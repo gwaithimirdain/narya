@@ -37,3 +37,8 @@ narya.opam
 
 # Documentation build directory
 docs/build
+
+# Nix stuff
+.envrc
+result
+.direnv/
