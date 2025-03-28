@@ -11,6 +11,7 @@ open Dim
 open Act
 open Norm
 open Equal
+open Subtype
 open Readback
 open Degctx
 open Printable
@@ -576,14 +577,16 @@ and check_of_synth : type a b s.
       @@ fun () ->
       let cty = check (Kinetic `Nolet) ctx aty (universe D.zero) in
       let ety = eval_term (Ctx.env ctx) cty in
-      equal_val (Ctx.length ctx) ety ty
+      (* It suffices for the synthesized type to be a subtype of the checking type. *)
+      subtype_of ctx ety ty
       <|> Unequal_synthesized_type
             { got = PVal (ctx, ety); expected = PVal (ctx, ty); which = None };
       let ctm = check status ctx ctm ety in
       ctm
   | _ ->
       let sval, sty = synth status ctx { value = stm; loc } in
-      equal_val (Ctx.length ctx) sty ty
+      (* It suffices for the synthesized type to be a subtype of the checking type. *)
+      subtype_of ctx sty ty
       <|> Unequal_synthesized_type
             { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None };
       sval

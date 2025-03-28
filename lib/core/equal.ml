@@ -20,11 +20,11 @@ end)
 let () = Mode.register_printer (function `Read -> Some "unhandled Equal.Mode.read effect")
 
 module Equal = struct
-  (* Compare two normal forms that are *assumed* to have the same type. *)
+  (* Compare two normal forms that are *assumed* to have the same type, or at least that the type of the first is a subtype of the type of the second. *)
   let rec equal_nf : int -> normal -> normal -> unit option =
    fun n x y ->
-    (* Thus, we can do an eta-expanding check at either one of their stored types, since they are assumed equal.  *)
-    equal_at n x.tm y.tm x.ty
+    (* Thus, we can do an eta-expanding check at either one of their stored types, since they are assumed equal.  We check them at the type of the *second* argument, since this is also called as a subroutine of subtype checking, in which case the subtype comes first and then the supertype. *)
+    equal_at n x.tm y.tm y.ty
 
   (* Compare two values at a type, which they are both assumed to belong to.  We do eta-expansion here if the type is one with an eta-rule, like a pi-type or a record type.  We also deal with the case of terms that don't synthesize, such as structs even in codatatypes without eta, and constructors in datatypes. *)
   and equal_at : int -> kinetic value -> kinetic value -> kinetic value -> unit option =
@@ -124,25 +124,29 @@ module Equal = struct
     (* Since an Inst has a positive amount of instantiation, it can never equal an Uninst.  We don't need to check that the types agree, since equal_uninst concludes equality of types rather than assumes it. *)
     | Uninst (u, _), Uninst (v, _) -> equal_uninst n u v
     | Inst { tm = tm1; dim = _; args = a1; tys = _ }, Inst { tm = tm2; dim = _; args = a2; tys = _ }
-      -> (
+      ->
         let* () = equal_uninst n tm1 tm2 in
         (* If tm1 and tm2 are equal and have the same type, that type must be an instantiation of a universe of the same dimension, itself instantiated at the same arguments.  So for the instantiations to be equal (including their types), it suffices for the instantiation dimensions and arguments to be equal. *)
-        match
-          ( D.compare (TubeOf.inst a1) (TubeOf.inst a2),
-            D.compare (TubeOf.uninst a1) (TubeOf.uninst a2) )
-        with
-        | Eq, Eq ->
-            let Eq = D.plus_uniq (TubeOf.plus a1) (TubeOf.plus a2) in
-            let open TubeOf.Monadic (Monad.Maybe) in
-            (* Because instantiation arguments are stored as normals, we use type-sensitive equality to compare them. *)
-            miterM { it = (fun _ [ x; y ] -> equal_nf n x y) } [ a1; a2 ]
-        | _ -> fail)
+        equal_tyargs n a1 a2
     | Lam _, _ | _, Lam _ -> fatal (Anomaly "unexpected lambda in synthesizing equality-check")
     | Struct _, _ | _, Struct _ ->
         fatal (Anomaly "unexpected struct in synthesizing equality-check")
     | Constr _, _ | _, Constr _ ->
         fatal (Anomaly "unexpected constr in synthesizing equality-check")
     | _, _ -> fail
+
+  and equal_tyargs : type n1 k1 nk1 n2 k2 nk2.
+      int -> (n1, k1, nk1, normal) TubeOf.t -> (n2, k2, nk2, normal) TubeOf.t -> unit option =
+   fun n a1 a2 ->
+    match
+      (D.compare (TubeOf.inst a1) (TubeOf.inst a2), D.compare (TubeOf.uninst a1) (TubeOf.uninst a2))
+    with
+    | Eq, Eq ->
+        let Eq = D.plus_uniq (TubeOf.plus a1) (TubeOf.plus a2) in
+        let open TubeOf.Monadic (Monad.Maybe) in
+        (* Because instantiation arguments are stored as normals, we use type-sensitive equality to compare them. *)
+        miterM { it = (fun _ [ x; y ] -> equal_nf n x y) } [ a1; a2 ]
+    | _ -> fail
 
   (* Subroutine of equal_val.  Like it, equality of the types is part of the conclusion, not a hypothesis.  *)
   and equal_uninst : int -> uninst -> uninst -> unit option =
@@ -341,4 +345,5 @@ let fallback f =
 
 let equal_at ctx x y ty = fallback @@ fun () -> Equal.equal_at ctx x y ty
 let equal_val ctx x y = fallback @@ fun () -> Equal.equal_val ctx x y
+let equal_tyargs ctx a1 a2 = fallback @@ fun () -> Equal.equal_tyargs ctx a1 a2
 let equal_arg ctx x y = fallback @@ fun () -> Equal.equal_arg ctx x y

@@ -126,6 +126,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols f =
         reformat = !reformat;
       }
   @@ fun () ->
+  Subtype.run @@ fun () ->
   Execute.Loaded.run @@ fun () ->
   Execute.Loading.run ~init:{ cwd = Sys.getcwd (); parents = Emp; imports = Emp; actions = false }
   @@ fun () ->

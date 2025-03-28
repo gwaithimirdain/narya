@@ -124,6 +124,7 @@ let run f =
       Reporter.display d;
       raise (Failure "Fatal error"))
   @@ fun () ->
+  Subtype.run @@ fun () ->
   let init_visible = Parser.Pi.install Scope.Trie.empty in
   Scope.run ~init_visible ~options:Options.default @@ fun () -> f ()
 
