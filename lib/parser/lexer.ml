@@ -111,7 +111,26 @@ module Specials = struct
   (* Any sequence consisting entirely of these characters is its own token. *)
   let default_ascii_symbols =
     [|
-      '~'; '!'; '@'; '#'; '$'; '%'; '&'; '*'; '/'; '='; '+'; '\\'; '|'; ','; '<'; '>'; ':'; ';'; '-';
+      '~';
+      '!';
+      '@';
+      '#';
+      '$';
+      '%';
+      '&';
+      '*';
+      '/';
+      '=';
+      '+';
+      '\\';
+      '|';
+      ',';
+      '<';
+      '>';
+      ':';
+      ';';
+      '-';
+      '^';
     |]
 
   module Data = struct
@@ -178,20 +197,22 @@ let utf8_superscript =
   </> let* _ = uchar Token.super_rparen_uchar in
       return (Invalid_superscript "")
 
-(* An ASCII superscript is a caret followed (without any space) by a string of numbers and letters between parentheses.  We don't ever want to fail lexing, so any string starting with a caret that doesn't look like this is lexed as an "invalid superscript". *)
+(* An ASCII superscript is a double caret followed (without any space) by a string of numbers and letters between parentheses.  We don't ever want to fail lexing, so any string starting with a double caret that doesn't look like this is lexed as an "invalid superscript".  (Single carats can be ASCII operators.) *)
 let caret_superscript =
-  let* _ = char '^' in
-  (let* _ = char '(' in
-   (let* s =
-      word
-        (fun x -> Array.mem x Token.unsupers)
-        (fun x -> Array.mem x Token.unsupers)
-        "caret superscript" in
-    (let* _ = char ')' in
-     return (Superscript s))
-    </> return (Invalid_superscript s))
-   </> return (Invalid_superscript ""))
-  </> return (Invalid_superscript "")
+  backtrack
+    (let* _ = string "^^" in
+     (let* _ = char '(' in
+      (let* s =
+         word
+           (fun x -> Array.mem x Token.unsupers)
+           (fun x -> Array.mem x Token.unsupers)
+           "caret superscript" in
+       (let* _ = char ')' in
+        return (Superscript s))
+       </> return (Invalid_superscript s))
+      </> return (Invalid_superscript ""))
+     </> return (Invalid_superscript ""))
+    ""
 
 let superscript = utf8_superscript </> caret_superscript
 
@@ -201,8 +222,8 @@ let specials () =
     [
       ascii_symbol_uchars ();
       onechar_uchars ();
-      (* Carets are not allowed to mean anything except a superscript.  We also have to stop when we meet a line comment started by a backquote.  We don't have to worry about block comments, since their opening brace is a onechar op and hence also stops an identifier. *)
-      Array.map Uchar.of_char [| '^'; ' '; '\t'; '\n'; '\r'; '`' |];
+      (* We also have to stop when we meet a line comment started by a backquote.  We don't have to worry about block comments, since their opening brace is a onechar op and hence also stops an identifier. *)
+      Array.map Uchar.of_char [| ' '; '\t'; '\n'; '\r'; '`' |];
       (* We only include the superscript parentheses: other superscript characters without parentheses are allowed in identifiers. *)
       [| Token.super_lparen_uchar; Token.super_rparen_uchar |];
     ]
@@ -283,7 +304,7 @@ let other : Token.t t =
 
 (* Finally, a token is either a quoted string, a single-character operator, an operator of special ASCII symbols, or something else.  Unlike the built-in 'lexer' function, we include whitespace *after* the token, so that we can save comments occurring after any code. *)
 let token : Located_token.t t =
-  (let* loc, tok = located (quoted_string </> onechar_op </> ascii_op </> superscript </> other) in
+  (let* loc, tok = located (quoted_string </> onechar_op </> superscript </> ascii_op </> other) in
    let* ws = whitespace in
    return (loc, (tok, ws)))
   </> located (expect_end (Eof, []))
