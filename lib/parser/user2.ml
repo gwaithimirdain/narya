@@ -103,4 +103,4 @@ let make_user : User.prenotation -> User.notation =
       print_case = None;
       is_case = (fun _ -> false);
     };
-  { key; notn = Wrap n; pat_vars; val_vars; inner_symbols }
+  { keys = [ key ]; notn = Wrap n; pat_vars; val_vars; inner_symbols }

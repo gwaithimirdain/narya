@@ -831,12 +831,14 @@ let execute : action_taken:(unit -> unit) -> get_file:(string -> Scope.trie) -> 
       in
       let notn, shadow = Situation.Current.add_user user in
       Scope.include_singleton (notation_name, ((`Notation (user, notn), loc), ()));
-      (if shadow then
-         let keyname =
-           match notn.key with
-           | `Constr (c, _) -> Constr.to_string c ^ "."
-           | `Constant c -> String.concat "." (Scope.name_of c) in
-         emit (Head_already_has_notation keyname));
+      List.iter
+        (fun key ->
+          let keyname =
+            match key with
+            | `Constr (c, _) -> Constr.to_string c ^ "."
+            | `Constant c -> String.concat "." (Scope.name_of c) in
+          emit (Head_already_has_notation keyname))
+        shadow;
       emit (Notation_defined (String.concat "." name))
   | Import { export; origin; op; _ } ->
       History.do_command @@ fun () ->

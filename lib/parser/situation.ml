@@ -115,12 +115,15 @@ let add_with_print : User.notation -> t -> t =
  fun notn sit ->
   let (Wrap n) = notn.notn in
   let sit = add n sit in
-  { sit with unparse = sit.unparse |> PrintMap.add notn.key notn }
+  {
+    sit with
+    unparse = List.fold_left (fun up key -> up |> PrintMap.add key notn) sit.unparse notn.keys;
+  }
 
-let add_user : User.prenotation -> t -> t * (User.notation * bool) =
+let add_user : User.prenotation -> t -> t * (User.notation * User.key list) =
  fun user sit ->
   let notn = make_user user in
-  let shadow = PrintMap.mem notn.key sit.unparse in
+  let shadow = List.filter (fun key -> PrintMap.mem key sit.unparse) notn.keys in
   (add_with_print notn sit, (notn, shadow))
 
 let add_users : t -> Scope.trie -> t =
@@ -148,7 +151,7 @@ module Current = struct
 
   let add_with_print : User.notation -> unit = fun notn -> S.modify (add_with_print notn)
 
-  let add_user : User.prenotation -> User.notation * bool =
+  let add_user : User.prenotation -> User.notation * User.key list =
    fun user ->
     let sit = S.get () in
     let sit, (notn, shadow) = add_user user sit in
