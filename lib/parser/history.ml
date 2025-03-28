@@ -70,7 +70,8 @@ let undo n =
 let undo_all () =
   S.modify (fun d ->
       if d.undoing then { d with past = Emp; present = Bwd_extra.head (Snoc (d.past, d.present)) }
-      else fatal (Forbidden_interactive_command "undo"))
+      else fatal (Forbidden_interactive_command "undo"));
+  Eternity.filter_now ()
 
 (* Call this at the beginning of interactive mode *)
 let start_undoing () = S.modify (fun d -> { d with undoing = true })
