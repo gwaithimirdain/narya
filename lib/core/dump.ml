@@ -261,7 +261,7 @@ module F = struct
         fprintf ppf "SFirst(%a, %a)"
           (pp_print_list ~pp_sep:(fun ppf () -> pp_print_string ppf ", ") synth)
           (List.map (fun (_, x, _) -> x) tms)
-          synth arg
+          (pp_print_option synth) arg
 
   and branches : type a. formatter -> (Constr.t, a branch) Abwd.t -> unit =
    fun ppf brs ->

@@ -133,7 +133,7 @@ module Make (I : Indices) = struct
     (* Try several terms, testing for each whether the synthesized type of the specified term has certain constructors or fields. *)
     | SFirst :
         ([ `Data of Constr.t list | `Codata of string list | `Any ] * 'a synth * bool) list
-        * 'a synth
+        * 'a synth option
         -> 'a synth
 
   (* Checkable raw terms *)
@@ -295,7 +295,7 @@ module Resolve (R : Resolver) = struct
       | SFirst (tms, arg) ->
           SFirst
             ( List.map (fun (t, x, b) -> (t, (synth ctx (locate_opt tm.loc x)).value, b)) tms,
-              (synth ctx (locate_opt tm.loc arg)).value ) in
+              Option.map (fun arg -> (synth ctx (locate_opt tm.loc arg)).value) arg ) in
     R.visit ctx (locate_opt tm.loc (T2.Synth newtm));
     locate_opt tm.loc newtm
 

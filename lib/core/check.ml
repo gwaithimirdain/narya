@@ -2192,15 +2192,17 @@ and synth : type a b s.
         | _ ->
             fatal ?loc:fn.loc (Applying_nonfunction_nontype (PTerm (ctx, sfn), PVal (ctx, sfnty))))
     | SFirst (alts, arg), _ ->
-        let _, sty = synth status ctx (locate_opt tm.loc arg) in
-        let vsty = view_type sty "synth_first" in
+        let sty = Option.map (fun arg -> snd (synth status ctx (locate_opt tm.loc arg))) arg in
+        let vsty = Option.map (fun sty -> view_type sty "synth_first") sty in
         let rec go errs = function
           | [] ->
-              if Bwd.is_empty errs then fatal (Choice_mismatch (PVal (ctx, sty)))
+              if Bwd.is_empty errs then
+                fatal
+                  (Choice_mismatch (Option.fold ~some:(fun sty -> PVal (ctx, sty)) ~none:PUnit sty))
               else fatal (Accumulated ("SFirst", errs))
           | (test, alt, passthru) :: alts -> (
               match (vsty, test) with
-              | Canonical (_, Data { constrs = data_constrs; _ }, _), `Data constrs ->
+              | Some (Canonical (_, Data { constrs = data_constrs; _ }, _)), `Data constrs ->
                   if
                     List.for_all
                       (fun constr ->
@@ -2211,7 +2213,7 @@ and synth : type a b s.
                         if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
                     @@ fun () -> synth status ctx (locate_opt tm.loc alt)
                   else go errs alts
-              | Canonical (_, Codata { fields = codata_fields; _ }, _), `Codata fields ->
+              | Some (Canonical (_, Codata { fields = codata_fields; _ }, _)), `Codata fields ->
                   if
                     List.for_all
                       (fun field ->
@@ -2229,6 +2231,7 @@ and synth : type a b s.
                   Reporter.try_with ~fatal:(fun d ->
                       if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
                   @@ fun () -> synth status ctx (locate_opt tm.loc alt)
+              | None, `Data _ | None, `Codata _ -> fatal (Anomaly "SFirst mismatch")
               | _ -> go errs alts) in
         go Emp alts in
   with_loc tm.loc @@ fun () ->
