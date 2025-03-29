@@ -79,9 +79,6 @@ let () =
   let () =
     uncheck ~print:() "suc." nat
       ~code:(Wrong_number_of_arguments_to_constructor (Core.Constr.intern "suc", -1)) in
-  let () =
-    uncheck ~print:() "4.2" nat ~code:(Unsupported_numeral (Q.make (Z.of_int 21) (Z.of_int 5)))
-  in
 
   (* To test degeneracies on records we have to set up a bunch of stuff, since the simplest case this happens is with Id Gel and squares in the universe. *)
   Testutil.Repl.gel_install ();

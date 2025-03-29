@@ -41,6 +41,7 @@ Does not handle sequences of abstraction variables broken across lines."
     ;; Constructors
     ("\\_<\\([[:word:]_.']+\\.\\)\\_>" . 'font-lock-constant-face)
     ("\\_<\\([[:digit:]]+\\)\\_>" . 'font-lock-number-face) ; these are really like constructors.
+    ("\\_<\\([[:digit:]][[:digit:].]+[[:digit:]]\\)\\_>" . 'font-lock-number-face) ; decimal numbers
 
     ;; Variables bound by let-bindings
     ("\\_<\\(let[[:space:]\n]+rec\\|let\\|and\\)[[:space:]\n]+\\([[:word:]_.']+\\)\\_>" 2 'font-lock-variable-name-face)

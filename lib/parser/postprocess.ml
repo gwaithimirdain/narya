@@ -25,17 +25,24 @@ let get_var : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string option 
   | Placeholder _ -> None
   | _ -> fatal Parse_error
 
-(* At present we only know how to postprocess natural number numerals. *)
 let process_numeral loc (n : Q.t) =
+  (* TODO: It would be better not to hardcode these.  It might also be nice to represent them more efficiently in syntax, as I think Agda does, rather than insisting on expanding them out completely into constructors. *)
+  let zero = { value = Constr.intern "zero"; loc } in
+  let one = { value = Constr.intern "one"; loc } in
+  let suc = { value = Constr.intern "suc"; loc } in
+  let quot = { value = Constr.intern "quot"; loc } in
   let rec process_nat (n : Z.t) =
-    (* TODO: Would be better not to hardcode these. *)
-    if n = Z.zero then { value = Raw.Constr ({ value = Constr.intern "zero"; loc }, []); loc }
-    else
-      {
-        value = Raw.Constr ({ value = Constr.intern "suc"; loc }, [ process_nat (Z.sub n Z.one) ]);
-        loc;
-      } in
-  if n.den = Z.one && n.num >= Z.zero then process_nat n.num else fatal (Unsupported_numeral n)
+    if n = Z.zero then { value = Raw.Constr (zero, []); loc }
+    else { value = Raw.Constr (suc, [ process_nat (Z.sub n Z.one) ]); loc } in
+  let rec process_pos (n : Z.t) =
+    if n = Z.one then { value = Raw.Constr (one, []); loc }
+    else { value = Raw.Constr (suc, [ process_pos (Z.sub n Z.one) ]); loc } in
+  if n.num >= Z.zero then
+    if n.den = Z.one then process_nat n.num
+    else if n.den > Z.zero then
+      { value = Raw.Constr (quot, [ process_nat n.num; process_pos n.den ]); loc }
+    else fatal (Anomaly "negative denominator")
+  else fatal (Anomaly "negative numeral")
 
 (* Process a bare identifier, resolving it into either a variable, a cube variable with face, a constant, a numeral, or a degeneracy name (the latter being an error since it isn't applied to anything). *)
 let process_ident ctx loc parts =

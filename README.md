@@ -886,6 +886,18 @@ Constructors must always be applied to all of their arguments.  For instance, on
 
 Natural number literals such as `0`, `7`, and `23` are expanded at parse time into applications of the constructors `suc.` and `zero.`.  There is no built-in datatype with these constructors, but of course the user can define `ℕ` as above, in which case for instance `3 : ℕ` is equivalent to `suc. (suc. (suc. zero.))`.  But numerals will also typecheck at any other datatype having constructors of the same name.
 
+Decimal number literals such as `0.5` and `2.3` are similarly expanded at parse time into the constructor `quot.` applied to a numerator and denominator, where the numerator is a natural number obtained through applications of `suc.` and `zero.`, while the denominator is a "positive natural number" obtained through applications of `suc.` and `one.`.  Such fractions are reduced to lowest terms before this translation is applied, so for instance `0.5` becomes `quotsuc. (suc. zero.) (suc. one.)`, while `0.75` becomes `quot. (suc. (suc. (suc. zero.))) (suc. (suc. (suc. one.)))`.  Again, there is no built-in datatype with these constructors, but the user can define for instance
+```
+def ℕ₊ : Type ≔ data [ one. | suc. (_ : ℕ₊) ]
+def ℚ₀₊ : Type ≔ data [ zero. | suc. (_ : ℕ) | quot. (_ : ℕ) (_ : ℕ₊) ]
+```
+Of course this is not a correct representation of non-negative rational numbers without either an extra parameter of `quot.` ensuring that the fraction is in lowest terms or a higher constructor that equates equal fractions, neither of which can be implemented yet.  Also note that mathematically, the constructors `zero.` and `suc.` are redundant since `quot. n one.` also embeds the natural numbers, but are currently necessary for whole number literals to typecheck at `ℚ₊` since they are translated using `suc.` and `zero.`.
+
+Decimal literals must include at least one digit both before and after the decimal point, since otherwise they would be parsed as a field projection or an ordinary constructor application.  There is no difference between `2` and `2.0`; in particular, both will typecheck at `ℕ`.
+
+Decimal literals are not currently printed (although positive naturals are): `echo 2.5 : ℕ` outputs `quot. 5 2`.  (This would not be entirely trivial, since there is no finite decimal way to print, say, `quot. 1 3`.)
+
+
 ### Matching
 
 When a new constant is defined as a function with arguments that belong to datatypes, it can match on such an argument (called the *discriminee*).  For instance, the function that swaps the elements of a binary sum can be written as
