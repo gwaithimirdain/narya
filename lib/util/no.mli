@@ -16,6 +16,14 @@ type seven = six plus
 type eight = seven plus
 type minus_one = zero minus
 type minus_two = minus_one minus
+type one_half = zero minus plus
+type one_fourth = zero minus minus plus
+type three_fourths = zero plus minus plus
+type three_halves = zero minus plus plus
+type minus_one_half = zero plus minus
+type minus_one_fourth = zero plus plus minus
+type minus_three_fourths = zero minus plus minus
+type minus_three_halves = zero plus minus minus
 
 val zero : zero t
 val one : one t
@@ -30,6 +38,14 @@ val minus_one : minus_one t
 val minus_two : minus_two t
 val minus_omega : minus_omega t
 val plus_omega : plus_omega t
+val one_half : one_half t
+val one_fourth : one_fourth t
+val three_fourths : three_fourths t
+val three_halves : three_halves t
+val minus_one_half : minus_one_half t
+val minus_one_fourth : minus_one_fourth t
+val minus_three_fourths : minus_three_fourths t
+val minus_three_halves : minus_three_halves t
 
 type strict
 type nonstrict
