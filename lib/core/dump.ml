@@ -213,6 +213,7 @@ module F = struct
           (fun ppf ->
             List.iter (fun (x : a check Asai.Range.located) -> fprintf ppf "%a, " check x.value))
           args
+    | Numeral x -> fprintf ppf "Numeral(%s)" (Q.to_string x)
     | Empty_co_match -> fprintf ppf "Emptycomatch(?)"
     | Data _ -> fprintf ppf "Data(?)"
     | Codata _ -> fprintf ppf "Codata(?)"

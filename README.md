@@ -895,7 +895,11 @@ Of course this is not a correct representation of non-negative rational numbers 
 
 Decimal literals must include at least one digit both before and after the decimal point, since otherwise they would be parsed as a field projection or an ordinary constructor application.  There is no difference between `2` and `2.0`; in particular, both will typecheck at `ℕ`.
 
-Decimal literals are not currently printed (although positive naturals are): `echo 2.5 : ℕ` outputs `quot. 5 2`.  (This would not be entirely trivial, since there is no finite decimal way to print, say, `quot. 1 3`.)
+Natural number and positive natural number numerals, composed of the constructors `zero.`, `suc.` and `one.`, are printed in the expected way.  Decimal numbers are not printed specially, but fractions can be both parsed and printed with an ordinary notation definition for the `quot` constructor:
+```
+notation 0 quot : x "/" y ≔ quot. x y
+```
+This will cause `1/2` to parse into `quot. (suc. zero.) (suc. one.)`, and also `quot. (suc. zero.) (suc. one.)` to be printed as `1 / 2`.  It also results in `0.5` being printed as `1 / 2`, while `1/0` does not typecheck since `ℕ₊` has no constructor `zero.`.  It doesn't permit division of arbitrary rational numbers; you can allow the "numerator" of the constructor `quot.` to be an arbitrary rational (with a higher field expected), but of course the denominator can't be anything that might be zero.
 
 
 ### Matching
