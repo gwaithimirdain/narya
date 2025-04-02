@@ -44,6 +44,7 @@ type (_, _) tree =
   | Done_closed : (closed, 'tight, 'right) notation -> ('t, 's) tree
   | Lazy : ('t, 's) tree Lazy.t -> ('t, 's) tree
   | Ambiguity : string list -> ('t, 's) tree
+  | Ambiguity_closed : string list -> ('t, 's) tree
 
 and ('t, 's) branch = {
   ops : ('t, 's) tree TokMap.t;

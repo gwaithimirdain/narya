@@ -81,6 +81,8 @@ type (_, _) tree =
   | Lazy : ('t, 's) tree Lazy.t -> ('t, 's) tree
   (* One notation is a prefix of another one.  Reported as an error when reached during parsing, but just saved when notations are created and merged. *)
   | Ambiguity : string list -> ('t, 's) tree
+  (* The sub-case when all the ambiguous notations are closed *)
+  | Ambiguity_closed : string list -> ('t, 's) tree
 
 (* When there is a choice in parsing, we arrange it so that no backtracking is required (except for a single token of lookahead).  We test all the possible next literal tokens, considering the possibility of a notation operator, field, or other term.  (Constructors and identifiers are considered special terms, and extracted during postprocessing.)  Fields cannot also be other terms, and we forbid symbols that occur in operators from also being variable names, so there is no need for backtracking. *)
 and ('t, 's) branch = {
@@ -512,6 +514,7 @@ let rec lower_tree : type t1 s1 t2 s2.
   | Done_closed n -> Done_closed n
   | Lazy tr -> Lazy (lazy (lower_tree sub (Lazy.force tr)))
   | Ambiguity strs -> Ambiguity strs
+  | Ambiguity_closed strs -> Ambiguity_closed strs
 
 and lower_branch : type t1 s1 t2 s2.
     (t2, s2, t1, s1) No.Interval.subset -> (t2, s2) branch -> (t1, s1) branch =
@@ -534,7 +537,7 @@ let rec names : type t s. (t, s) tree -> string list = function
   | Done_open (_, n) -> [ (find n).name ]
   | Done_closed n -> [ (find n).name ]
   | Lazy _ -> []
-  | Ambiguity strs -> strs
+  | Ambiguity strs | Ambiguity_closed strs -> strs
 
 and names_tmap : type t s. (t, s) tree TokMap.t -> string list =
  fun trees -> TokMap.fold (fun _ t xs -> names t @ xs) trees []
@@ -547,9 +550,13 @@ let rec merge_tree : type t1 s1 t2 s2.
   | Lazy (lazy xs), _ -> merge_tree sub xs ys
   | _, Lazy (lazy ys) -> merge_tree sub xs ys
   | Inner xb, Inner yb -> Inner (merge_branch sub xb yb)
-  (* As a special case, if a left-open notation and a left-closed notation have exactly the same tree, we resolve the ambiguity in favor of the left-open one.  This is basically a hack to allow unary minus to coexist with binary subtraction. *)
-  | Done_open _, Done_closed _ -> xs
-  | Done_closed _, Done_open _ -> lower_tree sub ys
+  (* As a special case, if a left-open notation and one or more left-closed notations have exactly the same tree, we resolve the ambiguity in favor of the left-open one. *)
+  | Done_open _, Done_closed _ | Done_open _, Ambiguity_closed _ -> xs
+  | Done_closed _, Done_open _ | Ambiguity_closed _, Done_open _ -> lower_tree sub ys
+  | Done_closed _, Done_closed _
+  | Done_closed _, Ambiguity_closed _
+  | Ambiguity_closed _, Done_closed _
+  | Ambiguity_closed _, Ambiguity_closed _ -> Ambiguity_closed (names xs @ names ys)
   | _ -> Ambiguity (names xs @ names ys)
 
 and merge_tmap : type t1 s1 t2 s2.
