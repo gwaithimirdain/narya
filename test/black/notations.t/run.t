@@ -145,6 +145,8 @@
     : ℤ
   
    ￫ error[E0201]
-   ￮ potential parsing ambiguity: One notation is a prefix of another: [minus] and [minus']
+   ￮ potential ambiguity (one notation is a prefix of another). Notations involved:
+       minus
+       minus'
   
   [1]

@@ -47,7 +47,7 @@ module Code = struct
   type t =
     | Parse_error : t
     | Encoding_error : t
-    | Parsing_ambiguity : string -> t
+    | Parsing_ambiguity : string list -> t
     | No_relative_precedence : string * string -> t
     | Invalid_variable : string list -> t
     | Invalid_numeral : string -> t
@@ -515,7 +515,11 @@ module Code = struct
       | Accumulated _ -> text "anomaly: multiple accumulated errors"
       | Parse_error -> text "parse error"
       | Encoding_error -> text "UTF-8 encoding error"
-      | Parsing_ambiguity str -> textf "potential parsing ambiguity: %s" str
+      | Parsing_ambiguity strs ->
+          textf
+            "@[<hv 2>potential ambiguity (one notation is a prefix of another). Notations involved:@ %a@]"
+            (pp_print_list ~pp_sep:pp_print_space pp_print_string)
+            strs
       | Invalid_variable str -> textf "invalid local variable name: %s" (String.concat "." str)
       | Invalid_field str -> textf "invalid field name: %s" str
       | Invalid_constr str -> textf "invalid constructor name: %s" str

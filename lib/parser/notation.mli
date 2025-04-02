@@ -43,6 +43,7 @@ type (_, _) tree =
   | Done_open : ('t, 's, 'tight) No.lt * ('left opn, 'tight, 'right) notation -> ('t, 's) tree
   | Done_closed : (closed, 'tight, 'right) notation -> ('t, 's) tree
   | Lazy : ('t, 's) tree Lazy.t -> ('t, 's) tree
+  | Ambiguity : string list -> ('t, 's) tree
 
 and ('t, 's) branch = {
   ops : ('t, 's) tree TokMap.t;

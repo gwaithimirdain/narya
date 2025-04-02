@@ -52,10 +52,7 @@ let () =
 let () =
   Parser.Lexer.Specials.run @@ fun () ->
   Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
-      if
-        d.message
-        = Parsing_ambiguity "One notation is a prefix of another: [ifthen] and [ifthenelse]"
-      then ()
+      if d.message = Parsing_ambiguity [ "ifthen"; "ifthenelse" ] then ()
       else (
         Reporter.display d;
         raise (Failure "Unexpected error code")))
