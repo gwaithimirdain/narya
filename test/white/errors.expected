@@ -88,20 +88,18 @@
 
  ￫ error[E0203]
  ￭ user-supplied term
- 1 | x .fs.t y
+ 1 | x |-> x .fs.t y
    ^ invalid field name: .fs.t
 
- ￫ error[E0204]
+ ￫ error[E0100]
  ￭ user-supplied term
  1 | f (con.str. x)
-   ^ invalid constructor name: con.str.
+   ^ higher constructors: con.str. not yet implemented
 
- ￫ error[E0300]
+ ￫ error[E0205]
  ￭ user-supplied term
  1 | x |-> f 0.1.2 x
-   ^ unbound variable: 0.1.2 (hint: did you mean one of:
-       0 .1 .2
-     ?)
+   ^ invalid numeral: 0.1.2
 
  ￫ error[E0202]
  ￭ user-supplied term

@@ -14,8 +14,13 @@ module Located_token = struct
   type t = Position.range * Token_whitespace.t
 end
 
+(* As the lexer "state" we remember whether we just saw a line comment. *)
+module LexerState = struct
+  type t = [ `Linecomment | `None ]
+end
+
 (* We define the lexer using a basic utf-8 character parser from Fmlib. *)
-module Basic = Ucharacter.Make_utf8 (Bool) (Located_token) (Unit)
+module Basic = Ucharacter.Make_utf8 (LexerState) (Located_token) (Unit)
 open Basic
 
 let backquote = Uchar.of_char '`'
@@ -26,7 +31,7 @@ let rbrace = Uchar.of_char '}'
 (* A line comment starts with a backquote and extends to the end of the line.  *)
 let line_comment : Whitespace.t t =
   let* c = uword (fun c -> c = backquote) (fun c -> c <> newline) "line comment" in
-  let* () = set true in
+  let* () = set `Linecomment in
   return (`Line (String.sub c 1 (String.length c - 1)))
 
 (* A block comment starts with {` and ends with `}, and can be nested.  *)
@@ -43,9 +48,10 @@ let block_comment : Whitespace.t t =
     | _ when c = backquote -> rest buf nesting `Backquote
     | _ -> rest (buf ^ Utf8.Encoder.to_internal c) nesting (state_of c) in
   let* _ = backtrack (string "{`") "\"{`\"" in
-  let* () = set false in
+  let* () = set `None in
   rest "" 0 `None
 
+(* This combinator parses not just newlines but also spaces and tabs, but it only counts the number of newlines.  Thus it returns (`Newlines 0) if it parses only spaces and tabs (possibly including the newline at the end of a preceding line comment). *)
 let newlines : Whitespace.t t =
   let* n =
     one_or_more_fold_left
@@ -53,12 +59,13 @@ let newlines : Whitespace.t t =
       (fun n c -> return (if c = '\n' then n + 1 else n))
       (one_of_chars " \t\n\r" "space, tab, or newline") in
   let* line = get in
-  let* () = set false in
-  return (`Newlines (if line then n - 1 else n))
+  let* () = set `None in
+  (* If we just saw a line comment, then we don't include the newline that *ended* the line comment as a "newline". *)
+  return (`Newlines (if line = `Linecomment then n - 1 else n))
 
-(* Whitespace.T consists of spaces, tabs, newlines, and comments. *)
+(* Whitespace.t consists of spaces, tabs, newlines, and comments.  We only record newlines when there are a positive number of them. *)
 let whitespace : Whitespace.t list t =
-  let* () = set false in
+  let* () = set `None in
   let* ws =
     zero_or_more_fold_left Emp
       (fun ws w -> if w = `Newlines 0 then return ws else return (Snoc (ws, w)))
@@ -108,18 +115,26 @@ module Specials = struct
     |]
 
   module Data = struct
-    type t = { onechar_ops : (int * Token.t) Array.t; ascii_symbols : char Array.t }
+    type t = {
+      onechar_ops : (int * Token.t) Array.t;
+      ascii_symbols : char Array.t;
+      digit_vars : bool;
+    }
   end
 
   module R = Algaeff.Reader.Make (Data)
 
-  let run ?(onechar_ops = Array.of_list []) ?(ascii_symbols = Array.of_list []) f =
+  let () = R.register_printer (function `Read -> Some "unhandled Lexer.Specials read effect")
+
+  let run ?(onechar_ops = Array.of_list []) ?(ascii_symbols = Array.of_list []) ?(digit_vars = true)
+      f =
     let onechar_ops = Array.append default_onechar_ops onechar_ops in
     let ascii_symbols = Array.append default_ascii_symbols ascii_symbols in
-    R.run ~env:{ onechar_ops; ascii_symbols } f
+    R.run ~env:{ onechar_ops; ascii_symbols; digit_vars } f
 
   let onechar_ops () = (R.read ()).onechar_ops
   let ascii_symbols () = (R.read ()).ascii_symbols
+  let digit_vars () = (R.read ()).digit_vars
 end
 
 let onechar_uchars () = Array.map (fun c -> Uchar.of_int (fst c)) (Specials.onechar_ops ())
@@ -145,11 +160,6 @@ let ascii_op : Token.t t =
   | ":" -> return Colon
   | "..." -> return Ellipsis
   | _ -> return (Op op)
-
-(* A numeral is a string composed entirely of digits and periods (and not starting or ending with a period, but that's taken care of later in "canonicalize".  Of course if there is more than one period it's not a *valid* numeral, but we don't allow it as another kind of token either. *)
-let digits_dot = "0123456789."
-let is_digit_or_dot c = String.exists (fun x -> x = c) digits_dot
-let is_numeral s = String.for_all is_digit_or_dot s
 
 (* A Unicode superscript is a string of Unicode superscript numbers and letters between superscript parentheses.  We don't ever want to fail lexing, so any string starting with a superscript left parenthesis that *doesn't* look like this, or a superscript right parenthesis occurring before a superscript left parenthesis, is lexed as an "invalid superscript". *)
 let utf8_superscript =
@@ -191,8 +201,8 @@ let specials () =
     [
       ascii_symbol_uchars ();
       onechar_uchars ();
-      (* Carets are not allowed to mean anything except a superscript. *)
-      Array.map Uchar.of_char [| '^'; ' '; '\t'; '\n'; '\r' |];
+      (* Carets are not allowed to mean anything except a superscript.  We also have to stop when we meet a line comment started by a backquote.  We don't have to worry about block comments, since their opening brace is a onechar op and hence also stops an identifier. *)
+      Array.map Uchar.of_char [| '^'; ' '; '\t'; '\n'; '\r'; '`' |];
       (* We only include the superscript parentheses: other superscript characters without parentheses are allowed in identifiers. *)
       [| Token.super_lparen_uchar; Token.super_rparen_uchar |];
     ]
@@ -200,6 +210,9 @@ let specials () =
 let other_char : string t =
   let* c = ucharp (fun x -> not (Array.mem x (specials ()))) "alphanumeric or unicode" in
   return (Utf8.Encoder.to_internal c)
+
+let is_numeral =
+  List.for_all (fun s -> String.for_all (fun c -> String.exists (fun x -> x = c) "0123456789") s)
 
 (* Once we have an identifier string, we inspect it and divide into cases to make a Token.t.  We take a range so that we can immediately report invalid field, constructor, and numeral names with a position. *)
 let canonicalize (rng : Position.range) : string -> Token.t t = function
@@ -223,6 +236,7 @@ let canonicalize (rng : Position.range) : string -> Token.t t = function
   | "solve" -> return Solve
   | "show" -> return Show
   | "display" -> return Display
+  | "option" -> return Option
   | "undo" -> return Undo
   | "section" -> return Section
   | "end" -> return End
@@ -230,18 +244,36 @@ let canonicalize (rng : Position.range) : string -> Token.t t = function
   | "..." -> return Ellipsis
   | "_" -> return Underscore
   | s -> (
-      match String.split_on_char '.' s with
-      | [] -> fatal (Anomaly "canonicalizing empty string")
-      | [ ""; "" ] -> return Dot (* Shouldn't happen, we already tested for dot *)
-      | [ ""; field ] -> return (Field field)
-      | [ constr; "" ] -> return (Constr constr)
-      | parts when List.for_all ok_ident parts -> return (Ident parts)
-      | "" :: parts when List.nth parts (List.length parts - 1) = "" ->
-          fatal ~loc:(Range.convert rng) Parse_error
-      | "" :: _ -> fatal ~loc:(Range.convert rng) (Invalid_field s)
-      | parts when List.nth parts (List.length parts - 1) = "" ->
-          fatal ~loc:(Range.convert rng) (Invalid_constr s)
-      | _ -> fatal ~loc:(Range.convert rng) Parse_error)
+      let parts = String.split_on_char '.' s in
+      let bwdparts = Bwd.of_list parts in
+      (* Only allow names starting with digits if the flag says so *)
+      if
+        (not (Specials.digit_vars ()))
+        && (not (is_numeral parts))
+        && List.exists
+             (fun s -> String.length s > 0 && String.exists (fun x -> x = s.[0]) "0123456789")
+             parts
+      then fatal Parse_error
+      else
+        match (parts, bwdparts) with
+        | [], _ -> fatal (Anomaly "canonicalizing empty string")
+        (* Can't both start and end with a . *)
+        | "" :: _, Snoc (_, "") -> fatal ~loc:(Range.convert rng) Parse_error
+        (* Starting with a . makes a field.  If there is only a primary name, it's a lower field. *)
+        | [ ""; field ], _ -> return (Field (field, []))
+        (* Otherwise, if the primary field name is followed by a "..", then the remaining sections are the parts. *)
+        | "" :: field :: "" :: pbij, _ -> return (Field (field, pbij))
+        (* Otherwise, there is only one remaining section allowed, and it is split into characters to make the remaining sections. *)
+        | [ ""; field; pbij ], _ ->
+            return (Field (field, String.fold_right (fun c s -> String.make 1 c :: s) pbij []))
+        | "" :: _ :: _ :: _ :: _, _ -> fatal ~loc:(Range.convert rng) Parse_error
+        (* Ending with a . (and containing no internal .s) makes a constr *)
+        | _, Snoc (Snoc (Emp, constr), "") -> return (Constr constr)
+        | _, Snoc (_, "") ->
+            fatal ~loc:(Range.convert rng) (Unimplemented ("higher constructors: " ^ s))
+        (* Otherwise, all the parts must be identifiers. *)
+        | parts, _ when List.for_all ok_ident parts -> return (Ident parts)
+        | _, _ -> fatal ~loc:(Range.convert rng) Parse_error)
 
 (* An identifier is a list of one or more other characters, canonicalized. *)
 let other : Token.t t =
@@ -265,8 +297,8 @@ module Parser = struct
   include Basic.Parser
 
   (* This is how we make the lexer to plug into the parser. *)
-  let start : t = make_partial Position.start false bof
-  let restart (lex : t) : t = make_partial (position lex) false token |> transfer_lookahead lex
+  let start : t = make_partial Position.start `None bof
+  let restart (lex : t) : t = make_partial (position lex) `None token |> transfer_lookahead lex
 end
 
 module Single_token = struct

@@ -9,7 +9,6 @@ open Unparse
 open Print
 open Norm
 open Check
-open Syntax
 open Term
 open Value
 open Raw
@@ -17,7 +16,7 @@ open Asai.Range
 
 let parse_term (tm : string) : N.zero check located =
   let p = Parse.Term.parse (`String { content = tm; title = Some "user-supplied term" }) in
-  let (Term tm) = Parse.Term.final p in
+  let (Wrap tm) = Parse.Term.final p in
   Postprocess.process Emp tm
 
 let check_type (rty : N.zero check located) : (emp, kinetic) term =
@@ -30,7 +29,7 @@ let check_term (rtm : N.zero check located) (ety : kinetic value) : (emp, kineti
 let assume (name : string) (ty : string) : unit =
   let p = Parse.Term.parse (`String { title = Some "constant name"; content = name }) in
   match Parse.Term.final p with
-  | Term { value = Ident (name, _); _ } ->
+  | Wrap { value = Ident (name, _); _ } ->
       Scope.check_name name None;
       let const = Scope.define Compunit.basic name in
       Reporter.try_with ~fatal:(fun d ->
@@ -46,7 +45,7 @@ let assume (name : string) (ty : string) : unit =
 let def (name : string) (ty : string) (tm : string) : unit =
   let p = Parse.Term.parse (`String { title = Some "constant name"; content = name }) in
   match Parse.Term.final p with
-  | Term { value = Ident (name, _); _ } ->
+  | Wrap { value = Ident (name, _); _ } ->
       Reporter.tracef "when defining %s" (String.concat "." name) @@ fun () ->
       Scope.check_name name None;
       let const = Scope.define Compunit.basic name in
@@ -61,7 +60,7 @@ let def (name : string) (ty : string) (tm : string) : unit =
       let ety = eval_term (Emp D.zero) cty in
       Reporter.trace "when checking case tree" @@ fun () ->
       Global.add const cty (Axiom `Parametric);
-      let tree = check (Potential (Constant const, Emp, fun x -> x)) Ctx.empty rtm ety in
+      let tree = check (Potential (Constant (const, D.zero), Emp, fun x -> x)) Ctx.empty rtm ety in
       Global.add const cty (Defined tree)
   | _ -> fatal (Invalid_constant_name name)
 
@@ -101,18 +100,18 @@ let print (tm : string) : unit =
       let etm = eval_term (Emp D.zero) ctm in
       Readback.Displaying.run ~env:true @@ fun () ->
       let btm = readback_at Ctx.empty etm ety in
-      let utm = unparse Names.empty btm Interval.entire Interval.entire in
-      pp_term `None Format.std_formatter (Term utm);
-      Format.pp_print_newline Format.std_formatter ()
+      let utm = unparse Names.empty btm No.Interval.entire No.Interval.entire in
+      PPrint.ToChannel.pretty 1.0 (Display.columns ()) stdout (pp_complete_term (Wrap utm) `None);
+      print_newline ()
   | _ -> fatal (Nonsynthesizing "argument of print")
 
 let run f =
   Lexer.Specials.run @@ fun () ->
   Parser.Unparse.install ();
+  History.run_empty @@ fun () ->
   Eternity.run ~init:Eternity.empty @@ fun () ->
   Global.run ~init:Global.empty @@ fun () ->
   Builtins.run @@ fun () ->
-  Print.State.run ~env:`Term @@ fun () ->
   Display.run ~init:Display.default @@ fun () ->
   Annotate.run @@ fun () ->
   Readback.Displaying.run ~env:false @@ fun () ->
@@ -126,7 +125,7 @@ let run f =
       raise (Failure "Fatal error"))
   @@ fun () ->
   let init_visible = Parser.Pi.install Scope.Trie.empty in
-  Scope.run ~init_visible @@ fun () -> f ()
+  Scope.run ~init_visible ~options:Options.default @@ fun () -> f ()
 
 let gel_install () =
   def "Gel" "(A B : Type) (R : A → B → Type) → Id Type A B" "A B R ↦ sig a b ↦ ( ungel : R a b )"

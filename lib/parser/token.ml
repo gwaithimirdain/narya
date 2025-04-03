@@ -1,9 +1,9 @@
 open Core
 open Reporter
-open Uuseg_string
 
 type t =
-  | Field of string (* Starting with . *)
+  (* A Field is an identifier starting with a period, broken into a list of components by internal periods, and with the first component stored separately.  The later components are only used to indicate the partial bijection identifying an instance of a "higher" field of a higher codatatype.  Thus for a record or ordinary codatatype the list is empty.  *)
+  | Field of string * string list
   | Constr of string (* Ending with . *)
   | LParen (* ( *)
   | RParen (* ) *)
@@ -41,6 +41,7 @@ type t =
   | Solve
   | Show
   | Display
+  | Option
   | Undo
   | Section
   | End
@@ -145,7 +146,10 @@ let of_super (s : string) : string =
   of_super 0
 
 let to_string = function
-  | Field s -> "." ^ s
+  | Field (f, strs) ->
+      if List.fold_right (fun s m -> max (String.length s) m) strs 0 > 1 then
+        "." ^ f ^ ".." ^ String.concat "." strs
+      else "." ^ f ^ "." ^ String.concat "" strs
   | Constr s -> s ^ "."
   | LParen -> "("
   | RParen -> ")"
@@ -183,6 +187,7 @@ let to_string = function
   | Solve -> "solve"
   | Show -> "show"
   | Display -> "display"
+  | Option -> "option"
   | Undo -> "undo"
   | Section -> "section"
   | End -> "end"
@@ -197,4 +202,4 @@ let to_string = function
   | Eof -> "EOF"
 
 (* Given a token, create a constant pretty-printer that prints that token. *)
-let pp tok ppf () = pp_utf_8 ppf (to_string tok)
+let pp tok = PPrint.utf8string (to_string tok)

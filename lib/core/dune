@@ -1,5 +1,6 @@
 (library
   (name core)
-  (libraries zarith util dim bwd asai uuseg)
-	(instrumentation (backend landmarks --auto)))
+  (public_name narya.core)
+  (libraries zarith util dim bwd asai pprint)
+  (instrumentation (backend landmarks --auto)))
 (env (_ (flags (:standard -w -37 -w -30))))

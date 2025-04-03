@@ -4,10 +4,16 @@ open Dim
 open Core
 open Raw
 open Reporter
-open Notation
 open Asai.Range
+open Notation
 open Monad.Ops (Monad.Maybe)
 module StringMap = Map.Make (String)
+
+(* We define this here so we can refer to it in parsing implicit applications. *)
+
+type (_, _, _) identity += Braces : (closed, No.plus_omega, closed) identity
+
+let braces : (closed, No.plus_omega, closed) notation = (Braces, Outfix)
 
 (* Require the argument to be either a valid local variable name (to be bound, so faces of cubical variables are not allowed) or an underscore, and return a corresponding 'string option'. *)
 let get_var : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string option =
@@ -34,34 +40,37 @@ let process_numeral loc (n : Q.t) =
 (* Process a bare identifier, resolving it into either a variable, a cube variable with face, a constant, a numeral, or a degeneracy name (the latter being an error since it isn't applied to anything). *)
 let process_ident ctx loc parts =
   let open Monad.Ops (Monad.Maybe) in
-  match
-    match parts with
-    | [ x ] ->
-        let* _, n = Bwv.find_opt (fun y -> y = Some x) ctx in
-        Some (Synth (Var (n, None)))
-    | [ x; face ] ->
-        let* _, v = Bwv.find_opt (fun y -> y = Some x) ctx in
-        let* fa = sface_of_string face in
-        return (Synth (Var (v, Some fa)))
-    | _ -> None
-  with
-  | Some tm -> { value = tm; loc }
-  | None -> (
-      match Scope.lookup parts with
-      | Some c -> { value = Synth (Const c); loc }
-      | None -> (
-          match parts with
-          | [] -> fatal (Anomaly "empty ident")
-          | [ str ] when Option.is_some (deg_of_name str) ->
-              fatal (Missing_argument_of_degeneracy str)
-          | _ -> (
-              try process_numeral loc (Q.of_string (String.concat "." parts))
-              with Invalid_argument _ -> fatal (Unbound_variable (String.concat "." parts, [])))))
+  (* A numeral is an ident whose pieces are composed entirely of digits.  Of course if there are more than two parts it's not a *valid* numeral, but we don't allow it as another kind of token either. *)
+  if List.is_empty parts then fatal (Anomaly "empty ident")
+  else if Lexer.is_numeral parts then
+    try process_numeral loc (Q.of_string (String.concat "." parts))
+    with Invalid_argument _ -> fatal (Invalid_numeral (String.concat "." parts))
+  else
+    match
+      match parts with
+      | [ x ] ->
+          let* _, n = Bwv.find_opt (fun y -> y = Some x) ctx in
+          return (Synth (Var (n, None)))
+      | [ x; face ] ->
+          let* _, v = Bwv.find_opt (fun y -> y = Some x) ctx in
+          let* fa = sface_of_string face in
+          return (Synth (Var (v, Some fa)))
+      | _ -> None
+    with
+    | Some tm -> { value = tm; loc }
+    | None -> (
+        match Scope.lookup parts with
+        | Some c -> { value = Synth (Const c); loc }
+        | None -> (
+            match parts with
+            | [ str ] when Option.is_some (deg_of_name str) ->
+                fatal (Missing_argument_of_degeneracy str)
+            | _ -> fatal (Unbound_variable (String.concat "." parts, []))))
 
 (* If an identifier doesn't resolve, we check whether the user might have meant to project one or more fields from a shorter identifier, and give them a hint that field projections require spaces. *)
 let rec detect_spaceless_fields ctx loc (bwd_parts : string Bwd.t) fields found =
   match bwd_parts with
-  | Emp -> found
+  | Emp | Snoc (Emp, _) -> found
   | Snoc (bwd_parts, fld) ->
       Reporter.try_with
         (fun () ->
@@ -72,16 +81,15 @@ let rec detect_spaceless_fields ctx loc (bwd_parts : string Bwd.t) fields found 
 
 (* Now the master postprocessing function.  Note that this function calls the "process" functions registered for individual notations, but those functions will be defined to call *this* function on their constituents, so we have some "open recursion" going on. *)
 
-let rec process :
-    type n lt ls rt rs.
+let rec process : type n lt ls rt rs.
     (string option, n) Bwv.t -> (lt, ls, rt, rs) parse located -> n check located =
  fun ctx res ->
   let loc = res.loc in
   with_loc loc @@ fun () ->
   match res.value with
-  | Notn n -> (processor (notn n)).process ctx (args n) loc (whitespace n)
+  | Notn (n, d) -> (find n).processor ctx (args d) loc
   (* "Application" nodes in result trees are used for anything that syntactically *looks* like an application.  In addition to actual applications of functions, this includes applications of constructors and degeneracy operators, and also field projections.  *)
-  | App { fn; arg; _ } -> process_spine ctx fn [ (Term arg, res.loc) ]
+  | App { fn; arg; _ } -> process_spine ctx fn [ (Wrap arg, res.loc) ]
   | Placeholder _ -> fatal (Unimplemented "unification arguments")
   | Ident (parts, _) ->
       Reporter.try_with
@@ -101,34 +109,35 @@ let rec process :
       fatal Parse_error
   | Superscript (Some x, str, _) -> (
       match deg_of_string str with
-      | Some (Any s) ->
+      | Some (Any_deg s) ->
           let body = process ctx x in
           { value = Synth (Act (str, s, body)); loc }
       | None -> fatal (Invalid_degeneracy str))
   | Superscript (None, _, _) -> fatal (Anomaly "degeneracy is head")
+  | Hole { li; ri; num; _ } ->
+      let hloc = loc <|> Anomaly "missing location in Hole" in
+      { value = Hole { scope = ctx; loc = hloc; li = Interval li; ri = Interval ri; num }; loc }
 
-and process_spine :
-    type n lt ls rt rs.
+and process_spine : type n lt ls rt rs.
     (string option, n) Bwv.t ->
     (lt, ls, rt, rs) parse located ->
-    (observation * Asai.Range.t option) list ->
+    (wrapped_parse * Asai.Range.t option) list ->
     n check located =
  fun ctx tm args ->
   match tm.value with
-  | App { fn; arg; _ } -> process_spine ctx fn ((Term arg, tm.loc) :: args)
+  | App { fn; arg; _ } -> process_spine ctx fn ((Wrap arg, tm.loc) :: args)
   | _ -> process_apps ctx tm args
 
-and process_apps :
-    type n lt ls rt rs.
+and process_apps : type n lt ls rt rs.
     (string option, n) Bwv.t ->
     (lt, ls, rt, rs) parse located ->
-    (observation * Asai.Range.t option) list ->
+    (wrapped_parse * Asai.Range.t option) list ->
     n check located =
  fun ctx tm args ->
   match process_head ctx tm with
-  | `Deg (str, Any s) -> (
+  | `Deg (str, Any_deg s) -> (
       match args with
-      | (Term arg, loc) :: args ->
+      | (Wrap arg, loc) :: args ->
           process_apply ctx
             { value = Act (str, s, { value = (process ctx arg).value; loc }); loc }
             args
@@ -138,15 +147,14 @@ and process_apps :
       let loc = ref None in
       let args =
         List.map
-          (fun (Term x, l) ->
+          (fun (Wrap x, l) ->
             loc := l;
             process ctx x)
           args in
       { value = Raw.Constr (c, args); loc = !loc }
   | `Fn fn -> process_apply ctx fn args
 
-and process_head :
-    type n lt ls rt rs.
+and process_head : type n lt ls rt rs.
     (string option, n) Bwv.t ->
     (lt, ls, rt, rs) parse located ->
     [ `Deg of string * any_deg | `Constr of Constr.t | `Fn of n synth located ] =
@@ -159,21 +167,34 @@ and process_head :
       | None -> `Fn (process_synth ctx tm "function"))
   | _ -> `Fn (process_synth ctx tm "function")
 
-and process_apply :
-    type n.
+and process_apply : type n.
     (string option, n) Bwv.t ->
     n synth located ->
-    (observation * Asai.Range.t option) list ->
+    (wrapped_parse * Asai.Range.t option) list ->
     n check located =
- fun ctx fn args ->
-  match args with
+ fun ctx fn fnargs ->
+  match fnargs with
   | [] -> { value = Synth fn.value; loc = fn.loc }
-  | (Term { value = Field (fld, _); _ }, loc) :: args ->
-      process_apply ctx { value = Field (fn, Field.intern_ori fld); loc } args
-  | (Term arg, loc) :: args -> process_apply ctx { value = Raw.App (fn, process ctx arg); loc } args
+  | (Wrap { value = Field (fld, pbij, _); _ }, loc) :: args -> (
+      try
+        let fld =
+          try `Int (int_of_string fld) with Failure _ -> `Name (fld, List.map int_of_string pbij)
+        in
+        process_apply ctx { value = Field (fn, fld); loc } args
+      with Failure _ -> fatal (Invalid_field (String.concat "." ("" :: fld :: pbij))))
+  | (Wrap { value = Notn ((Braces, _), n); loc = braceloc }, loc) :: rest -> (
+      match args n with
+      | [ Token (LBrace, _); Term arg; Token (RBrace, _) ] ->
+          process_apply ctx
+            { value = Raw.App (fn, process ctx arg, locate_opt braceloc `Implicit); loc }
+            rest
+      | _ -> fatal (Anomaly "invalid notation arguments for braces"))
+  | (Wrap arg, loc) :: args ->
+      process_apply ctx
+        { value = Raw.App (fn, process ctx arg, locate_opt arg.loc `Explicit); loc }
+        args
 
-and process_synth :
-    type n lt ls rt rs.
+and process_synth : type n lt ls rt rs.
     (string option, n) Bwv.t -> (lt, ls, rt, rs) parse located -> string -> n synth located =
  fun ctx x str ->
   match process ctx x with
@@ -191,45 +212,17 @@ let rec process_tel : type n. (string option, n) Bwv.t -> Parameter.t list -> n 
   | [] -> Processed_tel (Emp, ctx, [])
   | { names; ty; _ } :: parameters -> process_vars ctx names ty parameters
 
-and process_vars :
-    type n b.
+and process_vars : type n.
     (string option, n) Bwv.t ->
     (string option * Whitespace.t list) list ->
-    observation ->
+    wrapped_parse ->
     Parameter.t list ->
     n processed_tel =
- fun ctx names (Term ty) parameters ->
+ fun ctx names (Wrap ty) parameters ->
   match names with
   | [] -> process_tel ctx parameters
   | (name, w) :: names ->
       let pty = process ctx ty in
       let (Processed_tel (tel, ctx, ws)) =
-        process_vars (Bwv.snoc ctx name) names (Term ty) parameters in
+        process_vars (Bwv.snoc ctx name) names (Wrap ty) parameters in
       Processed_tel (Ext (name, pty, tel), ctx, w :: ws)
-
-let process_user :
-    type n.
-    User.key ->
-    string list ->
-    string list ->
-    (string option, n) Bwv.t ->
-    observation list ->
-    Asai.Range.t option ->
-    n check located =
- fun key pat_vars val_vars ctx obs loc ->
-  let args =
-    List.fold_left2
-      (fun acc k (Term x) -> acc |> StringMap.add k (process ctx x))
-      StringMap.empty pat_vars obs in
-  let value =
-    match key with
-    | `Constant c ->
-        let spine =
-          List.fold_left
-            (fun acc k -> Raw.App ({ value = acc; loc }, StringMap.find k args))
-            (Const c) val_vars in
-        Raw.Synth spine
-    | `Constr (c, _) ->
-        let args = List.map (fun k -> StringMap.find k args) val_vars in
-        Raw.Constr ({ value = c; loc }, args) in
-  { value; loc }

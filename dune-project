@@ -6,7 +6,6 @@
       (>= 5.2.0))
     dune
     zarith
-    uuseg
     bwd
     algaeff
     asai
@@ -15,5 +14,6 @@
     lwt
     lambda-term
     fmlib
-    fileutils))
+    fileutils
+    pprint))
 (generate_opam_files)
