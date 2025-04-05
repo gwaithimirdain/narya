@@ -122,10 +122,10 @@ module Equal = struct
       | `Full -> (view_term x, view_term y) in
     match (x, y) with
     (* Since an Inst has a positive amount of instantiation, it can never equal an Uninst.  We don't need to check that the types agree, since equal_uninst concludes equality of types rather than assumes it. *)
-    | Uninst (u, _), Uninst (v, _) -> equal_uninst n u v
+    | Uninst (u, _), Uninst (v, _) -> equal_neu n u v
     | Inst { tm = tm1; dim = _; args = a1; tys = _ }, Inst { tm = tm2; dim = _; args = a2; tys = _ }
       ->
-        let* () = equal_uninst n tm1 tm2 in
+        let* () = equal_neu n tm1 tm2 in
         (* If tm1 and tm2 are equal and have the same type, that type must be an instantiation of a universe of the same dimension, itself instantiated at the same arguments.  So for the instantiations to be equal (including their types), it suffices for the instantiation dimensions and arguments to be equal. *)
         equal_tyargs n a1 a2
     | Lam _, _ | _, Lam _ -> fatal (Anomaly "unexpected lambda in synthesizing equality-check")
@@ -149,15 +149,12 @@ module Equal = struct
     | _ -> fail
 
   (* Subroutine of equal_val.  Like it, equality of the types is part of the conclusion, not a hypothesis.  *)
-  and equal_uninst : int -> uninst -> uninst -> unit option =
-   fun lvl x y ->
-    match (x, y) with
-    | Neu { head = head1; args = args1; value = _ }, Neu { head = head2; args = args2; value = _ }
-      ->
-        (* To check two neutral applications are equal, with their types, we first check if the functions are equal, including their types and hence also their domains and codomains (and also they have the same insertion applied outside).  An alignment doesn't affect definitional equality. *)
-        let* () = equal_head lvl head1 head2 in
-        (* Then we recursively check that all their arguments are equal. *)
-        equal_args lvl args1 args2
+  and equal_neu : int -> neu -> neu -> unit option =
+   fun lvl { head = head1; args = args1; value = _ } { head = head2; args = args2; value = _ } ->
+    (* To check two neutral applications are equal, with their types, we first check if the functions are equal, including their types and hence also their domains and codomains (and also they have the same insertion applied outside).  An alignment doesn't affect definitional equality. *)
+    let* () = equal_head lvl head1 head2 in
+    (* Then we recursively check that all their arguments are equal. *)
+    equal_args lvl args1 args2
 
   (* Synthesizing equality check for heads.  Again equality of types is part of the conclusion, not a hypothesis. *)
   and equal_head : int -> head -> head -> unit option =

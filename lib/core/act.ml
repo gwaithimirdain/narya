@@ -70,7 +70,7 @@ module Act = struct
   let rec act_value : type m n status. status value -> (m, n) deg -> status value =
    fun v s ->
     match v with
-    | Uninst (tm, (lazy ty)) -> Uninst (act_uninst tm s, lazy (act_ty v ty s))
+    | Uninst (tm, (lazy ty)) -> Uninst (act_neu tm s, lazy (act_ty v ty s))
     | Inst { tm; dim; args; tys } ->
         let (Of fa) = deg_plus_to s (TubeOf.uninst args) ~on:"instantiation" in
         (* The action on an instantiation instantiates the same dimension j, but the leftover dimensions are now the domain of the degeneracy. *)
@@ -101,7 +101,7 @@ module Act = struct
                   let (Op (fd, fc)) = deg_sface fa (sface_of_tface fb) in
                   act_value (CubeOf.find tys' fd) fc);
             } in
-        Inst { tm = act_uninst tm fa; dim; args; tys }
+        Inst { tm = act_neu tm fa; dim; args; tys }
     | Lam (x, body) ->
         let (Of fa) = deg_plus_to s (dim_binder body) ~on:"lambda" in
         Lam (act_variables x fa, act_binder body fa)
@@ -277,16 +277,14 @@ module Act = struct
     let env = act_env env (op_of_deg s) in
     Dataconstr { env; args; indices }
 
-  and act_uninst : type m n. uninst -> (m, n) deg -> uninst =
-   fun tm s ->
-    match tm with
-    | Neu { head; args; value } ->
-        (* We act on the applications from the outside (last) to the inside, since the degeneracy has to be factored and may leave neutral insertions behind.  The resulting inner degeneracy then acts on the head. *)
-        let Any_deg s', args = act_apps args s in
-        let head = act_head head s' in
-        (* We act on the alignment separately with the original s, since (e.g.) a chaotic alignment is a "value" of the entire application spine, not just the head. *)
-        let value = act_lazy_eval value s in
-        Neu { head; args; value }
+  and act_neu : type m n. neu -> (m, n) deg -> neu =
+   fun { head; args; value } s ->
+    (* We act on the applications from the outside (last) to the inside, since the degeneracy has to be factored and may leave neutral insertions behind.  The resulting inner degeneracy then acts on the head. *)
+    let Any_deg s', args = act_apps args s in
+    let head = act_head head s' in
+    (* We act on the alignment separately with the original s, since (e.g.) a chaotic alignment is a "value" of the entire application spine, not just the head. *)
+    let value = act_lazy_eval value s in
+    { head; args; value }
 
   (* act_closure and act_binder assume that the degeneracy has exactly the correct codomain.  So if it doesn't, the caller should call deg_plus_to first. *)
   and act_closure : type mn m n a kn.
@@ -336,7 +334,7 @@ module Act = struct
                       in
                       act_normal ftm fc);
                 } in
-            Inst { tm = act_uninst ty s; dim = pos_deg dim fa; args; tys = TubeOf.empty D.zero })
+            Inst { tm = act_neu ty s; dim = pos_deg dim fa; args; tys = TubeOf.empty D.zero })
     | Uninst (ty, (lazy uu)) -> (
         (* This is just the case when dim = 0, so it is the same except simpler. *)
         let fa = s in
@@ -346,10 +344,10 @@ module Act = struct
             fatal
               (Option.value ~default:(Anomaly "invalid degeneracy action on uninstantiated type")
                  err)
-        | Eq, Uninst (Neu { head = UU z; _ }, _) -> (
+        | Eq, Uninst ({ head = UU z; _ }, _) -> (
             match (D.compare z D.zero, D.compare_zero (dom_deg fa), tm) with
             | Neq, _, _ -> fatal (Anomaly "acting on non-fully-instantiated type as a type")
-            | Eq, Zero, _ -> Uninst (act_uninst ty fa, lazy uu)
+            | Eq, Zero, _ -> Uninst (act_neu ty fa, lazy uu)
             | Eq, Pos _, None -> fatal (Anomaly "term missing in action on uninstantiated type")
             | Eq, Pos dim, Some tm ->
                 let args =
@@ -361,7 +359,7 @@ module Act = struct
                           let (Op (_, fc)) = deg_sface fa (sface_of_tface fb) in
                           act_normal { tm; ty = tmty } fc);
                     } in
-                Inst { tm = act_uninst ty fa; dim; args; tys = TubeOf.empty D.zero })
+                Inst { tm = act_neu ty fa; dim; args; tys = TubeOf.empty D.zero })
         | _ -> fatal (Anomaly "acting on non-type as if a type"))
     | Lam _ -> fatal (Anomaly "a lambda-abstraction cannot be a type to act on")
     | Struct _ -> fatal (Anomaly "a struct cannot be a type to act on")

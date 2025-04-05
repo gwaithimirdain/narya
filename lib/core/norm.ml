@@ -67,7 +67,7 @@ let rec view_term : type s. s value -> s value =
  fun tm ->
   if GluedEval.read () then
     match tm with
-    | Uninst (Neu { value; _ }, ty) -> (
+    | Uninst ({ value; _ }, ty) -> (
         (* For glued evaluation, when viewing a term, we force its value and proceed to view that value instead. *)
         match force_eval value with
         | Realize v -> view_term v
@@ -80,10 +80,10 @@ let rec view_term : type s. s value -> s value =
 
 (* Viewing a type fails if the argument is not fully instantiated.  In most situations this would be a bug, but we allow the caller to specify it differently, since during typechecking it could be a user error. *)
 and view_type ?(severity = Asai.Diagnostic.Bug) (ty : kinetic value) (err : string) : view_type =
-  let uty, Full_tube tyargs =
+  let { head; args = _; value }, Full_tube tyargs =
     match ty with
     (* Since we expect fully instantiated types, in the uninstantiated case the dimension must be zero. *)
-    | Uninst (ty, (lazy (Uninst (Neu { head = UU n; _ }, _)))) -> (
+    | Uninst (ty, (lazy (Uninst ({ head = UU n; _ }, _)))) -> (
         match D.compare n D.zero with
         | Eq -> (ty, Full_tube (TubeOf.empty D.zero))
         | Neq -> fatal ~severity (Type_not_fully_instantiated (err, n)))
@@ -95,8 +95,8 @@ and view_type ?(severity = Asai.Diagnostic.Bug) (ty : kinetic value) (err : stri
             (ty, Full_tube args)
         | Neq -> fatal ~severity (Type_not_fully_instantiated (err, TubeOf.uninst args)))
     | _ -> fatal ~severity (Type_expected (err, Dump.Val ty)) in
-  match uty with
-  | Neu { head = UU n; _ } -> (
+  match head with
+  | UU n -> (
       match (D.compare n (TubeOf.inst tyargs), D.compare (TubeOf.uninst tyargs) D.zero) with
       | Eq, Eq ->
           let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (TubeOf.inst tyargs)) in
@@ -105,7 +105,7 @@ and view_type ?(severity = Asai.Diagnostic.Bug) (ty : kinetic value) (err : stri
       | Neq, _ ->
           (* This one is always a bug *)
           fatal (Dimension_mismatch ("view universe", n, TubeOf.inst tyargs)))
-  | Neu { head = Pi (x, doms, cods); _ } -> (
+  | Pi (x, doms, cods) -> (
       match
         (D.compare (CubeOf.dim doms) (TubeOf.inst tyargs), D.compare (TubeOf.uninst tyargs) D.zero)
       with
@@ -116,7 +116,7 @@ and view_type ?(severity = Asai.Diagnostic.Bug) (ty : kinetic value) (err : stri
       | Neq, _ ->
           (* Always a bug *)
           fatal (Dimension_mismatch ("view pi-type", CubeOf.dim doms, TubeOf.inst tyargs)))
-  | Neu { head; args = _; value } -> (
+  | _ -> (
       (* Glued evaluation: when viewing a type, we force its value and proceed to view that value instead. *)
       match force_eval value with
       | Canonical c -> (
@@ -167,7 +167,7 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
                         eval_term (act_env env (op_of_sface (sface_of_tface fa))) (Const name) in
                       (* We need to know the type of each lower-dimensional version in order to annotate it as a "normal" instantiation argument.  But we already computed that type while evaluating the term itself, since as a neutral term it had to be annotated with its type. *)
                       match tm with
-                      | Uninst (Neu _, (lazy ty)) -> { tm; ty }
+                      | Uninst (_, (lazy ty)) -> { tm; ty }
                       | _ -> fatal (Anomaly "eval of lower-dim constant not neutral/canonical"));
                 })) in
       let head = Const { name; ins = ins_zero dim } in
@@ -175,17 +175,17 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
       | Defined tree -> (
           if GluedEval.read () then
             (* Glued evaluation: we evaluate the definition lazily and return a neutral with that lazy evaluation stored. *)
-            Val (Uninst (Neu { head; args = Emp; value = lazy_eval (Emp dim) tree }, ty))
+            Val (Uninst ({ head; args = Emp; value = lazy_eval (Emp dim) tree }, ty))
           else
             match eval (Emp dim) tree with
             | Realize x -> Val x
             | Canonical (Data d) as value ->
-                let newtm = Uninst (Neu { head; args = Emp; value = ready value }, ty) in
+                let newtm = Uninst ({ head; args = Emp; value = ready value }, ty) in
                 if Option.is_none !(d.tyfam) then
                   d.tyfam := Some (lazy { tm = newtm; ty = Lazy.force ty });
                 Val newtm
-            | value -> Val (Uninst (Neu { head; args = Emp; value = ready value }, ty)))
-      | Axiom _ -> Val (Uninst (Neu { head; args = Emp; value = ready Unrealized }, ty)))
+            | value -> Val (Uninst ({ head; args = Emp; value = ready value }, ty)))
+      | Axiom _ -> Val (Uninst ({ head; args = Emp; value = ready Unrealized }, ty)))
   | Meta (meta, ambient) -> (
       let dim = dim_env env in
       let head = Value.Meta { meta; env; ins = ins_zero dim } in
@@ -201,7 +201,7 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
                        (act_env env (op_of_sface (sface_of_tface fa)))
                        (Meta (meta, Kinetic)) in
                    match tm with
-                   | Uninst (Neu _, (lazy ty)) -> { tm; ty }
+                   | Uninst (_, (lazy ty)) -> { tm; ty }
                    | _ -> fatal (Anomaly "eval of lower-dim meta not neutral/canonical"));
              }) in
       match (Global.find_meta meta, ambient) with
@@ -212,20 +212,18 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
       | { tm = `Defined tm; energy = Potential; ty; _ }, Kinetic -> (
           if GluedEval.read () then
             (* A defined potential metavariable in kinetic context evaluates to a glued neutral, with its evaluated definition stored lazily. *)
-            Val
-              (Uninst (Neu { head; args = Emp; value = lazy_eval env tm }, lazy (make_ty meta ty)))
+            Val (Uninst ({ head; args = Emp; value = lazy_eval env tm }, lazy (make_ty meta ty)))
           else
             (* If a potential metavariable with a definition is used in a kinetic context, and doesn't evaluate yet to a kinetic result, we again have to build a neutral. *)
             match eval env tm with
             | Realize tm -> Val tm
             | value ->
-                Val (Uninst (Neu { head; args = Emp; value = ready value }, lazy (make_ty meta ty)))
-          )
+                Val (Uninst ({ head; args = Emp; value = ready value }, lazy (make_ty meta ty))))
       (* If an undefined potential metavariable appears in a case tree, then that branch of the case tree is stuck.  We don't need to return the metavariable itself; it suffices to know that that branch of the case tree is stuck, as the constant whose definition it is should handle all identity/equality checks correctly. *)
       | _, Potential -> Unrealized
       (* To evaluate an undefined kinetic metavariable, we have to build a neutral. *)
       | { ty; _ }, Kinetic ->
-          Val (Uninst (Neu { head; args = Emp; value = ready Unrealized }, lazy (make_ty meta ty))))
+          Val (Uninst ({ head; args = Emp; value = ready Unrealized }, lazy (make_ty meta ty))))
   | MetaEnv (meta, metaenv) ->
       let (Plus m_n) = D.plus (dim_term_env metaenv) in
       eval (eval_env env m_n metaenv) (Term.Meta (meta, Kinetic))
@@ -365,12 +363,11 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
                 let subdoms, subcods = (CubeOf.subcube fab doms, BindCube.subcube fab cods) in
                 let tm =
                   Uninst
-                    ( Neu
-                        {
-                          head = Pi (x, subdoms, subcods);
-                          args = Emp;
-                          value = ready (Canonical (Pi (x, subdoms, subcods)));
-                        },
+                    ( {
+                        head = Pi (x, subdoms, subcods);
+                        args = Emp;
+                        value = ready (Canonical (Pi (x, subdoms, subcods)));
+                      },
                       Lazy.from_val ty ) in
                 let ntm = { tm; ty } in
                 Hashtbl.add pitbl (SFace_of fab) ntm;
@@ -458,7 +455,7 @@ and apply : type n s. s value -> (n, kinetic value) CubeOf.t -> s evaluation =
       | Neq -> fatal (Dimension_mismatch ("applying a lambda", dim_binder body, m))
       | Eq -> apply_binder body arg)
   (* If it is a neutral application... *)
-  | Uninst (Neu { head; args; value }, (lazy ty)) -> (
+  | Uninst ({ head; args; value }, (lazy ty)) -> (
       (* ... we check that it is fully instantiated... *)
       match view_type ty "apply" with
       | Pi (_, doms, cods, tyargs) -> (
@@ -476,22 +473,21 @@ and apply : type n s. s value -> (n, kinetic value) CubeOf.t -> s evaluation =
               if GluedEval.read () then
                 (* We add the argument to the lazy value and return a glued neutral. *)
                 let value = apply_lazy value newarg in
-                Val (Uninst (Neu { head; args; value }, newty))
+                Val (Uninst ({ head; args; value }, newty))
               else
                 (* We evaluate further with a case tree. *)
                 match force_eval value with
-                | Unrealized -> Val (Uninst (Neu { head; args; value = ready Unrealized }, newty))
+                | Unrealized -> Val (Uninst ({ head; args; value = ready Unrealized }, newty))
                 | Val tm -> (
                     match apply tm arg with
                     | Realize x -> Val x
                     | Canonical (Data d) ->
                         let newtm =
-                          Uninst (Neu { head; args; value = ready (Canonical (Data d)) }, newty)
-                        in
+                          Uninst ({ head; args; value = ready (Canonical (Data d)) }, newty) in
                         if Option.is_none !(d.tyfam) then
                           d.tyfam := Some (lazy { tm = newtm; ty = Lazy.force newty });
                         Val newtm
-                    | value -> Val (Uninst (Neu { head; args; value = ready value }, newty)))
+                    | value -> Val (Uninst ({ head; args; value = ready value }, newty)))
                 | Canonical
                     (Data { dim; tyfam; indices = Unfilled _ as indices; constrs; discrete }) -> (
                     match D.compare dim k with
@@ -500,7 +496,7 @@ and apply : type n s. s value -> (n, kinetic value) CubeOf.t -> s evaluation =
                         let indices = Fillvec.snoc indices newarg in
                         let value =
                           Value.Canonical (Data { dim; tyfam; indices; constrs; discrete }) in
-                        Val (Uninst (Neu { head; args; value = ready value }, newty)))
+                        Val (Uninst ({ head; args; value = ready value }, newty)))
                 | _ -> fatal (Anomaly "invalid application of type")))
       | _ -> fatal (Anomaly "invalid application by non-function"))
   | _ -> fatal (Anomaly "invalid application of non-function")
@@ -570,26 +566,25 @@ and field : type n k nk s. s value -> k Field.t -> (nk, n, k) insertion -> s eva
       let (Plus fldplus) = D.plus k in
       let p = deg_of_perm (perm_inv (perm_of_ins_plus fldins fldplus)) in
       match act_value viewed_tm p with
-      | Uninst (Neu { head; args; value }, (lazy ty)) -> (
+      | Uninst ({ head; args; value }, (lazy ty)) -> (
           let newty = Lazy.from_val (tyof_field (Ok tm) ty fld ~shuf:Trivial fldins) in
           let args = Bwd.Snoc (args, App (Field (fld, fldplus), ins_zero n)) in
           if GluedEval.read () then
             let value = field_lazy value fld fldins in
-            Val (Uninst (Neu { head; args; value }, newty))
+            Val (Uninst ({ head; args; value }, newty))
           else
             match force_eval value with
-            | Unrealized -> Val (Uninst (Neu { head; args; value = ready Unrealized }, newty))
+            | Unrealized -> Val (Uninst ({ head; args; value = ready Unrealized }, newty))
             | Val tm -> (
                 (* At this point we've already pushed the insertion inside in computing our neutral, so the remaining insertion on the field to compute of its value is "the identity" of appropriate dimensions *)
                 match field tm fld (ins_of_plus n fldplus) with
                 | Realize x -> Val x
                 | Canonical (Data d) ->
-                    let newtm =
-                      Uninst (Neu { head; args; value = ready (Canonical (Data d)) }, newty) in
+                    let newtm = Uninst ({ head; args; value = ready (Canonical (Data d)) }, newty) in
                     if Option.is_none !(d.tyfam) then
                       d.tyfam := Some (lazy { tm = newtm; ty = Lazy.force newty });
                     Val newtm
-                | value -> Val (Uninst (Neu { head; args; value = ready value }, newty)))
+                | value -> Val (Uninst ({ head; args; value = ready value }, newty)))
             | Canonical _ -> fatal (Anomaly "field projection of canonical type")
             | Realize _ -> fatal (Anomaly "realized neutral"))
       | _ -> fatal ~severity:Asai.Diagnostic.Bug (No_such_field (`Other, `Ins (fld, fldins))))
@@ -1128,11 +1123,11 @@ and inst_args : type m n mn.
 
 (* Given a *type*, hence an element of a fully instantiated universe, extract the arguments of the instantiation of that universe.  These were stored in the extra arguments of Uninst and Inst. *)
 and inst_tys : kinetic value -> kinetic value full_tube = function
-  | Uninst (_, (lazy (Uninst (Neu { head = UU z; _ }, _)))) -> (
+  | Uninst (_, (lazy (Uninst ({ head = UU z; _ }, _)))) -> (
       match D.compare z D.zero with
       | Eq -> Full_tube (TubeOf.empty D.zero)
       | Neq -> fatal (Anomaly "higher universe must be instantiated to be a type"))
-  | Uninst (_, (lazy (Inst { tm = Neu { head = UU _; _ }; dim = _; args = tys; tys = _ }))) -> (
+  | Uninst (_, (lazy (Inst { tm = { head = UU _; _ }; dim = _; args = tys; tys = _ }))) -> (
       match D.compare (TubeOf.uninst tys) D.zero with
       | Eq ->
           let Eq = D.plus_uniq (D.zero_plus (TubeOf.inst tys)) (TubeOf.plus tys) in

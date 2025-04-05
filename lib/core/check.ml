@@ -686,12 +686,11 @@ and synth_or_check_let : type a b s p.
       let tm =
         if GluedEval.read () then
           (* Glued evaluation: we delay evaluating the term until it's needed. *)
-          Uninst (Neu { head; args = Emp; value = lazy_eval (Ctx.env ctx) sv }, Lazy.from_val svty)
+          Uninst ({ head; args = Emp; value = lazy_eval (Ctx.env ctx) sv }, Lazy.from_val svty)
         else
           match eval (Ctx.env ctx) sv with
           | Realize x -> x
-          | value -> Uninst (Neu { head; args = Emp; value = ready value }, Lazy.from_val svty)
-      in
+          | value -> Uninst ({ head; args = Emp; value = ready value }, Lazy.from_val svty) in
       (Term.Meta (meta, Kinetic), { tm; ty = svty }) in
   (* Either way, we end up with a checked term 'v' and a normal form 'nf'.  We use the latter to extend the context. *)
   let newctx = Ctx.ext_let ctx name nf in
@@ -794,7 +793,7 @@ and make_letrec_metas : type x a b ab. (x, a) Ctx.t -> (a, b, ab) Telescope.t ->
       (* Extend the context by it, as an unrealized neutral.  TODO: It's annoying that we have to evaluate the types here to extend the value-context, when the only use we're making of it is to readback that extended value-context into a termctx at each step to save with the global metavariable.  It would make more sense, and be more efficient, to just carry along the termctx and extend it directly at each step with "Term.Meta (meta, Kinetic)" at the term-type "vty".  Unfortunately, termctxs store terms and types in a one-longer context, so that would require directly weakening vty, or perhaps parsing and checking it in a one-longer context originally. *)
       let evty = eval_term (Ctx.env ctx) vty in
       let head = Value.Meta { meta; env = Ctx.env ctx; ins = zero_ins D.zero } in
-      let neutm = Uninst (Neu { head; args = Emp; value = ready Unrealized }, Lazy.from_val evty) in
+      let neutm = Uninst ({ head; args = Emp; value = ready Unrealized }, Lazy.from_val evty) in
       let ctx = Ctx.ext_let ctx x { tm = neutm; ty = evty } in
       (* And recurse. *)
       Ext (x, meta, make_letrec_metas ctx tel)
@@ -1190,7 +1189,7 @@ and check_var_match : type a b.
       let seen = Hashtbl.create 10 in
       let is_fresh x =
         match x.tm with
-        | Uninst (Neu { head = Var { level; deg }; args = Emp; value }, _) -> (
+        | Uninst ({ head = Var { level; deg }; args = Emp; value }, _) -> (
             match force_eval value with
             | Unrealized ->
                 if Option.is_none (is_id_deg deg) then
@@ -1524,8 +1523,7 @@ and check_data : type a b i.
             (* Note the type of each field is checked *kinetically*: it's not part of the case tree. *)
             let coutput = check (Kinetic `Nolet) newctx output (universe D.zero) in
             match eval_term (Ctx.env newctx) coutput with
-            | Uninst (Neu { head = Const { name = out_head; ins }; args = out_apps; value = _ }, _)
-              -> (
+            | Uninst ({ head = Const { name = out_head; ins }; args = out_apps; value = _ }, _) -> (
                 match head with
                 | Constant (cc, n) when cc = out_head && Option.is_some (is_id_ins ins) -> (
                     match D.compare_zero n with
@@ -1624,8 +1622,7 @@ and with_codata_so_far : type a b n c et.
                    termctx = lazy (termctx ());
                  }) in
           let prev_ety =
-            Uninst
-              (Neu { head; args; value = ready value }, Lazy.from_val (inst (universe dim) tyargs))
+            Uninst ({ head; args; value = ready value }, Lazy.from_val (inst (universe dim) tyargs))
           in
           snd
             (dom_vars (Ctx.length ctx)
@@ -1810,8 +1807,7 @@ and check_fields : type a b c d s m n mn et.
       let head = head_of_potential name in
       (* The up-until-now term is also maybe an error. *)
       let prev_etm =
-        unless_error (Uninst (Neu { head; args; value = ready (Val str) }, Lazy.from_val ty)) errs
-      in
+        unless_error (Uninst ({ head; args; value = ready (Val str) }, Lazy.from_val ty)) errs in
       check_field status eta ctx ty m mn codata_args fields tyargs fld cdf prev_etm tms ctms etms
         errs
   | Entry (fld, cdf) :: fields, Kinetic _ ->

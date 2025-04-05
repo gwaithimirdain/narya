@@ -14,7 +14,7 @@ open Raw
 type printable +=
   | Val : 's value -> printable
   | DeepVal : 's value * int -> printable
-  | Uninst : uninst -> printable
+  | Neu : neu -> printable
   | Head : head -> printable
   | Binder : ('b, 's) binder -> printable
   | Term : ('b, 's) term -> printable
@@ -36,11 +36,10 @@ module F = struct
    fun depth ppf v ->
     match v with
     | Uninst (tm, ty) ->
-        if depth > 0 then
-          fprintf ppf "Uninst (%a, %a)" uninst tm (dvalue (depth - 1)) (Lazy.force ty)
-        else fprintf ppf "Uninst (%a, ?)" uninst tm
+        if depth > 0 then fprintf ppf "Uninst (%a, %a)" neu tm (dvalue (depth - 1)) (Lazy.force ty)
+        else fprintf ppf "Uninst (%a, ?)" neu tm
     | Inst { tm; dim = d; args; tys = _ } ->
-        fprintf ppf "Inst (%a, %a, (" uninst tm dim (D.pos d);
+        fprintf ppf "Inst (%a, %a, (" neu tm dim (D.pos d);
         let started = ref false in
         TubeOf.miter
           {
@@ -106,10 +105,8 @@ module F = struct
     | Val v -> fprintf ppf "Val (%a)" (dvalue depth) v
     | Canonical _ -> fprintf ppf "Canonical ?"
 
-  and uninst : formatter -> uninst -> unit =
-   fun ppf u ->
-    match u with
-    | Neu { head = h; args = a; value = _ } -> fprintf ppf "Neu (%a, (%a), ?)" head h args a
+  and neu : formatter -> neu -> unit =
+   fun ppf { head = h; args = a; value = _ } -> fprintf ppf "Neu (%a, (%a), ?)" head h args a
 
   and args : formatter -> app Bwd.t -> unit =
    fun ppf args ->
@@ -289,7 +286,7 @@ let dim d = PPrint.utf8string (Format.asprintf "%a" F.dim d)
 let dvalue depth v = PPrint.utf8string (Format.asprintf "%a" (F.dvalue depth) v)
 let value v = PPrint.utf8string (Format.asprintf "%a" F.value v)
 let evaluation depth v = PPrint.utf8string (Format.asprintf "%a" (F.evaluation depth) v)
-let uninst v = PPrint.utf8string (Format.asprintf "%a" F.uninst v)
+let neu v = PPrint.utf8string (Format.asprintf "%a" F.neu v)
 let head v = PPrint.utf8string (Format.asprintf "%a" F.head v)
 let binder v = PPrint.utf8string (Format.asprintf "%a" F.binder v)
 let env v = PPrint.utf8string (Format.asprintf "%a" F.env v)

@@ -67,12 +67,12 @@ module rec Value : sig
       }
         -> ('mn, 's) binder
 
-  and uninst = Neu : { head : head; args : app Bwd.t; value : potential lazy_eval } -> uninst
+  and neu = { head : head; args : app Bwd.t; value : potential lazy_eval }
 
   and _ value =
-    | Uninst : uninst * kinetic value Lazy.t -> kinetic value
+    | Uninst : neu * kinetic value Lazy.t -> kinetic value
     | Inst : {
-        tm : uninst;
+        tm : neu;
         dim : 'k D.pos;
         args : ('n, 'k, 'nk, normal) TubeOf.t;
         tys : (D.zero, 'n, 'n, kinetic value) TubeOf.t;
@@ -205,18 +205,17 @@ end = struct
       }
         -> ('mn, 's) binder
 
-  (* An (m+n)-dimensional type is "instantiated" by applying it a "boundary tube" to get an m-dimensional type.  This operation is supposed to be functorial in dimensions, so in the normal forms we prevent it from being applied more than once in a row.  We have a separate class of "uninstantiated" values, and then every actual value is instantiated exactly once.  This means that even non-type neutrals must be "instantiated", albeit trivially. *)
-  and uninst =
-    (* A neutral is an application spine: a head with a list of applications.  Note that when we inject it into 'value' with Uninst below, it also stores its type (as do all the other uninsts).  It also stores (lazily) the up-to-now result of evaluating that application spine.  If that result is "Unrealized", then it is a "true neutral", the sort of neutral that is permanently stuck and usually appears in paper proofs of normalization.  If it is "Val" then the spine is still waiting for further arguments for its case tree to compute, while if it is "Canonical" then the case tree has already evaluated to a canonical type.  If it is "Realized" then the case tree has already evaluated to an ordinary value; this should only happen when glued evaluation is in effect. *)
-    | Neu : { head : head; args : app Bwd.t; value : potential lazy_eval } -> uninst
+  (* A neutral is an application spine: a head with a list of applications.  Note that when we inject it into 'value' with Uninst below, it also stores its type (as do all the other uninsts).  It also stores (lazily) the up-to-now result of evaluating that application spine.  If that result is "Unrealized", then it is a "true neutral", the sort of neutral that is permanently stuck and usually appears in paper proofs of normalization.  If it is "Val" then the spine is still waiting for further arguments for its case tree to compute, while if it is "Canonical" then the case tree has already evaluated to a canonical type.  If it is "Realized" then the case tree has already evaluated to an ordinary value; this should only happen when glued evaluation is in effect. *)
+  and neu = { head : head; args : app Bwd.t; value : potential lazy_eval }
 
+  (* An (m+n)-dimensional type is "instantiated" by applying it a "boundary tube" to get an m-dimensional type.  This operation is supposed to be functorial in dimensions, so in the normal forms we prevent it from being applied more than once in a row.  The neutral forms are uninstantiated, and then every actual value is instantiated exactly once.  This means that even non-type neutrals must be "instantiated", albeit trivially. *)
   and _ value =
     (* An uninstantiated term, together with its type.  The 0-dimensional universe is morally an infinite data structure Uninst (UU 0, (Uninst (UU 0, Uninst (UU 0, ... )))), so we make the type lazy. *)
-    | Uninst : uninst * kinetic value Lazy.t -> kinetic value
+    | Uninst : neu * kinetic value Lazy.t -> kinetic value
     (* A term with some nonzero instantiation *)
     | Inst : {
         (* The uninstantiated term being instantiated *)
-        tm : uninst;
+        tm : neu;
         (* Require at least one dimension to be instantiated *)
         dim : 'k D.pos;
         (* The arguments for a tube of some dimensions *)
@@ -384,7 +383,7 @@ let apply_lazy : type n s. s lazy_eval -> (n, normal) CubeOf.t -> s lazy_eval =
 let var : level -> kinetic value -> kinetic value =
  fun level ty ->
   Uninst
-    ( Neu { head = Var { level; deg = id_deg D.zero }; args = Emp; value = ready Unrealized },
+    ( { head = Var { level; deg = id_deg D.zero }; args = Emp; value = ready Unrealized },
       Lazy.from_val ty )
 
 (* Project out a cube or tube of values from a cube or tube of normals *)
@@ -415,7 +414,7 @@ let rec remove_env : type a k b n. (n, b) env -> (a, k, b) Tbwd.insert -> (n, a)
 (* The universe of any dimension belongs to an instantiation of itself.  Note that the result is not itself a type (i.e. in the 0-dimensional universe) unless n=0. *)
 let rec universe : type n. n D.t -> kinetic value =
  fun n ->
-  Uninst (Neu { head = UU n; args = Emp; value = ready (Canonical (UU n)) }, lazy (universe_ty n))
+  Uninst ({ head = UU n; args = Emp; value = ready (Canonical (UU n)) }, lazy (universe_ty n))
 
 and universe_nf : type n. n D.t -> normal = fun n -> { tm = universe n; ty = universe_ty n }
 
@@ -434,7 +433,7 @@ and universe_ty : type n. n D.t -> kinetic value =
           } in
       Inst
         {
-          tm = Neu { head = UU n; args = Emp; value = ready (Canonical (UU n)) };
+          tm = { head = UU n; args = Emp; value = ready (Canonical (UU n)) };
           dim = n';
           args;
           tys = TubeOf.empty D.zero;
