@@ -88,48 +88,25 @@ and view_type ?(severity = Asai.Diagnostic.Bug) (ty : kinetic value) (err : stri
             (ty, Full_tube args)
         | Neq -> fatal ~severity (Type_not_fully_instantiated (err, TubeOf.uninst args)))
     | _ -> fatal ~severity (Type_expected (err, Dump.Val ty)) in
-  match head with
-  | UU n -> (
-      match (D.compare n (TubeOf.inst tyargs), D.compare (TubeOf.uninst tyargs) D.zero) with
-      | Eq, Eq ->
-          let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (TubeOf.inst tyargs)) in
-          Canonical (UU n, UU n, tyargs)
-      | _, Neq -> fatal ~severity (Type_not_fully_instantiated (err, TubeOf.uninst tyargs))
-      | Neq, _ ->
-          (* This one is always a bug *)
-          fatal (Dimension_mismatch ("view universe", n, TubeOf.inst tyargs)))
-  | Pi (x, doms, cods) -> (
+  (* Glued evaluation: when viewing a type, we force its value and proceed to view that value instead. *)
+  match force_eval value with
+  | Canonical c -> (
+      (match c with
+      | Data d when Option.is_none !(d.tyfam) ->
+          d.tyfam := Some (lazy { tm = ty; ty = inst (universe (TubeOf.inst tyargs)) tyargs })
+      | _ -> ());
       match
-        (D.compare (CubeOf.dim doms) (TubeOf.inst tyargs), D.compare (TubeOf.uninst tyargs) D.zero)
+        (D.compare (dim_canonical c) (TubeOf.inst tyargs), D.compare (TubeOf.uninst tyargs) D.zero)
       with
       | Eq, Eq ->
           let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (TubeOf.inst tyargs)) in
-          Canonical (Pi (x, doms, cods), Pi (x, doms, cods), tyargs)
-      | _, Neq -> fatal ~severity (Type_not_fully_instantiated (err, TubeOf.inst tyargs))
+          Canonical (head, c, tyargs)
+      | _, Neq -> fatal ~severity (Type_not_fully_instantiated (err, TubeOf.uninst tyargs))
       | Neq, _ ->
           (* Always a bug *)
-          fatal (Dimension_mismatch ("view pi-type", CubeOf.dim doms, TubeOf.inst tyargs)))
-  | _ -> (
-      (* Glued evaluation: when viewing a type, we force its value and proceed to view that value instead. *)
-      match force_eval value with
-      | Canonical c -> (
-          (match c with
-          | Data d when Option.is_none !(d.tyfam) ->
-              d.tyfam := Some (lazy { tm = ty; ty = inst (universe (TubeOf.inst tyargs)) tyargs })
-          | _ -> ());
-          match
-            ( D.compare (dim_canonical c) (TubeOf.inst tyargs),
-              D.compare (TubeOf.uninst tyargs) D.zero )
-          with
-          | Eq, Eq ->
-              let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (TubeOf.inst tyargs)) in
-              Canonical (head, c, tyargs)
-          | _, Neq -> fatal ~severity (Type_not_fully_instantiated (err, TubeOf.uninst tyargs))
-          | Neq, _ ->
-              (* Always a bug *)
-              fatal (Dimension_mismatch ("view canonical", dim_canonical c, TubeOf.inst tyargs)))
-      | Realize v -> view_type ~severity (inst v tyargs) err
-      | _ -> Neutral (head, tyargs))
+          fatal (Dimension_mismatch ("view canonical", dim_canonical c, TubeOf.inst tyargs)))
+  | Realize v -> view_type ~severity (inst v tyargs) err
+  | _ -> Neutral (head, tyargs)
 
 (* Evaluation of terms and evaluation of case trees are technically separate things.  In particular, evaluating a kinetic (standard) term always produces just a value, whereas evaluating a potential term (a function case tree) can either
 
@@ -1110,11 +1087,8 @@ and inst_args : type m n mn.
 
 (* Given a *type*, hence an element of a fully instantiated universe, extract the arguments of the instantiation of that universe.  These were stored in the extra arguments of Uninst and Inst. *)
 and inst_tys : kinetic value -> kinetic value full_tube = function
-  | Uninst (_, (lazy (Uninst ({ head = UU z; _ }, _)))) -> (
-      match D.compare z D.zero with
-      | Eq -> Full_tube (TubeOf.empty D.zero)
-      | Neq -> fatal (Anomaly "higher universe must be instantiated to be a type"))
-  | Uninst (_, (lazy (Inst { tm = { head = UU _; _ }; dim = _; args = tys; tys = _ }))) -> (
+  | Uninst (_, (lazy (Uninst _))) -> Full_tube (TubeOf.empty D.zero)
+  | Uninst (_, (lazy (Inst { args = tys; _ }))) -> (
       match D.compare (TubeOf.uninst tys) D.zero with
       | Eq ->
           let Eq = D.plus_uniq (D.zero_plus (TubeOf.inst tys)) (TubeOf.plus tys) in
