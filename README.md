@@ -202,14 +202,15 @@ The most useful ProofGeneral key commands for Narya are the following.  As usual
 - `C-M-e` : Move the cursor to the end of the command it is inside.
 - `C-c C-v` : Read a "state-preserving" command from the minibuffer and execute it, displaying its output in the result buffer.  Currently the only state-preserving commands are `echo`, `synth`, `show`, and `display`.
 - `C-c C-c` : Interrupt Narya if a command is taking too long.  Narya attempts to recover, but its state may be unreliable afterwards.
+- `C-c C-x` : Retract the buffer and kill the Narya subprocess.
 - `M-;` : Insert a comment, remove a comment, or comment out a region.  This is a standard Emacs command, but is customized to use line comments on code lines and block comments elsewhere.
 
 As noted above, Narya's ProofGeneral mode is enhanced to deal with open holes (see below).  Whenever a hole is created by processing a command, the location of the hole is highlighted in `narya-hole-face` (which you can customize).  These highlights are removed when hole-creating commands are retracted.
 
 Narya's ProofGeneral mode also defines the following additional key commands.
 
-- `C-c ;` : Read a term from the minibuffer and normalize it (like `C-c C-v` with `echo`).
-- `C-c :` : Read a term from the minibuffer and synthesize its type (like `C-c C-v` with `synth`).
+- `C-c ;` : Read a term from the minibuffer and normalize it (like `C-c C-v` with `echo`), perhaps in the context of the current hole.
+- `C-c :` : Read a term from the minibuffer and synthesize its type (like `C-c C-v` with `synth`), perhaps in the context of the current hole.
 - `C-c C-?` : Show the contexts and types of all open holes (like `C-c C-v` with `show holes`).
 - `C-c C-,` : Show the context and type of the hole under point (like `C-c C-v` with `show hole`, except that you don't need to know the hole number).
 - `C-c C-j` : Move the cursor to the position of the next open hole.
@@ -219,7 +220,20 @@ Narya's ProofGeneral mode also defines the following additional key commands.
 - `C-c C-d C-f`: Toggle display of function boundaries.
 - `C-c C-d C-t`: Toggle display of type boundaries.
 
-Agda users should beware: while a few of Narya's key commands are chosen to match those of Agda (like `C-c C-?` and `C-c C-SPC` and `C-c C-,`), many of Agda's key bindings have already been defined in ProofGeneral to mean something else (notable examples are `C-c C-n` and `C-c C-b` and `C-c C-.`), leading Narya to choose different ones (such as `C-c C-k` in place of `C-c C-b`).  If there is significant demand, we could implement a configuration option that instead preferentially chooses Agda's key bindings, moving the conflicting ProofGeneral bindings to other key sequences.
+#### For Agda users
+
+Agda users should beware: while a few of Narya's key commands are chosen to match those of Agda (like `C-c C-?` and `C-c C-SPC` and `C-c C-,`), many of the key sequences used by Agda have already been defined in ProofGeneral to mean something else (notable examples are `C-c C-n` and `C-c C-b` and `C-c C-.`), leading Narya to choose different ones.  For reference, here is a mapping of Agda keybindings to approximately comparable Narya ones:
+
+- Instead of `C-c C-l`, use `C-c C-b` (process the whole buffer).
+- Instead of `C-c C-f`, use `C-c C-j` (move to the next hole).
+- Instead of `C-c C-b`, use `C-c C-k` (move to the previous hole).
+- Instead of `C-c C-n`, use `C-c ;` (normalize a term, perhaps in hole context).
+- Instead of `C-c C-d`, use `C-c :` (synthesize a term, perhaps in hole context).
+- Instead of `C-c C-.`, use `C-c :`  (synthesize a term) and `C-c C-,` (display hole context).
+- Instead of `C-c C-x C-q`, use `C-c C-x` (quit Narya subprocess).
+- Instead of `C-c C-x C-a`, use `C-c C-c` (interrupt a command).
+
+If there is significant demand, we could implement a configuration option that instead preferentially chooses Agda's key bindings, moving the conflicting ProofGeneral bindings to other key sequences.
 
 
 #### Syntax highlighting
@@ -565,17 +579,25 @@ The term solving a hole is parsed and typechecked *in the context where the hole
 
 You can also solve a hole directly in interactive mode with the command `solve`, identifying a particular hole by its number as in `solve 0 ≔ X`.  (This is also the command issued by ProofGeneral under the hood when you use `C-c C-SPC`.)  But identifying a hole by number is too brittle to use in a file, so this command is only allowed in interactive mode.
 
-Solving a hole cannot be "undone" by Narya; it happens "outside the timestream", effectively altering a previously executed command rather than executing a new one, and does not affect the sequence of commands available to be undone.  This should be intuitive in ProofGeneral, where solving a hole does not change the processed region or insert any commands in the buffer, and a subsequent "undo" (`C-c C-u`) acts on the most recently processed command *in the buffer* whether or not that was the command containing the solved hole.
+If you have forgotten the context and type of a hole that were displayed when it was created, you can re-display them in interactive mode with the command `show hole HOLE` which displays the context and type of a specific open hole by number, or `show holes` which displays the context and type of all the currently open holes.  In ProofGeneral mode the key command `C-c C-?` issues `show holes`, while `C-c C-,` issues `show hole` with the hole number inferred automatically from the cursor position (which must be over an open hole).  You can move between the existing holes with `C-c C-j` (next hole) and `C-c C-k` (previous hole).
 
-Along the same lines, undoing commands in ProofGeneral does not affect the replacement of holes by the terms that solve them.  Thus, if you process a command containing a hole, solve the hole, and then undo the command, the term with which you solved the hole remains in the buffer in place of the original `?`.  Therefore, if you then re-process the command, the solving term will be used where there used to be a hole, without creating a hole at all.  For purposes of later commands, this *should* be entirely equivalent to continuing on with a filled hole, but it is not *literally* identical in Narya's internals, so bugs may exist; if you find one, please report it.
+Finally, if the cursor is over a hole, then the commands `C-c ;` (normalize a term) and `C-c :` (display the type of a term) operate in the context of that hole.  Moreover, these commands, as well as `C-c C-SPC` which solves a hole, share an input history: when prompted by any of them for a term, you can press the up and down arrows, or `M-p` and `M-n`, to cycle through the terms you have previously input.  Thus, you can try out possible hole fillers or subterms thereof with `C-c :`, comparing their types to the goal type of the hole until you are ready to fill the hole, and then easily supply the same term to `C-c C-SPC`.
+
+
+### Undoing solved holes
+
+Solving a hole cannot be "undone" by Narya; it happens "outside the timestream", effectively altering a previously executed command rather than executing a new one, and does not affect the sequence of commands available to be undone.  This should be intuitive in ProofGeneral, where solving a hole does not change the processed region or insert any commands in the buffer, and a subsequent "undo" (`C-c C-u`) acts on the most recently processed command *in the buffer* whether or not that was the command containing the solved hole.  For example, suppose you process a command defining `f` that contains a hole, then process another command defining `g`, then solve the hole in the definition of `f`.  After this, an "undo" will retract the definition of `g`, leaving the definition of `f` with its solved hole in place.
+
+Along the same lines, undoing commands in ProofGeneral does not affect the replacement of holes by the terms that solve them in the text of the buffer.  Thus, if you process a command containing a hole, solve the hole, and then undo *that* command, the term with which you solved the hole remains in the buffer in place of the original `?`.  Therefore, if you then re-process the command, the solving term will be used where there used to be a hole, without creating a hole at all.  For purposes of later commands, this *should* be entirely equivalent to continuing on with a filled hole, but it is not *literally* identical in Narya's internals, so bugs may exist; if you find one, please report it.
 
 On the other hand, solving a hole changes the text of the Emacs buffer, and therefore it *can* be un-done with *Emacs's* `undo` command (generally bound to `C-/`, `C-_`, and `C-x u`), removing the inserted term and replacing the original `?`.  Since the "solve" command cannot be undone by Narya, if you undo it in Emacs there is no consistent thing that Narya can do with the command containing that hole.  Thus, in this case the Narya ProofGeneral mode automatically also retracts the processed region past the command containing the hole.
+
+
+### Reformatting solved holes
 
 By default, when filling a hole interactively with ProofGeneral, the term you enter is automatically reformatted.  In particular, line breaks and indenting spaces are inserted in (what Narya thinks are) appropriate places (and removed from what it thinks are inappropriate places), and ASCII operators such as `->` and `|->` are replaced by their Unicode equivalents such as → and ↦.  Unfortunately, at present the solving term is reformatted entirely on its own without reference to the command in which it appears, so after it is inserted the overall command may still be badly formatted, especially if you inserted a case tree structure such as `match`.  Currently the only solution to this is to retract the command after solving the hole and then re-process it to reformat it.
 
 As with reformatting of commands and source files, reformatting of hole-solving terms is affected by the command-line flags `-unicode` and `-ascii` (print operators as → or `->`, respectively).  You can also turn off solve-reformatting entirely by setting the Emacs customization variable `narya-reformat-holes` to `nil`.  However, if you don't like the way Narya reformats your terms, I would appreciate it if you give me feedback about it rather than (or, at least, in addition to) turning it off.
-
-If you have forgotten the context and type of a hole that were displayed when it was created, you can re-display them in interactive mode with the command `show hole HOLE` which displays the context and type of a specific open hole by number, or `show holes` which displays the context and type of all the currently open holes.  In ProofGeneral mode the key command `C-c C-?` issues `show holes`, while `C-c C-t` issues `show hole` with the hole number inferred automatically from the cursor position (which must be over an open hole).  You can move between the existing holes with `C-c C-j` (next hole) and `C-c C-k` (previous hole).
 
 
 ## Record types and tuples
