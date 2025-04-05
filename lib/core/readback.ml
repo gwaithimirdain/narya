@@ -31,7 +31,7 @@ and readback_at : type a z. (z, a) Ctx.t -> kinetic value -> kinetic value -> (a
  fun ctx tm ty ->
   let view = if Displaying.read () then view_term tm else tm in
   match (view_type ty "readback_at", view) with
-  | Pi (_, doms, cods, tyargs), Lam ((Variables (m, mn, xs) as x), body) -> (
+  | Canonical (_, Pi (_, doms, cods), tyargs), Lam ((Variables (m, mn, xs) as x), body) -> (
       let k = CubeOf.dim doms in
       let l = dim_binder body in
       match (D.compare (TubeOf.inst tyargs) k, D.compare k l) with

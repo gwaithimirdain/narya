@@ -53,13 +53,6 @@ type (_, _, _, _) shuffleable =
 (* A "view" is the aspect of a type or term that we match against to determine its behavior.  A view of a term is just another term, but in WHNF.  A view of a type is either a universe, a pi-type, another canonical type (data or codata), or a neutral.  All come with their instantiations that have been checked to have the correct dimension. *)
 
 type view_type =
-  | UU : (D.zero, 'k, 'k, normal) TubeOf.t -> view_type
-  | Pi :
-      string option
-      * ('k, kinetic value) CubeOf.t
-      * ('k, unit) BindCube.t
-      * (D.zero, 'k, 'k, normal) TubeOf.t
-      -> view_type
   | Canonical : head * 'k canonical * (D.zero, 'k, 'k, normal) TubeOf.t -> view_type
   | Neutral : head * (D.zero, 'k, 'k, normal) TubeOf.t -> view_type
 
@@ -100,7 +93,7 @@ and view_type ?(severity = Asai.Diagnostic.Bug) (ty : kinetic value) (err : stri
       match (D.compare n (TubeOf.inst tyargs), D.compare (TubeOf.uninst tyargs) D.zero) with
       | Eq, Eq ->
           let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (TubeOf.inst tyargs)) in
-          UU tyargs
+          Canonical (UU n, UU n, tyargs)
       | _, Neq -> fatal ~severity (Type_not_fully_instantiated (err, TubeOf.uninst tyargs))
       | Neq, _ ->
           (* This one is always a bug *)
@@ -111,7 +104,7 @@ and view_type ?(severity = Asai.Diagnostic.Bug) (ty : kinetic value) (err : stri
       with
       | Eq, Eq ->
           let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (TubeOf.inst tyargs)) in
-          Pi (x, doms, cods, tyargs)
+          Canonical (Pi (x, doms, cods), Pi (x, doms, cods), tyargs)
       | _, Neq -> fatal ~severity (Type_not_fully_instantiated (err, TubeOf.inst tyargs))
       | Neq, _ ->
           (* Always a bug *)
@@ -361,14 +354,9 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
                              Hashtbl.find pitbl (SFace_of (comp_sface fab (sface_of_tface fc))));
                        }) in
                 let subdoms, subcods = (CubeOf.subcube fab doms, BindCube.subcube fab cods) in
-                let tm =
-                  Uninst
-                    ( {
-                        head = Pi (x, subdoms, subcods);
-                        args = Emp;
-                        value = ready (Canonical (Pi (x, subdoms, subcods)));
-                      },
-                      Lazy.from_val ty ) in
+                let head : head = Pi (x, subdoms, subcods) in
+                let value = ready (Canonical (Pi (x, subdoms, subcods))) in
+                let tm = Uninst ({ head; args = Emp; value }, Lazy.from_val ty) in
                 let ntm = { tm; ty } in
                 Hashtbl.add pitbl (SFace_of fab) ntm;
                 ntm);
@@ -458,7 +446,7 @@ and apply : type n s. s value -> (n, kinetic value) CubeOf.t -> s evaluation =
   | Uninst ({ head; args; value }, (lazy ty)) -> (
       (* ... we check that it is fully instantiated... *)
       match view_type ty "apply" with
-      | Pi (_, doms, cods, tyargs) -> (
+      | Canonical (_, Pi (_, doms, cods), tyargs) -> (
           (* ... and that the pi-type and its instantiation have the correct dimension. *)
           let k = CubeOf.dim doms in
           match D.compare (CubeOf.dim arg) k with
@@ -1077,12 +1065,11 @@ and inst : type m n mn. kinetic value -> (m, n, mn, normal) TubeOf.t -> kinetic 
       | Uninst (tm, (lazy ty)) -> (
           (* In this case, the type must be a fully instantiated universe of the right dimension, and the remaining types come from its instantiation arguments. *)
           match view_type ty "inst" with
-          | UU tyargs -> (
-              match D.compare (TubeOf.inst tyargs) (TubeOf.out args2) with
+          | Canonical (_, UU n, tyargs) -> (
+              match D.compare n (TubeOf.out args2) with
               | Neq ->
                   fatal
-                    (Dimension_mismatch
-                       ("instantiating an uninstantiated type", TubeOf.out tyargs, TubeOf.out args2))
+                    (Dimension_mismatch ("instantiating an uninstantiated type", n, TubeOf.out args2))
               | Eq ->
                   let tys =
                     val_of_norm_tube
@@ -1285,8 +1272,6 @@ let rec tyof_inst : type m n mn.
 let get_tyargs ?(severity = Asai.Diagnostic.Bug) (ty : kinetic value) (err : string) :
     normal full_tube =
   match view_type ~severity ty err with
-  | UU tyargs -> Full_tube tyargs
-  | Pi (_, _, _, tyargs) -> Full_tube tyargs
   | Canonical (_, _, tyargs) -> Full_tube tyargs
   | Neutral (_, tyargs) -> Full_tube tyargs
 

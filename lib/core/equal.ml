@@ -32,7 +32,7 @@ module Equal = struct
     (* The type must be fully instantiated. *)
     match view_type ty "equal_at" with
     (* The only interesting thing here happens when the type is one with an eta-rule, such as a pi-type. *)
-    | Pi (_, doms, cods, tyargs) ->
+    | Canonical (_, Pi (_, doms, cods), tyargs) ->
         let newargs, _ = dom_vars ctx doms in
         let output = tyof_app cods tyargs newargs in
         (* If both terms have the given pi-type, then when applied to variables of the domains, they will both have the computed output-type, so we can recurse back to eta-expanding equality at that type. *)
