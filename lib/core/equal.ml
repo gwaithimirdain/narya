@@ -215,11 +215,11 @@ module Equal = struct
 
   (* Check that two application arguments are equal, including their outer insertions as well as their values.  As noted above, here we can go back to *assuming* that they have equal types, and thus passing off to the eta-expanding equality check. *)
   and equal_arg : int -> app -> app -> unit option =
-   fun n (App (a1, i1)) (App (a2, i2)) ->
-    let To d1, To d2 = (deg_of_ins i1, deg_of_ins i2) in
-    let* () = deg_equiv d1 d2 in
-    match (a1, a2) with
-    | Arg a1, Arg a2 -> (
+   fun n app1 app2 ->
+    match (app1, app2) with
+    | Arg (a1, i1), Arg (a2, i2) -> (
+        let To d1, To d2 = (deg_of_ins i1, deg_of_ins i2) in
+        let* () = deg_equiv d1 d2 in
         match D.compare (CubeOf.dim a1) (CubeOf.dim a2) with
         | Eq ->
             let open CubeOf.Monadic (Monad.Maybe) in
@@ -228,7 +228,9 @@ module Equal = struct
         | Neq ->
             fatal
               (Dimension_mismatch ("application in equality-check", CubeOf.dim a1, CubeOf.dim a2)))
-    | Field (f1, _), Field (f2, _) ->
+    | Field (f1, _, i1), Field (f2, _, i2) ->
+        let To d1, To d2 = (deg_of_ins i1, deg_of_ins i2) in
+        let* () = deg_equiv d1 d2 in
         (* The 'plus' parts must automatically be equal if the fields are equal and well-typed. *)
         guard (Field.equal f1 f2)
     | _, _ -> fail

@@ -288,10 +288,8 @@ let rec check : type a b s.
               function
               | Kinetic l -> Kinetic l
               | Potential (c, args, hyp) ->
-                  let arg =
-                    Arg (CubeOf.mmap { map = (fun _ [ x ] -> Ctx.Binding.value x) } [ newnfs ])
-                  in
-                  Potential (c, Snoc (args, App (arg, ins_zero m)), fun tm -> hyp (Lam (xs, tm)))
+                  let arg = CubeOf.mmap { map = (fun _ [ x ] -> Ctx.Binding.value x) } [ newnfs ] in
+                  Potential (c, Snoc (args, Arg (arg, ins_zero m)), fun tm -> hyp (Lam (xs, tm)))
             in
             (* Apply and instantiate the codomain to those arguments to get a type to check the body at. *)
             let output = tyof_app cods tyargs newargs in
@@ -1374,10 +1372,9 @@ and make_match_status : type a b ab c n.
         | Some eval_readback ->
             Bwd.map
               (function
-                | Value.App (Arg xs, ins) ->
-                    Value.App
-                      (Arg (CubeOf.mmap { map = (fun _ [ x ] -> eval_readback x) } [ xs ]), ins)
-                | fld -> fld)
+                | Arg (xs, ins) ->
+                    Arg (CubeOf.mmap { map = (fun _ [ x ] -> eval_readback x) } [ xs ], ins)
+                | Field (x, y, z) -> Field (x, y, z))
               args
         | None -> args in
       let hyp tm =
@@ -1579,14 +1576,14 @@ and get_indices : type a b.
   | [], _ ->
       Vec.of_list_map
         (function
-          | Value.App (Arg arg, ins) -> (
+          | Arg (arg, ins) -> (
               match is_id_ins ins with
               | Some _ -> (
                   match D.compare (CubeOf.dim arg) D.zero with
                   | Eq -> readback_nf ctx (CubeOf.find_top arg)
                   | Neq -> fatal (Invalid_constructor_type c))
               | None -> fatal (Invalid_constructor_type c))
-          | Value.App (Field _, _) -> fatal (Anomaly "field is not an index"))
+          | Field _ -> fatal (Anomaly "field is not an index"))
         output
   | _ -> fatal (Invalid_constructor_type c)
 
@@ -1847,7 +1844,7 @@ and check_field : type a b c d s m n mn i et.
       let mkstatus lbl : (b, s) status -> (b, s) status = function
         | Kinetic l -> Kinetic l
         | Potential (c, args, hyp) ->
-            let args = Snoc (args, App (Field (fld, D.plus_zero m), ins)) in
+            let args = Snoc (args, Field (fld, D.plus_zero m, ins)) in
             let hyp tm =
               let ctms = Snoc (ctms, Entry (fld, Lower (tm, lbl))) in
               hyp (Term.Struct (eta, m, ctms, energy status)) in
@@ -1953,14 +1950,15 @@ and check_higher_field : type a b c d m i ic0.
             let args =
               Bwd.map
                 (function
-                  | Value.App (Field (f, nk), appins) ->
+                  | Value.Field (f, nk, appins) ->
                       let n = cod_left_ins appins in
                       let (Plus rn) = D.plus n in
                       let (Plus rn_k) = D.plus (D.plus_right nk) in
                       let (Plus r_nz) = D.plus (dom_ins appins) in
                       let newins = plus_ins r r_nz rn appins in
-                      Value.App (Field (f, rn_k), newins)
-                  | App (type n nz z) ((Arg arg, appins) : n arg * (nz, n, z) insertion) ->
+                      Value.Field (f, rn_k, newins)
+                  | Arg (type n nz z) ((arg, appins) : (n, normal) CubeOf.t * (nz, n, z) insertion)
+                    ->
                       let n = CubeOf.dim arg in
                       let (Plus rn) = D.plus n in
                       let (Plus r_nz) = D.plus (dom_ins appins) in
@@ -2000,13 +1998,13 @@ and check_higher_field : type a b c d m i ic0.
                                 newtm);
                           }
                           [ etms; etys ] in
-                      Value.App (Arg newarg, newins))
+                      Arg (newarg, newins))
                 args in
             let (Plus ni) = D.plus intrinsic in
             (* We add the current field projection to the args, with an insertion obtained by incorporating the remaining dimensions into the evaluation. *)
             let (Plus rm) = D.plus m in
             let newins = ins_plus_of_pbij fldins fldshuf rm in
-            let args = Snoc (args, Value.App (Field (fld, ni), newins)) in
+            let args = Snoc (args, Value.Field (fld, ni, newins)) in
             (* To hypothesize a value for the current term, we insert the supposed value as the value of this field.  Note the context rb of the supposed value is the degenerated rb instead of the original b, but this is exactly right for the value that's supposed to go in at this pbij.  *)
             let hyp (tm : (rb, potential) term) : (aa, potential) term =
               let hsf =

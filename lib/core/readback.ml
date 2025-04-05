@@ -180,13 +180,14 @@ and readback_val : type a z. (z, a) Ctx.t -> kinetic value -> (a, kinetic) term 
 and readback_neu : type a z. (z, a) Ctx.t -> neu -> (a, kinetic) term =
  fun ctx { head; args; value = _ } ->
   Bwd.fold_left
-    (fun fn (Value.App (arg, ins)) ->
-      let (To p) = deg_of_ins ins in
-      Term.Act
-        ( (match arg with
-          | Arg args -> App (fn, CubeOf.mmap { map = (fun _ [ tm ] -> readback_nf ctx tm) } [ args ])
-          | Field (fld, fldplus) -> Field (fn, fld, id_ins (cod_left_ins ins) fldplus)),
-          p ))
+    (fun fn arg ->
+      match arg with
+      | Arg (args, ins) ->
+          let (To p) = deg_of_ins ins in
+          Term.Act (App (fn, CubeOf.mmap { map = (fun _ [ tm ] -> readback_nf ctx tm) } [ args ]), p)
+      | Field (fld, fldplus, ins) ->
+          let (To p) = deg_of_ins ins in
+          Term.Act (Field (fn, fld, id_ins (cod_left_ins ins) fldplus), p))
     (readback_head ctx head) args
 
 and readback_head : type c z. (z, c) Ctx.t -> head -> (c, kinetic) term =

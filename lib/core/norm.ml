@@ -434,7 +434,7 @@ and apply : type n s. s value -> (n, kinetic value) CubeOf.t -> s evaluation =
               (* We compute the output type of the application. *)
               let newty = lazy (tyof_app cods tyargs arg) in
               (* We add the new argument to the existing application spine. *)
-              let args = Bwd.Snoc (args, App (Arg newarg, ins_zero k)) in
+              let args = Bwd.Snoc (args, Arg (newarg, ins_zero k)) in
               if GluedEval.read () then
                 (* We add the argument to the lazy value and return a glued neutral. *)
                 let value = apply_lazy value newarg in
@@ -533,7 +533,7 @@ and field : type n k nk s. s value -> k Field.t -> (nk, n, k) insertion -> s eva
       match act_value viewed_tm p with
       | Uninst ({ head; args; value }, (lazy ty)) -> (
           let newty = Lazy.from_val (tyof_field (Ok tm) ty fld ~shuf:Trivial fldins) in
-          let args = Bwd.Snoc (args, App (Field (fld, fldplus), ins_zero n)) in
+          let args = Bwd.Snoc (args, Field (fld, fldplus, ins_zero n)) in
           if GluedEval.read () then
             let value = field_lazy value fld fldins in
             Val (Uninst ({ head; args; value }, newty))
@@ -952,10 +952,10 @@ and app_eval : type s. s evaluation -> app -> s evaluation =
   let app : type s. s value -> app -> s evaluation =
    fun tm x ->
     match x with
-    | App (Arg xs, ins) ->
+    | Arg (xs, ins) ->
         let (To p) = deg_of_ins ins in
         act_evaluation (apply tm (val_of_norm_cube xs)) p
-    | App (Field (fld, fldplus), ins) ->
+    | Field (fld, fldplus, ins) ->
         let (To p) = deg_of_ins ins in
         act_evaluation (field tm fld (id_ins (cod_left_ins ins) fldplus)) p in
   match (ev, x) with
@@ -965,7 +965,7 @@ and app_eval : type s. s evaluation -> app -> s evaluation =
       Realize v
   | Unrealized, _ -> Unrealized
   | ( Canonical (Data { dim; tyfam; indices = Unfilled _ as indices; constrs; discrete }),
-      App (Arg arg, ins) ) -> (
+      Arg (arg, ins) ) -> (
       match (D.compare dim (CubeOf.dim arg), is_id_ins ins) with
       | Neq, _ -> fatal (Dimension_mismatch ("adding indices to a datatype", dim, CubeOf.dim arg))
       | _, None -> fatal (Anomaly "nonidentity insertion on datatype")

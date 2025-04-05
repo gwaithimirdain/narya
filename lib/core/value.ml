@@ -53,11 +53,9 @@ module rec Value : sig
     | UU : 'n D.t -> head
     | Pi : string option * ('k, kinetic value) CubeOf.t * ('k, unit) BindCube.t -> head
 
-  and app = App : 'n arg * ('nk, 'n, 'k) insertion -> app
-
-  and 'n arg =
-    | Arg : ('n, normal) CubeOf.t -> 'n arg
-    | Field : 'i Field.t * ('t, 'i, 'n) D.plus -> 't arg
+  and app =
+    | Arg : ('n, normal) CubeOf.t * ('nk, 'n, 'k) insertion -> app
+    | Field : 'i Field.t * ('t, 'i, 'n) D.plus * ('tk, 't, 'k) insertion -> app
 
   and (_, _) binder =
     | Bind : {
@@ -189,12 +187,10 @@ end = struct
     | Pi : string option * ('k, kinetic value) CubeOf.t * ('k, unit) BindCube.t -> head
 
   (* An application contains the data of an n-dimensional argument and its boundary, together with a neutral insertion applied outside that can't be pushed in.  This represents the *argument list* of a single application, not the function.  Thus, an application spine will be a head together with a list of apps. *)
-  and app = App : 'n arg * ('nk, 'n, 'k) insertion -> app
-
-  and 'n arg =
-    | Arg : ('n, normal) CubeOf.t -> 'n arg
+  and app =
+    | Arg : ('n, normal) CubeOf.t * ('nk, 'n, 'k) insertion -> app
     (* For a higher field with ('n, 't, 'i) insertion, the actual evaluation dimension is 'n, but the result dimension is only 't.  So the dimension of the arg is 't, since that's the output dimension that a degeneracy acting on could be pushed through.  However, since a degeneracy of dimension up to 'n can act on the inside, we can push in the whole insertion and store only a plus outside. *)
-    | Field : 'i Field.t * ('t, 'i, 'n) D.plus -> 't arg
+    | Field : 'i Field.t * ('t, 'i, 'n) D.plus * ('tk, 't, 'k) insertion -> app
 
   (* Lambdas and Pis both bind a variable, along with its dependencies.  These are recorded as defunctionalized closures.  Since they are produced by higher-dimensional substitutions and operator actions, the dimension of the binder can be different than the dimension of the environment that closes its body.  Accordingly, in addition to the environment and degeneracy to close its body, we store information about how to map the eventual arguments into the bound variables in the body.  *)
   and (_, _) binder =
@@ -371,7 +367,7 @@ let ready : type s. s evaluation -> s lazy_eval = fun ev -> ref (Ready ev)
 
 let apply_lazy : type n s. s lazy_eval -> (n, normal) CubeOf.t -> s lazy_eval =
  fun lev xs ->
-  let xs = App (Arg xs, ins_zero (CubeOf.dim xs)) in
+  let xs = Arg (xs, ins_zero (CubeOf.dim xs)) in
   match !lev with
   | Deferred_eval (env, tm, ins, apps) -> ref (Deferred_eval (env, tm, ins, Snoc (apps, xs)))
   | Deferred (tm, ins, apps) -> ref (Deferred (tm, ins, Snoc (apps, xs)))

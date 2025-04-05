@@ -113,14 +113,11 @@ module F = struct
     fprintf ppf "Emp";
     Mbwd.miter (fun [ a ] -> fprintf ppf " <: %a" app a) [ args ]
 
+  (* TODO: display the outer insertion *)
   and app : formatter -> app -> unit =
    fun ppf -> function
-    | App (a, _) -> fprintf ppf "(%a,?)" arg a
-
-  and arg : type n. formatter -> n arg -> unit =
-   fun ppf -> function
-    | Arg xs -> value ppf (CubeOf.find_top xs).tm
-    | Field (fld, d) -> (
+    | Arg (xs, _) -> value ppf (CubeOf.find_top xs).tm
+    | Field (fld, d, _) -> (
         let d = D.plus_right d in
         match D.compare_zero d with
         | Zero -> fprintf ppf ".%s" (Field.to_string fld)

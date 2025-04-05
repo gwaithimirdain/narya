@@ -112,7 +112,7 @@ let app_entry : type f n. (f, n) entry -> app = function
   | Vis { bindings; _ } | Invis bindings ->
       if all_free bindings then
         let n = CubeOf.dim bindings in
-        App (Arg (CubeOf.mmap { map = (fun _ [ x ] -> Binding.value x) } [ bindings ]), ins_zero n)
+        Arg (CubeOf.mmap { map = (fun _ [ x ] -> Binding.value x) } [ bindings ], ins_zero n)
       else fatal (Anomaly "let-bound variable in Ctx.apps")
 
 module Ordered = struct

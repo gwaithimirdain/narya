@@ -414,21 +414,19 @@ module Act = struct
    fun apps s ->
     match apps with
     | Emp -> (Any_deg s, Emp)
-    | Snoc (rest, App (arg, ins)) ->
-        (* To act on an application, we compose the acting degeneracy with the delayed insertion, factor the result into a new insertion to leave outside and a smaller degeneracy to push in, and push the smaller degeneracy action into the application, acting on the function/struct. *)
+    (* To act on an application, we compose the acting degeneracy with the delayed insertion, factor the result into a new insertion to leave outside and a smaller degeneracy to push in, and push the smaller degeneracy action into the application, acting on the function/struct. *)
+    | Snoc (rest, Arg (args, ins)) ->
         let (Insfact_comp (fa, new_ins, _, _)) = insfact_comp ins s in
-        let new_arg =
-          match arg with
-          | Arg args ->
-              (* And, in the function case, on the arguments by factorization. *)
-              Arg (act_cube { act = (fun x s -> act_normal x s) } args fa)
-          | Field (fld, fldplus) ->
-              (* Note that we don't need to change the degeneracy, since it can be extended on the right as needed. *)
-              let (Plus new_fldplus) = D.plus (D.plus_right fldplus) in
-              Field (fld, new_fldplus) in
-        (* Finally, we recurse and assemble the result. *)
+        (* In the function case, we also act on the arguments by factorization. *)
+        let new_arg = act_cube { act = (fun x s -> act_normal x s) } args fa in
         let new_s, new_rest = act_apps rest fa in
-        (new_s, Snoc (new_rest, App (new_arg, new_ins)))
+        (new_s, Snoc (new_rest, Arg (new_arg, new_ins)))
+    | Snoc (rest, Field (fld, fldplus, ins)) ->
+        let (Insfact_comp (fa, new_ins, _, _)) = insfact_comp ins s in
+        (* Note that we don't need to change the degeneracy, since it can be extended on the right as needed. *)
+        let (Plus new_fldplus) = D.plus (D.plus_right fldplus) in
+        let new_s, new_rest = act_apps rest fa in
+        (new_s, Snoc (new_rest, Field (fld, new_fldplus, new_ins)))
 
   and act_lazy_eval : type s m n. s lazy_eval -> (m, n) deg -> s lazy_eval =
    fun lev s ->
@@ -467,7 +465,7 @@ let field_lazy : type s n t i. s lazy_eval -> i Field.t -> (n, t, i) insertion -
   let n, k = (cod_left_ins fldins, cod_right_ins fldins) in
   let (Plus nk) = D.plus k in
   let p = deg_of_perm (perm_inv (perm_of_ins_plus fldins nk)) in
-  let fld = App (Field (fld, nk), ins_zero n) in
+  let fld = Field (fld, nk, ins_zero n) in
   match !(act_lazy_eval lev p) with
   | Deferred_eval (env, tm, ins, apps) -> ref (Deferred_eval (env, tm, ins, Snoc (apps, fld)))
   | Deferred (tm, ins, apps) -> ref (Deferred (tm, ins, Snoc (apps, fld)))
