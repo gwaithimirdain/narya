@@ -17,6 +17,9 @@ let deg_plus_to : type m n nk. on:string -> ?err:Code.t -> (m, n) deg -> nk D.t 
       let sk = deg_plus s nk mk in
       Of sk
 
+type doms_and_cods =
+  | Doms_and_cods : ('m, kinetic value) CubeOf.t * ('m, unit) BindCube.t -> doms_and_cods
+
 (* Act on a cube of objects *)
 
 type ('a, 'b) actor = { act : 'm 'n. 'a -> ('m, 'n) deg -> 'b }
@@ -250,6 +253,12 @@ module Act = struct
   and act_canonical : type m n nk. nk canonical -> (m, n) deg -> any_canonical =
    fun tm s ->
     match tm with
+    | UU dim ->
+        let (Of fa) = deg_plus_to s dim ~on:"universe" in
+        Any (UU (dom_deg fa))
+    | Pi (x, doms, cods) ->
+        let (Doms_and_cods (doms', cods')) = act_pi (doms, cods) s in
+        Any (Pi (x, doms', cods'))
     | Data { dim; tyfam; indices; constrs; discrete } ->
         let (Of fa) = deg_plus_to ~on:"data" s dim in
         let tyfam = ref (Option.map (fun x -> lazy (act_normal (Lazy.force x) fa)) !tyfam) in
@@ -278,23 +287,6 @@ module Act = struct
         (* We act on the alignment separately with the original s, since (e.g.) a chaotic alignment is a "value" of the entire application spine, not just the head. *)
         let value = act_lazy_eval value s in
         Neu { head; args; value }
-    | UU nk ->
-        let (Of fa) = deg_plus_to s nk ~on:"universe" in
-        UU (dom_deg fa)
-    | Pi (x, doms, cods) ->
-        let k = CubeOf.dim doms in
-        let (Of fa) = deg_plus_to s k ~on:"pi-type" in
-        let mi = dom_deg fa in
-        let doms' = act_cube { act = (fun x s -> act_value x s) } doms fa in
-        let cods' =
-          BindCube.build mi
-            {
-              build =
-                (fun fb ->
-                  let (Op (fc, fd)) = deg_sface fa fb in
-                  act_binder (BindCube.find cods fc) fd);
-            } in
-        Pi (x, doms', cods')
 
   (* act_closure and act_binder assume that the degeneracy has exactly the correct codomain.  So if it doesn't, the caller should call deg_plus_to first. *)
   and act_closure : type mn m n a kn.
@@ -354,7 +346,7 @@ module Act = struct
             fatal
               (Option.value ~default:(Anomaly "invalid degeneracy action on uninstantiated type")
                  err)
-        | Eq, Uninst (UU z, _) -> (
+        | Eq, Uninst (Neu { head = UU z; _ }, _) -> (
             match (D.compare z D.zero, D.compare_zero (dom_deg fa), tm) with
             | Neq, _, _ -> fatal (Anomaly "acting on non-fully-instantiated type as a type")
             | Eq, Zero, _ -> Uninst (act_uninst ty fa, lazy uu)
@@ -395,6 +387,29 @@ module Act = struct
     | Meta { meta; env; ins } ->
         let (Insfact_comp (deg, ins, _, _)) = insfact_comp ins s in
         Meta { meta; env = act_env env (op_of_deg deg); ins }
+    | UU nk ->
+        let (Of fa) = deg_plus_to s nk ~on:"universe" in
+        UU (dom_deg fa)
+    | Pi (x, doms, cods) ->
+        let (Doms_and_cods (doms', cods')) = act_pi (doms, cods) s in
+        Pi (x, doms', cods')
+
+  and act_pi : type b m n.
+      (b, kinetic value) CubeOf.t * (b, unit) BindCube.t -> (m, n) deg -> doms_and_cods =
+   fun (doms, cods) s ->
+    let k = CubeOf.dim doms in
+    let (Of fa) = deg_plus_to s k ~on:"pi-type" in
+    let mi = dom_deg fa in
+    let doms' = act_cube { act = (fun x s -> act_value x s) } doms fa in
+    let cods' =
+      BindCube.build mi
+        {
+          build =
+            (fun fb ->
+              let (Op (fc, fd)) = deg_sface fa fb in
+              act_binder (BindCube.find cods fc) fd);
+        } in
+    Doms_and_cods (doms', cods')
 
   (* Action on a Bwd of applications (each of which is just the argument and its boundary).  Pushes the degeneracy past the stored insertions, factoring it each time and leaving an appropriate insertion on the outside.  Also returns the innermost degeneracy, for acting on the head with. *)
   and act_apps : type a b. app Bwd.t -> (a, b) deg -> any_deg * app Bwd.t =

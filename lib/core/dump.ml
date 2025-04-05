@@ -109,8 +109,6 @@ module F = struct
   and uninst : formatter -> uninst -> unit =
    fun ppf u ->
     match u with
-    | UU n -> fprintf ppf "UU %a" dim n
-    | Pi (_, _, _) -> fprintf ppf "Pi ?"
     | Neu { head = h; args = a; value = _ } -> fprintf ppf "Neu (%a, (%a), ?)" head h args a
 
   and args : formatter -> app Bwd.t -> unit =
@@ -141,6 +139,8 @@ module F = struct
     | Meta { meta; env = _; ins } ->
         let (To p) = deg_of_ins ins in
         fprintf ppf "Meta (%s, ?, %s)" (Meta.name meta) (string_of_deg p)
+    | UU n -> fprintf ppf "UU %a" dim n
+    | Pi (_, _, _) -> fprintf ppf "Pi ?"
 
   and binder : type b s. formatter -> (b, s) binder -> unit =
    fun ppf (Bind { env = e; ins = _; body }) -> fprintf ppf "Binder (%a, ?, %a)" env e term body

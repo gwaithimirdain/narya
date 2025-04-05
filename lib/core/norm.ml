@@ -83,7 +83,7 @@ and view_type ?(severity = Asai.Diagnostic.Bug) (ty : kinetic value) (err : stri
   let uty, Full_tube tyargs =
     match ty with
     (* Since we expect fully instantiated types, in the uninstantiated case the dimension must be zero. *)
-    | Uninst (ty, (lazy (Uninst (UU n, _)))) -> (
+    | Uninst (ty, (lazy (Uninst (Neu { head = UU n; _ }, _)))) -> (
         match D.compare n D.zero with
         | Eq -> (ty, Full_tube (TubeOf.empty D.zero))
         | Neq -> fatal ~severity (Type_not_fully_instantiated (err, n)))
@@ -96,7 +96,7 @@ and view_type ?(severity = Asai.Diagnostic.Bug) (ty : kinetic value) (err : stri
         | Neq -> fatal ~severity (Type_not_fully_instantiated (err, TubeOf.uninst args)))
     | _ -> fatal ~severity (Type_expected (err, Dump.Val ty)) in
   match uty with
-  | UU n -> (
+  | Neu { head = UU n; _ } -> (
       match (D.compare n (TubeOf.inst tyargs), D.compare (TubeOf.uninst tyargs) D.zero) with
       | Eq, Eq ->
           let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (TubeOf.inst tyargs)) in
@@ -105,7 +105,7 @@ and view_type ?(severity = Asai.Diagnostic.Bug) (ty : kinetic value) (err : stri
       | Neq, _ ->
           (* This one is always a bug *)
           fatal (Dimension_mismatch ("view universe", n, TubeOf.inst tyargs)))
-  | Pi (x, doms, cods) -> (
+  | Neu { head = Pi (x, doms, cods); _ } -> (
       match
         (D.compare (CubeOf.dim doms) (TubeOf.inst tyargs), D.compare (TubeOf.uninst tyargs) D.zero)
       with
@@ -362,10 +362,16 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
                            (fun fc ->
                              Hashtbl.find pitbl (SFace_of (comp_sface fab (sface_of_tface fc))));
                        }) in
+                let subdoms, subcods = (CubeOf.subcube fab doms, BindCube.subcube fab cods) in
                 let tm =
                   Uninst
-                    (Pi (x, CubeOf.subcube fab doms, BindCube.subcube fab cods), Lazy.from_val ty)
-                in
+                    ( Neu
+                        {
+                          head = Pi (x, subdoms, subcods);
+                          args = Emp;
+                          value = ready (Canonical (Pi (x, subdoms, subcods)));
+                        },
+                      Lazy.from_val ty ) in
                 let ntm = { tm; ty } in
                 Hashtbl.add pitbl (SFace_of fab) ntm;
                 ntm);
@@ -1122,11 +1128,11 @@ and inst_args : type m n mn.
 
 (* Given a *type*, hence an element of a fully instantiated universe, extract the arguments of the instantiation of that universe.  These were stored in the extra arguments of Uninst and Inst. *)
 and inst_tys : kinetic value -> kinetic value full_tube = function
-  | Uninst (_, (lazy (Uninst (UU z, _)))) -> (
+  | Uninst (_, (lazy (Uninst (Neu { head = UU z; _ }, _)))) -> (
       match D.compare z D.zero with
       | Eq -> Full_tube (TubeOf.empty D.zero)
       | Neq -> fatal (Anomaly "higher universe must be instantiated to be a type"))
-  | Uninst (_, (lazy (Inst { tm = UU _; dim = _; args = tys; tys = _ }))) -> (
+  | Uninst (_, (lazy (Inst { tm = Neu { head = UU _; _ }; dim = _; args = tys; tys = _ }))) -> (
       match D.compare (TubeOf.uninst tys) D.zero with
       | Eq ->
           let Eq = D.plus_uniq (D.zero_plus (TubeOf.inst tys)) (TubeOf.plus tys) in

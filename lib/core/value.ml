@@ -50,6 +50,8 @@ module rec Value : sig
         ins : ('mn, 'm, 'n) insertion;
       }
         -> head
+    | UU : 'n D.t -> head
+    | Pi : string option * ('k, kinetic value) CubeOf.t * ('k, unit) BindCube.t -> head
 
   and app = App : 'n arg * ('nk, 'n, 'k) insertion -> app
 
@@ -65,10 +67,7 @@ module rec Value : sig
       }
         -> ('mn, 's) binder
 
-  and uninst =
-    | UU : 'n D.t -> uninst
-    | Pi : string option * ('k, kinetic value) CubeOf.t * ('k, unit) BindCube.t -> uninst
-    | Neu : { head : head; args : app Bwd.t; value : potential lazy_eval } -> uninst
+  and uninst = Neu : { head : head; args : app Bwd.t; value : potential lazy_eval } -> uninst
 
   and _ value =
     | Uninst : uninst * kinetic value Lazy.t -> kinetic value
@@ -92,6 +91,8 @@ module rec Value : sig
   and _ canonical =
     | Data : ('m, 'j, 'ij) data_args -> 'm canonical
     | Codata : ('mn, 'm, 'n, 'c, 'a, 'et) codata_args -> 'mn canonical
+    | UU : 'm D.t -> 'm canonical
+    | Pi : string option * ('m, kinetic value) CubeOf.t * ('m, unit) BindCube.t -> 'm canonical
 
   and ('m, 'j, 'ij) data_args = {
     dim : 'm D.t;
@@ -182,6 +183,10 @@ end = struct
         ins : ('mn, 'm, 'n) insertion;
       }
         -> head
+    (* Universes are parametrized by a dimension *)
+    | UU : 'n D.t -> head
+    (* Pis must store not just the domain type but all its boundary types.  These domain and boundary types are not fully instantiated.  Note the codomains are stored in a cube of binders. *)
+    | Pi : string option * ('k, kinetic value) CubeOf.t * ('k, unit) BindCube.t -> head
 
   (* An application contains the data of an n-dimensional argument and its boundary, together with a neutral insertion applied outside that can't be pushed in.  This represents the *argument list* of a single application, not the function.  Thus, an application spine will be a head together with a list of apps. *)
   and app = App : 'n arg * ('nk, 'n, 'k) insertion -> app
@@ -202,9 +207,6 @@ end = struct
 
   (* An (m+n)-dimensional type is "instantiated" by applying it a "boundary tube" to get an m-dimensional type.  This operation is supposed to be functorial in dimensions, so in the normal forms we prevent it from being applied more than once in a row.  We have a separate class of "uninstantiated" values, and then every actual value is instantiated exactly once.  This means that even non-type neutrals must be "instantiated", albeit trivially. *)
   and uninst =
-    | UU : 'n D.t -> uninst
-    (* Pis must store not just the domain type but all its boundary types.  These domain and boundary types are not fully instantiated.  Note the codomains are stored in a cube of binders. *)
-    | Pi : string option * ('k, kinetic value) CubeOf.t * ('k, unit) BindCube.t -> uninst
     (* A neutral is an application spine: a head with a list of applications.  Note that when we inject it into 'value' with Uninst below, it also stores its type (as do all the other uninsts).  It also stores (lazily) the up-to-now result of evaluating that application spine.  If that result is "Unrealized", then it is a "true neutral", the sort of neutral that is permanently stuck and usually appears in paper proofs of normalization.  If it is "Val" then the spine is still waiting for further arguments for its case tree to compute, while if it is "Canonical" then the case tree has already evaluated to a canonical type.  If it is "Realized" then the case tree has already evaluated to an ordinary value; this should only happen when glued evaluation is in effect. *)
     | Neu : { head : head; args : app Bwd.t; value : potential lazy_eval } -> uninst
 
@@ -238,12 +240,15 @@ end = struct
     | Unrealized : potential evaluation
     | Canonical : 'm canonical -> potential evaluation
 
-  (* A canonical type value is either a datatype or a codatatype/record.  It is parametrized by its dimension as a type, which might be larger than its evaluation dimension if it has an intrinsic dimension (e.g. Gel). *)
+  (* A canonical type value is either a universe, a function-type, a datatype, or a codatatype/record.  It, is parametrized by its dimension as a type, which might be larger than its evaluation dimension if it has an intrinsic dimension (e.g. Gel). *)
   and _ canonical =
     (* We define a named record type to encapsulate the arguments of Data, rather than using an inline one, so that we can bind its existential variables (https://discuss.ocaml.org/t/annotating-by-an-existential-type/14721).  See the definition below. *)
     | Data : ('m, 'j, 'ij) data_args -> 'm canonical
     (* A codatatype value has an eta flag, an environment that it was evaluated at, an insertion that relates its intrinsic dimension (such as for Gel) to the dimension it was evaluated at, and its fields as unevaluted terms that depend on one additional variable belonging to the codatatype itself (usually through its previous fields).  Note that combining env, ins, and any of the field terms in a *lower* codatafield produces the data of a binder; so in the absence of higher codatatypes we can think of this as a family of binders, one for each field, that share the same environment and insertion.  (But with higher fields this is no longer the case, as the context of the types gets degenerated by their dimension.) *)
     | Codata : ('mn, 'm, 'n, 'c, 'a, 'et) codata_args -> 'mn canonical
+    (* TODO: At the moment we aren't really using these.  To test for universes and pi-types, we test *heads* rather than values.  But that should be okay, because we also never *produce* these values except as the values of their corresponding heads (so it is really a waste of time and effort).  In principle, we could allow universes and pi-types as potential terms, so that constants could be defined to "behave like" universes or pi-types without reducing to them. *)
+    | UU : 'm D.t -> 'm canonical
+    | Pi : string option * ('m, kinetic value) CubeOf.t * ('m, unit) BindCube.t -> 'm canonical
 
   (* A datatype value stores: *)
   and ('m, 'j, 'ij) data_args = {
@@ -328,6 +333,8 @@ let dim_binder : type m s. (m, s) binder -> m D.t = function
   | Bind b -> dom_ins b.ins
 
 let dim_canonical : type m. m canonical -> m D.t = function
+  | UU dim -> dim
+  | Pi (_, doms, _) -> CubeOf.dim doms
   | Data { dim; _ } -> dim
   | Codata { ins; _ } -> dom_ins ins
 
@@ -406,7 +413,10 @@ let rec remove_env : type a k b n. (n, b) env -> (a, k, b) Tbwd.insert -> (n, a)
       Shift (remove_env env v', mn, na)
 
 (* The universe of any dimension belongs to an instantiation of itself.  Note that the result is not itself a type (i.e. in the 0-dimensional universe) unless n=0. *)
-let rec universe : type n. n D.t -> kinetic value = fun n -> Uninst (UU n, lazy (universe_ty n))
+let rec universe : type n. n D.t -> kinetic value =
+ fun n ->
+  Uninst (Neu { head = UU n; args = Emp; value = ready (Canonical (UU n)) }, lazy (universe_ty n))
+
 and universe_nf : type n. n D.t -> normal = fun n -> { tm = universe n; ty = universe_ty n }
 
 and universe_ty : type n. n D.t -> kinetic value =
@@ -422,7 +432,13 @@ and universe_ty : type n. n D.t -> kinetic value =
                 let m = dom_tface fa in
                 universe_nf m);
           } in
-      Inst { tm = UU n; dim = n'; args; tys = TubeOf.empty D.zero }
+      Inst
+        {
+          tm = Neu { head = UU n; args = Emp; value = ready (Canonical (UU n)) };
+          dim = n';
+          args;
+          tys = TubeOf.empty D.zero;
+        }
 
 (* Glued evaluation is basically implemented, but currently disabled because it is very slow -- too much memory allocation, and OCaml 5 doesn't have memory profiling tools available yet to debug it.  So we disable it globally with this flag.  But all the regular tests pass with the flag enabled, and should continue to be run and to pass, so that once we are able to debug it it is still otherwise working. *)
 module GluedEval = struct

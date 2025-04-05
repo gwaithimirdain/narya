@@ -180,21 +180,6 @@ and readback_val : type a z. (z, a) Ctx.t -> kinetic value -> (a, kinetic) term 
 and readback_uninst : type a z. (z, a) Ctx.t -> uninst -> (a, kinetic) term =
  fun ctx x ->
   match x with
-  | UU m -> UU m
-  | Pi (x, doms, cods) ->
-      let k = CubeOf.dim doms in
-      let args, newnfs = dom_vars (Ctx.length ctx) doms in
-      Pi
-        ( x,
-          CubeOf.mmap { map = (fun _ [ dom ] -> readback_val ctx dom) } [ doms ],
-          CodCube.build k
-            {
-              build =
-                (fun fa ->
-                  let sctx = Ctx.cube_vis ctx x (CubeOf.subcube fa newnfs) in
-                  let sargs = CubeOf.subcube fa args in
-                  readback_val sctx (apply_binder_term (BindCube.find cods fa) sargs));
-            } )
   | Neu { head; args; value = _ } ->
       Bwd.fold_left
         (fun fn (Value.App (arg, ins)) ->
@@ -221,6 +206,21 @@ and readback_head : type c z. (z, c) Ctx.t -> head -> (c, kinetic) term =
   | Meta { meta; env; ins } ->
       let (To perm) = deg_of_ins ins in
       Act (MetaEnv (meta, readback_env ctx env (Global.find_meta meta).termctx), perm)
+  | UU m -> UU m
+  | Pi (x, doms, cods) ->
+      let k = CubeOf.dim doms in
+      let args, newnfs = dom_vars (Ctx.length ctx) doms in
+      Pi
+        ( x,
+          CubeOf.mmap { map = (fun _ [ dom ] -> readback_val ctx dom) } [ doms ],
+          CodCube.build k
+            {
+              build =
+                (fun fa ->
+                  let sctx = Ctx.cube_vis ctx x (CubeOf.subcube fa newnfs) in
+                  let sargs = CubeOf.subcube fa args in
+                  readback_val sctx (apply_binder_term (BindCube.find cods fa) sargs));
+            } )
 
 and readback_at_tel : type n c a b ab z.
     (z, c) Ctx.t ->

@@ -152,38 +152,12 @@ module Equal = struct
   and equal_uninst : int -> uninst -> uninst -> unit option =
    fun lvl x y ->
     match (x, y) with
-    | UU m, UU n -> (
-        (* Two universes are equal precisely when they have the same dimension, in which case they also automatically have the same type (a standard instantiation of a (higher) universe of that same dimension). *)
-        match D.compare m n with
-        | Eq -> return ()
-        | _ -> fail)
     | Neu { head = head1; args = args1; value = _ }, Neu { head = head2; args = args2; value = _ }
       ->
         (* To check two neutral applications are equal, with their types, we first check if the functions are equal, including their types and hence also their domains and codomains (and also they have the same insertion applied outside).  An alignment doesn't affect definitional equality. *)
         let* () = equal_head lvl head1 head2 in
         (* Then we recursively check that all their arguments are equal. *)
         equal_args lvl args1 args2
-    | Pi (_, dom1s, cod1s), Pi (_, dom2s, cod2s) -> (
-        (* If two pi-types have the same dimension, equal domains, and equal codomains, they are equal and have the same type (an instantiation of the universe of that dimension at pi-types formed from the lower-dimensional domains and codomains). *)
-        let k = CubeOf.dim dom1s in
-        match D.compare (CubeOf.dim dom2s) k with
-        | Eq ->
-            let open CubeOf.Monadic (Monad.Maybe) in
-            let* () = miterM { it = (fun _ [ x; y ] -> equal_val lvl x y) } [ dom1s; dom2s ] in
-            (* We create variables for all the domains, in order to equality-check all the codomains.  The codomain boundary types only use some of those variables, but it doesn't hurt to have the others around. *)
-            let newargs, _ = dom_vars lvl dom1s in
-            let open BindCube.Monadic (Monad.Maybe) in
-            miterM
-              {
-                it =
-                  (fun s [ cod1; cod2 ] ->
-                    let sargs = CubeOf.subcube s newargs in
-                    equal_val (lvl + 1) (apply_binder_term cod1 sargs)
-                      (apply_binder_term cod2 sargs));
-              }
-              [ cod1s; cod2s ]
-        | Neq -> fail)
-    | _ -> fail
 
   (* Synthesizing equality check for heads.  Again equality of types is part of the conclusion, not a hypothesis. *)
   and equal_head : int -> head -> head -> unit option =
@@ -204,6 +178,31 @@ module Equal = struct
         match (Meta.compare meta1 meta2, D.compare (cod_left_ins i1) (cod_left_ins i2)) with
         | Eq, Eq -> equal_env lvl env1 env2 (Global.find_meta meta1).termctx
         | _ -> fail)
+    | UU m, UU n -> (
+        (* Two universes are equal precisely when they have the same dimension, in which case they also automatically have the same type (a standard instantiation of a (higher) universe of that same dimension). *)
+        match D.compare m n with
+        | Eq -> return ()
+        | _ -> fail)
+    | Pi (_, dom1s, cod1s), Pi (_, dom2s, cod2s) -> (
+        (* If two pi-types have the same dimension, equal domains, and equal codomains, they are equal and have the same type (an instantiation of the universe of that dimension at pi-types formed from the lower-dimensional domains and codomains). *)
+        let k = CubeOf.dim dom1s in
+        match D.compare (CubeOf.dim dom2s) k with
+        | Eq ->
+            let open CubeOf.Monadic (Monad.Maybe) in
+            let* () = miterM { it = (fun _ [ x; y ] -> equal_val lvl x y) } [ dom1s; dom2s ] in
+            (* We create variables for all the domains, in order to equality-check all the codomains.  The codomain boundary types only use some of those variables, but it doesn't hurt to have the others around. *)
+            let newargs, _ = dom_vars lvl dom1s in
+            let open BindCube.Monadic (Monad.Maybe) in
+            miterM
+              {
+                it =
+                  (fun s [ cod1; cod2 ] ->
+                    let sargs = CubeOf.subcube s newargs in
+                    equal_val (lvl + 1) (apply_binder_term cod1 sargs)
+                      (apply_binder_term cod2 sargs));
+              }
+              [ cod1s; cod2s ]
+        | Neq -> fail)
     | _, _ -> fail
 
   (* Check that the arguments of two entire application spines of equal functions are equal.  This is basically a left fold, but we make sure to iterate from left to right, and fail rather than raising an exception if the lists have different lengths.  *)
