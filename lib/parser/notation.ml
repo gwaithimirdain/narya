@@ -79,6 +79,10 @@ type (_, _) tree =
   | Done_closed : (closed, 'tight, 'right) notation -> ('t, 's) tree
   (* Trees associated to notations of arbitrary length are infinite, so we allow them to be computed lazily as needed. *)
   | Lazy : ('t, 's) tree Lazy.t -> ('t, 's) tree
+  (* One notation is a prefix of another one.  Reported as an error when reached during parsing, but just saved when notations are created and merged. *)
+  | Ambiguity : string list -> ('t, 's) tree
+  (* The sub-case when all the ambiguous notations are closed *)
+  | Ambiguity_closed : string list -> ('t, 's) tree
 
 (* When there is a choice in parsing, we arrange it so that no backtracking is required (except for a single token of lookahead).  We test all the possible next literal tokens, considering the possibility of a notation operator, field, or other term.  (Constructors and identifiers are considered special terms, and extracted during postprocessing.)  Fields cannot also be other terms, and we forbid symbols that occur in operators from also being variable names, so there is no need for backtracking. *)
 and ('t, 's) branch = {
@@ -501,11 +505,6 @@ let merge_opt : type a b. (a -> b -> a) -> (b -> a) -> a option -> b option -> a
   | None, Some y -> Some (l y)
   | Some x, Some y -> Some (m x y)
 
-let rec to_branch : type t s. (t, s) tree -> (t, s) branch option = function
-  | Inner b -> Some b
-  | Done_open _ | Done_closed _ -> None
-  | Lazy (lazy t) -> to_branch t
-
 let rec lower_tree : type t1 s1 t2 s2.
     (t2, s2, t1, s1) No.Interval.subset -> (t2, s2) tree -> (t1, s1) tree =
  fun sub xs ->
@@ -514,6 +513,8 @@ let rec lower_tree : type t1 s1 t2 s2.
   | Done_open (lt, n) -> Done_open (No.Interval.subset_contains sub lt, n)
   | Done_closed n -> Done_closed n
   | Lazy tr -> Lazy (lazy (lower_tree sub (Lazy.force tr)))
+  | Ambiguity strs -> Ambiguity strs
+  | Ambiguity_closed strs -> Ambiguity_closed strs
 
 and lower_branch : type t1 s1 t2 s2.
     (t2, s2, t1, s1) No.Interval.subset -> (t2, s2) branch -> (t1, s1) branch =
@@ -536,27 +537,27 @@ let rec names : type t s. (t, s) tree -> string list = function
   | Done_open (_, n) -> [ (find n).name ]
   | Done_closed n -> [ (find n).name ]
   | Lazy _ -> []
+  | Ambiguity strs | Ambiguity_closed strs -> strs
 
 and names_tmap : type t s. (t, s) tree TokMap.t -> string list =
  fun trees -> TokMap.fold (fun _ t xs -> names t @ xs) trees []
 
+(* We are not maximally tolerant of ambiguity in notations.  In principle, it is possible to have one mixfix notation that is a strict initial segment of the other, like the "if_then_" and "if_then_else_" discussed in Danielsson-Norell.  However, it seems very hard to parse such a setup without a significant amount of backtracking, so we forbid it.  This is detected here at merge time.  Note that this includes the case of two notations that are identical.  (It is, of course, possible to have two notations that start out the same but then diverge, like _⊢_⦂_ and _⊢_type -- this is the whole point of merging trees.)  However, because this could happen accidentally when importing many notations from different libraries, we don't raise the error unless it actually comes up during parsing, by wrapping it in a lazy branch of the notation tree. *)
 let rec merge_tree : type t1 s1 t2 s2.
     (t2, s2, t1, s1) No.Interval.subset -> (t1, s1) tree -> (t2, s2) tree -> (t1, s1) tree =
  fun sub xs ys ->
-  let open Monad.Ops (Monad.Maybe) in
-  Option.value
-    (let* xb = to_branch xs in
-     let* yb = to_branch ys in
-     return (Inner (merge_branch sub xb yb)))
-    (* We are not maximally tolerant of ambiguity.  In principle, it is possible to have one mixfix notation that is a strict initial segment of the other, like the "if_then_" and "if_then_else_" discussed in Danielsson-Norell.  However, it seems very hard to parse such a setup without a significant amount of backtracking, so we forbid it.  This is detected here at merge time.  Note that this includes the case of two notations that are identical.  (It is, of course, possible to have two notations that start out the same but then diverge, like _⊢_⦂_ and _⊢_type -- this is the whole point of merging trees.)  However, because this could happen accidentally when importing many notations from different libraries, we don't raise the error unless it actually comes up during parsing, by wrapping it in a lazy branch of the notation tree. *)
-    ~default:
-      (Lazy
-         (lazy
-           (fatal
-              (Parsing_ambiguity
-                 (Printf.sprintf "One notation is a prefix of another: [%s] and [%s]"
-                    (String.concat "; " (names xs))
-                    (String.concat "; " (names ys)))))))
+  match (xs, ys) with
+  | Lazy (lazy xs), _ -> merge_tree sub xs ys
+  | _, Lazy (lazy ys) -> merge_tree sub xs ys
+  | Inner xb, Inner yb -> Inner (merge_branch sub xb yb)
+  (* As a special case, if a left-open notation and one or more left-closed notations have exactly the same tree, we resolve the ambiguity in favor of the left-open one. *)
+  | Done_open _, Done_closed _ | Done_open _, Ambiguity_closed _ -> xs
+  | Done_closed _, Done_open _ | Ambiguity_closed _, Done_open _ -> lower_tree sub ys
+  | Done_closed _, Done_closed _
+  | Done_closed _, Ambiguity_closed _
+  | Ambiguity_closed _, Done_closed _
+  | Ambiguity_closed _, Ambiguity_closed _ -> Ambiguity_closed (names xs @ names ys)
+  | _ -> Ambiguity (names xs @ names ys)
 
 and merge_tmap : type t1 s1 t2 s2.
     (t2, s2, t1, s1) No.Interval.subset ->

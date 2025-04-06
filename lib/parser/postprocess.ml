@@ -25,25 +25,13 @@ let get_var : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string option 
   | Placeholder _ -> None
   | _ -> fatal Parse_error
 
-(* At present we only know how to postprocess natural number numerals. *)
-let process_numeral loc (n : Q.t) =
-  let rec process_nat (n : Z.t) =
-    (* TODO: Would be better not to hardcode these. *)
-    if n = Z.zero then { value = Raw.Constr ({ value = Constr.intern "zero"; loc }, []); loc }
-    else
-      {
-        value = Raw.Constr ({ value = Constr.intern "suc"; loc }, [ process_nat (Z.sub n Z.one) ]);
-        loc;
-      } in
-  if n.den = Z.one && n.num >= Z.zero then process_nat n.num else fatal (Unsupported_numeral n)
-
 (* Process a bare identifier, resolving it into either a variable, a cube variable with face, a constant, a numeral, or a degeneracy name (the latter being an error since it isn't applied to anything). *)
 let process_ident ctx loc parts =
   let open Monad.Ops (Monad.Maybe) in
   (* A numeral is an ident whose pieces are composed entirely of digits.  Of course if there are more than two parts it's not a *valid* numeral, but we don't allow it as another kind of token either. *)
   if List.is_empty parts then fatal (Anomaly "empty ident")
   else if Lexer.is_numeral parts then
-    try process_numeral loc (Q.of_string (String.concat "." parts))
+    try { value = Numeral (Q.of_string (String.concat "." parts)); loc }
     with Invalid_argument _ -> fatal (Invalid_numeral (String.concat "." parts))
   else
     match

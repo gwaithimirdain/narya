@@ -53,6 +53,7 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
     | Done_open (lt, n) -> return (obs, Open_in_interval (lt, n))
     | Done_closed n -> return (obs, Closed_in_interval n)
     | Lazy (lazy t) -> tree t obs
+    | Ambiguity_closed strs | Ambiguity strs -> fatal (Parsing_ambiguity strs)
 
   (* Parse an inner branch of a tree except for the possibility of a term. *)
   and inner_nonterm : type tight strict.

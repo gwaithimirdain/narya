@@ -95,7 +95,7 @@ type prenotation = User : ('left, 'tight, 'right) prenotation_data -> prenotatio
 (* Whereas a user "notation" has been compiled into a notation tree, but remembers the variables from the pattern and the definition, so as to implement the necessary permutation. *)
 
 type notation = {
-  key : key;
+  keys : key list;
   notn : Notation.t;
   pat_vars : string list;
   val_vars : string list;

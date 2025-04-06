@@ -17,7 +17,7 @@ module StringMap = Map.Make (String)
 (* If the head of an application spine is a constant or constructor, and it has an associated notation, and there are enough of the supplied arguments to instantiate the notation, split off that many arguments and return the notation, those arguments permuted to match the order of the pattern variables in the notation, the symbols to intersperse with them, and the remaining arguments. *)
 let get_notation head args =
   let open Monad.Ops (Monad.Maybe) in
-  let* { key = _; notn; pat_vars; val_vars; inner_symbols } =
+  let* { keys = _; notn; pat_vars; val_vars; inner_symbols } =
     match head with
     | `Term (Const c) -> Situation.Current.unparse (`Constant c)
     | `Constr c -> Situation.Current.unparse (`Constr (c, Bwd.length args))
@@ -160,12 +160,15 @@ let rec unparse_abs : type li ls ri rs.
 (* If a term is a natural number numeral (a bunch of 'suc' constructors applied to a 'zero' constructor), unparse it as that numeral; otherwise return None. *)
 let unparse_numeral : type n li ls ri rs. (n, kinetic) term -> (li, ls, ri, rs) parse option =
  fun tm ->
+  (* As in parsing, it would be better not to hardcode these constructor names. *)
+  let zero = Constr.intern "zero" in
+  let one = Constr.intern "one" in
+  let suc = Constr.intern "suc" in
   let rec getsucs tm k =
     match tm with
-    (* As in parsing, it would be better not to hardcode the constructor names 'zero' and 'suc'. *)
-    | Term.Constr (c, _, []) when c = Constr.intern "zero" ->
-        Some (Ident (String.split_on_char '.' (Q.to_string (Q.of_int k)), []))
-    | Constr (c, _, [ arg ]) when c = Constr.intern "suc" -> getsucs (CubeOf.find_top arg) (k + 1)
+    | Term.Constr (c, _, []) when c = zero -> Some (Ident ([ string_of_int k ], []))
+    | Term.Constr (c, _, []) when c = one -> Some (Ident ([ string_of_int (k + 1) ], []))
+    | Constr (c, _, [ arg ]) when c = suc -> getsucs (CubeOf.find_top arg) (k + 1)
     | _ -> None in
   getsucs tm 0
 
@@ -255,7 +258,7 @@ let rec unparse : type n lt ls rt rs s.
   | Var x -> unlocated (Ident (Names.lookup vars x, []))
   | Const c -> (
       match Situation.Current.unparse (`Constant c) with
-      | Some { key = _; notn = Wrap notn; pat_vars = []; val_vars = []; inner_symbols } ->
+      | Some { keys = _; notn = Wrap notn; pat_vars = []; val_vars = []; inner_symbols } ->
           unparse_notation notn [] inner_symbols li ri
       | _ -> unlocated (Ident (Scope.name_of c, [])))
   | Meta (v, _) ->

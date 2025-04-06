@@ -538,15 +538,24 @@ pending hole data stored by `narya-handle-output'."
                 (narya-add-command-undo cmd-span)))))))))
   
 
+(defun narya-echo-or-synth (cmd term)
+  (let* ((n (get-char-property (point) 'narya-hole))
+         (command (concat cmd " "
+                          (if n (concat "in " (number-to-string n) " ") "")
+                          term)))
+    (proof-shell-invisible-command command)))
+
 (defun narya-echo (term)
-  "Normalize and display the value and type of a term."
+  "Normalize and display the value and type of a term.
+If cursor is over a hole, the term is interpreted in the context of that hole."
   (interactive "sTerm to normalize: ")
-  (proof-shell-invisible-command (concat "echo " term)))
+  (narya-echo-or-synth "echo" term))
 
 (defun narya-synth (term)
-  "Display the type of a term."
+  "Display the type of a term.
+If cursor is over a hole, the term is interpreted in the context of that hole."
   (interactive "sTerm to synthesize: ")
-  (proof-shell-invisible-command (concat "synth " term)))
+  (narya-echo-or-synth "synth" term))
 
 (defun narya-display-chars (arg)
   "Set, unset, or toggle display of unicode characters.

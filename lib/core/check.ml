@@ -11,6 +11,7 @@ open Dim
 open Act
 open Norm
 open Equal
+open Subtype
 open Readback
 open Degctx
 open Printable
@@ -404,6 +405,31 @@ let rec check : type a b s.
                   [ constr_indices; ty_indices ];
                 realize status (Term.Constr (constr, dim, newargs)))
         | _ -> fatal (No_such_constructor (`Other (PVal (ctx, ty)), constr)))
+    | Numeral n, _ ->
+        if n.num < Z.zero then fatal (Anomaly "negative numeral");
+        if n.den <= Z.zero then fatal (Anomaly "negative denominator");
+        (* A numeral is built out of 'suc', 'zero', and 'quot' (if it's a decimal) constructors, plus if we're checking an integer at a type that has a 'one' constructor we use that instead of 'suc. zero.' so that for instance 1/2 becomes quot. (suc. zero.) (suc. one.) with an ordinary notation binding of / to quot. .  This is the reason we don't do the expansion into constructors at the postprocessing step, so we can use the type information to decide whether to use 'one.' or 'suc. zero.'.  *)
+        let use_one =
+          match view_type ~severity ty "checking numeral" with
+          | Canonical (_, Data { constrs; _ }, _) -> Abwd.mem (Constr.intern "one") constrs
+          | _ -> false in
+        (* TODO: It would be better not to hardcode the constructor names.  It might also be nice to represent numerals more efficiently in syntax, as I think Agda does, rather than insisting on expanding them out completely into constructors. *)
+        let zero = { value = Constr.intern "zero"; loc = tm.loc } in
+        let one = { value = Constr.intern "one"; loc = tm.loc } in
+        let suc = { value = Constr.intern "suc"; loc = tm.loc } in
+        let quot = { value = Constr.intern "quot"; loc = tm.loc } in
+        let rec process_nat (n : Z.t) =
+          if n = Z.zero then { value = Raw.Constr (zero, []); loc = tm.loc }
+          else { value = Raw.Constr (suc, [ process_nat (Z.sub n Z.one) ]); loc = tm.loc } in
+        let rec process_pos (n : Z.t) =
+          if n = Z.one then { value = Raw.Constr (one, []); loc = tm.loc }
+          else { value = Raw.Constr (suc, [ process_pos (Z.sub n Z.one) ]); loc = tm.loc } in
+        let numeral =
+          if n.den = Z.one then
+            if use_one && n.num > Z.zero then process_pos n.num else process_nat n.num
+          else { value = Raw.Constr (quot, [ process_nat n.num; process_pos n.den ]); loc = tm.loc }
+        in
+        check ?discrete status ctx numeral ty
     | Synth (Match { tm; sort = `Implicit; branches; refutables }), Potential _ ->
         check_implicit_match status ctx tm branches refutables ty
     | Synth (Match { tm; sort = `Nondep i; branches; refutables = _ }), Potential _ ->
@@ -576,14 +602,16 @@ and check_of_synth : type a b s.
       @@ fun () ->
       let cty = check (Kinetic `Nolet) ctx aty (universe D.zero) in
       let ety = eval_term (Ctx.env ctx) cty in
-      equal_val (Ctx.length ctx) ety ty
+      (* It suffices for the synthesized type to be a subtype of the checking type. *)
+      subtype_of ctx ety ty
       <|> Unequal_synthesized_type
             { got = PVal (ctx, ety); expected = PVal (ctx, ty); which = None };
       let ctm = check status ctx ctm ety in
       ctm
   | _ ->
       let sval, sty = synth status ctx { value = stm; loc } in
-      equal_val (Ctx.length ctx) sty ty
+      (* It suffices for the synthesized type to be a subtype of the checking type. *)
+      subtype_of ctx sty ty
       <|> Unequal_synthesized_type
             { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None };
       sval
@@ -2192,15 +2220,17 @@ and synth : type a b s.
         | _ ->
             fatal ?loc:fn.loc (Applying_nonfunction_nontype (PTerm (ctx, sfn), PVal (ctx, sfnty))))
     | SFirst (alts, arg), _ ->
-        let _, sty = synth status ctx (locate_opt tm.loc arg) in
-        let vsty = view_type sty "synth_first" in
+        let sty = Option.map (fun arg -> snd (synth status ctx (locate_opt tm.loc arg))) arg in
+        let vsty = Option.map (fun sty -> view_type sty "synth_first") sty in
         let rec go errs = function
           | [] ->
-              if Bwd.is_empty errs then fatal (Choice_mismatch (PVal (ctx, sty)))
+              if Bwd.is_empty errs then
+                fatal
+                  (Choice_mismatch (Option.fold ~some:(fun sty -> PVal (ctx, sty)) ~none:PUnit sty))
               else fatal (Accumulated ("SFirst", errs))
           | (test, alt, passthru) :: alts -> (
               match (vsty, test) with
-              | Canonical (_, Data { constrs = data_constrs; _ }, _), `Data constrs ->
+              | Some (Canonical (_, Data { constrs = data_constrs; _ }, _)), `Data constrs ->
                   if
                     List.for_all
                       (fun constr ->
@@ -2211,7 +2241,7 @@ and synth : type a b s.
                         if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
                     @@ fun () -> synth status ctx (locate_opt tm.loc alt)
                   else go errs alts
-              | Canonical (_, Codata { fields = codata_fields; _ }, _), `Codata fields ->
+              | Some (Canonical (_, Codata { fields = codata_fields; _ }, _)), `Codata fields ->
                   if
                     List.for_all
                       (fun field ->
@@ -2229,6 +2259,7 @@ and synth : type a b s.
                   Reporter.try_with ~fatal:(fun d ->
                       if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
                   @@ fun () -> synth status ctx (locate_opt tm.loc alt)
+              | None, `Data _ | None, `Codata _ -> fatal (Anomaly "SFirst mismatch")
               | _ -> go errs alts) in
         go Emp alts in
   with_loc tm.loc @@ fun () ->

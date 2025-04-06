@@ -126,6 +126,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols f =
         reformat = !reformat;
       }
   @@ fun () ->
+  Subtype.run @@ fun () ->
   Execute.Loaded.run @@ fun () ->
   Execute.Loading.run ~init:{ cwd = Sys.getcwd (); parents = Emp; imports = Emp; actions = false }
   @@ fun () ->
@@ -156,8 +157,6 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols f =
   f ()
 
 (* Some applications may not be able to put their entire main loop inside a single call to "run_top".  Specifically, js_of_ocaml applications may need to return control to the browser periodically, but want to maintain the state that's normally stored in the effect handlers wrapped by run_top.  To accommodate this, we implement a "pausable" coroutine version of run_top, using effects, that saves a continuation inside all the handlers and returns to it whenever needed.  When our run_top callback finishes a single command, it yields control by performing the "Yield" effect, passing the output of the command it just executed.  The handler for this effect doesn't immediately continue, but stores the continuation in a global variable and returns control to the caller.  Then when we need to re-enter run_top, the continuation is resumed, passing it the code to be executed. *)
-
-exception Halt
 
 module Pauseable (R : Signatures.Type) = struct
   open Effect.Deep

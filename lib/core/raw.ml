@@ -133,7 +133,7 @@ module Make (I : Indices) = struct
     (* Try several terms, testing for each whether the synthesized type of the specified term has certain constructors or fields. *)
     | SFirst :
         ([ `Data of Constr.t list | `Codata of string list | `Any ] * 'a synth * bool) list
-        * 'a synth
+        * 'a synth option
         -> 'a synth
 
   (* Checkable raw terms *)
@@ -143,6 +143,7 @@ module Make (I : Indices) = struct
     (* A "Struct" is our current name for both tuples and comatches, which share a lot of their implementation even though they are conceptually and syntactically distinct.  Those with eta=`Eta are tuples, those with eta=`Noeta are comatches.  We index them by an option so as to include any unlabeled fields, with their relative order to the labeled ones.  The field hasn't been interned to an intrinsic dimension yet (that depends on what it checks against), so it's just a string name, plus a list of strings to indicate a pbij for higher fields. *)
     | Struct : ('s, 'et) eta * ((string * string list) option, 'a check located) Abwd.t -> 'a check
     | Constr : Constr.t located * 'a check located list -> 'a check
+    | Numeral : Q.t -> 'a check
     (* "[]", which could be either an empty pattern-matching lambda or an empty comatch *)
     | Empty_co_match : 'a check
     | Data : (Constr.t, 'a dataconstr located) Abwd.t -> 'a check
@@ -295,7 +296,7 @@ module Resolve (R : Resolver) = struct
       | SFirst (tms, arg) ->
           SFirst
             ( List.map (fun (t, x, b) -> (t, (synth ctx (locate_opt tm.loc x)).value, b)) tms,
-              (synth ctx (locate_opt tm.loc arg)).value ) in
+              Option.map (fun arg -> (synth ctx (locate_opt tm.loc arg)).value) arg ) in
     R.visit ctx (locate_opt tm.loc (T2.Synth newtm));
     locate_opt tm.loc newtm
 
@@ -308,6 +309,7 @@ module Resolve (R : Resolver) = struct
           Lam (locate_map (R.rename ctx) x, sort, check (R.snoc ctx x.value) body)
       | Struct (eta, fields) -> Struct (eta, Abwd.map (check ctx) fields)
       | Constr (c, args) -> Constr (c, List.map (check ctx) args)
+      | Numeral x -> Numeral x
       | Empty_co_match -> Empty_co_match
       | Data constrs -> Data (Abwd.map (locate_map (dataconstr ctx)) constrs)
       | Codata fields ->

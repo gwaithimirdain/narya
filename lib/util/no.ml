@@ -20,6 +20,16 @@ type eight = seven plus
 type minus_one = zero minus
 type minus_two = minus_one minus
 
+(* Warning: the sign sequences are counted from the *right* on types.  So "zero minus plus" means +- which is 1/2. *)
+type one_half = zero minus plus
+type one_fourth = zero minus minus plus
+type three_fourths = zero plus minus plus
+type three_halves = zero minus plus plus
+type minus_one_half = zero plus minus
+type minus_one_fourth = zero plus plus minus
+type minus_three_fourths = zero minus plus minus
+type minus_three_halves = zero plus minus minus
+
 let zero : zero t = Fin Zero
 let one : one t = Fin (Plus Zero)
 let two : two t = Fin (Plus (Plus Zero))
@@ -31,6 +41,14 @@ let seven : seven t = Fin (Plus (Plus (Plus (Plus (Plus (Plus (Plus Zero)))))))
 let eight : eight t = Fin (Plus (Plus (Plus (Plus (Plus (Plus (Plus (Plus Zero))))))))
 let minus_one : minus_one t = Fin (Minus Zero)
 let minus_two : minus_two t = Fin (Minus (Minus Zero))
+let one_half : one_half t = Fin (Plus (Minus Zero))
+let one_fourth : one_fourth t = Fin (Plus (Minus (Minus Zero)))
+let three_fourths : three_fourths t = Fin (Plus (Minus (Plus Zero)))
+let three_halves : three_halves t = Fin (Plus (Plus (Minus Zero)))
+let minus_one_half : minus_one_half t = Fin (Minus (Plus Zero))
+let minus_one_fourth : minus_one_fourth t = Fin (Minus (Plus (Plus Zero)))
+let minus_three_fourths : minus_three_fourths t = Fin (Minus (Plus (Minus Zero)))
+let minus_three_halves : minus_three_halves t = Fin (Minus (Minus (Plus Zero)))
 let minus_omega = Minus_omega
 let plus_omega = Plus_omega
 

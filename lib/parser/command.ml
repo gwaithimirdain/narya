@@ -40,7 +40,14 @@ module Command = struct
       }
     | Def of def list
     (* "synth" is almost just like "echo", so we implement them as one command distinguished by an "eval" flag. *)
-    | Echo of { wsecho : Whitespace.t list; tm : wrapped_parse; eval : bool }
+    | Echo of {
+        wsecho : Whitespace.t list;
+        number : int option;
+        wsin : Whitespace.t list;
+        wsnumber : Whitespace.t list;
+        tm : wrapped_parse;
+        eval : bool;
+      }
     | Notation : {
         fixity : ('left, 'tight, 'right) fixity;
         wsnotation : Whitespace.t list;
@@ -175,15 +182,26 @@ module Parse = struct
     let* rest = zero_or_more (def And) in
     return (Command.Def (first :: rest))
 
-  let echo =
-    let* wsecho = token Echo in
-    let* tm = C.term [] in
-    return (Command.Echo { wsecho; tm; eval = true })
+  let integer =
+    step "" (fun state _ (tok, ws) ->
+        match tok with
+        | Ident [ num ] -> Some ((int_of_string num, ws), state)
+        | _ -> None)
 
-  let synth =
-    let* wsecho = token Synth in
-    let* tm = C.term [] in
-    return (Command.Echo { wsecho; tm; eval = false })
+  let echo =
+    let* wsecho, eval =
+      (let* wsecho = token Echo in
+       return (wsecho, true))
+      </> let* wsecho = token Synth in
+          return (wsecho, false) in
+    let* number, wsin, wsnumber, tm =
+      (let* wsin = token In in
+       let* number, wsnumber = integer in
+       let* tm = C.term [] in
+       return (Some number, wsin, wsnumber, tm))
+      </> let* tm = C.term [] in
+          return (None, [], [], tm) in
+    return (Command.Echo { wsecho; number; wsin; wsnumber; tm; eval })
 
   let tightness_and_name :
       (No.wrapped option * Whitespace.t list * Trie.path * Asai.Range.t option * Whitespace.t list)
@@ -457,12 +475,6 @@ module Parse = struct
            "") in
     return (Import { wsimport; export; origin; wsorigin; op })
 
-  let integer =
-    step "" (fun state _ (tok, ws) ->
-        match tok with
-        | Ident [ num ] -> Some ((int_of_string num, ws), state)
-        | _ -> None)
-
   let solve =
     let* wssolve = token Solve in
     let* number, wsnumber = integer in
@@ -599,7 +611,6 @@ module Parse = struct
     </> axiom
     </> def_and
     </> echo
-    </> synth
     </> notation
     </> import
     </> solve
@@ -615,7 +626,8 @@ module Parse = struct
   let command_or_echo () =
     command ()
     </> let* tm = C.term [] in
-        return (Command.Echo { wsecho = []; tm; eval = true })
+        return
+          (Command.Echo { wsecho = []; number = None; wsin = []; wsnumber = []; tm; eval = true })
 
   type open_source = Range.Data.t * [ `String of int * string | `File of In_channel.t ]
 
@@ -766,21 +778,40 @@ let execute : action_taken:(unit -> unit) -> get_file:(string -> Scope.trie) -> 
                     | _ -> fatal (Nonsynthesizing "body of def without specified type"))))
           cdefs in
       Core.Command.execute (Def defs)
-  | Echo { tm = Wrap tm; eval; _ } -> (
-      let rtm = process Emp tm in
+  | Echo { tm = Wrap tm; eval; number; _ } -> (
+      let module Scope_and_ctx = struct
+        type t = Scope_and_ctx : (string option, 'a) Bwv.t * ('a, 'b) Ctx.t -> t
+      end in
+      let open Scope_and_ctx in
+      let Scope_and_ctx (vars, ctx), run =
+        match number with
+        | None -> (Scope_and_ctx (Bwv.Emp, Ctx.empty), fun f -> f ())
+        | Some number -> (
+            let (Find_number (_, { tm = metatm; termctx; _ }, { scope; global; vars; options; _ }))
+                =
+              Eternity.find_number number in
+            match metatm with
+            | `Undefined ->
+                ( Scope_and_ctx (vars, Norm.eval_ctx termctx),
+                  fun f ->
+                    History.run_with_scope ~init_visible:scope ~options @@ fun () ->
+                    Global.run ~init:global f )
+            | `Defined _ | `Axiom -> fatal (Anomaly "hole already defined")) in
+      run @@ fun () ->
+      let rtm = process vars tm in
       action_taken ();
       match rtm.value with
       | Synth stm ->
           Readback.Displaying.run ~env:true @@ fun () ->
-          let ctm, ety = Check.synth (Kinetic `Nolet) Ctx.empty { value = stm; loc = rtm.loc } in
+          let ctm, ety = Check.synth (Kinetic `Nolet) ctx { value = stm; loc = rtm.loc } in
           let btm =
             if eval then
-              let etm = Norm.eval_term (Emp D.zero) ctm in
-              readback_at Ctx.empty etm ety
+              let etm = Norm.eval_term (Ctx.env ctx) ctm in
+              readback_at ctx etm ety
             else ctm in
-          let bty = readback_at Ctx.empty ety (Value.universe D.zero) in
-          let utm = unparse Names.empty btm No.Interval.entire No.Interval.entire in
-          let uty = unparse Names.empty bty No.Interval.entire No.Interval.entire in
+          let bty = readback_at ctx ety (Value.universe D.zero) in
+          let utm = unparse (Names.of_ctx ctx) btm No.Interval.entire No.Interval.entire in
+          let uty = unparse (Names.of_ctx ctx) bty No.Interval.entire No.Interval.entire in
           ToChannel.pretty 1.0 (Display.columns ()) stdout
             (hang 2
                (pp_complete_term (Wrap utm) `None
@@ -790,7 +821,7 @@ let execute : action_taken:(unit -> unit) -> get_file:(string -> Scope.trie) -> 
                ^^ pp_complete_term (Wrap uty) `None));
           print_newline ();
           print_newline ()
-      | _ -> fatal (Nonsynthesizing "argument of echo"))
+      | _ -> fatal (Nonsynthesizing ("argument of " ^ if eval then "echo" else "synth")))
   | Notation { fixity; name; loc; pattern; head; args; _ } ->
       History.do_command @@ fun () ->
       let notation_name = "notations" :: name in
@@ -831,12 +862,14 @@ let execute : action_taken:(unit -> unit) -> get_file:(string -> Scope.trie) -> 
       in
       let notn, shadow = Situation.Current.add_user user in
       Scope.include_singleton (notation_name, ((`Notation (user, notn), loc), ()));
-      (if shadow then
-         let keyname =
-           match notn.key with
-           | `Constr (c, _) -> Constr.to_string c ^ "."
-           | `Constant c -> String.concat "." (Scope.name_of c) in
-         emit (Head_already_has_notation keyname));
+      List.iter
+        (fun key ->
+          let keyname =
+            match key with
+            | `Constr (c, _) -> Constr.to_string c ^ "."
+            | `Constant c -> String.concat "." (Scope.name_of c) in
+          emit (Head_already_has_notation keyname))
+        shadow;
       emit (Notation_defined (String.concat "." name))
   | Import { export; origin; op; _ } ->
       History.do_command @@ fun () ->
@@ -1039,11 +1072,18 @@ let pp_command : t -> document * Whitespace.t list =
                ^^ pp_complete_term (Wrap ty) `None)),
           rest )
     | Def defs -> pp_defs Def None defs empty
-    | Echo { wsecho; tm = Wrap tm; eval } ->
+    | Echo { wsecho; number; wsin; wsnumber; tm = Wrap tm; eval } ->
         let tm, rest = split_ending_whitespace tm in
         ( hang 2
             (Token.pp (if eval then Echo else Synth)
             ^^ pp_ws `Nobreak wsecho
+            ^^ optional
+                 (fun n ->
+                   Token.pp In
+                   ^^ pp_ws `Nobreak wsin
+                   ^^ string (string_of_int n)
+                   ^^ pp_ws `Nobreak wsnumber)
+                 number
             ^^ pp_complete_term (Wrap tm) `None),
           rest )
     | Notation

@@ -59,6 +59,7 @@ let alt_char uni asc =
   | `Unicode -> uni
   | `ASCII -> asc
 
+let get = State.get
 let run = State.run
 let modify = State.modify
 
