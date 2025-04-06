@@ -1,0 +1,188 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Canonical types defined by case trees &mdash; Narya 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=2709fde1"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Mutual definitions" href="mutual-definitions.html" />
+    <link rel="prev" title="Codatatypes and comatching" href="codata-types.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            Narya
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="top-level-interface.html">Top level interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="built-in-types.html">Built-in types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="names-and-notations.html">Names and notations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="imports-and-scoping.html">Imports and scoping</a></li>
+<li class="toctree-l1"><a class="reference internal" href="typechecking.html">Typechecking details</a></li>
+<li class="toctree-l1"><a class="reference internal" href="interactive.html">Interactive proof</a></li>
+<li class="toctree-l1"><a class="reference internal" href="record-types.html">Record types and tuples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data-types.html">Inductive datatypes and matching</a></li>
+<li class="toctree-l1"><a class="reference internal" href="codata-types.html">Codatatypes and comatching</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Canonical types defined by case trees</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mutual-definitions.html">Mutual definitions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="parametric-observational-type-theory.html">Parametric Observational Type Theory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="remarks.html">Remarks on implementation</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Narya</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Canonical types defined by case trees</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/canonical-types.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="canonical-types-defined-by-case-trees">
+<h1>Canonical types defined by case trees<a class="headerlink" href="#canonical-types-defined-by-case-trees" title="Link to this heading"></a></h1>
+<p>By a <em>canonical type</em> we mean a universe, function-type, record type, datatype, or codatatype, of which the first two are built in and the latter three are all user-defined.  So far, all our definitions of new canonical types (record types, datatypes, and codatatypes) may have been abstracted over parameters, but otherwise the keyword <code class="docutils literal notranslate"><span class="pre">sig</span></code> or <code class="docutils literal notranslate"><span class="pre">data</span></code> has occurred immediately after the ≔.</p>
+<p>However, in fact a canonical type declaration can appear anywhere in a case tree!  For example, here is another definition of length-indexed lists, which we call “covectors”.  Now instead of the length being an index, it is a <em>parameter</em> over which we recurse:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def Covec (A:Type) (n:ℕ) : Type ≔ match n [
+| zero. ↦ sig ()
+| suc. n ↦ sig (
+  car : A,
+  cdr : Covec A n )]
+</pre></div>
+</div>
+<p>Thus, <code class="docutils literal notranslate"><span class="pre">Covec</span> <span class="pre">A</span> <span class="pre">0</span></code> is a unit type, <code class="docutils literal notranslate"><span class="pre">Covec</span> <span class="pre">A</span> <span class="pre">1</span></code> is isomorphic to <code class="docutils literal notranslate"><span class="pre">A</span></code> (definitionally! since record types have η-conversion), <code class="docutils literal notranslate"><span class="pre">Covec</span> <span class="pre">A</span> <span class="pre">2</span></code> is isomorphic to <code class="docutils literal notranslate"><span class="pre">A</span> <span class="pre">×</span> <span class="pre">A</span></code>, and so on.</p>
+<p>This is very similar to, but subtly different from, the following definition that could be given in Coq or Agda:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def Covec&#39; (A:Type) (n:ℕ) : Type ≔ match n [
+| zero. ↦ ⊤
+| suc. n ↦ A × Covec&#39; A n]
+</pre></div>
+</div>
+<p>The two are definitionally isomorphic.  The difference is that <code class="docutils literal notranslate"><span class="pre">Covec'</span> <span class="pre">A</span> <span class="pre">n</span></code> reduces when <code class="docutils literal notranslate"><span class="pre">n</span></code> is a constructor, while <code class="docutils literal notranslate"><span class="pre">Covec</span> <span class="pre">A</span> <span class="pre">n</span></code> is already a canonical type no matter what <code class="docutils literal notranslate"><span class="pre">n</span></code> is; it’s just that when <code class="docutils literal notranslate"><span class="pre">n</span></code> is a constructor we know how it <em>behaves</em>.  For instance, <code class="docutils literal notranslate"><span class="pre">Covec'</span> <span class="pre">A</span> <span class="pre">2</span></code> reduces to <code class="docutils literal notranslate"><span class="pre">A</span> <span class="pre">×</span> <span class="pre">(A</span> <span class="pre">×</span> <span class="pre">⊤)</span></code>, whereas <code class="docutils literal notranslate"><span class="pre">Covec</span> <span class="pre">A</span> <span class="pre">2</span></code> does not reduce but we can still typecheck <code class="docutils literal notranslate"><span class="pre">(a,</span> <span class="pre">(b,</span> <span class="pre">()))</span></code> at it.  This sort of “recursively defined canonical type” helps maintain information about the meaning of a type, just like using a custom record type rather than a nested Σ-type; eventually we hope it will be helpful for unification and typeclass inference.</p>
+<p>As another example, once we have an identity type <code class="docutils literal notranslate"><span class="pre">Id</span></code> (which could be <code class="docutils literal notranslate"><span class="pre">Jd</span></code>, or an observational identity type) we can define the homotopy-theoretic tower of truncation levels:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def trunc_index : Type ≔ data [ minustwo. | suc. (_ : trunc_index) ]
+
+def IsTrunc (n:ℕ) (A:Type) : Type ≔ match n [
+| minustwo. ↦ sig ( center : A, contr : (x:A) → Id A center x )
+| suc. n ↦ sig ( trunc_id : (x y : A) → IsTrunc n (Id A x y) )]
+</pre></div>
+</div>
+<p>Definitions of datatypes by recursion can sometimes be used in place of indexed datatypes.  In particular, this can sometimes be a good way of getting around Narya’s lack of unification for indices in pattern-matching.  For example, if we define the standard finite types as an indexed datatype:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def Fin : ℕ → Type ≔ data [
+| zero. : (n : ℕ) → Fin (suc. n)
+| suc.  : (n : ℕ) → Fin n → Fin (suc. n)]
+</pre></div>
+</div>
+<p>then matching against an element of <code class="docutils literal notranslate"><span class="pre">Fin</span> <span class="pre">n</span></code> will only refine the goal and context if the index <code class="docutils literal notranslate"><span class="pre">n</span></code> is a free variable.  This means we need technical circumlocutions even to prove that, for instance, <code class="docutils literal notranslate"><span class="pre">Fin</span> <span class="pre">zero.</span></code> is empty.  However, we can instead define <code class="docutils literal notranslate"><span class="pre">Fin</span></code> recursively:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def Fin : ℕ → Type ≔ [
+| zero.  ↦ data [ ]
+| suc. n ↦ data [ zero. | suc. (_ : Fin n) ]]
+</pre></div>
+</div>
+<p>Now <code class="docutils literal notranslate"><span class="pre">Fin</span> <span class="pre">zero.</span></code>, while it is canonical and doesn’t reduce to anything, can also be proven to be empty by direct matching:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def Fin.zero_empty : Fin zero. → ⊥ ≔ [ ]
+</pre></div>
+</div>
+<p>Similarly, we can do a deep match against particular finite types:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def count_Bool2 : Fin 4 → Bool × Bool ≔ [
+| zero. ↦ (true., true.)
+| suc. zero. ↦ (true., false.)
+| suc. (suc. zero.) ↦ (false., true.)
+| suc. (suc. (suc. zero.)) ↦ (false., false.)]
+</pre></div>
+</div>
+<p>Here we also see another advantage of the recursive approach: the index <code class="docutils literal notranslate"><span class="pre">n</span></code> is not an argument of the constructors, so the syntax is much simpler.  In the inductive approach we would have to write <code class="docutils literal notranslate"><span class="pre">suc.</span> <span class="pre">3</span> <span class="pre">(suc.</span> <span class="pre">2</span> <span class="pre">(zero.</span> <span class="pre">1))</span></code> for “2” in <code class="docutils literal notranslate"><span class="pre">Fin</span> <span class="pre">4</span></code>, and there are not yet any implicit arguments or unification.</p>
+<p>Like <code class="docutils literal notranslate"><span class="pre">match</span></code> and <code class="docutils literal notranslate"><span class="pre">comatch</span></code>, the constructs <code class="docutils literal notranslate"><span class="pre">sig</span></code>, <code class="docutils literal notranslate"><span class="pre">data</span></code>, and <code class="docutils literal notranslate"><span class="pre">codata</span></code> can technically only occur in case trees, so if they appear outside a top-level case tree or <code class="docutils literal notranslate"><span class="pre">let</span></code> binding they are automatically lifted to a top-level case tree.  Also like <code class="docutils literal notranslate"><span class="pre">match</span></code> and <code class="docutils literal notranslate"><span class="pre">comatch</span></code>, they are generative, and when they occur outside a top-level case tree they are not printed comprehensibly.  For example:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def foo : ⊤ ≔
+  let A : Type ≔ sig () in
+  let B : Type ≔ sig () in
+  let f : A → B ≔ x ↦ x in
+  ()
+
+ ￫ error[E0401]
+ 4 |   let f : A → B ≔ x ↦ x in
+   ^ term synthesized type
+       _let.0.A
+     but is being checked against type
+       _let.1.B
+</pre></div>
+</div>
+<p>Thus, it is probably ill-advised to use such “on-the-fly” definitions of canonical types very much.  However, it may sometimes be convenient to, for example, pass a custom type like <code class="docutils literal notranslate"><span class="pre">data</span> <span class="pre">[</span> <span class="pre">red.</span> <span class="pre">|</span> <span class="pre">green.</span> <span class="pre">|</span> <span class="pre">blue.</span> <span class="pre">]</span></code> directly as an argument to some other function.  Types defined directly on the fly like this cannot be recursive, so in practice their usefulness is mostly restricted to record types and enumerated types (which could, in theory, also be printed more comprehensibly, and even treated non-generatively).  However, local recursive types can be defined with <code class="docutils literal notranslate"><span class="pre">let</span> <span class="pre">rec</span></code>, e.g. <code class="docutils literal notranslate"><span class="pre">let</span> <span class="pre">rec</span> <span class="pre">ℕ</span> <span class="pre">:</span> <span class="pre">Type</span> <span class="pre">≔</span> <span class="pre">data</span> <span class="pre">[</span> <span class="pre">zero.</span> <span class="pre">|</span> <span class="pre">suc.</span> <span class="pre">(_:ℕ)</span> <span class="pre">]</span> <span class="pre">in</span> <span class="pre">...</span></code>.</p>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="codata-types.html" class="btn btn-neutral float-left" title="Codatatypes and comatching" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="mutual-definitions.html" class="btn btn-neutral float-right" title="Mutual definitions" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Michael Shulman.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

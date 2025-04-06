@@ -1,0 +1,301 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Record types and tuples &mdash; Narya 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=2709fde1"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Inductive datatypes and matching" href="data-types.html" />
+    <link rel="prev" title="Interactive proof" href="interactive.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            Narya
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="top-level-interface.html">Top level interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="built-in-types.html">Built-in types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="names-and-notations.html">Names and notations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="imports-and-scoping.html">Imports and scoping</a></li>
+<li class="toctree-l1"><a class="reference internal" href="typechecking.html">Typechecking details</a></li>
+<li class="toctree-l1"><a class="reference internal" href="interactive.html">Interactive proof</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Record types and tuples</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#defining-record-types">Defining record types</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#tuples">Tuples</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#accessing-fields">Accessing fields</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#parsing-field-projections">Parsing field projections</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#eta-conversion-and-reduction">Eta-conversion and reduction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#eta-expansion-and-opacity">Eta-expansion and opacity</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="data-types.html">Inductive datatypes and matching</a></li>
+<li class="toctree-l1"><a class="reference internal" href="codata-types.html">Codatatypes and comatching</a></li>
+<li class="toctree-l1"><a class="reference internal" href="canonical-types.html">Canonical types defined by case trees</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mutual-definitions.html">Mutual definitions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="parametric-observational-type-theory.html">Parametric Observational Type Theory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="remarks.html">Remarks on implementation</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Narya</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Record types and tuples</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/record-types.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="record-types-and-tuples">
+<h1>Record types and tuples<a class="headerlink" href="#record-types-and-tuples" title="Link to this heading"></a></h1>
+<p>We now describe the various other classes of types that can be defined by the user, starting with the simplest, record types.</p>
+<section id="defining-record-types">
+<h2>Defining record types<a class="headerlink" href="#defining-record-types" title="Link to this heading"></a></h2>
+<p>A record type is defined by a number of <em>fields</em>, each with a declared type.  A constant of type <code class="docutils literal notranslate"><span class="pre">Type</span></code> can be defined to be a record type in a <code class="docutils literal notranslate"><span class="pre">def</span></code> statement by using the keyword <code class="docutils literal notranslate"><span class="pre">sig</span></code> and listing the fields with their types in parentheses, separated by commas.  For instance, we could bundle a type with an operation on it:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def Magma : Type ≔ sig (
+   t : Type,
+   op : t → t → t,
+   )
+</pre></div>
+</div>
+<p>The trailing comma after the last field is optional.  (By the lexing rules above, no space is required around the commas, unless they follow a type that is expressed using a notation that ends with another special ASCII character.)  Note that later fields can depend on the values of previous fields, by name.  The names of fields must be valid local variable names, i.e. identifiers not containing periods.</p>
+<p>Although this command may look like it is defining <code class="docutils literal notranslate"><span class="pre">Magma</span></code> to equal a pre-existing type denoted <code class="docutils literal notranslate"><span class="pre">sig</span> <span class="pre">(t:Type,</span> <span class="pre">op:t→t→t)</span></code>, in fact it declares <code class="docutils literal notranslate"><span class="pre">Magma</span></code> to be a <em>new</em> type that didn’t previously exist and doesn’t reduce to anything else.  In particular, therefore, declaring another identical-looking type:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def Magma&#39; : Type ≔ sig (
+   t : Type,
+   op : t → t → t,
+   )
+</pre></div>
+</div>
+<p>will yield a different result: <code class="docutils literal notranslate"><span class="pre">Magma</span></code> and <code class="docutils literal notranslate"><span class="pre">Magma'</span></code> are not convertible (although they will be isomorphic).</p>
+<p>Like any definition, record types can have parameters.  For example, Σ-types are just a record type that can be defined by the user, if you wish:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def Σ (A : Type) (B : A → Type) : Type ≔ sig (
+   fst : A,
+   snd : B fst,
+   )
+</pre></div>
+</div>
+<p>However, we consider it better style in general to use specialized record types rather than generic Σ-types, as it provides better error-checking and documentation of the meaning of the fields.  It is also probably more efficient to use one record type with a lot of fields than an iterated Σ-type.  In the future we plan to implement metaprogramming-like capabilities for proving theorems about arbitrary record types, so that using them in preference to generic Σ-types does not entail a loss of expressivity.</p>
+<p>Currently user notations cannot bind variables, so it is not possible to define a binding notation such as <code class="docutils literal notranslate"><span class="pre">(x</span> <span class="pre">:</span> <span class="pre">A)</span> <span class="pre">×</span> <span class="pre">B</span> <span class="pre">x</span></code> for Σ-types.  But if we define a non-dependent product type, we can give it an infix notation:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def prod (A B : Type) : Type ≔ sig (
+   fst : A,
+   snd : B,
+   )
+
+notation 2 prod : A &quot;×&quot; B ≔ prod A B
+</pre></div>
+</div>
+<p>The fact that parameters can equivalently be abstracted over in the type and the term applies also to record type declarations.  That is, the above definition of Σ-types is entirely equivalent to</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def Σ : (A:Type) → (A → Type) → Type ≔ A B ↦ sig (
+   fst : A,
+   snd : B fst,
+   )
+</pre></div>
+</div>
+<p>A record type can have only one field:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def wrapped_nat : Type ≔ sig ( unwrap : ℕ )
+</pre></div>
+</div>
+<p>or even zero fields:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def ⊤ : Type ≔ sig ()
+</pre></div>
+</div>
+</section>
+<section id="tuples">
+<h2>Tuples<a class="headerlink" href="#tuples" title="Link to this heading"></a></h2>
+<p>To define an element of a record type we use a <em>tuple</em>, which consists of components separated by commas inside parentheses.  The most explicit kind of tuple labels each component by name, for instance:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def nat.magma : Magma ≔ (
+   t ≔ ℕ,
+   op ≔ plus,
+   )
+</pre></div>
+</div>
+<p>Again, the trailing comma is optional, the Unicode ≔ can be replaced by ASCII <code class="docutils literal notranslate"><span class="pre">:=</span></code>, and neither of them normally requires surrounding space.  In this explicit version, the order of the fields doesn’t matter: the above is equivalent to</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def nat.magma : Magma ≔ (
+   op ≔ plus,
+   t ≔ ℕ,
+   )
+</pre></div>
+</div>
+<p>Note that whatever order they are written in a tuple, the fields will always be <em>typechecked</em> in the order specified in the <em>record type declaration</em>.  This is necessary because the types of later fields can depend on the values of earlier ones.</p>
+<p>The names of the fields in a tuple can also be replaced by underscores or omitted entirely, and in this case the fields are taken from the type definition <em>in the order given there</em>.  If some fields are named and others are not, the unnamed fields are matched up with the fields in the type that aren’t named explicitly in the tuple, again in order.  Thus, we can also write the above tuple as any of the following:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>(ℕ, plus)
+(_ ≔ ℕ, _ ≔ plus)
+(ℕ, op ≔ plus)
+(t ≔ ℕ, plus)
+(op ≔ plus, ℕ)
+(plus, t ≔ ℕ)
+</pre></div>
+</div>
+<p>but not, of course, <code class="docutils literal notranslate"><span class="pre">(plus,</span> <span class="pre">ℕ)</span></code> since that would try to interpret <code class="docutils literal notranslate"><span class="pre">plus</span></code> as the value of the field <code class="docutils literal notranslate"><span class="pre">t</span></code>.  Unlabeled tuples are convenient for small examples, including familiar cases such as <code class="docutils literal notranslate"><span class="pre">(0,0)</span> <span class="pre">:</span> <span class="pre">ℝ</span> <span class="pre">×</span> <span class="pre">ℝ</span></code>, but for records with large numbers of fields they are discouraged as being hard to understand and brittle.  (But some mathematicians do like to write, for instance, <code class="docutils literal notranslate"><span class="pre">(G,m,e,i,a,l,r,v)</span> <span class="pre">:</span> <span class="pre">Group</span></code>, and that is allowed.)</p>
+<p>As this discussion suggests, tuples <em>check</em>, and do not synthesize.  In particular, this means that, as for function abstractions, the same tuple can mean different things when checked at different types.  An unlabeled tuple <code class="docutils literal notranslate"><span class="pre">(a,b)</span></code> can check at <em>any</em> record type with two fields for which <cite>a</cite> checks at the type of the first field and <code class="docutils literal notranslate"><span class="pre">b</span></code> at the type of the second (possibly depending on the value of <code class="docutils literal notranslate"><span class="pre">a</span></code>).  A labeled tuple such as <code class="docutils literal notranslate"><span class="pre">(fst</span> <span class="pre">≔</span> <span class="pre">a,</span> <span class="pre">snd</span> <span class="pre">≔</span> <span class="pre">b)</span></code> can likewise check at any such record type for which the names of the two fields are <code class="docutils literal notranslate"><span class="pre">fst</span></code> and <code class="docutils literal notranslate"><span class="pre">snd</span></code>.  <em>Field names are not scoped or namespaced</em>: they belong to a flat global name domain, distinct from that of constants and variables.</p>
+<p>Like record types, tuples can have zero fields:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def ⋆ : ⊤ ≔ ()
+</pre></div>
+</div>
+<p>They can also have only one field, although the naïve notation <code class="docutils literal notranslate"><span class="pre">(M)</span></code> isn’t allowed for this case since it would clash with ordinary parenthesized terms.  To write a 1-tuple you can label the field, perhaps with an underscore, or you can add a trailing comma:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def wrapped_zero : wrapped_nat ≔ (unwrap ≔ zero.)
+def wrapped_zero : wrapped_nat ≔ (_ ≔ zero.)
+def wrapped_zero : wrapped_nat ≔ (zero. ,)
+</pre></div>
+</div>
+<p>Syntactically, tuples are an outfix notation that includes the parentheses, rather than an infix meaning of the comma; thus the parentheses are always required.  Tuples are not associative: neither <code class="docutils literal notranslate"><span class="pre">(a,</span> <span class="pre">(b,</span> <span class="pre">c))</span></code> nor <code class="docutils literal notranslate"><span class="pre">((a,</span> <span class="pre">b),</span> <span class="pre">c)</span></code> can be written as <code class="docutils literal notranslate"><span class="pre">(a,b,c)</span></code>.  The latter belongs to a record type with three fields, whereas the former two belong to a record type with two fields, one of which is itself a record type with two fields.  (This aligns with the behavior of functional programming languages such as Haskell and OCaml.)</p>
+</section>
+<section id="accessing-fields">
+<h2>Accessing fields<a class="headerlink" href="#accessing-fields" title="Link to this heading"></a></h2>
+<p>If <code class="docutils literal notranslate"><span class="pre">M</span></code> belongs to a record type that has a field named <code class="docutils literal notranslate"><span class="pre">fld</span></code>, then <code class="docutils literal notranslate"><span class="pre">M</span> <span class="pre">.fld</span></code> extracts the value of this field.  In particular, if <code class="docutils literal notranslate"><span class="pre">M</span></code> is a tuple, then this reduces to the corresponding component.  Note the space in <code class="docutils literal notranslate"><span class="pre">M</span> <span class="pre">.fld</span></code>, which distinguishes it from a single identifier named <code class="docutils literal notranslate"><span class="pre">M.fld</span></code> in the namespace <code class="docutils literal notranslate"><span class="pre">M</span></code>.</p>
+<p>A field projection <code class="docutils literal notranslate"><span class="pre">M</span> <span class="pre">.fld</span></code> requires <code class="docutils literal notranslate"><span class="pre">M</span></code> to synthesize a record type, and then synthesizes the value of the field <code class="docutils literal notranslate"><span class="pre">fld</span></code> in that record type (with any earlier fields that it depends on replaced by the corresponding fields of <code class="docutils literal notranslate"><span class="pre">M</span></code>).  Thus, if you want to write a “record redex” that creates a tuple and then immediately projects out one of its fields, you need to ascribe the tuple: <code class="docutils literal notranslate"><span class="pre">((a,</span> <span class="pre">b)</span> <span class="pre">:</span> <span class="pre">Σ</span> <span class="pre">A</span> <span class="pre">B)</span> <span class="pre">.fst</span></code>.</p>
+<p>Like unlabeled tuples that default to the order in which fields were declared in the record type, fields can also be projected out by index: <code class="docutils literal notranslate"><span class="pre">M</span> <span class="pre">.0</span></code> means the zeroth field declared in the record type, <code class="docutils literal notranslate"><span class="pre">M</span> <span class="pre">.1</span></code> means the first field, and so on.  It’s important to note that this is in reference to the order in which fields were declared in the record <em>type</em>, not in any tuple, even if labels were used in the tuple to give the components in a different order.  For instance, <code class="docutils literal notranslate"><span class="pre">((snd</span> <span class="pre">≔</span> <span class="pre">b,</span> <span class="pre">fst</span> <span class="pre">≔</span> <span class="pre">a)</span> <span class="pre">:</span> <span class="pre">Σ</span> <span class="pre">A</span> <span class="pre">B)</span> <span class="pre">.0</span></code> equals <code class="docutils literal notranslate"><span class="pre">a</span></code>.  As with tuples, positional field access is convenient for small examples (especially when using positional tuples as well), but confusing and brittle when there are many fields.</p>
+</section>
+<section id="parsing-field-projections">
+<h2>Parsing field projections<a class="headerlink" href="#parsing-field-projections" title="Link to this heading"></a></h2>
+<p>Field projections behave like a symbol-free left-associative infix operator of tightness +ω, and can therefore be interspersed with ordinary applications to form an “elimination spine”: <code class="docutils literal notranslate"><span class="pre">`f</span> <span class="pre">a</span> <span class="pre">.fld</span> <span class="pre">b</span></code> means <code class="docutils literal notranslate"><span class="pre">((f</span> <span class="pre">a)</span> <span class="pre">.fld)</span> <span class="pre">b</span></code>, in which we successively “eliminate” <code class="docutils literal notranslate"><span class="pre">f</span></code> by applying it to an argument (the elimination rule of a function type), project out a field (the elimination rule of a record type), and then apply it to another argument.  Indeed, it can sometimes be helpful to think of an element of a record type as a “function” and of <code class="docutils literal notranslate"><span class="pre">M</span> <span class="pre">.fld</span></code> as “applying” it to the field name as an “argument”.</p>
+<p>It must be emphasized that <em>field projections bind with the same tightness as function application</em>, similarly associating to the left.  This applies even if the argument preceeding the field ends with a special character so that a space is not required, e.g. <code class="docutils literal notranslate"><span class="pre">f</span> <span class="pre">(g</span> <span class="pre">a).fld</span> <span class="pre">b</span></code> means <code class="docutils literal notranslate"><span class="pre">((f</span> <span class="pre">(g</span> <span class="pre">a))</span> <span class="pre">.fld)</span> <span class="pre">b</span></code>.  If you mean to project the field from <code class="docutils literal notranslate"><span class="pre">g</span> <span class="pre">a</span></code>, you must write <code class="docutils literal notranslate"><span class="pre">f</span> <span class="pre">((g</span> <span class="pre">a).fld)</span> <span class="pre">b</span></code>, or better <code class="docutils literal notranslate"><span class="pre">f</span> <span class="pre">(g</span> <span class="pre">a</span> <span class="pre">.fld)</span> <span class="pre">b</span></code>.  This convention differs from field projections in many functional languages such as OCaml and Haskell (although it matches the behavior of Agda), but we believe it is the correct choice in a language where function application is denoted by juxtaposition.  For example, in a language like Java where function calls are parenthesized, one frequently finds an idiom like</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>object.methodOne(x, y, z)
+  .methodTwo(a, b)
+  .methodThree(c, d, e)
+  .methodFour()
+</pre></div>
+</div>
+<p>to call a sequence of methods on each other’s outputs.  In Narya and Agda, you can write the same thing even more simply without the parentheses:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>object .methodOne x y z
+  .methodTwo a b
+  .methodThree c d e
+  .methodFour
+</pre></div>
+</div>
+<p>But in a language with application by juxtaposition but where field projection binds tighter than function application, such as OCaml and Haskell, you have to write lots of silly parentheses:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>(((object.methodOne x y z)
+  .methodTwo a b)
+  .methodThree c d e)
+  .methodFour
+</pre></div>
+</div>
+</section>
+<section id="eta-conversion-and-reduction">
+<h2>Eta-conversion and reduction<a class="headerlink" href="#eta-conversion-and-reduction" title="Link to this heading"></a></h2>
+<p>Records satisfy η-conversion: two elements of a record type whose components are field-wise convertible are themselves convertible.  For instance, if <code class="docutils literal notranslate"><span class="pre">M</span> <span class="pre">:</span> <span class="pre">Σ</span> <span class="pre">A</span> <span class="pre">B</span></code>, then <code class="docutils literal notranslate"><span class="pre">M</span></code> is convertible with <code class="docutils literal notranslate"><span class="pre">(M</span> <span class="pre">.fst,</span> <span class="pre">M</span> <span class="pre">.snd)</span></code>, although neither reduces to the other.  In particular, if a record type has zero fields, then it has a unique element <code class="docutils literal notranslate"><span class="pre">()</span></code> up to convertibility; and if it has only one field, it is definitionally isomorphic to the type of that field.</p>
+<p>In addition, tuples are allowed as nodes in a case tree.  Thus, a constant that is defined to directly equal a tuple, or an abstracted tuple, or a tuple inside a let-binding, does not <em>reduce</em> to that tuple directly: it only reduces when a field is projected.  (Now we see why case trees are <em>trees</em>, as with tuple nodes they can in fact ramify into multiple branches.)  For instance, if we have</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def pair (a:A) (b:B a) : Σ A B ≔ (a,b)
+</pre></div>
+</div>
+<p>then <code class="docutils literal notranslate"><span class="pre">pair</span> <span class="pre">a</span> <span class="pre">b</span></code> doesn’t reduce to <code class="docutils literal notranslate"><span class="pre">(a,b)</span></code>.  But <code class="docutils literal notranslate"><span class="pre">pair</span> <span class="pre">a</span> <span class="pre">b</span> <span class="pre">.fst</span></code> does reduce to <code class="docutils literal notranslate"><span class="pre">a</span></code> and <code class="docutils literal notranslate"><span class="pre">pair</span> <span class="pre">a</span> <span class="pre">b</span> <span class="pre">.snd</span></code> does reduce to <code class="docutils literal notranslate"><span class="pre">b</span></code>, which in turn means (by η-conversion) that <code class="docutils literal notranslate"><span class="pre">pair</span> <span class="pre">a</span> <span class="pre">b</span></code> is <em>convertible</em> with <code class="docutils literal notranslate"><span class="pre">(a,b)</span></code>.  Similarly, abstractions <em>inside</em> a tuple are also still part of the case tree, and block reduction until applied to all their arguments: if we have</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def unpairfn (f : A → B × C) : (A → B) × (A → C) ≔ (x ↦ (f x).fst, x ↦ (f x).snd)
+</pre></div>
+</div>
+<p>then <code class="docutils literal notranslate"><span class="pre">unpairfn</span> <span class="pre">f</span> <span class="pre">.fst</span></code> does not reduce until applied to a further argument.  As with abstractions, you can force such reduction by wrapping the term in an identity function.</p>
+</section>
+<section id="eta-expansion-and-opacity">
+<h2>Eta-expansion and opacity<a class="headerlink" href="#eta-expansion-and-opacity" title="Link to this heading"></a></h2>
+<p>Often the behavior described above is convenient, e.g. when printing a term belonging to a large record type with many fields, such as <code class="docutils literal notranslate"><span class="pre">ℤ</span> <span class="pre">:</span> <span class="pre">Ring</span></code> or <code class="docutils literal notranslate"><span class="pre">Grp</span> <span class="pre">:</span> <span class="pre">Cat</span></code>, you don’t want to see the explicit definitions of all the fields.  However, there are times when you do want to see the definitions of the fields, and for this purpose you can change the “opacity” of a record type.</p>
+<p>Opacity is an <em>attribute</em> of a record type.  Attributes are an experimental feature, particularly their syntax, and may change radically in the future.  At present, only record types can have attributes, and the only attributes are those relating to opacity.  The current syntax for defining a record type with an attribute is <code class="docutils literal notranslate"><span class="pre">sig</span> <span class="pre">#(ATTR)</span> <span class="pre">(</span> <span class="pre">…</span> <span class="pre">)</span></code>.  Currently attributes can only be set when a record type is defined; in the future it may be possible to alter them after the fact.  Opacity attributes do <em>not</em> affect convertibility of terms; η-conversion is always valid internally.  Opacity attributes only affect how terms are <em>displayed</em> to the user.  (If you want a record-like type without η-conversion, use a non-recursive codatatype; see below.)</p>
+<p>To explain the opacity attributes, suppose that with the definitions above, we also have</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>axiom x : A × ⊤
+def y : A × ⊤ ≔ (a, ⋆)
+def z : A × ⊤ ≔ (a, ())
+</pre></div>
+</div>
+<p>We now list the opacity attributes, along with how altering the opacity of <code class="docutils literal notranslate"><span class="pre">prod</span></code> (but not <code class="docutils literal notranslate"><span class="pre">⊤</span></code>) would change the printing behavior of the above terms.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">opaque</span></code>: This is the default setting, as described above: no η-expansion happens, so only terms that are syntactically tuples outside of a case tree are printed as tuples.  If <code class="docutils literal notranslate"><span class="pre">prod</span></code> is opaque, then:
+- <code class="docutils literal notranslate"><span class="pre">x</span></code> is printed as <code class="docutils literal notranslate"><span class="pre">x</span></code>
+- <code class="docutils literal notranslate"><span class="pre">y</span></code> is printed as <code class="docutils literal notranslate"><span class="pre">y</span></code>
+- <code class="docutils literal notranslate"><span class="pre">z</span></code> is printed as <code class="docutils literal notranslate"><span class="pre">z</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">transparent</span></code>, a.k.a. <code class="docutils literal notranslate"><span class="pre">transparent</span> <span class="pre">labeled</span></code>: When a record type is transparent, <em>all</em> terms belonging to that record type are η-expanded before being printed.  By default, η-expanded tuples are printed with labels; the alternate attribute name <code class="docutils literal notranslate"><span class="pre">transparent</span> <span class="pre">labeled</span></code> emphasizes this.  If <code class="docutils literal notranslate"><span class="pre">prod</span></code> is transparent labeled, then:
+- <code class="docutils literal notranslate"><span class="pre">x</span></code> is printed as <code class="docutils literal notranslate"><span class="pre">(fst</span> <span class="pre">≔</span> <span class="pre">x</span> <span class="pre">.fst,</span> <span class="pre">snd</span> <span class="pre">≔</span> <span class="pre">x</span> <span class="pre">.snd)</span></code>
+- <code class="docutils literal notranslate"><span class="pre">y</span></code> is printed as <code class="docutils literal notranslate"><span class="pre">(fst</span> <span class="pre">≔</span> <span class="pre">a,</span> <span class="pre">snd</span> <span class="pre">≔</span> <span class="pre">⋆)</span></code>
+- <code class="docutils literal notranslate"><span class="pre">z</span></code> is printed as <code class="docutils literal notranslate"><span class="pre">(fst</span> <span class="pre">≔</span> <span class="pre">a,</span> <span class="pre">snd</span> <span class="pre">≔</span> <span class="pre">z</span> <span class="pre">.snd)</span></code>.  Note that <code class="docutils literal notranslate"><span class="pre">z</span> <span class="pre">.snd</span></code> is not η-expanded to <code class="docutils literal notranslate"><span class="pre">()</span></code> because it belongs to the record type <code class="docutils literal notranslate"><span class="pre">⊤</span></code> which we are assuming is still opaque.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">transparent</span> <span class="pre">positional</span></code>: Like <code class="docutils literal notranslate"><span class="pre">transparent</span> <span class="pre">labeled</span></code>, but η-expanded tuples are printed positionally rather than with labeled terms.  If <code class="docutils literal notranslate"><span class="pre">prod</span></code> is transparent positional, then:
+- <code class="docutils literal notranslate"><span class="pre">x</span></code> is printed as <code class="docutils literal notranslate"><span class="pre">(x</span> <span class="pre">.fst,</span> <span class="pre">x</span> <span class="pre">.snd)</span></code>
+- <code class="docutils literal notranslate"><span class="pre">y</span></code> is printed as <code class="docutils literal notranslate"><span class="pre">(a,</span> <span class="pre">⋆)</span></code>
+- <code class="docutils literal notranslate"><span class="pre">z</span></code> is printed as <code class="docutils literal notranslate"><span class="pre">(a,</span> <span class="pre">z</span> <span class="pre">.snd)</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">translucent</span></code>, a.k.a. <code class="docutils literal notranslate"><span class="pre">translucent</span> <span class="pre">labeled</span></code>: When a record type is translucent, terms belonging to that record type are η-expanded before being printed if and only if they are a tuple in a case tree.  Note that this does not guarantee that all or any of their fields will evaluate completely; any field whose case tree branch is stuck will be printed as a projection, as in the transparent case.  If <code class="docutils literal notranslate"><span class="pre">prod</span></code> is translucent labeled, then:
+- <code class="docutils literal notranslate"><span class="pre">x</span></code> is printed as <code class="docutils literal notranslate"><span class="pre">x</span></code>
+- <code class="docutils literal notranslate"><span class="pre">y</span></code> is printed as <code class="docutils literal notranslate"><span class="pre">(fst</span> <span class="pre">≔</span> <span class="pre">a,</span> <span class="pre">snd</span> <span class="pre">≔</span> <span class="pre">⋆)</span></code>
+- <code class="docutils literal notranslate"><span class="pre">z</span></code> is printed as <code class="docutils literal notranslate"><span class="pre">(fst</span> <span class="pre">≔</span> <span class="pre">a,</span> <span class="pre">snd</span> <span class="pre">≔</span> <span class="pre">z</span> <span class="pre">.snd)</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">translucent</span> <span class="pre">positional</span></code>: Like <code class="docutils literal notranslate"><span class="pre">translucent</span> <span class="pre">labeled</span></code>, but η-expanded tuples are printed positionally rather than with labeled terms.  If <code class="docutils literal notranslate"><span class="pre">prod</span></code> is translucent positional, then:
+- <code class="docutils literal notranslate"><span class="pre">x</span></code> is printed as <code class="docutils literal notranslate"><span class="pre">x</span></code>
+- <code class="docutils literal notranslate"><span class="pre">y</span></code> is printed as <code class="docutils literal notranslate"><span class="pre">(a,</span> <span class="pre">⋆)</span></code>
+- <code class="docutils literal notranslate"><span class="pre">z</span></code> is printed as <code class="docutils literal notranslate"><span class="pre">(a,</span> <span class="pre">z</span> <span class="pre">.snd)</span></code></p></li>
+</ul>
+<p>For a record type with zero fields, η-expansion prints all of its elements as <code class="docutils literal notranslate"><span class="pre">()</span></code>, with no difference between labeled and positional.  And for a record type with one field, positional η-expansion prints its elements as <code class="docutils literal notranslate"><span class="pre">(_</span> <span class="pre">≔</span> <span class="pre">a)</span></code>.  There is currently no way to cause the projections in an η-expansion to be printed with positional notation such as <code class="docutils literal notranslate"><span class="pre">(x</span> <span class="pre">.0,</span> <span class="pre">x</span> <span class="pre">.1)</span></code>.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="interactive.html" class="btn btn-neutral float-left" title="Interactive proof" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="data-types.html" class="btn btn-neutral float-right" title="Inductive datatypes and matching" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Michael Shulman.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

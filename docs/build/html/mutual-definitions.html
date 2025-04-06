@@ -1,0 +1,267 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mutual definitions &mdash; Narya 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=2709fde1"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Parametric Observational Type Theory" href="parametric-observational-type-theory.html" />
+    <link rel="prev" title="Canonical types defined by case trees" href="canonical-types.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            Narya
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="top-level-interface.html">Top level interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="built-in-types.html">Built-in types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="names-and-notations.html">Names and notations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="imports-and-scoping.html">Imports and scoping</a></li>
+<li class="toctree-l1"><a class="reference internal" href="typechecking.html">Typechecking details</a></li>
+<li class="toctree-l1"><a class="reference internal" href="interactive.html">Interactive proof</a></li>
+<li class="toctree-l1"><a class="reference internal" href="record-types.html">Record types and tuples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data-types.html">Inductive datatypes and matching</a></li>
+<li class="toctree-l1"><a class="reference internal" href="codata-types.html">Codatatypes and comatching</a></li>
+<li class="toctree-l1"><a class="reference internal" href="canonical-types.html">Canonical types defined by case trees</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Mutual definitions</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#mutual-recursion">Mutual recursion</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#mutual-induction">Mutual induction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#inductive-inductive-families">Inductive-inductive families</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#inductive-recursive-definitions">Inductive-recursive definitions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#mutually-recursive-let-bindings">Mutually recursive let-bindings</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#here-be-dragons">Here be dragons</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="parametric-observational-type-theory.html">Parametric Observational Type Theory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="remarks.html">Remarks on implementation</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Narya</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Mutual definitions</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/mutual-definitions.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="mutual-definitions">
+<h1>Mutual definitions<a class="headerlink" href="#mutual-definitions" title="Link to this heading"></a></h1>
+<p>A block of constants can be defined mutually.  This means that first all of their <em>types</em> are checked, in order, so that the types of later constants in the block may refer to earlier constants (but using only their types, not their definitions).  Then their definitions are checked, again in order, so that the definitions of later constants may use the definitions of earlier ones (as well as the types of arbitrary ones).  Because canonical types are just a kind of definition, the same syntax for mutual definitions encompasses mutually recursive functions, mutually inductive types, inductive-inductive types, and even inductive-recursive types and functions.  Furthermore, all these kinds of mutual definitions can be encoded as single definitions using record-types (but the explicit mutual syntax is usually more congenial).</p>
+<p>The syntax for a mutual block of definitions looks just like a sequence of ordinary <code class="docutils literal notranslate"><span class="pre">def</span></code> commands, except that the second and later ones use the keyword <code class="docutils literal notranslate"><span class="pre">and</span></code> instead of <code class="docutils literal notranslate"><span class="pre">def</span></code>.  This is similar to the syntax of ML-like programming languages and Coq, and in contrast to Agda’s style in which declarations and definitions can be mixed arbitrarily as long as each constant is declared before it is defined.  We prefer to keep the declaration of the type of each constant next to its definition, and make it clear textually which blocks of constants are defined mutually, at the price of allowing the definition of a constant to refer to others whose type is declared later textually in the same block.</p>
+<p>An entire mutual block constitutes a single command, since it is impossible to typecheck any part of it individually.  It is nevertheless usual to put a blank line in between the definitions in a mutual block, although note that this cannot be done in interactive mode since a blank line ends the command.</p>
+<p>Like any definition, the constants in a mutual block can be defined using the synthesizing form of <code class="docutils literal notranslate"><span class="pre">def</span></code> that omits their type.  However, this is of limited usefulness, since then they cannot be used while typechecking other constants in the block, as their types are not yet known at that point.</p>
+<p>We now give a few examples to illustrate the possibilities of mutual definitions, along with their encodings using records.</p>
+<section id="mutual-recursion">
+<h2>Mutual recursion<a class="headerlink" href="#mutual-recursion" title="Link to this heading"></a></h2>
+<p>We can define the Boolean predicates <code class="docutils literal notranslate"><span class="pre">even</span></code> and <code class="docutils literal notranslate"><span class="pre">odd</span></code> on the natural numbers:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def even : ℕ → Bool ≔ [
+| zero.  ↦ true.
+| suc. n ↦ odd n
+]
+
+and odd : ℕ → Bool ≔ [
+| zero.  ↦ false.
+| suc. n ↦ even n
+]
+</pre></div>
+</div>
+<p>Thus, for instance, <code class="docutils literal notranslate"><span class="pre">even</span> <span class="pre">4</span></code> reduces to <code class="docutils literal notranslate"><span class="pre">true.</span></code></p>
+<p>Encoded as a single definition, this looks like the following.</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def even_odd : (ℕ → Bool) × (ℕ → Bool) ≔ (
+  [ zero. ↦ true.  | suc. n ↦ even_odd .1 n ],
+  [ zero. ↦ false. | suc. n ↦ even_odd .0 n ])
+</pre></div>
+</div>
+<p>Here we have used a binary product type, but in more complicated cases when doing such encoding, it may be helpful to define a custom record-type first in which the bundled family of mutually recursive functions lives.</p>
+</section>
+<section id="mutual-induction">
+<h2>Mutual induction<a class="headerlink" href="#mutual-induction" title="Link to this heading"></a></h2>
+<p>The Type-valued predicates <code class="docutils literal notranslate"><span class="pre">Even</span></code> and <code class="docutils literal notranslate"><span class="pre">Odd</span></code> can be defined similarly:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def Even : ℕ → Type ≔ data [
+| even_zero. : Even zero.
+| even_suc. : (n:ℕ) → Odd n → Even (suc. n)
+]
+
+and Odd : ℕ → Type ≔ data [
+| odd_suc. : (n:ℕ) → Even n → Odd (suc. n)
+]
+</pre></div>
+</div>
+<p>Now <code class="docutils literal notranslate"><span class="pre">Even</span> <span class="pre">4</span></code> doesn’t reduce to anything, but it belongs to an indexed inductive type family, and can be inhabited by the term <code class="docutils literal notranslate"><span class="pre">even_suc.</span> <span class="pre">3</span> <span class="pre">(odd_suc.</span> <span class="pre">2</span> <span class="pre">(even_suc.</span> <span class="pre">1</span> <span class="pre">(odd_suc.</span> <span class="pre">0</span> <span class="pre">even_zero.)))</span></code>.</p>
+<p>The fact that canonical type declarations can appear as part of case trees means that these can also be encoded as a single definition:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def Even_Odd : (ℕ → Type) × (ℕ → Type) ≔ (
+  data [
+  | even_zero. : Even_Odd .0 zero.
+  | even_suc. : (n:ℕ) → Even_Odd .1 n → Even_Odd .0 (suc. n) ],
+  data [
+  | odd_suc. : (n:ℕ) → Even_Odd .0 n → Even_Odd .1 (suc. n) ])
+</pre></div>
+</div>
+<p>Recall that in Narya a third possibility is a recursive definition of families of canonical types:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def Even&#39; : ℕ → Type ≔ [
+| zero. ↦ sig ()
+| suc. n ↦ sig (even_suc : Odd&#39; n)
+]
+and Odd&#39; : ℕ → Type ≔ [
+| zero. ↦ data []
+| suc. n ↦ sig (odd_suc : Even&#39; n)
+]
+</pre></div>
+</div>
+<p>In this case, <code class="docutils literal notranslate"><span class="pre">Even'</span> <span class="pre">4</span></code> doesn’t reduce to anything, but it is definitionally a singleton, with unique inhabitant <code class="docutils literal notranslate"><span class="pre">(_</span> <span class="pre">≔</span> <span class="pre">(_</span> <span class="pre">≔</span> <span class="pre">(_</span> <span class="pre">≔</span> <span class="pre">(_</span> <span class="pre">≔</span> <span class="pre">()))))</span></code>.</p>
+</section>
+<section id="inductive-inductive-families">
+<h2>Inductive-inductive families<a class="headerlink" href="#inductive-inductive-families" title="Link to this heading"></a></h2>
+<p>An inductive-inductive definition consists of several type families defined by mutual induction, of which the types of later ones may depend on the previous ones.  For example, here is a definition of the bare bones of the syntax of type theory (contexts and types) that often appears as an example of induction-induction:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def ctx : Type ≔ data [
+| empty.
+| ext. (Γ : ctx) (A : ty Γ)
+]
+
+and ty (Γ : ctx) : Type ≔ data [
+| base.
+| pi. (A : ty Γ) (B : ty (ext. Γ A))
+]
+</pre></div>
+</div>
+<p>Note that the context Γ is a non-uniform parameter of the datatype <code class="docutils literal notranslate"><span class="pre">ty</span></code>.  Here is its encoding as a single definition:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def ctx_ty : Σ Type (X ↦ (X → Type)) ≔ (
+  ctx ≔ data [
+  | empty.
+  | ext. (Γ : ctx_ty .0) (A : ctx_ty .1 Γ) ],
+  ty ≔ Γ ↦ data [
+  | base.
+  | pi. (A : ctx_ty .1 Γ) (B : ctx_ty .1 (ext. Γ A)) ])
+</pre></div>
+</div>
+</section>
+<section id="inductive-recursive-definitions">
+<h2>Inductive-recursive definitions<a class="headerlink" href="#inductive-recursive-definitions" title="Link to this heading"></a></h2>
+<p>An inductive-recursive definition consists of one or more type families defined by induction together with one or more functions defined by recursion, in a way that refer to each other.  For instance, here is an inductive-recursive universe that contains the Booleans and is closed under Π-types:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def uu : Type ≔ data [
+| bool.
+| pi. (A : uu) (B : el A → uu)
+]
+
+and el : uu → Type ≔ [
+| bool. ↦ Bool
+| pi. A B ↦ (x : el A) → el (B x)
+]
+</pre></div>
+</div>
+<p>Because a case tree can include canonical type declarations in some branches and ordinary (co)recursive definitions in other branches, we can also encode this as a single definition:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def uu_el : Σ Type (X ↦ (X → Type)) ≔ (
+  uu ≔ data [
+  | bool.
+  | pi. (A : uu_el .0) (B : uu_el .1 A → uu_el .0) ],
+  el ≔ [
+  | bool. ↦ Bool
+  | pi. A B ↦ (x : uu_el .1 A) → uu_el .1 (B x) ])
+</pre></div>
+</div>
+</section>
+<section id="mutually-recursive-let-bindings">
+<h2>Mutually recursive let-bindings<a class="headerlink" href="#mutually-recursive-let-bindings" title="Link to this heading"></a></h2>
+<p>Mutual recursive families of local bindings can also be defined by following <code class="docutils literal notranslate"><span class="pre">let</span> <span class="pre">rec</span></code> with <code class="docutils literal notranslate"><span class="pre">and</span></code>.  For instance, as a silly example we can define <code class="docutils literal notranslate"><span class="pre">even</span></code> without making <code class="docutils literal notranslate"><span class="pre">odd</span></code> globally visible:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def even (n : ℕ) : Bool ≔
+  let rec even : ℕ → Bool ≔ [ zero. ↦ true. | suc. n ↦ odd n ]
+  and odd : ℕ → Bool ≔ [ zero. ↦ false. | suc. n ↦ even n]
+  in
+  even n
+</pre></div>
+</div>
+<p>Note that although the outer global <code class="docutils literal notranslate"><span class="pre">def</span></code> can (like any <code class="docutils literal notranslate"><span class="pre">def</span></code>) refer to itself recursively, the locally-bound <code class="docutils literal notranslate"><span class="pre">even</span></code> shadows the global one, so that <code class="docutils literal notranslate"><span class="pre">even</span></code> in the final line refers to the local one.</p>
+</section>
+<section id="here-be-dragons">
+<h2>Here be dragons<a class="headerlink" href="#here-be-dragons" title="Link to this heading"></a></h2>
+<p>As can be seen from these examples, Narya’s facility for mutual definitions is comparable to Agda’s in flexibility and power.  Also like Agda, Narya currently permits even more radical things such as nested datatypes:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def Bush (A:Type) : Type ≔ data [
+| leaf.
+| cons. (_ : A) (_ : Bush (Bush A))
+]
+</pre></div>
+</div>
+<p>and poorly understood things such as mutual families of definitions including both inductive and coinductive types and both recursive and corecursive functions.  As noted above, we have not yet implemented positivity, termination, or productivity checkers, so it is easy to create inconsistencies even without these more radical features.  Eventually, we intend the default to be a “safe mode” that restricts mutual definitions to combinations that are known to be consistent and have understood semantics, although this could be turned off by a flag.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="canonical-types.html" class="btn btn-neutral float-left" title="Canonical types defined by case trees" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="parametric-observational-type-theory.html" class="btn btn-neutral float-right" title="Parametric Observational Type Theory" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Michael Shulman.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

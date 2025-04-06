@@ -1,0 +1,187 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Imports and scoping &mdash; Narya 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=2709fde1"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Typechecking details" href="typechecking.html" />
+    <link rel="prev" title="Names and notations" href="names-and-notations.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            Narya
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="top-level-interface.html">Top level interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="built-in-types.html">Built-in types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="names-and-notations.html">Names and notations</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Imports and scoping</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#file-imports">File imports</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#import-modifiers">Import modifiers</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#importing-namespaces">Importing namespaces</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#importing-notations">Importing notations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#compilation">Compilation</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="typechecking.html">Typechecking details</a></li>
+<li class="toctree-l1"><a class="reference internal" href="interactive.html">Interactive proof</a></li>
+<li class="toctree-l1"><a class="reference internal" href="record-types.html">Record types and tuples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data-types.html">Inductive datatypes and matching</a></li>
+<li class="toctree-l1"><a class="reference internal" href="codata-types.html">Codatatypes and comatching</a></li>
+<li class="toctree-l1"><a class="reference internal" href="canonical-types.html">Canonical types defined by case trees</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mutual-definitions.html">Mutual definitions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="parametric-observational-type-theory.html">Parametric Observational Type Theory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="remarks.html">Remarks on implementation</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Narya</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Imports and scoping</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/imports-and-scoping.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="imports-and-scoping">
+<h1>Imports and scoping<a class="headerlink" href="#imports-and-scoping" title="Link to this heading"></a></h1>
+<section id="file-imports">
+<h2>File imports<a class="headerlink" href="#file-imports" title="Link to this heading"></a></h2>
+<p>The command <code class="docutils literal notranslate"><span class="pre">import</span> <span class="pre">FILE</span></code> executes another Narya file and adds (some of) its definitions and notations to the current namespace.  The commands in the imported file cannot access any definitions from other files, including the current one, except those that it imports itself.  Importing is not transitive: if <code class="docutils literal notranslate"><span class="pre">a.ny</span></code> imports <code class="docutils literal notranslate"><span class="pre">b.ny</span></code>, and <code class="docutils literal notranslate"><span class="pre">b.ny</span></code> imports <code class="docutils literal notranslate"><span class="pre">c.ny</span></code>, then the definitions from <code class="docutils literal notranslate"><span class="pre">c.ny</span></code> do not appear in the namespace of <code class="docutils literal notranslate"><span class="pre">a.ny</span></code> unless it also imports <code class="docutils literal notranslate"><span class="pre">c.ny</span></code> explicitly.</p>
+<p>More precisely, there are two namespaces at any time: the “import” namespace, which determines the names that are available to use in the current file, and the “export” namespace, which determines the names that will be made available to other files that import this one.  The command <code class="docutils literal notranslate"><span class="pre">import</span></code> only affects the import namespace, but the variant using the word <cite>export</cite> instead affects both.</p>
+<p>By contrast, when in interactive mode or executing a command-line <code class="docutils literal notranslate"><span class="pre">-e</span></code> string, all definitions from all files and strings that were explicitly specified previously on the command line are available, even if not exported.  This does not carry over transitively to files imported by them.  Standard input (indicated by <code class="docutils literal notranslate"><span class="pre">-</span></code> on the command line) is treated as an ordinary file; thus it must import any other files it wants to use, but its definitions are automatically available in <code class="docutils literal notranslate"><span class="pre">-e</span></code> strings and interactive mode.</p>
+<p>No file will be executed more than once during a single run, even if it is imported by multiple other files.  Thus, if both <code class="docutils literal notranslate"><span class="pre">b.ny</span></code> and <code class="docutils literal notranslate"><span class="pre">c.ny</span></code> import <code class="docutils literal notranslate"><span class="pre">d.ny</span></code>, and <code class="docutils literal notranslate"><span class="pre">a.ny</span></code> imports both <code class="docutils literal notranslate"><span class="pre">b.ny</span></code> and <code class="docutils literal notranslate"><span class="pre">c.ny</span></code>, any effectual commands like <code class="docutils literal notranslate"><span class="pre">echo</span></code> in <code class="docutils literal notranslate"><span class="pre">d.ny</span></code> will only happen once, there will only be one copy of the definitions from <code class="docutils literal notranslate"><span class="pre">d.ny</span></code> in the namespace of <code class="docutils literal notranslate"><span class="pre">a.ny</span></code>, and the definitions from <code class="docutils literal notranslate"><span class="pre">b.ny</span></code> and <code class="docutils literal notranslate"><span class="pre">c.ny</span></code> are compatible.  Circular imports are not allowed (and are checked for).  The order of execution is as specified on the command-line, with depth-first traversal of import statements as they are encountered.  Thus, for instance, if the command-line is <code class="docutils literal notranslate"><span class="pre">narya</span> <span class="pre">one.ny</span> <span class="pre">two.ny</span></code> but <code class="docutils literal notranslate"><span class="pre">one.ny</span></code> imports <code class="docutils literal notranslate"><span class="pre">two.ny</span></code>, then <code class="docutils literal notranslate"><span class="pre">two.ny</span></code> will be executed during <code class="docutils literal notranslate"><span class="pre">one.ny</span></code> whenever that import statement is encountered, and then skipped when we get to it on the command-line since it was already executed.</p>
+</section>
+<section id="import-modifiers">
+<h2>Import modifiers<a class="headerlink" href="#import-modifiers" title="Link to this heading"></a></h2>
+<p>Narya uses <a class="reference external" href="https://redprl.org/yuujinchou/yuujinchou/">Yuujinchou</a> for hierarchical namespacing, with periods to separate namespaces.  Thus a name like <code class="docutils literal notranslate"><span class="pre">nat.plus</span></code> lies in the <code class="docutils literal notranslate"><span class="pre">nat</span></code> namespace.  It can be defined in the following two equivalent ways:</p>
+<p>According to Yuujinchou, namespaces are untyped, implicit, and patchable: you can add anything you want to the <code class="docutils literal notranslate"><span class="pre">nat</span></code> namespace, anywhere, simply by defining it with a name that starts with <code class="docutils literal notranslate"><span class="pre">nat.</span></code></p>
+<p>By default, an <code class="docutils literal notranslate"><span class="pre">import</span></code> command merges the namespace of the imported file with the current namespace.  However, it is also possible to apply Yuujinchou <em>modifiers</em> to the imported namespace before it is merged with the command form <code class="docutils literal notranslate"><span class="pre">import</span> <span class="pre">FILE</span> <span class="pre">|</span> <span class="pre">MOD</span></code>.  (The symbol <code class="docutils literal notranslate"><span class="pre">|</span></code> is intended to suggest a Unix pipe that sends the definitions of <code class="docutils literal notranslate"><span class="pre">FILE</span></code> through the modifiers before importing them.)  The valid modifiers are exactly those of <a class="reference external" href="https://redprl.org/yuujinchou/yuujinchou/Yuujinchou/Language/index.html#modifier-builders">Yuujinchou</a>:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">all</span></code>: Keep everything, checking that there is something to keep.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">id</span></code>: Keep everything, without checking that there is anything to keep.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">none</span></code>: Drop everything, checking that there was something to drop.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">only</span> <span class="pre">NAME</span></code>: Keep only the namespace rooted at <code class="docutils literal notranslate"><span class="pre">NAME</span></code>, without renaming anything.  Thus <code class="docutils literal notranslate"><span class="pre">only</span> <span class="pre">nat</span></code> will keep <code class="docutils literal notranslate"><span class="pre">nat.plus</span></code> and <code class="docutils literal notranslate"><span class="pre">nat.times</span></code>, under those names, but discard <code class="docutils literal notranslate"><span class="pre">int.plus</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">except</span> <span class="pre">NAME</span></code>: Keep everything except the namespace rooted at <code class="docutils literal notranslate"><span class="pre">NAME</span></code>, without renaming anything.  Thus <code class="docutils literal notranslate"><span class="pre">except</span> <span class="pre">nat</span></code> will discard <code class="docutils literal notranslate"><span class="pre">nat.plus</span></code> and <code class="docutils literal notranslate"><span class="pre">nat.times</span></code> but keep <code class="docutils literal notranslate"><span class="pre">int.plus</span></code> and <code class="docutils literal notranslate"><span class="pre">real.plus</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">in</span> <span class="pre">NAME</span> <span class="pre">MOD</span></code>: Apply the modifier <code class="docutils literal notranslate"><span class="pre">MOD</span></code> to the namespace rooted at <code class="docutils literal notranslate"><span class="pre">NAME</span></code>, leaving everything else alone.  Thus <code class="docutils literal notranslate"><span class="pre">in</span> <span class="pre">nat</span> <span class="pre">only</span> <span class="pre">plus</span></code> will keep <code class="docutils literal notranslate"><span class="pre">nat.plus.assoc</span></code> and <code class="docutils literal notranslate"><span class="pre">nat.plus.comm</span></code> and <code class="docutils literal notranslate"><span class="pre">int.times</span></code> but discard <code class="docutils literal notranslate"><span class="pre">nat.times.assoc</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">renaming</span> <span class="pre">NAME1</span> <span class="pre">NAME2</span></code>: Rename the namespace rooted at <code class="docutils literal notranslate"><span class="pre">NAME1</span></code> to instead be rooted at <code class="docutils literal notranslate"><span class="pre">NAME2</span></code>, checking that <code class="docutils literal notranslate"><span class="pre">NAME1</span></code> is nonempty, and silently dropping anything already present under <code class="docutils literal notranslate"><span class="pre">NAME2</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">seq</span> <span class="pre">(MOD1,</span> <span class="pre">MOD2,</span> <span class="pre">…)</span></code>: Perform the modifiers <code class="docutils literal notranslate"><span class="pre">MOD1</span></code>, <code class="docutils literal notranslate"><span class="pre">MOD2</span></code>, and so on in order.  In particular, <code class="docutils literal notranslate"><span class="pre">seq</span> <span class="pre">()</span></code> is equivalent to <code class="docutils literal notranslate"><span class="pre">id</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">union</span> <span class="pre">(MOD1,</span> <span class="pre">MOD2,</span> <span class="pre">…)</span></code>: Apply all the modifiers <code class="docutils literal notranslate"><span class="pre">MOD1</span></code>, <code class="docutils literal notranslate"><span class="pre">MOD2</span></code> to the original namespace in parallel and take the union of the results.  In particular, <code class="docutils literal notranslate"><span class="pre">union</span> <span class="pre">()</span></code> is like <code class="docutils literal notranslate"><span class="pre">none</span></code> but doesn’t check that there is anything to drop.</p></li>
+</ul>
+<p>The <code class="docutils literal notranslate"><span class="pre">NAME</span></code> s in all these commands are ordinary identifiers, with one additional option: a bare period <code class="docutils literal notranslate"><span class="pre">.</span></code> represents the root namespace.  Thus <code class="docutils literal notranslate"><span class="pre">renaming</span> <span class="pre">nat</span> <span class="pre">.</span></code> will rename <code class="docutils literal notranslate"><span class="pre">nat.plus</span></code> to just <code class="docutils literal notranslate"><span class="pre">plus</span></code> and <code class="docutils literal notranslate"><span class="pre">nat.times</span></code> to just <code class="docutils literal notranslate"><span class="pre">times</span></code>, discarding everything that doesn’t start with <code class="docutils literal notranslate"><span class="pre">nat</span></code>.  On the other hand, <code class="docutils literal notranslate"><span class="pre">renaming</span> <span class="pre">.</span> <span class="pre">foo</span></code> will add <code class="docutils literal notranslate"><span class="pre">foo</span></code> to the beginning of everything.  In particular, therefore, <code class="docutils literal notranslate"><span class="pre">import</span> <span class="pre">&quot;arith&quot;</span> <span class="pre">|</span> <span class="pre">renaming</span> <span class="pre">.</span> <span class="pre">arith</span></code> is the standard sort of “qualified import” that will import definitions like <code class="docutils literal notranslate"><span class="pre">nat.plus</span></code> from a file like <code class="docutils literal notranslate"><span class="pre">arith.ny</span></code> but renamed to <code class="docutils literal notranslate"><span class="pre">arith.nat.plus</span></code>.</p>
+<p>Currently, you can and must specify explicitly the qualifying namespace prefix; it has no automatic relationship to the imported filename or path.  More generally, the full syntax for Yuujinchou modifiers is rather verbose, so we may introduce abbreviated versions of some common operations.  Feedback is welcome about what those should be.</p>
+</section>
+<section id="importing-namespaces">
+<h2>Importing namespaces<a class="headerlink" href="#importing-namespaces" title="Link to this heading"></a></h2>
+<p>The first argument of the <code class="docutils literal notranslate"><span class="pre">import</span></code> command can also be a namespace, with the effect that the contents of that namespace are merged with the root, possibly with a modifier applied.  Thus, for instance, after the following:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>axiom a.one : ℕ ≔ 1
+axiom a.two : ℕ ≔ 2
+import a | renaming one uno
+</pre></div>
+</div>
+<p>the names <code class="docutils literal notranslate"><span class="pre">a.one</span></code> and <code class="docutils literal notranslate"><span class="pre">uno</span></code> will refer to <code class="docutils literal notranslate"><span class="pre">1</span></code> while the names <code class="docutils literal notranslate"><span class="pre">a.two</span></code> and <code class="docutils literal notranslate"><span class="pre">two</span></code> will refer to <code class="docutils literal notranslate"><span class="pre">2</span></code>.</p>
+<p>Imported names also remain available in their original locations; there is no way to remove a name from the scope once it is added.  In addition, names imported this way are not <em>exported</em> from the current file when it it loaded by another file.  That is, if the above example is in a file <code class="docutils literal notranslate"><span class="pre">foo.ny</span></code>, then if some other file says <code class="docutils literal notranslate"><span class="pre">import</span> <span class="pre">&quot;foo&quot;</span></code> then it will only be able to access the original names <code class="docutils literal notranslate"><span class="pre">a.one</span></code> and <code class="docutils literal notranslate"><span class="pre">a.two</span></code>, not the new ones <code class="docutils literal notranslate"><span class="pre">uno</span></code> and <code class="docutils literal notranslate"><span class="pre">two</span></code>.  But, of course, they are exported if the variant called <code class="docutils literal notranslate"><span class="pre">export</span></code> is used instead.</p>
+</section>
+<section id="importing-notations">
+<h2>Importing notations<a class="headerlink" href="#importing-notations" title="Link to this heading"></a></h2>
+<p>Importing of notations defined by another file is implemented as a special case of importing names.  Specifically, when a new notation is declared with a <code class="docutils literal notranslate"><span class="pre">NAME</span></code>, it is associated to that name in the current namespace prefixed by <code class="docutils literal notranslate"><span class="pre">notations</span></code>.  Thus, for instance, <code class="docutils literal notranslate"><span class="pre">notation</span> <span class="pre">1</span> <span class="pre">plus</span> <span class="pre">:</span> <span class="pre">x</span> <span class="pre">&quot;+&quot;</span> <span class="pre">y</span> <span class="pre">≔</span> <span class="pre">plus</span> <span class="pre">x</span> <span class="pre">y</span></code> associates this notation to the name <code class="docutils literal notranslate"><span class="pre">notations.plus</span></code>.  Then, whenever another file is imported, any notations that are present in the <code class="docutils literal notranslate"><span class="pre">notations</span></code> namespace after the modifiers are applied become available in the current file.  Since by default the complete namespace of an imported file is merged with the current one, this means that by default all notations defined in that file also become available.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">notations</span></code> namespace is not otherwise special: you can put constants in it too, but this is not recommended.  The names of constants and of notations inhabit the same domain: you cannot have a constant and a notation with the same name, although since newly created notations always have names that start with <code class="docutils literal notranslate"><span class="pre">notations</span></code> this is not usually a problem.  It is possible for notations to end up with names that don’t start with <code class="docutils literal notranslate"><span class="pre">notation</span></code> through import modifiers, but in that case they are not available to the parser.</p>
+<p>For example, you can avoid making any imported notations available by using the modifier <code class="docutils literal notranslate"><span class="pre">except</span> <span class="pre">notations</span></code>, or you can import only the notations and no definitions with <code class="docutils literal notranslate"><span class="pre">only</span> <span class="pre">notations</span></code>.  Or you can import only a few particular notations with a modifier like <code class="docutils literal notranslate"><span class="pre">in</span> <span class="pre">notations</span> <span class="pre">union</span> <span class="pre">(only</span> <span class="pre">plus;</span> <span class="pre">only</span> <span class="pre">times)</span></code>.  In particular, if you import an entire file qualified such as <code class="docutils literal notranslate"><span class="pre">import</span> <span class="pre">&quot;arith&quot;</span> <span class="pre">|</span> <span class="pre">renaming</span> <span class="pre">.</span> <span class="pre">arith</span></code>, then a notation such as <code class="docutils literal notranslate"><span class="pre">notations.plus</span></code> in <code class="docutils literal notranslate"><span class="pre">&quot;arith.ny&quot;</span></code> will be renamed to <code class="docutils literal notranslate"><span class="pre">arith.notations.plus</span></code>, which is not in the <code class="docutils literal notranslate"><span class="pre">notations</span></code> namespace and thus will not be available to the parser.  To import all the constants qualified but make all the notations available, write <code class="docutils literal notranslate"><span class="pre">import</span> <span class="pre">&quot;arith&quot;</span> <span class="pre">|</span> <span class="pre">seq</span> <span class="pre">(renaming</span> <span class="pre">.</span> <span class="pre">arith;</span> <span class="pre">renaming</span> <span class="pre">arith.notations</span> <span class="pre">notations)</span></code>.  (This is probably a good candidate to have an abbreviated version.)</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">notations</span></code> namespace can also contain sub-namespaces: if you write <code class="docutils literal notranslate"><span class="pre">notation</span> <span class="pre">1</span> <span class="pre">nat.plus</span></code> then it will go in the namespace as <code class="docutils literal notranslate"><span class="pre">notations.nat.plus</span></code>.  Then by importing with <code class="docutils literal notranslate"><span class="pre">in</span> <span class="pre">notations</span> <span class="pre">only</span> <span class="pre">nat</span></code> you can get all the notations in that namespace such as <code class="docutils literal notranslate"><span class="pre">notations.nat.plus</span></code> and <code class="docutils literal notranslate"><span class="pre">notations.nat.times</span></code>, but no other notations from the imported file.  Thus, notation namespaces act somewhat like Rocq’s <a class="reference external" href="https://coq.inria.fr/doc/V8.18.0/refman/user-extensions/syntax-extensions.html#notation-scopes">notation scopes</a>, although they can only be opened globally and not locally to part of a term.</p>
+</section>
+<section id="compilation">
+<h2>Compilation<a class="headerlink" href="#compilation" title="Link to this heading"></a></h2>
+<p>Whenever a file <code class="docutils literal notranslate"><span class="pre">FILE.ny</span></code> is successfully executed, Narya writes a “compiled” version of that file in the same directory called <code class="docutils literal notranslate"><span class="pre">FILE.nyo</span></code>.  Then in future runs of Narya, whenever <code class="docutils literal notranslate"><span class="pre">FILE.ny</span></code> is to be executed, if</p>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">-source-only</span></code> was not specified,</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">FILE.ny</span></code> was not specified explicitly on the command-line (so that it must have been imported by another file),</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">FILE.nyo</span></code> exists in the same directory,</p></li>
+<li><p>the same type theory flags (<code class="docutils literal notranslate"><span class="pre">-arity</span></code>, <code class="docutils literal notranslate"><span class="pre">-direction</span></code>, <code class="docutils literal notranslate"><span class="pre">-internal</span></code>/<code class="docutils literal notranslate"><span class="pre">-external</span></code>, and <code class="docutils literal notranslate"><span class="pre">-discreteness</span></code>) are in effect now as when <code class="docutils literal notranslate"><span class="pre">FILE.nyo</span></code> was compiled,</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">FILE.ny</span></code> has not been modified more recently than <code class="docutils literal notranslate"><span class="pre">FILE.nyo</span></code>, and</p></li>
+<li><p>none of the files imported by <code class="docutils literal notranslate"><span class="pre">FILE.ny</span></code> are newer than it or their compiled versions,</p></li>
+</ol>
+<p>then <code class="docutils literal notranslate"><span class="pre">FILE.nyo</span></code> is loaded directly instead of re-executing <code class="docutils literal notranslate"><span class="pre">FILE.ny</span></code>, skipping the typechecking step.  This can be much faster.  If any of these conditions fail, then <code class="docutils literal notranslate"><span class="pre">FILE.ny</span></code> is executed from source as usual, and a new compiled version <code class="docutils literal notranslate"><span class="pre">FILE.nyo</span></code> is saved, overwriting the previous one.</p>
+<p>Effectual commands like <code class="docutils literal notranslate"><span class="pre">echo</span></code> are <em>not</em> re-executed when a file is loaded from its compiled version (they are not even stored in the compiled version).  Since this may be surprising, Narya issues a warning when loading a compiled version of a file that originally contained <code class="docutils literal notranslate"><span class="pre">echo</span></code> commands.  Since files explicitly specified on the command-line are never loaded from a compiled version, the best way to avoid this warning is to avoid <code class="docutils literal notranslate"><span class="pre">echo</span></code> statements in “library” files that are intended to be imported by other files.  Of course, you can also use <code class="docutils literal notranslate"><span class="pre">-source-only</span></code> to prevent all loading from compiled files.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="names-and-notations.html" class="btn btn-neutral float-left" title="Names and notations" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="typechecking.html" class="btn btn-neutral float-right" title="Typechecking details" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Michael Shulman.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -18,7 +18,8 @@
       <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
-    <link rel="search" title="Search" href="search.html" /> 
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Installation" href="installation.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -40,11 +41,24 @@
   </form>
 </div>
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <!-- Local TOC -->
-              <div class="local-toc"><ul>
-<li><a class="reference internal" href="#">Narya documentation</a></li>
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="top-level-interface.html">Top level interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="built-in-types.html">Built-in types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="names-and-notations.html">Names and notations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="imports-and-scoping.html">Imports and scoping</a></li>
+<li class="toctree-l1"><a class="reference internal" href="typechecking.html">Typechecking details</a></li>
+<li class="toctree-l1"><a class="reference internal" href="interactive.html">Interactive proof</a></li>
+<li class="toctree-l1"><a class="reference internal" href="record-types.html">Record types and tuples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data-types.html">Inductive datatypes and matching</a></li>
+<li class="toctree-l1"><a class="reference internal" href="codata-types.html">Codatatypes and comatching</a></li>
+<li class="toctree-l1"><a class="reference internal" href="canonical-types.html">Canonical types defined by case trees</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mutual-definitions.html">Mutual definitions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="parametric-observational-type-theory.html">Parametric Observational Type Theory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="remarks.html">Remarks on implementation</a></li>
 </ul>
-</div>
+
         </div>
       </div>
     </nav>
@@ -71,22 +85,128 @@
              
   <section id="narya-documentation">
 <h1>Narya documentation<a class="headerlink" href="#narya-documentation" title="Link to this heading"></a></h1>
-<p>Add your content using <code class="docutils literal notranslate"><span class="pre">reStructuredText</span></code> syntax. See the
-<a class="reference external" href="https://www.sphinx-doc.org/en/master/usage/restructuredtext/index.html">reStructuredText</a>
-documentation for details.</p>
+<p>Narya is eventually intended to be a proof assistant implementing Multi-Modal, Multi-Directional, Higher/Parametric/Displayed Observational Type Theory, but a formal type theory combining all those adjectives has not yet been specified. At the moment, Narya implements a normalization-by-evaluation algorithm and typechecker for an observational-style theory with Id/Bridge types satisfying parametricity, of variable arity and internality. There is a parser with user-definable mixfix notations, and user-definable record types, inductive datatypes and type families, and coinductive codatatypes, with functions definable by matching and comatching case trees, import and export and separate compilation, the ability to leave holes and solve them later, and a ProofGeneral interaction mode.</p>
+<p>Narya is very much a work in progress. Expect breaking changes, including even in fundamental aspects of the syntax. (I try to make breaking changes as GitHub pull requests, so if you watch the repository you should at least get notified of them.) But on the other side of the coin, feedback on anything and everything is welcome. In particular, please report all crashes, bugs, unexpected errors, and other unexpected, surprising, or unintuitive behavior, either in GitHub issues or by direct email.</p>
 <div class="toctree-wrapper compound">
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="installation.html#from-source">From source</a></li>
+<li class="toctree-l2"><a class="reference internal" href="installation.html#proofgeneral-emacs-mode">ProofGeneral (Emacs) mode</a></li>
+<li class="toctree-l2"><a class="reference internal" href="installation.html#in-browser-version">In-browser version</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="top-level-interface.html">Top level interface</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="top-level-interface.html#command-line-flags">Command-line flags</a></li>
+<li class="toctree-l2"><a class="reference internal" href="top-level-interface.html#execution">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="top-level-interface.html#commands">Commands</a></li>
+<li class="toctree-l2"><a class="reference internal" href="top-level-interface.html#proofgeneral-mode">ProofGeneral mode</a></li>
+<li class="toctree-l2"><a class="reference internal" href="top-level-interface.html#code-formatter">Code formatter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="top-level-interface.html#jsnarya">jsNarya</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="built-in-types.html">Built-in types</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="built-in-types.html#the-universe">The universe</a></li>
+<li class="toctree-l2"><a class="reference internal" href="built-in-types.html#functions-and-function-types">Functions and function-types</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="names-and-notations.html">Names and notations</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="names-and-notations.html#mixfix-notations">Mixfix notations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="names-and-notations.html#comments-and-strings">Comments and strings</a></li>
+<li class="toctree-l2"><a class="reference internal" href="names-and-notations.html#tokens">Tokens</a></li>
+<li class="toctree-l2"><a class="reference internal" href="names-and-notations.html#identifiers">Identifiers</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="imports-and-scoping.html">Imports and scoping</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="imports-and-scoping.html#file-imports">File imports</a></li>
+<li class="toctree-l2"><a class="reference internal" href="imports-and-scoping.html#import-modifiers">Import modifiers</a></li>
+<li class="toctree-l2"><a class="reference internal" href="imports-and-scoping.html#importing-namespaces">Importing namespaces</a></li>
+<li class="toctree-l2"><a class="reference internal" href="imports-and-scoping.html#importing-notations">Importing notations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="imports-and-scoping.html#compilation">Compilation</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="typechecking.html">Typechecking details</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="typechecking.html#bidirectionality">Bidirectionality</a></li>
+<li class="toctree-l2"><a class="reference internal" href="typechecking.html#ascription">Ascription</a></li>
+<li class="toctree-l2"><a class="reference internal" href="typechecking.html#let-binding">Let-binding</a></li>
+<li class="toctree-l2"><a class="reference internal" href="typechecking.html#eta-conversion-and-case-trees">Eta-conversion and case trees</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="interactive.html">Interactive proof</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="interactive.html#holes">Holes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="interactive.html#solving-holes">Solving holes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="interactive.html#undoing-solved-holes">Undoing solved holes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="interactive.html#reformatting-solved-holes">Reformatting solved holes</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="record-types.html">Record types and tuples</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="record-types.html#defining-record-types">Defining record types</a></li>
+<li class="toctree-l2"><a class="reference internal" href="record-types.html#tuples">Tuples</a></li>
+<li class="toctree-l2"><a class="reference internal" href="record-types.html#accessing-fields">Accessing fields</a></li>
+<li class="toctree-l2"><a class="reference internal" href="record-types.html#parsing-field-projections">Parsing field projections</a></li>
+<li class="toctree-l2"><a class="reference internal" href="record-types.html#eta-conversion-and-reduction">Eta-conversion and reduction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="record-types.html#eta-expansion-and-opacity">Eta-expansion and opacity</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="data-types.html">Inductive datatypes and matching</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="data-types.html#defining-datatypes">Defining datatypes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data-types.html#applying-constructors">Applying constructors</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data-types.html#numeral-notations">Numeral notations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data-types.html#matching">Matching</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data-types.html#matching-and-case-trees">Matching and case trees</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data-types.html#recursion">Recursion</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data-types.html#multiple-matches-and-deep-matches">Multiple matches and deep matches</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data-types.html#empty-types-and-refutation-cases">Empty types and refutation cases</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data-types.html#variable-matches">Variable matches</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data-types.html#non-dependent-matches">Non-dependent matches</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data-types.html#explicitly-dependent-matches">Explicitly dependent matches</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data-types.html#matches-in-terms-and-case-trees">Matches in terms and case trees</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="codata-types.html">Codatatypes and comatching</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="codata-types.html#defining-codatatypes">Defining codatatypes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="codata-types.html#copattern-matching">Copattern matching</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="canonical-types.html">Canonical types defined by case trees</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mutual-definitions.html">Mutual definitions</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="mutual-definitions.html#mutual-recursion">Mutual recursion</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mutual-definitions.html#mutual-induction">Mutual induction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mutual-definitions.html#inductive-inductive-families">Inductive-inductive families</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mutual-definitions.html#inductive-recursive-definitions">Inductive-recursive definitions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mutual-definitions.html#mutually-recursive-let-bindings">Mutually recursive let-bindings</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mutual-definitions.html#here-be-dragons">Here be dragons</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="parametric-observational-type-theory.html">Parametric Observational Type Theory</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="parametric-observational-type-theory.html#identity-bridge-types-of-canonical-types">Identity/bridge types of canonical types</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parametric-observational-type-theory.html#identity-bridge-types-of-the-universe">Identity/bridge types of the universe</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parametric-observational-type-theory.html#heterogeneous-identity-bridge-types">Heterogeneous identity/bridge types</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parametric-observational-type-theory.html#higher-dimensional-cubes">Higher-dimensional cubes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parametric-observational-type-theory.html#symmetries-and-degeneracies">Symmetries and degeneracies</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parametric-observational-type-theory.html#implicit-boundaries">Implicit boundaries</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parametric-observational-type-theory.html#cubes-of-variables">Cubes of variables</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parametric-observational-type-theory.html#varying-the-behavior-of-parametricity">Varying the behavior of parametricity</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parametric-observational-type-theory.html#higher-datatypes-and-codatatypes">Higher datatypes and codatatypes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parametric-observational-type-theory.html#parametrically-discrete-types">Parametrically discrete types</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="remarks.html">Remarks on implementation</a></li>
+</ul>
 </div>
 </section>
 
 
            </div>
           </div>
-          <footer>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="installation.html" class="btn btn-neutral float-right" title="Installation" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
 
   <hr/>
 
   <div role="contentinfo">
-    <p>&#169; Copyright 2025, Michael Shulman, Elif Uskuplu.</p>
+    <p>&#169; Copyright 2025, Michael Shulman.</p>
   </div>
 
   Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a

@@ -1,0 +1,142 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Built-in types &mdash; Narya 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=2709fde1"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Names and notations" href="names-and-notations.html" />
+    <link rel="prev" title="Top level interface" href="top-level-interface.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            Narya
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="top-level-interface.html">Top level interface</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Built-in types</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#the-universe">The universe</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#functions-and-function-types">Functions and function-types</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="names-and-notations.html">Names and notations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="imports-and-scoping.html">Imports and scoping</a></li>
+<li class="toctree-l1"><a class="reference internal" href="typechecking.html">Typechecking details</a></li>
+<li class="toctree-l1"><a class="reference internal" href="interactive.html">Interactive proof</a></li>
+<li class="toctree-l1"><a class="reference internal" href="record-types.html">Record types and tuples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data-types.html">Inductive datatypes and matching</a></li>
+<li class="toctree-l1"><a class="reference internal" href="codata-types.html">Codatatypes and comatching</a></li>
+<li class="toctree-l1"><a class="reference internal" href="canonical-types.html">Canonical types defined by case trees</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mutual-definitions.html">Mutual definitions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="parametric-observational-type-theory.html">Parametric Observational Type Theory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="remarks.html">Remarks on implementation</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Narya</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Built-in types</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/built-in-types.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="built-in-types">
+<h1>Built-in types<a class="headerlink" href="#built-in-types" title="Link to this heading"></a></h1>
+<section id="the-universe">
+<h2>The universe<a class="headerlink" href="#the-universe" title="Link to this heading"></a></h2>
+<p>Currently there is only one universe <code class="docutils literal notranslate"><span class="pre">Type</span></code> that contains all types, including itself, making the type theory inconsistent.  In the future it is planned to incorporate universe levels using <a class="reference external" href="https://github.com/redPRL/mugen">mugen</a>.</p>
+</section>
+<section id="functions-and-function-types">
+<h2>Functions and function-types<a class="headerlink" href="#functions-and-function-types" title="Link to this heading"></a></h2>
+<p>Apart from the universe, the only predefined type is a dependent function-type, written <code class="docutils literal notranslate"><span class="pre">(x:A)</span> <span class="pre">→</span> <span class="pre">B</span> <span class="pre">x</span></code> as in NuPRL and Agda.  As usual, if <code class="docutils literal notranslate"><span class="pre">B</span></code> does not depend on <code class="docutils literal notranslate"><span class="pre">x</span></code> one can simplify this to <code class="docutils literal notranslate"><span class="pre">A</span> <span class="pre">→</span> <span class="pre">B</span></code>, and iterated function-types can be combined, including combining multiple variables with the same type, as in <code class="docutils literal notranslate"><span class="pre">(x</span> <span class="pre">y</span> <span class="pre">:</span> <span class="pre">A)</span> <span class="pre">(z</span> <span class="pre">:</span> <span class="pre">B</span> <span class="pre">x</span> <span class="pre">y)</span> <span class="pre">→</span> <span class="pre">C</span> <span class="pre">x</span> <span class="pre">y</span> <span class="pre">z</span></code>.  Also as usual, this notation is right-associative, so <code class="docutils literal notranslate"><span class="pre">A</span> <span class="pre">→</span> <span class="pre">B</span> <span class="pre">→</span> <span class="pre">C</span></code> means <code class="docutils literal notranslate"><span class="pre">A</span> <span class="pre">→</span> <span class="pre">(B</span> <span class="pre">→</span> <span class="pre">C)</span></code>.  The unicode → appearing here is interchangeable with the ASCII <code class="docutils literal notranslate"><span class="pre">-&gt;</span></code>.</p>
+<p>Again as usual, functions are applied by juxtaposition; if <code class="docutils literal notranslate"><span class="pre">f</span> <span class="pre">:</span> <span class="pre">(x:A)</span> <span class="pre">→</span> <span class="pre">B</span> <span class="pre">x</span></code> and <code class="docutils literal notranslate"><span class="pre">a</span> <span class="pre">:</span> <span class="pre">A</span></code> then <code class="docutils literal notranslate"><span class="pre">f</span> <span class="pre">a</span> <span class="pre">:</span> <span class="pre">B</span> <span class="pre">a</span></code>.  And this is left-associative, so if <code class="docutils literal notranslate"><span class="pre">f</span> <span class="pre">:</span> <span class="pre">A</span> <span class="pre">→</span> <span class="pre">B</span> <span class="pre">→</span> <span class="pre">C</span></code> then <code class="docutils literal notranslate"><span class="pre">f</span> <span class="pre">a</span> <span class="pre">b</span> <span class="pre">:</span> <span class="pre">C</span></code>.</p>
+<p>Functions are introduced by abstraction, which in Narya is written (somewhat unusually) as <code class="docutils literal notranslate"><span class="pre">x</span> <span class="pre">↦</span> <span class="pre">M</span></code>, or <code class="docutils literal notranslate"><span class="pre">x</span> <span class="pre">y</span> <span class="pre">z</span> <span class="pre">↦</span> <span class="pre">M</span></code> to abstract multiple variables at once.  The unicode ↦ is interchangeable with the ASCII <code class="docutils literal notranslate"><span class="pre">|-&gt;</span></code>.</p>
+<p>The variable in a function-type or an abstraction can be replaced by an underscore <code class="docutils literal notranslate"><span class="pre">_</span></code>, indicating that that variable is not used and thus needs no name.  For types this is equivalent to a non-dependent function-type: <code class="docutils literal notranslate"><span class="pre">(_</span> <span class="pre">:</span> <span class="pre">A)</span> <span class="pre">→</span> <span class="pre">B</span></code> means the same as <code class="docutils literal notranslate"><span class="pre">A</span> <span class="pre">→</span> <span class="pre">B</span></code>.  For abstractions, <code class="docutils literal notranslate"><span class="pre">_</span> <span class="pre">↦</span> <span class="pre">M</span></code> defines a constant function, whose value doesn’t depend on its input.</p>
+<p>In addition, there is a built-in constant called <code class="docutils literal notranslate"><span class="pre">Π</span></code> that represents dependent function-types.  The type of <code class="docutils literal notranslate"><span class="pre">Π</span></code> is <code class="docutils literal notranslate"><span class="pre">(X</span> <span class="pre">:</span> <span class="pre">Type)</span> <span class="pre">→</span> <span class="pre">(X</span> <span class="pre">→</span> <span class="pre">Type)</span> <span class="pre">→</span> <span class="pre">Type</span></code>, and <code class="docutils literal notranslate"><span class="pre">Π</span> <span class="pre">A</span> <span class="pre">B</span></code> reduces to <code class="docutils literal notranslate"><span class="pre">(x</span> <span class="pre">:</span> <span class="pre">A)</span> <span class="pre">→</span> <span class="pre">B</span> <span class="pre">x</span></code>.  In other words, it behaves as if defined by</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def Π (A : Type) (B : A → Type) : Type ≔ (x : A) → B x
+</pre></div>
+</div>
+<p>This is mainly useful for writing and printing higher-dimensional function-types (see below).</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="top-level-interface.html" class="btn btn-neutral float-left" title="Top level interface" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="names-and-notations.html" class="btn btn-neutral float-right" title="Names and notations" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Michael Shulman.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

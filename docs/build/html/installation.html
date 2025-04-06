@@ -1,0 +1,160 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Installation &mdash; Narya 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=2709fde1"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Top level interface" href="top-level-interface.html" />
+    <link rel="prev" title="Narya documentation" href="index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            Narya
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Installation</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#from-source">From source</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#proofgeneral-emacs-mode">ProofGeneral (Emacs) mode</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#in-browser-version">In-browser version</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="top-level-interface.html">Top level interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="built-in-types.html">Built-in types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="names-and-notations.html">Names and notations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="imports-and-scoping.html">Imports and scoping</a></li>
+<li class="toctree-l1"><a class="reference internal" href="typechecking.html">Typechecking details</a></li>
+<li class="toctree-l1"><a class="reference internal" href="interactive.html">Interactive proof</a></li>
+<li class="toctree-l1"><a class="reference internal" href="record-types.html">Record types and tuples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data-types.html">Inductive datatypes and matching</a></li>
+<li class="toctree-l1"><a class="reference internal" href="codata-types.html">Codatatypes and comatching</a></li>
+<li class="toctree-l1"><a class="reference internal" href="canonical-types.html">Canonical types defined by case trees</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mutual-definitions.html">Mutual definitions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="parametric-observational-type-theory.html">Parametric Observational Type Theory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="remarks.html">Remarks on implementation</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Narya</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Installation</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/installation.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="installation">
+<h1>Installation<a class="headerlink" href="#installation" title="Link to this heading"></a></h1>
+<section id="from-source">
+<h2>From source<a class="headerlink" href="#from-source" title="Link to this heading"></a></h2>
+<p>There is no distribution yet, so you have to compile Narya yourself.  This requires a recent version of OCaml and various libraries.  Currently Narya is developed with OCaml 5.3.0; as far as I know, it also compiles with any version after 5.2.1, but this is not regularly verified.  After installing any version of OCaml and its package manager Opam, you can install Narya with its dependencies as follows:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>opam<span class="w"> </span>switch<span class="w"> </span>create<span class="w"> </span><span class="m">5</span>.3.0
+opam<span class="w"> </span>install<span class="w"> </span>dune
+
+<span class="nb">cd</span><span class="w"> </span>narya
+dune<span class="w"> </span>build<span class="w"> </span>narya.opam
+opam<span class="w"> </span>install<span class="w"> </span>.<span class="w"> </span>--deps-only
+dune<span class="w"> </span>build<span class="w"> </span>@install
+dune<span class="w"> </span>runtest
+dune<span class="w"> </span>install
+</pre></div>
+</div>
+<p>This will make the executable <code class="docutils literal notranslate"><span class="pre">narya</span></code> available in a directory such as <code class="docutils literal notranslate"><span class="pre">~/.opam/5.3.0/bin</span></code>, which should be in your <code class="docutils literal notranslate"><span class="pre">PATH</span></code>.  Alternatively, instead of <code class="docutils literal notranslate"><span class="pre">dune</span> <span class="pre">install</span></code> you can also run the executable directly from the <code class="docutils literal notranslate"><span class="pre">narya/</span></code> directory with <code class="docutils literal notranslate"><span class="pre">dune</span> <span class="pre">exec</span> <span class="pre">narya</span></code>.  In this case, to pass flags to the executable, put them after a <code class="docutils literal notranslate"><span class="pre">--</span></code>.  For instance, <code class="docutils literal notranslate"><span class="pre">dune</span> <span class="pre">exec</span> <span class="pre">narya</span> <span class="pre">--</span> <span class="pre">test.ny</span> <span class="pre">-i</span></code> loads the file <code class="docutils literal notranslate"><span class="pre">test.ny</span></code> and then enters interactive mode.</p>
+</section>
+<section id="proofgeneral-emacs-mode">
+<h2>ProofGeneral (Emacs) mode<a class="headerlink" href="#proofgeneral-emacs-mode" title="Link to this heading"></a></h2>
+<p>The recommended mode of use of Narya is with its <a class="reference external" href="https://proofgeneral.github.io/">ProofGeneral</a> Emacs mode (for further description of this, see below).  Unfortunately, ProofGeneral is not well-designed for users adding new proof assistant modes.  The steps to install Narya’s ProofGeneral mode are:</p>
+<ol class="arabic simple">
+<li><p>Install Emacs and ProofGeneral.  The recommended way to install ProofGeneral is from <a class="reference external" href="https://melpa.org/">MELPA</a> using Emacs’ package manager, as described at the <a class="reference external" href="https://proofgeneral.github.io/">ProofGeneral page</a>.</p></li>
+<li><p>Find the ProofGeneral installation directory, which may be something like <code class="docutils literal notranslate"><span class="pre">$HOME/.emacs.d/elpa/proof-general-XXXXXXXX-XXXX</span></code>.</p></li>
+<li><p>In this directory, create a subdirectory called <code class="docutils literal notranslate"><span class="pre">narya</span></code> and copy (or, better, symlink) the files in the proofgeneral directory of the Narya repository into that subdirectory.</p></li>
+<li><p>Then edit the file <code class="docutils literal notranslate"><span class="pre">proof-site.el</span></code> in the subdirectory <code class="docutils literal notranslate"><span class="pre">generic</span></code> of the ProofGeneral installation directory and add a line containing <code class="docutils literal notranslate"><span class="pre">(narya</span> <span class="pre">&quot;Narya&quot;</span> <span class="pre">&quot;ny&quot;</span> <span class="pre">nil</span> <span class="pre">(&quot;.nyo&quot;))</span></code> to the list of proof assistants in the definition of the variable <code class="docutils literal notranslate"><span class="pre">proof-assistant-table-default</span></code>.</p></li>
+<li><p>If there is a byte-compiled Emacs Lisp file <code class="docutils literal notranslate"><span class="pre">proof-site.elc</span></code> in the <code class="docutils literal notranslate"><span class="pre">generic</span></code> directory, either delete it, or re-create it from your edited <code class="docutils literal notranslate"><span class="pre">proof-site.el</span></code> using <code class="docutils literal notranslate"><span class="pre">M-x</span> <span class="pre">byte-compile-file</span></code>.</p></li>
+<li><p>Restart Emacs.</p></li>
+</ol>
+<p>You will have to repeat these steps whenever the Narya ProofGeneral mode is updated (unless you symlinked the files instead of copying them, in which case restarting Emacs will suffice); whenever ProofGeneral is updated; and whenever Emacs is updated.  Note also that you can only use ProofGeneral with one proof assistant per Emacs session: if you want to switch between (say) Narya and Rocq, you need to restart Emacs or open a new instance of it.  These appear to be fundamental restrictions of ProofGeneral (if you know how to get around them, please let me know); although once Narya and its ProofGeneral mode are more stable we can probably petition to be added to the main ProofGeneral distribution.</p>
+</section>
+<section id="in-browser-version">
+<h2>In-browser version<a class="headerlink" href="#in-browser-version" title="Link to this heading"></a></h2>
+<p>There is also a version of Narya that compiles to JavaScript and runs in a browser, called jsNarya.  Instructions for compiling and running jsNarya locally can be found in <a class="reference external" href="https://github.com/gwaithimirdain/narya/blob/master/js/README.md">js/README</a>, but a recent version of it can also be accessed directly at <a class="reference external" href="https://mikeshulman.github.io/jsnarya">mikeshulman.github.io/jsnarya</a>, not requiring installing or compiling anything locally.  However, jsNarya is currently limited to the interactive mode with one startup file (<a class="reference internal" href="top-level-interface.html#top-level-interface-jsnarya"><span class="std std-ref">see here</span></a>).</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="index.html" class="btn btn-neutral float-left" title="Narya documentation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="top-level-interface.html" class="btn btn-neutral float-right" title="Top level interface" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Michael Shulman.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

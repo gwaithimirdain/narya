@@ -1,0 +1,162 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Codatatypes and comatching &mdash; Narya 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=2709fde1"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Canonical types defined by case trees" href="canonical-types.html" />
+    <link rel="prev" title="Inductive datatypes and matching" href="data-types.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            Narya
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="top-level-interface.html">Top level interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="built-in-types.html">Built-in types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="names-and-notations.html">Names and notations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="imports-and-scoping.html">Imports and scoping</a></li>
+<li class="toctree-l1"><a class="reference internal" href="typechecking.html">Typechecking details</a></li>
+<li class="toctree-l1"><a class="reference internal" href="interactive.html">Interactive proof</a></li>
+<li class="toctree-l1"><a class="reference internal" href="record-types.html">Record types and tuples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data-types.html">Inductive datatypes and matching</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Codatatypes and comatching</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#defining-codatatypes">Defining codatatypes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#copattern-matching">Copattern matching</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="canonical-types.html">Canonical types defined by case trees</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mutual-definitions.html">Mutual definitions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="parametric-observational-type-theory.html">Parametric Observational Type Theory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="remarks.html">Remarks on implementation</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Narya</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Codatatypes and comatching</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/codata-types.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="codatatypes-and-comatching">
+<h1>Codatatypes and comatching<a class="headerlink" href="#codatatypes-and-comatching" title="Link to this heading"></a></h1>
+<p>A <em>codatatype</em> is superficially similar to a record type: it has a list of fields (which in this case we sometimes call <em>methods</em>), each with a type, which are projected out (or “called”) using the same syntax <code class="docutils literal notranslate"><span class="pre">x</span> <span class="pre">.method</span></code>.  The primary differences are:</p>
+<ol class="arabic simple">
+<li><p>Codatatypes can be (co)recursive: the output type of each method can involve the codatatype itself.  (Such occurrences ought to be strictly positive, but currently there is no check for that.  In fact, there is not yet even a check that rules out recursion in record types, but there will be.)</p></li>
+<li><p>Codatatypes do not satisfy η-conversion (this being undecidable in the recursive case).</p></li>
+<li><p>Elements of codatatypes are defined by <em>comatches</em>, which are like tuples but can be recursive, use a syntax more akin to matches, and are restricted to case trees.</p></li>
+</ol>
+<section id="defining-codatatypes">
+<h2>Defining codatatypes<a class="headerlink" href="#defining-codatatypes" title="Link to this heading"></a></h2>
+<p>Here is a corecursive definition of the codatatype of infinite streams:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def Stream (A:Type) : Type ≔ codata [
+| x .head : A
+| x .tail : Stream A
+]
+</pre></div>
+</div>
+<p>That is, we use brackets and bars instead of parentheses and commas.  Moreover, instead of writing field names like variables as in a record type, we write them as method calls <em>applied to a variable</em>.  This variable is then bound in the body to belong to the codatatype, and the values of previous fields are be accessed through it.  For instance, a codata version of Σ-types would be written</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def codata-Σ (A : Type) (B : A → Type) : Type ≔ codata [
+| x .fst : A
+| x .snd : B (x .fst)
+]
+</pre></div>
+</div>
+<p>It is often helpful to think of a codatatype as akin to an <em>interface</em> in an object-oriented programming language, in which case the variable <code class="docutils literal notranslate"><span class="pre">x</span></code> is like the <code class="docutils literal notranslate"><span class="pre">this</span></code> or <code class="docutils literal notranslate"><span class="pre">self</span></code> pointer by which an object refers to itself.  Of course an interface in a simply-typed language does not need a self-pointer to specify the <em>types</em> of its methods, but in a dependently typed language it does.  In higher-dimensional type theories, the presence of this variable can be used in other ways than simply accessing previously declared methods, such as in the coinductive definition of semi-simplicial types (see below).</p>
+</section>
+<section id="copattern-matching">
+<h2>Copattern matching<a class="headerlink" href="#copattern-matching" title="Link to this heading"></a></h2>
+<p>Elements of coinductive types are introduced by comatches, which are like tuples except for the syntax and the fact that they can be (co)recursive:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def Fibonacci (a b : ℕ) : Stream ℕ ≔ [
+| .head ↦ a
+| .tail ↦ Fibonacci b (ℕ.plus a b)
+]
+</pre></div>
+</div>
+<p>In addition, unlike tuples, comatches are a part of case trees but not of ordinary terms.  Thus, they never evaluate to anything until a method is called.  This is essential to ensure termination in the presence of corecursion; otherwise <code class="docutils literal notranslate"><span class="pre">Fibonacci</span> <span class="pre">1</span> <span class="pre">1</span></code> would spin forever computing the entire infinite sequence.  (It is also why codatatypes do not have <a class="reference external" href="http://strictlypositive.org/Ripley.pdf">η-conversion</a>.)  It is often helpful to think of a constant defined by comatching as an (<a class="reference external" href="https://dev.realworldocaml.org/objects.html">immutable</a>) <em>object</em> implementing an interface, with the parameters of that constant being its “private member variables”.</p>
+<p>(As a bit of syntactic trivia, note that <code class="docutils literal notranslate"><span class="pre">[]</span></code> is ambiguous: it could denote either a pattern-matching lambda on a datatype with no constructors, or a copattern-match into a codatatype with no methods.  Fortunately, since both possibilities are checking rather than synthesizing, and function-types and codatatypes are disjoint, the ambiguity is resolved by bidirectional typechecking.)</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="data-types.html" class="btn btn-neutral float-left" title="Inductive datatypes and matching" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="canonical-types.html" class="btn btn-neutral float-right" title="Canonical types defined by case trees" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Michael Shulman.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

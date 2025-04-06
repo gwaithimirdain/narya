@@ -5,20 +5,21 @@
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
-
+    
 project = 'Narya'
-copyright = '2025, Michael Shulman, Elif Uskuplu'
-author = 'Michael Shulman, Elif Uskuplu'
+copyright = '2025, Michael Shulman'
+author = u'Narya Developers'
 release = '0.1'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = []
+extensions = [
+    'sphinx_rtd_theme'
+]
 
 templates_path = ['_templates']
 exclude_patterns = []
-
 
 
 # -- Options for HTML output -------------------------------------------------

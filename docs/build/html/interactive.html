@@ -1,0 +1,159 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Interactive proof &mdash; Narya 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=2709fde1"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Record types and tuples" href="record-types.html" />
+    <link rel="prev" title="Typechecking details" href="typechecking.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            Narya
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="top-level-interface.html">Top level interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="built-in-types.html">Built-in types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="names-and-notations.html">Names and notations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="imports-and-scoping.html">Imports and scoping</a></li>
+<li class="toctree-l1"><a class="reference internal" href="typechecking.html">Typechecking details</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Interactive proof</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#holes">Holes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#solving-holes">Solving holes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#undoing-solved-holes">Undoing solved holes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#reformatting-solved-holes">Reformatting solved holes</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="record-types.html">Record types and tuples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data-types.html">Inductive datatypes and matching</a></li>
+<li class="toctree-l1"><a class="reference internal" href="codata-types.html">Codatatypes and comatching</a></li>
+<li class="toctree-l1"><a class="reference internal" href="canonical-types.html">Canonical types defined by case trees</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mutual-definitions.html">Mutual definitions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="parametric-observational-type-theory.html">Parametric Observational Type Theory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="remarks.html">Remarks on implementation</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Narya</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Interactive proof</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/interactive.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="interactive-proof">
+<h1>Interactive proof<a class="headerlink" href="#interactive-proof" title="Link to this heading"></a></h1>
+<section id="holes">
+<h2>Holes<a class="headerlink" href="#holes" title="Link to this heading"></a></h2>
+<p>The basic ingredient of interactive proof is a <em>hole</em>.  A hole is indicated by the character <code class="docutils literal notranslate"><span class="pre">?</span></code>, which is always its own token.  A hole does not synthesize, but checks against any type whatsoever.  A command containing one or more holes will succeed as long as all the terms in it typecheck without knowing anything about the contents of the holes, i.e. treating the holes as axioms generalized over their contexts, i.e. if it would be well-typed for <em>any</em> value of the hole having its given type.  If there are equality constraints on the possible fillers of the hole, then the command will fail; a hole is not equal to anything except itself (this may be improved in the future).</p>
+<p>When a command containing holes finishes succesfully (in verbose or interactive mode), messages are emitted showing the type and context of every hole in it.  In ProofGeneral mode, these types and contexts are displayed in the “goals” window.  You can then continue to issue/process other commands afterwards, and each hole will continue to be treated like an axiom.  When a term containing a hole is printed, the hole displays as <code class="docutils literal notranslate"><span class="pre">?N{…}</span></code> where <code class="docutils literal notranslate"><span class="pre">N</span></code> is the sequential number of the hole.  (Note that even if no holes appear explicitly when you print a term, it might still depend implicitly on the values of holes if it involves constants whose definition contain holes.)  Unlike the printing of most terms, <code class="docutils literal notranslate"><span class="pre">?N{…}</span></code> for a hole is <em>not</em> a re-parseable notation.  Moreover, if the hole has a nonempty context, then occurrences of that hole in other terms may have other terms substituted for the variables in its context and these substitutions <em>are not indicated</em> by the notation <code class="docutils literal notranslate"><span class="pre">?N{…}</span></code> (this is what the notation <code class="docutils literal notranslate"><span class="pre">{…}</span></code> is intended to suggest).  This may be improved in future, but it is ameliorated somewhat by the treatment of holes in case trees.</p>
+<p>Specifically, a hole <code class="docutils literal notranslate"><span class="pre">?</span></code> left in a place where a case tree would be valid to continue is a <em>case tree hole</em>, and is treated a bit differently than an ordinary hole.  The obvious difference is that a case tree hole can be solved (see below) by a case tree rather than an ordinary term.  But in addition, evaluation of a function does not reduce when it reaches a case tree hole, and thus a case tree hole will never appear when printing terms: instead the function in which it appears as part of the definition.  This may be a little surprising, but it has the advantage of being a re-parseable notation, and also explicitly indicating all the arguments of the function (which would constitute the substitution applied to a term hole, and hence not currently printed).</p>
+<p>When Narya reaches the end of a file (or command-line <code class="docutils literal notranslate"><span class="pre">-e</span></code> string) in which any holes were created and not solved, it issues an error.  In the future this might become configurable, but it aligns with the behavior of most other proof assistants that each file must be complete before it can be loaded into another file.  Of course, this doesn’t happen in interactive mode.  For this reason, a warning message is emitted after every command as long as there are open holes remaining.</p>
+</section>
+<section id="solving-holes">
+<h2>Solving holes<a class="headerlink" href="#solving-holes" title="Link to this heading"></a></h2>
+<p>Generally the purpose of leaving a hole is to see its displayed type and context, making it easier to <em>fill</em> the hole by a term.  The most straightforward way to fill a hole is to edit the source code to replace the <code class="docutils literal notranslate"><span class="pre">?</span></code> by a term (perhaps containing other holes) and reload the file.  In interactive mode, if you just entered a command containing a hole, you can <code class="docutils literal notranslate"><span class="pre">undo</span> <span class="pre">1</span></code> to cancel the original command containing the hole, press Up-arrow or Meta+P to recover it in the history, edit it to replace the <code class="docutils literal notranslate"><span class="pre">?</span></code>, and re-execute it.  And in ProofGeneral mode, you can use <code class="docutils literal notranslate"><span class="pre">C-c</span> <span class="pre">C-u</span></code> or <code class="docutils literal notranslate"><span class="pre">C-c</span> <span class="pre">RET</span></code> to retract the hole-creating command (along with any commands after it) and edit it (or just start editing it and it will auto-retract), and then re-process it with <code class="docutils literal notranslate"><span class="pre">C-c</span> <span class="pre">C-n</span></code>.</p>
+<p>It is also possible to fill a hole <em>without</em> retracting the command or any other commands after it.  In ProofGeneral mode, if you position the cursor over a hole (perhaps using <code class="docutils literal notranslate"><span class="pre">C-c</span> <span class="pre">C-j</span></code> and <code class="docutils literal notranslate"><span class="pre">C-c</span> <span class="pre">C-k</span></code> to move between holes) and type <code class="docutils literal notranslate"><span class="pre">C-c</span> <span class="pre">C-SPC</span></code>, ProofGeneral will prompt you for a term with which to solve the hole.  If this term does successfully solve the hole, it will be inserted to replace the <code class="docutils literal notranslate"><span class="pre">?</span></code> in the buffer, without retracting the original command or anything after it.  This enables you to process a bunch of commands containing holes, some of which might be slow to run, and then progressively work on filling the holes in any desired order without having to retract and re-process anything.  Of course, the term that you fill a hole with contain other holes.</p>
+<p>The term solving a hole is parsed and typechecked <em>in the context where the hole was created</em>.  Thus it can refer by name to variables that were in the context at that point (like <code class="docutils literal notranslate"><span class="pre">X</span></code> above) and constants that were defined at that point, and use notations that were in effect at that point, but not constants or notations that were defined later.</p>
+<p>You can also solve a hole directly in interactive mode with the command <code class="docutils literal notranslate"><span class="pre">solve</span></code>, identifying a particular hole by its number as in <code class="docutils literal notranslate"><span class="pre">solve</span> <span class="pre">0</span> <span class="pre">≔</span> <span class="pre">X</span></code>.  (This is also the command issued by ProofGeneral under the hood when you use <code class="docutils literal notranslate"><span class="pre">C-c</span> <span class="pre">C-SPC</span></code>.)  But identifying a hole by number is too brittle to use in a file, so this command is only allowed in interactive mode.</p>
+<p>If you have forgotten the context and type of a hole that were displayed when it was created, you can re-display them in interactive mode with the command <code class="docutils literal notranslate"><span class="pre">show</span> <span class="pre">hole</span> <span class="pre">HOLE</span></code> which displays the context and type of a specific open hole by number, or <code class="docutils literal notranslate"><span class="pre">show</span> <span class="pre">holes</span></code> which displays the context and type of all the currently open holes.  In ProofGeneral mode the key command <code class="docutils literal notranslate"><span class="pre">C-c</span> <span class="pre">C-?</span></code> issues <code class="docutils literal notranslate"><span class="pre">show</span> <span class="pre">holes</span></code>, while <code class="docutils literal notranslate"><span class="pre">C-c</span> <span class="pre">C-,</span></code> issues <code class="docutils literal notranslate"><span class="pre">show</span> <span class="pre">hole</span></code> with the hole number inferred automatically from the cursor position (which must be over an open hole).  You can move between the existing holes with <code class="docutils literal notranslate"><span class="pre">C-c</span> <span class="pre">C-j</span></code> (next hole) and <code class="docutils literal notranslate"><span class="pre">C-c</span> <span class="pre">C-k</span></code> (previous hole).</p>
+<blockquote>
+<div><p>Finally, if the cursor is over a hole, then the commands <code class="docutils literal notranslate"><span class="pre">C-c</span> <span class="pre">;</span></code> (normalize a term) and <code class="docutils literal notranslate"><span class="pre">C-c</span> <span class="pre">:</span></code> (display the type of a term) operate in the context of that hole.  Moreover, these commands, as well as <code class="docutils literal notranslate"><span class="pre">C-c</span> <span class="pre">C-SPC</span></code> which solves a hole, share an input history: when prompted by any of them for a term, you can press the up and down arrows, or <code class="docutils literal notranslate"><span class="pre">M-p</span></code> and <code class="docutils literal notranslate"><span class="pre">M-n</span></code>, to cycle through the terms you have previously input.  Thus, you can try out possible hole fillers or subterms thereof with <code class="docutils literal notranslate"><span class="pre">C-c</span> <span class="pre">:</span></code>, comparing their types to the goal type of the hole until you are ready to fill the hole, and then easily supply the same term to <code class="docutils literal notranslate"><span class="pre">C-c</span> <span class="pre">C-SPC</span></code>.</p>
+</div></blockquote>
+</section>
+<section id="undoing-solved-holes">
+<h2>Undoing solved holes<a class="headerlink" href="#undoing-solved-holes" title="Link to this heading"></a></h2>
+<p>Solving a hole cannot be “undone” by Narya; it happens “outside the timestream”, effectively altering a previously executed command rather than executing a new one, and does not affect the sequence of commands available to be undone.  This should be intuitive in ProofGeneral, where solving a hole does not change the processed region or insert any commands in the buffer, and a subsequent “undo” (<code class="docutils literal notranslate"><span class="pre">C-c</span> <span class="pre">C-u</span></code>) acts on the most recently processed command <em>in the buffer</em> whether or not that was the command containing the solved hole.  For example, suppose you process a command defining <code class="docutils literal notranslate"><span class="pre">f</span></code> that contains a hole, then process another command defining <code class="docutils literal notranslate"><span class="pre">g</span></code>, then solve the hole in the definition of <code class="docutils literal notranslate"><span class="pre">f</span></code>.  After this, an “undo” will retract the definition of <code class="docutils literal notranslate"><span class="pre">g</span></code>, leaving the definition of <code class="docutils literal notranslate"><span class="pre">f</span></code> with its solved hole in place.</p>
+<blockquote>
+<div><p>Along the same lines, undoing commands in ProofGeneral does not affect the replacement of holes by the terms that solve them in the text of the buffer.  Thus, if you process a command containing a hole, solve the hole, and then undo <em>that</em> command, the term with which you solved the hole remains in the buffer in place of the original <code class="docutils literal notranslate"><span class="pre">?</span></code>.  Therefore, if you then re-process the command, the solving term will be used where there used to be a hole, without creating a hole at all.  For purposes of later commands, this <em>should</em> be entirely equivalent to continuing on with a filled hole, but it is not <em>literally</em> identical in Narya’s internals, so bugs may exist; if you find one, please report it.</p>
+</div></blockquote>
+<p>On the other hand, solving a hole changes the text of the Emacs buffer, and therefore it <em>can</em> be un-done with <em>Emacs’s</em> <code class="docutils literal notranslate"><span class="pre">undo</span></code> command (generally bound to <code class="docutils literal notranslate"><span class="pre">C-/</span></code>, <code class="docutils literal notranslate"><span class="pre">C-_</span></code>, and <code class="docutils literal notranslate"><span class="pre">C-x</span> <span class="pre">u</span></code>), removing the inserted term and replacing the original <code class="docutils literal notranslate"><span class="pre">?</span></code>.  Since the “solve” command cannot be undone by Narya, if you undo it in Emacs there is no consistent thing that Narya can do with the command containing that hole.  Thus, in this case the Narya ProofGeneral mode automatically also retracts the processed region past the command containing the hole.</p>
+</section>
+<section id="reformatting-solved-holes">
+<h2>Reformatting solved holes<a class="headerlink" href="#reformatting-solved-holes" title="Link to this heading"></a></h2>
+<p>By default, when filling a hole interactively with ProofGeneral, the term you enter is automatically reformatted.  In particular, line breaks and indenting spaces are inserted in (what Narya thinks are) appropriate places (and removed from what it thinks are inappropriate places), and ASCII operators such as <code class="docutils literal notranslate"><span class="pre">-&gt;</span></code> and <code class="docutils literal notranslate"><span class="pre">|-&gt;</span></code> are replaced by their Unicode equivalents such as → and ↦.  Unfortunately, at present the solving term is reformatted entirely on its own without reference to the command in which it appears, so after it is inserted the overall command may still be badly formatted, especially if you inserted a case tree structure such as <code class="docutils literal notranslate"><span class="pre">match</span></code>.  Currently the only solution to this is to retract the command after solving the hole and then re-process it to reformat it.</p>
+<p>As with reformatting of commands and source files, reformatting of hole-solving terms is affected by the command-line flags <code class="docutils literal notranslate"><span class="pre">-unicode</span></code> and <code class="docutils literal notranslate"><span class="pre">-ascii</span></code> (print operators as → or <code class="docutils literal notranslate"><span class="pre">-&gt;</span></code>, respectively).  You can also turn off solve-reformatting entirely by setting the Emacs customization variable <code class="docutils literal notranslate"><span class="pre">narya-reformat-holes</span></code> to <code class="docutils literal notranslate"><span class="pre">nil</span></code>.  However, if you don’t like the way Narya reformats your terms, I would appreciate it if you give me feedback about it rather than (or, at least, in addition to) turning it off.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="typechecking.html" class="btn btn-neutral float-left" title="Typechecking details" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="record-types.html" class="btn btn-neutral float-right" title="Record types and tuples" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Michael Shulman.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,190 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Typechecking details &mdash; Narya 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=2709fde1"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Interactive proof" href="interactive.html" />
+    <link rel="prev" title="Imports and scoping" href="imports-and-scoping.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            Narya
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="top-level-interface.html">Top level interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="built-in-types.html">Built-in types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="names-and-notations.html">Names and notations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="imports-and-scoping.html">Imports and scoping</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Typechecking details</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#bidirectionality">Bidirectionality</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#ascription">Ascription</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#let-binding">Let-binding</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#eta-conversion-and-case-trees">Eta-conversion and case trees</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="interactive.html">Interactive proof</a></li>
+<li class="toctree-l1"><a class="reference internal" href="record-types.html">Record types and tuples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data-types.html">Inductive datatypes and matching</a></li>
+<li class="toctree-l1"><a class="reference internal" href="codata-types.html">Codatatypes and comatching</a></li>
+<li class="toctree-l1"><a class="reference internal" href="canonical-types.html">Canonical types defined by case trees</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mutual-definitions.html">Mutual definitions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="parametric-observational-type-theory.html">Parametric Observational Type Theory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="remarks.html">Remarks on implementation</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Narya</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Typechecking details</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/typechecking.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="typechecking-details">
+<h1>Typechecking details<a class="headerlink" href="#typechecking-details" title="Link to this heading"></a></h1>
+<section id="bidirectionality">
+<h2>Bidirectionality<a class="headerlink" href="#bidirectionality" title="Link to this heading"></a></h2>
+<p>Narya’s typechecker is bidirectional.  This means that some terms <em>synthesize</em> a type, and hence can be used even in a place where the “expected” type of a term is not known, whereas other terms <em>check</em> against a type, and hence can only be used where there is an “expected” type for them to check against.  Of the terms we have mentioned so far:</p>
+<ul class="simple">
+<li><p>Function application <code class="docutils literal notranslate"><span class="pre">M</span> <span class="pre">N</span></code> synthesizes, by first requiring <code class="docutils literal notranslate"><span class="pre">M</span></code> to synthesize a function-type <code class="docutils literal notranslate"><span class="pre">(x:A)</span> <span class="pre">→</span> <span class="pre">B</span></code>, then checking <code class="docutils literal notranslate"><span class="pre">N</span></code> against the input type <code class="docutils literal notranslate"><span class="pre">A</span></code>, and finally synthesizing the corresponding output <code class="docutils literal notranslate"><span class="pre">B[N/x]</span></code>.</p></li>
+<li><p>Function abstraction <code class="docutils literal notranslate"><span class="pre">x</span> <span class="pre">↦</span> <span class="pre">M</span></code> checks against a function-type <code class="docutils literal notranslate"><span class="pre">(x:A)</span> <span class="pre">→</span> <span class="pre">B</span></code> by checking <code class="docutils literal notranslate"><span class="pre">M</span></code> against <code class="docutils literal notranslate"><span class="pre">B</span></code> in a context extended by a variable <code class="docutils literal notranslate"><span class="pre">x:A</span></code>.  In particular, this means that the same abstraction term can mean different things depending on what type it is checked against.  For instance, <code class="docutils literal notranslate"><span class="pre">x</span> <span class="pre">↦</span> <span class="pre">x</span></code> checks against <em>any</em> endo-function type <code class="docutils literal notranslate"><span class="pre">A</span> <span class="pre">→</span> <span class="pre">A</span></code>.  (Speaking semantically, however, we do not regard this as “one term having multiple types”; rather we consider that the typechecker is elaborating the ambiguous notation <code class="docutils literal notranslate"><span class="pre">x</span> <span class="pre">↦</span> <span class="pre">x</span></code> using contextual information to produce a distinct identity term in each endo-function type.)</p></li>
+<li><p>Type-forming operators such as <code class="docutils literal notranslate"><span class="pre">Type</span></code> and <code class="docutils literal notranslate"><span class="pre">(x:A)</span> <span class="pre">→</span> <span class="pre">B</span></code> synthesize, after requiring their inputs to synthesize.  This might be modified later after universe levels are introduced.</p></li>
+<li><p>Variables and constants synthesize their declared types.</p></li>
+</ul>
+</section>
+<section id="ascription">
+<h2>Ascription<a class="headerlink" href="#ascription" title="Link to this heading"></a></h2>
+<p>If you want to use a checking term in a synthesizing position, you have to <em>ascribe</em> it to a particular type by writing <code class="docutils literal notranslate"><span class="pre">M</span> <span class="pre">:</span> <span class="pre">A</span></code> (or <code class="docutils literal notranslate"><span class="pre">M:A</span></code> by the lexer rules discussed above, assuming <code class="docutils literal notranslate"><span class="pre">M</span></code> doesn’t end, or <code class="docutils literal notranslate"><span class="pre">A</span></code> start, with a special ASCII character notation).  This <em>checks</em> <code class="docutils literal notranslate"><span class="pre">M</span></code> against the supplied type <code class="docutils literal notranslate"><span class="pre">A</span></code>, and then itself <em>synthesizes</em> that type.  For example, you cannot directly apply an abstraction to an argument to create a redex as in <code class="docutils literal notranslate"><span class="pre">(x</span> <span class="pre">↦</span> <span class="pre">M)</span> <span class="pre">N</span></code>, since the abstraction only checks whereas a function being applied must synthesize, but you can if you ascribe it as in <code class="docutils literal notranslate"><span class="pre">((x</span> <span class="pre">↦</span> <span class="pre">M)</span> <span class="pre">:</span> <span class="pre">A</span> <span class="pre">→</span> <span class="pre">B)</span> <span class="pre">N</span></code>.  In general, ascription tends only to be needed when explicitly writing a redex or something similar.</p>
+<p>The ascription notation has tightness −ω, and is non-associative, so that <code class="docutils literal notranslate"><span class="pre">M</span> <span class="pre">:</span> <span class="pre">N</span> <span class="pre">:</span> <span class="pre">P</span></code> is a parse error.  However, the right-associativity of <code class="docutils literal notranslate"><span class="pre">↦</span></code> and the fact that they share the same tightness means that <code class="docutils literal notranslate"><span class="pre">x</span> <span class="pre">↦</span> <span class="pre">M</span> <span class="pre">:</span> <span class="pre">A</span></code> is parsed as <code class="docutils literal notranslate"><span class="pre">x</span> <span class="pre">↦</span> <span class="pre">(M</span> <span class="pre">:</span> <span class="pre">A)</span></code>, hence the placement of parentheses in the above example redex.</p>
+<p><em>Side note:</em> The coexistence of type ascription and NuPRL/Agda-style dependent function-types leads to a potential ambiguity: <code class="docutils literal notranslate"><span class="pre">(x</span> <span class="pre">:</span> <span class="pre">A)</span> <span class="pre">→</span> <span class="pre">B</span></code> could be a dependent function type, but it could also be a <em>non-dependent</em> function type whose domain <code class="docutils literal notranslate"><span class="pre">x</span></code> is ascribed to type <code class="docutils literal notranslate"><span class="pre">A</span></code> (which would therefore have to be a type universe).  Narya resolves this in favor of the dependent function type, which is nearly always what is intended.  If you really mean the other you can write it as <code class="docutils literal notranslate"><span class="pre">((x</span> <span class="pre">:</span> <span class="pre">A))</span> <span class="pre">→</span> <span class="pre">B</span></code> or <code class="docutils literal notranslate"><span class="pre">((x)</span> <span class="pre">:</span> <span class="pre">A)</span> <span class="pre">→</span> <span class="pre">B</span></code>; but I can’t imagine why you would need to do this, since the only possible ambiguity is when <code class="docutils literal notranslate"><span class="pre">x</span></code> is a variable (or a list of variables), and variables and constants (and application spines of such) always synthesize their type anyway and thus don’t need to be ascribed.</p>
+</section>
+<section id="let-binding">
+<h2>Let-binding<a class="headerlink" href="#let-binding" title="Link to this heading"></a></h2>
+<p>Writing <code class="docutils literal notranslate"><span class="pre">let</span> <span class="pre">x</span> <span class="pre">≔</span> <span class="pre">M</span> <span class="pre">in</span> <span class="pre">N</span></code> binds the local variable <code class="docutils literal notranslate"><span class="pre">x</span></code> to the value <code class="docutils literal notranslate"><span class="pre">M</span></code> while typechecking and evaluating <code class="docutils literal notranslate"><span class="pre">N</span></code>.  The unicode ≔ is interchangeable with the ASCII <code class="docutils literal notranslate"><span class="pre">:=</span></code>.  Computationally, <code class="docutils literal notranslate"><span class="pre">let</span> <span class="pre">x</span> <span class="pre">≔</span> <span class="pre">M</span> <span class="pre">in</span> <span class="pre">N</span></code> is equivalent to <code class="docutils literal notranslate"><span class="pre">(x</span> <span class="pre">↦</span> <span class="pre">N)</span> <span class="pre">M</span></code>, but it also binds <code class="docutils literal notranslate"><span class="pre">x</span></code> to the value <code class="docutils literal notranslate"><span class="pre">M</span></code> while typechecking <code class="docutils literal notranslate"><span class="pre">N</span></code>, which in a dependent type theory is stronger.</p>
+<p>The term <code class="docutils literal notranslate"><span class="pre">M</span></code> is required to synthesize.  Thus <code class="docutils literal notranslate"><span class="pre">let</span> <span class="pre">x</span> <span class="pre">≔</span> <span class="pre">M</span> <span class="pre">:</span> <span class="pre">A</span> <span class="pre">in</span> <span class="pre">N</span></code> is a common idiom, and can be written alternatively as <code class="docutils literal notranslate"><span class="pre">let</span> <span class="pre">x</span> <span class="pre">:</span> <span class="pre">A</span> <span class="pre">≔</span> <span class="pre">M</span> <span class="pre">in</span> <span class="pre">N</span></code>.  The body <code class="docutils literal notranslate"><span class="pre">N</span></code> can either check or synthesize, and the let-binding as a whole inherits this from it: if <code class="docutils literal notranslate"><span class="pre">N</span></code> synthesizes a type then the let-binding synthesizes the same type, while if <code class="docutils literal notranslate"><span class="pre">N</span></code> checks then the let-binding checks against a type that is passed on to <code class="docutils literal notranslate"><span class="pre">N</span></code> to check against.  The let-binding notation is right-associative with tightness −ω.</p>
+<p>An ordinary let-binding is not recursive: the variable <code class="docutils literal notranslate"><span class="pre">x</span></code> cannot appear in the term <code class="docutils literal notranslate"><span class="pre">M</span></code>.  This is intentional and enables a common idiom where <code class="docutils literal notranslate"><span class="pre">x</span></code> shadows a previously existing variable of the same name in <code class="docutils literal notranslate"><span class="pre">N</span></code>, while the <em>previous</em> variable of that name can appear in <code class="docutils literal notranslate"><span class="pre">M</span></code>, thereby creating the illusion that the value of that variable has been “changed”.  For instance, <code class="docutils literal notranslate"><span class="pre">let</span> <span class="pre">x</span> <span class="pre">≔</span> <span class="pre">x</span> <span class="pre">+</span> <span class="pre">1</span> <span class="pre">in</span></code> has the appearance of incrementing the value of <code class="docutils literal notranslate"><span class="pre">x</span></code>.</p>
+<p>However, it is possible to define a recursive let-binding by writing <code class="docutils literal notranslate"><span class="pre">let</span> <span class="pre">rec</span></code> instead of <code class="docutils literal notranslate"><span class="pre">let</span></code>.  (Note that <code class="docutils literal notranslate"><span class="pre">let</span></code> and <code class="docutils literal notranslate"><span class="pre">rec</span></code> are two keywords separated by a space.)  In this case, the variable <code class="docutils literal notranslate"><span class="pre">x</span></code> <em>can</em> appear in <code class="docutils literal notranslate"><span class="pre">M</span></code>, and of course shadows any previously defined variable of the same name in <code class="docutils literal notranslate"><span class="pre">M</span></code> as well as in <code class="docutils literal notranslate"><span class="pre">N</span></code>.  In a recursive let-binding the type of <code class="docutils literal notranslate"><span class="pre">M</span></code> must be given explicitly (as with a top-level <code class="docutils literal notranslate"><span class="pre">def</span></code> which can also be recursive): the only valid syntax is <code class="docutils literal notranslate"><span class="pre">let</span> <span class="pre">rec</span> <span class="pre">x</span> <span class="pre">:</span> <span class="pre">A</span> <span class="pre">≔</span> <span class="pre">M</span> <span class="pre">in</span> <span class="pre">N</span></code>.  (Recursive let-bindings are also treated “generatively”, like let-bindings that include matches or comatches; see below.)</p>
+</section>
+<section id="eta-conversion-and-case-trees">
+<h2>Eta-conversion and case trees<a class="headerlink" href="#eta-conversion-and-case-trees" title="Link to this heading"></a></h2>
+<p>Functions satisfy undirected η-conversion (in addition to the obvious directed β-reduction).  That is, while neither of <code class="docutils literal notranslate"><span class="pre">x</span> <span class="pre">↦</span> <span class="pre">f</span> <span class="pre">x</span></code> or <code class="docutils literal notranslate"><span class="pre">f</span></code> <em>simplifies</em> to the other, they are considered equal for the purposes of typechecking (they are “convertible”).  The way this works is that the equality-checking algorithm is type-sensitive, and when comparing two terms at a function type it first applies them to a fresh variable, and <code class="docutils literal notranslate"><span class="pre">(x</span> <span class="pre">↦</span> <span class="pre">f</span> <span class="pre">x)</span> <span class="pre">y</span></code> then reduces to <code class="docutils literal notranslate"><span class="pre">f</span> <span class="pre">y</span></code>.</p>
+<p>In addition, constants defined as functions do not reduce until they are applied to all of their arguments, including both arguments declared as parameters (before the colon) and those not so declared.  For instance, if we define addition of Church numerals as</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def cplus (A:Type) (m n : (A → A) → (A → A)) : (A → A) → (A → A) ≔
+f x ↦ m f (n f x)
+</pre></div>
+</div>
+<p>then <code class="docutils literal notranslate"><span class="pre">cplus</span> <span class="pre">A</span> <span class="pre">(f</span> <span class="pre">x</span> <span class="pre">↦</span> <span class="pre">f</span> <span class="pre">x)</span> <span class="pre">(f</span> <span class="pre">x</span> <span class="pre">↦</span> <span class="pre">f</span> <span class="pre">x)</span></code> (i.e. “1 + 1”) doesn’t reduce to <code class="docutils literal notranslate"><span class="pre">(f</span> <span class="pre">x</span> <span class="pre">↦</span> <span class="pre">f</span> <span class="pre">(f</span> <span class="pre">x))</span></code> because it is not fully applied, whereas <code class="docutils literal notranslate"><span class="pre">cplus</span> <span class="pre">A</span> <span class="pre">(f</span> <span class="pre">x</span> <span class="pre">↦</span> <span class="pre">f</span> <span class="pre">x)</span> <span class="pre">(f</span> <span class="pre">x</span> <span class="pre">↦</span> <span class="pre">f</span> <span class="pre">x)</span> <span class="pre">f</span> <span class="pre">x</span></code> does reduce to <code class="docutils literal notranslate"><span class="pre">f</span> <span class="pre">(f</span> <span class="pre">x)</span></code>.  However, <code class="docutils literal notranslate"><span class="pre">cplus</span> <span class="pre">A</span> <span class="pre">(f</span> <span class="pre">x</span> <span class="pre">↦</span> <span class="pre">f</span> <span class="pre">x)</span> <span class="pre">(f</span> <span class="pre">x</span> <span class="pre">↦</span> <span class="pre">f</span> <span class="pre">x)</span></code> is still <em>convertible</em> with <code class="docutils literal notranslate"><span class="pre">(f</span> <span class="pre">x</span> <span class="pre">↦</span> <span class="pre">f</span> <span class="pre">(f</span> <span class="pre">x))</span></code> because equality-checking does η-conversion.  If you want to display the body of a constant defined as a function, you must manually η-expand it, which means it has to be ascribed as well:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>echo (A f x ↦ cplus A (f x ↦ f x) (f x ↦ f x) f x)
+   : (A:Type) → (A → A) → (A → A)
+
+A f x ↦ f (f x)
+   : (A : Type) → (A → A) → A → A
+</pre></div>
+</div>
+<p>If there is significant demand for displaying function bodies, we may add an option to ask for η-expansion.</p>
+<p>More generally, the definition of a constant is not just a term, but something called a <em>case tree</em>, which can contain internal nodes of different sorts and ends in ordinary terms at its leaves.  Evaluation of such a constant, applied to arguments, does not reduce to anything unless the arguments are sufficient and sufficiently informative for the evaluation to reach a leaf.  In fact <em>every</em> defined constant in Narya is actually defined to equal a case tree, even if it consists only of a single leaf.</p>
+<p>So far, the only kinds of case tree node we have seen are abstractions and let-bindings.  The requirement for abstractions in a case tree to reduce is just that the function receives enough arguments to β-reduce all the abstractions, and let-bindings in a case tree reduce if their body does.  Thus, in particular, an abstraction directly inside a let-binding, such as that over <code class="docutils literal notranslate"><span class="pre">y</span></code> above, must also receive an argument before the definition reduces.  Other kinds of case tree nodes, with their own reduction rules, include tuples, matches, and comatches, discussed below.</p>
+<p>Since abstractions and let-bindings can also occur at arbitrary positions in a term, there is some potential ambiguity in a definition containing these: are they part of the case tree, or part of a unique body term?  The rule to resolve this is that the case tree includes <em>as much as possible</em>.  Once another kind of term is encountered that cannot be a case tree node, then that term and all its sub-terms (including any abstractions or let-bindings) are part of the leaf.  Thus, for instance, in</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def foo : A → B → C ≔
+   x ↦
+   let y ≔ M in
+   y ↦
+   f (z ↦ N)
+</pre></div>
+</div>
+<p>the abstractions over <code class="docutils literal notranslate"><span class="pre">x</span></code> and <code class="docutils literal notranslate"><span class="pre">y</span></code> are part of the case tree, as is the let-binding, but the abstraction <code class="docutils literal notranslate"><span class="pre">z</span> <span class="pre">↦</span> <span class="pre">N</span></code> is not.  Thus, <code class="docutils literal notranslate"><span class="pre">foo</span></code> and <code class="docutils literal notranslate"><span class="pre">foo</span> <span class="pre">a</span></code> will not reduce, but <code class="docutils literal notranslate"><span class="pre">foo</span> <span class="pre">a</span> <span class="pre">b</span></code> will reduce.  This behavior is usually what you want, but if you really want to define a constant that reduces to an abstraction before it receives an argument you can wrap it in a no-op redex:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def id (A:Type) : A → A
+     ≔ ((f ↦ f) : (A → A) → (A → A)) (x ↦ x)
+</pre></div>
+</div>
+<p>Since a function application cannot be part of a case tree, it goes into the body term, including the abstraction over <code class="docutils literal notranslate"><span class="pre">f</span></code>; thus <code class="docutils literal notranslate"><span class="pre">id</span> <span class="pre">A</span></code> will reduce to <code class="docutils literal notranslate"><span class="pre">x</span> <span class="pre">↦</span> <span class="pre">x</span></code>.  Unfortunately the identity function has to be ascribed, as always whenever you write an explicit redex.  A slightly less verbose way to achieve this is to let-bind the abstraction to a variable and then return the variable, since let-bindings are fully evaluated before being assigned to a variable:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>def id (A:Type) : A → A
+     ≔ let id&#39; : A → A ≔ (x ↦ x) in id&#39;
+</pre></div>
+</div>
+<p>However, the type <code class="docutils literal notranslate"><span class="pre">A</span> <span class="pre">→</span> <span class="pre">A</span></code> still has to be written again, since a let-binding must synthesize.  If there is significant demand for it, we may implement a less kludgy way to force transitioning from case tree nodes to a leaf.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="imports-and-scoping.html" class="btn btn-neutral float-left" title="Imports and scoping" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="interactive.html" class="btn btn-neutral float-right" title="Interactive proof" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Michael Shulman.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
