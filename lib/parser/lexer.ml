@@ -232,8 +232,19 @@ let other_char : string t =
   let* c = ucharp (fun x -> not (Array.mem x (specials ()))) "alphanumeric or unicode" in
   return (Utf8.Encoder.to_internal c)
 
-let is_numeral =
-  List.for_all (fun s -> String.for_all (fun c -> String.exists (fun x -> x = c) "0123456789") s)
+let all_digits = String.for_all (fun c -> String.exists (fun x -> x = c) "0123456789")
+let is_numeral = List.for_all all_digits
+let valid_var x = not (all_digits x)
+let valid_field x = not (all_digits x)
+let valid_constr x = not (all_digits x)
+
+(* Whether a string is valid as a dot-separated piece of an identifier name, or equivalently as a local variable name.  We don't test for absence of the delimited symbols, since they will automatically be lexed separately; this is for testing validity after the lexer has split things into potential tokens.  We also don't test for absence of dots, since identifiers will be split on dots automatically.  Sadly, we also don't test for non-numerals here, since at lexing time numerals are represented by Idents. *)
+let atomic_ident s =
+  let len = String.length s in
+  len > 0 && s.[0] <> '_' && s.[len - 1] <> '_'
+
+(* Here we do check for non-numerals. *)
+let valid_ident = List.for_all (fun x -> atomic_ident x && not (all_digits x))
 
 (* Once we have an identifier string, we inspect it and divide into cases to make a Token.t.  We take a range so that we can immediately report invalid field, constructor, and numeral names with a position. *)
 let canonicalize (rng : Position.range) : string -> Token.t t = function
@@ -276,25 +287,30 @@ let canonicalize (rng : Position.range) : string -> Token.t t = function
              parts
       then fatal Parse_error
       else
+        with_loc (Some (Range.convert rng)) @@ fun () ->
         match (parts, bwdparts) with
         | [], _ -> fatal (Anomaly "canonicalizing empty string")
         (* Can't both start and end with a . *)
-        | "" :: _, Snoc (_, "") -> fatal ~loc:(Range.convert rng) Parse_error
+        | "" :: _, Snoc (_, "") -> fatal Parse_error
         (* Starting with a . makes a field.  If there is only a primary name, it's a lower field. *)
-        | [ ""; field ], _ -> return (Field (field, []))
+        | [ ""; field ], _ ->
+            if valid_field field then return (Field (field, [])) else fatal (Invalid_field field)
         (* Otherwise, if the primary field name is followed by a "..", then the remaining sections are the parts. *)
-        | "" :: field :: "" :: pbij, _ -> return (Field (field, pbij))
+        | "" :: field :: "" :: pbij, _ ->
+            if valid_field field then return (Field (field, pbij)) else fatal (Invalid_field field)
         (* Otherwise, there is only one remaining section allowed, and it is split into characters to make the remaining sections. *)
         | [ ""; field; pbij ], _ ->
-            return (Field (field, String.fold_right (fun c s -> String.make 1 c :: s) pbij []))
-        | "" :: _ :: _ :: _ :: _, _ -> fatal ~loc:(Range.convert rng) Parse_error
+            if valid_field field then
+              return (Field (field, String.fold_right (fun c s -> String.make 1 c :: s) pbij []))
+            else fatal (Invalid_field field)
+        | "" :: _ :: _ :: _ :: _, _ -> fatal Parse_error
         (* Ending with a . (and containing no internal .s) makes a constr *)
-        | _, Snoc (Snoc (Emp, constr), "") -> return (Constr constr)
-        | _, Snoc (_, "") ->
-            fatal ~loc:(Range.convert rng) (Unimplemented ("higher constructors: " ^ s))
+        | _, Snoc (Snoc (Emp, constr), "") ->
+            if valid_constr constr then return (Constr constr) else fatal (Invalid_constr constr)
+        | _, Snoc (_, "") -> fatal (Unimplemented ("higher constructors: " ^ s))
         (* Otherwise, all the parts must be identifiers. *)
-        | parts, _ when List.for_all ok_ident parts -> return (Ident parts)
-        | _, _ -> fatal ~loc:(Range.convert rng) Parse_error)
+        | parts, _ when List.for_all atomic_ident parts -> return (Ident parts)
+        | _, _ -> fatal Parse_error)
 
 (* An identifier is a list of one or more other characters, canonicalized. *)
 let other : Token.t t =

@@ -20,7 +20,7 @@ let get_var : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string option 
  fun { value; loc } ->
   with_loc loc @@ fun () ->
   match value with
-  | Ident ([ x ], _) -> Some x
+  | Ident ([ x ], _) when Lexer.valid_var x -> Some x
   | Ident (xs, _) -> fatal (Invalid_variable xs)
   | Placeholder _ -> None
   | _ -> fatal Parse_error

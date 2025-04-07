@@ -149,10 +149,11 @@ let rec get_vars : type n lt1 ls1 rt1 rs1.
     (string option, n) Bwv.t -> (lt1, ls1, rt1, rs1) parse located -> n extended_ctx =
  fun ctx vars ->
   match vars.value with
-  | Ident ([ x ], _) -> Extctx (Suc Zero, Snoc (Emp, vars.loc), Bwv.snoc ctx (Some x))
+  | Ident ([ x ], _) when Lexer.valid_var x ->
+      Extctx (Suc Zero, Snoc (Emp, vars.loc), Bwv.snoc ctx (Some x))
   | Ident (xs, _) -> fatal ?loc:vars.loc (Invalid_variable xs)
   | Placeholder _ -> Extctx (Suc Zero, Snoc (Emp, vars.loc), Bwv.snoc ctx None)
-  | App { fn; arg = { value = Ident ([ x ], _); _ }; _ } ->
+  | App { fn; arg = { value = Ident ([ x ], _); _ }; _ } when Lexer.valid_var x ->
       let (Extctx (ab, locs, ctx)) = get_vars ctx fn in
       Extctx (Suc ab, Snoc (locs, vars.loc), Bwv.snoc ctx (Some x))
   | App { arg = { value = Ident (xs, _); loc }; _ } -> fatal ?loc (Invalid_variable xs)
@@ -546,9 +547,10 @@ let rec process_var_list : type lt ls rt rs.
     (string option * Whitespace.t list) list option =
  fun { value; loc } vars ->
   match value with
-  | Ident ([ x ], w) -> Some ((Some x, w) :: vars)
+  | Ident ([ x ], w) when Lexer.valid_var x -> Some ((Some x, w) :: vars)
   | Placeholder w -> Some ((None, w) :: vars)
-  | App { fn; arg = { value = Ident ([ x ], w); _ }; _ } -> process_var_list fn ((Some x, w) :: vars)
+  | App { fn; arg = { value = Ident ([ x ], w); _ }; _ } when Lexer.valid_var x ->
+      process_var_list fn ((Some x, w) :: vars)
   | App { fn; arg = { value = Placeholder w; _ }; _ } -> process_var_list fn ((None, w) :: vars)
   (* There's a choice here: an invalid variable name could still be a valid term, so we could allow for instance (x.y : A) → B to be parsed as a non-dependent function type.  But that seems a recipe for confusion. *)
   | Ident (name, _) -> fatal ?loc (Invalid_variable name)
@@ -813,7 +815,8 @@ let rec process_tuple : type n.
   (* Labeled field *)
   | Term { value = Notn ((Coloneq, _), n); loc } :: obs -> (
       match args n with
-      | [ Term { value = Ident ([ fld ], _); loc = xloc }; Token (Coloneq, _); Term tm ] ->
+      | [ Term { value = Ident ([ fld ], _); loc = xloc }; Token (Coloneq, _); Term tm ]
+        when Lexer.valid_field fld ->
           let tm = process ctx tm in
           if StringSet.mem fld found then fatal ?loc:xloc (Duplicate_field_in_tuple fld)
           else
@@ -1008,7 +1011,7 @@ let get_pattern : type lt1 ls1 rt1 rs1. (lt1, ls1, rt1, rs1) parse located -> pa
       (lt1, ls1, rt1, rs1) parse located -> (pattern, n) Vec.t located -> pattern =
    fun pat pats ->
     match pat.value with
-    | Ident ([ x ], _) -> (
+    | Ident ([ x ], _) when Lexer.valid_var x -> (
         match pats.value with
         | [] -> Var (locate (Some x) pat.loc)
         | _ -> fatal ?loc:pat.loc Parse_error)
@@ -1683,7 +1686,7 @@ let rec process_codata : type n.
       with_loc loc @@ fun () ->
       let x =
         match x with
-        | Ident ([ x ], _) -> Some x
+        | Ident ([ x ], _) when Lexer.valid_var x -> Some x
         | Placeholder _ -> None
         | Ident (x, _) -> fatal ?loc:xloc (Invalid_variable x)
         | _ -> fatal ?loc:xloc Parse_error in
@@ -1790,12 +1793,14 @@ let rec process_tel : type a.
   | [ Token (RParen, _) ] -> Any_tel Emp
   | Token (Op ",", _) :: obs -> process_tel ctx seen obs
   | Term { value = Ident ([ name ], _); loc } :: Token (Colon, _) :: Term ty :: obs ->
-      if StringSet.mem name seen then
-        fatal ?loc (Duplicate_field_in_record (Field.intern name D.zero));
-      let ty = process ctx ty in
-      let ctx = Bwv.snoc ctx (Some name) in
-      let (Any_tel tel) = process_tel ctx (StringSet.add name seen) obs in
-      Any_tel (Ext (Some name, ty, tel))
+      if Lexer.valid_field name then (
+        if StringSet.mem name seen then
+          fatal ?loc (Duplicate_field_in_record (Field.intern name D.zero));
+        let ty = process ctx ty in
+        let ctx = Bwv.snoc ctx (Some name) in
+        let (Any_tel tel) = process_tel ctx (StringSet.add name seen) obs in
+        Any_tel (Ext (Some name, ty, tel)))
+      else fatal ?loc (Invalid_field name)
   | _ -> invalid "record"
 
 let process_record ctx obs loc =

@@ -60,11 +60,11 @@ However, there are the following exceptions to this, where whitespace is not nee
 Identifiers
 -----------
 
-Identifiers (variables and constant names) can be any string of non-whitespace characters, other than those mentioned above as special, that does not start or end with a period or an underscore, and is not a reserved word.  Currently the reserved words are
+An *atomic identifier* can be any string of non-whitespace characters, other than those mentioned above as special, not containing any periods, not starting or ending with an underscore, does not consist entirely of digits, and is not a reserved word.  Currently the reserved words are
 
 .. code-block:: none
    
-   let rec in def and axiom echo notation import export solve show quit undo match return sig data codata
+   and axiom codata data def display echo end export import in let match
+   notation option quit rec return section show sig solve synth undo
 
-In particular, identifiers may start with a digit, or even consist entirely of digits (thereby shadowing a :ref:`numeral notation<Numeral notations>`).  Internal periods in identifiers denote namespace qualifiers on constants; thus they cannot appear in local variable names.
-
+An *identifier* consists of one or more atomic identifiers joined by periods.  Variable names must be atomic identifiers, while constant names must be identifiers (internal periods denote :ref:`namespaces<Namespaces and sections>`).  In particular, (atomic) identifiers may *start* with a digit, such as for instance ``2Cat`` or ``2−Cat`` for the type of 2-categories.

@@ -137,7 +137,7 @@ module Code = struct
     | Anomaly : string -> t
     | No_such_level : printable -> t
     | Name_already_defined : string -> t
-    | Invalid_constant_name : string -> t
+    | Invalid_constant_name : string list -> t
     | Too_many_commands : t
     | Invalid_tightness : string -> t
     | Fixity_mismatch : t
@@ -724,7 +724,7 @@ module Code = struct
       | Name_already_defined name ->
           textf "name already defined: %a" pp_printed (print (PString name))
       | Invalid_constant_name name ->
-          textf "invalid constant name: %a" pp_printed (print (PString name))
+          textf "invalid constant name: %a" pp_printed (print (PString (String.concat "." name)))
       | Too_many_commands -> text "too many commands: enter one at a time"
       | Fixity_mismatch ->
           text
