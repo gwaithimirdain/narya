@@ -48,43 +48,69 @@ Commands
 
 In a file, conventionally each command begins on a new line, but this is not technically necessary since each command begins with a keyword that has no other meaning.  (Similarly, a command-line ``-e`` string may contain multiple commands as long as whitespace separates them.)  Indentation is not significant, but there is a built-in code reformatter (see below) that is on by default, enforcing a uniform indentation style.  The available commands in a file or ``-e`` string are the following.
 
-1. ``def NAME [PARAMS] [: TYPE] ≔ TERM [and ...]``
+Def
+^^^
 
-   Define a global constant called ``NAME`` having type ``TYPE`` and value ``TERM``.  Thus ``NAME`` must be a valid identifier (see below) with no current definition in scope, while ``TYPE`` must parse and typecheck as a type, and ``TERM`` must parse and typecheck at type ``TYPE``.  If ``TYPE`` is omitted, then ``TERM`` must synthesize a type (see below).  In addition, if ``TYPE`` is specified, then ``TERM`` can also be a case tree or canonical type declaration (see below).  The optional ``PARAMS`` is a list of parameters of the form ``(x : PTY)``, or more generally ``(x y z : PTY)``, with the effect that the actual type of the constant ``NAME`` is the Π-type of ``TYPE`` (or the synthesized type of ``TERM``) over these parameters, and its value is the λ-abstraction of ``TERM`` over them.  That is, ``def foo (x:A) : B ≔ M`` is equivalent to ``def foo : A → B ≔ x ↦ M``.  Finally, a family of constants can be defined mutually by using the ``and`` keyword to introduce the second and later ones (see below).
+.. code-block:: none
 
-2. ``axiom NAME [PARAMS] : TYPE``
+   def NAME [PARAMS] [: TYPE] ≔ TERM [and ...]
 
-   Assert a global constant called ``NAME`` having type ``TYPE``, without any definition (an axiom).  Parameters and names are treated as for ``def``.
+Define a global constant called ``NAME`` having type ``TYPE`` and value ``TERM``.  Thus ``NAME`` must be a valid identifier (see below) with no current definition in scope, while ``TYPE`` must parse and typecheck as a type, and ``TERM`` must parse and typecheck at type ``TYPE``.  If ``TYPE`` is omitted, then ``TERM`` must synthesize a type (see below).  In addition, if ``TYPE`` is specified, then ``TERM`` can also be a case tree or canonical type declaration (see below).  The optional ``PARAMS`` is a list of parameters of the form ``(x : PTY)``, or more generally ``(x y z : PTY)``, with the effect that the actual type of the constant ``NAME`` is the Π-type of ``TYPE`` (or the synthesized type of ``TERM``) over these parameters, and its value is the λ-abstraction of ``TERM`` over them.  That is, ``def foo (x:A) : B ≔ M`` is equivalent to ``def foo : A → B ≔ x ↦ M``.  Finally, a family of constants can be defined mutually by using the ``and`` keyword to introduce the second and later ones (see below).
 
-3. ``echo TERM``
+Axiom
+^^^^^
 
-   Normalize ``TERM`` and print its value and its type to standard output.  Note that ``TERM`` must synthesize a type (see below); if it is a checking term you must ascribe it.  In interactive mode, if you enter a term instead of a command, Narya assumes you mean to ``echo`` that term.
+.. code-block:: none
 
-4. ``synth TERM``
+   axiom NAME [PARAMS] : TYPE
 
-   Like ``echo``, but does not normalize the term, only computes its type.
+Assert a global constant called ``NAME`` having type ``TYPE``, without any definition (an axiom).  Parameters and names are treated as for ``def``.
 
-5. ``notation [TIGHTNESS] NAME : […] PATTERN […] ≔ HEAD ARGUMENTS``
+Echo
+^^^^
 
-   Declare a new mixfix notation.  Every notation must have a ``NAME``, which is an identifier like the name of a constant, and a ``TIGHTNESS`` unless it is outfix (see below).  The ``PATTERN`` of a notation is discussed below.  The value of a notation consists of a ``HEAD``, which is either a previously defined constant or a datatype constructor (see below), followed by the ``ARGUMENTS`` that must consist of exactly the variables appearing in the pattern, once each, in some order.
+.. code-block:: none
 
-6. 
+   echo TERM
 
-.. code-block:: bash
+Normalize ``TERM`` and print its value and its type to standard output.  Note that ``TERM`` must synthesize a type (see below); if it is a checking term you must ascribe it.  In interactive mode, if you enter a term instead of a command, Narya assumes you mean to ``echo`` that term.
+
+Synth
+^^^^^
+
+.. code-block:: none
+
+   synth TERM
+
+Like ``echo``, but does not normalize the term, only computes its type.
+
+Notation
+^^^^^^^^
+
+.. code-block:: none
+
+   notation [TIGHTNESS] NAME : […] PATTERN […] ≔ HEAD ARGUMENTS
+
+Declare a new mixfix notation.  Every notation must have a ``NAME``, which is an identifier like the name of a constant, and a ``TIGHTNESS`` unless it is outfix (see below).  The ``PATTERN`` of a notation is discussed below.  The value of a notation consists of a ``HEAD``, which is either a previously defined constant or a datatype constructor (see below), followed by the ``ARGUMENTS`` that must consist of exactly the variables appearing in the pattern, once each, in some order.
+
+Import/export
+^^^^^^^^^^^^^
+
+.. code-block:: none
 
     import "FILE"
     import "FILE" | MOD
   
 Add the extension ``.ny`` to the double-quoted string ``FILE`` and import the file at that location (either absolute or relative to the location of the current file), with the optional modifier ``MOD`` applied to its namespace (see below).  The disk file *must* have the ``.ny`` extension, whereas the string given to ``import`` must *not* have it; this is because in the future the string given to ``import`` will be a more general "library identifier" in the `bantorra <https://redprl.org/bantorra/bantorra/index.html>`_ framework.
 
-.. code-block:: bash
+.. code-block:: none
 
     import NAME
     import NAME | MOD
 
 Import the namespace rooted at ``NAME`` into the current top-level namespace, with the optional modifier ``MOD`` applied to it first.
 
-.. code-block:: bash
+.. code-block:: none
 
     export "FILE"
     export "FILE" | MOD
@@ -93,38 +119,71 @@ Import the namespace rooted at ``NAME`` into the current top-level namespace, wi
   
 Same as above, but also export the new names to other files that import this one.
 
-7. ``section NAME ≔``
+Sections
+^^^^^^^^
+
+.. code-block:: none
+
+   section NAME ≔
    
-   Begin a section named ``NAME``, which must be a valid identifier.  All ordinary commands are valid inside a section (including other section commands).
+Begin a section named ``NAME``, which must be a valid identifier.  All ordinary commands are valid inside a section (including other section commands).
    
-8. ``end``
+.. code-block:: none
 
-   End the section that was most recently opened and not yet closed.  All the constants that were in the export namespace of that section (i.e. those defined with ``def`` and ``axiom`` or imported from elsewhere with ``export``) are prefixed by the name of that section and merged into the previous namespace.  (See namespaces, below.)
+   end
 
-9. ``quit``
+End the section that was most recently opened and not yet closed.  All the constants that were in the export namespace of that section (i.e. those defined with ``def`` and ``axiom`` or imported from elsewhere with ``export``) are prefixed by the name of that section and merged into the previous namespace.  (See namespaces, below.)
 
-   Terminate execution of the current compilation unit.  Whenever this command is found, loading of the current file or command-line string ceases, just as if the file or string had ended right there.  Execution then continues as usual with any file that imported the current one, with the next file or string on the command line, or with interactive mode if that was requested.  The command ``quit`` in interactive mode exits the program (you can also exit interactive mode by typing Control+D).
+Quit
+^^^^
+
+.. code-block:: none
+
+   quit
+
+Terminate execution of the current compilation unit.  Whenever this command is found, loading of the current file or command-line string ceases, just as if the file or string had ended right there.  Execution then continues as usual with any file that imported the current one, with the next file or string on the command line, or with interactive mode if that was requested.  The command ``quit`` in interactive mode exits the program (you can also exit interactive mode by typing Control+D).
+
+Interactive commands
+--------------------
 
 In interactive mode, the following additional commands are also available.  (However, they are mostly intended for use in the ProofGeneral backend, see below.)
 
-1. Display the context and type of a specific open hole number ``HOLE``, or of all the open holes (see below).
+Show holes
+^^^^^^^^^^
 
 .. code-block:: bash
 
     show hole HOLE
     show holes
 
-2. ``solve HOLE ≔ TERM``
+Display the context and type of a specific open hole number ``HOLE``, or of all the open holes (see below).
 
-   Fill hole number ``HOLE`` with the term ``TERM`` (see below).
+Solve holes
+^^^^^^^^^^^
 
-3. ``undo N``
+.. code-block:: none
 
-   Undo the last ``N`` commands that modify the global state, rewinding to a previous situation.  This includes all commands except ``echo``, ``synth``, ``show``, ``solve``, and ``display``: those commands are skipped over when undoing.  (Of course ``solve`` does modify the global state, but it is not undoable because it doesn't affect the "processed position" in ProofGeneral; it exists "outside the timestream".)  The command ``undo`` itself is also not "undoable" and there is no "redo": after a command is undone, it is lost permanently from Narya's memory (although you can press Up-arrow or Meta+P to find it in the interactive history and re-execute it).  Following an ``undo`` with another ``undo`` will just undo additional commands: ``undo 1`` followed by ``undo 1`` is the same as ``undo 2``.
+   solve HOLE ≔ TERM
 
-4. ``display SETTING``
+Fill hole number ``HOLE`` with the term ``TERM`` (see below).
 
-   Set one of the display settings (that are also set by command-line flags).  Possible display settings are
+Undo
+^^^^
+
+.. code-block:: none
+
+   undo N
+
+Undo the last ``N`` commands that modify the global state, rewinding to a previous situation.  This includes all commands except ``echo``, ``synth``, ``show``, ``solve``, and ``display``: those commands are skipped over when undoing.  (Of course ``solve`` does modify the global state, but it is not undoable because it doesn't affect the "processed position" in ProofGeneral; it exists "outside the timestream".)  The command ``undo`` itself is also not "undoable" and there is no "redo": after a command is undone, it is lost permanently from Narya's memory (although you can press Up-arrow or Meta+P to find it in the interactive history and re-execute it).  Following an ``undo`` with another ``undo`` will just undo additional commands: ``undo 1`` followed by ``undo 1`` is the same as ``undo 2``.
+
+Display settings
+^^^^^^^^^^^^^^^^
+
+.. code-block:: none
+
+   display SETTING
+
+Set one of the display settings (that are also set by command-line flags).  Possible display settings are
    
 .. code-block:: bash
 
