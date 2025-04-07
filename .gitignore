@@ -34,3 +34,6 @@ narya.opam
 
 # Generated opam file
 narya.opam
+
+# Documentation build directory
+docs/build
