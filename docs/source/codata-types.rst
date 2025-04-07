@@ -20,7 +20,7 @@ Here is a corecursive definition of the codatatype of infinite streams:
    | x .tail : Stream A
    ]
 
-That is, we use brackets and bars instead of parentheses and commas.  Moreover, instead of writing field names like variables as in a record type, we write them as method calls *applied to a variable*.  This variable is then bound in the body to belong to the codatatype, and the values of previous fields are be accessed through it.  For instance, a codata version of Σ-types would be written
+That is, we use brackets and bars instead of parentheses and commas.  Moreover, instead of writing field names like variables as in a record type, we write them as method calls *applied to a variable*.  This variable is then bound in the body to belong to the codatatype, and the values of previous fields are accessed through it.  For instance, a codata version of Σ-types would be written
 
 .. code-block:: none
 

@@ -120,7 +120,7 @@ In interactive mode, the following additional commands are also available.  (How
 
 3. ``undo N``
 
-   Undo the last ``N`` commands that modify the global state, rewinding to a previous situation.  This includes all commands except ``echo``, ``synth``, ``show``, and ``solve``: those commands are skipped over when undoing.  (Of course ``solve`` does modify the global state, but it is not undoable because it doesn't affect the "processed position" in ProofGeneral.)  The command ``undo`` itself is also not "undoable" and there is no "redo": after a command is undone, it is lost permanently from Narya's memory (although you can press Up-arrow or Meta+P to find it in the interactive history and re-execute it).  Following an ``undo`` with another ``undo`` will just undo additional commands: ``undo 1`` followed by ``undo 1`` is the same as ``undo 2``.
+   Undo the last ``N`` commands that modify the global state, rewinding to a previous situation.  This includes all commands except ``echo``, ``synth``, ``show``, ``solve``, and ``display``: those commands are skipped over when undoing.  (Of course ``solve`` does modify the global state, but it is not undoable because it doesn't affect the "processed position" in ProofGeneral; it exists "outside the timestream".)  The command ``undo`` itself is also not "undoable" and there is no "redo": after a command is undone, it is lost permanently from Narya's memory (although you can press Up-arrow or Meta+P to find it in the interactive history and re-execute it).  Following an ``undo`` with another ``undo`` will just undo additional commands: ``undo 1`` followed by ``undo 1`` is the same as ``undo 2``.
 
 4. ``display SETTING``
 

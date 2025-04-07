@@ -149,7 +149,7 @@ Decimal number literals such as ``0.5`` and ``2.3`` are similarly expanded at pa
    def ℕ₊ : Type ≔ data [ one. | suc. (_ : ℕ₊) ]
    def ℚ₀₊ : Type ≔ data [ zero. | suc. (_ : ℕ) | quot. (_ : ℕ) (_ : ℕ₊) ]
 
-Of course this is not a correct representation of non-negative rational numbers without either an extra parameter of ``quot.`` ensuring that the fraction is in lowest terms or a higher constructor that equates equal fractions, neither of which can be implemented yet.  Also note that mathematically, the constructors ``zero.`` and ``suc.`` are redundant since ``quot. n one.`` also embeds the natural numbers, but are currently necessary for whole number literals to typecheck at ``ℚ₊`` since they are translated using ``suc.`` and ``zero.``.
+Of course this is not a correct representation of non-negative rational numbers without either an extra parameter of ``quot.`` ensuring that the fraction is in lowest terms or a higher constructor that equates equal fractions, neither of which can be implemented yet.  Also note that mathematically, the constructors ``zero.`` and ``suc.`` are redundant since ``quot. n one.`` also embeds the natural numbers, but are currently necessary for whole number literals to typecheck at ``ℚ₀₊`` since they are translated using ``suc.`` and ``zero.``.
 
 Decimal literals must include at least one digit both before and after the decimal point, since otherwise they would be parsed as a field projection or an ordinary constructor application.  There is no difference between `2` and `2.0`; in particular, both will typecheck at ``ℕ``.
 

@@ -25,7 +25,7 @@ Comments and strings
 
 There are two kinds of comments.  A line comment starts with a backquote ````` and extends to the end of the line.  A block comment starts with ``{``` and ends with ```}``.  Block comments can be nested and can contain line comments, but cannot start inside a line comment.
 
-String literals are surrounded by double-quotes, as in ``"hello, world"``.  At present the only use of string literals is in the ``notation`` command for defining user notations.
+String literals are surrounded by double quotes, as in ``"hello, world"``.  Currently, double-quoted strings appear in the syntax of some commands, such as ``notation`` and ``import``, but do not exist internally in the language of Narya.
 
 
 Tokens
@@ -33,7 +33,7 @@ Tokens
 
 A Narya source file is expected to be UTF-8 encoded and can contain arbitrary Unicode.  As usual, the code is first *lexed* by separating it into "tokens", and then the sequence of tokens is *parsed* into an abstract syntax tree of notations.  Both identifiers (variable and constant names) and the symbols in a mixfix notation are tokens.  Whitespace (including comments) always creates a token boundary.  And since notation symbols can be made of the same characters that might be in an identifier, whitespace is sometimes necessary to separate identifiers from symbols.  For instance, if ``⋆`` is defined as a binary operator, we cannot write ``x⋆y`` (or even ``1⋆1``) since that would be lexed as a single token.
 
-However, in Narya there are the following exceptions to this, where whitespace is not needed to separate tokens:
+However, there are the following exceptions to this, where whitespace is not needed to separate tokens:
 
 - The characters ``( ) [ ] { } ? → ↦ ⤇ ≔ ⩴ ⩲ … ^``, which either have built-in meaning or are reserved for future built-in meanings, are always treated as single tokens.  Thus, they do not need to be surrounded by whitespace (with the exception of ``^^``, see below).  This is the case for parentheses and braces in most languages, but in Narya you can also write, e.g., ``A→B`` without spaces.  The non-ASCII characters in this group all have ASCII-sequence substitutes that are completely interchangeable: ``-> |-> |=> := ::= += ...``.  Additional characters may be added to this list in the future.
 
