@@ -40,7 +40,7 @@ let assume (name : string) (ty : string) : unit =
       let rty = parse_term ty in
       let cty = check_type rty in
       Global.add const cty (Axiom `Nonparametric)
-  | _ -> fatal (Invalid_constant_name name)
+  | _ -> fatal (Invalid_constant_name [ name ])
 
 let def (name : string) (ty : string) (tm : string) : unit =
   let p = Parse.Term.parse (`String { title = Some "constant name"; content = name }) in
@@ -62,7 +62,7 @@ let def (name : string) (ty : string) (tm : string) : unit =
       Global.add const cty (Axiom `Parametric);
       let tree = check (Potential (Constant (const, D.zero), Emp, fun x -> x)) Ctx.empty rtm ety in
       Global.add const cty (Defined tree)
-  | _ -> fatal (Invalid_constant_name name)
+  | _ -> fatal (Invalid_constant_name [ name ])
 
 let equal_at (tm1 : string) (tm2 : string) (ty : string) : unit =
   let rty = parse_term ty in

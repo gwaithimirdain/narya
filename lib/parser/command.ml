@@ -135,12 +135,17 @@ module Parse = struct
         | _ -> None)
 
   let variable =
-    step "" (fun state _ (tok, w) ->
-        match tok with
-        | Ident [ x ] -> Some ((Some x, w), state)
-        | Ident xs -> fatal (Invalid_variable xs)
-        | Underscore -> Some ((None, w), state)
-        | _ -> None)
+    let* loc, (xs, w) =
+      located
+        (step "" (fun state _ (tok, w) ->
+             match tok with
+             | Ident xs -> Some ((Some xs, w), state)
+             | Underscore -> Some ((None, w), state)
+             | _ -> None)) in
+    match xs with
+    | Some [ x ] when Lexer.valid_var x -> return (Some x, w)
+    | None -> return (None, w)
+    | Some xs -> fatal ~loc:(Range.convert loc) (Invalid_variable xs)
 
   let parameter =
     let* wslparen = token LParen in
@@ -164,6 +169,7 @@ module Parse = struct
     let* wsdef = token tok in
     let* nameloc, (name, wsname) = located ident in
     let loc = Some (Range.convert nameloc) in
+    if not (Lexer.valid_ident name) then fatal ?loc (Invalid_constant_name name);
     let* parameters = zero_or_more parameter in
     let* ty, wscoloneq, tm =
       (let* wscolon = token Colon in
@@ -230,11 +236,11 @@ module Parse = struct
         | _ -> None)
 
   let pattern_var =
-    let* x, ws = ident in
+    let* loc, (x, ws) = located ident in
     match x with
     (* Currently we hard code a `Break space after each *variable* in a notation. *)
-    | [ x ] -> return (`Var (x, `Break, ws))
-    | _ -> fatal (Invalid_variable x)
+    | [ x ] when Lexer.valid_var x -> return (`Var (x, `Break, ws))
+    | _ -> fatal ~loc:(Range.convert loc) (Invalid_variable x)
 
   let pattern_ellipsis =
     let* ws = token Ellipsis in
@@ -346,10 +352,10 @@ module Parse = struct
         | _ -> None)
 
   let notation_var =
-    let* x, ws = ident in
+    let* loc, (x, ws) = located ident in
     match x with
-    | [ x ] -> return (x, ws)
-    | _ -> fatal (Invalid_variable x)
+    | [ x ] when Lexer.valid_var x -> return (x, ws)
+    | _ -> fatal ~loc:(Range.convert loc) (Invalid_variable x)
 
   let notation =
     let* wsnotation = token Notation in

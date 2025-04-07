@@ -23,31 +23,30 @@ type t =
   | Ellipsis (* ... and … *)
   | String of string (* Double-quoted *)
   | Underscore (* _ *)
-  | Internal of string (* Starting or ending with _ *)
-  | Axiom
-  | Def
   | And
-  | Echo
-  | Synth
-  | Quit
-  | Match
-  | Return
-  | Sig
-  | Data
+  | Axiom
   | Codata
-  | Notation
-  | Import
-  | Export
-  | Solve
-  | Show
+  | Data
+  | Def
   | Display
-  | Option
-  | Undo
-  | Section
+  | Echo
   | End
-  | Let
-  | Rec
+  | Export
+  | Import
   | In
+  | Let
+  | Match
+  | Notation
+  | Option
+  | Quit
+  | Rec
+  | Return
+  | Section
+  | Show
+  | Sig
+  | Solve
+  | Synth
+  | Undo
   | Op of string (* Sequence of common ASCII symbols, other than : := ::= += -> |-> |=> etc. *)
   (* Alphanumeric/unicode other than common ASCII symbols and above single-token characters, with dots and underscores occuring only internally, and each dot-separated piece being nonempty.  Those not containing any dots could be local variable names (with one dot, they could be a face of a cube variable), and those consisting entirely of digits could be numerals.  We can't separate these out at lexing time into those that are parts of mixfix notations and those that are potential identifiers, since the mixfix notations in scope change as we go through a file. *)
   | Ident of string list
@@ -57,11 +56,6 @@ type t =
   | Eof
 
 let compare : t -> t -> int = compare
-
-(* Whether a string is valid as a dot-separated piece of an identifier name, or equivalently as a local variable name.  We don't test for absence of the delimited symbols, since they will automatically be lexed separately; this is for testing validity after the lexer has split things into potential tokens.  We also don't test for absence of dots, since identifiers will be split on dots automatically. *)
-let ok_ident s =
-  let len = String.length s in
-  len > 0 && s.[0] <> '_' && s.[len - 1] <> '_'
 
 (* All (or at least most) of the Unicode superscript characters, their code points, and the corresponding ASCII characters.  This is digits, lowercase Roman letters, parentheses, and plus, minus, and equals signs. *)
 let supers =
@@ -169,7 +163,6 @@ let to_string = function
   | Ellipsis -> Display.alt_char "…" "..."
   | String s -> "\"" ^ s ^ "\""
   | Underscore -> "_"
-  | Internal s -> s
   | Axiom -> "axiom"
   | Def -> "def"
   | And -> "and"
