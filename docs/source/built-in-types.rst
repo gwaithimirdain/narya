@@ -24,5 +24,5 @@ In addition, there is a built-in constant called ``Π`` that represents dependen
 
    def Π (A : Type) (B : A → Type) : Type ≔ (x : A) → B x
 
-This is mainly useful for writing and printing higher-dimensional function-types (see below).
+This is mainly useful for writing and printing higher-dimensional function-types (see :ref:`Parametric Observational Type Theory`).
 

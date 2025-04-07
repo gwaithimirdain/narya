@@ -15,7 +15,7 @@ An inductive datatype is defined by a number of *constructors*, each with a decl
 
 The ``|`` before the first constructor is optional, and no spaces are required around the brackets and bar (unless, as usual, the bar is adjacent to a notation involving other special ASCII symbols).
 
-Note that each constructor ends with a period.  This is intentionally dual to the fact that record fields (and codata methods, see below) *begin* with a period, and reminds us that constructors, like fields and records, are not namespaced but belong to a separate flat name domain.  (OCaml programmers should think of polymorphic variants, not regular variants, although there is no subtyping yet.)  The use of separate syntax distinguishing constructors from variables and functions is also familiar from functional programming, although the specific use of a dot suffix is unusual (capitalization is more common).
+Note that each constructor ends with a period.  This is intentionally dual to the fact that record fields (and codata methods; see :ref:`Codatatypes and comatching`) *begin* with a period, and reminds us that constructors, like fields and records, are not namespaced but belong to a separate flat name domain.  (OCaml programmers should think of polymorphic variants, not regular variants, although there is no subtyping yet.)  The use of separate syntax distinguishing constructors from variables and functions is also familiar from functional programming, although the specific use of a dot suffix is unusual (capitalization is more common).
 
 Also as with record types, this is not defining ``Bool`` to equal a pre-existing thing, but declaring it to be a new type that didn't previously exist and doesn't reduce to anything else.
 
@@ -194,7 +194,7 @@ By omitting the keyword ``match`` and the variable name, it is possible to abstr
    | inr. b ↦ inl. b 
    ]
 
-A match (of this simple sort) is a checking term.  It requires the term being matched against to synthesize, while the bodies of each branch are checking (we will discuss below how the type they are checked against is determined).
+A match (of this simple sort) is a checking term.  It requires the term being matched against to synthesize, while the bodies of each branch are checking (we will discuss how the type they are checked against is determined :ref:`below<Variable matches>`).
 
 
 Matching and case trees
@@ -274,7 +274,7 @@ but this can be condensed to a "multiple match":
 
 Here the ``_`` indicates that that value can be anything.  It can also be replaced by a variable, which is then bound to the value being matched.
 
-Multiple and deep matches can be combined.  In general, for a multiple match on a comma-separated list of a positive number of discriminees, the left-hand side of each branch must be a comma-separated list of the same number of *patterns*.  Each pattern is either a variable, an underscore, or a constructor applied to some number of other patterns.  Plain variable patterns are equivalent to let-bindings: ``match x [ y ↦ M ]`` is the same as ``let y ≔ x in M``.  Multiple and deep matches are (with one exception, discussed below) a *purely syntactic* abbreviation: the condensed forms are expanded automatically to the nested match forms before even being typechecked.
+Multiple and deep matches can be combined.  In general, for a multiple match on a comma-separated list of a positive number of discriminees, the left-hand side of each branch must be a comma-separated list of the same number of *patterns*.  Each pattern is either a variable, an underscore, or a constructor applied to some number of other patterns.  Plain variable patterns are equivalent to let-bindings: ``match x [ y ↦ M ]`` is the same as ``let y ≔ x in M``.  Multiple and deep matches are (with one exception, discussed :ref:`below<Empty types and refutation cases>`) a *purely syntactic* abbreviation: the condensed forms are expanded automatically to the nested match forms before even being typechecked.
 
 Multiple and deep patterns can also be used in pattern-matching abstractions.  In the case of a multiple match, the number of variables abstracted over is determined by the number of patterns in the branches.  Thus, for instance, ``andb`` can also be defined by:
 
@@ -439,7 +439,7 @@ Again the presence of an ``inl`` branch clues Narya in that there should also be
    | _, inl. a ↦ a
    ]
 
-In general, when cases for one or more constructors are obviously missing from a match, Narya will inspect all the pattern variables and discriminees that would be available in that branch, and if it finds one whose type is empty, it inserts a match against that term.  Here by "empty" we mean that it was literally declared as a datatype with no constructors: there is no unification like in Agda to rule out impossible indices (although see the remarks about canonical types defined by case trees, below).  This is the exception mentioned above in which the expansion of multiple and deep matches requires some typechecking information: namely, whether the type of some variable is an empty datatype.
+In general, when cases for one or more constructors are obviously missing from a match, Narya will inspect all the pattern variables and discriminees that would be available in that branch, and if it finds one whose type is empty, it inserts a match against that term.  Here by "empty" we mean that it was literally declared as a datatype with no constructors: there is no unification like in Agda to rule out impossible indices (although see the remarks about :ref:`Canonical types defined by case trees`).  This is the exception mentioned above in which the expansion of multiple and deep matches requires some typechecking information: namely, whether the type of some variable is an empty datatype.
 
 As a particular case, if any of the discriminees belong directly to an empty datatype, then all the branches can be omitted.  Similarly, an empty pattern-matching lambda abstraction ``[ ]`` can be a multivariable function, although in this case there are no branches to indicate the number of arguments; instead Narya inspects the possibly-iterated function type it is being checked at, looking through the domains one at a time until it finds an empty one.  Thus the following are both valid:
 
@@ -510,7 +510,7 @@ For example, we can prove that natural number addition is associative:
    | suc. m' ↦ suc. (ℕ.plus.assoc m' n p)
    ]
 
-This proof uses observational identity types, which are introduced below.  But the point here is that in the ``suc.`` branch, the variable ``m`` is defined to equal ``suc. m'``, and this definition is substituted into the goal type ``Id ℕ ((m+n)+p) (m+(n+p))``, causing both additions to reduce one step.  You can see this by inserting a hole in this clause:
+This proof uses the identity types of :ref:`Higher Observational Type Theory`.  But the point here is that in the ``suc.`` branch, the variable ``m`` is defined to equal ``suc. m'``, and this definition is substituted into the goal type ``Id ℕ ((m+n)+p) (m+(n+p))``, causing both additions to reduce one step.  You can see this by inserting a hole in this clause:
 
 .. code-block:: none
 
@@ -577,7 +577,7 @@ It is also possible to match against a term that is not a free variable, or whos
 
 Note that matching against a let-bound variable is equivalent to matching against its value, so it falls under this category.
 
-The fact that this kind of match uses the same syntax as the previous one means that if you intend to do a variable match, as above, but the conditions on the match variable and its indices are not satisfied, then Narya will fall back to trying this kind of match.  You will then probably get an error message due to the fact that the goal type didn't get refined in the branches the way you were expecting it to.  Narya tries to help you find bugs of this sort by emitting a hint when that sort of fallback happens.  If you really did mean to write a non-dependent match, you can silence the hint by writing ``match M return _ ↦ _`` (see the next sort of match, below).
+The fact that this kind of match uses the same syntax as the previous one means that if you intend to do a variable match, as above, but the conditions on the match variable and its indices are not satisfied, then Narya will fall back to trying this kind of match.  You will then probably get an error message due to the fact that the goal type didn't get refined in the branches the way you were expecting it to.  Narya tries to help you find bugs of this sort by emitting a hint when that sort of fallback happens.  If you really did mean to write a non-dependent match, you can silence the hint by writing ``match M return _ ↦ _`` (see :ref:`Explicitly dependent matches`).
 
 A variable match can only check, but a non-dependent match can also synthesize.  This requires at least one of the branch bodies to synthesize a type that does not depend on any of its pattern variables; then the other branches are checked against that same type, and it is the type synthesized by the whole match statement.  Writing a match that could have been a variable match but in a synthesizing context will also cause an automatic fallback to non-dependent matching, with a hint emitted.
 

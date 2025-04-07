@@ -43,7 +43,7 @@ The first is literally true: given ``R : Id Type A B`` and ``a:A``, ``b:B`` we h
 
 However, unlike a true function ``A → B → Type``, an element of ``Id Type A B`` cannot be "partially applied": you cannot write ``Id A a``.  But of course, you can η-expand it and write ``x ↦ Id A a x``.  (If there is demand, we might implement an automatic η-expansion of the former to the latter.)
 
-For the second there is another wrinkle: we can define elements of ``Id Type A B`` by abstracting, but the body of the abstraction must be a *newly declared canonical type* rather than a pre-existing one.  This also seems to be essential to deal with symmetries (see below) in the normalization and typechecking algorithm.  Moreover, the current implementation allows this body to be a *record type* or *codatatype*, but not a *datatype*, and it does not permit other case tree operations in between such as pattern-matching.
+For the second there is another wrinkle: we can define elements of ``Id Type A B`` by abstracting, but the body of the abstraction must be a *newly declared canonical type* rather than a pre-existing one.  This also seems to be essential to deal with symmetries (see :ref:`Symmetries and degeneracies`) in the normalization and typechecking algorithm.  Moreover, the current implementation allows this body to be a *record type* or *codatatype*, but not a *datatype*, and it does not permit other case tree operations in between such as pattern-matching.
 
 For record types, there is a syntax that reflects this restriction: instead of the expected ``x y ↦ sig (⋯)`` we write ``sig x y ↦ (⋯)``, explicitly binding all the boundary variables as part of the record type syntax.  For example, here is the universal 1-dimensional record type, traditionally called "Gel":
 
@@ -51,7 +51,7 @@ For record types, there is a syntax that reflects this restriction: instead of t
 
    def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig a b ↦ ( ungel : R a b )
 
-For codatatypes, we simply use the ordinary syntax, but the "self" variable automatically becomes a cube variable of the appropriate dimension (see below).
+For codatatypes, we simply use the ordinary syntax, but the "self" variable automatically becomes a cube variable of the appropriate dimension (see :ref:`Cubes of variables`).
 
 We may allow more flexibility in the future, but in practice the current restrictions do not seem very onerous.  For most applications, the above "Gel" record type can simply be defined once and used everywhere, rather than declaring new higher-dimensional types all the time.  Note that because record-types satisfy η-conversion, ``Gel A B R a b`` is definitionally isomorphic to ``R a b``.  Thus, ``Id Type A B`` contains ``A → B → Type`` as a "retract up to definitional isomorphism".  This appears to be sufficient for all applications of internal parametricity.  (``Id Type`` does not itself satisfy any η-conversion rule.)
 
@@ -98,7 +98,7 @@ The ascription in the type of ``B₂`` is necessary since the argument of ``refl
 
    B₂ : refl Π A₀ A₁ A₂ (x₀ ↦ Type) (x₁ ↦ Type) (x₀ x₁ x₂ ↦ refl Type) B₀ B₁
 
-In particular, this is what Narya uses when printing higher-dimensional function-types (although it also uses cube variables, see below).
+In particular, this is what Narya uses when printing higher-dimensional function-types (although it also uses :ref:`Cubes of variables`).
 
 
 Higher-dimensional cubes
@@ -257,7 +257,7 @@ In addition, under external parametricity, *axioms* are not permitted to be used
 The combination ``-arity 1 -direction d -external`` is a version of `displayed type theory <https://arxiv.org/abs/2311.18781>`_ (dTT), and as such can be selected with the single option ``-dtt``.  The primary differences between ``narya -dtt`` and the original dTT of the paper are:
 
 1. Narya currently has no modalities, so display can only be applied to closed terms rather than to the more general □-modal ones.
-2. Narya has symmetries, which in particular (as noted in the paper) makes ``SST⁽ᵈ⁾`` (see below) actually usable.
+2. Narya has symmetries, which in particular (as noted in the paper) makes ``SST⁽ᵈ⁾`` (see :ref:`Displayed coinductive types`) actually usable.
 3. As noted above, display in Narya computes only up to isomorphism, and in the case of ``Type`` only up to retract up to isomorphism.
 4. (A syntactic difference only) Generic degeneracies in Narya must be parenthesized, so we write ``A⁽ᵈ⁾`` instead of ``Aᵈ``.
 
@@ -270,7 +270,7 @@ Discreteness is an experimental (and probably temporary) feature.  A (strictly p
 1. All elements of the mutual family are datatypes; and
 2. The types of all of their parameters, indices, and constructor arguments are either types belonging to the same family or previously defined discrete datatypes.
 
-Of the datatypes mentioned as examples above, the discrete ones are ``ℕ``, ``Bool``, and ``⊥``.  Some other examples of discrete types are integers and binary trees:
+Of the datatypes we have mentioned as examples, the discrete ones are ``ℕ``, ``Bool``, and ``⊥``.  Some other examples of discrete types are integers and binary trees:
 
 .. code-block:: none
 

@@ -23,7 +23,7 @@ This will make the executable ``narya`` available in a directory such as ``~/.op
 ProofGeneral (Emacs) mode
 -------------------------
 
-The recommended mode of use of Narya is with its `ProofGeneral <https://proofgeneral.github.io/>`_ Emacs mode (for further description of this, see below).  Unfortunately, ProofGeneral is not well-designed for users adding new proof assistant modes.  The steps to install Narya's ProofGeneral mode are:
+The recommended mode of use of Narya is with its `ProofGeneral <https://proofgeneral.github.io/>`_ Emacs mode (for further description of this, see :ref:`ProofGeneral mode`).  Unfortunately, ProofGeneral is not well-designed for users adding new proof assistant modes.  The steps to install Narya's ProofGeneral mode are:
 
 1. Install Emacs and ProofGeneral.  The recommended way to install ProofGeneral is from `MELPA <https://melpa.org/>`_ using Emacs' package manager, as described at the `ProofGeneral page <https://proofgeneral.github.io/>`_.
 
