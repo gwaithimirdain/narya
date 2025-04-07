@@ -7,7 +7,7 @@ Narya is very much a work in progress.  Expect breaking changes, including even 
 
 ## Links
 
-- [Installation](https://gwaithimirdain.github.io/narya/installation.html)
-- [Documentation](https://gwaithimirdain.github.io/narya/)
-- [Contributing to Narya](https://gwaithimirdain.github.io/narya/contributing.html)
+- [Installation](https://narya.readthedocs.io/en/latest/installation.html)
+- [Documentation](https://narya.readthedocs.io/en/latest/)
+- [Contributing to Narya](https://narya.readthedocs.io/en/latest/contributing.html)
 
