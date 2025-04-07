@@ -231,7 +231,7 @@ These "cube variables" also appear automatically when matching against a higher-
    [ zero. ↦ ()
    | suc. p ↦ (_ ≔ encode p.0 p.1 p.2)]
 
-Here in the definition of ``encode``, the pattern variable ``p` of the ``suc.`` branch is automatically made into a 1-dimensional cube of variables since we are matching against an element of ``Id ℕ``, so in the body we can refer to ``p.0``, ``p.1``, and ``p.2``.  In the future, we may implement a dual syntax for simultaneously *applying* a higher-dimensional function to a whole cube of variables of this sort as well, although of course if implicit application is on you can just write ``refl f x.2`` and so on.
+Here in the definition of ``encode``, the pattern variable ``p`` of the ``suc.`` branch is automatically made into a 1-dimensional cube of variables since we are matching against an element of ``Id ℕ``, so in the body we can refer to ``p.0``, ``p.1``, and ``p.2``.  In the future, we may implement a dual syntax for simultaneously *applying* a higher-dimensional function to a whole cube of variables of this sort as well, although of course if implicit application is on you can just write ``refl f x.2`` and so on.
 
 Similarly, when defining a codatatype lying in a higher universe, the "self" variable automatically becomes a cube variable, so that the boundary of the type is accessible through its faces.  For instance, here is a codatatype version of Gel:
 
