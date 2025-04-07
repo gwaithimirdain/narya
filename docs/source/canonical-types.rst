@@ -23,7 +23,7 @@ This is very similar to, but subtly different from, the following definition tha
    | zero. ↦ ⊤
    | suc. n ↦ A × Covec' A n]
 
-The two are definitionally isomorphic.  The difference is that ``Covec' A n`` reduces when ``n`` is a constructor, while ``Covec A n`` is already a canonical type no matter what ``n`` is; it's just that when ``n`` is a constructor we know how it *behaves*.  For instance, ``Covec' A 2`` reduces to ``A × (A × ⊤)``, whereas ``Covec A 2`` does not reduce but we can still typecheck ``(a, (b, ()))`` at it.  This sort of "recursively defined canonical type" helps maintain information about the meaning of a type, just like using a custom record type rather than a nested Σ-type; eventually we hope it will be helpful for unification and typeclass inference.
+The two are definitionally isomorphic at any concrete numeral ``n``, and equivalent in general.  The difference is that ``Covec' A n`` reduces when ``n`` is a constructor, while ``Covec A n`` is already a canonical type no matter what ``n`` is; it's just that when ``n`` is a constructor we know how it *behaves*.  For instance, ``Covec' A 2`` reduces to ``A × (A × ⊤)``, whereas ``Covec A 2`` does not reduce but we can still typecheck ``(a, (b, ()))`` at it.  This sort of "recursively defined canonical type" helps maintain information about the meaning of a type, just like using a custom record type rather than a nested Σ-type; eventually we hope it will be helpful for unification and typeclass inference.
 
 As another example, once we have an identity type ``Id`` (which could be ``Jd``, or an observational identity type) we can define the homotopy-theoretic tower of truncation levels:
 

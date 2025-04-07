@@ -174,5 +174,5 @@ As can be seen from these examples, Narya's facility for mutual definitions is c
    | cons. (_ : A) (_ : Bush (Bush A))
    ]
 
-and poorly understood things such as mutual families of definitions including both inductive and coinductive types and both recursive and corecursive functions.  As noted above, we have not yet implemented positivity, termination, or productivity checkers, so it is easy to create inconsistencies even without these more radical features.  Eventually, we intend the default to be a "safe mode" that restricts mutual definitions to combinations that are known to be consistent and have understood semantics, although this could be turned off by a flag.
+and poorly understood things such as mutual families of definitions including both inductive and coinductive types and both recursive and corecursive functions.  As noted elsewhere, we have not yet implemented positivity, termination, or productivity checkers, so it is easy to create inconsistencies even without these more radical features.  Eventually, we intend the default to be a "safe mode" that restricts mutual definitions to combinations that are known to be consistent and have understood semantics, although this could be turned off by a flag.
 

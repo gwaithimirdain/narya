@@ -28,6 +28,8 @@ Narya is very much a work in progress. Expect breaking changes, including even i
    canonical-types
    mutual-definitions
    parametric-observational-type-theory
+   higher-types
+   hott
    remarks
    contributing
    

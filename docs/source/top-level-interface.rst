@@ -9,8 +9,8 @@ The Narya executable accepts at least the following command-line flags.
 Execution behavior
 ^^^^^^^^^^^^^^^^^^
 
-- ``-interactive`` or ``-i``: Enter interactive mode (see below)
-- ``-exec STRING`` or ``-e STRING``: Execute a string argument (see below)
+- ``-interactive`` or ``-i``: Enter interactive mode (see :ref:`Execution`)
+- ``-exec STRING`` or ``-e STRING``: Execute a string argument (see :ref:`Execution`)
 - ``-source-only``: Load all files from source, ignoring any compiled versions
 
 Formatting output
@@ -18,8 +18,8 @@ Formatting output
 
 - ``-verbose`` or ``-v``: Show verbose messages
 - ``-unicode`` and ``-ascii``: Display and reformat code using Unicode (default) or ASCII
-- ``-no-reformat``: Do not automatically reformat source files (see below)
-- ``-show-function-boundaries``: Display boundaries of functions, when implicit
+- ``-no-reformat``: Do not automatically reformat source files (see :ref:`Code formatter`)
+- ``-show-function-boundaries``: Display boundaries of functions, when implicit (see :ref:`Implicit boundaries`)
 - ``-hide-function-boundaries``: Hide boundaries of functions, when implicit
 - ``-show-type-boundaries``: Display boundaries of functions, when implicit
 - ``-hide-type-boundaries``: Hide boundaries of functions, when implicit
@@ -27,7 +27,7 @@ Formatting output
 Controlling parametricity
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-These options are discussed further below.
+These options are discussed under :ref:`Varying the behavior of parametricity`.
 
 - ``-arity N``: Set the arity of parametricity to N (1 ≤ N ≤ 9)
 - ``-direction X``: Set the symbol and names for reflexivity
@@ -40,51 +40,75 @@ Execution
 
 When the Narya executable is run, it loads all the files given on its command line and any strings supplied on the command line with ``-e``.  As usual, the special filename ``-`` refers to standard input.  Files and strings are loaded in the order they are given on the command line; all files must have the extension ``.ny``.  Lastly, if ``-i`` was given anywhere on the command line, Narya enters interactive mode.
 
-In interactive mode, commands typed by the user are executed as they are entered.  Since many commands span multiple lines, Narya waits for a blank line before parsing and executing the command(s) being entered.  Make sure to enter a blank line before starting a new command; interactive commands must be entered and executed one at a time.  The result of the command is printed (more verbosely than is usual when loading a file) and then the user can enter more commands.  Type Control+D to exit interactive mode, or enter the command ``quit``.  In addition, in interactive mode you can enter a term instead of a command, and Narya will assume you mean to ``echo`` it (see below).
+In interactive mode, commands typed by the user are executed as they are entered.  Since many commands span multiple lines, Narya waits for a blank line before parsing and executing the command(s) being entered.  Make sure to enter a blank line before starting a new command; interactive commands must be entered and executed one at a time.  The result of the command is printed (more verbosely than is usual when loading a file) and then the user can enter more commands.  Type Control+D to exit interactive mode, or enter the command ``quit``.  In addition, in interactive mode you can enter a term instead of a command, and Narya will assume you mean to :ref:`echo<Echo/Synth>` it.
 
 
 Commands
 ------------
 
-In a file, conventionally each command begins on a new line, but this is not technically necessary since each command begins with a keyword that has no other meaning.  (Similarly, a command-line ``-e`` string may contain multiple commands as long as whitespace separates them.)  Indentation is not significant, but there is a built-in code reformatter (see below) that is on by default, enforcing a uniform indentation style.  The available commands in a file or ``-e`` string are the following.
+In a file, conventionally each command begins on a new line, but this is not technically necessary since each command begins with a keyword that has no other meaning.  (Similarly, a command-line ``-e`` string may contain multiple commands as long as whitespace separates them.)  Indentation is not significant, but there is a built-in :ref:`code formatter` that is on by default, enforcing a uniform indentation style.  The available commands in a file or ``-e`` string are the following.
 
-1. ``def NAME [PARAMS] [: TYPE] ≔ TERM [and ...]``
+Def
+^^^
 
-   Define a global constant called ``NAME`` having type ``TYPE`` and value ``TERM``.  Thus ``NAME`` must be a valid identifier (see below) with no current definition in scope, while ``TYPE`` must parse and typecheck as a type, and ``TERM`` must parse and typecheck at type ``TYPE``.  If ``TYPE`` is omitted, then ``TERM`` must synthesize a type (see below).  In addition, if ``TYPE`` is specified, then ``TERM`` can also be a case tree or canonical type declaration (see below).  The optional ``PARAMS`` is a list of parameters of the form ``(x : PTY)``, or more generally ``(x y z : PTY)``, with the effect that the actual type of the constant ``NAME`` is the Π-type of ``TYPE`` (or the synthesized type of ``TERM``) over these parameters, and its value is the λ-abstraction of ``TERM`` over them.  That is, ``def foo (x:A) : B ≔ M`` is equivalent to ``def foo : A → B ≔ x ↦ M``.  Finally, a family of constants can be defined mutually by using the ``and`` keyword to introduce the second and later ones (see below).
+.. code-block:: none
 
-2. ``axiom NAME [PARAMS] : TYPE``
+   def NAME [PARAMS] [: TYPE] ≔ TERM [and ...]
 
-   Assert a global constant called ``NAME`` having type ``TYPE``, without any definition (an axiom).  Parameters and names are treated as for ``def``.
+Define a global constant called ``NAME`` having type ``TYPE`` and value ``TERM``.  Thus ``NAME`` must be a valid identifier (see :ref:`Identifiers`) with no current definition in scope, while ``TYPE`` must parse and typecheck as a type, and ``TERM`` must parse and typecheck at type ``TYPE``.  If ``TYPE`` is omitted, then ``TERM`` must synthesize a type (see below).  In addition, if ``TYPE`` is specified, then ``TERM`` can also be a case tree or canonical type declaration (see below).  The optional ``PARAMS`` is a list of parameters of the form ``(x : PTY)``, or more generally ``(x y z : PTY)``, with the effect that the actual type of the constant ``NAME`` is the Π-type of ``TYPE`` (or the synthesized type of ``TERM``) over these parameters, and its value is the λ-abstraction of ``TERM`` over them.  That is, ``def foo (x:A) : B ≔ M`` is equivalent to ``def foo : A → B ≔ x ↦ M``.  Finally, a family of constants can be defined mutually by using the ``and`` keyword to introduce the second and later ones (see below).
 
-3. ``echo TERM``
+Axiom
+^^^^^
 
-   Normalize ``TERM`` and print its value and its type to standard output.  Note that ``TERM`` must synthesize a type (see below); if it is a checking term you must ascribe it.  In interactive mode, if you enter a term instead of a command, Narya assumes you mean to ``echo`` that term.
+.. code-block:: none
 
-4. ``synth TERM``
+   axiom NAME [PARAMS] : TYPE
 
-   Like ``echo``, but does not normalize the term, only computes its type.
+Assert a global constant called ``NAME`` having type ``TYPE``, without any definition (an axiom).  Parameters and names are treated as for ``def``.
 
-5. ``notation [TIGHTNESS] NAME : […] PATTERN […] ≔ HEAD ARGUMENTS``
+Echo/Synth
+^^^^^^^^^^
 
-   Declare a new mixfix notation.  Every notation must have a ``NAME``, which is an identifier like the name of a constant, and a ``TIGHTNESS`` unless it is outfix (see below).  The ``PATTERN`` of a notation is discussed below.  The value of a notation consists of a ``HEAD``, which is either a previously defined constant or a datatype constructor (see below), followed by the ``ARGUMENTS`` that must consist of exactly the variables appearing in the pattern, once each, in some order.
+.. code-block:: none
 
-6. 
+   echo TERM
 
-.. code-block:: bash
+Normalize ``TERM`` and print its value and its type to standard output.  Note that ``TERM`` must synthesize a type (see :ref:`Bidirectionality`); if it is a checking term you must ascribe it.  In interactive mode, if you enter a term instead of a command, Narya assumes you mean to ``echo`` that term.
+
+.. code-block:: none
+
+   synth TERM
+
+Like ``echo``, but does not normalize the term, only computes its type.
+
+Notation
+^^^^^^^^
+
+.. code-block:: none
+
+   notation [TIGHTNESS] NAME : […] PATTERN […] ≔ HEAD ARGUMENTS
+
+Declare a new mixfix notation; see :ref:`Mixfix notations`.
+
+
+Import/export
+^^^^^^^^^^^^^
+
+.. code-block:: none
 
     import "FILE"
     import "FILE" | MOD
   
-Add the extension ``.ny`` to the double-quoted string ``FILE`` and import the file at that location (either absolute or relative to the location of the current file), with the optional modifier ``MOD`` applied to its namespace (see below).  The disk file *must* have the ``.ny`` extension, whereas the string given to ``import`` must *not* have it; this is because in the future the string given to ``import`` will be a more general "library identifier" in the `bantorra <https://redprl.org/bantorra/bantorra/index.html>`_ framework.
+Add the extension ``.ny`` to the double-quoted string ``FILE`` and import the file at that location (either absolute or relative to the location of the current file), with the optional modifier ``MOD`` applied to its namespace (see :ref:`Imports and scoping`).  The disk file *must* have the ``.ny`` extension, whereas the string given to ``import`` must *not* have it; this is because in the future the string given to ``import`` will be a more general "library identifier" in the `bantorra <https://redprl.org/bantorra/bantorra/index.html>`_ framework.
 
-.. code-block:: bash
+.. code-block:: none
 
     import NAME
     import NAME | MOD
 
 Import the namespace rooted at ``NAME`` into the current top-level namespace, with the optional modifier ``MOD`` applied to it first.
 
-.. code-block:: bash
+.. code-block:: none
 
     export "FILE"
     export "FILE" | MOD
@@ -93,38 +117,88 @@ Import the namespace rooted at ``NAME`` into the current top-level namespace, wi
   
 Same as above, but also export the new names to other files that import this one.
 
-7. ``section NAME ≔``
+Sections
+^^^^^^^^
+
+.. code-block:: none
+
+   section NAME ≔
    
-   Begin a section named ``NAME``, which must be a valid identifier.  All ordinary commands are valid inside a section (including other section commands).
+Begin a section named ``NAME``, which must be a valid identifier.  All ordinary commands are valid inside a section (including other section commands).
    
-8. ``end``
+.. code-block:: none
 
-   End the section that was most recently opened and not yet closed.  All the constants that were in the export namespace of that section (i.e. those defined with ``def`` and ``axiom`` or imported from elsewhere with ``export``) are prefixed by the name of that section and merged into the previous namespace.  (See namespaces, below.)
+   end
 
-9. ``quit``
+End the section that was most recently opened and not yet closed.  All the constants that were in the export namespace of that section (i.e. those defined with ``def`` and ``axiom`` or imported from elsewhere with ``export``) are prefixed by the name of that section and merged into the previous namespace.  (See :ref:`Namespaces and sections`.)
 
-   Terminate execution of the current compilation unit.  Whenever this command is found, loading of the current file or command-line string ceases, just as if the file or string had ended right there.  Execution then continues as usual with any file that imported the current one, with the next file or string on the command line, or with interactive mode if that was requested.  The command ``quit`` in interactive mode exits the program (you can also exit interactive mode by typing Control+D).
+Option
+^^^^^^
 
-In interactive mode, the following additional commands are also available.  (However, they are mostly intended for use in the ProofGeneral backend, see below.)
+.. code-block:: none
 
-1. Display the context and type of a specific open hole number ``HOLE``, or of all the open holes (see below).
+   option NAME ≔ VALUE
+
+Set the value of a configuration option.  Currently the available options and values are
+
+.. code-block:: none
+
+   option function boundaries ≔ implicit
+   option type boundaries ≔ implicit
+   option function boundaries ≔ explicit
+   option type boundaries ≔ explicit
+
+
+Quit
+^^^^
+
+.. code-block:: none
+
+   quit
+
+Terminate execution of the current compilation unit.  Whenever this command is found, loading of the current file or command-line string ceases, just as if the file or string had ended right there.  Execution then continues as usual with any file that imported the current one, with the next file or string on the command line, or with interactive mode if that was requested.  The command ``quit`` in interactive mode exits the program (you can also exit interactive mode by typing Control+D).
+
+Interactive commands
+--------------------
+
+In interactive mode, the following additional commands are also available.  (However, they are mostly intended for use by the :ref:`ProofGeneral mode`.)
+
+Show hole(s)
+^^^^^^^^^^^^
 
 .. code-block:: bash
 
     show hole HOLE
     show holes
 
-2. ``solve HOLE ≔ TERM``
+Display the context and type of a specific open hole number ``HOLE``, or of all the open holes (see :ref:`Interactive proof`).
 
-   Fill hole number ``HOLE`` with the term ``TERM`` (see below).
+Solve
+^^^^^
 
-3. ``undo N``
+.. code-block:: none
 
-   Undo the last ``N`` commands that modify the global state, rewinding to a previous situation.  This includes all commands except ``echo``, ``synth``, ``show``, and ``solve``: those commands are skipped over when undoing.  (Of course ``solve`` does modify the global state, but it is not undoable because it doesn't affect the "processed position" in ProofGeneral.)  The command ``undo`` itself is also not "undoable" and there is no "redo": after a command is undone, it is lost permanently from Narya's memory (although you can press Up-arrow or Meta+P to find it in the interactive history and re-execute it).  Following an ``undo`` with another ``undo`` will just undo additional commands: ``undo 1`` followed by ``undo 1`` is the same as ``undo 2``.
+   solve HOLE ≔ TERM
 
-4. ``display SETTING``
+Fill hole number ``HOLE`` with the term ``TERM`` (see :ref:`Interactive proof`).
 
-   Set one of the display settings (that are also set by command-line flags).  Possible display settings are
+Undo
+^^^^
+
+.. code-block:: none
+
+   undo N
+
+Undo the last ``N`` commands that modify the global state, rewinding to a previous situation.  This includes all commands except ``echo``, ``synth``, ``show``, ``solve``, and ``display``: those commands are skipped over when undoing.  (Of course ``solve`` does modify the global state, but it is not undoable because it doesn't affect the "processed position" in ProofGeneral; it exists "outside the timestream".)  The command ``undo`` itself is also not "undoable" and there is no "redo": after a command is undone, it is lost permanently from Narya's memory (although you can press Up-arrow or Meta+P to find it in the interactive history and re-execute it).  Following an ``undo`` with another ``undo`` will just undo additional commands: ``undo 1`` followed by ``undo 1`` is the same as ``undo 2``.
+
+Display
+^^^^^^^
+
+.. code-block:: none
+
+   display NAME ≔ VALUE
+
+Set one of the display settings (that are also set by command-line flags).  Possible display settings are
    
 .. code-block:: bash
 
@@ -147,7 +221,7 @@ ProofGeneral mode
 Basic usage
 ^^^^^^^^^^^
 
-Once Narya's ProofGeneral mode is installed as described above, it should start automatically when you open a file with the ``.ny`` extension.  When ProofGeneral mode is active, there is some initial segment of the buffer (which starts out empty) that has been processed (sent to Narya) and is highlighted with a background color (usually blue).  The unprocessed part of the buffer can be freely edited, and as you complete new commands you can process them as well one by one.  You can also undo or "retract" processed commands, removing them from the processed region.  If you edit any part of the processed region (except for editing inside an existing comment, or filling a hole with ``C-c C-SPC`` as described below), it will automatically be retracted (using Narya's ``undo`` command) up to the point where you are editing.
+Once Narya's ProofGeneral mode is installed as described :ref:`here<ProofGeneral (Emacs) mode>`, it should start automatically when you open a file with the ``.ny`` extension.  When ProofGeneral mode is active, there is some initial segment of the buffer (which starts out empty) that has been processed (sent to Narya) and is highlighted with a background color (usually blue).  The unprocessed part of the buffer can be freely edited, and as you complete new commands you can process them as well one by one.  You can also undo or "retract" processed commands, removing them from the processed region.  If you edit any part of the processed region (except for editing inside an existing comment, or :ref:`filling a hole<solving holes>` with ``C-c C-SPC``), it will automatically be retracted (using Narya's ``undo`` command) up to the point where you are editing.
 
 In addition to the main window displaying your source file, there will normally be two other windows in split-screen labeled "goals" and "response" (although this can be customized with the Emacs variable ``proof-three-window-enable``).  The "response" window displays Narya's informational and error messages.  The "goals" window displays the contexts and types of holes whenever relevant.
 
@@ -169,7 +243,7 @@ The most useful ProofGeneral key commands for Narya are the following.  As usual
 - ``C-c C-x`` : Retract the buffer and kill the Narya subprocess.
 - ``M-;`` : Insert a comment, remove a comment, or comment out a region.  This is a standard Emacs command, but is customized to use line comments on code lines and block comments elsewhere.
 
-As noted above, Narya's ProofGeneral mode is enhanced to deal with open holes (see below).  Whenever a hole is created by processing a command, the location of the hole is highlighted in ``narya-hole-face`` (which you can customize).  These highlights are removed when hole-creating commands are retracted.
+As noted above, Narya's ProofGeneral mode is enhanced to deal with open holes (see :ref:`Interactive proof`).  Whenever a hole is created by processing a command, the location of the hole is highlighted in ``narya-hole-face`` (which you can customize).  These highlights are removed when hole-creating commands are retracted.
 
 Narya's ProofGeneral mode also defines the following additional key commands.
 
@@ -273,14 +347,14 @@ It is not currently possible to reformat code without simultaneously typecheckin
 
 Currently there is only one configuration option for the code formatter: whether to print Unicode characters such as → or their ASCII equivalents such as ``->``.  This can be set on the command line with the flags ``-unicode`` and ``-ascii``, and in ProofGeneral with the state-preserving ``display`` command.  In accord with the goal of opinionated code formatters -- to eliminate time wasted by arguing about formatting, including formatter options -- I do not plan to add more configuration options; although I'll listen if you have a case to make for one.  Suggestions for improvements and changes to the standard formatting style are also welcome, although I can't promise to adopt them.
 
-It is possible to turn off the code formatter.  The Emacs customization variables ``narya-reformat-commands`` and ``narya-reformat-holes`` (see below) will turn off reformatting in ProofGeneral, and the command-line option ``-no-format`` will turn off reformatting of input files.  However, if you don't like the way Narya reformats your code, I would appreciate it if you give me feedback about this rather than (or, at least, in addition to) turning it off entirely.
+It is possible to turn off the code formatter.  The Emacs customization variables ``narya-reformat-commands`` and ``narya-reformat-holes`` will turn off reformatting in ProofGeneral, and the command-line option ``-no-format`` will turn off reformatting of input files.  However, if you don't like the way Narya reformats your code, I would appreciate it if you give me feedback about this rather than (or, at least, in addition to) turning it off entirely.
 
 .. _top-level-interface-jsNarya:
 
 jsNarya
 -------
 
-As mentioned above, jsNarya is a JavaScript version of Narya that runs in a browser.  Its functionality is limited to the equivalent of ``narya -e "STARTUP" -i``: you can specify a single startup "file" by copying and pasting it into a text box, and then you drop into interactive mode.  Also there is no real Unicode input-mode, although there is a palette of buttons that can be used to enter a number of common Unicode characters.  These limitations are not intrinsic; we just have not yet found or implemented an appropriate frontend for anything more complicated.
+jsNarya is a JavaScript version of Narya that runs in a browser.  Its functionality is limited to the equivalent of ``narya -e "STARTUP" -i``: you can specify a single startup "file" by copying and pasting it into a text box, and then you drop into interactive mode.  Also there is no real Unicode input-mode, although there is a palette of buttons that can be used to enter a number of common Unicode characters.  These limitations are not intrinsic; we just have not yet found or implemented an appropriate frontend for anything more complicated.
 
-jsNarya does accept customization of the arity, direction name, and internality of parametricity, plus discreteness, as discussed below.  This can be done with input elements on the page before starting the interactive mode, or with appropriately-named URL parameters.  For instance, supplying the URL query string ``?arity=1&direction=d&external`` yields "Poor man's dTT" (see below), and this special case admits the shortcut ``?dtt``.  The startup code can also be specified in the URL with the ``?startup=`` parameter.
+jsNarya does accept customization of the arity, direction name, and internality of parametricity, plus discreteness, for :ref:`Parametric Observational Type Theory`.  This can be done with input elements on the page before starting the interactive mode, or with appropriately-named URL parameters.  For instance, supplying the URL query string ``?arity=1&direction=d&external`` yields "Poor man's dTT" (see below), and this special case admits the shortcut ``?dtt``.  The startup code can also be specified in the URL with the ``?startup=`` parameter.
 

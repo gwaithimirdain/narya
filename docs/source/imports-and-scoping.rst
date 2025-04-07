@@ -6,27 +6,38 @@ File imports
 
 The command ``import FILE`` executes another Narya file and adds (some of) its definitions and notations to the current namespace.  The commands in the imported file cannot access any definitions from other files, including the current one, except those that it imports itself.  Importing is not transitive: if ``a.ny`` imports ``b.ny``, and ``b.ny`` imports ``c.ny``, then the definitions from ``c.ny`` do not appear in the namespace of ``a.ny`` unless it also imports ``c.ny`` explicitly.
 
-More precisely, there are two namespaces at any time: the "import" namespace, which determines the names that are available to use in the current file, and the "export" namespace, which determines the names that will be made available to other files that import this one.  The command ``import`` only affects the import namespace, but the variant using the word `export` instead affects both.
+More precisely, there are two namespaces at any time: the "import" namespace, which determines the names that are available to use in the current file, and the "export" namespace, which determines the names that will be made available to other files that import this one.  The command ``import`` only affects the import namespace, but the variant using the word ``export`` instead affects both.
 
 By contrast, when in interactive mode or executing a command-line ``-e`` string, all definitions from all files and strings that were explicitly specified previously on the command line are available, even if not exported.  This does not carry over transitively to files imported by them.  Standard input (indicated by ``-`` on the command line) is treated as an ordinary file; thus it must import any other files it wants to use, but its definitions are automatically available in ``-e`` strings and interactive mode.
 
 No file will be executed more than once during a single run, even if it is imported by multiple other files.  Thus, if both ``b.ny`` and ``c.ny`` import ``d.ny``, and ``a.ny`` imports both ``b.ny`` and ``c.ny``, any effectual commands like ``echo`` in ``d.ny`` will only happen once, there will only be one copy of the definitions from ``d.ny`` in the namespace of ``a.ny``, and the definitions from ``b.ny`` and ``c.ny`` are compatible.  Circular imports are not allowed (and are checked for).  The order of execution is as specified on the command-line, with depth-first traversal of import statements as they are encountered.  Thus, for instance, if the command-line is ``narya one.ny two.ny`` but ``one.ny`` imports ``two.ny``, then ``two.ny`` will be executed during ``one.ny`` whenever that import statement is encountered, and then skipped when we get to it on the command-line since it was already executed.
 
+Namespaces and sections
+-----------------------
 
-Import modifiers
-----------------
-
-Narya uses `Yuujinchou <https://redprl.org/yuujinchou/yuujinchou/>`_ for hierarchical namespacing, with periods to separate namespaces.  Thus a name like ``nat.plus`` lies in the ``nat`` namespace.  It can be defined in the following two equivalent ways:
+Narya uses `Yuujinchou <https://redprl.org/yuujinchou/yuujinchou/>`_ for hierarchical namespacing, with periods to separate namespaces.  Thus a name like ``nat.plus`` lies in the ``nat`` namespace.  You can define a constant with such a name explicitly:
 
 .. code-block:: none
    
    def nat.plus ≔ BODY
 
+According to Yuujinchou, namespaces are untyped, implicit, and patchable: you can add anything you want to the ``nat`` namespace, anywhere, simply by defining it with a name that starts with ``nat.``
+
+In addition, the ``section`` command allows defining a group of constants without an explicit namespace, but with a given prefix added to their names afterwards.  For example, an equivalent way of defining ``nat.plus`` would be:
+
+.. code-block:: none
+
    section nat ≔
-      def plus ≔ BODY
+     def plus ≔ BODY
    end
 
-According to Yuujinchou, namespaces are untyped, implicit, and patchable: you can add anything you want to the ``nat`` namespace, anywhere, simply by defining it with a name that starts with ``nat.``
+All ordinary commands are valid inside a section, including other section commands.  When a section is closed with ``end``, all the constants that were defined in that section are prefixed by the name of that section and merged into the outer namespace (which might itself be another section, and so on).
+
+Like a file, a section has both a visible namespace and an export namespace, and ``import`` statements in a section only affect the visible namespace.  Thus, imported names are no longer visible after the section is closed.  But as with importing files, if you use ``export`` instead inside a section, then the imported names are placed in export namespace; thus when the section is closed they are treated like constants defined in the section and are merged into the outer namespace with the section name prefix.
+
+
+Import modifiers
+----------------
 
 By default, an ``import`` command merges the namespace of the imported file with the current namespace.  However, it is also possible to apply Yuujinchou *modifiers* to the imported namespace before it is merged with the command form ``import FILE | MOD``.  (The symbol ``|`` is intended to suggest a Unix pipe that sends the definitions of ``FILE`` through the modifiers before importing them.)  The valid modifiers are exactly the `Yuujinchou modifiers <https://redprl.org/yuujinchou/yuujinchou/Yuujinchou/Language/index.html#modifier-builders>`_:
 
@@ -68,9 +79,22 @@ Importing of notations defined by another file is implemented as a special case 
 
 The ``notations`` namespace is not otherwise special: you can put constants in it too, but this is not recommended.  The names of constants and of notations inhabit the same domain: you cannot have a constant and a notation with the same name, although since newly created notations always have names that start with ``notations`` this is not usually a problem.  It is possible for notations to end up with names that don't start with ``notation`` through import modifiers, but in that case they are not available to the parser.
 
-For example, you can avoid making any imported notations available by using the modifier ``except notations``, or you can import only the notations and no definitions with ``only notations``.  Or you can import only a few particular notations with a modifier like ``in notations union (only plus; only times)``.  In particular, if you import an entire file qualified such as ``import "arith" | renaming . arith``, then a notation such as ``notations.plus`` in ``"arith.ny"`` will be renamed to ``arith.notations.plus``, which is not in the ``notations`` namespace and thus will not be available to the parser.  To import all the constants qualified but make all the notations available, write ``import "arith" | seq (renaming . arith; renaming arith.notations notations)``.  (This is probably a good candidate to have an abbreviated version.)
+For example, you can avoid making any imported notations available by using the modifier ``except notations``, or you can import only the notations and no definitions with ``only notations``.  Or you can import only a few particular notations with a modifier like ``in notations union (only plus; only times)``.  In particular, if you import an entire file qualified such as ``import "arith" | renaming . arith``, then a notation such as ``notations.plus`` in ``"arith.ny"`` will be renamed to ``arith.notations.plus``, which is not in the ``notations`` namespace and thus will not be available to the parser.  To import all the constants qualified but make all the notations available, you can use one of the following (which are probably good candidates to have an abbreviated version).
+
+.. code-block:: none
+
+   import "arith" | seq (renaming . arith, renaming arith.notations notations)
+   import "arith" | union (renaming . arith, only notations)
 
 The ``notations`` namespace can also contain sub-namespaces: if you write ``notation 1 nat.plus`` then it will go in the namespace as ``notations.nat.plus``.  Then by importing with ``in notations only nat`` you can get all the notations in that namespace such as ``notations.nat.plus`` and ``notations.nat.times``, but no other notations from the imported file.  Thus, notation namespaces act somewhat like Rocq's `notation scopes <https://coq.inria.fr/doc/V8.18.0/refman/user-extensions/syntax-extensions.html#notation-scopes>`_, although they can only be opened globally and not locally to part of a term.
+
+In addition to explicitly putting notations in a namespace by explicitly naming them qualified such as ``nat.plus``, you may also want to do this grouping using sections.  By default, notations that are defined inside a section named ``nat`` will be exported from that section in ``nat.notations``, with the effect that they are no longer in effect after the section is closed.  You can move this to ``notations.nat`` with a command like
+
+.. code-block:: none
+
+   import nat | seq (only notations, renaming nat.notations notations.nat)
+
+thereby making them available in the rest of the file (or enclosing section).  And if you change ``import`` to ``export``, then users who import your file will see these notations in ``notations.nat``, so that they are imported by default and can be controlled with import modifiers as above.
 
 
 Compilation

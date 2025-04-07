@@ -19,6 +19,8 @@ The source code is organized in directories as follows:
   
   * `lib/parser/ <https://github.com/gwaithimirdain/narya/tree/master/lib/parser>`_: Parsing and printing
   
+  * `lib/top/ <https://github.com/gwaithimirdain/narya/tree/master/lib/top>`_: Auxiliary functions for the top-level (executing files, etc.)
+
 * `bin/ <https://github.com/gwaithimirdain/narya/tree/master/bin>`_: The main executable
 
 * `test/ <https://github.com/gwaithimirdain/narya/tree/master/test>`_: Unit tests

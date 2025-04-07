@@ -15,7 +15,7 @@ A record type is defined by a number of *fields*, each with a declared type.  A 
       op : t → t → t,
       )
 
-The trailing comma after the last field is optional.  (By the lexing rules above, no space is required around the commas, unless they follow a type that is expressed using a notation that ends with another special ASCII character.)  Note that later fields can depend on the values of previous fields, by name.  The names of fields must be valid local variable names, i.e. identifiers not containing periods.
+The trailing comma after the last field is optional.  (By the lexing rules for :ref:`tokens`, no space is required around the commas, unless they follow a type that is expressed using a notation that ends with another special ASCII character.)  Note that later fields can depend on the values of previous fields, by name.  The names of fields must be valid local variable names, i.e. identifiers not containing periods.
 
 Although this command may look like it is defining ``Magma`` to equal a pre-existing type denoted ``sig (t:Type, op:t→t→t)``, in fact it declares ``Magma`` to be a *new* type that didn't previously exist and doesn't reduce to anything else.  In particular, therefore, declaring another identical-looking type:
 
@@ -193,7 +193,7 @@ Eta-expansion and opacity
 
 Often the behavior described above is convenient, e.g. when printing a term belonging to a large record type with many fields, such as ``ℤ : Ring`` or ``Grp : Cat``, you don't want to see the explicit definitions of all the fields.  However, there are times when you do want to see the definitions of the fields, and for this purpose you can change the "opacity" of a record type.
 
-Opacity is an *attribute* of a record type.  Attributes are an experimental feature, particularly their syntax, and may change radically in the future.  At present, only record types can have attributes, and the only attributes are those relating to opacity.  The current syntax for defining a record type with an attribute is ``sig #(ATTR) ( … )``.  Currently attributes can only be set when a record type is defined; in the future it may be possible to alter them after the fact.  Opacity attributes do *not* affect convertibility of terms; η-conversion is always valid internally.  Opacity attributes only affect how terms are *displayed* to the user.  (If you want a record-like type without η-conversion, use a non-recursive codatatype; see below.)
+Opacity is an *attribute* of a record type.  Attributes are an experimental feature, particularly their syntax, and may change radically in the future.  At present, only record types can have attributes, and the only attributes are those relating to opacity.  The current syntax for defining a record type with an attribute is ``sig #(ATTR) ( … )``.  Currently attributes can only be set when a record type is defined; in the future it may be possible to alter them after the fact.  Opacity attributes do *not* affect convertibility of terms; η-conversion is always valid internally.  Opacity attributes only affect how terms are *displayed* to the user.  (If you want a record-like type without η-conversion, use a non-recursive codatatype; see :ref:`Codatatypes and comatching`.)
 
 To explain the opacity attributes, suppose that with the definitions above, we also have
 
