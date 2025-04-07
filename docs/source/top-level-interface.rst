@@ -66,17 +66,14 @@ Axiom
 
 Assert a global constant called ``NAME`` having type ``TYPE``, without any definition (an axiom).  Parameters and names are treated as for ``def``.
 
-Echo
-^^^^
+Echo/Synth
+^^^^^^^^^^
 
 .. code-block:: none
 
    echo TERM
 
 Normalize ``TERM`` and print its value and its type to standard output.  Note that ``TERM`` must synthesize a type (see below); if it is a checking term you must ascribe it.  In interactive mode, if you enter a term instead of a command, Narya assumes you mean to ``echo`` that term.
-
-Synth
-^^^^^
 
 .. code-block:: none
 
@@ -134,6 +131,23 @@ Begin a section named ``NAME``, which must be a valid identifier.  All ordinary 
 
 End the section that was most recently opened and not yet closed.  All the constants that were in the export namespace of that section (i.e. those defined with ``def`` and ``axiom`` or imported from elsewhere with ``export``) are prefixed by the name of that section and merged into the previous namespace.  (See namespaces, below.)
 
+Option
+^^^^^^
+
+.. code-block:: none
+
+   option NAME ≔ VALUE
+
+Set the value of a configuration option.  Currently the available options and values are
+
+.. code-block:: none
+
+   option function boundaries ≔ implicit
+   option type boundaries ≔ implicit
+   option function boundaries ≔ explicit
+   option type boundaries ≔ explicit
+
+
 Quit
 ^^^^
 
@@ -148,8 +162,8 @@ Interactive commands
 
 In interactive mode, the following additional commands are also available.  (However, they are mostly intended for use in the ProofGeneral backend, see below.)
 
-Show holes
-^^^^^^^^^^
+Show hole(s)
+^^^^^^^^^^^^
 
 .. code-block:: bash
 
@@ -158,8 +172,8 @@ Show holes
 
 Display the context and type of a specific open hole number ``HOLE``, or of all the open holes (see below).
 
-Solve holes
-^^^^^^^^^^^
+Solve
+^^^^^
 
 .. code-block:: none
 
@@ -176,12 +190,12 @@ Undo
 
 Undo the last ``N`` commands that modify the global state, rewinding to a previous situation.  This includes all commands except ``echo``, ``synth``, ``show``, ``solve``, and ``display``: those commands are skipped over when undoing.  (Of course ``solve`` does modify the global state, but it is not undoable because it doesn't affect the "processed position" in ProofGeneral; it exists "outside the timestream".)  The command ``undo`` itself is also not "undoable" and there is no "redo": after a command is undone, it is lost permanently from Narya's memory (although you can press Up-arrow or Meta+P to find it in the interactive history and re-execute it).  Following an ``undo`` with another ``undo`` will just undo additional commands: ``undo 1`` followed by ``undo 1`` is the same as ``undo 2``.
 
-Display settings
-^^^^^^^^^^^^^^^^
+Display
+^^^^^^^
 
 .. code-block:: none
 
-   display SETTING
+   display NAME ≔ VALUE
 
 Set one of the display settings (that are also set by command-line flags).  Possible display settings are
    
