@@ -3,7 +3,8 @@ name: Build and Deploy Documentation
 on:
   push:
     branches:
-      - main  # Trigger the workflow on push to the main branch
+      - master  # Trigger the workflow on push to the main branch
+      - '**'    # Trigger on any branch (including forked branches)
 
 jobs:
   build:
