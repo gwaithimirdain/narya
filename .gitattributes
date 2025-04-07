@@ -1,0 +1,12 @@
+# Language configuration for github-linguist
+*.ml linguist-language=OCaml
+*.mli linguist-language=OCaml
+*.js linguist-language=JavaScript
+*.el linguist-language=Emacs-Lisp
+*.rst linguist-language=reStructuredText
+
+# Exclude cram test files
+*.t linguist-documentation
+
+# Narya doesn't have its own linguist configuration, so we exclude it
+*.ny linguist-documentation
