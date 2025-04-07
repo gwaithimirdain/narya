@@ -419,7 +419,7 @@ If we rewrite this as a deep match, each branch of the outer match should be rep
    | inl. (inr. a) ↦ a
    ]
 
-In this example, this is not a problem, because Narya (like other proof assistants) can recognize from the type of ``x`` and the fact that there is at least one ``inl`` branch that there should also be an ``inr`` branch — and once there is an ``inr`` branch, it is straightforward to notice that the argument of ``inr`` is empty and thus can be matched against without needing any further branches.
+In this example, this is not a problem, because Narya (like other proof assistants) can recognize from the type of ``x`` *and the fact that there is at least one* ``inl`` *branch* that there should also be an ``inr`` branch — and once there is an ``inr`` branch, it is straightforward to notice that the argument of ``inr`` is empty and thus can be matched against without needing any further branches.
 
 This also works for multiple matches:
 
