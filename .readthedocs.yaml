@@ -16,7 +16,8 @@ sphinx:
 
 python:
   install:
+    - path: .
     - method: pip
       packages:
         - sphinx
-        - sphinx_rtd_theme        
+        - sphinx_rtd_theme  
