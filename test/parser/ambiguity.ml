@@ -4,27 +4,33 @@ open Parser
 open Notation
 open Testutil
 open Showparse
-module Terminal = Asai.Tty.Make (Core.Reporter.Code)
+open Parseonly
 
 (* We raise an error if one notation is a prefix of another, since parsing such combinations would require too much backtracking.  Here we test the generation of that error. *)
 
-let ifthen = make "ifthen" (Prefixr No.zero)
+type (_, _, _) identity +=
+  | Ifthen : (closed, No.zero, No.nonstrict opn) identity
+  | Ifthenelse : (closed, No.zero, No.nonstrict opn) identity
+  | Ifthenelif : (closed, No.zero, No.nonstrict opn) identity
+
+let ifthen : (closed, No.zero, No.nonstrict opn) notation = (Ifthen, Prefixr No.zero)
 
 let () =
-  set_tree ifthen
+  make ifthen "ifthen"
     (Closed_entry (eop (Ident [ "if" ]) (term (Ident [ "then" ]) (Done_closed ifthen))))
 
-let ifthenelse = make "ifthenelse" (Prefixr No.zero)
+let ifthenelse : (closed, No.zero, No.nonstrict opn) notation = (Ifthenelse, Prefixr No.zero)
 
 let () =
-  set_tree ifthenelse
+  make ifthenelse "ifthenelse"
     (Closed_entry
        (eop (Ident [ "if" ])
           (term (Ident [ "then" ]) (term (Ident [ "else" ]) (Done_closed ifthenelse)))))
 
 let () =
-  Reporter.run ~emit:Terminal.display ~fatal:(fun d ->
-      Terminal.display d;
+  Parser.Lexer.Specials.run @@ fun () ->
+  Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
+      Reporter.display d;
       raise (Failure "Parse failure"))
   @@ fun () ->
   Situation.run_on Situation.empty @@ fun () ->
@@ -32,8 +38,9 @@ let () =
   assert (parse "if x then y" = Notn ("ifthen", [ Term (Ident [ "x" ]); Term (Ident [ "y" ]) ]))
 
 let () =
-  Reporter.run ~emit:Terminal.display ~fatal:(fun d ->
-      Terminal.display d;
+  Parser.Lexer.Specials.run @@ fun () ->
+  Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
+      Reporter.display d;
       raise (Failure "Parse failure"))
   @@ fun () ->
   Situation.run_on Situation.empty @@ fun () ->
@@ -43,13 +50,11 @@ let () =
     = Notn ("ifthenelse", [ Term (Ident [ "x" ]); Term (Ident [ "y" ]); Term (Ident [ "z" ]) ]))
 
 let () =
-  Reporter.run ~emit:Terminal.display ~fatal:(fun d ->
-      if
-        d.message
-        = Parsing_ambiguity "One notation is a prefix of another: [ifthen] and [ifthenelse]"
-      then ()
+  Parser.Lexer.Specials.run @@ fun () ->
+  Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
+      if d.message = Parsing_ambiguity [ "ifthen"; "ifthenelse" ] then ()
       else (
-        Terminal.display d;
+        Reporter.display d;
         raise (Failure "Unexpected error code")))
   @@ fun () ->
   Situation.run_on Situation.empty @@ fun () ->
@@ -59,17 +64,18 @@ let () =
 
 (* However, it does work to have two distinct notations that share a common prefix, as long as both of them extend that prefix nontrivially.  (This is the whole point of merging notation trees.) *)
 
-let ifthenelif = make "ifthenelif" (Prefixr No.zero)
+let ifthenelif : (closed, No.zero, No.nonstrict opn) notation = (Ifthenelif, Prefixr No.zero)
 
 let () =
-  set_tree ifthenelif
+  make ifthenelif "ifthenelif"
     (Closed_entry
        (eop (Ident [ "if" ])
           (term (Ident [ "then" ]) (term (Ident [ "elif" ]) (Done_closed ifthenelif)))))
 
 let () =
-  Reporter.run ~emit:Terminal.display ~fatal:(fun d ->
-      Terminal.display d;
+  Parser.Lexer.Specials.run @@ fun () ->
+  Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
+      Reporter.display d;
       raise (Failure "Parse failure"))
   @@ fun () ->
   Situation.run_on Situation.empty @@ fun () ->

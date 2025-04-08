@@ -1,12 +1,9 @@
 open Util
 open Core
 open Parser
-open Syntax
 open Value
 open Norm
 open Asai.Range
-
-let () = Arity.install ()
 
 (* The current context of assumptions, including names. *)
 type ctx = Ctx : ('n, 'b) Ctx.t * (string option, 'n) Bwv.t -> ctx
@@ -19,15 +16,13 @@ let context = ref ectx
 let parse_term : type n. (string option, n) Bwv.t -> string -> n Raw.check located =
  fun names tm ->
   let p = Parse.Term.parse (`String { content = tm; title = Some "user-supplied term" }) in
-  let (Term tm) = Parse.Term.final p in
+  let (Wrap tm) = Parse.Term.final p in
   Postprocess.process names tm
-
-module Terminal = Asai.Tty.Make (Core.Reporter.Code)
 
 let synth (tm : string) : kinetic value * kinetic value =
   let (Ctx (ctx, names)) = !context in
-  Reporter.run ~emit:Terminal.display ~fatal:(fun d ->
-      Terminal.display d;
+  Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
+      Reporter.display d;
       raise (Failure "Failed to synthesize"))
   @@ fun () ->
   match parse_term names tm with
@@ -39,8 +34,8 @@ let synth (tm : string) : kinetic value * kinetic value =
 
 let check (tm : string) (ty : kinetic value) : kinetic value =
   let (Ctx (ctx, names)) = !context in
-  Reporter.run ~emit:Terminal.display ~fatal:(fun d ->
-      Terminal.display d;
+  Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
+      Reporter.display d;
       raise (Failure "Failed to check"))
   @@ fun () -> eval_term (Ctx.env ctx) (Check.check (Kinetic `Nolet) ctx (parse_term names tm) ty)
 
@@ -53,17 +48,17 @@ let unsynth : ?print:unit -> ?code:Reporter.Code.t -> ?short:string -> string ->
       match code with
       | None -> (
           match short with
-          | None -> if Option.is_some print then Terminal.display d
+          | None -> if Option.is_some print then Reporter.display d
           | Some str ->
               if Reporter.Code.short_code d.message = str then (
-                if Option.is_some print then Terminal.display d)
+                if Option.is_some print then Reporter.display d)
               else (
-                Terminal.display d;
+                Reporter.display d;
                 raise (Failure "Unexpected error code")))
       | Some c ->
-          if d.message = c then (if Option.is_some print then Terminal.display d)
+          if d.message = c then (if Option.is_some print then Reporter.display d)
           else (
-            Terminal.display d;
+            Reporter.display d;
             raise (Failure "Unexpected error code")))
   @@ fun () ->
   match parse_term names tm with
@@ -80,17 +75,18 @@ let uncheck :
       match code with
       | None -> (
           match short with
-          | None -> if Option.is_some print then Terminal.display d
+          | None -> if Option.is_some print then Reporter.display d
           | Some str ->
-              if Reporter.Code.short_code d.message = str then (
-                if Option.is_some print then Terminal.display d)
+              if Reporter.Code.short_code (Reporter.unaccumulate d.message) = str then (
+                if Option.is_some print then Reporter.display d)
               else (
-                Terminal.display d;
+                Reporter.display d;
                 raise (Failure "Unexpected error code")))
       | Some c ->
-          if d.message = c then (if Option.is_some print then Terminal.display d)
+          if Reporter.unaccumulate d.message = c then (
+            if Option.is_some print then Reporter.display d)
           else (
-            Terminal.display d;
+            Reporter.display d;
             raise (Failure "Unexpected error code")))
   @@ fun () ->
   let _ = Check.check (Kinetic `Nolet) ctx (parse_term names tm) ty in
@@ -102,7 +98,7 @@ let unparse : ?print:unit -> string -> unit =
  fun ?print tm ->
   let (Ctx (_, names)) = !context in
   Reporter.try_with
-    ~fatal:(fun d -> if Option.is_some print then Terminal.display d)
+    ~fatal:(fun d -> if Option.is_some print then Reporter.display d)
     (fun () ->
       let _ = parse_term names tm in
       raise (Failure "Unexpected parse success"))

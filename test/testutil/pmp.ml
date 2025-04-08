@@ -1,12 +1,10 @@
 open Util
 open Core
-open Syntax
 open Value
 open Norm
 open Parser
 open Asai.Range
 
-let () = Arity.install ()
 let unlocated (value : 'a) : 'a located = { value; loc = None }
 
 (* Poor man's parser, reusing the OCaml parser to make a vaguely usable syntax *)
@@ -35,7 +33,7 @@ let rec parse_chk : type n. (string, n) Bwv.t -> pmt -> n Raw.check located =
         (Raw.Struct
            ( Eta,
              List.fold_left
-               (fun acc (fld, tm) -> Abwd.add (Some (Field.intern fld)) (parse_chk ctx tm) acc)
+               (fun acc (fld, tm) -> Abwd.add (Some (fld, [])) (parse_chk ctx tm) acc)
                Abwd.empty tms ))
   | Constr c -> unlocated (Raw.Constr (unlocated (Constr.intern c), []))
   | App (fn, arg) as tm -> (
@@ -57,17 +55,18 @@ and parse_syn : type n. (string, n) Bwv.t -> pmt -> n Raw.synth located =
       | Some c -> unlocated (Raw.Const c)
       | None -> Reporter.fatal (Unbound_variable (x, [])))
   | UU -> unlocated Raw.UU
-  | Field (x, fld) -> unlocated (Raw.Field (parse_syn ctx x, Field.intern_ori fld))
+  | Field (x, fld) -> unlocated (Raw.Field (parse_syn ctx x, `Name (fld, [])))
   | Pi (x, dom, cod) ->
       unlocated (Raw.Pi (Some x, parse_chk ctx dom, parse_chk (Snoc (ctx, x)) cod))
-  | App (fn, arg) -> unlocated (Raw.App (parse_syn ctx fn, parse_chk ctx arg))
+  | App (fn, arg) ->
+      unlocated (Raw.App (parse_syn ctx fn, parse_chk ctx arg, locate_opt None `Explicit))
   | Deg (x, str) -> (
       let x = (parse_chk ctx x).value in
       match Dim.deg_of_name str with
-      | Some (Any s) -> unlocated (Raw.Act (str, s, unlocated x))
+      | Some (Any_deg s) -> unlocated (Raw.Act (str, s, unlocated x))
       | None -> (
           match Dim.deg_of_string str with
-          | Some (Any s) -> unlocated (Raw.Act (str, s, unlocated x))
+          | Some (Any_deg s) -> unlocated (Raw.Act (str, s, unlocated x))
           | None -> raise (Failure "unknown degeneracy")))
   | Asc (tm, ty) -> unlocated (Raw.Asc (parse_chk ctx tm, parse_chk ctx ty))
   | _ -> raise (Failure "Non-synthesizing")
@@ -89,8 +88,6 @@ let ( $. ) x fld = Field (x, fld)
 let struc tms = Struct tms
 let ( $^ ) x s = Deg (x, s)
 
-module Terminal = Asai.Tty.Make (Core.Reporter.Code)
-
 (* The current context of assumptions, including names. *)
 type ctx = Ctx : ('n, 'b) Ctx.t * (string, 'n) Bwv.t -> ctx
 
@@ -101,8 +98,8 @@ let context = ref ectx
 
 let synth (tm : pmt) : kinetic value * kinetic value =
   let (Ctx (ctx, names)) = !context in
-  Reporter.run ~emit:Terminal.display ~fatal:(fun d ->
-      Terminal.display d;
+  Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
+      Reporter.display d;
       raise (Failure "Failed to synthesize"))
   @@ fun () ->
   let raw = parse_syn names tm in
@@ -112,8 +109,8 @@ let synth (tm : pmt) : kinetic value * kinetic value =
 
 let check (tm : pmt) (ty : kinetic value) : kinetic value =
   let (Ctx (ctx, names)) = !context in
-  Reporter.run ~emit:Terminal.display ~fatal:(fun d ->
-      Terminal.display d;
+  Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
+      Reporter.display d;
       raise (Failure "Failed to check"))
   @@ fun () ->
   let raw = parse_chk names tm in
@@ -124,14 +121,14 @@ let check (tm : pmt) (ty : kinetic value) : kinetic value =
 
 let unsynth (tm : pmt) : unit =
   let (Ctx (ctx, names)) = !context in
-  Reporter.run ~emit:Terminal.display ~fatal:(fun _ -> ()) @@ fun () ->
+  Reporter.run ~emit:Reporter.display ~fatal:(fun _ -> ()) @@ fun () ->
   let raw = parse_syn names tm in
   let _ = Check.synth (Kinetic `Nolet) ctx raw in
   raise (Failure "Synthesis success")
 
 let uncheck (tm : pmt) (ty : kinetic value) : unit =
   let (Ctx (ctx, names)) = !context in
-  Reporter.run ~emit:Terminal.display ~fatal:(fun _ -> ()) @@ fun () ->
+  Reporter.run ~emit:Reporter.display ~fatal:(fun _ -> ()) @@ fun () ->
   let raw = parse_chk names tm in
   let _ = Check.check (Kinetic `Nolet) ctx raw ty in
   raise (Failure "Checking success")

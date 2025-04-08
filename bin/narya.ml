@@ -7,6 +7,8 @@ open Parser
 open React
 open Lwt
 open LTerm_text
+open Print
+open PPrint
 open Top
 
 let usage_msg = "narya [options] <file1> [<file2> ...]"
@@ -27,12 +29,23 @@ let speclist =
     ("-e", Arg.String (fun str -> inputs := Snoc (!inputs, `String str)), "");
     ("-verbose", Arg.Set verbose, "Show verbose messages (also -v)");
     ("-v", Arg.Set verbose, "");
-    ("-no-check", Arg.Clear execute, "Don't typecheck and execute code (only parse it)");
-    ("-reformat", Arg.Set reformat, "Display reformatted code on stdout");
-    ("-noncompact", Arg.Clear compact, "Reformat code noncompactly (default)");
-    ("-compact", Arg.Set compact, "Reformat code compactly");
+    ( "-no-reformat",
+      Arg.Clear reformat,
+      "Don't automatically reformat files supplied on the command line" );
     ("-unicode", Arg.Set unicode, "Display and reformat code using Unicode for built-ins (default)");
     ("-ascii", Arg.Clear unicode, "Display and reformat code using ASCII for built-ins");
+    ( "-hide-function-boundaries",
+      Arg.Clear show_function_boundaries,
+      "Hide implicit boundaries of higher-dimensional applications (default)" );
+    ( "-show-function-boundaries",
+      Arg.Set show_function_boundaries,
+      "Display implicit boundaries of higher-dimensional applications" );
+    ( "-hide-type-boundaries",
+      Arg.Clear show_type_boundaries,
+      "Hide implicit boundaries of instantiations of higher-dimensional types (default)" );
+    ( "-show-type-boundaries",
+      Arg.Set show_type_boundaries,
+      "Display implicit boundaries of instantiations of higher-dimensional types" );
     ("-arity", Arg.Set_int arity, "Arity of parametricity (default = 2)");
     ( "-direction",
       Arg.String set_refls,
@@ -46,12 +59,17 @@ let speclist =
         (fun () ->
           arity := 1;
           refl_char := 'd';
-          refl_strings := [];
+          refl_names := [];
           internal := false),
       "Abbreviation for -arity 1 -direction d -external" );
     ("--help", Arg.Unit (fun () -> ()), "");
     ("-", Arg.Unit (fun () -> inputs := Snoc (!inputs, `Stdin)), "");
     ("-fake-interact", Arg.String (fun str -> fake_interacts := Snoc (!fake_interacts, str)), "");
+    ("-number-metas", Arg.Set number_metas, "");
+    ("-anonymous-metas", Arg.Clear number_metas, "");
+    ("-parenthesize-arguments", Arg.Set parenthesize_arguments, "");
+    ("-juxtapose-arguments", Arg.Clear parenthesize_arguments, "");
+    ("-remove-spaces", Arg.Clear extra_spaces, "");
   ]
 
 (* Parse the command-line arguments and ensure that we have something to do. *)
@@ -99,14 +117,19 @@ let rec repl terminal history buf =
         let str = Buffer.contents buf in
         let* () = Lwt_io.flush Lwt_io.stdout in
         (* In interactive mode, we display all messages verbosely, and don't quit on fatal errors except for the Quit command. *)
-        Reporter.try_with
-          ~emit:(fun d -> Terminal.display ~output:stdout d)
-          ~fatal:(fun d ->
-            Terminal.display ~output:stdout d;
-            match d.message with
-            | Quit _ -> exit 0
-            | _ -> ())
-          (fun () -> do_command (Command.parse_single str));
+        ( Reporter.try_with
+            ~emit:(fun d -> Reporter.display ~output:stdout d)
+            ~fatal:(fun d ->
+              Reporter.display ~output:stdout d;
+              match d.message with
+              | Quit _ -> exit 0
+              | _ -> ())
+        @@ fun () ->
+          match Command.parse_single str with
+          | _, Some cmd ->
+              Execute.execute_command cmd;
+              Eternity.notify_holes ()
+          | _ -> () );
         LTerm_history.add history (Zed_string.of_utf8 (String.trim str));
         repl terminal history None)
       else (
@@ -147,40 +170,54 @@ let rec interact_pg () : unit =
     done;
     let cmd = Buffer.contents buf in
     let holes = ref Emp in
-    ( Global.HolePos.run ~init:Emp @@ fun () ->
+    ( Global.HolePos.run ~init:{ holes = Emp; offset = 0 } @@ fun () ->
+      Display.modify (fun s -> { s with holes = `With_number });
       Reporter.try_with
       (* ProofGeneral sets TERM=dumb, but in fact it can display ANSI colors, so we tell Asai to override TERM and use colors unconditionally. *)
         ~emit:(fun d ->
           match d.message with
           | Hole _ -> holes := Snoc (!holes, d.message)
-          | _ -> Terminal.display ~use_ansi:true ~output:stdout d)
-        ~fatal:(fun d -> Terminal.display ~use_ansi:true ~output:stdout d)
+          | _ -> Reporter.display ~use_ansi:true ~output:stdout d)
+        ~fatal:(fun d -> Reporter.display ~use_ansi:true ~output:stdout d)
         (fun () ->
           try
-            do_command (Command.parse_single cmd);
-            Format.printf "\x0C[goals]\x0C\n%!";
-            Mbwd.miter
-              (fun [ h ] ->
-                Reporter.Code.default_text h Format.std_formatter;
-                Format.printf "\n\n%!")
-              [ !holes ];
-            Format.printf "\x0C[data]\x0C\n%!";
-            Mbwd.miter
-              (fun [ (h, s, e) ] -> Format.printf "%d %d %d\n" h s e)
-              [ Global.HolePos.get () ]
+            match Command.parse_single cmd with
+            | _, None -> ()
+            | prews, Some cmd ->
+                Execute.execute_command cmd;
+                Eternity.notify_holes ();
+                Format.printf "\x0C[goals]\x0C\n%!";
+                Mbwd.miter
+                  (fun [ h ] ->
+                    Reporter.Code.default_text h Format.std_formatter;
+                    Format.printf "\n\n%!")
+                  [ !holes ];
+                Format.printf "\x0C[data]\x0C\n%!";
+                let st = Global.HolePos.get () in
+                Mbwd.miter
+                  (fun [ (h, s, e) ] ->
+                    Format.printf "%d %d %d\n" h (s - st.offset) (e - st.offset))
+                  [ st.holes ];
+                Format.printf "\x0C[reformat]\x0C\n%!";
+                let pcmd, wcmd = Parser.Command.pp_command cmd in
+                ToChannel.pretty 1.0 (Display.columns ()) stdout
+                  (pp_ws `None prews ^^ pcmd ^^ pp_ws `None wcmd)
           with Sys.Break -> Reporter.fatal Break) );
     interact_pg ()
   with End_of_file -> ()
 
 let () =
-  run_top @@ fun () ->
-  Mbwd.miter
-    (fun [ file ] ->
-      let p, src = Parser.Command.Parse.start_parse (`File file) in
-      Reporter.try_with ~emit:(Terminal.display ~output:stdout)
-        ~fatal:(Terminal.display ~output:stdout) (fun () -> Execute.batch true [] p src))
-    [ !fake_interacts ];
-  if !interactive then Lwt_main.run (interact ())
-  else if !proofgeneral then (
-    Sys.catch_break true;
-    interact_pg ())
+  try
+    run_top @@ fun () ->
+    (* Note: run_top executes the input files, so here we only have to do the interaction. *)
+    Mbwd.miter
+      (fun [ file ] ->
+        let p, src = Parser.Command.Parse.start_parse (`File file) in
+        Reporter.try_with ~emit:(Reporter.display ~output:stdout)
+          ~fatal:(Reporter.display ~output:stdout) (fun () -> Execute.batch None p src `None []))
+      [ !fake_interacts ];
+    if !interactive then Lwt_main.run (interact ())
+    else if !proofgeneral then (
+      Sys.catch_break true;
+      interact_pg ())
+  with Top.Exit -> exit 1
