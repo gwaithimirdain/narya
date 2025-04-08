@@ -27,7 +27,7 @@ type t = {
   (* For each upper tightness interval, we store a pre-merged tree of all left-closed trees along with all left-open trees whose tightness lies in that interval.  In particular, for the empty interval (+ω,+ω] this contains only the left-closed trees, and for the entire interval [-ω,+ω] it contains all notation trees. *)
   tighters : unit EntryMap.t;
   (* We store a map associating to each starting token of a left-open notation its left-hand upper tightness interval.  If there is more than one left-open notation starting with the same token, we store the loosest such interval. *)
-  left_opens : Interval.t TokMap.t;
+  left_opens : No.interval TokMap.t;
   (* For unparsing we also store backwards maps turning constants and constructors into notations.  Since the arguments of a notation can occur in a different order from those of the constant or constructor, we store lists of the argument names in the order they occur in the pattern and in the term value.  Note that these permutations are only used for printing; when parsing, the postprocessor function must ALSO incorporate the inverse permutation. *)
   unparse : User.notation PrintMap.t;
 }
@@ -46,8 +46,10 @@ let empty : t =
 let add : type left tight right. (left, tight, right) notation -> t -> t =
  fun n s ->
   (* First, if its tightness is new for this situation, we create new tighter-trees for the corresponding two interval_vars.  The strict one is a copy of the next-smallest nonstrict interval, while the nonstrict one is a copy of the next-largest strict interval. *)
+  let d = find n in
+  let left, tightness, _ = fixprops (snd n) in
   let tighters =
-    EntryMap.add_cut (tightness n)
+    EntryMap.add_cut tightness
       (fun _ up ->
         match up with
         | Upper (lt, u) ->
@@ -58,7 +60,7 @@ let add : type left tight right. (left, tight, right) notation -> t -> t =
       s.tighters in
   (* Then we merge the new notation to all the tighter-trees in which it should lie. *)
   let tighters =
-    match (left n, tree n) with
+    match (left, d.tree) with
     | Open _, Open_entry tr ->
         EntryMap.map_compare
           {
@@ -72,7 +74,7 @@ let add : type left tight right. (left, tight, right) notation -> t -> t =
             map_eq =
               (fun { strict; nonstrict } -> { nonstrict = merge Subset_eq nonstrict tr; strict });
           }
-          (tightness n) tighters
+          tightness tighters
     | Closed, Closed_entry tr ->
         EntryMap.map_compare
           {
@@ -93,15 +95,15 @@ let add : type left tight right. (left, tight, right) notation -> t -> t =
           No.plus_omega tighters in
   (* Finally, we update the map of all starting tokens of left-open notations. *)
   let left_opens =
-    match (left n, tree n) with
+    match (left, d.tree) with
     | Open _, Open_entry tr ->
-        let ivl = Interval.Interval (interval_left n) in
+        let ivl = No.Interval (interval_left n) in
         TokMap.fold
           (fun tok _ map ->
             TokMap.update tok
               (function
                 | None -> Some ivl
-                | Some ivl2 -> Some (Interval.union ivl ivl2))
+                | Some ivl2 -> Some (No.Interval.union ivl ivl2))
               map)
           tr s.left_opens
     | Closed, _ -> s.left_opens in
@@ -113,12 +115,15 @@ let add_with_print : User.notation -> t -> t =
  fun notn sit ->
   let (Wrap n) = notn.notn in
   let sit = add n sit in
-  { sit with unparse = sit.unparse |> PrintMap.add notn.key notn }
+  {
+    sit with
+    unparse = List.fold_left (fun up key -> up |> PrintMap.add key notn) sit.unparse notn.keys;
+  }
 
-let add_user : User.prenotation -> t -> t * (User.notation * bool) =
+let add_user : User.prenotation -> t -> t * (User.notation * User.key list) =
  fun user sit ->
   let notn = make_user user in
-  let shadow = PrintMap.mem notn.key sit.unparse in
+  let shadow = List.filter (fun key -> PrintMap.mem key sit.unparse) notn.keys in
   (add_with_print notn sit, (notn, shadow))
 
 let add_users : t -> Scope.trie -> t =
@@ -144,7 +149,9 @@ module Current = struct
   let add : type left tight right. (left, tight, right) notation -> unit =
    fun notn -> S.modify (add notn)
 
-  let add_user : User.prenotation -> User.notation * bool =
+  let add_with_print : User.notation -> unit = fun notn -> S.modify (add_with_print notn)
+
+  let add_user : User.prenotation -> User.notation * User.key list =
    fun user ->
     let sit = S.get () in
     let sit, (notn, shadow) = add_user user sit in
@@ -152,16 +159,17 @@ module Current = struct
     (notn, shadow)
 
   let left_closeds : unit -> (No.plus_omega, No.strict) entry =
-   fun () -> (Option.get (EntryMap.find_opt No.plus_omega (S.get ()).tighters)).strict
+   fun () ->
+    (EntryMap.find_opt No.plus_omega (S.get ()).tighters <|> Anomaly "missing left_closeds").strict
 
-  let tighters : type strict tight. (tight, strict) Interval.tt -> (tight, strict) entry =
+  let tighters : type strict tight. (tight, strict) No.iinterval -> (tight, strict) entry =
    fun { strictness; endpoint } ->
-    let ep = Option.get (EntryMap.find_opt endpoint (S.get ()).tighters) in
+    let ep = EntryMap.find_opt endpoint (S.get ()).tighters <|> Anomaly "missing tighters" in
     match strictness with
     | Nonstrict -> ep.nonstrict
     | Strict -> ep.strict
 
-  let left_opens : Token.t -> Interval.t option =
+  let left_opens : Token.t -> No.interval option =
    fun tok -> TokMap.find_opt tok (S.get ()).left_opens
 
   let unparse : PrintKey.t -> User.notation option = fun c -> PrintMap.find_opt c (S.get ()).unparse

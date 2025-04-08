@@ -1,10 +1,9 @@
 open Core
 open Reporter
-open Uuseg_string
-open Printconfig
 
 type t =
-  | Field of string (* Starting with . *)
+  (* A Field is an identifier starting with a period, broken into a list of components by internal periods, and with the first component stored separately.  The later components are only used to indicate the partial bijection identifying an instance of a "higher" field of a higher codatatype.  Thus for a record or ordinary codatatype the list is empty.  *)
+  | Field of string * string list
   | Constr of string (* Ending with . *)
   | LParen (* ( *)
   | RParen (* ) *)
@@ -24,29 +23,30 @@ type t =
   | Ellipsis (* ... and … *)
   | String of string (* Double-quoted *)
   | Underscore (* _ *)
-  | Internal of string (* Starting or ending with _ *)
-  | Axiom
-  | Def
   | And
-  | Echo
-  | Synth
-  | Quit
-  | Match
-  | Return
-  | Sig
-  | Data
+  | Axiom
   | Codata
-  | Notation
-  | Import
-  | Export
-  | Solve
-  | Show
-  | Undo
-  | Section
+  | Data
+  | Def
+  | Display
+  | Echo
   | End
-  | Let
-  | Rec
+  | Export
+  | Import
   | In
+  | Let
+  | Match
+  | Notation
+  | Option
+  | Quit
+  | Rec
+  | Return
+  | Section
+  | Show
+  | Sig
+  | Solve
+  | Synth
+  | Undo
   | Op of string (* Sequence of common ASCII symbols, other than : := ::= += -> |-> |=> etc. *)
   (* Alphanumeric/unicode other than common ASCII symbols and above single-token characters, with dots and underscores occuring only internally, and each dot-separated piece being nonempty.  Those not containing any dots could be local variable names (with one dot, they could be a face of a cube variable), and those consisting entirely of digits could be numerals.  We can't separate these out at lexing time into those that are parts of mixfix notations and those that are potential identifiers, since the mixfix notations in scope change as we go through a file. *)
   | Ident of string list
@@ -56,11 +56,6 @@ type t =
   | Eof
 
 let compare : t -> t -> int = compare
-
-(* Whether a string is valid as a dot-separated piece of an identifier name, or equivalently as a local variable name.  We don't test for absence of the delimited symbols, since they will automatically be lexed separately; this is for testing validity after the lexer has split things into potential tokens.  We also don't test for absence of dots, since identifiers will be split on dots automatically. *)
-let ok_ident s =
-  let len = String.length s in
-  len > 0 && s.[0] <> '_' && s.[len - 1] <> '_'
 
 (* All (or at least most) of the Unicode superscript characters, their code points, and the corresponding ASCII characters.  This is digits, lowercase Roman letters, parentheses, and plus, minus, and equals signs. *)
 let supers =
@@ -145,7 +140,10 @@ let of_super (s : string) : string =
   of_super 0
 
 let to_string = function
-  | Field s -> "." ^ s
+  | Field (f, strs) ->
+      if List.fold_right (fun s m -> max (String.length s) m) strs 0 > 1 then
+        "." ^ f ^ ".." ^ String.concat "." strs
+      else "." ^ f ^ "." ^ String.concat "" strs
   | Constr s -> s ^ "."
   | LParen -> "("
   | RParen -> ")"
@@ -154,18 +152,17 @@ let to_string = function
   | LBrace -> "{"
   | RBrace -> "}"
   | Query -> "?"
-  | Arrow -> alt_char "→" "->"
-  | Mapsto -> alt_char "↦" "|->"
-  | DblMapsto -> alt_char "⤇" "|=>"
+  | Arrow -> Display.alt_char "→" "->"
+  | Mapsto -> Display.alt_char "↦" "|->"
+  | DblMapsto -> Display.alt_char "⤇" "|=>"
   | Colon -> ":"
-  | Coloneq -> alt_char "≔" ":="
-  | DblColoneq -> alt_char "⩴" "::="
-  | Pluseq -> alt_char "⩲" "+="
+  | Coloneq -> Display.alt_char "≔" ":="
+  | DblColoneq -> Display.alt_char "⩴" "::="
+  | Pluseq -> Display.alt_char "⩲" "+="
   | Dot -> "."
-  | Ellipsis -> alt_char "…" "..."
+  | Ellipsis -> Display.alt_char "…" "..."
   | String s -> "\"" ^ s ^ "\""
   | Underscore -> "_"
-  | Internal s -> s
   | Axiom -> "axiom"
   | Def -> "def"
   | And -> "and"
@@ -182,6 +179,8 @@ let to_string = function
   | Export -> "export"
   | Solve -> "solve"
   | Show -> "show"
+  | Display -> "display"
+  | Option -> "option"
   | Undo -> "undo"
   | Section -> "section"
   | End -> "end"
@@ -196,4 +195,4 @@ let to_string = function
   | Eof -> "EOF"
 
 (* Given a token, create a constant pretty-printer that prints that token. *)
-let pp tok ppf () = pp_utf_8 ppf (to_string tok)
+let pp tok = PPrint.utf8string (to_string tok)

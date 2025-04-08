@@ -145,10 +145,10 @@ nest `}
 →  B x"
   in
 
-  (* Identifiers can contain or be digits.  In the latter case, they shadow numerals. *)
+  (* Identifiers can start with digits, but not be only digits. *)
   let atoa, _ = synth "A → A" in
   let _ = check "0a ↦ 0a" atoa in
-  let _ = check "0 ↦ 0" atoa in
+  let () = uncheck "0 ↦ 0" atoa in
 
   (* Local variables, constructors, and fields can't contain periods *)
   let () = unparse "x.x ↦ x.x" in
@@ -160,7 +160,7 @@ nest `}
   let ida00, _ = synth "Id A a₀ a₀" in
   let idb00, _ = synth "Id B a₀ a₀ (refl a₀) (f a₀) (f a₀)" in
 
-  let () = equal_at (check "refl a₀" ida00) (check "a₀^(e)" ida00) ida00 in
+  let () = equal_at (check "refl a₀" ida00) (check "a₀^^(e)" ida00) ida00 in
   let () = equal_at (check "refl a₀" ida00) (check "a₀⁽ᵉ⁾" ida00) ida00 in
 
   (* Superscripts bind tighter than application: *)
@@ -170,5 +170,5 @@ nest `}
   let () =
     equal_at (check "refl f a₀ a₀ (refl a₀)" idb00) (check "f⁽ᵉ⁾ a₀ a₀ (a₀⁽ᵉ⁾)" idb00) idb00 in
   let () =
-    equal_at (check "refl f a₀ a₀ (refl a₀)" idb00) (check "f⁽ᵉ⁾ a₀ a₀ (a₀^(e))" idb00) idb00 in
+    equal_at (check "refl f a₀ a₀ (refl a₀)" idb00) (check "f⁽ᵉ⁾ a₀ a₀ (a₀^^(e))" idb00) idb00 in
   ()
