@@ -542,11 +542,11 @@ Here the match against ``v`` falls into this case of matching because ``v`` and 
 
 .. code-block:: none
 
-   def Vec.append (A : Type) (m n : ℕ) (v : Vec A m) (w : Vec A n) : Vec A (ℕ.plus m n) 
-        ≔ match v [
-        | nil. ↦ w
-        | cons. k a u ↦ ?
-        ]
+   def Vec.append (A : Type) (m n : ℕ) (v : Vec A m) (w : Vec A n)
+     : Vec A (ℕ.plus m n)
+     ≔ match v [
+   | nil. ↦ w
+   | cons. k a u ↦ ? ]
    
         hole ?1 generated:
         
