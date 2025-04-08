@@ -532,11 +532,11 @@ As an example with indices, we can define appending of vectors:
 
 .. code-block:: none
 
-   def Vec.append (A : Type) (m n : ℕ) (v : Vec A m) (w : Vec A n) : Vec A (ℕ.plus m n) 
-        ≔ match v [
-        | nil. ↦ w
-        | cons. k a u ↦ cons. (ℕ.plus k n) a (Vec.append A k n u w)
-        ]
+   def Vec.append (A : Type) (m n : ℕ) (v : Vec A m) (w : Vec A n)
+     : Vec A (ℕ.plus m n)
+     ≔ match v [
+   | nil. ↦ w
+   | cons. k a u ↦ cons. (ℕ.plus k n) a (Vec.append A k n u w)]
 
 Here the match against ``v`` falls into this case of matching because ``v`` and the index ``m`` of its type ``Vec A m`` are both free variables.  Then in the two branches, not only is ``v`` specialized to the constructor, the variable ``m`` is also specialized to the index value associated to that constructor, namely ``zero.`` in the first branch and ``suc. k`` in the second.  Again, you can see this with a hole:
 
