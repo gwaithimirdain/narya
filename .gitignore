@@ -35,5 +35,10 @@ narya.opam
 # Generated opam file
 narya.opam
 
+# Nix stuff
+.envrc
+result
+.direnv/
+
 # Documentation build directory
 docs/build
