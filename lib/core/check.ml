@@ -289,8 +289,7 @@ let rec check : type a b s.
               | Kinetic l -> Kinetic l
               | Potential (c, args, hyp) ->
                   let arg = CubeOf.mmap { map = (fun _ [ x ] -> Ctx.Binding.value x) } [ newnfs ] in
-                  Potential (c, Snoc (args, Arg (arg, ins_zero m)), fun tm -> hyp (Lam (xs, tm)))
-            in
+                  Potential (c, Arg (args, arg, ins_zero m), fun tm -> hyp (Lam (xs, tm))) in
             (* Apply and instantiate the codomain to those arguments to get a type to check the body at. *)
             let output = tyof_app cods tyargs newargs in
             match cube with
@@ -571,6 +570,7 @@ let rec check : type a b s.
         let etm = eval_term (Ctx.env ctx) ctm in
         match Oracle.ask (Ask (ctx, etm)) with
         | Ok () -> (
+            (* TODO: try just "realize ctm" *)
             match status with
             | Kinetic _ -> ctm
             | Potential _ -> Realize ctm)
@@ -683,11 +683,11 @@ and synth_or_check_let : type a b s p.
       let tm =
         if GluedEval.read () then
           (* Glued evaluation: we delay evaluating the term until it's needed. *)
-          Uninst ({ head; args = Emp; value = lazy_eval (Ctx.env ctx) sv }, Lazy.from_val svty)
+          Neu { head; args = Emp; value = lazy_eval (Ctx.env ctx) sv; ty = Lazy.from_val svty }
         else
           match eval (Ctx.env ctx) sv with
           | Realize x -> x
-          | value -> Uninst ({ head; args = Emp; value = ready value }, Lazy.from_val svty) in
+          | value -> Neu { head; args = Emp; value = ready value; ty = Lazy.from_val svty } in
       (Term.Meta (meta, Kinetic), { tm; ty = svty }) in
   (* Either way, we end up with a checked term 'v' and a normal form 'nf'.  We use the latter to extend the context. *)
   let newctx = Ctx.ext_let ctx name nf in
@@ -790,7 +790,7 @@ and make_letrec_metas : type x a b ab. (x, a) Ctx.t -> (a, b, ab) Telescope.t ->
       (* Extend the context by it, as an unrealized neutral.  TODO: It's annoying that we have to evaluate the types here to extend the value-context, when the only use we're making of it is to readback that extended value-context into a termctx at each step to save with the global metavariable.  It would make more sense, and be more efficient, to just carry along the termctx and extend it directly at each step with "Term.Meta (meta, Kinetic)" at the term-type "vty".  Unfortunately, termctxs store terms and types in a one-longer context, so that would require directly weakening vty, or perhaps parsing and checking it in a one-longer context originally. *)
       let evty = eval_term (Ctx.env ctx) vty in
       let head = Value.Meta { meta; env = Ctx.env ctx; ins = zero_ins D.zero } in
-      let neutm = Uninst ({ head; args = Emp; value = ready Unrealized }, Lazy.from_val evty) in
+      let neutm = Neu { head; args = Emp; value = ready Unrealized; ty = Lazy.from_val evty } in
       let ctx = Ctx.ext_let ctx x { tm = neutm; ty = evty } in
       (* And recurse. *)
       Ext (x, meta, make_letrec_metas ctx tel)
@@ -1186,7 +1186,7 @@ and check_var_match : type a b.
       let seen = Hashtbl.create 10 in
       let is_fresh x =
         match x.tm with
-        | Uninst ({ head = Var { level; deg }; args = Emp; value }, _) -> (
+        | Neu { head = Var { level; deg }; args = Emp; value; ty = _ } -> (
             match force_eval value with
             | Unrealized ->
                 if Option.is_none (is_id_deg deg) then
@@ -1347,7 +1347,7 @@ and check_var_match : type a b.
                               (* If we found something to refute, we mark this branch as refuted in the compiled match. *)
                             then (branches |> Constr.Map.add constr Term.Refute, errs)
                             else fatal (Missing_constructor_in_match constr))))
-            | _ -> fatal (Anomaly "created datatype is not canonical?"))
+            | _ -> fatal (Anomaly "created datatype is not a datatype with all its indices"))
           (Constr.Map.empty, Emp) user_branches in
       match errs with
       | Snoc _ -> fatal (Accumulated ("check_var_match", errs))
@@ -1365,22 +1365,22 @@ and make_match_status : type a b ab c n.
     Constr.t ->
     (c, potential) status =
  fun status newtm dim branches efc eval_readback perm constr ->
-  match status with
-  | Potential (c, args, hyp) ->
-      let args =
-        match eval_readback with
-        | Some eval_readback ->
-            Bwd.map
-              (function
-                | Arg (xs, ins) ->
-                    Arg (CubeOf.mmap { map = (fun _ [ x ] -> eval_readback x) } [ xs ], ins)
-                | Field (x, y, z) -> Field (x, y, z))
-              args
-        | None -> args in
-      let hyp tm =
-        let branches = branches |> Constr.Map.add constr (Term.Branch (efc, perm, tm)) in
-        hyp (Term.Match { tm = newtm; dim; branches }) in
-      Potential (c, args, hyp)
+  let (Potential (c, args, hyp)) = status in
+  let args =
+    match eval_readback with
+    | Some eval_readback ->
+        let rec erapps : type any. any apps -> any apps = function
+          | Emp -> Emp
+          | Arg (rest, xs, ins) ->
+              Arg (erapps rest, CubeOf.mmap { map = (fun _ [ x ] -> eval_readback x) } [ xs ], ins)
+          | Field (rest, x, y, z) -> Field (erapps rest, x, y, z)
+          | Inst _ -> fatal (Anomaly "inst in make_match_status") in
+        erapps args
+    | None -> args in
+  let hyp tm =
+    let branches = branches |> Constr.Map.add constr (Term.Branch (efc, perm, tm)) in
+    hyp (Term.Match { tm = newtm; dim; branches }) in
+  Potential (c, args, hyp)
 
 (* Try matching against all the supplied terms with zero branches, producing an empty match if any succeeds and raising an error if none succeed. *)
 and check_refute : type a b.
@@ -1521,7 +1521,7 @@ and check_data : type a b i.
             (* Note the type of each field is checked *kinetically*: it's not part of the case tree. *)
             let coutput = check (Kinetic `Nolet) newctx output (universe D.zero) in
             match eval_term (Ctx.env newctx) coutput with
-            | Uninst ({ head = Const { name = out_head; ins }; args = out_apps; value = _ }, _) -> (
+            | Neu { head = Const { name = out_head; ins }; args = out_apps; value = _; ty = _ } -> (
                 match head with
                 | Constant (cc, n) when cc = out_head && Option.is_some (is_id_ins ins) -> (
                     match D.compare_zero n with
@@ -1529,9 +1529,7 @@ and check_data : type a b i.
                         fatal ?loc:output.loc
                           (Unimplemented "indexed inductive types nested inside higher comatches")
                     | Zero -> (
-                        let (Wrap indices) =
-                          get_indices newctx c (Bwd.to_list current_apps) (Bwd.to_list out_apps)
-                            output.loc in
+                        let (Wrap indices) = get_indices newctx c current_apps out_apps output.loc in
                         match Fwn.compare (Vec.length indices) num_indices with
                         | Eq ->
                             ( disc,
@@ -1559,33 +1557,29 @@ and check_data : type a b i.
                 status ctx ty Fwn.zero checked_constrs raw_constrs errs
           | Suc _ -> fatal (Missing_constructor_type c)))
 
-and get_indices : type a b.
+and get_indices : type a b any1 any2.
     (a, b) Ctx.t ->
     Constr.t ->
-    app list ->
-    app list ->
+    any1 apps ->
+    any2 apps ->
     Asai.Range.t option ->
     (b, kinetic) term Vec.wrapped =
  fun ctx c current output loc ->
   with_loc loc @@ fun () ->
-  match (current, output) with
-  | arg1 :: current, arg2 :: output -> (
-      match equal_arg (Ctx.length ctx) arg1 arg2 with
-      | Some () -> get_indices ctx c current output loc
-      | None -> fatal (Invalid_constructor_type c))
-  | [], _ ->
-      Vec.of_list_map
-        (function
-          | Arg (arg, ins) -> (
-              match is_id_ins ins with
-              | Some _ -> (
-                  match D.compare (CubeOf.dim arg) D.zero with
-                  | Eq -> readback_nf ctx (CubeOf.find_top arg)
-                  | Neq -> fatal (Invalid_constructor_type c))
-              | None -> fatal (Invalid_constructor_type c))
-          | Field _ -> fatal (Anomaly "field is not an index"))
-        output
-  | _ -> fatal (Invalid_constructor_type c)
+  let output_params, output_indices =
+    split_apps_at_length current output <|> Invalid_constructor_type c in
+  let () = equal_apps (Ctx.length ctx) current output_params <|> Invalid_constructor_type c in
+  Vec.of_list_map
+    (function
+      | Fwd_app.Arg (arg, ins) -> (
+          match is_id_ins ins with
+          | Some _ -> (
+              match D.compare (CubeOf.dim arg) D.zero with
+              | Eq -> readback_nf ctx (CubeOf.find_top arg)
+              | Neq -> fatal (Invalid_constructor_type c))
+          | None -> fatal (Invalid_constructor_type c))
+      | Field _ -> fatal (Anomaly "field is not an index"))
+    output_indices
 
 (* The common prefix of checking a codatatype or record type, which returns a (cube of) variables belonging to the up-until-now type so that later fields can refer to earlier ones.  It also dynamically binds the current constant or metavariable, if possible, to that value for recursive purposes.  Since this binding has to scope over the rest of the functions that are specific to codata or records, it uses CPS. *)
 and with_codata_so_far : type a b n c et.
@@ -1609,18 +1603,20 @@ and with_codata_so_far : type a b n c et.
         let head = head_of_potential h in
         let rec domvars () =
           let value =
-            Value.Canonical
-              (Codata
-                 {
-                   eta;
-                   opacity;
-                   env = Ctx.env ctx;
-                   ins = zero_ins dim;
-                   fields = checked_fields;
-                   termctx = lazy (termctx ());
-                 }) in
+            Val
+              (Value.Canonical
+                 ( Codata
+                     {
+                       eta;
+                       opacity;
+                       env = Ctx.env ctx;
+                       ins = zero_ins dim;
+                       fields = checked_fields;
+                       termctx = lazy (termctx ());
+                     },
+                   TubeOf.empty dim )) in
           let prev_ety =
-            Uninst ({ head; args; value = ready value }, Lazy.from_val (inst (universe dim) tyargs))
+            Neu { head; args; value = ready value; ty = Lazy.from_val (inst (universe dim) tyargs) }
           in
           snd
             (dom_vars (Ctx.length ctx)
@@ -1805,7 +1801,7 @@ and check_fields : type a b c d s m n mn et.
       let head = head_of_potential name in
       (* The up-until-now term is also maybe an error. *)
       let prev_etm =
-        unless_error (Uninst ({ head; args; value = ready (Val str) }, Lazy.from_val ty)) errs in
+        unless_error (Neu { head; args; value = ready (Val str); ty = Lazy.from_val ty }) errs in
       check_field status eta ctx ty m mn codata_args fields tyargs fld cdf prev_etm tms ctms etms
         errs
   | Entry (fld, cdf) :: fields, Kinetic _ ->
@@ -1844,7 +1840,7 @@ and check_field : type a b c d s m n mn i et.
       let mkstatus lbl : (b, s) status -> (b, s) status = function
         | Kinetic l -> Kinetic l
         | Potential (c, args, hyp) ->
-            let args = Snoc (args, Field (fld, D.plus_zero m, ins)) in
+            let args = Value.Field (args, fld, D.plus_zero m, ins) in
             let hyp tm =
               let ctms = Snoc (ctms, Entry (fld, Lower (tm, lbl))) in
               hyp (Term.Struct (eta, m, ctms, energy status)) in
@@ -1932,9 +1928,9 @@ and check_higher_field : type a b c d m i ic0.
       let newstatus : (rb, potential) status =
         match status with
         | Potential
-            (type aa)
+            (type aa any)
             ((head, args, hyp) :
-              aa potential_head * app Bwd.t * ((b, potential) term -> (aa, potential) term)) ->
+              aa potential_head * any apps * ((b, potential) term -> (aa, potential) term)) ->
             (* We increase the dimension of the potential_head, and also compute a value for the head.  This value is in the *old* context (not the degenerated one)! *)
             let head : aa potential_head =
               match head with
@@ -1947,64 +1943,65 @@ and check_higher_field : type a b c d m i ic0.
                   (* In the case of a metavariable, we eval-readback its stored environment to raise it to degctx. *)
                   Meta (meta, eval_env degenv rn (readback_env ctx metaenv d.termctx)) in
             (* We also eval-readback the args to raise them to degctx. *)
-            let args =
-              Bwd.map
-                (function
-                  | Value.Field (f, nk, appins) ->
-                      let n = cod_left_ins appins in
-                      let (Plus rn) = D.plus n in
-                      let (Plus rn_k) = D.plus (D.plus_right nk) in
-                      let (Plus r_nz) = D.plus (dom_ins appins) in
-                      let newins = plus_ins r r_nz rn appins in
-                      Value.Field (f, rn_k, newins)
-                  | Arg (type n nz z) ((arg, appins) : (n, normal) CubeOf.t * (nz, n, z) insertion)
-                    ->
-                      let n = CubeOf.dim arg in
-                      let (Plus rn) = D.plus n in
-                      let (Plus r_nz) = D.plus (dom_ins appins) in
-                      let newins = plus_ins r r_nz rn appins in
-                      (* First we readback the terms and types. *)
-                      let [ tms; tys ] =
-                        CubeOf.pmap
-                          { map = (fun _ [ x ] -> [ readback_nf ctx x; readback_val ctx x.ty ]) }
-                          [ arg ] (Cons (Cons Nil)) in
-                      (* Now we evaluate them in degenv to increase the dimension.  *)
-                      let etms = eval_args degenv rn (D.plus_out r rn) tms in
-                      let etys = eval_args degenv rn (D.plus_out r rn) tys in
-                      (* Now we have to reassociate the terms with the types to make a new cube of normals.  This is like norm_of_vals_cube, except that the types are already instantiated to dimension n, and we have only to instantiate them the rest of the way at dimension r. *)
-                      let new_tm_tbl = Hashtbl.create 10 in
-                      let newarg =
-                        CubeOf.mmap
-                          {
-                            map =
-                              (fun fab [ tm; ty ] ->
-                                let (SFace_of_plus (ml, fa, fb)) = sface_of_plus rn fab in
-                                let instargs =
-                                  TubeOf.build D.zero
-                                    (D.zero_plus (dom_sface fa))
-                                    {
-                                      build =
-                                        (fun fc ->
-                                          let (Plus kl) = D.plus (D.plus_right ml) in
-                                          Hashtbl.find new_tm_tbl
-                                            (SFace_of
-                                               (sface_plus_sface
-                                                  (comp_sface fa (sface_of_tface fc))
-                                                  rn kl fb)));
-                                    } in
-                                let ty = inst ty instargs in
-                                let newtm = { tm; ty } in
-                                Hashtbl.add new_tm_tbl (SFace_of fab) newtm;
-                                newtm);
-                          }
-                          [ etms; etys ] in
-                      Arg (newarg, newins))
-                args in
+            let rec erapps : type any. any apps -> any apps = function
+              | Emp -> Emp
+              | Field (apps, f, nk, appins) ->
+                  let n = cod_left_ins appins in
+                  let (Plus rn) = D.plus n in
+                  let (Plus rn_k) = D.plus (D.plus_right nk) in
+                  let (Plus r_nz) = D.plus (dom_ins appins) in
+                  let newins = plus_ins r r_nz rn appins in
+                  Value.Field (erapps apps, f, rn_k, newins)
+              | Arg
+                  (type any' n nz z)
+                  ((apps, arg, appins) : any' apps * (n, normal) CubeOf.t * (nz, n, z) insertion) ->
+                  let n = CubeOf.dim arg in
+                  let (Plus rn) = D.plus n in
+                  let (Plus r_nz) = D.plus (dom_ins appins) in
+                  let newins = plus_ins r r_nz rn appins in
+                  (* First we readback the terms and types. *)
+                  let [ tms; tys ] =
+                    CubeOf.pmap
+                      { map = (fun _ [ x ] -> [ readback_nf ctx x; readback_val ctx x.ty ]) }
+                      [ arg ] (Cons (Cons Nil)) in
+                  (* Now we evaluate them in degenv to increase the dimension.  *)
+                  let etms = eval_args degenv rn (D.plus_out r rn) tms in
+                  let etys = eval_args degenv rn (D.plus_out r rn) tys in
+                  (* Now we have to reassociate the terms with the types to make a new cube of normals.  This is like norm_of_vals_cube, except that the types are already instantiated to dimension n, and we have only to instantiate them the rest of the way at dimension r. *)
+                  let new_tm_tbl = Hashtbl.create 10 in
+                  let newarg =
+                    CubeOf.mmap
+                      {
+                        map =
+                          (fun fab [ tm; ty ] ->
+                            let (SFace_of_plus (ml, fa, fb)) = sface_of_plus rn fab in
+                            let instargs =
+                              TubeOf.build D.zero
+                                (D.zero_plus (dom_sface fa))
+                                {
+                                  build =
+                                    (fun fc ->
+                                      let (Plus kl) = D.plus (D.plus_right ml) in
+                                      Hashtbl.find new_tm_tbl
+                                        (SFace_of
+                                           (sface_plus_sface
+                                              (comp_sface fa (sface_of_tface fc))
+                                              rn kl fb)));
+                                } in
+                            let ty = inst ty instargs in
+                            let newtm = { tm; ty } in
+                            Hashtbl.add new_tm_tbl (SFace_of fab) newtm;
+                            newtm);
+                      }
+                      [ etms; etys ] in
+                  Arg (erapps apps, newarg, newins)
+              | Inst _ -> fatal (Anomaly "inst in eval-readback when checking higher field") in
+            let args = erapps args in
             let (Plus ni) = D.plus intrinsic in
             (* We add the current field projection to the args, with an insertion obtained by incorporating the remaining dimensions into the evaluation. *)
             let (Plus rm) = D.plus m in
             let newins = ins_plus_of_pbij fldins fldshuf rm in
-            let args = Snoc (args, Value.Field (fld, ni, newins)) in
+            let args = Value.Field (args, fld, ni, newins) in
             (* To hypothesize a value for the current term, we insert the supposed value as the value of this field.  Note the context rb of the supposed value is the degenerated rb instead of the original b, but this is exactly right for the value that's supposed to go in at this pbij.  *)
             let hyp (tm : (rb, potential) term) : (aa, potential) term =
               let hsf =

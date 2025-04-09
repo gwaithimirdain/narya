@@ -298,6 +298,10 @@ module Tube (F : Fam2) : sig
   val out : ('m, 'k, 'mk, 'b) t -> 'mk D.t
   val empty : 'n D.t -> ('n, D.zero, 'n, 'b) t
 
+  type _ full = Full_tube : (D.zero, 'n, 'n, 'a) t -> 'a full
+  type (_, _) some = Some_tube : ('n, 'k, 'nk, 'a) t -> ('nk, 'a) some
+  type _ any = Any_tube : ('n, 'k, 'nk, 'a) t -> 'a any
+
   module Heter : sig
     type (_, _, _, _, _) hgt =
       | [] : ('m, 'k, 'mk, 'nk, nil) hgt

@@ -1,4 +1,3 @@
-open Bwd
 open Util
 open Tbwd
 open Dim
@@ -23,7 +22,7 @@ let head_of_potential : type a. a potential_head -> Value.head = function
 type (_, _) status =
   | Kinetic : [ `Let | `Nolet ] -> ('b, kinetic) status
   | Potential :
-      'a potential_head * app Bwd.t * (('b, potential) term -> ('a, potential) term)
+      'a potential_head * 'any apps * (('b, potential) term -> ('a, potential) term)
       -> ('b, potential) status
 
 let energy : type b s. (b, s) status -> s energy = function

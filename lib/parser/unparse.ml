@@ -868,12 +868,6 @@ let () =
                (unparse (Names.of_ctx ctx) (readback_nf ctx tm) No.Interval.entire
                   No.Interval.entire))
             `None
-      | PNeu (ctx, tm) ->
-          pp_complete_term
-            (Wrap
-               (unparse (Names.of_ctx ctx) (readback_neu ctx tm) No.Interval.entire
-                  No.Interval.entire))
-            `None
       | PConstant name -> utf8string (String.concat "." (Scope.name_of name))
       | PMeta v -> utf8string (Meta.name v)
       | PHole (vars, Permute (p, ctx), ty) ->
@@ -883,7 +877,6 @@ let () =
           pp_hole ctx (Wrap ty)
       | Dump.Val tm -> Dump.value tm
       | Dump.DeepVal (tm, n) -> Dump.dvalue n tm
-      | Dump.Neu tm -> Dump.neu tm
       | Dump.Head h -> Dump.head h
       | Dump.Binder b -> Dump.binder b
       | Dump.Term tm -> Dump.term tm

@@ -7,7 +7,6 @@ open Domvars
 open Norm
 open Act
 open Monad.ZeroOps (Monad.Maybe)
-open Bwd
 module ListM = Mlist.Monadic (Monad.Maybe)
 module BwdM = Mbwd.Monadic (Monad.Maybe)
 
@@ -121,19 +120,16 @@ module Equal = struct
       | `Rigid -> (x, y)
       | `Full -> (view_term x, view_term y) in
     match (x, y) with
-    (* Since an Inst has a positive amount of instantiation, it can never equal an Uninst.  We don't need to check that the types agree, since equal_uninst concludes equality of types rather than assumes it. *)
-    | Uninst (u, _), Uninst (v, _) -> equal_neu n u v
-    | Inst { tm = tm1; dim = _; args = a1; tys = _ }, Inst { tm = tm2; dim = _; args = a2; tys = _ }
-      ->
-        let* () = equal_neu n tm1 tm2 in
-        (* If tm1 and tm2 are equal and have the same type, that type must be an instantiation of a universe of the same dimension, itself instantiated at the same arguments.  So for the instantiations to be equal (including their types), it suffices for the instantiation dimensions and arguments to be equal. *)
-        equal_tyargs n a1 a2
+    | ( Neu { head = head1; args = apps1; value = _; ty = _ },
+        Neu { head = head2; args = apps2; value = _; ty = _ } ) ->
+        (* To check two neutral applications are equal, with their types, we first check if the functions are equal, including their types and hence also their domains and codomains (and also they have the same insertion applied outside).  An alignment doesn't affect definitional equality.  We don't need to check that the types agree; this procedure concludes equality of types rather than assumes it. *)
+        let* () = equal_head n head1 head2 in
+        equal_apps n apps1 apps2
     | Lam _, _ | _, Lam _ -> fatal (Anomaly "unexpected lambda in synthesizing equality-check")
     | Struct _, _ | _, Struct _ ->
         fatal (Anomaly "unexpected struct in synthesizing equality-check")
     | Constr _, _ | _, Constr _ ->
         fatal (Anomaly "unexpected constr in synthesizing equality-check")
-    | _, _ -> fail
 
   and equal_tyargs : type n1 k1 nk1 n2 k2 nk2.
       int -> (n1, k1, nk1, normal) TubeOf.t -> (n2, k2, nk2, normal) TubeOf.t -> unit option =
@@ -147,14 +143,6 @@ module Equal = struct
         (* Because instantiation arguments are stored as normals, we use type-sensitive equality to compare them. *)
         miterM { it = (fun _ [ x; y ] -> equal_nf n x y) } [ a1; a2 ]
     | _ -> fail
-
-  (* Subroutine of equal_val.  Like it, equality of the types is part of the conclusion, not a hypothesis.  *)
-  and equal_neu : int -> neu -> neu -> unit option =
-   fun lvl { head = head1; args = args1; value = _ } { head = head2; args = args2; value = _ } ->
-    (* To check two neutral applications are equal, with their types, we first check if the functions are equal, including their types and hence also their domains and codomains (and also they have the same insertion applied outside).  An alignment doesn't affect definitional equality. *)
-    let* () = equal_head lvl head1 head2 in
-    (* Then we recursively check that all their arguments are equal. *)
-    equal_args lvl args1 args2
 
   (* Synthesizing equality check for heads.  Again equality of types is part of the conclusion, not a hypothesis. *)
   and equal_head : int -> head -> head -> unit option =
@@ -202,37 +190,33 @@ module Equal = struct
         | Neq -> fail)
     | _, _ -> fail
 
-  (* Check that the arguments of two entire application spines of equal functions are equal.  This is basically a left fold, but we make sure to iterate from left to right, and fail rather than raising an exception if the lists have different lengths.  *)
-  and equal_args : int -> app Bwd.t -> app Bwd.t -> unit option =
-   fun lvl args1 args2 ->
-    match (args1, args2) with
+  (* Check that the arguments of two entire application spines of equal functions are equal.  This is basically a left fold, but we make sure to iterate from left to right, and fail rather than raising an exception if the lists have different lengths.  As noted above, here we can go back to *assuming* that they have equal types, and thus passing off to the eta-expanding equality check.  *)
+  and equal_apps : type any1 any2. int -> any1 apps -> any2 apps -> unit option =
+   fun lvl apps1 apps2 ->
+    (* Iterating from left to right is important because it ensures that at the point of checking equality for any pair of arguments, we know that they have the same type, since they are valid arguments of equal functions with all previous arguments equal.  Thus each case *starts* with its recursive call. *)
+    match (apps1, apps2) with
     | Emp, Emp -> return ()
-    | Snoc (rest1, arg1), Snoc (rest2, arg2) ->
-        (* Iterating from left to right is important because it ensures that at the point of checking equality for any pair of arguments, we know that they have the same type, since they are valid arguments of equal functions with all previous arguments equal.  *)
-        let* () = equal_args lvl rest1 rest2 in
-        equal_arg lvl arg1 arg2
-    | Emp, Snoc _ | Snoc _, Emp -> fail
-
-  (* Check that two application arguments are equal, including their outer insertions as well as their values.  As noted above, here we can go back to *assuming* that they have equal types, and thus passing off to the eta-expanding equality check. *)
-  and equal_arg : int -> app -> app -> unit option =
-   fun n app1 app2 ->
-    match (app1, app2) with
-    | Arg (a1, i1), Arg (a2, i2) -> (
+    | Arg (rest1, a1, i1), Arg (rest2, a2, i2) -> (
+        let* () = equal_apps lvl rest1 rest2 in
         let To d1, To d2 = (deg_of_ins i1, deg_of_ins i2) in
         let* () = deg_equiv d1 d2 in
         match D.compare (CubeOf.dim a1) (CubeOf.dim a2) with
         | Eq ->
             let open CubeOf.Monadic (Monad.Maybe) in
-            miterM { it = (fun _ [ x; y ] -> (equal_nf n) x y) } [ a1; a2 ]
+            miterM { it = (fun _ [ x; y ] -> (equal_nf lvl) x y) } [ a1; a2 ]
         (* If the dimensions don't match, it is a bug rather than a user error, since they are supposed to both be valid arguments of the same function, and any function has a unique dimension. *)
         | Neq ->
             fatal
               (Dimension_mismatch ("application in equality-check", CubeOf.dim a1, CubeOf.dim a2)))
-    | Field (f1, _, i1), Field (f2, _, i2) ->
+    | Field (rest1, f1, _, i1), Field (rest2, f2, _, i2) ->
+        let* () = equal_apps lvl rest1 rest2 in
         let To d1, To d2 = (deg_of_ins i1, deg_of_ins i2) in
         let* () = deg_equiv d1 d2 in
         (* The 'plus' parts must automatically be equal if the fields are equal and well-typed. *)
         guard (Field.equal f1 f2)
+    | Inst (rest1, _, a1), Inst (rest2, _, a2) ->
+        let* () = equal_apps lvl rest1 rest2 in
+        equal_tyargs lvl a1 a2
     | _, _ -> fail
 
   and equal_at_tel : type n a b ab.
@@ -344,4 +328,4 @@ let fallback f =
 let equal_at ctx x y ty = fallback @@ fun () -> Equal.equal_at ctx x y ty
 let equal_val ctx x y = fallback @@ fun () -> Equal.equal_val ctx x y
 let equal_tyargs ctx a1 a2 = fallback @@ fun () -> Equal.equal_tyargs ctx a1 a2
-let equal_arg ctx x y = fallback @@ fun () -> Equal.equal_arg ctx x y
+let equal_apps ctx a1 a2 = fallback @@ fun () -> Equal.equal_apps ctx a1 a2

@@ -1,6 +1,5 @@
 (* This module should not be opened, but used qualified *)
 
-open Bwd
 open Util
 open Tbwd
 open Dim
@@ -108,11 +107,13 @@ let dim_entry : type f n. (f, n) entry -> n D.t = function
   | Vis { bindings; _ } | Invis bindings -> CubeOf.dim bindings
 
 (* Given an entry containing no let-bound variables, produce an "app" that says how to apply a function to its cube of (free) variables. *)
-let app_entry : type f n. (f, n) entry -> app = function
+let app_entry : type f n any. any apps -> (f, n) entry -> noninst apps =
+ fun apps e ->
+  match e with
   | Vis { bindings; _ } | Invis bindings ->
       if all_free bindings then
         let n = CubeOf.dim bindings in
-        Arg (CubeOf.mmap { map = (fun _ [ x ] -> Binding.value x) } [ bindings ], ins_zero n)
+        Arg (apps, CubeOf.mmap { map = (fun _ [ x ] -> Binding.value x) } [ bindings ], ins_zero n)
       else fatal (Anomaly "let-bound variable in Ctx.apps")
 
 module Ordered = struct
@@ -189,9 +190,9 @@ module Ordered = struct
         Word (Suc (b, dim_entry e))
     | Lock ctx -> dbwd ctx
 
-  let rec apps : type a b. (a, b) t -> app Bwd.t = function
+  let rec apps : type a b. (a, b) t -> noninst apps = function
     | Emp -> Emp
-    | Snoc (ctx, e, _) -> Snoc (apps ctx, app_entry e)
+    | Snoc (ctx, e, _) -> app_entry (apps ctx) e
     | Lock ctx -> apps ctx
 
   (* When we look up a visible variable in a context, we find the level (if any), the value, and the corresponding possibly-invisible variable.  To do this we have to iterate through each cube of variables from right-to-left as we decrement the raw index looking for the corresponding face.  So we need an auxiliary type family to keep track of where we are in that iteration and what result type we're expecting. *)

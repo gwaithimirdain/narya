@@ -57,7 +57,7 @@ module Code = struct
     | Not_enough_lambdas : int -> t
     | Not_enough_arguments_to_function : t
     | Not_enough_arguments_to_instantiation : t
-    | Type_not_fully_instantiated : string * 'n D.t -> t
+    | Type_not_fully_instantiated : string * 'n D.pos -> t
     | Instantiating_zero_dimensional_type : printable -> t
     | Unequal_synthesized_type : {
         expected : printable;
@@ -540,7 +540,8 @@ module Code = struct
       | Not_enough_arguments_to_instantiation ->
           text "not enough arguments to instantiate a higher-dimensional type"
       | Type_not_fully_instantiated (str, n) ->
-          textf "type not fully instantiated in %s (need %s more dimensions)" str (string_of_dim0 n)
+          textf "type not fully instantiated in %s (need %s more dimensions)" str
+            (string_of_dim0 (D.pos n))
       | Instantiating_zero_dimensional_type ty ->
           textf "@[<hv 0>can't apply/instantiate a zero-dimensional type@;<1 2>%a@]" pp_printed
             (print ty)

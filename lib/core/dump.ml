@@ -14,17 +14,11 @@ open Raw
 type printable +=
   | Val : 's value -> printable
   | DeepVal : 's value * int -> printable
-  | Neu : neu -> printable
   | Head : head -> printable
   | Binder : ('b, 's) binder -> printable
   | Term : ('b, 's) term -> printable
   | Env : ('n, 'b) Value.env -> printable
   | Check : 'a check -> printable
-
-type force_eval_type = { force : 's. 's lazy_eval -> 's evaluation }
-
-let force_eval : force_eval_type ref =
-  ref { force = (fun _ -> raise (Failure "Dump.force_eval not set")) }
 
 (* The dump functions were written using Format, but printable has now been changed to use PPrint instead.  To put off updating the dump functions to PPrint, we wrap the old versions in a module, and then at the end wrap them in functions that convert them to strings and make those into PPrint.documents. *)
 
@@ -35,22 +29,10 @@ module F = struct
   let rec dvalue : type s. int -> formatter -> s value -> unit =
    fun depth ppf v ->
     match v with
-    | Uninst (tm, ty) ->
-        if depth > 0 then fprintf ppf "Uninst (%a, %a)" neu tm (dvalue (depth - 1)) (Lazy.force ty)
-        else fprintf ppf "Uninst (%a, ?)" neu tm
-    | Inst { tm; dim = d; args; tys = _ } ->
-        fprintf ppf "Inst (%a, %a, (" neu tm dim (D.pos d);
-        let started = ref false in
-        TubeOf.miter
-          {
-            it =
-              (fun _ [ (x : normal) ] ->
-                if !started then fprintf ppf ", ";
-                started := true;
-                dvalue depth ppf x.tm);
-          }
-          [ args ];
-        fprintf ppf "), ?)"
+    | Neu { head = h; args = a; value = _; ty } ->
+        if depth > 0 then
+          fprintf ppf "Neu (%a, %a, %a)" head h apps a (dvalue (depth - 1)) (Lazy.force ty)
+        else fprintf ppf "Neu (%a, %a, ?)" head h apps a
     | Lam (_, _) -> fprintf ppf "Lam ?"
     | Struct (f, ins, _) ->
         let n = cod_left_ins ins in
@@ -59,6 +41,7 @@ module F = struct
         fprintf ppf "Constr (%s, %a, (%a))" (Constr.to_string c) dim d
           (pp_print_list ~pp_sep:(fun ppf () -> pp_print_string ppf ", ") value)
           (List.map CubeOf.find_top args)
+    | Canonical _ -> fprintf ppf "Canonical ?"
 
   and value : type s. formatter -> s value -> unit = fun ppf v -> dvalue 2 ppf v
 
@@ -91,7 +74,7 @@ module F = struct
     if depth > 0 then
       fprintf ppf "(%s%s, %a, %s)" (Field.to_string f) p
         (evaluation (depth - 1))
-        (!force_eval.force v) l
+        (View.force_eval v) l
     else
       match !v with
       | Ready v -> fprintf ppf "(%s%s, %a, %s)" (Field.to_string f) p (evaluation (depth - 1)) v l
@@ -103,25 +86,42 @@ module F = struct
     | Unrealized -> fprintf ppf "Unrealized"
     | Realize v -> fprintf ppf "Realize (%a)" (dvalue depth) v
     | Val v -> fprintf ppf "Val (%a)" (dvalue depth) v
-    | Canonical _ -> fprintf ppf "Canonical ?"
-
-  and neu : formatter -> neu -> unit =
-   fun ppf { head = h; args = a; value = _ } -> fprintf ppf "Neu (%a, (%a), ?)" head h args a
-
-  and args : formatter -> app Bwd.t -> unit =
-   fun ppf args ->
-    fprintf ppf "Emp";
-    Mbwd.miter (fun [ a ] -> fprintf ppf " <: %a" app a) [ args ]
 
   (* TODO: display the outer insertion *)
-  and app : formatter -> app -> unit =
-   fun ppf -> function
-    | Arg (xs, _) -> value ppf (CubeOf.find_top xs).tm
-    | Field (fld, d, _) -> (
+  and apps : type any. formatter -> any apps -> unit =
+   fun ppf args ->
+    match args with
+    | Emp -> fprintf ppf "Emp"
+    | Arg (rest, xs, _) ->
+        apps ppf rest;
+        fprintf ppf " <: ";
+        value ppf (CubeOf.find_top xs).tm
+    | Field (rest, fld, d, _) -> (
+        apps ppf rest;
+        fprintf ppf " <: ";
         let d = D.plus_right d in
         match D.compare_zero d with
         | Zero -> fprintf ppf ".%s" (Field.to_string fld)
         | Pos _ -> fprintf ppf ".%s.%s" (Field.to_string fld) (string_of_dim d))
+    | Inst (rest, d, args) ->
+        apps ppf rest;
+        fprintf ppf " <: ";
+        fprintf ppf "Inst (%a, %a)" dim (D.pos d) normal_tube args
+
+  and normal_tube : type k n nk. formatter -> (k, n, nk, normal) TubeOf.t -> unit =
+   fun ppf args ->
+    fprintf ppf "(";
+    let started = ref false in
+    TubeOf.miter
+      {
+        it =
+          (fun _ [ (x : normal) ] ->
+            if !started then fprintf ppf ", ";
+            started := true;
+            value ppf x.tm);
+      }
+      [ args ];
+    fprintf ppf ")"
 
   and head : formatter -> head -> unit =
    fun ppf h ->
@@ -283,7 +283,6 @@ let dim d = PPrint.utf8string (Format.asprintf "%a" F.dim d)
 let dvalue depth v = PPrint.utf8string (Format.asprintf "%a" (F.dvalue depth) v)
 let value v = PPrint.utf8string (Format.asprintf "%a" F.value v)
 let evaluation depth v = PPrint.utf8string (Format.asprintf "%a" (F.evaluation depth) v)
-let neu v = PPrint.utf8string (Format.asprintf "%a" F.neu v)
 let head v = PPrint.utf8string (Format.asprintf "%a" F.head v)
 let binder v = PPrint.utf8string (Format.asprintf "%a" F.binder v)
 let env v = PPrint.utf8string (Format.asprintf "%a" F.env v)

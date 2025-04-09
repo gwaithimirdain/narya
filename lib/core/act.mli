@@ -5,7 +5,6 @@ open Value
 type ('a, 'b) actor = { act : 'm 'n. 'a -> ('m, 'n) deg -> 'b }
 
 val act_cube : ('a, 'b) actor -> ('n, 'a) CubeOf.t -> ('m, 'n) deg -> ('m, 'b) CubeOf.t
-val forward_view_term : (kinetic value -> kinetic value) ref
 val act_value : 's value -> ('m, 'n) deg -> 's value
 val act_normal : normal -> ('a, 'b) deg -> normal
 val gact_ty : ?err:Code.t -> kinetic value option -> kinetic value -> ('a, 'b) deg -> kinetic value

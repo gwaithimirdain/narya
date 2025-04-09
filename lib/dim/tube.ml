@@ -63,6 +63,11 @@ module Tube (F : Fam2) = struct
 
   let empty : type n b. n D.t -> (n, D.zero, n, b) t = fun n -> Leaf n
 
+  (* A full tube of some dimension, with everything instantiated. *)
+  type _ full = Full_tube : (D.zero, 'n, 'n, 'a) t -> 'a full
+  type (_, _) some = Some_tube : ('n, 'k, 'nk, 'a) t -> ('nk, 'a) some
+  type _ any = Any_tube : ('n, 'k, 'nk, 'a) t -> 'a any
+
   (* Looking up with a tface *)
 
   let rec gfind : type m n k nk p q pq b.
