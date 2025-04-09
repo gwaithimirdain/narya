@@ -292,10 +292,9 @@ let canonicalize (rng : Position.range) : string -> Token.t t = function
         | [], _ -> fatal (Anomaly "canonicalizing empty string")
         (* Can't both start and end with a . *)
         | "" :: _, Snoc (_, "") -> fatal Parse_error
-        (* Starting with a . makes a field.  If there is only a primary name, it's a lower field. *)
-        | [ ""; field ], _ ->
-            if valid_field field then return (Field (field, [])) else fatal (Invalid_field field)
-        (* Otherwise, if the primary field name is followed by a "..", then the remaining sections are the parts. *)
+        (* Starting with a . makes a field.  If there is only a primary name, it's a lower field.  This is allowed to be fully numeric, for positional projections. *)
+        | [ ""; field ], _ -> return (Field (field, []))
+        (* Otherwise, if the primary field name is followed by a "..", then the remaining sections are the parts.  Higher fields are not allowed to be positional. *)
         | "" :: field :: "" :: pbij, _ ->
             if valid_field field then return (Field (field, pbij)) else fatal (Invalid_field field)
         (* Otherwise, there is only one remaining section allowed, and it is split into characters to make the remaining sections. *)

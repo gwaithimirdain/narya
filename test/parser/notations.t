@@ -22,7 +22,9 @@ Testing notation commands
 
   $ narya -e 'axiom A:Type' -e 'axiom f:A->A->A' -e 'notation 0 f : x "&" y.z := f x y.z'
    ￫ error[E0202]
-   ￮ invalid local variable name: y.z
+   ￭ command-line exec string
+   1 | notation 0 f : x "&" y.z := f x y.z
+     ^ invalid local variable name: y.z
   
   [1]
 

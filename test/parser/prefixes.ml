@@ -26,6 +26,7 @@ let query : (No.nonstrict opn, No.plus_omega, closed) notation = (Query, Postfix
 let () = make query "query" (Open_entry (eop (Op "!!") (done_open query)))
 
 let () =
+  Core.Reporter.run ~fatal:(fun _ -> raise (Failure "fatal error")) ~emit:(fun _ -> ()) @@ fun () ->
   Parser.Lexer.Specials.run @@ fun () ->
   Builtins.run @@ fun () ->
   Situation.Current.add att;
@@ -94,6 +95,7 @@ let perc : (No.strict opn, No.zero, No.strict opn) notation = (Perc, Infix No.ze
 let () = make perc "perc" (Open_entry (eop (Op "%") (done_open perc)))
 
 let () =
+  Core.Reporter.run ~fatal:(fun _ -> raise (Failure "fatal error")) ~emit:(fun _ -> ()) @@ fun () ->
   Parser.Lexer.Specials.run @@ fun () ->
   Builtins.run @@ fun () ->
   Situation.Current.add twiddle;
@@ -125,6 +127,7 @@ let atat : (No.strict opn, No.minus_omega, No.nonstrict opn) notation = (Atat, I
 let () = make atat "atat" (Open_entry (eop (Op "@@") (done_open atat)))
 
 let () =
+  Core.Reporter.run ~fatal:(fun _ -> raise (Failure "fatal error")) ~emit:(fun _ -> ()) @@ fun () ->
   Parser.Lexer.Specials.run @@ fun () ->
   Builtins.run @@ fun () ->
   Situation.Current.add atat;

@@ -1684,6 +1684,7 @@ let rec process_codata : type n.
     :: Term ty
     :: obs -> (
       with_loc loc @@ fun () ->
+      if not (Lexer.valid_field fstr) then fatal ?loc:fldloc (Invalid_field fstr);
       let x =
         match x with
         | Ident ([ x ], _) when Lexer.valid_var x -> Some x
