@@ -105,8 +105,8 @@ type (_, _, _) deg_perm_of_plus =
       -> ('ml, 'n, 'k) deg_perm_of_plus
   | None_deg_perm_of_plus : ('mk, 'n, 'k) deg_perm_of_plus
 
-let rec deg_perm_of_plus : type mk n k nk.
-    (n, k, nk) D.plus -> (mk, nk) deg -> (mk, n, k) deg_perm_of_plus =
+let rec deg_perm_of_plus : type ml n k nk.
+    (n, k, nk) D.plus -> (ml, nk) deg -> (ml, n, k) deg_perm_of_plus =
  fun nk s ->
   match nk with
   | Zero -> Deg_perm_of_plus (Zero, s, id_perm D.zero)

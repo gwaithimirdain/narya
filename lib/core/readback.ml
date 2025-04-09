@@ -1,4 +1,3 @@
-open Bwd
 open Util
 open Tbwd
 open Reporter
@@ -88,7 +87,7 @@ and readback_at : type a z. (z, a) Ctx.t -> kinetic value -> kinetic value -> (a
                               l ) ))
                     fields in
                 Some (Struct (Eta, dim, fields, Kinetic))
-            | Uninst ({ value; _ }, _), `Translucent l when Displaying.read () -> (
+            | Neu { value; _ }, `Translucent l when Displaying.read () -> (
                 match force_eval value with
                 | Val (Struct _) ->
                     let fields =
@@ -152,43 +151,31 @@ and readback_at : type a z. (z, a) Ctx.t -> kinetic value -> kinetic value -> (a
 and readback_val : type a z. (z, a) Ctx.t -> kinetic value -> (a, kinetic) term =
  fun ctx x ->
   match x with
-  | Uninst (({ value; _ } as u), ty) when Displaying.read () -> (
-      match force_eval value with
-      | Realize v -> readback_at ctx v (Lazy.force ty)
-      | _ -> readback_neu ctx u)
-  | Uninst (u, _) -> readback_neu ctx u
-  | Inst { tm = { value; _ } as tm; dim = _; args; tys } when Displaying.read () -> (
-      match force_eval value with
-      | Realize v ->
-          let univs =
-            TubeOf.build D.zero (TubeOf.plus tys) { build = (fun fa -> universe_ty (dom_tface fa)) }
-          in
-          readback_at ctx (inst v args)
-            (inst (universe (TubeOf.inst tys)) (norm_of_vals_tube tys univs))
-      | _ ->
-          let tm = readback_neu ctx tm in
-          let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ args ] in
-          Inst (tm, args))
-  | Inst { tm; dim = _; args; tys = _ } ->
-      let tm = readback_neu ctx tm in
-      let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ args ] in
-      Inst (tm, args)
+  | Neu { head; args; value; ty } -> (
+      match (force_eval value, Displaying.read ()) with
+      | Realize v, true -> readback_at ctx v (Lazy.force ty)
+      | _ -> readback_neu ctx head args)
   | Lam _ -> fatal (Anomaly "unexpected lambda in synthesizing readback")
   | Struct _ -> fatal (Anomaly "unexpected struct in synthesizing readback")
   | Constr _ -> fatal (Anomaly "unexpected constr in synthesizing readback")
 
-and readback_neu : type a z. (z, a) Ctx.t -> neu -> (a, kinetic) term =
- fun ctx { head; args; value = _ } ->
-  Bwd.fold_left
-    (fun fn arg ->
-      match arg with
-      | Arg (args, ins) ->
-          let (To p) = deg_of_ins ins in
-          Term.Act (App (fn, CubeOf.mmap { map = (fun _ [ tm ] -> readback_nf ctx tm) } [ args ]), p)
-      | Field (fld, fldplus, ins) ->
-          let (To p) = deg_of_ins ins in
-          Term.Act (Field (fn, fld, id_ins (cod_left_ins ins) fldplus), p))
-    (readback_head ctx head) args
+and readback_neu : type a z any. (z, a) Ctx.t -> head -> any apps -> (a, kinetic) term =
+ fun ctx head apps ->
+  match apps with
+  | Emp -> readback_head ctx head
+  | Arg (apps, args, ins) ->
+      let (To p) = deg_of_ins ins in
+      Term.Act
+        ( App
+            ( readback_neu ctx head apps,
+              CubeOf.mmap { map = (fun _ [ tm ] -> readback_nf ctx tm) } [ args ] ),
+          p )
+  | Field (apps, fld, fldplus, ins) ->
+      let (To p) = deg_of_ins ins in
+      Term.Act (Field (readback_neu ctx head apps, fld, id_ins (cod_left_ins ins) fldplus), p)
+  | Inst (apps, _, args) ->
+      let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ args ] in
+      Inst (readback_neu ctx head apps, args)
 
 and readback_head : type c z. (z, c) Ctx.t -> head -> (c, kinetic) term =
  fun ctx h ->

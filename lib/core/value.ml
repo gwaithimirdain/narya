@@ -1,10 +1,12 @@
-open Bwd
 open Util
 open Tbwd
 open Dim
 open Dimbwd
 include Energy
 open Term
+
+type inst = private Dummy_inst
+type noninst = private Dummy_noninst
 
 (* ******************** Values ******************** *)
 
@@ -53,9 +55,11 @@ module rec Value : sig
     | UU : 'n D.t -> head
     | Pi : string option * ('k, kinetic value) CubeOf.t * ('k, unit) BindCube.t -> head
 
-  and app =
-    | Arg : ('n, normal) CubeOf.t * ('nk, 'n, 'k) insertion -> app
-    | Field : 'i Field.t * ('t, 'i, 'n) D.plus * ('tk, 't, 'k) insertion -> app
+  and _ apps =
+    | Emp : noninst apps
+    | Arg : 'any apps * ('n, normal) CubeOf.t * ('nk, 'n, 'k) insertion -> noninst apps
+    | Field : 'any apps * 'i Field.t * ('t, 'i, 'n) D.plus * ('tk, 't, 'k) insertion -> noninst apps
+    | Inst : noninst apps * 'k D.pos * ('n, 'k, 'nk, normal) TubeOf.t -> inst apps
 
   and (_, _) binder =
     | Bind : {
@@ -65,26 +69,23 @@ module rec Value : sig
       }
         -> ('mn, 's) binder
 
-  and neu = { head : head; args : app Bwd.t; value : potential lazy_eval }
-
   and _ value =
-    | Uninst : neu * kinetic value Lazy.t -> kinetic value
-    | Inst : {
-        tm : neu;
-        dim : 'k D.pos;
-        args : ('n, 'k, 'nk, normal) TubeOf.t;
-        tys : (D.zero, 'n, 'n, kinetic value) TubeOf.t;
+    | Neu : {
+        head : head;
+        args : 'any apps;
+        value : potential lazy_eval;
+        ty : kinetic value Lazy.t;
       }
         -> kinetic value
     | Constr : Constr.t * 'n D.t * ('n, kinetic value) CubeOf.t list -> kinetic value
     | Lam : 'k variables * ('k, 's) binder -> 's value
     | Struct : ('p * 's * 'et) StructfieldAbwd.t * ('pk, 'p, 'k) insertion * 's energy -> 's value
+    | Canonical : 'mk canonical * ('m, 'k, 'mk, normal) TubeOf.t -> potential value
 
   and _ evaluation =
     | Val : 's value -> 's evaluation
     | Realize : kinetic value -> potential evaluation
     | Unrealized : potential evaluation
-    | Canonical : 'm canonical -> potential evaluation
 
   and _ canonical =
     | UU : 'm D.t -> 'm canonical
@@ -135,9 +136,9 @@ module rec Value : sig
 
   and 's lazy_state =
     | Deferred_eval :
-        ('m, 'b) env * ('b, 's) term * ('mn, 'm, 'n) insertion * app Bwd.t
+        ('m, 'b) env * ('b, 's) term * ('mn, 'm, 'n) insertion * 'any apps
         -> 's lazy_state
-    | Deferred : (unit -> 's evaluation) * ('m, 'n) deg * app Bwd.t -> 's lazy_state
+    | Deferred : (unit -> 's evaluation) * ('m, 'n) deg * 'any apps -> 's lazy_state
     | Ready : 's evaluation -> 's lazy_state
 
   and 's lazy_eval = 's lazy_state ref
@@ -187,10 +188,13 @@ end = struct
     | Pi : string option * ('k, kinetic value) CubeOf.t * ('k, unit) BindCube.t -> head
 
   (* An application contains the data of an n-dimensional argument and its boundary, together with a neutral insertion applied outside that can't be pushed in.  This represents the *argument list* of a single application, not the function.  Thus, an application spine will be a head together with a list of apps. *)
-  and app =
-    | Arg : ('n, normal) CubeOf.t * ('nk, 'n, 'k) insertion -> app
+  and _ apps =
+    | Emp : noninst apps
+    | Arg : 'any apps * ('n, normal) CubeOf.t * ('nk, 'n, 'k) insertion -> noninst apps
     (* For a higher field with ('n, 't, 'i) insertion, the actual evaluation dimension is 'n, but the result dimension is only 't.  So the dimension of the arg is 't, since that's the output dimension that a degeneracy acting on could be pushed through.  However, since a degeneracy of dimension up to 'n can act on the inside, we can push in the whole insertion and store only a plus outside. *)
-    | Field : 'i Field.t * ('t, 'i, 'n) D.plus * ('tk, 't, 'k) insertion -> app
+    | Field : 'any apps * 'i Field.t * ('t, 'i, 'n) D.plus * ('tk, 't, 'k) insertion -> noninst apps
+    (* An (m+n)-dimensional type is "instantiated" by applying it a "boundary tube" to get an m-dimensional type.  This operation is supposed to be functorial in dimensions, so it should not be applied more than once in a row.  So the dummy parameter of 'apps' tracks whether the last application was an instantiation, and here we verify that it wasn't before instantiating.  We also allow only nontrivial instantiations, to avoid cluttering up application spines with lots of empty instantiations and simplify equality-checking. *)
+    | Inst : noninst apps * 'k D.pos * ('n, 'k, 'nk, normal) TubeOf.t -> inst apps
 
   (* Lambdas and Pis both bind a variable, along with its dependencies.  These are recorded as defunctionalized closures.  Since they are produced by higher-dimensional substitutions and operator actions, the dimension of the binder can be different than the dimension of the environment that closes its body.  Accordingly, in addition to the environment and degeneracy to close its body, we store information about how to map the eventual arguments into the bound variables in the body.  *)
   and (_, _) binder =
@@ -201,31 +205,22 @@ end = struct
       }
         -> ('mn, 's) binder
 
-  (* A neutral is an application spine: a head with a list of applications.  Note that when we inject it into 'value' with Uninst below, it also stores its type (as do all the other uninsts).  It also stores (lazily) the up-to-now result of evaluating that application spine.  If that result is "Unrealized", then it is a "true neutral", the sort of neutral that is permanently stuck and usually appears in paper proofs of normalization.  If it is "Val" then the spine is still waiting for further arguments for its case tree to compute, while if it is "Canonical" then the case tree has already evaluated to a canonical type.  If it is "Realized" then the case tree has already evaluated to an ordinary value; this should only happen when glued evaluation is in effect. *)
-  and neu = { head : head; args : app Bwd.t; value : potential lazy_eval }
-
-  (* An (m+n)-dimensional type is "instantiated" by applying it a "boundary tube" to get an m-dimensional type.  This operation is supposed to be functorial in dimensions, so in the normal forms we prevent it from being applied more than once in a row.  The neutral forms are uninstantiated, and then every actual value is instantiated exactly once.  This means that even non-type neutrals must be "instantiated", albeit trivially. *)
   and _ value =
-    (* An uninstantiated term, together with its type.  The 0-dimensional universe is morally an infinite data structure Uninst (UU 0, (Uninst (UU 0, Uninst (UU 0, ... )))), so we make the type lazy. *)
-    | Uninst : neu * kinetic value Lazy.t -> kinetic value
-    (* A term with some nonzero instantiation *)
-    | Inst : {
-        (* The uninstantiated term being instantiated *)
-        tm : neu;
-        (* Require at least one dimension to be instantiated *)
-        dim : 'k D.pos;
-        (* The arguments for a tube of some dimensions *)
-        args : ('n, 'k, 'nk, normal) TubeOf.t;
-        (* The types of the arguments remaining to be supplied.  In other words, the type *of* this instantiation is "Inst (UU n, tys)". *)
-        tys : (D.zero, 'n, 'n, kinetic value) TubeOf.t;
+    (* A neutral is an application spine: a head with a list of applications.  It also stores its type, and (lazily) the up-to-now result of evaluating that application spine.  The type is also lazy because the 0-dimensional universe is morally an infinite data structure Uninst (UU 0, (Uninst (UU 0, Uninst (UU 0, ... )))).  If that result is "Unrealized", then it is a "true neutral", the sort of neutral that is permanently stuck and usually appears in paper proofs of normalization.  If it is "Val" then the spine is still waiting for further arguments for its case tree to compute.  If it is "Realized" then the case tree has already evaluated to an ordinary value; this should only happen when glued evaluation is in effect. *)
+    | Neu : {
+        head : head;
+        args : 'any apps;
+        value : potential lazy_eval;
+        ty : kinetic value Lazy.t;
       }
         -> kinetic value
     (* A constructor has a name, a dimension, and a list of arguments of that dimension.  It must always be applied to the correct number of arguments (otherwise it can be eta-expanded).  It doesn't have an outer insertion because a primitive datatype is always 0-dimensional (it has higher-dimensional versions, but degeneracies can always be pushed inside these).  *)
     | Constr : Constr.t * 'n D.t * ('n, kinetic value) CubeOf.t list -> kinetic value
-    (* Lambda-abstractions are never types, so they can never be nontrivially instantiated.  Thus we may as well make them values directly. *)
     | Lam : 'k variables * ('k, 's) binder -> 's value
-    (* The same is true for anonymous structs.  They have to store an insertion outside, like an application, to deal with higher-dimensional record types like Gel.  Here 'k is the Gel dimension, with 'n the substitution dimension and 'nk the total dimension. *)
+    (* Structs have to store an insertion outside, like an application, to deal with higher-dimensional record types like Gel.  Here 'k is the Gel dimension, with 'n the substitution dimension and 'nk the total dimension. *)
     | Struct : ('p * 's * 'et) StructfieldAbwd.t * ('pk, 'p, 'k) insertion * 's energy -> 's value
+    (* A canonical type is only a *potential* value, so it appears as the 'value' of a 'neu'.  It may also be partially instantiated. *)
+    | Canonical : 'mk canonical * ('m, 'k, 'mk, normal) TubeOf.t -> potential value
 
   (* This is the result of evaluating a term with a given kind of energy.  Evaluating a kinetic term just produces a (kinetic) value, whereas evaluating a potential term might be a potential value (waiting for more arguments), or else the information that the case tree has reached a leaf and the resulting kinetic value or canonical type, or else the information that the case tree is permanently stuck.  *)
   and _ evaluation =
@@ -233,7 +228,6 @@ end = struct
     | Val : 's value -> 's evaluation
     | Realize : kinetic value -> potential evaluation
     | Unrealized : potential evaluation
-    | Canonical : 'm canonical -> potential evaluation
 
   (* A canonical type value is either a universe, a function-type, a datatype, or a codatatype/record.  It, is parametrized by its dimension as a type, which might be larger than its evaluation dimension if it has an intrinsic dimension (e.g. Gel). *)
   and _ canonical =
@@ -302,9 +296,9 @@ end = struct
   (* An 's lazy_eval behaves from the outside like an 's evaluation Lazy.t.  But internally, in addition to being able to store an arbitrary thunk, it can also store a term and an environment in which to evaluate it (plus an outer insertion that can't be pushed into the environment).  This allows it to accept degeneracy actions and incorporate them into the environment, so that when it's eventually forced the term only has to be traversed once.  It can also accumulate degeneracies on an arbitrary thunk (which could, of course, be a constant value that was already forced, but now is deferred again until it's done accumulating degeneracy actions).  Both kinds of deferred values can also store more arguments and field projections for it to be applied to; this is only used in glued evaluation. *)
   and 's lazy_state =
     | Deferred_eval :
-        ('m, 'b) env * ('b, 's) term * ('mn, 'm, 'n) insertion * app Bwd.t
+        ('m, 'b) env * ('b, 's) term * ('mn, 'm, 'n) insertion * 'any apps
         -> 's lazy_state
-    | Deferred : (unit -> 's evaluation) * ('m, 'n) deg * app Bwd.t -> 's lazy_state
+    | Deferred : (unit -> 's evaluation) * ('m, 'n) deg * 'any apps -> 's lazy_state
     | Ready : 's evaluation -> 's lazy_state
 
   and 's lazy_eval = 's lazy_state ref
@@ -367,20 +361,24 @@ let ready : type s. s evaluation -> s lazy_eval = fun ev -> ref (Ready ev)
 
 let apply_lazy : type n s. s lazy_eval -> (n, normal) CubeOf.t -> s lazy_eval =
  fun lev xs ->
-  let xs = Arg (xs, ins_zero (CubeOf.dim xs)) in
+  let xins = ins_zero (CubeOf.dim xs) in
   match !lev with
-  | Deferred_eval (env, tm, ins, apps) -> ref (Deferred_eval (env, tm, ins, Snoc (apps, xs)))
-  | Deferred (tm, ins, apps) -> ref (Deferred (tm, ins, Snoc (apps, xs)))
-  | Ready tm -> ref (Deferred ((fun () -> tm), id_deg D.zero, Snoc (Emp, xs)))
+  | Deferred_eval (env, tm, ins, apps) -> ref (Deferred_eval (env, tm, ins, Arg (apps, xs, xins)))
+  | Deferred (tm, ins, apps) -> ref (Deferred (tm, ins, Arg (apps, xs, xins)))
+  | Ready tm -> ref (Deferred ((fun () -> tm), id_deg D.zero, Arg (Emp, xs, xins)))
 
 (* We defer "field_lazy" to act.ml, since it requires pushing a permutation inside the apps. *)
 
 (* Given a De Bruijn level and a type, build the variable of that level having that type. *)
 let var : level -> kinetic value -> kinetic value =
  fun level ty ->
-  Uninst
-    ( { head = Var { level; deg = id_deg D.zero }; args = Emp; value = ready Unrealized },
-      Lazy.from_val ty )
+  Neu
+    {
+      head = Var { level; deg = id_deg D.zero };
+      args = Emp;
+      value = ready Unrealized;
+      ty = Lazy.from_val ty;
+    }
 
 (* Project out a cube or tube of values from a cube or tube of normals *)
 let val_of_norm_cube : type n. (n, normal) CubeOf.t -> (n, kinetic value) CubeOf.t =
@@ -407,13 +405,20 @@ let rec remove_env : type a k b n. (n, b) env -> (a, k, b) Tbwd.insert -> (n, a)
       let (Unmap_insert (_, v', na)) = Plusmap.unmap_insert v nb in
       Shift (remove_env env v', mn, na)
 
-(* The universe of any dimension belongs to an instantiation of itself.  Note that the result is not itself a type (i.e. in the 0-dimensional universe) unless n=0. *)
+(* The universe of any dimension belongs to an instantiation of itself.  Note that the result is not itself a type (i.e. in the 0-dimensional universe) unless n=0.  This is the universe itself as a term. *)
 let rec universe : type n. n D.t -> kinetic value =
  fun n ->
-  Uninst ({ head = UU n; args = Emp; value = ready (Canonical (UU n)) }, lazy (universe_ty n))
+  Neu
+    {
+      head = UU n;
+      args = Emp;
+      value = ready (Val (Canonical (UU n, TubeOf.empty n)));
+      ty = lazy (universe_ty n);
+    }
 
 and universe_nf : type n. n D.t -> normal = fun n -> { tm = universe n; ty = universe_ty n }
 
+(* And this is the instantiation of itself that it belongs to.  This is a type (i.e. an element of the 0-dimensional universe), so it must be fully instantiated.  *)
 and universe_ty : type n. n D.t -> kinetic value =
  fun n ->
   match D.compare_zero n with
@@ -427,13 +432,89 @@ and universe_ty : type n. n D.t -> kinetic value =
                 let m = dom_tface fa in
                 universe_nf m);
           } in
-      Inst
-        {
-          tm = { head = UU n; args = Emp; value = ready (Canonical (UU n)) };
-          dim = n';
-          args;
-          tys = TubeOf.empty D.zero;
-        }
+      let value = ready (Val (Canonical (UU n, args))) in
+      Neu { head = UU n; args = Inst (Emp, n', args); value; ty = lazy (universe D.zero) }
+
+type any_apps = Any : 'any apps -> any_apps
+
+(* Smart constructor that coalesces instantiations *)
+let inst_apps : type any m n mn. any apps -> (m, n, mn, normal) TubeOf.t -> any_apps =
+ fun apps args2 ->
+  let n = TubeOf.inst args2 in
+  let inst_noninst apps =
+    match D.compare_zero n with
+    | Zero -> Any Emp
+    | Pos n -> Any (Inst (apps, n, args2)) in
+  match apps with
+  | Inst (apps, k, args1) -> (
+      let (Plus nk) = D.plus (TubeOf.inst args1) in
+      match D.compare (TubeOf.uninst args1) (TubeOf.out args2) with
+      | Neq ->
+          Reporter.fatal (Dimension_mismatch ("inst_apps", TubeOf.uninst args1, TubeOf.out args2))
+      | Eq ->
+          let args = TubeOf.plus_tube nk args1 args2 in
+          Any (Inst (apps, D.plus_pos n k nk, args)))
+  | Emp -> inst_noninst apps
+  | Arg _ -> inst_noninst apps
+  | Field _ -> inst_noninst apps
+
+(* Split off an instantiation, if any, at the end of an apps *)
+let inst_of_apps : type any. any apps -> noninst apps * normal TubeOf.any option =
+ fun apps ->
+  match apps with
+  | Inst (base_args, _, args1) -> (base_args, Some (TubeOf.Any_tube args1))
+  | Emp -> (apps, None)
+  | Arg _ -> (apps, None)
+  | Field _ -> (apps, None)
+
+module Fwd_app = struct
+  (* Make an apps without instantiations into a forwards list *)
+  type t =
+    | Arg : ('n, normal) CubeOf.t * ('nk, 'n, 'k) insertion -> t
+    | Field : 'i Field.t * ('t, 'i, 'n) D.plus * ('tk, 't, 'k) insertion -> t
+
+  let snoc : type any. any apps -> t -> noninst apps =
+   fun apps app ->
+    match app with
+    | Arg (arg, ins) -> Arg (apps, arg, ins)
+    | Field (fld, plus, ins) -> Field (apps, fld, plus, ins)
+
+  let of_apps apps =
+    let rec go : type any. any apps -> t list -> t list =
+     fun apps fwds ->
+      match apps with
+      | Emp -> fwds
+      | Arg (apps, arg, ins) -> go apps (Arg (arg, ins) :: fwds)
+      | Field (apps, fld, plus, ins) -> go apps (Field (fld, plus, ins) :: fwds)
+      | Inst _ -> Reporter.fatal (Anomaly "instantiation in fwd_of_apps") in
+    go apps []
+end
+
+(* Given two apps, the second longer, split the second into one of the same length and the rest. *)
+let split_apps_at_length : type any1 any2.
+    any1 apps -> any2 apps -> (noninst apps * Fwd_app.t list) option =
+ fun apps1 apps2 ->
+  let rec go apps2 fwd1 fwd2 =
+    match (fwd1, fwd2) with
+    | [], _ -> Some (apps2, fwd2)
+    | _ :: fwd1, app2 :: fwd2 -> go (Fwd_app.snoc apps2 app2) fwd1 fwd2
+    | _ -> None in
+  go Emp (Fwd_app.of_apps apps1) (Fwd_app.of_apps apps2)
+
+let get_full_tube : type n k nk a any.
+    err:(n D.pos -> Reporter.Code.t) ->
+    ?severity:Asai.Diagnostic.severity ->
+    (any * (n, k, nk, a) TubeOf.t) option ->
+    a TubeOf.full =
+ fun ~err ?(severity = Asai.Diagnostic.Bug) args ->
+  match args with
+  | None -> TubeOf.Full_tube (TubeOf.empty D.zero)
+  | Some (_, args) -> (
+      match D.compare_zero (TubeOf.uninst args) with
+      | Pos n -> Reporter.fatal ~severity (err n)
+      | Zero ->
+          let Eq = D.plus_uniq (TubeOf.plus args) (D.zero_plus (TubeOf.inst args)) in
+          TubeOf.Full_tube args)
 
 (* Glued evaluation is basically implemented, but currently disabled because it is very slow -- too much memory allocation, and OCaml 5 doesn't have memory profiling tools available yet to debug it.  So we disable it globally with this flag.  But all the regular tests pass with the flag enabled, and should continue to be run and to pass, so that once we are able to debug it it is still otherwise working. *)
 module GluedEval = struct
