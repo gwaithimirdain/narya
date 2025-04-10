@@ -1,6 +1,6 @@
 ;; narya-syntax.el --- Proof General instance for Narya - syntax file
 
-;; We omit "display", "solve", "show", and "undo" because these should NOT appear in source files.
+;; We omit "display", "solve", "split", "show", and "undo" because these should NOT appear in source files.
 (defconst narya-commands
   "\\_<\\(axiom\\|def\\|echo\\|synth\\|notation\\|import\\|export\\|quit\\|section\\|option\\|end\\)\\_>")
 

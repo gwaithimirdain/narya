@@ -8,7 +8,6 @@ open Notation
 open Postprocess
 open Unparse
 open Print
-open PPrint
 open Reporter
 open User
 open Modifier
@@ -25,6 +24,16 @@ type def = {
   ty : (Whitespace.t list * wrapped_parse) option;
   wscoloneq : Whitespace.t list;
   tm : wrapped_parse;
+}
+
+type solve_data = {
+  wssolve : Whitespace.t list;
+  number : int;
+  wsnumber : Whitespace.t list;
+  column : int;
+  wscolumn : Whitespace.t list;
+  wscoloneq : Whitespace.t list;
+  tm : wrapped_parse ref;
 }
 
 module Command = struct
@@ -71,15 +80,8 @@ module Command = struct
         wsorigin : Whitespace.t list;
         op : (Whitespace.t list * modifier) option;
       }
-    | Solve of {
-        wssolve : Whitespace.t list;
-        number : int;
-        wsnumber : Whitespace.t list;
-        column : int;
-        wscolumn : Whitespace.t list;
-        wscoloneq : Whitespace.t list;
-        mutable tm : wrapped_parse;
-      }
+    | Solve of solve_data
+    | Split of solve_data
     (* Show and Undo don't get reformatted (see pp_command, below), so there's no need to store whitespace in them, but we do it anyway for completeness. *)
     | Show of {
         wsshow : Whitespace.t list;
@@ -487,7 +489,15 @@ module Parse = struct
     let* column, wscolumn = integer </> return (0, []) in
     let* wscoloneq = token Coloneq in
     let* tm = C.term [] in
-    return (Solve { wssolve; number; wsnumber; column; wscolumn; wscoloneq; tm })
+    return (Solve { wssolve; number; wsnumber; column; wscolumn; wscoloneq; tm = ref tm })
+
+  let split =
+    let* wssolve = token Split in
+    let* number, wsnumber = integer in
+    let* column, wscolumn = integer </> return (0, []) in
+    let* wscoloneq = token Coloneq in
+    let* tm = C.term [] in
+    return (Split { wssolve; number; wsnumber; column; wscolumn; wscoloneq; tm = ref tm })
 
   let show =
     let* wsshow = token Show in
@@ -620,6 +630,7 @@ module Parse = struct
     </> notation
     </> import
     </> solve
+    </> split
     </> show
     </> display
     </> option
@@ -705,6 +716,7 @@ let to_string : Command.t -> string = function
   | Notation _ -> "notation"
   | Import _ -> "import"
   | Solve _ -> "solve"
+  | Split _ -> "split"
   | Show _ -> "show"
   | Display _ -> "display"
   | Option _ -> "option"
@@ -717,7 +729,7 @@ let to_string : Command.t -> string = function
 
 (* Whether a command requires an interactive mode (i.e. not interactive mode and not ProofGeneral interaction). *)
 let needs_interactive : Command.t -> bool = function
-  | Solve _ | Show _ | Undo _ -> true
+  | Solve _ | Split _ | Show _ | Undo _ -> true
   | _ -> false
 
 (* Forbid holes in imported files and in most commands.  In commands that allow holes, don't change the current setting (e.g. if we are in an imported file, we still don't want any holes). *)
@@ -734,7 +746,8 @@ let condense : Command.t -> [ `Import | `Option | `None | `Bof ] = function
   | _ -> `None
 
 (* Most execution of commands we can do here, but there are a couple things where we need to call out to the executable: noting when an effectual action like 'echo' is taken (for recording warnings in compiled files), and loading another file.  So this function takes a couple of callbacks as arguments. *)
-let execute : action_taken:(unit -> unit) -> get_file:(string -> Scope.trie) -> Command.t -> unit =
+let rec execute :
+    action_taken:(unit -> unit) -> get_file:(string -> Scope.trie) -> Command.t -> unit =
  fun ~action_taken ~get_file cmd ->
   if needs_interactive cmd && not (Core.Command.Mode.read ()).interactive then
     fatal (Forbidden_interactive_command (to_string cmd));
@@ -818,13 +831,14 @@ let execute : action_taken:(unit -> unit) -> get_file:(string -> Scope.trie) -> 
           let bty = readback_at ctx ety (Value.universe D.zero) in
           let utm = unparse (Names.of_ctx ctx) btm No.Interval.entire No.Interval.entire in
           let uty = unparse (Names.of_ctx ctx) bty No.Interval.entire No.Interval.entire in
-          ToChannel.pretty 1.0 (Display.columns ()) stdout
-            (hang 2
-               (pp_complete_term (Wrap utm) `None
-               ^^ hardline
-               ^^ Token.pp Colon
-               ^^ blank 1
-               ^^ pp_complete_term (Wrap uty) `None));
+          PPrint.(
+            ToChannel.pretty 1.0 (Display.columns ()) stdout
+              (hang 2
+                 (pp_complete_term (Wrap utm) `None
+                 ^^ hardline
+                 ^^ Token.pp Colon
+                 ^^ blank 1
+                 ^^ pp_complete_term (Wrap uty) `None)));
           print_newline ();
           print_newline ()
       | _ -> fatal (Nonsynthesizing ("argument of " ^ if eval then "echo" else "synth")))
@@ -909,19 +923,19 @@ let execute : action_taken:(unit -> unit) -> get_file:(string -> Scope.trie) -> 
       match metatm with
       | `Undefined ->
           History.run_with_scope ~init_visible:scope ~options @@ fun () ->
-          let (Wrap tm) = data.tm in
+          let (Wrap tm) = !(data.tm) in
           let ptm = process vars tm in
           (* We set the hole location offset to the start of the *term*, so that ProofGeneral can create hole overlays in the right places when solving a hole and creating new holes. *)
           Global.HolePos.modify (fun st ->
-              let tmloc = ptm.loc <|> Anomaly "missing location in Solve" in
+              let tmloc = ptm.loc <|> Anomaly "missing location in solve" in
               { st with offset = (fst (Asai.Range.split tmloc)).offset });
           let solve ctm =
             Eternity.solve m ctm;
             match (li, ri) with
             | Some (Interval li), Some (Interval ri) ->
                 let buf = Buffer.create 20 in
-                ToBuffer.compact buf (pp_complete_term data.tm `None);
-                Reporter.try_with ~fatal:(fun _ -> data.tm <- Wrap (parenthesize tm)) @@ fun () ->
+                PPrint.ToBuffer.compact buf (pp_complete_term !(data.tm) `None);
+                Reporter.try_with ~fatal:(fun _ -> data.tm := Wrap (parenthesize tm)) @@ fun () ->
                 let _ =
                   TermParse.Term.parse ~li:(Interval li) ~ri:(Interval ri)
                     (`String { content = Buffer.contents buf; title = None }) in
@@ -931,6 +945,50 @@ let execute : action_taken:(unit -> unit) -> get_file:(string -> Scope.trie) -> 
       | `Defined _ | `Axiom ->
           (* Yes, this is an anomaly and not a user error, because find_number should only be looking at the unsolved holes. *)
           fatal (Anomaly "hole already defined"))
+  | Split data -> (
+      let (Find_number
+             ( _m,
+               { tm = metatm; termctx; ty; energy = _; li = _; ri = _ },
+               { global = _; scope; status = _; vars; options } )) =
+        Eternity.find_number data.number in
+      match metatm with
+      | `Undefined -> (
+          History.run_with_scope ~init_visible:scope ~options @@ fun () ->
+          let (Wrap tm) = !(data.tm) in
+          match tm.value with
+          | Placeholder _ -> (
+              Global.HolesAllowed.run ~env:(Ok ()) @@ fun () ->
+              let ctx = Norm.eval_ctx termctx in
+              let ety = Norm.eval_term (Ctx.env ctx) ty in
+              match View.view_type ety "split" with
+              | Canonical (_, Pi (_, doms, _), _) ->
+                  let cube, _notn, mapsto =
+                    match D.compare_zero (CubeOf.dim doms) with
+                    | Zero -> (`Normal, Builtins.abs, Token.Mapsto)
+                    | Pos _ -> (`Cube, Builtins.cubeabs, Token.DblMapsto) in
+                  let xs = Domvars.get_pi_vars ctx cube Emp ety in
+                  let content =
+                    (* TODO: Should generate real variable names. *)
+                    String.concat " " (Bwd_extra.to_list_map (Option.value ~default:"_") xs)
+                    ^ Token.to_string mapsto
+                    ^ " ?" in
+                  (data.tm := TermParse.Term.(final (parse (`String { title = None; content }))));
+                  (* let first =
+                       unparse_abs xs No.Interval.entire (No.minusomega_le No.plus_omega)
+                         No.minusomega_lt_plusomega in
+                     let li, ri = (No.Interval.entire, No.Interval.entire) in
+                     let last = Range.unlocated (Hole { li; ri; ws = []; num = ref 0 }) in
+                     let left_ok, right_ok = (No.le_refl No.minus_omega, No.le_refl No.minus_omega) in
+                     data.tm :=
+                       Wrap
+                         (Range.unlocated
+                            (infix ~notn ~first ~inner:(Single (mapsto, [])) ~last ~left_ok ~right_ok)); *)
+                  execute ~action_taken ~get_file (Solve data)
+              | _ -> fatal (Unimplemented "splitting into non-pi"))
+          | _ ->
+              let _ptm = process vars tm in
+              fatal (Unimplemented "splitting on terms"))
+      | `Defined _ | `Axiom -> fatal (Anomaly "hole already defined"))
   | Show { what; _ } -> (
       action_taken ();
       match what with
@@ -986,8 +1044,10 @@ let tightness_of_fixity : type left tight right. (left, tight, right) fixity -> 
   | Postfixl tight -> Some (No.to_string tight)
   | Outfix -> None
 
-let rec pp_parameters : Whitespace.t list -> Parameter.t list -> document * Whitespace.t list =
+let rec pp_parameters : Whitespace.t list -> Parameter.t list -> PPrint.document * Whitespace.t list
+    =
  fun prews params ->
+  let open PPrint in
   match params with
   | [] -> (empty, prews)
   | { wslparen; names; wscolon; ty; wsrparen } :: params ->
@@ -1012,8 +1072,13 @@ let rec pp_parameters : Whitespace.t list -> Parameter.t list -> document * Whit
         wparams )
 
 let rec pp_defs :
-    Token.t -> Whitespace.t list option -> def list -> document -> document * Whitespace.t list =
+    Token.t ->
+    Whitespace.t list option ->
+    def list ->
+    PPrint.document ->
+    PPrint.document * Whitespace.t list =
  fun tok prews defs accum ->
+  let open PPrint in
   match defs with
   | [] -> (accum, Option.fold ~some:(fun x -> x) ~none:[] prews)
   | { wsdef; name; loc = _; wsname; parameters; ty; wscoloneq; tm = Wrap tm } :: defs ->
@@ -1057,8 +1122,9 @@ let rec pp_defs :
           ^^ group (params_and_ty ^^ nest 2 (pp_ws `Break wty ^^ coloneq ^^ group (hang 2 ptm))))
 
 (* We only print commands that can appear in source files or for which ProofGeneral may need reformatting info (e.g. solve). *)
-let pp_command : t -> document * Whitespace.t list =
+let pp_command : t -> PPrint.document * Whitespace.t list =
  fun cmd ->
+  let open PPrint in
   (* Indent when inside of sections. *)
   let indent = ref (Scope.count_sections () * 2) in
   let doc, ws =
@@ -1179,10 +1245,16 @@ let pp_command : t -> document * Whitespace.t list =
                   | `Path path -> utf8string (String.concat "." path))
                ^^ op)),
           rest )
-    | Solve { column; tm = Wrap tm; _ } ->
+    | Solve { column; tm; _ } ->
+        let (Wrap tm) = !tm in
         (* We (mis)use pretty-printing of a solve *command* to actually just reformat the solving *term*.  This is appropriate since "solve" should never appear in a source file, and when it's called from ProofGeneral, PG knows that the reformatted return is the new string to insert at the hole location. *)
         let tm, rest = split_ending_whitespace tm in
         (* When called from ProofGeneral, the 'column' is the column number of the hole, so the reformatted term should "start at that indentation".  The best way I've thought of so far to mimic that effect is to reduce the margin by that amount, and then add extra indentation to each new line on the ProofGeneral end.  *)
+        (nest column (pp_complete_term (Wrap tm) `None), rest)
+    | Split { column; tm; _ } ->
+        (* Same with split. *)
+        let (Wrap tm) = !tm in
+        let tm, rest = split_ending_whitespace tm in
         (nest column (pp_complete_term (Wrap tm) `None), rest)
     | Option { wsoption; wscoloneq; what } ->
         let opt, how, wshow =

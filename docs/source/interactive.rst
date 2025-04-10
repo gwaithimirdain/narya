@@ -28,6 +28,14 @@ If you have forgotten the context and type of a hole that were displayed when it
  
 Finally, if the cursor is over a hole, then the commands ``C-c ;`` (normalize a term) and ``C-c :`` (display the type of a term) operate in the context of that hole.  Moreover, these commands, as well as ``C-c C-SPC`` which solves a hole, share an input history: when prompted by any of them for a term, you can press the up and down arrows, or ``M-p`` and ``M-n``, to cycle through the terms you have previously input.  Thus, you can try out possible hole fillers or subterms thereof with ``C-c :``, comparing their types to the goal type of the hole until you are ready to fill the hole, and then easily supply the same term to ``C-c C-SPC``.
 
+Splitting in holes
+------------------
+
+Narya has a limited ability to infer the shape of a term to solve a hole with from the type of that hole.  In ProofGeneral mode, if you position the cursor over a hole and type ``C-c C-y``, Narya will try to guess the shape of a term to fill the hole with, leaving additional holes in appropriate places.  This includes:
+
+- If the hole has a function type, the term inserted will be an abstraction with a new hole in the body.  The variable names in the abstraction are taken from the function type, e.g. for ``(x : A) → B`` the term inserted will be ``x ↦ ?``.  For a function type with unnamed variable like ``A → B``, the variable inserted will be a placeholder ``_``.  Iterated function-types like ``(x : A) (y : B) → C`` lead to iterated abstractions ``x y ↦ ?``, and higher-dimensional function-types like ``Id ((x : A) → B) f g`` lead to cube abstractions ``x ⤇ ?`` (see :ref:`Parametric Observational Type Theory`).
+
+
 Undoing solved holes
 --------------------
 

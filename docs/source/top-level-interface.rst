@@ -179,14 +179,15 @@ Show hole(s)
 
 Display the context and type of a specific open hole number ``HOLE``, or of all the open holes (see :ref:`Interactive proof`).
 
-Solve
-^^^^^
+Solve/Split
+^^^^^^^^^^^
 
 .. code-block:: none
 
    solve HOLE ≔ TERM
+   split HOLE ≔ TERM
 
-Fill hole number ``HOLE`` with the term ``TERM`` (see :ref:`Interactive proof`).
+Fill hole number ``HOLE`` with the term ``TERM`` or a split deduced from ``TERM`` and/or its type (see :ref:`Interactive proof`).
 
 Undo
 ^^^^
@@ -195,7 +196,7 @@ Undo
 
    undo N
 
-Undo the last ``N`` commands that modify the global state, rewinding to a previous situation.  This includes all commands except ``echo``, ``synth``, ``show``, ``solve``, and ``display``: those commands are skipped over when undoing.  (Of course ``solve`` does modify the global state, but it is not undoable because it doesn't affect the "processed position" in ProofGeneral; it exists "outside the timestream".)  The command ``undo`` itself is also not "undoable" and there is no "redo": after a command is undone, it is lost permanently from Narya's memory (although you can press Up-arrow or Meta+P to find it in the interactive history and re-execute it).  Following an ``undo`` with another ``undo`` will just undo additional commands: ``undo 1`` followed by ``undo 1`` is the same as ``undo 2``.
+Undo the last ``N`` commands that modify the global state, rewinding to a previous situation.  This includes all commands except ``echo``, ``synth``, ``show``, ``solve``, ``split``, and ``display``: those commands are skipped over when undoing.  (Of course ``solve`` does modify the global state, but it is not undoable because it doesn't affect the "processed position" in ProofGeneral; it exists "outside the timestream".)  The command ``undo`` itself is also not "undoable" and there is no "redo": after a command is undone, it is lost permanently from Narya's memory (although you can press Up-arrow or Meta+P to find it in the interactive history and re-execute it).  Following an ``undo`` with another ``undo`` will just undo additional commands: ``undo 1`` followed by ``undo 1`` is the same as ``undo 2``.
 
 Display
 ^^^^^^^
@@ -260,6 +261,7 @@ Narya's ProofGeneral mode also defines the following additional key commands.
 - ``C-c C-j`` : Move the cursor to the position of the next open hole.
 - ``C-c C-k`` : Move the cursor to the position of the previous open hole.
 - ``C-c C-SPC`` : Fill the hole under point with a specified term, without retracting any code.
+- ``C-c C-y`` : Split in the hole under point based on its type.
 - ``C-c C-d C-u``: Toggle display of unicode characters.
 - ``C-c C-d C-f``: Toggle display of function boundaries.
 - ``C-c C-d C-t``: Toggle display of type boundaries.
@@ -275,6 +277,8 @@ Agda users should beware: while a few of Narya's key commands are chosen to matc
 - Instead of ``C-c C-n``, use ``C-c ;`` (normalize a term, perhaps in hole context).
 - Instead of ``C-c C-d``, use ``C-c :`` (synthesize a term, perhaps in hole context).
 - Instead of ``C-c C-.``, use ``C-c :``  (synthesize a term) and ``C-c C-,`` (display hole context).
+- Instead of ``C-c C-r``, use ``C-c C-y`` (split in a hole).
+- Instead of ``C-c C-c``, use ``C-c C-y`` (split in a hole).
 - Instead of ``C-c C-x C-q``, use ``C-c C-x`` (quit Narya subprocess).
 - Instead of ``C-c C-x C-a``, use ``C-c C-c`` (interrupt a command).
  

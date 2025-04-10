@@ -266,6 +266,7 @@ let canonicalize (rng : Position.range) : string -> Token.t t = function
   | "import" -> return Import
   | "export" -> return Export
   | "solve" -> return Solve
+  | "split" -> return Split
   | "show" -> return Show
   | "display" -> return Display
   | "option" -> return Option

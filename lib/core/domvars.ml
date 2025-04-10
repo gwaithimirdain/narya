@@ -1,3 +1,4 @@
+open Bwd
 open Util
 open Tbwd
 open Dim
@@ -66,3 +67,21 @@ let rec ext_tel : type a b c ac bc e ec n.
       let ctx, env, vars, nfs =
         ext_tel (Ctx.cube_vis ctx x newnfs) (Ext (env, D.plus_zero m, Ok newvars)) xs rest ec in
       (ctx, env, newvars :: vars, newnfs :: nfs)
+
+(* Extract a list of all the variables of a given kind in an iterated pi-type. *)
+let rec get_pi_vars : type a b.
+    (a, b) Ctx.t ->
+    [ `Cube | `Normal ] ->
+    string option Bwd.t ->
+    kinetic value ->
+    string option Bwd.t =
+ fun ctx cube xs ty ->
+  match View.view_type ty "get_pi_vars" with
+  | Canonical (_, Pi (x, doms, cods), tyargs) -> (
+      match (D.compare_zero (CubeOf.dim doms), cube) with
+      | Zero, `Normal | Pos _, `Cube ->
+          let args, newnfs = dom_vars (Ctx.length ctx) doms in
+          let sctx = Ctx.cube_vis ctx x newnfs in
+          get_pi_vars sctx cube (Snoc (xs, x)) (tyof_app cods tyargs args)
+      | _ -> xs)
+  | _ -> xs

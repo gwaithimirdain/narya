@@ -45,6 +45,7 @@ type t =
   | Show
   | Sig
   | Solve
+  | Split
   | Synth
   | Undo
   | Op of string (* Sequence of common ASCII symbols, other than : := ::= += -> |-> |=> etc. *)
@@ -178,6 +179,7 @@ let to_string = function
   | Import -> "import"
   | Export -> "export"
   | Solve -> "solve"
+  | Split -> "split"
   | Show -> "show"
   | Display -> "display"
   | Option -> "option"

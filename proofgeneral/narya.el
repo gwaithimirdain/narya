@@ -477,22 +477,31 @@ handling in Proof General."
   (proof-shell-invisible-command "show holes"))
 
 (defun narya-solve-hole ()
-  "Solve the current hole with a user-provided term, using any
-pending hole data stored by `narya-handle-output'."
+  "Solve the current hole with a user-provided term."
   (interactive)
+  (narya-solve-or-split-hole nil))
+
+(defun narya-split-hole ()
+  "Solve the current hole with a term inferred from its type."
+  (interactive)
+  (narya-solve-or-split-hole t))
+
+(defun narya-solve-or-split-hole (split)
+  "Issue either solve or split command, depending on the argument."
   ;; Check for an overlay marking the current hole at point.
   (let ((hole-overlay (car (seq-filter (lambda (ovl)
                                          (overlay-get ovl 'narya-hole))
                                        (overlays-at (point))))))
     ;; If no hole overlay is found, prompt the user to place the cursor on a hole.
     (if (not hole-overlay)
-        (message "Place the cursor on a hole.")
-      ;; Otherwise, proceed to solve the hole with a user-provided term.
-      (let ((term (read-string "Enter the term to solve the hole: "))
+        (message "Place the cursor in a hole to use this command.")
+      ;; Otherwise, proceed to solve/split the hole, perhaps with a user-provided term.
+      (let ((term (if split "_" (read-string "Enter the term to solve the hole: ")))
+            (cmd (if split "split" "solve"))
             (column (current-column)))
         ;; Send the solution command invisibly to the proof shell, synchronously.
         (proof-shell-invisible-command
-         (format "solve %d %d := %s" (overlay-get hole-overlay 'narya-hole) column term) t)
+         (format "%s %d %d := %s" cmd (overlay-get hole-overlay 'narya-hole) column term) t)
         ;; Check for errors in the proof shell output.
         (if (eq proof-shell-last-output-kind 'error)
             (message "You entered an incorrect term.")
@@ -508,7 +517,7 @@ pending hole data stored by `narya-handle-output'."
 	      ;; order so that if the hole is at the very end of the
 	      ;; processed region, the inserted term will end up
 	      ;; *inside* the processed region.
-              (if narya-reformat-holes
+              (if (or split narya-reformat-holes)
                   (let ((spaces (concat "\n" (make-string column ? ))))
                     (insert (string-replace "\n" spaces narya-pending-hole-reformatted)))
                 (setq parens
@@ -524,7 +533,7 @@ pending hole data stored by `narya-handle-output'."
                 (setq narya-hole-overlays (delq hole-overlay narya-hole-overlays))
                 ;; Create new overlays from holes in the new term
                 (cond
-                 (narya-reformat-holes
+                 ((or split narya-reformat-holes)
                   (narya-create-marked-hole-overlays insert-start insert-end)
                   (message "Hole solved."))
                  (narya-pending-hole-positions
@@ -536,7 +545,6 @@ pending hole data stored by `narya-handle-output'."
                 ;; only sensible course of action, since the Narya
                 ;; "solve" command can't be undone.
                 (narya-add-command-undo cmd-span)))))))))
-  
 
 (defun narya-echo-or-synth (cmd term)
   (let* ((n (get-char-property (point) 'narya-hole))
@@ -628,7 +636,7 @@ With a negative prefix argument,set display of type boundaries off."
 ;; C-c C-a --> apply/refine in a hole
 ;; C-c C-b proof-process-buffer
 ;; C-c C-c proof-interrupt-process
-;; C-c C-d proof-tree-external-display-toggle
+;; C-c C-d --> display prefix (was proof-tree-external-display-toggle)
 ;; C-c C-e
 ;; C-c C-f proof-find-theorems
 ;; C-c C-g
@@ -645,7 +653,6 @@ With a negative prefix argument,set display of type boundaries off."
 ;; C-c C-r proof-retract-buffer
 ;; C-c C-s proof-toggle-active-scripting
 ;; C-c C-t proof-ctxt (show current context)
-;;         --> show current hole if any, focused proof if any
 ;; C-c C-u proof-undo-last-successful-command
 ;; C-c C-v proof-minibuffer-cmd
 ;;         --> narya-minibuffer-cmd (wrapped)
@@ -673,7 +680,7 @@ With a negative prefix argument,set display of type boundaries off."
 ;; C-c 9
 ;; C-c `   proof-next-error
 ;; C-c C-. proof-goto-end-of-locked
-;; C-c C-,
+;; C-c C-, --> show current hole if any, focused proof if any
 ;; C-c C-; pg-insert-last-output-as-comment
 ;; C-c C-:
 ;; C-c ?   (help)
@@ -704,6 +711,7 @@ With a negative prefix argument,set display of type boundaries off."
 ;; C-c C-w why in scope
 
 (keymap-set narya-mode-map "C-c C-SPC" 'narya-solve-hole)
+(keymap-set narya-mode-map "C-c C-y" 'narya-split-hole)
 (keymap-set narya-mode-map "C-c C-," 'narya-show-hole)
 (keymap-set narya-mode-map "C-c C-?" 'narya-show-all-holes)
 (keymap-set narya-mode-map "C-c C-j" 'narya-next-hole)
