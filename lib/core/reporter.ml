@@ -136,7 +136,7 @@ module Code = struct
     | Unsupported_numeral : Q.t -> t
     | Anomaly : string -> t
     | No_such_level : printable -> t
-    | Name_already_defined : string -> t
+    | Redefining_constant : string list -> t
     | Invalid_constant_name : string list -> t
     | Too_many_commands : t
     | Invalid_tightness : string -> t
@@ -276,7 +276,7 @@ module Code = struct
     | Unsupported_numeral _ -> Error
     | Anomaly _ -> Bug
     | No_such_level _ -> Bug
-    | Name_already_defined _ -> Error
+    | Redefining_constant _ -> Warning
     | Invalid_constant_name _ -> Error
     | Too_many_commands -> Error
     | Invalid_tightness _ -> Error
@@ -455,7 +455,7 @@ module Code = struct
     | Forbidden_interactive_command _ -> "E2001"
     | No_holes_allowed _ -> "E2002"
     (* def *)
-    | Name_already_defined _ -> "E2100"
+    | Redefining_constant _ -> "E2100"
     | Invalid_constant_name _ -> "E2101"
     (* notation *)
     | Invalid_tightness _ -> "E2200"
@@ -722,8 +722,8 @@ module Code = struct
       | Unsupported_numeral n -> textf "unsupported numeral: %a" Q.pp_print n
       | Anomaly str -> textf "anomaly: %s" str
       | No_such_level i -> textf "@[<hov 2>no level variable@ %a@ in context@]" pp_printed (print i)
-      | Name_already_defined name ->
-          textf "name already defined: %a" pp_printed (print (PString name))
+      | Redefining_constant name ->
+          textf "redefining constant: %a" pp_printed (print (PString (String.concat "." name)))
       | Invalid_constant_name name ->
           textf "invalid constant name: %a" pp_printed (print (PString (String.concat "." name)))
       | Too_many_commands -> text "too many commands: enter one at a time"

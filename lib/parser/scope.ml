@@ -69,6 +69,7 @@ let export_prefix () = (S.get ()).inner.prefix
 (* The following operations are copied from Yuujinchou.Scope, but acting only on the inner scope. *)
 
 let resolve p = M.exclusively @@ fun () -> Trie.find_singleton p (S.get ()).inner.visible
+let resolve_export p = M.exclusively @@ fun () -> Trie.find_singleton p (S.get ()).inner.export
 
 let modify_visible ?context_visible m =
   M.exclusively @@ fun () ->
@@ -247,13 +248,13 @@ let define compunit ?loc name =
   include_singleton (name, ((`Constant c, loc), ()));
   c
 
-(* Ensure that a new name wouldn't shadow anything else *)
+(* Check whether a new name will shadow something else in the export namespace, and warn if so. *)
 let check_name name loc =
-  match resolve name with
+  match resolve_export name with
   | Some ((_, oldloc), ()) ->
       let extra_remarks =
         match oldloc with
         | Some loc -> [ Asai.Diagnostic.loctext ~loc "previous definition" ]
         | None -> [] in
-      fatal ?loc ~extra_remarks (Name_already_defined (String.concat "." name))
+      emit ?loc ~extra_remarks (Redefining_constant name)
   | None -> ()

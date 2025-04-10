@@ -55,7 +55,13 @@ Def
 
    def NAME [PARAMS] [: TYPE] ≔ TERM [and ...]
 
-Define a global constant called ``NAME`` having type ``TYPE`` and value ``TERM``.  Thus ``NAME`` must be a valid identifier (see :ref:`Identifiers`) with no current definition in scope, while ``TYPE`` must parse and typecheck as a type, and ``TERM`` must parse and typecheck at type ``TYPE``.  If ``TYPE`` is omitted, then ``TERM`` must synthesize a type (see :ref:`synth<Echo/Synth>`).  In addition, if ``TYPE`` is specified, then ``TERM`` can also be a case tree or canonical type declaration (see :ref:`canonical types<Canonical types defined by case trees>`).  The optional ``PARAMS`` is a list of parameters of the form ``(x : PTY)``, or more generally ``(x y z : PTY)``, with the effect that the actual type of the constant ``NAME`` is the Π-type of ``TYPE`` (or the synthesized type of ``TERM``) over these parameters, and its value is the λ-abstraction of ``TERM`` over them.  That is, ``def foo (x:A) : B ≔ M`` is equivalent to ``def foo : A → B ≔ x ↦ M``.  Finally, a family of constants can be defined mutually by using the ``and`` keyword to introduce the second and later ones (see :ref:`mutual definitions<Mutual definitions>`).
+Define a global constant called ``NAME`` having type ``TYPE`` and value ``TERM``.  Thus ``NAME`` must be a valid identifier (see :ref:`Identifiers`), while ``TYPE`` must parse and typecheck as a type, and ``TERM`` must parse and typecheck at type ``TYPE``.  If ``TYPE`` is omitted, then ``TERM`` must synthesize a type (see :ref:`synth<Echo/Synth>`).  In addition, if ``TYPE`` is specified, then ``TERM`` can also be a case tree or canonical type declaration (see :ref:`canonical types<Canonical types defined by case trees>`).
+
+The optional ``PARAMS`` is a list of parameters of the form ``(x : PTY)``, or more generally ``(x y z : PTY)``, with the effect that the actual type of the constant ``NAME`` is the Π-type of ``TYPE`` (or the synthesized type of ``TERM``) over these parameters, and its value is the λ-abstraction of ``TERM`` over them.  That is, ``def foo (x:A) : B ≔ M`` is equivalent to ``def foo : A → B ≔ x ↦ M``.
+
+A family of constants can be defined mutually by using the ``and`` keyword to introduce the second and later ones (see :ref:`mutual definitions<Mutual definitions>`).
+
+If ``NAME`` already has a definition that will be exported from the current scope, a warning about redefinition is emitted.
 
 Axiom
 ^^^^^
