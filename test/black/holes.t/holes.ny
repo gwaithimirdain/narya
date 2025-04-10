@@ -112,3 +112,17 @@ def afam : Type → Type ≔ X ↦ id ?
 
 {` This requires comparing a metavariable to equal itself when evaluated in equal environments. `}
 def idafam (X:Type) : afam X → afam X ≔ x ↦ x
+
+{` For testing hole splitting `}
+
+axiom f0 : A → B
+def f2 : Id ((x : A) → B) f0 f0 ≔ x ⤇ ?
+
+def prod : Type ≔ sig ( fst : A, snd : B )
+def p : prod ≔ ?
+
+axiom p0 : prod
+def p2 : Id prod p0 p0 ≔ ?
+
+def prod' : Type ≔ codata [ x .fst : A | x .snd : B ]
+def p : prod' ≔ ?

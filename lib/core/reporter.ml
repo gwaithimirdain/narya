@@ -191,6 +191,7 @@ module Code = struct
     | Incompatible_flags : string * string -> t
     | Actions_in_compiled_file : string -> t
     | No_such_hole : int -> t
+    | Invalid_split : string -> t
     | Forbidden_interactive_command : string -> t
     | Not_enough_to_undo : t
     | Commands_undone : int -> t
@@ -330,6 +331,7 @@ module Code = struct
     | Incompatible_flags _ -> Warning
     | Actions_in_compiled_file _ -> Warning
     | No_such_hole _ -> Error
+    | Invalid_split _ -> Error
     | Hole_solved _ -> Info
     | Forbidden_interactive_command _ -> Error
     | Not_enough_to_undo -> Error
@@ -492,6 +494,7 @@ module Code = struct
     | Open_holes_remaining _ -> "E3002"
     | Hole _ -> "I3003"
     | No_open_holes -> "I3004"
+    | Invalid_split _ -> "I3005"
     (* Command progress and success *)
     | Constant_defined _ -> "I0000"
     | Constant_assumed _ -> "I0001"
@@ -849,6 +852,7 @@ module Code = struct
       | Actions_in_compiled_file file ->
           textf "not re-executing echo/synth/show commands when loading compiled file %s" file
       | No_such_hole i -> textf "no open hole numbered %d" i
+      | Invalid_split str -> textf "invalid split: hole belongs to a %s" str
       | Hole_solved h ->
           if h > 1 then textf "hole solved, containing %d new holes" h
           else if h = 1 then text "hole solved, containing 1 new hole"

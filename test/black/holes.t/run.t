@@ -306,6 +306,64 @@
    ￫ info[I0000]
    ￮ constant idafam defined
   
+   ￫ info[I0001]
+   ￮ axiom f0 assumed
+  
+   ￫ info[I0000]
+   ￮ constant f2 defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?24:
+     
+     x.0 : A
+     x.1 : A
+     x.2 : refl A x.0 x.1
+     ----------------------------------------------------------------------
+     refl B (f0 x.0) (f0 x.1)
+  
+   ￫ info[I0000]
+   ￮ constant prod defined
+  
+   ￫ info[I0000]
+   ￮ constant p defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?25:
+     
+     ----------------------------------------------------------------------
+     prod
+  
+   ￫ info[I0001]
+   ￮ axiom p0 assumed
+  
+   ￫ info[I0000]
+   ￮ constant p2 defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?26:
+     
+     ----------------------------------------------------------------------
+     refl prod p0 p0
+  
+   ￫ info[I0000]
+   ￮ constant prod' defined
+  
+   ￫ warning[E2100]
+   ￭ $TESTCASE_ROOT/holes.ny
+   122 | def p : prod ≔ ?
+       ^ previous definition
+   128 | def p : prod' ≔ ?
+       ^ redefining constant: p
+  
+   ￫ info[I0000]
+   ￮ constant p defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?27:
+     
+     ----------------------------------------------------------------------
+     prod'
+  
    ￫ error[E3002]
    ￮ file holes.ny contains open holes
   

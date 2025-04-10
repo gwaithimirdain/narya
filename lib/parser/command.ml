@@ -956,35 +956,49 @@ let rec execute :
           History.run_with_scope ~init_visible:scope ~options @@ fun () ->
           let (Wrap tm) = !(data.tm) in
           match tm.value with
-          | Placeholder _ -> (
+          | Placeholder _ ->
               Global.HolesAllowed.run ~env:(Ok ()) @@ fun () ->
               let ctx = Norm.eval_ctx termctx in
               let ety = Norm.eval_term (Ctx.env ctx) ty in
-              match View.view_type ety "split" with
-              | Canonical (_, Pi (_, doms, _), _) ->
-                  let cube, _notn, mapsto =
-                    match D.compare_zero (CubeOf.dim doms) with
-                    | Zero -> (`Normal, Builtins.abs, Token.Mapsto)
-                    | Pos _ -> (`Cube, Builtins.cubeabs, Token.DblMapsto) in
-                  let xs = Domvars.get_pi_vars ctx cube Emp ety in
-                  let content =
+              let content =
+                match View.view_type ety "split" with
+                | Canonical (_, Pi (_, doms, _), _) ->
+                    let cube, mapsto =
+                      match D.compare_zero (CubeOf.dim doms) with
+                      | Zero -> (`Normal, Token.Mapsto)
+                      | Pos _ -> (`Cube, Token.DblMapsto) in
+                    let xs = Domvars.get_pi_vars ctx cube Emp ety in
                     (* TODO: Should generate real variable names. *)
                     String.concat " " (Bwd_extra.to_list_map (Option.value ~default:"_") xs)
                     ^ Token.to_string mapsto
-                    ^ " ?" in
-                  (data.tm := TermParse.Term.(final (parse (`String { title = None; content }))));
-                  (* let first =
-                       unparse_abs xs No.Interval.entire (No.minusomega_le No.plus_omega)
-                         No.minusomega_lt_plusomega in
-                     let li, ri = (No.Interval.entire, No.Interval.entire) in
-                     let last = Range.unlocated (Hole { li; ri; ws = []; num = ref 0 }) in
-                     let left_ok, right_ok = (No.le_refl No.minus_omega, No.le_refl No.minus_omega) in
-                     data.tm :=
-                       Wrap
-                         (Range.unlocated
-                            (infix ~notn ~first ~inner:(Single (mapsto, [])) ~last ~left_ok ~right_ok)); *)
-                  execute ~action_taken ~get_file (Solve data)
-              | _ -> fatal (Unimplemented "splitting into non-pi"))
+                    ^ " ?"
+                | Canonical (_, Codata { eta; ins; fields; _ }, _) -> (
+                    let m = cod_left_ins ins in
+                    let do_field : type a n et.
+                        (a * n * et) Term.CodatafieldAbwd.entry -> string list -> string list =
+                     fun (Term.CodatafieldAbwd.Entry (fld, cdf)) acc ->
+                      match cdf with
+                      | Lower _ -> Field.to_string fld :: acc
+                      | Higher _ ->
+                          let i = Field.dim fld in
+                          let pbijs = List.of_seq (all_pbij_between m i) in
+                          List.fold_right
+                            (fun (Pbij_between pbij) acc ->
+                              (Field.to_string fld ^ string_of_pbij pbij) :: acc)
+                            pbijs acc in
+                    let fields = Bwd.fold_right do_field fields [] in
+                    match eta with
+                    | Eta ->
+                        "(" ^ String.concat ", " (List.map (fun fld -> fld ^ " := ?") fields) ^ ")"
+                    | Noeta ->
+                        "["
+                        ^ String.concat " | " (List.map (fun fld -> "." ^ fld ^ " |-> ?") fields)
+                        ^ "]")
+                | Canonical (_, UU _, _) -> fatal (Invalid_split "universe")
+                | Canonical (_, Data _, _) -> fatal (Invalid_split "datatype")
+                | Neutral _ -> fatal (Invalid_split "neutral") in
+              (data.tm := TermParse.Term.(final (parse (`String { title = None; content }))));
+              execute ~action_taken ~get_file (Solve data)
           | _ ->
               let _ptm = process vars tm in
               fatal (Unimplemented "splitting on terms"))
