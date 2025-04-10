@@ -1758,6 +1758,8 @@ let () =
       processor =
         (fun ctx obs loc ->
           match obs with
+          | [ Token (Codata, _); Token (LBracket, _); Token (RBracket, _) ] ->
+              { value = Raw.Codata Emp; loc }
           | Token (Codata, _) :: Token (LBracket, _) :: obs ->
               process_codata Emp ctx (must_start_with (Op "|") obs) loc
           | _ -> invalid "codata");

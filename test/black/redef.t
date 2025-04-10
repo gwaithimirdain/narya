@@ -64,7 +64,7 @@
   >   def C : Type := data [ one. ]
   > end
   > import foo
-  > def B : Type := data []
+  > def B : Type := codata []
   > export foo
   > def C : Type := sig ( one : Type )
   > EOF
@@ -97,7 +97,7 @@
       ^ previous definition
     6 | end
     7 | import foo
-    8 | def B : Type := data []
+    8 | def B : Type := codata []
     9 | export foo
    10 | def C : Type := sig ( one : Type )
       ^ redefining constant: C
