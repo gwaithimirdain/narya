@@ -499,8 +499,8 @@ and field : type n k nk s. s value -> k Field.t -> (nk, n, k) insertion -> s eva
   (* TODO: Is it okay to ignore the insertion here?  I'm currently assuming that it must be zero if this field projection is well-typed. *)
   | Struct (fields, structins, energy) -> (
       match StructfieldAbwd.find_opt fields fld with
-      | Some (Lower (v, _)) -> force_eval v
-      | Some (Higher { vals; intrinsic; _ }) -> (
+      | Ok (Lower (v, _)) -> force_eval v
+      | Ok (Higher { vals; intrinsic; _ }) -> (
           match
             ( D.compare (cod_left_ins structins) (dom_ins fldins),
               D.compare intrinsic (cod_right_ins fldins) )
@@ -514,7 +514,7 @@ and field : type n k nk s. s value -> k Field.t -> (nk, n, k) insertion -> s eva
                 (Dimension_mismatch ("field evaluation", cod_left_ins structins, dom_ins fldins))
           | _, Neq ->
               fatal (Dimension_mismatch ("field intrinsic", intrinsic, cod_right_ins fldins)))
-      | None -> (
+      | Error _ -> (
           match energy with
           | Potential -> Unrealized
           | Kinetic -> fatal (Anomaly ("missing field in eval struct: " ^ Field.to_string fld))))
@@ -718,7 +718,6 @@ and tyof_field : type m h s r i c.
              (mn, m', n, d, a, et) codata_args),
          tyargs ) :
         head * mn canonical * (D.zero, mn, mn, normal) TubeOf.t) -> (
-      Reporter.trace "tyof_field 1" @@ fun () ->
       (* The type cannot have a nonidentity degeneracy applied to it (though it can be at a higher dimension). *)
       if Option.is_none (is_id_ins codatains) then
         fatal ~severity (No_such_field (`Degenerated_record eta, errfld));
@@ -732,8 +731,7 @@ and tyof_field : type m h s r i c.
       | _, Neq -> fatal ~severity (Dimension_mismatch ("tyof_field evaluation", m, dom_ins fldins))
       | Eq, Eq -> (
           match Term.CodatafieldAbwd.find_opt fields fld with
-          | Some fldty ->
-              Reporter.trace "tyof_field 2" @@ fun () ->
+          | Ok fldty ->
               let shuf : (r, h, i, a) shuffleable =
                 match shuf with
                 | Trivial -> Trivial
@@ -741,9 +739,15 @@ and tyof_field : type m h s r i c.
                     match Dbwd.compare dbwd (length_env env) with
                     | Eq -> shuf
                     | Neq -> fatal (Anomaly "context length mismatch in tyof_field")) in
-              Reporter.trace "tyof_field 3" @@ fun () ->
               tyof_codatafield tm fld fldty env tyargs m mn ~shuf fldins
-          | None -> fatal ~severity (No_such_field (`Record (eta, phead head), errfld))))
+          | Error None -> fatal ~severity (No_such_field (`Record (eta, phead head), errfld))
+          | Error (Some (Wrap i)) ->
+              let errsuffix =
+                match shuf with
+                | Trivial -> `Ins fldins
+                | Nontrivial { shuffle; _ } -> `Pbij (Pbij (fldins, shuffle)) in
+              fatal ~severity (Wrong_dimension_of_field (eta, phead head, `Field fld, i, errsuffix))
+          ))
   | _ -> fatal ~severity (No_such_field (`Other, errfld))
 
 (* This version is for when we are synthesizing the insertion, so we return the resulting insertion along with the type.  The field might also be given positionally in this case, so we also return the field name when we find it.  In this case, mismatches in field names or dimensions are user errors. *)
@@ -774,11 +778,14 @@ and tyof_field_withname : type a b.
                   let i = cod_right_ins fldins in
                   let fld = Field.intern fldname i in
                   match Term.CodatafieldAbwd.find_opt fields fld with
-                  | Some fldty ->
+                  | Ok fldty ->
                       let fldty =
                         tyof_codatafield tm fld fldty env tyargs m mn ~shuf:Trivial fldins in
                       (WithIns (fld, fldins), fldty)
-                  | None -> fatal (No_such_field (`Record (eta, phead head), errfld))))
+                  | Error (Some (Wrap i)) ->
+                      fatal
+                        (Wrong_dimension_of_field (eta, phead head, `String fldname, i, `Ints ints))
+                  | Error None -> fatal (No_such_field (`Record (eta, phead head), errfld))))
           | `Int k -> (
               try
                 let (Entry (fld, fldty)) = List.nth (Bwd.to_list fields) k in
@@ -787,8 +794,12 @@ and tyof_field_withname : type a b.
                     let fldins = ins_zero m in
                     let fldty = tyof_codatafield tm fld fldty env tyargs m mn ~shuf:Trivial fldins in
                     (WithIns (fld, fldins), fldty)
-                | Pos _ -> fatal (No_such_field (`Record (eta, phead head), errfld))
-              with Failure _ -> fatal (No_such_field (`Record (eta, phead head), errfld)))))
+                | Pos _ ->
+                    Reporter.trace "hello 3" @@ fun () ->
+                    fatal (No_such_field (`Record (eta, phead head), errfld))
+              with Failure _ ->
+                Reporter.trace "hello 3" @@ fun () ->
+                fatal (No_such_field (`Record (eta, phead head), errfld)))))
   | _ -> fatal (No_such_field (`Other, errfld))
 
 and eval_structfield : type m n mn a status i et.

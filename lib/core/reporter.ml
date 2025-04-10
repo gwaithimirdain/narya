@@ -105,7 +105,11 @@ module Code = struct
           | `Int of int ]
         -> t
     | Wrong_dimension_of_field :
-        printable * [ `Strings of string * int list | `Int of int ] * 'intrinsic D.t * 'used D.t
+        ('s, 'et) eta
+        * printable
+        * [ `Field of 'i Field.t | `String of string ]
+        * 'intrinsic D.t
+        * [ `Ins of ('n, 't, 'h) insertion | `Pbij of ('n, 'i2, 'r) pbij | `Ints of int list ]
         -> t
     | Invalid_field_suffix : printable * string * int list * 'evaluation D.t -> t
     | Missing_instantiation_constructor :
@@ -626,13 +630,18 @@ module Code = struct
               textf
                 "%s type with a nonidentity degeneracy applied is no longer a %s, hence has no field named %s"
                 rc rc f)
-      | Wrong_dimension_of_field (ty, f, intrinsic, used) ->
-          let f =
-            match f with
-            | `Strings (str, ints) -> str ^ string_of_ins_ints ints
-            | `Int n -> string_of_int n in
-          textf "field %s of type %a has intrinsic dimension %s, can't be used at %s" f pp_printed
-            (print ty) (string_of_dim0 intrinsic) (string_of_dim0 used)
+      | Wrong_dimension_of_field (eta, d, fld, intrinsic, err) ->
+          let fldname =
+            match fld with
+            | `Field f -> Field.to_string f
+            | `String s -> s in
+          let err =
+            match err with
+            | `Ins p -> string_of_ins p
+            | `Pbij p -> string_of_pbij p
+            | `Ints ints -> string_of_ins_ints ints in
+          textf "field %s of %s type %a has intrinsic dimension %s, can't have suffix %s" fldname
+            (record_or_codata eta) pp_printed (print d) (string_of_dim0 intrinsic) err
       | Invalid_field_suffix (ty, f, p, evaldim) ->
           textf "invalid suffix %s for field %s of %s-dimensional type %a" (string_of_ins_ints p) f
             (string_of_dim0 evaldim) pp_printed (print ty)
