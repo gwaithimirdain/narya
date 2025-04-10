@@ -107,8 +107,7 @@ type find_number =
 let find_number : int -> find_number =
  fun i ->
   let (Entry (m, { def; homewhen })) =
-    Metamap.find_hole_opt (Compunit.Current.read ()) i (S.get ()).map <|> Anomaly "missing hole"
-  in
+    Metamap.find_hole_opt (Compunit.Current.read ()) i (S.get ()).map <|> No_such_hole i in
   Find_number (m, def, homewhen)
 
 let all_holes () =
