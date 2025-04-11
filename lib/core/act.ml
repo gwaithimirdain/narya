@@ -131,6 +131,7 @@ module Act = struct
         (* Also in here we have status = potential. *)
         (* Now we want to change p to q by acting by fa : (q, p) deg.  We'll keep almost everything the same and simply compose deg with fa.  The sticky bit is to update vals, which has to become an Insmap with evaluation dimension q rather than p.
         *)
+        let deg = comp_deg deg1 deg0 in
         let vals =
           InsmapOf.build (dom_deg deg0) intrinsic
             {
@@ -150,22 +151,21 @@ module Act = struct
                       (* Note we have to act by deg2 here, not by deg0, since the field *values* only have the corresponding 'result dimension. *)
                       Option.map (fun v -> act_lazy_eval v deg2) (InsmapOf.find ins2 vals)
                   | Pos _s -> (
-                      (* Otherwise, we have to look into the 'terms' to find something to evaluate.  We start by further unfactoring through 'deg1' (combining it with deg0 first, to simplify the results) and 'plusdim' to get down to the original record dimension 'n and evaluation dimension 'm.  *)
+                      (* Otherwise, we have to look into the 'terms' to find something to evaluate.  We start by further unfactoring through the composite degeneracy 'deg' and 'plusdim' to get down to the original record dimension 'n and evaluation dimension 'm.  *)
                       let (Deg_comp_ins
                              (type s3 r3 h3)
                              ((ins3, shuf3, deg3) :
                                (mn, s3, h3) insertion * (r3, h3, i) shuffle * (s, s3) deg)) =
-                        deg_comp_ins (comp_deg deg1 deg0) ins in
+                        deg_comp_ins deg ins in
                       (* The dimensions that disappear in this degeneracy, and hence will have to be added back in, are those added by the degeneracy deg3 (s - s3) and those in the remaining dimensions r3. *)
                       let (Unplus_pbij
-                             (type s4 h4 r4 r34 t tn)
-                             ((ins4, shuf4, rr, mtr, _tn, tnsh) :
+                             (type s4 h4 r4 r34 t)
+                             ((ins4, shuf4, rr, mtr, _ts) :
                                (n, s4, h4) insertion
                                * (r34, h4, i) shuffle
                                * (r3, r4, r34) shuffle
                                * (m, t, r4) insertion
-                               * (t, n, tn) D.plus
-                               * (tn, s3, h4) insertion)) =
+                               * (t, s4, s3) D.plus)) =
                         unplus_pbij (dim_env env) plusdim ins3 shuf3 in
                       match PlusPbijmap.find (Pbij (ins4, shuf4)) terms with
                       | PlusFam None -> None
@@ -173,7 +173,7 @@ module Act = struct
                           (type ra)
                           (Some (ra, tm) : ((r34, a, ra) Plusmap.t * (ra, potential) term) option)
                         ->
-                          (* Now the game is to build a degeneracy that we can apply to the environment 'env' so that we can shift it by 'ra' and evaluate the term 'tm'.  That means we need to get an environment whose dimension is something+r34.  We start by adding r3.
+                          (* Now the game is to build a degeneracy that we can apply to the m-dimensional environment 'env' so that we can shift it by the plusmap 'ra' and evaluate the term 'tm'.  (Note that 'tm' is s4-dimensional as that is the result dimension of the pbij that indexes it.)  That means we need to get an environment whose dimension is something+r34.  We start by adding r3, and then apply a bunch of permutations.
                              m + r3
                              ≅ (t + r4) + r3    (mtr)
                              ≅ t + (r4 + r3)
@@ -206,21 +206,9 @@ module Act = struct
                           let env4 = act_env env3 (op_of_deg drr) in
                           (* env4 has dimension t + r34 *)
                           let env5 = Shift (env4, t_r34, ra) in
-                          (* env5 has dimension t.  So when we evaluate the n-dimensional record type in this environment, we get an object of dimension
-                             t + n
-                             = tn        (tn)
-                             ≅ s3 + h4  (tnsh)
-                             ← s + h4   (deg3)
-                          *)
-                          let etm = lazy_eval env5 tm in
-                          let h4 = cod_right_ins tnsh in
-                          let (Plus s3h4) = D.plus h4 in
-                          let ptnsh = deg_of_perm (perm_inv (perm_of_ins_plus tnsh s3h4)) in
-                          let (Plus sh4) = D.plus h4 in
-                          let deg3_h4 = deg_plus deg3 s3h4 sh4 in
-                          Some (act_lazy_eval etm (comp_deg ptnsh deg3_h4))));
+                          (* env5 has dimension t.  So when we evaluate the s4-dimensional term 'tm' in this environment, we get an object of dimension t + s4, which is equal to s3.  Therefore, we can act on it by deg3 to get an s-dimensional object, which is what we want. *)
+                          Some (act_lazy_eval (lazy_eval env5 tm) deg3)));
             } in
-        let deg = comp_deg deg1 deg0 in
         Higher { vals; intrinsic; plusdim; env; deg; terms }
 
   and act_evaluation : type m n s. s evaluation -> (m, n) deg -> s evaluation =

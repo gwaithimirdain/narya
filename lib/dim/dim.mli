@@ -751,8 +751,7 @@ type (_, _, _, _) unplus_ins =
       ('n, 's, 'h) insertion
       * ('r, 'h, 'i) shuffle
       * ('m, 't, 'r) insertion
-      * ('t, 'n, 'tn) D.plus
-      * ('tn, 'olds, 'h) insertion
+      * ('t, 's, 'olds) D.plus
       -> ('m, 'n, 'olds, 'i) unplus_ins
 
 val unplus_ins :
@@ -764,8 +763,7 @@ type (_, _, _, _, _, _) unplus_pbij =
       * ('r, 'newh, 'i) shuffle
       * ('oldr, 'newr, 'r) shuffle
       * ('m, 't, 'newr) insertion
-      * ('t, 'n, 'tn) D.plus
-      * ('tn, 'olds, 'newh) insertion
+      * ('t, 'news, 'olds) D.plus
       -> ('m, 'n, 'olds, 'oldr, 'h, 'i) unplus_pbij
 
 val unplus_pbij :

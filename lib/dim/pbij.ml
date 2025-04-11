@@ -113,7 +113,7 @@ let all_pbij_between : type evaluation intrinsic.
   let* (Of_right shuf) = all_shuffles_right (cod_right_ins ins) intrinsic in
   return (Pbij_between (Pbij (ins, shuf)))
 
-(* A partial bijection can be composed with a degeneracy on the evaluation dimension to produce another partial bijection, with an induced degeneracy on the results.  Note that the first two outputs form a partial bijection. *)
+(* An insertion can be composed with a degeneracy on the evaluation dimension to produce a partial bijection (the first two outputs together), with an induced degeneracy on the results. *)
 
 type (_, _, _) deg_comp_ins =
   | Deg_comp_ins :
@@ -183,8 +183,7 @@ type (_, _, _, _) unplus_ins =
       ('n, 's, 'h) insertion
       * ('r, 'h, 'i) shuffle
       * ('m, 't, 'r) insertion
-      * ('t, 'n, 'tn) D.plus
-      * ('tn, 'olds, 'h) insertion
+      * ('t, 's, 'olds) D.plus
       -> ('m, 'n, 'olds, 'i) unplus_ins
 
 let rec unplus_ins : type m n mn s i.
@@ -193,18 +192,17 @@ let rec unplus_ins : type m n mn s i.
   match ins with
   | Zero _ ->
       (* i=0, r=0, h=0, t=m, tn=mn, s=n *)
-      Unplus_ins (Zero (D.plus_right mn), Zero, Zero m, mn, Zero (D.plus_out m mn))
+      Unplus_ins (Zero (D.plus_right mn), Zero, Zero m, mn)
   | Suc (ins', x) -> (
       match D.insert_in_plus mn x with
       | Left (x, mn') ->
-          let (Unplus_ins (nsh, rhi, mtr, tn, tnsh)) = unplus_ins (D.insert_in m x) mn' ins' in
+          let (Unplus_ins (nsh, rhi, mtr, ts)) = unplus_ins (D.insert_in m x) mn' ins' in
           (* right-increment i and r, middle-increment m, keep s and h the same *)
-          Unplus_ins (nsh, Left rhi, Suc (mtr, x), tn, tnsh)
+          Unplus_ins (nsh, Left rhi, Suc (mtr, x), ts)
       | Right (x, mn') ->
-          let (Unplus_ins (nsh, rhi, mtr, tn, tnsh)) = unplus_ins m mn' ins' in
+          let (Unplus_ins (nsh, rhi, mtr, ts)) = unplus_ins m mn' ins' in
           (* right-increment i and h and s, middle-increment n, keep m and r the same *)
-          let (Plus tn') = D.plus (D.plus_right mn) in
-          Unplus_ins (Suc (nsh, x), Right rhi, mtr, tn', Suc (tnsh, D.plus_insert tn tn' x)))
+          Unplus_ins (Suc (nsh, x), Right rhi, mtr, ts))
 
 type (_, _, _, _, _, _) unplus_pbij =
   | Unplus_pbij :
@@ -212,8 +210,7 @@ type (_, _, _, _, _, _) unplus_pbij =
       * ('r, 'newh, 'i) shuffle
       * ('oldr, 'newr, 'r) shuffle
       * ('m, 't, 'newr) insertion
-      * ('t, 'n, 'tn) D.plus
-      * ('tn, 'olds, 'newh) insertion
+      * ('t, 'news, 'olds) D.plus
       -> ('m, 'n, 'olds, 'oldr, 'h, 'i) unplus_pbij
 
 let unplus_pbij : type m n mn s i r h.
@@ -223,9 +220,9 @@ let unplus_pbij : type m n mn s i r h.
     (r, h, i) shuffle ->
     (m, n, s, r, h, i) unplus_pbij =
  fun m mn ins shuf ->
-  let (Unplus_ins (nsh, rhi, mtr, tn, tnsh)) = unplus_ins m mn ins in
+  let (Unplus_ins (nsh, rhi, mtr, ts)) = unplus_ins m mn ins in
   let (Comp_shuffle_right (rr, rhi)) = comp_shuffle_right rhi shuf in
-  Unplus_pbij (nsh, rhi, rr, mtr, tn, tnsh)
+  Unplus_pbij (nsh, rhi, rr, mtr, ts)
 
 (* Convert a pbij to an insertion by increasing the evaluation dimension on the left to include the remaining dimension. *)
 let rec ins_plus_of_pbij : type n s h r i rn.

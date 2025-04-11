@@ -2060,7 +2060,7 @@ and check_higher_field : type a b c d m i ic0.
                       } in
                   { tm; ty = inst ity tyargs });
             } in
-        (* Evaluate the type for this instance of the field, and check the user's type against it. *)
+        (* Evaluate the type for this instance of the field, and check the user's term against it. *)
         let ety = tyof_higher_codatafield prev_etm fld env tyargs fldins ic0 fldty ~shuf in
         let ctm = check newstatus degctx tm ety in
         (* Add the typechecked term to the list *)
