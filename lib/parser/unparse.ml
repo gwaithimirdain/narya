@@ -881,6 +881,7 @@ let () =
       | Dump.Binder b -> Dump.binder b
       | Dump.Term tm -> Dump.term tm
       | Dump.Env e -> Dump.env e
+      | Dump.DeepEnv (e, n) -> Dump.denv n e
       | Dump.Check e -> Dump.check e
       | _ -> fatal (Anomaly "unknown printable")
 

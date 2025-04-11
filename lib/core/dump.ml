@@ -3,6 +3,7 @@
 open Bwd
 open Dim
 open Util
+open Tbwd
 open Reporter
 open Format
 open Value
@@ -18,13 +19,44 @@ type printable +=
   | Binder : ('b, 's) binder -> printable
   | Term : ('b, 's) term -> printable
   | Env : ('n, 'b) Value.env -> printable
+  | DeepEnv : ('n, 'b) Value.env * int -> printable
   | Check : 'a check -> printable
 
 (* The dump functions were written using Format, but printable has now been changed to use PPrint instead.  To put off updating the dump functions to PPrint, we wrap the old versions in a module, and then at the end wrap them in functions that convert them to strings and make those into PPrint.documents. *)
 
 module F = struct
-  let dim : formatter -> 'a D.t -> unit =
-   fun ppf d -> fprintf ppf "%d" (String.length (string_of_deg (id_deg d)))
+  let dim : formatter -> 'a D.t -> unit = fun ppf d -> fprintf ppf "%s" (string_of_dim d)
+
+  let tubeof : type k n nk a.
+      (formatter -> a -> unit) -> formatter -> (k, n, nk, a) TubeOf.t -> unit =
+   fun pp ppf args ->
+    fprintf ppf "(";
+    let started = ref false in
+    TubeOf.miter
+      {
+        it =
+          (fun _ [ x ] ->
+            if !started then fprintf ppf ", ";
+            started := true;
+            pp ppf x);
+      }
+      [ args ];
+    fprintf ppf ")"
+
+  let cubeof : type n a. (formatter -> a -> unit) -> formatter -> (n, a) CubeOf.t -> unit =
+   fun pp ppf args ->
+    fprintf ppf "(";
+    let started = ref false in
+    CubeOf.miter
+      {
+        it =
+          (fun _ [ x ] ->
+            if !started then fprintf ppf ", ";
+            started := true;
+            pp ppf x);
+      }
+      [ args ];
+    fprintf ppf ")"
 
   let rec dvalue : type s. int -> formatter -> s value -> unit =
    fun depth ppf v ->
@@ -33,7 +65,7 @@ module F = struct
         if depth > 0 then
           fprintf ppf "Neu (%a, %a, %a)" head h apps a (dvalue (depth - 1)) (Lazy.force ty)
         else fprintf ppf "Neu (%a, %a, ?)" head h apps a
-    | Lam (_, _) -> fprintf ppf "Lam ?"
+    | Lam (x, body) -> fprintf ppf "Lam (?^%s, %a)" (string_of_dim (dim_variables x)) binder body
     | Struct (f, ins, _) ->
         let n = cod_left_ins ins in
         fprintf ppf "Struct %s (%a)" (string_of_dim n) (fields depth n) f
@@ -44,6 +76,7 @@ module F = struct
     | Canonical _ -> fprintf ppf "Canonical ?"
 
   and value : type s. formatter -> s value -> unit = fun ppf v -> dvalue 2 ppf v
+  and normal : formatter -> normal -> unit = fun ppf x -> value ppf x.tm
 
   and fields : type s n et.
       int -> n D.t -> formatter -> (n * s * et) Value.StructfieldAbwd.t -> unit =
@@ -51,7 +84,7 @@ module F = struct
     | Emp -> fprintf ppf "Emp"
     | Snoc (flds, Entry (f, Lower (v, l))) ->
         fprintf ppf "%a <: " (fields depth n) flds;
-        lazy_eval depth ppf f "" v l
+        lazy_field depth ppf f "" v l
     | Snoc (flds, Entry (f, Higher { vals; _ })) ->
         fprintf ppf "%a <: " (fields depth n) flds;
         InsmapOf.miter n
@@ -60,11 +93,11 @@ module F = struct
               (fun p [ x ] ->
                 match x with
                 | None -> fprintf ppf "None"
-                | Some v -> lazy_eval depth ppf f (string_of_ins p) v `Labeled);
+                | Some v -> lazy_field depth ppf f (string_of_ins p) v `Labeled);
           }
           [ vals ]
 
-  and lazy_eval : type s i.
+  and lazy_field : type s i.
       int -> formatter -> i Field.t -> string -> s lazy_eval -> [ `Labeled | `Unlabeled ] -> unit =
    fun depth ppf f p v l ->
     let l =
@@ -79,6 +112,14 @@ module F = struct
       match !v with
       | Ready v -> fprintf ppf "(%s%s, %a, %s)" (Field.to_string f) p (evaluation (depth - 1)) v l
       | _ -> fprintf ppf "(%s%s, (Deferred), %s)" (Field.to_string f) p l
+
+  and lazy_eval : type s i. int -> formatter -> s lazy_eval -> unit =
+   fun depth ppf v ->
+    if depth > 0 then (evaluation (depth - 1)) ppf (View.force_eval v)
+    else
+      match !v with
+      | Ready v -> (evaluation (depth - 1)) ppf v
+      | _ -> fprintf ppf "(Deferred)"
 
   and evaluation : type s. int -> formatter -> s evaluation -> unit =
    fun depth ppf v ->
@@ -106,27 +147,12 @@ module F = struct
     | Inst (rest, d, args) ->
         apps ppf rest;
         fprintf ppf " <: ";
-        fprintf ppf "Inst (%a, %a)" dim (D.pos d) normal_tube args
-
-  and normal_tube : type k n nk. formatter -> (k, n, nk, normal) TubeOf.t -> unit =
-   fun ppf args ->
-    fprintf ppf "(";
-    let started = ref false in
-    TubeOf.miter
-      {
-        it =
-          (fun _ [ (x : normal) ] ->
-            if !started then fprintf ppf ", ";
-            started := true;
-            value ppf x.tm);
-      }
-      [ args ];
-    fprintf ppf ")"
+        fprintf ppf "Inst (%a, %a)" dim (D.pos d) (tubeof normal) args
 
   and head : formatter -> head -> unit =
    fun ppf h ->
     match h with
-    | Var { level; _ } -> fprintf ppf "Var (%d,%d)" (fst level) (snd level)
+    | Var { level; _ } -> fprintf ppf "LVar (%d,%d)" (fst level) (snd level)
     | Const { name; ins } ->
         let (To p) = deg_of_ins ins in
         fprintf ppf "Const (%a, %s)" pp_printed (print (PConstant name)) (string_of_deg p)
@@ -134,36 +160,43 @@ module F = struct
         let (To p) = deg_of_ins ins in
         fprintf ppf "Meta (%s, ?, %s)" (Meta.name meta) (string_of_deg p)
     | UU n -> fprintf ppf "UU %a" dim n
-    | Pi (_, _, _) -> fprintf ppf "Pi ?"
+    | Pi (x, doms, cods) ->
+        fprintf ppf "Pi^%s (%s, %a, (... %a))"
+          (string_of_dim (CubeOf.dim doms))
+          (Option.value ~default:"_" x) (cubeof value) doms binder (BindCube.find_top cods)
 
   and binder : type b s. formatter -> (b, s) binder -> unit =
-   fun ppf (Bind { env = e; ins = _; body }) -> fprintf ppf "Binder (%a, ?, %a)" env e term body
+   fun ppf (Bind { env = e; ins = i; body }) ->
+    fprintf ppf "Binder (%a, %s, %a)" env e (string_of_ins i) term body
 
-  and env : type b n. formatter -> (n, b) Value.env -> unit =
-   fun ppf e ->
+  and denv : type b n. int -> formatter -> (n, b) Value.env -> unit =
+   fun depth ppf e ->
     match e with
     | Emp d -> fprintf ppf "Emp %a" dim d
     | Ext (e, _, _) -> fprintf ppf "%a <: ?" env e
-    | LazyExt (e, _, _) -> fprintf ppf "%a <: ?" env e
+    | LazyExt (e, _, v) -> fprintf ppf "%a <; %a" env e (cubeof (lazy_eval depth)) v
     | Act (e, Op (f, d)) -> fprintf ppf "%a <* (%s,%s)" env e (string_of_sface f) (string_of_deg d)
     | Permute (_, e) -> fprintf ppf "(%a) permuted(?)" env e
     | Shift (e, mn, _) -> fprintf ppf "%a << %a" env e dim (D.plus_right mn)
 
+  and env : type b n. formatter -> (n, b) Value.env -> unit = fun ppf e -> denv 0 ppf e
+
   and term : type b s. formatter -> (b, s) term -> unit =
    fun ppf tm ->
     match tm with
-    | Var _ -> fprintf ppf "Var ?"
+    | Var (Index (x, fa)) -> fprintf ppf "IVar %d.%s" (Tbwd.int_of_insert x) (string_of_sface fa)
     | Const c -> fprintf ppf "Const %a" pp_printed (print (PConstant c))
     | Meta (v, _) -> fprintf ppf "Meta %a" pp_printed (print (PMeta v))
     | MetaEnv (v, _) -> fprintf ppf "MetaEnv (%a,?)" pp_printed (print (PMeta v))
     | Field (tm, fld, ins) ->
         fprintf ppf "Field (%a, %s%s)" term tm (Field.to_string fld) (string_of_ins ins)
     | UU n -> fprintf ppf "UU %a" dim n
-    | Inst (tm, _) -> fprintf ppf "Inst (%a, ?)" term tm
-    | Pi (x, doms, _) ->
-        fprintf ppf "Pi^(%a) (%s, ?, ?)" dim (CubeOf.dim doms) (Option.value x ~default:"_")
-    | App (fn, arg) -> fprintf ppf "App (%a, (... %a))" term fn term (CubeOf.find_top arg)
-    | Lam (_, body) -> fprintf ppf "Lam (?, %a)" term body
+    | Inst (tm, args) -> fprintf ppf "Inst (%a, %a)" term tm (tubeof term) args
+    | Pi (x, doms, cods) ->
+        fprintf ppf "Pi^(%a) (%s, %a, (... %a))" dim (CubeOf.dim doms) (Option.value x ~default:"_")
+          (cubeof term) doms term (CodCube.find_top cods)
+    | App (fn, arg) -> fprintf ppf "App (%a, %a)" term fn (cubeof term) arg
+    | Lam (x, body) -> fprintf ppf "Lam^(%s) (?, %a)" (string_of_dim (dim_variables x)) term body
     | Constr (c, _, _) -> fprintf ppf "Constr (%s, ?, ?)" (Constr.to_string c)
     | Act (tm, s) -> fprintf ppf "Act (%a, %s)" term tm (string_of_deg s)
     | Let (_, _, _) -> fprintf ppf "Let ?"
@@ -286,6 +319,7 @@ let evaluation depth v = PPrint.utf8string (Format.asprintf "%a" (F.evaluation d
 let head v = PPrint.utf8string (Format.asprintf "%a" F.head v)
 let binder v = PPrint.utf8string (Format.asprintf "%a" F.binder v)
 let env v = PPrint.utf8string (Format.asprintf "%a" F.env v)
+let denv depth v = PPrint.utf8string (Format.asprintf "%a" (F.denv depth) v)
 let term v = PPrint.utf8string (Format.asprintf "%a" F.term v)
 let check v = PPrint.utf8string (Format.asprintf "%a" F.check v)
 let synth v = PPrint.utf8string (Format.asprintf "%a" F.synth v)

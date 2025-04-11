@@ -73,6 +73,10 @@ module Tbwd = struct
     | Id, Now -> Id
     | _ -> Insert (perm, ins)
 
+  let rec int_of_insert : type a n b. (a, n, b) insert -> int = function
+    | Now -> 0
+    | Later i -> 1 + int_of_insert i
+
   (* Insertions can be transferred across a permutation, and when the image is removed produce a new permutation. *)
   type (_, _, _) permute_insert =
     | Permute_insert : ('d, 'n, 'c) insert * ('a, 'd) permute -> ('a, 'n, 'c) permute_insert
