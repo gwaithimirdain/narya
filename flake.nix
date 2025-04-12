@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url = "github:olynch/nixpkgs/add-binutils-to-ocaml";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     opam-repository = {
       url = "github:ocaml/opam-repository";
       flake = false;
@@ -35,14 +35,14 @@
             ${package} = prev.${package}.overrideAttrs (_: {
               doNixSupport = false;
               buildInputs = [ pkgs.pkgsStatic.gmp ];
-            } // (if pkgs.stdenv.hostPlatform.isStatic then {
+            } // (if isStatic then {
               DUNE_PROFILE = "static";
             } else {}));
             conf-gmp = prev.conf-gmp.overrideAttrs (_: {
               depsBuildBuild = [ pkgs.buildPackages.stdenv.cc ] ++ prev.conf-gmp.depsBuildBuild;
             });
           };
-          scope' = scope.overrideScope' overlay;
+          scope' = scope.overrideScope overlay;
           main = scope'.${package};
         };
         scopes = mkScopes pkgs;
