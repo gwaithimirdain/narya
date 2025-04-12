@@ -4,28 +4,60 @@ Installation
 From source
 ------------
 
-There is no distribution yet, so you have to compile Narya yourself.  This requires a recent version of OCaml and various libraries.  Currently Narya is developed with OCaml 5.3.0; as far as I know, it also compiles with any version after 5.2.1, but this is not regularly verified.  After installing any version of OCaml and its package manager Opam, you can install Narya with its dependencies as follows:
+There is no distribution yet, so you have to compile Narya yourself.  This requires a recent version of OCaml and various libraries.  Currently Narya is developed with OCaml 5.3.0; as far as I know, it also compiles with any version after 5.2.1, but this is not regularly verified.  The steps to compile Narya are:
 
-.. code-block:: bash
+1. Install `OCaml <https://ocaml.org/>`_ and its package manager `Opam <https://opam.ocaml.org/>`_.  How to do this this may vary depending on your operating system.
+
+2. Set up the OCaml environment and install the Dune build system by running the following commands:
+
+  .. code-block:: bash
 
     opam switch create 5.3.0
     opam install dune
+    eval $(opam env)
 
-    cd narya
+  The ``eval`` command is for Unix-like operating systems.  On Windows, replace it by:
+
+  .. code-block:: none
+
+    for /f "tokens=*" %i in ('opam env') do @%i
+
+  or for PowerShell:
+
+  .. code-block:: none
+
+    (& opam env) -split '\r?\n' | ForEach-Object { Invoke-Expression $_ }
+
+3. Download the Narya source code.  If you have (or install) `Git <https://git-scm.com/>`_ you can do this with:
+
+  .. code-block:: bash
+
+    git clone git@github.com:gwaithimirdain/narya.git
+
+  You can also download a `ZIP file <https://github.com/gwaithimirdain/narya/archive/refs/heads/master.zip>`_ and unpack it.
+
+4. Navigate to the root of the Narya source code (e.g. ``cd narya`` or ``cd narya-master``) and run the following commands:
+
+  .. code-block:: bash
+
     dune build narya.opam
     opam install . --deps-only
     dune build @install
     dune runtest
     dune install
 
-This will make the executable ``narya`` available in a directory such as ``~/.opam/5.3.0/bin``, which should be in your ``PATH``.  Alternatively, instead of ``dune install`` you can also run the executable directly from the ``narya/`` directory with ``dune exec narya``.  In this case, to pass flags to the executable, put them after a ``--``.  For instance, ``dune exec narya -- test.ny -i`` loads the file ``test.ny`` and then enters interactive mode.
+This will make the executable available in a directory such as ``$HOME/.opam/5.3.0/bin``, which should be in your ``PATH`` so that you can run it in the future from any directory by simply typing ``narya``.
+
+Alternatively, instead of running ``dune install``, you can run the executable directly from the Narya source directory with ``dune exec narya``.  In this case, to pass flags to the executable, put them after a ``--``.  For instance, ``dune exec narya -- test.ny -i`` loads the file ``test.ny`` and then enters interactive mode.
+
+If any of the above steps don't work for you, or if you have any other problems or encounter any bugs, please let us know by `opening an issue on GitHub <https://github.com/gwaithimirdain/narya/issues/new/choose>`_.
 
 ProofGeneral (Emacs) mode
 -------------------------
 
-The recommended mode of use of Narya is with its `ProofGeneral <https://proofgeneral.github.io/>`_ Emacs mode (for further description of this, see :ref:`ProofGeneral mode`).  Unfortunately, ProofGeneral is not well-designed for users adding new proof assistant modes.  The steps to install Narya's ProofGeneral mode are:
+The recommended mode of use of Narya is with its `ProofGeneral <https://proofgeneral.github.io/>`_ Emacs mode (for further description of this, see :ref:`ProofGeneral mode`).  Unfortunately, ProofGeneral doesn't make it asy for users to add new proof assistant modes.  The steps to install Narya's ProofGeneral mode are:
 
-1. Install Emacs and ProofGeneral.  The recommended way to install ProofGeneral is from `MELPA <https://melpa.org/>`_ using Emacs' package manager, as described at the `ProofGeneral page <https://proofgeneral.github.io/>`_.
+1. Install `Emacs <https://www.gnu.org/software/emacs/>`_ and ProofGeneral.  The recommended way to install ProofGeneral is from `MELPA <https://melpa.org/>`_ using Emacs' package manager, as described at the `ProofGeneral page <https://proofgeneral.github.io/>`_.
 
 2. Find the ProofGeneral installation directory, which may be something like ``$HOME/.emacs.d/elpa/proof-general-XXXXXXXX-XXXX``.
 
