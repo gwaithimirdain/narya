@@ -6,6 +6,8 @@
       (>= 5.2.0))
     dune
     zarith
+    zarith_stubs_js
+    uuseg
     bwd
     algaeff
     asai

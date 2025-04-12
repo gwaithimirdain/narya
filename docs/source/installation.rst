@@ -52,6 +52,17 @@ Alternatively, instead of running ``dune install``, you can run the executable d
 
 If any of the above steps don't work for you, or if you have any other problems or encounter any bugs, please let us know by `opening an issue on GitHub <https://github.com/gwaithimirdain/narya/issues/new/choose>`_.
 
+With nix
+--------
+
+Narya can also be developed and installed with nix.
+
+1. Get a version of nix with `flakes<https://nixos.wiki/wiki/flakes>`_ enabled, for instance via `determinate nix<https://github.com/DeterminateSystems/nix-installer>`_.
+
+2. Run ``nix develop`` to open a shell with all of the necessary dependencies for running ``dune build``. This may ask if you accept using a cache; you can say yes if you want to speed up the build process, or no if you want everything built on your own machine.
+
+3. Run ``nix build`` to build via nix, which on linux will create a static executable that can be copied over to other linux machines without problems.
+
 ProofGeneral (Emacs) mode
 -------------------------
 
