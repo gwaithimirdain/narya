@@ -165,7 +165,8 @@ module Code = struct
     | Invalid_constructor_type : Constr.t -> t
     | Missing_constructor_type : Constr.t -> t
     | Locked_variable : t
-    | Locked_axiom : printable -> t
+    | Locked_constant : printable -> t
+    | Axiom_in_parametric_definition : printable -> t
     | Hole : string * printable -> t
     | No_open_holes : t
     | Open_holes : int -> t
@@ -305,7 +306,8 @@ module Code = struct
     | Invalid_constructor_type _ -> Error
     | Missing_constructor_type _ -> Error
     | Locked_variable -> Error
-    | Locked_axiom _ -> Error
+    | Locked_constant _ -> Error
+    | Axiom_in_parametric_definition _ -> Error
     | Hole _ -> Info
     | No_open_holes -> Info
     | Open_holes _ -> Warning
@@ -378,7 +380,8 @@ module Code = struct
     | Undefined_metavariable _ -> "E0302"
     | Ill_scoped_connection -> "E0303"
     | Locked_variable -> "E0310"
-    | Locked_axiom _ -> "E0311"
+    | Locked_constant _ -> "E0311"
+    | Axiom_in_parametric_definition _ -> "E0312"
     (* Bidirectional typechecking and case trees *)
     | Nonsynthesizing _ -> "E0400"
     | Unequal_synthesized_type _ -> "E0401"
@@ -802,8 +805,13 @@ module Code = struct
             (Constr.to_string c)
       | Missing_constructor_type c ->
           textf "missing type for constructor %s of indexed datatype" (Constr.to_string c)
-      | Locked_variable -> text "variable locked behind external degeneracy"
-      | Locked_axiom a -> textf "axiom %a locked behind external degeneracy" pp_printed (print a)
+      | Locked_variable -> text "variable not available inside external degeneracy"
+      | Locked_constant a ->
+          textf "constant %a uses nonparametric axioms, can't appear inside an external degeneracy"
+            pp_printed (print a)
+      | Axiom_in_parametric_definition a ->
+          textf "constant %a uses nonparametric axioms, can't be used in a parametric definition"
+            pp_printed (print a)
       | Hole (n, ty) -> textf "@[<v 0>hole %s:@,%a@]" n pp_printed (print ty)
       | No_open_holes -> text "no open holes"
       | Open_holes n ->

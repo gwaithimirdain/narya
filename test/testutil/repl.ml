@@ -39,7 +39,7 @@ let assume (name : string) (ty : string) : unit =
       @@ fun () ->
       let rty = parse_term ty in
       let cty = check_type rty in
-      Global.add const cty (Axiom `Nonparametric)
+      Global.add const cty (`Axiom, `Nonparametric)
   | _ -> fatal (Invalid_constant_name [ name ])
 
 let def (name : string) (ty : string) (tm : string) : unit =
@@ -59,9 +59,9 @@ let def (name : string) (ty : string) (tm : string) : unit =
       let cty = check_type rty in
       let ety = eval_term (Emp D.zero) cty in
       Reporter.trace "when checking case tree" @@ fun () ->
-      Global.add const cty (Axiom `Parametric);
+      Global.add const cty (`Axiom, `Parametric);
       let tree = check (Potential (Constant (const, D.zero), Emp, fun x -> x)) Ctx.empty rtm ety in
-      Global.add const cty (Defined tree)
+      Global.add const cty (`Defined tree, `Parametric)
   | _ -> fatal (Invalid_constant_name [ name ])
 
 let equal_at (tm1 : string) (tm2 : string) (ty : string) : unit =

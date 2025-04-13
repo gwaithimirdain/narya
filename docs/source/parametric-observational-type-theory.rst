@@ -239,8 +239,8 @@ Similarly, when defining a codatatype lying in a higher universe, the "self" var
 
    def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ codata [ x .ungel : R x.0 x.1 ]
 
-Varying the behavior of parametricity
--------------------------------------
+Varying the arity of parametricity
+----------------------------------
 
 The parametricity described above, which is Narya's default, is *binary* in that the identity/bridge type ``Id A x y`` takes *two* elements of ``A`` as arguments.  However, a different "arity" can be specified with the ``-arity`` command-line flag.  For instance, under ``-arity 1`` we have bridge types ``Id A x``, and under ``-arity 3`` they look like ``Id A x y z``.  Everything else also alters according, e.g. under ``-arity 1`` the type ``Id (A → B) f`` is isomorphic to ``(x : A) (x' : Id A x) → Id B (f x)``, and a cube variable has pieces numbered with only ``0`` s and ``1`` s.
 
@@ -250,9 +250,16 @@ It is also possible to rename or remove the primitives ``refl`` and ``Id`` (whic
 
 The name of ``sym`` cannot be changed or removed, and likewise for the digits used in generic degeneracies to indicate permuted dimensions.
 
-Finally, parametricity can be set to be *internal* (the default) or *external*.  Setting it to external instead means that dimension-changing degeneracies (including ``refl``, but not ``sym``) can only be applied to *closed terms*.  Since degeneracies also compute fully on closed terms (at least in the "up-to-definitional-isomorphism" sense), we can then more or less think of these operations as meta-operations on syntax rather than intrinsic aspects of the theory.  This is the usual meaning of "external parametricity", although Narya's is of course at least partially internalized.  (Semantically, what Narya calls "external parametricity" is modeled in a diagram of *semi-cubical* types, in contrast to internal parametricity which is modeled in *cubical* types.)
+Internal versus external parametricity
+--------------------------------------
 
-In addition, under external parametricity, *axioms* are not permitted to be used inside of dimension-changing degeneracies either.  The reasoning behind this is that we may want to assume axioms that are inconsistent with parametricity, such as excluded middle, while still making use of external parametricity on other types.  (Note that *internal* parametricity is nonclassical, actively contradicting excluded middle.)  It also maintains the principle that assuming an axiom of type `A` is equivalent to working in a context extended by a variable of type `A`.  However, in the future it may be possible to declare a special kind of "parametric axiom" that does have higher-dimensional versions.
+Parametricity can also be set to be *internal* or *external* with the like-named flags ``-internal`` and ``-external``.  Internal is the default and the behavior that we have described up until now.  Setting it to external instead means that dimension-changing degeneracies (such as ``refl``, but not ``sym``) can only be applied to *closed terms*.  Since degeneracies also compute fully on closed terms (at least in the "up-to-definitional-isomorphism" sense), we can then more or less think of these operations as meta-operations on syntax rather than intrinsic aspects of the theory.  This is the usual meaning of "external parametricity", although Narya's is of course at least partially internalized.  (Semantically, what Narya calls "external parametricity" is modeled in a diagram of *semi-cubical* types, in contrast to internal parametricity which is modeled in *cubical* types.)
+
+In addition, when parametricity is external, *axioms* are not permitted to be used inside of dimension-changing degeneracies either, nor are any constants that use axioms in their types or definitions, hereditarily.  That is, axioms are "nonparametric" and have no dimension-changing degeneracies, and any definition that uses a nonparametric constant is also nonparametric.  Similarly, if any of the definitions in a mutual block use a nonparametric constant, then all the constants in the mutual block are nonparametric.
+
+The reasoning behind this is that you may want to assume axioms that are inconsistent with parametricity, such as excluded middle, while still making use of external parametricity on other types.  (Note that *internal* parametricity is nonclassical, actively contradicting excluded middle.)  It also maintains the principle that assuming an axiom of type `A` is equivalent to working in a context extended by a variable of type `A`.  However, in the future it may be possible to declare a special kind of "parametric axiom" that does have higher-dimensional versions.
+
+When a definition contains :ref:`holes` but does not (yet) use any nonparametric constants, it is considered parametric, and hence can have dimension-changing degeneracies applied to it.  Therefore, if you later try to fill one of those holes with a term that uses a nonparametric constant, an error will be emitted; it is not possible to retroactively set a definition to be nonparametric since it might already have had dimension-changing degeneracies applied to it by other definitions.  In this case, you have to undo back to the original definition and manually copy your desired nonparametric term in place of the hole.  (If there is significant demand, we may implement an easier solution.)
 
 The combination ``-arity 1 -direction d -external`` is a version of `displayed type theory <https://arxiv.org/abs/2311.18781>`_ (dTT), and as such can be selected with the single option ``-dtt``.  The primary differences between ``narya -dtt`` and the original dTT of the paper are:
 

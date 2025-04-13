@@ -125,7 +125,7 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
                 })) in
       let head = Const { name; ins = ins_zero dim } in
       match defn with
-      | Defined tree -> (
+      | `Defined tree, _ -> (
           if GluedEval.read () then
             (* Glued evaluation: we evaluate the definition lazily and return a neutral with that lazy evaluation stored. *)
             Val (Neu { head; args = Emp; value = lazy_eval (Emp dim) tree; ty })
@@ -139,7 +139,7 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
                   d.tyfam := Some (lazy { tm = newtm; ty = Lazy.force ty });
                 Val newtm
             | _ -> Val newtm)
-      | Axiom _ -> Val (Neu { head; args = Emp; value = ready Unrealized; ty }))
+      | `Axiom, _ -> Val (Neu { head; args = Emp; value = ready Unrealized; ty }))
   | Meta (meta, ambient) -> (
       let dim = dim_env env in
       let head = Value.Meta { meta; env; ins = ins_zero dim } in

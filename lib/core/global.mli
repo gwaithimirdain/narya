@@ -3,7 +3,10 @@ open Util
 open Tbwd
 open Term
 
-type definition = Axiom of [ `Parametric | `Nonparametric ] | Defined of (emp, potential) term
+type definition =
+  [ `Axiom | `Defined of (emp, potential) term ]
+  * [ `Parametric | `Nonparametric | `Maybe_parametric ]
+
 type metamap
 
 val find : Constant.t -> (emp, kinetic) term * definition
@@ -46,7 +49,10 @@ val add_hole :
   unit
 
 val hole_exists : ('a, 'b, 's) Meta.t -> bool
-val with_definition : Constant.t -> definition -> (unit -> 'a) -> 'a
+
+val with_definition :
+  Constant.t -> [ `Axiom | `Defined of (emp, potential) term ] -> (unit -> 'a) -> 'a
+
 val with_meta_definition : ('a, 'b, 's) Meta.t -> ('b, 's) term -> (unit -> 'x) -> 'x
 val without_definition : Constant.t -> Reporter.Code.t -> (unit -> 'a) -> 'a
 val without_meta_definition : ('a, 'b, 's) Meta.t -> Reporter.Code.t -> (unit -> 'x) -> 'x
@@ -70,6 +76,7 @@ type eternity = {
     No.interval option ->
     No.interval option ->
     unit;
+  modify : 'a 'b 's. ('a, 'b, 's) Meta.t -> (data -> data) -> unit;
 }
 
 val eternity : eternity ref
@@ -80,5 +87,9 @@ end
 
 module HolePos : module type of State.Make (HoleState)
 
+val set_nonparametric : Constant.t option -> unit
+val set_parametric : Constant.t -> unit
+val set_maybe_parametric : unit -> unit
+val get_parametric : unit -> [ `Parametric | `Nonparametric ]
 val end_command : (int -> Reporter.Code.t) -> unit
 val run_command_with : init:data -> (int -> Reporter.Code.t) -> (unit -> 'a) -> 'a
