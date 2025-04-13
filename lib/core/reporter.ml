@@ -154,7 +154,13 @@ module Code = struct
     | Unbound_variable_in_notation : string list -> t
     | Head_already_has_notation : string -> t
     | Constant_assumed : printable * int -> t
-    | Constant_defined : printable list * bool * int -> t
+    | Constant_defined : {
+        names : printable list;
+        discrete : bool;
+        parametric : bool;
+        holes : int;
+      }
+        -> t
     | Hole_solved : int -> t
     | Notation_defined : string -> t
     | Show : string * printable -> t
@@ -761,23 +767,27 @@ module Code = struct
           if h > 1 then textf "axiom %a assumed, containing %d holes" pp_printed (print name) h
           else if h = 1 then textf "axiom %a assumed, containing 1 hole" pp_printed (print name)
           else textf "axiom %a assumed" pp_printed (print name)
-      | Constant_defined (names, discrete, h) -> (
-          let discrete = if discrete then "discrete " else "" in
+      | Constant_defined { names; discrete; parametric; holes } -> (
+          (* Nonparametricity trumps discreteness *)
+          let prefix =
+            if parametric || Dim.Endpoints.internal () then if discrete then "discrete " else ""
+            else "nonparametric " in
           match names with
           | [] -> textf "anomaly: no constant defined"
           | [ name ] ->
-              if h > 1 then
-                textf "%sconstant %a defined, containing %d holes" discrete pp_printed (print name)
-                  h
-              else if h = 1 then
-                textf "%sconstant %a defined, containing 1 hole" discrete pp_printed (print name)
-              else textf "%sconstant %a defined" discrete pp_printed (print name)
+              if holes > 1 then
+                textf "%sconstant %a defined, containing %d holes" prefix pp_printed (print name)
+                  holes
+              else if holes = 1 then
+                textf "%sconstant %a defined, containing 1 hole" prefix pp_printed (print name)
+              else textf "%sconstant %a defined" prefix pp_printed (print name)
           | _ ->
-              (if h > 1 then
-                 textf "@[<v 2>%sconstants defined mutually, containing %d holes:@,%a@]" discrete h
-               else if h = 1 then
-                 textf "@[<v 2>%sconstants defined mutually, containing 1 hole:@,%a@]" discrete
-               else textf "@[<v 2>%sconstants defined mutually:@,%a@]" discrete)
+              (if holes > 1 then
+                 textf "@[<v 2>%sconstants defined mutually, containing %d holes:@,%a@]" prefix
+                   holes
+               else if holes = 1 then
+                 textf "@[<v 2>%sconstants defined mutually, containing 1 hole:@,%a@]" prefix
+               else textf "@[<v 2>%sconstants defined mutually:@,%a@]" prefix)
                 (fun ppf names -> pp_print_list (fun ppf name -> pp_printed ppf name) ppf names)
                 (List.map (fun name -> print name) names))
       | Notation_defined name -> textf "notation %s defined" name

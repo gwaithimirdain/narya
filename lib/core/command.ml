@@ -86,7 +86,7 @@ let check_term (def : defined_const) (discrete : unit Constant.Map.t option) :
 
 (* Iterate through a collection of such things checking them all, and then verify whether they are all potentially-discrete datatypes.  If so, redefine them all to be actually discrete (`Yes instead of `Maybe).  Returns a list of constant names to print, and whether they are discrete. *)
 let check_terms (defs : defined_const list) (discrete : unit Constant.Map.t option) :
-    printable list * bool =
+    printable list * bool * bool =
   let rec go defs defineds =
     match defs with
     | [] ->
@@ -99,21 +99,22 @@ let check_terms (defs : defined_const list) (discrete : unit Constant.Map.t opti
               let discrete_def, disc_def = Discrete.discrete_def def in
               ((c, discrete_def), disc && disc_def))
             [ defineds ] true in
-        let parametric =
-          (Global.get_parametric () :> [ `Parametric | `Nonparametric | `Maybe_parametric ]) in
+        let p = Global.get_parametric () in
+        let parametric = (p :> [ `Parametric | `Nonparametric | `Maybe_parametric ]) in
         ( Bwd_extra.to_list_map
             (fun (c, def) ->
               Global.set c (`Defined def, parametric);
               PConstant c)
             (if disc then discrete_defineds else defineds),
-          disc )
+          disc,
+          p = `Parametric )
     | d :: defs ->
         let c, v = check_term d discrete in
         go defs (Snoc (defineds, (c, v))) in
   go defs Emp
 
 (* When checking a "def", therefore, we first iterate through checking the parameters and types, and then go back and check all the terms.  Moreover, whenever we check a type, we temporarily define the corresponding constant as an axiom having that type, so that its type can be used recursively in typechecking its definition, as well as the types of later mutual constants and the definitions of any other mutual constants. *)
-let check_defs (defs : (Constant.t * defconst) list) : printable list * bool =
+let check_defs (defs : (Constant.t * defconst) list) : printable list * bool * bool =
   let rec go defs discrete defineds =
     match defs with
     | [] -> check_terms (Bwd.to_list defineds) discrete
@@ -142,8 +143,8 @@ let execute : t -> unit = function
       Global.end_command (fun h -> Constant_assumed (PConstant const, h))
   | Def defs ->
       Global.set_maybe_parametric ();
-      let printables, discrete = check_defs defs in
-      Global.end_command (fun h -> Constant_defined (printables, discrete, h))
+      let names, discrete, parametric = check_defs defs in
+      Global.end_command (fun holes -> Constant_defined { names; discrete; parametric; holes })
   | Solve (global, status, termctx, tm, ty, callback) ->
       if not (Mode.read ()).interactive then fatal (Forbidden_interactive_command "solve");
       let ctm =

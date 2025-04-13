@@ -182,7 +182,7 @@ Or of anything that uses an axiom.
    ￮ axiom A assumed
   
    ￫ info[I0000]
-   ￮ constant f defined
+   ￮ nonparametric constant f defined
   
    ￫ error[E0311]
    ￭ command-line exec string
@@ -217,7 +217,7 @@ But if one of them uses an axiom, the others don't have external degeneracies ei
    ￮ axiom A assumed
   
    ￫ info[I0000]
-   ￮ constants defined mutually:
+   ￮ nonparametric constants defined mutually:
        f
        g
   
