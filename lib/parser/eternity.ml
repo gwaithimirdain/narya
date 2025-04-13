@@ -70,6 +70,16 @@ let () =
                     }
                     map;
               }));
+      modify =
+        (fun (type a b s) m f ->
+          S.modify (fun { map } ->
+              {
+                map =
+                  Metamap.update m
+                    (Option.map (fun (md : (unit, a, b, s) MetaData.t) ->
+                         { md with homewhen = { md.homewhen with global = f md.homewhen.global } }))
+                    map;
+              }));
     }
 
 let unsolved () =

@@ -72,7 +72,7 @@ let check_term (def : defined_const) (discrete : unit Constant.Map.t option) :
           (check ?discrete
              (Potential (Constant (const, D.zero), Ctx.apps ctx, Ctx.lam ctx))
              ctx tm ety) in
-      Global.set const (Defined tm);
+      Global.set const (`Defined tm, `Maybe_parametric);
       (const, tm)
   | Defined_synth { const; params; tm } ->
       let Checked_tel (cparams, ctx), _ = check_tel Ctx.empty params in
@@ -81,12 +81,12 @@ let check_term (def : defined_const) (discrete : unit Constant.Map.t option) :
       let cty = readback_val ctx ety in
       let ty = Telescope.pis cparams cty in
       let tm = Ctx.lam ctx ctm in
-      Global.add const ty (Defined tm);
+      Global.add const ty (`Defined tm, `Maybe_parametric);
       (const, tm)
 
 (* Iterate through a collection of such things checking them all, and then verify whether they are all potentially-discrete datatypes.  If so, redefine them all to be actually discrete (`Yes instead of `Maybe).  Returns a list of constant names to print, and whether they are discrete. *)
 let check_terms (defs : defined_const list) (discrete : unit Constant.Map.t option) :
-    printable list * bool =
+    printable list * bool * bool =
   let rec go defs defineds =
     match defs with
     | [] ->
@@ -99,21 +99,22 @@ let check_terms (defs : defined_const list) (discrete : unit Constant.Map.t opti
               let discrete_def, disc_def = Discrete.discrete_def def in
               ((c, discrete_def), disc && disc_def))
             [ defineds ] true in
-        if disc then
-          ( Bwd_extra.to_list_map
-              (fun (c, def) ->
-                Global.set c (Defined def);
-                PConstant c)
-              discrete_defineds,
-            true )
-        else (Bwd_extra.to_list_map (fun (c, _) -> PConstant c) defineds, false)
+        let p = Global.get_parametric () in
+        let parametric = (p :> [ `Parametric | `Nonparametric | `Maybe_parametric ]) in
+        ( Bwd_extra.to_list_map
+            (fun (c, def) ->
+              Global.set c (`Defined def, parametric);
+              PConstant c)
+            (if disc then discrete_defineds else defineds),
+          disc,
+          p = `Parametric )
     | d :: defs ->
         let c, v = check_term d discrete in
         go defs (Snoc (defineds, (c, v))) in
   go defs Emp
 
 (* When checking a "def", therefore, we first iterate through checking the parameters and types, and then go back and check all the terms.  Moreover, whenever we check a type, we temporarily define the corresponding constant as an axiom having that type, so that its type can be used recursively in typechecking its definition, as well as the types of later mutual constants and the definitions of any other mutual constants. *)
-let check_defs (defs : (Constant.t * defconst) list) : printable list * bool =
+let check_defs (defs : (Constant.t * defconst) list) : printable list * bool * bool =
   let rec go defs discrete defineds =
     match defs with
     | [] -> check_terms (Bwd.to_list defineds) discrete
@@ -122,8 +123,8 @@ let check_defs (defs : (Constant.t * defconst) list) : printable list * bool =
         let Checked_tel (params, ctx), disc = check_tel ?discrete Ctx.empty params in
         let ty = check (Kinetic `Nolet) ctx ty (universe D.zero) in
         let pi_cty = Telescope.pis params ty in
-        (* We set the type now; the value will be added later. *)
-        Global.add const pi_cty (Axiom `Parametric);
+        (* We set the type now; the value will be added later.  We mark it as "maybe parametric" so that we can detect if it is used behind an external degeneracy. *)
+        Global.add const pi_cty (`Axiom, `Maybe_parametric);
         go defs
           (if disc then Option.map (Constant.Map.add const ()) discrete else None)
           (Snoc (defineds, Defined_check { const; bplus; params; ty; tm }))
@@ -134,14 +135,16 @@ let check_defs (defs : (Constant.t * defconst) list) : printable list * bool =
 
 let execute : t -> unit = function
   | Axiom (const, params, ty) ->
+      Global.set_nonparametric None;
       let Checked_tel (params, ctx), _ = check_tel Ctx.empty params in
       let cty = check (Kinetic `Nolet) ctx ty (universe D.zero) in
       let cty = Telescope.pis params cty in
-      Global.add const cty (Axiom `Nonparametric);
+      Global.add const cty (`Axiom, `Nonparametric);
       Global.end_command (fun h -> Constant_assumed (PConstant const, h))
   | Def defs ->
-      let printables, discrete = check_defs defs in
-      Global.end_command (fun h -> Constant_defined (printables, discrete, h))
+      Global.set_maybe_parametric ();
+      let names, discrete, parametric = check_defs defs in
+      Global.end_command (fun holes -> Constant_defined { names; discrete; parametric; holes })
   | Solve (global, status, termctx, tm, ty, callback) ->
       if not (Mode.read ()).interactive then fatal (Forbidden_interactive_command "solve");
       let ctm =

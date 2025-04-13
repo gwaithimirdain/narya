@@ -15,7 +15,7 @@ let usage_msg = "narya [options] <file1> [<file2> ...]"
 let interactive = ref false
 let proofgeneral = ref false
 
-(* Undocumented flag used for testing: interpret a given command-line string as if it were entered in interactive mode. *)
+(* Undocumented flag used for testing: interpret a given file or command-line string as if it were entered in interactive mode. *)
 let fake_interacts : string Bwd.t ref = ref Emp
 
 let speclist =
@@ -212,7 +212,10 @@ let () =
     (* Note: run_top executes the input files, so here we only have to do the interaction. *)
     Mbwd.miter
       (fun [ file ] ->
-        let p, src = Parser.Command.Parse.start_parse (`File file) in
+        let source : Asai.Range.source =
+          if FileUtil.test Is_file file then `File file
+          else `String { title = Some "command line fake-interact"; content = file } in
+        let p, src = Parser.Command.Parse.start_parse source in
         Reporter.try_with ~emit:(Reporter.display ~output:stdout)
           ~fatal:(Reporter.display ~output:stdout) (fun () -> Execute.batch None p src `None []))
       [ !fake_interacts ];

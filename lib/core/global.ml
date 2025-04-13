@@ -10,8 +10,11 @@ open Printable
 
 (* The global environment of constants and definition-local metavariables. *)
 
-(* Each global constant either is an axiom or has a definition (a case tree).  The latter includes canonical types.  An axiom can be either parametric, which means it is always accessible, or nonparametric, which means it is not accessible behind context locks for external parametricity.  (In the future, this should be customizable on a per-direction basis.) *)
-type definition = Axiom of [ `Parametric | `Nonparametric ] | Defined of (emp, potential) term
+(* Each global constant either is an axiom or has a definition (a case tree).  The latter includes canonical types.  *)
+type definition =
+  [ `Axiom | `Defined of (emp, potential) term ]
+  (* A parametric constant can have external degeneracies applied to it, while a nonparametric one can't.  A maybe-parametric one is one currently being typechecked which hasn't yet been concluded to be nonparametric. *)
+  * [ `Parametric | `Nonparametric | `Maybe_parametric ]
 
 (* Global metavariables have only a definition (or an error indicating that they can't be correctly accessed, such as if typechecking failed earlier). *)
 module Metamap = Meta.Map.Make (struct
@@ -23,9 +26,11 @@ type metamap = unit Metamap.t
 type data = {
   constants : ((emp, kinetic) term * definition, Code.t) Result.t Constant.Map.t;
   metas : metamap;
-  (* These two data pertain to the *currently executing command*: they store information about the holes and the global metavariables it has created.  The purpose is that if and when that command completes, we notify the user about the holes and save the metavariables to the correct global state.  In particular, during a "solve" command, the global state is rewound in time, but any newly created global metavariables need to be put into the "present" global state that it was rewound from. *)
+  (* These three data pertain to the *currently executing command*: they store information about the holes, the global metavariables it has created, and whether it is parametric.  The purpose is that if and when that command completes, we notify the user about the holes and save the metavariables to the correct global state.  In particular, during a "solve" command, the global state is rewound in time, but any newly created global metavariables need to be put into the "present" global state that it was rewound from. *)
   current_holes : (Meta.wrapped * printable * Asai.Range.t) Bwd.t;
   current_metas : metamap;
+  (* What's known about whether the current mutual block of definitions is parametric: either they are nonparametric (they are an axiom, or use other nonparametric constants), or they *could* be parametric so far, or they *must* be parametric (they involve external degeneracies applied to themselves). *)
+  parametric : [ `Must_be_parametric | `Maybe_parametric | `Nonparametric ];
   (* These are the eternal holes that exist.  We store them so that when commands creating holes are undone, those holes can be discarded. *)
   holes : Meta.WrapSet.t;
 }
@@ -37,6 +42,7 @@ let empty : data =
     metas = Metamap.empty;
     current_holes = Emp;
     current_metas = Metamap.empty;
+    parametric = `Maybe_parametric;
     holes = Meta.WrapSet.empty;
   }
 
@@ -70,6 +76,7 @@ type eternity = {
     No.interval option ->
     No.interval option ->
     unit;
+  modify : 'a 'b 's. ('a, 'b, 's) Meta.t -> (data -> data) -> unit;
 }
 
 let eternity : eternity ref =
@@ -77,6 +84,7 @@ let eternity : eternity ref =
     {
       find_opt = (fun _ -> raise (Failure "eternity not set"));
       add = (fun _ _ _ _ _ -> raise (Failure "eternity not set"));
+      modify = (fun _ _ -> raise (Failure "eternity not set"));
     }
 
 (* When looking up a metavariable, we check both Eternity, the new globals, and the old globals. *)
@@ -104,8 +112,8 @@ let to_channel_unit chan i flags =
 
 let link_definition f df =
   match df with
-  | Axiom p -> Axiom p
-  | Defined tm -> Defined (Link.term f tm)
+  | `Axiom, p -> (`Axiom, p)
+  | `Defined tm, p -> (`Defined (Link.term f tm), p)
 
 type unit_entry =
   ((emp, kinetic) term * definition, Code.t) Result.t Constant.Map.unit_entry
@@ -211,7 +219,11 @@ let with_definition c df f =
   let d = S.get () in
   match Constant.Map.find_opt c d.constants with
   | Some (Ok (ty, _) as old) ->
-      S.set { d with constants = d.constants |> Constant.Map.add c (Ok (ty, df)) };
+      let p =
+        match d.parametric with
+        | `Nonparametric -> `Nonparametric
+        | `Must_be_parametric | `Maybe_parametric -> `Maybe_parametric in
+      S.set { d with constants = d.constants |> Constant.Map.add c (Ok (ty, (df, p))) };
       let result = f () in
       (* Note that f could change the state in other ways, so we can't just reset the whole state to d.  *)
       S.modify (fun d -> { d with constants = d.constants |> Constant.Map.add c old });
@@ -312,9 +324,33 @@ let () =
     | `Get -> Some "unhandled Global.HolePos get effect"
     | `Set _ -> Some "unhandled Global.HolePos set effect")
 
+let set_nonparametric name =
+  S.modify (fun d ->
+      if d.parametric = `Must_be_parametric then
+        match name with
+        | Some name -> fatal (Axiom_in_parametric_definition (PConstant name))
+        | None -> fatal (Anomaly "set_nonparametric found must_be without constant")
+      else { d with parametric = `Nonparametric })
+
+let set_parametric name =
+  S.modify (fun d ->
+      if d.parametric = `Nonparametric then fatal (Locked_constant (PConstant name))
+      else { d with parametric = `Must_be_parametric })
+
+let set_maybe_parametric () = S.modify (fun d -> { d with parametric = `Maybe_parametric })
+
+let get_parametric () =
+  match (S.get ()).parametric with
+  | `Nonparametric -> `Nonparametric
+  | `Must_be_parametric | `Maybe_parametric -> `Parametric
+
 (* Notify the user about currently created holes and add them to the global list. *)
 let do_holes make_msg =
   let d = S.get () in
+  let parametric =
+    match d.parametric with
+    | `Nonparametric -> `Nonparametric
+    | `Must_be_parametric | `Maybe_parametric -> `Must_be_parametric in
   emit (make_msg (Bwd.length d.current_holes));
   Mbwd.miter
     (fun [ (Meta.Wrap m, p, (loc : Asai.Range.t)) ] ->
@@ -322,15 +358,17 @@ let do_holes make_msg =
       emit (Hole (Meta.name m, p));
       let s, e = Asai.Range.split loc in
       HolePos.modify (fun st ->
-          { st with holes = Snoc (st.holes, (Meta.hole_number m, s.offset, e.offset)) }))
+          { st with holes = Snoc (st.holes, (Meta.hole_number m, s.offset, e.offset)) });
+      !eternity.modify m (fun d -> { d with parametric }))
     [ d.current_holes ];
   d.current_metas
 
-(* At the end of a succesful normal command, notify the user of generated holes and save the newly created metavariables. *)
+(* At the end of a succesful normal command, notify the user of generated holes, save the newly created metavariables, and clear all the information about current holes and metas and parametricness.  (Parametricness must be previously observed with get_parametric.) *)
 let end_command make_msg =
   let metas = do_holes make_msg in
   save_metas metas;
-  S.modify (fun d -> { d with current_holes = Emp; current_metas = Metamap.empty })
+  S.modify (fun d ->
+      { d with current_holes = Emp; current_metas = Metamap.empty; parametric = `Maybe_parametric })
 
 (* For a command that needs to run in a different state like Solve, wrap it in this function instead.  This does that, and then after it completes, it saves the newly created metavariables to the *old* global state, not the special one that the command ran in. *)
 let run_command_with ~init make_msg f =

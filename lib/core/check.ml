@@ -152,7 +152,7 @@ let run_with_definition : type a c.
   match (head, errs) with
   (* In the case of an error, we bind the head to the error "Accumulated Emp".  That has the effect that accesses to it fail, but aren't displayed to the user as anything, since what's really going on is that we refuse to even try to typecheck later parts of a term that depend on previous parts that already failed, and this "error" is just detecting that dependence. *)
   (* We ignore the substituted dimension of the head, since this is really setting the *global* definition, which is not substituted. *)
-  | Constant (c, _), Emp -> Global.with_definition c (Global.Defined tm) f
+  | Constant (c, _), Emp -> Global.with_definition c (`Defined tm) f
   | Constant (c, _), Snoc _ -> Global.without_definition c (Accumulated ("dependence", Emp)) f
   | Meta (m, _), Emp -> Global.with_meta_definition m tm f
   | Meta (m, _), Snoc _ -> Global.without_meta_definition m (Accumulated ("dependence", Emp)) f
@@ -2103,11 +2103,17 @@ and synth : type a b s.
                 ( realize status (Term.Field (Var v, fld, ins)),
                   tyof_field (Ok x.tm) x.ty fld ~shuf:Trivial ins )
             | None -> fatal (Anomaly "level not found in field view")))
-    | Const name, _ -> (
+    | Const name, _ ->
         let ty, tm = Global.find name in
-        match (tm, Ctx.locked ctx) with
-        | Axiom `Nonparametric, true -> fatal (Locked_axiom (PConstant name))
-        | _ -> (realize status (Const name), eval_term (Emp D.zero) ty))
+        (match (snd tm, Ctx.locked ctx) with
+        (* If the context is locked, then nonparametric constants are not allowed.  *)
+        | `Nonparametric, true -> fatal (Locked_constant (PConstant name))
+        (* Thus, if one of the currently-being-defined constants is encountered in a locked context, they *must* be parametric. *)
+        | `Maybe_parametric, true -> Global.set_parametric name
+        (* On the other hand, if the context is not locked and we encounter a nonparametric constant, then the current constants must be nonparametric.  (The Global.set functions handle checking for conflicts between requirements of parametricness of the current definitions.) *)
+        | `Nonparametric, false -> Global.set_nonparametric (Some name)
+        | _ -> ());
+        (realize status (Const name), eval_term (Emp D.zero) ty)
     | Field (tm, fld), _ ->
         let stm, sty = synth (Kinetic `Nolet) ctx tm in
         (* To take a field of something, the type of the something must be a record-type that contains such a field, possibly substituted to a higher dimension and instantiated. *)

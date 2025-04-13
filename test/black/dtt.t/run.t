@@ -158,20 +158,96 @@
    ￫ error[E0310]
    ￭ command-line exec string
    1 | def foo (X:Type) : Type^^(d) X := X^^(d)
-     ^ variable locked behind external degeneracy
+     ^ variable not available inside external degeneracy
   
   [1]
 
-  $ narya -dtt -e "axiom A : Type" -e "echo A^^(d)"
+Can't take external degeneracies of axioms.
+
+  $ narya -dtt -v -e "axiom A : Type" -e "echo A⁽ᵈ⁾"
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
    ￫ error[E0311]
    ￭ command-line exec string
-   1 | echo A^^(d)
-     ^ axiom A locked behind external degeneracy
+   1 | echo A⁽ᵈ⁾
+     ^ constant A uses nonparametric axioms, can't appear inside an external degeneracy
   
   [1]
 
-  $ narya -dtt mutual.ny
-   ￫ error[E3002]
-   ￮ file mutual.ny contains open holes
+Or of anything that uses an axiom.
+
+  $ narya -dtt -v -e "axiom A : Type def f : A → A ≔ x ↦ x echo f⁽ᵈ⁾"
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0000]
+   ￮ nonparametric constant f defined
+  
+   ￫ error[E0311]
+   ￭ command-line exec string
+   1 | axiom A : Type def f : A → A ≔ x ↦ x echo f⁽ᵈ⁾
+     ^ constant f uses nonparametric axioms, can't appear inside an external degeneracy
   
   [1]
+
+We check that a family of mutual definitions can apply external degeneracies to each other.  This was an issue once because they are temporarily defined as "axioms" during definition, and by default axioms don't admit external degeneracies.
+
+  $ narya -dtt -v -e "def X : Type ≔ Type and Y : (x : X) → X⁽ᵈ⁾ x ≔ ?"
+   ￫ info[I0000]
+   ￮ constants defined mutually, containing 1 hole:
+       X
+       Y
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     ----------------------------------------------------------------------
+     (x : Type) → Type⁽ᵈ⁾ x
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
+  
+  [1]
+
+But if one of them uses an axiom, the others don't have external degeneracies either.
+
+  $ narya -dtt -v -e "axiom A:Type def f : Type := A and g : Type := sig () echo g⁽ᵈ⁾"
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0000]
+   ￮ nonparametric constants defined mutually:
+       f
+       g
+  
+   ￫ error[E0311]
+   ￭ command-line exec string
+   1 | axiom A:Type def f : Type := A and g : Type := sig () echo g⁽ᵈ⁾
+     ^ constant g uses nonparametric axioms, can't appear inside an external degeneracy
+  
+  [1]
+
+When a constant is defined containing a hole, it is allowed to be parametric, but then the hole cannot be filled by any term that uses an axiom.
+
+  $ narya -dtt -v -fake-interact "axiom A:Type def B:Type := ? echo B⁽ᵈ⁾ solve 0 := A"
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0000]
+   ￮ constant B defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     ----------------------------------------------------------------------
+     Type
+  
+  B⁽ᵈ⁾
+    : Type⁽ᵈ⁾ B
+  
+   ￫ error[E0312]
+   ￭ command line fake-interact
+   1 | axiom A:Type def B:Type := ? echo B⁽ᵈ⁾ solve 0 := A
+     ^ constant A uses nonparametric axioms, can't be used in a parametric definition
+  

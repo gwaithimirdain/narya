@@ -154,7 +154,13 @@ module Code = struct
     | Unbound_variable_in_notation : string list -> t
     | Head_already_has_notation : string -> t
     | Constant_assumed : printable * int -> t
-    | Constant_defined : printable list * bool * int -> t
+    | Constant_defined : {
+        names : printable list;
+        discrete : bool;
+        parametric : bool;
+        holes : int;
+      }
+        -> t
     | Hole_solved : int -> t
     | Notation_defined : string -> t
     | Show : string * printable -> t
@@ -165,7 +171,8 @@ module Code = struct
     | Invalid_constructor_type : Constr.t -> t
     | Missing_constructor_type : Constr.t -> t
     | Locked_variable : t
-    | Locked_axiom : printable -> t
+    | Locked_constant : printable -> t
+    | Axiom_in_parametric_definition : printable -> t
     | Hole : string * printable -> t
     | No_open_holes : t
     | Open_holes : int -> t
@@ -305,7 +312,8 @@ module Code = struct
     | Invalid_constructor_type _ -> Error
     | Missing_constructor_type _ -> Error
     | Locked_variable -> Error
-    | Locked_axiom _ -> Error
+    | Locked_constant _ -> Error
+    | Axiom_in_parametric_definition _ -> Error
     | Hole _ -> Info
     | No_open_holes -> Info
     | Open_holes _ -> Warning
@@ -378,7 +386,8 @@ module Code = struct
     | Undefined_metavariable _ -> "E0302"
     | Ill_scoped_connection -> "E0303"
     | Locked_variable -> "E0310"
-    | Locked_axiom _ -> "E0311"
+    | Locked_constant _ -> "E0311"
+    | Axiom_in_parametric_definition _ -> "E0312"
     (* Bidirectional typechecking and case trees *)
     | Nonsynthesizing _ -> "E0400"
     | Unequal_synthesized_type _ -> "E0401"
@@ -758,23 +767,27 @@ module Code = struct
           if h > 1 then textf "axiom %a assumed, containing %d holes" pp_printed (print name) h
           else if h = 1 then textf "axiom %a assumed, containing 1 hole" pp_printed (print name)
           else textf "axiom %a assumed" pp_printed (print name)
-      | Constant_defined (names, discrete, h) -> (
-          let discrete = if discrete then "discrete " else "" in
+      | Constant_defined { names; discrete; parametric; holes } -> (
+          (* Nonparametricity trumps discreteness *)
+          let prefix =
+            if parametric || Dim.Endpoints.internal () then if discrete then "discrete " else ""
+            else "nonparametric " in
           match names with
           | [] -> textf "anomaly: no constant defined"
           | [ name ] ->
-              if h > 1 then
-                textf "%sconstant %a defined, containing %d holes" discrete pp_printed (print name)
-                  h
-              else if h = 1 then
-                textf "%sconstant %a defined, containing 1 hole" discrete pp_printed (print name)
-              else textf "%sconstant %a defined" discrete pp_printed (print name)
+              if holes > 1 then
+                textf "%sconstant %a defined, containing %d holes" prefix pp_printed (print name)
+                  holes
+              else if holes = 1 then
+                textf "%sconstant %a defined, containing 1 hole" prefix pp_printed (print name)
+              else textf "%sconstant %a defined" prefix pp_printed (print name)
           | _ ->
-              (if h > 1 then
-                 textf "@[<v 2>%sconstants defined mutually, containing %d holes:@,%a@]" discrete h
-               else if h = 1 then
-                 textf "@[<v 2>%sconstants defined mutually, containing 1 hole:@,%a@]" discrete
-               else textf "@[<v 2>%sconstants defined mutually:@,%a@]" discrete)
+              (if holes > 1 then
+                 textf "@[<v 2>%sconstants defined mutually, containing %d holes:@,%a@]" prefix
+                   holes
+               else if holes = 1 then
+                 textf "@[<v 2>%sconstants defined mutually, containing 1 hole:@,%a@]" prefix
+               else textf "@[<v 2>%sconstants defined mutually:@,%a@]" prefix)
                 (fun ppf names -> pp_print_list (fun ppf name -> pp_printed ppf name) ppf names)
                 (List.map (fun name -> print name) names))
       | Notation_defined name -> textf "notation %s defined" name
@@ -802,8 +815,13 @@ module Code = struct
             (Constr.to_string c)
       | Missing_constructor_type c ->
           textf "missing type for constructor %s of indexed datatype" (Constr.to_string c)
-      | Locked_variable -> text "variable locked behind external degeneracy"
-      | Locked_axiom a -> textf "axiom %a locked behind external degeneracy" pp_printed (print a)
+      | Locked_variable -> text "variable not available inside external degeneracy"
+      | Locked_constant a ->
+          textf "constant %a uses nonparametric axioms, can't appear inside an external degeneracy"
+            pp_printed (print a)
+      | Axiom_in_parametric_definition a ->
+          textf "constant %a uses nonparametric axioms, can't be used in a parametric definition"
+            pp_printed (print a)
       | Hole (n, ty) -> textf "@[<v 0>hole %s:@,%a@]" n pp_printed (print ty)
       | No_open_holes -> text "no open holes"
       | Open_holes n ->
