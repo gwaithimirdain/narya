@@ -5,6 +5,12 @@ on:
   push:
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    - uses: actions/checkout@v4
+    - uses: DeterminateSystems/nix-installer-action@main
+    - run: nix profile install nixpkgs#cachix
+    - run: env CACHIX_AUTH_TOKEN=${{ secrets.CACHIX_AUTH_TOKEN }} cachix watch-exec narya -- nix develop --accept-flake-config . --command dune test
   build:
     runs-on: ubuntu-latest
     steps:
@@ -12,4 +18,3 @@ jobs:
     - uses: DeterminateSystems/nix-installer-action@main
     - run: nix profile install nixpkgs#cachix
     - run: env CACHIX_AUTH_TOKEN=${{ secrets.CACHIX_AUTH_TOKEN }} cachix watch-exec narya -- nix build --accept-flake-config .
-    - run: env CACHIX_AUTH_TOKEN=${{ secrets.CACHIX_AUTH_TOKEN }} cachix watch-exec narya -- nix develop --accept-flake-config
