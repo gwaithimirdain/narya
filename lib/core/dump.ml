@@ -113,7 +113,7 @@ module F = struct
       | Ready v -> fprintf ppf "(%s%s, %a, %s)" (Field.to_string f) p (evaluation (depth - 1)) v l
       | _ -> fprintf ppf "(%s%s, (Deferred), %s)" (Field.to_string f) p l
 
-  and lazy_eval : type s i. int -> formatter -> s lazy_eval -> unit =
+  and lazy_eval : type s. int -> formatter -> s lazy_eval -> unit =
    fun depth ppf v ->
     if depth > 0 then (evaluation (depth - 1)) ppf (View.force_eval v)
     else

@@ -305,7 +305,7 @@ module Act = struct
         Neu { head; args; value; ty }
 
   (* Subroutine of gact_ty that acts on the instantiation arguments of a type, keeping them a full tube. *)
-  and gact_ty_instargs : type a b n any.
+  and gact_ty_instargs : type a b n.
       ?err:Code.t ->
       kinetic value option ->
       kinetic value ->
@@ -363,7 +363,7 @@ module Act = struct
         let doms', cods' = act_pi (doms, cods) fa in
         Pi (x, doms', cods')
 
-  and act_pi : type b m n.
+  and act_pi : type m n.
       (n, kinetic value) CubeOf.t * (n, unit) BindCube.t ->
       (m, n) deg ->
       (m, kinetic value) CubeOf.t * (m, unit) BindCube.t =
