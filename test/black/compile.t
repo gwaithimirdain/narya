@@ -75,6 +75,7 @@ Requiring a file multiple times
   > import "two"
   > import "three"
   > axiom a2 : Id A a0 a1
+  > EOF
 
   $ narya -v four.ny
    ￫ info[I0004]

@@ -19,7 +19,7 @@
   > echo (m+n)*(m+n)
   > echo n + n + n + n + n + n + n + n + n + n + n + n + n + n + n + n + n + n + n + n + n + n + n + n + n + n + n + n + n + n + n + n + n + n + n + n
   > echo n + n * n + n * n * n + n * n * n * n + n + n * n * n * n * n * n * n + n * n + n * n * n + n * n * n * n + n + n * n * n * n * n * n * n
-
+  > EOF
 
   $ narya -v nat.ny
    ￫ info[I0000]

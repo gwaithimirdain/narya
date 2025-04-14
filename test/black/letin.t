@@ -342,6 +342,7 @@ Let doesn't make a case tree unless it needs to:
   > echo foo
   > def foo' : prod (Type -> Type) Type := let z : prod (Type -> Type) Type := ( fst := X |-> X, snd := Type ) in z
   > echo foo'
+  > EOF
 
   $ narya -v letnocase.ny
    ￫ info[I0000]
@@ -397,6 +398,7 @@ Pattern-matching lambdas can be used in arbitrary places:
   > echo squaredec 1
   > axiom n : ℕ
   > echo squaredec n
+  > EOF
    ￫ info[I0000]
    ￮ constant ℕ defined
   
@@ -423,6 +425,7 @@ Pattern-matching lambdas can be used in arbitrary places:
   _match.0{…}
     : ℕ
   
+
 Matches in definitions of datatypes
 
   $ narya -v - <<EOF
@@ -444,6 +447,7 @@ Matches in definitions of datatypes
    ￫ info[I0000]
    ￮ constant f defined
   
+
 Matches in non-toplevel definitions of datatype
 
   $ narya -v - <<EOF
@@ -474,3 +478,4 @@ Matches in non-toplevel definitions of datatype
    ￫ info[I0000]
    ￮ constant f defined
   
+

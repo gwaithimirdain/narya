@@ -89,6 +89,7 @@ Requiring a file multiple times
   > import "two"
   > import "three"
   > axiom a2 : Id A a0 a1
+  > EOF
 
   $ narya -source-only -v twothree.ny
    ￫ info[I0003]
@@ -130,6 +131,7 @@ Requiring a file multiple times
   > import "two"
   > import "three"
   > axiom a2 : Id A a0 a1
+  > EOF
 
   $ narya -source-only -v four.ny
    ￫ info[I0003]

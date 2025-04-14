@@ -8,6 +8,7 @@ Printing higher-dimensional pi-types
   > axiom B' : B → Type
   > axiom E' : refl ((X ↦ X → Type) : Type → Type) A B E A' B'
   > echo refl ((A B ↦ (x:A) → B x) : (X:Type) → (X → Type) → Type) A B E A' B' E'
+  > EOF
 
   $ narya hdpi.ny
   refl Π A B E (x ↦ A' x) (x ↦ B' x) (x ⤇ E' x.0 x.1 x.2)

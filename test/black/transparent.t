@@ -30,6 +30,7 @@ Transparency and translucency
   > echo x3b
   > def y3b : prod3b ≔ (a,b)
   > echo y3b
+  > EOF
   x1
     : prod1
   
@@ -60,3 +61,4 @@ Transparency and translucency
   (a, b)
     : prod3b
   
+

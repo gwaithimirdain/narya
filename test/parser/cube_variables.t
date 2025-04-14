@@ -20,7 +20,8 @@ Testing parsing and printing of cube variables
   > axiom a0:A
   > axiom a1:A
   > axiom a2:Id A a0 a1
-  > echo refl f a0 a1 a2  
+  > echo refl f a0 a1 a2
+  > EOF
 
   $ narya cube_vars.ny
   x0 x1 x2 ↦ refl b

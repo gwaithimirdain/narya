@@ -124,6 +124,7 @@ Datatypes with nondiscrete parameters are not discrete:
   > axiom A : Type
   > axiom l : List A
   > def T ≔ (List A)⁽ᵈ⁾ l
+  > EOF
 
   $ narya -source-only -v -arity 1 -direction d -discreteness param.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
    ￫ info[I0000]
@@ -159,6 +160,7 @@ Even trivial parameters:
   > axiom A : Type
   > axiom l : param_empty A
   > def T ≔ (param_empty A)⁽ᵈ⁾ l
+  > EOF
 
   $ narya -source-only -v -arity 1 -direction d -discreteness param2.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
    ￫ info[I0000]
@@ -195,6 +197,7 @@ But datatypes with discrete parameters are discrete:
   > def param_empty (n:ℕ) : Type ≔ data [ ]
   > axiom l : param_empty zero.
   > def T ≔ (param_empty zero.)⁽ᵈ⁾ l
+  > EOF
 
   $ narya -source-only -v -arity 1 -direction d -discreteness param3.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
    ￫ info[I0000]
@@ -225,6 +228,7 @@ Datatypes with discrete indices are discrete:
   > axiom n : ℕ
   > axiom z : iszero n
   > def T ≔ (iszero n)⁽ᵈ⁾ z
+  > EOF
 
   $ narya -source-only -v -arity 1 -direction d -discreteness index.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
    ￫ info[I0000]
@@ -257,6 +261,7 @@ But datatypes with nondiscrete indices, even trivial ones, are not discrete:
   > def index_unit : N → Type ≔ data [ foo. : index_unit n ]
   > axiom z : index_unit n
   > def T ≔ (index_unit n)⁽ᵈ⁾ z
+  > EOF
 
   $ narya -source-only -v -arity 1 -direction d -discreteness index2.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
    ￫ info[I0001]
@@ -295,6 +300,7 @@ Datatypes with constructors having non-discrete arguments are not discrete:
   > def foo : Type ≔ data [ foo. (_:Type) ]
   > axiom f : foo
   > def T ≔ foo⁽ᵈ⁾ f
+  > EOF
 
   $ narya -source-only -v -arity 1 -direction d -discreteness constr.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
    ￫ info[I0000]
