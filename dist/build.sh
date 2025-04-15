@@ -5,6 +5,6 @@ mkdir -p $NAME
 cp ../proofgeneral/*.el $NAME
 cp ../result/bin/narya $NAME
 cp INSTALL.txt $NAME
-tar -czf $NAME.tar.gz $NAME
+tar -czf narya-master-static.tar.gz $NAME
 mkdir -p build/releases
-mv $NAME.tar.gz build/releases
+mv narya-master-static.tar.gz build/releases
