@@ -42,3 +42,7 @@ docs/build
 .envrc
 result
 .direnv/
+
+# Github deploy build
+dist/build/*
+dist/narya-*

@@ -19,3 +19,19 @@ jobs:
     - uses: DeterminateSystems/nix-installer-action@main
     - run: nix profile install nixpkgs#cachix
     - run: env CACHIX_AUTH_TOKEN=${{ secrets.CACHIX_AUTH_TOKEN }} cachix watch-exec narya -- nix build --accept-flake-config .
+    - run: cd dist && ./build.sh
+    - name: Upload static files as artifact
+      id: deployment
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: dist/build/
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
