@@ -4,9 +4,78 @@ Installation
 Static binary
 -------------
 
-A statically compiled binary, built automatically from the up-to-date development version, can be downloaded from `GitHub Pages <https://gwaithimirdain.github.io/narya/releases/narya-master-static.tar.gz>`_.  This ought to work on any Linux computer, and might work on other operating systems as well (e.g. using `Windows Subsystem for Linux <https://learn.microsoft.com/en-us/windows/wsl/install>`_ on Windows).  Please report your experiences!
+A statically compiled binary, built automatically with Nix from the up-to-date development version, can be downloaded `here <https://gwaithimirdain.github.io/narya/releases/narya-master-static.tar.gz>`_.  This ought to work on any Linux computer, including on Windows using WSL (see :ref:`On Windows`).
 
-The static binary distribution also includes the recommended Narya :ref:`ProofGeneral mode` and a shell script that should install it, along with ProofGeneral, on any Linux computer.  You'll need to install `Emacs <https://www.gnu.org/software/emacs/>`_ yourself first.
+The executable
+^^^^^^^^^^^^^^
+
+After downloading and unpacking the `static distribution <https://gwaithimirdain.github.io/narya/releases/narya-master-static.tar.gz>`_, place the ``narya`` executable in a directory that's in your ``PATH``.  On some flavors of Linux, the directory ``~/bin`` is automatically in your path if it exists, so the first thing to try is
+
+.. code-block:: bash
+
+  mkdir -p ~/bin
+  cp narya ~/bin
+
+Then restart your shell (i.e. terminal or command prompt) and try running ``narya``.  If that doesn't work, try logging out and back in again.  If that still doesn't work, try something like the following commands:
+
+.. code-block:: bash
+
+  export PATH="$HOME/bin:$PATH"
+  echo export PATH="\$HOME/bin:\$PATH" >>~/.bashrc
+
+and then once again restart your shell, or log out and back in again.
+
+.. _Static distribution ProofGeneral mode:
+
+ProofGeneral mode (automatic installation)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The static binary distribution also includes the recommended Narya :ref:`ProofGeneral mode` and a shell script that should install it, along with ProofGeneral, on any Linux machine (including WSL).  You'll need to install `Emacs <https://www.gnu.org/software/emacs/>`_ yourself first.  On many modern distributions you can install Emacs with
+
+.. code-block:: bash
+
+  sudo snap install emacs
+
+Then run the supplied shell script ``install-pg.sh`` from the static distribution:
+
+.. code-block:: bash
+
+  ./install-pg.sh
+
+If that doesn't work, please report a bug on `GitHub <https://github.com/gwaithimirdain/narya>`_; in the meantime, you can follow the instructions for :ref:`ProofGeneral mode (manual installation)`.  You will need to repeat this every time Emacs, ProofGeneral, or Narya is updated (at least until the Narya ProofGeneral mode stabilizes and we can get it incorporated in the ProofGeneral distribution).
+
+Finally, you can run
+
+.. code-block:: bash
+
+  emacs
+
+and create or open a ``.ny`` file to start Narya ProofGeneral.
+
+On Windows
+^^^^^^^^^^
+
+The easiest way to run Narya on Windows 11 is to use the static binary inside `Windows Subsystem for Linux <https://learn.microsoft.com/en-us/windows/wsl/install>`_.  To install WSL, open a command prompt and run
+
+.. code-block:: none
+
+  wsl --install
+
+After this finishes, you may need to reboot your computer and run the same command again in order to install a Linux distribution inside WSL.  Once WSL is installed, you can run
+
+.. code-block:: none
+
+  wsl
+
+to enter a Linux command prompt, and then follow the Linux instructions above.  If you downloaded the static distribtion in Windows, you can navigate to it in WSL using a path like ``/mnt/c/Users/YOUR NAME/Downloads``.  You can also download it directly from the WSL prompt with
+
+.. code-block:: none
+
+  wget https://gwaithimirdain.github.io/narya/releases/narya-master-static.tar.gz
+  tar -xzf narya-master-static.tar.gz
+  cd narya-*
+
+and then proceed with the above Linux instructions.  Note that when you run Emacs from within WSL, it should automatically pop up as a graphical window.
 
 
 Compiling from source
@@ -71,8 +140,9 @@ Narya can also be developed and installed with `Nix <https://nixos.org/>`_.
 
 3. Run ``nix build`` to build via nix.  On Linux, this will create a static executable that can be copied over to other Linux machines without problems.
 
-ProofGeneral (Emacs) mode
--------------------------
+
+ProofGeneral mode (manual installation)
+---------------------------------------
 
 The recommended mode of use of Narya is with its `ProofGeneral <https://proofgeneral.github.io/>`_ Emacs mode (for further description of this, see :ref:`ProofGeneral mode`).  Unfortunately, ProofGeneral doesn't make it easy for users to add new proof assistant modes.  The static binary distribution includes a shell script that tries to automate this process, which you can also run from its directory in the source tree:
 

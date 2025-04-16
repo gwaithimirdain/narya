@@ -1,6 +1,10 @@
 This is a static build of the master branch of Narya, an experimental proof assistant for higher-dimensional type theory.
 
-The executable 'narya' should run on any Linux machine.  Place it in a directory that is in your PATH.  On some flavors of Linux, the directory `~/bin` is automatically in your path if it exists, so the first thing to try would be
+
+LINUX
+=====
+
+The executable 'narya' should run on any Linux machine.  Place it in a directory that is in your PATH.  On some flavors of Linux, the directory `~/bin` is automatically in your path if it exists, so the first thing to try is
 
   mkdir -p ~/bin
   cp narya ~/bin
@@ -12,8 +16,36 @@ Then restart your shell (i.e. terminal or command prompt) and try running 'narya
 
 and then once again restart your shell, or log out and back in again.
 
-To install the recommended ProofGeneral interactive mode, first make sure Emacs is installed, and then run the supplied shell script 'install-pg.sh' from this directory:
+To install the recommended ProofGeneral interactive mode, first make sure Emacs is installed.  On many modern distributions you can install Emacs with
+
+  sudo snap install emacs
+
+Then run the supplied shell script 'install-pg.sh' from this directory:
 
   ./install-pg.sh
 
-If that doesn't work, please report a bug at https://github.com/gwaithimirdain/narya.  In the meantime, you can follow the instructions in the Narya documentation for installing ProofGeneral manually (https://narya.readthedocs.io/en/latest/installation.html#proofgeneral-emacs-mode).  You will need to repeat this every time Emacs, ProofGeneral, or Narya is updated.
+If that doesn't work, please report a bug at https://github.com/gwaithimirdain/narya.  In the meantime, you can follow the instructions in the Narya documentation for installing ProofGeneral manually (https://narya.readthedocs.io/en/latest/installation.html#proofgeneral-emacs-mode).  You will need to repeat this every time Emacs, ProofGeneral, or Narya is updated.  Finally, you can run
+
+  emacs
+
+and create or open a .ny file to start Narya ProofGeneral.
+
+
+WINDOWS
+=======
+
+The easiest way to run Narya on Windows 11 is inside WSL (Windows Subsystem for Linux).  First install WSL by opening a command prompt and running
+
+  wsl --install
+
+After this finishes, you may need to reboot your computer and run the same command again in order to install a Linux distribution inside WSL.  Once WSL is installed, you can run
+
+  wsl
+
+to enter a Linux command prompt, and then follow the Linux instructions.  If you downloaded this bundle in Windows, you can navigate to it in WSL using a path like "/mnt/c/Users/YOUR NAME/Downloads".  You can also download it directly from the WSL prompt with
+
+  wget https://gwaithimirdain.github.io/narya/releases/narya-master-static.tar.gz
+  tar -xzf narya-master-static.tar.gz
+  cd narya-*
+
+and then proceed with the above Linux instructions.  Note that when you run Emacs from within WSL, it should automatically pop up as a graphical window.
