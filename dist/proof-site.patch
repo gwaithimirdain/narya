@@ -1,0 +1,10 @@
+--- proof-site-old.el	2025-04-15 18:10:57.146355104 -0700
++++ proof-site.el	2025-02-27 16:37:32.268486304 -0800
+@@ -48,6 +48,7 @@
+       (easycrypt "EasyCrypt" "ec" "\\.eca?\\'")
+       (phox "PhoX" "phx" nil (".phi" ".pho"))
+       (qrhl "qRHL" "qrhl")
++      (narya "Narya" "ny" nil (".nyo"))
+ 
+       ;; Cut-and-paste management only
+ 

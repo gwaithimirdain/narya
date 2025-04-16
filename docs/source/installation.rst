@@ -6,7 +6,7 @@ Static binary
 
 A statically compiled binary, built automatically from the up-to-date development version, can be downloaded from `GitHub Pages <https://gwaithimirdain.github.io/narya/releases/narya-master-static.tar.gz>`_.  This ought to work on any Linux computer, and might work on other operating systems as well (e.g. using `Windows Subsystem for Linux <https://learn.microsoft.com/en-us/windows/wsl/install>`_ on Windows).  Please report your experiences!
 
-You will still need to manually install Emacs, ProofGeneral, and the Narya :ref:`ProofGeneral mode`.  The static distribution includes the necessary Emacs Lisp files and instructions.
+The static binary distribution also includes the recommended Narya :ref:`ProofGeneral mode` and a shell script that should install it, along with ProofGeneral, on any Linux computer.  You'll need to install `Emacs <https://www.gnu.org/software/emacs/>`_ yourself first.
 
 
 Compiling from source
@@ -60,10 +60,10 @@ Alternatively, instead of running ``dune install``, you can run the executable d
 
 If any of the above steps don't work for you, or if you have any other problems or encounter any bugs, please let us know by `opening an issue on GitHub <https://github.com/gwaithimirdain/narya/issues/new/choose>`_.
 
-With nix
---------
+Compiling with nix
+------------------
 
-Narya can also be developed and installed with nix.
+Narya can also be developed and installed with `Nix <https://nixos.org/>`_.
 
 1. Get a version of nix with `flakes <https://nixos.wiki/wiki/flakes>`_ enabled, for instance via `determinate nix <https://github.com/DeterminateSystems/nix-installer>`_.
 
@@ -74,7 +74,14 @@ Narya can also be developed and installed with nix.
 ProofGeneral (Emacs) mode
 -------------------------
 
-The recommended mode of use of Narya is with its `ProofGeneral <https://proofgeneral.github.io/>`_ Emacs mode (for further description of this, see :ref:`ProofGeneral mode`).  Unfortunately, ProofGeneral doesn't make it asy for users to add new proof assistant modes.  The steps to install Narya's ProofGeneral mode are:
+The recommended mode of use of Narya is with its `ProofGeneral <https://proofgeneral.github.io/>`_ Emacs mode (for further description of this, see :ref:`ProofGeneral mode`).  Unfortunately, ProofGeneral doesn't make it easy for users to add new proof assistant modes.  The static binary distribution includes a shell script that tries to automate this process, which you can also run from its directory in the source tree:
+
+.. code-block:: bash
+
+  cd dist
+  ./install-pg.sh
+
+If this doesn't work for you, you can follow these steps to install Narya's ProofGeneral mode manually.
 
 1. Install `Emacs <https://www.gnu.org/software/emacs/>`_ and ProofGeneral.  The recommended way to install ProofGeneral is from `MELPA <https://melpa.org/>`_ using Emacs' package manager, as described at the `ProofGeneral page <https://proofgeneral.github.io/>`_.
 
@@ -82,7 +89,13 @@ The recommended mode of use of Narya is with its `ProofGeneral <https://proofgen
 
 3. In this directory, create a subdirectory called ``narya`` and copy (or, better, symlink) the files in the proofgeneral directory of the Narya repository into that subdirectory.
 
-4. Then edit the file ``proof-site.el`` in the subdirectory ``generic`` of the ProofGeneral installation directory and add a line containing ``(narya "Narya" "ny" nil (".nyo"))`` to the list of proof assistants in the definition of the variable ``proof-assistant-table-default``.
+4. Then edit the file ``proof-site.el`` in the subdirectory ``generic`` of the ProofGeneral installation directory and add this line line
+
+  .. code-block:: none
+
+    (narya "Narya" "ny" nil (".nyo"))
+
+  to the list of proof assistants in the definition of the variable ``proof-assistant-table-default``.
 
 5. If there is a byte-compiled Emacs Lisp file ``proof-site.elc`` in the ``generic`` directory, either delete it, or re-create it from your edited ``proof-site.el`` using ``M-x byte-compile-file``.
 

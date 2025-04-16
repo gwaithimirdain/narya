@@ -1,19 +1,19 @@
-This is a static build of the master branch of Narya.  The executable 'narya' should run on any Linux machine.  You may want to place it in a 'bin' directory that is in your PATH.
+This is a static build of the master branch of Narya, an experimental proof assistant for higher-dimensional type theory.
 
-To install the recommended ProofGeneral interactive mode, follow the following steps:
+The executable 'narya' should run on any Linux machine.  Place it in a directory that is in your PATH.  On some flavors of Linux, the directory `~/bin` is automatically in your path if it exists, so the first thing to try would be
 
-1. Install Emacs <https://www.gnu.org/software/emacs/> and ProofGeneral.  The recommended way to install ProofGeneral is from MELPA <https://melpa.org/> using Emacs' package manager, as described at the ProofGeneral page <https://proofgeneral.github.io/>.
+  mkdir -p ~/bin
+  cp narya ~/bin
 
-2. Find the ProofGeneral installation directory, which may be something like "$HOME/.emacs.d/elpa/proof-general-XXXXXXXX-XXXX".
+Then restart your shell (i.e. terminal or command prompt) and try running 'narya'.  If that doesn't work, try logging out and back in again.  If that still doesn't work, try something like the following commands:
 
-3. In this directory, create a subdirectory called "narya" and copy (or, better, symlink) the ".el" files from this directory into that subdirectory.
+  export PATH="$HOME/bin:$PATH"
+  echo export PATH="\$HOME/bin:\$PATH" >>~/.bashrc
 
-4. Then edit the file "proof-site.el" in the subdirectory "generic" of the ProofGeneral installation directory and add a line containing
+and then once again restart your shell, or log out and back in again.
 
-   (narya "Narya" "ny" nil (".nyo"))
+To install the recommended ProofGeneral interactive mode, first make sure Emacs is installed, and then run the supplied shell script 'install-pg.sh' from this directory:
 
-   to the list of proof assistants in the definition of the variable "proof-assistant-table-default".
+  ./install-pg.sh
 
-5. If there is a byte-compiled Emacs Lisp file "proof-site.elc" in the "generic" directory, either delete it, or re-create it from your edited "proof-site.el" using "M-x byte-compile-file".
-
-6. Restart Emacs.
+If that doesn't work, please report a bug at https://github.com/gwaithimirdain/narya.  In the meantime, you can follow the instructions in the Narya documentation for installing ProofGeneral manually (https://narya.readthedocs.io/en/latest/installation.html#proofgeneral-emacs-mode).  You will need to repeat this every time Emacs, ProofGeneral, or Narya is updated.
