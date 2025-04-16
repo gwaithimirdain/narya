@@ -190,12 +190,12 @@ let utf8_superscript =
         "utf-8 superscript" in
     (let* _ = uchar Token.super_rparen_uchar in
      return (Superscript (Token.of_super s)))
-    </> return (Invalid_superscript (Token.of_super s)))
+    </> return (Invalid_superscript ("(" ^ Token.of_super s)))
    </> (let* _ = uchar Token.super_rparen_uchar in
-        return (Invalid_superscript ""))
-   </> return (Invalid_superscript ""))
+        return (Invalid_superscript "()"))
+   </> return (Invalid_superscript "("))
   </> let* _ = uchar Token.super_rparen_uchar in
-      return (Invalid_superscript "")
+      return (Invalid_superscript ")")
 
 (* An ASCII superscript is a double caret followed (without any space) by a string of numbers and letters between parentheses.  We don't ever want to fail lexing, so any string starting with a double caret that doesn't look like this is lexed as an "invalid superscript".  (Single carats can be ASCII operators.) *)
 let caret_superscript =
@@ -209,8 +209,10 @@ let caret_superscript =
            "caret superscript" in
        (let* _ = char ')' in
         return (Superscript s))
-       </> return (Invalid_superscript s))
-      </> return (Invalid_superscript ""))
+       </> return (Invalid_superscript ("(" ^ s)))
+      </> (let* _ = char ')' in
+           return (Invalid_superscript "()"))
+      </> return (Invalid_superscript "("))
      </> return (Invalid_superscript ""))
     ""
 
