@@ -17,5 +17,6 @@
     lambda-term
     fmlib
     fileutils
-    pprint))
+    pprint
+    ppx_blob))
 (generate_opam_files)
