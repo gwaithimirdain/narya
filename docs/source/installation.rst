@@ -16,11 +16,10 @@ After downloading and unpacking the `static distribution <https://gwaithimirdain
   mkdir -p ~/bin
   cp narya ~/bin
 
-Then restart your shell (i.e. terminal or command prompt) and try running ``narya``.  If that doesn't work, try logging out and back in again.  If that still doesn't work, try something like the following commands:
+Then restart your shell (i.e. terminal or command prompt) and try running ``narya``.  If that doesn't work, try logging out and back in again.  If that still doesn't work, try something like the following:
 
 .. code-block:: bash
 
-  export PATH="$HOME/bin:$PATH"
   echo export PATH="\$HOME/bin:\$PATH" >>~/.bashrc
 
 and then once again restart your shell, or log out and back in again.
