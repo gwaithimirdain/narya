@@ -14,12 +14,14 @@ open Top
 let usage_msg = "narya [options] <file1> [<file2> ...]"
 let interactive = ref false
 let proofgeneral = ref false
+let show_version = ref false
 
 (* Undocumented flag used for testing: interpret a given file or command-line string as if it were entered in interactive mode. *)
 let fake_interacts : string Bwd.t ref = ref Emp
 
 let speclist =
   [
+    ("-version", Arg.Set show_version, "Show version and exit");
     ("-interactive", Arg.Set interactive, "Enter interactive mode (also -i)");
     ("-i", Arg.Set interactive, "");
     ("-proofgeneral", Arg.Set proofgeneral, "Enter proof general interaction mode");
@@ -75,6 +77,9 @@ let speclist =
 (* Parse the command-line arguments and ensure that we have something to do. *)
 let () =
   Arg.parse speclist anon_arg usage_msg;
+  if !show_version then (
+    print_endline (String.trim [%blob "version.txt"]);
+    exit 0);
   if
     Bwd.is_empty !inputs
     && (not !interactive)

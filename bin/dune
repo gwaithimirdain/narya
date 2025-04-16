@@ -1,4 +1,17 @@
+(rule
+  (deps (universe))
+  (action
+    (with-stdout-to version.txt
+      (progn
+        (echo "Narya development version -- built from commit ")
+        (system "(git show -s --format=%h 2>/dev/null || echo '(unknown)') | tr -d '\n'")
+        (echo " on ")
+        (system "date +'%Y-%m-%d'")))))
+
 (executable
   (libraries core parser top react lwt lambda-term)
   (name narya)
-  (public_name narya))
+  (public_name narya)
+  (preprocess (pps ppx_blob))
+  (preprocessor_deps
+    (file version.txt)))
