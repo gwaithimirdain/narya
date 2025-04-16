@@ -73,9 +73,9 @@ to enter a Linux command prompt, and then follow the Linux instructions above.  
 
   wget https://gwaithimirdain.github.io/narya/releases/narya-master-static.tar.gz
   tar -xzf narya-master-static.tar.gz
-  cd narya-*
+  cd narya-xxxxxxx-YYYYMMDD
 
-and then proceed with the above Linux instructions.  Note that when you run Emacs from within WSL, it should automatically pop up as a graphical window.
+(for the appropriate directory name) and then proceed with the above Linux instructions.  Note that when you run Emacs from within WSL, it should automatically pop up as a graphical window.
 
 
 Compiling from source
