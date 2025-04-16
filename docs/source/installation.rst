@@ -1,10 +1,18 @@
 Installation
 ============
 
-From source
-------------
+Static binary
+-------------
 
-There is no distribution yet, so you have to compile Narya yourself.  This requires a recent version of OCaml and various libraries.  Currently Narya is developed with OCaml 5.3.0; as far as I know, it also compiles with any version after 5.2.1, but this is not regularly verified.  The steps to compile Narya are:
+A statically compiled binary, built automatically from the up-to-date development version, can be downloaded from `GitHub Pages <https://gwaithimirdain.github.io/narya/releases/narya-master-static.tar.gz>`_.  This ought to work on any Linux computer, and might work on other operating systems as well (e.g. using `Windows Subsystem for Linux <https://learn.microsoft.com/en-us/windows/wsl/install>`_ on Windows).  Please report your experiences!
+
+You will still need to manually install Emacs, ProofGeneral, and the Narya :ref:`ProofGeneral mode`.  The static distribution includes the necessary Emacs Lisp files and instructions.
+
+
+Compiling from source
+---------------------
+
+If the static binary does not work for you, or if you want to edit the Narya code, you will have to compile it yourself.  This requires a recent version of OCaml and various libraries.  Currently Narya is developed with OCaml 5.3.0; as far as I know, it also compiles with any version after 5.2.1, but this is not regularly verified.  The steps to compile Narya are:
 
 1. Install `OCaml <https://ocaml.org/>`_ and its package manager `Opam <https://opam.ocaml.org/>`_.  How to do this this may vary depending on your operating system.
 
@@ -57,11 +65,11 @@ With nix
 
 Narya can also be developed and installed with nix.
 
-1. Get a version of nix with `flakes<https://nixos.wiki/wiki/flakes>`_ enabled, for instance via `determinate nix<https://github.com/DeterminateSystems/nix-installer>`_.
+1. Get a version of nix with `flakes <https://nixos.wiki/wiki/flakes>`_ enabled, for instance via `determinate nix <https://github.com/DeterminateSystems/nix-installer>`_.
 
 2. Run ``nix develop`` to open a shell with all of the necessary dependencies for running ``dune build``. This may ask if you accept using a cache; you can say yes if you want to speed up the build process, or no if you want everything built on your own machine.
 
-3. Run ``nix build`` to build via nix, which on linux will create a static executable that can be copied over to other linux machines without problems.
+3. Run ``nix build`` to build via nix.  On Linux, this will create a static executable that can be copied over to other Linux machines without problems.
 
 ProofGeneral (Emacs) mode
 -------------------------
