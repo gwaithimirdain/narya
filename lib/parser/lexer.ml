@@ -362,6 +362,11 @@ module Lex_and_parse_single =
     (Single_token.Parser)
 
 let single str =
+  (* The lexer performs Range effects, so we have to set up handlers for those. *)
+  let env : Range.Data.t =
+    { source = `String { content = str; title = None }; length = Int64.of_int (String.length str) }
+  in
+  Range.run ~env @@ fun () ->
   let open Lex_and_parse_single in
   let p = run_on_string str (make Parser.start Single_token.Parser.start) in
   if has_succeeded p then
