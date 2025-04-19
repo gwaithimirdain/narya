@@ -1,9 +1,14 @@
 (lang dune 3.11)
+(license GPL-3.0-or-later)
+(authors "Michael Shulman <shulman@sandiego.edu>")
+(maintainers "Michael Shulman <shulman@sandiego.edu>")
+(source (github gwaithimirdain/narya))
 (package
   (name narya)
+  (synopsis "A proof assistant for higher-dimensional type theories")
   (depends
     (ocaml
-      (>= 5.2.0))
+      (>= 5.2.1))
     dune
     zarith
     zarith_stubs_js
