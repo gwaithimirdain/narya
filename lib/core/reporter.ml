@@ -137,7 +137,6 @@ module Code = struct
     | Matching_wont_refine : string * printable option -> t
     | Dimension_mismatch : string * 'a D.t * 'b D.t -> t
     | Invalid_variable_face : 'a D.t * ('n, 'm) sface -> t
-    | Unsupported_numeral : Q.t -> t
     | Anomaly : string -> t
     | No_such_level : printable -> t
     | Redefining_constant : string list -> t
@@ -285,7 +284,6 @@ module Code = struct
     | Matching_on_nondatatype _ -> Error
     | Matching_wont_refine _ -> Hint
     | Dimension_mismatch _ -> Bug (* Sometimes Error? *)
-    | Unsupported_numeral _ -> Error
     | Anomaly _ -> Bug
     | No_such_level _ -> Bug
     | Redefining_constant _ -> Warning
@@ -366,7 +364,6 @@ module Code = struct
     | Invalid_degeneracy_action _ -> "E0003"
     (* Unimplemented future features *)
     | Unimplemented _ -> "E0100"
-    | Unsupported_numeral _ -> "E0101"
     (* Parse errors *)
     | Parse_error -> "E0200"
     | Parsing_ambiguity _ -> "E0201"
@@ -740,7 +737,6 @@ module Code = struct
           textf "match will not refine the goal or context (%s)" msg
       | Dimension_mismatch (op, a, b) ->
           textf "dimension mismatch in %s (%s ≠ %s)" op (string_of_dim0 a) (string_of_dim0 b)
-      | Unsupported_numeral n -> textf "unsupported numeral: %a" Q.pp_print n
       | Anomaly str -> textf "anomaly: %s" str
       | No_such_level i -> textf "@[<hov 2>no level variable@ %a@ in context@]" pp_printed (print i)
       | Redefining_constant name ->
