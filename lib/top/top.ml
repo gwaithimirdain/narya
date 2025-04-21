@@ -18,6 +18,7 @@ let arity = ref 2
 let refl_char = ref 'e'
 let refl_names = ref [ "refl"; "Id" ]
 let internal = ref true
+let hott = ref false
 let discreteness = ref false
 let source_only = ref false
 let number_metas = ref true
@@ -32,7 +33,8 @@ let marshal_flags chan =
   Marshal.to_channel chan !refl_char [];
   Marshal.to_channel chan !refl_names [];
   Marshal.to_channel chan !internal [];
-  Marshal.to_channel chan !discreteness []
+  Marshal.to_channel chan !discreteness [];
+  Marshal.to_channel chan !hott []
 
 (* Unmarshal saved flags from a file and check that they agree with the current ones. *)
 let unmarshal_flags chan =
@@ -41,14 +43,22 @@ let unmarshal_flags chan =
   let rs = (Marshal.from_channel chan : string list) in
   let int = (Marshal.from_channel chan : bool) in
   let disc = (Marshal.from_channel chan : bool) in
-  if ar = !arity && rc = !refl_char && rs = !refl_names && int = !internal && disc = !discreteness
+  let ho = (Marshal.from_channel chan : bool) in
+  if
+    ar = !arity
+    && rc = !refl_char
+    && rs = !refl_names
+    && int = !internal
+    && disc = !discreteness
+    && ho = !hott
   then Ok ()
   else
     Error
-      (Printf.sprintf "-arity %d -direction %s %s%s" ar
+      (Printf.sprintf "-arity %d -direction %s %s%s%s" ar
          (String.concat "," (String.make 1 rc :: rs))
          (if int then "-internal" else "-external")
-         (if disc then " -discreteness" else ""))
+         (if disc then " -discreteness" else "")
+         (if ho then " -hott" else ""))
 
 (* Given a string like "r,refl,Id" as in a command-line "-direction" argument, set refl_char and refl_names *)
 let set_refls str =
@@ -93,6 +103,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols f =
   Core.Discrete.run ~env:!discreteness @@ fun () ->
   if !arity < 1 || !arity > 9 then Reporter.fatal (Unimplemented "arities outside [1,9]");
   if !discreteness && !arity > 1 then Reporter.fatal (Unimplemented "discreteness with arity > 1");
+  if !hott && (!arity <> 2 || !discreteness || not !internal) then Reporter.fatal Invalid_flags;
   Dim.Endpoints.run ~arity:!arity ~refl_char:!refl_char ~refl_names:!refl_names ~internal:!internal
   @@ fun () ->
   (* We have to put Reporter.run inside Endpoints.run, so we can display dimensions *)
