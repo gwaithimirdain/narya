@@ -12,7 +12,12 @@ module Endpoints : sig
   type wrapped = Wrap : 'l len -> wrapped
 
   val run :
-    arity:int -> refl_char:char -> refl_names:string list -> internal:bool -> (unit -> 'a) -> 'a
+    arity:int ->
+    refl_char:char ->
+    refl_names:string list ->
+    internal:bool ->
+    (D.wrapped -> 'a) ->
+    'a
 
   val uniq : 'l1 len -> 'l2 len -> ('l1, 'l2) Eq.t
   val len : 'l len -> 'l N.t
