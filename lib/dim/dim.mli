@@ -7,8 +7,6 @@ open Monoid
 module D : MonoidPos
 module Dmap : MAP_MAKER with module Key := D
 
-type dim_wrapped = Wrap : 'n D.t -> dim_wrapped
-
 module Endpoints : sig
   type 'l len
   type wrapped = Wrap : 'l len -> wrapped

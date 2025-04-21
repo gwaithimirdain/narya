@@ -48,7 +48,7 @@ module Abwd (F : Fam2) = struct
   type 'a entry = Entry : ('i t * ('i, 'a) F.t) -> 'a entry
   type 'a t = 'a entry Bwd.t
 
-  let rec find_opt : type i a. a t -> i field -> ((i, a) F.t, dim_wrapped option) Result.t =
+  let rec find_opt : type i a. a t -> i field -> ((i, a) F.t, D.wrapped option) Result.t =
    fun fields ((name, i) as fld) ->
     match fields with
     | Emp -> Error None

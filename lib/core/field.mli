@@ -24,6 +24,6 @@ module Abwd : functor (F : Fam2) -> sig
   type 'a entry = Entry : ('i t * ('i, 'a) F.t) -> 'a entry
   type 'a t = 'a entry Bwd.t
 
-  val find_opt : 'a t -> 'i field -> (('i, 'a) F.t, dim_wrapped option) Result.t
+  val find_opt : 'a t -> 'i field -> (('i, 'a) F.t, D.wrapped option) Result.t
   val find_string_opt : 'a t -> string -> 'a entry option
 end

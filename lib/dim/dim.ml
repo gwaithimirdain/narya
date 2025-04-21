@@ -1,8 +1,6 @@
 module D = D
 module Dmap = Util.Nmap
 
-type dim_wrapped = Wrap : 'n D.t -> dim_wrapped
-
 let is_pos : type n. n D.t -> bool = function
   | Nat Zero -> false
   | Nat (Suc _) -> true

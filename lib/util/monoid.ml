@@ -3,6 +3,7 @@
 module type Monoid = sig
   (* The elements of the monoid are the types that satisfy this predicate. *)
   type 'a t
+  type wrapped = Wrap : 'a t -> wrapped
 
   val compare : 'a t -> 'b t -> ('a, 'b) Eq.compare
 

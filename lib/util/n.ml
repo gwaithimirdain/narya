@@ -34,6 +34,7 @@ let suc_plus : type m n p. (m, n suc, p) plus -> (m suc, n, p) plus =
 
 (* A type is a natural number if there is something it can be added to on the right. *)
 type _ t = Nat : ('any, 'n, 'anyn) plus -> 'n t
+type wrapped = Wrap : 'n t -> wrapped
 
 (* Zero is a natural number *)
 let zero : zero t = Nat Zero
