@@ -879,41 +879,34 @@ and eval_structfield : type m n mn a status i et.
   | Lower (tm, l) -> Lower (lazy_eval env tm, l)
   | Higher (terms : (n, i, a) PlusPbijmap.t) ->
       let intrinsic = PlusPbijmap.intrinsic terms in
-      Value.Structfield.Higher
-        {
-          intrinsic;
-          plusdim = m_n;
-          terms;
-          env;
-          deg = id_deg mn;
-          vals =
-            InsmapOf.build mn intrinsic
-              {
-                build =
-                  (fun (type olds) (ins : (mn, olds, i) insertion) ->
-                    let (Unplus_ins
-                           (type news newh t r)
-                           ((newins, newshuf, mtr, _ts) :
-                             (n, news, newh) insertion
-                             * (r, newh, i) shuffle
-                             * (m, t, r) insertion
-                             * (t, news, olds) D.plus)) =
-                      unplus_ins m m_n ins in
-                    let newpbij = Pbij (newins, newshuf) in
-                    match PlusPbijmap.find newpbij terms with
-                    | PlusFam None -> None
-                    | PlusFam (Some (ra, tm)) ->
-                        let (Plus tr) = D.plus (cod_right_ins mtr) in
-                        (* mtrp : m ≅ t+r *)
-                        let mtrp = deg_of_perm (perm_inv (perm_of_ins_plus mtr tr)) in
-                        (* env2 is (t+r)-dimensional *)
-                        let env2 = act_env env (op_of_deg mtrp) in
-                        (* env3 is t-dimensional *)
-                        let env3 = Shift (env2, tr, ra) in
-                        (* We don't need to further permute the result, as all the information about the permutation ins was captured in newpbij and mtr. *)
-                        Some (lazy_eval env3 tm));
-              };
-        }
+      let vals =
+        InsmapOf.build mn intrinsic
+          {
+            build =
+              (fun (type olds) (ins : (mn, olds, i) insertion) ->
+                let (Unplus_ins
+                       (type news newh t r)
+                       ((newins, newshuf, mtr, _ts) :
+                         (n, news, newh) insertion
+                         * (r, newh, i) shuffle
+                         * (m, t, r) insertion
+                         * (t, news, olds) D.plus)) =
+                  unplus_ins m m_n ins in
+                let newpbij = Pbij (newins, newshuf) in
+                match PlusPbijmap.find newpbij terms with
+                | PlusFam None -> None
+                | PlusFam (Some (ra, tm)) ->
+                    let (Plus tr) = D.plus (cod_right_ins mtr) in
+                    (* mtrp : m ≅ t+r *)
+                    let mtrp = deg_of_perm (perm_inv (perm_of_ins_plus mtr tr)) in
+                    (* env2 is (t+r)-dimensional *)
+                    let env2 = act_env env (op_of_deg mtrp) in
+                    (* env3 is t-dimensional *)
+                    let env3 = Shift (env2, tr, ra) in
+                    (* We don't need to further permute the result, as all the information about the permutation ins was captured in newpbij and mtr. *)
+                    Some (lazy_eval env3 tm));
+          } in
+      Value.Structfield.Higher { intrinsic; plusdim = m_n; terms; env; deg = id_deg mn; vals }
 
 and eval_binder : type m n mn b s.
     (m, b) env -> (m, n, mn) D.plus -> ((b, n) snoc, s) term -> (mn, s) Value.binder =
