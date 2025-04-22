@@ -546,7 +546,9 @@ and field : type n k nk s. s value -> k Field.t -> (nk, n, k) insertion -> s eva
                     Val newtm
                 | _ -> Val newtm)
             | Realize _ -> fatal (Anomaly "realized neutral"))
-      | _ -> fatal ~severity:Asai.Diagnostic.Bug (No_such_field (`Other, `Ins (fld, fldins))))
+      | _ ->
+          fatal ~severity:Asai.Diagnostic.Bug
+            (No_such_field (`Other (Dump.Val tm), `Ins (fld, fldins))))
 
 and field_term : type n k nk. kinetic value -> k Field.t -> (nk, n, k) insertion -> kinetic value =
  fun x fld fldins ->
@@ -719,36 +721,56 @@ and tyof_field : type m h s r i c.
          tyargs ) :
         head * mn canonical * (D.zero, mn, mn, normal) TubeOf.t) -> (
       (* The type cannot have a nonidentity degeneracy applied to it (though it can be at a higher dimension). *)
-      if Option.is_none (is_id_ins codatains) then
-        fatal ~severity (No_such_field (`Degenerated_record eta, errfld));
-      let m = cod_left_ins codatains in
-      let (Plus mn) = D.plus (cod_right_ins codatains) in
-      let mn' = D.plus_out m mn in
-      (* Note that n is the Gel dimension while m is the evaluation dimension.  So we need an m+n tube of type arguments, but the insertion labeling the field being accessed has only m as its evaluation dimension. *)
-      match (D.compare mn' (TubeOf.inst tyargs), D.compare m (dom_ins fldins)) with
-      | Neq, _ ->
-          fatal ~severity (Dimension_mismatch ("tyof_field tyargs", mn', TubeOf.inst tyargs))
-      | _, Neq -> fatal ~severity (Dimension_mismatch ("tyof_field evaluation", m, dom_ins fldins))
-      | Eq, Eq -> (
-          match Term.CodatafieldAbwd.find_opt fields fld with
-          | Ok fldty ->
-              let shuf : (r, h, i, a) shuffleable =
-                match shuf with
-                | Trivial -> Trivial
-                | Nontrivial { dbwd; _ } -> (
-                    match Dbwd.compare dbwd (length_env env) with
-                    | Eq -> shuf
-                    | Neq -> fatal (Anomaly "context length mismatch in tyof_field")) in
-              tyof_codatafield tm fld fldty env tyargs m mn ~shuf fldins
-          | Error None -> fatal ~severity (No_such_field (`Record (eta, phead head), errfld))
-          | Error (Some (Wrap i)) ->
-              let errsuffix =
-                match shuf with
-                | Trivial -> `Ins fldins
-                | Nontrivial { shuffle; _ } -> `Pbij (Pbij (fldins, shuffle)) in
-              fatal ~severity (Wrong_dimension_of_field (eta, phead head, `Field fld, i, errsuffix))
-          ))
-  | _ -> fatal ~severity (No_such_field (`Other, errfld))
+      match is_id_ins codatains with
+      | None -> fatal ~severity (No_such_field (`Degenerated_record eta, errfld))
+      | Some mn -> tyof_field_giventype tm head eta env mn fields tyargs fld ~shuf fldins)
+  | _ ->
+      let p =
+        match tm with
+        | Ok tm -> Dump.Val tm
+        | Error _err -> PString "[ERROR]" in
+      fatal ~severity (No_such_field (`Other p, errfld))
+
+and tyof_field_giventype : type m n mn h s r i c et a k.
+    (kinetic value, Code.t) Result.t ->
+    head ->
+    (potential, et) eta ->
+    (m, a) env ->
+    (m, n, mn) D.plus ->
+    (a * n * et) Term.CodatafieldAbwd.t ->
+    (D.zero, mn, mn, normal) TubeOf.t ->
+    i Field.t ->
+    shuf:(r, h, i, c) shuffleable ->
+    (k, s, h) insertion ->
+    kinetic value =
+ fun tm head eta env mn fields tyargs fld ~shuf fldins ->
+  let severity = Asai.Diagnostic.Bug in
+  let errfld =
+    match shuf with
+    | Trivial -> `Ins (fld, fldins)
+    | Nontrivial { shuffle; _ } -> `Pbij (fld, Pbij (fldins, shuffle)) in
+  let m = dim_env env in
+  (* Note that n is the Gel dimension while m is the evaluation dimension.  So we need an m+n tube of type arguments, but the insertion labeling the field being accessed has only m as its evaluation dimension. *)
+  match D.compare m (dom_ins fldins) with
+  | Neq -> fatal ~severity (Dimension_mismatch ("tyof_field evaluation", m, dom_ins fldins))
+  | Eq -> (
+      match Term.CodatafieldAbwd.find_opt fields fld with
+      | Ok fldty ->
+          let shuf : (r, h, i, a) shuffleable =
+            match shuf with
+            | Trivial -> Trivial
+            | Nontrivial { dbwd; _ } -> (
+                match Dbwd.compare dbwd (length_env env) with
+                | Eq -> shuf
+                | Neq -> fatal (Anomaly "context length mismatch in tyof_field")) in
+          tyof_codatafield tm fld fldty env tyargs m mn ~shuf fldins
+      | Error None -> fatal ~severity (No_such_field (`Record (eta, phead head), errfld))
+      | Error (Some (Wrap i)) ->
+          let errsuffix =
+            match shuf with
+            | Trivial -> `Ins fldins
+            | Nontrivial { shuffle; _ } -> `Pbij (Pbij (fldins, shuffle)) in
+          fatal ~severity (Wrong_dimension_of_field (eta, phead head, `Field fld, i, errsuffix)))
 
 (* This version is for when we are synthesizing the insertion, so we return the resulting insertion along with the type.  The field might also be given positionally in this case, so we also return the field name when we find it.  In this case, mismatches in field names or dimensions are user errors. *)
 and tyof_field_withname : type a b.
@@ -762,6 +784,10 @@ and tyof_field_withname : type a b.
     match infld with
     | `Name (str, ints) -> `Strings (str, ints)
     | `Int n -> `Int n in
+  let errtm =
+    match tm with
+    | Ok tm -> PVal (ctx, tm)
+    | Error _err -> PString "[ERROR]" in
   match view_type ~severity:Asai.Diagnostic.Error ty "tyof_field" with
   | Canonical (head, Codata { env; ins = codatains; fields; opacity = _; eta; termctx = _ }, tyargs)
     -> (
@@ -771,7 +797,7 @@ and tyof_field_withname : type a b.
       | Some mn ->
           let err = Code.No_such_field (`Record (eta, phead head), errfld) in
           tyof_field_withname_giventype ctx tm ty eta env mn fields tyargs infld err)
-  | _ -> fatal (No_such_field (`Other, errfld))
+  | _ -> fatal (No_such_field (`Other errtm, errfld))
 
 (* Subroutine of tyof_field_withname for after we've identified the type of the head as either a codatatype or a universe (for fibrancy fields). *)
 and tyof_field_withname_giventype : type a b m n mn c et.

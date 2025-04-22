@@ -96,7 +96,7 @@ module Code = struct
     | No_such_field :
         [ `Record of ('s, 'et) eta * printable
         | `Nonrecord of printable
-        | `Other
+        | `Other of printable
         | `Degenerated_record of ('s, 'et) eta ]
         (* We don't require the i's to match, since that might be part of the error. *)
         * [ `Ins of 'i Field.t * ('n, 't, 'i2) insertion
@@ -636,7 +636,7 @@ module Code = struct
               textf "%s type %a has no field named %s" (record_or_codata eta) pp_printed (print d) f
           | `Nonrecord d ->
               textf "non-record/codata type %a has no field named %s" pp_printed (print d) f
-          | `Other -> textf "term has no field named %s" f
+          | `Other tm -> textf "term %a has no field named %s" pp_printed (print tm) f
           | `Degenerated_record eta ->
               let rc = record_or_codata eta in
               textf
