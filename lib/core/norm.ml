@@ -56,7 +56,7 @@ let rec view_term : type s. s value -> s value =
         (* For glued evaluation, when viewing a term, we force its value and proceed to view that value instead. *)
         match force_eval value with
         | Realize v -> view_term v
-        | Val (Canonical (Data d, _)) when Option.is_none !(d.tyfam) ->
+        | Val (Canonical { canonical = Data d; _ }) when Option.is_none !(d.tyfam) ->
             d.tyfam := Some (lazy { tm; ty = Lazy.force ty });
             tm
         | _ -> tm)
@@ -69,7 +69,7 @@ and view_type ?(severity = Asai.Diagnostic.Bug) (ty : kinetic value) (err : stri
   | Neu { head; args; value; ty = _ } -> (
       (* Glued evaluation: when viewing a type, we force its value and proceed to view that value instead. *)
       match force_eval value with
-      | Val (Canonical (c, tyargs)) -> (
+      | Val (Canonical { canonical = c; tyargs }) -> (
           (match c with
           | Data d when Option.is_none !(d.tyfam) ->
               d.tyfam := Some (lazy { tm = ty; ty = inst (universe (TubeOf.inst tyargs)) tyargs })
@@ -134,7 +134,7 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
             let newtm = Neu { head; args = Emp; value = ready value; ty } in
             match value with
             | Realize x -> Val x
-            | Val (Canonical (Data d, _)) ->
+            | Val (Canonical { canonical = Data d; _ }) ->
                 if Option.is_none !(d.tyfam) then
                   d.tyfam := Some (lazy { tm = newtm; ty = Lazy.force ty });
                 Val newtm
@@ -316,7 +316,11 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
                        }) in
                 let subdoms, subcods = (CubeOf.subcube fab doms, BindCube.subcube fab cods) in
                 let head : head = Pi (x, subdoms, subcods) in
-                let value = ready (Val (Canonical (Pi (x, subdoms, subcods), TubeOf.empty kl))) in
+                let value =
+                  ready
+                    (Val
+                       (Canonical { canonical = Pi (x, subdoms, subcods); tyargs = TubeOf.empty kl }))
+                in
                 let tm = Neu { head; args = Emp; value; ty = Lazy.from_val ty } in
                 let ntm = { tm; ty } in
                 Hashtbl.add pitbl (SFace_of fab) ntm;
@@ -367,8 +371,8 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
       | _ -> Unrealized)
   | Realize tm -> Realize (eval_term env tm)
   | Canonical c ->
-      let (Any c) = eval_canonical env c in
-      Val (Canonical (c, TubeOf.empty (dim_canonical c)))
+      let (Any canonical) = eval_canonical env c in
+      Val (Canonical { canonical; tyargs = TubeOf.empty (dim_canonical canonical) })
 
 and eval_with_boundary : type m a. (m, a) env -> (a, kinetic) term -> (m, kinetic value) CubeOf.t =
  fun env tm ->
@@ -429,8 +433,11 @@ and apply : type n s. s value -> (n, kinetic value) CubeOf.t -> s evaluation =
                 | Unrealized -> Val (Neu { head; args; value = ready Unrealized; ty = newty })
                 | Val
                     (Canonical
-                       ( Data { dim; tyfam; indices = Unfilled _ as indices; constrs; discrete },
-                         data_tyargs )) -> (
+                       {
+                         canonical =
+                           Data { dim; tyfam; indices = Unfilled _ as indices; constrs; discrete };
+                         tyargs = data_tyargs;
+                       }) -> (
                     match (D.compare dim k, D.compare_zero (TubeOf.inst data_tyargs)) with
                     | Neq, _ -> fatal (Dimension_mismatch ("apply", dim, k))
                     | _, Pos _ ->
@@ -442,15 +449,17 @@ and apply : type n s. s value -> (n, kinetic value) CubeOf.t -> s evaluation =
                         let value =
                           Val
                             (Value.Canonical
-                               (Data { dim; tyfam; indices; constrs; discrete }, TubeOf.empty dim))
-                        in
+                               {
+                                 canonical = Data { dim; tyfam; indices; constrs; discrete };
+                                 tyargs = TubeOf.empty dim;
+                               }) in
                         Val (Neu { head; args; value = ready value; ty = newty }))
                 | Val tm -> (
                     let value = apply tm arg in
                     let newtm = Neu { head; args; value = ready value; ty = newty } in
                     match value with
                     | Realize x -> Val x
-                    | Val (Canonical (Data d, _)) ->
+                    | Val (Canonical { canonical = Data d; _ }) ->
                         if Option.is_none !(d.tyfam) then
                           d.tyfam := Some (lazy { tm = newtm; ty = Lazy.force newty });
                         Val newtm
@@ -540,7 +549,7 @@ and field : type n k nk s. s value -> k Field.t -> (nk, n, k) insertion -> s eva
                 let newtm = Neu { head; args; value = ready value; ty = newty } in
                 match value with
                 | Realize x -> Val x
-                | Val (Canonical (Data d, _)) ->
+                | Val (Canonical { canonical = Data d; _ }) ->
                     if Option.is_none !(d.tyfam) then
                       d.tyfam := Some (lazy { tm = newtm; ty = Lazy.force newty });
                     Val newtm
@@ -1108,7 +1117,7 @@ and inst : type m n mn s. s value -> (m, n, mn, normal) TubeOf.t -> s value =
                       let ty = lazy (tyof_inst tys1 args2) in
                       Neu { head; args; value; ty })
               | _ -> fatal (Anomaly "can't instantiate non-type")))
-      | Canonical (c, args1) -> (
+      | Canonical { canonical = c; tyargs = args1 } -> (
           match D.compare (TubeOf.out args2) (TubeOf.uninst args1) with
           | Neq ->
               fatal
@@ -1116,7 +1125,7 @@ and inst : type m n mn s. s value -> (m, n, mn, normal) TubeOf.t -> s value =
           | Eq ->
               let (Plus nk) = D.plus (TubeOf.inst args1) in
               let args = TubeOf.plus_tube nk args1 args2 in
-              Canonical (c, args))
+              Canonical { canonical = c; tyargs = args })
       | Lam _ | Struct _ | Constr _ -> fatal (Anomaly "instantiating non-type"))
 
 (* Given two families of values, the second intended to be the types of the other, annotate the former by instantiations of the latter to make them into normals.  Since we have to instantiate the types at the *normal* version of the terms, which is what we are computing, we also add the results to a hashtable as we create them so we can access them randomly later.  And since we have to do this sometimes with cubes and sometimes with tubes, we first define the content of the operation as a helper function. *)

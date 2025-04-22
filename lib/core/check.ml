@@ -1605,16 +1605,19 @@ and with_codata_so_far : type a b n c et.
           let value =
             Val
               (Value.Canonical
-                 ( Codata
-                     {
-                       eta;
-                       opacity;
-                       env = Ctx.env ctx;
-                       ins = zero_ins dim;
-                       fields = checked_fields;
-                       termctx = lazy (termctx ());
-                     },
-                   TubeOf.empty dim )) in
+                 {
+                   canonical =
+                     Codata
+                       {
+                         eta;
+                         opacity;
+                         env = Ctx.env ctx;
+                         ins = zero_ins dim;
+                         fields = checked_fields;
+                         termctx = lazy (termctx ());
+                       };
+                   tyargs = TubeOf.empty dim;
+                 }) in
           let prev_ety =
             Neu { head; args; value = ready value; ty = Lazy.from_val (inst (universe dim) tyargs) }
           in

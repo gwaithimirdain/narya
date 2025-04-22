@@ -105,10 +105,10 @@ module Act = struct
           ( name,
             dom_deg fa,
             List.map (fun tm -> act_cube { act = (fun x s -> act_value x s) } tm fa) args )
-    | Canonical (c, args) ->
+    | Canonical { canonical = c; tyargs = args } ->
         let (Acted_instargs (fa, new_args, None)) = act_instargs args s None in
         let new_c = act_canonical c (deg_plus fa (TubeOf.plus args) (TubeOf.plus new_args)) in
-        Canonical (new_c, new_args)
+        Canonical { canonical = new_c; tyargs = new_args }
 
   and act_structfield : type p q i status et.
       (q, p) deg -> (i, p * status * et) Structfield.t -> (i, q * status * et) Structfield.t =
@@ -293,12 +293,12 @@ module Act = struct
           match force_eval value with
           | Realize _ -> fatal (Anomaly "Realize in normalized type in act_ty")
           | Unrealized -> ready Unrealized
-          | Val (Canonical (c, ctyargs)) -> (
+          | Val (Canonical { canonical = c; tyargs = ctyargs }) -> (
               match D.compare_zero (TubeOf.uninst ctyargs) with
               | Zero ->
                   let Eq = D.plus_uniq (TubeOf.plus ctyargs) (D.zero_plus (TubeOf.inst ctyargs)) in
                   let (Ty_acted_instargs (fa, ctyargs)) = gact_ty_instargs ?err tm tmty ctyargs s in
-                  ready (Val (Canonical (act_canonical c fa, ctyargs)))
+                  ready (Val (Canonical { canonical = act_canonical c fa; tyargs = ctyargs }))
               | Pos _ -> fatal (Anomaly "non fully instantiated type in act_ty"))
           | Val _ -> fatal (Anomaly "non-canonical potential value in act_ty") in
         let ty = lazy (universe D.zero) in
