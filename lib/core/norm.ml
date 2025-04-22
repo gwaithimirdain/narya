@@ -704,6 +704,10 @@ and tyof_field : type m h s r i c.
     (m, s, h) insertion ->
     kinetic value =
  fun tm ty fld ~shuf fldins ->
+  let errtm =
+    match tm with
+    | Ok tm -> Dump.Val tm
+    | Error _err -> PString "[ERROR]" in
   let errfld =
     match shuf with
     | Trivial -> `Ins (fld, fldins)
@@ -724,6 +728,13 @@ and tyof_field : type m h s r i c.
       match is_id_ins codatains with
       | None -> fatal ~severity (No_such_field (`Degenerated_record eta, errfld))
       | Some mn -> tyof_field_giventype tm head eta env mn fields tyargs fld ~shuf fldins)
+  | Canonical (head, UU m, tyargs) -> (
+      let err = Code.No_such_field (`Other errtm, errfld) in
+      match !Fibrancy.fields with
+      | None -> fatal ~severity err
+      | Some fields ->
+          tyof_field_giventype tm head Noeta (Value.Emp m) (D.plus_zero m) fields tyargs fld ~shuf
+            fldins)
   | _ ->
       let p =
         match tm with
@@ -797,6 +808,13 @@ and tyof_field_withname : type a b.
       | Some mn ->
           let err = Code.No_such_field (`Record (eta, phead head), errfld) in
           tyof_field_withname_giventype ctx tm ty eta env mn fields tyargs infld err)
+  | Canonical (_head, UU m, tyargs) -> (
+      let err = Code.No_such_field (`Other errtm, errfld) in
+      match !Fibrancy.fields with
+      | None -> fatal err
+      | Some fields ->
+          tyof_field_withname_giventype ctx tm ty Noeta (Value.Emp m) (D.plus_zero m) fields tyargs
+            infld err)
   | _ -> fatal (No_such_field (`Other errtm, errfld))
 
 (* Subroutine of tyof_field_withname for after we've identified the type of the head as either a codatatype or a universe (for fibrancy fields). *)
