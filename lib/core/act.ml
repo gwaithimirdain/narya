@@ -93,11 +93,7 @@ module Act = struct
                ((deg0, new_ins, _, _) :
                  (q, p) deg * (ql, q, l) insertion * (k, j, l) D.plus * (m, z, ql) D.plus)) =
           insfact_comp ins s in
-        let fields =
-          Mbwd.mmap
-            (fun [ StructfieldAbwd.Entry (fld, sfld) ] ->
-              StructfieldAbwd.Entry (fld, act_structfield deg0 sfld))
-            [ fields ] in
+        let fields = act_structfield_abwd deg0 fields in
         Struct (fields, new_ins, energy)
     | Constr (name, dim, args) ->
         let (Of fa) = deg_plus_to s dim ~on:"constr" in
@@ -210,6 +206,14 @@ module Act = struct
                           Some (act_lazy_eval (lazy_eval env5 tm) deg3)));
             } in
         Higher { vals; intrinsic; plusdim; env; deg; terms }
+
+  and act_structfield_abwd : type p q status et.
+      (q, p) deg -> (p * status * et) StructfieldAbwd.t -> (q * status * et) StructfieldAbwd.t =
+   fun deg fields ->
+    Mbwd.mmap
+      (fun [ StructfieldAbwd.Entry (fld, sfld) ] ->
+        StructfieldAbwd.Entry (fld, act_structfield deg sfld))
+      [ fields ]
 
   and act_evaluation : type m n s. s evaluation -> (m, n) deg -> s evaluation =
    fun tm s ->
