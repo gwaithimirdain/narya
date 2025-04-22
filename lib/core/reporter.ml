@@ -652,8 +652,9 @@ module Code = struct
             | `Ins p -> string_of_ins p
             | `Pbij p -> string_of_pbij p
             | `Ints ints -> string_of_ins_ints ints in
-          textf "field %s of %s type %a has intrinsic dimension %s, can't have suffix %s" fldname
-            (record_or_codata eta) pp_printed (print d) (string_of_dim0 intrinsic) err
+          textf
+            "@[<hv 0>field %s of %s type@;<1 2>%a@ has intrinsic dimension %s, can't have suffix %s@]"
+            fldname (record_or_codata eta) pp_printed (print d) (string_of_dim0 intrinsic) err
       | Invalid_field_suffix (ty, f, p, evaldim) ->
           textf "invalid suffix %s for field %s of %s-dimensional type %a" (string_of_ins_ints p) f
             (string_of_dim0 evaldim) pp_printed (print ty)

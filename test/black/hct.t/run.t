@@ -550,6 +550,8 @@
    ￫ error[E0801]
    ￭ $TESTCASE_ROOT/flderr.ny
    5 | echo c .x.1
-     ^ field x of record type A has intrinsic dimension 0, can't have suffix .1
+     ^ field x of record type
+         refl A a b
+       has intrinsic dimension 0, can't have suffix .1
   
   [1]

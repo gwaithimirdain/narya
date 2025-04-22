@@ -768,39 +768,50 @@ and tyof_field_withname : type a b.
       (* The type cannot have a nonidentity degeneracy applied to it (though it can be at a higher dimension). *)
       match is_id_ins codatains with
       | None -> fatal (No_such_field (`Degenerated_record eta, errfld))
-      | Some mn -> (
-          let m = cod_left_ins codatains in
-          match infld with
-          | `Name (fldname, ints) -> (
-              match ins_of_ints m ints with
-              | None -> fatal (Invalid_field_suffix (PVal (ctx, ty), fldname, ints, m))
-              | Some (Ins_of fldins) -> (
-                  let i = cod_right_ins fldins in
-                  let fld = Field.intern fldname i in
-                  match Term.CodatafieldAbwd.find_opt fields fld with
-                  | Ok fldty ->
-                      let fldty =
-                        tyof_codatafield tm fld fldty env tyargs m mn ~shuf:Trivial fldins in
-                      (WithIns (fld, fldins), fldty)
-                  | Error (Some (Wrap i)) ->
-                      fatal
-                        (Wrong_dimension_of_field (eta, phead head, `String fldname, i, `Ints ints))
-                  | Error None -> fatal (No_such_field (`Record (eta, phead head), errfld))))
-          | `Int k -> (
-              try
-                let (Entry (fld, fldty)) = List.nth (Bwd.to_list fields) k in
-                match D.compare_zero (Field.dim fld) with
-                | Zero ->
-                    let fldins = ins_zero m in
-                    let fldty = tyof_codatafield tm fld fldty env tyargs m mn ~shuf:Trivial fldins in
-                    (WithIns (fld, fldins), fldty)
-                | Pos _ ->
-                    Reporter.trace "hello 3" @@ fun () ->
-                    fatal (No_such_field (`Record (eta, phead head), errfld))
-              with Failure _ ->
-                Reporter.trace "hello 3" @@ fun () ->
-                fatal (No_such_field (`Record (eta, phead head), errfld)))))
+      | Some mn ->
+          let err = Code.No_such_field (`Record (eta, phead head), errfld) in
+          tyof_field_withname_giventype ctx tm ty eta env mn fields tyargs infld err)
   | _ -> fatal (No_such_field (`Other, errfld))
+
+(* Subroutine of tyof_field_withname for after we've identified the type of the head as either a codatatype or a universe (for fibrancy fields). *)
+and tyof_field_withname_giventype : type a b m n mn c et.
+    (a, b) Ctx.t ->
+    (kinetic value, Code.t) Result.t ->
+    kinetic value ->
+    (potential, et) eta ->
+    (m, c) env ->
+    (m, n, mn) D.plus ->
+    (c * n * et) Term.CodatafieldAbwd.t ->
+    (D.zero, mn, mn, normal) TubeOf.t ->
+    [ `Name of string * int list | `Int of int ] ->
+    Code.t ->
+    Field.with_ins * kinetic value =
+ fun ctx tm ty eta env mn fields tyargs infld err ->
+  let m = dim_env env in
+  match infld with
+  | `Name (fldname, ints) -> (
+      match ins_of_ints m ints with
+      | None -> fatal (Invalid_field_suffix (PVal (ctx, ty), fldname, ints, m))
+      | Some (Ins_of fldins) -> (
+          let i = cod_right_ins fldins in
+          let fld = Field.intern fldname i in
+          match Term.CodatafieldAbwd.find_opt fields fld with
+          | Ok fldty ->
+              let fldty = tyof_codatafield tm fld fldty env tyargs m mn ~shuf:Trivial fldins in
+              (WithIns (fld, fldins), fldty)
+          | Error (Some (Wrap i)) ->
+              fatal (Wrong_dimension_of_field (eta, PVal (ctx, ty), `String fldname, i, `Ints ints))
+          | Error None -> fatal err))
+  | `Int k -> (
+      try
+        let (Entry (fld, fldty)) = List.nth (Bwd.to_list fields) k in
+        match D.compare_zero (Field.dim fld) with
+        | Zero ->
+            let fldins = ins_zero m in
+            let fldty = tyof_codatafield tm fld fldty env tyargs m mn ~shuf:Trivial fldins in
+            (WithIns (fld, fldins), fldty)
+        | Pos _ -> fatal err
+      with Failure _ -> fatal err)
 
 and eval_structfield : type m n mn a status i et.
     (m, a) env ->
