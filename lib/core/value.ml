@@ -410,6 +410,56 @@ let rec remove_env : type a k b n. (n, b) env -> (a, k, b) Tbwd.insert -> (n, a)
       let (Unmap_insert (_, v', na)) = Plusmap.unmap_insert v nb in
       Shift (remove_env env v', mn, na)
 
+(* Binders are completely lazy, so we can "evaluate" them independently of the master evaluation functions in norm. *)
+let eval_binder : type m n mn b s.
+    (m, b) env -> (m, n, mn) D.plus -> ((b, n) snoc, s) term -> (mn, s) Value.binder =
+ fun env mn body ->
+  let m = dim_env env in
+  let ins = id_ins m mn in
+  Value.Bind { env; ins; body }
+
+(* Same with structfields *)
+let eval_structfield : type m n mn a status i et.
+    (m, a) env ->
+    m D.t ->
+    (m, n, mn) D.plus ->
+    mn D.t ->
+    (i, n * a * status * et) Term.Structfield.t ->
+    (i, mn * status * et) Value.Structfield.t =
+ fun env m m_n mn fld ->
+  match fld with
+  | Lower (tm, l) -> Lower (lazy_eval env tm, l)
+  | Higher (terms : (n, i, a) PlusPbijmap.t) ->
+      let intrinsic = PlusPbijmap.intrinsic terms in
+      let vals =
+        InsmapOf.build mn intrinsic
+          {
+            build =
+              (fun (type olds) (ins : (mn, olds, i) insertion) ->
+                let (Unplus_ins
+                       (type news newh t r)
+                       ((newins, newshuf, mtr, _ts) :
+                         (n, news, newh) insertion
+                         * (r, newh, i) shuffle
+                         * (m, t, r) insertion
+                         * (t, news, olds) D.plus)) =
+                  unplus_ins m m_n ins in
+                let newpbij = Pbij (newins, newshuf) in
+                match PlusPbijmap.find newpbij terms with
+                | PlusFam None -> None
+                | PlusFam (Some (ra, tm)) ->
+                    let (Plus tr) = D.plus (cod_right_ins mtr) in
+                    (* mtrp : m ≅ t+r *)
+                    let mtrp = deg_of_perm (perm_inv (perm_of_ins_plus mtr tr)) in
+                    (* env2 is (t+r)-dimensional *)
+                    let env2 = act_env env (op_of_deg mtrp) in
+                    (* env3 is t-dimensional *)
+                    let env3 = Shift (env2, tr, ra) in
+                    (* We don't need to further permute the result, as all the information about the permutation ins was captured in newpbij and mtr. *)
+                    Some (lazy_eval env3 tm));
+          } in
+      Value.Structfield.Higher { intrinsic; plusdim = m_n; terms; env; deg = id_deg mn; vals }
+
 (* The universe of any dimension belongs to an instantiation of itself.  Note that the result is not itself a type (i.e. in the 0-dimensional universe) unless n=0.  This is the universe itself as a term. *)
 let rec universe : type n. n D.t -> kinetic value =
  fun n ->
