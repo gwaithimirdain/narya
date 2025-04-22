@@ -460,6 +460,19 @@ let eval_structfield : type m n mn a status i et.
           } in
       Value.Structfield.Higher { intrinsic; plusdim = m_n; terms; env; deg = id_deg mn; vals }
 
+let eval_structfield_abwd : type m n mn a status et.
+    (m, a) env ->
+    m D.t ->
+    (m, n, mn) D.plus ->
+    mn D.t ->
+    (n * a * status * et) Term.StructfieldAbwd.t ->
+    (mn * status * et) Value.StructfieldAbwd.t =
+ fun env m m_n mn fields ->
+  Mbwd.mmap
+    (fun [ Term.StructfieldAbwd.Entry (f, sf) ] ->
+      Value.StructfieldAbwd.Entry (f, eval_structfield env m m_n mn sf))
+    [ fields ]
+
 (* The universe of any dimension belongs to an instantiation of itself.  Note that the result is not itself a type (i.e. in the 0-dimensional universe) unless n=0.  This is the universe itself as a term. *)
 let rec universe : type n. n D.t -> kinetic value =
  fun n ->

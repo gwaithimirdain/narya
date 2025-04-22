@@ -263,11 +263,7 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
       let (Plus m_n) = D.plus n in
       let mn = D.plus_out m m_n in
       let ins = ins_zero mn in
-      let fields =
-        Mbwd.mmap
-          (fun [ Term.StructfieldAbwd.Entry (f, sf) ] ->
-            Value.StructfieldAbwd.Entry (f, eval_structfield env m m_n mn sf))
-          [ fields ] in
+      let fields = eval_structfield_abwd env m m_n mn fields in
       Val (Struct (fields, ins, energy))
   | Constr (constr, n, args) ->
       let m = dim_env env in
