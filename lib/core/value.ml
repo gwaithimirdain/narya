@@ -441,22 +441,22 @@ type any_apps = Any : 'any apps -> any_apps
 let inst_apps : type any m n mn. any apps -> (m, n, mn, normal) TubeOf.t -> any_apps =
  fun apps args2 ->
   let n = TubeOf.inst args2 in
-  let inst_noninst apps =
-    match D.compare_zero n with
-    | Zero -> Any apps
-    | Pos n -> Any (Inst (apps, n, args2)) in
-  match apps with
-  | Inst (apps, k, args1) -> (
-      let (Plus nk) = D.plus (TubeOf.inst args1) in
-      match D.compare (TubeOf.uninst args1) (TubeOf.out args2) with
-      | Neq ->
-          Reporter.fatal (Dimension_mismatch ("inst_apps", TubeOf.uninst args1, TubeOf.out args2))
-      | Eq ->
-          let args = TubeOf.plus_tube nk args1 args2 in
-          Any (Inst (apps, D.plus_pos n k nk, args)))
-  | Emp -> inst_noninst apps
-  | Arg _ -> inst_noninst apps
-  | Field _ -> inst_noninst apps
+  match D.compare_zero n with
+  | Zero -> Any apps
+  | Pos n' -> (
+      match apps with
+      | Inst (apps, k, args1) -> (
+          let (Plus nk) = D.plus (TubeOf.inst args1) in
+          match D.compare (TubeOf.uninst args1) (TubeOf.out args2) with
+          | Neq ->
+              Reporter.fatal
+                (Dimension_mismatch ("inst_apps", TubeOf.uninst args1, TubeOf.out args2))
+          | Eq ->
+              let args = TubeOf.plus_tube nk args1 args2 in
+              Any (Inst (apps, D.plus_pos n k nk, args)))
+      | Emp -> Any (Inst (apps, n', args2))
+      | Arg _ -> Any (Inst (apps, n', args2))
+      | Field _ -> Any (Inst (apps, n', args2)))
 
 (* Split off an instantiation, if any, at the end of an apps *)
 let inst_of_apps : type any. any apps -> noninst apps * normal TubeOf.any option =
