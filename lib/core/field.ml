@@ -48,14 +48,19 @@ module Abwd (F : Fam2) = struct
   type 'a entry = Entry : ('i t * ('i, 'a) F.t) -> 'a entry
   type 'a t = 'a entry Bwd.t
 
-  let rec find_opt : type i a. a t -> i field -> ((i, a) F.t, D.wrapped option) Result.t =
+  type (_, _) find_opt_result =
+    | Found : ('i, 'a) F.t -> ('i, 'a) find_opt_result
+    | Wrong_dimension : 'j D.t * ('j, 'a) F.t -> ('i, 'a) find_opt_result
+    | Not_found : ('i, 'a) find_opt_result
+
+  let rec find_opt : type i a. a t -> i field -> (i, a) find_opt_result =
    fun fields ((name, i) as fld) ->
     match fields with
-    | Emp -> Error None
+    | Emp -> Not_found
     | Snoc (fields, Entry ((name', i'), x)) -> (
         match (name = name', D.compare i i') with
-        | true, Eq -> Ok x
-        | true, Neq -> Error (Some (Wrap i'))
+        | true, Eq -> Found x
+        | true, Neq -> Wrong_dimension (i', x)
         | _ -> find_opt fields fld)
 
   let rec find_string_opt : type a. a t -> string -> a entry option =

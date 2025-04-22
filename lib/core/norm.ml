@@ -502,8 +502,8 @@ and field : type n k nk s. s value -> k Field.t -> (nk, n, k) insertion -> s eva
   (* TODO: Is it okay to ignore the insertion here?  I'm currently assuming that it must be zero if this field projection is well-typed. *)
   | Struct (fields, structins, energy) -> (
       match StructfieldAbwd.find_opt fields fld with
-      | Ok (Lower (v, _)) -> force_eval v
-      | Ok (Higher { vals; intrinsic; _ }) -> (
+      | Found (Lower (v, _)) -> force_eval v
+      | Found (Higher { vals; intrinsic; _ }) -> (
           match
             ( D.compare (cod_left_ins structins) (dom_ins fldins),
               D.compare intrinsic (cod_right_ins fldins) )
@@ -517,7 +517,7 @@ and field : type n k nk s. s value -> k Field.t -> (nk, n, k) insertion -> s eva
                 (Dimension_mismatch ("field evaluation", cod_left_ins structins, dom_ins fldins))
           | _, Neq ->
               fatal (Dimension_mismatch ("field intrinsic", intrinsic, cod_right_ins fldins)))
-      | Error _ -> (
+      | _ -> (
           match energy with
           | Potential -> Unrealized
           | Kinetic -> fatal (Anomaly ("missing field in eval struct: " ^ Field.to_string fld))))
@@ -769,7 +769,7 @@ and tyof_field_giventype : type m n mn h s r i c et a k.
   | Neq -> fatal ~severity (Dimension_mismatch ("tyof_field evaluation", m, dom_ins fldins))
   | Eq -> (
       match Term.CodatafieldAbwd.find_opt fields fld with
-      | Ok fldty ->
+      | Found fldty ->
           let shuf : (r, h, i, a) shuffleable =
             match shuf with
             | Trivial -> Trivial
@@ -778,8 +778,8 @@ and tyof_field_giventype : type m n mn h s r i c et a k.
                 | Eq -> shuf
                 | Neq -> fatal (Anomaly "context length mismatch in tyof_field")) in
           tyof_codatafield tm fld fldty env tyargs m mn ~shuf fldins
-      | Error None -> fatal ~severity (No_such_field (`Record (eta, phead head), errfld))
-      | Error (Some (Wrap i)) ->
+      | Not_found -> fatal ~severity (No_such_field (`Record (eta, phead head), errfld))
+      | Wrong_dimension (i, _) ->
           let errsuffix =
             match shuf with
             | Trivial -> `Ins fldins
@@ -843,12 +843,27 @@ and tyof_field_withname_giventype : type a b m n mn c et.
           let i = cod_right_ins fldins in
           let fld = Field.intern fldname i in
           match Term.CodatafieldAbwd.find_opt fields fld with
-          | Ok fldty ->
+          | Found fldty ->
               let fldty = tyof_codatafield tm fld fldty env tyargs m mn ~shuf:Trivial fldins in
               (WithIns (fld, fldins), fldty)
-          | Error (Some (Wrap i)) ->
-              fatal (Wrong_dimension_of_field (eta, PVal (ctx, ty), `String fldname, i, `Ints ints))
-          | Error None -> fatal err))
+          | Wrong_dimension (i, fldty) -> (
+              (* If the user omitted the suffix completely, and the field and the term are both 1-dimensional, we fill in the unique suffix "1" for them. *)
+              let err =
+                Code.Wrong_dimension_of_field (eta, PVal (ctx, ty), `String fldname, i, `Ints ints)
+              in
+              match (ints, D.compare m i, D.compare_zero m) with
+              | [], Eq, Pos m' -> (
+                  let (Is_suc (mpred, _, _)) = suc_pos m' in
+                  match D.compare_zero mpred with
+                  | Zero ->
+                      let fld = Field.intern fldname i in
+                      let fldins = zero_ins m in
+                      let fldty =
+                        tyof_codatafield tm fld fldty env tyargs m mn ~shuf:Trivial fldins in
+                      (WithIns (fld, fldins), fldty)
+                  | Pos _ -> fatal err)
+              | _ -> fatal err)
+          | Not_found -> fatal err))
   | `Int k -> (
       try
         let (Entry (fld, fldty)) = List.nth (Bwd.to_list fields) k in

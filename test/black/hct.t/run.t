@@ -17,6 +17,9 @@
   s2 .root.1
     : A
   
+  s2 .root.1
+    : A
+  
    ￫ info[I0001]
    ￮ axiom s00 assumed
   
