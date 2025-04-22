@@ -23,6 +23,7 @@
   A₂ .liftl.1 a₁
     : A₂ (A₂ .trl.1 a₁) a₁
   
+
   $ narya -hott hott2.ny
   A22 .trr.1
     : refl Π A02 {_ ↦ A10} {_ ↦ A11} (_ ⤇ A12) (A20 .trr.1) (A21 .trr.1)
@@ -136,4 +137,54 @@
   
   sym (sym A22 a20 a21 .liftl.1 a12)
     : A22 (sym A22 a20 a21 .trl.1 a12) a12 a20 a21
+  
+
+  $ narya -hott -v J.ny
+   ￫ info[I0100]
+   ￮ option set function boundaries to implicit
+  
+   ￫ info[I0100]
+   ￮ option set type boundaries to implicit
+  
+   ￫ info[I0000]
+   ￮ constant transport defined
+  
+   ￫ info[I0000]
+   ￮ constant concat defined
+  
+   ￫ info[I0000]
+   ￮ constant inverse defined
+  
+   ￫ info[I0000]
+   ￮ constant transport2 defined
+  
+   ￫ info[I0000]
+   ￮ constant refl_transport_1 defined
+  
+   ￫ info[I0000]
+   ￮ constant refl_transport_2 defined
+  
+   ￫ info[I0000]
+   ￮ constant Id2 defined
+  
+   ￫ info[I0000]
+   ￮ constant concat_p1 defined
+  
+   ￫ info[I0000]
+   ￮ constant J defined
+  
+   ￫ info[I0000]
+   ￮ constant Sq defined
+  
+   ￫ info[I0000]
+   ￮ constant conn defined
+  
+   ￫ info[I0000]
+   ￮ constant coconn defined
+  
+   ￫ info[I0000]
+   ￮ constant concat_1p defined
+  
+   ￫ info[I0000]
+   ￮ constant Jβ defined
   
