@@ -1602,25 +1602,9 @@ and with_codata_so_far : type a b n c et.
         (* We can always create a constant with the (0,0,0) insertion, even if its dimension is actually higher. *)
         let head = head_of_potential h in
         let rec domvars () =
-          let value =
-            Val
-              (Value.Canonical
-                 {
-                   canonical =
-                     Codata
-                       {
-                         eta;
-                         opacity;
-                         env = Ctx.env ctx;
-                         ins = zero_ins dim;
-                         fields = checked_fields;
-                         termctx = lazy (termctx ());
-                       };
-                   tyargs = TubeOf.empty dim;
-                 }) in
+          let value = eval_codata (Ctx.env ctx) eta opacity dim (lazy (termctx ())) checked_fields in
           let prev_ety =
-            Neu { head; args; value = ready value; ty = Lazy.from_val (inst (universe dim) tyargs) }
-          in
+            Neu { head; args; value = ready value; ty = lazy (inst (universe dim) tyargs) } in
           snd
             (dom_vars (Ctx.length ctx)
                (TubeOf.plus_cube

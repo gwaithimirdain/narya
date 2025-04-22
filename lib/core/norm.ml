@@ -366,9 +366,7 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
       (* Otherwise, the case tree doesn't reduce. *)
       | _ -> Unrealized)
   | Realize tm -> Realize (eval_term env tm)
-  | Canonical c ->
-      let (Any canonical) = eval_canonical env c in
-      Val (Canonical { canonical; tyargs = TubeOf.empty (dim_canonical canonical) })
+  | Canonical c -> eval_canonical env c
 
 and eval_with_boundary : type m a. (m, a) env -> (a, kinetic) term -> (m, kinetic value) CubeOf.t =
  fun env tm ->
@@ -883,7 +881,7 @@ and apply_binder : type n s. (n, s) Value.binder -> (n, kinetic value) CubeOf.t 
        body)
     (deg_of_perm perm)
 
-and eval_canonical : type m a. (m, a) env -> a Term.canonical -> any_canonical =
+and eval_canonical : type m a. (m, a) env -> a Term.canonical -> potential evaluation =
  fun env can ->
   match can with
   | Data { indices; constrs; discrete } ->
@@ -892,11 +890,28 @@ and eval_canonical : type m a. (m, a) env -> a Term.canonical -> any_canonical =
         Abwd.map
           (fun (Term.Dataconstr { args; indices }) -> Value.Dataconstr { env; args; indices })
           constrs in
-      Any (Data { dim = dim_env env; tyfam; indices = Fillvec.empty indices; constrs; discrete })
+      let canonical =
+        Data { dim = dim_env env; tyfam; indices = Fillvec.empty indices; constrs; discrete } in
+      let tyargs = TubeOf.empty (dim_env env) in
+      Val (Canonical { canonical; tyargs })
   | Codata { eta; opacity; dim; termctx; fields } ->
-      let (Plus ed) = D.plus dim in
-      let ins = id_ins (dim_env env) ed in
-      Any (Codata { eta; opacity; env; termctx = lazy termctx; ins; fields })
+      eval_codata env eta opacity dim (Lazy.from_val termctx) fields
+
+(* We split out this subroutine so it can be called from Check.with_codata_so_far and a lazy termctx.  *)
+and eval_codata : type m a c n et.
+    (m, a) env ->
+    (potential, et) eta ->
+    opacity ->
+    n D.t ->
+    (c, (a, n) snoc) termctx option Lazy.t ->
+    (a * n * et) CodatafieldAbwd.t ->
+    potential evaluation =
+ fun env eta opacity dim termctx fields ->
+  let (Plus ed) = D.plus dim in
+  let ins = id_ins (dim_env env) ed in
+  let canonical = Codata { eta; opacity; env; termctx; ins; fields } in
+  let tyargs = TubeOf.empty (dom_ins ins) in
+  Val (Canonical { canonical; tyargs })
 
 and eval_term : type m b. (m, b) env -> (b, kinetic) term -> kinetic value =
  fun env tm ->
