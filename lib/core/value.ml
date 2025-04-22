@@ -4,6 +4,7 @@ open Dim
 open Dimbwd
 include Energy
 open Term
+open Reporter
 
 type inst = private Dummy_inst
 type noninst = private Dummy_noninst
@@ -126,9 +127,7 @@ module rec Value : sig
         ('n, 'b) env * ('n, 'k, 'nk) D.plus * ('nk, kinetic lazy_eval) CubeOf.t
         -> ('n, ('b, 'k) snoc) env
     | Ext :
-        ('n, 'b) env
-        * ('n, 'k, 'nk) D.plus
-        * (('nk, kinetic value) CubeOf.t, Reporter.Code.t) Result.t
+        ('n, 'b) env * ('n, 'k, 'nk) D.plus * (('nk, kinetic value) CubeOf.t, Code.t) Result.t
         -> ('n, ('b, 'k) snoc) env
     | Act : ('n, 'b) env * ('m, 'n) op -> ('m, 'b) env
     | Permute : ('a, 'b) Tbwd.permute * ('n, 'b) env -> ('n, 'a) env
@@ -284,9 +283,7 @@ end = struct
         -> ('n, ('b, 'k) snoc) env
     (* We also allow Error binding in an environment, indicating that that variable is not actually usable, usually due to an earlier error in typechecking that we've continued on from anyway.  *)
     | Ext :
-        ('n, 'b) env
-        * ('n, 'k, 'nk) D.plus
-        * (('nk, kinetic value) CubeOf.t, Reporter.Code.t) Result.t
+        ('n, 'b) env * ('n, 'k, 'nk) D.plus * (('nk, kinetic value) CubeOf.t, Code.t) Result.t
         -> ('n, ('b, 'k) snoc) env
     | Act : ('n, 'b) env * ('m, 'n) op -> ('m, 'b) env
     | Permute : ('a, 'b) Tbwd.permute * ('n, 'b) env -> ('n, 'a) env
@@ -448,15 +445,38 @@ let inst_apps : type any m n mn. any apps -> (m, n, mn, normal) TubeOf.t -> any_
       | Inst (apps, k, args1) -> (
           let (Plus nk) = D.plus (TubeOf.inst args1) in
           match D.compare (TubeOf.uninst args1) (TubeOf.out args2) with
-          | Neq ->
-              Reporter.fatal
-                (Dimension_mismatch ("inst_apps", TubeOf.uninst args1, TubeOf.out args2))
+          | Neq -> fatal (Dimension_mismatch ("inst_apps", TubeOf.uninst args1, TubeOf.out args2))
           | Eq ->
               let args = TubeOf.plus_tube nk args1 args2 in
               Any (Inst (apps, D.plus_pos n k nk, args)))
       | Emp -> Any (Inst (apps, n', args2))
       | Arg _ -> Any (Inst (apps, n', args2))
       | Field _ -> Any (Inst (apps, n', args2)))
+
+(* Instantiate a lazy value *)
+let inst_lazy : type m n mn s. s lazy_eval -> (m, n, mn, normal) TubeOf.t -> s lazy_eval =
+ fun lev args ->
+  match D.compare_zero (TubeOf.inst args) with
+  | Zero -> lev
+  | Pos k -> (
+      match !lev with
+      | Deferred_eval (env, tm, ins, apps) ->
+          let (Any newargs) = inst_apps apps args in
+          ref (Deferred_eval (env, tm, ins, newargs))
+      | Deferred (tm, ins, apps) ->
+          let (Any newargs) = inst_apps apps args in
+          ref (Deferred (tm, ins, newargs))
+      | Ready tm -> ref (Deferred ((fun () -> tm), id_deg D.zero, Inst (Emp, k, args))))
+
+(* Given a *type*, hence an element of a fully instantiated universe, extract the arguments of the instantiation of that universe. *)
+let inst_tys : kinetic value -> kinetic value TubeOf.full = function
+  | Neu { ty = (lazy (Neu { args = Inst (_, _, tys); _ })); _ } -> (
+      match D.compare (TubeOf.uninst tys) D.zero with
+      | Eq ->
+          let Eq = D.plus_uniq (D.zero_plus (TubeOf.inst tys)) (TubeOf.plus tys) in
+          Full_tube (val_of_norm_tube tys)
+      | Neq -> fatal (Anomaly "universe must be fully instantiated to be a type"))
+  | _ -> fatal (Anomaly "invalid type, has no instantiation arguments")
 
 (* Split off an instantiation, if any, at the end of an apps *)
 let inst_of_apps : type any. any apps -> noninst apps * normal TubeOf.any option =
@@ -486,7 +506,7 @@ module Fwd_app = struct
       | Emp -> fwds
       | Arg (apps, arg, ins) -> go apps (Arg (arg, ins) :: fwds)
       | Field (apps, fld, plus, ins) -> go apps (Field (fld, plus, ins) :: fwds)
-      | Inst _ -> Reporter.fatal (Anomaly "instantiation in fwd_of_apps") in
+      | Inst _ -> fatal (Anomaly "instantiation in fwd_of_apps") in
     go apps []
 end
 
@@ -502,7 +522,7 @@ let split_apps_at_length : type any1 any2.
   go Emp (Fwd_app.of_apps apps1) (Fwd_app.of_apps apps2)
 
 let get_full_tube : type n k nk a any.
-    err:(n D.pos -> Reporter.Code.t) ->
+    err:(n D.pos -> Code.t) ->
     ?severity:Asai.Diagnostic.severity ->
     (any * (n, k, nk, a) TubeOf.t) option ->
     a TubeOf.full =
@@ -511,7 +531,7 @@ let get_full_tube : type n k nk a any.
   | None -> TubeOf.Full_tube (TubeOf.empty D.zero)
   | Some (_, args) -> (
       match D.compare_zero (TubeOf.uninst args) with
-      | Pos n -> Reporter.fatal ~severity (err n)
+      | Pos n -> fatal ~severity (err n)
       | Zero ->
           let Eq = D.plus_uniq (TubeOf.plus args) (D.zero_plus (TubeOf.inst args)) in
           TubeOf.Full_tube args)

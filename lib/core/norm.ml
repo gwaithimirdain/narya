@@ -1064,30 +1064,6 @@ and inst : type m n mn s. s value -> (m, n, mn, normal) TubeOf.t -> s value =
               Canonical (c, args))
       | Lam _ | Struct _ | Constr _ -> fatal (Anomaly "instantiating non-type"))
 
-and inst_lazy : type m n mn s. s lazy_eval -> (m, n, mn, normal) TubeOf.t -> s lazy_eval =
- fun lev args ->
-  match D.compare_zero (TubeOf.inst args) with
-  | Zero -> lev
-  | Pos k -> (
-      match !lev with
-      | Deferred_eval (env, tm, ins, apps) ->
-          let (Any newargs) = inst_apps apps args in
-          ref (Deferred_eval (env, tm, ins, newargs))
-      | Deferred (tm, ins, apps) ->
-          let (Any newargs) = inst_apps apps args in
-          ref (Deferred (tm, ins, newargs))
-      | Ready tm -> ref (Deferred ((fun () -> tm), id_deg D.zero, Inst (Emp, k, args))))
-
-(* Given a *type*, hence an element of a fully instantiated universe, extract the arguments of the instantiation of that universe.  These were stored in the extra arguments of Uninst and Inst. *)
-and inst_tys : kinetic value -> kinetic value TubeOf.full = function
-  | Neu { ty = (lazy (Neu { args = Inst (_, _, tys); _ })); _ } -> (
-      match D.compare (TubeOf.uninst tys) D.zero with
-      | Eq ->
-          let Eq = D.plus_uniq (D.zero_plus (TubeOf.inst tys)) (TubeOf.plus tys) in
-          Full_tube (val_of_norm_tube tys)
-      | Neq -> fatal (Anomaly "universe must be fully instantiated to be a type"))
-  | _ -> fatal (Anomaly "invalid type, has no instantiation arguments")
-
 (* Given two families of values, the second intended to be the types of the other, annotate the former by instantiations of the latter to make them into normals.  Since we have to instantiate the types at the *normal* version of the terms, which is what we are computing, we also add the results to a hashtable as we create them so we can access them randomly later.  And since we have to do this sometimes with cubes and sometimes with tubes, we first define the content of the operation as a helper function. *)
 
 and norm_of_val : type m n.
