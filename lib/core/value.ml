@@ -443,7 +443,7 @@ let inst_apps : type any m n mn. any apps -> (m, n, mn, normal) TubeOf.t -> any_
   let n = TubeOf.inst args2 in
   let inst_noninst apps =
     match D.compare_zero n with
-    | Zero -> Any Emp
+    | Zero -> Any apps
     | Pos n -> Any (Inst (apps, n, args2)) in
   match apps with
   | Inst (apps, k, args1) -> (
