@@ -5,7 +5,12 @@ type wrapped = Wrap : 'l len -> wrapped
 type 'l t = 'l len * 'l N.index
 
 val run :
-  arity:int -> refl_char:char -> refl_names:string list -> internal:bool -> (D.wrapped -> 'a) -> 'a
+  arity:int ->
+  refl_char:char ->
+  refl_names:string list ->
+  internal:bool ->
+  (N.two len option -> 'a) ->
+  'a
 
 val wrapped : unit -> wrapped
 val refl_string : unit -> string

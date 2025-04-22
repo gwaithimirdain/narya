@@ -52,3 +52,14 @@ let name_of_deg : type a b. (a, b) deg -> string option = function
       | name :: _ -> Some name)
   | Suc (Suc (Zero (Nat Zero), Now), Later Now) -> Some "sym"
   | _ -> None
+
+type hott_direction =
+  | Hott :
+      'n D.t * 'n is_singleton * (D.zero, 'n) sface * (D.zero, 'n) sface * Util.N.two Endpoints.len
+      -> hott_direction
+
+let run ~arity ~refl_char ~refl_names ~internal f =
+  Endpoints.run ~arity ~refl_char ~refl_names ~internal (function
+    | Some two ->
+        f (Some (Hott (D.one, One, End (Zero, (two, Top)), End (Zero, (two, Pop Top)), two)))
+    | None -> f None)
