@@ -242,19 +242,22 @@ end = struct
 
   (* A canonical type is either a datatype or a codatatype/record. *)
   and _ canonical =
-    (* A datatype stores its family of constructors, and also its number of indices.  (The former is not determined in the latter if there happen to be zero constructors). *)
+    (* A datatype stores its family of constructors, whether it is discrete, and also its number of indices.  (The former is not determined in the latter if there happen to be zero constructors). *)
     | Data : {
         indices : 'i Fwn.t;
         constrs : (Constr.t, ('a, 'i) dataconstr) Abwd.t;
         discrete : [ `Yes | `Maybe | `No ];
       }
         -> 'a canonical
-    (* A codatatype has an eta flag, an intrinsic dimension (like Gel), and a family of fields, each with a type that depends on one additional variable belonging to the codatatype itself (usually by way of its previous fields).  We retain the order of the fields by storing them in an Abwd rather than a Map so as to enable positional access as well as named access. *)
     | Codata : {
+        (* An eta flag and its opacity *)
         eta : (potential, 'et) eta;
         opacity : opacity;
+        (* An intrinsic dimension (like Gel) *)
         dim : 'n D.t;
+        (* The termctx in which it was checked, since that is needed to eval-readback the env to degenerate it when checking higher fields. *)
         termctx : ('c, ('a, 'n) snoc) termctx option;
+        (* A family of fields, each with a type that depends on one additional variable belonging to the codatatype itself (usually by way of its previous fields).  We retain the order of the fields by storing them in an Abwd rather than a Map so as to enable positional access as well as named access. *)
         fields : ('a * 'n * 'et) CodatafieldAbwd.t;
       }
         -> 'a canonical
