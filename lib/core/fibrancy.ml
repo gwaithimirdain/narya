@@ -5,6 +5,14 @@ open Util
 open Term
 
 let fields : (Tbwd.emp * D.zero * no_eta) CodatafieldAbwd.t option ref = ref None
+let universe : (D.zero * Tbwd.emp * potential * no_eta) StructfieldAbwd.t option ref = ref None
+
+let pi :
+    (D.zero * ((Tbwd.emp, D.zero) Tbwd.snoc, D.zero) Tbwd.snoc * potential * no_eta)
+    StructfieldAbwd.t
+    option
+    ref =
+  ref None
 
 let install (dim : Dim.hott_direction option) =
   match dim with
@@ -66,3 +74,4 @@ let install (dim : Dim.hott_direction option) =
           <: Entry (Field.intern "liftr" dim, Higher (plusmap, liftr))
           <: Entry (Field.intern "trl" dim, Higher (plusmap, trl))
           <: Entry (Field.intern "liftl" dim, Higher (plusmap, liftl)))
+(* TODO: Set universe and pi *)

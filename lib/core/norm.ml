@@ -69,7 +69,7 @@ and view_type ?(severity = Asai.Diagnostic.Bug) (ty : kinetic value) (err : stri
   | Neu { head; args; value; ty = _ } -> (
       (* Glued evaluation: when viewing a type, we force its value and proceed to view that value instead. *)
       match force_eval value with
-      | Val (Canonical { canonical = c; tyargs }) -> (
+      | Val (Canonical { canonical = c; tyargs; fields = _ }) -> (
           (match c with
           | Data d when Option.is_none !(d.tyfam) ->
               d.tyfam := Some (lazy { tm = ty; ty = inst (universe (TubeOf.inst tyargs)) tyargs })
@@ -271,11 +271,13 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
       let mn = D.plus_out m m_n in
       let eargs = List.map (eval_args env m_n mn) args in
       Val (Constr (constr, mn, eargs))
-  | Pi (x, doms, cods) ->
+  | Pi
+      (type n)
+      ((x, doms, cods) : string option * (n, (b, kinetic) term) CubeOf.t * (n, b) CodCube.t) ->
       (* We are starting with an n-dimensional pi-type and evaluating it in an m-dimensional environment, producing an (m+n)-dimensional result. *)
       let n = CubeOf.dim doms in
       let m = dim_env env in
-      let (Plus m_n) = D.plus n in
+      let (Plus (type mn) (m_n : (m, n, mn) D.plus)) = D.plus n in
       let mn = D.plus_out m m_n in
       (* The basic thing we do is evaluate the cubes of domains and codomains. *)
       let doms =
@@ -294,35 +296,40 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
                 let (SFace_of_plus (k_l, fa, fb)) = sface_of_plus m_n fab in
                 eval_binder (act_env env (op_of_sface fa)) k_l (CodCube.find cods fb));
           } in
-      (* However, because the result will be an Uninst, we need to know its type as well.  The starting n-dimensional pi-type (which is itself uninstantiated) lies in a full instantiation of the n-dimensional universe at lower-dimensional pi-types formed from subcubes of its domains and codomains.  Accordingly, the resulting (m+n)-dimensional pi-type will like in a full instantiation of the (m+n)-dimensional universe at lower-dimensional pi-types obtained by evaluating these at appropriately split faces.  Since each of them *also* belongs to a universe instantiated similarly, and needs to know its type not just because it is an uninst but because it is a normal, we build the whole cube at once and then take its top. *)
+      (* However, because the result will be a Neu, we need to know its type as well.  The starting n-dimensional pi-type (which is itself uninstantiated) lies in a full instantiation of the n-dimensional universe at lower-dimensional pi-types formed from subcubes of its domains and codomains.  Accordingly, the resulting (m+n)-dimensional pi-type will like in a full instantiation of the (m+n)-dimensional universe at lower-dimensional pi-types obtained by evaluating these at appropriately split faces.  Since each of them *also* belongs to a universe instantiated similarly, and needs to know its type not just because it is an uninst but because it is a normal, we build the whole cube at once and then take its top. *)
       let pitbl = Hashtbl.create 10 in
-      let pis =
-        CubeOf.build mn
-          {
-            build =
-              (fun fab ->
-                let kl = dom_sface fab in
-                let ty =
-                  inst (universe kl)
-                    (TubeOf.build D.zero (D.zero_plus kl)
-                       {
-                         build =
-                           (fun fc ->
-                             Hashtbl.find pitbl (SFace_of (comp_sface fab (sface_of_tface fc))));
-                       }) in
-                let subdoms, subcods = (CubeOf.subcube fab doms, BindCube.subcube fab cods) in
-                let head : head = Pi (x, subdoms, subcods) in
-                let value =
-                  ready
-                    (Val
-                       (Canonical { canonical = Pi (x, subdoms, subcods); tyargs = TubeOf.empty kl }))
-                in
-                let tm = Neu { head; args = Emp; value; ty = Lazy.from_val ty } in
-                let ntm = { tm; ty } in
-                Hashtbl.add pitbl (SFace_of fab) ntm;
-                ntm);
-          } in
-      Val (CubeOf.find_top pis).tm
+      (* Since we only care about the hashtbl and the top, and we can get that from the hashtbl at the end anyway, we don't bother actually putting the normals into a meaningful cube. *)
+      let build : type k. (k, mn) sface -> unit =
+       fun fab ->
+        let kl = dom_sface fab in
+        let ty =
+          inst (universe kl)
+            (TubeOf.build D.zero (D.zero_plus kl)
+               {
+                 build =
+                   (fun fc -> Hashtbl.find pitbl (SFace_of (comp_sface fab (sface_of_tface fc))));
+               }) in
+        let subdoms, subcods = (CubeOf.subcube fab doms, BindCube.subcube fab cods) in
+        let head : head = Pi (x, subdoms, subcods) in
+        (* We don't need fibrancy fields for all the boundary types, since once something "is a type" we don't need it to be in Fib any more. *)
+        let fields : (k * potential * no_eta) Value.StructfieldAbwd.t =
+          match (is_id_sface fab, !Fibrancy.pi) with
+          | None, _ | _, None -> Bwd.Emp
+          | Some Eq, Some fields ->
+              (* For the top face, we compute its fibrancy fields by evaluating the generic "fibrancy fields of a pi" at the evaluated domains and codomains.  *)
+              let pi_env =
+                Ext (Ext (Emp mn, D.plus_zero mn, Ok doms), D.plus_zero mn, Ok (lam_cube x cods))
+              in
+              eval_structfield_abwd pi_env mn (D.plus_zero mn) mn fields in
+        let value =
+          ready
+            (Val
+               (Canonical { canonical = Pi (x, subdoms, subcods); tyargs = TubeOf.empty kl; fields }))
+        in
+        let tm = Neu { head; args = Emp; value; ty = Lazy.from_val ty } in
+        Hashtbl.add pitbl (SFace_of fab) { tm; ty } in
+      let _ = CubeOf.build mn { build } in
+      Val (Hashtbl.find pitbl (SFace_of (id_sface mn))).tm
   | Let (_, v, body) ->
       (* We evaluate let-bindings lazily, on the chance they aren't actually used. *)
       let m = dim_env env in
@@ -425,12 +432,14 @@ and apply : type n s. s value -> (n, kinetic value) CubeOf.t -> s evaluation =
                 (* We evaluate further with a case tree. *)
                 match force_eval value with
                 | Unrealized -> Val (Neu { head; args; value = ready Unrealized; ty = newty })
+                (* It could be an indexed datatype waiting to be applied to more indices. *)
                 | Val
                     (Canonical
                        {
                          canonical =
                            Data { dim; tyfam; indices = Unfilled _ as indices; constrs; discrete };
                          tyargs = data_tyargs;
+                         fields;
                        }) -> (
                     match (D.compare dim k, D.compare_zero (TubeOf.inst data_tyargs)) with
                     | Neq, _ -> fatal (Dimension_mismatch ("apply", dim, k))
@@ -440,12 +449,15 @@ and apply : type n s. s value -> (n, kinetic value) CubeOf.t -> s evaluation =
                              "datatype was instantiated before being applied to all its indices")
                     | Eq, Zero ->
                         let indices = Fillvec.snoc indices newarg in
+                        (* TODO: What happens to these?  What even are the fields of a not-fully-applied indexed datatype? *)
+                        let fields, _ = (Sorry.e (), fields) in
                         let value =
                           Val
                             (Value.Canonical
                                {
                                  canonical = Data { dim; tyfam; indices; constrs; discrete };
                                  tyargs = TubeOf.empty dim;
+                                 fields;
                                }) in
                         Val (Neu { head; args; value = ready value; ty = newty }))
                 | Val tm -> (
@@ -521,6 +533,26 @@ and field : type n k nk s. s value -> k Field.t -> (nk, n, k) insertion -> s eva
           match energy with
           | Potential -> Unrealized
           | Kinetic -> fatal (Anomaly ("missing field in eval struct: " ^ Field.to_string fld))))
+  (* A canonical type can have fibrancy fields. *)
+  | Canonical { fields; _ } -> (
+      match StructfieldAbwd.find_opt fields fld with
+      | Found (Lower (v, _)) -> force_eval v
+      | Found (Higher { vals; intrinsic; deg; _ }) -> (
+          match
+            (D.compare (dom_deg deg) (dom_ins fldins), D.compare intrinsic (cod_right_ins fldins))
+          with
+          | Eq, Eq -> (
+              match InsmapOf.find fldins vals with
+              | Some v -> force_eval v
+              | None -> fatal (Anomaly "canonical field value unset"))
+          | Neq, _ ->
+              fatal (Dimension_mismatch ("canonical field evaluation", dom_deg deg, dom_ins fldins))
+          | _, Neq ->
+              fatal
+                (Dimension_mismatch ("canonical field intrinsic", intrinsic, cod_right_ins fldins)))
+      | _ ->
+          (* TODO: This will eventually be a bug, but for now we leave it as Unrealized so that types for which we haven't yet defined fibrancy will simply leave their fibrancy fields stuck. *)
+          Unrealized)
   | viewed_tm -> (
       (* We push the permutation from the insertion inside. *)
       let n, k = (cod_left_ins fldins, cod_right_ins fldins) in
@@ -529,7 +561,7 @@ and field : type n k nk s. s value -> k Field.t -> (nk, n, k) insertion -> s eva
       match act_value viewed_tm p with
       (* It must currently be an uninstantiated neutral application.  Later, fibrant types can have (higher) fields. *)
       | Neu { head; args; value; ty = (lazy ty) } -> (
-          let newty = Lazy.from_val (tyof_field (Ok tm) ty fld ~shuf:Trivial fldins) in
+          let newty = lazy (tyof_field (Ok tm) ty fld ~shuf:Trivial fldins) in
           let args = Field (args, fld, fldplus, ins_zero n) in
           if GluedEval.read () then
             let value = field_lazy value fld fldins in
@@ -908,7 +940,9 @@ and eval_canonical : type m a. (m, a) env -> a Term.canonical -> potential evalu
       let canonical =
         Data { dim = dim_env env; tyfam; indices = Fillvec.empty indices; constrs; discrete } in
       let tyargs = TubeOf.empty (dim_env env) in
-      Val (Canonical { canonical; tyargs })
+      (* TODO: Compute fibrancy fields *)
+      let fields = Sorry.e () in
+      Val (Canonical { canonical; tyargs; fields })
   | Codata { eta; opacity; dim; termctx; fields } ->
       eval_codata env eta opacity dim (Lazy.from_val termctx) fields
 
@@ -926,7 +960,9 @@ and eval_codata : type m a c n et.
   let ins = id_ins (dim_env env) ed in
   let canonical = Codata { eta; opacity; env; termctx; ins; fields } in
   let tyargs = TubeOf.empty (dom_ins ins) in
-  Val (Canonical { canonical; tyargs })
+  (* TODO: Compute fibrancy fields *)
+  let fields = Sorry.e () in
+  Val (Canonical { canonical; tyargs; fields })
 
 and eval_term : type m b. (m, b) env -> (b, kinetic) term -> kinetic value =
  fun env tm ->
@@ -1087,7 +1123,7 @@ and inst : type m n mn s. s value -> (m, n, mn, normal) TubeOf.t -> s value =
                       let ty = lazy (tyof_inst tys1 args2) in
                       Neu { head; args; value; ty })
               | _ -> fatal (Anomaly "can't instantiate non-type")))
-      | Canonical { canonical = c; tyargs = args1 } -> (
+      | Canonical { canonical = c; tyargs = args1; fields } -> (
           match D.compare (TubeOf.out args2) (TubeOf.uninst args1) with
           | Neq ->
               fatal
@@ -1095,7 +1131,8 @@ and inst : type m n mn s. s value -> (m, n, mn, normal) TubeOf.t -> s value =
           | Eq ->
               let (Plus nk) = D.plus (TubeOf.inst args1) in
               let args = TubeOf.plus_tube nk args1 args2 in
-              Canonical { canonical = c; tyargs = args })
+              let fields = inst_fibrancy_fields fields args2 in
+              Canonical { canonical = c; tyargs = args; fields })
       | Lam _ | Struct _ | Constr _ -> fatal (Anomaly "instantiating non-type"))
 
 (* Given two families of values, the second intended to be the types of the other, annotate the former by instantiations of the latter to make them into normals.  Since we have to instantiate the types at the *normal* version of the terms, which is what we are computing, we also add the results to a hashtable as we create them so we can access them randomly later.  And since we have to do this sometimes with cubes and sometimes with tubes, we first define the content of the operation as a helper function. *)
