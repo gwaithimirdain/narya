@@ -267,14 +267,25 @@ axiom funext (A : Type) (B : A → Type) (f0 f1 : (x : A) → B x)
   (f2 : (x : A) → eq (B x) (f0 x) (f1 x))
   : eq ((x : A) → B x) f0 f1
 
-{` We also need a version of funext for bridges in function types.  We could probably derive this from the ordinary one, using the definitional isomorphism behavior of Id-Π. `}
+{` We also need a version of funext for bridges in function types.  Since Id-Π is definitionally isomorphic to a triple Π-type, we can derive this from ordinary funext. `}
 
-axiom funext_refl (A0 A1 : Type) (A2 : Id Type A0 A1) (B0 : A0 → Type)
+def funext_refl (A0 A1 : Type) (A2 : Id Type A0 A1) (B0 : A0 → Type)
   (B1 : A1 → Type) (B2 : refl ((X ↦ X → Type) : Type → Type) A2 B0 B1)
   (f0 : Π A0 B0) (f1 : Π A1 B1) (f20 f21 : refl Π A2 B2 f0 f1)
   (f22 : (a0 : A0) (a1 : A1) (a2 : A2 a0 a1)
          → eq.eq (B2 a2 (f0 a0) (f1 a1)) (f20 a2) (f21 a2))
   : eq (refl Π A2 B2 f0 f1) f20 f21
+  ≔ eq.ap ((a0 : A0) (a1 : A1) (a2 : A2 a0 a1) → B2 a2 (f0 a0) (f1 a1))
+      (refl Π A2 {x ↦ B0 x} {x ↦ B1 x} (x ⤇ B2 x.2) f0 f1)
+      (g ↦ x ⤇ g x.0 x.1 x.2) (x0 x1 x2 ⤇ f20 x2) (x0 x1 x2 ⤇ f21 x2)
+      (funext A0 (a0 ↦ (a1 : A1) (a2 : A2 a0 a1) → B2 a2 (f0 a0) (f1 a1))
+         (x0 x1 x2 ↦ f20 x2) (x0 x1 x2 ↦ f21 x2)
+         (a0 ↦
+          funext A1 (a1 ↦ (a2 : A2 a0 a1) → B2 a2 (f0 a0) (f1 a1))
+            (x1 x2 ↦ f20 x2) (x1 x2 ↦ f21 x2)
+            (a1 ↦
+             funext (A2 a0 a1) (a2 ↦ B2 a2 (f0 a0) (f1 a1)) (x2 ↦ f20 x2)
+               (x2 ↦ f21 x2) (a2 ↦ f22 a0 a1 a2))))
 
 {` Now, there are two ways to characterize the Id types of a W-type.  The firts is that the Id-types of an (indexed) W-type are an indexed W-type, which is properly indexed even if the original W-type was not.  This is not helpful for us, since indexed inductive types in general are *not* fibrant until we fibrantly replace them.  However, we include the encode-decode argument here anyway. `}
 
