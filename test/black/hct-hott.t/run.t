@@ -319,6 +319,69 @@
    ￫ info[I0000]
    ￮ constant 𝕗ℕ defined
   
+   ￫ info[I0001]
+   ￮ axiom funext assumed
+  
+   ￫ info[I0001]
+   ￮ axiom funext_refl assumed
+  
+   ￫ info[I0007]
+   ￮ section Indexed_𝕎 opened
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎spec defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎 defined
+  
+   ￫ info[I0000]
+   ￮ constant code_spec defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_encode defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_decode defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_decode_encode defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_encode_decode defined
+  
+   ￫ info[I0000]
+   ￮ constant id_𝕎_iso defined
+  
+   ￫ info[I0008]
+   ￮ section Indexed_𝕎 closed
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎 defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_code defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_encode defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_decode defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_decode_encode defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_encode_decode defined
+  
+   ￫ info[I0000]
+   ￮ constant Id_𝕎_iso defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕗_𝕎_code defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕗𝕎 defined
+  
    ￫ info[I0000]
    ￮ constant Gel defined
   
