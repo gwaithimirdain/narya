@@ -806,9 +806,11 @@ let rec execute :
         match number with
         | None -> (Scope_and_ctx (Bwv.Emp, Ctx.empty), fun f -> f ())
         | Some number -> (
+            let num = Eternity.find_number number in
+            show_hole (No_such_hole number) num;
             let (Find_number (_, { tm = metatm; termctx; _ }, { scope; global; vars; options; _ }))
                 =
-              Eternity.find_number number in
+              num in
             match metatm with
             | `Undefined ->
                 ( Scope_and_ctx (vars, Norm.eval_ctx termctx),
