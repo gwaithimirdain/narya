@@ -349,8 +349,8 @@ let do_holes make_msg =
   let d = S.get () in
   let parametric =
     match d.parametric with
-    | `Nonparametric -> `Nonparametric
-    | `Must_be_parametric | `Maybe_parametric -> `Must_be_parametric in
+    | `Maybe_parametric when not (Dim.Endpoints.internal ()) -> `Must_be_parametric
+    | _ -> d.parametric in
   emit (make_msg (Bwd.length d.current_holes));
   Mbwd.miter
     (fun [ (Meta.Wrap m, p, (loc : Asai.Range.t)) ] ->
