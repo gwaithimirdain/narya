@@ -750,7 +750,7 @@ let () =
                 ( group
                     (px ^^ pp_ws `Break wx ^^ Token.pp Coloneq ^^ pp_ws `Nobreak wscoloneq ^^ pbody),
                   wbody )
-            | _ -> invalid "tuple");
+            | _ -> invalid "tuple (coloneq term)");
       (* This is used when printing labeled fields of a tuple in case mode. *)
       print_case =
         Some
@@ -764,7 +764,7 @@ let () =
                     (px ^^ pp_ws `Break wx ^^ Token.pp Coloneq ^^ pp_ws `Nobreak wscoloneq ^^ ibody),
                   pbody,
                   wbody )
-            | _ -> invalid "tuple");
+            | _ -> invalid "tuple (coloneq case)");
       is_case = (fun _ -> false);
     }
 
@@ -797,7 +797,7 @@ let parens_case :
       `Parens (wslparen, Wrap body, wsrparen)
   (* Other tuple *)
   | Token (LParen, wslparen) :: obs -> `Tuple (wslparen, obs)
-  | _ -> invalid "tuple"
+  | _ -> invalid "tuple (parens)"
 
 let rec process_tuple : type n.
     ((string * string list) option, n check located) Abwd.t ->
@@ -828,12 +828,12 @@ let rec process_tuple : type n.
           let tm = process ctx tm in
           process_tuple (Abwd.add None tm flds) found ctx obs loc
       | [ Term x; Token (Coloneq, _); _ ] -> fatal ?loc:x.loc Invalid_field_in_tuple
-      | _ -> invalid "tuple")
+      | _ -> invalid "tuple (process labeled)")
   (* Unlabeled field *)
   | Term tm :: obs ->
       let tm = process ctx tm in
       process_tuple (Abwd.add None tm flds) found ctx obs loc
-  | _ -> invalid "tuple"
+  | _ -> invalid "tuple (process)"
 
 let rec pp_tuple_fields first prews accum obs : document * Whitespace.t list =
   let prews =
@@ -873,7 +873,15 @@ let rec pp_tuple_fields first prews accum obs : document * Whitespace.t list =
       let itm, ptm, wtm = pp_case `Trivial tm in
       let doc = itm ^^ ptm ^^ pp_ws `None wtm ^^ Token.pp (Op ",") in
       pp_tuple_fields false (Some wscomma) (accum ^^ prews ^^ doc) obs
-  | _ -> invalid "tuple"
+  | Term _ :: Token (tok, _) :: _ ->
+      invalid
+        (Printf.sprintf "tuple (pp, Term, Token %s, length %d)" (Token.to_string tok)
+           (List.length obs))
+  | Term _ :: _ -> invalid (Printf.sprintf "tuple (pp, Term, length %d)" (List.length obs))
+  | Token (tok, _) :: _ ->
+      invalid
+        (Printf.sprintf "tuple (pp, Token %s, length %d)" (Token.to_string tok) (List.length obs))
+  | [] -> invalid (Printf.sprintf "tuple (pp, length %d)" (List.length obs))
 
 let pp_tuple_term obs =
   match parens_case obs with

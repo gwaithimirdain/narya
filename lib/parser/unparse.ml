@@ -359,28 +359,27 @@ let rec unparse : type n lt ls rt rs s.
                                (type i)
                                ((fld, structfield) : i Field.t * (i, m * n * s * et) Structfield.t))
                           ->
-                         match structfield with
-                         | Lower (fldtm, lbl) ->
-                             let fldtm = unparse vars fldtm No.Interval.entire No.Interval.entire in
-                             Snoc
-                               ( acc,
-                                 Term
-                                   (match lbl with
-                                   | `Labeled ->
-                                       unlocated
-                                         (infix ~notn:coloneq
-                                            ~first:(unlocated (Ident ([ Field.to_string fld ], [])))
-                                            ~inner:(Single (Coloneq, []))
-                                            ~last:fldtm ~left_ok:(No.le_refl No.minus_omega)
-                                            ~right_ok:(No.le_refl No.minus_omega))
-                                   (* An unlabeled 1-tuple is currently unparsed as (_ := M). *)
-                                   | `Unlabeled when Bwd.length fields = 1 ->
-                                       unlocated
-                                         (infix ~notn:coloneq ~first:(unlocated (Placeholder []))
-                                            ~inner:(Single (Coloneq, []))
-                                            ~last:fldtm ~left_ok:(No.le_refl No.minus_omega)
-                                            ~right_ok:(No.le_refl No.minus_omega))
-                                   | `Unlabeled -> fldtm) ))
+                         let (Lower (fldtm, lbl)) = structfield in
+                         let fldtm = unparse vars fldtm No.Interval.entire No.Interval.entire in
+                         Snoc
+                           ( acc,
+                             Term
+                               (match lbl with
+                               | `Labeled ->
+                                   unlocated
+                                     (infix ~notn:coloneq
+                                        ~first:(unlocated (Ident ([ Field.to_string fld ], [])))
+                                        ~inner:(Single (Coloneq, []))
+                                        ~last:fldtm ~left_ok:(No.le_refl No.minus_omega)
+                                        ~right_ok:(No.le_refl No.minus_omega))
+                               (* An unlabeled 1-tuple is currently unparsed as (_ := M). *)
+                               | `Unlabeled when Bwd.length fields = 1 ->
+                                   unlocated
+                                     (infix ~notn:coloneq ~first:(unlocated (Placeholder []))
+                                        ~inner:(Single (Coloneq, []))
+                                        ~last:fldtm ~left_ok:(No.le_refl No.minus_omega)
+                                        ~right_ok:(No.le_refl No.minus_omega))
+                               | `Unlabeled -> fldtm) ))
                        Emp fields),
                   (RParen, []) )))
   | Constr (c, _, args) -> (
