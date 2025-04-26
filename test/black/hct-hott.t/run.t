@@ -113,6 +113,18 @@
    ￫ info[I0000]
    ￮ constant eq defined
   
+   ￫ info[I0000]
+   ￮ constant eqd defined
+  
+   ￫ info[I0000]
+   ￮ constant ap2d defined
+  
+   ￫ info[I0000]
+   ￮ constant eqdd defined
+  
+   ￫ info[I0000]
+   ￮ constant ap3d defined
+  
    ￫ info[I0007]
    ￮ section sq opened
   
@@ -237,16 +249,31 @@
    ￮ constant 𝕗Σ defined
   
    ￫ info[I0000]
+   ￮ constant Σ𝕗 defined
+  
+   ￫ info[I0000]
    ￮ constant id_Π_iso defined
   
    ￫ info[I0000]
    ￮ constant 𝕗Π defined
   
    ￫ info[I0000]
+   ￮ constant Π𝕗 defined
+  
+   ￫ info[I0000]
    ￮ constant ∅ defined
   
    ￫ info[I0000]
    ￮ constant 𝕗∅ defined
+  
+   ￫ info[I0000]
+   ￮ constant Gel defined
+  
+   ￫ info[I0000]
+   ￮ constant Gel_iso defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕗Gel defined
   
    ￫ info[I0000]
    ￮ constant sum defined
@@ -262,11 +289,11 @@
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/fibrant_types.ny
-   211 |       (match u0, u1 [
-   212 |        | left. a0, left. a1 ↦ 𝕗A.2 .id.1 a0 a1
-   213 |        | left. _, right. _ ↦ 𝕗∅
-   214 |        | right. _, left. _ ↦ 𝕗∅
-   215 |        | right. b0, right. b1 ↦ 𝕗B.2 .id.1 b0 b1]))]
+   240 |       (match u0, u1 [
+   241 |        | left. a0, left. a1 ↦ 𝕗A.2 .id.1 a0 a1
+   242 |        | left. _, right. _ ↦ 𝕗∅
+   243 |        | right. _, left. _ ↦ 𝕗∅
+   244 |        | right. b0, right. b1 ↦ 𝕗B.2 .id.1 b0 b1]))]
        ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ info[I0000]
@@ -280,34 +307,34 @@
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/fibrant_types.ny
-   230 |        match n0, n1 [
-   231 |        | zero., zero. ↦ zero.
-   232 |        | zero., suc. n1 ↦ match m2 [ ]
-   233 |        | suc. n0, zero. ↦ match m2 [ ]
-   234 |        | suc. n0, suc. n1 ↦ suc. (id_ℕ_iso n0 n1 .to m2)])
+   259 |        match n0, n1 [
+   260 |        | zero., zero. ↦ zero.
+   261 |        | zero., suc. n1 ↦ match m2 [ ]
+   262 |        | suc. n0, zero. ↦ match m2 [ ]
+   263 |        | suc. n0, suc. n1 ↦ suc. (id_ℕ_iso n0 n1 .to m2)])
        ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/fibrant_types.ny
-   235 |       ([ zero. ↦ () | suc. m2 ↦ id_ℕ_iso m2.0 m2.1 .fro m2.2 ])
+   264 |       ([ zero. ↦ () | suc. m2 ↦ id_ℕ_iso m2.0 m2.1 .fro m2.2 ])
        ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/fibrant_types.ny
-   237 |        match n0, n1 [
-   238 |        | zero., zero. ↦ rfl.
-   239 |        | zero., suc. n1 ↦ match m2 [ ]
-   240 |        | suc. n0, zero. ↦ match m2 [ ]
-   241 |        | suc. n0, suc. n1 ↦ id_ℕ_iso n0 n1 .fro_to m2])
+   266 |        match n0, n1 [
+   267 |        | zero., zero. ↦ rfl.
+   268 |        | zero., suc. n1 ↦ match m2 [ ]
+   269 |        | suc. n0, zero. ↦ match m2 [ ]
+   270 |        | suc. n0, suc. n1 ↦ id_ℕ_iso n0 n1 .fro_to m2])
        ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/fibrant_types.ny
-   242 |       ([ zero. ↦ rfl.
-   243 |        | suc. m2 ↦
-   244 |            eq.ap (Id ℕ m2.0 m2.1) (Id ℕ (suc. m2.0) (suc. m2.1)) (x ↦ suc. x)
-   245 |              (id_ℕ_iso m2.0 m2.1 .to (id_ℕ_iso m2.0 m2.1 .fro m2.2)) m2.2
-   246 |              (id_ℕ_iso m2.0 m2.1 .to_fro m2.2)])
+   271 |       ([ zero. ↦ rfl.
+   272 |        | suc. m2 ↦
+   273 |            eq.ap (Id ℕ m2.0 m2.1) (Id ℕ (suc. m2.0) (suc. m2.1)) (x ↦ suc. x)
+   274 |              (id_ℕ_iso m2.0 m2.1 .to (id_ℕ_iso m2.0 m2.1 .fro m2.2)) m2.2
+   275 |              (id_ℕ_iso m2.0 m2.1 .to_fro m2.2)])
        ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ info[I0000]
@@ -322,8 +349,8 @@
    ￫ info[I0001]
    ￮ axiom funext assumed
   
-   ￫ info[I0001]
-   ￮ axiom funext_refl assumed
+   ￫ info[I0000]
+   ￮ constant funext_refl defined
   
    ￫ info[I0007]
    ￮ section Indexed_𝕎 opened
@@ -383,13 +410,49 @@
    ￮ constant 𝕗𝕎 defined
   
    ￫ info[I0000]
-   ￮ constant Gel defined
+   ￮ constant 𝕄_spec defined
   
    ￫ info[I0000]
-   ￮ constant Gel_iso defined
+   ￮ constant 𝕄 defined
   
    ￫ info[I0000]
-   ￮ constant 𝕗Gel defined
+   ￮ constant 𝕄_code_spec defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕄_encode defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕄_decode defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕄_bisim defined
+  
+   ￫ info[I0001]
+   ￮ axiom 𝕄_ext assumed
+  
+   ￫ info[I0000]
+   ￮ constant 𝕄_encode_decode_bisim defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕄_encode_decode defined
+  
+   ￫ info[I0000]
+   ￮ constant refl_𝕄_bisim defined
+  
+   ￫ info[I0001]
+   ￮ axiom refl_𝕄_ext assumed
+  
+   ￫ info[I0000]
+   ￮ constant 𝕄_decode_encode_bisim defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕄_decode_encode defined
+  
+   ￫ info[I0000]
+   ￮ constant Id_𝕄_iso defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕗𝕄 defined
   
    ￫ info[I0004]
    ￮ file loaded: $TESTCASE_ROOT/fibrant_types.ny (source)
@@ -402,12 +465,6 @@
   
    ￫ info[I0100]
    ￮ option set type boundaries to implicit
-  
-   ￫ info[I0000]
-   ￮ constant Σ𝕗 defined
-  
-   ￫ info[I0000]
-   ￮ constant Π𝕗 defined
   
    ￫ info[I0000]
    ￮ constant isContr defined

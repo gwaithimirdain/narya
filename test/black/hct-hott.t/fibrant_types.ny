@@ -96,6 +96,11 @@ def 𝕗Σ (A : Type) (B : A → Type) (𝕗A : isFibrant A)
          (𝕗A.2 .id.1 (u0 .fst) (u1 .fst))
          (a2 ↦ 𝕗B.2 a2 .id.1 (u0 .snd) (u1 .snd)))]
 
+{` Fibrant Σ-types `}
+def Σ𝕗 (A : Fib) (B : A .t → Fib) : Fib ≔ (
+  t ≔ Σ (A .t) (a ↦ B a .t),
+  f ≔ 𝕗Σ (A .t) (a ↦ B a .t) (A .f) (a ↦ B a .f))
+
 {` Π-types `}
 
 def id_Π_iso (A0 : Type) (A1 : Type) (A2 : Id Type A0 A1) (B0 : A0 → Type)
@@ -142,6 +147,11 @@ def 𝕗Π (A : Type) (B : A → Type) (𝕗A : isFibrant A)
              𝕗Π (A.2 a0 a1) (a2 ↦ B.2 a2 (f0 a0) (f1 a1)) (𝕗A.2 .id.1 a0 a1)
                (a2 ↦ 𝕗B.2 a2 .id.1 (f0 a0) (f1 a1)))))]
 
+{` Fibrant Π-types `}
+def Π𝕗 (A : Fib) (B : A .t → Fib) : Fib ≔ (
+  t ≔ (a : A .t) → B a .t,
+  f ≔ 𝕗Π (A .t) (a ↦ B a .t) (A .f) (a ↦ B a .f))
+
 {` Empty type `}
 
 def ∅ : Type ≔ data []
@@ -152,6 +162,25 @@ def 𝕗∅ : isFibrant ∅ ≔ [
 | .liftr.e ↦ [ ]
 | .liftl.e ↦ [ ]
 | .id.e ↦ [ ]]
+
+{` Gel types `}
+
+def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig a b ↦ (
+  ungel : R a b )
+
+def Gel_iso (A B : Type) (R : A → B → Type) (a : A) (b : B)
+  : R a b ≅ Gel A B R a b
+  ≔ (
+  to ≔ r ↦ (r,),
+  fro ≔ g ↦ g .0,
+  to_fro ≔ _ ↦ rfl.,
+  fro_to ≔ _ ↦ rfl.,
+  to_fro_to ≔ _ ↦ rfl.)
+
+def 𝕗Gel (A B : Type) (R : A → B → Type)
+  (𝕗R : (a : A) (b : B) → isFibrant (R a b)) (a : A) (b : B)
+  : isFibrant (Gel A B R a b)
+  ≔ 𝕗eqv (R a b) (Gel A B R a b) (Gel_iso A B R a b) (𝕗R a b)
 
 {` Sum type `}
 
@@ -604,7 +633,6 @@ def 𝕗𝕎 (A : Type) (B : A → Type) (𝕗A : isFibrant A)
              {_ ⤇ 𝕗𝕎 A.0 B.0 𝕗A.0 𝕗B.0} {_ ⤇ 𝕗𝕎 A.1 B.1 𝕗A.1 𝕗B.1}
              (_ ⤇ refl 𝕗𝕎 A.2 B.2 𝕗A.2 𝕗B.2)
          .trl.1 f1)]
-{` Just transport/lift in a Π `}
 | .liftr.e ↦ [
   | sup. a0 f0 ↦
       sup. (𝕗A.2 .liftr.1 a0)
@@ -626,21 +654,239 @@ def 𝕗𝕎 (A : Type) (B : A → Type) (𝕗A : isFibrant A)
       (Id_𝕎_iso A.0 A.1 A.2 B.0 B.1 B.2 x0 x1)
       (𝕗_𝕎_code A.0 A.1 A.2 B.0 B.1 B.2 𝕗A.0 𝕗A.1 𝕗A.2 𝕗B.0 𝕗B.1 𝕗B.2 x0 x1)]
 
-{` Gel types `}
+{` M-types `}
 
-def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig a b ↦ (
-  ungel : R a b )
+{` The bridge types of an M-type are M-types with non-uniform parameters, so we need to treat those in generality. `}
 
-def Gel_iso (A B : Type) (R : A → B → Type) (a : A) (b : B)
-  : R a b ≅ Gel A B R a b
-  ≔ (
-  to ≔ r ↦ (r,),
-  fro ≔ g ↦ g .0,
-  to_fro ≔ _ ↦ rfl.,
-  fro_to ≔ _ ↦ rfl.,
-  to_fro_to ≔ _ ↦ rfl.)
+def 𝕄_spec : Type ≔ sig (
+  R : Type,
+  A : R → Fib,
+  B : (r : R) → A r .t → Fib,
+  k : (r : R) (a : A r .t) → B r a .t → R )
 
-def 𝕗Gel (A B : Type) (R : A → B → Type)
-  (𝕗R : (a : A) (b : B) → isFibrant (R a b)) (a : A) (b : B)
-  : isFibrant (Gel A B R a b)
-  ≔ 𝕗eqv (R a b) (Gel A B R a b) (Gel_iso A B R a b) (𝕗R a b)
+def 𝕄 (s : 𝕄_spec) (r : s .R) : Type ≔ codata [
+| x .recv : s .A r .t
+| x .send : (b : s .B r (x .recv) .t) → 𝕄 s (s .k r (x .recv) b) ]
+
+def 𝕄_code_spec (s0 s1 : 𝕄_spec) (s2 : Id 𝕄_spec s0 s1) : 𝕄_spec ≔ (
+  R ≔ sig (
+    r0 : s0 .R,
+    r1 : s1 .R,
+    r2 : s2 .R r0 r1,
+    x0 : 𝕄 s0 r0,
+    x1 : 𝕄 s1 r1 ),
+  A ≔ r ↦
+    Idd𝕗 (s0 .A (r .r0)) (s1 .A (r .r1)) (s2 .A (r .r2)) (r .x0 .recv)
+      (r .x1 .recv),
+  B ≔ r a2 ↦
+    Σ𝕗 (s0 .B (r .r0) (r .x0 .recv))
+      (b0 ↦
+       Σ𝕗 (s1 .B (r .r1) (r .x1 .recv))
+         (b1 ↦
+          Idd𝕗 (s0 .B (r .r0) (r .x0 .recv)) (s1 .B (r .r1) (r .x1 .recv))
+            (s2 .B (r .r2) a2) b0 b1)),
+  k ≔ r a2 b ↦ (
+    r0 ≔ s0 .k (r .r0) (r .x0 .recv) (b .0),
+    r1 ≔ s1 .k (r .r1) (r .x1 .recv) (b .1 .0),
+    r2 ≔ s2 .k (r .r2) a2 (b .1 .1),
+    x0 ≔ r .x0 .send (b .0),
+    x1 ≔ r .x1 .send (b .1 .0)))
+
+def 𝕄_encode (s0 s1 : 𝕄_spec) (s2 : Id 𝕄_spec s0 s1) (r0 : s0 .R)
+  (r1 : s1 .R) (r2 : s2 .R r0 r1) (x0 : 𝕄 s0 r0) (x1 : 𝕄 s1 r1)
+  (x2 : refl 𝕄 s2 r2 x0 x1)
+  : 𝕄 (𝕄_code_spec s0 s1 s2) (r0, r1, r2, x0, x1)
+  ≔ [
+| .recv ↦ x2 .recv
+| .send ↦ b ↦
+    𝕄_encode s0 s1 s2 (s0 .k r0 (x0 .recv) (b .0))
+      (s1 .k r1 (x1 .recv) (b .1 .0)) (s2 .k r2 (x2 .recv) (b .1 .1))
+      (x0 .send (b .0)) (x1 .send (b .1 .0)) (x2 .send (b .1 .1))]
+
+def 𝕄_decode (s0 s1 : 𝕄_spec) (s2 : Id 𝕄_spec s0 s1) (r0 : s0 .R)
+  (r1 : s1 .R) (r2 : s2 .R r0 r1) (x0 : 𝕄 s0 r0) (x1 : 𝕄 s1 r1)
+  (y2 : 𝕄 (𝕄_code_spec s0 s1 s2) (r0, r1, r2, x0, x1))
+  : refl 𝕄 s2 r2 x0 x1
+  ≔ [
+| .recv ↦ y2 .recv
+| .send ↦ b ⤇
+    𝕄_decode s0 s1 s2 (s0 .k r0 (x0 .recv) b.0) (s1 .k r1 (x1 .recv) b.1)
+      (s2 .k r2 (y2 .recv) b.2) (x0 .send b.0) (x1 .send b.1)
+      (y2 .send (b.0, (b.1, b.2)))]
+
+{` We need "coinductive extensionality" for eq.  The version we need says that the eq-types of 𝕄, dependent over an equality of indices, are again an 𝕄-type, similar to the codes for Id but without changing the spec.  In the application we only use this over a fixed index, but we can't *define* it in general without passing to a non-rfl equality of indices. `}
+
+def 𝕄_bisim (s : 𝕄_spec) (r0 : s .R) (r1 : s .R) (r2 : eq (s .R) r0 r1)
+  (x0 : 𝕄 s r0) (x1 : 𝕄 s r1)
+  : Type
+  ≔ codata [
+| x2 .recv : eqd (s .R) (r ↦ s .A r .t) r0 r1 r2 (x0 .recv) (x1 .recv)
+| x2 .send
+  : (b0 : s .B r0 (x0 .recv) .t) (b1 : s .B r1 (x1 .recv) .t)
+    (b2
+    : eqdd (s .R) (r ↦ s .A r .t) (r a ↦ s .B r a .t) r0 r1 r2 (x0 .recv)
+        (x1 .recv) (x2 .recv) b0 b1)
+    → 𝕄_bisim s (s .k r0 (x0 .recv) b0) (s .k r1 (x1 .recv) b1)
+        (ap3d (s .R) (r ↦ s .A r .t) (r a ↦ s .B r a .t) (s .R) (s .k) r0 r1
+           r2 (x0 .recv) (x1 .recv) (x2 .recv) b0 b1 b2) (x0 .send b0)
+        (x1 .send b1) ]
+
+axiom 𝕄_ext (s : 𝕄_spec) (r : s .R) (x0 x1 : 𝕄 s r)
+  (y2 : 𝕄_bisim s r r rfl. x0 x1)
+  : eq (𝕄 s r) x0 x1
+
+def 𝕄_encode_decode_bisim (s0 s1 : 𝕄_spec) (s2 : Id 𝕄_spec s0 s1)
+  (r0 : s0 .R) (r1 : s1 .R) (r2 : s2 .R r0 r1) (x0 : 𝕄 s0 r0) (x1 : 𝕄 s1 r1)
+  (y2 : 𝕄 (𝕄_code_spec s0 s1 s2) (r0, r1, r2, x0, x1))
+  : 𝕄_bisim (𝕄_code_spec s0 s1 s2) (r0, r1, r2, x0, x1) (r0, r1, r2, x0, x1)
+      rfl.
+      (𝕄_encode s0 s1 s2 r0 r1 r2 x0 x1 (𝕄_decode s0 s1 s2 r0 r1 r2 x0 x1 y2))
+      y2
+  ≔ [
+| .recv ↦ rfl.
+| .send ↦ b0 b1 b2 ↦ match b2 [
+  | rfl. ↦
+      𝕄_encode_decode_bisim s0 s1 s2 (s0 .k r0 (x0 .recv) (b0 .0))
+        (s1 .k r1 (x1 .recv) (b0 .1 .0)) (s2 .k r2 (y2 .recv) (b0 .1 .1))
+        (x0 .send (b0 .0)) (x1 .send (b0 .1 .0)) (y2 .send b0)]]
+
+def 𝕄_encode_decode (s0 s1 : 𝕄_spec) (s2 : Id 𝕄_spec s0 s1) (r0 : s0 .R)
+  (r1 : s1 .R) (r2 : s2 .R r0 r1) (x0 : 𝕄 s0 r0) (x1 : 𝕄 s1 r1)
+  (y2 : 𝕄 (𝕄_code_spec s0 s1 s2) (r0, r1, r2, x0, x1))
+  : eq (𝕄 (𝕄_code_spec s0 s1 s2) (r0, r1, r2, x0, x1))
+      (𝕄_encode s0 s1 s2 r0 r1 r2 x0 x1 (𝕄_decode s0 s1 s2 r0 r1 r2 x0 x1 y2))
+      y2
+  ≔ 𝕄_ext (𝕄_code_spec s0 s1 s2) (r0, r1, r2, x0, x1)
+      (𝕄_encode s0 s1 s2 r0 r1 r2 x0 x1 (𝕄_decode s0 s1 s2 r0 r1 r2 x0 x1 y2))
+      y2 (𝕄_encode_decode_bisim s0 s1 s2 r0 r1 r2 x0 x1 y2)
+
+{` For the other direction we need a version of this for refl 𝕄. `}
+
+def refl_𝕄_bisim (s0 s1 : 𝕄_spec) (s2 : Id 𝕄_spec s0 s1) (r0 : s0 .R)
+  (r1 : s1 .R) (r20 : s2 .R r0 r1) (r21 : s2 .R r0 r1)
+  (r22 : eq (s2 .R r0 r1) r20 r21) (x0 : 𝕄 s0 r0) (x1 : 𝕄 s1 r1)
+  (x20 : refl 𝕄 s2 r20 x0 x1) (x21 : refl 𝕄 s2 r21 x0 x1)
+  : Type
+  ≔ codata [
+| y2 .recv
+  : eqd (s2 .R r0 r1) (r2 ↦ s2 .A r2 .t (x0 .recv) (x1 .recv)) r20 r21 r22
+      (x20 .recv) (x21 .recv)
+| y2 .send
+  : (b0 : s0 .B r0 (x0 .recv) .t) (b1 : s1 .B r1 (x1 .recv) .t)
+    (b20 : s2 .B r20 (x20 .recv) .t b0 b1)
+    (b21 : s2 .B r21 (x21 .recv) .t b0 b1)
+    (b22
+    : eqdd (s2 .R r0 r1) (r2 ↦ s2 .A r2 .t (x0 .recv) (x1 .recv))
+        (r2 a2 ↦ s2 .B r2 a2 .t b0 b1) r20 r21 r22 (x20 .recv) (x21 .recv)
+        (y2 .recv) b20 b21)
+    → refl_𝕄_bisim s0 s1 s2 (s0 .k r0 (x0 .recv) b0) (s1 .k r1 (x1 .recv) b1)
+        (s2 .k r20 (x20 .recv) b20) (s2 .k r21 (x21 .recv) b21)
+        (ap3d (s2 .R r0 r1) (r2 ↦ s2 .A r2 .t (x0 .recv) (x1 .recv))
+           (r2 a2 ↦ s2 .B r2 a2 .t b0 b1)
+           (s2 .R (s0 .k r0 (x0 .recv) b0) (s1 .k r1 (x1 .recv) b1))
+           (r2 a2 b2 ↦ s2 .k r2 a2 b2) r20 r21 r22 (x20 .recv) (x21 .recv)
+           (y2 .recv) b20 b21 b22) (x0 .send b0) (x1 .send b1)
+        (x20 .send b20) (x21 .send b21) ]
+
+axiom refl_𝕄_ext (s0 s1 : 𝕄_spec) (s2 : Id 𝕄_spec s0 s1) (r0 : s0 .R)
+  (r1 : s1 .R) (r2 : s2 .R r0 r1) (x0 : 𝕄 s0 r0) (x1 : 𝕄 s1 r1)
+  (x20 : refl 𝕄 s2 r2 x0 x1) (x21 : refl 𝕄 s2 r2 x0 x1)
+  (y22 : refl_𝕄_bisim s0 s1 s2 r0 r1 r2 r2 rfl. x0 x1 x20 x21)
+  : eq (refl 𝕄 s2 r2 x0 x1) x20 x21
+
+def 𝕄_decode_encode_bisim (s0 s1 : 𝕄_spec) (s2 : Id 𝕄_spec s0 s1)
+  (r0 : s0 .R) (r1 : s1 .R) (r2 : s2 .R r0 r1) (x0 : 𝕄 s0 r0) (x1 : 𝕄 s1 r1)
+  (x2 : refl 𝕄 s2 r2 x0 x1)
+  : refl_𝕄_bisim s0 s1 s2 r0 r1 r2 r2 rfl. x0 x1
+      (𝕄_decode s0 s1 s2 r0 r1 r2 x0 x1 (𝕄_encode s0 s1 s2 r0 r1 r2 x0 x1 x2))
+      x2
+  ≔ [
+| .recv ↦ rfl.
+| .send ↦ b0 b1 b20 b21 b22 ↦ match b22 [
+  | rfl. ↦
+      𝕄_decode_encode_bisim s0 s1 s2 (s0 .k r0 (x0 .recv) b0)
+        (s1 .k r1 (x1 .recv) b1) (s2 .k r2 (x2 .recv) b20) (x0 .send b0)
+        (x1 .send b1) (x2 .send b20)]]
+
+def 𝕄_decode_encode (s0 s1 : 𝕄_spec) (s2 : Id 𝕄_spec s0 s1) (r0 : s0 .R)
+  (r1 : s1 .R) (r2 : s2 .R r0 r1) (x0 : 𝕄 s0 r0) (x1 : 𝕄 s1 r1)
+  (x2 : refl 𝕄 s2 r2 x0 x1)
+  : eq (refl 𝕄 s2 r2 x0 x1)
+      (𝕄_decode s0 s1 s2 r0 r1 r2 x0 x1 (𝕄_encode s0 s1 s2 r0 r1 r2 x0 x1 x2))
+      x2
+  ≔ refl_𝕄_ext s0 s1 s2 r0 r1 r2 x0 x1
+      (𝕄_decode s0 s1 s2 r0 r1 r2 x0 x1 (𝕄_encode s0 s1 s2 r0 r1 r2 x0 x1 x2))
+      x2 (𝕄_decode_encode_bisim s0 s1 s2 r0 r1 r2 x0 x1 x2)
+
+def Id_𝕄_iso (s0 s1 : 𝕄_spec) (s2 : Id 𝕄_spec s0 s1) (r0 : s0 .R)
+  (r1 : s1 .R) (r2 : s2 .R r0 r1) (x0 : 𝕄 s0 r0) (x1 : 𝕄 s1 r1)
+  : 𝕄 (𝕄_code_spec s0 s1 s2) (r0, r1, r2, x0, x1) ≅ refl 𝕄 s2 r2 x0 x1
+  ≔ adjointify (𝕄 (𝕄_code_spec s0 s1 s2) (r0, r1, r2, x0, x1))
+      (refl 𝕄 s2 r2 x0 x1) (𝕄_decode s0 s1 s2 r0 r1 r2 x0 x1)
+      (𝕄_encode s0 s1 s2 r0 r1 r2 x0 x1)
+      (𝕄_encode_decode s0 s1 s2 r0 r1 r2 x0 x1)
+      (𝕄_decode_encode s0 s1 s2 r0 r1 r2 x0 x1)
+
+{` And finally we can prove that 𝕄-types are fibrant.  Again we have "recursive calls" to 𝕗𝕄 in each of the clauses, presumably justified by some kind of productivity. `}
+
+def 𝕗𝕄 (s : 𝕄_spec) (r : s .R) : isFibrant (𝕄 s r) ≔ [
+| .trr.e ↦ x0 ↦ [
+  | .recv ↦ s.2 .A r.2 .f .trr.1 (x0 .recv)
+  | .send ↦
+      refl 𝕗Π (s.2 .B r.2 (s.2 .A r.2 .f .liftr.1 (x0 .recv)) .t)
+          {b0 ↦ 𝕄 s.0 (s.0 .k r.0 (x0 .recv) b0)}
+          {b1 ↦ 𝕄 s.1 (s.1 .k r.1 (s.2 .A r.2 .f .trr.1 (x0 .recv)) b1)}
+          (b2 ⤇
+           refl 𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftr.1 (x0 .recv)) b2))
+          (s.2 .B r.2 (s.2 .A r.2 .f .liftr.1 (x0 .recv)) .f)
+          {b0 ↦ 𝕗𝕄 s.0 (s.0 .k r.0 (x0 .recv) b0)}
+          {b1 ↦ 𝕗𝕄 s.1 (s.1 .k r.1 (s.2 .A r.2 .f .trr.1 (x0 .recv)) b1)}
+          (b2 ⤇
+           refl 𝕗𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftr.1 (x0 .recv)) b2))
+        .trr.1 (b0 ↦ x0 .send b0)]
+| .trl.e ↦ x1 ↦ [
+  | .recv ↦ s.2 .A r.2 .f .trl.1 (x1 .recv)
+  | .send ↦
+      refl 𝕗Π (s.2 .B r.2 (s.2 .A r.2 .f .liftl.1 (x1 .recv)) .t)
+          {b0 ↦ 𝕄 s.0 (s.0 .k r.0 (s.2 .A r.2 .f .trl.1 (x1 .recv)) b0)}
+          {b1 ↦ 𝕄 s.1 (s.1 .k r.1 (x1 .recv) b1)}
+          (b2 ⤇
+           refl 𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftl.1 (x1 .recv)) b2))
+          (s.2 .B r.2 (s.2 .A r.2 .f .liftl.1 (x1 .recv)) .f)
+          {b0 ↦ 𝕗𝕄 s.0 (s.0 .k r.0 (s.2 .A r.2 .f .trl.1 (x1 .recv)) b0)}
+          {b1 ↦ 𝕗𝕄 s.1 (s.1 .k r.1 (x1 .recv) b1)}
+          (b2 ⤇
+           refl 𝕗𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftl.1 (x1 .recv)) b2))
+        .trl.1 (b1 ↦ x1 .send b1)]
+| .liftr.e ↦ x0 ↦ [
+  | .recv ↦ s.2 .A r.2 .f .liftr.1 (x0 .recv)
+  | .send ↦
+      refl 𝕗Π (s.2 .B r.2 (s.2 .A r.2 .f .liftr.1 (x0 .recv)) .t)
+          {b0 ↦ 𝕄 s.0 (s.0 .k r.0 (x0 .recv) b0)}
+          {b1 ↦ 𝕄 s.1 (s.1 .k r.1 (s.2 .A r.2 .f .trr.1 (x0 .recv)) b1)}
+          (b2 ⤇
+           refl 𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftr.1 (x0 .recv)) b2))
+          (s.2 .B r.2 (s.2 .A r.2 .f .liftr.1 (x0 .recv)) .f)
+          {b0 ↦ 𝕗𝕄 s.0 (s.0 .k r.0 (x0 .recv) b0)}
+          {b1 ↦ 𝕗𝕄 s.1 (s.1 .k r.1 (s.2 .A r.2 .f .trr.1 (x0 .recv)) b1)}
+          (b2 ⤇
+           refl 𝕗𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftr.1 (x0 .recv)) b2))
+        .liftr.1 (b0 ↦ x0 .send b0)]
+| .liftl.e ↦ x1 ↦ [
+  | .recv ↦ s.2 .A r.2 .f .liftl.1 (x1 .recv)
+  | .send ↦
+      refl 𝕗Π (s.2 .B r.2 (s.2 .A r.2 .f .liftl.1 (x1 .recv)) .t)
+          {b0 ↦ 𝕄 s.0 (s.0 .k r.0 (s.2 .A r.2 .f .trl.1 (x1 .recv)) b0)}
+          {b1 ↦ 𝕄 s.1 (s.1 .k r.1 (x1 .recv) b1)}
+          (b2 ⤇
+           refl 𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftl.1 (x1 .recv)) b2))
+          (s.2 .B r.2 (s.2 .A r.2 .f .liftl.1 (x1 .recv)) .f)
+          {b0 ↦ 𝕗𝕄 s.0 (s.0 .k r.0 (s.2 .A r.2 .f .trl.1 (x1 .recv)) b0)}
+          {b1 ↦ 𝕗𝕄 s.1 (s.1 .k r.1 (x1 .recv) b1)}
+          (b2 ⤇
+           refl 𝕗𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftl.1 (x1 .recv)) b2))
+        .liftl.1 (b1 ↦ x1 .send b1)]
+| .id.e ↦ x0 x1 ↦
+    𝕗eqv (𝕄 (𝕄_code_spec s.0 s.1 s.2) (r.0, r.1, r.2, x0, x1))
+      (refl 𝕄 s.2 r.2 x0 x1) (Id_𝕄_iso s.0 s.1 s.2 r.0 r.1 r.2 x0 x1)
+      (𝕗𝕄 (𝕄_code_spec s.0 s.1 s.2) (r.0, r.1, r.2, x0, x1))]

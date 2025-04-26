@@ -6,16 +6,6 @@ import "hott_bookhott"
 option function boundaries ≔ implicit
 option type boundaries ≔ implicit
 
-{` Fibrant Σ-types `}
-def Σ𝕗 (A : Fib) (B : A .t → Fib) : Fib ≔ (
-  t ≔ Σ (A .t) (a ↦ B a .t),
-  f ≔ 𝕗Σ (A .t) (a ↦ B a .t) (A .f) (a ↦ B a .f))
-
-{` Fibrant Π-types `}
-def Π𝕗 (A : Fib) (B : A .t → Fib) : Fib ≔ (
-  t ≔ (a : A .t) → B a .t,
-  f ≔ 𝕗Π (A .t) (a ↦ B a .t) (A .f) (a ↦ B a .f))
-
 {` Contractibility `}
 def isContr (A : Fib) : Type ≔ sig (
   center : A .t,
