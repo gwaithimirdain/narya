@@ -139,9 +139,10 @@ module Make (I : Indices) = struct
   (* Checkable raw terms *)
   and _ check =
     | Synth : 'a synth -> 'a check
+    (* An abstraction knows whether it is a cube abstraction (⤇) or a normal one (↦).  In the former case it stores an optional dimension, so that multiple variables in the same abstraction (x y ⤇) can be enforced to be the same dimension, and the location of the previous variable that set the dimension. *)
     | Lam : {
         name : I.name located;
-        cube : [ `Cube | `Normal ];
+        cube : [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ];
         body : 'a I.suc check located;
       }
         -> 'a check

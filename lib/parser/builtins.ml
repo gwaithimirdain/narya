@@ -164,7 +164,7 @@ let rec get_vars : type n lt1 ls1 rt1 rs1.
 
 let rec raw_lam : type a b ab.
     (string option, ab) Bwv.t ->
-    [ `Cube | `Normal ] ->
+    [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ] ->
     (a, b, ab) N.plus ->
     (Asai.Range.t option, b) Bwv.t ->
     ab check located ->
@@ -183,9 +183,13 @@ let rec raw_lam : type a b ab.
 let process_abs cube ctx obs _loc =
   (* The loc argument isn't used here since we can deduce the locations of each lambda by merging its variables with its body. *)
   match obs with
-  (* Don't bother checking that the mapsto token is valid; it could be different in the two cases. *)
-  | [ Term vars; Token _; Term body ] ->
+  | [ Term vars; Token (tok, _); Term body ]
+    when (tok = DblMapsto && cube = `Cube) || (tok = Mapsto && cube = `Normal) ->
       let (Extctx (ab, locs, ctx)) = get_vars ctx vars in
+      let cube =
+        match cube with
+        | `Normal -> `Normal
+        | `Cube -> `Cube (ref None) in
       raw_lam ctx cube ab locs (process ctx body)
   | _ -> invalid "abstraction"
 

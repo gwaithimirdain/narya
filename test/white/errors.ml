@@ -129,4 +129,16 @@ let () =
 
   (* Cube variables *)
   let () = uncheck ~print:() "x ↦ x.0" atoa ~short:"E0506" in
+  let () = uncheck ~print:() "x ⤇ x" atoa ~short:"E0507" in
+  let () = uncheck ~print:() "x ↦ x" idff ~short:"E0501" in
+  let _ = check "x ⤇ refl f x.0 x.1 x.2" idff in
+  let atoidff = check "A → Id (A→A) f f" uu in
+  let () = uncheck ~print:() "a x ⤇ refl f x.0 x.1 x.2" atoidff ~short:"E0507" in
+  let _ = check "a ↦ x ⤇ refl f x.0 x.1 x.2" atoidff in
+  let af = assume "af" atoidff in
+  let idafaf = check "Id (A → Id (A→A) f f) af af" uu in
+  let _ = check "a ⤇ x ⤇ refl af a.0 a.1 a.2 x.00 x.01 x.02 x.10 x.11 x.12 x.20 x.21 x.22" idafaf in
+  let () =
+    uncheck ~print:() "a x ⤇ refl af a.0 a.1 a.2 x.00 x.01 x.02 x.10 x.11 x.12 x.20 x.21 x.22"
+      idafaf ~short:"E0508" in
   ()

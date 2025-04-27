@@ -323,10 +323,23 @@ let rec check : type a b s.
                     let ctx = Ctx.vis ctx D.zero (D.zero_plus m) names newnfs af in
                     Lam (xs, check ?discrete (mkstatus xs status) ctx body output)
                 | Wrap (_, Missing (loc, j)) -> fatal ?loc (Not_enough_lambdas j))
-            | `Cube -> (
+            | `Cube absdim -> (
                 match D.compare_zero m with
                 | Zero -> fatal ?loc:xloc Zero_dimensional_cube_abstraction
                 | Pos _ ->
+                    (match !absdim with
+                    | None -> absdim := Some (Wrap m, xloc)
+                    | Some (Wrap m', xloc') -> (
+                        match D.compare m m' with
+                        | Eq -> ()
+                        | Neq ->
+                            let extra_remarks =
+                              Option.to_list
+                                (Option.map
+                                   (fun loc -> Asai.Diagnostic.loctext ~loc "previous variable")
+                                   xloc') in
+                            fatal ?loc:xloc ~extra_remarks
+                              (Mismatched_dimensions_in_cube_abstraction (m', m))));
                     (* Here we don't need to slurp up lots of lambdas, but can make do with one. *)
                     let xs = singleton_variables m x in
                     let ctx = Ctx.cube_vis ctx x newnfs in
