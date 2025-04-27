@@ -153,13 +153,13 @@ let rec get_vars : type n lt1 ls1 rt1 rs1.
       Extctx (Suc Zero, Snoc (Emp, vars.loc), Bwv.snoc ctx (Some x))
   | Ident (xs, _) -> fatal ?loc:vars.loc (Invalid_variable xs)
   | Placeholder _ -> Extctx (Suc Zero, Snoc (Emp, vars.loc), Bwv.snoc ctx None)
-  | App { fn; arg = { value = Ident ([ x ], _); _ }; _ } when Lexer.valid_var x ->
+  | App { fn; arg = { value = Ident ([ x ], _); loc = xloc }; _ } when Lexer.valid_var x ->
       let (Extctx (ab, locs, ctx)) = get_vars ctx fn in
-      Extctx (Suc ab, Snoc (locs, vars.loc), Bwv.snoc ctx (Some x))
+      Extctx (Suc ab, Snoc (locs, xloc), Bwv.snoc ctx (Some x))
   | App { arg = { value = Ident (xs, _); loc }; _ } -> fatal ?loc (Invalid_variable xs)
-  | App { fn; arg = { value = Placeholder _; _ }; _ } ->
+  | App { fn; arg = { value = Placeholder _; loc = xloc }; _ } ->
       let (Extctx (ab, locs, ctx)) = get_vars ctx fn in
-      Extctx (Suc ab, Snoc (locs, vars.loc), Bwv.snoc ctx None)
+      Extctx (Suc ab, Snoc (locs, xloc), Bwv.snoc ctx None)
   | _ -> fatal ?loc:vars.loc Parse_error
 
 let rec raw_lam : type a b ab.
