@@ -27,7 +27,13 @@ type pmt =
 let rec parse_chk : type n. (string, n) Bwv.t -> pmt -> n Raw.check located =
  fun ctx -> function
   | Lam (x, body) ->
-      unlocated (Raw.Lam ({ value = Some x; loc = None }, `Normal, parse_chk (Snoc (ctx, x)) body))
+      unlocated
+        (Raw.Lam
+           {
+             name = { value = Some x; loc = None };
+             cube = `Normal;
+             body = parse_chk (Snoc (ctx, x)) body;
+           })
   | Struct tms ->
       unlocated
         (Raw.Struct

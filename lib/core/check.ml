@@ -270,7 +270,7 @@ let rec check : type a b s.
             let ctx = if locking fa then Ctx.lock ctx else ctx in
             let cx = check (Kinetic `Nolet) ctx x ty_fainv in
             realize status (Term.Act (cx, fa)))
-    | Lam ({ value = x; loc = xloc }, cube, body), _ -> (
+    | Lam { name = { value = x; loc = xloc }; cube; body }, _ -> (
         match view_type ~severity ty "typechecking lambda" with
         | Canonical (_, Pi (_, doms, cods), tyargs) -> (
             (* TODO: Move this into a helper function, it's too long to go in here. *)
@@ -306,8 +306,13 @@ let rec check : type a b s.
                     {
                       build =
                         (fun _ -> function
-                          | Ok (_, ab, { value = Lam ({ value = x; loc }, `Normal, body); _ }) ->
-                              Fwrap (NFamOf x, Ok (loc, Suc ab, body))
+                          | Ok
+                              ( _,
+                                ab,
+                                {
+                                  value = Lam { name = { value = x; loc }; cube = `Normal; body };
+                                  _;
+                                } ) -> Fwrap (NFamOf x, Ok (loc, Suc ab, body))
                           | Ok (loc, _, _) -> Fwrap (NFamOf None, Missing (loc, 1))
                           | Missing (loc, j) -> Fwrap (NFamOf None, Missing (loc, j + 1)));
                     }

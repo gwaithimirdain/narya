@@ -225,8 +225,8 @@ module F = struct
    fun ppf c ->
     match c with
     | Synth s -> synth ppf s
-    | Lam (x, _, body) ->
-        fprintf ppf "Lam(%s, %a)" (Option.value ~default:"_" x.value) check body.value
+    | Lam { name; cube = _; body } ->
+        fprintf ppf "Lam(%s, %a)" (Option.value ~default:"_" name.value) check body.value
     | Struct (_, flds) ->
         fprintf ppf "Struct(";
         Mbwd.miter

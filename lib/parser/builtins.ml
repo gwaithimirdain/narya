@@ -169,13 +169,16 @@ let rec raw_lam : type a b ab.
     (Asai.Range.t option, b) Bwv.t ->
     ab check located ->
     a check located =
- fun names cube ab locs tm ->
+ fun names cube ab locs body ->
   match (ab, locs) with
-  | Zero, Emp -> tm
+  | Zero, Emp -> body
   | Suc ab, Snoc (locs, loc) ->
       let (Snoc (names, x)) = names in
       raw_lam names cube ab locs
-        { value = Lam ({ value = x; loc }, cube, tm); loc = Range.merge_opt loc tm.loc }
+        {
+          value = Lam { name = { value = x; loc }; cube; body };
+          loc = Range.merge_opt loc body.loc;
+        }
 
 let process_abs cube ctx obs _loc =
   (* The loc argument isn't used here since we can deduce the locations of each lambda by merging its variables with its body. *)

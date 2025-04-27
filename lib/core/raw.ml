@@ -139,7 +139,12 @@ module Make (I : Indices) = struct
   (* Checkable raw terms *)
   and _ check =
     | Synth : 'a synth -> 'a check
-    | Lam : I.name located * [ `Cube | `Normal ] * 'a I.suc check located -> 'a check
+    | Lam : {
+        name : I.name located;
+        cube : [ `Cube | `Normal ];
+        body : 'a I.suc check located;
+      }
+        -> 'a check
     (* A "Struct" is our current name for both tuples and comatches, which share a lot of their implementation even though they are conceptually and syntactically distinct.  Those with eta=`Eta are tuples, those with eta=`Noeta are comatches.  We index them by an option so as to include any unlabeled fields, with their relative order to the labeled ones.  The field hasn't been interned to an intrinsic dimension yet (that depends on what it checks against), so it's just a string name, plus a list of strings to indicate a pbij for higher fields. *)
     | Struct : ('s, 'et) eta * ((string * string list) option, 'a check located) Abwd.t -> 'a check
     | Constr : Constr.t located * 'a check located list -> 'a check
@@ -305,8 +310,13 @@ module Resolve (R : Resolver) = struct
     let newtm : a2 T2.check =
       match tm.value with
       | Synth x -> Synth (synth ctx (locate_opt tm.loc x)).value
-      | Lam (x, sort, body) ->
-          Lam (locate_map (R.rename ctx) x, sort, check (R.snoc ctx x.value) body)
+      | Lam { name; cube; body } ->
+          Lam
+            {
+              name = locate_map (R.rename ctx) name;
+              cube;
+              body = check (R.snoc ctx name.value) body;
+            }
       | Struct (eta, fields) -> Struct (eta, Abwd.map (check ctx) fields)
       | Constr (c, args) -> Constr (c, List.map (check ctx) args)
       | Numeral x -> Numeral x
@@ -411,7 +421,7 @@ let rec lams : type a b ab.
  fun ab xs tm loc ->
   match (ab, xs) with
   | Zero, [] -> tm
-  | Suc ab, x :: xs -> { value = Lam (x, `Normal, lams ab xs tm loc); loc }
+  | Suc ab, name :: xs -> { value = Lam { name; cube = `Normal; body = lams ab xs tm loc }; loc }
 
 let rec bplus_of_tel : type a b c. (a, b, c) tel -> (a, b, c) Fwn.bplus = function
   | Emp -> Zero
