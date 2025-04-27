@@ -1625,6 +1625,7 @@ and with_codata_so_far : type a b n c et.
                   (CubeOf.singleton prev_ety)))
         and termctx () =
           let newctx = Ctx.cube_vis ctx None (domvars ()) in
+          (* We don't spend the effort to readback the termctx unless the codatatype has higher fields, since it's only needed in that case (to read back the environment). *)
           Option.map (fun () -> readback_ctx newctx) has_higher_fields in
         (domvars (), termctx ())
     | Snoc _ ->

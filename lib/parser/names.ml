@@ -11,11 +11,12 @@ let __ANONYMOUS_VARIABLE__ = "_H"
 
 (* Track the used variable names, to generate fresh ones for bound variables if needed. *)
 
-(* We store a parametrized list like a context, and also a map that counts how many like-named variables already exist, so that we can create a new one with an unused number. *)
+(* We store a parametrized list of cubes of variable names like a context, along with a mapping of field names to local variable names bound textually to that field of the variable. *)
 type 'b ctx =
   | Emp : emp ctx
   | Snoc : 'b ctx * 'n variables * (string, string) Abwd.t -> ('b, 'n) snoc ctx
 
+(* We also store a map that counts how many like-named variables already exist, so that we can create a new one with an unused number. *)
 type 'b t = { ctx : 'b ctx; used : int StringMap.t }
 
 let empty : emp t = { ctx = Emp; used = StringMap.empty }
