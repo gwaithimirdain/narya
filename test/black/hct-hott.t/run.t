@@ -1,3 +1,5 @@
+  $ rm -f *.nyo
+
   $ narya -v univalence.ny
    ￫ info[I0003]
    ￮ loading file: $TESTCASE_ROOT/isfibrant.ny

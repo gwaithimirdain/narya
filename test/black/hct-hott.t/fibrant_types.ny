@@ -121,7 +121,7 @@ def 𝕗Π (A : Type) (B : A → Type) (𝕗A : isFibrant A)
   ≔ [
 | .trr.e ↦ f0 a1 ↦ 𝕗B.2 (𝕗A.2 .liftl.1 a1) .trr.1 (f0 (𝕗A.2 .trl.1 a1))
 | .trl.e ↦ f1 a0 ↦ 𝕗B.2 (𝕗A.2 .liftr.1 a0) .trl.1 (f1 (𝕗A.2 .trr.1 a0))
-| .liftr.e ↦ f0 a ⤇
+| .liftr.e ↦ f0 ↦ a ⤇
     refl 𝕗B.2
         (sym
            (sym (refl 𝕗A.2) .id.1 a.2 (𝕗A.2 .liftl.1 a.1) .liftl.1 (refl a.1)))
@@ -129,7 +129,7 @@ def 𝕗Π (A : Type) (B : A → Type) (𝕗A : isFibrant A)
         (refl f0 (𝕗A.2⁽ᵉ¹⁾ .id.1 a.2 (𝕗A.2 .liftl.1 a.1) .trl.1 (refl a.1)))
         (refl (𝕗B.2 (𝕗A.2 .liftl.1 a.1) .trr.1 (f0 (𝕗A.2 .trl.1 a.1))))
       .trl.1 (𝕗B.2 (𝕗A.2 .liftl.1 a.1) .liftr.1 (f0 (𝕗A.2 .trl.1 a.1)))
-| .liftl.e ↦ f1 a ⤇
+| .liftl.e ↦ f1 ↦ a ⤇
     refl 𝕗B.2
         (sym
            (sym (refl 𝕗A.2) .id.1 a.2 (𝕗A.2 .liftr.1 a.0) .liftr.1 (refl a.0)))
@@ -306,7 +306,7 @@ def funext_refl (A0 A1 : Type) (A2 : Id Type A0 A1) (B0 : A0 → Type)
   : eq (refl Π A2 B2 f0 f1) f20 f21
   ≔ eq.ap ((a0 : A0) (a1 : A1) (a2 : A2 a0 a1) → B2 a2 (f0 a0) (f1 a1))
       (refl Π A2 {x ↦ B0 x} {x ↦ B1 x} (x ⤇ B2 x.2) f0 f1)
-      (g ↦ x ⤇ g x.0 x.1 x.2) (x0 x1 x2 ⤇ f20 x2) (x0 x1 x2 ⤇ f21 x2)
+      (g ↦ x ⤇ g x.0 x.1 x.2) (x0 x1 x2 ↦ f20 x2) (x0 x1 x2 ↦ f21 x2)
       (funext A0 (a0 ↦ (a1 : A1) (a2 : A2 a0 a1) → B2 a2 (f0 a0) (f1 a1))
          (x0 x1 x2 ↦ f20 x2) (x0 x1 x2 ↦ f21 x2)
          (a0 ↦
@@ -620,33 +620,33 @@ def 𝕗𝕎 (A : Type) (B : A → Type) (𝕗A : isFibrant A)
 | .trr.e ↦ [
   | sup. a0 f0 ↦
       sup. (𝕗A.2 .trr.1 a0)
-        (refl 𝕗Π (B.2 (𝕗A.2 .liftr.1 a0)) {_ ⤇ 𝕎 A.0 B.0} {_ ⤇ 𝕎 A.1 B.1}
+        (refl 𝕗Π (B.2 (𝕗A.2 .liftr.1 a0)) {_ ↦ 𝕎 A.0 B.0} {_ ↦ 𝕎 A.1 B.1}
              (_ ⤇ refl 𝕎 A.2 B.2) (𝕗B.2 (𝕗A.2 .liftr.1 a0))
-             {_ ⤇ 𝕗𝕎 A.0 B.0 𝕗A.0 𝕗B.0} {_ ⤇ 𝕗𝕎 A.1 B.1 𝕗A.1 𝕗B.1}
+             {_ ↦ 𝕗𝕎 A.0 B.0 𝕗A.0 𝕗B.0} {_ ↦ 𝕗𝕎 A.1 B.1 𝕗A.1 𝕗B.1}
              (_ ⤇ refl 𝕗𝕎 A.2 B.2 𝕗A.2 𝕗B.2)
          .trr.1 f0)]
 | .trl.e ↦ [
   | sup. a1 f1 ↦
       sup. (𝕗A.2 .trl.1 a1)
-        (refl 𝕗Π (B.2 (𝕗A.2 .liftl.1 a1)) {_ ⤇ 𝕎 A.0 B.0} {_ ⤇ 𝕎 A.1 B.1}
+        (refl 𝕗Π (B.2 (𝕗A.2 .liftl.1 a1)) {_ ↦ 𝕎 A.0 B.0} {_ ↦ 𝕎 A.1 B.1}
              (_ ⤇ refl 𝕎 A.2 B.2) (𝕗B.2 (𝕗A.2 .liftl.1 a1))
-             {_ ⤇ 𝕗𝕎 A.0 B.0 𝕗A.0 𝕗B.0} {_ ⤇ 𝕗𝕎 A.1 B.1 𝕗A.1 𝕗B.1}
+             {_ ↦ 𝕗𝕎 A.0 B.0 𝕗A.0 𝕗B.0} {_ ↦ 𝕗𝕎 A.1 B.1 𝕗A.1 𝕗B.1}
              (_ ⤇ refl 𝕗𝕎 A.2 B.2 𝕗A.2 𝕗B.2)
          .trl.1 f1)]
 | .liftr.e ↦ [
   | sup. a0 f0 ↦
       sup. (𝕗A.2 .liftr.1 a0)
-        (refl 𝕗Π (B.2 (𝕗A.2 .liftr.1 a0)) {_ ⤇ 𝕎 A.0 B.0} {_ ⤇ 𝕎 A.1 B.1}
+        (refl 𝕗Π (B.2 (𝕗A.2 .liftr.1 a0)) {_ ↦ 𝕎 A.0 B.0} {_ ↦ 𝕎 A.1 B.1}
              (_ ⤇ refl 𝕎 A.2 B.2) (𝕗B.2 (𝕗A.2 .liftr.1 a0))
-             {_ ⤇ 𝕗𝕎 A.0 B.0 𝕗A.0 𝕗B.0} {_ ⤇ 𝕗𝕎 A.1 B.1 𝕗A.1 𝕗B.1}
+             {_ ↦ 𝕗𝕎 A.0 B.0 𝕗A.0 𝕗B.0} {_ ↦ 𝕗𝕎 A.1 B.1 𝕗A.1 𝕗B.1}
              (_ ⤇ refl 𝕗𝕎 A.2 B.2 𝕗A.2 𝕗B.2)
          .liftr.1 f0)]
 | .liftl.e ↦ [
   | sup. a1 f1 ↦
       sup. (𝕗A.2 .liftl.1 a1)
-        (refl 𝕗Π (B.2 (𝕗A.2 .liftl.1 a1)) {_ ⤇ 𝕎 A.0 B.0} {_ ⤇ 𝕎 A.1 B.1}
+        (refl 𝕗Π (B.2 (𝕗A.2 .liftl.1 a1)) {_ ↦ 𝕎 A.0 B.0} {_ ↦ 𝕎 A.1 B.1}
              (_ ⤇ refl 𝕎 A.2 B.2) (𝕗B.2 (𝕗A.2 .liftl.1 a1))
-             {_ ⤇ 𝕗𝕎 A.0 B.0 𝕗A.0 𝕗B.0} {_ ⤇ 𝕗𝕎 A.1 B.1 𝕗A.1 𝕗B.1}
+             {_ ↦ 𝕗𝕎 A.0 B.0 𝕗A.0 𝕗B.0} {_ ↦ 𝕗𝕎 A.1 B.1 𝕗A.1 𝕗B.1}
              (_ ⤇ refl 𝕗𝕎 A.2 B.2 𝕗A.2 𝕗B.2)
          .liftl.1 f1)]
 | .id.e ↦ x0 x1 ↦

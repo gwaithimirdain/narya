@@ -270,7 +270,7 @@ let rec check : type a b s.
             let ctx = if locking fa then Ctx.lock ctx else ctx in
             let cx = check (Kinetic `Nolet) ctx x ty_fainv in
             realize status (Term.Act (cx, fa)))
-    | Lam ({ value = x; _ }, cube, body), _ -> (
+    | Lam ({ value = x; loc = xloc }, cube, body), _ -> (
         match view_type ~severity ty "typechecking lambda" with
         | Canonical (_, Pi (_, doms, cods), tyargs) -> (
             (* TODO: Move this into a helper function, it's too long to go in here. *)
@@ -318,11 +318,14 @@ let rec check : type a b s.
                     let ctx = Ctx.vis ctx D.zero (D.zero_plus m) names newnfs af in
                     Lam (xs, check ?discrete (mkstatus xs status) ctx body output)
                 | Wrap (_, Missing (loc, j)) -> fatal ?loc (Not_enough_lambdas j))
-            | `Cube ->
-                (* Here we don't need to slurp up lots of lambdas, but can make do with one. *)
-                let xs = singleton_variables m x in
-                let ctx = Ctx.cube_vis ctx x newnfs in
-                Lam (xs, check ?discrete (mkstatus xs status) ctx body output))
+            | `Cube -> (
+                match D.compare_zero m with
+                | Zero -> fatal ?loc:xloc Zero_dimensional_cube_abstraction
+                | Pos _ ->
+                    (* Here we don't need to slurp up lots of lambdas, but can make do with one. *)
+                    let xs = singleton_variables m x in
+                    let ctx = Ctx.cube_vis ctx x newnfs in
+                    Lam (xs, check ?discrete (mkstatus xs status) ctx body output)))
         | _ -> fatal (Checking_lambda_at_nonfunction (PVal (ctx, ty))))
     | Struct (Noeta, tms), Potential _ -> (
         match view_type ~severity ty "typechecking comatch" with

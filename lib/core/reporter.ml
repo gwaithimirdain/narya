@@ -55,6 +55,7 @@ module Code = struct
     | Invalid_field : string -> t
     | Invalid_degeneracy : string -> t
     | Not_enough_lambdas : int -> t
+    | Zero_dimensional_cube_abstraction : t
     | Not_enough_arguments_to_function : t
     | Not_enough_arguments_to_instantiation : t
     | Type_not_fully_instantiated : string * 'n D.pos -> t
@@ -234,6 +235,7 @@ module Code = struct
     | Invalid_field _ -> Error
     | Invalid_degeneracy _ -> Error
     | Not_enough_lambdas _ -> Error
+    | Zero_dimensional_cube_abstraction -> Error
     | Type_not_fully_instantiated _ -> Error
     | Unequal_synthesized_type _ -> Error
     | Unequal_synthesized_boundary _ -> Error
@@ -400,6 +402,7 @@ module Code = struct
     | Type_not_fully_instantiated _ -> "E0504"
     | Instantiating_zero_dimensional_type _ -> "E0505"
     | Invalid_variable_face _ -> "E0506"
+    | Zero_dimensional_cube_abstraction -> "E0507"
     (* Degeneracies *)
     | Missing_argument_of_degeneracy _ -> "E0600"
     | Low_dimensional_argument_of_degeneracy _ -> "E0601"
@@ -548,6 +551,8 @@ module Code = struct
             n1 n2
       | Not_enough_lambdas n ->
           textf "not enough non-cube variables for higher-dimensional abstraction: need %d more" n
+      | Zero_dimensional_cube_abstraction ->
+          text "cube abstraction not allowed for zero-dimensional function"
       | Not_enough_arguments_to_function ->
           text "not enough arguments for a higher-dimensional function application"
       | Not_enough_arguments_to_instantiation ->

@@ -127,9 +127,9 @@ let () =
   def "refl_nat_f_eq_reflf" "Id (Id ((x:A)→B x) f f) (refl_nat_f zero.) (refl f)" "refl (refl f)";
 
   (* We also test cube variable abstraction syntax *)
-  def "refl_abort_f_cube" "∅ → Id ((x:A)→B x) f f" "e x ⤇ match e [ ]";
+  def "refl_abort_f_cube" "∅ → Id ((x:A)→B x) f f" "e ↦ x ⤇ match e [ ]";
   def "refl_nat_f_cube" "ℕ → Id ((x:A)→B x) f f"
-    "n x ⤇ match n [ zero. ↦ refl f x.0 x.1 x.2 | suc. _ ↦ refl f x.0 x.1 x.2 ]";
+    "n ↦ x ⤇ match n [ zero. ↦ refl f x.0 x.1 x.2 | suc. _ ↦ refl f x.0 x.1 x.2 ]";
   (* These are actually *unequal* because definition by case trees is generative. *)
   unequal_at "refl_nat_f" "refl_nat_f_cube" "ℕ → Id ((x:A)→B x) f f";
   (* But they become equal when evaluated at concrete numbers so that the case trees compute away. *)
@@ -170,10 +170,10 @@ let () =
 
   (* Matching on a boundary of a cube variable. *)
   def "mtchbd0" "(e:∅) (f : ℕ → ℕ) → Id (ℕ → ℕ) f f"
-    "e f n ⤇ match n.0 [ zero. ↦ match e [ ] | suc. _ ↦ match e [ ] ]";
+    "e f ↦ n ⤇ match n.0 [ zero. ↦ match e [ ] | suc. _ ↦ match e [ ] ]";
 
   def "mtchbd0'" "(e:∅) (f : ℕ → ℕ) → Id (ℕ → ℕ) f f"
-    "e f n ⤇ match n.0 [ zero. ↦ match e [ ] | suc. _ ↦ refl f n.0 n.1 n.2 ]";
+    "e f ↦ n ⤇ match n.0 [ zero. ↦ match e [ ] | suc. _ ↦ refl f n.0 n.1 n.2 ]";
 
   def "mtchbd0''" "(e:∅) (f : ℕ → ℕ) → Id (ℕ → ℕ) f f"
     "e f n0 n1 n2 ↦ match n0 [ zero. ↦ match e [ ] | suc. _ ↦ refl f n0 n1 n2 ]";
