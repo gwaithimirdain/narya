@@ -207,7 +207,7 @@
  1 | x ↦ x.0
    ^ invalid face: variable of dimension 0 has no face '0'
 
- ￫ error[E0507]
+ ￫ error[E0508]
  ￭ user-supplied term
  1 | x ⤇ x
    ^ cube abstraction not allowed for zero-dimensional function
@@ -219,10 +219,20 @@
 
  ￫ error[E0507]
  ￭ user-supplied term
+ 1 | x ⤇ refl f x.0 x.1 x
+   ^ variable of dimension e must be used with a face
+
+ ￫ error[E0508]
+ ￭ user-supplied term
  1 | a x ⤇ refl f x.0 x.1 x.2
    ^ cube abstraction not allowed for zero-dimensional function
 
- ￫ error[E0508]
+ ￫ error[E0507]
+ ￭ user-supplied term
+ 1 | x ↦ x ⤇ x
+   ^ variable of dimension e must be used with a face
+
+ ￫ error[E0509]
  ￭ user-supplied term
  1 | a x ⤇ refl af a.0 a.1 a.2 x.00 x.01 x.02 x.10 x.11 x.12 x.20 x.21 x.22
    ^ previous variable

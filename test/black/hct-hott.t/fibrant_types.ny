@@ -206,7 +206,7 @@ def id_sum_iso (A0 A1 : Type) (A2 : Id Type A0 A1) (B0 B1 : Type)
   | left. a0, right. b1 ↦ match v2 [ ]
   | right. b0, left. a1 ↦ match v2 [ ]
   | right. b0, right. b1 ↦ right. v2],
-  fro ≔ [ left. a2 ↦ a2 | right. b2 ↦ b2 ],
+  fro ≔ [ left. a ↦ a.2 | right. b ↦ b.2 ],
   to_fro ≔ [ left. a2 ↦ rfl. | right. b2 ↦ rfl. ],
   fro_to ≔ v2 ↦ match u0, u1 [
   | left. a0, left. a1 ↦ rfl.
@@ -836,13 +836,13 @@ def 𝕗𝕄 (s : 𝕄_spec) (r : s .R) : isFibrant (𝕄 s r) ≔ [
       refl 𝕗Π (s.2 .B r.2 (s.2 .A r.2 .f .liftr.1 (x0 .recv)) .t)
           {b0 ↦ 𝕄 s.0 (s.0 .k r.0 (x0 .recv) b0)}
           {b1 ↦ 𝕄 s.1 (s.1 .k r.1 (s.2 .A r.2 .f .trr.1 (x0 .recv)) b1)}
-          (b2 ⤇
-           refl 𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftr.1 (x0 .recv)) b2))
+          (b ⤇
+           refl 𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftr.1 (x0 .recv)) b.2))
           (s.2 .B r.2 (s.2 .A r.2 .f .liftr.1 (x0 .recv)) .f)
           {b0 ↦ 𝕗𝕄 s.0 (s.0 .k r.0 (x0 .recv) b0)}
           {b1 ↦ 𝕗𝕄 s.1 (s.1 .k r.1 (s.2 .A r.2 .f .trr.1 (x0 .recv)) b1)}
-          (b2 ⤇
-           refl 𝕗𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftr.1 (x0 .recv)) b2))
+          (b ⤇
+           refl 𝕗𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftr.1 (x0 .recv)) b.2))
         .trr.1 (b0 ↦ x0 .send b0)]
 | .trl.e ↦ x1 ↦ [
   | .recv ↦ s.2 .A r.2 .f .trl.1 (x1 .recv)
@@ -850,13 +850,13 @@ def 𝕗𝕄 (s : 𝕄_spec) (r : s .R) : isFibrant (𝕄 s r) ≔ [
       refl 𝕗Π (s.2 .B r.2 (s.2 .A r.2 .f .liftl.1 (x1 .recv)) .t)
           {b0 ↦ 𝕄 s.0 (s.0 .k r.0 (s.2 .A r.2 .f .trl.1 (x1 .recv)) b0)}
           {b1 ↦ 𝕄 s.1 (s.1 .k r.1 (x1 .recv) b1)}
-          (b2 ⤇
-           refl 𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftl.1 (x1 .recv)) b2))
+          (b ⤇
+           refl 𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftl.1 (x1 .recv)) b.2))
           (s.2 .B r.2 (s.2 .A r.2 .f .liftl.1 (x1 .recv)) .f)
           {b0 ↦ 𝕗𝕄 s.0 (s.0 .k r.0 (s.2 .A r.2 .f .trl.1 (x1 .recv)) b0)}
           {b1 ↦ 𝕗𝕄 s.1 (s.1 .k r.1 (x1 .recv) b1)}
-          (b2 ⤇
-           refl 𝕗𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftl.1 (x1 .recv)) b2))
+          (b ⤇
+           refl 𝕗𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftl.1 (x1 .recv)) b.2))
         .trl.1 (b1 ↦ x1 .send b1)]
 | .liftr.e ↦ x0 ↦ [
   | .recv ↦ s.2 .A r.2 .f .liftr.1 (x0 .recv)
@@ -864,13 +864,13 @@ def 𝕗𝕄 (s : 𝕄_spec) (r : s .R) : isFibrant (𝕄 s r) ≔ [
       refl 𝕗Π (s.2 .B r.2 (s.2 .A r.2 .f .liftr.1 (x0 .recv)) .t)
           {b0 ↦ 𝕄 s.0 (s.0 .k r.0 (x0 .recv) b0)}
           {b1 ↦ 𝕄 s.1 (s.1 .k r.1 (s.2 .A r.2 .f .trr.1 (x0 .recv)) b1)}
-          (b2 ⤇
-           refl 𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftr.1 (x0 .recv)) b2))
+          (b ⤇
+           refl 𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftr.1 (x0 .recv)) b.2))
           (s.2 .B r.2 (s.2 .A r.2 .f .liftr.1 (x0 .recv)) .f)
           {b0 ↦ 𝕗𝕄 s.0 (s.0 .k r.0 (x0 .recv) b0)}
           {b1 ↦ 𝕗𝕄 s.1 (s.1 .k r.1 (s.2 .A r.2 .f .trr.1 (x0 .recv)) b1)}
-          (b2 ⤇
-           refl 𝕗𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftr.1 (x0 .recv)) b2))
+          (b ⤇
+           refl 𝕗𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftr.1 (x0 .recv)) b.2))
         .liftr.1 (b0 ↦ x0 .send b0)]
 | .liftl.e ↦ x1 ↦ [
   | .recv ↦ s.2 .A r.2 .f .liftl.1 (x1 .recv)
@@ -878,13 +878,13 @@ def 𝕗𝕄 (s : 𝕄_spec) (r : s .R) : isFibrant (𝕄 s r) ≔ [
       refl 𝕗Π (s.2 .B r.2 (s.2 .A r.2 .f .liftl.1 (x1 .recv)) .t)
           {b0 ↦ 𝕄 s.0 (s.0 .k r.0 (s.2 .A r.2 .f .trl.1 (x1 .recv)) b0)}
           {b1 ↦ 𝕄 s.1 (s.1 .k r.1 (x1 .recv) b1)}
-          (b2 ⤇
-           refl 𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftl.1 (x1 .recv)) b2))
+          (b ⤇
+           refl 𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftl.1 (x1 .recv)) b.2))
           (s.2 .B r.2 (s.2 .A r.2 .f .liftl.1 (x1 .recv)) .f)
           {b0 ↦ 𝕗𝕄 s.0 (s.0 .k r.0 (s.2 .A r.2 .f .trl.1 (x1 .recv)) b0)}
           {b1 ↦ 𝕗𝕄 s.1 (s.1 .k r.1 (x1 .recv) b1)}
-          (b2 ⤇
-           refl 𝕗𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftl.1 (x1 .recv)) b2))
+          (b ⤇
+           refl 𝕗𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftl.1 (x1 .recv)) b.2))
         .liftl.1 (b1 ↦ x1 .send b1)]
 | .id.e ↦ x0 x1 ↦
     𝕗eqv (𝕄 (𝕄_code_spec s.0 s.1 s.2) (r.0, r.1, r.2, x0, x1))

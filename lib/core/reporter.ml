@@ -139,6 +139,7 @@ module Code = struct
     | Matching_wont_refine : string * printable option -> t
     | Dimension_mismatch : string * 'a D.t * 'b D.t -> t
     | Invalid_variable_face : 'a D.t * ('n, 'm) sface -> t
+    | Missing_variable_face : 'a D.t -> t
     | Anomaly : string -> t
     | No_such_level : printable -> t
     | Redefining_constant : string list -> t
@@ -273,6 +274,7 @@ module Code = struct
     | Not_enough_arguments_to_function -> Error
     | Instantiating_zero_dimensional_type _ -> Error
     | Invalid_variable_face _ -> Error
+    | Missing_variable_face _ -> Error
     | Not_enough_arguments_to_instantiation -> Error
     | Applying_nonfunction_nontype _ -> Error
     | Unexpected_implicitness _ -> Error
@@ -404,8 +406,9 @@ module Code = struct
     | Type_not_fully_instantiated _ -> "E0504"
     | Instantiating_zero_dimensional_type _ -> "E0505"
     | Invalid_variable_face _ -> "E0506"
-    | Zero_dimensional_cube_abstraction -> "E0507"
-    | Mismatched_dimensions_in_cube_abstraction _ -> "E0508"
+    | Missing_variable_face _ -> "E0507"
+    | Zero_dimensional_cube_abstraction -> "E0508"
+    | Mismatched_dimensions_in_cube_abstraction _ -> "E0509"
     (* Degeneracies *)
     | Missing_argument_of_degeneracy _ -> "E0600"
     | Low_dimensional_argument_of_degeneracy _ -> "E0601"
@@ -548,6 +551,8 @@ module Code = struct
       | Invalid_variable_face (k, fa) ->
           textf "invalid face: variable of dimension %s has no face '%s'" (string_of_dim0 k)
             (string_of_sface fa)
+      | Missing_variable_face k ->
+          textf "variable of dimension %s must be used with a face" (string_of_dim0 k)
       | No_relative_precedence (n1, n2) ->
           textf
             "notations \"%s\" and \"%s\" have no relative precedence or associativity; they can only be combined with parentheses"

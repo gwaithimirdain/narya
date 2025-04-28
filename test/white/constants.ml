@@ -141,9 +141,9 @@ let () =
   equal_at "bar 1 1 (refl (1:ℕ))" "0" "ℕ";
   equal_at "bar 2 2 (refl (2:ℕ))" "1" "ℕ";
   def "prec" "ℕ → ℕ" "[ zero. ↦ zero. | suc. n ↦ n ]";
-  def "idnat" "(x y : ℕ) → Id ℕ x y → Id ℕ x y" "x y ↦ [ zero. ↦ zero. | suc. p ↦ suc. p ]";
+  def "idnat" "(x y : ℕ) → Id ℕ x y → Id ℕ x y" "x y ↦ [ zero. ↦ zero. | suc. p ↦ suc. p.2 ]";
   def "apprec" "(x y : ℕ) → Id ℕ x y → Id ℕ (prec x) (prec y)"
-    "x y p ↦ match p [ zero. ↦ zero. | suc. p ↦ p ]";
+    "x y p ↦ match p [ zero. ↦ zero. | suc. p ↦ p.2 ]";
   def "⊤" "Type" "sig ()";
   def "code" "ℕ → ℕ → Type"
     "[ zero. ↦ [ zero. ↦ ⊤
