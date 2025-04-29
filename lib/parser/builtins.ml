@@ -807,7 +807,7 @@ let parens_case :
   | _ -> invalid "tuple (parens)"
 
 let rec process_tuple : type n.
-    ((string * string list) option, n check located) Abwd.t ->
+    ((string * string list) option, [ `Normal | `Cube ] located * n check located) Abwd.t ->
     StringSet.t ->
     (string option, n) Bwv.t ->
     observation list ->
@@ -829,17 +829,17 @@ let rec process_tuple : type n.
           else
             process_tuple
               (* Tuples have no higher fields, so the bwd of strings labeling a dimension is always empty. *)
-              (Abwd.add (Some (fld, [])) tm flds)
+              (Abwd.add (Some (fld, [])) (locate_opt None `Normal, tm) flds)
               (StringSet.add fld found) ctx obs loc
       | [ Term { value = Placeholder _; _ }; Token (Coloneq, _); Term tm ] ->
           let tm = process ctx tm in
-          process_tuple (Abwd.add None tm flds) found ctx obs loc
+          process_tuple (Abwd.add None (locate_opt None `Normal, tm) flds) found ctx obs loc
       | [ Term x; Token (Coloneq, _); _ ] -> fatal ?loc:x.loc Invalid_field_in_tuple
       | _ -> invalid "tuple (process labeled)")
   (* Unlabeled field *)
   | Term tm :: obs ->
       let tm = process ctx tm in
-      process_tuple (Abwd.add None tm flds) found ctx obs loc
+      process_tuple (Abwd.add None (locate_opt None `Normal, tm) flds) found ctx obs loc
   | _ -> invalid "tuple (process)"
 
 let rec pp_tuple_fields first prews accum obs : document * Whitespace.t list =
@@ -1585,12 +1585,12 @@ type (_, _, _) identity += Comatch : (closed, No.plus_omega, closed) identity
 let comatch : (closed, No.plus_omega, closed) notation = (Comatch, Outfix)
 
 let rec comatch_fields () =
-  field
-    (op Mapsto
-       (terms [ (Op "|", Lazy (lazy (comatch_fields ()))); (RBracket, Done_closed comatch) ]))
+  let rest = terms [ (Op "|", Lazy (lazy (comatch_fields ()))); (RBracket, Done_closed comatch) ] in
+  field (ops [ (Mapsto, rest); (DblMapsto, rest) ])
 
 let rec process_comatch : type n.
-    ((string * string list) option, n check located) Abwd.t * StringsSet.t ->
+    ((string * string list) option, [ `Normal | `Cube ] located * n check located) Abwd.t
+    * StringsSet.t ->
     (string option, n) Bwv.t ->
     observation list ->
     Asai.Range.t option ->
@@ -1600,7 +1600,7 @@ let rec process_comatch : type n.
   | [ Token (RBracket, _) ] -> { value = Raw.Struct (Noeta, flds); loc }
   | Token (Op "|", _)
     :: Term { value = Field (fld, pbij, _); loc = fldloc }
-    :: Token (Mapsto, _)
+    :: Token (mapsto, (mloc, _))
     :: Term tm
     :: obs ->
       let tm = process ctx tm in
@@ -1608,8 +1608,13 @@ let rec process_comatch : type n.
         (* Comatches can't have unlabeled fields *)
         fatal ?loc:fldloc (Duplicate_method_in_comatch (fld, pbij))
       else
+        let cube =
+          match mapsto with
+          | Mapsto -> locate `Normal mloc
+          | DblMapsto -> locate `Cube mloc
+          | _ -> invalid "comatch" in
         process_comatch
-          (Abwd.add (Some (fld, pbij)) tm flds, StringsSet.add (fld, pbij) found)
+          (Abwd.add (Some (fld, pbij)) (cube, tm) flds, StringsSet.add (fld, pbij) found)
           ctx obs loc
   | _ -> invalid "comatch"
 
@@ -1625,13 +1630,12 @@ let () =
                   empty_branch with
                   ops = TokMap.singleton (Op "|") (comatch_fields ());
                   field =
-                    Some
-                      (op Mapsto
-                         (terms
-                            [
-                              (Op "|", Lazy (lazy (comatch_fields ())));
-                              (RBracket, Done_closed comatch);
-                            ]));
+                    (let rest =
+                       terms
+                         [
+                           (Op "|", Lazy (lazy (comatch_fields ()))); (RBracket, Done_closed comatch);
+                         ] in
+                     Some (ops [ (Mapsto, rest); (DblMapsto, rest) ]));
                 }));
       processor =
         (fun ctx obs loc ->

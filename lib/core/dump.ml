@@ -230,7 +230,7 @@ module F = struct
     | Struct (_, flds) ->
         fprintf ppf "Struct(";
         Mbwd.miter
-          (fun [ (f, (x : a check Asai.Range.located)) ] ->
+          (fun [ (f, (_, (x : a check Asai.Range.located))) ] ->
             let f = Option.fold ~some:(fun (f, ps) -> String.concat "." (f :: ps)) ~none:"_" f in
             fprintf ppf "%s ≔ %a, " f check x.value)
           [ flds ];

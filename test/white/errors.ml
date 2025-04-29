@@ -150,4 +150,19 @@ let () =
   let () =
     uncheck ~print:() "n0 n1 n2 ↦ match n2 [ zero. ⤇ zero. | suc. n ↦ suc. n.2 ]" idntoidn
       ~short:"E0510" in
+  Testutil.Repl.(
+    def "Stream" "(A : Type) → Type" "A ↦ codata [ _ .head : A | _ .tail : Stream A ]";
+    def "zeros" "Stream ℕ" "[ .head ↦ 0 | .tail ↦ zeros ]");
+  let streamnat = check "Stream ℕ" uu in
+  let () =
+    uncheck ~print:() "[ .head ⤇ 0 | .tail ↦ zeros ]" streamnat
+      ~code:(Zero_dimensional_cube_abstraction "comatch") in
+  let () =
+    uncheck ~print:() "[ .head ↦ 0 | .tail ⤇ zeros ]" streamnat
+      ~code:(Zero_dimensional_cube_abstraction "comatch") in
+  let idzeros = check "Id (Stream ℕ) zeros zeros" uu in
+  let idz = assume "idz" idzeros in
+  let _ = check "[ .head ↦ refl (0:ℕ) | .tail ↦ idz ]" idzeros in
+  let _ = check "[ .head ⤇ refl (0:ℕ) | .tail ↦ idz ]" idzeros in
+  let _ = check "[ .head ↦ refl (0:ℕ) | .tail ⤇ idz ]" idzeros in
   ()

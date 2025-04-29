@@ -146,8 +146,11 @@ module Make (I : Indices) = struct
         body : 'a I.suc check located;
       }
         -> 'a check
-    (* A "Struct" is our current name for both tuples and comatches, which share a lot of their implementation even though they are conceptually and syntactically distinct.  Those with eta=`Eta are tuples, those with eta=`Noeta are comatches.  We index them by an option so as to include any unlabeled fields, with their relative order to the labeled ones.  The field hasn't been interned to an intrinsic dimension yet (that depends on what it checks against), so it's just a string name, plus a list of strings to indicate a pbij for higher fields. *)
-    | Struct : ('s, 'et) eta * ((string * string list) option, 'a check located) Abwd.t -> 'a check
+    (* A "Struct" is our current name for both tuples and comatches, which share a lot of their implementation even though they are conceptually and syntactically distinct.  Those with eta=`Eta are tuples, those with eta=`Noeta are comatches.  We index them by an option so as to include any unlabeled fields, with their relative order to the labeled ones.  The field hasn't been interned to an intrinsic dimension yet (that depends on what it checks against), so it's just a string name, plus a list of strings to indicate a pbij for higher fields.  We also store whether they were defined with a ↦ or a ⤇. *)
+    | Struct :
+        ('s, 'et) eta
+        * ((string * string list) option, [ `Normal | `Cube ] located * 'a check located) Abwd.t
+        -> 'a check
     | Constr : Constr.t located * 'a check located list -> 'a check
     | Numeral : Q.t -> 'a check
     (* "[]", which could be either an empty pattern-matching lambda or an empty comatch *)
@@ -321,7 +324,8 @@ module Resolve (R : Resolver) = struct
               cube;
               body = check (R.snoc ctx name.value) body;
             }
-      | Struct (eta, fields) -> Struct (eta, Abwd.map (check ctx) fields)
+      | Struct (eta, fields) ->
+          Struct (eta, Abwd.map (fun (cube, tm) -> (cube, check ctx tm)) fields)
       | Constr (c, args) -> Constr (c, List.map (check ctx) args)
       | Numeral x -> Numeral x
       | Empty_co_match -> Empty_co_match

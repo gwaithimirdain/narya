@@ -258,3 +258,38 @@
  1 | n0 n1 n2 ↦ match n2 [ zero. ⤇ zero. | suc. n ↦ suc. n.2 ]
    ^ e-dimensional match requires cube abstraction
 
+ ￫ hint[H0403]
+ ￭ user-supplied term
+ 1 | [ .head ⤇ 0 | .tail ↦ zeros ]
+   ^ comatch encountered outside case tree, wrapping in implicit let-binding
+
+ ￫ error[E0508]
+ ￭ user-supplied term
+ 1 | [ .head ⤇ 0 | .tail ↦ zeros ]
+   ^ cube abstraction not allowed for zero-dimensional comatch
+
+ ￫ hint[H0403]
+ ￭ user-supplied term
+ 1 | [ .head ↦ 0 | .tail ⤇ zeros ]
+   ^ comatch encountered outside case tree, wrapping in implicit let-binding
+
+ ￫ error[E0508]
+ ￭ user-supplied term
+ 1 | [ .head ↦ 0 | .tail ⤇ zeros ]
+   ^ cube abstraction not allowed for zero-dimensional comatch
+
+ ￫ hint[H0403]
+ ￭ user-supplied term
+ 1 | [ .head ↦ refl (0:ℕ) | .tail ↦ idz ]
+   ^ comatch encountered outside case tree, wrapping in implicit let-binding
+
+ ￫ hint[H0403]
+ ￭ user-supplied term
+ 1 | [ .head ⤇ refl (0:ℕ) | .tail ↦ idz ]
+   ^ comatch encountered outside case tree, wrapping in implicit let-binding
+
+ ￫ hint[H0403]
+ ￭ user-supplied term
+ 1 | [ .head ↦ refl (0:ℕ) | .tail ⤇ idz ]
+   ^ comatch encountered outside case tree, wrapping in implicit let-binding
+

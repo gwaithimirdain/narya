@@ -39,7 +39,8 @@ let rec parse_chk : type n. (string, n) Bwv.t -> pmt -> n Raw.check located =
         (Raw.Struct
            ( Eta,
              List.fold_left
-               (fun acc (fld, tm) -> Abwd.add (Some (fld, [])) (parse_chk ctx tm) acc)
+               (fun acc (fld, tm) ->
+                 Abwd.add (Some (fld, [])) (locate_opt None `Normal, parse_chk ctx tm) acc)
                Abwd.empty tms ))
   | Constr c -> unlocated (Raw.Constr (unlocated (Constr.intern c), []))
   | App (fn, arg) as tm -> (
