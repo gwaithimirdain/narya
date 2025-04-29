@@ -182,7 +182,10 @@ module Make (I : Indices) = struct
     | Oracle : 'a check located -> 'a check
 
   (* The location of the namevec is that of the whole pattern. *)
-  and _ branch = Branch : ('a, 'b, 'ab) Namevec.t located * 'ab check located -> 'a branch
+  and _ branch =
+    | Branch :
+        ('a, 'b, 'ab) Namevec.t located * [ `Cube | `Normal ] * 'ab check located
+        -> 'a branch
 
   (* *)
   and _ dataconstr = Dataconstr : ('a, 'b, 'ab) tel * 'ab check located option -> 'a dataconstr
@@ -353,11 +356,11 @@ module Resolve (R : Resolver) = struct
     newtm
 
   and branch : type a1 a2. (a1, a2) R.scope -> a1 T1.branch -> a2 T2.branch =
-   fun ctx (Branch (xs, body)) ->
+   fun ctx (Branch (xs, cube, body)) ->
     let (Bplus ab) = T2.bplus (T1.Namevec.length xs.value) in
     let xs2 = renames ctx xs.value ab in
     let ctx2 = append ctx xs.value ab in
-    Branch (locate_opt xs.loc xs2, check ctx2 body)
+    Branch (locate_opt xs.loc xs2, cube, check ctx2 body)
 
   and dataconstr : type a1 a2. (a1, a2) R.scope -> a1 T1.dataconstr -> a2 T2.dataconstr =
    fun ctx (Dataconstr (args, body)) ->

@@ -143,4 +143,11 @@ let () =
   let () =
     uncheck ~print:() "a x ⤇ refl af a.0 a.1 a.2 x.00 x.01 x.02 x.10 x.11 x.12 x.20 x.21 x.22"
       idafaf ~short:"E0509" in
+  let idntoidn = check "(n0 n1 : ℕ) → Id ℕ n0 n1 → Id ℕ n0 n1" uu in
+  let () =
+    uncheck ~print:() "n0 n1 n2 ↦ match n2 [ zero. ↦ zero. | suc. n ↦ suc. n.2 ]" idntoidn
+      ~short:"E0510" in
+  let () =
+    uncheck ~print:() "n0 n1 n2 ↦ match n2 [ zero. ⤇ zero. | suc. n ↦ suc. n.2 ]" idntoidn
+      ~short:"E0510" in
   ()

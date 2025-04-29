@@ -136,14 +136,14 @@ let () =
   equal_at "refl_nat_f 3" "refl_nat_f_cube 3" "Id ((x:A)→B x) f f";
 
   (* Higher-dimensional matches *)
-  def "foo" "(x y : ℕ) → Id ℕ x y → ℕ" "x y p ↦ match p [ zero. ↦ 0 | suc. n ↦ 1 ]";
-  def "bar" "(x y : ℕ) → Id ℕ x y → ℕ" "x y ↦ [ zero. ↦ zero. | suc. p ↦ p.0 ]";
+  def "foo" "(x y : ℕ) → Id ℕ x y → ℕ" "x y p ↦ match p [ zero. ⤇ 0 | suc. n ⤇ 1 ]";
+  def "bar" "(x y : ℕ) → Id ℕ x y → ℕ" "x y ↦ [ zero. ⤇ zero. | suc. p ⤇ p.0 ]";
   equal_at "bar 1 1 (refl (1:ℕ))" "0" "ℕ";
   equal_at "bar 2 2 (refl (2:ℕ))" "1" "ℕ";
   def "prec" "ℕ → ℕ" "[ zero. ↦ zero. | suc. n ↦ n ]";
-  def "idnat" "(x y : ℕ) → Id ℕ x y → Id ℕ x y" "x y ↦ [ zero. ↦ zero. | suc. p ↦ suc. p.2 ]";
+  def "idnat" "(x y : ℕ) → Id ℕ x y → Id ℕ x y" "x y ↦ [ zero. ⤇ zero. | suc. p ⤇ suc. p.2 ]";
   def "apprec" "(x y : ℕ) → Id ℕ x y → Id ℕ (prec x) (prec y)"
-    "x y p ↦ match p [ zero. ↦ zero. | suc. p ↦ p.2 ]";
+    "x y p ↦ match p [ zero. ⤇ zero. | suc. p ⤇ p.2 ]";
   def "⊤" "Type" "sig ()";
   def "code" "ℕ → ℕ → Type"
     "[ zero. ↦ [ zero. ↦ ⊤
@@ -152,8 +152,8 @@ let () =
                  | suc. n ↦ code m n ] ]";
   def "rcode" "(x:ℕ) → code x x" "[ zero. ↦ () | suc. n ↦ rcode n ]";
   def "encode" "(x y : ℕ) → Id ℕ x y → code x y"
-    "x y ↦ [ zero. ↦ ()
-            | suc. p ↦ encode p.0 p.1 p.2 ]";
+    "x y ↦ [ zero. ⤇ ()
+            | suc. p ⤇ encode p.0 p.1 p.2 ]";
   def "decode" "(x y : ℕ) → code x y → Id ℕ x y"
     "x y c |-> match x [ zero. ↦ match y [ zero. ↦ zero.
                 | suc. _ ↦ match c [ ] ]
@@ -165,8 +165,8 @@ let () =
      | suc. x ↦ [ zero. ↦ [ ]
                  | suc. y ↦ c ↦ encode_decode x y c ] ]";
   def "decode_encode" "(x y : ℕ) (p : Id ℕ x y) → Id (Id ℕ x y) (decode x y (encode x y p)) p"
-    "x y ↦ [ zero. ↦ zero.
-            | suc. p ↦ suc. (decode_encode p.0 p.1 p.2) ]";
+    "x y ↦ [ zero. ⤇ zero.
+            | suc. p ⤇ suc. (decode_encode p.0 p.1 p.2) ]";
 
   (* Matching on a boundary of a cube variable. *)
   def "mtchbd0" "(e:∅) (f : ℕ → ℕ) → Id (ℕ → ℕ) f f"

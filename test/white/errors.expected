@@ -238,3 +238,23 @@
    ^ previous variable
    ^ can't combine cube abstractions of different dimensions: e ≠ ee
 
+ ￫ hint[H0403]
+ ￭ user-supplied term
+ 1 | n0 n1 n2 ↦ match n2 [ zero. ↦ zero. | suc. n ↦ suc. n.2 ]
+   ^ match encountered outside case tree, wrapping in implicit let-binding
+
+ ￫ error[E0510]
+ ￭ user-supplied term
+ 1 | n0 n1 n2 ↦ match n2 [ zero. ↦ zero. | suc. n ↦ suc. n.2 ]
+   ^ e-dimensional match requires cube abstraction
+
+ ￫ hint[H0403]
+ ￭ user-supplied term
+ 1 | n0 n1 n2 ↦ match n2 [ zero. ⤇ zero. | suc. n ↦ suc. n.2 ]
+   ^ match encountered outside case tree, wrapping in implicit let-binding
+
+ ￫ error[E0510]
+ ￭ user-supplied term
+ 1 | n0 n1 n2 ↦ match n2 [ zero. ⤇ zero. | suc. n ↦ suc. n.2 ]
+   ^ e-dimensional match requires cube abstraction
+

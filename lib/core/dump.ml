@@ -302,14 +302,18 @@ module F = struct
         branch ppf br
 
   and branch : type a. formatter -> Constr.t * a branch -> unit =
-   fun ppf (c, Branch (vars, body)) ->
+   fun ppf (c, Branch (vars, cube, body)) ->
     let rec strvars : type a b ab. (a, b, ab) Namevec.t -> string = function
       | [] -> ""
       | [ Some x ] -> x
       | [ None ] -> "_"
       | Some x :: xs -> x ^ " " ^ strvars xs
       | None :: xs -> "_ " ^ strvars xs in
-    fprintf ppf "%s %s ↦ %a" (Constr.to_string c) (strvars vars.value) check body.value
+    let mapsto =
+      match cube with
+      | `Normal -> "↦"
+      | `Cube -> "⤇" in
+    fprintf ppf "%s %s %s %a" (Constr.to_string c) (strvars vars.value) mapsto check body.value
 end
 
 let dim d = PPrint.utf8string (Format.asprintf "%a" F.dim d)

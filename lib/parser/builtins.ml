@@ -994,7 +994,7 @@ let rec mtch_branches notn bar_ok end_ok comma_ok =
         Some
           (TokMap.of_list
              ((if comma_ok then [ (Token.Op ",", patterns notn) ] else [])
-             @ [ (Mapsto, body notn comma_ok) ]));
+             @ [ (Mapsto, body notn comma_ok); (DblMapsto, body notn comma_ok) ]));
     }
 
 and body notn comma_ok =
@@ -1003,7 +1003,13 @@ and body notn comma_ok =
       (Op "|", Lazy (lazy (mtch_branches notn false false comma_ok))); (RBracket, Done_closed notn);
     ]
 
-and patterns notn = terms [ (Token.Op ",", Lazy (lazy (patterns notn))); (Mapsto, body notn true) ]
+and patterns notn =
+  terms
+    [
+      (Token.Op ",", Lazy (lazy (patterns notn)));
+      (Mapsto, body notn true);
+      (DblMapsto, body notn true);
+    ]
 
 let rec discriminees () =
   terms
@@ -1122,11 +1128,15 @@ end = struct
 end
 
 (* An ('a, 'n) branch is a scope of 'a variables, a vector of 'n patterns, and a body to be parsed in the scope extended by the variables in those patterns.  At the beginning, all the branches start out with the same scope of variables, but as we proceed they can get different ones.  All the branches in a single invocation of process_match have the same *number* of variables in scope, but different branches could have different *names* for those variables. *)
-type ('a, 'n) branch = 'a Matchscope.t * (pattern, 'n) Vec.t * wrapped_parse
+type ('a, 'n) branch = 'a Matchscope.t * (pattern, 'n) Vec.t * [ `Normal | `Cube ] * wrapped_parse
 
 (* An ('a, 'm, 'n) cbranch is a branch, with scope of 'a variables, that starts with a constructor (unspecified) having 'm arguments and proceeds with 'n other patterns.  *)
 type ('a, 'm, 'n) cbranch =
-  'a Matchscope.t * (pattern, 'm) Vec.t located * (pattern, 'n) Vec.t * wrapped_parse
+  'a Matchscope.t
+  * (pattern, 'm) Vec.t located
+  * (pattern, 'n) Vec.t
+  * [ `Normal | `Cube ]
+  * wrapped_parse
 
 (* An ('a, 'n) cbranches is a Bwd of branches that start with the same constructor, which always has the same number of arguments, along with a scope of 'a variables common to those branches. *)
 type (_, _) cbranches =
@@ -1182,18 +1192,18 @@ let rec process_branches : type a n.
           | _ -> fatal (Nonsynthesizing "motive of explicit match"))
       | _ -> fatal (Anomaly "multiple match with return-type"))
   (* If there are no patterns left, and hence no discriminees either, we require that there must be exactly one branch. *)
-  | (_, [], _) :: _ :: _ -> fatal No_remaining_patterns
+  | (_, [], _, _) :: _ :: _ -> fatal No_remaining_patterns
   (* If that one remaining branch is a refutation, we refute all the "seen" terms or variables. *)
-  | [ (_, [], Wrap { value = Notn ((Dot, _), _); loc }) ] ->
+  | [ (_, [], _, Wrap { value = Notn ((Dot, _), _); loc }) ] ->
       let [] = xs in
       let tms = Bwd_extra.to_list_map (process_ix xctx) seen in
       locate (Refute (tms, `Explicit)) loc
   (* Otherwise, the result is just the body of that branch. *)
-  | [ (bodyctx, [], Wrap body) ] ->
+  | [ (bodyctx, [], _, Wrap body) ] ->
       let [] = xs in
       process (Matchscope.names bodyctx) body
   (* If the first pattern of the first branch is a variable, then the same must be true of all the other branches, but they could all have different variable names. *)
-  | (xctx, Var name :: _, _) :: _ as branches -> (
+  | (xctx, Var name :: _, _, _) :: _ as branches -> (
       (* The variable is assigned to the value of the first discriminee. *)
       let (x :: xs) = xs in
       match x with
@@ -1202,9 +1212,10 @@ let rec process_branches : type a n.
           let branches =
             List.map
               (function
-                | bodyctx, (Var y :: patterns : (pattern, n) Vec.t), body ->
-                    (Matchscope.give_name i y.value bodyctx, patterns, body)
-                | _, Constr (_, { loc = cloc; _ }) :: _, _ -> fatal ?loc:cloc Overlapping_patterns)
+                | bodyctx, (Var y :: patterns : (pattern, n) Vec.t), cube, body ->
+                    (Matchscope.give_name i y.value bodyctx, patterns, cube, body)
+                | _, Constr (_, { loc = cloc; _ }) :: _, _, _ ->
+                    fatal ?loc:cloc Overlapping_patterns)
               branches in
           let seen = Snoc (seen, i) in
           process_branches xctx xs seen branches loc sort
@@ -1213,9 +1224,10 @@ let rec process_branches : type a n.
           let branches =
             List.map
               (function
-                | bodyctx, (Var y :: patterns : (pattern, n) Vec.t), body ->
-                    (Matchscope.ext bodyctx y.value, patterns, body)
-                | _, Constr (_, { loc = cloc; _ }) :: _, _ -> fatal ?loc:cloc Overlapping_patterns)
+                | bodyctx, (Var y :: patterns : (pattern, n) Vec.t), cube, body ->
+                    (Matchscope.ext bodyctx y.value, patterns, cube, body)
+                | _, Constr (_, { loc = cloc; _ }) :: _, _, _ ->
+                    fatal ?loc:cloc Overlapping_patterns)
               branches in
           let stm = process_synth (Matchscope.names xctx) tm "discriminee of match" in
           Reporter.try_with
@@ -1229,22 +1241,23 @@ let rec process_branches : type a n.
               | No_remaining_patterns -> fatal ?loc:name.loc Overlapping_patterns
               | _ -> fatal_diagnostic d))
   (* If the first pattern of the first branch is a constructor, the same must be true of all the other branches, and we can sort them by constructor.  We require that each constructor always appear with the same number of arguments. *)
-  | (xctx, Constr _ :: _, _) :: _ as branches ->
+  | (xctx, Constr _ :: _, _, _) :: _ as branches ->
       let cbranches =
         List.fold_left
           (fun acc branch ->
             match branch with
-            | bodyctx, (Constr (c, pats) :: patterns : (pattern, n) Vec.t), body ->
+            | bodyctx, (Constr (c, pats) :: patterns : (pattern, n) Vec.t), cube, body ->
                 acc
                 |> Abwd.update c.value (function
                      | None | Some (CBranches (_, Emp)) ->
-                         Some (CBranches (c, Snoc (Emp, (bodyctx, pats, patterns, body))))
-                     | Some (CBranches (c', (Snoc (_, (_, pats', _, _)) as cbrs))) -> (
+                         Some (CBranches (c, Snoc (Emp, (bodyctx, pats, patterns, cube, body))))
+                     | Some (CBranches (c', (Snoc (_, (_, pats', _, _, _)) as cbrs))) -> (
                          match Fwn.compare (Vec.length pats.value) (Vec.length pats'.value) with
                          | Neq -> fatal ?loc:pats.loc Inconsistent_patterns
-                         | Eq -> Some (CBranches (c', Snoc (cbrs, (bodyctx, pats, patterns, body))))
-                         ))
-            | _, Var x :: _, _ -> fatal ?loc:x.loc Overlapping_patterns)
+                         | Eq ->
+                             Some
+                               (CBranches (c', Snoc (cbrs, (bodyctx, pats, patterns, cube, body))))))
+            | _, Var x :: _, _, _ -> fatal ?loc:x.loc Overlapping_patterns)
           Abwd.empty branches in
       let (x :: xs) = xs in
       let branches =
@@ -1253,7 +1266,7 @@ let rec process_branches : type a n.
           (fun (CBranches (type m) ((c, brs) : _ * (_, m, _) cbranch Bwd.t)) ->
             match Bwd.to_list brs with
             | [] -> fatal (Anomaly "empty list of branches for constructor")
-            | (_, pats, _, _) :: _ as brs ->
+            | (_, pats, _, cube, _) :: _ as brs ->
                 let m = Vec.length pats.value in
                 let (Bplus am) = Raw.Indexed.bplus m in
                 let names =
@@ -1269,8 +1282,8 @@ let rec process_branches : type a n.
                 let newxs = Vec.append mn (Vec.mmap (fun [ n ] -> Either.Right n) [ newnums ]) xs in
                 let newbrs =
                   List.map
-                    (fun (bodyctx, (cpats : (pattern, m) Vec.t located), pats, body) ->
-                      (fst (Matchscope.exts am bodyctx), Vec.append mn cpats.value pats, body))
+                    (fun (bodyctx, (cpats : (pattern, m) Vec.t located), pats, cube, body) ->
+                      (fst (Matchscope.exts am bodyctx), Vec.append mn cpats.value pats, cube, body))
                     brs in
                 Reporter.try_with ~fatal:(fun d ->
                     match d.message with
@@ -1280,7 +1293,7 @@ let rec process_branches : type a n.
                 @@ fun () ->
                 (* After the first outer match, we always switch to implicit matches. *)
                 Raw.Branch
-                  (locate names loc, process_branches newxctx newxs seen newbrs loc `Implicit))
+                  (locate names loc, cube, process_branches newxctx newxs seen newbrs loc `Implicit))
           cbranches in
       let tm = process_obs_or_ix xctx x in
       let refutables =
@@ -1309,17 +1322,18 @@ let rec get_discriminees :
   | Term tm :: obs -> (Wrap [ Left (Wrap tm) ], obs)
   | _ -> invalid "match"
 
-let rec get_patterns : type n. n Fwn.t -> observation list -> (pattern, n) Vec.t * observation list
-    =
+let rec get_patterns : type n.
+    n Fwn.t -> observation list -> (pattern, n) Vec.t * [ `Normal | `Cube ] * observation list =
  fun n obs ->
   match (n, obs) with
   | _, [] | Zero, _ -> invalid "match"
-  | Suc Zero, Term tm :: Token (Mapsto, _) :: obs -> ([ get_pattern tm ], obs)
+  | Suc Zero, Term tm :: Token (Mapsto, _) :: obs -> ([ get_pattern tm ], `Normal, obs)
+  | Suc Zero, Term tm :: Token (DblMapsto, _) :: obs -> ([ get_pattern tm ], `Cube, obs)
   | Suc Zero, Term _ :: Term tm :: _ -> fatal ?loc:tm.loc Parse_error
   | Suc Zero, Term tm :: _ -> fatal ?loc:tm.loc Parse_error
   | Suc (Suc _ as n), Term tm :: Token (Op ",", _) :: obs ->
-      let pats, obs = get_patterns n obs in
-      (get_pattern tm :: pats, obs)
+      let pats, cube, obs = get_patterns n obs in
+      (get_pattern tm :: pats, cube, obs)
   | Suc (Suc _), Term tm :: _ -> fatal ?loc:tm.loc Wrong_number_of_patterns
   | _ -> invalid "match"
 
@@ -1329,22 +1343,24 @@ let rec get_branches : type a n. a Matchscope.t -> n Fwn.t -> observation list -
   match obs with
   | [ Token (RBracket, _) ] -> []
   | Token (Op "|", _) :: obs -> (
-      let pats, obs = get_patterns n obs in
+      let pats, cube, obs = get_patterns n obs in
       match obs with
       | Term body :: obs ->
           let branches = get_branches ctx n obs in
-          (ctx, pats, Wrap body) :: branches
+          (ctx, pats, cube, Wrap body) :: branches
       | _ -> invalid "match")
   | _ -> invalid "match"
 
 (* A version of get_patterns that doesn't require a specific number of patterns in advance. *)
-let rec get_any_patterns : observation list -> pattern Vec.wrapped * observation list =
+let rec get_any_patterns :
+    observation list -> pattern Vec.wrapped * [ `Normal | `Cube ] * observation list =
  fun obs ->
   match obs with
-  | Term tm :: Token (Mapsto, _) :: obs -> (Wrap [ get_pattern tm ], obs)
+  | Term tm :: Token (Mapsto, _) :: obs -> (Wrap [ get_pattern tm ], `Normal, obs)
+  | Term tm :: Token (DblMapsto, _) :: obs -> (Wrap [ get_pattern tm ], `Cube, obs)
   | Term tm :: Token (Op ",", _) :: obs ->
-      let Wrap pats, obs = get_any_patterns obs in
-      (Wrap (get_pattern tm :: pats), obs)
+      let Wrap pats, cube, obs = get_any_patterns obs in
+      (Wrap (get_pattern tm :: pats), cube, obs)
   | _ -> invalid "match"
 
 let rec pp_patterns accum obs =
@@ -1371,7 +1387,7 @@ let rec pp_branches first triv accum prews obs : document * Whitespace.t list =
   | Token (Op "|", wsbar) :: obs -> (
       let ppats, wpats, obs = pp_patterns empty obs in
       match obs with
-      | Token (Mapsto, wsmapsto) :: Term body :: obs ->
+      | Token (mapsto, wsmapsto) :: Term body :: obs ->
           let ibody, pbody, wbody = pp_case `Nontrivial body in
           pp_branches false triv
             (accum
@@ -1384,7 +1400,7 @@ let rec pp_branches first triv accum prews obs : document * Whitespace.t list =
                          else Token.pp (Op "|") ^^ pp_ws `Nobreak wsbar)
                        ^^ group (align ppats)
                        ^^ pp_ws `Nobreak wpats
-                       ^^ Token.pp Mapsto
+                       ^^ Token.pp mapsto
                        ^^ pp_ws `Break wsmapsto
                        ^^ ibody)))
                  (group
@@ -1393,7 +1409,7 @@ let rec pp_branches first triv accum prews obs : document * Whitespace.t list =
                          else Token.pp (Op "|") ^^ pp_ws `Nobreak wsbar)
                        ^^ group (align ppats)
                        ^^ pp_ws `Nobreak wpats
-                       ^^ Token.pp Mapsto
+                       ^^ Token.pp mapsto
                        ^^ pp_ws `Break wsmapsto
                        ^^ ibody)))
             ^^ nest 2 pbody)
@@ -1534,7 +1550,7 @@ let () =
           match obs with
           | Token (LBracket, _) :: Token (Op "|", _) :: obs | Token (LBracket, _) :: obs -> (
               (* We get the *number* of patterns from the first branch. *)
-              let Wrap pats, obs = get_any_patterns obs in
+              let Wrap pats, cube, obs = get_any_patterns obs in
               match obs with
               | Term body :: obs ->
                   let n = Vec.length pats in
@@ -1545,7 +1561,7 @@ let () =
                     process_branches ctx
                       (Vec.mmap (fun [ i ] -> Either.Right i) [ xs ])
                       Emp
-                      ((ctx, pats, Wrap body) :: branches)
+                      ((ctx, pats, cube, Wrap body) :: branches)
                       loc `Implicit in
                   Raw.lams an (Vec.init (fun () -> (unlocated None, ())) n ()) mtch loc
               | _ -> invalid "match")

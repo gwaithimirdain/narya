@@ -34,6 +34,9 @@ In the case of datatypes, the boundary (endpoints) of the identity/bridge type b
    | suc. : (n₀ n₁ : ℕ) (n₂ : Id ℕ n₀ n₁) → Id ℕ (suc. n₀) (suc. n₁)
    ]
 
+*except* that the boundary arguments such as ``n₀`` and ``n₁`` are never written when applying such a constructor: if ``n₂ : Id ℕ n₀ n₁`` then ``suc. n₂ : Id ℕ (suc. n₀) (suc. n₁)``.  Thus, the higher-dimensional version of a constructor always takes exactly the same number of arguments as the 0-dimensional one.  This is possible because a constructor *checks* rather than synthesizing, and the type a higher-dimensional constructor checks at must have constructors in *its* boundary, so it is always possible to infer the boundaries of a constructor application by bidirectional typechecking.
+
+
 Identity/bridge types of the universe
 -------------------------------------
 
@@ -190,7 +193,7 @@ In general, this is the sort of issue that implicit arguments and higher-order u
 
 (and back off again with the similar ``≔ explicit`` commands).
 
-When *function* boundaries are implicit, a higher-dimensional function application takes only *one* argument, the top-dimensional one; thus instead of ``refl f a₀ a₁ a₂`` you can (and must) write ``refl f a₂``, and instead of ``refl (refl f) a₀₀ a₀₁ a₀₂ a₁₀ a₁₁ a₁₂ a₂₀ a₂₁ a₂₂`` you can (and must) write ``refl f a₂₂``.  It is possible to give the implicit arguments explicitly by surrounding them with curly braces, as in ``refl f {a₀} {a₁} a₂``, but if you do this you must give *all* of them explicitly; there are no half measures.  The main reason you might need to do this is if ``a₂`` is a term that doesn't synthesize, since in that case ``refl f a₂`` won't be able to infer the boundaries ``a₀`` and ``a₁``.
+When *function* boundaries are implicit, a higher-dimensional function application takes only *one* argument, the top-dimensional one; thus instead of ``refl f a₀ a₁ a₂`` you can (and must) write ``refl f a₂``, and instead of ``refl (refl f) a₀₀ a₀₁ a₀₂ a₁₀ a₁₁ a₁₂ a₂₀ a₂₁ a₂₂`` you can (and must) write ``refl (refl f) a₂₂``.  It is possible to give the implicit arguments explicitly by surrounding them with curly braces, as in ``refl f {a₀} {a₁} a₂``, but if you do this you must give *all* of them explicitly; there are no half measures.  The main reason you might need to do this is if ``a₂`` is a term that doesn't synthesize, since in that case ``refl f a₂`` won't be able to infer the boundaries ``a₀`` and ``a₁``.
 
 When *type* boundaries are implicit, a full instantiation of a higher-dimensional type takes only the *highest-dimensional* arguments.  For ordinary 1-dimensional identity types, this changes nothing, since both arguments ``a₀`` and ``a₁`` of ``Id A a₀ a₁`` are 0-dimensional and that is the highest dimension of any argument.  But for squares, instead of ``Id (Id A) a₀₀ a₀₁ a₀₂ a₁₀ a₁₁ a₁₂ a₂₀ a₂₁`` you can (and must) write ``Id (Id A) a₀₂ a₁₂ a₂₀ a₂₁`` since these are the four 1-dimensional arguments; the 0-dimensional ones are inferred from their boundaries (which are required to match up correctly where they overlap).  And you can of course give them explicitly with ``Id (Id A) {a₀₀} {a₀₁} a₀₂ {a₁₀} {a₁₁} a₁₂ a₂₀ a₂₁``.  In this case there are some half measures: if you give any lower-dimensional argument explicitly you must give all the arguments in that "block" explictly, but you can omit those in other blocks; for instance you can write ``Id (Id A) {a₀₀} {a₀₁} a₀₂ a₁₂ a₂₀ a₂₁`` or ``Id (Id A) a₀₂ {a₁₀} {a₁₁} a₁₂ a₂₀ a₂₁``.
 
@@ -201,9 +204,11 @@ Normally, when boundaries are implicit, Narya also *prints* higher-dimensional f
    display function boundaries ≔ on
    display type boundaries ≔ on
 
-(and switch back with ``≔ off``).  These commands are not available in source files, since they should not be un-done; they can be given in interactive mode, or in ProofGeneral with ``C-c C-v``, or you can use the corresponding command-line flags such as ``-show-function-boundaries``.  When these options are ``on`` *and* implicitness for the relevant kinds of boundaries is also on, Narya prints *all* the lower-dimensional arguments explicitly, with curly braces around them.  There are no half measures here, for functions or for types.  In the future, we may implement a way to switch on such display for some constants and/or variables but not others.
+(and switch back with ``≔ off``).  These commands are not available in source files, since they should not be un-done; they can be given in interactive mode, or with the ProofGeneral commands ``C-c C-d C-f`` and ``C-c C-d C-t``, or you can use the corresponding command-line flags such as ``-show-function-boundaries``.  When these options are ``on`` *and* implicitness for the relevant kinds of boundaries is also on, Narya prints *all* the lower-dimensional arguments explicitly, with curly braces around them.  There are no half measures here, for functions or for types.  In the future, we may implement a way to switch on such display for some constants and/or variables but not others.
 
 In addition, even when printing implicit boundaries is off, Narya attempts to be smart and print those boundaries when it thinks that they would be necessary in order to re-parse the printed term, because the corresponding explicit argument isn't synthesizing.  In this case it can do half measures, the way you can when writing type boundaries: the implicit arguments in each "block" are printed only if the primary argument of that block is nonsynthesizing.
+
+Note that the discussion of higher-dimensional constructors above implies that the hypothetical option ``option constructor boundaries`` (which doesn't actually exist) is *always* set to ``implicit``.
 
 
 Cubes of variables
@@ -211,11 +216,11 @@ Cubes of variables
 
 Implicitness of arguments to higher-dimensional *applications* has no bearing on higher-dimensional *abstractions*: the "implicit arguments" still must be named in an abstraction in the usual way, regardless of whether implicitness is on or not.  (This will also be Narya's approach to implicit arguments more generally.)  However, there is a different shorthand syntax for higher-dimensional abstractions: instead of ``x₀ x₁ x₂ ↦ M`` you can write ``x ⤇ M`` (or ``x |=> M`` in ASCII).  This binds ``x`` as a "family" or "cube" of variables whose names are suffixed with face names in ternary notation: ``x.0`` and ``x.1`` and ``x.2``, or in higher dimensions ``x.00`` through ``x.22`` and so on.
 
-The dimension of the cube of variables is inferred from the type at which the abstraction is checked, and *may not* be zero.  If the dimension is zero, you must use ``↦`` instead.  And as with ordinary abstractions, multiple cube abstractions can be combined as in ``x y ⤇ M``, but all the variables combined in this way must have the same dimension (which is nonzero); otherwise you can write ``x ⤇ y ⤇ M`` or ``x ↦ y ⤇ M``, etc.  (These restrictions are an intentional choice intended to increase readability; but if you don't like them, please give feedback.)
+The dimension of the cube of variables is inferred from the type at which the abstraction is checked, and *may not* be zero.  If the dimension is zero, you must use ``↦`` instead.  And as with ordinary abstractions, multiple cube abstractions can be combined as in ``x y ⤇ M``, but all the variables combined in this way must have the same dimension (which is nonzero); otherwise you must write ``x ⤇ y ⤇ M`` or ``x ↦ y ⤇ M``, etc.  (These restrictions are an intentional choice intended to increase readability; but if you don't like them, please give feedback.)
 
 Note that this is a *purely syntactic* abbreviation: there is no object "``x``", but rather there are really *three different variables* that just happen to have the names ``x.0`` and ``x.1`` and ``x.2``.  There is no potential for collision with user-defined names, since ordinary local variable names cannot contain internal periods, and atomic identifiers cannot consist entirely of digits.  However, a cube variable with "base" name ``x`` does shadow, and is shadowed by, ordinary variables named ``x``, as well as other cube variables with base name ``x`` of different dimension.
 
-These "cube variables" also appear automatically when matching against a higher-dimensional version of a datatype.  For instance, we can do an encode-decode proof for the natural numbers by matching directly on ``Id ℕ`` (using pattern-matching abstractions):
+These "cube variables" also appear automatically when matching against a higher-dimensional version of a datatype; and to indicate this, such matches use ``⤇`` rather than ``↦``.  For instance, we can do an encode-decode proof for the natural numbers by matching directly on ``Id ℕ`` (using pattern-matching abstractions):
 
 .. code-block:: none
 
@@ -232,12 +237,14 @@ These "cube variables" also appear automatically when matching against a higher-
               | suc. n ↦ p ↦ suc. (decode m n (p .0)) ]]
    
    def encode (m n : ℕ) : Id ℕ m n → code m n ≔
-   [ zero. ↦ ()
-   | suc. p ↦ (_ ≔ encode p.0 p.1 p.2)]
+   [ zero. ⤇ ()
+   | suc. p ⤇ (_ ≔ encode p.0 p.1 p.2)]
 
-Here in the definition of ``encode``, the pattern variable ``p`` of the ``suc.`` branch is automatically made into a 1-dimensional cube of variables since we are matching against an element of ``Id ℕ``, so in the body we can refer to ``p.0``, ``p.1``, and ``p.2``.  In the future, we may implement a dual syntax for simultaneously *applying* a higher-dimensional function to a whole cube of variables of this sort as well, although of course if implicit application is on you can just write ``refl f x.2`` and so on.
+Here in the definition of ``encode``, the pattern variable ``p`` of the ``suc.`` branch is automatically made into a 1-dimensional cube of variables since we are matching against an element of ``Id ℕ``, so in the body we can refer to ``p.0``, ``p.1``, and ``p.2``.  And because of this, we use ``⤇`` rather than ``↦`` to introduce the bodies of branches in that ``match``.
 
-Similarly, when defining a codatatype lying in a higher universe, the "self" variable automatically becomes a cube variable, so that the boundary of the type is accessible through its faces.  For instance, here is a codatatype version of Gel:
+Unlike for abstractions, there is no option to write ``↦`` and name all the variables explicitly (e.g. ``| suc. p0 p1 p2 ↦``).  We deem this would be too confusing, because higher-dimensional constructors can never be *applied* explicitly to all their boundaries, and a "pattern" in a ``match`` should look as much as possible like the constructor that it matches against.
+
+Similarly, when defining a codatatype lying in a higher universe, the "self" variable automatically becomes a cube variable, so that the boundary of the type is accessible through its faces.  (In this case, of course, there is no ``↦`` to become ``⤇``.)  For instance, here is a codatatype version of Gel:
 
 .. code-block:: none
 

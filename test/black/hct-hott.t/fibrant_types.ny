@@ -206,8 +206,8 @@ def id_sum_iso (A0 A1 : Type) (A2 : Id Type A0 A1) (B0 B1 : Type)
   | left. a0, right. b1 ↦ match v2 [ ]
   | right. b0, left. a1 ↦ match v2 [ ]
   | right. b0, right. b1 ↦ right. v2],
-  fro ≔ [ left. a ↦ a.2 | right. b ↦ b.2 ],
-  to_fro ≔ [ left. a2 ↦ rfl. | right. b2 ↦ rfl. ],
+  fro ≔ [ left. a ⤇ a.2 | right. b ⤇ b.2 ],
+  to_fro ≔ [ left. a ⤇ rfl. | right. b ⤇ rfl. ],
   fro_to ≔ v2 ↦ match u0, u1 [
   | left. a0, left. a1 ↦ rfl.
   | left. a0, right. b1 ↦ match v2 [ ]
@@ -261,18 +261,18 @@ def id_ℕ_iso (n0 n1 : ℕ) : ℕ_code n0 n1 ≅ Id ℕ n0 n1
        | zero., suc. n1 ↦ match m2 [ ]
        | suc. n0, zero. ↦ match m2 [ ]
        | suc. n0, suc. n1 ↦ suc. (id_ℕ_iso n0 n1 .to m2)])
-      ([ zero. ↦ () | suc. m2 ↦ id_ℕ_iso m2.0 m2.1 .fro m2.2 ])
+      ([ zero. ⤇ () | suc. m ⤇ id_ℕ_iso m.0 m.1 .fro m.2 ])
       (m2 ↦
        match n0, n1 [
        | zero., zero. ↦ rfl.
        | zero., suc. n1 ↦ match m2 [ ]
        | suc. n0, zero. ↦ match m2 [ ]
        | suc. n0, suc. n1 ↦ id_ℕ_iso n0 n1 .fro_to m2])
-      ([ zero. ↦ rfl.
-       | suc. m2 ↦
-           eq.ap (Id ℕ m2.0 m2.1) (Id ℕ (suc. m2.0) (suc. m2.1)) (x ↦ suc. x)
-             (id_ℕ_iso m2.0 m2.1 .to (id_ℕ_iso m2.0 m2.1 .fro m2.2)) m2.2
-             (id_ℕ_iso m2.0 m2.1 .to_fro m2.2)])
+      ([ zero. ⤇ rfl.
+       | suc. m ⤇
+           eq.ap (Id ℕ m.0 m.1) (Id ℕ (suc. m.0) (suc. m.1)) (x ↦ suc. x)
+             (id_ℕ_iso m.0 m.1 .to (id_ℕ_iso m.0 m.1 .fro m.2)) m.2
+             (id_ℕ_iso m.0 m.1 .to_fro m.2)])
 
 def 𝕗_ℕ_code (n0 n1 : ℕ) : isFibrant (ℕ_code n0 n1) ≔ match n0, n1 [
 | zero., zero. ↦ 𝕗⊤
@@ -364,7 +364,7 @@ section Indexed_𝕎 ≔
     (x0 : 𝕎 s i0) (x1 : 𝕎 s i1) (x2 : refl (𝕎 s) i2 x0 x1)
     : 𝕎 (code_spec s) (i0, i1, i2, x0, x1)
     ≔ match x2 [
-  | sup. a f ↦
+  | sup. a f ⤇
       sup. (a.0, a.1, a.2, f.0, f.1)
         (b ↦
          𝕎_encode s (s .j a.0 (b .b0)) (s .j a.1 (b .b1))
@@ -389,7 +389,7 @@ section Indexed_𝕎 ≔
     : eq (refl (𝕎 s) i2 x0 x1)
         (𝕎_decode s (i0, i1, i2, x0, x1) (𝕎_encode s i0 i1 i2 x0 x1 x2)) x2
     ≔ match x2 [
-  | sup. a f ↦
+  | sup. a f ⤇
       eq.ap
         (refl Π (refl s .B a.2) {b ↦ 𝕎 s (s .j a.0 b)} {b ↦ 𝕎 s (s .j a.1 b)}
            (b ⤇ refl 𝕎 (refl s) (refl s .j a.2 b.2)) f.0 f.1)
@@ -481,7 +481,7 @@ def 𝕎_encode (A0 A1 : Type) (A2 : Id Type A0 A1) (B0 : A0 → Type)
   (x0 : 𝕎 A0 B0) (x1 : 𝕎 A1 B1) (x2 : refl 𝕎 A2 B2 x0 x1)
   : 𝕎_code A0 A1 A2 B0 B1 B2 x0 x1
   ≔ match x2 [
-| sup. a f ↦ (
+| sup. a f ⤇ (
     fst ≔ a.2,
     snd ≔ b0 b1 b2 ↦ 𝕎_encode A0 A1 A2 B0 B1 B2 (f.0 b0) (f.1 b1) (f.2 b2))]
 
@@ -501,7 +501,7 @@ def 𝕎_decode_encode (A0 A1 : Type) (A2 : Id Type A0 A1) (B0 : A0 → Type)
       (𝕎_decode A0 A1 A2 B0 B1 B2 x0 x1 (𝕎_encode A0 A1 A2 B0 B1 B2 x0 x1 x2))
       x2
   ≔ match x2 [
-| sup. a f ↦
+| sup. a f ⤇
     eq.ap
       (refl Π (B2 a.2) {_ ↦ 𝕎 A0 B0} {_ ↦ 𝕎 A1 B1} (_ ⤇ refl 𝕎 A2 B2) f.0 f.1)
       (refl 𝕎 A2 B2 (sup. a.0 f.0) (sup. a.1 f.1)) (g ↦ sup. a.2 g)

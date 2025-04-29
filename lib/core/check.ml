@@ -186,10 +186,18 @@ type (_, _, _) synthable_branch =
       -> ('a, 'm, 'ij) synthable_branch
 
 (* This preprocesssing step pairs each user-provided branch with the corresponding constructor information from the datatype. *)
-let merge_branches head user_branches data_constrs =
+let merge_branches : type a m ij.
+    head ->
+    (Constr.t, a branch) Abwd.t ->
+    (Constr.t, (m, ij) Value.dataconstr) Abwd.t ->
+    (Constr.t * (a, m, ij) checkable_branch) list =
+ fun head user_branches data_constrs ->
   let user_branches, leftovers =
     Bwd.fold_left
-      (fun (userbrs, databrs) (constr, Branch ({ value = xs; loc }, body)) ->
+      (fun ((userbrs, databrs) :
+             (Constr.t, (a, m, ij) checkable_branch) Abwd.t
+             * (Constr.t, (m, ij) Value.dataconstr) Abwd.t)
+           (constr, Branch ({ value = xs; loc }, cube, body)) ->
         (* We check at the preprocessing stage that there are no duplicate constructors in the match. *)
         if Abwd.mem constr userbrs then fatal ?loc (Duplicate_constructor_in_match constr);
         let databrs, databr = Abwd.extract constr databrs in
@@ -198,6 +206,10 @@ let merge_branches head user_branches data_constrs =
           | Some db -> db
           | None -> fatal ?loc (No_such_constructor_in_match (phead head, constr)) in
         (* We also check during preprocessing that the user has supplied the right number of pattern variable arguments to the constructor.  The positive result of this check is then recorded in the common existential types bound by Checkable_branch. *)
+        (match (cube, D.compare_zero (dim_env env)) with
+        | `Normal, Pos _ -> fatal (Noncube_abstraction_in_higher_dimensional_match (dim_env env))
+        | `Cube, Zero -> fatal (Zero_dimensional_cube_abstraction "match")
+        | `Normal, Zero | `Cube, Pos _ -> ());
         match Fwn.compare (Namevec.length xs) (Telescope.length argtys) with
         | Neq ->
             fatal ?loc
@@ -325,7 +337,7 @@ let rec check : type a b s.
                 | Wrap (_, Missing (loc, j)) -> fatal ?loc (Not_enough_lambdas j))
             | `Cube absdim -> (
                 match D.compare_zero m with
-                | Zero -> fatal ?loc:xloc Zero_dimensional_cube_abstraction
+                | Zero -> fatal ?loc:xloc (Zero_dimensional_cube_abstraction "function")
                 | Pos _ ->
                     (match !absdim with
                     | None -> absdim := Some (Wrap m, xloc)
