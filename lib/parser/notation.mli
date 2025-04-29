@@ -5,7 +5,7 @@ open Raw
 open Asai.Range
 module TokMap : module type of Map.Make (Token)
 
-type token_ws = Token.t * Whitespace.t list
+type token_ws = Token.t * (Asai.Range.t option * Whitespace.t list)
 type closed = Dummy_closed
 type 's opn = Dummy_open
 type _ openness = Open : 's No.strictness -> 's opn openness | Closed : closed openness
