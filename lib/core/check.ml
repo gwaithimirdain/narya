@@ -310,8 +310,8 @@ let rec check : type a b s.
             | `Normal -> (
                 let module S = struct
                   type 'b t =
-                    | Ok : Asai.Range.t option * (a, 'b, 'ab) N.plus * 'ab check located -> 'b t
-                    | Missing of Asai.Range.t option * int
+                    | Ok : (a, 'b, 'ab) N.plus * 'ab check located -> 'b t
+                    | Missing of int
                 end in
                 let module Build = NICubeOf.Traverse (S) in
                 match
@@ -319,29 +319,18 @@ let rec check : type a b s.
                     {
                       build =
                         (fun _ -> function
-                          | Ok
-                              ( _,
-                                ab,
-                                {
-                                  value =
-                                    Lam
-                                      {
-                                        name = { value = x; loc };
-                                        cube = { value = `Normal; _ };
-                                        body;
-                                      };
-                                  _;
-                                } ) -> Fwrap (NFamOf x, Ok (loc, Suc ab, body))
-                          | Ok (loc, _, _) -> Fwrap (NFamOf None, Missing (loc, 1))
-                          | Missing (loc, j) -> Fwrap (NFamOf None, Missing (loc, j + 1)));
+                          | Ok (ab, { value = Lam { name; cube = { value = `Normal; _ }; body }; _ })
+                            -> Fwrap (NFamOf name.value, Ok (Suc ab, body))
+                          | Ok (_, _) -> Fwrap (NFamOf None, Missing 1)
+                          | Missing j -> Fwrap (NFamOf None, Missing (j + 1)));
                     }
-                    (Ok (None, Zero, tm))
+                    (Ok (Zero, tm))
                 with
-                | Wrap (names, Ok (_, af, body)) ->
+                | Wrap (names, Ok (af, body)) ->
                     let xs = Variables (D.zero, D.zero_plus m, names) in
                     let ctx = Ctx.vis ctx D.zero (D.zero_plus m) names newnfs af in
                     Lam (xs, check ?discrete (mkstatus xs status) ctx body output)
-                | Wrap (_, Missing (loc, j)) -> fatal ?loc (Not_enough_lambdas j))
+                | Wrap (_, Missing j) -> fatal ?loc:cube.loc (Not_enough_lambdas j))
             | `Cube absdim -> (
                 match D.compare_zero m with
                 | Zero -> fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "function")
