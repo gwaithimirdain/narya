@@ -142,7 +142,7 @@ module Make (I : Indices) = struct
     (* An abstraction knows whether it is a cube abstraction (⤇) or a normal one (↦).  In the former case it stores an optional dimension, so that multiple variables in the same abstraction (x y ⤇) can be enforced to be the same dimension, and the location of the previous variable that set the dimension. *)
     | Lam : {
         name : I.name located;
-        cube : [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ];
+        cube : [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ] located;
         body : 'a I.suc check located;
       }
         -> 'a check
@@ -181,10 +181,10 @@ module Make (I : Indices) = struct
     (* Check a term, but then verify its correctness with an external oracle. *)
     | Oracle : 'a check located -> 'a check
 
-  (* The location of the namevec is that of the whole pattern. *)
+  (* The location of the namevec is that of the whole pattern.  The location of the cube flag is that of the mapsto. *)
   and _ branch =
     | Branch :
-        ('a, 'b, 'ab) Namevec.t located * [ `Cube | `Normal ] * 'ab check located
+        ('a, 'b, 'ab) Namevec.t located * [ `Cube | `Normal ] located * 'ab check located
         -> 'a branch
 
   (* *)
@@ -425,7 +425,8 @@ let rec lams : type a b ab.
  fun ab xs tm loc ->
   match (ab, xs) with
   | Zero, [] -> tm
-  | Suc ab, name :: xs -> { value = Lam { name; cube = `Normal; body = lams ab xs tm loc }; loc }
+  | Suc ab, name :: xs ->
+      { value = Lam { name; cube = locate_opt None `Normal; body = lams ab xs tm loc }; loc }
 
 let rec bplus_of_tel : type a b c. (a, b, c) tel -> (a, b, c) Fwn.bplus = function
   | Emp -> Zero

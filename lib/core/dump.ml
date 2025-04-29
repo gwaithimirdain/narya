@@ -310,7 +310,7 @@ module F = struct
       | Some x :: xs -> x ^ " " ^ strvars xs
       | None :: xs -> "_ " ^ strvars xs in
     let mapsto =
-      match cube with
+      match cube.value with
       | `Normal -> "↦"
       | `Cube -> "⤇" in
     fprintf ppf "%s %s %s %a" (Constr.to_string c) (strvars vars.value) mapsto check body.value

@@ -206,9 +206,10 @@ let merge_branches : type a m ij.
           | Some db -> db
           | None -> fatal ?loc (No_such_constructor_in_match (phead head, constr)) in
         (* We also check during preprocessing that the user has supplied the right number of pattern variable arguments to the constructor.  The positive result of this check is then recorded in the common existential types bound by Checkable_branch. *)
-        (match (cube, D.compare_zero (dim_env env)) with
-        | `Normal, Pos _ -> fatal (Noncube_abstraction_in_higher_dimensional_match (dim_env env))
-        | `Cube, Zero -> fatal (Zero_dimensional_cube_abstraction "match")
+        (match (cube.value, D.compare_zero (dim_env env)) with
+        | `Normal, Pos _ ->
+            fatal ?loc:cube.loc (Noncube_abstraction_in_higher_dimensional_match (dim_env env))
+        | `Cube, Zero -> fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "match")
         | `Normal, Zero | `Cube, Pos _ -> ());
         match Fwn.compare (Namevec.length xs) (Telescope.length argtys) with
         | Neq ->
@@ -304,7 +305,7 @@ let rec check : type a b s.
                   Potential (c, Arg (args, arg, ins_zero m), fun tm -> hyp (Lam (xs, tm))) in
             (* Apply and instantiate the codomain to those arguments to get a type to check the body at. *)
             let output = tyof_app cods tyargs newargs in
-            match cube with
+            match cube.value with
             (* If the abstraction is a cube, we slurp up the right number of lambdas for the dimension of the pi-type, and pick up the body inside them.  We do this by building a cube of variables of the right dimension while maintaining the current term as an indexed state.  We also build a sum of raw lengths, since we need that to extend the context.  Note that we never need to manually "count" how many faces there are in a cube of any dimension, or discuss how to put them in order: the counting and ordering is handled automatically by iterating through a cube. *)
             | `Normal -> (
                 let module S = struct
@@ -322,7 +323,13 @@ let rec check : type a b s.
                               ( _,
                                 ab,
                                 {
-                                  value = Lam { name = { value = x; loc }; cube = `Normal; body };
+                                  value =
+                                    Lam
+                                      {
+                                        name = { value = x; loc };
+                                        cube = { value = `Normal; _ };
+                                        body;
+                                      };
                                   _;
                                 } ) -> Fwrap (NFamOf x, Ok (loc, Suc ab, body))
                           | Ok (loc, _, _) -> Fwrap (NFamOf None, Missing (loc, 1))
@@ -337,7 +344,7 @@ let rec check : type a b s.
                 | Wrap (_, Missing (loc, j)) -> fatal ?loc (Not_enough_lambdas j))
             | `Cube absdim -> (
                 match D.compare_zero m with
-                | Zero -> fatal ?loc:xloc (Zero_dimensional_cube_abstraction "function")
+                | Zero -> fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "function")
                 | Pos _ ->
                     (match !absdim with
                     | None -> absdim := Some (Wrap m, xloc)

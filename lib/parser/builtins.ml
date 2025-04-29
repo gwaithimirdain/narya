@@ -164,7 +164,7 @@ let rec get_vars : type n lt1 ls1 rt1 rs1.
 
 let rec raw_lam : type a b ab.
     (string option, ab) Bwv.t ->
-    [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ] ->
+    [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ] located ->
     (a, b, ab) N.plus ->
     (Asai.Range.t option, b) Bwv.t ->
     ab check located ->
@@ -183,13 +183,13 @@ let rec raw_lam : type a b ab.
 let process_abs cube ctx obs _loc =
   (* The loc argument isn't used here since we can deduce the locations of each lambda by merging its variables with its body. *)
   match obs with
-  | [ Term vars; Token (tok, _); Term body ]
+  | [ Term vars; Token (tok, (mloc, _)); Term body ]
     when (tok = DblMapsto && cube = `Cube) || (tok = Mapsto && cube = `Normal) ->
       let (Extctx (ab, locs, ctx)) = get_vars ctx vars in
       let cube =
         match cube with
-        | `Normal -> `Normal
-        | `Cube -> `Cube (ref None) in
+        | `Normal -> locate `Normal mloc
+        | `Cube -> locate (`Cube (ref None)) mloc in
       raw_lam ctx cube ab locs (process ctx body)
   | _ -> invalid "abstraction"
 
@@ -1128,14 +1128,15 @@ end = struct
 end
 
 (* An ('a, 'n) branch is a scope of 'a variables, a vector of 'n patterns, and a body to be parsed in the scope extended by the variables in those patterns.  At the beginning, all the branches start out with the same scope of variables, but as we proceed they can get different ones.  All the branches in a single invocation of process_match have the same *number* of variables in scope, but different branches could have different *names* for those variables. *)
-type ('a, 'n) branch = 'a Matchscope.t * (pattern, 'n) Vec.t * [ `Normal | `Cube ] * wrapped_parse
+type ('a, 'n) branch =
+  'a Matchscope.t * (pattern, 'n) Vec.t * [ `Normal | `Cube ] located * wrapped_parse
 
 (* An ('a, 'm, 'n) cbranch is a branch, with scope of 'a variables, that starts with a constructor (unspecified) having 'm arguments and proceeds with 'n other patterns.  *)
 type ('a, 'm, 'n) cbranch =
   'a Matchscope.t
   * (pattern, 'm) Vec.t located
   * (pattern, 'n) Vec.t
-  * [ `Normal | `Cube ]
+  * [ `Normal | `Cube ] located
   * wrapped_parse
 
 (* An ('a, 'n) cbranches is a Bwd of branches that start with the same constructor, which always has the same number of arguments, along with a scope of 'a variables common to those branches. *)
@@ -1323,12 +1324,16 @@ let rec get_discriminees :
   | _ -> invalid "match"
 
 let rec get_patterns : type n.
-    n Fwn.t -> observation list -> (pattern, n) Vec.t * [ `Normal | `Cube ] * observation list =
+    n Fwn.t ->
+    observation list ->
+    (pattern, n) Vec.t * [ `Normal | `Cube ] located * observation list =
  fun n obs ->
   match (n, obs) with
   | _, [] | Zero, _ -> invalid "match"
-  | Suc Zero, Term tm :: Token (Mapsto, _) :: obs -> ([ get_pattern tm ], `Normal, obs)
-  | Suc Zero, Term tm :: Token (DblMapsto, _) :: obs -> ([ get_pattern tm ], `Cube, obs)
+  | Suc Zero, Term tm :: Token (Mapsto, (loc, _)) :: obs ->
+      ([ get_pattern tm ], locate `Normal loc, obs)
+  | Suc Zero, Term tm :: Token (DblMapsto, (loc, _)) :: obs ->
+      ([ get_pattern tm ], locate `Cube loc, obs)
   | Suc Zero, Term _ :: Term tm :: _ -> fatal ?loc:tm.loc Parse_error
   | Suc Zero, Term tm :: _ -> fatal ?loc:tm.loc Parse_error
   | Suc (Suc _ as n), Term tm :: Token (Op ",", _) :: obs ->
@@ -1353,11 +1358,11 @@ let rec get_branches : type a n. a Matchscope.t -> n Fwn.t -> observation list -
 
 (* A version of get_patterns that doesn't require a specific number of patterns in advance. *)
 let rec get_any_patterns :
-    observation list -> pattern Vec.wrapped * [ `Normal | `Cube ] * observation list =
+    observation list -> pattern Vec.wrapped * [ `Normal | `Cube ] located * observation list =
  fun obs ->
   match obs with
-  | Term tm :: Token (Mapsto, _) :: obs -> (Wrap [ get_pattern tm ], `Normal, obs)
-  | Term tm :: Token (DblMapsto, _) :: obs -> (Wrap [ get_pattern tm ], `Cube, obs)
+  | Term tm :: Token (Mapsto, (loc, _)) :: obs -> (Wrap [ get_pattern tm ], locate `Normal loc, obs)
+  | Term tm :: Token (DblMapsto, (loc, _)) :: obs -> (Wrap [ get_pattern tm ], locate `Cube loc, obs)
   | Term tm :: Token (Op ",", _) :: obs ->
       let Wrap pats, cube, obs = get_any_patterns obs in
       (Wrap (get_pattern tm :: pats), cube, obs)
