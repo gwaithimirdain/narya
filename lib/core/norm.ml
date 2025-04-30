@@ -956,12 +956,28 @@ and eval_codata : type m a c n et.
     (a * n * et) CodatafieldAbwd.t ->
     potential evaluation =
  fun env eta opacity dim termctx fields ->
-  let (Plus ed) = D.plus dim in
+  let (Plus (type mn) (ed : (m, n, mn) D.plus)) = D.plus dim in
   let ins = id_ins (dim_env env) ed in
   let canonical = Codata { eta; opacity; env; termctx; ins; fields } in
   let tyargs = TubeOf.empty (dom_ins ins) in
-  (* TODO: Compute fibrancy fields *)
-  let fields = Sorry.e () in
+  let fldmap : (a * n * et) CodatafieldAbwd.entry -> (mn * potential * no_eta) StructfieldAbwd.entry
+      = function
+    | CodatafieldAbwd.Entry (fld, Lower (Term.Var _))
+    | CodatafieldAbwd.Entry (fld, Lower (Term.Const _))
+    | CodatafieldAbwd.Entry (fld, Lower (Term.Meta (_, _)))
+    | CodatafieldAbwd.Entry (fld, Lower (Term.MetaEnv (_, _)))
+    | CodatafieldAbwd.Entry (fld, Lower (Term.Field (_, _, _)))
+    | CodatafieldAbwd.Entry (fld, Lower (Term.UU _))
+    | CodatafieldAbwd.Entry (fld, Lower (Term.Inst (_, _)))
+    | CodatafieldAbwd.Entry (fld, Lower (Term.Pi (_, _, _)))
+    | CodatafieldAbwd.Entry (fld, Lower (Term.App (_, _)))
+    | CodatafieldAbwd.Entry (fld, Lower (Term.Constr (_, _, _)))
+    | CodatafieldAbwd.Entry (fld, Lower (Term.Act (_, _)))
+    | CodatafieldAbwd.Entry (fld, Lower (Term.Let (_, _, _)))
+    | CodatafieldAbwd.Entry (fld, Lower (Term.Lam (_, _)))
+    | CodatafieldAbwd.Entry (fld, Lower (Term.Struct (_, _, _, _))) -> _
+    | Entry (_fld, Higher _) -> Sorry.e () in
+  let fields = Mbwd.map fldmap fields in
   Val (Canonical { canonical; tyargs; fields })
 
 and eval_term : type m b. (m, b) env -> (b, kinetic) term -> kinetic value =
