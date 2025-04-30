@@ -206,6 +206,9 @@
    ￫ info[I0000]
    ￮ constant sym_eqv defined
   
+   ￫ info[I0000]
+   ￮ constant 312_eqv defined
+  
    ￫ info[I0004]
    ￮ file loaded: $TESTCASE_ROOT/hott_bookhott.ny (source)
   
@@ -525,4 +528,51 @@
   
    ￫ info[I0000]
    ￮ constant univalence_is_right_definitional defined
+  
+
+  $ narya -v univalence_ee.ny
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/isfibrant.ny (compiled)
+  
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/bookhott.ny (compiled)
+  
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/hott_bookhott.ny (compiled)
+  
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/fibrant_types.ny (compiled)
+  
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/homotopy.ny (compiled)
+  
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/univalence.ny (compiled)
+  
+   ￫ info[I0100]
+   ￮ option set function boundaries to implicit
+  
+   ￫ info[I0100]
+   ￮ option set type boundaries to implicit
+  
+   ￫ info[I0000]
+   ￮ constant isBisim_ee defined
+  
+   ￫ info[I0000]
+   ￮ constant isbisim_ee_eqv defined
+  
+   ￫ info[I0000]
+   ￮ constant pre_univalence_ee defined
+  
+   ￫ info[I0000]
+   ￮ constant Gel_ee defined
+  
+   ￫ info[I0000]
+   ￮ constant Gel_ee_iso defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕗Gel_ee defined
+  
+   ￫ info[I0000]
+   ￮ constant univalence_ee defined
   

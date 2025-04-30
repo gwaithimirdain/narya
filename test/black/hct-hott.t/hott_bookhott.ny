@@ -94,3 +94,49 @@ def sym_eqv (A00 A01 : Type) (A02 : Id Type A00 A01) (A10 A11 : Type)
   to_fro ≔ _ ↦ rfl.,
   fro_to ≔ _ ↦ rfl.,
   to_fro_to ≔ _ ↦ rfl.)
+
+def 312_eqv (A000 : Type) (A001 : Type) (A002 : Id Type A000 A001)
+  (A010 : Type) (A011 : Type) (A012 : Id Type A010 A011)
+  (A020 : Id Type A000 A010) (A021 : Id Type A001 A011)
+  (A022 : Id (Id Type) A002 A012 A020 A021)
+  {` Top face `}
+  (A100 : Type) (A101 : Type) (A102 : Id Type A100 A101) (A110 : Type)
+  (A111 : Type) (A112 : Id Type A110 A111) (A120 : Id Type A100 A110)
+  (A121 : Id Type A101 A111) (A122 : Id (Id Type) A102 A112 A120 A121)
+  {` Front face `}
+  (A200 : Id Type A000 A100) (A201 : Id Type A001 A101)
+  (A202 : Id (Id Type) A002 A102 A200 A201)
+  {` Back face `}
+  (A210 : Id Type A010 A110) (A211 : Id Type A011 A111)
+  (A212 : Id (Id Type) A012 A112 A210 A211)
+  {` Left face `}
+  (A220 : Id (Id Type) A020 A120 A200 A210)
+  {` Right face `}
+  (A221 : Id (Id Type) A021 A121 A201 A211)
+  {` Center `}
+  (A222 : Id (Id (Id Type)) A022 A122 A202 A212 A220 A221) (a000 : A000)
+  (a001 : A001) (a002 : A002 a000 a001) (a010 : A010) (a011 : A011)
+  (a012 : A012 a010 a011) (a020 : A020 a000 a010) (a021 : A021 a001 a011)
+  (a022 : A022 a002 a012 a020 a021)
+  {` Top face `}
+  (a100 : A100) (a101 : A101) (a102 : A102 a100 a101) (a110 : A110)
+  (a111 : A111) (a112 : A112 a110 a111) (a120 : A120 a100 a110)
+  (a121 : A121 a101 a111) (a122 : A122 a102 a112 a120 a121)
+  {` Front face `}
+  (a200 : A200 a000 a100) (a201 : A201 a001 a101)
+  (a202 : A202 a002 a102 a200 a201)
+  {` Back face `}
+  (a210 : A210 a010 a110) (a211 : A211 a011 a111)
+  (a212 : A212 a012 a112 a210 a211)
+  {` Left face `}
+  (a220 : A220 a020 a120 a200 a210)
+  {` Right face `}
+  (a221 : A221 a021 a121 a201 a211)
+  : A222 a022 a122 a202 a212 a220 a221
+    ≅ A222⁽³¹²⁾ a220 a221 (sym a022) (sym a122) (sym a202) (sym a212)
+  ≔ (
+  to ≔ a222 ↦ a222⁽³¹²⁾,
+  fro ≔ a222 ↦ a222⁽²³¹⁾,
+  to_fro ≔ _ ↦ rfl.,
+  fro_to ≔ _ ↦ rfl.,
+  to_fro_to ≔ _ ↦ rfl.)
