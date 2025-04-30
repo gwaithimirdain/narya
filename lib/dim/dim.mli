@@ -11,6 +11,9 @@ module Endpoints : sig
   type 'l len
   type wrapped = Wrap : 'l len -> wrapped
 
+  val run :
+    arity:int -> refl_char:char -> refl_names:string list -> internal:bool -> (unit -> 'a) -> 'a
+
   val uniq : 'l1 len -> 'l2 len -> ('l1, 'l2) Eq.t
   val len : 'l len -> 'l N.t
   val wrapped : unit -> wrapped
@@ -913,15 +916,10 @@ val name_of_deg : ('a, 'b) deg -> string option
 (* *)
 val locking : ('a, 'b) deg -> bool
 
-type hott_direction =
-  | Hott :
-      'n D.t * 'n is_singleton * (D.zero, 'n) sface * (D.zero, 'n) sface * Util.N.two Endpoints.len
-      -> hott_direction
+module Hott : sig
+  type dim
 
-val run :
-  arity:int ->
-  refl_char:char ->
-  refl_names:string list ->
-  internal:bool ->
-  (hott_direction option -> 'a) ->
-  'a
+  val dim : dim D.t
+  val singleton : dim is_singleton
+  val faces : unit -> ((D.zero, dim) sface * (D.zero, dim) sface * N.two Endpoints.len) option
+end

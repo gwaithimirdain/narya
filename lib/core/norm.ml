@@ -733,7 +733,7 @@ and tyof_field : type m h s r i c.
       | Some mn -> tyof_field_giventype tm head eta env mn fields tyargs fld ~shuf fldins)
   | Canonical (head, UU m, tyargs) -> (
       let err = Code.No_such_field (`Other errtm, errfld) in
-      match !Fibrancy.fields with
+      match Fibrancy.fields () with
       | None -> fatal ~severity err
       | Some fields ->
           tyof_field_giventype tm head Noeta (Value.Emp m) (D.plus_zero m) fields tyargs fld ~shuf
@@ -813,7 +813,7 @@ and tyof_field_withname : type a b.
           tyof_field_withname_giventype ctx tm ty eta env mn fields tyargs infld err)
   | Canonical (_head, UU m, tyargs) -> (
       let err = Code.No_such_field (`Other errtm, errfld) in
-      match !Fibrancy.fields with
+      match Fibrancy.fields () with
       | None -> fatal err
       | Some fields ->
           tyof_field_withname_giventype ctx tm ty Noeta (Value.Emp m) (D.plus_zero m) fields tyargs

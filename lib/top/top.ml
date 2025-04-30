@@ -104,9 +104,8 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols f =
   if !arity < 1 || !arity > 9 then Reporter.fatal (Unimplemented "arities outside [1,9]");
   if !discreteness && !arity > 1 then Reporter.fatal (Unimplemented "discreteness with arity > 1");
   if !hott && (!arity <> 2 || !discreteness || not !internal) then Reporter.fatal Invalid_flags;
-  Dim.run ~arity:!arity ~refl_char:!refl_char ~refl_names:!refl_names ~internal:!internal
-  @@ fun dim ->
-  if !hott then Fibrancy.install dim;
+  Dim.Endpoints.run ~arity:!arity ~refl_char:!refl_char ~refl_names:!refl_names ~internal:!internal
+  @@ fun () ->
   (* We have to put Reporter.run inside Endpoints.run, so we can display dimensions *)
   Reporter.run
     ~emit:(fun d ->

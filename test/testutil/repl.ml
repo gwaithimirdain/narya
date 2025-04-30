@@ -116,7 +116,7 @@ let run f =
   Annotate.run @@ fun () ->
   Readback.Displaying.run ~env:false @@ fun () ->
   Discrete.run ~env:false @@ fun () ->
-  Dim.run ~arity:2 ~refl_char:'e' ~refl_names:[ "refl"; "Id" ] ~internal:true @@ fun _ ->
+  Dim.Endpoints.run ~arity:2 ~refl_char:'e' ~refl_names:[ "refl"; "Id" ] ~internal:true @@ fun () ->
   Compunit.Current.run ~env:Compunit.basic @@ fun () ->
   Reporter.run
     ~emit:(fun d -> Reporter.display d)

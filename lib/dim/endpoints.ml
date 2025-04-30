@@ -14,15 +14,18 @@ module Config = Algaeff.Reader.Make (Data)
 
 let () = Config.register_printer (function `Read -> Some "unhandled Endpoints.Config.read effect")
 
+let hott : unit -> N.two len option =
+ fun () ->
+  let (Wrap arity) = (Config.read ()).arity in
+  match D.compare arity N.two with
+  | Eq -> Some N.two
+  | Neq -> None
+
 let run ~arity ~refl_char ~refl_names ~internal f =
   let (Plus_something arity) = N.plus_of_int arity in
   let refl_string = String.make 1 refl_char in
   let env : Data.t = { arity = Wrap (Nat arity); refl_string; refl_names; internal } in
-  let hott =
-    match N.compare (Nat arity) N.two with
-    | Eq -> Some N.two
-    | Neq -> None in
-  Config.run ~env (fun () -> f hott)
+  Config.run ~env f
 
 let wrapped () = (Config.read ()).arity
 let refl_string () = (Config.read ()).refl_string
