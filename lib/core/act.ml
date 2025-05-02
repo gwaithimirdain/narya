@@ -174,10 +174,10 @@ module Act = struct
                            * (t, s4, s3) D.plus)) =
                     unplus_pbij (dim_env env) plusdim ins3 shuf3 in
                   match PlusPbijmap.find (Pbij (ins4, shuf4)) terms with
-                  | PlusFam None -> None
-                  | PlusFam
-                      (type ra)
-                      (Some (ra, tm) : ((r34, a, ra) Plusmap.t * (ra, potential) term) option) ->
+                  | None -> None
+                  | Some
+                      (PlusFam (type ra) ((ra, tm) : (r34, a, ra) Plusmap.t * (ra, potential) term))
+                    ->
                       (* Now the game is to build a degeneracy that we can apply to the m-dimensional environment 'env' so that we can shift it by the plusmap 'ra' and evaluate the term 'tm'.  (Note that 'tm' is s4-dimensional as that is the result dimension of the pbij that indexes it.)  That means we need to get an environment whose dimension is something+r34.  We start by adding r3, and then apply a bunch of permutations.
                              m + r3
                              ≅ (t + r4) + r3    (mtr)

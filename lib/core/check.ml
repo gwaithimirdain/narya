@@ -1871,7 +1871,7 @@ and check_field : type a b c d s m n mn i et.
       let Eq = D.plus_uniq mn (D.plus_zero m) in
       let i = Field.dim fld in
       check_higher_field status ctx ty m i codata_args fields termctx tyargs tms ctms etms errs fld
-        (PlusPbijmap.build m i { build = (fun _ -> PlusFam None) })
+        (PlusPbijmap.build m i { build = (fun _ -> None) })
         (InsmapOf.build m i { build = (fun _ -> None) })
         (all_pbij_between m i) prev_etm ic0 fldty
   | Higher _, Potential _, _, (lazy None) ->
@@ -2007,7 +2007,7 @@ and check_higher_field : type a b c d m i ic0.
             (* To hypothesize a value for the current term, we insert the supposed value as the value of this field.  Note the context rb of the supposed value is the degenerated rb instead of the original b, but this is exactly right for the value that's supposed to go in at this pbij.  *)
             let hyp (tm : (rb, potential) term) : (aa, potential) term =
               let hsf =
-                Term.Structfield.Higher (PlusPbijmap.set pbij (PlusFam (Some (plusmap, tm))) cvals)
+                Term.Structfield.Higher (PlusPbijmap.set pbij (Some (PlusFam (plusmap, tm))) cvals)
               in
               let ctms = Snoc (ctms, Entry (fld, hsf)) in
               hyp (Term.Struct (Noeta, m, ctms, energy status)) in
@@ -2066,7 +2066,7 @@ and check_higher_field : type a b c d m i ic0.
         let ety = tyof_higher_codatafield prev_etm fld env tyargs fldins ic0 fldty ~shuf in
         let ctm = check newstatus degctx tm ety in
         (* Add the typechecked term to the list *)
-        let cvals = PlusPbijmap.set pbij (PlusFam (Some (plusmap, ctm))) cvals in
+        let cvals = PlusPbijmap.set pbij (Some (PlusFam (plusmap, ctm))) cvals in
         (* If there are no remaining dimensions, we can evaluate the term and add it to the list of evaluated fields. *)
         let evals =
           match D.compare_zero r with

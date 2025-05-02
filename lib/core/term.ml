@@ -39,8 +39,10 @@ module rec Term : sig
   module CodCube : module type of Cube (CodFam)
 
   module PlusFam : sig
-    type (_, _) t =
-      | PlusFam : (('r, 'b, 'rb) Plusmap.t * ('rb, potential) Term.term) option -> ('r, 'b) t
+    type (_, _) some =
+      | PlusFam : (('r, 'b, 'rb) Plusmap.t * ('rb, potential) Term.term) -> ('r, 'b) some
+
+    type ('r, 'b) t = ('r, 'b) some option
   end
 
   module PlusPbijmap : module type of Pbijmap (PlusFam)
@@ -174,8 +176,10 @@ end = struct
   module CodCube = Cube (CodFam)
 
   module PlusFam = struct
-    type (_, _) t =
-      | PlusFam : (('r, 'b, 'rb) Plusmap.t * ('rb, potential) Term.term) option -> ('r, 'b) t
+    type (_, _) some =
+      | PlusFam : (('r, 'b, 'rb) Plusmap.t * ('rb, potential) Term.term) -> ('r, 'b) some
+
+    type ('r, 'b) t = ('r, 'b) some option
   end
 
   module PlusPbijmap = Pbijmap (PlusFam)

@@ -464,8 +464,8 @@ and eval_higher_structfield : type m n mn a i.
               unplus_ins m m_n ins in
             let newpbij = Pbij (newins, newshuf) in
             match PlusPbijmap.find newpbij terms with
-            | PlusFam None -> None
-            | PlusFam (Some (ra, tm)) ->
+            | None -> None
+            | Some (PlusFam (ra, tm)) ->
                 let (Plus tr) = D.plus (cod_right_ins mtr) in
                 (* mtrp : m ≅ t+r *)
                 let mtrp = deg_of_perm (perm_inv (perm_of_ins_plus mtr tr)) in

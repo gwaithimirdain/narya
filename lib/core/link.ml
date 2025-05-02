@@ -78,8 +78,8 @@ and structfield : type n a s i et.
              map =
                (fun _ [ x ] ->
                  match x with
-                 | PlusFam (Some (rb, x)) -> PlusFam (Some (rb, term f x))
-                 | PlusFam None -> PlusFam None);
+                 | Some (PlusFam (rb, x)) -> Some (PlusFam (rb, term f x))
+                 | None -> None);
            }
            [ m ])
 
