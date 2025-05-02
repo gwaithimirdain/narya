@@ -99,6 +99,9 @@ let string_of_pbij : type n i r. (n, i, r) pbij -> string =
     ".." ^ String.concat "." strs
   else "." ^ String.concat "" strs
 
+let eq_of_zero_pbij : type i r. (D.zero, i, r) pbij -> (r, i) Eq.t = function
+  | Pbij (Zero _, shuf) -> eq_of_shuffle_zero shuf
+
 type (_, _) pbij_between =
   | Pbij_between :
       ('evaluation, 'intrinsic, 'remaining) pbij

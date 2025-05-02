@@ -712,6 +712,7 @@ val pbij_of_strings : 'e D.t -> string list -> 'e pbij_of option
 val int_strings_of_pbij : ('n, 'i, 'r) pbij -> [ `Int of int | `Str of string ] list
 val strings_of_pbij : ('n, 'i, 'r) pbij -> string list
 val string_of_pbij : ('n, 'i, 'r) pbij -> string
+val eq_of_zero_pbij : (D.zero, 'i, 'r) pbij -> ('r, 'i) Eq.t
 
 type (_, _) pbij_between =
   | Pbij_between :
@@ -922,4 +923,5 @@ module Hott : sig
   val dim : dim D.t
   val singleton : dim is_singleton
   val faces : unit -> ((D.zero, dim) sface * (D.zero, dim) sface * N.two Endpoints.len) option
+  val cube : 'a -> 'a -> 'a -> (dim, 'a) CubeOf.t option
 end
