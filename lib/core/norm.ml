@@ -511,7 +511,7 @@ and field : type n k nk s. s value -> k Field.t -> (nk, n, k) insertion -> s eva
   | Struct (fields, structins, energy) -> (
       match StructfieldAbwd.find_opt fields fld with
       | Found (Lower (v, _)) -> force_eval v
-      | Found (Higher { vals; intrinsic; _ }) -> (
+      | Found (Higher (lazy { vals; intrinsic; _ })) -> (
           match
             ( D.compare (cod_left_ins structins) (dom_ins fldins),
               D.compare intrinsic (cod_right_ins fldins) )

@@ -1780,13 +1780,13 @@ and check_fields : type a b c d s m n mn et.
     (* The fields supplied by the user *)
     ((string * string list) option, a check option located) Abwd.t ->
     (* The fields we have checked so far *)
-    (m * b * s * et) Term.StructfieldAbwd.t ->
+    (m * b * s * et * none) Term.StructfieldAbwd.t ->
     (* Evaluated versions of the fields we have checked so far *)
     (m * s * et) Value.StructfieldAbwd.t ->
     (* Errors we have accumulated so far *)
     Code.t Asai.Diagnostic.t Bwd.t ->
     ((string * string list) option, a check option located) Abwd.t
-    * (m * b * s * et) Term.StructfieldAbwd.t =
+    * (m * b * s * et * none) Term.StructfieldAbwd.t =
  fun status eta ctx ty m mn codata_args fields tyargs tms ctms etms errs ->
   (* Build a temporary value-struct consisting of the so-far checked and evaluated fields.  The insertion on a struct being checked is the identity, but it stores the substitution dimension of the type being checked against.  If this is a higher-dimensional record (e.g. Gel), there could be a nontrivial right dimension being trivially inserted, but that will get added automatically by an appropriate symmetry action if it happens. *)
   let str = Value.Struct (etms, ins_zero m, energy status) in
@@ -1829,11 +1829,11 @@ and check_field : type a b c d s m n mn i et.
     (kinetic value, Code.t) Result.t ->
     (* As before, user terms, checked terms, value terms, and errors *)
     ((string * string list) option, a check option located) Abwd.t ->
-    (m * b * s * et) Term.StructfieldAbwd.t ->
+    (m * b * s * et * none) Term.StructfieldAbwd.t ->
     (m * s * et) Value.StructfieldAbwd.t ->
     Code.t Asai.Diagnostic.t Bwd.t ->
     ((string * string list) option, a check option located) Abwd.t
-    * (m * b * s * et) Term.StructfieldAbwd.t =
+    * (m * b * s * et * none) Term.StructfieldAbwd.t =
  fun status eta ctx ty m mn ({ env; termctx; _ } as codata_args) fields tyargs fld cdf prev_etm tms
      ctms etms errs ->
   match (cdf, status, eta, termctx) with
@@ -1892,7 +1892,7 @@ and check_higher_field : type a b c d m i ic0.
     (D.zero, m, m, normal) TubeOf.t ->
     (* As before, user terms, checked terms, value terms, and errors *)
     ((string * string list) option, a check option located) Abwd.t ->
-    (m * b * potential * no_eta) Term.StructfieldAbwd.t ->
+    (m * b * potential * no_eta * none) Term.StructfieldAbwd.t ->
     (m * potential * no_eta) Value.StructfieldAbwd.t ->
     Code.t Asai.Diagnostic.t Bwd.t ->
     (* Field being checked *)
@@ -1909,7 +1909,7 @@ and check_higher_field : type a b c d m i ic0.
     (i, (c, D.zero) snoc, ic0) Plusmap.t ->
     (ic0, kinetic) term ->
     ((string * string list) option, a check option located) Abwd.t
-    * (m * b * potential * no_eta) Term.StructfieldAbwd.t =
+    * (m * b * potential * no_eta * none) Term.StructfieldAbwd.t =
  fun status ctx ty m intrinsic ({ env; _ } as codata_args) fields termctx tyargs tms ctms etms errs
      fld cvals evals pbijs prev_etm ic0 fldty ->
   (* We recurse through all the partial bijections that could be associated to this field name. *)
@@ -2083,8 +2083,9 @@ and check_higher_field : type a b c d m i ic0.
       let deg = id_deg (D.plus_out (dim_env env) plusdim) in
       let etms =
         Snoc
-          (etms, Entry (fld, Higher { vals = evals; intrinsic; plusdim; env; deg; terms = cvals }))
-      in
+          ( etms,
+            Entry (fld, Higher (lazy { vals = evals; intrinsic; plusdim; env; deg; terms = cvals }))
+          ) in
       let ctms = Snoc (ctms, Entry (fld, Higher cvals)) in
       check_fields status Noeta ctx ty m (D.plus_zero m) codata_args fields tyargs tms ctms etms
         errs

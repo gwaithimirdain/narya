@@ -27,10 +27,8 @@ module rec Value : sig
 
   module Structfield : sig
     type (_, _) t =
-      (* We remember which fields are labeled, for readback purposes, and we store the value of each field lazily, so that corecursive definitions don't try to compute an entire infinite structure.  And since in the non-kinetic case, evaluation can produce more data than just a term (e.g. whether a case tree has yet reached a leaf), what we store lazily is the result of evaluation. *)
       | Lower : 's Value.lazy_eval * [ `Labeled | `Unlabeled ] -> (D.zero, 'n * 's * 'et) t
-      (* In the higher case, they are always labeled.  There are multiple values are indexed by insertions, regarded as partial bijections with zero remaining dimensions; the 'evaluation dimension is the substitution dimension 'n and the 'intrinsic dimension is associated to the field.  We also store the original terms as a closure, since they may be needed to evaluate fields of degeneracies. *)
-      | Higher : ('m, 'n, 'mn, 'p, 'i, 'a) higher_data -> ('i, 'p * potential * no_eta) t
+      | Higher : ('m, 'n, 'mn, 'p, 'i, 'a) higher_data Lazy.t -> ('i, 'p * potential * no_eta) t
 
     and ('m, 'n, 'mn, 'p, 'i, 'a) higher_data = {
       vals : ('p, 'i, potential Value.lazy_eval option) InsmapOf.t;
@@ -161,7 +159,7 @@ end = struct
       (* We remember which fields are labeled, for readback purposes, and we store the value of each field lazily, so that corecursive definitions don't try to compute an entire infinite structure.  And since in the non-kinetic case, evaluation can produce more data than just a term (e.g. whether a case tree has yet reached a leaf), what we store lazily is the result of evaluation. *)
       | Lower : 's Value.lazy_eval * [ `Labeled | `Unlabeled ] -> (D.zero, 'n * 's * 'et) t
       (* In the higher case, they are always labeled.  There are multiple values are indexed by insertions, regarded as partial bijections with zero remaining dimensions; the 'evaluation dimension is the substitution dimension 'n and the 'intrinsic dimension is associated to the field.  We also store the original terms as a closure, since they may be needed to evaluate fields of degeneracies. *)
-      | Higher : ('m, 'n, 'mn, 'p, 'i, 'a) higher_data -> ('i, 'p * potential * no_eta) t
+      | Higher : ('m, 'n, 'mn, 'p, 'i, 'a) higher_data Lazy.t -> ('i, 'p * potential * no_eta) t
 
     and ('m, 'n, 'mn, 'p, 'i, 'a) higher_data = {
       vals : ('p, 'i, potential Value.lazy_eval option) InsmapOf.t;
@@ -429,53 +427,63 @@ let eval_binder : type m n mn b s.
   Value.Bind { env; ins; body }
 
 (* Same with structfields *)
-let eval_structfield : type m n mn a status i et.
+let rec eval_structfield : type m n mn a status i et any.
     (m, a) env ->
     m D.t ->
     (m, n, mn) D.plus ->
     mn D.t ->
-    (i, n * a * status * et) Term.Structfield.t ->
+    (i, n * a * status * et * any) Term.Structfield.t ->
     (i, mn * status * et) Value.Structfield.t =
  fun env m m_n mn fld ->
   match fld with
   | Lower (tm, l) -> Lower (lazy_eval env tm, l)
-  | Higher (terms : (n, i, a) PlusPbijmap.t) ->
-      let intrinsic = PlusPbijmap.intrinsic terms in
-      let vals =
-        InsmapOf.build mn intrinsic
-          {
-            build =
-              (fun (type olds) (ins : (mn, olds, i) insertion) ->
-                let (Unplus_ins
-                       (type news newh t r)
-                       ((newins, newshuf, mtr, _ts) :
-                         (n, news, newh) insertion
-                         * (r, newh, i) shuffle
-                         * (m, t, r) insertion
-                         * (t, news, olds) D.plus)) =
-                  unplus_ins m m_n ins in
-                let newpbij = Pbij (newins, newshuf) in
-                match PlusPbijmap.find newpbij terms with
-                | PlusFam None -> None
-                | PlusFam (Some (ra, tm)) ->
-                    let (Plus tr) = D.plus (cod_right_ins mtr) in
-                    (* mtrp : m ≅ t+r *)
-                    let mtrp = deg_of_perm (perm_inv (perm_of_ins_plus mtr tr)) in
-                    (* env2 is (t+r)-dimensional *)
-                    let env2 = act_env env (op_of_deg mtrp) in
-                    (* env3 is t-dimensional *)
-                    let env3 = Shift (env2, tr, ra) in
-                    (* We don't need to further permute the result, as all the information about the permutation ins was captured in newpbij and mtr. *)
-                    Some (lazy_eval env3 tm));
-          } in
-      Value.Structfield.Higher { intrinsic; plusdim = m_n; terms; env; deg = id_deg mn; vals }
+  | Higher terms -> Higher (lazy (eval_higher_structfield env m m_n mn terms))
+  | LazyHigher (lazy terms) -> Higher (lazy (eval_higher_structfield env m m_n mn terms))
 
-let eval_structfield_abwd : type m n mn a status et.
+and eval_higher_structfield : type m n mn a i.
     (m, a) env ->
     m D.t ->
     (m, n, mn) D.plus ->
     mn D.t ->
-    (n * a * status * et) Term.StructfieldAbwd.t ->
+    (n, i, a) PlusPbijmap.t ->
+    (m, n, mn, mn, i, a) Structfield.higher_data =
+ fun env m m_n mn terms ->
+  let intrinsic = PlusPbijmap.intrinsic terms in
+  let vals =
+    InsmapOf.build mn intrinsic
+      {
+        build =
+          (fun (type olds) (ins : (mn, olds, i) insertion) ->
+            let (Unplus_ins
+                   (type news newh t r)
+                   ((newins, newshuf, mtr, _ts) :
+                     (n, news, newh) insertion
+                     * (r, newh, i) shuffle
+                     * (m, t, r) insertion
+                     * (t, news, olds) D.plus)) =
+              unplus_ins m m_n ins in
+            let newpbij = Pbij (newins, newshuf) in
+            match PlusPbijmap.find newpbij terms with
+            | PlusFam None -> None
+            | PlusFam (Some (ra, tm)) ->
+                let (Plus tr) = D.plus (cod_right_ins mtr) in
+                (* mtrp : m ≅ t+r *)
+                let mtrp = deg_of_perm (perm_inv (perm_of_ins_plus mtr tr)) in
+                (* env2 is (t+r)-dimensional *)
+                let env2 = act_env env (op_of_deg mtrp) in
+                (* env3 is t-dimensional *)
+                let env3 = Shift (env2, tr, ra) in
+                (* We don't need to further permute the result, as all the information about the permutation ins was captured in newpbij and mtr. *)
+                Some (lazy_eval env3 tm));
+      } in
+  { intrinsic; plusdim = m_n; terms; env; deg = id_deg mn; vals }
+
+let eval_structfield_abwd : type m n mn a status et any.
+    (m, a) env ->
+    m D.t ->
+    (m, n, mn) D.plus ->
+    mn D.t ->
+    (n * a * status * et * any) Term.StructfieldAbwd.t ->
     (mn * status * et) Value.StructfieldAbwd.t =
  fun env m m_n mn fields ->
   Mbwd.mmap

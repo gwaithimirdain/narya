@@ -85,7 +85,7 @@ module F = struct
     | Snoc (flds, Entry (f, Lower (v, l))) ->
         fprintf ppf "%a <: " (fields depth n) flds;
         lazy_field depth ppf f "" v l
-    | Snoc (flds, Entry (f, Higher { vals; _ })) ->
+    | Snoc (flds, Entry (f, Higher (lazy { vals; _ }))) ->
         fprintf ppf "%a <: " (fields depth n) flds;
         InsmapOf.miter n
           {

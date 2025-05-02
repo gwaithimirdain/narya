@@ -1,6 +1,7 @@
 open Bwd
 open Bwd.Infix
 open Util
+open Perhaps
 open Tbwd
 open Bwd_extra
 open Dim
@@ -345,7 +346,8 @@ let rec unparse : type n lt ls rt rs s.
       unparse_lam cube vars Emp tm li ri
   | Struct
       (type m et)
-      ((Eta, _, fields, _) : (s, et) eta * m D.t * (m * n * s * et) StructfieldAbwd.t * s energy) ->
+      ((Eta, _, fields, _) :
+        (s, et) eta * m D.t * (m * n * s * et * none) StructfieldAbwd.t * s energy) ->
       unlocated
         (outfix ~notn:parens
            ~inner:
@@ -357,8 +359,8 @@ let rec unparse : type n lt ls rt rs s.
                        (fun acc
                             (Term.StructfieldAbwd.Entry
                                (type i)
-                               ((fld, structfield) : i Field.t * (i, m * n * s * et) Structfield.t))
-                          ->
+                               ((fld, structfield) :
+                                 i Field.t * (i, m * n * s * et * none) Structfield.t)) ->
                          match structfield with
                          | Lower (fldtm, lbl) ->
                              let fldtm = unparse vars fldtm No.Interval.entire No.Interval.entire in

@@ -66,8 +66,8 @@ and canonical : type a. (Compunit.t -> Compunit.t) -> a canonical -> a canonical
 
 and structfield : type n a s i et.
     (Compunit.t -> Compunit.t) ->
-    (i, n * a * s * et) Term.Structfield.t ->
-    (i, n * a * s * et) Term.Structfield.t =
+    (i, n * a * s * et * Perhaps.none) Term.Structfield.t ->
+    (i, n * a * s * et * Perhaps.none) Term.Structfield.t =
  fun f fld ->
   match fld with
   | Lower (x, l) -> Lower (term f x, l)
