@@ -14,6 +14,9 @@ type (_, _, _) insertion =
 
 let ins_zero : type a. a D.t -> (a, a, D.zero) insertion = fun a -> Zero a
 
+let eq_of_ins_zero : type a b. (a, b, D.zero) insertion -> (a, b) Eq.t = function
+  | Zero _ -> Eq
+
 let rec zero_ins : type a. a D.t -> (a, D.zero, a) insertion =
  fun a ->
   match a with

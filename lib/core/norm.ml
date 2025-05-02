@@ -69,7 +69,7 @@ and view_type ?(severity = Asai.Diagnostic.Bug) (ty : kinetic value) (err : stri
   | Neu { head; args; value; ty = _ } -> (
       (* Glued evaluation: when viewing a type, we force its value and proceed to view that value instead. *)
       match force_eval value with
-      | Val (Canonical { canonical = c; tyargs }) -> (
+      | Val (Canonical { canonical = c; tyargs; ins }) -> (
           (match c with
           | Data d when Option.is_none !(d.tyfam) ->
               d.tyfam := Some (lazy { tm = ty; ty = inst (universe (TubeOf.inst tyargs)) tyargs })
@@ -77,7 +77,7 @@ and view_type ?(severity = Asai.Diagnostic.Bug) (ty : kinetic value) (err : stri
           match D.compare_zero (TubeOf.uninst tyargs) with
           | Zero ->
               let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (TubeOf.inst tyargs)) in
-              Canonical (head, c, tyargs)
+              Canonical (head, c, ins, tyargs)
           | Pos k -> fatal ~severity (Type_not_fully_instantiated (err, k)))
       | Realize v -> view_type ~severity v err
       | _ -> (
@@ -315,8 +315,12 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
                 let value =
                   ready
                     (Val
-                       (Canonical { canonical = Pi (x, subdoms, subcods); tyargs = TubeOf.empty kl }))
-                in
+                       (Canonical
+                          {
+                            canonical = Pi (x, subdoms, subcods);
+                            tyargs = TubeOf.empty kl;
+                            ins = ins_zero kl;
+                          })) in
                 let tm = Neu { head; args = Emp; value; ty = Lazy.from_val ty } in
                 let ntm = { tm; ty } in
                 Hashtbl.add pitbl (SFace_of fab) ntm;
@@ -405,9 +409,10 @@ and apply : type n s. s value -> (n, kinetic value) CubeOf.t -> s evaluation =
   | Neu { head; args; value; ty = (lazy ty) } -> (
       (* ... we check that its type is fully instantiated... *)
       match view_type ty "apply" with
-      | Canonical (_, Pi (_, doms, cods), tyargs) -> (
+      | Canonical (_, Pi (_, doms, cods), ins, tyargs) -> (
           (* ... and that the pi-type and its instantiation have the correct dimension. *)
           let k = CubeOf.dim doms in
+          let Eq = eq_of_ins_zero ins in
           match D.compare (CubeOf.dim arg) k with
           | Neq -> fatal (Dimension_mismatch ("applying a neutral function", CubeOf.dim arg, k))
           | Eq -> (
@@ -431,7 +436,9 @@ and apply : type n s. s value -> (n, kinetic value) CubeOf.t -> s evaluation =
                          canonical =
                            Data { dim; tyfam; indices = Unfilled _ as indices; constrs; discrete };
                          tyargs = data_tyargs;
+                         ins;
                        }) -> (
+                    let Eq = eq_of_ins_zero ins in
                     match (D.compare dim k, D.compare_zero (TubeOf.inst data_tyargs)) with
                     | Neq, _ -> fatal (Dimension_mismatch ("apply", dim, k))
                     | _, Pos _ ->
@@ -446,6 +453,7 @@ and apply : type n s. s value -> (n, kinetic value) CubeOf.t -> s evaluation =
                                {
                                  canonical = Data { dim; tyfam; indices; constrs; discrete };
                                  tyargs = TubeOf.empty dim;
+                                 ins;
                                }) in
                         Val (Neu { head; args; value = ready value; ty = newty }))
                 | Val tm -> (
@@ -719,19 +727,20 @@ and tyof_field : type m h s r i c.
   let severity = Asai.Diagnostic.Bug in
   match view_type ty "tyof_field" with
   | Canonical
-      (type mn n)
+      (type mn m n)
       (( head,
          Codata
-           (type m' d a et)
-           ({ env; ins = codatains; fields; opacity = _; eta; termctx = _ } :
-             (mn, m', n, d, a, et) codata_args),
+           (type d a et)
+           ({ env; fields; opacity = _; eta; termctx = _ } : (m, n, d, a, et) codata_args),
+         codatains,
          tyargs ) :
-        head * (mn, n) canonical * (D.zero, mn, mn, normal) TubeOf.t) -> (
+        head * (m, n) canonical * (mn, m, n) insertion * (D.zero, mn, mn, normal) TubeOf.t) -> (
       (* The type cannot have a nonidentity degeneracy applied to it (though it can be at a higher dimension). *)
       match is_id_ins codatains with
       | None -> fatal ~severity (No_such_field (`Degenerated_record eta, errfld))
       | Some mn -> tyof_field_giventype tm head eta env mn fields tyargs fld ~shuf fldins)
-  | Canonical (head, UU m, tyargs) -> (
+  | Canonical (head, UU m, ins, tyargs) -> (
+      let Eq = eq_of_ins_zero ins in
       let err = Code.No_such_field (`Other errtm, errfld) in
       match Fibrancy.fields () with
       | None -> fatal ~severity err
@@ -803,15 +812,15 @@ and tyof_field_withname : type a b.
     | Ok tm -> PVal (ctx, tm)
     | Error _err -> PString "[ERROR]" in
   match view_type ~severity:Asai.Diagnostic.Error ty "tyof_field" with
-  | Canonical (head, Codata { env; ins = codatains; fields; opacity = _; eta; termctx = _ }, tyargs)
-    -> (
+  | Canonical (head, Codata { env; fields; opacity = _; eta; termctx = _ }, codatains, tyargs) -> (
       (* The type cannot have a nonidentity degeneracy applied to it (though it can be at a higher dimension). *)
       match is_id_ins codatains with
       | None -> fatal (No_such_field (`Degenerated_record eta, errfld))
       | Some mn ->
           let err = Code.No_such_field (`Record (eta, phead head), errfld) in
           tyof_field_withname_giventype ctx tm ty eta env mn fields tyargs infld err)
-  | Canonical (_head, UU m, tyargs) -> (
+  | Canonical (_head, UU m, ins, tyargs) -> (
+      let Eq = eq_of_ins_zero ins in
       let err = Code.No_such_field (`Other errtm, errfld) in
       match Fibrancy.fields () with
       | None -> fatal err
@@ -905,10 +914,10 @@ and eval_canonical : type m a. (m, a) env -> a Term.canonical -> potential evalu
         Abwd.map
           (fun (Term.Dataconstr { args; indices }) -> Value.Dataconstr { env; args; indices })
           constrs in
-      let canonical =
-        Data { dim = dim_env env; tyfam; indices = Fillvec.empty indices; constrs; discrete } in
+      let dim = dim_env env in
+      let canonical = Data { dim; tyfam; indices = Fillvec.empty indices; constrs; discrete } in
       let tyargs = TubeOf.empty (dim_env env) in
-      Val (Canonical { canonical; tyargs })
+      Val (Canonical { canonical; tyargs; ins = ins_zero dim })
   | Codata { eta; opacity; dim; termctx; fields } ->
       eval_codata env eta opacity dim (Lazy.from_val termctx) fields
 
@@ -924,9 +933,9 @@ and eval_codata : type m a c n et.
  fun env eta opacity dim termctx fields ->
   let (Plus ed) = D.plus dim in
   let ins = id_ins (dim_env env) ed in
-  let canonical = Codata { eta; opacity; env; termctx; ins; fields } in
+  let canonical = Codata { eta; opacity; env; termctx; fields } in
   let tyargs = TubeOf.empty (dom_ins ins) in
-  Val (Canonical { canonical; tyargs })
+  Val (Canonical { canonical; ins; tyargs })
 
 and eval_term : type m b. (m, b) env -> (b, kinetic) term -> kinetic value =
  fun env tm ->
@@ -1079,7 +1088,8 @@ and inst : type m n mn s. s value -> (m, n, mn, normal) TubeOf.t -> s value =
               let value = inst_lazy value args2 in
               (* Now we have to construct the type OF the new instantiation.  The old term must have belonged to some instantiation of the universe of the previously uninstantiated dimension. *)
               match view_type ty "inst" with
-              | Canonical (_, UU m, tys1) -> (
+              | Canonical (_, UU m, ins, tys1) -> (
+                  let Eq = eq_of_ins_zero ins in
                   match D.compare m (TubeOf.uninst args1) with
                   | Neq ->
                       fatal (Dimension_mismatch ("instantiating a type 2", m, TubeOf.uninst args1))
@@ -1087,7 +1097,7 @@ and inst : type m n mn s. s value -> (m, n, mn, normal) TubeOf.t -> s value =
                       let ty = lazy (tyof_inst tys1 args2) in
                       Neu { head; args; value; ty })
               | _ -> fatal (Anomaly "can't instantiate non-type")))
-      | Canonical { canonical = c; tyargs = args1 } -> (
+      | Canonical { canonical = c; tyargs = args1; ins } -> (
           match D.compare (TubeOf.out args2) (TubeOf.uninst args1) with
           | Neq ->
               fatal
@@ -1095,7 +1105,7 @@ and inst : type m n mn s. s value -> (m, n, mn, normal) TubeOf.t -> s value =
           | Eq ->
               let (Plus nk) = D.plus (TubeOf.inst args1) in
               let args = TubeOf.plus_tube nk args1 args2 in
-              Canonical { canonical = c; tyargs = args })
+              Canonical { canonical = c; tyargs = args; ins })
       | Lam _ | Struct _ | Constr _ -> fatal (Anomaly "instantiating non-type"))
 
 (* Given two families of values, the second intended to be the types of the other, annotate the former by instantiations of the latter to make them into normals.  Since we have to instantiate the types at the *normal* version of the terms, which is what we are computing, we also add the results to a hashtable as we create them so we can access them randomly later.  And since we have to do this sometimes with cubes and sometimes with tubes, we first define the content of the operation as a helper function. *)
@@ -1247,16 +1257,16 @@ let rec eval_append : type a b c ac bc.
 let get_tyargs ?(severity = Asai.Diagnostic.Bug) (ty : kinetic value) (err : string) :
     normal TubeOf.full =
   match view_type ~severity ty err with
-  | Canonical (_, _, tyargs) -> Full_tube tyargs
+  | Canonical (_, _, _, tyargs) -> Full_tube tyargs
   | Neutral (_, tyargs) -> Full_tube tyargs
 
 (* Check whether a given type is discrete, or has one of the the supplied constant heads (since for testing whether a newly defined datatype can be discrete, it and members of its mutual families can appear in its own parameters and arguments). *)
 let is_discrete : ?discrete:unit Constant.Map.t -> kinetic value -> bool =
  fun ?discrete ty ->
   match (view_type ty "is_discrete", discrete) with
-  | Canonical (_, Data { discrete = `Yes; _ }, _), _ -> true
+  | Canonical (_, Data { discrete = `Yes; _ }, _, _), _ -> true
   (* The currently-being-defined types may not be known to be discrete yet, but we treat them as discrete if they are one of the given heads. *)
-  | Canonical (Const { name; ins }, _, _), Some consts ->
+  | Canonical (Const { name; ins }, _, _, _), Some consts ->
       Option.is_some (is_id_ins ins) && Constant.Map.mem name consts
   | Neutral (Const { name; ins }, _), Some consts ->
       Option.is_some (is_id_ins ins) && Constant.Map.mem name consts

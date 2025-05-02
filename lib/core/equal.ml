@@ -31,16 +31,17 @@ module Equal = struct
     (* The type must be fully instantiated. *)
     match view_type ty "equal_at" with
     (* The only interesting thing here happens when the type is one with an eta-rule, such as a pi-type. *)
-    | Canonical (_, Pi (_, doms, cods), tyargs) ->
+    | Canonical (_, Pi (_, doms, cods), ins, tyargs) ->
+        let Eq = eq_of_ins_zero ins in
         let newargs, _ = dom_vars ctx doms in
         let output = tyof_app cods tyargs newargs in
         (* If both terms have the given pi-type, then when applied to variables of the domains, they will both have the computed output-type, so we can recurse back to eta-expanding equality at that type. *)
         equal_at (ctx + 1) (apply_term x newargs) (apply_term y newargs) output
     (* Codatatypes (without eta) don't need to be dealt with here, even though structs can't be compared synthesizingly, since codatatypes aren't actually inhabited by (kinetic) structs, only neutral terms that are equal to potential structs.  In the case of record types with eta, if there is a nonidentity insertion outside, then the type isn't actually a record type, *but* it still has an eta-rule since it is *isomorphic* to a record type!  Thus, instead of checking whether the insertion is the identity, we apply its inverse permutation to the terms being compared.  And because we pass off to 'field' and 'tyof_field', we don't need to make explicit use of any of the other data here. *)
     | Canonical
-        (type mn n)
-        ((_, Codata (type m c a et) ({ eta; fields; ins; _ } : (mn, m, n, c, a, et) codata_args), _) :
-          head * (mn, n) canonical * (D.zero, mn, mn, normal) TubeOf.t) -> (
+        (type mn m n)
+        ((_, Codata (type c a et) ({ eta; fields; _ } : (m, n, c, a, et) codata_args), ins, _) :
+          head * (m, n) canonical * (mn, m, n) insertion * (D.zero, mn, mn, normal) TubeOf.t) -> (
         match eta with
         | Eta ->
             let (Perm_to p) = perm_of_ins ins in
@@ -60,9 +61,9 @@ module Equal = struct
         (* At a codatatype without eta, there are no kinetic structs, only comatches, and those are not compared componentwise, only as neutrals, since they are generative. *)
         | Noeta -> equal_val ctx x y)
     (* At a higher-dimensional version of a discrete datatype, any two terms are equal.  Note that we do not check here whether discreteness is on: that affects datatypes when they are *defined*, not when they are used. *)
-    | Canonical (_, Data { dim; discrete = `Yes; _ }, _) when is_pos dim -> return ()
+    | Canonical (_, Data { dim; discrete = `Yes; _ }, _, _) when is_pos dim -> return ()
     (* At an ordinary datatype, two constructors are equal if they are instances of the same constructor, with the same dimension and arguments.  We handle these cases here because we can use the datatype information to give types to the arguments of the constructor. *)
-    | Canonical (_, Data { constrs; _ }, tyargs) -> (
+    | Canonical (_, Data { constrs; _ }, _, tyargs) -> (
         let x, y =
           match Mode.read () with
           | `Rigid -> (x, y)

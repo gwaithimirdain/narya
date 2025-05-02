@@ -18,6 +18,9 @@ let deg_plus_to : type m n nk. on:string -> ?err:Code.t -> (m, n) deg -> nk D.t 
       let sk = deg_plus s nk mk in
       Of sk
 
+type (_, _) act_inst_canonical =
+  | Act_inst_canonical : ('m, 'k, 'mk, 'e, 'n) inst_canonical -> ('k, 'n) act_inst_canonical
+
 type (_, _, _) acted_instargs =
   | Acted_instargs :
       ('m, 'n) deg * ('m, 'j, 'mj, normal) TubeOf.t * ('m D.pos, 'p) Perhaps.t
@@ -101,10 +104,18 @@ module Act = struct
           ( name,
             dom_deg fa,
             List.map (fun tm -> act_cube { act = (fun x s -> act_value x s) } tm fa) args )
-    | Canonical { canonical = c; tyargs = args } ->
-        let (Acted_instargs (fa, new_args, None)) = act_instargs args s None in
-        let new_c = act_canonical c (deg_plus fa (TubeOf.plus args) (TubeOf.plus new_args)) in
-        Canonical { canonical = new_c; tyargs = new_args }
+    | Canonical ic ->
+        let (Act_inst_canonical newic) = act_inst_canonical ic s in
+        Canonical newic
+
+  and act_inst_canonical : type m k mk e n a b.
+      (m, k, mk, e, n) inst_canonical -> (a, b) deg -> (k, n) act_inst_canonical =
+   fun { canonical; tyargs; ins } s ->
+    let (Acted_instargs (fa, new_tyargs, None)) = act_instargs tyargs s None in
+    let fb = deg_plus fa (TubeOf.plus tyargs) (TubeOf.plus new_tyargs) in
+    let (Insfact_comp (fc, new_ins)) = insfact_comp ins fb in
+    let new_c = act_canonical canonical fc in
+    Act_inst_canonical { canonical = new_c; tyargs = new_tyargs; ins = new_ins }
 
   and act_structfield : type p q i status et.
       (q, p) deg -> (i, p * status * et) Structfield.t -> (i, q * status * et) Structfield.t =
@@ -222,7 +233,7 @@ module Act = struct
     | Realize tm -> Realize (act_value tm s)
     | Val tm -> Val (act_value tm s)
 
-  and act_canonical : type m n i. (n, i) canonical -> (m, n) deg -> (m, i) canonical =
+  and act_canonical : type m n i mi. (n, i) canonical -> (m, n) deg -> (m, i) canonical =
    fun tm fa ->
     match tm with
     | UU _ -> UU (dom_deg fa)
@@ -236,9 +247,8 @@ module Act = struct
         in
         let constrs = Abwd.map (fun c -> act_dataconstr c fa) constrs in
         Data { dim = dom_deg fa; tyfam; indices; constrs; discrete }
-    | Codata { eta; opacity; env; termctx; ins; fields } ->
-        let (Act_closure (env, ins)) = act_closure env ins fa in
-        Codata { eta; opacity; env; termctx; ins; fields }
+    | Codata { eta; opacity; env; termctx; fields } ->
+        Codata { eta; opacity; env = act_env env (op_of_deg fa); termctx; fields }
 
   and act_dataconstr : type m n i. (n, i) dataconstr -> (m, n) deg -> (m, i) dataconstr =
    fun (Dataconstr { env; args; indices }) s ->
@@ -296,12 +306,15 @@ module Act = struct
           match force_eval value with
           | Realize _ -> fatal (Anomaly "Realize in normalized type in act_ty")
           | Unrealized -> ready Unrealized
-          | Val (Canonical { canonical = c; tyargs = ctyargs }) -> (
+          | Val (Canonical { canonical = c; tyargs = ctyargs; ins }) -> (
               match D.compare_zero (TubeOf.uninst ctyargs) with
               | Zero ->
                   let Eq = D.plus_uniq (TubeOf.plus ctyargs) (D.zero_plus (TubeOf.inst ctyargs)) in
-                  let (Ty_acted_instargs (fa, ctyargs)) = gact_ty_instargs ?err tm tmty ctyargs s in
-                  ready (Val (Canonical { canonical = act_canonical c fa; tyargs = ctyargs }))
+                  let (Ty_acted_instargs (fa, new_ctyargs)) =
+                    gact_ty_instargs ?err tm tmty ctyargs s in
+                  let (Insfact_comp (fc, new_ins)) = insfact_comp ins fa in
+                  let new_c = act_canonical c fc in
+                  ready (Val (Canonical { canonical = new_c; tyargs = new_ctyargs; ins = new_ins }))
               | Pos _ -> fatal (Anomaly "non fully instantiated type in act_ty"))
           | Val _ -> fatal (Anomaly "non-canonical potential value in act_ty") in
         let ty = lazy (universe D.zero) in

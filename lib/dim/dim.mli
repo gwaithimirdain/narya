@@ -524,6 +524,7 @@ type (_, _, _) insertion
 
 val ins_zero : 'a D.t -> ('a, 'a, D.zero) insertion
 val zero_ins : 'a D.t -> ('a, D.zero, 'a) insertion
+val eq_of_ins_zero : ('a, 'b, D.zero) insertion -> ('a, 'b) Eq.t
 val id_ins : 'a D.t -> ('a, 'b, 'ab) D.plus -> ('ab, 'a, 'b) insertion
 val dom_ins : ('a, 'b, 'c) insertion -> 'a D.t
 val cod_left_ins : ('a, 'b, 'c) insertion -> 'b D.t

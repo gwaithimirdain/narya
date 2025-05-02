@@ -30,7 +30,7 @@ and readback_at : type a z. (z, a) Ctx.t -> kinetic value -> kinetic value -> (a
  fun ctx tm ty ->
   let view = if Displaying.read () then view_term tm else tm in
   match (view_type ty "readback_at", view) with
-  | Canonical (_, Pi (_, doms, cods), tyargs), Lam ((Variables (m, mn, xs) as x), body) -> (
+  | Canonical (_, Pi (_, doms, cods), _ins, tyargs), Lam ((Variables (m, mn, xs) as x), body) -> (
       let k = CubeOf.dim doms in
       let l = dim_binder body in
       match (D.compare (TubeOf.inst tyargs) k, D.compare k l) with
@@ -43,14 +43,14 @@ and readback_at : type a z. (z, a) Ctx.t -> kinetic value -> kinetic value -> (a
           let body = readback_at newctx (apply_term tm args) output in
           Term.Lam (x, body))
   | ( Canonical
-        (type mn n)
+        (type mn m n)
         (( _,
            Codata
-             (type m c a et)
-             ({ eta; opacity; fields; env = _; ins; termctx = _ } :
-               (mn, m, n, c, a, et) codata_args),
+             (type c a et)
+             ({ eta; opacity; fields; env = _; termctx = _ } : (m, n, c, a, et) codata_args),
+           ins,
            _ ) :
-          head * (mn, n) canonical * (D.zero, mn, mn, normal) TubeOf.t),
+          head * (m, n) canonical * (mn, m, n) insertion * (D.zero, mn, mn, normal) TubeOf.t),
       _ ) -> (
       match (eta, fields) with
       | Eta, (fields : (a * n * has_eta) Term.CodatafieldAbwd.t) -> (
@@ -122,7 +122,8 @@ and readback_at : type a z. (z, a) Ctx.t -> kinetic value -> kinetic value -> (a
               | Some res -> Act (res, deg_of_perm p)
               | None -> readback_val ctx tm))
       | Noeta, _ -> readback_val ctx tm)
-  | Canonical (_, Data { constrs; _ }, tyargs), Constr (xconstr, xn, xargs) -> (
+  | Canonical (_, Data { constrs; _ }, ins, tyargs), Constr (xconstr, xn, xargs) -> (
+      let Eq = eq_of_ins_zero ins in
       let (Dataconstr { env; args = argtys; indices = _ }) =
         Abwd.find_opt xconstr constrs <|> Anomaly "constr not found in readback" in
       match D.compare xn (TubeOf.inst tyargs) with

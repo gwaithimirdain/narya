@@ -32,11 +32,11 @@ let rec typefam : type a b.
     ?discrete:unit Constant.Map.t -> (a, b) Ctx.t -> kinetic value -> int * bool =
  fun ?discrete ctx ty ->
   match view_type ~severity:Asai.Diagnostic.Error ty "typefam" with
-  | Canonical (_, UU n, _) -> (
+  | Canonical (_, UU n, _, _) -> (
       match D.compare n D.zero with
       | Eq -> (0, true)
       | Neq -> fatal (Unimplemented "higher-dimensional datatypes"))
-  | Canonical (_, Pi (x, doms, cods), tyargs) -> (
+  | Canonical (_, Pi (x, doms, cods), _, tyargs) -> (
       (* In practice, these dimensions will always be zero also if the function succeeds, otherwise the eventual output would have to be higher-dimensional too.  But it doesn't hurt to be more general, and will require less change if we eventually implement higher-dimensional datatypes. *)
       match D.compare (TubeOf.inst tyargs) (CubeOf.dim doms) with
       | Eq ->
@@ -82,7 +82,8 @@ let rec motive_of_family : type a b.
     let cv = readback_val ctx (Binding.value v).ty in
     Fwrap (Rbtm cv, Any_ctx (Ctx.cube_vis ctx x (CubeOf.singleton v))) in
   match view_type ty "motive_of_family" with
-  | Canonical (_, Pi (x, doms, cods), tyargs) ->
+  | Canonical (_, Pi (x, doms, cods), ins, tyargs) ->
+      let Eq = eq_of_ins_zero ins in
       let newvars, newnfs = dom_vars (Ctx.length ctx) doms in
       let newtm = apply_term tm newvars in
       (* We extend the context, not by the cube of types of newnfs, but by its elements one at a time as singletons.  This is because we want eventually to construct a 0-dimensional pi-type.  As we go, we also read back thesetypes and store them to later take the pi-type over.  Since they are all in different contexts, and we need to keep track of the type-indexed checked length of those contexts to ensure the later pis are well-typed, we use an indexed cube indexed over Tbwds. *)
@@ -93,7 +94,7 @@ let rec motive_of_family : type a b.
       let motive = motive_of_family newctx newtm (tyof_app cods tyargs newvars) in
       let motive, _ = MT.fold_map_right { foldmap = (fun _ x y -> folder x y) } newdoms motive in
       motive
-  | Canonical (_, UU _, tyargs) ->
+  | Canonical (_, UU _, _, tyargs) ->
       (* This is similar, except that we add the datatype itself to the instantiation argument to get the cube of domains, and take a pi over the 0-dimensional universe rather than a recursive call. *)
       let doms = TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm) in
       let _, newnfs = dom_vars (Ctx.length ctx) doms in
@@ -272,7 +273,8 @@ let rec check : type a b s.
             realize status (Term.Act (cx, fa)))
     | Lam ({ value = x; _ }, cube, body), _ -> (
         match view_type ~severity ty "typechecking lambda" with
-        | Canonical (_, Pi (_, doms, cods), tyargs) -> (
+        | Canonical (_, Pi (_, doms, cods), ins, tyargs) -> (
+            let Eq = eq_of_ins_zero ins in
             (* TODO: Move this into a helper function, it's too long to go in here. *)
             let m = CubeOf.dim doms in
             (* A zero-dimensional parameter that is a discrete type doesn't block discreteness, but others do. *)
@@ -326,13 +328,13 @@ let rec check : type a b s.
         | _ -> fatal (Checking_lambda_at_nonfunction (PVal (ctx, ty))))
     | Struct (Noeta, tms), Potential _ -> (
         match view_type ~severity ty "typechecking comatch" with
-        | Canonical (name, Codata ({ eta = Noeta; ins; _ } as codata_args), tyargs) ->
+        | Canonical (name, Codata ({ eta = Noeta; _ } as codata_args), ins, tyargs) ->
             let mn = is_id_ins ins <|> Comatching_at_degenerated_codata (phead name) in
             check_struct status Noeta ctx ty (cod_left_ins ins) mn codata_args tyargs tms
         | _ -> fatal (Comatching_at_noncodata (PVal (ctx, ty))))
     | Struct (Eta, tms), _ -> (
         match view_type ~severity ty "typechecking tuple" with
-        | Canonical (name, Codata ({ eta = Eta; ins; _ } as codata_args), tyargs) ->
+        | Canonical (name, Codata ({ eta = Eta; _ } as codata_args), ins, tyargs) ->
             let mn = is_id_ins ins <|> Checking_tuple_at_degenerated_record (phead name) in
             check_struct status Eta ctx ty (cod_left_ins ins) mn codata_args tyargs tms
         | _ -> fatal (Checking_tuple_at_nonrecord (PVal (ctx, ty))))
@@ -342,7 +344,9 @@ let rec check : type a b s.
         | Canonical
             ( name,
               Data { dim; indices = Filled ty_indices; constrs; discrete = _; tyfam = _ },
+              ins,
               tyargs ) -> (
+            let Eq = eq_of_ins_zero ins in
             (* We don't need the *types* of the parameters or indices, which are stored in the type of the constant name.  The variable ty_indices (defined above) contains the *values* of the indices of this instance of the datatype, while tyargs (defined by view_type, way above) contains the instantiation arguments of this instance of the datatype.  We check that the dimensions agree, and find our current constructor in the datatype definition. *)
             match Abwd.find_opt constr constrs with
             | None -> fatal ?loc:constr_loc (No_such_constructor (`Data (phead name), constr))
@@ -408,7 +412,7 @@ let rec check : type a b s.
         (* A numeral is built out of 'suc', 'zero', and 'quot' (if it's a decimal) constructors, plus if we're checking an integer at a type that has a 'one' constructor we use that instead of 'suc. zero.' so that for instance 1/2 becomes quot. (suc. zero.) (suc. one.) with an ordinary notation binding of / to quot. .  This is the reason we don't do the expansion into constructors at the postprocessing step, so we can use the type information to decide whether to use 'one.' or 'suc. zero.'.  *)
         let use_one =
           match view_type ~severity ty "checking numeral" with
-          | Canonical (_, Data { constrs; _ }, _) -> Abwd.mem (Constr.intern "one") constrs
+          | Canonical (_, Data { constrs; _ }, _, _) -> Abwd.mem (Constr.intern "one") constrs
           | _ -> false in
         (* TODO: It would be better not to hardcode the constructor names.  It might also be nice to represent numerals more efficiently in syntax, as I think Agda does, rather than insisting on expanding them out completely into constructors. *)
         let zero = { value = Constr.intern "zero"; loc = tm.loc } in
@@ -436,14 +440,14 @@ let rec check : type a b s.
     (* Checking [] at a pi-type interprets it as a pattern-matching lambda over some empty datatype. *)
     | Empty_co_match, _ -> (
         match (view_type ~severity ty "checking empty (co)match", status) with
-        | Canonical (_, Pi _, _), Potential _ -> check_empty_match_lam ctx ty `First
-        | Canonical (_, Pi _, _), Kinetic l -> kinetic_of_potential l ctx tm ty "matching lambda"
+        | Canonical (_, Pi _, _, _), Potential _ -> check_empty_match_lam ctx ty `First
+        | Canonical (_, Pi _, _, _), Kinetic l -> kinetic_of_potential l ctx tm ty "matching lambda"
         | _, _ -> check status ctx { value = Struct (Noeta, Abwd.empty); loc = tm.loc } ty)
     | Refute (tms, i), Potential _ -> check_refute status ctx tms ty i None
     (* Now we go through the canonical types. *)
     | Codata fields, Potential _ -> (
         match view_type ~severity ty "typechecking codata" with
-        | Canonical (_, UU _, tyargs) ->
+        | Canonical (_, UU _, _, tyargs) ->
             let has_higher_fields =
               Bwd.fold_left
                 (fun acc (Field.Wrap fld, _) ->
@@ -458,7 +462,8 @@ let rec check : type a b s.
         | _ -> fatal (Checking_canonical_at_nonuniverse ("codatatype", PVal (ctx, ty))))
     | Record (xs, fields, opacity), Potential _ -> (
         match view_type ~severity ty "typechecking record" with
-        | Canonical (_, UU dim, tyargs) ->
+        | Canonical (_, UU dim, ins, tyargs) ->
+            let Eq = eq_of_ins_zero ins in
             let (Vars (af, vars)) = vars_of_names xs.loc dim xs.value in
             check_record status dim ctx opacity tyargs vars Emp Zero af Emp fields Emp
         | _ -> fatal (Checking_canonical_at_nonuniverse ("record type", PVal (ctx, ty))))
@@ -500,13 +505,14 @@ let rec check : type a b s.
         (* Now we act like synth on an application. *)
         let sfn, sty = synth (Kinetic `Nolet) ctx fn in
         match view_type sty "ImplicitApp" with
-        | Canonical (_, Pi (_, doms, cods), tyargs) -> (
+        | Canonical (_, Pi (_, doms, cods), ins, tyargs) -> (
+            let Eq = eq_of_ins_zero ins in
             (* Only 0-dimensional applications are allowed. *)
             match D.compare (CubeOf.dim doms) D.zero with
             | Eq -> (
                 (* The first argument must be a type. *)
                 match view_type (CubeOf.find_top doms) "ImplicitApp argument" with
-                | Canonical (_, UU _, _) ->
+                | Canonical (_, UU _, _, _) ->
                     (* We build the implicit application term and its type. *)
                     let new_sfn = locate_opt fn.loc (Term.App (sfn, CubeOf.singleton cty)) in
                     let new_sty = tyof_app cods tyargs (CubeOf.singleton ty) in
@@ -534,7 +540,7 @@ let rec check : type a b s.
           | [] -> fatal (Choice_mismatch (PVal (ctx, ty)))
           | (test, alt, passthru) :: alts -> (
               match (view_type ty "check_first", test) with
-              | Canonical (_, Data { constrs = data_constrs; _ }, _), `Data constrs ->
+              | Canonical (_, Data { constrs = data_constrs; _ }, _, _), `Data constrs ->
                   if
                     List.for_all
                       (fun constr ->
@@ -545,7 +551,7 @@ let rec check : type a b s.
                         if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
                     @@ fun () -> check ?discrete status ctx (locate_opt tm.loc alt) ty
                   else go errs alts
-              | Canonical (_, Codata { fields = codata_fields; _ }, _), `Codata fields ->
+              | Canonical (_, Codata { fields = codata_fields; _ }, _, _), `Codata fields ->
                   if
                     List.for_all
                       (fun field ->
@@ -880,14 +886,15 @@ and check_nondep_match : type a b.
   (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
   match view_type varty "check_nondep_match" with
   | Canonical
-      (type m n)
+      (type mn m n)
       (( name,
          Data
            (type j ij)
            ({ dim; indices = Filled indices; constrs = data_constrs; discrete = _; tyfam = _ } :
              (_, j, ij) data_args),
+         _,
          _ ) :
-        _ * (m, n) canonical * _) -> (
+        _ * (m, n) canonical * (mn, m, n) insertion * _) -> (
       (* Yes, we really don't care what the instantiation arguments are in this case, and we really don't care what the indices are either except to check there are the right number of them.  This is because in the non-dependent case, we are just applying a recursor to a value, so we don't need to know that the indices and instantiation arguments are variables; in the branches they will be whatever they will be, but we don't even need to *know* what they will be because the output type isn't getting refined either. *)
       (match i with
       | Some { value; loc } ->
@@ -943,14 +950,15 @@ and synth_nondep_match : type a b.
   (* The preprocessing is the same as in check_nondep_match; see there for comments. *)
   match view_type varty "synth_nondep_match" with
   | Canonical
-      (type m n)
+      (type mn m n)
       (( name,
          Data
            (type j ij)
            ({ dim; indices = Filled indices; constrs = data_constrs; discrete = _; tyfam = _ } :
              (_, j, ij) data_args),
+         _,
          _ ) :
-        _ * (m, n) canonical * _) -> (
+        _ * (m, n) canonical * (mn, m, n) insertion * _) -> (
       (match i with
       | Some { value; loc } ->
           let needed = Fwn.to_int (Vec.length indices) + 1 in
@@ -1062,14 +1070,15 @@ and synth_dep_match : type a b.
   let ctm, varty = synth (Kinetic `Nolet) ctx tm in
   match view_type varty "synth_dep_match" with
   | Canonical
-      (type m n)
+      (type mn m n)
       (( name,
          Data
            (type j ij)
            ({ dim; indices = Filled var_indices; constrs = data_constrs; discrete = _; tyfam } :
              (_, j, ij) data_args),
+         _,
          inst_args ) :
-        _ * (m, n) canonical * _) -> (
+        _ * (m, n) canonical * (mn, m, n) insertion * _) -> (
       let tyfam =
         match !tyfam with
         | Some tyfam -> Lazy.force tyfam
@@ -1159,25 +1168,28 @@ and check_var_match : type a b.
   (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
   match view_type varty "check_var_match" with
   | Canonical
-      (type m n)
+      (type mn m n)
       (( name,
          Data
            (type j ij)
            ({ dim; indices = Filled var_indices; constrs = data_constrs; discrete = _; tyfam } :
              (_, j, ij) data_args),
+         ins,
          inst_args ) :
-        _ * (m, n) canonical * _) -> (
+        _ * (m, n) canonical * (mn, m, n) insertion * _) -> (
+      let Eq = eq_of_ins_zero ins in
       let tyfam =
         match !tyfam with
         | Some tyfam -> Lazy.force tyfam
         | None -> fatal (Anomaly "tyfam unset") in
       let tyfam_args : (D.zero, m, m, normal) TubeOf.t =
         match view_type tyfam.ty "check_var_match tyfam" with
-        | Canonical (_, Pi _, tyfam_args) -> (
+        | Canonical (_, Pi _, _, tyfam_args) -> (
             match D.compare dim (TubeOf.inst tyfam_args) with
             | Neq -> fatal (Dimension_mismatch ("check_var_match", dim, TubeOf.inst tyfam_args))
             | Eq -> tyfam_args)
-        | Canonical (_, UU n, tyfam_args) -> (
+        | Canonical (_, UU n, ins, tyfam_args) -> (
+            let Eq = eq_of_ins_zero ins in
             match D.compare dim n with
             | Neq -> fatal (Dimension_mismatch ("check_var_match", dim, n))
             | Eq -> tyfam_args)
@@ -1271,7 +1283,8 @@ and check_var_match : type a b.
             let constr_nf = CubeOf.find_top constr_nfs in
             (* Since "index_vals" is just a Bwv of Cubes of *values*, we extract the corresponding collection of *normals* from the type.  The main use of this will be to substitute for the index variables, so instead of assembling them into another Bwv of Cubes, we make a hashtable associating those index variables to the corresponding normals.  We also include in the same hashtable the lower-dimensional applications of the same constructor, to be substituted for the instantiation variables. *)
             match view_type constr_nf.ty "check_var_match (inner)" with
-            | Canonical (_, Data { dim = constrdim; indices = Filled indices; _ }, _) -> (
+            | Canonical (_, Data { dim = constrdim; indices = Filled indices; _ }, ins, _) -> (
+                let Eq = eq_of_ins_zero ins in
                 match
                   ( D.compare constrdim dim,
                     Fwn.compare (Vec.length index_terms) (Vec.length indices) )
@@ -1426,9 +1439,10 @@ and check_empty_match_lam : type a b.
  fun ctx ty first ->
   match view_type ty "check_empty_match_lam" with
   | Canonical
-      (type k n)
-      ((_, Pi (_, doms, cods), tyargs) : head * (k, n) canonical * (D.zero, k, k, normal) TubeOf.t)
-    -> (
+      (type kn k n)
+      ((_, Pi (_, doms, cods), ins, tyargs) :
+        head * (k, n) canonical * (kn, k, n) insertion * (D.zero, kn, kn, normal) TubeOf.t) -> (
+      let Eq = eq_of_ins_zero ins in
       let dim = CubeOf.dim doms in
       let newargs, newnfs = dom_vars (Ctx.length ctx) doms in
       let output = tyof_app cods tyargs newargs in
@@ -1465,7 +1479,7 @@ and check_empty_match_lam : type a b.
                   | Invalid_refutation -> (
                       let firstty = firstty <|> Anomaly "missing firstty in checking []" in
                       match view_type firstty "is_empty" with
-                      | Canonical (_, Data { constrs; _ }, _) ->
+                      | Canonical (_, Data { constrs; _ }, _, _) ->
                           fatal (Missing_constructor_in_match (fst (Bwd_extra.head constrs)))
                       | _ -> fatal (Matching_on_nondatatype (PVal (ctx, firstty))))
                   | _ -> fatal_diagnostic d)))
@@ -1473,7 +1487,7 @@ and check_empty_match_lam : type a b.
 
 and is_empty (varty : kinetic value) : bool =
   match view_type varty "is_empty" with
-  | Canonical (_, Data { constrs = Emp; _ }, _) -> true
+  | Canonical (_, Data { constrs = Emp; _ }, _, _) -> true
   | _ -> false
 
 and any_empty : type n. (n, Binding.t) CubeOf.t list -> bool =
@@ -1714,7 +1728,7 @@ and check_struct : type a b c d s m n mn et.
     (* m is the dimension to which that type has been substituted, and n is the Gel dimension of that type. *)
     m D.t ->
     (m, n, mn) D.plus ->
-    (mn, m, n, d, c, et) codata_args ->
+    (m, n, d, c, et) codata_args ->
     (D.zero, mn, mn, normal) TubeOf.t ->
     (* The fields supplied by the user *)
     ((string * string list) option, a check located) Abwd.t ->
@@ -1759,7 +1773,7 @@ and check_fields : type a b c d s m n mn et.
     kinetic value ->
     m D.t ->
     (m, n, mn) D.plus ->
-    (mn, m, n, d, c, et) codata_args ->
+    (m, n, d, c, et) codata_args ->
     (* The fields from the codatatype, to be checked against *)
     (c * n * et) Term.CodatafieldAbwd.entry list ->
     (D.zero, mn, mn, normal) TubeOf.t ->
@@ -1805,7 +1819,7 @@ and check_field : type a b c d s m n mn i et.
     kinetic value ->
     m D.t ->
     (m, n, mn) D.plus ->
-    (mn, m, n, d, c, et) codata_args ->
+    (m, n, d, c, et) codata_args ->
     (c * n * et) Term.CodatafieldAbwd.entry list ->
     (D.zero, mn, mn, normal) TubeOf.t ->
     (* The field being checked, by name and by data from the codatatype *)
@@ -1872,7 +1886,7 @@ and check_higher_field : type a b c d m i ic0.
     (* m = substitution dimension, i = intrinsic dimension *)
     m D.t ->
     i D.t ->
-    (m, m, D.zero, d, c, no_eta) codata_args ->
+    (m, D.zero, d, c, no_eta) codata_args ->
     (c * D.zero * no_eta) Term.CodatafieldAbwd.entry list ->
     (d, (c, D.zero) snoc) termctx ->
     (D.zero, m, m, normal) TubeOf.t ->
@@ -2183,13 +2197,14 @@ and synth : type a b s.
         (* We read back the synthesized type, so we can put it as the first argument in the generated term. *)
         let cargty = readback_val ctx sargty in
         match view_type sfnty "ImplicitSApp" with
-        | Canonical (_, Pi (_, doms, cods), tyargs) -> (
+        | Canonical (_, Pi (_, doms, cods), ins, tyargs) -> (
+            let Eq = eq_of_ins_zero ins in
             (* Only 0-dimensional applications are allowed, and the first argument must be a type. *)
             match
               ( D.compare (CubeOf.dim doms) D.zero,
                 view_type (CubeOf.find_top doms) "ImplicitSApp argument" )
             with
-            | Eq, Canonical (_, UU _, _) ->
+            | Eq, Canonical (_, UU _, _, _) ->
                 (* We build the implicit application term and its type. *)
                 let new_sfn = locate_opt fn.loc (Term.App (sfn, CubeOf.singleton cargty)) in
                 let new_sty = tyof_app cods tyargs (CubeOf.singleton sargty) in
@@ -2216,7 +2231,7 @@ and synth : type a b s.
               else fatal (Accumulated ("SFirst", errs))
           | (test, alt, passthru) :: alts -> (
               match (vsty, test) with
-              | Some (Canonical (_, Data { constrs = data_constrs; _ }, _)), `Data constrs ->
+              | Some (Canonical (_, Data { constrs = data_constrs; _ }, _, _)), `Data constrs ->
                   if
                     List.for_all
                       (fun constr ->
@@ -2227,7 +2242,7 @@ and synth : type a b s.
                         if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
                     @@ fun () -> synth status ctx (locate_opt tm.loc alt)
                   else go errs alts
-              | Some (Canonical (_, Codata { fields = codata_fields; _ }, _)), `Codata fields ->
+              | Some (Canonical (_, Codata { fields = codata_fields; _ }, _, _)), `Codata fields ->
                   if
                     List.for_all
                       (fun field ->
@@ -2269,9 +2284,11 @@ and synth_apps : type a b.
   let asfn, aty, afn, aargs =
     match view_type sty "synthesizing application spine" with
     (* The obvious thing we can "apply" is an element of a pi-type. *)
-    | Canonical (_, Pi (_, doms, cods), tyargs) -> synth_app ctx sfn doms cods tyargs fn args
+    | Canonical (_, Pi (_, doms, cods), ins, tyargs) ->
+        let Eq = eq_of_ins_zero ins in
+        synth_app ctx sfn doms cods tyargs fn args
     (* We can also "apply" a higher-dimensional *type*, leading to a (further) instantiation of it.  Here the number of arguments must exactly match *some* integral instantiation. *)
-    | Canonical (_, UU _, tyargs) -> synth_inst ctx sfn tyargs fn args
+    | Canonical (_, UU _, _, tyargs) -> synth_inst ctx sfn tyargs fn args
     (* Something that synthesizes a type that isn't a pi-type or a universe cannot be applied to anything, but this is a user error, not a bug. *)
     | _ ->
         fatal ?loc:sfn.loc (Applying_nonfunction_nontype (PTerm (ctx, sfn.value), PVal (ctx, sty)))
