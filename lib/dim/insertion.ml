@@ -124,13 +124,26 @@ let rec insfact : type ac b c bc. (ac, bc) deg -> (b, c, bc) D.plus -> (ac, b, c
       let (Insfact (s, i)) = insfact s bc in
       Insfact (s, Suc (i, e))
 
-(* In particular, since an insertion induces a degeneracy (a permutation) with a decomposition of its codomain, if we compose a degeneracy followed by an insertion, the result factors in the above way as an insertion followed by a whiskered degeneracy.  In the stated type of this operation, we also allow the given degeneracy to have any domain and codomain, and do the composition by extending both with identities as in comp_deg_extending. *)
-type (_, _, _) insfact_comp =
-  | Insfact_comp :
-      ('m, 'n) deg * ('ml, 'm, 'l) insertion * ('k, 'j, 'l) D.plus * ('a, 'i, 'ml) D.plus
-      -> ('n, 'k, 'a) insfact_comp
+(* In particular, since an insertion induces a degeneracy (a permutation) with a decomposition of its codomain, if we compose a degeneracy followed by an insertion, the result factors in the above way as an insertion followed by a whiskered degeneracy. *)
 
-let insfact_comp : type n k nk a b. (nk, n, k) insertion -> (a, b) deg -> (n, k, a) insfact_comp =
+type (_, _, _) insfact_comp =
+  | Insfact_comp : ('k, 'm) deg * ('kn, 'k, 'n) insertion -> ('m, 'n, 'kn) insfact_comp
+
+let insfact_comp : type m n mn kn. (mn, m, n) insertion -> (kn, mn) deg -> (m, n, kn) insfact_comp =
+ fun ins s ->
+  let (Plus mn) = D.plus (cod_right_ins ins) in
+  let (Insfact (fc, ins)) = insfact (comp_deg (deg_of_ins_plus ins mn) s) mn in
+  Insfact_comp (fc, ins)
+
+(* Here is version that also allows the given degeneracy to have any domain and codomain, and do the composition by extending both with identities as in comp_deg_extending. *)
+
+type (_, _, _) insfact_comp_ext =
+  | Insfact_comp_ext :
+      ('m, 'n) deg * ('ml, 'm, 'l) insertion * ('k, 'j, 'l) D.plus * ('a, 'i, 'ml) D.plus
+      -> ('n, 'k, 'a) insfact_comp_ext
+
+let insfact_comp_ext : type n k nk a b.
+    (nk, n, k) insertion -> (a, b) deg -> (n, k, a) insfact_comp_ext =
  fun ins s ->
   let (Plus nk) = D.plus (cod_right_ins ins) in
   let s' = deg_of_ins_plus ins nk in
@@ -138,7 +151,7 @@ let insfact_comp : type n k nk a b. (nk, n, k) insertion -> (a, b) deg -> (n, k,
   let (Plus kd) = D.plus (D.plus_right nk_d) in
   let n_kd = D.plus_assocr nk kd nk_d in
   let (Insfact (fa, new_ins)) = insfact s's n_kd in
-  Insfact_comp (fa, new_ins, kd, ai)
+  Insfact_comp_ext (fa, new_ins, kd, ai)
 
 (* A degeneracy of the left codomain of an insertion can be extended to a degeneracy of its domain, completing a commutative square with a larger insertion. *)
 

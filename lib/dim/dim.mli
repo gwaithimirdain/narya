@@ -550,11 +550,16 @@ type (_, _, _) insfact = Insfact : ('a, 'b) deg * ('ac, 'a, 'c) insertion -> ('a
 val insfact : ('ac, 'bc) deg -> ('b, 'c, 'bc) D.plus -> ('ac, 'b, 'c) insfact
 
 type (_, _, _) insfact_comp =
-  | Insfact_comp :
-      ('m, 'n) deg * ('ml, 'm, 'l) insertion * ('k, 'j, 'l) D.plus * ('a, 'i, 'ml) D.plus
-      -> ('n, 'k, 'a) insfact_comp
+  | Insfact_comp : ('k, 'm) deg * ('kn, 'k, 'n) insertion -> ('m, 'n, 'kn) insfact_comp
 
-val insfact_comp : ('nk, 'n, 'k) insertion -> ('a, 'b) deg -> ('n, 'k, 'a) insfact_comp
+val insfact_comp : ('mn, 'm, 'n) insertion -> ('kn, 'mn) deg -> ('m, 'n, 'kn) insfact_comp
+
+type (_, _, _) insfact_comp_ext =
+  | Insfact_comp_ext :
+      ('m, 'n) deg * ('ml, 'm, 'l) insertion * ('k, 'j, 'l) D.plus * ('a, 'i, 'ml) D.plus
+      -> ('n, 'k, 'a) insfact_comp_ext
+
+val insfact_comp_ext : ('nk, 'n, 'k) insertion -> ('a, 'b) deg -> ('n, 'k, 'a) insfact_comp_ext
 
 type (_, _, _) deg_lift_ins =
   | Deg_lift_ins : ('mk, 'm, 'k) insertion * ('mk, 'nk) deg -> ('m, 'k, 'nk) deg_lift_ins

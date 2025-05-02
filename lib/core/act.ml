@@ -88,11 +88,11 @@ module Act = struct
         (type p k pk et)
         ((fields, ins, energy) :
           (p * status * et) Value.StructfieldAbwd.t * (pk, p, k) insertion * status energy) ->
-        let (Insfact_comp
+        let (Insfact_comp_ext
                (type q l ql j z)
                ((deg0, new_ins, _, _) :
                  (q, p) deg * (ql, q, l) insertion * (k, j, l) D.plus * (m, z, ql) D.plus)) =
-          insfact_comp ins s in
+          insfact_comp_ext ins s in
         let fields = act_structfield_abwd deg0 fields in
         Struct (fields, new_ins, energy)
     | Constr (name, dim, args) ->
@@ -249,8 +249,7 @@ module Act = struct
   and act_closure : type mn m n a kn.
       (m, a) env -> (mn, m, n) insertion -> (kn, mn) deg -> (a, kn, n) act_closure =
    fun env ins fa ->
-    let (Plus mn) = D.plus (cod_right_ins ins) in
-    let (Insfact (fc, ins)) = insfact (comp_deg (deg_of_ins_plus ins mn) fa) mn in
+    let (Insfact_comp (fc, ins)) = insfact_comp ins fa in
     Act_closure (act_env env (op_of_deg fc), ins)
 
   and act_binder : type mn kn s. (mn, s) binder -> (kn, mn) deg -> (kn, s) binder =
@@ -353,11 +352,11 @@ module Act = struct
         Var { level; deg }
     (* To act on a constant, we push as much of the degeneracy through the insertion as possible.  The actual degeneracy that gets pushed through doesn't matter, since it just raises the constant to an even higher dimension, and that dimension is stored in the insertion. *)
     | Const { name; ins } ->
-        let (Insfact_comp (_, ins, _, _)) = insfact_comp ins s in
+        let (Insfact_comp_ext (_, ins, _, _)) = insfact_comp_ext ins s in
         Const { name; ins }
     (* Acting on a metavariable is similar to a constant, but now the inner degeneracy acts on the stored environment. *)
     | Meta { meta; env; ins } ->
-        let (Insfact_comp (deg, ins, _, _)) = insfact_comp ins s in
+        let (Insfact_comp_ext (deg, ins, _, _)) = insfact_comp_ext ins s in
         Meta { meta; env = act_env env (op_of_deg deg); ins }
     | UU nk ->
         let (Of fa) = deg_plus_to s nk ~on:"universe head" in
@@ -391,13 +390,13 @@ module Act = struct
     | Emp -> (Any_deg s, Emp)
     (* To act on an application, we compose the acting degeneracy with the delayed insertion, factor the result into a new insertion to leave outside and a smaller degeneracy to push in, and push the smaller degeneracy action into the application, acting on the function/struct. *)
     | Arg (rest, args, ins) ->
-        let (Insfact_comp (fa, new_ins, _, _)) = insfact_comp ins s in
+        let (Insfact_comp_ext (fa, new_ins, _, _)) = insfact_comp_ext ins s in
         (* In the function case, we also act on the arguments by factorization. *)
         let new_arg = act_cube { act = (fun x s -> act_normal x s) } args fa in
         let new_s, new_rest = act_apps rest fa in
         (new_s, Arg (new_rest, new_arg, new_ins))
     | Field (rest, fld, fldplus, ins) ->
-        let (Insfact_comp (fa, new_ins, _, _)) = insfact_comp ins s in
+        let (Insfact_comp_ext (fa, new_ins, _, _)) = insfact_comp_ext ins s in
         (* Note that we don't need to change the degeneracy, since it can be extended on the right as needed. *)
         let (Plus new_fldplus) = D.plus (D.plus_right fldplus) in
         let new_s, new_rest = act_apps rest fa in
@@ -440,7 +439,7 @@ module Act = struct
     match !lev with
     | Deferred_eval (env, tm, ins, apps) ->
         let Any_deg s, apps = act_apps apps s in
-        let (Insfact_comp (fa, ins, _, _)) = insfact_comp ins s in
+        let (Insfact_comp_ext (fa, ins, _, _)) = insfact_comp_ext ins s in
         ref (Deferred_eval (act_env env (op_of_deg fa), tm, ins, apps))
     | Deferred (tm, s', apps) ->
         let Any_deg s, apps = act_apps apps s in
