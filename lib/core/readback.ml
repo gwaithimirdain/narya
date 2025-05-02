@@ -43,14 +43,14 @@ and readback_at : type a z. (z, a) Ctx.t -> kinetic value -> kinetic value -> (a
           let body = readback_at newctx (apply_term tm args) output in
           Term.Lam (x, body))
   | ( Canonical
-        (type mn)
+        (type mn n)
         (( _,
            Codata
-             (type m n c a et)
+             (type m c a et)
              ({ eta; opacity; fields; env = _; ins; termctx = _ } :
                (mn, m, n, c, a, et) codata_args),
            _ ) :
-          head * mn canonical * (D.zero, mn, mn, normal) TubeOf.t),
+          head * (mn, n) canonical * (D.zero, mn, mn, normal) TubeOf.t),
       _ ) -> (
       match (eta, fields) with
       | Eta, (fields : (a * n * has_eta) Term.CodatafieldAbwd.t) -> (

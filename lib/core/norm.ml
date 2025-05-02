@@ -719,14 +719,14 @@ and tyof_field : type m h s r i c.
   let severity = Asai.Diagnostic.Bug in
   match view_type ty "tyof_field" with
   | Canonical
-      (type mn)
+      (type mn n)
       (( head,
          Codata
-           (type m' n d a et)
+           (type m' d a et)
            ({ env; ins = codatains; fields; opacity = _; eta; termctx = _ } :
              (mn, m', n, d, a, et) codata_args),
          tyargs ) :
-        head * mn canonical * (D.zero, mn, mn, normal) TubeOf.t) -> (
+        head * (mn, n) canonical * (D.zero, mn, mn, normal) TubeOf.t) -> (
       (* The type cannot have a nonidentity degeneracy applied to it (though it can be at a higher dimension). *)
       match is_id_ins codatains with
       | None -> fatal ~severity (No_such_field (`Degenerated_record eta, errfld))

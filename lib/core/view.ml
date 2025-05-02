@@ -5,7 +5,7 @@ open Reporter
 (* A "view" is the aspect of a type or term that we match against to determine its behavior.  A view of a term is just another term, but in WHNF.  A view of a type is either a canonical type (data or codata) or a neutral, either fully instantiated at the correct dimension. *)
 
 type view_type =
-  | Canonical : (head * 'k canonical * (D.zero, 'k, 'k, normal) TubeOf.t) -> view_type
+  | Canonical : (head * ('k, 'n) canonical * (D.zero, 'k, 'k, normal) TubeOf.t) -> view_type
   | Neutral : (head * (D.zero, 'k, 'k, normal) TubeOf.t) -> view_type
 
 let term_viewer : (kinetic value -> kinetic value) ref =

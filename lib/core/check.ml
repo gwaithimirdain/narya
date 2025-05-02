@@ -880,14 +880,14 @@ and check_nondep_match : type a b.
   (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
   match view_type varty "check_nondep_match" with
   | Canonical
-      (type m)
+      (type m n)
       (( name,
          Data
            (type j ij)
            ({ dim; indices = Filled indices; constrs = data_constrs; discrete = _; tyfam = _ } :
              (_, j, ij) data_args),
          _ ) :
-        _ * m canonical * _) -> (
+        _ * (m, n) canonical * _) -> (
       (* Yes, we really don't care what the instantiation arguments are in this case, and we really don't care what the indices are either except to check there are the right number of them.  This is because in the non-dependent case, we are just applying a recursor to a value, so we don't need to know that the indices and instantiation arguments are variables; in the branches they will be whatever they will be, but we don't even need to *know* what they will be because the output type isn't getting refined either. *)
       (match i with
       | Some { value; loc } ->
@@ -943,14 +943,14 @@ and synth_nondep_match : type a b.
   (* The preprocessing is the same as in check_nondep_match; see there for comments. *)
   match view_type varty "synth_nondep_match" with
   | Canonical
-      (type m)
+      (type m n)
       (( name,
          Data
            (type j ij)
            ({ dim; indices = Filled indices; constrs = data_constrs; discrete = _; tyfam = _ } :
              (_, j, ij) data_args),
          _ ) :
-        _ * m canonical * _) -> (
+        _ * (m, n) canonical * _) -> (
       (match i with
       | Some { value; loc } ->
           let needed = Fwn.to_int (Vec.length indices) + 1 in
@@ -1062,14 +1062,14 @@ and synth_dep_match : type a b.
   let ctm, varty = synth (Kinetic `Nolet) ctx tm in
   match view_type varty "synth_dep_match" with
   | Canonical
-      (type m)
+      (type m n)
       (( name,
          Data
            (type j ij)
            ({ dim; indices = Filled var_indices; constrs = data_constrs; discrete = _; tyfam } :
              (_, j, ij) data_args),
          inst_args ) :
-        _ * m canonical * _) -> (
+        _ * (m, n) canonical * _) -> (
       let tyfam =
         match !tyfam with
         | Some tyfam -> Lazy.force tyfam
@@ -1159,14 +1159,14 @@ and check_var_match : type a b.
   (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
   match view_type varty "check_var_match" with
   | Canonical
-      (type m)
+      (type m n)
       (( name,
          Data
            (type j ij)
            ({ dim; indices = Filled var_indices; constrs = data_constrs; discrete = _; tyfam } :
              (_, j, ij) data_args),
          inst_args ) :
-        _ * m canonical * _) -> (
+        _ * (m, n) canonical * _) -> (
       let tyfam =
         match !tyfam with
         | Some tyfam -> Lazy.force tyfam
@@ -1426,8 +1426,9 @@ and check_empty_match_lam : type a b.
  fun ctx ty first ->
   match view_type ty "check_empty_match_lam" with
   | Canonical
-      (type k)
-      ((_, Pi (_, doms, cods), tyargs) : head * k canonical * (D.zero, k, k, normal) TubeOf.t) -> (
+      (type k n)
+      ((_, Pi (_, doms, cods), tyargs) : head * (k, n) canonical * (D.zero, k, k, normal) TubeOf.t)
+    -> (
       let dim = CubeOf.dim doms in
       let newargs, newnfs = dom_vars (Ctx.length ctx) doms in
       let output = tyof_app cods tyargs newargs in

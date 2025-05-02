@@ -38,11 +38,9 @@ module Equal = struct
         equal_at (ctx + 1) (apply_term x newargs) (apply_term y newargs) output
     (* Codatatypes (without eta) don't need to be dealt with here, even though structs can't be compared synthesizingly, since codatatypes aren't actually inhabited by (kinetic) structs, only neutral terms that are equal to potential structs.  In the case of record types with eta, if there is a nonidentity insertion outside, then the type isn't actually a record type, *but* it still has an eta-rule since it is *isomorphic* to a record type!  Thus, instead of checking whether the insertion is the identity, we apply its inverse permutation to the terms being compared.  And because we pass off to 'field' and 'tyof_field', we don't need to make explicit use of any of the other data here. *)
     | Canonical
-        (type mn)
-        (( _,
-           Codata (type m n c a et) ({ eta; fields; ins; _ } : (mn, m, n, c, a, et) codata_args),
-           _ ) :
-          head * mn canonical * (D.zero, mn, mn, normal) TubeOf.t) -> (
+        (type mn n)
+        ((_, Codata (type m c a et) ({ eta; fields; ins; _ } : (mn, m, n, c, a, et) codata_args), _) :
+          head * (mn, n) canonical * (D.zero, mn, mn, normal) TubeOf.t) -> (
         match eta with
         | Eta ->
             let (Perm_to p) = perm_of_ins ins in

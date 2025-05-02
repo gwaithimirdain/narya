@@ -82,7 +82,7 @@ module rec Value : sig
     | Lam : 'k variables * ('k, 's) binder -> 's value
     | Struct : ('p * 's * 'et) StructfieldAbwd.t * ('pk, 'p, 'k) insertion * 's energy -> 's value
     | Canonical : {
-        canonical : 'mk canonical;
+        canonical : ('mk, 'n) canonical;
         tyargs : ('m, 'k, 'mk, normal) TubeOf.t;
       }
         -> potential value
@@ -92,11 +92,13 @@ module rec Value : sig
     | Realize : kinetic value -> potential evaluation
     | Unrealized : potential evaluation
 
-  and _ canonical =
-    | UU : 'm D.t -> 'm canonical
-    | Pi : string option * ('m, kinetic value) CubeOf.t * ('m, unit) BindCube.t -> 'm canonical
-    | Data : ('m, 'j, 'ij) data_args -> 'm canonical
-    | Codata : ('mn, 'm, 'n, 'c, 'a, 'et) codata_args -> 'mn canonical
+  and (_, _) canonical =
+    | UU : 'm D.t -> ('m, D.zero) canonical
+    | Pi :
+        string option * ('m, kinetic value) CubeOf.t * ('m, unit) BindCube.t
+        -> ('m, D.zero) canonical
+    | Data : ('m, 'j, 'ij) data_args -> ('m, D.zero) canonical
+    | Codata : ('mn, 'm, 'n, 'c, 'a, 'et) codata_args -> ('mn, 'n) canonical
 
   and ('m, 'j, 'ij) data_args = {
     dim : 'm D.t;
@@ -224,7 +226,7 @@ end = struct
     | Struct : ('p * 's * 'et) StructfieldAbwd.t * ('pk, 'p, 'k) insertion * 's energy -> 's value
     (* A canonical type is only a *potential* value, so it appears as the 'value' of a 'neu'.  It may also be instantiated, partially or fully. *)
     | Canonical : {
-        canonical : 'mk canonical;
+        canonical : ('mk, 'n) canonical;
         tyargs : ('m, 'k, 'mk, normal) TubeOf.t;
       }
         -> potential value
@@ -236,14 +238,16 @@ end = struct
     | Realize : kinetic value -> potential evaluation
     | Unrealized : potential evaluation
 
-  (* A canonical type value is either a universe, a function-type, a datatype, or a codatatype/record.  It is parametrized by its dimension as a type, which might be larger than its evaluation dimension if it has an intrinsic dimension (e.g. Gel). *)
-  and _ canonical =
+  (* A canonical type value is either a universe, a function-type, a datatype, or a codatatype/record.  It is parametrized by its dimension as a type, which might be larger than its evaluation dimension if it has an intrinsic dimension (e.g. Gel), and by that intrinsic dimension. *)
+  and (_, _) canonical =
     (* At present, we never produce these except as the values of their corresponding heads.  But in principle, we could allow universes and pi-types as potential terms, so that constants could be defined to "behave like" universes or pi-types without reducing to them. *)
-    | UU : 'm D.t -> 'm canonical
-    | Pi : string option * ('m, kinetic value) CubeOf.t * ('m, unit) BindCube.t -> 'm canonical
+    | UU : 'm D.t -> ('m, D.zero) canonical
+    | Pi :
+        string option * ('m, kinetic value) CubeOf.t * ('m, unit) BindCube.t
+        -> ('m, D.zero) canonical
     (* We define a named record type to encapsulate the arguments of Data and Codata, rather than using an inline one, so that we can bind their existential variables (https://discuss.ocaml.org/t/annotating-by-an-existential-type/14721).  See the definitions of these records below. *)
-    | Data : ('m, 'j, 'ij) data_args -> 'm canonical
-    | Codata : ('mn, 'm, 'n, 'c, 'a, 'et) codata_args -> 'mn canonical
+    | Data : ('m, 'j, 'ij) data_args -> ('m, D.zero) canonical
+    | Codata : ('mn, 'm, 'n, 'c, 'a, 'et) codata_args -> ('mn, 'n) canonical
 
   (* A datatype value stores: *)
   and ('m, 'j, 'ij) data_args = {
@@ -315,7 +319,7 @@ end
 
 include Value
 
-type any_canonical = Any : 'm canonical -> any_canonical
+type any_canonical = Any : ('mn, 'n) canonical -> any_canonical
 
 (* Every context morphism has a valid dimension. *)
 let rec dim_env : type n b. (n, b) env -> n D.t = function
@@ -330,7 +334,7 @@ let rec dim_env : type n b. (n, b) env -> n D.t = function
 let dim_binder : type m s. (m, s) binder -> m D.t = function
   | Bind b -> dom_ins b.ins
 
-let dim_canonical : type m. m canonical -> m D.t = function
+let dim_canonical : type m n. (m, n) canonical -> m D.t = function
   | UU dim -> dim
   | Pi (_, doms, _) -> CubeOf.dim doms
   | Data { dim; _ } -> dim
