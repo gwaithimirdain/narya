@@ -615,7 +615,7 @@ and tyof_lower_codatafield : type m n mn a.
             let ty = tyof_field (Ok arg.tm) arg.ty fldname ~shuf:Trivial fains in
             { tm; ty });
       }
-      [ TubeOf.middle (D.zero_plus m) mn tyargs ] in
+      [ fst (TubeOf.split (D.zero_plus m) mn tyargs) ] in
   inst insttm instargs
 
 (* This function is also called directly from check_higher_field.  In that case, the field is determined by a partial bijection that may *not* be just an insertion, and we have to frobnicate the environment in which we evaluate the type.  Some of that frobnication involves an eval-readback cycle, which requires a callback from here since readback isn't defined yet. *)

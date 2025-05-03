@@ -284,11 +284,7 @@ module Tube (F : Fam2) : sig
     ('n, 'k, 'nk, 'b) t
 
   val to_cube_bwv :
-    'k is_singleton ->
-    ('n, 'k, 'nk) D.plus ->
-    'l Endpoints.len ->
-    ('n, 'k, 'nk, 'b) t ->
-    (('n, 'b) C.t, 'l) Bwv.t
+    'k is_singleton -> 'l Endpoints.len -> ('n, 'k, 'nk, 'b) t -> (('n, 'b) C.t, 'l) Bwv.t
 
   val plus : ('m, 'k, 'mk, 'b) t -> ('m, 'k, 'mk) D.plus
   val inst : ('m, 'k, 'mk, 'b) t -> 'k D.t
@@ -380,8 +376,11 @@ module TubeOf : sig
   val plus_tube :
     ('k, 'l, 'kl) D.plus -> ('mk, 'l, 'mkl, 'b) t -> ('m, 'k, 'mk, 'b) t -> ('m, 'kl, 'mkl, 'b) t
 
-  val middle :
-    ('m, 'k, 'mk) D.plus -> ('k, 'l, 'kl) D.plus -> ('m, 'kl, 'mkl, 'b) t -> ('m, 'k, 'mk, 'b) t
+  val split :
+    ('m, 'k, 'mk) D.plus ->
+    ('k, 'l, 'kl) D.plus ->
+    ('m, 'kl, 'mkl, 'b) t ->
+    ('m, 'k, 'mk, 'b) t * ('mk, 'l, 'mkl, 'b) t
 
   val append_bwd : 'a Bwd.t -> ('m, 'n, 'mn, 'a) t -> 'a Bwd.t
 end

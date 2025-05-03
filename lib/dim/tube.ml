@@ -141,13 +141,9 @@ module Tube (F : Fam2) = struct
     Branch (l, cubes, Leaf n)
 
   let to_cube_bwv : type n k nk b l.
-      k is_singleton ->
-      (n, k, nk) D.plus ->
-      l Endpoints.len ->
-      (n, k, nk, b) t ->
-      ((n, b) C.t, l) Bwv.t =
-   fun k nk l tube ->
-    let One, Suc Zero = (k, nk) in
+      k is_singleton -> l Endpoints.len -> (n, k, nk, b) t -> ((n, b) C.t, l) Bwv.t =
+   fun k l tube ->
+    let One = k in
     let (Branch (l', cubes, Leaf _)) = tube in
     let Eq = Endpoints.uniq l l' in
     cubes
@@ -549,22 +545,31 @@ module TubeOf = struct
     let mk_l = gplus tl in
     gplus_gtube kl tl (glift mk_l tk)
 
-  (* We can also pick out a lower-dimensional part around the middle of a tube. *)
+  (* We can also pick out a lower-dimensional part around the middle of a tube, as well as the outer tube around it. *)
 
-  let rec gmiddle : type m k mk l kl mkl n b.
-      (m, k, mk) D.plus -> (k, l, kl) D.plus -> (m, kl, mkl, n, b) gt -> (m, k, mk, n, b) gt =
+  let rec gsplit : type m k mk l kl mkl n b.
+      (m, k, mk) D.plus ->
+      (k, l, kl) D.plus ->
+      (m, kl, mkl, n, b) gt ->
+      (m, k, mk, n, b) gt * (mk, l, mkl, n, b) gt =
    fun mk kl tr ->
     match (kl, tr) with
     | Zero, _ ->
         let Eq = D.plus_uniq mk (gplus tr) in
-        tr
-    | Suc kl, Branch (_, _, mid) -> gmiddle mk kl mid
+        (tr, Leaf (D.plus_out (guninst tr) mk))
+    | Suc kl, Branch (l, ends, mid) ->
+        let middle, outer = gsplit mk kl mid in
+        (middle, Branch (l, ends, outer))
 
-  let middle : type m k mk l kl mkl b.
-      (m, k, mk) D.plus -> (k, l, kl) D.plus -> (m, kl, mkl, b) t -> (m, k, mk, b) t =
+  let split : type m k mk l kl mkl b.
+      (m, k, mk) D.plus ->
+      (k, l, kl) D.plus ->
+      (m, kl, mkl, b) t ->
+      (m, k, mk, b) t * (mk, l, mkl, b) t =
    fun mk kl tr ->
     let mk_l = D.plus_assocl mk kl (plus tr) in
-    glower Zero mk_l (gmiddle mk kl tr)
+    let middle, outer = gsplit mk kl tr in
+    (glower Zero mk_l middle, outer)
 
   (* Append the elements of a tube, in order, to a given Bwd.t. *)
 

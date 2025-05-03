@@ -2486,7 +2486,7 @@ and synth_inst : type a b n.
           { map = (fun _ [ { tm; ty = _ } ] -> tm) }
           [ TubeOf.pboundary (D.zero_plus m) msuc tyargs ] in
       let (Wrap l) = Endpoints.wrapped () in
-      let doms = TubeOf.to_cube_bwv k msuc l tyargs1 in
+      let doms = TubeOf.to_cube_bwv k l tyargs1 in
       let module M = Monad.State (struct
         type t =
           Asai.Range.t option
