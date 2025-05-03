@@ -59,7 +59,7 @@ and readback_at : type a z. (z, a) Ctx.t -> kinetic value -> kinetic value -> (a
           let readback_at_record (tm : kinetic value) ty =
             match (tm, opacity) with
             (* If the term is a struct, we read back its fields.  Even though this is not technically an eta-expansion, we have to do it here rather than in readback_val because we need the record type to determine the types at which to read back the fields. *)
-            | Struct (tmflds, _, energy), _ ->
+            | Struct { fields = tmflds; energy; ins = _ }, _ ->
                 let fields =
                   Mbwd.map
                     (* We don't need to consider the Higher case since we are kinetic. *)

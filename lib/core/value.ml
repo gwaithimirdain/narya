@@ -78,8 +78,14 @@ module rec Value : sig
         -> kinetic value
     | Constr : Constr.t * 'n D.t * ('n, kinetic value) CubeOf.t list -> kinetic value
     | Lam : 'k variables * ('k, 's) binder -> 's value
-    | Struct : ('p * 's * 'et) StructfieldAbwd.t * ('pk, 'p, 'k) insertion * 's energy -> 's value
+    | Struct : ('p, 'k, 'pk, 's, 'et) struct_args -> 's value
     | Canonical : ('m, 'k, 'mk, 'e, 'n) inst_canonical -> potential value
+
+  and ('p, 'k, 'pk, 's, 'et) struct_args = {
+    fields : ('p * 's * 'et) StructfieldAbwd.t;
+    ins : ('pk, 'p, 'k) insertion;
+    energy : 's energy;
+  }
 
   and ('m, 'k, 'mk, 'e, 'n) inst_canonical = {
     canonical : ('e, 'n) canonical;
@@ -222,9 +228,15 @@ end = struct
     | Constr : Constr.t * 'n D.t * ('n, kinetic value) CubeOf.t list -> kinetic value
     | Lam : 'k variables * ('k, 's) binder -> 's value
     (* Structs have to store an insertion outside, like an application, to deal with higher-dimensional record types like Gel.  Here 'k is the Gel dimension, with 'n the substitution dimension and 'nk the total dimension. *)
-    | Struct : ('p * 's * 'et) StructfieldAbwd.t * ('pk, 'p, 'k) insertion * 's energy -> 's value
+    | Struct : ('p, 'k, 'pk, 's, 'et) struct_args -> 's value
     (* A canonical type is only a *potential* value, so it appears as the 'value' of a 'neu'.  It may also be instantiated, partially or fully. *)
     | Canonical : ('m, 'k, 'mk, 'e, 'n) inst_canonical -> potential value
+
+  and ('p, 'k, 'pk, 's, 'et) struct_args = {
+    fields : ('p * 's * 'et) StructfieldAbwd.t;
+    ins : ('pk, 'p, 'k) insertion;
+    energy : 's energy;
+  }
 
   and ('m, 'k, 'mk, 'e, 'n) inst_canonical = {
     canonical : ('e, 'n) canonical;
