@@ -1,7 +1,6 @@
 open Bwd
 open Bwd.Infix
 open Util
-open Perhaps
 open Tbwd
 open Bwd_extra
 open Dim
@@ -356,8 +355,8 @@ let rec unparse : type n lt ls rt rs s.
                        (fun acc
                             (Term.StructfieldAbwd.Entry
                                (type i)
-                               ((fld, structfield) :
-                                 i Field.t * (i, m * n * s * et * none) Structfield.t)) ->
+                               ((fld, structfield) : i Field.t * (i, m * n * s * et) Structfield.t))
+                          ->
                          match structfield with
                          | Lower (fldtm, lbl) ->
                              let fldtm = unparse vars fldtm No.Interval.entire No.Interval.entire in

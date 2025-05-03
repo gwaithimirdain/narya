@@ -69,8 +69,8 @@ and canonical : type a. (Compunit.t -> Compunit.t) -> a canonical -> a canonical
 
 and structfield : type n a s i et.
     (Compunit.t -> Compunit.t) ->
-    (i, n * a * s * et * Perhaps.none) Term.Structfield.t ->
-    (i, n * a * s * et * Perhaps.none) Term.Structfield.t =
+    (i, n * a * s * et) Term.Structfield.t ->
+    (i, n * a * s * et) Term.Structfield.t =
  fun f fld ->
   match fld with
   | Lower (x, l) -> Lower (term f x, l)
@@ -85,6 +85,7 @@ and structfield : type n a s i et.
                  | None -> None);
            }
            [ m ])
+  | LazyHigher _ -> Reporter.fatal (Anomaly "lazy higher field can't be linked")
 
 and codatafield : type a n i et.
     (Compunit.t -> Compunit.t) -> (i, a * n * et) Codatafield.t -> (i, a * n * et) Codatafield.t =

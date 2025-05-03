@@ -456,12 +456,12 @@ let eval_binder : type m n mn b s.
   Value.Bind { env; ins; body }
 
 (* Same with structfields *)
-let rec eval_structfield : type m n mn a status i et any.
+let rec eval_structfield : type m n mn a status i et.
     (m, a) env ->
     m D.t ->
     (m, n, mn) D.plus ->
     mn D.t ->
-    (i, n * a * status * et * any) Term.Structfield.t ->
+    (i, n * a * status * et) Term.Structfield.t ->
     (i, mn * status * et) Value.Structfield.t =
  fun env m m_n mn fld ->
   match fld with
@@ -507,12 +507,12 @@ and eval_higher_structfield : type m n mn a i.
       } in
   { intrinsic; plusdim = m_n; terms; env; deg = id_deg mn; vals }
 
-let eval_structfield_abwd : type m n mn a status et any.
+let eval_structfield_abwd : type m n mn a status et.
     (m, a) env ->
     m D.t ->
     (m, n, mn) D.plus ->
     mn D.t ->
-    (n * a * status * et * any) Term.StructfieldAbwd.t ->
+    (n * a * status * et) Term.StructfieldAbwd.t ->
     (mn * status * et) Value.StructfieldAbwd.t =
  fun env m m_n mn fields ->
   Mbwd.mmap

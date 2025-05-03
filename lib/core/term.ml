@@ -1,6 +1,5 @@
 open Bwd
 open Util
-open Perhaps
 open Tbwd
 open Dim
 open Dimbwd
@@ -59,13 +58,9 @@ module rec Term : sig
 
   module Structfield : sig
     type (_, _) t =
-      | Lower :
-          ('a, 's) Term.term * [ `Labeled | `Unlabeled ]
-          -> (D.zero, 'n * 'a * 's * 'et * 'any) t
-      | Higher : ('n, 'i, 'a) PlusPbijmap.t -> ('i, 'n * 'a * potential * no_eta * 'any) t
-      | LazyHigher :
-          ('n, 'i, 'a) PlusPbijmap.t Lazy.t
-          -> ('i, 'n * 'a * potential * no_eta * some) t
+      | Lower : ('a, 's) Term.term * [ `Labeled | `Unlabeled ] -> (D.zero, 'n * 'a * 's * 'et) t
+      | Higher : ('n, 'i, 'a) PlusPbijmap.t -> ('i, 'n * 'a * potential * no_eta) t
+      | LazyHigher : ('n, 'i, 'a) PlusPbijmap.t Lazy.t -> ('i, 'n * 'a * potential * no_eta) t
   end
 
   module StructfieldAbwd : module type of Field.Abwd (Structfield)
@@ -100,7 +95,7 @@ module rec Term : sig
 
   and ('n, 'a, 's, 'et) struct_args = {
     dim : 'n D.t;
-    fields : ('n * 'a * 's * 'et * none) StructfieldAbwd.t;
+    fields : ('n * 'a * 's * 'et) StructfieldAbwd.t;
     eta : ('s, 'et) eta;
     energy : 's energy;
   }
@@ -202,15 +197,11 @@ end = struct
   module CodatafieldAbwd = Field.Abwd (Codatafield)
 
   module Structfield = struct
-    (* The last parameter indicates whether lazy fields are allowed (some) or not (none).  Normally they are not, because a term is supposed to be a completed data object that can be, for instance, serialized to a file and reloaded.  But when we use this to store fibrancy fields, which are recomputed on evaluation and are corecursively infinite, we have to allow laziness.  *)
+    (* Lazy fields are not allowed in ordinary terms, because a term is supposed to be a completed data object that can be, for instance, serialized to a file and reloaded.  But when we use this to store fibrancy fields, which are recomputed on evaluation and are corecursively infinite, we have to allow laziness.  *)
     type (_, _) t =
-      | Lower :
-          ('a, 's) Term.term * [ `Labeled | `Unlabeled ]
-          -> (D.zero, 'n * 'a * 's * 'et * 'any) t
-      | Higher : ('n, 'i, 'a) PlusPbijmap.t -> ('i, 'n * 'a * potential * no_eta * 'any) t
-      | LazyHigher :
-          ('n, 'i, 'a) PlusPbijmap.t Lazy.t
-          -> ('i, 'n * 'a * potential * no_eta * some) t
+      | Lower : ('a, 's) Term.term * [ `Labeled | `Unlabeled ] -> (D.zero, 'n * 'a * 's * 'et) t
+      | Higher : ('n, 'i, 'a) PlusPbijmap.t -> ('i, 'n * 'a * potential * no_eta) t
+      | LazyHigher : ('n, 'i, 'a) PlusPbijmap.t Lazy.t -> ('i, 'n * 'a * potential * no_eta) t
   end
 
   module StructfieldAbwd = Field.Abwd (Structfield)
@@ -253,7 +244,7 @@ end = struct
 
   and ('n, 'a, 's, 'et) struct_args = {
     dim : 'n D.t;
-    fields : ('n * 'a * 's * 'et * none) StructfieldAbwd.t;
+    fields : ('n * 'a * 's * 'et) StructfieldAbwd.t;
     eta : ('s, 'et) eta;
     energy : 's energy;
   }

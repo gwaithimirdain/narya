@@ -2,7 +2,6 @@ open Bwd
 open Bwd.Infix
 open Dim
 open Util
-open Perhaps
 open Term
 open Monad.Ops (Monad.Maybe)
 
@@ -75,7 +74,7 @@ let fields : (Tbwd.emp * D.zero * no_eta) CodatafieldAbwd.t option Lazy.t =
 type pi_ctx = ((Tbwd.emp, D.zero) Tbwd.snoc, D.zero) Tbwd.snoc
 
 let pi :
-    (D.zero * ((Tbwd.emp, D.zero) Tbwd.snoc, D.zero) Tbwd.snoc * potential * no_eta * some)
+    (D.zero * ((Tbwd.emp, D.zero) Tbwd.snoc, D.zero) Tbwd.snoc * potential * no_eta)
     StructfieldAbwd.t
     option
     Lazy.t =
@@ -138,12 +137,11 @@ let pi :
           (* <: Entry (fliftl, Higher liftl) *)
           (* <: Entry (fid, Higher id) *)))
 
-let universe : (D.zero * Tbwd.emp * potential * no_eta * some) StructfieldAbwd.t option Lazy.t =
+let universe : (D.zero * Tbwd.emp * potential * no_eta) StructfieldAbwd.t option Lazy.t =
   Lazy.from_val None
 
 let codata : type a n et.
-    (a * n * et) CodatafieldAbwd.t ->
-    (n * a * potential * no_eta * some) StructfieldAbwd.t option Lazy.t =
+    (a * n * et) CodatafieldAbwd.t -> (n * a * potential * no_eta) StructfieldAbwd.t option Lazy.t =
  fun _ -> Lazy.from_val None
 
 let data : unit option Lazy.t = Lazy.from_val None
