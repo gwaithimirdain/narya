@@ -1789,7 +1789,7 @@ and check_fields : type a b c d s m n mn et.
     * (m * b * s * et * none) Term.StructfieldAbwd.t =
  fun status eta ctx ty m mn codata_args fields tyargs tms ctms etms errs ->
   (* Build a temporary value-struct consisting of the so-far checked and evaluated fields.  The insertion on a struct being checked is the identity, but it stores the substitution dimension of the type being checked against.  If this is a higher-dimensional record (e.g. Gel), there could be a nontrivial right dimension being trivially inserted, but that will get added automatically by an appropriate symmetry action if it happens. *)
-  let str = Value.Struct { fields = etms; ins = ins_zero m; energy = energy status } in
+  let str = Value.Struct { fields = etms; ins = ins_zero m; energy = energy status; eta } in
   match (fields, status) with
   | [], _ -> (
       (* If there are no more fields to check, we return.  We have accumulated a Bwd of errors as we progress through the fields, allowing later fields to typecheck (and, more importantly, produce their own meaningful error messages) even if earlier fields already failed.  Then at the end, if there are any such errors, we raise them all together.  *)

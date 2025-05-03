@@ -258,13 +258,13 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
       let n, l = (dom_ins fldins, cod_left_ins fldins) in
       let Plus m_n, Plus m_l = (D.plus n, D.plus l) in
       field (eval_term env tm) fld (plus_ins m m_n m_l fldins)
-  | Struct (_, n, fields, energy) ->
+  | Struct (eta, n, fields, energy) ->
       let m = dim_env env in
       let (Plus m_n) = D.plus n in
       let mn = D.plus_out m m_n in
       let ins = ins_zero mn in
       let fields = eval_structfield_abwd env m m_n mn fields in
-      Val (Struct { fields; ins; energy })
+      Val (Struct { fields; ins; energy; eta })
   | Constr (constr, n, args) ->
       let m = dim_env env in
       let (Plus m_n) = D.plus n in
@@ -508,7 +508,7 @@ and field : type n k nk s. s value -> k Field.t -> (nk, n, k) insertion -> s eva
  fun tm fld fldins ->
   match view_term tm with
   (* TODO: Is it okay to ignore the insertion here?  I'm currently assuming that it must be zero if this field projection is well-typed. *)
-  | Struct { fields; ins = structins; energy } -> (
+  | Struct { fields; ins = structins; energy; eta = _ } -> (
       match StructfieldAbwd.find_opt fields fld with
       | Found (Lower (v, _)) -> force_eval v
       | Found (Higher (lazy { vals; intrinsic; _ })) -> (

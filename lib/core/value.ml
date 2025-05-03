@@ -85,6 +85,7 @@ module rec Value : sig
     fields : ('p * 's * 'et) StructfieldAbwd.t;
     ins : ('pk, 'p, 'k) insertion;
     energy : 's energy;
+    eta : ('s, 'et) eta;
   }
 
   and ('m, 'k, 'mk, 'e, 'n) inst_canonical = {
@@ -236,6 +237,7 @@ end = struct
     fields : ('p * 's * 'et) StructfieldAbwd.t;
     ins : ('pk, 'p, 'k) insertion;
     energy : 's energy;
+    eta : ('s, 'et) eta;
   }
 
   and ('m, 'k, 'mk, 'e, 'n) inst_canonical = {

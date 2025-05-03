@@ -87,14 +87,14 @@ module Act = struct
     | Lam (x, body) ->
         let (Of fa) = deg_plus_to s (dim_binder body) ~on:"lambda" in
         Lam (act_variables x fa, act_binder body fa)
-    | Struct (type p k pk et) ({ fields; ins; energy } : (p, k, pk, status, et) struct_args) ->
+    | Struct (type p k pk et) ({ fields; ins; energy; eta } : (p, k, pk, status, et) struct_args) ->
         let (Insfact_comp_ext
                (type q l ql j z)
                ((deg0, new_ins, _, _) :
                  (q, p) deg * (ql, q, l) insertion * (k, j, l) D.plus * (m, z, ql) D.plus)) =
           insfact_comp_ext ins s in
         let fields = act_structfield_abwd deg0 fields in
-        Struct { fields; ins = new_ins; energy }
+        Struct { fields; ins = new_ins; energy; eta }
     | Constr (name, dim, args) ->
         let (Of fa) = deg_plus_to s dim ~on:"constr" in
         Constr
