@@ -202,7 +202,7 @@ let synths : type n. (n, kinetic) term -> bool = function
   | App (_, _)
   | Act (_, _)
   | Let (_, _, _) -> true
-  | Constr (_, _, _) | Lam (_, _) | Struct (_, _, _, _) -> false
+  | Constr (_, _, _) | Lam (_, _) | Struct _ -> false
 
 (* Given a term, extract its head and arguments as an application spine.  If the spine contains a field projection, stop there and return only the arguments after it, noting the field name and what it is applied to (which itself be another spine). *)
 let rec get_spine : type n.
@@ -344,10 +344,7 @@ let rec unparse : type n lt ls rt rs s.
         | Eq -> `Normal
         | Neq -> `Cube in
       unparse_lam cube vars Emp tm li ri
-  | Struct
-      (type m et)
-      ((Eta, _, fields, _) :
-        (s, et) eta * m D.t * (m * n * s * et * none) StructfieldAbwd.t * s energy) ->
+  | Struct (type m et) ({ eta = Eta; fields; dim = _; energy = _ } : (m, n, s, et) struct_args) ->
       unlocated
         (outfix ~notn:parens
            ~inner:
@@ -394,7 +391,7 @@ let rec unparse : type n lt ls rt rs s.
           unparse_spine vars (`Constr c) args li ri)
   | Realize tm -> unparse vars tm li ri
   | Canonical _ -> fatal (Unimplemented "unparsing canonical types")
-  | Struct (Noeta, _, _, _) -> fatal (Unimplemented "unparsing comatches")
+  | Struct { eta = Noeta; _ } -> fatal (Unimplemented "unparsing comatches")
   | Match _ -> fatal (Unimplemented "unparsing matches")
 
 (* The master unparsing function can easily be delayed. *)

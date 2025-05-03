@@ -1778,7 +1778,7 @@ and check_struct : type a b c d s m n mn et.
                 fatal ?loc:tmloc (Anomaly "taken raw field didn't end up in checked fields")))
       (Emp, Emp) tms in
   match errs with
-  | Emp -> Term.Struct (eta, m, fields, energy status)
+  | Emp -> Term.Struct { eta; dim = m; fields; energy = energy status }
   | Snoc _ -> fatal (Accumulated ("check_struct", errs))
 
 and check_fields : type a b c d s m n mn et.
@@ -1814,7 +1814,10 @@ and check_fields : type a b c d s m n mn et.
       | Snoc _ -> fatal (Accumulated ("check_struct", errs)))
   | Entry (fld, cdf) :: fields, Potential (name, args, hyp) ->
       (* Temporarily bind the current constant to the up-until-now value (or an error, if any have occurred yet), for (co)recursive purposes.  Note that this means as soon as one field fails, no other fields can be typechecked if they depend *at all* on earlier ones, even ones that didn't fail.  This could be improved in the future. *)
-      run_with_definition name (hyp (Term.Struct (eta, m, ctms, energy status))) errs @@ fun () ->
+      run_with_definition name
+        (hyp (Term.Struct { eta; dim = m; fields = ctms; energy = energy status }))
+        errs
+      @@ fun () ->
       (* The insertion on the *constant* being checked, by contrast, is always zero, since the constant is not nontrivially substituted at all yet. *)
       let head = head_of_potential name in
       (* The up-until-now term is also maybe an error. *)
@@ -1861,7 +1864,7 @@ and check_field : type a b c d s m n mn i et.
             let args = Value.Field (args, fld, D.plus_zero m, ins) in
             let hyp tm =
               let ctms = Snoc (ctms, Entry (fld, Lower (tm, lbl))) in
-              hyp (Term.Struct (eta, m, ctms, energy status)) in
+              hyp (Term.Struct { eta; dim = m; fields = ctms; energy = energy status }) in
             Potential (c, args, hyp) in
       let key = Some (Field.to_string fld, []) in
       let tm, tms, lbl =
@@ -2026,7 +2029,8 @@ and check_higher_field : type a b c d m i ic0.
                 Term.Structfield.Higher (PlusPbijmap.set pbij (Some (PlusFam (plusmap, tm))) cvals)
               in
               let ctms = Snoc (ctms, Entry (fld, hsf)) in
-              hyp (Term.Struct (Noeta, m, ctms, energy status)) in
+              hyp (Term.Struct { eta = Noeta; dim = m; fields = ctms; energy = energy status })
+            in
             Potential (head, args, hyp) in
       (* Get the user's supplied term for this partial bijection *)
       let key = Some (Field.to_string fld, strings_of_pbij pbij) in

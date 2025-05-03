@@ -200,7 +200,7 @@ module F = struct
     | Constr (c, _, _) -> fprintf ppf "Constr (%s, ?, ?)" (Constr.to_string c)
     | Act (tm, s) -> fprintf ppf "Act (%a, %s)" term tm (string_of_deg s)
     | Let (_, _, _) -> fprintf ppf "Let ?"
-    | Struct (_, _, _, _) -> fprintf ppf "Struct ?"
+    | Struct _ -> fprintf ppf "Struct ?"
     | Match _ -> fprintf ppf "Match ?"
     | Realize tm -> fprintf ppf "Realize (%a)" term tm
     | Canonical c -> fprintf ppf "Canonical (%a)" canonical c

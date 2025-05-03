@@ -26,15 +26,18 @@ let rec term : type a s. (Compunit.t -> Compunit.t) -> (a, s) term -> (a, s) ter
   | Act (tm, s) -> Act (term f tm, s)
   | Let (x, v, body) -> Let (x, term f v, term f body)
   | Lam (x, body) -> Lam (x, term f body)
-  | Struct (eta, dim, flds, energy) ->
+  | Struct { eta; dim; fields = flds; energy } ->
       Struct
-        ( eta,
-          dim,
-          Mbwd.map
-            (fun (Term.StructfieldAbwd.Entry (fld, x)) ->
-              Term.StructfieldAbwd.Entry (fld, structfield f x))
-            flds,
-          energy )
+        {
+          eta;
+          dim;
+          fields =
+            Mbwd.map
+              (fun (Term.StructfieldAbwd.Entry (fld, x)) ->
+                Term.StructfieldAbwd.Entry (fld, structfield f x))
+              flds;
+          energy;
+        }
   | Match { tm; dim; branches } ->
       Match { tm = term f tm; dim; branches = Constr.Map.map (branch f) branches }
   | Realize tm -> Realize (term f tm)

@@ -258,7 +258,7 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
       let n, l = (dom_ins fldins, cod_left_ins fldins) in
       let Plus m_n, Plus m_l = (D.plus n, D.plus l) in
       field (eval_term env tm) fld (plus_ins m m_n m_l fldins)
-  | Struct (eta, n, fields, energy) ->
+  | Struct { eta; dim = n; fields; energy } ->
       let m = dim_env env in
       let (Plus m_n) = D.plus n in
       let mn = D.plus_out m m_n in
