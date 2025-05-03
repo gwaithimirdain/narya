@@ -92,6 +92,7 @@ module rec Value : sig
     canonical : ('e, 'n) canonical;
     tyargs : ('m, 'k, 'mk, normal) TubeOf.t;
     ins : ('mk, 'e, 'n) insertion;
+    fields : ('mk * potential * no_eta) StructfieldAbwd.t;
   }
 
   and _ evaluation =
@@ -228,7 +229,7 @@ end = struct
     (* A constructor has a name, a dimension, and a list of arguments of that dimension.  It must always be applied to the correct number of arguments (otherwise it can be eta-expanded).  It doesn't have an outer insertion because a primitive datatype is always 0-dimensional (it has higher-dimensional versions, but degeneracies can always be pushed inside these).  *)
     | Constr : Constr.t * 'n D.t * ('n, kinetic value) CubeOf.t list -> kinetic value
     | Lam : 'k variables * ('k, 's) binder -> 's value
-    (* Structs have to store an insertion outside, like an application, to deal with higher-dimensional record types like Gel.  Here 'k is the Gel dimension, with 'n the substitution dimension and 'nk the total dimension. *)
+    (* Structs have to store an insertion outside, like an application, to deal with higher-dimensional record types like Gel.  Here 'k is the Gel dimension, with 'p the substitution dimension and 'pk the total dimension. *)
     | Struct : ('p, 'k, 'pk, 's, 'et) struct_args -> 's value
     (* A canonical type is only a *potential* value, so it appears as the 'value' of a 'neu'.  It may also be instantiated, partially or fully. *)
     | Canonical : ('m, 'k, 'mk, 'e, 'n) inst_canonical -> potential value
@@ -245,6 +246,8 @@ end = struct
     tyargs : ('m, 'k, 'mk, normal) TubeOf.t;
     (* An insertion that relates its intrinsic dimension (such as for Gel) to the dimension it was evaluated at. *)
     ins : ('mk, 'e, 'n) insertion;
+    (* Fibrancy fields *)
+    fields : ('mk * potential * no_eta) StructfieldAbwd.t;
   }
 
   (* This is the result of evaluating a term with a given kind of energy.  Evaluating a kinetic term just produces a (kinetic) value, whereas evaluating a potential term might be a potential value (either a lambda waiting for more arguments, a struct waiting for more fields, or a canonical type partially or fully instantiated), or else the information that the case tree has reached a leaf and the resulting kinetic value, or else the information that the case tree is permanently stuck.  *)
@@ -366,6 +369,18 @@ let rec length_env : type n b. (n, b) env -> b Dbwd.t = function
   | Act (env, _) -> length_env env
   | Permute (p, env) -> Plusmap.OfDom.permute p (length_env env)
   | Shift (env, mn, nb) -> Plusmap.out (D.plus_right mn) (length_env env) nb
+
+(* Abstract over a cube of binders to make a cube of lambdas.  TODO: This should morally be a Cube.map, but it goes from one instantiation of Cube to another one, and we didn't define a map like that, so for now we just make it a 'build'. *)
+let lam_cube : type n. string option -> (n, unit) BindCube.t -> (n, kinetic value) CubeOf.t =
+ fun x binders ->
+  CubeOf.build (BindCube.dim binders)
+    {
+      build =
+        (fun fa ->
+          let k = dom_sface fa in
+          let x = singleton_variables k x in
+          Lam (x, BindCube.find binders fa));
+    }
 
 (* Smart constructor that composes actions and cancels identities *)
 let rec act_env : type m n b. (n, b) env -> (m, n) op -> (m, b) env =
@@ -508,14 +523,14 @@ let eval_structfield_abwd : type m n mn a status et any.
 (* The universe of any dimension belongs to an instantiation of itself.  Note that the result is not itself a type (i.e. in the 0-dimensional universe) unless n=0.  This is the universe itself as a term. *)
 let rec universe : type n. n D.t -> kinetic value =
  fun n ->
-  Neu
-    {
-      head = UU n;
-      args = Emp;
-      value =
-        ready (Val (Canonical { canonical = UU n; tyargs = TubeOf.empty n; ins = ins_zero n }));
-      ty = lazy (universe_ty n);
-    }
+  let fields =
+    match Lazy.force Fibrancy.universe with
+    | None -> Bwd.Emp
+    | Some fields -> eval_structfield_abwd (Emp n) n (D.plus_zero n) n fields in
+  let value =
+    ready (Val (Canonical { canonical = UU n; tyargs = TubeOf.empty n; ins = ins_zero n; fields }))
+  in
+  Neu { head = UU n; args = Emp; value; ty = lazy (universe_ty n) }
 
 and universe_nf : type n. n D.t -> normal = fun n -> { tm = universe n; ty = universe_ty n }
 
@@ -533,7 +548,12 @@ and universe_ty : type n. n D.t -> kinetic value =
                 let m = dom_tface fa in
                 universe_nf m);
           } in
-      let value = ready (Val (Canonical { canonical = UU n; tyargs = args; ins = ins_zero n })) in
+      let fields =
+        match Lazy.force Fibrancy.universe with
+        | None -> Bwd.Emp
+        | Some fields -> eval_structfield_abwd (Emp n) n (D.plus_zero n) n fields in
+      let value =
+        ready (Val (Canonical { canonical = UU n; tyargs = args; ins = ins_zero n; fields })) in
       Neu { head = UU n; args = Inst (Emp, n', args); value; ty = lazy (universe D.zero) }
 
 type any_apps = Any : 'any apps -> any_apps

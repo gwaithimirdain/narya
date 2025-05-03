@@ -107,12 +107,14 @@ module Act = struct
 
   and act_inst_canonical : type m k mk e n a b.
       (m, k, mk, e, n) inst_canonical -> (a, b) deg -> (k, n) act_inst_canonical =
-   fun { canonical; tyargs; ins } s ->
+   fun { canonical; tyargs; ins; fields } s ->
     let (Acted_instargs (fa, new_tyargs, None)) = act_instargs tyargs s None in
     let fb = deg_plus fa (TubeOf.plus tyargs) (TubeOf.plus new_tyargs) in
     let (Insfact_comp (fc, new_ins)) = insfact_comp ins fb in
     let new_c = act_canonical canonical fc in
-    Act_inst_canonical { canonical = new_c; tyargs = new_tyargs; ins = new_ins }
+    let new_fields = act_structfield_abwd fb fields in
+    Act_inst_canonical
+      { canonical = new_c; tyargs = new_tyargs; ins = new_ins; fields = new_fields }
 
   and act_structfield : type p q i status et.
       (q, p) deg -> (i, p * status * et) Structfield.t -> (i, q * status * et) Structfield.t =
@@ -301,7 +303,7 @@ module Act = struct
           match force_eval value with
           | Realize _ -> fatal (Anomaly "Realize in normalized type in act_ty")
           | Unrealized -> ready Unrealized
-          | Val (Canonical { canonical = c; tyargs = ctyargs; ins }) -> (
+          | Val (Canonical { canonical = c; tyargs = ctyargs; ins; fields = _ }) -> (
               match D.compare_zero (TubeOf.uninst ctyargs) with
               | Zero ->
                   let Eq = D.plus_uniq (TubeOf.plus ctyargs) (D.zero_plus (TubeOf.inst ctyargs)) in
@@ -309,7 +311,11 @@ module Act = struct
                     gact_ty_instargs ?err tm tmty ctyargs s in
                   let (Insfact_comp (fc, new_ins)) = insfact_comp ins fa in
                   let new_c = act_canonical c fc in
-                  ready (Val (Canonical { canonical = new_c; tyargs = new_ctyargs; ins = new_ins }))
+                  (* We drop all the fibrancy fields, since once something "is a type" we don't need it to be in Fib any more. *)
+                  ready
+                    (Val
+                       (Canonical
+                          { canonical = new_c; tyargs = new_ctyargs; ins = new_ins; fields = Emp }))
               | Pos _ -> fatal (Anomaly "non fully instantiated type in act_ty"))
           | Val _ -> fatal (Anomaly "non-canonical potential value in act_ty") in
         let ty = lazy (universe D.zero) in
@@ -339,7 +345,7 @@ module Act = struct
                 match (pface_of_sface fd, tm) with
                 | `Proper fd, _ -> TubeOf.find inst_args fd
                 | `Id Eq, Some tm -> { tm; ty = tmty }
-                | `Id _, None ->
+                | `Id Eq, None ->
                     fatal (Anomaly "term missing in instantiated act_ty by non-symmetry") in
               act_normal ftm fc);
         } in
