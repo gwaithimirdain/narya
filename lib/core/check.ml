@@ -391,14 +391,16 @@ let rec check : type a b s.
                       {
                         it =
                           (fun fa [ t1; t2 ] ->
-                            match equal_at (Ctx.length ctx) t1 t2.tm t2.ty with
-                            | Some () -> ()
-                            | None -> (
+                            match equal_at ctx t1 t2.tm t2.ty with
+                            | Ok () -> ()
+                            | Error err -> (
                                 match is_id_sface fa with
                                 | Some _ ->
                                     fatal
                                       (Unequal_indices
-                                         (PNormal (ctx, { tm = t1; ty = t2.ty }), PNormal (ctx, t2)))
+                                         ( PNormal (ctx, { tm = t1; ty = t2.ty }),
+                                           PNormal (ctx, t2),
+                                           err ))
                                 | None ->
                                     fatal (Anomaly "mismatching lower-dimensional constructors")));
                       }
@@ -512,7 +514,7 @@ let rec check : type a b s.
             | Eq -> (
                 (* The first argument must be a type. *)
                 match view_type (CubeOf.find_top doms) "ImplicitApp argument" with
-                | Canonical (_, UU _, _, _) ->
+                | Canonical (_, UU _, _, _) -> (
                     (* We build the implicit application term and its type. *)
                     let new_sfn = locate_opt fn.loc (Term.App (sfn, CubeOf.singleton cty)) in
                     let new_sty = tyof_app cods tyargs (CubeOf.singleton ty) in
@@ -525,10 +527,13 @@ let rec check : type a b s.
                           synth_apps (Kinetic `Nolet) ctx new_sfn new_sty fn args
                       | _ -> (new_sfn.value, new_sty) in
                     (* Then we have to check that the resulting type of the whole application agrees with the one we're checking against. *)
-                    equal_val (Ctx.length ctx) sty ty
-                    <|> Unequal_synthesized_type
-                          { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None };
-                    realize status stm
+                    match equal_val ctx sty ty with
+                    | Ok () -> realize status stm
+                    | Error why ->
+                        fatal
+                          (Unequal_synthesized_type
+                             { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why })
+                    )
                 | _ ->
                     fatal ?loc:fn.loc
                       (Anomaly "first argument of an ImplicitMap is not of type Type"))
@@ -594,7 +599,7 @@ and check_of_synth : type a b s.
     =
  fun status ctx stm loc ty ->
   match stm with
-  | Asc (ctm, aty) ->
+  | Asc (ctm, aty) -> (
       (* If the term is synthesizing because it is ascribed, then we can accumulate errors: if the ascription fails to check, or if it fails to equal the checking type, we can proceed to check the ascribed term against the supplied type instead.  This will rarely happen in normal use, since there is no need to ascribe a term that's in checking position, but it can occur with some alternative frontends. *)
       Reporter.try_with ~fatal:(fun d1 ->
           Reporter.try_with ~fatal:(fun d2 ->
@@ -606,18 +611,21 @@ and check_of_synth : type a b s.
       let cty = check (Kinetic `Nolet) ctx aty (universe D.zero) in
       let ety = eval_term (Ctx.env ctx) cty in
       (* It suffices for the synthesized type to be a subtype of the checking type. *)
-      subtype_of ctx ety ty
-      <|> Unequal_synthesized_type
-            { got = PVal (ctx, ety); expected = PVal (ctx, ty); which = None };
-      let ctm = check status ctx ctm ety in
-      ctm
-  | _ ->
+      match subtype_of ctx ety ty with
+      | Ok () -> check status ctx ctm ety
+      | Error why ->
+          fatal
+            (Unequal_synthesized_type
+               { got = PVal (ctx, ety); expected = PVal (ctx, ty); which = None; why }))
+  | _ -> (
       let sval, sty = synth status ctx { value = stm; loc } in
       (* It suffices for the synthesized type to be a subtype of the checking type. *)
-      subtype_of ctx sty ty
-      <|> Unequal_synthesized_type
-            { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None };
-      sval
+      match subtype_of ctx sty ty with
+      | Ok () -> sval
+      | Error why ->
+          fatal
+            (Unequal_synthesized_type
+               { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why }))
 
 (* Deal with checking a potential term in kinetic position *)
 and kinetic_of_potential : type a b.
@@ -1535,6 +1543,7 @@ and check_data : type a b i.
             let Checked_tel (args, newctx), disc = check_tel ?discrete ctx args in
             (* Note the type of each field is checked *kinetically*: it's not part of the case tree. *)
             let coutput = check (Kinetic `Nolet) newctx output (universe D.zero) in
+            let err = Code.Invalid_constructor_type (c, Left "head must be current datatype") in
             match eval_term (Ctx.env newctx) coutput with
             | Neu { head = Const { name = out_head; ins }; args = out_apps; value = _; ty = _ } -> (
                 match head with
@@ -1553,8 +1562,8 @@ and check_data : type a b i.
                         | _ ->
                             (* I think this shouldn't ever happen, no matter what the user writes, since we know at this point that the output is a full application of the correct constant, so it must have the right number of arguments. *)
                             fatal (Anomaly "length of indices mismatch")))
-                | _ -> fatal ?loc:output.loc (Invalid_constructor_type c))
-            | _ -> fatal ?loc:output.loc (Invalid_constructor_type c) in
+                | _ -> fatal ?loc:output.loc err)
+            | _ -> fatal ?loc:output.loc err in
           check_data
             ~discrete:(if disc then discrete else None)
             status ctx ty num_indices checked_constrs raw_constrs errs
@@ -1582,19 +1591,26 @@ and get_indices : type a b any1 any2.
  fun ctx c current output loc ->
   with_loc loc @@ fun () ->
   let output_params, output_indices =
-    split_apps_at_length current output <|> Invalid_constructor_type c in
-  let () = equal_apps (Ctx.length ctx) current output_params <|> Invalid_constructor_type c in
-  Vec.of_list_map
-    (function
-      | Fwd_app.Arg (arg, ins) -> (
-          match is_id_ins ins with
-          | Some _ -> (
-              match D.compare (CubeOf.dim arg) D.zero with
-              | Eq -> readback_nf ctx (CubeOf.find_top arg)
-              | Neq -> fatal (Invalid_constructor_type c))
-          | None -> fatal (Invalid_constructor_type c))
-      | Field _ -> fatal (Anomaly "field is not an index"))
-    output_indices
+    split_apps_at_length current output
+    <|> Invalid_constructor_type (c, Left "wrong number of index arguments") in
+  match equal_apps ctx current output_params with
+  | None -> fatal (Invalid_constructor_type (c, Left "unequal parameters"))
+  | Some (Error why) -> fatal (Invalid_constructor_type (c, Right why))
+  | Some (Ok ()) ->
+      Vec.of_list_map
+        (function
+          | Fwd_app.Arg (arg, ins) -> (
+              match is_id_ins ins with
+              | Some _ -> (
+                  match D.compare (CubeOf.dim arg) D.zero with
+                  | Eq -> readback_nf ctx (CubeOf.find_top arg)
+                  | Neq ->
+                      fatal
+                        (Invalid_constructor_type (c, Left "applications must be zero-dimensional"))
+                  )
+              | None -> fatal (Invalid_constructor_type (c, Left "no degeneracies are allowed")))
+          | Field _ -> fatal (Anomaly "field is not an index"))
+        output_indices
 
 (* The common prefix of checking a codatatype or record type, which returns a (cube of) variables belonging to the up-until-now type so that later fields can refer to earlier ones.  It also dynamically binds the current constant or metavariable, if possible, to that value for recursive purposes.  Since this binding has to scope over the rest of the functions that are specific to codata or records, it uses CPS. *)
 and with_codata_so_far : type a b n c et.
@@ -2381,9 +2397,12 @@ and synth_arg_cube : type a b n c.
                   let (Plus ml) = D.plus (D.plus_right nk) in
                   let { tm = etm; ty = ety } = TubeOf.find argtyargs (pface_plus pfa nk ml) in
                   with_loc toploc (fun () ->
-                      equal_val (Ctx.length ctx) ety ty
-                      <|> Unequal_synthesized_boundary
-                            { face = fa; got = PVal (ctx, ety); expected = PVal (ctx, ty) });
+                      match equal_val ctx ety ty with
+                      | Ok () -> ()
+                      | Error why ->
+                          fatal
+                            (Unequal_synthesized_boundary
+                               { face = fa; got = PVal (ctx, ety); expected = PVal (ctx, ty); why }));
                   let ctm = readback_at ctx etm ety in
                   return (ctm, etm)
               (* Otherwise, we pull an argument of the appropriate implicitness, check it against the correct type. *)
@@ -2414,7 +2433,7 @@ and synth_arg_cube : type a b n c.
                       Reporter.try_with ~fatal:(fun d ->
                           match d.message with
                           | Unequal_synthesized_type
-                              { got = PVal (_, gotty) as got; expected; which = _ } -> (
+                              { got = PVal (_, gotty) as got; expected; which = _; why } -> (
                               match
                                 Reporter.try_with ~fatal:(fun _ -> None) @@ fun () ->
                                 Some (get_tyargs gotty "primary argument")
@@ -2425,7 +2444,7 @@ and synth_arg_cube : type a b n c.
                                   | Some (Factor _) ->
                                       fatal ?loc:d.explanation.loc
                                         (Unequal_synthesized_type
-                                           { got; expected; which = Some which })
+                                           { got; expected; which = Some which; why })
                                   | None -> fatal_diagnostic d))
                           | _ -> fatal_diagnostic d)
                       @@ fun () -> check (Kinetic `Nolet) ctx tm ty

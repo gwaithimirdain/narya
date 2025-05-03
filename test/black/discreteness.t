@@ -18,7 +18,10 @@ Arbitrary types are not discrete:
          t1
        of constructor application doesn't match the corresponding index
          t2
-       of datatype instance
+       of datatype instance: unequal head variables:
+         t1
+       does not equal
+         t2
   
   [1]
 
@@ -32,7 +35,10 @@ They remain so even when discreteness is on:
          t1
        of constructor application doesn't match the corresponding index
          t2
-       of datatype instance
+       of datatype instance: unequal head variables:
+         t1
+       does not equal
+         t2
   
   [1]
 
@@ -64,7 +70,10 @@ There are no discrete datatypes if discreteness is off:
          t1
        of constructor application doesn't match the corresponding index
          t2
-       of datatype instance
+       of datatype instance: unequal head variables:
+         t1
+       does not equal
+         t2
   
   [1]
 
@@ -88,7 +97,10 @@ Discrete datatypes are not themselves propositions:
          t1
        of constructor application doesn't match the corresponding index
          t2
-       of datatype instance
+       of datatype instance: unequal head variables:
+         t1
+       does not equal
+         t2
   
   [1]
 
@@ -149,7 +161,10 @@ Datatypes with nondiscrete parameters are not discrete:
          t1
        of constructor application doesn't match the corresponding index
          t2
-       of datatype instance
+       of datatype instance: unequal head variables:
+         t1
+       does not equal
+         t2
   
   [1]
 
@@ -185,7 +200,10 @@ Even trivial parameters:
          t1
        of constructor application doesn't match the corresponding index
          t2
-       of datatype instance
+       of datatype instance: unequal head variables:
+         t1
+       does not equal
+         t2
   
   [1]
 
@@ -289,7 +307,10 @@ But datatypes with nondiscrete indices, even trivial ones, are not discrete:
          t1
        of constructor application doesn't match the corresponding index
          t2
-       of datatype instance
+       of datatype instance: unequal head variables:
+         t1
+       does not equal
+         t2
   
   [1]
 
@@ -322,7 +343,10 @@ Datatypes with constructors having non-discrete arguments are not discrete:
          t1
        of constructor application doesn't match the corresponding index
          t2
-       of datatype instance
+       of datatype instance: unequal head variables:
+         t1
+       does not equal
+         t2
   
   [1]
 
@@ -448,7 +472,10 @@ But nondiscreteness of any of them throws the others off:
          t1
        of constructor application doesn't match the corresponding index
          t2
-       of datatype instance
+       of datatype instance: unequal head variables:
+         t1
+       does not equal
+         t2
   
   [1]
 

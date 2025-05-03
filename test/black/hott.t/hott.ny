@@ -1,3 +1,5 @@
+{` Transport and lifting have the right type `}
+
 axiom A₀ : Type
 axiom A₁ : Type
 axiom A₂ : Id Type A₀ A₁

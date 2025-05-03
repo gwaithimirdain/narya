@@ -30,6 +30,13 @@
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/wrap.ny
    7 | def wa4 : wrapA := (a)
-     ^ term synthesized type A but is being checked against type wrapA
+     ^ term synthesized type
+         A
+       but is being checked against type
+         wrapA
+       unequal head constants:
+         A
+       does not equal
+         wrapA
   
   [1]

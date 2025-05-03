@@ -22,7 +22,10 @@ Using the Martin-Löf "Jdentity type" as an indexed datatype, we can try to prov
          e
        of constructor application doesn't match the corresponding index
          rfl.
-       of datatype instance
+       of datatype instance: unequal terms:
+         e
+       does not equal
+         rfl.
   
   [1]
 
@@ -38,7 +41,14 @@ Using the Martin-Löf "Jdentity type" as an indexed datatype, we can try to prov
    ￫ error[E0401]
    ￭ command-line exec string
    1 | def K (A:Type) (a:A) (P : Jd A a a -> Type) (p : P rfl.) (e : Jd A a a) : P e := match e [ rfl. |-> p ]
-     ^ term synthesized type P rfl. but is being checked against type P e
+     ^ term synthesized type
+         P rfl.
+       but is being checked against type
+         P e
+       unequal terms:
+         rfl.
+       does not equal
+         e
   
   [1]
 
@@ -57,7 +67,14 @@ This "weak K" is mentioned in the "Pattern-matching without K" paper as justifyi
    ￫ error[E0401]
    ￭ command-line exec string
    1 | def weakK (A:Type) (a:A) (P : Jd (Jd A a a) rfl. rfl. -> Type) (p : P rfl.) (e : Jd (Jd A a a) rfl. rfl.) : P e := match e [ rfl. |-> p ]
-     ^ term synthesized type P rfl. but is being checked against type P e
+     ^ term synthesized type
+         P rfl.
+       but is being checked against type
+         P e
+       unequal terms:
+         rfl.
+       does not equal
+         e
   
   [1]
 
@@ -96,7 +113,10 @@ The following indexed datatype appears in Agda bug #1025.
          i
        of constructor application doesn't match the corresponding index
          rfl.
-       of datatype instance
+       of datatype instance: unequal terms:
+         i
+       does not equal
+         rfl.
   
   [1]
 

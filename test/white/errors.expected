@@ -1,7 +1,14 @@
  ￫ error[E0401]
  ￭ user-supplied term
  1 | a
-   ^ term synthesized type A but is being checked against type Type
+   ^ term synthesized type
+       A
+     but is being checked against type
+       Type
+     unequal head terms:
+       A
+     does not equal
+       Type
 
  ￫ error[E0502]
  ￭ user-supplied term
@@ -61,7 +68,14 @@
  ￫ error[E0401]
  ￭ user-supplied term
  1 | a
-   ^ term synthesized type A but is being checked against type refl A
+   ^ term synthesized type
+       A
+     but is being checked against type
+       refl A
+     unequal head terms:
+       A
+     does not equal
+       refl A
 
  ￫ error[E0401]
  ￭ user-supplied term
@@ -70,6 +84,10 @@
        A
      but is being checked against type
        A⁽ᵉᵉ⁾ a a (refl a) a a (refl a)
+     unequal head terms:
+       A
+     does not equal
+       A⁽ᵉᵉ⁾
 
  ￫ error[E0200]
  ￭ user-supplied term
