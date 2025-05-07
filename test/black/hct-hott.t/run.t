@@ -495,6 +495,9 @@
    ￫ info[I0000]
    ￮ constant isbisim_eqv defined
   
+   ￫ info[I0000]
+   ￮ constant bisim_of_Id defined
+  
    ￫ info[I0004]
    ￮ file loaded: $TESTCASE_ROOT/homotopy.ny (source)
   

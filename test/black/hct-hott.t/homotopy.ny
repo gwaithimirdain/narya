@@ -152,3 +152,23 @@ def isbisim_eqv (A B : Fib) (R S : A .t → B .t → Fib)
        Id_eqv (R.0 a0 b0 .t) (R.1 a1 b1 .t) (R.2 a2 b2 .t) (S.0 a0 b0 .t)
          (S.1 a1 b1 .t) (S.2 a2 b2 .t) (e.0 a0 b0) (e.1 a1 b1) (e.2 a2 b2) s0
          s1) (re.2 .id.1 a0 b0 r0 a1 b1 r1)]
+
+{` The converse of univalence: any identification of fibrant types is a bisimulation. `}
+def bisim_of_Id (A0 A1 : Fib) (A2 : Id Fib A0 A1)
+  : isBisim A0 A1 (a0 a1 ↦ Idd𝕗 A0 A1 A2 a0 a1)
+  ≔ [
+| .trr ↦ A2 .f .trr.1
+| .liftr ↦ A2 .f .liftr.1
+| .trl ↦ A2 .f .trl.1
+| .liftl ↦ A2 .f .liftl.1
+| .id.e ↦ a0 b0 r0 a1 b1 r1 ↦
+    isbisim_eqv (A0.2 .t a0 a1, A0.2 .f .id.1 a0 a1)
+      (A1.2 .t b0 b1, A1.2 .f .id.1 b0 b1)
+      (a2 b2 ↦ (sym A2.2 .t r0 r1 a2 b2, sym A2.2 .f .id.1 r0 r1 .id.1 a2 b2))
+      (a2 b2 ↦ (A2.2 .t a2 b2 r0 r1, A2.2 .f .id.1 a2 b2 .id.1 r0 r1))
+      (a2 b2 ↦
+       sym_eqv (A0.0 .t) (A1.0 .t) (A2.0 .t) (A0.1 .t) (A1.1 .t) (A2.1 .t)
+         (A0.2 .t) (A1.2 .t) (sym A2.2 .t) a0 b0 r0 a1 b1 r1 a2 b2)
+      (bisim_of_Id (A0.2 .t a0 a1, A0.2 .f .id.1 a0 a1)
+         (A1.2 .t b0 b1, A1.2 .f .id.1 b0 b1)
+         (sym A2.2 .t r0 r1, sym A2.2 .f .id.1 r0 r1))]
