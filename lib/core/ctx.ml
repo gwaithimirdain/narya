@@ -84,20 +84,21 @@ let all_free : type n. (n, Binding.t) CubeOf.t -> bool =
 (* A context is a list of "entries", which can be either visible or invisible in the raw world.  An (f,n) entry contains f raw variables and an n-dimensional cube of checked variables. *)
 type (_, _) entry =
   (* Add a cube of internal variables that are visible to the parser as a list of cubes of variables, the list-of-cubes being obtained by decomposing the dimension as a sum.  Note that the division into a cube and non-cube part, and the sum of dimensions, are only relevant for looking up *raw* indices: they are invisible to the checked world, whose indices store the total face of mn. *)
-  | Vis : {
-      dim : 'm D.t;
-      plusdim : ('m, 'n, 'mn) D.plus;
-      (* We use an indexed cube to automatically count how many raw variables appear, by starting with zero and incrementing it for each entry in the cube.  It's tempting to want to start instead from the previous raw length of the context, thereby eliminating the "plus" parameter of Snoc, below; but this causes problems with telescopes (forwards contexts), below, whose raw indices are forwards natural numbers instead. *)
-      vars : (N.zero, 'n, string option, 'f1) NICubeOf.t;
-      bindings : ('mn, Binding.t) CubeOf.t;
-      (* While typechecking a record, we expose the "self" variable as a list of "illusory" variables, visible only to raw terms, that are substituted at typechecking time with the fields of self. *)
-      hasfields : ('m, 'f2) has_fields;
-      fields : (D.zero Field.t * string, 'f2) Bwv.t;
-      fplus : ('f1, 'f2, 'f) N.plus;
-    }
-      -> ('f, 'mn) entry
+  | Vis : ('m, 'n, 'mn, 'f1, 'f2, 'f) vis_data -> ('f, 'mn) entry
   (* Add a cube of internal variables that are not visible to the parser.  We also allow a vector of "field view" variables that look to the user like ordinary variables but actually expand *at typechecking time* to field projections of the top invisible variable. *)
   | Invis : ('n, Binding.t) CubeOf.t -> (N.zero, 'n) entry
+
+and ('m, 'n, 'mn, 'f1, 'f2, 'f) vis_data = {
+  dim : 'm D.t;
+  plusdim : ('m, 'n, 'mn) D.plus;
+  (* We use an indexed cube to automatically count how many raw variables appear, by starting with zero and incrementing it for each entry in the cube.  It's tempting to want to start instead from the previous raw length of the context, thereby eliminating the "plus" parameter of Snoc, below; but this causes problems with telescopes (forwards contexts), below, whose raw indices are forwards natural numbers instead. *)
+  vars : (N.zero, 'n, string option, 'f1) NICubeOf.t;
+  bindings : ('mn, Binding.t) CubeOf.t;
+  (* While typechecking a record, we expose the "self" variable as a list of "illusory" variables, visible only to raw terms, that are substituted at typechecking time with the fields of self. *)
+  hasfields : ('m, 'f2) has_fields;
+  fields : (D.zero Field.t * string, 'f2) Bwv.t;
+  fplus : ('f1, 'f2, 'f) N.plus;
+}
 
 let raw_entry : type f n. (f, n) entry -> f N.t = function
   | Vis { vars; fplus; _ } -> N.plus_out (NICubeOf.out N.zero vars) fplus
@@ -195,36 +196,6 @@ module Ordered = struct
     | Snoc (ctx, e, _) -> app_entry (apps ctx) e
     | Lock ctx -> apps ctx
 
-  (* When we look up a visible variable in a context, we find the level (if any), the value, and the corresponding possibly-invisible variable.  To do this we have to iterate through each cube of variables from right-to-left as we decrement the raw index looking for the corresponding face.  So we need an auxiliary type family to keep track of where we are in that iteration and what result type we're expecting. *)
-
-  type (_, _, _, _) lookup =
-    | Unfound : ('a, 'right, 'rest) N.plus * 'rest Raw.index -> ('a, 'right, 'b, 'n) lookup
-    | Found : level option * normal * ('b, 'n) snoc index -> ('a, 'right, 'b, 'n) lookup
-
-  (* This function is called on every step of that iteration through a cube.  It appears that we have to define it with an explicit type signature in order for it to end up sufficiently polymorphic. *)
-  let lookup_folder : type left right l m n mn a b.
-      m D.t ->
-      (m, n, mn) D.plus ->
-      (mn, Binding.t) CubeOf.t ->
-      (l, n) sface ->
-      (left, l, string option, right) NFamOf.t ->
-      (a, right, b, mn) lookup ->
-      (a, left, b, mn) lookup * (left, l, unit, right) NFamOf.t =
-   fun m mn xs fb (NFamOf _) acc ->
-    let found_it fa =
-      let (Plus kl) = D.plus (dom_sface fb) in
-      let fab = sface_plus_sface fa mn kl fb in
-      let x = CubeOf.find xs fab in
-      (Found (Binding.level x, Binding.value x, Index (Now, fab)), NFamOf.NFamOf ()) in
-    match acc with
-    | Found (i, x, v) -> (Found (i, x, v), NFamOf ())
-    | Unfound (Suc p, (Pop k, fa)) -> (Unfound (p, (k, fa)), NFamOf ())
-    | Unfound (_, (Top, None)) -> found_it (id_sface m)
-    | Unfound (_, (Top, Some (Any_sface fa))) -> (
-        match D.compare (cod_sface fa) m with
-        | Eq -> found_it fa
-        | Neq -> fatal (Invalid_variable_face (D.zero, fa)))
-
   (* The lookup function iterates through entries. *)
   let rec lookup : type a b.
       (a, b) t ->
@@ -238,19 +209,22 @@ module Ordered = struct
     | Lock _, _ -> fatal Locked_variable
 
   (* For each entry, we iterate through the list of fields or the cube of names, as appropriate. *)
-  and lookup_entry : type a b f af n.
+  and lookup_entry : type a b f af mn.
       (a, b) t ->
-      (f, n) entry ->
+      (f, mn) entry ->
       (a, f, af) N.plus ->
       af Raw.index ->
-      [ `Var of level option * normal * (b, n) snoc index
+      [ `Var of level option * normal * (b, mn) snoc index
       | `Field of level * normal * D.zero Field.t ] =
    fun ctx e pf k ->
     let pop = function
       | `Var (i, x, Index (v, fa)) -> `Var (i, x, Index (Later v, fa))
       | `Field f -> `Field f in
     match e with
-    | Vis { dim; plusdim; vars; bindings; hasfields = _; fields; fplus } -> (
+    | Vis
+        (type m n f1 f2)
+        ({ dim; plusdim; vars; bindings; hasfields = _; fields; fplus } :
+          (m, n, mn, f1, f2, f) vis_data) -> (
         let (Plus pf1) = N.plus (NICubeOf.out N.zero vars) in
         let pf12 = N.plus_assocl pf1 fplus pf in
         match N.index_in_plus pf12 (fst k) with
@@ -260,17 +234,42 @@ module Ordered = struct
             | Some lvl -> `Field (lvl, Binding.value b, fst (Bwv.nth i fields))
             | None -> fatal (Anomaly "missing level in field view"))
         | Left i -> (
-            let module Fold = NICubeOf.Traverse (struct
-              type 'right t = (a, 'right, b, n) lookup
-            end) in
+            let module Lookup = struct
+              (* When we look up a visible variable in a context, we find the level (if any), the value, and the corresponding possibly-invisible variable.  To do this we have to iterate through each cube of variables from right-to-left as we decrement the raw index looking for the corresponding face.  So we need an auxiliary type family to keep track of where we are in that iteration and what result type we're expecting. *)
+              type 'right t =
+                | Unfound : (a, 'right, 'rest) N.plus * 'rest N.index -> 'right t
+                | Found : ('l, n) sface -> 'right t
+            end in
+            let module Fold = NICubeOf.Traverse (Lookup) in
+            (* This function is called on every step of that iteration through a cube.  It appears that we have to define it with an explicit type signature in order for it to end up sufficiently polymorphic. *)
+            let lookup_folder : type left right l.
+                (l, n) sface ->
+                (left, l, string option, right) NFamOf.t ->
+                right Lookup.t ->
+                left Lookup.t * (left, l, unit, right) NFamOf.t =
+             fun fb (NFamOf _) acc ->
+              match acc with
+              | Found fa -> (Found fa, NFamOf ())
+              | Unfound (Suc p, Pop k) -> (Unfound (p, k), NFamOf ())
+              | Unfound (_, Top) -> (Found fb, NFamOf ()) in
             match
-              Fold.fold_map_right
-                { foldmap = (fun fb -> lookup_folder dim plusdim bindings fb) }
-                vars
-                (Unfound (pf1, (i, snd k)))
+              Fold.fold_map_right { foldmap = (fun fb -> lookup_folder fb) } vars (Unfound (pf1, i))
             with
-            | Unfound (Zero, k), _ -> pop (lookup ctx k)
-            | Found (j, x, v), _ -> `Var (j, x, v)))
+            | Unfound (Zero, j), _ -> pop (lookup ctx (j, snd k))
+            | Found fb, _ ->
+                (* Once we find the face in the cube of visible variables, we add it to the face specified by the user for a cube variable, if any, and look up the corresponding binding. *)
+                let (SFace_of fa) =
+                  match (snd k, D.compare_zero dim) with
+                  | None, Zero -> SFace_of (id_sface dim)
+                  | None, Pos _ -> fatal (Missing_variable_face dim)
+                  | Some (Any_sface fa), _ -> (
+                      match D.compare (cod_sface fa) dim with
+                      | Neq -> fatal (Invalid_variable_face (dim, fa))
+                      | Eq -> SFace_of fa) in
+                let (Plus kl) = D.plus (dom_sface fb) in
+                let fab = sface_plus_sface fa plusdim kl fb in
+                let x = CubeOf.find bindings fab in
+                `Var (Binding.level x, Binding.value x, Index (Now, fab))))
     | Invis _ ->
         let Zero = pf in
         pop (lookup ctx k)

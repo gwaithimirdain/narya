@@ -186,10 +186,18 @@ type (_, _, _) synthable_branch =
       -> ('a, 'm, 'ij) synthable_branch
 
 (* This preprocesssing step pairs each user-provided branch with the corresponding constructor information from the datatype. *)
-let merge_branches head user_branches data_constrs =
+let merge_branches : type a m ij.
+    head ->
+    (Constr.t, a branch) Abwd.t ->
+    (Constr.t, (m, ij) Value.dataconstr) Abwd.t ->
+    (Constr.t * (a, m, ij) checkable_branch) list =
+ fun head user_branches data_constrs ->
   let user_branches, leftovers =
     Bwd.fold_left
-      (fun (userbrs, databrs) (constr, Branch ({ value = xs; loc }, body)) ->
+      (fun ((userbrs, databrs) :
+             (Constr.t, (a, m, ij) checkable_branch) Abwd.t
+             * (Constr.t, (m, ij) Value.dataconstr) Abwd.t)
+           (constr, Branch ({ value = xs; loc }, cube, body)) ->
         (* We check at the preprocessing stage that there are no duplicate constructors in the match. *)
         if Abwd.mem constr userbrs then fatal ?loc (Duplicate_constructor_in_match constr);
         let databrs, databr = Abwd.extract constr databrs in
@@ -198,6 +206,11 @@ let merge_branches head user_branches data_constrs =
           | Some db -> db
           | None -> fatal ?loc (No_such_constructor_in_match (phead head, constr)) in
         (* We also check during preprocessing that the user has supplied the right number of pattern variable arguments to the constructor.  The positive result of this check is then recorded in the common existential types bound by Checkable_branch. *)
+        (match (cube.value, D.compare_zero (dim_env env)) with
+        | `Normal, Pos _ ->
+            fatal ?loc:cube.loc (Noncube_abstraction_in_higher_dimensional_match (dim_env env))
+        | `Cube, Zero -> fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "match")
+        | `Normal, Zero | `Cube, Pos _ -> ());
         match Fwn.compare (Namevec.length xs) (Telescope.length argtys) with
         | Neq ->
             fatal ?loc
@@ -270,7 +283,7 @@ let rec check : type a b s.
             let ctx = if locking fa then Ctx.lock ctx else ctx in
             let cx = check (Kinetic `Nolet) ctx x ty_fainv in
             realize status (Term.Act (cx, fa)))
-    | Lam ({ value = x; _ }, cube, body), _ -> (
+    | Lam { name = { value = x; loc = xloc }; cube; body }, _ -> (
         match view_type ~severity ty "typechecking lambda" with
         | Canonical (_, Pi (_, doms, cods), tyargs) -> (
             (* TODO: Move this into a helper function, it's too long to go in here. *)
@@ -292,13 +305,13 @@ let rec check : type a b s.
                   Potential (c, Arg (args, arg, ins_zero m), fun tm -> hyp (Lam (xs, tm))) in
             (* Apply and instantiate the codomain to those arguments to get a type to check the body at. *)
             let output = tyof_app cods tyargs newargs in
-            match cube with
+            match cube.value with
             (* If the abstraction is a cube, we slurp up the right number of lambdas for the dimension of the pi-type, and pick up the body inside them.  We do this by building a cube of variables of the right dimension while maintaining the current term as an indexed state.  We also build a sum of raw lengths, since we need that to extend the context.  Note that we never need to manually "count" how many faces there are in a cube of any dimension, or discuss how to put them in order: the counting and ordering is handled automatically by iterating through a cube. *)
             | `Normal -> (
                 let module S = struct
                   type 'b t =
-                    | Ok : Asai.Range.t option * (a, 'b, 'ab) N.plus * 'ab check located -> 'b t
-                    | Missing of Asai.Range.t option * int
+                    | Ok : (a, 'b, 'ab) N.plus * 'ab check located -> 'b t
+                    | Missing of int
                 end in
                 let module Build = NICubeOf.Traverse (S) in
                 match
@@ -306,23 +319,39 @@ let rec check : type a b s.
                     {
                       build =
                         (fun _ -> function
-                          | Ok (_, ab, { value = Lam ({ value = x; loc }, `Normal, body); _ }) ->
-                              Fwrap (NFamOf x, Ok (loc, Suc ab, body))
-                          | Ok (loc, _, _) -> Fwrap (NFamOf None, Missing (loc, 1))
-                          | Missing (loc, j) -> Fwrap (NFamOf None, Missing (loc, j + 1)));
+                          | Ok (ab, { value = Lam { name; cube = { value = `Normal; _ }; body }; _ })
+                            -> Fwrap (NFamOf name.value, Ok (Suc ab, body))
+                          | Ok (_, _) -> Fwrap (NFamOf None, Missing 1)
+                          | Missing j -> Fwrap (NFamOf None, Missing (j + 1)));
                     }
-                    (Ok (None, Zero, tm))
+                    (Ok (Zero, tm))
                 with
-                | Wrap (names, Ok (_, af, body)) ->
+                | Wrap (names, Ok (af, body)) ->
                     let xs = Variables (D.zero, D.zero_plus m, names) in
                     let ctx = Ctx.vis ctx D.zero (D.zero_plus m) names newnfs af in
                     Lam (xs, check ?discrete (mkstatus xs status) ctx body output)
-                | Wrap (_, Missing (loc, j)) -> fatal ?loc (Not_enough_lambdas j))
-            | `Cube ->
-                (* Here we don't need to slurp up lots of lambdas, but can make do with one. *)
-                let xs = singleton_variables m x in
-                let ctx = Ctx.cube_vis ctx x newnfs in
-                Lam (xs, check ?discrete (mkstatus xs status) ctx body output))
+                | Wrap (_, Missing j) -> fatal ?loc:cube.loc (Not_enough_lambdas j))
+            | `Cube absdim -> (
+                match D.compare_zero m with
+                | Zero -> fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "function")
+                | Pos _ ->
+                    (match !absdim with
+                    | None -> absdim := Some (Wrap m, xloc)
+                    | Some (Wrap m', xloc') -> (
+                        match D.compare m m' with
+                        | Eq -> ()
+                        | Neq ->
+                            let extra_remarks =
+                              Option.to_list
+                                (Option.map
+                                   (fun loc -> Asai.Diagnostic.loctext ~loc "previous variable")
+                                   xloc') in
+                            fatal ?loc:xloc ~extra_remarks
+                              (Mismatched_dimensions_in_cube_abstraction (m', m))));
+                    (* Here we don't need to slurp up lots of lambdas, but can make do with one. *)
+                    let xs = singleton_variables m x in
+                    let ctx = Ctx.cube_vis ctx x newnfs in
+                    Lam (xs, check ?discrete (mkstatus xs status) ctx body output)))
         | _ -> fatal (Checking_lambda_at_nonfunction (PVal (ctx, ty))))
     | Struct (Noeta, tms), Potential _ -> (
         match view_type ~severity ty "typechecking comatch" with
@@ -1625,6 +1654,7 @@ and with_codata_so_far : type a b n c et.
                   (CubeOf.singleton prev_ety)))
         and termctx () =
           let newctx = Ctx.cube_vis ctx None (domvars ()) in
+          (* We don't spend the effort to readback the termctx unless the codatatype has higher fields, since it's only needed in that case (to read back the environment). *)
           Option.map (fun () -> readback_ctx newctx) has_higher_fields in
         (domvars (), termctx ())
     | Snoc _ ->
@@ -1729,7 +1759,7 @@ and check_struct : type a b c d s m n mn et.
     (mn, m, n, d, c, et) codata_args ->
     (D.zero, mn, mn, normal) TubeOf.t ->
     (* The fields supplied by the user *)
-    ((string * string list) option, a check located) Abwd.t ->
+    ((string * string list) option, [ `Normal | `Cube ] located * a check located) Abwd.t ->
     (b, s) term =
  fun status eta ctx ty m mn ({ fields; _ } as codata_args) tyargs tms ->
   (* The type of each record field, at which we check the corresponding field supplied in the struct, is the type associated to that field name in general, evaluated at the supplied parameters and at "the term itself".  We don't have the whole term available while typechecking, of course, but we can build a version of it that contains all the previously typechecked fields, which is all we need for a well-typed record.  So we iterate through the fields (in the order specified in the *type*, since that determines the dependencies) while also accumulating the previously typechecked and evaluated fields.  At the end, we throw away the evaluated fields (although as usual, that seems wasteful).  Note that check_fields returns a modified version of the *user* fields 'tms', since it may need to resolve positional fields to named ones. *)
@@ -1738,17 +1768,17 @@ and check_struct : type a b c d s m n mn et.
       (* We convert the backwards alist of fields and types into a forwards list, for forwards recursion.  This should contain each field name only once, even for higher fields, since it comes from the codatatype where all the instances of a higher field are grouped into a pbijmap. *)
       (Bwd.to_list fields)
       tyargs
-      (Abwd.map (fun { value; loc } -> { value = Some value; loc }) tms)
+      (Abwd.map (fun (cube, { value; loc }) -> (cube, { value = Some value; loc })) tms)
       Emp Emp Emp in
   (* We had to typecheck the fields in the order given in the record type, since later ones might depend on earlier ones.  But then we re-order them back to the order given in the struct, to match what the user wrote. *)
   let fields, errs =
     Bwd.fold_left
       (fun (fields, errs) -> function
         (* If the term is still there, or if there are any remaining unlabeled fields, they are extra. *)
-        | Some fldins, { value = Some _; loc = tmloc } ->
+        | Some fldins, (_, { value = Some _; loc = tmloc }) ->
             (fields, Snoc (errs, diagnostic ?loc:tmloc (extra_field_in_struct eta fldins)))
-        | None, tm -> (fields, Snoc (errs, diagnostic ?loc:tm.loc (Extra_field_in_tuple None)))
-        | Some (fld, _), { value = None; loc = tmloc } -> (
+        | None, (_, tm) -> (fields, Snoc (errs, diagnostic ?loc:tm.loc (Extra_field_in_tuple None)))
+        | Some (fld, _), (_, { value = None; loc = tmloc }) -> (
             (* In the case of higher fields, the same field name will appear more than once in tms, but it will appear only once in the returned ctms; thus we take it only if it hasn't already been taken. *)
             match
               ( Term.StructfieldAbwd.find_string_opt fields fld,
@@ -1776,14 +1806,14 @@ and check_fields : type a b c d s m n mn et.
     (c * n * et) Term.CodatafieldAbwd.entry list ->
     (D.zero, mn, mn, normal) TubeOf.t ->
     (* The fields supplied by the user *)
-    ((string * string list) option, a check option located) Abwd.t ->
+    ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t ->
     (* The fields we have checked so far *)
     (m * b * s * et) Term.StructfieldAbwd.t ->
     (* Evaluated versions of the fields we have checked so far *)
     (m * s * et) Value.StructfieldAbwd.t ->
     (* Errors we have accumulated so far *)
     Code.t Asai.Diagnostic.t Bwd.t ->
-    ((string * string list) option, a check option located) Abwd.t
+    ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t
     * (m * b * s * et) Term.StructfieldAbwd.t =
  fun status eta ctx ty m mn codata_args fields tyargs tms ctms etms errs ->
   (* Build a temporary value-struct consisting of the so-far checked and evaluated fields.  The insertion on a struct being checked is the identity, but it stores the substitution dimension of the type being checked against.  If this is a higher-dimensional record (e.g. Gel), there could be a nontrivial right dimension being trivially inserted, but that will get added automatically by an appropriate symmetry action if it happens. *)
@@ -1826,11 +1856,11 @@ and check_field : type a b c d s m n mn i et.
     (* The up-until-now term being checked *)
     (kinetic value, Code.t) Result.t ->
     (* As before, user terms, checked terms, value terms, and errors *)
-    ((string * string list) option, a check option located) Abwd.t ->
+    ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t ->
     (m * b * s * et) Term.StructfieldAbwd.t ->
     (m * s * et) Value.StructfieldAbwd.t ->
     Code.t Asai.Diagnostic.t Bwd.t ->
-    ((string * string list) option, a check option located) Abwd.t
+    ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t
     * (m * b * s * et) Term.StructfieldAbwd.t =
  fun status eta ctx ty m mn ({ env; termctx; _ } as codata_args) fields tyargs fld cdf prev_etm tms
      ctms etms errs ->
@@ -1847,13 +1877,25 @@ and check_field : type a b c d s m n mn i et.
             Potential (c, args, hyp) in
       let key = Some (Field.to_string fld, []) in
       let tm, tms, lbl =
-        match Abwd.find_opt_and_update key key (fun x -> locate_opt x.loc None) tms with
-        | Some ({ value = Some tm; loc }, tms) -> ({ value = tm; loc }, tms, `Labeled)
-        | Some ({ value = None; _ }, _) -> fatal (Anomaly "accessing same field twice")
+        match
+          Abwd.find_opt_and_update key key (fun (cube, x) -> (cube, locate_opt x.loc None)) tms
+        with
+        | Some ((cube, { value = Some tm; loc }), tms) ->
+            (match (cube.value, D.compare_zero m) with
+            | `Cube, Zero -> fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "comatch")
+            | _ -> ());
+            ({ value = tm; loc }, tms, `Labeled)
+        | Some ((_, { value = None; _ }), _) -> fatal (Anomaly "accessing same field twice")
         | None -> (
-            match Abwd.find_opt_and_update None key (fun x -> locate_opt x.loc None) tms with
-            | Some ({ value = Some tm; loc }, tms) -> ({ value = tm; loc }, tms, `Unlabeled)
-            | Some ({ value = None; _ }, _) -> fatal (Anomaly "accessing same field twice")
+            match
+              Abwd.find_opt_and_update None key (fun (cube, x) -> (cube, locate_opt x.loc None)) tms
+            with
+            | Some ((cube, { value = Some tm; loc }), tms) ->
+                (match (cube.value, D.compare_zero m) with
+                | `Cube, Zero -> fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "comatch")
+                | _ -> ());
+                ({ value = tm; loc }, tms, `Unlabeled)
+            | Some ((_, { value = None; _ }), _) -> fatal (Anomaly "accessing same field twice")
             | None -> fatal (missing_field_in_struct eta fld)) in
       let etms, ctms, errs =
         (* We trap any errors produced by 'check', adding them instead to the list of accumulated errors and going on.  Note that if any previous fields that have already failed, then prev_etm will be bound to an error value, and so if the type of this field depends on the value of any previous one, tyof_field will raise that error, which we catch and add to the list; but it will be (Accumulated Emp) so it won't be displayed to the user. *)
@@ -1889,7 +1931,7 @@ and check_higher_field : type a b c d m i ic0.
     (d, (c, D.zero) snoc) termctx ->
     (D.zero, m, m, normal) TubeOf.t ->
     (* As before, user terms, checked terms, value terms, and errors *)
-    ((string * string list) option, a check option located) Abwd.t ->
+    ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t ->
     (m * b * potential * no_eta) Term.StructfieldAbwd.t ->
     (m * potential * no_eta) Value.StructfieldAbwd.t ->
     Code.t Asai.Diagnostic.t Bwd.t ->
@@ -1906,7 +1948,7 @@ and check_higher_field : type a b c d m i ic0.
     (* The unevaluated type of the current field being checked. *)
     (i, (c, D.zero) snoc, ic0) Plusmap.t ->
     (ic0, kinetic) term ->
-    ((string * string list) option, a check option located) Abwd.t
+    ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t
     * (m * b * potential * no_eta) Term.StructfieldAbwd.t =
  fun status ctx ty m intrinsic ({ env; _ } as codata_args) fields termctx tyargs tms ctms etms errs
      fld cvals evals pbijs prev_etm ic0 fldty ->
@@ -2013,9 +2055,15 @@ and check_higher_field : type a b c d m i ic0.
       (* Get the user's supplied term for this partial bijection *)
       let key = Some (Field.to_string fld, strings_of_pbij pbij) in
       let tm, tms =
-        match Abwd.find_opt_and_update key key (fun x -> locate_opt x.loc None) tms with
-        | Some ({ value = Some tm; loc }, tms) -> ({ value = tm; loc }, tms)
-        | Some ({ value = None; _ }, _) -> fatal (Anomaly "accessing same method twice")
+        match
+          Abwd.find_opt_and_update key key (fun (cube, x) -> (cube, locate_opt x.loc None)) tms
+        with
+        | Some ((cube, { value = Some tm; loc }), tms) ->
+            (match (cube.value, D.compare_zero m) with
+            | `Cube, Zero -> fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "comatch")
+            | _ -> ());
+            ({ value = tm; loc }, tms)
+        | Some ((_, { value = None; _ }), _) -> fatal (Anomaly "accessing same method twice")
         (* Higher fields cannot be positional *)
         | None -> fatal (Missing_method_in_comatch (fld, Some pbij)) in
       let evals, cvals, errs =

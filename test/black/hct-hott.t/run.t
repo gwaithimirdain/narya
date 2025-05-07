@@ -1,3 +1,5 @@
+  $ rm -f *.nyo
+
   $ narya -v univalence.ny
    ￫ info[I0003]
    ￮ loading file: $TESTCASE_ROOT/isfibrant.ny
@@ -319,7 +321,7 @@
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/fibrant_types.ny
-   264 |       ([ zero. ↦ () | suc. m2 ↦ id_ℕ_iso m2.0 m2.1 .fro m2.2 ])
+   264 |       ([ zero. ⤇ () | suc. m ⤇ id_ℕ_iso m.0 m.1 .fro m.2 ])
        ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ hint[H0403]
@@ -333,11 +335,11 @@
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/fibrant_types.ny
-   271 |       ([ zero. ↦ rfl.
-   272 |        | suc. m2 ↦
-   273 |            eq.ap (Id ℕ m2.0 m2.1) (Id ℕ (suc. m2.0) (suc. m2.1)) (x ↦ suc. x)
-   274 |              (id_ℕ_iso m2.0 m2.1 .to (id_ℕ_iso m2.0 m2.1 .fro m2.2)) m2.2
-   275 |              (id_ℕ_iso m2.0 m2.1 .to_fro m2.2)])
+   271 |       ([ zero. ⤇ rfl.
+   272 |        | suc. m ⤇
+   273 |            eq.ap (Id ℕ m.0 m.1) (Id ℕ (suc. m.0) (suc. m.1)) (x ↦ suc. x)
+   274 |              (id_ℕ_iso m.0 m.1 .to (id_ℕ_iso m.0 m.1 .fro m.2)) m.2
+   275 |              (id_ℕ_iso m.0 m.1 .to_fro m.2)])
        ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ info[I0000]

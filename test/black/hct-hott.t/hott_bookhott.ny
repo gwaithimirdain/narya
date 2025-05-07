@@ -13,7 +13,7 @@ def Id_eq (A0 A1 : Type) (A2 : Id Type A0 A1) (a00 : A0) (a01 : A1)
   (a22 : Id eq A2 a02 a12 a20 a21)
   : eq (A2 a10 a11)
       (eq.trr2 A0 A1 (x y ↦ A2 x y) a00 a10 a20 a01 a11 a21 a02) a12
-  ≔ match a22 [ rfl. ↦ rfl. ]
+  ≔ match a22 [ rfl. ⤇ rfl. ]
 
 {` An Id of equivalences induces an equivalence on Ids. `}
 def Id_eqv (A0 : Type) (A1 : Type) (A2 : Id Type A0 A1) (B0 : Type)

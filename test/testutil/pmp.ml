@@ -27,13 +27,20 @@ type pmt =
 let rec parse_chk : type n. (string, n) Bwv.t -> pmt -> n Raw.check located =
  fun ctx -> function
   | Lam (x, body) ->
-      unlocated (Raw.Lam ({ value = Some x; loc = None }, `Normal, parse_chk (Snoc (ctx, x)) body))
+      unlocated
+        (Raw.Lam
+           {
+             name = { value = Some x; loc = None };
+             cube = locate_opt None `Normal;
+             body = parse_chk (Snoc (ctx, x)) body;
+           })
   | Struct tms ->
       unlocated
         (Raw.Struct
            ( Eta,
              List.fold_left
-               (fun acc (fld, tm) -> Abwd.add (Some (fld, [])) (parse_chk ctx tm) acc)
+               (fun acc (fld, tm) ->
+                 Abwd.add (Some (fld, [])) (locate_opt None `Normal, parse_chk ctx tm) acc)
                Abwd.empty tms ))
   | Constr c -> unlocated (Raw.Constr (unlocated (Constr.intern c), []))
   | App (fn, arg) as tm -> (

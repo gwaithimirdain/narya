@@ -207,3 +207,89 @@
  1 | x ↦ x.0
    ^ invalid face: variable of dimension 0 has no face '0'
 
+ ￫ error[E0508]
+ ￭ user-supplied term
+ 1 | x ⤇ x
+   ^ cube abstraction not allowed for zero-dimensional function
+
+ ￫ error[E0501]
+ ￭ user-supplied term
+ 1 | x ↦ x
+   ^ not enough non-cube variables for higher-dimensional abstraction: need 2 more
+
+ ￫ error[E0507]
+ ￭ user-supplied term
+ 1 | x ⤇ refl f x.0 x.1 x
+   ^ variable of dimension e must be used with a face
+
+ ￫ error[E0508]
+ ￭ user-supplied term
+ 1 | a x ⤇ refl f x.0 x.1 x.2
+   ^ cube abstraction not allowed for zero-dimensional function
+
+ ￫ error[E0507]
+ ￭ user-supplied term
+ 1 | x ↦ x ⤇ x
+   ^ variable of dimension e must be used with a face
+
+ ￫ error[E0509]
+ ￭ user-supplied term
+ 1 | a x ⤇ refl af a.0 a.1 a.2 x.00 x.01 x.02 x.10 x.11 x.12 x.20 x.21 x.22
+   ^ previous variable
+   ^ can't combine cube abstractions of different dimensions: e ≠ ee
+
+ ￫ hint[H0403]
+ ￭ user-supplied term
+ 1 | n0 n1 n2 ↦ match n2 [ zero. ↦ zero. | suc. n ↦ suc. n.2 ]
+   ^ match encountered outside case tree, wrapping in implicit let-binding
+
+ ￫ error[E0510]
+ ￭ user-supplied term
+ 1 | n0 n1 n2 ↦ match n2 [ zero. ↦ zero. | suc. n ↦ suc. n.2 ]
+   ^ e-dimensional match requires cube abstraction
+
+ ￫ hint[H0403]
+ ￭ user-supplied term
+ 1 | n0 n1 n2 ↦ match n2 [ zero. ⤇ zero. | suc. n ↦ suc. n.2 ]
+   ^ match encountered outside case tree, wrapping in implicit let-binding
+
+ ￫ error[E0510]
+ ￭ user-supplied term
+ 1 | n0 n1 n2 ↦ match n2 [ zero. ⤇ zero. | suc. n ↦ suc. n.2 ]
+   ^ e-dimensional match requires cube abstraction
+
+ ￫ hint[H0403]
+ ￭ user-supplied term
+ 1 | [ .head ⤇ 0 | .tail ↦ zeros ]
+   ^ comatch encountered outside case tree, wrapping in implicit let-binding
+
+ ￫ error[E0508]
+ ￭ user-supplied term
+ 1 | [ .head ⤇ 0 | .tail ↦ zeros ]
+   ^ cube abstraction not allowed for zero-dimensional comatch
+
+ ￫ hint[H0403]
+ ￭ user-supplied term
+ 1 | [ .head ↦ 0 | .tail ⤇ zeros ]
+   ^ comatch encountered outside case tree, wrapping in implicit let-binding
+
+ ￫ error[E0508]
+ ￭ user-supplied term
+ 1 | [ .head ↦ 0 | .tail ⤇ zeros ]
+   ^ cube abstraction not allowed for zero-dimensional comatch
+
+ ￫ hint[H0403]
+ ￭ user-supplied term
+ 1 | [ .head ↦ refl (0:ℕ) | .tail ↦ idz ]
+   ^ comatch encountered outside case tree, wrapping in implicit let-binding
+
+ ￫ hint[H0403]
+ ￭ user-supplied term
+ 1 | [ .head ⤇ refl (0:ℕ) | .tail ↦ idz ]
+   ^ comatch encountered outside case tree, wrapping in implicit let-binding
+
+ ￫ hint[H0403]
+ ￭ user-supplied term
+ 1 | [ .head ↦ refl (0:ℕ) | .tail ⤇ idz ]
+   ^ comatch encountered outside case tree, wrapping in implicit let-binding
+

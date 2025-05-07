@@ -129,4 +129,40 @@ let () =
 
   (* Cube variables *)
   let () = uncheck ~print:() "x ↦ x.0" atoa ~short:"E0506" in
+  let () = uncheck ~print:() "x ⤇ x" atoa ~short:"E0508" in
+  let () = uncheck ~print:() "x ↦ x" idff ~short:"E0501" in
+  let _ = check "x ⤇ refl f x.0 x.1 x.2" idff in
+  let () = uncheck ~print:() "x ⤇ refl f x.0 x.1 x" idff ~short:"E0507" in
+  let atoidff = check "A → Id (A→A) f f" uu in
+  let () = uncheck ~print:() "a x ⤇ refl f x.0 x.1 x.2" atoidff ~short:"E0508" in
+  let _ = check "a ↦ x ⤇ refl f x.0 x.1 x.2" atoidff in
+  let () = uncheck ~print:() "x ↦ x ⤇ x" atoidff in
+  let af = assume "af" atoidff in
+  let idafaf = check "Id (A → Id (A→A) f f) af af" uu in
+  let _ = check "a ⤇ x ⤇ refl af a.0 a.1 a.2 x.00 x.01 x.02 x.10 x.11 x.12 x.20 x.21 x.22" idafaf in
+  let () =
+    uncheck ~print:() "a x ⤇ refl af a.0 a.1 a.2 x.00 x.01 x.02 x.10 x.11 x.12 x.20 x.21 x.22"
+      idafaf ~short:"E0509" in
+  let idntoidn = check "(n0 n1 : ℕ) → Id ℕ n0 n1 → Id ℕ n0 n1" uu in
+  let () =
+    uncheck ~print:() "n0 n1 n2 ↦ match n2 [ zero. ↦ zero. | suc. n ↦ suc. n.2 ]" idntoidn
+      ~short:"E0510" in
+  let () =
+    uncheck ~print:() "n0 n1 n2 ↦ match n2 [ zero. ⤇ zero. | suc. n ↦ suc. n.2 ]" idntoidn
+      ~short:"E0510" in
+  Testutil.Repl.(
+    def "Stream" "(A : Type) → Type" "A ↦ codata [ _ .head : A | _ .tail : Stream A ]";
+    def "zeros" "Stream ℕ" "[ .head ↦ 0 | .tail ↦ zeros ]");
+  let streamnat = check "Stream ℕ" uu in
+  let () =
+    uncheck ~print:() "[ .head ⤇ 0 | .tail ↦ zeros ]" streamnat
+      ~code:(Zero_dimensional_cube_abstraction "comatch") in
+  let () =
+    uncheck ~print:() "[ .head ↦ 0 | .tail ⤇ zeros ]" streamnat
+      ~code:(Zero_dimensional_cube_abstraction "comatch") in
+  let idzeros = check "Id (Stream ℕ) zeros zeros" uu in
+  let idz = assume "idz" idzeros in
+  let _ = check "[ .head ↦ refl (0:ℕ) | .tail ↦ idz ]" idzeros in
+  let _ = check "[ .head ⤇ refl (0:ℕ) | .tail ↦ idz ]" idzeros in
+  let _ = check "[ .head ↦ refl (0:ℕ) | .tail ⤇ idz ]" idzeros in
   ()
