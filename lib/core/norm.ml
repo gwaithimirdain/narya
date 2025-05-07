@@ -369,6 +369,11 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
   | Canonical c ->
       let (Any c) = eval_canonical env c in
       Val (Canonical (c, TubeOf.empty (dim_canonical c)))
+  | Unshift (n, plusmap, tm) ->
+      let (Cofactor mn) =
+        cofactor (dim_env env) n
+        <|> Anomaly "evaluating unshifted term in too low-dimensional environment" in
+      eval (Shift (env, mn, plusmap)) tm
 
 and eval_with_boundary : type m a. (m, a) env -> (a, kinetic) term -> (m, kinetic value) CubeOf.t =
  fun env tm ->

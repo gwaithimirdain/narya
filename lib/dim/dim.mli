@@ -35,6 +35,10 @@ type (_, _) factor = Factor : ('n, 'k, 'nk) D.plus -> ('nk, 'n) factor
 
 val factor : 'nk D.t -> 'n D.t -> ('nk, 'n) factor option
 
+type (_, _) cofactor = Cofactor : ('n, 'k, 'nk) D.plus -> ('nk, 'k) cofactor
+
+val cofactor : 'nk D.t -> 'k D.t -> ('nk, 'k) cofactor option
+
 type (_, _) deg
 
 val dom_deg : ('m, 'n) deg -> 'm D.t

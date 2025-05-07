@@ -16,6 +16,18 @@ let rec factor : type nk n. nk D.t -> n D.t -> (nk, n) factor option =
           let* (Factor n_k) = factor (Nat nk) n in
           return (Factor (Suc n_k)))
 
+type (_, _) cofactor = Cofactor : ('n, 'k, 'nk) D.plus -> ('nk, 'k) cofactor
+
+let rec cofactor : type nk k. nk D.t -> k D.t -> (nk, k) cofactor option =
+ fun nk k ->
+  let open Monad.Ops (Monad.Maybe) in
+  match (nk, k) with
+  | Nat Zero, Nat Zero -> Some (Cofactor Zero)
+  | Nat (Suc nk), Nat (Suc k) ->
+      let* (Cofactor n) = cofactor (Nat nk) (Nat k) in
+      return (Cofactor (Suc n))
+  | _ -> None
+
 (* Compute the pushout of a span of dimensions, if it exists.  In practice we only need pushouts of spans that can be completed to some commutative square (equivalently, pushouts in slice categories), but in our primary examples all pushouts exist, so we don't bother putting an option on it yet. *)
 
 type (_, _) pushout = Pushout : ('a, 'c, 'p) D.plus * ('b, 'd, 'p) D.plus -> ('a, 'b) pushout

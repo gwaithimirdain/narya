@@ -91,6 +91,7 @@ module rec Term : sig
         -> ('a, potential) term
     | Realize : ('a, kinetic) term -> ('a, potential) term
     | Canonical : 'a canonical -> ('a, potential) term
+    | Unshift : 'n D.t * ('n, 'b, 'nb) Plusmap.t * ('nb, 's) term -> ('b, 's) term
 
   and (_, _) branch =
     | Branch :
@@ -231,6 +232,7 @@ end = struct
     (* A potential term is "realized" by kinetic terms, or canonical types, at its leaves. *)
     | Realize : ('a, kinetic) term -> ('a, potential) term
     | Canonical : 'a canonical -> ('a, potential) term
+    | Unshift : 'n D.t * ('n, 'b, 'nb) Plusmap.t * ('nb, 's) term -> ('b, 's) term
 
   (* A branch of a match binds a number of new variables.  If it is a higher-dimensional match, then each of those "variables" is actually a full cube of variables.  In addition, its context must be permuted to put those new variables before the existing variables that are now defined in terms of them. *)
   and (_, _) branch =
