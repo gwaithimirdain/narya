@@ -151,23 +151,19 @@ let assume (x : string) (ty : kinetic value) : kinetic value =
 
 let equal_at (tm1 : kinetic value) (tm2 : kinetic value) (ty : kinetic value) : unit =
   let (Ctx (ctx, _)) = !context in
-  if Option.is_some (Equal.equal_at (Ctx.length ctx) tm1 tm2 ty) then ()
-  else raise (Failure "Unequal terms")
+  if Result.is_ok (Equal.equal_at ctx tm1 tm2 ty) then () else raise (Failure "Unequal terms")
 
 let unequal_at (tm1 : kinetic value) (tm2 : kinetic value) (ty : kinetic value) : unit =
   let (Ctx (ctx, _)) = !context in
-  if Option.is_none (Equal.equal_at (Ctx.length ctx) tm1 tm2 ty) then ()
-  else raise (Failure "Equal terms")
+  if Result.is_error (Equal.equal_at ctx tm1 tm2 ty) then () else raise (Failure "Equal terms")
 
 let equal (tm1 : kinetic value) (tm2 : kinetic value) : unit =
   let (Ctx (ctx, _)) = !context in
-  if Option.is_some (Equal.equal_val (Ctx.length ctx) tm1 tm2) then ()
-  else raise (Failure "Unequal terms")
+  if Result.is_ok (Equal.equal_val ctx tm1 tm2) then () else raise (Failure "Unequal terms")
 
 let unequal (tm1 : kinetic value) (tm2 : kinetic value) : unit =
   let (Ctx (ctx, _)) = !context in
-  if Option.is_none (Equal.equal_val (Ctx.length ctx) tm1 tm2) then ()
-  else raise (Failure "Equal terms")
+  if Result.is_error (Equal.equal_val ctx tm1 tm2) then () else raise (Failure "Equal terms")
 
 (* Infix notation for applying values *)
 

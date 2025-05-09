@@ -964,7 +964,7 @@ let rec execute :
               let ety = Norm.eval_term (Ctx.env ctx) ty in
               let content =
                 match View.view_type ety "split" with
-                | Canonical (_, Pi (_, doms, _), _) ->
+                | Canonical (_, Pi (_, doms, _), _, _) ->
                     let cube, mapsto =
                       match D.compare_zero (CubeOf.dim doms) with
                       | Zero -> (`Normal, Token.Mapsto)
@@ -974,7 +974,7 @@ let rec execute :
                     String.concat " " (Bwd_extra.to_list_map (Option.value ~default:"_") xs)
                     ^ Token.to_string mapsto
                     ^ " ?"
-                | Canonical (_, Codata { eta; ins; fields; _ }, _) -> (
+                | Canonical (_, Codata { eta; fields; _ }, ins, _) -> (
                     let m = cod_left_ins ins in
                     let do_field : type a n et.
                         (a * n * et) Term.CodatafieldAbwd.entry -> string list -> string list =
@@ -996,8 +996,8 @@ let rec execute :
                         "["
                         ^ String.concat " | " (List.map (fun fld -> "." ^ fld ^ " |-> ?") fields)
                         ^ "]")
-                | Canonical (_, UU _, _) -> fatal (Invalid_split "universe")
-                | Canonical (_, Data _, _) -> fatal (Invalid_split "datatype")
+                | Canonical (_, UU _, _, _) -> fatal (Invalid_split "universe")
+                | Canonical (_, Data _, _, _) -> fatal (Invalid_split "datatype")
                 | Neutral _ -> fatal (Invalid_split "neutral") in
               (data.tm := TermParse.Term.(final (parse (`String { title = None; content }))));
               execute ~action_taken ~get_file (Solve data)

@@ -74,9 +74,9 @@ let equal_at (tm1 : string) (tm2 : string) (ty : string) : unit =
   let ctm2 = check_term rtm2 ety in
   let etm1 = eval_term (Emp D.zero) ctm1 in
   let etm2 = eval_term (Emp D.zero) ctm2 in
-  match Equal.equal_at 0 etm1 etm2 ety with
-  | None -> raise (Failure "Unequal terms")
-  | Some () -> ()
+  match Equal.equal_at Ctx.empty etm1 etm2 ety with
+  | Error _ -> raise (Failure "Unequal terms")
+  | Ok () -> ()
 
 let unequal_at (tm1 : string) (tm2 : string) (ty : string) : unit =
   let rty = parse_term ty in
@@ -88,9 +88,9 @@ let unequal_at (tm1 : string) (tm2 : string) (ty : string) : unit =
   let ctm2 = check_term rtm2 ety in
   let etm1 = eval_term (Emp D.zero) ctm1 in
   let etm2 = eval_term (Emp D.zero) ctm2 in
-  match Equal.equal_at 0 etm1 etm2 ety with
-  | None -> ()
-  | Some () -> raise (Failure "Equal terms")
+  match Equal.equal_at Ctx.empty etm1 etm2 ety with
+  | Error _ -> ()
+  | Ok () -> raise (Failure "Equal terms")
 
 let print (tm : string) : unit =
   let rtm = parse_term tm in

@@ -4,6 +4,8 @@ type 'l len
 type wrapped = Wrap : 'l len -> wrapped
 type 'l t = 'l len * 'l N.index
 
+val hott : unit -> N.two len option
+
 val run :
   arity:int -> refl_char:char -> refl_names:string list -> internal:bool -> (unit -> 'a) -> 'a
 

@@ -284,11 +284,7 @@ module Tube (F : Fam2) : sig
     ('n, 'k, 'nk, 'b) t
 
   val to_cube_bwv :
-    'k is_singleton ->
-    ('n, 'k, 'nk) D.plus ->
-    'l Endpoints.len ->
-    ('n, 'k, 'nk, 'b) t ->
-    (('n, 'b) C.t, 'l) Bwv.t
+    'k is_singleton -> 'l Endpoints.len -> ('n, 'k, 'nk, 'b) t -> (('n, 'b) C.t, 'l) Bwv.t
 
   val plus : ('m, 'k, 'mk, 'b) t -> ('m, 'k, 'mk) D.plus
   val inst : ('m, 'k, 'mk, 'b) t -> 'k D.t
@@ -380,8 +376,11 @@ module TubeOf : sig
   val plus_tube :
     ('k, 'l, 'kl) D.plus -> ('mk, 'l, 'mkl, 'b) t -> ('m, 'k, 'mk, 'b) t -> ('m, 'kl, 'mkl, 'b) t
 
-  val middle :
-    ('m, 'k, 'mk) D.plus -> ('k, 'l, 'kl) D.plus -> ('m, 'kl, 'mkl, 'b) t -> ('m, 'k, 'mk, 'b) t
+  val split :
+    ('m, 'k, 'mk) D.plus ->
+    ('k, 'l, 'kl) D.plus ->
+    ('m, 'kl, 'mkl, 'b) t ->
+    ('m, 'k, 'mk, 'b) t * ('mk, 'l, 'mkl, 'b) t
 
   val append_bwd : 'a Bwd.t -> ('m, 'n, 'mn, 'a) t -> 'a Bwd.t
 end
@@ -524,6 +523,7 @@ type (_, _, _) insertion
 
 val ins_zero : 'a D.t -> ('a, 'a, D.zero) insertion
 val zero_ins : 'a D.t -> ('a, D.zero, 'a) insertion
+val eq_of_ins_zero : ('a, 'b, D.zero) insertion -> ('a, 'b) Eq.t
 val id_ins : 'a D.t -> ('a, 'b, 'ab) D.plus -> ('ab, 'a, 'b) insertion
 val dom_ins : ('a, 'b, 'c) insertion -> 'a D.t
 val cod_left_ins : ('a, 'b, 'c) insertion -> 'b D.t
@@ -550,11 +550,16 @@ type (_, _, _) insfact = Insfact : ('a, 'b) deg * ('ac, 'a, 'c) insertion -> ('a
 val insfact : ('ac, 'bc) deg -> ('b, 'c, 'bc) D.plus -> ('ac, 'b, 'c) insfact
 
 type (_, _, _) insfact_comp =
-  | Insfact_comp :
-      ('m, 'n) deg * ('ml, 'm, 'l) insertion * ('k, 'j, 'l) D.plus * ('a, 'i, 'ml) D.plus
-      -> ('n, 'k, 'a) insfact_comp
+  | Insfact_comp : ('k, 'm) deg * ('kn, 'k, 'n) insertion -> ('m, 'n, 'kn) insfact_comp
 
-val insfact_comp : ('nk, 'n, 'k) insertion -> ('a, 'b) deg -> ('n, 'k, 'a) insfact_comp
+val insfact_comp : ('mn, 'm, 'n) insertion -> ('kn, 'mn) deg -> ('m, 'n, 'kn) insfact_comp
+
+type (_, _, _) insfact_comp_ext =
+  | Insfact_comp_ext :
+      ('m, 'n) deg * ('ml, 'm, 'l) insertion * ('k, 'j, 'l) D.plus * ('a, 'i, 'ml) D.plus
+      -> ('n, 'k, 'a) insfact_comp_ext
+
+val insfact_comp_ext : ('nk, 'n, 'k) insertion -> ('a, 'b) deg -> ('n, 'k, 'a) insfact_comp_ext
 
 type (_, _, _) deg_lift_ins =
   | Deg_lift_ins : ('mk, 'm, 'k) insertion * ('mk, 'nk) deg -> ('m, 'k, 'nk) deg_lift_ins
@@ -712,6 +717,7 @@ val pbij_of_strings : 'e D.t -> string list -> 'e pbij_of option
 val int_strings_of_pbij : ('n, 'i, 'r) pbij -> [ `Int of int | `Str of string ] list
 val strings_of_pbij : ('n, 'i, 'r) pbij -> string list
 val string_of_pbij : ('n, 'i, 'r) pbij -> string
+val eq_of_zero_pbij : (D.zero, 'i, 'r) pbij -> ('r, 'i) Eq.t
 
 type (_, _) pbij_between =
   | Pbij_between :
@@ -915,3 +921,12 @@ val name_of_deg : ('a, 'b) deg -> string option
 
 (* *)
 val locking : ('a, 'b) deg -> bool
+
+module Hott : sig
+  type dim
+
+  val dim : dim D.t
+  val singleton : dim is_singleton
+  val faces : unit -> ((D.zero, dim) sface * (D.zero, dim) sface * N.two Endpoints.len) option
+  val cube : 'a -> 'a -> 'a -> (dim, 'a) CubeOf.t option
+end

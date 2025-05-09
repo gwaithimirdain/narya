@@ -79,6 +79,8 @@ In general, a 1-dimensional field like ``root`` induces *n* fields of an *n*-dim
 
 If any of the numbers goes above ``9``, then the suffix can start instead with ``..`` and the numbers be separated by additional periods.  In other words, ``.field.12`` is equivalent to ``.field..1.2`` but in the latter notation ``1`` and ``2`` can also be multi-digit numbers.  Whereas, the twelfth field of a 12-dimensional version of a higher codatatype induced by a 1-dimensional field can be written ``.field..12``.
 
+As a shorthand, if the field and the term are both 1-dimensional, so that there is only one possible suffix ``1``, then that suffix can be omitted.  In all other cases the suffix is required, since there are multiple fields that could be meant.  Thus the above ``z .root.1`` could equivalently be written as ``z .root``, but the above ``x22 .root.1`` cannot be written as ``x22 .root`` since there is also an ``x22 .root.2``.
+
 When typechecking the type of a higher field in a `codata` definition, not only the argument variable but also all the *parameters in the context* are made higher-dimensional.  This is why we only defined ``√ℕ`` for a fixed constant type ``ℕ``: if we tried to define it with a parameter we would have trouble:
 
 .. code-block:: none

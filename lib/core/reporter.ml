@@ -43,6 +43,30 @@ let record_or_codata : type s et. (s, et) eta -> string = function
   | Eta -> "record"
   | Noeta -> "codata"
 
+(* Unequalities *)
+
+module Unequal = struct
+  type t =
+    | Constants of Constant.t * Constant.t
+    | Constrs of Constr.t * Constr.t
+    | Metas : ('a1, 'b1, 's1) Meta.t * ('a2, 'b2, 's2) Meta.t -> t
+    | Fields : 'i1 Field.t * 'i2 Field.t -> t
+    | Variables of printable * printable
+    | Terms of printable * printable
+    | Heads of t
+
+  let rec printables : t -> string * printable * printable = function
+    | Constants (c1, c2) -> ("constants", PConstant c1, PConstant c2)
+    | Constrs (c1, c2) -> ("constructors", PConstr c1, PConstr c2)
+    | Metas (m1, m2) -> ("metavariables", PMeta m1, PMeta m2)
+    | Fields (f1, f2) -> ("fields", PString (Field.to_string f1), PString (Field.to_string f2))
+    | Variables (v1, v2) -> ("variables", v1, v2)
+    | Terms (t1, t2) -> ("terms", t1, t2)
+    | Heads p ->
+        let str, p1, p2 = printables p in
+        ("head " ^ str, p1, p2)
+end
+
 module Code = struct
   type t =
     | Parse_error : t
@@ -66,12 +90,14 @@ module Code = struct
         expected : printable;
         got : printable;
         which : string option;
+        why : Unequal.t;
       }
         -> t
     | Unequal_synthesized_boundary : {
         face : ('a, 'b) sface;
         got : printable;
         expected : printable;
+        why : Unequal.t;
       }
         -> t
     | Checking_tuple_at_degenerated_record : printable -> t
@@ -99,7 +125,7 @@ module Code = struct
     | No_such_field :
         [ `Record of ('s, 'et) eta * printable
         | `Nonrecord of printable
-        | `Other
+        | `Other of printable
         | `Degenerated_record of ('s, 'et) eta ]
         (* We don't require the i's to match, since that might be part of the error. *)
         * [ `Ins of 'i Field.t * ('n, 't, 'i2) insertion
@@ -118,7 +144,7 @@ module Code = struct
     | Missing_instantiation_constructor :
         Constr.t * [ `Constr of Constr.t | `Nonconstr of printable ]
         -> t
-    | Unequal_indices : printable * printable -> t
+    | Unequal_indices : printable * printable * Unequal.t -> t
     | Unbound_variable : string * (string list * string list) list -> t
     | Ill_scoped_connection : t
     | Undefined_constant : printable -> t
@@ -171,7 +197,7 @@ module Code = struct
     | Checking_canonical_at_nonuniverse : string * printable -> t
     | Bare_case_tree_construct : string -> t
     | Wrong_boundary_of_record : int -> t
-    | Invalid_constructor_type : Constr.t -> t
+    | Invalid_constructor_type : Constr.t * (string, Unequal.t) Either.t -> t
     | Missing_constructor_type : Constr.t -> t
     | Locked_variable : t
     | Locked_constant : printable -> t
@@ -215,6 +241,7 @@ module Code = struct
     | No_holes_allowed : [ `Command of string | `File of string ] -> t
     | Cyclic_term : t
     | Oracle_failed : string * printable -> t
+    | Invalid_flags : t
 
   (* If an error is encountered during printing a term, we (meaning the function 'printer' to be defined in Parser.Unparse) call the function supplied by this reader effect and print it as "_UNPRINTABLE".  Usually this is a bug, but sometimes it can happen normally, particularly when accumulating errors: a term involved in a later error might be unprintable due to a previous error.  We make this a reader that supplies a function so that the function can be called at the point of *performing* the effect.  Thus, if we are not in the middle of displaying another message, there can be an outer handler for this effect that supplies the function "fatal", which is called at the point of performing the effect and is therefore inside any inner Reporter.run wrappers rather than the outermost one that just Exits. *)
   module PrintingErrorData = struct
@@ -362,6 +389,7 @@ module Code = struct
     | Invalid_field_suffix _ -> Error
     | Cyclic_term -> Error
     | Oracle_failed _ -> Error
+    | Invalid_flags -> Error
 
   (** A short, concise, ideally Google-able string representation for each message code. *)
   let short_code : t -> string = function
@@ -412,6 +440,7 @@ module Code = struct
     | Zero_dimensional_cube_abstraction _ -> "E0508"
     | Mismatched_dimensions_in_cube_abstraction _ -> "E0509"
     | Noncube_abstraction_in_higher_dimensional_match _ -> "E0510"
+    | Invalid_flags -> "E0511"
     (* Degeneracies *)
     | Missing_argument_of_degeneracy _ -> "E0600"
     | Low_dimensional_argument_of_degeneracy _ -> "E0601"
@@ -531,7 +560,9 @@ module Code = struct
     (* Debugging *)
     | Show _ -> "I9999"
 
-  let default_text (err : t) : text =
+  let debug_printing = true
+
+  let rec default_text (err : t) : text =
     (* We notice printing errors that occur while formatting this message, and later report them as part of the message. *)
     let printing_errors = ref Emp in
     let msg =
@@ -579,18 +610,22 @@ module Code = struct
       | Instantiating_zero_dimensional_type ty ->
           textf "@[<hv 0>can't apply/instantiate a zero-dimensional type@;<1 2>%a@]" pp_printed
             (print ty)
-      | Unequal_synthesized_type { got; expected; which } ->
+      | Unequal_synthesized_type { got; expected; which; why } ->
+          let str, p1, p2 = Unequal.printables why in
           textf
-            "@[<hv 0>term synthesized type@;<1 2>%a@ but is being checked against type@;<1 2>%a%a@]"
-            pp_printed (print got) pp_printed (print expected)
+            "@[<hv 0>term synthesized type@;<1 2>%a@ but is being checked against type@;<1 2>%a@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a%a@]"
+            pp_printed (print got) pp_printed (print expected) str pp_printed (print p1) pp_printed
+            (print p2)
             (pp_print_option
                ~none:(fun _ () -> ())
                (fun ppf which -> fprintf ppf "@ (hint: %s boundaries are explicit)" which))
             which
-      | Unequal_synthesized_boundary { face; got; expected } ->
+      | Unequal_synthesized_boundary { face; got; expected; why } ->
+          let str, p1, p2 = Unequal.printables why in
           textf
-            "@[<hv 0>the %s-boundary synthesized type@;<1 2>%a@ but is being checked against type@;<1 2>%a@]"
-            (string_of_sface face) pp_printed (print got) pp_printed (print expected)
+            "@[<hv 0>the %s-boundary synthesized type@;<1 2>%a@ but is being checked against type@;<1 2>%a@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a@]"
+            (string_of_sface face) pp_printed (print got) pp_printed (print expected) str pp_printed
+            (print p1) pp_printed (print p2)
       | Checking_tuple_at_degenerated_record r ->
           textf "can't check a tuple against a record %a with a nonidentity degeneracy applied"
             pp_printed (print r)
@@ -654,7 +689,7 @@ module Code = struct
               textf "%s type %a has no field named %s" (record_or_codata eta) pp_printed (print d) f
           | `Nonrecord d ->
               textf "non-record/codata type %a has no field named %s" pp_printed (print d) f
-          | `Other -> textf "term has no field named %s" f
+          | `Other tm -> textf "term %a has no field named %s" pp_printed (print tm) f
           | `Degenerated_record eta ->
               let rc = record_or_codata eta in
               textf
@@ -670,8 +705,9 @@ module Code = struct
             | `Ins p -> string_of_ins p
             | `Pbij p -> string_of_pbij p
             | `Ints ints -> string_of_ins_ints ints in
-          textf "field %s of %s type %a has intrinsic dimension %s, can't have suffix %s" fldname
-            (record_or_codata eta) pp_printed (print d) (string_of_dim0 intrinsic) err
+          let err = if err = "" then "empty suffix" else "suffix " ^ err in
+          textf "@[<hv 0>field %s of %s type@;<1 2>%a@ has intrinsic dimension %s, can't have %s@]"
+            fldname (record_or_codata eta) pp_printed (print d) (string_of_dim0 intrinsic) err
       | Invalid_field_suffix (ty, f, p, evaldim) ->
           textf "invalid suffix %s for field %s of %s-dimensional type %a" (string_of_ins_ints p) f
             (string_of_dim0 evaldim) pp_printed (print ty)
@@ -686,10 +722,12 @@ module Code = struct
               (Constr.to_string exp);
             pp_printed ppf pp_got;
             pp_close_box ppf ()
-      | Unequal_indices (t1, t2) ->
+      | Unequal_indices (t1, t2, why) ->
+          let str, p1, p2 = Unequal.printables why in
           textf
-            "@[<hv 0>index@;<1 2>%a@ of constructor application doesn't match the corresponding index@;<1 2>%a@ of datatype instance@]"
-            pp_printed (print t1) pp_printed (print t2)
+            "@[<hv 0>index@;<1 2>%a@ of constructor application doesn't match the corresponding index@;<1 2>%a@ of datatype instance: unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a@]"
+            pp_printed (print t1) pp_printed (print t2) str pp_printed (print p1) pp_printed
+            (print p2)
       | Unbound_variable (c, alt) -> (
           match alt with
           | [] -> textf "unbound variable: %s" c
@@ -827,9 +865,14 @@ module Code = struct
           else
             textf "not enough variables in boundary of higher-dimensional record (need %d more)"
               (abs n)
-      | Invalid_constructor_type c ->
-          textf "invalid type for constructor %s: must be current datatype instance"
-            (Constr.to_string c)
+      | Invalid_constructor_type (c, why) -> (
+          match why with
+          | Left str -> textf "invalid output type for constructor %s:@ %s" (Constr.to_string c) str
+          | Right why ->
+              let str, p1, p2 = Unequal.printables why in
+              textf
+                "invalid output type for constructor %s:@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a"
+                (Constr.to_string c) str pp_printed (print p1) pp_printed (print p2))
       | Missing_constructor_type c ->
           textf "missing type for constructor %s of indexed datatype" (Constr.to_string c)
       | Locked_variable -> text "variable not available inside external degeneracy"
@@ -908,14 +951,21 @@ module Code = struct
           | `File file -> textf "imported file '%s' cannot contain holes" file)
       | Ill_scoped_connection -> text "ill-scoped connection"
       | Cyclic_term -> text "cycle in graphical term"
-      | Oracle_failed (str, tm) -> textf "oracle failed: %s: %a" str pp_printed (print tm) in
+      | Oracle_failed (str, tm) -> textf "oracle failed: %s: %a" str pp_printed (print tm)
+      | Invalid_flags -> text "invalid combination of command-line flags" in
     match !printing_errors with
     | Emp -> msg
     | Snoc _ ->
-        (* We could report the actual error messages encountered, but we aren't doing that right now. *)
-        textf
-          "@[<v 0>%t@;@;(displaying this error encountered one or more terms that are unprintable,@ probably due to previous errors.@ If there are no other errors, this is probably a bug.)@]"
-          msg
+        if debug_printing then
+          textf
+            "@[<v 0>%t@;@;displaying this error encountered one or more terms that are unprintable; errors encountered were:@;%a@]"
+            msg
+            (pp_print_list (fun ppf x -> default_text x ppf))
+            (Bwd.to_list !printing_errors)
+        else
+          textf
+            "@[<v 0>%t@;@;(displaying this error encountered one or more terms that are unprintable,@ probably due to previous errors.@ If there are no other errors, this is probably a bug; please report it.)@]"
+            msg
 end
 
 include Asai.StructuredReporter.Make (Code)

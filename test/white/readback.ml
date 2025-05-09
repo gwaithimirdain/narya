@@ -1,6 +1,6 @@
-open Testutil.Mcp
 open Dim
 open Core
+open Testutil.Mcp
 
 (* For historical reasons, we do all our testing of readback in the empty context without "assume".  Thus we have a lot of abstractions. *)
 

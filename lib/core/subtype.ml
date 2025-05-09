@@ -34,13 +34,13 @@ let subtype_of ctx subtype supertype =
     (Some (view_type subtype "subtype_of"), Some (view_type supertype "supertype_of")) in
   let open Monad.Ops (Monad.Maybe) in
   match (subty, superty) with
-  | ( Some (Canonical (Const { name = subname; ins = subins }, _, subargs)),
-      Some (Canonical (Const { name = supername; ins = superins }, _, superargs)) )
+  | ( Some (Canonical (Const { name = subname; ins = subins }, _, _, subargs)),
+      Some (Canonical (Const { name = supername; ins = superins }, _, _, superargs)) )
     when Option.is_some
          @@ let* m = Constant.Map.find_opt subname (S.get ()) in
             let* () = Constant.Map.find_opt supername m in
             (* Higher-dimensional versions of subtypes are also subtypes, as long as they are instantiated at equal tubes. *)
             let* () = equal_ins subins superins in
-            equal_tyargs (Ctx.length ctx) subargs superargs -> Some ()
+            equal_tyargs ctx subargs superargs -> Ok ()
   (* If there is no subtyping relaton, we revert to checking type equality. *)
-  | _ -> equal_val (Ctx.length ctx) subtype supertype
+  | _ -> equal_val ctx subtype supertype

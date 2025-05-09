@@ -11,6 +11,9 @@ axiom s1 : √A
 axiom s2 : Id √A s0 s1
 echo s2 .root.1
 
+{` We can leave off the suffix if it's the identity (1, 12, etc.) `}
+echo s2 .root
+
 {` At higher dimensions, if we have a square in √A, we can project out *two* elements of A, according to the two directions of the square. `}
 axiom s00 : √A
 axiom s01 : √A

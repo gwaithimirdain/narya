@@ -380,6 +380,10 @@
          Type⁽ᵈ⁾ ?0{…}
        but is being checked against type
          Type⁽ᵈ⁾ X
+       unequal head terms:
+         ?0{…}
+       does not equal
+         X
   
   [1]
 

@@ -66,7 +66,7 @@ module F = struct
           fprintf ppf "Neu (%a, %a, %a)" head h apps a (dvalue (depth - 1)) (Lazy.force ty)
         else fprintf ppf "Neu (%a, %a, ?)" head h apps a
     | Lam (x, body) -> fprintf ppf "Lam (?^%s, %a)" (string_of_dim (dim_variables x)) binder body
-    | Struct (f, ins, _) ->
+    | Struct { fields = f; ins; _ } ->
         let n = cod_left_ins ins in
         fprintf ppf "Struct %s (%a)" (string_of_dim n) (fields depth n) f
     | Constr (c, d, args) ->
@@ -85,7 +85,7 @@ module F = struct
     | Snoc (flds, Entry (f, Lower (v, l))) ->
         fprintf ppf "%a <: " (fields depth n) flds;
         lazy_field depth ppf f "" v l
-    | Snoc (flds, Entry (f, Higher { vals; _ })) ->
+    | Snoc (flds, Entry (f, Higher (lazy { vals; _ }))) ->
         fprintf ppf "%a <: " (fields depth n) flds;
         InsmapOf.miter n
           {

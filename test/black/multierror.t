@@ -26,12 +26,26 @@
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    6 | def foo : prod B C := (a,a)
-     ^ term synthesized type A but is being checked against type B
+     ^ term synthesized type
+         A
+       but is being checked against type
+         B
+       unequal head constants:
+         A
+       does not equal
+         B
   
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    6 | def foo : prod B C := (a,a)
-     ^ term synthesized type A but is being checked against type C
+     ^ term synthesized type
+         A
+       but is being checked against type
+         C
+       unequal head constants:
+         A
+       does not equal
+         C
   
   [1]
 
@@ -67,7 +81,14 @@
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    7 | def foo : prod B C := (a,c)
-     ^ term synthesized type A but is being checked against type B
+     ^ term synthesized type
+         A
+       but is being checked against type
+         B
+       unequal head constants:
+         A
+       does not equal
+         B
   
   [1]
 
@@ -100,22 +121,50 @@
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    6 | def foo : prod (prod B C) (prod C B) := ((a,a),(a,a))
-     ^ term synthesized type A but is being checked against type B
+     ^ term synthesized type
+         A
+       but is being checked against type
+         B
+       unequal head constants:
+         A
+       does not equal
+         B
   
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    6 | def foo : prod (prod B C) (prod C B) := ((a,a),(a,a))
-     ^ term synthesized type A but is being checked against type C
+     ^ term synthesized type
+         A
+       but is being checked against type
+         C
+       unequal head constants:
+         A
+       does not equal
+         C
   
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    6 | def foo : prod (prod B C) (prod C B) := ((a,a),(a,a))
-     ^ term synthesized type A but is being checked against type C
+     ^ term synthesized type
+         A
+       but is being checked against type
+         C
+       unequal head constants:
+         A
+       does not equal
+         C
   
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    6 | def foo : prod (prod B C) (prod C B) := ((a,a),(a,a))
-     ^ term synthesized type A but is being checked against type B
+     ^ term synthesized type
+         A
+       but is being checked against type
+         B
+       unequal head constants:
+         A
+       does not equal
+         B
   
   [1]
 
@@ -147,7 +196,14 @@
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    6 | def foo : Sigma B P := (a,a)
-     ^ term synthesized type A but is being checked against type B
+     ^ term synthesized type
+         A
+       but is being checked against type
+         B
+       unequal head constants:
+         A
+       does not equal
+         B
   
   [1]
 
@@ -183,7 +239,14 @@
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    7 | def foo : Sigma bool P := (a, a)
-     ^ term synthesized type A but is being checked against type bool
+     ^ term synthesized type
+         A
+       but is being checked against type
+         bool
+       unequal head constants:
+         A
+       does not equal
+         bool
   
   [1]
 
@@ -213,7 +276,14 @@ Even trivial dependency blocks going on, as long as there is the potential for d
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    5 | def foo : Sigma B (_ ↦ B) := (a, a)
-     ^ term synthesized type A but is being checked against type B
+     ^ term synthesized type
+         A
+       but is being checked against type
+         B
+       unequal head constants:
+         A
+       does not equal
+         B
   
   [1]
 
@@ -242,12 +312,26 @@ Even trivial dependency blocks going on, as long as there is the potential for d
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    5 | def foo : streamB := [ .head ↦ a | .tail ↦ a ]
-     ^ term synthesized type A but is being checked against type B
+     ^ term synthesized type
+         A
+       but is being checked against type
+         B
+       unequal head constants:
+         A
+       does not equal
+         B
   
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    5 | def foo : streamB := [ .head ↦ a | .tail ↦ a ]
-     ^ term synthesized type A but is being checked against type streamB
+     ^ term synthesized type
+         A
+       but is being checked against type
+         streamB
+       unequal head constants:
+         A
+       does not equal
+         streamB
   
   [1]
 
@@ -275,12 +359,26 @@ Even trivial dependency blocks going on, as long as there is the potential for d
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    5 | def foo : B := let x : streamB := [ .head ↦ a | .tail ↦ a ] in x .head
-     ^ term synthesized type A but is being checked against type B
+     ^ term synthesized type
+         A
+       but is being checked against type
+         B
+       unequal head constants:
+         A
+       does not equal
+         B
   
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    5 | def foo : B := let x : streamB := [ .head ↦ a | .tail ↦ a ] in x .head
-     ^ term synthesized type A but is being checked against type streamB
+     ^ term synthesized type
+         A
+       but is being checked against type
+         streamB
+       unequal head constants:
+         A
+       does not equal
+         streamB
   
   [1]
 
@@ -308,12 +406,26 @@ Even trivial dependency blocks going on, as long as there is the potential for d
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    5 | def foo (x : bool) : B := match x [ true. ↦ a | false. ↦ a ]
-     ^ term synthesized type A but is being checked against type B
+     ^ term synthesized type
+         A
+       but is being checked against type
+         B
+       unequal head constants:
+         A
+       does not equal
+         B
   
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    5 | def foo (x : bool) : B := match x [ true. ↦ a | false. ↦ a ]
-     ^ term synthesized type A but is being checked against type B
+     ^ term synthesized type
+         A
+       but is being checked against type
+         B
+       unequal head constants:
+         A
+       does not equal
+         B
   
   [1]
 
@@ -333,12 +445,26 @@ Even trivial dependency blocks going on, as long as there is the potential for d
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    3 | def foo : Type := data [ true. (_ : a) | false. (_ : a) ]
-     ^ term synthesized type A but is being checked against type Type
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Type
+       unequal head terms:
+         A
+       does not equal
+         Type
   
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    3 | def foo : Type := data [ true. (_ : a) | false. (_ : a) ]
-     ^ term synthesized type A but is being checked against type Type
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Type
+       unequal head terms:
+         A
+       does not equal
+         Type
   
   [1]
 
@@ -358,12 +484,26 @@ Even trivial dependency blocks going on, as long as there is the potential for d
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    3 | def foo : Type := sig (fst : a, snd : a)
-     ^ term synthesized type A but is being checked against type Type
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Type
+       unequal head terms:
+         A
+       does not equal
+         Type
   
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    3 | def foo : Type := sig (fst : a, snd : a)
-     ^ term synthesized type A but is being checked against type Type
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Type
+       unequal head terms:
+         A
+       does not equal
+         Type
   
   [1]
 
@@ -387,7 +527,14 @@ Even trivial dependency blocks going on, as long as there is the potential for d
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    4 | def foo : Type := sig (fst : a, snd : B fst)
-     ^ term synthesized type A but is being checked against type Type
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Type
+       unequal head terms:
+         A
+       does not equal
+         Type
   
   [1]
 
@@ -407,12 +554,26 @@ Even trivial dependency blocks going on, as long as there is the potential for d
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    3 | def foo : Type := codata [ x .fst : a | x .snd : a ]
-     ^ term synthesized type A but is being checked against type Type
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Type
+       unequal head terms:
+         A
+       does not equal
+         Type
   
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    3 | def foo : Type := codata [ x .fst : a | x .snd : a ]
-     ^ term synthesized type A but is being checked against type Type
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Type
+       unequal head terms:
+         A
+       does not equal
+         Type
   
   [1]
 
@@ -432,7 +593,14 @@ Even trivial dependency blocks going on, as long as there is the potential for d
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    3 | def pred (x : Nat) : Nat := match x [ zero. |-> Nat | suc. y |-> f (pred y) ]
-     ^ term synthesized type Type but is being checked against type Nat
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         Nat
+       unequal head terms:
+         Type
+       does not equal
+         Nat
   
   [1]
 
@@ -461,7 +629,14 @@ Even trivial dependency blocks going on, as long as there is the potential for d
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    4 | def foo (x:color) ≔ match x [ red. ↦ (a,a a) | green. ↦ a | blue. ↦ A ]
-     ^ term synthesized type Type but is being checked against type A
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         A
+       unequal head terms:
+         Type
+       does not equal
+         A
   
    ￫ error[E0900]
    ￭ $TESTCASE_ROOT/multierr.ny
@@ -486,7 +661,14 @@ Even trivial dependency blocks going on, as long as there is the potential for d
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    3 | echo a a : a
-     ^ term synthesized type A but is being checked against type Type
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Type
+       unequal head terms:
+         A
+       does not equal
+         Type
   
    ￫ error[E0701]
    ￭ $TESTCASE_ROOT/multierr.ny
@@ -515,7 +697,14 @@ Even trivial dependency blocks going on, as long as there is the potential for d
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
    3 | def foo : A ≔ (a, a) : a
-     ^ term synthesized type A but is being checked against type Type
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Type
+       unequal head terms:
+         A
+       does not equal
+         Type
   
    ￫ error[E0900]
    ￭ $TESTCASE_ROOT/multierr.ny

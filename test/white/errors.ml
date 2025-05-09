@@ -33,7 +33,7 @@ let () =
   let () = uncheck ~print:() "a" ida ~short:"E0401" in
   let idida, _ = synth "Id (Id A) a a (refl a) a a (refl a)" in
   let () = uncheck ~print:() "a" idida ~short:"E0401" in
-  let () = assert (Option.is_none (Core.Equal.equal_val 0 aa ida)) in
+  let () = unequal aa ida in
 
   (* Parse errors. *)
   let () = unsynth ~print:() "x y {` unterminated block comment" ~code:Parse_error in

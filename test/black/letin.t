@@ -102,6 +102,10 @@ It matters what the variable is bound to:
          refl A a0 a0
        but is being checked against type
          refl A a0 a1
+       unequal head constants:
+         a0
+       does not equal
+         a1
   
   [1]
 
@@ -170,6 +174,10 @@ Let affects typechecking:
          B a0
        but is being checked against type
          B x
+       unequal head terms:
+         a0
+       does not equal
+         x
        (hint: function boundaries are explicit)
   
   [1]

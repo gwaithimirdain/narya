@@ -77,7 +77,8 @@ let rec get_pi_vars : type a b.
     string option Bwd.t =
  fun ctx cube xs ty ->
   match View.view_type ty "get_pi_vars" with
-  | Canonical (_, Pi (x, doms, cods), tyargs) -> (
+  | Canonical (_, Pi (x, doms, cods), ins, tyargs) -> (
+      let Eq = eq_of_ins_zero ins in
       match (D.compare_zero (CubeOf.dim doms), cube) with
       | Zero, `Normal | Pos _, `Cube ->
           let args, newnfs = dom_vars (Ctx.length ctx) doms in

@@ -27,10 +27,8 @@ module rec Value : sig
 
   module Structfield : sig
     type (_, _) t =
-      (* We remember which fields are labeled, for readback purposes, and we store the value of each field lazily, so that corecursive definitions don't try to compute an entire infinite structure.  And since in the non-kinetic case, evaluation can produce more data than just a term (e.g. whether a case tree has yet reached a leaf), what we store lazily is the result of evaluation. *)
       | Lower : 's Value.lazy_eval * [ `Labeled | `Unlabeled ] -> (D.zero, 'n * 's * 'et) t
-      (* In the higher case, they are always labeled.  There are multiple values are indexed by insertions, regarded as partial bijections with zero remaining dimensions; the 'evaluation dimension is the substitution dimension 'n and the 'intrinsic dimension is associated to the field.  We also store the original terms as a closure, since they may be needed to evaluate fields of degeneracies. *)
-      | Higher : ('m, 'n, 'mn, 'p, 'i, 'a) higher_data -> ('i, 'p * potential * no_eta) t
+      | Higher : ('m, 'n, 'mn, 'p, 'i, 'a) higher_data Lazy.t -> ('i, 'p * potential * no_eta) t
 
     and ('m, 'n, 'mn, 'p, 'i, 'a) higher_data = {
       vals : ('p, 'i, potential Value.lazy_eval option) InsmapOf.t;
@@ -80,19 +78,34 @@ module rec Value : sig
         -> kinetic value
     | Constr : Constr.t * 'n D.t * ('n, kinetic value) CubeOf.t list -> kinetic value
     | Lam : 'k variables * ('k, 's) binder -> 's value
-    | Struct : ('p * 's * 'et) StructfieldAbwd.t * ('pk, 'p, 'k) insertion * 's energy -> 's value
-    | Canonical : 'mk canonical * ('m, 'k, 'mk, normal) TubeOf.t -> potential value
+    | Struct : ('p, 'k, 'pk, 's, 'et) struct_args -> 's value
+    | Canonical : ('m, 'k, 'mk, 'e, 'n) inst_canonical -> potential value
+
+  and ('p, 'k, 'pk, 's, 'et) struct_args = {
+    fields : ('p * 's * 'et) StructfieldAbwd.t;
+    ins : ('pk, 'p, 'k) insertion;
+    energy : 's energy;
+    eta : ('s, 'et) eta;
+  }
+
+  and ('m, 'k, 'mk, 'e, 'n) inst_canonical = {
+    canonical : ('e, 'n) canonical;
+    tyargs : ('m, 'k, 'mk, normal) TubeOf.t;
+    ins : ('mk, 'e, 'n) insertion;
+  }
 
   and _ evaluation =
     | Val : 's value -> 's evaluation
     | Realize : kinetic value -> potential evaluation
     | Unrealized : potential evaluation
 
-  and _ canonical =
-    | UU : 'm D.t -> 'm canonical
-    | Pi : string option * ('m, kinetic value) CubeOf.t * ('m, unit) BindCube.t -> 'm canonical
-    | Data : ('m, 'j, 'ij) data_args -> 'm canonical
-    | Codata : ('mn, 'm, 'n, 'c, 'a, 'et) codata_args -> 'mn canonical
+  and (_, _) canonical =
+    | UU : 'm D.t -> ('m, D.zero) canonical
+    | Pi :
+        string option * ('m, kinetic value) CubeOf.t * ('m, unit) BindCube.t
+        -> ('m, D.zero) canonical
+    | Data : ('m, 'j, 'ij) data_args -> ('m, D.zero) canonical
+    | Codata : ('m, 'n, 'c, 'a, 'et) codata_args -> ('m, 'n) canonical
 
   and ('m, 'j, 'ij) data_args = {
     dim : 'm D.t;
@@ -102,12 +115,11 @@ module rec Value : sig
     discrete : [ `Yes | `Maybe | `No ];
   }
 
-  and ('mn, 'm, 'n, 'c, 'a, 'et) codata_args = {
+  and ('m, 'n, 'c, 'a, 'et) codata_args = {
     eta : (potential, 'et) eta;
     opacity : opacity;
     env : ('m, 'a) env;
     termctx : ('c, ('a, 'n) snoc) termctx option Lazy.t;
-    ins : ('mn, 'm, 'n) insertion;
     fields : ('a * 'n * 'et) Term.CodatafieldAbwd.t;
   }
 
@@ -154,7 +166,7 @@ end = struct
       (* We remember which fields are labeled, for readback purposes, and we store the value of each field lazily, so that corecursive definitions don't try to compute an entire infinite structure.  And since in the non-kinetic case, evaluation can produce more data than just a term (e.g. whether a case tree has yet reached a leaf), what we store lazily is the result of evaluation. *)
       | Lower : 's Value.lazy_eval * [ `Labeled | `Unlabeled ] -> (D.zero, 'n * 's * 'et) t
       (* In the higher case, they are always labeled.  There are multiple values are indexed by insertions, regarded as partial bijections with zero remaining dimensions; the 'evaluation dimension is the substitution dimension 'n and the 'intrinsic dimension is associated to the field.  We also store the original terms as a closure, since they may be needed to evaluate fields of degeneracies. *)
-      | Higher : ('m, 'n, 'mn, 'p, 'i, 'a) higher_data -> ('i, 'p * potential * no_eta) t
+      | Higher : ('m, 'n, 'mn, 'p, 'i, 'a) higher_data Lazy.t -> ('i, 'p * potential * no_eta) t
 
     and ('m, 'n, 'mn, 'p, 'i, 'a) higher_data = {
       vals : ('p, 'i, potential Value.lazy_eval option) InsmapOf.t;
@@ -217,26 +229,41 @@ end = struct
     | Constr : Constr.t * 'n D.t * ('n, kinetic value) CubeOf.t list -> kinetic value
     | Lam : 'k variables * ('k, 's) binder -> 's value
     (* Structs have to store an insertion outside, like an application, to deal with higher-dimensional record types like Gel.  Here 'k is the Gel dimension, with 'n the substitution dimension and 'nk the total dimension. *)
-    | Struct : ('p * 's * 'et) StructfieldAbwd.t * ('pk, 'p, 'k) insertion * 's energy -> 's value
-    (* A canonical type is only a *potential* value, so it appears as the 'value' of a 'neu'.  It may also be partially instantiated. *)
-    | Canonical : 'mk canonical * ('m, 'k, 'mk, normal) TubeOf.t -> potential value
+    | Struct : ('p, 'k, 'pk, 's, 'et) struct_args -> 's value
+    (* A canonical type is only a *potential* value, so it appears as the 'value' of a 'neu'.  It may also be instantiated, partially or fully. *)
+    | Canonical : ('m, 'k, 'mk, 'e, 'n) inst_canonical -> potential value
 
-  (* This is the result of evaluating a term with a given kind of energy.  Evaluating a kinetic term just produces a (kinetic) value, whereas evaluating a potential term might be a potential value (waiting for more arguments), or else the information that the case tree has reached a leaf and the resulting kinetic value or canonical type, or else the information that the case tree is permanently stuck.  *)
+  and ('p, 'k, 'pk, 's, 'et) struct_args = {
+    fields : ('p * 's * 'et) StructfieldAbwd.t;
+    ins : ('pk, 'p, 'k) insertion;
+    energy : 's energy;
+    eta : ('s, 'et) eta;
+  }
+
+  and ('m, 'k, 'mk, 'e, 'n) inst_canonical = {
+    canonical : ('e, 'n) canonical;
+    tyargs : ('m, 'k, 'mk, normal) TubeOf.t;
+    (* An insertion that relates its intrinsic dimension (such as for Gel) to the dimension it was evaluated at. *)
+    ins : ('mk, 'e, 'n) insertion;
+  }
+
+  (* This is the result of evaluating a term with a given kind of energy.  Evaluating a kinetic term just produces a (kinetic) value, whereas evaluating a potential term might be a potential value (either a lambda waiting for more arguments, a struct waiting for more fields, or a canonical type partially or fully instantiated), or else the information that the case tree has reached a leaf and the resulting kinetic value, or else the information that the case tree is permanently stuck.  *)
   and _ evaluation =
     (* When 's = potential, a Val means the case tree is not yet fully applied; while when 's = kinetic, it is the only possible kind of result.  Collapsing these two together seems to unify the code for Lam and Struct as much as possible. *)
     | Val : 's value -> 's evaluation
     | Realize : kinetic value -> potential evaluation
     | Unrealized : potential evaluation
 
-  (* A canonical type value is either a universe, a function-type, a datatype, or a codatatype/record.  It, is parametrized by its dimension as a type, which might be larger than its evaluation dimension if it has an intrinsic dimension (e.g. Gel). *)
-  and _ canonical =
+  (* A canonical type value is either a universe, a function-type, a datatype, or a codatatype/record.  It is parametrized by its dimension as a type, which might be larger than its evaluation dimension if it has an intrinsic dimension (e.g. Gel), and by that intrinsic dimension. *)
+  and (_, _) canonical =
     (* At present, we never produce these except as the values of their corresponding heads.  But in principle, we could allow universes and pi-types as potential terms, so that constants could be defined to "behave like" universes or pi-types without reducing to them. *)
-    | UU : 'm D.t -> 'm canonical
-    | Pi : string option * ('m, kinetic value) CubeOf.t * ('m, unit) BindCube.t -> 'm canonical
-    (* We define a named record type to encapsulate the arguments of Data, rather than using an inline one, so that we can bind its existential variables (https://discuss.ocaml.org/t/annotating-by-an-existential-type/14721).  See the definition below. *)
-    | Data : ('m, 'j, 'ij) data_args -> 'm canonical
-    (* A codatatype value has an eta flag, an environment that it was evaluated at, an insertion that relates its intrinsic dimension (such as for Gel) to the dimension it was evaluated at, and its fields as unevaluted terms that depend on one additional variable belonging to the codatatype itself (usually through its previous fields).  Note that combining env, ins, and any of the field terms in a *lower* codatafield produces the data of a binder; so in the absence of higher codatatypes we can think of this as a family of binders, one for each field, that share the same environment and insertion.  (But with higher fields this is no longer the case, as the context of the types gets degenerated by their dimension.) *)
-    | Codata : ('mn, 'm, 'n, 'c, 'a, 'et) codata_args -> 'mn canonical
+    | UU : 'm D.t -> ('m, D.zero) canonical
+    | Pi :
+        string option * ('m, kinetic value) CubeOf.t * ('m, unit) BindCube.t
+        -> ('m, D.zero) canonical
+    (* We define a named record type to encapsulate the arguments of Data and Codata, rather than using an inline one, so that we can bind their existential variables (https://discuss.ocaml.org/t/annotating-by-an-existential-type/14721).  See the definitions of these records below. *)
+    | Data : ('m, 'j, 'ij) data_args -> ('m, D.zero) canonical
+    | Codata : ('m, 'n, 'c, 'a, 'et) codata_args -> ('m, 'n) canonical
 
   (* A datatype value stores: *)
   and ('m, 'j, 'ij) data_args = {
@@ -252,12 +279,15 @@ end = struct
     discrete : [ `Yes | `Maybe | `No ];
   }
 
-  and ('mn, 'm, 'n, 'c, 'a, 'et) codata_args = {
+  (* A codatatype stores: *)
+  and ('m, 'n, 'c, 'a, 'et) codata_args = {
+    (* An eta flag and an opacity *)
     eta : (potential, 'et) eta;
     opacity : opacity;
+    (* The environment and termctx that it was evaluated in *)
     env : ('m, 'a) env;
     termctx : ('c, ('a, 'n) snoc) termctx option Lazy.t;
-    ins : ('mn, 'm, 'n) insertion;
+    (* Its fields, as unevaluted terms that depend on one additional variable belonging to the codatatype itself (usually through its previous fields).  Note that combining env, ins, and any of the field terms in a *lower* codatafield produces the data of a binder; so in the absence of higher codatatypes we can think of this as a family of binders, one for each field, that share the same environment and insertion.  (But with higher fields this is no longer the case, as the context of the types gets degenerated by their dimension.) *)
     fields : ('a * 'n * 'et) Term.CodatafieldAbwd.t;
   }
 
@@ -303,7 +333,7 @@ end
 
 include Value
 
-type any_canonical = Any : 'm canonical -> any_canonical
+type any_canonical = Any : ('m, 'n) canonical -> any_canonical
 
 (* Every context morphism has a valid dimension. *)
 let rec dim_env : type n b. (n, b) env -> n D.t = function
@@ -318,11 +348,11 @@ let rec dim_env : type n b. (n, b) env -> n D.t = function
 let dim_binder : type m s. (m, s) binder -> m D.t = function
   | Bind b -> dom_ins b.ins
 
-let dim_canonical : type m. m canonical -> m D.t = function
-  | UU dim -> dim
-  | Pi (_, doms, _) -> CubeOf.dim doms
-  | Data { dim; _ } -> dim
-  | Codata { ins; _ } -> dom_ins ins
+(* let dim_canonical : type m n mn. (m, n, mn) canonical -> mn D.t = function
+     | UU dim -> dim
+     | Pi (_, doms, _) -> CubeOf.dim doms
+     | Data { dim; _ } -> dim
+     | Codata { ins; _ } -> dom_ins ins *)
 
 (* The length of an environment is a tbwd of dimensions. *)
 let rec length_env : type n b. (n, b) env -> b Dbwd.t = function
@@ -402,6 +432,79 @@ let rec remove_env : type a k b n. (n, b) env -> (a, k, b) Tbwd.insert -> (n, a)
       let (Unmap_insert (_, v', na)) = Plusmap.unmap_insert v nb in
       Shift (remove_env env v', mn, na)
 
+(* Binders are completely lazy, so we can "evaluate" them independently of the master evaluation functions in norm. *)
+let eval_binder : type m n mn b s.
+    (m, b) env -> (m, n, mn) D.plus -> ((b, n) snoc, s) term -> (mn, s) Value.binder =
+ fun env mn body ->
+  let m = dim_env env in
+  let ins = id_ins m mn in
+  Value.Bind { env; ins; body }
+
+(* Same with structfields *)
+let rec eval_structfield : type m n mn a status i et any.
+    (m, a) env ->
+    m D.t ->
+    (m, n, mn) D.plus ->
+    mn D.t ->
+    (i, n * a * status * et * any) Term.Structfield.t ->
+    (i, mn * status * et) Value.Structfield.t =
+ fun env m m_n mn fld ->
+  match fld with
+  | Lower (tm, l) -> Lower (lazy_eval env tm, l)
+  | Higher terms -> Higher (lazy (eval_higher_structfield env m m_n mn terms))
+  | LazyHigher (lazy terms) -> Higher (lazy (eval_higher_structfield env m m_n mn terms))
+
+and eval_higher_structfield : type m n mn a i.
+    (m, a) env ->
+    m D.t ->
+    (m, n, mn) D.plus ->
+    mn D.t ->
+    (n, i, a) PlusPbijmap.t ->
+    (m, n, mn, mn, i, a) Structfield.higher_data =
+ fun env m m_n mn terms ->
+  let intrinsic = PlusPbijmap.intrinsic terms in
+  let vals =
+    InsmapOf.build mn intrinsic
+      {
+        build =
+          (fun (type olds) (ins : (mn, olds, i) insertion) ->
+            let (Unplus_ins
+                   (type news newh t r)
+                   ((newins, newshuf, mtr, _ts) :
+                     (n, news, newh) insertion
+                     * (r, newh, i) shuffle
+                     * (m, t, r) insertion
+                     * (t, news, olds) D.plus)) =
+              unplus_ins m m_n ins in
+            let newpbij = Pbij (newins, newshuf) in
+            match PlusPbijmap.find newpbij terms with
+            | None -> None
+            | Some (PlusFam (ra, tm)) ->
+                let (Plus tr) = D.plus (cod_right_ins mtr) in
+                (* mtrp : m ≅ t+r *)
+                let mtrp = deg_of_perm (perm_inv (perm_of_ins_plus mtr tr)) in
+                (* env2 is (t+r)-dimensional *)
+                let env2 = act_env env (op_of_deg mtrp) in
+                (* env3 is t-dimensional *)
+                let env3 = Shift (env2, tr, ra) in
+                (* We don't need to further permute the result, as all the information about the permutation ins was captured in newpbij and mtr. *)
+                Some (lazy_eval env3 tm));
+      } in
+  { intrinsic; plusdim = m_n; terms; env; deg = id_deg mn; vals }
+
+let eval_structfield_abwd : type m n mn a status et any.
+    (m, a) env ->
+    m D.t ->
+    (m, n, mn) D.plus ->
+    mn D.t ->
+    (n * a * status * et * any) Term.StructfieldAbwd.t ->
+    (mn * status * et) Value.StructfieldAbwd.t =
+ fun env m m_n mn fields ->
+  Mbwd.mmap
+    (fun [ Term.StructfieldAbwd.Entry (f, sf) ] ->
+      Value.StructfieldAbwd.Entry (f, eval_structfield env m m_n mn sf))
+    [ fields ]
+
 (* The universe of any dimension belongs to an instantiation of itself.  Note that the result is not itself a type (i.e. in the 0-dimensional universe) unless n=0.  This is the universe itself as a term. *)
 let rec universe : type n. n D.t -> kinetic value =
  fun n ->
@@ -409,7 +512,8 @@ let rec universe : type n. n D.t -> kinetic value =
     {
       head = UU n;
       args = Emp;
-      value = ready (Val (Canonical (UU n, TubeOf.empty n)));
+      value =
+        ready (Val (Canonical { canonical = UU n; tyargs = TubeOf.empty n; ins = ins_zero n }));
       ty = lazy (universe_ty n);
     }
 
@@ -429,7 +533,7 @@ and universe_ty : type n. n D.t -> kinetic value =
                 let m = dom_tface fa in
                 universe_nf m);
           } in
-      let value = ready (Val (Canonical (UU n, args))) in
+      let value = ready (Val (Canonical { canonical = UU n; tyargs = args; ins = ins_zero n })) in
       Neu { head = UU n; args = Inst (Emp, n', args); value; ty = lazy (universe D.zero) }
 
 type any_apps = Any : 'any apps -> any_apps

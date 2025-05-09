@@ -1,5 +1,6 @@
 open Bwd
 open Util
+open Perhaps
 open Tbwd
 open Dim
 open Dimbwd
@@ -38,8 +39,10 @@ module rec Term : sig
   module CodCube : module type of Cube (CodFam)
 
   module PlusFam : sig
-    type (_, _) t =
-      | PlusFam : (('r, 'b, 'rb) Plusmap.t * ('rb, potential) Term.term) option -> ('r, 'b) t
+    type (_, _) some =
+      | PlusFam : (('r, 'b, 'rb) Plusmap.t * ('rb, potential) Term.term) -> ('r, 'b) some
+
+    type ('r, 'b) t = ('r, 'b) some option
   end
 
   module PlusPbijmap : module type of Pbijmap (PlusFam)
@@ -56,8 +59,13 @@ module rec Term : sig
 
   module Structfield : sig
     type (_, _) t =
-      | Lower : ('a, 's) Term.term * [ `Labeled | `Unlabeled ] -> (D.zero, 'n * 'a * 's * 'et) t
-      | Higher : ('n, 'i, 'a) PlusPbijmap.t -> ('i, 'n * 'a * potential * no_eta) t
+      | Lower :
+          ('a, 's) Term.term * [ `Labeled | `Unlabeled ]
+          -> (D.zero, 'n * 'a * 's * 'et * 'any) t
+      | Higher : ('n, 'i, 'a) PlusPbijmap.t -> ('i, 'n * 'a * potential * no_eta * 'any) t
+      | LazyHigher :
+          ('n, 'i, 'a) PlusPbijmap.t Lazy.t
+          -> ('i, 'n * 'a * potential * no_eta * some) t
   end
 
   module StructfieldAbwd : module type of Field.Abwd (Structfield)
@@ -81,7 +89,7 @@ module rec Term : sig
     | Let : string option * ('a, kinetic) term * (('a, D.zero) snoc, 's) term -> ('a, 's) term
     | Lam : 'n variables * (('a, 'n) snoc, 's) Term.term -> ('a, 's) term
     | Struct :
-        ('s, 'et) eta * 'n D.t * ('n * 'a * 's * 'et) StructfieldAbwd.t * 's energy
+        ('s, 'et) eta * 'n D.t * ('n * 'a * 's * 'et * none) StructfieldAbwd.t * 's energy
         -> ('a, 's) term
     | Match : {
         tm : ('a, kinetic) term;
@@ -168,8 +176,10 @@ end = struct
   module CodCube = Cube (CodFam)
 
   module PlusFam = struct
-    type (_, _) t =
-      | PlusFam : (('r, 'b, 'rb) Plusmap.t * ('rb, potential) Term.term) option -> ('r, 'b) t
+    type (_, _) some =
+      | PlusFam : (('r, 'b, 'rb) Plusmap.t * ('rb, potential) Term.term) -> ('r, 'b) some
+
+    type ('r, 'b) t = ('r, 'b) some option
   end
 
   module PlusPbijmap = Pbijmap (PlusFam)
@@ -187,9 +197,15 @@ end = struct
   module CodatafieldAbwd = Field.Abwd (Codatafield)
 
   module Structfield = struct
+    (* The last parameter indicates whether lazy fields are allowed (some) or not (none).  Normally they are not, because a term is supposed to be a completed data object that can be, for instance, serialized to a file and reloaded.  But when we use this to store fibrancy fields, which are recomputed on evaluation and are corecursively infinite, we have to allow laziness.  *)
     type (_, _) t =
-      | Lower : ('a, 's) Term.term * [ `Labeled | `Unlabeled ] -> (D.zero, 'n * 'a * 's * 'et) t
-      | Higher : ('n, 'i, 'a) PlusPbijmap.t -> ('i, 'n * 'a * potential * no_eta) t
+      | Lower :
+          ('a, 's) Term.term * [ `Labeled | `Unlabeled ]
+          -> (D.zero, 'n * 'a * 's * 'et * 'any) t
+      | Higher : ('n, 'i, 'a) PlusPbijmap.t -> ('i, 'n * 'a * potential * no_eta * 'any) t
+      | LazyHigher :
+          ('n, 'i, 'a) PlusPbijmap.t Lazy.t
+          -> ('i, 'n * 'a * potential * no_eta * some) t
   end
 
   module StructfieldAbwd = Field.Abwd (Structfield)
@@ -219,7 +235,7 @@ end = struct
     (* Abstractions and structs can appear in any kind of term.  The dimension 'n is the substitution dimension of the type being checked against (function-type or codata/record).  *)
     | Lam : 'n variables * (('a, 'n) snoc, 's) Term.term -> ('a, 's) term
     | Struct :
-        ('s, 'et) eta * 'n D.t * ('n * 'a * 's * 'et) StructfieldAbwd.t * 's energy
+        ('s, 'et) eta * 'n D.t * ('n * 'a * 's * 'et * none) StructfieldAbwd.t * 's energy
         -> ('a, 's) term
     (* Matches can only appear in non-kinetic terms.  The dimension 'n is the substitution dimension of the type of the variable being matched against. *)
     | Match : {
@@ -242,19 +258,22 @@ end = struct
 
   (* A canonical type is either a datatype or a codatatype/record. *)
   and _ canonical =
-    (* A datatype stores its family of constructors, and also its number of indices.  (The former is not determined in the latter if there happen to be zero constructors). *)
+    (* A datatype stores its family of constructors, whether it is discrete, and also its number of indices.  (The former is not determined in the latter if there happen to be zero constructors). *)
     | Data : {
         indices : 'i Fwn.t;
         constrs : (Constr.t, ('a, 'i) dataconstr) Abwd.t;
         discrete : [ `Yes | `Maybe | `No ];
       }
         -> 'a canonical
-    (* A codatatype has an eta flag, an intrinsic dimension (like Gel), and a family of fields, each with a type that depends on one additional variable belonging to the codatatype itself (usually by way of its previous fields).  We retain the order of the fields by storing them in an Abwd rather than a Map so as to enable positional access as well as named access. *)
     | Codata : {
+        (* An eta flag and its opacity *)
         eta : (potential, 'et) eta;
         opacity : opacity;
+        (* An intrinsic dimension (like Gel) *)
         dim : 'n D.t;
+        (* The termctx in which it was checked, since that is needed to eval-readback the env to degenerate it when checking higher fields. *)
         termctx : ('c, ('a, 'n) snoc) termctx option;
+        (* A family of fields, each with a type that depends on one additional variable belonging to the codatatype itself (usually by way of its previous fields).  We retain the order of the fields by storing them in an Abwd rather than a Map so as to enable positional access as well as named access. *)
         fields : ('a * 'n * 'et) CodatafieldAbwd.t;
       }
         -> 'a canonical
