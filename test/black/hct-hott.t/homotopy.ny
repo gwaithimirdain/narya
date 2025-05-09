@@ -17,8 +17,8 @@ def iscontr_idfrom (A : Fib) (a0 : A .t) : isContr (Σ𝕗 A (a1 ↦ Id𝕗 A a0
   contract ≔ a1_a2 ↦
     let a1 ≔ a1_a2 .fst in
     let a2 ≔ a1_a2 .snd in
-    (refl ((z ↦ Id𝕗 A z a0) : A .t → Fib) a2 .f .trr.1 (refl a0),
-     sym (refl ((z ↦ Id𝕗 A z a0) : A .t → Fib) a2 .f .liftr.1 (refl a0))))
+    (refl ((z ↦ Id𝕗 A z a0) : A .t → Fib) a2 .f .trr (refl a0),
+     sym (refl ((z ↦ Id𝕗 A z a0) : A .t → Fib) a2 .f .liftr (refl a0))))
 
 def iscontr_idto (A : Fib) (a1 : A .t) : isContr (Σ𝕗 A (a0 ↦ Id𝕗 A a0 a1))
   ≔ (
@@ -43,7 +43,7 @@ def is11_Id (A0 A1 : Fib) (A2 : Id Fib A0 A1) (B0 B1 : Fib)
   (re2 : refl is11 A2 B2 R2 re0 re1) (a0 : A0 .t) (a1 : A1 .t) (b0 : B0 .t)
   (b1 : B1 .t) (r0 : R0 a0 b0 .t) (r1 : R1 a1 b1 .t)
   : is11 (Idd𝕗 A0 A1 A2 a0 a1) (Idd𝕗 B0 B1 B2 b0 b1)
-      (a2 b2 ↦ (R2 a2 b2 .t r0 r1, R2 a2 b2 .f .id.1 r0 r1))
+      (a2 b2 ↦ (R2 a2 b2 .t r0 r1, R2 a2 b2 .f .id r0 r1))
   ≔ (
   contrr ≔ a2 ↦
     let S : (y0 : B0 .t) (y1 : B1 .t) → R0 a0 y0 .t → R1 a1 y1 .t → Fib
@@ -63,7 +63,7 @@ def is11_Id (A0 A1 : Fib) (A2 : Id Fib A0 A1) (B0 B1 : Fib)
       ≔ re0 .contrr a0 .contract (b0, r0) .snd in
     let q1 : Id (R1 a1) p1 .t r1 r1'
       ≔ re1 .contrr a1 .contract (b1, r1) .snd in
-    (refl S p0 p1 q0 q1 .f .trl.1 u,
+    (refl S p0 p1 q0 q1 .f .trl u,
      v2 ↦
        let w
          ≔ re2 .contrr a2 .contract {(b0, r0)} {(b1, r1)} (v2 .fst, v2 .snd)
@@ -71,8 +71,8 @@ def is11_Id (A0 A1 : Fib) (A2 : Id Fib A0 A1) (B0 B1 : Fib)
        S⁽ᵉᵉ⁾ (sym (refl p0)) (sym (refl p1)) (sym (refl q0)) (sym (refl q1))
          .f
          .id.1 {v2} {u} (sym w .fst, sym w .snd)
-           (refl S p0 p1 q0 q1 .f .liftl.1 u)
-         .trl.1 (refl u)),
+           (refl S p0 p1 q0 q1 .f .liftl u)
+         .trl (refl u)),
   contrl ≔ b2 ↦
     let S : (x0 : A0 .t) (x1 : A1 .t) → R0 x0 b0 .t → R1 x1 b1 .t → Fib
       ≔ x0 x1 z0 z1 ↦
@@ -91,7 +91,7 @@ def is11_Id (A0 A1 : Fib) (A2 : Id Fib A0 A1) (B0 B1 : Fib)
       ≔ re0 .contrl b0 .contract (a0, r0) .snd in
     let q1 : Id R1 p1 (refl b1) .t r1 r1'
       ≔ re1 .contrl b1 .contract (a1, r1) .snd in
-    (refl S p0 p1 q0 q1 .f .trl.1 u,
+    (refl S p0 p1 q0 q1 .f .trl u,
      v2 ↦
        let w
          ≔ re2 .contrl b2 .contract {(a0, r0)} {(a1, r1)} (v2 .fst, v2 .snd)
@@ -99,8 +99,8 @@ def is11_Id (A0 A1 : Fib) (A2 : Id Fib A0 A1) (B0 B1 : Fib)
        S⁽ᵉᵉ⁾ (sym (refl p0)) (sym (refl p1)) (sym (refl q0)) (sym (refl q1))
          .f
          .id.1 {v2} {u} (sym w .fst, sym w .snd)
-           (refl S p0 p1 q0 q1 .f .liftl.1 u)
-         .trl.1 (refl u)))
+           (refl S p0 p1 q0 q1 .f .liftl u)
+         .trl (refl u)))
 
 {` Bisimulations `}
 
@@ -113,9 +113,9 @@ def isBisim (A B : Fib) (R : A .t → B .t → Fib) : Type ≔ codata [
 | x .id.e
   : (a0 : A.0 .t) (b0 : B.0 .t) (r0 : R.0 a0 b0 .t) (a1 : A.1 .t)
     (b1 : B.1 .t) (r1 : R.1 a1 b1 .t)
-    → isBisim (A.2 .t a0 a1, A.2 .f .id.1 a0 a1)
-        (B.2 .t b0 b1, B.2 .f .id.1 b0 b1)
-        (a2 b2 ↦ (R.2 a2 b2 .t r0 r1, R.2 a2 b2 .f .id.1 r0 r1)) ]
+    → isBisim (A.2 .t a0 a1, A.2 .f .id a0 a1)
+        (B.2 .t b0 b1, B.2 .f .id b0 b1)
+        (a2 b2 ↦ (R.2 a2 b2 .t r0 r1, R.2 a2 b2 .f .id r0 r1)) ]
 
 {` Any 1-1 correspondence is a bisimulation, because 1-1 correspondences lift to identity types. `}
 def bisim_of_11 (A B : Fib) (R : A .t → B .t → Fib) (re : is11 A B R)
@@ -126,9 +126,9 @@ def bisim_of_11 (A B : Fib) (R : A .t → B .t → Fib) (re : is11 A B R)
 | .trl ↦ b ↦ re .contrl b .center .fst
 | .liftl ↦ b ↦ re .contrl b .center .snd
 | .id.e ↦ a0 b0 r0 a1 b1 r1 ↦
-    bisim_of_11 (A.2 .t a0 a1, A.2 .f .id.1 a0 a1)
-      (B.2 .t b0 b1, B.2 .f .id.1 b0 b1)
-      (a2 b2 ↦ (R.2 a2 b2 .t r0 r1, R.2 a2 b2 .f .id.1 r0 r1))
+    bisim_of_11 (A.2 .t a0 a1, A.2 .f .id a0 a1)
+      (B.2 .t b0 b1, B.2 .f .id b0 b1)
+      (a2 b2 ↦ (R.2 a2 b2 .t r0 r1, R.2 a2 b2 .f .id r0 r1))
       (is11_Id A.0 A.1 A.2 B.0 B.1 B.2 R.0 re.0 R.1 re.1 R.2 re.2 a0 a1 b0 b1
          r0 r1)]
 
@@ -144,31 +144,31 @@ def isbisim_eqv (A B : Fib) (R S : A .t → B .t → Fib)
 | .id.e ↦ a0 b0 s0 a1 b1 s1 ↦
     let r0 ≔ e.0 a0 b0 .fro s0 in
     let r1 ≔ e.1 a1 b1 .fro s1 in
-    isbisim_eqv (A.2 .t a0 a1, A.2 .f .id.1 a0 a1)
-      (B.2 .t b0 b1, B.2 .f .id.1 b0 b1)
-      (a2 b2 ↦ (R.2 a2 b2 .t r0 r1, R.2 a2 b2 .f .id.1 r0 r1))
-      (a2 b2 ↦ (S.2 a2 b2 .t s0 s1, S.2 a2 b2 .f .id.1 s0 s1))
+    isbisim_eqv (A.2 .t a0 a1, A.2 .f .id a0 a1)
+      (B.2 .t b0 b1, B.2 .f .id b0 b1)
+      (a2 b2 ↦ (R.2 a2 b2 .t r0 r1, R.2 a2 b2 .f .id r0 r1))
+      (a2 b2 ↦ (S.2 a2 b2 .t s0 s1, S.2 a2 b2 .f .id s0 s1))
       (a2 b2 ↦
        Id_eqv (R.0 a0 b0 .t) (R.1 a1 b1 .t) (R.2 a2 b2 .t) (S.0 a0 b0 .t)
          (S.1 a1 b1 .t) (S.2 a2 b2 .t) (e.0 a0 b0) (e.1 a1 b1) (e.2 a2 b2) s0
-         s1) (re.2 .id.1 a0 b0 r0 a1 b1 r1)]
+         s1) (re.2 .id a0 b0 r0 a1 b1 r1)]
 
 {` The converse of univalence: any identification of fibrant types is a bisimulation. `}
 def bisim_of_Id (A0 A1 : Fib) (A2 : Id Fib A0 A1)
   : isBisim A0 A1 (a0 a1 ↦ Idd𝕗 A0 A1 A2 a0 a1)
   ≔ [
-| .trr ↦ A2 .f .trr.1
-| .liftr ↦ A2 .f .liftr.1
-| .trl ↦ A2 .f .trl.1
-| .liftl ↦ A2 .f .liftl.1
+| .trr ↦ A2 .f .trr
+| .liftr ↦ A2 .f .liftr
+| .trl ↦ A2 .f .trl
+| .liftl ↦ A2 .f .liftl
 | .id.e ↦ a0 b0 r0 a1 b1 r1 ↦
-    isbisim_eqv (A0.2 .t a0 a1, A0.2 .f .id.1 a0 a1)
-      (A1.2 .t b0 b1, A1.2 .f .id.1 b0 b1)
-      (a2 b2 ↦ (sym A2.2 .t r0 r1 a2 b2, sym A2.2 .f .id.1 r0 r1 .id.1 a2 b2))
-      (a2 b2 ↦ (A2.2 .t a2 b2 r0 r1, A2.2 .f .id.1 a2 b2 .id.1 r0 r1))
+    isbisim_eqv (A0.2 .t a0 a1, A0.2 .f .id a0 a1)
+      (A1.2 .t b0 b1, A1.2 .f .id b0 b1)
+      (a2 b2 ↦ (sym A2.2 .t r0 r1 a2 b2, sym A2.2 .f .id.1 r0 r1 .id a2 b2))
+      (a2 b2 ↦ (A2.2 .t a2 b2 r0 r1, A2.2 .f .id.1 a2 b2 .id r0 r1))
       (a2 b2 ↦
        sym_eqv (A0.0 .t) (A1.0 .t) (A2.0 .t) (A0.1 .t) (A1.1 .t) (A2.1 .t)
          (A0.2 .t) (A1.2 .t) (sym A2.2 .t) a0 b0 r0 a1 b1 r1 a2 b2)
-      (bisim_of_Id (A0.2 .t a0 a1, A0.2 .f .id.1 a0 a1)
-         (A1.2 .t b0 b1, A1.2 .f .id.1 b0 b1)
+      (bisim_of_Id (A0.2 .t a0 a1, A0.2 .f .id a0 a1)
+         (A1.2 .t b0 b1, A1.2 .f .id b0 b1)
          (sym A2.2 .t r0 r1, sym A2.2 .f .id.1 r0 r1))]

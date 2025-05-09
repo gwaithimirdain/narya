@@ -23,14 +23,12 @@ def pre_univalence (A : Fib) (B : Fib) (G : Id Type (A .t) (B .t))
 {` This is just the assumption of pointwise fibrancy. `}
 | .id.1 ↦ a b ↦ 𝕗G a b
 {` The first few e-dimensional fields are uniform operations, which also follow from pointwise fibrancy. `}
-| .trr.e ↦ a0 b0 r0 ↦
-    𝕗G.2 (A.2 .f .liftr.1 a0) (B.2 .f .liftr.1 b0) .trr.1 r0
-| .trl.e ↦ a1 b1 r1 ↦
-    𝕗G.2 (A.2 .f .liftl.1 a1) (B.2 .f .liftl.1 b1) .trl.1 r1
+| .trr.e ↦ a0 b0 r0 ↦ 𝕗G.2 (A.2 .f .liftr a0) (B.2 .f .liftr b0) .trr r0
+| .trl.e ↦ a1 b1 r1 ↦ 𝕗G.2 (A.2 .f .liftl a1) (B.2 .f .liftl b1) .trl r1
 | .liftr.e ↦ a0 b0 r0 ↦
-    sym (𝕗G.2 (A.2 .f .liftr.1 a0) (B.2 .f .liftr.1 b0) .liftr.1 r0)
+    sym (𝕗G.2 (A.2 .f .liftr a0) (B.2 .f .liftr b0) .liftr r0)
 | .liftl.e ↦ a1 b1 r1 ↦
-    sym (𝕗G.2 (A.2 .f .liftl.1 a1) (B.2 .f .liftl.1 b1) .liftl.1 r1)
+    sym (𝕗G.2 (A.2 .f .liftl a1) (B.2 .f .liftl b1) .liftl r1)
 {` Here is the most interesting bit, where we coinductively use the fact that bisimulations are defined to lift to identity types.  We have to transfer it across a symmetry equivalence. `}
 | .id.e ↦ a0 b0 r0 a1 b1 r1 ↦
     let s
@@ -44,13 +42,13 @@ def pre_univalence (A : Fib) (B : Fib) (G : Id Type (A .t) (B .t))
         → isFibrant (sym G.2 r0 r1 a2 b2)
       ≔ a2 b2 ↦
         𝕗eqv (G.2 a2 b2 r0 r1) (sym G.2 r0 r1 a2 b2) (s a2 b2)
-          (𝕗G.2 a2 b2 .id.1 r0 r1) in
+          (𝕗G.2 a2 b2 .id r0 r1) in
     pre_univalence (Idd𝕗 A.0 A.1 A.2 a0 a1) (Idd𝕗 B.0 B.1 B.2 b0 b1)
       (sym G.2 r0 r1) 𝕗sG
       (isbisim_eqv (Idd𝕗 A.0 A.1 A.2 a0 a1) (Idd𝕗 B.0 B.1 B.2 b0 b1)
-         (a2 b2 ↦ (G.2 a2 b2 r0 r1, 𝕗G.2 a2 b2 .id.1 r0 r1))
+         (a2 b2 ↦ (G.2 a2 b2 r0 r1, 𝕗G.2 a2 b2 .id r0 r1))
          (a2 b2 ↦ (sym G.2 r0 r1 a2 b2, 𝕗sG a2 b2)) s
-         (re.2 .id.1 a0 b0 r0 a1 b1 r1))]
+         (re.2 .id a0 b0 r0 a1 b1 r1))]
 
 {` Now we put this together with Gel to prove univalence for fibrant types, which we can express for bisimulations or for 1-1 correspondences. `}
 def univalence_bisim (A B : Fib) (R : A .t → B .t → Fib) (re : isBisim A B R)
@@ -77,7 +75,7 @@ def is11_Id𝕗 (A : Fib) : is11 A A (Id𝕗 A) ≔ (
 
 def srefl (A : Fib) : Id Fib A A ≔ univalence_11 A A (Id𝕗 A) (is11_Id𝕗 A)
 
-def srefl_is_strict (A : Fib) (a : A .t) : Id (A .t) (srefl A .f .trr.1 a) a
+def srefl_is_strict (A : Fib) (a : A .t) : Id (A .t) (srefl A .f .trr a) a
   ≔ refl a
 
 {` More generally, given any Voevodsky equivalence we can easily make it into a 1-1 correspondence and hence an identification. `}
@@ -93,11 +91,11 @@ def univalence_vv (A B : Fib) (f : A .t → B .t)
 def univalence_is_left_definitional (A B : Fib) (f : A .t → B .t)
   (fe : (b : B .t) → isContr (Σ𝕗 A (a ↦ Id𝕗 B (f a) b))) (a : A .t)
   : let E : Id Fib A B ≔ univalence_vv A B f fe in
-    Id (B .t) (E .f .trr.1 a) (f a)
+    Id (B .t) (E .f .trr a) (f a)
   ≔ refl (f a)
 
 def univalence_is_right_definitional (A B : Fib) (f : A .t → B .t)
   (fe : (b : B .t) → isContr (Σ𝕗 A (a ↦ Id𝕗 B (f a) b))) (b : B .t)
   : let E : Id Fib A B ≔ univalence_vv A B f fe in
-    Id (A .t) (E .f .trl.1 b) (fe b .center .fst)
+    Id (A .t) (E .f .trl b) (fe b .center .fst)
   ≔ refl (fe b .center .fst)

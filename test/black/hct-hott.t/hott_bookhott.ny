@@ -66,20 +66,20 @@ def Id_eqv (A0 : Type) (A1 : Type) (A2 : Id Type A0 A1) (B0 : Type)
 
 {` Fibrancy transports across equivalences. `}
 def 𝕗eqv (A B : Type) (e : A ≅ B) (𝕗A : isFibrant A) : isFibrant B ≔ [
-| .trr.e ↦ b0 ↦ e.1 .to (𝕗A.2 .trr.1 (e.0 .fro b0))
-| .trl.e ↦ b1 ↦ e.0 .to (𝕗A.2 .trl.1 (e.1 .fro b1))
+| .trr.e ↦ b0 ↦ e.1 .to (𝕗A.2 .trr (e.0 .fro b0))
+| .trl.e ↦ b1 ↦ e.0 .to (𝕗A.2 .trl (e.1 .fro b1))
 | .liftr.e ↦ b0 ↦
-    eq.trr B.0 (b ↦ B.2 b (e.1 .to (𝕗A.2 .trr.1 (e.0 .fro b0))))
+    eq.trr B.0 (b ↦ B.2 b (e.1 .to (𝕗A.2 .trr (e.0 .fro b0))))
       (e.0 .to (e.0 .fro b0)) b0 (e.0 .to_fro b0)
-      (e.2 .to (𝕗A.2 .liftr.1 (e.0 .fro b0)))
+      (e.2 .to (𝕗A.2 .liftr (e.0 .fro b0)))
 | .liftl.e ↦ b1 ↦
-    eq.trr B.1 (b ↦ B.2 (e.0 .to (𝕗A.2 .trl.1 (e.1 .fro b1))) b)
+    eq.trr B.1 (b ↦ B.2 (e.0 .to (𝕗A.2 .trl (e.1 .fro b1))) b)
       (e.1 .to (e.1 .fro b1)) b1 (e.1 .to_fro b1)
-      (e.2 .to (𝕗A.2 .liftl.1 (e.1 .fro b1)))
+      (e.2 .to (𝕗A.2 .liftl (e.1 .fro b1)))
 | .id.e ↦ b0 b1 ↦
     𝕗eqv (A.2 (e.0 .fro b0) (e.1 .fro b1)) (B.2 b0 b1)
       (Id_eqv A.0 A.1 A.2 B.0 B.1 B.2 e.0 e.1 e.2 b0 b1)
-      (𝕗A.2 .id.1 (e.0 .fro b0) (e.1 .fro b1))]
+      (𝕗A.2 .id (e.0 .fro b0) (e.1 .fro b1))]
 
 {` Symmetry is an equivalence `}
 def sym_eqv (A00 A01 : Type) (A02 : Id Type A00 A01) (A10 A11 : Type)
