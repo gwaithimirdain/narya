@@ -793,7 +793,7 @@ and tyof_field_giventype : type m n mn h s r i c et a k.
             match shuf with
             | Trivial -> `Ins fldins
             | Nontrivial { shuffle; _ } -> `Pbij (Pbij (fldins, shuffle)) in
-          fatal ~severity (Wrong_dimension_of_field (eta, phead head, `Field fld, i, errsuffix)))
+          fatal ~severity (Wrong_dimension_of_field (eta, phead head, `Field fld, m, i, errsuffix)))
 
 (* This version is for when we are synthesizing the insertion, so we return the resulting insertion along with the type.  The field might also be given positionally in this case, so we also return the field name when we find it.  In this case, mismatches in field names or dimensions are user errors. *)
 and tyof_field_withname : type a b.
@@ -858,8 +858,8 @@ and tyof_field_withname_giventype : type a b m n mn c et.
           | Wrong_dimension (i, fldty) -> (
               (* If the user omitted the suffix completely, and the field and the term are both 1-dimensional, we fill in the unique suffix "1" for them. *)
               let err =
-                Code.Wrong_dimension_of_field (eta, PVal (ctx, ty), `String fldname, i, `Ints ints)
-              in
+                Code.Wrong_dimension_of_field
+                  (eta, PVal (ctx, ty), `String fldname, m, i, `Ints ints) in
               match (ints, D.compare m i, D.compare_zero m) with
               | [], Eq, Pos m' -> (
                   let (Is_suc (mpred, _, _)) = suc_pos m' in
