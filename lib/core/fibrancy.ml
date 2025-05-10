@@ -2,13 +2,14 @@ open Bwd
 open Bwd.Infix
 open Dim
 open Util
+open Tbwd
 open Term
 open Monad.Ops (Monad.Maybe)
 
 let ([ ftrr; fliftr; ftrl; fliftl; fid ] : (Hott.dim Field.t, Fwn.five) Vec.t) =
   Vec.map (fun x -> Field.intern x Hott.dim) [ "trr"; "liftr"; "trl"; "liftl"; "id" ]
 
-let fields : (Tbwd.emp * D.zero * no_eta) CodatafieldAbwd.t option Lazy.t =
+let fields : (emp * D.zero * no_eta) CodatafieldAbwd.t option Lazy.t =
   lazy
     (let* zero, one, two = Hott.faces () in
      let plusmap = Plusmap.Map_snoc (Map_emp, D.plus_zero Hott.dim) in
@@ -67,7 +68,7 @@ let fields : (Tbwd.emp * D.zero * no_eta) CodatafieldAbwd.t option Lazy.t =
        <: Entry (ftrl, Higher (plusmap, trl))
        <: Entry (fliftl, Higher (plusmap, liftl))))
 
-(* The dimension 'n of the Structfields is alost always 0, since it is the substitution dimension of the type being checked against, and canonical types are almost always defined to belong to the 0-dimensional universe.  The one exception, of course, is Gel/glue, where this is the gel dimension.  *)
+(* The dimension 'n of the Structfields is alost always 0, since it is the substitution dimension of the type being checked against, and canonical types are almost always defined to belong to the 0-dimensional universe.  The one exception, of course, is Gel/glue, where this is the gel dimension.  When n=0, we are proving isFibrant; when n is larger we're proving "refl isFibrant" or some higher version of it. *)
 
 (* These are lazy only to delay them until we're inside Dim.Endpoints.run. *)
 
@@ -137,7 +138,7 @@ let pi :
           (* <: Entry (fliftl, Higher liftl) *)
           (* <: Entry (fid, Higher id) *)))
 
-let universe : (D.zero * Tbwd.emp * potential * no_eta) StructfieldAbwd.t option Lazy.t =
+let universe : (D.zero * emp * potential * no_eta) StructfieldAbwd.t option Lazy.t =
   Lazy.from_val None
 
 let codata : type a n et.
