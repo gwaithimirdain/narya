@@ -12,6 +12,7 @@ module type TFun = sig
 
   val exists : 'p param -> 'a Dom.t -> ('p, 'a) exists
   val out : 'p param -> 'a Dom.t -> ('p, 'a, 'b) t -> 'b Cod.t
+  val input : 'p param -> 'b Cod.t -> ('p, 'a, 'b) t -> 'a Dom.t
   val uniq : ('p, 'a, 'b1) t -> ('p, 'a, 'b2) t -> ('b1, 'b2) Eq.t
 end
 
@@ -30,6 +31,14 @@ module Make (F : TFun) = struct
     | Word (Suc (xs, x)), Map_snoc (pxs, px) ->
         let (Word ys) = out p (Word xs) pxs in
         Word (Suc (ys, F.out p x px))
+
+  let rec input : type p xs ys. p F.param -> ys OfCod.t -> (p, xs, ys) t -> xs OfDom.t =
+   fun p ys pxs ->
+    match (ys, pxs) with
+    | Word Zero, Map_emp -> Word Zero
+    | Word (Suc (xs, x)), Map_snoc (pxs, px) ->
+        let (Word ys) = input p (Word xs) pxs in
+        Word (Suc (ys, F.input p x px))
 
   type (_, _) exists = Exists : 'ys OfCod.t * ('p, 'xs, 'ys) t -> ('p, 'xs) exists
 

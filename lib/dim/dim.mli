@@ -883,6 +883,7 @@ module Plusmap : sig
 
   val exists : 'p D.t -> 'xs OfDom.t -> ('p, 'xs) exists
   val out : 'p D.t -> 'xs OfDom.t -> ('p, 'xs, 'ys) t -> 'ys OfCod.t
+  val input : 'p D.t -> 'ys OfCod.t -> ('p, 'xs, 'ys) t -> 'xs OfDom.t
   val uniq : ('p, 'xs, 'ys) t -> ('p, 'xs, 'zs) t -> ('ys, 'zs) Eq.t
 
   type (_, _, _, _) map_insert =
