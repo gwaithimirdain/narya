@@ -581,10 +581,11 @@ and struct_field : type p s et n k nk.
       | Eq, Eq -> (
           match InsmapOf.find fldins vals with
           | Some v -> force_eval v
-          | None -> fatal (Anomaly (err ^ "field value unset")))
-      | Neq, _ -> fatal (Dimension_mismatch (err ^ "field evaluation", dom_deg deg, dom_ins fldins))
+          | None -> fatal (Anomaly (err ^ " field value unset")))
+      | Neq, _ ->
+          fatal (Dimension_mismatch (err ^ " field evaluation", dom_deg deg, dom_ins fldins))
       | _, Neq ->
-          fatal (Dimension_mismatch (err ^ "field intrinsic", intrinsic, cod_right_ins fldins)))
+          fatal (Dimension_mismatch (err ^ " field intrinsic", intrinsic, cod_right_ins fldins)))
   | _ -> (
       match energy with
       | Potential -> Unrealized
@@ -1164,7 +1165,7 @@ and inst_fibrancy_fields : type m n mn.
       let middle, outer = TubeOf.split m_n n_1 tyargs in
       (* TODO: Is it always correct to use the identity fldins? *)
       let (Plus mn1k) = D.plus Hott.dim in
-      let fldins = id_ins (TubeOf.out tyargs) mn1k in
+      let fldins = id_ins (TubeOf.inst tyargs) mn1k in
       let idfld = struct_field "fibrancy" Potential fields Fibrancy.fid fldins in
       let (Snoc (Snoc (Emp, xcube), ycube)) = TubeOf.to_cube_bwv one l outer in
       match
