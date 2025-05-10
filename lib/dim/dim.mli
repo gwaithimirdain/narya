@@ -117,6 +117,12 @@ type (_, _, _) sface_of_plus =
 
 val sface_of_plus : ('n, 'k, 'nk) D.plus -> ('ml, 'nk) sface -> ('ml, 'n, 'k) sface_of_plus
 
+val singleton_sface :
+  ('m, 'n) sface ->
+  'n is_singleton ->
+  'l Endpoints.len ->
+  [ `End of 'l N.index | `Mid of ('m, 'n) Eq.t ]
+
 type any_sface = Any_sface : ('n, 'k) sface -> any_sface
 
 val string_of_sface : ('n, 'k) sface -> string
@@ -219,6 +225,14 @@ val tface_plus :
   ('m, 'l, 'ml) D.plus ->
   ('ml, 'n, 'kl, 'nkl) tface
 
+val plus_tface :
+  'l D.t ->
+  ('l, 'm, 'lm) D.plus ->
+  ('l, 'n, 'ln) D.plus ->
+  ('l, 'nk, 'lnk) D.plus ->
+  ('m, 'n, 'k, 'nk) tface ->
+  ('lm, 'ln, 'k, 'lnk) tface
+
 type ('m, 'n) pface = ('m, D.zero, 'n, 'n) tface
 
 val pface_of_sface : ('m, 'n) sface -> [ `Proper of ('m, 'n) pface | `Id of ('m, 'n) Eq.t ]
@@ -238,6 +252,14 @@ val sface_plus_pface :
   ('k, 'p, 'kp) D.plus ->
   ('p, 'n) pface ->
   ('kp, 'm, 'n, 'mn) tface
+
+val tface_plus_sface :
+  ('k, 'm, 'l, 'ml) tface ->
+  ('ml, 'n, 'mln) D.plus ->
+  ('l, 'n, 'ln) D.plus ->
+  ('k, 'p, 'kp) D.plus ->
+  ('p, 'n) sface ->
+  ('kp, 'm, 'ln, 'mln) tface
 
 type (_, _, _, _) tface_of_plus =
   | TFace_of_plus :

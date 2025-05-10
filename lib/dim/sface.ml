@@ -1,4 +1,5 @@
 open Util
+open Singleton
 
 (* ********** Strict faces ********** *)
 
@@ -121,6 +122,20 @@ let rec plus_of_sface : type m mn. (m, mn) sface -> (m, mn) d_le = function
   | Mid d ->
       let (Le mn) = plus_of_sface d in
       Le (N.suc_plus_eq_suc mn)
+
+(* A strict face of a singleton dimension is either the identity or an endpoint. *)
+
+let singleton_sface : type m n l.
+    (m, n) sface -> n is_singleton -> l Endpoints.len -> [ `End of l N.index | `Mid of (m, n) Eq.t ]
+    =
+ fun s One l ->
+  match s with
+  | End (Zero, (l', i)) ->
+      let Eq = Endpoints.uniq l l' in
+      `End i
+  | Mid Zero -> `Mid Eq
+
+(* Converting to and from strings *)
 
 type any_sface = Any_sface : ('n, 'k) sface -> any_sface
 

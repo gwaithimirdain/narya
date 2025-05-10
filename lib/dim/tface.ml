@@ -56,6 +56,20 @@ let rec tface_plus : type m n k nk l ml kl nkl.
   | Zero, Zero, Zero -> d
   | Suc kl, Suc nkl, Suc ml -> Mid (tface_plus d kl nkl ml)
 
+let rec plus_tface : type m n k nk l lm ln lnk.
+    l D.t ->
+    (l, m, lm) D.plus ->
+    (l, n, ln) D.plus ->
+    (l, nk, lnk) D.plus ->
+    (m, n, k, nk) tface ->
+    (lm, ln, k, lnk) tface =
+ fun l lm ln l_nk d ->
+  match (d, lm, l_nk) with
+  | Mid d, Suc lm, Suc l_nk -> Mid (plus_tface l lm ln l_nk d)
+  | End (s, nk, ll), _, Suc l_nk ->
+      let ln_k = D.plus_assocl ln nk l_nk in
+      End (plus_sface l l_nk lm s, ln_k, ll)
+
 (* A "proper face" is a fully instantiated tube face. *)
 
 type ('m, 'n) pface = ('m, D.zero, 'n, 'n) tface
@@ -92,7 +106,7 @@ let pface_plus : type m n mn k kn.
     (k, m) pface -> (m, n, mn) D.plus -> (k, n, kn) D.plus -> (kn, mn) pface =
  fun d mn kn -> tface_plus d mn mn kn
 
-(* Any strict face can be added to a tube face on the left to get another tube face. *)
+(* Any strict face can be added to a tube face on the left or right to get another tube face. *)
 
 let rec sface_plus_tface : type m n mn l nl mnl k p kp.
     (k, m) sface ->
@@ -111,6 +125,21 @@ let rec sface_plus_tface : type m n mn l nl mnl k p kp.
 let sface_plus_pface : type m n mn k p kp.
     (k, m) sface -> (m, n, mn) D.plus -> (k, p, kp) D.plus -> (p, n) pface -> (kp, m, n, mn) tface =
  fun fkm mn kp fpn -> sface_plus_tface fkm Zero mn kp fpn
+
+let rec tface_plus_sface : type m l ml ln n mln k p kp.
+    (k, m, l, ml) tface ->
+    (ml, n, mln) D.plus ->
+    (l, n, ln) D.plus ->
+    (k, p, kp) D.plus ->
+    (p, n) sface ->
+    (kp, m, ln, mln) tface =
+ fun fkm ml_n ln kp fpn ->
+  match (fpn, ml_n, ln, kp) with
+  | Zero, Zero, Zero, Zero -> fkm
+  | End (fpn, e), Suc ml_n, Suc ln, kp ->
+      let m_ln = D.plus_assocr (cod_plus_of_tface fkm) ln ml_n in
+      End (sface_plus_sface (sface_of_tface fkm) ml_n kp fpn, m_ln, e)
+  | Mid fpn, Suc ml_n, Suc ln, Suc kp -> Mid (tface_plus_sface fkm ml_n ln kp fpn)
 
 (* Conversely, every tube face decomposes as an ordinary strict face added to a tube face along a decomposition of its uninstantiated dimensions. *)
 
