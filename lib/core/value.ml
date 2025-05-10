@@ -399,7 +399,7 @@ let rec remove_env : type a k b n. (n, b) env -> (a, k, b) Tbwd.insert -> (n, a)
   | Ext (env, _, _), Now -> env
   | LazyExt (env, _, _), Now -> env
   | Shift (env, mn, nb), _ ->
-      let (Unmap_insert (_, v', na)) = Plusmap.unmap_insert v nb in
+      let (Uncoinsert (_, v', na)) = Plusmap.uncoinsert v nb in
       Shift (remove_env env v', mn, na)
 
 (* The universe of any dimension belongs to an instantiation of itself.  Note that the result is not itself a type (i.e. in the 0-dimensional universe) unless n=0.  This is the universe itself as a term. *)

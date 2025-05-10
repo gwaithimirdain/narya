@@ -1003,7 +1003,7 @@ and lookup_cube : type m n a b k mk.
   | Shift (env, n_x, xb), v ->
       (* In this branch, k is renamed to x+k. *)
       let m_xk = mk in
-      let (Unmap_insert (x_k, v, _)) = Plusmap.unmap_insert v xb in
+      let (Uncoinsert (x_k, v, _)) = Plusmap.uncoinsert v xb in
       let (Plus m_x) = D.plus (D.plus_right n_x) in
       let mx_k = D.plus_assocl m_x x_k m_xk in
       let op = op_plus op n_x m_x in

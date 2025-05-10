@@ -886,22 +886,28 @@ module Plusmap : sig
   val input : 'p D.t -> 'ys OfCod.t -> ('p, 'xs, 'ys) t -> 'xs OfDom.t
   val uniq : ('p, 'xs, 'ys) t -> ('p, 'xs, 'zs) t -> ('ys, 'zs) Eq.t
 
-  type (_, _, _, _) map_insert =
-    | Map_insert : ('zs, 'fx, 'ws) Tbwd.insert * ('p, 'ys, 'ws) t -> ('p, 'fx, 'ys, 'zs) map_insert
+  type (_, _, _, _) insert =
+    | Insert : ('zs, 'fx, 'ws) Tbwd.insert * ('p, 'ys, 'ws) t -> ('p, 'fx, 'ys, 'zs) insert
 
   val insert :
     ('p, 'x, 'z) D.plus ->
     ('xs, 'x, 'ys) Tbwd.insert ->
     ('p, 'xs, 'zs) t ->
-    ('p, 'z, 'ys, 'zs) map_insert
+    ('p, 'z, 'ys, 'zs) insert
 
-  type (_, _, _, _) unmap_insert =
-    | Unmap_insert :
+  type (_, _, _, _) uninsert =
+    | Uninsert :
+        ('p, 'x, 'fx) D.plus * ('zs, 'fx, 'ws) Tbwd.insert * ('p, 'xs, 'zs) t
+        -> ('p, 'x, 'xs, 'ws) uninsert
+
+  val uninsert : ('xs, 'x, 'ys) Tbwd.insert -> ('p, 'ys, 'ws) t -> ('p, 'x, 'xs, 'ws) uninsert
+
+  type (_, _, _, _) uncoinsert =
+    | Uncoinsert :
         ('p, 'x, 'z) D.plus * ('xs, 'x, 'ys) Tbwd.insert * ('p, 'xs, 'zs) t
-        -> ('p, 'z, 'ys, 'zs) unmap_insert
+        -> ('p, 'z, 'ys, 'zs) uncoinsert
 
-  val unmap_insert :
-    ('zs, 'z, 'ws) Tbwd.insert -> ('p, 'ys, 'ws) t -> ('p, 'z, 'ys, 'zs) unmap_insert
+  val uncoinsert : ('zs, 'z, 'ws) Tbwd.insert -> ('p, 'ys, 'ws) t -> ('p, 'z, 'ys, 'zs) uncoinsert
 
   type (_, _, _) map_permute =
     | Map_permute : ('p, 'zs, 'ws) t * ('ys, 'ws) Tbwd.permute -> ('p, 'zs, 'ys) map_permute
