@@ -4,7 +4,15 @@ open Signatures
 open Tlist
 open Tbwd
 open Monoid
-module D : MonoidPos
+
+module D : sig
+  include MonoidPos
+
+  val minus : 'mn t -> ('m, 'n, 'mn) plus -> 'm t
+  val minus_uniq : ('m1, 'n, 'mn) plus -> ('m2, 'n, 'mn) plus -> ('m1, 'm2) Eq.t
+  val minus_uniq' : 'm t -> ('m, 'n1, 'mn) plus -> ('m, 'n2, 'mn) plus -> ('n1, 'n2) Eq.t
+end
+
 module Dmap : MAP_MAKER with module Key := D
 
 module Endpoints : sig
