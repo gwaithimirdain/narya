@@ -374,6 +374,13 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
         cofactor (dim_env env) n
         <|> Anomaly "evaluating unshifted term in too low-dimensional environment" in
       eval (Shift (env, mn, plusmap)) tm
+  | Unact (op, tm) -> (
+      match factor (dim_env env) (cod_op op) with
+      | None -> fatal (Dimension_mismatch ("unact", dim_env env, cod_op op))
+      | Some (Factor nk) ->
+          let (Plus mk) = D.plus (D.plus_right nk) in
+          let op = op_plus op nk mk in
+          eval (Act (env, op)) tm)
 
 and eval_with_boundary : type m a. (m, a) env -> (a, kinetic) term -> (m, kinetic value) CubeOf.t =
  fun env tm ->

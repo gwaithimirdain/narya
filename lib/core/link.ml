@@ -40,6 +40,7 @@ let rec term : type a s. (Compunit.t -> Compunit.t) -> (a, s) term -> (a, s) ter
   | Realize tm -> Realize (term f tm)
   | Canonical can -> Canonical (canonical f can)
   | Unshift (n, plusmap, tm) -> Unshift (n, plusmap, term f tm)
+  | Unact (o, tm) -> Unact (o, term f tm)
 
 and branch : type a n. (Compunit.t -> Compunit.t) -> (a, n) branch -> (a, n) branch =
  fun f br ->

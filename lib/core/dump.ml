@@ -205,6 +205,7 @@ module F = struct
     | Realize tm -> fprintf ppf "Realize (%a)" term tm
     | Canonical c -> fprintf ppf "Canonical (%a)" canonical c
     | Unshift (n, _, tm) -> fprintf ppf "Unshift (%s, %a)" (string_of_dim n) term tm
+    | Unact (_, tm) -> fprintf ppf "Unact (?, %a)" term tm
 
   and canonical : type b. formatter -> b canonical -> unit =
    fun ppf c ->

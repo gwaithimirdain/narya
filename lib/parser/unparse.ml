@@ -204,6 +204,7 @@ let rec synths : type n. (n, kinetic) term -> bool = function
   | Let (_, _, _) -> true
   | Constr (_, _, _) | Lam (_, _) | Struct (_, _, _, _) -> false
   | Unshift (_, _, tm) -> synths tm
+  | Unact (_, tm) -> synths tm
 
 (* Given a term, extract its head and arguments as an application spine.  If the spine contains a field projection, stop there and return only the arguments after it, noting the field name and what it is applied to (which itself be another spine). *)
 let rec get_spine : type n.
@@ -397,6 +398,7 @@ let rec unparse : type n lt ls rt rs s.
   | Struct (Noeta, _, _, _) -> fatal (Unimplemented "unparsing comatches")
   | Match _ -> fatal (Unimplemented "unparsing matches")
   | Unshift _ -> fatal (Unimplemented "unparsing unshifts")
+  | Unact _ -> fatal (Unimplemented "unparsing unacts")
 
 (* The master unparsing function can easily be delayed. *)
 and make_unparser : type n. n Names.t -> (n, kinetic) term -> unparser =
