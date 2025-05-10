@@ -1,4 +1,4 @@
-{` Requires command-line flag "-direction p,rel,Br" `}
+{` -*- narya-prog-args: ("-proofgeneral" "-direction" "p,rel,Br") -*- `}
 
 import "isfibrant"
 import "bookhott"
