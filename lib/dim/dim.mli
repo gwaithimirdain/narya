@@ -32,6 +32,7 @@ type _ is_singleton
 type _ is_suc = Is_suc : 'n D.t * ('n, 'one, 'm) D.plus * 'one is_singleton -> 'm is_suc
 
 val suc_pos : 'n D.pos -> 'n is_suc
+val zero_nonsingleton : D.zero is_singleton -> 'c
 
 type any_dim = Any : 'n D.t -> any_dim
 
