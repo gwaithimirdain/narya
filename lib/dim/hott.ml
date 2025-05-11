@@ -12,7 +12,7 @@ let singleton : dim is_singleton = One
 let faces : unit -> ((D.zero, dim) sface * (D.zero, dim) sface * N.two Endpoints.len) option =
  fun () ->
   Option.map
-    (fun two -> (End (Zero, (two, Top)), End (Zero, (two, Pop Top)), two))
+    (fun two -> (End (Zero, (two, Pop Top)), End (Zero, (two, Top)), two))
     (Endpoints.hott ())
 
 let cube : type a. a -> a -> a -> (dim, a) CubeOf.t option =

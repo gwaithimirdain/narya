@@ -21,12 +21,12 @@ let fields : (emp * D.zero * no_eta) CodatafieldAbwd.t option Lazy.t =
      let trr =
        Pi
          ( None,
-           CubeOf.singleton (Var (Index (Now, one))),
-           CodCube.singleton (Var (Index (Later Now, zero))) ) in
+           CubeOf.singleton (Var (Index (Now, zero))),
+           CodCube.singleton (Var (Index (Later Now, one))) ) in
      let liftr =
        Pi
          ( Some "x₀",
-           CubeOf.singleton (Var (Index (Now, one))),
+           CubeOf.singleton (Var (Index (Now, zero))),
            CodCube.singleton
              (Inst
                 ( Var (Index (Later Now, id_sface Hott.dim)),
@@ -44,12 +44,12 @@ let fields : (emp * D.zero * no_eta) CodatafieldAbwd.t option Lazy.t =
      let trl =
        Pi
          ( None,
-           CubeOf.singleton (Var (Index (Now, zero))),
-           CodCube.singleton (Var (Index (Later Now, one))) ) in
+           CubeOf.singleton (Var (Index (Now, one))),
+           CodCube.singleton (Var (Index (Later Now, zero))) ) in
      let liftl =
        Pi
          ( Some "x₁",
-           CubeOf.singleton (Var (Index (Now, zero))),
+           CubeOf.singleton (Var (Index (Now, one))),
            CodCube.singleton
              (Inst
                 ( Var (Index (Later Now, id_sface Hott.dim)),
