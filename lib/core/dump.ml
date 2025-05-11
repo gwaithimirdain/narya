@@ -178,6 +178,7 @@ module F = struct
     | Act (e, Op (f, d)) -> fprintf ppf "%a <* (%s,%s)" env e (string_of_sface f) (string_of_deg d)
     | Permute (_, e) -> fprintf ppf "(%a) permuted(?)" env e
     | Shift (e, mn, _) -> fprintf ppf "%a << %a" env e dim (D.plus_right mn)
+    | Unshift (e, mn, _) -> fprintf ppf "%a >> %a" env e dim (D.plus_right mn)
 
   and env : type b n. formatter -> (n, b) Value.env -> unit = fun ppf e -> denv 0 ppf e
 

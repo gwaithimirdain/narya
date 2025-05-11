@@ -1002,13 +1002,19 @@ and lookup_cube : type n a b k mk nk.
       let (Plus lk) = D.plus (D.plus_right nk) in
       let op'k = op_plus op' lk nk in
       lookup_cube env lk v (comp_op op'k op)
-  (* If we encounter a shift, we split the face associated to our index and accumulate part of it into the operator. *)
+  (* If we encounter a shift or unshift, we just have to edit the insertion and go on. *)
   | Shift (env, n_x, xb), v ->
       (* In this branch, k is renamed to x+k. *)
       let n_xk = nk in
       let (Uncoinsert (x_k, v, _)) = Plusmap.uncoinsert v xb in
       let nx_k = D.plus_assocl n_x x_k n_xk in
       lookup_cube env nx_k v op
+  | Unshift (env, n_x, xb), v ->
+      (* In this branch, n is renamed to n+x. *)
+      let nx_k = nk in
+      let (Uninsert (x_k, v, _)) = Plusmap.uninsert v xb in
+      let n_xk = D.plus_assocr n_x x_k nx_k in
+      lookup_cube env n_xk v op
   (* If the environment is permuted, we apply the permutation to the index. *)
   | Permute (p, env), v ->
       let (Permute_insert (v, _)) = Tbwd.permute_insert v p in
