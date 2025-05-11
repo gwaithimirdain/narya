@@ -1,3 +1,5 @@
+{` -*- narya-prog-args: ("-proofgeneral" "-arity" "2" "-direction" "p" "-external") -*- `}
+
 ` (Binary) semi-cubical types
 def SCT : Type ≔ codata [
 | X .z : Type

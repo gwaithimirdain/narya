@@ -230,7 +230,7 @@ module Act = struct
     | Realize tm -> Realize (act_value tm s)
     | Val tm -> Val (act_value tm s)
 
-  and act_canonical : type m n i mi. (n, i) canonical -> (m, n) deg -> (m, i) canonical =
+  and act_canonical : type m n i. (n, i) canonical -> (m, n) deg -> (m, i) canonical =
    fun tm fa ->
     match tm with
     | UU _ -> UU (dom_deg fa)

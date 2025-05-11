@@ -139,9 +139,18 @@ module Make (I : Indices) = struct
   (* Checkable raw terms *)
   and _ check =
     | Synth : 'a synth -> 'a check
-    | Lam : I.name located * [ `Cube | `Normal ] * 'a I.suc check located -> 'a check
-    (* A "Struct" is our current name for both tuples and comatches, which share a lot of their implementation even though they are conceptually and syntactically distinct.  Those with eta=`Eta are tuples, those with eta=`Noeta are comatches.  We index them by an option so as to include any unlabeled fields, with their relative order to the labeled ones.  The field hasn't been interned to an intrinsic dimension yet (that depends on what it checks against), so it's just a string name, plus a list of strings to indicate a pbij for higher fields. *)
-    | Struct : ('s, 'et) eta * ((string * string list) option, 'a check located) Abwd.t -> 'a check
+    (* An abstraction knows whether it is a cube abstraction (⤇) or a normal one (↦).  In the former case it stores an optional dimension, so that multiple variables in the same abstraction (x y ⤇) can be enforced to be the same dimension, and the location of the previous variable that set the dimension. *)
+    | Lam : {
+        name : I.name located;
+        cube : [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ] located;
+        body : 'a I.suc check located;
+      }
+        -> 'a check
+    (* A "Struct" is our current name for both tuples and comatches, which share a lot of their implementation even though they are conceptually and syntactically distinct.  Those with eta=`Eta are tuples, those with eta=`Noeta are comatches.  We index them by an option so as to include any unlabeled fields, with their relative order to the labeled ones.  The field hasn't been interned to an intrinsic dimension yet (that depends on what it checks against), so it's just a string name, plus a list of strings to indicate a pbij for higher fields.  We also store whether they were defined with a ↦ or a ⤇. *)
+    | Struct :
+        ('s, 'et) eta
+        * ((string * string list) option, [ `Normal | `Cube ] located * 'a check located) Abwd.t
+        -> 'a check
     | Constr : Constr.t located * 'a check located list -> 'a check
     | Numeral : Q.t -> 'a check
     (* "[]", which could be either an empty pattern-matching lambda or an empty comatch *)
@@ -175,8 +184,11 @@ module Make (I : Indices) = struct
     (* Check a term, but then verify its correctness with an external oracle. *)
     | Oracle : 'a check located -> 'a check
 
-  (* The location of the namevec is that of the whole pattern. *)
-  and _ branch = Branch : ('a, 'b, 'ab) Namevec.t located * 'ab check located -> 'a branch
+  (* The location of the namevec is that of the whole pattern.  The location of the cube flag is that of the mapsto. *)
+  and _ branch =
+    | Branch :
+        ('a, 'b, 'ab) Namevec.t located * [ `Cube | `Normal ] located * 'ab check located
+        -> 'a branch
 
   (* *)
   and _ dataconstr = Dataconstr : ('a, 'b, 'ab) tel * 'ab check located option -> 'a dataconstr
@@ -305,9 +317,15 @@ module Resolve (R : Resolver) = struct
     let newtm : a2 T2.check =
       match tm.value with
       | Synth x -> Synth (synth ctx (locate_opt tm.loc x)).value
-      | Lam (x, sort, body) ->
-          Lam (locate_map (R.rename ctx) x, sort, check (R.snoc ctx x.value) body)
-      | Struct (eta, fields) -> Struct (eta, Abwd.map (check ctx) fields)
+      | Lam { name; cube; body } ->
+          Lam
+            {
+              name = locate_map (R.rename ctx) name;
+              cube;
+              body = check (R.snoc ctx name.value) body;
+            }
+      | Struct (eta, fields) ->
+          Struct (eta, Abwd.map (fun (cube, tm) -> (cube, check ctx tm)) fields)
       | Constr (c, args) -> Constr (c, List.map (check ctx) args)
       | Numeral x -> Numeral x
       | Empty_co_match -> Empty_co_match
@@ -342,11 +360,11 @@ module Resolve (R : Resolver) = struct
     newtm
 
   and branch : type a1 a2. (a1, a2) R.scope -> a1 T1.branch -> a2 T2.branch =
-   fun ctx (Branch (xs, body)) ->
+   fun ctx (Branch (xs, cube, body)) ->
     let (Bplus ab) = T2.bplus (T1.Namevec.length xs.value) in
     let xs2 = renames ctx xs.value ab in
     let ctx2 = append ctx xs.value ab in
-    Branch (locate_opt xs.loc xs2, check ctx2 body)
+    Branch (locate_opt xs.loc xs2, cube, check ctx2 body)
 
   and dataconstr : type a1 a2. (a1, a2) R.scope -> a1 T1.dataconstr -> a2 T2.dataconstr =
    fun ctx (Dataconstr (args, body)) ->
@@ -411,7 +429,8 @@ let rec lams : type a b ab.
  fun ab xs tm loc ->
   match (ab, xs) with
   | Zero, [] -> tm
-  | Suc ab, x :: xs -> { value = Lam (x, `Normal, lams ab xs tm loc); loc }
+  | Suc ab, name :: xs ->
+      { value = Lam { name; cube = locate_opt None `Normal; body = lams ab xs tm loc }; loc }
 
 let rec bplus_of_tel : type a b c. (a, b, c) tel -> (a, b, c) Fwn.bplus = function
   | Emp -> Zero

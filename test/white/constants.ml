@@ -127,23 +127,23 @@ let () =
   def "refl_nat_f_eq_reflf" "Id (Id ((x:A)→B x) f f) (refl_nat_f zero.) (refl f)" "refl (refl f)";
 
   (* We also test cube variable abstraction syntax *)
-  def "refl_abort_f_cube" "∅ → Id ((x:A)→B x) f f" "e x ⤇ match e [ ]";
+  def "refl_abort_f_cube" "∅ → Id ((x:A)→B x) f f" "e ↦ x ⤇ match e [ ]";
   def "refl_nat_f_cube" "ℕ → Id ((x:A)→B x) f f"
-    "n x ⤇ match n [ zero. ↦ refl f x.0 x.1 x.2 | suc. _ ↦ refl f x.0 x.1 x.2 ]";
+    "n ↦ x ⤇ match n [ zero. ↦ refl f x.0 x.1 x.2 | suc. _ ↦ refl f x.0 x.1 x.2 ]";
   (* These are actually *unequal* because definition by case trees is generative. *)
   unequal_at "refl_nat_f" "refl_nat_f_cube" "ℕ → Id ((x:A)→B x) f f";
   (* But they become equal when evaluated at concrete numbers so that the case trees compute away. *)
   equal_at "refl_nat_f 3" "refl_nat_f_cube 3" "Id ((x:A)→B x) f f";
 
   (* Higher-dimensional matches *)
-  def "foo" "(x y : ℕ) → Id ℕ x y → ℕ" "x y p ↦ match p [ zero. ↦ 0 | suc. n ↦ 1 ]";
-  def "bar" "(x y : ℕ) → Id ℕ x y → ℕ" "x y ↦ [ zero. ↦ zero. | suc. p ↦ p.0 ]";
+  def "foo" "(x y : ℕ) → Id ℕ x y → ℕ" "x y p ↦ match p [ zero. ⤇ 0 | suc. n ⤇ 1 ]";
+  def "bar" "(x y : ℕ) → Id ℕ x y → ℕ" "x y ↦ [ zero. ⤇ zero. | suc. p ⤇ p.0 ]";
   equal_at "bar 1 1 (refl (1:ℕ))" "0" "ℕ";
   equal_at "bar 2 2 (refl (2:ℕ))" "1" "ℕ";
   def "prec" "ℕ → ℕ" "[ zero. ↦ zero. | suc. n ↦ n ]";
-  def "idnat" "(x y : ℕ) → Id ℕ x y → Id ℕ x y" "x y ↦ [ zero. ↦ zero. | suc. p ↦ suc. p ]";
+  def "idnat" "(x y : ℕ) → Id ℕ x y → Id ℕ x y" "x y ↦ [ zero. ⤇ zero. | suc. p ⤇ suc. p.2 ]";
   def "apprec" "(x y : ℕ) → Id ℕ x y → Id ℕ (prec x) (prec y)"
-    "x y p ↦ match p [ zero. ↦ zero. | suc. p ↦ p ]";
+    "x y p ↦ match p [ zero. ⤇ zero. | suc. p ⤇ p.2 ]";
   def "⊤" "Type" "sig ()";
   def "code" "ℕ → ℕ → Type"
     "[ zero. ↦ [ zero. ↦ ⊤
@@ -152,8 +152,8 @@ let () =
                  | suc. n ↦ code m n ] ]";
   def "rcode" "(x:ℕ) → code x x" "[ zero. ↦ () | suc. n ↦ rcode n ]";
   def "encode" "(x y : ℕ) → Id ℕ x y → code x y"
-    "x y ↦ [ zero. ↦ ()
-            | suc. p ↦ encode p.0 p.1 p.2 ]";
+    "x y ↦ [ zero. ⤇ ()
+            | suc. p ⤇ encode p.0 p.1 p.2 ]";
   def "decode" "(x y : ℕ) → code x y → Id ℕ x y"
     "x y c |-> match x [ zero. ↦ match y [ zero. ↦ zero.
                 | suc. _ ↦ match c [ ] ]
@@ -165,15 +165,15 @@ let () =
      | suc. x ↦ [ zero. ↦ [ ]
                  | suc. y ↦ c ↦ encode_decode x y c ] ]";
   def "decode_encode" "(x y : ℕ) (p : Id ℕ x y) → Id (Id ℕ x y) (decode x y (encode x y p)) p"
-    "x y ↦ [ zero. ↦ zero.
-            | suc. p ↦ suc. (decode_encode p.0 p.1 p.2) ]";
+    "x y ↦ [ zero. ⤇ zero.
+            | suc. p ⤇ suc. (decode_encode p.0 p.1 p.2) ]";
 
   (* Matching on a boundary of a cube variable. *)
   def "mtchbd0" "(e:∅) (f : ℕ → ℕ) → Id (ℕ → ℕ) f f"
-    "e f n ⤇ match n.0 [ zero. ↦ match e [ ] | suc. _ ↦ match e [ ] ]";
+    "e f ↦ n ⤇ match n.0 [ zero. ↦ match e [ ] | suc. _ ↦ match e [ ] ]";
 
   def "mtchbd0'" "(e:∅) (f : ℕ → ℕ) → Id (ℕ → ℕ) f f"
-    "e f n ⤇ match n.0 [ zero. ↦ match e [ ] | suc. _ ↦ refl f n.0 n.1 n.2 ]";
+    "e f ↦ n ⤇ match n.0 [ zero. ↦ match e [ ] | suc. _ ↦ refl f n.0 n.1 n.2 ]";
 
   def "mtchbd0''" "(e:∅) (f : ℕ → ℕ) → Id (ℕ → ℕ) f f"
     "e f n0 n1 n2 ↦ match n0 [ zero. ↦ match e [ ] | suc. _ ↦ refl f n0 n1 n2 ]";

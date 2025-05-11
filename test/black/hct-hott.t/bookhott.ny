@@ -73,6 +73,30 @@ end
 
 def eq ≔ eq.eq
 
+def eqd (A : Type) (B : A → Type) (a0 a1 : A) (a2 : eq A a0 a1) (b0 : B a0)
+  (b1 : B a1)
+  : Type
+  ≔ match a2 [ rfl. ↦ eq (B a0) b0 b1 ]
+
+def ap2d (A : Type) (B : A → Type) (C : Type) (f : (a : A) → B a → C)
+  (a0 a1 : A) (a2 : eq A a0 a1) (b0 : B a0) (b1 : B a1)
+  (b2 : eqd A B a0 a1 a2 b0 b1)
+  : eq C (f a0 b0) (f a1 b1)
+  ≔ match a2, b2 [ rfl., rfl. ↦ rfl. ]
+
+def eqdd (A : Type) (B : A → Type) (C : (a : A) → B a → Type) (a0 a1 : A)
+  (a2 : eq A a0 a1) (b0 : B a0) (b1 : B a1) (b2 : eqd A B a0 a1 a2 b0 b1)
+  (c0 : C a0 b0) (c1 : C a1 b1)
+  : Type
+  ≔ match a2, b2 [ rfl., rfl. ↦ eq (C a0 b0) c0 c1 ]
+
+def ap3d (A : Type) (B : A → Type) (C : (a : A) → B a → Type) (D : Type)
+  (f : (a : A) (b : B a) → C a b → D) (a0 a1 : A) (a2 : eq A a0 a1)
+  (b0 : B a0) (b1 : B a1) (b2 : eqd A B a0 a1 a2 b0 b1) (c0 : C a0 b0)
+  (c1 : C a1 b1) (c2 : eqdd A B C a0 a1 a2 b0 b1 b2 c0 c1)
+  : eq D (f a0 b0 c0) (f a1 b1 c1)
+  ≔ match a2, b2, c2 [ rfl., rfl., rfl. ↦ rfl. ]
+
 section sq ≔
 
   def sq (A : Type) (a00 : A)

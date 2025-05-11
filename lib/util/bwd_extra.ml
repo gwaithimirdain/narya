@@ -1,6 +1,7 @@
 (* Extra functions acting on backwards lists *)
 
 open Bwd
+open Bwd.Infix
 
 (* Find the leftmost element of a bwd *)
 let rec head = function
@@ -84,4 +85,4 @@ let rec intersperse sep xs =
   match xs with
   | Emp -> Emp
   | Snoc (Emp, x) -> Snoc (Emp, x)
-  | Snoc (Snoc (xs, x1), x2) -> Snoc (Snoc (Snoc (intersperse sep xs, x1), sep), x2)
+  | Snoc ((Snoc _ as xs), x2) -> intersperse sep xs <: sep <: x2

@@ -1,4 +1,6 @@
-  $ narya -v univalence.ny
+  $ rm -f *.nyo
+
+  $ narya -v -direction p,rel,Br univalence.ny
    ￫ info[I0003]
    ￮ loading file: $TESTCASE_ROOT/isfibrant.ny
   
@@ -113,6 +115,18 @@
    ￫ info[I0000]
    ￮ constant eq defined
   
+   ￫ info[I0000]
+   ￮ constant eqd defined
+  
+   ￫ info[I0000]
+   ￮ constant ap2d defined
+  
+   ￫ info[I0000]
+   ￮ constant eqdd defined
+  
+   ￫ info[I0000]
+   ￮ constant ap3d defined
+  
    ￫ info[I0007]
    ￮ section sq opened
   
@@ -194,6 +208,9 @@
    ￫ info[I0000]
    ￮ constant sym_eqv defined
   
+   ￫ info[I0000]
+   ￮ constant 312_eqv defined
+  
    ￫ info[I0004]
    ￮ file loaded: $TESTCASE_ROOT/hott_bookhott.ny (source)
   
@@ -237,16 +254,31 @@
    ￮ constant 𝕗Σ defined
   
    ￫ info[I0000]
+   ￮ constant Σ𝕗 defined
+  
+   ￫ info[I0000]
    ￮ constant id_Π_iso defined
   
    ￫ info[I0000]
    ￮ constant 𝕗Π defined
   
    ￫ info[I0000]
+   ￮ constant Π𝕗 defined
+  
+   ￫ info[I0000]
    ￮ constant ∅ defined
   
    ￫ info[I0000]
    ￮ constant 𝕗∅ defined
+  
+   ￫ info[I0000]
+   ￮ constant Gel defined
+  
+   ￫ info[I0000]
+   ￮ constant Gel_iso defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕗Gel defined
   
    ￫ info[I0000]
    ￮ constant sum defined
@@ -262,11 +294,11 @@
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/fibrant_types.ny
-   211 |       (match u0, u1 [
-   212 |        | left. a0, left. a1 ↦ 𝕗A.2 .id.1 a0 a1
-   213 |        | left. _, right. _ ↦ 𝕗∅
-   214 |        | right. _, left. _ ↦ 𝕗∅
-   215 |        | right. b0, right. b1 ↦ 𝕗B.2 .id.1 b0 b1]))]
+   239 |       (match u0, u1 [
+   240 |        | left. a0, left. a1 ↦ 𝕗A.2 .id a0 a1
+   241 |        | left. _, right. _ ↦ 𝕗∅
+   242 |        | right. _, left. _ ↦ 𝕗∅
+   243 |        | right. b0, right. b1 ↦ 𝕗B.2 .id b0 b1]))]
        ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ info[I0000]
@@ -280,34 +312,34 @@
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/fibrant_types.ny
-   230 |        match n0, n1 [
-   231 |        | zero., zero. ↦ zero.
-   232 |        | zero., suc. n1 ↦ match m2 [ ]
-   233 |        | suc. n0, zero. ↦ match m2 [ ]
-   234 |        | suc. n0, suc. n1 ↦ suc. (id_ℕ_iso n0 n1 .to m2)])
+   258 |        match n0, n1 [
+   259 |        | zero., zero. ↦ zero.
+   260 |        | zero., suc. n1 ↦ match m2 [ ]
+   261 |        | suc. n0, zero. ↦ match m2 [ ]
+   262 |        | suc. n0, suc. n1 ↦ suc. (id_ℕ_iso n0 n1 .to m2)])
        ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/fibrant_types.ny
-   235 |       ([ zero. ↦ () | suc. m2 ↦ id_ℕ_iso m2.0 m2.1 .fro m2.2 ])
+   263 |       ([ zero. ⤇ () | suc. m ⤇ id_ℕ_iso m.0 m.1 .fro m.2 ])
        ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/fibrant_types.ny
-   237 |        match n0, n1 [
-   238 |        | zero., zero. ↦ rfl.
-   239 |        | zero., suc. n1 ↦ match m2 [ ]
-   240 |        | suc. n0, zero. ↦ match m2 [ ]
-   241 |        | suc. n0, suc. n1 ↦ id_ℕ_iso n0 n1 .fro_to m2])
+   265 |        match n0, n1 [
+   266 |        | zero., zero. ↦ rfl.
+   267 |        | zero., suc. n1 ↦ match m2 [ ]
+   268 |        | suc. n0, zero. ↦ match m2 [ ]
+   269 |        | suc. n0, suc. n1 ↦ id_ℕ_iso n0 n1 .fro_to m2])
        ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/fibrant_types.ny
-   242 |       ([ zero. ↦ rfl.
-   243 |        | suc. m2 ↦
-   244 |            eq.ap (Id ℕ m2.0 m2.1) (Id ℕ (suc. m2.0) (suc. m2.1)) (x ↦ suc. x)
-   245 |              (id_ℕ_iso m2.0 m2.1 .to (id_ℕ_iso m2.0 m2.1 .fro m2.2)) m2.2
-   246 |              (id_ℕ_iso m2.0 m2.1 .to_fro m2.2)])
+   270 |       ([ zero. ⤇ rfl.
+   271 |        | suc. m ⤇
+   272 |            eq.ap (Br ℕ m.0 m.1) (Br ℕ (suc. m.0) (suc. m.1)) (x ↦ suc. x)
+   273 |              (id_ℕ_iso m.0 m.1 .to (id_ℕ_iso m.0 m.1 .fro m.2)) m.2
+   274 |              (id_ℕ_iso m.0 m.1 .to_fro m.2)])
        ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ info[I0000]
@@ -319,14 +351,113 @@
    ￫ info[I0000]
    ￮ constant 𝕗ℕ defined
   
-   ￫ info[I0000]
-   ￮ constant Gel defined
+   ￫ info[I0001]
+   ￮ axiom funext assumed
   
    ￫ info[I0000]
-   ￮ constant Gel_iso defined
+   ￮ constant funext_refl defined
+  
+   ￫ info[I0007]
+   ￮ section Indexed_𝕎 opened
   
    ￫ info[I0000]
-   ￮ constant 𝕗Gel defined
+   ￮ constant 𝕎spec defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎 defined
+  
+   ￫ info[I0000]
+   ￮ constant code_spec defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_encode defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_decode defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_decode_encode defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_encode_decode defined
+  
+   ￫ info[I0000]
+   ￮ constant id_𝕎_iso defined
+  
+   ￫ info[I0008]
+   ￮ section Indexed_𝕎 closed
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎 defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_code defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_encode defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_decode defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_decode_encode defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_encode_decode defined
+  
+   ￫ info[I0000]
+   ￮ constant Id_𝕎_iso defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕗_𝕎_code defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕗𝕎 defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕄_spec defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕄 defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕄_code_spec defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕄_encode defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕄_decode defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕄_bisim defined
+  
+   ￫ info[I0001]
+   ￮ axiom 𝕄_ext assumed
+  
+   ￫ info[I0000]
+   ￮ constant 𝕄_encode_decode_bisim defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕄_encode_decode defined
+  
+   ￫ info[I0000]
+   ￮ constant refl_𝕄_bisim defined
+  
+   ￫ info[I0001]
+   ￮ axiom refl_𝕄_ext assumed
+  
+   ￫ info[I0000]
+   ￮ constant 𝕄_decode_encode_bisim defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕄_decode_encode defined
+  
+   ￫ info[I0000]
+   ￮ constant Id_𝕄_iso defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕗𝕄 defined
   
    ￫ info[I0004]
    ￮ file loaded: $TESTCASE_ROOT/fibrant_types.ny (source)
@@ -339,12 +470,6 @@
   
    ￫ info[I0100]
    ￮ option set type boundaries to implicit
-  
-   ￫ info[I0000]
-   ￮ constant Σ𝕗 defined
-  
-   ￫ info[I0000]
-   ￮ constant Π𝕗 defined
   
    ￫ info[I0000]
    ￮ constant isContr defined
@@ -369,6 +494,9 @@
   
    ￫ info[I0000]
    ￮ constant isbisim_eqv defined
+  
+   ￫ info[I0000]
+   ￮ constant bisim_of_Id defined
   
    ￫ info[I0004]
    ￮ file loaded: $TESTCASE_ROOT/homotopy.ny (source)
@@ -405,4 +533,51 @@
   
    ￫ info[I0000]
    ￮ constant univalence_is_right_definitional defined
+  
+
+  $ narya -v -direction p,rel,Br univalence_ee.ny
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/isfibrant.ny (compiled)
+  
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/bookhott.ny (compiled)
+  
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/hott_bookhott.ny (compiled)
+  
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/fibrant_types.ny (compiled)
+  
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/homotopy.ny (compiled)
+  
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/univalence.ny (compiled)
+  
+   ￫ info[I0100]
+   ￮ option set function boundaries to implicit
+  
+   ￫ info[I0100]
+   ￮ option set type boundaries to implicit
+  
+   ￫ info[I0000]
+   ￮ constant isBisim_ee defined
+  
+   ￫ info[I0000]
+   ￮ constant isbisim_ee_eqv defined
+  
+   ￫ info[I0000]
+   ￮ constant pre_univalence_ee defined
+  
+   ￫ info[I0000]
+   ￮ constant Gel_ee defined
+  
+   ￫ info[I0000]
+   ￮ constant Gel_ee_iso defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕗Gel_ee defined
+  
+   ￫ info[I0000]
+   ￮ constant univalence_ee defined
   

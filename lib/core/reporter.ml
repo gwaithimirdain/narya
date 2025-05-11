@@ -79,6 +79,9 @@ module Code = struct
     | Invalid_field : string -> t
     | Invalid_degeneracy : string -> t
     | Not_enough_lambdas : int -> t
+    | Zero_dimensional_cube_abstraction : string -> t
+    | Mismatched_dimensions_in_cube_abstraction : 'm D.t * 'n D.t -> t
+    | Noncube_abstraction_in_higher_dimensional_match : 'n D.t -> t
     | Not_enough_arguments_to_function : t
     | Not_enough_arguments_to_instantiation : t
     | Type_not_fully_instantiated : string * 'n D.pos -> t
@@ -134,6 +137,7 @@ module Code = struct
         ('s, 'et) eta
         * printable
         * [ `Field of 'i Field.t | `String of string ]
+        * 'used_at D.t
         * 'intrinsic D.t
         * [ `Ins of ('n, 't, 'h) insertion | `Pbij of ('n, 'i2, 'r) pbij | `Ints of int list ]
         -> t
@@ -163,6 +167,7 @@ module Code = struct
     | Matching_wont_refine : string * printable option -> t
     | Dimension_mismatch : string * 'a D.t * 'b D.t -> t
     | Invalid_variable_face : 'a D.t * ('n, 'm) sface -> t
+    | Missing_variable_face : 'a D.t -> t
     | Anomaly : string -> t
     | No_such_level : printable -> t
     | Redefining_constant : string list -> t
@@ -261,6 +266,9 @@ module Code = struct
     | Invalid_field _ -> Error
     | Invalid_degeneracy _ -> Error
     | Not_enough_lambdas _ -> Error
+    | Zero_dimensional_cube_abstraction _ -> Error
+    | Mismatched_dimensions_in_cube_abstraction _ -> Error
+    | Noncube_abstraction_in_higher_dimensional_match _ -> Error
     | Type_not_fully_instantiated _ -> Error
     | Unequal_synthesized_type _ -> Error
     | Unequal_synthesized_boundary _ -> Error
@@ -296,6 +304,7 @@ module Code = struct
     | Not_enough_arguments_to_function -> Error
     | Instantiating_zero_dimensional_type _ -> Error
     | Invalid_variable_face _ -> Error
+    | Missing_variable_face _ -> Error
     | Not_enough_arguments_to_instantiation -> Error
     | Applying_nonfunction_nontype _ -> Error
     | Unexpected_implicitness _ -> Error
@@ -428,7 +437,11 @@ module Code = struct
     | Type_not_fully_instantiated _ -> "E0504"
     | Instantiating_zero_dimensional_type _ -> "E0505"
     | Invalid_variable_face _ -> "E0506"
-    | Invalid_flags -> "E0507"
+    | Missing_variable_face _ -> "E0507"
+    | Zero_dimensional_cube_abstraction _ -> "E0508"
+    | Mismatched_dimensions_in_cube_abstraction _ -> "E0509"
+    | Noncube_abstraction_in_higher_dimensional_match _ -> "E0510"
+    | Invalid_flags -> "E0511"
     (* Degeneracies *)
     | Missing_argument_of_degeneracy _ -> "E0600"
     | Low_dimensional_argument_of_degeneracy _ -> "E0601"
@@ -573,12 +586,21 @@ module Code = struct
       | Invalid_variable_face (k, fa) ->
           textf "invalid face: variable of dimension %s has no face '%s'" (string_of_dim0 k)
             (string_of_sface fa)
+      | Missing_variable_face k ->
+          textf "variable of dimension %s must be used with a face" (string_of_dim0 k)
       | No_relative_precedence (n1, n2) ->
           textf
             "notations \"%s\" and \"%s\" have no relative precedence or associativity; they can only be combined with parentheses"
             n1 n2
       | Not_enough_lambdas n ->
           textf "not enough non-cube variables for higher-dimensional abstraction: need %d more" n
+      | Zero_dimensional_cube_abstraction str ->
+          textf "cube abstraction not allowed for zero-dimensional %s" str
+      | Mismatched_dimensions_in_cube_abstraction (m, n) ->
+          textf "can't combine cube abstractions of different dimensions: %s ≠ %s"
+            (string_of_dim0 m) (string_of_dim0 n)
+      | Noncube_abstraction_in_higher_dimensional_match n ->
+          textf "%s-dimensional match requires cube abstraction" (string_of_dim0 n)
       | Not_enough_arguments_to_function ->
           text "not enough arguments for a higher-dimensional function application"
       | Not_enough_arguments_to_instantiation ->
@@ -674,7 +696,7 @@ module Code = struct
               textf
                 "%s type with a nonidentity degeneracy applied is no longer a %s, hence has no field named %s"
                 rc rc f)
-      | Wrong_dimension_of_field (eta, d, fld, intrinsic, err) ->
+      | Wrong_dimension_of_field (eta, d, fld, used_at, intrinsic, err) ->
           let fldname =
             match fld with
             | `Field f -> Field.to_string f
@@ -685,8 +707,10 @@ module Code = struct
             | `Pbij p -> string_of_pbij p
             | `Ints ints -> string_of_ins_ints ints in
           let err = if err = "" then "empty suffix" else "suffix " ^ err in
-          textf "@[<hv 0>field %s of %s type@;<1 2>%a@ has intrinsic dimension %s, can't have %s@]"
-            fldname (record_or_codata eta) pp_printed (print d) (string_of_dim0 intrinsic) err
+          textf
+            "@[<hv 0>field %s of %s type@;<1 2>%a@ has intrinsic dimension %s and used at dimension %s, can't have %s@]"
+            fldname (record_or_codata eta) pp_printed (print d) (string_of_dim0 intrinsic)
+            (string_of_dim0 used_at) err
       | Invalid_field_suffix (ty, f, p, evaldim) ->
           textf "invalid suffix %s for field %s of %s-dimensional type %a" (string_of_ins_ints p) f
             (string_of_dim0 evaldim) pp_printed (print ty)

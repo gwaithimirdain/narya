@@ -225,12 +225,12 @@ module F = struct
    fun ppf c ->
     match c with
     | Synth s -> synth ppf s
-    | Lam (x, _, body) ->
-        fprintf ppf "Lam(%s, %a)" (Option.value ~default:"_" x.value) check body.value
+    | Lam { name; cube = _; body } ->
+        fprintf ppf "Lam(%s, %a)" (Option.value ~default:"_" name.value) check body.value
     | Struct (_, flds) ->
         fprintf ppf "Struct(";
         Mbwd.miter
-          (fun [ (f, (x : a check Asai.Range.located)) ] ->
+          (fun [ (f, (_, (x : a check Asai.Range.located))) ] ->
             let f = Option.fold ~some:(fun (f, ps) -> String.concat "." (f :: ps)) ~none:"_" f in
             fprintf ppf "%s ≔ %a, " f check x.value)
           [ flds ];
@@ -302,14 +302,18 @@ module F = struct
         branch ppf br
 
   and branch : type a. formatter -> Constr.t * a branch -> unit =
-   fun ppf (c, Branch (vars, body)) ->
+   fun ppf (c, Branch (vars, cube, body)) ->
     let rec strvars : type a b ab. (a, b, ab) Namevec.t -> string = function
       | [] -> ""
       | [ Some x ] -> x
       | [ None ] -> "_"
       | Some x :: xs -> x ^ " " ^ strvars xs
       | None :: xs -> "_ " ^ strvars xs in
-    fprintf ppf "%s %s ↦ %a" (Constr.to_string c) (strvars vars.value) check body.value
+    let mapsto =
+      match cube.value with
+      | `Normal -> "↦"
+      | `Cube -> "⤇" in
+    fprintf ppf "%s %s %s %a" (Constr.to_string c) (strvars vars.value) mapsto check body.value
 end
 
 let dim d = PPrint.utf8string (Format.asprintf "%a" F.dim d)
