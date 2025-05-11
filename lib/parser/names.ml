@@ -21,6 +21,16 @@ type 'b t = { ctx : 'b ctx; used : int StringMap.t }
 
 let empty : emp t = { ctx = Emp; used = StringMap.empty }
 
+let rec remove_ctx : type a n b. b ctx -> (a, n, b) Tbwd.insert -> a ctx =
+ fun ctx i ->
+  match (ctx, i) with
+  | Snoc (ctx, vars, flds), Later i -> Snoc (remove_ctx ctx i, vars, flds)
+  | Snoc (ctx, _, _), Now -> ctx
+  | Emp, _ -> .
+
+let remove : type a n b. b t -> (a, n, b) Tbwd.insert -> a t =
+ fun { ctx; used } i -> { ctx = remove_ctx ctx i; used }
+
 let cubevar x fa : string list =
   let fa = string_of_sface fa in
   if fa = "" then [ x ] else [ x; fa ]

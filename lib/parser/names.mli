@@ -10,6 +10,7 @@ val default : unit -> string
 type 'n t
 
 val empty : emp t
+val remove : 'b t -> ('a, 'n, 'b) Tbwd.insert -> 'a t
 val lookup : 'n t -> 'n index -> string list
 val lookup_field : 'n t -> 'n index -> string -> string list option
 val add_cube : 'n D.t -> 'b t -> string option -> string option * ('b, 'n) snoc t
