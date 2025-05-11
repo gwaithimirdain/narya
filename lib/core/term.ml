@@ -92,6 +92,10 @@ module rec Term : sig
         -> ('a, potential) term
     | Realize : ('a, kinetic) term -> ('a, potential) term
     | Canonical : 'a canonical -> ('a, potential) term
+    | Unshift : 'n D.t * ('n, 'b, 'nb) Plusmap.t * ('nb, 's) term -> ('b, 's) term
+    | Unact : ('m, 'n) op * ('b, 's) term -> ('b, 's) term
+    | Shift : 'n D.t * ('n, 'b, 'nb) Plusmap.t * ('b, 's) term -> ('nb, 's) term
+    | Weaken : ('b, 's) term -> (('b, 'n) snoc, 's) term
 
   and ('n, 'a, 's, 'et) struct_args = {
     dim : 'n D.t;
@@ -241,6 +245,10 @@ end = struct
     (* A potential term is "realized" by kinetic terms, or canonical types, at its leaves. *)
     | Realize : ('a, kinetic) term -> ('a, potential) term
     | Canonical : 'a canonical -> ('a, potential) term
+    | Unshift : 'n D.t * ('n, 'b, 'nb) Plusmap.t * ('nb, 's) term -> ('b, 's) term
+    | Unact : ('m, 'n) op * ('b, 's) term -> ('b, 's) term
+    | Shift : 'n D.t * ('n, 'b, 'nb) Plusmap.t * ('b, 's) term -> ('nb, 's) term
+    | Weaken : ('b, 's) term -> (('b, 'n) snoc, 's) term
 
   and ('n, 'a, 's, 'et) struct_args = {
     dim : 'n D.t;

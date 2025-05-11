@@ -10,7 +10,7 @@ open Act
 open Printable
 open View
 
-(* Since some entries in an environment are lazy and some aren't, lookup_cube returns a cube whose entries belong to an existential type, along with a function to act on any element of that type and force it into a value. *)
+(* Since some entries in an environment are lazy and some aren't, lookup_cube returns a cube whose entries belong to an existential type, along with a function to act on any element of that type and force it into a value.  It also returns an accumulated operator by which to act, first selecting an entry in the cube with a face and then acting on that value by a degeneracy. *)
 type _ looked_up_cube =
   | Looked_up : {
       act : 'x 'y. 'a -> ('x, 'y) deg -> kinetic value;
@@ -379,6 +379,22 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
       | _ -> Unrealized)
   | Realize tm -> Realize (eval_term env tm)
   | Canonical c -> eval_canonical env c
+  | Unshift (n, plusmap, tm) ->
+      let (Cofactor mn) =
+        cofactor (dim_env env) n
+        <|> Anomaly "evaluating unshifted term in too low-dimensional environment" in
+      eval (Shift (env, mn, plusmap)) tm
+  | Unact (op, tm) -> (
+      match factor (dim_env env) (cod_op op) with
+      | None -> fatal (Dimension_mismatch ("unact", dim_env env, cod_op op))
+      | Some (Factor nk) ->
+          let (Plus mk) = D.plus (D.plus_right nk) in
+          let op = op_plus op nk mk in
+          eval (Act (env, op)) tm)
+  | Shift (n, plusmap, tm) ->
+      let (Plus mn) = D.plus n in
+      eval (Unshift (env, mn, plusmap)) tm
+  | Weaken tm -> eval (remove_env env Now) tm
 
 and eval_with_boundary : type m a. (m, a) env -> (a, kinetic) term -> (m, kinetic value) CubeOf.t =
  fun env tm ->
@@ -1061,44 +1077,53 @@ and app_eval_apps : type s any. s evaluation -> any apps -> s evaluation =
       | Realize tm -> Realize (inst tm args)
       | Unrealized -> Unrealized)
 
-(* Look up a cube of values in an environment by variable index, accumulating operator actions and shifts as we go.  Eventually we will usually use the operator to select a value from the cubes and act on it, but we can't do that until we've defined acting on a value by a degeneracy (unless we do open recursive trickery). *)
-and lookup_cube : type m n a b k mk.
-    (n, b) env -> (m, k, mk) D.plus -> (a, k, b) Tbwd.insert -> (m, n) op -> mk looked_up_cube =
- fun env mk v op ->
+(* Look up a cube of values in an environment by variable index, accumulating operator actions and shifts as we go.  At the end, we usually use the operator to select a value from the cubes (with its face part) and act on it (with its degeneracy part). *)
+and lookup_cube : type n a b k mk nk.
+    (n, b) env -> (n, k, nk) D.plus -> (a, k, b) Tbwd.insert -> (mk, nk) op -> mk looked_up_cube =
+ fun env nk v op ->
   match (env, v) with
   (* Since there's an index, the environment can't be empty. *)
   | Emp _, _ -> .
   (* If we encounter an operator action, we accumulate it. *)
-  | Act (env, op'), _ -> lookup_cube env mk v (comp_op op' op)
-  (* If we encounter a shift, we split the face associated to our index and accumulate part of it into the operator. *)
+  | Act (env, op'), _ ->
+      let (Plus lk) = D.plus (D.plus_right nk) in
+      let op'k = op_plus op' lk nk in
+      lookup_cube env lk v (comp_op op'k op)
+  (* If we encounter a shift or unshift, we just have to edit the insertion and go on. *)
   | Shift (env, n_x, xb), v ->
       (* In this branch, k is renamed to x+k. *)
-      let m_xk = mk in
-      let (Unmap_insert (x_k, v, _)) = Plusmap.unmap_insert v xb in
-      let (Plus m_x) = D.plus (D.plus_right n_x) in
-      let mx_k = D.plus_assocl m_x x_k m_xk in
-      let op = op_plus op n_x m_x in
-      lookup_cube env mx_k v op
+      let n_xk = nk in
+      let (Uncoinsert (x_k, v, _)) = Plusmap.uncoinsert v xb in
+      let nx_k = D.plus_assocl n_x x_k n_xk in
+      lookup_cube env nx_k v op
+  | Unshift (env, n_x, xb), v ->
+      (* In this branch, n is renamed to n+x. *)
+      let nx_k = nk in
+      let (Uninsert (x_k, v, _)) = Plusmap.uninsert v xb in
+      let n_xk = D.plus_assocr n_x x_k nx_k in
+      lookup_cube env n_xk v op
   (* If the environment is permuted, we apply the permutation to the index. *)
   | Permute (p, env), v ->
       let (Permute_insert (v, _)) = Tbwd.permute_insert v p in
-      lookup_cube env mk v op
+      lookup_cube env nk v op
   (* If we encounter a variable that isn't ours, we skip it and proceed. *)
-  | Ext (env, _, _), Later v -> lookup_cube env mk v op
-  | LazyExt (env, _, _), Later v -> lookup_cube env mk v op
+  | Ext (env, _, _), Later v -> lookup_cube env nk v op
+  | LazyExt (env, _, _), Later v -> lookup_cube env nk v op
   (* Finally, when we find our variable, we decompose the accumulated operator into a strict face and degeneracy, use the face as an index lookup, and act by the degeneracy.  The forcing function is the identity if the entry is not lazy, and force_eval_term if it is lazy. *)
-  | Ext (_, nk, Ok entry), Now -> Looked_up { act = act_value; op = op_plus op nk mk; entry }
+  | Ext (_, nk', Ok entry), Now ->
+      let Eq = D.plus_uniq nk nk' in
+      Looked_up { act = act_value; op; entry }
   (* Looking up a variable that's bound to an error immediately fails with that error.  (In particular, this sort of failure can't currently happen "deeper" inside a term.) *)
   | Ext (_, _, Error e), Now -> fatal e
-  | LazyExt (_, nk, entry), Now ->
-      Looked_up
-        { act = (fun x s -> force_eval_term (act_lazy_eval x s)); op = op_plus op nk mk; entry }
+  | LazyExt (_, nk', entry), Now ->
+      let Eq = D.plus_uniq nk nk' in
+      Looked_up { act = (fun x s -> force_eval_term (act_lazy_eval x s)); op; entry }
 
 and lookup : type n b. (n, b) env -> b Term.index -> kinetic value =
  fun env (Index (v, fa)) ->
   let (Plus n_k) = D.plus (cod_sface fa) in
   let n = dim_env env in
-  match lookup_cube env n_k v (id_op n) with
+  match lookup_cube env n_k v (id_op (D.plus_out n n_k)) with
   | Looked_up { act; op; entry } ->
       let (Plus x) = D.plus (dom_sface fa) in
       let (Op (f, s)) = comp_op op (plus_op n n_k x (op_of_sface fa)) in

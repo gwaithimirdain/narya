@@ -191,7 +191,7 @@ let rec get_bwd : type n.
       get_bwd (CubeOf.find_top rdc) (CubeOf.find_top rac :: elts)
   | _ -> None
 
-let synths : type n. (n, kinetic) term -> bool = function
+let rec synths : type n. (n, kinetic) term -> bool = function
   | Var _ | Const _
   | Meta (_, _)
   | MetaEnv (_, _)
@@ -203,6 +203,10 @@ let synths : type n. (n, kinetic) term -> bool = function
   | Act (_, _)
   | Let (_, _, _) -> true
   | Constr (_, _, _) | Lam (_, _) | Struct _ -> false
+  | Unshift (_, _, tm) -> synths tm
+  | Unact (_, tm) -> synths tm
+  | Shift (_, _, tm) -> synths tm
+  | Weaken tm -> synths tm
 
 (* Given a term, extract its head and arguments as an application spine.  If the spine contains a field projection, stop there and return only the arguments after it, noting the field name and what it is applied to (which itself be another spine). *)
 let rec get_spine : type n.
@@ -393,6 +397,10 @@ let rec unparse : type n lt ls rt rs s.
   | Canonical _ -> fatal (Unimplemented "unparsing canonical types")
   | Struct { eta = Noeta; _ } -> fatal (Unimplemented "unparsing comatches")
   | Match _ -> fatal (Unimplemented "unparsing matches")
+  | Unshift _ -> fatal (Unimplemented "unparsing unshifts")
+  | Unact _ -> fatal (Unimplemented "unparsing unacts")
+  | Shift _ -> fatal (Unimplemented "unparsing shifts")
+  | Weaken tm -> unparse (Names.remove vars Now) tm li ri
 
 (* The master unparsing function can easily be delayed. *)
 and make_unparser : type n. n Names.t -> (n, kinetic) term -> unparser =

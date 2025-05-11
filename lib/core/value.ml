@@ -145,6 +145,7 @@ module rec Value : sig
     | Act : ('n, 'b) env * ('m, 'n) op -> ('m, 'b) env
     | Permute : ('a, 'b) Tbwd.permute * ('n, 'b) env -> ('n, 'a) env
     | Shift : ('mn, 'b) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb) Plusmap.t -> ('m, 'nb) env
+    | Unshift : ('m, 'nb) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb) Plusmap.t -> ('mn, 'b) env
 
   and 's lazy_state =
     | Deferred_eval :
@@ -322,6 +323,7 @@ end = struct
     | Permute : ('a, 'b) Tbwd.permute * ('n, 'b) env -> ('n, 'a) env
     (* Adding a dimension 'n to all the dimensions in a dimension list 'b is the power/cotensor in the dimension-enriched category of contexts.  Shifting an environment (substitution) implements its universal property: an (m+n)-dimensional substitution with codomain b is equivalent to an m-dimensional substitution with codomain n+b. *)
     | Shift : ('mn, 'b) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb) Plusmap.t -> ('m, 'nb) env
+    | Unshift : ('m, 'nb) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb) Plusmap.t -> ('mn, 'b) env
 
   (* An 's lazy_eval behaves from the outside like an 's evaluation Lazy.t.  But internally, in addition to being able to store an arbitrary thunk, it can also store a term and an environment in which to evaluate it (plus an outer insertion that can't be pushed into the environment).  This allows it to accept degeneracy actions and incorporate them into the environment, so that when it's eventually forced the term only has to be traversed once.  It can also accumulate degeneracies on an arbitrary thunk (which could, of course, be a constant value that was already forced, but now is deferred again until it's done accumulating degeneracy actions).  Both kinds of deferred values can also store more arguments and field projections for it to be applied to; this is only used in glued evaluation. *)
   and 's lazy_state =
@@ -346,6 +348,7 @@ let rec dim_env : type n b. (n, b) env -> n D.t = function
   | Act (_, op) -> dom_op op
   | Permute (_, e) -> dim_env e
   | Shift (e, mn, _) -> D.plus_left mn (dim_env e)
+  | Unshift (e, mn, _) -> D.plus_out (dim_env e) mn
 
 (* And likewise every binder *)
 let dim_binder : type m s. (m, s) binder -> m D.t = function
@@ -369,6 +372,7 @@ let rec length_env : type n b. (n, b) env -> b Dbwd.t = function
   | Act (env, _) -> length_env env
   | Permute (p, env) -> Plusmap.OfDom.permute p (length_env env)
   | Shift (env, mn, nb) -> Plusmap.out (D.plus_right mn) (length_env env) nb
+  | Unshift (env, mn, nb) -> Plusmap.input (D.plus_right mn) (length_env env) nb
 
 (* Abstract over a cube of binders to make a cube of lambdas.  TODO: This should morally be a Cube.map, but it goes from one instantiation of Cube to another one, and we didn't define a map like that, so for now we just make it a 'build'. *)
 let lam_cube : type n. string option -> (n, unit) BindCube.t -> (n, kinetic value) CubeOf.t =
@@ -444,8 +448,11 @@ let rec remove_env : type a k b n. (n, b) env -> (a, k, b) Tbwd.insert -> (n, a)
   | Ext (env, _, _), Now -> env
   | LazyExt (env, _, _), Now -> env
   | Shift (env, mn, nb), _ ->
-      let (Unmap_insert (_, v', na)) = Plusmap.unmap_insert v nb in
+      let (Uncoinsert (_, v', na)) = Plusmap.uncoinsert v nb in
       Shift (remove_env env v', mn, na)
+  | Unshift (env, mn, nb), _ ->
+      let (Uninsert (_, v', na)) = Plusmap.uninsert v nb in
+      Unshift (remove_env env v', mn, na)
 
 (* Binders are completely lazy, so we can "evaluate" them independently of the master evaluation functions in norm. *)
 let eval_binder : type m n mn b s.
