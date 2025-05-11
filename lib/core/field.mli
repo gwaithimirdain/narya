@@ -11,7 +11,7 @@ val intern : string -> 'i D.t -> 'i t
 val to_string : 'i t -> string
 val strings_to_string : string -> string list -> string
 val dim : 'i t -> 'i D.t
-val equal : 'i t -> 'j t -> bool
+val equal : 'i t -> 'j t -> ('i, 'j) Eq.compare
 
 type wrapped = Wrap : 'i t -> wrapped
 type with_ins = WithIns : 'i t * ('n, 't, 'i) insertion -> with_ins

@@ -18,13 +18,8 @@ let strings_to_string (f : string) (p : string list) =
 
 let dim (x : 'i t) : 'i D.t = snd x
 
-let equal : type i j. i t -> j t -> bool =
- fun x y ->
-  fst x = fst y
-  &&
-  match D.compare (snd x) (snd y) with
-  | Eq -> true
-  | _ -> false
+let equal : type i j. i t -> j t -> (i, j) Eq.compare =
+ fun x y -> if fst x = fst y then D.compare (snd x) (snd y) else Neq
 
 type wrapped = Wrap : 'i t -> wrapped
 type with_ins = WithIns : 'i t * ('n, 't, 'i) insertion -> with_ins

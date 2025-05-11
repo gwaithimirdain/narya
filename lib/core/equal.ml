@@ -263,12 +263,14 @@ module Equal = struct
         | Neq ->
             fatal
               (Dimension_mismatch ("application in equality-check", CubeOf.dim a1, CubeOf.dim a2)))
-    | Field (rest1, f1, _, i1), Field (rest2, f2, _, i2) ->
+    | Field (rest1, f1, _, i1), Field (rest2, f2, _, i2) -> (
         let* () = equal_apps ctx rest1 rest2 in
         let To d1, To d2 = (deg_of_ins i1, deg_of_ins i2) in
         let* () = ErrOpt.of_opt (deg_equiv d1 d2) in
         (* The 'plus' parts must automatically be equal if the fields are equal and well-typed. *)
-        Some (guard (Field.equal f1 f2) (Unequal.Fields (f1, f2)))
+        match Field.equal f1 f2 with
+        | Eq -> Some (Ok ())
+        | Neq -> Some (Error (Unequal.Fields (f1, f2))))
     | Inst (rest1, _, a1), Inst (rest2, _, a2) ->
         let* () = equal_apps ctx rest1 rest2 in
         equal_tyargs ctx a1 a2
