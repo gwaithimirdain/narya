@@ -381,6 +381,9 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
           let (Plus mk) = D.plus (D.plus_right nk) in
           let op = op_plus op nk mk in
           eval (Act (env, op)) tm)
+  | Shift (n, plusmap, tm) ->
+      let (Plus mn) = D.plus n in
+      eval (Unshift (env, mn, plusmap)) tm
 
 and eval_with_boundary : type m a. (m, a) env -> (a, kinetic) term -> (m, kinetic value) CubeOf.t =
  fun env tm ->
