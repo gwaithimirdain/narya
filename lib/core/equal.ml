@@ -284,10 +284,10 @@ module Equal = struct
         let open CubeOf.Monadic (Monad.Maybe) in
         let (Plus mk) = D.plus (dim_entry entry) in
         let (Looked_up { act = act1; op = Op (fc1, fd1); entry = xs1 }) =
-          lookup_cube env1 mk Now (id_op (dim_env env1)) in
+          lookup_cube env1 mk Now (id_op (D.plus_out (dim_env env1) mk)) in
         let xs1 = act_cube { act = act1 } (CubeOf.subcube fc1 xs1) fd1 in
         let (Looked_up { act = act2; op = Op (fc2, fd2); entry = xs2 }) =
-          lookup_cube env2 mk Now (id_op (dim_env env2)) in
+          lookup_cube env2 mk Now (id_op (D.plus_out (dim_env env2) mk)) in
         let xs2 = act_cube { act = act2 } (CubeOf.subcube fc2 xs2) fd2 in
         let env1' = remove_env env1 Now in
         let env2' = remove_env env2 Now in

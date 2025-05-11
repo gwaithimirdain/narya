@@ -271,7 +271,7 @@ and readback_ordered_env : type n a b c d.
   | Ext (envctx, entry, _) -> (
       let (Plus mk) = D.plus (dim_entry entry) in
       let (Looked_up { act; op = Op (fc, fd); entry = xs }) =
-        lookup_cube env mk Now (id_op (dim_env env)) in
+        lookup_cube env mk Now (id_op (D.plus_out (dim_env env) mk)) in
       let xs = act_cube { act } (CubeOf.subcube fc xs) fd in
       match entry with
       | Vis { bindings; _ } | Invis bindings ->
