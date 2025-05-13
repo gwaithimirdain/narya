@@ -385,11 +385,18 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
         <|> Anomaly "evaluating unshifted term in too low-dimensional environment" in
       eval (Shift (env, mn, plusmap)) tm
   | Unact (op, tm) -> (
-      match factor (dim_env env) (cod_op op) with
-      | None -> fatal (Dimension_mismatch ("unact", dim_env env, cod_op op))
-      | Some (Factor nk) ->
-          let (Plus mk) = D.plus (D.plus_right nk) in
-          let op = op_plus op nk mk in
+      match cofactor (dim_env env) (cod_op op) with
+      | None ->
+          fatal
+            (Anomaly
+               (Printf.sprintf
+                  "evaluating unacted term in too low-dimensional environment: %s doesn't cofactor through %s"
+                  (string_of_dim (dim_env env))
+                  (string_of_dim (cod_op op))))
+      | Some (Cofactor kn) ->
+          let (Plus km) = D.plus (dom_op op) in
+          let k = D.minus (dim_env env) kn in
+          let op = plus_op k kn km op in
           eval (Act (env, op)) tm)
   | Shift (n, plusmap, tm) ->
       let (Plus mn) = D.plus n in

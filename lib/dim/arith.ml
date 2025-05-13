@@ -26,6 +26,7 @@ let rec cofactor : type nk k. nk D.t -> k D.t -> (nk, k) cofactor option =
   | Nat (Suc nk), Nat (Suc k) ->
       let* (Cofactor n) = cofactor (Nat nk) (Nat k) in
       return (Cofactor (Suc n))
+  | Nat (Suc _), Nat Zero -> return (Cofactor (D.plus_zero nk))
   | _ -> None
 
 (* Compute the pushout of a span of dimensions, if it exists.  In practice we only need pushouts of spans that can be completed to some commutative square (equivalently, pushouts in slice categories), but in our primary examples all pushouts exist, so we don't bother putting an option on it yet. *)
