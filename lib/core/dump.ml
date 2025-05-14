@@ -209,8 +209,11 @@ module F = struct
    fun ppf c ->
     match c with
     | Data { indices; constrs; discrete = _ } ->
-        fprintf ppf "Data (%d, (%s), ?)" (Fwn.to_int indices)
-          (String.concat "," (Bwd_extra.to_list_map (fun (c, _) -> Constr.to_string c) constrs))
+        fprintf ppf "Data (%d, (%a))" (Fwn.to_int indices)
+          (pp_print_list
+             ~pp_sep:(fun ppf () -> pp_print_string ppf " | ")
+             (fun ppf (c, d) -> fprintf ppf "%s %a" (Constr.to_string c) dataconstr d))
+          (Bwd.to_list constrs)
     | Codata { eta; fields; _ } ->
         fprintf ppf "Codata (%s, (%s))"
           (match eta with
@@ -220,6 +223,18 @@ module F = struct
              (Bwd_extra.to_list_map
                 (fun (CodatafieldAbwd.Entry (f, _)) -> Field.to_string f)
                 fields))
+
+  and dataconstr : type p i. formatter -> (p, i) Term.dataconstr -> unit =
+   fun ppf (Dataconstr { args; indices = _ }) -> fprintf ppf "%a : ?" tel args
+
+  and tel : type a b ab. formatter -> (a, b, ab) Term.tel -> unit =
+   fun ppf -> function
+    | Emp -> ()
+    | Ext (x, ty, rest) ->
+        fprintf ppf "(%a : %a)"
+          (pp_print_option ~none:(fun ppf () -> pp_print_string ppf "_") pp_print_string)
+          x term ty;
+        tel ppf rest
 
   let rec check : type a. formatter -> a check -> unit =
    fun ppf c ->
