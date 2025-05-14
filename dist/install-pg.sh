@@ -42,7 +42,11 @@ mkdir -p $PGDIR/narya
 if [ -e narya.el ]
 then
     # Install the narya elisp files, overwriting any old ones.
-    cp --remove-destination *.el $PGDIR/narya
+    if ! cp -f *.el $PGDIR/narya
+    then
+        echo Error copying elisp files
+        exit 1
+    fi
 elif [ -e ../proofgeneral/narya.el ]
 then
      echo You appear to be running this script from the Narya source tree,
