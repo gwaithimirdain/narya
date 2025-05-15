@@ -143,6 +143,6 @@ type (_, _, _) degctx =
   | Degctx : ('k, 'b, 'kb) Plusmap.t * ('a, 'kb) Ctx.t * ('k, 'b) env -> ('a, 'b, 'k) degctx
 
 let degctx : type a b k. (a, b) Ctx.t -> k D.t -> (a, b, k) degctx =
- fun (Permute (p, _, ctx)) k ->
+ fun (Permute { perm; ctx; _ }) k ->
   let (Degctx (kb, newctx, env)) = Ordered.degenerate ctx k in
-  Degctx (kb, Permute (p, Ctx.Ordered.env newctx, newctx), env)
+  Degctx (kb, Permute { perm; env = Ctx.Ordered.env newctx; ctx = newctx }, env)

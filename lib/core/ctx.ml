@@ -370,62 +370,85 @@ end
 
 (* Now we define contexts that add a permutation of the raw indices.  For efficiency reasons we also precompute its environment as the context is built and store it. *)
 
-type ('a, 'b) t = Permute : ('a, 'i) N.perm * (D.zero, 'b) env * ('i, 'b) Ordered.t -> ('a, 'b) t
+type ('a, 'b) t =
+  | Permute : {
+      perm : ('a, 'i) N.perm;
+      env : (D.zero, 'b) env;
+      ctx : ('i, 'b) Ordered.t;
+    }
+      -> ('a, 'b) t
 
 (* Nearly all the operations on ordered contexts are lifted to either ignore the permutations or add identities on the right. *)
 
-let vis (Permute (p, env, ctx)) m mn xs vars af =
+let vis (Permute { perm; env; ctx }) m mn xs vars af =
   let (Plus bf) = N.plus (N.plus_right af) in
   Permute
-    ( N.perm_plus p af bf,
-      LazyExt (env, D.zero_plus (CubeOf.dim vars), Ordered.env_entry vars),
-      Ordered.vis ctx m mn xs vars bf )
+    {
+      perm = N.perm_plus perm af bf;
+      env = LazyExt (env, D.zero_plus (CubeOf.dim vars), Ordered.env_entry vars);
+      ctx = Ordered.vis ctx m mn xs vars bf;
+    }
 
 let cube_vis ctx x vars =
   let m = CubeOf.dim vars in
   vis ctx m (D.plus_zero m) (NICubeOf.singleton x) vars (Suc Zero)
 
-let vis_fields (Permute (p, env, ctx)) xs vars fields fplus af =
+let vis_fields (Permute { perm; env; ctx }) xs vars fields fplus af =
   let (Plus bf) = N.plus (N.plus_right af) in
   Permute
-    ( N.perm_plus p af bf,
-      LazyExt (env, D.zero_plus (CubeOf.dim vars), Ordered.env_entry vars),
-      Ordered.vis_fields ctx xs vars fields fplus bf )
+    {
+      perm = N.perm_plus perm af bf;
+      env = LazyExt (env, D.zero_plus (CubeOf.dim vars), Ordered.env_entry vars);
+      ctx = Ordered.vis_fields ctx xs vars fields fplus bf;
+    }
 
-let invis (Permute (p, env, ctx)) vars =
+let invis (Permute { perm; env; ctx }) vars =
   Permute
-    (p, LazyExt (env, D.zero_plus (CubeOf.dim vars), Ordered.env_entry vars), Ordered.invis ctx vars)
+    {
+      perm;
+      env = LazyExt (env, D.zero_plus (CubeOf.dim vars), Ordered.env_entry vars);
+      ctx = Ordered.invis ctx vars;
+    }
 
-let lock (Permute (p, env, ctx)) = Permute (p, env, Ordered.lock ctx)
-let locked (Permute (_, _, ctx)) = Ordered.locked ctx
-let raw_length (Permute (p, _, ctx)) = N.perm_dom (Ordered.raw_length ctx) p
-let length (Permute (_, _, ctx)) = Ordered.length ctx
-let empty = Permute (N.id_perm N.zero, Emp D.zero, Ordered.empty)
-let dbwd (Permute (_, _, ctx)) = Ordered.dbwd ctx
-let apps (Permute (_, _, ctx)) = Ordered.apps ctx
+let lock (Permute { perm; env; ctx }) = Permute { perm; env; ctx = Ordered.lock ctx }
+let locked (Permute { ctx; _ }) = Ordered.locked ctx
+let raw_length (Permute { perm; ctx; _ }) = N.perm_dom (Ordered.raw_length ctx) perm
+let length (Permute { ctx; _ }) = Ordered.length ctx
+let empty = Permute { perm = N.id_perm N.zero; env = Emp D.zero; ctx = Ordered.empty }
+let dbwd (Permute { ctx; _ }) = Ordered.dbwd ctx
+let apps (Permute { ctx; _ }) = Ordered.apps ctx
 
 (* Lookup is the only place where the permutations are used nontrivially: we apply the permutation to the raw index before looking it up. *)
-let lookup (Permute (p, _, ctx)) i = Ordered.lookup ctx (N.perm_apply p (fst i), snd i)
-let find_level (Permute (_, _, ctx)) x = Ordered.find_level ctx x
+let lookup (Permute { perm; ctx; _ }) i = Ordered.lookup ctx (N.perm_apply perm (fst i), snd i)
+let find_level (Permute { ctx; _ }) x = Ordered.find_level ctx x
 
 (* To get the environment, we can now just return the precomputed one. *)
-let env (Permute (_, env, _)) = env
+let env (Permute { env; _ }) = env
 
-let ext (Permute (p, env, ctx)) xs ty =
+let ext (Permute { perm; env; ctx }) xs ty =
   let ctx, b = Ordered.ext ctx xs ty in
   Permute
-    (Insert (p, Top), LazyExt (env, D.zero_plus D.zero, Ordered.env_entry (CubeOf.singleton b)), ctx)
+    {
+      perm = Insert (perm, Top);
+      env = LazyExt (env, D.zero_plus D.zero, Ordered.env_entry (CubeOf.singleton b));
+      ctx;
+    }
 
-let ext_let (Permute (p, env, ctx)) xs tm =
+let ext_let (Permute { perm; env; ctx }) xs tm =
   let ctx, b = Ordered.ext_let ctx xs tm in
   Permute
-    (Insert (p, Top), LazyExt (env, D.zero_plus D.zero, Ordered.env_entry (CubeOf.singleton b)), ctx)
+    {
+      perm = Insert (perm, Top);
+      env = LazyExt (env, D.zero_plus D.zero, Ordered.env_entry (CubeOf.singleton b));
+      ctx;
+    }
 
-let lam (Permute (_, _, ctx)) tm = Ordered.lam ctx tm
+let lam (Permute { ctx; _ }) tm = Ordered.lam ctx tm
 
-let forget_levels (Permute (p, _, ctx)) forget =
+let forget_levels (Permute { perm; ctx; _ }) forget =
   let ctx = Ordered.forget_levels ctx forget in
-  Permute (p, Ordered.env ctx, ctx)
+  Permute { perm; env = Ordered.env ctx; ctx }
 
 (* Augment an ordered context by the identity permutation *)
-let of_ordered ctx = Permute (N.id_perm (Ordered.raw_length ctx), Ordered.env ctx, ctx)
+let of_ordered ctx =
+  Permute { perm = N.id_perm (Ordered.raw_length ctx); env = Ordered.env ctx; ctx }

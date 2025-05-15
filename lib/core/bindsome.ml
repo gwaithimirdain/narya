@@ -325,13 +325,14 @@ type (_, _) bind_some =
       -> ('a, 'b) bind_some
   | None : ('a, 'b) bind_some
 
-let bind_some g (Ctx.Permute (p, _, ctx)) =
+let bind_some g (Ctx.Permute { perm; ctx; _ }) =
   match Ordered.bind_some g ctx with
   | Bind_some { raw_perm; checked_perm; oldctx; newctx } ->
+      let perm = N.comp_perm perm raw_perm in
       Bind_some
         {
           checked_perm;
-          oldctx = Permute (N.comp_perm p raw_perm, Ctx.Ordered.env oldctx, oldctx);
-          newctx = Permute (N.comp_perm p raw_perm, Ctx.Ordered.env newctx, newctx);
+          oldctx = Permute { perm; env = Ctx.Ordered.env oldctx; ctx = oldctx };
+          newctx = Permute { perm; env = Ctx.Ordered.env newctx; ctx = newctx };
         }
   | None -> None

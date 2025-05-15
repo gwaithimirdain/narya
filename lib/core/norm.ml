@@ -1239,9 +1239,9 @@ let rec eval_ordered_ctx : type a b. (a, b) ordered_termctx -> (a, b) Ctx.Ordere
   | Lock ctx -> Lock (eval_ordered_ctx ctx)
 
 let eval_ctx : type a b. (a, b) termctx -> (a, b) Ctx.t = function
-  | Permute (p, ctx) ->
+  | Permute (perm, ctx) ->
       let ctx = eval_ordered_ctx ctx in
-      Permute (p, Ctx.Ordered.env ctx, ctx)
+      Permute { perm; env = Ctx.Ordered.env ctx; ctx }
 
 (* Evaluate a telescope (forwards context of terms) and append the result to a context. *)
 let rec eval_append : type a b c ac bc.
