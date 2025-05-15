@@ -138,6 +138,98 @@ let plusmap_tube_ctx : type n hn b hb.
  fun hn hb tube_ctx ->
   Suc (plusmap_gtube_ctx hn hb (D.plus_zero Hott.dim) tube_ctx, D.zero_plus Hott.dim)
 
+(* Passing across isomorphisms *)
+
+(* As in the internal proofs of fibrancy, we sometimes need to pass across a definitional isomorphism.  We implement this by simply applying a pair of function terms. *)
+
+let rec fib_iso : type b.
+    b Plusmap.OfDom.t ->
+    (* fib is the known-to-be-fibrant *type* that we are isomorphic to.  Not its fibrancy fields!  If we worked directly with its fibrancy fields, they would be potential terms, and we wouldn't be able to apply them to things inside kinetic terms. *)
+    fib:(b, kinetic) term ->
+    (* to_fn is the function from that type *to* the type now being proven fibrant. *)
+    to_fn:(b, kinetic) term ->
+    (* fro_fn is the function *from* the type now being proven fibrant to the one known to be fibrant. *)
+    fro_fn:(b, kinetic) term ->
+    (* We only use this for zero-dimensional fibrancy. *)
+    (D.zero * b * potential * no_eta) StructfieldAbwd.t option =
+ fun b ~fib ~to_fn ~fro_fn ->
+  let* zero, one, _two = Hott.faces () in
+  let (Exists (type hb) ((hb, plusmap) : hb Plusmap.OfCod.t * (Hott.dim, b, hb) Plusmap.t)) =
+    Plusmap.exists Hott.dim b in
+  let plusfam x = Some (PlusFam.PlusFam (plusmap, x)) in
+  let tr : type r. [ `Left | `Right ] -> (D.zero, Hott.dim, r) pbij -> (r, b) PlusFam.t =
+   fun which p ->
+    let in_face, out_face, ftr =
+      match which with
+      | `Right -> (zero, one, ftrr)
+      | `Left -> (one, zero, ftrl) in
+    let Eq = eq_of_zero_pbij p in
+    let xname = singleton_variables D.zero (Some "x") in
+    let x = Var (Index (Now, id_sface D.zero)) in
+    let fro_x = app (Weaken (Shift (Hott.dim, plusmap, Unact (op_of_sface in_face, fro_fn)))) x in
+    let fib2 = Weaken (Shift (Hott.dim, plusmap, fib)) in
+    let tr_fro_x = app (Field (fib2, ftr, zero_ins Hott.dim)) fro_x in
+    let to_tr_fro_x =
+      app (Weaken (Shift (Hott.dim, plusmap, Unact (op_of_sface out_face, to_fn)))) tr_fro_x in
+    plusfam (Lam (xname, Realize to_tr_fro_x)) in
+  let trr = PlusPbijmap.build D.zero Hott.dim { build = (fun p -> tr `Right p) } in
+  let trl = PlusPbijmap.build D.zero Hott.dim { build = (fun p -> tr `Left p) } in
+  let lift : type r. [ `Left | `Right ] -> (D.zero, Hott.dim, r) pbij -> (r, b) PlusFam.t =
+   fun which p ->
+    let in_face, out_face, ftr, flift, cube =
+      match which with
+      | `Right -> (zero, one, ftrr, fliftr, Hott.cube)
+      | `Left -> (one, zero, ftrl, fliftl, fun x0 x1 x2 -> Hott.cube x1 x0 x2) in
+    let Eq = eq_of_zero_pbij p in
+    let xname = singleton_variables D.zero (Some "x") in
+    let x = Var (Index (Now, id_sface D.zero)) in
+    let fro_x = app (Weaken (Shift (Hott.dim, plusmap, Unact (op_of_sface in_face, fro_fn)))) x in
+    let fib2 = Weaken (Shift (Hott.dim, plusmap, fib)) in
+    let tr_fro_x = app (Field (fib2, ftr, zero_ins Hott.dim)) fro_x in
+    let lift_fro_x = app (Field (fib2, flift, zero_ins Hott.dim)) fro_x in
+    let* xcube = cube fro_x tr_fro_x lift_fro_x in
+    let to_lift_fro_x =
+      App (Weaken (Shift (Hott.dim, plusmap, Unact (op_of_sface out_face, to_fn))), xcube) in
+    plusfam (Lam (xname, Realize to_lift_fro_x)) in
+  let liftr = PlusPbijmap.build D.zero Hott.dim { build = (fun p -> lift `Right p) } in
+  let liftl = PlusPbijmap.build D.zero Hott.dim { build = (fun p -> lift `Left p) } in
+  let id : type r. (D.zero, Hott.dim, r) pbij -> (r, b) PlusFam.t =
+   fun p ->
+    let Eq = eq_of_zero_pbij p in
+    let x0name = singleton_variables D.zero (Some "x0") in
+    let x1name = singleton_variables D.zero (Some "x1") in
+    let x2name = singleton_variables D.zero (Some "x2") in
+    let x0 = Var (Index (Later Now, id_sface D.zero)) in
+    let fro2 = Weaken (Weaken (Shift (Hott.dim, plusmap, fro_fn))) in
+    let to2 = Weaken (Weaken (Weaken (Shift (Hott.dim, plusmap, to_fn)))) in
+    let fro_x0 =
+      app (Weaken (Weaken (Shift (Hott.dim, plusmap, Unact (op_of_sface zero, fro_fn))))) x0 in
+    let x1 = Var (Index (Now, id_sface D.zero)) in
+    let fro_x1 =
+      app (Weaken (Weaken (Shift (Hott.dim, plusmap, Unact (op_of_sface one, fro_fn))))) x1 in
+    let* fro_x01 = Hott.tube fro_x0 fro_x1 in
+    let fib2 = Weaken (Weaken (Shift (Hott.dim, plusmap, fib))) in
+    let x2 = Var (Index (Now, id_sface D.zero)) in
+    let* fro_x012 = Hott.cube (Weaken fro_x0) (Weaken fro_x1) x2 in
+    let* x012 = Hott.cube (Weaken x0) (Weaken x1) x2 in
+    let hb00 = Plusmap.OfDom.suc (Plusmap.OfDom.suc hb D.zero) D.zero in
+    let* fields =
+      fib_iso hb00
+        ~fib:(Inst (fib2, fro_x01))
+        ~to_fn:(Lam (x2name, App (Weaken fro2, fro_x012)))
+        ~fro_fn:(Lam (x2name, App (to2, x012))) in
+    plusfam
+      (Lam (x0name, Lam (x1name, Struct { dim = D.zero; eta = Noeta; energy = Potential; fields })))
+  in
+  let id = lazy (PlusPbijmap.build D.zero Hott.dim { build = id }) in
+  return
+    (Emp
+    <: StructfieldAbwd.Entry (ftrr, Higher trr)
+    <: Entry (fliftr, Higher liftr)
+    <: Entry (ftrl, Higher trl)
+    <: Entry (fliftl, Higher liftl)
+    <: Entry (fid, LazyHigher id))
+
 (* Computing the fibrancy fields on canonical type-formers *)
 
 (* We compute these directly as terms.  This puts the onus on us to define them in a well-typed way, but we try our best to copy the definitions that can be given (and typechecked) internally using the higher coinductive isFibrant.  However, in most cases the corecursive case needs to be a (co)recursion at OCaml level, hence we wrap it in LazyHigher to avoid infinite computations.
