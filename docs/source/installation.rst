@@ -76,13 +76,18 @@ to enter a Linux command prompt, and then follow the Linux instructions above.  
 
 (for the appropriate directory name) and then proceed with the above Linux instructions.  Note that when you run Emacs from within WSL, it should automatically pop up as a graphical window.
 
+On Mac
+^^^^^^
+
+The static binary does not work on a Mac, but you can compile Narya from source as below.
+
 
 Compiling from source
 ---------------------
 
 If the static binary does not work for you, or if you want to edit the Narya code, you will have to compile it yourself.  This requires a recent version of OCaml and various libraries.  Currently Narya is developed with OCaml 5.3.0; as far as I know, it also compiles with any version after 5.2.1, but this is not regularly verified.  The steps to compile Narya are:
 
-1. Install `OCaml <https://ocaml.org/>`_ and its package manager `Opam <https://opam.ocaml.org/>`_.  How to do this this may vary depending on your operating system.
+1. Install `OCaml <https://ocaml.org/>`_ and its package manager `Opam <https://opam.ocaml.org/>`_.  How to do this this may vary depending on your operating system.  Make sure that the opam bin directory is permanently added to the ``PATH`` in your shell; if you run ``opam init`` (*not* ``opam init -y``) it will offer to do that for you.
 
 2. Set up the OCaml environment and install the Dune build system by running the following commands:
 
@@ -108,7 +113,7 @@ If the static binary does not work for you, or if you want to edit the Narya cod
 
   .. code-block:: bash
 
-    git clone git@github.com:gwaithimirdain/narya.git
+    git clone https://github.com/gwaithimirdain/narya.git
 
   You can also download a `ZIP file <https://github.com/gwaithimirdain/narya/archive/refs/heads/master.zip>`_ and unpack it.
 
@@ -150,7 +155,9 @@ The recommended mode of use of Narya is with its `ProofGeneral <https://proofgen
   cd dist
   ./install-pg.sh
 
-If this doesn't work for you, you can follow these steps to install Narya's ProofGeneral mode manually.
+You will also need to ensure that Emacs can find the Narya executable.  On Linux machines, and in Windows Subsystem for Linux, this should happen automatically as long as the opam directory has been added to your shell profile (as can be done by ``opam init``).  On a Mac, when Emacs is run as a GUI it takes its environment variables from somewhere else; one solution is to install the package `exec-path-from-shell <https://github.com/purcell/exec-path-from-shell>`_.
+
+If th automatic ProofGeneral installer doesn't work for you, you can follow these steps to install Narya's ProofGeneral mode manually.
 
 1. Install `Emacs <https://www.gnu.org/software/emacs/>`_ and ProofGeneral.  The recommended way to install ProofGeneral is from `MELPA <https://melpa.org/>`_ using Emacs' package manager, as described at the `ProofGeneral page <https://proofgeneral.github.io/>`_.
 
@@ -171,6 +178,7 @@ If this doesn't work for you, you can follow these steps to install Narya's Proo
 6. Restart Emacs.
 
 You will have to repeat these steps whenever the Narya ProofGeneral mode is updated (unless you symlinked the files instead of copying them, in which case restarting Emacs will suffice); whenever ProofGeneral is updated; and whenever Emacs is updated.  Note also that you can only use ProofGeneral with one proof assistant per Emacs session: if you want to switch between (say) Narya and Rocq, you need to restart Emacs or open a new instance of it.  These appear to be fundamental restrictions of ProofGeneral (if you know how to get around them, please let me know); although once Narya and its ProofGeneral mode are more stable we can probably petition to be added to the main ProofGeneral distribution.
+
 
 In-browser version
 ------------------
