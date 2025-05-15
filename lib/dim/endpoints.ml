@@ -7,7 +7,13 @@ type wrapped = Wrap : 'l len -> wrapped
 type 'l t = 'l len * 'l N.index
 
 module Data = struct
-  type t = { arity : wrapped; refl_string : string; refl_names : string list; internal : bool }
+  type t = {
+    arity : wrapped;
+    refl_string : string;
+    refl_names : string list;
+    internal : bool;
+    hott : unit option;
+  }
 end
 
 module Config = Algaeff.Reader.Make (Data)
@@ -16,15 +22,17 @@ let () = Config.register_printer (function `Read -> Some "unhandled Endpoints.Co
 
 let hott : unit -> N.two len option =
  fun () ->
-  let (Wrap arity) = (Config.read ()).arity in
-  match D.compare arity N.two with
-  | Eq -> Some N.two
-  | Neq -> None
+  if Option.is_some (Config.read ()).hott then
+    let (Wrap arity) = (Config.read ()).arity in
+    match D.compare arity N.two with
+    | Eq -> Some N.two
+    | Neq -> None
+  else None
 
-let run ~arity ~refl_char ~refl_names ~internal f =
+let run ~arity ~refl_char ~refl_names ~internal ?hott f =
   let (Plus_something arity) = N.plus_of_int arity in
   let refl_string = String.make 1 refl_char in
-  let env : Data.t = { arity = Wrap (Nat arity); refl_string; refl_names; internal } in
+  let env : Data.t = { arity = Wrap (Nat arity); refl_string; refl_names; internal; hott } in
   Config.run ~env f
 
 let wrapped () = (Config.read ()).arity

@@ -478,25 +478,33 @@ let rec check : type a b s.
     (* Now we go through the canonical types. *)
     | Codata fields, Potential _ -> (
         match view_type ~severity ty "typechecking codata" with
-        | Canonical (_, UU _, _, tyargs) ->
-            let has_higher_fields =
-              Bwd.fold_left
-                (fun acc (Field.Wrap fld, _) ->
-                  match acc with
-                  | Some () -> Some ()
-                  | None -> (
-                      match D.compare (Field.dim fld) D.zero with
-                      | Eq -> None
-                      | Neq -> Some ()))
-                None fields in
-            check_codata status ctx tyargs Emp (Bwd.to_list fields) Emp ~has_higher_fields
+        | Canonical (_, UU dim, _, tyargs) -> (
+            match (D.compare_zero dim, Endpoints.hott ()) with
+            | Pos _, Some _ ->
+                fatal (Unimplemented "general higher-dimensional types in HOTT: use glue")
+            | _ ->
+                let has_higher_fields =
+                  Bwd.fold_left
+                    (fun acc (Field.Wrap fld, _) ->
+                      match acc with
+                      | Some () -> Some ()
+                      | None -> (
+                          match D.compare (Field.dim fld) D.zero with
+                          | Eq -> None
+                          | Neq -> Some ()))
+                    None fields in
+                check_codata status ctx tyargs Emp (Bwd.to_list fields) Emp ~has_higher_fields)
         | _ -> fatal (Checking_canonical_at_nonuniverse ("codatatype", PVal (ctx, ty))))
     | Record (xs, fields, opacity), Potential _ -> (
         match view_type ~severity ty "typechecking record" with
-        | Canonical (_, UU dim, ins, tyargs) ->
-            let Eq = eq_of_ins_zero ins in
-            let (Vars (af, vars)) = vars_of_names xs.loc dim xs.value in
-            check_record status dim ctx opacity tyargs vars Emp Zero af Emp fields Emp
+        | Canonical (_, UU dim, ins, tyargs) -> (
+            match (D.compare_zero dim, Endpoints.hott ()) with
+            | Pos _, Some _ ->
+                fatal (Unimplemented "general higher-dimensional types in HOTT: use glue")
+            | _ ->
+                let Eq = eq_of_ins_zero ins in
+                let (Vars (af, vars)) = vars_of_names xs.loc dim xs.value in
+                check_record status dim ctx opacity tyargs vars Emp Zero af Emp fields Emp)
         | _ -> fatal (Checking_canonical_at_nonuniverse ("record type", PVal (ctx, ty))))
     | Data constrs, Potential _ ->
         (* For a datatype, the type to check against might not be a universe, it could include indices.  We also check whether all the types of all the indices are discrete or a type being defined, to decide whether to keep evaluating the type for discreteness. *)
@@ -1808,7 +1816,7 @@ and check_struct : type a b c d s m n mn et.
                 fatal ?loc:tmloc (Anomaly "taken raw field didn't end up in checked fields")))
       (Emp, Emp) tms in
   match errs with
-  | Emp -> Term.Struct (eta, m, fields, energy status)
+  | Emp -> Term.Struct { eta; dim = m; fields; energy = energy status }
   | Snoc _ -> fatal (Accumulated ("check_struct", errs))
 
 and check_fields : type a b c d s m n mn et.
@@ -1826,13 +1834,13 @@ and check_fields : type a b c d s m n mn et.
     (* The fields supplied by the user *)
     ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t ->
     (* The fields we have checked so far *)
-    (m * b * s * et * none) Term.StructfieldAbwd.t ->
+    (m * b * s * et) Term.StructfieldAbwd.t ->
     (* Evaluated versions of the fields we have checked so far *)
     (m * s * et) Value.StructfieldAbwd.t ->
     (* Errors we have accumulated so far *)
     Code.t Asai.Diagnostic.t Bwd.t ->
     ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t
-    * (m * b * s * et * none) Term.StructfieldAbwd.t =
+    * (m * b * s * et) Term.StructfieldAbwd.t =
  fun status eta ctx ty m mn codata_args fields tyargs tms ctms etms errs ->
   (* Build a temporary value-struct consisting of the so-far checked and evaluated fields.  The insertion on a struct being checked is the identity, but it stores the substitution dimension of the type being checked against.  If this is a higher-dimensional record (e.g. Gel), there could be a nontrivial right dimension being trivially inserted, but that will get added automatically by an appropriate symmetry action if it happens. *)
   let str = Value.Struct { fields = etms; ins = ins_zero m; energy = energy status; eta } in
@@ -1844,7 +1852,10 @@ and check_fields : type a b c d s m n mn et.
       | Snoc _ -> fatal (Accumulated ("check_struct", errs)))
   | Entry (fld, cdf) :: fields, Potential (name, args, hyp) ->
       (* Temporarily bind the current constant to the up-until-now value (or an error, if any have occurred yet), for (co)recursive purposes.  Note that this means as soon as one field fails, no other fields can be typechecked if they depend *at all* on earlier ones, even ones that didn't fail.  This could be improved in the future. *)
-      run_with_definition name (hyp (Term.Struct (eta, m, ctms, energy status))) errs @@ fun () ->
+      run_with_definition name
+        (hyp (Term.Struct { eta; dim = m; fields = ctms; energy = energy status }))
+        errs
+      @@ fun () ->
       (* The insertion on the *constant* being checked, by contrast, is always zero, since the constant is not nontrivially substituted at all yet. *)
       let head = head_of_potential name in
       (* The up-until-now term is also maybe an error. *)
@@ -1875,11 +1886,11 @@ and check_field : type a b c d s m n mn i et.
     (kinetic value, Code.t) Result.t ->
     (* As before, user terms, checked terms, value terms, and errors *)
     ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t ->
-    (m * b * s * et * none) Term.StructfieldAbwd.t ->
+    (m * b * s * et) Term.StructfieldAbwd.t ->
     (m * s * et) Value.StructfieldAbwd.t ->
     Code.t Asai.Diagnostic.t Bwd.t ->
     ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t
-    * (m * b * s * et * none) Term.StructfieldAbwd.t =
+    * (m * b * s * et) Term.StructfieldAbwd.t =
  fun status eta ctx ty m mn ({ env; termctx; _ } as codata_args) fields tyargs fld cdf prev_etm tms
      ctms etms errs ->
   match (cdf, status, eta, termctx) with
@@ -1891,7 +1902,7 @@ and check_field : type a b c d s m n mn i et.
             let args = Value.Field (args, fld, D.plus_zero m, ins) in
             let hyp tm =
               let ctms = Snoc (ctms, Entry (fld, Lower (tm, lbl))) in
-              hyp (Term.Struct (eta, m, ctms, energy status)) in
+              hyp (Term.Struct { eta; dim = m; fields = ctms; energy = energy status }) in
             Potential (c, args, hyp) in
       let key = Some (Field.to_string fld, []) in
       let tm, tms, lbl =
@@ -1950,7 +1961,7 @@ and check_higher_field : type a b c d m i ic0.
     (D.zero, m, m, normal) TubeOf.t ->
     (* As before, user terms, checked terms, value terms, and errors *)
     ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t ->
-    (m * b * potential * no_eta * none) Term.StructfieldAbwd.t ->
+    (m * b * potential * no_eta) Term.StructfieldAbwd.t ->
     (m * potential * no_eta) Value.StructfieldAbwd.t ->
     Code.t Asai.Diagnostic.t Bwd.t ->
     (* Field being checked *)
@@ -1967,7 +1978,7 @@ and check_higher_field : type a b c d m i ic0.
     (i, (c, D.zero) snoc, ic0) Plusmap.t ->
     (ic0, kinetic) term ->
     ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t
-    * (m * b * potential * no_eta * none) Term.StructfieldAbwd.t =
+    * (m * b * potential * no_eta) Term.StructfieldAbwd.t =
  fun status ctx ty m intrinsic ({ env; _ } as codata_args) fields termctx tyargs tms ctms etms errs
      fld cvals evals pbijs prev_etm ic0 fldty ->
   (* We recurse through all the partial bijections that could be associated to this field name. *)
@@ -2068,7 +2079,8 @@ and check_higher_field : type a b c d m i ic0.
                 Term.Structfield.Higher (PlusPbijmap.set pbij (Some (PlusFam (plusmap, tm))) cvals)
               in
               let ctms = Snoc (ctms, Entry (fld, hsf)) in
-              hyp (Term.Struct (Noeta, m, ctms, energy status)) in
+              hyp (Term.Struct { eta = Noeta; dim = m; fields = ctms; energy = energy status })
+            in
             Potential (head, args, hyp) in
       (* Get the user's supplied term for this partial bijection *)
       let key = Some (Field.to_string fld, strings_of_pbij pbij) in

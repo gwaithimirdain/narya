@@ -263,12 +263,14 @@ module Equal = struct
         | Neq ->
             fatal
               (Dimension_mismatch ("application in equality-check", CubeOf.dim a1, CubeOf.dim a2)))
-    | Field (rest1, f1, _, i1), Field (rest2, f2, _, i2) ->
+    | Field (rest1, f1, _, i1), Field (rest2, f2, _, i2) -> (
         let* () = equal_apps ctx rest1 rest2 in
         let To d1, To d2 = (deg_of_ins i1, deg_of_ins i2) in
         let* () = ErrOpt.of_opt (deg_equiv d1 d2) in
         (* The 'plus' parts must automatically be equal if the fields are equal and well-typed. *)
-        Some (guard (Field.equal f1 f2) (Unequal.Fields (f1, f2)))
+        match Field.equal f1 f2 with
+        | Eq -> Some (Ok ())
+        | Neq -> Some (Error (Unequal.Fields (f1, f2))))
     | Inst (rest1, _, a1), Inst (rest2, _, a2) ->
         let* () = equal_apps ctx rest1 rest2 in
         equal_tyargs ctx a1 a2
@@ -339,10 +341,10 @@ module Equal = struct
         let open CubeOf.Monadic (Err) in
         let (Plus mk) = D.plus (dim_entry entry) in
         let (Looked_up { act = act1; op = Op (fc1, fd1); entry = xs1 }) =
-          lookup_cube env1 mk Now (id_op (dim_env env1)) in
+          lookup_cube env1 mk Now (id_op (D.plus_out (dim_env env1) mk)) in
         let xs1 = act_cube { act = act1 } (CubeOf.subcube fc1 xs1) fd1 in
         let (Looked_up { act = act2; op = Op (fc2, fd2); entry = xs2 }) =
-          lookup_cube env2 mk Now (id_op (dim_env env2)) in
+          lookup_cube env2 mk Now (id_op (D.plus_out (dim_env env2) mk)) in
         let xs2 = act_cube { act = act2 } (CubeOf.subcube fc2 xs2) fd2 in
         let env1' = remove_env env1 Now in
         let env2' = remove_env env2 Now in

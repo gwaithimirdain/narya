@@ -185,6 +185,7 @@ module F = struct
     | Act (e, Op (f, d)) -> fprintf ppf "%a <* (%s,%s)" env e (string_of_sface f) (string_of_deg d)
     | Permute (_, e) -> fprintf ppf "(%a) permuted(?)" env e
     | Shift (e, mn, _) -> fprintf ppf "%a << %a" env e dim (D.plus_right mn)
+    | Unshift (e, mn, _) -> fprintf ppf "%a >> %a" env e dim (D.plus_right mn)
 
   and env : type b n. formatter -> (n, b) Value.env -> unit = fun ppf e -> denv 0 ppf e
 
@@ -207,10 +208,14 @@ module F = struct
     | Constr (c, _, _) -> fprintf ppf "Constr (%s, ?, ?)" (Constr.to_string c)
     | Act (tm, s) -> fprintf ppf "Act (%a, %s)" term tm (string_of_deg s)
     | Let (_, _, _) -> fprintf ppf "Let ?"
-    | Struct (_, _, _, _) -> fprintf ppf "Struct ?"
+    | Struct _ -> fprintf ppf "Struct ?"
     | Match _ -> fprintf ppf "Match ?"
     | Realize tm -> fprintf ppf "Realize (%a)" term tm
     | Canonical c -> fprintf ppf "Canonical (%a)" canonical c
+    | Unshift (n, _, tm) -> fprintf ppf "Unshift (%s, %a)" (string_of_dim n) term tm
+    | Unact (_, tm) -> fprintf ppf "Unact (?, %a)" term tm
+    | Shift (n, _, tm) -> fprintf ppf "Shift (%s, %a)" (string_of_dim n) term tm
+    | Weaken tm -> fprintf ppf "Weaken (%a)" term tm
 
   and canonical : type b. formatter -> b canonical -> unit =
    fun ppf c ->

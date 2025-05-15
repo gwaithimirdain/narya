@@ -4,7 +4,15 @@ open Signatures
 open Tlist
 open Tbwd
 open Monoid
-module D : MonoidPos
+
+module D : sig
+  include MonoidPos
+
+  val minus : 'mn t -> ('m, 'n, 'mn) plus -> 'm t
+  val minus_uniq : ('m1, 'n, 'mn) plus -> ('m2, 'n, 'mn) plus -> ('m1, 'm2) Eq.t
+  val minus_uniq' : 'm t -> ('m, 'n1, 'mn) plus -> ('m, 'n2, 'mn) plus -> ('n1, 'n2) Eq.t
+end
+
 module Dmap : MAP_MAKER with module Key := D
 
 module Endpoints : sig
@@ -12,18 +20,26 @@ module Endpoints : sig
   type wrapped = Wrap : 'l len -> wrapped
 
   val run :
-    arity:int -> refl_char:char -> refl_names:string list -> internal:bool -> (unit -> 'a) -> 'a
+    arity:int ->
+    refl_char:char ->
+    refl_names:string list ->
+    internal:bool ->
+    ?hott:unit ->
+    (unit -> 'a) ->
+    'a
 
   val uniq : 'l1 len -> 'l2 len -> ('l1, 'l2) Eq.t
   val len : 'l len -> 'l N.t
   val wrapped : unit -> wrapped
   val internal : unit -> bool
+  val hott : unit -> N.two len option
 end
 
 type _ is_singleton
 type _ is_suc = Is_suc : 'n D.t * ('n, 'one, 'm) D.plus * 'one is_singleton -> 'm is_suc
 
 val suc_pos : 'n D.pos -> 'n is_suc
+val zero_nonsingleton : D.zero is_singleton -> 'c
 
 type any_dim = Any : 'n D.t -> any_dim
 
@@ -34,6 +50,10 @@ val is_pos : 'a D.t -> bool
 type (_, _) factor = Factor : ('n, 'k, 'nk) D.plus -> ('nk, 'n) factor
 
 val factor : 'nk D.t -> 'n D.t -> ('nk, 'n) factor option
+
+type (_, _) cofactor = Cofactor : ('n, 'k, 'nk) D.plus -> ('nk, 'k) cofactor
+
+val cofactor : 'nk D.t -> 'k D.t -> ('nk, 'k) cofactor option
 
 type (_, _) deg
 
@@ -116,6 +136,12 @@ type (_, _, _) sface_of_plus =
       -> ('ml, 'n, 'k) sface_of_plus
 
 val sface_of_plus : ('n, 'k, 'nk) D.plus -> ('ml, 'nk) sface -> ('ml, 'n, 'k) sface_of_plus
+
+val singleton_sface :
+  ('m, 'n) sface ->
+  'n is_singleton ->
+  'l Endpoints.len ->
+  [ `End of 'l N.index | `Mid of ('m, 'n) Eq.t ]
 
 type any_sface = Any_sface : ('n, 'k) sface -> any_sface
 
@@ -219,6 +245,14 @@ val tface_plus :
   ('m, 'l, 'ml) D.plus ->
   ('ml, 'n, 'kl, 'nkl) tface
 
+val plus_tface :
+  'l D.t ->
+  ('l, 'm, 'lm) D.plus ->
+  ('l, 'n, 'ln) D.plus ->
+  ('l, 'nk, 'lnk) D.plus ->
+  ('m, 'n, 'k, 'nk) tface ->
+  ('lm, 'ln, 'k, 'lnk) tface
+
 type ('m, 'n) pface = ('m, D.zero, 'n, 'n) tface
 
 val pface_of_sface : ('m, 'n) sface -> [ `Proper of ('m, 'n) pface | `Id of ('m, 'n) Eq.t ]
@@ -238,6 +272,14 @@ val sface_plus_pface :
   ('k, 'p, 'kp) D.plus ->
   ('p, 'n) pface ->
   ('kp, 'm, 'n, 'mn) tface
+
+val tface_plus_sface :
+  ('k, 'm, 'l, 'ml) tface ->
+  ('ml, 'n, 'mln) D.plus ->
+  ('l, 'n, 'ln) D.plus ->
+  ('k, 'p, 'kp) D.plus ->
+  ('p, 'n) sface ->
+  ('kp, 'm, 'ln, 'mln) tface
 
 type (_, _, _, _) tface_of_plus =
   | TFace_of_plus :
@@ -885,24 +927,31 @@ module Plusmap : sig
 
   val exists : 'p D.t -> 'xs OfDom.t -> ('p, 'xs) exists
   val out : 'p D.t -> 'xs OfDom.t -> ('p, 'xs, 'ys) t -> 'ys OfCod.t
+  val input : 'p D.t -> 'ys OfCod.t -> ('p, 'xs, 'ys) t -> 'xs OfDom.t
   val uniq : ('p, 'xs, 'ys) t -> ('p, 'xs, 'zs) t -> ('ys, 'zs) Eq.t
 
-  type (_, _, _, _) map_insert =
-    | Map_insert : ('zs, 'fx, 'ws) Tbwd.insert * ('p, 'ys, 'ws) t -> ('p, 'fx, 'ys, 'zs) map_insert
+  type (_, _, _, _) insert =
+    | Insert : ('zs, 'fx, 'ws) Tbwd.insert * ('p, 'ys, 'ws) t -> ('p, 'fx, 'ys, 'zs) insert
 
   val insert :
     ('p, 'x, 'z) D.plus ->
     ('xs, 'x, 'ys) Tbwd.insert ->
     ('p, 'xs, 'zs) t ->
-    ('p, 'z, 'ys, 'zs) map_insert
+    ('p, 'z, 'ys, 'zs) insert
 
-  type (_, _, _, _) unmap_insert =
-    | Unmap_insert :
+  type (_, _, _, _) uninsert =
+    | Uninsert :
+        ('p, 'x, 'fx) D.plus * ('zs, 'fx, 'ws) Tbwd.insert * ('p, 'xs, 'zs) t
+        -> ('p, 'x, 'xs, 'ws) uninsert
+
+  val uninsert : ('xs, 'x, 'ys) Tbwd.insert -> ('p, 'ys, 'ws) t -> ('p, 'x, 'xs, 'ws) uninsert
+
+  type (_, _, _, _) uncoinsert =
+    | Uncoinsert :
         ('p, 'x, 'z) D.plus * ('xs, 'x, 'ys) Tbwd.insert * ('p, 'xs, 'zs) t
-        -> ('p, 'z, 'ys, 'zs) unmap_insert
+        -> ('p, 'z, 'ys, 'zs) uncoinsert
 
-  val unmap_insert :
-    ('zs, 'z, 'ws) Tbwd.insert -> ('p, 'ys, 'ws) t -> ('p, 'z, 'ys, 'zs) unmap_insert
+  val uncoinsert : ('zs, 'z, 'ws) Tbwd.insert -> ('p, 'ys, 'ws) t -> ('p, 'z, 'ys, 'zs) uncoinsert
 
   type (_, _, _) map_permute =
     | Map_permute : ('p, 'zs, 'ws) t * ('ys, 'ws) Tbwd.permute -> ('p, 'zs, 'ys) map_permute
@@ -929,4 +978,5 @@ module Hott : sig
   val singleton : dim is_singleton
   val faces : unit -> ((D.zero, dim) sface * (D.zero, dim) sface * N.two Endpoints.len) option
   val cube : 'a -> 'a -> 'a -> (dim, 'a) CubeOf.t option
+  val tube : 'a -> 'a -> (D.zero, dim, dim, 'a) TubeOf.t option
 end

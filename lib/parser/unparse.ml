@@ -1,7 +1,6 @@
 open Bwd
 open Bwd.Infix
 open Util
-open Perhaps
 open Tbwd
 open Bwd_extra
 open Dim
@@ -192,7 +191,7 @@ let rec get_bwd : type n.
       get_bwd (CubeOf.find_top rdc) (CubeOf.find_top rac :: elts)
   | _ -> None
 
-let synths : type n. (n, kinetic) term -> bool = function
+let rec synths : type n. (n, kinetic) term -> bool = function
   | Var _ | Const _
   | Meta (_, _)
   | MetaEnv (_, _)
@@ -203,7 +202,11 @@ let synths : type n. (n, kinetic) term -> bool = function
   | App (_, _)
   | Act (_, _)
   | Let (_, _, _) -> true
-  | Constr (_, _, _) | Lam (_, _) | Struct (_, _, _, _) -> false
+  | Constr (_, _, _) | Lam (_, _) | Struct _ -> false
+  | Unshift (_, _, tm) -> synths tm
+  | Unact (_, tm) -> synths tm
+  | Shift (_, _, tm) -> synths tm
+  | Weaken tm -> synths tm
 
 (* Given a term, extract its head and arguments as an application spine.  If the spine contains a field projection, stop there and return only the arguments after it, noting the field name and what it is applied to (which itself be another spine). *)
 let rec get_spine : type n.
@@ -346,10 +349,7 @@ let rec unparse : type n lt ls rt rs s.
         | Eq -> `Normal
         | Neq -> `Cube in
       unparse_lam cube vars Emp tm li ri
-  | Struct
-      (type m et)
-      ((Eta, _, fields, _) :
-        (s, et) eta * m D.t * (m * n * s * et * none) StructfieldAbwd.t * s energy) ->
+  | Struct (type m et) ({ eta = Eta; fields; dim = _; energy = _ } : (m, n, s, et) struct_args) ->
       unlocated
         (outfix ~notn:parens
            ~inner:
@@ -361,8 +361,8 @@ let rec unparse : type n lt ls rt rs s.
                        (fun acc
                             (Term.StructfieldAbwd.Entry
                                (type i)
-                               ((fld, structfield) :
-                                 i Field.t * (i, m * n * s * et * none) Structfield.t)) ->
+                               ((fld, structfield) : i Field.t * (i, m * n * s * et) Structfield.t))
+                          ->
                          let (Lower (fldtm, lbl)) = structfield in
                          let fldtm = unparse vars fldtm No.Interval.entire No.Interval.entire in
                          Snoc
@@ -395,8 +395,12 @@ let rec unparse : type n lt ls rt rs s.
           unparse_spine vars (`Constr c) args li ri)
   | Realize tm -> unparse vars tm li ri
   | Canonical _ -> fatal (Unimplemented "unparsing canonical types")
-  | Struct (Noeta, _, _, _) -> fatal (Unimplemented "unparsing comatches")
+  | Struct { eta = Noeta; _ } -> fatal (Unimplemented "unparsing comatches")
   | Match _ -> fatal (Unimplemented "unparsing matches")
+  | Unshift _ -> fatal (Unimplemented "unparsing unshifts")
+  | Unact _ -> fatal (Unimplemented "unparsing unacts")
+  | Shift _ -> fatal (Unimplemented "unparsing shifts")
+  | Weaken tm -> unparse (Names.remove vars Now) tm li ri
 
 (* The master unparsing function can easily be delayed. *)
 and make_unparser : type n. n Names.t -> (n, kinetic) term -> unparser =

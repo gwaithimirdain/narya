@@ -10,7 +10,7 @@ open Act
 open Printable
 open View
 
-(* Since some entries in an environment are lazy and some aren't, lookup_cube returns a cube whose entries belong to an existential type, along with a function to act on any element of that type and force it into a value. *)
+(* Since some entries in an environment are lazy and some aren't, lookup_cube returns a cube whose entries belong to an existential type, along with a function to act on any element of that type and force it into a value.  It also returns an accumulated operator by which to act, first selecting an entry in the cube with a face and then acting on that value by a degeneracy. *)
 type _ looked_up_cube =
   | Looked_up : {
       act : 'x 'y. 'a -> ('x, 'y) deg -> kinetic value;
@@ -69,7 +69,7 @@ and view_type ?(severity = Asai.Diagnostic.Bug) (ty : kinetic value) (err : stri
   | Neu { head; args; value; ty = _ } -> (
       (* Glued evaluation: when viewing a type, we force its value and proceed to view that value instead. *)
       match force_eval value with
-      | Val (Canonical { canonical = c; tyargs; ins }) -> (
+      | Val (Canonical { canonical = c; tyargs; ins; fields = _ }) -> (
           (match c with
           | Data d when Option.is_none !(d.tyfam) ->
               d.tyfam := Some (lazy { tm = ty; ty = inst (universe (TubeOf.inst tyargs)) tyargs })
@@ -258,7 +258,7 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
       let n, l = (dom_ins fldins, cod_left_ins fldins) in
       let Plus m_n, Plus m_l = (D.plus n, D.plus l) in
       field (eval_term env tm) fld (plus_ins m m_n m_l fldins)
-  | Struct (eta, n, fields, energy) ->
+  | Struct { eta; dim = n; fields; energy } ->
       let m = dim_env env in
       let (Plus m_n) = D.plus n in
       let mn = D.plus_out m m_n in
@@ -271,11 +271,13 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
       let mn = D.plus_out m m_n in
       let eargs = List.map (eval_args env m_n mn) args in
       Val (Constr (constr, mn, eargs))
-  | Pi (x, doms, cods) ->
+  | Pi
+      (type n)
+      ((x, doms, cods) : string option * (n, (b, kinetic) term) CubeOf.t * (n, b) CodCube.t) ->
       (* We are starting with an n-dimensional pi-type and evaluating it in an m-dimensional environment, producing an (m+n)-dimensional result. *)
       let n = CubeOf.dim doms in
       let m = dim_env env in
-      let (Plus m_n) = D.plus n in
+      let (Plus (type mn) (m_n : (m, n, mn) D.plus)) = D.plus n in
       let mn = D.plus_out m m_n in
       (* The basic thing we do is evaluate the cubes of domains and codomains. *)
       let doms =
@@ -294,39 +296,45 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
                 let (SFace_of_plus (k_l, fa, fb)) = sface_of_plus m_n fab in
                 eval_binder (act_env env (op_of_sface fa)) k_l (CodCube.find cods fb));
           } in
-      (* However, because the result will be an Uninst, we need to know its type as well.  The starting n-dimensional pi-type (which is itself uninstantiated) lies in a full instantiation of the n-dimensional universe at lower-dimensional pi-types formed from subcubes of its domains and codomains.  Accordingly, the resulting (m+n)-dimensional pi-type will like in a full instantiation of the (m+n)-dimensional universe at lower-dimensional pi-types obtained by evaluating these at appropriately split faces.  Since each of them *also* belongs to a universe instantiated similarly, and needs to know its type not just because it is an uninst but because it is a normal, we build the whole cube at once and then take its top. *)
+      (* However, because the result will be a Neu, we need to know its type as well.  The starting n-dimensional pi-type (which is itself uninstantiated) lies in a full instantiation of the n-dimensional universe at lower-dimensional pi-types formed from subcubes of its domains and codomains.  Accordingly, the resulting (m+n)-dimensional pi-type will like in a full instantiation of the (m+n)-dimensional universe at lower-dimensional pi-types obtained by evaluating these at appropriately split faces.  Since each of them *also* belongs to a universe instantiated similarly, and needs to know its type not just because it is an uninst but because it is a normal, we build the whole cube at once and then take its top. *)
       let pitbl = Hashtbl.create 10 in
-      let pis =
-        CubeOf.build mn
-          {
-            build =
-              (fun fab ->
-                let kl = dom_sface fab in
-                let ty =
-                  inst (universe kl)
-                    (TubeOf.build D.zero (D.zero_plus kl)
-                       {
-                         build =
-                           (fun fc ->
-                             Hashtbl.find pitbl (SFace_of (comp_sface fab (sface_of_tface fc))));
-                       }) in
-                let subdoms, subcods = (CubeOf.subcube fab doms, BindCube.subcube fab cods) in
-                let head : head = Pi (x, subdoms, subcods) in
-                let value =
-                  ready
-                    (Val
-                       (Canonical
-                          {
-                            canonical = Pi (x, subdoms, subcods);
-                            tyargs = TubeOf.empty kl;
-                            ins = ins_zero kl;
-                          })) in
-                let tm = Neu { head; args = Emp; value; ty = Lazy.from_val ty } in
-                let ntm = { tm; ty } in
-                Hashtbl.add pitbl (SFace_of fab) ntm;
-                ntm);
-          } in
-      Val (CubeOf.find_top pis).tm
+      (* Since we only care about the hashtbl and the top, and we can get that from the hashtbl at the end anyway, we don't bother actually putting the normals into a meaningful cube. *)
+      let build : type k. (k, mn) sface -> unit =
+       fun fab ->
+        let kl = dom_sface fab in
+        let ty =
+          inst (universe kl)
+            (TubeOf.build D.zero (D.zero_plus kl)
+               {
+                 build =
+                   (fun fc -> Hashtbl.find pitbl (SFace_of (comp_sface fab (sface_of_tface fc))));
+               }) in
+        let subdoms, subcods = (CubeOf.subcube fab doms, BindCube.subcube fab cods) in
+        let head : head = Pi (x, subdoms, subcods) in
+        (* We don't need fibrancy fields for all the boundary types, since once something "is a type" we don't need it to be in Fib any more. *)
+        let fields : (k * potential * no_eta) Value.StructfieldAbwd.t =
+          match (is_id_sface fab, Lazy.force Fibrancy.pi) with
+          | None, _ | _, None -> Bwd.Emp
+          | Some Eq, Some fields ->
+              (* For the top face, we compute its fibrancy fields by evaluating the generic "fibrancy fields of a pi" at the evaluated domains and codomains.  *)
+              let pi_env =
+                Ext (Ext (Emp mn, D.plus_zero mn, Ok doms), D.plus_zero mn, Ok (lam_cube x cods))
+              in
+              eval_structfield_abwd pi_env mn (D.plus_zero mn) mn fields in
+        let value =
+          ready
+            (Val
+               (Canonical
+                  {
+                    canonical = Pi (x, subdoms, subcods);
+                    tyargs = TubeOf.empty kl;
+                    ins = ins_zero kl;
+                    fields;
+                  })) in
+        let tm = Neu { head; args = Emp; value; ty = Lazy.from_val ty } in
+        Hashtbl.add pitbl (SFace_of fab) { tm; ty } in
+      let _ = CubeOf.build mn { build } in
+      Val (Hashtbl.find pitbl (SFace_of (id_sface mn))).tm
   | Let (_, v, body) ->
       (* We evaluate let-bindings lazily, on the chance they aren't actually used. *)
       let m = dim_env env in
@@ -371,6 +379,29 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
       | _ -> Unrealized)
   | Realize tm -> Realize (eval_term env tm)
   | Canonical c -> eval_canonical env c
+  | Unshift (n, plusmap, tm) ->
+      let (Cofactor mn) =
+        cofactor (dim_env env) n
+        <|> Anomaly "evaluating unshifted term in too low-dimensional environment" in
+      eval (Shift (env, mn, plusmap)) tm
+  | Unact (op, tm) -> (
+      match cofactor (dim_env env) (cod_op op) with
+      | None ->
+          fatal
+            (Anomaly
+               (Printf.sprintf
+                  "evaluating unacted term in too low-dimensional environment: %s doesn't cofactor through %s"
+                  (string_of_dim (dim_env env))
+                  (string_of_dim (cod_op op))))
+      | Some (Cofactor kn) ->
+          let (Plus km) = D.plus (dom_op op) in
+          let k = D.minus (dim_env env) kn in
+          let op = plus_op k kn km op in
+          eval (Act (env, op)) tm)
+  | Shift (n, plusmap, tm) ->
+      let (Plus mn) = D.plus n in
+      eval (Unshift (env, mn, plusmap)) tm
+  | Weaken tm -> eval (remove_env env Now) tm
 
 and eval_with_boundary : type m a. (m, a) env -> (a, kinetic) term -> (m, kinetic value) CubeOf.t =
  fun env tm ->
@@ -430,12 +461,14 @@ and apply : type n s. s value -> (n, kinetic value) CubeOf.t -> s evaluation =
                 (* We evaluate further with a case tree. *)
                 match force_eval value with
                 | Unrealized -> Val (Neu { head; args; value = ready Unrealized; ty = newty })
+                (* It could be an indexed datatype waiting to be applied to more indices. *)
                 | Val
                     (Canonical
                        {
                          canonical =
                            Data { dim; tyfam; indices = Unfilled _ as indices; constrs; discrete };
                          tyargs = data_tyargs;
+                         fields;
                          ins;
                        }) -> (
                     let Eq = eq_of_ins_zero ins in
@@ -447,12 +480,18 @@ and apply : type n s. s value -> (n, kinetic value) CubeOf.t -> s evaluation =
                              "datatype was instantiated before being applied to all its indices")
                     | Eq, Zero ->
                         let indices = Fillvec.snoc indices newarg in
+                        (* TODO: What happens to these?  What even are the fields of a not-fully-applied indexed datatype? *)
+                        let fields =
+                          match fields with
+                          | Emp -> Bwd.Emp
+                          | Snoc _ -> fatal (Unimplemented "fibrancy of indexed datatypes") in
                         let value =
                           Val
                             (Value.Canonical
                                {
                                  canonical = Data { dim; tyfam; indices; constrs; discrete };
                                  tyargs = TubeOf.empty dim;
+                                 fields;
                                  ins;
                                }) in
                         Val (Neu { head; args; value = ready value; ty = newty }))
@@ -503,32 +542,19 @@ and tyof_app : type k.
       [ fns ] in
   inst (apply_binder_term (BindCube.find_top cods) args) out_args
 
-(* Compute a field of a structure. *)
+(* Compute a field of a structure (or a fibrant type). *)
 and field : type n k nk s. s value -> k Field.t -> (nk, n, k) insertion -> s evaluation =
  fun tm fld fldins ->
   match view_term tm with
-  (* TODO: Is it okay to ignore the insertion here?  I'm currently assuming that it must be zero if this field projection is well-typed. *)
   | Struct { fields; ins = structins; energy; eta = _ } -> (
-      match StructfieldAbwd.find_opt fields fld with
-      | Found (Lower (v, _)) -> force_eval v
-      | Found (Higher (lazy { vals; intrinsic; _ })) -> (
-          match
-            ( D.compare (cod_left_ins structins) (dom_ins fldins),
-              D.compare intrinsic (cod_right_ins fldins) )
-          with
-          | Eq, Eq -> (
-              match InsmapOf.find fldins vals with
-              | Some v -> force_eval v
-              | None -> fatal (Anomaly "field value unset"))
-          | Neq, _ ->
-              fatal
-                (Dimension_mismatch ("field evaluation", cod_left_ins structins, dom_ins fldins))
-          | _, Neq ->
-              fatal (Dimension_mismatch ("field intrinsic", intrinsic, cod_right_ins fldins)))
-      | _ -> (
-          match energy with
-          | Potential -> Unrealized
-          | Kinetic -> fatal (Anomaly ("missing field in eval struct: " ^ Field.to_string fld))))
+      match is_id_ins structins with
+      | Some _ -> struct_field "struct" energy fields fld fldins
+      | None -> fatal (Anomaly "nonidentity insertion when computing field of struct"))
+  (* A canonical type can have fibrancy fields. *)
+  | Canonical { fields; tyargs; _ } ->
+      let _, _, two = Hott.faces () <|> Anomaly "HOTT not set" in
+      let fields = inst_fibrancy_fields fields tyargs two in
+      struct_field "canonical" Potential fields fld fldins
   | viewed_tm -> (
       (* We push the permutation from the insertion inside. *)
       let n, k = (cod_left_ins fldins, cod_right_ins fldins) in
@@ -537,7 +563,7 @@ and field : type n k nk s. s value -> k Field.t -> (nk, n, k) insertion -> s eva
       match act_value viewed_tm p with
       (* It must currently be an uninstantiated neutral application.  Later, fibrant types can have (higher) fields. *)
       | Neu { head; args; value; ty = (lazy ty) } -> (
-          let newty = Lazy.from_val (tyof_field (Ok tm) ty fld ~shuf:Trivial fldins) in
+          let newty = lazy (tyof_field (Ok tm) ty fld ~shuf:Trivial fldins) in
           let args = Field (args, fld, fldplus, ins_zero n) in
           if GluedEval.read () then
             let value = field_lazy value fld fldins in
@@ -560,6 +586,33 @@ and field : type n k nk s. s value -> k Field.t -> (nk, n, k) insertion -> s eva
       | _ ->
           fatal ~severity:Asai.Diagnostic.Bug
             (No_such_field (`Other (Dump.Val tm), `Ins (fld, fldins))))
+
+and struct_field : type p s et n k nk.
+    string ->
+    s energy ->
+    (p * s * et) StructfieldAbwd.t ->
+    k Field.t ->
+    (nk, n, k) insertion ->
+    s evaluation =
+ fun err energy fields fld fldins ->
+  match StructfieldAbwd.find_opt fields fld with
+  | Found (Lower (v, _)) -> force_eval v
+  | Found (Higher (lazy { vals; intrinsic; deg; _ })) -> (
+      match
+        (D.compare (dom_deg deg) (dom_ins fldins), D.compare intrinsic (cod_right_ins fldins))
+      with
+      | Eq, Eq -> (
+          match InsmapOf.find fldins vals with
+          | Some v -> force_eval v
+          | None -> fatal (Anomaly (err ^ " field value unset")))
+      | Neq, _ ->
+          fatal (Dimension_mismatch (err ^ " field evaluation", dom_deg deg, dom_ins fldins))
+      | _, Neq ->
+          fatal (Dimension_mismatch (err ^ " field intrinsic", intrinsic, cod_right_ins fldins)))
+  | _ -> (
+      match energy with
+      | Potential -> Unrealized
+      | Kinetic -> fatal (Anomaly ("missing field in eval struct: " ^ Field.to_string fld)))
 
 and field_term : type n k nk. kinetic value -> k Field.t -> (nk, n, k) insertion -> kinetic value =
  fun x fld fldins ->
@@ -742,7 +795,7 @@ and tyof_field : type m h s r i c.
   | Canonical (head, UU m, ins, tyargs) -> (
       let Eq = eq_of_ins_zero ins in
       let err = Code.No_such_field (`Other errtm, errfld) in
-      match Fibrancy.fields () with
+      match Lazy.force Fibrancy.fields with
       | None -> fatal ~severity err
       | Some fields ->
           tyof_field_giventype tm head Noeta (Value.Emp m) (D.plus_zero m) fields tyargs fld ~shuf
@@ -822,7 +875,7 @@ and tyof_field_withname : type a b.
   | Canonical (_head, UU m, ins, tyargs) -> (
       let Eq = eq_of_ins_zero ins in
       let err = Code.No_such_field (`Other errtm, errfld) in
-      match Fibrancy.fields () with
+      match Lazy.force Fibrancy.fields with
       | None -> fatal err
       | Some fields ->
           tyof_field_withname_giventype ctx tm ty Noeta (Value.Emp m) (D.plus_zero m) fields tyargs
@@ -917,7 +970,11 @@ and eval_canonical : type m a. (m, a) env -> a Term.canonical -> potential evalu
       let dim = dim_env env in
       let canonical = Data { dim; tyfam; indices = Fillvec.empty indices; constrs; discrete } in
       let tyargs = TubeOf.empty (dim_env env) in
-      Val (Canonical { canonical; tyargs; ins = ins_zero dim })
+      let fields =
+        match Lazy.force Fibrancy.data with
+        | None -> Bwd.Emp
+        | Some () -> fatal (Unimplemented "fibrancy of datatypes") in
+      Val (Canonical { canonical; tyargs; ins = ins_zero dim; fields })
   | Codata { eta; opacity; dim; termctx; fields } ->
       eval_codata env eta opacity dim (Lazy.from_val termctx) fields
 
@@ -930,12 +987,18 @@ and eval_codata : type m a c n et.
     (c, (a, n) snoc) termctx option Lazy.t ->
     (a * n * et) CodatafieldAbwd.t ->
     potential evaluation =
- fun env eta opacity dim termctx fields ->
-  let (Plus ed) = D.plus dim in
-  let ins = id_ins (dim_env env) ed in
+ fun env eta opacity n termctx fields ->
+  let m = dim_env env in
+  let (Plus (type mn) (m_n : (m, n, mn) D.plus)) = D.plus n in
+  let mn = D.plus_out m m_n in
+  let ins = id_ins m m_n in
   let canonical = Codata { eta; opacity; env; termctx; fields } in
-  let tyargs = TubeOf.empty (dom_ins ins) in
-  Val (Canonical { canonical; ins; tyargs })
+  let tyargs = TubeOf.empty mn in
+  let fields =
+    match Lazy.force (Fibrancy.codata fields) with
+    | None -> Bwd.Emp
+    | Some fields -> eval_structfield_abwd env m m_n mn fields in
+  Val (Canonical { canonical; tyargs; ins; fields })
 
 and eval_term : type m b. (m, b) env -> (b, kinetic) term -> kinetic value =
  fun env tm ->
@@ -1021,44 +1084,53 @@ and app_eval_apps : type s any. s evaluation -> any apps -> s evaluation =
       | Realize tm -> Realize (inst tm args)
       | Unrealized -> Unrealized)
 
-(* Look up a cube of values in an environment by variable index, accumulating operator actions and shifts as we go.  Eventually we will usually use the operator to select a value from the cubes and act on it, but we can't do that until we've defined acting on a value by a degeneracy (unless we do open recursive trickery). *)
-and lookup_cube : type m n a b k mk.
-    (n, b) env -> (m, k, mk) D.plus -> (a, k, b) Tbwd.insert -> (m, n) op -> mk looked_up_cube =
- fun env mk v op ->
+(* Look up a cube of values in an environment by variable index, accumulating operator actions and shifts as we go.  At the end, we usually use the operator to select a value from the cubes (with its face part) and act on it (with its degeneracy part). *)
+and lookup_cube : type n a b k mk nk.
+    (n, b) env -> (n, k, nk) D.plus -> (a, k, b) Tbwd.insert -> (mk, nk) op -> mk looked_up_cube =
+ fun env nk v op ->
   match (env, v) with
   (* Since there's an index, the environment can't be empty. *)
   | Emp _, _ -> .
   (* If we encounter an operator action, we accumulate it. *)
-  | Act (env, op'), _ -> lookup_cube env mk v (comp_op op' op)
-  (* If we encounter a shift, we split the face associated to our index and accumulate part of it into the operator. *)
+  | Act (env, op'), _ ->
+      let (Plus lk) = D.plus (D.plus_right nk) in
+      let op'k = op_plus op' lk nk in
+      lookup_cube env lk v (comp_op op'k op)
+  (* If we encounter a shift or unshift, we just have to edit the insertion and go on. *)
   | Shift (env, n_x, xb), v ->
       (* In this branch, k is renamed to x+k. *)
-      let m_xk = mk in
-      let (Unmap_insert (x_k, v, _)) = Plusmap.unmap_insert v xb in
-      let (Plus m_x) = D.plus (D.plus_right n_x) in
-      let mx_k = D.plus_assocl m_x x_k m_xk in
-      let op = op_plus op n_x m_x in
-      lookup_cube env mx_k v op
+      let n_xk = nk in
+      let (Uncoinsert (x_k, v, _)) = Plusmap.uncoinsert v xb in
+      let nx_k = D.plus_assocl n_x x_k n_xk in
+      lookup_cube env nx_k v op
+  | Unshift (env, n_x, xb), v ->
+      (* In this branch, n is renamed to n+x. *)
+      let nx_k = nk in
+      let (Uninsert (x_k, v, _)) = Plusmap.uninsert v xb in
+      let n_xk = D.plus_assocr n_x x_k nx_k in
+      lookup_cube env n_xk v op
   (* If the environment is permuted, we apply the permutation to the index. *)
   | Permute (p, env), v ->
       let (Permute_insert (v, _)) = Tbwd.permute_insert v p in
-      lookup_cube env mk v op
+      lookup_cube env nk v op
   (* If we encounter a variable that isn't ours, we skip it and proceed. *)
-  | Ext (env, _, _), Later v -> lookup_cube env mk v op
-  | LazyExt (env, _, _), Later v -> lookup_cube env mk v op
+  | Ext (env, _, _), Later v -> lookup_cube env nk v op
+  | LazyExt (env, _, _), Later v -> lookup_cube env nk v op
   (* Finally, when we find our variable, we decompose the accumulated operator into a strict face and degeneracy, use the face as an index lookup, and act by the degeneracy.  The forcing function is the identity if the entry is not lazy, and force_eval_term if it is lazy. *)
-  | Ext (_, nk, Ok entry), Now -> Looked_up { act = act_value; op = op_plus op nk mk; entry }
+  | Ext (_, nk', Ok entry), Now ->
+      let Eq = D.plus_uniq nk nk' in
+      Looked_up { act = act_value; op; entry }
   (* Looking up a variable that's bound to an error immediately fails with that error.  (In particular, this sort of failure can't currently happen "deeper" inside a term.) *)
   | Ext (_, _, Error e), Now -> fatal e
-  | LazyExt (_, nk, entry), Now ->
-      Looked_up
-        { act = (fun x s -> force_eval_term (act_lazy_eval x s)); op = op_plus op nk mk; entry }
+  | LazyExt (_, nk', entry), Now ->
+      let Eq = D.plus_uniq nk nk' in
+      Looked_up { act = (fun x s -> force_eval_term (act_lazy_eval x s)); op; entry }
 
 and lookup : type n b. (n, b) env -> b Term.index -> kinetic value =
  fun env (Index (v, fa)) ->
   let (Plus n_k) = D.plus (cod_sface fa) in
   let n = dim_env env in
-  match lookup_cube env n_k v (id_op n) with
+  match lookup_cube env n_k v (id_op (D.plus_out n n_k)) with
   | Looked_up { act; op; entry } ->
       let (Plus x) = D.plus (dom_sface fa) in
       let (Op (f, s)) = comp_op op (plus_op n n_k x (op_of_sface fa)) in
@@ -1097,7 +1169,7 @@ and inst : type m n mn s. s value -> (m, n, mn, normal) TubeOf.t -> s value =
                       let ty = lazy (tyof_inst tys1 args2) in
                       Neu { head; args; value; ty })
               | _ -> fatal (Anomaly "can't instantiate non-type")))
-      | Canonical { canonical = c; tyargs = args1; ins } -> (
+      | Canonical { canonical = c; tyargs = args1; ins; fields } -> (
           match D.compare (TubeOf.out args2) (TubeOf.uninst args1) with
           | Neq ->
               fatal
@@ -1105,8 +1177,40 @@ and inst : type m n mn s. s value -> (m, n, mn, normal) TubeOf.t -> s value =
           | Eq ->
               let (Plus nk) = D.plus (TubeOf.inst args1) in
               let args = TubeOf.plus_tube nk args1 args2 in
-              Canonical { canonical = c; tyargs = args; ins })
+              Canonical { canonical = c; tyargs = args; ins; fields })
       | Lam _ | Struct _ | Constr _ -> fatal (Anomaly "instantiating non-type"))
+
+(* Instantiate a list of fibrancy fields by passing repeatedly to its internal corecursive 'id' field. *)
+and inst_fibrancy_fields : type m n mn.
+    (mn * potential * no_eta) Value.StructfieldAbwd.t ->
+    (m, n, mn, normal) TubeOf.t ->
+    N.two Endpoints.len ->
+    (m * potential * no_eta) Value.StructfieldAbwd.t =
+ fun fields tyargs l ->
+  match D.compare_zero (TubeOf.inst tyargs) with
+  | Zero ->
+      let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.plus_zero (TubeOf.uninst tyargs)) in
+      fields
+  | Pos n -> (
+      let (Is_suc (n, n_1, one)) = suc_pos n in
+      let (Plus m_n) = D.plus n in
+      let middle, outer = TubeOf.split m_n n_1 tyargs in
+      (* TODO: Is it always correct to use the identity fldins? *)
+      let (Plus mn1k) = D.plus Hott.dim in
+      let fldins = id_ins (TubeOf.inst tyargs) mn1k in
+      let idfld = struct_field "fibrancy" Potential fields Fibrancy.fid fldins in
+      let (Snoc (Snoc (Emp, xcube), ycube)) = TubeOf.to_cube_bwv one l outer in
+      match
+        app_eval_apps idfld
+          (Arg (Arg (Emp, xcube, ins_zero (CubeOf.dim xcube)), ycube, ins_zero (CubeOf.dim ycube)))
+      with
+      | Val (Struct { fields; ins; energy = Potential; eta = Noeta }) -> (
+          match (is_id_ins ins, D.compare (cod_left_ins ins) (TubeOf.out middle)) with
+          | Some _, Eq -> inst_fibrancy_fields fields middle l
+          | Some _, Neq ->
+              fatal (Dimension_mismatch ("inst_fibrancy", cod_left_ins ins, TubeOf.out middle))
+          | None, _ -> fatal (Anomaly "nonidentity insertion on evaluation of fibrancy id"))
+      | _ -> fatal (Anomaly "fibrancy id didn't yield a struct"))
 
 (* Given two families of values, the second intended to be the types of the other, annotate the former by instantiations of the latter to make them into normals.  Since we have to instantiate the types at the *normal* version of the terms, which is what we are computing, we also add the results to a hashtable as we create them so we can access them randomly later.  And since we have to do this sometimes with cubes and sometimes with tubes, we first define the content of the operation as a helper function. *)
 

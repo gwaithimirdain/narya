@@ -1,6 +1,5 @@
 open Bwd
 open Util
-open Perhaps
 open Tbwd
 open Dim
 open Dimbwd
@@ -59,13 +58,9 @@ module rec Term : sig
 
   module Structfield : sig
     type (_, _) t =
-      | Lower :
-          ('a, 's) Term.term * [ `Labeled | `Unlabeled ]
-          -> (D.zero, 'n * 'a * 's * 'et * 'any) t
-      | Higher : ('n, 'i, 'a) PlusPbijmap.t -> ('i, 'n * 'a * potential * no_eta * 'any) t
-      | LazyHigher :
-          ('n, 'i, 'a) PlusPbijmap.t Lazy.t
-          -> ('i, 'n * 'a * potential * no_eta * some) t
+      | Lower : ('a, 's) Term.term * [ `Labeled | `Unlabeled ] -> (D.zero, 'n * 'a * 's * 'et) t
+      | Higher : ('n, 'i, 'a) PlusPbijmap.t -> ('i, 'n * 'a * potential * no_eta) t
+      | LazyHigher : ('n, 'i, 'a) PlusPbijmap.t Lazy.t -> ('i, 'n * 'a * potential * no_eta) t
   end
 
   module StructfieldAbwd : module type of Field.Abwd (Structfield)
@@ -88,9 +83,7 @@ module rec Term : sig
     | Act : ('a, kinetic) term * ('m, 'n) deg -> ('a, kinetic) term
     | Let : string option * ('a, kinetic) term * (('a, D.zero) snoc, 's) term -> ('a, 's) term
     | Lam : 'n variables * (('a, 'n) snoc, 's) Term.term -> ('a, 's) term
-    | Struct :
-        ('s, 'et) eta * 'n D.t * ('n * 'a * 's * 'et * none) StructfieldAbwd.t * 's energy
-        -> ('a, 's) term
+    | Struct : ('n, 'a, 's, 'et) struct_args -> ('a, 's) term
     | Match : {
         tm : ('a, kinetic) term;
         dim : 'n D.t;
@@ -99,6 +92,17 @@ module rec Term : sig
         -> ('a, potential) term
     | Realize : ('a, kinetic) term -> ('a, potential) term
     | Canonical : 'a canonical -> ('a, potential) term
+    | Unshift : 'n D.t * ('n, 'b, 'nb) Plusmap.t * ('nb, 's) term -> ('b, 's) term
+    | Unact : ('m, 'n) op * ('b, 's) term -> ('b, 's) term
+    | Shift : 'n D.t * ('n, 'b, 'nb) Plusmap.t * ('b, 's) term -> ('nb, 's) term
+    | Weaken : ('b, 's) term -> (('b, 'n) snoc, 's) term
+
+  and ('n, 'a, 's, 'et) struct_args = {
+    dim : 'n D.t;
+    fields : ('n * 'a * 's * 'et) StructfieldAbwd.t;
+    eta : ('s, 'et) eta;
+    energy : 's energy;
+  }
 
   and (_, _) branch =
     | Branch :
@@ -197,15 +201,11 @@ end = struct
   module CodatafieldAbwd = Field.Abwd (Codatafield)
 
   module Structfield = struct
-    (* The last parameter indicates whether lazy fields are allowed (some) or not (none).  Normally they are not, because a term is supposed to be a completed data object that can be, for instance, serialized to a file and reloaded.  But when we use this to store fibrancy fields, which are recomputed on evaluation and are corecursively infinite, we have to allow laziness.  *)
+    (* Lazy fields are not allowed in ordinary terms, because a term is supposed to be a completed data object that can be, for instance, serialized to a file and reloaded.  But when we use this to store fibrancy fields, which are recomputed on evaluation and are corecursively infinite, we have to allow laziness.  *)
     type (_, _) t =
-      | Lower :
-          ('a, 's) Term.term * [ `Labeled | `Unlabeled ]
-          -> (D.zero, 'n * 'a * 's * 'et * 'any) t
-      | Higher : ('n, 'i, 'a) PlusPbijmap.t -> ('i, 'n * 'a * potential * no_eta * 'any) t
-      | LazyHigher :
-          ('n, 'i, 'a) PlusPbijmap.t Lazy.t
-          -> ('i, 'n * 'a * potential * no_eta * some) t
+      | Lower : ('a, 's) Term.term * [ `Labeled | `Unlabeled ] -> (D.zero, 'n * 'a * 's * 'et) t
+      | Higher : ('n, 'i, 'a) PlusPbijmap.t -> ('i, 'n * 'a * potential * no_eta) t
+      | LazyHigher : ('n, 'i, 'a) PlusPbijmap.t Lazy.t -> ('i, 'n * 'a * potential * no_eta) t
   end
 
   module StructfieldAbwd = Field.Abwd (Structfield)
@@ -234,9 +234,7 @@ end = struct
     | Let : string option * ('a, kinetic) term * (('a, D.zero) snoc, 's) term -> ('a, 's) term
     (* Abstractions and structs can appear in any kind of term.  The dimension 'n is the substitution dimension of the type being checked against (function-type or codata/record).  *)
     | Lam : 'n variables * (('a, 'n) snoc, 's) Term.term -> ('a, 's) term
-    | Struct :
-        ('s, 'et) eta * 'n D.t * ('n * 'a * 's * 'et * none) StructfieldAbwd.t * 's energy
-        -> ('a, 's) term
+    | Struct : ('n, 'a, 's, 'et) struct_args -> ('a, 's) term
     (* Matches can only appear in non-kinetic terms.  The dimension 'n is the substitution dimension of the type of the variable being matched against. *)
     | Match : {
         tm : ('a, kinetic) term;
@@ -247,6 +245,18 @@ end = struct
     (* A potential term is "realized" by kinetic terms, or canonical types, at its leaves. *)
     | Realize : ('a, kinetic) term -> ('a, potential) term
     | Canonical : 'a canonical -> ('a, potential) term
+    (* These operations are easy to evaluate because they are dual to corresponding operations on environments.  They never appear in the output of typechecking, but they are useful when constructing terms "by hand" in OCaml code, such as in fibrancy witnesses. *)
+    | Unshift : 'n D.t * ('n, 'b, 'nb) Plusmap.t * ('nb, 's) term -> ('b, 's) term
+    | Unact : ('m, 'n) op * ('b, 's) term -> ('b, 's) term
+    | Shift : 'n D.t * ('n, 'b, 'nb) Plusmap.t * ('b, 's) term -> ('nb, 's) term
+    | Weaken : ('b, 's) term -> (('b, 'n) snoc, 's) term
+
+  and ('n, 'a, 's, 'et) struct_args = {
+    dim : 'n D.t;
+    fields : ('n * 'a * 's * 'et) StructfieldAbwd.t;
+    eta : ('s, 'et) eta;
+    energy : 's energy;
+  }
 
   (* A branch of a match binds a number of new variables.  If it is a higher-dimensional match, then each of those "variables" is actually a full cube of variables.  In addition, its context must be permuted to put those new variables before the existing variables that are now defined in terms of them. *)
   and (_, _) branch =

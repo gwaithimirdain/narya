@@ -92,6 +92,7 @@ module rec Value : sig
     canonical : ('e, 'n) canonical;
     tyargs : ('m, 'k, 'mk, normal) TubeOf.t;
     ins : ('mk, 'e, 'n) insertion;
+    fields : ('mk * potential * no_eta) StructfieldAbwd.t;
   }
 
   and _ evaluation =
@@ -144,6 +145,7 @@ module rec Value : sig
     | Act : ('n, 'b) env * ('m, 'n) op -> ('m, 'b) env
     | Permute : ('a, 'b) Tbwd.permute * ('n, 'b) env -> ('n, 'a) env
     | Shift : ('mn, 'b) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb) Plusmap.t -> ('m, 'nb) env
+    | Unshift : ('m, 'nb) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb) Plusmap.t -> ('mn, 'b) env
 
   and 's lazy_state =
     | Deferred_eval :
@@ -228,7 +230,7 @@ end = struct
     (* A constructor has a name, a dimension, and a list of arguments of that dimension.  It must always be applied to the correct number of arguments (otherwise it can be eta-expanded).  It doesn't have an outer insertion because a primitive datatype is always 0-dimensional (it has higher-dimensional versions, but degeneracies can always be pushed inside these).  *)
     | Constr : Constr.t * 'n D.t * ('n, kinetic value) CubeOf.t list -> kinetic value
     | Lam : 'k variables * ('k, 's) binder -> 's value
-    (* Structs have to store an insertion outside, like an application, to deal with higher-dimensional record types like Gel.  Here 'k is the Gel dimension, with 'n the substitution dimension and 'nk the total dimension. *)
+    (* Structs have to store an insertion outside, like an application, to deal with higher-dimensional record types like Gel.  Here 'k is the Gel dimension, with 'p the substitution dimension and 'pk the total dimension. *)
     | Struct : ('p, 'k, 'pk, 's, 'et) struct_args -> 's value
     (* A canonical type is only a *potential* value, so it appears as the 'value' of a 'neu'.  It may also be instantiated, partially or fully. *)
     | Canonical : ('m, 'k, 'mk, 'e, 'n) inst_canonical -> potential value
@@ -245,6 +247,8 @@ end = struct
     tyargs : ('m, 'k, 'mk, normal) TubeOf.t;
     (* An insertion that relates its intrinsic dimension (such as for Gel) to the dimension it was evaluated at. *)
     ins : ('mk, 'e, 'n) insertion;
+    (* Fibrancy fields *)
+    fields : ('mk * potential * no_eta) StructfieldAbwd.t;
   }
 
   (* This is the result of evaluating a term with a given kind of energy.  Evaluating a kinetic term just produces a (kinetic) value, whereas evaluating a potential term might be a potential value (either a lambda waiting for more arguments, a struct waiting for more fields, or a canonical type partially or fully instantiated), or else the information that the case tree has reached a leaf and the resulting kinetic value, or else the information that the case tree is permanently stuck.  *)
@@ -319,6 +323,8 @@ end = struct
     | Permute : ('a, 'b) Tbwd.permute * ('n, 'b) env -> ('n, 'a) env
     (* Adding a dimension 'n to all the dimensions in a dimension list 'b is the power/cotensor in the dimension-enriched category of contexts.  Shifting an environment (substitution) implements its universal property: an (m+n)-dimensional substitution with codomain b is equivalent to an m-dimensional substitution with codomain n+b. *)
     | Shift : ('mn, 'b) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb) Plusmap.t -> ('m, 'nb) env
+    (* Unshifting is the inverse operation, which semantically is composing with the universal n-dimensional substitution from n+b to b. *)
+    | Unshift : ('m, 'nb) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb) Plusmap.t -> ('mn, 'b) env
 
   (* An 's lazy_eval behaves from the outside like an 's evaluation Lazy.t.  But internally, in addition to being able to store an arbitrary thunk, it can also store a term and an environment in which to evaluate it (plus an outer insertion that can't be pushed into the environment).  This allows it to accept degeneracy actions and incorporate them into the environment, so that when it's eventually forced the term only has to be traversed once.  It can also accumulate degeneracies on an arbitrary thunk (which could, of course, be a constant value that was already forced, but now is deferred again until it's done accumulating degeneracy actions).  Both kinds of deferred values can also store more arguments and field projections for it to be applied to; this is only used in glued evaluation. *)
   and 's lazy_state =
@@ -343,6 +349,7 @@ let rec dim_env : type n b. (n, b) env -> n D.t = function
   | Act (_, op) -> dom_op op
   | Permute (_, e) -> dim_env e
   | Shift (e, mn, _) -> D.plus_left mn (dim_env e)
+  | Unshift (e, mn, _) -> D.plus_out (dim_env e) mn
 
 (* And likewise every binder *)
 let dim_binder : type m s. (m, s) binder -> m D.t = function
@@ -366,6 +373,19 @@ let rec length_env : type n b. (n, b) env -> b Dbwd.t = function
   | Act (env, _) -> length_env env
   | Permute (p, env) -> Plusmap.OfDom.permute p (length_env env)
   | Shift (env, mn, nb) -> Plusmap.out (D.plus_right mn) (length_env env) nb
+  | Unshift (env, mn, nb) -> Plusmap.input (D.plus_right mn) (length_env env) nb
+
+(* Abstract over a cube of binders to make a cube of lambdas.  TODO: This should morally be a Cube.map, but it goes from one instantiation of Cube to another one, and we didn't define a map like that, so for now we just make it a 'build'. *)
+let lam_cube : type n. string option -> (n, unit) BindCube.t -> (n, kinetic value) CubeOf.t =
+ fun x binders ->
+  CubeOf.build (BindCube.dim binders)
+    {
+      build =
+        (fun fa ->
+          let k = dom_sface fa in
+          let x = singleton_variables k x in
+          Lam (x, BindCube.find binders fa));
+    }
 
 (* Smart constructor that composes actions and cancels identities *)
 let rec act_env : type m n b. (n, b) env -> (m, n) op -> (m, b) env =
@@ -429,8 +449,11 @@ let rec remove_env : type a k b n. (n, b) env -> (a, k, b) Tbwd.insert -> (n, a)
   | Ext (env, _, _), Now -> env
   | LazyExt (env, _, _), Now -> env
   | Shift (env, mn, nb), _ ->
-      let (Unmap_insert (_, v', na)) = Plusmap.unmap_insert v nb in
+      let (Uncoinsert (_, v', na)) = Plusmap.uncoinsert v nb in
       Shift (remove_env env v', mn, na)
+  | Unshift (env, mn, nb), _ ->
+      let (Uninsert (_, v', na)) = Plusmap.uninsert v nb in
+      Unshift (remove_env env v', mn, na)
 
 (* Binders are completely lazy, so we can "evaluate" them independently of the master evaluation functions in norm. *)
 let eval_binder : type m n mn b s.
@@ -441,12 +464,12 @@ let eval_binder : type m n mn b s.
   Value.Bind { env; ins; body }
 
 (* Same with structfields *)
-let rec eval_structfield : type m n mn a status i et any.
+let rec eval_structfield : type m n mn a status i et.
     (m, a) env ->
     m D.t ->
     (m, n, mn) D.plus ->
     mn D.t ->
-    (i, n * a * status * et * any) Term.Structfield.t ->
+    (i, n * a * status * et) Term.Structfield.t ->
     (i, mn * status * et) Value.Structfield.t =
  fun env m m_n mn fld ->
   match fld with
@@ -492,12 +515,12 @@ and eval_higher_structfield : type m n mn a i.
       } in
   { intrinsic; plusdim = m_n; terms; env; deg = id_deg mn; vals }
 
-let eval_structfield_abwd : type m n mn a status et any.
+let eval_structfield_abwd : type m n mn a status et.
     (m, a) env ->
     m D.t ->
     (m, n, mn) D.plus ->
     mn D.t ->
-    (n * a * status * et * any) Term.StructfieldAbwd.t ->
+    (n * a * status * et) Term.StructfieldAbwd.t ->
     (mn * status * et) Value.StructfieldAbwd.t =
  fun env m m_n mn fields ->
   Mbwd.mmap
@@ -508,14 +531,14 @@ let eval_structfield_abwd : type m n mn a status et any.
 (* The universe of any dimension belongs to an instantiation of itself.  Note that the result is not itself a type (i.e. in the 0-dimensional universe) unless n=0.  This is the universe itself as a term. *)
 let rec universe : type n. n D.t -> kinetic value =
  fun n ->
-  Neu
-    {
-      head = UU n;
-      args = Emp;
-      value =
-        ready (Val (Canonical { canonical = UU n; tyargs = TubeOf.empty n; ins = ins_zero n }));
-      ty = lazy (universe_ty n);
-    }
+  let fields =
+    match Lazy.force Fibrancy.universe with
+    | None -> Bwd.Emp
+    | Some fields -> eval_structfield_abwd (Emp n) n (D.plus_zero n) n fields in
+  let value =
+    ready (Val (Canonical { canonical = UU n; tyargs = TubeOf.empty n; ins = ins_zero n; fields }))
+  in
+  Neu { head = UU n; args = Emp; value; ty = lazy (universe_ty n) }
 
 and universe_nf : type n. n D.t -> normal = fun n -> { tm = universe n; ty = universe_ty n }
 
@@ -533,7 +556,12 @@ and universe_ty : type n. n D.t -> kinetic value =
                 let m = dom_tface fa in
                 universe_nf m);
           } in
-      let value = ready (Val (Canonical { canonical = UU n; tyargs = args; ins = ins_zero n })) in
+      let fields =
+        match Lazy.force Fibrancy.universe with
+        | None -> Bwd.Emp
+        | Some fields -> eval_structfield_abwd (Emp n) n (D.plus_zero n) n fields in
+      let value =
+        ready (Val (Canonical { canonical = UU n; tyargs = args; ins = ins_zero n; fields })) in
       Neu { head = UU n; args = Inst (Emp, n', args); value; ty = lazy (universe D.zero) }
 
 type any_apps = Any : 'any apps -> any_apps

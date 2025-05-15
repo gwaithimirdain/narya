@@ -1706,39 +1706,35 @@ let rec process_codata : type n.
  fun flds ctx obs loc ->
   match obs with
   | [ Token (RBracket, _) ] -> { value = Raw.Codata flds; loc }
-  | Token (Op "|", _)
-    :: Term
-         {
-           value =
-             App
-               {
-                 fn = { value = x; loc = xloc };
-                 arg = { value = Field (fstr, fdstr, _); loc = fldloc };
-                 _;
-               };
-           loc;
-         }
-    :: Token (Colon, _)
-    :: Term ty
-    :: obs -> (
-      with_loc loc @@ fun () ->
-      if not (Lexer.valid_field fstr) then fatal ?loc:fldloc (Invalid_field fstr);
-      let x =
-        match x with
-        | Ident ([ x ], _) when Lexer.valid_var x -> Some x
-        | Placeholder _ -> None
-        | Ident (x, _) -> fatal ?loc:xloc (Invalid_variable x)
-        | _ -> fatal ?loc:xloc Parse_error in
-      match dim_of_string (String.concat "" fdstr) with
-      | Some (Any fdim) -> (
-          let fld = Field.intern fstr fdim in
-          match Abwd.find_opt (Field.Wrap fld) flds with
-          | Some _ -> fatal ?loc:fldloc (Duplicate_method_in_codata fld)
-          | None ->
-              let ty = process (Bwv.snoc ctx x) ty in
-              process_codata (Abwd.add (Field.Wrap fld) (Raw.Codatafield (x, ty)) flds) ctx obs loc)
-      | None -> fatal (Invalid_field (String.concat "." ("" :: fstr :: fdstr))))
-  | _ -> invalid "codata"
+  | Token (Op "|", _) :: Term tm :: Token (Colon, _) :: Term ty :: obs -> (
+      match tm.value with
+      | App
+          {
+            fn = { value = x; loc = xloc };
+            arg = { value = Field (fstr, fdstr, _); loc = fldloc };
+            _;
+          } -> (
+          with_loc tm.loc @@ fun () ->
+          if not (Lexer.valid_field fstr) then fatal ?loc:fldloc (Invalid_field fstr);
+          let x =
+            match x with
+            | Ident ([ x ], _) when Lexer.valid_var x -> Some x
+            | Placeholder _ -> None
+            | Ident (x, _) -> fatal ?loc:xloc (Invalid_variable x)
+            | _ -> fatal ?loc:xloc Parse_error in
+          match dim_of_string (String.concat "" fdstr) with
+          | Some (Any fdim) -> (
+              let fld = Field.intern fstr fdim in
+              match Abwd.find_opt (Field.Wrap fld) flds with
+              | Some _ -> fatal ?loc:fldloc (Duplicate_method_in_codata fld)
+              | None ->
+                  let ty = process (Bwv.snoc ctx x) ty in
+                  process_codata
+                    (Abwd.add (Field.Wrap fld) (Raw.Codatafield (x, ty)) flds)
+                    ctx obs loc)
+          | None -> fatal (Invalid_field (String.concat "." ("" :: fstr :: fdstr))))
+      | _ -> fatal ?loc:tm.loc Parse_error)
+  | _ -> invalid "codata 1"
 
 let rec pp_codata_fields first prews accum obs : document * Whitespace.t list =
   match obs with
@@ -1769,7 +1765,7 @@ let rec pp_codata_fields first prews accum obs : document * Whitespace.t list =
                    ^^ pp_ws `Nobreak wscolon
                    ^^ pbody))))
         obs
-  | _ -> invalid "codata"
+  | _ -> invalid "codata 2"
 
 let pp_codata _triv = function
   (* The empty codatatype fits all on one line *)
@@ -1788,7 +1784,7 @@ let pp_codata _triv = function
       ( Token.pp Codata ^^ pp_ws `Nobreak wscodata ^^ Token.pp LBracket,
         pp_ws `Break wslbrack ^^ fields,
         ws )
-  | _ -> invalid "codata"
+  | _ -> invalid "codata 3"
 
 let () =
   make codata
@@ -1802,7 +1798,7 @@ let () =
               { value = Raw.Codata Emp; loc }
           | Token (Codata, _) :: Token (LBracket, _) :: obs ->
               process_codata Emp ctx (must_start_with (Op "|") obs) loc
-          | _ -> invalid "codata");
+          | _ -> invalid "codata 4");
       print_term = None;
       print_case = Some pp_codata;
       is_case = (fun _ -> true);
