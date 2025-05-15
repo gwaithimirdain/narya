@@ -76,11 +76,17 @@ module Ordered = struct
     let (Split_tel (ij, newctx, tel)) = split_tel ctx bc in
     To_tel (bplus_emp ij newctx, bc, tel)
 
-  (* Now we begin the suite of helper functions for bind_some.  This is an operation that happens during typechecking a pattern match, when the match variable along with all its indices have to be replaced by values determined by the constructor of each branch.  This requires the context to be re-sorted at the same time to maintain a consistent dependency structure, with each type and value depending only on the variables to its left.  It also requires "substitution into values", which we do by reading back values into the old context and then evaluating them in the new context. *)
+  (* Now we begin the suite of helper functions for bind_some.  This is an operation that happens during typechecking a pattern match, when the match variable along with all its indices have to be replaced by values determined by the constructor of each branch.  This requires the context to be re-sorted at the same time to maintain a consistent dependency structure, with each type and value depending only on the variables to its left.  It also requires "substitution into values", which we do by reading back values into the old context and then evaluating them in the new context.  This readback also has the double purpose of checking which types make sense in a given context, to determine a correct permutation.
+
+     The 'oldctx' here is nonstandard in that its level variables may appear out of order, because it's been created by partially permuting the variables in an existing context.  Therefore, in order to ensure that new level variables created in that context (during readback) don't conflict with any existing ones, we have to be passed the maximum level of the *original* context it was built from. *)
 
   let eval_readback_nf : type a b.
-      oldctx:(a, b) Ctx.Ordered.t -> newctx:(a, b) Ctx.Ordered.t -> normal -> normal option =
-   fun ~oldctx ~newctx nf ->
+      level:int ->
+      oldctx:(a, b) Ctx.Ordered.t ->
+      newctx:(a, b) Ctx.Ordered.t ->
+      normal ->
+      normal option =
+   fun ~level ~oldctx ~newctx nf ->
     Reporter.try_with ~fatal:(fun d ->
         match d.message with
         | No_such_level _ -> None
@@ -88,21 +94,23 @@ module Ordered = struct
     @@ fun () ->
     Some
       {
-        tm = eval_term (Ctx.Ordered.env newctx) (readback_nf (Ctx.of_ordered oldctx) nf);
-        ty = eval_term (Ctx.Ordered.env newctx) (readback_val (Ctx.of_ordered oldctx) nf.ty);
+        tm = eval_term (Ctx.Ordered.env newctx) (readback_nf (Ctx.of_ordered ~level oldctx) nf);
+        ty = eval_term (Ctx.Ordered.env newctx) (readback_val (Ctx.of_ordered ~level oldctx) nf.ty);
       }
 
   let eval_readback_val : type a b.
+      level:int ->
       oldctx:(a, b) Ctx.Ordered.t ->
       newctx:(a, b) Ctx.Ordered.t ->
       kinetic value ->
       kinetic value option =
-   fun ~oldctx ~newctx ty ->
+   fun ~level ~oldctx ~newctx ty ->
     Reporter.try_with ~fatal:(fun d ->
         match d.message with
         | No_such_level _ -> None
         | _ -> fatal_diagnostic d)
-    @@ fun () -> Some (eval_term (Ctx.Ordered.env newctx) (readback_val (Ctx.of_ordered oldctx) ty))
+    @@ fun () ->
+    Some (eval_term (Ctx.Ordered.env newctx) (readback_val (Ctx.of_ordered ~level oldctx) ty))
 
   (* We define bind_some and its helper functions in reverse order from the order in which they're called, so that each one can call the already-defined next one in line.  We could put them in the other order by making them mutual, but I prefer to avoid mutuality when it's unnecessary, and also this way each one can be next to the definition of its GADT return type.  But it is probably better to read them in reverse order, starting with bind_some lower down.  The call process goes as follows:
 
@@ -119,13 +127,14 @@ module Ordered = struct
      6. go_go_bind_some acts on each entry with bind_some_entry, whose real work is done by bind_some_normal_cube that acts on a cube of variables with the binder callback and readback-eval.  Since that function is the one we define first, we now proceed to comment its definition directly. *)
 
   let bind_some_normal_cube : type i a n.
+      level:int ->
       (level -> normal option) ->
       [ `Bindable | `Nonbindable ] ->
       oldctx:(i, a) Ctx.Ordered.t ->
       newctx:(i, a) Ctx.Ordered.t ->
       (n, Binding.t) CubeOf.t ->
       (n, Binding.t) CubeOf.t option =
-   fun binder bindable ~oldctx ~newctx in_entry ->
+   fun ~level binder bindable ~oldctx ~newctx in_entry ->
     let i = Ctx.Ordered.length newctx in
     let open Monad.Ops (Monad.Maybe) in
     let open CubeOf.Monadic (Monad.Maybe) in
@@ -151,7 +160,7 @@ module Ordered = struct
               | None ->
                   (* If the variable was let-bound in the original context, we readback-eval its (normal) value, which includes its type. *)
                   let oldnf = Binding.value b in
-                  let* newnf = eval_readback_nf ~oldctx ~newctx oldnf in
+                  let* newnf = eval_readback_nf ~level ~oldctx ~newctx oldnf in
                   (* Now we allow this variable to be used when reading back other variables, and specify the newly evaluated version to be used in the new context. *)
                   Binding.force oldb;
                   Binding.specify newb None newnf;
@@ -162,7 +171,7 @@ module Ordered = struct
                   (* `Nonbindable means only that the *top* variable is nonbindable. *)
                   | Some oldnf when bindable = `Bindable || Option.is_none (is_id_sface fa) ->
                       (* If so, then the value returned by the binder callback is in the old context, so we readback-eval it and proceed as before. *)
-                      let* newnf = eval_readback_nf ~oldctx ~newctx oldnf in
+                      let* newnf = eval_readback_nf ~level ~oldctx ~newctx oldnf in
                       Binding.force oldb;
                       Binding.specify newb None newnf;
                       return ()
@@ -170,7 +179,7 @@ module Ordered = struct
                       (* Otherwise, we readback-eval only its type, and create a new De Bruijn level for the new context. *)
                       let oldnf = Binding.value b in
                       let oldty = oldnf.ty in
-                      let* newty = eval_readback_val ~oldctx ~newctx oldty in
+                      let* newty = eval_readback_val ~level ~oldctx ~newctx oldty in
                       let newnf = { tm = var new_level newty; ty = newty } in
                       Binding.force oldb;
                       Binding.specify newb (Some new_level) newnf;
@@ -181,23 +190,24 @@ module Ordered = struct
     return newentry
 
   let bind_some_entry : type f i a n.
+      level:int ->
       (level -> normal option) ->
       oldctx:(i, a) Ctx.Ordered.t ->
       newctx:(i, a) Ctx.Ordered.t ->
       (f, n) Ctx.entry ->
       (f, n) Ctx.entry option =
-   fun binder ~oldctx ~newctx e ->
+   fun ~level binder ~oldctx ~newctx e ->
     let open Monad.Ops (Monad.Maybe) in
     match e with
     | Vis ({ bindings; fplus = Zero; _ } as v) ->
-        let* bindings = bind_some_normal_cube binder `Bindable ~oldctx ~newctx bindings in
+        let* bindings = bind_some_normal_cube ~level binder `Bindable ~oldctx ~newctx bindings in
         return (Ctx.Vis { v with bindings })
     | Invis bindings ->
-        let* bindings = bind_some_normal_cube binder `Bindable ~oldctx ~newctx bindings in
+        let* bindings = bind_some_normal_cube ~level binder `Bindable ~oldctx ~newctx bindings in
         return (Ctx.Invis bindings)
     | Vis ({ bindings; _ } as v) ->
         (* A variable that has views of its fields can't be bound. *)
-        let* bindings = bind_some_normal_cube binder `Nonbindable ~oldctx ~newctx bindings in
+        let* bindings = bind_some_normal_cube ~level binder `Nonbindable ~oldctx ~newctx bindings in
         return (Ctx.Vis { v with bindings })
 
   (* This seems an appropriate place to comment about the "insert" and "append_permute" data being returned from (go_)go_bind_some.  The issue is that in addition to a permuted context, we need to compute the permutation relating it to the original context.  In fact we need *two* permutations, one for the raw indices and one for the checked indices.
@@ -219,19 +229,20 @@ module Ordered = struct
     | None : ('c, 'cf) go_go_bind_some
 
   let rec go_go_bind_some : type i j a c cf.
+      level:int ->
       (level -> normal option) ->
       oldctx:(i, a) Ctx.Ordered.t ->
       newctx:(i, a) Ctx.Ordered.t ->
       (j, cf, c) tel ->
       (c, cf) go_go_bind_some =
-   fun binder ~oldctx ~newctx tel ->
+   fun ~level binder ~oldctx ~newctx tel ->
     match tel with
     | Nil -> Nil
     | Cons (entry, rest, _) -> (
-        match bind_some_entry binder ~oldctx ~newctx entry with
+        match bind_some_entry ~level binder ~oldctx ~newctx entry with
         | Some newentry -> Found { ins = Now; fins = Now; oldentry = entry; newentry; rest }
         | None -> (
-            match go_go_bind_some binder ~oldctx ~newctx rest with
+            match go_go_bind_some ~level binder ~oldctx ~newctx rest with
             | Found { ins; oldentry; newentry; rest; fins } ->
                 let (Fplus newfaces) = Fwn.fplus (Ctx.raw_entry entry) in
                 Found
@@ -243,7 +254,7 @@ module Ordered = struct
                     fins = Later fins;
                   }
             | Nil | None -> None))
-    | Lock tel -> go_go_bind_some binder ~oldctx ~newctx tel
+    | Lock tel -> go_go_bind_some ~level binder ~oldctx ~newctx tel
 
   type (_, _, _, _, _, _) go_bind_some =
     | Go_bind_some : {
@@ -257,19 +268,20 @@ module Ordered = struct
     | None : ('i, 'j, 'a, 'af, 'b, 'bf) go_bind_some
 
   let rec go_bind_some : type i j a af b bf.
+      level:int ->
       (level -> normal option) ->
       oldctx:(i, a) Ctx.Ordered.t ->
       newctx:(i, a) Ctx.Ordered.t ->
       (af, i) Tbwd.flatten ->
       (j, bf, b) tel ->
       (i, j, a, af, b, bf) go_bind_some =
-   fun binder ~oldctx ~newctx af tel ->
-    match go_go_bind_some binder ~oldctx ~newctx tel with
+   fun ~level binder ~oldctx ~newctx af tel ->
+    match go_go_bind_some ~level binder ~oldctx ~newctx tel with
     | Found { ins; fins; oldentry; newentry; rest } -> (
         let (Plus faces) = N.plus (Ctx.raw_entry oldentry) in
         let oldctx = Snoc (oldctx, oldentry, faces) in
         let newctx = Snoc (newctx, newentry, faces) in
-        match go_bind_some binder ~oldctx ~newctx (Flat_snoc (af, faces)) rest with
+        match go_bind_some ~level binder ~oldctx ~newctx (Flat_snoc (af, faces)) rest with
         | Go_bind_some { raw_flat; raw_perm; checked_perm; oldctx; newctx } ->
             Go_bind_some
               {
@@ -294,11 +306,12 @@ module Ordered = struct
         -> ('a, 'b) bind_some
     | None : ('a, 'b) bind_some
 
-  let bind_some : type a b. (level -> normal option) -> (a, b) Ctx.Ordered.t -> (a, b) bind_some =
-   fun binder ctx ->
+  let bind_some : type a b.
+      level:int -> (level -> normal option) -> (a, b) Ctx.Ordered.t -> (a, b) bind_some =
+   fun ~level binder ctx ->
     let (To_tel (bplus_raw, checked_append, tel)) = to_tel ctx in
     let telf = tel_flatten tel in
-    match go_bind_some binder ~oldctx:empty ~newctx:empty Flat_emp tel with
+    match go_bind_some ~level binder ~oldctx:empty ~newctx:empty Flat_emp tel with
     | Go_bind_some { raw_flat; raw_perm; checked_perm; oldctx; newctx } ->
         let (Append raw_append) = Tbwd.append (Tlist.flatten_in telf) in
         let (Bplus_flatten_append (new_flat, bplus_raw')) =
@@ -324,8 +337,8 @@ type (_, _) bind_some =
       -> ('a, 'b) bind_some
   | None : ('a, 'b) bind_some
 
-let bind_some g (Ctx.Permute { perm; ctx; _ }) =
-  match Ordered.bind_some g ctx with
+let bind_some g (Ctx.Permute { perm; ctx; level; _ }) =
+  match Ordered.bind_some g ~level ctx with
   | Bind_some { raw_perm; checked_perm; oldctx; newctx } ->
       let perm = N.comp_perm perm raw_perm in
       Bind_some
