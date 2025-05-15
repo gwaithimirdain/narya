@@ -64,7 +64,7 @@ module Equal = struct
     (* The only interesting thing here happens when the type is one with an eta-rule, such as a pi-type. *)
     | Canonical (_, Pi (name, doms, cods), ins, tyargs) ->
         let Eq = eq_of_ins_zero ins in
-        let newargs, newnfs = dom_vars (Ctx.length ctx) doms in
+        let newargs, newnfs = dom_vars ctx doms in
         let m = CubeOf.dim doms in
         let newctx = Ctx.vis ctx m (D.plus_zero m) (NICubeOf.singleton name) newnfs (Suc Zero) in
         let output = tyof_app cods tyargs newargs in
@@ -228,7 +228,7 @@ module Equal = struct
                let open CubeOf.Monadic (Err) in
                let* () = miterM { it = (fun _ [ x; y ] -> equal_val ctx x y) } [ dom1s; dom2s ] in
                (* We create variables for all the domains, in order to equality-check all the codomains.  The codomain boundary types only use some of those variables, but it doesn't hurt to have the others around. *)
-               let newargs, newnfs = dom_vars (Ctx.length ctx) dom1s in
+               let newargs, newnfs = dom_vars ctx dom1s in
                let newctx =
                  Ctx.vis ctx k (D.plus_zero k) (NICubeOf.singleton name) newnfs (Suc Zero) in
                let open BindCube.Monadic (Err) in

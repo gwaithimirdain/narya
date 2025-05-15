@@ -36,7 +36,7 @@ and readback_at : type a z. (z, a) Ctx.t -> kinetic value -> kinetic value -> (a
       match (D.compare (TubeOf.inst tyargs) k, D.compare k l) with
       | Neq, _ | _, Neq -> fatal (Dimension_mismatch ("reading back at pi", TubeOf.inst tyargs, k))
       | Eq, Eq ->
-          let args, newnfs = dom_vars (Ctx.length ctx) doms in
+          let args, newnfs = dom_vars ctx doms in
           let (Plus af) = N.plus (NICubeOf.out N.zero xs) in
           let newctx = Ctx.vis ctx m mn xs newnfs af in
           let output = tyof_app cods tyargs args in
@@ -195,7 +195,7 @@ and readback_head : type c z. (z, c) Ctx.t -> head -> (c, kinetic) term =
   | UU m -> UU m
   | Pi (x, doms, cods) ->
       let k = CubeOf.dim doms in
-      let args, newnfs = dom_vars (Ctx.length ctx) doms in
+      let args, newnfs = dom_vars ctx doms in
       Pi
         ( x,
           CubeOf.mmap { map = (fun _ [ dom ] -> readback_val ctx dom) } [ doms ],

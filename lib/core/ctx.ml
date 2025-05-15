@@ -368,24 +368,26 @@ module Ordered = struct
     | Snoc (ctx, Invis bindings, af) -> Snoc (ctx, Invis (forget_bindings bindings), af)
 end
 
-(* Now we define contexts that add a permutation of the raw indices.  For efficiency reasons we also precompute its environment as the context is built and store it. *)
+(* Now we define contexts that add a permutation of the raw indices.  For efficiency reasons we also precompute its environment as the context is built and store it.  We also store the next De Bruijn level (cube only, not internal face level) that may be added to the context; in most cases this equals the length of the context, but during bind_some we work temporarily with rearranged contexts containing old De Bruijn levels so it may be greater than the length.  *)
 
 type ('a, 'b) t =
   | Permute : {
       perm : ('a, 'i) N.perm;
       env : (D.zero, 'b) env;
+      level : int;
       ctx : ('i, 'b) Ordered.t;
     }
       -> ('a, 'b) t
 
 (* Nearly all the operations on ordered contexts are lifted to either ignore the permutations or add identities on the right. *)
 
-let vis (Permute { perm; env; ctx }) m mn xs vars af =
+let vis (Permute { perm; env; level; ctx }) m mn xs vars af =
   let (Plus bf) = N.plus (N.plus_right af) in
   Permute
     {
       perm = N.perm_plus perm af bf;
       env = LazyExt (env, D.zero_plus (CubeOf.dim vars), Ordered.env_entry vars);
+      level = level + 1;
       ctx = Ordered.vis ctx m mn xs vars bf;
     }
 
@@ -393,28 +395,30 @@ let cube_vis ctx x vars =
   let m = CubeOf.dim vars in
   vis ctx m (D.plus_zero m) (NICubeOf.singleton x) vars (Suc Zero)
 
-let vis_fields (Permute { perm; env; ctx }) xs vars fields fplus af =
+let vis_fields (Permute { perm; env; level; ctx }) xs vars fields fplus af =
   let (Plus bf) = N.plus (N.plus_right af) in
   Permute
     {
       perm = N.perm_plus perm af bf;
       env = LazyExt (env, D.zero_plus (CubeOf.dim vars), Ordered.env_entry vars);
+      level = level + 1;
       ctx = Ordered.vis_fields ctx xs vars fields fplus bf;
     }
 
-let invis (Permute { perm; env; ctx }) vars =
+let invis (Permute { perm; env; level; ctx }) vars =
   Permute
     {
       perm;
       env = LazyExt (env, D.zero_plus (CubeOf.dim vars), Ordered.env_entry vars);
+      level = level + 1;
       ctx = Ordered.invis ctx vars;
     }
 
-let lock (Permute { perm; env; ctx }) = Permute { perm; env; ctx = Ordered.lock ctx }
+let lock (Permute { perm; env; level; ctx }) = Permute { perm; env; level; ctx = Ordered.lock ctx }
 let locked (Permute { ctx; _ }) = Ordered.locked ctx
 let raw_length (Permute { perm; ctx; _ }) = N.perm_dom (Ordered.raw_length ctx) perm
-let length (Permute { ctx; _ }) = Ordered.length ctx
-let empty = Permute { perm = N.id_perm N.zero; env = Emp D.zero; ctx = Ordered.empty }
+let level (Permute { level; _ }) = level
+let empty = Permute { perm = N.id_perm N.zero; env = Emp D.zero; level = 0; ctx = Ordered.empty }
 let dbwd (Permute { ctx; _ }) = Ordered.dbwd ctx
 let apps (Permute { ctx; _ }) = Ordered.apps ctx
 
@@ -425,30 +429,36 @@ let find_level (Permute { ctx; _ }) x = Ordered.find_level ctx x
 (* To get the environment, we can now just return the precomputed one. *)
 let env (Permute { env; _ }) = env
 
-let ext (Permute { perm; env; ctx }) xs ty =
+let ext (Permute { perm; env; level; ctx }) xs ty =
   let ctx, b = Ordered.ext ctx xs ty in
   Permute
     {
       perm = Insert (perm, Top);
       env = LazyExt (env, D.zero_plus D.zero, Ordered.env_entry (CubeOf.singleton b));
+      level = level + 1;
       ctx;
     }
 
-let ext_let (Permute { perm; env; ctx }) xs tm =
+let ext_let (Permute { perm; env; level; ctx }) xs tm =
   let ctx, b = Ordered.ext_let ctx xs tm in
   Permute
     {
       perm = Insert (perm, Top);
       env = LazyExt (env, D.zero_plus D.zero, Ordered.env_entry (CubeOf.singleton b));
+      level = level + 1;
       ctx;
     }
 
 let lam (Permute { ctx; _ }) tm = Ordered.lam ctx tm
 
-let forget_levels (Permute { perm; ctx; _ }) forget =
+let forget_levels (Permute { perm; ctx; level; _ }) forget =
   let ctx = Ordered.forget_levels ctx forget in
-  Permute { perm; env = Ordered.env ctx; ctx }
+  Permute { perm; env = Ordered.env ctx; level; ctx }
 
 (* Augment an ordered context by the identity permutation *)
-let of_ordered ctx =
-  Permute { perm = N.id_perm (Ordered.raw_length ctx); env = Ordered.env ctx; ctx }
+let of_ordered ?level ctx =
+  let level =
+    match level with
+    | None -> Ordered.length ctx
+    | Some level -> level in
+  Permute { perm = N.id_perm (Ordered.raw_length ctx); env = Ordered.env ctx; level; ctx }

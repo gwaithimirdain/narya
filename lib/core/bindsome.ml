@@ -332,7 +332,21 @@ let bind_some g (Ctx.Permute { perm; ctx; _ }) =
       Bind_some
         {
           checked_perm;
-          oldctx = Permute { perm; env = Ctx.Ordered.env oldctx; ctx = oldctx };
-          newctx = Permute { perm; env = Ctx.Ordered.env newctx; ctx = newctx };
+          oldctx =
+            Permute
+              {
+                perm;
+                env = Ctx.Ordered.env oldctx;
+                level = Ctx.Ordered.length oldctx;
+                ctx = oldctx;
+              };
+          newctx =
+            Permute
+              {
+                perm;
+                env = Ctx.Ordered.env newctx;
+                level = Ctx.Ordered.length newctx;
+                ctx = newctx;
+              };
         }
   | None -> None

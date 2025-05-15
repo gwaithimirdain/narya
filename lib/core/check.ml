@@ -40,7 +40,7 @@ let rec typefam : type a b.
       (* In practice, these dimensions will always be zero also if the function succeeds, otherwise the eventual output would have to be higher-dimensional too.  But it doesn't hurt to be more general, and will require less change if we eventually implement higher-dimensional datatypes. *)
       match D.compare (TubeOf.inst tyargs) (CubeOf.dim doms) with
       | Eq ->
-          let newargs, newnfs = dom_vars (Ctx.length ctx) doms in
+          let newargs, newnfs = dom_vars ctx doms in
           let output = tyof_app cods tyargs newargs in
           let n, d = typefam ?discrete (Ctx.cube_vis ctx x newnfs) output in
           let disc =
@@ -84,7 +84,7 @@ let rec motive_of_family : type a b.
   match view_type ty "motive_of_family" with
   | Canonical (_, Pi (x, doms, cods), ins, tyargs) ->
       let Eq = eq_of_ins_zero ins in
-      let newvars, newnfs = dom_vars (Ctx.length ctx) doms in
+      let newvars, newnfs = dom_vars ctx doms in
       let newtm = apply_term tm newvars in
       (* We extend the context, not by the cube of types of newnfs, but by its elements one at a time as singletons.  This is because we want eventually to construct a 0-dimensional pi-type.  As we go, we also read back thesetypes and store them to later take the pi-type over.  Since they are all in different contexts, and we need to keep track of the type-indexed checked length of those contexts to ensure the later pis are well-typed, we use an indexed cube indexed over Tbwds. *)
       let (Wrap (newdoms, Any_ctx newctx)) =
@@ -97,7 +97,7 @@ let rec motive_of_family : type a b.
   | Canonical (_, UU _, _, tyargs) ->
       (* This is similar, except that we add the datatype itself to the instantiation argument to get the cube of domains, and take a pi over the 0-dimensional universe rather than a recursive call. *)
       let doms = TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm) in
-      let _, newnfs = dom_vars (Ctx.length ctx) doms in
+      let _, newnfs = dom_vars ctx doms in
       let (Wrap (newdoms, _)) =
         MC.build_left (CubeOf.dim newnfs)
           { build = (fun fa ctx -> builder None newnfs fa ctx) }
@@ -297,7 +297,7 @@ let rec check : type a b s.
               | Neq -> None in
             let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus m) in
             (* Extend the context by one variable for each type in doms, instantiated at the appropriate previous ones. *)
-            let newargs, newnfs = dom_vars (Ctx.length ctx) doms in
+            let newargs, newnfs = dom_vars ctx doms in
             (* A helper function to update the status *)
             let mkstatus (type n) (xs : n variables) : (b, s) status -> ((b, n) snoc, s) status =
               function
@@ -1481,7 +1481,7 @@ and check_empty_match_lam : type a b.
         head * (k, n) canonical * (kn, k, n) insertion * (D.zero, kn, kn, normal) TubeOf.t) -> (
       let Eq = eq_of_ins_zero ins in
       let dim = CubeOf.dim doms in
-      let newargs, newnfs = dom_vars (Ctx.length ctx) doms in
+      let newargs, newnfs = dom_vars ctx doms in
       let output = tyof_app cods tyargs newargs in
       let module S = struct
         type 'c t = Ok : kinetic value option * (a, 'c, 'ac) N.plus * k sface_of option -> 'c t
@@ -1666,7 +1666,7 @@ and with_codata_so_far : type a b n c et.
           let prev_ety =
             Neu { head; args; value = ready value; ty = lazy (inst (universe dim) tyargs) } in
           snd
-            (dom_vars (Ctx.length ctx)
+            (dom_vars ctx
                (TubeOf.plus_cube
                   (TubeOf.mmap { map = (fun _ [ nf ] -> nf.tm) } [ tyargs ])
                   (CubeOf.singleton prev_ety)))
@@ -2645,7 +2645,7 @@ and check_tel : type a b c ac.
   | Ext (x, ty, tys) ->
       let cty = check (Kinetic `Nolet) ctx ty (universe D.zero) in
       let ety = eval_term (Ctx.env ctx) cty in
-      let _, newnfs = dom_vars (Ctx.length ctx) (CubeOf.singleton ety) in
+      let _, newnfs = dom_vars ctx (CubeOf.singleton ety) in
       let ctx = Ctx.cube_vis ctx x newnfs in
       let Checked_tel (ctys, ctx), disc = check_tel ?discrete ctx tys in
       let tydisc = is_discrete ?discrete ety in
