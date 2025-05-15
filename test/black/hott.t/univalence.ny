@@ -1,3 +1,5 @@
+{` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
+
 option function boundaries ≔ implicit
 option type boundaries ≔ implicit
 

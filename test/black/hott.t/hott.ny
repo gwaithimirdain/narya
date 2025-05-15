@@ -1,3 +1,5 @@
+{` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
+
 {` Transport and lifting have the right type `}
 
 axiom A₀ : Type
