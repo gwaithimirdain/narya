@@ -77,7 +77,7 @@ module Make (F : TFun) = struct
         ('p, 'x, 'fx) F.t * ('zs, 'fx, 'ws) Tbwd.insert * ('p, 'xs, 'zs) t
         -> ('p, 'x, 'xs, 'ws) uninsert
 
-  let rec uninsert : type p xs x z ys ws.
+  let rec uninsert : type p xs x ys ws.
       (xs, x, ys) Tbwd.insert -> (p, ys, ws) t -> (p, x, xs, ws) uninsert =
    fun i fxs ->
     match (fxs, i) with
