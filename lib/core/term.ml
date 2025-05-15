@@ -245,6 +245,7 @@ end = struct
     (* A potential term is "realized" by kinetic terms, or canonical types, at its leaves. *)
     | Realize : ('a, kinetic) term -> ('a, potential) term
     | Canonical : 'a canonical -> ('a, potential) term
+    (* These operations are easy to evaluate because they are dual to corresponding operations on environments.  They never appear in the output of typechecking, but they are useful when constructing terms "by hand" in OCaml code, such as in fibrancy witnesses. *)
     | Unshift : 'n D.t * ('n, 'b, 'nb) Plusmap.t * ('nb, 's) term -> ('b, 's) term
     | Unact : ('m, 'n) op * ('b, 's) term -> ('b, 's) term
     | Shift : 'n D.t * ('n, 'b, 'nb) Plusmap.t * ('b, 's) term -> ('nb, 's) term

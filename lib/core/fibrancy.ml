@@ -137,72 +137,16 @@ let plusmap_tube_ctx : type n hn b hb.
 
 (* We compute these directly as terms.  This puts the onus on us to define them in a well-typed way, but we try our best to copy the definitions that can be given (and typechecked) internally using the higher coinductive isFibrant.  However, in most cases the corecursive case needs to be a (co)recursion at OCaml level, hence we wrap it in LazyHigher to avoid infinite computations.
 
-   The dimension 'n of these Structfields is alost always 0, since it is the substitution dimension of the type being checked against, and canonical types are almost always defined to belong to the 0-dimensional universe.  The one exception, of course, is Gel/glue, where this is the gel dimension.  When n=0, we are proving isFibrant; when n is larger we're proving "refl isFibrant" or some higher version of it.
+   The dimension 'n of these Structfields is almost always 0, since it is the substitution dimension of the type being checked against, and canonical types are almost always defined to belong to the 0-dimensional universe.  The one exception, of course, is Gel/glue, where this is the gel dimension.  When n=0, we are proving isFibrant; when n is larger we're proving "refl isFibrant" or some higher version of it.
 
    The outer laziness is only to delay them until we're inside Dim.Endpoints.run.  Eventually when the HOTT dimension is built-in and always present, that won't be necessary (but we will still need the LazyHigher wrapper around the 'id' field).  *)
 
 (* Pi-types *)
 
-type pi_ctx = ((emp, D.zero) snoc, D.zero) snoc
-
 let pi :
-    (D.zero * pi_ctx * potential * no_eta) StructfieldAbwd.t option
+    (D.zero * ((emp, D.zero) snoc, D.zero) snoc * potential * no_eta) StructfieldAbwd.t option
     Lazy.t =
-  lazy
-    (let plusmap =
-       Plusmap.Map_snoc (Map_snoc (Map_emp, D.plus_zero Hott.dim), D.plus_zero Hott.dim) in
-     let plusfam x = Some (PlusFam.PlusFam (plusmap, x)) in
-     let fname = singleton_variables D.zero (Some "f") in
-     let xname = singleton_variables D.zero (Some "x") in
-     let module Context = struct
-       type t = ((((emp, Hott.dim) snoc, Hott.dim) snoc, D.zero) snoc, D.zero) snoc
-     end in
-     let a2 : (Context.t, kinetic) term =
-       Var (Index (Later (Later (Later Now)), id_sface Hott.dim)) in
-     let b2 : (Context.t, kinetic) term = Var (Index (Later (Later Now), id_sface Hott.dim)) in
-     let f : (Context.t, kinetic) term = Var (Index (Later Now, id_sface D.zero)) in
-     let x : (Context.t, kinetic) term = Var (Index (Now, id_sface D.zero)) in
-     let trl_x = app (Field (a2, ftrl, zero_ins Hott.dim)) x in
-     let liftl_x = app (Field (a2, fliftl, zero_ins Hott.dim)) x in
-     let* lxcube = Hott.cube trl_x x liftl_x in
-     let trr_x = app (Field (a2, ftrr, zero_ins Hott.dim)) x in
-     let liftr_x = app (Field (a2, fliftr, zero_ins Hott.dim)) x in
-     let* rxcube = Hott.cube x trr_x liftr_x in
-     let trr : type r. (D.zero, Hott.dim, r) pbij -> (r, pi_ctx) PlusFam.t =
-      fun p ->
-       let Eq = eq_of_zero_pbij p in
-       plusfam
-         (Lam
-            ( fname,
-              Lam
-                ( xname,
-                  Realize (app (Field (App (b2, lxcube), ftrr, zero_ins Hott.dim)) (app f trl_x)) )
-            )) in
-     let trr = PlusPbijmap.build D.zero Hott.dim { build = trr } in
-     let trl : type r. (D.zero, Hott.dim, r) pbij -> (r, pi_ctx) PlusFam.t =
-      fun p ->
-       let Eq = eq_of_zero_pbij p in
-       plusfam
-         (Lam
-            ( fname,
-              Lam
-                ( xname,
-                  Realize (app (Field (App (b2, rxcube), ftrl, zero_ins Hott.dim)) (app f trr_x)) )
-            )) in
-     let trl = PlusPbijmap.build D.zero Hott.dim { build = trl } in
-     (* I haven't written out liftr and liftl yet. *)
-     (* let id : type r. (D.zero, Hott.dim, r) pbij -> (r, pi_ctx) PlusFam.t =
-         fun p ->
-          let Eq = eq_of_zero_pbij p in
-          Reporter.fatal (Unimplemented "pi.id") in
-        let id = PlusPbijmap.build D.zero Hott.dim { build = id } in *)
-     return
-       (Emp
-       <: StructfieldAbwd.Entry (ftrr, Higher trr)
-       (* <: Entry (fliftr, Higher liftr) *)
-       <: Entry (ftrl, Higher trl)
-          (* <: Entry (fliftl, Higher liftl) *)
-          (* <: Entry (fid, Higher id) *)))
+  Lazy.from_val None
 
 let universe : (D.zero * emp * potential * no_eta) StructfieldAbwd.t option Lazy.t =
   Lazy.from_val None

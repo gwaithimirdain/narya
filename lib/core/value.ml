@@ -323,6 +323,7 @@ end = struct
     | Permute : ('a, 'b) Tbwd.permute * ('n, 'b) env -> ('n, 'a) env
     (* Adding a dimension 'n to all the dimensions in a dimension list 'b is the power/cotensor in the dimension-enriched category of contexts.  Shifting an environment (substitution) implements its universal property: an (m+n)-dimensional substitution with codomain b is equivalent to an m-dimensional substitution with codomain n+b. *)
     | Shift : ('mn, 'b) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb) Plusmap.t -> ('m, 'nb) env
+    (* Unshifting is the inverse operation, which semantically is composing with the universal n-dimensional substitution from n+b to b. *)
     | Unshift : ('m, 'nb) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb) Plusmap.t -> ('mn, 'b) env
 
   (* An 's lazy_eval behaves from the outside like an 's evaluation Lazy.t.  But internally, in addition to being able to store an arbitrary thunk, it can also store a term and an environment in which to evaluate it (plus an outer insertion that can't be pushed into the environment).  This allows it to accept degeneracy actions and incorporate them into the environment, so that when it's eventually forced the term only has to be traversed once.  It can also accumulate degeneracies on an arbitrary thunk (which could, of course, be a constant value that was already forced, but now is deferred again until it's done accumulating degeneracy actions).  Both kinds of deferred values can also store more arguments and field projections for it to be applied to; this is only used in glued evaluation. *)
