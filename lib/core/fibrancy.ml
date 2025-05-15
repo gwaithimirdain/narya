@@ -72,6 +72,11 @@ let fields : (emp * D.zero * no_eta) CodatafieldAbwd.t option Lazy.t =
        <: Entry (ftrl, Higher (plusmap, trl))
        <: Entry (fliftl, Higher (plusmap, liftl))))
 
+(* Bisimulations and glue types (currently only 1-dimensional).  Will be defined later by parsing. *)
+
+let glue = Constant.make Compunit.basic
+let bisim = Constant.make Compunit.basic
+
 (* Tube contexts *)
 
 (* A witness of ('n, 'b) tube_ctx says that 'b is a term context of the form

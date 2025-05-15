@@ -188,3 +188,32 @@
    ￫ info[I0000]
    ￮ constant Jβ defined
   
+
+  $ narya -hott -v univalence.ny
+   ￫ info[I0100]
+   ￮ option set function boundaries to implicit
+  
+   ￫ info[I0100]
+   ￮ option set type boundaries to implicit
+  
+   ￫ info[I0000]
+   ￮ constant Σ defined
+  
+   ￫ info[I0000]
+   ￮ constant isContr defined
+  
+   ￫ info[I0000]
+   ￮ constant iscontr_idfrom defined
+  
+   ￫ info[I0000]
+   ￮ constant is11 defined
+  
+   ￫ info[I0000]
+   ￮ constant is11_Id defined
+  
+   ￫ info[I0000]
+   ￮ constant bisim_of_11 defined
+  
+   ￫ info[I0000]
+   ￮ constant univalence defined
+  
