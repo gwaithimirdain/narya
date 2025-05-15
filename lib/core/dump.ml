@@ -18,9 +18,13 @@ type printable +=
   | Head : head -> printable
   | Binder : ('b, 's) binder -> printable
   | Term : ('b, 's) term -> printable
+  | Tel : ('a, 'b, 'ab) Telescope.t -> printable
   | Env : ('n, 'b) Value.env -> printable
   | DeepEnv : ('n, 'b) Value.env * int -> printable
   | Check : 'a check -> printable
+  | Entry : ('x, 'n) Ctx.entry -> printable
+  | OrderedCtx : ('a, 'b) Ctx.Ordered.t -> printable
+  | Ctx : ('a, 'b) Ctx.t -> printable
 
 (* The dump functions were written using Format, but printable has now been changed to use PPrint instead.  To put off updating the dump functions to PPrint, we wrap the old versions in a module, and then at the end wrap them in functions that convert them to strings and make those into PPrint.documents. *)
 
@@ -149,10 +153,12 @@ module F = struct
         fprintf ppf " <: ";
         fprintf ppf "Inst (%a, %a)" dim (D.pos d) (tubeof normal) args
 
+  and level : formatter -> level -> unit = fun ppf l -> fprintf ppf "LVar (%d,%d)" (fst l) (snd l)
+
   and head : formatter -> head -> unit =
    fun ppf h ->
     match h with
-    | Var { level; _ } -> fprintf ppf "LVar (%d,%d)" (fst level) (snd level)
+    | Var { level = l; _ } -> level ppf l
     | Const { name; ins } ->
         let (To p) = deg_of_ins ins in
         fprintf ppf "Const (%a, %s)" pp_printed (print (PConstant name)) (string_of_deg p)
@@ -167,13 +173,14 @@ module F = struct
 
   and binder : type b s. formatter -> (b, s) binder -> unit =
    fun ppf (Bind { env = e; ins = i; body }) ->
-    fprintf ppf "Binder (%a, %s, %a)" env e (string_of_ins i) term body
+    fprintf ppf "Bind (%a, %s, %a)" env e (string_of_ins i) term body
 
   and denv : type b n. int -> formatter -> (n, b) Value.env -> unit =
    fun depth ppf e ->
     match e with
     | Emp d -> fprintf ppf "Emp %a" dim d
-    | Ext (e, _, _) -> fprintf ppf "%a <: ?" env e
+    | Ext (e, _, Ok v) -> fprintf ppf "%a <: %a" env e (cubeof (dvalue depth)) v
+    | Ext (e, _, Error _) -> fprintf ppf "%a <: Err" env e
     | LazyExt (e, _, v) -> fprintf ppf "%a <; %a" env e (cubeof (lazy_eval depth)) v
     | Act (e, Op (f, d)) -> fprintf ppf "%a <* (%s,%s)" env e (string_of_sface f) (string_of_deg d)
     | Permute (_, e) -> fprintf ppf "(%a) permuted(?)" env e
@@ -329,6 +336,30 @@ module F = struct
       | `Normal -> "↦"
       | `Cube -> "⤇" in
     fprintf ppf "%s %s %s %a" (Constr.to_string c) (strvars vars.value) mapsto check body.value
+
+  let entry : type x n. formatter -> (x, n) Ctx.entry -> unit =
+   fun ppf -> function
+    | Vis { dim; plusdim; hasfields = No_fields; vars; bindings; _ } -> (
+        match (D.compare_zero dim, D.compare_zero (D.plus_right plusdim)) with
+        | Zero, Zero ->
+            let x = NICubeOf.find_top vars in
+            let b = CubeOf.find_top bindings in
+            fprintf ppf "(%a%a : %a)"
+              (pp_print_option ~none:(fun ppf () -> pp_print_string ppf "_") pp_print_string)
+              x
+              (pp_print_option (fun ppf l -> fprintf ppf "(%a)" level l))
+              (Ctx.Binding.level b) value (Ctx.Binding.value b).ty
+        | _ -> fprintf ppf "(?)")
+    | _ -> fprintf ppf "(?)"
+
+  let rec ordered_ctx : type a b. formatter -> (a, b) Ctx.Ordered.t -> unit =
+   fun ppf -> function
+    | Emp -> ()
+    | Snoc (c, e, _) -> fprintf ppf "%a %a" ordered_ctx c entry e
+    | Lock c -> fprintf ppf "%a Lock" ordered_ctx c
+
+  let ctx : type a b. formatter -> (a, b) Ctx.t -> unit =
+   fun ppf (Permute { ctx; _ }) -> fprintf ppf "Ctx (?, ?, %a)" ordered_ctx ctx
 end
 
 let dim d = PPrint.utf8string (Format.asprintf "%a" F.dim d)
@@ -340,5 +371,9 @@ let binder v = PPrint.utf8string (Format.asprintf "%a" F.binder v)
 let env v = PPrint.utf8string (Format.asprintf "%a" F.env v)
 let denv depth v = PPrint.utf8string (Format.asprintf "%a" (F.denv depth) v)
 let term v = PPrint.utf8string (Format.asprintf "%a" F.term v)
+let tel v = PPrint.utf8string (Format.asprintf "%a" F.tel v)
 let check v = PPrint.utf8string (Format.asprintf "%a" F.check v)
 let synth v = PPrint.utf8string (Format.asprintf "%a" F.synth v)
+let entry v = PPrint.utf8string (Format.asprintf "%a" F.entry v)
+let ordered_ctx v = PPrint.utf8string (Format.asprintf "%a" F.ordered_ctx v)
+let ctx v = PPrint.utf8string (Format.asprintf "%a" F.ctx v)

@@ -886,9 +886,13 @@ let () =
       | Dump.Head h -> Dump.head h
       | Dump.Binder b -> Dump.binder b
       | Dump.Term tm -> Dump.term tm
+      | Dump.Tel tm -> Dump.tel tm
       | Dump.Env e -> Dump.env e
       | Dump.DeepEnv (e, n) -> Dump.denv n e
       | Dump.Check e -> Dump.check e
+      | Dump.Entry e -> Dump.entry e
+      | Dump.OrderedCtx e -> Dump.ordered_ctx e
+      | Dump.Ctx e -> Dump.ctx e
       | _ -> fatal (Anomaly "unknown printable")
 
 (* Hack to ensure the above code is executed. *)
