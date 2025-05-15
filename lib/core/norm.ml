@@ -1210,6 +1210,7 @@ and inst_fibrancy_fields : type m n mn.
           | Some _, Neq ->
               fatal (Dimension_mismatch ("inst_fibrancy", cod_left_ins ins, TubeOf.out middle))
           | None, _ -> fatal (Anomaly "nonidentity insertion on evaluation of fibrancy id"))
+      | Unrealized -> Emp
       | _ -> fatal (Anomaly "fibrancy id didn't yield a struct"))
 
 (* Given two families of values, the second intended to be the types of the other, annotate the former by instantiations of the latter to make them into normals.  Since we have to instantiate the types at the *normal* version of the terms, which is what we are computing, we also add the results to a hashtable as we create them so we can access them randomly later.  And since we have to do this sometimes with cubes and sometimes with tubes, we first define the content of the operation as a helper function. *)
