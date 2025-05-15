@@ -357,6 +357,7 @@ let pi x dom cod = Pi (x, CubeOf.singleton dom, CodCube.singleton cod)
 let app fn arg = App (fn, CubeOf.singleton arg)
 let apps fn args = List.fold_left app fn args
 let constr name args = Constr (name, D.zero, List.map CubeOf.singleton args)
+let field tm f = Field (tm, f, ins_zero D.zero)
 
 module Telescope = struct
   type ('a, 'b, 'ab) t = ('a, 'b, 'ab) Term.tel

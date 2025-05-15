@@ -976,7 +976,24 @@ module Hott : sig
 
   val dim : dim D.t
   val singleton : dim is_singleton
+  val sym : (dim, dim, 'b) D.plus -> ('b, 'b) deg
   val faces : unit -> ((D.zero, dim) sface * (D.zero, dim) sface * N.two Endpoints.len) option
   val cube : 'a -> 'a -> 'a -> (dim, 'a) CubeOf.t option
   val tube : 'a -> 'a -> (D.zero, dim, dim, 'a) TubeOf.t option
+
+  val cube2 :
+    (dim, dim, 'b) D.plus ->
+    'a ->
+    'a ->
+    'a ->
+    'a ->
+    'a ->
+    'a ->
+    'a ->
+    'a ->
+    'a ->
+    ('b, 'a) CubeOf.t option
+
+  val tube12 :
+    (dim, dim, 'b) D.plus -> 'a -> 'a -> 'a -> 'a -> 'a -> 'a -> (dim, dim, 'b, 'a) TubeOf.t option
 end
