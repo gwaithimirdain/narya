@@ -95,13 +95,13 @@ Testing notation commands
 
   $ narya -e 'axiom A:Type' -e 'axiom f:A->A->A' -e 'notation 0 f : x "&" … "&" y := f x y'
    ￫ error[E0100]
-   ￮ internal ellipses in notation not yet implemented
+   ￮ unimplemented: internal ellipses in notation
   
   [1]
 
   $ narya -e 'axiom A:Type' -e 'axiom f:A->A->A' -e 'notation 0 f : x "&" … y := f x y'
    ￫ error[E0100]
-   ￮ internal ellipses in notation not yet implemented
+   ￮ unimplemented: internal ellipses in notation
   
   [1]
 

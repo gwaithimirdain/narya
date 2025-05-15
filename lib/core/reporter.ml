@@ -770,7 +770,7 @@ module Code = struct
           textf
             "@[<hv 0>insufficient dimension of primary argument for higher-dimensional application:@ %s does not factor through %s@ (hint: %s boundaries are implicit)"
             (string_of_dim0 got) (string_of_dim0 needed) which
-      | Unimplemented str -> textf "%s not yet implemented" str
+      | Unimplemented str -> textf "unimplemented: %s" str
       | Matching_datatype_has_degeneracy ty ->
           textf
             "@[<hv 0>can't match on element of datatype@;<1 2>%a@ that has a degeneracy applied@]"
