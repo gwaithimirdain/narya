@@ -32,6 +32,7 @@ module Endpoints : sig
   val len : 'l len -> 'l N.t
   val wrapped : unit -> wrapped
   val internal : unit -> bool
+  val hott : unit -> N.two len option
 end
 
 type _ is_singleton

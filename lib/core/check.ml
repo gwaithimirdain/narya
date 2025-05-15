@@ -478,25 +478,33 @@ let rec check : type a b s.
     (* Now we go through the canonical types. *)
     | Codata fields, Potential _ -> (
         match view_type ~severity ty "typechecking codata" with
-        | Canonical (_, UU _, _, tyargs) ->
-            let has_higher_fields =
-              Bwd.fold_left
-                (fun acc (Field.Wrap fld, _) ->
-                  match acc with
-                  | Some () -> Some ()
-                  | None -> (
-                      match D.compare (Field.dim fld) D.zero with
-                      | Eq -> None
-                      | Neq -> Some ()))
-                None fields in
-            check_codata status ctx tyargs Emp (Bwd.to_list fields) Emp ~has_higher_fields
+        | Canonical (_, UU dim, _, tyargs) -> (
+            match (D.compare_zero dim, Endpoints.hott ()) with
+            | Pos _, Some _ ->
+                fatal (Unimplemented "general higher-dimensional types in HOTT: use glue")
+            | _ ->
+                let has_higher_fields =
+                  Bwd.fold_left
+                    (fun acc (Field.Wrap fld, _) ->
+                      match acc with
+                      | Some () -> Some ()
+                      | None -> (
+                          match D.compare (Field.dim fld) D.zero with
+                          | Eq -> None
+                          | Neq -> Some ()))
+                    None fields in
+                check_codata status ctx tyargs Emp (Bwd.to_list fields) Emp ~has_higher_fields)
         | _ -> fatal (Checking_canonical_at_nonuniverse ("codatatype", PVal (ctx, ty))))
     | Record (xs, fields, opacity), Potential _ -> (
         match view_type ~severity ty "typechecking record" with
-        | Canonical (_, UU dim, ins, tyargs) ->
-            let Eq = eq_of_ins_zero ins in
-            let (Vars (af, vars)) = vars_of_names xs.loc dim xs.value in
-            check_record status dim ctx opacity tyargs vars Emp Zero af Emp fields Emp
+        | Canonical (_, UU dim, ins, tyargs) -> (
+            match (D.compare_zero dim, Endpoints.hott ()) with
+            | Pos _, Some _ ->
+                fatal (Unimplemented "general higher-dimensional types in HOTT: use glue")
+            | _ ->
+                let Eq = eq_of_ins_zero ins in
+                let (Vars (af, vars)) = vars_of_names xs.loc dim xs.value in
+                check_record status dim ctx opacity tyargs vars Emp Zero af Emp fields Emp)
         | _ -> fatal (Checking_canonical_at_nonuniverse ("record type", PVal (ctx, ty))))
     | Data constrs, Potential _ ->
         (* For a datatype, the type to check against might not be a universe, it could include indices.  We also check whether all the types of all the indices are discrete or a type being defined, to decide whether to keep evaluating the type for discreteness. *)
