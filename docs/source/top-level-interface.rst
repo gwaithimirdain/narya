@@ -230,7 +230,7 @@ Basic usage
 
 Once Narya's ProofGeneral mode is installed either :ref:`automatically<ProofGeneral mode (automatic installation)>` or :ref:`manually<ProofGeneral mode (manual installation)>`, it should start automatically when you open a file with the ``.ny`` extension.  When ProofGeneral mode is active, there is some initial segment of the buffer (which starts out empty) that has been processed (sent to Narya) and is highlighted with a background color (usually blue).  The unprocessed part of the buffer can be freely edited, and as you complete new commands you can process them as well one by one.  You can also undo or "retract" processed commands, removing them from the processed region.  If you edit any part of the processed region (except for editing inside an existing comment, or :ref:`filling a hole<solving holes>` with ``C-c C-SPC``), it will automatically be retracted (using Narya's ``undo`` command) up to the point where you are editing.
 
-In addition to the main window displaying your source file, there will normally be two other windows in split-screen labeled "goals" and "response" (although this can be customized with the Emacs variable ``proof-three-window-enable``).  The "response" window displays Narya's informational and error messages.  The "goals" window displays the contexts and types of holes whenever relevant.
+In addition to the main window displaying your source file, there will normally be two other windows in split-screen labeled "goals" and "response" (although this can be customized with the Emacs variables ``proof-three-window-enable`` and ``proof-three-window-mode-policy``).  The "response" window displays Narya's informational and error messages.  The "goals" window displays the contexts and types of holes whenever relevant.
 
 Key commands
 ^^^^^^^^^^^^
@@ -339,7 +339,13 @@ Some other ProofGeneral customization options you may want to consider are:
 
 - ``proof-shrink-windows-tofit``: Note that this only affects windows that take up the full width of the frame, and in particular has no effect in the default three-window mode.  However, Narya's ProofGeneral mode includes some custom code (copied from the Rocq mode) that resizes the response window in three-window mode as well.
 
-- ``narya-prog-args``: If you want to pass command-line options to alter the behavior of Narya, such as the options like ``-dtt`` that modify the type theory, at present the only way to do this is to change this variable.  You can do that globally, or locally in particular ``ny`` files with Emacs file-local variables.  If you do change this variable, make sure to keep the argument ``-proofgeneral`` in it, which is necessary to put Narya into the correct mode for interacting with ProofGeneral.
+- ``proof-three-window-enable`` and ``proof-three-window-mode-policy``: I recommend making sure the first is enabled.  If your screen is not especially wide, you may want to set the second to ``horizontal`` to enforce putting the response and goals buffers side-by-side with the script buffer.
+
+- ``narya-prog-args``: If you want to pass command-line options to alter the behavior of Narya, such as the options like ``-dtt`` that modify the type theory, at present the only way to do this is to change this variable.  You can do that globally, or locally in particular ``ny`` files with Emacs file-local variables.  If you do change this variable, make sure to keep the argument ``-proofgeneral`` in it, which is necessary to put Narya into the correct mode for interacting with ProofGeneral.  As an example, to set the option ``-dtt`` locally in a file, you can add the following line at the top of it:
+
+```
+{` -*- narya-prog-args: ("-proofgeneral" "-dtt") -*- `}
+```
 
 
 Code formatter
