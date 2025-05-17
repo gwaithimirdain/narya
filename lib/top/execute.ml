@@ -280,13 +280,13 @@ and load_file file top =
                       output_string outfile (Buffer.contents buf)
                       (* Ignore file errors (e.g. read-only source file) *)
                     with Sys_error _ -> ()));
+              (* Save the compiled version *)
+              marshal compunit file exported;
               (exported, Global.find_unit compunit, `Source) in
         (* Then we add it to the table of loaded files and (possibly) the content of top-level files. *)
         if not top then emit (File_loaded (file, which));
         Loaded.add_to_files file trie globals compunit top;
         if top then Loaded.add_to_scope trie;
-        (* We save the compiled version *)
-        marshal compunit file trie;
         (trie, (Loading.get ()).imports) in
       (* We add the files that it imports to those of the current file, since the imports list is supposed to be transitive. *)
       Loading.modify (fun s -> { s with imports = Bwd_extra.append s.imports imports });

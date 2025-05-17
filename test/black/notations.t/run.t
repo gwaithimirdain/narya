@@ -121,6 +121,9 @@
   [1]
 
   $ narya -v minussubminus.ny
+   ￫ warning[W2400]
+   ￮ not re-executing echo/synth/show commands when loading compiled file $TESTCASE_ROOT/minus.nyo
+  
    ￫ info[I0004]
    ￮ file loaded: $TESTCASE_ROOT/minus.ny (compiled)
   
@@ -171,6 +174,9 @@
   [1]
 
   $ narya -v minusminussub.ny
+   ￫ warning[W2400]
+   ￮ not re-executing echo/synth/show commands when loading compiled file $TESTCASE_ROOT/minus.nyo
+  
    ￫ info[I0004]
    ￮ file loaded: $TESTCASE_ROOT/minus.ny (compiled)
   
