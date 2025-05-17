@@ -10,7 +10,7 @@ module Trie = Yuujinchou.Trie
 
 (* Execution of files (and strings), including marshaling and unmarshaling, and managing compilation units and imports. *)
 
-let __COMPILE_VERSION__ = 4
+let __COMPILE_VERSION__ = 5
 
 (* This state module is for data that gets restarted when loading a new file. *)
 module Loadstate = struct
