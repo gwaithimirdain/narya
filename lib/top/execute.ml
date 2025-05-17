@@ -104,20 +104,23 @@ end
 (* Save all the definitions from a given loaded compilation unit to a compiled disk file, along with other data such as the command-line type theory flags, the imported files, and the (supplied) export namespace. *)
 let marshal (compunit : Compunit.t) (file : FilePath.filename) (trie : Scope.trie) =
   let ofile = FilePath.replace_extension file "nyo" in
-  Out_channel.with_open_bin ofile @@ fun chan ->
-  Marshal.to_channel chan __COMPILE_VERSION__ [];
-  (Flags.read ()).marshal chan;
-  Marshal.to_channel chan compunit [];
-  Marshal.to_channel chan (Loading.get ()).imports [];
-  Global.to_channel_unit chan compunit [];
-  Marshal.to_channel chan
-    (Trie.map
-       (fun _ -> function
-         | (`Constant c, loc), tag -> ((`Constant c, loc), tag)
-         | (`Notation (u, _), loc), tag -> ((`Notation u, loc), tag))
-       trie)
-    [];
-  Marshal.to_channel chan (Loading.get ()).actions []
+  try
+    Out_channel.with_open_bin ofile @@ fun chan ->
+    Marshal.to_channel chan __COMPILE_VERSION__ [];
+    (Flags.read ()).marshal chan;
+    Marshal.to_channel chan compunit [];
+    Marshal.to_channel chan (Loading.get ()).imports [];
+    Global.to_channel_unit chan compunit [];
+    Marshal.to_channel chan
+      (Trie.map
+         (fun _ -> function
+           | (`Constant c, loc), tag -> ((`Constant c, loc), tag)
+           | (`Notation (u, _), loc), tag -> ((`Notation u, loc), tag))
+         trie)
+      [];
+    Marshal.to_channel chan (Loading.get ()).actions []
+    (* Just emit a warning if we can't write the compiled version *)
+  with Sys_error _ -> emit (Cant_write_compiled_file ofile)
 
 (* Load a compilation unit from a compiled disk file, if possible.  Returns its export namespace, or None if loading from a compiled file failed. *)
 let rec unmarshal (compunit : Compunit.t) (lookup : FilePath.filename -> Compunit.t)

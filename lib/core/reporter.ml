@@ -225,6 +225,7 @@ module Code = struct
     | Library_has_extension : string -> t
     | Invalid_filename : string -> t
     | No_such_file : string -> t
+    | Cant_write_compiled_file : string -> t
     | Incompatible_flags : string * string -> t
     | Actions_in_compiled_file : string -> t
     | No_such_hole : int -> t
@@ -370,6 +371,7 @@ module Code = struct
     | Library_has_extension _ -> Warning
     | Invalid_filename _ -> Error
     | No_such_file _ -> Error
+    | Cant_write_compiled_file _ -> Warning
     | Incompatible_flags _ -> Warning
     | Actions_in_compiled_file _ -> Warning
     | No_such_hole _ -> Error
@@ -528,6 +530,7 @@ module Code = struct
     | Invalid_filename _ -> "E2302"
     | Incompatible_flags _ -> "W2303"
     | No_such_file _ -> "E2304"
+    | Cant_write_compiled_file _ -> "W2305"
     (* echo *)
     | Actions_in_compiled_file _ -> "W2400"
     (* undo *)
@@ -928,6 +931,7 @@ module Code = struct
       | Library_has_extension file -> textf "putative library name '%s' has extension" file
       | Invalid_filename file -> textf "filename '%s' does not have 'ny' extension" file
       | No_such_file file -> textf "error opening file: %s" file
+      | Cant_write_compiled_file file -> textf "can't write compiled file: %s" file
       | Incompatible_flags (file, flags) ->
           textf "file '%s' was compiled with incompatible flags %s, recompiling" file flags
       | Actions_in_compiled_file file ->
