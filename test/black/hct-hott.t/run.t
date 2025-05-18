@@ -414,6 +414,45 @@
    ￫ info[I0000]
    ￮ constant 𝕗𝕎 defined
   
+   ￫ info[I0007]
+   ￮ section Parametrized_W opened
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_spec defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎 defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_proj1 defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_proj2 defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_code_spec defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_encode defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_decode defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_decode_encode defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕎_encode_decode defined
+  
+   ￫ info[I0000]
+   ￮ constant Id_𝕎_iso defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕗𝕎 defined
+  
+   ￫ info[I0008]
+   ￮ section Parametrized_W closed
+  
    ￫ info[I0000]
    ￮ constant 𝕄_spec defined
   
