@@ -652,6 +652,210 @@ def 𝕗𝕎 (A : Type) (B : A → Type) (𝕗A : isFibrant A)
       (Id_𝕎_iso A.0 A.1 A.2 B.0 B.1 B.2 x0 x1)
       (𝕗_𝕎_code A.0 A.1 A.2 B.0 B.1 B.2 𝕗A.0 𝕗A.1 𝕗A.2 𝕗B.0 𝕗B.1 𝕗B.2 x0 x1)]
 
+{` The Id-types of a W-type can also be characterized by a W-type with non-uniform parameters. We can prove they are fibrant as there is no need to fibrantly replace them. `}
+
+section Parametrized_W ≔
+
+  def 𝕎_spec : Type ≔ sig (
+    R : Type,
+    A : R → Fib,
+    B : (r : R) → A r .t → Fib,
+    k : (r : R) (a : A r .t) → B r a .t → R )
+
+  def 𝕎 (s : 𝕎_spec) (r : s .R) : Type ≔ data [
+  | sup. (a : s .A r .t) (f : (b : s .B r a .t) → 𝕎 s (s .k r a b)) ]
+
+  def 𝕎_proj1 (s : 𝕎_spec) (r : s .R) (x : 𝕎 s r) : s .A r .t ≔ match x [
+  | sup. a f ↦ a]
+
+  def 𝕎_proj2 (s : 𝕎_spec) (r : s .R) (x : 𝕎 s r)
+    : (b : s .B r (𝕎_proj1 s r x) .t) → 𝕎 s (s .k r (𝕎_proj1 s r x) b)
+    ≔ match x [ sup. a f ↦ f ]
+
+  def 𝕎_code_spec (s0 s1 : 𝕎_spec) (s2 : Br 𝕎_spec s0 s1) : 𝕎_spec ≔ (
+    R ≔ sig (
+      r0 : s0 .R,
+      r1 : s1 .R,
+      r2 : s2 .R r0 r1,
+      x0 : 𝕎 s0 r0,
+      x1 : 𝕎 s1 r1 ),
+    A ≔ r ↦
+      Idd𝕗 (s0 .A (r .r0)) (s1 .A (r .r1)) (s2 .A (r .r2))
+        (𝕎_proj1 s0 (r .r0) (r .x0)) (𝕎_proj1 s1 (r .r1) (r .x1)),
+    B ≔ r a2 ↦
+      Σ𝕗 (s0 .B (r .r0) (𝕎_proj1 s0 (r .r0) (r .x0)))
+        (b0 ↦
+         Σ𝕗 (s1 .B (r .r1) (𝕎_proj1 s1 (r .r1) (r .x1)))
+           (b1 ↦
+            Idd𝕗 (s0 .B (r .r0) (𝕎_proj1 s0 (r .r0) (r .x0)))
+              (s1 .B (r .r1) (𝕎_proj1 s1 (r .r1) (r .x1))) (s2 .B (r .r2) a2)
+              b0 b1)),
+    k ≔ r a2 b ↦ (
+      r0 ≔ s0 .k (r .r0) (𝕎_proj1 s0 (r .r0) (r .x0)) (b .0),
+      r1 ≔ s1 .k (r .r1) (𝕎_proj1 s1 (r .r1) (r .x1)) (b .1 .0),
+      r2 ≔ s2 .k (r .r2) a2 (b .1 .1),
+      x0 ≔ 𝕎_proj2 s0 (r .r0) (r .x0) (b .0),
+      x1 ≔ 𝕎_proj2 s1 (r .r1) (r .x1) (b .1 .0)))
+
+  def 𝕎_encode (s0 s1 : 𝕎_spec) (s2 : Br 𝕎_spec s0 s1) (r0 : s0 .R)
+    (r1 : s1 .R) (r2 : s2 .R r0 r1) (x0 : 𝕎 s0 r0) (x1 : 𝕎 s1 r1)
+    (x2 : Br 𝕎 s2 r2 x0 x1)
+    : 𝕎 (𝕎_code_spec s0 s1 s2) (r0, r1, r2, x0, x1)
+    ≔ match x2 [
+  | sup. a f ⤇
+      sup. a.2
+        (b ↦
+         𝕎_encode s0 s1 s2 (s0 .k r0 a.0 (b .0)) (s1 .k r1 a.1 (b .1 .0))
+           (s2 .k r2 a.2 (b .1 .1)) (f.0 (b .0)) (f.1 (b .1 .0))
+           (f.2 (b .1 .1)))]
+
+  def 𝕎_decode (s0 s1 : 𝕎_spec) (s2 : Br 𝕎_spec s0 s1) (r0 : s0 .R)
+    (r1 : s1 .R) (r2 : s2 .R r0 r1) (x0 : 𝕎 s0 r0) (x1 : 𝕎 s1 r1)
+    (y2 : 𝕎 (𝕎_code_spec s0 s1 s2) (r0, r1, r2, x0, x1))
+    : Br 𝕎 s2 r2 x0 x1
+    ≔ match x0, x1, y2 [
+  | sup. a0 f0, sup. a1 f1, sup. a2 f2 ↦
+      sup. a2
+        (b ⤇
+         𝕎_decode s0 s1 s2 (s0 .k r0 a0 b.0) (s1 .k r1 a1 b.1)
+           (s2 .k r2 a2 b.2) (f0 b.0) (f1 b.1) (f2 (b.0, (b.1, b.2))))]
+
+  def 𝕎_decode_encode (s0 s1 : 𝕎_spec) (s2 : Br 𝕎_spec s0 s1) (r0 : s0 .R)
+    (r1 : s1 .R) (r2 : s2 .R r0 r1) (x0 : 𝕎 s0 r0) (x1 : 𝕎 s1 r1)
+    (x2 : Br 𝕎 s2 r2 x0 x1)
+    : eq (Br 𝕎 s2 r2 x0 x1)
+        (𝕎_decode s0 s1 s2 r0 r1 r2 x0 x1
+           (𝕎_encode s0 s1 s2 r0 r1 r2 x0 x1 x2)) x2
+    ≔ match x2 [
+  | sup. a f ⤇
+      eq.ap
+        (rel Π (s2 .B r2 a.2 .t) {b0 ↦ 𝕎 s0 (s0 .k r0 a.0 b0)}
+           {b1 ↦ 𝕎 s1 (s1 .k r1 a.1 b1)} (b ⤇ rel 𝕎 s2 (s2 .k r2 a.2 b.2))
+           f.0 f.1) (Br 𝕎 s2 r2 (sup. a.0 f.0) (sup. a.1 f.1))
+        (f2 ↦ sup. a.2 f2)
+        (b ⤇
+         𝕎_decode s0 s1 s2 (s0 .k r0 a.0 b.0) (s1 .k r1 a.1 b.1)
+           (s2 .k r2 a.2 b.2) (f.0 b.0) (f.1 b.1)
+           (𝕎_encode s0 s1 s2 (s0 .k r0 a.0 b.0) (s1 .k r1 a.1 b.1)
+              (s2 .k r2 a.2 b.2) (f.0 b.0) (f.1 b.1) (f.2 b.2))) f.2
+        (funext_refl (s0 .B r0 a.0 .t) (s1 .B r1 a.1 .t) (s2 .B r2 a.2 .t)
+           (b0 ↦ 𝕎 s0 (s0 .k r0 a.0 b0)) (b1 ↦ 𝕎 s1 (s1 .k r1 a.1 b1))
+           (b ⤇ rel 𝕎 s2 (s2 .k r2 a.2 b.2)) f.0 f.1
+           (b ⤇
+            𝕎_decode s0 s1 s2 (s0 .k r0 a.0 b.0) (s1 .k r1 a.1 b.1)
+              (s2 .k r2 a.2 b.2) (f.0 b.0) (f.1 b.1)
+              (𝕎_encode s0 s1 s2 (s0 .k r0 a.0 b.0) (s1 .k r1 a.1 b.1)
+                 (s2 .k r2 a.2 b.2) (f.0 b.0) (f.1 b.1) (f.2 b.2))) f.2
+           (b0 b1 b2 ↦
+            𝕎_decode_encode s0 s1 s2 (s0 .k r0 a.0 b0) (s1 .k r1 a.1 b1)
+              (s2 .k r2 a.2 b2) (f.0 b0) (f.1 b1) (f.2 b2)))]
+
+  def 𝕎_encode_decode (s0 s1 : 𝕎_spec) (s2 : Br 𝕎_spec s0 s1) (r0 : s0 .R)
+    (r1 : s1 .R) (r2 : s2 .R r0 r1) (x0 : 𝕎 s0 r0) (x1 : 𝕎 s1 r1)
+    (y2 : 𝕎 (𝕎_code_spec s0 s1 s2) (r0, r1, r2, x0, x1))
+    : eq (𝕎 (𝕎_code_spec s0 s1 s2) (r0, r1, r2, x0, x1))
+        (𝕎_encode s0 s1 s2 r0 r1 r2 x0 x1
+           (𝕎_decode s0 s1 s2 r0 r1 r2 x0 x1 y2)) y2
+    ≔ match x0, x1, y2 [
+  | sup. a0 f0, sup. a1 f1, sup. a2 f2 ↦
+      eq.ap
+        ((b2
+         : 𝕎_code_spec s0 s1 s2 .B (r0, r1, r2, sup. a0 f0, sup. a1 f1) a2 .t)
+         → 𝕎 (𝕎_code_spec s0 s1 s2)
+             (𝕎_code_spec s0 s1 s2
+              .k (r0, r1, r2, sup. a0 f0, sup. a1 f1) a2 b2))
+        (𝕎 (𝕎_code_spec s0 s1 s2) (r0, r1, r2, x0, x1)) (f2 ↦ sup. a2 f2)
+        (b ↦
+         𝕎_encode s0 s1 s2 (s0 .k r0 a0 (b .0)) (s1 .k r1 a1 (b .1 .0))
+           (s2 .k r2 a2 (b .1 .1)) (f0 (b .0)) (f1 (b .1 .0))
+           (𝕎_decode s0 s1 s2 (s0 .k r0 a0 (b .0)) (s1 .k r1 a1 (b .1 .0))
+              (s2 .k r2 a2 (b .1 .1)) (f0 (b .0)) (f1 (b .1 .0)) (f2 b))) f2
+        (funext
+           (𝕎_code_spec s0 s1 s2
+            .B (r0, r1, r2, sup. a0 f0, sup. a1 f1) a2
+            .t)
+           (b ↦
+            𝕎 (𝕎_code_spec s0 s1 s2)
+              (𝕎_code_spec s0 s1 s2
+               .k (r0, r1, r2, sup. a0 f0, sup. a1 f1) a2 b))
+           (b ↦
+            𝕎_encode s0 s1 s2 (s0 .k r0 a0 (b .0)) (s1 .k r1 a1 (b .1 .0))
+              (s2 .k r2 a2 (b .1 .1)) (f0 (b .0)) (f1 (b .1 .0))
+              (𝕎_decode s0 s1 s2 (s0 .k r0 a0 (b .0)) (s1 .k r1 a1 (b .1 .0))
+                 (s2 .k r2 a2 (b .1 .1)) (f0 (b .0)) (f1 (b .1 .0)) (f2 b)))
+           f2
+           (b ↦
+            𝕎_encode_decode s0 s1 s2 (s0 .k r0 a0 (b .0))
+              (s1 .k r1 a1 (b .1 .0)) (s2 .k r2 a2 (b .1 .1)) (f0 (b .0))
+              (f1 (b .1 .0)) (f2 b)))]
+
+  def Id_𝕎_iso (s0 s1 : 𝕎_spec) (s2 : Br 𝕎_spec s0 s1) (r0 : s0 .R)
+    (r1 : s1 .R) (r2 : s2 .R r0 r1) (x0 : 𝕎 s0 r0) (x1 : 𝕎 s1 r1)
+    : 𝕎 (𝕎_code_spec s0 s1 s2) (r0, r1, r2, x0, x1) ≅ Br 𝕎 s2 r2 x0 x1
+    ≔ adjointify (𝕎 (𝕎_code_spec s0 s1 s2) (r0, r1, r2, x0, x1))
+        (Br 𝕎 s2 r2 x0 x1) (𝕎_decode s0 s1 s2 r0 r1 r2 x0 x1)
+        (𝕎_encode s0 s1 s2 r0 r1 r2 x0 x1)
+        (𝕎_encode_decode s0 s1 s2 r0 r1 r2 x0 x1)
+        (𝕎_decode_encode s0 s1 s2 r0 r1 r2 x0 x1)
+
+{` The same caveat holds here as in the proof that W-types are fibrant using the recursive characterization of Id-types. `}
+
+  def 𝕗𝕎 (s : 𝕎_spec) (r : s .R) : isFibrant (𝕎 s r) ≔ [
+  | .trr.p ↦ [
+    | sup. a0 f0 ↦
+        sup. (s.2 .A r.2 .f .trr a0)
+          (rel 𝕗Π (s.2 .B r.2 (s.2 .A r.2 .f .liftr a0) .t)
+               {b0 ↦ 𝕎 s.0 (s.0 .k r.0 a0 b0)}
+               {b1 ↦ 𝕎 s.1 (s.1 .k r.1 (s.2 .A r.2 .f .trr a0) b1)}
+               (b ⤇ rel 𝕎 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftr a0) b.2))
+               (s.2 .B r.2 (s.2 .A r.2 .f .liftr a0) .f)
+               {b0 ↦ 𝕗𝕎 s.0 (s.0 .k r.0 a0 b0)}
+               {b1 ↦ 𝕗𝕎 s.1 (s.1 .k r.1 (s.2 .A r.2 .f .trr a0) b1)}
+               (b ⤇ rel 𝕗𝕎 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftr a0) b.2))
+           .trr f0)]
+  | .trl.p ↦ [
+    | sup. a1 f1 ↦
+        sup. (s.2 .A r.2 .f .trl a1)
+          (rel 𝕗Π (s.2 .B r.2 (s.2 .A r.2 .f .liftl a1) .t)
+               {b0 ↦ 𝕎 s.0 (s.0 .k r.0 (s.2 .A r.2 .f .trl a1) b0)}
+               {b1 ↦ 𝕎 s.1 (s.1 .k r.1 a1 b1)}
+               (b ⤇ rel 𝕎 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftl a1) b.2))
+               (s.2 .B r.2 (s.2 .A r.2 .f .liftl a1) .f)
+               {b0 ↦ 𝕗𝕎 s.0 (s.0 .k r.0 (s.2 .A r.2 .f .trl a1) b0)}
+               {b1 ↦ 𝕗𝕎 s.1 (s.1 .k r.1 a1 b1)}
+               (b ⤇ rel 𝕗𝕎 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftl a1) b.2))
+           .trl f1)]
+  | .liftr.p ↦ [
+    | sup. a0 f0 ↦
+        sup. (s.2 .A r.2 .f .liftr a0)
+          (rel 𝕗Π (s.2 .B r.2 (s.2 .A r.2 .f .liftr a0) .t)
+               {b0 ↦ 𝕎 s.0 (s.0 .k r.0 a0 b0)}
+               {b1 ↦ 𝕎 s.1 (s.1 .k r.1 (s.2 .A r.2 .f .trr a0) b1)}
+               (b ⤇ rel 𝕎 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftr a0) b.2))
+               (s.2 .B r.2 (s.2 .A r.2 .f .liftr a0) .f)
+               {b0 ↦ 𝕗𝕎 s.0 (s.0 .k r.0 a0 b0)}
+               {b1 ↦ 𝕗𝕎 s.1 (s.1 .k r.1 (s.2 .A r.2 .f .trr a0) b1)}
+               (b ⤇ rel 𝕗𝕎 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftr a0) b.2))
+           .liftr f0)]
+  | .liftl.p ↦ [
+    | sup. a1 f1 ↦
+        sup. (s.2 .A r.2 .f .liftl a1)
+          (rel 𝕗Π (s.2 .B r.2 (s.2 .A r.2 .f .liftl a1) .t)
+               {b0 ↦ 𝕎 s.0 (s.0 .k r.0 (s.2 .A r.2 .f .trl a1) b0)}
+               {b1 ↦ 𝕎 s.1 (s.1 .k r.1 a1 b1)}
+               (b ⤇ rel 𝕎 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftl a1) b.2))
+               (s.2 .B r.2 (s.2 .A r.2 .f .liftl a1) .f)
+               {b0 ↦ 𝕗𝕎 s.0 (s.0 .k r.0 (s.2 .A r.2 .f .trl a1) b0)}
+               {b1 ↦ 𝕗𝕎 s.1 (s.1 .k r.1 a1 b1)}
+               (b ⤇ rel 𝕗𝕎 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftl a1) b.2))
+           .liftl f1)]
+  | .id.p ↦ x0 x1 ↦
+      𝕗eqv (𝕎 (𝕎_code_spec s.0 s.1 s.2) (r.0, r.1, r.2, x0, x1))
+        (Br 𝕎 s.2 r.2 x0 x1) (Id_𝕎_iso s.0 s.1 s.2 r.0 r.1 r.2 x0 x1)
+        (𝕗𝕎 (𝕎_code_spec s.0 s.1 s.2) (r.0, r.1, r.2, x0, x1))]
+
+end
+
 {` M-types `}
 
 {` The bridge types of an M-type are M-types with non-uniform parameters, so we need to treat those in generality. `}
