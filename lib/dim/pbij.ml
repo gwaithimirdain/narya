@@ -1,6 +1,7 @@
 open Util
 open Tlist
 open Signatures
+open Singleton
 open Deg
 open Insertion
 open Shuffle
@@ -101,6 +102,16 @@ let string_of_pbij : type n i r. (n, i, r) pbij -> string =
 
 let eq_of_zero_pbij : type i r. (D.zero, i, r) pbij -> (r, i) Eq.t = function
   | Pbij (Zero _, shuf) -> eq_of_shuffle_zero shuf
+
+type (_, _, _) singleton_pbij =
+  | Left : ('a, 'i, 'i) singleton_pbij
+  | Right : ('a, 'apred, 'i) insertion -> ('a, 'i, D.zero) singleton_pbij
+
+let singleton_pbij : type a i r. (a, i, r) pbij -> i is_singleton -> (a, i, r) singleton_pbij =
+ fun p One ->
+  match p with
+  | Pbij (_, Left Zero) -> Left
+  | Pbij (ins, Right Zero) -> Right ins
 
 type (_, _) pbij_between =
   | Pbij_between :

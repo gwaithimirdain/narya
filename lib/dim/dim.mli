@@ -761,6 +761,12 @@ val strings_of_pbij : ('n, 'i, 'r) pbij -> string list
 val string_of_pbij : ('n, 'i, 'r) pbij -> string
 val eq_of_zero_pbij : (D.zero, 'i, 'r) pbij -> ('r, 'i) Eq.t
 
+type (_, _, _) singleton_pbij =
+  | Left : ('a, 'i, 'i) singleton_pbij
+  | Right : ('a, 'apred, 'i) insertion -> ('a, 'i, D.zero) singleton_pbij
+
+val singleton_pbij : ('a, 'i, 'r) pbij -> 'i is_singleton -> ('a, 'i, 'r) singleton_pbij
+
 type (_, _) pbij_between =
   | Pbij_between :
       ('evaluation, 'intrinsic, 'remaining) pbij

@@ -70,8 +70,24 @@ let install trie =
       let rname = singleton_variables D.zero (Some "R") in
       let rbname = singleton_variables D.zero (Some "Rb") in
       let rvar = Var (Index (Later (Later Now), id_sface D.zero)) in
-      let avar = Var (Index (Now, zero)) in
-      let bvar = Var (Index (Now, one)) in
+      let xvar = Var (Index (Now, zero)) in
+      let yvar = Var (Index (Now, one)) in
+      let entry =
+        CodatafieldAbwd.Entry (Field.intern "unglue" D.zero, Lower (app (app rvar xvar) yvar)) in
+      let gtm =
+        app
+          (app
+             (app
+                (app (Const Fibrancy.glue)
+                   (Var (Index (Later (Later (Later Now)), id_sface D.zero))))
+                (Var (Index (Later (Later Now), id_sface D.zero))))
+             (Var (Index (Later Now, id_sface D.zero))))
+          (Var (Index (Now, id_sface D.zero))) in
+      let ctxlen =
+        Plusmap.OfDom.Word
+          (Plusmap.OfDom.Suc (Suc (Suc (Suc (Zero, D.zero), D.zero), D.zero), D.zero)) in
+      let (Fibrancy fibrancy) = Fibrancy.Codata.empty Hott.dim Hott.dim ctxlen Eta gtm in
+      (* TODO: Add a field *)
       let ctm =
         Lam
           ( aname,
@@ -88,12 +104,8 @@ let install trie =
                                opacity = `Transparent `Unlabeled;
                                dim = Hott.dim;
                                termctx = None;
-                               fields =
-                                 Snoc
-                                   ( Emp,
-                                     Entry
-                                       ( Field.intern "unglue" D.zero,
-                                         Lower (app (app rvar avar) bvar) ) );
+                               fields = Snoc (Emp, entry);
+                               fibrancy;
                              }) ) ) ) ) in
       Global.set Fibrancy.glue (`Defined ctm, `Parametric);
       (* Done! *)

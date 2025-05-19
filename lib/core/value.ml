@@ -90,8 +90,8 @@ module rec Value : sig
 
   and ('m, 'k, 'mk, 'e, 'n) inst_canonical = {
     canonical : ('e, 'n) canonical;
-    tyargs : ('m, 'k, 'mk, normal) TubeOf.t;
     ins : ('mk, 'e, 'n) insertion;
+    tyargs : ('m, 'k, 'mk, normal) TubeOf.t;
     fields : ('mk * potential * no_eta) StructfieldAbwd.t;
   }
 
@@ -244,10 +244,11 @@ end = struct
 
   and ('m, 'k, 'mk, 'e, 'n) inst_canonical = {
     canonical : ('e, 'n) canonical;
-    tyargs : ('m, 'k, 'mk, normal) TubeOf.t;
-    (* An insertion that relates its intrinsic dimension (such as for Gel) to the dimension it was evaluated at. *)
+    (* An insertion that combines its intrinsic dimension n (such as for Gel) with the dimension e it was evaluated at, producing a total dimension mk. *)
     ins : ('mk, 'e, 'n) insertion;
-    (* Fibrancy fields *)
+    (* Instantiation arguments for that total dimension. *)
+    tyargs : ('m, 'k, 'mk, normal) TubeOf.t;
+    (* Fibrancy fields, also parametrized by that total dimension. *)
     fields : ('mk * potential * no_eta) StructfieldAbwd.t;
   }
 
@@ -475,7 +476,7 @@ let rec eval_structfield : type m n mn a status i et.
   match fld with
   | Lower (tm, l) -> Lower (lazy_eval env tm, l)
   | Higher terms -> Higher (lazy (eval_higher_structfield env m m_n mn terms))
-  | LazyHigher (lazy terms) -> Higher (lazy (eval_higher_structfield env m m_n mn terms))
+  | LazyHigher terms -> Higher (lazy (eval_higher_structfield env m m_n mn (Lazy.force terms)))
 
 and eval_higher_structfield : type m n mn a i.
     (m, a) env ->

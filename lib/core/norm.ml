@@ -547,14 +547,20 @@ and field : type n k nk s. s value -> k Field.t -> (nk, n, k) insertion -> s eva
  fun tm fld fldins ->
   match view_term tm with
   | Struct { fields; ins = structins; energy; eta = _ } -> (
-      match is_id_ins structins with
-      | Some _ -> struct_field "struct" energy fields fld fldins
-      | None -> fatal (Anomaly "nonidentity insertion when computing field of struct"))
+      match (is_id_ins structins, D.compare (cod_left_ins structins) (dom_ins fldins)) with
+      | Some _, Eq -> struct_field "struct" energy fields fld fldins
+      | Some _, Neq ->
+          fatal (Dimension_mismatch ("field of struct", cod_left_ins structins, dom_ins fldins))
+      | None, _ -> fatal (Anomaly "nonidentity insertion when computing field of struct"))
   (* A canonical type can have fibrancy fields. *)
-  | Canonical { fields; tyargs; _ } ->
+  | Canonical { fields; tyargs; ins = _canins; _ } -> (
       let _, _, two = Hott.faces () <|> Anomaly "HOTT not set" in
+      (* TODO: Do something with that insertion, in the case of glue. *)
       let fields = inst_fibrancy_fields fields tyargs two in
-      struct_field "canonical" Potential fields fld fldins
+      match D.compare (TubeOf.uninst tyargs) (dom_ins fldins) with
+      | Neq ->
+          fatal (Dimension_mismatch ("field of canonical", TubeOf.uninst tyargs, dom_ins fldins))
+      | Eq -> struct_field "canonical" Potential fields fld fldins)
   | viewed_tm -> (
       (* We push the permutation from the insertion inside. *)
       let n, k = (cod_left_ins fldins, cod_right_ins fldins) in
@@ -587,27 +593,23 @@ and field : type n k nk s. s value -> k Field.t -> (nk, n, k) insertion -> s eva
           fatal ~severity:Asai.Diagnostic.Bug
             (No_such_field (`Other (Dump.Val tm), `Ins (fld, fldins))))
 
-and struct_field : type p s et n k nk.
+and struct_field : type s et n k nk.
     string ->
     s energy ->
-    (p * s * et) StructfieldAbwd.t ->
+    (nk * s * et) StructfieldAbwd.t ->
     k Field.t ->
     (nk, n, k) insertion ->
     s evaluation =
  fun err energy fields fld fldins ->
   match StructfieldAbwd.find_opt fields fld with
   | Found (Lower (v, _)) -> force_eval v
-  | Found (Higher (lazy { vals; intrinsic; deg; _ })) -> (
-      match
-        (D.compare (dom_deg deg) (dom_ins fldins), D.compare intrinsic (cod_right_ins fldins))
-      with
-      | Eq, Eq -> (
+  | Found (Higher (lazy { vals; intrinsic; _ })) -> (
+      match D.compare intrinsic (cod_right_ins fldins) with
+      | Eq -> (
           match InsmapOf.find fldins vals with
           | Some v -> force_eval v
           | None -> fatal (Anomaly (err ^ " field value unset")))
-      | Neq, _ ->
-          fatal (Dimension_mismatch (err ^ " field evaluation", dom_deg deg, dom_ins fldins))
-      | _, Neq ->
+      | Neq ->
           fatal (Dimension_mismatch (err ^ " field intrinsic", intrinsic, cod_right_ins fldins)))
   | _ -> (
       match energy with
@@ -635,7 +637,6 @@ and tyof_codatafield : type m n mn a k r s i et.
     kinetic value =
  fun tm fldname fldty env tyargs m mn ~shuf fldins ->
   (* The type of the field projection comes from the type associated to that field name in general, evaluated at the stored environment extended by the term itself and its boundaries. *)
-  Reporter.trace "tyof_codatafield" @@ fun () ->
   match fldty with
   | Term.Codatafield.Lower fldty -> tyof_lower_codatafield tm fldname fldty env tyargs m mn
   | Term.Codatafield.Higher (ic0, fldty) ->
@@ -690,7 +691,6 @@ and tyof_higher_codatafield : type c n h s r i ic.
     (* In the nontrivial case, the return value is also in the degenerated context. *)
     kinetic value =
  fun tm fldname codataenv tyargs fldins ~shuf ic0 fldty ->
-  Reporter.trace "tyof_higher_codatafield" @@ fun () ->
   let n = dom_ins fldins in
   let s = cod_left_ins fldins in
   let h =
@@ -732,7 +732,6 @@ and tyof_higher_codatafield : type c n h s r i ic.
   let insttm = eval_term env fldty in
   (* Since the result is s-dimensional, it has to be instantiated at a full s-tube. *)
   let instargs =
-    Reporter.trace "instantiating" @@ fun () ->
     TubeOf.build D.zero (D.zero_plus s)
       {
         build =
@@ -776,7 +775,6 @@ and tyof_field : type m h s r i c.
     match shuf with
     | Trivial -> `Ins (fld, fldins)
     | Nontrivial { shuffle; _ } -> `Pbij (fld, Pbij (fldins, shuffle)) in
-  Reporter.trace "tyof_field" @@ fun () ->
   let severity = Asai.Diagnostic.Bug in
   match view_type ty "tyof_field" with
   | Canonical
@@ -828,7 +826,9 @@ and tyof_field_giventype : type m n mn h s r i c et a k.
   let m = dim_env env in
   (* Note that n is the Gel dimension while m is the evaluation dimension.  So we need an m+n tube of type arguments, but the insertion labeling the field being accessed has only m as its evaluation dimension. *)
   match D.compare m (dom_ins fldins) with
-  | Neq -> fatal ~severity (Dimension_mismatch ("tyof_field evaluation", m, dom_ins fldins))
+  | Neq ->
+      fatal ~severity
+        (Dimension_mismatch ("tyof_field evaluation " ^ Field.to_string fld, m, dom_ins fldins))
   | Eq -> (
       match Term.CodatafieldAbwd.find_opt fields fld with
       | Found fldty ->
@@ -975,8 +975,9 @@ and eval_canonical : type m a. (m, a) env -> a Term.canonical -> potential evalu
         | None -> Bwd.Emp
         | Some () -> fatal (Unimplemented "fibrancy of datatypes") in
       Val (Canonical { canonical; tyargs; ins = ins_zero dim; fields })
-  | Codata { eta; opacity; dim; termctx; fields } ->
+  | Codata { eta; opacity; dim; termctx; fields; fibrancy } ->
       eval_codata env eta opacity dim (Lazy.from_val termctx) fields
+        (Fibrancy.Codata.finish fibrancy)
 
 (* We split out this subroutine so it can be called from Check.with_codata_so_far and a lazy termctx.  *)
 and eval_codata : type m a c n et.
@@ -986,18 +987,16 @@ and eval_codata : type m a c n et.
     n D.t ->
     (c, (a, n) snoc) termctx option Lazy.t ->
     (a * n * et) CodatafieldAbwd.t ->
+    (n * a * potential * no_eta) Term.StructfieldAbwd.t ->
     potential evaluation =
- fun env eta opacity n termctx fields ->
+ fun env eta opacity n termctx fields fibrancy_fields ->
   let m = dim_env env in
   let (Plus (type mn) (m_n : (m, n, mn) D.plus)) = D.plus n in
   let mn = D.plus_out m m_n in
   let ins = id_ins m m_n in
   let canonical = Codata { eta; opacity; env; termctx; fields } in
   let tyargs = TubeOf.empty mn in
-  let fields =
-    match Lazy.force (Fibrancy.codata fields) with
-    | None -> Bwd.Emp
-    | Some fields -> eval_structfield_abwd env m m_n mn fields in
+  let fields = eval_structfield_abwd env m m_n mn fibrancy_fields in
   Val (Canonical { canonical; tyargs; ins; fields })
 
 and eval_term : type m b. (m, b) env -> (b, kinetic) term -> kinetic value =
@@ -1192,26 +1191,32 @@ and inst_fibrancy_fields : type m n mn.
       let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.plus_zero (TubeOf.uninst tyargs)) in
       fields
   | Pos n -> (
+      let m = TubeOf.uninst tyargs in
+      let m_n1 = TubeOf.plus tyargs in
       let (Is_suc (n, n_1, one)) = suc_pos n in
-      let (Plus m_n) = D.plus n in
-      let middle, outer = TubeOf.split m_n n_1 tyargs in
-      (* TODO: Is it always correct to use the identity fldins? *)
-      let (Plus mn1k) = D.plus Hott.dim in
-      let fldins = id_ins (TubeOf.inst tyargs) mn1k in
-      let idfld = struct_field "fibrancy" Potential fields Fibrancy.fid fldins in
-      let (Snoc (Snoc (Emp, xcube), ycube)) = TubeOf.to_cube_bwv one l outer in
-      match
-        app_eval_apps idfld
-          (Arg (Arg (Emp, xcube, ins_zero (CubeOf.dim xcube)), ycube, ins_zero (CubeOf.dim ycube)))
-      with
-      | Val (Struct { fields; ins; energy = Potential; eta = Noeta }) -> (
-          match (is_id_ins ins, D.compare (cod_left_ins ins) (TubeOf.out middle)) with
-          | Some _, Eq -> inst_fibrancy_fields fields middle l
-          | Some _, Neq ->
-              fatal (Dimension_mismatch ("inst_fibrancy", cod_left_ins ins, TubeOf.out middle))
-          | None, _ -> fatal (Anomaly "nonidentity insertion on evaluation of fibrancy id"))
-      | Unrealized -> Emp
-      | _ -> fatal (Anomaly "fibrancy id didn't yield a struct"))
+      match D.compare (D.plus_right n_1) Hott.dim with
+      | Neq -> fatal (Dimension_mismatch ("inst_fibrancy_fields", D.plus_right n_1, Hott.dim))
+      | Eq -> (
+          let (Plus m_n) = D.plus n in
+          let middle, outer = TubeOf.split m_n n_1 tyargs in
+          (* TODO: Is it always correct to use the identity fldins? *)
+          let mn_1 = D.plus_assocl m_n n_1 m_n1 in
+          let fldins = id_ins (D.plus_out m m_n) mn_1 in
+          let idfld = struct_field "fibrancy" Potential fields Fibrancy.fid fldins in
+          let (Snoc (Snoc (Emp, xcube), ycube)) = TubeOf.to_cube_bwv one l outer in
+          match
+            app_eval_apps idfld
+              (Arg
+                 (Arg (Emp, xcube, ins_zero (CubeOf.dim xcube)), ycube, ins_zero (CubeOf.dim ycube)))
+          with
+          | Val (Struct { fields; ins; energy = Potential; eta = Noeta }) -> (
+              match (is_id_ins ins, D.compare (cod_left_ins ins) (TubeOf.out middle)) with
+              | Some _, Eq -> inst_fibrancy_fields fields middle l
+              | Some _, Neq ->
+                  fatal (Dimension_mismatch ("inst_fibrancy", cod_left_ins ins, TubeOf.out middle))
+              | None, _ -> fatal (Anomaly "nonidentity insertion on evaluation of fibrancy id"))
+          | Unrealized -> Emp
+          | _ -> fatal (Anomaly "fibrancy id didn't yield a struct")))
 
 (* Given two families of values, the second intended to be the types of the other, annotate the former by instantiations of the latter to make them into normals.  Since we have to instantiate the types at the *normal* version of the terms, which is what we are computing, we also add the results to a hashtable as we create them so we can access them randomly later.  And since we have to do this sometimes with cubes and sometimes with tubes, we first define the content of the operation as a helper function. *)
 

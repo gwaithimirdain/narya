@@ -27,6 +27,11 @@ let printer : (printable -> PPrint.document) ref =
 
 let print pr = !printer pr
 
+let print_to_string pr =
+  let buf = Buffer.create 5 in
+  PPrint.ToBuffer.pretty 1.0 70 buf (!printer pr);
+  Buffer.contents buf
+
 (* Now the function that Asai carries around is basically just PPrint.ToFormatter.pretty.  It's important to know exactly what this does, although it's not described precisely in the PPrint documentation: it converts all newlines to pp_force_newline and all spaces to pp_print_space.  Note that the latter is a break hint, allowing Format to break the line!  This is not what we want; the spaces in PPrint's output are supposed to be spaces, and only the newlines in PPrint's output should be newlines.  I think the only solution, short of modifying PPrint, is to surround it in a Format hbox, which causes all break hints to never split the line.  It does still respect force_newline, of course, so this should do what we want.  *)
 let pp_printed ppf x =
   pp_open_hbox ppf ();

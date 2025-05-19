@@ -58,7 +58,27 @@ and canonical : type a. (Compunit.t -> Compunit.t) -> a canonical -> a canonical
   match can with
   | Data { indices; constrs; discrete } ->
       Data { indices; constrs = Abwd.map (dataconstr f) constrs; discrete }
-  | Codata { eta; opacity; dim; termctx = tc; fields } ->
+  | Codata { eta; opacity; dim; termctx = tc; fields; fibrancy = fib } ->
+      let fibfields =
+        Mbwd.map
+          (fun (CodatafieldAbwd.Entry (fld, x)) -> CodatafieldAbwd.Entry (fld, codatafield f x))
+          fib.fields in
+      let trr =
+        Mbwd.map
+          (fun (StructfieldAbwd.Entry (fld, x)) -> StructfieldAbwd.Entry (fld, structfield f x))
+          fib.trr in
+      let liftr =
+        Mbwd.map
+          (fun (StructfieldAbwd.Entry (fld, x)) -> StructfieldAbwd.Entry (fld, structfield f x))
+          fib.liftr in
+      let trl =
+        Mbwd.map
+          (fun (StructfieldAbwd.Entry (fld, x)) -> StructfieldAbwd.Entry (fld, structfield f x))
+          fib.trl in
+      let liftl =
+        Mbwd.map
+          (fun (StructfieldAbwd.Entry (fld, x)) -> StructfieldAbwd.Entry (fld, structfield f x))
+          fib.liftl in
       Codata
         {
           eta;
@@ -69,6 +89,7 @@ and canonical : type a. (Compunit.t -> Compunit.t) -> a canonical -> a canonical
             Mbwd.map
               (fun (CodatafieldAbwd.Entry (fld, x)) -> CodatafieldAbwd.Entry (fld, codatafield f x))
               fields;
+          fibrancy = { fib with ty = term f fib.ty; fields = fibfields; trr; trl; liftr; liftl };
         }
 
 and structfield : type n a s i et.

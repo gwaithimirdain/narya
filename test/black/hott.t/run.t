@@ -772,3 +772,213 @@
          .trl.1 (f21 (A22 (A02 .liftr.1 a00) (A12 .liftr.1 a10) .trr.1 a20)))
         (f21 a21)
   
+
+  $ narya -hott sigma.ny
+  refl Σ A₂ B₂ .trr.1 u₀
+    : Σ A₁ B₁
+  
+  A₂ .trr.1 (u₀ .fst)
+    : A₁
+  
+  A₂ .trr.1 (u₀ .fst)
+    : A₁
+  
+  B₂ (A₂ .liftr.1 (u₀ .fst)) .trr.1 (u₀ .snd)
+    : B₁ (A₂ .trr.1 (u₀ .fst))
+  
+  B₂ (A₂ .liftr.1 (u₀ .fst)) .trr.1 (u₀ .snd)
+    : B₁ (A₂ .trr.1 (u₀ .fst))
+  
+  refl Σ A₂ B₂ .liftr.1 u₀
+    : refl Σ A₂ B₂ u₀ (refl Σ A₂ B₂ .trr.1 u₀)
+  
+  A₂ .liftr.1 (u₀ .fst)
+    : A₂ (u₀ .fst) (A₂ .trr.1 (u₀ .fst))
+  
+  A₂ .liftr.1 (u₀ .fst)
+    : A₂ (u₀ .fst) (A₂ .trr.1 (u₀ .fst))
+  
+  B₂ (A₂ .liftr.1 (u₀ .fst)) .liftr.1 (u₀ .snd)
+    : B₂ (A₂ .liftr.1 (u₀ .fst)) (u₀ .snd)
+        (B₂ (A₂ .liftr.1 (u₀ .fst)) .trr.1 (u₀ .snd))
+  
+  B₂ (A₂ .liftr.1 (u₀ .fst)) .liftr.1 (u₀ .snd)
+    : B₂ (A₂ .liftr.1 (u₀ .fst)) (u₀ .snd)
+        (B₂ (A₂ .liftr.1 (u₀ .fst)) .trr.1 (u₀ .snd))
+  
+  refl Σ A₂ B₂ .trl.1 u₁
+    : Σ A₀ B₀
+  
+  A₂ .trl.1 (u₁ .fst)
+    : A₀
+  
+  B₂ (A₂ .liftl.1 (u₁ .fst)) .trl.1 (u₁ .snd)
+    : B₀ (A₂ .trl.1 (u₁ .fst))
+  
+  refl Σ A₂ B₂ .liftl.1 u₁
+    : refl Σ A₂ B₂ (refl Σ A₂ B₂ .trl.1 u₁) u₁
+  
+  A₂ .liftl.1 (u₁ .fst)
+    : A₂ (A₂ .trl.1 (u₁ .fst)) (u₁ .fst)
+  
+  B₂ (A₂ .liftl.1 (u₁ .fst)) .liftl.1 (u₁ .snd)
+    : B₂ (A₂ .liftl.1 (u₁ .fst)) (B₂ (A₂ .liftl.1 (u₁ .fst)) .trl.1 (u₁ .snd))
+        (u₁ .snd)
+  
+
+  $ narya -hott sigma2.ny
+  A22 .trr.1 (u02 .fst)
+    : A12 (A20 .trr.1 (u00 .fst)) (A21 .trr.1 (u01 .fst))
+  
+  sym A22 .trr.1 (u20 .fst)
+    : A21 (A02 .trr.1 (u00 .fst)) (A12 .trr.1 (u10 .fst))
+  
+  Σ⁽ᵉᵉ⁾ A22 B22 u02 u12 .trr.1 u20
+    : refl Σ A21 B21 u01 u11
+  
+  A22 (u02 .fst) (u12 .fst) .trr.1 (u20 .fst)
+    : A21 (u01 .fst) (u11 .fst)
+  
+  B22 (A22 (u02 .fst) (u12 .fst) .liftr.1 (u20 .fst)) (u02 .snd) (u12 .snd)
+    .trr.1 (u20 .snd)
+    : B21 (A22 (u02 .fst) (u12 .fst) .trr.1 (u20 .fst)) (u01 .snd) (u11 .snd)
+  
+  Σ⁽ᵉᵉ⁾ A22 B22 u02 u12 .liftr.1 u20
+    : Σ⁽ᵉᵉ⁾ A22 B22 u02 u12 u20 (Σ⁽ᵉᵉ⁾ A22 B22 u02 u12 .trr.1 u20)
+  
+  A22 (u02 .fst) (u12 .fst) .liftr.1 (u20 .fst)
+    : A22 (u02 .fst) (u12 .fst) (u20 .fst)
+        (A22 (u02 .fst) (u12 .fst) .trr.1 (u20 .fst))
+  
+  B22 (A22 (u02 .fst) (u12 .fst) .liftr.1 (u20 .fst)) (u02 .snd) (u12 .snd)
+    .liftr.1 (u20 .snd)
+    : B22 (A22 (u02 .fst) (u12 .fst) .liftr.1 (u20 .fst)) (u02 .snd) (u12 .snd)
+        (u20 .snd)
+        (B22 (A22 (u02 .fst) (u12 .fst) .liftr.1 (u20 .fst)) (u02 .snd)
+             (u12 .snd)
+         .trr.1 (u20 .snd))
+  
+  Σ⁽ᵉᵉ⁾ A22 B22 u02 u12 .trl.1 u21
+    : refl Σ A20 B20 u00 u10
+  
+  A22 (u02 .fst) (u12 .fst) .trl.1 (u21 .fst)
+    : A20 (u00 .fst) (u10 .fst)
+  
+  B22 (A22 (u02 .fst) (u12 .fst) .liftl.1 (u21 .fst)) (u02 .snd) (u12 .snd)
+    .trl.1 (u21 .snd)
+    : B20 (A22 (u02 .fst) (u12 .fst) .trl.1 (u21 .fst)) (u00 .snd) (u10 .snd)
+  
+  Σ⁽ᵉᵉ⁾ A22 B22 u02 u12 .liftl.1 u21
+    : Σ⁽ᵉᵉ⁾ A22 B22 u02 u12 (Σ⁽ᵉᵉ⁾ A22 B22 u02 u12 .trl.1 u21) u21
+  
+  A22 (u02 .fst) (u12 .fst) .liftl.1 (u21 .fst)
+    : A22 (u02 .fst) (u12 .fst) (A22 (u02 .fst) (u12 .fst) .trl.1 (u21 .fst))
+        (u21 .fst)
+  
+  B22 (A22 (u02 .fst) (u12 .fst) .liftl.1 (u21 .fst)) (u02 .snd) (u12 .snd)
+    .liftl.1 (u21 .snd)
+    : B22 (A22 (u02 .fst) (u12 .fst) .liftl.1 (u21 .fst)) (u02 .snd) (u12 .snd)
+        (B22 (A22 (u02 .fst) (u12 .fst) .liftl.1 (u21 .fst)) (u02 .snd)
+             (u12 .snd)
+         .trl.1 (u21 .snd)) (u21 .snd)
+  
+
+  $ narya -hott 3sigma.ny
+  refl Σ3 A₂ B₂ C₂ .trr.1 u₀
+    : Σ3 A₁ B₁ C₁
+  
+  A₂ .trr.1 (u₀ .fst)
+    : A₁
+  
+  B₂ (A₂ .liftr.1 (u₀ .fst)) .trr.1 (u₀ .snd)
+    : B₁ (A₂ .trr.1 (u₀ .fst))
+  
+  C₂ (A₂ .liftr.1 (u₀ .fst)) (B₂ (A₂ .liftr.1 (u₀ .fst)) .liftr.1 (u₀ .snd))
+    .trr.1 (u₀ .thd)
+    : C₁ (A₂ .trr.1 (u₀ .fst)) (B₂ (A₂ .liftr.1 (u₀ .fst)) .trr.1 (u₀ .snd))
+  
+  refl Σ3 A₂ B₂ C₂ .liftr.1 u₀
+    : refl Σ3 A₂ B₂ C₂ u₀ (refl Σ3 A₂ B₂ C₂ .trr.1 u₀)
+  
+  A₂ .liftr.1 (u₀ .fst)
+    : A₂ (u₀ .fst) (A₂ .trr.1 (u₀ .fst))
+  
+  B₂ (A₂ .liftr.1 (u₀ .fst)) .liftr.1 (u₀ .snd)
+    : B₂ (A₂ .liftr.1 (u₀ .fst)) (u₀ .snd)
+        (B₂ (A₂ .liftr.1 (u₀ .fst)) .trr.1 (u₀ .snd))
+  
+  C₂ (A₂ .liftr.1 (u₀ .fst)) (B₂ (A₂ .liftr.1 (u₀ .fst)) .liftr.1 (u₀ .snd))
+    .liftr.1 (u₀ .thd)
+    : C₂ (A₂ .liftr.1 (u₀ .fst))
+        (B₂ (A₂ .liftr.1 (u₀ .fst)) .liftr.1 (u₀ .snd)) (u₀ .thd)
+        (C₂ (A₂ .liftr.1 (u₀ .fst))
+             (B₂ (A₂ .liftr.1 (u₀ .fst)) .liftr.1 (u₀ .snd))
+         .trr.1 (u₀ .thd))
+  
+
+  $ narya -hott prod.ny
+  refl prod A₂ B₂ .trr.1 u₀
+    : prod A₁ B₁
+  
+  A₂ .trr.1 (u₀ .fst)
+    : A₁
+  
+  B₂ .trr.1 (u₀ .snd)
+    : B₁
+  
+  refl prod A₂ B₂ .liftr.1 u₀
+    : refl prod A₂ B₂ u₀ (refl prod A₂ B₂ .trr.1 u₀)
+  
+  A₂ .liftr.1 (u₀ .fst)
+    : A₂ (u₀ .fst) (A₂ .trr.1 (u₀ .fst))
+  
+  B₂ .liftr.1 (u₀ .snd)
+    : B₂ (u₀ .snd) (B₂ .trr.1 (u₀ .snd))
+  
+
+  $ narya -hott m.ny
+  refl M A₂ B₂ .trr.1 u₀
+    : M A₁ B₁
+  
+  A₂ .trr.1 (u₀ .recv)
+    : A₁
+  
+  refl M A₂ B₂ .trr.1 (u₀ .send (B₂ (A₂ .liftr.1 (u₀ .recv)) .trl.1 b₁))
+    : M A₁ B₁
+  
+  refl M A₂ B₂ .liftr.1 u₀
+    : refl M A₂ B₂ u₀ (refl M A₂ B₂ .trr.1 u₀)
+  
+  A₂ .liftr.1 (u₀ .recv)
+    : A₂ (u₀ .recv) (A₂ .trr.1 (u₀ .recv))
+  
+  M⁽ᵉᵉ⁾ A₂⁽¹ᵉ⁾ B₂⁽¹ᵉ⁾
+      (refl u₀
+       .send
+         (B₂⁽ᵉ¹⁾ (sym (refl A₂ .liftr.1 (refl u₀ .recv))) b₂
+              (B₂ (A₂ .liftr.1 (u₀ .recv)) .liftl.1 b₁)
+          .trl.1 (refl b₁)))
+      (M⁽ᵉᵉ⁾ A₂⁽¹ᵉ⁾ B₂⁽¹ᵉ⁾
+       .trr.1
+         (refl u₀
+          .send (B₂⁽¹ᵉ⁾ (refl A₂ .liftr.1 (refl u₀ .recv)) .trl.1 (refl b₁))))
+    .trl.1
+      (refl M A₂ B₂ .liftr.1 (u₀ .send (B₂ (A₂ .liftr.1 (u₀ .recv)) .trl.1 b₁)))
+    : refl M A₂ B₂ (u₀ .send b₀)
+        (refl M A₂ B₂ .trr.1 (u₀ .send (B₂ (A₂ .liftr.1 (u₀ .recv)) .trl.1 b₁)))
+  
+  M⁽ᵉᵉ⁾ A₂⁽¹ᵉ⁾ B₂⁽¹ᵉ⁾
+      (refl u₀
+       .send
+         (B₂⁽ᵉ¹⁾ (sym (refl A₂ .liftr.1 (refl u₀ .recv))) b₂
+              (B₂ (A₂ .liftr.1 (u₀ .recv)) .liftl.1 b₁)
+          .trl.1 (refl b₁)))
+      (M⁽ᵉᵉ⁾ A₂⁽¹ᵉ⁾ B₂⁽¹ᵉ⁾
+       .trr.1
+         (refl u₀
+          .send (B₂⁽¹ᵉ⁾ (refl A₂ .liftr.1 (refl u₀ .recv)) .trl.1 (refl b₁))))
+    .trl.1
+      (refl M A₂ B₂ .liftr.1 (u₀ .send (B₂ (A₂ .liftr.1 (u₀ .recv)) .trl.1 b₁)))
+    : refl M A₂ B₂ (u₀ .send b₀)
+        (refl M A₂ B₂ .trr.1 (u₀ .send (B₂ (A₂ .liftr.1 (u₀ .recv)) .trl.1 b₁)))
+  

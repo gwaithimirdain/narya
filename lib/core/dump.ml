@@ -39,10 +39,10 @@ module F = struct
     TubeOf.miter
       {
         it =
-          (fun _ [ x ] ->
+          (fun s [ x ] ->
             if !started then fprintf ppf ", ";
             started := true;
-            pp ppf x);
+            fprintf ppf "%s ≔ %a" (string_of_sface (sface_of_tface s)) pp x);
       }
       [ args ];
     fprintf ppf ")"
@@ -77,9 +77,9 @@ module F = struct
         fprintf ppf "Constr (%s, %a, (%a))" (Constr.to_string c) dim d
           (pp_print_list ~pp_sep:(fun ppf () -> pp_print_string ppf ", ") value)
           (List.map CubeOf.find_top args)
-    | Canonical _ -> fprintf ppf "Canonical ?"
+    | Canonical ic -> fprintf ppf "Canonical %a" inst_canonical ic
 
-  and value : type s. formatter -> s value -> unit = fun ppf v -> dvalue 2 ppf v
+  and value : type s. formatter -> s value -> unit = fun ppf v -> dvalue 0 ppf v
   and normal : formatter -> normal -> unit = fun ppf x -> value ppf x.tm
 
   and fields : type s n et.
@@ -114,8 +114,14 @@ module F = struct
         (View.force_eval v) l
     else
       match !v with
-      | Ready v -> fprintf ppf "(%s%s, %a, %s)" (Field.to_string f) p (evaluation (depth - 1)) v l
-      | _ -> fprintf ppf "(%s%s, (Deferred), %s)" (Field.to_string f) p l
+      | Ready v -> fprintf ppf "(%s%s, %a, %s)" (Field.to_string f) p (evaluation 0) v l
+      | Deferred _ -> fprintf ppf "(%s%s, (Deferred), %s)" (Field.to_string f) p l
+      | Deferred_eval (e, tm, ins, args) ->
+          fprintf ppf "(%s%s, Deferred_eval (?(%s), %a, %s(%s), %a), %s)"
+            (string_of_dim (dim_env e))
+            (Field.to_string f) p term tm (string_of_ins ins)
+            (string_of_dim (dom_ins ins))
+            apps args l
 
   and lazy_eval : type s. int -> formatter -> s lazy_eval -> unit =
    fun depth ppf v ->
@@ -137,17 +143,23 @@ module F = struct
    fun ppf args ->
     match args with
     | Emp -> fprintf ppf "Emp"
-    | Arg (rest, xs, _) ->
+    | Arg (rest, xs, _) -> fprintf ppf "%a <: %a" apps rest (cubeof normal) xs
+    | Field (rest, fld, plus, ins) -> (
+        (* 'ins' is an *outer* insertion, not the field insertion.  The field insertion has been pushed inside and become the 'plus'. *)
         apps ppf rest;
         fprintf ppf " <: ";
-        value ppf (CubeOf.find_top xs).tm
-    | Field (rest, fld, d, _) -> (
-        apps ppf rest;
-        fprintf ppf " <: ";
-        let d = D.plus_right d in
-        match D.compare_zero d with
-        | Zero -> fprintf ppf ".%s" (Field.to_string fld)
-        | Pos _ -> fprintf ppf ".%s.%s" (Field.to_string fld) (string_of_dim d))
+        (* Intrinsic dimension *)
+        let i = D.plus_right plus in
+        (* result dimension *)
+        let t = cod_left_ins ins in
+        (* Total use dimension *)
+        let n = D.plus_out t plus in
+        match D.compare_zero i with
+        | Zero -> fprintf ppf ".%s(%s)" (Field.to_string fld) (string_of_dim n)
+        | Pos _ ->
+            fprintf ppf ".%s%s(%s)" (Field.to_string fld)
+              (string_of_ins (ins_of_plus t plus))
+              (string_of_dim n))
     | Inst (rest, d, args) ->
         apps ppf rest;
         fprintf ppf " <: ";
@@ -161,7 +173,7 @@ module F = struct
     | Var { level = l; _ } -> level ppf l
     | Const { name; ins } ->
         let (To p) = deg_of_ins ins in
-        fprintf ppf "Const (%a, %s)" pp_printed (print (PConstant name)) (string_of_deg p)
+        fprintf ppf "Const (%s, %s)" (print_to_string (PConstant name)) (string_of_deg p)
     | Meta { meta; env = _; ins } ->
         let (To p) = deg_of_ins ins in
         fprintf ppf "Meta (%s, ?, %s)" (Meta.name meta) (string_of_deg p)
@@ -174,6 +186,18 @@ module F = struct
   and binder : type b s. formatter -> (b, s) binder -> unit =
    fun ppf (Bind { env = e; ins = i; body }) ->
     fprintf ppf "Bind (%a, %s, %a)" env e (string_of_ins i) term body
+
+  and inst_canonical : type m k mk e n. formatter -> (m, k, mk, e, n) inst_canonical -> unit =
+   fun ppf { canonical; tyargs; ins; fields = _ } ->
+    fprintf ppf "(%s, %a, (evdim=%s)%s, ?)"
+      (match canonical with
+      | UU _ -> "UU ?"
+      | Pi (_, _, _) -> "Pi ?"
+      | Data _ -> "Data ?"
+      | Codata _ -> "Codata ?")
+      (tubeof normal) tyargs
+      (string_of_dim (cod_left_ins ins))
+      (string_of_ins ins)
 
   and denv : type b n. int -> formatter -> (n, b) Value.env -> unit =
    fun depth ppf e ->
@@ -193,11 +217,12 @@ module F = struct
    fun ppf tm ->
     match tm with
     | Var (Index (x, fa)) -> fprintf ppf "IVar %d.%s" (Tbwd.int_of_insert x) (string_of_sface fa)
-    | Const c -> fprintf ppf "Const %a" pp_printed (print (PConstant c))
-    | Meta (v, _) -> fprintf ppf "Meta %a" pp_printed (print (PMeta v))
-    | MetaEnv (v, _) -> fprintf ppf "MetaEnv (%a,?)" pp_printed (print (PMeta v))
+    | Const c -> fprintf ppf "Const %s" (print_to_string (PConstant c))
+    | Meta (v, _) -> fprintf ppf "Meta %s" (print_to_string (PMeta v))
+    | MetaEnv (v, _) -> fprintf ppf "MetaEnv (%s,?)" (print_to_string (PMeta v))
     | Field (tm, fld, ins) ->
-        fprintf ppf "Field (%a, %s%s)" term tm (Field.to_string fld) (string_of_ins ins)
+        fprintf ppf "Field (%a, %s%s(%s))" term tm (Field.to_string fld) (string_of_ins ins)
+          (string_of_dim (dom_ins ins))
     | UU n -> fprintf ppf "UU %a" dim n
     | Inst (tm, args) -> fprintf ppf "Inst (%a, %a)" term tm (tubeof term) args
     | Pi (x, doms, cods) ->

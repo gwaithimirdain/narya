@@ -123,8 +123,24 @@ module rec Term : sig
         dim : 'n D.t;
         termctx : ('c, ('a, 'n) snoc) termctx option;
         fields : ('a * 'n * 'et) CodatafieldAbwd.t;
+        fibrancy : ('n, 'n, 'nh, 'a, 'ha, 'et) codata_fibrancy;
       }
         -> 'a canonical
+
+  and ('g, 'n, 'nh, 'b, 'hb, 'et) codata_fibrancy = {
+    glue : 'g D.t;
+    dim : 'n D.t;
+    length : 'b Plusmap.OfDom.t;
+    plusmap : (Hott.dim, 'b, 'hb) Plusmap.t;
+    eta : (potential, 'et) eta;
+    ty : ('b, kinetic) term;
+    dimh : ('n, Hott.dim, 'nh) D.plus;
+    fields : ('b * 'g * 'et) CodatafieldAbwd.t;
+    trr : ('n * ('hb, D.zero) snoc * potential * 'et) StructfieldAbwd.t;
+    trl : ('n * ('hb, D.zero) snoc * potential * 'et) StructfieldAbwd.t;
+    liftr : ('nh * ('hb, D.zero) snoc * potential * 'et) StructfieldAbwd.t;
+    liftl : ('nh * ('hb, D.zero) snoc * potential * 'et) StructfieldAbwd.t;
+  }
 
   and (_, _) dataconstr =
     | Dataconstr : {
@@ -285,8 +301,31 @@ end = struct
         termctx : ('c, ('a, 'n) snoc) termctx option;
         (* A family of fields, each with a type that depends on one additional variable belonging to the codatatype itself (usually by way of its previous fields).  We retain the order of the fields by storing them in an Abwd rather than a Map so as to enable positional access as well as named access. *)
         fields : ('a * 'n * 'et) CodatafieldAbwd.t;
+        (* We partially compute the fibrancy fields at typechecking time, although we don't finish the computation until we need it.  Since the fibrancy fields include those of all the higher identity types, if we did all the computation eagerly it would be infinite, and if we made it Lazy in the naive way then it wouldn't be marshalable.  *)
+        fibrancy : ('n, 'n, 'nh, 'a, 'ha, 'et) codata_fibrancy;
       }
         -> 'a canonical
+
+  and ('g, 'n, 'nh, 'b, 'hb, 'et) codata_fibrancy = {
+    (* The original intrinsic gel/glue dimension *)
+    glue : 'g D.t;
+    (* The overall dimension.  Note that when it appears as a field of Codata, above, these two dimensions are the same.  However, as we apply the corecursive 'id' field in computing fibrancy of higher versions of a codatatype, the dimension n increases but the dimension g does not. *)
+    dim : 'n D.t;
+    length : 'b Plusmap.OfDom.t;
+    plusmap : (Hott.dim, 'b, 'hb) Plusmap.t;
+    eta : (potential, 'et) eta;
+    (* The codatatype itself. *)
+    ty : ('b, kinetic) term;
+    dimh : ('n, Hott.dim, 'nh) D.plus;
+    (* The fields.  We store them separately so that the fibrancy calculations will have them present. *)
+    fields : ('b * 'g * 'et) CodatafieldAbwd.t;
+    (* The fields of the struct that is the output of the transport and lifting operations. *)
+    trr : ('n * ('hb, D.zero) snoc * potential * 'et) StructfieldAbwd.t;
+    trl : ('n * ('hb, D.zero) snoc * potential * 'et) StructfieldAbwd.t;
+    (* These are one-higher-dimensional because the result of lifting lies in a degenerated version of the codatatype. *)
+    liftr : ('nh * ('hb, D.zero) snoc * potential * 'et) StructfieldAbwd.t;
+    liftl : ('nh * ('hb, D.zero) snoc * potential * 'et) StructfieldAbwd.t;
+  }
 
   (* A datatype constructor has a telescope of arguments and a list of index values depending on those arguments. *)
   and (_, _) dataconstr =
