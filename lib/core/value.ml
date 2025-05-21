@@ -93,6 +93,7 @@ module rec Value : sig
     ins : ('mk, 'e, 'n) insertion;
     tyargs : ('m, 'k, 'mk, normal) TubeOf.t;
     fields : ('mk * potential * no_eta) StructfieldAbwd.t;
+    mutable inst_fields : ('m * potential * no_eta) StructfieldAbwd.t option;
   }
 
   and _ evaluation =
@@ -248,8 +249,9 @@ end = struct
     ins : ('mk, 'e, 'n) insertion;
     (* Instantiation arguments for that total dimension. *)
     tyargs : ('m, 'k, 'mk, normal) TubeOf.t;
-    (* Fibrancy fields, also parametrized by that total dimension. *)
+    (* Original fibrancy fields for the total dimension, and computed fibrancy fields for the remaining uninstantiated dimensions. *)
     fields : ('mk * potential * no_eta) StructfieldAbwd.t;
+    mutable inst_fields : ('m * potential * no_eta) StructfieldAbwd.t option;
   }
 
   (* This is the result of evaluating a term with a given kind of energy.  Evaluating a kinetic term just produces a (kinetic) value, whereas evaluating a potential term might be a potential value (either a lambda waiting for more arguments, a struct waiting for more fields, or a canonical type partially or fully instantiated), or else the information that the case tree has reached a leaf and the resulting kinetic value, or else the information that the case tree is permanently stuck.  *)
@@ -537,8 +539,16 @@ let rec universe : type n. n D.t -> kinetic value =
     | None -> Bwd.Emp
     | Some fields -> eval_structfield_abwd (Emp n) n (D.plus_zero n) n fields in
   let value =
-    ready (Val (Canonical { canonical = UU n; tyargs = TubeOf.empty n; ins = ins_zero n; fields }))
-  in
+    ready
+      (Val
+         (Canonical
+            {
+              canonical = UU n;
+              tyargs = TubeOf.empty n;
+              ins = ins_zero n;
+              fields;
+              inst_fields = Some fields;
+            })) in
   Neu { head = UU n; args = Emp; value; ty = lazy (universe_ty n) }
 
 and universe_nf : type n. n D.t -> normal = fun n -> { tm = universe n; ty = universe_ty n }
@@ -562,7 +572,11 @@ and universe_ty : type n. n D.t -> kinetic value =
         | None -> Bwd.Emp
         | Some fields -> eval_structfield_abwd (Emp n) n (D.plus_zero n) n fields in
       let value =
-        ready (Val (Canonical { canonical = UU n; tyargs = args; ins = ins_zero n; fields })) in
+        ready
+          (Val
+             (Canonical
+                { canonical = UU n; tyargs = args; ins = ins_zero n; fields; inst_fields = None }))
+      in
       Neu { head = UU n; args = Inst (Emp, n', args); value; ty = lazy (universe D.zero) }
 
 type any_apps = Any : 'any apps -> any_apps

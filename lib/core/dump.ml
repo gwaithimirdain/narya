@@ -188,7 +188,7 @@ module F = struct
     fprintf ppf "Bind (%a, %s, %a)" env e (string_of_ins i) term body
 
   and inst_canonical : type m k mk e n. formatter -> (m, k, mk, e, n) inst_canonical -> unit =
-   fun ppf { canonical; tyargs; ins; fields = _ } ->
+   fun ppf { canonical; tyargs; ins; fields = _; inst_fields = _ } ->
     fprintf ppf "(%s, %a, (evdim=%s)%s, ?)"
       (match canonical with
       | UU _ -> "UU ?"
