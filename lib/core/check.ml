@@ -1677,12 +1677,12 @@ and with_codata_so_far : type a b n c et.
     | Emp ->
         (* We can always create a constant with the (0,0,0) insertion, even if its dimension is actually higher. *)
         let head = head_of_potential h in
+        let fibrancy_fields = Fibrancy.Codata.finish checked_fields fibrancy in
         let rec domvars () =
           let value =
             eval_codata (Ctx.env ctx) eta opacity dim
               (lazy (termctx ()))
-              checked_fields
-              (Fibrancy.Codata.finish checked_fields fibrancy) in
+              checked_fields fibrancy_fields in
           let prev_ety =
             Neu { head; args; value = ready value; ty = lazy (inst (universe dim) tyargs) } in
           snd
@@ -1716,33 +1716,31 @@ and check_codata : type a b n.
     Code.t Asai.Diagnostic.t Bwd.t ->
     has_higher_fields:unit option ->
     (b, potential) term =
- fun status ctx tyargs checked_fields fibrancy_fields raw_fields errs ~has_higher_fields ->
+ fun status ctx tyargs checked_fields fibrancy raw_fields errs ~has_higher_fields ->
   let dim = TubeOf.inst tyargs in
   match raw_fields with
   | [] -> (
       match errs with
       | Emp ->
-          with_codata_so_far status Noeta ctx `Opaque dim tyargs checked_fields fibrancy_fields
+          with_codata_so_far status Noeta ctx `Opaque dim tyargs checked_fields fibrancy
             ~has_higher_fields errs
           @@ fun _ codataterm -> codataterm
       | Snoc _ -> fatal (Accumulated ("check_codata", errs)))
   | (Wrap fld, Codatafield (x, rty)) :: raw_fields -> (
-      with_codata_so_far status Noeta ctx `Opaque dim tyargs checked_fields fibrancy_fields
+      with_codata_so_far status Noeta ctx `Opaque dim tyargs checked_fields fibrancy
         ~has_higher_fields errs
       @@ fun domvars _ ->
       let newctx = Ctx.cube_vis ctx x domvars in
       match (D.compare_zero (Field.dim fld), D.compare_zero (TubeOf.inst tyargs)) with
       | Zero, _ ->
-          let checked_fields, fibrancy_fields, errs =
-            Reporter.try_with ~fatal:(fun e -> (checked_fields, fibrancy_fields, Snoc (errs, e)))
+          let checked_fields, fibrancy, errs =
+            Reporter.try_with ~fatal:(fun e -> (checked_fields, fibrancy, Snoc (errs, e)))
             @@ fun () ->
             (* Note the type of each field is checked *kinetically*: it's not part of the case tree. *)
             let cty = check (Kinetic `Nolet) newctx rty (universe D.zero) in
             let entry = CodatafieldAbwd.Entry (fld, Lower cty) in
-            (Snoc (checked_fields, entry), Fibrancy.Codata.add_field fibrancy_fields entry, errs)
-          in
-          check_codata status ctx tyargs checked_fields fibrancy_fields raw_fields errs
-            ~has_higher_fields
+            (Snoc (checked_fields, entry), Fibrancy.Codata.add_field fibrancy entry, errs) in
+          check_codata status ctx tyargs checked_fields fibrancy raw_fields errs ~has_higher_fields
       | Pos _, Zero ->
           let (Degctx (plusmap, degctx, _)) = degctx newctx (Field.dim fld) in
           let checked_fields, errs =
@@ -1750,8 +1748,7 @@ and check_codata : type a b n.
             (* Note the type of each field is checked *kinetically*: it's not part of the case tree. *)
             let cty = check (Kinetic `Nolet) degctx rty (universe D.zero) in
             (Snoc (checked_fields, Entry (fld, Codatafield.Higher (plusmap, cty))), errs) in
-          check_codata status ctx tyargs checked_fields fibrancy_fields raw_fields errs
-            ~has_higher_fields
+          check_codata status ctx tyargs checked_fields fibrancy raw_fields errs ~has_higher_fields
       | Pos _, Pos _ -> fatal (Unimplemented "higher fields in higher-dimensional codatatypes"))
 
 and check_record : type a f1 f2 f af d acd b n.
@@ -1769,34 +1766,34 @@ and check_record : type a f1 f2 f af d acd b n.
     (af, d, acd) Raw.tel ->
     Code.t Asai.Diagnostic.t Bwd.t ->
     (b, potential) term =
- fun status dim ctx opacity tyargs vars ctx_fields fplus af checked_fields fibrancy_fields
-     raw_fields errs ->
+ fun status dim ctx opacity tyargs vars ctx_fields fplus af checked_fields fibrancy raw_fields
+     errs ->
   match raw_fields with
   | Emp -> (
       match errs with
       | Snoc _ -> fatal (Accumulated ("check_record", errs))
       | Emp ->
-          let fields, Fibrancy fibrancy = (checked_fields, fibrancy_fields) in
+          let fields, Fibrancy fibrancy = (checked_fields, fibrancy) in
           Term.Canonical (Codata { eta = Eta; opacity; dim; fields; termctx = None; fibrancy }))
   | Ext (None, _, _) -> fatal (Anomaly "unnamed field in check_record")
   | Ext (Some name, rty, raw_fields) ->
-      with_codata_so_far status Eta ctx opacity dim tyargs checked_fields fibrancy_fields
+      with_codata_so_far status Eta ctx opacity dim tyargs checked_fields fibrancy
         ~has_higher_fields:None errs
       @@ fun domvars _ ->
       let fld = Field.intern name D.zero in
-      let checked_fields, fibrancy_fields, ctx_fields, errs =
+      let checked_fields, fibrancy, ctx_fields, errs =
         Reporter.try_with ~fatal:(fun e ->
-            (checked_fields, fibrancy_fields, Bwv.Snoc (ctx_fields, (fld, name)), Snoc (errs, e)))
+            (checked_fields, fibrancy, Bwv.Snoc (ctx_fields, (fld, name)), Snoc (errs, e)))
         @@ fun () ->
         let newctx = Ctx.vis_fields ctx vars domvars ctx_fields fplus af in
         let cty = check (Kinetic `Nolet) newctx rty (universe D.zero) in
         let entry = CodatafieldAbwd.Entry (fld, Lower cty) in
         ( Snoc (checked_fields, entry),
-          Fibrancy.Codata.add_field fibrancy_fields entry,
+          Fibrancy.Codata.add_field fibrancy entry,
           Bwv.Snoc (ctx_fields, (fld, name)),
           errs ) in
       check_record status dim ctx opacity tyargs vars ctx_fields (Suc fplus) (Suc af) checked_fields
-        fibrancy_fields raw_fields errs
+        fibrancy raw_fields errs
 
 and check_struct : type a b c d s m n mn et.
     (b, s) status ->

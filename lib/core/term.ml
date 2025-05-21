@@ -117,15 +117,16 @@ module rec Term : sig
         discrete : [ `Yes | `Maybe | `No ];
       }
         -> 'a canonical
-    | Codata : {
-        eta : (potential, 'et) eta;
-        opacity : opacity;
-        dim : 'n D.t;
-        termctx : ('c, ('a, 'n) snoc) termctx option;
-        fields : ('a * 'n * 'et) CodatafieldAbwd.t;
-        fibrancy : ('n, 'n, 'nh, 'a, 'ha, 'et) codata_fibrancy;
-      }
-        -> 'a canonical
+    | Codata : ('n, 'c, 'a, 'nh, 'ha, 'et) codata_args -> 'a canonical
+
+  and ('n, 'c, 'a, 'nh, 'ha, 'et) codata_args = {
+    eta : (potential, 'et) eta;
+    opacity : opacity;
+    dim : 'n D.t;
+    termctx : ('c, ('a, 'n) snoc) termctx option;
+    fields : ('a * 'n * 'et) CodatafieldAbwd.t;
+    fibrancy : ('n, 'n, 'nh, 'a, 'ha, 'et) codata_fibrancy;
+  }
 
   and ('g, 'n, 'nh, 'b, 'hb, 'et) codata_fibrancy = {
     glue : 'g D.t;
@@ -290,20 +291,21 @@ end = struct
         discrete : [ `Yes | `Maybe | `No ];
       }
         -> 'a canonical
-    | Codata : {
-        (* An eta flag and its opacity *)
-        eta : (potential, 'et) eta;
-        opacity : opacity;
-        (* An intrinsic dimension (like Gel) *)
-        dim : 'n D.t;
-        (* The termctx in which it was checked, since that is needed to eval-readback the env to degenerate it when checking higher fields. *)
-        termctx : ('c, ('a, 'n) snoc) termctx option;
-        (* A family of fields, each with a type that depends on one additional variable belonging to the codatatype itself (usually by way of its previous fields).  We retain the order of the fields by storing them in an Abwd rather than a Map so as to enable positional access as well as named access. *)
-        fields : ('a * 'n * 'et) CodatafieldAbwd.t;
-        (* We partially compute the fibrancy fields at typechecking time, although we don't finish the computation until we need it.  Since the fibrancy fields include those of all the higher identity types, if we did all the computation eagerly it would be infinite, and if we made it Lazy in the naive way then it wouldn't be marshalable.  *)
-        fibrancy : ('n, 'n, 'nh, 'a, 'ha, 'et) codata_fibrancy;
-      }
-        -> 'a canonical
+    | Codata : ('n, 'c, 'a, 'nh, 'ha, 'et) codata_args -> 'a canonical
+
+  and ('n, 'c, 'a, 'nh, 'ha, 'et) codata_args = {
+    (* An eta flag and its opacity *)
+    eta : (potential, 'et) eta;
+    opacity : opacity;
+    (* An intrinsic dimension (like Gel) *)
+    dim : 'n D.t;
+    (* The termctx in which it was checked, since that is needed to eval-readback the env to degenerate it when checking higher fields. *)
+    termctx : ('c, ('a, 'n) snoc) termctx option;
+    (* A family of fields, each with a type that depends on one additional variable belonging to the codatatype itself (usually by way of its previous fields).  We retain the order of the fields by storing them in an Abwd rather than a Map so as to enable positional access as well as named access. *)
+    fields : ('a * 'n * 'et) CodatafieldAbwd.t;
+    (* We partially compute the fibrancy fields at typechecking time, although we don't finish the computation until we need it.  Since the fibrancy fields include those of all the higher identity types, if we did all the computation eagerly it would be infinite, and if we made it Lazy in the naive way then it wouldn't be marshalable.  *)
+    fibrancy : ('n, 'n, 'nh, 'a, 'ha, 'et) codata_fibrancy;
+  }
 
   and ('g, 'n, 'nh, 'b, 'hb, 'et) codata_fibrancy = {
     (* The original intrinsic gel/glue dimension *)

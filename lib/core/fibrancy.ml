@@ -591,6 +591,11 @@ module Codata = struct
     <: Entry (ftrl, Higher trl)
     <: Entry (fliftl, Higher liftl)
     <: Entry (fid, LazyHigher id)
+
+  (* TODO: It would be nice to memoize the "finish" computation.  But we can't store it as a mutable field inside a Term, because it contains a LazyHigher and so is not marshalable.  Maybe we could use a hashtable, but it would be tricky to ensure the output types depend correctly on the input ones.  I guess we could have a mutable Map depending on 'n' and 'a' and then hashtables inside of that.  But then it starts to get questionable how much time would be saved.  Let's wait until we do some profiling and see if this is actually a pain point. *)
+  let finished : type n c a nh ha et.
+      (n, c, a, nh, ha, et) codata_args -> (n * a * potential * no_eta) StructfieldAbwd.t =
+   fun c -> finish c.fields c.fibrancy
 end
 
 let universe : (D.zero * emp * potential * no_eta) StructfieldAbwd.t option Lazy.t =
