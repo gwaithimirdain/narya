@@ -620,3 +620,52 @@
    ￫ info[I0000]
    ￮ constant univalence_ee defined
   
+
+  $ narya -direction p,rel,Br 2dpitr.ny
+  B22 (A22 .f .liftl.1 a12) .f .trr.1 (f02 (A22 .f .trl.1 a12))
+    : B12 a12
+    .t (B20 (A20 .f .liftl.1 a10) .f .trr.1 (f00 (A20 .f .trl.1 a10)))
+      (B21 (A21 .f .liftl.1 a11) .f .trr.1 (f01 (A21 .f .trl.1 a11)))
+  
+  B22 (A22 .f .id.1 (A02 .f .liftl.1 a01) (A12 .f .liftl.1 a11) .liftl.1 a21)
+    .f
+    .id.1 (f02 (A02 .f .liftl.1 a01)) (f12 (A12 .f .liftl.1 a11))
+    .trr.1
+      (f20
+         (A22 .f .id.1 (A02 .f .liftl.1 a01) (A12 .f .liftl.1 a11) .trl.1 a21))
+    : B21 a21 .t (f01 a01) (f11 a11)
+  
+  B22 (A22 .f .id.1 (A02 .f .liftl.1 a01) (A12 .f .liftl.1 a11) .liftl.1 a21)
+    .f
+    .id.1 (f02 (A02 .f .liftl.1 a01)) (f12 (A12 .f .liftl.1 a11))
+    .trr.1
+      (f20
+         (A22 .f .id.1 (A02 .f .liftl.1 a01) (A12 .f .liftl.1 a11) .trl.1 a21))
+    : B21 a21 .t (f01 a01) (f11 a11)
+  
+  A22 .f .id.1 (A02 .f .liftl.1 a01) (A12 .f .liftl.1 a11) .trl.1 a21
+    : A20 .t (A02 .f .trl.1 a01) (A12 .f .trl.1 a11)
+  
+  sym A22 .f .trl.1 a21
+    : A20 .t (A02 .f .trl.1 a01) (A12 .f .trl.1 a11)
+  
+  A22 .f .id.1 (A02 .f .liftl.1 a01) (A12 .f .liftl.1 a11) .liftl.1 a21
+    : A22 .t (A02 .f .liftl.1 a01) (A12 .f .liftl.1 a11)
+        (A22 .f .id.1 (A02 .f .liftl.1 a01) (A12 .f .liftl.1 a11) .trl.1 a21)
+        a21
+  
+  sym (sym A22 .f .liftl.1 a21)
+    : A22 .t (A02 .f .liftl.1 a01) (A12 .f .liftl.1 a11)
+        (sym A22 .f .trl.1 a21) a21
+  
+  B22 (sym (sym A22 .f .liftl.1 a21))
+    .f
+    .id.1 (f02 (A02 .f .liftl.1 a01)) (f12 (A12 .f .liftl.1 a11))
+    .trr.1 (f20 (sym A22 .f .trl.1 a21))
+    : B21 a21 .t (f01 a01) (f11 a11)
+  
+  sym B22 (sym A22 .f .liftl.1 a21) .f .trr.1 (f20 (sym A22 .f .trl.1 a21))
+    : B21 a21
+    .t (B02 (A02 .f .liftl.1 a01) .f .trr.1 (f00 (A02 .f .trl.1 a01)))
+      (B12 (A12 .f .liftl.1 a11) .f .trr.1 (f10 (A12 .f .trl.1 a11)))
+  
