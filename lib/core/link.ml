@@ -59,10 +59,6 @@ and canonical : type a. (Compunit.t -> Compunit.t) -> a canonical -> a canonical
   | Data { indices; constrs; discrete } ->
       Data { indices; constrs = Abwd.map (dataconstr f) constrs; discrete }
   | Codata { eta; opacity; dim; termctx = tc; fields; fibrancy = fib } ->
-      let fibfields =
-        Mbwd.map
-          (fun (CodatafieldAbwd.Entry (fld, x)) -> CodatafieldAbwd.Entry (fld, codatafield f x))
-          fib.fields in
       let trr =
         Mbwd.map
           (fun (StructfieldAbwd.Entry (fld, x)) -> StructfieldAbwd.Entry (fld, structfield f x))
@@ -89,7 +85,7 @@ and canonical : type a. (Compunit.t -> Compunit.t) -> a canonical -> a canonical
             Mbwd.map
               (fun (CodatafieldAbwd.Entry (fld, x)) -> CodatafieldAbwd.Entry (fld, codatafield f x))
               fields;
-          fibrancy = { fib with ty = term f fib.ty; fields = fibfields; trr; trl; liftr; liftl };
+          fibrancy = { fib with ty = term f fib.ty; trr; trl; liftr; liftl };
         }
 
 and structfield : type n a s i et.

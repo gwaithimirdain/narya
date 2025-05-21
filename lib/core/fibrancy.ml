@@ -442,20 +442,7 @@ module Codata = struct
       Plusmap.exists Hott.dim length in
     let (Plus dimh) = D.plus Hott.dim in
     Fibrancy
-      {
-        glue;
-        dim;
-        length;
-        plusmap;
-        ty;
-        eta;
-        dimh;
-        fields = Emp;
-        trr = Emp;
-        trl = Emp;
-        liftr = Emp;
-        liftl = Emp;
-      }
+      { glue; dim; length; plusmap; ty; eta; dimh; trr = Emp; trl = Emp; liftr = Emp; liftl = Emp }
 
   let add_field : type g n b et.
       (g, n, b, et) t -> (b * g * et) CodatafieldAbwd.entry -> (g, n, b, et) t =
@@ -493,7 +480,6 @@ module Codata = struct
         Fibrancy
           {
             f with
-            fields = Snoc (f.fields, Entry (fld, fldty));
             trr = Snoc (f.trr, new_trr);
             liftr = Snoc (f.liftr, new_liftr);
             trl = Snoc (f.trl, new_trl);
@@ -502,8 +488,10 @@ module Codata = struct
     | _ -> Fibrancy f
 
   let rec finish : type g n nh b hb et.
-      (g, n, nh, b, hb, et) codata_fibrancy -> (g * b * potential * no_eta) StructfieldAbwd.t =
-   fun { glue; dim; length; plusmap; ty; eta; dimh; fields; trr; trl; liftr; liftl } ->
+      (b * g * et) CodatafieldAbwd.t ->
+      (g, n, nh, b, hb, et) codata_fibrancy ->
+      (g * b * potential * no_eta) StructfieldAbwd.t =
+   fun fields { glue; dim; length; plusmap; ty; eta; dimh; trr; trl; liftr; liftl } ->
     let xname = singleton_variables D.zero (Some "x") in
     let yname = singleton_variables D.zero (Some "y") in
     let plusfam x = Some (PlusFam.PlusFam (plusmap, x)) in
@@ -549,41 +537,48 @@ module Codata = struct
               let* xtube = Hott.tube x0 x1 in
               let* xcube = Hott.cube x0 x1 x2 in
               let folder :
-                  (g, nh, ((hb, D.zero) snoc, D.zero) snoc, et) t ->
+                  (((hb, D.zero) snoc, D.zero) snoc * g * et) CodatafieldAbwd.t
+                  * (g, nh, ((hb, D.zero) snoc, D.zero) snoc, et) t ->
                   (b * g * et) CodatafieldAbwd.entry ->
-                  (g, nh, ((hb, D.zero) snoc, D.zero) snoc, et) t =
-               fun fields (CodatafieldAbwd.Entry (fld, fldty)) ->
+                  (((hb, D.zero) snoc, D.zero) snoc * g * et) CodatafieldAbwd.t
+                  * (g, nh, ((hb, D.zero) snoc, D.zero) snoc, et) t =
+               fun (fields, fib) (CodatafieldAbwd.Entry (fld, fldty)) ->
                 match fldty with
                 | Lower fldty ->
                     let xsname = singleton_variables D.zero (Some "x") in
-                    add_field fields
-                      (CodatafieldAbwd.Entry
-                         ( fld,
-                           Lower
-                             (Inst
-                                ( App
-                                    ( Weaken
-                                        (Weaken
-                                           (Weaken (Shift (Hott.dim, plusmap, Lam (xsname, fldty))))),
-                                      xcube ),
-                                  TubeOf.mmap { map = (fun _ [ x ] -> field x fld) } [ xtube ] )) ))
+                    let field =
+                      CodatafieldAbwd.Entry
+                        ( fld,
+                          Lower
+                            (Inst
+                               ( App
+                                   ( Weaken
+                                       (Weaken
+                                          (Weaken (Shift (Hott.dim, plusmap, Lam (xsname, fldty))))),
+                                     xcube ),
+                                 TubeOf.mmap { map = (fun _ [ x ] -> field x fld) } [ xtube ] )) )
+                    in
+                    (Snoc (fields, field), add_field fib field)
                 | Higher _ ->
                     (* TODO *)
-                    fields in
+                    (fields, fib) in
               let x0 = Var (Index (Later Now, id_sface D.zero)) in
               let x1 : (((hb, D.zero) snoc, D.zero) snoc, kinetic) term =
                 Var (Index (Now, id_sface D.zero)) in
               let* xtube = Hott.tube x0 x1 in
-              let (Fibrancy fields) =
+              let fields, Fibrancy fib =
                 Bwd.fold_left folder
-                  (empty glue dimh hlength00 eta
-                     (Inst (Weaken (Weaken (Shift (Hott.dim, plusmap, ty))), xtube)))
+                  ( Emp,
+                    empty glue dimh hlength00 eta
+                      (Inst (Weaken (Weaken (Shift (Hott.dim, plusmap, ty))), xtube)) )
                   fields in
-              let fields = finish fields in
+              let fib = finish fields fib in
               plusfam
               @@ Lam
                    ( xname,
-                     Lam (yname, Struct { dim = glue; eta = Noeta; energy = Potential; fields }) )
+                     Lam
+                       (yname, Struct { dim = glue; eta = Noeta; energy = Potential; fields = fib })
+                   )
           | Pos _ ->
               (* The bisim .id case *)
               None)

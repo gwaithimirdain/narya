@@ -1681,7 +1681,8 @@ and with_codata_so_far : type a b n c et.
           let value =
             eval_codata (Ctx.env ctx) eta opacity dim
               (lazy (termctx ()))
-              checked_fields (Fibrancy.Codata.finish fibrancy) in
+              checked_fields
+              (Fibrancy.Codata.finish checked_fields fibrancy) in
           let prev_ety =
             Neu { head; args; value = ready value; ty = lazy (inst (universe dim) tyargs) } in
           snd

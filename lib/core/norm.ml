@@ -977,7 +977,7 @@ and eval_canonical : type m a. (m, a) env -> a Term.canonical -> potential evalu
       Val (Canonical { canonical; tyargs; ins = ins_zero dim; fields })
   | Codata { eta; opacity; dim; termctx; fields; fibrancy } ->
       eval_codata env eta opacity dim (Lazy.from_val termctx) fields
-        (Fibrancy.Codata.finish fibrancy)
+        (Fibrancy.Codata.finish fields fibrancy)
 
 (* We split out this subroutine so it can be called from Check.with_codata_so_far and a lazy termctx.  *)
 and eval_codata : type m a c n et.

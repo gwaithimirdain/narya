@@ -135,7 +135,6 @@ module rec Term : sig
     eta : (potential, 'et) eta;
     ty : ('b, kinetic) term;
     dimh : ('n, Hott.dim, 'nh) D.plus;
-    fields : ('b * 'g * 'et) CodatafieldAbwd.t;
     trr : ('n * ('hb, D.zero) snoc * potential * 'et) StructfieldAbwd.t;
     trl : ('n * ('hb, D.zero) snoc * potential * 'et) StructfieldAbwd.t;
     liftr : ('nh * ('hb, D.zero) snoc * potential * 'et) StructfieldAbwd.t;
@@ -317,8 +316,6 @@ end = struct
     (* The codatatype itself. *)
     ty : ('b, kinetic) term;
     dimh : ('n, Hott.dim, 'nh) D.plus;
-    (* The fields.  We store them separately so that the fibrancy calculations will have them present. *)
-    fields : ('b * 'g * 'et) CodatafieldAbwd.t;
     (* The fields of the struct that is the output of the transport and lifting operations. *)
     trr : ('n * ('hb, D.zero) snoc * potential * 'et) StructfieldAbwd.t;
     trl : ('n * ('hb, D.zero) snoc * potential * 'et) StructfieldAbwd.t;
