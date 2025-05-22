@@ -111,26 +111,7 @@ module Specials = struct
   (* Any sequence consisting entirely of these characters is its own token. *)
   let default_ascii_symbols =
     [|
-      '~';
-      '!';
-      '@';
-      '#';
-      '$';
-      '%';
-      '&';
-      '*';
-      '/';
-      '=';
-      '+';
-      '\\';
-      '|';
-      ',';
-      '<';
-      '>';
-      ':';
-      ';';
-      '-';
-      '^';
+      '~'; '!'; '@'; '#'; '$'; '%'; '&'; '*'; '/'; '='; '+'; '|'; ','; '<'; '>'; ':'; ';'; '-'; '^';
     |]
 
   module Data = struct
