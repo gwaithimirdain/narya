@@ -210,3 +210,23 @@
        minus'
   
   [1]
+
+  $ narya negtight.ny
+  b * c
+    : A
+  
+  c
+    : A
+  
+  a
+    : A
+  
+  b
+    : A
+  
+  a * b
+    : A
+  
+  a
+    : A
+  

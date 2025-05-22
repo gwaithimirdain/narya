@@ -214,6 +214,17 @@ module Parse = struct
   let tightness_and_name :
       (No.wrapped option * Whitespace.t list * Trie.path * Asai.Range.t option * Whitespace.t list)
       t =
+    (let* minusloc, wsminus = located (token (Op "-")) in
+     if not (List.is_empty wsminus) then fatal ~loc:(Range.convert minusloc) Parse_error;
+     let* tloc, (tight, wstight) = located ident in
+     let* nameloc, (name, wsname) = located ident in
+     let loc = Some (Range.convert nameloc) in
+     let tight = String.concat "." tight in
+     match No.of_rat (Q.neg (Q.of_string tight)) with
+     | Some tight -> return (Some tight, wstight, name, loc, wsname)
+     | None | (exception Invalid_argument _) ->
+         fatal ~loc:(Range.convert tloc) (Invalid_tightness tight))
+    </>
     let* tloc, tight_or_name = located ident in
     (let* nameloc, (name, wsname) = located ident in
      let loc = Some (Range.convert nameloc) in
