@@ -133,8 +133,8 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
               (step (fun state _ (tok, w) ->
                    match tok with
                    | Ident x -> Some ((`Ident x, w), state)
-                   (* Constructor names have already been validated by the lexer. *)
-                   | Constr x -> Some ((`Constr x, w), state)
+                   (* Constructor names have already been validated by the lexer.  No higher constructors are allowed yet. *)
+                   | Constr (x, []) -> Some ((`Constr x, w), state)
                    | Underscore -> Some ((`Placeholder, w), state)
                    | Query -> Some ((`Hole, w), state)
                    | _ -> None)) in
@@ -319,8 +319,8 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
                        (step (fun state _ (tok, w) ->
                             match tok with
                             | Ident x -> Some ((`Ident x, w), state)
-                            (* Constructor and field names have already been validated by the lexer. *)
-                            | Constr x -> Some ((`Constr x, w), state)
+                            (* Constructor and field names have already been validated by the lexer.  No higher constructors are allowed yet. *)
+                            | Constr (x, []) -> Some ((`Constr x, w), state)
                             | Underscore -> Some ((`Placeholder, w), state)
                             | Field (x, p) -> Some ((`Field (x, p), w), state)
                             | Query -> Some ((`Hole, w), state)

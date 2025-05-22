@@ -62,7 +62,7 @@ However, there are the following exceptions to this, where whitespace is not nee
 Identifiers
 -----------
 
-An *atomic identifier* can be any string of non-whitespace characters, other than those mentioned above as special, not containing any periods, not starting or ending with an underscore, does not consist entirely of digits, and is not a reserved word.  Currently the reserved words are
+An *atomic identifier* can be any string of non-whitespace characters, other than those mentioned above as special, not containing any periods, not starting with an underscore, does not consist entirely of digits, and is not a reserved word.  Currently the reserved words are
 
 .. code-block:: none
    

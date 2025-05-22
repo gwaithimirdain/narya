@@ -378,7 +378,7 @@ module Parse = struct
     step "" (fun state _ (tok, ws) ->
         match tok with
         | Ident name -> Some ((`Constant name, ws), state)
-        | Constr c -> Some ((`Constr c, ws), state)
+        | Constr (c, []) -> Some ((`Constr c, ws), state)
         | _ -> None)
 
   let notation_var =

@@ -112,7 +112,7 @@
  ￫ error[E0100]
  ￭ user-supplied term
  1 | f (con.str. x)
-   ^ unimplemented: higher constructors: con.str.
+   ^ unimplemented: higher constructors
 
  ￫ error[E0205]
  ￭ user-supplied term
