@@ -208,6 +208,17 @@ let rec synths : type n. (n, kinetic) term -> bool = function
   | Shift (_, _, tm) -> synths tm
   | Weaken tm -> synths tm
 
+(* If the insertion on a field is (1,0,1), we omit the numeric annotation. *)
+let show_ins : type nk n k. (nk, n, k) insertion -> int list =
+ fun ins ->
+  match (D.compare_zero (cod_left_ins ins), D.compare_zero (cod_right_ins ins)) with
+  | Zero, Pos i' -> (
+      let (Is_suc (ipred, _, _)) = suc_pos i' in
+      match D.compare_zero ipred with
+      | Zero -> []
+      | Pos _ -> ints_of_ins ins)
+  | _ -> ints_of_ins ins
+
 (* Given a term, extract its head and arguments as an application spine.  If the spine contains a field projection, stop there and return only the arguments after it, noting the field name and what it is applied to (which itself be another spine). *)
 let rec get_spine : type n.
     (n, kinetic) term ->
@@ -243,7 +254,7 @@ let rec get_spine : type n.
       match get_spine fn with
       | `App (head, args) -> `App (head, append_bwd args)
       | `Field (head, fld, ins, args) -> `Field (head, fld, ins, append_bwd args))
-  | Field (head, fld, ins) -> `Field (head, Field.to_string fld, ints_of_ins ins, Emp)
+  | Field (head, fld, ins) -> `Field (head, Field.to_string fld, show_ins ins, Emp)
   (* We have to look through identity degeneracies here. *)
   | Act (body, s) -> (
       match is_id_deg s with
@@ -273,7 +284,7 @@ let rec unparse : type n lt ls rt rs s.
       unlocated
         (Ident ([ (if Display.metas () == `Numbered then Meta.name v ^ "{…}" else "?") ], []))
   | Field (tm, fld, ins) ->
-      unparse_spine vars (`Field (tm, Field.to_string fld, ints_of_ins ins)) Emp li ri
+      unparse_spine vars (`Field (tm, Field.to_string fld, show_ins ins)) Emp li ri
   | UU n ->
       unparse_act vars
         {

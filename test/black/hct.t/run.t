@@ -14,10 +14,10 @@
    ￫ info[I0001]
    ￮ axiom s2 assumed
   
-  s2 .root.1
+  s2 .root
     : A
   
-  s2 .root.1
+  s2 .root
     : A
   
    ￫ info[I0001]
@@ -48,25 +48,25 @@
    ￮ axiom s22 assumed
   
   s22 .root.1
-    : refl A (s20 .root.1) (s21 .root.1)
+    : refl A (s20 .root) (s21 .root)
   
   sym s22 .root.1
-    : refl A (s02 .root.1) (s12 .root.1)
+    : refl A (s02 .root) (s12 .root)
   
   refl s2 .root.1
-    : refl A (s2 .root.1) (s2 .root.1)
+    : refl A (s2 .root) (s2 .root)
   
   s2⁽ᵉ¹⁾ .root.1
-    : refl A (refl s0 .root.1) (refl s1 .root.1)
+    : refl A (refl s0 .root) (refl s1 .root)
   
   refl s2 .root.1
-    : refl A (s2 .root.1) (s2 .root.1)
+    : refl A (s2 .root) (s2 .root)
   
   s0⁽ᵉᵉ⁾ .root.1
-    : refl A (refl s0 .root.1) (refl s0 .root.1)
+    : refl A (refl s0 .root) (refl s0 .root)
   
   s0⁽ᵉᵉ⁾ .root.1
-    : refl A (refl s0 .root.1) (refl s0 .root.1)
+    : refl A (refl s0 .root) (refl s0 .root)
   
    ￫ info[I0001]
    ￮ axiom B assumed
@@ -185,7 +185,7 @@
    ￫ info[I0001]
    ￮ axiom u2 assumed
   
-  u2 .root.1
+  u2 .root
     : ID A
   
    ￫ info[I0000]
@@ -195,7 +195,7 @@
    ￮ hole ?0:
      
      ----------------------------------------------------------------------
-     refl ID A A (refl A) (refl u0 .root.1) (refl u1 .root.1)
+     refl ID A A (refl A) (refl u0 .root) (refl u1 .root)
   
    ￫ info[I3003]
    ￮ hole ?1:
@@ -231,10 +231,10 @@
    ￮ axiom u22 assumed
   
   u22 .root.1
-    : refl ID A A (refl A) (u20 .root.1) (u21 .root.1)
+    : refl ID A A (refl A) (u20 .root) (u21 .root)
   
   sym u22 .root.1
-    : refl ID A A (refl A) (u02 .root.1) (u12 .root.1)
+    : refl ID A A (refl A) (u02 .root) (u12 .root)
   
    ￫ info[I0000]
    ￮ constant u22' defined, containing 3 holes
@@ -243,21 +243,21 @@
    ￮ hole ?2:
      
      ----------------------------------------------------------------------
-     ID⁽ᵉᵉ⁾ A A (refl A) A A (refl A) (refl A) (refl A) A⁽ᵉᵉ⁾ (refl u00 .root.1)
-       (refl u01 .root.1) (u02⁽ᵉ¹⁾ .root.1) (refl u10 .root.1) (refl u11 .root.1)
+     ID⁽ᵉᵉ⁾ A A (refl A) A A (refl A) (refl A) (refl A) A⁽ᵉᵉ⁾ (refl u00 .root)
+       (refl u01 .root) (u02⁽ᵉ¹⁾ .root.1) (refl u10 .root) (refl u11 .root)
        (u12⁽ᵉ¹⁾ .root.1) (u20⁽ᵉ¹⁾ .root.1) (u21⁽ᵉ¹⁾ .root.1)
   
    ￫ info[I3003]
    ￮ hole ?3:
      
      ----------------------------------------------------------------------
-     refl ID A A (refl A) (u20 .root.1) (u21 .root.1)
+     refl ID A A (refl A) (u20 .root) (u21 .root)
   
    ￫ info[I3003]
    ￮ hole ?4:
      
      ----------------------------------------------------------------------
-     refl ID A A (refl A) (u02 .root.1) (u12 .root.1)
+     refl ID A A (refl A) (u02 .root) (u12 .root)
   
    ￫ error[E3002]
    ￮ file sqrt.ny contains open holes

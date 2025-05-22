@@ -43,11 +43,11 @@ axiom a12 : A12 .t a10 a11
 echo ((X Y ↦ Π𝕗 X Y) : ((X : Fib) (Y : X .t → Fib) → Fib))⁽ᵖᵖ⁾ A22 B22
   .f
   .trr.1 f02 a12
-{` B22 (A22 .f .liftl.1 a12) .f .trr.1 (f02 (A22 .f .trl.1 a12))
 
+{` B22 (A22 .f .liftl.1 a12) .f .trr.1 (f02 (A22 .f .trl.1 a12))
   : B12 a12
-  .t (B20 (A20 .f .liftl.1 a10) .f .trr.1 (f00 (A20 .f .trl.1 a10)))
-    (B21 (A21 .f .liftl.1 a11) .f .trr.1 (f01 (A21 .f .trl.1 a11)))
+  .t (B20 (A20 .f .liftl a10) .f .trr (f00 (A20 .f .trl a10)))
+    (B21 (A21 .f .liftl a11) .f .trr (f01 (A21 .f .trl a11)))
  `}
 
 axiom f10 : (x10 : A10 .t) → B10 x10 .t
@@ -69,50 +69,41 @@ axiom a21 : A21 .t a01 a11
 echo ((X Y ↦ Π𝕗 X Y) : ((X : Fib) (Y : X .t → Fib) → Fib))⁽ᵖᵖ⁾ A22 B22
   .f
   .id.1 f02 f12
-  .trr.1 f20 a21
-{` B22 (A22 .f .id.1 (A02 .f .liftl.1 a01) (A12 .f .liftl.1 a11) .liftl.1 a21)
-  .f
-  .id.1 (f02 (A02 .f .liftl.1 a01)) (f12 (A12 .f .liftl.1 a11))
-  .trr.1
-    (f20
-       (A22 .f .id.1 (A02 .f .liftl.1 a01) (A12 .f .liftl.1 a11) .trl.1 a21))
+  .trr f20 a21
 
+{` B22 (A22 .f .id.1 (A02 .f .liftl a01) (A12 .f .liftl a11) .liftl a21)
+  .f
+  .id.1 (f02 (A02 .f .liftl a01)) (f12 (A12 .f .liftl a11))
+  .trr (f20 (A22 .f .id.1 (A02 .f .liftl a01) (A12 .f .liftl a11) .trl a21))
   : B21 a21 .t (f01 a01) (f11 a11)
  `}
 
 {` Double-check that the computed result indeed has the correct type. `}
-{` TODO: Oops formatting!  The A22 should be on the previous line or indented less. `}
-echo B22
-         (A22
-          .f
-          .id.1 (A02 .f .liftl.1 a01) (A12 .f .liftl.1 a11)
-          .liftl.1 a21)
+echo B22 (A22 .f .id.1 (A02 .f .liftl a01) (A12 .f .liftl a11) .liftl a21)
   .f
-  .id.1 (f02 (A02 .f .liftl.1 a01)) (f12 (A12 .f .liftl.1 a11))
+  .id.1 (f02 (A02 .f .liftl a01)) (f12 (A12 .f .liftl a11))
   .trr.1
-    (f20
-       (A22 .f .id.1 (A02 .f .liftl.1 a01) (A12 .f .liftl.1 a11) .trl.1 a21))
+    (f20 (A22 .f .id.1 (A02 .f .liftl a01) (A12 .f .liftl a11) .trl a21))
 
 {` Note that the above uses box-filling in A where the tube consists of lifts.  This operation has the same type as 1-uniform transport, so we could just as well use that.  It doesn't give the *same* result, but it would be another valid, and simpler-looking definition.  The coinductive definition of 𝕗Π can't give this simpler version; the builtin fibrancy of Π-types could, but that would require defining it at all dimensions directly rather than coinductively, which is simpler. `}
 
 {` That is, these have the same type: `}
-echo (A22 .f .id.1 (A02 .f .liftl.1 a01) (A12 .f .liftl.1 a11) .trl.1 a21)
+echo (A22 .f .id.1 (A02 .f .liftl a01) (A12 .f .liftl a11) .trl a21)
 echo (A22 .f .trl.2 a21)
 
 {` And the types of these differ only by switching out the previous two. `}
-echo (A22 .f .id.1 (A02 .f .liftl.1 a01) (A12 .f .liftl.1 a11) .liftl.1 a21)
+echo (A22 .f .id.1 (A02 .f .liftl a01) (A12 .f .liftl a11) .liftl a21)
 echo (sym (A22 .f .liftl.2 a21))
 
 {` So we could use this instead. `}
 echo B22 (sym (A22 .f .liftl.2 a21))
   .f
-  .id.1 (f02 (A02 .f .liftl.1 a01)) (f12 (A12 .f .liftl.1 a11))
-  .trr.1 (f20 ((A22 .f .trl.2 a21)))
+  .id.1 (f02 (A02 .f .liftl a01)) (f12 (A12 .f .liftl a11))
+  .trr (f20 ((A22 .f .trl.2 a21)))
 {` B22 (sym (sym A22 .f .liftl.1 a21))
   .f
-  .id.1 (f02 (A02 .f .liftl.1 a01)) (f12 (A12 .f .liftl.1 a11))
-  .trr.1 (f20 (sym A22 .f .trl.1 a21))
-
+  .id.1 (f02 (A02 .f .liftl a01)) (f12 (A12 .f .liftl a11))
+  .trr (f20 (sym A22 .f .trl.1 a21))
   : B21 a21 .t (f01 a01) (f11 a11)
  `}
 
@@ -122,6 +113,6 @@ echo sym B22 (A22 .f .liftl.2 a21) .f .trr.1 (f20 (A22 .f .trl.2 a21))
 {` sym B22 (sym A22 .f .liftl.1 a21) .f .trr.1 (f20 (sym A22 .f .trl.1 a21))
 
   : B21 a21
-  .t (B02 (A02 .f .liftl.1 a01) .f .trr.1 (f00 (A02 .f .trl.1 a01)))
-    (B12 (A12 .f .liftl.1 a11) .f .trr.1 (f10 (A12 .f .trl.1 a11)))
+  .t (B02 (A02 .f .liftl a01) .f .trr (f00 (A02 .f .trl a01)))
+    (B12 (A12 .f .liftl a11) .f .trr (f10 (A12 .f .trl a11)))
  `}
