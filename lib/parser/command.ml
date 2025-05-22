@@ -243,9 +243,26 @@ module Parse = struct
         match tok with
         | String str -> (
             match Lexer.single str with
-            (* Currently we hard code a `Nobreak space after each *symbol* in a notation. *)
-            | Some tok -> Some (`Op (tok, `Nobreak, ws), state)
-            | None -> fatal (Invalid_notation_symbol str))
+            (* Currently we hard code a `Nobreak space after each *symbol* in a notation.  Only certain kinds of token are allowed. *)
+            | Some (Op _ as tok) | Some (Ident [ _ ] as tok) -> Some (`Op (tok, `Nobreak, ws), state)
+            | Some tok
+              when Array.mem tok
+                     [|
+                       LBracket;
+                       RBracket;
+                       LBrace;
+                       RBrace;
+                       Arrow;
+                       Mapsto;
+                       DblMapsto;
+                       Colon;
+                       Coloneq;
+                       DblColoneq;
+                       Pluseq;
+                       Dot;
+                       Ellipsis;
+                     |] -> Some (`Op (tok, `Nobreak, ws), state)
+            | _ -> fatal (Invalid_notation_symbol str))
         | _ -> None)
 
   let pattern_var =
