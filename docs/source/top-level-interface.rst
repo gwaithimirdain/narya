@@ -92,7 +92,7 @@ Notation
 
 .. code-block:: none
 
-   notation [TIGHTNESS] NAME : […] PATTERN […] ≔ HEAD ARGUMENTS
+   notation [(TIGHTNESS)] […] PATTERN […] ≔ HEAD ARGUMENTS
 
 Declare a new mixfix notation; see :ref:`Mixfix notations`.
 

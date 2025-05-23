@@ -160,3 +160,80 @@ Testing notation commands
   a & a
     : A
   
+
+This should be an error:
+
+  $ narya -v -e 'axiom A:Type axiom f:A->A->A section nat := notation(0) x "+" y := f x y end axiom a:A echo a + a'
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom f assumed
+  
+   ￫ info[I0007]
+   ￮ section nat opened
+  
+   ￫ info[I0002]
+   ￮ notation «_ + _» defined
+  
+   ￫ info[I0008]
+   ￮ section nat closed
+  
+   ￫ info[I0001]
+   ￮ axiom a assumed
+  
+   ￫ error[E0200]
+   ￭ command-line exec string
+   1 | axiom A:Type axiom f:A->A->A section nat := notation(0) x "+" y := f x y end axiom a:A echo a + a
+     ^ parse error
+  
+
+This should work:
+
+  $ narya -v -e 'axiom A:Type axiom f:A->A->A section nat := notation(0) x "+" y := f x y end import nat | only notations axiom a:A echo a + a'
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom f assumed
+  
+   ￫ info[I0007]
+   ￮ section nat opened
+  
+   ￫ info[I0002]
+   ￮ notation «_ + _» defined
+  
+   ￫ info[I0008]
+   ￮ section nat closed
+  
+   ￫ info[I0001]
+   ￮ axiom a assumed
+  
+  a + a
+    : A
+  
+
+As should this:
+
+  $ narya -v -e 'axiom A:Type axiom f:A->A->A section nat := notation(0) x "+" y := f x y end import nat | seq (only notations, renaming notations notations.nat) axiom a:A echo a + a'
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom f assumed
+  
+   ￫ info[I0007]
+   ￮ section nat opened
+  
+   ￫ info[I0002]
+   ￮ notation «_ + _» defined
+  
+   ￫ info[I0008]
+   ￮ section nat closed
+  
+   ￫ info[I0001]
+   ￮ axiom a assumed
+  
+  a + a
+    : A
+  
