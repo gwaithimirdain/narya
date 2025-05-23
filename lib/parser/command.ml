@@ -832,8 +832,7 @@ let rec execute :
             | `Undefined ->
                 ( Scope_and_ctx (vars, Norm.eval_ctx termctx),
                   fun f ->
-                    History.run_with_scope ~init_visible:scope ~options @@ fun () ->
-                    Global.run ~init:global f )
+                    Scope.run ~init_visible:scope ~options @@ fun () -> Global.run ~init:global f )
             | `Defined _ | `Axiom -> fatal (Anomaly "hole already defined")) in
       run @@ fun () ->
       let rtm = process vars tm in
@@ -898,7 +897,7 @@ let rec execute :
       | [] -> ()
       | _ :: _ as unbound -> fatal (Unbound_variable_in_notation (List.map fst unbound)));
       let user = User { name; fixity; pattern; key; val_vars = List.map fst args } in
-      let notn, shadow = Situation.Current.add_user user in
+      let notn, shadow = Scope.Situation.add_user user in
       Scope.include_singleton (notation_name, ((`Notation (user, notn), loc), ()));
       List.iter
         (fun key ->
@@ -927,7 +926,7 @@ let rec execute :
         (fun (_, ((data, _), _)) ->
           match data with
           | `Notation (user, _) ->
-              let _ = Situation.Current.add_user user in
+              let _ = Scope.Situation.add_user user in
               ()
           | _ -> ())
         (Trie.to_seq (Trie.find_subtree [ "notations" ] trie))
@@ -940,7 +939,7 @@ let rec execute :
         Eternity.find_number data.number in
       match metatm with
       | `Undefined ->
-          History.run_with_scope ~init_visible:scope ~options @@ fun () ->
+          Scope.run ~init_visible:scope ~options @@ fun () ->
           let (Wrap tm) = !(data.tm) in
           let ptm = process vars tm in
           (* We set the hole location offset to the start of the *term*, so that ProofGeneral can create hole overlays in the right places when solving a hole and creating new holes. *)
@@ -971,7 +970,7 @@ let rec execute :
         Eternity.find_number data.number in
       match metatm with
       | `Undefined -> (
-          History.run_with_scope ~init_visible:scope ~options @@ fun () ->
+          Scope.run ~init_visible:scope ~options @@ fun () ->
           let (Wrap tm) = !(data.tm) in
           match tm.value with
           | Placeholder _ ->

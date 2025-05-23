@@ -78,6 +78,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols f =
   Check.Oracle.run ~ask:(fun _ -> Ok ()) @@ fun () ->
   Lexer.Specials.run ?onechar_ops ?ascii_symbols ?digit_vars @@ fun () ->
   Parser.Unparse.install ();
+  Parser.Builtins.install ();
   Parser.Scope.Mod.run @@ fun () ->
   History.run_empty @@ fun () ->
   Eternity.run ~init:Eternity.empty @@ fun () ->
@@ -163,7 +164,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols f =
         if Eternity.unsolved () > 0 then Reporter.fatal (Open_holes_remaining source))
       [ !inputs ] );
   (* Interactive mode also has all the other units loaded. *)
-  History.set_visible (Execute.Loaded.get_scope ());
+  Scope.set_visible (Execute.Loaded.get_scope ());
   Core.Command.Mode.run ~env:{ interactive = true } @@ fun () ->
   History.start_undoing ();
   f ()

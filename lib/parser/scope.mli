@@ -1,4 +1,5 @@
 open Bwd
+open Util
 open Core
 module Trie = Yuujinchou.Trie
 
@@ -49,7 +50,7 @@ exception Locked
 type trie = (Param.data, Param.tag) Trie.t
 type t
 
-val empty : t
+val empty : unit -> t
 val resolve : Trie.path -> (Param.data * Param.tag) option
 val modify_visible : ?context_visible:Param.context -> Param.hook Yuujinchou.Language.t -> unit
 val modify_export : ?context_export:Param.context -> Param.hook Yuujinchou.Language.t -> unit
@@ -104,6 +105,7 @@ val count_sections : unit -> int
 val run :
   ?export_prefix:string Bwd.t ->
   ?init_visible:(Param.data, Param.tag) Trie.t ->
+  ?init_situation:Situation.t ->
   ?options:Options.t ->
   (unit -> 'a) ->
   'a
@@ -114,3 +116,16 @@ val find_data : ('a * 'c, 'b) Trie.t -> 'a -> Trie.path option
 val name_of : Constant.t -> Trie.path
 val define : Compunit.t -> ?loc:Asai.Range.t -> Trie.path -> Constant.t
 val check_name : Trie.path -> Asai.Range.t option -> unit
+
+module Situation : sig
+  val get : unit -> Situation.t
+  val modify : (Situation.t -> 'a * Situation.t) -> 'a
+  val add : ('left, 'tight, 'right) Notation.notation -> unit
+  val add_with_print : User.notation -> unit
+  val left_closeds : unit -> (No.plus_omega, No.strict) Notation.entry
+  val tighters : ('tight, 'strict) No.iinterval -> ('tight, 'strict) Notation.entry
+  val left_opens : Token.t -> No.interval option
+  val unparse : Situation.PrintKey.t -> User.notation option
+  val add_users_to : Situation.t -> trie -> Situation.t
+  val add_user : User.prenotation -> User.notation * User.key list
+end

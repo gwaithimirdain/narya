@@ -111,7 +111,6 @@ let run f =
   History.run_empty @@ fun () ->
   Eternity.run ~init:Eternity.empty @@ fun () ->
   Global.run ~init:Global.empty @@ fun () ->
-  Builtins.run @@ fun () ->
   Display.run ~init:Display.default @@ fun () ->
   Annotate.run @@ fun () ->
   Readback.Displaying.run ~env:false @@ fun () ->
@@ -125,6 +124,9 @@ let run f =
       raise (Failure "Fatal error"))
   @@ fun () ->
   Subtype.run @@ fun () ->
+  (* We need an outer Scope.run, with the builtins installed, so that Pi.install can parse things. *)
+  Builtins.install ();
+  Scope.run @@ fun () ->
   let init_visible = Parser.Pi.install Scope.Trie.empty in
   Scope.run ~init_visible ~options:Options.default @@ fun () -> f ()
 

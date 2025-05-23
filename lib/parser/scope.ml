@@ -42,17 +42,32 @@ module M = Algaeff.Mutex.Make ()
 
 exception Locked = M.Locked
 
-(* Scope state: a visible namespace, an export namespace, an export prefix, and a set of configuration options. *)
+(* Scope state: a visible namespace, an export namespace, an export prefix, a notation situation, and a set of configuration options. *)
 type trie = (Param.data, Param.tag) Trie.t
-type scope = { visible : trie; export : trie; prefix : Trie.bwd_path; options : Options.t }
+
+type scope = {
+  visible : trie;
+  export : trie;
+  prefix : Trie.bwd_path;
+  situation : Situation.t;
+  options : Options.t;
+}
 
 (* A Scope.t has an inner scope and also maintains a stack of outer scopes. *)
 type t = { outer : scope Bwd.t; inner : scope }
 
-let empty : t =
+(* This takes a unit argument so it doesn't try to access builtins before they're set. *)
+let empty () : t =
   {
     outer = Emp;
-    inner = { visible = Trie.empty; export = Trie.empty; prefix = Emp; options = Options.default };
+    inner =
+      {
+        visible = Trie.empty;
+        export = Trie.empty;
+        prefix = Emp;
+        situation = !Situation.builtins;
+        options = Options.default;
+      };
   }
 
 module S = State.Make (struct
@@ -64,12 +79,64 @@ let () =
     | `Get -> Some "unhandled Scope.get effect"
     | `Set _ -> Some "unhandled Scope.set effect")
 
+module Situation = struct
+  include Situation
+
+  let get () = M.exclusively @@ fun () -> (S.get ()).inner.situation
+
+  let modify f =
+    M.exclusively @@ fun () ->
+    let s = S.get () in
+    let x, situation = f s.inner.situation in
+    S.set { s with inner = { s.inner with situation } };
+    x
+
+  let add : type left tight right. (left, tight, right) Notation.notation -> unit =
+   fun notn -> modify @@ fun s -> ((), Situation.add notn s)
+
+  let add_with_print : User.notation -> unit =
+   fun notn -> modify @@ fun s -> ((), Situation.add_with_print notn s)
+
+  let left_closeds : unit -> (No.plus_omega, No.strict) Notation.entry =
+   fun () ->
+    let s = get () in
+    (Situation.EntryMap.find_opt No.plus_omega s.tighters <|> Anomaly "missing left_closeds").strict
+
+  let tighters : type strict tight. (tight, strict) No.iinterval -> (tight, strict) Notation.entry =
+   fun { strictness; endpoint } ->
+    let ep = Situation.EntryMap.find_opt endpoint (get ()).tighters <|> Anomaly "missing tighters" in
+    match strictness with
+    | Nonstrict -> ep.nonstrict
+    | Strict -> ep.strict
+
+  let left_opens : Token.t -> No.interval option =
+   fun tok -> Notation.TokMap.find_opt tok (get ()).left_opens
+
+  let unparse : Situation.PrintKey.t -> User.notation option =
+   fun c -> Situation.PrintMap.find_opt c (get ()).unparse
+
+  let add_users_to : Situation.t -> trie -> Situation.t =
+   fun sit trie ->
+    Seq.fold_left
+      (fun state (_, ((data, _), _)) ->
+        match data with
+        | `Notation (user, _) -> snd (Situation.add_user_to user state)
+        | _ -> state)
+      sit
+      (Trie.to_seq (Trie.find_subtree [ "notations" ] trie))
+
+  let add_user : User.prenotation -> User.notation * User.key list =
+   fun user -> modify @@ fun s -> Situation.add_user_to user s
+end
+
 let export_prefix () = (S.get ()).inner.prefix
 
 (* The following operations are copied from Yuujinchou.Scope, but acting only on the inner scope. *)
 
 let resolve p = M.exclusively @@ fun () -> Trie.find_singleton p (S.get ()).inner.visible
 let resolve_export p = M.exclusively @@ fun () -> Trie.find_singleton p (S.get ()).inner.export
+
+(* These operations that modify the visible scope DO NOT modify the notation situation accordingly.  The caller must do that separately with the Situation functions above. *)
 
 let modify_visible ?context_visible m =
   M.exclusively @@ fun () ->
@@ -179,9 +246,11 @@ let () =
   (Implicitboundaries.forward_functions := fun () -> (get_options ()).function_boundaries);
   Implicitboundaries.forward_types := fun () -> (get_options ()).type_boundaries
 
-(* Set the visible namespace, e.g. before going into interactive mode. *)
+(* Set the visible namespace, e.g. before going into interactive mode.  This DOES also set the notation situation to consist of the user notations from that namespace. *)
 let set_visible visible =
-  M.exclusively @@ fun () -> S.modify (fun s -> { s with inner = { s.inner with visible } })
+  M.exclusively @@ fun () ->
+  let situation = Situation.add_users_to !Situation.builtins visible in
+  S.modify (fun s -> { s with inner = { s.inner with visible; situation } })
 
 (* Start a new section, with specified prefix. *)
 let start_section prefix =
@@ -192,6 +261,7 @@ let start_section prefix =
           visible = s.inner.visible;
           export = Trie.empty;
           prefix = Bwd.of_list prefix;
+          situation = s.inner.situation;
           options = s.inner.options;
         } in
       { outer = Snoc (s.outer, s.inner); inner = new_scope })
@@ -211,12 +281,18 @@ let end_section () =
     Some (Bwd.to_list ending_scope.prefix)
   with Failure _ -> None
 
-(* We remove the Mod.run from Scope.run and let the caller control it separately. *)
-let run ?(export_prefix = Emp) ?(init_visible = Trie.empty) ?(options = Options.default) f =
+(* We remove the Mod.run from Scope.run and let the caller control it separately.  Also sets the notation situation.  Note that this *overrides* (dynamically, locally) any "actual" namespace and notations in the outer state.  It is used for loading files and strings, which are atomic undo units, and for "going back in time" temporarily to solve an old hole. *)
+let run ?(export_prefix = Emp) ?(init_visible = Trie.empty) ?init_situation
+    ?(options = Options.default) f =
+  let situation =
+    match init_situation with
+    | Some s -> s
+    | None -> Situation.add_users_to !Situation.builtins init_visible in
   let init =
     {
       outer = Emp;
-      inner = { visible = init_visible; export = Trie.empty; prefix = export_prefix; options };
+      inner =
+        { visible = init_visible; export = Trie.empty; prefix = export_prefix; situation; options };
     } in
   M.run @@ fun () -> S.run ~init f
 

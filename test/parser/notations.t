@@ -182,11 +182,15 @@ This should be an error:
    ￫ info[I0001]
    ￮ axiom a assumed
   
+  a
+    : A
+  
    ￫ error[E0200]
    ￭ command-line exec string
    1 | axiom A:Type axiom f:A->A->A section nat := notation(0) x "+" y := f x y end axiom a:A echo a + a
      ^ parse error
   
+  [1]
 
 This should work:
 

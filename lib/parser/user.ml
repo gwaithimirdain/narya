@@ -1,8 +1,10 @@
+open Util
 open Core
 open Reporter
 open Notation
 open PPrint
 open Print
+module StringMap = Map.Make (String)
 
 (* A user notation pattern is a nonempty sequence of operator symbols and variable names.  There must be at least one operator symbol, and any two variable names must be separated by at least one symbol.  It is left-closed if the first element is an operator symbol and left-open if the first element is a variable, and similarly for right-open and -closed and the last element.  The two opennesses in turn determine whether it is infix, prefix, postfix, or outfix, but not its associativity or tightness.  *)
 
@@ -108,4 +110,118 @@ type notation = {
   inner_symbols : [ `Single of Token.t | `Multiple of Token.t * Token.t option list * Token.t ];
 }
 
-(* The actual function that compiles a prenotation into a notation is in user2.ml to avoid a circular dependency, since it uses Postprocess.  *)
+(* The global processing function isn't defined until postprocess.ml, but we need it before that here. *)
+
+type global_processor = {
+  process :
+    'n 'lt 'ls 'rt 'rs.
+    (string option, 'n) Bwv.t ->
+    ('lt, 'ls, 'rt, 'rs) parse Asai.Range.located ->
+    'n Raw.check Asai.Range.located;
+}
+
+let global_processor : global_processor ref =
+  ref { process = (fun _ _ -> fatal (Anomaly "global_processor not set")) }
+
+(* Compile a prenotation into a notation.  *)
+
+let make_user : prenotation -> notation =
+ fun notn ->
+  let open Notation in
+  let (User (type l t r) ({ name; fixity; pattern; key; val_vars } : (l, t, r) prenotation_data)) =
+    notn in
+  let module New = Make (struct
+    type nonrec left = l
+    type nonrec tight = t
+    type nonrec right = r
+  end) in
+  let n = (New.User, fixity) in
+  let pat_vars = Pattern.vars pattern in
+  let inner_symbols = Pattern.inner_symbols pattern in
+  make n
+    {
+      name;
+      (* Convert a user notation pattern to a notation tree.  Note that our highly structured definition of the type of patterns, that enforces invariants statically, means that this function CANNOT FAIL. *)
+      tree =
+        (* We have to handle the beginning specially, since the start and end of a notation tree are different depending on whether it is left-open or left-closed.  So we have an internal recursive function that handles everything except the first operator symbol. *)
+        (let rec go : type left l tight.
+             (l, r) Pattern.t -> (tight, left) tree -> (tight, left) tree =
+          fun pat n ->
+           match pat with
+           | Op_nil (tok, _) -> op tok n
+           | Var_nil ((tok, _, _), _) -> op tok n
+           | Op ((tok, _, _), pat) -> op tok (go pat n)
+           | Var (_, Op ((tok, _, _), pat)) -> term tok (go pat n)
+           | Var (_, Op_nil (tok, _)) -> term tok n
+           | Var (_, Var_nil ((tok, _, _), _)) -> term tok n in
+         match pattern with
+         | Op_nil (tok, _) -> Closed_entry (eop tok (Done_closed n))
+         | Var (_, Op ((tok, _, _), pat)) -> Open_entry (eop tok (go pat (done_open n)))
+         | Var (_, Op_nil (tok, _)) -> Open_entry (eop tok (done_open n))
+         | Var (_, Var_nil ((tok, _, _), _)) -> Open_entry (eop tok (done_open n))
+         | Op ((tok, _, _), pat) -> Closed_entry (eop tok (go pat (Done_closed n)))
+         | Var_nil ((tok, _, _), _) -> Closed_entry (eop tok (Done_closed n)));
+      processor =
+        (fun ctx obs loc ->
+          let args =
+            List.fold_left2
+              (fun acc k -> function
+                | (Wrap x : wrapped_parse) ->
+                    acc |> StringMap.add k (!global_processor.process ctx x))
+              StringMap.empty pat_vars
+              (List.filter_map
+                 (function
+                   | Term x -> Some (Wrap x : wrapped_parse)
+                   | Token _ -> None)
+                 obs) in
+          let value =
+            match key with
+            | `Constant c ->
+                let spine =
+                  List.fold_left
+                    (fun acc k ->
+                      Raw.App
+                        ( { value = acc; loc },
+                          StringMap.find_opt k args <|> Anomaly "not found processing user",
+                          Asai.Range.locate_opt None `Explicit ))
+                    (Const c) val_vars in
+                Raw.Synth spine
+            | `Constr (c, _) ->
+                let args = List.map (fun k -> StringMap.find k args) val_vars in
+                Raw.Constr ({ value = c; loc }, args) in
+          { value; loc });
+      (* We define this function inline here so that it can match against the constructor New.User that was generated above by the inline Make functor application.  The only way I can think of to factor this function out (and, for instance, put it in user.ml instead of this file) would be to pass it a first-class module as an argument.  At the moment, that seems like unnecessary complication. *)
+      print_term =
+        Some
+          (fun obs ->
+            let rec go : type l r.
+                bool -> (l, r) Pattern.t -> observation list -> document * Whitespace.t list =
+             fun first pat obs ->
+              match (pat, obs) with
+              | Op ((op, br, _), pat), Token (op', (_, wsop)) :: obs when op = op' ->
+                  let rest, ws = go false pat obs in
+                  (Token.pp op ^^ pp_ws br wsop ^^ rest, ws)
+              | Op_nil (op, _), [ Token (op', (_, wsop)) ] when op = op' -> (Token.pp op, wsop)
+              | Var_nil ((op, opbr, _), _), [ Token (op', (_, wsop)); Term x ] when op = op' ->
+                  (* Deal with right-associativity *)
+                  let xdoc, xws =
+                    match x.value with
+                    | Notn ((New.User, _), d) -> go false pattern (args d)
+                    | _ -> pp_term x in
+                  (Token.pp op ^^ pp_ws opbr wsop ^^ xdoc, xws)
+              | Var ((_, br, _), pat), Term x :: obs ->
+                  (* Deal with left-associativity *)
+                  let xdoc, xws =
+                    match (first, x.value) with
+                    | true, Notn ((New.User, _), d) -> go true pattern (args d)
+                    | _ -> pp_term x in
+                  let rest, ws = go false pat obs in
+                  (xdoc ^^ pp_ws br xws ^^ rest, ws)
+              | _ -> fatal (Anomaly ("invalid notation arguments for user notation: " ^ name)) in
+            (* Note the choice here.  "group" means that the whole notation, including associative repetitions, must all fit on one line or all be broken.  Where it is broken depends on the space arguments in the notation, which specify where there are spaces and where breaks are allowed.  "align" says that if it is broken, later lines will line up below the starting point. *)
+            let doc, ws = go true pattern obs in
+            (align (group doc), ws));
+      print_case = None;
+      is_case = (fun _ -> false);
+    };
+  { keys = [ key ]; notn = Wrap n; pat_vars; val_vars; inner_symbols }

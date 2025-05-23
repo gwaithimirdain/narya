@@ -214,3 +214,6 @@ and process_vars : type n.
       let (Processed_tel (tel, ctx, ws)) =
         process_vars (Bwv.snoc ctx name) names (Wrap ty) parameters in
       Processed_tel (Ext (name, pty, tel), ctx, w :: ws)
+
+(* Now that we've defined this function, we can pass it back to User. *)
+let () = User.global_processor := { process = (fun ctx x -> process ctx x) }
