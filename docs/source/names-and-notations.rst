@@ -70,3 +70,5 @@ An *atomic identifier* can be any string of non-whitespace characters, other tha
    notation option quit rec return section show sig solve synth undo
 
 An *identifier* consists of one or more atomic identifiers joined by periods.  Variable names must be atomic identifiers, while constant names must be identifiers (internal periods denote :ref:`namespaces<Namespaces and sections>`).  In particular, (atomic) identifiers may *start* with a digit, such as for instance ``2Cat`` or ``2−Cat`` for the type of 2-categories.
+
+In addition, enclosing guillemets ``«`` and ``»`` can be used to make an atomic identifier out of *any* sequence of characters at all, including spaces, periods, comment sequences, and special characters.  Thus, for instance, ``«a long string»`` is a single atomic identifier, and likewise ``«foo.bar»`` is a single *atomic* identifier (unlike ``foo.bar`` which is ``bar`` in namespace ``foo``).  Note that the guillemets in such cases are *part* of the identifier: thus for instance ``«foo»`` is a different identifier than ``foo``.  Guillemets can also be nested: ``«a«b»c»`` is a single atomic identifier.

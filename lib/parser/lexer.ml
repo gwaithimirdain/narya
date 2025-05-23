@@ -236,8 +236,22 @@ let valid_field s =
 
 let valid_ident = List.for_all atomic_ident
 
+(* Identifiers quoted by guillemets *)
+let guillemet_start = Uchar.of_int 0xAB
+let guillemet_end = Uchar.of_int 0xBB
+
+let rec guillemeted_word buf n =
+  let* c = ucharp (fun _ -> true) "any" in
+  let buf = buf ^ Utf8.Encoder.to_internal c in
+  if c = guillemet_end then if n = 1 then return buf else guillemeted_word buf (n - 1)
+  else if c = guillemet_start then guillemeted_word buf (n + 1)
+  else guillemeted_word buf n
+
 (* A sequence of other_chars, notably not including dots.  Not necessarily valid as an identifier. *)
-let other_word = one_or_more_fold_left return (fun str c -> return (str ^ c)) other_char
+let other_word =
+  (let* _ = uchar guillemet_start in
+   guillemeted_word "«" 1)
+  </> one_or_more_fold_left return (fun str c -> return (str ^ c)) other_char
 
 (* One or more dots. *)
 let dots = skip_one_or_more (char '.')
