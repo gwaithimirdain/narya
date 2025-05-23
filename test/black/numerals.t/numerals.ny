@@ -1,7 +1,7 @@
 def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]
 def ℕ₊ : Type ≔ data [ one. | suc. (_ : ℕ₊) ]
 def ℚ₀₊ : Type ≔ data [ zero. | suc. (_ : ℕ) | quot. (_ : ℕ) (_ : ℕ₊) ]
-notation 0 quot : x "/" y ≔ quot. x y
+notation(0) x "/" y ≔ quot. x y
 
 section ℕ ≔
   def zero : ℕ ≔ 0

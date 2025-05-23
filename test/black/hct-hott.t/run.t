@@ -176,7 +176,7 @@
    ￮ constant eqv defined
   
    ￫ info[I0002]
-   ￮ notation eqv defined
+   ￮ notation «_ ≅ _» defined
   
    ￫ info[I0000]
    ￮ constant fro_to_fro defined
@@ -236,7 +236,7 @@
    ￮ constant prod defined
   
    ￫ info[I0002]
-   ￮ notation prod defined
+   ￮ notation «_ × _» defined
   
    ￫ info[I0000]
    ￮ constant id_prod_iso defined
@@ -284,7 +284,7 @@
    ￮ constant sum defined
   
    ￫ info[I0002]
-   ￮ notation sum defined
+   ￮ notation «_ ⊔ _» defined
   
    ￫ info[I0000]
    ￮ constant sum_code defined

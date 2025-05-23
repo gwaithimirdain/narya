@@ -4,8 +4,8 @@
   > def S : ℕ → ℕ := n ↦ suc. n
   > def plus : ℕ → ℕ → ℕ := m n ↦ match n [ | zero. ↦ m | suc. n ↦ suc. (plus m n) ]
   > def times : ℕ → ℕ → ℕ := m n ↦ match n [ | zero. ↦ zero. | suc. n ↦ plus (times m n) m ]
-  > notation 0 plus : m "+" n … ≔ plus m n
-  > notation 1 times : m "*" n … ≔ times m n
+  > notation(0) m "+" n … ≔ plus m n
+  > notation(1) m "*" n … ≔ times m n
   > echo (S O) + (S (S O)) + (S (S (S O)))
   > echo S (S O) * S (S O) + S (S O)
   > echo S (S O) * (S (S O) + S (S O))
@@ -38,10 +38,10 @@
    ￮ constant times defined
   
    ￫ info[I0002]
-   ￮ notation plus defined
+   ￮ notation «_ + _» defined
   
    ￫ info[I0002]
-   ￮ notation times defined
+   ￮ notation «_ * _» defined
   
   6
     : ℕ

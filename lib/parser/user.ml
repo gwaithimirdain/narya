@@ -56,6 +56,12 @@ module Pattern = struct
     | Var_nil _ as pat -> Var (v, pat)
     | Op (_, _) as pat -> Var (v, pat)
     | _ -> fatal (Invalid_notation_pattern "missing symbol between variables")
+
+  let rec to_string : type left right. (left, right) t -> string = function
+    | Op_nil (tok, _) -> Token.to_string tok
+    | Var_nil ((tok, _, _), _) -> Token.to_string tok ^ " _"
+    | Op ((tok, _, _), rest) -> Token.to_string tok ^ " " ^ to_string rest
+    | Var (_, rest) -> "_ " ^ to_string rest
 end
 
 (* Print a *pattern* the way the user would enter it in a "notation" command, with quotes around the operator symbols. *)

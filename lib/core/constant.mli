@@ -6,6 +6,7 @@ end
 
 type t = Constant.t
 
+val to_string : t -> string
 val make : Compunit.t -> t
 val remake : (Compunit.t -> Compunit.t) -> t -> t
 

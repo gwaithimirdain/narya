@@ -77,7 +77,7 @@ Undo notations
   > axiom A:Type
   > axiom a:A
   > axiom f : A -> A -> A
-  > notation 1 f : x "+" y := f x y
+  > notation(1) x "+" y := f x y
   > echo a + a
   > undo 1
   > echo a + a
@@ -94,7 +94,7 @@ Undo notations
    ￮ axiom f assumed
   
    ￫ info[I0002]
-   ￮ notation f defined
+   ￮ notation «_ + _» defined
   
   a + a
     : A
