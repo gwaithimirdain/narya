@@ -774,30 +774,17 @@ let rec execute :
       History.do_command @@ fun () ->
       Scope.check_name name loc;
       let const = Scope.define (Compunit.Current.read ()) ?loc name in
-      Reporter.try_with ~fatal:(fun d ->
-          Scope.modify_visible (Yuujinchou.Language.except name);
-          Scope.modify_export (Yuujinchou.Language.except name);
-          Reporter.fatal_diagnostic d)
-      @@ fun () ->
       let (Processed_tel (params, ctx, _)) = process_tel Emp parameters in
       Core.Command.execute (Axiom (const, params, process ctx ty))
   | Def defs ->
       History.do_command @@ fun () ->
-      let [ names; cdefs ] =
-        Mlist.pmap
+      let cdefs =
+        Mlist.mmap
           (fun [ d ] ->
             Scope.check_name d.name d.loc;
             let c = Scope.define (Compunit.Current.read ()) ?loc:d.loc d.name in
-            [ d.name; (c, d) ])
-          [ defs ] (Cons (Cons Nil)) in
-      Reporter.try_with ~fatal:(fun d ->
-          List.iter
-            (fun c ->
-              Scope.modify_visible (Yuujinchou.Language.except c);
-              Scope.modify_export (Yuujinchou.Language.except c))
-            names;
-          Reporter.fatal_diagnostic d)
-      @@ fun () ->
+            (c, d))
+          [ defs ] in
       let defs =
         List.map
           (function
