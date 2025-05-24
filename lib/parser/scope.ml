@@ -123,7 +123,7 @@ module Situation = struct
       sit
       (Trie.to_seq (Trie.find_subtree [ "notations" ] trie))
 
-  (* These are used only for whitebox testing.  Once the whitebox tests are converted to blackbox ones, we can get rid of them. *)
+  (* These are used only internally and for whitebox testing.  Once the whitebox tests are converted to blackbox ones, we can remove them from the interface. *)
 
   let add : type left tight right. (left, tight, right) Notation.notation -> unit =
    fun notn -> modify @@ fun s -> ((), Situation.add notn s)
@@ -272,6 +272,7 @@ let set_visible visible =
 
 (* Start a new section, with specified prefix.  Keeps the ambient visible namespace, but starts with empty export namespace which will collect only the names defined in the section.  *)
 let start_section prefix =
+  if List.mem "notations" prefix then fatal (Invalid_section_name prefix);
   M.exclusively @@ fun () ->
   S.modify (fun s ->
       let new_scope : scope =
