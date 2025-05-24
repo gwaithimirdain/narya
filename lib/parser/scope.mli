@@ -52,7 +52,6 @@ type t
 
 val empty : unit -> t
 val resolve : Trie.path -> (Param.data * Param.tag) option
-val modify_visible : ?context_visible:Param.context -> Param.hook Yuujinchou.Language.t -> unit
 val modify_export : ?context_export:Param.context -> Param.hook Yuujinchou.Language.t -> unit
 val modify_options : (Options.t -> Options.t) -> unit
 
@@ -60,23 +59,6 @@ val export_visible :
   ?context_modifier:Param.context ->
   ?context_export:Param.context ->
   Param.hook Yuujinchou.Language.t ->
-  unit
-
-val include_singleton :
-  ?context_visible:Param.context ->
-  ?context_export:Param.context ->
-  Trie.path * (Param.data * Param.tag) ->
-  unit
-
-val import_singleton :
-  ?context_visible:Param.context -> Trie.path * (Param.data * Param.tag) -> unit
-
-val unsafe_include_subtree :
-  ?context_modifier:Param.context ->
-  ?context_visible:Param.context ->
-  ?context_export:Param.context ->
-  ?modifier:Param.hook Yuujinchou.Language.t ->
-  Trie.path * (Param.data, Param.tag) Trie.t ->
   unit
 
 val include_subtree :
@@ -115,17 +97,15 @@ val lookup : Trie.path -> Constant.t option
 val find_data : ('a * 'c, 'b) Trie.t -> 'a -> Trie.path option
 val name_of : Constant.t -> Trie.path
 val define : Compunit.t -> ?loc:Asai.Range.t -> Trie.path -> Constant.t
+val define_notation : User.prenotation -> ?loc:Asai.Range.t -> Trie.path -> User.key list
 val check_name : Trie.path -> Asai.Range.t option -> unit
 
 module Situation : sig
   val get : unit -> Situation.t
-  val modify : (Situation.t -> 'a * Situation.t) -> 'a
-  val add : ('left, 'tight, 'right) Notation.notation -> unit
-  val add_with_print : User.notation -> unit
   val left_closeds : unit -> (No.plus_omega, No.strict) Notation.entry
   val tighters : ('tight, 'strict) No.iinterval -> ('tight, 'strict) Notation.entry
   val left_opens : Token.t -> No.interval option
   val unparse : Situation.PrintKey.t -> User.notation option
-  val add_users_to : Situation.t -> trie -> Situation.t
+  val add : ('left, 'tight, 'right) Notation.notation -> unit
   val add_user : User.prenotation -> User.notation * User.key list
 end

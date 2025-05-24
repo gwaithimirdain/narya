@@ -884,8 +884,7 @@ let rec execute :
       | [] -> ()
       | _ :: _ as unbound -> fatal (Unbound_variable_in_notation (List.map fst unbound)));
       let user = User { name; fixity; pattern; key; val_vars = List.map fst args } in
-      let notn, shadow = Scope.Situation.add_user user in
-      Scope.include_singleton (notation_name, ((`Notation (user, notn), loc), ()));
+      let shadow = Scope.define_notation user ?loc notation_name in
       List.iter
         (fun key ->
           let keyname =
@@ -908,15 +907,7 @@ let rec execute :
         match op with
         | Some (_, op) -> Scope.Mod.modify (process_modifier op) trie
         | None -> trie in
-      if export then Scope.include_subtree ([], trie) else Scope.import_subtree ([], trie);
-      Seq.iter
-        (fun (_, ((data, _), _)) ->
-          match data with
-          | `Notation (user, _) ->
-              let _ = Scope.Situation.add_user user in
-              ()
-          | _ -> ())
-        (Trie.to_seq (Trie.find_subtree [ "notations" ] trie))
+      if export then Scope.include_subtree ([], trie) else Scope.import_subtree ([], trie)
   | Solve data -> (
       (* Solve does NOT create a new history entry because it is NOT undoable. *)
       let (Find_number
