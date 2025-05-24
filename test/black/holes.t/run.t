@@ -273,13 +273,13 @@
    ￮ constant ideqid defined
   
   u u′ u″ ↦ u″
-    : refl Π A A (refl A) (_ ↦ A) (_ ↦ A) (_ ⤇ refl A) ida ida
+    : refl Π (refl A) {_ ↦ A} {_ ↦ A} (_ ⤇ refl A) ida ida
   
    ￫ info[I0000]
    ￮ constant ideqid' defined
   
   u u′ u′′ ↦ u′′
-    : refl Π A A (refl A) (_ ↦ A) (_ ↦ A) (_ ⤇ refl A) ida ida
+    : refl Π (refl A) {_ ↦ A} {_ ↦ A} (_ ⤇ refl A) ida ida
   
    ￫ info[I0000]
    ￮ constant ideqid'' defined, containing 1 hole

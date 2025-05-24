@@ -7,9 +7,6 @@ import "fibrant_types"
 import "homotopy"
 import "univalence"
 
-option function boundaries ≔ implicit
-option type boundaries ≔ implicit
-
 {` We prove a version of univalence for 2-dimensional (i.e. ee-dimensional) squares.  Its input is a 2D correspondence that is a "2-dimensional bisimulation" in the following sence. `}
 
 def isBisim_ee (A00 A01 : Fib) (A02 : Br Fib A00 A01) (A10 A11 : Fib)

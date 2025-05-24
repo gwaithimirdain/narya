@@ -6,9 +6,6 @@ import "hott_bookhott"
 import "fibrant_types"
 import "homotopy"
 
-option function boundaries ≔ implicit
-option type boundaries ≔ implicit
-
 {` Univalence `}
 
 {` We factor out the Gel bookkeeping and first prove a lemma assuming we already have something in "Id Type".  Something like this seems necessary for the coinductive hypothesis to be strong enough.  Proving this about bisimulations is the most straightforward version. `}

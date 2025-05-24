@@ -774,10 +774,10 @@ module Code = struct
             | `Implicit -> "implicit"
             | `Explicit -> "explicit")
             str
-      | Insufficient_dimension { needed; got; which } ->
+      | Insufficient_dimension { needed; got; which = _ } ->
           textf
-            "@[<hv 0>insufficient dimension of primary argument for higher-dimensional application:@ %s does not factor through %s@ (hint: %s boundaries are implicit)"
-            (string_of_dim0 got) (string_of_dim0 needed) which
+            "@[<hv 0>insufficient dimension of primary argument for higher-dimensional application:@ %s does not factor through %s"
+            (string_of_dim0 got) (string_of_dim0 needed)
       | Unimplemented str -> textf "unimplemented: %s" str
       | Matching_datatype_has_degeneracy ty ->
           textf

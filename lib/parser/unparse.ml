@@ -240,14 +240,9 @@ let rec get_spine : type n.
              {
                it =
                  (fun fa [ x ] s ->
-                   match
-                     ( Implicitboundaries.functions (),
-                       Display.function_boundaries (),
-                       is_id_sface fa,
-                       all_args )
-                   with
-                   | `Implicit, `Hide, None, false -> ((), s)
-                   | `Implicit, _, None, _ -> ((), Snoc (s, (x, `Implicit)))
+                   match (Display.function_boundaries (), is_id_sface fa, all_args) with
+                   | `Hide, None, false -> ((), s)
+                   | _, None, _ -> ((), Snoc (s, (x, `Implicit)))
                    | _ -> ((), Snoc (s, (x, `Explicit))));
              }
              [ arg ] args) in
@@ -307,11 +302,9 @@ let rec unparse : type n lt ls rt rs s.
               (fun fa [ x ] s ->
                 let (Tface_of fa1) = codim1_envelope fa in
                 let all_args = not (synths (TubeOf.find tyargs fa1)) in
-                match
-                  (Implicitboundaries.types (), Display.type_boundaries (), is_codim1 fa, all_args)
-                with
-                | `Implicit, `Hide, None, false -> ((), s)
-                | `Implicit, _, None, _ -> ((), Snoc (s, make_unparser_implicit vars (x, `Implicit)))
+                match (Display.type_boundaries (), is_codim1 fa, all_args) with
+                | `Hide, None, false -> ((), s)
+                | _, None, _ -> ((), Snoc (s, make_unparser_implicit vars (x, `Implicit)))
                 | _ -> ((), Snoc (s, make_unparser_implicit vars (x, `Explicit))));
           }
           [ tyargs ] Emp in
@@ -658,14 +651,9 @@ and unparse_pis : type n lt ls rt rs.
                 it =
                   (fun fa [ dom ] args ->
                     let newdoms =
-                      match
-                        ( Implicitboundaries.functions (),
-                          Display.function_boundaries (),
-                          is_id_sface fa,
-                          all_args )
-                      with
-                      | `Implicit, `Hide, None, false -> []
-                      | `Implicit, _, None, _ -> [ (dom, `Implicit) ]
+                      match (Display.function_boundaries (), is_id_sface fa, all_args) with
+                      | `Hide, None, false -> []
+                      | _, None, _ -> [ (dom, `Implicit) ]
                       | _ -> [ (dom, `Explicit) ] in
                     ((), Bwd.append args (List.map (make_unparser_implicit vars) newdoms)));
               }
@@ -677,9 +665,9 @@ and unparse_pis : type n lt ls rt rs.
                 it =
                   (fun fa [ cod ] args ->
                     let impl =
-                      match (Implicitboundaries.functions (), is_id_sface fa) with
-                      | `Implicit, None -> `Implicit
-                      | _ -> `Explicit in
+                      match is_id_sface fa with
+                      | None -> `Implicit
+                      | Some _ -> `Explicit in
                     ( (),
                       Snoc
                         ( args,

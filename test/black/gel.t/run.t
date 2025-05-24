@@ -39,11 +39,10 @@
    ￮ axiom M assumed
   
   sym M
-    : refl Gel A A (refl A) B B (refl B) R R (refl R) a₀ a₁ a₂ b₀ b₁ b₂
-        (_ ≔ r₀) (_ ≔ r₁)
+    : refl Gel (refl A) (refl B) (refl R) a₂ b₂ (_ ≔ r₀) (_ ≔ r₁)
   
   sym M .ungel
-    : refl R a₀ a₁ a₂ b₀ b₁ b₂ r₀ r₁
+    : refl R a₂ b₂ r₀ r₁
   
    ￫ info[I0000]
    ￮ constant eta defined

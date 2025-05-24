@@ -175,10 +175,6 @@ let get_visible () = M.exclusively @@ fun () -> (S.get ()).inner.visible
 let get_export () = M.exclusively @@ fun () -> (S.get ()).inner.export
 let get_options () = M.exclusively @@ fun () -> (S.get ()).inner.options
 
-let () =
-  (Implicitboundaries.forward_functions := fun () -> (get_options ()).function_boundaries);
-  Implicitboundaries.forward_types := fun () -> (get_options ()).type_boundaries
-
 (* Set the visible namespace, e.g. before going into interactive mode. *)
 let set_visible visible =
   M.exclusively @@ fun () -> S.modify (fun s -> { s with inner = { s.inner with visible } })
