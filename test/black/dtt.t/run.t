@@ -51,7 +51,7 @@
    ￮ axiom a₁₂ assumed
   
   Gel⁽ᵈ⁾ A (Gel A (y ↦ eq A a₀ y)) (y ↦ eq A a₁ y)
-    (y ⤇ eq⁽ᵈ⁾ A (Gel A (y0 ↦ eq A a₀ y0)) a₁ a₀₁ y.0 y.1) a₂ a₀₂ a₁₂
+    (y ⤇ eq⁽ᵈ⁾ A (Gel A (y′ ↦ eq A a₀ y′)) a₁ a₀₁ y.0 y.1) a₂ a₀₂ a₁₂
     : Type
   
    ￫ info[I0001]
@@ -80,13 +80,13 @@
   
   Gel⁽ᵈᵈ⁾ A (Gel A (y ↦ eq A a₀ y)) (Gel A (y ↦ eq A a₁ y))
     (Gel⁽ᵈ⁾ A (Gel A (y ↦ eq A a₀ y)) (y ↦ eq A a₁ y)
-       (y ⤇ eq⁽ᵈ⁾ A (Gel A (y0 ↦ eq A a₀ y0)) a₁ a₀₁ y.0 y.1)) (y ↦ eq A a₂ y)
-    (y ⤇ eq⁽ᵈ⁾ A (Gel A (y0 ↦ eq A a₀ y0)) a₂ a₀₂ y.0 y.1)
-    (y ⤇ eq⁽ᵈ⁾ A (Gel A (y0 ↦ eq A a₁ y0)) a₂ a₁₂ y.0 y.1)
+       (y ⤇ eq⁽ᵈ⁾ A (Gel A (y′ ↦ eq A a₀ y′)) a₁ a₀₁ y.0 y.1)) (y ↦ eq A a₂ y)
+    (y ⤇ eq⁽ᵈ⁾ A (Gel A (y′ ↦ eq A a₀ y′)) a₂ a₀₂ y.0 y.1)
+    (y ⤇ eq⁽ᵈ⁾ A (Gel A (y′ ↦ eq A a₁ y′)) a₂ a₁₂ y.0 y.1)
     (y ⤇
-     eq⁽ᵈᵈ⁾ A (Gel A (y0 ↦ eq A a₀ y0)) (Gel A (y0 ↦ eq A a₁ y0))
-       (Gel⁽ᵈ⁾ A (Gel A (y0 ↦ eq A a₀ y0)) (y0 ↦ eq A a₁ y0)
-          (y0 ⤇ eq⁽ᵈ⁾ A (Gel A (y1 ↦ eq A a₀ y1)) a₁ a₀₁ y0.0 y0.1)) a₂ a₀₂ a₁₂
+     eq⁽ᵈᵈ⁾ A (Gel A (y′ ↦ eq A a₀ y′)) (Gel A (y′ ↦ eq A a₁ y′))
+       (Gel⁽ᵈ⁾ A (Gel A (y′ ↦ eq A a₀ y′)) (y′ ↦ eq A a₁ y′)
+          (y′ ⤇ eq⁽ᵈ⁾ A (Gel A (y″ ↦ eq A a₀ y″)) a₁ a₀₁ y′.0 y′.1)) a₂ a₀₂ a₁₂
        a₀₁₂ y.00 y.01 y.10 y.11) a₃ a₀₃ a₁₃ a₀₁₃ a₂₃ a₀₂₃ a₁₂₃
     : Type
   
