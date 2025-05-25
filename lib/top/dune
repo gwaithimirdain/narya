@@ -1,4 +1,14 @@
+(rule
+  (deps (universe))
+  (action
+    (with-stdout-to version.txt
+      (progn
+        (system "(git show -s --format=%h 2>/dev/null || echo '(unknown)') | tr -d '\n'")))))
+
 (library
   (name top)
   (public_name narya.top)
-  (libraries core parser))
+  (libraries core parser)
+  (preprocess (pps ppx_blob))
+  (preprocessor_deps
+    (file version.txt)))
