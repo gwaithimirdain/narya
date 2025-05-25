@@ -609,9 +609,12 @@ let process_typed_vars : type lt ls rt rs.
    Function types (dependent and non)
  **************************************** *)
 
-type (_, _, _) identity += Arrow : (No.strict opn, No.zero, No.nonstrict opn) identity
+type (_, _, _) identity +=
+  | Arrow : (No.strict opn, No.zero, No.nonstrict opn) identity
+  | DblArrow : (No.strict opn, No.zero, No.nonstrict opn) identity
 
 let arrow : (No.strict opn, No.zero, No.nonstrict opn) notation = (Arrow, Infixr No.zero)
+let dblarrow : (No.strict opn, No.zero, No.nonstrict opn) notation = (DblArrow, Infixr No.zero)
 
 type arrow_opt = [ `Arrow of Whitespace.t list | `Noarrow | `First ]
 
@@ -624,6 +627,7 @@ type pi_dom =
       wscolon : Whitespace.t list;
       wsrparen : Whitespace.t list;
       loc : Asai.Range.t option;
+      implicit : bool;
     }
   | Nondep of { wsarrow : arrow_opt; ty : wrapped_parse }
 
@@ -640,14 +644,63 @@ let get_pi_args : type lt ls rt rs.
         match args n with
         | [ Token (LParen, (_, wslparen)); Term body; Token (RParen, (_, wsrparen)) ] ->
             let* vars, wscolon, ty = process_typed_vars body.value in
-            return (Dep { wsarrow; vars; ty; wslparen; wscolon; wsrparen; loc = doms.loc } :: accum)
+            return
+              (Dep
+                 {
+                   wsarrow;
+                   vars;
+                   ty;
+                   wslparen;
+                   wscolon;
+                   wsrparen;
+                   loc = doms.loc;
+                   implicit = false;
+                 }
+              :: accum)
+        | _ -> None)
+    | Notn ((Braces, _), n) -> (
+        match args n with
+        | [ Token (LBrace, (_, wslparen)); Term body; Token (RBrace, (_, wsrparen)) ] ->
+            let* vars, wscolon, ty = process_typed_vars body.value in
+            return
+              (Dep
+                 { wsarrow; vars; ty; wslparen; wscolon; wsrparen; loc = doms.loc; implicit = true }
+              :: accum)
         | _ -> None)
     | App { fn; arg = { value = Notn ((Parens, _), n); _ }; _ } -> (
         match args n with
         | [ Token (LParen, (_, wslparen)); Term body; Token (RParen, (_, wsrparen)) ] ->
             let* vars, wscolon, ty = process_typed_vars body.value in
             go fn
-              (Dep { wsarrow = `Noarrow; vars; ty; wslparen; wscolon; wsrparen; loc = doms.loc }
+              (Dep
+                 {
+                   wsarrow = `Noarrow;
+                   vars;
+                   ty;
+                   wslparen;
+                   wscolon;
+                   wsrparen;
+                   loc = doms.loc;
+                   implicit = false;
+                 }
+              :: accum)
+        | _ -> None)
+    | App { fn; arg = { value = Notn ((Braces, _), n); _ }; _ } -> (
+        match args n with
+        | [ Token (LBrace, (_, wslparen)); Term body; Token (RBrace, (_, wsrparen)) ] ->
+            let* vars, wscolon, ty = process_typed_vars body.value in
+            go fn
+              (Dep
+                 {
+                   wsarrow = `Noarrow;
+                   vars;
+                   ty;
+                   wslparen;
+                   wscolon;
+                   wsrparen;
+                   loc = doms.loc;
+                   implicit = true;
+                 }
               :: accum)
         | _ -> None)
     | _ -> None in
@@ -665,9 +718,15 @@ let rec get_pi : arrow_opt -> observation list -> pi_dom list * Whitespace.t lis
         | Notn ((Arrow, _), n) -> get_pi (`Arrow wsarrow) (args n)
         | _ -> ([], wsarrow, Wrap cod) in
       (get_pi_args prev_arr doms vars, ws, cod)
+  | [ Term doms; Token (DblArrow, (_, wsarrow)); Term cod ] ->
+      let vars, ws, cod =
+        match cod.value with
+        | Notn ((DblArrow, _), n) -> get_pi (`Arrow wsarrow) (args n)
+        | _ -> ([], wsarrow, Wrap cod) in
+      (get_pi_args prev_arr doms vars, ws, cod)
   | _ -> invalid "arrow"
 
-(* Given the variables with domains and the codomain of a pi-type, process it into a raw term. *)
+(* Given the variables with domains and the codomain of an ordinary (not higher) pi-type, process it into a raw term. *)
 let rec process_pi : type n lt ls rt rs.
     (string option, n) Bwv.t -> pi_dom list -> (lt, ls, rt, rs) parse located -> n check located =
  fun ctx doms cod ->
@@ -679,13 +738,14 @@ let rec process_pi : type n lt ls rt rs.
       let cod = process_pi ctx doms cod in
       let loc = Range.merge_opt cdom.loc cod.loc in
       { value = Synth (Pi (None, cdom, cod)); loc }
-  | Dep ({ vars = (x, _) :: xs; ty = Wrap dom; loc; _ } as data) :: doms ->
+  | Dep ({ vars = (x, _) :: xs; ty = Wrap dom; loc; implicit = false; _ } as data) :: doms ->
       let cdom = process ctx dom in
       let ctx = Bwv.snoc ctx x in
       let cod = process_pi ctx (Dep { data with vars = xs } :: doms) cod in
       let loc = Range.merge_opt loc cod.loc in
       { value = Synth (Pi (x, cdom, cod)); loc }
-  | Dep { vars = []; _ } :: doms -> process_pi ctx doms cod
+  | Dep { vars = []; implicit = false; _ } :: doms -> process_pi ctx doms cod
+  | Dep { implicit = true; _ } :: _ -> fatal (Unimplemented "general implicit function-types")
 
 (* Pretty-print the domains of a right-associated iterated function-type that may mix dependent and non-dependent arguments.  Each argument is preceded by an arrow if its wsarrow is given; pi_doms ensures these go in the right place.  If linebreaked, the eventual codomain with its arrow goes on a line by itself with hanging indent, and then the domains are flowed with their own hanging indent.  Arrows never come at the beginnings of lines.  *)
 
@@ -697,7 +757,7 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
       (fun (acc, prews) dom ->
         let wsarrow, (pty, wty) =
           match dom with
-          | Dep { wsarrow; vars; ty = Wrap ty; wslparen; wscolon; wsrparen; loc = _ } ->
+          | Dep { wsarrow; vars; ty = Wrap ty; wslparen; wscolon; wsrparen; implicit; loc = _ } ->
               let pvars, wvars =
                 List.fold_left
                   (fun (acc, prews) (x, wx) ->
@@ -710,7 +770,7 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
               let pty, wty = pp_term ty in
               ( wsarrow,
                 ( group
-                    (Token.pp LParen
+                    (Token.pp (if implicit then LBrace else LParen)
                     ^^ pp_ws `None wslparen
                     ^^ hang 2 pvars
                     ^^ optional (pp_ws `Break) wvars
@@ -718,7 +778,7 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
                     ^^ pp_ws `Nobreak wscolon
                     ^^ pty
                     ^^ pp_ws `None wty
-                    ^^ Token.pp RParen),
+                    ^^ Token.pp (if implicit then RBrace else RParen)),
                   wsrparen ) )
           | Nondep { wsarrow; ty = Wrap ty } -> (wsarrow, pp_term ty) in
         let doc, ws =
@@ -731,6 +791,15 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
       (empty, None) doms in
   (doc, ws <|> Anomaly "missing ws in pp_doms")
 
+let pp_pi arrow obs =
+  let doms, wsarrow, Wrap cod = get_pi `First obs in
+  let pdom, wdom = pp_doms doms in
+  let pcod, wcod = pp_term cod in
+  ( group
+      (align
+         (pdom ^^ pp_ws `Break wdom ^^ Token.pp arrow ^^ hang 2 (pp_ws `Nobreak wsarrow ^^ pcod))),
+    wcod )
+
 let () =
   make arrow
     {
@@ -741,20 +810,19 @@ let () =
           (* We don't need the loc parameter here, since we can reconstruct the location of each pi-type from its arguments. *)
           let doms, _, Wrap cod = get_pi `First obs in
           process_pi ctx doms cod);
-      print_term =
-        Some
-          (fun obs ->
-            let doms, wsarrow, Wrap cod = get_pi `First obs in
-            let pdom, wdom = pp_doms doms in
-            let pcod, wcod = pp_term cod in
-            ( group
-                (align
-                   (pdom
-                   ^^ pp_ws `Break wdom
-                   ^^ Token.pp Arrow
-                   ^^ hang 2 (pp_ws `Nobreak wsarrow ^^ pcod))),
-              wcod ));
+      print_term = Some (pp_pi Arrow);
       (* Function-types are never part of case trees. *)
+      print_case = None;
+      is_case = (fun _ -> false);
+    }
+
+let () =
+  make dblarrow
+    {
+      name = "dblarrow";
+      tree = Open_entry (eop DblArrow (done_open arrow));
+      processor = (fun _ctx _obs _loc -> fatal (Unimplemented "parsing higher function types"));
+      print_term = Some (pp_pi DblArrow);
       print_case = None;
       is_case = (fun _ -> false);
     }

@@ -21,13 +21,17 @@ open Readback
 let () =
   Displaying.register_printer (function `Read -> Some "unhandled Readback.Displaying.read effect")
 
-(* Readback of values to terms.  Closely follows equality-testing in equal.ml, so most comments are omitted.  However, unlike equality-testing and the "readback" in theoretical NbE, this readback does *not* eta-expand functions and tuples.  It is used for (1) displaying terms to the user, who will usually prefer not to see things eta-expanded, and (2) turning values into terms so that we can re-evaluate them in a new environment, for which purpose eta-expansion is irrelevant. *)
+(* Readback of values to terms.  Closely follows equality-testing in equal.ml, so most comments are omitted.  However, unlike equality-testing and the "readback" in theoretical NbE, this readback does *not* eta-expand functions and tuples.  It is used for (1) displaying terms to the user, who will usually prefer not to see things eta-expanded, and (2) turning values into terms so that we can re-evaluate them in a new environment, for which purpose eta-expansion is irrelevant.  There are two exceptions:
 
-let rec readback_nf : type a z. (z, a) Ctx.t -> normal -> (a, kinetic) term =
- fun n x -> readback_at n x.tm x.ty
+   1. When reading back at a record type that the user has marked as transparent, we eta-expand tuples.  This is chosen based on the readback type.
+   2. When reading back a higher-dimensional pi-type, we eta-expand its instantiation arguments so that we can display it prettily.  This is controlled by the flag ~eta. *)
 
-and readback_at : type a z. (z, a) Ctx.t -> kinetic value -> kinetic value -> (a, kinetic) term =
- fun ctx tm ty ->
+let rec readback_nf : type a z. ?eta:bool -> (z, a) Ctx.t -> normal -> (a, kinetic) term =
+ fun ?(eta = false) n x -> readback_at ~eta n x.tm x.ty
+
+and readback_at : type a z.
+    ?eta:bool -> (z, a) Ctx.t -> kinetic value -> kinetic value -> (a, kinetic) term =
+ fun ?(eta = false) ctx tm ty ->
   let view = if Displaying.read () then view_term tm else tm in
   match (view_type ty "readback_at", view) with
   | Canonical (_, Pi (_, doms, cods), ins, tyargs), Lam ((Variables (m, mn, xs) as x), body) -> (
@@ -42,8 +46,16 @@ and readback_at : type a z. (z, a) Ctx.t -> kinetic value -> kinetic value -> (a
           let (Plus af) = N.plus (NICubeOf.out N.zero xs) in
           let newctx = Ctx.vis ctx m mn xs newnfs af in
           let output = tyof_app cods tyargs args in
-          let body = readback_at newctx (apply_term tm args) output in
+          let body = readback_at ~eta newctx (apply_term tm args) output in
           Term.Lam (x, body))
+  (* If eta-expansion is enabled, we do an eta-expanding readback of any term. *)
+  | Canonical (_, Pi (name, doms, cods), ins, tyargs), tm when eta ->
+      let Eq = eq_of_ins_zero ins in
+      let newargs, newnfs = dom_vars ctx doms in
+      let (Any_ctx newctx) = Ctx.variables_vis ctx name newnfs in
+      let output = tyof_app cods tyargs newargs in
+      (* We carry through the eta-expansion flag so that iterated pi-types will eta-expand fully. *)
+      Term.Lam (name, readback_at ~eta newctx (apply_term tm newargs) output)
   | ( Canonical
         (type mn m n)
         (( _,
@@ -164,19 +176,23 @@ and readback_val : type a z. (z, a) Ctx.t -> kinetic value -> (a, kinetic) term 
 
 and readback_neu : type a z any. (z, a) Ctx.t -> head -> any apps -> (a, kinetic) term =
  fun ctx head apps ->
-  match apps with
-  | Emp -> readback_head ctx head
-  | Arg (apps, args, ins) ->
+  match (apps, head) with
+  | Emp, _ -> readback_head ctx head
+  | Arg (apps, args, ins), _ ->
       let (To p) = deg_of_ins ins in
       Term.Act
         ( App
             ( readback_neu ctx head apps,
               CubeOf.mmap { map = (fun _ [ tm ] -> readback_nf ctx tm) } [ args ] ),
           p )
-  | Field (apps, fld, fldplus, ins) ->
+  | Field (apps, fld, fldplus, ins), _ ->
       let (To p) = deg_of_ins ins in
       Term.Act (Field (readback_neu ctx head apps, fld, id_ins (cod_left_ins ins) fldplus), p)
-  | Inst (apps, _, args) ->
+  | Inst (Emp, _, args), Pi _ when TubeOf.is_full args ->
+      (* When reading back a fully instantiated higher-dimensional pi-type, we eta-expand the instantiation arguments so that it can be printed with a nice notation. *)
+      let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ~eta:true ctx x) } [ args ] in
+      Inst (readback_head ctx head, args)
+  | Inst (apps, _, args), _ ->
       let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ args ] in
       Inst (readback_neu ctx head apps, args)
 

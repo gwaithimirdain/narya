@@ -24,5 +24,5 @@
    ￮ constant a2' defined
   
   y ⤇ y.2
-    : refl Π (refl A) {_ ↦ A} {_ ↦ A} (_ ⤇ refl A) (y ↦ y) (y ↦ y)
+    : {H₀ : A} {H₁ : A} (H₂ : refl A H₀ H₁) ⇒ refl A H₀ H₁
   

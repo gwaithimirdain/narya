@@ -44,6 +44,11 @@ let parenthesize tm =
     (outfix ~notn:parens
        ~inner:(Multiple ((LParen, (None, [])), Snoc (Emp, Term tm), (RParen, (None, [])))))
 
+let braceize tm =
+  unlocated
+    (outfix ~notn:Postprocess.braces
+       ~inner:(Multiple ((LBrace, (None, [])), Snoc (Emp, Term tm), (RBrace, (None, [])))))
+
 (* Put them only if they aren't there already *)
 let parenthesize_maybe (tm : ('lt, 'ls, 'rt, 'rs) parse located) =
   match tm.value with
@@ -145,22 +150,8 @@ let unparse_var_with_implicitness : type lt ls rt rs.
     string option * [ `Explicit | `Implicit ] -> (lt, ls, rt, rs) parse located = function
   | Some x, `Explicit -> unlocated (Ident ([ x ], []))
   | None, `Explicit -> unlocated (Placeholder [])
-  | Some x, `Implicit ->
-      unlocated
-        (outfix ~notn:Postprocess.braces
-           ~inner:
-             (Multiple
-                ( (LBrace, (None, [])),
-                  Snoc (Emp, Term (unlocated (Ident ([ x ], [])))),
-                  (RBrace, (None, [])) )))
-  | None, `Implicit ->
-      unlocated
-        (outfix ~notn:Postprocess.braces
-           ~inner:
-             (Multiple
-                ( (LBrace, (None, [])),
-                  Snoc (Emp, Term (unlocated (Placeholder []))),
-                  (RBrace, (None, [])) )))
+  | Some x, `Implicit -> braceize (unlocated (Ident ([ x ], [])))
+  | None, `Implicit -> braceize (unlocated (Placeholder []))
 
 (* Unparse a Bwd of variables to occur in an iterated abstraction.  If there is more than one variable, the result is an "application spine".  Can occur in any tightness interval that contains +ω. *)
 let rec unparse_abs : type li ls ri rs.
@@ -308,6 +299,18 @@ let rec unparse : type n lt ls rt rs s.
               unlocated (outfix ~notn:universe ~inner:(Single (Ident [ "Type" ], (None, [])))));
         }
         (deg_zero n) li ri
+  (* A fully instantiated pi-type we can unparse prettily. *)
+  | Inst ((Pi (x, doms, cods) as ty), tyargs) -> (
+      match
+        (D.compare_zero (TubeOf.uninst tyargs), D.compare (TubeOf.inst tyargs) (CubeOf.dim doms))
+      with
+      | Zero, Eq ->
+          let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (TubeOf.inst tyargs)) in
+          let tyargs = TubeOf.mmap { map = (fun _ [ x ] -> Names.Named (vars, x)) } [ tyargs ] in
+          unparse_higher_pi vars Emp x doms cods tyargs li ri
+      | Zero, Neq ->
+          fatal (Dimension_mismatch ("unparsing higher pi", TubeOf.inst tyargs, CubeOf.dim doms))
+      | Pos _, _ -> unparse_inst vars ty tyargs li ri)
   | Inst (ty, tyargs) -> unparse_inst vars ty tyargs li ri
   | Pi _ -> unparse_pis vars Emp tm li ri
   | App _ -> (
@@ -421,9 +424,7 @@ and make_unparser_implicit : type n.
         unparse =
           (fun _ _ ->
             let tm = unparse vars tm No.Interval.entire No.Interval.entire in
-            unlocated
-              (outfix ~notn:Postprocess.braces
-                 ~inner:(Multiple ((LBrace, (None, [])), Snoc (Emp, Term tm), (RBrace, (None, []))))));
+            braceize tm);
       }
 
 (* Unparse a spine with its arguments whose head could be many things: an as-yet-not-unparsed term, a constructor, a field projection, a degeneracy, or a general delayed unparsing. *)
@@ -607,6 +608,8 @@ and unparse_act : type n lt ls rt rs a b.
       | None ->
           unlocated (Superscript (Some (tm.unparse li No.Interval.empty), string_of_deg s, [])))
 
+(* We unparse instantiations like application spines, since that is how they are represented in user syntax.
+   TODO: How can we allow special notations for some instantiations, like x=y for Id A x y? *)
 and unparse_inst : type n lt ls rt rs m k mk.
     n Names.t ->
     (n, kinetic) term ->
@@ -615,23 +618,39 @@ and unparse_inst : type n lt ls rt rs m k mk.
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
  fun vars ty tyargs li ri ->
-  (* We unparse instantiations like application spines, since that is how they are represented in user syntax.
-         TODO: How can we allow special notations for some instantiations, like x=y for Id A x y? *)
+  let tyargs = TubeOf.mmap { map = (fun _ [ x ] -> Names.Named (vars, x)) } [ tyargs ] in
+  unparse_named_inst vars ty tyargs li ri
+
+and unparse_named_inst : type n lt ls rt rs m k mk.
+    n Names.t ->
+    (n, kinetic) term ->
+    (m, k, mk, Names.named_term) TubeOf.t ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun vars ty tyargs li ri ->
   let module M = TubeOf.Monadic (Monad.State (struct
     type t = unparser Bwd.t
   end)) in
-  (* To append the entries in a cube to a Bwd, we iterate through it with a Bwd state. *)
+  (* To append the entries in a tube to a Bwd, we iterate through it with a Bwd state. *)
   let (), args =
     M.miterM
       {
         it =
-          (fun fa [ x ] s ->
-            let (Tface_of fa1) = codim1_envelope fa in
-            let all_args = not (synths (TubeOf.find tyargs fa1)) in
-            match (Display.type_boundaries (), is_codim1 fa, all_args) with
-            | `Hide, None, false -> ((), s)
-            | _, None, _ -> ((), Snoc (s, make_unparser_implicit vars (x, `Implicit)))
-            | _ -> ((), Snoc (s, make_unparser_implicit vars (x, `Explicit))));
+          (fun fa [ Names.Named (xvars, x) ] s ->
+            (* We include the argument explicitly if it is codimension-1. *)
+            match is_codim1 fa with
+            | Some () -> ((), Snoc (s, make_unparser_implicit xvars (x, `Explicit)))
+            | None -> (
+                (* We include it implicitly if display of type boundaries is on. *)
+                match Display.type_boundaries () with
+                | `Show -> ((), Snoc (s, make_unparser_implicit xvars (x, `Implicit)))
+                | `Hide ->
+                    (* We also include it implicitly if its codimension-1 envelope is non-synthesizing *)
+                    let (Tface_of fa1) = codim1_envelope fa in
+                    let (Named (_, x1)) = TubeOf.find tyargs fa1 in
+                    if synths x1 then ((), s)
+                    else ((), Snoc (s, make_unparser_implicit xvars (x, `Implicit)))));
       }
       [ tyargs ] Emp in
   unparse_spine vars (`Term ty) args li ri
@@ -725,18 +744,20 @@ and unparse_pis : type n lt ls rt rs.
 
 (* The arrow in both dependent and non-dependent pi-types is (un)parsed as a binary operator.  In the dependent case, its left-hand argument looks like an "application spine" of ascribed variables.  Of course, it may have to be parenthesized. *)
 and unparse_arrow : type lt ls rt rs.
+    ?higher:bool ->
     unparser ->
     unparser ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun dom cod li ri ->
+ fun ?(higher = false) dom cod li ri ->
+  let arrow, aarrow = if higher then (dblarrow, Token.DblArrow) else (arrow, Arrow) in
   match (No.Interval.contains li No.zero, No.Interval.contains ri No.zero) with
   | Some left_ok, Some right_ok ->
       let first = dom.unparse li (interval_left arrow) in
       let last = cod.unparse (interval_right arrow) ri in
       unlocated
-        (infix ~notn:arrow ~first ~inner:(Single (Arrow, (None, []))) ~last ~left_ok ~right_ok)
+        (infix ~notn:arrow ~first ~inner:(Single (aarrow, (None, []))) ~last ~left_ok ~right_ok)
   | _ ->
       let first = dom.unparse No.Interval.entire (interval_left arrow) in
       let last = cod.unparse (interval_right arrow) No.Interval.entire in
@@ -744,44 +765,136 @@ and unparse_arrow : type lt ls rt rs.
       let right_ok = No.minusomega_lt_zero in
       parenthesize
         (unlocated
-           (infix ~notn:arrow ~first ~inner:(Single (Arrow, (None, []))) ~last ~left_ok ~right_ok))
+           (infix ~notn:arrow ~first ~inner:(Single (aarrow, (None, []))) ~last ~left_ok ~right_ok))
 
 and unparse_pis_final : type n lt ls rt rs.
+    ?higher:bool ->
     n Names.t ->
     unparser Bwd.t ->
     unparser ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun vars accum tm li ri ->
+ fun ?(higher = false) vars accum tm li ri ->
   match split_first accum with
   | None -> tm.unparse li ri
   | Some (dom0, accum) ->
-      unparse_arrow
+      unparse_arrow ~higher
         { unparse = (fun li ri -> unparse_spine vars (`Unparser dom0) accum li ri) }
         tm li ri
 
 (* Unparse a single domain of a dependent pi-type. *)
 and unparse_pi_dom : type lt ls rt rs.
+    ?implicit:bool ->
     string ->
     (No.minus_omega, No.strict, No.minus_omega, No.nonstrict) parse located ->
     (lt, ls, rt, rs) parse located =
- fun x dom ->
-  unlocated
-    (outfix ~notn:parens
-       ~inner:
-         (Multiple
-            ( (LParen, (None, [])),
+ fun ?(implicit = false) x dom ->
+  (if implicit then braceize else parenthesize)
+    (unlocated
+       (infix ~notn:asc
+          ~first:(unlocated (Ident ([ x ], [])))
+          ~inner:(Single (Colon, (None, [])))
+          ~last:dom ~left_ok:(No.le_refl No.minus_omega) ~right_ok:(No.le_refl No.minus_omega)))
+
+and unparse_higher_pi : type a lt ls rt rs n.
+    a Names.t ->
+    unparser Bwd.t ->
+    n variables ->
+    (n, (a, kinetic) term) CubeOf.t ->
+    (n, a) CodCube.t ->
+    (D.zero, n, n, Names.named_term) TubeOf.t ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun vars accum xs doms cods tyargs li ri ->
+  let n = CubeOf.dim doms in
+  (* Make all the variables ordinary ones by suffixing them with face names *without* a separating ".", and making sure that they all have some name. *)
+  let (Wrap (xs, _)) = Names.full_variables xs in
+  let xsv = Variables (D.zero, D.zero_plus n, xs) in
+  let xsv, newvars = Names.add ~rename:true vars xsv in
+  (* Unparse each domain, apply it to all the appropriate variables corresponding to its faces, and parenthesize or brace it to become a pi-type domain, adding them all to the accumulated list of domains. *)
+  let module S = Monad.State (struct
+    type t = unparser Bwd.t
+  end) in
+  let module MOf = CubeOf.Monadic (S) in
+  let (), accum =
+    MOf.miterM
+      {
+        it =
+          (fun s [ dom ] accum ->
+            let x = find_variable s xsv <|> Anomaly "missing variable in unparse_higher_pi" in
+            let module UP = NICubeOf.Traverse (struct
+              type 'a t = unparser Bwd.t
+            end) in
+            let (Variables (_, _, subxs)) = sub_variables s xsv in
+            let foldmap : type left right m n.
+                (m, n) sface ->
+                unparser Bwd.t ->
+                (left, m, string option, right) NFamOf.t ->
+                (left, m, unit, right) NFamOf.t * unparser Bwd.t =
+             fun fa xargs (NFamOf x) ->
+              (* We are only adding the boundary, so we skip the top face (really we want to be iterating over a full tube). *)
+              match pface_of_sface fa with
+              | `Id _ -> (NFamOf (), xargs)
+              | `Proper fa -> (
+                  match
+                    (* We include the argument explicitly if it is codimension-1. *)
+                    match is_codim1 fa with
+                    | Some () -> Some `Explicit
+                    | None -> (
+                        (* We include it implicitly if display of type boundaries is on.  Unlike for general instantiations, we don't need to check if its codimension-1 envelope is synthesizing, since that envelope is always just another variable, hence always synthesizing. *)
+                        match Display.type_boundaries () with
+                        | `Show -> Some `Implicit
+                        | `Hide -> None)
+                  with
+                  | Some implicit ->
+                      ( NFamOf (),
+                        Snoc
+                          ( xargs,
+                            { unparse = (fun _ _ -> unparse_var_with_implicitness (x, implicit)) }
+                          ) )
+                  | None -> (NFamOf (), xargs)) in
+            let _, xargs = UP.fold_map_left { foldmap } Emp subxs in
+            ( (),
               Snoc
-                ( Emp,
-                  Term
-                    (unlocated
-                       (infix ~notn:asc
-                          ~first:(unlocated (Ident ([ x ], [])))
-                          ~inner:(Single (Colon, (None, [])))
-                          ~last:dom ~left_ok:(No.le_refl No.minus_omega)
-                          ~right_ok:(No.le_refl No.minus_omega))) ),
-              (RParen, (None, [])) )))
+                ( accum,
+                  {
+                    unparse =
+                      (fun _ _ ->
+                        unparse_pi_dom
+                          ~implicit:(Option.is_none (is_id_sface s))
+                          x
+                          (unparse_spine vars (`Term dom) xargs (interval_right asc)
+                             No.Interval.entire));
+                  } ) ));
+      }
+      [ doms ] accum in
+  (* The instantiation arguments 'tyargs' should already all be eta-expanded, since readback eta-expands the instantiation arguments of higher pi-types.  So we can descend into those abstractions and add the appropriate variables on which they depend to their unparsing contexts. *)
+  let tyargs =
+    let map : type k. (k, D.zero, n, n) tface -> Names.named_term -> Names.named_term =
+     fun s lam ->
+      let k = dom_tface s in
+      match lam with
+      | Names.Named (lamvars, Lam (ys, body)) -> (
+          match D.compare (dim_variables ys) k with
+          | Eq ->
+              let lam_xs = sub_variables (sface_of_tface s) xsv in
+              let _, lamvars = Names.add lamvars lam_xs in
+              Named (lamvars, body)
+          | Neq -> fatal (Dimension_mismatch ("unparse_higher_pi lam", dim_variables ys, k)))
+      | _ -> fatal (Anomaly "unparse_higher_pi: tyarg not eta-expanded") in
+    TubeOf.mmap { map = (fun s [ lam ] -> map s lam) } [ tyargs ] in
+  (* We only need the top codomain.  If it's another pi-type, it must be of the same dimension since it is an (uninstantiated!) n-dimensional type, and we continue recursively.  Otherwise, we finish. *)
+  match CodCube.find_top cods with
+  | Pi (newxs, newdoms, newcods) -> (
+      match D.compare (CubeOf.dim newdoms) n with
+      | Eq -> unparse_higher_pi newvars accum newxs newdoms newcods tyargs li ri
+      | Neq -> fatal (Dimension_mismatch ("unparse_higher_pi recursion", CubeOf.dim newdoms, n)))
+  | cod ->
+      (* When it's time to finish, we unparse the eventual codomain and instantiate it at the unparsed bodies of all the lambda tyargs. *)
+      let tm = { unparse = (fun li ri -> unparse_named_inst newvars cod tyargs li ri) } in
+      unparse_pis_final ~higher:true vars accum tm li ri
 
 (* Unparse a term context, given a vector of variable names obtained by pre-uniquifying a variable list, and a list of names for by the empty context that nevertheless remembers the variables in that vector, as produced by Names.uniquify_vars.  Yields not only the list of unparsed terms/types, but a corresponding list of names that can be used to unparse further objects in that context. *)
 let rec unparse_ctx : type a b.

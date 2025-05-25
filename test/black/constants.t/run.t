@@ -280,15 +280,15 @@
    ￭ command-line exec string
    1 | def one_eq_zero : Id CN one zero := refl one
      ^ term synthesized type
-         refl Π (refl Type) {A ↦ (A → A) → A → A} {A ↦ (A → A) → A → A}
-           (A ⤇
-            refl Π (refl Π A.2 {_ ↦ A.0} {_ ↦ A.1} (_ ⤇ A.2)) {_ ↦ A.0 → A.0}
-              {_ ↦ A.1 → A.1} (_ ⤇ refl Π A.2 {_ ↦ A.0} {_ ↦ A.1} (_ ⤇ A.2))) one one
+         {A₀ : Type} {A₁ : Type} (A₂ : refl Type A₀ A₁) {H₀ : A₀ → A₀} {H₁ : A₁ → A₁}
+         (H₂ : refl Π A₂ {_ ↦ A₀} {_ ↦ A₁} (_ ⤇ A₂) H₀ H₁) {H₀′ : A₀} {H₁′ : A₁}
+         (H₂′ : A₂ H₀′ H₁′)
+         ⇒ A₂ (H₀ H₀′) (H₁ H₁′)
        but is being checked against type
-         refl Π (refl Type) {A ↦ (A → A) → A → A} {A ↦ (A → A) → A → A}
-           (A ⤇
-            refl Π (refl Π A.2 {_ ↦ A.0} {_ ↦ A.1} (_ ⤇ A.2)) {_ ↦ A.0 → A.0}
-              {_ ↦ A.1 → A.1} (_ ⤇ refl Π A.2 {_ ↦ A.0} {_ ↦ A.1} (_ ⤇ A.2))) one zero
+         {A₀ : Type} {A₁ : Type} (A₂ : refl Type A₀ A₁) {H₀ : A₀ → A₀} {H₁ : A₁ → A₁}
+         (H₂ : refl Π A₂ {_ ↦ A₀} {_ ↦ A₁} (_ ⤇ A₂) H₀ H₁) {H₀′ : A₀} {H₁′ : A₁}
+         (H₂′ : A₂ H₀′ H₁′)
+         ⇒ A₂ (H₀ H₀′) H₁′
        unequal head variables:
          _H
        does not equal
@@ -300,16 +300,15 @@
    ￭ command-line exec string
    1 | def cplus_one_two_eq_two : Id CN (cplus one two) two := refl two
      ^ term synthesized type
-         refl Π (refl Type) {A ↦ (A → A) → A → A} {A ↦ (A → A) → A → A}
-           (A ⤇
-            refl Π (refl Π A.2 {_ ↦ A.0} {_ ↦ A.1} (_ ⤇ A.2)) {_ ↦ A.0 → A.0}
-              {_ ↦ A.1 → A.1} (_ ⤇ refl Π A.2 {_ ↦ A.0} {_ ↦ A.1} (_ ⤇ A.2))) two two
+         {A₀ : Type} {A₁ : Type} (A₂ : refl Type A₀ A₁) {H₀ : A₀ → A₀} {H₁ : A₁ → A₁}
+         (H₂ : refl Π A₂ {_ ↦ A₀} {_ ↦ A₁} (_ ⤇ A₂) H₀ H₁) {H₀′ : A₀} {H₁′ : A₁}
+         (H₂′ : A₂ H₀′ H₁′)
+         ⇒ A₂ (H₀ (H₀ H₀′)) (H₁ (H₁ H₁′))
        but is being checked against type
-         refl Π (refl Type) {A ↦ (A → A) → A → A} {A ↦ (A → A) → A → A}
-           (A ⤇
-            refl Π (refl Π A.2 {_ ↦ A.0} {_ ↦ A.1} (_ ⤇ A.2)) {_ ↦ A.0 → A.0}
-              {_ ↦ A.1 → A.1} (_ ⤇ refl Π A.2 {_ ↦ A.0} {_ ↦ A.1} (_ ⤇ A.2)))
-           (cplus one two) two
+         {A₀ : Type} {A₁ : Type} (A₂ : refl Type A₀ A₁) {H₀ : A₀ → A₀} {H₁ : A₁ → A₁}
+         (H₂ : refl Π A₂ {_ ↦ A₀} {_ ↦ A₁} (_ ⤇ A₂) H₀ H₁) {H₀′ : A₀} {H₁′ : A₁}
+         (H₂′ : A₂ H₀′ H₁′)
+         ⇒ A₂ (H₀ (H₀ (H₀ H₀′))) (H₁ (H₁ H₁′))
        unequal head variables:
          _H
        does not equal
@@ -328,19 +327,15 @@
    ￭ command-line exec string
    1 | def refl_nat_eq_sample : Id (ℕ → Id ((x:A)→B x) f f) (refl_nat_f) (refl_nat_f_cube) ≔ refl refl_nat_f
      ^ term synthesized type
-         refl Π (refl ℕ) {_ ↦ refl Π (refl A) {x ↦ B x} {x ↦ B x} (x ⤇ refl B x.2) f f}
-           {_ ↦ refl Π (refl A) {x ↦ B x} {x ↦ B x} (x ⤇ refl B x.2) f f}
-           (_ ⤇
-            Π⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ {x ↦ B x} {x ↦ B x} {x ⤇ refl B x.2} {x ↦ B x} {x ↦ B x}
-              {x ⤇ refl B x.2} {x ⤇ refl B x.2} {x ⤇ refl B x.2} (x ⤇ B⁽ᵉᵉ⁾ x.22)
-              (refl f) (refl f)) refl_nat_f refl_nat_f
+         {H₀ : ℕ} {H₁ : ℕ} (H₂ : refl ℕ H₀ H₁)
+         ⇒ Π⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ {x ↦ B x} {x ↦ B x} {x ⤇ refl B x.2} {x ↦ B x} {x ↦ B x}
+             {x ⤇ refl B x.2} {x ⤇ refl B x.2} {x ⤇ refl B x.2} (x ⤇ B⁽ᵉᵉ⁾ x.22)
+             (refl f) (refl f) (x ⤇ refl_nat_f H₀ x.2) (x ⤇ refl_nat_f H₁ x.2)
        but is being checked against type
-         refl Π (refl ℕ) {_ ↦ refl Π (refl A) {x ↦ B x} {x ↦ B x} (x ⤇ refl B x.2) f f}
-           {_ ↦ refl Π (refl A) {x ↦ B x} {x ↦ B x} (x ⤇ refl B x.2) f f}
-           (_ ⤇
-            Π⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ {x ↦ B x} {x ↦ B x} {x ⤇ refl B x.2} {x ↦ B x} {x ↦ B x}
-              {x ⤇ refl B x.2} {x ⤇ refl B x.2} {x ⤇ refl B x.2} (x ⤇ B⁽ᵉᵉ⁾ x.22)
-              (refl f) (refl f)) refl_nat_f refl_nat_f_cube
+         {H₀ : ℕ} {H₁ : ℕ} (H₂ : refl ℕ H₀ H₁)
+         ⇒ Π⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ {x ↦ B x} {x ↦ B x} {x ⤇ refl B x.2} {x ↦ B x} {x ↦ B x}
+             {x ⤇ refl B x.2} {x ⤇ refl B x.2} {x ⤇ refl B x.2} (x ⤇ B⁽ᵉᵉ⁾ x.22)
+             (refl f) (refl f) (x ⤇ refl_nat_f H₀ x.2) (x ⤇ refl_nat_f_cube H₁ x.2)
        unequal head constants:
          refl_nat_f
        does not equal

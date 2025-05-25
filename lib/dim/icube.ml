@@ -392,7 +392,7 @@ module Icube (F : Fam4) = struct
    fun tr -> gfind_top tr
 end
 
-(* The most important case of indexed cubes is when the indices are type-level natural numbers that simply count how many entries there are in the cube.  In fact, as of May 8, 2024 this is the only case we are using.  TODO: Would it be easier to implement this case directly rather than as a special case of the more general version above, and if so would it simplify other things?  E.g. require fewer type annotations in uses?  It might also allow generic traversals to work. *)
+(* The most important case of indexed cubes is when the indices are type-level natural numbers that simply count how many entries there are in the cube.  TODO: Would it be easier to implement this case directly rather than as a special case of the more general version above, and if so would it simplify other things?  E.g. require fewer type annotations in uses?  It might also allow generic traversals to work. *)
 
 module NFamOf = struct
   type (_, _, _, _) t = NFamOf : 'b -> ('left, 'n, 'b, 'left N.suc) t

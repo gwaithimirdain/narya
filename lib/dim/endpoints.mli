@@ -24,5 +24,5 @@ val internal : unit -> bool
 val uniq : 'l1 len -> 'l2 len -> ('l1, 'l2) Eq.t
 val len : 'l len -> 'l N.t
 val indices : 'l len -> ('l t, 'l) Bwv.t
-val to_string : 'l t option -> string
+val to_string : ?unicode:bool -> 'l t option -> string
 val of_char : 'l len -> char -> ('l t option, unit) result

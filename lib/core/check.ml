@@ -84,6 +84,7 @@ let rec motive_of_family : type a b.
     let v = CubeOf.find newnfs fa in
     let cv = readback_val ctx (Binding.value v).ty in
     let (Any_ctx newctx) =
+      (* TODO: In the case of a cube variable, should we be annotating the variables by their face somehow?  *)
       Ctx.variables_vis ctx (singleton_variables D.zero (find_variable fa x)) (CubeOf.singleton v)
     in
     Fwrap (Rbtm cv, Any_ctx newctx) in

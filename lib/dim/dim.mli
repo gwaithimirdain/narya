@@ -145,7 +145,7 @@ val singleton_sface :
 
 type any_sface = Any_sface : ('n, 'k) sface -> any_sface
 
-val string_of_sface : ('n, 'k) sface -> string
+val string_of_sface : ?unicode:bool -> ('n, 'k) sface -> string
 val sface_of_string : string -> any_sface option
 
 module Cube (F : Fam2) : sig
@@ -338,6 +338,8 @@ module Tube (F : Fam2) : sig
   type (_, _) some = Some_tube : ('n, 'k, 'nk, 'a) t -> ('nk, 'a) some
   type _ any = Any_tube : ('n, 'k, 'nk, 'a) t -> 'a any
 
+  val is_full : ('m, 'k, 'mk, 'b) t -> bool
+
   module Heter : sig
     type (_, _, _, _, _) hgt =
       | [] : ('m, 'k, 'mk, 'nk, nil) hgt
@@ -520,6 +522,7 @@ end
 
 module NICubeOf : sig
   include module type of Icube (NFamOf)
+  module NFold : module type of Traverse (N)
 
   val singleton : 'b -> ('left, D.zero, 'b, 'left N.suc) t
   val out : 'left N.t -> ('left, 'm, 'b, 'right) t -> 'right N.t
