@@ -42,7 +42,8 @@ let rec typefam : type a b.
       | Eq ->
           let newargs, newnfs = dom_vars ctx doms in
           let output = tyof_app cods tyargs newargs in
-          let n, d = typefam ?discrete (Ctx.cube_vis ctx x newnfs) output in
+          let (Any_ctx newctx) = Ctx.variables_vis ctx x newnfs in
+          let n, d = typefam ?discrete newctx output in
           let disc =
             (* For indices of discrete datatypes, we only allow zero-dimensional pi-types. *)
             match D.compare (CubeOf.dim doms) D.zero with
@@ -61,7 +62,7 @@ let rec motive_of_family : type a b.
   end in
   let module FCube = Icube (F) in
   let module C = struct
-    type _ t = Any_ctx : ('a, 'c) Ctx.t -> 'c t
+    type 'b t = 'b Ctx.any
   end in
   let module T = struct
     type 'c t = ('c, kinetic) term
@@ -70,9 +71,11 @@ let rec motive_of_family : type a b.
   let module MT = FCube.Traverse (T) in
   let folder : type left m any right.
       (left, m, any, right) F.t -> right T.t -> left T.t * (left, m, any, right) F.t =
-   fun (Rbtm dom) cod -> (Pi (None, CubeOf.singleton dom, CodCube.singleton cod), Rbtm dom) in
+   fun (Rbtm dom) cod ->
+    (Pi (singleton_variables D.zero None, CubeOf.singleton dom, CodCube.singleton cod), Rbtm dom)
+  in
   let builder : type left n m.
-      string option ->
+      n variables ->
       (n, Binding.t) CubeOf.t ->
       (m, n) sface ->
       left C.t ->
@@ -80,13 +83,16 @@ let rec motive_of_family : type a b.
    fun x newnfs fa (Any_ctx ctx) ->
     let v = CubeOf.find newnfs fa in
     let cv = readback_val ctx (Binding.value v).ty in
-    Fwrap (Rbtm cv, Any_ctx (Ctx.cube_vis ctx x (CubeOf.singleton v))) in
+    let (Any_ctx newctx) =
+      Ctx.variables_vis ctx (singleton_variables D.zero (find_variable fa x)) (CubeOf.singleton v)
+    in
+    Fwrap (Rbtm cv, Any_ctx newctx) in
   match view_type ty "motive_of_family" with
   | Canonical (_, Pi (x, doms, cods), ins, tyargs) ->
       let Eq = eq_of_ins_zero ins in
       let newvars, newnfs = dom_vars ctx doms in
       let newtm = apply_term tm newvars in
-      (* We extend the context, not by the cube of types of newnfs, but by its elements one at a time as singletons.  This is because we want eventually to construct a 0-dimensional pi-type.  As we go, we also read back thesetypes and store them to later take the pi-type over.  Since they are all in different contexts, and we need to keep track of the type-indexed checked length of those contexts to ensure the later pis are well-typed, we use an indexed cube indexed over Tbwds. *)
+      (* We extend the context, not by the cube of types of newnfs, but by its elements one at a time as singletons.  This is because we want eventually to construct a 0-dimensional pi-type.  As we go, we also read back these types and store them to later take the pi-type over.  Since they are all in different contexts, and we need to keep track of the type-indexed checked length of those contexts to ensure the later pis are well-typed, we use an indexed cube indexed over Tbwds. *)
       let (Wrap (newdoms, Any_ctx newctx)) =
         MC.build_left (CubeOf.dim newnfs)
           { build = (fun fa ctx -> builder x newnfs fa ctx) }
@@ -98,9 +104,10 @@ let rec motive_of_family : type a b.
       (* This is similar, except that we add the datatype itself to the instantiation argument to get the cube of domains, and take a pi over the 0-dimensional universe rather than a recursive call. *)
       let doms = TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm) in
       let _, newnfs = dom_vars ctx doms in
+      let m = CubeOf.dim newnfs in
       let (Wrap (newdoms, _)) =
-        MC.build_left (CubeOf.dim newnfs)
-          { build = (fun fa ctx -> builder None newnfs fa ctx) }
+        MC.build_left m
+          { build = (fun fa ctx -> builder (singleton_variables m None) newnfs fa ctx) }
           (Any_ctx ctx) in
       let motive, _ =
         MT.fold_map_right { foldmap = (fun _ x y -> folder x y) } newdoms (UU D.zero) in
@@ -2244,7 +2251,7 @@ and synth : type a b s.
         let cdom = check (Kinetic `Nolet) ctx dom (universe D.zero) in
         let edom = eval_term (Ctx.env ctx) cdom in
         let ccod = check (Kinetic `Nolet) (Ctx.ext ctx x edom) cod (universe D.zero) in
-        (realize status (pi x cdom ccod), universe D.zero)
+        (realize status (pi (singleton_variables D.zero x) cdom ccod), universe D.zero)
     | App _, _ ->
         (* If there's at least one application, we slurp up all the applications, synthesize a type for the function, and then pass off to synth_apps to iterate through all the arguments. *)
         let fn, args = spine tm in

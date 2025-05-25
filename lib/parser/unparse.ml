@@ -308,27 +308,7 @@ let rec unparse : type n lt ls rt rs s.
               unlocated (outfix ~notn:universe ~inner:(Single (Ident [ "Type" ], (None, [])))));
         }
         (deg_zero n) li ri
-  | Inst (ty, tyargs) ->
-      (* We unparse instantiations like application spines, since that is how they are represented in user syntax.
-         TODO: How can we allow special notations for some instantiations, like x=y for Id A x y? *)
-      let module M = TubeOf.Monadic (Monad.State (struct
-        type t = unparser Bwd.t
-      end)) in
-      (* To append the entries in a cube to a Bwd, we iterate through it with a Bwd state. *)
-      let (), args =
-        M.miterM
-          {
-            it =
-              (fun fa [ x ] s ->
-                let (Tface_of fa1) = codim1_envelope fa in
-                let all_args = not (synths (TubeOf.find tyargs fa1)) in
-                match (Display.type_boundaries (), is_codim1 fa, all_args) with
-                | `Hide, None, false -> ((), s)
-                | _, None, _ -> ((), Snoc (s, make_unparser_implicit vars (x, `Implicit)))
-                | _ -> ((), Snoc (s, make_unparser_implicit vars (x, `Explicit))));
-          }
-          [ tyargs ] Emp in
-      unparse_spine vars (`Term ty) args li ri
+  | Inst (ty, tyargs) -> unparse_inst vars ty tyargs li ri
   | Pi _ -> unparse_pis vars Emp tm li ri
   | App _ -> (
       match get_spine tm with
@@ -627,6 +607,35 @@ and unparse_act : type n lt ls rt rs a b.
       | None ->
           unlocated (Superscript (Some (tm.unparse li No.Interval.empty), string_of_deg s, [])))
 
+and unparse_inst : type n lt ls rt rs m k mk.
+    n Names.t ->
+    (n, kinetic) term ->
+    (m, k, mk, (n, kinetic) term) TubeOf.t ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun vars ty tyargs li ri ->
+  (* We unparse instantiations like application spines, since that is how they are represented in user syntax.
+         TODO: How can we allow special notations for some instantiations, like x=y for Id A x y? *)
+  let module M = TubeOf.Monadic (Monad.State (struct
+    type t = unparser Bwd.t
+  end)) in
+  (* To append the entries in a cube to a Bwd, we iterate through it with a Bwd state. *)
+  let (), args =
+    M.miterM
+      {
+        it =
+          (fun fa [ x ] s ->
+            let (Tface_of fa1) = codim1_envelope fa in
+            let all_args = not (synths (TubeOf.find tyargs fa1)) in
+            match (Display.type_boundaries (), is_codim1 fa, all_args) with
+            | `Hide, None, false -> ((), s)
+            | _, None, _ -> ((), Snoc (s, make_unparser_implicit vars (x, `Implicit)))
+            | _ -> ((), Snoc (s, make_unparser_implicit vars (x, `Explicit))));
+      }
+      [ tyargs ] Emp in
+  unparse_spine vars (`Term ty) args li ri
+
 (* We group together all the 0-dimensional dependent pi-types in a notation, so we recursively descend through the term picking those up until we find a non-pi-type, a higher-dimensional pi-type, or a non-dependent pi-type, in which case we pass it off to unparse_pis_final. *)
 and unparse_pis : type n lt ls rt rs.
     n Names.t ->
@@ -638,8 +647,9 @@ and unparse_pis : type n lt ls rt rs.
  fun vars accum tm li ri ->
   match tm with
   | Pi (x, doms, cods) -> (
-      match (x, D.compare (CubeOf.dim doms) D.zero) with
+      match (top_variable x, D.compare (CubeOf.dim doms) D.zero) with
       | Some x, Eq ->
+          (* dependent 0-dimensional pi-type *)
           let Variables (_, _, x), newvars = Names.add vars (singleton_variables D.zero (Some x)) in
           unparse_pis newvars
             (Snoc
@@ -654,6 +664,7 @@ and unparse_pis : type n lt ls rt rs.
                  } ))
             (CodCube.find_top cods) li ri
       | None, Eq ->
+          (* non-dependent 0-dimensional pi-type *)
           let _, newvars = Names.add vars (singleton_variables D.zero None) in
           unparse_pis_final vars accum
             {
@@ -666,6 +677,7 @@ and unparse_pis : type n lt ls rt rs.
             }
             li ri
       | _, Neq ->
+          (* non-instantiated higher-dimensional pi-type; unparse as an application of the Π constant *)
           let module S = Monad.State (struct
             type t = unparser Bwd.t
           end) in
@@ -691,14 +703,13 @@ and unparse_pis : type n lt ls rt rs.
                 it =
                   (fun fa [ cod ] args ->
                     let impl =
+                      (* We never hide the boundaries of the codomain, since all of them are being unparsed as lambdas, so the top-dimensional face won't synthesize and we'd need the boundary given to make it re-parseable. *)
                       match is_id_sface fa with
                       | None -> `Implicit
                       | Some _ -> `Explicit in
                     ( (),
-                      Snoc
-                        ( args,
-                          make_unparser_implicit vars
-                            (Lam (singleton_variables (dom_sface fa) x, cod), impl) ) ));
+                      Snoc (args, make_unparser_implicit vars (Lam (sub_variables fa x, cod), impl))
+                    ));
               }
               [ cods ] args in
           unparse_pis_final vars accum
@@ -712,7 +723,7 @@ and unparse_pis : type n lt ls rt rs.
             li ri)
   | _ -> unparse_pis_final vars accum (make_unparser vars tm) li ri
 
-(* The arrow in both kinds of pi-type is (un)parsed as a binary operator.  In the dependent case, its left-hand argument looks like an "application spine" of ascribed variables.  Of course, it may have to be parenthesized. *)
+(* The arrow in both dependent and non-dependent pi-types is (un)parsed as a binary operator.  In the dependent case, its left-hand argument looks like an "application spine" of ascribed variables.  Of course, it may have to be parenthesized. *)
 and unparse_arrow : type lt ls rt rs.
     unparser ->
     unparser ->

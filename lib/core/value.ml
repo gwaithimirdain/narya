@@ -52,7 +52,7 @@ module rec Value : sig
       }
         -> head
     | UU : 'n D.t -> head
-    | Pi : string option * ('k, kinetic value) CubeOf.t * ('k, unit) BindCube.t -> head
+    | Pi : 'k variables * ('k, kinetic value) CubeOf.t * ('k, unit) BindCube.t -> head
 
   and _ apps =
     | Emp : noninst apps
@@ -104,7 +104,7 @@ module rec Value : sig
   and (_, _) canonical =
     | UU : 'm D.t -> ('m, D.zero) canonical
     | Pi :
-        string option * ('m, kinetic value) CubeOf.t * ('m, unit) BindCube.t
+        'm variables * ('m, kinetic value) CubeOf.t * ('m, unit) BindCube.t
         -> ('m, D.zero) canonical
     | Data : ('m, 'j, 'ij) data_args -> ('m, D.zero) canonical
     | Codata : ('m, 'n, 'c, 'a, 'et) codata_args -> ('m, 'n) canonical
@@ -199,7 +199,7 @@ end = struct
     (* Universes are parametrized by a dimension *)
     | UU : 'n D.t -> head
     (* Pis must store not just the domain type but all its boundary types.  These domain and boundary types are not fully instantiated.  Note the codomains are stored in a cube of binders. *)
-    | Pi : string option * ('k, kinetic value) CubeOf.t * ('k, unit) BindCube.t -> head
+    | Pi : 'k variables * ('k, kinetic value) CubeOf.t * ('k, unit) BindCube.t -> head
 
   (* An application contains the data of an n-dimensional argument and its boundary, together with a neutral insertion applied outside that can't be pushed in.  This represents the *argument list* of a single application, not the function.  Thus, an application spine will be a head together with a list of apps. *)
   and _ apps =
@@ -266,7 +266,7 @@ end = struct
     (* At present, we never produce these except as the values of their corresponding heads.  But in principle, we could allow universes and pi-types as potential terms, so that constants could be defined to "behave like" universes or pi-types without reducing to them. *)
     | UU : 'm D.t -> ('m, D.zero) canonical
     | Pi :
-        string option * ('m, kinetic value) CubeOf.t * ('m, unit) BindCube.t
+        'm variables * ('m, kinetic value) CubeOf.t * ('m, unit) BindCube.t
         -> ('m, D.zero) canonical
     (* We define a named record type to encapsulate the arguments of Data and Codata, rather than using an inline one, so that we can bind their existential variables (https://discuss.ocaml.org/t/annotating-by-an-existential-type/14721).  See the definitions of these records below. *)
     | Data : ('m, 'j, 'ij) data_args -> ('m, D.zero) canonical
@@ -379,16 +379,10 @@ let rec length_env : type n b. (n, b) env -> b Dbwd.t = function
   | Unshift (env, mn, nb) -> Plusmap.input (D.plus_right mn) (length_env env) nb
 
 (* Abstract over a cube of binders to make a cube of lambdas.  TODO: This should morally be a Cube.map, but it goes from one instantiation of Cube to another one, and we didn't define a map like that, so for now we just make it a 'build'. *)
-let lam_cube : type n. string option -> (n, unit) BindCube.t -> (n, kinetic value) CubeOf.t =
+let lam_cube : type n. n variables -> (n, unit) BindCube.t -> (n, kinetic value) CubeOf.t =
  fun x binders ->
   CubeOf.build (BindCube.dim binders)
-    {
-      build =
-        (fun fa ->
-          let k = dom_sface fa in
-          let x = singleton_variables k x in
-          Lam (x, BindCube.find binders fa));
-    }
+    { build = (fun fa -> Lam (sub_variables fa x, BindCube.find binders fa)) }
 
 (* Smart constructor that composes actions and cancels identities *)
 let rec act_env : type m n b. (n, b) env -> (m, n) op -> (m, b) env =

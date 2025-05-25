@@ -30,11 +30,13 @@ and readback_at : type a z. (z, a) Ctx.t -> kinetic value -> kinetic value -> (a
  fun ctx tm ty ->
   let view = if Displaying.read () then view_term tm else tm in
   match (view_type ty "readback_at", view) with
-  | Canonical (_, Pi (_, doms, cods), _ins, tyargs), Lam ((Variables (m, mn, xs) as x), body) -> (
+  | Canonical (_, Pi (_, doms, cods), ins, tyargs), Lam ((Variables (m, mn, xs) as x), body) -> (
+      let Eq = eq_of_ins_zero ins in
       let k = CubeOf.dim doms in
       let l = dim_binder body in
       match (D.compare (TubeOf.inst tyargs) k, D.compare k l) with
-      | Neq, _ | _, Neq -> fatal (Dimension_mismatch ("reading back at pi", TubeOf.inst tyargs, k))
+      | Neq, _ -> fatal (Dimension_mismatch ("reading back at pi 1", TubeOf.inst tyargs, k))
+      | _, Neq -> fatal (Dimension_mismatch ("reading back at pi 2", k, l))
       | Eq, Eq ->
           let args, newnfs = dom_vars ctx doms in
           let (Plus af) = N.plus (NICubeOf.out N.zero xs) in
@@ -203,7 +205,8 @@ and readback_head : type c z. (z, c) Ctx.t -> head -> (c, kinetic) term =
             {
               build =
                 (fun fa ->
-                  let sctx = Ctx.cube_vis ctx x (CubeOf.subcube fa newnfs) in
+                  let (Any_ctx sctx) =
+                    Ctx.variables_vis ctx (sub_variables fa x) (CubeOf.subcube fa newnfs) in
                   let sargs = CubeOf.subcube fa args in
                   readback_val sctx (apply_binder_term (BindCube.find cods fa) sargs));
             } )

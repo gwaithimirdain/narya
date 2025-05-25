@@ -271,9 +271,8 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
       let mn = D.plus_out m m_n in
       let eargs = List.map (eval_args env m_n mn) args in
       Val (Constr (constr, mn, eargs))
-  | Pi
-      (type n)
-      ((x, doms, cods) : string option * (n, (b, kinetic) term) CubeOf.t * (n, b) CodCube.t) ->
+  | Pi (type n) ((x, doms, cods) : n variables * (n, (b, kinetic) term) CubeOf.t * (n, b) CodCube.t)
+    ->
       (* We are starting with an n-dimensional pi-type and evaluating it in an m-dimensional environment, producing an (m+n)-dimensional result. *)
       let n = CubeOf.dim doms in
       let m = dim_env env in
@@ -301,6 +300,7 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
       (* Since we only care about the hashtbl and the top, and we can get that from the hashtbl at the end anyway, we don't bother actually putting the normals into a meaningful cube. *)
       let build : type k. (k, mn) sface -> unit =
        fun fab ->
+        let (SFace_of_plus (ab, fa, fb)) = sface_of_plus m_n fab in
         let kl = dom_sface fab in
         let ty =
           inst (universe kl)
@@ -310,7 +310,8 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
                    (fun fc -> Hashtbl.find pitbl (SFace_of (comp_sface fab (sface_of_tface fc))));
                }) in
         let subdoms, subcods = (CubeOf.subcube fab doms, BindCube.subcube fab cods) in
-        let head : head = Pi (x, subdoms, subcods) in
+        let subx = plus_variables (dom_sface fa) ab (sub_variables fb x) in
+        let head : head = Pi (subx, subdoms, subcods) in
         (* We don't need fibrancy fields for all the boundary types, since once something "is a type" we don't need it to be in Fib any more. *)
         let fields : (k * potential * no_eta) Value.StructfieldAbwd.t =
           match (is_id_sface fab, Lazy.force Fibrancy.pi) with
@@ -318,15 +319,17 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
           | Some Eq, Some fields ->
               (* For the top face, we compute its fibrancy fields by evaluating the generic "fibrancy fields of a pi" at the evaluated domains and codomains.  *)
               let pi_env =
-                Ext (Ext (Emp mn, D.plus_zero mn, Ok doms), D.plus_zero mn, Ok (lam_cube x cods))
-              in
+                Ext
+                  ( Ext (Emp mn, D.plus_zero mn, Ok doms),
+                    D.plus_zero mn,
+                    Ok (lam_cube (plus_variables m m_n x) cods) ) in
               eval_structfield_abwd pi_env mn (D.plus_zero mn) mn fields in
         let value =
           ready
             (Val
                (Canonical
                   {
-                    canonical = Pi (x, subdoms, subcods);
+                    canonical = Pi (subx, subdoms, subcods);
                     tyargs = TubeOf.empty kl;
                     ins = ins_zero kl;
                     fields;

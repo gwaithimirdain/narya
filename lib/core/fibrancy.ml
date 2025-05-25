@@ -20,12 +20,12 @@ let fields : (emp * D.zero * no_eta) CodatafieldAbwd.t option Lazy.t =
      let open CodatafieldAbwd in
      let trr =
        Pi
-         ( None,
+         ( singleton_variables D.zero None,
            CubeOf.singleton (Var (Index (Now, zero))),
            CodCube.singleton (Var (Index (Later Now, one))) ) in
      let liftr =
        Pi
-         ( Some "x₀",
+         ( singleton_variables D.zero (Some "x₀"),
            CubeOf.singleton (Var (Index (Now, zero))),
            CodCube.singleton
              (Inst
@@ -43,12 +43,12 @@ let fields : (emp * D.zero * no_eta) CodatafieldAbwd.t option Lazy.t =
      in
      let trl =
        Pi
-         ( None,
+         ( singleton_variables D.zero None,
            CubeOf.singleton (Var (Index (Now, one))),
            CodCube.singleton (Var (Index (Later Now, zero))) ) in
      let liftl =
        Pi
-         ( Some "x₁",
+         ( singleton_variables D.zero (Some "x₁"),
            CubeOf.singleton (Var (Index (Now, one))),
            CodCube.singleton
              (Inst
@@ -384,15 +384,15 @@ let pi :
        let* fxtube = Hott.tube f0x0 f1x1 in
        let fib =
          Pi
-           ( Some "x0",
+           ( singleton_variables D.zero (Some "x₀"),
              CubeOf.singleton dom0,
              CodCube.singleton
                (Pi
-                  ( Some "x1",
+                  ( singleton_variables D.zero (Some "x₁"),
                     CubeOf.singleton (Weaken dom1),
                     CodCube.singleton
                       (Pi
-                         ( Some "x2",
+                         ( singleton_variables D.zero (Some "x₂"),
                            CubeOf.singleton (Inst (Weaken (Weaken dom2), xtube)),
                            CodCube.singleton
                              (Inst (App (Weaken (Weaken (Weaken cod2)), xcube), fxtube)) )) )) )

@@ -391,6 +391,14 @@ let vis (Permute { perm; env; level; ctx }) m mn xs vars af =
       ctx = Ordered.vis ctx m mn xs vars bf;
     }
 
+type _ any = Any_ctx : ('a, 'b) t -> 'b any
+
+let variables_vis : type a b mn.
+    (a, b) t -> mn variables -> (mn, Binding.t) CubeOf.t -> (b, mn) snoc any =
+ fun ctx (Variables (m, mn, xs)) vars ->
+  let (Plus af) = N.plus (NICubeOf.out N.zero xs) in
+  Any_ctx (vis ctx m mn xs vars af)
+
 let cube_vis ctx x vars =
   let m = CubeOf.dim vars in
   vis ctx m (D.plus_zero m) (NICubeOf.singleton x) vars (Suc Zero)

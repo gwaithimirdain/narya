@@ -3,23 +3,8 @@ open Util
 open Tbwd
 open Dim
 open Dimbwd
+include Variables
 include Energy
-
-(* ******************** Names ******************** *)
-
-(* An element of "mn variables" is an mn-dimensional cube of variables where mn = m + n and the user specified names for n dimensions, with the other m dimensions being named with face suffixes.  *)
-type _ variables =
-  | Variables :
-      'm D.t * ('m, 'n, 'mn) D.plus * (N.zero, 'n, string option, 'f) NICubeOf.t
-      -> 'mn variables
-
-type any_variables = Any : 'n variables -> any_variables
-
-let dim_variables : type m. m variables -> m D.t = function
-  | Variables (m, mn, _) -> D.plus_out m mn
-
-let singleton_variables : type m. m D.t -> string option -> m variables =
- fun m x -> Variables (m, D.plus_zero m, NICubeOf.singleton x)
 
 (* ******************** Typechecked terms ******************** *)
 
@@ -76,7 +61,7 @@ module rec Term : sig
     | UU : 'n D.t -> ('a, kinetic) term
     | Inst : ('a, kinetic) term * ('m, 'n, 'mn, ('a, kinetic) term) TubeOf.t -> ('a, kinetic) term
     | Pi :
-        string option * ('n, ('a, kinetic) term) CubeOf.t * ('n, 'a) CodCube.t
+        'n variables * ('n, ('a, kinetic) term) CubeOf.t * ('n, 'a) CodCube.t
         -> ('a, kinetic) term
     | App : ('a, kinetic) term * ('n, ('a, kinetic) term) CubeOf.t -> ('a, kinetic) term
     | Constr : Constr.t * 'n D.t * ('n, ('a, kinetic) term) CubeOf.t list -> ('a, kinetic) term
@@ -239,9 +224,8 @@ end = struct
     | Field : ('a, kinetic) term * 'i Field.t * ('n, 't, 'i) insertion -> ('a, kinetic) term
     | UU : 'n D.t -> ('a, kinetic) term
     | Inst : ('a, kinetic) term * ('m, 'n, 'mn, ('a, kinetic) term) TubeOf.t -> ('a, kinetic) term
-    (* Since the user doesn't write higher-dimensional pi-types explicitly, there is always only one variable name in a pi-type. *)
     | Pi :
-        string option * ('n, ('a, kinetic) term) CubeOf.t * ('n, 'a) CodCube.t
+        'n variables * ('n, ('a, kinetic) term) CubeOf.t * ('n, 'a) CodCube.t
         -> ('a, kinetic) term
     | App : ('a, kinetic) term * ('n, ('a, kinetic) term) CubeOf.t -> ('a, kinetic) term
     | Constr : Constr.t * 'n D.t * ('n, ('a, kinetic) term) CubeOf.t list -> ('a, kinetic) term
@@ -408,7 +392,7 @@ module Telescope = struct
    fun doms cod ->
     match doms with
     | Emp -> cod
-    | Ext (x, dom, doms) -> pi x dom (pis doms cod)
+    | Ext (x, dom, doms) -> pi (singleton_variables D.zero x) dom (pis doms cod)
 
   let rec lams : type a b ab. (a, b, ab) t -> (ab, kinetic) term -> (a, kinetic) term =
    fun doms body ->
