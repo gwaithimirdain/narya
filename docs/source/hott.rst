@@ -31,7 +31,7 @@ Saying that these are one-dimensional higher fields means that they can only be 
    A₂ .trl : A₁ → A₀
    A₂ .liftr : (x₁ : A₁) → A₂ (A₂ .trl x₁) x₁
 
-More verbosely, these fields can also be denoted ``.trr.1`` and so on.  For a higher-dimensional type, the fields are numbered by dimension and yield "uniform" versions of these operations acting from one face to the opposite face.  For instance, given ``A₂₂ : Type⁽ᵉᵉ⁾ A₀₂ A₁₂ A₂₀ A₂₁`` (using implicit type boundaries):
+More verbosely, these fields can also be denoted ``.trr.1`` and so on.  For a higher-dimensional type, the fields are numbered by dimension and yield "uniform" versions of these operations acting from one face to the opposite face.  For instance, given ``A₂₂ : Type⁽ᵉᵉ⁾ A₀₂ A₁₂ A₂₀ A₂₁``:
 
 - If ``a₀₂ : A₀₂ a₀₀ a₀₁``, then ``A₂₂ .trr.1 a₀₂ : A₁₂ (A₂₀ .trr a₀₀) (A₂₁ .trr a₀₁)``.
 - If ``a₂₀ : A₂₀ a₀₀ a₁₀``, then ``A₂₂ .trr.2 a₂₀ : A₂₁ (A₀₂ .trr a₀₀) (A₁₂ .trr a₁₀)``.
