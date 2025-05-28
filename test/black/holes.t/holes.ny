@@ -100,8 +100,9 @@ def ideqid : Id (A -> A) ida ida := ((x |-> x) : Id (A -> A ) ida ida -> Id (A -
 
 echo ideqid
 
-{` TODO: Ideally, the user's "u0" should not be shadowed by an auto-generated one (although this matters a bit less than the one for contexts, since the user won't be using it to enter terms).  (This isn't about holes.) `}
-def ideqid' : Id (A -> A) ida ida := ((x |-> x) : Id (A -> A ) ida ida -> Id (A -> A) ida ida) (u u u0 |-> u0)
+{` TODO: Ideally, the user's "u′" should not be shadowed by an auto-generated one (although this matters a bit less than the one for contexts, since the user won't be using it to enter terms).  (This isn't about holes.) `}
+def ideqid' : Id (A → A) ida ida
+  ≔ ((x ↦ x) : Id (A → A) ida ida → Id (A → A) ida ida) (u u u′ ↦ u′)
 
 echo ideqid'
 

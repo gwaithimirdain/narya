@@ -278,7 +278,7 @@
    ￫ info[I0000]
    ￮ constant ideqid' defined
   
-  u u′ u0 ↦ u0
+  u u′ u′′ ↦ u′′
     : refl Π A A (refl A) (_ ↦ A) (_ ↦ A) (_ ⤇ refl A) ida ida
   
    ￫ info[I0000]
@@ -350,9 +350,9 @@
   
    ￫ warning[E2100]
    ￭ $TESTCASE_ROOT/holes.ny
-   122 | def p : prod ≔ ?
+   123 | def p : prod ≔ ?
        ^ previous definition
-   128 | def p : prod' ≔ ?
+   129 | def p : prod' ≔ ?
        ^ redefining constant: p
   
    ￫ info[I0000]
