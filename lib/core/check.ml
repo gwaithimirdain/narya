@@ -284,7 +284,7 @@ let rec check : type a b s.
             let ctx = if locking fa then Ctx.lock ctx else ctx in
             let cx = check (Kinetic `Nolet) ctx x ty_fainv in
             realize status (Term.Act (cx, fa)))
-    | Lam { name = { value = x; loc = xloc }; cube; body }, _ -> (
+    | Lam { name = { value = x; loc = xloc }; cube; implicit; body }, _ -> (
         match view_type ~severity ty "typechecking lambda" with
         | Canonical (_, Pi (_, doms, cods), ins, tyargs) -> (
             let Eq = eq_of_ins_zero ins in
@@ -308,7 +308,7 @@ let rec check : type a b s.
             (* Apply and instantiate the codomain to those arguments to get a type to check the body at. *)
             let output = tyof_app cods tyargs newargs in
             match cube.value with
-            (* If the abstraction is a cube, we slurp up the right number of lambdas for the dimension of the pi-type, and pick up the body inside them.  We do this by building a cube of variables of the right dimension while maintaining the current term as an indexed state.  We also build a sum of raw lengths, since we need that to extend the context.  Note that we never need to manually "count" how many faces there are in a cube of any dimension, or discuss how to put them in order: the counting and ordering is handled automatically by iterating through a cube. *)
+            (* If the abstraction is not a cube, we slurp up the right number of lambdas for the dimension of the pi-type, requiring all but the top variable to be {implicit}, and pick up the body inside them.  We do this by building a cube of variables of the right dimension while maintaining the current term as an indexed state.  We also build a sum of raw lengths, since we need that to extend the context.  Note that we never need to manually "count" how many faces there are in a cube of any dimension, or discuss how to put them in order: the counting and ordering is handled automatically by iterating through a cube. *)
             | `Normal -> (
                 let module S = struct
                   type 'b t =
@@ -320,9 +320,24 @@ let rec check : type a b s.
                   Build.build_left m
                     {
                       build =
-                        (fun _ -> function
-                          | Ok (ab, { value = Lam { name; cube = { value = `Normal; _ }; body }; _ })
-                            -> Fwrap (NFamOf name.value, Ok (Suc ab, body))
+                        (fun fa -> function
+                          | Ok
+                              ( ab,
+                                {
+                                  value =
+                                    Lam { name; cube = { value = `Normal; _ }; implicit; body };
+                                  _;
+                                } ) -> (
+                              match (is_id_sface fa, implicit) with
+                              | Some _, `Implicit ->
+                                  fatal ?loc:name.loc
+                                    (Unexpected_implicitness
+                                       (`Implicit, "abstraction", "expecting explicit variable"))
+                              | None, `Explicit ->
+                                  fatal ?loc:name.loc
+                                    (Unexpected_implicitness
+                                       (`Explicit, "abstraction", "expecting implicit variable"))
+                              | _ -> Fwrap (NFamOf name.value, Ok (Suc ab, body)))
                           | Ok (_, _) -> Fwrap (NFamOf None, Missing 1)
                           | Missing j -> Fwrap (NFamOf None, Missing (j + 1)));
                     }
@@ -334,9 +349,10 @@ let rec check : type a b s.
                     Lam (xs, check ?discrete (mkstatus xs status) ctx body output)
                 | Wrap (_, Missing j) -> fatal ?loc:cube.loc (Not_enough_lambdas j))
             | `Cube absdim -> (
-                match D.compare_zero m with
-                | Zero -> fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "function")
-                | Pos _ ->
+                match (D.compare_zero m, implicit) with
+                | Zero, _ -> fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "function")
+                | _, `Implicit -> fatal (Unimplemented "general implicit functions")
+                | Pos _, `Explicit ->
                     (match !absdim with
                     | None -> absdim := Some (Wrap m, xloc)
                     | Some (Wrap m', xloc') -> (
@@ -1485,7 +1501,7 @@ and check_refute : type a b.
               check_refute status ctx tms ty i (Some (Option.value missing ~default:c))
           | _ -> fatal_diagnostic d)
 
-(* Try empty-matching against each successive domain in an iterated pi-type. *)
+(* Try empty-matching against each successive domain in an iterated pi-type.  For higher-dimensional pi-types, try empty-matching against each variable in the abstraction cube. *)
 and check_empty_match_lam : type a b.
     (a, b) Ctx.t -> kinetic value -> [ `First | `Notfirst ] -> (b, potential) term =
  fun ctx ty first ->
@@ -2495,11 +2511,15 @@ and synth_arg_cube : type a b n c.
                         | Some _, `Implicit ->
                             fatal ?loc
                               (Unexpected_implicitness
-                                 (`Implicit, "expecting primary " ^ which ^ " argument"))
+                                 ( `Implicit,
+                                   "argument",
+                                   "expecting explicit primary " ^ which ^ " argument" ))
                         | None, `Explicit ->
                             fatal ?loc
                               (Unexpected_implicitness
-                                 (`Explicit, which ^ " boundaries are implicit"))
+                                 ( `Explicit,
+                                   "argument",
+                                   "expecting implicit boundary " ^ which ^ " argument" ))
                         | _ -> ());
                         let* () = M.put (l, locate_opt l (App (f, t, impl)), ts) in
                         return t in

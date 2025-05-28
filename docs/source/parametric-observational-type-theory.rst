@@ -15,9 +15,9 @@ For example, ``Id (A → B) f g`` is a function-type that behaves like
 
   {x₀ x₁ : A} (x₂ : Id A x₀ x₁) → Id B (f x₀) (g x₁)
 
-That is, an element of ``Id (A → B) f g`` is a function that can be applied to two arguments ``x₀`` and ``x₁`` of type ``A`` and a third argument ``x₂`` of type ``Id A x₀ x₁`` to produce an element of ``Id B (f x₀) (g x₁)``.  And similarly, an element of ``Id (A → B) f g`` can be defined as an abstraction ``x₀ x₁ x₂ ↦ M`` where ``M : Id B (f x₀) (g x₁)`` in the context of ``x₀ x₁ : A`` and ``x₂ : Id A x₀ x₁``.
+That is, an element of ``Id (A → B) f g`` is a function that can be applied to two arguments ``x₀`` and ``x₁`` of type ``A`` and a third argument ``x₂`` of type ``Id A x₀ x₁`` to produce an element of ``Id B (f x₀) (g x₁)``.  And similarly, an element of ``Id (A → B) f g`` can be defined as an abstraction of a term ``M : Id B (f x₀) (g x₁)`` over variables ``x₀ x₁ : A`` and ``x₂ : Id A x₀ x₁``.
 
-The curly braces around ``x₀`` and ``x₁`` indicate that they are implicit arguments, not written by default; thus for ``h : Id (A → B) f g`` and ``x₂ : Id A x₀ x₁`` we have ``h x₂ : Id B (f x₀) (g x₁)``.  Narya does not yet have general implicit arguments, but in this specific case it does, because they can be inferred in a consistent way: if ``x₂`` synthesizes (as it often does), then ``x₀`` and ``x₁`` are determined by its type.  However, if needed or desired (such as if ``x₂`` does not synthesize), the first two arguments can be supplied explicitly by putting curly braces around them, as in ``h {x₀} {x₁} x₂``.
+The curly braces around ``x₀`` and ``x₁`` indicate that they are implicit arguments, not written by default in applications.  Thus, for ``h : Id (A → B) f g`` and ``x₂ : Id A x₀ x₁`` we have ``h x₂ : Id B (f x₀) (g x₁)``.  Narya does not yet have general implicit arguments, but in this specific case it does, because they can be inferred in a consistent way: if ``x₂`` synthesizes (as it often does), then ``x₀`` and ``x₁`` are determined by its type.  However, if needed or desired (such as if ``x₂`` does not synthesize), the first two arguments can be supplied explicitly by putting curly braces around them, as in ``h {x₀} {x₁} x₂``.  When defining such a function by abstraction, the implicit arguments must be given and enclosed in curly braces, as in ``{x₀} {x₁} x₂ ↦ M``.  (Although an alternative is to use :ref:`Cubes of variables`.)
 
 The type ``Id (A → B) f g`` is not actually *equal* to the above ternary function-type; it only behaves like it.  (Apart from the implicitness of the first two arguments, there is one other difference in behavior: an element of ``Id (A → B) f g`` cannot be "partially applied" to only one or two of the implicit arguments.)  This should be compared with how ``Covec A 2`` doesn't reduce to ``A × (A × ⊤)`` but behaves like it in terms of what its elements are and what we can do with them.  As in that case, since part of this behavior is that ``Id (A → B) f g`` satisfies η-conversion, by η-expansions it is "definitionally isomorphic" to the corresponding ordinary function-type, i.e. there are functions in both directions whose composites in both orders are definitionally equal to identities.  For most purposes this behavior is just as good as a reduction, and it retains more information about the type, which, as before, is useful for many purposes.  (In fact, with our current understanding, it appears to be *essential* for Narya's normalization and typechecking algorithms.)
 
@@ -110,9 +110,9 @@ The ascription in the declared type of ``B₂`` is necessary since the argument 
 
 .. code-block:: none
 
-   B₂ : refl Π A₂ {x₀ ↦ Type} {x₁ ↦ Type} (x₀ x₁ x₂ ↦ refl Type) B₀ B₁
+   B₂ : refl Π A₂ {x₀ ↦ Type} {x₁ ↦ Type} ({x₀} {x₁} x₂ ↦ refl Type) B₀ B₁
 
-Note that since the argument ``(x₀ x₁ x₂ ↦ refl Type)`` is an abstraction, it does not synthesize, so we must supply the two implicit arguments preceding it.  In particular, this is what Narya uses when printing higher-dimensional function-types (although it also uses :ref:`Cubes of variables`).
+Note that since the argument ``({x₀} {x₁} x₂ ↦ refl Type)`` is an abstraction, it does not synthesize, so we must supply the two implicit arguments preceding it.  In particular, this is what Narya uses when printing higher-dimensional function-types (although it also uses :ref:`Cubes of variables`).
 
 
 Higher-dimensional cubes
@@ -216,7 +216,7 @@ For instance, ``Gel A B R`` is a 1-dimensional type, belonging to ``Id Type A B`
 Cubes of variables
 ------------------
 
-Implicitness of arguments to higher-dimensional *applications* has no bearing on higher-dimensional *abstractions*: the "implicit arguments" still must be named in an abstraction in the usual way.  (This will also be Narya's approach to implicit arguments more generally.)  However, there is a different shorthand syntax for higher-dimensional abstractions: instead of ``x₀ x₁ x₂ ↦ M`` you can write ``x ⤇ M`` (or ``x |=> M`` in ASCII).  This binds ``x`` as a "family" or "cube" of variables whose names are suffixed with face names in ternary notation: ``x.0`` and ``x.1`` and ``x.2``, or in higher dimensions ``x.00`` through ``x.22`` and so on.
+Implicitness of arguments to higher-dimensional *applications* has no bearing on higher-dimensional *abstractions*: the "implicit arguments" still must be named in an abstraction in the usual way.  (This will also be Narya's approach to implicit arguments more generally.)  However, there is a different shorthand syntax for higher-dimensional abstractions: instead of ``{x₀} {x₁} x₂ ↦ M`` you can write ``x ⤇ M`` (or ``x |=> M`` in ASCII).  This binds ``x`` as a "family" or "cube" of variables whose names are suffixed with face names in ternary notation: ``x.0`` and ``x.1`` and ``x.2``, or in higher dimensions ``x.00`` through ``x.22`` and so on.
 
 The dimension of the cube of variables is inferred from the type at which the abstraction is checked, and *may not* be zero.  If the dimension is zero, you must use ``↦`` instead.  And as with ordinary abstractions, multiple cube abstractions can be combined as in ``x y ⤇ M``, but all the variables combined in this way must have the same dimension (which is nonzero); otherwise you must write ``x ⤇ y ⤇ M`` or ``x ↦ y ⤇ M``, etc.  (These restrictions are an intentional choice intended to increase readability; but if you don't like them, please give feedback.)
 
@@ -244,7 +244,7 @@ These "cube variables" also appear automatically when matching against a higher-
 
 Here in the definition of ``encode``, the pattern variable ``p`` of the ``suc.`` branch is automatically made into a 1-dimensional cube of variables since we are matching against an element of ``Id ℕ``, so in the body we can refer to ``p.0``, ``p.1``, and ``p.2``.  And because of this, we use ``⤇`` rather than ``↦`` to introduce the bodies of branches in that ``match``.
 
-Unlike for abstractions, there is no option to write ``↦`` and name all the variables explicitly (e.g. ``| suc. p0 p1 p2 ↦``).  We deem this would be too confusing, because higher-dimensional constructors can never be *applied* explicitly to all their boundaries, and a "pattern" in a ``match`` should look as much as possible like the constructor that it matches against.
+Unlike for abstractions, there is no option to write ``↦`` and name all the variables explicitly (e.g. ``| suc. {p0} {p1} p2 ↦``).  We deem this would be too confusing, because higher-dimensional constructors can never be *applied* explicitly to all their boundaries, and a "pattern" in a ``match`` should look as much as possible like the constructor that it matches against.
 
 Similarly, when defining a codatatype lying in a higher universe, the "self" variable automatically becomes a cube variable, so that the boundary of the type is accessible through its faces.  (In this case, of course, there is no ``↦`` to become ``⤇``.)  For instance, here is a codatatype version of Gel:
 

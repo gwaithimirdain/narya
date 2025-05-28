@@ -32,6 +32,7 @@ let rec parse_chk : type n. (string, n) Bwv.t -> pmt -> n Raw.check located =
            {
              name = { value = Some x; loc = None };
              cube = locate_opt None `Normal;
+             implicit = `Explicit;
              body = parse_chk (Snoc (ctx, x)) body;
            })
   | Struct tms ->

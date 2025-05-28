@@ -22,14 +22,14 @@ def pre_univalence (A : Fib) (B : Fib) (G : Br Type (A .t) (B .t))
 {` This is just the assumption of pointwise fibrancy. `}
 | .id.1 ↦ a b ↦ 𝕗G a b
 {` The first few e-dimensional fields are uniform operations, which also follow from pointwise fibrancy. `}
-| .trr.p ↦ a0 b0 r0 ↦ 𝕗G.2 (A.2 .f .liftr a0) (B.2 .f .liftr b0) .trr r0
-| .trl.p ↦ a1 b1 r1 ↦ 𝕗G.2 (A.2 .f .liftl a1) (B.2 .f .liftl b1) .trl r1
-| .liftr.p ↦ a0 b0 r0 ↦
+| .trr.p ↦ {a0} {b0} r0 ↦ 𝕗G.2 (A.2 .f .liftr a0) (B.2 .f .liftr b0) .trr r0
+| .trl.p ↦ {a1} {b1} r1 ↦ 𝕗G.2 (A.2 .f .liftl a1) (B.2 .f .liftl b1) .trl r1
+| .liftr.p ↦ {a0} {b0} r0 ↦
     sym (𝕗G.2 (A.2 .f .liftr a0) (B.2 .f .liftr b0) .liftr r0)
-| .liftl.p ↦ a1 b1 r1 ↦
+| .liftl.p ↦ {a1} {b1} r1 ↦
     sym (𝕗G.2 (A.2 .f .liftl a1) (B.2 .f .liftl b1) .liftl r1)
 {` Here is the most interesting bit, where we coinductively use the fact that bisimulations are defined to lift to identity types.  We have to transfer it across a symmetry equivalence. `}
-| .id.p ↦ a0 b0 r0 a1 b1 r1 ↦
+| .id.p ↦ {a0} {b0} r0 {a1} {b1} r1 ↦
     let s
       : (a2 : A.2 .t a0 a1) (b2 : B.2 .t b0 b1)
         → G.2 a2 b2 r0 r1 ≅ sym G.2 r0 r1 a2 b2

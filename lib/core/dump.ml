@@ -277,8 +277,12 @@ module F = struct
    fun ppf c ->
     match c with
     | Synth s -> synth ppf s
-    | Lam { name; cube = _; body } ->
-        fprintf ppf "Lam(%s, %a)" (Option.value ~default:"_" name.value) check body.value
+    | Lam { name; cube = _; implicit; body } ->
+        fprintf ppf "Lam(%s%s%s, %a)"
+          (if implicit = `Implicit then "{" else "")
+          (Option.value ~default:"_" name.value)
+          (if implicit = `Implicit then "}" else "")
+          check body.value
     | Struct (_, flds) ->
         fprintf ppf "Struct(";
         Mbwd.miter

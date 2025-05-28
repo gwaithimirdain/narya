@@ -115,7 +115,7 @@ So the type of "Y .s⁽ᵈ⁾ (xy .fst) (xy .snd)" is indeed symmetrized from wh
 def sst.const (X Y : SST) : SST⁽ᵈ⁾ X ≔ [
 | .z ↦ sig _ ↦ (
     ungel : Y .z )
-| .s ↦ x y ↦ sym (sst.const⁽ᵈ⁾ (X .s x) (Y .s (y .ungel)))]
+| .s ↦ {x} y ↦ sym (sst.const⁽ᵈ⁾ (X .s x) (Y .s (y .ungel)))]
 
 {` Using constant displayed SSTs, we can define binary sum SSTs. `}
 def sst.sum (X Y : SST) : SST ≔ [
@@ -171,8 +171,8 @@ def sst.abortz (X : Type) : sst.∅ .z → X ≔ [ ]
 def sst.const_abort (X Y : SST) (Y' : SST⁽ᵈ⁾ Y) (f : sst.hom X Y)
   : sst.hom⁽ᵈ⁾ (sst.const X sst.∅) Y' f
   ≔ [
-| .z ↦ x x' ↦ sst.abortz (Y' .z (f .z x)) (x' .ungel)
-| .s ↦ x x' ↦
+| .z ↦ {x} x' ↦ sst.abortz (Y' .z (f .z x)) (x' .ungel)
+| .s ↦ {x} x' ↦
     sst.abortz
       {` Ideally, this big long argument should be obtainable by unification. `}
       (sst.hom⁽ᵈᵈ⁾ {X} {sst.const X sst.∅} {X .s x}

@@ -57,7 +57,7 @@ def itecnat
   (sf : (a : A) → eq B (f (sA a)) (sB (f a))) (n : cnat)
   : eq B (f (ite A zA sA n)) (ite B zB sB n)
   ≔ refl n (Gel A B (a b ↦ eq B (f a) b)) {zA} {zB} (_ ≔ zf) {sA} {sB}
-      (a b r ↦
+      ({a} {b} r ↦
        (_ ≔
           trans B (f (sA a)) (sB (f a)) (sB b) (sf a)
             (cong B B sB (f a) b (r .0)))) .0
