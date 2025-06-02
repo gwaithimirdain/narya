@@ -2169,6 +2169,87 @@ let () =
     }
 
 (* ********************
+   Equational reasoning (hack)
+ ******************** *)
+
+type (_, _, _) identity += Calc : (closed, No.plus_omega, closed) identity
+
+let calc : (closed, No.plus_omega, closed) notation = (Calc, Outfix)
+
+let rec calcs by_ok =
+  terms
+    (Bwd.prepend
+       (if by_ok then Snoc (Emp, (Token.Ident [ "by" ], Lazy (lazy (calcs false)))) else Emp)
+       [ (Op "=", Lazy (lazy (calcs true))); (Ident [ "∎" ], Done_closed calc) ])
+
+let rec process_calcs : type n.
+    n synth located ->
+    (n check located * n check located option) Bwd.t ->
+    (string option, n) Bwv.t ->
+    observation list ->
+    Asai.Range.t option ->
+    n check located =
+ fun x rest ctx obs loc ->
+  match obs with
+  | Token (Op "=", _) :: Term y :: obs -> (
+      let y = process ctx y in
+      match obs with
+      | Token (Ident [ "by" ], _) :: Term e :: obs ->
+          let e = process ctx e in
+          process_calcs x (Snoc (rest, (y, Some e))) ctx obs loc
+      | _ -> process_calcs x (Snoc (rest, (y, None))) ctx obs loc)
+  | [ Token (Ident [ "∎" ], _) ] -> locate (Synth (Calc (x, Bwd.to_list rest))) loc
+  | _ -> invalid "calc"
+
+let rec pp_calcs : Whitespace.t list -> observation list -> document * Whitespace.t list =
+ fun ws obs ->
+  match obs with
+  | Token (Op "=", (_, wseq)) :: Term y :: obs ->
+      let py, wy = pp_term y in
+      let peq = pp_ws `Hard ws ^^ hang 2 (group (Token.pp (Op "=") ^^ pp_ws `Nobreak wseq ^^ py)) in
+      let pby, w, obs =
+        match obs with
+        | Token (Ident [ "by" ], (_, wby)) :: Term e :: obs ->
+            let pe, we = pp_term e in
+            ( nest 4
+                (pp_ws `Hard wy
+                ^^ hang 2 (group (Token.pp (Ident [ "by" ]) ^^ pp_ws `Nobreak wby ^^ pe))),
+              we,
+              obs )
+        | _ -> (empty, wy, obs) in
+      let rest, wrest = pp_calcs w obs in
+      (peq ^^ pby ^^ rest, wrest)
+  | [ Token (Ident [ "∎" ], (_, wqed)) ] -> (pp_ws `Nobreak ws ^^ Token.pp (Ident [ "∎" ]), wqed)
+  | _ -> invalid "calc"
+
+let () =
+  make calc
+    {
+      name = "calc";
+      tree = Closed_entry (eop (Ident [ "calc" ]) (calcs false));
+      processor =
+        (fun ctx obs loc ->
+          match obs with
+          | Token (Ident [ "calc" ], _) :: Term x :: obs ->
+              let x = process_synth ctx x "first calc term" in
+              process_calcs x Emp ctx obs loc
+          | _ -> invalid "calc");
+      print_term = None;
+      print_case =
+        Some
+          (fun _ obs ->
+            match obs with
+            | Token (Ident [ "calc" ], (_, wscalc)) :: Term x :: obs ->
+                let px, wx = pp_term x in
+                let pcalcs, wcalcs = pp_calcs wx obs in
+                ( Token.pp (Ident [ "calc" ]),
+                  nest 2 (pp_ws `Hard wscalc ^^ px ^^ group pcalcs),
+                  wcalcs )
+            | _ -> invalid "calc");
+      is_case = (fun _ -> true);
+    }
+
+(* ********************
    Generating the state
  ******************** *)
 
@@ -2194,3 +2275,4 @@ let install () =
     |> Situation.add codata
     |> Situation.add record
     |> Situation.add data
+    |> Situation.add calc

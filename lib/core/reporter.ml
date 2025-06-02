@@ -121,6 +121,7 @@ module Code = struct
     | Checking_lambda_at_nonfunction : printable -> t
     | Checking_tuple_at_nonrecord : printable -> t
     | Choice_mismatch : printable -> t
+    | Calc_error : printable -> t
     | Comatching_at_noncodata : printable -> t
     | Comatching_at_degenerated_codata : printable -> t
     | No_such_constructor :
@@ -295,6 +296,7 @@ module Code = struct
     | Checking_lambda_at_nonfunction _ -> Error
     | Checking_tuple_at_nonrecord _ -> Error
     | Choice_mismatch _ -> Error
+    | Calc_error _ -> Error
     | Comatching_at_noncodata _ -> Error
     | Comatching_at_degenerated_codata _ -> Error
     | No_such_constructor _ -> Error
@@ -513,6 +515,7 @@ module Code = struct
     | Missing_constructor_type _ -> "E1506"
     (* Tactics *)
     | Choice_mismatch _ -> "E1600"
+    | Calc_error _ -> "E1601"
     (* Commands *)
     | Too_many_commands -> "E2000"
     | Forbidden_interactive_command _ -> "E2001"
@@ -670,6 +673,7 @@ module Code = struct
           textf "@[<hv 0>checking tuple against non-record type@;<1 2>%a@]" pp_printed (print ty)
       | Choice_mismatch ty ->
           textf "@[<hv 0>multi-choice term doesn't match type@;<1 2>%a@]" pp_printed (print ty)
+      | Calc_error e -> textf "error in calc: %a" pp_printed (print e)
       | Comatching_at_noncodata ty ->
           textf "@[<hv 0>checking comatch against non-codata type@;<1 2>%a@]" pp_printed (print ty)
       | No_such_constructor (d, c) -> (
