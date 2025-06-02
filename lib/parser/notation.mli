@@ -36,7 +36,7 @@ module Make (F : Fixity) : sig
   type (_, _, _) identity += User : (F.left, F.tight, F.right) identity
 end
 
-type space = [ `None | `Cut | `Break | `Nobreak ]
+type space = [ `None | `Cut | `Break | `Nobreak | `Hard ]
 
 type (_, _) tree =
   | Inner : ('t, 's) branch -> ('t, 's) tree
