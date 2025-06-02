@@ -9,7 +9,7 @@
    ￮ constant ℚ₀₊ defined
   
    ￫ info[I0002]
-   ￮ notation quot defined
+   ￮ notation «_ / _» defined
   
    ￫ info[I0007]
    ￮ section ℕ opened

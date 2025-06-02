@@ -33,8 +33,8 @@ let () =
       Reporter.display d;
       raise (Failure "Parse failure"))
   @@ fun () ->
-  Situation.run_on Situation.empty @@ fun () ->
-  Situation.Current.add ifthen;
+  Scope.run ~init_situation:Situation.empty @@ fun () ->
+  Scope.Situation.add ifthen;
   assert (parse "if x then y" = Notn ("ifthen", [ Term (Ident [ "x" ]); Term (Ident [ "y" ]) ]))
 
 let () =
@@ -43,8 +43,8 @@ let () =
       Reporter.display d;
       raise (Failure "Parse failure"))
   @@ fun () ->
-  Situation.run_on Situation.empty @@ fun () ->
-  Situation.Current.add ifthenelse;
+  Scope.run ~init_situation:Situation.empty @@ fun () ->
+  Scope.Situation.add ifthenelse;
   assert (
     parse "if x then y else z"
     = Notn ("ifthenelse", [ Term (Ident [ "x" ]); Term (Ident [ "y" ]); Term (Ident [ "z" ]) ]))
@@ -57,9 +57,9 @@ let () =
         Reporter.display d;
         raise (Failure "Unexpected error code")))
   @@ fun () ->
-  Situation.run_on Situation.empty @@ fun () ->
-  Situation.Current.add ifthen;
-  Situation.Current.add ifthenelse;
+  Scope.run ~init_situation:Situation.empty @@ fun () ->
+  Scope.Situation.add ifthen;
+  Scope.Situation.add ifthenelse;
   assert (parse "if x then y" = Notn ("ifthen", [ Term (Ident [ "x" ]); Term (Ident [ "y" ]) ]))
 
 (* However, it does work to have two distinct notations that share a common prefix, as long as both of them extend that prefix nontrivially.  (This is the whole point of merging notation trees.) *)
@@ -78,9 +78,9 @@ let () =
       Reporter.display d;
       raise (Failure "Parse failure"))
   @@ fun () ->
-  Situation.run_on Situation.empty @@ fun () ->
-  Situation.Current.add ifthenelse;
-  Situation.Current.add ifthenelif;
+  Scope.run ~init_situation:Situation.empty @@ fun () ->
+  Scope.Situation.add ifthenelse;
+  Scope.Situation.add ifthenelif;
   assert (
     parse "if x then y else z"
     = Notn ("ifthenelse", [ Term (Ident [ "x" ]); Term (Ident [ "y" ]); Term (Ident [ "z" ]) ]));

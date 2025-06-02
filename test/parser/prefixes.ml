@@ -26,12 +26,11 @@ let query : (No.nonstrict opn, No.plus_omega, closed) notation = (Query, Postfix
 let () = make query "query" (Open_entry (eop (Op "!!") (done_open query)))
 
 let () =
-  Core.Reporter.run ~fatal:(fun _ -> raise (Failure "fatal error")) ~emit:(fun _ -> ()) @@ fun () ->
-  Parser.Lexer.Specials.run @@ fun () ->
-  Builtins.run @@ fun () ->
-  Situation.Current.add att;
-  Situation.Current.add bang;
-  Situation.Current.add query (* Plain application *);
+  Repl.run @@ fun () ->
+  Scope.Situation.add att;
+  Scope.Situation.add bang;
+  (* Plain application *)
+  Scope.Situation.add query;
 
   assert (parse "@ f" = Notn ("at", [ Term (Ident [ "f" ]) ]))
   (* Since function application is "left-associative" and @ has the same tightness, "@ f x"  is parsed as "(@ f) x".  Since @ is not right-associative, function application can't appear in *its* argument, so "@ (f x)" is not a possible parse. *);
@@ -95,12 +94,10 @@ let perc : (No.strict opn, No.zero, No.strict opn) notation = (Perc, Infix No.ze
 let () = make perc "perc" (Open_entry (eop (Op "%") (done_open perc)))
 
 let () =
-  Core.Reporter.run ~fatal:(fun _ -> raise (Failure "fatal error")) ~emit:(fun _ -> ()) @@ fun () ->
-  Parser.Lexer.Specials.run @@ fun () ->
-  Builtins.run @@ fun () ->
-  Situation.Current.add twiddle;
-  Situation.Current.add star;
-  Situation.Current.add perc;
+  Repl.run @@ fun () ->
+  Scope.Situation.add twiddle;
+  Scope.Situation.add star;
+  Scope.Situation.add perc;
   unparse "~ x % y";
   assert (parse "f ~ x" = App (Ident [ "f" ], Notn ("twiddle", [ Term (Ident [ "x" ]) ])));
   unparse "f ~ x % y";
@@ -127,10 +124,8 @@ let atat : (No.strict opn, No.minus_omega, No.nonstrict opn) notation = (Atat, I
 let () = make atat "atat" (Open_entry (eop (Op "@@") (done_open atat)))
 
 let () =
-  Core.Reporter.run ~fatal:(fun _ -> raise (Failure "fatal error")) ~emit:(fun _ -> ()) @@ fun () ->
-  Parser.Lexer.Specials.run @@ fun () ->
-  Builtins.run @@ fun () ->
-  Situation.Current.add atat;
+  Repl.run @@ fun () ->
+  Scope.Situation.add atat;
   assert (
     parse "f @@ x ↦ y"
     = Notn

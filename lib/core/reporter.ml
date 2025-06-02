@@ -240,6 +240,7 @@ module Code = struct
     | Commands_undone : int -> t
     | Section_opened : string list -> t
     | Section_closed : string list -> t
+    | Invalid_section_name : string list -> t
     | No_such_section : t
     | Display_set : string * string -> t
     | Option_set : string * string -> t
@@ -387,6 +388,7 @@ module Code = struct
     | Commands_undone _ -> Info
     | Section_opened _ -> Info
     | Section_closed _ -> Info
+    | Invalid_section_name _ -> Error
     | No_such_section -> Error
     | Display_set _ -> Info
     | Option_set _ -> Info
@@ -542,6 +544,7 @@ module Code = struct
     | Not_enough_to_undo -> "E2500"
     (* section *)
     | No_such_section -> "E2600"
+    | Invalid_section_name _ -> "E2601"
     (* oracles *)
     | Oracle_failed _ -> "E3000"
     (* Interactive proof *)
@@ -956,6 +959,7 @@ module Code = struct
       | Display_set (setting, str) -> textf "display set %s to %s" setting str
       | Option_set (setting, str) -> textf "option set %s to %s" setting str
       | No_such_section -> text "no section here to end"
+      | Invalid_section_name name -> textf "invalid section name: %s" (String.concat "." name)
       | Break -> text "user interrupt"
       | No_holes_allowed str -> (
           match str with

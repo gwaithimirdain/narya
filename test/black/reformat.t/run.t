@@ -629,14 +629,14 @@ The supplied files are symlinked into the directory where the test is run, and u
     | .tail ↦ mss 0 .head]
   | .tail ↦ mss 0]
   
-  notation 3 prod : A "×" B ≔ prod A B
+  notation(3) A "×" B ≔ prod A B
   
-  notation 3 prod₁ : AAAAAAAAAAAAAAAAAAAA "×₁" BBBBBBBBBBBBBBBBBBBB
+  notation(3) AAAAAAAAAAAAAAAAAAAA "×₁" BBBBBBBBBBBBBBBBBBBB
     ≔ prod AAAAAAAAAAAAAAAAAAAA BBBBBBBBBBBBBBBBBBBB
   
-  notation 3 prod₂
-    : AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA "×₂"
-        BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+  notation(3)
+    AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA "×₂"
+      BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
     ≔ prod AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
         BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
   
@@ -721,5 +721,5 @@ The supplied files are symlinked into the directory where the test is run, and u
   {` fractional tightness notations `}
   axiom binop : A → A → A
   
-  notation 1.5 binop : x "*+*" y ≔ binop x y
+  notation(1.5) x "*+*" y ≔ binop x y
   

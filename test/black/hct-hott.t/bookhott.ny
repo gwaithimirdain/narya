@@ -191,7 +191,7 @@ def eqv (A B : Type) : Type ≔ sig (
               → eq (eq B (to (fro (to a))) (to a))
                   (eq.ap A B to (fro (to a)) a (fro_to a)) (to_fro (to a)) )
 
-notation 1 eqv : A "≅" B ≔ eqv A B
+notation(1) A "≅" B ≔ eqv A B
 
 def fro_to_fro (A B : Type) (e : A ≅ B) (y : B)
   : eq (eq A (e .fro (e .to (e .fro y))) (e .fro y))

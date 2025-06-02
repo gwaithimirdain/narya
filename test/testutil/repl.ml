@@ -32,11 +32,6 @@ let assume (name : string) (ty : string) : unit =
   | Wrap { value = Ident (name, _); _ } ->
       Scope.check_name name None;
       let const = Scope.define Compunit.basic name in
-      Reporter.try_with ~fatal:(fun d ->
-          Scope.modify_visible (Yuujinchou.Language.except name);
-          Scope.modify_export (Yuujinchou.Language.except name);
-          Reporter.fatal_diagnostic d)
-      @@ fun () ->
       let rty = parse_term ty in
       let cty = check_type rty in
       Global.add const cty (`Axiom, `Nonparametric)
@@ -49,11 +44,6 @@ let def (name : string) (ty : string) (tm : string) : unit =
       Reporter.tracef "when defining %s" (String.concat "." name) @@ fun () ->
       Scope.check_name name None;
       let const = Scope.define Compunit.basic name in
-      Reporter.try_with ~fatal:(fun d ->
-          Scope.modify_visible (Yuujinchou.Language.except name);
-          Scope.modify_export (Yuujinchou.Language.except name);
-          Reporter.fatal_diagnostic d)
-      @@ fun () ->
       let rty = parse_term ty in
       let rtm = parse_term tm in
       let cty = check_type rty in
@@ -111,7 +101,6 @@ let run f =
   History.run_empty @@ fun () ->
   Eternity.run ~init:Eternity.empty @@ fun () ->
   Global.run ~init:Global.empty @@ fun () ->
-  Builtins.run @@ fun () ->
   Display.run ~init:Display.default @@ fun () ->
   Annotate.run @@ fun () ->
   Readback.Displaying.run ~env:false @@ fun () ->
@@ -125,6 +114,9 @@ let run f =
       raise (Failure "Fatal error"))
   @@ fun () ->
   Subtype.run @@ fun () ->
+  (* We need an outer Scope.run, with the builtins installed, so that Pi.install can parse things. *)
+  Builtins.install ();
+  Scope.run @@ fun () ->
   let init_visible = Parser.Pi.install Scope.Trie.empty in
   Scope.run ~init_visible ~options:Options.default @@ fun () -> f ()
 

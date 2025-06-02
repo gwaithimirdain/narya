@@ -7,9 +7,9 @@
   > def plus (x y : Nat) : Nat := match y [ zero. ↦ x | suc. y ↦ suc. (plus x y) ]
   > def times (x y : Nat) : Nat := match y [ zero. ↦ zero. | suc. y ↦ plus (times x y) x ]
   > def minus (x y : Nat) : Nat := match y, x [ zero., x ↦ x | suc. y, suc. x ↦ minus x y | suc. _, zero. ↦ y ]
-  > notation 5 plus : x "+" y ≔ plus x y
-  > notation 6 times : x "*" y ≔ times x y
-  > notation 5 minus : x "-" y ≔ minus x y
+  > notation(5) x "+" y ≔ plus x y
+  > notation(6) x "*" y ≔ times x y
+  > notation(5) x "-" y ≔ minus x y
   > EOF
 
 Renaming individual imports
@@ -79,7 +79,7 @@ Or exclude the notations but get everything else
 
 Or import some of the notations but not others
 
-  $ narya -e 'import "nat" | in notations union (only plus, only times) echo 1+1 echo 1*1 echo (1-1 : Nat)'
+  $ narya -e 'import "nat" | in notations union (only «_ + _», only «_ * _») echo 1+1 echo 1*1 echo (1-1 : Nat)'
   2
     : Nat
   
@@ -88,7 +88,7 @@ Or import some of the notations but not others
   
    ￫ error[E0200]
    ￭ command-line exec string
-   1 | import "nat" | in notations union (only plus, only times) echo 1+1 echo 1*1 echo (1-1 : Nat)
+   1 | import "nat" | in notations union (only «_ + _», only «_ * _») echo 1+1 echo 1*1 echo (1-1 : Nat)
      ^ parse error
   
   [1]

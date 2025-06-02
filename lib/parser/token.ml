@@ -3,8 +3,8 @@ open Reporter
 
 type t =
   (* A Field is an identifier starting with a period, broken into a list of components by internal periods, and with the first component stored separately.  The later components are only used to indicate the partial bijection identifying an instance of a "higher" field of a higher codatatype.  Thus for a record or ordinary codatatype the list is empty.  *)
-  | Field of string * string list
-  | Constr of string (* Ending with . *)
+  | Field of string * string list (* Starting with . *)
+  | Constr of string * string list (* Ending with . *)
   | LParen (* ( *)
   | RParen (* ) *)
   | LBracket (* [ *)
@@ -145,7 +145,10 @@ let to_string = function
       if List.fold_right (fun s m -> max (String.length s) m) strs 0 > 1 then
         "." ^ f ^ ".." ^ String.concat "." strs
       else "." ^ f ^ "." ^ String.concat "" strs
-  | Constr s -> s ^ "."
+  | Constr (c, strs) ->
+      if List.fold_right (fun s m -> max (String.length s) m) strs 0 > 1 then
+        c ^ ".." ^ String.concat "." strs ^ "."
+      else c ^ "." ^ String.concat "" strs ^ "."
   | LParen -> "("
   | RParen -> ")"
   | LBracket -> "["

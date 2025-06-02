@@ -2172,9 +2172,9 @@ let () =
    Generating the state
  ******************** *)
 
-let builtins =
-  ref
-    (Situation.empty
+let install () =
+  Situation.builtins :=
+    Situation.empty
     |> Situation.add parens
     |> Situation.add Postprocess.braces
     |> Situation.add letin
@@ -2193,6 +2193,4 @@ let builtins =
     |> Situation.add empty_co_match
     |> Situation.add codata
     |> Situation.add record
-    |> Situation.add data)
-
-let run : type a. (unit -> a) -> a = fun f -> Situation.run_on !builtins f
+    |> Situation.add data

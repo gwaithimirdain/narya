@@ -11,6 +11,7 @@ end
 
 type t = Constant.t
 
+let to_string x = string_of_int (snd x)
 let counters = Compunit.IntArray.make_basic ()
 
 let make compunit : t =

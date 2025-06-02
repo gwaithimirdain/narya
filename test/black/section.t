@@ -105,3 +105,21 @@
    ￫ info[I0001]
    ￮ axiom gc' assumed
   
+
+  $ narya -e 'section notations := '
+   ￫ error[E2601]
+   ￮ invalid section name: notations
+  
+  [1]
+
+  $ narya -e 'section foo.notations := '
+   ￫ error[E2601]
+   ￮ invalid section name: foo.notations
+  
+  [1]
+
+  $ narya -e 'section notations.foo := '
+   ￫ error[E2601]
+   ￮ invalid section name: notations.foo
+  
+  [1]
