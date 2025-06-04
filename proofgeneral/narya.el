@@ -242,7 +242,6 @@ handling in Proof General."
                      (goto-char start)
                      (while (looking-at "[ \t\n]")
                        (forward-char 1))
-                     (set-marker start (point))
                      ;; We also skip backwards across any indent to include it in the command being replaced, 
                      ;; since the Narya reformatter will insert indentation if necessary (e.g. if we are in a section).
                      ;; And we insert a blank line if we aren't at the beginning of a line.
@@ -251,6 +250,7 @@ handling in Proof General."
                      (skip-syntax-backward " ")
                      (unless (bolp)
                        (insert "\n\n"))
+                     (set-marker start (point))
                      ;; Now we replace the old command with the new one.  But if they are the same, we do nothing,
                      ;; so that the buffer doesn't get marked "modified".
                      (let ((pos (count-screen-lines (window-start) end)))

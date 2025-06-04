@@ -13,7 +13,7 @@ echo bool.and false. true.
 
 def plus (m n : ℕ) : ℕ ≔ match n [ zero. ↦ m | suc. n ↦ suc. (plus m n) ]
 
-notation 5 plus : x "+" y ≔ plus x y
+notation(5) x "+" y ≔ plus x y
 
 def fib (n : ℕ) : ℕ ≔ match n [
 | zero. ↦ 1

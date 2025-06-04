@@ -85,7 +85,7 @@
    ￮ constant plus defined
   
    ￫ info[I0002]
-   ￮ notation plus defined
+   ￮ notation «_ + _» defined
   
    ￫ info[I0000]
    ￮ constant fib defined

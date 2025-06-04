@@ -1,5 +1,5 @@
 (tests
-  (names stream lst)
+  (names readback)
 	(libraries core parser testutil zarith)
 	(instrumentation (backend landmarks --auto)))
 (env (_ (flags (:standard -w -26 -w -27))))

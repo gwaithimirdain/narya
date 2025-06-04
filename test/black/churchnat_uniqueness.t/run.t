@@ -3,7 +3,7 @@
    ￮ constant prod defined
   
    ￫ info[I0002]
-   ￮ notation prod defined
+   ￮ notation «_ >< _» defined
   
    ￫ info[I0000]
    ￮ constant Σ defined

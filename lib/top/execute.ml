@@ -5,12 +5,11 @@ open Reporter
 open Parser
 open PPrint
 open Print
-open User2
 module Trie = Yuujinchou.Trie
 
 (* Execution of files (and strings), including marshaling and unmarshaling, and managing compilation units and imports. *)
 
-let __COMPILE_VERSION__ = 5
+let __COMPILE_VERSION__ = int_of_string ("0x" ^ [%blob "version.txt"])
 
 (* This state module is for data that gets restarted when loading a new file. *)
 module Loadstate = struct
@@ -181,7 +180,7 @@ let rec unmarshal (compunit : Compunit.t) (lookup : FilePath.filename -> Compuni
                         | `Constant c -> `Constant (Constant.remake find_in_table c)
                         | `Constr (c, i) -> `Constr (c, i) in
                       let u = User.User { u with key } in
-                      ((`Notation (u, make_user u), loc), tag))
+                      ((`Notation (u, User.make_user u), loc), tag))
                 (Marshal.from_channel chan
                   : ( [ `Constant of Constant.t | `Notation of User.prenotation ]
                       * Asai.Range.t option,
@@ -303,7 +302,7 @@ and load_string ?init_visible title content =
 (* Given a source (file or string), parse and execute all the commands in it, in a local scope that starts with either the supplied scope or a default one. *)
 and execute_source ?(init_visible = (Flags.read ()).init_visible) ?renderer compunit
     (source : Asai.Range.source) =
-  History.run_with_scope ~init_visible @@ fun () ->
+  Scope.run ~init_visible @@ fun () ->
   let p, src = Parser.Command.Parse.start_parse source in
   Compunit.Current.run ~env:compunit @@ fun () ->
   Reporter.try_with

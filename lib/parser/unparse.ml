@@ -19,8 +19,8 @@ let get_notation head args =
   let open Monad.Ops (Monad.Maybe) in
   let* { keys = _; notn; pat_vars; val_vars; inner_symbols } =
     match head with
-    | `Term (Const c) -> Situation.Current.unparse (`Constant c)
-    | `Constr c -> Situation.Current.unparse (`Constr (c, Bwd.length args))
+    | `Term (Const c) -> Scope.Situation.unparse (`Constant c)
+    | `Constr c -> Scope.Situation.unparse (`Constr (c, Bwd.length args))
     (* TODO: Can we associate notations to Fields too? *)
     | _ -> None in
   (* There's probably a more efficient way to do this that doesn't involve converting to and from forwards lists, but this way is more natural and easier to understand, and I think this is unlikely to be a performance bottleneck. *)
@@ -288,7 +288,7 @@ let rec unparse : type n lt ls rt rs s.
   match tm with
   | Var x -> unlocated (Ident (Names.lookup vars x, []))
   | Const c -> (
-      match Situation.Current.unparse (`Constant c) with
+      match Scope.Situation.unparse (`Constant c) with
       | Some { keys = _; notn = Wrap notn; pat_vars = []; val_vars = []; inner_symbols } ->
           unparse_notation notn [] inner_symbols li ri
       | _ -> unlocated (Ident (Scope.name_of c, [])))

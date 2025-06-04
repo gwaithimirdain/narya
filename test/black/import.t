@@ -243,13 +243,13 @@ Notations are used from explicitly imported files, but not transitively.
 
   $ cat >n2.ny <<EOF
   > import "n1"
-  > notation 0 f : x "&" y := f x y
+  > notation(0) x "&" y := f x y
   > EOF
 
   $ cat >n3.ny <<EOF
   > import "n1"
   > import "n2"
-  > notation 0 f2 : x "%" y := f x y
+  > notation(0) x "%" y := f x y
   > EOF
 
   $ narya -source-only n1.ny n3.ny -e 'echo a % a'

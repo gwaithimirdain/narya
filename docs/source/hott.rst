@@ -71,6 +71,26 @@ Note that it has four ordinary fields that are non-recursive, and one higher fie
 The syntax of ``glue`` and ``isBisim`` is provisional and may change in the future.
 
 
+Equational reasoning
+--------------------
+
+In ``-hott`` mode, elements of ``Id`` are equalities, hence in particular are not just reflexive but also symmetric and transitive.  There is a temporary convenient syntax for equational reasoning with such equalities, which is exemplified as follows:
+
+.. code-block:: none
+
+   def eqreas (A : Type) (x y z w : A) (p : Id A x y) (q : Id A y z) (r : Id A w z)
+     : Id A x w ≔ calc
+     x
+     = y
+         by p
+     = z
+         by q
+     = w
+         by r ∎
+
+Note that the supplied reason for each equality can be applied either forwards or backwards, without the user needing to notate which.  However, all congruences must be applied explicitly (e.g. with ``refl``).  If two subsequent terms are definitionally equal, the ``by`` clause can be omitted; this allows notating applications of definitional equality in a more readable way.
+
+
 HOTT inside parametricity
 -------------------------
 

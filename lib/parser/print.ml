@@ -32,6 +32,7 @@ let pp_space (space : space) : document =
   | `Cut -> break 0
   | `Break -> break 1
   | `Nobreak -> blank 1
+  | `Hard -> hardline
 
 (* Like PPrint.lines, but also excludes the indentation after each newline from the substrings. *)
 let unindented_lines str =
@@ -64,6 +65,7 @@ let pp_ws ?(space_before_starting_comment = 1) (space : space) (ws : Whitespace.
         let ending =
           match space with
           | (`Cut | `Break) when not any_hardlines -> break 1
+          | `Hard when not any_hardlines -> hardline
           | _ -> blank 1 in
         string "{`" ^^ separate hardline ls ^^ string "`}" ^^ ending
     | `Newlines n :: ws -> repeat n hardline ^^ pp ws true

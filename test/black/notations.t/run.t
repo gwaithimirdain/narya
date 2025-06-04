@@ -6,13 +6,13 @@
    ￮ constant twos defined
   
    ￫ info[I0002]
-   ￮ notation twos.foo defined
+   ￮ notation «_ + _» defined
   
    ￫ info[I0000]
    ￮ constant threes defined
   
    ￫ info[I0002]
-   ￮ notation threes.foo defined
+   ￮ notation «_ * _ * _» defined
   
    ￫ info[I0001]
    ￮ axiom a assumed
@@ -75,10 +75,10 @@
    ￮ file loaded: $TESTCASE_ROOT/minus.ny (compiled)
   
    ￫ info[I0002]
-   ￮ notation sub defined
+   ￮ notation «_ - _» defined
   
    ￫ info[I0002]
-   ￮ notation minus defined
+   ￮ notation «- _» defined
   
   2
     : ℤ
@@ -103,20 +103,27 @@
   
   0
     : ℤ
+  
+   ￫ warning[E2100]
+   ￭ $TESTCASE_ROOT/subminusminus.ny
+    5 | notation(0) "-" x ≔ ℤ.minus x
+      ^ previous definition
+   16 | notation(0) "-" x ≔ ℤ.minus x
+      ^ redefining constant: notations.«- _»
   
    ￫ warning[E2209]
    ￮ replacing printing notation for ℤ.minus (previous notation will still be parseable)
   
    ￫ info[I0002]
-   ￮ notation minus' defined
+   ￮ notation «- _» defined
   
   2
     : ℤ
   
    ￫ error[E0201]
    ￮ potential ambiguity (one notation is a prefix of another). Notations involved:
-       minus
-       minus'
+       «- _»
+       «- _»
   
   [1]
 
@@ -128,10 +135,10 @@
    ￮ file loaded: $TESTCASE_ROOT/minus.ny (compiled)
   
    ￫ info[I0002]
-   ￮ notation minus defined
+   ￮ notation «- _» defined
   
    ￫ info[I0002]
-   ￮ notation sub defined
+   ￮ notation «_ - _» defined
   
   2
     : ℤ
@@ -156,20 +163,27 @@
   
   0
     : ℤ
+  
+   ￫ warning[E2100]
+   ￭ $TESTCASE_ROOT/minussubminus.ny
+    3 | notation(0) "-" x ≔ ℤ.minus x
+      ^ previous definition
+   16 | notation(0) "-" x ≔ ℤ.minus x
+      ^ redefining constant: notations.«- _»
   
    ￫ warning[E2209]
    ￮ replacing printing notation for ℤ.minus (previous notation will still be parseable)
   
    ￫ info[I0002]
-   ￮ notation minus' defined
+   ￮ notation «- _» defined
   
   2
     : ℤ
   
    ￫ error[E0201]
    ￮ potential ambiguity (one notation is a prefix of another). Notations involved:
-       minus
-       minus'
+       «- _»
+       «- _»
   
   [1]
 
@@ -181,16 +195,23 @@
    ￮ file loaded: $TESTCASE_ROOT/minus.ny (compiled)
   
    ￫ info[I0002]
-   ￮ notation minus defined
+   ￮ notation «- _» defined
+  
+   ￫ warning[E2100]
+   ￭ $TESTCASE_ROOT/minusminussub.ny
+   3 | notation(0) "-" x ≔ ℤ.minus x
+     ^ previous definition
+   4 | notation(0) "-" x ≔ ℤ.minus x
+     ^ redefining constant: notations.«- _»
   
    ￫ warning[E2209]
    ￮ replacing printing notation for ℤ.minus (previous notation will still be parseable)
   
    ￫ info[I0002]
-   ￮ notation minus' defined
+   ￮ notation «- _» defined
   
    ￫ info[I0002]
-   ￮ notation sub defined
+   ￮ notation «_ - _» defined
   
   2
     : ℤ
@@ -206,8 +227,8 @@
   
    ￫ error[E0201]
    ￮ potential ambiguity (one notation is a prefix of another). Notations involved:
-       minus
-       minus'
+       «- _»
+       «- _»
   
   [1]
 

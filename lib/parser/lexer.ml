@@ -209,6 +209,8 @@ let specials () =
       Array.map Uchar.of_char [| ' '; '\t'; '\n'; '\r'; '`' |];
       (* We only include the superscript parentheses: other superscript characters without parentheses are allowed in identifiers. *)
       [| Token.super_lparen_uchar; Token.super_rparen_uchar |];
+      (* Finally, we exclude dots, because they are treated specially as separating pieces of an identifier *)
+      [| Uchar.of_char '.' |];
     ]
 
 let other_char : string t =
@@ -218,88 +220,157 @@ let other_char : string t =
 let all_digits = String.for_all (fun c -> String.exists (fun x -> x = c) "0123456789")
 let is_numeral = List.for_all all_digits
 let valid_var x = not (all_digits x)
-let valid_field x = not (all_digits x)
-let valid_constr x = not (all_digits x)
 
-(* Whether a string is valid as a dot-separated piece of an identifier name, or equivalently as a local variable name.  We don't test for absence of the delimited symbols, since they will automatically be lexed separately; this is for testing validity after the lexer has split things into potential tokens.  We also don't test for absence of dots, since identifiers will be split on dots automatically.  Sadly, we also don't test for non-numerals here, since at lexing time numerals are represented by Idents. *)
+(* Whether a string is valid as a dot-separated piece of an identifier name, or equivalently as a local variable name.  We don't test for absence of the delimited symbols, since they will automatically be lexed separately; this is for testing validity after the lexer has split things into potential tokens.  We also don't test for absence of dots, since identifiers will be split on dots automatically. *)
 let atomic_ident s =
-  let len = String.length s in
-  len > 0 && s.[0] <> '_' && s.[len - 1] <> '_'
+  String.length s > 0
+  && s.[0] <> '_'
+  && (Specials.digit_vars () || s.[0] < '0' || s.[1] > '9')
+  && not (all_digits s)
 
-(* Here we do check for non-numerals. *)
-let valid_ident = List.for_all (fun x -> atomic_ident x && not (all_digits x))
+(* A field name is like an identifier, but it could be all numeric for positional projections. *)
+let valid_field s =
+  String.length s > 0
+  && s.[0] <> '_'
+  && ((Specials.digit_vars () || s.[0] < '0' || s.[1] > '9') || all_digits s)
 
-(* Once we have an identifier string, we inspect it and divide into cases to make a Token.t.  We take a range so that we can immediately report invalid field, constructor, and numeral names with a position. *)
-let canonicalize (rng : Position.range) : string -> Token.t t = function
-  | "let" -> return Let
-  | "rec" -> return Rec
-  | "in" -> return In
-  | "axiom" -> return Axiom
-  | "def" -> return Def
-  | "and" -> return And
-  | "echo" -> return Echo
-  | "synth" -> return Synth
-  | "quit" -> return Quit
-  | "match" -> return Match
-  | "return" -> return Return
-  | "sig" -> return Sig
-  | "data" -> return Data
-  | "codata" -> return Codata
-  | "notation" -> return Notation
-  | "import" -> return Import
-  | "export" -> return Export
-  | "solve" -> return Solve
-  | "split" -> return Split
-  | "show" -> return Show
-  | "display" -> return Display
-  | "option" -> return Option
-  | "undo" -> return Undo
-  | "section" -> return Section
-  | "end" -> return End
-  | "." -> return Dot
-  | "..." -> return Ellipsis
-  | "_" -> return Underscore
-  | s -> (
-      let parts = String.split_on_char '.' s in
-      let bwdparts = Bwd.of_list parts in
-      (* Only allow names starting with digits if the flag says so *)
-      if
-        (not (Specials.digit_vars ()))
-        && (not (is_numeral parts))
-        && List.exists
-             (fun s -> String.length s > 0 && String.exists (fun x -> x = s.[0]) "0123456789")
-             parts
-      then fatal Parse_error
+let valid_ident = List.for_all atomic_ident
+
+(* Identifiers quoted by guillemets *)
+let guillemet_start = Uchar.of_int 0xAB
+let guillemet_end = Uchar.of_int 0xBB
+
+let rec guillemeted_word buf n =
+  let* c = ucharp (fun _ -> true) "any" in
+  let buf = buf ^ Utf8.Encoder.to_internal c in
+  if c = guillemet_end then if n = 1 then return buf else guillemeted_word buf (n - 1)
+  else if c = guillemet_start then guillemeted_word buf (n + 1)
+  else guillemeted_word buf n
+
+(* A sequence of other_chars, notably not including dots.  Not necessarily valid as an identifier. *)
+let other_word =
+  (let* _ = uchar guillemet_start in
+   guillemeted_word "«" 1)
+  </> one_or_more_fold_left return (fun str c -> return (str ^ c)) other_char
+
+(* One or more dots. *)
+let dots = skip_one_or_more (char '.')
+
+(* An dot_separated_token is a sequence of other_words separated by some number of dots, without any spaces or special characters. *)
+
+let rec dot_other_token () =
+  let* n = dots in
+  (let* rest = atomic_other_token () in
+   return (`Dots n :: rest))
+  </> return [ `Dots n ]
+
+and atomic_other_token () =
+  let* atom = other_word in
+  (let* rest = dot_other_token () in
+   return (`Atom atom :: rest))
+  </> return [ `Atom atom ]
+
+let dot_separated_token : [ `Dots of int | `Atom of string ] list t =
+  dot_other_token () </> atomic_other_token ()
+
+(* Check for notation parts that are reserved words or single underscores. *)
+let get_reserved_word = function
+  | "let" -> Some Let
+  | "rec" -> Some Rec
+  | "in" -> Some In
+  | "axiom" -> Some Axiom
+  | "def" -> Some Def
+  | "and" -> Some And
+  | "echo" -> Some Echo
+  | "synth" -> Some Synth
+  | "quit" -> Some Quit
+  | "match" -> Some Match
+  | "return" -> Some Return
+  | "sig" -> Some Sig
+  | "data" -> Some Data
+  | "codata" -> Some Codata
+  | "notation" -> Some Notation
+  | "import" -> Some Import
+  | "export" -> Some Export
+  | "solve" -> Some Solve
+  | "split" -> Some Split
+  | "show" -> Some Show
+  | "display" -> Some Display
+  | "option" -> Some Option
+  | "undo" -> Some Undo
+  | "section" -> Some Section
+  | "end" -> Some End
+  | "_" -> Some Underscore
+  | _ -> None
+
+let is_single_reserved_word = function
+  | [ `Atom str ] -> get_reserved_word str
+  | _ -> None
+
+let rec contains_reserved_word = function
+  | [] -> false
+  | `Dots _ :: parts -> contains_reserved_word parts
+  | `Atom str :: parts -> Option.is_none (get_reserved_word str) && contains_reserved_word parts
+
+(* An identifier contains strings separated by single dots in the middle.  They can be digit strings because this could be a numeral, and they could also be the suffix of a cube variable. *)
+let rec get_ident = function
+  | [ `Atom str ] -> Some [ str ]
+  | `Atom str :: `Dots 1 :: rest -> (
+      match get_ident rest with
+      | Some id -> Some (str :: id)
+      | None -> None)
+  | _ -> None
+
+let rec get_higher_parts = function
+  | [ `Atom str ] -> Some ([ str ], false)
+  | [ `Atom str; `Dots 1 ] -> Some ([ str ], true)
+  | `Atom str :: `Dots 1 :: rest -> (
+      match get_higher_parts rest with
+      | Some (parts, enddot) -> Some (str :: parts, enddot)
+      | None -> None)
+  | _ -> None
+
+let canonicalize (loc : Asai.Range.t) (parts : [ `Dots of int | `Atom of string ] list) : Token.t =
+  match is_single_reserved_word parts with
+  | Some tok -> tok
+  | None -> (
+      if contains_reserved_word parts then fatal ~loc Parse_error
       else
-        with_loc (Some (Range.convert rng)) @@ fun () ->
-        match (parts, bwdparts) with
-        | [], _ -> fatal (Anomaly "canonicalizing empty string")
-        (* Can't both start and end with a . *)
-        | "" :: _, Snoc (_, "") -> fatal Parse_error
-        (* Starting with a . makes a field.  If there is only a primary name, it's a lower field.  This is allowed to be fully numeric, for positional projections. *)
-        | [ ""; field ], _ -> return (Field (field, []))
-        (* Otherwise, if the primary field name is followed by a "..", then the remaining sections are the parts.  Higher fields are not allowed to be positional. *)
-        | "" :: field :: "" :: pbij, _ ->
-            if valid_field field then return (Field (field, pbij)) else fatal (Invalid_field field)
-        (* Otherwise, there is only one remaining section allowed, and it is split into characters to make the remaining sections. *)
-        | [ ""; field; pbij ], _ ->
-            if valid_field field then
-              return (Field (field, String.fold_right (fun c s -> String.make 1 c :: s) pbij []))
-            else fatal (Invalid_field field)
-        | "" :: _ :: _ :: _ :: _, _ -> fatal Parse_error
-        (* Ending with a . (and containing no internal .s) makes a constr *)
-        | _, Snoc (Snoc (Emp, constr), "") ->
-            if valid_constr constr then return (Constr constr) else fatal (Invalid_constr constr)
-        | _, Snoc (_, "") -> fatal (Unimplemented ("higher constructors: " ^ s))
-        (* Otherwise, all the parts must be identifiers. *)
-        | parts, _ when List.for_all atomic_ident parts -> return (Ident parts)
-        | _, _ -> fatal Parse_error)
+        match parts with
+        | [ `Dots 1 ] -> Dot
+        | [ `Dots 3 ] -> Ellipsis
+        (* Simple field (allowed to be positional) *)
+        | [ `Dots 1; `Atom fld ] when valid_field fld -> Field (fld, [])
+        (* Higher field with one suffix (not allowed to be positional) *)
+        | [ `Dots 1; `Atom fld; `Dots 1; `Atom pbij ] when atomic_ident fld ->
+            Field (fld, String.fold_right (fun c s -> String.make 1 c :: s) pbij [])
+        (* Higher field with multiple suffixes (not allowed to be positional) *)
+        | `Dots 1 :: `Atom fld :: `Dots 2 :: rest when atomic_ident fld -> (
+            match get_higher_parts rest with
+            | Some (parts, false) -> Field (fld, parts)
+            | _ -> fatal ~loc Parse_error)
+        (* Simple constructor *)
+        | [ `Atom con; `Dots 1 ] when atomic_ident con -> Constr (con, [])
+        (* Higher constructor with multiple suffixes *)
+        | `Atom con :: `Dots 2 :: rest when atomic_ident con ->
+            let _ =
+              match get_higher_parts rest with
+              | Some (parts, true) -> Constr (con, parts)
+              | _ -> fatal ~loc Parse_error in
+            fatal ~loc (Unimplemented "higher constructors")
+        (* Higher constructor with single suffix *)
+        | [ `Atom con; `Dots 1; `Atom pbij; `Dots 1 ] when atomic_ident con ->
+            let _ = Constr (con, String.fold_right (fun c s -> String.make 1 c :: s) pbij []) in
+            fatal ~loc (Unimplemented "higher constructors")
+        (* Identifier *)
+        | _ -> (
+            match get_ident parts with
+            | Some id -> Ident id
+            | None -> fatal ~loc Parse_error))
 
-(* An identifier is a list of one or more other characters, canonicalized. *)
 let other : Token.t t =
-  let* rng, str =
-    located (one_or_more_fold_left return (fun str c -> return (str ^ c)) other_char) in
-  canonicalize rng str
+  let* rng, parts = located dot_separated_token in
+  return (canonicalize (Range.convert rng) parts)
 
 (* Finally, a token is either a quoted string, a single-character operator, an operator of special ASCII symbols, or something else.  Unlike the built-in 'lexer' function, we include whitespace *after* the token, so that we can save comments occurring after any code. *)
 let token : Located_token.t t =
