@@ -1053,7 +1053,7 @@ and synth_nondep_match : type a b.
             ( Reporter.try_with ~fatal:(fun d ->
                   match d.message with
                   | No_such_level _ ->
-                      fatal
+                      fatal ?loc:d.explanation.loc
                         (Invalid_synthesized_type
                            ("synthesizing branch of match", PVal (newctx, sty)))
                   | _ -> fatal_diagnostic d)
@@ -1268,10 +1268,11 @@ and check_var_match : type a b.
       Reporter.try_with ~fatal:(fun d ->
           match d.message with
           | Matching_wont_refine (str, x) ->
-              emit (Matching_wont_refine (str, x));
+              emit ?loc:d.explanation.loc (Matching_wont_refine (str, x));
               check_nondep_match status ctx (Term.Var index) varty brs None motive loc
           | No_such_level x ->
-              emit (Matching_wont_refine ("index variable occurs in parameter", Some x));
+              emit ?loc:d.explanation.loc
+                (Matching_wont_refine ("index variable occurs in parameter", Some x));
               check_nondep_match status ctx (Term.Var index) varty brs None motive loc
           | _ -> fatal_diagnostic d)
       @@ fun () ->
@@ -1363,7 +1364,7 @@ and check_var_match : type a b.
                         ( Reporter.try_with ~fatal:(fun d ->
                               match d.message with
                               | No_such_level x ->
-                                  fatal
+                                  fatal ?loc:d.explanation.loc
                                     (Matching_wont_refine
                                        ("free index variable occurs in inferred index value", Some x))
                               | _ -> fatal_diagnostic d)
