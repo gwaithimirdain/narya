@@ -541,3 +541,11 @@
      ^ cube abstraction not allowed for zero-dimensional comatch
   
   [1]
+  $ narya errors.ny -e "echo x y {\` unterminated block comment"
+   ￫ error[E0200]
+   ￭ command-line exec string
+   1 | echo x y {` unterminated block comment‹EOF›
+     ^ parse error
+  
+  [1]
+
