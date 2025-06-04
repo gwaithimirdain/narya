@@ -143,6 +143,7 @@
    ￫ info[I0000]
    ￮ constant symsym_r2'_eq_r2' defined
   
+
   $ narya gel.ny -e "def r2ty_eq_sym_r2ty : Id Type r2ty sym_r2ty := refl r2ty"
   sym M
     : refl Gel A A (refl A) B B (refl B) R R (refl R) a₀ a₁ a₂ b₀ b₁ b₂
