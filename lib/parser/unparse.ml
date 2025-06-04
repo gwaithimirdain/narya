@@ -299,18 +299,6 @@ let rec unparse : type n lt ls rt rs s.
               unlocated (outfix ~notn:universe ~inner:(Single (Ident [ "Type" ], (None, [])))));
         }
         (deg_zero n) li ri
-  (* A fully instantiated pi-type we can unparse prettily. *)
-  | Inst ((Pi (x, doms, cods) as ty), tyargs) -> (
-      match
-        (D.compare_zero (TubeOf.uninst tyargs), D.compare (TubeOf.inst tyargs) (CubeOf.dim doms))
-      with
-      | Zero, Eq ->
-          let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (TubeOf.inst tyargs)) in
-          let tyargs = TubeOf.mmap { map = (fun _ [ x ] -> Names.Named (vars, x)) } [ tyargs ] in
-          unparse_higher_pi vars Emp x doms cods tyargs li ri
-      | Zero, Neq ->
-          fatal (Dimension_mismatch ("unparsing higher pi", TubeOf.inst tyargs, CubeOf.dim doms))
-      | Pos _, _ -> unparse_inst vars ty tyargs li ri)
   | Inst (ty, tyargs) -> unparse_inst vars ty tyargs li ri
   | Pi _ -> unparse_pis vars Emp tm li ri
   | App _ -> (
@@ -618,8 +606,19 @@ and unparse_inst : type n lt ls rt rs m k mk.
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
  fun vars ty tyargs li ri ->
-  let tyargs = TubeOf.mmap { map = (fun _ [ x ] -> Names.Named (vars, x)) } [ tyargs ] in
-  unparse_named_inst vars ty tyargs li ri
+  match (D.compare_zero (TubeOf.uninst tyargs), ty) with
+  (* A fully instantiated higher pi-type we can unparse prettily. *)
+  | Zero, Pi (x, doms, cods) -> (
+      match D.compare (TubeOf.inst tyargs) (CubeOf.dim doms) with
+      | Eq ->
+          let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (TubeOf.inst tyargs)) in
+          let tyargs = TubeOf.mmap { map = (fun _ [ x ] -> Names.Named (vars, x)) } [ tyargs ] in
+          unparse_higher_pi vars Emp x doms cods tyargs li ri
+      | Neq ->
+          fatal (Dimension_mismatch ("unparsing higher pi", TubeOf.inst tyargs, CubeOf.dim doms)))
+  | _ ->
+      let tyargs = TubeOf.mmap { map = (fun _ [ x ] -> Names.Named (vars, x)) } [ tyargs ] in
+      unparse_named_inst vars ty tyargs li ri
 
 and unparse_named_inst : type n lt ls rt rs m k mk.
     n Names.t ->
