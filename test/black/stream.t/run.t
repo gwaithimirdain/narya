@@ -89,9 +89,9 @@
    ￭ command-line exec string
    1 | def s_eq_s' : Id (Stream A) s s' := refl s
      ^ term synthesized type
-         refl Stream A A (refl A) s s
+         refl Stream (refl A) s s
        but is being checked against type
-         refl Stream A A (refl A) s s'
+         refl Stream (refl A) s s'
        unequal head constants:
          s
        does not equal
@@ -103,9 +103,9 @@
    ￭ command-line exec string
    1 | def s_eq_s'' : Id (Stream A) s s'' := refl s
      ^ term synthesized type
-         refl Stream A A (refl A) s s
+         refl Stream (refl A) s s
        but is being checked against type
-         refl Stream A A (refl A) s (corec A (Stream A) (x ↦ x .head) (x ↦ x .tail) s)
+         refl Stream (refl A) s (corec A (Stream A) (x ↦ x .head) (x ↦ x .tail) s)
        unequal head constants:
          s
        does not equal

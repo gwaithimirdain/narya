@@ -127,27 +127,27 @@
          Type
   
   [1]
-  $ narya errors.ny -e "echo (refl f a)"
+  $ narya errors.ny -e "echo (refl f {a})"
    ￫ error[E0502]
    ￭ command-line exec string
-   1 | echo (refl f a)
+   1 | echo (refl f {a})
      ^ not enough arguments for a higher-dimensional function application
   
   [1]
 
-  $ narya errors.ny -e "echo (refl f a a)"
+  $ narya errors.ny -e "echo (refl f {a} {a})"
    ￫ error[E0502]
    ￭ command-line exec string
-   1 | echo (refl f a a)
+   1 | echo (refl f {a} {a})
      ^ not enough arguments for a higher-dimensional function application
   
   [1]
-  $ narya errors.ny -e "echo (refl f a a (refl a) a)"
+  $ narya errors.ny -e "echo (refl f (refl a) a)"
    ￫ error[E0701]
    ￭ command-line exec string
-   1 | echo (refl f a a (refl a) a)
+   1 | echo (refl f (refl a) a)
      ^ attempt to apply/instantiate
-         refl f a a (refl a)
+         refl f (refl a)
        of type
          refl A (f a) (f a)
        which is not a function-type or universe
@@ -162,23 +162,23 @@
   
   [1]
   $ narya errors.ny -e "echo ((x |-> x) : Id (A -> A) f f)"
-   ￫ error[E0501]
+   ￫ error[E0702]
    ￭ command-line exec string
    1 | echo ((x |-> x) : Id (A -> A) f f)
-     ^ not enough non-cube variables for higher-dimensional abstraction: need 2 more
+     ^ unexpected explicit abstraction: expecting implicit variable
   
   [1]
-  $ narya errors.ny -e "echo ((x y |-> x) : Id (A -> A) f f)"
+  $ narya errors.ny -e "echo (({x} {y} |-> x) : Id (A -> A) f f)"
    ￫ error[E0501]
    ￭ command-line exec string
-   1 | echo ((x y |-> x) : Id (A -> A) f f)
+   1 | echo (({x} {y} |-> x) : Id (A -> A) f f)
      ^ not enough non-cube variables for higher-dimensional abstraction: need 1 more
   
   [1]
-  $ narya errors.ny -e "echo ((x0 x1 x2 x3 ↦ refl f x0 x1 x2) : Id (A -> A) f f)"
+  $ narya errors.ny -e "echo (({x0} {x1} x2 x3 ↦ refl f x0 x1 x2) : Id (A -> A) f f)"
    ￫ error[E0700]
    ￭ command-line exec string
-   1 | echo ((x0 x1 x2 x3 ↦ refl f x0 x1 x2) : Id (A -> A) f f)
+   1 | echo (({x0} {x1} x2 x3 ↦ refl f x0 x1 x2) : Id (A -> A) f f)
      ^ checking abstraction against non-function type refl A (f x0) (f x1)
   
   [1]
@@ -243,10 +243,10 @@
          Type
   
   [1]
-  $ narya errors.ny -e "echo (a : Id (Id A) a a (refl a) a a (refl a))"
+  $ narya errors.ny -e "echo (a : Id (Id A) (refl a) (refl a))"
    ￫ error[E0401]
    ￭ command-line exec string
-   1 | echo (a : Id (Id A) a a (refl a) a a (refl a))
+   1 | echo (a : Id (Id A) (refl a) (refl a))
      ^ term synthesized type
          refl Type (refl A a a) (refl A a a)
        but is being checked against type
@@ -258,7 +258,7 @@
   
    ￫ error[E0401]
    ￭ command-line exec string
-   1 | echo (a : Id (Id A) a a (refl a) a a (refl a))
+   1 | echo (a : Id (Id A) (refl a) (refl a))
      ^ term synthesized type
          refl Type (refl A a a) (refl A a a)
        but is being checked against type
@@ -281,7 +281,6 @@
          refl Type
        does not equal
          Type
-       (hint: type boundaries are explicit)
   
   [1]
   $ narya errors.ny -e "f (x"
@@ -478,23 +477,23 @@
   
   [1]
   $ narya errors.ny -e "echo ((x ↦ x) : Id (A→A) f f)"
-   ￫ error[E0501]
+   ￫ error[E0702]
    ￭ command-line exec string
    1 | echo ((x ↦ x) : Id (A→A) f f)
-     ^ not enough non-cube variables for higher-dimensional abstraction: need 2 more
+     ^ unexpected explicit abstraction: expecting implicit variable
   
   [1]
-  $ narya errors.ny -e "echo ((x ⤇ refl f x.0 x.1 x) : Id (A→A) f f)"
+  $ narya errors.ny -e "echo ((x ⤇ refl f {x.0} {x.1} x) : Id (A→A) f f)"
    ￫ error[E0507]
    ￭ command-line exec string
-   1 | echo ((x ⤇ refl f x.0 x.1 x) : Id (A→A) f f)
+   1 | echo ((x ⤇ refl f {x.0} {x.1} x) : Id (A→A) f f)
      ^ variable of dimension e must be used with a face
   
   [1]
-  $ narya errors.ny -e "echo ((a x ⤇ refl f x.0 x.1 x.2) : A → Id (A→A) f f)"
+  $ narya errors.ny -e "echo ((a x ⤇ refl f {x.0} {x.1} x.2) : A → Id (A→A) f f)"
    ￫ error[E0508]
    ￭ command-line exec string
-   1 | echo ((a x ⤇ refl f x.0 x.1 x.2) : A → Id (A→A) f f)
+   1 | echo ((a x ⤇ refl f {x.0} {x.1} x.2) : A → Id (A→A) f f)
      ^ cube abstraction not allowed for zero-dimensional function
   
   [1]
@@ -505,10 +504,10 @@
      ^ variable of dimension e must be used with a face
   
   [1]
-  $ narya errors.ny -e "echo ((a x ⤇ refl af a.0 a.1 a.2 x.00 x.01 x.02 x.10 x.11 x.12 x.20 x.21 x.22) : Id (A → Id (A→A) f f) af af)"
+  $ narya errors.ny -e "echo ((a x ⤇ refl af {a.0} {a.1} a.2 {x.00} {x.01} {x.02} {x.10} {x.11} {x.12} {x.20} {x.21} x.22) : Id (A → Id (A→A) f f) af af)"
    ￫ error[E0509]
    ￭ command-line exec string
-   1 | echo ((a x ⤇ refl af a.0 a.1 a.2 x.00 x.01 x.02 x.10 x.11 x.12 x.20 x.21 x.22) : Id (A → Id (A→A) f f) af af)
+   1 | echo ((a x ⤇ refl af {a.0} {a.1} a.2 {x.00} {x.01} {x.02} {x.10} {x.11} {x.12} {x.20} {x.21} x.22) : Id (A → Id (A→A) f f) af af)
      ^ previous variable
      ^ can't combine cube abstractions of different dimensions: e ≠ ee
   

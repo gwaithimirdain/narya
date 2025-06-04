@@ -47,7 +47,7 @@ let () =
 
   let apty, _ = synth "(A B : Type) (f : A → B) (a₀ a₁ : A) → Id A a₀ a₁ → Id B (f a₀) (f a₁)" in
 
-  let ap = check "A B f a₀ a₁ a₂ ↦ refl f a₀ a₁ a₂" apty in
+  let ap = check "A B f a₀ a₁ a₂ ↦ refl f a₂" apty in
   roundtrip_ok ap apty;
 
   (* And some instantiations *)

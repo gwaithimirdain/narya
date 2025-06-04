@@ -127,10 +127,10 @@
          x0
   
   [1]
-  $ narya idrefl.ny -e "synth (refl ((x ↦ x) : (X → X)) x0 x0 x2) synth (refl ((x ↦ x) : (X → X)) x0 x0 x0)"
+  $ narya idrefl.ny -e "synth (refl ((x ↦ x) : (X → X)) {x0} {x0} x2) synth (refl ((x ↦ x) : (X → X)) {x0} {x0} x0)"
    ￫ error[E0401]
    ￭ command-line exec string
-   1 | synth (refl ((x ↦ x) : (X → X)) x0 x0 x2) synth (refl ((x ↦ x) : (X → X)) x0 x0 x0)
+   1 | synth (refl ((x ↦ x) : (X → X)) {x0} {x0} x2) synth (refl ((x ↦ x) : (X → X)) {x0} {x0} x0)
      ^ term synthesized type
          refl X x0 x1
        but is being checked against type
@@ -153,7 +153,6 @@
          X
        does not equal
          Y
-       (hint: function boundaries are explicit)
   
   [1]
   $ narya idrefl.ny -e "def idff_eq_idff' : Id Type idff idff' := refl idff"
@@ -161,22 +160,22 @@
    ￭ command-line exec string
    1 | def idff_eq_idff' : Id Type idff idff' := refl idff
      ^ term synthesized type
-         refl Type (refl Π X X (refl X) (_ ↦ Y) (_ ↦ Y) (_ ⤇ refl Y) f f')
-           (refl Π X X (refl X) (_ ↦ Y) (_ ↦ Y) (_ ⤇ refl Y) f f')
+         refl Type (refl Π (refl X) {_ ↦ Y} {_ ↦ Y} (_ ⤇ refl Y) f f')
+           (refl Π (refl X) {_ ↦ Y} {_ ↦ Y} (_ ⤇ refl Y) f f')
        but is being checked against type
-         refl Type (refl Π X X (refl X) (_ ↦ Y) (_ ↦ Y) (_ ⤇ refl Y) f f')
+         refl Type (refl Π (refl X) {_ ↦ Y} {_ ↦ Y} (_ ⤇ refl Y) f f')
            ((x : X) (x' : X) (x'' : refl X x x') → refl Y (f x) (f' x'))
        unequal head terms:
-         refl Π X X (refl X) (_ ↦ Y) (_ ↦ Y) (_ ⤇ refl Y)
+         refl Π (refl X) {_ ↦ Y} {_ ↦ Y} (_ ⤇ refl Y)
        does not equal
          (x : X) (x' : X) (x'' : refl X x x') → refl Y (f x) (f' x')
   
   [1]
-  $ narya idrefl.ny -e "synth (refl g x0 x1 x2) "
-   ￫ error[E0401]
+  $ narya idrefl.ny -e "synth (refl g x2)"
+   ￫ error[E0704]
    ￭ command-line exec string
-   1 | synth (refl g x0 x1 x2) 
-     ^ term synthesized type
+   1 | synth (refl g x2)
+     ^ the 0-boundary synthesized type
          X
        but is being checked against type
          Y

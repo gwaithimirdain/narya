@@ -280,19 +280,15 @@
    ￭ command-line exec string
    1 | def one_eq_zero : Id CN one zero := refl one
      ^ term synthesized type
-         refl Π Type Type (refl Type) (A ↦ (A → A) → A → A) (A ↦ (A → A) → A → A)
+         refl Π (refl Type) {A ↦ (A → A) → A → A} {A ↦ (A → A) → A → A}
            (A ⤇
-            refl Π (A.0 → A.0) (A.1 → A.1)
-              (refl Π A.0 A.1 A.2 (_ ↦ A.0) (_ ↦ A.1) (_ ⤇ A.2)) (_ ↦ A.0 → A.0)
-              (_ ↦ A.1 → A.1) (_ ⤇ refl Π A.0 A.1 A.2 (_ ↦ A.0) (_ ↦ A.1) (_ ⤇ A.2)))
-           one one
+            refl Π (refl Π A.2 {_ ↦ A.0} {_ ↦ A.1} (_ ⤇ A.2)) {_ ↦ A.0 → A.0}
+              {_ ↦ A.1 → A.1} (_ ⤇ refl Π A.2 {_ ↦ A.0} {_ ↦ A.1} (_ ⤇ A.2))) one one
        but is being checked against type
-         refl Π Type Type (refl Type) (A ↦ (A → A) → A → A) (A ↦ (A → A) → A → A)
+         refl Π (refl Type) {A ↦ (A → A) → A → A} {A ↦ (A → A) → A → A}
            (A ⤇
-            refl Π (A.0 → A.0) (A.1 → A.1)
-              (refl Π A.0 A.1 A.2 (_ ↦ A.0) (_ ↦ A.1) (_ ⤇ A.2)) (_ ↦ A.0 → A.0)
-              (_ ↦ A.1 → A.1) (_ ⤇ refl Π A.0 A.1 A.2 (_ ↦ A.0) (_ ↦ A.1) (_ ⤇ A.2)))
-           one zero
+            refl Π (refl Π A.2 {_ ↦ A.0} {_ ↦ A.1} (_ ⤇ A.2)) {_ ↦ A.0 → A.0}
+              {_ ↦ A.1 → A.1} (_ ⤇ refl Π A.2 {_ ↦ A.0} {_ ↦ A.1} (_ ⤇ A.2))) one zero
        unequal head variables:
          _H
        does not equal
@@ -304,18 +300,15 @@
    ￭ command-line exec string
    1 | def cplus_one_two_eq_two : Id CN (cplus one two) two := refl two
      ^ term synthesized type
-         refl Π Type Type (refl Type) (A ↦ (A → A) → A → A) (A ↦ (A → A) → A → A)
+         refl Π (refl Type) {A ↦ (A → A) → A → A} {A ↦ (A → A) → A → A}
            (A ⤇
-            refl Π (A.0 → A.0) (A.1 → A.1)
-              (refl Π A.0 A.1 A.2 (_ ↦ A.0) (_ ↦ A.1) (_ ⤇ A.2)) (_ ↦ A.0 → A.0)
-              (_ ↦ A.1 → A.1) (_ ⤇ refl Π A.0 A.1 A.2 (_ ↦ A.0) (_ ↦ A.1) (_ ⤇ A.2)))
-           two two
+            refl Π (refl Π A.2 {_ ↦ A.0} {_ ↦ A.1} (_ ⤇ A.2)) {_ ↦ A.0 → A.0}
+              {_ ↦ A.1 → A.1} (_ ⤇ refl Π A.2 {_ ↦ A.0} {_ ↦ A.1} (_ ⤇ A.2))) two two
        but is being checked against type
-         refl Π Type Type (refl Type) (A ↦ (A → A) → A → A) (A ↦ (A → A) → A → A)
+         refl Π (refl Type) {A ↦ (A → A) → A → A} {A ↦ (A → A) → A → A}
            (A ⤇
-            refl Π (A.0 → A.0) (A.1 → A.1)
-              (refl Π A.0 A.1 A.2 (_ ↦ A.0) (_ ↦ A.1) (_ ⤇ A.2)) (_ ↦ A.0 → A.0)
-              (_ ↦ A.1 → A.1) (_ ⤇ refl Π A.0 A.1 A.2 (_ ↦ A.0) (_ ↦ A.1) (_ ⤇ A.2)))
+            refl Π (refl Π A.2 {_ ↦ A.0} {_ ↦ A.1} (_ ⤇ A.2)) {_ ↦ A.0 → A.0}
+              {_ ↦ A.1 → A.1} (_ ⤇ refl Π A.2 {_ ↦ A.0} {_ ↦ A.1} (_ ⤇ A.2)))
            (cplus one two) two
        unequal head variables:
          _H
@@ -335,25 +328,19 @@
    ￭ command-line exec string
    1 | def refl_nat_eq_sample : Id (ℕ → Id ((x:A)→B x) f f) (refl_nat_f) (refl_nat_f_cube) ≔ refl refl_nat_f
      ^ term synthesized type
-         refl Π ℕ ℕ (refl ℕ)
-           (_ ↦ refl Π A A (refl A) (x ↦ B x) (x ↦ B x) (x ⤇ refl B x.0 x.1 x.2) f f)
-           (_ ↦ refl Π A A (refl A) (x ↦ B x) (x ↦ B x) (x ⤇ refl B x.0 x.1 x.2) f f)
+         refl Π (refl ℕ) {_ ↦ refl Π (refl A) {x ↦ B x} {x ↦ B x} (x ⤇ refl B x.2) f f}
+           {_ ↦ refl Π (refl A) {x ↦ B x} {x ↦ B x} (x ⤇ refl B x.2) f f}
            (_ ⤇
-            Π⁽ᵉᵉ⁾ A A (refl A) A A (refl A) (refl A) (refl A) A⁽ᵉᵉ⁾ (x ↦ B x) (x ↦ B x)
-              (x ⤇ refl B x.0 x.1 x.2) (x ↦ B x) (x ↦ B x) (x ⤇ refl B x.0 x.1 x.2)
-              (x ⤇ refl B x.0 x.1 x.2) (x ⤇ refl B x.0 x.1 x.2)
-              (x ⤇ B⁽ᵉᵉ⁾ x.00 x.01 x.02 x.10 x.11 x.12 x.20 x.21 x.22) f f (refl f) f f
-              (refl f)) refl_nat_f refl_nat_f
+            Π⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ {x ↦ B x} {x ↦ B x} {x ⤇ refl B x.2} {x ↦ B x} {x ↦ B x}
+              {x ⤇ refl B x.2} {x ⤇ refl B x.2} {x ⤇ refl B x.2} (x ⤇ B⁽ᵉᵉ⁾ x.22)
+              (refl f) (refl f)) refl_nat_f refl_nat_f
        but is being checked against type
-         refl Π ℕ ℕ (refl ℕ)
-           (_ ↦ refl Π A A (refl A) (x ↦ B x) (x ↦ B x) (x ⤇ refl B x.0 x.1 x.2) f f)
-           (_ ↦ refl Π A A (refl A) (x ↦ B x) (x ↦ B x) (x ⤇ refl B x.0 x.1 x.2) f f)
+         refl Π (refl ℕ) {_ ↦ refl Π (refl A) {x ↦ B x} {x ↦ B x} (x ⤇ refl B x.2) f f}
+           {_ ↦ refl Π (refl A) {x ↦ B x} {x ↦ B x} (x ⤇ refl B x.2) f f}
            (_ ⤇
-            Π⁽ᵉᵉ⁾ A A (refl A) A A (refl A) (refl A) (refl A) A⁽ᵉᵉ⁾ (x ↦ B x) (x ↦ B x)
-              (x ⤇ refl B x.0 x.1 x.2) (x ↦ B x) (x ↦ B x) (x ⤇ refl B x.0 x.1 x.2)
-              (x ⤇ refl B x.0 x.1 x.2) (x ⤇ refl B x.0 x.1 x.2)
-              (x ⤇ B⁽ᵉᵉ⁾ x.00 x.01 x.02 x.10 x.11 x.12 x.20 x.21 x.22) f f (refl f) f f
-              (refl f)) refl_nat_f refl_nat_f_cube
+            Π⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ {x ↦ B x} {x ↦ B x} {x ⤇ refl B x.2} {x ↦ B x} {x ↦ B x}
+              {x ⤇ refl B x.2} {x ⤇ refl B x.2} {x ⤇ refl B x.2} (x ⤇ B⁽ᵉᵉ⁾ x.22)
+              (refl f) (refl f)) refl_nat_f refl_nat_f_cube
        unequal head constants:
          refl_nat_f
        does not equal
