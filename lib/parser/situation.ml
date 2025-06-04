@@ -2,9 +2,7 @@ open Util
 open Core
 open Reporter
 open Notation
-open User2
 module TokMap = Map.Make (Token)
-module Trie = Yuujinchou.Trie
 
 (* A notation "situation" is the collection of all the notations currently available.  Unfortunately, good words like "state" and "context" and "scope" are taken for other things, so "situation" is the best I've been able to come up with to uniquely identify this object. *)
 
@@ -41,6 +39,8 @@ let empty : t =
     left_opens = TokMap.empty;
     unparse = PrintMap.empty;
   }
+
+let builtins = ref empty
 
 (* Add a new notation to the current situation of available ones. *)
 let add : type left tight right. (left, tight, right) notation -> t -> t =
@@ -120,60 +120,8 @@ let add_with_print : User.notation -> t -> t =
     unparse = List.fold_left (fun up key -> up |> PrintMap.add key notn) sit.unparse notn.keys;
   }
 
-let add_user : User.prenotation -> t -> t * (User.notation * User.key list) =
+let add_user_to : User.prenotation -> t -> (User.notation * User.key list) * t =
  fun user sit ->
-  let notn = make_user user in
+  let notn = User.make_user user in
   let shadow = List.filter (fun key -> PrintMap.mem key sit.unparse) notn.keys in
-  (add_with_print notn sit, (notn, shadow))
-
-let add_users : t -> Scope.trie -> t =
- fun sit trie ->
-  Seq.fold_left
-    (fun state (_, ((data, _), _)) ->
-      match data with
-      | `Notation (user, _) -> fst (add_user user state)
-      | _ -> state)
-    sit
-    (Trie.to_seq (Trie.find_subtree [ "notations" ] trie))
-
-module S = State.Make (struct
-  type nonrec t = t
-end)
-
-let () =
-  S.register_printer (function
-    | `Get -> Some "unhandled notation situation get effect"
-    | `Set _ -> Some "unhandled notation situation set effect")
-
-module Current = struct
-  let add : type left tight right. (left, tight, right) notation -> unit =
-   fun notn -> S.modify (add notn)
-
-  let add_with_print : User.notation -> unit = fun notn -> S.modify (add_with_print notn)
-
-  let add_user : User.prenotation -> User.notation * User.key list =
-   fun user ->
-    let sit = S.get () in
-    let sit, (notn, shadow) = add_user user sit in
-    S.set sit;
-    (notn, shadow)
-
-  let left_closeds : unit -> (No.plus_omega, No.strict) entry =
-   fun () ->
-    (EntryMap.find_opt No.plus_omega (S.get ()).tighters <|> Anomaly "missing left_closeds").strict
-
-  let tighters : type strict tight. (tight, strict) No.iinterval -> (tight, strict) entry =
-   fun { strictness; endpoint } ->
-    let ep = EntryMap.find_opt endpoint (S.get ()).tighters <|> Anomaly "missing tighters" in
-    match strictness with
-    | Nonstrict -> ep.nonstrict
-    | Strict -> ep.strict
-
-  let left_opens : Token.t -> No.interval option =
-   fun tok -> TokMap.find_opt tok (S.get ()).left_opens
-
-  let unparse : PrintKey.t -> User.notation option = fun c -> PrintMap.find_opt c (S.get ()).unparse
-end
-
-let run_on init f = S.run ~init f
-let try_with = S.try_with
+  ((notn, shadow), add_with_print notn sit)

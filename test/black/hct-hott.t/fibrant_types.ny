@@ -31,7 +31,7 @@ def 𝕗⊤ : isFibrant ⊤ ≔ [
 
 def prod (A B : Type) : Type ≔ sig ( fst : A, snd : B )
 
-notation 2 prod : A "×" B ≔ prod A B
+notation(2) A "×" B ≔ prod A B
 
 def id_prod_iso (A0 : Type) (A1 : Type) (A2 : Br Type A0 A1) (B0 : Type)
   (B1 : Type) (B2 : Br Type B0 B1) (a0 : A0) (a1 : A1) (b0 : B0) (b1 : B1)
@@ -185,7 +185,7 @@ def 𝕗Gel (A B : Type) (R : A → B → Type)
 
 def sum (A B : Type) : Type ≔ data [ left. (_ : A) | right. (_ : B) ]
 
-notation 1.5 sum : A "⊔" B ≔ sum A B
+notation(1.5) A "⊔" B ≔ sum A B
 
 def sum_code (A0 A1 : Type) (A2 : Br Type A0 A1) (B0 B1 : Type)
   (B2 : Br Type B0 B1) (u0 : A0 ⊔ B0) (u1 : A1 ⊔ B1)

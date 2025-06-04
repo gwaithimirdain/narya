@@ -310,7 +310,7 @@
    ￫ error[E0100]
    ￭ command-line exec string
    1 | echo (f (con.str. x))
-     ^ unimplemented: higher constructors: con.str.
+     ^ unimplemented: higher constructors
   
   [1]
   $ narya errors.ny -e "echo (x |-> f 0.1.2 x)"

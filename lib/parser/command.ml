@@ -60,12 +60,11 @@ module Command = struct
     | Notation : {
         fixity : ('left, 'tight, 'right) fixity;
         wsnotation : Whitespace.t list;
+        wslparen : Whitespace.t list;
         wstight : Whitespace.t list; (* Empty for outfix *)
         wsellipsis : Whitespace.t list; (* Empty for non-associative *)
-        name : Trie.path;
         loc : Asai.Range.t option;
-        wsname : Whitespace.t list;
-        wscolon : Whitespace.t list;
+        wsrparen : Whitespace.t list;
         pattern : ('left, 'right) User.Pattern.t;
         wscoloneq : Whitespace.t list;
         head : [ `Constr of string | `Constant of Trie.path ];
@@ -211,32 +210,22 @@ module Parse = struct
           return (None, [], [], tm) in
     return (Command.Echo { wsecho; number; wsin; wsnumber; tm; eval })
 
-  let tightness_and_name :
-      (No.wrapped option * Whitespace.t list * Trie.path * Asai.Range.t option * Whitespace.t list)
-      t =
-    (let* minusloc, wsminus = located (token (Op "-")) in
-     if not (List.is_empty wsminus) then fatal ~loc:(Range.convert minusloc) Parse_error;
+  let tightness : (Whitespace.t list * No.wrapped option * Whitespace.t list * Whitespace.t list) t
+      =
+    (let* wslparen = token LParen in
+     let* sign =
+       (let* minusloc, wsminus = located (token (Op "-")) in
+        if not (List.is_empty wsminus) then fatal ~loc:(Range.convert minusloc) Parse_error;
+        return Q.neg)
+       </> return (fun x -> x) in
      let* tloc, (tight, wstight) = located ident in
-     let* nameloc, (name, wsname) = located ident in
-     let loc = Some (Range.convert nameloc) in
+     let* wsrparen = token RParen in
      let tight = String.concat "." tight in
-     match No.of_rat (Q.neg (Q.of_string tight)) with
-     | Some tight -> return (Some tight, wstight, name, loc, wsname)
+     match No.of_rat (sign (Q.of_string tight)) with
+     | Some tight -> return (wslparen, Some tight, wstight, wsrparen)
      | None | (exception Invalid_argument _) ->
          fatal ~loc:(Range.convert tloc) (Invalid_tightness tight))
-    </>
-    let* tloc, tight_or_name = located ident in
-    (let* nameloc, (name, wsname) = located ident in
-     let loc = Some (Range.convert nameloc) in
-     let tight, wstight = tight_or_name in
-     let tight = String.concat "." tight in
-     match No.of_rat (Q.of_string tight) with
-     | Some tight -> return (Some tight, wstight, name, loc, wsname)
-     | None | (exception Invalid_argument _) ->
-         fatal ~loc:(Range.convert tloc) (Invalid_tightness tight))
-    </>
-    let name, wsname = tight_or_name in
-    return (None, [], name, Some (Range.convert tloc), wsname)
+    </> return ([], None, [], [])
 
   let pattern_token =
     step "" (fun state _ (tok, ws) ->
@@ -378,7 +367,7 @@ module Parse = struct
     step "" (fun state _ (tok, ws) ->
         match tok with
         | Ident name -> Some ((`Constant name, ws), state)
-        | Constr c -> Some ((`Constr c, ws), state)
+        | Constr (c, []) -> Some ((`Constr c, ws), state)
         | _ -> None)
 
   let notation_var =
@@ -389,9 +378,10 @@ module Parse = struct
 
   let notation =
     let* wsnotation = token Notation in
-    let* tight, wstight, name, loc, wsname = tightness_and_name in
-    let* wscolon = token Colon in
-    let* pat, pattern = one_or_more (pattern_token </> pattern_var </> pattern_ellipsis) in
+    let* wslparen, tight, wstight, wsrparen = tightness in
+    let* loc, (pat, pattern) =
+      located (one_or_more (pattern_token </> pattern_var </> pattern_ellipsis)) in
+    let loc = Some (Range.convert loc) in
     let pattern = pat :: pattern in
     let Fix_pat (fixity, pattern), wsellipsis = fixity_of_pattern pattern tight in
     let* wscoloneq = token Coloneq in
@@ -403,11 +393,10 @@ module Parse = struct
            fixity;
            wsnotation;
            wstight;
+           wslparen;
            wsellipsis;
-           name;
            loc;
-           wsname;
-           wscolon;
+           wsrparen;
            pattern;
            wscoloneq;
            head;
@@ -785,30 +774,17 @@ let rec execute :
       History.do_command @@ fun () ->
       Scope.check_name name loc;
       let const = Scope.define (Compunit.Current.read ()) ?loc name in
-      Reporter.try_with ~fatal:(fun d ->
-          Scope.modify_visible (Yuujinchou.Language.except name);
-          Scope.modify_export (Yuujinchou.Language.except name);
-          Reporter.fatal_diagnostic d)
-      @@ fun () ->
       let (Processed_tel (params, ctx, _)) = process_tel Emp parameters in
       Core.Command.execute (Axiom (const, params, process ctx ty))
   | Def defs ->
       History.do_command @@ fun () ->
-      let [ names; cdefs ] =
-        Mlist.pmap
+      let cdefs =
+        Mlist.mmap
           (fun [ d ] ->
             Scope.check_name d.name d.loc;
             let c = Scope.define (Compunit.Current.read ()) ?loc:d.loc d.name in
-            [ d.name; (c, d) ])
-          [ defs ] (Cons (Cons Nil)) in
-      Reporter.try_with ~fatal:(fun d ->
-          List.iter
-            (fun c ->
-              Scope.modify_visible (Yuujinchou.Language.except c);
-              Scope.modify_export (Yuujinchou.Language.except c))
-            names;
-          Reporter.fatal_diagnostic d)
-      @@ fun () ->
+            (c, d))
+          [ defs ] in
       let defs =
         List.map
           (function
@@ -843,8 +819,7 @@ let rec execute :
             | `Undefined ->
                 ( Scope_and_ctx (vars, Norm.eval_ctx termctx),
                   fun f ->
-                    History.run_with_scope ~init_visible:scope ~options @@ fun () ->
-                    Global.run ~init:global f )
+                    Scope.run ~init_visible:scope ~options @@ fun () -> Global.run ~init:global f )
             | `Defined _ | `Axiom -> fatal (Anomaly "hole already defined")) in
       run @@ fun () ->
       let rtm = process vars tm in
@@ -872,9 +847,10 @@ let rec execute :
           print_newline ();
           print_newline ()
       | _ -> fatal (Nonsynthesizing ("argument of " ^ if eval then "echo" else "synth")))
-  | Notation { fixity; name; loc; pattern; head; args; _ } ->
+  | Notation { fixity; loc; pattern; head; args; _ } ->
       History.do_command @@ fun () ->
-      let notation_name = "notations" :: name in
+      let name = "«" ^ User.Pattern.to_string pattern ^ "»" in
+      let notation_name = [ "notations"; name ] in
       Scope.check_name notation_name loc;
       let key =
         match head with
@@ -907,11 +883,8 @@ let rec execute :
       (match unbounds args [] pattern with
       | [] -> ()
       | _ :: _ as unbound -> fatal (Unbound_variable_in_notation (List.map fst unbound)));
-      let user =
-        User { name = String.concat "." name; fixity; pattern; key; val_vars = List.map fst args }
-      in
-      let notn, shadow = Situation.Current.add_user user in
-      Scope.include_singleton (notation_name, ((`Notation (user, notn), loc), ()));
+      let user = User { name; fixity; pattern; key; val_vars = List.map fst args } in
+      let shadow = Scope.define_notation user ?loc notation_name in
       List.iter
         (fun key ->
           let keyname =
@@ -920,7 +893,7 @@ let rec execute :
             | `Constant c -> String.concat "." (Scope.name_of c) in
           emit (Head_already_has_notation keyname))
         shadow;
-      emit (Notation_defined (String.concat "." name))
+      emit (Notation_defined name)
   | Import { export; origin; op; _ } ->
       History.do_command @@ fun () ->
       let trie =
@@ -934,15 +907,7 @@ let rec execute :
         match op with
         | Some (_, op) -> Scope.Mod.modify (process_modifier op) trie
         | None -> trie in
-      if export then Scope.include_subtree ([], trie) else Scope.import_subtree ([], trie);
-      Seq.iter
-        (fun (_, ((data, _), _)) ->
-          match data with
-          | `Notation (user, _) ->
-              let _ = Situation.Current.add_user user in
-              ()
-          | _ -> ())
-        (Trie.to_seq (Trie.find_subtree [ "notations" ] trie))
+      if export then Scope.include_subtree ([], trie) else Scope.import_subtree ([], trie)
   | Solve data -> (
       (* Solve does NOT create a new history entry because it is NOT undoable. *)
       let (Find_number
@@ -952,7 +917,7 @@ let rec execute :
         Eternity.find_number data.number in
       match metatm with
       | `Undefined ->
-          History.run_with_scope ~init_visible:scope ~options @@ fun () ->
+          Scope.run ~init_visible:scope ~options @@ fun () ->
           let (Wrap tm) = !(data.tm) in
           let ptm = process vars tm in
           (* We set the hole location offset to the start of the *term*, so that ProofGeneral can create hole overlays in the right places when solving a hole and creating new holes. *)
@@ -983,7 +948,7 @@ let rec execute :
         Eternity.find_number data.number in
       match metatm with
       | `Undefined -> (
-          History.run_with_scope ~init_visible:scope ~options @@ fun () ->
+          Scope.run ~init_visible:scope ~options @@ fun () ->
           let (Wrap tm) = !(data.tm) in
           match tm.value with
           | Placeholder _ ->
@@ -1206,12 +1171,11 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
         {
           fixity;
           wsnotation;
+          wslparen;
           wstight;
           wsellipsis;
-          name;
           loc = _;
-          wsname;
-          wscolon;
+          wsrparen;
           pattern;
           wscoloneq;
           head;
@@ -1234,19 +1198,23 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
               (pargs ^^ group (pp_ws `Break wargs ^^ utf8string last) ^^ pp_ws `None wslast, rest)
         in
         let ppat, wpat = User.pp_pattern pattern in
+        let notn_tight, ws =
+          match tightness_of_fixity fixity with
+          | Some str ->
+              ( pp_ws `None wsnotation
+                ^^ Token.pp LParen
+                ^^ pp_ws `None wslparen
+                ^^ string str
+                ^^ pp_ws `None wstight
+                ^^ Token.pp RParen,
+                wsrparen )
+          | None -> (empty, wsnotation) in
         ( hang 2
             (Token.pp Notation
-            ^^ pp_ws `Nobreak wsnotation
-            ^^ (match tightness_of_fixity fixity with
-               | Some str -> string str
-               | None -> empty)
-            ^^ pp_ws `Nobreak wstight
-            ^^ utf8string (String.concat "." name)
+            ^^ notn_tight
             ^^ group
                  (group
-                    (pp_ws `Break wsname
-                    ^^ Token.pp Colon
-                    ^^ pp_ws `Nobreak wscolon
+                    (pp_ws `Break ws
                     ^^ (match fixity with
                        | Infixl _ | Postfixl _ -> Token.pp Ellipsis ^^ pp_ws `Nobreak wsellipsis
                        | _ -> empty)

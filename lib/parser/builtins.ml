@@ -597,6 +597,7 @@ type pi_dom =
       wslparen : Whitespace.t list;
       wscolon : Whitespace.t list;
       wsrparen : Whitespace.t list;
+      loc : Asai.Range.t option;
     }
   | Nondep of { wsarrow : arrow_opt; ty : wrapped_parse }
 
@@ -613,13 +614,15 @@ let get_pi_args : type lt ls rt rs.
         match args n with
         | [ Token (LParen, (_, wslparen)); Term body; Token (RParen, (_, wsrparen)) ] ->
             let* vars, wscolon, ty = process_typed_vars body.value in
-            return (Dep { wsarrow; vars; ty; wslparen; wscolon; wsrparen } :: accum)
+            return (Dep { wsarrow; vars; ty; wslparen; wscolon; wsrparen; loc = doms.loc } :: accum)
         | _ -> None)
     | App { fn; arg = { value = Notn ((Parens, _), n); _ }; _ } -> (
         match args n with
         | [ Token (LParen, (_, wslparen)); Term body; Token (RParen, (_, wsrparen)) ] ->
             let* vars, wscolon, ty = process_typed_vars body.value in
-            go fn (Dep { wsarrow = `Noarrow; vars; ty; wslparen; wscolon; wsrparen } :: accum)
+            go fn
+              (Dep { wsarrow = `Noarrow; vars; ty; wslparen; wscolon; wsrparen; loc = doms.loc }
+              :: accum)
         | _ -> None)
     | _ -> None in
   match go doms accum with
@@ -650,11 +653,11 @@ let rec process_pi : type n lt ls rt rs.
       let cod = process_pi ctx doms cod in
       let loc = Range.merge_opt cdom.loc cod.loc in
       { value = Synth (Pi (None, cdom, cod)); loc }
-  | Dep ({ vars = (x, _) :: xs; ty = Wrap dom; _ } as data) :: doms ->
+  | Dep ({ vars = (x, _) :: xs; ty = Wrap dom; loc; _ } as data) :: doms ->
       let cdom = process ctx dom in
       let ctx = Bwv.snoc ctx x in
       let cod = process_pi ctx (Dep { data with vars = xs } :: doms) cod in
-      let loc = Range.merge_opt cdom.loc cod.loc in
+      let loc = Range.merge_opt loc cod.loc in
       { value = Synth (Pi (x, cdom, cod)); loc }
   | Dep { vars = []; _ } :: doms -> process_pi ctx doms cod
 
@@ -668,7 +671,7 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
       (fun (acc, prews) dom ->
         let wsarrow, (pty, wty) =
           match dom with
-          | Dep { wsarrow; vars; ty = Wrap ty; wslparen; wscolon; wsrparen } ->
+          | Dep { wsarrow; vars; ty = Wrap ty; wslparen; wscolon; wsrparen; loc = _ } ->
               let pvars, wvars =
                 List.fold_left
                   (fun (acc, prews) (x, wx) ->
@@ -2169,12 +2172,93 @@ let () =
     }
 
 (* ********************
+   Equational reasoning (hack)
+ ******************** *)
+
+type (_, _, _) identity += Calc : (closed, No.plus_omega, closed) identity
+
+let calc : (closed, No.plus_omega, closed) notation = (Calc, Outfix)
+
+let rec calcs by_ok =
+  terms
+    (Bwd.prepend
+       (if by_ok then Snoc (Emp, (Token.Ident [ "by" ], Lazy (lazy (calcs false)))) else Emp)
+       [ (Op "=", Lazy (lazy (calcs true))); (Ident [ "∎" ], Done_closed calc) ])
+
+let rec process_calcs : type n.
+    n synth located ->
+    (n check located * n check located option) Bwd.t ->
+    (string option, n) Bwv.t ->
+    observation list ->
+    Asai.Range.t option ->
+    n check located =
+ fun x rest ctx obs loc ->
+  match obs with
+  | Token (Op "=", _) :: Term y :: obs -> (
+      let y = process ctx y in
+      match obs with
+      | Token (Ident [ "by" ], _) :: Term e :: obs ->
+          let e = process ctx e in
+          process_calcs x (Snoc (rest, (y, Some e))) ctx obs loc
+      | _ -> process_calcs x (Snoc (rest, (y, None))) ctx obs loc)
+  | [ Token (Ident [ "∎" ], _) ] -> locate (Synth (Calc (x, Bwd.to_list rest))) loc
+  | _ -> invalid "calc"
+
+let rec pp_calcs : Whitespace.t list -> observation list -> document * Whitespace.t list =
+ fun ws obs ->
+  match obs with
+  | Token (Op "=", (_, wseq)) :: Term y :: obs ->
+      let py, wy = pp_term y in
+      let peq = pp_ws `Hard ws ^^ hang 2 (group (Token.pp (Op "=") ^^ pp_ws `Nobreak wseq ^^ py)) in
+      let pby, w, obs =
+        match obs with
+        | Token (Ident [ "by" ], (_, wby)) :: Term e :: obs ->
+            let pe, we = pp_term e in
+            ( nest 4
+                (pp_ws `Hard wy
+                ^^ hang 2 (group (Token.pp (Ident [ "by" ]) ^^ pp_ws `Nobreak wby ^^ pe))),
+              we,
+              obs )
+        | _ -> (empty, wy, obs) in
+      let rest, wrest = pp_calcs w obs in
+      (peq ^^ pby ^^ rest, wrest)
+  | [ Token (Ident [ "∎" ], (_, wqed)) ] -> (pp_ws `Nobreak ws ^^ Token.pp (Ident [ "∎" ]), wqed)
+  | _ -> invalid "calc"
+
+let () =
+  make calc
+    {
+      name = "calc";
+      tree = Closed_entry (eop (Ident [ "calc" ]) (calcs false));
+      processor =
+        (fun ctx obs loc ->
+          match obs with
+          | Token (Ident [ "calc" ], _) :: Term x :: obs ->
+              let x = process_synth ctx x "first calc term" in
+              process_calcs x Emp ctx obs loc
+          | _ -> invalid "calc");
+      print_term = None;
+      print_case =
+        Some
+          (fun _ obs ->
+            match obs with
+            | Token (Ident [ "calc" ], (_, wscalc)) :: Term x :: obs ->
+                let px, wx = pp_term x in
+                let pcalcs, wcalcs = pp_calcs wx obs in
+                ( Token.pp (Ident [ "calc" ]),
+                  nest 2 (pp_ws `Hard wscalc ^^ px ^^ group pcalcs),
+                  wcalcs )
+            | _ -> invalid "calc");
+      is_case = (fun _ -> true);
+    }
+
+(* ********************
    Generating the state
  ******************** *)
 
-let builtins =
-  ref
-    (Situation.empty
+let install () =
+  Situation.builtins :=
+    Situation.empty
     |> Situation.add parens
     |> Situation.add Postprocess.braces
     |> Situation.add letin
@@ -2193,6 +2277,5 @@ let builtins =
     |> Situation.add empty_co_match
     |> Situation.add codata
     |> Situation.add record
-    |> Situation.add data)
-
-let run : type a. (unit -> a) -> a = fun f -> Situation.run_on !builtins f
+    |> Situation.add data
+    |> Situation.add calc

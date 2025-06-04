@@ -1053,7 +1053,7 @@ and synth_nondep_match : type a b.
             ( Reporter.try_with ~fatal:(fun d ->
                   match d.message with
                   | No_such_level _ ->
-                      fatal
+                      fatal ?loc:d.explanation.loc
                         (Invalid_synthesized_type
                            ("synthesizing branch of match", PVal (newctx, sty)))
                   | _ -> fatal_diagnostic d)
@@ -1268,10 +1268,11 @@ and check_var_match : type a b.
       Reporter.try_with ~fatal:(fun d ->
           match d.message with
           | Matching_wont_refine (str, x) ->
-              emit (Matching_wont_refine (str, x));
+              emit ?loc:d.explanation.loc (Matching_wont_refine (str, x));
               check_nondep_match status ctx (Term.Var index) varty brs None motive loc
           | No_such_level x ->
-              emit (Matching_wont_refine ("index variable occurs in parameter", Some x));
+              emit ?loc:d.explanation.loc
+                (Matching_wont_refine ("index variable occurs in parameter", Some x));
               check_nondep_match status ctx (Term.Var index) varty brs None motive loc
           | _ -> fatal_diagnostic d)
       @@ fun () ->
@@ -1363,7 +1364,7 @@ and check_var_match : type a b.
                         ( Reporter.try_with ~fatal:(fun d ->
                               match d.message with
                               | No_such_level x ->
-                                  fatal
+                                  fatal ?loc:d.explanation.loc
                                     (Matching_wont_refine
                                        ("free index variable occurs in inferred index value", Some x))
                               | _ -> fatal_diagnostic d)
@@ -2361,7 +2362,70 @@ and synth : type a b s.
                   @@ fun () -> synth status ctx (locate_opt tm.loc alt)
               | None, `Data _ | None, `Codata _ -> fatal (Anomaly "SFirst mismatch")
               | _ -> go errs alts) in
-        go Emp alts in
+        go Emp alts
+    | Calc (x, rest), _ ->
+        let cx, ty = synth (Kinetic `Nolet) ctx x in
+        let cty = readback_val ctx ty in
+        let env = Ctx.env ctx in
+        let ex = eval_term env cx in
+        let nx : normal = { tm = ex; ty } in
+        let creflx = Term.Act (cx, deg_zero Hott.dim) in
+        let idty = act_value ty (deg_zero Hott.dim) in
+        let ididcty = Term.Act (Term.Act (cty, deg_zero Hott.dim), deg_zero Hott.dim) in
+        let (Plus hh) = D.plus Hott.dim in
+        let _, nz, xeqz =
+          List.fold_left
+            (fun (cy, ny, xeqy) (z, yeqz) ->
+              let cz = check (Kinetic `Nolet) ctx z ty in
+              let ez = eval_term env cz in
+              match yeqz with
+              | Some yeqz ->
+                  let nz : normal = { tm = ez; ty } in
+                  Reporter.try_with
+                    (fun () ->
+                      let yztube =
+                        Hott.tube ny nz <|> Unimplemented "equational reasoning without -hott" in
+                      let idyz = inst idty yztube in
+                      let cyeqz = check (Kinetic `Nolet) ctx yeqz idyz in
+                      let pqtube =
+                        Hott.tube12 hh cx cx creflx cy cz cyeqz
+                        <|> Unimplemented "equational reasoning without -hott" in
+                      ( cz,
+                        nz,
+                        app
+                          (Field
+                             ( Inst (ididcty, pqtube),
+                               Field.intern "trr" Hott.dim,
+                               id_ins D.zero (D.zero_plus Hott.dim) ))
+                          xeqy ))
+                      (* If that didn't work, we try reversing the equality and checking that instead. *)
+                    ~fatal:(fun d ->
+                      let zytube =
+                        Hott.tube nz ny <|> Unimplemented "equational reasoning without -hott" in
+                      let idzy = inst idty zytube in
+                      let czeqy =
+                        (* But if that also fails, we report only the error from the forwards direction. *)
+                        Reporter.try_with ~fatal:(fun _ -> fatal_diagnostic d) @@ fun () ->
+                        check (Kinetic `Nolet) ctx yeqz idzy in
+                      let pqtube =
+                        Hott.tube12 hh cx cx creflx cz cy czeqy
+                        <|> Unimplemented "equational reasoning without -hott" in
+                      ( cz,
+                        nz,
+                        app
+                          (Field
+                             ( Inst (ididcty, pqtube),
+                               Field.intern "trl" Hott.dim,
+                               id_ins D.zero (D.zero_plus Hott.dim) ))
+                          xeqy ))
+              | None -> (
+                  with_loc z.loc @@ fun () ->
+                  match equal_at ctx ny.tm ez ty with
+                  | Ok () -> (cy, ny, xeqy)
+                  | Error _ -> fatal (Calc_error (PString "unequal term"))))
+            (cx, nx, creflx) rest in
+        let xztube = Hott.tube nx nz <|> Unimplemented "equational reasoning without -hott" in
+        (realize status xeqz, inst idty xztube) in
   with_loc tm.loc @@ fun () ->
   Annotate.ctx status ctx (locate_opt tm.loc (Synth tm.value));
   let restm, resty = go () in

@@ -135,6 +135,8 @@ module Make (I : Indices) = struct
         ([ `Data of Constr.t list | `Codata of string list | `Any ] * 'a synth * bool) list
         * 'a synth option
         -> 'a synth
+    (* Chain of equational reasoning *)
+    | Calc : 'a synth located * ('a check located * 'a check located option) list -> 'a synth
 
   (* Checkable raw terms *)
   and _ check =
@@ -308,7 +310,11 @@ module Resolve (R : Resolver) = struct
       | SFirst (tms, arg) ->
           SFirst
             ( List.map (fun (t, x, b) -> (t, (synth ctx (locate_opt tm.loc x)).value, b)) tms,
-              Option.map (fun arg -> (synth ctx (locate_opt tm.loc arg)).value) arg ) in
+              Option.map (fun arg -> (synth ctx (locate_opt tm.loc arg)).value) arg )
+      | Calc (first, rest) ->
+          Calc
+            ( synth ctx first,
+              List.map (fun (y, xeqy) -> (check ctx y, Option.map (check ctx) xeqy)) rest ) in
     R.visit ctx (locate_opt tm.loc (T2.Synth newtm));
     locate_opt tm.loc newtm
 

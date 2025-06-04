@@ -121,6 +121,7 @@ module Code = struct
     | Checking_lambda_at_nonfunction : printable -> t
     | Checking_tuple_at_nonrecord : printable -> t
     | Choice_mismatch : printable -> t
+    | Calc_error : printable -> t
     | Comatching_at_noncodata : printable -> t
     | Comatching_at_degenerated_codata : printable -> t
     | No_such_constructor :
@@ -240,6 +241,7 @@ module Code = struct
     | Commands_undone : int -> t
     | Section_opened : string list -> t
     | Section_closed : string list -> t
+    | Invalid_section_name : string list -> t
     | No_such_section : t
     | Display_set : string * string -> t
     | Option_set : string * string -> t
@@ -294,6 +296,7 @@ module Code = struct
     | Checking_lambda_at_nonfunction _ -> Error
     | Checking_tuple_at_nonrecord _ -> Error
     | Choice_mismatch _ -> Error
+    | Calc_error _ -> Error
     | Comatching_at_noncodata _ -> Error
     | Comatching_at_degenerated_codata _ -> Error
     | No_such_constructor _ -> Error
@@ -387,6 +390,7 @@ module Code = struct
     | Commands_undone _ -> Info
     | Section_opened _ -> Info
     | Section_closed _ -> Info
+    | Invalid_section_name _ -> Error
     | No_such_section -> Error
     | Display_set _ -> Info
     | Option_set _ -> Info
@@ -511,6 +515,7 @@ module Code = struct
     | Missing_constructor_type _ -> "E1506"
     (* Tactics *)
     | Choice_mismatch _ -> "E1600"
+    | Calc_error _ -> "E1601"
     (* Commands *)
     | Too_many_commands -> "E2000"
     | Forbidden_interactive_command _ -> "E2001"
@@ -542,6 +547,7 @@ module Code = struct
     | Not_enough_to_undo -> "E2500"
     (* section *)
     | No_such_section -> "E2600"
+    | Invalid_section_name _ -> "E2601"
     (* oracles *)
     | Oracle_failed _ -> "E3000"
     (* Interactive proof *)
@@ -667,6 +673,7 @@ module Code = struct
           textf "@[<hv 0>checking tuple against non-record type@;<1 2>%a@]" pp_printed (print ty)
       | Choice_mismatch ty ->
           textf "@[<hv 0>multi-choice term doesn't match type@;<1 2>%a@]" pp_printed (print ty)
+      | Calc_error e -> textf "error in calc: %a" pp_printed (print e)
       | Comatching_at_noncodata ty ->
           textf "@[<hv 0>checking comatch against non-codata type@;<1 2>%a@]" pp_printed (print ty)
       | No_such_constructor (d, c) -> (
@@ -956,6 +963,7 @@ module Code = struct
       | Display_set (setting, str) -> textf "display set %s to %s" setting str
       | Option_set (setting, str) -> textf "option set %s to %s" setting str
       | No_such_section -> text "no section here to end"
+      | Invalid_section_name name -> textf "invalid section name: %s" (String.concat "." name)
       | Break -> text "user interrupt"
       | No_holes_allowed str -> (
           match str with
