@@ -597,6 +597,7 @@ type pi_dom =
       wslparen : Whitespace.t list;
       wscolon : Whitespace.t list;
       wsrparen : Whitespace.t list;
+      loc : Asai.Range.t option;
     }
   | Nondep of { wsarrow : arrow_opt; ty : wrapped_parse }
 
@@ -613,13 +614,15 @@ let get_pi_args : type lt ls rt rs.
         match args n with
         | [ Token (LParen, (_, wslparen)); Term body; Token (RParen, (_, wsrparen)) ] ->
             let* vars, wscolon, ty = process_typed_vars body.value in
-            return (Dep { wsarrow; vars; ty; wslparen; wscolon; wsrparen } :: accum)
+            return (Dep { wsarrow; vars; ty; wslparen; wscolon; wsrparen; loc = doms.loc } :: accum)
         | _ -> None)
     | App { fn; arg = { value = Notn ((Parens, _), n); _ }; _ } -> (
         match args n with
         | [ Token (LParen, (_, wslparen)); Term body; Token (RParen, (_, wsrparen)) ] ->
             let* vars, wscolon, ty = process_typed_vars body.value in
-            go fn (Dep { wsarrow = `Noarrow; vars; ty; wslparen; wscolon; wsrparen } :: accum)
+            go fn
+              (Dep { wsarrow = `Noarrow; vars; ty; wslparen; wscolon; wsrparen; loc = doms.loc }
+              :: accum)
         | _ -> None)
     | _ -> None in
   match go doms accum with
@@ -650,11 +653,11 @@ let rec process_pi : type n lt ls rt rs.
       let cod = process_pi ctx doms cod in
       let loc = Range.merge_opt cdom.loc cod.loc in
       { value = Synth (Pi (None, cdom, cod)); loc }
-  | Dep ({ vars = (x, _) :: xs; ty = Wrap dom; _ } as data) :: doms ->
+  | Dep ({ vars = (x, _) :: xs; ty = Wrap dom; loc; _ } as data) :: doms ->
       let cdom = process ctx dom in
       let ctx = Bwv.snoc ctx x in
       let cod = process_pi ctx (Dep { data with vars = xs } :: doms) cod in
-      let loc = Range.merge_opt cdom.loc cod.loc in
+      let loc = Range.merge_opt loc cod.loc in
       { value = Synth (Pi (x, cdom, cod)); loc }
   | Dep { vars = []; _ } :: doms -> process_pi ctx doms cod
 
@@ -668,7 +671,7 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
       (fun (acc, prews) dom ->
         let wsarrow, (pty, wty) =
           match dom with
-          | Dep { wsarrow; vars; ty = Wrap ty; wslparen; wscolon; wsrparen } ->
+          | Dep { wsarrow; vars; ty = Wrap ty; wslparen; wscolon; wsrparen; loc = _ } ->
               let pvars, wvars =
                 List.fold_left
                   (fun (acc, prews) (x, wx) ->
