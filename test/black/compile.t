@@ -264,7 +264,7 @@ Dimensions work in files loaded from source
    ￮ file loaded: $TESTCASE_ROOT/dim.ny (compiled)
   
   a2
-    : A⁽ᵉ⁾ a0 a1
+    : Id A a0 a1
   
 Echos are not re-executed in compiled files
 

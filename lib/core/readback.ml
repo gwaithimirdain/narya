@@ -147,7 +147,7 @@ and readback_at : type a z.
               let ptm = act_value tm pinv in
               let pty = act_ty tm ty pinv in
               match readback_at_record ptm pty with
-              | Some res -> Act (res, deg_of_perm p, `Other)
+              | Some res -> Act (res, deg_of_perm p, (`Other, `Other))
               | None -> readback_val ctx tm))
       | Noeta, _ -> readback_val ctx tm)
   | Canonical (_, Data { constrs; _ }, ins, tyargs), Constr (xconstr, xn, xargs) -> (
@@ -186,14 +186,19 @@ and readback_val : type a z.
   | Neu { head; args; value; ty } -> (
       match (force_eval value, Displaying.read ()) with
       | Realize v, true -> readback_at ctx v (Lazy.force ty)
-      | _ -> readback_neu ~sort ctx head args)
+      | Val (Canonical _), _ -> readback_neu ~sort:(sort, `Canonical) ctx head args
+      | _ -> readback_neu ~sort:(sort, `Other) ctx head args)
   | Lam _ -> fatal (Anomaly "unexpected lambda in synthesizing readback")
   | Struct _ -> fatal (Anomaly "unexpected struct in synthesizing readback")
   | Constr _ -> fatal (Anomaly "unexpected constr in synthesizing readback")
 
 and readback_neu : type a z any.
-    ?sort:[ `Type | `Function | `Other ] -> (z, a) Ctx.t -> head -> any apps -> (a, kinetic) term =
- fun ?(sort = `Other) ctx head apps ->
+    ?sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] ->
+    (z, a) Ctx.t ->
+    head ->
+    any apps ->
+    (a, kinetic) term =
+ fun ?(sort = (`Other, `Other)) ctx head apps ->
   match (apps, head) with
   | Emp, _ -> readback_head ~sort ctx head
   | Arg (apps, args, ins), _ ->
@@ -217,8 +222,11 @@ and readback_neu : type a z any.
       Inst (readback_neu ~sort ctx head apps, args)
 
 and readback_head : type c z.
-    ?sort:[ `Type | `Function | `Other ] -> (z, c) Ctx.t -> head -> (c, kinetic) term =
- fun ?(sort = `Other) ctx h ->
+    ?sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] ->
+    (z, c) Ctx.t ->
+    head ->
+    (c, kinetic) term =
+ fun ?(sort = (`Other, `Other)) ctx h ->
   match h with
   | Var { level; deg } -> (
       let x = Ctx.find_level ctx level <|> No_such_level (PLevel level) in

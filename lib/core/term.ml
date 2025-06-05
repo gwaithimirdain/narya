@@ -65,7 +65,11 @@ module rec Term : sig
         -> ('a, kinetic) term
     | App : ('a, kinetic) term * ('n, ('a, kinetic) term) CubeOf.t -> ('a, kinetic) term
     | Constr : Constr.t * 'n D.t * ('n, ('a, kinetic) term) CubeOf.t list -> ('a, kinetic) term
-    | Act : ('a, kinetic) term * ('m, 'n) deg * [ `Type | `Function | `Other ] -> ('a, kinetic) term
+    | Act :
+        ('a, kinetic) term
+        * ('m, 'n) deg
+        * ([ `Type | `Function | `Other ] * [ `Canonical | `Other ])
+        -> ('a, kinetic) term
     | Let : string option * ('a, kinetic) term * (('a, D.zero) snoc, 's) term -> ('a, 's) term
     | Lam : 'n variables * (('a, 'n) snoc, 's) Term.term -> ('a, 's) term
     | Struct : ('n, 'a, 's, 'et) struct_args -> ('a, 's) term
@@ -229,7 +233,11 @@ end = struct
         -> ('a, kinetic) term
     | App : ('a, kinetic) term * ('n, ('a, kinetic) term) CubeOf.t -> ('a, kinetic) term
     | Constr : Constr.t * 'n D.t * ('n, ('a, kinetic) term) CubeOf.t list -> ('a, kinetic) term
-    | Act : ('a, kinetic) term * ('m, 'n) deg * [ `Type | `Function | `Other ] -> ('a, kinetic) term
+    | Act :
+        ('a, kinetic) term
+        * ('m, 'n) deg
+        * ([ `Type | `Function | `Other ] * [ `Canonical | `Other ])
+        -> ('a, kinetic) term
     (* The term being bound in a 'let' is always kinetic.  Thus, if the supplied bound term is potential, the "bound term" here must be the metavariable whose value is set to that term rather than to the (potential) term itself.  We don't need a term-level "letrec" since recursion is implemented in the typechecker by creating a new global metavariable. *)
     | Let : string option * ('a, kinetic) term * (('a, D.zero) snoc, 's) term -> ('a, 's) term
     (* Abstractions and structs can appear in any kind of term.  The dimension 'n is the substitution dimension of the type being checked against (function-type or codata/record).  *)

@@ -292,7 +292,7 @@ let rec unparse : type n lt ls rt rs s.
   | Field (tm, fld, ins) ->
       unparse_spine vars (`Field (tm, Field.to_string fld, show_ins ins)) Emp li ri
   | UU n ->
-      unparse_act ~sort:`Type ~var:false vars
+      unparse_act ~sort:(`Type, `Canonical) vars
         {
           unparse =
             (fun _ _ ->
@@ -311,11 +311,7 @@ let rec unparse : type n lt ls rt rs s.
             (Bwd.map (make_unparser_implicit vars) args)
             li ri)
   | Act (tm, s, sort) ->
-      let var =
-        match tm with
-        | Var _ -> true
-        | _ -> false in
-      unparse_act ~sort ~var vars { unparse = (fun li ri -> unparse vars tm li ri) } s li ri
+      unparse_act ~sort vars { unparse = (fun li ri -> unparse vars tm li ri) } s li ri
   | Let (x, tm, body) -> (
       let tm = unparse vars tm No.Interval.entire No.Interval.entire in
       (* If a let-in doesn't fit in its interval, we have to parenthesize it. *)
@@ -586,19 +582,18 @@ and unparse_lam_done : type n lt ls rt rs s.
            (infix ~notn ~first ~inner:(Single (mapsto, (None, []))) ~last ~left_ok ~right_ok))
 
 and unparse_act : type n lt ls rt rs a b.
-    sort:[ `Type | `Function | `Other ] ->
-    var:bool ->
+    sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] ->
     n Names.t ->
     unparser ->
     (a, b) deg ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun ~sort ~var vars tm s li ri ->
+ fun ~sort vars tm s li ri ->
   match is_id_deg s with
   | Some _ -> tm.unparse li ri
   | None -> (
-      match name_of_deg ~sort ~var s with
+      match name_of_deg ~sort s with
       | Some str -> unparse_spine vars (`Degen str) (Snoc (Emp, tm)) li ri
       | None ->
           unlocated (Superscript (Some (tm.unparse li No.Interval.empty), string_of_deg s, [])))
@@ -744,7 +739,7 @@ and unparse_pis : type n lt ls rt rs.
               unparse =
                 (fun li ri ->
                   unparse_spine vars
-                    (`Term (Act (Const Pi.const, deg_zero (CubeOf.dim doms), `Type)))
+                    (`Term (Act (Const Pi.const, deg_zero (CubeOf.dim doms), (`Type, `Canonical))))
                     args li ri);
             }
             li ri)

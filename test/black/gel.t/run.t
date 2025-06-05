@@ -39,10 +39,10 @@
    ￮ axiom M assumed
   
   sym M
-    : Gel⁽ᵉ⁾ A⁽ᵉ⁾ B⁽ᵉ⁾ R⁽ᵉ⁾ a₂ b₂ (_ ≔ r₀) (_ ≔ r₁)
+    : Gel⁽ᵉ⁾ (Id A) (Id B) (Id R) a₂ b₂ (_ ≔ r₀) (_ ≔ r₁)
   
   sym M .ungel
-    : R⁽ᵉ⁾ a₂ b₂ r₀ r₁
+    : Id R a₂ b₂ r₀ r₁
   
    ￫ info[I0000]
    ￮ constant eta defined
@@ -143,10 +143,10 @@
 
   $ narya gel.ny -e "def r2ty_eq_sym_r2ty : Id Type r2ty sym_r2ty := refl r2ty"
   sym M
-    : Gel⁽ᵉ⁾ A⁽ᵉ⁾ B⁽ᵉ⁾ R⁽ᵉ⁾ a₂ b₂ (_ ≔ r₀) (_ ≔ r₁)
+    : Gel⁽ᵉ⁾ (Id A) (Id B) (Id R) a₂ b₂ (_ ≔ r₀) (_ ≔ r₁)
   
   sym M .ungel
-    : R⁽ᵉ⁾ a₂ b₂ r₀ r₁
+    : Id R a₂ b₂ r₀ r₁
   
   r_gelr2
     : Type⁽ᵉᵉ⁾ A2 B2 (Gel A0 B0 R0) (Gel A1 B1 R1)

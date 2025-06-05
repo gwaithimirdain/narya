@@ -61,5 +61,5 @@ Testing parsing and printing of cube variables
       ⇒ B⁽ᵉᵉ⁾ (refl b) (refl b) (h H₀₀) (h H₀₁)
   
   refl b
-    : B⁽ᵉ⁾ b b
+    : Id B b b
   

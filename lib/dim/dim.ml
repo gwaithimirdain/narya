@@ -47,14 +47,14 @@ let deg_of_name : string -> any_deg option =
   else None
 
 let name_of_deg : type a b.
-    sort:[ `Type | `Function | `Other ] -> var:bool -> (a, b) deg -> string option =
- fun ~sort ~var -> function
+    sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] -> (a, b) deg -> string option =
+ fun ~sort -> function
   | Zero (Nat (Suc Zero)) -> (
       match (Endpoints.refl_names (), sort) with
       | [], _ -> None
-      | _ :: name :: _, `Type when var -> Some name
-      | _ :: _ :: name :: _, `Function -> Some name
-      | _, `Type when not var -> None
+      | _ :: name :: _, (`Type, `Other) -> Some name
+      | _ :: _ :: name :: _, (`Function, _) -> Some name
+      | _, (`Type, `Canonical) -> None
       | name :: _, _ -> Some name)
   | Suc (Suc (Zero (Nat Zero), Now), Later Now) -> Some "sym"
   | _ -> None

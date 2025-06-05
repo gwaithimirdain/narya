@@ -975,7 +975,9 @@ module Plusmap : sig
 
 (* *)
 val deg_of_name : string -> any_deg option
-val name_of_deg : sort:[ `Type | `Function | `Other ] -> var:bool -> ('a, 'b) deg -> string option
+
+val name_of_deg :
+  sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] -> ('a, 'b) deg -> string option
 
 (* *)
 val locking : ('a, 'b) deg -> bool

@@ -118,9 +118,9 @@
    ￭ command-line exec string
    1 | def id_map_act' : Id X (((x ↦ x) : X → X) x0) x1 ≔ refl x1 synth (((x ↦ x) : X → X) x2)
      ^ term synthesized type
-         X⁽ᵉ⁾ x1 x1
+         Id X x1 x1
        but is being checked against type
-         X⁽ᵉ⁾ x0 x1
+         Id X x0 x1
        unequal head constants:
          x1
        does not equal
@@ -132,9 +132,9 @@
    ￭ command-line exec string
    1 | synth (refl ((x ↦ x) : (X → X)) {x0} {x0} x2) synth (refl ((x ↦ x) : (X → X)) {x0} {x0} x0)
      ^ term synthesized type
-         X⁽ᵉ⁾ x0 x1
+         Id X x0 x1
        but is being checked against type
-         X⁽ᵉ⁾ x0 x0
+         Id X x0 x0
        unequal head constants:
          x1
        does not equal

@@ -918,14 +918,14 @@
   M⁽ᵉᵉ⁾ A₂⁽¹ᵉ⁾ B₂⁽¹ᵉ⁾
       (refl u₀
        .send
-         (B₂⁽ᵉ¹⁾ (sym (A₂⁽ᵉ⁾ .liftr.1 (refl u₀ .recv))) b₂
+         (B₂⁽ᵉ¹⁾ (sym (Id A₂ .liftr.1 (refl u₀ .recv))) b₂
               (B₂ (A₂ .liftr (u₀ .recv)) .liftl b₁)
           .trl (refl b₁)))
       (M⁽ᵉᵉ⁾ A₂⁽¹ᵉ⁾ B₂⁽¹ᵉ⁾
        .trr.1
          (refl u₀
-          .send (B₂⁽¹ᵉ⁾ (A₂⁽ᵉ⁾ .liftr.1 (refl u₀ .recv)) .trl.1 (refl b₁))))
-    .trl (M⁽ᵉ⁾ A₂ B₂ .liftr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁)))
+          .send (B₂⁽¹ᵉ⁾ (Id A₂ .liftr.1 (refl u₀ .recv)) .trl.1 (refl b₁))))
+    .trl (Id M A₂ B₂ .liftr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁)))
     : M⁽ᵉ⁾ A₂ B₂ (u₀ .send b₀)
         (refl M A₂ B₂ .trr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁)))
   
