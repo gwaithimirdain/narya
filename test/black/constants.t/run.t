@@ -281,13 +281,13 @@
    1 | def one_eq_zero : Id CN one zero := refl one
      ^ term synthesized type
          {A₀ : Type} {A₁ : Type} (A₂ : refl Type A₀ A₁) {H₀ : A₀ → A₀} {H₁ : A₁ → A₁}
-         (H₂ : refl Π A₂ {_ ↦ A₀} {_ ↦ A₁} (_ ⤇ A₂) H₀ H₁) {H₀′ : A₀} {H₁′ : A₁}
-         (H₂′ : A₂ H₀′ H₁′)
+         (H₂ : {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′) ⇒ A₂ (H₀ H₀′) (H₁ H₁′))
+         {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′)
          ⇒ A₂ (H₀ H₀′) (H₁ H₁′)
        but is being checked against type
          {A₀ : Type} {A₁ : Type} (A₂ : refl Type A₀ A₁) {H₀ : A₀ → A₀} {H₁ : A₁ → A₁}
-         (H₂ : refl Π A₂ {_ ↦ A₀} {_ ↦ A₁} (_ ⤇ A₂) H₀ H₁) {H₀′ : A₀} {H₁′ : A₁}
-         (H₂′ : A₂ H₀′ H₁′)
+         (H₂ : {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′) ⇒ A₂ (H₀ H₀′) (H₁ H₁′))
+         {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′)
          ⇒ A₂ (H₀ H₀′) H₁′
        unequal head variables:
          _H
@@ -301,13 +301,13 @@
    1 | def cplus_one_two_eq_two : Id CN (cplus one two) two := refl two
      ^ term synthesized type
          {A₀ : Type} {A₁ : Type} (A₂ : refl Type A₀ A₁) {H₀ : A₀ → A₀} {H₁ : A₁ → A₁}
-         (H₂ : refl Π A₂ {_ ↦ A₀} {_ ↦ A₁} (_ ⤇ A₂) H₀ H₁) {H₀′ : A₀} {H₁′ : A₁}
-         (H₂′ : A₂ H₀′ H₁′)
+         (H₂ : {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′) ⇒ A₂ (H₀ H₀′) (H₁ H₁′))
+         {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′)
          ⇒ A₂ (H₀ (H₀ H₀′)) (H₁ (H₁ H₁′))
        but is being checked against type
          {A₀ : Type} {A₁ : Type} (A₂ : refl Type A₀ A₁) {H₀ : A₀ → A₀} {H₁ : A₁ → A₁}
-         (H₂ : refl Π A₂ {_ ↦ A₀} {_ ↦ A₁} (_ ⤇ A₂) H₀ H₁) {H₀′ : A₀} {H₁′ : A₁}
-         (H₂′ : A₂ H₀′ H₁′)
+         (H₂ : {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′) ⇒ A₂ (H₀ H₀′) (H₁ H₁′))
+         {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′)
          ⇒ A₂ (H₀ (H₀ (H₀ H₀′))) (H₁ (H₁ H₁′))
        unequal head variables:
          _H

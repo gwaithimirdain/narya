@@ -299,7 +299,7 @@ let rec unparse : type n lt ls rt rs s.
               unlocated (outfix ~notn:universe ~inner:(Single (Ident [ "Type" ], (None, [])))));
         }
         (deg_zero n) li ri
-  | Inst (ty, tyargs) -> unparse_inst vars ty tyargs li ri
+  | Inst (ty, tyargs) -> unparse_inst vars ty vars tyargs li ri
   | Pi _ -> unparse_pis vars Emp tm li ri
   | App _ -> (
       match get_spine tm with
@@ -598,26 +598,28 @@ and unparse_act : type n lt ls rt rs a b.
 
 (* We unparse instantiations like application spines, since that is how they are represented in user syntax.
    TODO: How can we allow special notations for some instantiations, like x=y for Id A x y? *)
-and unparse_inst : type n lt ls rt rs m k mk.
+and unparse_inst : type n n' lt ls rt rs m k mk.
+    (* We allow the type and its instantiation arguments to be in different contexts, for use in unparse_higher_pi. *)
     n Names.t ->
     (n, kinetic) term ->
-    (m, k, mk, (n, kinetic) term) TubeOf.t ->
+    n' Names.t ->
+    (m, k, mk, (n', kinetic) term) TubeOf.t ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun vars ty tyargs li ri ->
-  match (D.compare_zero (TubeOf.uninst tyargs), ty) with
+ fun vars ty argvars tyargs li ri ->
+  match (D.compare_zero (TubeOf.uninst tyargs), D.compare_zero (TubeOf.inst tyargs), ty) with
   (* A fully instantiated higher pi-type we can unparse prettily. *)
-  | Zero, Pi (x, doms, cods) -> (
+  | Zero, Pos _, Pi (x, doms, cods) -> (
       match D.compare (TubeOf.inst tyargs) (CubeOf.dim doms) with
       | Eq ->
           let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (TubeOf.inst tyargs)) in
-          let tyargs = TubeOf.mmap { map = (fun _ [ x ] -> Names.Named (vars, x)) } [ tyargs ] in
+          let tyargs = TubeOf.mmap { map = (fun _ [ x ] -> Names.Named (argvars, x)) } [ tyargs ] in
           unparse_higher_pi vars Emp x doms cods tyargs li ri
       | Neq ->
           fatal (Dimension_mismatch ("unparsing higher pi", TubeOf.inst tyargs, CubeOf.dim doms)))
   | _ ->
-      let tyargs = TubeOf.mmap { map = (fun _ [ x ] -> Names.Named (vars, x)) } [ tyargs ] in
+      let tyargs = TubeOf.mmap { map = (fun _ [ x ] -> Names.Named (argvars, x)) } [ tyargs ] in
       unparse_named_inst vars ty tyargs li ri
 
 and unparse_named_inst : type n lt ls rt rs m k mk.
@@ -821,67 +823,35 @@ and unparse_higher_pi : type a lt ls rt rs n.
       {
         it =
           (fun s [ dom ] accum ->
+            let k = dom_sface s in
             let x = find_variable s xs <|> Anomaly "missing variable in unparse_higher_pi" in
-            let module UP = NICubeOf.Traverse (struct
-              type 'a t = unparser Bwd.t
-            end) in
-            let (Variables (_, _, subxs)) = sub_variables s xs in
-            let foldmap : type left right m n.
-                (m, n) sface ->
-                unparser Bwd.t ->
-                (left, m, string option, right) NFamOf.t ->
-                (left, m, unit, right) NFamOf.t * unparser Bwd.t =
-             fun fa xargs (NFamOf x) ->
-              (* We are only adding the boundary, so we skip the top face (really we want to be iterating over a full tube). *)
-              match pface_of_sface fa with
-              | `Id _ -> (NFamOf (), xargs)
-              | `Proper fa -> (
-                  match
-                    (* We include the argument explicitly if it is codimension-1. *)
-                    match is_codim1 fa with
-                    | Some () -> Some `Explicit
-                    | None -> (
-                        (* We include it implicitly if display of type boundaries is on.  Unlike for general instantiations, we don't need to check if its codimension-1 envelope is synthesizing, since that envelope is always just another variable, hence always synthesizing. *)
-                        match Display.type_boundaries () with
-                        | `Show -> Some `Implicit
-                        | `Hide -> None)
-                  with
-                  | Some implicit ->
-                      ( NFamOf (),
-                        Snoc
-                          ( xargs,
-                            { unparse = (fun _ _ -> unparse_var_with_implicitness (x, implicit)) }
-                          ) )
-                  | None -> (NFamOf (), xargs)) in
-            let _, xargs = UP.fold_map_left { foldmap } Emp subxs in
-            ( (),
-              Snoc
-                ( accum,
-                  {
-                    unparse =
-                      (fun _ _ ->
-                        unparse_pi_dom
-                          ~implicit:(Option.is_none (is_id_sface s))
-                          x
-                          (unparse_spine vars (`Term dom) xargs (interval_right asc)
-                             No.Interval.entire));
-                  } ) ));
+            let xargs =
+              TubeOf.build D.zero (D.zero_plus k)
+                { build = (fun fa -> Var (Index (Now, comp_sface s (sface_of_tface fa)))) } in
+            let implicit = Option.is_none (is_id_sface s) in
+            (* Here we use the flexibility to have the type and the instantiation arguments in different contexts, since the type is not in the context extended by the new variables.  However, it's important that we get the context for the type by *removing* those new variables from newvars, rather than using the original vars, since that retains the extra information stored in a Names.t about how many copies of a variable there have been, for future renaming use.  *)
+            let dom =
+              unparse_inst (Names.remove newvars Now) dom newvars xargs (interval_right asc)
+                No.Interval.entire in
+            ((), Snoc (accum, { unparse = (fun _ _ -> unparse_pi_dom ~implicit x dom) })));
       }
       [ doms ] accum in
   (* The instantiation arguments 'tyargs' should already all be eta-expanded, since readback eta-expands the instantiation arguments of higher pi-types.  So we can descend into those abstractions and add the appropriate variables on which they depend to their unparsing contexts. *)
   let tyargs =
     let map : type k. (k, D.zero, n, n) tface -> Names.named_term -> Names.named_term =
-     fun s lam ->
+     fun s (Names.Named (lamvars, lam)) ->
       let k = dom_tface s in
+      let lam_xs = sub_variables (sface_of_tface s) xs in
+      let _, lamvars = Names.add lamvars lam_xs in
       match lam with
-      | Names.Named (lamvars, Lam (ys, body)) -> (
+      | Lam (ys, body) -> (
           match D.compare (dim_variables ys) k with
-          | Eq ->
-              let lam_xs = sub_variables (sface_of_tface s) xs in
-              let _, lamvars = Names.add lamvars lam_xs in
-              Named (lamvars, body)
+          | Eq -> Named (lamvars, body)
           | Neq -> fatal (Dimension_mismatch ("unparse_higher_pi lam", dim_variables ys, k)))
-      | _ -> fatal (Anomaly "unparse_higher_pi: tyarg not eta-expanded") in
+      | nonlam ->
+          (* This case happens when we are recursively working with the domains of another higher pi-type. *)
+          let lamargs = CubeOf.build k { build = (fun s -> Var (Index (Now, s))) } in
+          Named (lamvars, App (Weaken nonlam, lamargs)) in
     TubeOf.mmap { map = (fun s [ lam ] -> map s lam) } [ tyargs ] in
   (* We only need the top codomain.  If it's another pi-type, it must be of the same dimension since it is an (uninstantiated!) n-dimensional type, and we continue recursively.  Otherwise, we finish. *)
   match CodCube.find_top cods with
