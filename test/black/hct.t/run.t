@@ -553,7 +553,7 @@
    ￭ $TESTCASE_ROOT/flderr.ny
    5 | echo c .x.1
      ^ field x of record type
-         refl A a b
+         A⁽ᵉ⁾ a b
        has intrinsic dimension 0 and used at dimension e, can't have suffix .1
   
   [1]

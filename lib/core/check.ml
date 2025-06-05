@@ -600,12 +600,8 @@ let rec check : type a b s.
                     | Error why ->
                         fatal
                           (Unequal_synthesized_type
-                             {
-                               got = PType (ctx, sty);
-                               expected = PType (ctx, ty);
-                               which = None;
-                               why;
-                             }))
+                             { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why })
+                    )
                 | _ ->
                     fatal ?loc:fn.loc
                       (Anomaly "first argument of an ImplicitMap is not of type Type"))
@@ -688,7 +684,7 @@ and check_of_synth : type a b s.
       | Error why ->
           fatal
             (Unequal_synthesized_type
-               { got = PType (ctx, ety); expected = PType (ctx, ty); which = None; why }))
+               { got = PVal (ctx, ety); expected = PVal (ctx, ty); which = None; why }))
   | _ -> (
       let sval, sty = synth status ctx { value = stm; loc } in
       (* It suffices for the synthesized type to be a subtype of the checking type. *)
@@ -697,7 +693,7 @@ and check_of_synth : type a b s.
       | Error why ->
           fatal
             (Unequal_synthesized_type
-               { got = PType (ctx, sty); expected = PType (ctx, ty); which = None; why }))
+               { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why }))
 
 (* Deal with checking a potential term in kinetic position *)
 and kinetic_of_potential : type a b.
@@ -2576,12 +2572,7 @@ and synth_arg_cube : type a b n c.
                       | Error why ->
                           fatal
                             (Unequal_synthesized_boundary
-                               {
-                                 face = fa;
-                                 got = PType (ctx, ety);
-                                 expected = PType (ctx, ty);
-                                 why;
-                               }));
+                               { face = fa; got = PVal (ctx, ety); expected = PVal (ctx, ty); why }));
                   let ctm = readback_at ctx etm ety in
                   return (ctm, etm)
               (* Otherwise, we pull an argument of the appropriate implicitness, check it against the correct type. *)

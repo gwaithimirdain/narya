@@ -149,7 +149,7 @@
      ^ attempt to apply/instantiate
          refl f (refl a)
        of type
-         refl A (f a) (f a)
+         A⁽ᵉ⁾ (f a) (f a)
        which is not a function-type or universe
   
   [1]
@@ -179,7 +179,7 @@
    ￫ error[E0700]
    ￭ command-line exec string
    1 | echo (({x0} {x1} x2 x3 ↦ refl f x0 x1 x2) : Id (A -> A) f f)
-     ^ checking abstraction against non-function type refl A (f x0) (f x1)
+     ^ checking abstraction against non-function type A⁽ᵉ⁾ (f x0) (f x1)
   
   [1]
   $ narya errors.ny -e "echo (refl (x |-> x))"
