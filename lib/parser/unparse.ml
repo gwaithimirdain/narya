@@ -810,9 +810,8 @@ and unparse_higher_pi : type a lt ls rt rs n.
   let n = CubeOf.dim doms in
   (* Make all the variables ordinary ones by suffixing them with face names *without* a separating ".", and making sure that they all have some name. *)
   let (Wrap (xs, _)) = Names.full_variables xs in
-  let xsv = Variables (D.zero, D.zero_plus n, xs) in
-  let xsv, newvars = Names.add ~rename:true vars xsv in
-  (* Unparse each domain, apply it to all the appropriate variables corresponding to its faces, and parenthesize or brace it to become a pi-type domain, adding them all to the accumulated list of domains. *)
+  let xs, newvars = Names.add ~force_names:true vars (Variables (D.zero, D.zero_plus n, xs)) in
+  (* Unparse each domain, instantiate it at the appropriate variables corresponding to its faces, and parenthesize or brace it to become a pi-type domain, adding them all to the accumulated list of domains. *)
   let module S = Monad.State (struct
     type t = unparser Bwd.t
   end) in
@@ -822,11 +821,11 @@ and unparse_higher_pi : type a lt ls rt rs n.
       {
         it =
           (fun s [ dom ] accum ->
-            let x = find_variable s xsv <|> Anomaly "missing variable in unparse_higher_pi" in
+            let x = find_variable s xs <|> Anomaly "missing variable in unparse_higher_pi" in
             let module UP = NICubeOf.Traverse (struct
               type 'a t = unparser Bwd.t
             end) in
-            let (Variables (_, _, subxs)) = sub_variables s xsv in
+            let (Variables (_, _, subxs)) = sub_variables s xs in
             let foldmap : type left right m n.
                 (m, n) sface ->
                 unparser Bwd.t ->
@@ -878,7 +877,7 @@ and unparse_higher_pi : type a lt ls rt rs n.
       | Names.Named (lamvars, Lam (ys, body)) -> (
           match D.compare (dim_variables ys) k with
           | Eq ->
-              let lam_xs = sub_variables (sface_of_tface s) xsv in
+              let lam_xs = sub_variables (sface_of_tface s) xs in
               let _, lamvars = Names.add lamvars lam_xs in
               Named (lamvars, body)
           | Neq -> fatal (Dimension_mismatch ("unparse_higher_pi lam", dim_variables ys, k)))

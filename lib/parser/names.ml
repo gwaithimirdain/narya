@@ -109,14 +109,14 @@ let uniquify : string -> int StringMap.t -> string * [ `Original | `Renamed ] * 
       let namen, n = until_unique n in
       (namen, `Renamed, used |> StringMap.add namen 0 |> StringMap.add name (n + 1))
 
-(* Make a variable name unique.  Leave unnamed variables unnamed, unless rename=true. *)
+(* Make a variable name unique.  Leave unnamed variables unnamed, unless force_names = true. *)
 let uniquify_opt :
-    ?rename:bool ->
+    ?force_names:bool ->
     string option ->
     int StringMap.t ->
     string option * [ `Original | `Renamed ] * int StringMap.t =
- fun ?(rename = false) name used ->
-  match (name, rename) with
+ fun ?(force_names = false) name used ->
+  match (name, force_names) with
   | None, false -> (None, `Original, used)
   | None, true ->
       let name, orig, used = uniquify __DEFAULT_NAME__ used in
@@ -127,18 +127,18 @@ let uniquify_opt :
 
 (* Do the same thing to a whole cube of variable names. *)
 let uniquify_cube : type n left right.
-    ?rename:bool ->
+    ?force_names:bool ->
     (left, n, string option, right) NICubeOf.t ->
     int StringMap.t ->
     (left, n, string option, right) NICubeOf.t * int StringMap.t =
- fun ?(rename = false) names used ->
+ fun ?(force_names = false) names used ->
   (* Apparently we need to define the iteration function with an explicit type so that it ends up sufficiently polymorphic. *)
   let uniquify_nfamof : type m left right.
       (left, m, string option, right) NFamOf.t ->
       int StringMap.t ->
       (left, m, string option, right) NFamOf.t * int StringMap.t =
    fun (NFamOf name) used ->
-    let name, _, used = uniquify_opt ~rename name used in
+    let name, _, used = uniquify_opt ~force_names name used in
     (NFamOf name, used) in
   let open NICubeOf.Applicatic (Applicative.OfMonad (Monad.State (struct
     type t = int StringMap.t
@@ -147,9 +147,9 @@ let uniquify_cube : type n left right.
 
 (* Add a new cube variable at a specified dimension, generating a fresh version of its name if necessary to avoid conflicts.  Again, leave unnamed variables unnamed unless rename=true. *)
 let add_cube : type n b.
-    ?rename:bool -> n D.t -> b t -> string option -> string option * (b, n) snoc t =
- fun ?(rename = false) n { ctx; used } name ->
-  let name, _, used = uniquify_opt ~rename name used in
+    ?force_names:bool -> n D.t -> b t -> string option -> string option * (b, n) snoc t =
+ fun ?(force_names = false) n { ctx; used } name ->
+  let name, _, used = uniquify_opt ~force_names name used in
   ( name,
     { ctx = Snoc (ctx, Variables (n, D.plus_zero n, NICubeOf.singleton name), Abwd.empty); used } )
 
@@ -159,10 +159,10 @@ let add_cube_autogen : type n b. n D.t -> b t -> string * (b, n) snoc t =
   let x, used = add_cube n ctx (Some __DEFAULT_NAME__) in
   (Option.get x, used)
 
-(* Add a cube of variables, generating a fresh version of each of their names.  Again, leave unnamed variables unnamed unless rename=true. *)
-let add : ?rename:bool -> 'b t -> 'n variables -> 'n variables * ('b, 'n) snoc t =
- fun ?(rename = false) { ctx; used } (Variables (m, mn, names)) ->
-  let names, used = uniquify_cube ~rename names used in
+(* Add a cube of variables, generating a fresh version of each of their names.  Again, leave unnamed variables unnamed unless force_names=true. *)
+let add : ?force_names:bool -> 'b t -> 'n variables -> 'n variables * ('b, 'n) snoc t =
+ fun ?(force_names = false) { ctx; used } (Variables (m, mn, names)) ->
+  let names, used = uniquify_cube ~force_names names used in
   let vars = Variables (m, mn, names) in
   (vars, { ctx = Snoc (ctx, vars, Abwd.empty); used })
 
