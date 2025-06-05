@@ -19,8 +19,8 @@ axiom B₂ : Id ((X ↦ X → Type) : Type → Type) A₂ B₀ B₁
 axiom C₀ : (x₀ : A₀) → B₀ x₀ → Type
 axiom C₁ : (x₁ : A₁) → B₁ x₁ → Type
 axiom C₂
-  : Id ((X Y ↦ (x : X) → Y x → Type) : (X : Type) → (X → Type) → Type) A₂ B₂
-      C₀ C₁
+  : Id ((X Y ↦ (x : X) → Y x → Type) : (X : Type) → (X → Type) → Type) A₂
+      B₂ C₀ C₁
 
 axiom u₀ : Σ3 A₀ B₀ C₀
 
