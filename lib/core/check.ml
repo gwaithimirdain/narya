@@ -291,7 +291,7 @@ let rec check : type a b s.
             (* A pure permutation shouldn't ever be locking, but we may as well keep this here for consistency.  *)
             let ctx = if locking fa then Ctx.lock ctx else ctx in
             let cx = check (Kinetic `Nolet) ctx x ty_fainv in
-            realize status (Term.Act (cx, fa)))
+            realize status (Term.Act (cx, fa, sort_of_ty ctx (view_type ty "checking act"))))
     | Lam { name = { value = x; loc = xloc }; cube; implicit; body }, _ -> (
         match view_type ~severity ty "typechecking lambda" with
         | Canonical (_, Pi (_, doms, cods), ins, tyargs) -> (
@@ -600,8 +600,12 @@ let rec check : type a b s.
                     | Error why ->
                         fatal
                           (Unequal_synthesized_type
-                             { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why })
-                    )
+                             {
+                               got = PType (ctx, sty);
+                               expected = PType (ctx, ty);
+                               which = None;
+                               why;
+                             }))
                 | _ ->
                     fatal ?loc:fn.loc
                       (Anomaly "first argument of an ImplicitMap is not of type Type"))
@@ -684,7 +688,7 @@ and check_of_synth : type a b s.
       | Error why ->
           fatal
             (Unequal_synthesized_type
-               { got = PVal (ctx, ety); expected = PVal (ctx, ty); which = None; why }))
+               { got = PType (ctx, ety); expected = PType (ctx, ty); which = None; why }))
   | _ -> (
       let sval, sty = synth status ctx { value = stm; loc } in
       (* It suffices for the synthesized type to be a subtype of the checking type. *)
@@ -693,7 +697,7 @@ and check_of_synth : type a b s.
       | Error why ->
           fatal
             (Unequal_synthesized_type
-               { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why }))
+               { got = PType (ctx, sty); expected = PType (ctx, ty); which = None; why }))
 
 (* Deal with checking a potential term in kinetic position *)
 and kinetic_of_potential : type a b.
@@ -2264,9 +2268,10 @@ and synth : type a b s.
         let ctx = if locking fa then Ctx.lock ctx else ctx in
         let sx, ety = synth (Kinetic `Nolet) ctx x in
         let ex = eval_term (Ctx.env ctx) sx in
-        ( realize status (Term.Act (sx, fa)),
+        let sty =
           with_loc x.loc @@ fun () ->
-          act_ty ex ety fa ~err:(Low_dimensional_argument_of_degeneracy (str, cod_deg fa)) )
+          act_ty ex ety fa ~err:(Low_dimensional_argument_of_degeneracy (str, cod_deg fa)) in
+        (realize status (Term.Act (sx, fa, sort_of_ty ctx (view_type sty "synth act"))), sty)
     | Act _, _ -> fatal (Nonsynthesizing "argument of degeneracy")
     | Asc (tm, ty), _ ->
         let cty =
@@ -2393,9 +2398,10 @@ and synth : type a b s.
         let env = Ctx.env ctx in
         let ex = eval_term env cx in
         let nx : normal = { tm = ex; ty } in
-        let creflx = Term.Act (cx, deg_zero Hott.dim) in
+        let creflx = Term.Act (cx, deg_zero Hott.dim, `Other) in
         let idty = act_value ty (deg_zero Hott.dim) in
-        let ididcty = Term.Act (Term.Act (cty, deg_zero Hott.dim), deg_zero Hott.dim) in
+        let ididcty =
+          Term.Act (Term.Act (cty, deg_zero Hott.dim, `Other), deg_zero Hott.dim, `Other) in
         let (Plus hh) = D.plus Hott.dim in
         let _, nz, xeqz =
           List.fold_left
@@ -2570,7 +2576,12 @@ and synth_arg_cube : type a b n c.
                       | Error why ->
                           fatal
                             (Unequal_synthesized_boundary
-                               { face = fa; got = PVal (ctx, ety); expected = PVal (ctx, ty); why }));
+                               {
+                                 face = fa;
+                                 got = PType (ctx, ety);
+                                 expected = PType (ctx, ty);
+                                 why;
+                               }));
                   let ctm = readback_at ctx etm ety in
                   return (ctm, etm)
               (* Otherwise, we pull an argument of the appropriate implicitness, check it against the correct type. *)

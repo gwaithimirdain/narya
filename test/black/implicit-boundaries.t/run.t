@@ -18,7 +18,7 @@
    ￮ axiom a2 assumed
   
   refl f a2
-    : refl B (f a0) (f a1)
+    : B⁽ᵉ⁾ (f a0) (f a1)
   
    ￫ info[I0001]
    ￮ axiom a00 assumed
@@ -66,7 +66,7 @@
    ￮ axiom g assumed
   
   refl g a02 a12 a22
-    : refl B (g a00 a10 a20) (g a01 a11 a21)
+    : B⁽ᵉ⁾ (g a00 a10 a20) (g a01 a11 a21)
   
    ￫ info[I0001]
    ￮ axiom C assumed
@@ -87,7 +87,7 @@
    ￮ axiom b2 assumed
   
   refl h {(a0, b0)} {(a1, b1)} (a2, b2)
-    : refl C (h (a0, b0)) (h (a1, b1))
+    : C⁽ᵉ⁾ (h (a0, b0)) (h (a1, b1))
   
    ￫ info[I0001]
    ￮ axiom b00 assumed
@@ -176,7 +176,7 @@
    ￮ axiom a2 assumed
   
   refl f {a0} {a1} a2
-    : refl B (f a0) (f a1)
+    : B⁽ᵉ⁾ (f a0) (f a1)
   
    ￫ info[I0001]
    ￮ axiom a00 assumed
@@ -225,7 +225,7 @@
    ￮ axiom g assumed
   
   refl g {a00} {a01} a02 {a10} {a11} a12 {a20} {a21} a22
-    : refl B (g a00 a10 a20) (g a01 a11 a21)
+    : B⁽ᵉ⁾ (g a00 a10 a20) (g a01 a11 a21)
   
    ￫ info[I0001]
    ￮ axiom C assumed
@@ -246,7 +246,7 @@
    ￮ axiom b2 assumed
   
   refl h {(a0, b0)} {(a1, b1)} (a2, b2)
-    : refl C (h (a0, b0)) (h (a1, b1))
+    : C⁽ᵉ⁾ (h (a0, b0)) (h (a1, b1))
   
    ￫ info[I0001]
    ￮ axiom b00 assumed
@@ -337,7 +337,7 @@
    ￮ axiom a2 assumed
   
   refl f a2
-    : refl B (f a0) (f a1)
+    : B⁽ᵉ⁾ (f a0) (f a1)
   
    ￫ info[I0001]
    ￮ axiom a00 assumed
@@ -385,7 +385,7 @@
    ￮ axiom g assumed
   
   refl g a02 a12 a22
-    : refl B (g a00 a10 a20) (g a01 a11 a21)
+    : B⁽ᵉ⁾ (g a00 a10 a20) (g a01 a11 a21)
   
    ￫ info[I0001]
    ￮ axiom C assumed
@@ -406,7 +406,7 @@
    ￮ axiom b2 assumed
   
   refl h {(a0, b0)} {(a1, b1)} (a2, b2)
-    : refl C (h (a0, b0)) (h (a1, b1))
+    : C⁽ᵉ⁾ (h (a0, b0)) (h (a1, b1))
   
    ￫ info[I0001]
    ￮ axiom b00 assumed
@@ -495,7 +495,7 @@
    ￮ axiom a2 assumed
   
   refl f {a0} {a1} a2
-    : refl B (f a0) (f a1)
+    : B⁽ᵉ⁾ (f a0) (f a1)
   
    ￫ info[I0001]
    ￮ axiom a00 assumed
@@ -544,7 +544,7 @@
    ￮ axiom g assumed
   
   refl g {a00} {a01} a02 {a10} {a11} a12 {a20} {a21} a22
-    : refl B (g a00 a10 a20) (g a01 a11 a21)
+    : B⁽ᵉ⁾ (g a00 a10 a20) (g a01 a11 a21)
   
    ￫ info[I0001]
    ￮ axiom C assumed
@@ -565,7 +565,7 @@
    ￮ axiom b2 assumed
   
   refl h {(a0, b0)} {(a1, b1)} (a2, b2)
-    : refl C (h (a0, b0)) (h (a1, b1))
+    : C⁽ᵉ⁾ (h (a0, b0)) (h (a1, b1))
   
    ￫ info[I0001]
    ￮ axiom b00 assumed
@@ -656,7 +656,7 @@
    ￮ axiom a2 assumed
   
   refl f a2
-    : refl B (f a0) (f a1)
+    : B⁽ᵉ⁾ (f a0) (f a1)
   
    ￫ info[I0001]
    ￮ axiom a00 assumed
@@ -705,7 +705,7 @@
    ￮ axiom g assumed
   
   refl g a02 a12 a22
-    : refl B (g a00 a10 a20) (g a01 a11 a21)
+    : B⁽ᵉ⁾ (g a00 a10 a20) (g a01 a11 a21)
   
    ￫ info[I0001]
    ￮ axiom C assumed
@@ -726,7 +726,7 @@
    ￮ axiom b2 assumed
   
   refl h {(a0, b0)} {(a1, b1)} (a2, b2)
-    : refl C (h (a0, b0)) (h (a1, b1))
+    : C⁽ᵉ⁾ (h (a0, b0)) (h (a1, b1))
   
    ￫ info[I0001]
    ￮ axiom b00 assumed

@@ -222,11 +222,11 @@
    ￭ command-line exec string
    1 | echo (a : Id A)
      ^ term synthesized type
-         refl Type A A
+         Type⁽ᵉ⁾ A A
        but is being checked against type
          Type
        unequal head terms:
-         refl Type
+         Type⁽ᵉ⁾
        does not equal
          Type
   
@@ -234,11 +234,11 @@
    ￭ command-line exec string
    1 | echo (a : Id A)
      ^ term synthesized type
-         refl Type A A
+         Type⁽ᵉ⁾ A A
        but is being checked against type
          Type
        unequal head terms:
-         refl Type
+         Type⁽ᵉ⁾
        does not equal
          Type
   
@@ -248,11 +248,11 @@
    ￭ command-line exec string
    1 | echo (a : Id (Id A) (refl a) (refl a))
      ^ term synthesized type
-         refl Type (refl A a a) (refl A a a)
+         Type⁽ᵉ⁾ (A⁽ᵉ⁾ a a) (A⁽ᵉ⁾ a a)
        but is being checked against type
          Type
        unequal head terms:
-         refl Type
+         Type⁽ᵉ⁾
        does not equal
          Type
   
@@ -260,11 +260,11 @@
    ￭ command-line exec string
    1 | echo (a : Id (Id A) (refl a) (refl a))
      ^ term synthesized type
-         refl Type (refl A a a) (refl A a a)
+         Type⁽ᵉ⁾ (A⁽ᵉ⁾ a a) (A⁽ᵉ⁾ a a)
        but is being checked against type
          Type
        unequal head terms:
-         refl Type
+         Type⁽ᵉ⁾
        does not equal
          Type
   
@@ -274,11 +274,11 @@
    ￭ command-line exec string
    1 | def q := Id Type A (Id A)
      ^ term synthesized type
-         refl Type A A
+         Type⁽ᵉ⁾ A A
        but is being checked against type
          Type
        unequal head terms:
-         refl Type
+         Type⁽ᵉ⁾
        does not equal
          Type
   

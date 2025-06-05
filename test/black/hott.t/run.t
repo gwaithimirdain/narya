@@ -740,7 +740,7 @@
     : B₁ (A₂ .trr (u₀ .fst))
   
   refl Σ A₂ B₂ .liftr u₀
-    : refl Σ A₂ B₂ u₀ (refl Σ A₂ B₂ .trr u₀)
+    : Σ⁽ᵉ⁾ A₂ B₂ u₀ (refl Σ A₂ B₂ .trr u₀)
   
   A₂ .liftr (u₀ .fst)
     : A₂ (u₀ .fst) (A₂ .trr (u₀ .fst))
@@ -766,7 +766,7 @@
     : B₀ (A₂ .trl (u₁ .fst))
   
   refl Σ A₂ B₂ .liftl u₁
-    : refl Σ A₂ B₂ (refl Σ A₂ B₂ .trl u₁) u₁
+    : Σ⁽ᵉ⁾ A₂ B₂ (refl Σ A₂ B₂ .trl u₁) u₁
   
   A₂ .liftl (u₁ .fst)
     : A₂ (A₂ .trl (u₁ .fst)) (u₁ .fst)
@@ -784,7 +784,7 @@
     : A21 (A02 .trr (u00 .fst)) (A12 .trr (u10 .fst))
   
   Σ⁽ᵉᵉ⁾ A22 B22 u02 u12 .trr u20
-    : refl Σ A21 B21 u01 u11
+    : Σ⁽ᵉ⁾ A21 B21 u01 u11
   
   A22 (u02 .fst) (u12 .fst) .trr (u20 .fst)
     : A21 (u01 .fst) (u11 .fst)
@@ -809,7 +809,7 @@
          .trr (u20 .snd))
   
   Σ⁽ᵉᵉ⁾ A22 B22 u02 u12 .trl u21
-    : refl Σ A20 B20 u00 u10
+    : Σ⁽ᵉ⁾ A20 B20 u00 u10
   
   A22 (u02 .fst) (u12 .fst) .trl (u21 .fst)
     : A20 (u00 .fst) (u10 .fst)
@@ -848,7 +848,7 @@
     : C₁ (A₂ .trr (u₀ .fst)) (B₂ (A₂ .liftr (u₀ .fst)) .trr (u₀ .snd))
   
   refl Σ3 A₂ B₂ C₂ .liftr u₀
-    : refl Σ3 A₂ B₂ C₂ u₀ (refl Σ3 A₂ B₂ C₂ .trr u₀)
+    : Σ3⁽ᵉ⁾ A₂ B₂ C₂ u₀ (refl Σ3 A₂ B₂ C₂ .trr u₀)
   
   A₂ .liftr (u₀ .fst)
     : A₂ (u₀ .fst) (A₂ .trr (u₀ .fst))
@@ -876,7 +876,7 @@
     : B₁
   
   refl prod A₂ B₂ .liftr u₀
-    : refl prod A₂ B₂ u₀ (refl prod A₂ B₂ .trr u₀)
+    : prod⁽ᵉ⁾ A₂ B₂ u₀ (refl prod A₂ B₂ .trr u₀)
   
   A₂ .liftr (u₀ .fst)
     : A₂ (u₀ .fst) (A₂ .trr (u₀ .fst))
@@ -896,7 +896,7 @@
     : M A₁ B₁
   
   refl M A₂ B₂ .liftr u₀
-    : refl M A₂ B₂ u₀ (refl M A₂ B₂ .trr u₀)
+    : M⁽ᵉ⁾ A₂ B₂ u₀ (refl M A₂ B₂ .trr u₀)
   
   A₂ .liftr (u₀ .recv)
     : A₂ (u₀ .recv) (A₂ .trr (u₀ .recv))
@@ -912,20 +912,20 @@
          (refl u₀
           .send (B₂⁽¹ᵉ⁾ (refl A₂ .liftr.1 (refl u₀ .recv)) .trl.1 (refl b₁))))
     .trl (refl M A₂ B₂ .liftr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁)))
-    : refl M A₂ B₂ (u₀ .send b₀)
+    : M⁽ᵉ⁾ A₂ B₂ (u₀ .send b₀)
         (refl M A₂ B₂ .trr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁)))
   
   M⁽ᵉᵉ⁾ A₂⁽¹ᵉ⁾ B₂⁽¹ᵉ⁾
       (refl u₀
        .send
-         (B₂⁽ᵉ¹⁾ (sym (refl A₂ .liftr.1 (refl u₀ .recv))) b₂
+         (B₂⁽ᵉ¹⁾ (sym (A₂⁽ᵉ⁾ .liftr.1 (refl u₀ .recv))) b₂
               (B₂ (A₂ .liftr (u₀ .recv)) .liftl b₁)
           .trl (refl b₁)))
       (M⁽ᵉᵉ⁾ A₂⁽¹ᵉ⁾ B₂⁽¹ᵉ⁾
        .trr.1
          (refl u₀
-          .send (B₂⁽¹ᵉ⁾ (refl A₂ .liftr.1 (refl u₀ .recv)) .trl.1 (refl b₁))))
-    .trl (refl M A₂ B₂ .liftr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁)))
-    : refl M A₂ B₂ (u₀ .send b₀)
+          .send (B₂⁽¹ᵉ⁾ (A₂⁽ᵉ⁾ .liftr.1 (refl u₀ .recv)) .trl.1 (refl b₁))))
+    .trl (M⁽ᵉ⁾ A₂ B₂ .liftr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁)))
+    : M⁽ᵉ⁾ A₂ B₂ (u₀ .send b₀)
         (refl M A₂ B₂ .trr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁)))
   

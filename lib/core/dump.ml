@@ -233,7 +233,7 @@ module F = struct
     | App (fn, arg) -> fprintf ppf "App (%a, %a)" term fn (cubeof term) arg
     | Lam (x, body) -> fprintf ppf "Lam^(%s) (?, %a)" (string_of_dim (dim_variables x)) term body
     | Constr (c, _, _) -> fprintf ppf "Constr (%s, ?, ?)" (Constr.to_string c)
-    | Act (tm, s) -> fprintf ppf "Act (%a, %s)" term tm (string_of_deg s)
+    | Act (tm, s, _) -> fprintf ppf "Act (%a, %s)" term tm (string_of_deg s)
     | Let (_, _, _) -> fprintf ppf "Let ?"
     | Struct _ -> fprintf ppf "Struct ?"
     | Match _ -> fprintf ppf "Match ?"

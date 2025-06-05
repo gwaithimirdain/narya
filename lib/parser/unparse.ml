@@ -211,7 +211,7 @@ let rec synths : type n. (n, kinetic) term -> bool = function
   | Inst (_, _)
   | Pi (_, _, _)
   | App (_, _)
-  | Act (_, _)
+  | Act (_, _, _)
   | Let (_, _, _) -> true
   | Constr (_, _, _) | Lam (_, _) | Struct _ -> false
   | Unshift (_, _, tm) -> synths tm
@@ -262,7 +262,7 @@ let rec get_spine : type n.
       | `Field (head, fld, ins, args) -> `Field (head, fld, ins, append_bwd args))
   | Field (head, fld, ins) -> `Field (head, Field.to_string fld, show_ins ins, Emp)
   (* We have to look through identity degeneracies here. *)
-  | Act (body, s) -> (
+  | Act (body, s, _) -> (
       match is_id_deg s with
       | Some _ -> get_spine body
       | None -> `App (tm, Emp))
@@ -292,7 +292,7 @@ let rec unparse : type n lt ls rt rs s.
   | Field (tm, fld, ins) ->
       unparse_spine vars (`Field (tm, Field.to_string fld, show_ins ins)) Emp li ri
   | UU n ->
-      unparse_act vars
+      unparse_act ~sort:`Type ~var:false vars
         {
           unparse =
             (fun _ _ ->
@@ -310,7 +310,12 @@ let rec unparse : type n lt ls rt rs s.
             (`Field (head, fld, ins))
             (Bwd.map (make_unparser_implicit vars) args)
             li ri)
-  | Act (tm, s) -> unparse_act vars { unparse = (fun li ri -> unparse vars tm li ri) } s li ri
+  | Act (tm, s, sort) ->
+      let var =
+        match tm with
+        | Var _ -> true
+        | _ -> false in
+      unparse_act ~sort ~var vars { unparse = (fun li ri -> unparse vars tm li ri) } s li ri
   | Let (x, tm, body) -> (
       let tm = unparse vars tm No.Interval.entire No.Interval.entire in
       (* If a let-in doesn't fit in its interval, we have to parenthesize it. *)
@@ -506,7 +511,7 @@ and unparse_field_var : type n lt ls rt rs.
       | Some name -> Some (unlocated (Ident (name, [])))
       (* If the field is still leftover after the lookup, we unparse it as a field. *)
       | None -> None)
-  | Act (tm, deg) -> (
+  | Act (tm, deg, _) -> (
       match is_id_deg deg with
       | Some _ -> unparse_field_var vars tm fld
       | None -> None)
@@ -581,17 +586,19 @@ and unparse_lam_done : type n lt ls rt rs s.
            (infix ~notn ~first ~inner:(Single (mapsto, (None, []))) ~last ~left_ok ~right_ok))
 
 and unparse_act : type n lt ls rt rs a b.
+    sort:[ `Type | `Function | `Other ] ->
+    var:bool ->
     n Names.t ->
     unparser ->
     (a, b) deg ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun vars tm s li ri ->
+ fun ~sort ~var vars tm s li ri ->
   match is_id_deg s with
   | Some _ -> tm.unparse li ri
   | None -> (
-      match name_of_deg s with
+      match name_of_deg ~sort ~var s with
       | Some str -> unparse_spine vars (`Degen str) (Snoc (Emp, tm)) li ri
       | None ->
           unlocated (Superscript (Some (tm.unparse li No.Interval.empty), string_of_deg s, [])))
@@ -737,7 +744,7 @@ and unparse_pis : type n lt ls rt rs.
               unparse =
                 (fun li ri ->
                   unparse_spine vars
-                    (`Term (Act (Const Pi.const, deg_zero (CubeOf.dim doms))))
+                    (`Term (Act (Const Pi.const, deg_zero (CubeOf.dim doms), `Type)))
                     args li ri);
             }
             li ri)
@@ -987,6 +994,12 @@ let () =
           pp_complete_term
             (Wrap
                (unparse (Names.of_ctx ctx) (readback_val ctx tm) No.Interval.entire
+                  No.Interval.entire))
+            `None
+      | PType (ctx, tm) ->
+          pp_complete_term
+            (Wrap
+               (unparse (Names.of_ctx ctx) (readback_val ~sort:`Type ctx tm) No.Interval.entire
                   No.Interval.entire))
             `None
       | PNormal (ctx, tm) ->

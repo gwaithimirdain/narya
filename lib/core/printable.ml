@@ -12,6 +12,10 @@ type printable +=
   | PLevel : level -> printable
   | PTerm : ('a, 'b) Ctx.t * ('b, 's) term -> printable
   | PVal : ('a, 'b) Ctx.t * kinetic value -> printable
+  | (* Like a PVal, but will be read back as a type *)
+      PType :
+      ('a, 'b) Ctx.t * kinetic value
+      -> printable
   | PNormal : ('a, 'b) Ctx.t * normal -> printable
   | (* When printing a hole we use a termctx, since that's what we store anyway, and we would also have to read back a value context anyway in order to unparse it. *)
       PHole :

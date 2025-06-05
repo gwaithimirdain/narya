@@ -21,6 +21,20 @@ open Readback
 let () =
   Displaying.register_printer (function `Read -> Some "unhandled Readback.Displaying.read effect")
 
+let rec sort_of_ty : type a z.
+    ?isfunc:bool -> (z, a) Ctx.t -> View.view_type -> [ `Type | `Function | `Other ] =
+ fun ?(isfunc = false) ctx -> function
+  | Canonical (_, UU _, _, _) -> `Type
+  | Canonical (_, Pi (_, doms, cods), _, tyargs) -> (
+      match D.compare (TubeOf.inst tyargs) (CubeOf.dim doms) with
+      | Neq -> fatal (Dimension_mismatch ("sort_of_ty", TubeOf.inst tyargs, CubeOf.dim doms))
+      | Eq ->
+          let args, newnfs = dom_vars ctx doms in
+          let newctx = Ctx.invis ctx newnfs in
+          let output = tyof_app cods tyargs args in
+          sort_of_ty ~isfunc:true newctx (view_type output "sort_of_ty"))
+  | _ -> if isfunc then `Function else `Other
+
 (* Readback of values to terms.  Closely follows equality-testing in equal.ml, so most comments are omitted.  However, unlike equality-testing and the "readback" in theoretical NbE, this readback does *not* eta-expand functions and tuples.  It is used for (1) displaying terms to the user, who will usually prefer not to see things eta-expanded, and (2) turning values into terms so that we can re-evaluate them in a new environment, for which purpose eta-expansion is irrelevant.  There are two exceptions:
 
    1. When reading back at a record type that the user has marked as transparent, we eta-expand tuples.  This is chosen based on the readback type.
@@ -133,7 +147,7 @@ and readback_at : type a z.
               let ptm = act_value tm pinv in
               let pty = act_ty tm ty pinv in
               match readback_at_record ptm pty with
-              | Some res -> Act (res, deg_of_perm p)
+              | Some res -> Act (res, deg_of_perm p, `Other)
               | None -> readback_val ctx tm))
       | Noeta, _ -> readback_val ctx tm)
   | Canonical (_, Data { constrs; _ }, ins, tyargs), Constr (xconstr, xn, xargs) -> (
@@ -161,55 +175,70 @@ and readback_at : type a z.
               readback_at_tel ctx env
                 (List.fold_right (fun a args -> CubeOf.find_top a :: args) xargs [])
                 argtys tyarg_args ))
-  | _ -> readback_val ctx tm
+  | vty, _ ->
+      let sort = sort_of_ty ctx vty in
+      readback_val ~sort ctx tm
 
-and readback_val : type a z. (z, a) Ctx.t -> kinetic value -> (a, kinetic) term =
- fun ctx x ->
+and readback_val : type a z.
+    ?sort:[ `Type | `Function | `Other ] -> (z, a) Ctx.t -> kinetic value -> (a, kinetic) term =
+ fun ?(sort = `Other) ctx x ->
   match x with
   | Neu { head; args; value; ty } -> (
       match (force_eval value, Displaying.read ()) with
       | Realize v, true -> readback_at ctx v (Lazy.force ty)
-      | _ -> readback_neu ctx head args)
+      | _ -> readback_neu ~sort ctx head args)
   | Lam _ -> fatal (Anomaly "unexpected lambda in synthesizing readback")
   | Struct _ -> fatal (Anomaly "unexpected struct in synthesizing readback")
   | Constr _ -> fatal (Anomaly "unexpected constr in synthesizing readback")
 
-and readback_neu : type a z any. (z, a) Ctx.t -> head -> any apps -> (a, kinetic) term =
- fun ctx head apps ->
+and readback_neu : type a z any.
+    ?sort:[ `Type | `Function | `Other ] -> (z, a) Ctx.t -> head -> any apps -> (a, kinetic) term =
+ fun ?(sort = `Other) ctx head apps ->
   match (apps, head) with
-  | Emp, _ -> readback_head ctx head
+  | Emp, _ -> readback_head ~sort ctx head
   | Arg (apps, args, ins), _ ->
       let (To p) = deg_of_ins ins in
       Term.Act
         ( App
-            ( readback_neu ctx head apps,
+            ( readback_neu ~sort ctx head apps,
               CubeOf.mmap { map = (fun _ [ tm ] -> readback_nf ctx tm) } [ args ] ),
-          p )
+          p,
+          sort )
   | Field (apps, fld, fldplus, ins), _ ->
       let (To p) = deg_of_ins ins in
-      Term.Act (Field (readback_neu ctx head apps, fld, id_ins (cod_left_ins ins) fldplus), p)
+      Term.Act
+        (Field (readback_neu ~sort ctx head apps, fld, id_ins (cod_left_ins ins) fldplus), p, sort)
   | Inst (Emp, _, args), Pi _ when TubeOf.is_full args ->
       (* When reading back a fully instantiated higher-dimensional pi-type, we eta-expand the instantiation arguments so that it can be printed with a nice notation. *)
       let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ~eta:true ctx x) } [ args ] in
-      Inst (readback_head ctx head, args)
+      Inst (readback_head ~sort ctx head, args)
   | Inst (apps, _, args), _ ->
       let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ args ] in
-      Inst (readback_neu ctx head apps, args)
+      Inst (readback_neu ~sort ctx head apps, args)
 
-and readback_head : type c z. (z, c) Ctx.t -> head -> (c, kinetic) term =
- fun ctx h ->
+and readback_head : type c z.
+    ?sort:[ `Type | `Function | `Other ] -> (z, c) Ctx.t -> head -> (c, kinetic) term =
+ fun ?(sort = `Other) ctx h ->
   match h with
-  | Var { level; deg } ->
+  | Var { level; deg } -> (
       let x = Ctx.find_level ctx level <|> No_such_level (PLevel level) in
-      Act (Var x, deg)
-  | Const { name; ins } ->
+      match is_id_deg deg with
+      | Some _ -> Var x
+      | None -> Act (Var x, deg, sort))
+  | Const { name; ins } -> (
       let dim = cod_left_ins ins in
       let (To perm) = deg_of_ins ins in
       let (DegExt (_, _, deg)) = comp_deg_extending (deg_zero dim) perm in
-      Act (Const name, deg)
-  | Meta { meta; env; ins } ->
-      let (To perm) = deg_of_ins ins in
-      Act (MetaEnv (meta, readback_env ctx env (Global.find_meta meta).termctx), perm)
+      match is_id_deg deg with
+      | Some _ -> Const name
+      | None -> Act (Const name, deg, sort))
+  | Meta { meta; env; ins } -> (
+      let tm = MetaEnv (meta, readback_env ctx env (Global.find_meta meta).termctx) in
+      match is_id_ins ins with
+      | Some _ -> tm
+      | None ->
+          let (To perm) = deg_of_ins ins in
+          Act (tm, perm, sort))
   | UU m -> UU m
   | Pi (x, doms, cods) ->
       let k = CubeOf.dim doms in
