@@ -41,7 +41,7 @@ Files are recompiled if the flags change
 
   $ narya -dtt -v two.ny
    ￫ warning[W2303]
-   ￮ file '$TESTCASE_ROOT/one.ny' was compiled with incompatible flags -arity 2 -direction e,refl,Id -internal, recompiling
+   ￮ file '$TESTCASE_ROOT/one.ny' was compiled with incompatible flags -arity 2 -direction e,refl,Id,ap -internal, recompiling
   
    ￫ info[I0003]
    ￮ loading file: $TESTCASE_ROOT/one.ny

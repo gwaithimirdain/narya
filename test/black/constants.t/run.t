@@ -329,13 +329,13 @@
      ^ term synthesized type
          {H₀ : ℕ} {H₁ : ℕ} (H₂ : refl ℕ H₀ H₁)
          ⇒ Π⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ {x ↦ B x} {x ↦ B x} {x ⤇ refl B x.2} {x ↦ B x} {x ↦ B x}
-             {x ⤇ refl B x.2} {x ⤇ refl B x.2} {x ⤇ refl B x.2} (x ⤇ B⁽ᵉᵉ⁾ x.22)
-             (refl f) (refl f) (x ⤇ refl_nat_f H₀ x.2) (x ⤇ refl_nat_f H₁ x.2)
+             {x ⤇ refl B x.2} {x ⤇ refl B x.2} {x ⤇ refl B x.2} (x ⤇ B⁽ᵉᵉ⁾ x.22) (ap f)
+             (ap f) (x ⤇ refl_nat_f H₀ x.2) (x ⤇ refl_nat_f H₁ x.2)
        but is being checked against type
          {H₀ : ℕ} {H₁ : ℕ} (H₂ : refl ℕ H₀ H₁)
          ⇒ Π⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ {x ↦ B x} {x ↦ B x} {x ⤇ refl B x.2} {x ↦ B x} {x ↦ B x}
-             {x ⤇ refl B x.2} {x ⤇ refl B x.2} {x ⤇ refl B x.2} (x ⤇ B⁽ᵉᵉ⁾ x.22)
-             (refl f) (refl f) (x ⤇ refl_nat_f H₀ x.2) (x ⤇ refl_nat_f_cube H₁ x.2)
+             {x ⤇ refl B x.2} {x ⤇ refl B x.2} {x ⤇ refl B x.2} (x ⤇ B⁽ᵉᵉ⁾ x.22) (ap f)
+             (ap f) (x ⤇ refl_nat_f H₀ x.2) (x ⤇ refl_nat_f_cube H₁ x.2)
        unequal head constants:
          refl_nat_f
        does not equal

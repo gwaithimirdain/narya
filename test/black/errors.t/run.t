@@ -147,7 +147,7 @@
    ￭ command-line exec string
    1 | echo (refl f (refl a) a)
      ^ attempt to apply/instantiate
-         refl f (refl a)
+         ap f (refl a)
        of type
          A⁽ᵉ⁾ (f a) (f a)
        which is not a function-type or universe
