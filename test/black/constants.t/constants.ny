@@ -38,7 +38,7 @@ def built_in_pi_eqs_named_pi : Id Type ((x : A) → B x) (Π A B) ≔ refl (Π A
 {`In particular, this gives a way for the user to write higher-dimensional Π-types.`}
 def refl_for_pi
   : Id (Id Type ((x : A) → B x) ((x : A) → B x)) (refl ((x : A) → B x))
-      (refl Π A A (refl A) B B (refl B))
+      (refl Π (refl A) (refl B))
   ≔ refl (refl ((x : A) → B x))
 
 {`Coinductive streams`}
@@ -116,14 +116,14 @@ def abort2 : (A : Type) → ∅ → A ≔ A x ↦ match x [ ]
 
 {`Higher-dimensional lambdas in case trees.  This simple version doesn't actually need them, as it could be just an ordinary higher-dimensional lambda term at a leaf.`}
 axiom f : (x : A) → B x
-def reflf : Id ((x : A) → B x) f f ≔ x₀ x₁ x₂ ↦ refl f x₀ x₁ x₂
+def reflf : Id ((x : A) → B x) f f ≔ {x₀} {x₁} x₂ ↦ refl f x₂
 def reflf_eq_reflf : Id (Id ((x : A) → B x) f f) reflf (refl f)
   ≔ refl (refl f)
 {`To test that we actually allow higher-dimensional lambdas in case trees, we need to do some case-tree-only thing inside the lambda, like a match.`}
-def refl_abort_f : ∅ → Id ((x : A) → B x) f f ≔ e x₀ x₁ x₂ ↦ match e [ ]
-def refl_nat_f : ℕ → Id ((x : A) → B x) f f ≔ n x₀ x₁ x₂ ↦ match n [
-| zero. ↦ refl f x₀ x₁ x₂
-| suc. _ ↦ refl f x₀ x₁ x₂]
+def refl_abort_f : ∅ → Id ((x : A) → B x) f f ≔ e {x₀} {x₁} x₂ ↦ match e [ ]
+def refl_nat_f : ℕ → Id ((x : A) → B x) f f ≔ n {x₀} {x₁} x₂ ↦ match n [
+| zero. ↦ refl f x₂
+| suc. _ ↦ refl f x₂]
 def refl_nat_f_eq_reflf
   : Id (Id ((x : A) → B x) f f) (refl_nat_f zero.) (refl f)
   ≔ refl (refl f)
@@ -131,8 +131,8 @@ def refl_nat_f_eq_reflf
 {`We also test cube variable abstraction syntax `}
 def refl_abort_f_cube : ∅ → Id ((x : A) → B x) f f ≔ e ↦ x ⤇ match e [ ]
 def refl_nat_f_cube : ℕ → Id ((x : A) → B x) f f ≔ n ↦ x ⤇ match n [
-| zero. ↦ refl f x.0 x.1 x.2
-| suc. _ ↦ refl f x.0 x.1 x.2]
+| zero. ↦ refl f x.2
+| suc. _ ↦ refl f x.2]
 {`These are actually *unequal* because definition by case trees is generative. But they become equal when evaluated at concrete numbers so that the case trees compute away.`}
 def evaluated_eq_sample
   : Id (Id ((x : A) → B x) f f) (refl_nat_f 3) (refl_nat_f_cube 3)
@@ -178,12 +178,10 @@ def mtchbd0 : (e : ∅) (f : ℕ → ℕ) → Id (ℕ → ℕ) f f ≔ e f ↦ n
 
 def mtchbd0' : (e : ∅) (f : ℕ → ℕ) → Id (ℕ → ℕ) f f ≔ e f ↦ n ⤇ match n.0 [
 | zero. ↦ match e [ ]
-| suc. _ ↦ refl f n.0 n.1 n.2]
+| suc. _ ↦ refl f n.2]
 
 def mtchbd0'' : (e : ∅) (f : ℕ → ℕ) → Id (ℕ → ℕ) f f
-  ≔ e f n0 n1 n2 ↦ match n0 [
-| zero. ↦ match e [ ]
-| suc. _ ↦ refl f n0 n1 n2]
+  ≔ e f {n0} {n1} n2 ↦ match n0 [ zero. ↦ match e [ ] | suc. _ ↦ refl f n2 ]
 
 {`Matching inside a tuple `}
 def mtchtup : ℕ → Σ Type (X ↦ (X → X)) ≔ n ↦ (

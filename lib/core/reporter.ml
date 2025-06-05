@@ -160,7 +160,7 @@ module Code = struct
     | Low_dimensional_argument_of_degeneracy : (string * 'a D.t) -> t
     | Missing_argument_of_degeneracy : string -> t
     | Applying_nonfunction_nontype : printable * printable -> t
-    | Unexpected_implicitness : [ `Implicit | `Explicit ] * string -> t
+    | Unexpected_implicitness : [ `Implicit | `Explicit ] * string * string -> t
     | Insufficient_dimension : { needed : 'a D.t; got : 'b D.t; which : string } -> t
     | Unimplemented : string -> t
     | Matching_datatype_has_degeneracy : printable -> t
@@ -775,16 +775,16 @@ module Code = struct
           textf
             "@[<hv 0>attempt to apply/instantiate@;<1 2>%a@ of type@;<1 2>%a@ which is not a function-type or universe@]"
             pp_printed (print tm) pp_printed (print ty)
-      | Unexpected_implicitness (i, str) ->
-          textf "unexpected %s argument: %s"
+      | Unexpected_implicitness (i, what, str) ->
+          textf "unexpected %s %s: %s"
             (match i with
             | `Implicit -> "implicit"
             | `Explicit -> "explicit")
-            str
-      | Insufficient_dimension { needed; got; which } ->
+            what str
+      | Insufficient_dimension { needed; got; which = _ } ->
           textf
-            "@[<hv 0>insufficient dimension of primary argument for higher-dimensional application:@ %s does not factor through %s@ (hint: %s boundaries are implicit)"
-            (string_of_dim0 got) (string_of_dim0 needed) which
+            "@[<hv 0>insufficient dimension of primary argument for higher-dimensional application:@ %s does not factor through %s"
+            (string_of_dim0 got) (string_of_dim0 needed)
       | Unimplemented str -> textf "unimplemented: %s" str
       | Matching_datatype_has_degeneracy ty ->
           textf

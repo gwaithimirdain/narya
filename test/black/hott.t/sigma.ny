@@ -2,9 +2,6 @@
 
 {` Transport and lifting compute on Σ-types `}
 
-option function boundaries ≔ implicit
-option type boundaries ≔ implicit
-
 def Σ (A : Type) (B : A → Type) : Type ≔ sig ( fst : A, snd : B fst )
 
 axiom A₀ : Type

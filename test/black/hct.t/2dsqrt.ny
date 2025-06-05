@@ -1,9 +1,7 @@
 {` The "double square root", a higher coinductive type with a 2-dimensional field. `}
-axiom A:Type
+axiom A : Type
 
-def √√A : Type ≔ codata [
-| x .rroot.ee : A
-]
+def √√A : Type ≔ codata [ x .rroot.ee : A ]
 
 {` To project this out, we need a doubly degenerated instance.  With a triply degenerated instance, we can project out all six fields. `}
 axiom s000 : √√A
@@ -14,7 +12,7 @@ axiom s011 : √√A
 axiom s012 : Id √√A s010 s011
 axiom s020 : Id √√A s000 s010
 axiom s021 : Id √√A s001 s011
-axiom s022 : √√A⁽ᵉᵉ⁾ s000 s001 s002 s010 s011 s012 s020 s021
+axiom s022 : √√A⁽ᵉᵉ⁾ s002 s012 s020 s021
 axiom s100 : √√A
 axiom s101 : √√A
 axiom s102 : Id √√A s100 s101
@@ -23,20 +21,17 @@ axiom s111 : √√A
 axiom s112 : Id √√A s110 s111
 axiom s120 : Id √√A s100 s110
 axiom s121 : Id √√A s101 s111
-axiom s122 : √√A⁽ᵉᵉ⁾ s100 s101 s102 s110 s111 s112 s120 s121
+axiom s122 : √√A⁽ᵉᵉ⁾ s102 s112 s120 s121
 axiom s200 : Id √√A s000 s100
 axiom s201 : Id √√A s001 s101
-axiom s202 : √√A⁽ᵉᵉ⁾ s000 s001 s002 s100 s101 s102 s200 s201
+axiom s202 : √√A⁽ᵉᵉ⁾ s002 s102 s200 s201
 axiom s210 : Id √√A s010 s110
 axiom s211 : Id √√A s011 s111
-axiom s212 : √√A⁽ᵉᵉ⁾ s010 s011 s012 s110 s111 s112 s210 s211
-axiom s220 : √√A⁽ᵉᵉ⁾ s000 s010 s020 s100 s110 s120 s200 s210
-axiom s221 : √√A⁽ᵉᵉ⁾ s001 s011 s021 s101 s111 s121 s201 s211
+axiom s212 : √√A⁽ᵉᵉ⁾ s012 s112 s210 s211
+axiom s220 : √√A⁽ᵉᵉ⁾ s020 s120 s200 s210
+axiom s221 : √√A⁽ᵉᵉ⁾ s021 s121 s201 s211
 
-axiom s222 : √√A⁽ᵉᵉᵉ⁾
-  s000 s001 s002 s010 s011 s012 s020 s021 s022
-  s100 s101 s102 s110 s111 s112 s120 s121 s122
-  s200 s201 s202 s210 s211 s212 s220 s221
+axiom s222 : √√A⁽ᵉᵉᵉ⁾ s022 s122 s202 s212 s220 s221
 
 {` Here are the six fields, with their six different types.  Note that they all compute to .rroot.12 of a symmetrized s222. `}
 echo s222 .rroot.12
@@ -56,28 +51,24 @@ def ID2 (X : Type) : Type ≔ sig (
   x12 : Id X x10 x11,
   x20 : Id X x00 x10,
   x21 : Id X x01 x11,
-  x22 : X⁽ᵉᵉ⁾ x00 x01 x02 x10 x11 x12 x20 x21,
-)
+  x22 : X⁽ᵉᵉ⁾ x02 x12 x20 x21 )
 
-def √√ID2A : Type ≔ codata [
-  | x .rroot.ee : ID2 A
-]
+def √√ID2A : Type ≔ codata [ x .rroot.ee : ID2 A ]
 
-def t (a:A) : √√ID2A ≔ [
-  .rroot.ee ↦ (a.00, a.01, a.02, a.10, a.11, a.12, a.20, a.21, a.22)
-]
+def t (a : A) : √√ID2A ≔ [
+| .rroot.ee ↦ (a.00, a.01, a.02, a.10, a.11, a.12, a.20, a.21, a.22)]
 
-axiom a00:A
-axiom a01:A
-axiom a02:Id A a00 a01
-axiom a10:A
-axiom a11:A
-axiom a12:Id A a10 a11
-axiom a20:Id A a00 a10
-axiom a21:Id A a01 a11
-axiom a22: A⁽ᵉᵉ⁾ a00 a01 a02 a10 a11 a12 a20 a21
+axiom a00 : A
+axiom a01 : A
+axiom a02 : Id A a00 a01
+axiom a10 : A
+axiom a11 : A
+axiom a12 : Id A a10 a11
+axiom a20 : Id A a00 a10
+axiom a21 : Id A a01 a11
+axiom a22 : A⁽ᵉᵉ⁾ a02 a12 a20 a21
 
-def ta ≔ t⁽ᵉᵉ⁾ a00 a01 a02 a10 a11 a12 a20 a21 a22
+def ta ≔ t⁽ᵉᵉ⁾ a22
 
 {` ta has two projectable fields, .rroot.12 and .rroot.21. `}
 echo ta .rroot.12

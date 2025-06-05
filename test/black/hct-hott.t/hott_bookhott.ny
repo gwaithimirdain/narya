@@ -3,9 +3,6 @@
 import "isfibrant"
 import "bookhott"
 
-option function boundaries ≔ implicit
-option type boundaries ≔ implicit
-
 {` Facts about the interaction of Book HoTT equivalences (regarded as the outer 2LTT layer) and HOTT identity types. `}
 
 {` An Id of equalities induces an equality involving transport `}

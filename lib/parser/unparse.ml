@@ -141,9 +141,30 @@ let unparse_var : type lt ls rt rs. string option -> (lt, ls, rt, rs) parse loca
   | Some x -> unlocated (Ident ([ x ], []))
   | None -> unlocated (Placeholder [])
 
+let unparse_var_with_implicitness : type lt ls rt rs.
+    string option * [ `Explicit | `Implicit ] -> (lt, ls, rt, rs) parse located = function
+  | Some x, `Explicit -> unlocated (Ident ([ x ], []))
+  | None, `Explicit -> unlocated (Placeholder [])
+  | Some x, `Implicit ->
+      unlocated
+        (outfix ~notn:Postprocess.braces
+           ~inner:
+             (Multiple
+                ( (LBrace, (None, [])),
+                  Snoc (Emp, Term (unlocated (Ident ([ x ], [])))),
+                  (RBrace, (None, [])) )))
+  | None, `Implicit ->
+      unlocated
+        (outfix ~notn:Postprocess.braces
+           ~inner:
+             (Multiple
+                ( (LBrace, (None, [])),
+                  Snoc (Emp, Term (unlocated (Placeholder []))),
+                  (RBrace, (None, [])) )))
+
 (* Unparse a Bwd of variables to occur in an iterated abstraction.  If there is more than one variable, the result is an "application spine".  Can occur in any tightness interval that contains +ω. *)
 let rec unparse_abs : type li ls ri rs.
-    string option Bwd.t ->
+    (string option * [ `Explicit | `Implicit ]) Bwd.t ->
     (li, ls) No.iinterval ->
     (li, ls, No.plus_omega) No.lt ->
     (ri, rs, No.plus_omega) No.lt ->
@@ -151,11 +172,10 @@ let rec unparse_abs : type li ls ri rs.
  fun xs li left_ok right_ok ->
   match xs with
   | Emp -> fatal (Anomaly "missing abstractions")
-  | Snoc (Emp, Some x) -> unlocated (Ident ([ x ], []))
-  | Snoc (Emp, None) -> unlocated (Placeholder [])
+  | Snoc (Emp, x) -> unparse_var_with_implicitness x
   | Snoc (xs, x) ->
       let fn = unparse_abs xs li left_ok (No.le_refl No.plus_omega) in
-      let arg = unparse_var x in
+      let arg = unparse_var_with_implicitness x in
       unlocated (App { fn; arg; left_ok; right_ok })
 
 (* If a term is a natural number numeral (a bunch of 'suc' constructors applied to a 'zero' constructor), unparse it as that numeral; otherwise return None. *)
@@ -240,14 +260,9 @@ let rec get_spine : type n.
              {
                it =
                  (fun fa [ x ] s ->
-                   match
-                     ( Implicitboundaries.functions (),
-                       Display.function_boundaries (),
-                       is_id_sface fa,
-                       all_args )
-                   with
-                   | `Implicit, `Hide, None, false -> ((), s)
-                   | `Implicit, _, None, _ -> ((), Snoc (s, (x, `Implicit)))
+                   match (Display.function_boundaries (), is_id_sface fa, all_args) with
+                   | `Hide, None, false -> ((), s)
+                   | _, None, _ -> ((), Snoc (s, (x, `Implicit)))
                    | _ -> ((), Snoc (s, (x, `Explicit))));
              }
              [ arg ] args) in
@@ -307,11 +322,9 @@ let rec unparse : type n lt ls rt rs s.
               (fun fa [ x ] s ->
                 let (Tface_of fa1) = codim1_envelope fa in
                 let all_args = not (synths (TubeOf.find tyargs fa1)) in
-                match
-                  (Implicitboundaries.types (), Display.type_boundaries (), is_codim1 fa, all_args)
-                with
-                | `Implicit, `Hide, None, false -> ((), s)
-                | `Implicit, _, None, _ -> ((), Snoc (s, make_unparser_implicit vars (x, `Implicit)))
+                match (Display.type_boundaries (), is_codim1 fa, all_args) with
+                | `Hide, None, false -> ((), s)
+                | _, None, _ -> ((), Snoc (s, make_unparser_implicit vars (x, `Implicit)))
                 | _ -> ((), Snoc (s, make_unparser_implicit vars (x, `Explicit))));
           }
           [ tyargs ] Emp in
@@ -534,7 +547,7 @@ and unparse_field_var : type n lt ls rt rs.
 and unparse_lam : type n lt ls rt rs s.
     [ `Cube | `Normal ] ->
     n Names.t ->
-    string option Bwd.t ->
+    (string option * [ `Explicit | `Implicit ]) Bwd.t ->
     (n, s) term ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
@@ -546,16 +559,22 @@ and unparse_lam : type n lt ls rt rs s.
       | `Normal, Eq | `Cube, Neq ->
           let Variables (_, _, x), vars = Names.add vars boundvars in
           let module Fold = NICubeOf.Traverse (struct
-            type 'acc t = string option Bwd.t
+            type 'acc t = (string option * [ `Explicit | `Implicit ]) Bwd.t
           end) in
           (* Apparently we need to define the folding function explicitly with a type to make it come out sufficiently polymorphic. *)
-          let folder : type m left right.
-              string option Bwd.t ->
-              (left, m, string option, right) NFamOf.t ->
-              (left, m, unit, right) NFamOf.t * string option Bwd.t =
-           fun acc (NFamOf x) -> (NFamOf (), Snoc (acc, x)) in
+          let folder : type left right k m.
+              (k, m) sface ->
+              (string option * [ `Explicit | `Implicit ]) Bwd.t ->
+              (left, k, string option, right) NFamOf.t ->
+              (left, k, unit, right) NFamOf.t * (string option * [ `Explicit | `Implicit ]) Bwd.t =
+           fun s acc (NFamOf x) ->
+            let implicit =
+              match is_id_sface s with
+              | None -> `Implicit
+              | Some _ -> `Explicit in
+            (NFamOf (), Snoc (acc, (x, implicit))) in
           unparse_lam cube vars
-            (snd (Fold.fold_map_left { foldmap = (fun _ acc x -> folder acc x) } xs x))
+            (snd (Fold.fold_map_left { foldmap = (fun s acc x -> folder s acc x) } xs x))
             inner li ri
       | _ -> unparse_lam_done cube vars xs body li ri)
   | _ -> unparse_lam_done cube vars xs body li ri
@@ -564,7 +583,7 @@ and unparse_lam : type n lt ls rt rs s.
 and unparse_lam_done : type n lt ls rt rs s.
     [ `Cube | `Normal ] ->
     n Names.t ->
-    string option Bwd.t ->
+    (string option * [ `Explicit | `Implicit ]) Bwd.t ->
     (n, s) term ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
@@ -658,14 +677,9 @@ and unparse_pis : type n lt ls rt rs.
                 it =
                   (fun fa [ dom ] args ->
                     let newdoms =
-                      match
-                        ( Implicitboundaries.functions (),
-                          Display.function_boundaries (),
-                          is_id_sface fa,
-                          all_args )
-                      with
-                      | `Implicit, `Hide, None, false -> []
-                      | `Implicit, _, None, _ -> [ (dom, `Implicit) ]
+                      match (Display.function_boundaries (), is_id_sface fa, all_args) with
+                      | `Hide, None, false -> []
+                      | _, None, _ -> [ (dom, `Implicit) ]
                       | _ -> [ (dom, `Explicit) ] in
                     ((), Bwd.append args (List.map (make_unparser_implicit vars) newdoms)));
               }
@@ -677,9 +691,9 @@ and unparse_pis : type n lt ls rt rs.
                 it =
                   (fun fa [ cod ] args ->
                     let impl =
-                      match (Implicitboundaries.functions (), is_id_sface fa) with
-                      | `Implicit, None -> `Implicit
-                      | _ -> `Explicit in
+                      match is_id_sface fa with
+                      | None -> `Implicit
+                      | Some _ -> `Explicit in
                     ( (),
                       Snoc
                         ( args,

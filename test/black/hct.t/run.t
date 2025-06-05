@@ -116,10 +116,10 @@
    ￫ info[I0001]
    ￮ axiom t22 assumed
   
-  refl f t00 t10 t20 t01 t11 t21 t02 t12 (sym t22)
+  refl f t20 t21 (sym t22)
     : refl A (f t00 t01 t02) (f t10 t11 t12)
   
-  refl f t00 t01 t02 t10 t11 t12 t20 t21 t22
+  refl f t02 t12 t22
     : refl A (f t00 t10 t20) (f t01 t11 t21)
   
    ￫ info[I0001]
@@ -143,7 +143,7 @@
   a
     : A
   
-  refl f b0 b1 b2 b0 b1 b2 (refl b0) (refl b1) b2⁽ᵉ¹⁾
+  refl f b2 b2 b2⁽ᵉ¹⁾
     : refl A (f b0 b0 (refl b0)) (f b1 b1 (refl b1))
   
   refl a
@@ -195,7 +195,7 @@
    ￮ hole ?0:
      
      ----------------------------------------------------------------------
-     refl ID A A (refl A) (refl u0 .root) (refl u1 .root)
+     refl ID (refl A) (refl u0 .root) (refl u1 .root)
   
    ￫ info[I3003]
    ￮ hole ?1:
@@ -231,10 +231,10 @@
    ￮ axiom u22 assumed
   
   u22 .root.1
-    : refl ID A A (refl A) (u20 .root) (u21 .root)
+    : refl ID (refl A) (u20 .root) (u21 .root)
   
   sym u22 .root.1
-    : refl ID A A (refl A) (u02 .root) (u12 .root)
+    : refl ID (refl A) (u02 .root) (u12 .root)
   
    ￫ info[I0000]
    ￮ constant u22' defined, containing 3 holes
@@ -243,21 +243,20 @@
    ￮ hole ?2:
      
      ----------------------------------------------------------------------
-     ID⁽ᵉᵉ⁾ A A (refl A) A A (refl A) (refl A) (refl A) A⁽ᵉᵉ⁾ (refl u00 .root)
-       (refl u01 .root) (u02⁽ᵉ¹⁾ .root.1) (refl u10 .root) (refl u11 .root)
-       (u12⁽ᵉ¹⁾ .root.1) (u20⁽ᵉ¹⁾ .root.1) (u21⁽ᵉ¹⁾ .root.1)
+     ID⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ (u02⁽ᵉ¹⁾ .root.1) (u12⁽ᵉ¹⁾ .root.1) (u20⁽ᵉ¹⁾ .root.1)
+       (u21⁽ᵉ¹⁾ .root.1)
   
    ￫ info[I3003]
    ￮ hole ?3:
      
      ----------------------------------------------------------------------
-     refl ID A A (refl A) (u20 .root) (u21 .root)
+     refl ID (refl A) (u20 .root) (u21 .root)
   
    ￫ info[I3003]
    ￮ hole ?4:
      
      ----------------------------------------------------------------------
-     refl ID A A (refl A) (u02 .root) (u12 .root)
+     refl ID (refl A) (u02 .root) (u12 .root)
   
    ￫ error[E3002]
    ￮ file sqrt.ny contains open holes
@@ -409,10 +408,10 @@
    ￫ info[I0000]
    ￮ constant ta defined
   
-  t⁽ᵉᵉ⁾ a00 a01 a02 a10 a11 a12 a20 a21 a22 .rroot.12
+  t⁽ᵉᵉ⁾ a22 .rroot.12
     : ID2 A
   
-  t⁽ᵉᵉ⁾ a00 a10 a20 a01 a11 a21 a02 a12 (sym a22) .rroot.12
+  t⁽ᵉᵉ⁾ (sym a22) .rroot.12
     : ID2 A
   
   a00
@@ -464,15 +463,15 @@
     : refl A a10 a11
   
   a22
-    : A⁽ᵉᵉ⁾ a00 a01 a02 a10 a11 a12 a20 a21
+    : A⁽ᵉᵉ⁾ a02 a12 a20 a21
   
   sym a22
-    : A⁽ᵉᵉ⁾ a00 a10 a20 a01 a11 a21 a02 a12
+    : A⁽ᵉᵉ⁾ a20 a21 a02 a12
   
-  t⁽ᵉᵉ⁾ a00 a10 a20 a01 a11 a21 a02 a12 (sym a22) .rroot.12
+  t⁽ᵉᵉ⁾ (sym a22) .rroot.12
     : ID2 A
   
-  t⁽ᵉᵉ⁾ a00 a10 a20 a01 a11 a21 a02 a12 (sym a22) .rroot.12
+  t⁽ᵉᵉ⁾ (sym a22) .rroot.12
     : ID2 A
   
   a10

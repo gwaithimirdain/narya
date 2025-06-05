@@ -416,7 +416,7 @@ Including if they have discrete indices:
   > def even : ℕ → Type ≔ data [ zero. : even zero. | suc. (n : ℕ) (_ : odd n) : even (suc. n) ]
   > and odd : ℕ → Type ≔ data [ suc. (n:ℕ) (_ : even n) : odd (suc. n) ]
   > axiom e : even 2
-  > def T ≔ even⁽ᵈ⁾ 2 2 e
+  > def T ≔ even⁽ᵈ⁾ {2} 2 e
   > EOF
 
   $ narya -source-only -v -arity 1 -direction d -discreteness mutual4.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'

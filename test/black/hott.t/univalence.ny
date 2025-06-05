@@ -1,8 +1,5 @@
 {` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
 
-option function boundaries ≔ implicit
-option type boundaries ≔ implicit
-
 def Σ (A : Type) (B : A → Type) : Type ≔ sig ( fst : A, snd : B fst )
 
 def isContr (A : Type) : Type ≔ sig (

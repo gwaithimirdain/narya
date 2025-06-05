@@ -39,11 +39,10 @@
    ￮ axiom M assumed
   
   sym M
-    : refl Gel A A (refl A) B B (refl B) R R (refl R) a₀ a₁ a₂ b₀ b₁ b₂
-        (_ ≔ r₀) (_ ≔ r₁)
+    : refl Gel (refl A) (refl B) (refl R) a₂ b₂ (_ ≔ r₀) (_ ≔ r₁)
   
   sym M .ungel
-    : refl R a₀ a₁ a₂ b₀ b₁ b₂ r₀ r₁
+    : refl R a₂ b₂ r₀ r₁
   
    ￫ info[I0000]
    ￮ constant eta defined
@@ -79,7 +78,7 @@
    ￮ constant r_gelr2 defined
   
   r_gelr2
-    : Type⁽ᵉᵉ⁾ A0 A1 A2 B0 B1 B2 (Gel A0 B0 R0) (Gel A1 B1 R1)
+    : Type⁽ᵉᵉ⁾ A2 B2 (Gel A0 B0 R0) (Gel A1 B1 R1)
   
    ￫ info[I0001]
    ￮ axiom a0 assumed
@@ -115,7 +114,7 @@
    ￮ constant r_sym_gelr2 defined
   
   r_sym_gelr2
-    : Type⁽ᵉᵉ⁾ A0 B0 (Gel A0 B0 R0) A1 B1 (Gel A1 B1 R1) A2 B2
+    : Type⁽ᵉᵉ⁾ (Gel A0 B0 R0) (Gel A1 B1 R1) A2 B2
   
    ￫ info[I0000]
    ￮ constant sym_r2ty defined
@@ -124,12 +123,11 @@
    ￮ axiom r2' assumed
   
   sym r2
-    : sym (refl Gel A0 A1 A2 B0 B1 B2 R0 R1 R2) a0 b0 (ungel ≔ r0) a1 b1
-        (ungel ≔ r1) a2 b2
+    : sym (refl Gel A2 B2 R2) {a0} {b0} (ungel ≔ r0) {a1} {b1} (ungel ≔ r1) a2
+        b2
   
   sym r2'
-    : refl Gel A0 A1 A2 B0 B1 B2 R0 R1 R2 a0 a1 a2 b0 b1 b2 (ungel ≔ r0)
-        (ungel ≔ r1)
+    : refl Gel A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1)
   
    ￫ info[I0000]
    ￮ constant symsym_r2 defined
@@ -146,46 +144,36 @@
 
   $ narya gel.ny -e "def r2ty_eq_sym_r2ty : Id Type r2ty sym_r2ty := refl r2ty"
   sym M
-    : refl Gel A A (refl A) B B (refl B) R R (refl R) a₀ a₁ a₂ b₀ b₁ b₂
-        (_ ≔ r₀) (_ ≔ r₁)
+    : refl Gel (refl A) (refl B) (refl R) a₂ b₂ (_ ≔ r₀) (_ ≔ r₁)
   
   sym M .ungel
-    : refl R a₀ a₁ a₂ b₀ b₁ b₂ r₀ r₁
+    : refl R a₂ b₂ r₀ r₁
   
   r_gelr2
-    : Type⁽ᵉᵉ⁾ A0 A1 A2 B0 B1 B2 (Gel A0 B0 R0) (Gel A1 B1 R1)
+    : Type⁽ᵉᵉ⁾ A2 B2 (Gel A0 B0 R0) (Gel A1 B1 R1)
   
   r_sym_gelr2
-    : Type⁽ᵉᵉ⁾ A0 B0 (Gel A0 B0 R0) A1 B1 (Gel A1 B1 R1) A2 B2
+    : Type⁽ᵉᵉ⁾ (Gel A0 B0 R0) (Gel A1 B1 R1) A2 B2
   
   sym r2
-    : sym (refl Gel A0 A1 A2 B0 B1 B2 R0 R1 R2) a0 b0 (ungel ≔ r0) a1 b1
-        (ungel ≔ r1) a2 b2
+    : sym (refl Gel A2 B2 R2) {a0} {b0} (ungel ≔ r0) {a1} {b1} (ungel ≔ r1) a2
+        b2
   
   sym r2'
-    : refl Gel A0 A1 A2 B0 B1 B2 R0 R1 R2 a0 a1 a2 b0 b1 b2 (ungel ≔ r0)
-        (ungel ≔ r1)
+    : refl Gel A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1)
   
    ￫ error[E0401]
    ￭ command-line exec string
    1 | def r2ty_eq_sym_r2ty : Id Type r2ty sym_r2ty := refl r2ty
      ^ term synthesized type
-         refl Type
-           (refl Gel A0 A1 A2 B0 B1 B2 R0 R1 R2 a0 a1 a2 b0 b1 b2 (ungel ≔ r0)
-              (ungel ≔ r1))
-           (refl Gel A0 A1 A2 B0 B1 B2 R0 R1 R2 a0 a1 a2 b0 b1 b2 (ungel ≔ r0)
-              (ungel ≔ r1))
+         refl Type (refl Gel A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1))
+           (refl Gel A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1))
        but is being checked against type
-         refl Type
-           (refl Gel A0 A1 A2 B0 B1 B2 R0 R1 R2 a0 a1 a2 b0 b1 b2 (ungel ≔ r0)
-              (ungel ≔ r1))
-           (sym (refl Gel A0 A1 A2 B0 B1 B2 R0 R1 R2) a0 b0 (ungel ≔ r0) a1 b1
-              (ungel ≔ r1) a2 b2)
+         refl Type (refl Gel A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1))
+           (sym (refl Gel A2 B2 R2) {a0} {b0} (ungel ≔ r0) {a1} {b1} (ungel ≔ r1) a2 b2)
        unequal terms:
-         refl Gel A0 A1 A2 B0 B1 B2 R0 R1 R2 a0 a1 a2 b0 b1 b2 (ungel ≔ r0)
-           (ungel ≔ r1)
+         refl Gel A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1)
        does not equal
-         sym (refl Gel A0 A1 A2 B0 B1 B2 R0 R1 R2) a0 b0 (ungel ≔ r0) a1 b1
-           (ungel ≔ r1) a2 b2
+         sym (refl Gel A2 B2 R2) {a0} {b0} (ungel ≔ r0) {a1} {b1} (ungel ≔ r1) a2 b2
   
   [1]

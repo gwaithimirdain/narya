@@ -5,9 +5,6 @@ import "fibrant_types"
 import "bookhott"
 import "hott_bookhott"
 
-option function boundaries ≔ implicit
-option type boundaries ≔ implicit
-
 {` Contractibility `}
 def isContr (A : Fib) : Type ≔ sig (
   center : A .t,

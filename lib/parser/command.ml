@@ -98,15 +98,7 @@ module Command = struct
             Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
           ];
       }
-    | Option of {
-        wsoption : Whitespace.t list;
-        wscoloneq : Whitespace.t list;
-        what :
-          [ `Function_boundaries of
-            Whitespace.t list * Whitespace.t list * Options.implicitness * Whitespace.t list
-          | `Type_boundaries of
-            Whitespace.t list * Whitespace.t list * Options.implicitness * Whitespace.t list ];
-      }
+    | Option of { wsoption : Whitespace.t list; wscoloneq : Whitespace.t list; what : Empty.t }
     | Undo of { wsundo : Whitespace.t list; count : int; wscount : Whitespace.t list }
     | Section of {
         wssection : Whitespace.t list;
@@ -585,32 +577,8 @@ module Parse = struct
     | _ -> None
 
   let option =
-    let* wsoption = token Option in
-    let* what, wswhat =
-      step "" (fun state _ (tok, ws) ->
-          match tok with
-          | Ident [ "function" ] -> Some ((`Function, ws), state)
-          | Ident [ "type" ] -> Some ((`Type, ws), state)
-          | _ -> None) in
-    match what with
-    | `Function ->
-        let* wsb = token (Ident [ "boundaries" ]) in
-        let* wscoloneq = token Coloneq in
-        step "" (fun state _ (tok, ws) ->
-            let open Monad.Ops (Monad.Maybe) in
-            let* show = implicit_of_token tok in
-            return
-              ( Option { wsoption; wscoloneq; what = `Function_boundaries (wswhat, wsb, show, ws) },
-                state ))
-    | `Type ->
-        let* wsb = token (Ident [ "boundaries" ]) in
-        let* wscoloneq = token Coloneq in
-        step "" (fun state _ (tok, ws) ->
-            let open Monad.Ops (Monad.Maybe) in
-            let* show = implicit_of_token tok in
-            return
-              ( Option { wsoption; wscoloneq; what = `Type_boundaries (wswhat, wsb, show, ws) },
-                state ))
+    let* _ = token Option in
+    fatal Parse_error
 
   let undo =
     let* wsundo = token Undo in
@@ -736,7 +704,7 @@ let to_string : Command.t -> string = function
   | Split _ -> "split"
   | Show _ -> "show"
   | Display _ -> "display"
-  | Option _ -> "option"
+  | Option _ -> .
   | Quit _ -> "quit"
   | Undo _ -> "undo"
   | Section _ -> "section"
@@ -759,7 +727,7 @@ let maybe_forbid_holes : Command.t -> (unit -> 'a) -> 'a =
 
 let condense : Command.t -> [ `Import | `Option | `None | `Bof ] = function
   | Import _ -> `Import
-  | Option _ -> `Option
+  | Option _ -> .
   | _ -> `None
 
 (* Most execution of commands we can do here, but there are a couple things where we need to call out to the executable: noting when an effectual action like 'echo' is taken (for recording warnings in compiled files), and loading another file.  So this function takes a couple of callbacks as arguments. *)
@@ -1017,15 +985,7 @@ let rec execute :
       | `Type_boundaries (_, _, tb, _) ->
           let tb = Display.modify_type_boundaries tb in
           emit (Display_set ("type boundaries", Display.to_string (tb :> Display.values))))
-  | Option { what; _ } -> (
-      History.do_command @@ fun () ->
-      match what with
-      | `Function_boundaries (_, _, function_boundaries, _) ->
-          Scope.modify_options (fun opt -> { opt with function_boundaries });
-          emit (Option_set ("function boundaries", Options.to_string function_boundaries))
-      | `Type_boundaries (_, _, type_boundaries, _) ->
-          Scope.modify_options (fun opt -> { opt with type_boundaries });
-          emit (Option_set ("type boundaries", Options.to_string type_boundaries)))
+  | Option _ -> .
   | Undo { count; _ } ->
       History.undo count;
       emit (Commands_undone count)
@@ -1268,32 +1228,7 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
         let (Wrap tm) = !tm in
         let tm, rest = split_ending_whitespace tm in
         (nest column (pp_complete_term (Wrap tm) `None), rest)
-    | Option { wsoption; wscoloneq; what } ->
-        let opt, how, wshow =
-          match what with
-          | `Function_boundaries (wsfunction, wsboundaries, how, wshow) ->
-              ( string "function"
-                ^^ pp_ws `Nobreak wsfunction
-                ^^ string "boundaries"
-                ^^ pp_ws `Nobreak wsboundaries,
-                (how :> Options.values),
-                wshow )
-          | `Type_boundaries (wstype, wsboundaries, how, wshow) ->
-              ( string "type"
-                ^^ pp_ws `Nobreak wstype
-                ^^ string "boundaries"
-                ^^ pp_ws `Nobreak wsboundaries,
-                (how :> Options.values),
-                wshow ) in
-        let ws, rest = Whitespace.split wshow in
-        ( Token.pp Option
-          ^^ pp_ws `Nobreak wsoption
-          ^^ opt
-          ^^ Token.pp Coloneq
-          ^^ pp_ws `Nobreak wscoloneq
-          ^^ string (Options.to_string how)
-          ^^ pp_ws `None ws,
-          rest )
+    | Option _ -> .
     | Section { wssection; prefix; wsprefix; wscoloneq } ->
         (* Since we pp a command *after* executing it, the indent is too large for the 'section' command. *)
         indent := !indent - 2;

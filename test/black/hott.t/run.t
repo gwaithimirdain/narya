@@ -140,12 +140,6 @@
   
 
   $ narya -hott -v J.ny
-   ￫ info[I0100]
-   ￮ option set function boundaries to implicit
-  
-   ￫ info[I0100]
-   ￮ option set type boundaries to implicit
-  
    ￫ info[I0000]
    ￮ constant transport defined
   
@@ -190,12 +184,6 @@
   
 
   $ narya -hott -v univalence.ny
-   ￫ info[I0100]
-   ￮ option set function boundaries to implicit
-  
-   ￫ info[I0100]
-   ￮ option set type boundaries to implicit
-  
    ￫ info[I0000]
    ￮ constant Σ defined
   

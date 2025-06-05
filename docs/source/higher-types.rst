@@ -64,7 +64,7 @@ Just as the higher-dimensional versions of an ordinary codatatype inherit fields
 
 .. code-block:: none
 
-   x22 : √ℕ⁽ᵉᵉ⁾ x00 x01 x02 x10 x11 x12 x20 x21
+   x22 : √ℕ⁽ᵉᵉ⁾ {x00} {x01} x02 {x10} {x11} x12 x20 x21
 
 with ``x00`` through ``x21`` of appropriate types, then the two projectable fields of ``x22`` and their types are
 

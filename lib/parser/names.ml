@@ -66,15 +66,22 @@ let lookup_field : type n. n t -> n index -> string -> string list option =
         return (cubevar y fb) in
   lookup ctx x
 
+let rec primes n =
+  if n <= 0 then ""
+  else if n = 1 then "′"
+  else if n = 2 then "″"
+  else if n = 3 then "‴"
+  else "⁗" ^ primes (n - 4)
+
 (* Make a variable name unique, adding the new one to the list of used variables and returning it. *)
 let uniquify : string -> int StringMap.t -> string * [ `Original | `Renamed ] * int StringMap.t =
  fun name used ->
   match StringMap.find_opt name used with
   | None -> (name, `Original, used |> StringMap.add name 0)
   | Some n ->
-      (* The tentative new name is the original one suffixed by that number.  But the user might already have created a variable with that name, so we have to increment the number until we find an unused name.  *)
+      (* The tentative new name is the original one suffixed by that number of primes.  But the user might already have created a variable with that name, so we have to increment the number until we find an unused name. *)
       let rec until_unique k =
-        let namek = name ^ string_of_int k in
+        let namek = name ^ primes k in
         match StringMap.find_opt namek used with
         | None -> (namek, k)
         | Some _ -> until_unique (k + 1) in

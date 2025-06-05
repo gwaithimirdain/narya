@@ -60,7 +60,7 @@
      
      m : ℕ
      n : ℕ
-     n0 ≔ suc. n : ℕ (not in scope)
+     n′ ≔ suc. n : ℕ (not in scope)
      ----------------------------------------------------------------------
      ℕ
   
@@ -73,7 +73,7 @@
    ￫ info[I3003]
    ￮ hole ?4:
      
-     n1 : ℕ (not in scope)
+     n′ : ℕ (not in scope)
      n0 : ℕ
      n : ℕ
      ----------------------------------------------------------------------
@@ -86,7 +86,7 @@
    ￮ hole ?5:
      
      n0 : ℕ
-     n1 : ℕ (not in scope)
+     n′ : ℕ (not in scope)
      n : ℕ
      ----------------------------------------------------------------------
      P n
@@ -97,7 +97,7 @@
    ￫ info[I3003]
    ￮ hole ?6:
      
-     n0 : ℕ (not in scope)
+     n′ : ℕ (not in scope)
      H : ℕ (not in scope)
      n : ℕ
      ----------------------------------------------------------------------
@@ -110,7 +110,7 @@
    ￮ hole ?7:
      
      H : ℕ
-     H0 : ℕ (not in scope)
+     H′ : ℕ (not in scope)
      n : ℕ
      ----------------------------------------------------------------------
      P n
@@ -272,14 +272,14 @@
    ￫ info[I0000]
    ￮ constant ideqid defined
   
-  u u0 u1 ↦ u1
-    : refl Π A A (refl A) (_ ↦ A) (_ ↦ A) (_ ⤇ refl A) ida ida
+  {u} {u′} u″ ↦ u″
+    : refl Π (refl A) {_ ↦ A} {_ ↦ A} (_ ⤇ refl A) ida ida
   
    ￫ info[I0000]
    ￮ constant ideqid' defined
   
-  u u0 u00 ↦ u00
-    : refl Π A A (refl A) (_ ↦ A) (_ ↦ A) (_ ⤇ refl A) ida ida
+  {u} {u′} u′′ ↦ u′′
+    : refl Π (refl A) {_ ↦ A} {_ ↦ A} (_ ⤇ refl A) ida ida
   
    ￫ info[I0000]
    ￮ constant ideqid'' defined, containing 1 hole
@@ -287,11 +287,11 @@
    ￫ info[I3003]
    ￮ hole ?22:
      
-     u1 : A (not in scope)
-     u0 : A (not in scope)
-     u : refl A u1 u0
+     u″ : A (not in scope)
+     u′ : A (not in scope)
+     u : refl A u″ u′
      ----------------------------------------------------------------------
-     refl A u1 u0
+     refl A u″ u′
   
    ￫ info[I0000]
    ￮ constant afam defined, containing 1 hole
@@ -350,9 +350,9 @@
   
    ￫ warning[E2100]
    ￭ $TESTCASE_ROOT/holes.ny
-   122 | def p : prod ≔ ?
+    97 | def p : prod ≔ ?
        ^ previous definition
-   128 | def p : prod' ≔ ?
+   103 | def p : prod' ≔ ?
        ^ redefining constant: p
   
    ￫ info[I0000]

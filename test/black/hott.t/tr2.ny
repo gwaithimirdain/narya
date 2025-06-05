@@ -1,8 +1,5 @@
 {` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
 
-option function boundaries ≔ implicit
-option type boundaries ≔ implicit
-
 axiom A00 : Type
 axiom A01 : Type
 axiom A02 : Id Type A00 A01

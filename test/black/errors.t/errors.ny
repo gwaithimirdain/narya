@@ -26,9 +26,7 @@ axiom B1 : Type
 axiom R1 : A1 → B1 → Type
 axiom A2 : Id Type A0 A1
 axiom B2 : Id Type B0 B1
-axiom R2
-  : refl ((X ↦ Y ↦ (X → Y → Type)) : Type → Type → Type) A0 A1 A2 B0 B1 B2 R0
-      R1
+axiom R2 : refl ((X ↦ Y ↦ (X → Y → Type)) : Type → Type → Type) A2 B2 R0 R1
 axiom a0 : A0
 axiom a1 : A1
 axiom a2 : A2 a0 a1
@@ -37,16 +35,14 @@ axiom b1 : B1
 axiom b2 : B2 b0 b1
 axiom r0 : R0 a0 b0
 axiom r1 : R1 a1 b1
-axiom r2 : R2 a0 a1 a2 b0 b1 b2 r0 r1
+axiom r2 : R2 a2 b2 r0 r1
 
 
-def r2ty
-  ≔ refl Gel A0 A1 A2 B0 B1 B2 R0 R1 R2 a0 a1 a2 b0 b1 b2 (ungel ≔ r0)
-      (ungel ≔ r1)
+def r2ty ≔ refl Gel A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1)
 
 def symr2ty
-  ≔ sym (refl Gel A0 A1 A2 B0 B1 B2 R0 R1 R2) a0 b0 (ungel ≔ r0) a1 b1
-      (ungel ≔ r1) a2 b2
+  ≔ sym (refl Gel A2 B2 R2) {a0} {b0} (ungel ≔ r0) {a1} {b1} (ungel ≔ r1) a2
+      b2
 
 axiom gg : r2ty
 

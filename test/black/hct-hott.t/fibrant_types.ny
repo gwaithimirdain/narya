@@ -4,9 +4,6 @@ import "isfibrant"
 import "bookhott"
 import "hott_bookhott"
 
-option function boundaries ≔ implicit
-option type boundaries ≔ implicit
-
 {` Since identity types compute only up to definitional isomorphism, in order to prove that anything is fibrant by corecursion, we need to be able to transport fibrancy across definitional isomorphisms.  In fact, we can transport it across any Book-HoTT equivalence defined using the Martin-Lof identity type. `}
 
 {` The unit type `}

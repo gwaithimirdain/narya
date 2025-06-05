@@ -1,7 +1,6 @@
 {` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
 
-option function boundaries ≔ implicit
-option type boundaries ≔ implicit
+{` Transport and lifting compute on 2-dimensional Π-types `}
 
 axiom A00 : Type
 axiom A01 : Type
