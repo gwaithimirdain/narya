@@ -179,7 +179,7 @@ Some code copied from Coq."
                 (recenter (- 1)))))))))
                 
 (defface narya-error-face
-  '((t (:background "red1" :foreground "white" :weight bold)))
+  '((t (:foreground "red1" :underline t)))
   "Face used to highlight script errors in Narya."
   :group 'narya)
 
