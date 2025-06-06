@@ -247,8 +247,8 @@ handling in Proof General."
                     (end-byte (string-to-number (match-string 2 string))))
               ;; Highlight the positions on the current line
               (if (and span (overlay-buffer span) (overlay-end span)) 
-                  (narya-highlight-error-range (+ (overlay-end span) 1 start-byte) 
-                                               (+ (overlay-end span) 1 end-byte))
+                  (narya-highlight-error-range (+ (position-bytes (overlay-end span)) 1 start-byte) 
+                                               (+ (position-bytes (overlay-end span)) 1 end-byte))
                   (narya-highlight-error-range (+ 1 start-byte) (+ 1 end-byte)))
               ;; Move forward in the string to look for the next error pair
               (setq string (substring string (match-end 0))))))))
