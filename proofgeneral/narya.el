@@ -177,7 +177,40 @@ Some code copied from Coq."
               (with-selected-window goal-win
                 (goto-char (point-max))
                 (recenter (- 1)))))))))
+                
+(defface narya-error-face
+  '((t (:background "red1" :foreground "white" :weight bold)))
+  "Face used to highlight script errors in Narya."
+  :group 'narya)
 
+(defvar narya-error-overlays nil
+  "List of overlays for error highlighting.")
+
+(defun narya-highlight-error-range (start-byte end-byte)
+  "Highlight the byte range START-BYTE to END-BYTE in the script buffer."
+  (let ((start (byte-to-position start-byte))
+        (end (byte-to-position end-byte)))
+    (when (and start end)
+      (let ((ovl (make-overlay start end)))
+        (overlay-put ovl 'face 'narya-error-face)
+        (push ovl narya-error-overlays)))))
+
+(defun narya-clear-error-highlights ()
+  "Remove all current error overlays."
+  (mapc #'delete-overlay narya-error-overlays)
+  (setq narya-error-overlays nil))
+
+(add-hook 'proof-shell-pre-send-hook 'narya-clear-error-highlights)
+
+(defun narya-clear-error-highlights-on-edit (start end length)
+  "Remove all error overlays when the buffer is edited."
+  (narya-clear-error-highlights))  
+
+(add-hook 'after-change-functions 'narya-clear-error-highlights-on-edit)
+
+(defvar narya-last-successful-span nil
+  "Stores the last successful span.")
+  
 (defun narya-handle-output (cmd string)
   "Parse and handle Narya's output.
 If called with an invisible command (such as 'solve'), store hole data
@@ -197,10 +230,28 @@ handling in Proof General."
         (parsed-hole-data nil)
         (error-found nil)
         (reformatted nil))
+    (when (and span (overlay-buffer span))
+    ;; Store the span
+    (setq narya-last-successful-span span))
     ;; Check for errors in the output first.
-    (when (string-match proof-shell-error-regexp string)
-      (setq error-found t
-            proof-shell-last-output-kind 'error))
+    (when (and (string-match proof-shell-error-regexp string))
+        (setq error-found t
+              proof-shell-last-output-kind 'error)
+        (setq span narya-last-successful-span)
+        (proof-with-script-buffer
+   	;; Start parsing the error numbers after the initial "^L[errors]^L" part
+        (let ((error-start (string-match "\f\\[errors\\]\f\n" string)))
+           ;; Parse all the error pairs (start-byte, end-byte)
+           (while (string-match "\\([0-9]+\\) \\([0-9]+\\)" string)
+              (let ((start-byte (string-to-number (match-string 1 string)))
+                    (end-byte (string-to-number (match-string 2 string))))
+              ;; Highlight the positions on the current line
+              (if (and span (overlay-buffer span) (overlay-end span)) 
+                  (narya-highlight-error-range (+ (overlay-end span) 1 start-byte) 
+                                               (+ (overlay-end span) 1 end-byte))
+                  (narya-highlight-error-range (+ 1 start-byte) (+ 1 end-byte)))
+              ;; Move forward in the string to look for the next error pair
+              (setq string (substring string (match-end 0))))))))
     ;; If no errors, proceed with normal processing.
     (unless error-found
       ;; Check for the goals marker in the output, setting positions to slice
