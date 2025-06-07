@@ -851,12 +851,37 @@ and unparse_higher_pi : type a lt ls rt rs n.
           let lamargs = CubeOf.build k { build = (fun s -> Var (Index (Now, s))) } in
           Named (lamvars, App (Weaken nonlam, lamargs)) in
     TubeOf.mmap { map = (fun s [ lam ] -> map s lam) } [ tyargs ] in
-  (* We only need the top codomain.  If it's another pi-type, it must be of the same dimension since it is an (uninstantiated!) n-dimensional type, and we continue recursively.  Otherwise, we finish. *)
+  (* We only need the top codomain. *)
   match CodCube.find_top cods with
   | Pi (newxs, newdoms, newcods) -> (
+      (* If it's another pi-type, it must be of the same dimension since it is an (uninstantiated!) n-dimensional type, and we continue recursively. *)
       match D.compare (CubeOf.dim newdoms) n with
       | Eq -> unparse_higher_pi newvars accum newxs newdoms newcods tyargs li ri
       | Neq -> fatal (Dimension_mismatch ("unparse_higher_pi recursion", CubeOf.dim newdoms, n)))
+  (* It might also be a *partially* instantiated *higher* dimensional pi-type, in which case we combine the instantiation arguments to make it fully instantiated.  We don't continue accumulating domains as in the previous case, though, because in this case the codomain has different dimension, and hence needs its own arrow. *)
+  | Inst (Pi (newxs, newdoms, newcods), newtyargs) -> (
+      match
+        ( D.compare (TubeOf.out newtyargs) (CubeOf.dim newdoms),
+          D.compare (TubeOf.uninst newtyargs) (TubeOf.inst tyargs) )
+      with
+      | Eq, Eq ->
+          let newtyargs =
+            TubeOf.mmap { map = (fun _ [ x ] -> Names.Named (newvars, x)) } [ newtyargs ] in
+          let plustyargs = TubeOf.plus_tube (TubeOf.plus newtyargs) newtyargs tyargs in
+          let tm =
+            {
+              unparse =
+                (fun li ri -> unparse_higher_pi newvars Emp newxs newdoms newcods plustyargs li ri);
+            } in
+          unparse_pis_final ~higher:(CodCube.dim cods) vars accum tm li ri
+      | Neq, _ ->
+          fatal
+            (Dimension_mismatch
+               ("nested unparse higher pi", TubeOf.out newtyargs, CubeOf.dim newdoms))
+      | _, Neq ->
+          fatal
+            (Dimension_mismatch
+               ("nested unparse higher pi", TubeOf.uninst newtyargs, TubeOf.inst tyargs)))
   | cod ->
       (* When it's time to finish, we unparse the eventual codomain and instantiate it at the unparsed bodies of all the lambda tyargs. *)
       let tm = { unparse = (fun li ri -> unparse_named_inst newvars cod tyargs li ri) } in

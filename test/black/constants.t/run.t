@@ -328,14 +328,18 @@
    1 | def refl_nat_eq_sample : Id (ℕ → Id ((x:A)→B x) f f) (refl_nat_f) (refl_nat_f_cube) ≔ refl refl_nat_f
      ^ term synthesized type
          {H₀ : ℕ} {H₁ : ℕ} (H₂ : refl ℕ H₀ H₁)
-         →⁽ᵉ⁾ Π⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ {x ↦ B x} {x ↦ B x} {x ⤇ refl B x.2} {x ↦ B x} {x ↦ B x}
-                {x ⤇ refl B x.2} {x ⤇ refl B x.2} {x ⤇ refl B x.2} (x ⤇ B⁽ᵉᵉ⁾ x.22)
-                (refl f) (refl f) (x ⤇ refl_nat_f H₀ x.2) (x ⤇ refl_nat_f H₁ x.2)
+         →⁽ᵉ⁾ {x₀₀ : A} {x₀₁ : A} {x₀₂ : refl A x₀₀ x₀₁} {x₁₀ : A} {x₁₁ : A}
+              {x₁₂ : refl A x₁₀ x₁₁} {x₂₀ : refl A x₀₀ x₁₀} {x₂₁ : refl A x₀₁ x₁₁}
+              (x₂₂ : A⁽ᵉᵉ⁾ x₀₂ x₁₂ x₂₀ x₂₁)
+              →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ x₂₂ (refl f x₀₂) (refl f x₁₂) (refl_nat_f H₀ x₂₀)
+                      (refl_nat_f H₁ x₂₁)
        but is being checked against type
          {H₀ : ℕ} {H₁ : ℕ} (H₂ : refl ℕ H₀ H₁)
-         →⁽ᵉ⁾ Π⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ {x ↦ B x} {x ↦ B x} {x ⤇ refl B x.2} {x ↦ B x} {x ↦ B x}
-                {x ⤇ refl B x.2} {x ⤇ refl B x.2} {x ⤇ refl B x.2} (x ⤇ B⁽ᵉᵉ⁾ x.22)
-                (refl f) (refl f) (x ⤇ refl_nat_f H₀ x.2) (x ⤇ refl_nat_f_cube H₁ x.2)
+         →⁽ᵉ⁾ {x₀₀ : A} {x₀₁ : A} {x₀₂ : refl A x₀₀ x₀₁} {x₁₀ : A} {x₁₁ : A}
+              {x₁₂ : refl A x₁₀ x₁₁} {x₂₀ : refl A x₀₀ x₁₀} {x₂₁ : refl A x₀₁ x₁₁}
+              (x₂₂ : A⁽ᵉᵉ⁾ x₀₂ x₁₂ x₂₀ x₂₁)
+              →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ x₂₂ (refl f x₀₂) (refl f x₁₂) (refl_nat_f H₀ x₂₀)
+                      (refl_nat_f_cube H₁ x₂₁)
        unequal head constants:
          refl_nat_f
        does not equal
