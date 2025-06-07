@@ -358,6 +358,8 @@ module Observations = struct
         * observation Bwd.t
         * (token_ws, ss_token_ws) Either.t option
 
+  let empty : partial = Single None
+
   let snoc_sstok : partial -> ss_token_ws -> partial =
    fun obs tok ->
     match obs with

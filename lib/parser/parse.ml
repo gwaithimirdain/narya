@@ -91,7 +91,7 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
   and entry : type tight strict.
       (tight, strict) tree TokMap.t -> (observations * (tight, strict) notation_in_interval) t =
    fun ops ->
-    let* obs, op = tree_op ops (Single None) in
+    let* obs, op = tree_op ops Observations.empty in
     return (Observations.of_partial obs, op)
 
   (* "lclosed" is passed an upper tightness interval and an additional set of ending ops (stored as a map, since that's how they occur naturally, but here we ignore the values and look only at the keys).  It parses an arbitrary left-closed tree (pre-merged).  The interior terms are calls to "lclosed" with the next ops passed as the ending ones. *)

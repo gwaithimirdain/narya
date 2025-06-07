@@ -125,15 +125,9 @@ module Observations : sig
 
   val prepend : t -> observation list -> observation list
 
-  (* TODO: Don't export? *)
+  type partial
 
-  type partial =
-    | Single of (token_ws, ss_token_ws) Either.t option
-    | Multiple of
-        (token_ws, ss_token_ws) Either.t
-        * observation Bwd.t
-        * (token_ws, ss_token_ws) Either.t option
-
+  val empty : partial
   val snoc_sstok : partial -> ss_token_ws -> partial
   val snoc_tok : partial -> token_ws -> partial
   val snoc_term : partial -> ('lt, 'ls, 'rt, 'rs) parse located -> partial
