@@ -172,7 +172,7 @@ let make_user : prenotation -> notation =
               (List.filter_map
                  (function
                    | Term x -> Some (Wrap x : wrapped_parse)
-                   | Token _ -> None)
+                   | _ -> None)
                  obs) in
           let value =
             match key with

@@ -6,6 +6,7 @@ open Asai.Range
 module TokMap : module type of Map.Make (Token)
 
 type token_ws = Token.t * (Whitespace.t list * Asai.Range.t option)
+type ss_token_ws = token_ws * (Asai.Range.t * string * Whitespace.t list) list
 type closed = Dummy_closed
 type 's opn = Dummy_open
 type _ openness = Open : 's No.strictness -> 's opn openness | Closed : closed openness
@@ -57,8 +58,13 @@ and ('t, 's) entry = ('t, 's) tree TokMap.t
 and observation =
   | Term : ('lt, 'ls, 'rt, 'rs) parse located -> observation
   | Token : token_ws -> observation
+  | Ss_token : ss_token_ws -> observation
 
-and observations = Single of token_ws | Multiple of token_ws * observation Bwd.t * token_ws
+and observations =
+  | Single of (token_ws, ss_token_ws) Either.t
+  | Multiple of
+      (token_ws, ss_token_ws) Either.t * observation Bwd.t * (token_ws, ss_token_ws) Either.t
+
 and ('left, 'tight, 'right, 'lt, 'ls, 'rt, 'rs) parsed_notn
 
 and (_, _, _, _) parse =
@@ -119,10 +125,16 @@ module Observations : sig
 
   val prepend : t -> observation list -> observation list
 
-  type partial =
-    | Single of token_ws option
-    | Multiple of token_ws * observation Bwd.t * token_ws option
+  (* TODO: Don't export? *)
 
+  type partial =
+    | Single of (token_ws, ss_token_ws) Either.t option
+    | Multiple of
+        (token_ws, ss_token_ws) Either.t
+        * observation Bwd.t
+        * (token_ws, ss_token_ws) Either.t option
+
+  val snoc_sstok : partial -> ss_token_ws -> partial
   val snoc_tok : partial -> token_ws -> partial
   val snoc_term : partial -> ('lt, 'ls, 'rt, 'rs) parse located -> partial
   val of_partial : partial -> t

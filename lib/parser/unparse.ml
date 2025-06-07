@@ -14,7 +14,8 @@ open Range
 open Readback
 module StringMap = Map.Make (String)
 
-let wstok (tok : Token.t) = (tok, ([], None))
+let mktok (tok : Token.t) = Token (tok, ([], None))
+let wstok (tok : Token.t) = Either.Left (tok, ([], None))
 
 (* If the head of an application spine is a constant or constructor, and it has an associated notation, and there are enough of the supplied arguments to instantiate the notation, split off that many arguments and return the notation, those arguments permuted to match the order of the pattern variables in the notation, the symbols to intersperse with them, and the remaining arguments. *)
 let get_notation head args =
@@ -77,7 +78,7 @@ let observations_of_symbols :
             (List.fold_left
                (fun (acc, args) symbol ->
                  match (symbol, args) with
-                 | Some tok, _ -> (Snoc (acc, Token (wstok tok)), args)
+                 | Some tok, _ -> (Snoc (acc, mktok tok), args)
                  | None, tm :: args ->
                      (Snoc (acc, Term (tm.unparse No.Interval.entire No.Interval.entire)), args)
                  | None, [] -> fatal (Anomaly "missing argument in observations_of_symbols"))
@@ -323,9 +324,7 @@ let rec unparse : type n lt ls rt rs s.
             (prefix ~notn:letin
                ~inner:
                  (Multiple
-                    ( wstok Let,
-                      Emp <: Term (unparse_var x) <: Token (wstok Coloneq) <: Term tm,
-                      wstok In ))
+                    (wstok Let, Emp <: Term (unparse_var x) <: mktok Coloneq <: Term tm, wstok In))
                ~last:body ~right_ok)
       | None ->
           let body = unparse vars body No.Interval.entire No.Interval.entire in
@@ -335,9 +334,7 @@ let rec unparse : type n lt ls rt rs s.
                (prefix ~notn:letin
                   ~inner:
                     (Multiple
-                       ( wstok Let,
-                         Emp <: Term (unparse_var x) <: Token (wstok Coloneq) <: Term tm,
-                         wstok In ))
+                       (wstok Let, Emp <: Term (unparse_var x) <: mktok Coloneq <: Term tm, wstok In))
                   ~last:body ~right_ok)))
   | Lam (Variables (m, _, _), _) ->
       let cube =
@@ -351,8 +348,7 @@ let rec unparse : type n lt ls rt rs s.
            ~inner:
              (Multiple
                 ( wstok LParen,
-                  Bwd_extra.intersperse
-                    (Token (wstok (Op ",")))
+                  Bwd_extra.intersperse (mktok (Op ","))
                     (Bwd.fold_left
                        (fun acc
                             (Term.StructfieldAbwd.Entry

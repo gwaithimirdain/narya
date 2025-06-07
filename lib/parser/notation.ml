@@ -7,6 +7,7 @@ module TokMap = Map.Make (Token)
 open Asai.Range
 
 type token_ws = Token.t * (Whitespace.t list * Asai.Range.t option)
+type ss_token_ws = token_ws * (Asai.Range.t * string * Whitespace.t list) list
 
 (* A notation is either open or closed, on both sides.  We call these two properties combined its "fixity", since they are equivalent to the traditional classification as infix, prefix, postfix, or "outfix".
 
@@ -98,8 +99,13 @@ and ('t, 's) entry = ('t, 's) tree TokMap.t
 and observation =
   | Term : ('lt, 'ls, 'rt, 'rs) parse located -> observation
   | Token : token_ws -> observation
+  (* Superscripted tokens are only used here when there is at least one superscript. *)
+  | Ss_token : ss_token_ws -> observation
 
-and observations = Single of token_ws | Multiple of token_ws * observation Bwd.t * token_ws
+and observations =
+  | Single of (token_ws, ss_token_ws) Either.t
+  | Multiple of
+      (token_ws, ss_token_ws) Either.t * observation Bwd.t * (token_ws, ss_token_ws) Either.t
 
 (* A parsed notation, with its own tightness and openness, and lying in specified left and right tightness intervals, has a Bwd of observations in its inner holes, plus possibly a first and/or last term depending on its openness.  It is parametrized by the openness and tightness of the notation, and also by upper tightness intervals from the left and right in which it is guaranteed to lie.  Thus, the first and last term (if any) can be guaranteed statically to be valid, and we may require witnesses that the notation is tight enough on the left and/or the right (also depending on its openness) to fit in the specified intervals.  The whitespace argument stores the comments and whitespace attached after each operator token. *)
 and ('left, 'tight, 'right, 'lt, 'ls, 'rt, 'rs) parsed_notn =
@@ -335,23 +341,40 @@ type wrapped_parse = Wrap : ('lt, 'ls, 'rt, 'rs) parse Asai.Range.located -> wra
 module Observations = struct
   type t = observations
 
+  let tok_of_ss = function
+    | Either.Left tok -> Token tok
+    | Right tok -> Ss_token tok
+
   let prepend : t -> observation list -> observation list =
    fun obs tail ->
     match obs with
-    | Single tok -> Token tok :: tail
-    | Multiple (tok1, obs, tok2) -> Token tok1 :: Bwd.prepend obs (Token tok2 :: tail)
+    | Single tok -> tok_of_ss tok :: tail
+    | Multiple (tok1, obs, tok2) -> tok_of_ss tok1 :: Bwd.prepend obs (tok_of_ss tok2 :: tail)
 
   type partial =
-    | Single of token_ws option
-    | Multiple of token_ws * observation Bwd.t * token_ws option
+    | Single of (token_ws, ss_token_ws) Either.t option
+    | Multiple of
+        (token_ws, ss_token_ws) Either.t
+        * observation Bwd.t
+        * (token_ws, ss_token_ws) Either.t option
+
+  let snoc_sstok : partial -> ss_token_ws -> partial =
+   fun obs tok ->
+    match obs with
+    | Single None -> Single (Some (Right tok))
+    | Single (Some tok1) -> Multiple (tok1, Emp, Some (Right tok))
+    | Multiple (tok1, inner, None) -> Multiple (tok1, inner, Some (Right tok))
+    | Multiple (tok1, inner, Some tok2) ->
+        Multiple (tok1, Snoc (inner, tok_of_ss tok2), Some (Right tok))
 
   let snoc_tok : partial -> token_ws -> partial =
    fun obs tok ->
     match obs with
-    | Single None -> Single (Some tok)
-    | Single (Some tok1) -> Multiple (tok1, Emp, Some tok)
-    | Multiple (tok1, inner, None) -> Multiple (tok1, inner, Some tok)
-    | Multiple (tok1, inner, Some tok2) -> Multiple (tok1, Snoc (inner, Token tok2), Some tok)
+    | Single None -> Single (Some (Left tok))
+    | Single (Some tok1) -> Multiple (tok1, Emp, Some (Left tok))
+    | Multiple (tok1, inner, None) -> Multiple (tok1, inner, Some (Left tok))
+    | Multiple (tok1, inner, Some tok2) ->
+        Multiple (tok1, Snoc (inner, tok_of_ss tok2), Some (Left tok))
 
   let snoc_term : type lt ls rt rs. partial -> (lt, ls, rt, rs) parse located -> partial =
    fun obs tm ->
@@ -360,7 +383,7 @@ module Observations = struct
     | Single (Some tok1) -> Multiple (tok1, Snoc (Emp, Term tm), None)
     | Multiple (tok1, inner, None) -> Multiple (tok1, Snoc (inner, Term tm), None)
     | Multiple (tok1, inner, Some tok2) ->
-        Multiple (tok1, Snoc (Snoc (inner, Token tok2), Term tm), None)
+        Multiple (tok1, Snoc (Snoc (inner, tok_of_ss tok2), Term tm), None)
 
   let of_partial : partial -> t = function
     | Single (Some tok) -> Single tok
@@ -432,12 +455,18 @@ let is_case = function
 
 let split_last_whitespace (obs : observations) : observations * Whitespace.t list =
   match obs with
-  | Single (tok, (ws, loc)) ->
+  | Single (Left (tok, (ws, loc))) ->
       let first, rest = Whitespace.split ws in
-      (Single (tok, (first, loc)), rest)
-  | Multiple (tok1, obs, (tok2, (ws2, loc))) ->
+      (Single (Left (tok, (first, loc))), rest)
+  | Single (Right ((tok, (ws, loc)), sups)) ->
+      let first, rest = Whitespace.split ws in
+      (Single (Right ((tok, (first, loc)), sups)), rest)
+  | Multiple (tok1, obs, Left (tok2, (ws2, loc))) ->
       let first, rest = Whitespace.split ws2 in
-      (Multiple (tok1, obs, (tok2, (first, loc))), rest)
+      (Multiple (tok1, obs, Left (tok2, (first, loc))), rest)
+  | Multiple (tok1, obs, Right ((tok2, (ws2, loc)), sups)) ->
+      let first, rest = Whitespace.split ws2 in
+      (Multiple (tok1, obs, Right ((tok2, (first, loc)), sups)), rest)
 
 let rec split_ending_whitespace : type lt ls rt rs.
     (lt, ls, rt, rs) parse located -> (lt, ls, rt, rs) parse located * Whitespace.t list = function

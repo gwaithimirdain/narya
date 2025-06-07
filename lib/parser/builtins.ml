@@ -982,9 +982,9 @@ let rec pp_tuple_fields first prews accum obs : document * Whitespace.t list =
         (Printf.sprintf "tuple (pp, Term, Token %s, length %d)" (Token.to_string tok)
            (List.length obs))
   | Term _ :: _ -> invalid (Printf.sprintf "tuple (pp, Term, length %d)" (List.length obs))
-  | Token (tok, _) :: _ ->
+  | Token (tok, _) :: _ | Ss_token ((tok, _), _) :: _ ->
       invalid
-        (Printf.sprintf "tuple (pp, Token %s, length %d)" (Token.to_string tok) (List.length obs))
+        (Printf.sprintf "tuple (pp, Ss_token %s, length %d)" (Token.to_string tok) (List.length obs))
   | [] -> invalid (Printf.sprintf "tuple (pp, length %d)" (List.length obs))
 
 let pp_tuple_term obs =
