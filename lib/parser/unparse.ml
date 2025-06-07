@@ -529,11 +529,11 @@ and unparse_lam : type n lt ls rt rs s.
             type 'acc t = (string option * [ `Explicit | `Implicit ]) Bwd.t
           end) in
           (* Apparently we need to define the folding function explicitly with a type to make it come out sufficiently polymorphic. *)
-          let folder : type left right k m.
+          let folder : type left k m.
               (k, m) sface ->
               (string option * [ `Explicit | `Implicit ]) Bwd.t ->
-              (left, k, string option, right) NFamOf.t ->
-              (left, k, unit, right) NFamOf.t * (string option * [ `Explicit | `Implicit ]) Bwd.t =
+              (left, k, string option) NFamOf.t ->
+              (left, k, unit) NFamOf.t * (string option * [ `Explicit | `Implicit ]) Bwd.t =
            fun s acc (NFamOf x) ->
             let implicit =
               match is_id_sface s with
@@ -933,18 +933,18 @@ let rec unparse_ctx : type a b.
             type 'n t = (string * [ `Original | `Renamed ], 'n) Bwv.t
           end in
           let module Fold = NICubeOf.Traverse (T) in
-          let do_var : type left right m n.
+          let do_var : type left m n.
               (m, n) sface ->
-              (left, m, string option, right) NFamOf.t ->
-              right T.t ->
-              left T.t * (left, m, string * [ `Original | `Renamed ], right) NFamOf.t =
+              (left, m, string option) NFamOf.t ->
+              left N.suc T.t ->
+              left T.t * (left, m, string * [ `Original | `Renamed ]) NFamOf.t =
            fun _ (NFamOf _) (Snoc (xs, x)) -> (xs, NFamOf x) in
           let _, vardata = Fold.fold_map_right { foldmap = do_var } vars xs in
           (* Then we project out the variable names alone.  TODO: Can we do this as part of the same iteration?  It would require a two-output version of the traversal.  *)
-          let projector : type left right m n.
+          let projector : type left m n.
               (m, n) sface ->
-              (left, m, string * [ `Original | `Renamed ], right) NFamOf.t ->
-              (left, m, string option, right) NFamOf.t =
+              (left, m, string * [ `Original | `Renamed ]) NFamOf.t ->
+              (left, m, string option) NFamOf.t =
            fun _ (NFamOf (x, _)) -> NFamOf (Some x) in
           let xs = NICubeOf.map { map = projector } vardata in
           (* With the variables projected out, we add them to the Names.t.  We use Names.unsafe_add because at this point the variables have already been uniquified by Names.uniquify_vars. *)

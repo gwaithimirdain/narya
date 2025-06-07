@@ -429,7 +429,11 @@ module TubeOf : sig
   val append_bwd : 'a Bwd.t -> ('m, 'n, 'mn, 'a) t -> 'a Bwd.t
 end
 
-module Icube (F : Fam4) : sig
+module type Suc = sig
+  type 'a suc
+end
+
+module Icube (S : Suc) (F : Fam3) : sig
   type (_, _, _, _, _) gt
   type ('left, 'n, 'b, 'right) t = ('left, 'n, 'n, 'b, 'right) gt
 
@@ -437,9 +441,7 @@ module Icube (F : Fam4) : sig
 
   module Applicatic (M : Util.Applicative.Plain) : sig
     type ('n, 'b, 'c) mapperM = {
-      map :
-        'left 'right 'm.
-        ('m, 'n) sface -> ('left, 'm, 'b, 'right) F.t -> ('left, 'm, 'c, 'right) F.t M.t;
+      map : 'left 'right 'm. ('m, 'n) sface -> ('left, 'm, 'b) F.t -> ('left, 'm, 'c) F.t M.t;
     }
 
     val mapM : ('n, 'b, 'c) mapperM -> ('left, 'n, 'b, 'right) t -> ('left, 'n, 'c, 'right) t M.t
@@ -455,8 +457,8 @@ module Icube (F : Fam4) : sig
         'left 'right 'm.
         ('m, 'n) sface ->
         'left Acc.t ->
-        ('left, 'm, 'b, 'right) F.t ->
-        ('left, 'm, 'c, 'right) F.t * 'right Acc.t;
+        ('left, 'm, 'b) F.t ->
+        ('left, 'm, 'c) F.t * 'left S.suc Acc.t;
     }
 
     val fold_map_left :
@@ -467,11 +469,11 @@ module Icube (F : Fam4) : sig
 
     type ('n, 'b, 'c) right_folder = {
       foldmap :
-        'left 'right 'm.
+        'left 'm.
         ('m, 'n) sface ->
-        ('left, 'm, 'b, 'right) F.t ->
-        'right Acc.t ->
-        'left Acc.t * ('left, 'm, 'c, 'right) F.t;
+        ('left, 'm, 'b) F.t ->
+        'left S.suc Acc.t ->
+        'left Acc.t * ('left, 'm, 'c) F.t;
     }
 
     val fold_map_right :
@@ -481,7 +483,7 @@ module Icube (F : Fam4) : sig
       'left Acc.t * ('left, 'n, 'c, 'right) t
 
     type (_, _, _) fwrap_left =
-      | Fwrap : ('left, 'm, 'b, 'right) F.t * 'right Acc.t -> ('left, 'm, 'b) fwrap_left
+      | Fwrap : ('left, 'm, 'b) F.t * 'left S.suc Acc.t -> ('left, 'm, 'b) fwrap_left
 
     type (_, _, _, _) gwrap_left =
       | Wrap : ('left, 'm, 'mk, 'b, 'right) gt * 'right Acc.t -> ('left, 'm, 'mk, 'b) gwrap_left
@@ -493,35 +495,20 @@ module Icube (F : Fam4) : sig
     }
 
     val build_left : 'n D.t -> ('n, 'b) builder_leftM -> 'left Acc.t -> ('left, 'n, 'b) wrap_left
-
-    type (_, _, _) fwrap_right =
-      | Fwrap : 'left Acc.t * ('left, 'm, 'b, 'right) F.t -> ('m, 'b, 'right) fwrap_right
-
-    type (_, _, _, _) gwrap_right =
-      | Wrap : 'left Acc.t * ('left, 'm, 'mk, 'b, 'right) gt -> ('m, 'mk, 'b, 'right) gwrap_right
-
-    type ('m, 'b, 'right) wrap_right = ('m, 'm, 'b, 'right) gwrap_right
-
-    type ('n, 'b) builder_rightM = {
-      build : 'right 'm. ('m, 'n) sface -> 'right Acc.t -> ('m, 'b, 'right) fwrap_right;
-    }
-
-    val build_right :
-      'n D.t -> ('n, 'b) builder_rightM -> 'right Acc.t -> ('n, 'b, 'right) wrap_right
   end
 
-  type (_, _) fbiwrap = Fbiwrap : ('left, 'n, 'b, 'right) F.t -> ('n, 'b) fbiwrap
+  type (_, _) fbiwrap = Fbiwrap : ('left, 'n, 'b) F.t -> ('n, 'b) fbiwrap
 
   val find : ('left, 'n, 'b, 'right) t -> ('k, 'n) sface -> ('k, 'b) fbiwrap
   val find_top : ('left, 'n, 'b, 'right) t -> ('n, 'b) fbiwrap
 end
 
 module NFamOf : sig
-  type (_, _, _, _) t = NFamOf : 'b -> ('left, 'n, 'b, 'left N.suc) t
+  type (_, _, _) t = NFamOf : 'b -> ('left, 'n, 'b) t
 end
 
 module NICubeOf : sig
-  include module type of Icube (NFamOf)
+  include module type of Icube (N) (NFamOf)
   module NFold : module type of Traverse (N)
 
   val singleton : 'b -> ('left, D.zero, 'b, 'left N.suc) t

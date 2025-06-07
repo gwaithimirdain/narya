@@ -56,11 +56,13 @@ let rec typefam : type a b.
 let rec motive_of_family : type a b.
     (a, b) Ctx.t -> kinetic value -> kinetic value -> (b, kinetic) term =
  fun ctx tm ty ->
-  let module F = struct
-    type (_, _, _, _) t =
-      | Rbtm : ('left, kinetic) term -> ('left, 'c, 'any, ('left, D.zero) snoc) t
+  let module S = struct
+    type 'a suc = ('a, D.zero) snoc
   end in
-  let module FCube = Icube (F) in
+  let module F = struct
+    type (_, _, _) t = Rbtm : ('left, kinetic) term -> ('left, 'c, 'any) t
+  end in
+  let module FCube = Icube (S) (F) in
   let module C = struct
     type 'b t = 'b Ctx.any
   end in
@@ -69,8 +71,8 @@ let rec motive_of_family : type a b.
   end in
   let module MC = FCube.Traverse (C) in
   let module MT = FCube.Traverse (T) in
-  let folder : type left m any right.
-      (left, m, any, right) F.t -> right T.t -> left T.t * (left, m, any, right) F.t =
+  let folder : type left m any.
+      (left, m, any) F.t -> (left, D.zero) snoc T.t -> left T.t * (left, m, any) F.t =
    fun (Rbtm dom) cod ->
     (Pi (singleton_variables D.zero None, CubeOf.singleton dom, CodCube.singleton cod), Rbtm dom)
   in

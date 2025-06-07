@@ -133,10 +133,10 @@ let uniquify_cube : type n left right.
     (left, n, string option, right) NICubeOf.t * int StringMap.t =
  fun ?(force_names = false) names used ->
   (* Apparently we need to define the iteration function with an explicit type so that it ends up sufficiently polymorphic. *)
-  let uniquify_nfamof : type m left right.
-      (left, m, string option, right) NFamOf.t ->
+  let uniquify_nfamof : type m left.
+      (left, m, string option) NFamOf.t ->
       int StringMap.t ->
-      (left, m, string option, right) NFamOf.t * int StringMap.t =
+      (left, m, string option) NFamOf.t * int StringMap.t =
    fun (NFamOf name) used ->
     let name, _, used = uniquify_opt ~force_names name used in
     (NFamOf name, used) in
