@@ -330,6 +330,78 @@ module Icube (S : Suc) (F : Fam3) = struct
    fun tr -> gfind_top tr
 end
 
+module IcubeTraverse2 (S1 : Suc) (S2 : Suc) (F1 : Fam3) (F2 : Fam3) (Acc : Fam2) = struct
+  module C1 = Icube (S1) (F1)
+  module C2 = Icube (S2) (F2)
+
+  type ('n, 'b, 'c) left_folder = {
+    foldmap :
+      'left1 'left2 'm.
+      ('m, 'n) sface ->
+      ('left1, 'left2) Acc.t ->
+      ('left1, 'm, 'b) F1.t ->
+      ('left2, 'm, 'c) F2.t * ('left1 S1.suc, 'left2 S2.suc) Acc.t;
+  }
+
+  type (_, _, _, _, _) gfolded =
+    | Gfolded :
+        ('left2, 'm, 'km, 'c, 'right2) C2.gt * ('right1, 'right2) Acc.t
+        -> ('left2, 'm, 'km, 'c, 'right1) gfolded
+
+  type (_, _, _, _, _, _) gfolded_branches =
+    | Gfolded_branches :
+        ('left2, 'len, 'm, 'km, 'c, 'right2) C2.branches * ('right1, 'right2) Acc.t
+        -> ('left2, 'len, 'm, 'km, 'c, 'right1) gfolded_branches
+
+  let rec gfold_map_left : type k m km n b c l left1 left2 right1.
+      (k, m, km) D.plus ->
+      (l, m, n) D.plus ->
+      (k, l) bwsface ->
+      (n, b, c) left_folder ->
+      (left1, left2) Acc.t ->
+      (left1, m, km, b, right1) C1.gt ->
+      (left2, m, km, c, right1) gfolded =
+   fun km lm d g acc tr ->
+    match tr with
+    | Leaf x ->
+        let Zero, Zero = (km, lm) in
+        let x, acc = g.foldmap (sface_of_bw d) acc x in
+        Gfolded (Leaf x, acc)
+    | Branch (l, ends, mid) ->
+        let (Suc km') = km in
+        let (Gfolded_branches (ends, acc)) =
+          gfold_left_map_branches km' (D.suc_plus lm) d g (Endpoints.indices l) acc ends in
+        let (Gfolded (mid, acc)) =
+          gfold_map_left (D.suc_plus km) (D.suc_plus lm) (Mid d) g acc mid in
+        Gfolded (Branch (l, ends, mid), acc)
+
+  and gfold_left_map_branches : type k m km n b c l len len' left1 left2 right1.
+      (k, m, km) D.plus ->
+      (l N.suc, m, n) D.plus ->
+      (k, l) bwsface ->
+      (n, b, c) left_folder ->
+      (len Endpoints.t, len') Bwv.t ->
+      (left1, left2) Acc.t ->
+      (left1, len', m, km, b, right1) C1.branches ->
+      (left2, len', m, km, c, right1) gfolded_branches =
+   fun km lm d g ixs acc brs ->
+    match (brs, ixs) with
+    | Emp, Emp -> Gfolded_branches (Emp, acc)
+    | Snoc (brs, br), Snoc (ixs, e) ->
+        let (Gfolded_branches (brs, acc)) = gfold_left_map_branches km lm d g ixs acc brs in
+        let (Gfolded (br, acc)) = gfold_map_left km lm (End (e, d)) g acc br in
+        Gfolded_branches (Snoc (brs, br), acc)
+
+  let fold_map_left : type n b c left1 left2 right1.
+      (n, b, c) left_folder ->
+      (left1, left2) Acc.t ->
+      (left1, n, n, b, right1) C1.gt ->
+      (left2, n, n, c, right1) gfolded =
+   fun g acc x ->
+    let n = C1.dim x in
+    gfold_map_left (D.zero_plus n) (D.zero_plus n) Zero g acc x
+end
+
 (* The most important case of indexed cubes is when the indices are type-level natural numbers that simply count how many entries there are in the cube.  TODO: Would it be easier to implement this case directly rather than as a special case of the more general version above, and if so would it simplify other things?  E.g. require fewer type annotations in uses?  It might also allow generic traversals to work. *)
 
 module NFamOf = struct

@@ -434,7 +434,7 @@ module type Suc = sig
 end
 
 module Icube (S : Suc) (F : Fam3) : sig
-  type (_, _, _, _, _) gt
+  type ('left, 'n, 'm, 'b, 'right) gt
   type ('left, 'n, 'b, 'right) t = ('left, 'n, 'n, 'b, 'right) gt
 
   val dim : ('left, 'n, 'b, 'right) t -> 'n D.t
@@ -451,7 +451,7 @@ module Icube (S : Suc) (F : Fam3) : sig
 
   val map : ('n, 'b, 'c) IdM.mapperM -> ('left, 'n, 'b, 'right) t -> ('left, 'n, 'c, 'right) t
 
-  module Traverse : functor (Acc : Util.Signatures.Fam) -> sig
+  module Traverse : functor (Acc : Fam) -> sig
     type ('n, 'b, 'c) left_folder = {
       foldmap :
         'left 'right 'm.
@@ -501,6 +501,36 @@ module Icube (S : Suc) (F : Fam3) : sig
 
   val find : ('left, 'n, 'b, 'right) t -> ('k, 'n) sface -> ('k, 'b) fbiwrap
   val find_top : ('left, 'n, 'b, 'right) t -> ('n, 'b) fbiwrap
+end
+
+module IcubeTraverse2 (S1 : Suc) (S2 : Suc) (F1 : Fam3) (F2 : Fam3) (Acc : Fam2) : sig
+  module C1 : module type of struct
+    include Icube (S1) (F1)
+  end
+
+  module C2 : module type of struct
+    include Icube (S2) (F2)
+  end
+
+  type ('n, 'b, 'c) left_folder = {
+    foldmap :
+      'left1 'left2 'm.
+      ('m, 'n) sface ->
+      ('left1, 'left2) Acc.t ->
+      ('left1, 'm, 'b) F1.t ->
+      ('left2, 'm, 'c) F2.t * ('left1 S1.suc, 'left2 S2.suc) Acc.t;
+  }
+
+  type (_, _, _, _, _) gfolded =
+    | Gfolded :
+        ('left2, 'm, 'km, 'c, 'right2) C2.gt * ('right1, 'right2) Acc.t
+        -> ('left2, 'm, 'km, 'c, 'right1) gfolded
+
+  val fold_map_left :
+    ('n, 'b, 'c) left_folder ->
+    ('left1, 'left2) Acc.t ->
+    ('left1, 'n, 'b, 'right1) C1.t ->
+    ('left2, 'n, 'n, 'c, 'right1) gfolded
 end
 
 module NFamOf : sig
