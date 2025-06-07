@@ -202,11 +202,32 @@ Some code copied from Coq."
 
 (add-hook 'proof-shell-pre-send-hook 'narya-clear-error-highlights)
 
-(defun narya-clear-error-highlights-on-edit (start end length)
-  "Remove all error overlays when the buffer is edited."
-  (narya-clear-error-highlights))  
+(defun narya-clear-error-highlights-on-edit (start end _length)
+  "Clear error overlays if they intersect the edit."
+  (setq narya-error-overlays
+        (seq-filter
+         (lambda (ovl)
+           (if (and (overlay-start ovl)
+                    (overlay-end ovl)
+                    (<= (overlay-start ovl) end)
+                    (>= (overlay-end ovl) start))
+               (progn (delete-overlay ovl) nil)
+             t))
+         narya-error-overlays)))
 
 (add-hook 'after-change-functions 'narya-clear-error-highlights-on-edit)
+
+(defun narya-clear-error-highlights-on-change ()
+  "Clear error highlights if the processed region shrank (e.g., via undo)."
+  (let* ((current-end (proof-unprocessed-begin))
+         (prev-end (or (get 'narya-clear-error-highlights-on-change 'last-processed-end) 1)))
+    (when (< current-end prev-end)
+      ;; The processed region shrank — clear all error highlights.
+      (narya-clear-error-highlights))
+    ;; Update stored end for next comparison.
+    (put 'narya-clear-error-highlights-on-change 'last-processed-end current-end)))
+
+(add-hook 'proof-state-change-hook #'narya-clear-error-highlights-on-change)
 
 (defvar narya-last-successful-span nil
   "Stores the last successful span.")
