@@ -7,7 +7,7 @@ open Notation
 let must_start_with tok obs =
   match obs with
   | Token (tok', _) :: _ when tok = tok' -> obs
-  | _ -> Token (tok, (None, [])) :: obs
+  | _ -> Token (tok, ([], None)) :: obs
 
 (* Print a variable, with underscore for unnamed variables. *)
 let pp_var : string option -> document = function

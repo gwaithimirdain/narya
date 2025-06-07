@@ -14,6 +14,8 @@ open Range
 open Readback
 module StringMap = Map.Make (String)
 
+let wstok (tok : Token.t) = (tok, ([], None))
+
 (* If the head of an application spine is a constant or constructor, and it has an associated notation, and there are enough of the supplied arguments to instantiate the notation, split off that many arguments and return the notation, those arguments permuted to match the order of the pattern variables in the notation, the symbols to intersperse with them, and the remaining arguments. *)
 let get_notation head args =
   let open Monad.Ops (Monad.Maybe) in
@@ -41,13 +43,12 @@ let get_notation head args =
 (* Put parentheses around a term. *)
 let parenthesize tm =
   unlocated
-    (outfix ~notn:parens
-       ~inner:(Multiple ((LParen, (None, [])), Snoc (Emp, Term tm), (RParen, (None, [])))))
+    (outfix ~notn:parens ~inner:(Multiple (wstok LParen, Snoc (Emp, Term tm), wstok RParen)))
 
 let braceize tm =
   unlocated
     (outfix ~notn:Postprocess.braces
-       ~inner:(Multiple ((LBrace, (None, [])), Snoc (Emp, Term tm), (RBrace, (None, [])))))
+       ~inner:(Multiple (wstok LBrace, Snoc (Emp, Term tm), wstok RBrace)))
 
 (* Put them only if they aren't there already *)
 let parenthesize_maybe (tm : ('lt, 'ls, 'rt, 'rs) parse located) =
@@ -68,20 +69,20 @@ let observations_of_symbols :
     observations =
  fun args inner_symbols ->
   match inner_symbols with
-  | `Single tok -> Single (tok, (None, []))
+  | `Single tok -> Single (wstok tok)
   | `Multiple (first, inner, last) ->
       Multiple
-        ( (first, (None, [])),
+        ( wstok first,
           fst
             (List.fold_left
                (fun (acc, args) symbol ->
                  match (symbol, args) with
-                 | Some tok, _ -> (Snoc (acc, Token (tok, (None, []))), args)
+                 | Some tok, _ -> (Snoc (acc, Token (wstok tok)), args)
                  | None, tm :: args ->
                      (Snoc (acc, Term (tm.unparse No.Interval.entire No.Interval.entire)), args)
                  | None, [] -> fatal (Anomaly "missing argument in observations_of_symbols"))
                (Emp, args) inner),
-          (last, (None, [])) )
+          wstok last )
 
 (* Unparse a notation together with all its arguments. *)
 let unparse_notation : type left tight right lt ls rt rs.
@@ -296,7 +297,7 @@ let rec unparse : type n lt ls rt rs s.
         {
           unparse =
             (fun _ _ ->
-              unlocated (outfix ~notn:universe ~inner:(Single (Ident [ "Type" ], (None, [])))));
+              unlocated (outfix ~notn:universe ~inner:(Single (wstok (Ident [ "Type" ])))));
         }
         (deg_zero n) li ri
   | Inst (ty, tyargs) -> unparse_inst vars ty vars tyargs li ri
@@ -322,9 +323,9 @@ let rec unparse : type n lt ls rt rs s.
             (prefix ~notn:letin
                ~inner:
                  (Multiple
-                    ( (Let, (None, [])),
-                      Emp <: Term (unparse_var x) <: Token (Coloneq, (None, [])) <: Term tm,
-                      (In, (None, [])) ))
+                    ( wstok Let,
+                      Emp <: Term (unparse_var x) <: Token (wstok Coloneq) <: Term tm,
+                      wstok In ))
                ~last:body ~right_ok)
       | None ->
           let body = unparse vars body No.Interval.entire No.Interval.entire in
@@ -334,9 +335,9 @@ let rec unparse : type n lt ls rt rs s.
                (prefix ~notn:letin
                   ~inner:
                     (Multiple
-                       ( (Let, (None, [])),
-                         Emp <: Term (unparse_var x) <: Token (Coloneq, (None, [])) <: Term tm,
-                         (In, (None, [])) ))
+                       ( wstok Let,
+                         Emp <: Term (unparse_var x) <: Token (wstok Coloneq) <: Term tm,
+                         wstok In ))
                   ~last:body ~right_ok)))
   | Lam (Variables (m, _, _), _) ->
       let cube =
@@ -349,9 +350,9 @@ let rec unparse : type n lt ls rt rs s.
         (outfix ~notn:parens
            ~inner:
              (Multiple
-                ( (LParen, (None, [])),
+                ( wstok LParen,
                   Bwd_extra.intersperse
-                    (Token (Op ",", (None, [])))
+                    (Token (wstok (Op ",")))
                     (Bwd.fold_left
                        (fun acc
                             (Term.StructfieldAbwd.Entry
@@ -368,19 +369,19 @@ let rec unparse : type n lt ls rt rs s.
                                    unlocated
                                      (infix ~notn:coloneq
                                         ~first:(unlocated (Ident ([ Field.to_string fld ], [])))
-                                        ~inner:(Single (Coloneq, (None, [])))
+                                        ~inner:(Single (wstok Coloneq))
                                         ~last:fldtm ~left_ok:(No.le_refl No.minus_omega)
                                         ~right_ok:(No.le_refl No.minus_omega))
                                (* An unlabeled 1-tuple is currently unparsed as (_ := M). *)
                                | `Unlabeled when Bwd.length fields = 1 ->
                                    unlocated
                                      (infix ~notn:coloneq ~first:(unlocated (Placeholder []))
-                                        ~inner:(Single (Coloneq, (None, [])))
+                                        ~inner:(Single (wstok Coloneq))
                                         ~last:fldtm ~left_ok:(No.le_refl No.minus_omega)
                                         ~right_ok:(No.le_refl No.minus_omega))
                                | `Unlabeled -> fldtm) ))
                        Emp fields),
-                  (RParen, (None, [])) )))
+                  wstok RParen )))
   | Constr (c, _, args) -> (
       (* TODO: This doesn't print the dimension.  This is correct since constructors don't have to (and in fact *can't* be) written with their dimension, but it could also be somewhat confusing, e.g. printing "refl (0:N)" yields just "0", and similarly "refl (nil. : List N)" yields "nil.". *)
       match unparse_numeral tm with
@@ -568,7 +569,7 @@ and unparse_lam_done : type n lt ls rt rs s.
       let li_ok = No.lt_trans Any_strict left_ok No.minusomega_lt_plusomega in
       let first = unparse_abs xs li li_ok No.minusomega_lt_plusomega in
       let last = unparse vars body No.Interval.entire ri in
-      unlocated (infix ~notn ~first ~inner:(Single (mapsto, (None, []))) ~last ~left_ok ~right_ok)
+      unlocated (infix ~notn ~first ~inner:(Single (wstok mapsto)) ~last ~left_ok ~right_ok)
   | _ ->
       let first =
         unparse_abs xs No.Interval.entire (No.le_plusomega No.minus_omega)
@@ -577,8 +578,7 @@ and unparse_lam_done : type n lt ls rt rs s.
       let left_ok = No.le_refl No.minus_omega in
       let right_ok = No.le_refl No.minus_omega in
       parenthesize
-        (unlocated
-           (infix ~notn ~first ~inner:(Single (mapsto, (None, []))) ~last ~left_ok ~right_ok))
+        (unlocated (infix ~notn ~first ~inner:(Single (wstok mapsto)) ~last ~left_ok ~right_ok))
 
 and unparse_act : type n lt ls rt rs a b.
     n Names.t ->
@@ -757,8 +757,7 @@ and unparse_arrow : type lt ls rt rs.
   | Some left_ok, Some right_ok ->
       let first = dom.unparse li (interval_left arrow) in
       let last = cod.unparse (interval_right arrow) ri in
-      unlocated
-        (infix ~notn:arrow ~first ~inner:(Single (aarrow, (None, []))) ~last ~left_ok ~right_ok)
+      unlocated (infix ~notn:arrow ~first ~inner:(Single (wstok aarrow)) ~last ~left_ok ~right_ok)
   | _ ->
       let first = dom.unparse No.Interval.entire (interval_left arrow) in
       let last = cod.unparse (interval_right arrow) No.Interval.entire in
@@ -766,7 +765,7 @@ and unparse_arrow : type lt ls rt rs.
       let right_ok = No.minusomega_lt_zero in
       parenthesize
         (unlocated
-           (infix ~notn:arrow ~first ~inner:(Single (aarrow, (None, []))) ~last ~left_ok ~right_ok))
+           (infix ~notn:arrow ~first ~inner:(Single (wstok aarrow)) ~last ~left_ok ~right_ok))
 
 and unparse_pis_final : type n lt ls rt rs.
     ?higher:bool ->
@@ -795,7 +794,7 @@ and unparse_pi_dom : type lt ls rt rs.
     (unlocated
        (infix ~notn:asc
           ~first:(unlocated (Ident ([ x ], [])))
-          ~inner:(Single (Colon, (None, [])))
+          ~inner:(Single (wstok Colon))
           ~last:dom ~left_ok:(No.le_refl No.minus_omega) ~right_ok:(No.le_refl No.minus_omega)))
 
 and unparse_higher_pi : type a lt ls rt rs n.

@@ -6,7 +6,7 @@ open Reporter
 module TokMap = Map.Make (Token)
 open Asai.Range
 
-type token_ws = Token.t * (Asai.Range.t option * Whitespace.t list)
+type token_ws = Token.t * (Whitespace.t list * Asai.Range.t option)
 
 (* A notation is either open or closed, on both sides.  We call these two properties combined its "fixity", since they are equivalent to the traditional classification as infix, prefix, postfix, or "outfix".
 
@@ -432,12 +432,12 @@ let is_case = function
 
 let split_last_whitespace (obs : observations) : observations * Whitespace.t list =
   match obs with
-  | Single (tok, (loc, ws)) ->
+  | Single (tok, (ws, loc)) ->
       let first, rest = Whitespace.split ws in
-      (Single (tok, (loc, first)), rest)
-  | Multiple (tok1, obs, (tok2, (loc, ws2))) ->
+      (Single (tok, (first, loc)), rest)
+  | Multiple (tok1, obs, (tok2, (ws2, loc))) ->
       let first, rest = Whitespace.split ws2 in
-      (Multiple (tok1, obs, (tok2, (loc, first))), rest)
+      (Multiple (tok1, obs, (tok2, (first, loc))), rest)
 
 let rec split_ending_whitespace : type lt ls rt rs.
     (lt, ls, rt, rs) parse located -> (lt, ls, rt, rs) parse located * Whitespace.t list = function

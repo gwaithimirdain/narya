@@ -198,11 +198,11 @@ let make_user : prenotation -> notation =
                 bool -> (l, r) Pattern.t -> observation list -> document * Whitespace.t list =
              fun first pat obs ->
               match (pat, obs) with
-              | Op ((op, br, _), pat), Token (op', (_, wsop)) :: obs when op = op' ->
+              | Op ((op, br, _), pat), Token (op', (wsop, _)) :: obs when op = op' ->
                   let rest, ws = go false pat obs in
                   (Token.pp op ^^ pp_ws br wsop ^^ rest, ws)
-              | Op_nil (op, _), [ Token (op', (_, wsop)) ] when op = op' -> (Token.pp op, wsop)
-              | Var_nil ((op, opbr, _), _), [ Token (op', (_, wsop)); Term x ] when op = op' ->
+              | Op_nil (op, _), [ Token (op', (wsop, _)) ] when op = op' -> (Token.pp op, wsop)
+              | Var_nil ((op, opbr, _), _), [ Token (op', (wsop, _)); Term x ] when op = op' ->
                   (* Deal with right-associativity *)
                   let xdoc, xws =
                     match x.value with

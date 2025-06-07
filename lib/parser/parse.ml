@@ -72,7 +72,7 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
                  | Some br, Field (x, p) -> Some ((br, `Term (Field (x, p, w))), state)
                  | _ -> None))) in
     match x with
-    | `Token (tok, w) -> tree br (Observations.snoc_tok obs (tok, (Some loc, w)))
+    | `Token (tok, w) -> tree br (Observations.snoc_tok obs (tok, (w, Some loc)))
     | `Term x -> tree br (Observations.snoc_term obs (locate loc x))
 
   and tree_op : type tight strict.
@@ -86,7 +86,7 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
              match TokMap.find_opt tok ops with
              | Some br -> Some ((br, tok, w), state)
              | None -> None)) in
-    tree optree (Observations.snoc_tok obs (tok, (Some loc, w)))
+    tree optree (Observations.snoc_tok obs (tok, (w, Some loc)))
 
   and entry : type tight strict.
       (tight, strict) tree TokMap.t -> (observations * (tight, strict) notation_in_interval) t =
