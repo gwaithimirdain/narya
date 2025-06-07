@@ -43,105 +43,60 @@ module DeBruijnIndices = struct
   type 'a embed = |
 end
 
-module Make (I : Indices) = struct
-  (* A version of Fwn.bplus operating on I-indices, using I.suc instead of N.suc. *)
+module rec Make : functor (I : Indices) -> sig
   type ('a, 'b, 'ab) bplus =
     | Zero : ('a, Fwn.zero, 'a) bplus
     | Suc : ('a I.suc, 'b, 'ab) bplus -> ('a, 'b Fwn.suc, 'ab) bplus
 
-  let bplus_zero : type a ab. (a, Fwn.zero, ab) bplus -> (a, ab) Eq.t = function
-    | Zero -> Eq
-
-  let bplus_suc : type a b ab. (a, b Fwn.suc, ab) bplus -> (a I.suc, b, ab) bplus = function
-    | Suc ab -> ab
-
-  let rec bplus_right : type a b ab. (a, b, ab) bplus -> b Fwn.t = function
-    | Zero -> Zero
-    | Suc ab -> Suc (bplus_right ab)
+  val bplus_zero : ('a, Fwn.zero, 'ab) bplus -> ('a, 'ab) Eq.t
+  val bplus_suc : ('a, 'b Fwn.suc, 'ab) bplus -> ('a I.suc, 'b, 'ab) bplus
+  val bplus_right : ('a, 'b, 'ab) bplus -> 'b Fwn.t
 
   type ('a, 'b) has_bplus = Bplus : ('a, 'b, 'ab) bplus -> ('a, 'b) has_bplus
 
-  let rec bplus : type a b. b Fwn.t -> (a, b) has_bplus = function
-    | Zero -> Bplus Zero
-    | Suc b ->
-        let (Bplus ab) = bplus b in
-        Bplus (Suc ab)
+  val bplus : 'b Fwn.t -> ('a, 'b) has_bplus
 
-  (* Here's a special kind of Vector of names that raises the parametrizing indices as we go, and also stores the bplus of the starting index with the length.  This simplifies things in a few places where otherwise we would have to store a bplus along with a vector of names to get the correct extended context length for bodies of terms under multiple binders. *)
-  module Namevec = struct
+  module Namevec : sig
     type (_, _, _) t =
       | [] : ('a, Fwn.zero, 'a) t
       | ( :: ) : I.name * ('a I.suc, 'b, 'ab) t -> ('a, 'b Fwn.suc, 'ab) t
 
-    let rec length : type a b ab. (a, b, ab) t -> b Fwn.t = function
-      | [] -> Zero
-      | _ :: xs -> Suc (length xs)
-
-    let rec bplus : type a b ab. (a, b, ab) t -> (a, b, ab) bplus = function
-      | [] -> Zero
-      | _ :: xs -> Suc (bplus xs)
-
-    let rec none : type a b ab. (a, b, ab) bplus -> (a, b, ab) t =
-     fun ab ->
-      match bplus_right ab with
-      | Zero ->
-          let Eq = bplus_zero ab in
-          []
-      | Suc _ ->
-          let ab = bplus_suc ab in
-          I.none :: none ab
-
-    let rec of_vec : type a b ab. (a, b, ab) bplus -> (I.name, b) Vec.t -> (a, b, ab) t =
-     fun ab xs ->
-      match (ab, xs) with
-      | Zero, [] -> []
-      | Suc ab, x :: xs -> x :: of_vec ab xs
+    val length : ('a, 'b, 'ab) t -> 'b Fwn.t
+    val bplus : ('a, 'b, 'ab) t -> ('a, 'b, 'ab) bplus
+    val none : ('a, 'b, 'ab) bplus -> ('a, 'b, 'ab) t
+    val of_vec : ('a, 'b, 'ab) bplus -> (I.name, 'b) Vec.t -> ('a, 'b, 'ab) t
   end
 
-  (* A raw De Bruijn index is a well-scoped (backwards) natural number (or, more generally, an element of I.index) together with a possible face.  During typechecking we will verify that the face, if given, is applicable to the variable as a "cube variable", and compile the combination into a more strongly well-scoped kind of index. *)
   type 'a index = 'a I.index * any_sface option
 
-  (* Synthesizable raw terms *)
   type _ synth =
     | Var : 'a index -> 'a synth
     | Const : Constant.t -> 'a synth
-    (* A field projection from a possibly-higher-coinductive type comes with a suffix that is a string of integers, denoting a partial bijection between n and m that is total on n.  This is the same as an injection from n to m, or equivalently an insertion of n into m∖l to produce m, where l = image(n). *)
     | Field : 'a synth located * [ `Name of string * int list | `Int of int ] -> 'a synth
     | Pi : I.name * 'a check located * 'a I.suc check located -> 'a synth
-    (* The location of the implicitness flag is, in the implicit case, the location of the braces surrounding the implicit argument. *)
     | App : 'a synth located * 'a check located * [ `Implicit | `Explicit ] located -> 'a synth
     | Asc : 'a check located * 'a check located -> 'a synth
     | UU : 'a synth
-    (* A Let can either synthesize or (sometimes) check.  It synthesizes only if its body also synthesizes, but we wait until typechecking type to look for that, so that if it occurs in a checking context the body can also be checking.  Thus, we make it a "synthesizing term".  The term being bound must also synthesize; the shorthand notation "let x : A := M" is expanded during parsing to "let x := M : A". *)
     | Let : I.name * 'a synth located * 'a I.suc check located -> 'a synth
-    (* Letrec has a telescope of types, so that each can depend on the previous ones, and an equal-length vector of bound terms, all in the context extended by all the variables being bound, plus a body that is also in that context. *)
     | Letrec : ('a, 'b, 'ab) tel * ('ab check located, 'b) Vec.t * 'ab check located -> 'a synth
-    (* An Act can also sometimes check, if its body checks and the degeneracy is a pure permutation.  But otherwise, it synthesizes and so must its body.  *)
     | Act : string * ('m, 'n) deg * 'a check located -> 'a synth
-    (* A Match can also sometimes check, but synthesizes if it has an explicit return type or if it is nondependent and its first branch synthesizes. *)
     | Match : {
         tm : 'a synth located;
-        (* Implicit means no "return" statement was given, so Narya has to guess what to do.  Explicit means a "return" statement was given with a motive.  "Nondep" means a placeholder return statement like "_ ↦ _" was given, indicating that a non-dependent matching is intended (to silence hints about fallback from the implicit case). *)
         sort : [ `Implicit | `Explicit of 'a check located | `Nondep of int located ];
         branches : (Constr.t, 'a branch) Abwd.t;
         refutables : 'a refutables option;
       }
         -> 'a synth
     | Fail : Reporter.Code.t -> 'a synth
-    (* Pass the synthesized type of an argument as an implicit first argument of a function. *)
     | ImplicitSApp : 'a synth located * Asai.Range.t option * 'a synth located -> 'a synth
-    (* Try several terms, testing for each whether the synthesized type of the specified term has certain constructors or fields. *)
     | SFirst :
         ([ `Data of Constr.t list | `Codata of string list | `Any ] * 'a synth * bool) list
         * 'a synth option
         -> 'a synth
-    (* Chain of equational reasoning *)
     | Calc : 'a synth located * ('a check located * 'a check located option) list -> 'a synth
 
-  (* Checkable raw terms *)
   and _ check =
     | Synth : 'a synth -> 'a check
-    (* An abstraction knows whether it is a cube abstraction (⤇) or a normal one (↦).  In the former case it stores an optional dimension, so that multiple variables in the same abstraction (x y ⤇) can be enforced to be the same dimension, and the location of the previous variable that set the dimension. *)
     | Lam : {
         name : I.name located;
         cube : [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ] located;
@@ -149,23 +104,17 @@ module Make (I : Indices) = struct
         body : 'a I.suc check located;
       }
         -> 'a check
-    (* A "Struct" is our current name for both tuples and comatches, which share a lot of their implementation even though they are conceptually and syntactically distinct.  Those with eta=`Eta are tuples, those with eta=`Noeta are comatches.  We index them by an option so as to include any unlabeled fields, with their relative order to the labeled ones.  The field hasn't been interned to an intrinsic dimension yet (that depends on what it checks against), so it's just a string name, plus a list of strings to indicate a pbij for higher fields.  We also store whether they were defined with a ↦ or a ⤇. *)
     | Struct :
         ('s, 'et) eta
         * ((string * string list) option, [ `Normal | `Cube ] located * 'a check located) Abwd.t
         -> 'a check
     | Constr : Constr.t located * 'a check located list -> 'a check
     | Numeral : Q.t -> 'a check
-    (* "[]", which could be either an empty pattern-matching lambda or an empty comatch *)
     | Empty_co_match : 'a check
     | Data : (Constr.t, 'a dataconstr located) Abwd.t -> 'a check
-    (* A codatatype binds one more "self" variable in the types of each of its fields.  For a higher-dimensional codatatype (like a codata version of Gel), this becomes a cube of variables.  The field also knows its dimension already. *)
     | Codata : (Field.wrapped, 'a codatafield) Abwd.t -> 'a check
-    (* A record type binds its "self" variable namelessly, exposing it to the user by additional variables that are bound locally to its fields.  This can't be "cubeified" as easily, so we have the user specify a list of ordinary variables to be its boundary.  Thus, in practice below 'c must be a number of faces associated to a dimension, but the parser doesn't know the dimension, so it can't ensure that.  The unnamed internal variable is included as the last one. *)
     | Record : ('a, 'c, 'ac) Namevec.t located * ('ac, 'd, 'acd) tel * opacity -> 'a check
-    (* Empty match against the first one of the arguments belonging to an empty type. *)
     | Refute : 'a synth located list * [ `Explicit | `Implicit ] -> 'a check
-    (* A hole must store the entire "state" from when it was entered, so that the user can later go back and fill it with a term that would have been valid in its original position.  This includes the variables in lexical scope, which are available only during parsing, so we store them here at that point.  During typechecking, when the actual metavariable is created, we save the lexical scope along with its other context and type data.  A hole also stores its source location so that proofgeneral can create an overlay at that place, and the notation tightnesses of the hole location. *)
     | Hole : {
         scope : 'a I.scope;
         loc : Asai.Range.t;
@@ -174,44 +123,201 @@ module Make (I : Indices) = struct
         num : int ref;
       }
         -> 'a check
-    (* Force a leaf of the case tree *)
     | Realize : 'a check -> 'a check
-    (* Pass the type being checked against as the implicit first argument of a function. *)
     | ImplicitApp : 'a synth located * (Asai.Range.t option * 'a check located) list -> 'a check
-    (* Embed an arbitrary object *)
     | Embed : 'a I.embed -> 'a check
-    (* Try several terms, testing for each whether the goal type has certain constructors or fields. *)
     | First :
         ([ `Data of Constr.t list | `Codata of string list | `Any ] * 'a check * bool) list
         -> 'a check
-    (* Check a term, but then verify its correctness with an external oracle. *)
     | Oracle : 'a check located -> 'a check
 
-  (* The location of the namevec is that of the whole pattern.  The location of the cube flag is that of the mapsto. *)
   and _ branch =
     | Branch :
         ('a, 'b, 'ab) Namevec.t located * [ `Cube | `Normal ] located * 'ab check located
         -> 'a branch
 
-  (* *)
   and _ dataconstr = Dataconstr : ('a, 'b, 'ab) tel * 'ab check located option -> 'a dataconstr
-
-  (* A field of a codatatype has a self variable and a type.  At the raw level we don't need any more information about higher fields. *)
   and _ codatafield = Codatafield : I.name * 'a I.suc check located -> 'a codatafield
-
-  (* A raw match stores the information about the pattern variables available from previous matches that could be used to refute missing cases.  But it can't store them as raw terms, since they have to be in the correct context extended by the new pattern variables generated in any such case.  So it stores them as a callback that puts them in any such extended context. *)
   and 'a refutables = { refutables : 'b 'ab. ('a, 'b, 'ab) bplus -> 'ab synth located list }
 
-  (* An ('a, 'b, 'ab) tel is a raw telescope of length 'b in context 'a, with 'ab = 'a+'b the extended context. *)
   and (_, _, _) tel =
     | Emp : ('a, Fwn.zero, 'a) tel
     | Ext : I.name * 'a check located * ('a I.suc, 'b, 'ab) tel -> ('a, 'b Fwn.suc, 'ab) tel
 
-  (* The length of a telescope is a forwards nat. *)
-  let rec fwn_of_tel : type a b c. (a, b, c) tel -> b Fwn.t = function
-    | Emp -> Zero
-    | Ext (_, _, tel) -> Suc (fwn_of_tel tel)
-end
+  val fwn_of_tel : ('a, 'b, 'c) tel -> 'b Fwn.t
+end =
+functor
+  (I : Indices)
+  ->
+  struct
+    (* A version of Fwn.bplus operating on I-indices, using I.suc instead of N.suc. *)
+    type ('a, 'b, 'ab) bplus =
+      | Zero : ('a, Fwn.zero, 'a) bplus
+      | Suc : ('a I.suc, 'b, 'ab) bplus -> ('a, 'b Fwn.suc, 'ab) bplus
+
+    let bplus_zero : type a ab. (a, Fwn.zero, ab) bplus -> (a, ab) Eq.t = function
+      | Zero -> Eq
+
+    let bplus_suc : type a b ab. (a, b Fwn.suc, ab) bplus -> (a I.suc, b, ab) bplus = function
+      | Suc ab -> ab
+
+    let rec bplus_right : type a b ab. (a, b, ab) bplus -> b Fwn.t = function
+      | Zero -> Zero
+      | Suc ab -> Suc (bplus_right ab)
+
+    type ('a, 'b) has_bplus = Bplus : ('a, 'b, 'ab) bplus -> ('a, 'b) has_bplus
+
+    let rec bplus : type a b. b Fwn.t -> (a, b) has_bplus = function
+      | Zero -> Bplus Zero
+      | Suc b ->
+          let (Bplus ab) = bplus b in
+          Bplus (Suc ab)
+
+    (* Here's a special kind of Vector of names that raises the parametrizing indices as we go, and also stores the bplus of the starting index with the length.  This simplifies things in a few places where otherwise we would have to store a bplus along with a vector of names to get the correct extended context length for bodies of terms under multiple binders. *)
+    module Namevec = struct
+      type (_, _, _) t =
+        | [] : ('a, Fwn.zero, 'a) t
+        | ( :: ) : I.name * ('a I.suc, 'b, 'ab) t -> ('a, 'b Fwn.suc, 'ab) t
+
+      let rec length : type a b ab. (a, b, ab) t -> b Fwn.t = function
+        | [] -> Zero
+        | _ :: xs -> Suc (length xs)
+
+      let rec bplus : type a b ab. (a, b, ab) t -> (a, b, ab) bplus = function
+        | [] -> Zero
+        | _ :: xs -> Suc (bplus xs)
+
+      let rec none : type a b ab. (a, b, ab) bplus -> (a, b, ab) t =
+       fun ab ->
+        match bplus_right ab with
+        | Zero ->
+            let Eq = bplus_zero ab in
+            []
+        | Suc _ ->
+            let ab = bplus_suc ab in
+            I.none :: none ab
+
+      let rec of_vec : type a b ab. (a, b, ab) bplus -> (I.name, b) Vec.t -> (a, b, ab) t =
+       fun ab xs ->
+        match (ab, xs) with
+        | Zero, [] -> []
+        | Suc ab, x :: xs -> x :: of_vec ab xs
+    end
+
+    (* A raw De Bruijn index is a well-scoped (backwards) natural number (or, more generally, an element of I.index) together with a possible face.  During typechecking we will verify that the face, if given, is applicable to the variable as a "cube variable", and compile the combination into a more strongly well-scoped kind of index. *)
+    type 'a index = 'a I.index * any_sface option
+
+    (* Synthesizable raw terms *)
+    type _ synth =
+      | Var : 'a index -> 'a synth
+      | Const : Constant.t -> 'a synth
+      (* A field projection from a possibly-higher-coinductive type comes with a suffix that is a string of integers, denoting a partial bijection between n and m that is total on n.  This is the same as an injection from n to m, or equivalently an insertion of n into m∖l to produce m, where l = image(n). *)
+      | Field : 'a synth located * [ `Name of string * int list | `Int of int ] -> 'a synth
+      | Pi : I.name * 'a check located * 'a I.suc check located -> 'a synth
+      (* The location of the implicitness flag is, in the implicit case, the location of the braces surrounding the implicit argument. *)
+      | App : 'a synth located * 'a check located * [ `Implicit | `Explicit ] located -> 'a synth
+      | Asc : 'a check located * 'a check located -> 'a synth
+      | UU : 'a synth
+      (* A Let can either synthesize or (sometimes) check.  It synthesizes only if its body also synthesizes, but we wait until typechecking type to look for that, so that if it occurs in a checking context the body can also be checking.  Thus, we make it a "synthesizing term".  The term being bound must also synthesize; the shorthand notation "let x : A := M" is expanded during parsing to "let x := M : A". *)
+      | Let : I.name * 'a synth located * 'a I.suc check located -> 'a synth
+      (* Letrec has a telescope of types, so that each can depend on the previous ones, and an equal-length vector of bound terms, all in the context extended by all the variables being bound, plus a body that is also in that context. *)
+      | Letrec : ('a, 'b, 'ab) tel * ('ab check located, 'b) Vec.t * 'ab check located -> 'a synth
+      (* An Act can also sometimes check, if its body checks and the degeneracy is a pure permutation.  But otherwise, it synthesizes and so must its body.  *)
+      | Act : string * ('m, 'n) deg * 'a check located -> 'a synth
+      (* A Match can also sometimes check, but synthesizes if it has an explicit return type or if it is nondependent and its first branch synthesizes. *)
+      | Match : {
+          tm : 'a synth located;
+          (* Implicit means no "return" statement was given, so Narya has to guess what to do.  Explicit means a "return" statement was given with a motive.  "Nondep" means a placeholder return statement like "_ ↦ _" was given, indicating that a non-dependent matching is intended (to silence hints about fallback from the implicit case). *)
+          sort : [ `Implicit | `Explicit of 'a check located | `Nondep of int located ];
+          branches : (Constr.t, 'a branch) Abwd.t;
+          refutables : 'a refutables option;
+        }
+          -> 'a synth
+      | Fail : Reporter.Code.t -> 'a synth
+      (* Pass the synthesized type of an argument as an implicit first argument of a function. *)
+      | ImplicitSApp : 'a synth located * Asai.Range.t option * 'a synth located -> 'a synth
+      (* Try several terms, testing for each whether the synthesized type of the specified term has certain constructors or fields. *)
+      | SFirst :
+          ([ `Data of Constr.t list | `Codata of string list | `Any ] * 'a synth * bool) list
+          * 'a synth option
+          -> 'a synth
+      (* Chain of equational reasoning *)
+      | Calc : 'a synth located * ('a check located * 'a check located option) list -> 'a synth
+
+    (* Checkable raw terms *)
+    and _ check =
+      | Synth : 'a synth -> 'a check
+      (* An abstraction knows whether it is a cube abstraction (⤇) or a normal one (↦).  In the former case it stores an optional dimension, so that multiple variables in the same abstraction (x y ⤇) can be enforced to be the same dimension, and the location of the previous variable that set the dimension. *)
+      | Lam : {
+          name : I.name located;
+          cube : [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ] located;
+          implicit : [ `Explicit | `Implicit ];
+          body : 'a I.suc check located;
+        }
+          -> 'a check
+      (* A "Struct" is our current name for both tuples and comatches, which share a lot of their implementation even though they are conceptually and syntactically distinct.  Those with eta=`Eta are tuples, those with eta=`Noeta are comatches.  We index them by an option so as to include any unlabeled fields, with their relative order to the labeled ones.  The field hasn't been interned to an intrinsic dimension yet (that depends on what it checks against), so it's just a string name, plus a list of strings to indicate a pbij for higher fields.  We also store whether they were defined with a ↦ or a ⤇. *)
+      | Struct :
+          ('s, 'et) eta
+          * ((string * string list) option, [ `Normal | `Cube ] located * 'a check located) Abwd.t
+          -> 'a check
+      | Constr : Constr.t located * 'a check located list -> 'a check
+      | Numeral : Q.t -> 'a check
+      (* "[]", which could be either an empty pattern-matching lambda or an empty comatch *)
+      | Empty_co_match : 'a check
+      | Data : (Constr.t, 'a dataconstr located) Abwd.t -> 'a check
+      (* A codatatype binds one more "self" variable in the types of each of its fields.  For a higher-dimensional codatatype (like a codata version of Gel), this becomes a cube of variables.  The field also knows its dimension already. *)
+      | Codata : (Field.wrapped, 'a codatafield) Abwd.t -> 'a check
+      (* A record type binds its "self" variable namelessly, exposing it to the user by additional variables that are bound locally to its fields.  This can't be "cubeified" as easily, so we have the user specify a list of ordinary variables to be its boundary.  Thus, in practice below 'c must be a number of faces associated to a dimension, but the parser doesn't know the dimension, so it can't ensure that.  The unnamed internal variable is included as the last one. *)
+      | Record : ('a, 'c, 'ac) Namevec.t located * ('ac, 'd, 'acd) tel * opacity -> 'a check
+      (* Empty match against the first one of the arguments belonging to an empty type. *)
+      | Refute : 'a synth located list * [ `Explicit | `Implicit ] -> 'a check
+      (* A hole must store the entire "state" from when it was entered, so that the user can later go back and fill it with a term that would have been valid in its original position.  This includes the variables in lexical scope, which are available only during parsing, so we store them here at that point.  During typechecking, when the actual metavariable is created, we save the lexical scope along with its other context and type data.  A hole also stores its source location so that proofgeneral can create an overlay at that place, and the notation tightnesses of the hole location. *)
+      | Hole : {
+          scope : 'a I.scope;
+          loc : Asai.Range.t;
+          li : No.interval;
+          ri : No.interval;
+          num : int ref;
+        }
+          -> 'a check
+      (* Force a leaf of the case tree *)
+      | Realize : 'a check -> 'a check
+      (* Pass the type being checked against as the implicit first argument of a function. *)
+      | ImplicitApp : 'a synth located * (Asai.Range.t option * 'a check located) list -> 'a check
+      (* Embed an arbitrary object *)
+      | Embed : 'a I.embed -> 'a check
+      (* Try several terms, testing for each whether the goal type has certain constructors or fields. *)
+      | First :
+          ([ `Data of Constr.t list | `Codata of string list | `Any ] * 'a check * bool) list
+          -> 'a check
+      (* Check a term, but then verify its correctness with an external oracle. *)
+      | Oracle : 'a check located -> 'a check
+
+    (* The location of the namevec is that of the whole pattern.  The location of the cube flag is that of the mapsto. *)
+    and _ branch =
+      | Branch :
+          ('a, 'b, 'ab) Namevec.t located * [ `Cube | `Normal ] located * 'ab check located
+          -> 'a branch
+
+    (* *)
+    and _ dataconstr = Dataconstr : ('a, 'b, 'ab) tel * 'ab check located option -> 'a dataconstr
+
+    (* A field of a codatatype has a self variable and a type.  At the raw level we don't need any more information about higher fields. *)
+    and _ codatafield = Codatafield : I.name * 'a I.suc check located -> 'a codatafield
+
+    (* A raw match stores the information about the pattern variables available from previous matches that could be used to refute missing cases.  But it can't store them as raw terms, since they have to be in the correct context extended by the new pattern variables generated in any such case.  So it stores them as a callback that puts them in any such extended context. *)
+    and 'a refutables = { refutables : 'b 'ab. ('a, 'b, 'ab) bplus -> 'ab synth located list }
+
+    (* An ('a, 'b, 'ab) tel is a raw telescope of length 'b in context 'a, with 'ab = 'a+'b the extended context. *)
+    and (_, _, _) tel =
+      | Emp : ('a, Fwn.zero, 'a) tel
+      | Ext : I.name * 'a check located * ('a I.suc, 'b, 'ab) tel -> ('a, 'b Fwn.suc, 'ab) tel
+
+    (* The length of a telescope is a forwards nat. *)
+    let rec fwn_of_tel : type a b c. (a, b, c) tel -> b Fwn.t = function
+      | Emp -> Zero
+      | Ext (_, _, tel) -> Suc (fwn_of_tel tel)
+  end
 
 module Indexed = Make (DeBruijnIndices)
 
