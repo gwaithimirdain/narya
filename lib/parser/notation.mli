@@ -47,13 +47,15 @@ type (_, _) tree =
   | Ambiguity : string list -> ('t, 's) tree
   | Ambiguity_closed : string list -> ('t, 's) tree
 
+and ('t, 's) tokmap = (('t, 's) tree * [ `Ss | `Noss ]) TokMap.t
+
 and ('t, 's) branch = {
-  ops : ('t, 's) tree TokMap.t;
+  ops : ('t, 's) tokmap;
   field : ('t, 's) tree option;
-  term : ('t, 's) tree TokMap.t option;
+  term : ('t, 's) tokmap option;
 }
 
-and ('t, 's) entry = ('t, 's) tree TokMap.t
+and ('t, 's) entry = ('t, 's) tokmap
 
 and observation =
   | Term : ('lt, 'ls, 'rt, 'rs) parse located -> observation
@@ -206,15 +208,17 @@ val split_ending_whitespace :
   ('lt, 'ls, 'rt, 'rs) parse located -> ('lt, 'ls, 'rt, 'rs) parse located * Whitespace.t list
 
 (* *)
+val singleton : TokMap.key -> ('t, 's) tree -> ('t, 's) tokmap
+val oflist : (TokMap.key * ('t, 's) tree) list -> ('t, 's) tokmap
 val op : TokMap.key -> ('t, 's) tree -> ('t, 's) tree
 val ops : (TokMap.key * ('t, 's) tree) list -> ('t, 's) tree
 val term : TokMap.key -> ('t, 's) tree -> ('t, 's) tree
 val terms : (TokMap.key * ('t, 's) tree) list -> ('t, 's) tree
 val field : ('t, 's) tree -> ('t, 's) tree
-val of_entry : ('t, 's) tree TokMap.t -> ('t, 's) tree
+val of_entry : ('t, 's) tokmap -> ('t, 's) tree
 val done_open : ('left opn, 'tight, 'right) notation -> ('tight, No.nonstrict) tree
-val eop : TokMap.key -> 'a -> 'a TokMap.t
-val eops : (TokMap.key * 'a) list -> 'a TokMap.t
+val eop : TokMap.key -> ('t, 's) tree -> ('t, 's) tokmap
+val eops : (TokMap.key * ('t, 's) tree) list -> ('t, 's) tokmap
 val empty_entry : 'a TokMap.t
 
 (* *)

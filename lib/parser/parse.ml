@@ -65,38 +65,47 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
       located
         (step (fun state _ (tok, w) ->
              match TokMap.find_opt tok ops with
-             | Some br -> Some ((br, `Token (tok, w)), state)
+             | Some (br, ss) -> Some ((br, `Token (tok, ss, w)), state)
              | None -> (
                  (* Field names have already been validated by the lexer. *)
                  match (field, tok) with
                  | Some br, Field (x, p) -> Some ((br, `Term (Field (x, p, w))), state)
                  | _ -> None))) in
     match x with
-    | `Token (tok, w) -> tree br (Observations.snoc_tok obs (tok, (w, Some loc)))
+    | `Token (tok, `Noss, w) -> tree br (Observations.snoc_tok obs (tok, (w, Some loc)))
+    | `Token (tok, `Ss, w) ->
+        let* sups = supers in
+        let _ = (tok, w, sups) in
+        tree br (Observations.snoc_sstok obs ((tok, (w, Some loc)), sups))
     | `Term x -> tree br (Observations.snoc_term obs (locate loc x))
 
   and tree_op : type tight strict.
-      (tight, strict) tree TokMap.t ->
+      (tight, strict) tokmap ->
       Observations.partial ->
       (Observations.partial * (tight, strict) notation_in_interval) t =
    fun ops obs ->
-    let* loc, (optree, tok, w) =
+    let* loc, (optree, ss, tok, w) =
       located
         (step (fun state _ (tok, w) ->
              match TokMap.find_opt tok ops with
-             | Some br -> Some ((br, tok, w), state)
+             | Some (br, ss) -> Some ((br, ss, tok, w), state)
              | None -> None)) in
-    tree optree (Observations.snoc_tok obs (tok, (w, Some loc)))
+    match ss with
+    | `Noss -> tree optree (Observations.snoc_tok obs (tok, (w, Some loc)))
+    | `Ss ->
+        let* sups = supers in
+        let _ = (tok, w, sups) in
+        tree optree (Observations.snoc_sstok obs ((tok, (w, Some loc)), sups))
 
   and entry : type tight strict.
-      (tight, strict) tree TokMap.t -> (observations * (tight, strict) notation_in_interval) t =
+      (tight, strict) tokmap -> (observations * (tight, strict) notation_in_interval) t =
    fun ops ->
     let* obs, op = tree_op ops Observations.empty in
     return (Observations.of_partial obs, op)
 
   (* "lclosed" is passed an upper tightness interval and an additional set of ending ops (stored as a map, since that's how they occur naturally, but here we ignore the values and look only at the keys).  It parses an arbitrary left-closed tree (pre-merged).  The interior terms are calls to "lclosed" with the next ops passed as the ending ones. *)
   and lclosed : type lt ls rt rs.
-      (lt, ls) No.iinterval -> (rt, rs) tree TokMap.t -> (lt, ls) right_wrapped_parse t =
+      (lt, ls) No.iinterval -> (rt, rs) tokmap -> (lt, ls) right_wrapped_parse t =
    fun tight stop ->
     let* res =
       (let* inner_loc, (inner, notn) = located (entry (Scope.Situation.left_closeds ())) in
@@ -201,7 +210,7 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
   (* "lopen" is passed an upper tightness interval and a set of ending ops, plus a parsed result for the left open argument and the tightness of the outermost notation in that argument if it is right-open. *)
   and lopen : type lt ls rt rs.
       (lt, ls) No.iinterval ->
-      (rt, rs) tree TokMap.t ->
+      (rt, rs) tokmap ->
       (lt, ls) right_wrapped_parse ->
       (lt, ls) right_wrapped_parse t =
    fun tight stop first_arg ->
@@ -379,7 +388,7 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
     let tokmap =
       List.fold_left
         (fun map tok ->
-          TokMap.add tok (Lazy (lazy (fatal (Anomaly "dummy notation tree accessed")))) map)
+          TokMap.add tok (Lazy (lazy (fatal (Anomaly "dummy notation tree accessed"))), `Noss) map)
         TokMap.empty toks in
     let* tm = lclosed li tokmap in
     match tm.get ri with

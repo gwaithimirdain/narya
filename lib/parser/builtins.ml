@@ -882,10 +882,8 @@ let rec tuple_fields () =
   Inner
     {
       empty_branch with
-      ops = TokMap.singleton RParen (Done_closed parens);
-      term =
-        Some
-          (TokMap.of_list [ (Op ",", Lazy (lazy (tuple_fields ()))); (RParen, Done_closed parens) ]);
+      ops = singleton RParen (Done_closed parens);
+      term = Some (oflist [ (Op ",", Lazy (lazy (tuple_fields ()))); (RParen, Done_closed parens) ]);
     }
 
 (* Split in cases based on whether an instance of 'parens' is a tuple or just parentheses.  In the former case, we return the interior term; in the latter we strip off the starting parentheses. *)
@@ -1084,12 +1082,12 @@ let rec mtch_branches notn bar_ok end_ok comma_ok =
     {
       empty_branch with
       ops =
-        TokMap.of_list
+        oflist
           ((if end_ok then [ (Token.RBracket, Done_closed notn) ] else [])
           @ if bar_ok then [ (Op "|", mtch_branches notn false false comma_ok) ] else []);
       term =
         Some
-          (TokMap.of_list
+          (oflist
              ((if comma_ok then [ (Token.Op ",", patterns notn) ] else [])
              @ [ (Mapsto, body notn comma_ok); (DblMapsto, body notn comma_ok) ]));
     }
@@ -1609,7 +1607,7 @@ let () =
                   empty_branch with
                   term =
                     Some
-                      (TokMap.singleton Return
+                      (singleton Return
                          (* The motive is parsed as an abstraction sub-notation *)
                          (term LBracket (mtch_branches explicit_mtch true true false)));
                 }));
@@ -1726,7 +1724,7 @@ let () =
              (Inner
                 {
                   empty_branch with
-                  ops = TokMap.singleton (Op "|") (comatch_fields ());
+                  ops = singleton (Op "|") (comatch_fields ());
                   field =
                     (let rest =
                        terms
@@ -1786,12 +1784,11 @@ let rec codata_fields bar_ok =
       empty_branch with
       ops =
         (if bar_ok then
-           TokMap.of_list
-             [ (Op "|", Lazy (lazy (codata_fields false))); (RBracket, Done_closed codata) ]
+           oflist [ (Op "|", Lazy (lazy (codata_fields false))); (RBracket, Done_closed codata) ]
          else TokMap.empty);
       term =
         Some
-          (TokMap.singleton Colon
+          (singleton Colon
              (terms [ (Op "|", Lazy (lazy (codata_fields false))); (RBracket, Done_closed codata) ]));
     }
 
@@ -1914,10 +1911,10 @@ let rec record_fields () =
   Inner
     {
       empty_branch with
-      ops = TokMap.singleton RParen (Done_closed record);
+      ops = singleton RParen (Done_closed record);
       term =
         Some
-          (TokMap.singleton Colon
+          (singleton Colon
              (terms [ (Op ",", Lazy (lazy (record_fields ()))); (RParen, Done_closed record) ]));
     }
 
@@ -2092,7 +2089,7 @@ let () =
                 {
                   empty_branch with
                   ops =
-                    TokMap.of_list
+                    oflist
                       [
                         (LParen, record_fields ());
                         ( Op "#",
@@ -2101,12 +2098,11 @@ let () =
                                (Inner
                                   {
                                     empty_branch with
-                                    ops = TokMap.singleton LParen (record_fields ());
-                                    term =
-                                      Some (TokMap.singleton Mapsto (op LParen (record_fields ())));
+                                    ops = singleton LParen (record_fields ());
+                                    term = Some (singleton Mapsto (op LParen (record_fields ())));
                                   })) );
                       ];
-                  term = Some (TokMap.singleton Mapsto (op LParen (record_fields ())));
+                  term = Some (singleton Mapsto (op LParen (record_fields ())));
                 }));
       processor = (fun ctx obs loc -> process_record ctx obs loc);
       print_term = None;
@@ -2128,13 +2124,10 @@ let rec data_constrs bar_ok =
       empty_branch with
       ops =
         (if bar_ok then
-           TokMap.of_list
-             [ (Op "|", Lazy (lazy (data_constrs false))); (RBracket, Done_closed data) ]
+           oflist [ (Op "|", Lazy (lazy (data_constrs false))); (RBracket, Done_closed data) ]
          else TokMap.empty);
       term =
-        Some
-          (TokMap.of_list
-             [ (Op "|", Lazy (lazy (data_constrs false))); (RBracket, Done_closed data) ]);
+        Some (oflist [ (Op "|", Lazy (lazy (data_constrs false))); (RBracket, Done_closed data) ]);
     }
 
 (* Extract all the typed arguments of a constructor given before its colon. *)
