@@ -7,7 +7,7 @@ module TokMap = Map.Make (Token)
 open Asai.Range
 
 type token_ws = Token.t * (Whitespace.t list * Asai.Range.t option)
-type ss_token_ws = token_ws * (Asai.Range.t * string * Whitespace.t list) list
+type ss_token_ws = token_ws * (Asai.Range.t option * string * Whitespace.t list) list
 
 (* A notation is either open or closed, on both sides.  We call these two properties combined its "fixity", since they are equivalent to the traditional classification as infix, prefix, postfix, or "outfix".
 

@@ -281,14 +281,14 @@
    1 | def one_eq_zero : Id CN one zero := refl one
      ^ term synthesized type
          {A₀ : Type} {A₁ : Type} (A₂ : refl Type A₀ A₁) {H₀ : A₀ → A₀} {H₁ : A₁ → A₁}
-         (H₂ : {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′) ⇒ A₂ (H₀ H₀′) (H₁ H₁′))
+         (H₂ : {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′) →⁽ᵉ⁾ A₂ (H₀ H₀′) (H₁ H₁′))
          {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′)
-         ⇒ A₂ (H₀ H₀′) (H₁ H₁′)
+         →⁽ᵉ⁾ A₂ (H₀ H₀′) (H₁ H₁′)
        but is being checked against type
          {A₀ : Type} {A₁ : Type} (A₂ : refl Type A₀ A₁) {H₀ : A₀ → A₀} {H₁ : A₁ → A₁}
-         (H₂ : {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′) ⇒ A₂ (H₀ H₀′) (H₁ H₁′))
+         (H₂ : {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′) →⁽ᵉ⁾ A₂ (H₀ H₀′) (H₁ H₁′))
          {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′)
-         ⇒ A₂ (H₀ H₀′) H₁′
+         →⁽ᵉ⁾ A₂ (H₀ H₀′) H₁′
        unequal head variables:
          _H
        does not equal
@@ -301,14 +301,14 @@
    1 | def cplus_one_two_eq_two : Id CN (cplus one two) two := refl two
      ^ term synthesized type
          {A₀ : Type} {A₁ : Type} (A₂ : refl Type A₀ A₁) {H₀ : A₀ → A₀} {H₁ : A₁ → A₁}
-         (H₂ : {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′) ⇒ A₂ (H₀ H₀′) (H₁ H₁′))
+         (H₂ : {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′) →⁽ᵉ⁾ A₂ (H₀ H₀′) (H₁ H₁′))
          {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′)
-         ⇒ A₂ (H₀ (H₀ H₀′)) (H₁ (H₁ H₁′))
+         →⁽ᵉ⁾ A₂ (H₀ (H₀ H₀′)) (H₁ (H₁ H₁′))
        but is being checked against type
          {A₀ : Type} {A₁ : Type} (A₂ : refl Type A₀ A₁) {H₀ : A₀ → A₀} {H₁ : A₁ → A₁}
-         (H₂ : {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′) ⇒ A₂ (H₀ H₀′) (H₁ H₁′))
+         (H₂ : {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′) →⁽ᵉ⁾ A₂ (H₀ H₀′) (H₁ H₁′))
          {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′)
-         ⇒ A₂ (H₀ (H₀ (H₀ H₀′))) (H₁ (H₁ H₁′))
+         →⁽ᵉ⁾ A₂ (H₀ (H₀ (H₀ H₀′))) (H₁ (H₁ H₁′))
        unequal head variables:
          _H
        does not equal
@@ -328,14 +328,14 @@
    1 | def refl_nat_eq_sample : Id (ℕ → Id ((x:A)→B x) f f) (refl_nat_f) (refl_nat_f_cube) ≔ refl refl_nat_f
      ^ term synthesized type
          {H₀ : ℕ} {H₁ : ℕ} (H₂ : refl ℕ H₀ H₁)
-         ⇒ Π⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ {x ↦ B x} {x ↦ B x} {x ⤇ refl B x.2} {x ↦ B x} {x ↦ B x}
-             {x ⤇ refl B x.2} {x ⤇ refl B x.2} {x ⤇ refl B x.2} (x ⤇ B⁽ᵉᵉ⁾ x.22)
-             (refl f) (refl f) (x ⤇ refl_nat_f H₀ x.2) (x ⤇ refl_nat_f H₁ x.2)
+         →⁽ᵉ⁾ Π⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ {x ↦ B x} {x ↦ B x} {x ⤇ refl B x.2} {x ↦ B x} {x ↦ B x}
+                {x ⤇ refl B x.2} {x ⤇ refl B x.2} {x ⤇ refl B x.2} (x ⤇ B⁽ᵉᵉ⁾ x.22)
+                (refl f) (refl f) (x ⤇ refl_nat_f H₀ x.2) (x ⤇ refl_nat_f H₁ x.2)
        but is being checked against type
          {H₀ : ℕ} {H₁ : ℕ} (H₂ : refl ℕ H₀ H₁)
-         ⇒ Π⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ {x ↦ B x} {x ↦ B x} {x ⤇ refl B x.2} {x ↦ B x} {x ↦ B x}
-             {x ⤇ refl B x.2} {x ⤇ refl B x.2} {x ⤇ refl B x.2} (x ⤇ B⁽ᵉᵉ⁾ x.22)
-             (refl f) (refl f) (x ⤇ refl_nat_f H₀ x.2) (x ⤇ refl_nat_f_cube H₁ x.2)
+         →⁽ᵉ⁾ Π⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ {x ↦ B x} {x ↦ B x} {x ⤇ refl B x.2} {x ↦ B x} {x ↦ B x}
+                {x ⤇ refl B x.2} {x ⤇ refl B x.2} {x ⤇ refl B x.2} (x ⤇ B⁽ᵉᵉ⁾ x.22)
+                (refl f) (refl f) (x ⤇ refl_nat_f H₀ x.2) (x ⤇ refl_nat_f_cube H₁ x.2)
        unequal head constants:
          refl_nat_f
        does not equal

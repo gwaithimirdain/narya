@@ -160,10 +160,10 @@
    ￭ command-line exec string
    1 | def idff_eq_idff' : Id Type idff idff' := refl idff
      ^ term synthesized type
-         refl Type ({H₀ : X} {H₁ : X} (H₂ : refl X H₀ H₁) ⇒ refl Y (f H₀) (f' H₁))
-           ({H₀ : X} {H₁ : X} (H₂ : refl X H₀ H₁) ⇒ refl Y (f H₀) (f' H₁))
+         refl Type ({H₀ : X} {H₁ : X} (H₂ : refl X H₀ H₁) →⁽ᵉ⁾ refl Y (f H₀) (f' H₁))
+           ({H₀ : X} {H₁ : X} (H₂ : refl X H₀ H₁) →⁽ᵉ⁾ refl Y (f H₀) (f' H₁))
        but is being checked against type
-         refl Type ({H₀ : X} {H₁ : X} (H₂ : refl X H₀ H₁) ⇒ refl Y (f H₀) (f' H₁))
+         refl Type ({H₀ : X} {H₁ : X} (H₂ : refl X H₀ H₁) →⁽ᵉ⁾ refl Y (f H₀) (f' H₁))
            ((x : X) (x' : X) (x'' : refl X x x') → refl Y (f x) (f' x'))
        unequal head terms:
          refl Π (refl X) {_ ↦ Y} {_ ↦ Y} (_ ⤇ refl Y)

@@ -26,7 +26,8 @@
 
   $ narya -hott tr2.ny
   A22 .trr.1
-    : {H₀ : A00} {H₁ : A01} (H₂ : A02 H₀ H₁) ⇒ A12 (A20 .trr H₀) (A21 .trr H₁)
+    : {H₀ : A00} {H₁ : A01} (H₂ : A02 H₀ H₁)
+      →⁽ᵉ⁾ A12 (A20 .trr H₀) (A21 .trr H₁)
   
   A22 .trr.1 a02
     : A12 (A20 .trr a00) (A21 .trr a01)
@@ -39,7 +40,7 @@
   
   A22 .liftr.1
     : {x₀₀ : A00} {x₀₁ : A01} (x₀₂ : A02 x₀₀ x₀₁)
-      ⇒ A22 x₀₂ (A22 .trr.1 x₀₂) (A20 .liftr x₀₀) (A21 .liftr x₀₁)
+      →⁽ᵉ⁾ A22 x₀₂ (A22 .trr.1 x₀₂) (A20 .liftr x₀₀) (A21 .liftr x₀₁)
   
   A22 .liftr.1 a02
     : A22 a02 (A22 .trr.1 a02) (A20 .liftr a00) (A21 .liftr a01)
@@ -51,7 +52,8 @@
     : A21 a01 (A21 .trr a01)
   
   A22 .trl.1
-    : {H₀ : A10} {H₁ : A11} (H₂ : A12 H₀ H₁) ⇒ A02 (A20 .trl H₀) (A21 .trl H₁)
+    : {H₀ : A10} {H₁ : A11} (H₂ : A12 H₀ H₁)
+      →⁽ᵉ⁾ A02 (A20 .trl H₀) (A21 .trl H₁)
   
   A22 .trl.1 a12
     : A02 (A20 .trl a10) (A21 .trl a11)
@@ -63,7 +65,8 @@
     : A01
   
   A22 .trr.2
-    : {H₀ : A00} {H₁ : A10} (H₂ : A20 H₀ H₁) ⇒ A21 (A02 .trr H₀) (A12 .trr H₁)
+    : {H₀ : A00} {H₁ : A10} (H₂ : A20 H₀ H₁)
+      →⁽ᵉ⁾ A21 (A02 .trr H₀) (A12 .trr H₁)
   
   A22 .trr.2 a20
     : A21 (A02 .trr a00) (A12 .trr a10)
@@ -79,7 +82,7 @@
   
   A22 .liftr.2
     : {x₀₀ : A00} {x₀₁ : A10} (x₀₂ : A20 x₀₀ x₀₁)
-      ⇒ sym A22 x₀₂ (sym A22 .trr.1 x₀₂) (A02 .liftr x₀₀) (A12 .liftr x₀₁)
+      →⁽ᵉ⁾ sym A22 x₀₂ (sym A22 .trr.1 x₀₂) (A02 .liftr x₀₀) (A12 .liftr x₀₁)
   
   A22 .liftr.2 a20
     : sym A22 a20 (sym A22 .trr.1 a20) (A02 .liftr a00) (A12 .liftr a10)

@@ -25,40 +25,40 @@ Testing parsing and printing of cube variables
 
   $ narya cube_vars.ny
   {x0} {x1} x2 ↦ refl b
-    : {H₀ : A} {H₁ : A} (H₂ : refl A H₀ H₁) ⇒ refl B b b
+    : {H₀ : A} {H₁ : A} (H₂ : refl A H₀ H₁) →⁽ᵉ⁾ refl B b b
   
   {x00} {x01} {x02} {x10} {x11} {x12} {x20} {x21} x22 ↦ b⁽ᵉᵉ⁾
     : {H₀₀ : A} {H₀₁ : A} {H₀₂ : refl A H₀₀ H₀₁} {H₁₀ : A} {H₁₁ : A}
       {H₁₂ : refl A H₁₀ H₁₁} {H₂₀ : refl A H₀₀ H₁₀} {H₂₁ : refl A H₀₁ H₁₁}
       (H₂₂ : A⁽ᵉᵉ⁾ H₀₂ H₁₂ H₂₀ H₂₁)
-      ⇒ B⁽ᵉᵉ⁾ (refl b) (refl b) (refl b) (refl b)
+      →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ (refl b) (refl b) (refl b) (refl b)
   
   x ⤇ refl b
-    : {H₀ : A} {H₁ : A} (H₂ : refl A H₀ H₁) ⇒ refl B b b
+    : {H₀ : A} {H₁ : A} (H₂ : refl A H₀ H₁) →⁽ᵉ⁾ refl B b b
   
   x ⤇ b⁽ᵉᵉ⁾
     : {H₀₀ : A} {H₀₁ : A} {H₀₂ : refl A H₀₀ H₀₁} {H₁₀ : A} {H₁₁ : A}
       {H₁₂ : refl A H₁₀ H₁₁} {H₂₀ : refl A H₀₀ H₁₀} {H₂₁ : refl A H₀₁ H₁₁}
       (H₂₂ : A⁽ᵉᵉ⁾ H₀₂ H₁₂ H₂₀ H₂₁)
-      ⇒ B⁽ᵉᵉ⁾ (refl b) (refl b) (refl b) (refl b)
+      →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ (refl b) (refl b) (refl b) (refl b)
   
   {x0} {x1} x2 ↦ h x0
-    : {H₀ : A} {H₁ : A} (H₂ : refl A H₀ H₁) ⇒ refl B b b
+    : {H₀ : A} {H₁ : A} (H₂ : refl A H₀ H₁) →⁽ᵉ⁾ refl B b b
   
   x ⤇ h x.0
-    : {H₀ : A} {H₁ : A} (H₂ : refl A H₀ H₁) ⇒ refl B b b
+    : {H₀ : A} {H₁ : A} (H₂ : refl A H₀ H₁) →⁽ᵉ⁾ refl B b b
   
   x ⤇ refl h x.02
     : {H₀₀ : A} {H₀₁ : A} {H₀₂ : refl A H₀₀ H₀₁} {H₁₀ : A} {H₁₁ : A}
       {H₁₂ : refl A H₁₀ H₁₁} {H₂₀ : refl A H₀₀ H₁₀} {H₂₁ : refl A H₀₁ H₁₁}
       (H₂₂ : A⁽ᵉᵉ⁾ H₀₂ H₁₂ H₂₀ H₂₁)
-      ⇒ B⁽ᵉᵉ⁾ (refl b) (refl b) (h H₀₀) (h H₀₁)
+      →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ (refl b) (refl b) (h H₀₀) (h H₀₁)
   
   x ⤇ refl h x.02
     : {H₀₀ : A} {H₀₁ : A} {H₀₂ : refl A H₀₀ H₀₁} {H₁₀ : A} {H₁₁ : A}
       {H₁₂ : refl A H₁₀ H₁₁} {H₂₀ : refl A H₀₀ H₁₀} {H₂₁ : refl A H₀₁ H₁₁}
       (H₂₂ : A⁽ᵉᵉ⁾ H₀₂ H₁₂ H₂₀ H₂₁)
-      ⇒ B⁽ᵉᵉ⁾ (refl b) (refl b) (h H₀₀) (h H₀₁)
+      →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ (refl b) (refl b) (h H₀₀) (h H₀₁)
   
   refl b
     : refl B b b

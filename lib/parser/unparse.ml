@@ -16,6 +16,7 @@ module StringMap = Map.Make (String)
 
 let mktok (tok : Token.t) = Token (tok, ([], None))
 let wstok (tok : Token.t) = Either.Left (tok, ([], None))
+let sstok (tok : Token.t) (ss : string) = Either.Right ((tok, ([], None)), [ (None, ss, []) ])
 
 (* If the head of an application spine is a constant or constructor, and it has an associated notation, and there are enough of the supplied arguments to instantiate the notation, split off that many arguments and return the notation, those arguments permuted to match the order of the pattern variables in the notation, the symbols to intersperse with them, and the remaining arguments. *)
 let get_notation head args =
@@ -740,42 +741,44 @@ and unparse_pis : type n lt ls rt rs.
   | _ -> unparse_pis_final vars accum (make_unparser vars tm) li ri
 
 (* The arrow in both dependent and non-dependent pi-types is (un)parsed as a binary operator.  In the dependent case, its left-hand argument looks like an "application spine" of ascribed variables.  Of course, it may have to be parenthesized. *)
-and unparse_arrow : type lt ls rt rs.
-    ?higher:bool ->
+and unparse_arrow : type lt ls rt rs m.
+    ?higher:m D.t ->
     unparser ->
     unparser ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun ?(higher = false) dom cod li ri ->
-  let arrow, aarrow = if higher then (dblarrow, Token.DblArrow) else (arrow, Arrow) in
+ fun ?higher dom cod li ri ->
+  let tok =
+    match higher with
+    | None -> sstok Arrow ""
+    | Some dim -> sstok Arrow (string_of_dim dim) in
   match (No.Interval.contains li No.zero, No.Interval.contains ri No.zero) with
   | Some left_ok, Some right_ok ->
       let first = dom.unparse li (interval_left arrow) in
       let last = cod.unparse (interval_right arrow) ri in
-      unlocated (infix ~notn:arrow ~first ~inner:(Single (wstok aarrow)) ~last ~left_ok ~right_ok)
+      unlocated (infix ~notn:arrow ~first ~inner:(Single tok) ~last ~left_ok ~right_ok)
   | _ ->
       let first = dom.unparse No.Interval.entire (interval_left arrow) in
       let last = cod.unparse (interval_right arrow) No.Interval.entire in
       let left_ok = No.minusomega_lt_zero in
       let right_ok = No.minusomega_lt_zero in
       parenthesize
-        (unlocated
-           (infix ~notn:arrow ~first ~inner:(Single (wstok aarrow)) ~last ~left_ok ~right_ok))
+        (unlocated (infix ~notn:arrow ~first ~inner:(Single tok) ~last ~left_ok ~right_ok))
 
-and unparse_pis_final : type n lt ls rt rs.
-    ?higher:bool ->
+and unparse_pis_final : type n lt ls rt rs m.
+    ?higher:m D.t ->
     n Names.t ->
     unparser Bwd.t ->
     unparser ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun ?(higher = false) vars accum tm li ri ->
+ fun ?higher vars accum tm li ri ->
   match split_first accum with
   | None -> tm.unparse li ri
   | Some (dom0, accum) ->
-      unparse_arrow ~higher
+      unparse_arrow ?higher
         { unparse = (fun li ri -> unparse_spine vars (`Unparser dom0) accum li ri) }
         tm li ri
 
@@ -857,7 +860,7 @@ and unparse_higher_pi : type a lt ls rt rs n.
   | cod ->
       (* When it's time to finish, we unparse the eventual codomain and instantiate it at the unparsed bodies of all the lambda tyargs. *)
       let tm = { unparse = (fun li ri -> unparse_named_inst newvars cod tyargs li ri) } in
-      unparse_pis_final ~higher:true vars accum tm li ri
+      unparse_pis_final ~higher:(CodCube.dim cods) vars accum tm li ri
 
 (* Unparse a term context, given a vector of variable names obtained by pre-uniquifying a variable list, and a list of names for by the empty context that nevertheless remembers the variables in that vector, as produced by Names.uniquify_vars.  Yields not only the list of unparsed terms/types, but a corresponding list of names that can be used to unparse further objects in that context. *)
 let rec unparse_ctx : type a b.

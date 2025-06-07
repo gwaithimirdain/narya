@@ -102,7 +102,6 @@ module Specials = struct
       (0x21A6, Mapsto);
       (0x2907, DblMapsto);
       (0x2192, Arrow);
-      (0x21D2, DblArrow);
       (0x2254, Coloneq);
       (0x2A74, DblColoneq);
       (0x2A72, Pluseq);
@@ -153,7 +152,6 @@ let ascii_op : Token.t t =
   let* op = word is_ascii_symbol is_ascii_symbol "ASCII symbol" in
   match op with
   | "->" -> return Arrow
-  | "=>" -> return DblArrow
   | "|->" -> return Mapsto
   | "|=>" -> return DblMapsto
   | ":=" -> return Coloneq

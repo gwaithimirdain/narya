@@ -609,12 +609,9 @@ let process_typed_vars : type lt ls rt rs.
    Function types (dependent and non)
  **************************************** *)
 
-type (_, _, _) identity +=
-  | Arrow : (No.strict opn, No.zero, No.nonstrict opn) identity
-  | DblArrow : (No.strict opn, No.zero, No.nonstrict opn) identity
+type (_, _, _) identity += Arrow : (No.strict opn, No.zero, No.nonstrict opn) identity
 
 let arrow : (No.strict opn, No.zero, No.nonstrict opn) notation = (Arrow, Infixr No.zero)
-let dblarrow : (No.strict opn, No.zero, No.nonstrict opn) notation = (DblArrow, Infixr No.zero)
 
 type arrow_opt = [ `Arrow of Whitespace.t list | `Noarrow | `First ]
 
@@ -708,23 +705,25 @@ let get_pi_args : type lt ls rt rs.
   | Some result -> result
   | None -> Nondep { wsarrow; ty = Wrap doms } :: accum
 
-(* Get all the domains and eventual codomain from a right-associated iterated function-type. *)
-let rec get_pi : arrow_opt -> observation list -> pi_dom list * Whitespace.t list * wrapped_parse =
+(* Get all the domains, dimension, and eventual codomain from a right-associated iterated function-type. *)
+let rec get_pi :
+    arrow_opt -> observation list -> pi_dom list * Whitespace.t list * string * wrapped_parse =
  fun prev_arr obs ->
   match obs with
-  | [ Term doms; Token (Arrow, (wsarrow, _)); Term cod ] ->
+  | [ Term doms; Ss_token ((Arrow, (wsarrow, _)), dims); Term cod ] ->
+      let dim =
+        match dims with
+        | [] -> ""
+        | [ (_, dim, _) ] -> dim
+        | _ -> invalid "arrow 1" in
       let vars, ws, cod =
         match cod.value with
-        | Notn ((Arrow, _), n) -> get_pi (`Arrow wsarrow) (args n)
+        | Notn ((Arrow, _), n) ->
+            let vars, ws, coddim, evcod = get_pi (`Arrow wsarrow) (args n) in
+            if coddim = dim then (vars, ws, evcod) else ([], wsarrow, Wrap cod)
         | _ -> ([], wsarrow, Wrap cod) in
-      (get_pi_args prev_arr doms vars, ws, cod)
-  | [ Term doms; Token (DblArrow, (wsarrow, _)); Term cod ] ->
-      let vars, ws, cod =
-        match cod.value with
-        | Notn ((DblArrow, _), n) -> get_pi (`Arrow wsarrow) (args n)
-        | _ -> ([], wsarrow, Wrap cod) in
-      (get_pi_args prev_arr doms vars, ws, cod)
-  | _ -> invalid "arrow"
+      (get_pi_args prev_arr doms vars, ws, dim, cod)
+  | _ -> invalid "arrow 2"
 
 (* Given the variables with domains and the codomain of an ordinary (not higher) pi-type, process it into a raw term. *)
 let rec process_pi : type n lt ls rt rs.
@@ -791,38 +790,32 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
       (empty, None) doms in
   (doc, ws <|> Anomaly "missing ws in pp_doms")
 
-let pp_pi arrow obs =
-  let doms, wsarrow, Wrap cod = get_pi `First obs in
+let pp_pi obs =
+  let doms, wsarrow, dim, Wrap cod = get_pi `First obs in
   let pdom, wdom = pp_doms doms in
   let pcod, wcod = pp_term cod in
   ( group
       (align
-         (pdom ^^ pp_ws `Break wdom ^^ Token.pp arrow ^^ hang 2 (pp_ws `Nobreak wsarrow ^^ pcod))),
+         (pdom
+         ^^ pp_ws `Break wdom
+         ^^ Token.pp Arrow
+         ^^ (if dim = "" then empty else pp_superscript dim)
+         ^^ hang 2 (pp_ws `Nobreak wsarrow ^^ pcod))),
     wcod )
 
 let () =
   make arrow
     {
       name = "arrow";
-      tree = Open_entry (eop Arrow (done_open arrow));
+      tree = Open_entry (TokMap.singleton Arrow (done_open arrow, `Ss));
       processor =
         (fun ctx obs _loc ->
           (* We don't need the loc parameter here, since we can reconstruct the location of each pi-type from its arguments. *)
-          let doms, _, Wrap cod = get_pi `First obs in
-          process_pi ctx doms cod);
-      print_term = Some (pp_pi Arrow);
+          let doms, _, dim, Wrap cod = get_pi `First obs in
+          if dim = "" then process_pi ctx doms cod
+          else fatal (Unimplemented "parsing higher pi-types"));
+      print_term = Some pp_pi;
       (* Function-types are never part of case trees. *)
-      print_case = None;
-      is_case = (fun _ -> false);
-    }
-
-let () =
-  make dblarrow
-    {
-      name = "dblarrow";
-      tree = Open_entry (eop DblArrow (done_open arrow));
-      processor = (fun _ctx _obs _loc -> fatal (Unimplemented "parsing higher function types"));
-      print_term = Some (pp_pi DblArrow);
       print_case = None;
       is_case = (fun _ -> false);
     }

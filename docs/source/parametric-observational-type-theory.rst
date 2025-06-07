@@ -48,7 +48,7 @@ Since such identity types arise very commonly, they are printed with the followi
 
 .. code-block:: none
 
-  {x₀ x₁ : A} (x₂ : Id A x₀ x₁) ⇒ Id B (f x₀) (g x₁)
+  {x₀ x₁ : A} (x₂ : Id A x₀ x₁) →⁽ᵉ⁾ Id B (f x₀) (g x₁)
 
 Again, this is only a notation for ``Id (A → B) f g``.  It is chosen to indicate that an element of ``Id (A → B) f g`` is a function that can be applied to two arguments ``x₀`` and ``x₁`` of type ``A`` and a third argument ``x₂`` of type ``Id A x₀ x₁`` to produce an element of ``Id B (f x₀) (g x₁)``.  And similarly, an element of ``Id (A → B) f g`` can be defined as an abstraction of a term ``M : Id B (f x₀) (g x₁)`` over variables ``x₀ x₁ : A`` and ``x₂ : Id A x₀ x₁``.
 
@@ -56,7 +56,7 @@ The above notation also indicates a difference between it and the preceding ordi
 
 Similarly, when defining an element of ``Id (A → B) f g`` by abstraction, the implicit arguments *must* be given and enclosed in curly braces, as in ``{x₀} {x₁} x₂ ↦ M``.  (An alternative to this is to use :ref:`Cubes of variables`.)
 
-As a particular case, if ``f : A → B``, then ``refl f`` is a function of a type ``{x₀ x₁ : A} (x₂ : Id A x₀ x₁) ⇒ Id B (f x₀) (f x₁)``, witnessing that all functions preserve "equalities" or "relatedness".  Thus the operation traditionally denoted ``ap`` in homotopy type theory is just ``refl`` applied to a function (although since the argument of ``refl`` must synthesize, if the function is an abstraction it must be ascribed).
+As a particular case, if ``f : A → B``, then ``refl f`` is a function of a type ``{x₀ x₁ : A} (x₂ : Id A x₀ x₁) →⁽ᵉ⁾ Id B (f x₀) (f x₁)``, witnessing that all functions preserve "equalities" or "relatedness".  Thus the operation traditionally denoted ``ap`` in homotopy type theory is just ``refl`` applied to a function (although since the argument of ``refl`` must synthesize, if the function is an abstraction it must be ascribed).
 
 Currently the above special notation for identity types of function types is not parseable; it is only used in printing.  This will probably be fixed in the future, just on the general principle that as much as possible that is printed should be re-parseable.
 
@@ -92,7 +92,7 @@ Such heterogeneous identity/bridge types are used in the computation (up to defi
 
 .. code-block:: none
 
-   {x₀ x₁ : A} (x₂ : Id A x₀ x₁) ⇒ refl B x₂ (f x₀) (g x₁)``
+   {x₀ x₁ : A} (x₂ : Id A x₀ x₁) →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)``
 
 Heterogeneous identity/bridge types also appear in identity/bridge types of other canonical types, such as when one field of a record type depends on previous ones.  For instance, ``Id (Σ A B) u v`` behaves like a record type
 
@@ -115,7 +115,7 @@ The ascription in the declared type of ``B₂`` is necessary since the argument 
 
 .. code-block:: none
 
-   {x₀ : A₀} {x₁ : A₁} (x₂ : A₂ x₀ x₁) ⇒ Id Type (B₀ x₀) (B₁ x₁)
+   {x₀ : A₀} {x₁ : A₁} (x₂ : A₂ x₀ x₁) →⁽ᵉ⁾ Id Type (B₀ x₀) (B₁ x₁)
 
 Now we can say that ``refl Σ A₂ B₂ u₀ u₁`` behaves like a record type
 
@@ -133,8 +133,8 @@ Similarly, since the built-in constant ``Π`` also has type ``(A : Type) (B : A 
 .. code-block:: none
 
    {A₀ : Type} {A₁ : Type} (A₂ : Id Type A₀ A₁) {B₀ : A₀ → Type} {B₁ : A₁ → Type}
-     (B₂ : {x₀ : A₀} {x₁ : A₁} (x₂ : A₂ x₀ x₁) ⇒ Id Type (B₀ x₀) (B₁ x₁))
-     ⇒ Id Type ((x₀ : A₀) → B₀) ((x₁ : A₁) → B₁)
+     (B₂ : {x₀ : A₀} {x₁ : A₁} (x₂ : A₂ x₀ x₁) →⁽ᵉ⁾ Id Type (B₀ x₀) (B₁ x₁))
+     →⁽ᵉ⁾ Id Type ((x₀ : A₀) → B₀) ((x₁ : A₁) → B₁)
 
 For instance, the declared type of ``B₂`` can also be written using ``Π`` as
 
@@ -162,7 +162,7 @@ We can view this as assigning to any boundary for a 2-dimensional square a type 
 
    refl (refl f) : {a₀₀ a₀₁ : A} {a₀₂ : Id A a₀₀ a₀₁} {a₁₀ a₁₁ : A} {a₁₂ : Id A a₁₀ a₁₁}
                    {a₂₀ : Id A a₀₀ a₁₀} {a₂₁ : Id A a₀₁ a₁₁} (a₂₂ : Id A a₀₂ a₁₂ a₂₀ a₂₁)
-     ⇒ Id B (refl f a₀₀ a₀₁ a₀₂) (refl f a₁₀ a₁₁ a₁₂) (refl f a₀₀ a₁₀ a₂₀) (refl f a₀₁ a₁₁ a₂₁)
+     →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ (refl f a₀₂) (refl f a₁₂) (refl f a₂₀) (refl f a₂₁)
 
 More generally, just as any "1-dimensional type" ``A₂ : Id Type A₀ A₁`` can be instantiated at endpoints ``a₀:A₀`` and ``a₁:A₁`` to produce an ordinary (0-dimensional) type ``A₂ a₀ a₁ : Type``, any element ``A₂₂ : Id (Id Type) A₀₂ A₁₂ A₂₀ A₂₁`` can be instantiated at a "heterogeneous square boundary" consisting of
 

@@ -13,7 +13,6 @@ type t =
   | RBrace (* } *)
   | Query (* ? *)
   | Arrow (* Both -> and → *)
-  | DblArrow (* Both => and ⇒ *)
   | Mapsto (* Both |-> and ↦ *)
   | DblMapsto (* Both |=> and ⤇ *)
   | Colon (* : *)
@@ -158,7 +157,6 @@ let to_string = function
   | RBrace -> "}"
   | Query -> "?"
   | Arrow -> Display.alt_char "→" "->"
-  | DblArrow -> Display.alt_char "⇒" "=>"
   | Mapsto -> Display.alt_char "↦" "|->"
   | DblMapsto -> Display.alt_char "⤇" "|=>"
   | Colon -> ":"

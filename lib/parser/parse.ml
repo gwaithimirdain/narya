@@ -163,7 +163,7 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
     lopen tight stop res
 
   (* Parse a possibly-empty sequence of nonempty superscripts. *)
-  and supers : (Asai.Range.t * string * Whitespace.t list) list t =
+  and supers : (Asai.Range.t option * string * Whitespace.t list) list t =
     zero_or_more
       (let* loc, res =
          located
@@ -174,13 +174,13 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
                     Some (Error (SemanticError.Invalid_degeneracy (rng, s)), state)
                 | _ -> None)) in
        match res with
-       | Ok (s, ws) -> return (loc, s, ws)
+       | Ok (s, ws) -> return (Some loc, s, ws)
        | Error e -> fail e)
 
   (* Given a parsed term and a possibly-empty list of superscripts, tack them all onto the term sequentially. *)
   and superify : type lt ls.
       (lt, ls) right_wrapped_parse ->
-      (Asai.Range.t * string * Whitespace.t list) list ->
+      (Asai.Range.t option * string * Whitespace.t list) list ->
       (lt, ls) right_wrapped_parse =
    fun arg sups ->
     match sups with
@@ -196,7 +196,7 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
                       {
                         value = Superscript (Some x, s, ws);
                         (* TODO: This merge doesn't seem to be working: the reported location for the superscripted term is just the superscript, not including the body. *)
-                        loc = Range.merge_opt x.loc (Some loc);
+                        loc = Range.merge_opt x.loc loc;
                       }
                 | Error e -> Error e);
           }
