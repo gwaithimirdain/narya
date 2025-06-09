@@ -48,25 +48,25 @@
    ￮ axiom s22 assumed
   
   s22 .root.1
-    : refl A (s20 .root) (s21 .root)
+    : Id A (s20 .root) (s21 .root)
   
   sym s22 .root.1
-    : refl A (s02 .root) (s12 .root)
+    : Id A (s02 .root) (s12 .root)
   
   refl s2 .root.1
-    : refl A (s2 .root) (s2 .root)
+    : Id A (s2 .root) (s2 .root)
   
   s2⁽ᵉ¹⁾ .root.1
-    : refl A (refl s0 .root) (refl s1 .root)
+    : Id A (refl s0 .root) (refl s1 .root)
   
   refl s2 .root.1
-    : refl A (s2 .root) (s2 .root)
+    : Id A (s2 .root) (s2 .root)
   
   s0⁽ᵉᵉ⁾ .root.1
-    : refl A (refl s0 .root) (refl s0 .root)
+    : Id A (refl s0 .root) (refl s0 .root)
   
   s0⁽ᵉᵉ⁾ .root.1
-    : refl A (refl s0 .root) (refl s0 .root)
+    : Id A (refl s0 .root) (refl s0 .root)
   
    ￫ info[I0001]
    ￮ axiom B assumed
@@ -117,10 +117,10 @@
    ￮ axiom t22 assumed
   
   refl f t20 t21 (sym t22)
-    : refl A (f t00 t01 t02) (f t10 t11 t12)
+    : Id A (f t00 t01 t02) (f t10 t11 t12)
   
   refl f t02 t12 t22
-    : refl A (f t00 t10 t20) (f t01 t11 t21)
+    : Id A (f t00 t10 t20) (f t01 t11 t21)
   
    ￫ info[I0001]
    ￮ axiom a assumed
@@ -132,10 +132,10 @@
     : A
   
   refl a
-    : refl A a a
+    : Id A a a
   
   refl a
-    : refl A a a
+    : Id A a a
   
    ￫ info[I0000]
    ￮ constant s2' defined
@@ -144,10 +144,10 @@
     : A
   
   refl f b2 b2 b2⁽ᵉ¹⁾
-    : refl A (f b0 b0 (refl b0)) (f b1 b1 (refl b1))
+    : Id A (f b0 b0 (refl b0)) (f b1 b1 (refl b1))
   
   refl a
-    : refl A a a
+    : Id A a a
   
    ￫ info[I0000]
    ￮ constant ID defined
@@ -174,7 +174,7 @@
     : A
   
   a2
-    : refl A a0 a1
+    : Id A a0 a1
   
    ￫ info[I0001]
    ￮ axiom u0 assumed
@@ -195,7 +195,7 @@
    ￮ hole ?0:
      
      ----------------------------------------------------------------------
-     refl ID (refl A) (refl u0 .root) (refl u1 .root)
+     refl ID (Id A) (refl u0 .root) (refl u1 .root)
   
    ￫ info[I3003]
    ￮ hole ?1:
@@ -231,10 +231,10 @@
    ￮ axiom u22 assumed
   
   u22 .root.1
-    : refl ID (refl A) (u20 .root) (u21 .root)
+    : ID⁽ᵉ⁾ (Id A) (u20 .root) (u21 .root)
   
   sym u22 .root.1
-    : refl ID (refl A) (u02 .root) (u12 .root)
+    : ID⁽ᵉ⁾ (Id A) (u02 .root) (u12 .root)
   
    ￫ info[I0000]
    ￮ constant u22' defined, containing 3 holes
@@ -250,13 +250,13 @@
    ￮ hole ?3:
      
      ----------------------------------------------------------------------
-     refl ID (refl A) (u20 .root) (u21 .root)
+     refl ID (Id A) (u20 .root) (u21 .root)
   
    ￫ info[I3003]
    ￮ hole ?4:
      
      ----------------------------------------------------------------------
-     refl ID (refl A) (u02 .root) (u12 .root)
+     refl ID (Id A) (u02 .root) (u12 .root)
   
    ￫ error[E3002]
    ￮ file sqrt.ny contains open holes
@@ -352,22 +352,22 @@
    ￮ axiom s222 assumed
   
   s222 .rroot.12
-    : refl A (s220 .rroot.12) (s221 .rroot.12)
+    : Id A (s220 .rroot.12) (s221 .rroot.12)
   
   s222⁽¹³²⁾ .rroot.12
-    : refl A (s202 .rroot.12) (s212 .rroot.12)
+    : Id A (s202 .rroot.12) (s212 .rroot.12)
   
   s222⁽²³¹⁾ .rroot.12
-    : refl A (s022 .rroot.12) (s122 .rroot.12)
+    : Id A (s022 .rroot.12) (s122 .rroot.12)
   
   s222⁽²¹³⁾ .rroot.12
-    : refl A (sym s220 .rroot.12) (sym s221 .rroot.12)
+    : Id A (sym s220 .rroot.12) (sym s221 .rroot.12)
   
   s222⁽³²¹⁾ .rroot.12
-    : refl A (sym s022 .rroot.12) (sym s122 .rroot.12)
+    : Id A (sym s022 .rroot.12) (sym s122 .rroot.12)
   
   s222⁽³¹²⁾ .rroot.12
-    : refl A (sym s202 .rroot.12) (sym s212 .rroot.12)
+    : Id A (sym s202 .rroot.12) (sym s212 .rroot.12)
   
    ￫ info[I0000]
    ￮ constant ID2 defined
@@ -427,10 +427,10 @@
     : A
   
   a02
-    : refl A a00 a01
+    : Id A a00 a01
   
   a20
-    : refl A a00 a10
+    : Id A a00 a10
   
   a10
     : A
@@ -445,22 +445,22 @@
     : A
   
   a12
-    : refl A a10 a11
+    : Id A a10 a11
   
   a21
-    : refl A a01 a11
+    : Id A a01 a11
   
   a20
-    : refl A a00 a10
+    : Id A a00 a10
   
   a02
-    : refl A a00 a01
+    : Id A a00 a01
   
   a21
-    : refl A a01 a11
+    : Id A a01 a11
   
   a12
-    : refl A a10 a11
+    : Id A a10 a11
   
   a22
     : A⁽ᵉᵉ⁾ a02 a12 a20 a21
@@ -481,10 +481,10 @@
     : A
   
   a20
-    : refl A a00 a10
+    : Id A a00 a10
   
   a20
-    : refl A a00 a10
+    : Id A a00 a10
   
 
   $ narya -v sqrtsqrt.ny
@@ -553,7 +553,7 @@
    ￭ $TESTCASE_ROOT/flderr.ny
    5 | echo c .x.1
      ^ field x of record type
-         refl A a b
+         A⁽ᵉ⁾ a b
        has intrinsic dimension 0 and used at dimension e, can't have suffix .1
   
   [1]

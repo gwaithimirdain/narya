@@ -126,9 +126,9 @@
    ￭ command-line exec string
    1 | def one_plus_one_eq_one : Id ℕ (plus one one) one := refl one
      ^ term synthesized type
-         refl ℕ 1 1
+         ℕ⁽ᵉ⁾ 1 1
        but is being checked against type
-         refl ℕ 2 1
+         ℕ⁽ᵉ⁾ 2 1
        unequal constructors:
          zero
        does not equal
@@ -140,9 +140,9 @@
    ￭ command-line exec string
    1 | def one_plus_one_eq_three : Id ℕ (plus one one) three := refl three
      ^ term synthesized type
-         refl ℕ 3 3
+         ℕ⁽ᵉ⁾ 3 3
        but is being checked against type
-         refl ℕ 2 3
+         ℕ⁽ᵉ⁾ 2 3
        unequal constructors:
          suc
        does not equal
@@ -154,9 +154,9 @@
    ￭ command-line exec string
    1 | def one_plus_two_eq_one : Id ℕ (plus one two) one := refl one
      ^ term synthesized type
-         refl ℕ 1 1
+         ℕ⁽ᵉ⁾ 1 1
        but is being checked against type
-         refl ℕ 3 1
+         ℕ⁽ᵉ⁾ 3 1
        unequal constructors:
          zero
        does not equal
@@ -168,9 +168,9 @@
    ￭ command-line exec string
    1 | def one_plus_one_eq_one' : Id ℕ (rplus one one) one := refl one
      ^ term synthesized type
-         refl ℕ 1 1
+         ℕ⁽ᵉ⁾ 1 1
        but is being checked against type
-         refl ℕ 2 1
+         ℕ⁽ᵉ⁾ 2 1
        unequal constructors:
          zero
        does not equal
@@ -182,9 +182,9 @@
    ￭ command-line exec string
    1 | def one_plus_one_eq_three' : Id ℕ (rplus one one) three := refl three
      ^ term synthesized type
-         refl ℕ 3 3
+         ℕ⁽ᵉ⁾ 3 3
        but is being checked against type
-         refl ℕ 2 3
+         ℕ⁽ᵉ⁾ 2 3
        unequal constructors:
          suc
        does not equal
@@ -196,9 +196,9 @@
    ￭ command-line exec string
    1 | def one_plus_two_eq_one' : Id ℕ (rplus one two) one := refl one
      ^ term synthesized type
-         refl ℕ 1 1
+         ℕ⁽ᵉ⁾ 1 1
        but is being checked against type
-         refl ℕ 3 1
+         ℕ⁽ᵉ⁾ 3 1
        unequal constructors:
          zero
        does not equal

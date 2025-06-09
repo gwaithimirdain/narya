@@ -293,7 +293,8 @@ let rec check : type a b s.
             (* A pure permutation shouldn't ever be locking, but we may as well keep this here for consistency.  *)
             let ctx = if locking fa then Ctx.lock ctx else ctx in
             let cx = check (Kinetic `Nolet) ctx x ty_fainv in
-            realize status (Term.Act (cx, fa)))
+            realize status
+              (Term.Act (cx, fa, (sort_of_ty ctx (view_type ty "checking act"), `Other))))
     | Lam { name = { value = x; loc = xloc }; cube; implicit; body }, _ -> (
         match view_type ~severity ty "typechecking lambda" with
         | Canonical (_, Pi (_, doms, cods), ins, tyargs) -> (
@@ -2460,9 +2461,11 @@ and synth : type a b s.
         let ctx = if locking fa then Ctx.lock ctx else ctx in
         let sx, ety = synth (Kinetic `Nolet) ctx x in
         let ex = eval_term (Ctx.env ctx) sx in
-        ( realize status (Term.Act (sx, fa)),
+        let sty =
           with_loc x.loc @@ fun () ->
-          act_ty ex ety fa ~err:(Low_dimensional_argument_of_degeneracy (str, cod_deg fa)) )
+          act_ty ex ety fa ~err:(Low_dimensional_argument_of_degeneracy (str, cod_deg fa)) in
+        ( realize status (Term.Act (sx, fa, (sort_of_ty ctx (view_type sty "synth act"), `Other))),
+          sty )
     | Act _, _ -> fatal (Nonsynthesizing "argument of degeneracy")
     | Asc (tm, ty), _ ->
         let cty =
@@ -2589,9 +2592,13 @@ and synth : type a b s.
         let env = Ctx.env ctx in
         let ex = eval_term env cx in
         let nx : normal = { tm = ex; ty } in
-        let creflx = Term.Act (cx, deg_zero Hott.dim) in
+        let creflx = Term.Act (cx, deg_zero Hott.dim, (`Other, `Other)) in
         let idty = act_value ty (deg_zero Hott.dim) in
-        let ididcty = Term.Act (Term.Act (cty, deg_zero Hott.dim), deg_zero Hott.dim) in
+        let ididcty =
+          Term.Act
+            ( Term.Act (cty, deg_zero Hott.dim, (`Other, `Other)),
+              deg_zero Hott.dim,
+              (`Other, `Other) ) in
         let (Plus hh) = D.plus Hott.dim in
         let _, nz, xeqz =
           List.fold_left

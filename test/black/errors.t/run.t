@@ -147,9 +147,9 @@
    ￭ command-line exec string
    1 | echo (refl f (refl a) a)
      ^ attempt to apply/instantiate
-         refl f (refl a)
+         ap f (refl a)
        of type
-         refl A (f a) (f a)
+         Id A (f a) (f a)
        which is not a function-type or universe
   
   [1]
@@ -179,7 +179,7 @@
    ￫ error[E0700]
    ￭ command-line exec string
    1 | echo (({x0} {x1} x2 x3 ↦ refl f x0 x1 x2) : Id (A -> A) f f)
-     ^ checking abstraction against non-function type refl A (f x0) (f x1)
+     ^ checking abstraction against non-function type Id A (f x0) (f x1)
   
   [1]
   $ narya errors.ny -e "echo (refl (x |-> x))"
@@ -222,11 +222,11 @@
    ￭ command-line exec string
    1 | echo (a : Id A)
      ^ term synthesized type
-         refl Type A A
+         Type⁽ᵉ⁾ A A
        but is being checked against type
          Type
        unequal head terms:
-         refl Type
+         Type⁽ᵉ⁾
        does not equal
          Type
   
@@ -234,11 +234,11 @@
    ￭ command-line exec string
    1 | echo (a : Id A)
      ^ term synthesized type
-         refl Type A A
+         Type⁽ᵉ⁾ A A
        but is being checked against type
          Type
        unequal head terms:
-         refl Type
+         Type⁽ᵉ⁾
        does not equal
          Type
   
@@ -248,11 +248,11 @@
    ￭ command-line exec string
    1 | echo (a : Id (Id A) (refl a) (refl a))
      ^ term synthesized type
-         refl Type (refl A a a) (refl A a a)
+         Type⁽ᵉ⁾ (Id A a a) (Id A a a)
        but is being checked against type
          Type
        unequal head terms:
-         refl Type
+         Type⁽ᵉ⁾
        does not equal
          Type
   
@@ -260,11 +260,11 @@
    ￭ command-line exec string
    1 | echo (a : Id (Id A) (refl a) (refl a))
      ^ term synthesized type
-         refl Type (refl A a a) (refl A a a)
+         Type⁽ᵉ⁾ (Id A a a) (Id A a a)
        but is being checked against type
          Type
        unequal head terms:
-         refl Type
+         Type⁽ᵉ⁾
        does not equal
          Type
   
@@ -274,11 +274,11 @@
    ￭ command-line exec string
    1 | def q := Id Type A (Id A)
      ^ term synthesized type
-         refl Type A A
+         Type⁽ᵉ⁾ A A
        but is being checked against type
          Type
        unequal head terms:
-         refl Type
+         Type⁽ᵉ⁾
        does not equal
          Type
   

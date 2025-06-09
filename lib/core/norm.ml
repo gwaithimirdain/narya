@@ -345,7 +345,7 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
       let args = CubeOf.build m { build = (fun fa -> lazy_eval (act_env env (op_of_sface fa)) v) } in
       eval (LazyExt (env, D.plus_zero m, args)) body
   (* It's tempting to write just "act_value (eval env x) s" here, but that is WRONG!  Pushing a substitution through an operator action requires whiskering the operator by the dimension of the substitution. *)
-  | Act (x, s) ->
+  | Act (x, s, _) ->
       let k = dim_env env in
       let (Plus km) = D.plus (dom_deg s) in
       let (Plus kn) = D.plus (cod_deg s) in

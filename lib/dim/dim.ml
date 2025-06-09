@@ -46,10 +46,15 @@ let deg_of_name : string -> any_deg option =
   else if str = "sym" then Some (Any_deg sym)
   else None
 
-let name_of_deg : type a b. (a, b) deg -> string option = function
+let name_of_deg : type a b.
+    sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] -> (a, b) deg -> string option =
+ fun ~sort -> function
   | Zero (Nat (Suc Zero)) -> (
-      match Endpoints.refl_names () with
-      | [] -> None
-      | name :: _ -> Some name)
+      match (Endpoints.refl_names (), sort) with
+      | [], _ -> None
+      | _ :: name :: _, (`Type, `Other) -> Some name
+      | _ :: _ :: name :: _, (`Function, _) -> Some name
+      | _, (`Type, `Canonical) -> None
+      | name :: _, _ -> Some name)
   | Suc (Suc (Zero (Nat Zero), Now), Later Now) -> Some "sym"
   | _ -> None

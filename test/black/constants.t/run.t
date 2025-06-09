@@ -274,12 +274,12 @@
    ￭ command-line exec string
    1 | def one_eq_zero : Id CN one zero := refl one
      ^ term synthesized type
-         {A₀ : Type} {A₁ : Type} (A₂ : refl Type A₀ A₁) {H₀ : A₀ → A₀} {H₁ : A₁ → A₁}
+         {A₀ : Type} {A₁ : Type} (A₂ : Type⁽ᵉ⁾ A₀ A₁) {H₀ : A₀ → A₀} {H₁ : A₁ → A₁}
          (H₂ : {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′) →⁽ᵉ⁾ A₂ (H₀ H₀′) (H₁ H₁′))
          {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′)
          →⁽ᵉ⁾ A₂ (H₀ H₀′) (H₁ H₁′)
        but is being checked against type
-         {A₀ : Type} {A₁ : Type} (A₂ : refl Type A₀ A₁) {H₀ : A₀ → A₀} {H₁ : A₁ → A₁}
+         {A₀ : Type} {A₁ : Type} (A₂ : Type⁽ᵉ⁾ A₀ A₁) {H₀ : A₀ → A₀} {H₁ : A₁ → A₁}
          (H₂ : {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′) →⁽ᵉ⁾ A₂ (H₀ H₀′) (H₁ H₁′))
          {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′)
          →⁽ᵉ⁾ A₂ (H₀ H₀′) H₁′
@@ -294,12 +294,12 @@
    ￭ command-line exec string
    1 | def cplus_one_two_eq_two : Id CN (cplus one two) two := refl two
      ^ term synthesized type
-         {A₀ : Type} {A₁ : Type} (A₂ : refl Type A₀ A₁) {H₀ : A₀ → A₀} {H₁ : A₁ → A₁}
+         {A₀ : Type} {A₁ : Type} (A₂ : Type⁽ᵉ⁾ A₀ A₁) {H₀ : A₀ → A₀} {H₁ : A₁ → A₁}
          (H₂ : {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′) →⁽ᵉ⁾ A₂ (H₀ H₀′) (H₁ H₁′))
          {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′)
          →⁽ᵉ⁾ A₂ (H₀ (H₀ H₀′)) (H₁ (H₁ H₁′))
        but is being checked against type
-         {A₀ : Type} {A₁ : Type} (A₂ : refl Type A₀ A₁) {H₀ : A₀ → A₀} {H₁ : A₁ → A₁}
+         {A₀ : Type} {A₁ : Type} (A₂ : Type⁽ᵉ⁾ A₀ A₁) {H₀ : A₀ → A₀} {H₁ : A₁ → A₁}
          (H₂ : {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′) →⁽ᵉ⁾ A₂ (H₀ H₀′) (H₁ H₁′))
          {H₀′ : A₀} {H₁′ : A₁} (H₂′ : A₂ H₀′ H₁′)
          →⁽ᵉ⁾ A₂ (H₀ (H₀ (H₀ H₀′))) (H₁ (H₁ H₁′))
@@ -325,14 +325,14 @@
          →⁽ᵉ⁾ {x₀₀ : A} {x₀₁ : A} {x₀₂ : refl A x₀₀ x₀₁} {x₁₀ : A} {x₁₁ : A}
               {x₁₂ : refl A x₁₀ x₁₁} {x₂₀ : refl A x₀₀ x₁₀} {x₂₁ : refl A x₀₁ x₁₁}
               (x₂₂ : A⁽ᵉᵉ⁾ x₀₂ x₁₂ x₂₀ x₂₁)
-              →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ x₂₂ (refl f x₀₂) (refl f x₁₂) (refl_nat_f H₀ x₂₀)
+              →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ x₂₂ (ap f x₀₂) (ap f x₁₂) (refl_nat_f H₀ x₂₀)
                       (refl_nat_f H₁ x₂₁)
        but is being checked against type
          {H₀ : ℕ} {H₁ : ℕ} (H₂ : refl ℕ H₀ H₁)
          →⁽ᵉ⁾ {x₀₀ : A} {x₀₁ : A} {x₀₂ : refl A x₀₀ x₀₁} {x₁₀ : A} {x₁₁ : A}
               {x₁₂ : refl A x₁₀ x₁₁} {x₂₀ : refl A x₀₀ x₁₀} {x₂₁ : refl A x₀₁ x₁₁}
               (x₂₂ : A⁽ᵉᵉ⁾ x₀₂ x₁₂ x₂₀ x₂₁)
-              →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ x₂₂ (refl f x₀₂) (refl f x₁₂) (refl_nat_f H₀ x₂₀)
+              →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ x₂₂ (ap f x₀₂) (ap f x₁₂) (refl_nat_f H₀ x₂₀)
                       (refl_nat_f_cube H₁ x₂₁)
        unequal head constants:
          refl_nat_f

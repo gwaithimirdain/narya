@@ -54,7 +54,7 @@
     : Type
   
   (x : refl A) ⇒ refl B x.2
-    : refl Type ((x : A) → B x) ((x : A) → B x)
+    : Type⁽ᵉ⁾ ((x : A) → B x) ((x : A) → B x)
   
 
   $ narya higherpi.ny -e "echo (x₂ : refl A x₀ x₁) →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)"
