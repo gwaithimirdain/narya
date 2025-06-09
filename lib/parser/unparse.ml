@@ -303,7 +303,12 @@ let rec unparse : type n lt ls rt rs s.
         }
         (deg_zero n) li ri
   | Inst (ty, tyargs) -> unparse_inst vars ty vars tyargs li ri
-  | Pi _ -> unparse_pis vars Emp tm li ri
+  | Pi (_, doms, _) ->
+      let dim, notn =
+        match D.compare_zero (CubeOf.dim doms) with
+        | Zero -> (`Arrow, arrow)
+        | Pos _ -> (`DblArrow, dblarrow) in
+      unparse_pis dim notn vars Emp tm li ri
   | App _ -> (
       match get_spine tm with
       | `App (fn, args) ->
@@ -653,132 +658,109 @@ and unparse_named_inst : type n lt ls rt rs m k mk.
       [ tyargs ] Emp in
   unparse_spine vars (`Term ty) args li ri
 
-(* We group together all the 0-dimensional dependent pi-types in a notation, so we recursively descend through the term picking those up until we find a non-pi-type, a higher-dimensional pi-type, or a non-dependent pi-type, in which case we pass it off to unparse_pis_final. *)
+(* We group together all the 0-dimensional or non-instantiated higher dependent pi-types in a notation, so we recursively descend through the term picking those up until we find a non-pi-type, a higher-dimensional pi-type, or a non-dependent pi-type, in which case we pass it off to unparse_pis_final. *)
 and unparse_pis : type n lt ls rt rs.
+    [ `Arrow | `DblArrow ] ->
+    (No.strict opn, No.zero, No.nonstrict opn) notation ->
     n Names.t ->
     unparser Bwd.t ->
     (n, kinetic) term ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun vars accum tm li ri ->
+ fun dim notn vars accum tm li ri ->
   match tm with
   | Pi (x, doms, cods) -> (
-      match (top_variable x, D.compare (CubeOf.dim doms) D.zero) with
-      | Some x, Eq ->
-          (* dependent 0-dimensional pi-type *)
-          let Variables (_, _, x), newvars = Names.add vars (singleton_variables D.zero (Some x)) in
-          unparse_pis newvars
-            (Snoc
-               ( accum,
-                 {
-                   unparse =
-                     (fun _ _ ->
-                       unparse_pi_dom
-                         (NICubeOf.find_top x <|> Anomaly "missing top in unparse_pis")
-                         (unparse vars (CubeOf.find_top doms) (interval_right asc)
-                            No.Interval.entire));
-                 } ))
-            (CodCube.find_top cods) li ri
-      | None, Eq ->
-          (* non-dependent 0-dimensional pi-type *)
-          let _, newvars = Names.add vars (singleton_variables D.zero None) in
-          unparse_pis_final vars accum
-            {
-              unparse =
-                (fun li ri ->
-                  unparse_arrow
-                    (make_unparser vars (CubeOf.find_top doms))
-                    (make_unparser newvars (CodCube.find_top cods))
-                    li ri);
-            }
-            li ri
-      | _, Neq ->
-          (* non-instantiated higher-dimensional pi-type; unparse as an application of the Π constant *)
-          let module S = Monad.State (struct
-            type t = unparser Bwd.t
-          end) in
-          let module MOf = CubeOf.Monadic (S) in
-          let all_args = not (synths (CubeOf.find_top doms)) in
-          let (), args =
-            MOf.miterM
-              {
-                it =
-                  (fun fa [ dom ] args ->
-                    let newdoms =
-                      match (Display.function_boundaries (), is_id_sface fa, all_args) with
-                      | `Hide, None, false -> []
-                      | _, None, _ -> [ (dom, `Implicit) ]
-                      | _ -> [ (dom, `Explicit) ] in
-                    ((), Bwd.append args (List.map (make_unparser_implicit vars) newdoms)));
-              }
-              [ doms ] Emp in
-          let module MCod = CodCube.Monadic (S) in
-          let (), args =
-            MCod.miterM
-              {
-                it =
-                  (fun fa [ cod ] args ->
-                    let impl =
-                      (* We never hide the boundaries of the codomain, since all of them are being unparsed as lambdas, so the top-dimensional face won't synthesize and we'd need the boundary given to make it re-parseable. *)
-                      match is_id_sface fa with
-                      | None -> `Implicit
-                      | Some _ -> `Explicit in
-                    ( (),
-                      Snoc (args, make_unparser_implicit vars (Lam (sub_variables fa x, cod), impl))
-                    ));
-              }
-              [ cods ] args in
-          unparse_pis_final vars accum
-            {
-              unparse =
-                (fun li ri ->
-                  unparse_spine vars
-                    (`Term (Act (Const Pi.const, deg_zero (CubeOf.dim doms))))
-                    args li ri);
-            }
-            li ri)
-  | _ -> unparse_pis_final vars accum (make_unparser vars tm) li ri
+      match (D.compare_zero (CubeOf.dim doms), dim) with
+      | Zero, `Arrow | Pos _, `DblArrow -> (
+          match top_variable x with
+          | Some x ->
+              (* dependent pi-type *)
+              let Variables (_, _, x), newvars =
+                Names.add vars (singleton_variables (CubeOf.dim doms) (Some x)) in
+              unparse_pis dim notn newvars
+                (Snoc
+                   ( accum,
+                     {
+                       unparse =
+                         (fun _ _ ->
+                           unparse_pi_dom
+                             (NICubeOf.find_top x <|> Anomaly "missing top in unparse_pis")
+                             (unparse vars (CubeOf.find_top doms) (interval_right asc)
+                                No.Interval.entire));
+                     } ))
+                (CodCube.find_top cods) li ri
+          | None ->
+              (* non-dependent pi-type *)
+              let _, newvars = Names.add vars (singleton_variables (CubeOf.dim doms) None) in
+              let dim =
+                match dim with
+                | `Arrow -> `Arrow None
+                | `DblArrow -> `DblArrow in
+              unparse_pis_final dim notn vars accum
+                {
+                  unparse =
+                    (fun li ri ->
+                      unparse_arrow dim notn
+                        (make_unparser vars (CubeOf.find_top doms))
+                        (make_unparser newvars (CodCube.find_top cods))
+                        li ri);
+                }
+                li ri)
+      | _ ->
+          let dim =
+            match dim with
+            | `Arrow -> `Arrow None
+            | `DblArrow -> `DblArrow in
+          unparse_pis_final dim notn vars accum (make_unparser vars tm) li ri)
+  | _ ->
+      let dim =
+        match dim with
+        | `Arrow -> `Arrow None
+        | `DblArrow -> `DblArrow in
+      unparse_pis_final dim notn vars accum (make_unparser vars tm) li ri
 
 (* The arrow in both dependent and non-dependent pi-types is (un)parsed as a binary operator.  In the dependent case, its left-hand argument looks like an "application spine" of ascribed variables.  Of course, it may have to be parenthesized. *)
 and unparse_arrow : type lt ls rt rs m.
-    ?higher:m D.t ->
+    [ `Arrow of m D.t option | `DblArrow ] ->
+    (No.strict opn, No.zero, No.nonstrict opn) notation ->
     unparser ->
     unparser ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun ?higher dom cod li ri ->
+ fun dim notn dom cod li ri ->
   let tok =
-    match higher with
-    | None -> sstok Arrow ""
-    | Some dim -> sstok Arrow (string_of_dim dim) in
+    match dim with
+    | `Arrow None -> sstok Arrow ""
+    | `Arrow (Some dim) -> sstok Arrow (string_of_dim dim)
+    | `DblArrow -> wstok DblArrow in
   match (No.Interval.contains li No.zero, No.Interval.contains ri No.zero) with
   | Some left_ok, Some right_ok ->
       let first = dom.unparse li (interval_left arrow) in
       let last = cod.unparse (interval_right arrow) ri in
-      unlocated (infix ~notn:arrow ~first ~inner:(Single tok) ~last ~left_ok ~right_ok)
+      unlocated (infix ~notn ~first ~inner:(Single tok) ~last ~left_ok ~right_ok)
   | _ ->
       let first = dom.unparse No.Interval.entire (interval_left arrow) in
       let last = cod.unparse (interval_right arrow) No.Interval.entire in
       let left_ok = No.minusomega_lt_zero in
       let right_ok = No.minusomega_lt_zero in
-      parenthesize
-        (unlocated (infix ~notn:arrow ~first ~inner:(Single tok) ~last ~left_ok ~right_ok))
+      parenthesize (unlocated (infix ~notn ~first ~inner:(Single tok) ~last ~left_ok ~right_ok))
 
 and unparse_pis_final : type n lt ls rt rs m.
-    ?higher:m D.t ->
+    [ `Arrow of m D.t option | `DblArrow ] ->
+    (No.strict opn, No.zero, No.nonstrict opn) notation ->
     n Names.t ->
     unparser Bwd.t ->
     unparser ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun ?higher vars accum tm li ri ->
+ fun dim notn vars accum tm li ri ->
   match split_first accum with
   | None -> tm.unparse li ri
   | Some (dom0, accum) ->
-      unparse_arrow ?higher
+      unparse_arrow dim notn
         { unparse = (fun li ri -> unparse_spine vars (`Unparser dom0) accum li ri) }
         tm li ri
 
@@ -873,7 +855,7 @@ and unparse_higher_pi : type a lt ls rt rs n.
               unparse =
                 (fun li ri -> unparse_higher_pi newvars Emp newxs newdoms newcods plustyargs li ri);
             } in
-          unparse_pis_final ~higher:(CodCube.dim cods) vars accum tm li ri
+          unparse_pis_final (`Arrow (Some (CodCube.dim cods))) arrow vars accum tm li ri
       | Neq, _ ->
           fatal
             (Dimension_mismatch
@@ -885,7 +867,7 @@ and unparse_higher_pi : type a lt ls rt rs n.
   | cod ->
       (* When it's time to finish, we unparse the eventual codomain and instantiate it at the unparsed bodies of all the lambda tyargs. *)
       let tm = { unparse = (fun li ri -> unparse_named_inst newvars cod tyargs li ri) } in
-      unparse_pis_final ~higher:(CodCube.dim cods) vars accum tm li ri
+      unparse_pis_final (`Arrow (Some (CodCube.dim cods))) arrow vars accum tm li ri
 
 (* Unparse a term context, given a vector of variable names obtained by pre-uniquifying a variable list, and a list of names for by the empty context that nevertheless remembers the variables in that vector, as produced by Names.uniquify_vars.  Yields not only the list of unparsed terms/types, but a corresponding list of names that can be used to unparse further objects in that context. *)
 let rec unparse_ctx : type a b.

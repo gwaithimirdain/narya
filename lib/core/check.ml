@@ -2255,6 +2255,69 @@ and synth : type a b s.
         let edom = eval_term (Ctx.env ctx) cdom in
         let ccod = check (Kinetic `Nolet) (Ctx.ext ctx x edom) cod (universe D.zero) in
         (realize status (pi (singleton_variables D.zero x) cdom ccod), universe D.zero)
+    | HigherPi (x, dom, cod), _ -> (
+        let cdom, domty = synth (Kinetic `Nolet) ctx dom in
+        let edom = eval_term (Ctx.env ctx) cdom in
+        match view_type domty "higher pi domain" with
+        | Canonical
+            (type m n nm)
+            ((_, UU n, ins, edoms) :
+              head * (n, m) canonical * (nm, n, m) insertion * (D.zero, nm, nm, normal) TubeOf.t)
+          -> (
+            let Eq = eq_of_ins_zero ins in
+            let cdomt = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ edoms ] in
+            let cdoms = TubeOf.plus_cube cdomt (CubeOf.singleton cdom) in
+            let edomt = TubeOf.mmap { map = (fun _ [ x ] -> x.tm) } [ edoms ] in
+            let edoms = TubeOf.plus_cube edomt (CubeOf.singleton edom) in
+            let _, binds = dom_vars ctx edoms in
+            let newctx = Ctx.cube_vis ctx x binds in
+            let ccod, codty = synth (Kinetic `Nolet) newctx cod in
+            match view_type codty "higher pi codomain" with
+            | Canonical (_, UU n', ins', ecodt) -> (
+                match D.compare n n' with
+                | Eq ->
+                    let Eq = eq_of_ins_zero ins' in
+                    let ccods =
+                      let build : type k. (k, n) sface -> (k, b) CodFam.t =
+                       fun s ->
+                        match pface_of_sface s with
+                        | `Id Eq -> ccod
+                        | `Proper t ->
+                            let sctx = Ctx.cube_vis ctx x (CubeOf.subcube s binds) in
+                            readback_nf sctx (TubeOf.find ecodt t) in
+                      CodCube.build n { build } in
+                    let tyargstbl = Hashtbl.create 10 in
+                    let tyargs =
+                      TubeOf.build D.zero (D.zero_plus n)
+                        {
+                          build =
+                            (fun t ->
+                              let k = dom_tface t in
+                              let t' = sface_of_tface t in
+                              let ctm =
+                                Term.Pi
+                                  ( singleton_variables k x,
+                                    CubeOf.subcube t' cdoms,
+                                    CodCube.subcube t' ccods ) in
+                              let tm = eval_term (Ctx.env ctx) ctm in
+                              let tyargs =
+                                TubeOf.build D.zero (D.zero_plus k)
+                                  {
+                                    build =
+                                      (fun v ->
+                                        Hashtbl.find tyargstbl
+                                          (Tface_of (tface_comp_sface t (sface_of_tface v))));
+                                  } in
+                              let ty = inst (universe k) tyargs in
+                              let arg = { tm; ty } in
+                              Hashtbl.add tyargstbl (Tface_of t) arg;
+                              arg);
+                        } in
+                    ( realize status (Pi (singleton_variables n x, cdoms, ccods)),
+                      inst (universe n) tyargs )
+                | Neq -> fatal (Invalid_higher_function "invalid single codomain dimension"))
+            | _ -> fatal (Invalid_higher_function "invalid single codomain"))
+        | _ -> fatal (Invalid_higher_function "invalid single domain"))
     | ( InstHigherPi
           (type n an)
           ((n', doms, cod) : n D.pos * (a, n, unit, an) DomCube.t * an check located),
@@ -2328,6 +2391,7 @@ and synth : type a b s.
         let newctx = Ctx.vis ctx D.zero (D.zero_plus n) xs binds af in
         (* We likewise check the codomain against universe 0. *)
         let ccod = check (Kinetic `Nolet) newctx cod (universe D.zero) in
+        with_loc cod.loc @@ fun () ->
         Reporter.try_with ~fatal:(fun d ->
             match d.message with
             | No_such_level _ ->

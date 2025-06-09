@@ -609,9 +609,12 @@ let process_typed_vars : type lt ls rt rs.
    Function types (dependent and non)
  **************************************** *)
 
-type (_, _, _) identity += Arrow : (No.strict opn, No.zero, No.nonstrict opn) identity
+type (_, _, _) identity +=
+  | Arrow : (No.strict opn, No.zero, No.nonstrict opn) identity
+  | DblArrow : (No.strict opn, No.zero, No.nonstrict opn) identity
 
 let arrow : (No.strict opn, No.zero, No.nonstrict opn) notation = (Arrow, Infixr No.zero)
+let dblarrow : (No.strict opn, No.zero, No.nonstrict opn) notation = (DblArrow, Infixr No.zero)
 
 type arrow_opt = [ `Arrow of Whitespace.t list | `Noarrow | `First ]
 
@@ -734,30 +737,57 @@ let rec get_pi :
             if coddim = dim then (vars, ws, evcod) else ([], wsarrow, Wrap cod)
         | _ -> ([], wsarrow, Wrap cod) in
       (get_pi_args prev_arr doms vars, ws, dim, cod)
+  | [ Term doms; Token (DblArrow, (wsarrow, _)); Term cod ] ->
+      let vars, ws, cod =
+        match cod.value with
+        | Notn ((DblArrow, _), n) ->
+            let vars, ws, _, evcod = get_pi (`Arrow wsarrow) (args n) in
+            (vars, ws, evcod)
+        | _ -> ([], wsarrow, Wrap cod) in
+      (get_pi_args prev_arr doms vars, ws, ("", []), cod)
   | _ -> invalid "arrow 2"
 
 (* Given the variables with domains and the codomain of an ordinary (not higher) pi-type, process it into a raw term. *)
 let rec process_pi : type n lt ls rt rs.
-    (string option, n) Bwv.t -> pi_dom list -> (lt, ls, rt, rs) parse located -> n check located =
- fun ctx doms cod ->
+    (string option, n) Bwv.t ->
+    [ `Lower | `Higher ] ->
+    pi_dom list ->
+    (lt, ls, rt, rs) parse located ->
+    n check located =
+ fun ctx higher doms cod ->
   match doms with
   | [] -> process ctx cod
-  | Nondep { ty = Wrap dom; _ } :: doms ->
+  | Nondep { ty = Wrap dom; _ } :: doms -> (
       let cdom = process ctx dom in
       let ctx = Bwv.snoc ctx None in
-      let cod = process_pi ctx doms cod in
+      let cod = process_pi ctx higher doms cod in
       let loc = Range.merge_opt cdom.loc cod.loc in
-      { value = Synth (Pi (None, cdom, cod)); loc }
-  | Dep ({ vars = (x, _) :: xs; ty = Wrap dom; loc; implicit = `Explicit; _ } as data) :: doms ->
+      match (higher, cdom.value, cod.value) with
+      | `Lower, _, _ -> { value = Synth (Pi (None, cdom, cod)); loc }
+      | `Higher, Synth sdom, Synth scod ->
+          {
+            value = Synth (HigherPi (None, locate_opt cdom.loc sdom, locate_opt cod.loc scod));
+            loc;
+          }
+      | `Higher, Synth _, _ ->
+          fatal ?loc:cod.loc (Nonsynthesizing "codomain of higher function type")
+      | `Higher, _, _ -> fatal ?loc:cdom.loc (Nonsynthesizing "domain of higher function type"))
+  | Dep ({ vars = (x, _) :: xs; ty = Wrap dom; loc; implicit = `Explicit; _ } as data) :: doms -> (
       let cdom = process ctx dom in
       let ctx = Bwv.snoc ctx x in
-      let cod = process_pi ctx (Dep { data with vars = xs } :: doms) cod in
+      let cod = process_pi ctx higher (Dep { data with vars = xs } :: doms) cod in
       let loc = Range.merge_opt loc cod.loc in
-      { value = Synth (Pi (x, cdom, cod)); loc }
-  | Dep { vars = []; implicit = `Explicit; _ } :: doms -> process_pi ctx doms cod
+      match (higher, cdom.value, cod.value) with
+      | `Lower, _, _ -> { value = Synth (Pi (x, cdom, cod)); loc }
+      | `Higher, Synth sdom, Synth scod ->
+          { value = Synth (HigherPi (x, locate_opt cdom.loc sdom, locate_opt cod.loc scod)); loc }
+      | `Higher, Synth _, _ ->
+          fatal ?loc:cod.loc (Nonsynthesizing "codomain of higher function type")
+      | `Higher, _, _ -> fatal ?loc:cdom.loc (Nonsynthesizing "domain of higher function type"))
+  | Dep { vars = []; implicit = `Explicit; _ } :: doms -> process_pi ctx higher doms cod
   | Dep { implicit = `Implicit; _ } :: _ -> fatal (Unimplemented "general implicit function-types")
 
-let rec process_higher_pi : type n lt ls rt rs m.
+let rec process_inst_higher_pi : type n lt ls rt rs m.
     (string option, n) Bwv.t ->
     m D.pos ->
     pi_dom list ->
@@ -799,7 +829,7 @@ let rec process_higher_pi : type n lt ls rt rs m.
                          "all boundary domains must be implicit and primary domain explicit" )))
           | _ -> invalid "higher pi" in
         T.build_left (D.pos dim) { build } (ctx, doms, None) in
-      let cod = process_higher_pi newctx dim doms cod in
+      let cod = process_inst_higher_pi newctx dim doms cod in
       let loc = Range.merge_opt loc cod.loc in
       { value = Synth (InstHigherPi (dim, domcube, cod)); loc }
 
@@ -847,7 +877,7 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
       (empty, None) doms in
   (doc, ws <|> Anomaly "missing ws in pp_doms")
 
-let pp_pi obs =
+let pp_pi arrow obs =
   let doms, wsarrow, (dim, wsdim), Wrap cod = get_pi `First obs in
   let pdom, wdom = pp_doms doms in
   let pcod, wcod = pp_term cod in
@@ -860,7 +890,7 @@ let pp_pi obs =
       (align
          (pdom
          ^^ pp_ws `Break wdom
-         ^^ Token.pp Arrow
+         ^^ Token.pp arrow
          ^^ dim
          ^^ hang 2 (pp_ws `Nobreak wsdim ^^ pcod))),
     wcod )
@@ -877,11 +907,23 @@ let () =
           match dim_of_string dim with
           | Some (Any m) -> (
               match D.compare_zero m with
-              | Zero -> process_pi ctx doms cod
-              | Pos dim -> process_higher_pi ctx dim doms cod)
+              | Zero -> process_pi ctx `Lower doms cod
+              | Pos dim -> process_inst_higher_pi ctx dim doms cod)
           | None -> fatal Parse_error);
-      print_term = Some pp_pi;
+      print_term = Some (pp_pi Arrow);
       (* Function-types are never part of case trees. *)
+      print_case = None;
+      is_case = (fun _ -> false);
+    };
+  make dblarrow
+    {
+      name = "dblarrow";
+      tree = Open_entry (eop DblArrow (done_open dblarrow));
+      processor =
+        (fun ctx obs _loc ->
+          let doms, _, _, Wrap cod = get_pi `First obs in
+          process_pi ctx `Higher doms cod);
+      print_term = Some (pp_pi DblArrow);
       print_case = None;
       is_case = (fun _ -> false);
     }
@@ -2414,6 +2456,7 @@ let install () =
     |> Situation.add abs
     |> Situation.add cubeabs
     |> Situation.add arrow
+    |> Situation.add dblarrow
     |> Situation.add universe
     |> Situation.add coloneq
     |> Situation.add comatch

@@ -609,7 +609,6 @@ let inst_lazy : type m n mn s. s lazy_eval -> (m, n, mn, normal) TubeOf.t -> s l
           ref (Deferred (tm, ins, newargs))
       | Ready tm -> ref (Deferred ((fun () -> tm), id_deg D.zero, Inst (Emp, k, args))))
 
-(* Given a *type*, hence an element of a fully instantiated universe, extract the arguments of the instantiation of that universe. *)
 let inst_tys : kinetic value -> kinetic value TubeOf.full = function
   | Neu { ty = (lazy (Neu { args = Inst (_, _, tys); _ })); _ } -> (
       match D.compare (TubeOf.uninst tys) D.zero with

@@ -82,6 +82,7 @@ module rec Make : functor (I : Indices) -> sig
     | Const : Constant.t -> 'a synth
     | Field : 'a synth located * [ `Name of string * int list | `Int of int ] -> 'a synth
     | Pi : I.name * 'a check located * 'a I.suc check located -> 'a synth
+    | HigherPi : I.name * 'a synth located * 'a I.suc synth located -> 'a synth
     | InstHigherPi : 'n D.pos * ('a, 'n, unit, 'an) DomCube.t * 'an check located -> 'a synth
     | App : 'a synth located * 'a check located * [ `Implicit | `Explicit ] located -> 'a synth
     | Asc : 'a check located * 'a check located -> 'a synth
@@ -229,6 +230,7 @@ functor
       (* A field projection from a possibly-higher-coinductive type comes with a suffix that is a string of integers, denoting a partial bijection between n and m that is total on n.  This is the same as an injection from n to m, or equivalently an insertion of n into m∖l to produce m, where l = image(n). *)
       | Field : 'a synth located * [ `Name of string * int list | `Int of int ] -> 'a synth
       | Pi : I.name * 'a check located * 'a I.suc check located -> 'a synth
+      | HigherPi : I.name * 'a synth located * 'a I.suc synth located -> 'a synth
       | InstHigherPi : 'n D.pos * ('a, 'n, unit, 'an) DomCube.t * 'an check located -> 'a synth
       (* The location of the implicitness flag is, in the implicit case, the location of the braces surrounding the implicit argument. *)
       | App : 'a synth located * 'a check located * [ `Implicit | `Explicit ] located -> 'a synth
@@ -422,6 +424,7 @@ module Resolve (R : Resolver) = struct
       | Const c -> Const c
       | Field (tm, fld) -> Field (synth ctx tm, fld)
       | Pi (x, dom, cod) -> Pi (R.rename ctx x, check ctx dom, check (R.snoc ctx x) cod)
+      | HigherPi (x, dom, cod) -> HigherPi (R.rename ctx x, synth ctx dom, synth (R.snoc ctx x) cod)
       | InstHigherPi (n, doms, cod) ->
           let (Gfolded (doms, ctx)) =
             DomTraverse.fold_map_left

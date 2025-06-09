@@ -25,3 +25,8 @@ def id2ok
        (x₂₂ : A⁽ᵉᵉ⁾ x₀₂ x₁₂ x₂₀ x₂₁)
        →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ x₂₂ (f02 x₀₂) (f12 x₁₂) (f20 x₂₀) (f21 x₂₁))
   ≔ refl (((x : A) → B x)⁽ᵉᵉ⁾ f02 f12 f20 f21)
+
+def nidok
+  : Id (Id Type ((x : A) → B x) ((x : A) → B x)) (Id ((x : A) → B x))
+      ((x : Id A) ⇒ Id B x.2)
+  ≔ refl (Id ((x : A) → B x))

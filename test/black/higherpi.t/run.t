@@ -1,4 +1,4 @@
-  $ narya -v higherpi.ny -e "echo Id ((x : A) → B x) f g" -e "echo ((x : A) → B x)⁽ᵉᵉ⁾ f02 f12 f20 f21"
+  $ narya -v higherpi.ny -e "echo Id ((x : A) → B x) f g" -e "echo ((x : A) → B x)⁽ᵉᵉ⁾ f02 f12 f20 f21" -e "echo Id ((x : A) → B x)"
    ￫ info[I0001]
    ￮ axiom A assumed
   
@@ -41,6 +41,9 @@
    ￫ info[I0000]
    ￮ constant id2ok defined
   
+   ￫ info[I0000]
+   ￮ constant nidok defined
+  
   {x₀ : A} {x₁ : A} (x₂ : refl A x₀ x₁) →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)
     : Type
   
@@ -49,6 +52,9 @@
   (x₂₂ : A⁽ᵉᵉ⁾ x₀₂ x₁₂ x₂₀ x₂₁)
   →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ x₂₂ (f02 x₀₂) (f12 x₁₂) (f20 x₂₀) (f21 x₂₁)
     : Type
+  
+  (x : refl A) ⇒ refl B x.2
+    : refl Type ((x : A) → B x) ((x : A) → B x)
   
 
   $ narya higherpi.ny -e "echo (x₂ : refl A x₀ x₁) →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)"
@@ -109,5 +115,13 @@
    ￭ command-line exec string
    1 | echo {x₀ x₁ : A} (x₂ : refl A x₀ x₁) →⁽ᵉ⁾ A
      ^ invalid higher function-type: invalid codomain
+  
+  [1]
+
+  $ narya higherpi.ny -e "echo (x : Id A) ⇒ A"
+   ￫ error[E0706]
+   ￭ command-line exec string
+   1 | echo (x : Id A) ⇒ A
+     ^ invalid higher function-type: invalid single codomain dimension
   
   [1]
