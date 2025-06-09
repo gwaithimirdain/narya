@@ -628,6 +628,23 @@ let inst_of_apps : type any. any apps -> noninst apps * normal TubeOf.any option
   | Arg _ -> (apps, None)
   | Field _ -> (apps, None)
 
+(* Split off a given positive dimension's worth of instantiation, putting the rest back on the apps.  The argument must be a neutral, so the return value is just the head and apps part of a neutral (which suffices to read it back with readback_neu). *)
+let split_inst : type m.
+    m D.pos -> kinetic value -> (head * any_apps * (D.zero, m, m, normal) TubeOf.t) option =
+ fun m tm ->
+  let m = D.pos m in
+  match tm with
+  | Neu { head; args = Inst (args, mk, tyargs); _ } -> (
+      match (D.compare_zero (TubeOf.uninst tyargs), factor (D.pos mk) m) with
+      | Zero, Some (Factor m_k) -> (
+          let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (D.pos mk)) in
+          let tyargs, rest = TubeOf.split (D.zero_plus m) m_k tyargs in
+          match D.compare_zero (D.plus_right m_k) with
+          | Zero -> Some (head, Any args, tyargs)
+          | Pos k -> Some (head, Any (Inst (args, k, rest)), tyargs))
+      | _ -> None)
+  | _ -> None
+
 module Fwd_app = struct
   (* Make an apps without instantiations into a forwards list *)
   type t =

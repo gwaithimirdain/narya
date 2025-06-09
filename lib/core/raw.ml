@@ -69,11 +69,20 @@ module rec Make : functor (I : Indices) -> sig
 
   type 'a index = 'a I.index * any_sface option
 
+  module DomFam : sig
+    type (_, _, _) t = DomFam : I.name * 'left Make(I).check located -> ('left, 'n, 'b) t
+  end
+
+  module DomCube : module type of struct
+    include Icube (I) (DomFam)
+  end
+
   type _ synth =
     | Var : 'a index -> 'a synth
     | Const : Constant.t -> 'a synth
     | Field : 'a synth located * [ `Name of string * int list | `Int of int ] -> 'a synth
     | Pi : I.name * 'a check located * 'a I.suc check located -> 'a synth
+    | InstHigherPi : 'n D.pos * ('a, 'n, unit, 'an) DomCube.t * 'an check located -> 'a synth
     | App : 'a synth located * 'a check located * [ `Implicit | `Explicit ] located -> 'a synth
     | Asc : 'a check located * 'a check located -> 'a synth
     | UU : 'a synth
@@ -207,6 +216,12 @@ functor
     (* A raw De Bruijn index is a well-scoped (backwards) natural number (or, more generally, an element of I.index) together with a possible face.  During typechecking we will verify that the face, if given, is applicable to the variable as a "cube variable", and compile the combination into a more strongly well-scoped kind of index. *)
     type 'a index = 'a I.index * any_sface option
 
+    module DomFam = struct
+      type (_, _, _) t = DomFam : I.name * 'left Make(I).check located -> ('left, 'n, 'b) t
+    end
+
+    module DomCube = Icube (I) (DomFam)
+
     (* Synthesizable raw terms *)
     type _ synth =
       | Var : 'a index -> 'a synth
@@ -214,6 +229,7 @@ functor
       (* A field projection from a possibly-higher-coinductive type comes with a suffix that is a string of integers, denoting a partial bijection between n and m that is total on n.  This is the same as an injection from n to m, or equivalently an insertion of n into m∖l to produce m, where l = image(n). *)
       | Field : 'a synth located * [ `Name of string * int list | `Int of int ] -> 'a synth
       | Pi : I.name * 'a check located * 'a I.suc check located -> 'a synth
+      | InstHigherPi : 'n D.pos * ('a, 'n, unit, 'an) DomCube.t * 'an check located -> 'a synth
       (* The location of the implicitness flag is, in the implicit case, the location of the braces surrounding the implicit argument. *)
       | App : 'a synth located * 'a check located * [ `Implicit | `Explicit ] located -> 'a synth
       | Asc : 'a check located * 'a check located -> 'a synth
@@ -326,8 +342,14 @@ module Indexed = Make (DeBruijnIndices)
 module type Resolver = sig
   module I1 : Indices
   module I2 : Indices
-  module T1 : module type of Make (I1)
-  module T2 : module type of Make (I2)
+
+  module T1 : module type of struct
+    include Make (I1)
+  end
+
+  module T2 : module type of struct
+    include Make (I2)
+  end
 
   type ('a1, 'a2) scope
 
@@ -350,39 +372,47 @@ end
 
 (* Resolution is basically a straightforward structural induction that walks the terms, extending the scope as it goes. *)
 module Resolve (R : Resolver) = struct
-  module I1 = R.I1
-  module I2 = R.I2
-  module T1 = R.T1
-  module T2 = R.T2
+  (* We can't make things more concise with aliases like
+       module I1 = R.I1
+     because module aliases are not preserved by functors: F(I1) will not be equal to F(R.I1). *)
 
   let rec append : type a1 a2 b ab1 ab2.
-      (a1, a2) R.scope -> (a1, b, ab1) T1.Namevec.t -> (a2, b, ab2) T2.bplus -> (ab1, ab2) R.scope =
+      (a1, a2) R.scope ->
+      (a1, b, ab1) R.T1.Namevec.t ->
+      (a2, b, ab2) R.T2.bplus ->
+      (ab1, ab2) R.scope =
    fun ctx xs ab2 ->
     match xs with
     | [] ->
-        let Eq = T2.bplus_zero ab2 in
+        let Eq = R.T2.bplus_zero ab2 in
         ctx
     | x :: xs ->
-        let ab2 = T2.bplus_suc ab2 in
+        let ab2 = R.T2.bplus_suc ab2 in
         append (R.snoc ctx x) xs ab2
 
   let rec renames : type a1 a2 b ab1 ab2.
       (a1, a2) R.scope ->
-      (a1, b, ab1) T1.Namevec.t ->
-      (a2, b, ab2) T2.bplus ->
-      (a2, b, ab2) T2.Namevec.t =
+      (a1, b, ab1) R.T1.Namevec.t ->
+      (a2, b, ab2) R.T2.bplus ->
+      (a2, b, ab2) R.T2.Namevec.t =
    fun ctx xs ab ->
     match xs with
     | [] ->
-        let Eq = T2.bplus_zero ab in
+        let Eq = R.T2.bplus_zero ab in
         []
     | x :: xs ->
-        let ab = T2.bplus_suc ab in
+        let ab = R.T2.bplus_suc ab in
         R.rename ctx x :: renames (R.snoc ctx x) xs ab
 
-  let rec synth : type a1 a2. (a1, a2) R.scope -> a1 T1.synth located -> a2 T2.synth located =
+  module DomTraverse =
+    IcubeTraverse2 (R.I1) (R.I2) (R.T1.DomFam) (R.T2.DomFam)
+      (struct
+        type ('a1, 'a2) t = ('a1, 'a2) R.scope
+      end)
+
+  let rec synth : type a1 a2. (a1, a2) R.scope -> a1 R.T1.synth located -> a2 R.T2.synth located =
    fun ctx tm ->
-    let newtm : a2 T2.synth =
+    let newtm : a2 R.T2.synth =
       match tm.value with
       | Var (name, fa) -> (
           (* Here's the important resolution bit: we "look up" names in the scope (although at this point that is just an abstract operation supplied by the caller), and insert an error in case of failure.  Note that we store the error in the term rather than raising it immediately; a caller who wants to raise it immediately can do that in the function 'scope_error' instead of returning it. *)
@@ -392,12 +422,22 @@ module Resolve (R : Resolver) = struct
       | Const c -> Const c
       | Field (tm, fld) -> Field (synth ctx tm, fld)
       | Pi (x, dom, cod) -> Pi (R.rename ctx x, check ctx dom, check (R.snoc ctx x) cod)
+      | InstHigherPi (n, doms, cod) ->
+          let (Gfolded (doms, ctx)) =
+            DomTraverse.fold_map_left
+              {
+                foldmap =
+                  (fun _ ctx (DomFam (x, dom)) ->
+                    (DomFam (R.rename ctx x, check ctx dom), R.snoc ctx x));
+              }
+              ctx doms in
+          InstHigherPi (n, doms, check ctx cod)
       | App (fn, arg, impl) -> App (synth ctx fn, check ctx arg, impl)
       | Asc (tm, ty) -> Asc (check ctx tm, check ctx ty)
       | UU -> UU
       | Let (x, tm, body) -> Let (R.rename ctx x, synth ctx tm, (check (R.snoc ctx x)) body)
       | Letrec (tys, tms, body) ->
-          let (Bplus ab) = T2.bplus (Vec.length tms) in
+          let (Bplus ab) = R.T2.bplus (Vec.length tms) in
           let tys2, ctx2 = tel ctx tys ab in
           let tms2 = Vec.map (check ctx2) tms in
           Letrec (tys2, tms2, check ctx2 body)
@@ -422,12 +462,12 @@ module Resolve (R : Resolver) = struct
           Calc
             ( synth ctx first,
               List.map (fun (y, xeqy) -> (check ctx y, Option.map (check ctx) xeqy)) rest ) in
-    R.visit ctx (locate_opt tm.loc (T2.Synth newtm));
+    R.visit ctx (locate_opt tm.loc (R.T2.Synth newtm));
     locate_opt tm.loc newtm
 
-  and check : type a1 a2. (a1, a2) R.scope -> a1 T1.check located -> a2 T2.check located =
+  and check : type a1 a2. (a1, a2) R.scope -> a1 R.T1.check located -> a2 R.T2.check located =
    fun ctx tm ->
-    let newtm : a2 T2.check =
+    let newtm : a2 R.T2.check =
       match tm.value with
       | Synth x -> Synth (synth ctx (locate_opt tm.loc x)).value
       | Lam { name; cube; implicit; body } ->
@@ -447,14 +487,14 @@ module Resolve (R : Resolver) = struct
       | Codata fields ->
           Codata
             (Abwd.map
-               (fun (T1.Codatafield (x, fld)) ->
-                 T2.Codatafield (R.rename ctx x, check (R.snoc ctx x) fld))
+               (fun (R.T1.Codatafield (x, fld)) ->
+                 R.T2.Codatafield (R.rename ctx x, check (R.snoc ctx x) fld))
                fields)
       | Record (xs, fields, opaq) ->
-          let (Bplus ac2) = T2.bplus (T1.Namevec.length xs.value) in
+          let (Bplus ac2) = R.T2.bplus (R.T1.Namevec.length xs.value) in
           let xs2 = renames ctx xs.value ac2 in
           let ctx2 = append ctx xs.value ac2 in
-          let (Bplus ad) = T2.bplus (T1.fwn_of_tel fields) in
+          let (Bplus ad) = R.T2.bplus (R.T1.fwn_of_tel fields) in
           let fields2, _ = tel ctx2 fields ad in
           Record (locate_opt xs.loc xs2, fields2, opaq)
       | Refute (args, sort) -> Refute (List.map (synth ctx) args, sort)
@@ -473,41 +513,41 @@ module Resolve (R : Resolver) = struct
     R.visit ctx newtm;
     newtm
 
-  and branch : type a1 a2. (a1, a2) R.scope -> a1 T1.branch -> a2 T2.branch =
+  and branch : type a1 a2. (a1, a2) R.scope -> a1 R.T1.branch -> a2 R.T2.branch =
    fun ctx (Branch (xs, cube, body)) ->
-    let (Bplus ab) = T2.bplus (T1.Namevec.length xs.value) in
+    let (Bplus ab) = R.T2.bplus (R.T1.Namevec.length xs.value) in
     let xs2 = renames ctx xs.value ab in
     let ctx2 = append ctx xs.value ab in
     Branch (locate_opt xs.loc xs2, cube, check ctx2 body)
 
-  and dataconstr : type a1 a2. (a1, a2) R.scope -> a1 T1.dataconstr -> a2 T2.dataconstr =
+  and dataconstr : type a1 a2. (a1, a2) R.scope -> a1 R.T1.dataconstr -> a2 R.T2.dataconstr =
    fun ctx (Dataconstr (args, body)) ->
-    let (Bplus ab) = T2.bplus (T1.fwn_of_tel args) in
+    let (Bplus ab) = R.T2.bplus (R.T1.fwn_of_tel args) in
     let args2, ctx2 = tel ctx args ab in
     Dataconstr (args2, Option.map (check ctx2) body)
 
-  and refutables : type a1 a2. (a1, a2) R.scope -> a1 T1.refutables -> a2 T2.refutables =
+  and refutables : type a1 a2. (a1, a2) R.scope -> a1 R.T1.refutables -> a2 R.T2.refutables =
    fun ctx { refutables } ->
-    let refutables : type b ab2. (a2, b, ab2) T2.bplus -> ab2 T2.synth located list =
+    let refutables : type b ab2. (a2, b, ab2) R.T2.bplus -> ab2 R.T2.synth located list =
      fun ab2 ->
-      let (Bplus ab1) = T1.bplus (T2.bplus_right ab2) in
-      let ctx2 = append ctx (T1.Namevec.none ab1) ab2 in
+      let (Bplus ab1) = R.T1.bplus (R.T2.bplus_right ab2) in
+      let ctx2 = append ctx (R.T1.Namevec.none ab1) ab2 in
       List.map (synth ctx2) (refutables ab1) in
     { refutables }
 
   and tel : type b a1 ab1 a2 ab2.
       (a1, a2) R.scope ->
-      (a1, b, ab1) T1.tel ->
-      (a2, b, ab2) T2.bplus ->
-      (a2, b, ab2) T2.tel * (ab1, ab2) R.scope =
+      (a1, b, ab1) R.T1.tel ->
+      (a2, b, ab2) R.T2.bplus ->
+      (a2, b, ab2) R.T2.tel * (ab1, ab2) R.scope =
    fun ctx tele ab ->
     match tele with
     | Emp ->
-        let Eq = T2.bplus_zero ab in
+        let Eq = R.T2.bplus_zero ab in
         (Emp, ctx)
     | Ext (x, ty, rest) ->
         let ctx2 = R.snoc ctx x in
-        let ab = T2.bplus_suc ab in
+        let ab = R.T2.bplus_suc ab in
         let rest3, ctx3 = tel ctx2 rest ab in
         (Ext (R.rename ctx x, check ctx ty, rest3), ctx3)
 end

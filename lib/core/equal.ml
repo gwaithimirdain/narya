@@ -388,5 +388,6 @@ let fallback_opt f =
 
 let equal_at ctx x y ty = fallback @@ fun () -> Equal.equal_at ctx x y ty
 let equal_val ctx x y = fallback @@ fun () -> Equal.equal_val ctx x y
+let equal_nf ctx x y = fallback @@ fun () -> Equal.equal_nf ctx x y
 let equal_tyargs ctx a1 a2 = fallback_opt @@ fun () -> Equal.equal_tyargs ctx a1 a2
 let equal_apps ctx a1 a2 = fallback_opt @@ fun () -> Equal.equal_apps ctx a1 a2

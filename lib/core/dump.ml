@@ -333,6 +333,7 @@ module F = struct
               else "." ^ f ^ "." ^ String.concat "" (List.map string_of_int p)
           | `Int i -> "." ^ string_of_int i)
     | Pi (_, _, _) -> fprintf ppf "Pi(?)"
+    | InstHigherPi (_, _, _) -> fprintf ppf "InstHigherPi(?)"
     | App (fn, arg, _) -> fprintf ppf "App(%a, %a)" synth fn.value check arg.value
     | Asc (tm, ty) -> fprintf ppf "Asc(%a, %a)" check tm.value check ty.value
     | Let (_, _, _) -> fprintf ppf "Let(?)"

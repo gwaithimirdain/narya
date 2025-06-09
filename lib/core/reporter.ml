@@ -105,6 +105,8 @@ module Code = struct
         why : Unequal.t;
       }
         -> t
+    | Not_enough_domains : 'a D.t -> t
+    | Invalid_higher_function : string -> t
     | Checking_tuple_at_degenerated_record : printable -> t
     | Missing_field_in_tuple : 'i Field.t * ('e, 'i, 'r) pbij option -> t
     | Missing_method_in_comatch : 'i Field.t * ('e, 'i, 'r) pbij option -> t
@@ -280,6 +282,8 @@ module Code = struct
     | Type_not_fully_instantiated _ -> Error
     | Unequal_synthesized_type _ -> Error
     | Unequal_synthesized_boundary _ -> Error
+    | Not_enough_domains _ -> Error
+    | Invalid_higher_function _ -> Error
     | Checking_tuple_at_degenerated_record _ -> Error
     | Missing_field_in_tuple _ -> Error
     | Missing_method_in_comatch _ -> Error
@@ -462,6 +466,8 @@ module Code = struct
     | Unexpected_implicitness _ -> "E0702"
     | Insufficient_dimension _ -> "E0703"
     | Unequal_synthesized_boundary _ -> "E0704"
+    | Not_enough_domains _ -> "E0705"
+    | Invalid_higher_function _ -> "E0706"
     (* Record fields *)
     | No_such_field _ -> "E0800"
     | Wrong_dimension_of_field _ -> "E0801"
@@ -641,6 +647,9 @@ module Code = struct
             "@[<hv 0>the %s-boundary synthesized type@;<1 2>%a@ but is being checked against type@;<1 2>%a@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a@]"
             (string_of_sface face) pp_printed (print got) pp_printed (print expected) str pp_printed
             (print p1) pp_printed (print p2)
+      | Not_enough_domains dim ->
+          textf "not enough domains for an %s-dimensional function type" (string_of_dim0 dim)
+      | Invalid_higher_function str -> textf "invalid higher function-type: %s" str
       | Checking_tuple_at_degenerated_record r ->
           textf "can't check a tuple against a record %a with a nonidentity degeneracy applied"
             pp_printed (print r)

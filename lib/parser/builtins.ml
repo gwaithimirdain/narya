@@ -624,7 +624,7 @@ type pi_dom =
       wscolon : Whitespace.t list;
       wsrparen : Whitespace.t list;
       loc : Asai.Range.t option;
-      implicit : bool;
+      implicit : [ `Implicit | `Explicit ];
     }
   | Nondep of { wsarrow : arrow_opt; ty : wrapped_parse }
 
@@ -651,7 +651,7 @@ let get_pi_args : type lt ls rt rs.
                    wscolon;
                    wsrparen;
                    loc = doms.loc;
-                   implicit = false;
+                   implicit = `Explicit;
                  }
               :: accum)
         | _ -> None)
@@ -661,7 +661,16 @@ let get_pi_args : type lt ls rt rs.
             let* vars, wscolon, ty = process_typed_vars body.value in
             return
               (Dep
-                 { wsarrow; vars; ty; wslparen; wscolon; wsrparen; loc = doms.loc; implicit = true }
+                 {
+                   wsarrow;
+                   vars;
+                   ty;
+                   wslparen;
+                   wscolon;
+                   wsrparen;
+                   loc = doms.loc;
+                   implicit = `Implicit;
+                 }
               :: accum)
         | _ -> None)
     | App { fn; arg = { value = Notn ((Parens, _), n); _ }; _ } -> (
@@ -678,7 +687,7 @@ let get_pi_args : type lt ls rt rs.
                    wscolon;
                    wsrparen;
                    loc = doms.loc;
-                   implicit = false;
+                   implicit = `Explicit;
                  }
               :: accum)
         | _ -> None)
@@ -696,7 +705,7 @@ let get_pi_args : type lt ls rt rs.
                    wscolon;
                    wsrparen;
                    loc = doms.loc;
-                   implicit = true;
+                   implicit = `Implicit;
                  }
               :: accum)
         | _ -> None)
@@ -707,14 +716,16 @@ let get_pi_args : type lt ls rt rs.
 
 (* Get all the domains, dimension, and eventual codomain from a right-associated iterated function-type. *)
 let rec get_pi :
-    arrow_opt -> observation list -> pi_dom list * Whitespace.t list * string * wrapped_parse =
+    arrow_opt ->
+    observation list ->
+    pi_dom list * Whitespace.t list * (string * Whitespace.t list) * wrapped_parse =
  fun prev_arr obs ->
   match obs with
   | [ Term doms; Ss_token ((Arrow, (wsarrow, _)), dims); Term cod ] ->
       let dim =
         match dims with
-        | [] -> ""
-        | [ (_, dim, _) ] -> dim
+        | [] -> ("", [])
+        | [ (_, dim, wsdim) ] -> (dim, wsdim)
         | _ -> invalid "arrow 1" in
       let vars, ws, cod =
         match cod.value with
@@ -737,14 +748,60 @@ let rec process_pi : type n lt ls rt rs.
       let cod = process_pi ctx doms cod in
       let loc = Range.merge_opt cdom.loc cod.loc in
       { value = Synth (Pi (None, cdom, cod)); loc }
-  | Dep ({ vars = (x, _) :: xs; ty = Wrap dom; loc; implicit = false; _ } as data) :: doms ->
+  | Dep ({ vars = (x, _) :: xs; ty = Wrap dom; loc; implicit = `Explicit; _ } as data) :: doms ->
       let cdom = process ctx dom in
       let ctx = Bwv.snoc ctx x in
       let cod = process_pi ctx (Dep { data with vars = xs } :: doms) cod in
       let loc = Range.merge_opt loc cod.loc in
       { value = Synth (Pi (x, cdom, cod)); loc }
-  | Dep { vars = []; implicit = false; _ } :: doms -> process_pi ctx doms cod
-  | Dep { implicit = true; _ } :: _ -> fatal (Unimplemented "general implicit function-types")
+  | Dep { vars = []; implicit = `Explicit; _ } :: doms -> process_pi ctx doms cod
+  | Dep { implicit = `Implicit; _ } :: _ -> fatal (Unimplemented "general implicit function-types")
+
+let rec process_higher_pi : type n lt ls rt rs m.
+    (string option, n) Bwv.t ->
+    m D.pos ->
+    pi_dom list ->
+    (lt, ls, rt, rs) parse located ->
+    n check located =
+ fun ctx dim doms cod ->
+  match doms with
+  | [] -> process ctx cod
+  | _ :: _ ->
+      let module Acc = struct
+        type 'left t = (string option, 'left) Bwv.t * pi_dom list * Asai.Range.t option
+      end in
+      let module T = DomCube.Traverse (Acc) in
+      let (Wrap (domcube, (newctx, doms, loc))) =
+        let build : type left k b. (k, m) sface -> left Acc.t -> (left, k, b) T.fwrap_left =
+         fun s (ctx, doms, loc) ->
+          match doms with
+          | [] -> fatal (Not_enough_domains (D.pos dim))
+          | Dep ({ vars = (x, _) :: xs; ty = Wrap dom; loc = xloc; implicit; _ } as data) :: doms
+            -> (
+              match (is_id_sface s, implicit) with
+              | Some Eq, `Explicit | None, `Implicit ->
+                  let cdom = process ctx dom in
+                  let ctx = Bwv.snoc ctx x in
+                  let doms =
+                    match xs with
+                    | [] -> doms
+                    | _ :: _ -> Dep { data with vars = xs } :: doms in
+                  let loc =
+                    match loc with
+                    | Some loc -> Some loc
+                    | None -> xloc in
+                  Fwrap (DomFam (x, cdom), (ctx, doms, loc))
+              | _ ->
+                  fatal
+                    (Unexpected_implicitness
+                       ( implicit,
+                         "domain",
+                         "all boundary domains must be implicit and primary domain explicit" )))
+          | _ -> invalid "higher pi" in
+        T.build_left (D.pos dim) { build } (ctx, doms, None) in
+      let cod = process_higher_pi newctx dim doms cod in
+      let loc = Range.merge_opt loc cod.loc in
+      { value = Synth (InstHigherPi (dim, domcube, cod)); loc }
 
 (* Pretty-print the domains of a right-associated iterated function-type that may mix dependent and non-dependent arguments.  Each argument is preceded by an arrow if its wsarrow is given; pi_doms ensures these go in the right place.  If linebreaked, the eventual codomain with its arrow goes on a line by itself with hanging indent, and then the domains are flowed with their own hanging indent.  Arrows never come at the beginnings of lines.  *)
 
@@ -769,7 +826,7 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
               let pty, wty = pp_term ty in
               ( wsarrow,
                 ( group
-                    (Token.pp (if implicit then LBrace else LParen)
+                    (Token.pp (if implicit = `Implicit then LBrace else LParen)
                     ^^ pp_ws `None wslparen
                     ^^ hang 2 pvars
                     ^^ optional (pp_ws `Break) wvars
@@ -777,7 +834,7 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
                     ^^ pp_ws `Nobreak wscolon
                     ^^ pty
                     ^^ pp_ws `None wty
-                    ^^ Token.pp (if implicit then RBrace else RParen)),
+                    ^^ Token.pp (if implicit = `Implicit then RBrace else RParen)),
                   wsrparen ) )
           | Nondep { wsarrow; ty = Wrap ty } -> (wsarrow, pp_term ty) in
         let doc, ws =
@@ -791,16 +848,21 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
   (doc, ws <|> Anomaly "missing ws in pp_doms")
 
 let pp_pi obs =
-  let doms, wsarrow, dim, Wrap cod = get_pi `First obs in
+  let doms, wsarrow, (dim, wsdim), Wrap cod = get_pi `First obs in
   let pdom, wdom = pp_doms doms in
   let pcod, wcod = pp_term cod in
+  let dim, wsdim =
+    if dim = "" then (empty, wsarrow)
+    else
+      ( pp_ws (if Display.chars () = `Unicode then `None else `Nobreak) wsarrow ^^ pp_superscript dim,
+        wsdim ) in
   ( group
       (align
          (pdom
          ^^ pp_ws `Break wdom
          ^^ Token.pp Arrow
-         ^^ (if dim = "" then empty else pp_superscript dim)
-         ^^ hang 2 (pp_ws `Nobreak wsarrow ^^ pcod))),
+         ^^ dim
+         ^^ hang 2 (pp_ws `Nobreak wsdim ^^ pcod))),
     wcod )
 
 let () =
@@ -811,9 +873,13 @@ let () =
       processor =
         (fun ctx obs _loc ->
           (* We don't need the loc parameter here, since we can reconstruct the location of each pi-type from its arguments. *)
-          let doms, _, dim, Wrap cod = get_pi `First obs in
-          if dim = "" then process_pi ctx doms cod
-          else fatal (Unimplemented "parsing higher pi-types"));
+          let doms, _, (dim, _), Wrap cod = get_pi `First obs in
+          match dim_of_string dim with
+          | Some (Any m) -> (
+              match D.compare_zero m with
+              | Zero -> process_pi ctx doms cod
+              | Pos dim -> process_higher_pi ctx dim doms cod)
+          | None -> fatal Parse_error);
       print_term = Some pp_pi;
       (* Function-types are never part of case trees. *)
       print_case = None;
