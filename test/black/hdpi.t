@@ -11,6 +11,6 @@ Printing higher-dimensional pi-types
   > EOF
 
   $ narya hdpi.ny
-  refl Π E {x ↦ A' x} {x ↦ B' x} (x ⤇ E' x.2)
+  (x : E) ⇒ E' x.2
     : refl Type ((x : A) → A' x) ((x : B) → B' x)
   

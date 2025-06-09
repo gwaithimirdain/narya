@@ -78,12 +78,6 @@
    ￮ constant zero_zero_eq_zero_zero' defined
   
    ￫ info[I0000]
-   ￮ constant built_in_pi_eqs_named_pi defined
-  
-   ￫ info[I0000]
-   ￮ constant refl_for_pi defined
-  
-   ￫ info[I0000]
    ￮ constant Stream defined
   
    ￫ info[I0000]

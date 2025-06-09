@@ -134,7 +134,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols f =
         marshal = marshal_flags;
         unmarshal = unmarshal_flags;
         source_only = !source_only;
-        init_visible = Parser.Glue.install (Parser.Pi.install Scope.Trie.empty);
+        init_visible = Parser.Glue.install Scope.Trie.empty;
         top_files;
         reformat = !reformat;
       }

@@ -166,7 +166,7 @@
          refl Type ({H₀ : X} {H₁ : X} (H₂ : refl X H₀ H₁) →⁽ᵉ⁾ refl Y (f H₀) (f' H₁))
            ((x : X) (x' : X) (x'' : refl X x x') → refl Y (f x) (f' x'))
        unequal head terms:
-         refl Π (refl X) {_ ↦ Y} {_ ↦ Y} (_ ⤇ refl Y)
+         refl X ⇒ refl Y
        does not equal
          (x : X) (x' : X) (x'' : refl X x x') → refl Y (f x) (f' x')
   
