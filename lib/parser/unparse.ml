@@ -172,21 +172,6 @@ let rec unparse_abs : type li ls ri rs.
       let arg = unparse_var_with_implicitness x in
       unlocated (App { fn; arg; left_ok; right_ok })
 
-(* If a term is a natural number numeral (a bunch of 'suc' constructors applied to a 'zero' constructor), unparse it as that numeral; otherwise return None. *)
-let unparse_numeral : type n li ls ri rs. (n, kinetic) term -> (li, ls, ri, rs) parse option =
- fun tm ->
-  (* As in parsing, it would be better not to hardcode these constructor names. *)
-  let zero = Constr.intern "zero" in
-  let one = Constr.intern "one" in
-  let suc = Constr.intern "suc" in
-  let rec getsucs tm k =
-    match tm with
-    | Term.Constr (c, _, []) when c = zero -> Some (Ident ([ string_of_int k ], []))
-    | Term.Constr (c, _, []) when c = one -> Some (Ident ([ string_of_int (k + 1) ], []))
-    | Constr (c, _, [ arg ]) when c = suc -> getsucs (CubeOf.find_top arg) (k + 1)
-    | _ -> None in
-  getsucs tm 0
-
 let rec get_list : type n.
     (n, kinetic) term -> (n, kinetic) term Bwd.t -> (n, kinetic) term Bwd.t option =
  fun tm elts ->
@@ -388,7 +373,7 @@ let rec unparse : type n lt ls rt rs s.
   | Constr (c, _, args) -> (
       (* TODO: This doesn't print the dimension.  This is correct since constructors don't have to (and in fact *can't* be) written with their dimension, but it could also be somewhat confusing, e.g. printing "refl (0:N)" yields just "0", and similarly "refl (nil. : List N)" yields "nil.". *)
       match unparse_numeral tm with
-      | Some tm -> unlocated tm
+      | Some tm -> tm.unparse li ri
       | None ->
           let args = of_list_map (fun x -> make_unparser vars (CubeOf.find_top x)) args in
           unparse_spine vars (`Constr c) args li ri)
@@ -582,6 +567,28 @@ and unparse_lam_done : type n lt ls rt rs s.
       let right_ok = No.le_refl No.minus_omega in
       parenthesize
         (unlocated (infix ~notn ~first ~inner:(Single (wstok mapsto)) ~last ~left_ok ~right_ok))
+
+(* If a term is a natural number numeral (a bunch of 'suc' constructors applied to a 'zero' constructor), unparse it as that numeral; otherwise return None. *)
+and unparse_numeral : type n. (n, kinetic) term -> unparser option =
+ fun tm ->
+  (* As in parsing, it would be better not to hardcode these constructor names. *)
+  let zero = Constr.intern "zero" in
+  let one = Constr.intern "one" in
+  let suc = Constr.intern "suc" in
+  let make_numeral dim k =
+    let tm = { unparse = (fun _ _ -> unlocated (Ident ([ string_of_int k ], []))) } in
+    Some
+      {
+        unparse =
+          (fun li ri -> unparse_act ~sort:(`Other, `Other) Names.empty tm (deg_zero dim) li ri);
+      } in
+  let rec getsucs tm k =
+    match tm with
+    | Term.Constr (c, dim, []) when c = zero -> make_numeral dim k
+    | Term.Constr (c, dim, []) when c = one -> make_numeral dim (k + 1)
+    | Constr (c, _, [ arg ]) when c = suc -> getsucs (CubeOf.find_top arg) (k + 1)
+    | _ -> None in
+  getsucs tm 0
 
 and unparse_act : type n lt ls rt rs a b.
     sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] ->

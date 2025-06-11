@@ -157,7 +157,7 @@ As with record types, the other primitives ``refl`` and ``ap`` compute on terms 
 
 1. ``refl (left. a)`` reduces to ``left. (refl a)``, and similarly for ``right``.  As with tuples, since the argument of ``refl`` must in general synthesize, you would expect that ``left. a`` needs to be ascribed; but because ``refl (left. a)`` always reduces to ``left. (refl a)`` Narya does that reduction at checking time and allows ``refl (left. a)`` to check without needing the constructor to be ascribed.
 2. ``refl (cons. x (cons. y nil.))`` reduces to ``cons. (refl x) (cons. (refl y) nil.)``.
-3. ``refl 3``, which means ``refl (suc. (suc. (suc. zero.)))``, reduces to ``suc. (suc. (suc. zero.))`` where all the constructors denote higher-dimensional ones, and is therefore displayed as just ``3``.
+3. ``refl 3``, which means ``refl (suc. (suc. (suc. zero.)))``, reduces to ``suc. (suc. (suc. zero.))`` where all the constructors denote higher-dimensional ones.  Since a numeral checks at *any* datatype having the appropriate constructors, ``refl 3`` can also be written as just ``3``.  However, since this may look confusing, Narya prints it as ``refl 3`` even though the ``refl`` is strictly speaking unnecessary.
 
 Since matches (like comatches) are case tree constructs, ``refl`` and ``ap`` of functions defined using matching don't compute until they are applied to constructors.  Thus, for instance, if we define addition of natural numbers:
 

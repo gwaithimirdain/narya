@@ -13,8 +13,11 @@
   
 
   $ narya degnumeral.ny
-  3
+  refl 3
     : ℕ⁽ᵉ⁾ 3 3
+  
+  3⁽ᵉᵉ⁾
+    : ℕ⁽ᵉᵉ⁾ {3} {3} (refl 3) {3} {3} (refl 3) (refl 3) (refl 3)
   
 
   $ narya degtuple.ny
