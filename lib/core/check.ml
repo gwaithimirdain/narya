@@ -2786,8 +2786,9 @@ and synth_arg_cube : type a b n c.
             fatal ~severity:Asai.Diagnostic.Error ?loc
               (Insufficient_dimension
                  { needed = CubeOf.dim doms; got = TubeOf.inst argtyargs; which }))
-    | (_, _, { value = `Explicit; _ }) :: _, Pos _ ->
-        fatal (Nonsynthesizing ("primary argument with implicit " ^ which ^ " boundaries")) in
+    | (_, { loc; _ }, { value = `Explicit; _ }) :: _, Pos _ ->
+        fatal ?loc (Nonsynthesizing ("primary argument with implicit " ^ which ^ " boundaries"))
+  in
   let module M = Monad.State (struct
     type t =
       Asai.Range.t option
