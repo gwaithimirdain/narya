@@ -295,39 +295,46 @@ let rec check : type a b s.
             realize status
               (Term.Act (cx, fa, (sort_of_ty ctx (view_type ty "checking act"), `Other)))
         (* It can also check if its argument is a constructor (including a numeral) or a tuple, by pushing the degeneracy through to its arguments, since higher constructors and fields have the same names as lower ones. *)
-        | None -> (
-            let add_extra what (d : Reporter.Code.t Asai.Diagnostic.t) =
+        | None ->
+            let add_extra locs what (d : Reporter.Code.t Asai.Diagnostic.t) =
               let extra_remarks =
-                match str.loc with
-                | None -> d.extra_remarks
-                | Some loc ->
-                    Snoc
-                      ( d.extra_remarks,
-                        Asai.Diagnostic.loctext ~loc ("degeneracy propagated through " ^ what) )
-              in
+                Bwd.append d.extra_remarks
+                  (Bwd_extra.to_list_map
+                     (fun loc ->
+                       Asai.Diagnostic.loctext ~loc ("degeneracy propagated through " ^ what))
+                     locs) in
               fatal_diagnostic { d with extra_remarks } in
-            match x.value with
-            | Constr (c, args) ->
-                Reporter.try_with ~fatal:(add_extra "constructor") @@ fun () ->
-                check ?discrete status ctx
-                  (locate_opt x.loc
-                     (Constr
-                        (c, List.map (fun x -> locate_opt x.loc (Synth (Act (str, fa, x)))) args)))
-                  ty
-            | Struct (eta, flds) ->
-                Reporter.try_with ~fatal:(add_extra "tuple") @@ fun () ->
-                check ?discrete status ctx
-                  (locate_opt x.loc
-                     (Struct
-                        ( eta,
-                          Abwd.map
-                            (fun (cube, x) -> (cube, locate_opt x.loc (Synth (Act (str, fa, x)))))
-                            flds )))
-                  ty
-            | Numeral _ ->
-                (* Numerals are sequences of constructors with no other arguments, so there is no need to push anything through. *)
-                check ?discrete status ctx x ty
-            | _ -> check_of_synth status ctx stm tm.loc ty))
+            let rec look_through locs fas x =
+              let act_on x =
+                Bwd.fold_right
+                  (fun (str, Any_deg fa) x -> locate_opt x.loc (Synth (Act (str, fa, x))))
+                  fas x in
+              match x.value with
+              | Constr (c, args) ->
+                  Reporter.try_with ~fatal:(add_extra locs "constructor") @@ fun () ->
+                  check ?discrete status ctx
+                    (locate_opt x.loc (Constr (c, List.map act_on args)))
+                    ty
+              | Struct (eta, flds) ->
+                  Reporter.try_with ~fatal:(add_extra locs "tuple") @@ fun () ->
+                  check ?discrete status ctx
+                    (locate_opt x.loc
+                       (Struct (eta, Abwd.map (fun (cube, x) -> (cube, act_on x)) flds)))
+                    ty
+              | Numeral _ ->
+                  (* Numerals are sequences of constructors with no other arguments, so there is no need to push anything through. *)
+                  check ?discrete status ctx x ty
+              | Synth (Act (str2, fa2, y)) ->
+                  (* Iterated degeneracies, like (refl (refl 3)) can be combined to look all the way through. *)
+                  look_through
+                    (Option.fold ~none:locs ~some:(Bwd.snoc locs) str2.loc)
+                    (Snoc (fas, (str2, Any_deg fa2)))
+                    y
+              | _ -> check_of_synth status ctx stm tm.loc ty in
+            look_through
+              (Option.fold ~none:Bwd.Emp ~some:(Bwd.snoc Emp) str.loc)
+              (Snoc (Emp, (str, Any_deg fa)))
+              x)
     | Lam { name = { value = x; loc = xloc }; cube; implicit; body }, _ -> (
         match view_type ~severity ty "typechecking lambda" with
         | Canonical (_, Pi (_, doms, cods), ins, tyargs) -> (

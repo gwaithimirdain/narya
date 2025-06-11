@@ -11,10 +11,39 @@
   cons. (refl a) (cons. (refl a) nil.)
     : List⁽ᵉ⁾ (Id A) (cons. a (cons. a nil.)) (cons. a (cons. a nil.))
   
+  cons. a⁽ᵉᵉ⁾ (cons. a⁽ᵉᵉ⁾ nil.)
+    : List⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ {cons. a (cons. a nil.)} {cons. a (cons. a nil.)}
+        (cons. (refl a) (cons. (refl a) nil.)) {cons. a (cons. a nil.)}
+        {cons. a (cons. a nil.)} (cons. (refl a) (cons. (refl a) nil.))
+        (cons. (refl a) (cons. (refl a) nil.))
+        (cons. (refl a) (cons. (refl a) nil.))
+  
+
+  $ narya -e 'import "degconstr" echo refl (cons. a (cons. a nil.)) : List A'
+   ￫ warning[W2400]
+   ￮ not re-executing echo/synth/show commands when loading compiled file $TESTCASE_ROOT/degconstr.nyo
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | import "degconstr" echo refl (cons. a (cons. a nil.)) : List A
+     ^ degeneracy propagated through constructor
+     ^ term synthesized type
+         Id A a a
+       but is being checked against type
+         A
+       unequal head terms:
+         refl A
+       does not equal
+         A
+  
+  [1]
 
   $ narya degnumeral.ny
   refl 3
     : ℕ⁽ᵉ⁾ 3 3
+  
+  3⁽ᵉᵉ⁾
+    : ℕ⁽ᵉᵉ⁾ {3} {3} (refl 3) {3} {3} (refl 3) (refl 3) (refl 3)
   
   3⁽ᵉᵉ⁾
     : ℕ⁽ᵉᵉ⁾ {3} {3} (refl 3) {3} {3} (refl 3) (refl 3) (refl 3)

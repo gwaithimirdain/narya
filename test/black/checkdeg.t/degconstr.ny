@@ -16,3 +16,9 @@ echo refl nil. : List A
 
 echo refl (cons. a (cons. a nil.))
      : Id (List A) (cons. a (cons. a nil.)) (cons. a (cons. a nil.))
+
+echo refl (refl (cons. a (cons. a nil.)))
+     : Id (Id (List A)) {cons. a (cons. a nil.)} {cons. a (cons. a nil.)}
+         (refl (cons. a (cons. a nil.))) {cons. a (cons. a nil.)}
+         {cons. a (cons. a nil.)} (refl (cons. a (cons. a nil.)))
+         (refl (cons. a (cons. a nil.))) (refl (cons. a (cons. a nil.)))
