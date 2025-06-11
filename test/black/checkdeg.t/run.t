@@ -6,7 +6,7 @@
     : Sum⁽ᵉ⁾ (Id A) (Id B) (left. a) (left. a)
   
   nil.
-    : List A
+    : List⁽ᵉ⁾ (Id A) nil. nil.
   
   cons. (refl a) (cons. (refl a) nil.)
     : List⁽ᵉ⁾ (Id A) (cons. a (cons. a nil.)) (cons. a (cons. a nil.))
@@ -19,22 +19,34 @@
         (cons. (refl a) (cons. (refl a) nil.))
   
 
-  $ narya -e 'import "degconstr" echo refl (cons. a (cons. a nil.)) : List A'
+  $ narya -e 'import "degconstr" echo refl nil. : List A'
+   ￫ warning[W2400]
+   ￮ not re-executing echo/synth/show commands when loading compiled file $TESTCASE_ROOT/degconstr.nyo
+  
+   ￫ error[E0500]
+   ￭ command-line exec string
+   1 | import "degconstr" echo refl nil. : List A
+     ^ dimension mismatch in higher constructor (e ≠ 0)
+  
+  [1]
+
+
+  $ narya -e 'import "degconstr" axiom a1 : A echo refl (cons. a nil.) : Id (List A) (cons. a nil.) (cons. a1 nil.)'
    ￫ warning[W2400]
    ￮ not re-executing echo/synth/show commands when loading compiled file $TESTCASE_ROOT/degconstr.nyo
   
    ￫ error[E0401]
    ￭ command-line exec string
-   1 | import "degconstr" echo refl (cons. a (cons. a nil.)) : List A
+   1 | import "degconstr" axiom a1 : A echo refl (cons. a nil.) : Id (List A) (cons. a nil.) (cons. a1 nil.)
      ^ degeneracy propagated through constructor
      ^ term synthesized type
          Id A a a
        but is being checked against type
-         A
-       unequal head terms:
-         refl A
+         Id A a a1
+       unequal head constants:
+         a
        does not equal
-         A
+         a1
   
   [1]
 
@@ -48,6 +60,14 @@
   3⁽ᵉᵉ⁾
     : ℕ⁽ᵉᵉ⁾ {3} {3} (refl 3) {3} {3} (refl 3) (refl 3) (refl 3)
   
+
+  $ narya -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] echo refl 3 : ℕ'
+   ￫ error[E0500]
+   ￭ command-line exec string
+   1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] echo refl 3 : ℕ
+     ^ dimension mismatch in higher constructor (e ≠ 0)
+  
+  [1]
 
   $ narya degtuple.ny
   (refl a, refl b)

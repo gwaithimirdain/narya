@@ -304,18 +304,28 @@ let rec check : type a b s.
                        Asai.Diagnostic.loctext ~loc ("degeneracy propagated through " ^ what))
                      locs) in
               fatal_diagnostic { d with extra_remarks } in
-            let rec look_through locs fas x =
+            let (Any dim) =
+              match view_type ~severity ty "typechecking lambda" with
+              | Canonical (_, _, ins, _) -> Any (cod_left_ins ins)
+              | Neutral (_, tyargs) -> Any (TubeOf.inst tyargs) in
+            let check_dim () =
+              if Option.is_none (factor dim (dom_deg fa)) then
+                fatal ~severity:Asai.Diagnostic.Error
+                  (Dimension_mismatch ("higher constructor", dom_deg fa, dim)) in
+            let rec look_through locs fas (Any_deg s) x =
               let act_on x =
                 Bwd.fold_right
                   (fun (str, Any_deg fa) x -> locate_opt x.loc (Synth (Act (str, fa, x))))
                   fas x in
               match x.value with
               | Constr (c, args) ->
+                  check_dim ();
                   Reporter.try_with ~fatal:(add_extra locs "constructor") @@ fun () ->
                   check ?discrete status ctx
                     (locate_opt x.loc (Constr (c, List.map act_on args)))
                     ty
               | Struct (eta, flds) ->
+                  check_dim ();
                   Reporter.try_with ~fatal:(add_extra locs "tuple") @@ fun () ->
                   check ?discrete status ctx
                     (locate_opt x.loc
@@ -323,18 +333,22 @@ let rec check : type a b s.
                     ty
               | Numeral _ ->
                   (* Numerals are sequences of constructors with no other arguments, so there is no need to push anything through. *)
+                  check_dim ();
                   check ?discrete status ctx x ty
               | Synth (Act (str2, fa2, y)) ->
                   (* Iterated degeneracies, like (refl (refl 3)) can be combined to look all the way through. *)
+                  let (DegExt (_, _, s)) = comp_deg_extending s fa2 in
                   look_through
                     (Option.fold ~none:locs ~some:(Bwd.snoc locs) str2.loc)
                     (Snoc (fas, (str2, Any_deg fa2)))
-                    y
-              | _ -> check_of_synth status ctx stm tm.loc ty in
+                    (Any_deg s) y
+              | _ ->
+                  (* If after looking through all the degeneracies we get something that's none of those, we back up and pass the whole thing off to check_of_synth. *)
+                  check_of_synth status ctx stm tm.loc ty in
             look_through
               (Option.fold ~none:Bwd.Emp ~some:(Bwd.snoc Emp) str.loc)
               (Snoc (Emp, (str, Any_deg fa)))
-              x)
+              (Any_deg fa) x)
     | Lam { name = { value = x; loc = xloc }; cube; implicit; body }, _ -> (
         match view_type ~severity ty "typechecking lambda" with
         | Canonical (_, Pi (_, doms, cods), ins, tyargs) -> (
