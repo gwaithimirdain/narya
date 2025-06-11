@@ -142,41 +142,67 @@ let cubeabs : (No.strict opn, No.minus_omega, No.nonstrict opn) notation =
 
 type _ extended_ctx =
   | Extctx :
-      ('n, 'm, 'nm) N.plus * (Asai.Range.t option, 'm) Bwv.t * (string option, 'nm) Bwv.t
+      ('n, 'm, 'nm) N.plus
+      * (Asai.Range.t option * [ `Implicit | `Explicit ], 'm) Bwv.t
+      * (string option, 'nm) Bwv.t
       -> 'n extended_ctx
 
 let rec get_vars : type n lt1 ls1 rt1 rs1.
     (string option, n) Bwv.t -> (lt1, ls1, rt1, rs1) parse located -> n extended_ctx =
  fun ctx vars ->
   match vars.value with
-  | Ident ([ x ], _) when Lexer.valid_var x ->
-      Extctx (Suc Zero, Snoc (Emp, vars.loc), Bwv.snoc ctx (Some x))
+  | Ident ([ x ], _) ->
+      if Lexer.valid_var x then
+        Extctx (Suc Zero, Snoc (Emp, (vars.loc, `Explicit)), Bwv.snoc ctx (Some x))
+      else fatal ?loc:vars.loc Parse_error
   | Ident (xs, _) -> fatal ?loc:vars.loc (Invalid_variable xs)
-  | Placeholder _ -> Extctx (Suc Zero, Snoc (Emp, vars.loc), Bwv.snoc ctx None)
+  | Placeholder _ -> Extctx (Suc Zero, Snoc (Emp, (vars.loc, `Explicit)), Bwv.snoc ctx None)
+  | Notn ((Braces, _), n) -> (
+      match args n with
+      | [ Token (LBrace, _); Term { value = Ident ([ x ], _); _ }; Token (RBrace, _) ]
+        when Lexer.valid_var x ->
+          Extctx (Suc Zero, Snoc (Emp, (vars.loc, `Implicit)), Bwv.snoc ctx (Some x))
+      | [ Token (LBrace, _); Term { value = Ident (xs, _); _ }; Token (RBrace, _) ] ->
+          fatal ?loc:vars.loc (Invalid_variable xs)
+      | [ Token (LBrace, _); Term { value = Placeholder _; _ }; Token (RBrace, _) ] ->
+          Extctx (Suc Zero, Snoc (Emp, (vars.loc, `Implicit)), Bwv.snoc ctx None)
+      | _ -> fatal ?loc:vars.loc Parse_error)
   | App { fn; arg = { value = Ident ([ x ], _); loc = xloc }; _ } when Lexer.valid_var x ->
       let (Extctx (ab, locs, ctx)) = get_vars ctx fn in
-      Extctx (Suc ab, Snoc (locs, xloc), Bwv.snoc ctx (Some x))
+      Extctx (Suc ab, Snoc (locs, (xloc, `Explicit)), Bwv.snoc ctx (Some x))
   | App { arg = { value = Ident (xs, _); loc }; _ } -> fatal ?loc (Invalid_variable xs)
   | App { fn; arg = { value = Placeholder _; loc = xloc }; _ } ->
       let (Extctx (ab, locs, ctx)) = get_vars ctx fn in
-      Extctx (Suc ab, Snoc (locs, xloc), Bwv.snoc ctx None)
+      Extctx (Suc ab, Snoc (locs, (xloc, `Explicit)), Bwv.snoc ctx None)
+  | App { fn; arg = { value = Notn ((Braces, _), n); loc = xloc }; _ } -> (
+      match args n with
+      | [ Token (LBrace, _); Term { value = Ident ([ x ], _); _ }; Token (RBrace, _) ]
+        when Lexer.valid_var x ->
+          let (Extctx (ab, locs, ctx)) = get_vars ctx fn in
+          Extctx (Suc ab, Snoc (locs, (xloc, `Implicit)), Bwv.snoc ctx (Some x))
+      | [ Token (LBrace, _); Term { value = Ident (xs, _); _ }; Token (RBrace, _) ] ->
+          fatal ?loc:vars.loc (Invalid_variable xs)
+      | [ Token (LBrace, _); Term { value = Placeholder _; _ }; Token (RBrace, _) ] ->
+          let (Extctx (ab, locs, ctx)) = get_vars ctx fn in
+          Extctx (Suc ab, Snoc (locs, (xloc, `Implicit)), Bwv.snoc ctx None)
+      | _ -> fatal ?loc:vars.loc Parse_error)
   | _ -> fatal ?loc:vars.loc Parse_error
 
 let rec raw_lam : type a b ab.
     (string option, ab) Bwv.t ->
     [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ] located ->
     (a, b, ab) N.plus ->
-    (Asai.Range.t option, b) Bwv.t ->
+    (Asai.Range.t option * [ `Explicit | `Implicit ], b) Bwv.t ->
     ab check located ->
     a check located =
  fun names cube ab locs body ->
   match (ab, locs) with
   | Zero, Emp -> body
-  | Suc ab, Snoc (locs, loc) ->
+  | Suc ab, Snoc (locs, (loc, implicit)) ->
       let (Snoc (names, x)) = names in
       raw_lam names cube ab locs
         {
-          value = Lam { name = { value = x; loc }; cube; body };
+          value = Lam { name = { value = x; loc }; cube; implicit; body };
           loc = Range.merge_opt loc body.loc;
         }
 
@@ -1571,6 +1597,7 @@ let () =
                       Emp
                       ((ctx, pats, cube, Wrap body) :: branches)
                       loc `Implicit in
+                  (* NB: Raw.lams produces only explicit lambdas.  Pattern-matching lambdas can't be used for implicit ones. *)
                   Raw.lams an (Vec.init (fun () -> (unlocated None, ())) n ()) mtch loc
               | _ -> invalid "match")
           | _ -> invalid "match");

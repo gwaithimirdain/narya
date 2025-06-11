@@ -76,13 +76,13 @@ def a01_234_eq_a01234 : Id (Vec A 5) a01_234 a01234 ≔ refl a01234
 {`We can prove that concatenation is associative, "over" associativity of addition.`}
 def concatassoc
   : (A : Type) (m n k : ℕ) (xs : Vec A m) (ys : Vec A n) (zs : Vec A k)
-    → Id (Vec A) (lplus (lplus m n) k) (lplus m (lplus n k))
+    → Id (Vec A) {lplus (lplus m n) k} {lplus m (lplus n k)}
         (lplusassoc m n k) (concat A (lplus m n) k (concat A m n xs ys) zs)
         (concat A m (lplus n k) xs (concat A n k ys zs))
   ≔ A m n k xs ys zs ↦
     Vec_ind A
       (m xs ↦
-       Id (Vec A) (lplus (lplus m n) k) (lplus m (lplus n k))
+       Id (Vec A) {lplus (lplus m n) k} {lplus m (lplus n k)}
          (lplusassoc m n k) (concat A (lplus m n) k (concat A m n xs ys) zs)
          (concat A m (lplus n k) xs (concat A n k ys zs)))
       (refl (concat A n k ys zs))
@@ -91,8 +91,9 @@ def concatassoc
 {`And similarly right unital.`}
 def concatru
   : (A : Type) (m : ℕ) (xs : Vec A m)
-    → Id (Vec A) (lplus m 0) m (lplusru m) (concat A m 0 xs nil.) xs
+    → Id (Vec A) {lplus m 0} {m} (lplusru m) (concat A m 0 xs nil.) xs
   ≔ A m xs ↦
     Vec_ind A
-      (m xs ↦ Id (Vec A) (lplus m 0) m (lplusru m) (concat A m 0 xs nil.) xs)
-      nil. (m x xs IH ↦ cons. (lplusru m) (refl x) IH) m xs
+      (m xs ↦
+       Id (Vec A) {lplus m 0} {m} (lplusru m) (concat A m 0 xs nil.) xs) nil.
+      (m x xs IH ↦ cons. (lplusru m) (refl x) IH) m xs

@@ -22,6 +22,6 @@ parentheses.
 There was once a bug with expressions like this, so we test for it.
 
   $ narya -e "echo (A:Type) → (A:Type) → A"
-  (A : Type) (A0 : Type) → A0
+  (A : Type) (A′ : Type) → A′
     : Type
   

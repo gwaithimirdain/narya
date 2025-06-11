@@ -111,7 +111,7 @@ It matters what the variable is bound to:
 
 Ap on let:
 
-  $ narya -source-only -v pre.ny -e "def a2' := refl ((y ↦ let id : A → A ≔ x ↦ x in id y) : A → A) a0 a1 a2" -e "def test : Id (Id A a0 a1) a2 a2' := refl a2"
+  $ narya -source-only -v pre.ny -e "def a2' := refl ((y ↦ let id : A → A ≔ x ↦ x in id y) : A → A) a2" -e "def test : Id (Id A a0 a1) a2 a2' := refl a2"
    ￫ info[I0001]
    ￮ axiom A assumed
   
@@ -178,7 +178,6 @@ Let affects typechecking:
          a0
        does not equal
          x
-       (hint: function boundaries are explicit)
   
   [1]
 

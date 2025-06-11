@@ -1,9 +1,6 @@
 {` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
 
-{` Transport and lifting compute on Σ-types `}
-
-option function boundaries ≔ implicit
-option type boundaries ≔ implicit
+{` Transport and lifting compute on M-types `}
 
 def M (A : Type) (B : A → Type) : Type ≔ codata [
 | x .recv : A

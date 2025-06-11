@@ -190,12 +190,6 @@
    ￫ info[I0003]
    ￮ loading file: $TESTCASE_ROOT/hott_bookhott.ny
   
-   ￫ info[I0100]
-   ￮ option set function boundaries to implicit
-  
-   ￫ info[I0100]
-   ￮ option set type boundaries to implicit
-  
    ￫ info[I0000]
    ￮ constant Id_eq defined
   
@@ -216,12 +210,6 @@
   
    ￫ info[I0003]
    ￮ loading file: $TESTCASE_ROOT/fibrant_types.ny
-  
-   ￫ info[I0100]
-   ￮ option set function boundaries to implicit
-  
-   ￫ info[I0100]
-   ￮ option set type boundaries to implicit
   
    ￫ info[I0000]
    ￮ constant ⊤ defined
@@ -294,11 +282,11 @@
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/fibrant_types.ny
-   239 |       (match u0, u1 [
-   240 |        | left. a0, left. a1 ↦ 𝕗A.2 .id a0 a1
-   241 |        | left. _, right. _ ↦ 𝕗∅
-   242 |        | right. _, left. _ ↦ 𝕗∅
-   243 |        | right. b0, right. b1 ↦ 𝕗B.2 .id b0 b1]))]
+   236 |       (match u0, u1 [
+   237 |        | left. a0, left. a1 ↦ 𝕗A.2 .id a0 a1
+   238 |        | left. _, right. _ ↦ 𝕗∅
+   239 |        | right. _, left. _ ↦ 𝕗∅
+   240 |        | right. b0, right. b1 ↦ 𝕗B.2 .id b0 b1]))]
        ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ info[I0000]
@@ -312,34 +300,34 @@
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/fibrant_types.ny
-   258 |        match n0, n1 [
-   259 |        | zero., zero. ↦ zero.
-   260 |        | zero., suc. n1 ↦ match m2 [ ]
-   261 |        | suc. n0, zero. ↦ match m2 [ ]
-   262 |        | suc. n0, suc. n1 ↦ suc. (id_ℕ_iso n0 n1 .to m2)])
+   255 |        match n0, n1 [
+   256 |        | zero., zero. ↦ zero.
+   257 |        | zero., suc. n1 ↦ match m2 [ ]
+   258 |        | suc. n0, zero. ↦ match m2 [ ]
+   259 |        | suc. n0, suc. n1 ↦ suc. (id_ℕ_iso n0 n1 .to m2)])
        ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/fibrant_types.ny
-   263 |       ([ zero. ⤇ () | suc. m ⤇ id_ℕ_iso m.0 m.1 .fro m.2 ])
+   260 |       ([ zero. ⤇ () | suc. m ⤇ id_ℕ_iso m.0 m.1 .fro m.2 ])
        ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/fibrant_types.ny
-   265 |        match n0, n1 [
-   266 |        | zero., zero. ↦ rfl.
-   267 |        | zero., suc. n1 ↦ match m2 [ ]
-   268 |        | suc. n0, zero. ↦ match m2 [ ]
-   269 |        | suc. n0, suc. n1 ↦ id_ℕ_iso n0 n1 .fro_to m2])
+   262 |        match n0, n1 [
+   263 |        | zero., zero. ↦ rfl.
+   264 |        | zero., suc. n1 ↦ match m2 [ ]
+   265 |        | suc. n0, zero. ↦ match m2 [ ]
+   266 |        | suc. n0, suc. n1 ↦ id_ℕ_iso n0 n1 .fro_to m2])
        ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/fibrant_types.ny
-   270 |       ([ zero. ⤇ rfl.
-   271 |        | suc. m ⤇
-   272 |            eq.ap (Br ℕ m.0 m.1) (Br ℕ (suc. m.0) (suc. m.1)) (x ↦ suc. x)
-   273 |              (id_ℕ_iso m.0 m.1 .to (id_ℕ_iso m.0 m.1 .fro m.2)) m.2
-   274 |              (id_ℕ_iso m.0 m.1 .to_fro m.2)])
+   267 |       ([ zero. ⤇ rfl.
+   268 |        | suc. m ⤇
+   269 |            eq.ap (Br ℕ m.0 m.1) (Br ℕ (suc. m.0) (suc. m.1)) (x ↦ suc. x)
+   270 |              (id_ℕ_iso m.0 m.1 .to (id_ℕ_iso m.0 m.1 .fro m.2)) m.2
+   271 |              (id_ℕ_iso m.0 m.1 .to_fro m.2)])
        ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ info[I0000]
@@ -504,12 +492,6 @@
    ￫ info[I0003]
    ￮ loading file: $TESTCASE_ROOT/homotopy.ny
   
-   ￫ info[I0100]
-   ￮ option set function boundaries to implicit
-  
-   ￫ info[I0100]
-   ￮ option set type boundaries to implicit
-  
    ￫ info[I0000]
    ￮ constant isContr defined
   
@@ -539,12 +521,6 @@
   
    ￫ info[I0004]
    ￮ file loaded: $TESTCASE_ROOT/homotopy.ny (source)
-  
-   ￫ info[I0100]
-   ￮ option set function boundaries to implicit
-  
-   ￫ info[I0100]
-   ￮ option set type boundaries to implicit
   
    ￫ info[I0000]
    ￮ constant pre_univalence defined
@@ -592,12 +568,6 @@
   
    ￫ info[I0004]
    ￮ file loaded: $TESTCASE_ROOT/univalence.ny (compiled)
-  
-   ￫ info[I0100]
-   ￮ option set function boundaries to implicit
-  
-   ￫ info[I0100]
-   ￮ option set type boundaries to implicit
   
    ￫ info[I0000]
    ￮ constant isBisim_ee defined

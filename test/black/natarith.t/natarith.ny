@@ -28,8 +28,8 @@ def congsuc : (x : ℕ) (y : ℕ) → Id ℕ x y → Id ℕ (suc. x) (suc. y)
 def cong2suc
   : (x00 : ℕ) (x01 : ℕ) (x02 : Id ℕ x00 x01) (x10 : ℕ) (x11 : ℕ)
     (x12 : Id ℕ x10 x11) (x20 : Id ℕ x00 x10) (x21 : Id ℕ x01 x11)
-    (x22 : Id (Id ℕ) x00 x01 x02 x10 x11 x12 x20 x21)
-    → (Id (Id ℕ) (suc. x00) (suc. x01) (suc. x02) (suc. x10) (suc. x11)
+    (x22 : Id (Id ℕ) x02 x12 x20 x21)
+    → (Id (Id ℕ) {suc. x00} {suc. x01} (suc. x02) {suc. x10} {suc. x11}
          (suc. x12) (suc. x20) (suc. x21))
   ≔ x00 x01 x02 x10 x11 x12 x20 x21 x22 ↦ suc. x22
 
