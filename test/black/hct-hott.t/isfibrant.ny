@@ -81,8 +81,8 @@ def J (A : Fib) (a : A .t) (P : (y : A .t) → Br (A .t) a y → Fib)
   rel P a b q (rel a) p (sym s) .f .trr pa
 
 {` The type of squares in a fibrant type is also fibrant. `}
-def Sq𝕗 (A : Fib) (x00 x01 : A .t) (x02 : Br (A .t) x00 x01) (x10 x11 : A .t)
-  (x12 : Br (A .t) x10 x11) (x20 : Br (A .t) x00 x10)
+def Sq𝕗 (A : Fib) (x00 x01 : A .t) (x02 : Br (A .t) x00 x01)
+  (x10 x11 : A .t) (x12 : Br (A .t) x10 x11) (x20 : Br (A .t) x00 x10)
   (x21 : Br (A .t) x01 x11)
   : Fib
   ≔ (
@@ -115,9 +115,9 @@ def Jβ (A : Fib) (a : A .t) (P : (y : A .t) → Br (A .t) a y → Fib)
   let q ≔ sq .trr (rel a) in
   let s ≔ sq .liftr (rel a) in
   let cube
-    ≔ rel (Sq𝕗 A) a a (rel a) a a (rel a) (rel a) (rel a) a⁽ᵖᵖ⁾ a a (rel a) a
-        a (rel a) (rel a) q s (rel a) (rel a) a⁽ᵖᵖ⁾ (rel a) (rel a) a⁽ᵖᵖ⁾ .f
-    in
+    ≔ rel (Sq𝕗 A) a a (rel a) a a (rel a) (rel a) (rel a) a⁽ᵖᵖ⁾ a a (rel a)
+        a a (rel a) (rel a) q s (rel a) (rel a) a⁽ᵖᵖ⁾ (rel a) (rel a) a⁽ᵖᵖ⁾
+        .f in
   let t ≔ cube .trr a⁽ᵖᵖ⁾ in
   let c ≔ cube .liftr a⁽ᵖᵖ⁾ in
   P⁽ᵖᵖ⁾ a a (rel a) a a (rel a) (rel a) q (sym t) (rel a) (rel a) a⁽ᵖᵖ⁾

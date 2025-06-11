@@ -41,4 +41,5 @@ synth M⁽ᵉᵉ⁾ A₂⁽¹ᵉ⁾ B₂⁽¹ᵉ⁾
               .send
                 (B₂⁽¹ᵉ⁾ (refl A₂ .liftr.1 (refl u₀ .recv)) .trl.1 (refl b₁))))
   .trl.1
-    (refl M A₂ B₂ .liftr.1 (u₀ .send (B₂ (A₂ .liftr.1 (u₀ .recv)) .trl.1 b₁)))
+    (refl M A₂ B₂
+     .liftr.1 (u₀ .send (B₂ (A₂ .liftr.1 (u₀ .recv)) .trl.1 b₁)))

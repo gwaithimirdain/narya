@@ -194,14 +194,14 @@
         a111 a112 a120 a121 a122 a200 a201 a202 a210 a211 a212 a220 a221
   
   sym a222
-    : A⁽ᵉᵉᵉ⁾ a000 a010 a020 a001 a011 a021 a002 a012 (sym a022) a100 a110 a120
-        a101 a111 a121 a102 a112 (sym a122) a200 a210 a220 a201 a211 a221 a202
-        a212
+    : A⁽ᵉᵉᵉ⁾ a000 a010 a020 a001 a011 a021 a002 a012 (sym a022) a100 a110
+        a120 a101 a111 a121 a102 a112 (sym a122) a200 a210 a220 a201 a211
+        a221 a202 a212
   
   a222⁽¹³²⁾
-    : A⁽ᵉᵉᵉ⁾ a000 a010 a020 a001 a011 a021 a002 a012 (sym a022) a100 a110 a120
-        a101 a111 a121 a102 a112 (sym a122) a200 a210 a220 a201 a211 a221 a202
-        a212
+    : A⁽ᵉᵉᵉ⁾ a000 a010 a020 a001 a011 a021 a002 a012 (sym a022) a100 a110
+        a120 a101 a111 a121 a102 a112 (sym a122) a200 a210 a220 a201 a211
+        a221 a202 a212
   
    ￫ info[I0000]
    ￮ constant sym2 defined
@@ -227,34 +227,34 @@
         (sym a202) (sym a212)
   
   a222⁽³²¹⁾
-    : A⁽ᵉᵉᵉ⁾ a000 a100 a200 a010 a110 a210 a020 a120 (sym a220) a001 a101 a201
-        a011 a111 a211 a021 a121 (sym a221) a002 a102 (sym a202) a012 a112
-        (sym a212) (sym a022) (sym a122)
+    : A⁽ᵉᵉᵉ⁾ a000 a100 a200 a010 a110 a210 a020 a120 (sym a220) a001 a101
+        a201 a011 a111 a211 a021 a121 (sym a221) a002 a102 (sym a202) a012
+        a112 (sym a212) (sym a022) (sym a122)
   
   a222⁽³²¹⁾
-    : A⁽ᵉᵉᵉ⁾ a000 a100 a200 a010 a110 a210 a020 a120 (sym a220) a001 a101 a201
-        a011 a111 a211 a021 a121 (sym a221) a002 a102 (sym a202) a012 a112
-        (sym a212) (sym a022) (sym a122)
+    : A⁽ᵉᵉᵉ⁾ a000 a100 a200 a010 a110 a210 a020 a120 (sym a220) a001 a101
+        a201 a011 a111 a211 a021 a121 (sym a221) a002 a102 (sym a202) a012
+        a112 (sym a212) (sym a022) (sym a122)
   
   a222⁽²³¹⁾
-    : A⁽ᵉᵉᵉ⁾ a000 a100 a200 a001 a101 a201 a002 a102 (sym a202) a010 a110 a210
-        a011 a111 a211 a012 a112 (sym a212) a020 a120 (sym a220) a021 a121
-        (sym a221) a022 a122
+    : A⁽ᵉᵉᵉ⁾ a000 a100 a200 a001 a101 a201 a002 a102 (sym a202) a010 a110
+        a210 a011 a111 a211 a012 a112 (sym a212) a020 a120 (sym a220) a021
+        a121 (sym a221) a022 a122
   
   a222⁽²³¹⁾
-    : A⁽ᵉᵉᵉ⁾ a000 a100 a200 a001 a101 a201 a002 a102 (sym a202) a010 a110 a210
-        a011 a111 a211 a012 a112 (sym a212) a020 a120 (sym a220) a021 a121
-        (sym a221) a022 a122
+    : A⁽ᵉᵉᵉ⁾ a000 a100 a200 a001 a101 a201 a002 a102 (sym a202) a010 a110
+        a210 a011 a111 a211 a012 a112 (sym a212) a020 a120 (sym a220) a021
+        a121 (sym a221) a022 a122
   
   a222⁽³²¹⁾
-    : A⁽ᵉᵉᵉ⁾ a000 a100 a200 a010 a110 a210 a020 a120 (sym a220) a001 a101 a201
-        a011 a111 a211 a021 a121 (sym a221) a002 a102 (sym a202) a012 a112
-        (sym a212) (sym a022) (sym a122)
+    : A⁽ᵉᵉᵉ⁾ a000 a100 a200 a010 a110 a210 a020 a120 (sym a220) a001 a101
+        a201 a011 a111 a211 a021 a121 (sym a221) a002 a102 (sym a202) a012
+        a112 (sym a212) (sym a022) (sym a122)
   
   a222⁽³²¹⁾
-    : A⁽ᵉᵉᵉ⁾ a000 a100 a200 a010 a110 a210 a020 a120 (sym a220) a001 a101 a201
-        a011 a111 a211 a021 a121 (sym a221) a002 a102 (sym a202) a012 a112
-        (sym a212) (sym a022) (sym a122)
+    : A⁽ᵉᵉᵉ⁾ a000 a100 a200 a010 a110 a210 a020 a120 (sym a220) a001 a101
+        a201 a011 a111 a211 a021 a121 (sym a221) a002 a102 (sym a202) a012
+        a112 (sym a212) (sym a022) (sym a122)
   
    ￫ info[I0000]
    ￮ constant braid defined

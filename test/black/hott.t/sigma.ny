@@ -45,7 +45,8 @@ echo B₂ (A₂ .liftr.1 (u₀ .fst)) .liftr.1 (u₀ .snd)
 
 def Σliftr
   : Id (refl Σ A₂ B₂ u₀ (refl Σ A₂ B₂ .trr.1 u₀)) (refl Σ A₂ B₂ .liftr u₀)
-      (A₂ .liftr.1 (u₀ .fst), B₂ (A₂ .liftr.1 (u₀ .fst)) .liftr.1 (u₀ .snd))
+      (A₂ .liftr.1 (u₀ .fst),
+       B₂ (A₂ .liftr.1 (u₀ .fst)) .liftr.1 (u₀ .snd))
   ≔ refl (refl Σ A₂ B₂ .liftr u₀)
 
 axiom u₁ : Σ A₁ B₁
@@ -65,5 +66,6 @@ echo refl Σ A₂ B₂ .liftl u₁ .snd
 
 def Σliftl
   : Id (refl Σ A₂ B₂ (refl Σ A₂ B₂ .trl.1 u₁) u₁) (refl Σ A₂ B₂ .liftl u₁)
-      (A₂ .liftl.1 (u₁ .fst), B₂ (A₂ .liftl.1 (u₁ .fst)) .liftl.1 (u₁ .snd))
+      (A₂ .liftl.1 (u₁ .fst),
+       B₂ (A₂ .liftl.1 (u₁ .fst)) .liftl.1 (u₁ .snd))
   ≔ refl (refl Σ A₂ B₂ .liftl u₁)

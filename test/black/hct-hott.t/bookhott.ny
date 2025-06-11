@@ -16,8 +16,8 @@ section eq ≔
     : eq (eq A a0 a1) (cat A a0 a0 a1 rfl. a2) a2
     ≔ match a2 [ rfl. ↦ rfl. ]
 
-  def inv (A : Type) (a0 a1 : A) (a2 : eq A a0 a1) : eq A a1 a0 ≔ match a2 [
-  | rfl. ↦ rfl.]
+  def inv (A : Type) (a0 a1 : A) (a2 : eq A a0 a1) : eq A a1 a0
+    ≔ match a2 [ rfl. ↦ rfl. ]
 
   def ap (A B : Type) (f : A → B) (a0 a1 : A) (a2 : eq A a0 a1)
     : eq B (f a0) (f a1)
@@ -30,7 +30,8 @@ section eq ≔
         (ap A C (x ↦ g (f x)) a0 a1 a2)
     ≔ match a2 [ rfl. ↦ rfl. ]
 
-  def trr (A : Type) (P : A → Type) (a0 a1 : A) (a2 : eq A a0 a1) (p : P a0)
+  def trr (A : Type) (P : A → Type) (a0 a1 : A) (a2 : eq A a0 a1)
+    (p : P a0)
     : P a1
     ≔ match a2 [ rfl. ↦ p ]
 
@@ -50,9 +51,10 @@ section eq ≔
     : P a0 b0
     ≔ match a2, b2 [ rfl., rfl. ↦ p ]
 
-  def trr2_ap (A B : Type) (P : A → B → Type) (C D : Type) (Q : C → D → Type)
-    (f : A → C) (g : B → D) (h : (x : A) (y : B) → P x y → Q (f x) (g y))
-    (a0 a1 : A) (a2 : eq A a0 a1) (b0 b1 : B) (b2 : eq B b0 b1) (p : P a0 b0)
+  def trr2_ap (A B : Type) (P : A → B → Type) (C D : Type)
+    (Q : C → D → Type) (f : A → C) (g : B → D)
+    (h : (x : A) (y : B) → P x y → Q (f x) (g y)) (a0 a1 : A)
+    (a2 : eq A a0 a1) (b0 b1 : B) (b2 : eq B b0 b1) (p : P a0 b0)
     : eq (Q (f a1) (g b1)) (h a1 b1 (trr2 A B P a0 a1 a2 b0 b1 b2 p))
         (trr2 C D Q (f a0) (f a1) (ap A C f a0 a1 a2) (g b0) (g b1)
            (ap B D g b0 b1 b2) (h a0 b0 p))
@@ -65,7 +67,8 @@ section eq ≔
 
   def unwhiskerR (A : Type) (a0 a1 a2 : A) (a01 a01' : eq A a0 a1)
     (a12 : eq A a1 a2)
-    (a02 : eq (eq A a0 a2) (cat A a0 a1 a2 a01 a12) (cat A a0 a1 a2 a01' a12))
+    (a02 : eq (eq A a0 a2) (cat A a0 a1 a2 a01 a12)
+             (cat A a0 a1 a2 a01' a12))
     : eq (eq A a0 a1) a01 a01'
     ≔ match a12 [ rfl. ↦ a02 ]
 
@@ -166,8 +169,8 @@ section sq ≔
     ≔ match a22 [
   | rfl. ↦ eq.inv (eq A a00 a00) a21' rfl. (all_rfl_21 A a00 a21' a22')]
 
-  def cancel_12_eq_21 (A : Type) (a00 a01 : A) (a02 : eq A a00 a01) (a11 : A)
-    (a12 : eq A a01 a11) (a20 : eq A a00 a01)
+  def cancel_12_eq_21 (A : Type) (a00 a01 : A) (a02 : eq A a00 a01)
+    (a11 : A) (a12 : eq A a01 a11) (a20 : eq A a00 a01)
     (a22 : sq A a00 a01 a02 a01 a11 a12 a20 a12)
     : eq (eq A a00 a01) a02 a20
     ≔ eq.unwhiskerR A a00 a01 a11 a02 a20 a12
@@ -179,8 +182,8 @@ def sq ≔ sq.sq
 
 def selfnat (A : Type) (f : A → A) (H : (x : A) → eq A (f x) x) (a : A)
   : eq (eq A (f (f a)) (f a)) (eq.ap A A f (f a) a (H a)) (H (f a))
-  ≔ sq.cancel_12_eq_21 A (f (f a)) (f a) (eq.ap A A f (f a) a (H a)) a (H a)
-      (H (f a)) (sq.nat_toid A f H (f a) a (H a))
+  ≔ sq.cancel_12_eq_21 A (f (f a)) (f a) (eq.ap A A f (f a) a (H a)) a
+      (H a) (H (f a)) (sq.nat_toid A f H (f a) a (H a))
 
 def eqv (A B : Type) : Type ≔ sig (
   to : A → B,
@@ -223,8 +226,8 @@ def fro_to_fro (A B : Type) (e : A ≅ B) (y : B)
           (ap_g (fgfg y) (fg y) (ap_fg (fg y) y (ε y))) (gfg y) (g y)
           (ap_g (fg y) y (ε y)) (ap_g (fgfg y) (fg y) (ε (fg y)))
           (ap_g (fg y) y (ε y))
-          (sq.ap B A g (fgfg y) (fg y) (ap_fg (fg y) y (ε y)) (fg y) y (ε y)
-             (ε (fg y)) (ε y) (sq.nat_toid B fg ε (fg y) y (ε y)))
+          (sq.ap B A g (fgfg y) (fg y) (ap_fg (fg y) y (ε y)) (fg y) y
+             (ε y) (ε (fg y)) (ε y) (sq.nat_toid B fg ε (fg y) y (ε y)))
           (ap_gf (gfg y) (g y) (ap_g (fg y) y (ε y)))
           (eq.cat (eq A (gfgfg y) (gfg y))
              (ap_g (fgfg y) (fg y) (ap_fg (fg y) y (ε y)))
@@ -233,8 +236,8 @@ def fro_to_fro (A B : Type) (e : A ≅ B) (y : B)
              (eq.ap_ap B B A fg g (fg y) y (ε y))
              (eq.inv (eq A (gfgfg y) (gfg y))
                 (ap_gf (gfg y) (g y) (ap_g (fg y) y (ε y)))
-                (ap_gfg (fg y) y (ε y)) (eq.ap_ap B A A g gf (fg y) y (ε y)))))
-       (η (gfg y))
+                (ap_gfg (fg y) y (ε y))
+                (eq.ap_ap B A A g gf (fg y) y (ε y))))) (η (gfg y))
        (eq.cat3 (eq A (gfgfg y) (gfg y)) (ap_g (fgfg y) (fg y) (ε (fg y)))
           (ap_g (fgfg y) (fg y) (ap_f (gfg y) (g y) (η (g y))))
           (eq.ap A A gf (gfg y) (g y) (η (g y))) (η (gfg y))
@@ -244,8 +247,9 @@ def fro_to_fro (A B : Type) (e : A ≅ B) (y : B)
              (eq.ap (eq B (fgfg y) (fg y)) (eq A (gfgfg y) (gfg y))
                 (ap_g (fgfg y) (fg y)) (ap_f (gfg y) (g y) (η (g y)))
                 (ε (fg y)) (e .to_fro_to (g y))))
-          (eq.ap_ap A B A f g (gfg y) (g y) (η (g y))) (selfnat A gf η (g y))))
-    (η (g y)) (sq.nat_toid A gf η (gfg y) (g y) (ap_g (fg y) y (ε y)))
+          (eq.ap_ap A B A f g (gfg y) (g y) (η (g y)))
+          (selfnat A gf η (g y)))) (η (g y))
+    (sq.nat_toid A gf η (gfg y) (g y) (ap_g (fg y) y (ε y)))
 
 def adjointify (A B : Type) (f : A → B) (g : B → A)
   (η : (a : A) → eq A (g (f a)) a) (ε : (b : B) → eq B (f (g b)) b)
@@ -269,11 +273,12 @@ def adjointify (A B : Type) (f : A → B) (g : B → A)
    fro ≔ g,
    fro_to ≔ η,
    to_fro ≔ b ↦
-     eq.cat3 B (fg b) (fgfg b) (fg b) b (eq.inv B (fgfg b) (fg b) (ε (fg b)))
-       (ap_f (gfg b) (g b) (η (g b))) (ε b),
+     eq.cat3 B (fg b) (fgfg b) (fg b) b
+       (eq.inv B (fgfg b) (fg b) (ε (fg b))) (ap_f (gfg b) (g b) (η (g b)))
+       (ε b),
    to_fro_to ≔ a ↦
-     sq.to_cat3 B (fgfgf a) (fgf a) (ap_f (gfgf a) (gf a) (η (gf a))) (fgf a)
-       (f a) (ap_f (gf a) a (η a)) (ε (fgf a)) (ε (f a))
+     sq.to_cat3 B (fgfgf a) (fgf a) (ap_f (gfgf a) (gf a) (η (gf a)))
+       (fgf a) (f a) (ap_f (gf a) a (η a)) (ε (fgf a)) (ε (f a))
        (sq.act02 B (fgfgf a) (fgf a)
           (ap_fg (fgf a) (f a) (ap_f (gf a) a (η a))) (fgf a) (f a)
           (ap_f (gf a) a (η a)) (ε (fgf a)) (ε (f a))
@@ -287,7 +292,8 @@ def adjointify (A B : Type) (f : A → B) (g : B → A)
              (eq.ap_ap A B B f fg (gf a) a (η a))
              (eq.inv (eq B (fgfgf a) (fgf a))
                 (ap_f (gfgf a) (gf a) (ap_gf (gf a) a (η a)))
-                (ap_fgf (gf a) a (η a)) (eq.ap_ap A A B gf f (gf a) a (η a)))
+                (ap_fgf (gf a) a (η a))
+                (eq.ap_ap A A B gf f (gf a) a (η a)))
              (eq.ap (eq A (gfgf a) (gf a)) (eq B (fgfgf a) (fgf a))
                 (ap_f (gfgf a) (gf a)) (ap_gf (gf a) a (η a)) (η (gf a))
                 (selfnat A gf η a)))))
