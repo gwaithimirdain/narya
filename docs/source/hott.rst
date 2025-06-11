@@ -6,7 +6,7 @@ Although Narya can be used for various different higher type theories, its prima
 Native HOTT mode
 ----------------
 
-The native HOTT mode is activated by the command-line flag ``-hott``.  This conflicts with any other flags that modify the direction of parametricity: it must be binary with letter ``e`` and degeneracy names ``Id`` and ``refl``.  (In the future, we plan to allow multiple directions of higher-dimensionality, so that internal parametricity can coexist with HOTT in a different direction.)  In particular, when working in HOTT mode you may want to start all your source files with the line
+The native HOTT mode is activated by the command-line flag ``-hott``.  This conflicts with the flags ``-arity`` and ``-direction``: it requires the default of binary higher-dimensions with letter ``e`` and degeneracy names ``Id``, ``refl``, and ``ap``.  (In the future, we plan to allow multiple directions of higher-dimensionality, so that internal parametricity can coexist with HOTT in a different direction.)  In particular, when working in HOTT mode you may want to start all your source files with the line
 
 .. code-block:: none
 
@@ -15,7 +15,7 @@ The native HOTT mode is activated by the command-line flag ``-hott``.  This conf
 Transport and lifting
 ^^^^^^^^^^^^^^^^^^^^^
 
-In HOTT mode, types can be treated also like codata, with four one-dimensional higher fields:
+In HOTT mode, types can be treated also like codata, with four one-dimensional higher fields (as in :ref:`Higher coinductive types`):
 
 - ``trr``: transport left to right
 - ``liftr``: path-lifting left to right
