@@ -160,15 +160,15 @@
    ￭ command-line exec string
    1 | def idff_eq_idff' : Id Type idff idff' := refl idff
      ^ term synthesized type
-         Type⁽ᵉ⁾ ({H₀ : X} {H₁ : X} (H₂ : refl X H₀ H₁) →⁽ᵉ⁾ refl Y (f H₀) (f' H₁))
-           ({H₀ : X} {H₁ : X} (H₂ : refl X H₀ H₁) →⁽ᵉ⁾ refl Y (f H₀) (f' H₁))
+         Type⁽ᵉ⁾ ({H₀ : X} {H₁ : X} (H₂ : Id X H₀ H₁) →⁽ᵉ⁾ Id Y (f H₀) (f' H₁))
+           ({H₀ : X} {H₁ : X} (H₂ : Id X H₀ H₁) →⁽ᵉ⁾ Id Y (f H₀) (f' H₁))
        but is being checked against type
-         Type⁽ᵉ⁾ ({H₀ : X} {H₁ : X} (H₂ : refl X H₀ H₁) →⁽ᵉ⁾ refl Y (f H₀) (f' H₁))
-           ((x : X) (x' : X) (x'' : refl X x x') → refl Y (f x) (f' x'))
+         Type⁽ᵉ⁾ ({H₀ : X} {H₁ : X} (H₂ : Id X H₀ H₁) →⁽ᵉ⁾ Id Y (f H₀) (f' H₁))
+           ((x : X) (x' : X) (x'' : Id X x x') → Id Y (f x) (f' x'))
        unequal head terms:
-         refl X ⇒ refl Y
+         Id X ⇒ Id Y
        does not equal
-         (x : X) (x' : X) (x'' : refl X x x') → refl Y (f x) (f' x')
+         (x : X) (x' : X) (x'' : Id X x x') → Id Y (f x) (f' x')
   
   [1]
   $ narya idrefl.ny -e "synth (refl g x2)"

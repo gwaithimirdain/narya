@@ -47,7 +47,8 @@ and readback_at : type a z.
     ?eta:bool -> (z, a) Ctx.t -> kinetic value -> kinetic value -> (a, kinetic) term =
  fun ?(eta = false) ctx tm ty ->
   let view = if Displaying.read () then view_term tm else tm in
-  match (view_type ty "readback_at", view) with
+  let vty = view_type ty "readback_at" in
+  match (vty, view) with
   | Canonical (_, Pi (_, doms, cods), ins, tyargs), Lam ((Variables (m, mn, xs) as x), body) -> (
       let Eq = eq_of_ins_zero ins in
       let k = CubeOf.dim doms in
@@ -139,7 +140,7 @@ and readback_at : type a z.
           | Some _ -> (
               match readback_at_record tm ty with
               | Some res -> res
-              | None -> readback_val ctx tm)
+              | None -> readback_val_sorted ctx tm vty)
           | None -> (
               (* A nontrivially permuted record is not a record type, but we can permute its arguments to find elements of a record type that we can then eta-expand and re-permute. *)
               let (Perm_to p) = perm_of_ins ins in
@@ -148,8 +149,8 @@ and readback_at : type a z.
               let pty = act_ty tm ty pinv in
               match readback_at_record ptm pty with
               | Some res -> Act (res, deg_of_perm p, (`Other, `Other))
-              | None -> readback_val ctx tm))
-      | Noeta, _ -> readback_val ctx tm)
+              | None -> readback_val_sorted ctx tm vty))
+      | Noeta, _ -> readback_val_sorted ctx tm vty)
   | Canonical (_, Data { constrs; _ }, ins, tyargs), Constr (xconstr, xn, xargs) -> (
       let Eq = eq_of_ins_zero ins in
       let (Dataconstr { env; args = argtys; indices = _ }) =
@@ -175,9 +176,13 @@ and readback_at : type a z.
               readback_at_tel ctx env
                 (List.fold_right (fun a args -> CubeOf.find_top a :: args) xargs [])
                 argtys tyarg_args ))
-  | vty, _ ->
-      let sort = sort_of_ty ctx vty in
-      readback_val ~sort ctx tm
+  | _ -> readback_val_sorted ctx tm vty
+
+and readback_val_sorted : type a z.
+    (z, a) Ctx.t -> kinetic value -> View.view_type -> (a, kinetic) term =
+ fun ctx tm vty ->
+  let sort = sort_of_ty ctx vty in
+  readback_val ~sort ctx tm
 
 and readback_val : type a z.
     ?sort:[ `Type | `Function | `Other ] -> (z, a) Ctx.t -> kinetic value -> (a, kinetic) term =
@@ -253,7 +258,7 @@ and readback_head : type c z.
       let args, newnfs = dom_vars ctx doms in
       Pi
         ( x,
-          CubeOf.mmap { map = (fun _ [ dom ] -> readback_val ctx dom) } [ doms ],
+          CubeOf.mmap { map = (fun _ [ dom ] -> readback_val ~sort:`Type ctx dom) } [ doms ],
           CodCube.build k
             {
               build =
@@ -261,7 +266,7 @@ and readback_head : type c z.
                   let (Any_ctx sctx) =
                     Ctx.variables_vis ctx (sub_variables fa x) (CubeOf.subcube fa newnfs) in
                   let sargs = CubeOf.subcube fa args in
-                  readback_val sctx (apply_binder_term (BindCube.find cods fa) sargs));
+                  readback_val ~sort:`Type sctx (apply_binder_term (BindCube.find cods fa) sargs));
             } )
 
 and readback_at_tel : type n c a b ab z.
@@ -369,11 +374,12 @@ let readback_bindings : type a b n.
         (fun _ [ b ] ->
           match Binding.level b with
           | Some _ ->
-              ({ tm = None; ty = readback_val ctx (Binding.value b).ty } : (b, n) snoc binding)
+              ({ tm = None; ty = readback_val ~sort:`Type ctx (Binding.value b).ty }
+                : (b, n) snoc binding)
           | None ->
               {
                 tm = Some (readback_nf ctx (Binding.value b));
-                ty = readback_val ctx (Binding.value b).ty;
+                ty = readback_val ~sort:`Type ctx (Binding.value b).ty;
               });
     }
     [ vbs ]
@@ -388,7 +394,9 @@ let readback_entry : type a b f n. (a, (b, n) snoc) Ctx.t -> (f, n) Ctx.entry ->
       let fields =
         Bwv.map
           (fun (f, x) ->
-            let fldty = readback_val ctx (tyof_field (Ok top.tm) top.ty f ~shuf:Trivial fins) in
+            let fldty =
+              readback_val ~sort:`Type ctx (tyof_field (Ok top.tm) top.ty f ~shuf:Trivial fins)
+            in
             (f, x, fldty))
           fields in
       let bindings = readback_bindings ctx bindings in

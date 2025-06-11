@@ -44,16 +44,16 @@
    ￫ info[I0000]
    ￮ constant nidok defined
   
-  {x₀ : A} {x₁ : A} (x₂ : refl A x₀ x₁) →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)
+  {x₀ : A} {x₁ : A} (x₂ : Id A x₀ x₁) →⁽ᵉ⁾ Id B x₂ (f x₀) (g x₁)
     : Type
   
-  {x₀₀ : A} {x₀₁ : A} {x₀₂ : refl A x₀₀ x₀₁} {x₁₀ : A} {x₁₁ : A}
-  {x₁₂ : refl A x₁₀ x₁₁} {x₂₀ : refl A x₀₀ x₁₀} {x₂₁ : refl A x₀₁ x₁₁}
+  {x₀₀ : A} {x₀₁ : A} {x₀₂ : Id A x₀₀ x₀₁} {x₁₀ : A} {x₁₁ : A}
+  {x₁₂ : Id A x₁₀ x₁₁} {x₂₀ : Id A x₀₀ x₁₀} {x₂₁ : Id A x₀₁ x₁₁}
   (x₂₂ : A⁽ᵉᵉ⁾ x₀₂ x₁₂ x₂₀ x₂₁)
   →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ x₂₂ (f02 x₀₂) (f12 x₁₂) (f20 x₂₀) (f21 x₂₁)
     : Type
   
-  (x : refl A) ⇒ refl B x.2
+  (x : Id A) ⇒ Id B x.2
     : Type⁽ᵉ⁾ ((x : A) → B x) ((x : A) → B x)
   
 
@@ -66,7 +66,7 @@
   [1]
 
   $ narya higherpi.ny -e "echo {x₀ x₁ : A} (x₂ : refl A x₀ x₁) →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)"
-  {x₀ : A} {x₁ : A} (x₂ : refl A x₀ x₁) →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)
+  {x₀ : A} {x₁ : A} (x₂ : Id A x₀ x₁) →⁽ᵉ⁾ Id B x₂ (f x₀) (g x₁)
     : Type
   
 
