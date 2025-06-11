@@ -7,7 +7,7 @@ module TokMap = Map.Make (Token)
 open Asai.Range
 
 type token_ws = Token.t * (Whitespace.t list * Asai.Range.t option)
-type ss_token_ws = token_ws * (Asai.Range.t option * string * Whitespace.t list) list
+type ss_token_ws = token_ws * (string located * Whitespace.t list) list
 
 (* A notation is either open or closed, on both sides.  We call these two properties combined its "fixity", since they are equivalent to the traditional classification as infix, prefix, postfix, or "outfix".
 
@@ -153,7 +153,7 @@ and (_, _, _, _) parse =
   | Constr : string * Whitespace.t list -> ('lt, 'ls, 'rt, 'rs) parse
   | Field : string * string list * Whitespace.t list -> ('lt, 'ls, 'rt, 'rs) parse
   | Superscript :
-      ('lt, 'ls, No.plus_omega, No.strict) parse located option * string * Whitespace.t list
+      ('lt, 'ls, No.plus_omega, No.strict) parse located option * string located * Whitespace.t list
       -> ('lt, 'ls, 'rt, 'rs) parse
   | Hole : {
       li : ('lt, 'ls) No.iinterval;

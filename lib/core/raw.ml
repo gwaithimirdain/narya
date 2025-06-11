@@ -89,7 +89,7 @@ module rec Make : functor (I : Indices) -> sig
     | UU : 'a synth
     | Let : I.name * 'a synth located * 'a I.suc check located -> 'a synth
     | Letrec : ('a, 'b, 'ab) tel * ('ab check located, 'b) Vec.t * 'ab check located -> 'a synth
-    | Act : string * ('m, 'n) deg * 'a check located -> 'a synth
+    | Act : string located * ('m, 'n) deg * 'a check located -> 'a synth
     | Match : {
         tm : 'a synth located;
         sort : [ `Implicit | `Explicit of 'a check located | `Nondep of int located ];
@@ -241,7 +241,7 @@ functor
       (* Letrec has a telescope of types, so that each can depend on the previous ones, and an equal-length vector of bound terms, all in the context extended by all the variables being bound, plus a body that is also in that context. *)
       | Letrec : ('a, 'b, 'ab) tel * ('ab check located, 'b) Vec.t * 'ab check located -> 'a synth
       (* An Act can also sometimes check, if its body checks and the degeneracy is a pure permutation.  But otherwise, it synthesizes and so must its body.  *)
-      | Act : string * ('m, 'n) deg * 'a check located -> 'a synth
+      | Act : string located * ('m, 'n) deg * 'a check located -> 'a synth
       (* A Match can also sometimes check, but synthesizes if it has an explicit return type or if it is nondependent and its first branch synthesizes. *)
       | Match : {
           tm : 'a synth located;

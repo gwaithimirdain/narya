@@ -721,14 +721,14 @@ let get_pi_args : type lt ls rt rs.
 let rec get_pi :
     arrow_opt ->
     observation list ->
-    pi_dom list * Whitespace.t list * (string * Whitespace.t list) * wrapped_parse =
+    pi_dom list * Whitespace.t list * (string located * Whitespace.t list) * wrapped_parse =
  fun prev_arr obs ->
   match obs with
   | [ Term doms; Ss_token ((Arrow, (wsarrow, _)), dims); Term cod ] ->
       let dim =
         match dims with
-        | [] -> ("", [])
-        | [ (_, dim, wsdim) ] -> (dim, wsdim)
+        | [] -> (locate_opt None "", [])
+        | [ (dim, wsdim) ] -> (dim, wsdim)
         | _ -> invalid "arrow 1" in
       let vars, ws, cod =
         match cod.value with
@@ -744,7 +744,7 @@ let rec get_pi :
             let vars, ws, _, evcod = get_pi (`Arrow wsarrow) (args n) in
             (vars, ws, evcod)
         | _ -> ([], wsarrow, Wrap cod) in
-      (get_pi_args prev_arr doms vars, ws, ("", []), cod)
+      (get_pi_args prev_arr doms vars, ws, (locate_opt None "", []), cod)
   | _ -> invalid "arrow 2"
 
 (* Given the variables with domains and the codomain of an ordinary (not higher) pi-type, process it into a raw term. *)
@@ -882,7 +882,7 @@ let pp_pi arrow obs =
   let pdom, wdom = pp_doms doms in
   let pcod, wcod = pp_term cod in
   let dim, wsdim =
-    if dim = "" then (empty, wsarrow)
+    if dim.value = "" then (empty, wsarrow)
     else
       ( pp_ws (if Display.chars () = `Unicode then `None else `Nobreak) wsarrow ^^ pp_superscript dim,
         wsdim ) in
@@ -904,7 +904,7 @@ let () =
         (fun ctx obs _loc ->
           (* We don't need the loc parameter here, since we can reconstruct the location of each pi-type from its arguments. *)
           let doms, _, (dim, _), Wrap cod = get_pi `First obs in
-          match dim_of_string dim with
+          match dim_of_string dim.value with
           | Some (Any m) -> (
               match D.compare_zero m with
               | Zero -> process_pi ctx `Lower doms cod

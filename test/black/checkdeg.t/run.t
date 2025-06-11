@@ -1,0 +1,139 @@
+  $ narya degconstr.ny
+  left. (refl a)
+    : Sum⁽ᵉ⁾ (Id A) (Id B) (left. a) (left. a)
+  
+  left. (refl a)
+    : Sum⁽ᵉ⁾ (Id A) (Id B) (left. a) (left. a)
+  
+  nil.
+    : List A
+  
+  cons. (refl a) (cons. (refl a) nil.)
+    : List⁽ᵉ⁾ (Id A) (cons. a (cons. a nil.)) (cons. a (cons. a nil.))
+  
+
+  $ narya degnumeral.ny
+  3
+    : ℕ⁽ᵉ⁾ 3 3
+  
+
+  $ narya degtuple.ny
+  (refl a, refl b)
+    : Prod⁽ᵉ⁾ (Id A) (Id B) (a, b) (a, b)
+  
+  (fst ≔ refl a, snd ≔ refl b)
+    : Prod⁽ᵉ⁾ (Id A) (Id B) (a, b) (a, b)
+  
+  (snd ≔ refl b, fst ≔ refl a)
+    : Prod⁽ᵉ⁾ (Id A) (Id B) (a, b) (a, b)
+  
+  $ narya -v symabs.ny
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a00 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a01 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a02 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a10 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a11 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a12 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a20 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a21 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a22 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom B assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b00 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b01 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b02 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b10 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b11 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b12 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b20 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b21 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b22 assumed
+  
+   ￫ info[I0000]
+   ￮ constant prod defined
+  
+   ￫ info[I0000]
+   ￮ constant ab22 defined
+  
+   ￫ info[I0000]
+   ￮ constant sym_ab22 defined
+  
+   ￫ info[I0000]
+   ￮ constant sym_ab22' defined
+  
+   ￫ info[I0001]
+   ￮ axiom f00 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom f01 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom f02 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom f10 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom f11 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom f12 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom f20 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom f21 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom f22 assumed
+  
+   ￫ info[I0000]
+   ￮ constant etaf22 defined
+  
+   ￫ info[I0000]
+   ￮ constant eta_symf22 defined
+  
+   ￫ info[I0000]
+   ￮ constant eta_symf22' defined
+  
+

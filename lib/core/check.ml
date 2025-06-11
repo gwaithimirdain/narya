@@ -274,10 +274,9 @@ let rec check : type a b s.
     | Synth (Letrec (vtys, vs, body)), _ ->
         let clet, Not_some = synth_or_check_letrec status ctx vtys vs body (Some ty) in
         clet
-    (* An action can always synthesize, but can also check if its degeneracy is a pure permutation, since then the type of the argument can be inferred by applying the inverse permutation to the ambient type. *)
     | Synth (Act (str, fa, x) as stm), _ -> (
+        (* An action can always synthesize, but can also check if its degeneracy is a pure permutation, since then the type of the argument can be inferred by applying the inverse permutation to the ambient type. *)
         match perm_of_deg fa with
-        | None -> check_of_synth status ctx stm tm.loc ty
         | Some pfa ->
             let fainv = deg_of_perm (perm_inv pfa) in
             Reporter.try_with ~fatal:(fun d ->
@@ -288,13 +287,47 @@ let rec check : type a b s.
                 | _ -> fatal_diagnostic d)
             @@ fun () ->
             let ty_fainv =
-              gact_ty None ty fainv ~err:(Low_dimensional_argument_of_degeneracy (str, cod_deg fa))
-            in
+              gact_ty None ty fainv
+                ~err:(Low_dimensional_argument_of_degeneracy (str.value, cod_deg fa)) in
             (* A pure permutation shouldn't ever be locking, but we may as well keep this here for consistency.  *)
             let ctx = if locking fa then Ctx.lock ctx else ctx in
             let cx = check (Kinetic `Nolet) ctx x ty_fainv in
             realize status
-              (Term.Act (cx, fa, (sort_of_ty ctx (view_type ty "checking act"), `Other))))
+              (Term.Act (cx, fa, (sort_of_ty ctx (view_type ty "checking act"), `Other)))
+        (* It can also check if its argument is a constructor (including a numeral) or a tuple, by pushing the degeneracy through to its arguments, since higher constructors and fields have the same names as lower ones. *)
+        | None -> (
+            let add_extra what (d : Reporter.Code.t Asai.Diagnostic.t) =
+              let extra_remarks =
+                match str.loc with
+                | None -> d.extra_remarks
+                | Some loc ->
+                    Snoc
+                      ( d.extra_remarks,
+                        Asai.Diagnostic.loctext ~loc ("degeneracy propagated through " ^ what) )
+              in
+              fatal_diagnostic { d with extra_remarks } in
+            match x.value with
+            | Constr (c, args) ->
+                Reporter.try_with ~fatal:(add_extra "constructor") @@ fun () ->
+                check ?discrete status ctx
+                  (locate_opt x.loc
+                     (Constr
+                        (c, List.map (fun x -> locate_opt x.loc (Synth (Act (str, fa, x)))) args)))
+                  ty
+            | Struct (eta, flds) ->
+                Reporter.try_with ~fatal:(add_extra "tuple") @@ fun () ->
+                check ?discrete status ctx
+                  (locate_opt x.loc
+                     (Struct
+                        ( eta,
+                          Abwd.map
+                            (fun (cube, x) -> (cube, locate_opt x.loc (Synth (Act (str, fa, x)))))
+                            flds )))
+                  ty
+            | Numeral _ ->
+                (* Numerals are sequences of constructors with no other arguments, so there is no need to push anything through. *)
+                check ?discrete status ctx x ty
+            | _ -> check_of_synth status ctx stm tm.loc ty))
     | Lam { name = { value = x; loc = xloc }; cube; implicit; body }, _ -> (
         match view_type ~severity ty "typechecking lambda" with
         | Canonical (_, Pi (_, doms, cods), ins, tyargs) -> (
@@ -2463,7 +2496,8 @@ and synth : type a b s.
         let ex = eval_term (Ctx.env ctx) sx in
         let sty =
           with_loc x.loc @@ fun () ->
-          act_ty ex ety fa ~err:(Low_dimensional_argument_of_degeneracy (str, cod_deg fa)) in
+          act_ty ex ety fa ~err:(Low_dimensional_argument_of_degeneracy (str.value, cod_deg fa))
+        in
         ( realize status (Term.Act (sx, fa, (sort_of_ty ctx (view_type sty "synth act"), `Other))),
           sty )
     | Act _, _ -> fatal (Nonsynthesizing "argument of degeneracy")

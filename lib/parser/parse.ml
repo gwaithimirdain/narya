@@ -34,6 +34,7 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
     return (Range.convert rng, x)
 
   let locate (loc : Asai.Range.t) (value : 'a) : 'a Asai.Range.located = { value; loc = Some loc }
+  let locate_opt (loc : Asai.Range.t option) (value : 'a) : 'a Asai.Range.located = { value; loc }
 
   let rec tree : type tight strict.
       (tight, strict) tree ->
@@ -75,7 +76,6 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
     | `Token (tok, `Noss, w) -> tree br (Observations.snoc_tok obs (tok, (w, Some loc)))
     | `Token (tok, `Ss, w) ->
         let* sups = supers in
-        let _ = (tok, w, sups) in
         tree br (Observations.snoc_sstok obs ((tok, (w, Some loc)), sups))
     | `Term x -> tree br (Observations.snoc_term obs (locate loc x))
 
@@ -163,7 +163,7 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
     lopen tight stop res
 
   (* Parse a possibly-empty sequence of nonempty superscripts. *)
-  and supers : (Asai.Range.t option * string * Whitespace.t list) list t =
+  and supers : (string Asai.Range.located * Whitespace.t list) list t =
     zero_or_more
       (let* loc, res =
          located
@@ -174,18 +174,18 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
                     Some (Error (SemanticError.Invalid_degeneracy (rng, s)), state)
                 | _ -> None)) in
        match res with
-       | Ok (s, ws) -> return (Some loc, s, ws)
+       | Ok (s, ws) -> return (locate loc s, ws)
        | Error e -> fail e)
 
   (* Given a parsed term and a possibly-empty list of superscripts, tack them all onto the term sequentially. *)
   and superify : type lt ls.
       (lt, ls) right_wrapped_parse ->
-      (Asai.Range.t option * string * Whitespace.t list) list ->
+      (string Asai.Range.located * Whitespace.t list) list ->
       (lt, ls) right_wrapped_parse =
    fun arg sups ->
     match sups with
     | [] -> arg
-    | (loc, s, ws) :: sups ->
+    | (s, ws) :: sups ->
         superify
           {
             get =
@@ -196,7 +196,7 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
                       {
                         value = Superscript (Some x, s, ws);
                         (* TODO: This merge doesn't seem to be working: the reported location for the superscripted term is just the superscript, not including the body. *)
-                        loc = Range.merge_opt x.loc loc;
+                        loc = Range.merge_opt x.loc s.loc;
                       }
                 | Error e -> Error e);
           }

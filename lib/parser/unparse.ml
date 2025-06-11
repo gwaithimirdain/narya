@@ -16,7 +16,7 @@ module StringMap = Map.Make (String)
 
 let mktok (tok : Token.t) = Token (tok, ([], None))
 let wstok (tok : Token.t) = Either.Left (tok, ([], None))
-let sstok (tok : Token.t) (ss : string) = Either.Right ((tok, ([], None)), [ (None, ss, []) ])
+let sstok (tok : Token.t) (ss : string) = Either.Right ((tok, ([], None)), [ (unlocated ss, []) ])
 
 (* If the head of an application spine is a constant or constructor, and it has an associated notation, and there are enough of the supplied arguments to instantiate the notation, split off that many arguments and return the notation, those arguments permuted to match the order of the pattern variables in the notation, the symbols to intersperse with them, and the remaining arguments. *)
 let get_notation head args =
@@ -598,7 +598,8 @@ and unparse_act : type n lt ls rt rs a b.
       match name_of_deg ~sort s with
       | Some str -> unparse_spine vars (`Degen str) (Snoc (Emp, tm)) li ri
       | None ->
-          unlocated (Superscript (Some (tm.unparse li No.Interval.empty), string_of_deg s, [])))
+          unlocated
+            (Superscript (Some (tm.unparse li No.Interval.empty), unlocated (string_of_deg s), [])))
 
 (* We unparse instantiations like application spines, since that is how they are represented in user syntax.
    TODO: How can we allow special notations for some instantiations, like x=y for Id A x y? *)
