@@ -3,23 +3,8 @@ open Util
 open Tbwd
 open Dim
 open Dimbwd
+include Variables
 include Energy
-
-(* ******************** Names ******************** *)
-
-(* An element of "mn variables" is an mn-dimensional cube of variables where mn = m + n and the user specified names for n dimensions, with the other m dimensions being named with face suffixes.  *)
-type _ variables =
-  | Variables :
-      'm D.t * ('m, 'n, 'mn) D.plus * (N.zero, 'n, string option, 'f) NICubeOf.t
-      -> 'mn variables
-
-type any_variables = Any : 'n variables -> any_variables
-
-let dim_variables : type m. m variables -> m D.t = function
-  | Variables (m, mn, _) -> D.plus_out m mn
-
-let singleton_variables : type m. m D.t -> string option -> m variables =
- fun m x -> Variables (m, D.plus_zero m, NICubeOf.singleton x)
 
 (* ******************** Typechecked terms ******************** *)
 
@@ -76,11 +61,15 @@ module rec Term : sig
     | UU : 'n D.t -> ('a, kinetic) term
     | Inst : ('a, kinetic) term * ('m, 'n, 'mn, ('a, kinetic) term) TubeOf.t -> ('a, kinetic) term
     | Pi :
-        string option * ('n, ('a, kinetic) term) CubeOf.t * ('n, 'a) CodCube.t
+        'n variables * ('n, ('a, kinetic) term) CubeOf.t * ('n, 'a) CodCube.t
         -> ('a, kinetic) term
     | App : ('a, kinetic) term * ('n, ('a, kinetic) term) CubeOf.t -> ('a, kinetic) term
     | Constr : Constr.t * 'n D.t * ('n, ('a, kinetic) term) CubeOf.t list -> ('a, kinetic) term
-    | Act : ('a, kinetic) term * ('m, 'n) deg -> ('a, kinetic) term
+    | Act :
+        ('a, kinetic) term
+        * ('m, 'n) deg
+        * ([ `Type | `Function | `Other ] * [ `Canonical | `Other ])
+        -> ('a, kinetic) term
     | Let : string option * ('a, kinetic) term * (('a, D.zero) snoc, 's) term -> ('a, 's) term
     | Lam : 'n variables * (('a, 'n) snoc, 's) Term.term -> ('a, 's) term
     | Struct : ('n, 'a, 's, 'et) struct_args -> ('a, 's) term
@@ -239,13 +228,16 @@ end = struct
     | Field : ('a, kinetic) term * 'i Field.t * ('n, 't, 'i) insertion -> ('a, kinetic) term
     | UU : 'n D.t -> ('a, kinetic) term
     | Inst : ('a, kinetic) term * ('m, 'n, 'mn, ('a, kinetic) term) TubeOf.t -> ('a, kinetic) term
-    (* Since the user doesn't write higher-dimensional pi-types explicitly, there is always only one variable name in a pi-type. *)
     | Pi :
-        string option * ('n, ('a, kinetic) term) CubeOf.t * ('n, 'a) CodCube.t
+        'n variables * ('n, ('a, kinetic) term) CubeOf.t * ('n, 'a) CodCube.t
         -> ('a, kinetic) term
     | App : ('a, kinetic) term * ('n, ('a, kinetic) term) CubeOf.t -> ('a, kinetic) term
     | Constr : Constr.t * 'n D.t * ('n, ('a, kinetic) term) CubeOf.t list -> ('a, kinetic) term
-    | Act : ('a, kinetic) term * ('m, 'n) deg -> ('a, kinetic) term
+    | Act :
+        ('a, kinetic) term
+        * ('m, 'n) deg
+        * ([ `Type | `Function | `Other ] * [ `Canonical | `Other ])
+        -> ('a, kinetic) term
     (* The term being bound in a 'let' is always kinetic.  Thus, if the supplied bound term is potential, the "bound term" here must be the metavariable whose value is set to that term rather than to the (potential) term itself.  We don't need a term-level "letrec" since recursion is implemented in the typechecker by creating a new global metavariable. *)
     | Let : string option * ('a, kinetic) term * (('a, D.zero) snoc, 's) term -> ('a, 's) term
     (* Abstractions and structs can appear in any kind of term.  The dimension 'n is the substitution dimension of the type being checked against (function-type or codata/record).  *)
@@ -408,7 +400,7 @@ module Telescope = struct
    fun doms cod ->
     match doms with
     | Emp -> cod
-    | Ext (x, dom, doms) -> pi x dom (pis doms cod)
+    | Ext (x, dom, doms) -> pi (singleton_variables D.zero x) dom (pis doms cod)
 
   let rec lams : type a b ab. (a, b, ab) t -> (ab, kinetic) term -> (a, kinetic) term =
    fun doms body ->

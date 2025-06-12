@@ -181,7 +181,8 @@ module F = struct
     | Pi (x, doms, cods) ->
         fprintf ppf "Pi^%s (%s, %a, (... %a))"
           (string_of_dim (CubeOf.dim doms))
-          (Option.value ~default:"_" x) (cubeof value) doms binder (BindCube.find_top cods)
+          (Option.value ~default:"_" (top_variable x))
+          (cubeof value) doms binder (BindCube.find_top cods)
 
   and binder : type b s. formatter -> (b, s) binder -> unit =
    fun ppf (Bind { env = e; ins = i; body }) ->
@@ -226,12 +227,13 @@ module F = struct
     | UU n -> fprintf ppf "UU %a" dim n
     | Inst (tm, args) -> fprintf ppf "Inst (%a, %a)" term tm (tubeof term) args
     | Pi (x, doms, cods) ->
-        fprintf ppf "Pi^(%a) (%s, %a, (... %a))" dim (CubeOf.dim doms) (Option.value x ~default:"_")
+        fprintf ppf "Pi^(%a) (%s, %a, (... %a))" dim (CubeOf.dim doms)
+          (Option.value (top_variable x) ~default:"_")
           (cubeof term) doms term (CodCube.find_top cods)
     | App (fn, arg) -> fprintf ppf "App (%a, %a)" term fn (cubeof term) arg
     | Lam (x, body) -> fprintf ppf "Lam^(%s) (?, %a)" (string_of_dim (dim_variables x)) term body
     | Constr (c, _, _) -> fprintf ppf "Constr (%s, ?, ?)" (Constr.to_string c)
-    | Act (tm, s) -> fprintf ppf "Act (%a, %s)" term tm (string_of_deg s)
+    | Act (tm, s, _) -> fprintf ppf "Act (%a, %s)" term tm (string_of_deg s)
     | Let (_, _, _) -> fprintf ppf "Let ?"
     | Struct _ -> fprintf ppf "Struct ?"
     | Match _ -> fprintf ppf "Match ?"
@@ -331,6 +333,8 @@ module F = struct
               else "." ^ f ^ "." ^ String.concat "" (List.map string_of_int p)
           | `Int i -> "." ^ string_of_int i)
     | Pi (_, _, _) -> fprintf ppf "Pi(?)"
+    | HigherPi (_, _, _) -> fprintf ppf "HigherPi(?)"
+    | InstHigherPi (_, _, _) -> fprintf ppf "InstHigherPi(?)"
     | App (fn, arg, _) -> fprintf ppf "App(%a, %a)" synth fn.value check arg.value
     | Asc (tm, ty) -> fprintf ppf "Asc(%a, %a)" check tm.value check ty.value
     | Let (_, _, _) -> fprintf ppf "Let(?)"

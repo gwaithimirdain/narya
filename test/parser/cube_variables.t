@@ -25,33 +25,41 @@ Testing parsing and printing of cube variables
 
   $ narya cube_vars.ny
   {x0} {x1} x2 ↦ refl b
-    : refl Π (refl A) {_ ↦ B} {_ ↦ B} (_ ⤇ refl B) f g
+    : {H₀ : A} {H₁ : A} (H₂ : Id A H₀ H₁) →⁽ᵉ⁾ Id B b b
   
   {x00} {x01} {x02} {x10} {x11} {x12} {x20} {x21} x22 ↦ b⁽ᵉᵉ⁾
-    : Π⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ {_ ↦ B} {_ ↦ B} {_ ⤇ refl B} {_ ↦ B} {_ ↦ B} {_ ⤇ refl B}
-        {_ ⤇ refl B} {_ ⤇ refl B} (_ ⤇ B⁽ᵉᵉ⁾) (refl f) (refl g) fg fg
+    : {H₀₀ : A} {H₀₁ : A} {H₀₂ : Id A H₀₀ H₀₁} {H₁₀ : A} {H₁₁ : A}
+      {H₁₂ : Id A H₁₀ H₁₁} {H₂₀ : Id A H₀₀ H₁₀} {H₂₁ : Id A H₀₁ H₁₁}
+      (H₂₂ : A⁽ᵉᵉ⁾ H₀₂ H₁₂ H₂₀ H₂₁)
+      →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ (refl b) (refl b) (refl b) (refl b)
   
   x ⤇ refl b
-    : refl Π (refl A) {_ ↦ B} {_ ↦ B} (_ ⤇ refl B) f g
+    : {H₀ : A} {H₁ : A} (H₂ : Id A H₀ H₁) →⁽ᵉ⁾ Id B b b
   
   x ⤇ b⁽ᵉᵉ⁾
-    : Π⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ {_ ↦ B} {_ ↦ B} {_ ⤇ refl B} {_ ↦ B} {_ ↦ B} {_ ⤇ refl B}
-        {_ ⤇ refl B} {_ ⤇ refl B} (_ ⤇ B⁽ᵉᵉ⁾) (refl f) (refl g) fg fg
+    : {H₀₀ : A} {H₀₁ : A} {H₀₂ : Id A H₀₀ H₀₁} {H₁₀ : A} {H₁₁ : A}
+      {H₁₂ : Id A H₁₀ H₁₁} {H₂₀ : Id A H₀₀ H₁₀} {H₂₁ : Id A H₀₁ H₁₁}
+      (H₂₂ : A⁽ᵉᵉ⁾ H₀₂ H₁₂ H₂₀ H₂₁)
+      →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ (refl b) (refl b) (refl b) (refl b)
   
   {x0} {x1} x2 ↦ h x0
-    : refl Π (refl A) {_ ↦ B} {_ ↦ B} (_ ⤇ refl B) f g
+    : {H₀ : A} {H₁ : A} (H₂ : Id A H₀ H₁) →⁽ᵉ⁾ Id B b b
   
   x ⤇ h x.0
-    : refl Π (refl A) {_ ↦ B} {_ ↦ B} (_ ⤇ refl B) f g
+    : {H₀ : A} {H₁ : A} (H₂ : Id A H₀ H₁) →⁽ᵉ⁾ Id B b b
   
   x ⤇ refl h x.02
-    : Π⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ {_ ↦ B} {_ ↦ B} {_ ⤇ refl B} {_ ↦ B} {_ ↦ B} {_ ⤇ refl B}
-        {_ ⤇ refl B} {_ ⤇ refl B} (_ ⤇ B⁽ᵉᵉ⁾) (refl f) (refl g) fgh fgh
+    : {H₀₀ : A} {H₀₁ : A} {H₀₂ : Id A H₀₀ H₀₁} {H₁₀ : A} {H₁₁ : A}
+      {H₁₂ : Id A H₁₀ H₁₁} {H₂₀ : Id A H₀₀ H₁₀} {H₂₁ : Id A H₀₁ H₁₁}
+      (H₂₂ : A⁽ᵉᵉ⁾ H₀₂ H₁₂ H₂₀ H₂₁)
+      →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ (refl b) (refl b) (h H₀₀) (h H₀₁)
   
   x ⤇ refl h x.02
-    : Π⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ {_ ↦ B} {_ ↦ B} {_ ⤇ refl B} {_ ↦ B} {_ ↦ B} {_ ⤇ refl B}
-        {_ ⤇ refl B} {_ ⤇ refl B} (_ ⤇ B⁽ᵉᵉ⁾) (refl f) (refl g) fgh fgh
+    : {H₀₀ : A} {H₀₁ : A} {H₀₂ : Id A H₀₀ H₀₁} {H₁₀ : A} {H₁₁ : A}
+      {H₁₂ : Id A H₁₀ H₁₁} {H₂₀ : Id A H₀₀ H₁₀} {H₂₁ : Id A H₀₁ H₁₁}
+      (H₂₂ : A⁽ᵉᵉ⁾ H₀₂ H₁₂ H₂₀ H₂₁)
+      →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ (refl b) (refl b) (h H₀₀) (h H₀₁)
   
   refl b
-    : refl B b b
+    : Id B b b
   

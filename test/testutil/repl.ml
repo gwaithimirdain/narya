@@ -117,7 +117,7 @@ let run f =
   (* We need an outer Scope.run, with the builtins installed, so that Pi.install can parse things. *)
   Builtins.install ();
   Scope.run @@ fun () ->
-  let init_visible = Parser.Pi.install Scope.Trie.empty in
+  let init_visible = Scope.Trie.empty in
   Scope.run ~init_visible ~options:Options.default @@ fun () -> f ()
 
 let gel_install () =

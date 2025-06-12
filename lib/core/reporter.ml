@@ -22,14 +22,14 @@ type printable +=
 
 (* In addition, in Asai messages are emitted by performing an effect or raising an exception that carries with it the data of a function of type "formatter -> unit", which is then called by the handler Reporter.run to format the message text as part of a larger display formatting.  This causes problems if we define our printing functions naively, since it means that any effects performed by the formatting function (such as looking up names in a Yuujinchou Scope) will take place in the context of the handler, not that where the message was invoked, and hence in the wrong scope.  To deal with this, we ensure that the printable values are converted to PPrint documents directly in "default_text", before they are passed to Asai. *)
 
-let printer : (printable -> PPrint.document) ref =
-  ref (fun _ -> raise (Failure "print not set (hint: Parser.Unparse must be loaded)"))
+let printer : (sort:[ `Type | `Function | `Other ] -> printable -> PPrint.document) ref =
+  ref (fun ~sort:_ _ -> raise (Failure "print not set (hint: Parser.Unparse must be loaded)"))
 
-let print pr = !printer pr
+let print ?(sort = `Other) pr = !printer ~sort pr
 
 let print_to_string pr =
   let buf = Buffer.create 5 in
-  PPrint.ToBuffer.pretty 1.0 70 buf (!printer pr);
+  PPrint.ToBuffer.pretty 1.0 70 buf (!printer ~sort:`Other pr);
   Buffer.contents buf
 
 (* Now the function that Asai carries around is basically just PPrint.ToFormatter.pretty.  It's important to know exactly what this does, although it's not described precisely in the PPrint documentation: it converts all newlines to pp_force_newline and all spaces to pp_print_space.  Note that the latter is a break hint, allowing Format to break the line!  This is not what we want; the spaces in PPrint's output are supposed to be spaces, and only the newlines in PPrint's output should be newlines.  I think the only solution, short of modifying PPrint, is to surround it in a Format hbox, which causes all break hints to never split the line.  It does still respect force_newline, of course, so this should do what we want.  *)
@@ -105,6 +105,8 @@ module Code = struct
         why : Unequal.t;
       }
         -> t
+    | Not_enough_domains : 'a D.t -> t
+    | Invalid_higher_function : string -> t
     | Checking_tuple_at_degenerated_record : printable -> t
     | Missing_field_in_tuple : 'i Field.t * ('e, 'i, 'r) pbij option -> t
     | Missing_method_in_comatch : 'i Field.t * ('e, 'i, 'r) pbij option -> t
@@ -280,6 +282,8 @@ module Code = struct
     | Type_not_fully_instantiated _ -> Error
     | Unequal_synthesized_type _ -> Error
     | Unequal_synthesized_boundary _ -> Error
+    | Not_enough_domains _ -> Error
+    | Invalid_higher_function _ -> Error
     | Checking_tuple_at_degenerated_record _ -> Error
     | Missing_field_in_tuple _ -> Error
     | Missing_method_in_comatch _ -> Error
@@ -462,6 +466,8 @@ module Code = struct
     | Unexpected_implicitness _ -> "E0702"
     | Insufficient_dimension _ -> "E0703"
     | Unequal_synthesized_boundary _ -> "E0704"
+    | Not_enough_domains _ -> "E0705"
+    | Invalid_higher_function _ -> "E0706"
     (* Record fields *)
     | No_such_field _ -> "E0800"
     | Wrong_dimension_of_field _ -> "E0801"
@@ -624,13 +630,13 @@ module Code = struct
             (string_of_dim0 (D.pos n))
       | Instantiating_zero_dimensional_type ty ->
           textf "@[<hv 0>can't apply/instantiate a zero-dimensional type@;<1 2>%a@]" pp_printed
-            (print ty)
+            (print ~sort:`Type ty)
       | Unequal_synthesized_type { got; expected; which; why } ->
           let str, p1, p2 = Unequal.printables why in
           textf
             "@[<hv 0>term synthesized type@;<1 2>%a@ but is being checked against type@;<1 2>%a@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a%a@]"
-            pp_printed (print got) pp_printed (print expected) str pp_printed (print p1) pp_printed
-            (print p2)
+            pp_printed (print ~sort:`Type got) pp_printed (print ~sort:`Type expected) str
+            pp_printed (print p1) pp_printed (print p2)
             (pp_print_option
                ~none:(fun _ () -> ())
                (fun ppf which -> fprintf ppf "@ (hint: %s boundaries are explicit)" which))
@@ -639,14 +645,17 @@ module Code = struct
           let str, p1, p2 = Unequal.printables why in
           textf
             "@[<hv 0>the %s-boundary synthesized type@;<1 2>%a@ but is being checked against type@;<1 2>%a@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a@]"
-            (string_of_sface face) pp_printed (print got) pp_printed (print expected) str pp_printed
-            (print p1) pp_printed (print p2)
+            (string_of_sface face) pp_printed (print ~sort:`Type got) pp_printed
+            (print ~sort:`Type expected) str pp_printed (print p1) pp_printed (print p2)
+      | Not_enough_domains dim ->
+          textf "not enough domains for an %s-dimensional function type" (string_of_dim0 dim)
+      | Invalid_higher_function str -> textf "invalid higher function-type: %s" str
       | Checking_tuple_at_degenerated_record r ->
           textf "can't check a tuple against a record %a with a nonidentity degeneracy applied"
-            pp_printed (print r)
+            pp_printed (print ~sort:`Type r)
       | Comatching_at_degenerated_codata r ->
           textf "can't comatch against a codatatype %a with a nonidentity degeneracy applied"
-            pp_printed (print r)
+            pp_printed (print ~sort:`Type r)
       | Missing_field_in_tuple (f, _) ->
           textf "record field '%s' missing in tuple" (Field.to_string f)
       | Missing_method_in_comatch (f, p) ->
@@ -668,25 +677,28 @@ module Code = struct
       | Unnamed_variable_in_match -> text "unnamed match variable"
       | Checking_lambda_at_nonfunction ty ->
           textf "@[<hv 0>checking abstraction against non-function type@;<1 2>%a@]" pp_printed
-            (print ty)
+            (print ~sort:`Type ty)
       | Checking_tuple_at_nonrecord ty ->
-          textf "@[<hv 0>checking tuple against non-record type@;<1 2>%a@]" pp_printed (print ty)
+          textf "@[<hv 0>checking tuple against non-record type@;<1 2>%a@]" pp_printed
+            (print ~sort:`Type ty)
       | Choice_mismatch ty ->
-          textf "@[<hv 0>multi-choice term doesn't match type@;<1 2>%a@]" pp_printed (print ty)
+          textf "@[<hv 0>multi-choice term doesn't match type@;<1 2>%a@]" pp_printed
+            (print ~sort:`Type ty)
       | Calc_error e -> textf "error in calc: %a" pp_printed (print e)
       | Comatching_at_noncodata ty ->
-          textf "@[<hv 0>checking comatch against non-codata type@;<1 2>%a@]" pp_printed (print ty)
+          textf "@[<hv 0>checking comatch against non-codata type@;<1 2>%a@]" pp_printed
+            (print ~sort:`Type ty)
       | No_such_constructor (d, c) -> (
           match d with
           | `Data d ->
-              textf "datatype %a has no constructor named %s" pp_printed (print d)
+              textf "datatype %a has no constructor named %s" pp_printed (print ~sort:`Type d)
                 (Constr.to_string c)
           | `Nondata d ->
-              textf "non-datatype %a has no constructor named %s" pp_printed (print d)
+              textf "non-datatype %a has no constructor named %s" pp_printed (print ~sort:`Type d)
                 (Constr.to_string c)
           | `Other ty ->
               textf "@[<hv 0>non-datatype@;<1 2>%a@ has no constructor named %s@]" pp_printed
-                (print ty) (Constr.to_string c))
+                (print ~sort:`Type ty) (Constr.to_string c))
       | Wrong_number_of_arguments_to_constructor (c, n) ->
           if n > 0 then
             textf "too many arguments to constructor %s (%d extra)" (Constr.to_string c) n
@@ -702,9 +714,11 @@ module Code = struct
             | `Int n -> string_of_int n in
           match d with
           | `Record (eta, d) ->
-              textf "%s type %a has no field named %s" (record_or_codata eta) pp_printed (print d) f
+              textf "%s type %a has no field named %s" (record_or_codata eta) pp_printed
+                (print ~sort:`Type d) f
           | `Nonrecord d ->
-              textf "non-record/codata type %a has no field named %s" pp_printed (print d) f
+              textf "non-record/codata type %a has no field named %s" pp_printed
+                (print ~sort:`Type d) f
           | `Other tm -> textf "term %a has no field named %s" pp_printed (print tm) f
           | `Degenerated_record eta ->
               let rc = record_or_codata eta in
@@ -724,8 +738,8 @@ module Code = struct
           let err = if err = "" then "empty suffix" else "suffix " ^ err in
           textf
             "@[<hv 0>field %s of %s type@;<1 2>%a@ has intrinsic dimension %s and used at dimension %s, can't have %s@]"
-            fldname (record_or_codata eta) pp_printed (print d) (string_of_dim0 intrinsic)
-            (string_of_dim0 used_at) err
+            fldname (record_or_codata eta) pp_printed (print ~sort:`Type d)
+            (string_of_dim0 intrinsic) (string_of_dim0 used_at) err
       | Invalid_field_suffix (ty, f, p, evaldim) ->
           textf "invalid suffix %s for field %s of %s-dimensional type %a" (string_of_ins_ints p) f
             (string_of_dim0 evaldim) pp_printed (print ty)
@@ -774,7 +788,7 @@ module Code = struct
       | Applying_nonfunction_nontype (tm, ty) ->
           textf
             "@[<hv 0>attempt to apply/instantiate@;<1 2>%a@ of type@;<1 2>%a@ which is not a function-type or universe@]"
-            pp_printed (print tm) pp_printed (print ty)
+            pp_printed (print tm) pp_printed (print ~sort:`Type ty)
       | Unexpected_implicitness (i, what, str) ->
           textf "unexpected %s %s: %s"
             (match i with
@@ -806,7 +820,7 @@ module Code = struct
           textf "constructor %s appears twice in match" (Constr.to_string c)
       | Matching_on_nondatatype ty ->
           textf "@[<hv 0>can't match on variable belonging to non-datatype@;<1 2>%a@]" pp_printed
-            (print ty)
+            (print ~sort:`Type ty)
       | Matching_wont_refine (msg, Some d) ->
           textf "@[<hv 0>match will not refine the goal or context (%s):@;<1 2>%a@]" msg pp_printed
             (print d)
@@ -868,7 +882,7 @@ module Code = struct
       | Comment_end_in_string ->
           text "comment-end sequence `} in quoted string: cannot be commented out"
       | Checking_canonical_at_nonuniverse (tm, ty) ->
-          textf "checking %s at non-universe %a" tm pp_printed (print ty)
+          textf "checking %s at non-universe %a" tm pp_printed (print ~sort:`Type ty)
       | Bare_case_tree_construct str ->
           textf "%s encountered outside case tree, wrapping in implicit let-binding" str
       | Duplicate_method_in_codata fld ->
@@ -914,7 +928,8 @@ module Code = struct
       | Synthesizing_recursion c ->
           textf "for '%a' to be recursive, it must have a declared type" pp_printed (print c)
       | Invalid_synthesized_type (str, ty) ->
-          textf "type %a synthesized by %s is invalid for entire term" pp_printed (print ty) str
+          textf "type %a synthesized by %s is invalid for entire term" pp_printed
+            (print ~sort:`Type ty) str
       | Unrecognized_attribute -> textf "unrecognized attribute"
       | Invalid_degeneracy_action (str, nk, n) ->
           textf

@@ -99,9 +99,9 @@ It matters what the variable is bound to:
    ￭ command-line exec string
    1 | def untest : Id A a0 a0' := refl a0
      ^ term synthesized type
-         refl A a0 a0
+         Id A a0 a0
        but is being checked against type
-         refl A a0 a1
+         Id A a0 a1
        unequal head constants:
          a0
        does not equal

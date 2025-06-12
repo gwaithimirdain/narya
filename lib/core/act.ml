@@ -243,7 +243,7 @@ module Act = struct
     | UU _ -> UU (dom_deg fa)
     | Pi (x, doms, cods) ->
         let doms', cods' = act_pi (doms, cods) fa in
-        Pi (x, doms', cods')
+        Pi (act_variables x fa, doms', cods')
     | Data { dim = _; tyfam; indices; constrs; discrete } ->
         let tyfam = ref (Option.map (fun x -> lazy (act_normal (Lazy.force x) fa)) !tyfam) in
         let indices =
@@ -392,7 +392,7 @@ module Act = struct
     | Pi (x, doms, cods) ->
         let (Of fa) = deg_plus_to s (CubeOf.dim doms) ~on:"pi-type head" in
         let doms', cods' = act_pi (doms, cods) fa in
-        Pi (x, doms', cods')
+        Pi (act_variables x fa, doms', cods')
 
   and act_pi : type m n.
       (n, kinetic value) CubeOf.t * (n, unit) BindCube.t ->

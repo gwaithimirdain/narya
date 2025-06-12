@@ -6,7 +6,8 @@ open Reporter
 module TokMap = Map.Make (Token)
 open Asai.Range
 
-type token_ws = Token.t * (Asai.Range.t option * Whitespace.t list)
+type token_ws = Token.t * (Whitespace.t list * Asai.Range.t option)
+type ss_token_ws = token_ws * (string located * Whitespace.t list) list
 
 (* A notation is either open or closed, on both sides.  We call these two properties combined its "fixity", since they are equivalent to the traditional classification as infix, prefix, postfix, or "outfix".
 
@@ -84,22 +85,30 @@ type (_, _) tree =
   (* The sub-case when all the ambiguous notations are closed *)
   | Ambiguity_closed : string list -> ('t, 's) tree
 
+(* A map from tokens to trees that remembers in addition whether each token is allowed to be superscripted. *)
+and ('t, 's) tokmap = (('t, 's) tree * [ `Ss | `Noss ]) TokMap.t
+
 (* When there is a choice in parsing, we arrange it so that no backtracking is required (except for a single token of lookahead).  We test all the possible next literal tokens, considering the possibility of a notation operator, field, or other term.  (Constructors and identifiers are considered special terms, and extracted during postprocessing.)  Fields cannot also be other terms, and we forbid symbols that occur in operators from also being variable names, so there is no need for backtracking. *)
 and ('t, 's) branch = {
-  ops : ('t, 's) tree TokMap.t;
+  ops : ('t, 's) tokmap;
   field : ('t, 's) tree option;
-  term : ('t, 's) tree TokMap.t option;
+  term : ('t, 's) tokmap option;
 }
 
 (* The entry point of a notation tree must begin with an operator symbol. *)
-and ('t, 's) entry = ('t, 's) tree TokMap.t
+and ('t, 's) entry = ('t, 's) tokmap
 
 (* If we weren't using intrinsically well-scoped De Bruijn indices, then the typechecking context and the type of raw terms would be simply ordinary types, and we could use the one as the parsing State and the other as the parsing Result.  However, the Fmlib parser isn't set up to allow a parametrized family of state types, with the output of a parsing combinator depending on the state (and it would be tricky to do that correctly anyway).  So instead we record the result of parsing as a syntax tree with idents, and have a separate step of "postprocessing" that makes it into a raw term.  This has the additional advantage that by parsing and pretty-printing we can reformat code even if it is not well-scoped. *)
 and observation =
   | Term : ('lt, 'ls, 'rt, 'rs) parse located -> observation
   | Token : token_ws -> observation
+  (* Superscripted tokens are only used here when there is at least one superscript. *)
+  | Ss_token : ss_token_ws -> observation
 
-and observations = Single of token_ws | Multiple of token_ws * observation Bwd.t * token_ws
+and observations =
+  | Single of (token_ws, ss_token_ws) Either.t
+  | Multiple of
+      (token_ws, ss_token_ws) Either.t * observation Bwd.t * (token_ws, ss_token_ws) Either.t
 
 (* A parsed notation, with its own tightness and openness, and lying in specified left and right tightness intervals, has a Bwd of observations in its inner holes, plus possibly a first and/or last term depending on its openness.  It is parametrized by the openness and tightness of the notation, and also by upper tightness intervals from the left and right in which it is guaranteed to lie.  Thus, the first and last term (if any) can be guaranteed statically to be valid, and we may require witnesses that the notation is tight enough on the left and/or the right (also depending on its openness) to fit in the specified intervals.  The whitespace argument stores the comments and whitespace attached after each operator token. *)
 and ('left, 'tight, 'right, 'lt, 'ls, 'rt, 'rs) parsed_notn =
@@ -144,7 +153,7 @@ and (_, _, _, _) parse =
   | Constr : string * Whitespace.t list -> ('lt, 'ls, 'rt, 'rs) parse
   | Field : string * string list * Whitespace.t list -> ('lt, 'ls, 'rt, 'rs) parse
   | Superscript :
-      ('lt, 'ls, No.plus_omega, No.strict) parse located option * string * Whitespace.t list
+      ('lt, 'ls, No.plus_omega, No.strict) parse located option * string located * Whitespace.t list
       -> ('lt, 'ls, 'rt, 'rs) parse
   | Hole : {
       li : ('lt, 'ls) No.iinterval;
@@ -335,23 +344,42 @@ type wrapped_parse = Wrap : ('lt, 'ls, 'rt, 'rs) parse Asai.Range.located -> wra
 module Observations = struct
   type t = observations
 
+  let tok_of_ss = function
+    | Either.Left tok -> Token tok
+    | Right tok -> Ss_token tok
+
   let prepend : t -> observation list -> observation list =
    fun obs tail ->
     match obs with
-    | Single tok -> Token tok :: tail
-    | Multiple (tok1, obs, tok2) -> Token tok1 :: Bwd.prepend obs (Token tok2 :: tail)
+    | Single tok -> tok_of_ss tok :: tail
+    | Multiple (tok1, obs, tok2) -> tok_of_ss tok1 :: Bwd.prepend obs (tok_of_ss tok2 :: tail)
 
   type partial =
-    | Single of token_ws option
-    | Multiple of token_ws * observation Bwd.t * token_ws option
+    | Single of (token_ws, ss_token_ws) Either.t option
+    | Multiple of
+        (token_ws, ss_token_ws) Either.t
+        * observation Bwd.t
+        * (token_ws, ss_token_ws) Either.t option
+
+  let empty : partial = Single None
+
+  let snoc_sstok : partial -> ss_token_ws -> partial =
+   fun obs tok ->
+    match obs with
+    | Single None -> Single (Some (Right tok))
+    | Single (Some tok1) -> Multiple (tok1, Emp, Some (Right tok))
+    | Multiple (tok1, inner, None) -> Multiple (tok1, inner, Some (Right tok))
+    | Multiple (tok1, inner, Some tok2) ->
+        Multiple (tok1, Snoc (inner, tok_of_ss tok2), Some (Right tok))
 
   let snoc_tok : partial -> token_ws -> partial =
    fun obs tok ->
     match obs with
-    | Single None -> Single (Some tok)
-    | Single (Some tok1) -> Multiple (tok1, Emp, Some tok)
-    | Multiple (tok1, inner, None) -> Multiple (tok1, inner, Some tok)
-    | Multiple (tok1, inner, Some tok2) -> Multiple (tok1, Snoc (inner, Token tok2), Some tok)
+    | Single None -> Single (Some (Left tok))
+    | Single (Some tok1) -> Multiple (tok1, Emp, Some (Left tok))
+    | Multiple (tok1, inner, None) -> Multiple (tok1, inner, Some (Left tok))
+    | Multiple (tok1, inner, Some tok2) ->
+        Multiple (tok1, Snoc (inner, tok_of_ss tok2), Some (Left tok))
 
   let snoc_term : type lt ls rt rs. partial -> (lt, ls, rt, rs) parse located -> partial =
    fun obs tm ->
@@ -360,7 +388,7 @@ module Observations = struct
     | Single (Some tok1) -> Multiple (tok1, Snoc (Emp, Term tm), None)
     | Multiple (tok1, inner, None) -> Multiple (tok1, Snoc (inner, Term tm), None)
     | Multiple (tok1, inner, Some tok2) ->
-        Multiple (tok1, Snoc (Snoc (inner, Token tok2), Term tm), None)
+        Multiple (tok1, Snoc (Snoc (inner, tok_of_ss tok2), Term tm), None)
 
   let of_partial : partial -> t = function
     | Single (Some tok) -> Single tok
@@ -432,12 +460,18 @@ let is_case = function
 
 let split_last_whitespace (obs : observations) : observations * Whitespace.t list =
   match obs with
-  | Single (tok, (loc, ws)) ->
+  | Single (Left (tok, (ws, loc))) ->
       let first, rest = Whitespace.split ws in
-      (Single (tok, (loc, first)), rest)
-  | Multiple (tok1, obs, (tok2, (loc, ws2))) ->
+      (Single (Left (tok, (first, loc))), rest)
+  | Single (Right ((tok, (ws, loc)), sups)) ->
+      let first, rest = Whitespace.split ws in
+      (Single (Right ((tok, (first, loc)), sups)), rest)
+  | Multiple (tok1, obs, Left (tok2, (ws2, loc))) ->
       let first, rest = Whitespace.split ws2 in
-      (Multiple (tok1, obs, (tok2, (loc, first))), rest)
+      (Multiple (tok1, obs, Left (tok2, (first, loc))), rest)
+  | Multiple (tok1, obs, Right ((tok2, (ws2, loc)), sups)) ->
+      let first, rest = Whitespace.split ws2 in
+      (Multiple (tok1, obs, Right ((tok2, (first, loc)), sups)), rest)
 
 let rec split_ending_whitespace : type lt ls rt rs.
     (lt, ls, rt, rs) parse located -> (lt, ls, rt, rs) parse located * Whitespace.t list = function
@@ -479,10 +513,22 @@ let rec split_ending_whitespace : type lt ls rt rs.
 
 (* Helper functions for constructing notation trees *)
 
-let op tok x = Inner { empty_branch with ops = TokMap.singleton tok x }
-let ops toks = Inner { empty_branch with ops = TokMap.of_list toks }
-let term tok x = Inner { empty_branch with term = Some (TokMap.singleton tok x) }
-let terms toks = Inner { empty_branch with term = Some (TokMap.of_list toks) }
+let singleton tok br = TokMap.singleton tok (br, `Noss)
+let oflist brs = TokMap.of_list (List.map (fun (tok, x) -> (tok, (x, `Noss))) brs)
+let op tok x = Inner { empty_branch with ops = TokMap.singleton tok (x, `Noss) }
+
+let ops toks =
+  Inner { empty_branch with ops = TokMap.of_list (List.map (fun (k, x) -> (k, (x, `Noss))) toks) }
+
+let term tok x = Inner { empty_branch with term = Some (TokMap.singleton tok (x, `Noss)) }
+
+let terms toks =
+  Inner
+    {
+      empty_branch with
+      term = Some (TokMap.of_list (List.map (fun (k, x) -> (k, (x, `Noss))) toks));
+    }
+
 let field x = Inner { empty_branch with field = Some x }
 let of_entry e = Inner { empty_branch with ops = e }
 
@@ -491,8 +537,8 @@ let done_open n =
   Done_open (No.le_refl tight, n)
 
 (* Similar, but for "entries". *)
-let eop tok x = TokMap.singleton tok x
-let eops toks = TokMap.of_list toks
+let eop tok x = TokMap.singleton tok (x, `Noss)
+let eops toks = TokMap.of_list (List.map (fun (k, x) -> (k, (x, `Noss))) toks)
 let empty_entry = TokMap.empty
 
 (* Merging notation trees. *)
@@ -520,14 +566,14 @@ and lower_branch : type t1 s1 t2 s2.
     (t2, s2, t1, s1) No.Interval.subset -> (t2, s2) branch -> (t1, s1) branch =
  fun sub { ops; field; term } ->
   {
-    ops = TokMap.map (lower_tree sub) ops;
+    ops = TokMap.map (fun (xs, ss) -> (lower_tree sub xs, ss)) ops;
     field = Option.map (lower_tree sub) field;
-    term = Option.map (TokMap.map (lower_tree sub)) term;
+    term = Option.map (TokMap.map (fun (xs, ss) -> (lower_tree sub xs, ss))) term;
   }
 
 let lower : type t1 s1 t2 s2.
     (t2, s2, t1, s1) No.Interval.subset -> (t2, s2) entry -> (t1, s1) entry =
- fun sub map -> TokMap.map (lower_tree sub) map
+ fun sub map -> TokMap.map (fun (xs, ss) -> (lower_tree sub xs, ss)) map
 
 let rec names : type t s. (t, s) tree -> string list = function
   | Inner { ops; field; term } ->
@@ -539,8 +585,8 @@ let rec names : type t s. (t, s) tree -> string list = function
   | Lazy _ -> []
   | Ambiguity strs | Ambiguity_closed strs -> strs
 
-and names_tmap : type t s. (t, s) tree TokMap.t -> string list =
- fun trees -> TokMap.fold (fun _ t xs -> names t @ xs) trees []
+and names_tmap : type t s. (t, s) tokmap -> string list =
+ fun trees -> TokMap.fold (fun _ (t, _) xs -> names t @ xs) trees []
 
 (* We are not maximally tolerant of ambiguity in notations.  In principle, it is possible to have one mixfix notation that is a strict initial segment of the other, like the "if_then_" and "if_then_else_" discussed in Danielsson-Norell.  However, it seems very hard to parse such a setup without a significant amount of backtracking, so we forbid it.  This is detected here at merge time.  Note that this includes the case of two notations that are identical.  (It is, of course, possible to have two notations that start out the same but then diverge, like _⊢_⦂_ and _⊢_type -- this is the whole point of merging trees.)  However, because this could happen accidentally when importing many notations from different libraries, we don't raise the error unless it actually comes up during parsing, by wrapping it in a lazy branch of the notation tree. *)
 let rec merge_tree : type t1 s1 t2 s2.
@@ -560,16 +606,15 @@ let rec merge_tree : type t1 s1 t2 s2.
   | _ -> Ambiguity (names xs @ names ys)
 
 and merge_tmap : type t1 s1 t2 s2.
-    (t2, s2, t1, s1) No.Interval.subset ->
-    (t1, s1) tree TokMap.t ->
-    (t2, s2) tree TokMap.t ->
-    (t1, s1) tree TokMap.t =
+    (t2, s2, t1, s1) No.Interval.subset -> (t1, s1) tokmap -> (t2, s2) tokmap -> (t1, s1) tokmap =
  fun sub x y ->
   TokMap.fold
-    (fun k yb ->
+    (fun k (yb, ssy) ->
       TokMap.update k (function
-        | None -> Some (lower_tree sub yb)
-        | Some xb -> Some (merge_tree sub xb yb)))
+        | None -> Some (lower_tree sub yb, ssy)
+        | Some (xb, ssx) when ssx = ssy -> Some (merge_tree sub xb yb, ssy)
+        (* If the two notations disagree about whether superscripts are allowed, it is an ambiguity. *)
+        | Some (xb, _) -> Some (Ambiguity (names xb @ names yb), ssy)))
     y x
 
 and merge_branch : type t1 s1 t2 s2.
@@ -577,7 +622,9 @@ and merge_branch : type t1 s1 t2 s2.
  fun sub x y ->
   let ops = merge_tmap sub x.ops y.ops in
   let field = merge_opt (merge_tree sub) (lower_tree sub) x.field y.field in
-  let term = merge_opt (merge_tmap sub) (TokMap.map (lower_tree sub)) x.term y.term in
+  let term =
+    merge_opt (merge_tmap sub) (TokMap.map (fun (xs, ss) -> (lower_tree sub xs, ss))) x.term y.term
+  in
   { ops; field; term }
 
 let merge : type t1 t2 s1 s2.
