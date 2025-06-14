@@ -1,8 +1,5 @@
 {` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
 
-option function boundaries ≔ implicit
-option type boundaries ≔ implicit
-
 {` Basic higher groupoid operations, constructed as in cubical type theory. `}
 
 def transport (A : Type) (B : A → Type) (x y : A) (p : Id A x y)

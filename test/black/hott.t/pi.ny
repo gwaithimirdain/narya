@@ -2,9 +2,6 @@
 
 {` Transport and lifting compute on Π-types `}
 
-option function boundaries ≔ implicit
-option type boundaries ≔ implicit
-
 axiom A₀ : Type
 
 axiom A₁ : Type

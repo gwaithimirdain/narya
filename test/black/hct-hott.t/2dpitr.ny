@@ -6,9 +6,6 @@ import "bookhott"
 import "hott_bookhott"
 import "homotopy"
 
-option function boundaries ≔ implicit
-option type boundaries ≔ implicit
-
 axiom A00 : Fib
 axiom A01 : Fib
 axiom A02 : Br Fib A00 A01
