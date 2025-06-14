@@ -94,4 +94,4 @@ let modify_type_boundaries fb =
   type_boundaries
 
 (* For now, we hardcode this. *)
-let columns () = 77
+let columns () = 75

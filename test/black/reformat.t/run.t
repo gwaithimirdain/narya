@@ -161,8 +161,8 @@ The supplied files are symlinked into the directory where the test is run, and u
      0))
   
   axiom f
-    : A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A →
-      A → A
+    : A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A →
+      A → A → A
       → ℕ
   
   axiom f2
@@ -185,7 +185,8 @@ The supplied files are symlinked into the directory where the test is run, and u
   axiom f5
     : (x : A) → B `second arg
       →
-      C → C → C → C → C → C → C → C → C → C → C → C → C → C → C → C → C → C → C
+      C → C → C → C → C → C → C → C → C → C → C → C → C → C → C → C → C → C →
+      C
       → C
   
   axiom a : A
@@ -233,8 +234,8 @@ The supplied files are symlinked into the directory where the test is run, and u
       : ℕ
   
   def ftype
-    : A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A →
-      A
+    : A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A →
+      A → A
       → Type
     ≔ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ↦ ℕ
   
@@ -244,18 +245,20 @@ The supplied files are symlinked into the directory where the test is run, and u
         a_long_thing a_long_thing a_long_thing a_long_thing a_long_thing
         a_long_thing a_long_thing a_long_thing a_long_thing a_long_thing
         a_long_thing
-      : ftype a_long_thing a_long_thing a_long_thing a_long_thing a_long_thing
+      : ftype a_long_thing a_long_thing a_long_thing a_long_thing
           a_long_thing a_long_thing a_long_thing a_long_thing a_long_thing
           a_long_thing a_long_thing a_long_thing a_long_thing a_long_thing
           a_long_thing a_long_thing a_long_thing a_long_thing a_long_thing
+          a_long_thing
   
   axiom ftoftype
-    : A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A →
-      A → A
-      → ftype a_long_thing a_long_thing a_long_thing a_long_thing a_long_thing
+    : A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A →
+      A → A → A
+      → ftype a_long_thing a_long_thing a_long_thing a_long_thing
           a_long_thing a_long_thing a_long_thing a_long_thing a_long_thing
           a_long_thing a_long_thing a_long_thing a_long_thing a_long_thing
           a_long_thing a_long_thing a_long_thing a_long_thing a_long_thing
+          a_long_thing
   
   axiom a_very_long_type_to_wrap_the_line : Type
   
@@ -364,7 +367,8 @@ The supplied files are symlinked into the directory where the test is run, and u
   def longfun2 : Type ≔ A → A → A → A → A → A → A → A → A → A → B
   
   def longfun3 : Type
-    ≔ A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A
+    ≔ A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A →
+      A
       → B
   
   def longfun4 : Type
@@ -389,7 +393,8 @@ The supplied files are symlinked into the directory where the test is run, and u
   axiom object
     : A → A → A → A → A → A → A
       → wrap
-          (A → A → A → A → A → wrap (A → A → A → A → A → A → wrap (A → A → B)))
+          (A → A → A → A → A
+           → wrap (A → A → A → A → A → A → wrap (A → A → B)))
   
   def objectb : B
     ≔ object a_long_thing a_long_thing a_long_thing a_long_thing a_long_thing
@@ -434,16 +439,16 @@ The supplied files are symlinked into the directory where the test is run, and u
   
   def wrapb : B
     ≔ wraps .unwrap .unwrap .unwrap .unwrap .unwrap .unwrap .unwrap .unwrap
-        .unwrap .unwrap .unwrap .unwrap .unwrap .unwrap .unwrap .unwrap .unwrap
-        .unwrap .unwrap .unwrap
+        .unwrap .unwrap .unwrap .unwrap .unwrap .unwrap .unwrap .unwrap
+        .unwrap .unwrap .unwrap .unwrap
   
   def bigabs
-    : A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A →
-      A
+    : A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A → A →
+      A → A
       → A
     ≔ longvar longvar longvar longvar longvar longvar longvar longvar longvar
-        longvar longvar longvar longvar longvar longvar longvar longvar longvar
-        longvar longvar ↦
+        longvar longvar longvar longvar longvar longvar longvar longvar
+        longvar longvar longvar ↦
       longvar
   
   def plus : ℕ → ℕ → ℕ ≔ [ zero. ↦ n ↦ n | suc. m ↦ n ↦ suc. (plus m n) ]
@@ -455,7 +460,8 @@ The supplied files are symlinked into the directory where the test is run, and u
     an_even_longer_variable_name
   
   def tlet : ℕ ≔
-    let a_long_variable : ℕ ≔ (plus (plus 0 (plus 0 0)) (plus 0 (plus 0 0))) in
+    let a_long_variable : ℕ
+      ≔ (plus (plus 0 (plus 0 0)) (plus 0 (plus 0 0))) in
     a_long_variable
   
   def tlet1 : ℕ ≔
@@ -466,7 +472,8 @@ The supplied files are symlinked into the directory where the test is run, and u
     a_long_variable a a a a a a a a a a a a a a
   
   def tlet2 : prod ℕ ℕ ≔
-    let a_long_variable : ℕ ≔ (plus (plus 0 (plus 0 0)) (plus 0 (plus 0 0))) in
+    let a_long_variable : ℕ
+      ≔ (plus (plus 0 (plus 0 0)) (plus 0 (plus 0 0))) in
     (a_long_variable, a_long_variable)
   
   def dlet : ℕ ≔ let a_long_variable : ℕ ≔ 0 in let y : ℕ ≔ 0 in y
@@ -493,7 +500,8 @@ The supplied files are symlinked into the directory where the test is run, and u
     w ↦ another_long_variable
   
   def mlet : ℕ → ℕ → ℕ ≔
-    let a_long_variable : ℕ ≔ (plus (plus 0 (plus 0 0)) (plus 0 (plus 0 0))) in
+    let a_long_variable : ℕ
+      ≔ (plus (plus 0 (plus 0 0)) (plus 0 (plus 0 0))) in
     match a_long_variable [
     | zero. ↦
         let another_long_variable : ℕ
@@ -568,7 +576,8 @@ The supplied files are symlinked into the directory where the test is run, and u
            (blahblah blahblah3 blahblah3 blahblah3))
   
   def unpaired3 : A
-    ≔ unpair (blahblah2 (blahblah2 blahblah3), blahblah2 (blahblah2 blahblah3))
+    ≔ unpair
+        (blahblah2 (blahblah2 blahblah3), blahblah2 (blahblah2 blahblah3))
   
   def unpaired4 : A
     ≔ unpair
@@ -603,8 +612,8 @@ The supplied files are symlinked into the directory where the test is run, and u
   
   def fs : stream ℕ ≔ [
   | .head ↦
-      f a_long_thing a_long_thing a_long_thing a a a a a a a a a a a a a a a a
-        a_long_thing a_long_thing
+      f a_long_thing a_long_thing a_long_thing a a a a a a a a a a a a a a a
+        a a_long_thing a_long_thing
   | .tail ↦ zeros]
   
   def ssz : stream (stream ℕ) ≔ [

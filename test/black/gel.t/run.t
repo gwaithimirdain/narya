@@ -123,8 +123,8 @@
    ￮ axiom r2' assumed
   
   sym r2
-    : sym (refl Gel A2 B2 R2) {a0} {b0} (ungel ≔ r0) {a1} {b1} (ungel ≔ r1) a2
-        b2
+    : sym (refl Gel A2 B2 R2) {a0} {b0} (ungel ≔ r0) {a1} {b1} (ungel ≔ r1)
+        a2 b2
   
   sym r2'
     : refl Gel A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1)
@@ -156,8 +156,8 @@
     : Type⁽ᵉᵉ⁾ (Gel A0 B0 R0) (Gel A1 B1 R1) A2 B2
   
   sym r2
-    : sym (refl Gel A2 B2 R2) {a0} {b0} (ungel ≔ r0) {a1} {b1} (ungel ≔ r1) a2
-        b2
+    : sym (refl Gel A2 B2 R2) {a0} {b0} (ungel ≔ r0) {a1} {b1} (ungel ≔ r1)
+        a2 b2
   
   sym r2'
     : refl Gel A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1)

@@ -10,7 +10,8 @@ def isContr (A : Fib) : Type ≔ sig (
   center : A .t,
   contract : (a : A .t) → Br (A .t) a center )
 
-def iscontr_idfrom (A : Fib) (a0 : A .t) : isContr (Σ𝕗 A (a1 ↦ Id𝕗 A a0 a1))
+def iscontr_idfrom (A : Fib) (a0 : A .t)
+  : isContr (Σ𝕗 A (a1 ↦ Id𝕗 A a0 a1))
   ≔ (
   center ≔ (a0, rel a0),
   contract ≔ a1_a2 ↦
@@ -65,8 +66,9 @@ def is11_Id (A0 A1 : Fib) (A2 : Br Fib A0 A1) (B0 B1 : Fib)
     (rel S p0 p1 q0 q1 .f .trl u,
      v2 ↦
        let w
-         ≔ re2 .contrr a2 .contract {(b0, r0)} {(b1, r1)} (v2 .fst, v2 .snd)
-         in
+         ≔ re2
+             .contrr a2
+             .contract {(b0, r0)} {(b1, r1)} (v2 .fst, v2 .snd) in
        S⁽ᵖᵖ⁾ (sym (rel p0)) (sym (rel p1)) (sym (rel q0)) (sym (rel q1))
          .f
          .id.1 {v2} {u} (sym w .fst, sym w .snd)
@@ -93,8 +95,9 @@ def is11_Id (A0 A1 : Fib) (A2 : Br Fib A0 A1) (B0 B1 : Fib)
     (rel S p0 p1 q0 q1 .f .trl u,
      v2 ↦
        let w
-         ≔ re2 .contrl b2 .contract {(a0, r0)} {(a1, r1)} (v2 .fst, v2 .snd)
-         in
+         ≔ re2
+             .contrl b2
+             .contract {(a0, r0)} {(a1, r1)} (v2 .fst, v2 .snd) in
        S⁽ᵖᵖ⁾ (sym (rel p0)) (sym (rel p1)) (sym (rel q0)) (sym (rel q1))
          .f
          .id.1 {v2} {u} (sym w .fst, sym w .snd)
@@ -128,8 +131,8 @@ def bisim_of_11 (A B : Fib) (R : A .t → B .t → Fib) (re : is11 A B R)
     bisim_of_11 (A.2 .t a0 a1, A.2 .f .id a0 a1)
       (B.2 .t b0 b1, B.2 .f .id b0 b1)
       (a2 b2 ↦ (R.2 a2 b2 .t r0 r1, R.2 a2 b2 .f .id r0 r1))
-      (is11_Id A.0 A.1 A.2 B.0 B.1 B.2 R.0 re.0 R.1 re.1 R.2 re.2 a0 a1 b0 b1
-         r0 r1)]
+      (is11_Id A.0 A.1 A.2 B.0 B.1 B.2 R.0 re.0 R.1 re.1 R.2 re.2 a0 a1 b0
+         b1 r0 r1)]
 
 {` Bisimulations transfer across Book HoTT equivalences. `}
 def isbisim_eqv (A B : Fib) (R S : A .t → B .t → Fib)
@@ -149,8 +152,8 @@ def isbisim_eqv (A B : Fib) (R S : A .t → B .t → Fib)
       (a2 b2 ↦ (S.2 a2 b2 .t s0 s1, S.2 a2 b2 .f .id s0 s1))
       (a2 b2 ↦
        Id_eqv (R.0 a0 b0 .t) (R.1 a1 b1 .t) (R.2 a2 b2 .t) (S.0 a0 b0 .t)
-         (S.1 a1 b1 .t) (S.2 a2 b2 .t) (e.0 a0 b0) (e.1 a1 b1) (e.2 a2 b2) s0
-         s1) (re.2 .id a0 b0 r0 a1 b1 r1)]
+         (S.1 a1 b1 .t) (S.2 a2 b2 .t) (e.0 a0 b0) (e.1 a1 b1) (e.2 a2 b2)
+         s0 s1) (re.2 .id a0 b0 r0 a1 b1 r1)]
 
 {` The converse of univalence: any identification of fibrant types is a bisimulation. `}
 def bisim_of_Id (A0 A1 : Fib) (A2 : Br Fib A0 A1)

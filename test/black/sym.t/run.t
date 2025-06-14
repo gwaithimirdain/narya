@@ -207,10 +207,12 @@
     : A⁽ᵉᵉᵉ⁾ a220 a221 (sym a022) (sym a122) (sym a202) (sym a212)
   
   a222⁽³²¹⁾
-    : A⁽ᵉᵉᵉ⁾ (sym a220) (sym a221) (sym a202) (sym a212) (sym a022) (sym a122)
+    : A⁽ᵉᵉᵉ⁾ (sym a220) (sym a221) (sym a202) (sym a212) (sym a022)
+        (sym a122)
   
   a222⁽³²¹⁾
-    : A⁽ᵉᵉᵉ⁾ (sym a220) (sym a221) (sym a202) (sym a212) (sym a022) (sym a122)
+    : A⁽ᵉᵉᵉ⁾ (sym a220) (sym a221) (sym a202) (sym a212) (sym a022)
+        (sym a122)
   
   a222⁽²³¹⁾
     : A⁽ᵉᵉᵉ⁾ (sym a202) (sym a212) (sym a220) (sym a221) a022 a122
@@ -219,10 +221,12 @@
     : A⁽ᵉᵉᵉ⁾ (sym a202) (sym a212) (sym a220) (sym a221) a022 a122
   
   a222⁽³²¹⁾
-    : A⁽ᵉᵉᵉ⁾ (sym a220) (sym a221) (sym a202) (sym a212) (sym a022) (sym a122)
+    : A⁽ᵉᵉᵉ⁾ (sym a220) (sym a221) (sym a202) (sym a212) (sym a022)
+        (sym a122)
   
   a222⁽³²¹⁾
-    : A⁽ᵉᵉᵉ⁾ (sym a220) (sym a221) (sym a202) (sym a212) (sym a022) (sym a122)
+    : A⁽ᵉᵉᵉ⁾ (sym a220) (sym a221) (sym a202) (sym a212) (sym a022)
+        (sym a122)
   
    ￫ info[I0000]
    ￮ constant braid defined
