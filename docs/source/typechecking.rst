@@ -10,6 +10,8 @@ Narya's typechecker is bidirectional.  This means that some terms *synthesize* a
 
 - Function abstraction ``x ↦ M`` checks against a function-type ``(x:A) → B`` by checking ``M`` against ``B`` in a context extended by a variable ``x:A``.  In particular, this means that the same abstraction term can mean different things depending on what type it is checked against.  For instance, ``x ↦ x`` checks against *any* endo-function type ``A → A``.  (Speaking semantically, however, we do not regard this as "one term having multiple types"; rather we consider that the typechecker is elaborating the ambiguous notation ``x ↦ x`` using contextual information to produce a distinct identity term in each endo-function type.)
 
+- A function abstraction can also synthesize if a type is given for its variable and its body synthesizes.  That is, ``(x : A) ↦ M`` synthesizes by first checking that ``A`` is a valid type, then synthesizing a type ``B`` for ``M`` in a context extended by a variable ``x:A``, and finally synthesizing the type ``(x:A) → B``.
+
 - Type-forming operators such as ``Type`` and ``(x:A) → B`` synthesize, after requiring their inputs to synthesize.  This might be modified later after universe levels are introduced.
 
 - Variables and constants synthesize their declared types.
@@ -18,7 +20,7 @@ Narya's typechecker is bidirectional.  This means that some terms *synthesize* a
 Ascription
 ----------
 
-If you want to use a checking term in a synthesizing position, you have to *ascribe* it to a particular type by writing ``M : A`` (or ``M:A`` by the lexer rules for :ref:`tokens`, assuming ``M`` doesn't end, or ``A`` start, with a special ASCII character notation).  This *checks* ``M`` against the supplied type ``A``, and then itself *synthesizes* that type.  For example, you cannot directly apply an abstraction to an argument to create a redex as in ``(x ↦ M) N``, since the abstraction only checks whereas a function being applied must synthesize, but you can if you ascribe it as in ``((x ↦ M) : A → B) N``.  In general, ascription tends only to be needed when explicitly writing a redex or something similar.
+If you want to use a checking term in a synthesizing position, you have to *ascribe* it to a particular type by writing ``M : A`` (or ``M:A`` by the lexer rules for :ref:`tokens`, assuming ``M`` doesn't end, or ``A`` start, with a special ASCII character notation).  This *checks* ``M`` against the supplied type ``A``, and then itself *synthesizes* that type.  For example, you cannot directly apply an abstraction to an argument to create a redex as in ``(x ↦ M) N``, since the abstraction only checks whereas a function being applied must synthesize, but you can if you ascribe it as in ``((x ↦ M) : A → B) N``.  If the body ``M`` synthesizes, you can also just ascribe the domain as in ``((x : A) ↦ M) N``.  In general, ascription tends only to be needed when explicitly writing a redex or something similar.
 
 The ascription notation has tightness −ω, and is non-associative, so that ``M : N : P`` is a parse error.  However, the right-associativity of ``↦`` and the fact that they share the same tightness means that ``x ↦ M : A`` is parsed as ``x ↦ (M : A)``, hence the placement of parentheses in the above example redex.
 

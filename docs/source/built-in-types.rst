@@ -14,7 +14,7 @@ Apart from the universe, the only predefined type is a dependent function-type, 
 
 Again as usual, functions are applied by juxtaposition; if ``f : (x:A) → B x`` and ``a : A`` then ``f a : B a``.  And this is left-associative, so if ``f : A → B → C`` then ``f a b : C``.
 
-Functions are introduced by abstraction, which in Narya is written (somewhat unusually) as ``x ↦ M``, or ``x y z ↦ M`` to abstract multiple variables at once.  The unicode ↦ is interchangeable with the ASCII ``|->``.
+Functions are introduced by abstraction, which in Narya is written (somewhat unusually) as ``x ↦ M``, or ``x y z ↦ M`` to abstract multiple variables at once.  The unicode ↦ is interchangeable with the ASCII ``|->``.  If desired, the type of the variable can be indicated explicitly with ``(x : A) ↦ M``.
 
 The variable in a function-type or an abstraction can be replaced by an underscore ``_``, indicating that that variable is not used and thus needs no name.  For types this is equivalent to a non-dependent function-type: ``(_ : A) → B`` means the same as ``A → B``.  For abstractions, ``_ ↦ M`` defines a constant function, whose value doesn't depend on its input.
 
