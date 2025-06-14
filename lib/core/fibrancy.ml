@@ -6,6 +6,8 @@ open Tbwd
 open Term
 open Monad.Ops (Monad.Maybe)
 
+let other = (`Other, `Other)
+
 (* Fibrancy fields *)
 
 (* The types of the (user-accessible, non-corecursive) fibrancy fields *)
@@ -20,12 +22,12 @@ let fields : (emp * D.zero * no_eta) CodatafieldAbwd.t option Lazy.t =
      let open CodatafieldAbwd in
      let trr =
        Pi
-         ( None,
+         ( singleton_variables D.zero None,
            CubeOf.singleton (Var (Index (Now, zero))),
            CodCube.singleton (Var (Index (Later Now, one))) ) in
      let liftr =
        Pi
-         ( Some "x₀",
+         ( singleton_variables D.zero (Some "x₀"),
            CubeOf.singleton (Var (Index (Now, zero))),
            CodCube.singleton
              (Inst
@@ -43,12 +45,12 @@ let fields : (emp * D.zero * no_eta) CodatafieldAbwd.t option Lazy.t =
      in
      let trl =
        Pi
-         ( None,
+         ( singleton_variables D.zero None,
            CubeOf.singleton (Var (Index (Now, one))),
            CodCube.singleton (Var (Index (Later Now, zero))) ) in
      let liftl =
        Pi
-         ( Some "x₁",
+         ( singleton_variables D.zero (Some "x₁"),
            CubeOf.singleton (Var (Index (Now, one))),
            CodCube.singleton
              (Inst
@@ -327,27 +329,27 @@ let pi :
          match which with
          | `Right -> Hott.tube12 hh a00 a01 a02 a10 a11 a12
          | `Left -> Hott.tube12 hh a01 a00 a02 a11 a10 a12 in
-       let dom_tubed = Inst (Act (Act (dom2, refl), sym), atube) in
-       let a21 = Act (a1, refl) in
+       let dom_tubed = Inst (Act (Act (dom2, refl, other), sym, other), atube) in
+       let a21 = Act (a1, refl, other) in
        let a20 = app (Field (dom_tubed, funtr, zero_ins Hott.dim)) a21 in
-       let sym_a22 = Act (app (Field (dom_tubed, funlift, zero_ins Hott.dim)) a21, sym) in
+       let sym_a22 = Act (app (Field (dom_tubed, funlift, zero_ins Hott.dim)) a21, sym, other) in
        let* a22cube =
          match which with
          | `Right -> Hott.cube2 hh a00 a10 a20 a01 a11 a21 a02 a12 sym_a22
          | `Left -> Hott.cube2 hh a01 a11 a21 a00 a10 a20 a02 a12 sym_a22 in
-       let cod22 = App (Act (cod2, refl), a22cube) in
+       let cod22 = App (Act (cod2, refl, other), a22cube) in
        (* The final transport is *always* a trl, for both cases (liftr and liftl), so this is Hott.cube in both cases. *)
        let* ax0 = Hott.cube a00 a10 a20 in
-       let tr_reflf_a20 = Act (tr_f_untr_a1, refl) in
+       let tr_reflf_a20 = Act (tr_f_untr_a1, refl, other) in
        let* btube =
          match which with
          | `Right ->
              Hott.tube12 hh (app f a00) (app f a10)
-               (App (Act (f, refl), ax0))
+               (App (Act (f, refl, other), ax0))
                tr_f_untr_a1 tr_f_untr_a1 tr_reflf_a20
          | `Left ->
              Hott.tube12 hh tr_f_untr_a1 tr_f_untr_a1 tr_reflf_a20 (app f a00) (app f a10)
-               (App (Act (f, refl), ax0)) in
+               (App (Act (f, refl, other), ax0)) in
        plusfam
          (Lam
             ( fname,
@@ -384,15 +386,15 @@ let pi :
        let* fxtube = Hott.tube f0x0 f1x1 in
        let fib =
          Pi
-           ( Some "x0",
+           ( singleton_variables D.zero (Some "x₀"),
              CubeOf.singleton dom0,
              CodCube.singleton
                (Pi
-                  ( Some "x1",
+                  ( singleton_variables D.zero (Some "x₁"),
                     CubeOf.singleton (Weaken dom1),
                     CodCube.singleton
                       (Pi
-                         ( Some "x2",
+                         ( singleton_variables D.zero (Some "x₂"),
                            CubeOf.singleton (Inst (Weaken (Weaken dom2), xtube)),
                            CodCube.singleton
                              (Inst (App (Weaken (Weaken (Weaken cod2)), xcube), fxtube)) )) )) )

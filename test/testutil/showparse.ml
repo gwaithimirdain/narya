@@ -17,7 +17,7 @@ and parse_tree =
 let rec get_obs (obs : Notation.observation) : obs option =
   match obs with
   | Term r -> Some (Term (get_tree r.value))
-  | Token _ -> None
+  | _ -> None
 
 and get_tree : type lt ls rt rs. (lt, ls, rt, rs) Notation.parse -> parse_tree =
  fun r ->
@@ -28,8 +28,8 @@ and get_tree : type lt ls rt rs. (lt, ls, rt, rs) Notation.parse -> parse_tree =
   | Ident (x, _) -> Ident x
   | Constr (x, _) -> Constr x
   | Field (x, b, _) -> Field (x, b)
-  | Superscript (None, s, _) -> Superscript (None, s)
-  | Superscript (Some x, s, _) -> Superscript (Some (get_tree x.value), s)
+  | Superscript (None, s, _) -> Superscript (None, s.value)
+  | Superscript (Some x, s, _) -> Superscript (Some (get_tree x.value), s.value)
   | Hole _ -> Hole
 
 let parse tm =

@@ -242,11 +242,11 @@ module Ordered = struct
             end in
             let module Fold = NICubeOf.Traverse (Lookup) in
             (* This function is called on every step of that iteration through a cube.  It appears that we have to define it with an explicit type signature in order for it to end up sufficiently polymorphic. *)
-            let lookup_folder : type left right l.
+            let lookup_folder : type left l.
                 (l, n) sface ->
-                (left, l, string option, right) NFamOf.t ->
-                right Lookup.t ->
-                left Lookup.t * (left, l, unit, right) NFamOf.t =
+                (left, l, string option) NFamOf.t ->
+                left N.suc Lookup.t ->
+                left Lookup.t * (left, l, unit) NFamOf.t =
              fun fb (NFamOf _) acc ->
               match acc with
               | Found fa -> (Found fa, NFamOf ())
@@ -390,6 +390,14 @@ let vis (Permute { perm; env; level; ctx }) m mn xs vars af =
       level = level + 1;
       ctx = Ordered.vis ctx m mn xs vars bf;
     }
+
+type _ any = Any_ctx : ('a, 'b) t -> 'b any
+
+let variables_vis : type a b mn.
+    (a, b) t -> mn variables -> (mn, Binding.t) CubeOf.t -> (b, mn) snoc any =
+ fun ctx (Variables (m, mn, xs)) vars ->
+  let (Plus af) = N.plus (NICubeOf.out N.zero xs) in
+  Any_ctx (vis ctx m mn xs vars af)
 
 let cube_vis ctx x vars =
   let m = CubeOf.dim vars in

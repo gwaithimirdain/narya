@@ -74,7 +74,7 @@ def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig a b ↦ (
 def ⊤ : Type ≔ sig ()
 def ⊤eq⊥ : Id Type ⊤ ⊥ ≔ Gel ⊤ ⊥ [ ]
 
-def foo : Id Π ⊤eq⊥ {_ ↦ ⊤} {_ ↦ ⊥} ({_} {_} _ ↦ ⊤eq⊥) (x ↦ x) (x ↦ x) ≔ [ ]
+def foo : (⊤eq⊥ ⇒ ⊤eq⊥) (x ↦ x) (x ↦ x) ≔ [ ]
 
 {` Later variables can be empty `}
 def one_not_even : even 1 → ⊥ ≔ [ ]

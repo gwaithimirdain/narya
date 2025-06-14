@@ -120,7 +120,7 @@ Note that the context Γ is a non-uniform parameter of the datatype ``ty``.  Her
 Inductive-recursive definitions
 -------------------------------
 
-An inductive-recursive definition consists of one or more type families defined by induction together with one or more functions defined by recursion, in a way that refer to each other.  For instance, here is an inductive-recursive universe that contains the Booleans and is closed under Π-types:
+An inductive-recursive definition consists of one or more type families defined by induction together with one or more functions defined by recursion, in a way that refer to each other.  For instance, here is an inductive-recursive universe that contains the Booleans and is closed under function-types:
 
 .. code-block:: none
 

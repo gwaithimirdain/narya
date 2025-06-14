@@ -16,7 +16,7 @@ let reformat = ref true
 let unicode = ref true
 let arity = ref 2
 let refl_char = ref 'e'
-let refl_names = ref [ "refl"; "Id" ]
+let refl_names = ref [ "refl"; "Id"; "ap" ]
 let internal = ref true
 let hott = ref false
 let discreteness = ref false
@@ -134,7 +134,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols f =
         marshal = marshal_flags;
         unmarshal = unmarshal_flags;
         source_only = !source_only;
-        init_visible = Parser.Glue.install (Parser.Pi.install Scope.Trie.empty);
+        init_visible = Parser.Glue.install Scope.Trie.empty;
         top_files;
         reformat = !reformat;
       }

@@ -23,7 +23,7 @@ let rec term : type a s. (Compunit.t -> Compunit.t) -> (a, s) term -> (a, s) ter
   | Constr (c, n, args) ->
       Constr
         (c, n, List.map (fun arg -> CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ arg ]) args)
-  | Act (tm, s) -> Act (term f tm, s)
+  | Act (tm, s, sort) -> Act (term f tm, s, sort)
   | Let (x, v, body) -> Let (x, term f v, term f body)
   | Lam (x, body) -> Lam (x, term f body)
   | Struct { eta; dim; fields = flds; energy } ->

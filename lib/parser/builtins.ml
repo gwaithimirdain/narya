@@ -46,7 +46,7 @@ let () =
         Some
           (fun obs ->
             match obs with
-            | [ Token (LBrace, (_, wslbrace)); Term body; Token (RBrace, (_, wsrbrace)) ] ->
+            | [ Token (LBrace, (wslbrace, _)); Term body; Token (RBrace, (wsrbrace, _)) ] ->
                 let ptm, wtm = pp_term body in
                 ( Token.pp LBrace
                   ^^ pp_ws `None wslbrace
@@ -81,7 +81,7 @@ let () =
       print_term =
         Some
           (function
-          | [ Token (Ident [ "Type" ], (_, wstype)) ] -> (string "Type", wstype)
+          | [ Token (Ident [ "Type" ], (wstype, _)) ] -> (string "Type", wstype)
           | _ -> invalid "universe");
       print_case = None;
       is_case = (fun _ -> false);
@@ -113,7 +113,7 @@ let () =
         Some
           (fun obs ->
             match obs with
-            | [ Term tm; Token (Colon, (_, wscolon)); Term ty ] ->
+            | [ Term tm; Token (Colon, (wscolon, _)); Term ty ] ->
                 let ptm, wtm = pp_term tm in
                 let pty, wty = pp_term ty in
                 ( align
@@ -209,7 +209,7 @@ let rec raw_lam : type a b ab.
 let process_abs cube ctx obs _loc =
   (* The loc argument isn't used here since we can deduce the locations of each lambda by merging its variables with its body. *)
   match obs with
-  | [ Term vars; Token (tok, (mloc, _)); Term body ]
+  | [ Term vars; Token (tok, (_, mloc)); Term body ]
     when (tok = DblMapsto && cube = `Cube) || (tok = Mapsto && cube = `Normal) ->
       let (Extctx (ab, locs, ctx)) = get_vars ctx vars in
       let cube =
@@ -310,7 +310,7 @@ let process_letrec ctx obs loc =
   match obs with
   | Token (Let, _) :: Token (Rec, _) :: obs ->
       let (Letrec_terms (tys, Zero, tms, body)) =
-        process_letrec_terms ctx (Token (And, (None, [])) :: obs) Emp N.zero in
+        process_letrec_terms ctx (Token (And, ([], None)) :: obs) Emp N.zero in
       locate (Synth (Letrec (tys, tms, body))) loc
   | _ -> invalid "let-rec"
 
@@ -328,34 +328,34 @@ let letrec_tree = Closed_entry (eop Let (op Rec (letrec_terms ())))
 let rec get_abslets heads obs =
   match obs with
   (* Abstraction *)
-  | [ Term vars; Token (Mapsto, (_, wsmapsto)); Term body ] ->
+  | [ Term vars; Token (Mapsto, (wsmapsto, _)); Term body ] ->
       get_abslets_of_parse (Snoc (heads, `Abs (Wrap vars, Token.Mapsto, wsmapsto))) (Wrap body)
-  | [ Term vars; Token (DblMapsto, (_, wsmapsto)); Term body ] ->
+  | [ Term vars; Token (DblMapsto, (wsmapsto, _)); Term body ] ->
       get_abslets_of_parse (Snoc (heads, `Abs (Wrap vars, DblMapsto, wsmapsto))) (Wrap body)
   (* Let-binding *)
   | Token _ :: _ -> (
       (* First we pull off the "let", "let rec", or "and" tokens and the variable name. *)
       let toks, x, obs =
         match obs with
-        | Token (Let, (_, wslet)) :: Token (Rec, (_, wsrec)) :: Term x :: rest ->
+        | Token (Let, (wslet, _)) :: Token (Rec, (wsrec, _)) :: Term x :: rest ->
             ([ (Token.Let, wslet); (Rec, wsrec) ], Wrap x, rest)
-        | Token (Let, (_, wslet)) :: Term x :: rest -> ([ (Token.Let, wslet) ], Wrap x, rest)
-        | Token (And, (_, wsand)) :: Term x :: rest -> ([ (Token.And, wsand) ], Wrap x, rest)
+        | Token (Let, (wslet, _)) :: Term x :: rest -> ([ (Token.Let, wslet) ], Wrap x, rest)
+        | Token (And, (wsand, _)) :: Term x :: rest -> ([ (Token.And, wsand) ], Wrap x, rest)
         | _ -> invalid "let" in
       (* Then we pull off the ascribed type, if any. *)
       let ty, obs =
         match obs with
-        | Token (Colon, (_, wscolon)) :: Term ty :: rest -> (Some (wscolon, Wrap ty), rest)
+        | Token (Colon, (wscolon, _)) :: Term ty :: rest -> (Some (wscolon, Wrap ty), rest)
         | _ -> (None, obs) in
       (* Finally we pull the bound value. *)
       match obs with
       (* If we're at an "in", this is the end of this "let". *)
-      | [ Token (Coloneq, (_, wscoloneq)); Term tm; Token (In, (_, wsin)); Term body ] ->
+      | [ Token (Coloneq, (wscoloneq, _)); Term tm; Token (In, (wsin, _)); Term body ] ->
           get_abslets_of_parse
             (Snoc (heads, `Let (toks, x, ty, wscoloneq, Wrap tm, Some wsin)))
             (Wrap body)
       (* Otherwise, we must be at an "and", so we continue inspecting this observation list. *)
-      | Token (Coloneq, (_, wscoloneq)) :: Term tm :: rest ->
+      | Token (Coloneq, (wscoloneq, _)) :: Term tm :: rest ->
           get_abslets (Snoc (heads, `Let (toks, x, ty, wscoloneq, Wrap tm, None))) rest
       | _ -> invalid "let")
   | _ -> invalid "abstraction"
@@ -599,7 +599,7 @@ let process_typed_vars : type lt ls rt rs.
   match arg with
   | Notn ((Asc, _), n) -> (
       match args n with
-      | [ Term xs; Token (Colon, (_, wscolon)); Term ty ] ->
+      | [ Term xs; Token (Colon, (wscolon, _)); Term ty ] ->
           let* vars = process_var_list xs [] in
           return (vars, wscolon, Wrap ty)
       | _ -> None)
@@ -609,9 +609,12 @@ let process_typed_vars : type lt ls rt rs.
    Function types (dependent and non)
  **************************************** *)
 
-type (_, _, _) identity += Arrow : (No.strict opn, No.zero, No.nonstrict opn) identity
+type (_, _, _) identity +=
+  | Arrow : (No.strict opn, No.zero, No.nonstrict opn) identity
+  | DblArrow : (No.strict opn, No.zero, No.nonstrict opn) identity
 
 let arrow : (No.strict opn, No.zero, No.nonstrict opn) notation = (Arrow, Infixr No.zero)
+let dblarrow : (No.strict opn, No.zero, No.nonstrict opn) notation = (DblArrow, Infixr No.zero)
 
 type arrow_opt = [ `Arrow of Whitespace.t list | `Noarrow | `First ]
 
@@ -624,6 +627,7 @@ type pi_dom =
       wscolon : Whitespace.t list;
       wsrparen : Whitespace.t list;
       loc : Asai.Range.t option;
+      implicit : [ `Implicit | `Explicit ];
     }
   | Nondep of { wsarrow : arrow_opt; ty : wrapped_parse }
 
@@ -638,16 +642,74 @@ let get_pi_args : type lt ls rt rs.
     match doms.value with
     | Notn ((Parens, _), n) -> (
         match args n with
-        | [ Token (LParen, (_, wslparen)); Term body; Token (RParen, (_, wsrparen)) ] ->
+        | [ Token (LParen, (wslparen, _)); Term body; Token (RParen, (wsrparen, _)) ] ->
             let* vars, wscolon, ty = process_typed_vars body.value in
-            return (Dep { wsarrow; vars; ty; wslparen; wscolon; wsrparen; loc = doms.loc } :: accum)
+            return
+              (Dep
+                 {
+                   wsarrow;
+                   vars;
+                   ty;
+                   wslparen;
+                   wscolon;
+                   wsrparen;
+                   loc = doms.loc;
+                   implicit = `Explicit;
+                 }
+              :: accum)
+        | _ -> None)
+    | Notn ((Braces, _), n) -> (
+        match args n with
+        | [ Token (LBrace, (wslparen, _)); Term body; Token (RBrace, (wsrparen, _)) ] ->
+            let* vars, wscolon, ty = process_typed_vars body.value in
+            return
+              (Dep
+                 {
+                   wsarrow;
+                   vars;
+                   ty;
+                   wslparen;
+                   wscolon;
+                   wsrparen;
+                   loc = doms.loc;
+                   implicit = `Implicit;
+                 }
+              :: accum)
         | _ -> None)
     | App { fn; arg = { value = Notn ((Parens, _), n); _ }; _ } -> (
         match args n with
-        | [ Token (LParen, (_, wslparen)); Term body; Token (RParen, (_, wsrparen)) ] ->
+        | [ Token (LParen, (wslparen, _)); Term body; Token (RParen, (wsrparen, _)) ] ->
             let* vars, wscolon, ty = process_typed_vars body.value in
             go fn
-              (Dep { wsarrow = `Noarrow; vars; ty; wslparen; wscolon; wsrparen; loc = doms.loc }
+              (Dep
+                 {
+                   wsarrow = `Noarrow;
+                   vars;
+                   ty;
+                   wslparen;
+                   wscolon;
+                   wsrparen;
+                   loc = doms.loc;
+                   implicit = `Explicit;
+                 }
+              :: accum)
+        | _ -> None)
+    | App { fn; arg = { value = Notn ((Braces, _), n); _ }; _ } -> (
+        match args n with
+        | [ Token (LBrace, (wslparen, _)); Term body; Token (RBrace, (wsrparen, _)) ] ->
+            let* vars, wscolon, ty = process_typed_vars body.value in
+            go fn
+              (Dep
+                 {
+                   wsarrow = `Noarrow;
+                   vars;
+                   ty;
+                   wslparen;
+                   wscolon;
+                   wsrparen;
+                   loc = doms.loc;
+                   implicit = `Implicit;
+                 }
               :: accum)
         | _ -> None)
     | _ -> None in
@@ -655,37 +717,121 @@ let get_pi_args : type lt ls rt rs.
   | Some result -> result
   | None -> Nondep { wsarrow; ty = Wrap doms } :: accum
 
-(* Get all the domains and eventual codomain from a right-associated iterated function-type. *)
-let rec get_pi : arrow_opt -> observation list -> pi_dom list * Whitespace.t list * wrapped_parse =
+(* Get all the domains, dimension, and eventual codomain from a right-associated iterated function-type. *)
+let rec get_pi :
+    arrow_opt ->
+    observation list ->
+    pi_dom list * Whitespace.t list * (string located * Whitespace.t list) * wrapped_parse =
  fun prev_arr obs ->
   match obs with
-  | [ Term doms; Token (Arrow, (_, wsarrow)); Term cod ] ->
+  | [ Term doms; Ss_token ((Arrow, (wsarrow, _)), dims); Term cod ] ->
+      let dim =
+        match dims with
+        | [] -> (locate_opt None "", [])
+        | [ (dim, wsdim) ] -> (dim, wsdim)
+        | _ -> invalid "arrow 1" in
       let vars, ws, cod =
         match cod.value with
-        | Notn ((Arrow, _), n) -> get_pi (`Arrow wsarrow) (args n)
+        | Notn ((Arrow, _), n) ->
+            let vars, ws, coddim, evcod = get_pi (`Arrow wsarrow) (args n) in
+            if coddim = dim then (vars, ws, evcod) else ([], wsarrow, Wrap cod)
         | _ -> ([], wsarrow, Wrap cod) in
-      (get_pi_args prev_arr doms vars, ws, cod)
-  | _ -> invalid "arrow"
+      (get_pi_args prev_arr doms vars, ws, dim, cod)
+  | [ Term doms; Token (DblArrow, (wsarrow, _)); Term cod ] ->
+      let vars, ws, cod =
+        match cod.value with
+        | Notn ((DblArrow, _), n) ->
+            let vars, ws, _, evcod = get_pi (`Arrow wsarrow) (args n) in
+            (vars, ws, evcod)
+        | _ -> ([], wsarrow, Wrap cod) in
+      (get_pi_args prev_arr doms vars, ws, (locate_opt None "", []), cod)
+  | _ -> invalid "arrow 2"
 
-(* Given the variables with domains and the codomain of a pi-type, process it into a raw term. *)
+(* Given the variables with domains and the codomain of an ordinary (not higher) pi-type, process it into a raw term. *)
 let rec process_pi : type n lt ls rt rs.
-    (string option, n) Bwv.t -> pi_dom list -> (lt, ls, rt, rs) parse located -> n check located =
- fun ctx doms cod ->
+    (string option, n) Bwv.t ->
+    [ `Lower | `Higher ] ->
+    pi_dom list ->
+    (lt, ls, rt, rs) parse located ->
+    n check located =
+ fun ctx higher doms cod ->
   match doms with
   | [] -> process ctx cod
-  | Nondep { ty = Wrap dom; _ } :: doms ->
+  | Nondep { ty = Wrap dom; _ } :: doms -> (
       let cdom = process ctx dom in
       let ctx = Bwv.snoc ctx None in
-      let cod = process_pi ctx doms cod in
+      let cod = process_pi ctx higher doms cod in
       let loc = Range.merge_opt cdom.loc cod.loc in
-      { value = Synth (Pi (None, cdom, cod)); loc }
-  | Dep ({ vars = (x, _) :: xs; ty = Wrap dom; loc; _ } as data) :: doms ->
+      match (higher, cdom.value, cod.value) with
+      | `Lower, _, _ -> { value = Synth (Pi (None, cdom, cod)); loc }
+      | `Higher, Synth sdom, Synth scod ->
+          {
+            value = Synth (HigherPi (None, locate_opt cdom.loc sdom, locate_opt cod.loc scod));
+            loc;
+          }
+      | `Higher, Synth _, _ ->
+          fatal ?loc:cod.loc (Nonsynthesizing "codomain of higher function type")
+      | `Higher, _, _ -> fatal ?loc:cdom.loc (Nonsynthesizing "domain of higher function type"))
+  | Dep ({ vars = (x, _) :: xs; ty = Wrap dom; loc; implicit = `Explicit; _ } as data) :: doms -> (
       let cdom = process ctx dom in
       let ctx = Bwv.snoc ctx x in
-      let cod = process_pi ctx (Dep { data with vars = xs } :: doms) cod in
+      let cod = process_pi ctx higher (Dep { data with vars = xs } :: doms) cod in
       let loc = Range.merge_opt loc cod.loc in
-      { value = Synth (Pi (x, cdom, cod)); loc }
-  | Dep { vars = []; _ } :: doms -> process_pi ctx doms cod
+      match (higher, cdom.value, cod.value) with
+      | `Lower, _, _ -> { value = Synth (Pi (x, cdom, cod)); loc }
+      | `Higher, Synth sdom, Synth scod ->
+          { value = Synth (HigherPi (x, locate_opt cdom.loc sdom, locate_opt cod.loc scod)); loc }
+      | `Higher, Synth _, _ ->
+          fatal ?loc:cod.loc (Nonsynthesizing "codomain of higher function type")
+      | `Higher, _, _ -> fatal ?loc:cdom.loc (Nonsynthesizing "domain of higher function type"))
+  | Dep { vars = []; implicit = `Explicit; _ } :: doms -> process_pi ctx higher doms cod
+  | Dep { implicit = `Implicit; _ } :: _ -> fatal (Unimplemented "general implicit function-types")
+
+let rec process_inst_higher_pi : type n lt ls rt rs m.
+    (string option, n) Bwv.t ->
+    m D.pos ->
+    pi_dom list ->
+    (lt, ls, rt, rs) parse located ->
+    n check located =
+ fun ctx dim doms cod ->
+  match doms with
+  | [] -> process ctx cod
+  | _ :: _ ->
+      let module Acc = struct
+        type 'left t = (string option, 'left) Bwv.t * pi_dom list * Asai.Range.t option
+      end in
+      let module T = DomCube.Traverse (Acc) in
+      let (Wrap (domcube, (newctx, doms, loc))) =
+        let build : type left k b. (k, m) sface -> left Acc.t -> (left, k, b) T.fwrap_left =
+         fun s (ctx, doms, loc) ->
+          match doms with
+          | [] -> fatal (Not_enough_domains (D.pos dim))
+          | Dep ({ vars = (x, _) :: xs; ty = Wrap dom; loc = xloc; implicit; _ } as data) :: doms
+            -> (
+              match (is_id_sface s, implicit) with
+              | Some Eq, `Explicit | None, `Implicit ->
+                  let cdom = process ctx dom in
+                  let ctx = Bwv.snoc ctx x in
+                  let doms =
+                    match xs with
+                    | [] -> doms
+                    | _ :: _ -> Dep { data with vars = xs } :: doms in
+                  let loc =
+                    match loc with
+                    | Some loc -> Some loc
+                    | None -> xloc in
+                  Fwrap (DomFam (x, cdom), (ctx, doms, loc))
+              | _ ->
+                  fatal
+                    (Unexpected_implicitness
+                       ( implicit,
+                         "domain",
+                         "all boundary domains must be implicit and primary domain explicit" )))
+          | _ -> invalid "higher pi" in
+        T.build_left (D.pos dim) { build } (ctx, doms, None) in
+      let cod = process_inst_higher_pi newctx dim doms cod in
+      let loc = Range.merge_opt loc cod.loc in
+      { value = Synth (InstHigherPi (dim, domcube, cod)); loc }
 
 (* Pretty-print the domains of a right-associated iterated function-type that may mix dependent and non-dependent arguments.  Each argument is preceded by an arrow if its wsarrow is given; pi_doms ensures these go in the right place.  If linebreaked, the eventual codomain with its arrow goes on a line by itself with hanging indent, and then the domains are flowed with their own hanging indent.  Arrows never come at the beginnings of lines.  *)
 
@@ -697,7 +843,7 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
       (fun (acc, prews) dom ->
         let wsarrow, (pty, wty) =
           match dom with
-          | Dep { wsarrow; vars; ty = Wrap ty; wslparen; wscolon; wsrparen; loc = _ } ->
+          | Dep { wsarrow; vars; ty = Wrap ty; wslparen; wscolon; wsrparen; implicit; loc = _ } ->
               let pvars, wvars =
                 List.fold_left
                   (fun (acc, prews) (x, wx) ->
@@ -710,7 +856,7 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
               let pty, wty = pp_term ty in
               ( wsarrow,
                 ( group
-                    (Token.pp LParen
+                    (Token.pp (if implicit = `Implicit then LBrace else LParen)
                     ^^ pp_ws `None wslparen
                     ^^ hang 2 pvars
                     ^^ optional (pp_ws `Break) wvars
@@ -718,7 +864,7 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
                     ^^ pp_ws `Nobreak wscolon
                     ^^ pty
                     ^^ pp_ws `None wty
-                    ^^ Token.pp RParen),
+                    ^^ Token.pp (if implicit = `Implicit then RBrace else RParen)),
                   wsrparen ) )
           | Nondep { wsarrow; ty = Wrap ty } -> (wsarrow, pp_term ty) in
         let doc, ws =
@@ -731,30 +877,53 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
       (empty, None) doms in
   (doc, ws <|> Anomaly "missing ws in pp_doms")
 
+let pp_pi arrow obs =
+  let doms, wsarrow, (dim, wsdim), Wrap cod = get_pi `First obs in
+  let pdom, wdom = pp_doms doms in
+  let pcod, wcod = pp_term cod in
+  let dim, wsdim =
+    if dim.value = "" then (empty, wsarrow)
+    else
+      ( pp_ws (if Display.chars () = `Unicode then `None else `Nobreak) wsarrow ^^ pp_superscript dim,
+        wsdim ) in
+  ( group
+      (align
+         (pdom
+         ^^ pp_ws `Break wdom
+         ^^ Token.pp arrow
+         ^^ dim
+         ^^ hang 2 (pp_ws `Nobreak wsdim ^^ pcod))),
+    wcod )
+
 let () =
   make arrow
     {
       name = "arrow";
-      tree = Open_entry (eop Arrow (done_open arrow));
+      tree = Open_entry (TokMap.singleton Arrow (done_open arrow, `Ss));
       processor =
         (fun ctx obs _loc ->
           (* We don't need the loc parameter here, since we can reconstruct the location of each pi-type from its arguments. *)
-          let doms, _, Wrap cod = get_pi `First obs in
-          process_pi ctx doms cod);
-      print_term =
-        Some
-          (fun obs ->
-            let doms, wsarrow, Wrap cod = get_pi `First obs in
-            let pdom, wdom = pp_doms doms in
-            let pcod, wcod = pp_term cod in
-            ( group
-                (align
-                   (pdom
-                   ^^ pp_ws `Break wdom
-                   ^^ Token.pp Arrow
-                   ^^ hang 2 (pp_ws `Nobreak wsarrow ^^ pcod))),
-              wcod ));
+          let doms, _, (dim, _), Wrap cod = get_pi `First obs in
+          match dim_of_string dim.value with
+          | Some (Any m) -> (
+              match D.compare_zero m with
+              | Zero -> process_pi ctx `Lower doms cod
+              | Pos dim -> process_inst_higher_pi ctx dim doms cod)
+          | None -> fatal Parse_error);
+      print_term = Some (pp_pi Arrow);
       (* Function-types are never part of case trees. *)
+      print_case = None;
+      is_case = (fun _ -> false);
+    };
+  make dblarrow
+    {
+      name = "dblarrow";
+      tree = Open_entry (eop DblArrow (done_open dblarrow));
+      processor =
+        (fun ctx obs _loc ->
+          let doms, _, _, Wrap cod = get_pi `First obs in
+          process_pi ctx `Higher doms cod);
+      print_term = Some (pp_pi DblArrow);
       print_case = None;
       is_case = (fun _ -> false);
     }
@@ -780,7 +949,7 @@ let () =
         Some
           (fun obs ->
             match obs with
-            | [ Term x; Token (Coloneq, (_, wscoloneq)); Term body ] ->
+            | [ Term x; Token (Coloneq, (wscoloneq, _)); Term body ] ->
                 let px, wx = pp_term x in
                 let pbody, wbody = pp_term body in
                 ( group
@@ -793,7 +962,7 @@ let () =
           (* Always nontrivial *)
           (fun _triv obs ->
             match obs with
-            | [ Term x; Token (Coloneq, (_, wscoloneq)); Term body ] ->
+            | [ Term x; Token (Coloneq, (wscoloneq, _)); Term body ] ->
                 let px, wx = pp_term x in
                 let ibody, pbody, wbody = pp_case `Nontrivial body in
                 ( group
@@ -814,10 +983,8 @@ let rec tuple_fields () =
   Inner
     {
       empty_branch with
-      ops = TokMap.singleton RParen (Done_closed parens);
-      term =
-        Some
-          (TokMap.of_list [ (Op ",", Lazy (lazy (tuple_fields ()))); (RParen, Done_closed parens) ]);
+      ops = singleton RParen (Done_closed parens);
+      term = Some (oflist [ (Op ",", Lazy (lazy (tuple_fields ()))); (RParen, Done_closed parens) ]);
     }
 
 (* Split in cases based on whether an instance of 'parens' is a tuple or just parentheses.  In the former case, we return the interior term; in the latter we strip off the starting parentheses. *)
@@ -826,13 +993,13 @@ let parens_case :
     [ `Parens of Whitespace.t list * wrapped_parse * Whitespace.t list
     | `Tuple of Whitespace.t list * observation list ] = function
   (* Tuple starting with a labeled term *)
-  | Token (LParen, (_, wslparen)) :: (Term { value = Notn ((Coloneq, _), _); _ } :: _ as obs) ->
+  | Token (LParen, (wslparen, _)) :: (Term { value = Notn ((Coloneq, _), _); _ } :: _ as obs) ->
       `Tuple (wslparen, obs)
   (* Ordinary parentheses (around an unlabeled term!) *)
-  | [ Token (LParen, (_, wslparen)); Term body; Token (RParen, (_, wsrparen)) ] ->
+  | [ Token (LParen, (wslparen, _)); Term body; Token (RParen, (wsrparen, _)) ] ->
       `Parens (wslparen, Wrap body, wsrparen)
   (* Other tuple *)
-  | Token (LParen, (_, wslparen)) :: obs -> `Tuple (wslparen, obs)
+  | Token (LParen, (wslparen, _)) :: obs -> `Tuple (wslparen, obs)
   | _ -> invalid "tuple (parens)"
 
 let rec process_tuple : type n.
@@ -878,34 +1045,34 @@ let rec pp_tuple_fields first prews accum obs : document * Whitespace.t list =
     | `Narrow -> optional (pp_ws `Cut) prews in
   match obs with
   (* No more terms.  This includes empty tuples.  (Empty tuples can't contain a comma.) *)
-  | [ Token (RParen, (_, wsrparen)) ] -> (accum ^^ prews ^^ Token.pp RParen, wsrparen)
+  | [ Token (RParen, (wsrparen, _)) ] -> (accum ^^ prews ^^ Token.pp RParen, wsrparen)
   (* Last term, without a trailing comma.  Don't add one. *)
-  | [ Term tm; Token (RParen, (_, wsrparen)) ] ->
+  | [ Term tm; Token (RParen, (wsrparen, _)) ] ->
       let itm, ptm, wtm = pp_case `Trivial tm in
       let doc = itm ^^ ptm ^^ pp_ws `None wtm ^^ Token.pp RParen in
       (accum ^^ prews ^^ doc, wsrparen)
   (* Last term, with an unnecessary trailing comma (that is, not a 1-tuple or the entry is labeled).  Remove it, but keep its whitespace. *)
-  | [ Term tm; Token (Op ",", (_, wscomma)); Token (RParen, (_, wsrparen)) ] when not first ->
+  | [ Term tm; Token (Op ",", (wscomma, _)); Token (RParen, (wsrparen, _)) ] when not first ->
       let itm, ptm, wtm = pp_case `Trivial tm in
       let doc = itm ^^ ptm ^^ pp_ws `None wtm ^^ pp_ws `None wscomma ^^ Token.pp RParen in
       (accum ^^ prews ^^ doc, wsrparen)
   | [
    Term ({ value = Notn ((Coloneq, _), _); _ } as tm);
-   Token (Op ",", (_, wscomma));
-   Token (RParen, (_, wsrparen));
+   Token (Op ",", (wscomma, _));
+   Token (RParen, (wsrparen, _));
   ] ->
       let itm, ptm, wtm = pp_case `Trivial tm in
       let doc = itm ^^ ptm ^^ pp_ws `None wtm ^^ pp_ws `None wscomma ^^ Token.pp RParen in
       (accum ^^ prews ^^ doc, wsrparen)
   (* Last term, with a necessary trailing comma.  Keep it. *)
-  | [ Term tm; Token (Op ",", (_, wscomma)); Token (RParen, (_, wsrparen)) ] ->
+  | [ Term tm; Token (Op ",", (wscomma, _)); Token (RParen, (wsrparen, _)) ] ->
       let itm, ptm, wtm = pp_case `Trivial tm in
       let doc =
         itm ^^ ptm ^^ pp_ws `None wtm ^^ Token.pp (Op ",") ^^ pp_ws `None wscomma ^^ Token.pp RParen
       in
       (accum ^^ prews ^^ doc, wsrparen)
   (* Non-last term, with a comma after it.  Keep the comma, of course. *)
-  | Term tm :: Token (Op ",", (_, wscomma)) :: obs ->
+  | Term tm :: Token (Op ",", (wscomma, _)) :: obs ->
       let itm, ptm, wtm = pp_case `Trivial tm in
       let doc = itm ^^ ptm ^^ pp_ws `None wtm ^^ Token.pp (Op ",") in
       pp_tuple_fields false (Some wscomma) (accum ^^ prews ^^ doc) obs
@@ -914,9 +1081,9 @@ let rec pp_tuple_fields first prews accum obs : document * Whitespace.t list =
         (Printf.sprintf "tuple (pp, Term, Token %s, length %d)" (Token.to_string tok)
            (List.length obs))
   | Term _ :: _ -> invalid (Printf.sprintf "tuple (pp, Term, length %d)" (List.length obs))
-  | Token (tok, _) :: _ ->
+  | Token (tok, _) :: _ | Ss_token ((tok, _), _) :: _ ->
       invalid
-        (Printf.sprintf "tuple (pp, Token %s, length %d)" (Token.to_string tok) (List.length obs))
+        (Printf.sprintf "tuple (pp, Ss_token %s, length %d)" (Token.to_string tok) (List.length obs))
   | [] -> invalid (Printf.sprintf "tuple (pp, length %d)" (List.length obs))
 
 let pp_tuple_term obs =
@@ -936,7 +1103,7 @@ let pp_tuple_case triv obs =
   | `Tuple (wslparen, obs) -> (
       match obs with
       (* For an empty tuple, we put everything in the intro. *)
-      | [ Token (RParen, (_, wsrparen)) ] ->
+      | [ Token (RParen, (wsrparen, _)) ] ->
           (Token.pp LParen ^^ pp_ws `None wslparen ^^ Token.pp RParen, empty, wsrparen)
       | _ -> (
           let doc, ws = pp_tuple_fields true None empty obs in
@@ -988,7 +1155,7 @@ let () =
       print_term =
         Some
           (function
-          | [ Token (Dot, (_, wsdot)) ] -> (Token.pp Dot, wsdot)
+          | [ Token (Dot, (wsdot, _)) ] -> (Token.pp Dot, wsdot)
           | _ -> invalid "dot");
       print_case = None;
       is_case = (fun _ -> false);
@@ -1016,12 +1183,12 @@ let rec mtch_branches notn bar_ok end_ok comma_ok =
     {
       empty_branch with
       ops =
-        TokMap.of_list
+        oflist
           ((if end_ok then [ (Token.RBracket, Done_closed notn) ] else [])
           @ if bar_ok then [ (Op "|", mtch_branches notn false false comma_ok) ] else []);
       term =
         Some
-          (TokMap.of_list
+          (oflist
              ((if comma_ok then [ (Token.Op ",", patterns notn) ] else [])
              @ [ (Mapsto, body notn comma_ok); (DblMapsto, body notn comma_ok) ]));
     }
@@ -1359,9 +1526,9 @@ let rec get_patterns : type n.
  fun n obs ->
   match (n, obs) with
   | _, [] | Zero, _ -> invalid "match"
-  | Suc Zero, Term tm :: Token (Mapsto, (loc, _)) :: obs ->
+  | Suc Zero, Term tm :: Token (Mapsto, (_, loc)) :: obs ->
       ([ get_pattern tm ], locate `Normal loc, obs)
-  | Suc Zero, Term tm :: Token (DblMapsto, (loc, _)) :: obs ->
+  | Suc Zero, Term tm :: Token (DblMapsto, (_, loc)) :: obs ->
       ([ get_pattern tm ], locate `Cube loc, obs)
   | Suc Zero, Term _ :: Term tm :: _ -> fatal ?loc:tm.loc Parse_error
   | Suc Zero, Term tm :: _ -> fatal ?loc:tm.loc Parse_error
@@ -1390,8 +1557,8 @@ let rec get_any_patterns :
     observation list -> pattern Vec.wrapped * [ `Normal | `Cube ] located * observation list =
  fun obs ->
   match obs with
-  | Term tm :: Token (Mapsto, (loc, _)) :: obs -> (Wrap [ get_pattern tm ], locate `Normal loc, obs)
-  | Term tm :: Token (DblMapsto, (loc, _)) :: obs -> (Wrap [ get_pattern tm ], locate `Cube loc, obs)
+  | Term tm :: Token (Mapsto, (_, loc)) :: obs -> (Wrap [ get_pattern tm ], locate `Normal loc, obs)
+  | Term tm :: Token (DblMapsto, (_, loc)) :: obs -> (Wrap [ get_pattern tm ], locate `Cube loc, obs)
   | Term tm :: Token (Op ",", _) :: obs ->
       let Wrap pats, cube, obs = get_any_patterns obs in
       (Wrap (get_pattern tm :: pats), cube, obs)
@@ -1400,7 +1567,7 @@ let rec get_any_patterns :
 let rec pp_patterns accum obs =
   match obs with
   (* Not-last pattern *)
-  | Term pat :: Token (Op ",", (_, wscomma)) :: obs ->
+  | Term pat :: Token (Op ",", (wscomma, _)) :: obs ->
       let ppat, wpat = pp_term pat in
       pp_patterns
         (accum ^^ ppat ^^ pp_ws `None wpat ^^ Token.pp (Op ",") ^^ pp_ws `Break wscomma)
@@ -1413,15 +1580,15 @@ let rec pp_patterns accum obs =
 
 let rec pp_branches first triv accum prews obs : document * Whitespace.t list =
   match obs with
-  | [ Token (RBracket, (_, wsrbrack)) ] ->
+  | [ Token (RBracket, (wsrbrack, _)) ] ->
       ( accum
         ^^ ifflat (optional (pp_ws `Nobreak) prews) (optional (pp_ws `None) prews)
         ^^ Token.pp RBracket,
         wsrbrack )
-  | Token (Op "|", (_, wsbar)) :: obs -> (
+  | Token (Op "|", (wsbar, _)) :: obs -> (
       let ppats, wpats, obs = pp_patterns empty obs in
       match obs with
-      | Token (mapsto, (_, wsmapsto)) :: Term body :: obs ->
+      | Token (mapsto, (wsmapsto, _)) :: Term body :: obs ->
           let ibody, pbody, wbody = pp_case `Nontrivial body in
           pp_branches false triv
             (accum
@@ -1454,7 +1621,7 @@ let rec pp_branches first triv accum prews obs : document * Whitespace.t list =
 let rec pp_discriminees accum prews obs : document * Whitespace.t list * observation list =
   match obs with
   (* Not-last discriminee *)
-  | Term x :: Token (Op ",", (_, wscomma)) :: obs ->
+  | Term x :: Token (Op ",", (wscomma, _)) :: obs ->
       let px, wx = pp_term x in
       pp_discriminees
         (accum ^^ pp_ws `Break prews ^^ px ^^ pp_ws `None wx ^^ Token.pp (Op ","))
@@ -1470,12 +1637,12 @@ let rec pp_discriminees accum prews obs : document * Whitespace.t list * observa
 
 (* Print an implicit match, explicit match, matching lambda, or comatch, with possible multiple discriminees and possible 'return'.  We can combine comatches with matches because a "field" is just a term that can be printed like a pattern.  Always nontrivial. *)
 let pp_match triv = function
-  | Token (Match, (_, wsmatch)) :: obs -> (
+  | Token (Match, (wsmatch, _)) :: obs -> (
       let pdisc, wdisc, obs = pp_discriminees (Token.pp Match) wsmatch obs in
       let pret, wret, obs =
         match obs with
         (* The motive is parsed as an abstraction sub-notation *)
-        | Token (Return, (_, wsreturn)) :: Term motive :: Token (LBracket, (_, wslbrack)) :: obs ->
+        | Token (Return, (wsreturn, _)) :: Term motive :: Token (LBracket, (wslbrack, _)) :: obs ->
             let pmotive, wmotive = pp_term motive in
             ( pp_ws `Break wdisc
               ^^ Token.pp Return
@@ -1485,11 +1652,11 @@ let pp_match triv = function
               ^^ Token.pp LBracket,
               wslbrack,
               obs )
-        | Token (LBracket, (_, wslbrack)) :: obs ->
+        | Token (LBracket, (wslbrack, _)) :: obs ->
             (pp_ws `Nobreak wdisc ^^ Token.pp LBracket, wslbrack, obs)
         | _ -> invalid "(co)match 5" in
       match obs with
-      | [ Token (RBracket, (_, wsrbrack)) ] ->
+      | [ Token (RBracket, (wsrbrack, _)) ] ->
           (* The empty match fits all on one line *)
           ( align (group (hang 2 pdisc) ^^ pret ^^ pp_ws `Nobreak wret ^^ Token.pp RBracket),
             empty,
@@ -1498,7 +1665,7 @@ let pp_match triv = function
           let pbranches, wbranches =
             pp_branches true `Nontrivial empty None (must_start_with (Op "|") obs) in
           (align (group (hang 2 pdisc) ^^ pret), group (pp_ws `Break wret ^^ pbranches), wbranches))
-  | Token (LBracket, (_, wslbrack)) :: obs ->
+  | Token (LBracket, (wslbrack, _)) :: obs ->
       let pbranches, wbranches = pp_branches true triv empty None (must_start_with (Op "|") obs) in
       ( Token.pp LBracket,
         group (pp_ws (if triv = `Trivial then `Nobreak else `Break) wslbrack ^^ pbranches),
@@ -1541,7 +1708,7 @@ let () =
                   empty_branch with
                   term =
                     Some
-                      (TokMap.singleton Return
+                      (singleton Return
                          (* The motive is parsed as an abstraction sub-notation *)
                          (term LBracket (mtch_branches explicit_mtch true true false)));
                 }));
@@ -1630,7 +1797,7 @@ let rec process_comatch : type n.
   | [ Token (RBracket, _) ] -> { value = Raw.Struct (Noeta, flds); loc }
   | Token (Op "|", _)
     :: Term { value = Field (fld, pbij, _); loc = fldloc }
-    :: Token (mapsto, (mloc, _))
+    :: Token (mapsto, (_, mloc))
     :: Term tm
     :: obs ->
       let tm = process ctx tm in
@@ -1658,7 +1825,7 @@ let () =
              (Inner
                 {
                   empty_branch with
-                  ops = TokMap.singleton (Op "|") (comatch_fields ());
+                  ops = singleton (Op "|") (comatch_fields ());
                   field =
                     (let rest =
                        terms
@@ -1698,7 +1865,7 @@ let () =
       print_case =
         Some
           (fun _triv -> function
-            | [ Token (LBracket, (_, wslbrack)); Token (RBracket, (_, wsrbrack)) ] ->
+            | [ Token (LBracket, (wslbrack, _)); Token (RBracket, (wsrbrack, _)) ] ->
                 (Token.pp LBracket ^^ pp_ws `Nobreak wslbrack ^^ Token.pp RBracket, empty, wsrbrack)
             | _ -> invalid "empty_co_match");
       is_case = (fun _ -> true);
@@ -1718,12 +1885,11 @@ let rec codata_fields bar_ok =
       empty_branch with
       ops =
         (if bar_ok then
-           TokMap.of_list
-             [ (Op "|", Lazy (lazy (codata_fields false))); (RBracket, Done_closed codata) ]
+           oflist [ (Op "|", Lazy (lazy (codata_fields false))); (RBracket, Done_closed codata) ]
          else TokMap.empty);
       term =
         Some
-          (TokMap.singleton Colon
+          (singleton Colon
              (terms [ (Op "|", Lazy (lazy (codata_fields false))); (RBracket, Done_closed codata) ]));
     }
 
@@ -1768,9 +1934,9 @@ let rec process_codata : type n.
 
 let rec pp_codata_fields first prews accum obs : document * Whitespace.t list =
   match obs with
-  | [ Token (RBracket, (_, wsrbrack)) ] ->
+  | [ Token (RBracket, (wsrbrack, _)) ] ->
       (accum ^^ optional (pp_ws `Nobreak) prews ^^ Token.pp RBracket, wsrbrack)
-  | Token (Op "|", (_, wsbar)) :: Term varfld :: Token (Colon, (_, wscolon)) :: Term body :: obs ->
+  | Token (Op "|", (wsbar, _)) :: Term varfld :: Token (Colon, (wscolon, _)) :: Term body :: obs ->
       let pvarfld, wsvarfld = pp_term varfld in
       let pbody, wbody = pp_term body in
       pp_codata_fields false (Some wbody)
@@ -1800,7 +1966,7 @@ let rec pp_codata_fields first prews accum obs : document * Whitespace.t list =
 let pp_codata _triv = function
   (* The empty codatatype fits all on one line *)
   | [
-      Token (Codata, (_, wscodata)); Token (LBracket, (_, wslbrack)); Token (RBracket, (_, wsrbrack));
+      Token (Codata, (wscodata, _)); Token (LBracket, (wslbrack, _)); Token (RBracket, (wsrbrack, _));
     ] ->
       ( Token.pp Codata
         ^^ pp_ws `Nobreak wscodata
@@ -1809,7 +1975,7 @@ let pp_codata _triv = function
         ^^ Token.pp RBracket,
         empty,
         wsrbrack )
-  | Token (Codata, (_, wscodata)) :: Token (LBracket, (_, wslbrack)) :: obs ->
+  | Token (Codata, (wscodata, _)) :: Token (LBracket, (wslbrack, _)) :: obs ->
       let fields, ws = pp_codata_fields true None empty (must_start_with (Op "|") obs) in
       ( Token.pp Codata ^^ pp_ws `Nobreak wscodata ^^ Token.pp LBracket,
         pp_ws `Break wslbrack ^^ fields,
@@ -1846,10 +2012,10 @@ let rec record_fields () =
   Inner
     {
       empty_branch with
-      ops = TokMap.singleton RParen (Done_closed record);
+      ops = singleton RParen (Done_closed record);
       term =
         Some
-          (TokMap.singleton Colon
+          (singleton Colon
              (terms [ (Op ",", Lazy (lazy (record_fields ()))); (RParen, Done_closed record) ]));
     }
 
@@ -1932,18 +2098,18 @@ let process_record ctx obs loc =
 let rec pp_record_fields prews accum obs =
   match obs with
   (* If the user ended with a trailing comma, don't print it, but do print its whitespace. *)
-  | [ Token (Op ",", (_, wscomma)); Token (RParen, (_, wsrparen)) ] ->
+  | [ Token (Op ",", (wscomma, _)); Token (RParen, (wsrparen, _)) ] ->
       (accum ^^ optional (pp_ws `None) prews ^^ pp_ws `Nobreak wscomma ^^ Token.pp RParen, wsrparen)
   (* If the user ended without a trailing comma, don't add one. *)
-  | [ Token (RParen, (_, wsrparen)) ] ->
+  | [ Token (RParen, (wsrparen, _)) ] ->
       (accum ^^ optional (pp_ws `Nobreak) prews ^^ Token.pp RParen, wsrparen)
   (* If the previous field ended with a comma, print it. *)
-  | Token (Op ",", (_, wscomma)) :: obs ->
+  | Token (Op ",", (wscomma, _)) :: obs ->
       pp_record_fields (Some wscomma)
         (accum ^^ optional (pp_ws `None) prews ^^ Token.pp (Op ","))
         obs
   (* Now we're on a field. *)
-  | Term var :: Token (Colon, (_, wscolon)) :: Term body :: obs ->
+  | Term var :: Token (Colon, (wscolon, _)) :: Term body :: obs ->
       let pvar, wvar = pp_term var in
       let pbody, wbody = pp_term body in
       pp_record_fields (Some wbody)
@@ -1967,11 +2133,11 @@ let rec pp_record_fields prews accum obs =
 let pp_record _triv obs =
   let withattr, wsattr, obs =
     match obs with
-    | Token (Sig, (_, wssig))
-      :: Token (Op "#", (_, wshash))
-      :: Token (LParen, (_, wslattr))
+    | Token (Sig, (wssig, _))
+      :: Token (Op "#", (wshash, _))
+      :: Token (LParen, (wslattr, _))
       :: Term attr
-      :: Token (RParen, (_, wsrattr))
+      :: Token (RParen, (wsrattr, _))
       :: obs ->
         let pattr, wattr = pp_term attr in
         ( Token.pp Sig
@@ -1986,11 +2152,11 @@ let pp_record _triv obs =
                ^^ Token.pp RParen),
           wsrattr,
           obs )
-    | Token (Sig, (_, wssig)) :: obs -> (Token.pp Sig, wssig, obs)
+    | Token (Sig, (wssig, _)) :: obs -> (Token.pp Sig, wssig, obs)
     | _ -> invalid "record" in
   let withlparen, wslparen, obs =
     match obs with
-    | Term x :: Token (Mapsto, (_, wsmapsto)) :: Token (LParen, (_, wslparen)) :: obs ->
+    | Term x :: Token (Mapsto, (wsmapsto, _)) :: Token (LParen, (wslparen, _)) :: obs ->
         let px, wx = pp_term x in
         ( withattr
           ^^ group
@@ -2002,11 +2168,11 @@ let pp_record _triv obs =
                ^^ Token.pp LParen),
           wslparen,
           obs )
-    | Token (LParen, (_, wslparen)) :: obs ->
+    | Token (LParen, (wslparen, _)) :: obs ->
         (withattr ^^ pp_ws `Nobreak wsattr ^^ Token.pp LParen, wslparen, obs)
     | _ -> invalid "record" in
   match obs with
-  | [ Token (RParen, (_, wsrparen)) ] ->
+  | [ Token (RParen, (wsrparen, _)) ] ->
       (* The empty record type fits all on one line *)
       (withlparen ^^ pp_ws `None wslparen ^^ Token.pp RParen, empty, wsrparen)
   | _ ->
@@ -2024,7 +2190,7 @@ let () =
                 {
                   empty_branch with
                   ops =
-                    TokMap.of_list
+                    oflist
                       [
                         (LParen, record_fields ());
                         ( Op "#",
@@ -2033,12 +2199,11 @@ let () =
                                (Inner
                                   {
                                     empty_branch with
-                                    ops = TokMap.singleton LParen (record_fields ());
-                                    term =
-                                      Some (TokMap.singleton Mapsto (op LParen (record_fields ())));
+                                    ops = singleton LParen (record_fields ());
+                                    term = Some (singleton Mapsto (op LParen (record_fields ())));
                                   })) );
                       ];
-                  term = Some (TokMap.singleton Mapsto (op LParen (record_fields ())));
+                  term = Some (singleton Mapsto (op LParen (record_fields ())));
                 }));
       processor = (fun ctx obs loc -> process_record ctx obs loc);
       print_term = None;
@@ -2060,13 +2225,10 @@ let rec data_constrs bar_ok =
       empty_branch with
       ops =
         (if bar_ok then
-           TokMap.of_list
-             [ (Op "|", Lazy (lazy (data_constrs false))); (RBracket, Done_closed data) ]
+           oflist [ (Op "|", Lazy (lazy (data_constrs false))); (RBracket, Done_closed data) ]
          else TokMap.empty);
       term =
-        Some
-          (TokMap.of_list
-             [ (Op "|", Lazy (lazy (data_constrs false))); (RBracket, Done_closed data) ]);
+        Some (oflist [ (Op "|", Lazy (lazy (data_constrs false))); (RBracket, Done_closed data) ]);
     }
 
 (* Extract all the typed arguments of a constructor given before its colon. *)
@@ -2147,9 +2309,9 @@ let rec process_data : type n.
 
 let rec pp_data_constrs first prews accum obs =
   match obs with
-  | [ Token (RBracket, (_, wsrbrack)) ] ->
+  | [ Token (RBracket, (wsrbrack, _)) ] ->
       (accum ^^ optional (pp_ws `Nobreak) prews ^^ Token.pp RBracket, wsrbrack)
-  | Token (Op "|", (_, wsbar)) :: Term constr :: obs ->
+  | Token (Op "|", (wsbar, _)) :: Term constr :: obs ->
       let pconstr, wconstr = pp_term constr in
       pp_data_constrs false (Some wconstr)
         (accum
@@ -2166,7 +2328,7 @@ let rec pp_data_constrs first prews accum obs =
 
 let pp_data _triv = function
   (* The empty datatype fits all on one line *)
-  | [ Token (Data, (_, wsdata)); Token (LBracket, (_, wslbrack)); Token (RBracket, (_, wsrbrack)) ]
+  | [ Token (Data, (wsdata, _)); Token (LBracket, (wslbrack, _)); Token (RBracket, (wsrbrack, _)) ]
     ->
       ( Token.pp Data
         ^^ pp_ws `Nobreak wsdata
@@ -2175,7 +2337,7 @@ let pp_data _triv = function
         ^^ Token.pp RBracket,
         empty,
         wsrbrack )
-  | Token (Data, (_, wsdata)) :: Token (LBracket, (_, wslbrack)) :: obs ->
+  | Token (Data, (wsdata, _)) :: Token (LBracket, (wslbrack, _)) :: obs ->
       let doc, ws = pp_data_constrs true None empty (must_start_with (Op "|") obs) in
       (Token.pp Data ^^ pp_ws `Nobreak wsdata ^^ Token.pp LBracket, pp_ws `Break wslbrack ^^ doc, ws)
   | _ -> invalid "data"
@@ -2234,12 +2396,12 @@ let rec process_calcs : type n.
 let rec pp_calcs : Whitespace.t list -> observation list -> document * Whitespace.t list =
  fun ws obs ->
   match obs with
-  | Token (Op "=", (_, wseq)) :: Term y :: obs ->
+  | Token (Op "=", (wseq, _)) :: Term y :: obs ->
       let py, wy = pp_term y in
       let peq = pp_ws `Hard ws ^^ hang 2 (group (Token.pp (Op "=") ^^ pp_ws `Nobreak wseq ^^ py)) in
       let pby, w, obs =
         match obs with
-        | Token (Ident [ "by" ], (_, wby)) :: Term e :: obs ->
+        | Token (Ident [ "by" ], (wby, _)) :: Term e :: obs ->
             let pe, we = pp_term e in
             ( nest 4
                 (pp_ws `Hard wy
@@ -2249,7 +2411,7 @@ let rec pp_calcs : Whitespace.t list -> observation list -> document * Whitespac
         | _ -> (empty, wy, obs) in
       let rest, wrest = pp_calcs w obs in
       (peq ^^ pby ^^ rest, wrest)
-  | [ Token (Ident [ "∎" ], (_, wqed)) ] -> (pp_ws `Nobreak ws ^^ Token.pp (Ident [ "∎" ]), wqed)
+  | [ Token (Ident [ "∎" ], (wqed, _)) ] -> (pp_ws `Nobreak ws ^^ Token.pp (Ident [ "∎" ]), wqed)
   | _ -> invalid "calc"
 
 let () =
@@ -2269,7 +2431,7 @@ let () =
         Some
           (fun _ obs ->
             match obs with
-            | Token (Ident [ "calc" ], (_, wscalc)) :: Term x :: obs ->
+            | Token (Ident [ "calc" ], (wscalc, _)) :: Term x :: obs ->
                 let px, wx = pp_term x in
                 let pcalcs, wcalcs = pp_calcs wx obs in
                 ( Token.pp (Ident [ "calc" ]),
@@ -2294,6 +2456,7 @@ let install () =
     |> Situation.add abs
     |> Situation.add cubeabs
     |> Situation.add arrow
+    |> Situation.add dblarrow
     |> Situation.add universe
     |> Situation.add coloneq
     |> Situation.add comatch

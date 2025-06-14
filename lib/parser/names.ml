@@ -66,6 +66,27 @@ let lookup_field : type n. n t -> n index -> string -> string list option =
         return (cubevar y fb) in
   lookup ctx x
 
+(* Convert a partially-cube variable to a full cube of non-cube variables. *)
+let full_variables : type m. m variables -> (N.zero, m, string option) NICubeOf.NFold.wrap_left =
+  function
+  | Variables (m, m_n, xs) ->
+      NICubeOf.NFold.build_left (D.plus_out m m_n)
+        {
+          build =
+            (fun s i ->
+              let (SFace_of_plus (_, sm, sn)) = sface_of_plus m_n s in
+              let smstr = string_of_sface ~unicode:(Display.chars () = `Unicode) sm in
+              Fwrap
+                ( NFamOf
+                    (Some
+                       ((match NICubeOf.find xs sn with
+                        | Some x -> x
+                        | None -> __DEFAULT_NAME__)
+                       ^ smstr)),
+                  N.suc i ));
+        }
+        N.zero
+
 let rec primes n =
   if n <= 0 then ""
   else if n = 1 then "′"
@@ -88,52 +109,60 @@ let uniquify : string -> int StringMap.t -> string * [ `Original | `Renamed ] * 
       let namen, n = until_unique n in
       (namen, `Renamed, used |> StringMap.add namen 0 |> StringMap.add name (n + 1))
 
-(* Make a variable name unique, leaving unnamed variables unnamed. *)
+(* Make a variable name unique.  Leave unnamed variables unnamed, unless force_names = true. *)
 let uniquify_opt :
-    string option -> int StringMap.t -> string option * [ `Original | `Renamed ] * int StringMap.t =
- fun name used ->
-  match name with
-  | None -> (None, `Original, used)
-  | Some name ->
+    ?force_names:bool ->
+    string option ->
+    int StringMap.t ->
+    string option * [ `Original | `Renamed ] * int StringMap.t =
+ fun ?(force_names = false) name used ->
+  match (name, force_names) with
+  | None, false -> (None, `Original, used)
+  | None, true ->
+      let name, orig, used = uniquify __DEFAULT_NAME__ used in
+      (Some name, orig, used)
+  | Some name, _ ->
       let name, orig, used = uniquify name used in
       (Some name, orig, used)
 
-(* Do the same thing to a whole cube of variable names, leaving unnamed variables unnamed. *)
+(* Do the same thing to a whole cube of variable names. *)
 let uniquify_cube : type n left right.
+    ?force_names:bool ->
     (left, n, string option, right) NICubeOf.t ->
     int StringMap.t ->
     (left, n, string option, right) NICubeOf.t * int StringMap.t =
- fun names used ->
+ fun ?(force_names = false) names used ->
   (* Apparently we need to define the iteration function with an explicit type so that it ends up sufficiently polymorphic. *)
-  let uniquify_nfamof : type m left right.
-      (left, m, string option, right) NFamOf.t ->
+  let uniquify_nfamof : type m left.
+      (left, m, string option) NFamOf.t ->
       int StringMap.t ->
-      (left, m, string option, right) NFamOf.t * int StringMap.t =
+      (left, m, string option) NFamOf.t * int StringMap.t =
    fun (NFamOf name) used ->
-    let name, _, used = uniquify_opt name used in
+    let name, _, used = uniquify_opt ~force_names name used in
     (NFamOf name, used) in
   let open NICubeOf.Applicatic (Applicative.OfMonad (Monad.State (struct
     type t = int StringMap.t
   end))) in
   mapM { map = (fun _ name used -> uniquify_nfamof name used) } names used
 
-(* Add a new cube variable at a specified dimension, generating a fresh version of its name if necessary to avoid conflicts, leaving unnamed variables unnamed. *)
-let add_cube : type n b. n D.t -> b t -> string option -> string option * (b, n) snoc t =
- fun n { ctx; used } name ->
-  let name, _, used = uniquify_opt name used in
+(* Add a new cube variable at a specified dimension, generating a fresh version of its name if necessary to avoid conflicts.  Again, leave unnamed variables unnamed unless rename=true. *)
+let add_cube : type n b.
+    ?force_names:bool -> n D.t -> b t -> string option -> string option * (b, n) snoc t =
+ fun ?(force_names = false) n { ctx; used } name ->
+  let name, _, used = uniquify_opt ~force_names name used in
   ( name,
     { ctx = Snoc (ctx, Variables (n, D.plus_zero n, NICubeOf.singleton name), Abwd.empty); used } )
 
-(* Same, but starting from an unnamed variable and giving it a default name. *)
+(* Same, but starting from an unnamed variable and always giving it a default name. *)
 let add_cube_autogen : type n b. n D.t -> b t -> string * (b, n) snoc t =
  fun n ctx ->
   let x, used = add_cube n ctx (Some __DEFAULT_NAME__) in
   (Option.get x, used)
 
-(* Add a cube of variables, generating a fresh version of each of their names, leaving unnamed variables unnamed. *)
-let add : 'b t -> 'n variables -> 'n variables * ('b, 'n) snoc t =
- fun { ctx; used } (Variables (m, mn, names)) ->
-  let names, used = uniquify_cube names used in
+(* Add a cube of variables, generating a fresh version of each of their names.  Again, leave unnamed variables unnamed unless force_names=true. *)
+let add : ?force_names:bool -> 'b t -> 'n variables -> 'n variables * ('b, 'n) snoc t =
+ fun ?(force_names = false) { ctx; used } (Variables (m, mn, names)) ->
+  let names, used = uniquify_cube ~force_names names used in
   let vars = Variables (m, mn, names) in
   (vars, { ctx = Snoc (ctx, vars, Abwd.empty); used })
 
@@ -208,3 +237,5 @@ let uniquify_vars : type a.
         (Snoc (vars, (x, orig)), used) in
   let vars, used = go vars used in
   (vars, { ctx = Emp; used })
+
+type named_term = Named : 'a t * ('a, kinetic) term -> named_term

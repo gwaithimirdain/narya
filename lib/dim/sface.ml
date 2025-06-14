@@ -139,12 +139,12 @@ let singleton_sface : type m n l.
 
 type any_sface = Any_sface : ('n, 'k) sface -> any_sface
 
-let rec string_of_sface : type n k. (n, k) sface -> string =
- fun fa ->
+let rec string_of_sface : type n k. ?unicode:bool -> (n, k) sface -> string =
+ fun ?(unicode = false) fa ->
   match fa with
   | Zero -> ""
-  | End (fa, e) -> Endpoints.to_string (Some e) ^ string_of_sface fa
-  | Mid fa -> Endpoints.to_string None ^ string_of_sface fa
+  | End (fa, e) -> Endpoints.to_string ~unicode (Some e) ^ string_of_sface ~unicode fa
+  | Mid fa -> Endpoints.to_string ~unicode None ^ string_of_sface ~unicode fa
 
 let sface_of_string : string -> any_sface option =
  fun str ->

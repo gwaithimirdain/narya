@@ -30,17 +30,6 @@ def zero_zero' : Σ CN (_ ↦ CN) ≔ (fst ≔ zero, snd ≔ zero)
 def zero_zero_eq_zero_zero' : Id (Σ CN (_ ↦ CN)) zero_zero zero_zero'
   ≔ refl zero_zero
 
-{` Pi-types `}
-{`These are built in, of course, but we also have a named constant for them.`}
-
-def built_in_pi_eqs_named_pi : Id Type ((x : A) → B x) (Π A B) ≔ refl (Π A B)
-
-{`In particular, this gives a way for the user to write higher-dimensional Π-types.`}
-def refl_for_pi
-  : Id (Id Type ((x : A) → B x) ((x : A) → B x)) (refl ((x : A) → B x))
-      (refl Π (refl A) (refl B))
-  ≔ refl (refl ((x : A) → B x))
-
 {`Coinductive streams`}
 def Stream : Type → Type ≔ A ↦ codata [ _ .head : A | _ .tail : Stream A ]
 def zeros : Stream CN ≔ [ .head ↦ zero | .tail ↦ zeros ]

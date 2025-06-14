@@ -52,7 +52,7 @@ module rec Value : sig
       }
         -> head
     | UU : 'n D.t -> head
-    | Pi : string option * ('k, kinetic value) CubeOf.t * ('k, unit) BindCube.t -> head
+    | Pi : 'k variables * ('k, kinetic value) CubeOf.t * ('k, unit) BindCube.t -> head
 
   and _ apps =
     | Emp : noninst apps
@@ -104,7 +104,7 @@ module rec Value : sig
   and (_, _) canonical =
     | UU : 'm D.t -> ('m, D.zero) canonical
     | Pi :
-        string option * ('m, kinetic value) CubeOf.t * ('m, unit) BindCube.t
+        'm variables * ('m, kinetic value) CubeOf.t * ('m, unit) BindCube.t
         -> ('m, D.zero) canonical
     | Data : ('m, 'j, 'ij) data_args -> ('m, D.zero) canonical
     | Codata : ('m, 'n, 'c, 'a, 'et) codata_args -> ('m, 'n) canonical
@@ -199,7 +199,7 @@ end = struct
     (* Universes are parametrized by a dimension *)
     | UU : 'n D.t -> head
     (* Pis must store not just the domain type but all its boundary types.  These domain and boundary types are not fully instantiated.  Note the codomains are stored in a cube of binders. *)
-    | Pi : string option * ('k, kinetic value) CubeOf.t * ('k, unit) BindCube.t -> head
+    | Pi : 'k variables * ('k, kinetic value) CubeOf.t * ('k, unit) BindCube.t -> head
 
   (* An application contains the data of an n-dimensional argument and its boundary, together with a neutral insertion applied outside that can't be pushed in.  This represents the *argument list* of a single application, not the function.  Thus, an application spine will be a head together with a list of apps. *)
   and _ apps =
@@ -266,7 +266,7 @@ end = struct
     (* At present, we never produce these except as the values of their corresponding heads.  But in principle, we could allow universes and pi-types as potential terms, so that constants could be defined to "behave like" universes or pi-types without reducing to them. *)
     | UU : 'm D.t -> ('m, D.zero) canonical
     | Pi :
-        string option * ('m, kinetic value) CubeOf.t * ('m, unit) BindCube.t
+        'm variables * ('m, kinetic value) CubeOf.t * ('m, unit) BindCube.t
         -> ('m, D.zero) canonical
     (* We define a named record type to encapsulate the arguments of Data and Codata, rather than using an inline one, so that we can bind their existential variables (https://discuss.ocaml.org/t/annotating-by-an-existential-type/14721).  See the definitions of these records below. *)
     | Data : ('m, 'j, 'ij) data_args -> ('m, D.zero) canonical
@@ -379,16 +379,10 @@ let rec length_env : type n b. (n, b) env -> b Dbwd.t = function
   | Unshift (env, mn, nb) -> Plusmap.input (D.plus_right mn) (length_env env) nb
 
 (* Abstract over a cube of binders to make a cube of lambdas.  TODO: This should morally be a Cube.map, but it goes from one instantiation of Cube to another one, and we didn't define a map like that, so for now we just make it a 'build'. *)
-let lam_cube : type n. string option -> (n, unit) BindCube.t -> (n, kinetic value) CubeOf.t =
+let lam_cube : type n. n variables -> (n, unit) BindCube.t -> (n, kinetic value) CubeOf.t =
  fun x binders ->
   CubeOf.build (BindCube.dim binders)
-    {
-      build =
-        (fun fa ->
-          let k = dom_sface fa in
-          let x = singleton_variables k x in
-          Lam (x, BindCube.find binders fa));
-    }
+    { build = (fun fa -> Lam (sub_variables fa x, BindCube.find binders fa)) }
 
 (* Smart constructor that composes actions and cancels identities *)
 let rec act_env : type m n b. (n, b) env -> (m, n) op -> (m, b) env =
@@ -615,7 +609,6 @@ let inst_lazy : type m n mn s. s lazy_eval -> (m, n, mn, normal) TubeOf.t -> s l
           ref (Deferred (tm, ins, newargs))
       | Ready tm -> ref (Deferred ((fun () -> tm), id_deg D.zero, Inst (Emp, k, args))))
 
-(* Given a *type*, hence an element of a fully instantiated universe, extract the arguments of the instantiation of that universe. *)
 let inst_tys : kinetic value -> kinetic value TubeOf.full = function
   | Neu { ty = (lazy (Neu { args = Inst (_, _, tys); _ })); _ } -> (
       match D.compare (TubeOf.uninst tys) D.zero with
@@ -633,6 +626,23 @@ let inst_of_apps : type any. any apps -> noninst apps * normal TubeOf.any option
   | Emp -> (apps, None)
   | Arg _ -> (apps, None)
   | Field _ -> (apps, None)
+
+(* Split off a given positive dimension's worth of instantiation, putting the rest back on the apps.  The argument must be a neutral, so the return value is just the head and apps part of a neutral (which suffices to read it back with readback_neu). *)
+let split_inst : type m.
+    m D.pos -> kinetic value -> (head * any_apps * (D.zero, m, m, normal) TubeOf.t) option =
+ fun m tm ->
+  let m = D.pos m in
+  match tm with
+  | Neu { head; args = Inst (args, mk, tyargs); _ } -> (
+      match (D.compare_zero (TubeOf.uninst tyargs), factor (D.pos mk) m) with
+      | Zero, Some (Factor m_k) -> (
+          let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (D.pos mk)) in
+          let tyargs, rest = TubeOf.split (D.zero_plus m) m_k tyargs in
+          match D.compare_zero (D.plus_right m_k) with
+          | Zero -> Some (head, Any args, tyargs)
+          | Pos k -> Some (head, Any (Inst (args, k, rest)), tyargs))
+      | _ -> None)
+  | _ -> None
 
 module Fwd_app = struct
   (* Make an apps without instantiations into a forwards list *)

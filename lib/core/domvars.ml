@@ -84,7 +84,7 @@ let rec get_pi_vars : type a b.
       match (D.compare_zero (CubeOf.dim doms), cube) with
       | Zero, `Normal | Pos _, `Cube ->
           let args, newnfs = dom_vars ctx doms in
-          let sctx = Ctx.cube_vis ctx x newnfs in
-          get_pi_vars sctx cube (Snoc (xs, x)) (tyof_app cods tyargs args)
+          let (Any_ctx sctx) = Ctx.variables_vis ctx x newnfs in
+          get_pi_vars sctx cube (Snoc (xs, top_variable x)) (tyof_app cods tyargs args)
       | _ -> xs)
   | _ -> xs

@@ -96,11 +96,11 @@ let rec process : type n lt ls rt rs.
       (* This can happen if the user tries to project a field from a constructor. *)
       fatal Parse_error
   | Superscript (Some x, str, _) -> (
-      match deg_of_string str with
+      match deg_of_string str.value with
       | Some (Any_deg s) ->
           let body = process ctx x in
           { value = Synth (Act (str, s, body)); loc }
-      | None -> fatal (Invalid_degeneracy str))
+      | None -> fatal ?loc:str.loc (Invalid_degeneracy str.value))
   | Superscript (None, _, _) -> fatal (Anomaly "degeneracy is head")
   | Hole { li; ri; num; _ } ->
       let hloc = loc <|> Anomaly "missing location in Hole" in
@@ -145,13 +145,13 @@ and process_apps : type n lt ls rt rs.
 and process_head : type n lt ls rt rs.
     (string option, n) Bwv.t ->
     (lt, ls, rt, rs) parse located ->
-    [ `Deg of string * any_deg | `Constr of Constr.t | `Fn of n synth located ] =
+    [ `Deg of string located * any_deg | `Constr of Constr.t | `Fn of n synth located ] =
  fun ctx tm ->
   match tm.value with
   | Constr (ident, _) -> `Constr (Constr.intern ident)
   | Ident ([ str ], _) -> (
       match deg_of_name str with
-      | Some s -> `Deg (str, s)
+      | Some s -> `Deg (locate_opt tm.loc str, s)
       | None -> `Fn (process_synth ctx tm "function"))
   | _ -> `Fn (process_synth ctx tm "function")
 
