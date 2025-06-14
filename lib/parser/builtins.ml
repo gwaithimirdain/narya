@@ -147,46 +147,39 @@ type _ extended_ctx =
       * (string option, 'nm) Bwv.t
       -> 'n extended_ctx
 
-let rec get_vars : type n lt1 ls1 rt1 rs1.
-    (string option, n) Bwv.t -> (lt1, ls1, rt1, rs1) parse located -> n extended_ctx =
- fun ctx vars ->
-  match vars.value with
-  | Ident ([ x ], _) ->
-      if Lexer.valid_var x then
-        Extctx (Suc Zero, Snoc (Emp, (vars.loc, `Explicit)), Bwv.snoc ctx (Some x))
-      else fatal ?loc:vars.loc Parse_error
-  | Ident (xs, _) -> fatal ?loc:vars.loc (Invalid_variable xs)
-  | Placeholder _ -> Extctx (Suc Zero, Snoc (Emp, (vars.loc, `Explicit)), Bwv.snoc ctx None)
+(* Require the argument to be either a valid local variable name (to be bound, so faces of cubical variables are not allowed) or an underscore, and return a corresponding 'string option'. *)
+let get_var : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string option =
+ fun { value; loc } ->
+  with_loc loc @@ fun () ->
+  match value with
+  | Ident ([ x ], _) when Lexer.valid_var x -> Some x
+  | Ident (xs, _) -> fatal (Invalid_variable xs)
+  | Placeholder _ -> None
+  | _ -> fatal Parse_error
+
+(* Like get_var, but allow it to be enclosed in braces to mean implicit. *)
+let get_var_implicit : type lt ls rt rs.
+    (lt, ls, rt, rs) parse located -> string option * [ `Implicit | `Explicit ] =
+ fun v ->
+  match v.value with
   | Notn ((Braces, _), n) -> (
       match args n with
-      | [ Token (LBrace, _); Term { value = Ident ([ x ], _); _ }; Token (RBrace, _) ]
-        when Lexer.valid_var x ->
-          Extctx (Suc Zero, Snoc (Emp, (vars.loc, `Implicit)), Bwv.snoc ctx (Some x))
-      | [ Token (LBrace, _); Term { value = Ident (xs, _); _ }; Token (RBrace, _) ] ->
-          fatal ?loc:vars.loc (Invalid_variable xs)
-      | [ Token (LBrace, _); Term { value = Placeholder _; _ }; Token (RBrace, _) ] ->
-          Extctx (Suc Zero, Snoc (Emp, (vars.loc, `Implicit)), Bwv.snoc ctx None)
-      | _ -> fatal ?loc:vars.loc Parse_error)
-  | App { fn; arg = { value = Ident ([ x ], _); loc = xloc }; _ } when Lexer.valid_var x ->
+      | [ Token (LBrace, _); Term w; Token (RBrace, _) ] -> (get_var w, `Implicit)
+      | _ -> invalid "braces")
+  | _ -> (get_var v, `Explicit)
+
+(* Get a sequence of variables, as in the domain of an abstraction, some possibly enclosed in braces to mean they are implicit. *)
+let rec get_vars : type n lt ls rt rs.
+    (string option, n) Bwv.t -> (lt, ls, rt, rs) parse located -> n extended_ctx =
+ fun ctx vars ->
+  match vars.value with
+  | App { fn; arg; _ } ->
       let (Extctx (ab, locs, ctx)) = get_vars ctx fn in
-      Extctx (Suc ab, Snoc (locs, (xloc, `Explicit)), Bwv.snoc ctx (Some x))
-  | App { arg = { value = Ident (xs, _); loc }; _ } -> fatal ?loc (Invalid_variable xs)
-  | App { fn; arg = { value = Placeholder _; loc = xloc }; _ } ->
-      let (Extctx (ab, locs, ctx)) = get_vars ctx fn in
-      Extctx (Suc ab, Snoc (locs, (xloc, `Explicit)), Bwv.snoc ctx None)
-  | App { fn; arg = { value = Notn ((Braces, _), n); loc = xloc }; _ } -> (
-      match args n with
-      | [ Token (LBrace, _); Term { value = Ident ([ x ], _); _ }; Token (RBrace, _) ]
-        when Lexer.valid_var x ->
-          let (Extctx (ab, locs, ctx)) = get_vars ctx fn in
-          Extctx (Suc ab, Snoc (locs, (xloc, `Implicit)), Bwv.snoc ctx (Some x))
-      | [ Token (LBrace, _); Term { value = Ident (xs, _); _ }; Token (RBrace, _) ] ->
-          fatal ?loc:vars.loc (Invalid_variable xs)
-      | [ Token (LBrace, _); Term { value = Placeholder _; _ }; Token (RBrace, _) ] ->
-          let (Extctx (ab, locs, ctx)) = get_vars ctx fn in
-          Extctx (Suc ab, Snoc (locs, (xloc, `Implicit)), Bwv.snoc ctx None)
-      | _ -> fatal ?loc:vars.loc Parse_error)
-  | _ -> fatal ?loc:vars.loc Parse_error
+      let x, implicit = get_var_implicit arg in
+      Extctx (Suc ab, Snoc (locs, (arg.loc, implicit)), Bwv.snoc ctx x)
+  | _ ->
+      let x, implicit = get_var_implicit vars in
+      Extctx (Suc Zero, Snoc (Emp, (vars.loc, implicit)), Bwv.snoc ctx x)
 
 let rec raw_lam : type a b ab.
     (string option, ab) Bwv.t ->
