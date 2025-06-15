@@ -111,6 +111,8 @@ module Make (I : Indices) = struct
     (* The location of the implicitness flag is, in the implicit case, the location of the braces surrounding the implicit argument. *)
     | App : 'a synth located * 'a check located * [ `Implicit | `Explicit ] located -> 'a synth
     | Asc : 'a check located * 'a check located -> 'a synth
+    (* Abstraction with ascribed variable.  Currently can't be a cube or implicit.  *)
+    | AscLam : I.name located * 'a check located * 'a I.suc synth located -> 'a synth
     | UU : 'a synth
     (* A Let can either synthesize or (sometimes) check.  It synthesizes only if its body also synthesizes, but we wait until typechecking type to look for that, so that if it occurs in a checking context the body can also be checking.  Thus, we make it a "synthesizing term".  The term being bound must also synthesize; the shorthand notation "let x : A := M" is expanded during parsing to "let x := M : A". *)
     | Let : I.name * 'a synth located * 'a I.suc check located -> 'a synth
@@ -288,6 +290,8 @@ module Resolve (R : Resolver) = struct
       | Pi (x, dom, cod) -> Pi (R.rename ctx x, check ctx dom, check (R.snoc ctx x) cod)
       | App (fn, arg, impl) -> App (synth ctx fn, check ctx arg, impl)
       | Asc (tm, ty) -> Asc (check ctx tm, check ctx ty)
+      | AscLam (x, dom, body) ->
+          AscLam (locate_map (R.rename ctx) x, check ctx dom, synth (R.snoc ctx x.value) body)
       | UU -> UU
       | Let (x, tm, body) -> Let (R.rename ctx x, synth ctx tm, (check (R.snoc ctx x)) body)
       | Letrec (tys, tms, body) ->
