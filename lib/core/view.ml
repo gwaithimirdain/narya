@@ -19,7 +19,7 @@ let type_viewer : (?severity:Asai.Diagnostic.severity -> kinetic value -> string
 type force_eval_type = { force : 's. 's lazy_eval -> 's evaluation }
 
 let eval_forcer : force_eval_type ref =
-  ref { force = (fun _ -> raise (Failure "Dump.force_eval not set")) }
+  ref { force = (fun _ -> fatal (Anomaly "force_eval not set (load Norm)")) }
 
 let view_term tm = !term_viewer tm
 let view_type ty = !type_viewer ty
