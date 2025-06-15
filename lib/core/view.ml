@@ -8,7 +8,7 @@ type view_type =
   | Canonical :
       (head * ('m, 'n) canonical * ('mn, 'm, 'n) insertion * (D.zero, 'mn, 'mn, normal) TubeOf.t)
       -> view_type
-  | Neutral : (head * (D.zero, 'k, 'k, normal) TubeOf.t) -> view_type
+  | Neutral : (head * noninst apps * (D.zero, 'k, 'k, normal) TubeOf.t) -> view_type
 
 let term_viewer : (kinetic value -> kinetic value) ref =
   ref (fun _ -> fatal (Anomaly "term_viewer not set (load Norm)"))
