@@ -274,7 +274,10 @@ handling in Proof General."
         (setq proof-shell-last-goals-output (substring string gstart gend))
         (proof-shell-display-output-as-response flags (substring string rstart rend))
         (unless (memq 'no-goals-display flags)
-          (pg-goals-display proof-shell-last-goals-output t)))
+          ;; In May 2025, pg-goals-display added a third argument.  For now, we stay backwards-compatible.
+          (if (= (car (func-arity 'pg-goals-display)) 3)
+              (pg-goals-display proof-shell-last-goals-output t nil)
+            (pg-goals-display proof-shell-last-goals-output t))))
       ;; Update output kind to avoid redundant handling by `proof-shell-handle-delayed-output`
       (setq proof-shell-last-output-kind 'goals))
     ;; Optionally handle proof tree output
