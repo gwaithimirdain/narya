@@ -3,7 +3,7 @@
   (action
     (with-stdout-to version.txt
       (progn
-        (system "(git show -s --format=%h 2>/dev/null || echo ${GIT_COMMIT:0:8}) | tr -d '\n'")))))
+        (system "(git show -s --format=%h 2>/dev/null || echo $GIT_COMMIT) | tr -d '\n'")))))
 
 (library
   (name top)

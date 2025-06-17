@@ -15,8 +15,8 @@
   outputs = { self, flake-utils, opam-nix, nixpkgs, ... }@inputs:
     let
       package = "narya";
-      githash = builtins.getEnv "GITHUB_SHA";
-      gitCommit = if githash == "" then "unknown" else githash;
+      githash = builtins.getEnv "GIT_COMMIT";
+      gitCommit = if githash == "" then "(unknown)" else githash;
     in flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
