@@ -9,12 +9,9 @@ module Trie = Yuujinchou.Trie
 
 (* Execution of files (and strings), including marshaling and unmarshaling, and managing compilation units and imports. *)
 
+(* Compiled files are tagged with the git hash of the commit, so they will only be loaded by Narya built from the exact same commit.  This is overkill, since most commits don't change the marshaling format; but it guarantees automatically that we never try to load a file that has a different marshaling format, thereby avoiding segmentation faults.  A version of -1 means that we don't know our git commit, and therefore we never load or save compiled files. *)
 let __COMPILE_VERSION__ =
-  match int_of_string_opt ("0x" ^ [%blob "version.txt"]) with
-  | Some i -> i
-  | None ->
-      Random.self_init ();
-      Random.full_int Int.max_int
+  Option.value ~default:(-1) (int_of_string_opt ("0x" ^ [%blob "version.txt"]))
 
 (* This state module is for data that gets restarted when loading a new file. *)
 module Loadstate = struct
@@ -107,24 +104,25 @@ end
 
 (* Save all the definitions from a given loaded compilation unit to a compiled disk file, along with other data such as the command-line type theory flags, the imported files, and the (supplied) export namespace. *)
 let marshal (compunit : Compunit.t) (file : FilePath.filename) (trie : Scope.trie) =
-  let ofile = FilePath.replace_extension file "nyo" in
-  try
-    Out_channel.with_open_bin ofile @@ fun chan ->
-    Marshal.to_channel chan __COMPILE_VERSION__ [];
-    (Flags.read ()).marshal chan;
-    Marshal.to_channel chan compunit [];
-    Marshal.to_channel chan (Loading.get ()).imports [];
-    Global.to_channel_unit chan compunit [];
-    Marshal.to_channel chan
-      (Trie.map
-         (fun _ -> function
-           | (`Constant c, loc), tag -> ((`Constant c, loc), tag)
-           | (`Notation (u, _), loc), tag -> ((`Notation u, loc), tag))
-         trie)
-      [];
-    Marshal.to_channel chan (Loading.get ()).actions []
-    (* Just emit a warning if we can't write the compiled version *)
-  with Sys_error _ -> emit (Cant_write_compiled_file ofile)
+  if __COMPILE_VERSION__ > 0 then
+    let ofile = FilePath.replace_extension file "nyo" in
+    try
+      Out_channel.with_open_bin ofile @@ fun chan ->
+      Marshal.to_channel chan __COMPILE_VERSION__ [];
+      (Flags.read ()).marshal chan;
+      Marshal.to_channel chan compunit [];
+      Marshal.to_channel chan (Loading.get ()).imports [];
+      Global.to_channel_unit chan compunit [];
+      Marshal.to_channel chan
+        (Trie.map
+           (fun _ -> function
+             | (`Constant c, loc), tag -> ((`Constant c, loc), tag)
+             | (`Notation (u, _), loc), tag -> ((`Notation u, loc), tag))
+           trie)
+        [];
+      Marshal.to_channel chan (Loading.get ()).actions []
+      (* Just emit a warning if we can't write the compiled version *)
+    with Sys_error _ -> emit (Cant_write_compiled_file ofile)
 
 (* Load a compilation unit from a compiled disk file, if possible.  Returns its export namespace, or None if loading from a compiled file failed. *)
 let rec unmarshal (compunit : Compunit.t) (lookup : FilePath.filename -> Compunit.t)
@@ -140,7 +138,7 @@ let rec unmarshal (compunit : Compunit.t) (lookup : FilePath.filename -> Compuni
     In_channel.with_open_bin ofile @@ fun chan ->
     (* We check it was compiled with the same version as us. *)
     let old_version = (Marshal.from_channel chan : int) in
-    if old_version = __COMPILE_VERSION__ then (
+    if __COMPILE_VERSION__ > 0 && old_version = __COMPILE_VERSION__ then (
       (* We also check it was compiled with the same type theory flags as us. *)
       match (Flags.read ()).unmarshal chan with
       | Ok () ->

@@ -142,7 +142,13 @@ Narya can also be developed and installed with `Nix <https://nixos.org/>`_.
 
 2. Run ``nix develop`` to open a shell with all of the necessary dependencies for running ``dune build``. This may ask if you accept using a cache; you can say yes if you want to speed up the build process, or no if you want everything built on your own machine.
 
-3. Run ``nix build`` to build via nix.  On Linux, this will create a static executable that can be copied over to other Linux machines without problems.
+3. To build a static executable that can be copied over to other Linux machines without problems (like the one mentioned above that is built automatically and hosted on github), run the following command in the Narya source directory.
+
+.. code-block:: bash
+
+  GIT_COMMIT=`git show -s --format=%h` nix build --impure
+
+Running just ``nix build`` instead will still build a static binary that will work, but it will not know what git commit it was built from.  This has two consequences: it will not report that commit when run with the ``-version`` flag (making it harder to track down any bugs it exhibits); and it will not be able to tell whether compiled ``.nyo`` files are compatible (and therefore will never load them).
 
 
 ProofGeneral mode (manual installation)
