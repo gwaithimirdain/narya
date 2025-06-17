@@ -9,7 +9,12 @@ module Trie = Yuujinchou.Trie
 
 (* Execution of files (and strings), including marshaling and unmarshaling, and managing compilation units and imports. *)
 
-let __COMPILE_VERSION__ = 9999 (* int_of_string ("0x" ^ [%blob "version.txt"]) *)
+let __COMPILE_VERSION__ =
+  match int_of_string_opt ("0x" ^ [%blob "version.txt"]) with
+  | Some i -> i
+  | None ->
+      Random.self_init ();
+      Random.full_int Int.max_int
 
 (* This state module is for data that gets restarted when loading a new file. *)
 module Loadstate = struct

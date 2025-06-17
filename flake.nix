@@ -13,7 +13,10 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
   outputs = { self, flake-utils, opam-nix, nixpkgs, ... }@inputs:
-    let package = "narya";
+    let
+      package = "narya";
+      githash = builtins.getEnv "GITHUB_SHA";
+      gitCommit = if githash == "" then "unknown" else githash;
     in flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
@@ -32,9 +35,13 @@
           scope = on.buildDuneProject { inherit pkgs; } package ./. query;
           overlay = final: prev: {
             # You can add overrides here
-            ${package} = prev.${package}.overrideAttrs (_: {
+            ${package} = prev.${package}.overrideAttrs (prevAttrs: {
               doNixSupport = false;
               buildInputs = [ pkgs.pkgsStatic.gmp ];
+              buildPhase = ''
+                echo "Building commit: ${gitCommit}"
+                export GIT_COMMIT=${gitCommit}
+              '' + (prevAttrs.buildPhase or "");
             } // (if isStatic then {
               DUNE_PROFILE = "static";
             } else {}));
