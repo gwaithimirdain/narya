@@ -311,23 +311,27 @@ And Narya defines some of its own faces as well.
 Entering Unicode characters
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-When editing Narya files in Emacs, you will probably also want an input-mode for entering Unicode characters.  Narya does not have its own such mode.  I use the one that ships with Agda, customized by adding the following to ``agda-input-user-translations``:
-```
-("r|" "↦")
-("|->" "↦")
-("|=>" "⤇")
-("R|" "⤇")
-("..." "…")
-```
-With this customization added, the Unicode characters that have primitive meanings to Narya can all be entered with short commands:
+When editing Narya files in Emacs, you will probably also want an input-mode that allows you to type Unicode characters using TeX-style keyboard shortcuts.  Narya does not have its own such mode yet, so I recommend one of the following modes (to be described in a moment).
 
-- For →, type ``\r`` or ``\to``
-- For ↦, type ``\r|`` or ``\|->``
-- For ⤇, type ``\R|`` or ``\|=>``
-- For ≔, type ``\:=``
-- For …, type ``\...``
+To select an input-mode, type ``C-\``, enter the name of the input-mode (see below) and hit enter.  You'll have to do this separately in every buffer, but after you've done it once, Emacs remembers the last input-mode you selected so that a single ``C-\`` will toggle that input-mode on and off.  Each input-mode has a one-character indicator that will be displayed in the lower-left corner of the Emacs window when that mode is selected.  If you want to select a different input-mode instead, type ``C-u C-\`` and Emacs will prompt you again for the input-mode name.
 
-(These particular characters will be automatically converted from their ASCII versions to their Unicode equivalents by Narya's reformatter (assuming ``display chars`` is set to ``unicode``), so it is not necessary to enter them manually.  But you will probably want to enter other Unicode characters at some point as well.)
+- A simple input-mode called ``TeX`` is supplied by default with Emacs, indicated by the character ``\``.  When this mode is enabled, you can use the following shortcuts (and many others):
+
+  * For →, type ``\to`` or ``\rightarrow``
+  * For ≔, type ``\coloneq``
+  * For ↦, type ``\mapsto``
+  * For …, type ``\ldots``
+
+  Note that these particular characters will be automatically converted from their ASCII versions (namely, ``->``, ``:=``, ``|->``, and ``...``) to their Unicode equivalents by Narya's reformatter (assuming ``display chars`` is set to ``unicode``, as it is by default), so it is not necessary to enter them manually.  But you will probably want to enter other Unicode characters at some point as well.
+
+- A fancier input mode called ``Agda`` ships with the proof assistant Agda, indicated by the character ``Π``.  The most convenient way to obtain this mode is to install Agda and its `Emacs mode <https://agda.readthedocs.io/en/latest/getting-started/installation.html#install-agda-mode>`_.  When this mode is enabled, you can use the previously mentioned shortcuts from the ``TeX`` input-mode, and also the following:
+
+  * For →, you can also type ``\r`` (which will also allow you to select from other arrows dynamically).
+  * For ≔, you can also type ``\:=``
+  * For ℕ, you can type ``\bN``, and similarly for ℤ, ℚ, ℝ, and so on.
+  * For superscript characters, you can start with ``\^`` and then the ordinary character, e.g. to get ³ you can type ``\^3``.  This works for numbers, letters, parentheses, and hyphens at least.
+
+  For more information about the Agda input-mode, see the `Agda documentation <https://agda.readthedocs.io/en/latest/tools/emacs-mode.html#unicode-input>`_.  It is also easy to customize by adding to the variable ``agda-input-user-translations``.  Namely, if you type ``M-x customize-variable RET agda-input-user-translations RET``, it will show you a list of user-defined translations (which will start out empty).  You can then click ``INS`` to add a new translation, type the key sequence (without the initial backslash), click ``INS`` underneath it to add the desired unicode character (which you can copy-and-paste from elsewhere, or insert with ``C-x 8 RET`` and then the official unicode character name or hex code).  After repeating this for as many translations as you want, click ``State`` and select ``Save for future sessions``.  For instance, you could define ``\r|`` (entered in the customization as just ``r|``) to insert ↦, and ``\R|`` to insert ⤇.
 
 
 Other customization

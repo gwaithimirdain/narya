@@ -49,7 +49,7 @@ Finally, you can run
 
   emacs
 
-and create or open a ``.ny`` file to start Narya ProofGeneral.
+and create or open a ``.ny`` file to start Narya ProofGeneral.  See :ref:`ProofGeneral mode` for details on how to use the Emacs interface, and in particular some ways that you'll probably want to customize it.
 
 On Windows
 ^^^^^^^^^^
