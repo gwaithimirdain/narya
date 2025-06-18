@@ -499,7 +499,10 @@ handling in Proof General."
     (if (not hole-overlay)
         (message "Place the cursor in a hole to use this command.")
       ;; Otherwise, proceed to solve/split the hole, perhaps with a user-provided term.
-      (let ((term (if split "_" (read-string "Enter the term to solve the hole: ")))
+      (let ((term (if split
+                      "_"
+                    (read-string "Enter the term to solve the hole: "
+                                 nil 'proof-minibuffer-history nil t)))
             (cmd (if split "split" "solve"))
             (column (current-column)))
         ;; Send the solution command invisibly to the proof shell, synchronously.
@@ -559,13 +562,13 @@ handling in Proof General."
 (defun narya-echo (term)
   "Normalize and display the value and type of a term.
 If cursor is over a hole, the term is interpreted in the context of that hole."
-  (interactive "sTerm to normalize: ")
+  (interactive "MTerm to normalize: ")
   (narya-echo-or-synth "echo" term))
 
 (defun narya-synth (term)
   "Display the type of a term.
 If cursor is over a hole, the term is interpreted in the context of that hole."
-  (interactive "sTerm to synthesize: ")
+  (interactive "MTerm to synthesize: ")
   (narya-echo-or-synth "synth" term))
 
 (defun narya-display-chars (arg)
