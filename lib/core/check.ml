@@ -15,6 +15,7 @@ open Subtype
 open Readback
 open Degctx
 open Printable
+open Unact
 open Asai.Range
 include Status
 
@@ -155,6 +156,16 @@ let spine : type a.
     | Synth (App (fn, arg, impl)) -> spine fn ((tm.loc, arg, impl) :: args)
     | _ -> (tm, args) in
   spine tm []
+
+(* Pull all the actions off of a term and compose them. *)
+let rec actions : type a. a check located -> any_deg * a check located =
+ fun tm ->
+  match tm.value with
+  | Synth (Act (_, s, tm)) ->
+      let Any_deg s', tm = actions tm in
+      let (DegExt (_, _, ss')) = comp_deg_extending s' s in
+      (Any_deg ss', tm)
+  | _ -> (Any_deg (id_deg D.zero), tm)
 
 (* Temporarily define a given head (constant or meta) to be a given value, in executing a callback.  However, if an error has occurred earlier in typechecking other parts of it, then instead bind that head to an error value that doesn't allow it to be used. *)
 let run_with_definition : type a c.
@@ -349,6 +360,17 @@ let rec check : type a b s.
               (Option.fold ~none:Bwd.Emp ~some:(Bwd.snoc Emp) str.loc)
               (Snoc (Emp, (str, Any_deg fa)))
               (Any_deg fa) x)
+    (* Similarly, an application can always synthesize, but can also check, as a non-dependent application, if enough domains are ascribed or arguments are synthesizing. *)
+    | Synth (App _), _ -> (
+        let fn, args = spine tm in
+        let ctm, sty = synth_or_check_apps ctx fn args (Some ty) in
+        (* We still have to check that the synthesized type is correct, as in check_of_synth. *)
+        match subtype_of ctx sty ty with
+        | Ok () -> realize status ctm
+        | Error why ->
+            fatal
+              (Unequal_synthesized_type
+                 { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why }))
     | Lam { name = { value = x; loc = xloc }; cube; implicit; dom; body }, _ -> (
         match view_type ~severity ty "typechecking lambda" with
         | Canonical (_, Pi (_, doms, cods), ins, tyargs) -> (
@@ -2531,14 +2553,11 @@ and synth : type a b s.
               CodCube.build n { build } in
             let xs = Variables (D.zero, D.zero_plus n, xs) in
             (realize status (Inst (Pi (xs, doms, cods), piargs)), universe D.zero))
-    | App _, _ -> (
-        (* If there's at least one application, we slurp up all the applications, synthesize a type for the function, and then pass off to synth_apps to iterate through all the arguments. *)
-        match spine { value = Synth tm.value; loc = tm.loc } with
-        | ({ value = Synth fn; loc } as cfn), args ->
-            let sfn, sty = synth (Kinetic `Nolet) ctx { value = fn; loc } in
-            let stm, sty = synth_apps ctx { value = sfn; loc } sty cfn args in
-            (realize status stm, sty)
-        | fn, _ -> fatal ?loc:fn.loc (Nonsynthesizing "function"))
+    | App _, _ ->
+        (* If there's at least one application, we slurp up all the applications and then iterate through them. *)
+        let fn, args = spine { value = Synth tm.value; loc = tm.loc } in
+        let stm, sty = synth_or_check_apps ctx fn args None in
+        (realize status stm, sty)
     | Act (str, fa, { value = Synth x; loc }), _ ->
         let x = { value = x; loc } in
         let ctx = if locking fa then Ctx.lock ctx else ctx in
@@ -2815,7 +2834,7 @@ and synth_arg_cube : type a b n c.
       * a check located
       * (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list) =
  fun ~not_enough ~which ctx choose doms (sfnloc, fn, args) ->
-  (* Based on the global implicit-function-boundaries setting, the dimension of the application, and whether the first argument is implicit, decide whether we are taking a whole cube of arguments or only one argument with the boundary synthesized from it. *)
+  (* Based on the dimension of the application and whether the first argument is implicit, decide whether we are taking a whole cube of arguments or only one argument with the boundary synthesized from it. *)
   let module TakenArgs = struct
     type t =
       | Take
@@ -2978,6 +2997,115 @@ and synth_inst : type a b n.
       let cargs = TubeOf.of_cube_bwv m k msuc l cargs in
       let nargs = TubeOf.of_cube_bwv m k msuc l nargs in
       ({ value = Term.Inst (sfn.value, cargs); loc = newloc }, tyof_inst tyargs nargs, newfn, rest)
+
+(* If the head of an application spine doesn't fully synthesize, i.e. it is a possibly-degenerated abstraction, we inspect the arguments and ascriptions in the abstraction to see if we can get types for all the arguments.  Then we can try to synthesize the body of the abstraction, or check it if we are checking the whole application against a (non-dependent) output type. *)
+and synth_or_check_apps : type a b.
+    (a, b) Ctx.t ->
+    a check located ->
+    (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list ->
+    kinetic value option ->
+    (b, kinetic) term * kinetic value =
+ fun ctx fn args ty ->
+  match (fn.value, actions fn) with
+  (* If we can fully synthesize a type for the function (that is, if it's a synthesizing term perhaps degenerated), we do that and then pass off to synth_apps to iterate through all the arguments. *)
+  | Synth sfn, (_, { value = Synth _; _ }) ->
+      let sfn, sty = synth (Kinetic `Nolet) ctx { value = sfn; loc = fn.loc } in
+      let stm, sty = synth_apps ctx { value = sfn; loc = fn.loc } sty fn args in
+      (stm, sty)
+  (* Otherwise, we try getting information from the arguments. *)
+  | _, (Any_deg s, fn) -> (
+      match D.compare_zero (cod_deg s) with
+      | Zero ->
+          let cfn, sty = synth_lam (dom_deg s) ctx fn ctx args ty in
+          let efn = eval_term (Ctx.env ctx) cfn in
+          (* Finally, we still need to degenerate that function and apply it to all the arguments. *)
+          synth_apps ctx
+            (locate_opt fn.loc (Term.Act (cfn, s, (`Function, `Other))))
+            (act_ty efn sty s) fn args
+      | Pos _ -> fatal (Unimplemented "typechecking degenerated higher-dimensional redices"))
+
+(* A helper function for synth_or_check_apps.  It uses information from ascribed abstractions, synthesizing arguments, and supplied type to synthesize a type for the head abstraction.  It *only* uses the arguments for this purpose, and ignores them if unneeded.  Thus its return value must afterwards still be applied to the arguments.  (In particular, therefore, some of the arguments may end up being synthesized twice, which is not great.) *)
+and synth_lam : type a b c d n.
+    n D.t ->
+    (c, d) Ctx.t ->
+    c check located ->
+    (a, b) Ctx.t ->
+    (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list ->
+    kinetic value option ->
+    (d, kinetic) term * kinetic value =
+ fun n ctx fn argctx args ty ->
+  match (fn.value, args) with
+  (* If the current function synthesizes, we do that right away and return it, ignoring the rest of the arguments. *)
+  | Synth sfn, _ -> synth (Kinetic `Nolet) ctx { value = sfn; loc = fn.loc }
+  (* Otherwise, if we're out of arguments, we assume we have a non-dependent function type and check the body against the overall type that must have been supplied to check against. *)
+  | _, [] -> (
+      match ty with
+      | Some ty ->
+          (* We un-act on the checking type to obtain a type for the function inside the degeneracy *)
+          let uty =
+            unact_ty ~err:(Unimplemented "typechecking degenerated redexes with arity 0") ty n in
+          let cfn = check (Kinetic `Nolet) ctx fn uty in
+          (cfn, uty)
+      | None ->
+          fatal ?loc:fn.loc (Nonsynthesizing "head of application spine in synthesizing position"))
+  (* If there are arguments left, and the head is an abstraction with a type ascribed to its variable, we use that type. *)
+  | Lam { name; cube = { value = `Normal; _ }; implicit = `Explicit; dom = Some dom; body }, _ :: _
+    ->
+      (* As in synthesizing an AscLam, we check the supplied domain and extend the context. *)
+      let cdom = check (Kinetic `Nolet) ctx dom (universe D.zero) in
+      let edom = eval_term (Ctx.env ctx) cdom in
+      let newctx = Ctx.ext ctx name.value edom in
+      let xs = singleton_variables D.zero name.value in
+      (* Pull off either one explicit argument or a cube of mostly-implicit ones, of the correct dimension. *)
+      let module M = CubeOf.Monadic (Monad.State (struct
+        type t = (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list
+      end)) in
+      let _, rest =
+        M.buildM n
+          {
+            build =
+              (fun _ -> function
+                | [] -> fatal Not_enough_arguments_to_function
+                | _ :: xs -> ((), xs));
+          }
+          args in
+      (* Then we proceed recursively to check the body of the abstraction. *)
+      let cbody, scod = synth_lam n newctx body argctx rest ty in
+      let scod =
+        eval_term (Ctx.env ctx)
+          (Pi
+             ( singleton_variables D.zero name.value,
+               CubeOf.singleton cdom,
+               CodCube.singleton (readback_val newctx scod) )) in
+      (Lam (xs, cbody), scod)
+  (* If there are arguments left, and the head is a normal explicit abstraction (no higher abstractions are allowed), and the application is also explicit (but might be higher-dimensional, if there is a degeneracy), we try synthesizing a type from the argument. *)
+  | ( Lam { name; cube = { value = `Normal; _ }; implicit = `Explicit; dom = None; body },
+      (_, arg, { value = `Explicit; _ }) :: args ) -> (
+      match arg.value with
+      | Synth sarg ->
+          let _, sargty = synth (Kinetic `Nolet) argctx (locate_opt arg.loc sarg) in
+          let edom =
+            unact_ty ~err:(Unimplemented "typechecking degenerated redexes with arity 0") sargty n
+          in
+          (* Finally we can extend the context by this obtained domain. *)
+          let newctx = Ctx.ext ctx name.value edom in
+          let xs = singleton_variables D.zero name.value in
+          (* Then we proceed again recursively to check the body of the abstraction. *)
+          let cbody, scod = synth_lam n newctx body argctx args ty in
+          let cdom = readback_val ctx edom in
+          let scod =
+            eval_term (Ctx.env ctx)
+              (Pi
+                 ( singleton_variables D.zero name.value,
+                   CubeOf.singleton cdom,
+                   CodCube.singleton (readback_val newctx scod) )) in
+          (Lam (xs, cbody), scod)
+      | _ ->
+          let extra_remarks = [ Asai.Diagnostic.loctext ?loc:arg.loc "argument" ] in
+          fatal ?loc:fn.loc ~extra_remarks
+            (Nonsynthesizing "head of application spine and corresponding argument"))
+  | _ ->
+      fatal ?loc:fn.loc (Nonsynthesizing "head of higher-dimensional or implicit application spine")
 
 (* Check a list of terms against the types specified in a telescope, evaluating the latter in a supplied environment and in the context of the previously checked terms, and instantiating them at values given in a tube.  See description in context of the call to it above during typechecking of a constructor. *)
 and check_at_tel : type n a b c bc e.
