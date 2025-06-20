@@ -123,6 +123,19 @@ let rec plus_of_sface : type m mn. (m, mn) sface -> (m, mn) d_le = function
       let (Le mn) = plus_of_sface d in
       Le (N.suc_plus_eq_suc mn)
 
+(* As long as there is at least one endpoint, any dimension has at least one zero-dimensional face. *)
+
+let rec vertex : type n. n D.t -> (D.zero, n) sface option = function
+  | Nat Zero -> Some Zero
+  | Nat (Suc n) -> (
+      let open Monad.Ops (Monad.Maybe) in
+      let (Wrap l) = Endpoints.wrapped () in
+      match Endpoints.len l with
+      | Nat (Suc _) ->
+          let* s = vertex (Nat n) in
+          Some (End (s, (l, Top)))
+      | Nat Zero -> None)
+
 (* A strict face of a singleton dimension is either the identity or an endpoint. *)
 
 let singleton_sface : type m n l.

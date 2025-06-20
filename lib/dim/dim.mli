@@ -136,6 +136,7 @@ type (_, _, _) sface_of_plus =
       -> ('ml, 'n, 'k) sface_of_plus
 
 val sface_of_plus : ('n, 'k, 'nk) D.plus -> ('ml, 'nk) sface -> ('ml, 'n, 'k) sface_of_plus
+val vertex : 'n D.t -> (D.zero, 'n) sface option
 
 val singleton_sface :
   ('m, 'n) sface ->
