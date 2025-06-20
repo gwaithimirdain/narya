@@ -10,7 +10,7 @@ Narya's typechecker is bidirectional.  This means that some terms *synthesize* a
 
 - Function abstraction ``x ↦ M`` checks against a function-type ``(x:A) → B`` by checking ``M`` against ``B`` in a context extended by a variable ``x:A``.  In particular, this means that the same abstraction term can mean different things depending on what type it is checked against.  For instance, ``x ↦ x`` checks against *any* endo-function type ``A → A``.  (Speaking semantically, however, we do not regard this as "one term having multiple types"; rather we consider that the typechecker is elaborating the ambiguous notation ``x ↦ x`` using contextual information to produce a distinct identity term in each endo-function type.)
 
-- A function abstraction can also synthesize if a type is given for its variable and its body synthesizes.  That is, ``(x : A) ↦ M`` synthesizes by first checking that ``A`` is a valid type, then synthesizing a type ``B`` for ``M`` in a context extended by a variable ``x:A``, and finally synthesizing the type ``(x:A) → B``.
+- A function abstraction can also synthesize if a type is given for its variable and its body synthesizes.  That is, ``(x:A) ↦ M`` synthesizes by first checking that ``A`` is a valid type, then synthesizing a type ``B`` for ``M`` in a context extended by a variable ``x:A``, and finally synthesizing the type ``(x:A) → B``.  If ``M`` is nonsynthesizing, then ``(x:A) ↦ M`` can also check against a function-type, in which case the supplied type ``A`` is redundant but must match the domain of the function-type.
 
 - Type-forming operators such as ``Type`` and ``(x:A) → B`` synthesize, after requiring their inputs to synthesize.  This might be modified later after universe levels are introduced.
 
