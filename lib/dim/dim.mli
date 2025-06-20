@@ -560,6 +560,9 @@ val face_of_sface : ('m, 'n) sface -> ('m, 'n) face
 val face_of_perm : ('m, 'n) perm -> ('m, 'n) face
 
 type _ face_of = Face_of : ('m, 'n) face -> 'n face_of
+
+val section_of_deg : ('m, 'n) deg -> ('n, 'm) face option
+
 type (_, _) op = Op : ('n, 'k) sface * ('m, 'n) deg -> ('m, 'k) op
 
 val id_op : 'n D.t -> ('n, 'n) op

@@ -18,6 +18,7 @@ include Bwtface
 include Tube
 include Icube
 include Face
+include Section
 include Op
 include Insertion
 include Shuffle
