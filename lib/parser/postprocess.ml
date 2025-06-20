@@ -117,7 +117,7 @@ and process_apps : type n lt ls rt rs.
       match args with
       | (Wrap arg, loc) :: args ->
           process_apply ctx
-            { value = Act (str, s, { value = (process ctx arg).value; loc }); loc }
+            { value = Synth (Act (str, s, { value = (process ctx arg).value; loc })); loc }
             args
       | [] -> fatal ?loc:tm.loc (Anomaly "TODO"))
   | `Constr c ->
@@ -135,41 +135,46 @@ and process_apps : type n lt ls rt rs.
 and process_head : type n lt ls rt rs.
     (string option, n) Bwv.t ->
     (lt, ls, rt, rs) parse located ->
-    [ `Deg of string located * any_deg | `Constr of Constr.t | `Fn of n synth located ] =
+    [ `Deg of string located * any_deg | `Constr of Constr.t | `Fn of n check located ] =
  fun ctx tm ->
   match tm.value with
   | Constr (ident, _) -> `Constr (Constr.intern ident)
   | Ident ([ str ], _) -> (
       match deg_of_name str with
       | Some s -> `Deg (locate_opt tm.loc str, s)
-      | None -> `Fn (process_synth ctx tm "function"))
-  | _ -> `Fn (process_synth ctx tm "function")
+      | None -> `Fn (process ctx tm))
+  | _ -> `Fn (process ctx tm)
 
 and process_apply : type n.
     (string option, n) Bwv.t ->
-    n synth located ->
+    n check located ->
     (wrapped_parse * Asai.Range.t option) list ->
     n check located =
  fun ctx fn fnargs ->
   match fnargs with
-  | [] -> { value = Synth fn.value; loc = fn.loc }
+  | [] -> fn
   | (Wrap { value = Field (fld, pbij, _); _ }, loc) :: args -> (
       try
         let fld =
-          try `Int (int_of_string fld) with Failure _ -> `Name (fld, List.map int_of_string pbij)
-        in
-        process_apply ctx { value = Field (fn, fld); loc } args
+          match int_of_string_opt fld with
+          | Some n -> `Int n
+          | None -> `Name (fld, List.map int_of_string pbij) in
+        let fn =
+          match fn.value with
+          | Synth sfn -> { value = sfn; loc = fn.loc }
+          | _ -> fatal (Nonsynthesizing "head of field application") in
+        process_apply ctx { value = Synth (Field (fn, fld)); loc } args
       with Failure _ -> fatal (Invalid_field (String.concat "." ("" :: fld :: pbij))))
   | (Wrap { value = Notn ((Braces, _), n); loc = braceloc }, loc) :: rest -> (
       match args n with
       | [ Token (LBrace, _); Term arg; Token (RBrace, _) ] ->
           process_apply ctx
-            { value = Raw.App (fn, process ctx arg, locate_opt braceloc `Implicit); loc }
+            { value = Synth (App (fn, process ctx arg, locate_opt braceloc `Implicit)); loc }
             rest
       | _ -> fatal (Anomaly "invalid notation arguments for braces"))
   | (Wrap arg, loc) :: args ->
       process_apply ctx
-        { value = Raw.App (fn, process ctx arg, locate_opt arg.loc `Explicit); loc }
+        { value = Synth (App (fn, process ctx arg, locate_opt arg.loc `Explicit)); loc }
         args
 
 and process_synth : type n lt ls rt rs.

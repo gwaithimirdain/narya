@@ -339,7 +339,7 @@ module F = struct
     | Pi (_, _, _) -> fprintf ppf "Pi(?)"
     | HigherPi (_, _, _) -> fprintf ppf "HigherPi(?)"
     | InstHigherPi (_, _, _) -> fprintf ppf "InstHigherPi(?)"
-    | App (fn, arg, _) -> fprintf ppf "App(%a, %a)" synth fn.value check arg.value
+    | App (fn, arg, _) -> fprintf ppf "App(%a, %a)" check fn.value check arg.value
     | Asc (tm, ty) -> fprintf ppf "Asc(%a, %a)" check tm.value check ty.value
     | AscLam (x, dom, body) ->
         fprintf ppf "AscLam(%s, %a, %a)"

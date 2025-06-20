@@ -146,13 +146,13 @@ let vars_of_names : type a c abc n.
 
 (* Slurp up an entire application spine.  Returns the function, and all the arguments, where each argument is paired with the location of its application.  So spine "f x y" would return "f" (located) along with [(location of "f x", "x" (located)); (location of "f x y", "y" (located))]. *)
 let spine : type a.
-    a synth located ->
-    a synth located
+    a check located ->
+    a check located
     * (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list =
  fun tm ->
   let rec spine tm args =
     match tm.value with
-    | Raw.App (fn, arg, impl) -> spine fn ((tm.loc, arg, impl) :: args)
+    | Synth (App (fn, arg, impl)) -> spine fn ((tm.loc, arg, impl) :: args)
     | _ -> (tm, args) in
   spine tm []
 
@@ -674,7 +674,9 @@ let rec check : type a b s.
                       | _ :: _ ->
                           let args =
                             List.map (fun (l, x) -> (l, x, locate_opt None `Explicit)) args in
-                          synth_apps (Kinetic `Nolet) ctx new_sfn new_sty fn args
+                          synth_apps ctx new_sfn new_sty
+                            { value = Synth fn.value; loc = fn.loc }
+                            args
                       | _ -> (new_sfn.value, new_sty) in
                     (* Then we have to check that the resulting type of the whole application agrees with the one we're checking against. *)
                     match equal_val ctx sty ty with
@@ -2529,12 +2531,14 @@ and synth : type a b s.
               CodCube.build n { build } in
             let xs = Variables (D.zero, D.zero_plus n, xs) in
             (realize status (Inst (Pi (xs, doms, cods), piargs)), universe D.zero))
-    | App _, _ ->
+    | App _, _ -> (
         (* If there's at least one application, we slurp up all the applications, synthesize a type for the function, and then pass off to synth_apps to iterate through all the arguments. *)
-        let fn, args = spine tm in
-        let sfn, sty = synth (Kinetic `Nolet) ctx fn in
-        let stm, sty = synth_apps (Kinetic `Nolet) ctx { value = sfn; loc = fn.loc } sty fn args in
-        (realize status stm, sty)
+        match spine { value = Synth tm.value; loc = tm.loc } with
+        | ({ value = Synth fn; loc } as cfn), args ->
+            let sfn, sty = synth (Kinetic `Nolet) ctx { value = fn; loc } in
+            let stm, sty = synth_apps ctx { value = sfn; loc } sty cfn args in
+            (realize status stm, sty)
+        | fn, _ -> fatal ?loc:fn.loc (Nonsynthesizing "function"))
     | Act (str, fa, { value = Synth x; loc }), _ ->
         let x = { value = x; loc } in
         let ctx = if locking fa then Ctx.lock ctx else ctx in
@@ -2636,7 +2640,8 @@ and synth : type a b s.
                 let new_sty = tyof_app cods tyargs (CubeOf.singleton sargty) in
                 (* And then apply to the argument. *)
                 let stm, sty =
-                  synth_apps (Kinetic `Nolet) ctx new_sfn new_sty fn
+                  synth_apps ctx new_sfn new_sty
+                    { value = Synth fn.value; loc = fn.loc }
                     [ (apploc, locate_opt arg.loc (Synth arg.value), locate_opt None `Explicit) ]
                 in
                 (realize status stm, sty)
@@ -2765,14 +2770,13 @@ and synth : type a b s.
 
 (* Given something that can be applied, its type, and a list of arguments, check the arguments in appropriately-sized groups. *)
 and synth_apps : type a b.
-    (b, kinetic) status ->
     (a, b) Ctx.t ->
     (b, kinetic) term located ->
     kinetic value ->
-    a synth located ->
+    a check located ->
     (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list ->
     (b, kinetic) term * kinetic value =
- fun status ctx sfn sty fn args ->
+ fun ctx sfn sty fn args ->
   (* To determine what to do, we inspect the (fully instantiated) *type* of the function being applied.  Failure of view_type here is really a bug, not a user error: the user can try to check something against an abstraction as if it were a type, but our synthesis functions should never synthesize (say) a lambda-abstraction as if it were a type. *)
   let asfn, aty, afn, aargs =
     match view_type sty "synthesizing application spine" with
@@ -2791,10 +2795,10 @@ and synth_apps : type a b.
   | [] -> (asfn.value, aty)
   | _ :: _ ->
       with_loc asfn.loc (fun () ->
-          Annotate.ctx status ctx (locate_opt afn.loc (Synth afn.value));
+          Annotate.ctx (Kinetic `Nolet) ctx afn;
           Annotate.ty ctx aty;
           Annotate.tm ctx asfn.value);
-      synth_apps status ctx asfn aty afn aargs
+      synth_apps ctx asfn aty afn aargs
 
 (* This is a common subroutine for synth_app and synth_inst that picks up a whole cube of arguments and checks their types.  Since in one case we need a cube of values and the other case a cube of normals, we let the caller choose. *)
 and synth_arg_cube : type a b n c.
@@ -2804,11 +2808,11 @@ and synth_arg_cube : type a b n c.
     (kinetic value -> normal -> c) ->
     (n, kinetic value) CubeOf.t ->
     Asai.Range.t option
-    * a synth located
+    * a check located
     * (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list ->
     ((n, (b, kinetic) term) CubeOf.t * (n, c) CubeOf.t)
     * (Asai.Range.t option
-      * a synth located
+      * a check located
       * (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list) =
  fun ~not_enough ~which ctx choose doms (sfnloc, fn, args) ->
   (* Based on the global implicit-function-boundaries setting, the dimension of the application, and whether the first argument is implicit, decide whether we are taking a whole cube of arguments or only one argument with the boundary synthesized from it. *)
@@ -2840,7 +2844,7 @@ and synth_arg_cube : type a b n c.
   let module M = Monad.State (struct
     type t =
       Asai.Range.t option
-      * a synth located
+      * a check located
       * (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list
   end) in
   (* Pick up the right number of arguments for the dimension, leaving the others for a later call to synth_app.  Then check each argument against the corresponding type in "doms", instantiated at the appropriate evaluated previous arguments, and evaluate it, producing Cubes of checked terms and values.  Since each argument has to be checked against a type instantiated at the *values* of the previous ones, we also store those in a hashtable as we go. *)
@@ -2900,7 +2904,7 @@ and synth_arg_cube : type a b n c.
                                    "argument",
                                    "expecting implicit boundary " ^ which ^ " argument" ))
                         | _ -> ());
-                        let* () = M.put (l, locate_opt l (App (f, t, impl)), ts) in
+                        let* () = M.put (l, locate_opt l (Synth (App (f, t, impl))), ts) in
                         return t in
                   let ctm = check (Kinetic `Nolet) ctx tm ty in
                   let etm = eval_term (Ctx.env ctx) ctm in
@@ -2920,11 +2924,11 @@ and synth_app : type a b n.
     (n, kinetic value) CubeOf.t ->
     (n, unit) BindCube.t ->
     (D.zero, n, n, normal) TubeOf.t ->
-    a synth located ->
+    a check located ->
     (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list ->
     (b, kinetic) term located
     * kinetic value
-    * a synth located
+    * a check located
     * (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list =
  fun ctx sfn doms cods tyargs fn args ->
   let (cargs, eargs), (newloc, newfn, rest) =
@@ -2939,11 +2943,11 @@ and synth_inst : type a b n.
     (a, b) Ctx.t ->
     (b, kinetic) term located ->
     (D.zero, n, n, normal) TubeOf.t ->
-    a synth located ->
+    a check located ->
     (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list ->
     (b, kinetic) term located
     * kinetic value
-    * a synth located
+    * a check located
     * (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list =
  fun ctx sfn tyargs fn args ->
   let n = TubeOf.inst tyargs in
@@ -2961,7 +2965,7 @@ and synth_inst : type a b n.
       let module M = Monad.State (struct
         type t =
           Asai.Range.t option
-          * a synth located
+          * a check located
           * (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list
       end) in
       let open Bwv.Monadic (M) in

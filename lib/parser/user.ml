@@ -181,7 +181,7 @@ let make_user : prenotation -> notation =
                   List.fold_left
                     (fun acc k ->
                       Raw.App
-                        ( { value = acc; loc },
+                        ( { value = Synth acc; loc },
                           StringMap.find_opt k args <|> Anomaly "not found processing user",
                           Asai.Range.locate_opt None `Explicit ))
                     (Const c) val_vars in
