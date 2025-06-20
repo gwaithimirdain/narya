@@ -17,3 +17,7 @@ axiom a : A
 echo ((x : A) ↦ x) a
 
 echo ((x : A) ↦ g x (f x)) a
+
+def unit : Type ≔ sig ()
+
+echo ((x : A) ↦ ()) : A → unit

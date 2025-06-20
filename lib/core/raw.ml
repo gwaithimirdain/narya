@@ -112,6 +112,7 @@ module rec Make : functor (I : Indices) -> sig
         name : I.name located;
         cube : [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ] located;
         implicit : [ `Explicit | `Implicit ];
+        dom : 'a check located option;
         body : 'a I.suc check located;
       }
         -> 'a check
@@ -273,6 +274,7 @@ functor
           name : I.name located;
           cube : [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ] located;
           implicit : [ `Explicit | `Implicit ];
+          dom : 'a check located option;
           body : 'a I.suc check located;
         }
           -> 'a check
@@ -478,12 +480,13 @@ module Resolve (R : Resolver) = struct
     let newtm : a2 R.T2.check =
       match tm.value with
       | Synth x -> Synth (synth ctx (locate_opt tm.loc x)).value
-      | Lam { name; cube; implicit; body } ->
+      | Lam { name; cube; implicit; dom; body } ->
           Lam
             {
               name = locate_map (R.rename ctx) name;
               cube;
               implicit;
+              dom = Option.map (check ctx) dom;
               body = check (R.snoc ctx name.value) body;
             }
       | Struct (eta, fields) ->
@@ -596,7 +599,13 @@ let rec lams : type a b ab.
       {
         value =
           Lam
-            { name; cube = locate_opt None `Normal; implicit = `Explicit; body = lams ab xs tm loc };
+            {
+              name;
+              cube = locate_opt None `Normal;
+              implicit = `Explicit;
+              dom = None;
+              body = lams ab xs tm loc;
+            };
         loc;
       }
 

@@ -210,11 +210,13 @@ let rec raw_lam : type a b ab.
       let (Snoc (ctx, x)) = ctx in
       let name = locate_opt loc x in
       let value =
-        match (dom, body.value) with
-        | None, _ -> Lam { name; cube; implicit; body }
-        | Some (Wrap dom), Synth sbody ->
-            Synth (AscLam (name, process ctx dom, locate_opt body.loc sbody))
-        | Some _, _ -> fatal ?loc (Nonsynthesizing "body of domain-ascribed abstraction") in
+        match (dom, body) with
+        | None, _ -> Lam { name; cube; implicit; dom = None; body }
+        | Some (Wrap dom), { value = Synth body; loc } ->
+            Synth (AscLam (name, process ctx dom, locate_opt loc body))
+        | Some (Wrap dom), _ ->
+            let dom = Some (process ctx dom) in
+            Lam { name; cube; implicit; dom; body } in
       raw_lam ctx cube ab locs { value; loc = Range.merge_opt loc body.loc }
 
 let process_abs cube ctx obs _loc =

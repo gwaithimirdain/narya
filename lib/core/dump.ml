@@ -279,10 +279,14 @@ module F = struct
    fun ppf c ->
     match c with
     | Synth s -> synth ppf s
-    | Lam { name; cube = _; implicit; body } ->
-        fprintf ppf "Lam(%s%s%s, %a)"
+    | Lam { name; cube = _; implicit; dom; body } ->
+        fprintf ppf "Lam(%s%s%a%s, %a)"
           (if implicit = `Implicit then "{" else "")
           (Option.value ~default:"_" name.value)
+          (fun ppf ->
+            Option.fold ~none:() ~some:(fun (x : a check located) ->
+                fprintf ppf " : %a" check x.value))
+          dom
           (if implicit = `Implicit then "}" else "")
           check body.value
     | Struct (_, flds) ->

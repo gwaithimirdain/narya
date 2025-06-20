@@ -349,12 +349,30 @@ let rec check : type a b s.
               (Option.fold ~none:Bwd.Emp ~some:(Bwd.snoc Emp) str.loc)
               (Snoc (Emp, (str, Any_deg fa)))
               (Any_deg fa) x)
-    | Lam { name = { value = x; loc = xloc }; cube; implicit; body }, _ -> (
+    | Lam { name = { value = x; loc = xloc }; cube; implicit; dom; body }, _ -> (
         match view_type ~severity ty "typechecking lambda" with
         | Canonical (_, Pi (_, doms, cods), ins, tyargs) -> (
             let Eq = eq_of_ins_zero ins in
             (* TODO: Move this into a helper function, it's too long to go in here. *)
             let m = CubeOf.dim doms in
+            (* If the domain was supplied, it must be a zero-dimensional lambda and it must match the checking domain, or at least contain it as a subtype (contravariance!). *)
+            (match (dom, D.compare_zero m) with
+            | Some _, Pos _ -> fatal (Unimplemented "domain-ascribed higher abstractions")
+            | Some dom, Zero -> (
+                let cdom = check (Kinetic `Nolet) ctx dom (universe D.zero) in
+                let edom = eval_term (Ctx.env ctx) cdom in
+                match subtype_of ctx (CubeOf.find_top doms) edom with
+                | Ok () -> ()
+                | Error why ->
+                    fatal ?loc:dom.loc
+                      (Unequal_synthesized_type
+                         {
+                           got = PVal (ctx, edom);
+                           expected = PVal (ctx, CubeOf.find_top doms);
+                           which = None;
+                           why;
+                         }))
+            | _ -> ());
             (* A zero-dimensional parameter that is a discrete type doesn't block discreteness, but others do. *)
             let discrete =
               match D.compare m D.zero with
@@ -390,7 +408,14 @@ let rec check : type a b s.
                               ( ab,
                                 {
                                   value =
-                                    Lam { name; cube = { value = `Normal; _ }; implicit; body };
+                                    Lam
+                                      {
+                                        name;
+                                        cube = { value = `Normal; _ };
+                                        implicit;
+                                        dom = _;
+                                        body;
+                                      };
                                   _;
                                 } ) -> (
                               match (is_id_sface fa, implicit) with
