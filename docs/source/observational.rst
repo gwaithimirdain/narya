@@ -25,7 +25,7 @@ The notation ``ap`` for this is traditional in homotopy type theory, standing fo
 
    ap g a₂ b₂ : Id C (g a₀ b₀) (g a₁ b₁)
 
-The arguments ``a₂`` and ``b₂`` must also synthesize.  If necessary they can be ascribed, but you can also give their endpoints as *implicit arguments* to ``ap f``:
+The function ``g`` as well as the arguments ``a₂`` and ``b₂`` must all synthesize.  If necessary they can be ascribed.  However, you can also give the endpoints of ``a₂`` and ``b₂`` explicitly by enclosing them in curly braces, in which case ``a₂`` and ``b₂`` need not synthesize:
 
 .. code-block:: none
 
@@ -34,7 +34,7 @@ The arguments ``a₂`` and ``b₂`` must also synthesize.  If necessary they can
 
 At the moment it is not obvious how to generalize this to dependent functions; we will return to this later.
 
-The operations ``refl`` and ``ap`` also satisfy various intuitive laws.  For instance:
+The operations ``refl`` and ``ap`` also satisfy various intuitive laws.  For instance, we have definitional equalities:
 
 .. code-block:: none
 
@@ -42,6 +42,8 @@ The operations ``refl`` and ``ap`` also satisfy various intuitive laws.  For ins
    ap ((_ ↦ b) : A → B) a₂ ≡ refl b
    ap (g ∘ f) a₂ ≡ ap g (ap f a₂)
    ap f (refl a) ≡ refl (f a)
+
+Note that we have ascribed the abstractions when given as arguments to ``ap``, since the function argument must synthesize.
 
 
 Id of record types
@@ -55,7 +57,7 @@ For example, consider a binary product:
 
    def Prod (A B : Type) : Type ≔ sig (
      fst : A,
-     snd : B)
+     snd : B )
 
 In this case, the identity type ``Id (Prod A B) u v`` reduces to a record type that is written
 
@@ -70,17 +72,33 @@ The superscript ``⁽ᵉ⁾`` indicates that this is a higher-dimensional versio
    fst : Id A (u .fst) (v .fst)
    snd : Id B (u .snd) (v .snd)
 
-That is, if we have ``p : Prod⁽ᵉ⁾ (Id A) (Id B) u v``, then ``p .fst : Id A (u .fst) (v .fst)`` and ``p .snd : Id B (u .snd) (v .snd)``.  And dually, if we have ``r : Id A (u .fst) (v .fst)`` and ``s : Id B (u .snd) (v .snd)``, then ``(r,s) : Prod⁽ᵉ⁾ (Id A) (Id B) u v``.  In general, the rule is that the identity types of a record type are again record types, with the same number of fields *with the same names*, whose types are the identity types of those of the original record type.
+That is, if we have ``p : Prod⁽ᵉ⁾ (Id A) (Id B) u v``, then
+
+.. code-block:: none
+
+   p .fst : Id A (u .fst) (v .fst)
+   p .snd : Id B (u .snd) (v .snd)
+
+Dually, if we have
+
+.. code-block:: none
+
+   r : Id A (u .fst) (v .fst)
+   s : Id B (u .snd) (v .snd)
+
+then ``(r,s) : Prod⁽ᵉ⁾ (Id A) (Id B) u v``.
+
+In general, the rule is that the identity types of a record type are again record types, with the same number of fields *with the same names*, whose types are the identity types of those of the original record type.  We will return later to what this means when the types of some fields are dependent on others.
 
 Since ``Prod⁽ᵉ⁾ (Id A) (Id B) u v`` satisfies η-conversion, it is "definitionally isomorphic" to ``Prod (Id A (u .fst) (v .fst)) (Id B (u .snd) (v .snd))``, i.e. there are functions in both directions whose composites in both orders are definitionally equal to identities.  This further justifies the notation ``Prod⁽ᵉ⁾``: this is *a* product type, though not definitionally equal to an ordinary product type.  (However, for a general record type it may not be possible to say something quite like this.)
 
-The notation suggests that ``Id A`` and ``Id B`` as well as ``u`` and ``v`` are *parameters* of the record type ``Prod⁽ᵉ⁾``.  This is in fact true, but we postpone discussing it until later after we talk about what type ``Id A`` and ``Id B`` have.  As before, we also postpone the case of *dependent* records to later.
+The notation suggests that ``Id A`` and ``Id B`` as well as ``u`` and ``v`` are *parameters* of the record type ``Prod⁽ᵉ⁾``.  This is in fact true, but we postpone discussing it until later after we talk about what type ``Id A`` and ``Id B`` have.
 
 The other operations ``refl`` and ``ap`` also compute when applied to terms associated to records (projections and tuples).  For instance:
 
 1. ``refl (a, b)`` reduces to ``(refl a, refl b)``.  Since in general the argument of ``refl`` must synthesize, you would expect that the ``(a, b)`` needs to be ascribed.  But in fact because ``refl (a, b)`` always reduces to ``(refl a, refl b)``, which is a checking term, Narya does that reduction at checking time, allowing it also to check without needing the tuple to be ascribed.
 2. ``refl (u .fst)`` reduces to ``refl u .fst`` (which, recall, means ``(refl u) .fst``), and similarly for ``snd``.
-3. ``ap ((x ↦ (f x, g x)) : A → Prod B B) u₂`` (which indeed must be ascribed) reduces to ``(ap f u₂, ap g u₂)`` (modulo η-converting ``(x ↦ f x) : A → B`` to ``f`` and similarly).
+3. ``ap ((x ↦ (f x, g x)) : A → Prod B C) u₂`` (which indeed must be ascribed) reduces to ``(ap f u₂, ap g u₂)`` (modulo η-converting ``(x ↦ f x) : A → B`` to ``f`` and similarly).
 4. ``ap ((x ↦ f x .fst) : A → B) u₂`` reduces to ``ap f u₂ .fst``, and similarly for ``snd``.
 5. Multi-variable functions work similarly: ``ap ((x y ↦ g x y .fst) : A → B → C) u₂ v₂`` reduces to ``ap g u₂ v₂ .fst`` and so on.
 
@@ -103,7 +121,7 @@ Then ``Id (Stream A) s t`` reduces to ``Stream⁽ᵉ⁾ (Id A) s t``, which is a
    | _ .head : Id A (s .head) (t .head)
    | _ .tail : Id (Stream A) (s. tail) (t .tail)
 
-In other words, an element of ``Stream⁽ᵉ⁾ (Id A) s t`` is a *stream of equalities*, again justifying the notation ``Stream⁽ᵉ⁾``.  Individual bisimulations, i.e. elements of ``Id (Stream A) s t``, can then be constructed by comatching and corecursion.
+In other words, an element of ``Stream⁽ᵉ⁾ (Id A) s t`` is a *stream of equalities*, again justifying the notation ``Stream⁽ᵉ⁾``.  Individual bisimulations, i.e. elements of ``Stream⁽ᵉ⁾ (Id A) s t``, can then be constructed by comatching and corecursion.
 
 Just as for record types, ``refl`` and ``ap`` compute straightforwardly on field projections for codatatypes.  However, since a comatch is always part of a case tree, which never computes until a field projection is applied, the same is true for ``refl`` and ``ap`` of it.  For instance, if we define a stream of natural numbers:
 
@@ -113,13 +131,13 @@ Just as for record types, ``refl`` and ``ap`` compute straightforwardly on field
    | .head ↦ n
    | .tail ↦ nats (suc. n) ]
 
-then ``refl (nats 0)`` does not reduce to anything.  However, if we apply some destructors to it, such as ``refl (nats 0) .tail .tail .head``, then it does compute in the expected way (in this case, to ``refl 2`` --- although, as noted below, ``refl 2`` is printed as merely ``2``).
+then ``refl (nats 0)`` does not reduce to anything.  However, if we apply some destructors to it, such as ``refl (nats 0) .tail .tail .head``, then it does compute in the expected way (in this case, to ``refl 2``).
 
 
 Id of datatypes
 ---------------
 
-Similarly again, the identity types of a datatype are again datatypes, whose constructors have types involving the identity types of those of the original.  In this case, the *endpoints* of the identity type behave like *indices* of its definition rather than parameters.  For instance, consider the usual sum type:
+As with records and codatatypes, the identity types of a datatype are again datatypes, whose constructors have types involving the identity types of those of the original.  In this case, the *endpoints* of the identity type behave like *indices* of its definition rather than parameters.  For instance, consider the usual sum type:
 
 .. code-block:: none
 
@@ -134,7 +152,9 @@ Then ``Id (Sum A B) u v`` reduces to ``Sum⁽ᵉ⁾ (Id A) (Id B) u v``, which i
    | left. {a₀ a₁ : A} (a₂ : Id A a₀ a₁) : Sum⁽ᵉ⁾ (Id A) (Id B) (left. a₀) (left. a₁)
    | right. {b₀ b₁ : B} (b₂ : Id B b₀ b₁) : Sum⁽ᵉ⁾ (Id A) (Id B) (right. b₀) (right. b₁)
 
-Thus, as before, ``Sum⁽ᵉ⁾ (Id A) (Id B) u v`` is again *a* sum type.  The endpoints are indices because their occurrences ``(left. a₀) (left. a₁)`` and ``(right. b₀) (right. b₁)`` in the outputs of the constructors are not fully general, but are determined by the inputs.  Note also that the input endpoints such as ``a₀ a₁`` are implicit, as with the endpoint arguments of ``ap f``.  In this case it is *not* possible to give these arguments explicitly; but there is unlikely to be any need to, since constructors *and* their arguments always check rather than needing to synthesize.
+Thus, as before, ``Sum⁽ᵉ⁾ (Id A) (Id B) u v`` is again *a* sum type.  The endpoints are indices because their occurrences ``(left. a₀) (left. a₁)`` and ``(right. b₀) (right. b₁)`` in the outputs of the constructors are not fully general, but are determined by the inputs.  (The arguments ``Id A`` and ``Id B`` are also not fully general, but they are the same as those given to ``Sum⁽ᵉ⁾``, and when we give the general type of ``Sum⁽ᵉ⁾`` below it will be clear that these arguments are actually parameters.)
+
+We have written the input endpoints such as ``a₀ a₁`` with curly braces to indicate that they are implicit, as with the endpoint arguments of ``ap f``.  However, in this case it is *not* possible to give these arguments explicitly when applying the constructors ``left.`` and ``right.``.  But there is unlikely to be any need to, since constructors *and* their arguments always check rather than needing to synthesize.
 
 Recursive cases are similar, e.g. for lists
 
@@ -149,8 +169,7 @@ the identity type ``Id (List A) p q`` reduces to ``List⁽ᵉ⁾ (Id A) p q``, w
 .. code-block:: none
 
    | nil. : List⁽ᵉ⁾ (Id A) nil. nil.
-   | cons. {x₀ x₁ : A} {x₂ : Id A x₀ x₁}
-       {xs₀ xs₁ : List A} (xs₂ : List⁽ᵉ⁾ (Id A) xs₀ xs₁)
+   | cons. {x₀ x₁ : A} (x₂ : Id A x₀ x₁) {xs₀ xs₁ : List A} (xs₂ : List⁽ᵉ⁾ (Id A) xs₀ xs₁)
        : List⁽ᵉ⁾ (Id A) (cons. x₀ xs₀) (cons. x₁ xs₁)
 
 As with record types, the other primitives ``refl`` and ``ap`` compute on terms associated to datatypes (constructors and matches).  In the case of constructors, we have for example
@@ -197,8 +216,8 @@ Of course, ``refl`` and ``ap`` also compute on terms associated to function type
 
 For abstraction, ``refl`` computes to ``ap``, while ``ap`` computes to an ``ap`` with one more variable.  Although, in fact these computations don't reduce fully until applied to arguments, as if they were defined by a case tree.  For instance:
 
-1. ``refl (x ↦ M) a₂`` reduces to ``ap (x ↦ M) a₂``.
-2. ``ap (x ↦ (y ↦ M)) a₂ b₂`` reduces to ``ap (x y ↦ M) a₂ b₂``.
+1. ``refl ((x ↦ M) : A → B) a₂`` reduces to ``ap ((x ↦ M) : A → B) a₂``.
+2. ``ap ((x ↦ (y ↦ M)) : A → (B → C)) a₂ b₂`` reduces to ``ap ((x y ↦ M) : A → B → C) a₂ b₂``.
 
 These equations suggest that ``refl`` can be view as a "0-ary" version of ``ap``, which is correct.  In fact, more is true: by η-expansion, for any function ``f : A → B`` we have
 
@@ -265,13 +284,13 @@ Understanding ``Id Type`` also makes sense of the notation ``Prod⁽ᵉ⁾ (Id A
 
 This suggests that ``⁽ᵉ⁾`` is just *another* notational variant of ``refl``.  For then ``Prod⁽ᵉ⁾`` (that is, ``refl Prod``) has exactly the correct type to be applied to two (explicit) arguments ``Id A : Id Type A A`` and ``Id B : Id Type B B`` to obtain an element of ``Id Type (Prod A B) (Prod A B)``, which can then be instantiated at ``u`` and ``v`` to produce a type.
 
-In particular, this makes sense of un-applied ``Prod⁽ᵉ⁾``, and un-instantiated higher-dimensional types such as ``Prod⁽ᵉ⁾ (Id A) (Id B)`` that is the reduct of un-instantiated ``Id (Prod A B)``.  We can also consider un-instantiated ``Id (A → B)``, but in this case we need a new notation for what it reduces to, since the previously introduced notation ``{x₀ x₁ : A} (x₂ : Id A x₀ x₁) →⁽ᵉ⁾ Id B (f x₀) (g x₁)`` doesn't make sense without an ``f`` and a ``g``.  The new notation we use for this is ``Id A ⇒ Id B``.  In particular, therefore, the fully instantiated version ``Id (A → B) f g`` can also be written as ``(Id A ⇒ Id B) f g``.
+In particular, this makes sense of un-applied ``Prod⁽ᵉ⁾``, and un-instantiated higher-dimensional types such as ``Prod⁽ᵉ⁾ (Id A) (Id B)`` (the reduct of un-instantiated ``Id (Prod A B)``).  We can also consider un-instantiated ``Id (A → B)``, but in this case we need a new notation for what it reduces to, since the previously introduced notation ``{x₀ x₁ : A} (x₂ : Id A x₀ x₁) →⁽ᵉ⁾ Id B (f x₀) (g x₁)`` doesn't make sense without an ``f`` and a ``g``.  The new notation we use for this is ``Id A ⇒ Id B``.  In particular, therefore, the fully instantiated version ``Id (A → B) f g`` can also be written as ``(Id A ⇒ Id B) f g``.
 
 
 Heterogeneous identity types
 ----------------------------
 
-Now suppose ``B : A → Type`` and ``x₂ : Id A x₀ x₁``.  Then ``ap B x₂ : Id Type (B x₀) (B x₁)``, so it has instantiations.  That is, given ``y₀ : B x₀`` and ``y₁ : B x₁``, we have a type ``ap B x₂ y₀ y₁``, whose elements we call of *heterogeneous* identifications/bridges relating ``y₀`` and ``y₁`` "along" or "over" ``x₂``.  Since ``Id`` is a notational variant of ``ap`` (i.e. ``refl``), this type can also be written suggestively as ``Id B x₂ y₀ y₁`` (and Narya does this when printing: for the special case of ``Type``-valued functors we prefer ``Id`` over ``refl`` or ``ap``.)
+Now suppose ``B : A → Type`` and ``x₂ : Id A x₀ x₁``.  Then ``ap B x₂ : Id Type (B x₀) (B x₁)``, so it has instantiations.  That is, given ``y₀ : B x₀`` and ``y₁ : B x₁``, we have a type ``ap B x₂ y₀ y₁``, whose elements we call of *heterogeneous* identifications/bridges relating ``y₀`` and ``y₁`` "along" or "over" ``x₂``.  Since ``Id`` is a notational variant of ``ap`` (i.e. ``refl``), this type can also be written suggestively as ``Id B x₂ y₀ y₁`` (and Narya does this when printing: for the special case of ``Type``-valued functions we prefer ``Id`` over ``refl`` or ``ap``.)
 
 Note that since ``ap`` of a constant function reduces to ``refl``, heterogeneous ``Id`` of a constant type family reduces to ordinary ``Id``.  That is:
 
@@ -294,15 +313,15 @@ then ``Id (Σ A B) u v`` reduces to ``Σ⁽ᵉ⁾ (Id A) (Id B) u v``, which is 
    fst : Id A (u .fst) (v .fst)
    snd : Id B fst (u .snd) (v .snd)
 
-Similarly, ``Id ((x:A) → B x) f g`` reduces to a higher-dimensional function-type
+Similarly, ``Id ((x:A) → B x) f g`` reduces to a higher-dimensional function type
 
 .. code-block:: none
 
-   {x₀ x₁ : A} (x₂ : Id A x₀ x₁) →⁽ᵉ⁾ Id B x₂ (f x₀) (g x₁)``
+   {x₀ x₁ : A} (x₂ : Id A x₀ x₁) →⁽ᵉ⁾ Id B x₂ (f x₀) (g x₁)
 
 whose behavior generalizes that described for non-dependent function types in :ref:`Id of function types`.  Since heterogeneous ``Id`` of a constant family reduces to ordinary ``Id``, this is consistent with the definition above of ``Id`` for non-dependent function types.
 
-The un-instantiated version ``Id ((x:A) → B x)`` likewise reduces to a dependently typed version of the previously introduced notation, ``(x : Id A) ⇒ Id B x.2``.  Here ``x`` is a cube of variables, and the symbal ``⇒`` is of course intentionally reminiscent of ``⤇``.
+The un-instantiated version ``Id ((x:A) → B x)`` likewise reduces to a dependently typed version of the previously introduced notation, ``(x : Id A) ⇒ Id B x.2``.  Here ``x`` is a cube of variables, and the symbol ``⇒`` is of course intentionally reminiscent of ``⤇``.
 
 In particular, since ``Σ : (A : Type) (B : A → Type) → Type``, the type of ``Id Σ`` is
 
@@ -354,7 +373,7 @@ As a special case, if ``R`` is ``Id A : Id Type A A``, then such an instantiatio
 
 We view these as forming the boundary of a 2-dimensional square, with ``Id (Id A) a₀₂ a₁₂ a₂₀ a₂₁`` the type of fillers inhabiting that boundary.  Similarly, ``Id (Id (Id A))`` can be instantiated to yield types of 3-dimensional cubes, and so on.
 
-Of course, the variables in the boundary of a square can be named anything you want.  However, the naming scheme with subscripts used above is systematic and has certain advantages.  Specifically, a cube of dimension *n* has 3ⁿ faces, including the center one (which is missing in a boundary), and we name them by the numbers from 0 to 3ⁿ−1 written in base-3 notation.  The intrinsic dimension of a face is then the number of 2s in its base-3 representation, and *its* codimension-1 faces are obtained by replacing one of the 2s with a 0 or a 1.  The overall codimension-1 faces, which are the only explicit ones in an instantiation, are those in which all the digits are 2s except one.  Finally, the variables in an instantiation or higher-dimensional function application appear in increasing ternary order.  In particular, Narya uses this naming scheme for :ref:`Cubes of variables` of all dimensions (see below), although with dot-suffixes rather than subscripts.
+Of course, the variables in the boundary of a square can be named anything you want.  However, the naming scheme with subscripts used above is systematic and has certain advantages.  Specifically, a cube of dimension *n* has 3ⁿ faces, including the center one (which is missing in a boundary), and we name them by the numbers from 0 to 3ⁿ−1 written in base-3 notation.  The intrinsic dimension of a face is then the number of 2s in its base-3 representation, and *its* codimension-1 faces are obtained by replacing one of the 2s with a 0 or a 1.  The overall codimension-1 faces, which are the only explicit ones in an instantiation, are those in which all the digits are 2s except one.  Finally, the variables in an instantiation or higher-dimensional function application appear in increasing ternary order.  In particular, Narya uses this naming scheme for :ref:`Cubes of variables` of all dimensions, although with dot-suffixes rather than subscripts; we will return to this below.
 
 In any case, the squares described by ``Id (Id A)`` are "totally homogeneous", with everything living in the same type ``A``; whereas the previously mentioned case of ``Id R : Id (Id Type A B) R R`` is homogeneous in one dimension (with some boundary components like ``a₂ : Id A a₀ a₁`` living entirely in one type ``A``) and heterogeneous in the other (with other boundary components like ``r₀ : R a₀ b₀`` connecting one type ``A`` to another type ``B``).  But we can also consider types of totally *heterogeneous* squares.  To explain this, observe that by the homogeneous case, we can instantiate ``Id (Id Type)`` at a family of arguments of the following types:
 
