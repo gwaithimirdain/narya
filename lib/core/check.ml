@@ -2556,7 +2556,10 @@ and synth : type a b s.
         let cbody, scod = synth newstatus newctx body in
         let ty =
           eval_term (Ctx.env ctx)
-            (Pi (x, CubeOf.singleton cdom, CodCube.singleton (readback_val newctx scod))) in
+            (Pi
+               ( singleton_variables D.zero x,
+                 CubeOf.singleton cdom,
+                 CodCube.singleton (readback_val newctx scod) )) in
         (Lam (xs, cbody), ty)
     | Let (x, v, body), _ ->
         let ctm, Not_none ety = synth_or_check_let status ctx x v body None in

@@ -86,7 +86,6 @@ module rec Make : functor (I : Indices) -> sig
     | InstHigherPi : 'n D.pos * ('a, 'n, unit, 'an) DomCube.t * 'an check located -> 'a synth
     | App : 'a synth located * 'a check located * [ `Implicit | `Explicit ] located -> 'a synth
     | Asc : 'a check located * 'a check located -> 'a synth
-    (* Abstraction with ascribed variable.  Currently can't be a cube or implicit.  *)
     | AscLam : I.name located * 'a check located * 'a I.suc synth located -> 'a synth
     | UU : 'a synth
     | Let : I.name * 'a synth located * 'a I.suc check located -> 'a synth
@@ -237,6 +236,8 @@ functor
       (* The location of the implicitness flag is, in the implicit case, the location of the braces surrounding the implicit argument. *)
       | App : 'a synth located * 'a check located * [ `Implicit | `Explicit ] located -> 'a synth
       | Asc : 'a check located * 'a check located -> 'a synth
+      (* Abstraction with ascribed variable.  Currently can't be a cube or implicit.  *)
+      | AscLam : I.name located * 'a check located * 'a I.suc synth located -> 'a synth
       | UU : 'a synth
       (* A Let can either synthesize or (sometimes) check.  It synthesizes only if its body also synthesizes, but we wait until typechecking type to look for that, so that if it occurs in a checking context the body can also be checking.  Thus, we make it a "synthesizing term".  The term being bound must also synthesize; the shorthand notation "let x : A := M" is expanded during parsing to "let x := M : A". *)
       | Let : I.name * 'a synth located * 'a I.suc check located -> 'a synth
