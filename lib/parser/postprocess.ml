@@ -15,16 +15,6 @@ type (_, _, _) identity += Braces : (closed, No.plus_omega, closed) identity
 
 let braces : (closed, No.plus_omega, closed) notation = (Braces, Outfix)
 
-(* Require the argument to be either a valid local variable name (to be bound, so faces of cubical variables are not allowed) or an underscore, and return a corresponding 'string option'. *)
-let get_var : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string option =
- fun { value; loc } ->
-  with_loc loc @@ fun () ->
-  match value with
-  | Ident ([ x ], _) when Lexer.valid_var x -> Some x
-  | Ident (xs, _) -> fatal (Invalid_variable xs)
-  | Placeholder _ -> None
-  | _ -> fatal Parse_error
-
 (* Process a bare identifier, resolving it into either a variable, a cube variable with face, a constant, a numeral, or a degeneracy name (the latter being an error since it isn't applied to anything). *)
 let process_ident ctx loc parts =
   let open Monad.Ops (Monad.Maybe) in

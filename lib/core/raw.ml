@@ -86,6 +86,8 @@ module rec Make : functor (I : Indices) -> sig
     | InstHigherPi : 'n D.pos * ('a, 'n, unit, 'an) DomCube.t * 'an check located -> 'a synth
     | App : 'a synth located * 'a check located * [ `Implicit | `Explicit ] located -> 'a synth
     | Asc : 'a check located * 'a check located -> 'a synth
+    (* Abstraction with ascribed variable.  Currently can't be a cube or implicit.  *)
+    | AscLam : I.name located * 'a check located * 'a I.suc synth located -> 'a synth
     | UU : 'a synth
     | Let : I.name * 'a synth located * 'a I.suc check located -> 'a synth
     | Letrec : ('a, 'b, 'ab) tel * ('ab check located, 'b) Vec.t * 'ab check located -> 'a synth
@@ -437,6 +439,8 @@ module Resolve (R : Resolver) = struct
           InstHigherPi (n, doms, check ctx cod)
       | App (fn, arg, impl) -> App (synth ctx fn, check ctx arg, impl)
       | Asc (tm, ty) -> Asc (check ctx tm, check ctx ty)
+      | AscLam (x, dom, body) ->
+          AscLam (locate_map (R.rename ctx) x, check ctx dom, synth (R.snoc ctx x.value) body)
       | UU -> UU
       | Let (x, tm, body) -> Let (R.rename ctx x, synth ctx tm, (check (R.snoc ctx x)) body)
       | Letrec (tys, tms, body) ->

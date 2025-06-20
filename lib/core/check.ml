@@ -2538,6 +2538,26 @@ and synth : type a b s.
         let ety = eval_term (Ctx.env ctx) cty in
         let ctm = check status ctx tm ety in
         (ctm, ety)
+    | AscLam ({ value = x; loc = _ }, dom, body), _ ->
+        let cdom = check (Kinetic `Nolet) ctx dom (universe D.zero) in
+        let edom = eval_term (Ctx.env ctx) cdom in
+        let newctx = Ctx.ext ctx x edom in
+        let xnf =
+          match Ctx.lookup newctx (Top, None) with
+          | `Field _ -> fatal (Anomaly "field variable in asclam")
+          | `Var (_, nf, _) -> nf in
+        let xs = singleton_variables D.zero x in
+        let newstatus : ((b, D.zero) snoc, s) status =
+          match status with
+          | Kinetic l -> Kinetic l
+          | Potential (c, args, hyp) ->
+              let arg = CubeOf.singleton xnf in
+              Potential (c, Arg (args, arg, ins_zero D.zero), fun tm -> hyp (Lam (xs, tm))) in
+        let cbody, scod = synth newstatus newctx body in
+        let ty =
+          eval_term (Ctx.env ctx)
+            (Pi (x, CubeOf.singleton cdom, CodCube.singleton (readback_val newctx scod))) in
+        (Lam (xs, cbody), ty)
     | Let (x, v, body), _ ->
         let ctm, Not_none ety = synth_or_check_let status ctx x v body None in
         (* The synthesized type of the body is also correct for the whole let-expression, because it was synthesized in a context where the variable is bound not just to its type but to its value, so it doesn't include any extra level variables (i.e. it can be silently "strengthened"). *)

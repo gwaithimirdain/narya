@@ -143,80 +143,91 @@ let cubeabs : (No.strict opn, No.minus_omega, No.nonstrict opn) notation =
 type _ extended_ctx =
   | Extctx :
       ('n, 'm, 'nm) N.plus
-      * (Asai.Range.t option * [ `Implicit | `Explicit ], 'm) Bwv.t
+      * (Asai.Range.t option * wrapped_parse option * [ `Implicit | `Explicit ], 'm) Bwv.t
       * (string option, 'nm) Bwv.t
       -> 'n extended_ctx
 
-let rec get_vars : type n lt1 ls1 rt1 rs1.
-    (string option, n) Bwv.t -> (lt1, ls1, rt1, rs1) parse located -> n extended_ctx =
- fun ctx vars ->
-  match vars.value with
-  | Ident ([ x ], _) ->
-      if Lexer.valid_var x then
-        Extctx (Suc Zero, Snoc (Emp, (vars.loc, `Explicit)), Bwv.snoc ctx (Some x))
-      else fatal ?loc:vars.loc Parse_error
-  | Ident (xs, _) -> fatal ?loc:vars.loc (Invalid_variable xs)
-  | Placeholder _ -> Extctx (Suc Zero, Snoc (Emp, (vars.loc, `Explicit)), Bwv.snoc ctx None)
+(* Require the argument to be either a valid local variable name (to be bound, so faces of cubical variables are not allowed) or an underscore, and return a corresponding 'string option'. *)
+let get_var : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string option =
+ fun { value; loc } ->
+  with_loc loc @@ fun () ->
+  match value with
+  | Ident ([ x ], _) when Lexer.valid_var x -> Some x
+  | Ident (xs, _) -> fatal (Invalid_variable xs)
+  | Placeholder _ -> None
+  | _ -> fatal Parse_error
+
+let get_var_asc : type lt ls rt rs.
+    (lt, ls, rt, rs) parse located -> string option * wrapped_parse option =
+ fun v ->
+  match v.value with
+  | Notn ((Asc, _), n) -> (
+      match args n with
+      | [ Term x; Token (Colon, _); Term ty ] -> (get_var x, Some (Wrap ty))
+      | _ -> invalid "colon")
+  | _ -> (get_var v, None)
+
+(* Like get_var, but allow it to be enclosed in braces to mean implicit, and/or to be ascribed to a type (in parentheses or braces). *)
+let get_var_asc_implicit : type lt ls rt rs.
+    (lt, ls, rt, rs) parse located ->
+    (string option * wrapped_parse option) * [ `Implicit | `Explicit ] =
+ fun v ->
+  match v.value with
   | Notn ((Braces, _), n) -> (
       match args n with
-      | [ Token (LBrace, _); Term { value = Ident ([ x ], _); _ }; Token (RBrace, _) ]
-        when Lexer.valid_var x ->
-          Extctx (Suc Zero, Snoc (Emp, (vars.loc, `Implicit)), Bwv.snoc ctx (Some x))
-      | [ Token (LBrace, _); Term { value = Ident (xs, _); _ }; Token (RBrace, _) ] ->
-          fatal ?loc:vars.loc (Invalid_variable xs)
-      | [ Token (LBrace, _); Term { value = Placeholder _; _ }; Token (RBrace, _) ] ->
-          Extctx (Suc Zero, Snoc (Emp, (vars.loc, `Implicit)), Bwv.snoc ctx None)
-      | _ -> fatal ?loc:vars.loc Parse_error)
-  | App { fn; arg = { value = Ident ([ x ], _); loc = xloc }; _ } when Lexer.valid_var x ->
-      let (Extctx (ab, locs, ctx)) = get_vars ctx fn in
-      Extctx (Suc ab, Snoc (locs, (xloc, `Explicit)), Bwv.snoc ctx (Some x))
-  | App { arg = { value = Ident (xs, _); loc }; _ } -> fatal ?loc (Invalid_variable xs)
-  | App { fn; arg = { value = Placeholder _; loc = xloc }; _ } ->
-      let (Extctx (ab, locs, ctx)) = get_vars ctx fn in
-      Extctx (Suc ab, Snoc (locs, (xloc, `Explicit)), Bwv.snoc ctx None)
-  | App { fn; arg = { value = Notn ((Braces, _), n); loc = xloc }; _ } -> (
+      | [ Token (LBrace, _); Term w; Token (RBrace, _) ] -> (get_var_asc w, `Implicit)
+      | _ -> invalid "braces")
+  | Notn ((Parens, _), n) -> (
       match args n with
-      | [ Token (LBrace, _); Term { value = Ident ([ x ], _); _ }; Token (RBrace, _) ]
-        when Lexer.valid_var x ->
-          let (Extctx (ab, locs, ctx)) = get_vars ctx fn in
-          Extctx (Suc ab, Snoc (locs, (xloc, `Implicit)), Bwv.snoc ctx (Some x))
-      | [ Token (LBrace, _); Term { value = Ident (xs, _); _ }; Token (RBrace, _) ] ->
-          fatal ?loc:vars.loc (Invalid_variable xs)
-      | [ Token (LBrace, _); Term { value = Placeholder _; _ }; Token (RBrace, _) ] ->
-          let (Extctx (ab, locs, ctx)) = get_vars ctx fn in
-          Extctx (Suc ab, Snoc (locs, (xloc, `Implicit)), Bwv.snoc ctx None)
-      | _ -> fatal ?loc:vars.loc Parse_error)
-  | _ -> fatal ?loc:vars.loc Parse_error
+      | [ Token (LParen, _); Term w; Token (RParen, _) ] -> (get_var_asc w, `Explicit)
+      | _ -> invalid "braces")
+  | _ -> ((get_var v, None), `Explicit)
+
+(* Get a sequence of variables, as in the domain of an abstraction, some possibly enclosed in braces to mean they are implicit. *)
+let rec get_vars : type n lt ls rt rs.
+    (string option, n) Bwv.t -> (lt, ls, rt, rs) parse located -> n extended_ctx =
+ fun ctx vars ->
+  match vars.value with
+  | App { fn; arg; _ } ->
+      let (Extctx (ab, locs, ctx)) = get_vars ctx fn in
+      let (x, dom), implicit = get_var_asc_implicit arg in
+      Extctx (Suc ab, Snoc (locs, (arg.loc, dom, implicit)), Bwv.snoc ctx x)
+  | _ ->
+      let (x, dom), implicit = get_var_asc_implicit vars in
+      Extctx (Suc Zero, Snoc (Emp, (vars.loc, dom, implicit)), Bwv.snoc ctx x)
 
 let rec raw_lam : type a b ab.
     (string option, ab) Bwv.t ->
     [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ] located ->
     (a, b, ab) N.plus ->
-    (Asai.Range.t option * [ `Explicit | `Implicit ], b) Bwv.t ->
+    (Asai.Range.t option * wrapped_parse option * [ `Explicit | `Implicit ], b) Bwv.t ->
     ab check located ->
     a check located =
- fun names cube ab locs body ->
+ fun ctx cube ab locs body ->
   match (ab, locs) with
   | Zero, Emp -> body
-  | Suc ab, Snoc (locs, (loc, implicit)) ->
-      let (Snoc (names, x)) = names in
-      raw_lam names cube ab locs
-        {
-          value = Lam { name = { value = x; loc }; cube; implicit; body };
-          loc = Range.merge_opt loc body.loc;
-        }
+  | Suc ab, Snoc (locs, (loc, dom, implicit)) ->
+      let (Snoc (ctx, x)) = ctx in
+      let name = locate_opt loc x in
+      let value =
+        match (dom, body.value) with
+        | None, _ -> Lam { name; cube; implicit; body }
+        | Some (Wrap dom), Synth sbody ->
+            Synth (AscLam (name, process ctx dom, locate_opt body.loc sbody))
+        | Some _, _ -> fatal ?loc (Nonsynthesizing "body of domain-ascribed abstraction") in
+      raw_lam ctx cube ab locs { value; loc = Range.merge_opt loc body.loc }
 
 let process_abs cube ctx obs _loc =
   (* The loc argument isn't used here since we can deduce the locations of each lambda by merging its variables with its body. *)
   match obs with
   | [ Term vars; Token (tok, (_, mloc)); Term body ]
     when (tok = DblMapsto && cube = `Cube) || (tok = Mapsto && cube = `Normal) ->
-      let (Extctx (ab, locs, ctx)) = get_vars ctx vars in
+      let (Extctx (ab, data, ctx)) = get_vars ctx vars in
       let cube =
         match cube with
         | `Normal -> locate `Normal mloc
         | `Cube -> locate (`Cube (ref None)) mloc in
-      raw_lam ctx cube ab locs (process ctx body)
+      raw_lam ctx cube ab data (process ctx body)
   | _ -> invalid "abstraction"
 
 (* Abstractions are printed bundled with let-bindings. *)

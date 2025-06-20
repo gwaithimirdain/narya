@@ -337,6 +337,10 @@ module F = struct
     | InstHigherPi (_, _, _) -> fprintf ppf "InstHigherPi(?)"
     | App (fn, arg, _) -> fprintf ppf "App(%a, %a)" synth fn.value check arg.value
     | Asc (tm, ty) -> fprintf ppf "Asc(%a, %a)" check tm.value check ty.value
+    | AscLam (x, dom, body) ->
+        fprintf ppf "AscLam(%s, %a, %a)"
+          (Option.value ~default:"_" x.value)
+          check dom.value synth body.value
     | Let (_, _, _) -> fprintf ppf "Let(?)"
     | Letrec (_, _, _) -> fprintf ppf "LetRec(?)"
     | Act (_, _, _) -> fprintf ppf "Act(?)"
