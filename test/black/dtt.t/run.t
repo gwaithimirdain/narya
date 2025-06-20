@@ -86,8 +86,8 @@
     (y ⤇
      eq⁽ᵈᵈ⁾
        (Gel⁽ᵈ⁾ (Gel A (y′ ↦ eq A a₀ y′)) {y′ ↦ eq A a₁ y′}
-          (y′ ⤇ eq⁽ᵈ⁾ (Gel A (y″ ↦ eq A a₀ y″)) a₀₁ y′.1)) a₀₁₂ y.11) a₀₁₃ a₀₂₃
-    a₁₂₃
+          (y′ ⤇ eq⁽ᵈ⁾ (Gel A (y″ ↦ eq A a₀ y″)) a₀₁ y′.1)) a₀₁₂ y.11) a₀₁₃
+    a₀₂₃ a₁₂₃
     : Type
   
    ￫ info[I0000]

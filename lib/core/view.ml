@@ -8,7 +8,7 @@ type view_type =
   | Canonical :
       (head * ('m, 'n) canonical * ('mn, 'm, 'n) insertion * (D.zero, 'mn, 'mn, normal) TubeOf.t)
       -> view_type
-  | Neutral : (head * (D.zero, 'k, 'k, normal) TubeOf.t) -> view_type
+  | Neutral : (head * noninst apps * (D.zero, 'k, 'k, normal) TubeOf.t) -> view_type
 
 let term_viewer : (kinetic value -> kinetic value) ref =
   ref (fun _ -> fatal (Anomaly "term_viewer not set (load Norm)"))
@@ -19,7 +19,7 @@ let type_viewer : (?severity:Asai.Diagnostic.severity -> kinetic value -> string
 type force_eval_type = { force : 's. 's lazy_eval -> 's evaluation }
 
 let eval_forcer : force_eval_type ref =
-  ref { force = (fun _ -> raise (Failure "Dump.force_eval not set")) }
+  ref { force = (fun _ -> fatal (Anomaly "force_eval not set (load Norm)")) }
 
 let view_term tm = !term_viewer tm
 let view_type ty = !type_viewer ty

@@ -82,13 +82,13 @@ and view_type ?(severity = Asai.Diagnostic.Bug) (ty : kinetic value) (err : stri
       | Realize v -> view_type ~severity v err
       | _ -> (
           match inst_of_apps args with
-          | _, Some (Any_tube tyargs) -> (
+          | apps, Some (Any_tube tyargs) -> (
               match D.compare_zero (TubeOf.uninst tyargs) with
               | Pos k -> fatal ~severity (Type_not_fully_instantiated (err, k))
               | Zero ->
                   let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (TubeOf.inst tyargs)) in
-                  Neutral (head, tyargs))
-          | _, None -> Neutral (head, TubeOf.empty D.zero)))
+                  Neutral (head, apps, tyargs))
+          | apps, None -> Neutral (head, apps, TubeOf.empty D.zero)))
   | _ -> fatal ~severity (Type_expected (err, Dump.Val ty))
 
 (* Evaluation of terms and evaluation of case trees are technically separate things.  In particular, evaluating a kinetic (standard) term always produces just a value, whereas evaluating a potential term (a function case tree) can either
@@ -1392,7 +1392,7 @@ let get_tyargs ?(severity = Asai.Diagnostic.Bug) (ty : kinetic value) (err : str
     normal TubeOf.full =
   match view_type ~severity ty err with
   | Canonical (_, _, _, tyargs) -> Full_tube tyargs
-  | Neutral (_, tyargs) -> Full_tube tyargs
+  | Neutral (_, _, tyargs) -> Full_tube tyargs
 
 (* Check whether a given type is discrete, or has one of the the supplied constant heads (since for testing whether a newly defined datatype can be discrete, it and members of its mutual families can appear in its own parameters and arguments). *)
 let is_discrete : ?discrete:unit Constant.Map.t -> kinetic value -> bool =
@@ -1402,7 +1402,7 @@ let is_discrete : ?discrete:unit Constant.Map.t -> kinetic value -> bool =
   (* The currently-being-defined types may not be known to be discrete yet, but we treat them as discrete if they are one of the given heads. *)
   | Canonical (Const { name; ins }, _, _, _), Some consts ->
       Option.is_some (is_id_ins ins) && Constant.Map.mem name consts
-  | Neutral (Const { name; ins }, _), Some consts ->
+  | Neutral (Const { name; ins }, _, _), Some consts ->
       Option.is_some (is_id_ins ins) && Constant.Map.mem name consts
       (* In theory, pi-types with discrete codomain, and record types with discrete fields, could also be discrete.  But that would be trickier to check as it would require evaluating their codomain and fields under binders, and eta-conversion for those types should implement direct discreteness automatically.  So the only thing we're missing is that they can't appear as arguments to a constructor of some other discrete datatype. *)
   | _ -> false

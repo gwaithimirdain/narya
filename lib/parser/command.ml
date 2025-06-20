@@ -760,8 +760,9 @@ let rec execute :
                 let (Processed_tel (params, ctx, _)) = process_tel Emp parameters in
                 match ty with
                 | Some (_, Wrap ty) ->
-                    ( const,
-                      Core.Command.Def_check { params; ty = process ctx ty; tm = process ctx tm } )
+                    let ty = process ctx ty in
+                    let tm = process ctx tm in
+                    (const, Core.Command.Def_check { params; ty; tm })
                 | None -> (
                     match process ctx tm with
                     | { value = Synth tm; loc } ->

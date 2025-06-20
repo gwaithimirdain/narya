@@ -274,7 +274,10 @@ handling in Proof General."
         (setq proof-shell-last-goals-output (substring string gstart gend))
         (proof-shell-display-output-as-response flags (substring string rstart rend))
         (unless (memq 'no-goals-display flags)
-          (pg-goals-display proof-shell-last-goals-output t)))
+          ;; In May 2025, pg-goals-display added a third argument.  For now, we stay backwards-compatible.
+          (if (= (car (func-arity 'pg-goals-display)) 3)
+              (pg-goals-display proof-shell-last-goals-output t nil)
+            (pg-goals-display proof-shell-last-goals-output t))))
       ;; Update output kind to avoid redundant handling by `proof-shell-handle-delayed-output`
       (setq proof-shell-last-output-kind 'goals))
     ;; Optionally handle proof tree output
@@ -496,7 +499,10 @@ handling in Proof General."
     (if (not hole-overlay)
         (message "Place the cursor in a hole to use this command.")
       ;; Otherwise, proceed to solve/split the hole, perhaps with a user-provided term.
-      (let ((term (if split "_" (read-string "Enter the term to solve the hole: ")))
+      (let ((term (if split
+                      "_"
+                    (read-string "Enter the term to solve the hole: "
+                                 nil 'proof-minibuffer-history nil t)))
             (cmd (if split "split" "solve"))
             (column (current-column)))
         ;; Send the solution command invisibly to the proof shell, synchronously.
@@ -556,13 +562,13 @@ handling in Proof General."
 (defun narya-echo (term)
   "Normalize and display the value and type of a term.
 If cursor is over a hole, the term is interpreted in the context of that hole."
-  (interactive "sTerm to normalize: ")
+  (interactive "MTerm to normalize: ")
   (narya-echo-or-synth "echo" term))
 
 (defun narya-synth (term)
   "Display the type of a term.
 If cursor is over a hole, the term is interpreted in the context of that hole."
-  (interactive "sTerm to synthesize: ")
+  (interactive "MTerm to synthesize: ")
   (narya-echo-or-synth "synth" term))
 
 (defun narya-display-chars (arg)

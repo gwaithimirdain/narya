@@ -307,7 +307,7 @@ let rec check : type a b s.
             let (Any dim) =
               match view_type ~severity ty "typechecking lambda" with
               | Canonical (_, _, ins, _) -> Any (cod_left_ins ins)
-              | Neutral (_, tyargs) -> Any (TubeOf.inst tyargs) in
+              | Neutral (_, _, tyargs) -> Any (TubeOf.inst tyargs) in
             let check_dim () =
               if Option.is_none (factor dim (dom_deg fa)) then
                 fatal ~severity:Asai.Diagnostic.Error

@@ -1,6 +1,7 @@
 Top level interface
 ===================
 
+
 Command-line flags
 ------------------
 
@@ -228,14 +229,14 @@ ProofGeneral mode
 Basic usage
 ^^^^^^^^^^^
 
-Once Narya's ProofGeneral mode is installed either :ref:`automatically<ProofGeneral mode (automatic installation)>` or :ref:`manually<ProofGeneral mode (manual installation)>`, it should start automatically when you open a file with the ``.ny`` extension.  When ProofGeneral mode is active, there is some initial segment of the buffer (which starts out empty) that has been processed (sent to Narya) and is highlighted with a background color (usually blue).  The unprocessed part of the buffer can be freely edited, and as you complete new commands you can process them as well one by one.  You can also undo or "retract" processed commands, removing them from the processed region.  If you edit any part of the processed region (except for editing inside an existing comment, or :ref:`filling a hole<solving holes>` with ``C-c C-SPC``), it will automatically be retracted (using Narya's ``undo`` command) up to the point where you are editing.
+Once Narya's ProofGeneral mode is installed either :ref:`automatically<Automatic ProofGeneral installation>` or :ref:`manually<Manual ProofGeneral installation>`, it should start automatically when you open a file with the ``.ny`` extension.  When ProofGeneral mode is active, there is some initial segment of the buffer (which starts out empty) that has been processed (sent to Narya) and is highlighted with a background color (usually blue).  The unprocessed part of the buffer can be freely edited, and as you complete new commands you can process them as well one by one.  You can also undo or "retract" processed commands, removing them from the processed region.  If you edit any part of the processed region (except for editing inside an existing comment, or :ref:`filling a hole<solving holes>` with ``C-c C-SPC``), it will automatically be retracted (using Narya's ``undo`` command) up to the point where you are editing.
 
 In addition to the main window displaying your source file, there will normally be two other windows in split-screen labeled "goals" and "response" (although this can be customized with the Emacs variables ``proof-three-window-enable`` and ``proof-three-window-mode-policy``).  The "response" window displays Narya's informational and error messages.  The "goals" window displays the contexts and types of holes whenever relevant.
 
 Key commands
 ^^^^^^^^^^^^
 
-The most useful ProofGeneral key commands for Narya are the following.  As usual in Emacs, ``C-a`` means hold down the Control key and press ``a``, then release both.  Similarly, ``C-M-a`` means hold down both Control and Meta (usually the same as "Alt") and press ``a``, then release them all.
+The most useful ProofGeneral key commands for Narya are the following.  As usual in Emacs (see the `Emacs manual <https://www.gnu.org/software/emacs/manual/html_node/emacs/User-Input.html>`_), ``C-a`` means hold down the Control key and press ``a``, then release both.  Similarly, ``C-M-a`` means hold down both Control and Meta (Meta is usually the same as "Alt") and press ``a``, then release them all.
 
 - ``C-c C-n`` : Process the next unprocessed command.  Since Narya has no command-terminating string, the "next command" is interpreted as continuing until the following command keyword or until the end of the buffer.  This means that if you've written a complete command but there is garbage following it, in order to process the command you'll need to either comment out the garbage or insert at least the beginning of another command in between (such as ``quit``) so that ProofGeneral can find the end of the command you want to process.
 - ``C-c C-u`` : Retract the last processed command.
@@ -308,46 +309,6 @@ And Narya defines some of its own faces as well.
 - ``narya-hole-face``: the background highlight of open holes.
 
 
-Entering Unicode characters
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-When editing Narya files in Emacs, you will probably also want an input-mode for entering Unicode characters.  Narya does not have its own such mode.  I use the one that ships with Agda, customized by adding the following to ``agda-input-user-translations``:
-```
-("r|" "↦")
-("|->" "↦")
-("|=>" "⤇")
-("R|" "⤇")
-("..." "…")
-```
-With this customization added, the Unicode characters that have primitive meanings to Narya can all be entered with short commands:
-
-- For →, type ``\r`` or ``\to``
-- For ↦, type ``\r|`` or ``\|->``
-- For ⤇, type ``\R|`` or ``\|=>``
-- For ≔, type ``\:=``
-- For …, type ``\...``
-
-(These particular characters will be automatically converted from their ASCII versions to their Unicode equivalents by Narya's reformatter (assuming ``display chars`` is set to ``unicode``), so it is not necessary to enter them manually.  But you will probably want to enter other Unicode characters at some point as well.)
-
-
-Other customization
-^^^^^^^^^^^^^^^^^^^
-
-Some other ProofGeneral customization options you may want to consider are:
-
-- ``proof-output-tooltips``: I recommend turning this off, as the "output" that it displays in tooltips is not very readable or helpful.
-
-- ``proof-shrink-windows-tofit``: Note that this only affects windows that take up the full width of the frame, and in particular has no effect in the default three-window mode.  However, Narya's ProofGeneral mode includes some custom code (copied from the Rocq mode) that resizes the response window in three-window mode as well.
-
-- ``proof-three-window-enable`` and ``proof-three-window-mode-policy``: I recommend making sure the first is enabled.  If your screen is not especially wide, you may want to set the second to ``horizontal`` to enforce putting the response and goals buffers side-by-side with the script buffer.
-
-- ``narya-prog-args``: If you want to pass command-line options to alter the behavior of Narya, such as the options like ``-dtt`` that modify the type theory, at present the only way to do this is to change this variable.  You can do that globally, or locally in particular ``ny`` files with Emacs file-local variables.  If you do change this variable, make sure to keep the argument ``-proofgeneral`` in it, which is necessary to put Narya into the correct mode for interacting with ProofGeneral.  As an example, to set the option ``-dtt`` locally in a file, you can add the following line at the top of it:
-
-```
-{` -*- narya-prog-args: ("-proofgeneral" "-dtt") -*- `}
-```
-
-
 Code formatter
 --------------
 
@@ -364,8 +325,6 @@ It is not currently possible to reformat code without simultaneously typecheckin
 Currently there is only one configuration option for the code formatter: whether to print Unicode characters such as → or their ASCII equivalents such as ``->``.  This can be set on the command line with the flags ``-unicode`` and ``-ascii``, and in ProofGeneral with the state-preserving ``display`` command.  In accord with the goal of opinionated code formatters -- to eliminate time wasted by arguing about formatting, including formatter options -- I do not plan to add more configuration options; although I'll listen if you have a case to make for one.  Suggestions for improvements and changes to the standard formatting style are also welcome, although I can't promise to adopt them.
 
 It is possible to turn off the code formatter.  The Emacs customization variables ``narya-reformat-commands`` and ``narya-reformat-holes`` will turn off reformatting in ProofGeneral, and the command-line option ``-no-format`` will turn off reformatting of input files.  However, if you don't like the way Narya reformats your code, I would appreciate it if you give me feedback about this rather than (or, at least, in addition to) turning it off entirely.
-
-.. _top-level-interface-jsNarya:
 
 jsNarya
 -------

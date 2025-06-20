@@ -77,8 +77,8 @@ def J (A : Fib) (a : A .t) (P : (y : A .t) → Br (A .t) a y → Fib)
   rel P {a} {b} q {rel a} {p} (sym s) .f .trr pa
 
 {` The type of squares in a fibrant type is also fibrant. `}
-def Sq𝕗 (A : Fib) (x00 x01 : A .t) (x02 : Br (A .t) x00 x01) (x10 x11 : A .t)
-  (x12 : Br (A .t) x10 x11) (x20 : Br (A .t) x00 x10)
+def Sq𝕗 (A : Fib) (x00 x01 : A .t) (x02 : Br (A .t) x00 x01)
+  (x10 x11 : A .t) (x12 : Br (A .t) x10 x11) (x20 : Br (A .t) x00 x10)
   (x21 : Br (A .t) x01 x11)
   : Fib
   ≔ (A⁽ᵖᵖ⁾ .t x02 x12 x20 x21, A⁽ᵖᵖ⁾ .f .id.1 x02 x12 .id x20 x21)
