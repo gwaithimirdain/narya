@@ -42,7 +42,8 @@ let rec typefam : type a b.
       | Eq ->
           let newargs, newnfs = dom_vars ctx doms in
           let output = tyof_app cods tyargs newargs in
-          let n, d = typefam ?discrete (Ctx.cube_vis ctx x newnfs) output in
+          let (Any_ctx newctx) = Ctx.variables_vis ctx x newnfs in
+          let n, d = typefam ?discrete newctx output in
           let disc =
             (* For indices of discrete datatypes, we only allow zero-dimensional pi-types. *)
             match D.compare (CubeOf.dim doms) D.zero with
@@ -55,24 +56,28 @@ let rec typefam : type a b.
 let rec motive_of_family : type a b.
     (a, b) Ctx.t -> kinetic value -> kinetic value -> (b, kinetic) term =
  fun ctx tm ty ->
-  let module F = struct
-    type (_, _, _, _) t =
-      | Rbtm : ('left, kinetic) term -> ('left, 'c, 'any, ('left, D.zero) snoc) t
+  let module S = struct
+    type 'a suc = ('a, D.zero) snoc
   end in
-  let module FCube = Icube (F) in
+  let module F = struct
+    type (_, _, _) t = Rbtm : ('left, kinetic) term -> ('left, 'c, 'any) t
+  end in
+  let module FCube = Icube (S) (F) in
   let module C = struct
-    type _ t = Any_ctx : ('a, 'c) Ctx.t -> 'c t
+    type 'b t = 'b Ctx.any
   end in
   let module T = struct
     type 'c t = ('c, kinetic) term
   end in
   let module MC = FCube.Traverse (C) in
   let module MT = FCube.Traverse (T) in
-  let folder : type left m any right.
-      (left, m, any, right) F.t -> right T.t -> left T.t * (left, m, any, right) F.t =
-   fun (Rbtm dom) cod -> (Pi (None, CubeOf.singleton dom, CodCube.singleton cod), Rbtm dom) in
+  let folder : type left m any.
+      (left, m, any) F.t -> (left, D.zero) snoc T.t -> left T.t * (left, m, any) F.t =
+   fun (Rbtm dom) cod ->
+    (Pi (singleton_variables D.zero None, CubeOf.singleton dom, CodCube.singleton cod), Rbtm dom)
+  in
   let builder : type left n m.
-      string option ->
+      n variables ->
       (n, Binding.t) CubeOf.t ->
       (m, n) sface ->
       left C.t ->
@@ -80,13 +85,17 @@ let rec motive_of_family : type a b.
    fun x newnfs fa (Any_ctx ctx) ->
     let v = CubeOf.find newnfs fa in
     let cv = readback_val ctx (Binding.value v).ty in
-    Fwrap (Rbtm cv, Any_ctx (Ctx.cube_vis ctx x (CubeOf.singleton v))) in
+    let (Any_ctx newctx) =
+      (* TODO: In the case of a cube variable, should we be annotating the variables by their face somehow?  *)
+      Ctx.variables_vis ctx (singleton_variables D.zero (find_variable fa x)) (CubeOf.singleton v)
+    in
+    Fwrap (Rbtm cv, Any_ctx newctx) in
   match view_type ty "motive_of_family" with
   | Canonical (_, Pi (x, doms, cods), ins, tyargs) ->
       let Eq = eq_of_ins_zero ins in
       let newvars, newnfs = dom_vars ctx doms in
       let newtm = apply_term tm newvars in
-      (* We extend the context, not by the cube of types of newnfs, but by its elements one at a time as singletons.  This is because we want eventually to construct a 0-dimensional pi-type.  As we go, we also read back thesetypes and store them to later take the pi-type over.  Since they are all in different contexts, and we need to keep track of the type-indexed checked length of those contexts to ensure the later pis are well-typed, we use an indexed cube indexed over Tbwds. *)
+      (* We extend the context, not by the cube of types of newnfs, but by its elements one at a time as singletons.  This is because we want eventually to construct a 0-dimensional pi-type.  As we go, we also read back these types and store them to later take the pi-type over.  Since they are all in different contexts, and we need to keep track of the type-indexed checked length of those contexts to ensure the later pis are well-typed, we use an indexed cube indexed over Tbwds. *)
       let (Wrap (newdoms, Any_ctx newctx)) =
         MC.build_left (CubeOf.dim newnfs)
           { build = (fun fa ctx -> builder x newnfs fa ctx) }
@@ -98,9 +107,10 @@ let rec motive_of_family : type a b.
       (* This is similar, except that we add the datatype itself to the instantiation argument to get the cube of domains, and take a pi over the 0-dimensional universe rather than a recursive call. *)
       let doms = TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm) in
       let _, newnfs = dom_vars ctx doms in
+      let m = CubeOf.dim newnfs in
       let (Wrap (newdoms, _)) =
-        MC.build_left (CubeOf.dim newnfs)
-          { build = (fun fa ctx -> builder None newnfs fa ctx) }
+        MC.build_left m
+          { build = (fun fa ctx -> builder (singleton_variables m None) newnfs fa ctx) }
           (Any_ctx ctx) in
       let motive, _ =
         MT.fold_map_right { foldmap = (fun _ x y -> folder x y) } newdoms (UU D.zero) in
@@ -264,10 +274,9 @@ let rec check : type a b s.
     | Synth (Letrec (vtys, vs, body)), _ ->
         let clet, Not_some = synth_or_check_letrec status ctx vtys vs body (Some ty) in
         clet
-    (* An action can always synthesize, but can also check if its degeneracy is a pure permutation, since then the type of the argument can be inferred by applying the inverse permutation to the ambient type. *)
     | Synth (Act (str, fa, x) as stm), _ -> (
+        (* An action can always synthesize, but can also check if its degeneracy is a pure permutation, since then the type of the argument can be inferred by applying the inverse permutation to the ambient type. *)
         match perm_of_deg fa with
-        | None -> check_of_synth status ctx stm tm.loc ty
         | Some pfa ->
             let fainv = deg_of_perm (perm_inv pfa) in
             Reporter.try_with ~fatal:(fun d ->
@@ -278,12 +287,68 @@ let rec check : type a b s.
                 | _ -> fatal_diagnostic d)
             @@ fun () ->
             let ty_fainv =
-              gact_ty None ty fainv ~err:(Low_dimensional_argument_of_degeneracy (str, cod_deg fa))
-            in
+              gact_ty None ty fainv
+                ~err:(Low_dimensional_argument_of_degeneracy (str.value, cod_deg fa)) in
             (* A pure permutation shouldn't ever be locking, but we may as well keep this here for consistency.  *)
             let ctx = if locking fa then Ctx.lock ctx else ctx in
             let cx = check (Kinetic `Nolet) ctx x ty_fainv in
-            realize status (Term.Act (cx, fa)))
+            realize status
+              (Term.Act (cx, fa, (sort_of_ty ctx (view_type ty "checking act"), `Other)))
+        (* It can also check if its argument is a constructor (including a numeral) or a tuple, by pushing the degeneracy through to its arguments, since higher constructors and fields have the same names as lower ones. *)
+        | None ->
+            let add_extra locs what (d : Reporter.Code.t Asai.Diagnostic.t) =
+              let extra_remarks =
+                Bwd.append d.extra_remarks
+                  (Bwd_extra.to_list_map
+                     (fun loc ->
+                       Asai.Diagnostic.loctext ~loc ("degeneracy propagated through " ^ what))
+                     locs) in
+              fatal_diagnostic { d with extra_remarks } in
+            let (Any dim) =
+              match view_type ~severity ty "typechecking lambda" with
+              | Canonical (_, _, ins, _) -> Any (cod_left_ins ins)
+              | Neutral (_, _, tyargs) -> Any (TubeOf.inst tyargs) in
+            let check_dim () =
+              if Option.is_none (factor dim (dom_deg fa)) then
+                fatal ~severity:Asai.Diagnostic.Error
+                  (Dimension_mismatch ("higher constructor", dom_deg fa, dim)) in
+            let rec look_through locs fas (Any_deg s) x =
+              let act_on x =
+                Bwd.fold_right
+                  (fun (str, Any_deg fa) x -> locate_opt x.loc (Synth (Act (str, fa, x))))
+                  fas x in
+              match x.value with
+              | Constr (c, args) ->
+                  check_dim ();
+                  Reporter.try_with ~fatal:(add_extra locs "constructor") @@ fun () ->
+                  check ?discrete status ctx
+                    (locate_opt x.loc (Constr (c, List.map act_on args)))
+                    ty
+              | Struct (eta, flds) ->
+                  check_dim ();
+                  Reporter.try_with ~fatal:(add_extra locs "tuple") @@ fun () ->
+                  check ?discrete status ctx
+                    (locate_opt x.loc
+                       (Struct (eta, Abwd.map (fun (cube, x) -> (cube, act_on x)) flds)))
+                    ty
+              | Numeral _ ->
+                  (* Numerals are sequences of constructors with no other arguments, so there is no need to push anything through. *)
+                  check_dim ();
+                  check ?discrete status ctx x ty
+              | Synth (Act (str2, fa2, y)) ->
+                  (* Iterated degeneracies, like (refl (refl 3)) can be combined to look all the way through. *)
+                  let (DegExt (_, _, s)) = comp_deg_extending s fa2 in
+                  look_through
+                    (Option.fold ~none:locs ~some:(Bwd.snoc locs) str2.loc)
+                    (Snoc (fas, (str2, Any_deg fa2)))
+                    (Any_deg s) y
+              | _ ->
+                  (* If after looking through all the degeneracies we get something that's none of those, we back up and pass the whole thing off to check_of_synth. *)
+                  check_of_synth status ctx stm tm.loc ty in
+            look_through
+              (Option.fold ~none:Bwd.Emp ~some:(Bwd.snoc Emp) str.loc)
+              (Snoc (Emp, (str, Any_deg fa)))
+              (Any_deg fa) x)
     | Lam { name = { value = x; loc = xloc }; cube; implicit; body }, _ -> (
         match view_type ~severity ty "typechecking lambda" with
         | Canonical (_, Pi (_, doms, cods), ins, tyargs) -> (
@@ -2240,11 +2305,205 @@ and synth : type a b s.
         (realize status (Field (stm, fld, ins)), newty)
     | UU, _ -> (realize status (Term.UU D.zero), universe D.zero)
     | Pi (x, dom, cod), _ ->
-        (* User-level pi-types are always dimension zero, so the domain must be a zero-dimensional type. *)
+        (* These user-level pi-types are always dimension zero, so the domain must be a zero-dimensional type. *)
         let cdom = check (Kinetic `Nolet) ctx dom (universe D.zero) in
         let edom = eval_term (Ctx.env ctx) cdom in
         let ccod = check (Kinetic `Nolet) (Ctx.ext ctx x edom) cod (universe D.zero) in
-        (realize status (pi x cdom ccod), universe D.zero)
+        (realize status (pi (singleton_variables D.zero x) cdom ccod), universe D.zero)
+    | HigherPi (x, dom, cod), _ -> (
+        let cdom, domty = synth (Kinetic `Nolet) ctx dom in
+        let edom = eval_term (Ctx.env ctx) cdom in
+        match view_type domty "higher pi domain" with
+        | Canonical
+            (type m n nm)
+            ((_, UU n, ins, edoms) :
+              head * (n, m) canonical * (nm, n, m) insertion * (D.zero, nm, nm, normal) TubeOf.t)
+          -> (
+            let Eq = eq_of_ins_zero ins in
+            let cdomt = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ edoms ] in
+            let cdoms = TubeOf.plus_cube cdomt (CubeOf.singleton cdom) in
+            let edomt = TubeOf.mmap { map = (fun _ [ x ] -> x.tm) } [ edoms ] in
+            let edoms = TubeOf.plus_cube edomt (CubeOf.singleton edom) in
+            let _, binds = dom_vars ctx edoms in
+            let newctx = Ctx.cube_vis ctx x binds in
+            let ccod, codty = synth (Kinetic `Nolet) newctx cod in
+            match view_type codty "higher pi codomain" with
+            | Canonical (_, UU n', ins', ecodt) -> (
+                match D.compare n n' with
+                | Eq ->
+                    let Eq = eq_of_ins_zero ins' in
+                    let ccods =
+                      let build : type k. (k, n) sface -> (k, b) CodFam.t =
+                       fun s ->
+                        match pface_of_sface s with
+                        | `Id Eq -> ccod
+                        | `Proper t ->
+                            let sctx = Ctx.cube_vis ctx x (CubeOf.subcube s binds) in
+                            readback_nf sctx (TubeOf.find ecodt t) in
+                      CodCube.build n { build } in
+                    let tyargstbl = Hashtbl.create 10 in
+                    let tyargs =
+                      TubeOf.build D.zero (D.zero_plus n)
+                        {
+                          build =
+                            (fun t ->
+                              let k = dom_tface t in
+                              let t' = sface_of_tface t in
+                              let ctm =
+                                Term.Pi
+                                  ( singleton_variables k x,
+                                    CubeOf.subcube t' cdoms,
+                                    CodCube.subcube t' ccods ) in
+                              let tm = eval_term (Ctx.env ctx) ctm in
+                              let tyargs =
+                                TubeOf.build D.zero (D.zero_plus k)
+                                  {
+                                    build =
+                                      (fun v ->
+                                        Hashtbl.find tyargstbl
+                                          (Tface_of (tface_comp_sface t (sface_of_tface v))));
+                                  } in
+                              let ty = inst (universe k) tyargs in
+                              let arg = { tm; ty } in
+                              Hashtbl.add tyargstbl (Tface_of t) arg;
+                              arg);
+                        } in
+                    ( realize status (Pi (singleton_variables n x, cdoms, ccods)),
+                      inst (universe n) tyargs )
+                | Neq -> fatal (Invalid_higher_function "invalid single codomain dimension"))
+            | _ -> fatal (Invalid_higher_function "invalid single codomain"))
+        | _ -> fatal (Invalid_higher_function "invalid single domain"))
+    | ( InstHigherPi
+          (type n an)
+          ((n', doms, cod) : n D.pos * (a, n, unit, an) DomCube.t * an check located),
+        _ ) -> (
+        let n = D.pos n' in
+        let module Acc = struct
+          type (_, _) t = Ctx : ('ac, 'b) Ctx.t * (a, 'c, 'ac) N.plus -> ('ac, 'c) t
+        end in
+        let module T = IcubeTraverse2 (DeBruijnIndices) (N) (Indexed.DomFam) (NFamOf) (Acc) in
+        let domstbl = Hashtbl.create 10 in
+        let varstbl = Hashtbl.create 10 in
+        let foldmap : type left1 left2 m g.
+            (m, n) sface ->
+            (left1, left2) Acc.t ->
+            (left1, m, g) Indexed.DomFam.t ->
+            (left2, m, string option) NFamOf.t * (left1 N.suc, left2 N.suc) Acc.t =
+         fun s (Ctx (xctx, ac)) (Indexed.DomFam.DomFam (x, dom)) ->
+          let m = dom_sface s in
+          (* We check the domains against universe 0, since they should be fully instantiated. *)
+          let cdom = check (Kinetic `Nolet) xctx dom (universe D.zero) in
+          let edom = eval_term (Ctx.env xctx) cdom in
+          (* Further errors here should also be reported on the relevant domain term. *)
+          with_loc dom.loc
+          @@ fun () : ((left2, m, string option) NFamOf.t * (left1 N.suc, left2 N.suc) Acc.t) ->
+          (* No_such_level indicates a readback failure, meaning that some domain or boundary was not defined in the correct context (e.g. used unavailable variables). *)
+          Reporter.try_with ~fatal:(fun d ->
+              match d.message with
+              | No_such_level _ ->
+                  fatal ?loc:d.explanation.loc (Invalid_higher_function "invalid domain scope")
+              | _ -> fatal_diagnostic d)
+          @@ fun () : ((left2, m, string option) NFamOf.t * (left1 N.suc, left2 N.suc) Acc.t) ->
+          let dom, tyargs =
+            match D.compare_zero m with
+            | Zero ->
+                (readback_val ctx edom, (TubeOf.empty D.zero : (D.zero, m, m, normal) TubeOf.t))
+            (* If the dimension of this domain is supposed to be positive, the supplied domain must be fully instantiated by at least that dimension (perhaps more, since it could come from something higher-dimensional).  We pull off those instantiation arguments. *)
+            | Pos m -> (
+                match split_inst m (view_term edom) with
+                | Some (head, Any args, tyargs) ->
+                    (* After spliting off those instantiation arguments, we read back the rest of the type in the *original* context, to make sure it makes sense there and yield the term domain. *)
+                    (readback_neu ctx head args, tyargs)
+                | None -> fatal (Invalid_higher_function "invalid domain")) in
+          (* Then we check that the instantiation arguments we pulled off are each equal to the corresponding *variable* from the earlier domains. *)
+          TubeOf.miter
+            {
+              it =
+                (fun t [ arg ] ->
+                  match
+                    equal_nf xctx arg
+                      (Hashtbl.find varstbl (SFace_of (comp_sface s (sface_of_tface t))))
+                  with
+                  | Ok () -> ()
+                  | Error _ -> fatal (Invalid_higher_function "invalid domain boundary"));
+            }
+            [ tyargs ];
+          (* We "return" the domain term by adding it to a hashtbl. *)
+          Hashtbl.add domstbl (SFace_of s) dom;
+          let newctx = Ctx.ext xctx x edom in
+          (* We also get and store the normal corresponding to this variable, for checking the tyargs of later domains. *)
+          (match Ctx.lookup newctx (Top, None) with
+          | `Field (_, v, _) | `Var (_, v, _) -> Hashtbl.add varstbl (SFace_of s) v);
+          (NFamOf x, Ctx (newctx, Suc ac)) in
+        (* We don't care about the produced context, since its checked length is wrong.  We want just one cube of variables, and the total raw length added to the previous one.  *)
+        let (Gfolded (xs, Ctx (_, af))) =
+          T.fold_map_left { foldmap } (Ctx (ctx, Zero) : (a, N.zero) Acc.t) doms in
+        let doms = CubeOf.build n { build = (fun s -> Hashtbl.find domstbl (SFace_of s)) } in
+        let _, binds =
+          dom_vars ctx (CubeOf.mmap { map = (fun _ [ x ] -> eval_term (Ctx.env ctx) x) } [ doms ])
+        in
+        let xsv = Variables (D.zero, D.zero_plus n, xs) in
+        let newctx = Ctx.vis ctx D.zero (D.zero_plus n) xs binds af in
+        (* We likewise check the codomain against universe 0. *)
+        let ccod = check (Kinetic `Nolet) newctx cod (universe D.zero) in
+        with_loc cod.loc @@ fun () ->
+        Reporter.try_with ~fatal:(fun d ->
+            match d.message with
+            | No_such_level _ ->
+                fatal ?loc:d.explanation.loc (Invalid_higher_function "invalid codomain scope")
+            | _ -> fatal_diagnostic d)
+        @@ fun () ->
+        (* It must also be fully instantiated at at least the total dimension. *)
+        match split_inst n' (eval_term (Ctx.env newctx) ccod) with
+        | None -> fatal (Invalid_higher_function "invalid codomain")
+        | Some (head, Any args, tyargs) ->
+            (* After spliting off those instantiation arguments, we read back the rest of the type to yield the top-dimensional codomain. *)
+            let cod = readback_neu newctx head args in
+            (* To get the lower-dimensional codomains, and the instantation arguments of the whole pi-type, we iterate through the split-off tyargs. *)
+            let [ ecods; piargs ] =
+              let map : type m.
+                  (m, D.zero, n, n) tface ->
+                  (m, (normal, Tlist.nil) Tlist.cons) CubeOf.Heter.hft ->
+                  ( m,
+                    ( [ `Neu of head * any_apps | `Val of kinetic value ],
+                      ((b, kinetic) term, Tlist.nil) Tlist.cons )
+                    Tlist.cons )
+                  CubeOf.Heter.hft =
+               fun s [ { tm; ty } ] ->
+                (* The type of this argument must *also* be instantiated at the correct dimension; we want the not-instantiated part. *)
+                let cod =
+                  match D.compare_zero (dom_tface s) with
+                  | Zero -> `Val ty
+                  | Pos m -> (
+                      match split_inst m (view_term ty) with
+                      | Some (head, args, _) ->
+                          (* I don't think we need to check that the instantiation arguments are correct or do anything with them; since this was obtained from typechecking the given cod, they *must* be correct. *)
+                          `Neu (head, args)
+                      | None ->
+                          (* Is this ever possible, or is it a bug? *)
+                          fatal (Invalid_higher_function "invalid codomain weirdness")) in
+                (* The value of this argument must be read back and abstracted over the appropriate variables. *)
+                let s = sface_of_tface s in
+                let codxs = sub_variables s xsv in
+                let (Any_ctx codctx) = Ctx.variables_vis ctx codxs (CubeOf.subcube s binds) in
+                let body = readback_at codctx tm ty in
+                [ cod; Term.Lam (codxs, body) ] in
+              TubeOf.pmap { map } [ tyargs ] (Cons (Cons Nil)) in
+            (* We build the cube of codomains by reading back the lower-dimensional ones in a context extended by the appropriate partial cube of variables, and adding the top-dimensional one. *)
+            let cods =
+              let build : type m. (m, n) sface -> ((b, m) snoc, kinetic) term =
+               fun s ->
+                match pface_of_sface s with
+                | `Proper t -> (
+                    let (Any_ctx codctx) =
+                      Ctx.variables_vis ctx (sub_variables s xsv) (CubeOf.subcube s binds) in
+                    match TubeOf.find ecods t with
+                    | `Neu (head, Any args) -> readback_neu codctx head args
+                    | `Val ty -> readback_val codctx ty)
+                | `Id Eq -> cod in
+              CodCube.build n { build } in
+            let xs = Variables (D.zero, D.zero_plus n, xs) in
+            (realize status (Inst (Pi (xs, doms, cods), piargs)), universe D.zero))
     | App _, _ ->
         (* If there's at least one application, we slurp up all the applications, synthesize a type for the function, and then pass off to synth_apps to iterate through all the arguments. *)
         let fn, args = spine tm in
@@ -2256,9 +2515,12 @@ and synth : type a b s.
         let ctx = if locking fa then Ctx.lock ctx else ctx in
         let sx, ety = synth (Kinetic `Nolet) ctx x in
         let ex = eval_term (Ctx.env ctx) sx in
-        ( realize status (Term.Act (sx, fa)),
+        let sty =
           with_loc x.loc @@ fun () ->
-          act_ty ex ety fa ~err:(Low_dimensional_argument_of_degeneracy (str, cod_deg fa)) )
+          act_ty ex ety fa ~err:(Low_dimensional_argument_of_degeneracy (str.value, cod_deg fa))
+        in
+        ( realize status (Term.Act (sx, fa, (sort_of_ty ctx (view_type sty "synth act"), `Other))),
+          sty )
     | Act _, _ -> fatal (Nonsynthesizing "argument of degeneracy")
     | Asc (tm, ty), _ ->
         let cty =
@@ -2385,9 +2647,13 @@ and synth : type a b s.
         let env = Ctx.env ctx in
         let ex = eval_term env cx in
         let nx : normal = { tm = ex; ty } in
-        let creflx = Term.Act (cx, deg_zero Hott.dim) in
+        let creflx = Term.Act (cx, deg_zero Hott.dim, (`Other, `Other)) in
         let idty = act_value ty (deg_zero Hott.dim) in
-        let ididcty = Term.Act (Term.Act (cty, deg_zero Hott.dim), deg_zero Hott.dim) in
+        let ididcty =
+          Term.Act
+            ( Term.Act (cty, deg_zero Hott.dim, (`Other, `Other)),
+              deg_zero Hott.dim,
+              (`Other, `Other) ) in
         let (Plus hh) = D.plus Hott.dim in
         let _, nz, xeqz =
           List.fold_left
@@ -2520,8 +2786,9 @@ and synth_arg_cube : type a b n c.
             fatal ~severity:Asai.Diagnostic.Error ?loc
               (Insufficient_dimension
                  { needed = CubeOf.dim doms; got = TubeOf.inst argtyargs; which }))
-    | (_, _, { value = `Explicit; _ }) :: _, Pos _ ->
-        fatal (Nonsynthesizing ("primary argument with implicit " ^ which ^ " boundaries")) in
+    | (_, { loc; _ }, { value = `Explicit; _ }) :: _, Pos _ ->
+        fatal ?loc (Nonsynthesizing ("primary argument with implicit " ^ which ^ " boundaries"))
+  in
   let module M = Monad.State (struct
     type t =
       Asai.Range.t option

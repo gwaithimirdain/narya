@@ -3,15 +3,17 @@ open Signatures
 open Sface
 open Bwsface
 
-(* This is a version of the cube data structure whose indices can "count" some type-level data that is accumulated by what is stored.  For instance, if each entry is parametrized by a type-level natural number, then the cube data structure is parametrized by the total of all these numbers.  In fact it is parametrized by the operation of addition of this number, or more precisely by both an input and result for this operation.
+(* This is a version of the cube data structure whose indices can "count" some type-level data that is accumulated by what is stored.  For instance, if each entry is parametrized by a type-level natural number, then the cube data structure is parametrized by the total of all these numbers.  In fact it is parametrized by the operation of addition of this number, or more precisely by both an input and result for this operation. *)
 
-   Unfortunately I have not figured out a way to unify this with ordinary Cubes.  In particular, it seems unlikely that a generic traversal is possible for these indexed cubes, since different Icubes, even with the same input and output "counts", might distribute these counts differently to different entries, so that a generic traversal wouldn't know how to match up the types of its inputs or outputs. *)
+module type Suc = sig
+  type 'a suc
+end
 
-(* An Icube is parametrized by a 4-variable family.  In ('left, 'm, 'b, 'right) F.t, the meanings of 'm and 'b are as for ('m, 'b) F.t in an ordinary Cube, while (intuitively, at least) 'right is obtained from 'left by "adding" the data specified by F. *)
-module Icube (F : Fam4) = struct
+(* An Icube is parametrized by a "successor" type operation and a 3-variable family for the contents that are also parametrized by the "current count".  *)
+module Icube (S : Suc) (F : Fam3) = struct
   (* The basic definitions are mostly just like those of Cube, with extra parameters. *)
   type (_, _, _, _, _) gt =
-    | Leaf : ('left, 'n, 'b, 'right) F.t -> ('left, D.zero, 'n, 'b, 'right) gt
+    | Leaf : ('left, 'n, 'b) F.t -> ('left, D.zero, 'n, 'b, 'left S.suc) gt
     | Branch :
         'l Endpoints.len
         * ('left, 'l, 'm, 'n, 'b, 'middle) branches
@@ -41,9 +43,7 @@ module Icube (F : Fam4) = struct
     (* ********** Map ********** *)
 
     type ('n, 'b, 'c) mapperM = {
-      map :
-        'left 'right 'm.
-        ('m, 'n) sface -> ('left, 'm, 'b, 'right) F.t -> ('left, 'm, 'c, 'right) F.t M.t;
+      map : 'left 'right 'm. ('m, 'n) sface -> ('left, 'm, 'b) F.t -> ('left, 'm, 'c) F.t M.t;
     }
 
     let rec gmapM : type k m km n b c l left right.
@@ -101,11 +101,11 @@ module Icube (F : Fam4) = struct
   module Traverse (Acc : Fam) = struct
     type ('n, 'b, 'c) left_folder = {
       foldmap :
-        'left 'right 'm.
+        'left 'm.
         ('m, 'n) sface ->
         'left Acc.t ->
-        ('left, 'm, 'b, 'right) F.t ->
-        ('left, 'm, 'c, 'right) F.t * 'right Acc.t;
+        ('left, 'm, 'b) F.t ->
+        ('left, 'm, 'c) F.t * 'left S.suc Acc.t;
     }
 
     let rec gfold_map_left : type k m km n b c l left right.
@@ -159,11 +159,11 @@ module Icube (F : Fam4) = struct
 
     type ('n, 'b, 'c) right_folder = {
       foldmap :
-        'left 'right 'm.
+        'left 'm.
         ('m, 'n) sface ->
-        ('left, 'm, 'b, 'right) F.t ->
-        'right Acc.t ->
-        'left Acc.t * ('left, 'm, 'c, 'right) F.t;
+        ('left, 'm, 'b) F.t ->
+        'left S.suc Acc.t ->
+        'left Acc.t * ('left, 'm, 'c) F.t;
     }
 
     let rec gfold_map_right : type k m km n b c l left right.
@@ -216,7 +216,7 @@ module Icube (F : Fam4) = struct
     (* Similarly for building. *)
 
     type (_, _, _) fwrap_left =
-      | Fwrap : ('left, 'm, 'b, 'right) F.t * 'right Acc.t -> ('left, 'm, 'b) fwrap_left
+      | Fwrap : ('left, 'm, 'b) F.t * 'left S.suc Acc.t -> ('left, 'm, 'b) fwrap_left
 
     type (_, _, _, _) gwrap_left =
       | Wrap : ('left, 'm, 'mk, 'b, 'right) gt * 'right Acc.t -> ('left, 'm, 'mk, 'b) gwrap_left
@@ -276,73 +276,11 @@ module Icube (F : Fam4) = struct
     let build_left : type n b left.
         n D.t -> (n, b) builder_leftM -> left Acc.t -> (left, n, b) wrap_left =
      fun n g acc -> gbuild_left n (D.plus_zero n) (D.plus_zero n) Zero g acc
-
-    type (_, _, _) fwrap_right =
-      | Fwrap : 'left Acc.t * ('left, 'm, 'b, 'right) F.t -> ('m, 'b, 'right) fwrap_right
-
-    type (_, _, _, _) gwrap_right =
-      | Wrap : 'left Acc.t * ('left, 'm, 'mk, 'b, 'right) gt -> ('m, 'mk, 'b, 'right) gwrap_right
-
-    type ('m, 'b, 'right) wrap_right = ('m, 'm, 'b, 'right) gwrap_right
-
-    type (_, _, _, _, _) wrap_branches_right =
-      | Wrap_branches :
-          'left Acc.t * ('left, 'len, 'm, 'mk, 'b, 'right) branches
-          -> ('len, 'm, 'mk, 'b, 'right) wrap_branches_right
-
-    type ('n, 'b) builder_rightM = {
-      build : 'right 'm. ('m, 'n) sface -> 'right Acc.t -> ('m, 'b, 'right) fwrap_right;
-    }
-
-    let rec gbuild_right : type k m mk l ml b right.
-        m D.t ->
-        (m, k, mk) D.plus ->
-        (m, l, ml) D.plus ->
-        (k, l) bwsface ->
-        (ml, b) builder_rightM ->
-        right Acc.t ->
-        (m, mk, b, right) gwrap_right =
-     fun m mk ml d g acc ->
-      match m with
-      | Nat Zero ->
-          let Eq = D.plus_uniq mk (D.zero_plus (dom_bwsface d)) in
-          let Eq = D.plus_uniq ml (D.zero_plus (cod_bwsface d)) in
-          let (Fwrap (acc, x)) = g.build (sface_of_bw d) acc in
-          Wrap (acc, Leaf x)
-      | Nat (Suc m) ->
-          let (Suc mk') = D.plus_suc mk in
-          let (Wrap l) = Endpoints.wrapped () in
-          let (Wrap (acc, mid)) =
-            gbuild_right (Nat m) (D.plus_suc mk) (D.plus_suc ml) (Mid d) g acc in
-          let (Wrap_branches (acc, ends)) =
-            gbuild_right_branches (Nat m) mk' (D.plus_suc ml) d g (Endpoints.indices l) acc in
-          Wrap (acc, Branch (l, ends, mid))
-
-    and gbuild_right_branches : type k m mk l ml b right len len'.
-        m D.t ->
-        (m, k, mk) D.plus ->
-        (m, l N.suc, ml) D.plus ->
-        (k, l) bwsface ->
-        (ml, b) builder_rightM ->
-        (len Endpoints.t, len') Bwv.t ->
-        right Acc.t ->
-        (len', m, mk, b, right) wrap_branches_right =
-     fun m mk ml d g ixs acc ->
-      match ixs with
-      | Emp -> Wrap_branches (acc, Emp)
-      | Snoc (ixs, e) ->
-          let (Wrap (acc, newbr)) = gbuild_right m mk ml (End (e, d)) g acc in
-          let (Wrap_branches (acc, newbrs)) = gbuild_right_branches m mk ml d g ixs acc in
-          Wrap_branches (acc, Snoc (newbrs, newbr))
-
-    let build_right : type n b right.
-        n D.t -> (n, b) builder_rightM -> right Acc.t -> (n, b, right) wrap_right =
-     fun n g acc -> gbuild_right n (D.plus_zero n) (D.plus_zero n) Zero g acc
   end
 
   (* Indexing *)
 
-  type (_, _) fbiwrap = Fbiwrap : ('left, 'n, 'b, 'right) F.t -> ('n, 'b) fbiwrap
+  type (_, _) fbiwrap = Fbiwrap : ('left, 'n, 'b) F.t -> ('n, 'b) fbiwrap
 
   let rec gfind : type m n k km nm b left right.
       (left, km, nm, b, right) gt ->
@@ -392,24 +330,94 @@ module Icube (F : Fam4) = struct
    fun tr -> gfind_top tr
 end
 
-(* The most important case of indexed cubes is when the indices are type-level natural numbers that simply count how many entries there are in the cube.  In fact, as of May 8, 2024 this is the only case we are using.  TODO: Would it be easier to implement this case directly rather than as a special case of the more general version above, and if so would it simplify other things?  E.g. require fewer type annotations in uses?  It might also allow generic traversals to work. *)
+module IcubeTraverse2 (S1 : Suc) (S2 : Suc) (F1 : Fam3) (F2 : Fam3) (Acc : Fam2) = struct
+  module C1 = Icube (S1) (F1)
+  module C2 = Icube (S2) (F2)
+
+  type ('n, 'b, 'c) left_folder = {
+    foldmap :
+      'left1 'left2 'm.
+      ('m, 'n) sface ->
+      ('left1, 'left2) Acc.t ->
+      ('left1, 'm, 'b) F1.t ->
+      ('left2, 'm, 'c) F2.t * ('left1 S1.suc, 'left2 S2.suc) Acc.t;
+  }
+
+  type (_, _, _, _, _) gfolded =
+    | Gfolded :
+        ('left2, 'm, 'km, 'c, 'right2) C2.gt * ('right1, 'right2) Acc.t
+        -> ('left2, 'm, 'km, 'c, 'right1) gfolded
+
+  type (_, _, _, _, _, _) gfolded_branches =
+    | Gfolded_branches :
+        ('left2, 'len, 'm, 'km, 'c, 'right2) C2.branches * ('right1, 'right2) Acc.t
+        -> ('left2, 'len, 'm, 'km, 'c, 'right1) gfolded_branches
+
+  let rec gfold_map_left : type k m km n b c l left1 left2 right1.
+      (k, m, km) D.plus ->
+      (l, m, n) D.plus ->
+      (k, l) bwsface ->
+      (n, b, c) left_folder ->
+      (left1, left2) Acc.t ->
+      (left1, m, km, b, right1) C1.gt ->
+      (left2, m, km, c, right1) gfolded =
+   fun km lm d g acc tr ->
+    match tr with
+    | Leaf x ->
+        let Zero, Zero = (km, lm) in
+        let x, acc = g.foldmap (sface_of_bw d) acc x in
+        Gfolded (Leaf x, acc)
+    | Branch (l, ends, mid) ->
+        let (Suc km') = km in
+        let (Gfolded_branches (ends, acc)) =
+          gfold_left_map_branches km' (D.suc_plus lm) d g (Endpoints.indices l) acc ends in
+        let (Gfolded (mid, acc)) =
+          gfold_map_left (D.suc_plus km) (D.suc_plus lm) (Mid d) g acc mid in
+        Gfolded (Branch (l, ends, mid), acc)
+
+  and gfold_left_map_branches : type k m km n b c l len len' left1 left2 right1.
+      (k, m, km) D.plus ->
+      (l N.suc, m, n) D.plus ->
+      (k, l) bwsface ->
+      (n, b, c) left_folder ->
+      (len Endpoints.t, len') Bwv.t ->
+      (left1, left2) Acc.t ->
+      (left1, len', m, km, b, right1) C1.branches ->
+      (left2, len', m, km, c, right1) gfolded_branches =
+   fun km lm d g ixs acc brs ->
+    match (brs, ixs) with
+    | Emp, Emp -> Gfolded_branches (Emp, acc)
+    | Snoc (brs, br), Snoc (ixs, e) ->
+        let (Gfolded_branches (brs, acc)) = gfold_left_map_branches km lm d g ixs acc brs in
+        let (Gfolded (br, acc)) = gfold_map_left km lm (End (e, d)) g acc br in
+        Gfolded_branches (Snoc (brs, br), acc)
+
+  let fold_map_left : type n b c left1 left2 right1.
+      (n, b, c) left_folder ->
+      (left1, left2) Acc.t ->
+      (left1, n, n, b, right1) C1.gt ->
+      (left2, n, n, c, right1) gfolded =
+   fun g acc x ->
+    let n = C1.dim x in
+    gfold_map_left (D.zero_plus n) (D.zero_plus n) Zero g acc x
+end
+
+(* The most important case of indexed cubes is when the indices are type-level natural numbers that simply count how many entries there are in the cube.  TODO: Would it be easier to implement this case directly rather than as a special case of the more general version above, and if so would it simplify other things?  E.g. require fewer type annotations in uses?  It might also allow generic traversals to work. *)
 
 module NFamOf = struct
-  type (_, _, _, _) t = NFamOf : 'b -> ('left, 'n, 'b, 'left N.suc) t
+  type (_, _, _) t = NFamOf : 'b -> ('left, 'n, 'b) t
 end
 
 module NICubeOf = struct
-  include Icube (NFamOf)
+  include Icube (N) (NFamOf)
 
   let singleton : type left b. b -> (left, D.zero, b, left N.suc) t = fun x -> Leaf (NFamOf x)
 
   module NFold = Traverse (N)
 
-  let nfold : type left m n b right.
-      (m, n) sface ->
-      left N.t ->
-      (left, m, b, right) NFamOf.t ->
-      (left, m, unit, right) NFamOf.t * right N.t =
+  let nfold : type left m n b.
+      (m, n) sface -> left N.t -> (left, m, b) NFamOf.t -> (left, m, unit) NFamOf.t * left N.suc N.t
+      =
    fun _ n (NFamOf _) -> (NFamOf (), N.suc n)
 
   let out : type left m b right. left N.t -> (left, m, b, right) t -> right N.t =

@@ -5,7 +5,8 @@ open Raw
 open Asai.Range
 module TokMap : module type of Map.Make (Token)
 
-type token_ws = Token.t * (Asai.Range.t option * Whitespace.t list)
+type token_ws = Token.t * (Whitespace.t list * Asai.Range.t option)
+type ss_token_ws = token_ws * (string located * Whitespace.t list) list
 type closed = Dummy_closed
 type 's opn = Dummy_open
 type _ openness = Open : 's No.strictness -> 's opn openness | Closed : closed openness
@@ -46,19 +47,26 @@ type (_, _) tree =
   | Ambiguity : string list -> ('t, 's) tree
   | Ambiguity_closed : string list -> ('t, 's) tree
 
+and ('t, 's) tokmap = (('t, 's) tree * [ `Ss | `Noss ]) TokMap.t
+
 and ('t, 's) branch = {
-  ops : ('t, 's) tree TokMap.t;
+  ops : ('t, 's) tokmap;
   field : ('t, 's) tree option;
-  term : ('t, 's) tree TokMap.t option;
+  term : ('t, 's) tokmap option;
 }
 
-and ('t, 's) entry = ('t, 's) tree TokMap.t
+and ('t, 's) entry = ('t, 's) tokmap
 
 and observation =
   | Term : ('lt, 'ls, 'rt, 'rs) parse located -> observation
   | Token : token_ws -> observation
+  | Ss_token : ss_token_ws -> observation
 
-and observations = Single of token_ws | Multiple of token_ws * observation Bwd.t * token_ws
+and observations =
+  | Single of (token_ws, ss_token_ws) Either.t
+  | Multiple of
+      (token_ws, ss_token_ws) Either.t * observation Bwd.t * (token_ws, ss_token_ws) Either.t
+
 and ('left, 'tight, 'right, 'lt, 'ls, 'rt, 'rs) parsed_notn
 
 and (_, _, _, _) parse =
@@ -77,7 +85,7 @@ and (_, _, _, _) parse =
   | Constr : string * Whitespace.t list -> ('lt, 'ls, 'rt, 'rs) parse
   | Field : string * string list * Whitespace.t list -> ('lt, 'ls, 'rt, 'rs) parse
   | Superscript :
-      ('lt, 'ls, No.plus_omega, No.strict) parse located option * string * Whitespace.t list
+      ('lt, 'ls, No.plus_omega, No.strict) parse located option * string located * Whitespace.t list
       -> ('lt, 'ls, 'rt, 'rs) parse
   | Hole : {
       li : ('lt, 'ls) No.iinterval;
@@ -119,10 +127,10 @@ module Observations : sig
 
   val prepend : t -> observation list -> observation list
 
-  type partial =
-    | Single of token_ws option
-    | Multiple of token_ws * observation Bwd.t * token_ws option
+  type partial
 
+  val empty : partial
+  val snoc_sstok : partial -> ss_token_ws -> partial
   val snoc_tok : partial -> token_ws -> partial
   val snoc_term : partial -> ('lt, 'ls, 'rt, 'rs) parse located -> partial
   val of_partial : partial -> t
@@ -200,15 +208,17 @@ val split_ending_whitespace :
   ('lt, 'ls, 'rt, 'rs) parse located -> ('lt, 'ls, 'rt, 'rs) parse located * Whitespace.t list
 
 (* *)
+val singleton : TokMap.key -> ('t, 's) tree -> ('t, 's) tokmap
+val oflist : (TokMap.key * ('t, 's) tree) list -> ('t, 's) tokmap
 val op : TokMap.key -> ('t, 's) tree -> ('t, 's) tree
 val ops : (TokMap.key * ('t, 's) tree) list -> ('t, 's) tree
 val term : TokMap.key -> ('t, 's) tree -> ('t, 's) tree
 val terms : (TokMap.key * ('t, 's) tree) list -> ('t, 's) tree
 val field : ('t, 's) tree -> ('t, 's) tree
-val of_entry : ('t, 's) tree TokMap.t -> ('t, 's) tree
+val of_entry : ('t, 's) tokmap -> ('t, 's) tree
 val done_open : ('left opn, 'tight, 'right) notation -> ('tight, No.nonstrict) tree
-val eop : TokMap.key -> 'a -> 'a TokMap.t
-val eops : (TokMap.key * 'a) list -> 'a TokMap.t
+val eop : TokMap.key -> ('t, 's) tree -> ('t, 's) tokmap
+val eops : (TokMap.key * ('t, 's) tree) list -> ('t, 's) tokmap
 val empty_entry : 'a TokMap.t
 
 (* *)

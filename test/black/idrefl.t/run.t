@@ -118,9 +118,9 @@
    ￭ command-line exec string
    1 | def id_map_act' : Id X (((x ↦ x) : X → X) x0) x1 ≔ refl x1 synth (((x ↦ x) : X → X) x2)
      ^ term synthesized type
-         refl X x1 x1
+         Id X x1 x1
        but is being checked against type
-         refl X x0 x1
+         Id X x0 x1
        unequal head constants:
          x1
        does not equal
@@ -132,9 +132,9 @@
    ￭ command-line exec string
    1 | synth (refl ((x ↦ x) : (X → X)) {x0} {x0} x2) synth (refl ((x ↦ x) : (X → X)) {x0} {x0} x0)
      ^ term synthesized type
-         refl X x0 x1
+         Id X x0 x1
        but is being checked against type
-         refl X x0 x0
+         Id X x0 x0
        unequal head constants:
          x1
        does not equal
@@ -160,15 +160,15 @@
    ￭ command-line exec string
    1 | def idff_eq_idff' : Id Type idff idff' := refl idff
      ^ term synthesized type
-         refl Type (refl Π (refl X) {_ ↦ Y} {_ ↦ Y} (_ ⤇ refl Y) f f')
-           (refl Π (refl X) {_ ↦ Y} {_ ↦ Y} (_ ⤇ refl Y) f f')
+         Type⁽ᵉ⁾ ({H₀ : X} {H₁ : X} (H₂ : Id X H₀ H₁) →⁽ᵉ⁾ Id Y (f H₀) (f' H₁))
+           ({H₀ : X} {H₁ : X} (H₂ : Id X H₀ H₁) →⁽ᵉ⁾ Id Y (f H₀) (f' H₁))
        but is being checked against type
-         refl Type (refl Π (refl X) {_ ↦ Y} {_ ↦ Y} (_ ⤇ refl Y) f f')
-           ((x : X) (x' : X) (x'' : refl X x x') → refl Y (f x) (f' x'))
+         Type⁽ᵉ⁾ ({H₀ : X} {H₁ : X} (H₂ : Id X H₀ H₁) →⁽ᵉ⁾ Id Y (f H₀) (f' H₁))
+           ((x : X) (x' : X) (x'' : Id X x x') → Id Y (f x) (f' x'))
        unequal head terms:
-         refl Π (refl X) {_ ↦ Y} {_ ↦ Y} (_ ⤇ refl Y)
+         Id X ⇒ Id Y
        does not equal
-         (x : X) (x' : X) (x'' : refl X x x') → refl Y (f x) (f' x')
+         (x : X) (x' : X) (x'' : Id X x x') → Id Y (f x) (f' x')
   
   [1]
   $ narya idrefl.ny -e "synth (refl g x2)"

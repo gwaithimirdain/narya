@@ -70,6 +70,14 @@ let rec plus_tface : type m n k nk l lm ln lnk.
       let ln_k = D.plus_assocl ln nk l_nk in
       End (plus_sface l l_nk lm s, ln_k, ll)
 
+let rec tface_comp_sface : type m n k nk p.
+    (m, n, k, nk) tface -> (p, m) sface -> (p, n, k, nk) tface =
+ fun b a ->
+  match (a, b) with
+  | End (a', e), Mid b' -> End (sface_of_tface (tface_comp_sface b' a'), cod_plus_of_tface b', e)
+  | Mid a', Mid b' -> Mid (tface_comp_sface b' a')
+  | _, End (b', nk, e) -> End (comp_sface b' a, nk, e)
+
 (* A "proper face" is a fully instantiated tube face. *)
 
 type ('m, 'n) pface = ('m, D.zero, 'n, 'n) tface

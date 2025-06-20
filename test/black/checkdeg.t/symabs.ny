@@ -32,8 +32,25 @@ def sym_ab22
       {(a11, b11)} (a21, b21) (a02, b02) (a12, b12)
   ≔ (sym a22, sym b22)
 
-{` This one requires symmetry to check in addition to synthesize `}
+{` This one requires symmetry to check in addition to synthesize, although it could also work with degeneracies applied to tuples. `}
 def sym_ab22'
   : Id (Id (prod A B)) {(a00, b00)} {(a10, b10)} (a20, b20) {(a01, b01)}
       {(a11, b11)} (a21, b21) (a02, b02) (a12, b12)
   ≔ sym (a22, b22)
+
+{` To make sure we're testing that symmetry checks, we do one with abstractions too, which degeneracies don't push through. `}
+
+axiom f00 : A → B
+axiom f01 : A → B
+axiom f02 : Id (A → B) f00 f01
+axiom f10 : A → B
+axiom f11 : A → B
+axiom f12 : Id (A → B) f10 f11
+axiom f20 : Id (A → B) f00 f10
+axiom f21 : Id (A → B) f01 f11
+axiom f22 : Id (Id (A → B)) f02 f12 f20 f21
+
+def etaf22 : Id (Id (A → B)) f02 f12 f20 f21 ≔ (x ⤇ f22 x.22)
+def eta_symf22 : Id (Id (A → B)) f20 f21 f02 f12 ≔ (x ⤇ sym (f22 (sym x.22)))
+
+def eta_symf22' : Id (Id (A → B)) f20 f21 f02 f12 ≔ sym (x ⤇ f22 x.22)

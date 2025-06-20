@@ -68,6 +68,12 @@ module Tube (F : Fam2) = struct
   type (_, _) some = Some_tube : ('n, 'k, 'nk, 'a) t -> ('nk, 'a) some
   type _ any = Any_tube : ('n, 'k, 'nk, 'a) t -> 'a any
 
+  let is_full : type m k mk b. (m, k, mk, b) t -> bool =
+   fun t ->
+    match D.compare (uninst t) D.zero with
+    | Eq -> true
+    | Neq -> false
+
   (* Looking up with a tface *)
 
   let rec gfind : type m n k nk p q pq b.

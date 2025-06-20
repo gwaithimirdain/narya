@@ -245,6 +245,9 @@
    ￮ constant Σ𝕗 defined
   
    ￫ info[I0000]
+   ￮ constant Π defined
+  
+   ￫ info[I0000]
    ￮ constant id_Π_iso defined
   
    ￫ info[I0000]
@@ -282,11 +285,11 @@
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/fibrant_types.ny
-   238 |       (match u0, u1 [
-   239 |        | left. a0, left. a1 ↦ 𝕗A.2 .id a0 a1
-   240 |        | left. _, right. _ ↦ 𝕗∅
-   241 |        | right. _, left. _ ↦ 𝕗∅
-   242 |        | right. b0, right. b1 ↦ 𝕗B.2 .id b0 b1]))]
+   239 |       (match u0, u1 [
+   240 |        | left. a0, left. a1 ↦ 𝕗A.2 .id a0 a1
+   241 |        | left. _, right. _ ↦ 𝕗∅
+   242 |        | right. _, left. _ ↦ 𝕗∅
+   243 |        | right. b0, right. b1 ↦ 𝕗B.2 .id b0 b1]))]
        ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ info[I0000]
@@ -300,34 +303,34 @@
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/fibrant_types.ny
-   257 |        match n0, n1 [
-   258 |        | zero., zero. ↦ zero.
-   259 |        | zero., suc. n1 ↦ match m2 [ ]
-   260 |        | suc. n0, zero. ↦ match m2 [ ]
-   261 |        | suc. n0, suc. n1 ↦ suc. (id_ℕ_iso n0 n1 .to m2)])
+   258 |        match n0, n1 [
+   259 |        | zero., zero. ↦ zero.
+   260 |        | zero., suc. n1 ↦ match m2 [ ]
+   261 |        | suc. n0, zero. ↦ match m2 [ ]
+   262 |        | suc. n0, suc. n1 ↦ suc. (id_ℕ_iso n0 n1 .to m2)])
        ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/fibrant_types.ny
-   262 |       ([ zero. ⤇ () | suc. m ⤇ id_ℕ_iso m.0 m.1 .fro m.2 ])
+   263 |       ([ zero. ⤇ () | suc. m ⤇ id_ℕ_iso m.0 m.1 .fro m.2 ])
        ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/fibrant_types.ny
-   264 |        match n0, n1 [
-   265 |        | zero., zero. ↦ rfl.
-   266 |        | zero., suc. n1 ↦ match m2 [ ]
-   267 |        | suc. n0, zero. ↦ match m2 [ ]
-   268 |        | suc. n0, suc. n1 ↦ id_ℕ_iso n0 n1 .fro_to m2])
+   265 |        match n0, n1 [
+   266 |        | zero., zero. ↦ rfl.
+   267 |        | zero., suc. n1 ↦ match m2 [ ]
+   268 |        | suc. n0, zero. ↦ match m2 [ ]
+   269 |        | suc. n0, suc. n1 ↦ id_ℕ_iso n0 n1 .fro_to m2])
        ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/fibrant_types.ny
-   269 |       ([ zero. ⤇ rfl.
-   270 |        | suc. m ⤇
-   271 |            eq.ap (Br ℕ m.0 m.1) (Br ℕ (suc. m.0) (suc. m.1)) (x ↦ suc. x)
-   272 |              (id_ℕ_iso m.0 m.1 .to (id_ℕ_iso m.0 m.1 .fro m.2)) m.2
-   273 |              (id_ℕ_iso m.0 m.1 .to_fro m.2)])
+   270 |       ([ zero. ⤇ rfl.
+   271 |        | suc. m ⤇
+   272 |            eq.ap (Br ℕ m.0 m.1) (Br ℕ (suc. m.0) (suc. m.1)) (x ↦ suc. x)
+   273 |              (id_ℕ_iso m.0 m.1 .to (id_ℕ_iso m.0 m.1 .fro m.2)) m.2
+   274 |              (id_ℕ_iso m.0 m.1 .to_fro m.2)])
        ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ info[I0000]

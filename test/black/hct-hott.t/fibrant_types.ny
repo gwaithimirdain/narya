@@ -60,9 +60,8 @@ def 𝕗prod (A B : Type) (𝕗A : isFibrant A) (𝕗B : isFibrant B)
 def Σ (A : Type) (B : A → Type) : Type ≔ sig ( fst : A, snd : B fst )
 
 def id_Σ_iso (A0 : Type) (A1 : Type) (A2 : Br Type A0 A1) (B0 : A0 → Type)
-  (B1 : A1 → Type)
-  (B2 : Br Π A2 {_ ↦ Type} {_ ↦ Type} (_ ⤇ rel Type) B0 B1) (a0 : A0)
-  (a1 : A1) (b0 : B0 a0) (b1 : B1 a1)
+  (B1 : A1 → Type) (B2 : (A2 ⇒ rel Type) B0 B1)
+  (a0 : A0) (a1 : A1) (b0 : B0 a0) (b1 : B1 a1)
   : Σ (A2 a0 a1) (a2 ↦ B2 a2 b0 b1) ≅ Br Σ A2 B2 (a0, b0) (a1, b1)
   ≔ (
   to ≔ u ↦ (u .fst, u .snd),
@@ -102,6 +101,8 @@ def Σ𝕗 (A : Fib) (B : A .t → Fib) : Fib ≔ (
   f ≔ 𝕗Σ (A .t) (a ↦ B a .t) (A .f) (a ↦ B a .f))
 
 {` Π-types `}
+
+def Π (A : Type) (B : A → Type) : Type := (x : A) → B x
 
 def id_Π_iso (A0 : Type) (A1 : Type) (A2 : Br Type A0 A1) (B0 : A0 → Type)
   (B1 : A1 → Type)

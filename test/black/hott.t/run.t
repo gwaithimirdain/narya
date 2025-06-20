@@ -26,7 +26,8 @@
 
   $ narya -hott tr2.ny
   A22 .trr.1
-    : refl Π A02 {_ ↦ A10} {_ ↦ A11} (_ ⤇ A12) (A20 .trr) (A21 .trr)
+    : {H₀ : A00} {H₁ : A01} (H₂ : A02 H₀ H₁)
+      →⁽ᵉ⁾ A12 (A20 .trr H₀) (A21 .trr H₁)
   
   A22 .trr.1 a02
     : A12 (A20 .trr a00) (A21 .trr a01)
@@ -38,8 +39,8 @@
     : A11
   
   A22 .liftr.1
-    : refl Π A02 {x₀ ↦ A20 x₀ (A20 .trr x₀)} {x₀ ↦ A21 x₀ (A21 .trr x₀)}
-        (x₀ ⤇ A22 x₀.2 (A22 .trr.1 x₀.2)) (A20 .liftr) (A21 .liftr)
+    : {x₀₀ : A00} {x₀₁ : A01} (x₀₂ : A02 x₀₀ x₀₁)
+      →⁽ᵉ⁾ A22 x₀₂ (A22 .trr.1 x₀₂) (A20 .liftr x₀₀) (A21 .liftr x₀₁)
   
   A22 .liftr.1 a02
     : A22 a02 (A22 .trr.1 a02) (A20 .liftr a00) (A21 .liftr a01)
@@ -51,7 +52,8 @@
     : A21 a01 (A21 .trr a01)
   
   A22 .trl.1
-    : refl Π A12 {_ ↦ A00} {_ ↦ A01} (_ ⤇ A02) (A20 .trl) (A21 .trl)
+    : {H₀ : A10} {H₁ : A11} (H₂ : A12 H₀ H₁)
+      →⁽ᵉ⁾ A02 (A20 .trl H₀) (A21 .trl H₁)
   
   A22 .trl.1 a12
     : A02 (A20 .trl a10) (A21 .trl a11)
@@ -63,7 +65,8 @@
     : A01
   
   A22 .trr.2
-    : refl Π A20 {_ ↦ A01} {_ ↦ A11} (_ ⤇ A21) (A02 .trr) (A12 .trr)
+    : {H₀ : A00} {H₁ : A10} (H₂ : A20 H₀ H₁)
+      →⁽ᵉ⁾ A21 (A02 .trr H₀) (A12 .trr H₁)
   
   A22 .trr.2 a20
     : A21 (A02 .trr a00) (A12 .trr a10)
@@ -78,8 +81,8 @@
     : A11
   
   A22 .liftr.2
-    : refl Π A20 {x₀ ↦ A02 x₀ (A02 .trr x₀)} {x₀ ↦ A12 x₀ (A12 .trr x₀)}
-        (x₀ ⤇ sym A22 x₀.2 (sym A22 .trr.1 x₀.2)) (A02 .liftr) (A12 .liftr)
+    : {x₀₀ : A00} {x₀₁ : A10} (x₀₂ : A20 x₀₀ x₀₁)
+      →⁽ᵉ⁾ sym A22 x₀₂ (sym A22 .trr.1 x₀₂) (A02 .liftr x₀₀) (A12 .liftr x₀₁)
   
   A22 .liftr.2 a20
     : sym A22 a20 (sym A22 .trr.1 a20) (A02 .liftr a00) (A12 .liftr a10)
@@ -227,9 +230,9 @@
     : B₂ a₂ (f₀ a₀) (B₂ (A₂ .liftl a₁) .trr (f₀ (A₂ .trl a₁)))
   
   B₂⁽¹ᵉ⁾ (sym (A₂⁽ᵉ¹⁾ a₂ (A₂ .liftl a₁) .liftl (refl a₁)))
-      (refl f₀ (A₂⁽ᵉ¹⁾ a₂ (A₂ .liftl a₁) .trl (refl a₁)))
+      (ap f₀ (A₂⁽ᵉ¹⁾ a₂ (A₂ .liftl a₁) .trl (refl a₁)))
       (B₂⁽¹ᵉ⁾ (A₂⁽¹ᵉ⁾ .liftl.1 (refl a₁))
-       .trr.1 (refl f₀ (A₂⁽¹ᵉ⁾ .trl.1 (refl a₁))))
+       .trr.1 (ap f₀ (A₂⁽¹ᵉ⁾ .trl.1 (refl a₁))))
     .trl (B₂ (A₂ .liftl a₁) .liftr (f₀ (A₂ .trl a₁)))
     : B₂ a₂ (f₀ a₀) (B₂ (A₂ .liftl a₁) .trr (f₀ (A₂ .trl a₁)))
   
@@ -242,8 +245,8 @@
   
   B₂⁽¹ᵉ⁾ (sym (A₂⁽ᵉ¹⁾ a₂ (A₂ .liftr a₀) .liftr (refl a₀)))
       (B₂⁽¹ᵉ⁾ (A₂⁽¹ᵉ⁾ .liftr.1 (refl a₀))
-       .trl.1 (refl f₁ (A₂⁽¹ᵉ⁾ .trr.1 (refl a₀))))
-      (refl f₁ (A₂⁽ᵉ¹⁾ a₂ (A₂ .liftr a₀) .trr (refl a₀)))
+       .trl.1 (ap f₁ (A₂⁽¹ᵉ⁾ .trr.1 (refl a₀))))
+      (ap f₁ (A₂⁽ᵉ¹⁾ a₂ (A₂ .liftr a₀) .trr (refl a₀)))
     .trl (B₂ (A₂ .liftr a₀) .liftl (f₁ (A₂ .trr a₀)))
     : B₂ a₂ (B₂ (A₂ .liftr a₀) .trl (f₁ (A₂ .trr a₀))) (f₁ a₁)
   
@@ -763,7 +766,7 @@
     : B₁ (A₂ .trr (u₀ .fst))
   
   refl Σ A₂ B₂ .liftr u₀
-    : refl Σ A₂ B₂ u₀ (refl Σ A₂ B₂ .trr u₀)
+    : Σ⁽ᵉ⁾ A₂ B₂ u₀ (refl Σ A₂ B₂ .trr u₀)
   
   A₂ .liftr (u₀ .fst)
     : A₂ (u₀ .fst) (A₂ .trr (u₀ .fst))
@@ -789,7 +792,7 @@
     : B₀ (A₂ .trl (u₁ .fst))
   
   refl Σ A₂ B₂ .liftl u₁
-    : refl Σ A₂ B₂ (refl Σ A₂ B₂ .trl u₁) u₁
+    : Σ⁽ᵉ⁾ A₂ B₂ (refl Σ A₂ B₂ .trl u₁) u₁
   
   A₂ .liftl (u₁ .fst)
     : A₂ (A₂ .trl (u₁ .fst)) (u₁ .fst)
@@ -807,7 +810,7 @@
     : A21 (A02 .trr (u00 .fst)) (A12 .trr (u10 .fst))
   
   Σ⁽ᵉᵉ⁾ A22 B22 u02 u12 .trr u20
-    : refl Σ A21 B21 u01 u11
+    : Σ⁽ᵉ⁾ A21 B21 u01 u11
   
   A22 (u02 .fst) (u12 .fst) .trr (u20 .fst)
     : A21 (u01 .fst) (u11 .fst)
@@ -832,7 +835,7 @@
          .trr (u20 .snd))
   
   Σ⁽ᵉᵉ⁾ A22 B22 u02 u12 .trl u21
-    : refl Σ A20 B20 u00 u10
+    : Σ⁽ᵉ⁾ A20 B20 u00 u10
   
   A22 (u02 .fst) (u12 .fst) .trl (u21 .fst)
     : A20 (u00 .fst) (u10 .fst)
@@ -871,7 +874,7 @@
     : C₁ (A₂ .trr (u₀ .fst)) (B₂ (A₂ .liftr (u₀ .fst)) .trr (u₀ .snd))
   
   refl Σ3 A₂ B₂ C₂ .liftr u₀
-    : refl Σ3 A₂ B₂ C₂ u₀ (refl Σ3 A₂ B₂ C₂ .trr u₀)
+    : Σ3⁽ᵉ⁾ A₂ B₂ C₂ u₀ (refl Σ3 A₂ B₂ C₂ .trr u₀)
   
   A₂ .liftr (u₀ .fst)
     : A₂ (u₀ .fst) (A₂ .trr (u₀ .fst))
@@ -899,7 +902,7 @@
     : B₁
   
   refl prod A₂ B₂ .liftr u₀
-    : refl prod A₂ B₂ u₀ (refl prod A₂ B₂ .trr u₀)
+    : prod⁽ᵉ⁾ A₂ B₂ u₀ (refl prod A₂ B₂ .trr u₀)
   
   A₂ .liftr (u₀ .fst)
     : A₂ (u₀ .fst) (A₂ .trr (u₀ .fst))
@@ -919,7 +922,7 @@
     : M A₁ B₁
   
   refl M A₂ B₂ .liftr u₀
-    : refl M A₂ B₂ u₀ (refl M A₂ B₂ .trr u₀)
+    : M⁽ᵉ⁾ A₂ B₂ u₀ (refl M A₂ B₂ .trr u₀)
   
   A₂ .liftr (u₀ .recv)
     : A₂ (u₀ .recv) (A₂ .trr (u₀ .recv))
@@ -935,20 +938,20 @@
          (refl u₀
           .send (B₂⁽¹ᵉ⁾ (refl A₂ .liftr.1 (refl u₀ .recv)) .trl.1 (refl b₁))))
     .trl (refl M A₂ B₂ .liftr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁)))
-    : refl M A₂ B₂ (u₀ .send b₀)
+    : M⁽ᵉ⁾ A₂ B₂ (u₀ .send b₀)
         (refl M A₂ B₂ .trr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁)))
   
   M⁽ᵉᵉ⁾ A₂⁽¹ᵉ⁾ B₂⁽¹ᵉ⁾
       (refl u₀
        .send
-         (B₂⁽ᵉ¹⁾ (sym (refl A₂ .liftr.1 (refl u₀ .recv))) b₂
+         (B₂⁽ᵉ¹⁾ (sym (Id A₂ .liftr.1 (refl u₀ .recv))) b₂
               (B₂ (A₂ .liftr (u₀ .recv)) .liftl b₁)
           .trl (refl b₁)))
       (M⁽ᵉᵉ⁾ A₂⁽¹ᵉ⁾ B₂⁽¹ᵉ⁾
        .trr.1
          (refl u₀
-          .send (B₂⁽¹ᵉ⁾ (refl A₂ .liftr.1 (refl u₀ .recv)) .trl.1 (refl b₁))))
-    .trl (refl M A₂ B₂ .liftr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁)))
-    : refl M A₂ B₂ (u₀ .send b₀)
+          .send (B₂⁽¹ᵉ⁾ (Id A₂ .liftr.1 (refl u₀ .recv)) .trl.1 (refl b₁))))
+    .trl (Id M A₂ B₂ .liftr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁)))
+    : M⁽ᵉ⁾ A₂ B₂ (u₀ .send b₀)
         (refl M A₂ B₂ .trr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁)))
   

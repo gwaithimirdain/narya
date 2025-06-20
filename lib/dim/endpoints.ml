@@ -51,12 +51,16 @@ let len l = l
 let indices : type l. l len -> (l t, l) Bwv.t =
  fun l -> Bwv.map (fun i -> (l, i)) (Bwv.all_indices (len l))
 
-let to_string : type l. l t option -> string =
- fun i ->
+let subscripts = [| "₀"; "₁"; "₂"; "₃"; "₄"; "₅"; "₆"; "₇"; "₈"; "₉" |]
+
+let to_string : type l. ?unicode:bool -> l t option -> string =
+ fun ?(unicode = false) i ->
   let (Wrap l) = wrapped () in
-  match i with
-  | Some i -> string_of_int (N.to_int (len l) - N.int_of_index (snd i) - 1)
-  | None -> string_of_int (N.to_int (len l))
+  let j =
+    match i with
+    | Some i -> N.to_int (len l) - N.int_of_index (snd i) - 1
+    | None -> N.to_int (len l) in
+  if unicode then subscripts.(j) else string_of_int j
 
 let of_char : type l. l len -> char -> (l t option, unit) result =
  fun l c ->

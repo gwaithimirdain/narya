@@ -39,10 +39,10 @@
    ￮ axiom M assumed
   
   sym M
-    : refl Gel (refl A) (refl B) (refl R) a₂ b₂ (_ ≔ r₀) (_ ≔ r₁)
+    : Gel⁽ᵉ⁾ (Id A) (Id B) (Id R) a₂ b₂ (_ ≔ r₀) (_ ≔ r₁)
   
   sym M .ungel
-    : refl R a₂ b₂ r₀ r₁
+    : Id R a₂ b₂ r₀ r₁
   
    ￫ info[I0000]
    ￮ constant eta defined
@@ -123,11 +123,11 @@
    ￮ axiom r2' assumed
   
   sym r2
-    : sym (refl Gel A2 B2 R2) {a0} {b0} (ungel ≔ r0) {a1} {b1} (ungel ≔ r1)
-        a2 b2
+    : sym (Gel⁽ᵉ⁾ A2 B2 R2) {a0} {b0} (ungel ≔ r0) {a1} {b1} (ungel ≔ r1) a2
+        b2
   
   sym r2'
-    : refl Gel A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1)
+    : Gel⁽ᵉ⁾ A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1)
   
    ￫ info[I0000]
    ￮ constant symsym_r2 defined
@@ -144,10 +144,10 @@
 
   $ narya gel.ny -e "def r2ty_eq_sym_r2ty : Id Type r2ty sym_r2ty := refl r2ty"
   sym M
-    : refl Gel (refl A) (refl B) (refl R) a₂ b₂ (_ ≔ r₀) (_ ≔ r₁)
+    : Gel⁽ᵉ⁾ (Id A) (Id B) (Id R) a₂ b₂ (_ ≔ r₀) (_ ≔ r₁)
   
   sym M .ungel
-    : refl R a₂ b₂ r₀ r₁
+    : Id R a₂ b₂ r₀ r₁
   
   r_gelr2
     : Type⁽ᵉᵉ⁾ A2 B2 (Gel A0 B0 R0) (Gel A1 B1 R1)
@@ -156,21 +156,21 @@
     : Type⁽ᵉᵉ⁾ (Gel A0 B0 R0) (Gel A1 B1 R1) A2 B2
   
   sym r2
-    : sym (refl Gel A2 B2 R2) {a0} {b0} (ungel ≔ r0) {a1} {b1} (ungel ≔ r1)
-        a2 b2
+    : sym (Gel⁽ᵉ⁾ A2 B2 R2) {a0} {b0} (ungel ≔ r0) {a1} {b1} (ungel ≔ r1) a2
+        b2
   
   sym r2'
-    : refl Gel A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1)
+    : Gel⁽ᵉ⁾ A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1)
   
    ￫ error[E0401]
    ￭ command-line exec string
    1 | def r2ty_eq_sym_r2ty : Id Type r2ty sym_r2ty := refl r2ty
      ^ term synthesized type
-         refl Type (refl Gel A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1))
-           (refl Gel A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1))
+         Type⁽ᵉ⁾ (Gel⁽ᵉ⁾ A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1))
+           (Gel⁽ᵉ⁾ A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1))
        but is being checked against type
-         refl Type (refl Gel A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1))
-           (sym (refl Gel A2 B2 R2) {a0} {b0} (ungel ≔ r0) {a1} {b1} (ungel ≔ r1) a2 b2)
+         Type⁽ᵉ⁾ (Gel⁽ᵉ⁾ A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1))
+           (sym (Gel⁽ᵉ⁾ A2 B2 R2) {a0} {b0} (ungel ≔ r0) {a1} {b1} (ungel ≔ r1) a2 b2)
        unequal terms:
          refl Gel A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1)
        does not equal

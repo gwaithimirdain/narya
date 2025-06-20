@@ -65,8 +65,7 @@ module Equal = struct
     | Canonical (_, Pi (name, doms, cods), ins, tyargs) ->
         let Eq = eq_of_ins_zero ins in
         let newargs, newnfs = dom_vars ctx doms in
-        let m = CubeOf.dim doms in
-        let newctx = Ctx.vis ctx m (D.plus_zero m) (NICubeOf.singleton name) newnfs (Suc Zero) in
+        let (Any_ctx newctx) = Ctx.variables_vis ctx name newnfs in
         let output = tyof_app cods tyargs newargs in
         (* If both terms have the given pi-type, then when applied to variables of the domains, they will both have the computed output-type, so we can recurse back to eta-expanding equality at that type. *)
         equal_at newctx (apply_term x newargs) (apply_term y newargs) output
@@ -229,8 +228,7 @@ module Equal = struct
                let* () = miterM { it = (fun _ [ x; y ] -> equal_val ctx x y) } [ dom1s; dom2s ] in
                (* We create variables for all the domains, in order to equality-check all the codomains.  The codomain boundary types only use some of those variables, but it doesn't hurt to have the others around. *)
                let newargs, newnfs = dom_vars ctx dom1s in
-               let newctx =
-                 Ctx.vis ctx k (D.plus_zero k) (NICubeOf.singleton name) newnfs (Suc Zero) in
+               let (Any_ctx newctx) = Ctx.variables_vis ctx name newnfs in
                let open BindCube.Monadic (Err) in
                miterM
                  {
@@ -390,5 +388,6 @@ let fallback_opt f =
 
 let equal_at ctx x y ty = fallback @@ fun () -> Equal.equal_at ctx x y ty
 let equal_val ctx x y = fallback @@ fun () -> Equal.equal_val ctx x y
+let equal_nf ctx x y = fallback @@ fun () -> Equal.equal_nf ctx x y
 let equal_tyargs ctx a1 a2 = fallback_opt @@ fun () -> Equal.equal_tyargs ctx a1 a2
 let equal_apps ctx a1 a2 = fallback_opt @@ fun () -> Equal.equal_apps ctx a1 a2

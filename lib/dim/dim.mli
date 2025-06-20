@@ -145,7 +145,7 @@ val singleton_sface :
 
 type any_sface = Any_sface : ('n, 'k) sface -> any_sface
 
-val string_of_sface : ('n, 'k) sface -> string
+val string_of_sface : ?unicode:bool -> ('n, 'k) sface -> string
 val sface_of_string : string -> any_sface option
 
 module Cube (F : Fam2) : sig
@@ -253,6 +253,8 @@ val plus_tface :
   ('m, 'n, 'k, 'nk) tface ->
   ('lm, 'ln, 'k, 'lnk) tface
 
+val tface_comp_sface : ('m, 'n, 'k, 'nk) tface -> ('p, 'm) sface -> ('p, 'n, 'k, 'nk) tface
+
 type ('m, 'n) pface = ('m, D.zero, 'n, 'n) tface
 
 val pface_of_sface : ('m, 'n) sface -> [ `Proper of ('m, 'n) pface | `Id of ('m, 'n) Eq.t ]
@@ -337,6 +339,8 @@ module Tube (F : Fam2) : sig
   type _ full = Full_tube : (D.zero, 'n, 'n, 'a) t -> 'a full
   type (_, _) some = Some_tube : ('n, 'k, 'nk, 'a) t -> ('nk, 'a) some
   type _ any = Any_tube : ('n, 'k, 'nk, 'a) t -> 'a any
+
+  val is_full : ('m, 'k, 'mk, 'b) t -> bool
 
   module Heter : sig
     type (_, _, _, _, _) hgt =
@@ -427,17 +431,19 @@ module TubeOf : sig
   val append_bwd : 'a Bwd.t -> ('m, 'n, 'mn, 'a) t -> 'a Bwd.t
 end
 
-module Icube (F : Fam4) : sig
-  type (_, _, _, _, _) gt
+module type Suc = sig
+  type 'a suc
+end
+
+module Icube (S : Suc) (F : Fam3) : sig
+  type ('left, 'n, 'm, 'b, 'right) gt
   type ('left, 'n, 'b, 'right) t = ('left, 'n, 'n, 'b, 'right) gt
 
   val dim : ('left, 'n, 'b, 'right) t -> 'n D.t
 
   module Applicatic (M : Util.Applicative.Plain) : sig
     type ('n, 'b, 'c) mapperM = {
-      map :
-        'left 'right 'm.
-        ('m, 'n) sface -> ('left, 'm, 'b, 'right) F.t -> ('left, 'm, 'c, 'right) F.t M.t;
+      map : 'left 'right 'm. ('m, 'n) sface -> ('left, 'm, 'b) F.t -> ('left, 'm, 'c) F.t M.t;
     }
 
     val mapM : ('n, 'b, 'c) mapperM -> ('left, 'n, 'b, 'right) t -> ('left, 'n, 'c, 'right) t M.t
@@ -447,14 +453,14 @@ module Icube (F : Fam4) : sig
 
   val map : ('n, 'b, 'c) IdM.mapperM -> ('left, 'n, 'b, 'right) t -> ('left, 'n, 'c, 'right) t
 
-  module Traverse : functor (Acc : Util.Signatures.Fam) -> sig
+  module Traverse : functor (Acc : Fam) -> sig
     type ('n, 'b, 'c) left_folder = {
       foldmap :
         'left 'right 'm.
         ('m, 'n) sface ->
         'left Acc.t ->
-        ('left, 'm, 'b, 'right) F.t ->
-        ('left, 'm, 'c, 'right) F.t * 'right Acc.t;
+        ('left, 'm, 'b) F.t ->
+        ('left, 'm, 'c) F.t * 'left S.suc Acc.t;
     }
 
     val fold_map_left :
@@ -465,11 +471,11 @@ module Icube (F : Fam4) : sig
 
     type ('n, 'b, 'c) right_folder = {
       foldmap :
-        'left 'right 'm.
+        'left 'm.
         ('m, 'n) sface ->
-        ('left, 'm, 'b, 'right) F.t ->
-        'right Acc.t ->
-        'left Acc.t * ('left, 'm, 'c, 'right) F.t;
+        ('left, 'm, 'b) F.t ->
+        'left S.suc Acc.t ->
+        'left Acc.t * ('left, 'm, 'c) F.t;
     }
 
     val fold_map_right :
@@ -479,7 +485,7 @@ module Icube (F : Fam4) : sig
       'left Acc.t * ('left, 'n, 'c, 'right) t
 
     type (_, _, _) fwrap_left =
-      | Fwrap : ('left, 'm, 'b, 'right) F.t * 'right Acc.t -> ('left, 'm, 'b) fwrap_left
+      | Fwrap : ('left, 'm, 'b) F.t * 'left S.suc Acc.t -> ('left, 'm, 'b) fwrap_left
 
     type (_, _, _, _) gwrap_left =
       | Wrap : ('left, 'm, 'mk, 'b, 'right) gt * 'right Acc.t -> ('left, 'm, 'mk, 'b) gwrap_left
@@ -491,35 +497,51 @@ module Icube (F : Fam4) : sig
     }
 
     val build_left : 'n D.t -> ('n, 'b) builder_leftM -> 'left Acc.t -> ('left, 'n, 'b) wrap_left
-
-    type (_, _, _) fwrap_right =
-      | Fwrap : 'left Acc.t * ('left, 'm, 'b, 'right) F.t -> ('m, 'b, 'right) fwrap_right
-
-    type (_, _, _, _) gwrap_right =
-      | Wrap : 'left Acc.t * ('left, 'm, 'mk, 'b, 'right) gt -> ('m, 'mk, 'b, 'right) gwrap_right
-
-    type ('m, 'b, 'right) wrap_right = ('m, 'm, 'b, 'right) gwrap_right
-
-    type ('n, 'b) builder_rightM = {
-      build : 'right 'm. ('m, 'n) sface -> 'right Acc.t -> ('m, 'b, 'right) fwrap_right;
-    }
-
-    val build_right :
-      'n D.t -> ('n, 'b) builder_rightM -> 'right Acc.t -> ('n, 'b, 'right) wrap_right
   end
 
-  type (_, _) fbiwrap = Fbiwrap : ('left, 'n, 'b, 'right) F.t -> ('n, 'b) fbiwrap
+  type (_, _) fbiwrap = Fbiwrap : ('left, 'n, 'b) F.t -> ('n, 'b) fbiwrap
 
   val find : ('left, 'n, 'b, 'right) t -> ('k, 'n) sface -> ('k, 'b) fbiwrap
   val find_top : ('left, 'n, 'b, 'right) t -> ('n, 'b) fbiwrap
 end
 
+module IcubeTraverse2 (S1 : Suc) (S2 : Suc) (F1 : Fam3) (F2 : Fam3) (Acc : Fam2) : sig
+  module C1 : module type of struct
+    include Icube (S1) (F1)
+  end
+
+  module C2 : module type of struct
+    include Icube (S2) (F2)
+  end
+
+  type ('n, 'b, 'c) left_folder = {
+    foldmap :
+      'left1 'left2 'm.
+      ('m, 'n) sface ->
+      ('left1, 'left2) Acc.t ->
+      ('left1, 'm, 'b) F1.t ->
+      ('left2, 'm, 'c) F2.t * ('left1 S1.suc, 'left2 S2.suc) Acc.t;
+  }
+
+  type (_, _, _, _, _) gfolded =
+    | Gfolded :
+        ('left2, 'm, 'km, 'c, 'right2) C2.gt * ('right1, 'right2) Acc.t
+        -> ('left2, 'm, 'km, 'c, 'right1) gfolded
+
+  val fold_map_left :
+    ('n, 'b, 'c) left_folder ->
+    ('left1, 'left2) Acc.t ->
+    ('left1, 'n, 'b, 'right1) C1.t ->
+    ('left2, 'n, 'n, 'c, 'right1) gfolded
+end
+
 module NFamOf : sig
-  type (_, _, _, _) t = NFamOf : 'b -> ('left, 'n, 'b, 'left N.suc) t
+  type (_, _, _) t = NFamOf : 'b -> ('left, 'n, 'b) t
 end
 
 module NICubeOf : sig
-  include module type of Icube (NFamOf)
+  include module type of Icube (N) (NFamOf)
+  module NFold : module type of Traverse (N)
 
   val singleton : 'b -> ('left, D.zero, 'b, 'left N.suc) t
   val out : 'left N.t -> ('left, 'm, 'b, 'right) t -> 'right N.t
@@ -972,7 +994,9 @@ module Plusmap : sig
 
 (* *)
 val deg_of_name : string -> any_deg option
-val name_of_deg : ('a, 'b) deg -> string option
+
+val name_of_deg :
+  sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] -> ('a, 'b) deg -> string option
 
 (* *)
 val locking : ('a, 'b) deg -> bool
