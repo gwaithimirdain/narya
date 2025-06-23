@@ -25,25 +25,25 @@ The notation ``ap`` for this is traditional in homotopy type theory, standing fo
 
    ap g a₂ b₂ : Id C (g a₀ b₀) (g a₁ b₁)
 
-The function ``g`` as well as the arguments ``a₂`` and ``b₂`` must all synthesize.  If necessary they can be ascribed.  However, you can also give the endpoints of ``a₂`` and ``b₂`` explicitly by enclosing them in curly braces, in which case ``a₂`` and ``b₂`` need not synthesize:
+In this syntax, the function ``f`` or ``g`` can be a non-synthesizing abstraction such as ``x ↦ …``, but the arguments such as ``a₂`` and ``b₂`` must synthesize (an appropriate identity type).  If they don't synthesize, you can give their endpoints explicitly by enclosing them in curly braces:
 
 .. code-block:: none
 
    ap f {a₀} {a₁} a₂ : Id B (f a₀) (f a₁)
    ap g {a₀} {a₁} a₂ {b₀} {b₁} b₂ : Id C (g a₀ b₀) (g a₁ b₁)
 
-At the moment it is not obvious how to generalize this to dependent functions; we will return to this later.
+However, if you do this, then the function ``f`` must synthesize in order for the whole expression to synthesize.  If the whole expression is in a checking context, then it suffices for the function to be an abstraction with explicit domain such as ``(x : A) ↦ …``.
 
-The operations ``refl`` and ``ap`` also satisfy various intuitive laws.  For instance, we have definitional equalities:
+At the moment it is not obvious how to generalize ``ap`` to dependent functions; we will return to this later.
+
+Finally, the operations ``refl`` and ``ap`` also satisfy various intuitive laws.  For instance, we have definitional equalities:
 
 .. code-block:: none
 
-   ap ((x ↦ x) : A → A) a₂ ≡ a₂
-   ap ((_ ↦ b) : A → B) a₂ ≡ refl b
+   ap (x ↦ x) a₂ ≡ a₂
+   ap (_ ↦ b) a₂ ≡ refl b
    ap (g ∘ f) a₂ ≡ ap g (ap f a₂)
    ap f (refl a) ≡ refl (f a)
-
-Note that we have ascribed the abstractions when given as arguments to ``ap``, since the function argument must synthesize.
 
 
 Id of record types
@@ -98,9 +98,9 @@ The other operations ``refl`` and ``ap`` also compute when applied to terms asso
 
 1. ``refl (a, b)`` reduces to ``(refl a, refl b)``.  Since in general the argument of ``refl`` must synthesize, you would expect that the ``(a, b)`` needs to be ascribed.  But in fact because ``refl (a, b)`` always reduces to ``(refl a, refl b)``, which is a checking term, Narya does that reduction at checking time, allowing it also to check without needing the tuple to be ascribed.
 2. ``refl (u .fst)`` reduces to ``refl u .fst`` (which, recall, means ``(refl u) .fst``), and similarly for ``snd``.
-3. ``ap ((x ↦ (f x, g x)) : A → Prod B C) u₂`` (which indeed must be ascribed) reduces to ``(ap f u₂, ap g u₂)`` (modulo η-converting ``(x ↦ f x) : A → B`` to ``f`` and similarly).
+3. ``ap (x ↦ (f x, g x)) u₂`` reduces to ``(ap f u₂, ap g u₂)`` (modulo η-converting ``(x ↦ f x) : A → B`` to ``f`` and similarly).
 4. ``ap ((x ↦ f x .fst) : A → B) u₂`` reduces to ``ap f u₂ .fst``, and similarly for ``snd``.
-5. Multi-variable functions work similarly: ``ap ((x y ↦ g x y .fst) : A → B → C) u₂ v₂`` reduces to ``ap g u₂ v₂ .fst`` and so on.
+5. Multi-variable functions work similarly: ``ap (x y ↦ g x y .fst) u₂ v₂`` reduces to ``ap g u₂ v₂ .fst`` and so on.
 
 
 Id of codatatypes
@@ -216,8 +216,8 @@ Of course, ``refl`` and ``ap`` also compute on terms associated to function type
 
 For abstraction, ``refl`` computes to ``ap``, while ``ap`` computes to an ``ap`` with one more variable.  Although, in fact these computations don't reduce fully until applied to arguments, as if they were defined by a case tree.  For instance:
 
-1. ``refl ((x ↦ M) : A → B) a₂`` reduces to ``ap ((x ↦ M) : A → B) a₂``.
-2. ``ap ((x ↦ (y ↦ M)) : A → (B → C)) a₂ b₂`` reduces to ``ap ((x y ↦ M) : A → B → C) a₂ b₂``.
+1. ``refl (x ↦ M) a₂`` reduces to ``ap (x ↦ M) a₂``.
+2. ``ap (x ↦ (y ↦ M)) a₂ b₂`` reduces to ``ap (x y ↦ M) a₂ b₂``.
 
 These equations suggest that ``refl`` can be view as a "0-ary" version of ``ap``, which is correct.  In fact, more is true: by η-expansion, for any function ``f : A → B`` we have
 
@@ -479,7 +479,9 @@ Symmetries and degeneracies
 
 There is a symmetry operation ``sym`` that acts on at-least-two dimensional cubes, swapping or transposing the last two dimensions.  Like ``refl``, if the argument of ``sym`` synthesizes, then the ``sym`` synthesizes a symmetrized type; but in this case the argument must synthesize a "2-dimensional" type.  In addition, unlike ``refl``, an application of ``sym`` can also check if its argument does, since the type it is checked against can be "unsymmetrized" to obtain the necessary type for its argument to check against.
 
-Combining versions of ``refl`` and ``sym`` yields arbitrary higher-dimensional "degeneracies" (from the BCH cube category).  There is also a generic syntax for such degeneracies, for example ``M⁽²ᵉ¹⁾`` or ``M^^(2e1)`` where the superscript represents the degeneracy, with ``e`` denoting a degenerate dimension and nonzero digits denoting a permutation.  (The ``e`` stands for "equality", as we are using the notation of :ref:`Higher Observational Type Theory`; when using :ref:`Parametricity` instead you can change the letter.)  In the unlikely event you are working with dimensions greater than nine, you can separate multi-digit numbers and letters with a hyphen, e.g. ``M⁽¹⁻²⁻³⁻⁴⁻⁵⁻⁶⁻⁷⁻⁸⁻⁹⁻¹⁰⁾`` or ``M^^(0-1-2-3-4-5-6-7-8-9-10)``.  This notation can always synthesize if ``M`` does, while like ``sym`` it can also check if the degeneracy is a "pure permutation", consisting only of digits without any ``e`` s.  It can also check if ``M`` is a tuple or a constructor, as described for ``refl`` above.
+Combining versions of ``refl`` and ``sym`` yields arbitrary higher-dimensional "degeneracies" (from the BCH cube category).  There is also a generic syntax for such degeneracies, for example ``M⁽²ᵉ¹⁾`` or ``M^^(2e1)`` where the superscript represents the degeneracy, with ``e`` denoting a degenerate dimension and nonzero digits denoting a permutation.  (The ``e`` stands for "equality", as we are using the notation of :ref:`Higher Observational Type Theory`; when using :ref:`Parametricity` instead you can change the letter.)  In the unlikely event you are working with dimensions greater than nine, you can separate multi-digit numbers and letters with a hyphen, e.g. ``M⁽¹⁻²⁻³⁻⁴⁻⁵⁻⁶⁻⁷⁻⁸⁻⁹⁻¹⁰⁾`` or ``M^^(0-1-2-3-4-5-6-7-8-9-10)``.
+
+This notation can always synthesize if ``M`` does, while like ``sym`` it can also check if the degeneracy is a "pure permutation", consisting only of digits without any ``e`` s.  It can also check if ``M`` is a tuple or a constructor, as described for ``refl`` above.  Finally, if ``M`` is a 0-dimensional abstraction and the degeneracy is immediately applied to arguments such as ``(x y ↦ P)⁽ᵉᵉ⁾ a₂₂ b₂₂``, it is treated as a "higher-dimensional redex" and subject to the rules laid out for :ref:`Checking redexes`: each argument must either synthesize or have the corresponding domain given explicitly in the abstraction, and either the body of the abstraction must synthesize or the whole application must be in a checking context.
 
 Degeneracies can be extended by identities on the left and remain the same operation.  For instance, the two degeneracies taking a 1-dimensional object to a 2-dimensional one are denoted ``1e`` and ``e1``, and of these ``1e`` can be written as simply ``e`` and coincides with ordinary ``refl`` applied to an object that happens to be 1-dimensional.  Similarly, the basic symmetry ``sym`` of a 3-dimensional object actually acts on the last two dimensions, so it coincides with the superscripted operation ``132``.
 
