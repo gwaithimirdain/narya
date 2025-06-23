@@ -28,13 +28,14 @@ Formatting output
 Controlling parametricity
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-These options are discussed under :ref:`Parametric observational type theory`.
+These options are discussed under :ref:`Observational higher dimensions`, :ref:`Parametricity`, and :ref:`Higher Observational Type Theory`.
 
 - ``-arity N``: Set the arity of parametricity to N (1 ≤ N ≤ 9)
 - ``-direction X``: Set the symbol and names for reflexivity
 - ``-internal`` and ``-external``: Set whether parametricity is internal (default) or external
 - ``-discreteness``: Enable strictly parametrically discrete types
 - ``-dtt``: Poor man's dTT mode (``-arity 1 -direction d -external``)
+- ``-hott``: Higher Observational Type Theory mode
 
 Execution
 ---------
@@ -331,5 +332,5 @@ jsNarya
 
 jsNarya is a JavaScript version of Narya that runs in a browser.  Its functionality is limited to the equivalent of ``narya -e "STARTUP" -i``: you can specify a single startup "file" by copying and pasting it into a text box, and then you drop into interactive mode.  Also there is no real Unicode input-mode, although there is a palette of buttons that can be used to enter a number of common Unicode characters.  These limitations are not intrinsic; we just have not yet found or implemented an appropriate frontend for anything more complicated.
 
-jsNarya does accept customization of the arity, direction name, and internality of parametricity, plus discreteness, for :ref:`Parametric Observational Type Theory`.  This can be done with input elements on the page before starting the interactive mode, or with appropriately-named URL parameters.  For instance, supplying the URL query string ``?arity=1&direction=d&external`` yields :ref:`Poor man's dTT<Internal versus external parametricity>`, and this special case admits the shortcut ``?dtt``.  The startup code can also be specified in the URL with the ``?startup=`` parameter.
+jsNarya does accept customization of the arity, direction name, and internality of parametricity, plus discreteness, for :ref:`Observational higher dimensions`.  This can be done with input elements on the page before starting the interactive mode, or with appropriately-named URL parameters.  For instance, supplying the URL query string ``?arity=1&direction=d&external`` yields :ref:`Poor man's dTT<Internal versus external parametricity>`, and this special case admits the shortcut ``?dtt``.  The startup code can also be specified in the URL with the ``?startup=`` parameter.
 
