@@ -88,7 +88,10 @@ let rec process : type n lt ls rt rs.
   | Superscript (Some x, str, _) -> (
       match deg_of_string str.value with
       | Some (Any_deg s) ->
-          let body = process ctx x in
+          let body =
+            match x.value with
+            | Placeholder _ -> None
+            | _ -> Some (process ctx x) in
           { value = Synth (Act (str, s, body)); loc }
       | None -> fatal ?loc:str.loc (Invalid_degeneracy str.value))
   | Superscript (None, _, _) -> fatal (Anomaly "degeneracy is head")
@@ -116,9 +119,11 @@ and process_apps : type n lt ls rt rs.
   | `Deg (str, Any_deg s) -> (
       match args with
       | (Wrap arg, loc) :: args ->
-          process_apply ctx
-            { value = Synth (Act (str, s, { value = (process ctx arg).value; loc })); loc }
-            args
+          let arg =
+            match arg.value with
+            | Placeholder _ -> None
+            | _ -> Some { value = (process ctx arg).value; loc } in
+          process_apply ctx { value = Synth (Act (str, s, arg)); loc } args
       | [] -> fatal ?loc:tm.loc (Anomaly "TODO"))
   | `Constr c ->
       let c = { value = c; loc = tm.loc } in

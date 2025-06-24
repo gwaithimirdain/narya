@@ -158,10 +158,10 @@ let spine : type a.
   spine tm []
 
 (* Pull all the actions off of a term and compose them. *)
-let rec actions : type a. a check located -> any_deg * a check located =
+let rec actions : type a. a check located option -> any_deg * a check located option =
  fun tm ->
-  match tm.value with
-  | Synth (Act (_, s, tm)) ->
+  match tm with
+  | Some { value = Synth (Act (_, s, tm)); _ } ->
       let Any_deg s', tm = actions tm in
       let (DegExt (_, _, ss')) = comp_deg_extending s' s in
       (Any_deg ss', tm)
@@ -287,8 +287,8 @@ let rec check : type a b s.
         clet
     | Synth (Act (str, fa, x) as stm), _ -> (
         (* An action can always synthesize, but can usually also check. *)
-        match perm_of_deg fa with
-        | Some pfa -> (
+        match (perm_of_deg fa, x) with
+        | Some pfa, Some x -> (
             (* It can check if its degeneracy is a pure permutation, since then the type of the argument can be inferred by applying the inverse permutation to the ambient type. *)
             let fainv = deg_of_perm (perm_inv pfa) in
             match
@@ -308,7 +308,8 @@ let rec check : type a b s.
                 let cx = check (Kinetic `Nolet) ctx x ty_fainv in
                 realize status
                   (Term.Act (cx, fa, (sort_of_ty ctx (view_type ty "checking act"), `Other))))
-        | None -> (
+        | Some _, None -> fatal (Nonsynthesizing "pure symmetry of placeholder")
+        | None, _ -> (
             (* It can also check if it is *not* a permutation and the arity is positive, since then we can extract the needed type of its argument from the boundary of the type it is checking against. *)
             let (Full_tube tyargs) = get_tyargs ty "type of checking degeneracy" in
             match factor (TubeOf.inst tyargs) (dom_deg fa) with
@@ -331,17 +332,21 @@ let rec check : type a b s.
                     | `Id _ ->
                         fatal (Anomaly "non-permutation degeneracy doesn't have a proper section")
                     | `Proper fs -> (
-                        let sxty = (TubeOf.find tyargs fs).ty in
+                        let arg = TubeOf.find tyargs fs in
+                        let sxty = arg.ty in
                         let xty =
                           gact_ty
                             ~err:(anomaly_dim_err "dimension confusion in checking degeneracy")
                             None sxty (deg_of_perm fp) in
                         let ctx = if locking fa then Ctx.lock ctx else ctx in
-                        let cx = check (Kinetic `Nolet) ctx x xty in
+                        let cx, xloc =
+                          match x with
+                          | Some x -> (check (Kinetic `Nolet) ctx x xty, x.loc)
+                          | None -> (readback_nf ctx arg, None) in
                         (* We also have to check that the rest of the output type is correct. *)
                         let ex = eval_term (Ctx.env ctx) cx in
                         let sty =
-                          with_loc x.loc @@ fun () ->
+                          with_loc xloc @@ fun () ->
                           act_ty ex xty fa ~err:(low_dim_arg_err str.value) in
                         match subtype_of ctx sty ty with
                         | Ok () ->
@@ -2566,7 +2571,7 @@ and synth : type a b s.
         let fn, args = spine { value = Synth tm.value; loc = tm.loc } in
         let stm, sty = synth_or_check_apps ctx fn args None in
         (realize status stm, sty)
-    | Act (str, fa, { value = Synth x; loc }), _ ->
+    | Act (str, fa, Some { value = Synth x; loc }), _ ->
         let x = { value = x; loc } in
         let ctx = if locking fa then Ctx.lock ctx else ctx in
         (* We pass on the "nosynth" error, so that we can look through multiple degeneracies before noticing a nonsynthesizing term. *)
@@ -3013,14 +3018,15 @@ and synth_or_check_apps : type a b.
     kinetic value option ->
     (b, kinetic) term * kinetic value =
  fun ctx fn args ty ->
-  match (fn.value, actions fn) with
+  match (fn.value, actions (Some fn)) with
   (* If we can fully synthesize a type for the function (that is, if it's a synthesizing term perhaps degenerated), we do that and then pass off to synth_apps to iterate through all the arguments. *)
-  | Synth sfn, (_, { value = Synth _; _ }) ->
+  | Synth sfn, (_, Some { value = Synth _; _ }) ->
       let sfn, sty = synth (Kinetic `Nolet) ctx { value = sfn; loc = fn.loc } in
       let stm, sty = synth_apps ctx { value = sfn; loc = fn.loc } sty fn args in
       (stm, sty)
   (* Otherwise, we try getting information from the arguments. *)
-  | _, (Any_deg s, fn) -> (
+  | _, (_, None) -> fatal (Nonsynthesizing "degeneracy of placeholder function")
+  | _, (Any_deg s, Some fn) -> (
       match D.compare_zero (cod_deg s) with
       | Zero ->
           let ctx = if locking s then Ctx.lock ctx else ctx in

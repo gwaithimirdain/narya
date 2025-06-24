@@ -226,3 +226,54 @@
         0 does not factor through e
   
   [1]
+
+  $ narya degblank.ny
+  refl a
+    : Id A a a
+  
+  refl a
+    : Id A a a
+  
+  (refl a)⁽¹ᵉ⁾
+    : A⁽ᵉᵉ⁾ (refl a) (refl a) (refl a) (refl a)
+  
+  a⁽ᵉᵉ⁾
+    : A⁽ᵉᵉ⁾ (refl a) (refl a) (refl a) (refl a)
+  
+  a⁽ᵉᵉ⁾
+    : A⁽ᵉᵉ⁾ (refl a) (refl a) (refl a) (refl a)
+  
+  refl a2
+    : A⁽ᵉᵉ⁾ (refl a0) (refl a1) a2 a2
+  
+
+
+  $ narya -e 'import "degblank" echo refl _ : Id A a0 a1'
+   ￫ warning[W2400]
+   ￮ not re-executing echo/synth/show commands when loading compiled file $TESTCASE_ROOT/degblank.nyo
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | import "degblank" echo refl _ : Id A a0 a1
+     ^ term synthesized type
+         Id A a1 a1
+       but is being checked against type
+         Id A a0 a1
+       unequal head constants:
+         a1
+       does not equal
+         a0
+  
+  [1]
+
+
+  $ narya -e 'import "degblank" echo sym _ : Id (Id A) a2 a2 (refl a0) (refl a1)'
+   ￫ warning[W2400]
+   ￮ not re-executing echo/synth/show commands when loading compiled file $TESTCASE_ROOT/degblank.nyo
+  
+   ￫ error[E0400]
+   ￭ command-line exec string
+   1 | import "degblank" echo sym _ : Id (Id A) a2 a2 (refl a0) (refl a1)
+     ^ non-synthesizing term in synthesizing position (pure symmetry of placeholder)
+  
+  [1]

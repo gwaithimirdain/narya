@@ -90,7 +90,7 @@ module rec Make : functor (I : Indices) -> sig
     | UU : 'a synth
     | Let : I.name * 'a synth located * 'a I.suc check located -> 'a synth
     | Letrec : ('a, 'b, 'ab) tel * ('ab check located, 'b) Vec.t * 'ab check located -> 'a synth
-    | Act : string located * ('m, 'n) deg * 'a check located -> 'a synth
+    | Act : string located * ('m, 'n) deg * 'a check located option -> 'a synth
     | Match : {
         tm : 'a synth located;
         sort : [ `Implicit | `Explicit of 'a check located | `Nondep of int located ];
@@ -244,8 +244,8 @@ functor
       | Let : I.name * 'a synth located * 'a I.suc check located -> 'a synth
       (* Letrec has a telescope of types, so that each can depend on the previous ones, and an equal-length vector of bound terms, all in the context extended by all the variables being bound, plus a body that is also in that context. *)
       | Letrec : ('a, 'b, 'ab) tel * ('ab check located, 'b) Vec.t * 'ab check located -> 'a synth
-      (* An Act can also sometimes check, if its body checks and the degeneracy is a pure permutation.  But otherwise, it synthesizes and so must its body.  *)
-      | Act : string located * ('m, 'n) deg * 'a check located -> 'a synth
+      (* An Act can also often check, but can also synthesizes if its body does.  *)
+      | Act : string located * ('m, 'n) deg * 'a check located option -> 'a synth
       (* A Match can also sometimes check, but synthesizes if it has an explicit return type or if it is nondependent and its first branch synthesizes. *)
       | Match : {
           tm : 'a synth located;
@@ -451,7 +451,7 @@ module Resolve (R : Resolver) = struct
           let tys2, ctx2 = tel ctx tys ab in
           let tms2 = Vec.map (check ctx2) tms in
           Letrec (tys2, tms2, check ctx2 body)
-      | Act (s, fa, tm) -> Act (s, fa, check ctx tm)
+      | Act (s, fa, tm) -> Act (s, fa, Option.map (check ctx) tm)
       | Match { tm; sort; branches; refutables = r } ->
           let tm = synth ctx tm in
           let sort =
