@@ -23,10 +23,10 @@
    ￫ warning[W2400]
    ￮ not re-executing echo/synth/show commands when loading compiled file $TESTCASE_ROOT/degconstr.nyo
   
-   ￫ error[E0500]
+   ￫ error[E0602]
    ￭ command-line exec string
    1 | import "degconstr" echo refl nil. : List A
-     ^ dimension mismatch in higher constructor (e ≠ 0)
+     ^ expected type of degeneracy 'refl' must have dimension at least e
   
   [1]
 
@@ -38,11 +38,10 @@
    ￫ error[E0401]
    ￭ command-line exec string
    1 | import "degconstr" axiom a1 : A echo refl (cons. a nil.) : Id (List A) (cons. a nil.) (cons. a1 nil.)
-     ^ degeneracy propagated through constructor
      ^ term synthesized type
-         Id A a a
+         List⁽ᵉ⁾ (Id A) (cons. a nil.) (cons. a nil.)
        but is being checked against type
-         Id A a a1
+         List⁽ᵉ⁾ (Id A) (cons. a nil.) (cons. a1 nil.)
        unequal head constants:
          a
        does not equal
@@ -62,10 +61,10 @@
   
 
   $ narya -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] echo refl 3 : ℕ'
-   ￫ error[E0500]
+   ￫ error[E0602]
    ￭ command-line exec string
    1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] echo refl 3 : ℕ
-     ^ dimension mismatch in higher constructor (e ≠ 0)
+     ^ expected type of degeneracy 'refl' must have dimension at least e
   
   [1]
 

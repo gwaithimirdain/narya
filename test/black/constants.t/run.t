@@ -310,10 +310,19 @@
   
   [1]
   $ narya constants.ny -e "def ∞eta_bisim' : Id (Stream A → Stream A) (s ↦ s) (s ↦ ∞eta s) ≔ refl (s ↦ ∞eta s)"
-   ￫ error[E0400]
+   ￫ error[E0401]
    ￭ command-line exec string
    1 | def ∞eta_bisim' : Id (Stream A → Stream A) (s ↦ s) (s ↦ ∞eta s) ≔ refl (s ↦ ∞eta s)
-     ^ non-synthesizing term in synthesizing position (argument of degeneracy)
+     ^ term synthesized type
+         {H₀ : Stream A} {H₁ : Stream A} (H₂ : Stream⁽ᵉ⁾ (Id A) H₀ H₁)
+         →⁽ᵉ⁾ Stream⁽ᵉ⁾ (Id A) (∞eta H₀) (∞eta H₁)
+       but is being checked against type
+         {H₀ : Stream A} {H₁ : Stream A} (H₂ : Stream⁽ᵉ⁾ (Id A) H₀ H₁)
+         →⁽ᵉ⁾ Stream⁽ᵉ⁾ (Id A) H₀ (∞eta H₁)
+       unequal head terms:
+         ∞eta
+       does not equal
+         _H
   
   [1]
   $ narya constants.ny -e "def refl_nat_eq_sample : Id (ℕ → Id ((x:A)→B x) f f) (refl_nat_f) (refl_nat_f_cube) ≔ refl refl_nat_f"

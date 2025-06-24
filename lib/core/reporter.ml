@@ -159,7 +159,8 @@ module Code = struct
     | Undefined_constant : printable -> t
     | Undefined_metavariable : printable -> t
     | Nonsynthesizing : string -> t
-    | Low_dimensional_argument_of_degeneracy : (string * 'a D.t) -> t
+    | Low_dimensional_argument_of_degeneracy : string * 'a D.t -> t
+    | Low_dimensional_type_of_degeneracy : string * 'a D.t -> t
     | Missing_argument_of_degeneracy : string -> t
     | Applying_nonfunction_nontype : printable * printable -> t
     | Unexpected_implicitness : [ `Implicit | `Explicit ] * string * string -> t
@@ -313,6 +314,7 @@ module Code = struct
     | No_such_field _ -> Error
     | Nonsynthesizing _ -> Error
     | Low_dimensional_argument_of_degeneracy _ -> Error
+    | Low_dimensional_type_of_degeneracy _ -> Error
     | Missing_argument_of_degeneracy _ -> Error
     | Not_enough_arguments_to_function -> Error
     | Instantiating_zero_dimensional_type _ -> Error
@@ -460,6 +462,7 @@ module Code = struct
     (* Degeneracies *)
     | Missing_argument_of_degeneracy _ -> "E0600"
     | Low_dimensional_argument_of_degeneracy _ -> "E0601"
+    | Low_dimensional_type_of_degeneracy _ -> "E0602"
     (* Function-types *)
     | Checking_lambda_at_nonfunction _ -> "E0700"
     | Applying_nonfunction_nontype _ -> "E0701"
@@ -783,6 +786,9 @@ module Code = struct
       | Nonsynthesizing pos -> textf "non-synthesizing term in synthesizing position (%s)" pos
       | Low_dimensional_argument_of_degeneracy (deg, dim) ->
           textf "argument of degeneracy '%s' must have dimension at least %s" deg
+            (string_of_dim0 dim)
+      | Low_dimensional_type_of_degeneracy (deg, dim) ->
+          textf "expected type of degeneracy '%s' must have dimension at least %s" deg
             (string_of_dim0 dim)
       | Missing_argument_of_degeneracy deg -> textf "missing argument for degeneracy %s" deg
       | Applying_nonfunction_nontype (tm, ty) ->

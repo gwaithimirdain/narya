@@ -316,13 +316,10 @@ let rec check : type a b s.
             let (Full_tube tyargs) = get_tyargs ty "type of checking degeneracy" in
             match factor (TubeOf.inst tyargs) (dom_deg fa) with
             | None ->
-                fatal
-                  (Insufficient_dimension
-                     {
-                       needed = dom_deg fa;
-                       got = TubeOf.inst tyargs;
-                       which = "TODO: type of checking degeneracy";
-                     })
+                (* Again, in this case, if the term synthesizes, we want the error reported to be Unequal_synthesized_type.  So we fall back to synthesizing if the checking type doesn't symmetrize, reporting the low-dimensional error in case of a failure to synthesize. *)
+                let nosynth =
+                  diagnostic (Low_dimensional_type_of_degeneracy (str.value, dom_deg fa)) in
+                check_of_synth ~nosynth status ctx stm tm.loc ty
             | Some (Factor nk) -> (
                 let (Plus mk) = D.plus (D.plus_right nk) in
                 let fa = deg_plus fa mk nk in
