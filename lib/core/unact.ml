@@ -10,7 +10,9 @@ let unact_ty : type n. err:Code.t -> kinetic value -> n D.t -> kinetic value =
   (* We may need to extend the dimension n to match the dimension of the tyargs. *)
   match factor (TubeOf.inst tyargs) n with
   | None ->
-      fatal (Insufficient_dimension { needed = n; got = TubeOf.inst tyargs; which = "function" })
+      fatal
+        (Insufficient_dimension
+           { needed = n; got = TubeOf.inst tyargs; which = "higher-dimensional application" })
   | Some (Factor nk) -> (
       let s = vertex n <|> err in
       let sk = sface_plus s nk (D.zero_plus (D.plus_right nk)) in

@@ -288,24 +288,29 @@ let rec check : type a b s.
     | Synth (Act (str, fa, x) as stm), _ -> (
         (* An action can always synthesize, but can usually also check. *)
         match perm_of_deg fa with
-        | Some pfa ->
+        | Some pfa -> (
             (* It can check if its degeneracy is a pure permutation, since then the type of the argument can be inferred by applying the inverse permutation to the ambient type. *)
             let fainv = deg_of_perm (perm_inv pfa) in
-            Reporter.try_with ~fatal:(fun d ->
-                (* If the user has given a symmetrized term that synthesizes but doesn't match the checking type, we want the error reported to be Unequal_synthesized_type.  So we fall back to synthesizing if the checking type doesn't symmetrize.  *)
-                match d.message with
-                | Low_dimensional_argument_of_degeneracy _ ->
-                    check_of_synth status ctx stm tm.loc ty
-                | _ -> fatal_diagnostic d)
-            @@ fun () ->
-            let ty_fainv =
-              gact_ty None ty fainv
-                ~err:(Low_dimensional_argument_of_degeneracy (str.value, cod_deg fa)) in
-            (* A pure permutation shouldn't ever be locking, but we may as well keep this here for consistency.  *)
-            let ctx = if locking fa then Ctx.lock ctx else ctx in
-            let cx = check (Kinetic `Nolet) ctx x ty_fainv in
-            realize status
-              (Term.Act (cx, fa, (sort_of_ty ctx (view_type ty "checking act"), `Other)))
+            match
+              Reporter.try_with ~fatal:(fun d ->
+                  (* If the user has given a symmetrized term that synthesizes but doesn't match the checking type, we want the error reported to be Unequal_synthesized_type.  So we fall back to synthesizing if the checking type doesn't symmetrize.  *)
+                  match d.message with
+                  | Low_dimensional_argument_of_degeneracy _ -> Error d
+                  | _ -> fatal_diagnostic d)
+              @@ fun () ->
+              Ok
+                (gact_ty None ty fainv
+                   ~err:(Low_dimensional_argument_of_degeneracy (str.value, cod_deg fa)))
+            with
+            | Error nosynth ->
+                (* However, if the given term *doesn't* synthesize, we want to report the low-dimensional error, so we pass that diagnostic on. *)
+                check_of_synth ~nosynth status ctx stm tm.loc ty
+            | Ok ty_fainv ->
+                (* A pure permutation shouldn't ever be locking, but we may as well keep this here for consistency.  *)
+                let ctx = if locking fa then Ctx.lock ctx else ctx in
+                let cx = check (Kinetic `Nolet) ctx x ty_fainv in
+                realize status
+                  (Term.Act (cx, fa, (sort_of_ty ctx (view_type ty "checking act"), `Other))))
         | None -> (
             (* It can also check if it is *not* a permutation and the arity is positive, since then we can extract the needed type of its argument from the boundary of the type it is checking against. *)
             let (Full_tube tyargs) = get_tyargs ty "type of checking degeneracy" in
@@ -322,7 +327,9 @@ let rec check : type a b s.
                 let (Plus mk) = D.plus (D.plus_right nk) in
                 let fa = deg_plus fa mk nk in
                 match section_of_deg fa with
-                | None -> check_of_synth status ctx stm tm.loc ty
+                | None ->
+                    (* If the arity is zero, we just give up and try to synthesize. *)
+                    check_of_synth status ctx stm tm.loc ty
                 | Some (Face (fs, fp)) -> (
                     match pface_of_sface fs with
                     | `Id _ ->
@@ -764,9 +771,14 @@ let rec check : type a b s.
 
 (* Deal with a synthesizing term in checking position. *)
 and check_of_synth : type a b s.
-    (b, s) status -> (a, b) Ctx.t -> a synth -> Asai.Range.t option -> kinetic value -> (b, s) term
-    =
- fun status ctx stm loc ty ->
+    ?nosynth:Code.t Asai.Diagnostic.t ->
+    (b, s) status ->
+    (a, b) Ctx.t ->
+    a synth ->
+    Asai.Range.t option ->
+    kinetic value ->
+    (b, s) term =
+ fun ?nosynth status ctx stm loc ty ->
   match stm with
   | Asc (ctm, aty) -> (
       (* If the term is synthesizing because it is ascribed, then we can accumulate errors: if the ascription fails to check, or if it fails to equal the checking type, we can proceed to check the ascribed term against the supplied type instead.  This will rarely happen in normal use, since there is no need to ascribe a term that's in checking position, but it can occur with some alternative frontends. *)
@@ -787,7 +799,7 @@ and check_of_synth : type a b s.
             (Unequal_synthesized_type
                { got = PVal (ctx, ety); expected = PVal (ctx, ty); which = None; why }))
   | _ -> (
-      let sval, sty = synth status ctx { value = stm; loc } in
+      let sval, sty = synth ?nosynth status ctx { value = stm; loc } in
       (* It suffices for the synthesized type to be a subtype of the checking type. *)
       match subtype_of ctx sty ty with
       | Ok () -> sval
@@ -823,6 +835,7 @@ and kinetic_of_potential : type a b.
       Term.Meta (meta, Kinetic)
 
 and synth_or_check_let : type a b s p.
+    ?nosynth:Code.t Asai.Diagnostic.t ->
     (b, s) status ->
     (a, b) Ctx.t ->
     string option ->
@@ -830,7 +843,7 @@ and synth_or_check_let : type a b s p.
     a N.suc check located ->
     (kinetic value, p) Perhaps.t ->
     (b, s) term * (kinetic value, p) Perhaps.not =
- fun status ctx name v body ty ->
+ fun ?nosynth status ctx name v body ty ->
   let v, nf =
     try
       (* We first try checking the bound term first as an ordinary kinetic term. *)
@@ -888,9 +901,10 @@ and synth_or_check_let : type a b s p.
   | None, { value = Synth body; loc } ->
       let sbody, sbodyty = synth status newctx { value = body; loc } in
       (Term.Let (name, v, sbody), Not_none sbodyty)
-  | None, _ -> fatal (Nonsynthesizing "let-expression without synthesizing body")
+  | None, _ -> fatal_or nosynth (Nonsynthesizing "let-expression without synthesizing body")
 
 and synth_or_check_letrec : type a b c ac s p.
+    ?nosynth:Code.t Asai.Diagnostic.t ->
     (b, s) status ->
     (a, b) Ctx.t ->
     (a, c, ac) Raw.tel ->
@@ -898,7 +912,7 @@ and synth_or_check_letrec : type a b c ac s p.
     ac check located ->
     (kinetic value, p) Perhaps.t ->
     (b, s) term * (kinetic value, p) Perhaps.not =
- fun status ctx rvtys vtms body ty ->
+ fun ?nosynth status ctx rvtys vtms body ty ->
   (* First we check the types of all the bound variables, which are a telescope since each can depend on the previous ones. *)
   let Checked_tel (type bc) ((vtys, _) : (_, _, bc) Telescope.t * (_, bc) Ctx.t), _ =
     check_tel ctx rvtys in
@@ -923,7 +937,7 @@ and synth_or_check_letrec : type a b c ac s p.
   | None, { value = Synth body; loc } ->
       let sbody, sbodyty = synth status newctx { value = body; loc } in
       (let_metas metas sbody, Not_none sbodyty)
-  | None, _ -> fatal (Nonsynthesizing "let-expression without synthesizing body")
+  | None, _ -> fatal_or nosynth (Nonsynthesizing "let-expression without synthesizing body")
 
 and check_letrec_bindings : type a xc b ac bc.
     (a, b) Ctx.t ->
@@ -2315,8 +2329,12 @@ and check_higher_field : type a b c d m i ic0.
         errs
 
 and synth : type a b s.
-    (b, s) status -> (a, b) Ctx.t -> a synth located -> (b, s) term * kinetic value =
- fun status ctx tm ->
+    ?nosynth:Code.t Asai.Diagnostic.t ->
+    (b, s) status ->
+    (a, b) Ctx.t ->
+    a synth located ->
+    (b, s) term * kinetic value =
+ fun ?nosynth status ctx tm ->
   let go () =
     match (tm.value, status) with
     | Var i, _ -> (
@@ -2556,7 +2574,8 @@ and synth : type a b s.
     | Act (str, fa, { value = Synth x; loc }), _ ->
         let x = { value = x; loc } in
         let ctx = if locking fa then Ctx.lock ctx else ctx in
-        let sx, ety = synth (Kinetic `Nolet) ctx x in
+        (* We pass on the "nosynth" error, so that we can look through multiple degeneracies before noticing a nonsynthesizing term. *)
+        let sx, ety = synth ?nosynth (Kinetic `Nolet) ctx x in
         let ex = eval_term (Ctx.env ctx) sx in
         let sty =
           with_loc x.loc @@ fun () ->
@@ -2564,7 +2583,7 @@ and synth : type a b s.
         in
         ( realize status (Term.Act (sx, fa, (sort_of_ty ctx (view_type sty "synth act"), `Other))),
           sty )
-    | Act _, _ -> fatal (Nonsynthesizing "argument of degeneracy")
+    | Act _, _ -> fatal_or nosynth (Nonsynthesizing "argument of degeneracy")
     | Asc (tm, ty), _ ->
         let cty =
           Reporter.try_with ~fatal:(fun d1 ->
@@ -2605,11 +2624,11 @@ and synth : type a b s.
                  CodCube.singleton (readback_val newctx scod) )) in
         (Lam (xs, cbody), ty)
     | Let (x, v, body), _ ->
-        let ctm, Not_none ety = synth_or_check_let status ctx x v body None in
+        let ctm, Not_none ety = synth_or_check_let ?nosynth status ctx x v body None in
         (* The synthesized type of the body is also correct for the whole let-expression, because it was synthesized in a context where the variable is bound not just to its type but to its value, so it doesn't include any extra level variables (i.e. it can be silently "strengthened"). *)
         (ctm, ety)
     | Letrec (vtys, vs, body), _ ->
-        let ctm, Not_none ety = synth_or_check_letrec status ctx vtys vs body None in
+        let ctm, Not_none ety = synth_or_check_letrec ?nosynth status ctx vtys vs body None in
         (* The synthesized type of the body is also correct for the whole let-expression, because it was synthesized in a context where the variable is bound not just to its type but to its value, so it doesn't include any extra level variables (i.e. it can be silently "strengthened"). *)
         (ctm, ety)
     | Match _, Kinetic l -> (
@@ -2946,7 +2965,8 @@ and synth_app : type a b n.
     * (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list =
  fun ctx sfn doms cods tyargs fn args ->
   let (cargs, eargs), (newloc, newfn, rest) =
-    synth_arg_cube ~not_enough:Not_enough_arguments_to_function ~which:"function" ctx
+    synth_arg_cube ~not_enough:Not_enough_arguments_to_function
+      ~which:"higher-dimensional application" ctx
       (fun tm _ -> tm)
       doms (sfn.loc, fn, args) in
   (* Evaluate cod at these evaluated arguments and instantiate it at the appropriate values of tyargs. *)
@@ -2985,8 +3005,8 @@ and synth_inst : type a b n.
       let open Bwv.Monadic (M) in
       let (cargs, nargs), (newloc, newfn, rest) =
         mapM1_2
-          (synth_arg_cube ~not_enough:Not_enough_arguments_to_instantiation ~which:"type" ctx
-             (fun _ ntm -> ntm))
+          (synth_arg_cube ~not_enough:Not_enough_arguments_to_instantiation ~which:"instantiation"
+             ctx (fun _ ntm -> ntm))
           doms (sfn.loc, fn, args) in
       (* The synthesized type *of* the instantiation is itself a full instantiation of a universe, at the instantiations of the type arguments at the evaluated term arguments.  This is computed by tyof_inst. *)
       let cargs = TubeOf.of_cube_bwv m k msuc l cargs in

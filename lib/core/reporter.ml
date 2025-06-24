@@ -795,10 +795,10 @@ module Code = struct
             | `Implicit -> "implicit"
             | `Explicit -> "explicit")
             what str
-      | Insufficient_dimension { needed; got; which = _ } ->
+      | Insufficient_dimension { needed; got; which } ->
           textf
-            "@[<hv 0>insufficient dimension of primary argument for higher-dimensional application:@ %s does not factor through %s"
-            (string_of_dim0 got) (string_of_dim0 needed)
+            "@[<hv 0>insufficient dimension of primary argument for %s:@ %s does not factor through %s"
+            which (string_of_dim0 got) (string_of_dim0 needed)
       | Unimplemented str -> textf "unimplemented: %s" str
       | Matching_datatype_has_degeneracy ty ->
           textf
@@ -1061,3 +1061,9 @@ let rec unaccumulate (c : Code.t) : Code.t =
   match c with
   | Accumulated (_, Snoc (Emp, c)) -> unaccumulate c.message
   | c -> c
+
+(* Re-raise one diagnostic, if given, otherwise another. *)
+let fatal_or d e =
+  match d with
+  | Some d -> fatal_diagnostic d
+  | None -> fatal e
