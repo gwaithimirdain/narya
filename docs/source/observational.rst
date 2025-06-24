@@ -11,7 +11,7 @@ Observational primitives
 
 The fundamental aspect of all these higher-dimensional type theories is that each type comes with a specified type family indexed by some copies of itself.  By default, this type family is called ``Id`` (intended to suggest the identity type of HOTT) and depends on two copies of the base type.  That is, for any type ``A`` and two elements ``x:A`` and ``y:A`` we have a type ``Id A x y``.  Under internal parametricity these types are more precisely called *bridge* types, but in this section we will refer to them as identity types and denote them by ``Id``.
 
-Until we get to :ref:`Higher Observational Type Theory` these types do not have all the structure of equality; in particular they are missing *symmetry* and *transitivity*.  However, they do always have *reflexivity*: any element ``x:A`` gives rise to ``refl x : Id A x x``.  The argument of ``refl`` must in general synthesize, though of course it can be ascribed, and there are some exceptions described below.
+Until we get to :ref:`Higher Observational Type Theory` these types do not have all the structure of equality; in particular they are missing *symmetry* and *transitivity*.  However, they do always have *reflexivity*: any element ``x:A`` gives rise to ``refl x : Id A x x``.  Specifically, if ``x`` synthesizes a type ``A``, then ``refl x`` synthesizes ``Id A x x``; whereas ``refl x`` can always check against a type of the form ``Id A x x`` in which case it suffices for ``x`` to check against ``A``.
 
 In addition to reflexivity, these types satisfy *congruence*, which is to say that every function preserves them.  Specifically, given ``f : A → B`` and ``a₂ : Id A a₀ a₁``, we have
 
@@ -96,7 +96,7 @@ The notation suggests that ``Id A`` and ``Id B`` as well as ``u`` and ``v`` are 
 
 The other operations ``refl`` and ``ap`` also compute when applied to terms associated to records (projections and tuples).  For instance:
 
-1. ``refl (a, b)`` reduces to ``(refl a, refl b)``.  Since in general the argument of ``refl`` must synthesize, you would expect that the ``(a, b)`` needs to be ascribed.  But in fact because ``refl (a, b)`` always reduces to ``(refl a, refl b)``, which is a checking term, Narya does that reduction at checking time, allowing it also to check without needing the tuple to be ascribed.
+1. ``refl (a, b)`` reduces to ``(refl a, refl b)``.
 2. ``refl (u .fst)`` reduces to ``refl u .fst`` (which, recall, means ``(refl u) .fst``), and similarly for ``snd``.
 3. ``ap (x ↦ (f x, g x)) u₂`` reduces to ``(ap f u₂, ap g u₂)`` (modulo η-converting ``(x ↦ f x) : A → B`` to ``f`` and similarly).
 4. ``ap ((x ↦ f x .fst) : A → B) u₂`` reduces to ``ap f u₂ .fst``, and similarly for ``snd``.
@@ -174,7 +174,7 @@ the identity type ``Id (List A) p q`` reduces to ``List⁽ᵉ⁾ (Id A) p q``, w
 
 As with record types, the other primitives ``refl`` and ``ap`` compute on terms associated to datatypes (constructors and matches).  In the case of constructors, we have for example
 
-1. ``refl (left. a)`` reduces to ``left. (refl a)``, and similarly for ``right``.  As with tuples, since the argument of ``refl`` must in general synthesize, you would expect that ``left. a`` needs to be ascribed; but because ``refl (left. a)`` always reduces to ``left. (refl a)`` Narya does that reduction at checking time and allows ``refl (left. a)`` to check without needing the constructor to be ascribed.
+1. ``refl (left. a)`` reduces to ``left. (refl a)``, and similarly for ``right``.
 2. ``refl (cons. x (cons. y nil.))`` reduces to ``cons. (refl x) (cons. (refl y) nil.)``.
 3. ``refl 3``, which means ``refl (suc. (suc. (suc. zero.)))``, reduces to ``suc. (suc. (suc. zero.))`` where all the constructors denote higher-dimensional ones.  Since a numeral checks at *any* datatype having the appropriate constructors, ``refl 3`` can also be written as just ``3``.  However, since this may look confusing, Narya prints it as ``refl 3`` even though the ``refl`` is strictly speaking unnecessary.
 
@@ -477,11 +477,11 @@ In addition, even when printing implicit boundaries is off, Narya attempts to be
 Symmetries and degeneracies
 ---------------------------
 
-There is a symmetry operation ``sym`` that acts on at-least-two dimensional cubes, swapping or transposing the last two dimensions.  Like ``refl``, if the argument of ``sym`` synthesizes, then the ``sym`` synthesizes a symmetrized type; but in this case the argument must synthesize a "2-dimensional" type.  In addition, unlike ``refl``, an application of ``sym`` can also check if its argument does, since the type it is checked against can be "unsymmetrized" to obtain the necessary type for its argument to check against.
+There is a symmetry operation ``sym`` that acts on at-least-two dimensional cubes, swapping or transposing the last two dimensions.  Like ``refl``, if the argument of ``sym`` synthesizes, then the ``sym`` synthesizes a symmetrized type; but in this case the argument must synthesize a "2-dimensional" type.  And also as with ``refl``, an application of ``sym`` can also check, in this case by symmetrizing the checking type to check its argument.
 
 Combining versions of ``refl`` and ``sym`` yields arbitrary higher-dimensional "degeneracies" (from the BCH cube category).  There is also a generic syntax for such degeneracies, for example ``M⁽²ᵉ¹⁾`` or ``M^^(2e1)`` where the superscript represents the degeneracy, with ``e`` denoting a degenerate dimension and nonzero digits denoting a permutation.  (The ``e`` stands for "equality", as we are using the notation of :ref:`Higher Observational Type Theory`; when using :ref:`Parametricity` instead you can change the letter.)  In the unlikely event you are working with dimensions greater than nine, you can separate multi-digit numbers and letters with a hyphen, e.g. ``M⁽¹⁻²⁻³⁻⁴⁻⁵⁻⁶⁻⁷⁻⁸⁻⁹⁻¹⁰⁾`` or ``M^^(0-1-2-3-4-5-6-7-8-9-10)``.
 
-This notation can always synthesize if ``M`` does, while like ``sym`` it can also check if the degeneracy is a "pure permutation", consisting only of digits without any ``e`` s.  It can also check if ``M`` is a tuple or a constructor, as described for ``refl`` above.  Finally, if ``M`` is a 0-dimensional abstraction and the degeneracy is immediately applied to arguments such as ``(x y ↦ P)⁽ᵉᵉ⁾ a₂₂ b₂₂``, it is treated as a "higher-dimensional redex" and subject to the rules laid out for :ref:`Checking redexes`: each argument must either synthesize or have the corresponding domain given explicitly in the abstraction, and either the body of the abstraction must synthesize or the whole application must be in a checking context.
+As with ``refl`` and ``sym``, this notation synthesizes if ``M`` does, and can always check.  Moreover, if ``M`` is a 0-dimensional abstraction and the degeneracy is immediately applied to arguments such as ``(x y ↦ P)⁽ᵉᵉ⁾ a₂₂ b₂₂``, it is treated as a "higher-dimensional redex" and subject to the rules laid out for :ref:`Checking redexes`: each argument must either synthesize or have the corresponding domain given explicitly in the abstraction, and either the body of the abstraction must synthesize or the whole application must be in a checking context.
 
 Degeneracies can be extended by identities on the left and remain the same operation.  For instance, the two degeneracies taking a 1-dimensional object to a 2-dimensional one are denoted ``1e`` and ``e1``, and of these ``1e`` can be written as simply ``e`` and coincides with ordinary ``refl`` applied to an object that happens to be 1-dimensional.  Similarly, the basic symmetry ``sym`` of a 3-dimensional object actually acts on the last two dimensions, so it coincides with the superscripted operation ``132``.
 
