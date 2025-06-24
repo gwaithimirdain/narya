@@ -74,7 +74,7 @@ def Σtrr
        B22 (A22 (u02 .fst) (u12 .fst) .liftr.1 (u20 .fst)) (u02 .snd)
            (u12 .snd)
          .trr.1 (u20 .snd))
-  ≔ refl (Σ⁽ᵉᵉ⁾ A22 B22 u02 u12 .trr u20)
+  ≔ refl _
 
 synth Σ⁽ᵉᵉ⁾ A22 B22 u02 u12 .liftr u20
 
@@ -89,7 +89,7 @@ def Σliftr
        B22 (A22 (u02 .fst) (u12 .fst) .liftr.1 (u20 .fst)) (u02 .snd)
            (u12 .snd)
          .liftr.1 (u20 .snd))
-  ≔ refl (Σ⁽ᵉᵉ⁾ A22 B22 u02 u12 .liftr u20)
+  ≔ refl _
 
 synth Σ⁽ᵉᵉ⁾ A22 B22 u02 u12 .trl u21
 
@@ -103,7 +103,7 @@ def Σtrl
        B22 (A22 (u02 .fst) (u12 .fst) .liftl.1 (u21 .fst)) (u02 .snd)
            (u12 .snd)
          .trl.1 (u21 .snd))
-  ≔ refl (Σ⁽ᵉᵉ⁾ A22 B22 u02 u12 .trl u21)
+  ≔ refl _
 
 synth Σ⁽ᵉᵉ⁾ A22 B22 u02 u12 .liftl u21
 
@@ -118,4 +118,4 @@ def Σliftl
        B22 (A22 (u02 .fst) (u12 .fst) .liftl.1 (u21 .fst)) (u02 .snd)
            (u12 .snd)
          .liftl.1 (u21 .snd))
-  ≔ refl (Σ⁽ᵉᵉ⁾ A22 B22 u02 u12 .liftl u21)
+  ≔ refl _

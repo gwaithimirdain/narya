@@ -90,10 +90,7 @@ def Πtrr
       (B22 (A22 (A02 .liftl a01) (A12 .liftl a11) .liftl a21)
            (f02 (A02 .liftl a01)) (f12 (A12 .liftl a11))
        .trr (f20 (A22 (A02 .liftl a01) (A12 .liftl a11) .trl a21)))
-  ≔ refl
-      (B22 (A22 (A02 .liftl a01) (A12 .liftl a11) .liftl a21)
-           (f02 (A02 .liftl a01)) (f12 (A12 .liftl a11))
-       .trr (f20 (A22 (A02 .liftl a01) (A12 .liftl a11) .trl a21)))
+  ≔ refl _
 
 {` And in the other direction `}
 
@@ -117,10 +114,7 @@ def Πtrl
       (B22 (A22 (A02 .liftr a00) (A12 .liftr a10) .liftr a20)
            (f02 (A02 .liftr a00)) (f12 (A12 .liftr a10))
        .trl (f21 (A22 (A02 .liftr a00) (A12 .liftr a10) .trr a20)))
-  ≔ refl
-      (B22 (A22 (A02 .liftr a00) (A12 .liftr a10) .liftr a20)
-           (f02 (A02 .liftr a00)) (f12 (A12 .liftr a10))
-       .trl (f21 (A22 (A02 .liftr a00) (A12 .liftr a10) .trr a20)))
+  ≔ refl _
 
 {` Now lifting `}
 axiom a02 : A02 a00 a01
@@ -398,10 +392,7 @@ def Πliftr
                          .trr
                            (A21⁽¹ᵉ⁾ (refl a01) (refl A11 .liftr a11)
                             .trr a21))))))))
-  ≔ refl
-      (((X Y ↦ (x : X) → Y x) : ((X : Type) (Y : X → Type) → Type))⁽ᵉᵉ⁾ A22
-           B22 f02 f12
-       .liftr f20 a22)
+  ≔ refl _
 
 echo ((X Y ↦ (x : X) → Y x) : ((X : Type) (Y : X → Type) → Type))⁽ᵉᵉ⁾ A22
          B22 f02 f12
@@ -675,7 +666,4 @@ def Πliftl
                          .trr
                            (A20⁽¹ᵉ⁾ (refl a00) (refl A10 .liftr a10)
                             .trr a20))))))))
-  ≔ refl
-      (((X Y ↦ (x : X) → Y x) : ((X : Type) (Y : X → Type) → Type))⁽ᵉᵉ⁾ A22
-           B22 f02 f12
-       .liftl.1 f21 a22)
+  ≔ refl _
