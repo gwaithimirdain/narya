@@ -159,8 +159,8 @@ module Code = struct
     | Undefined_constant : printable -> t
     | Undefined_metavariable : printable -> t
     | Nonsynthesizing : string -> t
-    | Low_dimensional_argument_of_degeneracy : string * 'a D.t -> t
-    | Low_dimensional_type_of_degeneracy : string * 'a D.t -> t
+    | Low_dimensional_argument_of_degeneracy : { name : string; needed : 'a D.t; got : 'b D.t } -> t
+    | Low_dimensional_type_of_degeneracy : { name : string; needed : 'a D.t; got : 'b D.t } -> t
     | Missing_argument_of_degeneracy : string -> t
     | Applying_nonfunction_nontype : printable * printable -> t
     | Unexpected_implicitness : [ `Implicit | `Explicit ] * string * string -> t
@@ -784,12 +784,14 @@ module Code = struct
       | Undefined_constant c -> textf "undefined constant: %a" pp_printed (print c)
       | Undefined_metavariable v -> textf "undefined metavariable: %a" pp_printed (print v)
       | Nonsynthesizing pos -> textf "non-synthesizing term in synthesizing position (%s)" pos
-      | Low_dimensional_argument_of_degeneracy (deg, dim) ->
-          textf "argument of degeneracy '%s' must have dimension at least %s" deg
-            (string_of_dim0 dim)
-      | Low_dimensional_type_of_degeneracy (deg, dim) ->
-          textf "expected type of degeneracy '%s' must have dimension at least %s" deg
-            (string_of_dim0 dim)
+      | Low_dimensional_argument_of_degeneracy { name; needed; got } ->
+          textf
+            "@[<hv 0>insufficient dimension for argument of degeneracy '%s':@  %s does not factor through %s@]"
+            name (string_of_dim0 got) (string_of_dim0 needed)
+      | Low_dimensional_type_of_degeneracy { name; needed; got } ->
+          textf
+            "@[<hv 0>insufficient dimension for expected type of degeneracy '%s':@  %s does not factor through %s@]"
+            name (string_of_dim0 got) (string_of_dim0 needed)
       | Missing_argument_of_degeneracy deg -> textf "missing argument for degeneracy %s" deg
       | Applying_nonfunction_nontype (tm, ty) ->
           textf
@@ -803,7 +805,7 @@ module Code = struct
             what str
       | Insufficient_dimension { needed; got; which } ->
           textf
-            "@[<hv 0>insufficient dimension of primary argument for %s:@ %s does not factor through %s"
+            "@[<hv 0>insufficient dimension of primary argument for %s:@ %s does not factor through %s@]"
             which (string_of_dim0 got) (string_of_dim0 needed)
       | Unimplemented str -> textf "unimplemented: %s" str
       | Matching_datatype_has_degeneracy ty ->
@@ -1073,3 +1075,19 @@ let fatal_or d e =
   match d with
   | Some d -> fatal_diagnostic d
   | None -> fatal e
+
+type dim_err = { make : 'a 'b. needed:'a D.t -> got:'b D.t -> Code.t }
+
+let low_dim_arg_err (name : string) : dim_err =
+  { make = (fun ~needed ~got -> Low_dimensional_argument_of_degeneracy { name; needed; got }) }
+
+let low_dim_ty_err (name : string) : dim_err =
+  { make = (fun ~needed ~got -> Low_dimensional_type_of_degeneracy { name; needed; got }) }
+
+let anomaly_dim_err str : dim_err =
+  {
+    make =
+      (fun ~needed ~got ->
+        let _ = (needed, got) in
+        Anomaly str);
+  }

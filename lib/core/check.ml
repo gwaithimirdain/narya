@@ -297,10 +297,7 @@ let rec check : type a b s.
                   match d.message with
                   | Low_dimensional_argument_of_degeneracy _ -> Error d
                   | _ -> fatal_diagnostic d)
-              @@ fun () ->
-              Ok
-                (gact_ty None ty fainv
-                   ~err:(Low_dimensional_argument_of_degeneracy (str.value, cod_deg fa)))
+              @@ fun () -> Ok (gact_ty None ty fainv ~err:(low_dim_arg_err str.value))
             with
             | Error nosynth ->
                 (* However, if the given term *doesn't* synthesize, we want to report the low-dimensional error, so we pass that diagnostic on. *)
@@ -318,7 +315,9 @@ let rec check : type a b s.
             | None ->
                 (* Again, in this case, if the term synthesizes, we want the error reported to be Unequal_synthesized_type.  So we fall back to synthesizing if the checking type doesn't symmetrize, reporting the low-dimensional error in case of a failure to synthesize. *)
                 let nosynth =
-                  diagnostic (Low_dimensional_type_of_degeneracy (str.value, dom_deg fa)) in
+                  diagnostic
+                    ((low_dim_ty_err str.value).make ~got:(TubeOf.inst tyargs) ~needed:(dom_deg fa))
+                in
                 check_of_synth ~nosynth status ctx stm tm.loc ty
             | Some (Factor nk) -> (
                 let (Plus mk) = D.plus (D.plus_right nk) in
@@ -334,17 +333,16 @@ let rec check : type a b s.
                     | `Proper fs -> (
                         let sxty = (TubeOf.find tyargs fs).ty in
                         let xty =
-                          gact_ty ~err:(Anomaly "dimension confusion in checking degeneracy") None
-                            sxty (deg_of_perm fp) in
+                          gact_ty
+                            ~err:(anomaly_dim_err "dimension confusion in checking degeneracy")
+                            None sxty (deg_of_perm fp) in
                         let ctx = if locking fa then Ctx.lock ctx else ctx in
                         let cx = check (Kinetic `Nolet) ctx x xty in
                         (* We also have to check that the rest of the output type is correct. *)
                         let ex = eval_term (Ctx.env ctx) cx in
                         let sty =
                           with_loc x.loc @@ fun () ->
-                          act_ty ex xty fa
-                            ~err:(Low_dimensional_argument_of_degeneracy (str.value, cod_deg fa))
-                        in
+                          act_ty ex xty fa ~err:(low_dim_arg_err str.value) in
                         match subtype_of ctx sty ty with
                         | Ok () ->
                             realize status
@@ -2574,10 +2572,7 @@ and synth : type a b s.
         (* We pass on the "nosynth" error, so that we can look through multiple degeneracies before noticing a nonsynthesizing term. *)
         let sx, ety = synth ?nosynth (Kinetic `Nolet) ctx x in
         let ex = eval_term (Ctx.env ctx) sx in
-        let sty =
-          with_loc x.loc @@ fun () ->
-          act_ty ex ety fa ~err:(Low_dimensional_argument_of_degeneracy (str.value, cod_deg fa))
-        in
+        let sty = with_loc x.loc @@ fun () -> act_ty ex ety fa ~err:(low_dim_arg_err str.value) in
         ( realize status (Term.Act (sx, fa, (sort_of_ty ctx (view_type sty "synth act"), `Other))),
           sty )
     | Act _, _ -> fatal_or nosynth (Nonsynthesizing "argument of degeneracy")

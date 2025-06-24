@@ -9,10 +9,13 @@ open View
 (* Operator actions on values.  Unlike substitution, operator actions take a *value* as input (and produces another value). *)
 
 (* Since values don't have a statically specified dimension, we have to act on them by an *arbitrary* degeneracy, which means that in many places we have to check dynamically that the dimensions either match or can be extended to match.  This function encapsulates that. *)
-let deg_plus_to : type m n nk. on:string -> ?err:Code.t -> (m, n) deg -> nk D.t -> nk deg_of =
+let deg_plus_to : type m n nk. on:string -> ?err:dim_err -> (m, n) deg -> nk D.t -> nk deg_of =
  fun ~on ?err s nk ->
   match factor nk (cod_deg s) with
-  | None -> fatal (Option.value err ~default:(Invalid_degeneracy_action (on, nk, cod_deg s)))
+  | None -> (
+      match err with
+      | Some err -> fatal (err.make ~needed:(cod_deg s) ~got:nk)
+      | None -> fatal (Invalid_degeneracy_action (on, nk, cod_deg s)))
   | Some (Factor nk) ->
       let (Plus mk) = D.plus (D.plus_right nk) in
       let sk = deg_plus s nk mk in
@@ -276,7 +279,7 @@ module Act = struct
 
   (* When acting on a neutral or normal, we also need to specify the type of the output.  This *isn't* act_value on the original type; instead the type is required to be fully instantiated and the operator acts on the *instantiated* dimensions, in contrast to how act_value on an instantiation acts on the *uninstantiated* dimensions (as well as the instantiated term).  This function computes this "type of acted terms".  In general, it has to be passed the term as well as the type because the instantiation of the result may involve that term, e.g. if x : A then refl x : Id A x x; but we allow that term to be omitted in case the degeneracy is a pure symmetry in which case this doesn't happen. *)
   and gact_ty : type a b.
-      ?err:Code.t -> kinetic value option -> kinetic value -> (a, b) deg -> kinetic value =
+      ?err:dim_err -> kinetic value option -> kinetic value -> (a, b) deg -> kinetic value =
    fun ?err tm tmty s ->
     (* We have to normalize the type in order to be sure of exposing the instantiations.  But we can't use view_type, because that discards information and we need to reconstruct the acted type. *)
     match view_term tmty with
@@ -337,7 +340,7 @@ module Act = struct
 
   (* Subroutine of gact_ty that acts on the instantiation arguments of a type, keeping them a full tube. *)
   and gact_ty_instargs : type a b n.
-      ?err:Code.t ->
+      ?err:dim_err ->
       kinetic value option ->
       kinetic value ->
       (D.zero, n, n, normal) TubeOf.t ->
@@ -367,7 +370,7 @@ module Act = struct
 
   (* Version of gact_ty that always takes the term value. *)
   and act_ty : type a b.
-      ?err:Code.t -> kinetic value -> kinetic value -> (a, b) deg -> kinetic value =
+      ?err:dim_err -> kinetic value -> kinetic value -> (a, b) deg -> kinetic value =
    fun ?err tm tmty s -> gact_ty ?err (Some tm) tmty s
 
   (* Action on a head *)

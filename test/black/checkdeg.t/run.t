@@ -26,7 +26,8 @@
    ￫ error[E0602]
    ￭ command-line exec string
    1 | import "degconstr" echo refl nil. : List A
-     ^ expected type of degeneracy 'refl' must have dimension at least e
+     ^ insufficient dimension for expected type of degeneracy 'refl':
+        0 does not factor through e
   
   [1]
 
@@ -64,7 +65,8 @@
    ￫ error[E0602]
    ￭ command-line exec string
    1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] echo refl 3 : ℕ
-     ^ expected type of degeneracy 'refl' must have dimension at least e
+     ^ insufficient dimension for expected type of degeneracy 'refl':
+        0 does not factor through e
   
   [1]
 

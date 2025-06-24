@@ -70,7 +70,8 @@
    ￫ error[E0601]
    ￭ command-line exec string
    1 | echo sym a00
-     ^ argument of degeneracy 'sym' must have dimension at least ee
+     ^ insufficient dimension for argument of degeneracy 'sym':
+        0 does not factor through ee
   
   [1]
 
@@ -90,7 +91,8 @@
    ￫ error[E0601]
    ￭ command-line exec string
    1 | echo sym a02
-     ^ argument of degeneracy 'sym' must have dimension at least ee
+     ^ insufficient dimension for argument of degeneracy 'sym':
+        e does not factor through ee
   
   [1]
 
