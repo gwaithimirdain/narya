@@ -3016,6 +3016,7 @@ and synth_or_check_apps : type a b.
   | _, (Any_deg s, fn) -> (
       match D.compare_zero (cod_deg s) with
       | Zero ->
+          let ctx = if locking s then Ctx.lock ctx else ctx in
           let cfn, sty = synth_lam (dom_deg s) ctx fn ctx args ty in
           let efn = eval_term (Ctx.env ctx) cfn in
           (* Finally, we still need to degenerate that function and apply it to all the arguments. *)
