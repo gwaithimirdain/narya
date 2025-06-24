@@ -286,9 +286,10 @@ let rec check : type a b s.
         let clet, Not_some = synth_or_check_letrec status ctx vtys vs body (Some ty) in
         clet
     | Synth (Act (str, fa, x) as stm), _ -> (
-        (* An action can always synthesize, but can also check if its degeneracy is a pure permutation, since then the type of the argument can be inferred by applying the inverse permutation to the ambient type. *)
+        (* An action can always synthesize, but can usually also check. *)
         match perm_of_deg fa with
         | Some pfa ->
+            (* It can check if its degeneracy is a pure permutation, since then the type of the argument can be inferred by applying the inverse permutation to the ambient type. *)
             let fainv = deg_of_perm (perm_inv pfa) in
             Reporter.try_with ~fatal:(fun d ->
                 (* If the user has given a symmetrized term that synthesizes but doesn't match the checking type, we want the error reported to be Unequal_synthesized_type.  So we fall back to synthesizing if the checking type doesn't symmetrize.  *)
@@ -305,61 +306,55 @@ let rec check : type a b s.
             let cx = check (Kinetic `Nolet) ctx x ty_fainv in
             realize status
               (Term.Act (cx, fa, (sort_of_ty ctx (view_type ty "checking act"), `Other)))
-        (* It can also check if its argument is a constructor (including a numeral) or a tuple, by pushing the degeneracy through to its arguments, since higher constructors and fields have the same names as lower ones. *)
-        | None ->
-            let add_extra locs what (d : Reporter.Code.t Asai.Diagnostic.t) =
-              let extra_remarks =
-                Bwd.append d.extra_remarks
-                  (Bwd_extra.to_list_map
-                     (fun loc ->
-                       Asai.Diagnostic.loctext ~loc ("degeneracy propagated through " ^ what))
-                     locs) in
-              fatal_diagnostic { d with extra_remarks } in
-            let (Any dim) =
-              match view_type ~severity ty "typechecking lambda" with
-              | Canonical (_, _, ins, _) -> Any (cod_left_ins ins)
-              | Neutral (_, _, tyargs) -> Any (TubeOf.inst tyargs) in
-            let check_dim () =
-              if Option.is_none (factor dim (dom_deg fa)) then
-                fatal ~severity:Asai.Diagnostic.Error
-                  (Dimension_mismatch ("higher constructor", dom_deg fa, dim)) in
-            let rec look_through locs fas (Any_deg s) x =
-              let act_on x =
-                Bwd.fold_right
-                  (fun (str, Any_deg fa) x -> locate_opt x.loc (Synth (Act (str, fa, x))))
-                  fas x in
-              match x.value with
-              | Constr (c, args) ->
-                  check_dim ();
-                  Reporter.try_with ~fatal:(add_extra locs "constructor") @@ fun () ->
-                  check ?discrete status ctx
-                    (locate_opt x.loc (Constr (c, List.map act_on args)))
-                    ty
-              | Struct (eta, flds) ->
-                  check_dim ();
-                  Reporter.try_with ~fatal:(add_extra locs "tuple") @@ fun () ->
-                  check ?discrete status ctx
-                    (locate_opt x.loc
-                       (Struct (eta, Abwd.map (fun (cube, x) -> (cube, act_on x)) flds)))
-                    ty
-              | Numeral _ ->
-                  (* Numerals are sequences of constructors with no other arguments, so there is no need to push anything through. *)
-                  check_dim ();
-                  check ?discrete status ctx x ty
-              | Synth (Act (str2, fa2, y)) ->
-                  (* Iterated degeneracies, like (refl (refl 3)) can be combined to look all the way through. *)
-                  let (DegExt (_, _, s)) = comp_deg_extending s fa2 in
-                  look_through
-                    (Option.fold ~none:locs ~some:(Bwd.snoc locs) str2.loc)
-                    (Snoc (fas, (str2, Any_deg fa2)))
-                    (Any_deg s) y
-              | _ ->
-                  (* If after looking through all the degeneracies we get something that's none of those, we back up and pass the whole thing off to check_of_synth. *)
-                  check_of_synth status ctx stm tm.loc ty in
-            look_through
-              (Option.fold ~none:Bwd.Emp ~some:(Bwd.snoc Emp) str.loc)
-              (Snoc (Emp, (str, Any_deg fa)))
-              (Any_deg fa) x)
+        | None -> (
+            (* It can also check if it is *not* a permutation and the arity is positive, since then we can extract the needed type of its argument from the boundary of the type it is checking against. *)
+            let (Full_tube tyargs) = get_tyargs ty "type of checking degeneracy" in
+            match factor (TubeOf.inst tyargs) (dom_deg fa) with
+            | None ->
+                fatal
+                  (Insufficient_dimension
+                     {
+                       needed = dom_deg fa;
+                       got = TubeOf.inst tyargs;
+                       which = "TODO: type of checking degeneracy";
+                     })
+            | Some (Factor nk) -> (
+                let (Plus mk) = D.plus (D.plus_right nk) in
+                let fa = deg_plus fa mk nk in
+                match section_of_deg fa with
+                | None -> check_of_synth status ctx stm tm.loc ty
+                | Some (Face (fs, fp)) -> (
+                    match pface_of_sface fs with
+                    | `Id _ ->
+                        fatal (Anomaly "non-permutation degeneracy doesn't have a proper section")
+                    | `Proper fs -> (
+                        let sxty = (TubeOf.find tyargs fs).ty in
+                        let xty =
+                          gact_ty ~err:(Anomaly "dimension confusion in checking degeneracy") None
+                            sxty (deg_of_perm fp) in
+                        let ctx = if locking fa then Ctx.lock ctx else ctx in
+                        let cx = check (Kinetic `Nolet) ctx x xty in
+                        (* We also have to check that the rest of the output type is correct. *)
+                        let ex = eval_term (Ctx.env ctx) cx in
+                        let sty =
+                          with_loc x.loc @@ fun () ->
+                          act_ty ex xty fa
+                            ~err:(Low_dimensional_argument_of_degeneracy (str.value, cod_deg fa))
+                        in
+                        match subtype_of ctx sty ty with
+                        | Ok () ->
+                            realize status
+                              (Term.Act
+                                 (cx, fa, (sort_of_ty ctx (view_type ty "checking act"), `Other)))
+                        | Error why ->
+                            fatal
+                              (Unequal_synthesized_type
+                                 {
+                                   got = PVal (ctx, sty);
+                                   expected = PVal (ctx, ty);
+                                   which = None;
+                                   why;
+                                 }))))))
     (* Similarly, an application can always synthesize, but can also check, as a non-dependent application, if enough domains are ascribed or arguments are synthesizing. *)
     | Synth (App _), _ -> (
         let fn, args = spine tm in
