@@ -54,6 +54,7 @@ val factor : 'nk D.t -> 'n D.t -> ('nk, 'n) factor option
 type (_, _) cofactor = Cofactor : ('n, 'k, 'nk) D.plus -> ('nk, 'k) cofactor
 
 val cofactor : 'nk D.t -> 'k D.t -> ('nk, 'k) cofactor option
+val totally_nullary : 'a D.t -> bool
 
 type (_, _) deg
 

@@ -2857,13 +2857,14 @@ and synth_arg_cube : type a b n c.
       | Take
       | Given : Asai.Range.t option * (n, 'k, 'nk) D.plus * (D.zero, 'nk, 'nk, normal) TubeOf.t -> t
   end in
+  let n = CubeOf.dim doms in
   let taken_args : TakenArgs.t =
-    match (args, D.compare_zero (CubeOf.dim doms)) with
-    | [], _ -> fatal not_enough
-    (* If the application if zero-dimensional, or if the first argument is implicit, take a whole cube. *)
-    | _, Zero | (_, _, { value = `Implicit; _ }) :: _, Pos _ -> Take
+    match (args, D.compare_zero n, totally_nullary n) with
+    | [], _, _ -> fatal not_enough
+    (* If the first argument is implicit, or if the cube would have only one element (i.e. it is 0-dimensional or consists entirely of nullary dimensions) take a whole cube. *)
+    | (_, _, { value = `Implicit; _ }) :: _, Pos _, false | _, Zero, _ | _, _, true -> Take
     (* Otherwise, the first argument must be explicit and synthesizing. *)
-    | (_, { value = Some (Synth toptm); loc }, { value = `Explicit; _ }) :: _, Pos _ -> (
+    | (_, { value = Some (Synth toptm); loc }, { value = `Explicit; _ }) :: _, Pos _, false -> (
         (* We synthesize its type, extract the instantiation arguments, and store them to fill in the boundary arguments. *)
         let _, argty = synth (Kinetic `Nolet) ctx (locate_opt loc toptm) in
         let (Full_tube argtyargs) = get_tyargs argty "primary argument" in
@@ -2874,7 +2875,7 @@ and synth_arg_cube : type a b n c.
             fatal ~severity:Asai.Diagnostic.Error ?loc
               (Insufficient_dimension
                  { needed = CubeOf.dim doms; got = TubeOf.inst argtyargs; which }))
-    | (_, { loc; _ }, { value = `Explicit; _ }) :: _, Pos _ ->
+    | (_, { loc; _ }, { value = `Explicit; _ }) :: _, Pos _, false ->
         fatal ?loc (Nonsynthesizing ("primary argument with implicit " ^ which ^ " boundaries"))
   in
   let module M = Monad.State (struct
