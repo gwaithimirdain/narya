@@ -12,6 +12,8 @@ In addition to installing the basic Narya executable, the following are highly r
 - The :ref:`Installing ProofGeneral mode` that runs inside Emacs.
 - Further :ref:`Configuration` options.
 
+We have tried to make the installation process as easy and painless as possible.  If you run into any problems, please ask for help!  See :ref:`Support and community` for places to ask.
+
 
 Static binary
 -------------

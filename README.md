@@ -11,5 +11,5 @@ Narya is very much a work in progress.  Expect breaking changes, including even 
 
 - [Installation](https://narya.readthedocs.io/en/latest/installation.html)
 - [Documentation](https://narya.readthedocs.io/en/latest/)
+- [Support and community](https://narya.readthedocs.io/en/latest/community.html)
 - [Contributing to Narya](https://narya.readthedocs.io/en/latest/contributing.html)
-
