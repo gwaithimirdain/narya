@@ -479,17 +479,17 @@ handling in Proof General."
   (interactive)
   (proof-shell-invisible-command "show holes"))
 
-(defun narya-solve-hole ()
+(defun narya-solve-hole (term)
   "Solve the current hole with a user-provided term."
-  (interactive)
-  (narya-solve-or-split-hole nil))
+  (interactive "MEnter the term to solve the hole: ")
+  (narya-solve-or-split-hole nil term))
 
 (defun narya-split-hole ()
   "Solve the current hole with a term inferred from its type."
   (interactive)
-  (narya-solve-or-split-hole t))
+  (narya-solve-or-split-hole t "_"))
 
-(defun narya-solve-or-split-hole (split)
+(defun narya-solve-or-split-hole (split term)
   "Issue either solve or split command, depending on the argument."
   ;; Check for an overlay marking the current hole at point.
   (let ((hole-overlay (car (seq-filter (lambda (ovl)
@@ -499,11 +499,7 @@ handling in Proof General."
     (if (not hole-overlay)
         (message "Place the cursor in a hole to use this command.")
       ;; Otherwise, proceed to solve/split the hole, perhaps with a user-provided term.
-      (let ((term (if split
-                      "_"
-                    (read-string "Enter the term to solve the hole: "
-                                 nil 'proof-minibuffer-history nil t)))
-            (cmd (if split "split" "solve"))
+      (let ((cmd (if split "split" "solve"))
             (column (current-column)))
         ;; Send the solution command invisibly to the proof shell, synchronously.
         (proof-shell-invisible-command
