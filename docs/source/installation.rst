@@ -36,6 +36,8 @@ Then restart your shell (i.e. terminal or command prompt) and try running ``nary
 
 and then once again restart your shell, or log out and back in again.
 
+Once you can run Narya from the command prompt, proceed to :ref:`Installing ProofGeneral mode`.
+
 
 On Windows
 ^^^^^^^^^^
@@ -52,7 +54,7 @@ After this finishes, you may need to reboot your computer and run the same comma
 
   wsl
 
-to enter a Linux command prompt, and then follow the :ref:`On Linux` instructions above.  If you downloaded the static distribtion in Windows, you can navigate to it in WSL using a path like ``/mnt/c/Users/YOUR NAME/Downloads``.  You can also download it directly from the WSL prompt with
+to enter a Linux command prompt, and then follow the :ref:`On Linux` instructions above.  If you downloaded the static distribtion in Windows, you can usually navigate to it in WSL using a path like ``/mnt/c/Users/YOUR NAME/Downloads``.  You can also download it directly from the WSL prompt with
 
 .. code-block:: none
 
@@ -60,7 +62,8 @@ to enter a Linux command prompt, and then follow the :ref:`On Linux` instruction
   tar -xzf narya-master-static.tar.gz
   cd narya-xxxxxxx-YYYYMMDD
 
-(for the appropriate directory name) and then proceed with the above Linux instructions.  Note that when you run Emacs from within WSL, it should automatically pop up as a graphical window.
+(for the appropriate directory name) and then proceed with the above Linux instructions (and the later instructions for :ref:`Installing ProofGeneral mode`).  Note that when you run Emacs from the WSL command prompt, it should automatically pop up as a graphical window; you can run ``emacs &`` if you want to also continue using your command prompt while Emacs is running.
+
 
 On Mac
 ^^^^^^
@@ -185,13 +188,15 @@ ProofGeneral Mode
 
 `ProofGeneral <https://proofgeneral.github.io/>`_ is a generic development environment designed for proof assistants that runs inside the text editor Emacs.  Narya comes with a basic ProofGeneral mode that is the recommended way to use it.
 
-To install the Narya ProofGeneral mode, first you'll need to install `Emacs <https://www.gnu.org/software/emacs/>`_.  The best way to do this depends on your operating system.  On many modern Linux distributions (including WSL) you can install Emacs with
+To install the Narya ProofGeneral mode, first you'll need to install a relatively recent version of `Emacs <https://www.gnu.org/software/emacs/>`_.  Unfortunately, the version installable through the default package manager on many Linux distributions (such as ``apt`` on Debian/Ubuntu) is not recent enough.  However, on many modern Linux distributions (including WSL) you can install a more recent version of Emacs with
 
 .. code-block:: bash
 
-  sudo snap install emacs
+  sudo snap install emacs --classic
 
-Once Emacs is installed, you have two options:
+If you have previously installed an older version of Emacs through your package manager, you may want to remove it (such as with ``sudo apt remove emacs-common``) to avoid confusion, and then restart your shell or terminal.  To find out what version of Emacs you have, you can run ``emacs --version`` in a terminal, or ``M-x emacs-version`` inside Emacs: look for at least 30.1.
+
+Once Emacs is installed, you have two options for installing the Narya ProofGeneral mode:
 
 - There is an :ref:`Automatic ProofGeneral installation` script that should usually be able to install ProofGeneral and the Narya ProofGeneral mode for you, once you have installed Emacs.
 - If this doesn't work, or you want to edit the Narya ProofGeneral mode, you can use :ref:`Manual ProofGeneral installation` instead.
@@ -213,6 +218,8 @@ If the script reports any errors, or if it doesn't report any errors but the Pro
 You will also need to ensure that Emacs can find the Narya executable.  On Linux machines, and on Windows with WSL, this should happen automatically as long as the directory containing narya is in your ``PATH``.  On a Mac, when Emacs is run as a GUI it takes its environment variables from somewhere else, so it may not be able to find Narya; one solution is to install the package `exec-path-from-shell <https://github.com/purcell/exec-path-from-shell>`_.
 
 You will need to re-run the installation script every time Emacs, ProofGeneral, or Narya is updated.  This will be the case until the Narya ProofGeneral mode stabilizes and we can get it incorporated in the ProofGeneral distribution.
+
+Once ProofGeneral is installed and working, you can proceed with further :ref:`Configuration`.
 
 
 .. _Manual ProofGeneral installation:
@@ -242,6 +249,8 @@ If the automatic ProofGeneral installer doesn't work for you, you can follow the
 
 You will have to repeat these steps whenever the Narya ProofGeneral mode is updated (unless you symlinked the files instead of copying them, in which case restarting Emacs will suffice); whenever ProofGeneral is updated; and whenever Emacs is updated.
 
+Once ProofGeneral is installed and working, you can proceed with further :ref:`Configuration`.
+
 
 Configuration
 -------------
@@ -252,7 +261,7 @@ Once Narya and its ProofGeneral mode are installed, you can run
 
   emacs
 
-Then whenever you create or open a ``.ny`` file in Emacs, Narya ProofGeneral should automatically start.  See :ref:`ProofGeneral mode` for usage instructions; you should also familiarize yourself with the standard syntax for `Emacs key sequences <https://www.gnu.org/software/emacs/manual/html_node/emacs/User-Input.html>`_ such as ``C-c C-M-a``.
+Then whenever you create or open a ``.ny`` file in Emacs, Narya ProofGeneral should automatically start.  The first time you do this, look in the minibuffer (at the bottom of the screen) for any errors or warning messages that may indicate a problem with the installation of Narya, Emacs, or ProofGeneral.  For usage instructions, see :ref:`ProofGeneral mode`.  You should also familiarize yourself with the standard syntax for `Emacs key sequences <https://www.gnu.org/software/emacs/manual/html_node/emacs/User-Input.html>`_ such as ``C-c C-M-a``.
 
 Note that you can only use ProofGeneral with one proof assistant per Emacs session: if you want to switch between (say) Narya and Rocq, you need to restart Emacs each time, or open a separate instance of it for each proof assistant.
 
