@@ -102,13 +102,22 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols f =
   Annotate.run @@ fun () ->
   Readback.Displaying.run ~env:false @@ fun () ->
   Core.Discrete.run ~env:!discreteness @@ fun () ->
-  if !arity < 1 || !arity > 9 then Reporter.fatal (Unimplemented "arities outside [1,9]");
-  if !discreteness && !arity > 1 then Reporter.fatal (Unimplemented "discreteness with arity > 1");
-  if !hott && (!arity <> 2 || !discreteness || not !internal) then Reporter.fatal Invalid_flags;
+  (* A temporary Reporter.run to report these errors *)
+  ( Reporter.run
+      ~emit:(fun d ->
+        if !verbose || d.severity = Error || d.severity = Warning then
+          Reporter.display ?use_ansi ~output:stderr d)
+      ~fatal:(fun d ->
+        Reporter.display ?use_ansi ~output:stderr d;
+        raise Exit)
+  @@ fun () ->
+    if !arity < 0 || !arity > 9 then Reporter.fatal (Unimplemented "arities outside [1,9]");
+    if !discreteness && !arity > 1 then Reporter.fatal (Unimplemented "discreteness with arity > 1");
+    if !hott && (!arity <> 2 || !discreteness || not !internal) then Reporter.fatal Invalid_flags );
   Dim.Endpoints.run ~arity:!arity ~refl_char:!refl_char ~refl_names:!refl_names ~internal:!internal
     ?hott:(if !hott then Some () else None)
   @@ fun () ->
-  (* We have to put Reporter.run inside Endpoints.run, so we can display dimensions *)
+  (* We have to put the main Reporter.run inside Endpoints.run, so we can display dimensions *)
   Reporter.run
     ~emit:(fun d ->
       if !verbose || d.severity = Error || d.severity = Warning then
