@@ -24,6 +24,8 @@ Here is a listing of the files in this directory, as of May 5, 2024, with brief 
 * [Tface](tface.ml): A strict face restricted to lie in a certain tube.
 * [Bwtface](bwtface.ml): Backwards version of tface.
 * [Insertion](insertion.ml): A restricted permutation that preserves the relative order of part of its codomain.
+* [Pbij](pbij.ml): A partial bijection is an insertion together with a shuffle.
+* [Section](section.ml): If the arity is at least one, any degeneracy has a section that's a non-strict face.
 
 ## Data structures
 
