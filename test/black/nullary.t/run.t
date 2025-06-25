@@ -82,3 +82,13 @@
     : (x₀₀ : A⁽ʷʷ⁾ . .) →⁽ʷʷ⁾ B⁽ʷʷ⁾ x₀₀ . .
   
 
+  $ narya -arity 0 -direction w,wk nominal.ny
+  a .subst
+    : wk A .
+  
+  b .subst.1
+    : A⁽ʷʷ⁾ . .
+  
+  sym b .subst.1
+    : A⁽ʷʷ⁾ . .
+  
