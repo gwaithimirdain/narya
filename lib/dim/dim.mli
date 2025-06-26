@@ -54,6 +54,7 @@ val factor : 'nk D.t -> 'n D.t -> ('nk, 'n) factor option
 type (_, _) cofactor = Cofactor : ('n, 'k, 'nk) D.plus -> ('nk, 'k) cofactor
 
 val cofactor : 'nk D.t -> 'k D.t -> ('nk, 'k) cofactor option
+val totally_nullary : 'a D.t -> bool
 
 type (_, _) deg
 
@@ -361,6 +362,7 @@ module Tube (F : Fam2) : sig
     val pmapM :
       ('n, 'k, 'nk, ('b, 'bs) cons, 'cs) pmapperM ->
       ('n, 'k, 'nk, 'nk, ('b, 'bs) cons) Heter.hgt ->
+      ?ifzero:unit M.t ->
       'cs Tlist.t ->
       ('n, 'k, 'nk, 'nk, 'cs) Heter.hgt M.t
 
@@ -370,6 +372,7 @@ module Tube (F : Fam2) : sig
 
     val mmapM :
       ('n, 'k, 'nk, ('b, 'bs) cons, 'c) mmapperM ->
+      ?ifzero:unit M.t ->
       ('n, 'k, 'nk, 'nk, ('b, 'bs) cons) Heter.hgt ->
       ('n, 'k, 'nk, 'c) t M.t
 
@@ -379,6 +382,7 @@ module Tube (F : Fam2) : sig
 
     val miterM :
       ('n, 'k, 'nk, ('b, 'bs) cons) miteratorM ->
+      ?ifzero:unit M.t ->
       ('n, 'k, 'nk, 'nk, ('b, 'bs) cons) Heter.hgt ->
       unit M.t
 
@@ -429,7 +433,7 @@ module TubeOf : sig
     ('m, 'kl, 'mkl, 'b) t ->
     ('m, 'k, 'mk, 'b) t * ('mk, 'l, 'mkl, 'b) t
 
-  val append_bwd : 'a Bwd.t -> ('m, 'n, 'mn, 'a) t -> 'a Bwd.t
+  val append_bwd : 'a Bwd.t -> ?ifzero:'a -> ('m, 'n, 'mn, 'a) t -> 'a Bwd.t
 end
 
 module type Suc = sig

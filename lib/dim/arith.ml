@@ -39,3 +39,12 @@ let pushout : type a b. a D.t -> b D.t -> (a, b) pushout =
   | Eq -> Pushout (Zero, Zero)
   | Lt ab -> Pushout (ab, Zero)
   | Gt ba -> Pushout (Zero, ba)
+
+(* A dimension is totally nullary if all its directions have arity zero.  Currently there is only one direction, so it suffices to test whether the overall arity is zero.  *)
+
+let totally_nullary : type a. a D.t -> bool =
+ fun _ ->
+  let (Wrap l) = Endpoints.wrapped () in
+  match Endpoints.len l with
+  | Nat Zero -> true
+  | Nat (Suc _) -> false
