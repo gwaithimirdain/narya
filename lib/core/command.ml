@@ -30,7 +30,13 @@ type defconst =
   | Def_synth : { params : (N.zero, 'b, 'c) Raw.tel; tm : 'c synth located } -> defconst
 
 type t =
-  | Axiom : Constant.t * (N.zero, 'b, 'c) Raw.tel * 'c check located -> t
+  | Axiom : {
+      name : Constant.t;
+      params : (N.zero, 'b, 'c) Raw.tel;
+      ty : 'c check located;
+      parametric : bool;
+    }
+      -> t
   | Def : (Constant.t * defconst) list -> t
   | Solve :
       Global.data
@@ -134,13 +140,15 @@ let check_defs (defs : (Constant.t * defconst) list) : printable list * bool * b
   go defs (if Discrete.enabled () then Some Constant.Map.empty else None) Emp
 
 let execute : t -> unit = function
-  | Axiom (const, params, ty) ->
-      Global.set_nonparametric None;
+  | Axiom { name; params; ty; parametric } ->
+      if parametric then Global.set_parametric name else Global.set_nonparametric None;
       let Checked_tel (params, ctx), _ = check_tel Ctx.empty params in
       let cty = check (Kinetic `Nolet) ctx ty (universe D.zero) in
       let cty = Telescope.pis params cty in
-      Global.add const cty (`Axiom, `Nonparametric);
-      Global.end_command (fun h -> Constant_assumed (PConstant const, h))
+      let p = Global.get_parametric () in
+      Global.add name cty (`Axiom, (p :> [ `Parametric | `Nonparametric | `Maybe_parametric ]));
+      Global.end_command (fun holes ->
+          Constant_assumed { name = PConstant name; parametric; holes })
   | Def defs ->
       Global.set_maybe_parametric ();
       let names, discrete, parametric = check_defs defs in

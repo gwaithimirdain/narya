@@ -192,7 +192,7 @@ module Code = struct
     | Notation_variable_used_twice : string -> t
     | Unbound_variable_in_notation : string list -> t
     | Head_already_has_notation : string -> t
-    | Constant_assumed : printable * int -> t
+    | Constant_assumed : { name : printable; parametric : bool; holes : int } -> t
     | Constant_defined : {
         names : printable list;
         discrete : bool;
@@ -858,10 +858,13 @@ module Code = struct
       | Head_already_has_notation name ->
           textf "replacing printing notation for %s (previous notation will still be parseable)"
             name
-      | Constant_assumed (name, h) ->
-          if h > 1 then textf "axiom %a assumed, containing %d holes" pp_printed (print name) h
-          else if h = 1 then textf "axiom %a assumed, containing 1 hole" pp_printed (print name)
-          else textf "axiom %a assumed" pp_printed (print name)
+      | Constant_assumed { name; parametric; holes } ->
+          let p = if parametric then "" else "nonparametric " in
+          if holes > 1 then
+            textf "%saxiom %a assumed, containing %d holes" p pp_printed (print name) holes
+          else if holes = 1 then
+            textf "%saxiom %a assumed, containing 1 hole" p pp_printed (print name)
+          else textf "%saxiom %a assumed" p pp_printed (print name)
       | Constant_defined { names; discrete; parametric; holes } -> (
           (* Nonparametricity trumps discreteness *)
           let prefix =
@@ -920,7 +923,7 @@ module Code = struct
           textf "constant %a uses nonparametric axioms, can't appear inside an external degeneracy"
             pp_printed (print a)
       | Axiom_in_parametric_definition a ->
-          textf "constant %a uses nonparametric axioms, can't be used in a parametric definition"
+          textf "constant %a uses nonparametric axioms, can't be used in a parametric command"
             pp_printed (print a)
       | Hole (n, ty) -> textf "@[<v 0>hole %s:@,%a@]" n pp_printed (print ty)
       | No_open_holes -> text "no open holes"
