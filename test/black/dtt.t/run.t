@@ -163,11 +163,11 @@
   
   [1]
 
-Can't take external degeneracies of axioms.
+Can't take external degeneracies of nonparametric axioms.
 
-  $ narya -dtt -v -e "axiom A : Type" -e "echo A⁽ᵈ⁾"
+  $ narya -dtt -v -e "axiom nonparametric A : Type" -e "echo A⁽ᵈ⁾"
    ￫ info[I0001]
-   ￮ axiom A assumed
+   ￮ nonparametric axiom A assumed
   
    ￫ error[E0311]
    ￭ command-line exec string
@@ -176,21 +176,38 @@ Can't take external degeneracies of axioms.
   
   [1]
 
-Or of anything that uses an axiom.
+Or of anything that uses a nonparametric axiom.
 
-  $ narya -dtt -v -e "axiom A : Type def f : A → A ≔ x ↦ x echo f⁽ᵈ⁾"
+  $ narya -dtt -v -e "axiom nonparametric A : Type def f : A → A ≔ x ↦ x echo f⁽ᵈ⁾"
    ￫ info[I0001]
-   ￮ axiom A assumed
+   ￮ nonparametric axiom A assumed
   
    ￫ info[I0000]
    ￮ nonparametric constant f defined
   
    ￫ error[E0311]
    ￭ command-line exec string
-   1 | axiom A : Type def f : A → A ≔ x ↦ x echo f⁽ᵈ⁾
+   1 | axiom nonparametric A : Type def f : A → A ≔ x ↦ x echo f⁽ᵈ⁾
      ^ constant f uses nonparametric axioms, can't appear inside an external degeneracy
   
   [1]
+
+All axioms using a nonparametric axiom must also be nonparametric
+
+  $ narya -dtt -v -e "axiom nonparametric A : Type axiom nonparametric a : A axiom a' : A"
+   ￫ info[I0001]
+   ￮ nonparametric axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ nonparametric axiom a assumed
+  
+   ￫ error[E0312]
+   ￭ command-line exec string
+   1 | axiom nonparametric A : Type axiom nonparametric a : A axiom a' : A
+     ^ constant A uses nonparametric axioms, can't be used in a parametric command
+  
+  [1]
+
 
 We check that a family of mutual definitions can apply external degeneracies to each other.  This was an issue once because they are temporarily defined as "axioms" during definition, and by default axioms don't admit external degeneracies.
 
@@ -213,9 +230,9 @@ We check that a family of mutual definitions can apply external degeneracies to 
 
 But if one of them uses an axiom, the others don't have external degeneracies either.
 
-  $ narya -dtt -v -e "axiom A:Type def f : Type := A and g : Type := sig () echo g⁽ᵈ⁾"
+  $ narya -dtt -v -e "axiom nonparametric A:Type def f : Type := A and g : Type := sig () echo g⁽ᵈ⁾"
    ￫ info[I0001]
-   ￮ axiom A assumed
+   ￮ nonparametric axiom A assumed
   
    ￫ info[I0000]
    ￮ nonparametric constants defined mutually:
@@ -224,16 +241,16 @@ But if one of them uses an axiom, the others don't have external degeneracies ei
   
    ￫ error[E0311]
    ￭ command-line exec string
-   1 | axiom A:Type def f : Type := A and g : Type := sig () echo g⁽ᵈ⁾
+   1 | axiom nonparametric A:Type def f : Type := A and g : Type := sig () echo g⁽ᵈ⁾
      ^ constant g uses nonparametric axioms, can't appear inside an external degeneracy
   
   [1]
 
 When a constant is defined containing a hole, it is allowed to be parametric, but then the hole cannot be filled by any term that uses an axiom.
 
-  $ narya -dtt -v -fake-interact "axiom A:Type def B:Type := ? echo B⁽ᵈ⁾ solve 0 := A"
+  $ narya -dtt -v -fake-interact "axiom nonparametric A:Type def B:Type := ? echo B⁽ᵈ⁾ solve 0 := A"
    ￫ info[I0001]
-   ￮ axiom A assumed
+   ￮ nonparametric axiom A assumed
   
    ￫ info[I0000]
    ￮ constant B defined, containing 1 hole
@@ -249,6 +266,6 @@ When a constant is defined containing a hole, it is allowed to be parametric, bu
   
    ￫ error[E0312]
    ￭ command line fake-interact
-   1 | axiom A:Type def B:Type := ? echo B⁽ᵈ⁾ solve 0 := A
-     ^ constant A uses nonparametric axioms, can't be used in a parametric definition
+   1 | axiom nonparametric A:Type def B:Type := ? echo B⁽ᵈ⁾ solve 0 := A
+     ^ constant A uses nonparametric axioms, can't be used in a parametric command
   

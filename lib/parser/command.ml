@@ -40,6 +40,7 @@ module Command = struct
   type t =
     | Axiom of {
         wsaxiom : Whitespace.t list;
+        wsnonparam : Whitespace.t list option;
         name : Trie.path;
         loc : Asai.Range.t option;
         wsname : Whitespace.t list;
@@ -151,12 +152,13 @@ module Parse = struct
 
   let axiom =
     let* wsaxiom = token Axiom in
+    let* wsnonparam = optional (token (Ident [ "nonparametric" ])) in
     let* nameloc, (name, wsname) = located ident in
     let loc = Some (Range.convert nameloc) in
     let* parameters = zero_or_more parameter in
     let* wscolon = token Colon in
     let* ty = C.term [] in
-    return (Command.Axiom { wsaxiom; name; loc; wsname; parameters; wscolon; ty })
+    return (Command.Axiom { wsaxiom; wsnonparam; name; loc; wsname; parameters; wscolon; ty })
 
   let def tok =
     let* wsdef = token tok in
@@ -738,12 +740,13 @@ let rec execute :
     fatal (Forbidden_interactive_command (to_string cmd));
   maybe_forbid_holes cmd @@ fun () ->
   match cmd with
-  | Axiom { name; loc; parameters; ty = Wrap ty; _ } ->
+  | Axiom { name; wsnonparam; loc; parameters; ty = Wrap ty; _ } ->
       History.do_command @@ fun () ->
       Scope.check_name name loc;
       let const = Scope.define (Compunit.Current.read ()) ?loc name in
       let (Processed_tel (params, ctx, _)) = process_tel Emp parameters in
-      Core.Command.execute (Axiom (const, params, process ctx ty))
+      let parametric = Option.is_none wsnonparam in
+      Core.Command.execute (Axiom { name = const; params; ty = process ctx ty; parametric })
   | Def defs ->
       History.do_command @@ fun () ->
       let cdefs =
@@ -1099,13 +1102,14 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
   let indent = ref (Scope.count_sections () * 2) in
   let doc, ws =
     match cmd with
-    | Axiom { wsaxiom; name; loc = _; wsname; parameters; wscolon; ty = Wrap ty } ->
+    | Axiom { wsaxiom; wsnonparam; name; loc = _; wsname; parameters; wscolon; ty = Wrap ty } ->
         let pparams, wparams = pp_parameters wsname parameters in
         let ty, rest = split_ending_whitespace ty in
         ( group
             (hang 2
                (Token.pp Axiom
                ^^ pp_ws `Nobreak wsaxiom
+               ^^ PPrint.optional (fun ws -> string "nonparametric" ^^ pp_ws `Nobreak ws) wsnonparam
                ^^ utf8string (String.concat "." name)
                ^^ pparams
                ^^ pp_ws `Break wparams
