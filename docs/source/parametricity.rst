@@ -57,11 +57,11 @@ Internal versus external parametricity
 Parametricity can also be set to be *internal* or *external* with the like-named flags ``-internal`` and ``-external``.  Internal is the default and the behavior that we have described up until now.  Setting it to external instead means that dimension-changing degeneracies (such as ``rel``, but not ``sym``) can only be applied to *closed terms*.  Since degeneracies also compute fully on closed terms (at least in the "up-to-definitional-isomorphism" sense), we can then more or less think of these operations as meta-operations on syntax rather than intrinsic aspects of the theory.  This is the usual meaning of "external parametricity", although Narya's is of course at least partially internalized.  (Semantically, what Narya calls "external parametricity" is modeled in a diagram of *semi-cubical* types, in contrast to internal parametricity which is modeled in *cubical* types.)
 
 
-When parametricity is external, there are two different possibilities for how to treat *axioms*.  The default kind of axiom is a *parametric axiom*, which can have dimension-changing degeneracies applied to it like a defined constant.  But it is also possible to define a *nonparametric axiom*, which is treated like a variable and thus cannot appear inside of dimension-changing degeneracies.  For example, axioms such as excluded middle that are inconsistent with parametricity can be assumed as nonparametric axioms.  To define a nonparametric axiom, use the keyword ``nonparametric``:
+When parametricity is external, there are two different possibilities for how to treat *axioms*.  The default kind of axiom is a *parametric axiom*, which can have dimension-changing degeneracies applied to it like a defined constant.  But it is also possible to define a *nonparametric axiom*, which is treated like a variable and thus cannot appear inside of dimension-changing degeneracies.  For example, axioms such as excluded middle that are inconsistent with parametricity can be assumed as nonparametric axioms.  To define a nonparametric axiom, use the attribute ``nonparametric``:
 
 .. code-block:: none
 
-   axiom nonparametric LEM : (P : Type) → P ⊔ ¬ P
+   axiom #(nonparametric) LEM : (P : Type) → P ⊔ ¬ P
 
 Other constants that use nonparametric axioms in their types or definitions, hereditarily, must also be nonparametric.  For definitions, this is deduced automatically, while for axioms it must be marked explicitly with ``nonparametric``.  Similarly, if any of the definitions in a mutual block use a nonparametric constant, then all the constants in the mutual block are nonparametric.
 
