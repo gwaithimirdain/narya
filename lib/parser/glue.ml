@@ -55,9 +55,11 @@ let install_isfibrant trie =
   | _ -> fatal (Anomaly "isFibrant has wrong shape"));
   trie
 
+(* To compute the fibrancy fields of a pi-type, we basically copy a minimal part of the code from the proof in binary parametricity that pi-types are fibrant, with a few changes. *)
 let install_fib_pi trie =
   let trie, ctm =
     trie
+    (* We include the Martin-Lof equality so that everything will typecheck, although in practice it will turn out to always be rfl and thus reduce away. *)
     |> def "eq" "(A : Type) (a : A) → A → Type" "A a ↦ data [ rfl. : eq A a a ]"
     |> def "eq.trr" "(A : Type) (P : A → Type) (a0 a1 : A) (a2 : eq A a0 a1) (p : P a0) → P a1"
          "A P a0 a1 a2 p ↦ match a2 [ rfl. ↦ p ]"
@@ -66,11 +68,13 @@ let install_fib_pi trie =
   (a2 : eq A a0 a1) (b0 b1 : B) (b2 : eq B b0 b1) (p : P a0 b0)
   → P a1 b1"
          "A B P a0 a1 a2 b0 b1 b2 p ↦ match a2, b2 [ rfl., rfl. ↦ p ]"
+    (* We don't need a full equivalence, only a retraction. *)
     |> def "rtr" "(A B : Type) → Type"
          "A B ↦ sig (
   to : A → B,
   fro : B → A,
   to_fro : (b : B) → eq B (to (fro b)) b )"
+    (* In the "id" field here, we wrap the results in an identity function so that they will not be part of the case tree.  In theory it would be nice to include them in the case tree, but with the current way of doing things that would lead to exposing the constant "id_pi_iso" to the user.  *)
     |> def "id_pi_iso"
          "(A0 : Type) (A1 : Type) (A2 : Id Type A0 A1) (B0 : A0 → Type)
   (B1 : A1 → Type)
@@ -125,6 +129,7 @@ let install_fib_pi trie =
 | .id.e ↦ b0 b1 ↦
     fib_rtr (A.2 (e.0 .fro b0) (e.1 .fro b1)) (B.2 b0 b1)
       (Id_rtr A.0 A.1 A.2 B.0 B.1 B.2 e.0 e.1 e.2 b0 b1)]"
+    (* For consistency, we wrap all the basic four fields in identity functions to keep them out of the case tree as well. *)
     |> def_term "fib_pi" "(A : Type) (B : A → Type) → isFibrant ((x : A) → B x)"
          "A B ↦ [
 | .trr.e ↦ f0 ↦
