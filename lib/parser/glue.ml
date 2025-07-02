@@ -8,40 +8,32 @@ open Notation
 open Postprocess
 open Reporter
 
-let glue = Constant.make Compunit.basic
-let bisim = Constant.make Compunit.basic
-let isfibrant = Constant.make Compunit.basic
-
-let install_isfibrant trie =
+let def trie name ty tm =
   let ctx = Ctx.empty in
-  let (Wrap pty) =
-    Parse.Term.final (Parse.Term.parse (`String { content = "Type → Type"; title = None })) in
+  let const = Constant.make Compunit.basic in
+  let trie = Scope.Mod.union_singleton ~prefix:Emp trie ([ name ], ((`Constant const, None), ())) in
+  Scope.run ~init_visible:trie @@ fun () ->
+  let (Wrap pty) = Parse.Term.final (Parse.Term.parse (`String { content = ty; title = None })) in
   let rty = process Emp pty in
   let cty = check (Kinetic `Nolet) ctx rty (universe D.zero) in
   let ety = eval_term (Ctx.env ctx) cty in
-  let trie =
-    Scope.Mod.union_singleton ~prefix:Emp trie ([ "isFibrant" ], ((`Constant isfibrant, None), ()))
-  in
-  Global.add isfibrant cty (`Axiom, `Parametric);
-  Scope.run ~init_visible:trie @@ fun () ->
-  let (Wrap ptm) =
-    Parse.Term.final
-      (Parse.Term.parse
-         (`String
-            {
-              content =
-                "A ↦ codata [
+  Global.add const cty (`Axiom, `Parametric);
+  let (Wrap ptm) = Parse.Term.final (Parse.Term.parse (`String { content = tm; title = None })) in
+  let rtm = process Emp ptm in
+  let ctm = check (Potential (Constant (const, D.zero), Ctx.apps ctx, Ctx.lam ctx)) ctx rtm ety in
+  Global.set const (`Defined ctm, `Parametric);
+  (trie, ctm)
+
+let install_isfibrant trie =
+  let trie, ctm =
+    def trie "isFibrant" "Type → Type"
+      "A ↦ codata [
 | x .trr.e : A.0 → A.1
 | x .liftr.e : (x₀ : A.0) → A.2 x₀ (x.2 .trr x₀)
 | x .trl.e : A.1 → A.0
 | x .liftl.e : (x₁ : A.1) → A.2 (x.2 .trl x₁) x₁
-| x .id.e : (x₀ : A.0) (x₁ : A.1) → isFibrant (A.2 x₀ x₁) ]";
-              title = None;
-            })) in
-  let rtm = process Emp ptm in
-  let ctm =
-    check (Potential (Constant (isfibrant, D.zero), Ctx.apps ctx, Ctx.lam ctx)) ctx rtm ety in
-  Global.set isfibrant (`Defined ctm, `Parametric);
+| x .id.e : (x₀ : A.0) (x₁ : A.1) → isFibrant (A.2 x₀ x₁) ]"
+  in
   (match ctm with
   | Lam (x, Canonical (Codata { eta = Noeta; dim; fields; _ })) -> (
       match (D.compare_zero (Variables.dim_variables x), D.compare_zero dim) with
@@ -60,26 +52,9 @@ let install_isfibrant trie =
   trie
 
 let install_bisim trie =
-  let ctx = Ctx.empty in
-  let (Wrap pty) =
-    Parse.Term.final
-      (Parse.Term.parse
-         (`String { content = "(A : Type) (B : Type) (R : A → B → Type) → Type"; title = None }))
-  in
-  let rty = process Emp pty in
-  let cty = check (Kinetic `Nolet) ctx rty (universe D.zero) in
-  let ety = eval_term (Ctx.env ctx) cty in
-  Global.add bisim cty (`Axiom, `Parametric);
-  let trie =
-    Scope.Mod.union_singleton ~prefix:Emp trie ([ "isBisim" ], ((`Constant bisim, None), ())) in
-  Scope.run ~init_visible:trie @@ fun () ->
-  let (Wrap ptm) =
-    Parse.Term.final
-      (Parse.Term.parse
-         (`String
-            {
-              content =
-                "A B R ↦ codata [
+  let trie, _ =
+    def trie "isBisim" "(A : Type) (B : Type) (R : A → B → Type) → Type"
+      "A B R ↦ codata [
 | x .trr : A → B
 | x .liftr : (a : A) → R a (x .trr a)
 | x .trl : B → A
@@ -87,16 +62,13 @@ let install_bisim trie =
 | x .id.e
   : (a0 : A.0) (b0 : B.0) (r0 : R.0 a0 b0) (a1 : A.1) (b1 : B.1)
     (r1 : R.1 a1 b1)
-    → isBisim (A.2 a0 a1) (B.2 b0 b1) (a2 b2 ↦ R.2 a2 b2 r0 r1) ]";
-              title = None;
-            })) in
-  let rtm = process Emp ptm in
-  let ctm = check (Potential (Constant (bisim, D.zero), Ctx.apps ctx, Ctx.lam ctx)) ctx rtm ety in
-  Global.set bisim (`Defined ctm, `Parametric);
+    → isBisim (A.2 a0 a1) (B.2 b0 b1) (a2 b2 ↦ R.2 a2 b2 r0 r1) ]"
+  in
   trie
 
 let install_glue zero one trie =
   let ctx = Ctx.empty in
+  let glue = Constant.make Compunit.basic in
   Scope.run ~init_visible:trie @@ fun () ->
   let (Wrap pty) =
     Parse.Term.final
