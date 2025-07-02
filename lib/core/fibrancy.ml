@@ -10,75 +10,21 @@ let other = (`Other, `Other)
 
 (* Fibrancy fields *)
 
+(* Bisimulations and glue types (currently only 1-dimensional).  Will be defined later by parsing. *)
+
+let glue = Constant.make Compunit.basic
+let bisim = Constant.make Compunit.basic
+let isfibrant = Constant.make Compunit.basic
+
 (* The types of the (user-accessible, non-corecursive) fibrancy fields *)
 
 let ([ ftrr; fliftr; ftrl; fliftl; fid ] : (Hott.dim Field.t, Fwn.five) Vec.t) =
   Vec.map (fun x -> Field.intern x Hott.dim) [ "trr"; "liftr"; "trl"; "liftl"; "id" ]
 
-(* These aren't exactly the fields that we would get by typechecking the definition of "isFibrant" in parametric Narya.  That definition has a (non-fibrant) type as a parameter, so together with the self variable all of its fields are in a context of length two.  But in HOTT mode we consider (fibrant) types as *themselves* having fields, so the type itself is now the "self variable" and the fields are in a context of length one.  And since the extension by the self variable is accounted for in the definition of Codatafield, what we define here is in context 'emp' of length zero.  The D.zero says it is an ordinary (non-Gel) codatatype. *)
-let fields : (emp * D.zero * no_eta) CodatafieldAbwd.t option Lazy.t =
-  lazy
-    (let* zero, one, two = Hott.faces () in
-     let plusmap = Plusmap.Map_snoc (Map_emp, D.plus_zero Hott.dim) in
-     let open CodatafieldAbwd in
-     let trr =
-       Pi
-         ( singleton_variables D.zero None,
-           CubeOf.singleton (Var (Index (Now, zero))),
-           CodCube.singleton (Var (Index (Later Now, one))) ) in
-     let liftr =
-       Pi
-         ( singleton_variables D.zero (Some "x₀"),
-           CubeOf.singleton (Var (Index (Now, zero))),
-           CodCube.singleton
-             (Inst
-                ( Var (Index (Later Now, id_sface Hott.dim)),
-                  TubeOf.of_cube_bwv D.zero Hott.singleton (D.zero_plus Hott.dim) two
-                    (Snoc
-                       ( Snoc (Emp, CubeOf.singleton (Var (Index (Now, id_sface D.zero)))),
-                         CubeOf.singleton
-                           (App
-                              ( Field
-                                  ( Var (Index (Later Now, id_sface Hott.dim)),
-                                    Field.intern "trr" Hott.dim,
-                                    id_ins D.zero (D.zero_plus Hott.dim) ),
-                                CubeOf.singleton (Var (Index (Now, id_sface D.zero))) )) )) )) )
-     in
-     let trl =
-       Pi
-         ( singleton_variables D.zero None,
-           CubeOf.singleton (Var (Index (Now, one))),
-           CodCube.singleton (Var (Index (Later Now, zero))) ) in
-     let liftl =
-       Pi
-         ( singleton_variables D.zero (Some "x₁"),
-           CubeOf.singleton (Var (Index (Now, one))),
-           CodCube.singleton
-             (Inst
-                ( Var (Index (Later Now, id_sface Hott.dim)),
-                  TubeOf.of_cube_bwv D.zero Hott.singleton (D.zero_plus Hott.dim) two
-                    (Snoc
-                       ( Snoc
-                           ( Emp,
-                             CubeOf.singleton
-                               (App
-                                  ( Field
-                                      ( Var (Index (Later Now, id_sface Hott.dim)),
-                                        Field.intern "trl" Hott.dim,
-                                        id_ins D.zero (D.zero_plus Hott.dim) ),
-                                    CubeOf.singleton (Var (Index (Now, id_sface D.zero))) )) ),
-                         CubeOf.singleton (Var (Index (Now, id_sface D.zero))) )) )) ) in
-     return
-       (Emp
-       <: Entry (ftrr, Higher (plusmap, trr))
-       <: Entry (fliftr, Higher (plusmap, liftr))
-       <: Entry (ftrl, Higher (plusmap, trl))
-       <: Entry (fliftl, Higher (plusmap, liftl))))
+(* We will later get these fields by typechecking the definition of "isFibrant" in parametric Narya.  That definition has a (non-fibrant) type as a parameter, so together with the self variable all of its fields are in a context of length two; and since the extension by the self variable is accounted for in the definition of Codatafield, what we get here is a context of length one.  However, in HOTT mode we consider (fibrant) types as *themselves* having fields, so the type itself should now act like the "self variable"; we will deal with this at the point of use by evaluating it in an environment with the fibrant type itself appearing for both the type parameter and the element of isFibrant.
 
-(* Bisimulations and glue types (currently only 1-dimensional).  Will be defined later by parsing. *)
-
-let glue = Constant.make Compunit.basic
-let bisim = Constant.make Compunit.basic
+   The D.zero says it is an ordinary (non-Gel) codatatype. *)
+let fields : ((emp, D.zero) snoc * D.zero * no_eta) CodatafieldAbwd.t option ref = ref None
 
 (* Tube contexts *)
 
