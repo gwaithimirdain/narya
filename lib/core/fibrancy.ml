@@ -15,6 +15,7 @@ let other = (`Other, `Other)
 let ([ ftrr; fliftr; ftrl; fliftl; fid ] : (Hott.dim Field.t, Fwn.five) Vec.t) =
   Vec.map (fun x -> Field.intern x Hott.dim) [ "trr"; "liftr"; "trl"; "liftl"; "id" ]
 
+(* These aren't exactly the fields that we would get by typechecking the definition of "isFibrant" in parametric Narya.  That definition has a (non-fibrant) type as a parameter, so together with the self variable all of its fields are in a context of length two.  But in HOTT mode we consider (fibrant) types as *themselves* having fields, so the type itself is now the "self variable" and the fields are in a context of length one.  And since the extension by the self variable is accounted for in the definition of Codatafield, what we define here is in context 'emp' of length zero.  The D.zero says it is an ordinary (non-Gel) codatatype. *)
 let fields : (emp * D.zero * no_eta) CodatafieldAbwd.t option Lazy.t =
   lazy
     (let* zero, one, two = Hott.faces () in
