@@ -18,6 +18,7 @@ let ([ ftrr; fliftr; ftrl; fliftl; fid ] : (Hott.dim Field.t, Fwn.five) Vec.t) =
 (* We will later get these fields by typechecking the definition of "isFibrant" in parametric Narya.  That definition has a (non-fibrant) type as a parameter, so together with the self variable all of its fields are in a context of length two; and since the extension by the self variable is accounted for in the definition of Codatafield, what we get here is a context of length one.  However, in HOTT mode we consider (fibrant) types as *themselves* having fields, so the type itself should now act like the "self variable"; we will deal with this at the point of use by evaluating it in an environment with the fibrant type itself appearing for both the type parameter and the element of isFibrant.
 
    The D.zero says it is an ordinary (non-Gel) codatatype. *)
+
 let fields : ((emp, D.zero) snoc * D.zero * no_eta) CodatafieldAbwd.t option ref = ref None
 
 (* Tube contexts *)
@@ -174,19 +175,19 @@ let rec fib_iso : type b.
 
 (* Computing the fibrancy fields on canonical type-formers *)
 
-(* We compute these directly as terms.  This puts the onus on us to define them in a well-typed way, but we try our best to copy the definitions that can be given (and typechecked) internally using the higher coinductive isFibrant.
-
-   The dimension 'n of these Structfields is almost always 0, since it is the substitution dimension of the type being checked against, and canonical types are almost always defined to belong to the 0-dimensional universe.  The one exception, of course, is Gel/glue, where this is the gel dimension.  When n=0, we are proving isFibrant; when n is larger we're proving "refl isFibrant" or some higher version of it.
-
-   The outer laziness is only to delay them until we're inside Dim.Endpoints.run.  Eventually when the HOTT dimension is built-in and always present, that won't be necessary (but we will still need the LazyHigher wrapper around the 'id' field in some cases).  *)
+(* The dimension 'n of these Structfields is almost always 0, since it is the substitution dimension of the type being checked against, and canonical types are almost always defined to belong to the 0-dimensional universe.  The one exception, of course, is Gel/glue, where this is the gel dimension.  When n=0, we are proving isFibrant; when n is larger we're proving "refl isFibrant" or some higher version of it.  *)
 
 (* Pi-types *)
 
-(* In the case of pi-types, we could probably literally write the definitions in Narya, typecheck them, and insert them here.  However, we stick with defining the terms explicitly in code, for parallelism with the other fibrancy proofs where that is not possible. *)
+(* In the case of pi-types, we can literally write the definition in Narya, typecheck it, and insert it here.  That makes it easier to get correct.  Thus, for now we leave this empty; it will be filled in after the parser is loaded. *)
 
 let pi :
     (D.zero * ((emp, D.zero) snoc, D.zero) snoc * potential * no_eta) StructfieldAbwd.t option ref =
   ref None
+
+(* Codata types *)
+
+(* We compute these directly as terms.  This puts the onus on us to define them in a well-typed way, but we try our best to copy the definitions that can be given (and typechecked) internally using the higher coinductive isFibrant.  The outer laziness is only to delay them until we're inside Dim.Endpoints.run.  Eventually when the HOTT dimension is built-in and always present, that won't be necessary (but we will still need the LazyHigher wrapper around the 'id' field in some cases). *)
 
 module Codata = struct
   type (_, _, _, _) t =
