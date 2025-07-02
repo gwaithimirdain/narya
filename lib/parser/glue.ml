@@ -8,6 +8,10 @@ open Notation
 open Postprocess
 open Reporter
 
+let glue = Constant.make Compunit.basic
+let bisim = Constant.make Compunit.basic
+let isfibrant = Constant.make Compunit.basic
+
 let install_isfibrant trie =
   let ctx = Ctx.empty in
   let (Wrap pty) =
@@ -16,9 +20,9 @@ let install_isfibrant trie =
   let cty = check (Kinetic `Nolet) ctx rty (universe D.zero) in
   let ety = eval_term (Ctx.env ctx) cty in
   let trie =
-    Scope.Mod.union_singleton ~prefix:Emp trie
-      ([ "isFibrant" ], ((`Constant Fibrancy.isfibrant, None), ())) in
-  Global.add Fibrancy.isfibrant cty (`Axiom, `Parametric);
+    Scope.Mod.union_singleton ~prefix:Emp trie ([ "isFibrant" ], ((`Constant isfibrant, None), ()))
+  in
+  Global.add isfibrant cty (`Axiom, `Parametric);
   Scope.run ~init_visible:trie @@ fun () ->
   let (Wrap ptm) =
     Parse.Term.final
@@ -36,9 +40,8 @@ let install_isfibrant trie =
             })) in
   let rtm = process Emp ptm in
   let ctm =
-    check (Potential (Constant (Fibrancy.isfibrant, D.zero), Ctx.apps ctx, Ctx.lam ctx)) ctx rtm ety
-  in
-  Global.set Fibrancy.isfibrant (`Defined ctm, `Parametric);
+    check (Potential (Constant (isfibrant, D.zero), Ctx.apps ctx, Ctx.lam ctx)) ctx rtm ety in
+  Global.set isfibrant (`Defined ctm, `Parametric);
   (match ctm with
   | Lam (x, Canonical (Codata { eta = Noeta; dim; fields; _ })) -> (
       match (D.compare_zero (Variables.dim_variables x), D.compare_zero dim) with
@@ -66,10 +69,9 @@ let install_bisim trie =
   let rty = process Emp pty in
   let cty = check (Kinetic `Nolet) ctx rty (universe D.zero) in
   let ety = eval_term (Ctx.env ctx) cty in
-  Global.add Fibrancy.bisim cty (`Axiom, `Parametric);
+  Global.add bisim cty (`Axiom, `Parametric);
   let trie =
-    Scope.Mod.union_singleton ~prefix:Emp trie
-      ([ "isBisim" ], ((`Constant Fibrancy.bisim, None), ())) in
+    Scope.Mod.union_singleton ~prefix:Emp trie ([ "isBisim" ], ((`Constant bisim, None), ())) in
   Scope.run ~init_visible:trie @@ fun () ->
   let (Wrap ptm) =
     Parse.Term.final
@@ -89,10 +91,8 @@ let install_bisim trie =
               title = None;
             })) in
   let rtm = process Emp ptm in
-  let ctm =
-    check (Potential (Constant (Fibrancy.bisim, D.zero), Ctx.apps ctx, Ctx.lam ctx)) ctx rtm ety
-  in
-  Global.set Fibrancy.bisim (`Defined ctm, `Parametric);
+  let ctm = check (Potential (Constant (bisim, D.zero), Ctx.apps ctx, Ctx.lam ctx)) ctx rtm ety in
+  Global.set bisim (`Defined ctm, `Parametric);
   trie
 
 let install_glue zero one trie =
@@ -109,10 +109,8 @@ let install_glue zero one trie =
             })) in
   let rty = process Emp pty in
   let cty = check (Kinetic `Nolet) ctx rty (universe D.zero) in
-  Global.add Fibrancy.glue cty (`Axiom, `Parametric);
-  let trie =
-    Scope.Mod.union_singleton ~prefix:Emp trie ([ "glue" ], ((`Constant Fibrancy.glue, None), ()))
-  in
+  Global.add glue cty (`Axiom, `Parametric);
+  let trie = Scope.Mod.union_singleton ~prefix:Emp trie ([ "glue" ], ((`Constant glue, None), ())) in
   (* We construct this term by hand rather than by parsing and checking, to bypass the block on Gel-types under HOTT. *)
   let open Term in
   let aname = singleton_variables D.zero (Some "A") in
@@ -128,7 +126,7 @@ let install_glue zero one trie =
     app
       (app
          (app
-            (app (Const Fibrancy.glue) (Var (Index (Later (Later (Later Now)), id_sface D.zero))))
+            (app (Const glue) (Var (Index (Later (Later (Later Now)), id_sface D.zero))))
             (Var (Index (Later (Later Now), id_sface D.zero))))
          (Var (Index (Later Now, id_sface D.zero))))
       (Var (Index (Now, id_sface D.zero))) in
@@ -156,7 +154,7 @@ let install_glue zero one trie =
                            fields = Snoc (Emp, entry);
                            fibrancy;
                          }) ) ) ) ) in
-  Global.set Fibrancy.glue (`Defined ctm, `Parametric);
+  Global.set glue (`Defined ctm, `Parametric);
   trie
 
 let install trie =

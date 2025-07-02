@@ -10,12 +10,6 @@ let other = (`Other, `Other)
 
 (* Fibrancy fields *)
 
-(* Bisimulations and glue types (currently only 1-dimensional).  Will be defined later by parsing. *)
-
-let glue = Constant.make Compunit.basic
-let bisim = Constant.make Compunit.basic
-let isfibrant = Constant.make Compunit.basic
-
 (* The types of the (user-accessible, non-corecursive) fibrancy fields *)
 
 let ([ ftrr; fliftr; ftrl; fliftl; fid ] : (Hott.dim Field.t, Fwn.five) Vec.t) =
