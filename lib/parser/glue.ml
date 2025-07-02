@@ -4,14 +4,16 @@ open Core
 open Value
 open Norm
 open Check
+open Variables
 open Notation
 open Postprocess
 open Reporter
 
-let def trie name ty tm =
+let def_term name ty tm trie =
   let ctx = Ctx.empty in
   let const = Constant.make Compunit.basic in
-  let trie = Scope.Mod.union_singleton ~prefix:Emp trie ([ name ], ((`Constant const, None), ())) in
+  let name = String.split_on_char '.' name in
+  let trie = Scope.Mod.union_singleton ~prefix:Emp trie (name, ((`Constant const, None), ())) in
   Scope.run ~init_visible:trie @@ fun () ->
   let (Wrap pty) = Parse.Term.final (Parse.Term.parse (`String { content = ty; title = None })) in
   let rty = process Emp pty in
@@ -24,19 +26,21 @@ let def trie name ty tm =
   Global.set const (`Defined ctm, `Parametric);
   (trie, ctm)
 
+let def name ty tm trie = fst (def_term name ty tm trie)
+
 let install_isfibrant trie =
   let trie, ctm =
-    def trie "isFibrant" "Type → Type"
+    def_term "isFibrant" "Type → Type"
       "A ↦ codata [
 | x .trr.e : A.0 → A.1
 | x .liftr.e : (x₀ : A.0) → A.2 x₀ (x.2 .trr x₀)
 | x .trl.e : A.1 → A.0
 | x .liftl.e : (x₁ : A.1) → A.2 (x.2 .trl x₁) x₁
 | x .id.e : (x₀ : A.0) (x₁ : A.1) → isFibrant (A.2 x₀ x₁) ]"
-  in
+      trie in
   (match ctm with
   | Lam (x, Canonical (Codata { eta = Noeta; dim; fields; _ })) -> (
-      match (D.compare_zero (Variables.dim_variables x), D.compare_zero dim) with
+      match (D.compare_zero (dim_variables x), D.compare_zero dim) with
       | Zero, Zero ->
           Fibrancy.fields :=
             (* The recursive "id" field is not exposed to the user; they access it simply by instantiating higher-dimensional types. *)
@@ -47,14 +51,129 @@ let install_isfibrant trie =
                    | Eq -> false
                    | Neq -> true)
                  fields)
-      | _ -> fatal (Anomaly "isFibrant abstraction has wrong dimension"))
+      | _ -> fatal (Anomaly "isFibrant has wrong dimension"))
   | _ -> fatal (Anomaly "isFibrant has wrong shape"));
   trie
 
-let install_bisim trie =
-  let trie, _ =
-    def trie "isBisim" "(A : Type) (B : Type) (R : A → B → Type) → Type"
-      "A B R ↦ codata [
+let install_fib_pi trie =
+  let trie, ctm =
+    trie
+    |> def "eq" "(A : Type) (a : A) → A → Type" "A a ↦ data [ rfl. : eq A a a ]"
+    |> def "eq.trr" "(A : Type) (P : A → Type) (a0 a1 : A) (a2 : eq A a0 a1) (p : P a0) → P a1"
+         "A P a0 a1 a2 p ↦ match a2 [ rfl. ↦ p ]"
+    |> def "eq.trr2"
+         "(A : Type) (B : Type) (P : A → B → Type) (a0 a1 : A)
+  (a2 : eq A a0 a1) (b0 b1 : B) (b2 : eq B b0 b1) (p : P a0 b0)
+  → P a1 b1"
+         "A B P a0 a1 a2 b0 b1 b2 p ↦ match a2, b2 [ rfl., rfl. ↦ p ]"
+    |> def "rtr" "(A B : Type) → Type"
+         "A B ↦ sig (
+  to : A → B,
+  fro : B → A,
+  to_fro : (b : B) → eq B (to (fro b)) b )"
+    |> def "id_pi_iso"
+         "(A0 : Type) (A1 : Type) (A2 : Id Type A0 A1) (B0 : A0 → Type)
+  (B1 : A1 → Type)
+  (B2 : Id ((X Y ↦ (x : X) → Y x) : (X : Type) → (X → Type) → Type) A2
+          {_ ↦ Type} {_ ↦ Type} (_ ⤇ refl Type) B0 B1)
+  (f0 : (a0 : A0) → B0 a0) (f1 : (a1 : A1) → B1 a1)
+  → rtr ((a0 : A0) (a1 : A1) (a2 : A2 a0 a1) → B2 a2 (f0 a0) (f1 a1))
+      (Id ((X Y ↦ (x : X) → Y x) : (X : Type) → (X → Type) → Type) A2 B2 f0
+         f1)"
+         "A0 A1 A2 B0 B1 B2 f0 f1 ↦
+         (
+  to ≔ f ↦
+    ((g : (Id ((X Y ↦ (x : X) → Y x) : (X : Type) → (X → Type) → Type) A2 B2 f0 f1)) ↦ g)
+     (a ⤇ f a.0 a.1 a.2),
+  fro ≔ g ↦
+    ((g : ((a0 : A0) (a1 : A1) (a2 : A2 a0 a1) → B2 a2 (f0 a0) (f1 a1))) ↦ g)
+     (a0 a1 a2 ↦ g a2),
+  to_fro ≔ _ ↦ rfl.)"
+    |> def "Id_eq"
+         "(A0 A1 : Type) (A2 : Id Type A0 A1) (a00 : A0) (a01 : A1)
+  (a02 : A2 a00 a01) (a10 : A0) (a11 : A1) (a12 : A2 a10 a11)
+  (a20 : eq A0 a00 a10) (a21 : eq A1 a01 a11)
+  (a22 : Id eq A2 a02 a12 a20 a21)
+  → eq (A2 a10 a11)
+      (eq.trr2 A0 A1 (x y ↦ A2 x y) a00 a10 a20 a01 a11 a21 a02) a12"
+         "A0 A1 A2 a00 a01 a02 a10 a11 a12 a20 a21 a22 ↦ match a22 [ rfl. ⤇ rfl. ]"
+    |> def "Id_rtr"
+         "(A0 : Type) (A1 : Type) (A2 : Id Type A0 A1) (B0 : Type)
+  (B1 : Type) (B2 : Id Type B0 B1) (e0 : rtr A0 B0) (e1 : rtr A1 B1)
+  (e2 : Id rtr A2 B2 e0 e1) (b0 : B0) (b1 : B1)
+  → rtr (A2 (e0 .fro b0) (e1 .fro b1)) (B2 b0 b1)"
+         "A0 A1 A2 B0 B1 B2 e0 e1 e2 b0 b1 ↦ (to ≔ a2 ↦
+    eq.trr2 B0 B1 (b0 b1 ↦ B2 b0 b1) (e0 .to (e0 .fro b0)) b0
+      (e0 .to_fro b0) (e1 .to (e1 .fro b1)) b1 (e1 .to_fro b1) (e2 .to a2),
+  fro ≔ b2 ↦ e2 .fro b2,
+  to_fro ≔ b2 ↦
+    Id_eq B0 B1 B2 (e0 .to (e0 .fro b0)) (e1 .to (e1 .fro b1))
+      (e2 .to (e2 .fro b2)) b0 b1 b2 (e0 .to_fro b0) (e1 .to_fro b1)
+      (e2 .to_fro b2))"
+    |> def "fib_rtr" "(A B : Type) (e : rtr A B) → isFibrant B"
+         "A B e ↦ [
+| .trr.e ↦ b0 ↦ e.1 .to (A.2 .trr (e.0 .fro b0))
+| .trl.e ↦ b1 ↦ e.0 .to (A.2 .trl (e.1 .fro b1))
+| .liftr.e ↦ b0 ↦
+    eq.trr B.0 (b ↦ B.2 b (e.1 .to (A.2 .trr (e.0 .fro b0))))
+      (e.0 .to (e.0 .fro b0)) b0 (e.0 .to_fro b0)
+      (e.2 .to (A.2 .liftr (e.0 .fro b0)))
+| .liftl.e ↦ b1 ↦
+    eq.trr B.1 (b ↦ B.2 (e.0 .to (A.2 .trl (e.1 .fro b1))) b)
+      (e.1 .to (e.1 .fro b1)) b1 (e.1 .to_fro b1)
+      (e.2 .to (A.2 .liftl (e.1 .fro b1)))
+| .id.e ↦ b0 b1 ↦
+    fib_rtr (A.2 (e.0 .fro b0) (e.1 .fro b1)) (B.2 b0 b1)
+      (Id_rtr A.0 A.1 A.2 B.0 B.1 B.2 e.0 e.1 e.2 b0 b1)]"
+    |> def_term "fib_pi" "(A : Type) (B : A → Type) → isFibrant ((x : A) → B x)"
+         "A B ↦ [
+| .trr.e ↦ f0 ↦
+    ((x : (a1 : A.1) → B.1 a1) ↦ x)
+      (a1 ↦ B.2 (A.2 .liftl a1) .trr (f0 (A.2 .trl a1)))
+| .trl.e ↦ f1 ↦
+    ((x : (a0 : A.0) → B.0 a0) ↦ x)
+      (a0 ↦ B.2 (A.2 .liftr a0) .trl (f1 (A.2 .trr a0)))
+| .liftr.e ↦ f0 ↦
+    ((x
+      : {a0 : A.0} {a1 : A.1} (a2 : A.2 a0 a1)
+        →⁽ᵉ⁾ B.2 a2 (f0 a0) (B.2 (A.2 .liftl a1) .trr (f0 (A.2 .trl a1)))) ↦
+     x)
+      (a ⤇
+       refl B.2
+           (sym (sym (refl A.2) a.2 (A.2 .liftl a.1) .liftl (refl a.1)))
+           (refl f0 (A.2⁽ᵉ¹⁾ a.2 (A.2 .liftl a.1) .trl (refl a.1)))
+           (refl (B.2 (A.2 .liftl a.1) .trr (f0 (A.2 .trl a.1))))
+       .trl (B.2 (A.2 .liftl a.1) .liftr (f0 (A.2 .trl a.1))))
+| .liftl.e ↦ f1 ↦
+    ((x
+      : {a0 : A.0} {a1 : A.1} (a2 : A.2 a0 a1)
+        →⁽ᵉ⁾ B.2 a2 (B.2 (A.2 .liftr a0) .trl (f1 (A.2 .trr a0))) (f1 a1)) ↦
+     x)
+      (a ⤇
+       refl B.2
+           (sym (sym (refl A.2) a.2 (A.2 .liftr a.0) .liftr (refl a.0)))
+           (refl (B.2 (A.2 .liftr a.0) .trl (f1 (A.2 .trr a.0))))
+           (refl f1 (A.2⁽ᵉ¹⁾ a.2 (A.2 .liftr a.0) .trr (refl a.0)))
+       .trl (B.2 (A.2 .liftr a.0) .liftl (f1 (A.2 .trr a.0))))
+| .id.e ↦ f0 f1 ↦
+    fib_rtr
+      ((a0 : A.0) (a1 : A.1) (a2 : A.2 a0 a1) → B.2 a2 (f0 a0) (f1 a1))
+      (Id ((X Y ↦ (x : X) → Y x) : (X : Type) → (X → Type) → Type) A.2 B.2
+         f0 f1) (id_pi_iso A.0 A.1 A.2 B.0 B.1 B.2 f0 f1)]"
+  in
+  (match ctm with
+  | Lam (a, Lam (b, Struct { dim; fields; eta = Noeta; energy = Potential })) -> (
+      match
+        (D.compare_zero (dim_variables a), D.compare_zero (dim_variables b), D.compare_zero dim)
+      with
+      | Zero, Zero, Zero -> Fibrancy.pi := Some fields
+      | _ -> fatal (Anomaly "fib_pi has wrong dimension"))
+  | _ -> fatal (Anomaly "fib_pi has wrong shape"));
+  trie
+
+let install_bisim =
+  def "isBisim" "(A : Type) (B : Type) (R : A → B → Type) → Type"
+    "A B R ↦ codata [
 | x .trr : A → B
 | x .liftr : (a : A) → R a (x .trr a)
 | x .trl : B → A
@@ -63,8 +182,6 @@ let install_bisim trie =
   : (a0 : A.0) (b0 : B.0) (r0 : R.0 a0 b0) (a1 : A.1) (b1 : B.1)
     (r1 : R.1 a1 b1)
     → isBisim (A.2 a0 a1) (B.2 b0 b1) (a2 b2 ↦ R.2 a2 b2 r0 r1) ]"
-  in
-  trie
 
 let install_glue zero one trie =
   let ctx = Ctx.empty in
@@ -133,6 +250,6 @@ let install trie =
   match Hott.faces () with
   | None -> trie
   | Some (zero, one, _two) ->
-      let _ = trie |> install_isfibrant in
+      let _ = trie |> install_isfibrant |> install_fib_pi in
       (* We don't expose isFibrant to the user *)
       trie |> install_bisim |> install_glue zero one

@@ -15,6 +15,11 @@ end
 
 module S = State.Make (Recorded)
 
+let () =
+  S.register_printer (function
+    | `Get -> Some "unhandled Recorded get effect"
+    | `Set _ -> Some "unhandled Recorded set effect")
+
 let run_empty : type a. (unit -> a) -> a =
  fun f ->
   S.run

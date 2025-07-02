@@ -10,6 +10,11 @@ module S = State.Make (struct
   type t = unit Constant.Map.t Constant.Map.t
 end)
 
+let () =
+  S.register_printer (function
+    | `Get -> Some "unhandled Subtype get effect"
+    | `Set _ -> Some "unhandled Subtype set effect")
+
 let add subtype supertype =
   match (Global.find subtype, Global.find supertype) with
   | (UU subdim, _), (UU superdim, _) -> (
