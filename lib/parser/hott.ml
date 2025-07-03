@@ -24,12 +24,14 @@ let def_term name ty tm trie =
   let rtm = process Emp ptm in
   let ctm = check (Potential (Constant (const, D.zero), Ctx.apps ctx, Ctx.lam ctx)) ctx rtm ety in
   Global.set const (`Defined ctm, `Parametric);
-  (trie, ctm)
+  (const, trie, ctm)
 
-let def name ty tm trie = fst (def_term name ty tm trie)
+let def name ty tm trie =
+  let _, trie, _ = def_term name ty tm trie in
+  trie
 
 let install_isfibrant trie =
-  let trie, ctm =
+  let _, trie, ctm =
     def_term "isFibrant" "Type → Type"
       "A ↦ codata [
 | x .trr.e : A.0 → A.1
@@ -57,7 +59,7 @@ let install_isfibrant trie =
 
 (* To compute the fibrancy fields of a pi-type, we basically copy a minimal part of the code from the proof in binary parametricity that pi-types are fibrant, with a few changes. *)
 let install_fib_pi trie =
-  let trie, ctm =
+  let id_pi_iso, trie, _ =
     trie
     (* We include the Martin-Lof equality so that everything will typecheck, although in practice it will turn out to always be rfl and thus reduce away. *)
     |> def "eq" "(A : Type) (a : A) → A → Type" "A a ↦ data [ rfl. : eq A a a ]"
@@ -74,8 +76,7 @@ let install_fib_pi trie =
   to : A → B,
   fro : B → A,
   to_fro : (b : B) → eq B (to (fro b)) b )"
-    (* In the "id" field here, we wrap the results in an identity function so that they will not be part of the case tree.  In theory it would be nice to include them in the case tree, but with the current way of doing things that would lead to exposing the constant "id_pi_iso" to the user.  *)
-    |> def "id_pi_iso"
+    |> def_term "id_pi_iso"
          "(A0 : Type) (A1 : Type) (A2 : Id Type A0 A1) (B0 : A0 → Type)
   (B1 : A1 → Type)
   (B2 : Id ((X Y ↦ (x : X) → Y x) : (X : Type) → (X → Type) → Type) A2
@@ -86,13 +87,12 @@ let install_fib_pi trie =
          f1)"
          "A0 A1 A2 B0 B1 B2 f0 f1 ↦
          (
-  to ≔ f ↦
-    ((g : (Id ((X Y ↦ (x : X) → Y x) : (X : Type) → (X → Type) → Type) A2 B2 f0 f1)) ↦ g)
-     (a ⤇ f a.0 a.1 a.2),
-  fro ≔ g ↦
-    ((g : ((a0 : A0) (a1 : A1) (a2 : A2 a0 a1) → B2 a2 (f0 a0) (f1 a1))) ↦ g)
-     (a0 a1 a2 ↦ g a2),
+  to ≔ f ↦ a ⤇ f a.0 a.1 a.2,
+  fro ≔ g ↦ a0 a1 a2 ↦ g a2,
   to_fro ≔ _ ↦ rfl.)"
+  in
+  let _, trie, ctm =
+    trie
     |> def "Id_eq"
          "(A0 A1 : Type) (A2 : Id Type A0 A1) (a00 : A0) (a01 : A1)
   (a02 : A2 a00 a01) (a10 : A0) (a11 : A1) (a12 : A2 a10 a11)
@@ -130,49 +130,92 @@ let install_fib_pi trie =
 | .id.e ↦ b0 b1 ↦
     fib_rtr (A.2 (e.0 .fro b0) (e.1 .fro b1)) (B.2 b0 b1)
       (Id_rtr A.0 A.1 A.2 B.0 B.1 B.2 e.0 e.1 e.2 b0 b1)]"
-    (* For consistency, we wrap all the basic four fields in identity functions to keep them out of the case tree as well. *)
     |> def_term "fib_pi" "(A : Type) (B : A → Type) → isFibrant ((x : A) → B x)"
          "A B ↦ [
-| .trr.e ↦ f0 ↦
-    ((x : (a1 : A.1) → B.1 a1) ↦ x)
-      (a1 ↦ B.2 (A.2 .liftl a1) .trr (f0 (A.2 .trl a1)))
-| .trl.e ↦ f1 ↦
-    ((x : (a0 : A.0) → B.0 a0) ↦ x)
-      (a0 ↦ B.2 (A.2 .liftr a0) .trl (f1 (A.2 .trr a0)))
+| .trr.e ↦ f0 ↦ a1 ↦ B.2 (A.2 .liftl a1) .trr (f0 (A.2 .trl a1))
+| .trl.e ↦ f1 ↦ a0 ↦ B.2 (A.2 .liftr a0) .trl (f1 (A.2 .trr a0))
 | .liftr.e ↦ f0 ↦
-    ((x
-      : {a0 : A.0} {a1 : A.1} (a2 : A.2 a0 a1)
-        →⁽ᵉ⁾ B.2 a2 (f0 a0) (B.2 (A.2 .liftl a1) .trr (f0 (A.2 .trl a1)))) ↦
-     x)
-      (a ⤇
+      a ⤇
        refl B.2
            (sym (sym (refl A.2) a.2 (A.2 .liftl a.1) .liftl (refl a.1)))
            (refl f0 (A.2⁽ᵉ¹⁾ a.2 (A.2 .liftl a.1) .trl (refl a.1)))
            (refl (B.2 (A.2 .liftl a.1) .trr (f0 (A.2 .trl a.1))))
-       .trl (B.2 (A.2 .liftl a.1) .liftr (f0 (A.2 .trl a.1))))
+       .trl (B.2 (A.2 .liftl a.1) .liftr (f0 (A.2 .trl a.1)))
 | .liftl.e ↦ f1 ↦
-    ((x
-      : {a0 : A.0} {a1 : A.1} (a2 : A.2 a0 a1)
-        →⁽ᵉ⁾ B.2 a2 (B.2 (A.2 .liftr a0) .trl (f1 (A.2 .trr a0))) (f1 a1)) ↦
-     x)
-      (a ⤇
+      a ⤇
        refl B.2
            (sym (sym (refl A.2) a.2 (A.2 .liftr a.0) .liftr (refl a.0)))
            (refl (B.2 (A.2 .liftr a.0) .trl (f1 (A.2 .trr a.0))))
            (refl f1 (A.2⁽ᵉ¹⁾ a.2 (A.2 .liftr a.0) .trr (refl a.0)))
-       .trl (B.2 (A.2 .liftr a.0) .liftl (f1 (A.2 .trr a.0))))
+       .trl (B.2 (A.2 .liftr a.0) .liftl (f1 (A.2 .trr a.0)))
 | .id.e ↦ f0 f1 ↦
     fib_rtr
       ((a0 : A.0) (a1 : A.1) (a2 : A.2 a0 a1) → B.2 a2 (f0 a0) (f1 a1))
       (Id ((X Y ↦ (x : X) → Y x) : (X : Type) → (X → Type) → Type) A.2 B.2
          f0 f1) (id_pi_iso A.0 A.1 A.2 B.0 B.1 B.2 f0 f1)]"
   in
+  (* Now we pull out the fields from the above definition of fib_pi to insert them in Fibrancy.pi. *)
   (match ctm with
   | Lam (a, Lam (b, Struct { dim; fields; eta = Noeta; energy = Potential })) -> (
       match
         (D.compare_zero (dim_variables a), D.compare_zero (dim_variables b), D.compare_zero dim)
       with
-      | Zero, Zero, Zero -> Fibrancy.pi := Some fields
+      | Zero, Zero, Zero -> (
+          (* We rearrange the end of the case trees for tr and lift so that after applying to a single function argument they compute to an abstraction.  This is actually not what we'd want in principle, but we do it for consistency with the higher-dimensional case where we don't seem to have another option. *)
+          let fields =
+            Bwd.map
+              (function
+                | Term.StructfieldAbwd.Entry (f, Higher tms) ->
+                    let tms =
+                      Term.PlusPbijmap.mmap
+                        {
+                          map =
+                            (fun _ [ x ] ->
+                              Option.map
+                                (function
+                                  | Term.PlusFam.PlusFam (p, Lam (f, Lam (a, Realize tm))) ->
+                                      Term.PlusFam.PlusFam (p, Lam (f, Realize (Lam (a, tm))))
+                                  | y -> y)
+                                x);
+                        }
+                        [ tms ] in
+                    Term.StructfieldAbwd.Entry (f, Higher tms)
+                | s -> s)
+              fields in
+          Fibrancy.pi := Some fields;
+          (* For the higher-dimensional case, we have to adjust the case tree boundary for id_pi_iso to avoid exposing that constant to the user when a higher fibrancy field is applied only to a function but not a further argument. *)
+          match Global.find id_pi_iso with
+          | ( _,
+              ( `Defined
+                  (Lam
+                     ( a0,
+                       Lam (a1, Lam (a2, Lam (b0, Lam (b1, Lam (b2, Lam (f0, Lam (f1, Struct s)))))))
+                     )),
+                param ) ) ->
+              let fields =
+                Bwd.map
+                  Term.StructfieldAbwd.(
+                    function
+                    | Entry (fld, Lower (Lam (f, Lam (a, Realize tm)), l)) ->
+                        Entry (fld, Lower (Lam (f, Realize (Lam (a, tm))), l))
+                    | Entry (fld, Lower (Lam (f, Lam (a0, Lam (a1, Lam (a2, Realize tm)))), l)) ->
+                        Entry (fld, Lower (Lam (f, Realize (Lam (a0, Lam (a1, Lam (a2, tm))))), l))
+                    | s -> s)
+                  s.fields in
+              Global.set id_pi_iso
+                ( `Defined
+                    (Lam
+                       ( a0,
+                         Lam
+                           ( a1,
+                             Lam
+                               ( a2,
+                                 Lam
+                                   ( b0,
+                                     Lam (b1, Lam (b2, Lam (f0, Lam (f1, Struct { s with fields }))))
+                                   ) ) ) )),
+                  param )
+          | _ -> ())
       | _ -> fatal (Anomaly "fib_pi has wrong dimension"))
   | _ -> fatal (Anomaly "fib_pi has wrong shape"));
   trie
