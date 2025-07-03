@@ -48,5 +48,5 @@ struct
     | Effect.Unhandled (Set state) -> f (`Set state)
     | _ -> None
 
-  let () = register_printer @@ fun _ -> Some "Unhandled algaeff effect; use Algaeff.State.run"
+  let () = register_printer @@ fun _ -> Some "Unhandled myalgaeff effect; use Algaeff.State.run"
 end
