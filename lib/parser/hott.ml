@@ -59,17 +59,21 @@ let install_isfibrant trie =
 
 (* To compute the fibrancy fields of a pi-type, we basically copy a minimal part of the code from the proof in binary parametricity that pi-types are fibrant, with a few changes. *)
 let install_fib_pi trie =
-  let id_pi_iso, trie, _ =
+  let eq_trr, trie, _ =
     trie
     (* We include the Martin-Lof equality so that everything will typecheck, although in practice it will turn out to always be rfl and thus reduce away. *)
     |> def "eq" "(A : Type) (a : A) → A → Type" "A a ↦ data [ rfl. : eq A a a ]"
-    |> def "eq.trr" "(A : Type) (P : A → Type) (a0 a1 : A) (a2 : eq A a0 a1) (p : P a0) → P a1"
-         "A P a0 a1 a2 p ↦ match a2 [ rfl. ↦ p ]"
-    |> def "eq.trr2"
+    |> def_term "eq.trr" "(A : Type) (P : A → Type) (a0 a1 : A) (a2 : eq A a0 a1) (p : P a0) → P a1"
+         "A P a0 a1 a2 p ↦ match a2 [ rfl. ↦ p ]" in
+  let eq_trr2, trie, _ =
+    trie
+    |> def_term "eq.trr2"
          "(A : Type) (B : Type) (P : A → B → Type) (a0 a1 : A)
   (a2 : eq A a0 a1) (b0 b1 : B) (b2 : eq B b0 b1) (p : P a0 b0)
   → P a1 b1"
-         "A B P a0 a1 a2 b0 b1 b2 p ↦ match a2, b2 [ rfl., rfl. ↦ p ]"
+         "A B P a0 a1 a2 b0 b1 b2 p ↦ match a2, b2 [ rfl., rfl. ↦ p ]" in
+  let id_pi_iso, trie, _ =
+    trie
     (* We don't need a full equivalence, only a retraction. *)
     |> def "rtr" "(A B : Type) → Type"
          "A B ↦ sig (
@@ -91,7 +95,7 @@ let install_fib_pi trie =
   fro ≔ g ↦ a0 a1 a2 ↦ g a2,
   to_fro ≔ _ ↦ rfl.)"
   in
-  let _, trie, ctm =
+  let id_rtr, trie, _ =
     trie
     |> def "Id_eq"
          "(A0 A1 : Type) (A2 : Id Type A0 A1) (a00 : A0) (a01 : A1)
@@ -101,12 +105,13 @@ let install_fib_pi trie =
   → eq (A2 a10 a11)
       (eq.trr2 A0 A1 (x y ↦ A2 x y) a00 a10 a20 a01 a11 a21 a02) a12"
          "A0 A1 A2 a00 a01 a02 a10 a11 a12 a20 a21 a22 ↦ match a22 [ rfl. ⤇ rfl. ]"
-    |> def "Id_rtr"
+    |> def_term "Id_rtr"
          "(A0 : Type) (A1 : Type) (A2 : Id Type A0 A1) (B0 : Type)
   (B1 : Type) (B2 : Id Type B0 B1) (e0 : rtr A0 B0) (e1 : rtr A1 B1)
   (e2 : Id rtr A2 B2 e0 e1) (b0 : B0) (b1 : B1)
   → rtr (A2 (e0 .fro b0) (e1 .fro b1)) (B2 b0 b1)"
-         "A0 A1 A2 B0 B1 B2 e0 e1 e2 b0 b1 ↦ (to ≔ a2 ↦
+         "A0 A1 A2 B0 B1 B2 e0 e1 e2 b0 b1 ↦
+ (to ≔ a2 ↦
     eq.trr2 B0 B1 (b0 b1 ↦ B2 b0 b1) (e0 .to (e0 .fro b0)) b0
       (e0 .to_fro b0) (e1 .to (e1 .fro b1)) b1 (e1 .to_fro b1) (e2 .to a2),
   fro ≔ b2 ↦ e2 .fro b2,
@@ -114,8 +119,11 @@ let install_fib_pi trie =
     Id_eq B0 B1 B2 (e0 .to (e0 .fro b0)) (e1 .to (e1 .fro b1))
       (e2 .to (e2 .fro b2)) b0 b1 b2 (e0 .to_fro b0) (e1 .to_fro b1)
       (e2 .to_fro b2))"
-    (* Here we can cheat a little: since we're already in HOTT, we don't need to assume an explicit witness of fibrancy for the given type A, we can just use its intrinsic one. *)
-    |> def "fib_rtr" "(A B : Type) (e : rtr A B) → isFibrant B"
+  in
+  (* Here we can cheat a little: since we're already in HOTT, we don't need to assume an explicit witness of fibrancy for the given type A, we can just use its intrinsic one. *)
+  let fib_rtr, trie, _ =
+    trie
+    |> def_term "fib_rtr" "(A B : Type) (e : rtr A B) → isFibrant B"
          "A B e ↦ [
 | .trr.e ↦ b0 ↦ e.1 .to (A.2 .trr (e.0 .fro b0))
 | .trl.e ↦ b1 ↦ e.0 .to (A.2 .trl (e.1 .fro b1))
@@ -130,6 +138,9 @@ let install_fib_pi trie =
 | .id.e ↦ b0 b1 ↦
     fib_rtr (A.2 (e.0 .fro b0) (e.1 .fro b1)) (B.2 b0 b1)
       (Id_rtr A.0 A.1 A.2 B.0 B.1 B.2 e.0 e.1 e.2 b0 b1)]"
+  in
+  let _, trie, ctm =
+    trie
     |> def_term "fib_pi" "(A : Type) (B : A → Type) → isFibrant ((x : A) → B x)"
          "A B ↦ [
 | .trr.e ↦ f0 ↦ a1 ↦ B.2 (A.2 .liftl a1) .trr (f0 (A.2 .trl a1))
@@ -184,7 +195,7 @@ let install_fib_pi trie =
               fields in
           Fibrancy.pi := Some fields;
           (* For the higher-dimensional case, we have to adjust the case tree boundary for id_pi_iso to avoid exposing that constant to the user when a higher fibrancy field is applied only to a function but not a further argument. *)
-          match Global.find id_pi_iso with
+          (match Global.find id_pi_iso with
           | ( _,
               ( `Defined
                   (Lam
@@ -214,6 +225,118 @@ let install_fib_pi trie =
                                    ( b0,
                                      Lam (b1, Lam (b2, Lam (f0, Lam (f1, Struct { s with fields }))))
                                    ) ) ) )),
+                  param )
+          | _ -> ());
+          (* We also remove the eq.trr's from fib_rtr, and the eq.trr2's from id_rtr, since they are always unnecessary computationally.  This doesn't seem to materially affect performance, but it's cleaner. *)
+          (match Global.find fib_rtr with
+          | ( _,
+              ( `Defined (Lam (aa, Lam (bb, Lam (e, Struct ({ fields; eta = Noeta; _ } as s))))),
+                param ) ) ->
+              let fields =
+                Bwd.map
+                  (function
+                    | Term.StructfieldAbwd.Entry (f, Higher tms) ->
+                        let tms =
+                          Term.PlusPbijmap.mmap
+                            {
+                              map =
+                                (fun _ [ x ] ->
+                                  Option.map
+                                    (function
+                                      | Term.PlusFam.PlusFam
+                                          ( p,
+                                            Lam
+                                              ( b,
+                                                Realize
+                                                  (App
+                                                     ( App
+                                                         ( App
+                                                             (App (App (App (Const c, _), _), _), _),
+                                                           _ ),
+                                                       tm )) ) )
+                                        when c = eq_trr ->
+                                          Term.PlusFam.PlusFam
+                                            (p, Lam (b, Realize (CubeOf.find_top tm)))
+                                      | y -> y)
+                                    x);
+                            }
+                            [ tms ] in
+                        Term.StructfieldAbwd.Entry (f, Higher tms)
+                    | s -> s)
+                  fields in
+              Global.set fib_rtr
+                (`Defined (Lam (aa, Lam (bb, Lam (e, Struct { s with fields })))), param)
+          | _ -> ());
+          match Global.find id_rtr with
+          | ( _,
+              ( `Defined
+                  (Lam
+                     ( a0,
+                       Lam
+                         ( a1,
+                           Lam
+                             ( a2,
+                               Lam
+                                 ( b0,
+                                   Lam
+                                     ( b1,
+                                       Lam
+                                         ( b2,
+                                           Lam (e0, Lam (e1, Lam (e2, Lam (x0, Lam (x1, Struct s)))))
+                                         ) ) ) ) ) )),
+                param ) ) ->
+              let fields =
+                Bwd.map
+                  (function
+                    | Term.StructfieldAbwd.Entry
+                        ( fld,
+                          Lower
+                            ( Lam
+                                ( b,
+                                  Realize
+                                    (App
+                                       ( App
+                                           ( App
+                                               ( App
+                                                   ( App
+                                                       ( App
+                                                           ( App
+                                                               ( App (App (App (Const c, _), _), _),
+                                                                 _ ),
+                                                             _ ),
+                                                         _ ),
+                                                     _ ),
+                                                 _ ),
+                                             _ ),
+                                         tm )) ),
+                              l ) )
+                      when c = eq_trr2 ->
+                        Term.StructfieldAbwd.Entry
+                          (fld, Lower (Lam (b, Realize (CubeOf.find_top tm)), l))
+                    | y -> y)
+                  s.fields in
+              Global.set id_rtr
+                ( `Defined
+                    (Lam
+                       ( a0,
+                         Lam
+                           ( a1,
+                             Lam
+                               ( a2,
+                                 Lam
+                                   ( b0,
+                                     Lam
+                                       ( b1,
+                                         Lam
+                                           ( b2,
+                                             Lam
+                                               ( e0,
+                                                 Lam
+                                                   ( e1,
+                                                     Lam
+                                                       ( e2,
+                                                         Lam (x0, Lam (x1, Struct { s with fields }))
+                                                       ) ) ) ) ) ) ) ) )),
                   param )
           | _ -> ())
       | _ -> fatal (Anomaly "fib_pi has wrong dimension"))
