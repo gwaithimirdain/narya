@@ -292,9 +292,11 @@ module Tube (F : Fam2) = struct
         (k2, l2) bwsface ->
         (n, kl, nkl, (b, bs) cons, cs) pmapperM ->
         (n, k1, nk1, nk, (b, bs) cons) Heter.hgt ->
+        (* A special Applicative action to take for dimensions that have zero arity *)
+        ?ifzero:unit M.t ->
         cs Tlist.t ->
         (n, k1, nk1, nk, cs) Heter.hgt M.t =
-     fun nk1 kl nk12 nkl d g trs cst ->
+     fun nk1 kl nk12 nkl d g trs ?ifzero cst ->
       match (nk1, trs) with
       | Zero, Leaf n :: _ -> return (Heter.leaf n cst)
       | Suc nk1, Branch (_, _, _) :: _ ->
@@ -312,15 +314,21 @@ module Tube (F : Fam2) = struct
                     g (C.Heter.hgt_of_hlist hs brs) cst in
                 C.Heter.hlist_of_hgt newhs xs)
               (Endpoints.indices l :: ends) (C.Heter.tlist_hgts newhs cst)
-          and+ newmid = gpmapM_r nk1 (N.plus_suc kl) nk12' (D.plus_suc nkl) (Mid d) g mid cst in
+          and+ () =
+            match (Endpoints.len l, ifzero) with
+            | Nat Zero, Some ifzero -> ifzero
+            | _ -> return ()
+          and+ newmid =
+            gpmapM_r nk1 (N.plus_suc kl) nk12' (D.plus_suc nkl) (Mid d) g mid ?ifzero cst in
           Heter.branch l newhs newends newmid
 
     let pmapM : type n k nk b bs cs.
         (n, k, nk, (b, bs) cons, cs) pmapperM ->
         (n, k, nk, nk, (b, bs) cons) Heter.hgt ->
+        ?ifzero:unit M.t ->
         cs Tlist.t ->
         (n, k, nk, nk, cs) Heter.hgt M.t =
-     fun g trs cst ->
+     fun g trs ?ifzero cst ->
       let (tr :: _) = trs in
       let n = uninst tr in
       let k = inst tr in
@@ -328,7 +336,7 @@ module Tube (F : Fam2) = struct
       let n_k = plus tr in
       let nk = D.plus_out n n_k in
       let nk0 = D.plus_zero nk in
-      gpmapM_r n_k k0 nk0 nk0 Zero g trs cst
+      gpmapM_r n_k k0 nk0 nk0 Zero g trs ?ifzero cst
 
     (* And now the more specialized versions. *)
 
@@ -338,9 +346,10 @@ module Tube (F : Fam2) = struct
 
     let mmapM : type n k nk b bs c.
         (n, k, nk, (b, bs) cons, c) mmapperM ->
+        ?ifzero:unit M.t ->
         (n, k, nk, nk, (b, bs) cons) Heter.hgt ->
         (n, k, nk, c) t M.t =
-     fun g xs ->
+     fun g ?ifzero xs ->
       let+ [ ys ] =
         pmapM
           {
@@ -349,7 +358,7 @@ module Tube (F : Fam2) = struct
                 let+ y = g.map fa x in
                 y @: []);
           }
-          xs (Cons Nil) in
+          xs ?ifzero (Cons Nil) in
       ys
 
     type ('n, 'k, 'nk, 'bs) miteratorM = {
@@ -357,8 +366,11 @@ module Tube (F : Fam2) = struct
     }
 
     let miterM : type n k nk b bs.
-        (n, k, nk, (b, bs) cons) miteratorM -> (n, k, nk, nk, (b, bs) cons) Heter.hgt -> unit M.t =
-     fun g xs ->
+        (n, k, nk, (b, bs) cons) miteratorM ->
+        ?ifzero:unit M.t ->
+        (n, k, nk, nk, (b, bs) cons) Heter.hgt ->
+        unit M.t =
+     fun g ?ifzero xs ->
       let+ [] =
         pmapM
           {
@@ -367,7 +379,7 @@ module Tube (F : Fam2) = struct
                 let+ () = g.it fa x in
                 hnil);
           }
-          xs Nil in
+          xs ?ifzero Nil in
       ()
 
     (* We also have a monadic builder function *)
@@ -577,15 +589,16 @@ module TubeOf = struct
     let middle, outer = gsplit mk kl tr in
     (glower Zero mk_l middle, outer)
 
-  (* Append the elements of a tube, in order, to a given Bwd.t. *)
+  (* Append the elements of a tube, in order, to a given Bwd.t.  For each dimension with zero arity, append the specified element, if any, instead. *)
 
-  let append_bwd : type a m n mn. a Bwd.t -> (m, n, mn, a) t -> a Bwd.t =
-   fun start xs ->
+  let append_bwd : type a m n mn. a Bwd.t -> ?ifzero:a -> (m, n, mn, a) t -> a Bwd.t =
+   fun start ?ifzero xs ->
     let module S = struct
       type t = a Bwd.t
     end in
     let module M = Monad.State (S) in
     let open Monadic (M) in
-    let (), xs = miterM { it = (fun _ [ x ] xs -> ((), Snoc (xs, x))) } [ xs ] start in
+    let ifzero = Option.map (fun x xs -> ((), Snoc (xs, x))) ifzero in
+    let (), xs = miterM { it = (fun _ [ x ] xs -> ((), Snoc (xs, x))) } [ xs ] ?ifzero start in
     xs
 end

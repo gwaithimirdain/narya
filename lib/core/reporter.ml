@@ -107,6 +107,8 @@ module Code = struct
         -> t
     | Not_enough_domains : 'a D.t -> t
     | Invalid_higher_function : string -> t
+    | Invalid_nullary_application : t
+    | Expected_nullary_application : t
     | Checking_tuple_at_degenerated_record : printable -> t
     | Missing_field_in_tuple : 'i Field.t * ('e, 'i, 'r) pbij option -> t
     | Missing_method_in_comatch : 'i Field.t * ('e, 'i, 'r) pbij option -> t
@@ -285,6 +287,8 @@ module Code = struct
     | Unequal_synthesized_boundary _ -> Error
     | Not_enough_domains _ -> Error
     | Invalid_higher_function _ -> Error
+    | Invalid_nullary_application -> Error
+    | Expected_nullary_application -> Error
     | Checking_tuple_at_degenerated_record _ -> Error
     | Missing_field_in_tuple _ -> Error
     | Missing_method_in_comatch _ -> Error
@@ -471,6 +475,8 @@ module Code = struct
     | Unequal_synthesized_boundary _ -> "E0704"
     | Not_enough_domains _ -> "E0705"
     | Invalid_higher_function _ -> "E0706"
+    | Invalid_nullary_application -> "E0707"
+    | Expected_nullary_application -> "E0708"
     (* Record fields *)
     | No_such_field _ -> "E0800"
     | Wrong_dimension_of_field _ -> "E0801"
@@ -653,6 +659,8 @@ module Code = struct
       | Not_enough_domains dim ->
           textf "not enough domains for an %s-dimensional function type" (string_of_dim0 dim)
       | Invalid_higher_function str -> textf "invalid higher function-type: %s" str
+      | Invalid_nullary_application -> text "invalid nullary application"
+      | Expected_nullary_application -> text "expected nullary application"
       | Checking_tuple_at_degenerated_record r ->
           textf "can't check a tuple against a record %a with a nonidentity degeneracy applied"
             pp_printed (print ~sort:`Type r)

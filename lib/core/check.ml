@@ -149,7 +149,7 @@ let vars_of_names : type a c abc n.
 let spine : type a.
     a check located ->
     a check located
-    * (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list =
+    * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list =
  fun tm ->
   let rec spine tm args =
     match tm.value with
@@ -697,7 +697,10 @@ let rec check : type a b s.
                       match args with
                       | _ :: _ ->
                           let args =
-                            List.map (fun (l, x) -> (l, x, locate_opt None `Explicit)) args in
+                            List.map
+                              (fun (l, x) ->
+                                (l, { value = Some x.value; loc = x.loc }, locate_opt None `Explicit))
+                              args in
                           synth_apps ctx new_sfn new_sty
                             { value = Synth fn.value; loc = fn.loc }
                             args
@@ -2672,8 +2675,11 @@ and synth : type a b s.
                 let stm, sty =
                   synth_apps ctx new_sfn new_sty
                     { value = Synth fn.value; loc = fn.loc }
-                    [ (apploc, locate_opt arg.loc (Synth arg.value), locate_opt None `Explicit) ]
-                in
+                    [
+                      ( apploc,
+                        locate_opt arg.loc (Some (Synth arg.value)),
+                        locate_opt None `Explicit );
+                    ] in
                 (realize status stm, sty)
             | Eq, _ ->
                 fatal ?loc:fn.loc (Anomaly "first argument of an ImplicitSMap is not of type Type")
@@ -2804,7 +2810,7 @@ and synth_apps : type a b.
     (b, kinetic) term located ->
     kinetic value ->
     a check located ->
-    (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list ->
+    (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
     (b, kinetic) term * kinetic value =
  fun ctx sfn sty fn args ->
   (* To determine what to do, we inspect the (fully instantiated) *type* of the function being applied.  Failure of view_type here is really a bug, not a user error: the user can try to check something against an abstraction as if it were a type, but our synthesis functions should never synthesize (say) a lambda-abstraction as if it were a type. *)
@@ -2839,11 +2845,11 @@ and synth_arg_cube : type a b n c.
     (n, kinetic value) CubeOf.t ->
     Asai.Range.t option
     * a check located
-    * (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list ->
+    * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
     ((n, (b, kinetic) term) CubeOf.t * (n, c) CubeOf.t)
     * (Asai.Range.t option
       * a check located
-      * (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list) =
+      * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list) =
  fun ~not_enough ~which ctx choose doms (sfnloc, fn, args) ->
   (* Based on the dimension of the application and whether the first argument is implicit, decide whether we are taking a whole cube of arguments or only one argument with the boundary synthesized from it. *)
   let module TakenArgs = struct
@@ -2851,13 +2857,14 @@ and synth_arg_cube : type a b n c.
       | Take
       | Given : Asai.Range.t option * (n, 'k, 'nk) D.plus * (D.zero, 'nk, 'nk, normal) TubeOf.t -> t
   end in
+  let n = CubeOf.dim doms in
   let taken_args : TakenArgs.t =
-    match (args, D.compare_zero (CubeOf.dim doms)) with
-    | [], _ -> fatal not_enough
-    (* If the application if zero-dimensional, or if the first argument is implicit, take a whole cube. *)
-    | _, Zero | (_, _, { value = `Implicit; _ }) :: _, Pos _ -> Take
+    match (args, D.compare_zero n, totally_nullary n) with
+    | [], _, _ -> fatal not_enough
+    (* If the first argument is implicit, or if the cube would have only one element (i.e. it is 0-dimensional or consists entirely of nullary dimensions) take a whole cube. *)
+    | (_, _, { value = `Implicit; _ }) :: _, Pos _, false | _, Zero, _ | _, _, true -> Take
     (* Otherwise, the first argument must be explicit and synthesizing. *)
-    | (_, { value = Synth toptm; loc }, { value = `Explicit; _ }) :: _, Pos _ -> (
+    | (_, { value = Some (Synth toptm); loc }, { value = `Explicit; _ }) :: _, Pos _, false -> (
         (* We synthesize its type, extract the instantiation arguments, and store them to fill in the boundary arguments. *)
         let _, argty = synth (Kinetic `Nolet) ctx (locate_opt loc toptm) in
         let (Full_tube argtyargs) = get_tyargs argty "primary argument" in
@@ -2868,14 +2875,14 @@ and synth_arg_cube : type a b n c.
             fatal ~severity:Asai.Diagnostic.Error ?loc
               (Insufficient_dimension
                  { needed = CubeOf.dim doms; got = TubeOf.inst argtyargs; which }))
-    | (_, { loc; _ }, { value = `Explicit; _ }) :: _, Pos _ ->
+    | (_, { loc; _ }, { value = `Explicit; _ }) :: _, Pos _, false ->
         fatal ?loc (Nonsynthesizing ("primary argument with implicit " ^ which ^ " boundaries"))
   in
   let module M = Monad.State (struct
     type t =
       Asai.Range.t option
       * a check located
-      * (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list
+      * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list
   end) in
   (* Pick up the right number of arguments for the dimension, leaving the others for a later call to synth_app.  Then check each argument against the corresponding type in "doms", instantiated at the appropriate evaluated previous arguments, and evaluate it, producing Cubes of checked terms and values.  Since each argument has to be checked against a type instantiated at the *values* of the previous ones, we also store those in a hashtable as we go. *)
   let eargtbl = Hashtbl.create 10 in
@@ -2936,6 +2943,10 @@ and synth_arg_cube : type a b n c.
                         | _ -> ());
                         let* () = M.put (l, locate_opt l (Synth (App (f, t, impl))), ts) in
                         return t in
+                  let tm =
+                    match tm.value with
+                    | Some value -> { value; loc = tm.loc }
+                    | None -> fatal ?loc:tm.loc Invalid_nullary_application in
                   let ctm = check (Kinetic `Nolet) ctx tm ty in
                   let etm = eval_term (Ctx.env ctx) ctm in
                   return (ctm, etm) in
@@ -2955,11 +2966,11 @@ and synth_app : type a b n.
     (n, unit) BindCube.t ->
     (D.zero, n, n, normal) TubeOf.t ->
     a check located ->
-    (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list ->
+    (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
     (b, kinetic) term located
     * kinetic value
     * a check located
-    * (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list =
+    * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list =
  fun ctx sfn doms cods tyargs fn args ->
   let (cargs, eargs), (newloc, newfn, rest) =
     synth_arg_cube ~not_enough:Not_enough_arguments_to_function
@@ -2970,16 +2981,17 @@ and synth_app : type a b n.
   let output = tyof_app cods tyargs eargs in
   ({ value = Term.App (sfn.value, cargs); loc = newloc }, output, newfn, rest)
 
+(* Pick up enough arguments to form a tube for instantiating a higher-dimensional type by a single direction, and return the result along with the remaining arguments not yet picked up.  *)
 and synth_inst : type a b n.
     (a, b) Ctx.t ->
     (b, kinetic) term located ->
     (D.zero, n, n, normal) TubeOf.t ->
     a check located ->
-    (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list ->
+    (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
     (b, kinetic) term located
     * kinetic value
     * a check located
-    * (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list =
+    * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list =
  fun ctx sfn tyargs fn args ->
   let n = TubeOf.inst tyargs in
   match D.compare_zero n with
@@ -2997,14 +3009,23 @@ and synth_inst : type a b n.
         type t =
           Asai.Range.t option
           * a check located
-          * (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list
+          * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list
       end) in
       let open Bwv.Monadic (M) in
       let (cargs, nargs), (newloc, newfn, rest) =
-        mapM1_2
-          (synth_arg_cube ~not_enough:Not_enough_arguments_to_instantiation ~which:"instantiation"
-             ctx (fun _ ntm -> ntm))
-          doms (sfn.loc, fn, args) in
+        match Bwv.length doms with
+        | Nat (Suc _) ->
+            mapM1_2
+              (synth_arg_cube ~not_enough:Not_enough_arguments_to_instantiation
+                 ~which:"instantiation" ctx (fun _ ntm -> ntm))
+              doms (sfn.loc, fn, args)
+        | Nat Zero -> (
+            (* If instantiating a nullary dimension, we expect a single . argument. *)
+            match args with
+            | (l, ({ value = None; _ } as arg), i) :: rest ->
+                ((Emp, Emp), (l, locate_opt l (Synth (App (fn, arg, i))), rest))
+            | (_, { value = Some _; loc }, _) :: _ -> fatal ?loc Expected_nullary_application
+            | [] -> fatal Not_enough_arguments_to_instantiation) in
       (* The synthesized type *of* the instantiation is itself a full instantiation of a universe, at the instantiations of the type arguments at the evaluated term arguments.  This is computed by tyof_inst. *)
       let cargs = TubeOf.of_cube_bwv m k msuc l cargs in
       let nargs = TubeOf.of_cube_bwv m k msuc l nargs in
@@ -3014,7 +3035,7 @@ and synth_inst : type a b n.
 and synth_or_check_apps : type a b.
     (a, b) Ctx.t ->
     a check located ->
-    (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list ->
+    (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
     kinetic value option ->
     (b, kinetic) term * kinetic value =
  fun ctx fn args ty ->
@@ -3044,7 +3065,7 @@ and synth_lam : type a b c d n.
     (c, d) Ctx.t ->
     c check located ->
     (a, b) Ctx.t ->
-    (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list ->
+    (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
     kinetic value option ->
     (d, kinetic) term * kinetic value =
  fun n ctx fn argctx args ty ->
@@ -3072,7 +3093,8 @@ and synth_lam : type a b c d n.
       let xs = singleton_variables D.zero name.value in
       (* Pull off either one explicit argument or a cube of mostly-implicit ones, of the correct dimension. *)
       let module M = CubeOf.Monadic (Monad.State (struct
-        type t = (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list
+        type t =
+          (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list
       end)) in
       let _, rest =
         M.buildM n
@@ -3096,7 +3118,7 @@ and synth_lam : type a b c d n.
   | ( Lam { name; cube = { value = `Normal; _ }; implicit = `Explicit; dom = None; body },
       (_, arg, { value = `Explicit; _ }) :: args ) -> (
       match arg.value with
-      | Synth sarg ->
+      | Some (Synth sarg) ->
           let _, sargty = synth (Kinetic `Nolet) argctx (locate_opt arg.loc sarg) in
           let edom =
             unact_ty ~err:(Unimplemented "typechecking degenerated redexes with arity 0") sargty n
@@ -3114,6 +3136,7 @@ and synth_lam : type a b c d n.
                    CubeOf.singleton cdom,
                    CodCube.singleton (readback_val newctx scod) )) in
           (Lam (xs, cbody), scod)
+      | None -> fatal ?loc:arg.loc Invalid_nullary_application
       | _ ->
           let extra_remarks = [ Asai.Diagnostic.loctext ?loc:arg.loc "argument" ] in
           fatal ?loc:fn.loc ~extra_remarks

@@ -84,7 +84,9 @@ module rec Make : functor (I : Indices) -> sig
     | Pi : I.name * 'a check located * 'a I.suc check located -> 'a synth
     | HigherPi : I.name * 'a synth located * 'a I.suc synth located -> 'a synth
     | InstHigherPi : 'n D.pos * ('a, 'n, unit, 'an) DomCube.t * 'an check located -> 'a synth
-    | App : 'a check located * 'a check located * [ `Implicit | `Explicit ] located -> 'a synth
+    | App :
+        'a check located * 'a check option located * [ `Implicit | `Explicit ] located
+        -> 'a synth
     | Asc : 'a check located * 'a check located -> 'a synth
     | AscLam : I.name located * 'a check located * 'a I.suc synth located -> 'a synth
     | UU : 'a synth
@@ -235,7 +237,9 @@ functor
       | HigherPi : I.name * 'a synth located * 'a I.suc synth located -> 'a synth
       | InstHigherPi : 'n D.pos * ('a, 'n, unit, 'an) DomCube.t * 'an check located -> 'a synth
       (* The location of the implicitness flag is, in the implicit case, the location of the braces surrounding the implicit argument. *)
-      | App : 'a check located * 'a check located * [ `Implicit | `Explicit ] located -> 'a synth
+      | App :
+          'a check located * 'a check option located * [ `Implicit | `Explicit ] located
+          -> 'a synth
       | Asc : 'a check located * 'a check located -> 'a synth
       (* Abstraction with ascribed variable.  Currently can't be a cube or implicit.  *)
       | AscLam : I.name located * 'a check located * 'a I.suc synth located -> 'a synth
@@ -440,7 +444,14 @@ module Resolve (R : Resolver) = struct
               }
               ctx doms in
           InstHigherPi (n, doms, check ctx cod)
-      | App (fn, arg, impl) -> App (check ctx fn, check ctx arg, impl)
+      | App (fn, arg, impl) ->
+          let arg =
+            match arg.value with
+            | Some x ->
+                let arg = check ctx (locate_opt arg.loc x) in
+                locate_opt arg.loc (Some arg.value)
+            | None -> locate_opt arg.loc None in
+          App (check ctx fn, arg, impl)
       | Asc (tm, ty) -> Asc (check ctx tm, check ctx ty)
       | AscLam (x, dom, body) ->
           AscLam (locate_map (R.rename ctx) x, check ctx dom, synth (R.snoc ctx x.value) body)
