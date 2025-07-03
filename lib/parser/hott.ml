@@ -114,6 +114,7 @@ let install_fib_pi trie =
     Id_eq B0 B1 B2 (e0 .to (e0 .fro b0)) (e1 .to (e1 .fro b1))
       (e2 .to (e2 .fro b2)) b0 b1 b2 (e0 .to_fro b0) (e1 .to_fro b1)
       (e2 .to_fro b2))"
+    (* Here we can cheat a little: since we're already in HOTT, we don't need to assume an explicit witness of fibrancy for the given type A, we can just use its intrinsic one. *)
     |> def "fib_rtr" "(A B : Type) (e : rtr A B) → isFibrant B"
          "A B e ↦ [
 | .trr.e ↦ b0 ↦ e.1 .to (A.2 .trr (e.0 .fro b0))
