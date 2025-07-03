@@ -1153,17 +1153,13 @@ let () =
    Dot
  ******************** *)
 
-(* A dot is an auxiliary notation used for refutation branches. *)
-
-type (_, _, _) identity += Dot : (closed, No.plus_omega, closed) identity
-
-let dot : (closed, No.plus_omega, closed) notation = (Dot, Outfix)
+(* A dot is an auxiliary notation used for refutation branches and nullary applications.  It was defined in postprocess.ml. *)
 
 let () =
-  make dot
+  make Postprocess.dot
     {
       name = "dot";
-      tree = Closed_entry (eop Dot (Done_closed dot));
+      tree = Closed_entry (eop Dot (Done_closed Postprocess.dot));
       processor = (fun _ _ _ -> fatal Parse_error);
       print_term =
         Some
@@ -2453,7 +2449,7 @@ let install () =
     |> Situation.add universe
     |> Situation.add coloneq
     |> Situation.add comatch
-    |> Situation.add dot
+    |> Situation.add Postprocess.dot
     |> Situation.add implicit_mtch
     |> Situation.add explicit_mtch
     |> Situation.add mtchlam

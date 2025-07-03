@@ -48,7 +48,9 @@ Varying the arity of parametricity
 
 The parametricity described above, which is Narya's default, is *binary* in that the bridge type ``Br A x y`` takes *two* elements of ``A`` as arguments.  However, a different "arity" can be specified with the ``-arity`` command-line flag.  For instance, under ``-arity 1`` we have bridge types ``Br A x``, and under ``-arity 3`` they look like ``Br A x y z``.  Everything else also alters according, e.g. under ``-arity 1`` the type ``Br (A → B) f`` is isomorphic to ``{x₀ : A} (x₁ : Br A x) → Br B (f x)``, and a cube variable has pieces numbered with only ``0`` s and ``1`` s.
 
-In principle, the arity could be any natural number, but for syntactic reasons Narya currently requires it to be between 1 and 9 inclusive.  The problem with arities greater than 9 is that the syntax ``x.10`` for cube variables would become ambiguous: does ``10`` mean "one-zero" or "ten"?  But if you have an application of such a type theory, let us know and we can work out a syntax (although at present we are unaware of any applications of n-ary parametricity for n>2).  The problem with arity 0 is that then ``Br A`` would belong to ``Br Type`` and also be instantiatable to an element of ``Type``, but since this requires no arguments it's not clear what syntax should indicate whether the instantiation has happened.  We do expect to solve this problem somehow, since 0-ary parametricity does have potential applications (it is related to nominal type theory).
+In principle, the arity could be any natural number, but for syntactic reasons Narya currently requires it to be between 0 and 9 inclusive.  The problem with arities greater than 9 is that the syntax ``x.10`` for cube variables would become ambiguous: does ``10`` mean "one-zero" or "ten"?  It would probably be possible to resolve this similarly to how we deal with degeneracies for dimensions above 9, for instance writing ``x..1.0`` for one-zero and ``x..10`` for ten (while keeping the simpler ``x.10`` to mean ``x..1.0``), but this is not a priority because at present we are unaware of any applications of n-ary parametricity for n>2.
+
+Syntactically, nullary parametricity is a bit special because when instantiating a higher-dimensional type there are zero arguments to be supplied, so it is not obvious how to indicate that an instantiation has happened.  To resolve this, each dimension of instantiation that takes zero arguments is indicated by syntactic application to a dot ``.`` that denotes "zero arguments".  Thus, if ``A : Type`` then ``Br A : Type⁽ᵖ⁾ .``, and if ``a : A`` then ``rel a : A⁽ᵖ⁾ .``, while ``rel (rel a) : A⁽ᵖᵖ⁾ . .``, and so on.  Note that each dot must be separated from others by spaces.
 
 
 Internal versus external parametricity
@@ -67,18 +69,11 @@ Other constants that use nonparametric axioms in their types or definitions, her
 
 When a definition contains :ref:`holes` but does not (yet) use any nonparametric constants, it is considered parametric, and hence can have dimension-changing degeneracies applied to it.  Therefore, if you later try to fill one of those holes with a term that uses a nonparametric constant, an error will be emitted; it is not possible to retroactively set a definition to be nonparametric since it might already have had dimension-changing degeneracies applied to it by other definitions.  In this case, you have to undo back to the original definition and manually copy your desired nonparametric term in place of the hole.  (If there is significant demand, we may implement an easier solution.)
 
-The combination ``-arity 1 -direction d -external`` is closely related to `displayed type theory <https://arxiv.org/abs/2311.18781>`_ (dTT), and as such can be selected with the single option ``-dtt``.  The primary differences between ``narya -dtt`` and the original dTT of the paper are:
-
-1. Narya currently has no modalities, so display can only be applied to closed terms rather than to the more general □-modal ones.
-2. Narya has symmetries, which in particular (as noted in the paper) makes ``SST⁽ᵈ⁾`` (see :ref:`Displayed coinductive types`) actually usable.
-3. As noted above, display in Narya computes only up to isomorphism, and in the case of ``Type`` only up to retract up to isomorphism.
-4. (A syntactic difference only) Generic degeneracies in Narya must be parenthesized, so we write ``A⁽ᵈ⁾`` instead of ``Aᵈ``.
-
 
 Parametrically discrete types
 -----------------------------
 
-Discreteness is an experimental (and probably temporary) feature.  A (strictly parametrically) *discrete* type, in the sense meant here, is one whose higher-dimensional versions are all definitionally subsingletons.  That is, if ``b1 : A⁽ᵈ⁾ a`` and ``b2 : A⁽ᵈ⁾ a``, then ``b1`` and ``b2`` are convertible (this is implemented as an η-rule).  Discreteness is currently restricted to arity 1 (including dTT), and can be enabled by the ``-discreteness`` flag (which is not included in ``-dtt``).  When discreteness is enabled, a mutual family of datatypes will be marked as discrete if
+Discreteness is an experimental (and probably temporary) feature.  A (strictly parametrically) *discrete* type, in the sense meant here, is one whose higher-dimensional versions are all definitionally subsingletons.  That is, if ``b1 : A⁽ᵈ⁾ a`` and ``b2 : A⁽ᵈ⁾ a``, then ``b1`` and ``b2`` are convertible (this is implemented as an η-rule).  Discreteness is currently restricted to arity 1 (including dTT), and can be enabled by the ``-discreteness`` flag.  When discreteness is enabled, a mutual family of datatypes will be marked as discrete if
 
 1. All elements of the mutual family are datatypes; and
 2. The types of all of their parameters, indices, and constructor arguments are either types belonging to the same family or previously defined discrete datatypes.

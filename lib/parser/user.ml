@@ -180,10 +180,13 @@ let make_user : prenotation -> notation =
                 let spine =
                   List.fold_left
                     (fun acc k ->
-                      Raw.App
-                        ( { value = Synth acc; loc },
-                          StringMap.find_opt k args <|> Anomaly "not found processing user",
-                          Asai.Range.locate_opt None `Explicit ))
+                      match StringMap.find_opt k args with
+                      | None -> fatal (Anomaly "not found processing user")
+                      | Some arg ->
+                          Raw.App
+                            ( { value = Synth acc; loc },
+                              { value = Some arg.value; loc = arg.loc },
+                              Asai.Range.locate_opt None `Explicit ))
                     (Const c) val_vars in
                 Raw.Synth spine
             | `Constr (c, _) ->
