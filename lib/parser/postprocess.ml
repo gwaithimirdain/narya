@@ -9,6 +9,22 @@ open Notation
 open Monad.Ops (Monad.Maybe)
 module StringMap = Map.Make (String)
 
+(* Process a term into a list of strings, to be a multi-word attribute *)
+let strings_of_term : type ls lt rs rt.
+    (ls, lt, rs, rt) parse -> string list * Whitespace.t list list =
+ fun tm ->
+  let rec go : type ls lt rs rt.
+      string list ->
+      Whitespace.t list list ->
+      (ls, lt, rs, rt) parse ->
+      string list * Whitespace.t list list =
+   fun strs wss -> function
+     | Ident ([ str ], ws) -> (str :: strs, ws :: wss)
+     | App { fn; arg = { value = Ident ([ str ], ws); _ }; _ } ->
+         go (str :: strs) (ws :: wss) fn.value
+     | _ -> fatal Unrecognized_attribute in
+  go [] [] tm
+
 (* We define these here so we can refer to them in parsing implicit and nullary applications. *)
 
 type (_, _, _) identity +=

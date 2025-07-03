@@ -2057,34 +2057,14 @@ let process_record ctx obs loc =
       :: Token (RParen, _)
       :: obs ->
         let opacity =
-          match attr.value with
-          | Ident ([ "opaque" ], _) -> `Opaque
-          | Ident ([ "transparent" ], _) -> `Transparent `Labeled
-          | Ident ([ "translucent" ], _) -> `Translucent `Labeled
-          | App
-              {
-                fn = { value = Ident ([ "transparent" ], _); _ };
-                arg = { value = Ident ([ "labeled" ], _); _ };
-                _;
-              } -> `Transparent `Labeled
-          | App
-              {
-                fn = { value = Ident ([ "transparent" ], _); _ };
-                arg = { value = Ident ([ "positional" ], _); _ };
-                _;
-              } -> `Transparent `Unlabeled
-          | App
-              {
-                fn = { value = Ident ([ "translucent" ], _); _ };
-                arg = { value = Ident ([ "labeled" ], _); _ };
-                _;
-              } -> `Translucent `Labeled
-          | App
-              {
-                fn = { value = Ident ([ "translucent" ], _); _ };
-                arg = { value = Ident ([ "positional" ], _); _ };
-                _;
-              } -> `Translucent `Unlabeled
+          match fst (Postprocess.strings_of_term attr.value) with
+          | [ "opaque" ] -> `Opaque
+          | [ "transparent" ] -> `Transparent `Labeled
+          | [ "translucent" ] -> `Translucent `Labeled
+          | [ "transparent"; "labeled" ] -> `Transparent `Labeled
+          | [ "transparent"; "positional" ] -> `Transparent `Unlabeled
+          | [ "translucent"; "labeled" ] -> `Translucent `Labeled
+          | [ "translucent"; "positional" ] -> `Translucent `Unlabeled
           | _ -> fatal ?loc:attr.loc Unrecognized_attribute in
         (opacity, obs)
     | Token (Sig, _) :: obs -> (`Opaque, obs)
