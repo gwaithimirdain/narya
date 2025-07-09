@@ -18,7 +18,7 @@ module StringsSet = Set.Make (struct
   let compare = compare
 end)
 
-let invalid str = fatal (Anomaly ("invalid notation arguments for " ^ str))
+let invalid ?loc str = fatal ?loc (Anomaly ("invalid notation arguments for " ^ str))
 
 (* ********************
    Parentheses
@@ -164,7 +164,7 @@ let get_var_asc : type lt ls rt rs.
   | Notn ((Asc, _), n) -> (
       match args n with
       | [ Term x; Token (Colon, _); Term ty ] -> (get_var x, Some (Wrap ty))
-      | _ -> invalid "colon")
+      | _ -> invalid ?loc:v.loc "colon")
   | _ -> (get_var v, None)
 
 (* Like get_var, but allow it to be enclosed in braces to mean implicit, and/or to be ascribed to a type (in parentheses or braces). *)
@@ -176,11 +176,13 @@ let get_var_asc_implicit : type lt ls rt rs.
   | Notn ((Braces, _), n) -> (
       match args n with
       | [ Token (LBrace, _); Term w; Token (RBrace, _) ] -> (get_var_asc w, `Implicit)
-      | _ -> invalid "braces")
+      | _ -> invalid ?loc:v.loc "braces")
   | Notn ((Parens, _), n) -> (
       match args n with
       | [ Token (LParen, _); Term w; Token (RParen, _) ] -> (get_var_asc w, `Explicit)
-      | _ -> invalid "braces")
+      | _ ->
+          (* This isn't invalid, since the user could have written a tuple. *)
+          fatal ?loc:v.loc Parse_error)
   | _ -> ((get_var v, None), `Explicit)
 
 (* Get a sequence of variables, as in the domain of an abstraction, some possibly enclosed in braces to mean they are implicit. *)
