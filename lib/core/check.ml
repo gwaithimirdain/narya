@@ -1515,14 +1515,10 @@ and check_var_match : type a b.
                         (* The type of the match must be specialized in the branches by substituting different constructors for the match variable, as well as the index values for the index variables, and lower-dimensional versions of each constructor for the instantiation variables.  Thus, we readback-eval this type into the new context, to obtain the type at which the branch body will be checked. *)
                         let newty = eval_term (Ctx.env newctx) (readback_val oldctx motive) in
                         (* Now we have to modify the "status" data by readback-eval on the arguments and adding a hypothesized current branch to the match.  *)
-                        let eval_readback_args x =
-                          let tm = eval_term (Ctx.env newctx) (readback_nf oldctx x) in
-                          let ty = eval_term (Ctx.env newctx) (readback_val oldctx x.ty) in
-                          { tm; ty } in
-                        let perm = checked_perm in
                         let status =
                           make_match_status status (Term.Var index) dim branches efc
-                            (Some eval_readback_args) perm constr in
+                            (Some (oldctx, newctx))
+                            checked_perm constr in
                         (* Finally, we typecheck the "body" of the branch, if the user supplied one. *)
                         match body with
                         | Some body ->
@@ -1533,7 +1529,8 @@ and check_var_match : type a b.
                                 | _ -> (branches, Snoc (errs, e)))
                             @@ fun () ->
                             let branch = check status newctx body newty in
-                            ( branches |> Constr.Map.add constr (Term.Branch (efc, perm, branch)),
+                            ( branches
+                              |> Constr.Map.add constr (Term.Branch (efc, checked_perm, branch)),
                               errs )
                         (* If not, then we look for something to refute. *)
                         | None ->
@@ -1562,33 +1559,58 @@ and check_var_match : type a b.
       | Emp -> Match { tm = Term.Var index; dim; branches })
   | _ -> fatal ?loc (Matching_on_nondatatype (PVal (ctx, varty)))
 
-and make_match_status : type a b ab c n.
+and make_match_status : type a b ab c n x y z.
     (a, potential) status ->
     (a, kinetic) term ->
     n D.t ->
     (a, n) Term.branch Constr.Map.t ->
     (a, b, n, ab) Tbwd.snocs ->
-    (normal -> normal) option ->
+    ((x, z) Ctx.t * (y, z) Ctx.t) option ->
     (c, ab) Tbwd.permute ->
     Constr.t ->
     (c, potential) status =
  fun status newtm dim branches efc eval_readback perm constr ->
-  let (Potential (c, args, hyp)) = status in
-  let args =
+  let (Potential
+         (type d any)
+         ((head, args, hyp) :
+           d potential_head * any apps * ((a, potential) term -> (d, potential) term))) =
+    status in
+  let head, apps =
     match eval_readback with
-    | Some eval_readback ->
+    | Some (oldctx, newctx) ->
+        let newenv = Ctx.env newctx in
         let rec erapps : type any. any apps -> any apps = function
           | Emp -> Emp
           | Arg (rest, xs, ins) ->
-              Arg (erapps rest, CubeOf.mmap { map = (fun _ [ x ] -> eval_readback x) } [ xs ], ins)
+              Arg
+                ( erapps rest,
+                  CubeOf.mmap
+                    {
+                      map =
+                        (fun _ [ x ] ->
+                          let tm = eval_term newenv (readback_nf oldctx x) in
+                          let ty = eval_term newenv (readback_val oldctx x.ty) in
+                          { tm; ty });
+                    }
+                    [ xs ],
+                  ins )
           | Field (rest, x, y, z) -> Field (erapps rest, x, y, z)
           | Inst _ -> fatal (Anomaly "inst in make_match_status") in
-        erapps args
-    | None -> args in
+        let (erhead : d potential_head) =
+          match head with
+          | Meta (meta, metaenv) ->
+              Meta
+                ( meta,
+                  eval_env newenv
+                    (D.zero_plus (dim_env metaenv))
+                    (readback_env oldctx metaenv (Global.find_meta meta).termctx) )
+          | Constant (c, dim) -> Constant (c, dim) in
+        (erhead, erapps args)
+    | None -> (head, args) in
   let hyp tm =
     let branches = branches |> Constr.Map.add constr (Term.Branch (efc, perm, tm)) in
     hyp (Term.Match { tm = newtm; dim; branches }) in
-  Potential (c, args, hyp)
+  Potential (head, apps, hyp)
 
 (* Try matching against all the supplied terms with zero branches, producing an empty match if any succeeds and raising an error if none succeed. *)
 and check_refute : type a b.
