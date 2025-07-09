@@ -1032,6 +1032,7 @@ let () =
       | Dump.Env e -> Dump.env e
       | Dump.DeepEnv (e, n) -> Dump.denv n e
       | Dump.Check e -> Dump.check e
+      | Dump.Apps e -> Dump.apps e
       | Dump.Entry e -> Dump.entry e
       | Dump.OrderedCtx e -> Dump.ordered_ctx e
       | Dump.Ctx e -> Dump.ctx e
