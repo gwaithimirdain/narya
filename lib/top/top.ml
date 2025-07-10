@@ -137,18 +137,18 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols f =
         | `File file -> FilePath.make_absolute (Sys.getcwd ()) file :: acc
         | _ -> acc)
       !inputs [] in
+  Subtype.run @@ fun () ->
   Execute.Flags.run
     ~env:
       {
         marshal = marshal_flags;
         unmarshal = unmarshal_flags;
         source_only = !source_only;
-        init_visible = Parser.Glue.install Scope.Trie.empty;
+        init_visible = Parser.Hott.install Scope.Trie.empty;
         top_files;
         reformat = !reformat;
       }
   @@ fun () ->
-  Subtype.run @@ fun () ->
   Execute.Loaded.run @@ fun () ->
   Execute.Loading.run ~init:{ cwd = Sys.getcwd (); parents = Emp; imports = Emp; actions = false }
   @@ fun () ->

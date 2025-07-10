@@ -314,7 +314,7 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
         let head : head = Pi (subx, subdoms, subcods) in
         (* We don't need fibrancy fields for all the boundary types, since once something "is a type" we don't need it to be in Fib any more. *)
         let fields : (k * potential * no_eta) Value.StructfieldAbwd.t =
-          match (is_id_sface fab, Lazy.force Fibrancy.pi) with
+          match (is_id_sface fab, !Fibrancy.pi) with
           | None, _ | _, None -> Bwd.Emp
           | Some Eq, Some fields ->
               (* For the top face, we compute its fibrancy fields by evaluating the generic "fibrancy fields of a pi" at the evaluated domains and codomains.  *)
@@ -798,11 +798,15 @@ and tyof_field : type m h s r i c.
   | Canonical (head, UU m, ins, tyargs) -> (
       let Eq = eq_of_ins_zero ins in
       let err = Code.No_such_field (`Other errtm, errfld) in
-      match Lazy.force Fibrancy.fields with
+      match !Fibrancy.fields with
       | None -> fatal ~severity err
       | Some fields ->
-          tyof_field_giventype tm head Noeta (Value.Emp m) (D.plus_zero m) fields tyargs fld ~shuf
-            fldins)
+          let tmcube =
+            Result.map
+              (fun tm -> TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
+              tm in
+          let env = Value.Ext (Value.Emp m, D.plus_zero m, tmcube) in
+          tyof_field_giventype tm head Noeta env (D.plus_zero m) fields tyargs fld ~shuf fldins)
   | _ ->
       let p =
         match tm with
@@ -880,11 +884,15 @@ and tyof_field_withname : type a b.
   | Canonical (_head, UU m, ins, tyargs) -> (
       let Eq = eq_of_ins_zero ins in
       let err = Code.No_such_field (`Other errtm, errfld) in
-      match Lazy.force Fibrancy.fields with
+      match !Fibrancy.fields with
       | None -> fatal err
       | Some fields ->
-          tyof_field_withname_giventype ctx tm ty Noeta (Value.Emp m) (D.plus_zero m) fields tyargs
-            infld err)
+          let tmcube =
+            Result.map
+              (fun tm -> TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
+              tm in
+          let env = Value.Ext (Value.Emp m, D.plus_zero m, tmcube) in
+          tyof_field_withname_giventype ctx tm ty Noeta env (D.plus_zero m) fields tyargs infld err)
   | _ -> fatal (No_such_field (`Other errtm, errfld))
 
 (* Subroutine of tyof_field_withname for after we've identified the type of the head as either a codatatype or a universe (for fibrancy fields). *)
@@ -1213,22 +1221,30 @@ and inst_fibrancy_fields : type m n mn.
               let fldins = id_ins (D.plus_out m m_n) mn_1 in
               let idfld = struct_field "fibrancy" Potential fields Fibrancy.fid fldins in
               let (Snoc (Snoc (Emp, xcube), ycube)) = TubeOf.to_cube_bwv one l outer in
-              match
-                app_eval_apps idfld
-                  (Arg
-                     ( Arg (Emp, xcube, ins_zero (CubeOf.dim xcube)),
-                       ycube,
-                       ins_zero (CubeOf.dim ycube) ))
-              with
-              | Val (Struct { fields; ins; energy = Potential; eta = Noeta }) -> (
+              let v =
+                match
+                  app_eval_apps idfld
+                    (Arg
+                       ( Arg (Emp, xcube, ins_zero (CubeOf.dim xcube)),
+                         ycube,
+                         ins_zero (CubeOf.dim ycube) ))
+                with
+                | Val v -> Some v
+                | Realize (Neu { value; _ }) -> (
+                    match force_eval value with
+                    | Val v -> Some v
+                    | _ -> None)
+                | _ -> None in
+              match v with
+              | Some (Struct { fields; ins; energy = Potential; eta = Noeta }) -> (
                   match (is_id_ins ins, D.compare (cod_left_ins ins) (TubeOf.out middle)) with
                   | Some _, Eq -> inst_fibrancy_fields fields middle
                   | Some _, Neq ->
                       fatal
                         (Dimension_mismatch ("inst_fibrancy", cod_left_ins ins, TubeOf.out middle))
                   | None, _ -> fatal (Anomaly "nonidentity insertion on evaluation of fibrancy id"))
-              | Unrealized -> Some Emp
-              | _ -> fatal (Anomaly "fibrancy id didn't yield a struct"))))
+              | Some _ -> fatal (Anomaly "fibrancy id didn't yield a struct")
+              | None -> Some Emp)))
 
 and get_fibrancy_fields : type m k mk e n.
     (m, k, mk, e, n) inst_canonical -> (m * potential * no_eta) Value.StructfieldAbwd.t =
