@@ -102,11 +102,16 @@ and ('left, 'tight) notation_entry =
 and ('left, 'tight, 'right) notation =
   ('left, 'tight, 'right) identity * ('left, 'tight, 'right) fixity
 
+module Matchpattern : sig
+  type t = Var : string option located -> t | Constr : Constr.t located * (t, 'n) Vec.t -> t
+end
+
 type ('left, 'tight, 'right) data = {
   name : string;
   tree : ('left, 'tight) notation_entry;
   processor :
     'n. (string option, 'n) Bwv.t -> observation list -> Asai.Range.t option -> 'n check located;
+  pattern : observation list -> Asai.Range.t option -> Matchpattern.t;
   print_term : (observation list -> PPrint.document * Whitespace.t list) option;
   print_case :
     ([ `Trivial | `Nontrivial ] ->
@@ -193,6 +198,9 @@ val processor :
   observation list ->
   Asai.Range.t option ->
   'n check located
+
+val pattern :
+  ('left, 'tight, 'right) notation -> observation list -> Asai.Range.t option -> Matchpattern.t
 
 val is_case : ('lt, 'ls, 'rt, 'rs) parse located -> bool
 val make : ('left, 'tight, 'right) notation -> ('left, 'tight, 'right) data -> unit

@@ -25,12 +25,14 @@ let strings_of_term : type ls lt rs rt.
      | _ -> fatal Unrecognized_attribute in
   go [] [] tm
 
-(* We define these here so we can refer to them in parsing implicit and nullary applications. *)
+(* We define these here so we can refer to them in parsing implicit and nullary applications and in getting patterns.  Note that parentheses are primarily parsed, processed, and printed along with tuples, since their notation overlaps; but are also used as sub-notations in many other notations.  *)
 
 type (_, _, _) identity +=
+  | Parens : (closed, No.plus_omega, closed) identity
   | Braces : (closed, No.plus_omega, closed) identity
   | Dot : (closed, No.plus_omega, closed) identity
 
+let parens : (closed, No.plus_omega, closed) notation = (Parens, Outfix)
 let braces : (closed, No.plus_omega, closed) notation = (Braces, Outfix)
 let dot : (closed, No.plus_omega, closed) notation = (Dot, Outfix)
 
@@ -248,5 +250,29 @@ and process_vars : type n.
         process_vars (Bwv.snoc ctx name) names (Wrap ty) parameters in
       Processed_tel (Ext (name, pty, tel), ctx, w :: ws)
 
-(* Now that we've defined this function, we can pass it back to User. *)
-let () = User.global_processor := { process = (fun ctx x -> process ctx x) }
+let get_pattern : type lt1 ls1 rt1 rs1. (lt1, ls1, rt1, rs1) parse located -> Matchpattern.t =
+ fun pat ->
+  let rec go : type n lt1 ls1 rt1 rs1.
+      (lt1, ls1, rt1, rs1) parse located -> (Matchpattern.t, n) Vec.t located -> Matchpattern.t =
+   fun pat pats ->
+    match pat.value with
+    | Ident ([ x ], _) when Lexer.valid_var x -> (
+        match pats.value with
+        | [] -> Var (locate_opt pat.loc (Some x))
+        | _ -> fatal ?loc:pat.loc Parse_error)
+    | Ident (xs, _) -> fatal ?loc:pat.loc (Invalid_variable xs)
+    | Placeholder _ -> (
+        match pats.value with
+        | [] -> Var (locate_opt pat.loc None)
+        | _ -> fatal ?loc:pat.loc Parse_error)
+    | Constr (c, _) -> Constr (locate_opt pat.loc (Constr.intern c), pats.value)
+    | App { fn; arg; _ } ->
+        go fn
+          (locate_opt pats.loc
+             (go arg (locate_opt arg.loc Vec.[]) :: pats.value : (Matchpattern.t, n Fwn.suc) Vec.t))
+    | Notn (notn, n) -> pattern notn (args n) pat.loc
+    | _ -> fatal ?loc:pat.loc Parse_error in
+  go pat (locate_opt pat.loc Vec.[])
+
+(* Now that we've defined these functions, we can pass them back to User. *)
+let () = User.global_processor := { process = (fun ctx x -> process ctx x); pattern = get_pattern }

@@ -21,16 +21,6 @@ end)
 let invalid ?loc str = fatal ?loc (Anomaly ("invalid notation arguments for " ^ str))
 
 (* ********************
-   Parentheses
- ******************** *)
-
-(* Parentheses are parsed, processed, and printed along with tuples, since their notation overlaps.  But we define them here, since they are used as sub-notations in many other notations.  *)
-
-type (_, _, _) identity += Parens : (closed, No.plus_omega, closed) identity
-
-let parens : (closed, No.plus_omega, closed) notation = (Parens, Outfix)
-
-(* ********************
    Braces
  ******************** *)
 
@@ -41,7 +31,8 @@ let () =
     {
       name = "braces";
       tree = Closed_entry (eop LBrace (term RBrace (Done_closed Postprocess.braces)));
-      processor = (fun _ _ _ -> fatal Parse_error);
+      processor = (fun _ _ loc -> fatal ?loc Parse_error);
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "braces"));
       print_term =
         Some
           (fun obs ->
@@ -76,7 +67,8 @@ let () =
         (fun _ obs loc ->
           match obs with
           | [ Token (Ident [ "Type" ], _) ] -> { value = Synth UU; loc }
-          | _ -> invalid "universe");
+          | _ -> invalid ?loc "universe");
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "universe"));
       (* Universes are never part of case trees. *)
       print_term =
         Some
@@ -107,7 +99,8 @@ let () =
               let tm = process ctx tm in
               let ty = process ctx ty in
               { value = Synth (Asc (tm, ty)); loc }
-          | _ -> invalid "ascription");
+          | _ -> invalid ?loc "ascription");
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "ascription"));
       (* Ascriptions are never part of case trees. *)
       print_term =
         Some
@@ -549,6 +542,7 @@ let () =
       name = "abstraction";
       tree = Open_entry (eop Mapsto (done_open abs));
       processor = (fun ctx obs loc -> process_abs `Normal ctx obs loc);
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "abstraction"));
       print_term = Some pp_abslet_term;
       print_case = Some pp_abslet_case;
       is_case = abs_is_case;
@@ -558,6 +552,7 @@ let () =
       name = "cube_abstraction";
       tree = Open_entry (eop DblMapsto (done_open cubeabs));
       processor = (fun ctx obs loc -> process_abs `Cube ctx obs loc);
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "cube abstraction"));
       print_term = Some pp_abslet_term;
       print_case = Some pp_abslet_case;
       is_case = abs_is_case;
@@ -567,6 +562,7 @@ let () =
       name = "let";
       tree = letin_tree;
       processor = (fun ctx obs loc -> process_let ctx obs loc);
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "let"));
       print_term = Some pp_abslet_term;
       print_case = Some pp_abslet_case;
       (* However, a let-binding is always printed as a case tree. *)
@@ -577,6 +573,7 @@ let () =
       name = "letrec";
       tree = letrec_tree;
       processor = process_letrec;
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "let rec"));
       print_term = Some pp_abslet_term;
       print_case = Some pp_abslet_case;
       is_case = (fun _ -> true);
@@ -925,6 +922,7 @@ let () =
               | Zero -> process_pi ctx `Lower doms cod
               | Pos dim -> process_inst_higher_pi ctx dim doms cod)
           | None -> fatal Parse_error);
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "arrow"));
       print_term = Some (pp_pi Arrow);
       (* Function-types are never part of case trees. *)
       print_case = None;
@@ -938,6 +936,7 @@ let () =
         (fun ctx obs _loc ->
           let doms, _, _, Wrap cod = get_pi `First obs in
           process_pi ctx `Higher doms cod);
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "double arrow"));
       print_term = Some (pp_pi DblArrow);
       print_case = None;
       is_case = (fun _ -> false);
@@ -960,6 +959,7 @@ let () =
       name = "coloneq";
       tree = Open_entry (eop Coloneq (done_open coloneq));
       processor = (fun _ _ -> fatal Parse_error);
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "colon-equals"));
       print_term =
         Some
           (fun obs ->
@@ -998,8 +998,11 @@ let rec tuple_fields () =
   Inner
     {
       empty_branch with
-      ops = singleton RParen (Done_closed parens);
-      term = Some (oflist [ (Op ",", Lazy (lazy (tuple_fields ()))); (RParen, Done_closed parens) ]);
+      ops = singleton RParen (Done_closed Postprocess.parens);
+      term =
+        Some
+          (oflist
+             [ (Op ",", Lazy (lazy (tuple_fields ()))); (RParen, Done_closed Postprocess.parens) ]);
     }
 
 (* Split in cases based on whether an instance of 'parens' is a tuple or just parentheses.  In the former case, we return the interior term; in the latter we strip off the starting parentheses. *)
@@ -1132,7 +1135,7 @@ let pp_tuple_case triv obs =
         wsrparen )
 
 let () =
-  make parens
+  make Postprocess.parens
     {
       name = "parens/tuple";
       tree = Closed_entry (eop LParen (tuple_fields ()));
@@ -1141,6 +1144,12 @@ let () =
           match parens_case obs with
           | `Tuple (_, obs) -> process_tuple Abwd.empty StringSet.empty ctx obs loc
           | `Parens (_, Wrap body, _) -> process ctx body);
+      (* Parentheses can appear in patterns and we just look through them. *)
+      pattern =
+        (fun obs loc ->
+          match obs with
+          | [ Token (LParen, _); Term body; Token (RParen, _) ] -> Postprocess.get_pattern body
+          | _ -> fatal ?loc (Invalid_notation_pattern ""));
       print_term = Some pp_tuple_term;
       print_case = Some pp_tuple_case;
       (* A tuple is always printed like a case tree, even if it isn't one, because that looks best when it goes over multiple lines.  But parentheses are only printed as a case tree if the term inside is a case tree. *)
@@ -1163,6 +1172,7 @@ let () =
       name = "dot";
       tree = Closed_entry (eop Dot (Done_closed Postprocess.dot));
       processor = (fun _ _ _ -> fatal Parse_error);
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "dot"));
       print_term =
         Some
           (function
@@ -1224,42 +1234,7 @@ let rec discriminees () =
       (LBracket, mtch_branches implicit_mtch true true true); (Op ",", Lazy (lazy (discriminees ())));
     ]
 
-(* A pattern is either a variable name or a constructor with some number of pattern arguments. *)
-module Pattern = struct
-  type t =
-    | Var : string option located -> t
-    | Constr : Constr.t located * (t, 'n) Vec.t located -> t
-end
-
-type pattern = Pattern.t
-
-let get_pattern : type lt1 ls1 rt1 rs1. (lt1, ls1, rt1, rs1) parse located -> pattern =
- fun pat ->
-  let rec go : type n lt1 ls1 rt1 rs1.
-      (lt1, ls1, rt1, rs1) parse located -> (pattern, n) Vec.t located -> pattern =
-   fun pat pats ->
-    match pat.value with
-    | Ident ([ x ], _) when Lexer.valid_var x -> (
-        match pats.value with
-        | [] -> Var (locate (Some x) pat.loc)
-        | _ -> fatal ?loc:pat.loc Parse_error)
-    | Ident (xs, _) -> fatal ?loc:pat.loc (Invalid_variable xs)
-    | Placeholder _ -> (
-        match pats.value with
-        | [] -> Var (locate None pat.loc)
-        | _ -> fatal ?loc:pat.loc Parse_error)
-    | Constr (c, _) -> Constr (locate (Constr.intern c) pat.loc, pats)
-    | App { fn; arg; _ } ->
-        go fn
-          (locate
-             (go arg (locate Vec.[] arg.loc) :: pats.value : (pattern, n Fwn.suc) Vec.t)
-             pats.loc)
-    | Notn ((Parens, _), n) -> (
-        match args n with
-        | [ Token (LParen, _); Term arg; Token (RParen, _) ] -> go arg pats
-        | _ -> fatal ?loc:pat.loc Parse_error)
-    | _ -> fatal ?loc:pat.loc Parse_error in
-  go pat (locate Vec.[] pat.loc)
+type pattern = Matchpattern.t
 
 (* For parsing matches, we use a special kind of scope that labels all the variables with integers (De Bruijn levels) in addition to possible strings. *)
 module Matchscope : sig
@@ -1341,7 +1316,7 @@ type ('a, 'n) branch =
 (* An ('a, 'm, 'n) cbranch is a branch, with scope of 'a variables, that starts with a constructor (unspecified) having 'm arguments and proceeds with 'n other patterns.  *)
 type ('a, 'm, 'n) cbranch =
   'a Matchscope.t
-  * (pattern, 'm) Vec.t located
+  * (pattern, 'm) Vec.t
   * (pattern, 'n) Vec.t
   * [ `Normal | `Cube ] located
   * wrapped_parse
@@ -1422,8 +1397,7 @@ let rec process_branches : type a n.
               (function
                 | bodyctx, (Var y :: patterns : (pattern, n) Vec.t), cube, body ->
                     (Matchscope.give_name i y.value bodyctx, patterns, cube, body)
-                | _, Constr (_, { loc = cloc; _ }) :: _, _, _ ->
-                    fatal ?loc:cloc Overlapping_patterns)
+                | _, Constr _ :: _, _, _ -> fatal Overlapping_patterns)
               branches in
           let seen = Snoc (seen, i) in
           process_branches xctx xs seen branches loc sort
@@ -1434,8 +1408,7 @@ let rec process_branches : type a n.
               (function
                 | bodyctx, (Var y :: patterns : (pattern, n) Vec.t), cube, body ->
                     (Matchscope.ext bodyctx y.value, patterns, cube, body)
-                | _, Constr (_, { loc = cloc; _ }) :: _, _, _ ->
-                    fatal ?loc:cloc Overlapping_patterns)
+                | _, Constr _ :: _, _, _ -> fatal Overlapping_patterns)
               branches in
           let stm = process_synth (Matchscope.names xctx) tm "discriminee of match" in
           Reporter.try_with
@@ -1460,8 +1433,8 @@ let rec process_branches : type a n.
                      | None | Some (CBranches (_, Emp)) ->
                          Some (CBranches (c, Snoc (Emp, (bodyctx, pats, patterns, cube, body))))
                      | Some (CBranches (c', (Snoc (_, (_, pats', _, _, _)) as cbrs))) -> (
-                         match Fwn.compare (Vec.length pats.value) (Vec.length pats'.value) with
-                         | Neq -> fatal ?loc:pats.loc Inconsistent_patterns
+                         match Fwn.compare (Vec.length pats) (Vec.length pats') with
+                         | Neq -> fatal Inconsistent_patterns
                          | Eq ->
                              Some
                                (CBranches (c', Snoc (cbrs, (bodyctx, pats, patterns, cube, body))))))
@@ -1475,23 +1448,23 @@ let rec process_branches : type a n.
             match Bwd.to_list brs with
             | [] -> fatal (Anomaly "empty list of branches for constructor")
             | (_, pats, _, cube, _) :: _ as brs ->
-                let m = Vec.length pats.value in
+                let m = Vec.length pats in
                 let (Bplus am) = Raw.Indexed.bplus m in
                 let names =
                   Indexed.Namevec.of_vec am
                     (Vec.mmap
                        (function
                          (* Anywhere that the first pattern for this constructor has a name, we take it. *)
-                         | [ Pattern.Var name ] -> name.value
+                         | [ Matchpattern.Var name ] -> name.value
                          | [ _ ] -> None)
-                       [ pats.value ]) in
+                       [ pats ]) in
                 let (Plus mn) = Fwn.plus m in
                 let newxctx, newnums = Matchscope.exts am xctx in
                 let newxs = Vec.append mn (Vec.mmap (fun [ n ] -> Either.Right n) [ newnums ]) xs in
                 let newbrs =
                   List.map
-                    (fun (bodyctx, (cpats : (pattern, m) Vec.t located), pats, cube, body) ->
-                      (fst (Matchscope.exts am bodyctx), Vec.append mn cpats.value pats, cube, body))
+                    (fun (bodyctx, (cpats : (pattern, m) Vec.t), pats, cube, body) ->
+                      (fst (Matchscope.exts am bodyctx), Vec.append mn cpats pats, cube, body))
                     brs in
                 Reporter.try_with ~fatal:(fun d ->
                     match d.message with
@@ -1538,14 +1511,14 @@ let rec get_patterns : type n.
   match (n, obs) with
   | _, [] | Zero, _ -> invalid "match"
   | Suc Zero, Term tm :: Token (Mapsto, (_, loc)) :: obs ->
-      ([ get_pattern tm ], locate `Normal loc, obs)
+      ([ Postprocess.get_pattern tm ], locate `Normal loc, obs)
   | Suc Zero, Term tm :: Token (DblMapsto, (_, loc)) :: obs ->
-      ([ get_pattern tm ], locate `Cube loc, obs)
+      ([ Postprocess.get_pattern tm ], locate `Cube loc, obs)
   | Suc Zero, Term _ :: Term tm :: _ -> fatal ?loc:tm.loc Parse_error
   | Suc Zero, Term tm :: _ -> fatal ?loc:tm.loc Parse_error
   | Suc (Suc _ as n), Term tm :: Token (Op ",", _) :: obs ->
       let pats, cube, obs = get_patterns n obs in
-      (get_pattern tm :: pats, cube, obs)
+      (Postprocess.get_pattern tm :: pats, cube, obs)
   | Suc (Suc _), Term tm :: _ -> fatal ?loc:tm.loc Wrong_number_of_patterns
   | _ -> invalid "match"
 
@@ -1568,11 +1541,13 @@ let rec get_any_patterns :
     observation list -> pattern Vec.wrapped * [ `Normal | `Cube ] located * observation list =
  fun obs ->
   match obs with
-  | Term tm :: Token (Mapsto, (_, loc)) :: obs -> (Wrap [ get_pattern tm ], locate `Normal loc, obs)
-  | Term tm :: Token (DblMapsto, (_, loc)) :: obs -> (Wrap [ get_pattern tm ], locate `Cube loc, obs)
+  | Term tm :: Token (Mapsto, (_, loc)) :: obs ->
+      (Wrap [ Postprocess.get_pattern tm ], locate `Normal loc, obs)
+  | Term tm :: Token (DblMapsto, (_, loc)) :: obs ->
+      (Wrap [ Postprocess.get_pattern tm ], locate `Cube loc, obs)
   | Term tm :: Token (Op ",", _) :: obs ->
       let Wrap pats, cube, obs = get_any_patterns obs in
-      (Wrap (get_pattern tm :: pats), cube, obs)
+      (Wrap (Postprocess.get_pattern tm :: pats), cube, obs)
   | _ -> invalid "match"
 
 let rec pp_patterns accum obs =
@@ -1703,6 +1678,7 @@ let () =
                 | _ -> invalid "implicit_match" in
               process_branches ctx xs Emp branches loc `Implicit
           | _ -> invalid "implicit_match");
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "match"));
       print_term = None;
       print_case = Some pp_match;
       is_case = (fun _ -> true);
@@ -1747,6 +1723,7 @@ let () =
           | Token (Match, _) :: _ :: Token (Return, _) :: Term nonabs :: Token (LBracket, _) :: _ ->
               fatal ?loc:nonabs.loc Parse_error
           | _ -> invalid "match");
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "match"));
       print_term = None;
       print_case = Some pp_match;
       is_case = (fun _ -> true);
@@ -1779,6 +1756,7 @@ let () =
                   Raw.lams an (Vec.init (fun () -> (unlocated None, ())) n ()) mtch loc
               | _ -> invalid "match")
           | _ -> invalid "match");
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "matching abstraction"));
       print_term = None;
       print_case = Some pp_match;
       is_case = (fun _ -> true);
@@ -1853,6 +1831,7 @@ let () =
               let obs = must_start_with (Op "|") obs in
               process_comatch (Abwd.empty, StringsSet.empty) ctx obs loc
           | _ -> invalid "comatch");
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "comatch"));
       print_term = None;
       print_case = Some pp_match;
       is_case = (fun _ -> true);
@@ -1872,6 +1851,7 @@ let () =
       name = "empty_co_match";
       tree = Closed_entry (eop LBracket (op RBracket (Done_closed empty_co_match)));
       processor = (fun _ _ loc -> { value = Empty_co_match; loc });
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "empty (co)match"));
       print_term = None;
       print_case =
         Some
@@ -2006,6 +1986,7 @@ let () =
           | Token (Codata, _) :: Token (LBracket, _) :: obs ->
               process_codata Emp ctx (must_start_with (Op "|") obs) loc
           | _ -> invalid "codata 4");
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "codata"));
       print_term = None;
       print_case = Some pp_codata;
       is_case = (fun _ -> true);
@@ -2197,6 +2178,7 @@ let () =
                   term = Some (singleton Mapsto (op LParen (record_fields ())));
                 }));
       processor = (fun ctx obs loc -> process_record ctx obs loc);
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "record"));
       print_term = None;
       print_case = Some pp_record;
       is_case = (fun _ -> true);
@@ -2346,6 +2328,7 @@ let () =
           | Token (Data, _) :: Token (LBracket, _) :: obs ->
               process_data Emp ctx (must_start_with (Op "|") obs) loc
           | _ -> invalid "data");
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "data"));
       print_term = None;
       print_case = Some pp_data;
       is_case = (fun _ -> true);
@@ -2417,6 +2400,7 @@ let () =
               let x = process_synth ctx x "first calc term" in
               process_calcs x Emp ctx obs loc
           | _ -> invalid "calc");
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "calc"));
       print_term = None;
       print_case =
         Some
@@ -2439,7 +2423,7 @@ let () =
 let install () =
   Situation.builtins :=
     Situation.empty
-    |> Situation.add parens
+    |> Situation.add Postprocess.parens
     |> Situation.add Postprocess.braces
     |> Situation.add letin
     |> Situation.add letrec

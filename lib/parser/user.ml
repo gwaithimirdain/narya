@@ -118,10 +118,15 @@ type global_processor = {
     (string option, 'n) Bwv.t ->
     ('lt, 'ls, 'rt, 'rs) parse Asai.Range.located ->
     'n Raw.check Asai.Range.located;
+  pattern : 'lt 'ls 'rt 'rs. ('lt, 'ls, 'rt, 'rs) parse Asai.Range.located -> Matchpattern.t;
 }
 
 let global_processor : global_processor ref =
-  ref { process = (fun _ _ -> fatal (Anomaly "global_processor not set")) }
+  ref
+    {
+      process = (fun _ _ -> fatal (Anomaly "global_processor not set"));
+      pattern = (fun _ -> fatal (Anomaly "global_processor not set"));
+    }
 
 (* Compile a prenotation into a notation.  *)
 
@@ -193,6 +198,29 @@ let make_user : prenotation -> notation =
                 let args = List.map (fun k -> StringMap.find k args) val_vars in
                 Raw.Constr ({ value = c; loc }, args) in
           { value; loc });
+      pattern =
+        (fun obs loc ->
+          let open Mlist.Monadic (Monad.State (struct
+            type t = Matchpattern.t StringMap.t
+          end)) in
+          let (), args =
+            miterM
+              (fun [ k; (Wrap x : wrapped_parse) ] acc ->
+                ((), acc |> StringMap.add k (!global_processor.pattern x)))
+              [
+                pat_vars;
+                List.filter_map
+                  (function
+                    | Term x -> Some (Wrap x : wrapped_parse)
+                    | _ -> None)
+                  obs;
+              ]
+              StringMap.empty in
+          match key with
+          | `Constr (c, _) ->
+              let (Wrap args) = Vec.of_list_map (fun k -> StringMap.find k args) val_vars in
+              Matchpattern.Constr ({ value = c; loc }, args)
+          | _ -> fatal (Anomaly "TODO"));
       (* We define this function inline here so that it can match against the constructor New.User that was generated above by the inline Make functor application.  The only way I can think of to factor this function out (and, for instance, put it in user.ml instead of this file) would be to pass it a first-class module as an argument.  At the moment, that seems like unnecessary complication. *)
       print_term =
         Some

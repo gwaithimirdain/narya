@@ -45,7 +45,8 @@ let get_notation head args =
 (* Put parentheses around a term. *)
 let parenthesize tm =
   unlocated
-    (outfix ~notn:parens ~inner:(Multiple (wstok LParen, Snoc (Emp, Term tm), wstok RParen)))
+    (outfix ~notn:Postprocess.parens
+       ~inner:(Multiple (wstok LParen, Snoc (Emp, Term tm), wstok RParen)))
 
 let braceize tm =
   unlocated
@@ -55,7 +56,7 @@ let braceize tm =
 (* Put them only if they aren't there already *)
 let parenthesize_maybe (tm : ('lt, 'ls, 'rt, 'rs) parse located) =
   match tm.value with
-  | Notn ((Parens, _), _) -> tm
+  | Notn ((Postprocess.Parens, _), _) -> tm
   | _ -> parenthesize tm
 
 (* A "delayed" result of unparsing that needs only to know the tightness intervals to produce a result. *)
@@ -336,7 +337,7 @@ let rec unparse : type n lt ls rt rs s.
       unparse_lam cube vars Emp tm li ri
   | Struct (type m et) ({ eta = Eta; fields; dim = _; energy = _ } : (m, n, s, et) struct_args) ->
       unlocated
-        (outfix ~notn:parens
+        (outfix ~notn:Postprocess.parens
            ~inner:
              (Multiple
                 ( wstok LParen,

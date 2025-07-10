@@ -196,6 +196,20 @@ By omitting the keyword ``match`` and the variable name, it is possible to abstr
 
 A match (of this simple sort) is a checking term.  It requires the term being matched against to synthesize, while the bodies of each branch are checking (we will discuss how the type they are checked against is determined :ref:`below<Variable matches>`).
 
+If a :ref:`notation<Mixfix notations>` has been defined for a constructor, that notation can be used on the left-hand side of ↦ in a match.  For instance:
+
+.. code-block:: none
+
+   def List (A : Type) : Type := data [ nil. | cons. (_ : A) (_ : List A) ]
+
+   notation(0) x "∷" xs ≔ cons. x xs
+
+   def concat (A : Type) (xs ys : List A) : List A ≔ match xs [
+   | nil. ↦ ys
+   | x ∷ xs ↦ x ∷ (concat A xs ys) ]
+
+(The traditional notation ``[]`` for ``nil.`` is unavailable in Narya since it would be ambiguous with an empty pattern-matching abstraction.)
+
 
 Matching and case trees
 -----------------------

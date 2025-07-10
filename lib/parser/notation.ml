@@ -176,6 +176,11 @@ and ('left, 'tight, 'right) notation =
 
 type wrapped_identity = Wrap : ('left, 'tight, 'right) identity -> wrapped_identity
 
+(* A match pattern is either a variable name or a constructor with some number of pattern arguments. *)
+module Matchpattern = struct
+  type t = Var : string option located -> t | Constr : Constr.t located * (t, 'n) Vec.t -> t
+end
+
 (* The definition of a notation *)
 
 type ('left, 'tight, 'right) data = {
@@ -184,6 +189,8 @@ type ('left, 'tight, 'right) data = {
   (* A postproccesing function has to be polymorphic over the length of the context so as to produce intrinsically well-scoped terms.  Thus, we have to wrap it as a field of a record (or object).  The whitespace argument is often ignored, but it allows complicated notation processing functions to be shared between the processor and the printer, and sometimes the processing functions need to inspect the sequence of tokens which is stored with the whitespace. *)
   processor :
     'n. (string option, 'n) Bwv.t -> observation list -> Asai.Range.t option -> 'n check located;
+  (* If this notation can be a match pattern, get it. *)
+  pattern : observation list -> Asai.Range.t option -> Matchpattern.t;
   (* A printing function for a notation is told the list of arguments of the notation.  It returns the printed document along with its trailing whitespace/comments (so that the caller can place that whitespace outside its group). *)
   print_term : (observation list -> PPrint.document * Whitespace.t list) option;
   (* When printing case tree notations, we split the output into an "introduction" and a "body".  The introduction, such as "match n [", tries to go on the same line as whatever form introduced the case tree (and with a hanging indent under it), such as "def x : A ≔" or "let x : A ≔" or part of an outer case tree construct such as ".field ↦".  The body goes on the same line too if it fits, otherwise it breaks into multiple lines and indents back to the next level below the enclosing case tree construct if any (NOT hanging under the introductory line).  Thus, a case-tree printing function returns two printed documents.
@@ -453,6 +460,7 @@ let tree n = (find n).tree
 let print_term n = (find n).print_term
 let print_case n = (find n).print_case
 let processor n = (find n).processor
+let pattern n = (find n).pattern
 
 let is_case = function
   | { value = Notn (n, d); _ } -> (find n).is_case (args d)

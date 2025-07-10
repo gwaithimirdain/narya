@@ -204,6 +204,14 @@
   
   [1]
 
+  $ narya -e 'axiom A : Type axiom B : Type def AB : Type ≔ data [ left. (_:A) | right. (_:B) ]' -e 'def foo (x y : AB) : AB ≔ match x,y [ left. a, right. b ↦ left. a | left. a, left. b ↦ left. b | left. a, right. b ↦ left. a | right. b, _ ↦ right. b ]'
+   ￫ error[E1302]
+   ￭ command-line exec string
+   1 | def foo (x y : AB) : AB ≔ match x,y [ left. a, right. b ↦ left. a | left. a, left. b ↦ left. b | left. a, right. b ↦ left. a | right. b, _ ↦ right. b ]
+     ^ constructor right appears twice in match
+  
+  [1]
+
   $ narya -e 'def bool : Type ≔ data [ true. | false. ]' -e 'def test (x y : bool) : bool ≔ match x,y [ true. , true. ↦ true. | false. ↦ false. ]'
    ￫ error[E1305]
    ￭ command-line exec string
