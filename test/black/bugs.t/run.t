@@ -17,6 +17,7 @@
    ￫ info[I0000]
    ￮ constant get_f defined
   
+
   $ narya -hott issue84.ny
   (Id A ⇒ Id B) .trr
     : (A → B) → A → B
@@ -617,3 +618,27 @@
       →⁽ᵉᵉᵉ⁾ B⁽ᵉᵉᵉ⁾ (f⁽ᵉᵉ⁾ H₀₂₂) (f⁽ᵉᵉ⁾ H₁₂₂) (f⁽ᵉᵉ⁾ H₂₀₂) (f⁽ᵉᵉ⁾ H₂₁₂)
                (f⁽ᵉᵉ⁾ H₂₂₀) (f⁽ᵉᵉ⁾ H₂₂₁)
   
+
+  $ narya -v match_in_type.ny
+   ￫ info[I0000]
+   ￮ constant ⊤ defined
+  
+   ￫ hint[H0403]
+   ￭ $TESTCASE_ROOT/match_in_type.ny
+   3 | def test (m : ⊤) : match m [ star. ↦ sig () ] ≔ ?
+     ^ match encountered outside case tree, wrapping in implicit let-binding
+  
+   ￫ info[I0000]
+   ￮ constant test defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     m : ⊤
+     ----------------------------------------------------------------------
+     _match.0{…}
+  
+   ￫ error[E3002]
+   ￮ file match_in_type.ny contains open holes
+  
+  [1]

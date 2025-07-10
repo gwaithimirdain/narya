@@ -665,6 +665,12 @@ and unparse_named_inst : type n lt ls rt rs m k mk.
                     if synths x1 then ((), s)
                     else ((), Snoc (s, make_unparser_implicit xvars (x, `Implicit)))));
       }
+      ~ifzero:(fun acc ->
+        ( (),
+          Snoc
+            ( acc,
+              { unparse = (fun li ri -> unparse_notation Postprocess.dot [] (`Single Dot) li ri) }
+            ) ))
       [ tyargs ] Emp in
   unparse_spine vars (`Term ty) args li ri
 
@@ -1026,6 +1032,7 @@ let () =
       | Dump.Env e -> Dump.env e
       | Dump.DeepEnv (e, n) -> Dump.denv n e
       | Dump.Check e -> Dump.check e
+      | Dump.Apps e -> Dump.apps e
       | Dump.Entry e -> Dump.entry e
       | Dump.OrderedCtx e -> Dump.ordered_ctx e
       | Dump.Ctx e -> Dump.ctx e

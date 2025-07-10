@@ -22,6 +22,7 @@ type printable +=
   | Env : ('n, 'b) Value.env -> printable
   | DeepEnv : ('n, 'b) Value.env * int -> printable
   | Check : 'a check -> printable
+  | Apps : 'any apps -> printable
   | Entry : ('x, 'n) Ctx.entry -> printable
   | OrderedCtx : ('a, 'b) Ctx.Ordered.t -> printable
   | Ctx : ('a, 'b) Ctx.t -> printable
@@ -174,9 +175,9 @@ module F = struct
     | Const { name; ins } ->
         let (To p) = deg_of_ins ins in
         fprintf ppf "Const (%s, %s)" (print_to_string (PConstant name)) (string_of_deg p)
-    | Meta { meta; env = _; ins } ->
+    | Meta { meta; env = e; ins } ->
         let (To p) = deg_of_ins ins in
-        fprintf ppf "Meta (%s, ?, %s)" (Meta.name meta) (string_of_deg p)
+        fprintf ppf "Meta (%s, %a, %s)" (Meta.name meta) env e (string_of_deg p)
     | UU n -> fprintf ppf "UU %a" dim n
     | Pi (x, doms, cods) ->
         fprintf ppf "Pi^%s (%s, %a, (... %a))"
@@ -339,7 +340,8 @@ module F = struct
     | Pi (_, _, _) -> fprintf ppf "Pi(?)"
     | HigherPi (_, _, _) -> fprintf ppf "HigherPi(?)"
     | InstHigherPi (_, _, _) -> fprintf ppf "InstHigherPi(?)"
-    | App (fn, arg, _) -> fprintf ppf "App(%a, %a)" check fn.value check arg.value
+    | App (fn, { value = Some arg; _ }, _) -> fprintf ppf "App(%a, %a)" check fn.value check arg
+    | App (fn, { value = None; _ }, _) -> fprintf ppf "App(%a, .)" check fn.value
     | Asc (tm, ty) -> fprintf ppf "Asc(%a, %a)" check tm.value check ty.value
     | AscLam (x, dom, body) ->
         fprintf ppf "AscLam(%s, %a, %a)"
@@ -421,6 +423,7 @@ let term v = PPrint.utf8string (Format.asprintf "%a" F.term v)
 let tel v = PPrint.utf8string (Format.asprintf "%a" F.tel v)
 let check v = PPrint.utf8string (Format.asprintf "%a" F.check v)
 let synth v = PPrint.utf8string (Format.asprintf "%a" F.synth v)
+let apps v = PPrint.utf8string (Format.asprintf "%a" F.apps v)
 let entry v = PPrint.utf8string (Format.asprintf "%a" F.entry v)
 let ordered_ctx v = PPrint.utf8string (Format.asprintf "%a" F.ordered_ctx v)
 let ctx v = PPrint.utf8string (Format.asprintf "%a" F.ctx v)

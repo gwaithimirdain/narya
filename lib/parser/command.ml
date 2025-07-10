@@ -15,6 +15,21 @@ open Printable
 module Trie = Yuujinchou.Trie
 module TermParse = Parse
 
+module StringsMap = Map.Make (struct
+  type t = string list
+
+  let compare = compare
+end)
+
+type 'a attribute = {
+  wshash : Whitespace.t list;
+  wslparen : Whitespace.t list;
+  loc : Asai.Range.t option;
+  attr : 'a;
+  wsattr : Whitespace.t list list;
+  wsrparen : Whitespace.t list;
+}
+
 type def = {
   wsdef : Whitespace.t list;
   name : Trie.path;
@@ -40,6 +55,7 @@ module Command = struct
   type t =
     | Axiom of {
         wsaxiom : Whitespace.t list;
+        nonparam : unit attribute option;
         name : Trie.path;
         loc : Asai.Range.t option;
         wsname : Whitespace.t list;
@@ -149,14 +165,29 @@ module Parse = struct
     let* wsrparen = token RParen in
     return ({ wslparen; names; wscolon; ty; wsrparen } : Parameter.t)
 
+  let attribute : type a. a StringsMap.t -> a attribute option t =
+   fun values ->
+    let* hash = optional (token (Op "#")) in
+    match hash with
+    | None -> return None
+    | Some wshash -> (
+        let* wslparen = token LParen in
+        let* (Wrap tm) = C.term [] in
+        let* wsrparen = token RParen in
+        let strs, wsattr = strings_of_term tm.value in
+        match StringsMap.find_opt strs values with
+        | None -> fatal ?loc:tm.loc Unrecognized_attribute
+        | Some attr -> return (Some { wshash; wslparen; loc = tm.loc; attr; wsattr; wsrparen }))
+
   let axiom =
     let* wsaxiom = token Axiom in
+    let* nonparam = attribute (StringsMap.of_list [ ([ "nonparametric" ], ()) ]) in
     let* nameloc, (name, wsname) = located ident in
     let loc = Some (Range.convert nameloc) in
     let* parameters = zero_or_more parameter in
     let* wscolon = token Colon in
     let* ty = C.term [] in
-    return (Command.Axiom { wsaxiom; name; loc; wsname; parameters; wscolon; ty })
+    return (Command.Axiom { wsaxiom; nonparam; name; loc; wsname; parameters; wscolon; ty })
 
   let def tok =
     let* wsdef = token tok in
@@ -738,12 +769,13 @@ let rec execute :
     fatal (Forbidden_interactive_command (to_string cmd));
   maybe_forbid_holes cmd @@ fun () ->
   match cmd with
-  | Axiom { name; loc; parameters; ty = Wrap ty; _ } ->
+  | Axiom { name; nonparam; loc; parameters; ty = Wrap ty; _ } ->
       History.do_command @@ fun () ->
       Scope.check_name name loc;
       let const = Scope.define (Compunit.Current.read ()) ?loc name in
       let (Processed_tel (params, ctx, _)) = process_tel Emp parameters in
-      Core.Command.execute (Axiom (const, params, process ctx ty))
+      let parametric = Option.is_none nonparam in
+      Core.Command.execute (Axiom { name = const; params; ty = process ctx ty; parametric })
   | Def defs ->
       History.do_command @@ fun () ->
       let cdefs =
@@ -1091,6 +1123,18 @@ let rec pp_defs :
           (accum_prews
           ^^ group (params_and_ty ^^ nest 2 (pp_ws `Break wty ^^ coloneq ^^ group (hang 2 ptm))))
 
+let pp_attribute : type a.
+    (a -> Whitespace.t list list -> PPrint.document) -> a attribute -> PPrint.document =
+ fun pp { wshash; wslparen; loc = _; attr; wsattr; wsrparen } ->
+  let open PPrint in
+  Token.pp (Op "#")
+  ^^ pp_ws `None wshash
+  ^^ Token.pp LParen
+  ^^ pp_ws `None wslparen
+  ^^ pp attr wsattr
+  ^^ Token.pp RParen
+  ^^ pp_ws `Nobreak wsrparen
+
 (* We only print commands that can appear in source files or for which ProofGeneral may need reformatting info (e.g. solve). *)
 let pp_command : t -> PPrint.document * Whitespace.t list =
  fun cmd ->
@@ -1099,13 +1143,17 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
   let indent = ref (Scope.count_sections () * 2) in
   let doc, ws =
     match cmd with
-    | Axiom { wsaxiom; name; loc = _; wsname; parameters; wscolon; ty = Wrap ty } ->
+    | Axiom { wsaxiom; nonparam; name; loc = _; wsname; parameters; wscolon; ty = Wrap ty } ->
         let pparams, wparams = pp_parameters wsname parameters in
         let ty, rest = split_ending_whitespace ty in
         ( group
             (hang 2
                (Token.pp Axiom
                ^^ pp_ws `Nobreak wsaxiom
+               ^^ PPrint.optional
+                    (pp_attribute (fun () ws ->
+                         string "nonparametric" ^^ concat_map (pp_ws `None) ws))
+                    nonparam
                ^^ utf8string (String.concat "." name)
                ^^ pparams
                ^^ pp_ws `Break wparams

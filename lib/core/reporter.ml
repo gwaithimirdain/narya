@@ -107,6 +107,8 @@ module Code = struct
         -> t
     | Not_enough_domains : 'a D.t -> t
     | Invalid_higher_function : string -> t
+    | Invalid_nullary_application : t
+    | Expected_nullary_application : t
     | Checking_tuple_at_degenerated_record : printable -> t
     | Missing_field_in_tuple : 'i Field.t * ('e, 'i, 'r) pbij option -> t
     | Missing_method_in_comatch : 'i Field.t * ('e, 'i, 'r) pbij option -> t
@@ -192,7 +194,7 @@ module Code = struct
     | Notation_variable_used_twice : string -> t
     | Unbound_variable_in_notation : string list -> t
     | Head_already_has_notation : string -> t
-    | Constant_assumed : printable * int -> t
+    | Constant_assumed : { name : printable; parametric : bool; holes : int } -> t
     | Constant_defined : {
         names : printable list;
         discrete : bool;
@@ -285,6 +287,8 @@ module Code = struct
     | Unequal_synthesized_boundary _ -> Error
     | Not_enough_domains _ -> Error
     | Invalid_higher_function _ -> Error
+    | Invalid_nullary_application -> Error
+    | Expected_nullary_application -> Error
     | Checking_tuple_at_degenerated_record _ -> Error
     | Missing_field_in_tuple _ -> Error
     | Missing_method_in_comatch _ -> Error
@@ -471,6 +475,8 @@ module Code = struct
     | Unequal_synthesized_boundary _ -> "E0704"
     | Not_enough_domains _ -> "E0705"
     | Invalid_higher_function _ -> "E0706"
+    | Invalid_nullary_application -> "E0707"
+    | Expected_nullary_application -> "E0708"
     (* Record fields *)
     | No_such_field _ -> "E0800"
     | Wrong_dimension_of_field _ -> "E0801"
@@ -653,6 +659,8 @@ module Code = struct
       | Not_enough_domains dim ->
           textf "not enough domains for an %s-dimensional function type" (string_of_dim0 dim)
       | Invalid_higher_function str -> textf "invalid higher function-type: %s" str
+      | Invalid_nullary_application -> text "invalid nullary application"
+      | Expected_nullary_application -> text "expected nullary application"
       | Checking_tuple_at_degenerated_record r ->
           textf "can't check a tuple against a record %a with a nonidentity degeneracy applied"
             pp_printed (print ~sort:`Type r)
@@ -858,10 +866,13 @@ module Code = struct
       | Head_already_has_notation name ->
           textf "replacing printing notation for %s (previous notation will still be parseable)"
             name
-      | Constant_assumed (name, h) ->
-          if h > 1 then textf "axiom %a assumed, containing %d holes" pp_printed (print name) h
-          else if h = 1 then textf "axiom %a assumed, containing 1 hole" pp_printed (print name)
-          else textf "axiom %a assumed" pp_printed (print name)
+      | Constant_assumed { name; parametric; holes } ->
+          let p = if parametric then "" else "nonparametric " in
+          if holes > 1 then
+            textf "%saxiom %a assumed, containing %d holes" p pp_printed (print name) holes
+          else if holes = 1 then
+            textf "%saxiom %a assumed, containing 1 hole" p pp_printed (print name)
+          else textf "%saxiom %a assumed" p pp_printed (print name)
       | Constant_defined { names; discrete; parametric; holes } -> (
           (* Nonparametricity trumps discreteness *)
           let prefix =
@@ -920,7 +931,7 @@ module Code = struct
           textf "constant %a uses nonparametric axioms, can't appear inside an external degeneracy"
             pp_printed (print a)
       | Axiom_in_parametric_definition a ->
-          textf "constant %a uses nonparametric axioms, can't be used in a parametric definition"
+          textf "constant %a uses nonparametric axioms, can't be used in a parametric command"
             pp_printed (print a)
       | Hole (n, ty) -> textf "@[<v 0>hole %s:@,%a@]" n pp_printed (print ty)
       | No_open_holes -> text "no open holes"

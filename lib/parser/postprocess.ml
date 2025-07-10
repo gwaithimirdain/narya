@@ -9,11 +9,30 @@ open Notation
 open Monad.Ops (Monad.Maybe)
 module StringMap = Map.Make (String)
 
-(* We define this here so we can refer to it in parsing implicit applications. *)
+(* Process a term into a list of strings, to be a multi-word attribute *)
+let strings_of_term : type ls lt rs rt.
+    (ls, lt, rs, rt) parse -> string list * Whitespace.t list list =
+ fun tm ->
+  let rec go : type ls lt rs rt.
+      string list ->
+      Whitespace.t list list ->
+      (ls, lt, rs, rt) parse ->
+      string list * Whitespace.t list list =
+   fun strs wss -> function
+     | Ident ([ str ], ws) -> (str :: strs, ws :: wss)
+     | App { fn; arg = { value = Ident ([ str ], ws); _ }; _ } ->
+         go (str :: strs) (ws :: wss) fn.value
+     | _ -> fatal Unrecognized_attribute in
+  go [] [] tm
 
-type (_, _, _) identity += Braces : (closed, No.plus_omega, closed) identity
+(* We define these here so we can refer to them in parsing implicit and nullary applications. *)
+
+type (_, _, _) identity +=
+  | Braces : (closed, No.plus_omega, closed) identity
+  | Dot : (closed, No.plus_omega, closed) identity
 
 let braces : (closed, No.plus_omega, closed) notation = (Braces, Outfix)
+let dot : (closed, No.plus_omega, closed) notation = (Dot, Outfix)
 
 (* Process a bare identifier, resolving it into either a variable, a cube variable with face, a constant, a numeral, or a degeneracy name (the latter being an error since it isn't applied to anything). *)
 let process_ident ctx loc parts =
@@ -173,13 +192,27 @@ and process_apply : type n.
   | (Wrap { value = Notn ((Braces, _), n); loc = braceloc }, loc) :: rest -> (
       match args n with
       | [ Token (LBrace, _); Term arg; Token (RBrace, _) ] ->
+          let arg = process ctx arg in
           process_apply ctx
-            { value = Synth (App (fn, process ctx arg, locate_opt braceloc `Implicit)); loc }
+            {
+              value =
+                Synth (App (fn, locate_opt arg.loc (Some arg.value), locate_opt braceloc `Implicit));
+              loc;
+            }
             rest
       | _ -> fatal (Anomaly "invalid notation arguments for braces"))
-  | (Wrap arg, loc) :: args ->
+  | (Wrap { value = Notn ((Dot, _), _); loc = dotloc }, loc) :: rest ->
       process_apply ctx
-        { value = Synth (App (fn, process ctx arg, locate_opt arg.loc `Explicit)); loc }
+        { value = Synth (App (fn, locate_opt dotloc None, locate_opt None `Explicit)); loc }
+        rest
+  | (Wrap arg, loc) :: args ->
+      let arg = process ctx arg in
+      process_apply ctx
+        {
+          value =
+            Synth (App (fn, locate_opt arg.loc (Some arg.value), locate_opt arg.loc `Explicit));
+          loc;
+        }
         args
 
 and process_synth : type n lt ls rt rs.
