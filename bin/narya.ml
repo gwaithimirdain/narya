@@ -163,16 +163,31 @@ let interact () =
           let* () = LTerm_history.save history history_file in
           Lwt.fail exn)
 
+let rec print_error_locs (d : Reporter.Code.t Asai.Diagnostic.t) =
+  match d.message with
+  | Accumulated (_name, msgs) -> Mbwd.miter (fun [ e ] -> print_error_locs e) [ msgs ]
+  | _ -> (
+      match d.explanation.loc with
+      | Some loc -> (
+          match Asai.Range.view loc with
+          | `Range (s, e) -> Format.printf "%d %d\n" s.offset e.offset
+          | `End_of_file p -> Format.printf "%d\n" p.offset)
+      | None -> ())
+
 (* In ProofGeneral interaction mode, the prompt is delimited by formfeeds, and commands are ended by a formfeed on a line by itself.  This prevents any possibility of collision with other input or output.  This doesn't require initialization. *)
 let rec interact_pg () : unit =
   Format.printf "\x0C[narya]\x0C\n%!";
   try
     let buf = Buffer.create 20 in
+    let atstart = ref true in
     let str = ref "" in
     while !str <> "\x0C\n" do
       Buffer.add_string buf !str;
       let line = read_line () in
-      str := if String.length line > 0 then line ^ "\n" else ""
+      (* Sometimes the command we get has a blank line at the beginning and sometimes it doesn't.  I don't understand why. *)
+      if (not !atstart) || line <> "" then (
+        str := line ^ "\n";
+        atstart := false)
     done;
     let cmd = Buffer.contents buf in
     let holes = ref Emp in
@@ -184,7 +199,10 @@ let rec interact_pg () : unit =
           match d.message with
           | Hole _ -> holes := Snoc (!holes, d.message)
           | _ -> Reporter.display ~use_ansi:true ~output:stdout d)
-        ~fatal:(fun d -> Reporter.display ~use_ansi:true ~output:stdout d)
+        ~fatal:(fun d ->
+          Reporter.display ~use_ansi:true ~output:stdout d;
+          Format.printf "\x0C[errors]\x0C\n%!";
+          print_error_locs d)
         (fun () ->
           try
             match Command.parse_single cmd with
