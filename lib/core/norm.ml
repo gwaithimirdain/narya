@@ -572,7 +572,7 @@ and field : type n k nk s. s value -> k Field.t -> (nk, n, k) insertion -> s eva
       let (Plus fldplus) = D.plus k in
       let p = deg_of_perm (perm_inv (perm_of_ins_plus fldins fldplus)) in
       match act_value viewed_tm p with
-      (* It must currently be an uninstantiated neutral application.  Later, fibrant types can have (higher) fields. *)
+      (* It must be an uninstantiated neutral application (which could be either an element of a record/codata, or a fibrant type). *)
       | Neu { head; args; value; ty = (lazy ty) } -> (
           let newty = lazy (tyof_field (Ok tm) ty fld ~shuf:Trivial fldins) in
           let args = Field (args, fld, fldplus, ins_zero n) in
@@ -797,7 +797,7 @@ and tyof_field : type m h s r i c.
       | Some mn -> tyof_field_giventype tm head eta env mn fields tyargs fld ~shuf fldins)
   | Canonical (head, UU m, ins, tyargs) -> (
       let Eq = eq_of_ins_zero ins in
-      let err = Code.No_such_field (`Other errtm, errfld) in
+      let err = Code.No_such_field (`Type errtm, errfld) in
       match !Fibrancy.fields with
       | None -> fatal ~severity err
       | Some fields ->
@@ -883,7 +883,7 @@ and tyof_field_withname : type a b.
           tyof_field_withname_giventype ctx tm ty eta env mn fields tyargs infld err)
   | Canonical (_head, UU m, ins, tyargs) -> (
       let Eq = eq_of_ins_zero ins in
-      let err = Code.No_such_field (`Other errtm, errfld) in
+      let err = Code.No_such_field (`Type errtm, errfld) in
       match !Fibrancy.fields with
       | None -> fatal err
       | Some fields ->
