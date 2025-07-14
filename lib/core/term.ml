@@ -302,7 +302,7 @@ end = struct
   and ('g, 'n, 'nh, 'b, 'hb, 'et) codata_fibrancy = {
     (* The original intrinsic gel/glue dimension *)
     glue : 'g D.t;
-    (* The overall dimension.  Note that when it appears as a field of Codata, above, these two dimensions are the same.  However, as we apply the corecursive 'id' field in computing fibrancy of higher versions of a codatatype, the dimension n increases but the dimension g does not. *)
+    (* The overall dimension.  Note that when it appears as a field of codata_args, above, these two dimensions are the same.  However, as we apply the corecursive 'id' field in computing fibrancy of higher versions of a codatatype, the overall dimension n increases but the glue dimension g does not. *)
     dim : 'n D.t;
     length : 'b Plusmap.OfDom.t;
     plusmap : (Hott.dim, 'b, 'hb) Plusmap.t;

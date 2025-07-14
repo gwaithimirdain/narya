@@ -1898,6 +1898,7 @@ and check_codata : type a b n.
       let newctx = Ctx.cube_vis ctx x domvars in
       match (D.compare_zero (Field.dim fld), D.compare_zero (TubeOf.inst tyargs)) with
       | Zero, _ ->
+          (* Zero-dimensional field *)
           let checked_fields, fibrancy, errs =
             Reporter.try_with ~fatal:(fun e -> (checked_fields, fibrancy, Snoc (errs, e)))
             @@ fun () ->
@@ -1907,10 +1908,10 @@ and check_codata : type a b n.
             (Snoc (checked_fields, entry), Fibrancy.Codata.add_field fibrancy entry, errs) in
           check_codata status ctx tyargs checked_fields fibrancy raw_fields errs ~has_higher_fields
       | Pos _, Zero ->
+          (* Higher-dimensional field, currently requires a zero-dimensional codatatype (non-Gel). *)
           let (Degctx (plusmap, degctx, _)) = degctx newctx (Field.dim fld) in
           let checked_fields, errs =
             Reporter.try_with ~fatal:(fun e -> (checked_fields, Snoc (errs, e))) @@ fun () ->
-            (* Note the type of each field is checked *kinetically*: it's not part of the case tree. *)
             let cty = check (Kinetic `Nolet) degctx rty (universe D.zero) in
             (Snoc (checked_fields, Entry (fld, Codatafield.Higher (plusmap, cty))), errs) in
           check_codata status ctx tyargs checked_fields fibrancy raw_fields errs ~has_higher_fields

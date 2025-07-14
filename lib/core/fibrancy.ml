@@ -10,14 +10,14 @@ let other = (`Other, `Other)
 
 (* Fibrancy fields *)
 
-(* The types of the (user-accessible, non-corecursive) fibrancy fields *)
+(* The names of the fibrancy fields. *)
 
 let ([ ftrr; fliftr; ftrl; fliftl; fid ] : (Hott.dim Field.t, Fwn.five) Vec.t) =
   Vec.map (fun x -> Field.intern x Hott.dim) [ "trr"; "liftr"; "trl"; "liftl"; "id" ]
 
-(* We will later get these fields by typechecking the definition of "isFibrant" in parametric Narya.  That definition has a (non-fibrant) type as a parameter, so together with the self variable all of its fields are in a context of length two; and since the extension by the self variable is accounted for in the definition of Codatafield, what we get here is a context of length one.  However, in HOTT mode we consider (fibrant) types as *themselves* having fields, so the type itself should now act like the "self variable"; we will deal with this at the point of use by evaluating it in an environment with the fibrant type itself appearing for both the type parameter and the element of isFibrant.
+(* The types of the user-accessible, non-corecursive, fibrancy fields *)
 
-   The D.zero says it is an ordinary (non-Gel) codatatype. *)
+(* We will later get these fields by typechecking the definition of "isFibrant" in parametric Narya.  That definition has a (non-fibrant) type as a parameter, so together with the self variable all of its fields are in a context of length two; and since the extension by the self variable is accounted for in the definition of Codatafield, what we get here is a context of length one.  However, in HOTT mode we consider (fibrant) types as *themselves* having fields, so the type itself should now act like the "self variable"; we will deal with this at the point of use by evaluating it in an environment with the fibrant type itself appearing for both the type parameter and the element of isFibrant.  The D.zero says that isFibrant is an ordinary (non-Gel) codatatype. *)
 
 let fields : ((emp, D.zero) snoc * D.zero * no_eta) CodatafieldAbwd.t option ref = ref None
 
@@ -41,6 +41,8 @@ module Codata = struct
   type (_, _, _, _) t =
     | Fibrancy : ('g, 'n, 'nh, 'b, 'hb, 'et) codata_fibrancy -> ('g, 'n, 'b, 'et) t
 
+  (* We compute the fibrancy fields of a codatatype progressively field-by-field as the codatatype declaration is typechecked, starting with an empty one and adding to it. *)
+
   let empty : type g n b et.
       g D.t ->
       n D.t ->
@@ -55,16 +57,21 @@ module Codata = struct
     Fibrancy
       { glue; dim; length; plusmap; ty; eta; dimh; trr = Emp; trl = Emp; liftr = Emp; liftl = Emp }
 
+  (* Given the typechecked version of a field, add the corresponding behavior of the fibrancy fields. *)
   let add_field : type g n b et.
       (g, n, b, et) t -> (b * g * et) CodatafieldAbwd.entry -> (g, n, b, et) t =
    fun (Fibrancy (type nh hb) (f : (g, n, nh, b, hb, et) codata_fibrancy)) (Entry (fld, fldty)) ->
+    (* x is the index-zero variable. *)
     let x = Var (Index (Now, id_sface D.zero)) in
     let ins = zero_ins Hott.dim in
+    (* Compute terms that project each fibrancy field out of the codatatype and apply it to the index-zero variable 'x'. *)
     let onx : Hott.dim Field.t -> ((hb, D.zero) snoc, kinetic) term =
      fun trlift -> app (Field (Weaken (Shift (Hott.dim, f.plusmap, f.ty)), trlift, ins)) x in
     let trr_x, liftr_x, trl_x, liftl_x = (onx ftrr, onx fliftr, onx ftrl, onx fliftl) in
+    (* xrcube and xlcube are 1-dimensional cubes consisting of the index-zero variable 'x' and its transports right or left. *)
     match (Hott.cube x trr_x liftr_x, Hott.cube trl_x x liftl_x) with
     | Some xrcube, Some xlcube ->
+        (* This generic functions computes the specified field projection 'fld' of any of the fibrancy fields, by applying that fibrancy field to the corresponding 'fld' of the input. *)
         let trlift : type m.
             Hott.dim Field.t ->
             (Hott.dim, ((hb, D.zero) snoc, kinetic) term) CubeOf.t ->
@@ -98,6 +105,7 @@ module Codata = struct
           }
     | _ -> Fibrancy f
 
+  (* After all the codatafields have been added, we can "finish" the job at the time of evaluation, combining the StructfieldAbwds for the four user fibrancy fields, and a computation of the corecursive field id, to produce a single StructfieldAbwd whose fields are the five fibrancy fields. *)
   let rec finish : type g n nh b hb et.
       (b * g * et) CodatafieldAbwd.t ->
       (g, n, nh, b, hb, et) codata_fibrancy ->
@@ -107,6 +115,7 @@ module Codata = struct
     let yname = singleton_variables D.zero (Some "y") in
     let plusfam x = Some (PlusFam.PlusFam (plusmap, x)) in
     let _pluszero x = Some (PlusFam.PlusFam (Plusmap.zerol length, x)) in
+    (* Generic function combining trr and trl. *)
     let tr : type r.
         [ `Left | `Right ] ->
         (n * (hb, D.zero) snoc * potential * et) StructfieldAbwd.t ->
@@ -116,12 +125,13 @@ module Codata = struct
       match singleton_pbij p Hott.singleton with
       (* This is the "tr.e" case when we just pass off to the type of the field. *)
       | Left -> plusfam (Lam (xname, Struct { dim; eta; energy = Potential; fields }))
-      (* This is the tr.1/tr.2 case when we use the bisimulation data supplied. *)
+      (* This is the tr.1/tr.2 case when we use the bisimulation data supplied.  The insertion is an insertion into g, the glue dimension. *)
       | Right _ins -> None
      (* pluszero @@ Lam (xname, _) *) in
     let trr = PlusPbijmap.build glue Hott.dim { build = (fun p -> tr `Right trr p) } in
     let trl = PlusPbijmap.build glue Hott.dim { build = (fun p -> tr `Left trl p) } in
     let dimh = D.plus_out dim dimh in
+    (* Generic function combining liftr and liftl. *)
     let lift : type r.
         [ `Left | `Right ] ->
         (nh * (hb, D.zero) snoc * potential * et) StructfieldAbwd.t ->
