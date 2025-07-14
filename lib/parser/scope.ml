@@ -197,11 +197,22 @@ let include_singleton ?context_visible ?context_export (path, x) =
       };
   }
 
+(* Save the original as-defined names of constants *)
+let original_names = Hashtbl.create 100
+let marshal_original_names chan flags = Marshal.to_channel chan original_names flags
+
 (* Create a new Constant.t and define a name to equal it. *)
 let define compunit ?loc name =
   let c = Constant.make compunit in
+  Hashtbl.add original_names c name;
   include_singleton (name, ((`Constant c, loc), ()));
   c
+
+(* Re-create a Constant.t at linking, and associate its old original name to the new re-created version. *)
+let redefine old_original_names find_in_table oldc =
+  let newc = Constant.remake find_in_table oldc in
+  Hashtbl.add original_names newc (Hashtbl.find old_original_names oldc);
+  newc
 
 (* Install a user notation and define a name to equal it.  Returns a list of the old notations shadowed by this one. *)
 let define_notation user ?loc name =
@@ -332,7 +343,7 @@ let name_of c =
   match find_data (get_visible ()) (`Constant c) with
   | Some name -> name
   (* TODO: Better to munge the original name. *)
-  | None -> [ "_UNNAMED_CONSTANT" ]
+  | None -> "_OUT_OF_SCOPE" :: Option.value ~default:[] (Hashtbl.find_opt original_names c)
 
 (* Check whether a new name will shadow something else in the export namespace, and warn if so. *)
 let check_name name loc =

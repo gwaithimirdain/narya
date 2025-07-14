@@ -113,6 +113,7 @@ let marshal (compunit : Compunit.t) (file : FilePath.filename) (trie : Scope.tri
       Marshal.to_channel chan compunit [];
       Marshal.to_channel chan (Loading.get ()).imports [];
       Global.to_channel_unit chan compunit [];
+      Parser.Scope.marshal_original_names chan [];
       Marshal.to_channel chan
         (Trie.map
            (fun _ -> function
@@ -171,11 +172,13 @@ let rec unmarshal (compunit : Compunit.t) (lookup : FilePath.filename -> Compuni
                 <|> Anomaly "missing compunit while unmarshaling compiled file" in
             (* Now we load the definitions from the compiled file, replacing all the old compunits by the new ones. *)
             let unit_entry = Global.from_channel_unit find_in_table chan compunit in
+            let original_names = (Marshal.from_channel chan : (Constant.t, string list) Hashtbl.t) in
             let trie =
               Trie.map
                 (fun _ (data, tag) ->
                   match data with
-                  | `Constant c, loc -> ((`Constant (Constant.remake find_in_table c), loc), tag)
+                  | `Constant c, loc ->
+                      ((`Constant (Parser.Scope.redefine original_names find_in_table c), loc), tag)
                   | `Notation (User.User u), loc ->
                       (* We also have to re-make the notation objects since they contain constant names (print keys) and their own autonumbers (but those are only used for comparison locally so don't need to be walked elsewhere). *)
                       let key =

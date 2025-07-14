@@ -96,7 +96,12 @@ val run_with : ?get:(unit -> t) -> ?set:(t -> unit) -> (unit -> 'a) -> 'a
 val lookup : Trie.path -> Constant.t option
 val find_data : ('a * 'c, 'b) Trie.t -> 'a -> Trie.path option
 val name_of : Constant.t -> Trie.path
+val marshal_original_names : out_channel -> Marshal.extern_flags list -> unit
 val define : Compunit.t -> ?loc:Asai.Range.t -> Trie.path -> Constant.t
+
+val redefine :
+  (Constant.t, string list) Hashtbl.t -> (Compunit.t -> Compunit.t) -> Constant.t -> Constant.t
+
 val define_notation : User.prenotation -> ?loc:Asai.Range.t -> Trie.path -> User.key list
 val check_name : Trie.path -> Asai.Range.t option -> unit
 

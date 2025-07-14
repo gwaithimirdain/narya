@@ -23,7 +23,7 @@ Renaming a whole subtree, clobbering the rest
 
   $ narya -e 'import "nat" | renaming nums . echo two'
   2
-    : _UNNAMED_CONSTANT
+    : _OUT_OF_SCOPE.Nat
   
 Renaming a subtree while preserving the rest
 
@@ -63,7 +63,7 @@ We can get only the notations by keeping only that subtree
 
   $ narya -e 'import "nat" | only notations echo 1 + 1'
   2
-    : _UNNAMED_CONSTANT
+    : _OUT_OF_SCOPE.Nat
   
 
 Or exclude the notations but get everything else
