@@ -4,7 +4,9 @@ Imports and scoping
 File imports
 ------------
 
-The command ``import FILE`` executes another Narya file and adds (some of) its definitions and notations to the current namespace.  The commands in the imported file cannot access any definitions from other files, including the current one, except those that it imports itself.  Importing is not transitive: if ``a.ny`` imports ``b.ny``, and ``b.ny`` imports ``c.ny``, then the definitions from ``c.ny`` do not appear in the namespace of ``a.ny`` unless it also imports ``c.ny`` explicitly.
+The command ``import "FILE"`` executes another Narya file and adds (some of) its definitions and notations to the current namespace.  The disk file *must* have the ``.ny`` extension, whereas the string given to ``import`` must *not* have it; thus ``import "mylib"`` loads the file ``mylib.ny``.
+
+The commands in the imported file cannot access any definitions from other files, including the current one, except those that it imports itself.  Importing is not transitive: if ``a.ny`` imports ``b.ny``, and ``b.ny`` imports ``c.ny``, then the definitions from ``c.ny`` do not appear in the namespace of ``a.ny`` unless it also imports ``c.ny`` explicitly.
 
 More precisely, there are two namespaces at any time: the "import" namespace, which determines the names that are available to use in the current file, and the "export" namespace, which determines the names that will be made available to other files that import this one.  The command ``import`` only affects the import namespace, but the variant using the word ``export`` instead affects both.
 
