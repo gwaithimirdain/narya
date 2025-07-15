@@ -634,6 +634,7 @@ type pi_dom =
   | Dep of {
       wsarrow : arrow_opt;
       vars : (string option * Whitespace.t list) list;
+      tok : Token.t;
       ty : wrapped_parse;
       wslparen : Whitespace.t list;
       wscolon : Whitespace.t list;
@@ -641,12 +642,12 @@ type pi_dom =
       loc : Asai.Range.t option;
       implicit : [ `Implicit | `Explicit ];
     }
-  | Nondep of { wsarrow : arrow_opt; ty : wrapped_parse }
+  | Nondep of { wsarrow : arrow_opt; tok : Token.t; ty : wrapped_parse }
 
 (* Inspect 'doms', expecting it to be of the form (x:A)(y:B) etc, and produce a list of variables with types, prepending that list onto the front of the given accumulation list, with the first one having an arrow attached (before it front) if 'wsarrow' is given.  If it isn't of that form, interpret it as the single domain type of a non-dependent function-type and cons it onto the list. *)
 let get_pi_args : type lt ls rt rs.
-    arrow_opt -> (lt, ls, rt, rs) parse located -> pi_dom list -> pi_dom list =
- fun wsarrow doms accum ->
+    Token.t -> arrow_opt -> (lt, ls, rt, rs) parse located -> pi_dom list -> pi_dom list =
+ fun tok wsarrow doms accum ->
   let open Monad.Ops (Monad.Maybe) in
   let rec go : type lt ls rt rs. (lt, ls, rt, rs) parse located -> pi_dom list -> pi_dom list option
       =
@@ -661,6 +662,7 @@ let get_pi_args : type lt ls rt rs.
                  {
                    wsarrow;
                    vars;
+                   tok;
                    ty;
                    wslparen;
                    wscolon;
@@ -679,6 +681,7 @@ let get_pi_args : type lt ls rt rs.
                  {
                    wsarrow;
                    vars;
+                   tok;
                    ty;
                    wslparen;
                    wscolon;
@@ -697,6 +700,7 @@ let get_pi_args : type lt ls rt rs.
                  {
                    wsarrow = `Noarrow;
                    vars;
+                   tok;
                    ty;
                    wslparen;
                    wscolon;
@@ -715,6 +719,7 @@ let get_pi_args : type lt ls rt rs.
                  {
                    wsarrow = `Noarrow;
                    vars;
+                   tok;
                    ty;
                    wslparen;
                    wscolon;
@@ -727,7 +732,7 @@ let get_pi_args : type lt ls rt rs.
     | _ -> None in
   match go doms accum with
   | Some result -> result
-  | None -> Nondep { wsarrow; ty = Wrap doms } :: accum
+  | None -> Nondep { wsarrow; tok; ty = Wrap doms } :: accum
 
 (* Get all the domains, dimension, and eventual codomain from a right-associated iterated function-type. *)
 let rec get_pi :
@@ -748,7 +753,7 @@ let rec get_pi :
             let vars, ws, coddim, evcod = get_pi (`Arrow wsarrow) (args n) in
             if coddim = dim then (vars, ws, evcod) else ([], wsarrow, Wrap cod)
         | _ -> ([], wsarrow, Wrap cod) in
-      (get_pi_args prev_arr doms vars, ws, dim, cod)
+      (get_pi_args Arrow prev_arr doms vars, ws, dim, cod)
   | [ Term doms; Token (DblArrow, (wsarrow, _)); Term cod ] ->
       let vars, ws, cod =
         match cod.value with
@@ -756,7 +761,7 @@ let rec get_pi :
             let vars, ws, _, evcod = get_pi (`Arrow wsarrow) (args n) in
             (vars, ws, evcod)
         | _ -> ([], wsarrow, Wrap cod) in
-      (get_pi_args prev_arr doms vars, ws, (locate_opt None "", []), cod)
+      (get_pi_args DblArrow prev_arr doms vars, ws, (locate_opt None "", []), cod)
   | _ -> invalid "arrow 2"
 
 (* Given the variables with domains and the codomain of an ordinary (not higher) pi-type, process it into a raw term. *)
@@ -853,9 +858,10 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
   let doc, ws =
     List.fold_left
       (fun (acc, prews) dom ->
-        let wsarrow, (pty, wty) =
+        let tok, wsarrow, (pty, wty) =
           match dom with
-          | Dep { wsarrow; vars; ty = Wrap ty; wslparen; wscolon; wsrparen; implicit; loc = _ } ->
+          | Dep { wsarrow; vars; tok; ty = Wrap ty; wslparen; wscolon; wsrparen; implicit; loc = _ }
+            ->
               let pvars, wvars =
                 List.fold_left
                   (fun (acc, prews) (x, wx) ->
@@ -866,7 +872,8 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
                       Some wx ))
                   (empty, None) vars in
               let pty, wty = pp_term ty in
-              ( wsarrow,
+              ( tok,
+                wsarrow,
                 ( group
                     (Token.pp (if implicit = `Implicit then LBrace else LParen)
                     ^^ pp_ws `None wslparen
@@ -878,11 +885,11 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
                     ^^ pp_ws `None wty
                     ^^ Token.pp (if implicit = `Implicit then RBrace else RParen)),
                   wsrparen ) )
-          | Nondep { wsarrow; ty = Wrap ty } -> (wsarrow, pp_term ty) in
+          | Nondep { wsarrow; tok; ty = Wrap ty } -> (tok, wsarrow, pp_term ty) in
         let doc, ws =
           match wsarrow with
           | `Arrow wsarrow ->
-              ( optional (pp_ws `Nobreak) prews ^^ Token.pp Arrow ^^ pp_ws `Break wsarrow ^^ pty,
+              ( optional (pp_ws `Nobreak) prews ^^ Token.pp tok ^^ pp_ws `Break wsarrow ^^ pty,
                 Some wty )
           | `Noarrow | `First -> (optional (pp_ws `Break) prews ^^ pty, Some wty) in
         (acc ^^ group doc, ws))

@@ -125,3 +125,10 @@
      ^ invalid higher function-type: invalid single codomain dimension
   
   [1]
+
+  $ narya -e "echo refl ((X Y ↦ X → Y → Type) : Type → Type → Type)"
+  X Y ⤇ X.2 ⇒ Y.2 ⇒ Type⁽ᵉ⁾
+    : {H₀ : Type} {H₁ : Type} (H₂ : Type⁽ᵉ⁾ H₀ H₁) {H₀′ : Type} {H₁′ : Type}
+      (H₂′ : Type⁽ᵉ⁾ H₀′ H₁′)
+      →⁽ᵉ⁾ Type⁽ᵉ⁾ (H₀ → H₀′ → Type) (H₁ → H₁′ → Type)
+  

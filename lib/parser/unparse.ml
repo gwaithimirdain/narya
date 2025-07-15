@@ -754,12 +754,12 @@ and unparse_arrow : type lt ls rt rs m.
     | `DblArrow -> wstok DblArrow in
   match (No.Interval.contains li No.zero, No.Interval.contains ri No.zero) with
   | Some left_ok, Some right_ok ->
-      let first = dom.unparse li (interval_left arrow) in
-      let last = cod.unparse (interval_right arrow) ri in
+      let first = dom.unparse li (interval_left notn) in
+      let last = cod.unparse (interval_right notn) ri in
       unlocated (infix ~notn ~first ~inner:(Single tok) ~last ~left_ok ~right_ok)
   | _ ->
-      let first = dom.unparse No.Interval.entire (interval_left arrow) in
-      let last = cod.unparse (interval_right arrow) No.Interval.entire in
+      let first = dom.unparse No.Interval.entire (interval_left notn) in
+      let last = cod.unparse (interval_right notn) No.Interval.entire in
       let left_ok = No.minusomega_lt_zero in
       let right_ok = No.minusomega_lt_zero in
       parenthesize (unlocated (infix ~notn ~first ~inner:(Single tok) ~last ~left_ok ~right_ok))
