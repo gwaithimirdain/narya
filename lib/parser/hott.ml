@@ -57,8 +57,9 @@ let install_isfibrant trie =
   | _ -> fatal (Anomaly "isFibrant has wrong shape"));
   trie
 
-(* To compute the fibrancy fields of a pi-type, we basically copy a minimal part of the code from the proof in binary parametricity that pi-types are fibrant, with a few changes. *)
-let install_fib_pi trie =
+(* To compute the fibrancy fields of a pi-type, we basically copy a minimal part of the code from the proof in binary parametricity that pi-types are fibrant, with a few changes.  First we typecheck a proof that fibrancy is preserved under retraction. *)
+
+let install_fib_rtr trie =
   let eq_trr, trie, _ =
     trie
     (* We include the Martin-Lof equality so that everything will typecheck, although in practice it will turn out to always be rfl and thus reduce away. *)
@@ -72,7 +73,7 @@ let install_fib_pi trie =
   (a2 : eq A a0 a1) (b0 b1 : B) (b2 : eq B b0 b1) (p : P a0 b0)
   → P a1 b1"
          "A B P a0 a1 a2 b0 b1 b2 p ↦ match a2, b2 [ rfl., rfl. ↦ p ]" in
-  let id_pi_iso, trie, _ =
+  let id_rtr, trie, _ =
     trie
     (* We don't need a full equivalence, only a retraction. *)
     |> def "rtr" "(A B : Type) → Type"
@@ -80,23 +81,6 @@ let install_fib_pi trie =
   to : A → B,
   fro : B → A,
   to_fro : (b : B) → eq B (to (fro b)) b )"
-    |> def_term "id_pi_iso"
-         "(A0 : Type) (A1 : Type) (A2 : Id Type A0 A1) (B0 : A0 → Type)
-  (B1 : A1 → Type)
-  (B2 : Id ((X Y ↦ (x : X) → Y x) : (X : Type) → (X → Type) → Type) A2
-          {_ ↦ Type} {_ ↦ Type} (_ ⤇ refl Type) B0 B1)
-  (f0 : (a0 : A0) → B0 a0) (f1 : (a1 : A1) → B1 a1)
-  → rtr ((a0 : A0) (a1 : A1) (a2 : A2 a0 a1) → B2 a2 (f0 a0) (f1 a1))
-      (Id ((X Y ↦ (x : X) → Y x) : (X : Type) → (X → Type) → Type) A2 B2 f0
-         f1)"
-         "A0 A1 A2 B0 B1 B2 f0 f1 ↦
-         (
-  to ≔ f ↦ a ⤇ f a.0 a.1 a.2,
-  fro ≔ g ↦ a0 a1 a2 ↦ g a2,
-  to_fro ≔ _ ↦ rfl.)"
-  in
-  let id_rtr, trie, _ =
-    trie
     |> def "Id_eq"
          "(A0 A1 : Type) (A2 : Id Type A0 A1) (a00 : A0) (a01 : A1)
   (a02 : A2 a00 a01) (a10 : A0) (a11 : A1) (a12 : A2 a10 a11)
@@ -138,6 +122,124 @@ let install_fib_pi trie =
 | .id.e ↦ b0 b1 ↦
     fib_rtr (A.2 (e.0 .fro b0) (e.1 .fro b1)) (B.2 b0 b1)
       (Id_rtr A.0 A.1 A.2 B.0 B.1 B.2 e.0 e.1 e.2 b0 b1)]"
+  in
+  (* Now we remove the eq.trr's from fib_rtr, and the eq.trr2's from id_rtr, since they are always unnecessary computationally.  This doesn't seem to materially affect performance, but it's cleaner. *)
+  (match Global.find fib_rtr with
+  | _, (`Defined (Lam (aa, Lam (bb, Lam (e, Struct ({ fields; eta = Noeta; _ } as s))))), param) ->
+      let fields =
+        Bwd.map
+          (function
+            | Term.StructfieldAbwd.Entry (f, Higher tms) ->
+                let tms =
+                  Term.PlusPbijmap.mmap
+                    {
+                      map =
+                        (fun _ [ x ] ->
+                          Option.map
+                            (function
+                              | Term.PlusFam.PlusFam
+                                  ( p,
+                                    Lam
+                                      ( b,
+                                        Realize
+                                          (App
+                                             ( App (App (App (App (App (Const c, _), _), _), _), _),
+                                               tm )) ) )
+                                when c = eq_trr ->
+                                  Term.PlusFam.PlusFam (p, Lam (b, Realize (CubeOf.find_top tm)))
+                              | y -> y)
+                            x);
+                    }
+                    [ tms ] in
+                Term.StructfieldAbwd.Entry (f, Higher tms)
+            | s -> s)
+          fields in
+      Global.set fib_rtr (`Defined (Lam (aa, Lam (bb, Lam (e, Struct { s with fields })))), param)
+  | _ -> ());
+  (match Global.find id_rtr with
+  | ( _,
+      ( `Defined
+          (Lam
+             ( a0,
+               Lam
+                 ( a1,
+                   Lam
+                     ( a2,
+                       Lam
+                         ( b0,
+                           Lam
+                             ( b1,
+                               Lam (b2, Lam (e0, Lam (e1, Lam (e2, Lam (x0, Lam (x1, Struct s))))))
+                             ) ) ) ) )),
+        param ) ) ->
+      let fields =
+        Bwd.map
+          (function
+            | Term.StructfieldAbwd.Entry
+                ( fld,
+                  Lower
+                    ( Lam
+                        ( b,
+                          Realize
+                            (App
+                               ( App
+                                   ( App
+                                       ( App
+                                           ( App
+                                               ( App (App (App (App (App (Const c, _), _), _), _), _),
+                                                 _ ),
+                                             _ ),
+                                         _ ),
+                                     _ ),
+                                 tm )) ),
+                      l ) )
+              when c = eq_trr2 ->
+                Term.StructfieldAbwd.Entry (fld, Lower (Lam (b, Realize (CubeOf.find_top tm)), l))
+            | y -> y)
+          s.fields in
+      Global.set id_rtr
+        ( `Defined
+            (Lam
+               ( a0,
+                 Lam
+                   ( a1,
+                     Lam
+                       ( a2,
+                         Lam
+                           ( b0,
+                             Lam
+                               ( b1,
+                                 Lam
+                                   ( b2,
+                                     Lam
+                                       ( e0,
+                                         Lam
+                                           ( e1,
+                                             Lam (e2, Lam (x0, Lam (x1, Struct { s with fields })))
+                                           ) ) ) ) ) ) ) )),
+          param )
+  | _ -> ());
+  trie
+
+(* Now we do pi-types based on that. *)
+let install_fib_pi trie =
+  let trie = install_fib_rtr trie in
+  let id_pi_iso, trie, _ =
+    trie
+    |> def_term "id_pi_iso"
+         "(A0 : Type) (A1 : Type) (A2 : Id Type A0 A1) (B0 : A0 → Type)
+  (B1 : A1 → Type)
+  (B2 : Id ((X Y ↦ (x : X) → Y x) : (X : Type) → (X → Type) → Type) A2
+          {_ ↦ Type} {_ ↦ Type} (_ ⤇ refl Type) B0 B1)
+  (f0 : (a0 : A0) → B0 a0) (f1 : (a1 : A1) → B1 a1)
+  → rtr ((a0 : A0) (a1 : A1) (a2 : A2 a0 a1) → B2 a2 (f0 a0) (f1 a1))
+      (Id ((X Y ↦ (x : X) → Y x) : (X : Type) → (X → Type) → Type) A2 B2 f0
+         f1)"
+         "A0 A1 A2 B0 B1 B2 f0 f1 ↦
+         (
+  to ≔ f ↦ a ⤇ f a.0 a.1 a.2,
+  fro ≔ g ↦ a0 a1 a2 ↦ g a2,
+  to_fro ≔ _ ↦ rfl.)"
   in
   let _, trie, ctm =
     trie
@@ -195,7 +297,7 @@ let install_fib_pi trie =
               fields in
           Fibrancy.pi := Some fields;
           (* For the higher-dimensional case, we have to adjust the case tree boundary for id_pi_iso to avoid exposing that constant to the user when a higher fibrancy field is applied only to a function but not a further argument. *)
-          (match Global.find id_pi_iso with
+          match Global.find id_pi_iso with
           | ( _,
               ( `Defined
                   (Lam
@@ -225,118 +327,6 @@ let install_fib_pi trie =
                                    ( b0,
                                      Lam (b1, Lam (b2, Lam (f0, Lam (f1, Struct { s with fields }))))
                                    ) ) ) )),
-                  param )
-          | _ -> ());
-          (* We also remove the eq.trr's from fib_rtr, and the eq.trr2's from id_rtr, since they are always unnecessary computationally.  This doesn't seem to materially affect performance, but it's cleaner. *)
-          (match Global.find fib_rtr with
-          | ( _,
-              ( `Defined (Lam (aa, Lam (bb, Lam (e, Struct ({ fields; eta = Noeta; _ } as s))))),
-                param ) ) ->
-              let fields =
-                Bwd.map
-                  (function
-                    | Term.StructfieldAbwd.Entry (f, Higher tms) ->
-                        let tms =
-                          Term.PlusPbijmap.mmap
-                            {
-                              map =
-                                (fun _ [ x ] ->
-                                  Option.map
-                                    (function
-                                      | Term.PlusFam.PlusFam
-                                          ( p,
-                                            Lam
-                                              ( b,
-                                                Realize
-                                                  (App
-                                                     ( App
-                                                         ( App
-                                                             (App (App (App (Const c, _), _), _), _),
-                                                           _ ),
-                                                       tm )) ) )
-                                        when c = eq_trr ->
-                                          Term.PlusFam.PlusFam
-                                            (p, Lam (b, Realize (CubeOf.find_top tm)))
-                                      | y -> y)
-                                    x);
-                            }
-                            [ tms ] in
-                        Term.StructfieldAbwd.Entry (f, Higher tms)
-                    | s -> s)
-                  fields in
-              Global.set fib_rtr
-                (`Defined (Lam (aa, Lam (bb, Lam (e, Struct { s with fields })))), param)
-          | _ -> ());
-          match Global.find id_rtr with
-          | ( _,
-              ( `Defined
-                  (Lam
-                     ( a0,
-                       Lam
-                         ( a1,
-                           Lam
-                             ( a2,
-                               Lam
-                                 ( b0,
-                                   Lam
-                                     ( b1,
-                                       Lam
-                                         ( b2,
-                                           Lam (e0, Lam (e1, Lam (e2, Lam (x0, Lam (x1, Struct s)))))
-                                         ) ) ) ) ) )),
-                param ) ) ->
-              let fields =
-                Bwd.map
-                  (function
-                    | Term.StructfieldAbwd.Entry
-                        ( fld,
-                          Lower
-                            ( Lam
-                                ( b,
-                                  Realize
-                                    (App
-                                       ( App
-                                           ( App
-                                               ( App
-                                                   ( App
-                                                       ( App
-                                                           ( App
-                                                               ( App (App (App (Const c, _), _), _),
-                                                                 _ ),
-                                                             _ ),
-                                                         _ ),
-                                                     _ ),
-                                                 _ ),
-                                             _ ),
-                                         tm )) ),
-                              l ) )
-                      when c = eq_trr2 ->
-                        Term.StructfieldAbwd.Entry
-                          (fld, Lower (Lam (b, Realize (CubeOf.find_top tm)), l))
-                    | y -> y)
-                  s.fields in
-              Global.set id_rtr
-                ( `Defined
-                    (Lam
-                       ( a0,
-                         Lam
-                           ( a1,
-                             Lam
-                               ( a2,
-                                 Lam
-                                   ( b0,
-                                     Lam
-                                       ( b1,
-                                         Lam
-                                           ( b2,
-                                             Lam
-                                               ( e0,
-                                                 Lam
-                                                   ( e1,
-                                                     Lam
-                                                       ( e2,
-                                                         Lam (x0, Lam (x1, Struct { s with fields }))
-                                                       ) ) ) ) ) ) ) ) )),
                   param )
           | _ -> ())
       | _ -> fatal (Anomaly "fib_pi has wrong dimension"))
