@@ -193,7 +193,7 @@ module Parse = struct
     let* wsdef = token tok in
     let* nameloc, (name, wsname) = located ident in
     let loc = Some (Range.convert nameloc) in
-    if not (Lexer.valid_ident name) then fatal ?loc (Invalid_constant_name name);
+    if not (Lexer.valid_ident name) then fatal ?loc (Invalid_constant_name (name, None));
     let* parameters = zero_or_more parameter in
     let* ty, wscoloneq, tm =
       (let* wscolon = token Colon in
@@ -771,6 +771,11 @@ let rec execute :
   match cmd with
   | Axiom { name; nonparam; loc; parameters; ty = Wrap ty; _ } ->
       History.do_command @@ fun () ->
+      (match name with
+      | [ str ] ->
+          if Option.is_some (deg_of_name str) then
+            fatal (Invalid_constant_name (name, Some "that's a degeneracy name"))
+      | _ -> ());
       Scope.check_name name loc;
       let const = Scope.define (Compunit.Current.read ()) ?loc name in
       let (Processed_tel (params, ctx, _)) = process_tel Emp parameters in
@@ -781,6 +786,11 @@ let rec execute :
       let cdefs =
         Mlist.mmap
           (fun [ d ] ->
+            (match d.name with
+            | [ str ] ->
+                if Option.is_some (deg_of_name str) then
+                  fatal (Invalid_constant_name (d.name, Some "that's a degeneracy name"))
+            | _ -> ());
             Scope.check_name d.name d.loc;
             let c = Scope.define (Compunit.Current.read ()) ?loc:d.loc d.name in
             (c, d))

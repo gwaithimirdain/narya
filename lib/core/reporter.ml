@@ -183,7 +183,7 @@ module Code = struct
     | Anomaly : string -> t
     | No_such_level : printable -> t
     | Redefining_constant : string list -> t
-    | Invalid_constant_name : string list -> t
+    | Invalid_constant_name : string list * string option -> t
     | Too_many_commands : t
     | Invalid_tightness : string -> t
     | Fixity_mismatch : t
@@ -852,8 +852,11 @@ module Code = struct
       | No_such_level i -> textf "@[<hov 2>no level variable@ %a@ in context@]" pp_printed (print i)
       | Redefining_constant name ->
           textf "redefining constant: %a" pp_printed (print (PString (String.concat "." name)))
-      | Invalid_constant_name name ->
-          textf "invalid constant name: %a" pp_printed (print (PString (String.concat "." name)))
+      | Invalid_constant_name (name, why) ->
+          textf "invalid constant name: %a%a" pp_printed
+            (print (PString (String.concat "." name)))
+            (pp_print_option ~none:(fun _ _ -> ()) (fun ppf -> fprintf ppf " (%s)"))
+            why
       | Too_many_commands -> text "too many commands: enter one at a time"
       | Fixity_mismatch ->
           text
