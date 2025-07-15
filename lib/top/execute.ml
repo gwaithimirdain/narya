@@ -57,25 +57,17 @@ module Flags = Algaeff.Reader.Make (FlagData)
 let () = Flags.register_printer (function `Read -> Some "unhandled Flags.read effect")
 
 module Loaded = struct
+  type data = {
+    trie : Scope.trie;
+    globals : Global.unit_entry;
+    compunit : Compunit.t;
+    old_imports : (Compunit.t * FilePath.filename) Bwd.t;
+    explicit : bool;
+  }
+
   type _ Effect.t +=
-    | Add_to_files :
-        FilePath.filename
-        * Scope.trie
-        * Global.unit_entry
-        * Compunit.t
-        * (Compunit.t * FilePath.filename) Bwd.t
-        * bool
-        -> unit Effect.t
-    | Get_file :
-        FilePath.filename
-        -> (Scope.trie
-           * Global.unit_entry
-           * Compunit.t
-           * (Compunit.t * FilePath.filename) Bwd.t
-           * float
-           * bool)
-           option
-           Effect.t
+    | Add_to_files : FilePath.filename * data -> unit Effect.t
+    | Get_file : FilePath.filename -> (data * float) option Effect.t
     | Add_to_scope : Scope.trie -> unit Effect.t
     | Get_scope : Scope.trie Effect.t
 
@@ -83,24 +75,15 @@ module Loaded = struct
 
   let run f =
     (* All the files that have been loaded so far in this run of the program, along with their export namespaces, compilation unit identifiers, files that *they* import transitively, modification time when they were loaded, and whether they were explicitly invoked on the command line. *)
-    let loaded_files :
-        ( FilePath.filename,
-          Scope.trie
-          * Global.unit_entry
-          * Compunit.t
-          * (Compunit.t * FilePath.filename) Bwd.t
-          * float
-          * bool )
-        Hashtbl.t =
-      Hashtbl.create 20 in
+    let loaded_files : (FilePath.filename, data * float) Hashtbl.t = Hashtbl.create 20 in
     (* The complete merged namespace of all the files explicitly given on the command line so far.  Imported into -e and -i.  We compute it lazily because if there is no -e or -i we don't need it.  (And also so that we won't try to read the flags before they're set.) *)
     let loaded_contents : Scope.trie Lazy.t ref = ref (lazy (Flags.read ()).init_visible) in
     let effc : type b a. b Effect.t -> ((b, a) continuation -> a) option = function
-      | Add_to_files (file, trie, globals, compunit, old_imports, explicit) ->
+      | Add_to_files (file, data) ->
           let mtime = (FileUtil.stat file).modification_time in
           Some
             (fun k ->
-              Hashtbl.add loaded_files file (trie, globals, compunit, old_imports, mtime, explicit);
+              Hashtbl.add loaded_files file (data, mtime);
               continue k ())
       | Get_file file -> Some (fun k -> continue k (Hashtbl.find_opt loaded_files file))
       | Add_to_scope trie ->
@@ -119,7 +102,7 @@ module Loaded = struct
   let get_file file = Effect.perform (Get_file file)
 
   let add_to_files file trie globals compunit old_imports explicit =
-    Effect.perform (Add_to_files (file, trie, globals, compunit, old_imports, explicit))
+    Effect.perform (Add_to_files (file, { trie; globals; compunit; old_imports; explicit }))
 end
 
 (* Save all the definitions from a given loaded compilation unit to a compiled disk file, along with other data such as the command-line type theory flags, the imported files, and the (supplied) export namespace. *)
@@ -231,7 +214,7 @@ and load_file file top =
   in
   let file = FilePath.reduce file in
   match Loaded.get_file file with
-  | Some (trie, globals, compunit, old_imports, mtime, top') ->
+  | Some ({ trie; globals; compunit; old_imports; explicit = top' }, mtime) ->
       (* If we already loaded that file, first we check that neither it nor any of its imports have been modified more recently that when they were loaded. *)
       if (FileUtil.stat file).modification_time > mtime then fatal (Library_modified file);
       Bwd.iter
@@ -258,9 +241,7 @@ and load_file file top =
       (* Now we record it as a file that was imported by the current file. *)
       Loading.modify (fun s -> { s with imports = Snoc (s.imports, (compunit, file)) });
       (* Then we load it, in its directory and with itself added to the list of parents. *)
-      let rename i =
-        let _, _, c, _, _, _ = Loaded.get_file i <|> Anomaly "missing file in load_file" in
-        c in
+      let rename i = (fst (Loaded.get_file i <|> Anomaly "missing file in load_file")).compunit in
       let trie, imports =
         Loading.run
           ~init:
