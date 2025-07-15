@@ -387,13 +387,14 @@
   
   [1]
 
-No holes in echo:
+Holes in echo:
 
   $ narya -e 'echo (? : Type)'
-   ￫ error[E2002]
-   ￭ command-line exec string
-   1 | echo (? : Type)
-     ^ command 'echo' cannot contain holes
+  ?0{…}
+    : Type
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
   
   [1]
 
