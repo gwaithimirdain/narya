@@ -752,7 +752,7 @@ let needs_interactive : Command.t -> bool = function
 let maybe_forbid_holes : Command.t -> (unit -> 'a) -> 'a =
  fun cmd f ->
   match cmd with
-  | Axiom _ | Def _ | Solve _ -> f ()
+  | Axiom _ | Def _ | Solve _ | Echo _ -> f ()
   | Import { origin = `File file; _ } -> Global.HolesAllowed.run ~env:(Error (`File file)) f
   | _ -> Global.HolesAllowed.run ~env:(Error (`Command (to_string cmd))) f
 
@@ -817,6 +817,7 @@ let rec execute :
         type t = Scope_and_ctx : (string option, 'a) Bwv.t * ('a, 'b) Ctx.t -> t
       end in
       let open Scope_and_ctx in
+      History.do_then_undo @@ fun () ->
       let Scope_and_ctx (vars, ctx), run =
         match number with
         | None -> (Scope_and_ctx (Bwv.Emp, Ctx.empty), fun f -> f ())
@@ -856,7 +857,8 @@ let rec execute :
                  ^^ blank 1
                  ^^ pp_complete_term (Wrap uty) `None)));
           print_newline ();
-          print_newline ()
+          print_newline ();
+          Global.end_command (fun _ -> None)
       | _ -> fatal (Nonsynthesizing ("argument of " ^ if eval then "echo" else "synth")))
   | Notation { fixity; loc; pattern; head; args; _ } ->
       History.do_command @@ fun () ->

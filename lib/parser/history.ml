@@ -51,6 +51,19 @@ let do_command f =
       raise e)
   else f ()
 
+(* Similar, but *always* rewind the state as if the command "failed".  Used for non-undoable commands like "echo". *)
+let do_then_undo f =
+  if (S.get ()).undoing then (
+    S.modify (fun d -> { d with past = Snoc (d.past, d.present) });
+    Fun.protect f ~finally:(fun () ->
+        (* If the current command fails, we restore the state at the end of the previous command, including deleting any holes it created. *)
+        S.modify (fun d ->
+            match d.past with
+            | Snoc (past, present) -> { d with past; present }
+            | Emp -> fatal (Anomaly "nothing to unsave"));
+        Eternity.filter_now ()))
+  else f ()
+
 (* This is run *by* the 'undo' command.  Since 'undo' is not undoable, it is *not* wrapped in 'do_command'. *)
 let undo n =
   (try

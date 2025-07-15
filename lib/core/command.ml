@@ -148,15 +148,16 @@ let execute : t -> unit = function
       let p = Global.get_parametric () in
       Global.add name cty (`Axiom, (p :> [ `Parametric | `Nonparametric | `Maybe_parametric ]));
       Global.end_command (fun holes ->
-          Constant_assumed { name = PConstant name; parametric; holes })
+          Some (Constant_assumed { name = PConstant name; parametric; holes }))
   | Def defs ->
       Global.set_maybe_parametric ();
       let names, discrete, parametric = check_defs defs in
-      Global.end_command (fun holes -> Constant_defined { names; discrete; parametric; holes })
+      Global.end_command (fun holes ->
+          Some (Constant_defined { names; discrete; parametric; holes }))
   | Solve (global, status, termctx, tm, ty, callback) ->
       if not (Mode.read ()).interactive then fatal (Forbidden_interactive_command "solve");
       let ctm =
-        Global.run_command_with ~init:global (fun h -> Hole_solved h) @@ fun () ->
+        Global.run_command_with ~init:global (fun h -> Some (Hole_solved h)) @@ fun () ->
         let ctx = Norm.eval_ctx termctx in
         let ety = Norm.eval_term (Ctx.env ctx) ty in
         Check.check status ctx tm ety in

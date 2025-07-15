@@ -351,7 +351,7 @@ let do_holes make_msg =
     match d.parametric with
     | `Maybe_parametric when not (Dim.Endpoints.internal ()) -> `Must_be_parametric
     | _ -> d.parametric in
-  emit (make_msg (Bwd.length d.current_holes));
+  Option.iter emit (make_msg (Bwd.length d.current_holes));
   Mbwd.miter
     (fun [ (Meta.Wrap m, p, (loc : Asai.Range.t)) ] ->
       (* We intentionally do not "locate" this emission, since we want to display only the hole context and type, not its location in the source. *)

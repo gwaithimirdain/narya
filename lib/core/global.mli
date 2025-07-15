@@ -91,5 +91,5 @@ val set_nonparametric : Constant.t option -> unit
 val set_parametric : Constant.t -> unit
 val set_maybe_parametric : unit -> unit
 val get_parametric : unit -> [ `Parametric | `Nonparametric ]
-val end_command : (int -> Reporter.Code.t) -> unit
-val run_command_with : init:data -> (int -> Reporter.Code.t) -> (unit -> 'a) -> 'a
+val end_command : (int -> Reporter.Code.t option) -> unit
+val run_command_with : init:data -> (int -> Reporter.Code.t option) -> (unit -> 'a) -> 'a
