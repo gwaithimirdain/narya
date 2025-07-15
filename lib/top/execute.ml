@@ -59,28 +59,48 @@ let () = Flags.register_printer (function `Read -> Some "unhandled Flags.read ef
 module Loaded = struct
   type _ Effect.t +=
     | Add_to_files :
-        FilePath.filename * Scope.trie * Global.unit_entry * Compunit.t * bool
+        FilePath.filename
+        * Scope.trie
+        * Global.unit_entry
+        * Compunit.t
+        * (Compunit.t * FilePath.filename) Bwd.t
+        * bool
         -> unit Effect.t
     | Get_file :
         FilePath.filename
-        -> (Scope.trie * Global.unit_entry * Compunit.t * bool) option Effect.t
+        -> (Scope.trie
+           * Global.unit_entry
+           * Compunit.t
+           * (Compunit.t * FilePath.filename) Bwd.t
+           * float
+           * bool)
+           option
+           Effect.t
     | Add_to_scope : Scope.trie -> unit Effect.t
     | Get_scope : Scope.trie Effect.t
 
   open Effect.Deep
 
   let run f =
-    (* All the files that have been loaded so far in this run of the program, along with their export namespaces, compilation unit identifiers, and whether they were explicitly invoked on the command line. *)
+    (* All the files that have been loaded so far in this run of the program, along with their export namespaces, compilation unit identifiers, files that *they* import transitively, modification time when they were loaded, and whether they were explicitly invoked on the command line. *)
     let loaded_files :
-        (FilePath.filename, Scope.trie * Global.unit_entry * Compunit.t * bool) Hashtbl.t =
+        ( FilePath.filename,
+          Scope.trie
+          * Global.unit_entry
+          * Compunit.t
+          * (Compunit.t * FilePath.filename) Bwd.t
+          * float
+          * bool )
+        Hashtbl.t =
       Hashtbl.create 20 in
     (* The complete merged namespace of all the files explicitly given on the command line so far.  Imported into -e and -i.  We compute it lazily because if there is no -e or -i we don't need it.  (And also so that we won't try to read the flags before they're set.) *)
     let loaded_contents : Scope.trie Lazy.t ref = ref (lazy (Flags.read ()).init_visible) in
     let effc : type b a. b Effect.t -> ((b, a) continuation -> a) option = function
-      | Add_to_files (file, trie, globals, compunit, explicit) ->
+      | Add_to_files (file, trie, globals, compunit, old_imports, explicit) ->
+          let mtime = (FileUtil.stat file).modification_time in
           Some
             (fun k ->
-              Hashtbl.add loaded_files file (trie, globals, compunit, explicit);
+              Hashtbl.add loaded_files file (trie, globals, compunit, old_imports, mtime, explicit);
               continue k ())
       | Get_file file -> Some (fun k -> continue k (Hashtbl.find_opt loaded_files file))
       | Add_to_scope trie ->
@@ -98,8 +118,8 @@ module Loaded = struct
   let get_scope () = Effect.perform Get_scope
   let get_file file = Effect.perform (Get_file file)
 
-  let add_to_files file trie globals compunit explicit =
-    Effect.perform (Add_to_files (file, trie, globals, compunit, explicit))
+  let add_to_files file trie globals compunit old_imports explicit =
+    Effect.perform (Add_to_files (file, trie, globals, compunit, old_imports, explicit))
 end
 
 (* Save all the definitions from a given loaded compilation unit to a compiled disk file, along with other data such as the command-line type theory flags, the imported files, and the (supplied) export namespace. *)
@@ -155,7 +175,7 @@ let rec unmarshal (compunit : Compunit.t) (lookup : FilePath.filename -> Compuni
                 && not (FileUtil.test (Is_newer_than ofile) ifile))
               old_imports
           then (
-            (* If so, we load all those files right away.  We don't need their returned namespaces, since we aren't typechecking our compiled file. *)
+            (* If so, we load all those files (from their compiled versions, or make sure that they were already loaded) right away.  We don't need their returned namespaces, since we aren't typechecking our compiled file. *)
             Mbwd.miter
               (fun [ (_, ifile) ] ->
                 let _ = load_file ifile false in
@@ -194,7 +214,7 @@ let rec unmarshal (compunit : Compunit.t) (lookup : FilePath.filename -> Compuni
                     Trie.t) in
             (* We check whether the compiled file had any actions, and issue a warning if so *)
             if (Marshal.from_channel chan : bool) then emit (Actions_in_compiled_file ofile);
-            Some (trie, unit_entry))
+            Some (trie, unit_entry, old_imports))
           else None
       | Error flags ->
           emit (Incompatible_flags (file, flags));
@@ -211,14 +231,22 @@ and load_file file top =
   in
   let file = FilePath.reduce file in
   match Loaded.get_file file with
-  | Some (trie, globals, compunit, top') ->
-      (* If we already loaded that file, we just add it back into Global and return its saved export namespace.  We may need to add it to the 'all' namespace if it wasn't already there. *)
+  | Some (trie, globals, compunit, old_imports, mtime, top') ->
+      (* If we already loaded that file, first we check that neither it nor any of its imports have been modified more recently that when they were loaded. *)
+      if (FileUtil.stat file).modification_time > mtime then fatal (Library_modified file);
+      Bwd.iter
+        (fun (_, f) ->
+          if (FileUtil.stat file).modification_time > mtime then fatal (Library_modified f))
+        old_imports;
+      (* We add it back into Global, and to the 'all' namespace if it wasn't already there. *)
+      Global.add_unit compunit globals;
       if top && not top' then (
         Loaded.add_to_scope trie;
-        Loaded.add_to_files file trie globals compunit true);
+        (* Ensure that it's marked as having been loaded explicitly. *)
+        Loaded.add_to_files file trie globals compunit old_imports true);
       (* We also add it to the list of things imported by the current ambient file.  TODO: Should that go in execute_command Import? *)
       Loading.modify (fun s -> { s with imports = Snoc (s.imports, (compunit, file)) });
-      Global.add_unit compunit globals;
+      (* Return its saved export namespace. *)
       trie
   | None ->
       (* Otherwise, we have to load it.  First we check for circular dependencies. *)
@@ -231,7 +259,7 @@ and load_file file top =
       Loading.modify (fun s -> { s with imports = Snoc (s.imports, (compunit, file)) });
       (* Then we load it, in its directory and with itself added to the list of parents. *)
       let rename i =
-        let _, _, c, _ = Loaded.get_file i <|> Anomaly "missing file in load_file" in
+        let _, _, c, _, _, _ = Loaded.get_file i <|> Anomaly "missing file in load_file" in
         c in
       let trie, imports =
         Loading.run
@@ -244,13 +272,13 @@ and load_file file top =
             }
         @@ fun () ->
         (* If there's a compiled version, and we aren't in source-only mode, and this file wasn't specified explicitly on the command-line, we try loading the compiled version. *)
-        let trie, globals, which =
+        let trie, globals, old_imports, which =
           let flags = Flags.read () in
           match
             if flags.source_only || List.mem file flags.top_files then None
             else unmarshal compunit rename file
           with
-          | Some (trie, globals) -> (trie, globals, `Compiled)
+          | Some (trie, globals, old_imports) -> (trie, globals, old_imports, `Compiled)
           | None ->
               (* If we are in source-only mode, or this file was specified explicitly on the command-line, or if unmarshal failed (e.g. the compiled file is outdated), we load it from source. *)
               if not top then emit (Loading_file file);
@@ -287,10 +315,10 @@ and load_file file top =
                     with Sys_error _ -> ()));
               (* Save the compiled version *)
               marshal compunit file exported;
-              (exported, Global.find_unit compunit, `Source) in
+              (exported, Global.find_unit compunit, (Loading.get ()).imports, `Source) in
         (* Then we add it to the table of loaded files and (possibly) the content of top-level files. *)
         if not top then emit (File_loaded (file, which));
-        Loaded.add_to_files file trie globals compunit top;
+        Loaded.add_to_files file trie globals compunit old_imports top;
         if top then Loaded.add_to_scope trie;
         (trie, (Loading.get ()).imports) in
       (* We add the files that it imports to those of the current file, since the imports list is supposed to be transitive. *)

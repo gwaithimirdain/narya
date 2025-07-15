@@ -235,6 +235,7 @@ module Code = struct
     | Loading_file : string -> t
     | File_loaded : string * [ `Compiled | `Source ] -> t
     | Library_has_extension : string -> t
+    | Library_modified : string -> t
     | Invalid_filename : string -> t
     | No_such_file : string -> t
     | Cant_write_compiled_file : string -> t
@@ -388,6 +389,7 @@ module Code = struct
     | Loading_file _ -> Info
     | File_loaded _ -> Info
     | Library_has_extension _ -> Warning
+    | Library_modified _ -> Error
     | Invalid_filename _ -> Error
     | No_such_file _ -> Error
     | Cant_write_compiled_file _ -> Warning
@@ -557,6 +559,7 @@ module Code = struct
     | Incompatible_flags _ -> "W2303"
     | No_such_file _ -> "E2304"
     | Cant_write_compiled_file _ -> "W2305"
+    | Library_modified _ -> "E2306"
     (* echo *)
     | Actions_in_compiled_file _ -> "W2400"
     (* undo *)
@@ -983,6 +986,10 @@ module Code = struct
       | File_loaded (file, `Source) -> textf "file loaded: %s (source)" file
       | Library_has_extension file -> textf "putative library name '%s' has extension" file
       | Invalid_filename file -> textf "filename '%s' does not have 'ny' extension" file
+      | Library_modified file ->
+          textf
+            "library '%s'@ was@ already@ loaded@ in@ this@ session@ but@ has@ been@ modified@ since@ then:@ you@ must@ restart@ Narya@ to@ reload@ it"
+            file
       | No_such_file file -> textf "error opening file: %s" file
       | Cant_write_compiled_file file -> textf "can't write compiled file: %s" file
       | Incompatible_flags (file, flags) ->
