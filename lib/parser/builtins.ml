@@ -150,46 +150,70 @@ let get_var : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string option 
   | Placeholder _ -> None
   | _ -> fatal Parse_error
 
-let get_var_asc : type lt ls rt rs.
-    (lt, ls, rt, rs) parse located -> string option * wrapped_parse option =
- fun v ->
-  match v.value with
-  | Notn ((Asc, _), n) -> (
-      match args n with
-      | [ Term x; Token (Colon, _); Term ty ] -> (get_var x, Some (Wrap ty))
-      | _ -> invalid ?loc:v.loc "colon")
-  | _ -> (get_var v, None)
+(* Similarly, but could be a sequence of variables like "x y z", returned as a Bwd. *)
+let rec get_var_list : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string option Bwd.t =
+ fun { value; loc } ->
+  with_loc loc @@ fun () ->
+  match value with
+  | App { fn; arg; _ } -> Snoc (get_var_list fn, get_var arg)
+  | Ident ([ x ], _) when Lexer.valid_var x -> Snoc (Emp, Some x)
+  | Ident (xs, _) -> fatal (Invalid_variable xs)
+  | Placeholder _ -> Snoc (Emp, None)
+  | _ -> fatal Parse_error
 
-(* Like get_var, but allow it to be enclosed in braces to mean implicit, and/or to be ascribed to a type (in parentheses or braces). *)
+(* Get a list of variables as above, perhaps ascribed. *)
+let get_var_asc : type lt ls rt rs.
+    asc_req:bool -> (lt, ls, rt, rs) parse located -> string option list * wrapped_parse option =
+ fun ~asc_req v ->
+  match (v.value, asc_req) with
+  | Notn ((Asc, _), n), _ -> (
+      match args n with
+      | [ Term x; Token (Colon, _); Term ty ] -> (Bwd.to_list (get_var_list x), Some (Wrap ty))
+      | _ -> invalid ?loc:v.loc "colon")
+  | _, false -> ([ get_var v ], None)
+  | _, true -> fatal ?loc:v.loc Parse_error
+
+(* Get one variable bare, one variable in braces, or one or more variables enclosed in parentheses or braces and ascribed. *)
 let get_var_asc_implicit : type lt ls rt rs.
     (lt, ls, rt, rs) parse located ->
-    (string option * wrapped_parse option) * [ `Implicit | `Explicit ] =
+    (string option list * wrapped_parse option) * [ `Implicit | `Explicit ] =
  fun v ->
   match v.value with
   | Notn ((Braces, _), n) -> (
       match args n with
-      | [ Token (LBrace, _); Term w; Token (RBrace, _) ] -> (get_var_asc w, `Implicit)
-      | _ -> invalid ?loc:v.loc "braces")
+      | [ Token (LBrace, _); Term w; Token (RBrace, _) ] -> (get_var_asc ~asc_req:false w, `Implicit)
+      | _ -> fatal ?loc:v.loc Parse_error)
   | Notn ((Parens, _), n) -> (
       match args n with
-      | [ Token (LParen, _); Term w; Token (RParen, _) ] -> (get_var_asc w, `Explicit)
+      | [ Token (LParen, _); Term w; Token (RParen, _) ] -> (get_var_asc ~asc_req:true w, `Explicit)
       | _ ->
-          (* This isn't invalid, since the user could have written a tuple. *)
+          (* This isn't the bug "invalid", since the user could have (mistakenly) written a tuple. *)
           fatal ?loc:v.loc Parse_error)
-  | _ -> ((get_var v, None), `Explicit)
+  | _ -> (([ get_var v ], None), `Explicit)
 
 (* Get a sequence of variables, as in the domain of an abstraction, some possibly enclosed in braces to mean they are implicit. *)
 let rec get_vars : type n lt ls rt rs.
     (string option, n) Bwv.t -> (lt, ls, rt, rs) parse located -> n extended_ctx =
  fun ctx vars ->
+  let rec go :
+      n extended_ctx ->
+      Asai.Range.t option ->
+      string option list ->
+      wrapped_parse option ->
+      [ `Implicit | `Explicit ] ->
+      n extended_ctx =
+   fun extctx loc xs dom implicit ->
+    match (extctx, xs) with
+    | Extctx (ab, locs, ctx), x :: xs ->
+        go (Extctx (Suc ab, Snoc (locs, (loc, dom, implicit)), Bwv.snoc ctx x)) loc xs dom implicit
+    | _, [] -> extctx in
   match vars.value with
   | App { fn; arg; _ } ->
-      let (Extctx (ab, locs, ctx)) = get_vars ctx fn in
-      let (x, dom), implicit = get_var_asc_implicit arg in
-      Extctx (Suc ab, Snoc (locs, (arg.loc, dom, implicit)), Bwv.snoc ctx x)
+      let (xs, dom), implicit = get_var_asc_implicit arg in
+      go (get_vars ctx fn) arg.loc xs dom implicit
   | _ ->
-      let (x, dom), implicit = get_var_asc_implicit vars in
-      Extctx (Suc Zero, Snoc (Emp, (vars.loc, dom, implicit)), Bwv.snoc ctx x)
+      let (xs, dom), implicit = get_var_asc_implicit vars in
+      go (Extctx (Zero, Emp, ctx)) vars.loc xs dom implicit
 
 let rec raw_lam : type a b ab.
     (string option, ab) Bwv.t ->
