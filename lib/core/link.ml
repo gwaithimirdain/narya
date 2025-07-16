@@ -58,7 +58,7 @@ and canonical : type a. (Compunit.t -> Compunit.t) -> a canonical -> a canonical
   match can with
   | Data { indices; constrs; discrete } ->
       Data { indices; constrs = Abwd.map (dataconstr f) constrs; discrete }
-  | Codata { eta; opacity; dim; termctx = tc; fields; fibrancy = fib } ->
+  | Codata { eta; opacity; dim; termctx = tc; fields; fibrancy = fib; is_glue } ->
       let trr =
         Mbwd.map
           (fun (StructfieldAbwd.Entry (fld, x)) -> StructfieldAbwd.Entry (fld, structfield f x))
@@ -86,6 +86,7 @@ and canonical : type a. (Compunit.t -> Compunit.t) -> a canonical -> a canonical
               (fun (CodatafieldAbwd.Entry (fld, x)) -> CodatafieldAbwd.Entry (fld, codatafield f x))
               fields;
           fibrancy = { fib with ty = term f fib.ty; trr; trl; liftr; liftl };
+          is_glue;
         }
 
 and structfield : type n a s i et.

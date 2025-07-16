@@ -1871,7 +1871,9 @@ and with_codata_so_far : type a b n c et.
         (CubeOf.build dim { build = (fun _ -> Ctx.Binding.error (Accumulated (msg, Emp))) }, None)
   in
   let codataterm =
-    Term.Canonical (Codata { eta; opacity; dim; fields = checked_fields; termctx; fibrancy }) in
+    Term.Canonical
+      (Codata { eta; opacity; dim; fields = checked_fields; termctx; fibrancy; is_glue = None })
+  in
   run_with_definition h (hyp codataterm) errs @@ fun () -> cont domvars codataterm
 
 and check_codata : type a b n.
@@ -1943,7 +1945,8 @@ and check_record : type a f1 f2 f af d acd b n.
       | Snoc _ -> fatal (Accumulated ("check_record", errs))
       | Emp ->
           let fields, Fibrancy fibrancy = (checked_fields, fibrancy) in
-          Term.Canonical (Codata { eta = Eta; opacity; dim; fields; termctx = None; fibrancy }))
+          Term.Canonical
+            (Codata { eta = Eta; opacity; dim; fields; termctx = None; fibrancy; is_glue = None }))
   | Ext (None, _, _) -> fatal (Anomaly "unnamed field in check_record")
   | Ext (Some name, rty, raw_fields) ->
       with_codata_so_far status Eta ctx opacity dim tyargs checked_fields fibrancy
