@@ -333,7 +333,7 @@ let install_fib_pi trie =
   | _ -> fatal (Anomaly "fib_pi has wrong shape"));
   trie
 
-let install_bisim =
+let install_bisim trie =
   def "isBisim" "(A : Type) (B : Type) (R : A → B → Type) → Type"
     "A B R ↦ codata [
 | x .trr : A → B
@@ -344,74 +344,20 @@ let install_bisim =
   : (a0 : A.0) (b0 : B.0) (r0 : R.0 a0 b0) (a1 : A.1) (b1 : B.1)
     (r1 : R.1 a1 b1)
     → isBisim (A.2 a0 a1) (B.2 b0 b1) (a2 b2 ↦ R.2 a2 b2 r0 r1) ]"
+    trie
 
-let install_glue zero one trie =
-  let ctx = Ctx.empty in
-  let glue = Constant.make Compunit.basic in
-  Scope.run ~init_visible:trie @@ fun () ->
-  let (Wrap pty) =
-    Parse.Term.final
-      (Parse.Term.parse
-         (`String
-            {
-              content =
-                "(A : Type) (B : Type) (R : A → B → Type) (Rb : isBisim A B R) → Id Type A B";
-              title = None;
-            })) in
-  let rty = process Emp pty in
-  let cty = check (Kinetic `Nolet) ctx rty (universe D.zero) in
-  Global.add glue cty (`Axiom, `Parametric);
-  let trie = Scope.Mod.union_singleton ~prefix:Emp trie ([ "glue" ], ((`Constant glue, None), ())) in
-  (* We construct this term by hand rather than by parsing and checking, to bypass the block on Gel-types under HOTT. *)
-  let open Term in
-  let aname = singleton_variables D.zero (Some "A") in
-  let bname = singleton_variables D.zero (Some "B") in
-  let rname = singleton_variables D.zero (Some "R") in
-  let rbname = singleton_variables D.zero (Some "Rb") in
-  let rvar = Var (Index (Later (Later Now), id_sface D.zero)) in
-  let xvar = Var (Index (Now, zero)) in
-  let yvar = Var (Index (Now, one)) in
-  let entry =
-    CodatafieldAbwd.Entry (Field.intern "unglue" D.zero, Lower (app (app rvar xvar) yvar)) in
-  let gtm =
-    app
-      (app
-         (app
-            (app (Const glue) (Var (Index (Later (Later (Later Now)), id_sface D.zero))))
-            (Var (Index (Later (Later Now), id_sface D.zero))))
-         (Var (Index (Later Now, id_sface D.zero))))
-      (Var (Index (Now, id_sface D.zero))) in
-  let ctxlen =
-    Plusmap.OfDom.Word (Plusmap.OfDom.Suc (Suc (Suc (Suc (Zero, D.zero), D.zero), D.zero), D.zero))
-  in
-  let (Fibrancy fibrancy) = Fibrancy.Codata.empty Hott.dim Hott.dim ctxlen Eta gtm in
-  (* TODO: Add a field *)
-  let ctm =
-    Lam
-      ( aname,
-        Lam
-          ( bname,
-            Lam
-              ( rname,
-                Lam
-                  ( rbname,
-                    Canonical
-                      (Codata
-                         {
-                           eta = Eta;
-                           opacity = `Transparent `Unlabeled;
-                           dim = Hott.dim;
-                           termctx = None;
-                           fields = Snoc (Emp, entry);
-                           fibrancy;
-                         }) ) ) ) ) in
-  Global.set glue (`Defined ctm, `Parametric);
+let install_glue trie =
+  let trie =
+    trie
+    |> def "glue" "(A : Type) (B : Type) (R : A → B → Type) (Rb : isBisim A B R) → Id Type A B"
+         "A B R Rb ↦ sig x y ↦ ( unglue : R x y )" in
+  Check.gel_ok := false;
   trie
 
 let install trie =
   match Hott.faces () with
   | None -> trie
-  | Some (zero, one, _two) ->
+  | Some (_zero, _one, _two) ->
       let _ = trie |> install_isfibrant |> install_fib_pi in
       (* We don't expose isFibrant to the user *)
-      trie |> install_bisim |> install_glue zero one
+      trie |> install_bisim |> install_glue

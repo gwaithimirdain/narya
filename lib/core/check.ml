@@ -265,6 +265,9 @@ type (_, _, _) meta_tel =
       string option * ('a, 'b, potential) Meta.t * (('b, D.zero) snoc, 'c, 'bc) meta_tel
       -> ('b, 'c Fwn.suc, 'bc) meta_tel
 
+(* In HOTT mode, the user isn't allowed to define gel-types, so we bail out at typechecking time if we detect one.  However, we do want to allow *ourselves* to define glue as a Gel-type later on, so we start out this flag as true and then set it (permanently) to false later. *)
+let gel_ok = ref true
+
 (* Check a term or case tree (depending on the energy: terms are kinetic, case trees are potential).  The ?discrete parameter is supplied if the term we are currently checking might be a discrete datatype, in which case it is a set of all the currently-being-defined mutual constants.  Most term-formers are nondiscrete, so they can just ignore this argument and make their recursive calls without it. *)
 let rec check : type a b s.
     ?discrete:unit Constant.Map.t ->
@@ -609,8 +612,8 @@ let rec check : type a b s.
     | Codata fields, Potential (head, apps, _) -> (
         match view_type ~severity ty "typechecking codata" with
         | Canonical (_, UU dim, ins, tyargs) -> (
-            match (D.compare_zero dim, Endpoints.hott ()) with
-            | Pos _, Some _ ->
+            match (D.compare_zero dim, Endpoints.hott (), !gel_ok) with
+            | Pos _, Some _, false ->
                 fatal (Unimplemented "general higher-dimensional types in HOTT: use glue")
             | _ ->
                 let Eq = eq_of_ins_zero ins in
@@ -632,8 +635,8 @@ let rec check : type a b s.
     | Record (xs, fields, opacity), Potential (head, apps, _) -> (
         match view_type ~severity ty "typechecking record" with
         | Canonical (_, UU dim, ins, tyargs) -> (
-            match (D.compare_zero dim, Endpoints.hott ()) with
-            | Pos _, Some _ ->
+            match (D.compare_zero dim, Endpoints.hott (), !gel_ok) with
+            | Pos _, Some _, false ->
                 fatal (Unimplemented "general higher-dimensional types in HOTT: use glue")
             | _ ->
                 let Eq = eq_of_ins_zero ins in
