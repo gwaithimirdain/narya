@@ -209,6 +209,56 @@
    ￮ constant univalence defined
   
 
+  $ narya -hott -v bootstrap.ny
+   ￫ info[I0000]
+   ￮ constant isFibrant defined
+  
+   ￫ info[I0000]
+   ￮ constant eq defined
+  
+   ￫ info[I0000]
+   ￮ constant eq.trr defined
+  
+   ￫ info[I0000]
+   ￮ constant eq.trr2 defined
+  
+   ￫ info[I0000]
+   ￮ constant rtr defined
+  
+   ￫ info[I0000]
+   ￮ constant Id_eq defined
+  
+   ￫ info[I0000]
+   ￮ constant Id_rtr defined
+  
+   ￫ info[I0000]
+   ￮ constant fib_rtr defined
+  
+   ￫ info[I0000]
+   ￮ constant id_pi_iso defined
+  
+   ￫ info[I0000]
+   ￮ constant fib_pi defined
+  
+   ￫ info[I0000]
+   ￮ constant sym_rtr defined
+  
+   ￫ info[I0000]
+   ￮ constant isbisim_rtr defined
+  
+   ￫ info[I0000]
+   ￮ constant fib_type defined
+  
+   ￫ info[I0000]
+   ￮ constant pre_univalence defined
+  
+   ￫ info[I0000]
+   ￮ constant glue_rtr defined
+  
+   ￫ info[I0000]
+   ￮ constant fib_glue defined
+  
+
   $ narya -hott pi.ny
   B₂ (A₂ .liftl a₁) .trr (f₀ (A₂ .trl a₁))
     : B₁ a₁
