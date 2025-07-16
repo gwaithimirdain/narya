@@ -599,13 +599,14 @@ and field : type n k nk s. s value -> k Field.t -> (nk, n, k) insertion -> s eva
             (No_such_field (`Other (Dump.Val tm), `Ins (fld, fldins))))
 
 and struct_field : type s et n k nk.
+    ?unset_ok:bool ->
     string ->
     s energy ->
     (nk * s * et) StructfieldAbwd.t ->
     k Field.t ->
     (nk, n, k) insertion ->
     s evaluation =
- fun err energy fields fld fldins ->
+ fun ?(unset_ok = false) err energy fields fld fldins ->
   match StructfieldAbwd.find_opt fields fld with
   | Found (Lower (v, _)) -> force_eval v
   | Found (Higher (lazy { vals; intrinsic; _ })) -> (
@@ -613,7 +614,7 @@ and struct_field : type s et n k nk.
       | Eq -> (
           match InsmapOf.find fldins vals with
           | Some v -> force_eval v
-          | None -> fatal (Anomaly (err ^ " field value unset")))
+          | None -> if unset_ok then Unrealized else fatal (Anomaly (err ^ " field value unset")))
       | Neq ->
           fatal (Dimension_mismatch (err ^ " field intrinsic", intrinsic, cod_right_ins fldins)))
   | _ -> (
@@ -1219,7 +1220,8 @@ and inst_fibrancy_fields : type m n mn.
               (* TODO: Is it always correct to use the identity fldins? *)
               let mn_1 = D.plus_assocl m_n n_1 m_n1 in
               let fldins = id_ins (D.plus_out m m_n) mn_1 in
-              let idfld = struct_field "fibrancy" Potential fields Fibrancy.fid fldins in
+              let idfld =
+                struct_field ~unset_ok:true "fibrancy" Potential fields Fibrancy.fid fldins in
               let (Snoc (Snoc (Emp, xcube), ycube)) = TubeOf.to_cube_bwv one l outer in
               let v =
                 match
