@@ -33,6 +33,18 @@ let pi :
     (D.zero * ((emp, D.zero) snoc, D.zero) snoc * potential * no_eta) StructfieldAbwd.t option ref =
   ref None
 
+(* Glue types *)
+
+let glue :
+    (Hott.dim
+    * ((((emp, D.zero) snoc, D.zero) snoc, D.zero) snoc, D.zero) snoc
+    * potential
+    * no_eta)
+    StructfieldAbwd.t
+    option
+    ref =
+  ref None
+
 (* Codata types *)
 
 (* We compute these directly as terms.  This puts the onus on us to define them in a well-typed way, but we try our best to copy the definitions that can be given (and typechecked) internally using the higher coinductive isFibrant.  The outer laziness is only to delay them until we're inside Dim.Endpoints.run.  Eventually when the HOTT dimension is built-in and always present, that won't be necessary (but we will still need the LazyHigher wrapper around the 'id' field in some cases). *)
@@ -125,9 +137,8 @@ module Codata = struct
       match singleton_pbij p Hott.singleton with
       (* This is the "tr.e" case when we just pass off to the type of the field. *)
       | Left -> plusfam (Lam (xname, Struct { dim; eta; energy = Potential; fields }))
-      (* This is the tr.1/tr.2 case when we use the bisimulation data supplied.  The insertion is an insertion into g, the glue dimension. *)
-      | Right _ins -> None
-     (* pluszero @@ Lam (xname, _) *) in
+      (* This is the tr.1/tr.2 case when we should use the bisimulation data supplied.  The insertion is an insertion into g, the glue dimension.  Currently we don't do anything here, however, because the only case when this could happen is for a glue type, and we deal with those specially by bootstrapping their fibrancy and insesrting it using the is_glue marker.  *)
+      | Right _ins -> None in
     let trr = PlusPbijmap.build glue Hott.dim { build = (fun p -> tr `Right trr p) } in
     let trl = PlusPbijmap.build glue Hott.dim { build = (fun p -> tr `Left trl p) } in
     let dimh = D.plus_out dim dimh in
@@ -140,8 +151,7 @@ module Codata = struct
      fun _which fields p ->
       match singleton_pbij p Hott.singleton with
       | Left -> plusfam (Lam (xname, Struct { dim = dimh; eta; energy = Potential; fields }))
-      | Right _ins -> None
-     (* pluszero @@ Lam (xname, _) *) in
+      | Right _ins -> None in
     let liftr = PlusPbijmap.build glue Hott.dim { build = (fun p -> lift `Right liftr p) } in
     let liftl = PlusPbijmap.build glue Hott.dim { build = (fun p -> lift `Left liftl p) } in
     let id : type r. (g, Hott.dim, r) pbij -> (r, b) PlusFam.t =
@@ -201,10 +211,11 @@ module Codata = struct
                        (yname, Struct { dim = glue; eta = Noeta; energy = Potential; fields = fib })
                    )
           | Pos _ ->
-              (* The bisim .id case *)
+              (* The bisim .id case.  Again, this would be only for glue, so we ignore it. *)
               None)
-      | Right _ins -> None
-     (* pluszero @@ Lam (xname, _) *) in
+      | Right _ins ->
+          (* Would also be only for glue. *)
+          None in
     let id = lazy (PlusPbijmap.build glue Hott.dim { build = (fun p -> id p) }) in
     Emp
     <: StructfieldAbwd.Entry (ftrr, Higher trr)
@@ -216,7 +227,14 @@ module Codata = struct
   (* TODO: It would be nice to memoize the "finish" computation.  But we can't store it as a mutable field inside a Term, because it contains a LazyHigher and so is not marshalable.  Maybe we could use a hashtable, but it would be tricky to ensure the output types depend correctly on the input ones.  I guess we could have a mutable Map depending on 'n' and 'a' and then hashtables inside of that.  But then it starts to get questionable how much time would be saved.  Let's wait until we do some profiling and see if this is actually a pain point. *)
   let finished : type n c a nh ha et.
       (n, c, a, nh, ha, et) codata_args -> (n * a * potential * no_eta) StructfieldAbwd.t =
-   fun c -> finish c.fields c.fibrancy
+   fun c ->
+    (* Fibrancy of glue-types is bootstrapped later and saved to the ref above, so here we detect whether the type is glue and insert that value if so. *)
+    match c.is_glue with
+    | Some Glue -> (
+        match !glue with
+        | None -> Emp
+        | Some fields -> fields)
+    | None -> finish c.fields c.fibrancy
 end
 
 let universe : (D.zero * emp * potential * no_eta) StructfieldAbwd.t option Lazy.t =

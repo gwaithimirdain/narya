@@ -6,6 +6,10 @@ open Dimbwd
 include Variables
 include Energy
 
+type (_, _, _) is_glue =
+  | Glue :
+      (Hott.dim, ((((emp, D.zero) snoc, D.zero) snoc, D.zero) snoc, D.zero) snoc, has_eta) is_glue
+
 (* ******************** Typechecked terms ******************** *)
 
 (* Typechecked, but unevaluated, terms.  Use De Bruijn indices that are intrinsically well-scoped by hctxs, but are no longer separated into synthesizing and checking; hence without type ascriptions.  Note that extending an hctx by a dimension 'k means adding a whole cube of new variables, which are indexed by the position of that dimension together with a strict face of it.  (At user-level, those variables may all be accessed as faces of one "cube variable", or they may have independent names, but internally there is no difference.)
@@ -115,6 +119,7 @@ module rec Term : sig
     termctx : ('c, ('a, 'n) snoc) termctx option;
     fields : ('a * 'n * 'et) CodatafieldAbwd.t;
     fibrancy : ('n, 'n, 'nh, 'a, 'ha, 'et) codata_fibrancy;
+    is_glue : ('n, 'a, 'et) is_glue option;
   }
 
   and ('g, 'n, 'nh, 'b, 'hb, 'et) codata_fibrancy = {
@@ -297,6 +302,8 @@ end = struct
     fields : ('a * 'n * 'et) CodatafieldAbwd.t;
     (* We partially compute the fibrancy fields at typechecking time, although we don't finish the computation until we need it.  Since the fibrancy fields include those of all the higher identity types, if we did all the computation eagerly it would be infinite, and if we made it Lazy in the naive way then it wouldn't be marshalable.  *)
     fibrancy : ('n, 'n, 'nh, 'a, 'ha, 'et) codata_fibrancy;
+    (* Fibrancy of glue-types is computed separately and stored, so we remember whether this is a glue-type. *)
+    is_glue : ('n, 'a, 'et) is_glue option;
   }
 
   and ('g, 'n, 'nh, 'b, 'hb, 'et) codata_fibrancy = {

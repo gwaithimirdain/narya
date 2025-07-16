@@ -965,3 +965,105 @@ Gel is not allowed
      ^ unimplemented: general higher-dimensional types in HOTT: use glue
   
   [1]
+
+  $ narya -hott -v glue.ny
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom B assumed
+  
+   ￫ info[I0001]
+   ￮ axiom R assumed
+  
+   ￫ info[I0001]
+   ￮ axiom Rb assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a assumed
+  
+   ￫ info[I0000]
+   ￮ constant glue.trr defined
+  
+   ￫ info[I0000]
+   ￮ constant glue.liftr defined
+  
+   ￫ info[I0001]
+   ￮ axiom b assumed
+  
+   ￫ info[I0000]
+   ￮ constant glue.trl defined
+  
+   ￫ info[I0000]
+   ￮ constant glue.liftl defined
+  
+
+
+  $ narya -hott glue2.ny
+  ap glue A₂ B₂ R₂ Rb₂ .trr.1
+    : {H₀ : A₀} {H₁ : A₁} (H₂ : A₂ H₀ H₁) →⁽ᵉ⁾ B₂ (Rb₀ .trr H₀) (Rb₁ .trr H₁)
+  
+  ap glue A₂ B₂ R₂ Rb₂ .trl.1
+    : {H₀ : B₀} {H₁ : B₁} (H₂ : B₂ H₀ H₁) →⁽ᵉ⁾ A₂ (Rb₀ .trl H₀) (Rb₁ .trl H₁)
+  
+  ap glue A₂ B₂ R₂ Rb₂ .liftr.1
+    : {x₀₀ : A₀} {x₀₁ : A₁} (x₀₂ : A₂ x₀₀ x₀₁)
+      →⁽ᵉ⁾ glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂ x₀₂ (Rb₂ .trr x₀₂) (_ ≔ Rb₀ .liftr x₀₀)
+             (_ ≔ Rb₁ .liftr x₀₁)
+  
+  ap glue A₂ B₂ R₂ Rb₂ .liftl.1
+    : {x₁₀ : B₀} {x₁₁ : B₁} (x₁₂ : B₂ x₁₀ x₁₁)
+      →⁽ᵉ⁾ glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂ (Rb₂ .trl x₁₂) x₁₂ (_ ≔ Rb₀ .liftl x₁₀)
+             (_ ≔ Rb₁ .liftl x₁₁)
+  
+  sym (ap glue A₂ B₂ R₂ Rb₂) .trr.1
+    : {H₀ : A₀} {H₁ : B₀} (H₂ : glue A₀ B₀ R₀ Rb₀ H₀ H₁)
+      →⁽ᵉ⁾ glue A₁ B₁ R₁ Rb₁ (A₂ .trr H₀) (B₂ .trr H₁)
+  
+  sym (ap glue A₂ B₂ R₂ Rb₂) .trl.1
+    : {H₀ : A₁} {H₁ : B₁} (H₂ : glue A₁ B₁ R₁ Rb₁ H₀ H₁)
+      →⁽ᵉ⁾ glue A₀ B₀ R₀ Rb₀ (A₂ .trl H₀) (B₂ .trl H₁)
+  
+  sym (ap glue A₂ B₂ R₂ Rb₂) .liftr.1
+    : {x₀₀ : A₀} {x₀₁ : B₀} (x₀₂ : glue A₀ B₀ R₀ Rb₀ x₀₀ x₀₁)
+      →⁽ᵉ⁾ sym (glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂) x₀₂ {A₂ .trr x₀₀} {B₂ .trr x₀₁}
+             (_ ≔ R₂ (A₂ .liftr x₀₀) (B₂ .liftr x₀₁) .trr (x₀₂ .unglue))
+             (A₂ .liftr x₀₀) (B₂ .liftr x₀₁)
+  
+  sym (ap glue A₂ B₂ R₂ Rb₂) .liftl.1
+    : {x₁₀ : A₁} {x₁₁ : B₁} (x₁₂ : glue A₁ B₁ R₁ Rb₁ x₁₀ x₁₁)
+      →⁽ᵉ⁾ sym (glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂) {A₂ .trl x₁₀} {B₂ .trl x₁₁}
+             (_ ≔ R₂ (A₂ .liftl x₁₀) (B₂ .liftl x₁₁) .trl (x₁₂ .unglue)) x₁₂
+             (A₂ .liftl x₁₀) (B₂ .liftl x₁₁)
+  
+  ap glue A₂ B₂ R₂ Rb₂ a₂ b₂ .trr
+    : glue A₀ B₀ R₀ Rb₀ a₀ b₀ → glue A₁ B₁ R₁ Rb₁ a₁ b₁
+  
+  ap glue A₂ B₂ R₂ Rb₂ a₂ b₂ .trl
+    : glue A₁ B₁ R₁ Rb₁ a₁ b₁ → glue A₀ B₀ R₀ Rb₀ a₀ b₀
+  
+  ap glue A₂ B₂ R₂ Rb₂ a₂ b₂ .liftr
+    : (x₀ : glue A₀ B₀ R₀ Rb₀ a₀ b₀)
+      → glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂ a₂ b₂ x₀ (_ ≔ R₂ a₂ b₂ .trr (x₀ .unglue))
+  
+  ap glue A₂ B₂ R₂ Rb₂ a₂ b₂ .liftl
+    : (x₁ : glue A₁ B₁ R₁ Rb₁ a₁ b₁)
+      → glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂ a₂ b₂ (_ ≔ R₂ a₂ b₂ .trl (x₁ .unglue)) x₁
+  
+  sym (ap glue A₂ B₂ R₂ Rb₂) g₀ g₁ .trr
+    : A₂ a₀ a₁ → B₂ b₀ b₁
+  
+  sym (ap glue A₂ B₂ R₂ Rb₂) g₀ g₁ .trl
+    : B₂ b₀ b₁ → A₂ a₀ a₁
+  
+  sym (ap glue A₂ B₂ R₂ Rb₂) g₀ g₁ .liftr
+    : (x₀ : A₂ a₀ a₁)
+      → sym (glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂) g₀ g₁ x₀
+          (Rb₂ .id a₀ b₀ r₀ a₁ b₁ r₁ .trr x₀)
+  
+  sym (ap glue A₂ B₂ R₂ Rb₂) g₀ g₁ .liftl
+    : (x₁ : B₂ b₀ b₁)
+      → sym (glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂) g₀ g₁ (Rb₂ .id a₀ b₀ r₀ a₁ b₁ r₁ .trl x₁)
+          x₁
+  
+
