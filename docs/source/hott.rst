@@ -42,18 +42,19 @@ In theory, these operations should all compute based on the type ``A₂`` or ``A
 
 - Function types
 - Zero-dimensional record types and codatatypes without higher fields
+- Glue types (see below)
 
 
 Glue types and univalence
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The final change in HOTT mode is that gel types are replaced by glue types.  Specifically, it is no longer possible to define elements of ``Id Type A B`` as explicit record or codata types.  Instead, there is a built-in constant ``glue`` with the following type:
+The final change in HOTT mode is that gel types are replaced by glue types.  Specifically, it is no longer possible to define elements of ``Id Type A B`` as explicit record or codata types: all user-defined record and codata types are zero-dimensional.  Instead, there is a built-in constant ``glue`` with the following type:
 
 .. code-block:: none
 
    glue : (A B : Type) (R : A → B → Type) (Rb : isBisim A B R) → Id Type A B
 
-That is, ``glue`` is like the ``Gel`` that under parametricity can be defined as a higher-dimensional record type, but it also requires the given correspondence ``R`` to be a *bisimulation* of types.  Here ``isBisim`` is another built-in constant defined as follows:
+That is, ``glue`` is like the ``Gel`` that under parametricity can be defined as a higher-dimensional record type, but it also requires the given correspondence ``R`` to be a *bisimulation* of types.  Here ``isBisim`` is another built-in constant, but its definition could have been given by a user:
 
 .. code-block:: none
 
@@ -66,7 +67,7 @@ That is, ``glue`` is like the ``Gel`` that under parametricity can be defined as
      : (a0 : A.0) (b0 : B.0) (r0 : R.0 a0 b0) (a1 : A.1) (b1 : B.1) (r1 : R.1 a1 b1)
        → isBisim (A.2 a0 a1) (B.2 b0 b1) (a2 b2 ↦ R.2 a0 a1 a2 b0 b1 b2 r0 r1) ]
 
-Note that it has four ordinary fields that are non-recursive, and one higher field that is recursive.  It is possible to prove that any equivalence gives rise to a bisimulation, and thereby deduce univalence; this can be found in `test/black/hott.t/univalence.ny <https://github.com/gwaithimirdain/narya/tree/master/test/black/hott.t/univalence.ny>`_.  Eventually, the fields of ``isBisim`` will be used to compute the built-in operations ``trr`` on ``glue`` types, making univalence computational.
+Note that it has four ordinary fields that are non-recursive, and one higher field that is recursive.  It is possible to prove that any equivalence gives rise to a bisimulation, and thereby deduce univalence; this can be found in `test/black/hott.t/univalence.ny <https://github.com/gwaithimirdain/narya/tree/master/test/black/hott.t/univalence.ny>`_.  The fields of ``isBisim`` are then used to compute the built-in operations such as ``trr`` on ``glue`` types, making univalence computational; the corecursive higher field ``id`` is used to deal with higher degeneracies of ``glue``.
 
 The syntax of ``glue`` and ``isBisim`` is provisional and may change in the future.
 
