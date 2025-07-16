@@ -2147,7 +2147,7 @@ let pp_record _triv obs =
           ^^ group
                (pp_ws `Break wssig
                ^^ Token.pp (Op "#")
-               ^^ pp_ws `Nobreak wshash
+               ^^ pp_ws `None wshash
                ^^ Token.pp LParen
                ^^ pp_ws `None wslattr
                ^^ pattr
