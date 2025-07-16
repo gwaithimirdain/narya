@@ -955,3 +955,13 @@
     : M⁽ᵉ⁾ A₂ B₂ (u₀ .send b₀)
         (refl M A₂ B₂ .trr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁)))
   
+
+Gel is not allowed
+
+  $ narya -hott -e "def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig x y ↦ ( ungel : R x y )"
+   ￫ error[E0100]
+   ￭ command-line exec string
+   1 | def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig x y ↦ ( ungel : R x y )
+     ^ unimplemented: general higher-dimensional types in HOTT: use glue
+  
+  [1]
