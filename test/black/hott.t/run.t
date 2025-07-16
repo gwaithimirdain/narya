@@ -1117,3 +1117,16 @@ Gel is not allowed
           x₁
   
 
+  $ narya -hott flip.ny
+  f.
+    : 𝔹
+  
+  t.
+    : 𝔹
+  
+  (_ ≔ ())
+    : glue 𝔹 𝔹 flips (bisim_of_11 𝔹 𝔹 flips flips11) t. f.
+  
+  (_ ≔ ())
+    : glue 𝔹 𝔹 flips (bisim_of_11 𝔹 𝔹 flips flips11) f. t.
+  
