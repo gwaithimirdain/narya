@@ -1152,13 +1152,14 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
  fun cmd ->
   let open PPrint in
   (* Indent when inside of sections. *)
-  let indent = ref (Scope.count_sections () * 2) in
-  let doc, ws =
+  let indent = Scope.count_sections () * 2 in
+  let indent, doc, ws =
     match cmd with
     | Axiom { wsaxiom; nonparam; name; loc = _; wsname; parameters; wscolon; ty = Wrap ty } ->
         let pparams, wparams = pp_parameters wsname parameters in
         let ty, rest = split_ending_whitespace ty in
-        ( group
+        ( indent,
+          group
             (hang 2
                (Token.pp Axiom
                ^^ pp_ws `Nobreak wsaxiom
@@ -1173,10 +1174,13 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
                ^^ pp_ws `Nobreak wscolon
                ^^ pp_complete_term (Wrap ty) `None)),
           rest )
-    | Def defs -> pp_defs Def None defs empty
+    | Def defs ->
+        let doc, ws = pp_defs Def None defs empty in
+        (indent, doc, ws)
     | Echo { wsecho; number; wsin; wsnumber; tm = Wrap tm; eval } ->
         let tm, rest = split_ending_whitespace tm in
-        ( hang 2
+        ( indent,
+          hang 2
             (Token.pp (if eval then Echo else Synth)
             ^^ pp_ws `Nobreak wsecho
             ^^ optional
@@ -1230,7 +1234,8 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
                 ^^ Token.pp RParen,
                 wsrparen )
           | None -> (empty, wsnotation) in
-        ( hang 2
+        ( indent,
+          hang 2
             (Token.pp Notation
             ^^ notn_tight
             ^^ group
@@ -1268,7 +1273,8 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
                 ^^ pmod
                 ^^ pp_ws `None ws,
                 rest ) in
-        ( group
+        ( indent,
+          group
             (nest 2
                (Token.pp (if export then Export else Import)
                ^^ pp_ws `Nobreak wsimport
@@ -1282,19 +1288,19 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
         let (Wrap tm) = !tm in
         (* We (mis)use pretty-printing of a solve *command* to actually just reformat the solving *term*.  This is appropriate since "solve" should never appear in a source file, and when it's called from ProofGeneral, PG knows that the reformatted return is the new string to insert at the hole location. *)
         let tm, rest = split_ending_whitespace tm in
-        (* When called from ProofGeneral, the 'column' is the column number of the hole, so the reformatted term should "start at that indentation".  The best way I've thought of so far to mimic that effect is to reduce the margin by that amount, and then add extra indentation to each new line on the ProofGeneral end.  *)
-        (nest column (pp_complete_term (Wrap tm) `None), rest)
+        (* When called from ProofGeneral, the 'column' is the column number of the hole, so the reformatted term should "start at that indentation".  The best way I've thought of so far to mimic that effect is to reduce the margin by that amount, and then add extra indentation to each new line on the ProofGeneral end.  Also, section indents should be ignored when printing solve terms. *)
+        (0, nest column (pp_complete_term (Wrap tm) `None), rest)
     | Split { column; tm; _ } ->
         (* Same with split. *)
         let (Wrap tm) = !tm in
         let tm, rest = split_ending_whitespace tm in
-        (nest column (pp_complete_term (Wrap tm) `None), rest)
+        (0, nest column (pp_complete_term (Wrap tm) `None), rest)
     | Option _ -> .
     | Section { wssection; prefix; wsprefix; wscoloneq } ->
-        (* Since we pp a command *after* executing it, the indent is too large for the 'section' command. *)
-        indent := !indent - 2;
         let ws, rest = Whitespace.split wscoloneq in
-        ( Token.pp Section
+        (* Since we pp a command *after* executing it, the indent is too large for the 'section' command. *)
+        ( indent - 2,
+          Token.pp Section
           ^^ pp_ws `Nobreak wssection
           ^^ utf8string (String.concat "." prefix)
           ^^ pp_ws `Nobreak wsprefix
@@ -1303,11 +1309,11 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
           rest )
     | End { wsend } ->
         let ws, rest = Whitespace.split wsend in
-        (Token.pp End ^^ pp_ws `None ws, rest)
-    | Quit ws -> (empty, ws)
-    | Bof ws -> (empty, ws)
-    | Eof -> (empty, [])
+        (indent, Token.pp End ^^ pp_ws `None ws, rest)
+    | Quit ws -> (indent, empty, ws)
+    | Bof ws -> (indent, empty, ws)
+    | Eof -> (indent, empty, [])
     (* These commands can't appear in a source file, and ProofGeneral doesn't need any reformatting info from them, so we display nothing.  In fact, in the case of Undo, PG uses this emptiness to determine that it should not replace any command in the buffer. *)
-    | Show _ | Display _ | Undo _ -> (empty, []) in
+    | Show _ | Display _ | Undo _ -> (indent, empty, []) in
   (* "nest" only has effect *after* linebreaks, so we have to separately indent the first line. *)
-  (nest !indent (blank !indent ^^ doc), ws)
+  (nest indent (blank indent ^^ doc), ws)
