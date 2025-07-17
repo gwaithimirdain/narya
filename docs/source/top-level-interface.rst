@@ -140,22 +140,6 @@ Begin a section named ``NAME``, which must be a valid identifier.  All ordinary 
 
 End the section that was most recently opened and not yet closed.  All the constants that were in the export namespace of that section (i.e. those defined with ``def`` and ``axiom`` or imported from elsewhere with ``export``) are prefixed by the name of that section and merged into the previous namespace.  (See :ref:`Namespaces and sections`.)
 
-Option
-^^^^^^
-
-.. code-block:: none
-
-   option NAME ≔ VALUE
-
-Set the value of a configuration option.  Currently the available options and values are
-
-.. code-block:: none
-
-   option function boundaries ≔ implicit
-   option type boundaries ≔ implicit
-   option function boundaries ≔ explicit
-   option type boundaries ≔ explicit
-
 
 Quit
 ^^^^
@@ -174,7 +158,7 @@ In interactive mode, the following additional commands are also available.  (How
 Show hole(s)
 ^^^^^^^^^^^^
 
-.. code-block:: bash
+.. code-block:: none
 
     show hole HOLE
     show holes
@@ -209,7 +193,7 @@ Display
 
 Set one of the display settings (that are also set by command-line flags).  Possible display settings are
    
-.. code-block:: bash
+.. code-block:: none
 
     display chars ≔ unicode
     display chars ≔ ascii
