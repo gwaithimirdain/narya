@@ -48,6 +48,7 @@ let speclist =
     ( "-show-type-boundaries",
       Arg.Set show_type_boundaries,
       "Display implicit boundaries of instantiations of higher-dimensional types" );
+    ("-variables", Arg.String (fun str -> variables := Some str), "Default variable names");
     ("-arity", Arg.Set_int arity, "Arity of parametricity (default = 2)");
     ( "-direction",
       Arg.String set_refls,

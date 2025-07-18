@@ -26,6 +26,7 @@ let parenthesize_arguments = ref false
 let extra_spaces = ref true
 let show_function_boundaries = ref false
 let show_type_boundaries = ref false
+let variables = ref None
 
 (* Marshal the current flags to a file. *)
 let marshal_flags chan =
@@ -97,7 +98,10 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols f =
         function_boundaries = (if !show_function_boundaries then `Show else `Hide);
         type_boundaries = (if !show_type_boundaries then `Show else `Hide);
         holes = `Without_number;
-        variables = Display.default.variables;
+        variables =
+          (match !variables with
+          | Some xs -> String.split_on_char ',' xs
+          | None -> Display.default.variables);
       }
   @@ fun () ->
   Annotate.run @@ fun () ->

@@ -132,3 +132,8 @@
       (𝑦₂ : Type⁽ᵉ⁾ 𝑦₀ 𝑦₁)
       →⁽ᵉ⁾ Type⁽ᵉ⁾ (𝑥₀ → 𝑦₀ → Type) (𝑥₁ → 𝑦₁ → Type)
   
+  $ narya -variables 𝑎,𝑏 -e "axiom A : Type axiom B : Type axiom f : A → B axiom g : A → B echo Id (A → B) f g"
+  {𝑎₀ : A} {𝑎₁ : A} (𝑎₂ : Id A 𝑎₀ 𝑎₁) →⁽ᵉ⁾ Id B (f 𝑎₀) (g 𝑎₁)
+    : Type
+  
+
