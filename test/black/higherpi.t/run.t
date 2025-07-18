@@ -128,7 +128,7 @@
 
   $ narya -e "echo refl ((X Y ↦ X → Y → Type) : Type → Type → Type)"
   X Y ⤇ X.2 ⇒ Y.2 ⇒ Type⁽ᵉ⁾
-    : {H₀ : Type} {H₁ : Type} (H₂ : Type⁽ᵉ⁾ H₀ H₁) {H₀′ : Type} {H₁′ : Type}
-      (H₂′ : Type⁽ᵉ⁾ H₀′ H₁′)
-      →⁽ᵉ⁾ Type⁽ᵉ⁾ (H₀ → H₀′ → Type) (H₁ → H₁′ → Type)
+    : {𝑥₀ : Type} {𝑥₁ : Type} (𝑥₂ : Type⁽ᵉ⁾ 𝑥₀ 𝑥₁) {𝑦₀ : Type} {𝑦₁ : Type}
+      (𝑦₂ : Type⁽ᵉ⁾ 𝑦₀ 𝑦₁)
+      →⁽ᵉ⁾ Type⁽ᵉ⁾ (𝑥₀ → 𝑦₀ → Type) (𝑥₁ → 𝑦₁ → Type)
   

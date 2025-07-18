@@ -4,21 +4,18 @@ open Dim
 open Core
 open Term
 
-val default : unit -> string
-
 type 'n t
 
 val empty : emp t
 val remove : 'b t -> ('a, 'n, 'b) Tbwd.insert -> 'a t
 val lookup : 'n t -> 'n index -> string list
 val lookup_field : 'n t -> 'n index -> string -> string list option
-val full_variables : 'm variables -> (N.zero, 'm, string option) NICubeOf.NFold.wrap_left
 
 val add_cube :
   ?force_names:bool -> 'n D.t -> 'b t -> string option -> string option * ('b, 'n) snoc t
 
-val add_cube_autogen : 'n D.t -> 'b t -> string * ('b, 'n) snoc t
 val add : ?force_names:bool -> 'b t -> 'n variables -> 'n variables * ('b, 'n) snoc t
+val add_full : 'b t -> 'mn variables -> 'mn variables * ('b, 'mn) snoc t
 val of_ctx : ('a, 'b) Ctx.t -> 'b t
 
 val uniquify_vars :

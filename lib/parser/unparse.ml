@@ -808,8 +808,7 @@ and unparse_higher_pi : type a lt ls rt rs n.
  fun vars accum xs doms cods tyargs li ri ->
   let n = CubeOf.dim doms in
   (* Make all the variables ordinary ones by suffixing them with face names *without* a separating ".", and making sure that they all have some name. *)
-  let (Wrap (xs, _)) = Names.full_variables xs in
-  let xs, newvars = Names.add ~force_names:true vars (Variables (D.zero, D.zero_plus n, xs)) in
+  let xs, newvars = Names.add_full vars xs in
   (* Unparse each domain, instantiate it at the appropriate variables corresponding to its faces, and parenthesize or brace it to become a pi-type domain, adding them all to the accumulated list of domains. *)
   let module S = Monad.State (struct
     type t = unparser Bwd.t
@@ -913,14 +912,15 @@ let rec unparse_ctx : type a b.
       match entry with
       | Invis bindings ->
           (* We treat an invisible binding as consisting of all nameless variables, and autogenerate names for them all. *)
-          let x, names = Names.add_cube_autogen (CubeOf.dim bindings) names in
+          let x, names =
+            Names.add ~force_names:true names (singleton_variables (CubeOf.dim bindings) None) in
           let do_binding (b : b binding) (res : S.t) : unit * S.t =
             let ty = Wrap (unparse names b.ty No.Interval.entire No.Interval.entire) in
             let tm =
               Option.map
                 (fun t -> Wrap (unparse names t No.Interval.entire No.Interval.entire))
                 b.tm in
-            ((), Snoc (res, (x, `Renamed, tm, ty))) in
+            ((), Snoc (res, (Option.get (top_variable x), `Renamed, tm, ty))) in
           let _, result =
             M.miterM { it = (fun _ [ b ] res -> do_binding b res) } [ bindings ] result in
           (names, result)

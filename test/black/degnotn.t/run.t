@@ -6,10 +6,10 @@
     : Type
   
   ap f
-    : {H₀ : A} {H₁ : A} (H₂ : Id A H₀ H₁) →⁽ᵉ⁾ Id C (f H₀) (f H₁)
+    : {𝑥₀ : A} {𝑥₁ : A} (𝑥₂ : Id A 𝑥₀ 𝑥₁) →⁽ᵉ⁾ Id C (f 𝑥₀) (f 𝑥₁)
   
   Id B
-    : {H₀ : A} {H₁ : A} (H₂ : Id A H₀ H₁) →⁽ᵉ⁾ Type⁽ᵉ⁾ (B H₀) (B H₁)
+    : {𝑥₀ : A} {𝑥₁ : A} (𝑥₂ : Id A 𝑥₀ 𝑥₁) →⁽ᵉ⁾ Type⁽ᵉ⁾ (B 𝑥₀) (B 𝑥₁)
   
   Unit⁽ᵉ⁾ u0 u1
     : Type

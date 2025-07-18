@@ -117,11 +117,11 @@
    ￭ command-line exec string
    1 | def ∞eta_bisim' : Id (Stream A → Stream A) (s ↦ s) (s ↦ ∞eta s) ≔ refl (s ↦ ∞eta s)
      ^ term synthesized type
-         {H₀ : Stream A} {H₁ : Stream A} (H₂ : Stream⁽ᵉ⁾ (Id A) H₀ H₁)
-         →⁽ᵉ⁾ Stream⁽ᵉ⁾ (Id A) (∞eta H₀) (∞eta H₁)
+         {𝑥₀ : Stream A} {𝑥₁ : Stream A} (𝑥₂ : Stream⁽ᵉ⁾ (Id A) 𝑥₀ 𝑥₁)
+         →⁽ᵉ⁾ Stream⁽ᵉ⁾ (Id A) (∞eta 𝑥₀) (∞eta 𝑥₁)
        but is being checked against type
-         {H₀ : Stream A} {H₁ : Stream A} (H₂ : Stream⁽ᵉ⁾ (Id A) H₀ H₁)
-         →⁽ᵉ⁾ Stream⁽ᵉ⁾ (Id A) H₀ (∞eta H₁)
+         {𝑥₀ : Stream A} {𝑥₁ : Stream A} (𝑥₂ : Stream⁽ᵉ⁾ (Id A) 𝑥₀ 𝑥₁)
+         →⁽ᵉ⁾ Stream⁽ᵉ⁾ (Id A) 𝑥₀ (∞eta 𝑥₁)
        unequal head terms:
          ∞eta
        does not equal

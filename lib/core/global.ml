@@ -185,6 +185,7 @@ let set_meta m ~tm =
 
 (* Given a map of meta definitions, save them to the permanent Global state.  This is done after a command finishes with the current_metas from this or some other global state. *)
 let save_metas metas =
+  (* TODO: This could be simpler as a Metamap.union *)
   Metamap.iter
     { it = (fun m def -> S.modify @@ fun d -> { d with metas = d.metas |> Metamap.add m def }) }
     metas

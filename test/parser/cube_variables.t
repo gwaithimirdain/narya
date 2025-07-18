@@ -25,40 +25,40 @@ Testing parsing and printing of cube variables
 
   $ narya cube_vars.ny
   {x0} {x1} x2 ↦ refl b
-    : {H₀ : A} {H₁ : A} (H₂ : Id A H₀ H₁) →⁽ᵉ⁾ Id B b b
+    : {𝑥₀ : A} {𝑥₁ : A} (𝑥₂ : Id A 𝑥₀ 𝑥₁) →⁽ᵉ⁾ Id B b b
   
   {x00} {x01} {x02} {x10} {x11} {x12} {x20} {x21} x22 ↦ b⁽ᵉᵉ⁾
-    : {H₀₀ : A} {H₀₁ : A} {H₀₂ : Id A H₀₀ H₀₁} {H₁₀ : A} {H₁₁ : A}
-      {H₁₂ : Id A H₁₀ H₁₁} {H₂₀ : Id A H₀₀ H₁₀} {H₂₁ : Id A H₀₁ H₁₁}
-      (H₂₂ : A⁽ᵉᵉ⁾ H₀₂ H₁₂ H₂₀ H₂₁)
+    : {𝑥₀₀ : A} {𝑥₀₁ : A} {𝑥₀₂ : Id A 𝑥₀₀ 𝑥₀₁} {𝑥₁₀ : A} {𝑥₁₁ : A}
+      {𝑥₁₂ : Id A 𝑥₁₀ 𝑥₁₁} {𝑥₂₀ : Id A 𝑥₀₀ 𝑥₁₀} {𝑥₂₁ : Id A 𝑥₀₁ 𝑥₁₁}
+      (𝑥₂₂ : A⁽ᵉᵉ⁾ 𝑥₀₂ 𝑥₁₂ 𝑥₂₀ 𝑥₂₁)
       →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ (refl b) (refl b) (refl b) (refl b)
   
   x ⤇ refl b
-    : {H₀ : A} {H₁ : A} (H₂ : Id A H₀ H₁) →⁽ᵉ⁾ Id B b b
+    : {𝑥₀ : A} {𝑥₁ : A} (𝑥₂ : Id A 𝑥₀ 𝑥₁) →⁽ᵉ⁾ Id B b b
   
   x ⤇ b⁽ᵉᵉ⁾
-    : {H₀₀ : A} {H₀₁ : A} {H₀₂ : Id A H₀₀ H₀₁} {H₁₀ : A} {H₁₁ : A}
-      {H₁₂ : Id A H₁₀ H₁₁} {H₂₀ : Id A H₀₀ H₁₀} {H₂₁ : Id A H₀₁ H₁₁}
-      (H₂₂ : A⁽ᵉᵉ⁾ H₀₂ H₁₂ H₂₀ H₂₁)
+    : {𝑥₀₀ : A} {𝑥₀₁ : A} {𝑥₀₂ : Id A 𝑥₀₀ 𝑥₀₁} {𝑥₁₀ : A} {𝑥₁₁ : A}
+      {𝑥₁₂ : Id A 𝑥₁₀ 𝑥₁₁} {𝑥₂₀ : Id A 𝑥₀₀ 𝑥₁₀} {𝑥₂₁ : Id A 𝑥₀₁ 𝑥₁₁}
+      (𝑥₂₂ : A⁽ᵉᵉ⁾ 𝑥₀₂ 𝑥₁₂ 𝑥₂₀ 𝑥₂₁)
       →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ (refl b) (refl b) (refl b) (refl b)
   
   {x0} {x1} x2 ↦ h x0
-    : {H₀ : A} {H₁ : A} (H₂ : Id A H₀ H₁) →⁽ᵉ⁾ Id B b b
+    : {𝑥₀ : A} {𝑥₁ : A} (𝑥₂ : Id A 𝑥₀ 𝑥₁) →⁽ᵉ⁾ Id B b b
   
   x ⤇ h x.0
-    : {H₀ : A} {H₁ : A} (H₂ : Id A H₀ H₁) →⁽ᵉ⁾ Id B b b
+    : {𝑥₀ : A} {𝑥₁ : A} (𝑥₂ : Id A 𝑥₀ 𝑥₁) →⁽ᵉ⁾ Id B b b
   
   x ⤇ refl h x.02
-    : {H₀₀ : A} {H₀₁ : A} {H₀₂ : Id A H₀₀ H₀₁} {H₁₀ : A} {H₁₁ : A}
-      {H₁₂ : Id A H₁₀ H₁₁} {H₂₀ : Id A H₀₀ H₁₀} {H₂₁ : Id A H₀₁ H₁₁}
-      (H₂₂ : A⁽ᵉᵉ⁾ H₀₂ H₁₂ H₂₀ H₂₁)
-      →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ (refl b) (refl b) (h H₀₀) (h H₀₁)
+    : {𝑥₀₀ : A} {𝑥₀₁ : A} {𝑥₀₂ : Id A 𝑥₀₀ 𝑥₀₁} {𝑥₁₀ : A} {𝑥₁₁ : A}
+      {𝑥₁₂ : Id A 𝑥₁₀ 𝑥₁₁} {𝑥₂₀ : Id A 𝑥₀₀ 𝑥₁₀} {𝑥₂₁ : Id A 𝑥₀₁ 𝑥₁₁}
+      (𝑥₂₂ : A⁽ᵉᵉ⁾ 𝑥₀₂ 𝑥₁₂ 𝑥₂₀ 𝑥₂₁)
+      →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ (refl b) (refl b) (h 𝑥₀₀) (h 𝑥₀₁)
   
   x ⤇ refl h x.02
-    : {H₀₀ : A} {H₀₁ : A} {H₀₂ : Id A H₀₀ H₀₁} {H₁₀ : A} {H₁₁ : A}
-      {H₁₂ : Id A H₁₀ H₁₁} {H₂₀ : Id A H₀₀ H₁₀} {H₂₁ : Id A H₀₁ H₁₁}
-      (H₂₂ : A⁽ᵉᵉ⁾ H₀₂ H₁₂ H₂₀ H₂₁)
-      →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ (refl b) (refl b) (h H₀₀) (h H₀₁)
+    : {𝑥₀₀ : A} {𝑥₀₁ : A} {𝑥₀₂ : Id A 𝑥₀₀ 𝑥₀₁} {𝑥₁₀ : A} {𝑥₁₁ : A}
+      {𝑥₁₂ : Id A 𝑥₁₀ 𝑥₁₁} {𝑥₂₀ : Id A 𝑥₀₀ 𝑥₁₀} {𝑥₂₁ : Id A 𝑥₀₁ 𝑥₁₁}
+      (𝑥₂₂ : A⁽ᵉᵉ⁾ 𝑥₀₂ 𝑥₁₂ 𝑥₂₀ 𝑥₂₁)
+      →⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ (refl b) (refl b) (h 𝑥₀₀) (h 𝑥₀₁)
   
   refl b
     : Id B b b

@@ -31,8 +31,8 @@ def anop' : ℕ → ℕ → (x : ℕ) → P x ≔ n0 n n ↦ ?
 
 def anop'' : ℕ → ℕ → (x : ℕ) → P x ≔ n _ n ↦ ?
 
-{` Nor the user's H be shadowed by an auto-generated one `}
-def anop''' : ℕ → ℕ → (x : ℕ) → P x ≔ H _ n ↦ ?
+{` Nor the user's 𝑥 be shadowed by an auto-generated one `}
+def anop''' : ℕ → ℕ → (x : ℕ) → P x ≔ 𝑥 _ n ↦ ?
 
 def Σ (A : Type) (B : A → Type) : Type ≔ sig ( fst : A, snd : B fst )
 
@@ -42,7 +42,7 @@ def pp : Σ Type (X ↦ X) ≔ (?, ?)
 {` But if we break the case tree, then the type of the second hole is the first hole. `}
 def pp' : Σ Type (X ↦ X) ≔ (id ?, ?)
 
-{` The out-of-scope variable "H" that appears here is because record types are stored internally like codatatypes with all fields depending on a single variable, so we have to introduce that variable during typechecking. `}
+{` The out-of-scope variable "𝑥" that appears here is because record types are stored internally like codatatypes with all fields depending on a single variable, so we have to introduce that variable during typechecking. `}
 def foo : Type ≔ sig (
   bar : ℕ,
 {` It's important for ? to be its own token, so that it can be followed immediately by a comma. `}

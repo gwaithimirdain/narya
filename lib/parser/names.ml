@@ -5,8 +5,6 @@ open Core
 open Term
 module StringSet = Set.Make (String)
 
-let __DEFAULT_NAME__ = "H"
-let default () = __DEFAULT_NAME__
 let __ANONYMOUS_VARIABLE__ = "_H"
 
 (* Track the used variable names, to generate fresh ones for bound variables if needed. *)
@@ -66,27 +64,6 @@ let lookup_field : type n. n t -> n index -> string -> string list option =
         return (cubevar y fb) in
   lookup ctx x
 
-(* Convert a partially-cube variable to a full cube of non-cube variables. *)
-let full_variables : type m. m variables -> (N.zero, m, string option) NICubeOf.NFold.wrap_left =
-  function
-  | Variables (m, m_n, xs) ->
-      NICubeOf.NFold.build_left (D.plus_out m m_n)
-        {
-          build =
-            (fun s i ->
-              let (SFace_of_plus (_, sm, sn)) = sface_of_plus m_n s in
-              let smstr = string_of_sface ~unicode:(Display.chars () = `Unicode) sm in
-              Fwrap
-                ( NFamOf
-                    (Some
-                       ((match NICubeOf.find xs sn with
-                        | Some x -> x
-                        | None -> __DEFAULT_NAME__)
-                       ^ smstr)),
-                  N.suc i ));
-        }
-        N.zero
-
 let rec primes n =
   if n <= 0 then ""
   else if n = 1 then "′"
@@ -103,36 +80,48 @@ let uniquify : string -> StringSet.t -> string * [ `Original | `Renamed ] * Stri
   let namen = until_unique 0 in
   (namen, `Renamed, used |> StringSet.add namen)
 
-(* Make a variable name unique.  Leave unnamed variables unnamed, unless force_names = true. *)
-let uniquify_opt :
+(* Create a new unique variable name, for a previously unnamed variable, from a list of possibilities.  The result is always "Renamed". *)
+let new_name :
+    string -> string list -> StringSet.t -> string * [ `Original | `Renamed ] * StringSet.t =
+ fun face names used ->
+  let rec go n = function
+    | [] -> go (n + 1) names
+    | name :: rest ->
+        let namen = name ^ face ^ primes n in
+        if StringSet.mem namen used then go n rest
+        else (namen, `Renamed, used |> StringSet.add namen) in
+  go 0 names
+
+(* Make a variable name or placeholder unique.  Leave placeholders as-is, unless force_names = true in which case find a name for them. *)
+let uniquify_opt : type a.
+    (a -> string option * string) ->
     ?force_names:bool ->
-    string option ->
+    a ->
     StringSet.t ->
     string option * [ `Original | `Renamed ] * StringSet.t =
- fun ?(force_names = false) name used ->
-  match (name, force_names) with
-  | None, false -> (None, `Original, used)
-  | None, true ->
-      let name, orig, used = uniquify __DEFAULT_NAME__ used in
+ fun f ?(force_names = false) name used ->
+  match (f name, force_names) with
+  | (None, _), false -> (None, `Original, used)
+  | (None, face), true ->
+      let name, orig, used = new_name face (Display.variables ()) used in
       (Some name, orig, used)
-  | Some name, _ ->
-      let name, orig, used = uniquify name used in
+  | (Some name, face), _ ->
+      let name, orig, used = uniquify (name ^ face) used in
       (Some name, orig, used)
 
 (* Do the same thing to a whole cube of variable names. *)
-let uniquify_cube : type n left right.
+let uniquify_cube : type n left right a.
+    (a -> string option * string) ->
     ?force_names:bool ->
-    (left, n, string option, right) NICubeOf.t ->
+    (left, n, a, right) NICubeOf.t ->
     StringSet.t ->
     (left, n, string option, right) NICubeOf.t * StringSet.t =
- fun ?(force_names = false) names used ->
+ fun f ?(force_names = false) names used ->
   (* Apparently we need to define the iteration function with an explicit type so that it ends up sufficiently polymorphic. *)
   let uniquify_nfamof : type m left.
-      (left, m, string option) NFamOf.t ->
-      StringSet.t ->
-      (left, m, string option) NFamOf.t * StringSet.t =
+      (left, m, a) NFamOf.t -> StringSet.t -> (left, m, string option) NFamOf.t * StringSet.t =
    fun (NFamOf name) used ->
-    let name, _, used = uniquify_opt ~force_names name used in
+    let name, _, used = uniquify_opt f ~force_names name used in
     (NFamOf name, used) in
   let open NICubeOf.Applicatic (Applicative.OfMonad (Monad.State (struct
     type t = StringSet.t
@@ -143,21 +132,32 @@ let uniquify_cube : type n left right.
 let add_cube : type n b.
     ?force_names:bool -> n D.t -> b t -> string option -> string option * (b, n) snoc t =
  fun ?(force_names = false) n { ctx; used } name ->
-  let name, _, used = uniquify_opt ~force_names name used in
+  let name, _, used = uniquify_opt (fun x -> (x, "")) ~force_names name used in
   ( name,
     { ctx = Snoc (ctx, Variables (n, D.plus_zero n, NICubeOf.singleton name), Abwd.empty); used } )
 
-(* Same, but starting from an unnamed variable and always giving it a default name. *)
-let add_cube_autogen : type n b. n D.t -> b t -> string * (b, n) snoc t =
- fun n ctx ->
-  let x, used = add_cube n ctx (Some __DEFAULT_NAME__) in
-  (Option.get x, used)
-
 (* Add a cube of variables, generating a fresh version of each of their names.  Again, leave unnamed variables unnamed unless force_names=true. *)
-let add : ?force_names:bool -> 'b t -> 'n variables -> 'n variables * ('b, 'n) snoc t =
+let add : type b n. ?force_names:bool -> b t -> n variables -> n variables * (b, n) snoc t =
  fun ?(force_names = false) { ctx; used } (Variables (m, mn, names)) ->
-  let names, used = uniquify_cube ~force_names names used in
+  let names, used = uniquify_cube (fun x -> (x, "")) ~force_names names used in
   let vars = Variables (m, mn, names) in
+  (vars, { ctx = Snoc (ctx, vars, Abwd.empty); used })
+
+(* Add a partially-cube variable as a full cube of non-cube variables, with face names explicitly concatenated with the variable names, making all variables named. *)
+let add_full : type b mn. b t -> mn variables -> mn variables * (b, mn) snoc t =
+ fun { ctx; used } (Variables (m, m_n, xs)) ->
+  let (Wrap (newxs, _)) =
+    NICubeOf.NFold.build_left (D.plus_out m m_n)
+      {
+        build =
+          (fun s i ->
+            let (SFace_of_plus (_, sm, sn)) = sface_of_plus m_n s in
+            let smstr = string_of_sface ~unicode:(Display.chars () = `Unicode) sm in
+            Fwrap (NFamOf (NICubeOf.find xs sn, smstr), N.suc i));
+      }
+      N.zero in
+  let names, used = uniquify_cube (fun x -> x) ~force_names:true newxs used in
+  let vars = Variables (D.zero, D.zero_plus (D.plus_out m m_n), names) in
   (vars, { ctx = Snoc (ctx, vars, Abwd.empty); used })
 
 (* Extract all the names in a context, generating a fresh version of each name from left to right, including field access variables, leaving unnamed variables unnamed. *)
@@ -165,7 +165,7 @@ let rec of_ordered_ctx : type a b. (a, b) Ctx.Ordered.t -> b t = function
   | Emp -> empty
   | Snoc (ctx, Vis { dim; plusdim; vars; bindings = _; hasfields = _; fields; fplus = _ }, _) ->
       let { ctx; used } = of_ordered_ctx ctx in
-      let vars, used = uniquify_cube vars used in
+      let vars, used = uniquify_cube (fun x -> (x, "")) vars used in
       let module M = Mbwd.Monadic (Monad.State (struct
         type t = StringSet.t
       end)) in
@@ -187,17 +187,18 @@ let of_ctx : type a b. (a, b) Ctx.t -> b t = function
 let unsafe_add : 'b t -> 'n variables -> (string, string) Abwd.t -> ('b, 'n) snoc t =
  fun { ctx; used } vars fields -> { ctx = Snoc (ctx, vars, fields); used }
 
-(* Given a Bwv of variables, proceed through from the *right* to mark them as visible or shadowed, accumulating a list of the visible names in a map.  Replaces unnamed variables by a default name. *)
+(* Given a Bwv of variables, proceed through from the *right* to mark them as visible or shadowed, accumulating a list of the visible names in a map.  Missing variables are marked as shadowed. *)
 let rec used_vars : type n.
     (string option, n) Bwv.t ->
     StringSet.t ->
-    (string * [ `Visible | `Shadowed ], n) Bwv.t * StringSet.t =
+    (string option * [ `Visible | `Shadowed ], n) Bwv.t * StringSet.t =
  fun vars used ->
   let do_var x used =
     match x with
     | Some x ->
-        if StringSet.mem x used then (x, `Shadowed, used) else (x, `Visible, used |> StringSet.add x)
-    | None -> (__DEFAULT_NAME__, `Shadowed, used) in
+        if StringSet.mem x used then (Some x, `Shadowed, used)
+        else (Some x, `Visible, used |> StringSet.add x)
+    | None -> (None, `Shadowed, used) in
   match vars with
   | Emp -> (Emp, used)
   | Snoc (vars, x) ->
@@ -213,7 +214,7 @@ let uniquify_vars : type a.
   let vars, used = used_vars vars StringSet.empty in
   (* Then we proceed again from right to left, leaving the visible variables alone and replacing the shadowed ones with uniquified versions.  We do this in two passes to ensure that the uniquified version of a shadowed variable is never chosen in such a way as would shadow a variable to its left that already had that name. *)
   let rec go : type n.
-      (string * [ `Visible | `Shadowed ], n) Bwv.t ->
+      (string option * [ `Visible | `Shadowed ], n) Bwv.t ->
       StringSet.t ->
       (string * [ `Original | `Renamed ], n) Bwv.t * StringSet.t =
    fun vars used ->
@@ -224,10 +225,10 @@ let uniquify_vars : type a.
           match sh with
           | `Visible -> (x, `Original, used)
           | `Shadowed ->
-              let x, _, used = uniquify x used in
+              let x, _, used = uniquify_opt (fun x -> (x, "")) ~force_names:true x used in
               (x, `Renamed, used) in
         let vars, used = go vars used in
-        (Snoc (vars, (x, orig)), used) in
+        (Snoc (vars, (Option.get x, orig)), used) in
   let vars, used = go vars used in
   (vars, { ctx = Emp; used })
 
