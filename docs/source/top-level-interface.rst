@@ -22,8 +22,9 @@ Formatting output
 - ``-no-reformat``: Do not automatically reformat source files (see :ref:`Code formatter`)
 - ``-show-function-boundaries``: Display boundaries of functions, when implicit (see :ref:`Implicit boundaries`)
 - ``-hide-function-boundaries``: Hide boundaries of functions, when implicit
-- ``-show-type-boundaries``: Display boundaries of functions, when implicit
-- ``-hide-type-boundaries``: Hide boundaries of functions, when implicit
+- ``-show-type-boundaries``: Display boundaries of types, when implicit
+- ``-hide-type-boundaries``: Hide boundaries of types, when implicit
+- ``-variables X``: Set the default variable names (see :ref:`Default names`)
 
 Controlling parametricity
 ^^^^^^^^^^^^^^^^^^^^^^^^^

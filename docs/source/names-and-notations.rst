@@ -93,3 +93,16 @@ An *atomic identifier* can be any string of non-whitespace characters, other tha
 An *identifier* consists of one or more atomic identifiers joined by periods.  Variable names must be atomic identifiers, while constant names must be identifiers (internal periods denote :ref:`namespaces<Namespaces and sections>`).  In particular, (atomic) identifiers may *start* with a digit, such as for instance ``2Cat`` or ``2−Cat`` for the type of 2-categories.
 
 In addition, enclosing guillemets ``«`` and ``»`` can be used to make an atomic identifier out of *any* sequence of characters at all, including spaces, periods, comment sequences, and special characters.  Thus, for instance, ``«a long string»`` is a single atomic identifier, and likewise ``«foo.bar»`` is a single *atomic* identifier (unlike ``foo.bar`` which is ``bar`` in namespace ``foo``).  Note that the guillemets in such cases are *part* of the identifier: thus for instance ``«foo»`` is a different identifier than ``foo``.  Guillemets can also be nested: ``«a«b»c»`` is a single atomic identifier.
+
+Default names
+-------------
+
+Sometimes, when printing terms, Narya needs to generate a name for variables that the user has left unnamed.  For instance, this happens when displaying the context of a :ref:`hole<Holes>` inside an unnamed abstraction such as ``_ ↦ ?``.  It also happens when printing the :ref:`higher-dimensional version<Id of function types>` of a non-dependent function type such as ``Id (A → B) f g``.
+
+To deal with cases like this, Narya maintains a list of "default variable names", and whenever it needs such a name it looks through that list until it finds one that hasn't been used in the current context.  If all of them have been used, it goes back to the beginning and tries them all with a single prime ``′``, and so on through ``″``, ``‴``, and so on.  The default list of default variable names is
+
+.. code-block:: none
+
+   𝑥 𝑦 𝑧 𝑤 𝑢 𝑣
+
+Here ``𝑥`` is the unicode character MATHEMATICAL ITALIC SMALL X, and so on.  These are chosen because *x*, *y*, and so on are common "neutral" variable names in mathematics, while their unicode italic versions are not commonly used in coding.  However, you can change the default variable names with the command-line flag ``-variables``, which takes a comma-separated list of variable names, such as ``-variables 𝑎,𝑏,𝑐`` if you prefer the beginning of the alphabet, or ``-variables 𝓍,𝓎,𝓏`` if you prefer a different font.
