@@ -3,7 +3,7 @@ open Tbwd
 open Dim
 open Core
 open Term
-module StringMap = Map.Make (String)
+module StringSet = Set.Make (String)
 
 let __DEFAULT_NAME__ = "H"
 let default () = __DEFAULT_NAME__
@@ -16,10 +16,10 @@ type 'b ctx =
   | Emp : emp ctx
   | Snoc : 'b ctx * 'n variables * (string, string) Abwd.t -> ('b, 'n) snoc ctx
 
-(* We also store a map that counts how many like-named variables already exist, so that we can create a new one with an unused number. *)
-type 'b t = { ctx : 'b ctx; used : int StringMap.t }
+(* We also store a set of which variables already exist, so that we can be sure of creating a new unused one. *)
+type 'b t = { ctx : 'b ctx; used : StringSet.t }
 
-let empty : emp t = { ctx = Emp; used = StringMap.empty }
+let empty : emp t = { ctx = Emp; used = StringSet.empty }
 
 let rec remove_ctx : type a n b. b ctx -> (a, n, b) Tbwd.insert -> a ctx =
  fun ctx i ->
@@ -95,26 +95,20 @@ let rec primes n =
   else "⁗" ^ primes (n - 4)
 
 (* Make a variable name unique, adding the new one to the list of used variables and returning it. *)
-let uniquify : string -> int StringMap.t -> string * [ `Original | `Renamed ] * int StringMap.t =
+let uniquify : string -> StringSet.t -> string * [ `Original | `Renamed ] * StringSet.t =
  fun name used ->
-  match StringMap.find_opt name used with
-  | None -> (name, `Original, used |> StringMap.add name 0)
-  | Some n ->
-      (* The tentative new name is the original one suffixed by that number of primes.  But the user might already have created a variable with that name, so we have to increment the number until we find an unused name. *)
-      let rec until_unique k =
-        let namek = name ^ primes k in
-        match StringMap.find_opt namek used with
-        | None -> (namek, k)
-        | Some _ -> until_unique (k + 1) in
-      let namen, n = until_unique n in
-      (namen, `Renamed, used |> StringMap.add namen 0 |> StringMap.add name (n + 1))
+  let rec until_unique k =
+    let namek = name ^ primes k in
+    if StringSet.mem namek used then until_unique (k + 1) else namek in
+  let namen = until_unique 0 in
+  (namen, `Renamed, used |> StringSet.add namen)
 
 (* Make a variable name unique.  Leave unnamed variables unnamed, unless force_names = true. *)
 let uniquify_opt :
     ?force_names:bool ->
     string option ->
-    int StringMap.t ->
-    string option * [ `Original | `Renamed ] * int StringMap.t =
+    StringSet.t ->
+    string option * [ `Original | `Renamed ] * StringSet.t =
  fun ?(force_names = false) name used ->
   match (name, force_names) with
   | None, false -> (None, `Original, used)
@@ -129,19 +123,19 @@ let uniquify_opt :
 let uniquify_cube : type n left right.
     ?force_names:bool ->
     (left, n, string option, right) NICubeOf.t ->
-    int StringMap.t ->
-    (left, n, string option, right) NICubeOf.t * int StringMap.t =
+    StringSet.t ->
+    (left, n, string option, right) NICubeOf.t * StringSet.t =
  fun ?(force_names = false) names used ->
   (* Apparently we need to define the iteration function with an explicit type so that it ends up sufficiently polymorphic. *)
   let uniquify_nfamof : type m left.
       (left, m, string option) NFamOf.t ->
-      int StringMap.t ->
-      (left, m, string option) NFamOf.t * int StringMap.t =
+      StringSet.t ->
+      (left, m, string option) NFamOf.t * StringSet.t =
    fun (NFamOf name) used ->
     let name, _, used = uniquify_opt ~force_names name used in
     (NFamOf name, used) in
   let open NICubeOf.Applicatic (Applicative.OfMonad (Monad.State (struct
-    type t = int StringMap.t
+    type t = StringSet.t
   end))) in
   mapM { map = (fun _ name used -> uniquify_nfamof name used) } names used
 
@@ -173,7 +167,7 @@ let rec of_ordered_ctx : type a b. (a, b) Ctx.Ordered.t -> b t = function
       let { ctx; used } = of_ordered_ctx ctx in
       let vars, used = uniquify_cube vars used in
       let module M = Mbwd.Monadic (Monad.State (struct
-        type t = int StringMap.t
+        type t = StringSet.t
       end)) in
       let fields, used =
         M.mmapM
@@ -196,14 +190,13 @@ let unsafe_add : 'b t -> 'n variables -> (string, string) Abwd.t -> ('b, 'n) sno
 (* Given a Bwv of variables, proceed through from the *right* to mark them as visible or shadowed, accumulating a list of the visible names in a map.  Replaces unnamed variables by a default name. *)
 let rec used_vars : type n.
     (string option, n) Bwv.t ->
-    int StringMap.t ->
-    (string * [ `Visible | `Shadowed ], n) Bwv.t * int StringMap.t =
+    StringSet.t ->
+    (string * [ `Visible | `Shadowed ], n) Bwv.t * StringSet.t =
  fun vars used ->
   let do_var x used =
     match x with
     | Some x ->
-        if StringMap.mem x used then (x, `Shadowed, used)
-        else (x, `Visible, used |> StringMap.add x 0)
+        if StringSet.mem x used then (x, `Shadowed, used) else (x, `Visible, used |> StringSet.add x)
     | None -> (__DEFAULT_NAME__, `Shadowed, used) in
   match vars with
   | Emp -> (Emp, used)
@@ -217,12 +210,12 @@ let uniquify_vars : type a.
     (string option, a) Bwv.t -> (string * [ `Original | `Renamed ], a) Bwv.t * emp t =
  fun vars ->
   (* First we collect a map of all the visible names, also marking the given names as visible or shadowed. *)
-  let vars, used = used_vars vars StringMap.empty in
+  let vars, used = used_vars vars StringSet.empty in
   (* Then we proceed again from right to left, leaving the visible variables alone and replacing the shadowed ones with uniquified versions.  We do this in two passes to ensure that the uniquified version of a shadowed variable is never chosen in such a way as would shadow a variable to its left that already had that name. *)
   let rec go : type n.
       (string * [ `Visible | `Shadowed ], n) Bwv.t ->
-      int StringMap.t ->
-      (string * [ `Original | `Renamed ], n) Bwv.t * int StringMap.t =
+      StringSet.t ->
+      (string * [ `Original | `Renamed ], n) Bwv.t * StringSet.t =
    fun vars used ->
     match vars with
     | Emp -> (Emp, used)

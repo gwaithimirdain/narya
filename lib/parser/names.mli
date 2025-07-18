@@ -3,7 +3,6 @@ open Tbwd
 open Dim
 open Core
 open Term
-module StringMap : module type of Map.Make (String)
 
 val default : unit -> string
 
