@@ -6,12 +6,11 @@ open Status
 open Term
 open Reporter
 
-(* Like its Asimovian namesake, Eternity exists outside the ordinary timestream.  Eternal metavariables aren't scoped and aren't affected by import and sectioning commands, but even more importantly, each such metavariable stores its own copy of the Global state, as well as the Scope and variable scope when it was created.  This way we can "go back in time" to when that metavariable was created and be sure that any solution of that metavariable would have been valid in its original location.  Changes to eternal metavariables are also not subject to undo. *)
+(* Like its Asimovian namesake, Eternity exists outside the ordinary timestream (meaning the processing and undoing of commands).  Eternal metavariables aren't scoped and aren't affected by import and sectioning commands, but even more importantly, each such metavariable stores its own copy of the Global state, as well as the Scope and variable scope when it was created.  This way we can "go back in time" to when that metavariable was created and be sure that any solution of that metavariable would have been valid in its original location.  Changes to eternal metavariables are also not subject to undo. *)
 
 type ('a, 'b, 's) homewhen = {
   global : Global.data;
   scope : Scope.trie;
-  options : Options.t;
   status : ('b, 's) status;
   vars : (string option, 'a) Bwv.t;
 }
@@ -60,13 +59,7 @@ let () =
                         Metadef.make ~tm:`Undefined ~termctx ~ty ~energy:(Status.energy status) ~li
                           ~ri;
                       homewhen =
-                        {
-                          global = Global.get ();
-                          scope = Scope.get_visible ();
-                          status;
-                          vars;
-                          options = Scope.get_options ();
-                        };
+                        { global = Global.get (); scope = Scope.get_visible (); status; vars };
                     }
                     map;
               }));

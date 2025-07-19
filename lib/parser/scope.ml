@@ -54,7 +54,6 @@ type scope = {
   prefix : Trie.bwd_path;
   (* The notation situation that applies in the present file/section. *)
   situation : Situation.t;
-  options : Options.t;
 }
 
 (* A Scope.t has an inner scope (the current file/section) and also maintains a stack of outer scopes. *)
@@ -65,13 +64,7 @@ let empty () : t =
   {
     outer = Emp;
     inner =
-      {
-        visible = Trie.empty;
-        export = Trie.empty;
-        prefix = Emp;
-        situation = !Situation.builtins;
-        options = Options.default;
-      };
+      { visible = Trie.empty; export = Trie.empty; prefix = Emp; situation = !Situation.builtins };
   }
 
 module S = State.Make (struct
@@ -148,10 +141,6 @@ let _modify_visible ?context_visible m =
     inner =
       { s.inner with visible = Mod.modify ?context:context_visible ~prefix:Emp m s.inner.visible };
   }
-
-let modify_options f =
-  M.exclusively @@ fun () ->
-  S.modify @@ fun s -> { s with inner = { s.inner with options = f s.inner.options } }
 
 let modify_export ?context_export m =
   M.exclusively @@ fun () ->
@@ -269,7 +258,6 @@ let import_subtree ?context_modifier ?context_visible ?modifier (path, ns) =
 
 let get_visible () = M.exclusively @@ fun () -> (S.get ()).inner.visible
 let get_export () = M.exclusively @@ fun () -> (S.get ()).inner.export
-let get_options () = M.exclusively @@ fun () -> (S.get ()).inner.options
 
 (* Set the visible namespace, e.g. before going into interactive mode.  Also set the notation situation to consist of the user notations from that namespace. *)
 let set_visible visible =
@@ -288,7 +276,6 @@ let start_section prefix =
           export = Trie.empty;
           prefix = Bwd.of_list prefix;
           situation = s.inner.situation;
-          options = s.inner.options;
         } in
       { outer = Snoc (s.outer, s.inner); inner = new_scope })
 
@@ -309,8 +296,7 @@ let end_section () =
   with Failure _ -> None
 
 (* We remove the Mod.run from Scope.run and let the caller control it separately.  Also sets the notation situation.  Note that this *overrides* (dynamically, locally) any "actual" namespace and notations in the outer state.  It is used for loading files and strings, which are atomic undo units, and for "going back in time" temporarily to solve an old hole. *)
-let run ?(export_prefix = Emp) ?(init_visible = Trie.empty) ?init_situation
-    ?(options = Options.default) f =
+let run ?(export_prefix = Emp) ?(init_visible = Trie.empty) ?init_situation f =
   let situation =
     match init_situation with
     | Some s -> s
@@ -318,8 +304,7 @@ let run ?(export_prefix = Emp) ?(init_visible = Trie.empty) ?init_situation
   let init =
     {
       outer = Emp;
-      inner =
-        { visible = init_visible; export = Trie.empty; prefix = export_prefix; situation; options };
+      inner = { visible = init_visible; export = Trie.empty; prefix = export_prefix; situation };
     } in
   M.run @@ fun () -> S.run ~init f
 

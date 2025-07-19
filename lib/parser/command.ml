@@ -602,7 +602,7 @@ module Parse = struct
               ( Display { wsdisplay; wscoloneq; what = `Type_boundaries (wswhat, wsb, show, ws) },
                 state ))
 
-  let implicit_of_token : Token.t -> Options.implicitness option = function
+  let implicit_of_token : Token.t -> [ `Implicit | `Explicit ] option = function
     | Ident [ "implicit" ] -> Some `Implicit
     | Ident [ "explicit" ] -> Some `Explicit
     | _ -> None
@@ -824,14 +824,11 @@ let rec execute :
         | Some number -> (
             let num = Eternity.find_number number in
             show_hole (No_such_hole number) num;
-            let (Find_number (_, { tm = metatm; termctx; _ }, { scope; global; vars; options; _ }))
-                =
-              num in
+            let (Find_number (_, { tm = metatm; termctx; _ }, { scope; global; vars; _ })) = num in
             match metatm with
             | `Undefined ->
                 ( Scope_and_ctx (vars, Norm.eval_ctx termctx),
-                  fun f ->
-                    Scope.run ~init_visible:scope ~options @@ fun () -> Global.run ~init:global f )
+                  fun f -> Scope.run ~init_visible:scope @@ fun () -> Global.run ~init:global f )
             | `Defined _ | `Axiom -> fatal (Anomaly "hole already defined")) in
       run @@ fun () ->
       let rtm = process vars tm in
@@ -924,13 +921,12 @@ let rec execute :
   | Solve data -> (
       (* Solve does NOT create a new history entry because it is NOT undoable. *)
       let (Find_number
-             ( m,
-               { tm = metatm; termctx; ty; energy = _; li; ri },
-               { global; scope; status; vars; options } )) =
+             (m, { tm = metatm; termctx; ty; energy = _; li; ri }, { global; scope; status; vars }))
+          =
         Eternity.find_number data.number in
       match metatm with
       | `Undefined ->
-          Scope.run ~init_visible:scope ~options @@ fun () ->
+          Scope.run ~init_visible:scope @@ fun () ->
           let (Wrap tm) = !(data.tm) in
           let ptm = process vars tm in
           (* We set the hole location offset to the start of the *term*, so that ProofGeneral can create hole overlays in the right places when solving a hole and creating new holes. *)
@@ -957,11 +953,11 @@ let rec execute :
       let (Find_number
              ( _m,
                { tm = metatm; termctx; ty; energy = _; li = _; ri = _ },
-               { global = _; scope; status = _; vars; options } )) =
+               { global = _; scope; status = _; vars } )) =
         Eternity.find_number data.number in
       match metatm with
       | `Undefined -> (
-          Scope.run ~init_visible:scope ~options @@ fun () ->
+          Scope.run ~init_visible:scope @@ fun () ->
           let (Wrap tm) = !(data.tm) in
           match tm.value with
           | Placeholder _ ->

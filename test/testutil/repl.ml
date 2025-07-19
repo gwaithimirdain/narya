@@ -118,7 +118,7 @@ let run f =
   Builtins.install ();
   Scope.run @@ fun () ->
   let init_visible = Scope.Trie.empty in
-  Scope.run ~init_visible ~options:Options.default @@ fun () -> f ()
+  Scope.run ~init_visible @@ fun () -> f ()
 
 let gel_install () =
   def "Gel" "(A B : Type) (R : A → B → Type) → Id Type A B" "A B R ↦ sig a b ↦ ( ungel : R a b )"

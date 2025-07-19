@@ -180,7 +180,7 @@ let set_meta m ~tm =
       d.current_metas
       |> Metamap.update m (function
            | Some (Ok d) -> Some (Ok { d with tm = `Defined tm })
-           | _ -> raise (Failure "set_meta"));
+           | _ -> fatal (Anomaly "error in set_meta"));
   }
 
 (* Given a map of meta definitions, save them to the permanent Global state.  This is done after a command finishes with the current_metas from this or some other global state. *)
@@ -345,7 +345,7 @@ let get_parametric () =
   | `Nonparametric -> `Nonparametric
   | `Must_be_parametric | `Maybe_parametric -> `Parametric
 
-(* Notify the user about currently created holes and add them to the global list. *)
+(* Notify the user about currently created holes and add them to the global list to be reported to ProofGeneral.  Also save the current parametric-ness state to eternity.  Return the current metavariables. *)
 let do_holes make_msg =
   let d = S.get () in
   let parametric =

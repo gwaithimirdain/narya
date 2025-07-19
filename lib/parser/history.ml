@@ -4,7 +4,7 @@ open Core
 open Reporter
 module Trie = Yuujinchou.Trie
 
-(* History manages the global state, eternal state, and namespace scopes with a single state effect, and recording past versions of this state for "undo" purposes. *)
+(* History manages the global state and namespace scopes with a single state effect, and recording past versions of this state for "undo" purposes. *)
 
 type moment = { global : Global.data; scope : Scope.t }
 
