@@ -260,11 +260,11 @@ Installing ctags
 
 `Universal Ctags <https://ctags.io/>`_ is a command-line program that reads all the source files in a project and generates a "tags file" containing the location of every definition in those files.  The tags file can then be read by Emacs to enable commands for jumping to the location where a given constant was defined.
 
-Narya comes with a "language definition" file for Universal Ctags, enabling it to generate tags files for Narya source code.  This is not perfect: it doesn't take into account :ref:`sections <Namespaces and sections>` or :ref:`Import modifiers`, so it won't always be able to find definitions correctly.  But until we implement an analogous feature in a more sophisticated way, it can serve as a useful stopgap.
+Narya comes with a "language definition" file for Universal Ctags, enabling it to generate tags files for Narya source code.  This is not perfect (e.g. it doesn't know about :ref:`Import modifiers`), so it won't always be able to find definitions correctly.  But it can still be very useful, until we implement an analogous feature in a more sophisticated way.
 
 The automatic installation script will also attempt to install the ctags language definition file in the correct place.  If it fails, or if you are doing a manual installation, you can do this yourself by copying (or symlinking) the file ``narya.ctags`` (included in the binary distribution, or in the directory ``ctags`` of the source tree) into the directory ``$HOME/.ctags.d`` (which you can create if it doesn't exist).
 
-You will also have to install Universal Ctags.  On Linux or WSL you can use a package manager such as
+You will also have to install Universal Ctags.  (There are other programs that generate tags files, but Narya's language definition file is designed for Universal Ctags.)  On Linux or WSL you can use a package manager such as
 
 .. code-block:: none
 
@@ -272,12 +272,20 @@ You will also have to install Universal Ctags.  On Linux or WSL you can use a pa
 
 while on MacOS you may be able to use `homebrew <https://formulae.brew.sh/formula/universal-ctags>`_ or `build manually <https://docs.ctags.io/en/latest/osx.html>`_.
 
-In addition, it is recommended to add the following two lines to your ``$HOME/.emacs`` file, which will tell Emacs to automatically run ``ctags`` on all Narya files in a given project.
+In addition, it is recommended to add the following two lines to your ``$HOME/.emacs`` file, which will tell Emacs to automatically run Universal Ctags on all Narya files in a given project.
 
 .. code-block:: lisp
 
    (etags-regen-mode t)
    (add-to-list 'etags-regen-file-extensions "ny")
+
+Alternatively, you can manually create the tags file (called ``TAGS`` by convention) by running a command such as
+
+.. code-block:: bash
+
+   find . -name '*.ny' | etags -L -
+
+It is important to run the program as ``etags``, or as ``ctags -e``, so that it produces a tags file in the correct format for Emacs.
 
 For information on using the tags file, see :ref:`Ctags`.
 

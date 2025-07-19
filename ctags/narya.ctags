@@ -1,8 +1,29 @@
---langdef=narya
+--langdef=narya{_autoFQTag}
 --map-narya=.ny
 
 --kinddef-narya=d,definition,definitions
 --kinddef-narya=a,axiom,axioms
+--kinddef-narya=s,section,sections
 
---regex-narya=/^[ \t]*def[ \t]+([a-zA-Z0-9]+)/\1/d/
---regex-narya=/^[ \t]*axiom[ \t]+([a-zA-Z0-9]+)/\1/a/
+--_tabledef-narya=toplevel
+--_tabledef-narya=linecomment
+--_tabledef-narya=blockcomment
+
+--_mtable-regex-narya=toplevel/def[ \t\n]+([^ \t\n]+)/\1/d/{scope=ref}
+--_mtable-regex-narya=toplevel/and[ \t\n]+([^ \t\n]+)/\1/d/{scope=ref}
+--_mtable-regex-narya=toplevel/axiom[ \t\n]+([^ \t\n]+)/\1/a/{scope=ref}
+--_mtable-regex-narya=toplevel/section[ \t\n]+([^ \t\n]+)/\1/s/{scope=push}
+--_mtable-regex-narya=toplevel/end///{placeholder}{scope=pop}
+--_mtable-regex-narya=toplevel/quit//{tquit}
+--_mtable-regex-narya=toplevel/\{`//{tenter=blockcomment}
+--_mtable-regex-narya=toplevel/`//{tenter=linecomment}
+--_mtable-regex-narya=toplevel/.//
+
+--_mtable-regex-narya=blockcomment/\{`//{tenter=blockcomment}
+--_mtable-regex-narya=blockcomment/`\}//{tleave}
+--_mtable-regex-narya=blockcomment/.//
+
+--_mtable-regex-narya=linecomment/\n//{tleave}
+--_mtable-regex-narya=linecomment/.//
+
+--extras=+q

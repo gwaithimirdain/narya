@@ -309,7 +309,23 @@ If you followed the instructions for :ref:`Installing Ctags`, then you should be
 - ``M-x tags-search`` : Search for a regular expression through all the files in the current project.
 - ``M-x tags-query-replace`` : Search for and replace a regular expression through all the files in the current project.
 
-Unfortunately, ctags does not understand Narya's :ref:`sections <Namespaces and sections>` or :ref:`Import modifiers`, so these commands won't be able to find identifiers that have been renamed by ``import`` or that were declared in a ``section``.  Eventually we hope to implement a more sophisticated solution.
+Ctags is implemented with simple regular expressions, which works fairly well but has certain limitations.  It does understand comments, so ``M-.`` will not find commented-out definitions, nor will ``M-?`` find commented-out uses.  It also understands the ``quit`` command and ignores anything that appears after it in a source file.
+
+However, Ctags doesn't understand Narya's :ref:`Import modifiers`.  Thus, if you have renamed an identifier with ``import``, ``M-.`` on that identifier won't be able to find its definition, and ``M-?`` on the original identifier will not find renamed usages.
+
+Ctags has a limited understanding of Narya's :ref:`sections <Namespaces and sections>`.  A constant declared inside a section is saved to the tags file both with its *unqualified* name (the one given in its ``def`` or ``axiom`` command) and with its *fully qualified* name (the one obtained by prefixing its unqualified name with those of *all* the sections it appears inside).  Therefore, the definition can be found with ``M-.`` from both unqualified uses of an identifier (e.g. those appearing in the same section where it is defined) and fully-qualified uses (e.g. those appearing outside of all nested sections that it is defined in, such as in another file that imports the file it was defined in without any renaming).  However, it is not saved with any *partially* qualified names.  For instance, given the following Narya code:
+
+.. code-block:: none
+
+   section foo ≔
+     section bar ≔
+       def baz ≔ …
+     end
+   end
+
+the definition ``baz`` can be found under the names ``baz`` and ``foo.bar.baz``,  but not ``bar.baz`` (which it would be referred to by inside the section ``foo`` but outside the section ``bar``).
+
+Eventually we hope to implement a more sophisticated solution for finding definitions, but until then, Ctags can be very useful if you keep aware of these limitations.
 
 
 Code formatter
