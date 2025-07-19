@@ -956,15 +956,15 @@ let rec execute :
                { global = _; scope; status = _; vars } )) =
         Eternity.find_number data.number in
       match metatm with
-      | `Undefined -> (
+      | `Undefined ->
           Scope.run ~init_visible:scope @@ fun () ->
           let (Wrap tm) = !(data.tm) in
-          match tm.value with
-          | Placeholder _ ->
-              Global.HolesAllowed.run ~env:(Ok ()) @@ fun () ->
-              let ctx = Norm.eval_ctx termctx in
-              let ety = Norm.eval_term (Ctx.env ctx) ty in
-              let content =
+          Global.HolesAllowed.run ~env:(Ok ()) @@ fun () ->
+          let ctx = Norm.eval_ctx termctx in
+          let content =
+            match tm.value with
+            | Placeholder _ -> (
+                let ety = Norm.eval_term (Ctx.env ctx) ty in
                 match View.view_type ety "split" with
                 | Canonical (_, Pi (_, doms, _), _, _) ->
                     let cube, mapsto =
@@ -993,19 +993,76 @@ let rec execute :
                     let fields = Bwd.fold_right do_field fields [] in
                     match eta with
                     | Eta ->
-                        "(" ^ String.concat ", " (List.map (fun fld -> fld ^ " := ?") fields) ^ ")"
+                        Token.to_string LParen
+                        ^ String.concat ", "
+                            (List.map
+                               (fun fld ->
+                                 fld ^ " " ^ Token.to_string Coloneq ^ " " ^ Token.to_string Query)
+                               fields)
+                        ^ Token.to_string RParen
                     | Noeta ->
-                        "["
-                        ^ String.concat " | " (List.map (fun fld -> "." ^ fld ^ " |-> ?") fields)
-                        ^ "]")
-                | Canonical (_, UU _, _, _) -> fatal (Invalid_split "universe")
-                | Canonical (_, Data _, _, _) -> fatal (Invalid_split "datatype")
-                | Neutral _ -> fatal (Invalid_split "neutral") in
-              (data.tm := TermParse.Term.(final (parse (`String { title = None; content }))));
-              execute ~action_taken ~get_file (Solve data)
-          | _ ->
-              let _ptm = process vars tm in
-              fatal (Unimplemented "splitting on terms"))
+                        Token.to_string LBracket
+                        ^ String.concat " | "
+                            (List.map
+                               (fun fld ->
+                                 "."
+                                 ^ fld
+                                 ^ " "
+                                 ^ Token.to_string Mapsto
+                                 ^ " "
+                                 ^ Token.to_string Query)
+                               fields)
+                        ^ Token.to_string RBracket)
+                | Canonical (_, UU _, _, _) -> fatal (Invalid_split (`Goal, "universe"))
+                | Canonical (_, Data _, _, _) -> fatal (Invalid_split (`Goal, "datatype"))
+                | Neutral _ -> fatal (Invalid_split (`Goal, "neutral")))
+            | _ -> (
+                match process vars tm with
+                | { value = Synth rtm; loc } -> (
+                    let _, sty = Check.synth (Kinetic `Nolet) ctx (Asai.Range.locate_opt loc rtm) in
+                    match View.view_type sty "split" with
+                    | Canonical (_, Data { dim; constrs; _ }, _, _) ->
+                        let mapsto =
+                          match D.compare_zero dim with
+                          | Zero -> Token.to_string Mapsto
+                          | Pos _ -> Token.to_string DblMapsto in
+                        let rec do_args : type a p ap.
+                            (a, p, ap) Term.Telescope.t -> string -> string =
+                         fun args acc ->
+                          match args with
+                          | Emp -> acc
+                          | Ext (x, _, args) ->
+                              Option.value ~default:(Token.to_string Underscore) x
+                              ^ " "
+                              ^ do_args args acc in
+                        let do_constrs : type m ij.
+                            Constr.t * (m, ij) Value.dataconstr -> string list -> string list =
+                         fun (c, Dataconstr { args; _ }) acc ->
+                          (Constr.to_string c
+                          ^ ". "
+                          ^ do_args args " "
+                          ^ mapsto
+                          ^ " "
+                          ^ Token.to_string Query)
+                          :: acc in
+                        let constrs = Bwd.fold_right do_constrs constrs [] in
+                        let buf = Buffer.create 10 in
+                        PPrint.(
+                          ToBuffer.pretty 1.0 (Display.columns ()) buf
+                            (pp_complete_term (Wrap tm) `None));
+                        Token.to_string Match
+                        ^ " "
+                        ^ Buffer.contents buf
+                        ^ " "
+                        ^ Token.to_string LBracket
+                        ^ " "
+                        ^ String.concat " | " constrs
+                        ^ " "
+                        ^ Token.to_string RBracket
+                    | _ -> fatal (Invalid_split (`Term, "non-datatype")))
+                | _ -> fatal (Nonsynthesizing "splitting term")) in
+          (data.tm := TermParse.Term.(final (parse (`String { title = None; content }))));
+          execute ~action_taken ~get_file (Solve data)
       | `Defined _ | `Axiom -> fatal (Anomaly "hole already defined"))
   | Show { what; _ } -> (
       action_taken ();

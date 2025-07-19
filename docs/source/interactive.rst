@@ -33,15 +33,19 @@ Finally, if the cursor is over a hole, then the commands ``C-c ;`` (normalize a 
 Splitting in holes
 ------------------
 
-Narya has a limited ability to infer the shape of a term to solve a hole with from the type of that hole.  In ProofGeneral mode, if you position the cursor over a hole and type ``C-c C-y``, Narya will try to guess the shape of a term to fill the hole with, leaving additional holes in appropriate places.  This includes:
+Narya has a limited ability to infer the shape of a term to solve a hole with from the type of that hole or from the type of an argument to match against.  In ProofGeneral mode, if you position the cursor over a hole and type ``C-c C-y``, you will be prompted for a term on which to split, or to leave it blank to split on the type of the goal.  Narya will then try to guess the shape of a term to fill the hole with, leaving additional holes in appropriate places.  This includes:
 
-- If the hole has a function type, the term inserted will be an abstraction with a new hole in the body.  The variable names in the abstraction are taken from the function type, e.g. for ``(x : A) → B`` the term inserted will be ``x ↦ ?``.  For a function type with unnamed variable like ``A → B``, the variable inserted will be a placeholder ``_``.  Iterated function-types like ``(x : A) (y : B) → C`` lead to iterated abstractions ``x y ↦ ?``, and higher-dimensional function-types like ``Id ((x : A) → B) f g`` lead to :ref:`Cubes of variables` ``x ⤇ ?``.
+- If you enter a term, that term must synthesize a datatype (see :ref:`Inductive datatypes and matching`).  The term inserted will then be a match against that term, with appropriate branches for all of its constructors.  The variable names for the arguments of each constructor are taken from the datatype declaration.  This includes higher-dimensional versions of data types (see :ref:`Id of datatypes`).  However, it is not currently possible to use this method to insert :ref:`Multiple matches and deep matches`.
 
-- If the hole has a record type (see :ref:`Record types and tuples`), the term inserted will be a tuple with all fields labeled such as ``(fst ≔ ?, snd ≔ ?)``.  This includes higher-dimensional versions of record types (see :ref:`Id of record types`).
+- If you don't enter a term, and the hole has a function type, the term inserted will be an abstraction with a new hole in the body.  The variable names in the abstraction are taken from the function type, e.g. for ``(x : A) → B`` the term inserted will be ``x ↦ ?``.  For a function type with unnamed variable like ``A → B``, the variable inserted will be a placeholder ``_``.  Iterated function-types like ``(x : A) (y : B) → C`` lead to iterated abstractions ``x y ↦ ?``, and higher-dimensional function-types like ``Id ((x : A) → B) f g`` lead to :ref:`Cubes of variables` ``x ⤇ ?``.
 
-- If the hole has a codata type (see :ref:`Codatatypes and comatching`), including higher-dimensional versions thereof, the term inserted will be a comatch such as ``[ .head ↦ ? | .tail ↦ ? ]``.  This also works with :ref:`higher coinductive types`: the correct number of copies of each higher field are inserted depending on the dimension of the type.
+- If you don't enter a term, and the hole has a record type (see :ref:`Record types and tuples`), the term inserted will be a tuple with all fields labeled such as ``(fst ≔ ?, snd ≔ ?)``.  This includes higher-dimensional versions of record types (see :ref:`Id of record types`).
 
-You can also split on a hole directly in interactive mode, identifying a hole by its number as in ``split 0 ≔ _``.  (The placeholder ``_`` is necessary, as in the future we may also implement splitting on a supplied term that belongs to some datatype.)  This can be a bit confusing, though, because it doesn't inform you about the term that was inserted, only about all the new holes.
+- If you don't enter a term, and the hole has a codata type (see :ref:`Codatatypes and comatching`), including higher-dimensional versions thereof, the term inserted will be a comatch such as ``[ .head ↦ ? | .tail ↦ ? ]``.  This also works with :ref:`higher coinductive types`: the correct number of copies of each higher field are inserted depending on the dimension of the type.
+
+If none of these cases apply, an error results.
+
+You can also split on a hole directly in interactive mode, identifying a hole by its number as in ``split 0 ≔ M`` to split on a term ``M``, or ``split 0 ≔ _`` to split on the goal type.  This can be a bit confusing, though, because it doesn't inform you about the term that was inserted, only about all the new holes.
 
 
 Undoing solved holes

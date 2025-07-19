@@ -481,13 +481,13 @@ handling in Proof General."
 
 (defun narya-solve-hole (term)
   "Solve the current hole with a user-provided term."
-  (interactive "MEnter the term to solve the hole: ")
+  (interactive "MSolve hole with: ")
   (narya-solve-or-split-hole nil term))
 
-(defun narya-split-hole ()
-  "Solve the current hole with a term inferred from its type."
-  (interactive)
-  (narya-solve-or-split-hole t "_"))
+(defun narya-split-hole (term)
+  "Solve the current hole by matching a term or inferring from its type."
+  (interactive "MSplit on term (leave blank to split on goal): ")
+  (narya-solve-or-split-hole t (if (equal term "") "_" term)))
 
 (defun narya-solve-or-split-hole (split term)
   "Issue either solve or split command, depending on the argument."

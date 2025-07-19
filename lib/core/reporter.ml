@@ -242,7 +242,7 @@ module Code = struct
     | Incompatible_flags : string * string -> t
     | Actions_in_compiled_file : string -> t
     | No_such_hole : int -> t
-    | Invalid_split : string -> t
+    | Invalid_split : [ `Term | `Goal ] * string -> t
     | Forbidden_interactive_command : string -> t
     | Not_enough_to_undo : t
     | Commands_undone : int -> t
@@ -997,7 +997,12 @@ module Code = struct
       | Actions_in_compiled_file file ->
           textf "not re-executing echo/synth/show commands when loading compiled file %s" file
       | No_such_hole i -> textf "no open hole numbered %d" i
-      | Invalid_split str -> textf "invalid split: hole belongs to a %s" str
+      | Invalid_split (which, str) ->
+          textf "invalid split: %s belongs to a %s"
+            (match which with
+            | `Goal -> "goal"
+            | `Term -> "term")
+            str
       | Hole_solved h ->
           if h > 1 then textf "hole solved, containing %d new holes" h
           else if h = 1 then text "hole solved, containing 1 new hole"
