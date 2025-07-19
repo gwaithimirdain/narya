@@ -10,6 +10,7 @@ There are several ways to install Narya.
 In addition to installing the basic Narya executable, the following are highly recommended:
 
 - The :ref:`Installing ProofGeneral mode` that runs inside Emacs.
+- :ref:`Installing ctags` for jumping to the definition of constants in a source tree.
 - Further :ref:`Configuration` options.
 
 We have tried to make the installation process as easy and painless as possible.  If you run into any problems, please ask for help!  See :ref:`Support and community` for places to ask.
@@ -252,6 +253,33 @@ If the automatic ProofGeneral installer doesn't work for you, you can follow the
 You will have to repeat these steps whenever the Narya ProofGeneral mode is updated (unless you symlinked the files instead of copying them, in which case restarting Emacs will suffice); whenever ProofGeneral is updated; and whenever Emacs is updated.
 
 Once ProofGeneral is installed and working, you can proceed with further :ref:`Configuration`.
+
+
+Installing ctags
+----------------
+
+`Universal Ctags <https://ctags.io/>`_ is a command-line program that reads all the source files in a project and generates a "tags file" containing the location of every definition in those files.  The tags file can then be read by Emacs to enable commands for jumping to the location where a given constant was defined.
+
+Narya comes with a "language definition" file for Universal Ctags, enabling it to generate tags files for Narya source code.  This is not perfect: it doesn't take into account :ref:`sections <Namespaces and sections>` or :ref:`Import modifiers`, so it won't always be able to find definitions correctly.  But until we implement an analogous feature in a more sophisticated way, it can serve as a useful stopgap.
+
+The automatic installation script will also attempt to install the ctags language definition file in the correct place.  If it fails, or if you are doing a manual installation, you can do this yourself by copying (or symlinking) the file ``narya.ctags`` (included in the binary distribution, or in the directory ``ctags`` of the source tree) into the directory ``$HOME/.ctags.d`` (which you can create if it doesn't exist).
+
+You will also have to install Universal Ctags.  On Linux or WSL you can use a package manager such as
+
+.. code-block:: none
+
+   sudo apt install universal-ctags
+
+while on MacOS you may be able to use `homebrew <https://formulae.brew.sh/formula/universal-ctags>`_ or `build manually <https://docs.ctags.io/en/latest/osx.html>`_.
+
+In addition, it is recommended to add the following two lines to your ``$HOME/.emacs`` file, which will tell Emacs to automatically run ``ctags`` on all Narya files in a given project.
+
+.. code-block:: lisp
+
+   (etags-regen-mode t)
+   (add-to-list 'etags-regen-file-extensions "ny")
+
+For information on using the tags file, see :ref:`Ctags`.
 
 
 Configuration

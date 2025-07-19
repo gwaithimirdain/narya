@@ -76,6 +76,39 @@ then
     fi
 fi
 
+# Install the Narya ctags configuration file
 echo
-echo Narya ProofGeneral installed.  Restart any open instances of Emacs.
+echo Installing Narya ctags configuration...
+
+mkdir -p $HOME/.ctags.d
+
+if [ -e narya.ctags ]
+then
+    if ! cp narya.ctags $HOME/.ctags.d
+    then
+        echo Error copying tags file
+    fi
+elif [ -e ../ctags/narya.ctags ]
+then
+     echo You appear to be running this script from the Narya source tree,
+     echo so I will symlink the Narya .ctags file instead of copying it.
+     pushd ../ctags >/dev/null
+     NARYA_CTAGS=`pwd`
+     popd >/dev/null
+     pushd $HOME/.ctags.d >/dev/null
+     ln -s $NARYA_CTAGS/narya.ctags .
+     popd >/dev/null
+else
+    echo I can\'t find the Narya .ctags file!
+    exit 1
+fi
+
+echo
+echo Narya ProofGeneral and Ctags installed.
+echo
+echo To use ctags, add the following lines to your $HOME/.emacs file:
+echo "  (etags-regen-mode t)"
+echo "  (add-to-list 'etags-regen-file-extensions \"ny\")"
+echo 
+echo Then restart any open instances of Emacs.
 echo "(You will need to run this script again every time Emacs, ProofGeneral, or Narya is updated.)"

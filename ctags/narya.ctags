@@ -1,0 +1,8 @@
+--langdef=narya
+--map-narya=.ny
+
+--kinddef-narya=d,definition,definitions
+--kinddef-narya=a,axiom,axioms
+
+--regex-narya=/^[ \t]*def[ \t]+([a-zA-Z0-9]+)/\1/d/
+--regex-narya=/^[ \t]*axiom[ \t]+([a-zA-Z0-9]+)/\1/a/

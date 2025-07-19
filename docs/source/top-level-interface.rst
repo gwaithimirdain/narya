@@ -295,6 +295,23 @@ And Narya defines some of its own faces as well.
 - ``narya-hole-face``: the background highlight of open holes.
 
 
+Ctags
+-----
+
+If you followed the instructions for :ref:`Installing Ctags`, then you should be able to use Emacs's built-in commands for finding and jumping to definitions in and between Narya source files.  The full documentation can be found in the `Emacs manual <https://www.gnu.org/software/emacs/manual/html_node/emacs/Find-Identifiers.html>`_, but here is a summary of the most useful commands:
+
+- ``M-.`` : Show the definition of the identifier under the cursor.
+- ``C-u M-.`` : Prompts for any identifier and shows its definition.
+- ``M-,`` : After ``M-.``, go back to the original location.
+- ``C-M-,`` : After ``M-,``, go back to the definition location again.
+- ``C-M-.`` : Search for an identifier matching a pattern.
+- ``M-?`` : Find all uses of an identifier in any file in the current project.
+- ``M-x tags-search`` : Search for a regular expression through all the files in the current project.
+- ``M-x tags-query-replace`` : Search for and replace a regular expression through all the files in the current project.
+
+Unfortunately, ctags does not understand Narya's :ref:`sections <Namespaces and sections>` or :ref:`Import modifiers`, so these commands won't be able to find identifiers that have been renamed by ``import`` or that were declared in a ``section``.  Eventually we hope to implement a more sophisticated solution.
+
+
 Code formatter
 --------------
 
