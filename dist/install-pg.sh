@@ -39,9 +39,10 @@ fi
 
 mkdir -p $PGDIR/narya
 
+# Install the narya elisp files, replacing any old ones.
 if [ -e narya.el ]
 then
-    # Install the narya elisp files, overwriting any old ones.
+    rm -f $PGDIR/narya/*.el $PGDIR/narya/*.elc
     if ! cp -f *.el $PGDIR/narya
     then
         echo Error copying elisp files
@@ -76,15 +77,16 @@ then
     fi
 fi
 
-# Install the Narya ctags configuration file
 echo
 echo Installing Narya ctags configuration...
 
 mkdir -p $HOME/.ctags.d
 
+# Install the Narya ctags configuration file, replacing any old one
 if [ -e narya.ctags ]
 then
-    if ! cp narya.ctags $HOME/.ctags.d
+    rm -f $HOME/.ctags.d/narya.ctags
+    if ! cp -f narya.ctags $HOME/.ctags.d
     then
         echo Error copying tags file
     fi
@@ -96,6 +98,7 @@ then
      NARYA_CTAGS=`pwd`
      popd >/dev/null
      pushd $HOME/.ctags.d >/dev/null
+     rm -f narya.ctags
      ln -s $NARYA_CTAGS/narya.ctags .
      popd >/dev/null
 else
