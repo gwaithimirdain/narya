@@ -109,9 +109,22 @@ fi
 echo
 echo Narya ProofGeneral and Ctags installed.
 echo
-echo To use ctags, add the following lines to your $HOME/.emacs file:
-echo "  (etags-regen-mode t)"
-echo "  (add-to-list 'etags-regen-file-extensions \"ny\")"
-echo 
-echo Then restart any open instances of Emacs.
-echo "(You will need to run this script again every time Emacs, ProofGeneral, or Narya is updated.)"
+
+if [ `emacs -Q --batch --eval '(print (or (and (= emacs-major-version 30) (>= emacs-minor-version 1)) (> emacs-major-version 30)))'` = "t" ]
+then
+    echo To use ctags, add the following lines to your $HOME/.emacs file:
+    echo "  (etags-regen-mode t)"
+    echo "  (add-to-list 'etags-regen-file-extensions \"ny\")"
+    echo 
+    echo Then restart any open instances of Emacs.
+else
+    echo 'To use ctags, you must first create a "TAGS" file by running the command'
+    echo "  etags"
+    echo "in the root directory of your Narya project.  You'll need to do this again"
+    echo "whenever new definitions are added to imported files."
+    echo '(If you upgrade Emacs to version 30.1 or newer, you can instead use'
+    echo '"etags-regen-mode" to automatically generate and regenerate the TAGS file.)'
+    echo
+    echo Now restart any open instances of Emacs.
+fi
+echo "You will need to run this script again every time Emacs, ProofGeneral, or Narya is updated."

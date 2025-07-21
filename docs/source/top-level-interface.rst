@@ -325,6 +325,8 @@ Ctags has a limited understanding of Narya's :ref:`sections <Namespaces and sect
 
 the definition ``baz`` can be found under the names ``baz`` and ``foo.bar.baz``,  but not ``bar.baz`` (which it would be referred to by inside the section ``foo`` but outside the section ``bar``).
 
+Remember also that if your Emacs version is older than 30.1, so that ``etags-regen-mode`` is not available, you'll need to re-run the command ``etags`` in the root directory of your Narya project every time new definitions are added to an imported file in order for the above commands to find them.
+
 Eventually we hope to implement a more sophisticated solution for finding definitions, but until then, Ctags can be very useful if you keep aware of these limitations.
 
 

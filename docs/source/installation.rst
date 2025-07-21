@@ -272,20 +272,20 @@ You will also have to install Universal Ctags.  (There are other programs that g
 
 while on MacOS you may be able to use `homebrew <https://formulae.brew.sh/formula/universal-ctags>`_ or `build manually <https://docs.ctags.io/en/latest/osx.html>`_.
 
-In addition, it is recommended to add the following two lines to your ``$HOME/.emacs`` file, which will tell Emacs to automatically run Universal Ctags on all Narya files in a given project.
+In addition, if you have Emacs version 30.1 or newer, it is recommended to add the following two lines to your ``$HOME/.emacs`` file, which will tell Emacs to automatically run Universal Ctags on all Narya files in a given project.
 
 .. code-block:: lisp
 
    (etags-regen-mode t)
    (add-to-list 'etags-regen-file-extensions "ny")
 
-Alternatively, you can manually create the tags file (called ``TAGS`` by convention) by running a command such as
+If your version of Emacs is older than this, you can instead manually create the tags file (called ``TAGS`` by convention) by running a command such as
 
 .. code-block:: bash
 
    find . -name '*.ny' | etags -L -
 
-It is important to run the program as ``etags``, or as ``ctags -e``, so that it produces a tags file in the correct format for Emacs.
+in the base directory of your Narya project.  It is important to run the program as ``etags``, or as ``ctags -e``, so that it produces a tags file in the correct format for Emacs.
 
 For information on using the tags file, see :ref:`Ctags`.
 
