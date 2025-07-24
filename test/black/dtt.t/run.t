@@ -142,7 +142,7 @@
    ￮ constant sst.copair defined
   
 
-  $ narya -arity 2 -direction p -external -v sct.ny
+  $ narya -parametric -arity 2 -direction p -external -v sct.ny
    ￫ info[I0000]
    ￮ constant SCT defined
   

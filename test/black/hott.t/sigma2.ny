@@ -1,5 +1,3 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
-
 {` Transport and liftnig compute in 2-dimensional Σ-types `}
 
 axiom A00 : Type

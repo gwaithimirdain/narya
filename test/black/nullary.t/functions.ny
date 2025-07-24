@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-arity" "0" "-direction" "w,wk") -*- `}
+{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-arity" "0" "-direction" "w,wk") -*- `}
 
 axiom A : Type
 axiom B : A → Type

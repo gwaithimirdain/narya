@@ -1,3 +1,5 @@
+{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-direction" "p,rel,Br") -*- `}
+
 {` Basic facts from Book HoTT using the Martin-Lof identity type.  We are treating this as the outer layer of 2LTT used in Orton-Pitts style to build an inner HOTT layer. `}
 
 section eq ≔

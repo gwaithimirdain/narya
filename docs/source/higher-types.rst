@@ -147,7 +147,7 @@ In other words, ``Id √ℕ n₀ n₁`` behaves like a higher coinductive type i
 Displayed coinductive types
 ---------------------------
 
-In the *displayed coinductive types* of *Displayed Type Theory* (dTT), the *output* of a corecursive method is a higher-dimensional version of the codatatype.  One of the most basic examples is the definition of the type of semi-simplicial types from the `dTT paper <https://arxiv.org/abs/2311.18781>`_ (written here in Narya using ``-dtt``, meaning ``-arity 1 -direction d -external``):
+In the *displayed coinductive types* of :ref:`Displayed type theory` (dTT), the *output* of a corecursive method is a higher-dimensional version of the codatatype.  One of the most basic examples is the definition of the type of semi-simplicial types from the `dTT paper <https://arxiv.org/abs/2311.18781>`_ (written here in Narya using ``-dtt``, meaning ``-parametric -arity 1 -direction d -external``):
 
 .. code-block:: none
 

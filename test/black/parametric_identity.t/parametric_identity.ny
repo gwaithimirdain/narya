@@ -1,3 +1,5 @@
+{` -*- narya-prog-args: ("-proofgeneral" "-parametric") -*- `}
+
 def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig a b ↦ ( ungel : R a b )
 
 {` First we define an equality type `}

@@ -65,7 +65,7 @@
    ￮ constant idvec_nil_or_cons defined
   
 
-  $ narya -v multi.ny
+  $ narya -v -parametric multi.ny
    ￫ info[I0000]
    ￮ constant bool defined
   

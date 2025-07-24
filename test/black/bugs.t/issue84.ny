@@ -1,5 +1,3 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
-
 axiom A : Type
 axiom B : Type
 axiom f : A → B

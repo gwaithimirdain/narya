@@ -1,4 +1,4 @@
-  $ narya -hott -v equational.ny
+  $ narya -v equational.ny
    ￫ info[I0001]
    ￮ axiom A assumed
   
