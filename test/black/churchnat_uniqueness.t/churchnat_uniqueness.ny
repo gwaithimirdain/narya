@@ -1,3 +1,5 @@
+{` -*- narya-prog-args: ("-proofgeneral" "-parametric") `}
+
 {` Uniqueness of iteration for Church encoded Nat from parametricity (from Thorsten) `}
 
 def prod (A B : Type) : Type ≔ sig ( fst : A, snd : B )

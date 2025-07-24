@@ -1,4 +1,4 @@
-  $ narya -v holes.ny
+  $ narya -parametric -v holes.ny
    ￫ info[I0001]
    ￮ axiom A assumed
   
@@ -350,9 +350,9 @@
   
    ￫ warning[E2100]
    ￭ $TESTCASE_ROOT/holes.ny
-    97 | def p : prod ≔ ?
+    99 | def p : prod ≔ ?
        ^ previous definition
-   103 | def p : prod' ≔ ?
+   105 | def p : prod' ≔ ?
        ^ redefining constant: p
   
    ￫ info[I0000]
@@ -375,7 +375,7 @@
   
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/dtt-holes.ny
-   4 | def g (X : Type) : Type⁽ᵈ⁾ X ≔ (f ?)⁽ᵈ⁾
+   6 | def g (X : Type) : Type⁽ᵈ⁾ X ≔ (f ?)⁽ᵈ⁾
      ^ term synthesized type
          Type⁽ᵈ⁾ ?0{…}
        but is being checked against type

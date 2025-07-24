@@ -1,3 +1,5 @@
+{` -*- narya-prog-args: ("-proofgeneral" "-parametric") -*- `}
+
 axiom A : Type
 
 axiom B : Type

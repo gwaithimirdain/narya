@@ -1,9 +1,9 @@
 Observational higher dimensions
 ===============================
 
-There are many ways in which a type theory can be "higher-dimensional", by which we include homotopy type theory (specifically, Higher Observational Type Theory), internally parametric type theories, and `displayed type theory <https://arxiv.org/abs/2311.18781>`_.  The internal architecture of Narya is set up to eventually permit the user to mix and match multiple such "directions" of higher-dimensionality, but currently this is not realized.  At the moment, there is only one built-in direction, although its behavior can be customized to any of the above-mentioned theories.
+There are many ways in which a type theory can be "higher-dimensional", by which we include homotopy type theory (specifically, Higher Observational Type Theory, a.k.a. HOTT), internally parametric type theories, and `displayed type theory <https://arxiv.org/abs/2311.18781>`_.  The internal architecture of Narya is set up to eventually permit the user to mix and match multiple such "directions" of higher-dimensionality, but currently this is not realized.  At the moment, there is only one built-in direction, although its behavior can be customized to any of the above-mentioned theories.
 
-In this section we describe the common features of all these theories; more details will be discussed under :ref:`Parametricity` and :ref:`Higher Observational Type Theory`.  To be precise, here we describe the *default* behavior of Narya with no command-line flags given, which is *binary internal parametricity* named ``e,refl,Id,ap`` (the meaning of this will be explained later).
+In this section we describe the common features of all these theories; more details will be discussed under :ref:`Parametricity` and :ref:`Higher Observational Type Theory`.  We use the notation of HOTT.
 
 
 Observational primitives

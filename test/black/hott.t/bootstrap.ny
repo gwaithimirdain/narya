@@ -1,5 +1,3 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
-
 {` The code in this file is used in Parser.Hott to bootstrap the definitions of fibrancy at some types.  It isn't actually loaded from here, though, it's copied into that file as strings.  It would be better to maintain it in only one place, namely here, and load it into that file with something like ppx_blob. `}
 
 def isFibrant : Type → Type ≔ A ↦ codata [

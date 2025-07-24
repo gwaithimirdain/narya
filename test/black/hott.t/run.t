@@ -1,4 +1,4 @@
-  $ narya -hott tr.ny
+  $ narya tr.ny
   A₂ .trr
     : A₀ → A₁
   
@@ -24,7 +24,7 @@
     : A₂ (A₂ .trl a₁) a₁
   
 
-  $ narya -hott tr2.ny
+  $ narya tr2.ny
   A22 .trr.1
     : {𝑥₀ : A00} {𝑥₁ : A01} (𝑥₂ : A02 𝑥₀ 𝑥₁)
       →⁽ᵉ⁾ A12 (A20 .trr 𝑥₀) (A21 .trr 𝑥₁)
@@ -142,7 +142,7 @@
     : A22 (sym A22 a20 a21 .trl a12) a12 a20 a21
   
 
-  $ narya -hott -v J.ny
+  $ narya -v J.ny
    ￫ info[I0000]
    ￮ constant transport defined
   
@@ -186,7 +186,7 @@
    ￮ constant Jβ defined
   
 
-  $ narya -hott -v univalence.ny
+  $ narya -v univalence.ny
    ￫ info[I0000]
    ￮ constant Σ defined
   
@@ -209,7 +209,7 @@
    ￮ constant univalence defined
   
 
-  $ narya -hott -v bootstrap.ny
+  $ narya -v bootstrap.ny
    ￫ info[I0000]
    ￮ constant isFibrant defined
   
@@ -259,7 +259,7 @@
    ￮ constant fib_glue defined
   
 
-  $ narya -hott pi.ny
+  $ narya pi.ny
   B₂ (A₂ .liftl a₁) .trr (f₀ (A₂ .trl a₁))
     : B₁ a₁
   
@@ -301,7 +301,7 @@
     : B₂ a₂ (B₂ (A₂ .liftr a₀) .trl (f₁ (A₂ .trr a₀))) (f₁ a₁)
   
 
-  $ narya -hott pi2.ny
+  $ narya pi2.ny
   B22 (A22 (A02 .liftl a01) (A12 .liftl a11) .liftl a21)
       (f02 (A02 .liftl a01)) (f12 (A12 .liftl a11))
     .trr (f20 (A22 (A02 .liftl a01) (A12 .liftl a11) .trl a21))
@@ -799,7 +799,7 @@
         (f21 a21)
   
 
-  $ narya -hott sigma.ny
+  $ narya sigma.ny
   refl Σ A₂ B₂ .trr u₀
     : Σ A₁ B₁
   
@@ -852,7 +852,7 @@
         (u₁ .snd)
   
 
-  $ narya -hott sigma2.ny
+  $ narya sigma2.ny
   A22 .trr.1 (u02 .fst)
     : A12 (A20 .trr (u00 .fst)) (A21 .trr (u01 .fst))
   
@@ -909,7 +909,7 @@
          .trl (u21 .snd)) (u21 .snd)
   
 
-  $ narya -hott 3sigma.ny
+  $ narya 3sigma.ny
   refl Σ3 A₂ B₂ C₂ .trr u₀
     : Σ3 A₁ B₁ C₁
   
@@ -941,7 +941,7 @@
          .trr (u₀ .thd))
   
 
-  $ narya -hott prod.ny
+  $ narya prod.ny
   refl prod A₂ B₂ .trr u₀
     : prod A₁ B₁
   
@@ -961,7 +961,7 @@
     : B₂ (u₀ .snd) (B₂ .trr (u₀ .snd))
   
 
-  $ narya -hott m.ny
+  $ narya m.ny
   refl M A₂ B₂ .trr u₀
     : M A₁ B₁
   
@@ -1008,7 +1008,7 @@
 
 Gel is not allowed
 
-  $ narya -hott -e "def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig x y ↦ ( ungel : R x y )"
+  $ narya -e "def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig x y ↦ ( ungel : R x y )"
    ￫ error[E0100]
    ￭ command-line exec string
    1 | def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig x y ↦ ( ungel : R x y )
@@ -1016,7 +1016,7 @@ Gel is not allowed
   
   [1]
 
-  $ narya -hott -v glue.ny
+  $ narya -v glue.ny
    ￫ info[I0001]
    ￮ axiom A assumed
   
@@ -1049,7 +1049,7 @@ Gel is not allowed
   
 
 
-  $ narya -hott glue2.ny
+  $ narya glue2.ny
   ap glue A₂ B₂ R₂ Rb₂ .trr.1
     : {𝑥₀ : A₀} {𝑥₁ : A₁} (𝑥₂ : A₂ 𝑥₀ 𝑥₁) →⁽ᵉ⁾ B₂ (Rb₀ .trr 𝑥₀) (Rb₁ .trr 𝑥₁)
   
@@ -1117,7 +1117,7 @@ Gel is not allowed
           x₁
   
 
-  $ narya -hott flip.ny
+  $ narya flip.ny
   f.
     : 𝔹
   

@@ -1,5 +1,3 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
-
 {` Transport and lifting compute on ternary Σ-types `}
 
 def Σ3 (A : Type) (B : A → Type) (C : (x : A) → B x → Type) : Type ≔ sig (

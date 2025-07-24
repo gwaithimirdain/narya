@@ -1,5 +1,3 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
-
 import "univalence"
 
 def 𝔹 : Type ≔ data [ t. | f. ]

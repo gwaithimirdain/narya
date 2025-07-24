@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-direction" "p,rel,Br") -*- `}
+{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-direction" "p,rel,Br") -*- `}
 
 import "isfibrant"
 import "fibrant_types"

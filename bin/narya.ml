@@ -55,12 +55,16 @@ let speclist =
       "Names for parametricity direction and reflexivity (default = e,refl,Id)" );
     ("-internal", Arg.Set internal, "Set parametricity to internal (default)");
     ("-external", Arg.Clear internal, "Set parametricity to external");
-    ("-hott", Arg.Set hott, "Enable higher observational type theory (fibrancy)");
+    ( "-parametric",
+      Arg.Clear hott,
+      "Switch from higher observational type theory (fibrancy) to parametricity" );
+    ("-hott", Arg.Set hott_deprecated, "");
     ("-discreteness", Arg.Set discreteness, "Enable discreteness");
     ("-source-only", Arg.Set source_only, "Load all files from source (ignore compiled versions)");
     ( "-dtt",
       Unit
         (fun () ->
+          hott := false;
           arity := 1;
           refl_char := 'd';
           refl_names := [];

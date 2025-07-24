@@ -58,7 +58,7 @@ Files are recompiled if the flags change
 
   $ narya two.ny
    ￫ warning[W2303]
-   ￮ file '$TESTCASE_ROOT/one.ny' was compiled with incompatible flags -arity 1 -direction d -external, recompiling
+   ￮ file '$TESTCASE_ROOT/one.ny' was compiled with incompatible flags -parametric -arity 1 -direction d -external, recompiling
   
 
 Requiring a file multiple times

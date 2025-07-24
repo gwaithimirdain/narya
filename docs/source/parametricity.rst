@@ -6,15 +6,21 @@ Narya's support for parametricity builds on the primitives discussed in :ref:`Ob
 Names for parametricity
 -----------------------
 
-The command-line flag ``-direction`` can be used to rename or remove the formally-synonymous primitives ``refl``, ``Id``, and ``ap``, as well as the superscript letter ``e``.  The default behavior described in :ref:`Observational higher dimensions` is equivalent to the command-line argument ``-direction e,refl,Id,ap``.  In general the argument of ``-direction`` is a comma-separated list of names, where the first must be a single lowercase letter to be used in generic degeneracies, and the others (if any) are names for the basic degeneracy.  If there is a second name such as ``refl``, it is used as the default for 1-dimensional degeneracies.  If there is a third name such as ``Id``, it is used for 1-dimensional degeneracies of types and type families.  And if there is a fourth name such as ``ap``, it is used for 1-dimensional degeneracies of other functions.  (The name of ``sym`` cannot be changed or removed, and likewise for the digits used in generic degeneracies to indicate permuted dimensions.)
+Parametricity mode is activated by the command-line flag ``-parametric``.  In addition, when this flag is given, the command-line flag ``-direction`` can be used to rename or remove the formally-synonymous primitives ``refl``, ``Id``, and ``ap``, as well as the superscript letter ``e``.  The notation of HOTT, which we used in :ref:`Observational higher dimensions` is equivalent to the command-line argument ``-direction e,refl,Id,ap``.  In general, the argument of ``-direction`` is a comma-separated list of names, where the first must be a single lowercase letter to be used in generic degeneracies, and the others (if any) are names for the basic degeneracy.  If there is a second name such as ``refl``, it is used as the default for 1-dimensional degeneracies.  If there is a third name such as ``Id``, it is used for 1-dimensional degeneracies of types and type families.  And if there is a fourth name such as ``ap``, it is used for 1-dimensional degeneracies of other functions.  (The name of ``sym`` cannot be changed or removed, and likewise for the digits used in generic degeneracies to indicate permuted dimensions.)
 
-In the rest of our discussion of parametricity we will assume the flag
+In the rest of our discussion of parametricity we will assume the flags
 
 .. code-block:: none
 
-   -direction p,rel,Br
+   -parametric -direction p,rel,Br
 
 where ``p`` stands for *parametricity*, ``rel`` for *relation* or *relatedness*, and ``Br`` for *bridge* types.  In this notation, we now restate the defining feature of parametricity: a higher-dimensional type such as ``A₂ : Br Type A₀ A₁`` is completely characterized by its instantiations ``A₂ a₀ a₁``, so that ``Br Type A₀ A₁`` is equivalent to the type ``A₀ → A₁ → Type`` of correspondences.
+
+In particular, when working in parametricity mode you may want to start all your source files with a line such as
+
+.. code-block:: none
+
+   {` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-direction" "p,rel,Br") -*- `}
 
 
 Bridge types of the universe
@@ -46,7 +52,7 @@ For instance, ``Gel A B R`` is a 1-dimensional type, belonging to ``Br Type A B`
 Varying the arity of parametricity
 ----------------------------------
 
-The parametricity described above, which is Narya's default, is *binary* in that the bridge type ``Br A x y`` takes *two* elements of ``A`` as arguments.  However, a different "arity" can be specified with the ``-arity`` command-line flag.  For instance, under ``-arity 1`` we have bridge types ``Br A x``, and under ``-arity 3`` they look like ``Br A x y z``.  Everything else also alters according, e.g. under ``-arity 1`` the type ``Br (A → B) f`` is isomorphic to ``{x₀ : A} (x₁ : Br A x) → Br B (f x)``, and a cube variable has pieces numbered with only ``0`` s and ``1`` s.
+The parametricity described above, which is Narya's default, is *binary* in that the bridge type ``Br A x y`` takes *two* elements of ``A`` as arguments.  However, a different "arity" can be specified with the ``-arity`` command-line flag (which also requires the ``-parametric`` flag).  For instance, under ``-arity 1`` we have bridge types ``Br A x``, and under ``-arity 3`` they look like ``Br A x y z``.  Everything else also alters according, e.g. under ``-arity 1`` the type ``Br (A → B) f`` is isomorphic to ``{x₀ : A} (x₁ : Br A x) → Br B (f x)``, and a cube variable has pieces numbered with only ``0`` s and ``1`` s.
 
 In principle, the arity could be any natural number, but for syntactic reasons Narya currently requires it to be between 0 and 9 inclusive.  The problem with arities greater than 9 is that the syntax ``x.10`` for cube variables would become ambiguous: does ``10`` mean "one-zero" or "ten"?  It would probably be possible to resolve this similarly to how we deal with degeneracies for dimensions above 9, for instance writing ``x..1.0`` for one-zero and ``x..10`` for ten (while keeping the simpler ``x.10`` to mean ``x..1.0``), but this is not a priority because at present we are unaware of any applications of n-ary parametricity for n>2.
 

@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-arity" "0" "-direction" "w,wk") -*- `}
+{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-arity" "0" "-direction" "w,wk") -*- `}
 
 def И (A : Type) : Type ≔ codata [ x .subst.w : A.0 . ]
 
