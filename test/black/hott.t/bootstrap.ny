@@ -132,18 +132,18 @@ def isbisim_rtr
          (S.2 a2 b2) (e.0 a0 b0) (e.1 a1 b1) (e.2 a2 b2) s0 s1)
       (Re.2 .id a0 b0 (e.0 a0 b0 .fro s0) a1 b1 (e.1 a1 b1 .fro s1))]
 
-def fib_type : (A : Type) → isFibrant A ≔ A ↦ [
+def fib_any : (A : Type) → isFibrant A ≔ A ↦ [
 | .trr.e ↦ A.2 .trr
 | .liftr.e ↦ A.2 .liftr
 | .trl.e ↦ A.2 .trl
 | .liftl.e ↦ A.2 .liftl
-| .id.e ↦ x₀ x₁ ↦ fib_type (A.2 x₀ x₁)]
+| .id.e ↦ x₀ x₁ ↦ fib_any (A.2 x₀ x₁)]
 
 def pre_univalence
   : (A : Type) (B : Type) (G : Id Type A B)
     (fibG : (a : A) (b : B) → isFibrant (G a b))
     (Ge : isBisim A B (x y ↦ G x y))
-    → Id isFibrant G (fib_type A) (fib_type B)
+    → Id isFibrant G (fib_any A) (fib_any B)
   ≔ A B G fibG Ge ↦ [
 | .trr.1 ↦ a ↦ Ge .trr a
 | .trl.1 ↦ b ↦ Ge .trl b
@@ -175,7 +175,7 @@ def glue_rtr
 
 def fib_glue
   : (A B : Type) (R : A → B → Type) (Re : isBisim A B R)
-    → Id isFibrant (glue A B R Re) (fib_type A) (fib_type B)
+    → Id isFibrant (glue A B R Re) (fib_any A) (fib_any B)
   ≔ A B R Re ↦ [
 | .trr.1 ↦ a ↦
     isbisim_rtr A B (x y ↦ R x y) (a b ↦ glue A B R Re a b)

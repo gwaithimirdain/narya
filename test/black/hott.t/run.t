@@ -247,7 +247,7 @@
    ￮ constant isbisim_rtr defined
   
    ￫ info[I0000]
-   ￮ constant fib_type defined
+   ￮ constant fib_any defined
   
    ￫ info[I0000]
    ￮ constant pre_univalence defined
