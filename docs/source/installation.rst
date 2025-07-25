@@ -24,7 +24,7 @@ A statically compiled binary, built automatically with Nix from the up-to-date d
 On Linux
 ^^^^^^^^
 
-After downloading and unpacking the `static distribution <https://gwaithimirdain.github.io/narya/releases/narya-master-static.tar.gz>`_, place the ``narya`` executable in a directory that's in your ``PATH`` (the "environment variable" that tells your shell or command prompt which directories to look in to find programs).  On some flavors of Linux, the directory ``~/bin`` is automatically in your path if it exists, so the first thing to try is
+After downloading and unpacking the `static distribution <https://gwaithimirdain.github.io/narya/releases/narya-master-static.tar.gz>`_, place the ``narya`` executable in a directory that's in your ``PATH`` (the "environment variable" that tells your shell or command prompt which directories to look in to find programs).  On some flavors of Linux, the directory ``~/bin`` is automatically in your path if it exists.  Thus, the first thing to try is (from the directory ``narya-XXXXXXX-YYYYMMDD`` created by extracting the static distribution):
 
 .. code-block:: bash
 
@@ -37,9 +37,9 @@ Then restart your shell (i.e. terminal or command prompt) and try running ``nary
 
   echo export PATH="\$HOME/bin:\$PATH" >>~/.bashrc
 
-and then once again restart your shell, or log out and back in again.
+and then once again restart your shell, or log out and back in again.  Once you can run Narya from the command prompt, proceed to :ref:`Installing ProofGeneral mode`.
 
-Once you can run Narya from the command prompt, proceed to :ref:`Installing ProofGeneral mode`.
+To update to a newer version of Narya, simply download the most recent static distribution and copy the newer ``narya`` excecutable into your ``bin``, replacing the old one.  (You may also need to update :ref:`ProofGeneral <Installing ProofGeneral mode>`.)
 
 
 On Windows
@@ -95,7 +95,7 @@ Here are steps to manually set up a development environment in which you can com
     opam install dune
     eval $(opam env)
 
-  The ``eval`` command is for Unix-like operating systems.  On Windows, replace it by:
+  The ``eval`` command is for Unix-like operating systems.  On Windows (not WSL), replace it by:
 
   .. code-block:: none
 
@@ -122,7 +122,7 @@ Here are steps to manually set up a development environment in which you can com
     dune build narya.opam
     opam install . --deps-only
     dune build @install
-    dune runtest
+    dune test
     dune install
 
 This will make the executable available in a directory such as ``$HOME/.opam/5.3.0/bin``.  If Opam was installed correctly using ``opam init``, this directory should already be in your ``PATH``, so that you can then run Narya in the future from any directory by simply typing ``narya``.
@@ -157,15 +157,13 @@ The most recent version of the documentation is automatically posted on `Readthe
 1. *Sphinx*: The documentation generator.
 2. *Sphinx Read the Docs theme*: A popular theme for Sphinx-based documentation.
 
-To install these dependencies, run the following commands:
+To install these dependencies, first ensure that `Python <https://www.python.org/>`_ is installed along with its package manager ``pip``, and then run the following commands:
 
 .. code-block:: bash
    
    pip install sphinx sphinx-rtd-theme
 
-After installing the required dependencies, navigate to the documentation directory (typically ``docs/`` or ``docs/source/``).
-
-To build the documentation in HTML format, run:
+After installing the required dependencies, navigate to the documentation directory (typically ``docs/`` or ``docs/source/``).  Then you can build the documentation in HTML format with:
 
 .. code-block:: bash
    
@@ -198,6 +196,13 @@ To install the Narya ProofGeneral mode, first you'll need to install a relativel
   sudo snap install emacs --classic
 
 If you have previously installed an older version of Emacs through your package manager, you may want to remove it (such as with ``sudo apt remove emacs-common``) to avoid confusion, and then restart your shell or terminal.  To find out what version of Emacs you have, you can run ``emacs --version`` in a terminal, or ``M-x emacs-version`` inside Emacs: look for at least 30.1.
+
+For MacOS there are multiple versions of Emacs available, such as:
+
+- Using `Homebrew <http://brew.sh/>`_, run ``brew install --cask emacs``.
+- Using `MacPorts <https://www.macports.org/>`_, run ``sudo port install emacs-app``.
+- Universal binaries from `Emacs for OSX <https://emacsformacosx.com/>`_.
+- The `Emacs-mac port <https://github.com/railwaycat/homebrew-emacsmacport?tab=readme-ov-file>`_, which may integrate better with MacOS graphics: run ``brew tap railwaycat/emacsmacport`` and then ``brew install --cask emacs-mac``.  However, as of July 2025 this only offers Emacs version 29, which in particular doesn't support ``etags-regen-mode`` (see :ref:`Installing ctags`).
 
 Once Emacs is installed, you have two options for installing the Narya ProofGeneral mode:
 
@@ -262,30 +267,41 @@ Installing ctags
 
 Narya comes with a "language definition" file for Universal Ctags, enabling it to generate tags files for Narya source code.  This is not perfect (e.g. it doesn't know about :ref:`Import modifiers`), so it won't always be able to find definitions correctly.  But it can still be very useful, until we implement an analogous feature in a more sophisticated way.
 
-The automatic installation script will also attempt to install the ctags language definition file in the correct place.  If it fails, or if you are doing a manual installation, you can do this yourself by copying (or symlinking) the file ``narya.ctags`` (included in the binary distribution, or in the directory ``ctags`` of the source tree) into the directory ``$HOME/.ctags.d`` (which you can create if it doesn't exist).
+The automatic installation script ``install-pg.sh`` will also attempt to install the ctags language definition file in the correct place.  If it fails, or if you are doing a manual installation, you can do this yourself by copying (or symlinking) the file ``narya.ctags`` (included in the binary distribution, or in the directory ``ctags`` of the source tree) into the directory ``$HOME/.ctags.d`` (which you can create if it doesn't exist).
 
 You will also have to install Universal Ctags.  (There are other programs that generate tags files, but Narya's language definition file is designed for Universal Ctags.)  On Linux or WSL you can use a package manager such as
 
-.. code-block:: none
+.. code-block:: bash
 
    sudo apt install universal-ctags
 
-while on MacOS you may be able to use `homebrew <https://formulae.brew.sh/formula/universal-ctags>`_ or `build manually <https://docs.ctags.io/en/latest/osx.html>`_.
+On MacOS, you may be able to use `homebrew <https://formulae.brew.sh/formula/universal-ctags>`_ (e.g. ``brew install universal-ctags``) or `build manually <https://docs.ctags.io/en/latest/osx.html>`_.
 
-In addition, if you have Emacs version 30.1 or newer, it is recommended to add the following two lines to your ``$HOME/.emacs`` file, which will tell Emacs to automatically run Universal Ctags on all Narya files in a given project.
+Note that while Universal Ctags provides an executable called ``ctags`` that generates tags files, it is not the only package that does.  In particular, some distributions of Emacs also install an executable called ``ctags``.  However, the ``ctags`` executables provided by other packages do not understand the Narya language definition file, and therefore in particular will not correctly parse comments and ``section`` commands in Narya files.  You can check that your ``ctags`` is Universal Ctags by running
+
+.. code-block:: bash
+
+   ctags --version
+
+and look for ``Universal Ctags`` in the output.  If you have installed Universal Ctags but running ``ctags`` doesn't give you Universal Ctags, you'll need to figure out what's wrong and fix it; feel free to contact the Narya developers for help, and let us know about your experience so we can update this documentation for other users.  So far we are aware of the following causes and solutions of this:
+
+- The `Emacs-mac port <https://github.com/railwaycat/homebrew-emacsmacport?tab=readme-ov-file>`_ for MacOS has a ``--with-ctags`` option that installs the Emacs version of ``ctags``.  The fix is to (re)install it without that option.
+
+In addition, if you have Emacs version 30.1 or newer, it is recommended to add the following lines to your ``$HOME/.emacs`` file, which will tell Emacs to automatically run Universal Ctags on all Narya files in a given project.
 
 .. code-block:: lisp
 
    (etags-regen-mode t)
+   (setq etags-regen-program "ctags -e")
    (add-to-list 'etags-regen-file-extensions "ny")
 
 If your version of Emacs is older than this, you can instead manually create the tags file (called ``TAGS`` by convention) by running a command such as
 
 .. code-block:: bash
 
-   find . -name '*.ny' | etags -L -
+   find . -name '*.ny' | ctags -e -L -
 
-in the base directory of your Narya project.  It is important to run the program as ``etags``, or as ``ctags -e``, so that it produces a tags file in the correct format for Emacs.
+in the base directory of your Narya project.  You'll have to do this again whenever you add new definitions to a file that you want Ctags to be able to find.  The option ``-e`` instructs ``ctags`` to produce a tags file in the correct format for Emacs.  (You may also have an executable called ``etags``, which may or may not be equivalent to ``ctags -e``; in general ``ctags -e`` is more reliable as long as you have installed Universal Ctags.)
 
 For information on using the tags file, see :ref:`Ctags`.
 
