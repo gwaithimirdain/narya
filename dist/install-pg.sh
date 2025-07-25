@@ -110,6 +110,13 @@ echo
 echo Narya ProofGeneral and Ctags installed.
 echo
 
+echo It is highly recommended to add the following lines to your $HOME/.emacs file:
+echo "  (setq proof-output-tooltips nil)"
+echo "  (setq proof-three-window-mode-policy 'hybrid)"
+echo "  (setq proof-three-window-enable t)"
+echo You can also set these values through the Emacs customization interface.
+echo
+
 if [ `emacs -Q --batch --eval '(print (or (and (= emacs-major-version 30) (>= emacs-minor-version 1)) (> emacs-major-version 30)))'` = "t" ]
 then
     echo To use ctags, add the following lines to your $HOME/.emacs file:
