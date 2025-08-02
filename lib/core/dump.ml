@@ -323,6 +323,7 @@ module F = struct
           (pp_print_list ~pp_sep:(fun ppf () -> pp_print_string ppf ", ") check)
           (List.map (fun (_, x, _) -> x) tms)
     | Oracle tm -> fprintf ppf "Oracle(%a)" check tm.value
+    | Weaken (tm, Eq) -> check ppf tm
 
   and synth : type a. formatter -> a synth -> unit =
    fun ppf s ->

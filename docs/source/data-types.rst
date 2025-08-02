@@ -127,6 +127,7 @@ or Paulin-Möhring style:
    | rfl. : Jd A a a
    ]
 
+
 Applying constructors
 ---------------------
 
@@ -134,7 +135,13 @@ A constructor, meaning an identifier ending with a period but containing no inte
 
 Constructors check rather than synthesizing.  As usual with checking terms, one constructor application can check at many different datatypes.  As a simple and common example, ``nil.`` typechecks at ``List A`` for *any* type ``A``.  This makes it clear that, unlike an ordinary function application, a constructor application cannot synthesize, as there is no way to guess from ``nil.`` what the type ``A`` should be.  Moreover, unlike in some other languages, the parameter ``A`` is not even an "implicit argument" of the constructor; the only way to make ``nil.`` synthesize is to ascribe it as ``nil. : List A``.  Similarly, ``inl. a`` typechecks at ``A ⊔ B`` for any type ``B``.
 
-Constructors must always be applied to all of their arguments.  For instance, one cannot write ``cons. x : List A → List A``.  You have to η-expand it: ``(xs ↦ cons. x xs) : List A → List A``.  This might be improved in future.
+If a constructor is not applied to all of its arguments, it can check at an appropriate function-type.  For instance:
+
+- ``suc.`` checks at type ``ℕ → ℕ``.
+- ``cons.`` checks at type ``A → List A → List A`` for any fixed type ``A`` (but not at a generic type like ``(A : Type) → A → List A → List A``, since the parameter ``A`` is never an argument of the constructor).
+- For any fixed type ``A``, if ``x : A``, then ``cons. x`` checks at type ``List A → List A``.
+
+What actually happens in this case is that the constructor is automatically eta-expanded as necessary, so ``suc.`` becomes ``n ↦ suc. n`` and so on.  This can be convenient, but one should be careful when thinking of ``suc.`` as a function, since unlike ordinary functions it does not synthesize, and indeed can check at other types like ``W → W`` for any datatype ``W`` with a one-argument constructor named ``suc.``.
 
 
 Numeral notations

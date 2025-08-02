@@ -144,6 +144,7 @@ module rec Make : functor (I : Indices) -> sig
         ([ `Data of Constr.t list | `Codata of string list | `Any ] * 'a check * bool) list
         -> 'a check
     | Oracle : 'a check located -> 'a check
+    | Weaken : 'a check * ('a I.suc, 'b) Eq.t -> 'b check
 
   and _ branch =
     | Branch :
@@ -319,6 +320,8 @@ functor
           -> 'a check
       (* Check a term, but then verify its correctness with an external oracle. *)
       | Oracle : 'a check located -> 'a check
+      (* Lift a term to a longer context *)
+      | Weaken : 'a check * ('a I.suc, 'b) Eq.t -> 'b check
 
     (* The location of the namevec is that of the whole pattern.  The location of the cube flag is that of the mapsto. *)
     and _ branch =
@@ -373,6 +376,11 @@ module type Resolver = sig
 
   (* This is how we extend a scope when passing under a binder. *)
   val snoc : ('a1, 'a2) scope -> I1.name -> ('a1 I1.suc, 'a2 I2.suc) scope
+
+  (* Remove the last element of a scope *)
+  type (_, _) pop = Pop : ('a1, 'a2) scope * ('a2 I2.suc, 'a2s) Eq.t -> ('a1, 'a2s) pop
+
+  val pop : ('a1 I1.suc, 'a2) scope -> ('a1, 'a2) pop
 
   (* This is for annotations and saving all the seen scopes. *)
   val visit : ('a1, 'a2) scope -> 'a2 T2.check located -> unit
@@ -530,7 +538,10 @@ module Resolve (R : Resolver) = struct
           | Right x -> x)
       | First tms ->
           First (List.map (fun (t, x, b) -> (t, (check ctx (locate_opt tm.loc x)).value, b)) tms)
-      | Oracle tm -> Oracle (check ctx tm) in
+      | Oracle tm -> Oracle (check ctx tm)
+      | Weaken (x, Eq) ->
+          let (Pop (ctx, Eq)) = R.pop ctx in
+          Weaken ((check ctx (locate_opt tm.loc x)).value, Eq) in
     let newtm = locate_opt tm.loc newtm in
     R.visit ctx newtm;
     newtm

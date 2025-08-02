@@ -34,3 +34,7 @@ let realize : type b s. (b, s) status -> (b, kinetic) term -> (b, s) term =
   match status with
   | Potential _ -> Realize tm
   | Kinetic _ -> tm
+
+let pop_status : type b n s. ((b, n) snoc, s) status -> (b, s) status = function
+  | Kinetic l -> Kinetic l
+  | Potential (head, apps, hyp) -> Potential (head, apps, fun x -> hyp (Weaken x))

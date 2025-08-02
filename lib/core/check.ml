@@ -569,6 +569,24 @@ let rec check : type a b s.
                       [ t1s; t2s ])
                   [ constr_indices; ty_indices ];
                 realize status (Term.Constr (constr, dim, newargs)))
+        (* A constructor can also check at a function-type by eta-expansion. *)
+        | Canonical (_, Pi (x, _, _), _, _) ->
+            let name = locate_opt None (top_variable x) in
+            let cube, fa =
+              match D.compare_zero (dim_variables x) with
+              | Zero -> (locate_opt None `Normal, None)
+              | Pos _ ->
+                  (locate_opt None (`Cube (ref None)), Some (Any_sface (id_sface (dim_variables x))))
+            in
+            let args =
+              List.fold_right
+                (fun arg acc -> locate_opt arg.loc (Weaken (arg.value, Eq)) :: acc)
+                args
+                [ locate_opt None (Synth (Var (Top, fa))) ] in
+            let body = locate_opt tm.loc (Constr ({ value = constr; loc = constr_loc }, args)) in
+            check ?discrete status ctx
+              (locate_opt tm.loc (Lam { name; cube; implicit = `Explicit; dom = None; body }))
+              ty
         | _ -> fatal (No_such_constructor (`Other (PVal (ctx, ty)), constr)))
     | Numeral n, _ ->
         if n.num < Z.zero then fatal (Anomaly "negative numeral");
@@ -767,7 +785,12 @@ let rec check : type a b s.
             match status with
             | Kinetic _ -> ctm
             | Potential _ -> Realize ctm)
-        | Error err -> fatal err) in
+        | Error err -> fatal err)
+    | Weaken (body, Eq), _ -> (
+        match Ctx.pop ctx with
+        | Ok (Pop (ctx, Eq, Eq)) ->
+            Weaken (check ?discrete (pop_status status) ctx (locate_opt tm.loc body) ty)
+        | Error e -> fatal (Anomaly ("failed to weaken raw term: " ^ e))) in
   with_loc tm.loc @@ fun () ->
   Annotate.ctx status ctx tm;
   Annotate.ty ctx ty;

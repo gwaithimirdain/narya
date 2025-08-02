@@ -334,6 +334,14 @@ module Ordered = struct
     let b = Binding.make None v in
     (cube_vis ctx x (CubeOf.singleton b), b)
 
+  (* Remove the last entry in a context.  Only works if that last entry is a fully-cube variable with no fields. *)
+  type (_, _) pop =
+    | Pop : ('a, 'b) t * ('a N.suc, 'asuc) Eq.t * (('b, 'n) snoc, 'bn) Eq.t -> ('asuc, 'bn) pop
+
+  let pop : type a b. (a, b) t -> (a, b) pop option = function
+    | Snoc (ctx, _, Suc Zero) -> Some (Pop (ctx, Eq, Eq))
+    | _ -> None
+
   (* Generate a case tree consisting of a sequence of abstractions corresponding to the (checked) variables in a context.  The context must contain NO LET-BOUND VARIABLES, including field-access variables, since abstracting over them would not be well-defined.  (In general, we couldn't just omit them, because some of the variables in a cube could be bound but not others, and cubes in the context yield cube abstractions.  However, at least when this comment was written, this function was only used for contexts consisting entirely of 0-dimensional cubes without let-bound variables.) *)
   let rec lam : type a b. (a, b) t -> (b, potential) term -> (emp, potential) term =
    fun ctx tree ->
@@ -456,6 +464,21 @@ let ext_let (Permute { perm; env; level; ctx }) xs tm =
       level = level + 1;
       ctx;
     }
+
+(* Remove the last cube entry in a context.  This only works if it is a pure cube variable with no fields and the context has not been permuted after its addition. *)
+type (_, _) pop =
+  | Pop : ('a, 'b) t * ('a N.suc, 'asuc) Eq.t * (('b, 'n) snoc, 'bn) Eq.t -> ('asuc, 'bn) pop
+
+let pop : type a b. (a, b) t -> ((a, b) pop, string) Result.t =
+ fun (Permute { ctx; perm; level; env }) ->
+  match (Ordered.pop ctx, perm, env) with
+  | Some (Pop (ctx, Eq, Eq)), Insert (perm, Top), LazyExt (env, _, _) ->
+      Ok (Pop (Permute { ctx; perm; level; env }, Eq, Eq))
+  | Some (Pop (ctx, Eq, Eq)), Id, LazyExt (env, _, _) ->
+      Ok (Pop (Permute { ctx; perm = Id; level; env }, Eq, Eq))
+  | Some (Pop (_, Eq, Eq)), Insert (_, Top), _ -> Error "not lazyext"
+  | Some (Pop (_, Eq, Eq)), _, _ -> Error "not insert-top"
+  | None, _, _ -> Error "not ordered.pop"
 
 let lam (Permute { ctx; _ }) tm = Ordered.lam ctx tm
 

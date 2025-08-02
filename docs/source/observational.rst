@@ -158,6 +158,8 @@ Thus, as before, ``Sum⁽ᵉ⁾ (Id A) (Id B) u v`` is again *a* sum type.  The 
 
 We have written the input endpoints such as ``a₀ a₁`` with curly braces to indicate that they are implicit, as with the endpoint arguments of ``ap f``.  However, in this case it is *not* possible to give these arguments explicitly when applying the constructors ``left.`` and ``right.``.  But there is unlikely to be any need to, since constructors *and* their arguments always check rather than needing to synthesize.
 
+It is possible, however, to omit some of the arguments of a higher constructor and check it at a higher function-type.  For instance, for any fixed types ``A`` and ``B``, the constructor ``left.`` checks at type ``{a₀ a₁ : A} (a₂ : Id A a₀ a₁) →⁽ᵉ⁾ Sum⁽ᵉ⁾ (Id A) (Id B) (left. a₀) (left. a₁)`` (see :ref:`Id of function types`, below).
+
 Recursive cases are similar, e.g. for lists
 
 .. code-block:: none
