@@ -101,18 +101,6 @@ def fib_pi : (A : Type) (B : A → Type) → isFibrant ((x : A) → B x)
       (Id ((X Y ↦ (x : X) → Y x) : (X : Type) → (X → Type) → Type) A.2 B.2
          f0 f1) (id_pi_rtr A.0 A.1 A.2 B.0 B.1 B.2 f0 f1)]
 
-def sym_rtr
-  : (A00 A01 : Type) (A02 : Id Type A00 A01) (A10 A11 : Type)
-    (A12 : Id Type A10 A11) (A20 : Id Type A00 A10) (A21 : Id Type A01 A11)
-    (A22 : Id (Id Type) A02 A12 A20 A21) (a00 : A00) (a01 : A01)
-    (a02 : A02 a00 a01) (a10 : A10) (a11 : A11) (a12 : A12 a10 a11)
-    (a20 : A20 a00 a10) (a21 : A21 a01 a11)
-    → rtr (A22 a02 a12 a20 a21) (sym A22 a20 a21 a02 a12)
-  ≔ A00 A01 A02 A10 A11 A12 A20 A21 A22 a00 a01 a02 a10 a11 a12 a20 a21 ↦ (
-  to ≔ a22 ↦ sym a22,
-  fro ≔ a22 ↦ sym a22,
-  to_fro ≔ _ ↦ rfl.)
-
 def isbisim_rtr
   : (A B : Type) (R S : A → B → Type)
     (e : (a : A) (b : B) → rtr (R a b) (S a b)) (Re : isBisim A B R)
@@ -159,13 +147,11 @@ def pre_univalence
     pre_univalence (A.2 a0 a1) (B.2 b0 b1) (sym G.2 r0 r1)
       (a2 b2 ↦
        fib_rtr (G.2 a2 b2 r0 r1) (sym G.2 r0 r1 a2 b2)
-         (sym_rtr A.0 A.1 A.2 B.0 B.1 B.2 G.0 G.1 G.2 a0 a1 a2 b0 b1 b2 r0
-            r1))
+         (x ↦ sym x, x ↦ sym x, _ ↦ rfl.))
       (isbisim_rtr (A.2 a0 a1) (B.2 b0 b1) (a2 b2 ↦ G.2 a2 b2 r0 r1)
          (a2 b2 ↦ sym G.2 r0 r1 a2 b2)
-         (a2 b2 ↦
-          sym_rtr A.0 A.1 A.2 B.0 B.1 B.2 G.0 G.1 G.2 a0 a1 a2 b0 b1 b2 r0
-            r1) (Ge.2 .id a0 b0 r0 a1 b1 r1))]
+         (a2 b2 ↦ (x ↦ sym x, x ↦ sym x, _ ↦ rfl.))
+         (Ge.2 .id a0 b0 r0 a1 b1 r1))]
 
 def glue_rtr
   : (A B : Type) (R : A → B → Type) (Re : isBisim A B R) (a : A) (b : B)
@@ -223,16 +209,11 @@ def fib_glue
       (a2 b2 ↦
        fib_rtr (refl glue A.2 B.2 R.2 Re.2 a2 b2 r0 r1)
          (sym (refl glue A.2 B.2 R.2 Re.2) r0 r1 a2 b2)
-         (sym_rtr A.0 A.1 A.2 B.0 B.1 B.2 (glue A.0 B.0 R.0 Re.0)
-            (glue A.1 B.1 R.1 Re.1) (refl glue A.2 B.2 R.2 Re.2) a0 a1 a2
-            b0 b1 b2 r0 r1))
+         (x ↦ sym x, x ↦ sym x, _ ↦ rfl.))
       (isbisim_rtr (A.2 a0 a1) (B.2 b0 b1)
          (a2 b2 ↦ (refl glue A.2 B.2 R.2 Re.2) a2 b2 r0 r1)
          (a2 b2 ↦ sym (refl glue A.2 B.2 R.2 Re.2) r0 r1 a2 b2)
-         (a2 b2 ↦
-          sym_rtr A.0 A.1 A.2 B.0 B.1 B.2 (glue A.0 B.0 R.0 Re.0)
-            (glue A.1 B.1 R.1 Re.1) (refl glue A.2 B.2 R.2 Re.2) a0 a1 a2
-            b0 b1 b2 r0 r1)
+         (a2 b2 ↦ (x ↦ sym x, x ↦ sym x, _ ↦ rfl.))
          (refl isbisim_rtr A.2 B.2 {R.0} {R.1} (x y ⤇ R.2 x.2 y.2)
               {a b ↦ glue A.0 B.0 R.0 Re.0 a b}
               {a b ↦ glue A.1 B.1 R.1 Re.1 a b}
