@@ -95,33 +95,30 @@ let new_name :
 (* Make a variable name or placeholder unique.  Leave placeholders as-is, unless force_names = true in which case find a name for them. *)
 let uniquify_opt : type a.
     (a -> string option * string) ->
-    ?force_names:bool ->
     a ->
     StringSet.t ->
     string option * [ `Original | `Renamed ] * StringSet.t =
- fun f ?(force_names = false) name used ->
-  match (f name, force_names) with
-  | (None, _), false -> (None, `Original, used)
-  | (None, face), true ->
+ fun f name used ->
+  match f name with
+  | None, face ->
       let name, orig, used = new_name face (Display.variables ()) used in
       (Some name, orig, used)
-  | (Some name, face), _ ->
+  | Some name, face ->
       let name, orig, used = uniquify (name ^ face) used in
       (Some name, orig, used)
 
 (* Do the same thing to a whole cube of variable names. *)
 let uniquify_cube : type n left right a.
     (a -> string option * string) ->
-    ?force_names:bool ->
     (left, n, a, right) NICubeOf.t ->
     StringSet.t ->
     (left, n, string option, right) NICubeOf.t * StringSet.t =
- fun f ?(force_names = false) names used ->
+ fun f names used ->
   (* Apparently we need to define the iteration function with an explicit type so that it ends up sufficiently polymorphic. *)
   let uniquify_nfamof : type m left.
       (left, m, a) NFamOf.t -> StringSet.t -> (left, m, string option) NFamOf.t * StringSet.t =
    fun (NFamOf name) used ->
-    let name, _, used = uniquify_opt f ~force_names name used in
+    let name, _, used = uniquify_opt f name used in
     (NFamOf name, used) in
   let open NICubeOf.Applicatic (Applicative.OfMonad (Monad.State (struct
     type t = StringSet.t
@@ -129,17 +126,16 @@ let uniquify_cube : type n left right a.
   mapM { map = (fun _ name used -> uniquify_nfamof name used) } names used
 
 (* Add a new cube variable at a specified dimension, generating a fresh version of its name if necessary to avoid conflicts.  Leave unnamed variables unnamed unless force_names = true. *)
-let add_cube : type n b.
-    ?force_names:bool -> n D.t -> b t -> string option -> string option * (b, n) snoc t =
- fun ?(force_names = false) n { ctx; used } name ->
-  let name, _, used = uniquify_opt (fun x -> (x, "")) ~force_names name used in
+let add_cube : type n b. n D.t -> b t -> string option -> string option * (b, n) snoc t =
+ fun n { ctx; used } name ->
+  let name, _, used = uniquify_opt (fun x -> (x, "")) name used in
   ( name,
     { ctx = Snoc (ctx, Variables (n, D.plus_zero n, NICubeOf.singleton name), Abwd.empty); used } )
 
 (* Add a cube of variables, generating a fresh version of each of their names.  Again, leave unnamed variables unnamed unless force_names = true. *)
-let add : type b n. ?force_names:bool -> b t -> n variables -> n variables * (b, n) snoc t =
- fun ?(force_names = false) { ctx; used } (Variables (m, mn, names)) ->
-  let names, used = uniquify_cube (fun x -> (x, "")) ~force_names names used in
+let add : type b n. b t -> n variables -> n variables * (b, n) snoc t =
+ fun { ctx; used } (Variables (m, mn, names)) ->
+  let names, used = uniquify_cube (fun x -> (x, "")) names used in
   let vars = Variables (m, mn, names) in
   (vars, { ctx = Snoc (ctx, vars, Abwd.empty); used })
 
@@ -156,7 +152,7 @@ let add_full : type b mn. b t -> mn variables -> mn variables * (b, mn) snoc t =
             Fwrap (NFamOf (NICubeOf.find xs sn, smstr), N.suc i));
       }
       N.zero in
-  let names, used = uniquify_cube (fun x -> x) ~force_names:true newxs used in
+  let names, used = uniquify_cube (fun x -> x) newxs used in
   let vars = Variables (D.zero, D.zero_plus (D.plus_out m m_n), names) in
   (vars, { ctx = Snoc (ctx, vars, Abwd.empty); used })
 
@@ -225,7 +221,7 @@ let uniquify_vars : type a.
           match sh with
           | `Visible -> (x, `Original, used)
           | `Shadowed ->
-              let x, _, used = uniquify_opt (fun x -> (x, "")) ~force_names:true x used in
+              let x, _, used = uniquify_opt (fun x -> (x, "")) x used in
               (x, `Renamed, used) in
         let vars, used = go vars used in
         (Snoc (vars, (Option.get x, orig)), used) in

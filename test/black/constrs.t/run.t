@@ -2,7 +2,7 @@
   3
     : ℕ
   
-  _ ↦ suc. _H
+  𝑥 ↦ suc. 𝑥
     : ℕ → ℕ
   
   cons. 2 a (cons. 1 a (cons. 0 a nil.))

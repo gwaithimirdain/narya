@@ -912,8 +912,7 @@ let rec unparse_ctx : type a b.
       match entry with
       | Invis bindings ->
           (* We treat an invisible binding as consisting of all nameless variables, and autogenerate names for them all. *)
-          let x, names =
-            Names.add ~force_names:true names (singleton_variables (CubeOf.dim bindings) None) in
+          let x, names = Names.add names (singleton_variables (CubeOf.dim bindings) None) in
           let do_binding (b : b binding) (res : S.t) : unit * S.t =
             let ty = Wrap (unparse names b.ty No.Interval.entire No.Interval.entire) in
             let tm =

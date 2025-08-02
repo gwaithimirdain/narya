@@ -284,9 +284,9 @@
          {𝑦₁ : A₁} (𝑦₂ : A₂ 𝑦₀ 𝑦₁)
          →⁽ᵉ⁾ A₂ (𝑥₀ 𝑦₀) 𝑦₁
        unequal head variables:
-         _H
+         𝑥
        does not equal
-         _H
+         𝑦
   
   [1]
   $ narya constants.ny -e "def cplus_one_two_eq_two : Id CN (cplus one two) two := refl two"
@@ -304,9 +304,9 @@
          {𝑦₁ : A₁} (𝑦₂ : A₂ 𝑦₀ 𝑦₁)
          →⁽ᵉ⁾ A₂ (𝑥₀ (𝑥₀ (𝑥₀ 𝑦₀))) (𝑥₁ (𝑥₁ 𝑦₁))
        unequal head variables:
-         _H
+         𝑦
        does not equal
-         _H
+         𝑥
   
   [1]
   $ narya constants.ny -e "def ∞eta_bisim' : Id (Stream A → Stream A) (s ↦ s) (s ↦ ∞eta s) ≔ refl (s ↦ ∞eta s)"
@@ -322,7 +322,7 @@
        unequal head terms:
          ∞eta
        does not equal
-         _H
+         𝑥
   
   [1]
   $ narya constants.ny -e "def refl_nat_eq_sample : Id (ℕ → Id ((x:A)→B x) f f) (refl_nat_f) (refl_nat_f_cube) ≔ refl refl_nat_f"

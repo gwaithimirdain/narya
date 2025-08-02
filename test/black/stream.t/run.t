@@ -125,7 +125,7 @@
        unequal head terms:
          ∞eta
        does not equal
-         _H
+         𝑥
   
   [1]
 
