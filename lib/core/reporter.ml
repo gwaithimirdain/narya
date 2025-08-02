@@ -942,10 +942,12 @@ module Code = struct
           textf "missing type for constructor %s of indexed datatype" (Constr.to_string c)
       | Locked_variable -> text "variable not available inside external degeneracy"
       | Locked_constant a ->
-          textf "constant %a uses nonparametric axioms, can't appear inside an external degeneracy"
+          textf
+            "constant %a is or uses a nonparametric axiom, can't appear inside an external degeneracy"
             pp_printed (print a)
       | Axiom_in_parametric_definition a ->
-          textf "constant %a uses nonparametric axioms, can't be used in a parametric command"
+          textf
+            "constant %a is or uses a nonparametric axiom, can't be used in a parametric command"
             pp_printed (print a)
       | Hole (n, ty) -> textf "@[<v 0>hole %s:@,%a@]" n pp_printed (print ty)
       | No_open_holes -> text "no open holes"
