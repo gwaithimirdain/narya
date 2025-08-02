@@ -128,7 +128,7 @@ let uniquify_cube : type n left right a.
   end))) in
   mapM { map = (fun _ name used -> uniquify_nfamof name used) } names used
 
-(* Add a new cube variable at a specified dimension, generating a fresh version of its name if necessary to avoid conflicts.  Again, leave unnamed variables unnamed unless rename=true. *)
+(* Add a new cube variable at a specified dimension, generating a fresh version of its name if necessary to avoid conflicts.  Leave unnamed variables unnamed unless force_names = true. *)
 let add_cube : type n b.
     ?force_names:bool -> n D.t -> b t -> string option -> string option * (b, n) snoc t =
  fun ?(force_names = false) n { ctx; used } name ->
@@ -136,7 +136,7 @@ let add_cube : type n b.
   ( name,
     { ctx = Snoc (ctx, Variables (n, D.plus_zero n, NICubeOf.singleton name), Abwd.empty); used } )
 
-(* Add a cube of variables, generating a fresh version of each of their names.  Again, leave unnamed variables unnamed unless force_names=true. *)
+(* Add a cube of variables, generating a fresh version of each of their names.  Again, leave unnamed variables unnamed unless force_names = true. *)
 let add : type b n. ?force_names:bool -> b t -> n variables -> n variables * (b, n) snoc t =
  fun ?(force_names = false) { ctx; used } (Variables (m, mn, names)) ->
   let names, used = uniquify_cube (fun x -> (x, "")) ~force_names names used in

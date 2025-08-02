@@ -885,7 +885,7 @@ and unparse_higher_pi : type a lt ls rt rs n.
       let tm = { unparse = (fun li ri -> unparse_named_inst newvars cod tyargs li ri) } in
       unparse_pis_final (`Arrow (Some (CodCube.dim cods))) arrow vars accum tm li ri
 
-(* Unparse a term context, given a vector of variable names obtained by pre-uniquifying a variable list, and a list of names for by the empty context that nevertheless remembers the variables in that vector, as produced by Names.uniquify_vars.  Yields not only the list of unparsed terms/types, but a corresponding list of names that can be used to unparse further objects in that context. *)
+(* Unparse a term context, given a vector of variable names obtained by pre-uniquifying a variable list, and a list of names for the empty context that nevertheless remembers the variables in that vector, as produced by Names.uniquify_vars.  Yields not only the list of unparsed terms/types, but a corresponding list of names that can be used to unparse further objects in that context. *)
 let rec unparse_ctx : type a b.
     emp Names.t ->
     [ `Locked | `Unlocked ] ->
