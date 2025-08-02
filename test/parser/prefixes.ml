@@ -9,6 +9,10 @@ type (_, _, _) identity +=
   | At : (closed, No.plus_omega, No.strict opn) identity
   | Bang : (No.strict opn, No.plus_omega, closed) identity
   | Query : (No.nonstrict opn, No.plus_omega, closed) identity
+  | Twiddle : (closed, No.zero, No.strict opn) identity
+  | Star : (No.strict opn, No.zero, closed) identity
+  | Perc : (No.strict opn, No.zero, No.strict opn) identity
+  | Atat : (No.strict opn, No.minus_omega, No.nonstrict opn) identity
 
 let unparse str =
   Core.Reporter.run ~emit:(fun _ -> ()) ~fatal:(fun _ -> ()) @@ fun () ->
@@ -24,6 +28,18 @@ let bang : (No.strict opn, No.plus_omega, closed) notation = (Bang, Postfix No.p
 let () = make bang "bang" (Open_entry (eop (Op "!") (done_open bang)))
 let query : (No.nonstrict opn, No.plus_omega, closed) notation = (Query, Postfixl No.plus_omega)
 let () = make query "query" (Open_entry (eop (Op "!!") (done_open query)))
+
+(* And also nonassociative prefix, infix, and postfix operators of the same tightness. *)
+let twiddle : (closed, No.zero, No.strict opn) notation = (Twiddle, Prefix No.zero)
+let () = make twiddle "twiddle" (Closed_entry (eop (Op "~") (Done_closed twiddle)))
+let star : (No.strict opn, No.zero, closed) notation = (Star, Postfix No.zero)
+let () = make star "star" (Open_entry (eop (Op "*") (done_open star)))
+let perc : (No.strict opn, No.zero, No.strict opn) notation = (Perc, Infix No.zero)
+let () = make perc "perc" (Open_entry (eop (Op "%") (done_open perc)))
+
+(* A right-associative infix operator of tightness -ω can have an abstraction on its right. *)
+let atat : (No.strict opn, No.minus_omega, No.nonstrict opn) notation = (Atat, Infixr No.minus_omega)
+let () = make atat "atat" (Open_entry (eop (Op "@@") (done_open atat)))
 
 let () =
   Repl.run @@ fun () ->
@@ -77,27 +93,12 @@ let () =
 
   assert (
     parse "f !! x !!"
-    = Notn ("query", [ Term (App (Notn ("query", [ Term (Ident [ "f" ]) ]), Ident [ "x" ])) ]))
+    = Notn ("query", [ Term (App (Notn ("query", [ Term (Ident [ "f" ]) ]), Ident [ "x" ])) ]));
 
-(* We define nonassociative prefix, infix, and postfix operators of the same tightness. *)
-
-type (_, _, _) identity +=
-  | Twiddle : (closed, No.zero, No.strict opn) identity
-  | Star : (No.strict opn, No.zero, closed) identity
-  | Perc : (No.strict opn, No.zero, No.strict opn) identity
-
-let twiddle : (closed, No.zero, No.strict opn) notation = (Twiddle, Prefix No.zero)
-let () = make twiddle "twiddle" (Closed_entry (eop (Op "~") (Done_closed twiddle)))
-let star : (No.strict opn, No.zero, closed) notation = (Star, Postfix No.zero)
-let () = make star "star" (Open_entry (eop (Op "*") (done_open star)))
-let perc : (No.strict opn, No.zero, No.strict opn) notation = (Perc, Infix No.zero)
-let () = make perc "perc" (Open_entry (eop (Op "%") (done_open perc)))
-
-let () =
-  Repl.run @@ fun () ->
   Scope.Situation.add twiddle;
   Scope.Situation.add star;
   Scope.Situation.add perc;
+
   unparse "~ x % y";
   assert (parse "f ~ x" = App (Ident [ "f" ], Notn ("twiddle", [ Term (Ident [ "x" ]) ])));
   unparse "f ~ x % y";
@@ -115,17 +116,10 @@ let () =
           [
             Term (Ident [ "a" ]);
             Term (App (Ident [ "b" ], Notn ("twiddle", [ Term (Ident [ "c" ]) ])));
-          ] ))
+          ] ));
 
-(* A right-associative infix operator of tightness -ω can have an abstraction on its right. *)
-type (_, _, _) identity += Atat : (No.strict opn, No.minus_omega, No.nonstrict opn) identity
-
-let atat : (No.strict opn, No.minus_omega, No.nonstrict opn) notation = (Atat, Infixr No.minus_omega)
-let () = make atat "atat" (Open_entry (eop (Op "@@") (done_open atat)))
-
-let () =
-  Repl.run @@ fun () ->
   Scope.Situation.add atat;
+
   assert (
     parse "f @@ x ↦ y"
     = Notn

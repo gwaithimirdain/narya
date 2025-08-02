@@ -4,8 +4,9 @@ open Util
 open Signatures
 open Dimbwd
 open Energy
+open Origin
 
-(* Metavariables, such as holes and unification variables.  Local generative definitions are also reperesented as metavariables.  A metavariable is identified by its class, an autonumber that's specific to the class, and the compilation unit it belongs to.  Since the autonumbers are specific to the class, we store them as arguments of the class, even though every metavariable has one. *)
+(* Metavariables, such as holes and unification variables.  Local generative definitions are also reperesented as metavariables.  A metavariable is identified by its class, an autonumber that's specific to the class, and its origin (file or interactive instant).  Since the autonumbers are specific to the class, we store them as arguments of the class, even though every metavariable has one. *)
 
 module Identity = struct
   type t = [ `Hole of int | `Def of int * string * string option ]
@@ -13,9 +14,9 @@ module Identity = struct
   let compare : t -> t -> int = compare
 end
 
-(* A metavariable is also parametrized by its checked context length and its energy (kinetic or potential), although these are not part of its identity. *)
+(* A metavariable is also parametrized by its raw context length, its checked context length, and its energy (kinetic or potential), although these are not part of its identity. *)
 type ('a, 'b, 's) t = {
-  compunit : Compunit.t;
+  origin : Origin.t;
   identity : Identity.t;
   raw : 'a N.t;
   len : 'b Dbwd.t;
@@ -24,42 +25,56 @@ type ('a, 'b, 's) t = {
 
 (* Make metavariables of each class. *)
 
-let def_counters = Compunit.IntArray.make_basic ()
+(* Store autonumber counters for defined metavariables, for both files and instants. *)
+let def_counters = Versioned.make ~default:(fun _ -> 0) ~inherit_values:false
 
+(* Create a new defined constant in the current execution location (file or interactive instant). *)
 let make_def : type a b s. string -> string option -> a N.t -> b Dbwd.t -> s energy -> (a, b, s) t =
  fun sort name raw len energy ->
-  let compunit = Compunit.Current.read () in
-  let number = Compunit.IntArray.inc def_counters compunit in
+  let origin = Origin.current () in
+  let number = Versioned.get def_counters in
+  Versioned.set def_counters (number + 1);
   let identity = `Def (number, sort, name) in
-  { compunit; identity; raw; len; energy }
+  { origin; identity; raw; len; energy }
 
-let hole_counters = Compunit.IntArray.make_basic ()
+(* We just use one global hole counter, so that a hole can be represented by a single number to communicate with the user and ProofGeneral.  But to make up for that, we have to remember the origin of each hole as a function of its global number.  And then, since the next number is just the length of this array, we don't need a separate counter for hole autonumbers. *)
+let hole_origins : Origin.t Dynarray.t = Dynarray.create ()
 
 let make_hole : type a b s. a N.t -> b Dbwd.t -> s energy -> (a, b, s) t =
  fun raw len energy ->
-  let compunit = Compunit.Current.read () in
-  let number = Compunit.IntArray.inc hole_counters compunit in
+  let origin = Origin.current () in
+  let number = Dynarray.length hole_origins in
+  Dynarray.add_last hole_origins origin;
   let identity = `Hole number in
-  { compunit; identity; raw; len; energy }
+  { origin; identity; raw; len; energy }
 
 (* Re-make (link) a metavariable when loading a compiled version from disk. *)
-let remake : type a b s. (Compunit.t -> Compunit.t) -> (a, b, s) t -> (a, b, s) t =
- fun f m -> { m with compunit = f m.compunit }
+let remake : type a b s. (File.t -> File.t) -> (a, b, s) t -> (a, b, s) t =
+ fun f m ->
+  match m.origin with
+  | Top -> raise (Failure "can't remake built-in metavariable")
+  | File file -> { m with origin = File (f file) }
+  | Instant _ -> raise (Failure "can't remake interactive metavariable")
 
-(* Printable names.  Doesn't include the compilation unit and is not re-parseable. *)
+(* Printable names. *)
 let name : type a b s. (a, b, s) t -> string =
  fun x ->
   match x.identity with
-  | `Hole number -> Printf.sprintf "?%d" number
-  | `Def (number, sort, None) -> Printf.sprintf "_%s.%d" sort number
-  | `Def (number, sort, Some name) -> Printf.sprintf "_%s.%d.%s" sort number name
+  | `Hole number ->
+      (* We don't need to include the origin here, since holes are sequentially numbered globally rather than by origin. *)
+      Printf.sprintf "?%d" number
+  | `Def (number, sort, None) -> Printf.sprintf "_%s.%s.%d" sort (Origin.to_string x.origin) number
+  | `Def (number, sort, Some name) ->
+      Printf.sprintf "_%s.%s.%d.%s" sort (Origin.to_string x.origin) number name
+
+let origin : type a b s. (a, b, s) t -> Origin.t = fun m -> m.origin
 
 (* Compare two metavariables for equality, returning equality of their lengths and energies. *)
 let compare : type a1 b1 s1 a2 b2 s2.
     (a1, b1, s1) t -> (a2, b2, s2) t -> (a1 * b1 * s1, a2 * b2 * s2) Eq.compare =
  fun x y ->
   match
-    ( x.compunit = y.compunit,
+    ( x.origin = y.origin,
       x.identity = y.identity,
       N.compare x.raw y.raw,
       Dbwd.compare x.len y.len,
@@ -78,29 +93,30 @@ end
 
 module WrapSet = Set.Make (Wrapped)
 
-(* Note that this doesn't give the compunit, whereas hole numbers are only unique within a compunit.  But holes are probably only used in the top level compunit, and in general we can assume this is only used for just-created holes hence in the "current" compunit. *)
+(* Representation of holes for interacting with ProofGeneral. *)
 let hole_number : type a b s. (a, b, s) t -> int =
- fun { identity; _ } ->
-  match identity with
+ fun m ->
+  match m.identity with
   | `Hole number -> number
-  | _ -> raise (Failure "not a hole")
+  | _ -> raise (Failure "not an interactive hole")
 
-(* Since metavariables are parametrized by context length and energy, an intrinsically well-typed map must incorporate those as well.  Since this is triply parametrized, it is not technically an instance of our "intrinsically well-typed maps" from Signatures. *)
+(* A metavariable table, like a constant table, is MUTABLE and versioned, and can store anything.  It is also intrinsically well-typed, with values that can be parametrized by the raw length, checked length, and energy of the metavariable. *)
 
 module IdMap = Map.Make (Identity)
 
-module Map = struct
+module Table = struct
   type ('a, 'b, 's) key = ('a, 'b, 's) t
 
   module Make (F : Fam4) = struct
     type _ entry = Entry : ('a, 'b, 's) key * ('x, 'a, 'b, 's) F.t -> 'x entry
-    type 'x t = 'x entry IdMap.t Compunit.Map.t
+    type 'x t = 'x entry IdMap.t Versioned.t
 
-    let empty : type x. x t = Compunit.Map.empty
+    let make () = Versioned.make ~default:(fun () -> IdMap.empty) ~inherit_values:false
 
     let find_opt : type x a b s. (a, b, s) key -> x t -> (x, a, b, s) F.t option =
      fun key m ->
-      match Compunit.Map.find_opt key.compunit m with
+      (* Apparently we can't use Monad.Ops(Monad.Maybe) here because the type doesn't get sufficiently refined. *)
+      match Versioned.get_at m key.origin with
       | Some m -> (
           match IdMap.find_opt key.identity m with
           | None -> None
@@ -110,56 +126,41 @@ module Map = struct
               | Neq -> raise (Failure "Meta.Map.find_opt")))
       | None -> None
 
-    let find_hole_opt : type x. Compunit.t -> int -> x t -> x entry option =
-     fun c i m ->
-      match Compunit.Map.find_opt c m with
+    let find_hole_opt : type x. int -> x t -> x entry option =
+     fun i m ->
+      let c = Dynarray.get hole_origins i in
+      match Versioned.get_at m c with
       | Some m -> IdMap.find_opt (`Hole i) m
       | None -> None
 
     let update : type x a b s.
-        (a, b, s) key -> ((x, a, b, s) F.t option -> (x, a, b, s) F.t option) -> x t -> x t =
+        (a, b, s) key -> ((x, a, b, s) F.t option -> (x, a, b, s) F.t option) -> x t -> unit =
      fun key f m ->
-      Compunit.Map.update key.compunit
-        (fun m ->
-          let m = Option.value ~default:IdMap.empty m in
-          Some
-            (IdMap.update key.identity
-               (function
-                 | None -> (
-                     match f None with
-                     | None -> None
-                     | Some fx -> Some (Entry (key, fx)))
-                 | Some (Entry (key', value)) -> (
-                     match compare key key' with
-                     | Eq -> (
-                         match f (Some value) with
-                         | None -> None
-                         | Some fx -> Some (Entry (key, fx)))
-                     | Neq -> raise (Failure "Meta.Map.update")))
-               m))
-        m
+      if key.origin = Origin.current () then
+        let a = Option.value ~default:IdMap.empty (Versioned.get_at m key.origin) in
+        let newa =
+          IdMap.update key.identity
+            (function
+              | None -> (
+                  match f None with
+                  | None -> None
+                  | Some fx -> Some (Entry (key, fx)))
+              | Some (Entry (key', value)) -> (
+                  match compare key key' with
+                  | Eq -> (
+                      match f (Some value) with
+                      | None -> None
+                      | Some fx -> Some (Entry (key, fx)))
+                  | Neq -> raise (Failure "Meta.Map.update")))
+            a in
+        Versioned.set m newa
+      else raise (Failure "Meta.Table: can only update/add to the current origin")
 
-    let add : type x a b s. (a, b, s) key -> (x, a, b, s) F.t -> x t -> x t =
+    let add : type x a b s. (a, b, s) key -> (x, a, b, s) F.t -> x t -> unit =
      fun key value m -> update key (fun _ -> Some value) m
 
-    let remove : type x a b s. (a, b, s) key -> x t -> x t =
+    let _remove : type x a b s. (a, b, s) key -> x t -> unit =
      fun key m -> update key (fun _ -> None) m
-
-    type 'x mapper = {
-      map : 'a 'b 's. ('a, 'b, 's) key -> ('x, 'a, 'b, 's) F.t -> ('x, 'a, 'b, 's) F.t;
-    }
-
-    let map : type x. x mapper -> x t -> x t =
-     fun f m ->
-      Compunit.Map.map
-        (fun m -> IdMap.map (fun (Entry (key, value)) -> Entry (key, f.map key value)) m)
-        m
-
-    type 'x iterator = { it : 'a 'b 's. ('a, 'b, 's) key -> ('x, 'a, 'b, 's) F.t -> unit }
-
-    let iter : type x. x iterator -> x t -> unit =
-     fun f m ->
-      Compunit.Map.iter (fun _ m -> IdMap.iter (fun _ (Entry (key, value)) -> f.it key value) m) m
 
     type ('x, 'acc) folder = {
       fold : 'a 'b 's. ('a, 'b, 's) key -> ('x, 'a, 'b, 's) F.t -> 'acc -> 'acc;
@@ -167,38 +168,37 @@ module Map = struct
 
     let fold : type x acc. (x, acc) folder -> x t -> acc -> acc =
      fun f m acc ->
-      Compunit.Map.fold
-        (fun _ m acc -> IdMap.fold (fun _ (Entry (key, value)) acc -> f.fold key value acc) m acc)
-        m acc
+      let go acc m = IdMap.fold (fun _ (Entry (key, value)) acc -> f.fold key value acc) m acc in
+      Versioned.fold m go acc
 
-    type 'x filterer = { filter : 'a 'b 's. ('a, 'b, 's) key -> ('x, 'a, 'b, 's) F.t -> bool }
+    let fold_current : type x acc. (x, acc) folder -> x t -> acc -> acc =
+     fun f m acc ->
+      IdMap.fold (fun _ (Entry (key, value)) acc -> f.fold key value acc) (Versioned.get m) acc
 
-    let filter : type x. x filterer -> x t -> x t =
-     fun f m ->
-      Compunit.Map.map
-        (fun m -> IdMap.filter (fun _ (Entry (key, value)) -> f.filter key value) m)
-        m
+    type 'x file_entry = 'x entry IdMap.t option
 
-    let to_channel_unit : type x.
-        Out_channel.t -> Compunit.t -> x t -> Marshal.extern_flags list -> unit =
-     fun chan i m flags -> Marshal.to_channel chan (Compunit.Map.find_opt i m) flags
+    let find_file (file : File.t) (m : 'a t) : 'a file_entry = Versioned.get_at m (File file)
 
-    type 'x unit_entry = 'x entry IdMap.t option
-
-    let find_unit i m = Compunit.Map.find_opt i m
-
-    let add_unit i x m =
+    let add_file file x m =
       match x with
-      | Some x -> Compunit.Map.add i x m
-      | None -> m
+      | Some x -> Versioned.set_file m file x
+      | None -> ()
 
-    let from_channel_unit : type x.
-        In_channel.t -> x mapper -> Compunit.t -> x t -> x t * x unit_entry =
-     fun chan f compunit m ->
-      match (Marshal.from_channel chan : x entry IdMap.t option) with
+    let to_channel_file : type x.
+        Out_channel.t -> File.t -> x t -> Marshal.extern_flags list -> unit =
+     fun chan file m flags -> Marshal.to_channel chan (find_file file m) flags
+
+    type 'x mapper = {
+      map : 'a 'b 's. ('a, 'b, 's) key -> ('x, 'a, 'b, 's) F.t -> ('x, 'a, 'b, 's) F.t;
+    }
+
+    let from_channel_file : type x. In_channel.t -> x mapper -> File.t -> x t -> x file_entry =
+     fun chan f file m ->
+      match (Marshal.from_channel chan : x file_entry) with
       | Some n ->
           let fn = IdMap.map (fun (Entry (key, value)) -> Entry (key, f.map key value)) n in
-          (Compunit.Map.add compunit fn m, Some fn)
-      | None -> (m, None)
+          add_file file (Some fn) m;
+          Some fn
+      | None -> None
   end
 end

@@ -1,6 +1,7 @@
 open Bwd
 open Util
 open Core
+open Origin
 open Reporter
 module Trie = Yuujinchou.Trie
 
@@ -38,9 +39,23 @@ let () =
     | `Shadow _ -> Some "unhandled Modifier.shadow effect"
     | `Hook _ -> Some "unhandled Modifier.hook effect")
 
-module M = Algaeff.Mutex.Make ()
+(* Following Yuujinchou, we guard the scope by a mutex.  But since our states are stored in a global mutable array, we similarly store our mutex in a global mutable boolean. *)
 
-exception Locked = M.Locked
+module M = struct
+  let mutex = ref false
+
+  let exclusively f =
+    if !mutex then fatal (Anomaly "Scope mutex locked")
+    else (
+      mutex := true;
+      match f () with
+      | ans ->
+          mutex := false;
+          ans
+      | exception e ->
+          mutex := false;
+          raise e)
+end
 
 (* Scope state: a visible namespace, an export namespace, an export prefix, a notation situation, and a set of configuration options. *)
 type trie = (Param.data, Param.tag) Trie.t
@@ -59,33 +74,27 @@ type scope = {
 (* A Scope.t has an inner scope (the current file/section) and also maintains a stack of outer scopes. *)
 type t = { outer : scope Bwd.t; inner : scope }
 
-(* This is a function taking a unit argument, rather than a constant, so it doesn't try to access builtins before they're set. *)
-let empty () : t =
+let empty : t =
   {
     outer = Emp;
-    inner =
-      { visible = Trie.empty; export = Trie.empty; prefix = Emp; situation = !Situation.builtins };
+    inner = { visible = Trie.empty; export = Trie.empty; prefix = Emp; situation = Situation.empty };
   }
 
-module S = State.Make (struct
-  type nonrec t = t
-end)
+(* The default scope is empty, but interactive instants inherit the scope of the previous instant.  (Command-line exec strings, stdin, and interactive mode also start with a scope that includes everything already executed, but this is handled separately.)  *)
+let scopes : t Versioned.t = Versioned.make ~default:(fun () -> empty) ~inherit_values:true
 
-let () =
-  S.register_printer (function
-    | `Get -> Some "unhandled Scope.get effect"
-    | `Set _ -> Some "unhandled Scope.set effect")
+(* Access the current notation situation.  *)
 
 module Situation = struct
   include Situation
 
-  let get () = M.exclusively @@ fun () -> (S.get ()).inner.situation
+  let get () = M.exclusively @@ fun () -> (Versioned.get scopes).inner.situation
 
   let modify f =
     M.exclusively @@ fun () ->
-    let s = S.get () in
+    let s = Versioned.get scopes in
     let x, situation = f s.inner.situation in
-    S.set { s with inner = { s.inner with situation } };
+    Versioned.set scopes { s with inner = { s.inner with situation } };
     x
 
   let left_closeds : unit -> (No.plus_omega, No.strict) Notation.entry =
@@ -116,8 +125,6 @@ module Situation = struct
       sit
       (Trie.to_seq (Trie.find_subtree [ "notations" ] trie))
 
-  (* These are used only internally and for whitebox testing.  Once the whitebox tests are converted to blackbox ones, we can remove them from the interface. *)
-
   let add : type left tight right. (left, tight, right) Notation.notation -> unit =
    fun notn -> modify @@ fun s -> ((), Situation.add notn s)
 
@@ -125,17 +132,20 @@ module Situation = struct
    fun user -> modify @@ fun s -> Situation.add_user_to user s
 end
 
-let export_prefix () = (S.get ()).inner.prefix
+let export_prefix () = (Versioned.get scopes).inner.prefix
 
 (* The following operations are copied from Yuujinchou.Scope, but acting only on the inner scope. *)
 
-let resolve p = M.exclusively @@ fun () -> Trie.find_singleton p (S.get ()).inner.visible
-let resolve_export p = M.exclusively @@ fun () -> Trie.find_singleton p (S.get ()).inner.export
+let resolve p =
+  M.exclusively @@ fun () -> Trie.find_singleton p (Versioned.get scopes).inner.visible
+
+let resolve_export p =
+  M.exclusively @@ fun () -> Trie.find_singleton p (Versioned.get scopes).inner.export
 
 (* Does not modify the notation situation.  This is dangerous, so we don't export it. *)
 let _modify_visible ?context_visible m =
   M.exclusively @@ fun () ->
-  S.modify @@ fun s ->
+  Versioned.modify scopes @@ fun s ->
   {
     s with
     inner =
@@ -144,7 +154,7 @@ let _modify_visible ?context_visible m =
 
 let modify_export ?context_export m =
   M.exclusively @@ fun () ->
-  S.modify @@ fun s ->
+  Versioned.modify scopes @@ fun s ->
   {
     s with
     inner =
@@ -157,7 +167,7 @@ let modify_export ?context_export m =
 (* Copy the visible namespace into the export namespace. *)
 let export_visible ?context_modifier ?context_export m =
   M.exclusively @@ fun () ->
-  S.modify @@ fun s ->
+  Versioned.modify scopes @@ fun s ->
   {
     s with
     inner =
@@ -172,7 +182,7 @@ let export_visible ?context_modifier ?context_export m =
 (* Add a name to the visible and export namespaces.  Does not modify the notation situation -- this is dangerous, so we don't export it; instead use 'define' and 'define_notation'. *)
 let include_singleton ?context_visible ?context_export (path, x) =
   M.exclusively @@ fun () ->
-  S.modify @@ fun s ->
+  Versioned.modify scopes @@ fun s ->
   {
     s with
     inner =
@@ -191,8 +201,8 @@ let original_names = Hashtbl.create 100
 let marshal_original_names chan flags = Marshal.to_channel chan original_names flags
 
 (* Create a new Constant.t and define a name to equal it. *)
-let define compunit ?loc name =
-  let c = Constant.make compunit in
+let define ?loc name =
+  let c = Constant.make () in
   Hashtbl.add original_names c name;
   include_singleton (name, ((`Constant c, loc), ()));
   c
@@ -212,7 +222,7 @@ let define_notation user ?loc name =
 (* As above, but only adding it to the visible namespace and not the export one.  Also does not modify the notation situation; this is dangerous, so we don't export it. *)
 let _import_singleton ?context_visible (path, x) =
   M.exclusively @@ fun () ->
-  S.modify @@ fun s ->
+  Versioned.modify scopes @@ fun s ->
   {
     s with
     inner =
@@ -225,7 +235,7 @@ let _import_singleton ?context_visible (path, x) =
 (* Include a subtree into the visible namespace at a specified location.  Also adds notations from the subtree "notations" namespace into the notation situation IF the supplied path is empty (since then this is getting merged into the ambient "notations" namespace).  Adds the subtree into the export namespace if "export" is true.  This is not wrapped in the mutex, hence not exported. *)
 let unsafe_include_subtree ?context_modifier ?context_visible ?context_export
     ?(modifier = Yuujinchou.Language.id) ~export (path, ns) =
-  S.modify @@ fun s ->
+  Versioned.modify scopes @@ fun s ->
   let ns = Mod.modify ?context:context_modifier ~prefix:Emp modifier ns in
   let situation =
     if List.is_empty path then Situation.add_users_to s.inner.situation ns else s.inner.situation
@@ -256,20 +266,21 @@ let import_subtree ?context_modifier ?context_visible ?modifier (path, ns) =
   M.exclusively @@ fun () ->
   unsafe_include_subtree ?context_modifier ?context_visible ?modifier ~export:false (path, ns)
 
-let get_visible () = M.exclusively @@ fun () -> (S.get ()).inner.visible
-let get_export () = M.exclusively @@ fun () -> (S.get ()).inner.export
+let get_visible () = M.exclusively @@ fun () -> (Versioned.get scopes).inner.visible
+let get_export () = M.exclusively @@ fun () -> (Versioned.get scopes).inner.export
 
-(* Set the visible namespace, e.g. before going into interactive mode.  Also set the notation situation to consist of the user notations from that namespace. *)
+(* Set the visible namespace for the current origin, e.g. before going into interactive mode.  Also set the notation situation to consist of the user notations from that namespace. *)
 let set_visible visible =
   M.exclusively @@ fun () ->
-  let situation = Situation.add_users_to !Situation.builtins visible in
-  S.modify (fun s -> { s with inner = { s.inner with visible; situation } })
+  Versioned.modify scopes (fun s ->
+      let situation = Situation.add_users_to s.inner.situation visible in
+      { s with inner = { s.inner with visible; situation } })
 
 (* Start a new section, with specified prefix.  Keeps the ambient visible namespace, but starts with empty export namespace which will collect only the names defined in the section.  *)
 let start_section prefix =
   if List.mem "notations" prefix then fatal (Invalid_section_name prefix);
   M.exclusively @@ fun () ->
-  S.modify (fun s ->
+  Versioned.modify scopes (fun s ->
       let new_scope : scope =
         {
           visible = s.inner.visible;
@@ -280,36 +291,20 @@ let start_section prefix =
       { outer = Snoc (s.outer, s.inner); inner = new_scope })
 
 (* How many nested sections are we inside? *)
-let count_sections () = M.exclusively @@ fun () -> Bwd.length (S.get ()).outer
+let count_sections () = M.exclusively @@ fun () -> Bwd.length (Versioned.get scopes).outer
 
 (* Finish a section, integrating its exported names into the previous section's namespaces (import and export) with the prefix attached.  Doesn't add notations to the situation since the prefix is (presumably) nonempty.  Returns the prefix that was used. *)
 let end_section () =
   M.exclusively @@ fun () ->
-  let ending_scope = (S.get ()).inner in
+  let ending_scope = (Versioned.get scopes).inner in
   try
-    S.modify (fun s ->
+    Versioned.modify scopes (fun s ->
         match s.outer with
         | Snoc (outer, inner) -> { outer; inner }
         | Emp -> raise (Failure "no section here to end"));
     unsafe_include_subtree ~export:true (Bwd.to_list ending_scope.prefix, ending_scope.export);
     Some (Bwd.to_list ending_scope.prefix)
   with Failure _ -> None
-
-(* We remove the Mod.run from Scope.run and let the caller control it separately.  Also sets the notation situation.  Note that this *overrides* (dynamically, locally) any "actual" namespace and notations in the outer state.  It is used for loading files and strings, which are atomic undo units, and for "going back in time" temporarily to solve an old hole. *)
-let run ?(export_prefix = Emp) ?(init_visible = Trie.empty) ?init_situation f =
-  let situation =
-    match init_situation with
-    | Some s -> s
-    | None -> Situation.add_users_to !Situation.builtins init_visible in
-  let init =
-    {
-      outer = Emp;
-      inner = { visible = init_visible; export = Trie.empty; prefix = export_prefix; situation };
-    } in
-  M.run @@ fun () -> S.run ~init f
-
-(* Like 'run', but override the handlers for the scope state effects instead of running a state module; hence no init_visible is given.  Unlike most RedPRL try_with functions, this one isn't designed for calling *inside* of an outer "run" to override some things locally, instead it is for *replacing* "run" by passing out the state effects to our History module.  Hence why it starts a new Mutex as well, and why we call it "run_with" instead of "try_with". *)
-let run_with ?get ?set f = M.run @@ fun () -> S.try_with ?get ?set f
 
 (* Look up a name to get a constant. *)
 let lookup name =

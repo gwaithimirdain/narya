@@ -255,7 +255,7 @@ module Code = struct
     | Option_set : string * string -> t
     | Break : t
     | Accumulated : string * t Asai.Diagnostic.t Bwd.t -> t
-    | No_holes_allowed : [ `Command of string | `File of string ] -> t
+    | No_holes_allowed : [ `Command of string | `File of string | `Other of string ] -> t
     | Cyclic_term : t
     | Oracle_failed : string * printable -> t
     | Invalid_flags : t
@@ -1027,7 +1027,8 @@ module Code = struct
       | No_holes_allowed str -> (
           match str with
           | `Command cmd -> textf "command '%s' cannot contain holes" cmd
-          | `File file -> textf "imported file '%s' cannot contain holes" file)
+          | `File file -> textf "imported file '%s' cannot contain holes" file
+          | `Other where -> textf "%s cannot contain holes" where)
       | Ill_scoped_connection -> text "ill-scoped connection"
       | Cyclic_term -> text "cycle in graphical term"
       | Oracle_failed (str, tm) -> textf "oracle failed: %s: %a" str pp_printed (print tm)

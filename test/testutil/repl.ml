@@ -2,6 +2,7 @@ open Util
 open Tbwd
 open Dim
 open Core
+open Origin
 open Readback
 open Reporter
 open Parser
@@ -27,23 +28,25 @@ let check_term (rtm : N.zero check located) (ety : kinetic value) : (emp, kineti
   Reporter.trace "when checking term" @@ fun () -> check (Kinetic `Nolet) Ctx.empty rtm ety
 
 let assume (name : string) (ty : string) : unit =
+  Global.run @@ fun () ->
   let p = Parse.Term.parse (`String { title = Some "constant name"; content = name }) in
   match Parse.Term.final p with
   | Wrap { value = Ident (name, _); _ } ->
       Scope.check_name name None;
-      let const = Scope.define Compunit.basic name in
+      let const = Scope.define name in
       let rty = parse_term ty in
       let cty = check_type rty in
       Global.add const cty (`Axiom, `Nonparametric)
   | _ -> fatal (Invalid_constant_name ([ name ], None))
 
 let def (name : string) (ty : string) (tm : string) : unit =
+  Global.run @@ fun () ->
   let p = Parse.Term.parse (`String { title = Some "constant name"; content = name }) in
   match Parse.Term.final p with
   | Wrap { value = Ident (name, _); _ } ->
       Reporter.tracef "when defining %s" (String.concat "." name) @@ fun () ->
       Scope.check_name name None;
-      let const = Scope.define Compunit.basic name in
+      let const = Scope.define name in
       let rty = parse_term ty in
       let rtm = parse_term tm in
       let cty = check_type rty in
@@ -55,6 +58,7 @@ let def (name : string) (ty : string) (tm : string) : unit =
   | _ -> fatal (Invalid_constant_name ([ name ], None))
 
 let equal_at (tm1 : string) (tm2 : string) (ty : string) : unit =
+  Global.run @@ fun () ->
   let rty = parse_term ty in
   let rtm1 = parse_term tm1 in
   let rtm2 = parse_term tm2 in
@@ -69,6 +73,7 @@ let equal_at (tm1 : string) (tm2 : string) (ty : string) : unit =
   | Ok () -> ()
 
 let unequal_at (tm1 : string) (tm2 : string) (ty : string) : unit =
+  Global.run @@ fun () ->
   let rty = parse_term ty in
   let rtm1 = parse_term tm1 in
   let rtm2 = parse_term tm2 in
@@ -83,6 +88,7 @@ let unequal_at (tm1 : string) (tm2 : string) (ty : string) : unit =
   | Ok () -> raise (Failure "Equal terms")
 
 let print (tm : string) : unit =
+  Global.run @@ fun () ->
   let rtm = parse_term tm in
   match rtm with
   | { value = Synth rtm; loc } ->
@@ -98,15 +104,11 @@ let print (tm : string) : unit =
 let run f =
   Lexer.Specials.run @@ fun () ->
   Parser.Unparse.install ();
-  History.run_empty @@ fun () ->
-  Eternity.run ~init:Eternity.empty @@ fun () ->
-  Global.run ~init:Global.empty @@ fun () ->
   Display.run ~init:Display.default @@ fun () ->
   Annotate.run @@ fun () ->
   Readback.Displaying.run ~env:false @@ fun () ->
   Discrete.run ~env:false @@ fun () ->
   Dim.Endpoints.run ~arity:2 ~refl_char:'e' ~refl_names:[ "refl"; "Id" ] ~internal:true @@ fun () ->
-  Compunit.Current.run ~env:Compunit.basic @@ fun () ->
   Reporter.run
     ~emit:(fun d -> Reporter.display d)
     ~fatal:(fun d ->
@@ -114,11 +116,9 @@ let run f =
       raise (Failure "Fatal error"))
   @@ fun () ->
   Subtype.run @@ fun () ->
-  (* We need an outer Scope.run, with the builtins installed, so that Pi.install can parse things. *)
+  Origin.run @@ fun () ->
   Builtins.install ();
-  Scope.run @@ fun () ->
-  let init_visible = Scope.Trie.empty in
-  Scope.run ~init_visible @@ fun () -> f ()
+  f ()
 
 let gel_install () =
   def "Gel" "(A B : Type) (R : A → B → Type) → Id Type A B" "A B R ↦ sig a b ↦ ( ungel : R a b )"

@@ -40,8 +40,6 @@ let empty : t =
     unparse = PrintMap.empty;
   }
 
-let builtins = ref empty
-
 (* Add a new notation to the current situation of available ones. *)
 let add : type left tight right. (left, tight, right) notation -> t -> t =
  fun n s ->

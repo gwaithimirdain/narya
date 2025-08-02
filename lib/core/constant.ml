@@ -1,83 +1,71 @@
-open Util
-
 (* This module should not be opened, but be used qualified. *)
 
-(* A constant is identified by an autonumber, scoped by compilation unit. *)
+open Origin
+
+(* A constant is identified by an autonumber, scoped by an Origin. *)
 module Constant = struct
-  type t = Compunit.t * int
+  type t = Origin.t * int
 
   let compare (x : t) (y : t) = compare x y
 end
 
 type t = Constant.t
 
-let to_string x = string_of_int (snd x)
-let counters = Compunit.IntArray.make_basic ()
+(* Store autonumber counters *)
+let counters = Versioned.make ~default:(fun _ -> 0) ~inherit_values:false
 
-let make compunit : t =
-  let number = Compunit.IntArray.inc counters compunit in
-  (compunit, number)
+(* Create a new constant in the current execution location (file or interactive instant). *)
+let make () : t =
+  let current = Origin.current () in
+  let number = Versioned.get counters in
+  Versioned.set counters (number + 1);
+  (current, number)
 
-let remake f (c, i) = (f c, i)
+(* Recreate a constant with an altered file identifier, as when linking. *)
+let remake f ((c : Origin.t), i) =
+  match c with
+  | File n -> (Origin.File (f n), i)
+  (* Built-in constants should be created in the same order with the same identifiers in every execution run, so we don't need to change them. *)
+  | Top -> (c, i)
+  | Instant _ -> raise (Failure "Constant: can't remake interactive constant")
 
-(* Data associated to constants is also stored in a map whose domain is their paired identities. *)
-module Map = struct
+(* A constant Table is mutable and versioned, and can store any kind of data. *)
+module Table = struct
   module IntMap = Map.Make (Int)
 
-  type 'a t = 'a IntMap.t Compunit.Map.t
+  type 'a t = 'a IntMap.t Versioned.t
 
-  let empty : 'a t = Compunit.Map.empty
+  let make () = Versioned.make ~default:(fun () -> IntMap.empty) ~inherit_values:false
+  let find_opt (c, i) tbl = Option.bind (Versioned.get_at tbl c) (IntMap.find_opt i)
 
-  let find_opt (i, c) m =
-    let open Monad.Ops (Monad.Maybe) in
-    let* m = Compunit.Map.find_opt i m in
-    IntMap.find_opt c m
+  let add (c, i) v tbl =
+    if c = Origin.current () then Versioned.set tbl (IntMap.add i v (Versioned.get tbl))
+    else raise (Failure "Constant.Table: can only add to the current origin")
 
-  let mem (i, c) m =
-    match Compunit.Map.find_opt i m with
-    | Some m -> IntMap.mem c m
-    | None -> false
+  (* Get or set all the data associated to a single file. *)
 
-  let add (i, c) x m =
-    Compunit.Map.update i
-      (function
-        | None -> Some (IntMap.empty |> IntMap.add c x)
-        | Some m -> Some (IntMap.add c x m))
-      m
+  type 'a file_entry = 'a IntMap.t option
 
-  let update (i, c) f m =
-    Compunit.Map.update i
-      (function
-        | None -> Some (IntMap.update c f IntMap.empty)
-        | Some m -> Some (IntMap.update c f m))
-      m
+  let find_file file tbl = Versioned.get_at tbl (File file)
 
-  let remove (i, c) m =
-    Compunit.Map.update i
-      (function
-        | None -> None
-        | Some m -> Some (IntMap.remove c m))
-      m
-
-  let iter f m = Compunit.Map.iter (fun i n -> IntMap.iter (fun c v -> f (i, c) v) n) m
-  let cardinal m = Compunit.Map.fold (fun _ n x -> x + IntMap.cardinal n) m 0
-
-  let to_channel_unit chan i (m : 'a t) flags =
-    Marshal.to_channel chan (Compunit.Map.find_opt i m : 'a IntMap.t option) flags
-
-  type 'a unit_entry = 'a IntMap.t option
-
-  let find_unit i m = Compunit.Map.find_opt i m
-
-  let add_unit i x m =
+  let add_file file x tbl =
     match x with
-    | Some x -> Compunit.Map.add i x m
-    | None -> m
+    | Some x -> Versioned.set_file tbl file x
+    | None -> ()
 
-  let from_channel_unit chan f i (m : 'a t) =
+  (* Marshal the objects associated to a specific file only. *)
+  let to_channel_file chan file (tbl : 'a t) flags =
+    Marshal.to_channel chan (Versioned.get_at tbl (File file)) flags
+
+  (* Unmarshal the objects associated to a specific file only, applying f to their elements before adding them to the current map, and returning the new file data. *)
+  let from_channel_file chan f file tbl =
     match (Marshal.from_channel chan : 'a IntMap.t option) with
     | Some x ->
         let fx = IntMap.map f x in
-        (Compunit.Map.add i fx m, Some fx)
-    | None -> (m, None)
+        Versioned.set_file tbl file fx;
+        Some fx
+    | None -> None
 end
+
+(* Other data associated to constants is stored in a Map whose domain is their paired identities.  This doesn't record any history, so it should generally only be used locally to a particular instant. *)
+module Map = Map.Make (Constant)
