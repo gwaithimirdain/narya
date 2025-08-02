@@ -169,6 +169,7 @@ module Code = struct
     | Unexpected_implicitness : [ `Implicit | `Explicit ] * string * string -> t
     | Insufficient_dimension : { needed : 'a D.t; got : 'b D.t; which : string } -> t
     | Unimplemented : string -> t
+    | Deprecated : string -> t
     | Matching_datatype_has_degeneracy : printable -> t
     | Wrong_number_of_arguments_to_pattern : Constr.t * int -> t
     | Wrong_number_of_arguments_to_motive : int -> t
@@ -332,6 +333,7 @@ module Code = struct
     | Insufficient_dimension _ -> Error
     | Wrong_number_of_arguments_to_constructor _ -> Error
     | Unimplemented _ -> Error
+    | Deprecated _ -> Warning
     | Matching_datatype_has_degeneracy _ -> Error
     | Wrong_number_of_arguments_to_pattern _ -> Error
     | Wrong_number_of_arguments_to_motive _ -> Error
@@ -423,8 +425,9 @@ module Code = struct
     | No_such_level _ -> "E0001"
     | Accumulated (_msg, _errs) -> "E0002"
     | Invalid_degeneracy_action _ -> "E0003"
-    (* Unimplemented future features *)
+    (* Past and future features *)
     | Unimplemented _ -> "E0100"
+    | Deprecated _ -> "E0110"
     (* Parse errors *)
     | Parse_error -> "E0200"
     | Parsing_ambiguity _ -> "E0201"
@@ -736,7 +739,7 @@ module Code = struct
                 (print ~sort:`Type d) f
           | `Other tm -> textf "term %a has no field named %s" pp_printed (print tm) f
           | `Type tm ->
-              textf "type %a has no field named %s (did you mean to supply -hott?)" pp_printed
+              textf "type %a has no field named %s (maybe turn off -parametric?)" pp_printed
                 (print tm) f
           | `Degenerated_record eta ->
               let rc = record_or_codata eta in
@@ -823,6 +826,7 @@ module Code = struct
             "@[<hv 0>insufficient dimension of primary argument for %s:@ %s does not factor through %s@]"
             which (string_of_dim0 got) (string_of_dim0 needed)
       | Unimplemented str -> textf "unimplemented: %s" str
+      | Deprecated str -> textf "deprecated: %s" str
       | Matching_datatype_has_degeneracy ty ->
           textf
             "@[<hv 0>can't match on element of datatype@;<1 2>%a@ that has a degeneracy applied@]"

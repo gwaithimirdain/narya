@@ -1,5 +1,3 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
-
 {` Transport and lifting compute on Σ-types `}
 
 def Σ (A : Type) (B : A → Type) : Type ≔ sig ( fst : A, snd : B fst )

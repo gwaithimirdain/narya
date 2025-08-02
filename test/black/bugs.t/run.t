@@ -18,7 +18,7 @@
    ￮ constant get_f defined
   
 
-  $ narya -hott issue84.ny
+  $ narya issue84.ny
   (Id A ⇒ Id B) .trr
     : (A → B) → A → B
   

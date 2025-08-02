@@ -1,5 +1,3 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
-
 {` Transport and lifting compute on product types `}
 
 def prod (A : Type) (B : Type) : Type ≔ sig ( fst : A, snd : B )

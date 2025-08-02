@@ -1,5 +1,3 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
-
 {` Transport and lifting compute on M-types `}
 
 def M (A : Type) (B : A → Type) : Type ≔ codata [

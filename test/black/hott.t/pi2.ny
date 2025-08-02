@@ -1,5 +1,3 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
-
 {` Transport and lifting compute on 2-dimensional Π-types `}
 
 axiom A00 : Type

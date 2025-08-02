@@ -29,14 +29,14 @@ Formatting output
 Controlling parametricity
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-These options are discussed under :ref:`Observational higher dimensions`, :ref:`Parametricity`, and :ref:`Higher Observational Type Theory`.
+These options are discussed under :ref:`Parametricity`.
 
-- ``-arity N``: Set the arity of parametricity to N (1 ≤ N ≤ 9)
+- ``-parametric``: Internal parametricity mode
 - ``-direction X``: Set the symbol and names for reflexivity
+- ``-arity N``: Set the arity of parametricity to N (1 ≤ N ≤ 9)
 - ``-internal`` and ``-external``: Set whether parametricity is internal (default) or external
 - ``-discreteness``: Enable strictly parametrically discrete types
-- ``-dtt``: Poor man's dTT mode (``-arity 1 -direction d -external``)
-- ``-hott``: Higher Observational Type Theory mode
+- ``-dtt``: Poor man's dTT mode (``-parametric -arity 1 -direction d -external``)
 
 Execution
 ---------

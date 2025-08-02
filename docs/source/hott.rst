@@ -1,16 +1,7 @@
 Higher Observational Type Theory
 ================================
 
-Although Narya can be used for various different higher type theories, its primary *raison d'être* is Higher Observational Type Theory (HOTT), a computational version of Homotopy Type Theory (HoTT) in which the identity types are defined "observationally".  HOTT can be encoded inside parametricity, and there is a native HOTT mode in development.
-
-Native HOTT mode
-----------------
-
-The native HOTT mode is activated by the command-line flag ``-hott``.  This conflicts with the flags ``-arity`` and ``-direction``: it requires the default of binary higher-dimensions with letter ``e`` and degeneracy names ``Id``, ``refl``, and ``ap``.  (In the future, we plan to allow multiple directions of higher-dimensionality, so that internal parametricity can coexist with HOTT in a different direction.)  In particular, when working in HOTT mode you may want to start all your source files with the line
-
-.. code-block:: none
-
-   {` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
+Although Narya can be used for various different higher type theories, its primary *raison d'être* is Higher Observational Type Theory (HOTT), a computational version of Homotopy Type Theory (HoTT) in which the identity types are defined "observationally".  Narya's HOTT mode is the default, while the command-line flag ``-parametric`` switches it into :ref:`Parametricity` mode.  (In the future, we plan to allow multiple "directions" of higher-dimensionality, so that internal parametricity can coexist with HOTT.)
 
 Transport and lifting
 ^^^^^^^^^^^^^^^^^^^^^
@@ -75,7 +66,7 @@ The syntax of ``glue`` and ``isBisim`` is provisional and may change in the futu
 Equational reasoning
 --------------------
 
-In ``-hott`` mode, elements of ``Id`` are equalities, hence in particular are not just reflexive but also symmetric and transitive.  There is a temporary convenient syntax for equational reasoning with such equalities, which is exemplified as follows:
+In HOTT mode, elements of ``Id`` are equalities, hence in particular are not just reflexive but also symmetric and transitive.  There is a temporary convenient syntax for equational reasoning with such equalities, which is exemplified as follows:
 
 .. code-block:: none
 

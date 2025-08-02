@@ -1,5 +1,3 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
-
 axiom A₀ : Type
 axiom A₁ : Type
 axiom A₂ : Id Type A₀ A₁

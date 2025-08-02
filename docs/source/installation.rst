@@ -331,11 +331,11 @@ Here are some other ProofGeneral customization options that are highly recommend
 
 - ``proof-three-window-mode-policy``: Assuming your screen is significantly wider than it is tall, as most computer screens are, it is highly recommended to set this to ``Horizontal (two columns)``, so that the goals and response buffers do not take up vertical space.  (The configuration option ``proof-three-window-enable`` must also be set to on (``non-nil``), although this is usually the default so you shouldn't have to touch it.)
 
-- ``narya-prog-args``: If you want to pass command-line options to alter the behavior of Narya, such as options like ``-hott`` that modify the type theory, at present the only way to do this is to change this variable.  You can do that globally with ``customize-variable``, or locally in particular ``ny`` files with Emacs file-local variables.  If you do change this variable, make sure to keep the argument ``-proofgeneral`` in it, which is necessary to put Narya into the correct mode for interacting with ProofGeneral.  As an example, to set the option ``-hott`` locally in a file, you can insert the following as its first line:
+- ``narya-prog-args``: If you want to pass command-line options to alter the behavior of Narya, such as options like ``-parametric`` that modify the type theory, at present the only way to do this is to change this variable.  You can do that globally with ``customize-variable``, or locally in particular ``ny`` files with Emacs file-local variables.  If you do change this variable, make sure to keep the argument ``-proofgeneral`` in it, which is necessary to put Narya into the correct mode for interacting with ProofGeneral.  As an example, to set the option ``-parametric`` locally in a file, you can insert the following as its first line:
 
   .. code-block:: none
 
-     {` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
+     {` -*- narya-prog-args: ("-proofgeneral" "-parametric") -*- `}
 
   This file-local approach does have some pitfalls.  For instance, if you start processing one file, then retract it completely and start processing another file, ProofGeneral does not restart Narya, so the flags passed by the first file will remain in effect.  You must also agree every time you open a file like this to execute the "unsafe" file-local variable, or else mark it as permanently trusted -- and don't mark it as permanently untrusted, or it'll stop working completely.
 

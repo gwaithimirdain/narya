@@ -18,7 +18,8 @@ let arity = ref 2
 let refl_char = ref 'e'
 let refl_names = ref [ "refl"; "Id"; "ap" ]
 let internal = ref true
-let hott = ref false
+let hott = ref true
+let hott_deprecated = ref false
 let discreteness = ref false
 let source_only = ref false
 let number_metas = ref true
@@ -55,11 +56,12 @@ let unmarshal_flags chan =
   then Ok ()
   else
     Error
-      (Printf.sprintf "-arity %d -direction %s %s%s%s" ar
+      (Printf.sprintf "%s-arity %d -direction %s %s%s"
+         (if ho then "" else "-parametric ")
+         ar
          (String.concat "," (String.make 1 rc :: rs))
          (if int then "-internal" else "-external")
-         (if disc then " -discreteness" else "")
-         (if ho then " -hott" else ""))
+         (if disc then " -discreteness" else ""))
 
 (* Given a string like "r,refl,Id" as in a command-line "-direction" argument, set refl_char and refl_names *)
 let set_refls str =
@@ -118,7 +120,8 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols f =
   @@ fun () ->
     if !arity < 0 || !arity > 9 then Reporter.fatal (Unimplemented "arities outside [1,9]");
     if !discreteness && !arity > 1 then Reporter.fatal (Unimplemented "discreteness with arity > 1");
-    if !hott && (!arity <> 2 || !discreteness || not !internal) then Reporter.fatal Invalid_flags );
+    if !hott && (!arity <> 2 || !discreteness || not !internal) then Reporter.fatal Invalid_flags;
+    if !hott_deprecated then Reporter.emit (Deprecated "-hott (this is now the default)") );
   Dim.Endpoints.run ~arity:!arity ~refl_char:!refl_char ~refl_names:!refl_names ~internal:!internal
     ?hott:(if !hott then Some () else None)
   @@ fun () ->

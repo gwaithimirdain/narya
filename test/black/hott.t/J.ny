@@ -1,5 +1,3 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
-
 {` Basic higher groupoid operations, constructed as in cubical type theory. `}
 
 def transport (A : Type) (B : A → Type) (x y : A) (p : Id A x y)

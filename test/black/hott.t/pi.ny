@@ -1,5 +1,3 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
-
 {` Transport and lifting compute on Π-types `}
 
 def Π (A : Type) (B : A → Type) : Type ≔ (x : A) → B x
