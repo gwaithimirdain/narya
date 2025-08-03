@@ -26,10 +26,10 @@ def plus (m n : ℕ) : ℕ ≔ match n [ zero. ↦ ? | suc. n ↦ ? ]
 
 axiom P : ℕ → Type
 
-def anop : ℕ → ℕ → (x : ℕ) → P x ≔ n n0 n ↦ ?
+def anop : ℕ → ℕ → (x : ℕ) → P x ≔ n n′ n ↦ ?
 
-{` The user's "n0" should not be shadowed by an auto-generated one `}
-def anop' : ℕ → ℕ → (x : ℕ) → P x ≔ n0 n n ↦ ?
+{` The user's "n′" should not be shadowed by an auto-generated one `}
+def anop' : ℕ → ℕ → (x : ℕ) → P x ≔ n′ n n ↦ ?
 
 def anop'' : ℕ → ℕ → (x : ℕ) → P x ≔ n _ n ↦ ?
 
