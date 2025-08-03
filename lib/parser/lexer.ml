@@ -88,6 +88,34 @@ let quoted_string : Token.t t =
     | _, c -> rest `None (str ^ c) in
   rest `None ""
 
+let query = Uchar.of_char '?'
+let bang = Uchar.of_char '!'
+let query_bang = Uchar.of_int 0x2048 (* ⁈ *)
+let bang_query = Uchar.of_int 0x2049 (* ⁉ *)
+
+(* A hole is either the single character ?, or a hole with contents that start with ?! or ⁈ and ends with !? or ⁉, with internal parts separated by !.  Even comment sequences inside of a hole are ignored. *)
+let rec hole_contents () : string list t =
+  let* first = uword (fun _ -> true) (fun c -> c <> bang && c <> bang_query) "hole contents" in
+  (let* _ = uchar bang in
+   (let* _ = uchar query in
+    return [ first ])
+   </> let* rest = hole_contents () in
+       return (first :: rest))
+  </>
+  let* _ = uchar bang_query in
+  return [ first ]
+
+let hole : Token.t t =
+  (let* _ = uchar query in
+   (let* _ = uchar bang in
+    let* contents = hole_contents () in
+    return (Hole (Some contents)))
+   </> return (Hole None))
+  </>
+  let* _ = uchar query_bang in
+  let* contents = hole_contents () in
+  return (Hole (Some contents))
+
 module Specials = struct
   (* Any of these characters is always its own token. *)
   let default_onechar_ops =
@@ -98,7 +126,6 @@ module Specials = struct
       (0x5D, RBracket);
       (0x7B, LBrace);
       (0x7D, RBrace);
-      (0x3F, Query);
       (0x21A6, Mapsto);
       (0x2907, DblMapsto);
       (0x2192, Arrow);
@@ -211,6 +238,8 @@ let specials () =
       Array.map Uchar.of_char [| ' '; '\t'; '\n'; '\r'; '`' |];
       (* We only include the superscript parentheses: other superscript characters without parentheses are allowed in identifiers. *)
       [| Token.super_lparen_uchar; Token.super_rparen_uchar |];
+      (* Hole symbols also stop us *)
+      [| query; bang; query_bang; bang_query |];
       (* Finally, we exclude dots, because they are treated specially as separating pieces of an identifier *)
       [| Uchar.of_char '.' |];
     ]
@@ -376,7 +405,8 @@ let other : Token.t t =
 
 (* Finally, a token is either a quoted string, a single-character operator, an operator of special ASCII symbols, or something else.  Unlike the built-in 'lexer' function, we include whitespace *after* the token, so that we can save comments occurring after any code. *)
 let token : Located_token.t t =
-  (let* loc, tok = located (quoted_string </> onechar_op </> superscript </> ascii_op </> other) in
+  (let* loc, tok =
+     located (hole </> quoted_string </> onechar_op </> superscript </> ascii_op </> other) in
    let* ws = whitespace in
    return (loc, (tok, ws)))
   </> located (expect_end (Eof, []))

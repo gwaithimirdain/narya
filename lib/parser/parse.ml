@@ -145,7 +145,7 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
                    (* Constructor names have already been validated by the lexer.  No higher constructors are allowed yet. *)
                    | Constr (x, []) -> Some ((`Constr x, w), state)
                    | Underscore -> Some ((`Placeholder, w), state)
-                   | Query -> Some ((`Hole, w), state)
+                   | Hole None -> Some ((`Hole, w), state)
                    | _ -> None)) in
           with_supers
             {
@@ -332,7 +332,7 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
                             | Constr (x, []) -> Some ((`Constr x, w), state)
                             | Underscore -> Some ((`Placeholder, w), state)
                             | Field (x, p) -> Some ((`Field (x, p), w), state)
-                            | Query -> Some ((`Hole, w), state)
+                            | Hole None -> Some ((`Hole, w), state)
                             | _ -> None)) in
                    let* sups = supers in
                    match first_arg.get No.Interval.plus_omega_only with

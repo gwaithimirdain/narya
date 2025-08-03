@@ -997,7 +997,11 @@ let rec execute :
                         ^ String.concat ", "
                             (List.map
                                (fun fld ->
-                                 fld ^ " " ^ Token.to_string Coloneq ^ " " ^ Token.to_string Query)
+                                 fld
+                                 ^ " "
+                                 ^ Token.to_string Coloneq
+                                 ^ " "
+                                 ^ Token.to_string (Hole None))
                                fields)
                         ^ Token.to_string RParen
                     | Noeta ->
@@ -1010,7 +1014,7 @@ let rec execute :
                                  ^ " "
                                  ^ Token.to_string Mapsto
                                  ^ " "
-                                 ^ Token.to_string Query)
+                                 ^ Token.to_string (Hole None))
                                fields)
                         ^ Token.to_string RBracket)
                 | Canonical (_, UU _, _, _) -> fatal (Invalid_split (`Goal, "universe"))
@@ -1043,7 +1047,7 @@ let rec execute :
                           ^ do_args args " "
                           ^ mapsto
                           ^ " "
-                          ^ Token.to_string Query)
+                          ^ Token.to_string (Hole None))
                           :: acc in
                         let constrs = Bwd.fold_right do_constrs constrs [] in
                         let buf = Buffer.create 10 in
