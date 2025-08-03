@@ -11,7 +11,12 @@ type t =
   | RBracket (* ] *)
   | LBrace (* { *)
   | RBrace (* } *)
-  | Hole of string list option
+  | Hole of string list option (* ⁈ ... ⁉ or ?! ... !? etc. *)
+  | Bang
+  | DblQuery (* Both ?? and ⁇ *)
+  | DblBang (* Both !! and ‼ *)
+  | BangQuery (* Both ⁉ and ?! *)
+  (* We don't need a Query or a QueryBang since those always start a Hole. *)
   | Arrow (* Both -> and → *)
   | DblArrow (* Both => and ⇒ *)
   | Mapsto (* Both |-> and ↦ *)
@@ -158,6 +163,10 @@ let to_string = function
   | RBrace -> "}"
   | Hole None -> "?"
   | Hole (Some _) -> raise (Failure "Can't print nonempty Hole token directly")
+  | Bang -> "!"
+  | DblQuery -> Display.alt_char "⁇" "??"
+  | DblBang -> Display.alt_char "‼" "!!"
+  | BangQuery -> Display.alt_char "⁉" "!?"
   | Arrow -> Display.alt_char "→" "->"
   | DblArrow -> Display.alt_char "⇒" "=>"
   | Mapsto -> Display.alt_char "↦" "|->"

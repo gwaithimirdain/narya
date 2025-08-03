@@ -7,8 +7,8 @@ open Parseonly
 
 type (_, _, _) identity +=
   | At : (closed, No.plus_omega, No.strict opn) identity
-  | Bang : (No.strict opn, No.plus_omega, closed) identity
-  | Query : (No.nonstrict opn, No.plus_omega, closed) identity
+  | Dollar : (No.strict opn, No.plus_omega, closed) identity
+  | Dbldollar : (No.nonstrict opn, No.plus_omega, closed) identity
 
 let unparse str =
   Core.Reporter.run ~emit:(fun _ -> ()) ~fatal:(fun _ -> ()) @@ fun () ->
@@ -19,18 +19,21 @@ let unparse str =
 let att : (closed, No.plus_omega, No.strict opn) notation = (At, Prefix No.plus_omega)
 let () = make att "at" (Closed_entry (eop (Op "@") (Done_closed att)))
 
-(* And also postfix notations ! and !! of tightness +∞, one left-associative and one not. *)
-let bang : (No.strict opn, No.plus_omega, closed) notation = (Bang, Postfix No.plus_omega)
-let () = make bang "bang" (Open_entry (eop (Op "!") (done_open bang)))
-let query : (No.nonstrict opn, No.plus_omega, closed) notation = (Query, Postfixl No.plus_omega)
-let () = make query "query" (Open_entry (eop (Op "!!") (done_open query)))
+(* And also postfix notations $ and $$ of tightness +∞, one left-associative and one not. *)
+let dollar : (No.strict opn, No.plus_omega, closed) notation = (Dollar, Postfix No.plus_omega)
+let () = make dollar "dollar" (Open_entry (eop (Op "$") (done_open dollar)))
+
+let dbldollar : (No.nonstrict opn, No.plus_omega, closed) notation =
+  (Dbldollar, Postfixl No.plus_omega)
+
+let () = make dbldollar "dbldollar" (Open_entry (eop (Op "$$") (done_open dbldollar)))
 
 let () =
   Repl.run @@ fun () ->
   Scope.Situation.add att;
-  Scope.Situation.add bang;
+  Scope.Situation.add dollar;
   (* Plain application *)
-  Scope.Situation.add query;
+  Scope.Situation.add dbldollar;
 
   assert (parse "@ f" = Notn ("at", [ Term (Ident [ "f" ]) ]))
   (* Since function application is "left-associative" and @ has the same tightness, "@ f x"  is parsed as "(@ f) x".  Since @ is not right-associative, function application can't appear in *its* argument, so "@ (f x)" is not a possible parse. *);
@@ -62,22 +65,23 @@ let () =
 
   unparse "f @ .x" (* Now we experiment with the postfix ones *);
 
-  assert (parse "x !" = Notn ("bang", [ Term (Ident [ "x" ]) ]));
-  assert (parse "x !!" = Notn ("query", [ Term (Ident [ "x" ]) ]));
+  assert (parse "x $" = Notn ("dollar", [ Term (Ident [ "x" ]) ]));
+  assert (parse "x $$" = Notn ("dbldollar", [ Term (Ident [ "x" ]) ]));
 
-  assert (parse "f x !!" = Notn ("query", [ Term (App (Ident [ "f" ], Ident [ "x" ])) ]))
-  (* It's not possible to get "f x !" to parse as "f (x !)", since function application is not right-associative and nothing is strictly tighter than it. *);
+  assert (parse "f x $$" = Notn ("dbldollar", [ Term (App (Ident [ "f" ], Ident [ "x" ])) ]))
+  (* It's not possible to get "f x $" to parse as "f (x $)", since function application is not right-associative and nothing is strictly tighter than it. *);
 
-  unparse "f x !"
+  unparse "f x $"
   (* Now we try the operator in the middle.  This works since function application is left-associative. *);
 
-  assert (parse "f ! x" = App (Notn ("bang", [ Term (Ident [ "f" ]) ]), Ident [ "x" ]));
+  assert (parse "f $ x" = App (Notn ("dollar", [ Term (Ident [ "f" ]) ]), Ident [ "x" ]));
 
-  assert (parse "f !! x" = App (Notn ("query", [ Term (Ident [ "f" ]) ]), Ident [ "x" ]));
+  assert (parse "f $$ x" = App (Notn ("dbldollar", [ Term (Ident [ "f" ]) ]), Ident [ "x" ]));
 
   assert (
-    parse "f !! x !!"
-    = Notn ("query", [ Term (App (Notn ("query", [ Term (Ident [ "f" ]) ]), Ident [ "x" ])) ]))
+    parse "f $$ x $$"
+    = Notn
+        ("dbldollar", [ Term (App (Notn ("dbldollar", [ Term (Ident [ "f" ]) ]), Ident [ "x" ])) ]))
 
 (* We define nonassociative prefix, infix, and postfix operators of the same tightness. *)
 

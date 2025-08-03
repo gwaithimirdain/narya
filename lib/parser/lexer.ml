@@ -92,6 +92,8 @@ let query = Uchar.of_char '?'
 let bang = Uchar.of_char '!'
 let query_bang = Uchar.of_int 0x2048 (* ⁈ *)
 let bang_query = Uchar.of_int 0x2049 (* ⁉ *)
+let query_query = Uchar.of_int 0x2047 (* ⁇ *)
+let bang_bang = Uchar.of_int 0x203C (* ‼ *)
 
 (* A hole is either the single character ?, or a hole with contents that start with ?! or ⁈ and ends with !? or ⁉, with internal parts separated by !.  Even comment sequences inside of a hole are ignored. *)
 let rec hole_contents () : string list t =
@@ -110,11 +112,25 @@ let hole : Token.t t =
    (let* _ = uchar bang in
     let* contents = hole_contents () in
     return (Hole (Some contents)))
+   </> (let* _ = uchar query in
+        return DblQuery)
    </> return (Hole None))
-  </>
-  let* _ = uchar query_bang in
-  let* contents = hole_contents () in
-  return (Hole (Some contents))
+  </> (let* _ = uchar query_bang in
+       let* contents = hole_contents () in
+       return (Hole (Some contents)))
+  (* Grab other hole-like sequences, which won't parse but which we don't want the user to use elsewhere. *)
+  </> (let* _ = uchar query_query in
+       return DblQuery)
+  </> (let* _ = uchar bang in
+       (let* _ = uchar bang in
+        return DblBang)
+       </> (let* _ = uchar query in
+            return BangQuery)
+       </> return Bang)
+  </> (let* _ = uchar bang_query in
+       return BangQuery)
+  </> let* _ = uchar bang_bang in
+      return DblBang
 
 module Specials = struct
   (* Any of these characters is always its own token. *)
@@ -239,7 +255,9 @@ let specials () =
       (* We only include the superscript parentheses: other superscript characters without parentheses are allowed in identifiers. *)
       [| Token.super_lparen_uchar; Token.super_rparen_uchar |];
       (* Hole symbols also stop us *)
-      [| query; bang; query_bang; bang_query |];
+      [| query; bang; query_bang; bang_query; query_query; bang_bang |];
+      (* Unicode tag characters are special *)
+      Array.init (16 * 6) (fun i -> Uchar.of_int (0xE0020 + i));
       (* Finally, we exclude dots, because they are treated specially as separating pieces of an identifier *)
       [| Uchar.of_char '.' |];
     ]

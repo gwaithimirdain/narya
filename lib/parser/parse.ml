@@ -412,7 +412,7 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
       | Invalid_degeneracy (rng, str) -> fatal ~loc:(Range.convert rng) (Invalid_degeneracy str)
     else if has_succeeded p then p
     else if needs_more p then fatal (Anomaly "parser needs more")
-    else fatal (Anomaly "what")
+    else fatal (Anomaly "unknown parser error: possible lexer error")
 
   (* Strip off the initial Bof token attached to initial comments and whitespace, and return that whitespace. *)
   let bof = step (fun state _ (tok, ws) -> if tok = Bof then Some (ws, state) else None)
