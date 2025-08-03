@@ -163,7 +163,7 @@ let rec pp_term : type lt ls rt rs.
   | Hole { num; ws; _ } ->
       ( utf8string
           (match Display.holes () with
-          | `With_number -> "¿" ^ string_of_int !num ^ "?"
+          | `With_number -> "⁇" ^ string_of_int !num ^ "?"
           | `Without_number -> "?"),
         ws )
 
