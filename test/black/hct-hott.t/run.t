@@ -639,3 +639,124 @@
     .t (B02 (A02 .f .liftl a01) .f .trr (f00 (A02 .f .trl a01)))
       (B12 (A12 .f .liftl a11) .f .trr (f10 (A12 .f .trl a11)))
   
+  $ narya -v -parametric -direction p,rel,Br fibrant_sqrt.ny
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/isfibrant.ny (compiled)
+  
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/bookhott.ny (compiled)
+  
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/hott_bookhott.ny (compiled)
+  
+   ￫ info[I0007]
+   ￮ section single opened
+  
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom 𝕗A assumed
+  
+   ￫ info[I0000]
+   ￮ constant √A× defined
+  
+   ￫ info[I0000]
+   ￮ constant √IdA× defined
+  
+   ￫ hint[H0403]
+   ￭ $TESTCASE_ROOT/fibrant_sqrt.ny
+   31 |          [ .root.p ↦ y2.2 .root | .root.1 ↦ y2 .root1 | .else ↦ y2 .else ])
+      ^ comatch encountered outside case tree, wrapping in implicit let-binding
+  
+   ￫ hint[H0403]
+   ￭ $TESTCASE_ROOT/fibrant_sqrt.ny
+   33 |          [ .root.p ↦ x2.2 .root.2 | .root1 ↦ x2 .root | .else ↦ x2 .else ])
+      ^ comatch encountered outside case tree, wrapping in implicit let-binding
+  
+   ￫ info[I0000]
+   ￮ constant id√_iso defined, containing 2 holes
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     B0 : Type
+     B1 : Type
+     B2 : Type⁽ᵖ⁾ B0 B1
+     x0 : √A× B0
+     x1 : √A× B1
+     y2 : √IdA× B0 B1 B2 x0 x1
+     ----------------------------------------------------------------------
+     eq.eq (√IdA× B0 B1 B2 x0 x1) _comatch.1{…} y2
+  
+   ￫ info[I3003]
+   ￮ hole ?1:
+     
+     B0 : Type
+     B1 : Type
+     B2 : Type⁽ᵖ⁾ B0 B1
+     x0 : √A× B0
+     x1 : √A× B1
+     x2 : √A×⁽ᵖ⁾ B2 x0 x1
+     ----------------------------------------------------------------------
+     eq.eq (√A×⁽ᵖ⁾ B2 x0 x1) _comatch.0{…} x2
+  
+   ￫ info[I0000]
+   ￮ constant 𝕗√A× defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?2:
+     
+     B.0 : Type
+     B.1 : Type
+     B.2 : Type⁽ᵖ⁾ B.0 B.1
+     𝕗B.0 : isFibrant B.0
+     𝕗B.1 : isFibrant B.1
+     𝕗B.2 : isFibrant⁽ᵖ⁾ B.2 𝕗B.0 𝕗B.1
+     x0 : √A× B.0
+     x1 : √A× B.1
+     ----------------------------------------------------------------------
+     isFibrant (√IdA× B.0 B.1 B.2 x0 x1)
+  
+   ￫ info[I0008]
+   ￮ section single closed
+  
+   ￫ info[I0007]
+   ￮ section parametrized opened
+  
+   ￫ info[I0001]
+   ￮ axiom Γ assumed
+  
+   ￫ info[I0001]
+   ￮ axiom 𝕗Γ assumed
+  
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom 𝕗A assumed
+  
+   ￫ info[I0000]
+   ￮ constant √A defined
+  
+   ￫ info[I0000]
+   ￮ constant 𝕗√A defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?3:
+     
+     x.0 : Γ
+     x.1 : Γ
+     x.2 : Br Γ x.0 x.1
+     a₀ : √A x.0
+     a₁ : √A x.1
+     ----------------------------------------------------------------------
+     isFibrant (√A⁽ᵖ⁾ x.2 a₀ a₁)
+  
+   ￫ info[I0008]
+   ￮ section parametrized closed
+  
+   ￫ error[E3002]
+   ￮ file fibrant_sqrt.ny contains open holes
+  
+  [1]
