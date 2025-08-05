@@ -1048,6 +1048,11 @@ end
 include Asai.StructuredReporter.Make (Code)
 open Code
 
+(* Don't try to set the 'message' field of an Asai.Diagnostic.t directly, since the 'explanation' field was already computed from it.  Use this function instead.  See https://github.com/RedPRL/asai/issues/189. *)
+let with_message d message =
+  let explanation = Asai.Range.locate_opt d.explanation.loc (Code.default_text message) in
+  { d with message; explanation }
+
 let struct_at_degenerated_type : type s et. (s, et) eta -> printable -> Code.t =
  fun eta name ->
   match eta with
@@ -1091,9 +1096,9 @@ module Terminal = Asai.Tty.Make (Code)
 
 let rec display ?use_ansi ?output ?(empty_ok = false) (d : Code.t Asai.Diagnostic.t) =
   match d.message with
-  | Accumulated (_, Emp) when not empty_ok ->
+  | Accumulated (why, Emp) when not empty_ok ->
       Terminal.display ?use_ansi ?output
-        { d with message = Anomaly "unexpected empty error accumulation" }
+        (with_message d (Anomaly ("unexpected empty error accumulation: " ^ why)))
   | Accumulated (_name, msgs) ->
       Mbwd.miter (fun [ e ] -> display ?use_ansi ?output ~empty_ok:true e) [ msgs ]
   | _ -> try_with ~fatal:(fun _ -> ()) @@ fun () -> Terminal.display ?use_ansi ?output d
