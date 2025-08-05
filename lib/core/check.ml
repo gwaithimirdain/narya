@@ -1937,9 +1937,9 @@ and check_codata : type a b n.
           check_codata status ctx tyargs checked_fields fibrancy raw_fields errs ~has_higher_fields
       | Pos _, Zero ->
           (* Higher-dimensional field, currently requires a zero-dimensional codatatype (non-Gel). *)
-          let (Degctx (plusmap, degctx, _)) = degctx newctx (Field.dim fld) in
           let checked_fields, errs =
             Reporter.try_with ~fatal:(fun e -> (checked_fields, Snoc (errs, e))) @@ fun () ->
+            let (Degctx (plusmap, degctx, _)) = degctx newctx (Field.dim fld) in
             let cty = check (Kinetic `Nolet) degctx rty (universe D.zero) in
             (Snoc (checked_fields, Entry (fld, Codatafield.Higher (plusmap, cty))), errs) in
           check_codata status ctx tyargs checked_fields fibrancy raw_fields errs ~has_higher_fields
