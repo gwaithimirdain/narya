@@ -721,8 +721,8 @@ let parse_single (content : string) : Whitespace.t list * Command.t option =
   | _ -> Core.Reporter.fatal (Anomaly "interactive parse doesn't start with Bof")
 
 let show_hole = function
-  | Global.Found_hole { meta; termctx; ty; vars; _ } ->
-      emit (Hole (Meta.name meta, PHole (vars, termctx, ty)))
+  | Global.Found_hole { instant; meta; termctx; ty; vars; _ } ->
+      emit (Hole (Meta.name meta, PHole (Instant instant, vars, termctx, ty)))
 
 let to_string : Command.t -> string = function
   | Axiom _ -> "axiom"

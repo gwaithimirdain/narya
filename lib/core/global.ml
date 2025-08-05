@@ -316,7 +316,7 @@ let add_hole m loc ~vars ~termctx ~ty ~status ~li ~ri =
               ( cmd.current_holes,
                 {
                   meta = Wrap m;
-                  printable = PHole (vars, termctx, ty);
+                  printable = PHole (Origin.current (), vars, termctx, ty);
                   startpos = s.offset;
                   endpos = e.offset;
                 } );
