@@ -11,7 +11,8 @@ type t =
   | RBracket (* ] *)
   | LBrace (* { *)
   | RBrace (* } *)
-  | Hole of string list option (* ⁈ ... ⁉ or ?! ... !? etc. *)
+  | Hole of
+      string list option (* ? or ⁈ ... ⁉ or ?! ... !? etc., also ⁇0? etc. with numbers ignored. *)
   | Bang
   | DblQuery (* Both ?? and ⁇ *)
   | DblBang (* Both !! and ‼ *)

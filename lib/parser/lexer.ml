@@ -94,6 +94,7 @@ let query_bang = Uchar.of_int 0x2048 (* ⁈ *)
 let bang_query = Uchar.of_int 0x2049 (* ⁉ *)
 let query_query = Uchar.of_int 0x2047 (* ⁇ *)
 let bang_bang = Uchar.of_int 0x203C (* ‼ *)
+let is_digit c = String.exists (fun x -> x = c) "0123456789"
 
 (* A hole is either the single character ?, or a hole with contents that start with ?! or ⁈ and ends with !? or ⁉, with internal parts separated by !.  Even comment sequences inside of a hole are ignored. *)
 let rec hole_contents () : string list t =
@@ -113,14 +114,33 @@ let hole : Token.t t =
     let* contents = hole_contents () in
     return (Hole (Some contents)))
    </> (let* _ = uchar query in
-        return DblQuery)
+        (* Numbered hole *)
+        (let* _ = word is_digit is_digit "hole number" in
+         (let* _ = uchar query in
+          (let* _ = uchar bang in
+           let* contents = hole_contents () in
+           return (Hole (Some contents)))
+          </> return (Hole None))
+         </> let* _ = uchar query_bang in
+             let* contents = hole_contents () in
+             return (Hole (Some contents)))
+        </> return DblQuery)
    </> return (Hole None))
   </> (let* _ = uchar query_bang in
        let* contents = hole_contents () in
        return (Hole (Some contents)))
-  (* Grab other hole-like sequences, which won't parse but which we don't want the user to use elsewhere. *)
   </> (let* _ = uchar query_query in
-       return DblQuery)
+       (let* _ = word is_digit is_digit "hole number" in
+        (let* _ = uchar query in
+         (let* _ = uchar bang in
+          let* contents = hole_contents () in
+          return (Hole (Some contents)))
+         </> return (Hole None))
+        </> let* _ = uchar query_bang in
+            let* contents = hole_contents () in
+            return (Hole (Some contents)))
+       </> return DblQuery)
+  (* Grab other hole-like sequences, which won't parse but which we don't want the user to use elsewhere. *)
   </> (let* _ = uchar bang in
        (let* _ = uchar bang in
         return DblBang)
@@ -266,7 +286,7 @@ let other_char : string t =
   let* c = ucharp (fun x -> not (Array.mem x (specials ()))) "alphanumeric or unicode" in
   return (Utf8.Encoder.to_internal c)
 
-let all_digits = String.for_all (fun c -> String.exists (fun x -> x = c) "0123456789")
+let all_digits = String.for_all is_digit
 let is_numeral = List.for_all all_digits
 let valid_var x = not (all_digits x)
 
