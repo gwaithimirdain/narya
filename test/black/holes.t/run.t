@@ -406,6 +406,6 @@ No holes in imported file
    ￫ error[E2002]
    ￭ $TESTCASE_ROOT/to_import.ny
    1 | def A : Type := ?
-     ^ imported file 'to_import' cannot contain holes
+     ^ imported file '$TESTCASE_ROOT/to_import.ny' cannot contain holes
   
   [1]

@@ -69,7 +69,7 @@ Local recursive datatypes
    ￮ constant ℕadder defined
   
   2
-    : _letrec.0.ℕ{…}
+    : _letrec.F2.0.ℕ{…}
   
 
 Local mutually recursive definitions
@@ -111,6 +111,6 @@ Local mutually recursive definitions
    ￫ info[I0001]
    ￮ axiom n assumed
   
-  _letrec.1.even{…} n
+  _letrec.F2.1.even{…} n
     : bool
   

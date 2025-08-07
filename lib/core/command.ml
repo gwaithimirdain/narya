@@ -11,14 +11,6 @@ open Readback
 open Reporter
 open Asai.Range
 
-module ModeState = struct
-  type t = { interactive : bool }
-end
-
-module Mode = Algaeff.Reader.Make (ModeState)
-
-let () = Mode.register_printer (function `Read -> Some "unhandled Command.Mode.read effect")
-
 (* A mutual "def" command can contain multiple constant definitions, each one checking or synthesizing.  *)
 type defconst =
   | Def_check : {
@@ -38,14 +30,6 @@ type t =
     }
       -> t
   | Def : (Constant.t * defconst) list -> t
-  | Solve :
-      Global.data
-      * ('b, 's) status
-      * ('a, 'b) termctx
-      * 'a check located
-      * ('b, kinetic) term
-      * (('b, 's) term -> unit)
-      -> t
 
 (* When checking a mutual "def", we first check all the parameter telescopes, and the types in the checking cases when they are provided.  Here are the outputs of that stage, saving the as-yet-unchecked raw term along with its checked parameters and type. *)
 type defined_const =
@@ -139,7 +123,8 @@ let check_defs (defs : (Constant.t * defconst) list) : printable list * bool * b
         go defs None (Snoc (defineds, Defined_synth { const; params; tm })) in
   go defs (if Discrete.enabled () then Some Constant.Map.empty else None) Emp
 
-let execute : t -> unit = function
+let execute : t -> int option * (int -> Reporter.Code.t option) = function
+  (* We let Parser.Command do the calling of Global.run_command etc. *)
   | Axiom { name; params; ty; parametric } ->
       if parametric then Global.set_parametric name else Global.set_nonparametric None;
       let Checked_tel (params, ctx), _ = check_tel Ctx.empty params in
@@ -147,18 +132,8 @@ let execute : t -> unit = function
       let cty = Telescope.pis params cty in
       let p = Global.get_parametric () in
       Global.add name cty (`Axiom, (p :> [ `Parametric | `Nonparametric | `Maybe_parametric ]));
-      Global.end_command (fun holes ->
-          Some (Constant_assumed { name = PConstant name; parametric; holes }))
+      (None, fun holes -> Some (Constant_assumed { name = PConstant name; parametric; holes }))
   | Def defs ->
       Global.set_maybe_parametric ();
       let names, discrete, parametric = check_defs defs in
-      Global.end_command (fun holes ->
-          Some (Constant_defined { names; discrete; parametric; holes }))
-  | Solve (global, status, termctx, tm, ty, callback) ->
-      if not (Mode.read ()).interactive then fatal (Forbidden_interactive_command "solve");
-      let ctm =
-        Global.run_command_with ~init:global (fun h -> Some (Hole_solved h)) @@ fun () ->
-        let ctx = Norm.eval_ctx termctx in
-        let ety = Norm.eval_term (Ctx.env ctx) ty in
-        Check.check status ctx tm ety in
-      callback ctm
+      (None, fun holes -> Some (Constant_defined { names; discrete; parametric; holes }))

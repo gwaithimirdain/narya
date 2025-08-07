@@ -3,6 +3,7 @@
 open Bwd
 open Util
 open Core
+open Origin
 open Reporter
 open Readback
 open Parser
@@ -81,15 +82,9 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols f =
   Check.Oracle.run ~ask:(fun _ -> Ok ()) @@ fun () ->
   Lexer.Specials.run ?onechar_ops ?ascii_symbols ?digit_vars @@ fun () ->
   Parser.Unparse.install ();
+  Origin.run @@ fun () ->
   Parser.Builtins.install ();
   Parser.Scope.Mod.run @@ fun () ->
-  History.run_empty @@ fun () ->
-  Eternity.run ~init:Eternity.empty @@ fun () ->
-  (* Holes are allowed in command-line files, strings, and interactive modes, although we will raise an error *after* completing any command-line files or strings that contain holes. *)
-  Global.HolesAllowed.run ~env:(Ok ()) @@ fun () ->
-  (* By default, we ignore the hole positions. *)
-  Global.HolePos.try_with ~get:(fun () -> { holes = Emp; offset = 0 }) ~set:(fun _ -> ())
-  @@ fun () ->
   Display.run
     ~init:
       {
@@ -134,33 +129,36 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols f =
       Reporter.display ?use_ansi ~output:stderr d;
       raise Exit)
   @@ fun () ->
-  (* Printing errors that happen outside of any other error should be reported as fatal errors on their own. *)
-  Reporter.Code.PrintingError.run ~env:(fun d -> fatal d) @@ fun () ->
-  (* The initial namespace for all compilation units. *)
-  Compunit.Current.run ~env:Compunit.basic @@ fun () ->
-  let top_files =
-    Bwd.fold_right
-      (fun input acc ->
-        match input with
-        | `File file -> FilePath.make_absolute (Sys.getcwd ()) file :: acc
-        | _ -> acc)
-      !inputs [] in
-  Subtype.run @@ fun () ->
-  Execute.Flags.run
-    ~env:
-      {
-        marshal = marshal_flags;
-        unmarshal = unmarshal_flags;
-        source_only = !source_only;
-        init_visible = Parser.Hott.install Scope.Trie.empty;
-        top_files;
-        reformat = !reformat;
-      }
-  @@ fun () ->
-  Execute.Loaded.run @@ fun () ->
-  Execute.Loading.run ~init:{ cwd = Sys.getcwd (); parents = Emp; imports = Emp; actions = false }
-  @@ fun () ->
-  ( Core.Command.Mode.run ~env:{ interactive = false } @@ fun () ->
+  (* Some anomalies are thrown as Failure instead because they're in code that's defined before Reporter. *)
+  try
+    (* Printing errors that happen outside of any other error should be reported as fatal errors on their own. *)
+    Reporter.Code.PrintingError.run ~env:(fun d -> fatal d) @@ fun () ->
+    let top_files =
+      Bwd.fold_right
+        (fun input acc ->
+          match input with
+          | `File file -> FilePath.make_absolute (Sys.getcwd ()) file :: acc
+          | _ -> acc)
+        !inputs [] in
+    Subtype.run @@ fun () ->
+    if !hott then (
+      let v = !verbose in
+      verbose := false;
+      Parser.Hott.install ();
+      verbose := v);
+    Execute.Flags.run
+      ~env:
+        {
+          marshal = marshal_flags;
+          unmarshal = unmarshal_flags;
+          source_only = !source_only;
+          top_files;
+          reformat = !reformat;
+        }
+    @@ fun () ->
+    Execute.Loaded.run @@ fun () ->
+    Execute.Loading.run ~init:{ cwd = Sys.getcwd (); parents = Emp; imports = Emp; actions = false }
+    @@ fun () ->
     Mbwd.miter
       (fun [ input ] ->
         let source =
@@ -170,21 +168,21 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols f =
               `File filename
           | `Stdin ->
               let content = In_channel.input_all stdin in
-              let _ = Execute.load_string (Some "stdin") content in
+              let _ = Execute.load_string "stdin" content in
               `Stdin
           (* Command-line strings have all the previous units loaded without needing to import them. *)
           | `String content ->
               let _ =
                 Execute.load_string ~init_visible:(Execute.Loaded.get_scope ())
-                  (Some "command-line exec string") content in
+                  "command-line exec string" content in
               `String in
-        if Eternity.unsolved () > 0 then Reporter.fatal (Open_holes_remaining source))
-      [ !inputs ] );
-  (* Interactive mode also has all the other units loaded. *)
-  Scope.set_visible (Execute.Loaded.get_scope ());
-  Core.Command.Mode.run ~env:{ interactive = true } @@ fun () ->
-  History.start_undoing ();
-  f ()
+        if Global.unsolved_holes () > 0 then Reporter.fatal (Open_holes_remaining source))
+      [ !inputs ];
+    (* Interactive mode also has all the other units loaded.  Note that this should affect the "Top" origin. *)
+    Scope.set_visible (Execute.Loaded.get_scope ());
+    Origin.set_interactive ();
+    f ()
+  with Failure str -> fatal (Anomaly ("failure: " ^ str))
 
 (* Some applications may not be able to put their entire main loop inside a single call to "run_top".  Specifically, js_of_ocaml applications may need to return control to the browser periodically, but want to maintain the state that's normally stored in the effect handlers wrapped by run_top.  To accommodate this, we implement a "pausable" coroutine version of run_top, using effects, that saves a continuation inside all the handlers and returns to it whenever needed.  When our run_top callback finishes a single command, it yields control by performing the "Yield" effect, passing the output of the command it just executed.  The handler for this effect doesn't immediately continue, but stores the continuation in a global variable and returns control to the caller.  Then when we need to re-enter run_top, the continuation is resumed, passing it the code to be executed. *)
 

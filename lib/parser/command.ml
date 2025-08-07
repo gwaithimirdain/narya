@@ -3,6 +3,7 @@ open Dim
 open Util
 open List_extra
 open Core
+open Origin
 open Readback
 open Notation
 open Postprocess
@@ -719,10 +720,9 @@ let parse_single (content : string) : Whitespace.t list * Command.t option =
       else (ws, None)
   | _ -> Core.Reporter.fatal (Anomaly "interactive parse doesn't start with Bof")
 
-let show_hole err = function
-  | Eternity.Find_number (m, { tm = `Undefined; termctx; ty; _ }, { vars; _ }) ->
-      emit (Hole (Meta.name m, PHole (vars, termctx, ty)))
-  | _ -> fatal err
+let show_hole = function
+  | Global.Found_hole { instant; meta; termctx; ty; vars; _ } ->
+      emit (Hole (Meta.name meta, PHole (Instant instant, vars, termctx, ty)))
 
 let to_string : Command.t -> string = function
   | Axiom _ -> "axiom"
@@ -748,41 +748,32 @@ let needs_interactive : Command.t -> bool = function
   | Solve _ | Split _ | Show _ | Undo _ -> true
   | _ -> false
 
-(* Forbid holes in imported files and in most commands.  In commands that allow holes, don't change the current setting (e.g. if we are in an imported file, we still don't want any holes). *)
-let maybe_forbid_holes : Command.t -> (unit -> 'a) -> 'a =
- fun cmd f ->
-  match cmd with
-  | Axiom _ | Def _ | Solve _ | Echo _ -> f ()
-  | Import { origin = `File file; _ } -> Global.HolesAllowed.run ~env:(Error (`File file)) f
-  | _ -> Global.HolesAllowed.run ~env:(Error (`Command (to_string cmd))) f
-
 let condense : Command.t -> [ `Import | `Option | `None | `Bof ] = function
   | Import _ -> `Import
   | Option _ -> .
   | _ -> `None
 
 (* Most execution of commands we can do here, but there are a couple things where we need to call out to the executable: noting when an effectual action like 'echo' is taken (for recording warnings in compiled files), and loading another file.  So this function takes a couple of callbacks as arguments. *)
-let rec execute :
-    action_taken:(unit -> unit) -> get_file:(string -> Scope.trie) -> Command.t -> unit =
- fun ~action_taken ~get_file cmd ->
-  if needs_interactive cmd && not (Core.Command.Mode.read ()).interactive then
-    fatal (Forbidden_interactive_command (to_string cmd));
-  maybe_forbid_holes cmd @@ fun () ->
+let rec execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (cmd : Command.t)
+    : int option * (int * int * int) list =
+  (match (Origin.current (), needs_interactive cmd) with
+  | Top, true | File _, true -> fatal (Forbidden_interactive_command (to_string cmd))
+  | _ -> ());
   match cmd with
   | Axiom { name; nonparam; loc; parameters; ty = Wrap ty; _ } ->
-      History.do_command @@ fun () ->
+      Global.run_command ~holes_allowed:(Ok ()) @@ fun () ->
       (match name with
       | [ str ] ->
           if Option.is_some (deg_of_name str) then
             fatal (Invalid_constant_name (name, Some "that's a degeneracy name"))
       | _ -> ());
       Scope.check_name name loc;
-      let const = Scope.define (Compunit.Current.read ()) ?loc name in
+      let const = Scope.define ?loc name in
       let (Processed_tel (params, ctx, _)) = process_tel Emp parameters in
       let parametric = Option.is_none nonparam in
       Core.Command.execute (Axiom { name = const; params; ty = process ctx ty; parametric })
   | Def defs ->
-      History.do_command @@ fun () ->
+      Global.run_command ~holes_allowed:(Ok ()) @@ fun () ->
       let cdefs =
         Mlist.mmap
           (fun [ d ] ->
@@ -792,7 +783,7 @@ let rec execute :
                   fatal (Invalid_constant_name (d.name, Some "that's a degeneracy name"))
             | _ -> ());
             Scope.check_name d.name d.loc;
-            let c = Scope.define (Compunit.Current.read ()) ?loc:d.loc d.name in
+            let c = Scope.define ?loc:d.loc d.name in
             (c, d))
           [ defs ] in
       let defs =
@@ -817,19 +808,16 @@ let rec execute :
         type t = Scope_and_ctx : (string option, 'a) Bwv.t * ('a, 'b) Ctx.t -> t
       end in
       let open Scope_and_ctx in
-      History.do_then_undo @@ fun () ->
       let Scope_and_ctx (vars, ctx), run =
         match number with
-        | None -> (Scope_and_ctx (Bwv.Emp, Ctx.empty), fun f -> f ())
-        | Some number -> (
-            let num = Eternity.find_number number in
-            show_hole (No_such_hole number) num;
-            let (Find_number (_, { tm = metatm; termctx; _ }, { scope; global; vars; _ })) = num in
-            match metatm with
-            | `Undefined ->
-                ( Scope_and_ctx (vars, Norm.eval_ctx termctx),
-                  fun f -> Scope.run ~init_visible:scope @@ fun () -> Global.run ~init:global f )
-            | `Defined _ | `Axiom -> fatal (Anomaly "hole already defined")) in
+        | None ->
+            (Scope_and_ctx (Bwv.Emp, Ctx.empty), Global.run_command_then_undo ~holes_allowed:(Ok ()))
+        | Some number ->
+            let num = Global.find_hole number in
+            let (Found_hole { instant; termctx; vars; parametric; _ }) = num in
+            show_hole num;
+            ( Scope_and_ctx (vars, Norm.eval_ctx termctx),
+              Global.rewind_command_then_undo ~parametric ~holes_allowed:(Ok ()) instant ) in
       run @@ fun () ->
       let rtm = process vars tm in
       action_taken ();
@@ -855,10 +843,10 @@ let rec execute :
                  ^^ pp_complete_term (Wrap uty) `None)));
           print_newline ();
           print_newline ();
-          Global.end_command (fun _ -> None)
+          (None, fun _ -> None)
       | _ -> fatal (Nonsynthesizing ("argument of " ^ if eval then "echo" else "synth")))
   | Notation { fixity; loc; pattern; head; args; _ } ->
-      History.do_command @@ fun () ->
+      Global.run_command ~holes_allowed:(Error (to_string cmd)) @@ fun () ->
       let name = "«" ^ User.Pattern.to_string pattern ^ "»" in
       let notation_name = [ "notations"; name ] in
       Scope.check_name notation_name loc;
@@ -903,9 +891,9 @@ let rec execute :
             | `Constant c -> String.concat "." (Scope.name_of c) in
           emit (Head_already_has_notation keyname))
         shadow;
-      emit (Notation_defined name)
+      (None, fun _ -> Some (Notation_defined name))
   | Import { export; origin; op; _ } ->
-      History.do_command @@ fun () ->
+      Global.run_command ~holes_allowed:(Error (to_string cmd)) @@ fun () ->
       let trie =
         match origin with
         | `File file ->
@@ -917,163 +905,125 @@ let rec execute :
         match op with
         | Some (_, op) -> Scope.Mod.modify (process_modifier op) trie
         | None -> trie in
-      if export then Scope.include_subtree ([], trie) else Scope.import_subtree ([], trie)
-  | Solve data -> (
-      (* Solve does NOT create a new history entry because it is NOT undoable. *)
-      let (Find_number
-             (m, { tm = metatm; termctx; ty; energy = _; li; ri }, { global; scope; status; vars }))
-          =
-        Eternity.find_number data.number in
-      match metatm with
-      | `Undefined ->
-          Scope.run ~init_visible:scope @@ fun () ->
-          let (Wrap tm) = !(data.tm) in
-          let ptm = process vars tm in
-          (* We set the hole location offset to the start of the *term*, so that ProofGeneral can create hole overlays in the right places when solving a hole and creating new holes. *)
-          Global.HolePos.modify (fun st ->
-              let tmloc = ptm.loc <|> Anomaly "missing location in solve" in
-              { st with offset = (fst (Asai.Range.split tmloc)).offset });
-          let solve ctm =
-            Eternity.solve m ctm;
-            match (li, ri) with
-            | Some (Interval li), Some (Interval ri) ->
-                let buf = Buffer.create 20 in
-                PPrint.ToBuffer.compact buf (pp_complete_term !(data.tm) `None);
-                Reporter.try_with ~fatal:(fun _ -> data.tm := Wrap (parenthesize tm)) @@ fun () ->
-                let _ =
-                  TermParse.Term.parse ~li:(Interval li) ~ri:(Interval ri)
-                    (`String { content = Buffer.contents buf; title = None }) in
-                ()
-            | _ -> fatal (Anomaly "tightness missing for hole") in
-          Core.Command.execute (Solve (global, status, termctx, ptm, ty, solve))
-      | `Defined _ | `Axiom ->
-          (* Yes, this is an anomaly and not a user error, because find_number should only be looking at the unsolved holes. *)
-          fatal (Anomaly "hole already defined"))
-  | Split data -> (
-      let (Find_number
-             ( _m,
-               { tm = metatm; termctx; ty; energy = _; li = _; ri = _ },
-               { global = _; scope; status = _; vars } )) =
-        Eternity.find_number data.number in
-      match metatm with
-      | `Undefined ->
-          Scope.run ~init_visible:scope @@ fun () ->
-          let (Wrap tm) = !(data.tm) in
-          Global.HolesAllowed.run ~env:(Ok ()) @@ fun () ->
-          let ctx = Norm.eval_ctx termctx in
-          let content =
-            match tm.value with
-            | Placeholder _ -> (
-                let ety = Norm.eval_term (Ctx.env ctx) ty in
-                match View.view_type ety "split" with
-                | Canonical (_, Pi (_, doms, _), _, _) ->
-                    let cube, mapsto =
-                      match D.compare_zero (CubeOf.dim doms) with
-                      | Zero -> (`Normal, Token.Mapsto)
-                      | Pos _ -> (`Cube, Token.DblMapsto) in
-                    let xs = Domvars.get_pi_vars ctx cube Emp ety in
-                    (* TODO: Should generate real variable names. *)
-                    String.concat " " (Bwd_extra.to_list_map (Option.value ~default:"_") xs)
-                    ^ Token.to_string mapsto
-                    ^ " ?"
-                | Canonical (_, Codata { eta; fields; _ }, ins, _) -> (
-                    let m = cod_left_ins ins in
-                    let do_field : type a n et.
-                        (a * n * et) Term.CodatafieldAbwd.entry -> string list -> string list =
-                     fun (Term.CodatafieldAbwd.Entry (fld, cdf)) acc ->
-                      match cdf with
-                      | Lower _ -> Field.to_string fld :: acc
-                      | Higher _ ->
-                          let i = Field.dim fld in
-                          let pbijs = List.of_seq (all_pbij_between m i) in
-                          List.fold_right
-                            (fun (Pbij_between pbij) acc ->
-                              (Field.to_string fld ^ string_of_pbij pbij) :: acc)
-                            pbijs acc in
-                    let fields = Bwd.fold_right do_field fields [] in
-                    match eta with
-                    | Eta ->
-                        Token.to_string LParen
-                        ^ String.concat ", "
-                            (List.map
-                               (fun fld ->
-                                 fld ^ " " ^ Token.to_string Coloneq ^ " " ^ Token.to_string Query)
-                               fields)
-                        ^ Token.to_string RParen
-                    | Noeta ->
-                        Token.to_string LBracket
-                        ^ String.concat " | "
-                            (List.map
-                               (fun fld ->
-                                 "."
-                                 ^ fld
-                                 ^ " "
-                                 ^ Token.to_string Mapsto
-                                 ^ " "
-                                 ^ Token.to_string Query)
-                               fields)
-                        ^ Token.to_string RBracket)
-                | Canonical (_, UU _, _, _) -> fatal (Invalid_split (`Goal, "universe"))
-                | Canonical (_, Data _, _, _) -> fatal (Invalid_split (`Goal, "datatype"))
-                | Neutral _ -> fatal (Invalid_split (`Goal, "neutral")))
-            | _ -> (
-                match process vars tm with
-                | { value = Synth rtm; loc } -> (
-                    let _, sty = Check.synth (Kinetic `Nolet) ctx (Asai.Range.locate_opt loc rtm) in
-                    match View.view_type sty "split" with
-                    | Canonical (_, Data { dim; constrs; _ }, _, _) ->
-                        let mapsto =
-                          match D.compare_zero dim with
-                          | Zero -> Token.to_string Mapsto
-                          | Pos _ -> Token.to_string DblMapsto in
-                        let rec do_args : type a p ap.
-                            (a, p, ap) Term.Telescope.t -> string -> string =
-                         fun args acc ->
-                          match args with
-                          | Emp -> acc
-                          | Ext (x, _, args) ->
-                              Option.value ~default:(Token.to_string Underscore) x
-                              ^ " "
-                              ^ do_args args acc in
-                        let do_constrs : type m ij.
-                            Constr.t * (m, ij) Value.dataconstr -> string list -> string list =
-                         fun (c, Dataconstr { args; _ }) acc ->
-                          (Constr.to_string c
-                          ^ ". "
-                          ^ do_args args " "
-                          ^ mapsto
+      if export then Scope.include_subtree ([], trie) else Scope.import_subtree ([], trie);
+      (None, fun _ -> None)
+  | Solve data ->
+      let (Found_hole { instant; parametric; _ } as found) = Global.find_hole data.number in
+      Global.rewind_command ~parametric ~holes_allowed:(Ok ()) instant @@ fun () ->
+      execute_solve data found
+  | Split data ->
+      let (Found_hole { instant; termctx; ty; vars; parametric; _ } as found) =
+        Global.find_hole data.number in
+      Global.rewind_command ~parametric ~holes_allowed:(Ok ()) instant @@ fun () ->
+      let (Wrap tm) = !(data.tm) in
+      let content =
+        let ctx = Norm.eval_ctx termctx in
+        match tm.value with
+        | Placeholder _ -> (
+            let ety = Norm.eval_term (Ctx.env ctx) ty in
+            match View.view_type ety "split" with
+            | Canonical (_, Pi (_, doms, _), _, _) ->
+                let cube, mapsto =
+                  match D.compare_zero (CubeOf.dim doms) with
+                  | Zero -> (`Normal, Token.Mapsto)
+                  | Pos _ -> (`Cube, Token.DblMapsto) in
+                let xs = Domvars.get_pi_vars ctx cube Emp ety in
+                (* TODO: Should generate real variable names. *)
+                String.concat " " (Bwd_extra.to_list_map (Option.value ~default:"_") xs)
+                ^ Token.to_string mapsto
+                ^ " ?"
+            | Canonical (_, Codata { eta; fields; _ }, ins, _) -> (
+                let m = cod_left_ins ins in
+                let do_field : type a n et.
+                    (a * n * et) Term.CodatafieldAbwd.entry -> string list -> string list =
+                 fun (Term.CodatafieldAbwd.Entry (fld, cdf)) acc ->
+                  match cdf with
+                  | Lower _ -> Field.to_string fld :: acc
+                  | Higher _ ->
+                      let i = Field.dim fld in
+                      let pbijs = List.of_seq (all_pbij_between m i) in
+                      List.fold_right
+                        (fun (Pbij_between pbij) acc ->
+                          (Field.to_string fld ^ string_of_pbij pbij) :: acc)
+                        pbijs acc in
+                let fields = Bwd.fold_right do_field fields [] in
+                match eta with
+                | Eta ->
+                    Token.to_string LParen
+                    ^ String.concat ", "
+                        (List.map
+                           (fun fld ->
+                             fld ^ " " ^ Token.to_string Coloneq ^ " " ^ Token.to_string Query)
+                           fields)
+                    ^ Token.to_string RParen
+                | Noeta ->
+                    Token.to_string LBracket
+                    ^ String.concat " | "
+                        (List.map
+                           (fun fld ->
+                             "." ^ fld ^ " " ^ Token.to_string Mapsto ^ " " ^ Token.to_string Query)
+                           fields)
+                    ^ Token.to_string RBracket)
+            | Canonical (_, UU _, _, _) -> fatal (Invalid_split (`Goal, "universe"))
+            | Canonical (_, Data _, _, _) -> fatal (Invalid_split (`Goal, "datatype"))
+            | Neutral _ -> fatal (Invalid_split (`Goal, "neutral")))
+        | _ -> (
+            match process vars tm with
+            | { value = Synth rtm; loc } -> (
+                let _, sty = Check.synth (Kinetic `Nolet) ctx (Asai.Range.locate_opt loc rtm) in
+                match View.view_type sty "split" with
+                | Canonical (_, Data { dim; constrs; _ }, _, _) ->
+                    let mapsto =
+                      match D.compare_zero dim with
+                      | Zero -> Token.to_string Mapsto
+                      | Pos _ -> Token.to_string DblMapsto in
+                    let rec do_args : type a p ap. (a, p, ap) Term.Telescope.t -> string -> string =
+                     fun args acc ->
+                      match args with
+                      | Emp -> acc
+                      | Ext (x, _, args) ->
+                          Option.value ~default:(Token.to_string Underscore) x
                           ^ " "
-                          ^ Token.to_string Query)
-                          :: acc in
-                        let constrs = Bwd.fold_right do_constrs constrs [] in
-                        let buf = Buffer.create 10 in
-                        PPrint.(
-                          ToBuffer.pretty 1.0 (Display.columns ()) buf
-                            (pp_complete_term (Wrap tm) `None));
-                        Token.to_string Match
-                        ^ " "
-                        ^ Buffer.contents buf
-                        ^ " "
-                        ^ Token.to_string LBracket
-                        ^ " "
-                        ^ String.concat " | " constrs
-                        ^ " "
-                        ^ Token.to_string RBracket
-                    | _ -> fatal (Invalid_split (`Term, "non-datatype")))
-                | _ -> fatal (Nonsynthesizing "splitting term")) in
-          (data.tm := TermParse.Term.(final (parse (`String { title = None; content }))));
-          execute ~action_taken ~get_file (Solve data)
-      | `Defined _ | `Axiom -> fatal (Anomaly "hole already defined"))
-  | Show { what; _ } -> (
+                          ^ do_args args acc in
+                    let do_constrs : type m ij.
+                        Constr.t * (m, ij) Value.dataconstr -> string list -> string list =
+                     fun (c, Dataconstr { args; _ }) acc ->
+                      (Constr.to_string c
+                      ^ ". "
+                      ^ do_args args " "
+                      ^ mapsto
+                      ^ " "
+                      ^ Token.to_string Query)
+                      :: acc in
+                    let constrs = Bwd.fold_right do_constrs constrs [] in
+                    let buf = Buffer.create 10 in
+                    PPrint.(
+                      ToBuffer.pretty 1.0 (Display.columns ()) buf
+                        (pp_complete_term (Wrap tm) `None));
+                    Token.to_string Match
+                    ^ " "
+                    ^ Buffer.contents buf
+                    ^ " "
+                    ^ Token.to_string LBracket
+                    ^ " "
+                    ^ String.concat " | " constrs
+                    ^ " "
+                    ^ Token.to_string RBracket
+                | _ -> fatal (Invalid_split (`Term, "non-datatype")))
+            | _ -> fatal (Nonsynthesizing "splitting term")) in
+      (data.tm := TermParse.Term.(final (parse (`String { title = None; content }))));
+      execute_solve data found
+  | Show { what; _ } ->
       action_taken ();
-      match what with
-      | `Hole (_, number) -> show_hole (No_such_hole number) (Eternity.find_number number)
+      (match what with
+      | `Hole (_, number) -> show_hole (Global.find_hole number)
       | `Holes -> (
-          match Eternity.all_holes () with
-          | [] -> emit No_open_holes
-          | holes -> List.iter (show_hole (Anomaly "defined hole in undefined list")) holes))
-  | Display { what; _ } -> (
-      match what with
+          match Global.all_holes () with
+          | Emp -> emit No_open_holes
+          | holes -> Mbwd.miter (fun [ h ] -> show_hole h) [ holes ]));
+      (None, [])
+  | Display { what; _ } ->
+      (match what with
       | `Chars (_, chars, _) ->
           let chars = Display.modify_chars chars in
           emit (Display_set ("chars", Display.to_string (chars :> Display.values)))
@@ -1082,23 +1032,50 @@ let rec execute :
           emit (Display_set ("function boundaries", Display.to_string (fb :> Display.values)))
       | `Type_boundaries (_, _, tb, _) ->
           let tb = Display.modify_type_boundaries tb in
-          emit (Display_set ("type boundaries", Display.to_string (tb :> Display.values))))
+          emit (Display_set ("type boundaries", Display.to_string (tb :> Display.values))));
+      (None, [])
   | Option _ -> .
   | Undo { count; _ } ->
-      History.undo count;
-      emit (Commands_undone count)
+      for _ = 1 to count do
+        match Origin.undo () with
+        | `Ok -> ()
+        | `No_past -> fatal Not_enough_to_undo
+        | `Not_interactive -> fatal (Forbidden_interactive_command "undo")
+      done;
+      emit (Commands_undone count);
+      (None, [])
   | Section { prefix; _ } ->
-      History.do_command @@ fun () ->
+      Global.run_command ~holes_allowed:(Error (to_string cmd)) @@ fun () ->
       Scope.start_section prefix;
-      emit (Section_opened prefix)
+      (None, fun _ -> Some (Section_opened prefix))
   | End _ -> (
-      History.do_command @@ fun () ->
+      Global.run_command ~holes_allowed:(Error (to_string cmd)) @@ fun () ->
       match Scope.end_section () with
-      | Some prefix -> emit (Section_closed prefix)
+      | Some prefix -> (None, fun _ -> Some (Section_closed prefix))
       | None -> fatal No_such_section)
   | Quit _ -> fatal (Quit None)
-  | Bof _ -> ()
+  | Bof _ -> (None, [])
   | Eof -> fatal (Anomaly "EOF cannot be executed")
+
+and execute_solve data found =
+  let (Global.Found_hole { meta; instant = _; termctx; ty; status; vars; li; ri; parametric = _ }) =
+    found in
+  let (Wrap tm) = !(data.tm) in
+  let ptm = process vars tm in
+  (* We set the hole location offset to the start of the *term*, so that ProofGeneral can create hole overlays in the right places when solving a hole and creating new holes. *)
+  let tmloc = ptm.loc <|> Anomaly "missing location in solve" in
+  let offset = (fst (Asai.Range.split tmloc)).offset in
+  (* Now we typecheck the supplied term. *)
+  let ctx = Norm.eval_ctx termctx in
+  let ety = Norm.eval_term (Ctx.env ctx) ty in
+  let ctm = Check.check status ctx ptm ety in
+  Global.set_meta meta ~tm:ctm;
+  let buf = Buffer.create 20 in
+  PPrint.ToBuffer.compact buf (pp_complete_term !(data.tm) `None);
+  ( Reporter.try_with ~fatal:(fun _ -> data.tm := Wrap (parenthesize tm)) @@ fun () ->
+    let _ = TermParse.Term.parse ~li ~ri (`String { content = Buffer.contents buf; title = None }) in
+    () );
+  (Some offset, fun h -> Some (Code.Hole_solved h))
 
 let tightness_of_fixity : type left tight right. (left, tight, right) fixity -> string option =
   function

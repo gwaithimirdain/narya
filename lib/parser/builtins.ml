@@ -2452,26 +2452,25 @@ let () =
  ******************** *)
 
 let install () =
-  Situation.builtins :=
-    Situation.empty
-    |> Situation.add Postprocess.parens
-    |> Situation.add Postprocess.braces
-    |> Situation.add letin
-    |> Situation.add letrec
-    |> Situation.add asc
-    |> Situation.add abs
-    |> Situation.add cubeabs
-    |> Situation.add arrow
-    |> Situation.add dblarrow
-    |> Situation.add universe
-    |> Situation.add coloneq
-    |> Situation.add comatch
-    |> Situation.add Postprocess.dot
-    |> Situation.add implicit_mtch
-    |> Situation.add explicit_mtch
-    |> Situation.add mtchlam
-    |> Situation.add empty_co_match
-    |> Situation.add codata
-    |> Situation.add record
-    |> Situation.add data
-    |> Situation.add calc
+  Scope.(
+    Situation.add Postprocess.parens;
+    Situation.add Postprocess.braces;
+    Situation.add letin;
+    Situation.add letrec;
+    Situation.add asc;
+    Situation.add abs;
+    Situation.add cubeabs;
+    Situation.add arrow;
+    Situation.add dblarrow;
+    Situation.add universe;
+    Situation.add coloneq;
+    Situation.add comatch;
+    Situation.add Postprocess.dot;
+    Situation.add implicit_mtch;
+    Situation.add explicit_mtch;
+    Situation.add mtchlam;
+    Situation.add empty_co_match;
+    Situation.add codata;
+    Situation.add record;
+    Situation.add data;
+    Situation.add calc)

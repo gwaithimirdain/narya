@@ -255,7 +255,7 @@ module Code = struct
     | Option_set : string * string -> t
     | Break : t
     | Accumulated : string * t Asai.Diagnostic.t Bwd.t -> t
-    | No_holes_allowed : [ `Command of string | `File of string ] -> t
+    | No_holes_allowed : [ `Command of string | `File of string | `Other of string ] -> t
     | Cyclic_term : t
     | Oracle_failed : string * printable -> t
     | Invalid_flags : t
@@ -942,10 +942,12 @@ module Code = struct
           textf "missing type for constructor %s of indexed datatype" (Constr.to_string c)
       | Locked_variable -> text "variable not available inside external degeneracy"
       | Locked_constant a ->
-          textf "constant %a uses nonparametric axioms, can't appear inside an external degeneracy"
+          textf
+            "constant %a is or uses a nonparametric axiom, can't appear inside an external degeneracy"
             pp_printed (print a)
       | Axiom_in_parametric_definition a ->
-          textf "constant %a uses nonparametric axioms, can't be used in a parametric command"
+          textf
+            "constant %a is or uses a nonparametric axiom, can't be used in a parametric command"
             pp_printed (print a)
       | Hole (n, ty) -> textf "@[<v 0>hole %s:@,%a@]" n pp_printed (print ty)
       | No_open_holes -> text "no open holes"
@@ -1025,7 +1027,8 @@ module Code = struct
       | No_holes_allowed str -> (
           match str with
           | `Command cmd -> textf "command '%s' cannot contain holes" cmd
-          | `File file -> textf "imported file '%s' cannot contain holes" file)
+          | `File file -> textf "imported file '%s' cannot contain holes" file
+          | `Other where -> textf "%s cannot contain holes" where)
       | Ill_scoped_connection -> text "ill-scoped connection"
       | Cyclic_term -> text "cycle in graphical term"
       | Oracle_failed (str, tm) -> textf "oracle failed: %s: %a" str pp_printed (print tm)
