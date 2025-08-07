@@ -775,34 +775,28 @@ let rec execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie
   | Def defs ->
       Global.run_command ~holes_allowed:(Ok ()) @@ fun () ->
       let cdefs =
-        Mlist.mmap
-          (fun [ d ] ->
-            (match d.name with
+        List.map
+          (fun { name; loc; parameters; ty; tm = Wrap tm; _ } ->
+            (match name with
             | [ str ] ->
                 if Option.is_some (deg_of_name str) then
-                  fatal (Invalid_constant_name (d.name, Some "that's a degeneracy name"))
+                  fatal (Invalid_constant_name (name, Some "that's a degeneracy name"))
             | _ -> ());
-            Scope.check_name d.name d.loc;
-            let c = Scope.define ?loc:d.loc d.name in
-            (c, d))
-          [ defs ] in
-      let defs =
-        List.map
-          (function
-            | const, { parameters; ty; tm = Wrap tm; _ } -> (
-                let (Processed_tel (params, ctx, _)) = process_tel Emp parameters in
-                match ty with
-                | Some (_, Wrap ty) ->
-                    let ty = process ctx ty in
-                    let tm = process ctx tm in
-                    (const, Core.Command.Def_check { params; ty; tm })
-                | None -> (
-                    match process ctx tm with
-                    | { value = Synth tm; loc } ->
-                        (const, Def_synth { params; tm = { value = tm; loc } })
-                    | _ -> fatal (Nonsynthesizing "body of def without specified type"))))
-          cdefs in
-      Core.Command.execute (Def defs)
+            Scope.check_name name loc;
+            ( lazy (Scope.define ?loc name),
+              lazy
+                (let (Processed_tel (params, ctx, _)) = process_tel Emp parameters in
+                 match ty with
+                 | Some (_, Wrap ty) ->
+                     let ty = process ctx ty in
+                     let tm = lazy (process ctx tm) in
+                     Core.Command.Def_check { params; ty; tm }
+                 | None -> (
+                     match process ctx tm with
+                     | { value = Synth tm; loc } -> Def_synth { params; tm = { value = tm; loc } }
+                     | _ -> fatal (Nonsynthesizing "body of def without specified type"))) ))
+          defs in
+      Core.Command.execute (Def cdefs)
   | Echo { tm = Wrap tm; eval; number; _ } -> (
       let module Scope_and_ctx = struct
         type t = Scope_and_ctx : (string option, 'a) Bwv.t * ('a, 'b) Ctx.t -> t
