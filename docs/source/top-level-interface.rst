@@ -256,13 +256,21 @@ Narya's ProofGeneral mode also defines the following additional key commands.
 For Agda users
 ^^^^^^^^^^^^^^
  
-Agda users should beware: while a few of Narya's key commands are chosen to match those of Agda (like ``C-c C-?`` and ``C-c C-SPC`` and ``C-c C-,``), many of the key sequences used by Agda have already been defined in ProofGeneral to mean something else (notable examples are ``C-c C-n`` and ``C-c C-b`` and ``C-c C-.``), leading Narya to choose different ones.  For reference, here is a mapping of Agda keybindings to approximately comparable Narya ones:
- 
-- Instead of ``C-c C-l``, use ``C-c C-b`` (process the whole buffer).
+Agda users should beware: while a few of Narya's key commands are chosen to match those of Agda, many of the key sequences used by Agda have already been defined in ProofGeneral to mean something else (notable examples are ``C-c C-n`` and ``C-c C-b`` and ``C-c C-.``), leading Narya to choose different ones.
+
+Here are the key commands that are basically the same in Narya and Agda:
+
+- ``C-c C-,``: Show the context and goal type of a hole.  The cursor must be over the hole.
+- ``C-c C-SPC``: Solve a hole.  You'll be prompted in the minibuffer for the term to solve it with.  Again, the cursor must be over the hole.
+- ``C-c C-?``: Display the context and goal type of all open holes.
+
+And here is a mapping of Agda keybindings to approximately comparable Narya ones.
+
+- Instead of ``C-c C-l``, you can use ``C-c C-b`` (process the whole buffer).  However, you may not want to do this: in ProofGeneral it's often better to only process the buffer up until the point of the few definitions you're working on right now, using ``C-c C-RET`` (process buffer up to the cursor) and ``C-c C-n`` (process one more command).
 - Instead of ``C-c C-f``, use ``C-c C-j`` (move to the next hole).
 - Instead of ``C-c C-b``, use ``C-c C-k`` (move to the previous hole).
-- Instead of ``C-c C-n``, use ``C-c ;`` (normalize a term, perhaps in hole context).
-- Instead of ``C-c C-d``, use ``C-c :`` (synthesize a term, perhaps in hole context).
+- Instead of ``C-c C-n``, use ``C-c ;`` (normalize a term; in hole context if the cursor is over a hole).
+- Instead of ``C-c C-d``, use ``C-c :`` (synthesize a term; in hole context if the cursor is over a hole).
 - Instead of ``C-c C-.``, use ``C-c :``  (synthesize a term) and ``C-c C-,`` (display hole context).
 - Instead of ``C-c C-r``, use ``C-c C-y`` (split in a hole).
 - Instead of ``C-c C-c``, use ``C-c C-y`` (split in a hole).
@@ -270,6 +278,7 @@ Agda users should beware: while a few of Narya's key commands are chosen to matc
 - Instead of ``C-c C-x C-a``, use ``C-c C-c`` (interrupt a command).
  
 If there is significant demand, we could implement a configuration option that instead preferentially chooses Agda's key bindings, moving the conflicting ProofGeneral bindings to other key sequences.
+
 
 Syntax highlighting
 ^^^^^^^^^^^^^^^^^^^
