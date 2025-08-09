@@ -212,6 +212,50 @@ ProofGeneral mode
 
 `ProofGeneral <https://proofgeneral.github.io/>`_ is a generic development environment designed for proof assistants that runs inside the text editor Emacs.  Proof General is perhaps best known for its use with `Rocq <https://rocq-prover.org/>`_.  Narya comes with a basic ProofGeneral mode.  Narya does not yet have a true interactive *proof* mode, which ProofGeneral is designed for, but it is still useful for progressive processing of commands in a file.  In addition, the Narya ProofGeneral mode is enhanced with commands for creating, inspecting, and filling holes, similar to Agda's Emacs mode.
 
+Introduction to Emacs
+^^^^^^^^^^^^^^^^^^^^^
+
+Emacs is a very powerful and idiosyncratic editor.  In particular, it has many shortcut key commands that can do a whole lot, but it can be hard to learn them all, especially because the key commands for common operations are often different from those used by all other programs.  (I believe this is due to a sort of "early adopter syndrome": Emacs is older than the convention that, for instance, control+C means copy and control+V means paste, and by the time those conventions were established, it was too late to change Emacs.)
+
+Here are a few of the most important key commands for using Emacs, written using the Emacs convention that ``C-a`` means hold down the Control key and press ``a``, then release both.  Similarly, the prefix ``M`` means Meta (usually the same as "Alt") and ``S`` means Shift, while ``C-M-a`` means hold down both Control and Meta and press ``a``, then release them all.  (See the `Emacs manual <https://www.gnu.org/software/emacs/manual/html_node/emacs/User-Input.html>`_.)
+
+- ``C-w``: Cut the highlighted region
+- ``C-k``: Cut the current line ("kill")
+- ``M-w``: Copy the highlighted region
+- ``C-y``: Paste ("yank")
+- ``C-/``: Undo
+- ``C-S-/`` (a.k.a. ``C-?``): Redo
+- ``ESC ESC ESC``: Abort current mode or operation.  If Emacs ever gets stuck in a weird state, use this command.
+- ``C-x C-f``: Open ("find") a file
+- ``C-x C-s``: Save current file
+- ``C-x C-c``: Quit Emacs
+- ``C-s``: Search forward
+- ``C-r``: Search backward
+
+All of these commands should also be available in the menu bar at the top of the screen in the ``File`` and ``Edit`` menus, with their key shortcuts listed for reference.
+
+Fortunately (unless you are a :ref:`Vim user <For Vim users>`), the usual arrow keys, as well as "Home", "End", "PageUp", etc. work for moving around in Emacs.  In addition, they have equivalent control-key sequences, which can be faster (once you get used to them) as they don't require moving your fingers away from the keyboard:
+
+- ``C-f``: Move forward one character (same as ``Right``)
+- ``C-b``: Move backward one character (same as ``Left``)
+- ``C-n``: Move down one line (same as ``Down``)
+- ``C-p``: Move up one line (same as ``Up``)
+- ``C-a``: Move to the beginning of the line (same as ``Home``)
+- ``C-e``: Move to the end of the line (same as ``End``)
+- ``M-<`` (i.e. ``M-S-,``): Move to the beginning of the file (same as ``C-Home``)
+- ``M->`` (i.e. ``M-S-.``): Move to the end of the file (same as ``C-End``)
+
+A number of Emacs commands will prompt you for input in the line at the very bottom of the Emacs window, which Emacs calls the "minibuffer".  (Informational messages are also displayed there.)  It's good to get in the habit of paying attention to what's shown in the minibuffer, so that in particular you'll notice when a command is prompting you.
+
+Confusingly, if you're currently being prompted for input in the minibuffer, Emacs allows you to click on the main window and continue viewing or editing the document while the incomplete prompt remains in the minibuffer, then click back in the minibuffer and respond to the prompt.  This can actually be useful, e.g. if you're solving a hole and being prompted for a term, you can copy terms from your code or the ProofGeneral output windows and paste it into the prompt.  However, it's also easy to accidentally get into this state.  It normally doesn't cause problems, but if you notice a prompt waiting for you in the minibuffer and you don't know where it came from, you can make it go away with ``ESC ESC ESC``.  It will also go away if you try to run another command that tries to use the minibuffer, although that will also prevent the second command from running and you'll have to do it again.
+
+If you're going to be doing any substantial amount of coding in ProofGeneral (or Emacs more generally), I *highly* recommend the following:
+
+1. Change your keyboard layout so that the ``Control`` key is immediately to the left of the ``a`` key.  Usually that means rebinding the ``CapsLock`` key to act as the ``Control`` key instead.  Really, I mean it: this will immeasurably reduce your frustration with the Emacs key sequences.
+
+2. Work through the Emacs tutorial.  The best way to do this is inside of Emacs, so you can easily do its exercises: open Emacs and type ``C-h t``.
+
+
 Basic usage
 ^^^^^^^^^^^
 
@@ -222,7 +266,7 @@ In addition to the main window displaying your source file, there will normally 
 Key commands
 ^^^^^^^^^^^^
 
-The most useful ProofGeneral key commands for Narya are the following.  As usual in Emacs (see the `Emacs manual <https://www.gnu.org/software/emacs/manual/html_node/emacs/User-Input.html>`_), ``C-a`` means hold down the Control key and press ``a``, then release both.  Similarly, ``C-M-a`` means hold down both Control and Meta (Meta is usually the same as "Alt") and press ``a``, then release them all.
+The most useful ProofGeneral key commands for Narya are the following.
 
 - ``C-c C-n`` : Process the next unprocessed command.  Since Narya has no command-terminating string, the "next command" is interpreted as continuing until the following command keyword or until the end of the buffer.  This means that if you've written a complete command but there is garbage following it, in order to process the command you'll need to either comment out the garbage or insert at least the beginning of another command in between (such as ``quit``) so that ProofGeneral can find the end of the command you want to process.
 - ``C-c C-u`` : Retract the last processed command.
