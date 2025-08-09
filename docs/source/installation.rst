@@ -3,9 +3,10 @@ Installation
 
 There are several ways to install Narya.
 
-- If you are using Linux, or on Windows and you have (or can install) WSL, and you don't want to edit or contribute to the Narya source code, the easiest way to run Narya is to use the :ref:`Static binary`.
+- If you are using Linux, and you don't want to edit or contribute to the Narya source code, the easiest way to run Narya is to use the :ref:`Static binary`.
+- If you are on Windows, and you have (or can install) Windows Subsystem for Linux (WSL), you can also use the :ref:`Static binary`.
 - If you are on MacOS, or you want to edit the Narya source code, you'll need :ref:`Compiling from source` instead.
-- You can also use an in-browser version called :ref:`Installing jsNarya` without installing anything, although its functionality is limited and the currently posted version is out of date.
+- You can also use an in-browser version called :ref:`Installing jsNarya` without installing anything, although its functionality is limited and the currently posted version is way out of date.
 
 In addition to installing the basic Narya executable, the following are highly recommended:
 
