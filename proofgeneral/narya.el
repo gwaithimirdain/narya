@@ -694,8 +694,8 @@ With a negative prefix argument,set display of type boundaries off."
 ;; C-c `   proof-next-error
 ;; C-c C-. proof-goto-end-of-locked
 ;; C-c C-, --> show current hole if any, focused proof if any
-;; C-c C-; pg-insert-last-output-as-comment
-;; C-c C-:
+;; C-c C-; not pg-insert-last-output-as-comment, that's useless; same as C-c ;
+;; C-c C-: same as C-c :
 ;; C-c ?   (help)
 ;; C-c C-? --> show all goals
 ;; C-c C-SPC --> fill hole
@@ -730,7 +730,9 @@ With a negative prefix argument,set display of type boundaries off."
 (keymap-set narya-mode-map "C-c C-j" 'narya-next-hole)
 (keymap-set narya-mode-map "C-c C-k" 'narya-previous-hole)
 (keymap-set narya-mode-map "C-c ;" 'narya-echo)
+(keymap-set narya-mode-map "C-c C-;" 'narya-echo)
 (keymap-set narya-mode-map "C-c :" 'narya-synth)
+(keymap-set narya-mode-map "C-c C-:" 'narya-synth)
 (keymap-set narya-mode-map "C-c C-v" 'narya-minibuffer-cmd)
 (keymap-set narya-mode-map "C-c C-d C-u" 'narya-display-chars)
 (keymap-set narya-mode-map "C-c C-d C-f" 'narya-display-function-boundaries)
