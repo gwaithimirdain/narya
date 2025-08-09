@@ -10,8 +10,7 @@ cat >"$TEMPINIT" <<EOF
 (setq package-archives '(("melpa" . "https://melpa.org/packages/")
                          ("gnu" . "https://elpa.gnu.org/packages/")))
 (package-initialize)
-(unless package-archive-contents
-  (package-refresh-contents))
+(package-refresh-contents)
 (package-install 'proof-general)
 EOF
 
