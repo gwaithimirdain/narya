@@ -1,3 +1,5 @@
+open Origin
+
 module Constant : sig
   type t
 
@@ -6,26 +8,22 @@ end
 
 type t = Constant.t
 
-val to_string : t -> string
-val make : Compunit.t -> t
-val remake : (Compunit.t -> Compunit.t) -> t -> t
+val make : unit -> t
+val remake : (File.t -> File.t) -> Constant.t -> Constant.t
 
-module Map : sig
+module Table : sig
   type 'a t
 
-  val empty : 'a t
+  val make : unit -> 'a t
   val find_opt : Constant.t -> 'a t -> 'a option
-  val mem : Constant.t -> 'a t -> bool
-  val add : Constant.t -> 'a -> 'a t -> 'a t
-  val update : Constant.t -> ('a option -> 'a option) -> 'a t -> 'a t
-  val remove : Constant.t -> 'a t -> 'a t
-  val iter : (Constant.t -> 'a -> unit) -> 'a t -> unit
-  val cardinal : 'a t -> int
-  val to_channel_unit : Out_channel.t -> Compunit.t -> 'a t -> Marshal.extern_flags list -> unit
+  val add : Constant.t -> 'a -> 'a t -> unit
 
-  type 'a unit_entry
+  type 'a file_entry
 
-  val find_unit : Compunit.t -> 'a t -> 'a unit_entry
-  val add_unit : Compunit.t -> 'a unit_entry -> 'a t -> 'a t
-  val from_channel_unit : In_channel.t -> ('a -> 'a) -> Compunit.t -> 'a t -> 'a t * 'a unit_entry
+  val find_file : File.t -> 'a t -> 'a file_entry
+  val add_file : File.t -> 'a file_entry -> 'a t -> unit
+  val to_channel_file : out_channel -> File.t -> 'a t -> Marshal.extern_flags list -> unit
+  val from_channel_file : in_channel -> ('a -> 'b) -> File.t -> 'b t -> 'b file_entry
 end
+
+module Map : module type of Map.Make (Constant)

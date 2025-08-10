@@ -259,10 +259,9 @@ module Ordered = struct
             | Found fb, _ ->
                 (* Once we find the face in the cube of visible variables, we add it to the face specified by the user for a cube variable, if any, and look up the corresponding binding. *)
                 let (SFace_of fa) =
-                  match (snd k, D.compare_zero dim) with
-                  | None, Zero -> SFace_of (id_sface dim)
-                  | None, Pos _ -> fatal (Missing_variable_face dim)
-                  | Some (Any_sface fa), _ -> (
+                  match snd k with
+                  | None -> SFace_of (id_sface dim)
+                  | Some (Any_sface fa) -> (
                       match D.compare (cod_sface fa) dim with
                       | Neq -> fatal (Invalid_variable_face (dim, fa))
                       | Eq -> SFace_of fa) in

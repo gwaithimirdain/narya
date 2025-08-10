@@ -3,9 +3,10 @@ Installation
 
 There are several ways to install Narya.
 
-- If you are using Linux, or on Windows and you have (or can install) WSL, and you don't want to edit or contribute to the Narya source code, the easiest way to run Narya is to use the :ref:`Static binary`.
+- If you are using Linux, and you don't want to edit or contribute to the Narya source code, the easiest way to run Narya is to use the :ref:`Static binary`.
+- If you are on Windows, and you have (or can install) Windows Subsystem for Linux (WSL), you can also use the :ref:`Static binary`.
 - If you are on MacOS, or you want to edit the Narya source code, you'll need :ref:`Compiling from source` instead.
-- You can also use an in-browser version called :ref:`Installing jsNarya` without installing anything, although its functionality is limited and the currently posted version is out of date.
+- You can also use an in-browser version called :ref:`Installing jsNarya` without installing anything, although its functionality is limited and the currently posted version is way out of date.
 
 In addition to installing the basic Narya executable, the following are highly recommended:
 
@@ -57,7 +58,7 @@ After this finishes, you may need to reboot your computer and run the same comma
 
   wsl
 
-to enter a Linux command prompt, and then follow the :ref:`On Linux` instructions above.  If you downloaded the static distribtion in Windows, you can usually navigate to it in WSL using a path like ``/mnt/c/Users/YOUR NAME/Downloads``.  You can also download it directly from the WSL prompt with
+to enter a Linux command prompt.  If you downloaded the static distribtion in Windows, you can usually navigate to it in WSL using a path like ``/mnt/c/Users/YOUR NAME/Downloads``.  You can also download it directly from the WSL prompt with
 
 .. code-block:: none
 
@@ -65,7 +66,7 @@ to enter a Linux command prompt, and then follow the :ref:`On Linux` instruction
   tar -xzf narya-master-static.tar.gz
   cd narya-xxxxxxx-YYYYMMDD
 
-(for the appropriate directory name) and then proceed with the above Linux instructions (and the later instructions for :ref:`Installing ProofGeneral mode`).  Note that when you run Emacs from the WSL command prompt, it should automatically pop up as a graphical window; you can run ``emacs &`` if you want to also continue using your command prompt while Emacs is running.
+(for the appropriate directory name).  In either case you can then proceed with the :ref:`On Linux` instructions above (and then the later instructions for :ref:`Installing ProofGeneral mode`).  Note that when you run Emacs from the WSL command prompt, it should automatically pop up as a graphical window; you can run ``emacs &`` if you want to also continue using your command prompt while Emacs is running.
 
 
 On Mac
@@ -95,7 +96,7 @@ Here are steps to manually set up a development environment in which you can com
     opam install dune
     eval $(opam env)
 
-  The ``eval`` command is for Unix-like operating systems.  On Windows (not WSL), replace it by:
+  The ``eval`` command is for Unix-like operating systems, including WSL.  On Windows (not WSL), replace it by:
 
   .. code-block:: none
 
@@ -189,7 +190,10 @@ ProofGeneral Mode
 
 `ProofGeneral <https://proofgeneral.github.io/>`_ is a generic development environment designed for proof assistants that runs inside the text editor Emacs.  Narya comes with a basic ProofGeneral mode that is the recommended way to use it.
 
-To install the Narya ProofGeneral mode, first you'll need to install a relatively recent version of `Emacs <https://www.gnu.org/software/emacs/>`_.  Unfortunately, the version installable through the default package manager on many Linux distributions (such as ``apt`` on Debian/Ubuntu) is not recent enough.  However, on many modern Linux distributions (including WSL) you can install a more recent version of Emacs with
+Installing Emacs
+^^^^^^^^^^^^^^^^
+
+To install the Narya ProofGeneral mode, first you'll need to install a relatively recent version of `Emacs <https://www.gnu.org/software/emacs/>`_.  Unfortunately, the version installable through the default package manager on many Linux distributions (such as ``apt`` on Debian/Ubuntu) is not recent enough.  However, on many modern Linux distributions (including WSL under Windows) you can install a more recent version of Emacs with
 
 .. code-block:: bash
 
@@ -203,11 +207,18 @@ For MacOS there are multiple versions of Emacs available, such as:
 - Using `MacPorts <https://www.macports.org/>`_, run ``sudo port install emacs-app``.
 - Universal binaries from `Emacs for OSX <https://emacsformacosx.com/>`_.
 - The `Emacs-mac port <https://github.com/railwaycat/homebrew-emacsmacport?tab=readme-ov-file>`_, which may integrate better with MacOS graphics: run ``brew tap railwaycat/emacsmacport`` and then ``brew install --cask emacs-mac``.  However, as of July 2025 this only offers Emacs version 29, which in particular doesn't support ``etags-regen-mode`` (see :ref:`Installing ctags`).
+- Unfortunately, Aquamacs does not appear to support ProofGeneral, so if you normally use that, you'll need to get one of the above versions instead.
+
+When using Emacs, it is also *highly* recommended to change your keyboard layout so that the ``Ctrl`` key is immediately to the left of the ``a`` key.  Usually that means rebinding the ``CapsLock`` key to act as the ``Ctrl`` key instead.  This may sound silly, but it's actually very important.  Experience from many users suggests that this is likely to immeasurably reduce your frustration with the Emacs key sequences.  Here are some recommendations on how to do this on different operating systems:
+
+- In Ubuntu, install the package "gnome-tweaks" with ``sudo apt install gnome-tweaks``.  Then run ``gnome-tweaks``, navigate to ``Keyboard & Mouse``, ``Additional Layout Options``, ``Ctrl position``, and select either ``CapsLock as Ctrl`` or ``Swap Ctrl and CapsLock`` (depending on how you want the old ``Ctrl`` key to behave).
+- In Windows, install Microsoft `PowerToys <https://github.com/microsoft/PowerToys>`_.  Run it and navigate to the ``Keyboard Manager``, select ``Remap a Key``, and remap ``Caps Lock`` to ``Ctrl (Left)``.
+- In MacOS, go to System Preferences, navigate to a Keyboard section and look for a Modifier Keys option.
 
 Once Emacs is installed, you have two options for installing the Narya ProofGeneral mode:
 
 - There is an :ref:`Automatic ProofGeneral installation` script that should usually be able to install ProofGeneral and the Narya ProofGeneral mode for you, once you have installed Emacs.
-- If this doesn't work, or you want to edit the Narya ProofGeneral mode, you can use :ref:`Manual ProofGeneral installation` instead.
+- If this doesn't work, please submit a `bug report <https://github.com/gwaithimirdain/narya/issues>`_.  But while you wait for us to fix the problem, you can use :ref:`Manual ProofGeneral installation` instead.
 
 
 .. _Automatic ProofGeneral installation:
@@ -221,9 +232,17 @@ Narya comes with a shell script that should install ProofGeneral, and the ProofG
 
   ./install-pg.sh
 
-If the script reports any errors, or if it doesn't report any errors but the ProofGeneral mode doesn't seem to work as advertised, please report a bug on `GitHub <https://github.com/gwaithimirdain/narya>`_; in the meantime, you can follow the instructions for :ref:`Manual ProofGeneral installation`.
+Pay attention to the output of the script!  If it reports any errors, or if it doesn't report any errors but the ProofGeneral mode doesn't seem to work as advertised, please report a bug on `GitHub <https://github.com/gwaithimirdain/narya>`_.  In the meantime, you can follow the instructions for :ref:`Manual ProofGeneral installation`.
 
-You will also need to ensure that Emacs can find the Narya executable.  On Linux machines, and on Windows with WSL, this should happen automatically as long as the directory containing narya is in your ``PATH``.  On a Mac, when Emacs is run as a GUI it takes its environment variables from somewhere else, so it may not be able to find Narya; one solution is to install the package `exec-path-from-shell <https://github.com/purcell/exec-path-from-shell>`_.
+If the script doesn't report any errors, then it will end by instructing you to add some lines to the file ``.emacs`` in your home directory.  This will include the following, which are not necessary but highly recommended to improve the experience of using ProofGeneral:
+
+.. code-block:: lisp
+
+   (setq proof-output-tooltips nil)
+   (setq proof-three-window-mode-policy 'hybrid)
+   (setq proof-three-window-enable t)
+
+Depending on your operating system and version of Emacs, the script may also instruct you to add additional lines to ``.emacs``.  Please do as it says, unless those lines are already there.  (It doesn't do this automatically to avoid the danger of disrupting any personal Emacs configuration you may have already done.)
 
 You will need to re-run the installation script every time Emacs, ProofGeneral, or Narya is updated.  This will be the case until the Narya ProofGeneral mode stabilizes and we can get it incorporated in the ProofGeneral distribution.
 
@@ -239,11 +258,19 @@ If the automatic ProofGeneral installer doesn't work for you, you can follow the
 
 1. Install `Emacs <https://www.gnu.org/software/emacs/>`_ and ProofGeneral.  The recommended way to install ProofGeneral is from `MELPA <https://melpa.org/>`_ using Emacs' package manager, as described at the `ProofGeneral page <https://proofgeneral.github.io/>`_.
 
-2. Find the ProofGeneral installation directory, which may be something like ``$HOME/.emacs.d/elpa/proof-general-XXXXXXXX-XXXX``.
+2. Ensure that Emacs can find the Narya executable, by typing ``C-!`` (that is, ``C-S-1``) in Emacs and entering ``narya``.  If the result is ``command not found``, you have a problem.  This happens most often on MacOS, where some versions of Emacs take their environment variables from somewhere else by default.  One solution to this is to install the package `exec-path-from-shell <https://github.com/purcell/exec-path-from-shell>`_.  To do this, type ``M-x package-install``, hit return, then enter ``exec-path-from-shell``, hit return, and wait for it to install.  (If that doesn't work, you may need to run ``M-x package-initialize`` and/or ``M-x package-refresh-contents`` first.)  Then add the following line to the ``.emacs`` file in your home directory:
 
-3. In this directory, create a subdirectory called ``narya`` and copy (or, better, symlink) the ``.el`` files in the ``proofgeneral`` directory of the Narya repository into that subdirectory.  If you are using the static distribution, the ``.el`` files are included there as well.
+   .. code-block:: elisp
 
-4. Edit the file ``proof-site.el`` in the subdirectory ``generic`` of the ProofGeneral installation directory and add this line
+      (exec-path-from-shell-initialize)
+
+   Then try ``C-! narya`` again.  If it still doesn't work, please `report a bug <https://github.com/gwaithimirdain/narya>`_.
+
+3. Find the ProofGeneral installation directory, which may be something like ``$HOME/.emacs.d/elpa/proof-general-XXXXXXXX-XXXX``.
+
+4. In this directory, create a subdirectory called ``narya`` and copy (or, better, symlink) the ``.el`` files in the ``proofgeneral`` directory of the Narya repository into that subdirectory.  If you are using the static distribution, the ``.el`` files are included there as well.
+
+5. Edit the file ``proof-site.el`` in the subdirectory ``generic`` of the ProofGeneral installation directory and add this line
 
   .. code-block:: none
 
@@ -251,9 +278,9 @@ If the automatic ProofGeneral installer doesn't work for you, you can follow the
 
   to the list of proof assistants in the definition of the variable ``proof-assistant-table-default``.
 
-5. If there is a byte-compiled Emacs Lisp file ``proof-site.elc`` in the ``generic`` directory, either delete it, or re-create it from your edited ``proof-site.el`` using ``M-x byte-compile-file``.
+6. If there is a byte-compiled Emacs Lisp file ``proof-site.elc`` in the ``generic`` directory, either delete it, or re-create it from your edited ``proof-site.el`` using ``M-x byte-compile-file``.
 
-6. Restart Emacs.
+7. Restart Emacs.
 
 You will have to repeat these steps whenever the Narya ProofGeneral mode is updated (unless you symlinked the files instead of copying them, in which case restarting Emacs will suffice); whenever ProofGeneral is updated; and whenever Emacs is updated.
 
@@ -353,15 +380,20 @@ To select an input-mode, type ``C-\``, enter the name of the input-mode (see bel
   * For ≔, type ``\coloneq``
   * For ↦, type ``\mapsto``
   * For …, type ``\ldots``
+  * For ℕ, type ``\Bbb{N}``, and similarly for ℤ, ℚ, ℝ, and so on.
+  * For subscript characters, type ``_`` and then the ordinary character.
+  * For superscript characters, type ``^`` and then the ordinary character.
 
   Note that these particular characters will be automatically converted from their ASCII versions (namely, ``->``, ``:=``, ``|->``, and ``...``) to their Unicode equivalents by Narya's reformatter (assuming ``display chars`` is set to ``unicode``, as it is by default), so it is not necessary to enter them manually.  But you will probably want to enter other Unicode characters at some point as well.
 
-- A fancier input mode called ``Agda`` ships with the proof assistant Agda, indicated by the character ``Π``.  The most convenient way to obtain this mode is to install Agda and its `Emacs mode <https://agda.readthedocs.io/en/latest/getting-started/installation.html#install-agda-mode>`_.  When this mode is enabled, you can use the previously mentioned shortcuts from the ``TeX`` input-mode, and also the following:
+- A fancier input mode called ``Agda`` ships with the proof assistant Agda, indicated by the character ``Π``.  The most convenient way to obtain this mode is to install Agda and its `Emacs mode <https://agda.readthedocs.io/en/latest/getting-started/installation.html#install-agda-mode>`_.  When this mode is enabled, you can use the following shortcuts (and many others):
 
-  * For →, you can also type ``\r`` (which will also allow you to select from other arrows dynamically).
-  * For ≔, you can also type ``\:=``
-  * For ℕ, you can type ``\bN``, and similarly for ℤ, ℚ, ℝ, and so on.
-  * For superscript characters, you can start with ``\^`` and then the ordinary character, e.g. to get ³ you can type ``\^3``.  This works for numbers, letters, parentheses, and hyphens at least.
+  * For →,type ``\to``, ``\rightarrow``, or ``\r`` (which will also allow you to select from other arrows dynamically).
+  * For ≔, type ``\coloneqq`` or ``\:=``
+  * For ↦, type ``\mapsto``
+  * For ℕ, type ``\bN``, and similarly for ℤ, ℚ, ℝ, and so on.
+  * For subscript characters, type ``\_`` and then the ordinary character.
+  * For superscript characters, type ``\^`` and then the ordinary character.
 
   For more information about the Agda input-mode, see the `Agda documentation <https://agda.readthedocs.io/en/latest/tools/emacs-mode.html#unicode-input>`_.  It is also easy to customize by adding to the variable ``agda-input-user-translations``.  Namely, if you type ``M-x customize-variable RET agda-input-user-translations RET``, it will show you a list of user-defined translations (which will start out empty).  You can then click ``INS`` to add a new translation, type the key sequence (without the initial backslash), click ``INS`` underneath it to add the desired unicode character (which you can copy-and-paste from elsewhere, or insert with ``C-x 8 RET`` and then the official unicode character name or hex code).  After repeating this for as many translations as you want, click ``State`` and select ``Save for future sessions``.  For instance, you could define ``\r|`` (entered in the customization as just ``r|``) to insert ↦, and ``\R|`` to insert ⤇.
 

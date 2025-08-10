@@ -1,5 +1,6 @@
 open Util
 open Core
+open Origin
 open Parser
 open Notation
 open Testutil
@@ -29,21 +30,23 @@ let () =
 
 let () =
   Parser.Lexer.Specials.run @@ fun () ->
+  Origin.run @@ fun () ->
+  Origin.with_file ~holes_allowed:true (File.make (`Other "ifthen")) @@ fun () ->
   Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
       Reporter.display d;
-      raise (Failure "Parse failure"))
+      raise (Failure "Parse failure 1"))
   @@ fun () ->
-  Scope.run ~init_situation:Situation.empty @@ fun () ->
   Scope.Situation.add ifthen;
   assert (parse "if x then y" = Notn ("ifthen", [ Term (Ident [ "x" ]); Term (Ident [ "y" ]) ]))
 
 let () =
   Parser.Lexer.Specials.run @@ fun () ->
+  Origin.run @@ fun () ->
+  Origin.with_file ~holes_allowed:true (File.make (`Other "ifthenelse")) @@ fun () ->
   Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
       Reporter.display d;
-      raise (Failure "Parse failure"))
+      raise (Failure "Parse failure 2"))
   @@ fun () ->
-  Scope.run ~init_situation:Situation.empty @@ fun () ->
   Scope.Situation.add ifthenelse;
   assert (
     parse "if x then y else z"
@@ -51,13 +54,14 @@ let () =
 
 let () =
   Parser.Lexer.Specials.run @@ fun () ->
+  Origin.run @@ fun () ->
+  Origin.with_file ~holes_allowed:true (File.make (`Other "ifthen-ifthenelse")) @@ fun () ->
   Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
       if d.message = Parsing_ambiguity [ "ifthen"; "ifthenelse" ] then ()
       else (
         Reporter.display d;
         raise (Failure "Unexpected error code")))
   @@ fun () ->
-  Scope.run ~init_situation:Situation.empty @@ fun () ->
   Scope.Situation.add ifthen;
   Scope.Situation.add ifthenelse;
   assert (parse "if x then y" = Notn ("ifthen", [ Term (Ident [ "x" ]); Term (Ident [ "y" ]) ]))
@@ -74,11 +78,12 @@ let () =
 
 let () =
   Parser.Lexer.Specials.run @@ fun () ->
+  Origin.run @@ fun () ->
+  Origin.with_file ~holes_allowed:true (File.make (`Other "ifthenelse-ifthenelif")) @@ fun () ->
   Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
       Reporter.display d;
-      raise (Failure "Parse failure"))
+      raise (Failure "Parse failure 3"))
   @@ fun () ->
-  Scope.run ~init_situation:Situation.empty @@ fun () ->
   Scope.Situation.add ifthenelse;
   Scope.Situation.add ifthenelif;
   assert (

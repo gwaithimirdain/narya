@@ -485,13 +485,6 @@
      ^ unexpected explicit abstraction: expecting implicit variable
   
   [1]
-  $ narya -parametric errors.ny -e "echo ((x ⤇ refl f {x.0} {x.1} x) : Id (A→A) f f)"
-   ￫ error[E0507]
-   ￭ command-line exec string
-   1 | echo ((x ⤇ refl f {x.0} {x.1} x) : Id (A→A) f f)
-     ^ variable of dimension e must be used with a face
-  
-  [1]
   $ narya -parametric errors.ny -e "echo ((a x ⤇ refl f {x.0} {x.1} x.2) : A → Id (A→A) f f)"
    ￫ error[E0508]
    ￭ command-line exec string
@@ -500,10 +493,17 @@
   
   [1]
   $ narya -parametric errors.ny -e "echo ((x ↦ x ⤇ x) : A → Id (A→A) f f)"
-   ￫ error[E0507]
+   ￫ error[E0401]
    ￭ command-line exec string
    1 | echo ((x ↦ x ⤇ x) : A → Id (A→A) f f)
-     ^ variable of dimension e must be used with a face
+     ^ term synthesized type
+         Id A x′.0 x′.1
+       but is being checked against type
+         Id A (f x′.0) (f x′.1)
+       unequal head terms:
+         x′.0
+       does not equal
+         f
   
   [1]
   $ narya -parametric errors.ny -e "echo ((a x ⤇ refl af {a.0} {a.1} a.2 {x.00} {x.01} {x.02} {x.10} {x.11} {x.12} {x.20} {x.21} x.22) : Id (A → Id (A→A) f f) af af)"

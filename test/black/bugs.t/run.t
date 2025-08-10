@@ -636,7 +636,7 @@
      
      m : ⊤
      ----------------------------------------------------------------------
-     _match.0{…}
+     _match.F2.0{…}
   
    ￫ error[E3002]
    ￮ file match_in_type.ny contains open holes

@@ -2,6 +2,7 @@ open Util
 open Term
 open Value
 open Reporter
+open Origin
 
 let phead : head -> printable = function
   | Const { name; _ } -> PConstant name
@@ -15,5 +16,5 @@ type printable +=
   | PNormal : ('a, 'b) Ctx.t * normal -> printable
   | (* When printing a hole we use a termctx, since that's what we store anyway, and we would also have to read back a value context anyway in order to unparse it. *)
       PHole :
-      (string option, 'a) Bwv.t * ('a, 'b) termctx * ('b, kinetic) term
+      Origin.t * (string option, 'a) Bwv.t * ('a, 'b) termctx * ('b, kinetic) term
       -> printable

@@ -16,7 +16,7 @@ whitespace (no comments).  Finds the arguments of a simple match pattern
 like \"constr. x y z ↦\", but not variables deeper inside nested or
 multiple match patterns.  Unfortunately, also highlights underscores.
 Does not handle sequences of abstraction variables broken across lines."
-  (when (re-search-forward "[^[:word:][:space:]][[:space:]]*\\([[:word:][:space:]]+\\)\\(↦\\||->\\|⤇\\||=>\\)" limit 'move)
+  (when (re-search-forward "[^[:word:][:space:]_'][[:space:]]*\\([[:word:][:space:]_']+\\)\\(↦\\||->\\|⤇\\||=>\\)" limit 'move)
     ;; Move back across the ↦, so it can be the non-word-non-space character that predelimits another abstraction afterwards.
     (backward-char 1)
     t))
@@ -49,13 +49,13 @@ Does not handle sequences of abstraction variables broken across lines."
     ("\\_<\\([[:digit:]][[:digit:].]+[[:digit:]]\\)\\_>" . 'font-lock-number-face) ; decimal numbers
 
     ;; Variables bound by let-bindings
-    ("\\_<\\(let[[:space:]\n]+rec\\|let\\|and\\)[[:space:]\n]+\\([[:word:]_.']+\\)\\_>" 2 'font-lock-variable-name-face)
+    ("\\_<\\(let[[:space:]\n]+rec\\|let\\|and\\)[[:space:]\n]+\\([[:word:]_']+\\)\\_>" 2 'font-lock-variable-name-face)
     ;; Variables bound by abstractions
     (narya-highlight-abstractions 1 'font-lock-variable-name-face)
     ;; Self variables in codata declarations.
-    ("[[|][[:space:]\n]*\\([[:word:]_.']+\\)[[:space:]\n]*\\(↦\\||->\\)" 1 'font-lock-variable-name-face)
+    ("[[|][[:space:]\n]*\\([[:word:]_']+\\)[[:space:]\n]*\\(↦\\||->\\)" 1 'font-lock-variable-name-face)
     ;; Variables bound in telescopes (parameters or dependent-function arguments)
-    ("([[:space:]\n]*\\([[:word:]_.'[:space:]\n]+\\):" 1 'font-lock-variable-name-face)
+    ("([[:space:]\n]*\\([[:word:]_'[:space:]\n]+\\):" 1 'font-lock-variable-name-face)
 
     ;; Symbols
     ("[][(){}]" . 'font-lock-bracket-face)

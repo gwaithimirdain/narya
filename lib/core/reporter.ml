@@ -180,7 +180,6 @@ module Code = struct
     | Matching_wont_refine : string * printable option -> t
     | Dimension_mismatch : string * 'a D.t * 'b D.t -> t
     | Invalid_variable_face : 'a D.t * ('n, 'm) sface -> t
-    | Missing_variable_face : 'a D.t -> t
     | Anomaly : string -> t
     | No_such_level : printable -> t
     | Redefining_constant : string list -> t
@@ -255,7 +254,7 @@ module Code = struct
     | Option_set : string * string -> t
     | Break : t
     | Accumulated : string * t Asai.Diagnostic.t Bwd.t -> t
-    | No_holes_allowed : [ `Command of string | `File of string ] -> t
+    | No_holes_allowed : [ `Command of string | `File of string | `Other of string ] -> t
     | Cyclic_term : t
     | Oracle_failed : string * printable -> t
     | Invalid_flags : t
@@ -326,7 +325,6 @@ module Code = struct
     | Not_enough_arguments_to_function -> Error
     | Instantiating_zero_dimensional_type _ -> Error
     | Invalid_variable_face _ -> Error
-    | Missing_variable_face _ -> Error
     | Not_enough_arguments_to_instantiation -> Error
     | Applying_nonfunction_nontype _ -> Error
     | Unexpected_implicitness _ -> Error
@@ -464,7 +462,6 @@ module Code = struct
     | Type_not_fully_instantiated _ -> "E0504"
     | Instantiating_zero_dimensional_type _ -> "E0505"
     | Invalid_variable_face _ -> "E0506"
-    | Missing_variable_face _ -> "E0507"
     | Zero_dimensional_cube_abstraction _ -> "E0508"
     | Mismatched_dimensions_in_cube_abstraction _ -> "E0509"
     | Noncube_abstraction_in_higher_dimensional_match _ -> "E0510"
@@ -622,8 +619,6 @@ module Code = struct
       | Invalid_variable_face (k, fa) ->
           textf "invalid face: variable of dimension %s has no face '%s'" (string_of_dim0 k)
             (string_of_sface fa)
-      | Missing_variable_face k ->
-          textf "variable of dimension %s must be used with a face" (string_of_dim0 k)
       | No_relative_precedence (n1, n2) ->
           textf
             "notations \"%s\" and \"%s\" have no relative precedence or associativity; they can only be combined with parentheses"
@@ -942,10 +937,12 @@ module Code = struct
           textf "missing type for constructor %s of indexed datatype" (Constr.to_string c)
       | Locked_variable -> text "variable not available inside external degeneracy"
       | Locked_constant a ->
-          textf "constant %a uses nonparametric axioms, can't appear inside an external degeneracy"
+          textf
+            "constant %a is or uses a nonparametric axiom, can't appear inside an external degeneracy"
             pp_printed (print a)
       | Axiom_in_parametric_definition a ->
-          textf "constant %a uses nonparametric axioms, can't be used in a parametric command"
+          textf
+            "constant %a is or uses a nonparametric axiom, can't be used in a parametric command"
             pp_printed (print a)
       | Hole (n, ty) -> textf "@[<v 0>hole %s:@,%a@]" n pp_printed (print ty)
       | No_open_holes -> text "no open holes"
@@ -1025,7 +1022,8 @@ module Code = struct
       | No_holes_allowed str -> (
           match str with
           | `Command cmd -> textf "command '%s' cannot contain holes" cmd
-          | `File file -> textf "imported file '%s' cannot contain holes" file)
+          | `File file -> textf "imported file '%s' cannot contain holes" file
+          | `Other where -> textf "%s cannot contain holes" where)
       | Ill_scoped_connection -> text "ill-scoped connection"
       | Cyclic_term -> text "cycle in graphical term"
       | Oracle_failed (str, tm) -> textf "oracle failed: %s: %a" str pp_printed (print tm)

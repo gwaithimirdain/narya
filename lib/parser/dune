@@ -1,6 +1,11 @@
 (library
   (name parser)
   (public_name narya.parser)
+  (preprocessor_deps
+    (file hott-visible.ny)
+    (file hott-isfibrant.ny)
+    (file hott-hidden.ny))
+  (preprocess (pps ppx_blob))
   (libraries util bwd algaeff core fmlib_parse zarith yuujinchou fileutils pprint)
   (instrumentation (backend landmarks --auto)))
 (env (_ (flags (:standard -w -69))))

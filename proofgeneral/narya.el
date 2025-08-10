@@ -84,7 +84,7 @@ Also replaces single ? holes with ⁈...⁉."
                              ;; included in the hole overlay.
                              nil t)))
       (overlay-put ovl 'narya-hole hole-id)
-      (overlay-put ovl 'face 'highlight)
+      (overlay-put ovl 'face '(:extend t :inherit highlight))
       (push ovl narya-hole-overlays)
       (narya-adjust-hole-overlay ovl)
       ovl)))
@@ -281,7 +281,10 @@ handling in Proof General."
         (string-match "\x0C\\[data\\]\x0C\n" string gstart)
         (setq gend (match-beginning 0)
               dpos (match-end 0))
-        ;; Parse hole data from the data section
+        ;; Parse hole data from the data section.  This will only be
+        ;; used if we are *not* reformatting commands/holes, since the
+        ;; reformatted version contains ¿0? markers for hole positions
+        ;; and numbers.
         (setq parsed-hole-data
               (cl-loop while (string-match "^\\([0-9]+\\) \\([0-9]+\\) \\([0-9]+\\).*\n" string dpos)
                        collect (let* ((hole (string-to-number (match-string 1 string)))
@@ -303,6 +306,7 @@ handling in Proof General."
           (when (and span (overlay-buffer span))
             (proof-with-script-buffer
              (if (and narya-reformat-commands (not (equal reformatted "")))
+                 ;; If we are reformatting commands, replace the old command with the new one.
                  (let ((inhibit-read-only t)
                        (start (set-marker (make-marker) (overlay-start span)))
                        (end (set-marker (make-marker) (overlay-end span))))
@@ -327,6 +331,7 @@ handling in Proof General."
                        (unless (equal reformatted (buffer-substring-no-properties (point) end))
                          (insert reformatted)
                          (delete-region (point) end))
+                       ;; In the reformatted command, its holes were printed using the ¿0? syntax.
                        (narya-create-marked-hole-overlays start end)
                        ;; Add an undo item so that if the reformatting is undone, ProofGeneral will also retract the Narya command.
                        (narya-add-command-undo span)
@@ -334,6 +339,9 @@ handling in Proof General."
                            (recenter)
                          ;; Apparently count-screen-lines is 1-based, but recenter is 0-based.
                          (recenter (- pos 1))))))
+               ;; If we are not reformatting commands, we just have to
+               ;; create the hole overlays, and without the ¿0? flags
+               ;; we have to use the info from the [data] block.
                (let ((inhibit-read-only t)
                      (bpos (position-bytes (save-excursion
                                              (goto-char (overlay-start span))
@@ -680,11 +688,16 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
                 ;; Delete the overlay for the solved hole and update the hole list.
                 (delete-overlay hole-overlay)
                 (setq narya-hole-overlays (delq hole-overlay narya-hole-overlays))
-                ;; Create new overlays from holes in the new term
+                ;; Create new overlays from holes in the new term.
                 (cond
+                 ;; If the new term was reformatted, then its holes
+                 ;; were printed using the ¿0? syntax, so we can use
+                 ;; narya-create-marked-hole-overlays.
                  ((or split narya-reformat-holes)
                   (narya-create-marked-hole-overlays insert-start insert-end)
                   (message "Hole solved."))
+                 ;; Otherwise, we get the hole position information
+                 ;; from the [data] block.
                  (narya-pending-hole-positions
                   (narya-create-hole-overlays (+ byte-insert-start (if parens 1 0)) narya-pending-hole-positions)
                   (setq narya-pending-hole-positions nil)))
@@ -760,8 +773,6 @@ With a negative prefix argument,set display of type boundaries off."
     "synth"
     "show hole"
     "show holes"
-    "display style ≔ compact"
-    "display style ≔ noncompact"
     "display chars ≔ unicode"
     "display chars ≔ ascii"
     "display function boundaries ≔ on"
@@ -832,8 +843,8 @@ With a negative prefix argument,set display of type boundaries off."
 ;; C-c `   proof-next-error
 ;; C-c C-. proof-goto-end-of-locked
 ;; C-c C-, --> show current hole if any, focused proof if any
-;; C-c C-; pg-insert-last-output-as-comment
-;; C-c C-:
+;; C-c C-; not pg-insert-last-output-as-comment, that's useless; same as C-c ;
+;; C-c C-: same as C-c :
 ;; C-c ?   (help)
 ;; C-c C-? --> show all goals
 ;; C-c C-SPC --> fill hole
@@ -868,7 +879,9 @@ With a negative prefix argument,set display of type boundaries off."
 (keymap-set narya-mode-map "C-c C-j" 'narya-next-hole)
 (keymap-set narya-mode-map "C-c C-k" 'narya-previous-hole)
 (keymap-set narya-mode-map "C-c ;" 'narya-echo)
+(keymap-set narya-mode-map "C-c C-;" 'narya-echo)
 (keymap-set narya-mode-map "C-c :" 'narya-synth)
+(keymap-set narya-mode-map "C-c C-:" 'narya-synth)
 (keymap-set narya-mode-map "C-c C-v" 'narya-minibuffer-cmd)
 (keymap-set narya-mode-map "C-c C-d C-u" 'narya-display-chars)
 (keymap-set narya-mode-map "C-c C-d C-f" 'narya-display-function-boundaries)
