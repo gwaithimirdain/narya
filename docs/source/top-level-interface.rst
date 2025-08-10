@@ -251,7 +251,7 @@ Confusingly, if you're currently being prompted for input in the minibuffer, Ema
 
 If you're going to be doing any substantial amount of coding in ProofGeneral (or Emacs more generally), I *highly* recommend the following:
 
-1. Change your keyboard layout so that the ``Control`` key is immediately to the left of the ``a`` key.  Usually that means rebinding the ``CapsLock`` key to act as the ``Control`` key instead.  Really, I mean it: this will immeasurably reduce your frustration with the Emacs key sequences.
+1. Change your keyboard layout so that the ``Control`` key is immediately to the left of the ``a`` key.  This is likely to immeasurably reduce your frustration with the Emacs key sequences.  Instructions can be found under :ref:`Installing Emacs`.
 
 2. Work through the Emacs tutorial.  The best way to do this is inside of Emacs, so you can easily do its exercises: open Emacs and type ``C-h t``.
 

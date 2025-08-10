@@ -190,6 +190,9 @@ ProofGeneral Mode
 
 `ProofGeneral <https://proofgeneral.github.io/>`_ is a generic development environment designed for proof assistants that runs inside the text editor Emacs.  Narya comes with a basic ProofGeneral mode that is the recommended way to use it.
 
+Installing Emacs
+^^^^^^^^^^^^^^^^
+
 To install the Narya ProofGeneral mode, first you'll need to install a relatively recent version of `Emacs <https://www.gnu.org/software/emacs/>`_.  Unfortunately, the version installable through the default package manager on many Linux distributions (such as ``apt`` on Debian/Ubuntu) is not recent enough.  However, on many modern Linux distributions (including WSL under Windows) you can install a more recent version of Emacs with
 
 .. code-block:: bash
@@ -205,6 +208,12 @@ For MacOS there are multiple versions of Emacs available, such as:
 - Universal binaries from `Emacs for OSX <https://emacsformacosx.com/>`_.
 - The `Emacs-mac port <https://github.com/railwaycat/homebrew-emacsmacport?tab=readme-ov-file>`_, which may integrate better with MacOS graphics: run ``brew tap railwaycat/emacsmacport`` and then ``brew install --cask emacs-mac``.  However, as of July 2025 this only offers Emacs version 29, which in particular doesn't support ``etags-regen-mode`` (see :ref:`Installing ctags`).
 - Unfortunately, Aquamacs does not appear to support ProofGeneral, so if you normally use that, you'll need to get one of the above versions instead.
+
+When using Emacs, it is also *highly* recommended to change your keyboard layout so that the ``Ctrl`` key is immediately to the left of the ``a`` key.  Usually that means rebinding the ``CapsLock`` key to act as the ``Ctrl`` key instead.  This may sound silly, but it's actually very important.  Experience from many users suggests that this is likely to immeasurably reduce your frustration with the Emacs key sequences.  Here are some recommendations on how to do this on different operating systems:
+
+- In Ubuntu, install the package "gnome-tweaks" with ``sudo apt install gnome-tweaks``.  Then run ``gnome-tweaks``, navigate to ``Keyboard & Mouse``, ``Additional Layout Options``, ``Ctrl position``, and select either ``CapsLock as Ctrl`` or ``Swap Ctrl and CapsLock`` (depending on how you want the old ``Ctrl`` key to behave).
+- In Windows, install Microsoft `PowerToys <https://github.com/microsoft/PowerToys>`_.  Run it and navigate to the ``Keyboard Manager``, select ``Remap a Key``, and remap ``Caps Lock`` to ``Ctrl (Left)``.
+- In MacOS, go to System Preferences, navigate to a Keyboard section and look for a Modifier Keys option.
 
 Once Emacs is installed, you have two options for installing the Narya ProofGeneral mode:
 
