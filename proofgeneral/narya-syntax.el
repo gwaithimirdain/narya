@@ -21,6 +21,11 @@ Does not handle sequences of abstraction variables broken across lines."
     (backward-char 1)
     t))
 
+(defun narya-highlight-holes (limit)
+  (when (re-search-forward "\\(⁈\\|\\?!\\|!\\)\\([^!⁉]*\\)\\(⁉\\|!\\?\\|!\\)" limit 'move)
+    (backward-char 1)
+    t))
+
 ;; Yes, the face names here actually have to be *quoted*, even though the entire list is *also* quoted.  I think font lock expects an expression there that it *evaluates*, and while some of the faces are also variables whose value is the face of the same name, some aren't.  So we ought to quote them all.
 ;; Many of these regexps are simplistic and will get confused if there are comments interspersed.  They also depend on font-lock-multiline being set to t.
 (defconst narya-core-font-lock-keywords
@@ -54,7 +59,15 @@ Does not handle sequences of abstraction variables broken across lines."
 
     ;; Symbols
     ("[][(){}]" . 'font-lock-bracket-face)
-    ("[→↦⤇≔~!@#$%&*/=+\\|,<>:;?-]" . 'font-lock-operator-face)
+    ("[→↦⤇≔~@#$%&*/=+\\|,<>:;-]" . 'font-lock-operator-face)
+
+    ;; Hole characters
+    ("[!?⁉⁈⁇‼]" 0 'font-lock-warning-face)
+    ;; I tried to highlight non-processed holes, but I can't get it to
+    ;; work right with highlighting the internal !s in warning-face.
+    ;; And maybe it would be confusing anyway.
+    ;; ("\\(⁈\\|\\?!\\)\\(\\([^!⁉]\\|![^?]\\)*\\)\\(⁉\\|!\\?\\)" 2
+    ;; 'highlight t) (narya-highlight-holes 2 'highlight)
 
     ;; "keywords" used only in import statements.  We put them last so they don't prevent other things.
     ("\\_<\\(all\\|id\\|none\\|only\\|except\\|renaming\\|seq\\|union\\)\\_>" . 'font-lock-builtin-face)
@@ -89,7 +102,6 @@ Does not handle sequences of abstraction variables broken across lines."
    '(?\" "\"")
    ;; Punctuation: characters that can appear in operators (and hence mark the beginning or end of a symbol).
    '(?~ ".")
-   '(?! ".")
    '(?@ ".")
    '(?# ".")
    '(?$ ".")
@@ -108,7 +120,6 @@ Does not handle sequences of abstraction variables broken across lines."
    '(?\;  ".")
    '(?- ".")
    ;; Single-character operators are also punctuation
-   '(?\? ".")
    '(?≔ ".")
    '(?⩴ ".")
    '(?→ ".")
@@ -116,6 +127,13 @@ Does not handle sequences of abstraction variables broken across lines."
    '(?⤇ ".")
    '(?… ".")
    '(?⩲ ".")
+   ;; As are hole characters
+   '(?! ".")
+   '(?\? ".")
+   '(?⁈ ".")
+   '(?⁉ ".")
+   '(?‼ ".")
+   '(?⁇ ".")
    ))
 
 (provide 'narya-syntax)

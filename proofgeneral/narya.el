@@ -26,10 +26,6 @@
 
 (add-hook 'proof-shell-kill-function-hooks #'narya-delete-all-holes)
 
-(defface narya-hole-face '((t . (:background "SlateGray4" :foreground "white" :weight bold)))
-  "Face used for open holes in Narya"
-  :group 'narya)
-
 (defcustom narya-reformat-holes t
   "Automatically reformat terms entered to solve holes."
   :type 'boolean
@@ -48,30 +44,104 @@
 
 (defun narya-create-hole-overlays (start-position relative-positions)
   "Create overlays for holes given a starting position and a list of relative positions.
-Each entry in RELATIVE-POSITIONS should be a list of the form (START-OFFSET END-OFFSET HOLE-ID)."
-  (dolist (pos relative-positions)
-    (let* ((start-offset (nth 0 pos))
-           (end-offset (nth 1 pos))
-           (hole-id (nth 2 pos))
-           ;; Adjust offsets relative to the starting position
-           (char-start (byte-to-position (+ start-position start-offset)))
-           (char-end (byte-to-position (+ start-position end-offset))))
-      (narya-create-hole-overlay char-start char-end hole-id))))
+Each entry in RELATIVE-POSITIONS should be a list of the form (START-OFFSET END-OFFSET HOLE-ID).
+Also replaces single ? holes with ⁈...⁉."
+  (let ((positions
+         (cl-map 'list
+                 (lambda (pos)
+                   (let ((start (set-marker (make-marker) (byte-to-position (+ start-position (nth 0 pos)))))
+                         (end (set-marker (make-marker) (byte-to-position (+ start-position (nth 1 pos))))))
+                     (set-marker-insertion-type start t)
+                     (list start end (nth 2 pos))))
+                 relative-positions)))
+    (dolist (pos positions)
+      (let ((start (nth 0 pos))
+            (end (nth 1 pos))
+            (hole-id (nth 2 pos)))
+        (save-excursion
+          (goto-char start)
+          (if (looking-at "\\?[^!]")
+              (progn (delete-char 1)
+                     (insert "⁈  ⁉")
+                     (set-marker end (- (point) 1))
+                     (set-marker start (- (point) 3)))
+            (goto-char start)
+            (when (looking-at "⁈\\|\\?!")
+              (setq start (match-end 0)))
+            (goto-char (- end 1))
+            (if (looking-at "⁉")
+                (setq end (point))
+              (backward-char 1)
+              (if (looking-at "!\\?")
+                  (setq end (point))))))
+        (narya-create-hole-overlay start end hole-id)))))
 
 (defun narya-create-hole-overlay (char-start char-end hole-id)
   "Create a single hole overlay."
   (when (and char-start char-end)
-    (let ((ovl (make-overlay char-start char-end nil nil nil)))
+    (let ((ovl (make-overlay char-start char-end nil
+                             ;; Inserted text at both ends should be
+                             ;; included in the hole overlay.
+                             nil t)))
       (overlay-put ovl 'narya-hole hole-id)
-      (overlay-put ovl 'face 'narya-hole-face)
-      (push ovl narya-hole-overlays))))
+      (overlay-put ovl 'face 'highlight)
+      (push ovl narya-hole-overlays)
+      (narya-adjust-hole-overlay ovl)
+      ovl)))
+
+(defun narya-adjust-hole-overlay (ovl)
+  "Adjust a hole overlay so it contains readonly spaces at the start and end."
+  (let ((start-space (propertize " "
+                                 'read-only t
+                                 'front-sticky t
+                                 'rear-nonsticky t))
+        (end-space (propertize " " 'read-only t)))
+  (save-excursion
+    (goto-char (overlay-start ovl))
+    (unless (cond
+             ((looking-at "⁉\\|!\\?")
+              (insert start-space)
+              (insert end-space)
+              t)
+             ((looking-at " \\(⁉\\|!\\?\\)")
+              (insert start-space)
+              (put-text-property (point) (+ (point) 1) 'read-only t) 
+              t)
+             ((looking-at "[^ ]")
+              (insert start-space)
+              nil)
+             (t
+              (put-text-property (point) (+ (point) 1) 'read-only t)
+              (put-text-property (point) (+ (point) 1) 'front-sticky t)
+              (put-text-property (point) (+ (point) 1) 'rear-nonsticky t)))
+      (goto-char (overlay-end ovl))
+      (forward-char -1)
+      (if (looking-at " ")
+          (put-text-property (point) (+ (point) 1) 'read-only t)
+        (forward-char 1)
+        (insert end-space))))))
 
 (defun narya-create-marked-hole-overlays (start end)
-  "Create hole overlays from markers of the form ⁇0? from START to END."
+  "Create hole overlays from markers of the form ⁇0? or ⁇0⁈...⁉ from START to END."
   (goto-char start)
-  (while (re-search-forward "⁇\\([[:digit:]]+\\)\\?" end 'limit)
-    (narya-create-hole-overlay (match-beginning 0) (match-end 0) (string-to-number (match-string 1)))
-    (replace-match "?")))
+  (while (re-search-forward "\\(⁇\\([[:digit:]]+\\)\\)\\(⁈\\|?!\\)\\(\\([^!⁉]\\|![^?]\\)*\\)\\(⁉\\|!\\?\\)" end 'limit)
+    (let* ((number (string-to-number (match-string 2)))
+           (start (set-marker (make-marker) (match-beginning 4)))
+           (end (set-marker (make-marker) (match-end 4))))
+      (replace-match "" nil nil nil 1)
+      (narya-create-hole-overlay start end number))))
+
+(defun narya-get-hole-overlay (beg &optional end)
+  "Find the hole overlay that contains the given position or range, if any."
+  (unless end (setq end beg))
+  ;; overlays-at and overlays-in are both weird at the boundary and
+  ;; for zero-width overlays, so we overestimate and then filter.
+  (cl-find-if
+   (lambda (ovl)
+     (and (overlay-get ovl 'narya-hole)
+          (<= (overlay-start ovl) beg)
+          (<= end (overlay-end ovl))))
+   (overlays-in (- beg 1) (+ end 1))))
 
 (defun narya-skip-comments-backwards ()
   "Skip backwards to the last non-whitespace, non-comment character."
@@ -264,7 +334,8 @@ handling in Proof General."
                            (recenter)
                          ;; Apparently count-screen-lines is 1-based, but recenter is 0-based.
                          (recenter (- pos 1))))))
-               (let ((bpos (position-bytes (save-excursion
+               (let ((inhibit-read-only t)
+                     (bpos (position-bytes (save-excursion
                                              (goto-char (overlay-start span))
                                              (skip-chars-forward " \t\n")
                                              (point)))))
@@ -287,12 +358,16 @@ handling in Proof General."
 
 (defun narya-delete-undone-holes ()
   "Delete overlays for holes that are (now) outside the processed region."
-  (let ((pend (proof-unprocessed-begin)))
+  (let ((pend (proof-unprocessed-begin))
+        (inhibit-read-only t))
     (setq narya-hole-overlays
 	  (seq-filter
 	   (lambda (ovl)
 	     (if (and (overlay-start ovl) (< (overlay-start ovl) pend))
 		 t
+               (remove-text-properties
+                (overlay-start ovl) (overlay-end ovl)
+                '(read-only nil front-sticky nil rear-nonsticky nil))
 	       (delete-overlay ovl)
 	       nil))
 	   narya-hole-overlays))))
@@ -430,40 +505,45 @@ handling in Proof General."
 
 (add-hook 'narya-mode-hook 'narya-mode-extra-config)
 
+;; Don't retract the processed region when editing in a hole contents.
+(define-advice proof-retract-before-change
+    (:before-until (beg end) narya-holes)
+  ;; Simply using get-char-property will give the wrong answer for
+  ;; zero-width overlays.
+  (narya-get-hole-overlay beg end))
+  
 ;; Interactive commands
-
-(defun narya-previous-hole ()
-  "Move point to the previous open hole, if any."
-  (interactive)
-  (let ((pos
-	 (seq-reduce
-	  (lambda (pos ovl)
-	    (let ((opos (overlay-start ovl)))
-	      (if (and (< opos (point))
-		       (if pos (< pos opos) t))
-		  opos
-		pos)))
-	  narya-hole-overlays
-	  nil)))
-    (if pos
-	(goto-char pos)
-      (message "No more holes."))))
 
 (defun narya-next-hole ()
   "Move point to the next open hole, if any."
   (interactive)
-  (let ((pos
-	 (seq-reduce
-	  (lambda (pos ovl)
-	    (let ((opos (overlay-start ovl)))
-	      (if (and (< (point) opos)
-		       (if pos (< opos pos) t))
-		  opos
-		pos)))
-	  narya-hole-overlays
-	  nil)))
-    (if pos
-	(goto-char pos)
+  ;; If we're in a hole, move to its end.
+  (let* ((ovl (narya-get-hole-overlay (point)))
+         (pos1 (if ovl (overlay-end ovl) (point)))
+         ;; Find the next hole, if any.
+         (pos2 (next-single-char-property-change pos1 'narya-hole)))
+    (if (< pos2 (point-max))
+	(progn
+          ;; Go to the beginning of that hole.
+          (goto-char pos2)
+          (if (looking-at " [^!⁉]")
+              (forward-char 1)))
+      (message "No more processed holes."))))
+
+(defun narya-previous-hole ()
+  "Move point to the previous open hole, if any."
+  (interactive)
+  ;; If we're in a hole, move to its beginning.
+  (let* ((ovl (narya-get-hole-overlay (point)))
+         (pos1 (if ovl (overlay-start ovl) (point)))
+         ;; Find the previous hole, if any
+         (pos2 (previous-single-char-property-change pos1 'narya-hole)))
+    (if (> pos2 (point-min))
+	(progn
+          ;; Go back to the beginning of that hole.
+          (goto-char (previous-single-char-property-change pos2 'narya-hole))
+          (if (looking-at " [^!⁉]")
+              (forward-char 1)))
       (message "No more holes."))))
 
 (defun narya-show-hole ()
@@ -479,28 +559,83 @@ handling in Proof General."
   (interactive)
   (proof-shell-invisible-command "show holes"))
 
-(defun narya-solve-hole (term)
+(defun narya-current-hole-contents ()
+  "Get the contents of the current subdivision of the current hole."
+  (let* ((ovl (narya-get-hole-overlay (point)))
+         (start
+          (when ovl
+            (save-excursion
+              (re-search-backward "[!⁈]" (- (overlay-start ovl) 1))
+              (forward-char 1)
+              (when (re-search-forward "[^ ]" (overlay-end ovl) t)
+                (- (point) 1)))))
+         (end
+          (when ovl
+            (save-excursion
+              (re-search-forward "[!⁉]" (+ (overlay-end ovl) 1))
+              (backward-char 1)
+              (when (re-search-backward "[^ ]" (overlay-start ovl) t)
+                (+ (point) 1))))))
+    (when (and start end)
+      (buffer-substring-no-properties start end))))
+
+(defun narya-hole-subdivisions (ovl)
+  "Count the non-empty subdivisions in a hole overlay, if any.
+Here \"empty\" means containing only whitespace; comments are nonempty."
+  (let ((count 0))
+    (save-excursion
+      (goto-char (overlay-start ovl))
+      (while (< (point) (overlay-end ovl))
+        ;; skip empty subdivision
+        (unless (looking-at "[ \t\n]*[!⁉]")
+          (setq count (+ count 1)))
+        (re-search-forward "[!⁉]" (overlay-end ovl) 'limit))
+      count)))
+
+(defun narya-solve-hole ()
   "Solve the current hole with a user-provided term."
-  (interactive "MSolve hole with: ")
-  (narya-solve-or-split-hole nil term))
+  (interactive)
+  (narya-solve-or-split-hole "Solve hole with: " nil))
 
-(defun narya-split-hole (term)
+(defun narya-split-hole ()
   "Solve the current hole by matching a term or inferring from its type."
-  (interactive "MSplit on term (leave blank to split on goal): ")
-  (narya-solve-or-split-hole t (if (equal term "") "_" term)))
+  (interactive)
+  (narya-solve-or-split-hole "Split on term (leave blank to split on goal): " t))
 
-(defun narya-solve-or-split-hole (split term)
+(defun narya-solve-or-split-hole (prompt split)
   "Issue either solve or split command, depending on the argument."
   ;; Check for an overlay marking the current hole at point.
-  (let ((hole-overlay (car (seq-filter (lambda (ovl)
-                                         (overlay-get ovl 'narya-hole))
-                                       (overlays-at (point))))))
+  (let ((hole-overlay (narya-get-hole-overlay (point))))
     ;; If no hole overlay is found, prompt the user to place the cursor on a hole.
     (if (not hole-overlay)
         (message "Place the cursor in a hole to use this command.")
       ;; Otherwise, proceed to solve/split the hole, perhaps with a user-provided term.
-      (let ((cmd (if split "split" "solve"))
-            (column (current-column)))
+      (let* ((subdivisions (narya-hole-subdivisions hole-overlay))
+             (userterm
+              (cond
+               ((= subdivisions 0)
+                (read-from-minibuffer prompt nil nil nil nil nil t))
+               ((= subdivisions 1)
+                (read-from-minibuffer prompt (narya-current-hole-contents)
+                                      nil nil nil nil t))
+               (t
+                (let ((which (let ((read-answer-short t))
+                               (read-answer "Hole contains multiple terms: (d)rop others, or (c)oncatenate them all "
+                                            '(("drop" ?d "use the term at point, deleting the others in the hole if it succeeds")
+                                              ("concatenate" ?c "concatenate all the terms in the hole, removing the !s"))))))
+                  (cond
+                   ((equal which "drop")
+                    (narya-current-hole-contents))
+                   ((equal which "concatenate")
+                    (let ((str (buffer-substring-no-properties
+                                (overlay-start hole-overlay) (overlay-end hole-overlay))))
+                      (while (string-match "!" str)
+                        (setq str (replace-match "" nil nil str)))
+                      str))
+                   (t ""))))))
+             (term (if (and split (equal userterm "")) "_" userterm))
+             (cmd (if split "split" "solve"))
+             (column (current-column)))
         ;; Send the solution command invisibly to the proof shell, synchronously.
         (proof-shell-invisible-command
          (format "%s %d %d := %s" cmd (overlay-get hole-overlay 'narya-hole) column term) t)
@@ -508,13 +643,22 @@ handling in Proof General."
         (if (eq proof-shell-last-output-kind 'error)
             (message "You entered an incorrect term.")
           ;; If no errors, insert the solution term at the hole position and update overlays.
+          ;; First we remove the read-only properties, and make that change non-undoable, since undo will leave the command *unprocessed*.
+          (undo-boundary)
+          (let ((inhibit-read-only t))
+            (remove-text-properties (overlay-start hole-overlay) (overlay-end hole-overlay)
+                                    '(read-only nil front-sticky nil rear-nonsticky nil)))
+          (setq buffer-undo-list (memq nil buffer-undo-list))
           (atomic-change-group
-            (let* ((inhibit-read-only t)
-                   (insert-start (overlay-start hole-overlay))
-                   (byte-insert-start (position-bytes insert-start))
-                   (cmd-span (span-at insert-start 'type))
-                   parens)
-              (goto-char insert-start)
+            (goto-char (overlay-start hole-overlay))
+            (backward-char 1)
+            (when (looking-at "!")
+              (backward-char 1))
+            (let ((inhibit-read-only t)
+                  (insert-start (point))
+                  (byte-insert-start (position-bytes (point)))
+                  (cmd-span (span-at (point) 'type))
+                  parens)
 	      ;; Insert the term and delete the hole.  We do it in this
 	      ;; order so that if the hole is at the very end of the
 	      ;; processed region, the inserted term will end up
@@ -530,6 +674,9 @@ handling in Proof General."
                   (insert term)))
               (let ((insert-end (point-marker)))
                 (delete-region (point) (overlay-end hole-overlay))
+                (if (looking-at "!\\?")
+                    (delete-char 2)
+                  (delete-char 1))
                 ;; Delete the overlay for the solved hole and update the hole list.
                 (delete-overlay hole-overlay)
                 (setq narya-hole-overlays (delq hole-overlay narya-hole-overlays))
@@ -548,24 +695,26 @@ handling in Proof General."
                 ;; "solve" command can't be undone.
                 (narya-add-command-undo cmd-span)))))))))
 
-(defun narya-echo-or-synth (cmd term)
-  (let* ((n (get-char-property (point) 'narya-hole))
+(defun narya-echo-or-synth (cmd prompt)
+  (let* ((contents (narya-current-hole-contents))
+         (term (read-from-minibuffer prompt contents nil nil nil nil t))
+         (n (get-char-property (point) 'narya-hole))
          (command (concat cmd " "
                           (if n (concat "in " (number-to-string n) " ") "")
                           term)))
     (proof-shell-invisible-command command)))
 
-(defun narya-echo (term)
+(defun narya-echo ()
   "Normalize and display the value and type of a term.
 If cursor is over a hole, the term is interpreted in the context of that hole."
-  (interactive "MTerm to normalize: ")
-  (narya-echo-or-synth "echo" term))
+  (interactive)
+  (narya-echo-or-synth "echo" "Term to normalize: "))
 
-(defun narya-synth (term)
+(defun narya-synth ()
   "Display the type of a term.
 If cursor is over a hole, the term is interpreted in the context of that hole."
-  (interactive "MTerm to synthesize: ")
-  (narya-echo-or-synth "synth" term))
+  (interactive)
+  (narya-echo-or-synth "synth" "Term to synthesize: "))
 
 (defun narya-display-chars (arg)
   "Set, unset, or toggle display of unicode characters.

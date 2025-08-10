@@ -17,7 +17,7 @@ type t =
   | DblQuery (* Both ?? and ⁇ *)
   | DblBang (* Both !! and ‼ *)
   | BangQuery (* Both ⁉ and ?! *)
-  (* We don't need a Query or a QueryBang since those always start a Hole. *)
+  | QueryBang (* Both ⁈ and ?! -- never parsed since they start a hole, but used to print *)
   | Arrow (* Both -> and → *)
   | DblArrow (* Both => and ⇒ *)
   | Mapsto (* Both |-> and ↦ *)
@@ -168,6 +168,7 @@ let to_string = function
   | DblQuery -> Display.alt_char "⁇" "??"
   | DblBang -> Display.alt_char "‼" "!!"
   | BangQuery -> Display.alt_char "⁉" "!?"
+  | QueryBang -> Display.alt_char "⁈" "?!"
   | Arrow -> Display.alt_char "→" "->"
   | DblArrow -> Display.alt_char "⇒" "=>"
   | Mapsto -> Display.alt_char "↦" "|->"

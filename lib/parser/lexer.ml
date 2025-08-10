@@ -98,7 +98,10 @@ let is_digit c = String.exists (fun x -> x = c) "0123456789"
 
 (* A hole is either the single character ?, or a hole with contents that start with ?! or ⁈ and ends with !? or ⁉, with internal parts separated by !.  Even comment sequences inside of a hole are ignored. *)
 let rec hole_contents () : string list t =
-  let* first = uword (fun _ -> true) (fun c -> c <> bang && c <> bang_query) "hole contents" in
+  let* first =
+    zero_or_more_fold_left ""
+      (fun s c -> return (s ^ Utf8.Encoder.to_internal c))
+      (ucharp (fun c -> c <> bang && c <> bang_query) "hole contents") in
   (let* _ = uchar bang in
    (let* _ = uchar query in
     return [ first ])

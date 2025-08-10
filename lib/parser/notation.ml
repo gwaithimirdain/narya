@@ -160,6 +160,7 @@ and (_, _, _, _) parse =
       ri : ('rt, 'rs) No.iinterval;
       num : int ref;
       ws : Whitespace.t list;
+      contents : string list option;
     }
       -> ('lt, 'ls, 'rt, 'rs) parse
 
@@ -515,9 +516,9 @@ let rec split_ending_whitespace : type lt ls rt rs.
       | Superscript (x, s, ws) ->
           let first, rest = Whitespace.split ws in
           ({ value = Superscript (x, s, first); loc }, rest)
-      | Hole { li; ri; num; ws } ->
+      | Hole { li; ri; num; ws; contents } ->
           let first, rest = Whitespace.split ws in
-          ({ value = Hole { li; ri; num; ws = first }; loc }, rest))
+          ({ value = Hole { li; ri; num; ws = first; contents }; loc }, rest))
 
 (* Helper functions for constructing notation trees *)
 
