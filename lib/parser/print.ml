@@ -161,15 +161,16 @@ let rec pp_term : type lt ls rt rs.
       (px ^^ pp_ws `None wx ^^ pp_superscript s, w)
   | Superscript (None, s, w) -> (pp_superscript s, w)
   | Hole { num; ws; contents; _ } ->
-      ( utf8string
-          (match Display.holes () with
-          | `With_number -> "⁇" ^ string_of_int !num
-          | `Without_number -> "")
-        ^^ Token.pp QueryBang
-        ^^ (match contents with
-           | None | Some [] -> utf8string "  "
-           | Some (_ :: _ as contents) -> separate_map (utf8string "!") utf8string contents)
-        ^^ Token.pp BangQuery,
+      ( (match Display.holes () with
+        | `With_number ->
+            utf8string "⁇"
+            ^^ utf8string (string_of_int !num)
+            ^^ Token.pp QueryBang
+            ^^ (match contents with
+               | None | Some [] -> utf8string "  "
+               | Some (_ :: _ as contents) -> separate_map (utf8string "!") utf8string contents)
+            ^^ Token.pp BangQuery
+        | `Without_number -> utf8string "?"),
         ws )
 
 and pp_superscript str =

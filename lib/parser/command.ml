@@ -42,17 +42,6 @@ type def = {
   tm : wrapped_parse;
 }
 
-type solve_data = {
-  wssolve : Whitespace.t list;
-  number : int;
-  wsnumber : Whitespace.t list;
-  column : int;
-  wscolumn : Whitespace.t list;
-  wscoloneq : Whitespace.t list;
-  tm : wrapped_parse ref;
-  mutable parenthesized : bool;
-}
-
 module Command = struct
   type t =
     | Axiom of {
@@ -97,8 +86,24 @@ module Command = struct
         wsorigin : Whitespace.t list;
         op : (Whitespace.t list * modifier) option;
       }
-    | Solve of solve_data
-    | Split of solve_data
+    | Solve of {
+        wssolve : Whitespace.t list;
+        number : int;
+        wsnumber : Whitespace.t list;
+        column : int;
+        wscolumn : Whitespace.t list;
+        wscoloneq : Whitespace.t list;
+        tm : wrapped_parse ref;
+        mutable parenthesized : bool;
+      }
+    | Split of {
+        wssplit : Whitespace.t list;
+        number : int;
+        wsnumber : Whitespace.t list;
+        wscoloneq : Whitespace.t list;
+        tm : wrapped_parse;
+        mutable printed_term : PPrint.document;
+      }
     (* Show and Undo don't get reformatted (see pp_command, below), so there's no need to store whitespace in them, but we do it anyway for completeness. *)
     | Show of {
         wsshow : Whitespace.t list;
@@ -545,23 +550,11 @@ module Parse = struct
          })
 
   let split =
-    let* wssolve = token Split in
+    let* wssplit = token Split in
     let* number, wsnumber = integer in
-    let* column, wscolumn = integer </> return (0, []) in
     let* wscoloneq = token Coloneq in
     let* tm = C.term [] in
-    return
-      (Split
-         {
-           wssolve;
-           number;
-           wsnumber;
-           column;
-           wscolumn;
-           wscoloneq;
-           tm = ref tm;
-           parenthesized = false;
-         })
+    return (Split { wssplit; number; wsnumber; wscoloneq; tm; printed_term = PPrint.empty })
 
   let show =
     let* wsshow = token Show in
@@ -777,8 +770,8 @@ let condense : Command.t -> [ `Import | `Option | `None | `Bof ] = function
   | _ -> `None
 
 (* Most execution of commands we can do here, but there are a couple things where we need to call out to the executable: noting when an effectual action like 'echo' is taken (for recording warnings in compiled files), and loading another file.  So this function takes a couple of callbacks as arguments. *)
-let rec execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (cmd : Command.t)
-    : int option * (int * int * int) list =
+let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (cmd : Command.t) :
+    int option * (int * int * int) list =
   (match (Origin.current (), needs_interactive cmd) with
   | Top, true | File _, true -> fatal (Forbidden_interactive_command (to_string cmd))
   | _ -> ());
@@ -927,12 +920,35 @@ let rec execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie
   | Solve data ->
       let (Found_hole { instant; parametric; _ } as found) = Global.find_hole data.number in
       Global.rewind_command ~parametric ~holes_allowed:(Ok ()) instant @@ fun () ->
-      execute_solve data found
+      let (Global.Found_hole
+             { meta; instant = _; termctx; ty; status; vars; li; ri; parametric = _ }) =
+        found in
+      let (Wrap tm) = !(data.tm) in
+      let ptm = process vars tm in
+      (* We set the hole location offset to the start of the *term*, so that ProofGeneral can create hole overlays in the right places when solving a hole and creating new holes. *)
+      let tmloc = ptm.loc <|> Anomaly "missing location in solve" in
+      let offset = (fst (Asai.Range.split tmloc)).offset in
+      (* Now we typecheck the supplied term. *)
+      let ctx = Norm.eval_ctx termctx in
+      let ety = Norm.eval_term (Ctx.env ctx) ty in
+      let ctm = Check.check status ctx ptm ety in
+      Global.set_meta meta ~tm:ctm;
+      let buf = Buffer.create 20 in
+      PPrint.ToBuffer.compact buf (pp_complete_term !(data.tm) `None);
+      ( Reporter.try_with ~fatal:(fun _ ->
+            data.tm := Wrap (parenthesize tm);
+            data.parenthesized <- true)
+      @@ fun () ->
+        let _ =
+          TermParse.Term.parse ~li ~ri (`String { content = Buffer.contents buf; title = None })
+        in
+        () );
+      (Some offset, fun h -> Some (Code.Hole_solved h))
   | Split data ->
-      let (Found_hole { instant; termctx; ty; vars; parametric; _ } as found) =
+      let (Found_hole { instant; termctx; ty; vars; parametric; _ }) =
         Global.find_hole data.number in
       Global.rewind_command ~parametric ~holes_allowed:(Ok ()) instant @@ fun () ->
-      let (Wrap tm) = !(data.tm) in
+      let (Wrap tm) = data.tm in
       let content =
         let ctx = Norm.eval_ctx termctx in
         match tm.value with
@@ -1033,8 +1049,11 @@ let rec execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie
                     ^ Token.to_string RBracket
                 | _ -> fatal (Invalid_split (`Term, "non-datatype")))
             | _ -> fatal (Nonsynthesizing "splitting term")) in
-      (data.tm := TermParse.Term.(final (parse (`String { title = None; content }))));
-      execute_solve data found
+      let ptm = TermParse.Term.(final (parse (`String { title = None; content }))) in
+      let disp = Display.get () in
+      Display.run ~init:{ disp with holes = `Without_number } @@ fun () ->
+      data.printed_term <- pp_complete_term ptm `None;
+      (None, fun _ -> Some (Code.Split_term data.printed_term))
   | Show { what; _ } ->
       action_taken ();
       (match what with
@@ -1078,29 +1097,6 @@ let rec execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie
   | Quit _ -> fatal (Quit None)
   | Bof _ -> (None, [])
   | Eof -> fatal (Anomaly "EOF cannot be executed")
-
-and execute_solve data found =
-  let (Global.Found_hole { meta; instant = _; termctx; ty; status; vars; li; ri; parametric = _ }) =
-    found in
-  let (Wrap tm) = !(data.tm) in
-  let ptm = process vars tm in
-  (* We set the hole location offset to the start of the *term*, so that ProofGeneral can create hole overlays in the right places when solving a hole and creating new holes. *)
-  let tmloc = ptm.loc <|> Anomaly "missing location in solve" in
-  let offset = (fst (Asai.Range.split tmloc)).offset in
-  (* Now we typecheck the supplied term. *)
-  let ctx = Norm.eval_ctx termctx in
-  let ety = Norm.eval_term (Ctx.env ctx) ty in
-  let ctm = Check.check status ctx ptm ety in
-  Global.set_meta meta ~tm:ctm;
-  let buf = Buffer.create 20 in
-  PPrint.ToBuffer.compact buf (pp_complete_term !(data.tm) `None);
-  ( Reporter.try_with ~fatal:(fun _ ->
-        data.tm := Wrap (parenthesize tm);
-        data.parenthesized <- true)
-  @@ fun () ->
-    let _ = TermParse.Term.parse ~li ~ri (`String { content = Buffer.contents buf; title = None }) in
-    () );
-  (Some offset, fun h -> Some (Code.Hole_solved h))
 
 let tightness_of_fixity : type left tight right. (left, tight, right) fixity -> string option =
   function
@@ -1345,11 +1341,9 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
         let tm, rest = split_ending_whitespace tm in
         (* When called from ProofGeneral, the 'column' is the column number of the hole, so the reformatted term should "start at that indentation".  The best way I've thought of so far to mimic that effect is to reduce the margin by that amount, and then add extra indentation to each new line on the ProofGeneral end.  Also, section indents should be ignored when printing solve terms. *)
         (0, nest column (pp_complete_term (Wrap tm) `None), rest)
-    | Split { column; tm; _ } ->
-        (* Same with split. *)
-        let (Wrap tm) = !tm in
-        let tm, rest = split_ending_whitespace tm in
-        (0, nest column (pp_complete_term (Wrap tm) `None), rest)
+    | Split data ->
+        (* Same with split, except here we've already done the printing. *)
+        (0, data.printed_term, [])
     | Option _ -> .
     | Section { wssection; prefix; wsprefix; wscoloneq } ->
         let ws, rest = Whitespace.split wscoloneq in
@@ -1374,5 +1368,5 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
   (nest indent (blank indent ^^ doc), ws)
 
 let parenthesized : t -> bool = function
-  | Solve data | Split data -> data.parenthesized
+  | Solve data -> data.parenthesized
   | _ -> false
