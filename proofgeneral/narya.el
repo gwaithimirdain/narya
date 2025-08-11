@@ -630,6 +630,11 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
         (progn
           (with-current-buffer tempbuf
             (insert "The current hole contains more than one term.\nChoose one (the others will be discarded):\n\n")
+            ;; Extra
+            (setq extran n)
+            (when extra
+              (insert "(" (int-to-string extran) ") " extra "\n"))
+            (setq n (+ n 1))
             (setq terms
                   (mapcan (lambda (term)
                             (setq term (string-trim term))
@@ -658,12 +663,7 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
             (setq n (+ n 1))
             ;; Enter new one
             (setq entern n)
-            (insert "(" (int-to-string n) ") enter new term\n")
-            (setq n (+ n 1))
-            ;; Extra
-            (setq extran n)
-            (when extra
-              (insert "(" (int-to-string extran) ") " extra "\n")))
+            (insert "(" (int-to-string n) ") enter new term\n"))
           (while (not choice)
             (setq choice (ignore-errors (read-from-minibuffer prompt nil nil t t)))
             (setq choice (and (integerp choice) (>= choice 0) (<= choice n) choice))
@@ -673,7 +673,7 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
           (cond
            ((= choice concatn) concatenated)
            ((= choice entern) (read-from-minibuffer prompt nil nil nil nil nil t))
-           ((= choice extran) "_")
+           ((and extra (= choice extran)) "_")
            (t (string-trim (nth choice terms)))))
       (quit-window t tempwin))))
 
