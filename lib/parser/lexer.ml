@@ -89,71 +89,47 @@ let quoted_string : Token.t t =
   rest `None ""
 
 let query = Uchar.of_char '?'
+let invquery = Uchar.of_int 0xBF (* ¿ *)
 let bang = Uchar.of_char '!'
-let query_bang = Uchar.of_int 0x2048 (* ⁈ *)
-let bang_query = Uchar.of_int 0x2049 (* ⁉ *)
-let query_query = Uchar.of_int 0x2047 (* ⁇ *)
-let bang_bang = Uchar.of_int 0x203C (* ‼ *)
+let dblquery = Uchar.of_int 0x2047 (* ⁇ *)
+let glottal_stop = Uchar.of_int 0x0294 (* ʔ *)
 let is_digit c = String.exists (fun x -> x = c) "0123456789"
 
-(* A hole is either the single character ?, or a hole with contents that start with ?! or ⁈ and ends with !? or ⁉, with internal parts separated by !.  Even comment sequences inside of a hole are ignored. *)
+(* A hole is either the single character ?, or a hole with contents that start with ¿ and ends with ʔ, with internal parts separated by !.  Even comment sequences inside of a hole are ignored. *)
 let rec hole_contents () : string list t =
   let* first =
     zero_or_more_fold_left ""
       (fun s c -> return (s ^ Utf8.Encoder.to_internal c))
-      (ucharp (fun c -> c <> bang && c <> bang_query) "hole contents") in
+      (ucharp (fun c -> c <> bang && c <> glottal_stop) "hole contents") in
   (let* _ = uchar bang in
-   (let* _ = uchar query in
-    return [ first ])
-   </> let* rest = hole_contents () in
-       return (first :: rest))
+   let* rest = hole_contents () in
+   return (first :: rest))
   </>
-  let* _ = uchar bang_query in
+  let* _ = uchar glottal_stop in
   return [ first ]
 
 let hole : Token.t t =
   (let* _ = uchar query in
-   (let* _ = uchar bang in
-    let* contents = hole_contents () in
-    return (Hole (Some contents)))
-   </> (let* _ = uchar query in
-        (* Numbered hole *)
-        (let* _ = word is_digit is_digit "hole number" in
-         (let* _ = uchar query in
-          (let* _ = uchar bang in
-           let* contents = hole_contents () in
-           return (Hole (Some contents)))
-          </> return (Hole None))
-         </> let* _ = uchar query_bang in
-             let* contents = hole_contents () in
-             return (Hole (Some contents)))
-        </> return DblQuery)
-   </> return (Hole None))
-  </> (let* _ = uchar query_bang in
+   return (Hole None))
+  </> (let* _ = uchar invquery in
        let* contents = hole_contents () in
        return (Hole (Some contents)))
-  </> (let* _ = uchar query_query in
-       (let* _ = word is_digit is_digit "hole number" in
-        (let* _ = uchar query in
-         (let* _ = uchar bang in
-          let* contents = hole_contents () in
-          return (Hole (Some contents)))
-         </> return (Hole None))
-        </> let* _ = uchar query_bang in
-            let* contents = hole_contents () in
-            return (Hole (Some contents)))
+  </> (let* _ = uchar dblquery in
+       (* Numbered hole *)
+       backtrack
+         (let* _ = word is_digit is_digit "hole number" in
+          (let* _ = uchar query in
+           return (Hole None))
+          </> let* _ = uchar invquery in
+              let* contents = hole_contents () in
+              return (Hole (Some contents)))
+         "numbered hole"
        </> return DblQuery)
   (* Grab other hole-like sequences, which won't parse but which we don't want the user to use elsewhere. *)
   </> (let* _ = uchar bang in
-       (let* _ = uchar bang in
-        return DblBang)
-       </> (let* _ = uchar query in
-            return BangQuery)
-       </> return Bang)
-  </> (let* _ = uchar bang_query in
-       return BangQuery)
-  </> let* _ = uchar bang_bang in
-      return DblBang
+       return Bang)
+  </> let* _ = uchar glottal_stop in
+      return GlottalStop
 
 module Specials = struct
   (* Any of these characters is always its own token. *)
@@ -278,7 +254,7 @@ let specials () =
       (* We only include the superscript parentheses: other superscript characters without parentheses are allowed in identifiers. *)
       [| Token.super_lparen_uchar; Token.super_rparen_uchar |];
       (* Hole symbols also stop us *)
-      [| query; bang; query_bang; bang_query; query_query; bang_bang |];
+      [| query; bang; dblquery; invquery; glottal_stop |];
       (* Unicode tag characters are special *)
       Array.init (16 * 6) (fun i -> Uchar.of_int (0xE0020 + i));
       (* Finally, we exclude dots, because they are treated specially as separating pieces of an identifier *)

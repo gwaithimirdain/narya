@@ -163,13 +163,9 @@ let rec pp_term : type lt ls rt rs.
   | Hole { num; ws; contents; _ } ->
       ( (match Display.holes () with
         | `With_number ->
-            utf8string "⁇"
-            ^^ utf8string (string_of_int !num)
-            ^^ Token.pp QueryBang
-            ^^ (match contents with
-               | None | Some [] -> utf8string "  "
-               | Some (_ :: _ as contents) -> separate_map (utf8string "!") utf8string contents)
-            ^^ Token.pp BangQuery
+            utf8string ("⁇" ^ string_of_int !num ^ "¿")
+            ^^ optional (separate_map (utf8string "!") utf8string) contents
+            ^^ utf8string "ʔ"
         | `Without_number -> utf8string "?"),
         ws )
 

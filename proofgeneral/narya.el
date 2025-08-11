@@ -48,7 +48,7 @@
 (defun narya-create-hole-overlays (start-position relative-positions)
   "Create overlays for holes given a starting position and a list of relative positions.
 Each entry in RELATIVE-POSITIONS should be a list of the form (START-OFFSET END-OFFSET HOLE-ID).
-Also replaces single ? holes with ⁈...⁉.
+Also replaces single ? holes with ¿...ʔ.
 Return the number of such overlays created."
   (let ((positions
          (cl-map 'list
@@ -65,94 +65,52 @@ Return the number of such overlays created."
             (hole-id (nth 2 pos)))
         (save-excursion
           (goto-char start)
-          (if (looking-at "\\?[^!]")
-              (progn (delete-char 1)
-                     (insert "⁈  ⁉")
-                     (set-marker end (- (point) 1))
-                     (set-marker start (- (point) 3)))
-            (goto-char start)
-            (when (looking-at "⁈\\|\\?!")
-              (setq start (match-end 0)))
-            (goto-char (- end 1))
-            (if (looking-at "⁉")
-                (setq end (point))
-              (backward-char 1)
-              (if (looking-at "!\\?")
-                  (setq end (point))))))
+          (when (looking-at "\\?")
+            (delete-char 1)
+            (insert "¿ʔ")
+            (set-marker start (- (point) 2))
+            (set-marker end (point))))
         (narya-create-hole-overlay start end hole-id))
       (setq count (+ count 1)))
     count))
 
 (defun narya-create-hole-overlay (char-start char-end hole-id)
-  "Create a single hole overlay."
+  "Create a single hole overlay.
+The start and end regions should include the already-inserted ¿ and ʔ."
   (when (and char-start char-end)
     (let ((ovl (make-overlay char-start char-end nil
-                             ;; Inserted text at both ends should be
-                             ;; included in the hole overlay.
-                             nil t)))
+                             ;; No text should be inserted outside the
+                             ;; hole anyway.
+                             t nil)))
       (overlay-put ovl 'narya-hole hole-id)
       (overlay-put ovl 'face '(:extend t :inherit highlight))
       (push ovl narya-hole-overlays)
-      (narya-adjust-hole-overlay ovl)
       ovl)))
 
-(defun narya-adjust-hole-overlay (ovl)
-  "Adjust a hole overlay so it contains readonly spaces at the start and end."
-  (let ((start-space (propertize " "
-                                 'read-only t
-                                 'front-sticky t
-                                 'rear-nonsticky t))
-        (end-space (propertize " " 'read-only t)))
-  (save-excursion
-    (goto-char (overlay-start ovl))
-    (unless (cond
-             ((looking-at "⁉\\|!\\?")
-              (insert start-space)
-              (insert end-space)
-              t)
-             ((looking-at " \\(⁉\\|!\\?\\)")
-              (insert start-space)
-              (put-text-property (point) (+ (point) 1) 'read-only t) 
-              t)
-             ((looking-at "[^ ]")
-              (insert start-space)
-              nil)
-             (t
-              (put-text-property (point) (+ (point) 1) 'read-only t)
-              (put-text-property (point) (+ (point) 1) 'front-sticky t)
-              (put-text-property (point) (+ (point) 1) 'rear-nonsticky t)))
-      (goto-char (overlay-end ovl))
-      (forward-char -1)
-      (if (looking-at " ")
-          (put-text-property (point) (+ (point) 1) 'read-only t)
-        (forward-char 1)
-        (insert end-space))))))
-
 (defun narya-create-marked-hole-overlays (start end)
-  "Create hole overlays from markers of the form ⁇0? or ⁇0⁈...⁉ from START to END.
+  "Create hole overlays from markers of the form ⁇0? or ⁇0¿...ʔ from START to END.
 Return the number of such overlays created."
   (goto-char start)
   (let ((count 0))
-    (while (re-search-forward "\\(⁇\\([[:digit:]]+\\)\\)\\(⁈\\|?!\\)\\(\\([^!⁉]\\|![^?]\\)*\\)\\(⁉\\|!\\?\\)" end 'limit)
+    (while (re-search-forward "\\(⁇\\([[:digit:]]+\\)\\)\\(¿[^ʔ]*ʔ\\)" end 'limit)
       (let* ((number (string-to-number (match-string 2)))
-             (start (set-marker (make-marker) (match-beginning 4)))
-             (end (set-marker (make-marker) (match-end 4))))
+             (start (set-marker (make-marker) (match-beginning 3)))
+             (end (set-marker (make-marker) (match-end 3))))
         (replace-match "" nil nil nil 1)
         (narya-create-hole-overlay start end number)
         (setq count (+ count 1))))
     count))
 
-(defun narya-get-hole-overlay (beg &optional end)
-  "Find the hole overlay that contains the given position or range, if any."
-  (unless end (setq end beg))
-  ;; overlays-at and overlays-in are both weird at the boundary and
-  ;; for zero-width overlays, so we overestimate and then filter.
+(defun narya-get-hole-overlay (pos)
+  "Find the hole overlay that strictly contains the given position, if any.
+Does *not* find overlays that we are at the beginning or end of (outside the markers)."
+  ;; `overlays-at' finds overlays we're at the beginning of, but not
+  ;; those we're at the end of.  So we filter out the beginning ones.
   (cl-find-if
    (lambda (ovl)
      (and (overlay-get ovl 'narya-hole)
-          (<= (overlay-start ovl) beg)
-          (<= end (overlay-end ovl))))
-   (overlays-in (- beg 1) (+ end 1))))
+          (< (overlay-start ovl) pos (overlay-end ovl))))
+   (overlays-at pos)))
 
 (defun narya-skip-comments-backwards ()
   "Skip backwards to the last non-whitespace, non-comment character."
@@ -532,42 +490,47 @@ handling in Proof General."
 ;; Don't retract the processed region when editing in a hole contents.
 (define-advice proof-retract-before-change
     (:before-until (beg end) narya-holes)
-  ;; Simply using get-char-property will give the wrong answer for
-  ;; zero-width overlays.
-  (narya-get-hole-overlay beg end))
-  
+  (let ((ovl (cl-find-if (lambda (ovl) (and (overlay-get ovl 'narya-hole) ))
+                         (overlays-in beg end))))
+    ;; If the user is trying to delete the starting or ending marker but not the whole goal, signal a read-only error.
+    (and ovl
+         (or (< (overlay-start ovl) beg) (< end (overlay-end ovl)))
+         (or (<= beg (overlay-start ovl)) (<= (overlay-end ovl) end))
+         (signal 'text-read-only nil))
+    ;; Otherwise, if they're editing entirely within the overlay, don't retract.
+    (and ovl (< (overlay-start ovl) beg) (< end (overlay-end ovl)))))
+
 ;; Interactive commands
 
 (defun narya-next-hole ()
   "Move point to the next open hole, if any."
   (interactive)
-  ;; If we're in a hole, move to its end.
-  (let* ((ovl (narya-get-hole-overlay (point)))
-         (pos1 (if ovl (overlay-end ovl) (point)))
-         ;; Find the next hole, if any.
-         (pos2 (next-single-char-property-change pos1 'narya-hole)))
-    (if (< pos2 (point-max))
-	(progn
-          ;; Go to the beginning of that hole.
-          (goto-char pos2)
-          (if (looking-at " [^!⁉]")
-              (forward-char 1)))
+  ;; Get the overlay of the current hole, *including* if we're at the beginning.
+  (let* ((ovl (cl-find-if (lambda (ovl) (overlay-get ovl 'narya-hole)) (overlays-at (point))))
+         (pos (if ovl
+                  (if (= (point) (overlay-start ovl))
+                      ;; But if we're at the start, go to *this* overlay.
+                      (point)
+                    (next-single-char-property-change (overlay-end ovl) 'narya-hole))
+                (next-single-char-property-change (point) 'narya-hole))))
+    (if (< pos (point-max))
+        ;; Go to the beginning of that hole's interior.
+        (goto-char (+ pos 1))
       (message "No more processed holes."))))
 
 (defun narya-previous-hole ()
   "Move point to the previous open hole, if any."
   (interactive)
-  ;; If we're in a hole, move to its beginning.
-  (let* ((ovl (narya-get-hole-overlay (point)))
-         (pos1 (if ovl (overlay-start ovl) (point)))
-         ;; Find the previous hole, if any
-         (pos2 (previous-single-char-property-change pos1 'narya-hole)))
-    (if (> pos2 (point-min))
-	(progn
-          ;; Go back to the beginning of that hole.
-          (goto-char (previous-single-char-property-change pos2 'narya-hole))
-          (if (looking-at " [^!⁉]")
-              (forward-char 1)))
+  ;; Get the overlay of the current hole.  This does *not* include if we're at the end.
+  (let* ((ovl (cl-find-if (lambda (ovl) (overlay-get ovl 'narya-hole)) (overlays-in (- (point ) 1) (point))))
+         (pos (if ovl
+                  (if (= (point) (overlay-end ovl))
+                      (point)
+                    (previous-single-char-property-change (overlay-start ovl) 'narya-hole))
+                (previous-single-char-property-change (point) 'narya-hole))))
+    (if (> pos (point-min))
+        ;; Go back to the beginning of that hole.
+        (goto-char (+ (previous-single-char-property-change pos 'narya-hole) 1))
       (message "No more holes."))))
 
 (defun narya-show-hole ()
@@ -585,35 +548,34 @@ handling in Proof General."
 
 (defun narya-current-hole-contents ()
   "Get the contents of the current subdivision of the current hole."
-  (let* ((ovl (narya-get-hole-overlay (point)))
-         (start
-          (when ovl
-            (save-excursion
-              (re-search-backward "[!⁈]" (- (overlay-start ovl) 1))
-              (forward-char 1)
-              (when (re-search-forward "[^ ]" (overlay-end ovl) t)
-                (- (point) 1)))))
-         (end
-          (when ovl
-            (save-excursion
-              (re-search-forward "[!⁉]" (+ (overlay-end ovl) 1))
-              (backward-char 1)
-              (when (re-search-backward "[^ ]" (overlay-start ovl) t)
-                (+ (point) 1))))))
-    (when (and start end)
-      (buffer-substring-no-properties start end))))
+  (let ((ovl (narya-get-hole-overlay (point))))
+    (when ovl
+      (let ((start
+             (save-excursion
+               (re-search-backward "[!¿]" (overlay-start ovl))
+               (forward-char 1)
+               (when (re-search-forward "[^ ]" (overlay-end ovl) t)
+                 (- (point) 1))))
+            (end
+             (save-excursion
+               (re-search-forward "[!ʔ]" (overlay-end ovl))
+               (backward-char 1)
+               (when (re-search-backward "[^ ]" (overlay-start ovl) t)
+                 (+ (point) 1)))))
+        (when (and start end)
+          (buffer-substring-no-properties start end))))))
 
 (defun narya-hole-subdivisions (ovl)
   "Count the non-empty subdivisions in a hole overlay, if any.
 Here \"empty\" means containing only whitespace; comments are nonempty."
   (let ((count 0))
     (save-excursion
-      (goto-char (overlay-start ovl))
+      (goto-char (+ (overlay-start ovl) 1))
       (while (< (point) (overlay-end ovl))
         ;; skip empty subdivision
-        (unless (looking-at "[ \t\n]*[!⁉]")
+        (unless (looking-at "[ \t\n]*[!ʔ]")
           (setq count (+ count 1)))
-        (re-search-forward "[!⁉]" (overlay-end ovl) 'limit))
+        (re-search-forward "[!ʔ]" (overlay-end ovl) 'limit))
       count)))
 
 (defun narya-choose-delimited-term (ovl prompt extra)
@@ -716,10 +678,6 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
       (setq buffer-undo-list (memq nil buffer-undo-list))
       (atomic-change-group
         (goto-char (overlay-start hole-overlay))
-        ;; Back up across the hole-begin sequence ⁈ or ?!
-        (backward-char 1)
-        (when (looking-at "!")
-          (backward-char 1))
         (let ((inhibit-read-only t)
               (insert-start (point))
               (byte-insert-start (position-bytes (point)))
@@ -745,9 +703,6 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
           (let ((insert-end (point-marker))
                 (new-holes 0))
             (delete-region (point) (overlay-end hole-overlay))
-            (if (looking-at "!\\?")
-                (delete-char 2)
-              (delete-char 1))
             ;; Delete the overlay for the solved hole and update the hole list.
             (delete-overlay hole-overlay)
             (setq narya-hole-overlays (delq hole-overlay narya-hole-overlays))

@@ -12,7 +12,7 @@ axiom b : B
 
 axiom g : (A → B) → A → B
 
-def f : A → B ≔ g ⁈ g f ! _ ↦ ? ⁉
+def f : A → B ≔ g ¿ g f ! _ ↦ ? ʔ
 
 axiom a_very_long_variable : A
 

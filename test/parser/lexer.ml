@@ -78,22 +78,22 @@ let () =
       ]);
 
   assert (
-    lex "hole ?! with ! contents !?"
+    lex "hole ¿ with ! contents ʔ"
     = [ (Ident [ "hole" ], []); (Hole (Some [ " with "; " contents " ]), []) ]);
 
   assert (
-    lex "hole ⁈ with ! more ! contents ⁉"
+    lex "hole ¿ with ! more ! contents ʔ"
     = [ (Ident [ "hole" ], []); (Hole (Some [ " with "; " more "; " contents " ]), []) ]);
 
   assert (
-    lex "hole ⁈ containing ` ! comments ⁉"
+    lex "hole ¿ containing ` ! comments ʔ"
     = [ (Ident [ "hole" ], []); (Hole (Some [ " containing ` "; " comments " ]), []) ]);
 
   assert (
-    lex "hole ⁈ containing {` ! `} comment ⁉"
+    lex "hole ¿ containing {` ! `} comment ʔ"
     = [ (Ident [ "hole" ], []); (Hole (Some [ " containing {` "; " `} comment " ]), []) ]);
 
-  assert (lex "hole ` ⁈ commented ⁉" = [ (Ident [ "hole" ], [ `Line " ⁈ commented ⁉" ]) ]);
+  assert (lex "hole ` ¿ commented ʔ" = [ (Ident [ "hole" ], [ `Line " ¿ commented ʔ" ]) ]);
 
   assert (
     lex "block comments {` nest `{` even after `} backquotes `} see?"
