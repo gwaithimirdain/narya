@@ -299,7 +299,7 @@ handling in Proof General."
         (setq parenthesized (not (match-string 1 string)))
         ;; Parse hole data from the data section.  This will only be
         ;; used if we are *not* reformatting commands/holes, since the
-        ;; reformatted version contains ¿0? markers for hole positions
+        ;; reformatted version contains ⁇0? markers for hole positions
         ;; and numbers.
         (setq parsed-hole-data
               (cl-loop while (string-match "^\\([0-9]+\\) \\([0-9]+\\) \\([0-9]+\\).*\n" string dpos)
@@ -311,7 +311,6 @@ handling in Proof General."
         ;; Now grab the reformatting info
         (string-match "\x0C\\[reformat\\]\x0C\n" string dpos)
         ;; Remove trailing newlines and trailing spaces on any line
-        ;(setq reformatted (replace-regexp-in-string "[ \t]+\n" "\n" (string-trim-right (substring string (match-end 0)))))
         (setq reformatted (substring string (match-end 0)))
         ;; Handle parsed hole data based on the visibility of the command
         (if (member 'invisible flags)
@@ -348,7 +347,7 @@ handling in Proof General."
                        (unless (equal reformatted (buffer-substring-no-properties (point) end))
                          (insert reformatted)
                          (delete-region (point) end))
-                       ;; In the reformatted command, its holes were printed using the ¿0? syntax.
+                       ;; In the reformatted command, its holes were printed using the ⁇0? syntax.
                        (narya-create-marked-hole-overlays start end)
                        ;; Add an undo item so that if the reformatting is undone, ProofGeneral will also retract the Narya command.
                        (narya-add-command-undo span)
@@ -357,7 +356,7 @@ handling in Proof General."
                          ;; Apparently count-screen-lines is 1-based, but recenter is 0-based.
                          (recenter (- pos 1))))))
                ;; If we are not reformatting commands, we just have to
-               ;; create the hole overlays, and without the ¿0? flags
+               ;; create the hole overlays, and without the ⁇0? flags
                ;; we have to use the info from the [data] block.
                (let ((inhibit-read-only t)
                      (bpos (position-bytes (save-excursion
@@ -755,7 +754,7 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
             ;; Create new overlays from holes in the new term.
             (cond
              ;; If the new term was reformatted, then its holes
-             ;; were printed using the ¿0? syntax, so we can use
+             ;; were printed using the ⁇0? syntax, so we can use
              ;; narya-create-marked-hole-overlays.
              (narya-reformat-holes
               (setq new-holes (narya-create-marked-hole-overlays insert-start insert-end)))
