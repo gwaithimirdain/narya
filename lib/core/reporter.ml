@@ -204,6 +204,7 @@ module Code = struct
       }
         -> t
     | Hole_solved : int -> t
+    | Split_term : PPrint.document -> t
     | Notation_defined : string -> t
     | Show : string * printable -> t
     | Comment_end_in_string : t
@@ -398,6 +399,7 @@ module Code = struct
     | No_such_hole _ -> Error
     | Invalid_split _ -> Error
     | Hole_solved _ -> Info
+    | Split_term _ -> Info
     | Forbidden_interactive_command _ -> Error
     | Not_enough_to_undo -> Error
     | Commands_undone _ -> Info
@@ -586,6 +588,7 @@ module Code = struct
     | Commands_undone _ -> "I0006"
     | Section_opened _ -> "I0007"
     | Section_closed _ -> "I0008"
+    | Split_term _ -> "I0009"
     | Option_set _ -> "I0100"
     | Display_set _ -> "I0101"
     (* Control of execution *)
@@ -1008,6 +1011,7 @@ module Code = struct
           if h > 1 then textf "hole solved, containing %d new holes" h
           else if h = 1 then text "hole solved, containing 1 new hole"
           else text "hole solved"
+      | Split_term t -> textf "@[<v 2>split successful, hole could be solved by:@;%a@]" pp_printed t
       | Forbidden_interactive_command cmd ->
           textf "command '%s' only allowed in interactive mode" cmd
       | Not_enough_to_undo -> text "not enough commands to undo"

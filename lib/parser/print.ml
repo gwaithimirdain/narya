@@ -160,11 +160,13 @@ let rec pp_term : type lt ls rt rs.
       let px, wx = pp_term x in
       (px ^^ pp_ws `None wx ^^ pp_superscript s, w)
   | Superscript (None, s, w) -> (pp_superscript s, w)
-  | Hole { num; ws; _ } ->
-      ( utf8string
-          (match Display.holes () with
-          | `With_number -> "¿" ^ string_of_int !num ^ "?"
-          | `Without_number -> "?"),
+  | Hole { num; ws; contents; _ } ->
+      ( (match Display.holes () with
+        | `With_number ->
+            utf8string ("⁇" ^ string_of_int !num ^ "¿")
+            ^^ optional (separate_map (utf8string "!") utf8string) contents
+            ^^ utf8string "ʔ"
+        | `Without_number -> utf8string "?"),
         ws )
 
 and pp_superscript str =

@@ -92,6 +92,7 @@ and (_, _, _, _) parse =
       ri : ('rt, 'rs) No.iinterval;
       num : int ref;
       ws : Whitespace.t list;
+      contents : string list option;
     }
       -> ('lt, 'ls, 'rt, 'rs) parse
 

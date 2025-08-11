@@ -74,8 +74,26 @@ let () =
         ( Ident [ "comments" ],
           [ `Block " can contain ` line comments \n and {` nest `} arbitrarily "; `Newlines 1 ] );
         (Ident [ "see" ], []);
-        (Query, []);
+        (Hole None, []);
       ]);
+
+  assert (
+    lex "hole ¿ with ! contents ʔ"
+    = [ (Ident [ "hole" ], []); (Hole (Some [ " with "; " contents " ]), []) ]);
+
+  assert (
+    lex "hole ¿ with ! more ! contents ʔ"
+    = [ (Ident [ "hole" ], []); (Hole (Some [ " with "; " more "; " contents " ]), []) ]);
+
+  assert (
+    lex "hole ¿ containing ` ! comments ʔ"
+    = [ (Ident [ "hole" ], []); (Hole (Some [ " containing ` "; " comments " ]), []) ]);
+
+  assert (
+    lex "hole ¿ containing {` ! `} comment ʔ"
+    = [ (Ident [ "hole" ], []); (Hole (Some [ " containing {` "; " `} comment " ]), []) ]);
+
+  assert (lex "hole ` ¿ commented ʔ" = [ (Ident [ "hole" ], [ `Line " ¿ commented ʔ" ]) ]);
 
   assert (
     lex "block comments {` nest `{` even after `} backquotes `} see?"
@@ -83,7 +101,7 @@ let () =
         (Ident [ "block" ], []);
         (Ident [ "comments" ], [ `Block " nest `{` even after `} backquotes " ]);
         (Ident [ "see" ], []);
-        (Query, []);
+        (Hole None, []);
       ]);
 
   assert (
@@ -92,7 +110,7 @@ let () =
         (Ident [ "block" ], []);
         (Ident [ "comments" ], [ `Block "} can start with a lbrace " ]);
         (Ident [ "see" ], []);
-        (Query, []);
+        (Hole None, []);
       ]);
 
   assert (

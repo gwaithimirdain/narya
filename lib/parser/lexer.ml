@@ -88,6 +88,49 @@ let quoted_string : Token.t t =
     | _, c -> rest `None (str ^ c) in
   rest `None ""
 
+let query = Uchar.of_char '?'
+let invquery = Uchar.of_int 0xBF (* ¿ *)
+let bang = Uchar.of_char '!'
+let dblquery = Uchar.of_int 0x2047 (* ⁇ *)
+let glottal_stop = Uchar.of_int 0x0294 (* ʔ *)
+let is_digit c = String.exists (fun x -> x = c) "0123456789"
+
+(* A hole is either the single character ?, or a hole with contents that start with ¿ and ends with ʔ, with internal parts separated by !.  Even comment sequences inside of a hole are ignored. *)
+let rec hole_contents () : string list t =
+  let* first =
+    zero_or_more_fold_left ""
+      (fun s c -> return (s ^ Utf8.Encoder.to_internal c))
+      (ucharp (fun c -> c <> bang && c <> glottal_stop) "hole contents") in
+  (let* _ = uchar bang in
+   let* rest = hole_contents () in
+   return (first :: rest))
+  </>
+  let* _ = uchar glottal_stop in
+  return [ first ]
+
+let hole : Token.t t =
+  (let* _ = uchar query in
+   return (Hole None))
+  </> (let* _ = uchar invquery in
+       let* contents = hole_contents () in
+       return (Hole (Some contents)))
+  </> (let* _ = uchar dblquery in
+       (* Numbered hole *)
+       backtrack
+         (let* _ = word is_digit is_digit "hole number" in
+          (let* _ = uchar query in
+           return (Hole None))
+          </> let* _ = uchar invquery in
+              let* contents = hole_contents () in
+              return (Hole (Some contents)))
+         "numbered hole"
+       </> return DblQuery)
+  (* Grab other hole-like sequences, which won't parse but which we don't want the user to use elsewhere. *)
+  </> (let* _ = uchar bang in
+       return Bang)
+  </> let* _ = uchar glottal_stop in
+      return GlottalStop
+
 module Specials = struct
   (* Any of these characters is always its own token. *)
   let default_onechar_ops =
@@ -98,7 +141,6 @@ module Specials = struct
       (0x5D, RBracket);
       (0x7B, LBrace);
       (0x7D, RBrace);
-      (0x3F, Query);
       (0x21A6, Mapsto);
       (0x2907, DblMapsto);
       (0x2192, Arrow);
@@ -211,6 +253,10 @@ let specials () =
       Array.map Uchar.of_char [| ' '; '\t'; '\n'; '\r'; '`' |];
       (* We only include the superscript parentheses: other superscript characters without parentheses are allowed in identifiers. *)
       [| Token.super_lparen_uchar; Token.super_rparen_uchar |];
+      (* Hole symbols also stop us *)
+      [| query; bang; dblquery; invquery; glottal_stop |];
+      (* Unicode tag characters are special *)
+      Array.init (16 * 6) (fun i -> Uchar.of_int (0xE0020 + i));
       (* Finally, we exclude dots, because they are treated specially as separating pieces of an identifier *)
       [| Uchar.of_char '.' |];
     ]
@@ -219,7 +265,7 @@ let other_char : string t =
   let* c = ucharp (fun x -> not (Array.mem x (specials ()))) "alphanumeric or unicode" in
   return (Utf8.Encoder.to_internal c)
 
-let all_digits = String.for_all (fun c -> String.exists (fun x -> x = c) "0123456789")
+let all_digits = String.for_all is_digit
 let is_numeral = List.for_all all_digits
 let valid_var x = not (all_digits x)
 
@@ -376,7 +422,8 @@ let other : Token.t t =
 
 (* Finally, a token is either a quoted string, a single-character operator, an operator of special ASCII symbols, or something else.  Unlike the built-in 'lexer' function, we include whitespace *after* the token, so that we can save comments occurring after any code. *)
 let token : Located_token.t t =
-  (let* loc, tok = located (quoted_string </> onechar_op </> superscript </> ascii_op </> other) in
+  (let* loc, tok =
+     located (hole </> quoted_string </> onechar_op </> superscript </> ascii_op </> other) in
    let* ws = whitespace in
    return (loc, (tok, ws)))
   </> located (expect_end (Eof, []))

@@ -62,15 +62,15 @@ A Narya source file is expected to be UTF-8 encoded and can contain arbitrary Un
 
 However, there are the following exceptions to this, where whitespace is not needed to separate tokens:
 
-- The characters ``( ) [ ] { } ? → ↦ ⤇ ≔ ⩴ ⩲ …``, which either have built-in meaning or are reserved for future built-in meanings, are always treated as single tokens.  Thus, they do not need to be surrounded by whitespace (with the exception of ``^^``; see below).  This is the case for parentheses and braces in most languages, but in Narya you can also write, e.g., ``A→B`` without spaces.  The non-ASCII characters in this group all have ASCII-sequence substitutes that are completely interchangeable: ``-> |-> |=> := ::= += ...``.  Additional characters may be added to this list in the future.
+- The characters ``( ) [ ] { } → ↦ ⤇ ≔ ⩴ ⩲ … ? ! ⁇ ¿ ʔ``, which either have built-in meaning or are reserved for future built-in meanings, are always treated as single tokens.  Thus, they do not need to be surrounded by whitespace.  This is the case for parentheses and braces in most languages, but in Narya you can also write, e.g., ``A→B`` without spaces.  Many of the non-ASCII characters in this group have ASCII-sequence substitutes that are completely interchangeable: ``-> |-> |=> := ::= += ...``.  Additional characters may be added to this list in the future.
 
-- A nonempty string consisting of the characters ``~ ! @ # $ % & * / = + | , < > : ; - ^`` is always treated as a single token, and does not need to be surrounded by whitespace.  Moreover, such tokens may only be notation symbols, not identifiers.  Note that this is most of the non-alphanumeric characters that appear on a standard US keyboard except for those that already have another meaning (parentheses, backquote, double quote, curly braces) or are allowed in identifiers (period, underscore, and single quote).  In particular:
+- A nonempty string consisting of the characters ``~ @ # $ % & * / = + | , < > : ; - ^`` is always treated as a single token, and does not need to be surrounded by whitespace.  Moreover, such tokens may only be notation symbols, not identifiers.  Note that this is most of the non-alphanumeric characters that appear on a standard US keyboard except for those that already have another meaning (parentheses, backquote, double quote, curly braces) or are allowed in identifiers (period, underscore, and single quote).  In particular:
 
    - Ordinary algebraic operations like ``+`` and ``*`` can be defined so that ``x+y`` and ``x*y`` are valid.
    
    - This includes the colon, so you can write ``(x:A) → B``, and similarly for the comma ``,`` in a tuple and the bar ``|`` in a :ref:`match<Matching>` or :ref:`comatch<Copattern matching>`.  But the user can also use these characters in other operators.
    
-   - The ASCII substitutes for the single-token Unicode characters (except ``...`` for ``…``) also fall into this category, so you can write for instance ``A->B``.
+   - The ASCII substitutes for most of the single-token Unicode characters also fall into this category, so you can write for instance ``A->B``.
    
    - The ASCII hyphen ``-`` is in this category; in addition to its being part of ``->`` and ``|->``, this allows a subtraction operator ``x-y`` to be written without spaces. Therefore, unlike in Agda, the hyphen is not allowed in identifiers.
    

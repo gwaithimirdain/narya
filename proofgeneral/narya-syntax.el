@@ -25,6 +25,12 @@ Does not handle sequences of abstraction variables broken across lines."
 ;; Many of these regexps are simplistic and will get confused if there are comments interspersed.  They also depend on font-lock-multiline being set to t.
 (defconst narya-core-font-lock-keywords
   `(
+    ;; Holes with contents
+    ("\\(\\(⁇[[:digit:]]+\\)?¿\\)\\([^ʔ]*\\)\\(ʔ\\)"
+     (1 'font-lock-warning-face)
+     (3 'default t)
+     (4 'font-lock-warning-face))
+
     (,narya-commands . 'font-lock-keyword-face)
     ("\\_<\\(Type\\|let\\|rec\\|in\\|and\\|match\\|return\\|sig\\|data\\|codata\\|Id\\|refl\\|sym\\)\\_>" 1 'font-lock-builtin-face)
 
@@ -54,7 +60,13 @@ Does not handle sequences of abstraction variables broken across lines."
 
     ;; Symbols
     ("[][(){}]" . 'font-lock-bracket-face)
-    ("[→↦⤇≔~!@#$%&*/=+\\|,<>:;?-]" . 'font-lock-operator-face)
+    ("[→↦⤇≔~@#$%&*/=+\\|,<>:;-]" . 'font-lock-operator-face)
+
+    ;; ! delimiters in hole contents
+    ("!" 0 'font-lock-warning-face t)
+
+    ;; Holes without contents
+    ("\\?" 0 'font-lock-warning-face)
 
     ;; "keywords" used only in import statements.  We put them last so they don't prevent other things.
     ("\\_<\\(all\\|id\\|none\\|only\\|except\\|renaming\\|seq\\|union\\)\\_>" . 'font-lock-builtin-face)
@@ -85,11 +97,13 @@ Does not handle sequences of abstraction variables broken across lines."
    '(?[ "(")
    '(?) ")")
    '(?] ")")
+   ;; Hole delimiters are treated as parenthesis-like
+   '(?¿ "(")
+   '(?ʔ ")")
    ;; Quotes
    '(?\" "\"")
    ;; Punctuation: characters that can appear in operators (and hence mark the beginning or end of a symbol).
    '(?~ ".")
-   '(?! ".")
    '(?@ ".")
    '(?# ".")
    '(?$ ".")
@@ -108,7 +122,6 @@ Does not handle sequences of abstraction variables broken across lines."
    '(?\;  ".")
    '(?- ".")
    ;; Single-character operators are also punctuation
-   '(?\? ".")
    '(?≔ ".")
    '(?⩴ ".")
    '(?→ ".")
@@ -116,6 +129,10 @@ Does not handle sequences of abstraction variables broken across lines."
    '(?⤇ ".")
    '(?… ".")
    '(?⩲ ".")
+   ;; As are hole characters
+   '(?! ".")
+   '(?\? ".")
+   '(?⁇ ".")
    ))
 
 (provide 'narya-syntax)
