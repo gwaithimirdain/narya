@@ -50,6 +50,7 @@ type solve_data = {
   wscolumn : Whitespace.t list;
   wscoloneq : Whitespace.t list;
   tm : wrapped_parse ref;
+  mutable parenthesized : bool;
 }
 
 module Command = struct
@@ -530,7 +531,18 @@ module Parse = struct
     let* column, wscolumn = integer </> return (0, []) in
     let* wscoloneq = token Coloneq in
     let* tm = C.term [] in
-    return (Solve { wssolve; number; wsnumber; column; wscolumn; wscoloneq; tm = ref tm })
+    return
+      (Solve
+         {
+           wssolve;
+           number;
+           wsnumber;
+           column;
+           wscolumn;
+           wscoloneq;
+           tm = ref tm;
+           parenthesized = false;
+         })
 
   let split =
     let* wssolve = token Split in
@@ -538,7 +550,18 @@ module Parse = struct
     let* column, wscolumn = integer </> return (0, []) in
     let* wscoloneq = token Coloneq in
     let* tm = C.term [] in
-    return (Split { wssolve; number; wsnumber; column; wscolumn; wscoloneq; tm = ref tm })
+    return
+      (Split
+         {
+           wssolve;
+           number;
+           wsnumber;
+           column;
+           wscolumn;
+           wscoloneq;
+           tm = ref tm;
+           parenthesized = false;
+         })
 
   let show =
     let* wsshow = token Show in
@@ -1071,7 +1094,10 @@ and execute_solve data found =
   Global.set_meta meta ~tm:ctm;
   let buf = Buffer.create 20 in
   PPrint.ToBuffer.compact buf (pp_complete_term !(data.tm) `None);
-  ( Reporter.try_with ~fatal:(fun _ -> data.tm := Wrap (parenthesize tm)) @@ fun () ->
+  ( Reporter.try_with ~fatal:(fun _ ->
+        data.tm := Wrap (parenthesize tm);
+        data.parenthesized <- true)
+  @@ fun () ->
     let _ = TermParse.Term.parse ~li ~ri (`String { content = Buffer.contents buf; title = None }) in
     () );
   (Some offset, fun h -> Some (Code.Hole_solved h))
@@ -1346,3 +1372,7 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
     | Show _ | Display _ | Undo _ -> (indent, empty, []) in
   (* "nest" only has effect *after* linebreaks, so we have to separately indent the first line. *)
   (nest indent (blank indent ^^ doc), ws)
+
+let parenthesized : t -> bool = function
+  | Solve data | Split data -> data.parenthesized
+  | _ -> false

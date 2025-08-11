@@ -42,6 +42,9 @@
 (defvar narya-pending-hole-reformatted nil
   "Temporary storage for reformatted hole-filling term.")
 
+(defvar narya-pending-hole-parenthesized nil
+  "Temporary storage for parenthesization of hole-filling term.")
+
 (defun narya-create-hole-overlays (start-position relative-positions)
   "Create overlays for holes given a starting position and a list of relative positions.
 Each entry in RELATIVE-POSITIONS should be a list of the form (START-OFFSET END-OFFSET HOLE-ID).
@@ -266,7 +269,8 @@ handling in Proof General."
         ;; Temporary storage for hole data.
         (parsed-hole-data nil)
         (error-found nil)
-        (reformatted nil))
+        (reformatted nil)
+        (parenthesized nil))
     ;; Check for errors in the output first.
     (when (string-match proof-shell-error-regexp string)
       (setq error-found t
@@ -281,6 +285,10 @@ handling in Proof General."
         (string-match "\x0C\\[data\\]\x0C\n" string gstart)
         (setq gend (match-beginning 0)
               dpos (match-end 0))
+        ;; Find out whether Narya parenthesized the term
+        (string-match "\\(un\\)?parenthesized\n" string dpos)
+        (setq dpos (match-end 0))
+        (setq parenthesized (not (match-string 1 string)))
         ;; Parse hole data from the data section.  This will only be
         ;; used if we are *not* reformatting commands/holes, since the
         ;; reformatted version contains ¿0? markers for hole positions
@@ -301,7 +309,8 @@ handling in Proof General."
         (if (member 'invisible flags)
             ;; For invisible commands ("solve"), store the parsed data globally, both the holes and the reformatted term
             (setq narya-pending-hole-positions parsed-hole-data
-                  narya-pending-hole-reformatted reformatted)
+                  narya-pending-hole-reformatted reformatted
+                  narya-pending-hole-parenthesized parenthesized)
           ;; For visible commands, create overlays directly
           (when (and span (overlay-buffer span))
             (proof-with-script-buffer
@@ -666,19 +675,23 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
                   (insert-start (point))
                   (byte-insert-start (position-bytes (point)))
                   (cmd-span (span-at (point) 'type))
-                  parens)
+                  (shift 0))
 	      ;; Insert the term and delete the hole.  We do it in this
 	      ;; order so that if the hole is at the very end of the
 	      ;; processed region, the inserted term will end up
 	      ;; *inside* the processed region.
               (if (or split narya-reformat-holes)
+                  ;; If we're splitting or reformatting holes, insert the reformatted version.
                   (let ((spaces (concat "\n" (make-string column ? ))))
                     (insert (string-replace "\n" spaces narya-pending-hole-reformatted)))
-                (setq parens
-                      (and (equal (elt narya-pending-hole-reformatted 0) ?\()
-                           (not (equal (elt term 0) ?\())))
-                (if parens
-                    (insert "(" term ")")
+                ;; If we're not reformatting holes, check whether the
+                ;; reformatted version would have put new parentheses
+                ;; around the term, and if so put parentheses around
+                ;; the user's term.
+                (if narya-pending-hole-parenthesized
+                    (progn
+                      (insert "(" term ")")
+                      (setq shift 1))
                   (insert term)))
               (let ((insert-end (point-marker)))
                 (delete-region (point) (overlay-end hole-overlay))
@@ -699,7 +712,7 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
                  ;; Otherwise, we get the hole position information
                  ;; from the [data] block.
                  (narya-pending-hole-positions
-                  (narya-create-hole-overlays (+ byte-insert-start (if parens 1 0)) narya-pending-hole-positions)
+                  (narya-create-hole-overlays (+ byte-insert-start shift) narya-pending-hole-positions)
                   (setq narya-pending-hole-positions nil)))
                 ;; Now we add an Emacs undo action so that if the
                 ;; "solve" command is undone in Emacs, PG will rewind
