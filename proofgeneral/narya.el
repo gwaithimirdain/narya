@@ -48,7 +48,8 @@
 (defun narya-create-hole-overlays (start-position relative-positions)
   "Create overlays for holes given a starting position and a list of relative positions.
 Each entry in RELATIVE-POSITIONS should be a list of the form (START-OFFSET END-OFFSET HOLE-ID).
-Also replaces single ? holes with ⁈...⁉."
+Also replaces single ? holes with ⁈...⁉.
+Return the number of such overlays created."
   (let ((positions
          (cl-map 'list
                  (lambda (pos)
@@ -56,7 +57,8 @@ Also replaces single ? holes with ⁈...⁉."
                          (end (set-marker (make-marker) (byte-to-position (+ start-position (nth 1 pos))))))
                      (set-marker-insertion-type start t)
                      (list start end (nth 2 pos))))
-                 relative-positions)))
+                 relative-positions))
+        (count 0))
     (dolist (pos positions)
       (let ((start (nth 0 pos))
             (end (nth 1 pos))
@@ -77,7 +79,9 @@ Also replaces single ? holes with ⁈...⁉."
               (backward-char 1)
               (if (looking-at "!\\?")
                   (setq end (point))))))
-        (narya-create-hole-overlay start end hole-id)))))
+        (narya-create-hole-overlay start end hole-id))
+      (setq count (+ count 1)))
+    count))
 
 (defun narya-create-hole-overlay (char-start char-end hole-id)
   "Create a single hole overlay."
@@ -125,14 +129,18 @@ Also replaces single ? holes with ⁈...⁉."
         (insert end-space))))))
 
 (defun narya-create-marked-hole-overlays (start end)
-  "Create hole overlays from markers of the form ⁇0? or ⁇0⁈...⁉ from START to END."
+  "Create hole overlays from markers of the form ⁇0? or ⁇0⁈...⁉ from START to END.
+Return the number of such overlays created."
   (goto-char start)
-  (while (re-search-forward "\\(⁇\\([[:digit:]]+\\)\\)\\(⁈\\|?!\\)\\(\\([^!⁉]\\|![^?]\\)*\\)\\(⁉\\|!\\?\\)" end 'limit)
-    (let* ((number (string-to-number (match-string 2)))
-           (start (set-marker (make-marker) (match-beginning 4)))
-           (end (set-marker (make-marker) (match-end 4))))
-      (replace-match "" nil nil nil 1)
-      (narya-create-hole-overlay start end number))))
+  (let ((count 0))
+    (while (re-search-forward "\\(⁇\\([[:digit:]]+\\)\\)\\(⁈\\|?!\\)\\(\\([^!⁉]\\|![^?]\\)*\\)\\(⁉\\|!\\?\\)" end 'limit)
+      (let* ((number (string-to-number (match-string 2)))
+             (start (set-marker (make-marker) (match-beginning 4)))
+             (end (set-marker (make-marker) (match-end 4))))
+        (replace-match "" nil nil nil 1)
+        (narya-create-hole-overlay start end number)
+        (setq count (+ count 1))))
+    count))
 
 (defun narya-get-hole-overlay (beg &optional end)
   "Find the hole overlay that contains the given position or range, if any."
@@ -728,7 +736,8 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
                       (insert "(" term ")")
                       (setq shift 1))
                   (insert term)))
-              (let ((insert-end (point-marker)))
+              (let ((insert-end (point-marker))
+                    (new-holes 0))
                 (delete-region (point) (overlay-end hole-overlay))
                 (if (looking-at "!\\?")
                     (delete-char 2)
@@ -742,19 +751,26 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
                  ;; were printed using the ¿0? syntax, so we can use
                  ;; narya-create-marked-hole-overlays.
                  ((or split narya-reformat-holes)
-                  (narya-create-marked-hole-overlays insert-start insert-end)
-                  (message "Hole solved."))
+                  (setq new-holes (narya-create-marked-hole-overlays insert-start insert-end)))
                  ;; Otherwise, we get the hole position information
                  ;; from the [data] block.
                  (narya-pending-hole-positions
-                  (narya-create-hole-overlays (+ byte-insert-start shift) narya-pending-hole-positions)
+                  (setq new-holes (narya-create-hole-overlays
+                                   (+ byte-insert-start shift)
+                                   narya-pending-hole-positions))
                   (setq narya-pending-hole-positions nil)))
+                (message "Hole solved.")
                 ;; Now we add an Emacs undo action so that if the
                 ;; "solve" command is undone in Emacs, PG will rewind
                 ;; past the command containing the hole.  This is the
                 ;; only sensible course of action, since the Narya
                 ;; "solve" command can't be undone.
-                (narya-add-command-undo cmd-span)))))))))
+                (narya-add-command-undo cmd-span)
+                ;; Finally, if any new holes were created, we position
+                ;; the cursor in the first of them.
+                (when (> new-holes 0)
+                  (goto-char insert-start)
+                  (narya-next-hole))))))))))
 
 (defun narya-echo-or-synth (cmd prompt)
   (let* ((contents (narya-current-hole-contents))
