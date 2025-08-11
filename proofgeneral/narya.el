@@ -612,14 +612,61 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
 (defun narya-solve-hole ()
   "Solve the current hole with a user-provided term."
   (interactive)
-  (narya-solve-or-split-hole "Solve hole with: " nil))
+  (narya-solve-or-split-hole "Solve hole with: " "Solve hole with: " nil nil))
 
 (defun narya-split-hole ()
   "Solve the current hole by matching a term or inferring from its type."
   (interactive)
-  (narya-solve-or-split-hole "Split on term (leave blank to split on goal): " t))
+  (narya-solve-or-split-hole "Split on term (leave blank to split on goal): " "Split on term: " t "none (split on goal)"))
 
-(defun narya-solve-or-split-hole (prompt split)
+(defun narya-choose-delimited-term (ovl prompt extra)
+  "Given a hole overlay, prompt the user to choose one of the terms in it."
+  (let* ((contents (string-trim (buffer-substring (overlay-start ovl) (overlay-end ovl))))
+         (terms (split-string contents "!"))
+         (concatenated nil)
+         (n 0)
+         (tempbuf (generate-new-buffer "narya terms"))
+         (tempwin (display-buffer tempbuf))
+         choice concatn extran)
+    (unwind-protect
+        (progn
+          (with-current-buffer tempbuf
+            (insert "The current hole contains more than one term.\nChoose one (the others will be discarded):\n\n")
+            (dolist (term terms)
+              (setq term (string-trim term))
+              (insert "(" (int-to-string n) ") ")
+              (if (> (length term) 40)
+                  (insert (substring term 0 40) "...")
+                (insert term))
+              (insert "\n")
+              (setq n (+ n 1))
+              (setq concatenated
+                    (if concatenated
+                        (concat concatenated " " term)
+                      term)))
+            (setq concatn n)
+            (insert "(" (int-to-string n) ") ")
+            (if (> (length concatenated) 40)
+                (insert (substring concatenated 0 40) "...")
+              (insert concatenated))
+            (insert " (all terms concatenated)\n")
+            (setq n (+ n 1))
+            (setq extran n)
+            (when extra
+              (insert "(" (int-to-string extran) ") " extra "\n")))
+          (while (not choice)
+            (setq choice (ignore-errors (read-from-minibuffer prompt nil nil t t)))
+            (setq choice (and (integerp choice) (>= choice 0) (<= choice n) choice))
+            (unless choice
+              (message "Please enter an integer between 0 and %d." n)
+              (sit-for 1)))
+          (cond
+           ((= choice concatn) concatenated)
+           ((= choice extran) "_")
+           (t (string-trim (nth choice terms)))))
+      (quit-window t tempwin))))
+
+(defun narya-solve-or-split-hole (prompt multiprompt split extra)
   "Issue either solve or split command, depending on the argument."
   ;; Check for an overlay marking the current hole at point.
   (let ((hole-overlay (narya-get-hole-overlay (point))))
@@ -636,20 +683,7 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
                 (read-from-minibuffer prompt (narya-current-hole-contents)
                                       nil nil nil nil t))
                (t
-                (let ((which (let ((read-answer-short t))
-                               (read-answer "Hole contains multiple terms: (d)rop others, or (c)oncatenate them all "
-                                            '(("drop" ?d "use the term at point, deleting the others in the hole if it succeeds")
-                                              ("concatenate" ?c "concatenate all the terms in the hole, removing the !s"))))))
-                  (cond
-                   ((equal which "drop")
-                    (narya-current-hole-contents))
-                   ((equal which "concatenate")
-                    (let ((str (buffer-substring-no-properties
-                                (overlay-start hole-overlay) (overlay-end hole-overlay))))
-                      (while (string-match "!" str)
-                        (setq str (replace-match "" nil nil str)))
-                      str))
-                   (t ""))))))
+                (narya-choose-delimited-term hole-overlay multiprompt extra))))
              (term (if (and split (equal userterm "")) "_" userterm))
              (cmd (if split "split" "solve"))
              (column (current-column)))
@@ -668,6 +702,7 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
           (setq buffer-undo-list (memq nil buffer-undo-list))
           (atomic-change-group
             (goto-char (overlay-start hole-overlay))
+            ;; Back up across the hole-begin sequence ⁈ or ?!
             (backward-char 1)
             (when (looking-at "!")
               (backward-char 1))
