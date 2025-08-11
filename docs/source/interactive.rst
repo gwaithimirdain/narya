@@ -67,6 +67,8 @@ Narya has a limited ability to infer the shape of a term to solve a hole with fr
 
 - If you don't enter a term, and the hole has a codata type (see :ref:`Codatatypes and comatching`), including higher-dimensional versions thereof, the term inserted will be a comatch such as ``[ .head ↦ ? | .tail ↦ ? ]``.  This also works with :ref:`higher coinductive types`: the correct number of copies of each higher field are inserted depending on the dimension of the type.
 
+- If you don't enter a term, and the hole has a data type (see :ref:`Inductive datatypes and matching`) that has exactly one constructor, the term inserted will be an application of that constructor such as ``constr. ? ? ?``.  This includes higher-dimensional versions of data types (see :ref:`Id of datatypes`).  Note that if the datatype is indexed, this term probably won't typecheck, because the indices will probably depend on the values of the holes.
+
 If none of these cases apply, an error results.
 
 You can also split on a hole directly in interactive mode, identifying a hole by its number as in ``split 0 ≔ M`` to split on a term ``M``, or ``split 0 ≔ _`` to split on the goal type.  This will print the proposed term with the label "hole could be solved by"; you can then copy it, edit it as desired, and supply it to a ``solve`` command.

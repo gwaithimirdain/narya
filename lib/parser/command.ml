@@ -992,8 +992,15 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                              ^ Token.to_string (Hole None))
                            fields)
                     ^ Token.to_string RBracket)
+            | Canonical (_, Data { constrs = Snoc (Emp, (constr, Dataconstr { args; _ })); _ }, _, _)
+              ->
+                let nargs = Fwn.to_int (Term.Telescope.length args) in
+                Constr.to_string constr ^ "." ^ String.concat "" (List.init nargs (fun _ -> " ?"))
+            | Canonical (_, Data { constrs = Emp; _ }, _, _) ->
+                fatal (Invalid_split (`Goal, "empty datatype"))
+            | Canonical (_, Data { constrs = Snoc (Snoc (_, _), _); _ }, _, _) ->
+                fatal (Invalid_split (`Goal, "datatype with multiple constructors"))
             | Canonical (_, UU _, _, _) -> fatal (Invalid_split (`Goal, "universe"))
-            | Canonical (_, Data _, _, _) -> fatal (Invalid_split (`Goal, "datatype"))
             | Neutral _ -> fatal (Invalid_split (`Goal, "neutral")))
         | _ -> (
             match process vars tm with
