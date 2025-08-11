@@ -93,7 +93,7 @@ module Command = struct
         column : int;
         wscolumn : Whitespace.t list;
         wscoloneq : Whitespace.t list;
-        tm : wrapped_parse ref;
+        mutable tm : wrapped_parse;
         mutable parenthesized : bool;
       }
     | Split of {
@@ -537,17 +537,7 @@ module Parse = struct
     let* wscoloneq = token Coloneq in
     let* tm = C.term [] in
     return
-      (Solve
-         {
-           wssolve;
-           number;
-           wsnumber;
-           column;
-           wscolumn;
-           wscoloneq;
-           tm = ref tm;
-           parenthesized = false;
-         })
+      (Solve { wssolve; number; wsnumber; column; wscolumn; wscoloneq; tm; parenthesized = false })
 
   let split =
     let* wssplit = token Split in
@@ -923,7 +913,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       let (Global.Found_hole
              { meta; instant = _; termctx; ty; status; vars; li; ri; parametric = _ }) =
         found in
-      let (Wrap tm) = !(data.tm) in
+      let (Wrap tm) = data.tm in
       let ptm = process vars tm in
       (* We set the hole location offset to the start of the *term*, so that ProofGeneral can create hole overlays in the right places when solving a hole and creating new holes. *)
       let tmloc = ptm.loc <|> Anomaly "missing location in solve" in
@@ -934,9 +924,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       let ctm = Check.check status ctx ptm ety in
       Global.set_meta meta ~tm:ctm;
       let buf = Buffer.create 20 in
-      PPrint.ToBuffer.compact buf (pp_complete_term !(data.tm) `None);
+      PPrint.ToBuffer.compact buf (pp_complete_term data.tm `None);
       ( Reporter.try_with ~fatal:(fun _ ->
-            data.tm := Wrap (parenthesize tm);
+            data.tm <- Wrap (parenthesize tm);
             data.parenthesized <- true)
       @@ fun () ->
         let _ =
@@ -1336,7 +1326,7 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
                ^^ op)),
           rest )
     | Solve { column; tm; _ } ->
-        let (Wrap tm) = !tm in
+        let (Wrap tm) = tm in
         (* We (mis)use pretty-printing of a solve *command* to actually just reformat the solving *term*.  This is appropriate since "solve" should never appear in a source file, and when it's called from ProofGeneral, PG knows that the reformatted return is the new string to insert at the hole location. *)
         let tm, rest = split_ending_whitespace tm in
         (* When called from ProofGeneral, the 'column' is the column number of the hole, so the reformatted term should "start at that indentation".  The best way I've thought of so far to mimic that effect is to reduce the margin by that amount, and then add extra indentation to each new line on the ProofGeneral end.  Also, section indents should be ignored when printing solve terms. *)
