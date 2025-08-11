@@ -635,7 +635,7 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
          (n 0)
          (tempbuf (generate-new-buffer "narya terms"))
          (tempwin (display-buffer tempbuf))
-         choice concatn extran)
+         choice concatn entern extran)
     (unwind-protect
         (progn
           (with-current-buffer tempbuf
@@ -658,6 +658,7 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
                                       term))
                               (list term)))
                           terms))
+            ;; Concatenated
             (setq concatn n)
             (insert "(" (int-to-string n) ") ")
             (if (> (length concatenated) 40)
@@ -665,6 +666,11 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
               (insert concatenated))
             (insert " (all terms concatenated)\n")
             (setq n (+ n 1))
+            ;; Enter new one
+            (setq entern n)
+            (insert "(" (int-to-string n) ") enter new term\n")
+            (setq n (+ n 1))
+            ;; Extra
             (setq extran n)
             (when extra
               (insert "(" (int-to-string extran) ") " extra "\n")))
@@ -676,6 +682,7 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
               (sit-for 1)))
           (cond
            ((= choice concatn) concatenated)
+           ((= choice entern) (read-from-minibuffer prompt nil nil nil nil nil t))
            ((= choice extran) "_")
            (t (string-trim (nth choice terms)))))
       (quit-window t tempwin))))
