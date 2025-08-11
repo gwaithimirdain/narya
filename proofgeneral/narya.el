@@ -640,18 +640,24 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
         (progn
           (with-current-buffer tempbuf
             (insert "The current hole contains more than one term.\nChoose one (the others will be discarded):\n\n")
-            (dolist (term terms)
-              (setq term (string-trim term))
-              (insert "(" (int-to-string n) ") ")
-              (if (> (length term) 40)
-                  (insert (substring term 0 40) "...")
-                (insert term))
-              (insert "\n")
-              (setq n (+ n 1))
-              (setq concatenated
-                    (if concatenated
-                        (concat concatenated " " term)
-                      term)))
+            (setq terms
+                  (mapcan (lambda (term)
+                            (setq term (string-trim term))
+                            ;; Skip empty subdivisions
+                            (if (equal term "")
+                                nil
+                              (insert "(" (int-to-string n) ") ")
+                              (if (> (length term) 40)
+                                  (insert (substring term 0 40) "...")
+                                (insert term))
+                              (insert "\n")
+                              (setq n (+ n 1))
+                              (setq concatenated
+                                    (if concatenated
+                                        (concat concatenated " " term)
+                                      term))
+                              (list term)))
+                          terms))
             (setq concatn n)
             (insert "(" (int-to-string n) ") ")
             (if (> (length concatenated) 40)
