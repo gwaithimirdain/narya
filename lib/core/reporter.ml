@@ -237,6 +237,7 @@ module Code = struct
     | File_loaded : string * [ `Compiled | `Source ] -> t
     | Library_has_extension : string -> t
     | Library_modified : string -> t
+    | Directory_changed : string -> t
     | Invalid_filename : string -> t
     | No_such_file : string -> t
     | Cant_write_compiled_file : string -> t
@@ -391,6 +392,7 @@ module Code = struct
     | File_loaded _ -> Info
     | Library_has_extension _ -> Warning
     | Library_modified _ -> Error
+    | Directory_changed _ -> Info
     | Invalid_filename _ -> Error
     | No_such_file _ -> Error
     | Cant_write_compiled_file _ -> Warning
@@ -562,6 +564,8 @@ module Code = struct
     | No_such_file _ -> "E2304"
     | Cant_write_compiled_file _ -> "W2305"
     | Library_modified _ -> "E2306"
+    (* chdir *)
+    | Directory_changed _ -> "I2310"
     (* echo *)
     | Actions_in_compiled_file _ -> "W2400"
     (* undo *)
@@ -994,6 +998,7 @@ module Code = struct
           textf
             "library '%s'@ was@ already@ loaded@ in@ this@ session@ but@ has@ been@ modified@ since@ then:@ you@ must@ restart@ Narya@ to@ reload@ it"
             file
+      | Directory_changed dir -> textf "current directory changed to@ %s" dir
       | No_such_file file -> textf "error opening file: %s" file
       | Cant_write_compiled_file file -> textf "can't write compiled file: %s" file
       | Incompatible_flags (file, flags) ->
