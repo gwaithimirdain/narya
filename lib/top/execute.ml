@@ -77,24 +77,18 @@ module Loaded = struct
     let loaded_files : (FilePath.filename, data * float) Hashtbl.t = Hashtbl.create 20 in
     (* The complete merged namespace of all the files explicitly given on the command line so far.  Imported into -e and -i.  We compute it lazily because if there is no -e or -i we don't need it.  (And also so that we won't try to read the flags before they're set.)  It starts as the "current" namespace, which should be the top-level one. *)
     let loaded_contents : Scope.trie Lazy.t ref = ref (Lazy.from_val (Scope.get_visible ())) in
-    let effc : type b a. b Effect.t -> ((b, a) continuation -> a) option = function
-      | Add_to_files (file, data) ->
-          let mtime = (FileUtil.stat file).modification_time in
-          Some
-            (fun k ->
-              Hashtbl.add loaded_files file (data, mtime);
-              continue k ())
-      | Get_file file -> Some (fun k -> continue k (Hashtbl.find_opt loaded_files file))
-      | Add_to_scope trie ->
-          Some
-            (fun k ->
-              let old = !loaded_contents in
-              loaded_contents := lazy (Scope.Mod.union ~prefix:Emp (Lazy.force old) trie);
-              continue k ())
-      (* Add something to the complete merged namespace. *)
-      | Get_scope -> Some (fun k -> continue k (Lazy.force !loaded_contents))
-      | _ -> None in
-    try_with f () { effc }
+    try f () with
+    | effect Add_to_files (file, data), k ->
+        let mtime = (FileUtil.stat file).modification_time in
+        Hashtbl.add loaded_files file (data, mtime);
+        continue k ()
+    | effect Get_file file, k -> continue k (Hashtbl.find_opt loaded_files file)
+    | effect Add_to_scope trie, k ->
+        let old = !loaded_contents in
+        loaded_contents := lazy (Scope.Mod.union ~prefix:Emp (Lazy.force old) trie);
+        continue k ()
+    (* Add something to the complete merged namespace. *)
+    | effect Get_scope, k -> continue k (Lazy.force !loaded_contents)
 
   let add_to_scope trie = Effect.perform (Add_to_scope trie)
   let get_scope () = Effect.perform Get_scope

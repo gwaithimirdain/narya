@@ -78,7 +78,7 @@ The static binary does not work on a Mac, but you can compile Narya from source 
 Compiling from source
 ---------------------
 
-If the static binary does not work for you (such as if you are on MacOS), or if you want to edit the Narya code, you will have to compile it yourself.  This requires a recent version of OCaml and various libraries.  Currently Narya is developed with OCaml 5.3.0; as far as I know, it also compiles with any version after 5.2.1, but this is not regularly verified.  You can set up a :ref:`Manual development environment` or look into :ref:`Compiling with nix`.
+If the static binary does not work for you (such as if you are on MacOS), or if you want to edit the Narya code, you will have to compile it yourself.  This requires a recent version of OCaml and various libraries.  Narya requires OCaml 5.3.0 or later.  You can set up a :ref:`Manual development environment` or look into :ref:`Compiling with nix`.
 
 
 Manual development environment
