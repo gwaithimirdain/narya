@@ -154,7 +154,7 @@ module Equal = struct
     match (x, y) with
     | ( Neu { head = head1; args = apps1; value = _; ty = _ },
         Neu { head = head2; args = apps2; value = _; ty = _ } ) -> (
-        (* To check two neutral applications are equal, with their types, we first check if the functions are equal, including their types and hence also their domains and codomains (and also they have the same insertion applied outside).  An alignment doesn't affect definitional equality.  We don't need to check that the types agree; this procedure concludes equality of types rather than assumes it. *)
+        (* To check two neutral applications are equal, with their types, we first check if the functions are equal, including their types and hence also their domains and codomains (and also they have the same insertion applied outside).  We don't need to check that the types agree; this procedure concludes equality of types rather than assumes it. *)
         match equal_head ctx head1 head2 with
         | Some (Error err) -> Error (Unequal.Heads err)
         | None ->
