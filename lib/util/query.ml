@@ -11,14 +11,7 @@ struct
 
   let run ~(ask : Q.question -> Q.answer) f =
     let open Effect.Deep in
-    try_with f ()
-      {
-        effc =
-          (fun (type a) (eff : a Effect.t) ->
-            match eff with
-            | Ask q -> Option.some @@ fun (k : (a, _) continuation) -> continue k (ask q)
-            | _ -> None);
-      }
+    try f () with effect Ask q, k -> continue k (ask q)
 
   let register_printer f =
     Printexc.register_printer @@ function

@@ -196,15 +196,6 @@ module Pauseable (R : Signatures.Type) = struct
   (* The stored continuation, which points into the callback inside run_top. *)
   let cont : (unit -> R.t, R.t) continuation option ref = ref None
 
-  (* The effect handler that saves the continuation and returns the output passed to 'Yield'. *)
-  let effc : type b. b Effect.t -> ((b, R.t) continuation -> R.t) option = function
-    | Yield output ->
-        Some
-          (fun k ->
-            cont := Some k;
-            output)
-    | _ -> None
-
   (* The coroutine.  This calls itself with an infinite recursion and so never actually returns in an ordinary way, only by performing effects.  But it is declared to have a return type of R.t, to match that of the effects. *)
   let rec corun_top (f : unit -> R.t) : R.t =
     (* The "Yield" effect returns control to the caller until we are continued.  At that point execution resumes here with a new callback, which we then pass off to ourselves recursively. *)
@@ -224,9 +215,10 @@ module Pauseable (R : Signatures.Type) = struct
   let init ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols f =
     (* First we discontinue any existing continuation, to avoid leaks. *)
     halt ();
-    try_with
-      (fun () -> run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols @@ fun () -> corun_top f)
-      () { effc }
+    try run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols @@ fun () -> corun_top f
+    with effect Yield output, k ->
+      cont := Some k;
+      output
 
   (* After startup, the caller calls "next" with a callback to be executed inside the run_top handlers and return a value. *)
   let next (f : unit -> R.t) : R.t =
