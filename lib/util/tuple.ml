@@ -222,9 +222,11 @@ end = struct
       match mss with
       | Emp :: _ -> return (Heter.emp qs)
       | Map { now = ab', v; later } :: mss ->
-          let+ fnow = f.map (Fwn.insert_bplus Now ab' ab) (v :: Heter.now ab' mss)
-          and+ flater = gpmapM (Suc ab) f (later :: Heter.later mss) qs in
-          Heter.map ab' fnow flater
+          M.apply
+            (M.zip
+               (fun () -> f.map (Fwn.insert_bplus Now ab' ab) (v :: Heter.now ab' mss))
+               (fun () -> gpmapM (Suc ab) f (later :: Heter.later mss) qs))
+          @@ fun (fnow, flater) -> Heter.map ab' fnow flater
 
     let pmapM : type a p ps qs.
         (a, (p, ps) cons, qs) pmapperM ->
@@ -242,16 +244,8 @@ end = struct
         (a, Fwn.zero, (p, ps) cons) Heter.hgt ->
         (a, Fwn.zero, q) gt M.t =
      fun f xs ->
-      let+ [ ys ] =
-        pmapM
-          {
-            map =
-              (fun i x ->
-                let+ y = f.map i x in
-                y @: hnil);
-          }
-          xs (Cons Nil) in
-      ys
+      M.apply (pmapM { map = (fun i x -> M.apply (f.map i x) @@ fun y -> y @: hnil) } xs (Cons Nil))
+      @@ fun [ ys ] -> ys
 
     type ('asuc, 'ps) miteratorM = {
       it : 'a. ('a, 'asuc) N.insert -> ('a, 'ps) Heter.hft -> unit M.t;
@@ -260,16 +254,8 @@ end = struct
     let miterM : type a p ps.
         (a, (p, ps) cons) miteratorM -> (a, Fwn.zero, (p, ps) cons) Heter.hgt -> unit M.t =
      fun f xs ->
-      let+ [] =
-        pmapM
-          {
-            map =
-              (fun i x ->
-                let+ () = f.it i x in
-                hnil);
-          }
-          xs Nil in
-      ()
+      M.apply (pmapM { map = (fun i x -> M.apply (f.it i x) @@ fun () -> hnil) } xs Nil)
+      @@ fun [] -> ()
   end
 
   module Monadic (M : Monad.Plain) = struct

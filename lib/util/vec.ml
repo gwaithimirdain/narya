@@ -115,32 +115,23 @@ module Applicatic (M : Applicative.Plain) = struct
     match xss with
     | [] :: _ -> return (Heter.nil ys)
     | (x :: xs) :: xss ->
-        let+ fx = f (x :: Heter.car xss) and+ fxs = pmapM f (xs :: Heter.cdr xss) ys in
-        Heter.cons fx fxs
+        M.apply
+          (M.zip (fun () -> f (x :: Heter.car xss)) (fun () -> pmapM f (xs :: Heter.cdr xss) ys))
+        @@ fun (fx, fxs) -> Heter.cons fx fxs
 
   (* With specializations to simple arity possibly-monadic maps and iterators.  *)
 
   let miterM : type x xs n.
       ((x, xs) cons hlist -> unit M.t) -> ((x, xs) cons, n) Heter.ht -> unit M.t =
    fun f xss ->
-    let+ [] =
-      pmapM
-        (fun x ->
-          let+ () = f x in
-          Hlist.nil)
-        xss Nil in
-    ()
+    M.apply (pmapM (fun x -> M.apply (f x) (fun () -> Hlist.nil)) xss Nil) (fun [] -> ())
 
   let mmapM : type x xs y n.
       ((x, xs) cons hlist -> y M.t) -> ((x, xs) cons, n) Heter.ht -> (y, n) t M.t =
-   fun f xss ->
-    let+ [ ys ] =
-      pmapM
-        (fun x ->
-          let+ y = f x in
-          Hlist.cons y Hlist.nil)
-        xss (Cons Nil) in
-    ys
+   fun f xs ->
+    M.apply
+      (pmapM (fun x -> M.apply (f x) (fun y -> Hlist.cons y Hlist.nil)) xs (Cons Nil))
+      (fun [ ys ] -> ys)
 
   let mapM : type x y n. (x -> y M.t) -> (x, n) t -> (y, n) t M.t =
    fun f xs -> mmapM (fun [ x ] -> f x) [ xs ]

@@ -47,30 +47,18 @@ module Applicatic (M : Applicative.Plain) = struct
     match xss with
     | [] :: _ -> return (Heter.empty ys)
     | (x :: xs) :: xss ->
-        let+ fx = f (x :: Heter.hd xss) and+ fxs = pmapM f (xs :: Heter.tl xss) ys in
-        Heter.cons fx fxs
+        M.apply
+          (M.zip (fun () -> f (x :: Heter.hd xss)) (fun () -> pmapM f (xs :: Heter.tl xss) ys))
+        @@ fun (fx, fxs) -> Heter.cons fx fxs
 
   (* Since "nil hlist" is isomorphic to unit, this includes iterations, but it's more convenient to write those actually using unit. *)
   let miterM : type x xs. ((x, xs) cons hlist -> unit M.t) -> (x, xs) cons Heter.ht -> unit M.t =
-   fun f xss ->
-    let+ [] =
-      pmapM
-        (fun x ->
-          let+ () = f x in
-          [])
-        xss Nil in
-    ()
+   fun f xss -> M.apply (pmapM (fun x -> M.apply (f x) (fun () -> [])) xss Nil) (fun [] -> ())
 
   (* It's also convenient to separate out the multi-input single-output version. *)
   let mmapM : type x xs y. ((x, xs) cons hlist -> y M.t) -> (x, xs) cons Heter.ht -> y list M.t =
    fun f xs ->
-    let+ [ ys ] =
-      pmapM
-        (fun x ->
-          let+ y = f x in
-          [ y ])
-        xs (Cons Nil) in
-    ys
+    M.apply (pmapM (fun x -> M.apply (f x) (fun y -> [ y ])) xs (Cons Nil)) (fun [ ys ] -> ys)
 end
 
 module Monadic (M : Monad.Plain) = struct

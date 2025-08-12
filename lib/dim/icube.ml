@@ -57,13 +57,14 @@ module Icube (S : Suc) (F : Fam3) = struct
       match tr with
       | Leaf x ->
           let Zero, Zero = (km, lm) in
-          let+ x = g.map (sface_of_bw d) x in
-          Leaf x
+          M.apply (g.map (sface_of_bw d) x) @@ fun x -> Leaf x
       | Branch (l, ends, mid) ->
           let (Suc km') = km in
-          let+ newends = gmapM_branches km' (D.suc_plus lm) d g (Endpoints.indices l) ends
-          and+ newmid = gmapM (D.suc_plus km) (D.suc_plus lm) (Mid d) g mid in
-          Branch (l, newends, newmid)
+          M.apply
+            (M.zip
+               (fun () -> gmapM_branches km' (D.suc_plus lm) d g (Endpoints.indices l) ends)
+               (fun () -> gmapM (D.suc_plus km) (D.suc_plus lm) (Mid d) g mid))
+          @@ fun (newends, newmid) -> Branch (l, newends, newmid)
 
     and gmapM_branches : type k m km n b c l len len' left right.
         (k, m, km) D.plus ->
@@ -77,9 +78,11 @@ module Icube (S : Suc) (F : Fam3) = struct
       match (brs, ixs) with
       | Emp, Emp -> return Emp
       | Snoc (brs, br), Snoc (ixs, e) ->
-          let+ newbrs = gmapM_branches km lm d g ixs brs
-          and+ newbr = gmapM km lm (End (e, d)) g br in
-          Snoc (newbrs, newbr)
+          M.apply
+            (M.zip
+               (fun () -> gmapM_branches km lm d g ixs brs)
+               (fun () -> gmapM km lm (End (e, d)) g br))
+          @@ fun (newbrs, newbr) -> Snoc (newbrs, newbr)
 
     let mapM : type n b c left right.
         (n, b, c) mapperM -> (left, n, b, right) t -> (left, n, c, right) t M.t =

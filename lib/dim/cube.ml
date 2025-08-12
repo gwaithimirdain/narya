@@ -183,22 +183,23 @@ module Cube (F : Fam2) = struct
       match trs with
       | Leaf _ :: _ ->
           let Zero, Zero = (km, lm) in
-          let+ x = g.map (sface_of_bw d) (Heter.lab trs) in
-          Heter.leaf x
+          M.apply (g.map (sface_of_bw d) (Heter.lab trs)) @@ fun x -> Heter.leaf x
       | Branch (_, _, _) :: _ ->
           let (Suc km') = km in
           let (Ends (l, hs, ends)) = Heter.ends trs in
           let mid = Heter.mid trs in
           let (Hgts newhs) = Heter.hgts_of_tlist cst in
-          let+ newends =
-            BwvM.pmapM
-              (fun (e :: brs) ->
-                let+ xs =
-                  gpmapM km' (D.suc_plus lm) (End (e, d)) g (Heter.hgt_of_hlist hs brs) cst in
-                Heter.hlist_of_hgt newhs xs)
-              (Endpoints.indices l :: ends) (Heter.tlist_hgts newhs cst)
-          and+ newmid = gpmapM (D.suc_plus km) (D.suc_plus lm) (Mid d) g mid cst in
-          Heter.branch l newhs newends newmid
+          M.apply
+            (M.zip
+               (fun () ->
+                 BwvM.pmapM
+                   (fun (e :: brs) ->
+                     M.apply
+                       (gpmapM km' (D.suc_plus lm) (End (e, d)) g (Heter.hgt_of_hlist hs brs) cst)
+                     @@ fun xs -> Heter.hlist_of_hgt newhs xs)
+                   (Endpoints.indices l :: ends) (Heter.tlist_hgts newhs cst))
+               (fun () -> gpmapM (D.suc_plus km) (D.suc_plus lm) (Mid d) g mid cst))
+          @@ fun (newends, newmid) -> Heter.branch l newhs newends newmid
 
     (* And the actual one for a t, which we can henceforth restrict our attention to. *)
     let pmapM : type n b bs cs.
@@ -218,33 +219,25 @@ module Cube (F : Fam2) = struct
     let mmapM : type n b bs c.
         (n, (b, bs) cons, c) mmapperM -> (n, n, (b, bs) cons) Heter.hgt -> (n, c) t M.t =
      fun g xs ->
-      let+ [ ys ] =
-        pmapM
-          {
-            map =
-              (fun fa x ->
-                let+ y = g.map fa x in
-                (* Apparently writing [y] is insufficiently polymorphic *)
-                y @: []);
-          }
-          xs (Cons Nil) in
-      ys
+      M.apply
+        (pmapM
+           {
+             map =
+               (fun fa x ->
+                 M.apply (g.map fa x) @@ fun y ->
+                 (* Apparently writing [y] is insufficiently polymorphic *)
+                 y @: []);
+           }
+           xs (Cons Nil))
+      @@ fun [ ys ] -> ys
 
     type ('n, 'bs) miteratorM = { it : 'm. ('m, 'n) sface -> ('m, 'bs) Heter.hft -> unit M.t }
 
     let miterM : type n b bs.
         (n, (b, bs) cons) miteratorM -> (n, n, (b, bs) cons) Heter.hgt -> unit M.t =
      fun g xs ->
-      let+ [] =
-        pmapM
-          {
-            map =
-              (fun fa x ->
-                let+ () = g.it fa x in
-                hnil);
-          }
-          xs Nil in
-      ()
+      M.apply (pmapM { map = (fun fa x -> M.apply (g.it fa x) @@ fun () -> hnil) } xs Nil)
+      @@ fun [] -> ()
 
     (* The builder function isn't quite a special case of the generic traversal, since it needs to maintain different information when constructing a cube from scratch. *)
 
@@ -262,17 +255,18 @@ module Cube (F : Fam2) = struct
       | Nat Zero ->
           let Eq = D.plus_uniq mk (D.zero_plus (dom_bwsface d)) in
           let Eq = D.plus_uniq ml (D.zero_plus (cod_bwsface d)) in
-          let+ x = g.build (sface_of_bw d) in
-          Leaf x
+          M.apply (g.build (sface_of_bw d)) @@ fun x -> Leaf x
       | Nat (Suc m) ->
           let (Suc mk') = D.plus_suc mk in
           let (Wrap l) = Endpoints.wrapped () in
-          let+ ends =
-            BwvM.mapM
-              (fun e -> gbuildM (Nat m) mk' (D.plus_suc ml) (End (e, d)) g)
-              (Endpoints.indices l)
-          and+ mid = gbuildM (Nat m) (D.plus_suc mk) (D.plus_suc ml) (Mid d) g in
-          Branch (l, ends, mid)
+          M.apply
+            (M.zip
+               (fun () ->
+                 BwvM.mapM
+                   (fun e -> gbuildM (Nat m) mk' (D.plus_suc ml) (End (e, d)) g)
+                   (Endpoints.indices l))
+               (fun () -> gbuildM (Nat m) (D.plus_suc mk) (D.plus_suc ml) (Mid d) g))
+          @@ fun (ends, mid) -> Branch (l, ends, mid)
 
     let buildM : type n b. n D.t -> (n, b) builderM -> (n, b) t M.t =
      fun n g -> gbuildM n (D.plus_zero n) (D.plus_zero n) Zero g

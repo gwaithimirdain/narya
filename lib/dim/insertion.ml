@@ -428,57 +428,41 @@ module Insmap (F : Fam) = struct
      fun evaluation f ms ws ->
       match ms with
       | Zero _ :: _ ->
-          let+ res = f.map (ins_zero evaluation) (Heter.zeros ms) in
-          Heter.zero res
+          M.apply (f.map (ins_zero evaluation) (Heter.zeros ms)) @@ fun res -> Heter.zero res
       | Suc _ :: _ ->
           let module T = Tup.Applicatic (M) in
           let (Exists_cons irvs) = MapTimes.exists_cons (Heter.params ms) in
           let (Exists irws) = MapTimes.exists ws in
-          let+ rights =
-            T.pmapM
-              {
-                map =
-                  (fun i x ->
-                    let+ res =
-                      pmapM (D.insert_in evaluation i)
-                        { map = (fun ins v -> f.map (Suc (ins, i)) v) }
-                        (Heter.unwrap x irvs) ws in
-                    Heter.wrap res irws);
-              }
-              (Heter.right ms irvs) (MapTimes.cod irws) in
-          Heter.suc irws rights
+          M.apply
+            (T.pmapM
+               {
+                 map =
+                   (fun i x ->
+                     M.apply
+                       (pmapM (D.insert_in evaluation i)
+                          { map = (fun ins v -> f.map (Suc (ins, i)) v) }
+                          (Heter.unwrap x irvs) ws)
+                     @@ fun res -> Heter.wrap res irws);
+               }
+               (Heter.right ms irvs) (MapTimes.cod irws))
+          @@ fun rights -> Heter.suc irws rights
 
     type ('evaluation, 'intrinsic, 'vs, 'w) mmapperM = {
       map : 'shared. ('evaluation, 'shared, 'intrinsic) insertion -> 'vs Heter.hft -> 'w F.t M.t;
     }
 
     let mmapM e f xs =
-      let+ [ ys ] =
-        pmapM e
-          {
-            map =
-              (fun i x ->
-                let+ y = f.map i x in
-                y @: hnil);
-          }
-          xs (Cons Nil) in
-      ys
+      M.apply
+        (pmapM e { map = (fun i x -> M.apply (f.map i x) @@ fun y -> y @: hnil) } xs (Cons Nil))
+      @@ fun [ ys ] -> ys
 
     type ('evaluation, 'intrinsic, 'vs) miteratorM = {
       it : 'shared. ('evaluation, 'shared, 'intrinsic) insertion -> 'vs Heter.hft -> unit M.t;
     }
 
     let miterM e f xs =
-      let+ [] =
-        pmapM e
-          {
-            map =
-              (fun i x ->
-                let+ () = f.it i x in
-                hnil);
-          }
-          xs Nil in
-      ()
+      M.apply (pmapM e { map = (fun i x -> M.apply (f.it i x) @@ fun () -> hnil) } xs Nil)
+      @@ fun [] -> ()
   end
 
   module Monadic (M : Monad.Plain) = struct
