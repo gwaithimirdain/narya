@@ -207,6 +207,16 @@ Set one of the display settings (that are also set by command-line flags).  Poss
     display type boundaries ≔ toggle
 
 
+Chdir
+^^^^^
+
+.. code-block:: none
+
+   chdir "DIR"
+
+Change the current directory to ``DIR``.  Subsequent ``import`` commands will load files from this directory.
+
+
 ProofGeneral mode
 -----------------
 

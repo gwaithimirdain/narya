@@ -87,7 +87,7 @@ An *atomic identifier* can be any string of non-whitespace characters, other tha
 
 .. code-block:: none
    
-   and axiom codata data def display echo end export import in let match
+   and axiom codata data def display echo end export import chdir in let match
    notation option quit rec return section show sig solve synth undo
 
 An *identifier* consists of one or more atomic identifiers joined by periods.  Variable names must be atomic identifiers, while constant names must be identifiers (internal periods denote :ref:`namespaces<Namespaces and sections>`).  In particular, (atomic) identifiers may *start* with a digit, such as for instance ``2Cat`` or ``2−Cat`` for the type of 2-categories.

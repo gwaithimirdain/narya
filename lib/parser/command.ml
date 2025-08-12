@@ -16,6 +16,8 @@ open Printable
 module Trie = Yuujinchou.Trie
 module TermParse = Parse
 
+type _ Effect.t += Chdir : string -> string Effect.t
+
 module StringsMap = Map.Make (struct
   type t = string list
 
@@ -86,6 +88,7 @@ module Command = struct
         wsorigin : Whitespace.t list;
         op : (Whitespace.t list * modifier) option;
       }
+    | Chdir of { wschdir : Whitespace.t list; dir : string; wsdir : Whitespace.t list }
     | Solve of {
         wssolve : Whitespace.t list;
         number : int;
@@ -530,6 +533,15 @@ module Parse = struct
            "") in
     return (Import { wsimport; export; origin; wsorigin; op })
 
+  let chdir =
+    let* wschdir = token Chdir in
+    let* dir, wsdir =
+      step "" (fun state _ (tok, ws) ->
+          match tok with
+          | String dir -> Some ((dir, ws), state)
+          | _ -> None) in
+    return (Chdir { wschdir; dir; wsdir })
+
   let solve =
     let* wssolve = token Solve in
     let* number, wsnumber = integer in
@@ -652,6 +664,7 @@ module Parse = struct
     </> echo
     </> notation
     </> import
+    </> chdir
     </> solve
     </> split
     </> show
@@ -737,6 +750,7 @@ let to_string : Command.t -> string = function
   | Echo { eval = false; _ } -> "synth"
   | Notation _ -> "notation"
   | Import _ -> "import"
+  | Chdir _ -> "chdir"
   | Solve _ -> "solve"
   | Split _ -> "split"
   | Show _ -> "show"
@@ -907,6 +921,10 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
         | None -> trie in
       if export then Scope.include_subtree ([], trie) else Scope.import_subtree ([], trie);
       (None, fun _ -> None)
+  | Chdir { dir; _ } ->
+      let newdir = Effect.perform (Chdir dir) in
+      emit (Directory_changed newdir);
+      (None, [])
   | Solve data ->
       let (Found_hole { instant; parametric; _ } as found) = Global.find_hole data.number in
       Global.rewind_command ~parametric ~holes_allowed:(Ok ()) instant @@ fun () ->
@@ -1331,6 +1349,11 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
                   | `Path [] -> Token.pp Dot
                   | `Path path -> utf8string (String.concat "." path))
                ^^ op)),
+          rest )
+    | Chdir { wschdir; dir; wsdir } ->
+        let ws, rest = Whitespace.split wsdir in
+        ( indent,
+          Token.pp Chdir ^^ pp_ws `Nobreak wschdir ^^ dquotes (utf8string dir) ^^ pp_ws `None ws,
           rest )
     | Solve { column; tm; _ } ->
         let (Wrap tm) = tm in

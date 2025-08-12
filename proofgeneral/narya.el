@@ -473,6 +473,12 @@ handling in Proof General."
 	(comment-style 'extra-line))
     (comment-region-default beg end arg)))
 
+(defun narya-chdir-to-current-file ()
+  "Change Narya's current directory to that of the current buffer file."
+  (proof-shell-invisible-command
+   (concat "chdir " (prin1-to-string (file-name-directory (buffer-file-name))))
+   t))
+
 (defun narya-mode-extra-config ()
   (set (make-local-variable 'block-comment-start) "{` ")
   (set (make-local-variable 'block-comment-end) " `}")
@@ -483,7 +489,8 @@ handling in Proof General."
   (add-hook 'proof-shell-handle-delayed-output-hook 'narya-show-goal)
   (add-hook 'proof-shell-handle-delayed-output-hook 'narya-optimise-resp-windows)
   (modify-syntax-entry ? " ")           ; Why is this necessary?
-  (setq font-lock-multiline t))
+  (setq font-lock-multiline t)
+  (add-hook 'proof-activate-scripting-hook 'narya-chdir-to-current-file))
 
 (add-hook 'narya-mode-hook 'narya-mode-extra-config)
 

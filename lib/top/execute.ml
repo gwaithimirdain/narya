@@ -28,7 +28,17 @@ module Loadstate = struct
   }
 end
 
-module Loading = Algaeff.State.Make (Loadstate)
+module Loading = struct
+  include State.Make (Loadstate)
+
+  let run ~init f =
+    run ~init @@ fun () ->
+    try f ()
+    with effect Parser.Command.Chdir dir, k ->
+      let cwd = FilePath.make_absolute (get ()).cwd dir in
+      modify (fun s -> { s with cwd });
+      Effect.Deep.continue k cwd
+end
 
 let () =
   Loading.register_printer (function

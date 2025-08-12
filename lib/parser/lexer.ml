@@ -340,6 +340,7 @@ let get_reserved_word = function
   | "notation" -> Some Notation
   | "import" -> Some Import
   | "export" -> Some Export
+  | "chdir" -> Some Chdir
   | "solve" -> Some Solve
   | "split" -> Some Split
   | "show" -> Some Show

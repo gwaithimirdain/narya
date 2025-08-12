@@ -37,6 +37,7 @@ type t =
   | End
   | Export
   | Import
+  | Chdir
   | In
   | Let
   | Match
@@ -189,6 +190,7 @@ let to_string = function
   | Codata -> "codata"
   | Notation -> "notation"
   | Import -> "import"
+  | Chdir -> "chdir"
   | Export -> "export"
   | Solve -> "solve"
   | Split -> "split"
