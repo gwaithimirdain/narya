@@ -384,7 +384,7 @@ module F = struct
     let mapsto =
       match cube.value with
       | `Normal -> "↦"
-      | `Cube -> "⤇" in
+      | `Cube | `Any -> "⤇" in
     fprintf ppf "%s %s %s %a" (Constr.to_string c) (strvars vars.value) mapsto check body.value
 
   let entry : type x n. formatter -> (x, n) Ctx.entry -> unit =

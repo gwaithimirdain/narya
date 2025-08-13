@@ -128,3 +128,28 @@ def is_zero_eq_zero_rev (n : ℕ) (z : is_zero n) : Id ℕ n 0 ≔ match z, n [
 {` And we can similarly omit its case `}
 def is_zero_eq_zero_rev' (n : ℕ) (z : is_zero n) : Id ℕ n 0 ≔ match z, n [
 | _, zero. ↦ refl (0 : ℕ)]
+
+{` Higher-dimensional matches use ⤇ `}
+def bar (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : Type ≔ match y2 [
+| zero. ⤇ ℕ
+| suc. n ⤇ bar n.0 n.1 n.2 ]
+
+{` Multiple matches use ⤇ if any of them are higher-dimensional `}
+def bar' (x : ℕ) (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : Type ≔ match x, y2 [
+| zero., zero. ⤇ ℕ
+| zero., suc. n ⤇ bar' x n.0 n.1 n.2
+| suc. _, zero. ⤇ ℕ
+| suc. _, suc. n ⤇ bar' x n.0 n.1 n.2 ]
+
+{` But it's only required in the branches that include any higher-dimensional matches. `}
+def bar'' (x : ℕ) (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : Type ≔ match x, y2 [
+| zero., _ ↦ ℕ
+| suc. _, zero. ⤇ ℕ
+| suc. _, suc. n ⤇ bar'' x n.0 n.1 n.2 ]
+
+{` Same for deep matches `}
+def baz : Type ≔ data [ baz. (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) ]
+
+def bazzz (x : baz) : Type ≔ match x [
+| baz. _ _ zero. ⤇ ℕ
+| baz. _ _ (suc. n) ⤇ bazzz (baz. n.0 n.1 n.2)]

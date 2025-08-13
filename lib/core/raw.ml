@@ -148,7 +148,7 @@ module rec Make : functor (I : Indices) -> sig
 
   and _ branch =
     | Branch :
-        ('a, 'b, 'ab) Namevec.t located * [ `Cube | `Normal ] located * 'ab check located
+        ('a, 'b, 'ab) Namevec.t located * [ `Cube | `Normal | `Any ] located * 'ab check located
         -> 'a branch
 
   and _ dataconstr = Dataconstr : ('a, 'b, 'ab) tel * 'ab check located option -> 'a dataconstr
@@ -326,7 +326,7 @@ functor
     (* The location of the namevec is that of the whole pattern.  The location of the cube flag is that of the mapsto. *)
     and _ branch =
       | Branch :
-          ('a, 'b, 'ab) Namevec.t located * [ `Cube | `Normal ] located * 'ab check located
+          ('a, 'b, 'ab) Namevec.t located * [ `Cube | `Normal | `Any ] located * 'ab check located
           -> 'a branch
 
     (* *)

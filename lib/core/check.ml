@@ -232,7 +232,7 @@ let merge_branches : type a m ij.
         | `Normal, Pos _ ->
             fatal ?loc:cube.loc (Noncube_abstraction_in_higher_dimensional_match (dim_env env))
         | `Cube, Zero -> fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "match")
-        | `Normal, Zero | `Cube, Pos _ -> ());
+        | `Normal, Zero | `Cube, Pos _ | `Any, _ -> ());
         match Fwn.compare (Namevec.length xs) (Telescope.length argtys) with
         | Neq ->
             fatal ?loc

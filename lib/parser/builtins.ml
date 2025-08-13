@@ -1342,14 +1342,14 @@ end
 
 (* An ('a, 'n) branch is a scope of 'a variables, a vector of 'n patterns, and a body to be parsed in the scope extended by the variables in those patterns.  At the beginning, all the branches start out with the same scope of variables, but as we proceed they can get different ones.  All the branches in a single invocation of process_match have the same *number* of variables in scope, but different branches could have different *names* for those variables. *)
 type ('a, 'n) branch =
-  'a Matchscope.t * (pattern, 'n) Vec.t * [ `Normal | `Cube ] located * wrapped_parse
+  'a Matchscope.t * (pattern, 'n) Vec.t * [ `Normal | `Cube | `Any ] located * wrapped_parse
 
 (* An ('a, 'm, 'n) cbranch is a branch, with scope of 'a variables, that starts with a constructor (unspecified) having 'm arguments and proceeds with 'n other patterns.  *)
 type ('a, 'm, 'n) cbranch =
   'a Matchscope.t
   * (pattern, 'm) Vec.t
   * (pattern, 'n) Vec.t
-  * [ `Normal | `Cube ] located
+  * [ `Normal | `Cube | `Any ] located
   * wrapped_parse
 
 (* An ('a, 'n) cbranches is a Bwd of branches that start with the same constructor, which always has the same number of arguments, along with a scope of 'a variables common to those branches. *)
@@ -1378,31 +1378,34 @@ let rec process_branches : type a n.
     (a, n) branch list ->
     Asai.Range.t option ->
     [ `Implicit | `Explicit of wrapped_parse | `Nondep of int located ] ->
-    a check located =
- fun xctx xs seen branches loc sort ->
+    int ->
+    a check located * int =
+ fun xctx xs seen branches loc sort n ->
   match branches with
   (* An empty match, having no branches, compiles to a refutation that will check by looking for any discriminee with an empty type.  This can only happen as the top-level call, so 'seen' should be empty and we really can just take all the discriminees. *)
   | [] -> (
       let tms = Vec.to_list_map (process_obs_or_ix xctx) xs in
       match (sort, xs) with
-      | `Implicit, _ -> locate (Refute (tms, `Implicit)) loc
+      | `Implicit, _ -> (locate (Refute (tms, `Implicit)) loc, n + 1)
       | `Explicit (Wrap motive), [ Left (Wrap tm) ] -> (
           let ctx = Matchscope.names xctx in
           let sort = `Explicit (process ctx motive) in
           match process ctx tm with
           | { value = Synth tm; loc } ->
-              locate
-                (Synth (Match { tm = locate tm loc; sort; branches = Emp; refutables = None }))
-                loc
+              ( locate
+                  (Synth (Match { tm = locate tm loc; sort; branches = Emp; refutables = None }))
+                  loc,
+                n + 1 )
           | _ -> fatal (Nonsynthesizing "motive of explicit match"))
       | `Nondep i, [ Left (Wrap tm) ] -> (
           let ctx = Matchscope.names xctx in
           let sort = `Nondep i in
           match process ctx tm with
           | { value = Synth tm; loc } ->
-              locate
-                (Synth (Match { tm = locate tm loc; sort; branches = Emp; refutables = None }))
-                loc
+              ( locate
+                  (Synth (Match { tm = locate tm loc; sort; branches = Emp; refutables = None }))
+                  loc,
+                n + 1 )
           | _ -> fatal (Nonsynthesizing "motive of explicit match"))
       | _ -> fatal (Anomaly "multiple match with return-type"))
   (* If there are no patterns left, and hence no discriminees either, we require that there must be exactly one branch. *)
@@ -1411,11 +1414,11 @@ let rec process_branches : type a n.
   | [ (_, [], _, Wrap { value = Notn ((Dot, _), _); loc }) ] ->
       let [] = xs in
       let tms = Bwd_extra.to_list_map (process_ix xctx) seen in
-      locate (Refute (tms, `Explicit)) loc
+      (locate (Refute (tms, `Explicit)) loc, n + 1)
   (* Otherwise, the result is just the body of that branch. *)
   | [ (bodyctx, [], _, Wrap body) ] ->
       let [] = xs in
-      process (Matchscope.names bodyctx) body
+      (process (Matchscope.names bodyctx) body, n)
   (* If the first pattern of the first branch is a variable, then the same must be true of all the other branches, but they could all have different variable names. *)
   | (xctx, Var name :: _, _, _) :: _ as branches -> (
       (* The variable is assigned to the value of the first discriminee. *)
@@ -1431,7 +1434,7 @@ let rec process_branches : type a n.
                 | _, Constr _ :: _, _, _ -> fatal Overlapping_patterns)
               branches in
           let seen = Snoc (seen, i) in
-          process_branches xctx xs seen branches loc sort
+          process_branches xctx xs seen branches loc sort n
       | Left (Wrap tm) ->
           (* Otherwise, we have to let-bind it to the discriminee term, adding it as a new variable to the scope. *)
           let branches =
@@ -1446,8 +1449,8 @@ let rec process_branches : type a n.
             (fun () ->
               let xctx = Matchscope.ext xctx None in
               let seen = Snoc (seen, Matchscope.last_num xctx) in
-              let mtch = process_branches xctx xs seen branches loc sort in
-              locate (Synth (Let (name.value, stm, mtch))) loc)
+              let mtch, any_constrs = process_branches xctx xs seen branches loc sort n in
+              (locate (Synth (Let (name.value, stm, mtch))) loc, any_constrs))
             ~fatal:(fun d ->
               match d.message with
               | No_remaining_patterns -> fatal ?loc:name.loc Overlapping_patterns
@@ -1504,8 +1507,14 @@ let rec process_branches : type a n.
                     | _ -> fatal_diagnostic d)
                 @@ fun () ->
                 (* After the first outer match, we always switch to implicit matches. *)
-                Raw.Branch
-                  (locate names loc, cube, process_branches newxctx newxs seen newbrs loc `Implicit))
+                let rest, n = process_branches newxctx newxs seen newbrs loc `Implicit (n + 1) in
+                let newcube =
+                  if n >= 2 then
+                    match cube.value with
+                    | `Normal -> `Normal
+                    | _ -> `Any
+                  else cube.value in
+                Raw.Branch (locate names loc, locate_opt cube.loc newcube, rest))
           cbranches in
       let tm = process_obs_or_ix xctx x in
       let refutables =
@@ -1522,7 +1531,7 @@ let rec process_branches : type a n.
         | `Implicit -> `Implicit
         | `Nondep i -> `Nondep i
         | `Explicit (Wrap motive) -> `Explicit (process (Matchscope.names xctx) motive) in
-      locate (Synth (Match { tm; sort; branches; refutables })) loc
+      (locate (Synth (Match { tm; sort; branches; refutables })) loc, n + 1)
 
 let rec get_discriminees :
     observation list -> (wrapped_parse, int) Either.t Vec.wrapped * observation list =
@@ -1537,7 +1546,7 @@ let rec get_discriminees :
 let rec get_patterns : type n.
     n Fwn.t ->
     observation list ->
-    (pattern, n) Vec.t * [ `Normal | `Cube ] located * observation list =
+    (pattern, n) Vec.t * [ `Normal | `Cube | `Any ] located * observation list =
  fun n obs ->
   match (n, obs) with
   | _, [] | Zero, _ -> invalid "match"
@@ -1549,7 +1558,11 @@ let rec get_patterns : type n.
   | Suc Zero, Term tm :: _ -> fatal ?loc:tm.loc Parse_error
   | Suc (Suc _ as n), Term tm :: Token (Op ",", _) :: obs ->
       let pats, cube, obs = get_patterns n obs in
-      (Postprocess.get_pattern tm :: pats, cube, obs)
+      let newcube =
+        match cube.value with
+        | `Normal -> `Normal
+        | _ -> `Any in
+      (Postprocess.get_pattern tm :: pats, locate_opt cube.loc newcube, obs)
   | Suc (Suc _), Term tm :: _ -> fatal ?loc:tm.loc Wrong_number_of_patterns
   | _ -> invalid "match"
 
@@ -1569,7 +1582,8 @@ let rec get_branches : type a n. a Matchscope.t -> n Fwn.t -> observation list -
 
 (* A version of get_patterns that doesn't require a specific number of patterns in advance. *)
 let rec get_any_patterns :
-    observation list -> pattern Vec.wrapped * [ `Normal | `Cube ] located * observation list =
+    observation list -> pattern Vec.wrapped * [ `Normal | `Cube | `Any ] located * observation list
+    =
  fun obs ->
   match obs with
   | Term tm :: Token (Mapsto, (_, loc)) :: obs ->
@@ -1578,7 +1592,11 @@ let rec get_any_patterns :
       (Wrap [ Postprocess.get_pattern tm ], locate `Cube loc, obs)
   | Term tm :: Token (Op ",", _) :: obs ->
       let Wrap pats, cube, obs = get_any_patterns obs in
-      (Wrap (Postprocess.get_pattern tm :: pats), cube, obs)
+      let newcube =
+        match cube.value with
+        | `Normal -> `Normal
+        | _ -> `Any in
+      (Wrap (Postprocess.get_pattern tm :: pats), locate_opt cube.loc newcube, obs)
   | _ -> invalid "match"
 
 let rec pp_patterns accum obs =
@@ -1707,7 +1725,7 @@ let () =
                 | Token (LBracket, _) :: obs ->
                     get_branches ctx (Vec.length xs) (must_start_with (Op "|") obs)
                 | _ -> invalid "implicit_match" in
-              process_branches ctx xs Emp branches loc `Implicit
+              fst (process_branches ctx xs Emp branches loc `Implicit 0)
           | _ -> invalid "implicit_match");
       pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "match"));
       print_term = None;
@@ -1750,7 +1768,7 @@ let () =
                     let (Extctx (mn, _, _)) = get_vars (Matchscope.names ctx) vars in
                     `Nondep ({ value = N.to_int (N.plus_right mn); loc = vars.loc } : int located)
                 | _ -> `Explicit (Wrap motive) in
-              process_branches ctx [ Left (Wrap tm) ] Emp branches loc sort
+              fst (process_branches ctx [ Left (Wrap tm) ] Emp branches loc sort 0)
           | Token (Match, _) :: _ :: Token (Return, _) :: Term nonabs :: Token (LBracket, _) :: _ ->
               fatal ?loc:nonabs.loc Parse_error
           | _ -> invalid "match");
@@ -1777,12 +1795,12 @@ let () =
                   let (Bplus an) = Raw.Indexed.bplus n in
                   let ctx, xs = Matchscope.exts an (Matchscope.make ctx) in
                   let branches = get_branches ctx n obs in
-                  let mtch =
+                  let mtch, _ =
                     process_branches ctx
                       (Vec.mmap (fun [ i ] -> Either.Right i) [ xs ])
                       Emp
                       ((ctx, pats, cube, Wrap body) :: branches)
-                      loc `Implicit in
+                      loc `Implicit 0 in
                   (* NB: Raw.lams produces only explicit lambdas.  Pattern-matching lambdas can't be used for implicit ones. *)
                   Raw.lams an (Vec.init (fun () -> (unlocated None, ())) n ()) mtch loc
               | _ -> invalid "match")

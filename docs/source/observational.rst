@@ -247,25 +247,31 @@ Cubes of variables also appear automatically when matching against a higher-dime
 
 .. code-block:: none
 
-   def code : ℕ → ℕ → Type ≔
-   [ zero. ↦ [ zero. ↦ sig ()
-             | suc. n ↦ data [] ]
-   | suc. m ↦ [ zero. ↦ data []
-              | suc. n ↦ sig ( uncode : code m n ) ]]
+   def code : ℕ → ℕ → Type ≔ [
+   | zero. ↦ [
+     | zero. ↦ sig ()
+     | suc. n ↦ data []]
+   | suc. m ↦ [
+     | zero. ↦ data []
+     | suc. n ↦ sig ( uncode : code m n ) ]]
    
-   def decode : (m n : ℕ) → code m n → Id ℕ m n ≔
-   [ zero. ↦ [ zero. ↦ _ ↦ zero.
-             | suc. n ↦ [] ]
-   | suc. m ↦ [ zero. ↦ []
-              | suc. n ↦ p ↦ suc. (decode m n (p .0)) ]]
+   def decode : (m n : ℕ) → code m n → Id ℕ m n ≔ [
+   | zero. ↦ [
+     | zero. ↦ _ ↦ zero.
+     | suc. n ↦ [] ]
+   | suc. m ↦ [
+     | zero. ↦ []
+     | suc. n ↦ p ↦ suc. (decode m n (p .0)) ]]
    
-   def encode (m n : ℕ) : Id ℕ m n → code m n ≔
-   [ zero. ⤇ ()
+   def encode (m n : ℕ) : Id ℕ m n → code m n ≔ [
+   | zero. ⤇ ()
    | suc. p ⤇ (_ ≔ encode p.0 p.1 p.2)]
 
-Here in the definition of ``encode``, the pattern variable ``p`` of the ``suc.`` branch is automatically made into a 1-dimensional cube of variables since we are matching against an element of ``Id ℕ``, so in the body we can refer to ``p.0``, ``p.1``, and ``p.2``.  And because of this, we use ``⤇`` rather than ``↦`` to introduce the bodies of branches in that ``match``.
+Here in the definition of ``encode``, the pattern variable ``p`` of the ``suc.`` branch is automatically made into a 1-dimensional cube of variables since we are matching against an element of ``Id ℕ``, so in the body we can refer to ``p.0``, ``p.1``, and ``p.2``.  And because of this, we are required to use ``⤇`` rather than ``↦`` to introduce the bodies of branches in that ``match``.
 
 Unlike for abstractions, for higher-dimensional matches there is no option to write ``↦`` and name all the variables explicitly (e.g. ``| suc. {p0} {p1} p2 ↦``).  We deem this would be too confusing, because higher-dimensional constructors can never be *applied* explicitly to all their boundaries, and a "pattern" in a ``match`` should look as much as possible like the constructor that it matches against.
+
+It is possible to do :ref:`Multiple matches and deep matches` that combine zero- and higher-dimensional matches.  In this case the match symbol is ``⤇``, which we can think of as indicating that at least *some* of the pattern variables are nontrivial cubes.  (In fact, currently the symbol ``⤇`` is allowed for *all* multiple and deep matches, even if none of them are higher-dimensional, but this should not be depended on.)
 
 
 Id of the universe
