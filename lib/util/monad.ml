@@ -18,9 +18,13 @@ module Ops (M : Plain) = struct
   let ( let* ) = M.bind
   let ( >> ) x y = M.bind x (fun _ -> y)
 
-  let liftM (f : 'a -> 'b) (mx : 'a M.t) : 'b M.t =
-    let* x = mx in
-    return (f x)
+  let rec mapM (f : 'a -> 'b M.t) (xs : 'a list) : 'b list M.t =
+    match xs with
+    | [] -> M.return []
+    | x :: xs ->
+        let* fx = f x in
+        let* fxs = mapM f xs in
+        M.return (fx :: fxs)
 end
 
 (* The identity monad *)
@@ -158,6 +162,25 @@ module List = struct
   let mzero = []
   let mplus xs ys = xs @ ys
   let force (x : 'a t) : 'a list = x
+end
+
+module ListT (M : Plain) = struct
+  open Ops (M)
+
+  type 'a t = 'a list M.t
+
+  let return : type a. a -> a t = fun x -> M.return [ x ]
+
+  let bind : type a b. a t -> (a -> b t) -> b t =
+   fun o f ->
+    M.bind o (fun o ->
+        let* fo = mapM f o in
+        M.return (GList.flatten fo))
+
+  let lift : type a. a M.t -> a t =
+   fun mx ->
+    let* x = mx in
+    M.return [ x ]
 end
 
 (*

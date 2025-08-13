@@ -1,4 +1,5 @@
 open Bwd
+open Bwd.Infix
 open Dim
 open Util
 open List_extra
@@ -104,7 +105,8 @@ module Command = struct
         number : int;
         wsnumber : Whitespace.t list;
         wscoloneq : Whitespace.t list;
-        tm : wrapped_parse;
+        (* The whitespace is for the commas.  The first one is ignored. *)
+        tms : (Whitespace.t list * wrapped_parse) list;
         mutable printed_term : PPrint.document;
       }
     (* Show and Undo don't get reformatted (see pp_command, below), so there's no need to store whitespace in them, but we do it anyway for completeness. *)
@@ -556,7 +558,13 @@ module Parse = struct
     let* number, wsnumber = integer in
     let* wscoloneq = token Coloneq in
     let* tm = C.term [] in
-    return (Split { wssplit; number; wsnumber; wscoloneq; tm; printed_term = PPrint.empty })
+    let* tms =
+      zero_or_more
+        (let* wscomma = token (Op ",") in
+         let* tm = C.term [] in
+         return (wscomma, tm)) in
+    let tms = ([], tm) :: tms in
+    return (Split { wssplit; number; wsnumber; wscoloneq; tms; printed_term = PPrint.empty })
 
   let show =
     let* wsshow = token Show in
@@ -773,6 +781,59 @@ let condense : Command.t -> [ `Import | `Option | `None | `Bof ] = function
   | Option _ -> .
   | _ -> `None
 
+(* Subroutine for "split" that generates the cases in a multiple match. *)
+let split_match_cases : type a b.
+    (a, b) Ctx.t ->
+    (string option, a) Bwv.t ->
+    (Whitespace.t list * wrapped_parse) list ->
+    observation list list =
+ fun ctx vars tms ->
+  let open Asai.Range in
+  let module S = Monad.State (Bool) in
+  let module LS = Monad.ListT (S) in
+  let open Monad.Ops (LS) in
+  let tok t : observation = Token (t, ([], None)) in
+  let rec do_args : type a p ap.
+      (a, p, ap) Term.Telescope.t ->
+      (No.plus_omega, No.strict, No.plus_omega, No.nonstrict) parse Asai.Range.located list =
+   fun args ->
+    match args with
+    | Emp -> []
+    | Ext (None, _, args) -> locate_opt None (Placeholder []) :: do_args args
+    | Ext (Some x, _, args) -> locate_opt None (Ident ([ x ], [])) :: do_args args in
+  let rec go = function
+    | [] ->
+        let* higher = LS.lift S.get in
+        let mapsto = if higher then Token.DblMapsto else Mapsto in
+        let li, ri = (No.Interval.entire, No.Interval.entire) in
+        let h = Hole { li; ri; num = ref 0; ws = []; contents = None } in
+        return [ tok mapsto; Term (locate_opt None h) ]
+    | (_, Wrap tm) :: tms -> (
+        match process vars tm with
+        | { value = Synth rtm; loc } -> (
+            let _, sty = Check.synth (Kinetic `Nolet) ctx (Asai.Range.locate_opt loc rtm) in
+            match View.view_type sty "split" with
+            | Canonical (_, Data { dim; constrs; _ }, _, _) ->
+                let* () =
+                  match D.compare_zero dim with
+                  | Zero -> return ()
+                  | Pos _ -> LS.lift (S.put true) in
+                let* c, Dataconstr { args; _ } = S.return (Bwd.to_list constrs) in
+                let left_ok = No.le_refl No.plus_omega in
+                let right_ok = No.le_refl No.plus_omega in
+                let first =
+                  Term
+                    (List.fold_left
+                       (fun fn arg -> locate_opt None (App { fn; arg; left_ok; right_ok }))
+                       (locate_opt None (Constr (Constr.to_string c, [])))
+                       (do_args args)) in
+                let* rest = go tms in
+                if List.length rest = 2 then return (first :: rest)
+                else return (first :: tok (Op ",") :: rest)
+            | _ -> fatal (Invalid_split (`Term, "non-datatype")))
+        | _ -> fatal (Nonsynthesizing "splitting term")) in
+  fst (go tms false)
+
 (* Most execution of commands we can do here, but there are a couple things where we need to call out to the executable: noting when an effectual action like 'echo' is taken (for recording warnings in compiled files), and loading another file.  So this function takes a couple of callbacks as arguments. *)
 let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (cmd : Command.t) :
     int option * (int * int * int) list =
@@ -956,11 +1017,10 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       let (Found_hole { instant; termctx; ty; vars; parametric; _ }) =
         Global.find_hole data.number in
       Global.rewind_command ~parametric ~holes_allowed:(Ok ()) instant @@ fun () ->
-      let (Wrap tm) = data.tm in
       let content =
         let ctx = Norm.eval_ctx termctx in
-        match tm.value with
-        | Placeholder _ -> (
+        match data.tms with
+        | [ (_, Wrap { value = Placeholder _; _ }) ] -> (
             let ety = Norm.eval_term (Ctx.env ctx) ty in
             match View.view_type ety "split" with
             | Canonical (_, Pi (_, doms, _), _, _) ->
@@ -1020,50 +1080,30 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                 fatal (Invalid_split (`Goal, "datatype with multiple constructors"))
             | Canonical (_, UU _, _, _) -> fatal (Invalid_split (`Goal, "universe"))
             | Neutral _ -> fatal (Invalid_split (`Goal, "neutral")))
-        | _ -> (
-            match process vars tm with
-            | { value = Synth rtm; loc } -> (
-                let _, sty = Check.synth (Kinetic `Nolet) ctx (Asai.Range.locate_opt loc rtm) in
-                match View.view_type sty "split" with
-                | Canonical (_, Data { dim; constrs; _ }, _, _) ->
-                    let mapsto =
-                      match D.compare_zero dim with
-                      | Zero -> Token.to_string Mapsto
-                      | Pos _ -> Token.to_string DblMapsto in
-                    let rec do_args : type a p ap. (a, p, ap) Term.Telescope.t -> string -> string =
-                     fun args acc ->
-                      match args with
-                      | Emp -> acc
-                      | Ext (x, _, args) ->
-                          Option.value ~default:(Token.to_string Underscore) x
-                          ^ " "
-                          ^ do_args args acc in
-                    let do_constrs : type m ij.
-                        Constr.t * (m, ij) Value.dataconstr -> string list -> string list =
-                     fun (c, Dataconstr { args; _ }) acc ->
-                      (Constr.to_string c
-                      ^ ". "
-                      ^ do_args args " "
-                      ^ mapsto
-                      ^ " "
-                      ^ Token.to_string (Hole None))
-                      :: acc in
-                    let constrs = Bwd.fold_right do_constrs constrs [] in
-                    let buf = Buffer.create 10 in
-                    PPrint.(
-                      ToBuffer.pretty 1.0 (Display.columns ()) buf
-                        (pp_complete_term (Wrap tm) `None));
-                    Token.to_string Match
-                    ^ " "
-                    ^ Buffer.contents buf
-                    ^ " "
-                    ^ Token.to_string LBracket
-                    ^ " "
-                    ^ String.concat " | " constrs
-                    ^ " "
-                    ^ Token.to_string RBracket
-                | _ -> fatal (Invalid_split (`Term, "non-datatype")))
-            | _ -> fatal (Nonsynthesizing "splitting term")) in
+        | _ ->
+            let tok t : observation = Token (t, ([], None)) in
+            let comma_tms =
+              List.tl
+              @@
+              let open Monad.Ops (Monad.List) in
+              let* wscomma, Wrap tm = data.tms in
+              [ Token (Op ",", (wscomma, None)); Term tm ] in
+            let lines = split_match_cases ctx vars data.tms in
+            let mtch =
+              Asai.Range.locate_opt None
+              @@ outfix ~notn:Builtins.implicit_mtch
+                   ~inner:
+                     (Multiple
+                        ( Left (Match, ([], None)),
+                          Emp
+                          <@ comma_tms
+                          <: tok LBracket
+                          <@ List.flatten (List.map (fun line -> tok (Op "|") :: line) lines),
+                          Left (RBracket, ([], None)) )) in
+            let buf = Buffer.create 10 in
+            PPrint.(
+              ToBuffer.pretty 1.0 (Display.columns ()) buf (pp_complete_term (Wrap mtch) `None));
+            Buffer.contents buf in
       let ptm = TermParse.Term.(final (parse (`String { title = None; content }))) in
       let disp = Display.get () in
       Display.run ~init:{ disp with holes = `Without_number } @@ fun () ->
