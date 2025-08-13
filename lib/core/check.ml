@@ -227,12 +227,15 @@ let merge_branches : type a m ij.
           match databr with
           | Some db -> db
           | None -> fatal ?loc (No_such_constructor_in_match (phead head, constr)) in
+        (* Check that the abstraction symbol matches the dimension of the discriminee. *)
+        (match (cube, D.compare_zero (dim_env env)) with
+        | `Normal loc, Pos _ ->
+            fatal ?loc (Noncube_abstraction_in_higher_dimensional_match (dim_env env))
+        | `Normal _, Zero -> ()
+        (* Cube abstractions ⤇ can be used with 0-dimensional discriminees if they're generated as part of a multiple/deep match clause that also includes some higher discriminess.  We check for errors in that when the outer match finishes. *)
+        | `Cube _, Zero -> ()
+        | `Cube bs, Pos _ -> List.iter (fun b -> b.value := true) bs);
         (* We also check during preprocessing that the user has supplied the right number of pattern variable arguments to the constructor.  The positive result of this check is then recorded in the common existential types bound by Checkable_branch. *)
-        (match (cube.value, D.compare_zero (dim_env env)) with
-        | `Normal, Pos _ ->
-            fatal ?loc:cube.loc (Noncube_abstraction_in_higher_dimensional_match (dim_env env))
-        | `Cube, Zero -> fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "match")
-        | `Normal, Zero | `Cube, Pos _ | `Any, _ -> ());
         match Fwn.compare (Namevec.length xs) (Telescope.length argtys) with
         | Neq ->
             fatal ?loc
@@ -613,11 +616,11 @@ let rec check : type a b s.
           else { value = Raw.Constr (quot, [ process_nat n.num; process_pos n.den ]); loc = tm.loc }
         in
         check ?discrete status ctx numeral ty
-    | Synth (Match { tm; sort = `Implicit; branches; refutables }), Potential _ ->
-        check_implicit_match status ctx tm branches refutables ty
-    | Synth (Match { tm; sort = `Nondep i; branches; refutables = _ }), Potential _ ->
+    | Synth (Match { tm; sort = `Implicit; branches; refutables; highers }), Potential _ ->
+        check_implicit_match status ctx tm branches refutables highers ty
+    | Synth (Match { tm; sort = `Nondep i; branches; refutables = _; highers }), Potential _ ->
         let stm, sty = synth (Kinetic `Nolet) ctx tm in
-        check_nondep_match status ctx stm sty branches (Some i) ty tm.loc
+        check_nondep_match status ctx stm sty branches (Some i) highers ty tm.loc
     (* We don't need to deal with `Explicit matches here, since they can always synthesize a type and hence be caught by the catch-all for checking synthesizing terms, below. *)
     (* Checking [] at a pi-type interprets it as a pattern-matching lambda over some empty datatype. *)
     | Empty_co_match, _ -> (
@@ -1066,9 +1069,10 @@ and check_implicit_match : type a b.
     a synth located ->
     (Constr.t, a branch) Abwd.t ->
     a refutables option ->
+    bool ref located list ->
     kinetic value ->
     (b, potential) term =
- fun status ctx tm brs refutables motive ->
+ fun status ctx tm brs refutables highers motive ->
   match tm with
   (* For a variable match, the variable must not be let-bound to a value or be a field access variable.  Checking that it isn't also gives us its De Bruijn level, its type, and its checked-index.  If it's not a free variable, or if we're not in a case tree or if the motive was supplied explicitly, we obtain its value and type; then we pass on to the appropriate checking function. *)
   | { value = Var ix; loc } -> (
@@ -1076,20 +1080,20 @@ and check_implicit_match : type a b.
       | `Field (_, _, fld) ->
           emit ?loc (Matching_wont_refine ("discriminee is record field", Some (PField fld)));
           let stm, varty = synth (Kinetic `Nolet) ctx tm in
-          check_nondep_match status ctx stm varty brs None motive tm.loc
+          check_nondep_match status ctx stm varty brs None highers motive tm.loc
       | `Var (None, _, ix) ->
           emit ?loc (Matching_wont_refine ("discriminee is let-bound", Some (PTerm (ctx, Var ix))));
           let stm, varty = synth (Kinetic `Nolet) ctx tm in
-          check_nondep_match status ctx stm varty brs None motive tm.loc
+          check_nondep_match status ctx stm varty brs None highers motive tm.loc
       | `Var (Some level, { tm = _; ty = varty }, index) ->
           with_loc loc (fun () ->
               Annotate.ctx status ctx (locate_opt loc (Synth (Var ix)));
               Annotate.ty ctx varty;
               Annotate.tm ctx (realize status (Term.Var index)));
-          check_var_match status ctx level index varty brs refutables motive loc)
+          check_var_match status ctx level index varty brs refutables highers motive loc)
   | _ ->
       let stm, varty = synth (Kinetic `Nolet) ctx tm in
-      check_nondep_match status ctx stm varty brs None motive tm.loc
+      check_nondep_match status ctx stm varty brs None highers motive tm.loc
 
 (* Check a non-dependent match against a specified type. *)
 and check_nondep_match : type a b.
@@ -1099,10 +1103,11 @@ and check_nondep_match : type a b.
     kinetic value ->
     (Constr.t, a branch) Abwd.t ->
     int located option ->
+    bool ref located list ->
     kinetic value ->
     Asai.Range.t option ->
     (b, potential) term =
- fun status ctx tm varty brs i motive loc ->
+ fun status ctx tm varty brs i highers motive loc ->
   (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
   match view_type varty "check_nondep_match" with
   | Canonical
@@ -1153,7 +1158,12 @@ and check_nondep_match : type a b.
           (Constr.Map.empty, Emp) user_branches in
       match errs with
       | Snoc _ -> fatal (Accumulated ("check_nondep_match", errs))
-      | Emp -> Match { tm; dim; branches })
+      | Emp ->
+          List.iter
+            (fun b ->
+              if not !(b.value) then fatal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
+            highers;
+          Match { tm; dim; branches })
   | _ -> fatal ?loc (Matching_on_nondatatype (PVal (ctx, varty)))
 
 (* Try to synthesize a type from all the branches.  If any succeed, check the remaining branches against that synthesized type. *)
@@ -1162,9 +1172,10 @@ and synth_nondep_match : type a b.
     (a, b) Ctx.t ->
     a synth located ->
     (Constr.t, a branch) Abwd.t ->
+    bool ref located list ->
     int located option ->
     (b, potential) term * kinetic value =
- fun status ctx tm brs i ->
+ fun status ctx tm brs highers i ->
   (* First we synthesize the discriminee.  If that fails, we give up completely, as we don't even have a context in which to try synthesizing the branches. *)
   let (tm, varty), loc = (synth (Kinetic `Nolet) ctx tm, tm.loc) in
   (* The preprocessing is the same as in check_nondep_match; see there for comments. *)
@@ -1269,7 +1280,12 @@ and synth_nondep_match : type a b.
       match (errs, motive) with
       | Snoc _, _ -> fatal (Accumulated ("synth_nondep_match", errs))
       | Emp, None -> fatal (Anomaly "no synthesized type of match but no errors")
-      | Emp, Some motive -> (Match { tm; dim; branches }, motive))
+      | Emp, Some motive ->
+          List.iter
+            (fun b ->
+              if not !(b.value) then fatal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
+            highers;
+          (Match { tm; dim; branches }, motive))
   | _ -> fatal ?loc (Matching_on_nondatatype (PVal (ctx, varty)))
 
 (* Check a dependently typed match, with motive supplied by the user.  (Thus we have to typecheck the motive as well.) *)
@@ -1278,9 +1294,10 @@ and synth_dep_match : type a b.
     (a, b) Ctx.t ->
     a synth located ->
     (Constr.t, a branch) Abwd.t ->
+    bool ref located list ->
     a check located ->
     (b, potential) term * kinetic value =
- fun status ctx tm brs motive ->
+ fun status ctx tm brs highers motive ->
   let module S = Monad.State (struct
     type t = kinetic value
   end) in
@@ -1368,6 +1385,10 @@ and synth_dep_match : type a b.
                  { it = (fun _ [ x ] fn -> ((), apply_term fn (CubeOf.singleton x.tm))) }
                  [ inst_args ] result) in
           let result = apply_term result (CubeOf.singleton (eval_term (Ctx.env ctx) ctm)) in
+          List.iter
+            (fun b ->
+              if not !(b.value) then fatal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
+            highers;
           (* We readback the result so we can store it in the term, so that when evaluating it we know what its type must be without having to do all the work again. *)
           (Match { tm = ctm; dim; branches }, result))
   | _ -> fatal ?loc:tm.loc (Matching_on_nondatatype (PVal (ctx, varty)))
@@ -1381,10 +1402,11 @@ and check_var_match : type a b.
     kinetic value ->
     (Constr.t, a branch) Abwd.t ->
     a refutables option ->
+    bool ref located list ->
     kinetic value ->
     Asai.Range.t option ->
     (b, potential) term =
- fun status ctx level index varty brs refutables motive loc ->
+ fun status ctx level index varty brs refutables highers motive loc ->
   (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
   match view_type varty "check_var_match" with
   | Canonical
@@ -1437,11 +1459,11 @@ and check_var_match : type a b.
           match d.message with
           | Matching_wont_refine (str, x) ->
               emit ?loc:d.explanation.loc (Matching_wont_refine (str, x));
-              check_nondep_match status ctx (Term.Var index) varty brs None motive loc
+              check_nondep_match status ctx (Term.Var index) varty brs None highers motive loc
           | No_such_level x ->
               emit ?loc:d.explanation.loc
                 (Matching_wont_refine ("index variable occurs in parameter", Some x));
-              check_nondep_match status ctx (Term.Var index) varty brs None motive loc
+              check_nondep_match status ctx (Term.Var index) varty brs None highers motive loc
           | _ -> fatal_diagnostic d)
       @@ fun () ->
       let index_vars =
@@ -1582,7 +1604,12 @@ and check_var_match : type a b.
           (Constr.Map.empty, Emp) user_branches in
       match errs with
       | Snoc _ -> fatal (Accumulated ("check_var_match", errs))
-      | Emp -> Match { tm = Term.Var index; dim; branches })
+      | Emp ->
+          List.iter
+            (fun b ->
+              if not !(b.value) then fatal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
+            highers;
+          Match { tm = Term.Var index; dim; branches })
   | _ -> fatal ?loc (Matching_on_nondatatype (PVal (ctx, varty)))
 
 and make_match_status : type a b ab c n x y z.
@@ -1657,7 +1684,7 @@ and check_refute : type a b.
   | [ tm ] ->
       let stm, sty = synth (Kinetic `Nolet) ctx tm in
       Reporter.try_with
-        (fun () -> check_nondep_match status ctx stm sty Emp None ty tm.loc)
+        (fun () -> check_nondep_match status ctx stm sty Emp None [] ty tm.loc)
         ~fatal:(fun d ->
           match d.message with
           | Missing_constructor_in_match c -> (
@@ -1669,7 +1696,7 @@ and check_refute : type a b.
   | tm :: (_ :: _ as tms) ->
       let stm, sty = synth (Kinetic `Nolet) ctx tm in
       Reporter.try_with
-        (fun () -> check_nondep_match status ctx stm sty Emp None ty tm.loc)
+        (fun () -> check_nondep_match status ctx stm sty Emp None [] ty tm.loc)
         ~fatal:(fun d ->
           match d.message with
           | Missing_constructor_in_match c ->
@@ -2696,13 +2723,13 @@ and synth : type a b s.
             let termctx = readback_ctx ctx in
             Global.add_meta meta ~termctx ~tm:(`Defined sv) ~ty:vty ~energy:Potential;
             (Term.Meta (meta, Kinetic), svty))
-    | Match { tm; sort = `Explicit motive; branches; refutables = _ }, Potential _ ->
-        synth_dep_match status ctx tm branches motive
-    | Match { tm; sort = `Implicit; branches; refutables = _ }, Potential _ ->
+    | Match { tm; sort = `Explicit motive; branches; refutables = _; highers }, Potential _ ->
+        synth_dep_match status ctx tm branches highers motive
+    | Match { tm; sort = `Implicit; branches; refutables = _; highers }, Potential _ ->
         emit (Matching_wont_refine ("match in synthesizing position", None));
-        synth_nondep_match status ctx tm branches None
-    | Match { tm; sort = `Nondep i; branches; refutables = _ }, Potential _ ->
-        synth_nondep_match status ctx tm branches (Some i)
+        synth_nondep_match status ctx tm branches highers None
+    | Match { tm; sort = `Nondep i; branches; refutables = _; highers }, Potential _ ->
+        synth_nondep_match status ctx tm branches highers (Some i)
     | Fail e, _ -> fatal e
     (* If we're using the synthesized type of an argument as an implicit first argument: *)
     | ImplicitSApp (fn, apploc, arg), _ -> (

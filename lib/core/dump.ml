@@ -351,7 +351,7 @@ module F = struct
     | Let (_, _, _) -> fprintf ppf "Let(?)"
     | Letrec (_, _, _) -> fprintf ppf "LetRec(?)"
     | Act (_, _, _) -> fprintf ppf "Act(?)"
-    | Match { tm; sort = _; branches = br; refutables = _ } ->
+    | Match { tm; sort = _; branches = br; refutables = _; highers = _ } ->
         fprintf ppf "Match (%a, (%a))" synth tm.value branches br
     | UU -> fprintf ppf "Type"
     | Fail _ -> fprintf ppf "Error"
@@ -382,9 +382,9 @@ module F = struct
       | Some x :: xs -> x ^ " " ^ strvars xs
       | None :: xs -> "_ " ^ strvars xs in
     let mapsto =
-      match cube.value with
-      | `Normal -> "↦"
-      | `Cube | `Any -> "⤇" in
+      match cube with
+      | `Normal _ -> "↦"
+      | `Cube _ -> "⤇" in
     fprintf ppf "%s %s %s %a" (Constr.to_string c) (strvars vars.value) mapsto check body.value
 
   let entry : type x n. formatter -> (x, n) Ctx.entry -> unit =

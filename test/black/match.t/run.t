@@ -337,9 +337,12 @@
    ￫ info[I0000]
    ￮ constant bool defined
   
-   ￫ info[I0000]
-   ￮ constant bool.and defined
+   ￫ error[E0508]
+   ￭ command-line exec string
+   1 | def bool : Type ≔ data [ true. | false. ] def bool.and (x y : bool) : bool ≔ match x, y [ true., true. ⤇ true. | true., false. ⤇ false. | false., true. ⤇ false. | false., false. ⤇ false.]
+     ^ cube abstraction not allowed for zero-dimensional match
   
+  [1]
 
   $ narya -v -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bar (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : Type ≔ match y2 [ zero. ↦ ℕ | suc. n ↦ bar n.0 n.1 n.2 ]'
    ￫ info[I0000]

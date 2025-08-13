@@ -271,7 +271,7 @@ Here in the definition of ``encode``, the pattern variable ``p`` of the ``suc.``
 
 Unlike for abstractions, for higher-dimensional matches there is no option to write ``↦`` and name all the variables explicitly (e.g. ``| suc. {p0} {p1} p2 ↦``).  We deem this would be too confusing, because higher-dimensional constructors can never be *applied* explicitly to all their boundaries, and a "pattern" in a ``match`` should look as much as possible like the constructor that it matches against.
 
-It is possible to do :ref:`Multiple matches and deep matches` that combine zero- and higher-dimensional matches.  In this case the match symbol is ``⤇``, which we can think of as indicating that at least *some* of the pattern variables are nontrivial cubes.  (In fact, currently the symbol ``⤇`` is allowed for *all* multiple and deep matches, even if none of them are higher-dimensional, but this should not be depended on.)
+It is possible to do :ref:`Multiple matches and deep matches` that combine zero- and higher-dimensional matches.  In this case the match symbol is ``⤇``, which we can think of as indicating that at least *some* of the pattern variables are nontrivial cubes.
 
 
 Id of the universe
