@@ -16,6 +16,7 @@ open Modifier
 open Printable
 module Trie = Yuujinchou.Trie
 module TermParse = Parse
+open Asai.Range
 
 type _ Effect.t += Chdir : string -> string Effect.t
 
@@ -734,7 +735,7 @@ module Parse = struct
 end
 
 let parse_single (content : string) : Whitespace.t list * Command.t option =
-  let src : Asai.Range.source = `String { content; title = None } in
+  let src : source = `String { content; title = None } in
   let p, src = Parse.start_parse ~or_echo:true src in
   match Parse.final p with
   | Bof ws ->
@@ -781,6 +782,8 @@ let condense : Command.t -> [ `Import | `Option | `None | `Bof ] = function
   | Option _ -> .
   | _ -> `None
 
+let tok t : observation = Token (t, ([], None))
+
 (* Subroutine for "split" that generates the cases in a multiple match. *)
 let split_match_cases : type a b.
     (a, b) Ctx.t ->
@@ -788,14 +791,12 @@ let split_match_cases : type a b.
     (Whitespace.t list * wrapped_parse) list ->
     observation list list =
  fun ctx vars tms ->
-  let open Asai.Range in
   let module S = Monad.State (Bool) in
   let module LS = Monad.ListT (S) in
   let open Monad.Ops (LS) in
-  let tok t : observation = Token (t, ([], None)) in
   let rec do_args : type a p ap.
       (a, p, ap) Term.Telescope.t ->
-      (No.plus_omega, No.strict, No.plus_omega, No.nonstrict) parse Asai.Range.located list =
+      (No.plus_omega, No.strict, No.plus_omega, No.nonstrict) parse located list =
    fun args ->
     match args with
     | Emp -> []
@@ -811,7 +812,7 @@ let split_match_cases : type a b.
     | (_, Wrap tm) :: tms -> (
         match process vars tm with
         | { value = Synth rtm; loc } -> (
-            let _, sty = Check.synth (Kinetic `Nolet) ctx (Asai.Range.locate_opt loc rtm) in
+            let _, sty = Check.synth (Kinetic `Nolet) ctx (locate_opt loc rtm) in
             match View.view_type sty "split" with
             | Canonical (_, Data { dim; constrs; _ }, _, _) ->
                 let* () =
@@ -996,7 +997,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       let ptm = process vars tm in
       (* We set the hole location offset to the start of the *term*, so that ProofGeneral can create hole overlays in the right places when solving a hole and creating new holes. *)
       let tmloc = ptm.loc <|> Anomaly "missing location in solve" in
-      let offset = (fst (Asai.Range.split tmloc)).offset in
+      let offset = (fst (split tmloc)).offset in
       (* Now we typecheck the supplied term. *)
       let ctx = Norm.eval_ctx termctx in
       let ety = Norm.eval_term (Ctx.env ctx) ty in
@@ -1017,63 +1018,95 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       let (Found_hole { instant; termctx; ty; vars; parametric; _ }) =
         Global.find_hole data.number in
       Global.rewind_command ~parametric ~holes_allowed:(Ok ()) instant @@ fun () ->
-      let content =
-        let ctx = Norm.eval_ctx termctx in
+      (* We have to generate a bunch of holes, possibly in different tightness intervals. *)
+      let hole li ri = locate_opt None (Hole { li; ri; num = ref (-1); ws = []; contents = None }) in
+      let ehole = hole No.Interval.entire No.Interval.entire in
+      let ctx = Norm.eval_ctx termctx in
+      (* I don't think we actually use this, but it's "correct" to put it in. *)
+      let _, names = Names.uniquify_vars vars in
+      let term =
         match data.tms with
         | [ (_, Wrap { value = Placeholder _; _ }) ] -> (
             let ety = Norm.eval_term (Ctx.env ctx) ty in
             match View.view_type ety "split" with
             | Canonical (_, Pi (_, doms, _), _, _) ->
-                let cube, mapsto =
+                let cube, mapsto, notn =
                   match D.compare_zero (CubeOf.dim doms) with
-                  | Zero -> (`Normal, Token.Mapsto)
-                  | Pos _ -> (`Cube, Token.DblMapsto) in
+                  | Zero -> (`Normal, Token.Mapsto, Builtins.abs)
+                  | Pos _ -> (`Cube, Token.DblMapsto, Builtins.cubeabs) in
                 let xs = Domvars.get_pi_vars ctx cube Emp ety in
                 (* TODO: Should generate real variable names. *)
-                String.concat " " (Bwd_extra.to_list_map (Option.value ~default:"_") xs)
-                ^ Token.to_string mapsto
-                ^ " ?"
+                let vars =
+                  unparse_abs
+                    (Bwd.map (fun x -> (x, `Explicit)) xs)
+                    { strictness = No.Nonstrict; endpoint = No.minus_omega }
+                    (No.minusomega_le No.plus_omega) No.minusomega_lt_plusomega in
+                locate_opt None
+                @@ infix ~notn ~first:vars
+                     ~inner:(Single (Left (mapsto, ([], None))))
+                     ~last:ehole ~left_ok:(No.le_refl No.minus_omega)
+                     ~right_ok:(No.le_refl No.minus_omega)
             | Canonical (_, Codata { eta; fields; _ }, ins, _) -> (
                 let m = cod_left_ins ins in
                 let do_field : type a n et.
-                    (a * n * et) Term.CodatafieldAbwd.entry -> string list -> string list =
+                    (a * n * et) Term.CodatafieldAbwd.entry ->
+                    (string * string list) list ->
+                    (string * string list) list =
                  fun (Term.CodatafieldAbwd.Entry (fld, cdf)) acc ->
                   match cdf with
-                  | Lower _ -> Field.to_string fld :: acc
+                  | Lower _ -> (Field.to_string fld, []) :: acc
                   | Higher _ ->
                       let i = Field.dim fld in
                       let pbijs = List.of_seq (all_pbij_between m i) in
                       List.fold_right
                         (fun (Pbij_between pbij) acc ->
-                          (Field.to_string fld ^ string_of_pbij pbij) :: acc)
+                          (Field.to_string fld, strings_of_pbij pbij) :: acc)
                         pbijs acc in
                 let fields = Bwd.fold_right do_field fields [] in
                 match eta with
                 | Eta ->
-                    Token.to_string LParen
-                    ^ String.concat ", "
-                        (List.map
-                           (fun fld ->
-                             fld ^ " " ^ Token.to_string Coloneq ^ " " ^ Token.to_string (Hole None))
-                           fields)
-                    ^ Token.to_string RParen
+                    let inner =
+                      Multiple
+                        ( Left (LParen, ([], None)),
+                          Bwd_extra.intersperse (tok (Op ","))
+                            (Bwd_extra.of_list_map
+                               (fun (fld, pbij) ->
+                                 if List.length pbij > 0 then
+                                   fatal (Anomaly "record type has higher field");
+                                 Term
+                                   (locate_opt None
+                                      (infix ~notn:Builtins.coloneq
+                                         ~first:(locate_opt None (Ident ([ fld ], [])))
+                                         ~inner:(Single (Left (Coloneq, ([], None))))
+                                         ~last:ehole ~left_ok:(No.le_refl No.minus_omega)
+                                         ~right_ok:(No.le_refl No.minus_omega))))
+                               fields),
+                          Left (RParen, ([], None)) ) in
+                    locate_opt None @@ outfix ~notn:parens ~inner
                 | Noeta ->
-                    Token.to_string LBracket
-                    ^ String.concat " | "
-                        (List.map
-                           (fun fld ->
-                             "."
-                             ^ fld
-                             ^ " "
-                             ^ Token.to_string Mapsto
-                             ^ " "
-                             ^ Token.to_string (Hole None))
-                           fields)
-                    ^ Token.to_string RBracket)
+                    let mapsto =
+                      match D.compare_zero m with
+                      | Zero -> Token.Mapsto
+                      | Pos _ -> Token.DblMapsto in
+                    let inner =
+                      Multiple
+                        ( Left (LBracket, ([], None)),
+                          List.fold_left
+                            (fun acc (fld, pbij) ->
+                              acc
+                              <: tok (Op "|")
+                              <: Term (locate_opt None (Field (fld, pbij, [])))
+                              <: tok mapsto
+                              <: Term ehole)
+                            Emp fields,
+                          Left (RBracket, ([], None)) ) in
+                    locate_opt None @@ outfix ~notn:Builtins.comatch ~inner)
             | Canonical (_, Data { constrs = Snoc (Emp, (constr, Dataconstr { args; _ })); _ }, _, _)
               ->
                 let nargs = Fwn.to_int (Term.Telescope.length args) in
-                Constr.to_string constr ^ "." ^ String.concat "" (List.init nargs (fun _ -> " ?"))
+                unparse_spine names (`Constr constr)
+                  (Bwd.init nargs (fun _ -> { unparse = (fun li ri -> hole li ri) }))
+                  No.Interval.entire No.Interval.entire
             | Canonical (_, Data { constrs = Emp; _ }, _, _) ->
                 fatal (Invalid_split (`Goal, "empty datatype"))
             | Canonical (_, Data { constrs = Snoc (Snoc (_, _), _); _ }, _, _) ->
@@ -1084,26 +1117,60 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
             let tok t : observation = Token (t, ([], None)) in
             let comma_tms =
               List.tl
-              @@
-              let open Monad.Ops (Monad.List) in
-              let* wscomma, Wrap tm = data.tms in
-              [ Token (Op ",", (wscomma, None)); Term tm ] in
-            let lines = split_match_cases ctx vars data.tms in
-            let mtch =
-              Asai.Range.locate_opt None
-              @@ outfix ~notn:Builtins.implicit_mtch
-                   ~inner:
-                     (Multiple
-                        ( Left (Match, ([], None)),
-                          Emp
-                          <@ comma_tms
-                          <: tok LBracket
-                          <@ List.flatten (List.map (fun line -> tok (Op "|") :: line) lines),
-                          Left (RBracket, ([], None)) )) in
-            let buf = Buffer.create 10 in
-            PPrint.(
-              ToBuffer.pretty 1.0 (Display.columns ()) buf (pp_complete_term (Wrap mtch) `None));
-            Buffer.contents buf in
+                (let open Monad.Ops (Monad.List) in
+                 let* wscomma, Wrap tm = data.tms in
+                 [ Token (Op ",", (wscomma, None)); Term tm ]) in
+            let module S = Monad.State (Bool) in
+            let module LS = Monad.ListT (S) in
+            let open Monad.Ops (LS) in
+            let rec constr_args : type a p ap.
+                ?acc:unparser Bwd.t -> (a, p, ap) Term.Telescope.t -> unparser Bwd.t =
+             fun ?(acc = Emp) -> function
+               | Emp -> acc
+               | Ext (x, _, args) ->
+                   constr_args ~acc:(Snoc (acc, { unparse = (fun _ _ -> unparse_var x) })) args
+            in
+            let rec go = function
+              | [] ->
+                  let* higher = LS.lift S.get in
+                  let mapsto = if higher then Token.DblMapsto else Mapsto in
+                  return [ tok mapsto; Term ehole ]
+              | (_, Wrap tm) :: tms -> (
+                  match process vars tm with
+                  | { value = Synth rtm; loc } -> (
+                      let _, sty = Check.synth (Kinetic `Nolet) ctx (locate_opt loc rtm) in
+                      match View.view_type sty "split" with
+                      | Canonical (_, Data { dim; constrs; _ }, _, _) ->
+                          let* () =
+                            match D.compare_zero dim with
+                            | Zero -> return ()
+                            | Pos _ -> LS.lift (S.put true) in
+                          let* c, Dataconstr { args; _ } = S.return (Bwd.to_list constrs) in
+                          let first =
+                            Term
+                              (unparse_spine names (`Constr c) (constr_args args) No.Interval.entire
+                                 No.Interval.entire) in
+                          let* rest = go tms in
+                          if List.length rest = 2 then return (first :: rest)
+                          else return (first :: tok (Op ",") :: rest)
+                      | _ -> fatal (Invalid_split (`Term, "non-datatype")))
+                  | _ -> fatal (Nonsynthesizing "splitting term")) in
+            let lines = fst (go data.tms false) in
+            locate_opt None
+            @@ outfix ~notn:Builtins.implicit_mtch
+                 ~inner:
+                   (Multiple
+                      ( Left (Match, ([], None)),
+                        Emp
+                        <@ comma_tms
+                        <: tok LBracket
+                        <@ List.flatten (List.map (fun line -> tok (Op "|") :: line) lines),
+                        Left (RBracket, ([], None)) )) in
+      let buf = Buffer.create 10 in
+      let s = Display.get () in
+      Display.run ~init:{ s with holes = `Without_number } @@ fun () ->
+      PPrint.(ToBuffer.pretty 1.0 (Display.columns ()) buf (pp_complete_term (Wrap term) `None));
+      let content = Buffer.contents buf in
       let ptm = TermParse.Term.(final (parse (`String { title = None; content }))) in
       let disp = Display.get () in
       Display.run ~init:{ disp with holes = `Without_number } @@ fun () ->
