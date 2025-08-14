@@ -133,11 +133,31 @@ Does *not* find overlays that we are at the beginning or end of (outside the mar
   (forward-char 1))
 
 (defun narya-parse-cmdstart ()
-  "Parse a complete command, not including any comments that follow it."
-  (let ((parsed (proof-script-generic-parse-cmdstart)))
-    (when (eq parsed 'cmd)
-      (narya-skip-comments-backwards))
-    parsed))
+  "Parse a complete command, not including any comments that follow it.
+For `proof-script-parse-function'.
+Based on `proof-script-generic-parse-cmdstart'."
+  (let ((case-fold-search proof-case-fold-search))
+    (if (looking-at proof-script-comment-start-regexp)
+	;; Find end of comment
+        ;; Narya TODO: Why don't we iterate this moving past whitespace too?
+	(if (proof-script-generic-parse-find-comment-end) 'comment)
+    ;; Handle non-comments: assumed to be commands
+    (when (looking-at proof-script-command-start-regexp)
+      ;; We've got at least the beginnings of a command, skip past it
+      (goto-char (match-end 0))
+      ;; Find next command start or end of buffer
+      (when (or (and (re-search-forward proof-script-command-start-regexp nil 'movetolimit)
+                     (goto-char (match-beginning 0)))
+                (eq (point) (point-max)))
+        ;; If we're in an unclosed comment, back out of it
+	(when (proof-looking-at-syntactic-context)
+          (while (proof-looking-at-syntactic-context)
+            (backward-char 1))
+          ;; That backs up too far
+          (forward-char 1))
+        ;; Then back across complete comments
+        (narya-skip-comments-backwards)
+        'cmd)))))
 
 (defun narya-retract-target (target)
   "Retract the span TARGET as in `proof-retract-target', if it exists.
