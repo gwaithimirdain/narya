@@ -163,9 +163,8 @@ let rec pp_term : type lt ls rt rs.
   | Hole { num; ws; contents; _ } ->
       ( (match Display.holes () with
         | `With_number ->
-            utf8string ("⁇" ^ string_of_int !num ^ "¿")
-            ^^ optional (separate_map (utf8string "!") utf8string) contents
-            ^^ utf8string "ʔ"
+            utf8string ("⁇" ^ string_of_int !num)
+            ^^ Option.fold ~some:utf8string ~none:(utf8string "¿ʔ") contents
         | `Without_number -> utf8string "?"),
         ws )
 

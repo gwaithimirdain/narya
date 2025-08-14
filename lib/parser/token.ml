@@ -11,8 +11,8 @@ type t =
   | RBracket (* ] *)
   | LBrace (* { *)
   | RBrace (* } *)
-  | Hole of string list option (* ? or ¿ ... ʔ, also ⁇0? etc. with numbers ignored. *)
-  | Bang (* ! *)
+  | Hole of string option
+    (* None means ?, Some contents means ¿ ... ʔ with the delimiters included.  Also includes ⁇0? etc., with numbers discarded on lexing. *)
   | GlottalStop (* ʔ *)
   | DblQuery (* ⁇ *)
   | Arrow (* Both -> and → *)
@@ -161,8 +161,7 @@ let to_string = function
   | LBrace -> "{"
   | RBrace -> "}"
   | Hole None -> "?"
-  | Hole (Some _) -> raise (Failure "Can't print nonempty Hole token directly")
-  | Bang -> "!"
+  | Hole (Some contents) -> contents
   | GlottalStop -> "ʔ"
   | DblQuery -> "⁇"
   | Arrow -> Display.alt_char "→" "->"

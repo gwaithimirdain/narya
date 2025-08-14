@@ -79,19 +79,23 @@ let () =
 
   assert (
     lex "hole ¿ with ! contents ʔ"
-    = [ (Ident [ "hole" ], []); (Hole (Some [ " with "; " contents " ]), []) ]);
+    = [ (Ident [ "hole" ], []); (Hole (Some "¿ with ! contents ʔ"), []) ]);
 
   assert (
     lex "hole ¿ with ! more ! contents ʔ"
-    = [ (Ident [ "hole" ], []); (Hole (Some [ " with "; " more "; " contents " ]), []) ]);
+    = [ (Ident [ "hole" ], []); (Hole (Some "¿ with ! more ! contents ʔ"), []) ]);
 
   assert (
     lex "hole ¿ containing ` ! comments ʔ"
-    = [ (Ident [ "hole" ], []); (Hole (Some [ " containing ` "; " comments " ]), []) ]);
+    = [ (Ident [ "hole" ], []); (Hole (Some "¿ containing ` ! comments ʔ"), []) ]);
 
   assert (
     lex "hole ¿ containing {` ! `} comment ʔ"
-    = [ (Ident [ "hole" ], []); (Hole (Some [ " containing {` "; " `} comment " ]), []) ]);
+    = [ (Ident [ "hole" ], []); (Hole (Some "¿ containing {` ! `} comment ʔ"), []) ]);
+
+  assert (
+    lex "hole ¿ containing ¿ nested ʔ holes ʔ"
+    = [ (Ident [ "hole" ], []); (Hole (Some "¿ containing ¿ nested ʔ holes ʔ"), []) ]);
 
   assert (lex "hole ` ¿ commented ʔ" = [ (Ident [ "hole" ], [ `Line " ¿ commented ʔ" ]) ]);
 
