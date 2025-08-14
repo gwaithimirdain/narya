@@ -582,12 +582,13 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
         ;; skip empty subdivision
         (unless (looking-at "[ \t\n]*[!ʔ]")
           (setq count (+ count 1)))
-        (re-search-forward "[!ʔ]" (overlay-end ovl) 'limit))
+        (re-search-forward "!" (overlay-end ovl) 'limit))
       count)))
 
 (defun narya-choose-delimited-term (ovl prompt extra)
   "Given a hole overlay, prompt the user to choose one of the terms in it."
-  (let* ((contents (string-trim (buffer-substring (overlay-start ovl) (overlay-end ovl))))
+  (let* ((contents (string-trim (buffer-substring (+ (overlay-start ovl) 1)
+                                                  (- (overlay-end ovl) 1))))
          (terms (split-string contents "!"))
          (concatenated nil)
          (n 0)
