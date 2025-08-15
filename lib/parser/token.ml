@@ -13,7 +13,7 @@ type t =
   | RBrace (* } *)
   | Hole of string option
     (* None means ?, Some contents means ¿ ... ʔ with the delimiters included.  Also includes ⁇0? etc., with numbers discarded on lexing. *)
-  | GlottalStop (* ʔ *)
+  | GeldedQuery (* ʔ *)
   | DblQuery (* ⁇ *)
   | Arrow (* Both -> and → *)
   | DblArrow (* Both => and ⇒ *)
@@ -162,7 +162,7 @@ let to_string = function
   | RBrace -> "}"
   | Hole None -> "?"
   | Hole (Some contents) -> contents
-  | GlottalStop -> "ʔ"
+  | GeldedQuery -> "ʔ"
   | DblQuery -> "⁇"
   | Arrow -> Display.alt_char "→" "->"
   | DblArrow -> Display.alt_char "⇒" "=>"

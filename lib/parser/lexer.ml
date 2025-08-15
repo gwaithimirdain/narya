@@ -91,7 +91,7 @@ let quoted_string : Token.t t =
 let query = Uchar.of_char '?'
 let invquery = Uchar.of_int 0xBF (* ¿ *)
 let dblquery = Uchar.of_int 0x2047 (* ⁇ *)
-let glottal_stop = Uchar.of_int 0x0294 (* ʔ *)
+let gelded_query = Uchar.of_int 0x0294 (* ʔ *)
 let is_digit c = String.exists (fun x -> x = c) "0123456789"
 
 (* A hole is either the single character ?, or a hole with contents that start with ¿ and ends with ʔ.  Even comment sequences inside of a hole are ignored.  Holes with contents can be nested. *)
@@ -103,11 +103,11 @@ let rec hole_contents () : string t =
     (fun () ->
       zero_or_more_fold_left ""
         (fun s c -> return (s ^ c))
-        ((let* c = ucharp (fun c -> c <> invquery && c <> glottal_stop) "hole contents" in
+        ((let* c = ucharp (fun c -> c <> invquery && c <> gelded_query) "hole contents" in
           return (Utf8.Encoder.to_internal c))
         </> hole_contents ()))
     (fun _ ->
-      let* _ = uchar glottal_stop in
+      let* _ = uchar gelded_query in
       return "ʔ")
 
 let hole : Token.t t =
@@ -126,8 +126,8 @@ let hole : Token.t t =
          "numbered hole"
        </> return DblQuery)
   (* Grab other hole-like sequences, which won't parse but which we don't want the user to use elsewhere. *)
-  </> let* _ = uchar glottal_stop in
-      return GlottalStop
+  </> let* _ = uchar gelded_query in
+      return GeldedQuery
 
 module Specials = struct
   (* Any of these characters is always its own token. *)
@@ -252,7 +252,7 @@ let specials () =
       (* We only include the superscript parentheses: other superscript characters without parentheses are allowed in identifiers. *)
       [| Token.super_lparen_uchar; Token.super_rparen_uchar |];
       (* Hole symbols also stop us *)
-      [| query; dblquery; invquery; glottal_stop |];
+      [| query; dblquery; invquery; gelded_query |];
       (* Unicode tag characters are special *)
       Array.init (16 * 6) (fun i -> Uchar.of_int (0xE0020 + i));
       (* Finally, we exclude dots, because they are treated specially as separating pieces of an identifier *)
