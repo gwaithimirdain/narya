@@ -48,7 +48,7 @@
 (defun narya-create-hole-overlays (start-position relative-positions)
   "Create overlays for holes given a starting position and a list of relative positions.
 Each entry in RELATIVE-POSITIONS should be a list of the form (START-OFFSET END-OFFSET HOLE-ID).
-Also replaces single ? holes with ¿...ʔ.
+Also replaces single ? holes with ¿ʔ.
 Return the number of such overlays created."
   (let ((positions
          (cl-map 'list
@@ -66,8 +66,10 @@ Return the number of such overlays created."
         (save-excursion
           (goto-char start)
           (when (looking-at "\\?")
-            (delete-char 1)
+            ;; We insert first and then delete, so that the inserted
+            ;; text remains inside the processed region.
             (insert "¿ʔ")
+            (delete-char 1)
             (set-marker start (- (point) 2))
             (set-marker end (point))))
         (narya-create-hole-overlay start end hole-id))
@@ -88,16 +90,20 @@ The start and end regions should include the already-inserted ¿ and ʔ."
       ovl)))
 
 (defun narya-create-marked-hole-overlays (start end)
-  "Create hole overlays from markers of the form ⁇0? or ⁇0¿...ʔ from START to END.
+  "Create hole overlays from markers of the form ⁇0¿...ʔ from START to END.
 Return the number of such overlays created."
   (goto-char start)
-  (let ((count 0))
-    (while (re-search-forward "\\(⁇\\([[:digit:]]+\\)\\)\\(¿[^ʔ]*ʔ\\)" end 'limit)
+  (let ((count 0) data)
+    (while (re-search-forward "\\(⁇\\([[:digit:]]+\\)\\)?\\(¿\\)" end 'limit)
       (let* ((number (string-to-number (match-string 2)))
-             (start (set-marker (make-marker) (match-beginning 3)))
-             (end (set-marker (make-marker) (match-end 3))))
+             (hole-start (set-marker (make-marker) (match-beginning 3))))
         (replace-match "" nil nil nil 1)
-        (narya-create-hole-overlay start end number)
+        (goto-char (match-end 3))
+        (while
+          (and (setq data (narya-next-hole-subdivision end))
+               data
+               (nth 0 data)))
+        (narya-create-hole-overlay hole-start (nth 2 data) number)
         (setq count (+ count 1))))
     count))
 
@@ -588,42 +594,40 @@ handling in Proof General."
 
 (defun narya-current-hole-contents ()
   "Get the contents of the current subdivision of the current hole."
-  (let ((ovl (narya-get-hole-overlay (point))))
+  (let ((ovl (narya-get-hole-overlay (point)))
+        (pos (point))
+        start
+        (result nil))
     (when ovl
-      (let ((start
-             (save-excursion
-               (re-search-backward "[!¿]" (overlay-start ovl))
-               (forward-char 1)
-               (when (re-search-forward "[^ ]" (overlay-end ovl) t)
-                 (- (point) 1))))
-            (end
-             (save-excursion
-               (re-search-forward "[!ʔ]" (overlay-end ovl))
-               (backward-char 1)
-               (when (re-search-backward "[^ ]" (overlay-start ovl) t)
-                 (+ (point) 1)))))
-        (when (and start end)
-          (buffer-substring-no-properties start end))))))
+      (save-excursion
+        (goto-char (+ (overlay-start ovl) 1))
+        (while (not result)
+          (setq start (point))
+          (setq data (narya-next-hole-subdivision (overlay-end ovl)))
+          (when (or (not data)
+                    (>= (nth 2 data) pos))
+            (setq result (buffer-substring-no-properties start (nth 1 data)))))
+        (string-trim result)))))
 
 (defun narya-hole-subdivisions (ovl)
-  "Count the non-empty subdivisions in a hole overlay, if any.
+  "Parse and return the non-empty subdivisions in a hole overlay, if any.
 Here \"empty\" means containing only whitespace; comments are nonempty."
-  (let ((count 0))
+  (let ((subdivisions nil)
+        data str)
     (save-excursion
       (goto-char (+ (overlay-start ovl) 1))
-      (while (< (point) (overlay-end ovl))
-        ;; skip empty subdivision
-        (unless (looking-at "[ \t\n]*[!ʔ]")
-          (setq count (+ count 1)))
-        (re-search-forward "!" (overlay-end ovl) 'limit))
-      count)))
+      (setq start (point))
+      (while (setq data (narya-next-hole-subdivision (overlay-end ovl)))
+        (setq str (string-trim
+                   (buffer-substring-no-properties start (nth 1 data))))
+        (unless (equal str "")
+          (setq subdivisions (nconc subdivisions (list str))))
+        (setq start (point)))
+      subdivisions)))
 
-(defun narya-choose-delimited-term (ovl prompt extra)
+(defun narya-choose-delimited-term (terms prompt extra)
   "Given a hole overlay, prompt the user to choose one of the terms in it."
-  (let* ((contents (string-trim (buffer-substring (+ (overlay-start ovl) 1)
-                                                  (- (overlay-end ovl) 1))))
-         (terms (split-string contents "!"))
-         (concatenated nil)
+  (let* ((concatenated nil)
          (n 0)
          (tempbuf (generate-new-buffer "narya terms"))
          (tempwin (display-buffer tempbuf))
@@ -683,12 +687,12 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
   "Get a term to solve or split with from the hole contents, perhaps prompting."
   (let ((subdivisions (narya-hole-subdivisions hole-overlay)))
     (cond
-     ((= subdivisions 0)
+     ((not subdivisions)
       (read-from-minibuffer prompt nil nil nil nil nil t))
-     ((= subdivisions 1)
+     ((not (cdr subdivisions))
       (read-from-minibuffer prompt (narya-current-hole-contents) nil nil nil nil t))
      (t
-      (narya-choose-delimited-term hole-overlay multiprompt extra)))))
+      (narya-choose-delimited-term subdivisions multiprompt extra)))))
 
 (defun narya-solve-hole ()
   "Solve the current hole with a user-provided term."
