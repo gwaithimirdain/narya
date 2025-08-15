@@ -622,8 +622,8 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
             ;; Extra
             (setq extran n)
             (when extra
-              (insert "(" (int-to-string extran) ") " extra "\n"))
-            (setq n (+ n 1))
+              (insert "(" (int-to-string extran) ") " extra "\n")
+              (setq n (+ n 1)))
             (setq terms
                   (mapcan (lambda (term)
                             (setq term (string-trim term))
