@@ -806,6 +806,68 @@ If cursor is over a hole, the term is interpreted in the context of that hole."
   (interactive)
   (narya-echo-or-synth "synth" "Term to synthesize: "))
 
+(defun narya-insert-hole-numbers (start end)
+  "Insert hole-number labels ⁇n in front of hole overlays from START to END."
+  (save-excursion
+    (dolist (ovl (overlays-in start end))
+      (let ((n (overlay-get ovl 'narya-hole)))
+        (when n
+          (goto-char (overlay-start ovl))
+          (insert "⁇" (number-to-string n)))))))
+
+(defun narya-reformat-command ()
+  "Reformat the current command in the processed region."
+  (interactive)
+  ;; Find the current PG 'cmd overlay
+  (let ((ovl (cl-find-if (lambda (o) (overlay-get o 'cmd))
+                         (overlays-at (point)))))
+    (if ovl
+        ;; That overlay apperas to include preceding whitespace (but
+        ;; not comments).  We make our own markers for where its
+        ;; start and end should be after the reformatting, so as not
+        ;; to depend on whatever front-advance and rear-advance
+        ;; properties PG gave it.
+        (let* ((inhibit-read-only t)
+               (ovl-start (copy-marker (overlay-start ovl) nil))
+               (start (save-excursion
+                        (goto-char ovl-start)
+                        (while (looking-at "[ \t\n]")
+                          (forward-char 1))
+                        (skip-syntax-backward " ")
+                        (unless (bolp)
+                          (insert "\n\n"))
+                        (point-marker)))
+               (end (copy-marker (overlay-end ovl) t))
+               (cmd (progn
+                      (narya-insert-hole-numbers start end)
+                      (buffer-substring-no-properties start end)))
+               new-holes)
+          ;; Reformat the command
+          (proof-shell-invisible-command
+           (format "fmt %d := %s" (overlay-get ovl 'instant) cmd) t)
+          (if (eq proof-shell-last-output-kind 'error)
+              (message "Reformatter failed!")
+            ;; Delete the existing hole overlays in the region
+            (atomic-change-group
+              (dolist (h (overlays-in start end))
+                (when (overlay-get h 'narya-hole)
+                  (delete-overlay h)))
+              ;; Insert the reformatted version in place of the old version
+              (goto-char start)
+              (insert narya-pending-reformatted)
+              (delete-region (point) end)
+              ;; Adjust the PG overlay to be in the right place.
+              (move-overlay ovl ovl-start end)
+              ;; Create new hole overlays.  Since we're forcing reformatting
+              ;; here, we can use the marked version.
+              (setq new-holes (narya-create-marked-hole-overlays start end))
+              ;; Add an undo action to retract to here
+              (narya-add-command-undo ovl)
+              (goto-char start)
+              (when (> new-holes 0)
+                (narya-next-hole)))))
+      (message "No current processed command found."))))
+
 (defun narya-display-chars (arg)
   "Set, unset, or toggle display of unicode characters.
 With no prefix argument, toggle display of unicode and ASCII.
@@ -963,6 +1025,7 @@ With a negative prefix argument,set display of type boundaries off."
 (keymap-set narya-mode-map "C-c C-d C-u" 'narya-display-chars)
 (keymap-set narya-mode-map "C-c C-d C-f" 'narya-display-function-boundaries)
 (keymap-set narya-mode-map "C-c C-d C-t" 'narya-display-type-boundaries)
+(keymap-set narya-mode-map "C-M-q" 'narya-reformat-command)
 
 (provide 'narya)
 
