@@ -37,7 +37,7 @@ let make_def : type a b s. string -> string option -> a N.t -> b Dbwd.t -> s ene
   let identity = `Def (number, sort, name) in
   { origin; identity; raw; len; energy }
 
-(* We just use one global hole counter, so that a hole can be represented by a single number to communicate with the user and ProofGeneral.  But to make up for that, we have to remember the origin of each hole as a function of its global number.  And then, since the next number is just the length of this array, we don't need a separate counter for hole autonumbers. *)
+(* We just use one global hole counter, so that a hole can be represented by a single number to communicate with the user and ProofGeneral.  But to make up for that, we have to remember the origin of each hole as a function of its global number.  And then, since the next number is just the length of this array, we don't need a separate counter for hole autonumbers.  Note that this dynarray never shrinks, so old holes that have gone away are still here.  There wouldn't be any easy way to do that, since solving an old hole can create new holes that have to be at the end of the array, so the origins don't appear here in order. *)
 let hole_origins : Origin.t Dynarray.t = Dynarray.create ()
 
 let make_hole : type a b s. a N.t -> b Dbwd.t -> s energy -> (a, b, s) t =
@@ -128,10 +128,12 @@ module Table = struct
 
     let find_hole_opt : type x. int -> x t -> x entry option =
      fun i m ->
-      let c = Dynarray.get hole_origins i in
-      match Versioned.get_at m c with
-      | Some m -> IdMap.find_opt (`Hole i) m
-      | None -> None
+      try
+        let c = Dynarray.get hole_origins i in
+        match Versioned.get_at m c with
+        | Some m -> IdMap.find_opt (`Hole i) m
+        | None -> None
+      with Invalid_argument _ -> None
 
     let update : type x a b s.
         (a, b, s) key -> ((x, a, b, s) F.t option -> (x, a, b, s) F.t option) -> x t -> unit =

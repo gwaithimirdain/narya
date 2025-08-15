@@ -216,15 +216,17 @@ module Versioned = struct
 
   (* Get the value of the object associated to a given origin.  If we are in the past, only instants before the current time are accessible. *)
   let get_at (x : 'a t) (i : Origin.t) : 'a option =
-    match i with
-    | Top -> Some !(x.top)
-    | File file ->
-        grow_files x file;
-        Some (Dynarray.get x.files file)
-    | Instant instant -> (
-        match Origin.S.get () with
-        | Past now when instant > now -> None
-        | _ -> Some (Dynarray.get x.instants instant))
+    try
+      match i with
+      | Top -> Some !(x.top)
+      | File file ->
+          grow_files x file;
+          Some (Dynarray.get x.files file)
+      | Instant instant -> (
+          match Origin.S.get () with
+          | Past now when instant > now -> None
+          | _ -> Some (Dynarray.get x.instants instant))
+    with Invalid_argument _ -> None
 
   (* Get the current value.  This is, of course, always possible. *)
   let get (x : 'a t) : 'a =
