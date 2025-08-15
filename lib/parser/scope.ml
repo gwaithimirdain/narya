@@ -90,6 +90,12 @@ module Situation = struct
 
   let get () = M.exclusively @@ fun () -> (Versioned.get scopes).inner.situation
 
+  let get_at origin =
+    M.exclusively @@ fun () ->
+    match Versioned.get_at scopes origin with
+    | Some s -> s.inner.situation
+    | None -> fatal (Anomaly "invalid origin in Scope.Situation.get_at")
+
   let modify f =
     M.exclusively @@ fun () ->
     let s = Versioned.get scopes in
@@ -97,11 +103,21 @@ module Situation = struct
     Versioned.set scopes { s with inner = { s.inner with situation } };
     x
 
+  let left_closeds_at : Origin.t -> (No.plus_omega, No.strict) Notation.entry =
+   fun origin -> left_closeds (get_at origin)
+
   let left_closeds : unit -> (No.plus_omega, No.strict) Notation.entry =
    fun () -> left_closeds (get ())
 
+  let tighters_at : type strict tight.
+      Origin.t -> (tight, strict) No.iinterval -> (tight, strict) Notation.entry =
+   fun origin i -> tighters (get_at origin) i
+
   let tighters : type strict tight. (tight, strict) No.iinterval -> (tight, strict) Notation.entry =
    fun i -> tighters (get ()) i
+
+  let left_opens_at : Origin.t -> Token.t -> No.interval option =
+   fun origin tok -> left_opens (get_at origin) tok
 
   let left_opens : Token.t -> No.interval option = fun tok -> left_opens (get ()) tok
 

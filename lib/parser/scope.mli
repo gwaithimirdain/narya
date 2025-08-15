@@ -90,8 +90,11 @@ val check_name : Trie.path -> Asai.Range.t option -> unit
 
 module Situation : sig
   val get : unit -> Situation.t
+  val left_closeds_at : Origin.t -> (No.plus_omega, No.strict) Notation.entry
   val left_closeds : unit -> (No.plus_omega, No.strict) Notation.entry
+  val tighters_at : Origin.t -> ('tight, 'strict) No.iinterval -> ('tight, 'strict) Notation.entry
   val tighters : ('tight, 'strict) No.iinterval -> ('tight, 'strict) Notation.entry
+  val left_opens_at : Origin.t -> Token.t -> No.interval option
   val left_opens : Token.t -> No.interval option
   val unparse : Situation.PrintKey.t -> User.notation option
   val add : ('left, 'tight, 'right) Notation.notation -> unit

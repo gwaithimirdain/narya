@@ -240,6 +240,9 @@ module Parse = struct
     let* number, wsin, wsnumber, tm =
       (let* wsin = token In in
        let* number, wsnumber = integer in
+       (* Go back in time for parsing, to use the notations in scope at that hole. *)
+       let (Found_hole { instant; _ }) = Global.find_hole number in
+       let* () = set (Instant instant) in
        let* tm = C.term [] in
        return (Some number, wsin, wsnumber, tm))
       </> let* tm = C.term [] in
@@ -550,6 +553,9 @@ module Parse = struct
     let* number, wsnumber = integer in
     let* column, wscolumn = integer </> return (0, []) in
     let* wscoloneq = token Coloneq in
+    (* Go back in time for parsing, to use the notations in scope at that hole. *)
+    let (Found_hole { instant; _ }) = Global.find_hole number in
+    let* () = set (Instant instant) in
     let* tm = C.term [] in
     return
       (Solve { wssolve; number; wsnumber; column; wscolumn; wscoloneq; tm; parenthesized = false })
@@ -558,6 +564,9 @@ module Parse = struct
     let* wssplit = token Split in
     let* number, wsnumber = integer in
     let* wscoloneq = token Coloneq in
+    (* Go back in time for parsing, to use the notations in scope at that hole. *)
+    let (Found_hole { instant; _ }) = Global.find_hole number in
+    let* () = set (Instant instant) in
     let* tm = C.term [] in
     let* tms =
       zero_or_more
@@ -710,7 +719,8 @@ module Parse = struct
     Range.run ~env @@ fun () ->
     let p =
       C.Lex_and_parse.make Lexer.Parser.start
-        (C.Basic.make_partial () (if or_echo then command_or_echo () else command ())) in
+        (C.Basic.make_partial (Origin.current ())
+           (if or_echo then command_or_echo () else command ())) in
     let out, p = run p in
     (C.ensure_success p, (env, out))
 
@@ -726,7 +736,8 @@ module Parse = struct
     Range.run ~env @@ fun () ->
     let p =
       C.Lex_and_parse.make_next p
-        (C.Basic.make_partial () (if or_echo then command_or_echo () else command ())) in
+        (C.Basic.make_partial (Origin.current ())
+           (if or_echo then command_or_echo () else command ())) in
     let out, p = run p in
     (C.ensure_success p, (env, out))
 

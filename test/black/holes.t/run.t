@@ -41,6 +41,27 @@
      ----------------------------------------------------------------------
      A → B
   
+   ￫ info[I0007]
+   ￮ section sec opened
+  
+   ￫ info[I0002]
+   ￮ notation «&» defined
+  
+   ￫ info[I0000]
+   ￮ constant f' defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?2:
+     
+     ----------------------------------------------------------------------
+     A → B
+  
+   ￫ info[I0008]
+   ￮ section sec closed
+  
+   ￫ info[I0002]
+   ￮ notation «$» defined
+  
    ￫ info[I0000]
    ￮ constant ℕ defined
   
@@ -48,7 +69,7 @@
    ￮ constant plus defined, containing 2 holes
   
    ￫ info[I3003]
-   ￮ hole ?2:
+   ￮ hole ?3:
      
      m : ℕ
      n ≔ 0 : ℕ
@@ -56,7 +77,7 @@
      ℕ
   
    ￫ info[I3003]
-   ￮ hole ?3:
+   ￮ hole ?4:
      
      m : ℕ
      n : ℕ
@@ -71,7 +92,7 @@
    ￮ constant anop defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?4:
+   ￮ hole ?5:
      
      n″ : ℕ (not in scope)
      n′ : ℕ
@@ -83,7 +104,7 @@
    ￮ constant anop' defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?5:
+   ￮ hole ?6:
      
      n′ : ℕ
      n″ : ℕ (not in scope)
@@ -95,7 +116,7 @@
    ￮ constant anop'' defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?6:
+   ￮ hole ?7:
      
      n′ : ℕ (not in scope)
      𝑥 : ℕ (not in scope)
@@ -107,7 +128,7 @@
    ￮ constant anop''' defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?7:
+   ￮ hole ?8:
      
      𝑥 : ℕ
      𝑦 : ℕ (not in scope)
@@ -122,13 +143,13 @@
    ￮ constant pp defined, containing 2 holes
   
    ￫ info[I3003]
-   ￮ hole ?8:
+   ￮ hole ?9:
      
      ----------------------------------------------------------------------
      Type
   
    ￫ info[I3003]
-   ￮ hole ?9:
+   ￮ hole ?10:
      
      ----------------------------------------------------------------------
      pp .fst
@@ -137,22 +158,22 @@
    ￮ constant pp' defined, containing 2 holes
   
    ￫ info[I3003]
-   ￮ hole ?10:
+   ￮ hole ?11:
      
      ----------------------------------------------------------------------
      Type
   
    ￫ info[I3003]
-   ￮ hole ?11:
+   ￮ hole ?12:
      
      ----------------------------------------------------------------------
-     ?10{…}
+     ?11{…}
   
    ￫ info[I0000]
    ￮ constant foo defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?12:
+   ￮ hole ?13:
      
      bar : ℕ
      ----------------------------------------------------------------------
@@ -162,7 +183,7 @@
    ￮ constant foo' defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?13:
+   ￮ hole ?14:
      
      bar : Type
      x : bar
@@ -173,7 +194,7 @@
    ￮ constant gel0 defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?14:
+   ￮ hole ?15:
      
      A : Type
      B : Type
@@ -186,7 +207,7 @@
    ￮ constant gel1 defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?15:
+   ￮ hole ?16:
      
      A : Type
      B : Type
@@ -200,7 +221,7 @@
    ￮ constant gel2 defined, containing 2 holes
   
    ￫ info[I3003]
-   ￮ hole ?16:
+   ￮ hole ?17:
      
      A : Type
      B : Type
@@ -210,13 +231,13 @@
      Type
   
    ￫ info[I3003]
-   ￮ hole ?17:
+   ￮ hole ?18:
      
      A : Type
      B : Type
      x : A
      y : B
-     one : ?16{…}
+     one : ?17{…}
      ----------------------------------------------------------------------
      Type
   
@@ -224,7 +245,7 @@
    ￮ constant gel3 defined, containing 2 holes
   
    ￫ info[I3003]
-   ￮ hole ?18:
+   ￮ hole ?19:
      
      A : Type
      B : Type
@@ -235,7 +256,7 @@
      Type
   
    ￫ info[I3003]
-   ￮ hole ?19:
+   ￮ hole ?20:
      
      A : Type
      B : Type
@@ -255,13 +276,13 @@
    ￮ constant ac defined, containing 2 holes
   
    ￫ info[I3003]
-   ￮ hole ?20:
+   ￮ hole ?21:
      
      ----------------------------------------------------------------------
      ℕ → A
   
    ￫ info[I3003]
-   ￮ hole ?21:
+   ￮ hole ?22:
      
      ----------------------------------------------------------------------
      C (ac .a 0)
@@ -285,7 +306,7 @@
    ￮ constant ideqid'' defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?22:
+   ￮ hole ?23:
      
      u″ : A (not in scope)
      u′ : A (not in scope)
@@ -297,7 +318,7 @@
    ￮ constant afam defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?23:
+   ￮ hole ?24:
      
      X : Type
      ----------------------------------------------------------------------
@@ -313,7 +334,7 @@
    ￮ constant f2 defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?24:
+   ￮ hole ?25:
      
      x.0 : A
      x.1 : A
@@ -328,7 +349,7 @@
    ￮ constant p defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?25:
+   ￮ hole ?26:
      
      ----------------------------------------------------------------------
      prod
@@ -340,7 +361,7 @@
    ￮ constant p2 defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?26:
+   ￮ hole ?27:
      
      ----------------------------------------------------------------------
      refl prod p0 p0
@@ -350,16 +371,16 @@
   
    ￫ warning[E2100]
    ￭ $TESTCASE_ROOT/holes.ny
-    99 | def p : prod ≔ ?
+   110 | def p : prod ≔ ?
        ^ previous definition
-   105 | def p : prod' ≔ ?
+   116 | def p : prod' ≔ ?
        ^ redefining constant: p
   
    ￫ info[I0000]
    ￮ constant p defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?27:
+   ￮ hole ?28:
      
      ----------------------------------------------------------------------
      prod'

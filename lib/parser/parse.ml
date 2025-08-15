@@ -1,5 +1,6 @@
 open Util
 open Core.Reporter
+open Core.Origin
 open Fmlib_parse
 open Notation
 module TokMap = Map.Make (Token)
@@ -21,7 +22,8 @@ end
 
 (* The functor that defines all the term-parsing combinators. *)
 module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
-  module Basic = Token_parser.Make (Unit) (Lexer.Token_whitespace) (Final) (SemanticError)
+  (* The "state" is an Origin.  Normally the origin is stored globally with a State effect, but we sometimes need to change the origin temporarily during parsing (e.g. to go back in time and parse a term using the notations that were in scope in the past) and doing that with effects doesn't interact well with fmlib's continuation-based parser monad.  So we store the origin used for parsing in fmlib's built-in state parameter instead, and initialize it with the overall current origin when beginning parsing. *)
+  module Basic = Token_parser.Make (Origin) (Lexer.Token_whitespace) (Final) (SemanticError)
   open Basic
 
   (* We aren't using Fmlib's error reporting, so there's no point in supplying it nonempty "expect" strings. *)
@@ -108,7 +110,8 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
       (lt, ls) No.iinterval -> (rt, rs) tokmap -> (lt, ls) right_wrapped_parse t =
    fun tight stop ->
     let* res =
-      (let* inner_loc, (inner, notn) = located (entry (Scope.Situation.left_closeds ())) in
+      (let* origin = get in
+       let* inner_loc, (inner, notn) = located (entry (Scope.Situation.left_closeds_at origin)) in
        match notn with
        | Open_in_interval (lt, _) -> No.plusomega_nlt lt (* This case is impossible *)
        | Closed_in_interval notn -> (
@@ -219,18 +222,20 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
     | None -> succeed first_arg
     | Some nontrivial ->
         (* Now we start by looking ahead one token.  If we see one of the specified ending ops, or the initial op of a left-open tree with looser tightness than the lower endpoint of the current interval (with strictness determined by the tree in question), we return the result argument without parsing any more.  Note that the order matters, in case the next token could have more than one role.  Ending ops are tested first, which means that if a certain operator could end an "inner term" in an outer containing notation, it always does, even if it could also be interpreted as some infix notation inside that inner term.  If a certain token could be the initial op of more than one left-open, we stop here if *any* of those is looser; we don't backtrack and try other possibilities.  So the rule is that if multiple notations start with the same token, the looser one is used preferentially in cases when it matters.  (In cases where it doesn't matter, i.e. they would both be allowed at the same grouping relative to other notations, we can proceed to parse a merged tree containing both of them and decide later which one it is.)  *)
+        let* origin = get in
         followed_by
           (step (fun state _ (tok, _) ->
                if TokMap.mem tok stop then Some (first_arg, state)
                else
                  let open Monad.Ops (Monad.Maybe) in
-                 let* (No.Interval ivl) = Scope.Situation.left_opens tok in
+                 let* (No.Interval ivl) = Scope.Situation.left_opens_at origin tok in
                  let t = tight.endpoint in
                  let* _ = No.Interval.contains ivl t in
                  return (first_arg, state)))
         (* Otherwise, we parse either an arbitrary left-closed tree (applying the given result to it as a function) or an arbitrary left-open tree with tightness in the given interval (passing the given result as the starting open argument).  Interior terms are treated as in "lclosed".  *)
         </> (let* res =
-               (let* inner_loc, (inner, notn) = located (entry (Scope.Situation.tighters tight)) in
+               (let* inner_loc, (inner, notn) =
+                  located (entry (Scope.Situation.tighters_at origin tight)) in
                 match notn with
                 | Open_in_interval (left_ok, notn) -> (
                     match (first_arg.get (interval_left notn), right notn) with
@@ -397,7 +402,7 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
     | Error e -> fatal (Anomaly ("Outer term failed: " ^ e))
 
   module Lex_and_parse =
-    Parse_with_lexer.Make_utf8 (Unit) (Lexer.Token_whitespace) (Final) (SemanticError)
+    Parse_with_lexer.Make_utf8 (Origin) (Lexer.Token_whitespace) (Final) (SemanticError)
       (Lexer.Parser)
       (Basic.Parser)
 
@@ -438,7 +443,9 @@ module Term = struct
           ( { source = `File name; length = In_channel.length ic },
             fun p -> C.Lex_and_parse.run_on_channel ic p ) in
     Range.run ~env @@ fun () ->
-    let p = C.Lex_and_parse.make Lexer.Parser.start (C.Basic.make () (C.term_only ?li ?ri ())) in
+    let p =
+      C.Lex_and_parse.make Lexer.Parser.start
+        (C.Basic.make (Origin.current ()) (C.term_only ?li ?ri ())) in
     let p = run p in
     C.ensure_success p
 

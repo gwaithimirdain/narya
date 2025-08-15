@@ -20,6 +20,17 @@ axiom a_very_long_function : A → A → A → A → A → A → A → B
 
 def f' : A → B ≔ ?
 
+{` Check whether notations that were in scope at the time of a hole are still available when solving the hole even if they're no longer in scope at the current time, while notations defined later are not in scope for the hole. `}
+section sec ≔
+
+  notation "&" ≔ b
+
+  def f' : A → B ≔ ¿_ ↦ &ʔ
+
+end
+
+notation "$" ≔ b
+
 def ℕ : Type ≔ data [ zero. : ℕ | suc. : ℕ → ℕ ]
 
 def plus (m n : ℕ) : ℕ ≔ match n [ zero. ↦ ? | suc. n ↦ ? ]
