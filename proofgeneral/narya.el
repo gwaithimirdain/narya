@@ -739,31 +739,32 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
             ;; Delete the overlay for the solved hole.
             (delete-overlay hole-overlay)
             ;; Create new overlays from holes in the new term.
-            (cond
-             ;; If the new term was reformatted, then its holes
-             ;; were printed using the ⁇0? syntax, so we can use
-             ;; narya-create-marked-hole-overlays.
-             (narya-reformat-holes
-              (setq new-holes (narya-create-marked-hole-overlays insert-start insert-end)))
-             ;; Otherwise, we get the hole position information
-             ;; from the [data] block.
-             (narya-pending-hole-positions
-              (setq new-holes (narya-create-hole-overlays
-                               (+ byte-insert-start shift)
-                               narya-pending-hole-positions))
-              (setq narya-pending-hole-positions nil)))
-            (message "Hole solved.")
-            ;; Now we add an Emacs undo action so that if the
-            ;; "solve" command is undone in Emacs, PG will rewind
-            ;; past the command containing the hole.  This is the
-            ;; only sensible course of action, since the Narya
-            ;; "solve" command can't be undone.
-            (narya-add-command-undo cmd-span)
-            ;; Finally, if any new holes were created, we position
-            ;; the cursor in the first of them.
-            (when (> new-holes 0)
-              (goto-char insert-start)
-              (narya-next-hole))))))))
+            (if narya-reformat-holes
+                ;; If the new term was reformatted, then its holes
+                ;; were printed using the ⁇0? syntax, so we can use
+                ;; narya-create-marked-hole-overlays.
+                ;; (narya-create-marked-hole-overlays insert-start insert-end)
+                (narya-reformat-command cmd-span)
+              ;; Otherwise, we get the hole position information
+              ;; from the [data] block.
+              (let ((new-holes (narya-create-hole-overlays (+ byte-insert-start shift)
+                                                           narya-pending-hole-positions)))
+                (setq narya-pending-hole-positions nil)
+                ;; The rest is done by narya-reformat-command when we
+                ;; call that, but here we have to do it ourselves.
+                ;;
+                ;; First we add an Emacs undo action so that if the
+                ;; "solve" command is undone in Emacs, PG will rewind
+                ;; past the command containing the hole.  This is the
+                ;; only sensible course of action, since the Narya
+                ;; "solve" command can't be undone.
+                (narya-add-command-undo cmd-span)
+                ;; Then if any new holes were created, we position the
+                ;; cursor in the first of them.
+                (when (> new-holes 0)
+                  (goto-char insert-start)
+                  (narya-next-hole))))
+            (message "Hole solved.")))))))
 
 (defun narya-split-hole ()
   "Split in the current hole, prompting the user to edit and then solving."
@@ -815,14 +816,16 @@ If cursor is over a hole, the term is interpreted in the context of that hole."
           (goto-char (overlay-start ovl))
           (insert "⁇" (number-to-string n)))))))
 
-(defun narya-reformat-command ()
-  "Reformat the current command in the processed region."
+(defun narya-reformat-command (&optional ovl)
+  "Reformat the command with overlay OVL in the processed region.
+Defaults to the command containing point."
   (interactive)
   ;; Find the current PG 'cmd overlay
-  (let ((ovl (cl-find-if (lambda (o) (overlay-get o 'cmd))
-                         (overlays-at (point)))))
+  (let ((ovl (or ovl
+                 (cl-find-if (lambda (o) (overlay-get o 'cmd))
+                             (overlays-at (point))))))
     (if ovl
-        ;; That overlay apperas to include preceding whitespace (but
+        ;; That overlay appears to include preceding whitespace (but
         ;; not comments).  We make our own markers for where its
         ;; start and end should be after the reformatting, so as not
         ;; to depend on whatever front-advance and rear-advance
