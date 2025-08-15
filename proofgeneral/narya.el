@@ -385,9 +385,6 @@ handling in Proof General."
 	   (lambda (ovl)
 	     (if (and (overlay-start ovl) (< (overlay-start ovl) pend))
 		 t
-               (remove-text-properties
-                (overlay-start ovl) (overlay-end ovl)
-                '(read-only nil front-sticky nil rear-nonsticky nil))
 	       (delete-overlay ovl)
 	       nil))
 	   narya-hole-overlays))))
@@ -715,12 +712,6 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
     (if (eq proof-shell-last-output-kind 'error)
         (message "You entered an incorrect term.")
       ;; If no errors, insert the solution term at the hole position and update overlays.
-      ;; First we remove the read-only properties, and make that change non-undoable, since undo will leave the command *unprocessed*.
-      (undo-boundary)
-      (let ((inhibit-read-only t))
-        (remove-text-properties (overlay-start hole-overlay) (overlay-end hole-overlay)
-                                '(read-only nil front-sticky nil rear-nonsticky nil)))
-      (setq buffer-undo-list (memq nil buffer-undo-list))
       (atomic-change-group
         (goto-char (overlay-start hole-overlay))
         (let ((inhibit-read-only t)
