@@ -1,6 +1,6 @@
 ;; narya-syntax.el --- Proof General instance for Narya - syntax file
 
-;; We omit "display", "solve", "split", "show", and "undo" because these should NOT appear in source files.
+;; We omit "display", "solve", "split", "show", "undo", and "chdir" because these should NOT appear in source files.
 (defconst narya-commands
   "\\_<\\(axiom\\|def\\|echo\\|synth\\|notation\\|import\\|export\\|quit\\|section\\|option\\|end\\)\\_>")
 
@@ -21,15 +21,88 @@ Does not handle sequences of abstraction variables broken across lines."
     (backward-char 1)
     t))
 
+(defun narya-next-hole-subdivision (limit)
+  "Look for the next hole-ending or subdivision-delimiting sequence.
+Skips over nested holes.
+
+Returns nil if it found nothing before the LIMIT.
+
+Returns (t start end) if it found a subdivision-delimiting sequence
+from START to END, and moves point to END.
+
+Returns (nil start end) if it found a hole-ending sequence from START to
+END, and moves point to END."
+  (let ((found nil)
+        (nesting 0))
+    (while
+        (and (setq found (re-search-forward "\\(⁇[[:digit:]]+\\)?\\(¿\\)\\|\\(!\\|\\(ʔ\\)\\)" limit t))
+             (progn
+               (cond
+                ((match-string 2)     ; ¿
+                 (setq nesting (+ nesting 1)))
+                ((match-string 4)     ; ʔ
+                 (setq nesting (- nesting 1))))
+               ;; If nesting > 0, we are still inside a nested hole, and we keep going.
+               ;; If nesting = -1, we hit the overall ending ʔ, in which case we stop.
+               ;; If nesting = 0, we might have hit a top-level !, in which case we stop,
+               ;;   or we might have just exited a nested hole, in which case we *don't* stop yet.
+               (or (> nesting 0)
+                   (and (= nesting 0) (match-string 4))))))
+    (if found
+        (list (= nesting 0) (match-beginning 3) (match-end 3))
+      nil)))
+
+(defun narya-highlight-holes (limit)
+  "Font-lock search function to find holes.
+Highlights their starting, ending, and subdivider sequences as
+subexpressions 1 and 3 (with 3 sometimes missing), and their interiors
+as subexpression 2.  Skips across nested holes, including their
+subdivisions."
+  ;; First find the next hole-beginning or subdivision-delimiting
+  ;; sequence, assuming that it is not nested inside any other hole.
+  (when (re-search-forward "\\(⁇[[:digit:]]+\\)?¿\\|!" limit t)
+    (let ((start-start (set-marker (make-marker) (match-beginning 0)))
+          (start-end (set-marker (make-marker) (match-end 0))))
+      ;; Now look for the next hole-ending or subdivision-delimiting
+      ;; sequence, skipping over nested holes.
+      (let ((data (narya-next-hole-subdivision limit)))
+        (if data
+            (let ((end-start (set-marker (make-marker) (nth 1 data)))
+                  (end-end (set-marker (make-marker) (nth 2 data))))
+              (if (nth 0 data)
+                  ;; We must have found a top-level !.
+                  (progn
+                    ;; Back across it so the next search will start there.
+                    (goto-char end-start)
+                    ;; Highlight the starting sequence, and the intermediate region as default, but not the !.
+                    (set-match-data (list start-start end-start
+                                          start-start start-end
+                                          start-end end-start))
+                    ;; Continue searching
+                    t)
+                ;; We must have found the ending ʔ.  Highlight it too.
+                (set-match-data (list start-start end-end
+                                      start-start start-end
+                                      start-end end-start
+                                      end-start end-end))
+                ;; Continue searching to find more holes.
+                t))
+          ;; The hole drops off the end of the fontification region.  Just highlight the start sequence and the intermediate region.
+          (set-match-data (list start-start (point-marker)
+                                start-start start-end
+                                start-end (point-marker)))
+          ;; Stop searching, we've found all the holes
+          nil)))))
+
 ;; Yes, the face names here actually have to be *quoted*, even though the entire list is *also* quoted.  I think font lock expects an expression there that it *evaluates*, and while some of the faces are also variables whose value is the face of the same name, some aren't.  So we ought to quote them all.
 ;; Many of these regexps are simplistic and will get confused if there are comments interspersed.  They also depend on font-lock-multiline being set to t.
 (defconst narya-core-font-lock-keywords
   `(
     ;; Holes with contents
-    ("\\(\\(⁇[[:digit:]]+\\)?¿\\)\\([^ʔ]*\\)\\(ʔ\\)"
+    (narya-highlight-holes
      (1 'font-lock-warning-face)
-     (3 'default t)
-     (4 'font-lock-warning-face))
+     (2 'default t)
+     (3 'font-lock-warning-face nil t))
 
     (,narya-commands . 'font-lock-keyword-face)
     ("\\_<\\(Type\\|let\\|rec\\|in\\|and\\|match\\|return\\|sig\\|data\\|codata\\|Id\\|refl\\|sym\\)\\_>" 1 'font-lock-builtin-face)
@@ -61,9 +134,6 @@ Does not handle sequences of abstraction variables broken across lines."
     ;; Symbols
     ("[][(){}]" . 'font-lock-bracket-face)
     ("[→↦⤇≔~@#$%&*/=+\\|,<>:;-]" . 'font-lock-operator-face)
-
-    ;; ! delimiters in hole contents
-    ("!" 0 'font-lock-warning-face t)
 
     ;; Holes without contents
     ("\\?" 0 'font-lock-warning-face)

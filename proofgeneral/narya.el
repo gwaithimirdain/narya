@@ -112,6 +112,18 @@ Does *not* find overlays that we are at the beginning or end of (outside the mar
           (< (overlay-start ovl) pos (overlay-end ovl))))
    (overlays-at pos)))
 
+(defun narya-extend-font-lock-region ()
+  "Extend the font-lock region so it includes any processed hole.
+For unprocessed holes, you're on your own."
+  (let ((beg-ovl (narya-get-hole-overlay font-lock-beg))
+        (end-ovl (narya-get-hole-overlay font-lock-beg)))
+    (or (and beg-ovl
+             (< (overlay-start beg-ovl) font-lock-beg)
+             (setq font-lock-beg (overlay-start beg-ovl)))
+        (and end-ovl
+             (> (overlay-end end-ovl) font-lock-end)
+             (setq font-lock-end (overlay-end end-ovl))))))
+
 (defun narya-skip-comments-backwards ()
   "Skip backwards to the last non-whitespace, non-comment character."
   (let ((continue t)
@@ -510,6 +522,7 @@ handling in Proof General."
   (add-hook 'proof-shell-handle-delayed-output-hook 'narya-optimise-resp-windows)
   (modify-syntax-entry ? " ")           ; Why is this necessary?
   (setq font-lock-multiline t)
+  (add-to-list 'font-lock-extend-region-functions 'narya-extend-font-lock-region)
   (add-hook 'proof-activate-scripting-hook 'narya-chdir-to-current-file))
 
 (add-hook 'narya-mode-hook 'narya-mode-extra-config)
