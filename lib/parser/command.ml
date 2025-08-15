@@ -228,7 +228,7 @@ module Parse = struct
   let integer =
     step "" (fun state _ (tok, ws) ->
         match tok with
-        | Ident [ num ] -> Some ((int_of_string num, ws), state)
+        | Ident [ num ] -> Option.map (fun n -> ((n, ws), state)) (int_of_string_opt num)
         | _ -> None)
 
   let echo =
