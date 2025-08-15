@@ -98,19 +98,12 @@ module Situation = struct
     x
 
   let left_closeds : unit -> (No.plus_omega, No.strict) Notation.entry =
-   fun () ->
-    let s = get () in
-    (Situation.EntryMap.find_opt No.plus_omega s.tighters <|> Anomaly "missing left_closeds").strict
+   fun () -> left_closeds (get ())
 
   let tighters : type strict tight. (tight, strict) No.iinterval -> (tight, strict) Notation.entry =
-   fun { strictness; endpoint } ->
-    let ep = Situation.EntryMap.find_opt endpoint (get ()).tighters <|> Anomaly "missing tighters" in
-    match strictness with
-    | Nonstrict -> ep.nonstrict
-    | Strict -> ep.strict
+   fun i -> tighters (get ()) i
 
-  let left_opens : Token.t -> No.interval option =
-   fun tok -> Notation.TokMap.find_opt tok (get ()).left_opens
+  let left_opens : Token.t -> No.interval option = fun tok -> left_opens (get ()) tok
 
   let unparse : Situation.PrintKey.t -> User.notation option =
    fun c -> Situation.PrintMap.find_opt c (get ()).unparse
