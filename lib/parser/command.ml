@@ -238,6 +238,12 @@ module Parse = struct
         | Ident [ num ] -> Option.map (fun n -> ((n, ws), state)) (int_of_string_opt num)
         | _ -> None)
 
+  (* Go back in time for parsing only, to use the notations in scope at a given instant.  The usual origin algebraic effect doesn't mesh well with the continuation-based parser monad, so we have to use the built-in parser state. *)
+  let set_instant ?severity past =
+    match Origin.current () with
+    | Instant now when Instant.(past <= now) -> set (Instant past)
+    | _ -> fatal ?severity (Invalid_instant (Origin.to_string (Instant past)))
+
   let echo =
     let* wsecho, eval =
       (let* wsecho = token Echo in
@@ -247,9 +253,8 @@ module Parse = struct
     let* number, wsin, wsnumber, tm =
       (let* wsin = token In in
        let* number, wsnumber = integer in
-       (* Go back in time for parsing, to use the notations in scope at that hole. *)
        let (Found_hole { instant; _ }) = Global.find_hole number in
-       let* () = set (Instant instant) in
+       let* () = set_instant instant in
        let* tm = C.term [] in
        return (Some number, wsin, wsnumber, tm))
       </> let* tm = C.term [] in
@@ -560,9 +565,8 @@ module Parse = struct
     let* number, wsnumber = integer in
     let* column, wscolumn = integer </> return (0, []) in
     let* wscoloneq = token Coloneq in
-    (* Go back in time for parsing, to use the notations in scope at that hole. *)
     let (Found_hole { instant; _ }) = Global.find_hole number in
-    let* () = set (Instant instant) in
+    let* () = set_instant instant in
     let* tm = C.term [] in
     return
       (Solve { wssolve; number; wsnumber; column; wscolumn; wscoloneq; tm; parenthesized = false })
@@ -571,9 +575,8 @@ module Parse = struct
     let* wssplit = token Split in
     let* number, wsnumber = integer in
     let* wscoloneq = token Coloneq in
-    (* Go back in time for parsing, to use the notations in scope at that hole. *)
     let (Found_hole { instant; _ }) = Global.find_hole number in
-    let* () = set (Instant instant) in
+    let* () = set_instant instant in
     let* tm = C.term [] in
     let* tms =
       zero_or_more
@@ -687,8 +690,7 @@ module Parse = struct
     let* instant, wsinstant = integer in
     let instant = Instant.of_int instant in
     let* wscoloneq = token Coloneq in
-    (* Go back in time for parsing, to use the notations in scope at that instant. *)
-    let* () = set (Instant instant) in
+    let* () = set_instant ~severity:Error instant in
     let* cmd = command () in
     return (Fmt { wsfmt; instant; wsinstant; wscoloneq; cmd })
 

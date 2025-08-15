@@ -10,6 +10,7 @@ module Instant : sig
   type t
 
   val of_int : int -> t
+  val ( <= ) : t -> t -> bool
 end
 
 module Origin : sig

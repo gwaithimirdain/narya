@@ -257,6 +257,7 @@ module Code = struct
     | Break : t
     | Accumulated : string * t Asai.Diagnostic.t Bwd.t -> t
     | No_holes_allowed : [ `Command of string | `File of string | `Other of string ] -> t
+    | Invalid_instant : string -> t
     | Cyclic_term : t
     | Oracle_failed : string * printable -> t
     | Invalid_flags : t
@@ -414,6 +415,7 @@ module Code = struct
     | Break -> Error
     | Accumulated _ -> Error
     | No_holes_allowed _ -> Error
+    | Invalid_instant _ -> Bug
     | Wrong_dimension_of_field _ -> Error
     | Invalid_field_suffix _ -> Error
     | Cyclic_term -> Error
@@ -542,6 +544,7 @@ module Code = struct
     | Too_many_commands -> "E2000"
     | Forbidden_interactive_command _ -> "E2001"
     | No_holes_allowed _ -> "E2002"
+    | Invalid_instant _ -> "E2003"
     (* def *)
     | Redefining_constant _ -> "E2100"
     | Invalid_constant_name _ -> "E2101"
@@ -1033,6 +1036,7 @@ module Code = struct
           | `Command cmd -> textf "command '%s' cannot contain holes" cmd
           | `File file -> textf "imported file '%s' cannot contain holes" file
           | `Other where -> textf "%s cannot contain holes" where)
+      | Invalid_instant instant -> textf "invalid instant: %s" instant
       | Ill_scoped_connection -> text "ill-scoped connection"
       | Cyclic_term -> text "cycle in graphical term"
       | Oracle_failed (str, tm) -> textf "oracle failed: %s: %a" str pp_printed (print tm)
