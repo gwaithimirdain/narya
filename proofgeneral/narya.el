@@ -24,13 +24,8 @@
 
 (add-hook 'proof-shell-kill-function-hooks #'narya-delete-all-holes)
 
-(defcustom narya-reformat-holes t
-  "Automatically reformat terms entered to solve holes."
-  :type 'boolean
-  :group 'narya)
-
 (defcustom narya-reformat-commands t
-  "Automatically reformat processed commands."
+  "Automatically reformat commands upon processing and solving holes."
   :type 'boolean
   :group 'narya)
 
@@ -720,7 +715,7 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
 	  ;; order so that if the hole is at the very end of the
 	  ;; processed region, the inserted term will end up
 	  ;; *inside* the processed region.
-          (if narya-reformat-holes
+          (if narya-reformat-commands
               ;; If we're splitting or reformatting holes, insert the reformatted version.
               (let ((spaces (concat "\n" (make-string column ? ))))
                 (insert (string-replace "\n" spaces narya-pending-reformatted)))
@@ -739,7 +734,7 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
             ;; Delete the overlay for the solved hole.
             (delete-overlay hole-overlay)
             ;; Create new overlays from holes in the new term.
-            (if narya-reformat-holes
+            (if narya-reformat-commands
                 ;; If the new term was reformatted, then its holes
                 ;; were printed using the ⁇0? syntax, so we can use
                 ;; narya-create-marked-hole-overlays.
