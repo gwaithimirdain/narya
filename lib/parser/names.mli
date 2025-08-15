@@ -5,6 +5,7 @@ open Core
 open Term
 
 type 'n t
+type wrapped = Wrap : 'n t -> wrapped
 
 val empty : emp t
 val remove : 'b t -> ('a, 'n, 'b) Tbwd.insert -> 'a t

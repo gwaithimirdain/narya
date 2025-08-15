@@ -16,6 +16,7 @@ type 'b ctx =
 
 (* We also store a set of which variables already exist, so that we can be sure of creating a new unused one. *)
 type 'b t = { ctx : 'b ctx; used : StringSet.t }
+type wrapped = Wrap : 'n t -> wrapped
 
 let empty : emp t = { ctx = Emp; used = StringSet.empty }
 

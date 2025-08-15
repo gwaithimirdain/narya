@@ -1033,7 +1033,6 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       let hole li ri = locate_opt None (Hole { li; ri; num = ref (-1); ws = []; contents = None }) in
       let ehole = hole No.Interval.entire No.Interval.entire in
       let ctx = Norm.eval_ctx termctx in
-      (* I don't think we actually use this, but it's "correct" to put it in. *)
       let _, names = Names.uniquify_vars vars in
       let term =
         match data.tms with
@@ -1041,12 +1040,26 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
             let ety = Norm.eval_term (Ctx.env ctx) ty in
             match View.view_type ety "split" with
             | Canonical (_, Pi (_, doms, _), _, _) ->
+                let dim = CubeOf.dim doms in
                 let cube, mapsto, notn =
-                  match D.compare_zero (CubeOf.dim doms) with
+                  match D.compare_zero dim with
                   | Zero -> (`Normal, Token.Mapsto, Builtins.abs)
                   | Pos _ -> (`Cube, Token.DblMapsto, Builtins.cubeabs) in
-                let xs = Domvars.get_pi_vars ctx cube Emp ety in
-                (* TODO: Should generate real variable names. *)
+                (* Uniquify the variable names relative to the context *)
+                let module NameState = Monad.State (struct
+                  type t = Names.wrapped
+                end) in
+                let module M = Mbwd.Monadic (NameState) in
+                let xs, _ =
+                  M.mmapM
+                    (fun [ x ] ->
+                      let open Monad.Ops (NameState) in
+                      let* (Wrap names) = NameState.get in
+                      let x, names = Names.add_cube dim names x in
+                      let* () = NameState.put (Wrap names) in
+                      return x)
+                    [ Domvars.get_pi_vars ctx cube Emp ety ]
+                    (Wrap names) in
                 let vars =
                   unparse_abs
                     (Bwd.map (fun x -> (x, `Explicit)) xs)
@@ -1131,19 +1144,33 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                 (let open Monad.Ops (Monad.List) in
                  let* wscomma, Wrap tm = data.tms in
                  [ Token (Op ",", (wscomma, None)); Term tm ]) in
-            let module S = Monad.State (Bool) in
-            let module LS = Monad.ListT (S) in
-            let open Monad.Ops (LS) in
-            let rec constr_args : type a p ap.
-                ?acc:unparser Bwd.t -> (a, p, ap) Term.Telescope.t -> unparser Bwd.t =
-             fun ?(acc = Emp) -> function
-               | Emp -> acc
-               | Ext (x, _, args) ->
-                   constr_args ~acc:(Snoc (acc, { unparse = (fun _ _ -> unparse_var x) })) args
+            (* We have a list of terms and we need to produce a multiple match.  We use a list monad to produce all possible combinations of constructors for all the types of all the terms, with a boolean state outside the list to track, whether it contains any higher-dimensional matches and thus should use a ⤇ instead of a ↦.  And we use a Names state *inside* the list to uniquify variables separately in each branch. *)
+            let module HigherBranch = Monad.State (Bool) in
+            let module Branches = Monad.ListT (HigherBranch) in
+            let module NameBranches =
+              Monad.StateT
+                (Branches)
+                (struct
+                  type t = Names.wrapped
+                end)
             in
+            let open Monad.Ops (NameBranches) in
+            let rec constr_args : type a p ap n k.
+                n Names.t ->
+                k D.t ->
+                ?acc:unparser Bwd.t ->
+                (a, p, ap) Term.Telescope.t ->
+                unparser Bwd.t * Names.wrapped =
+             fun names dim ?(acc = Emp) -> function
+               | Emp -> (acc, Wrap names)
+               | Ext (x, _, args) ->
+                   let x, names = Names.add_cube dim names x in
+                   constr_args names dim
+                     ~acc:(Snoc (acc, { unparse = (fun _ _ -> unparse_var x) }))
+                     args in
             let rec go = function
               | [] ->
-                  let* higher = LS.lift S.get in
+                  let* higher = NameBranches.stateless (Branches.lift HigherBranch.get) in
                   let mapsto = if higher then Token.DblMapsto else Mapsto in
                   return [ tok mapsto; Term ehole ]
               | (_, Wrap tm) :: tms -> (
@@ -1155,18 +1182,23 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                           let* () =
                             match D.compare_zero dim with
                             | Zero -> return ()
-                            | Pos _ -> LS.lift (S.put true) in
-                          let* c, Dataconstr { args; _ } = S.return (Bwd.to_list constrs) in
+                            | Pos _ ->
+                                NameBranches.stateless (Branches.lift (HigherBranch.put true)) in
+                          let* c, Dataconstr { args; _ } =
+                            NameBranches.stateless (HigherBranch.return (Bwd.to_list constrs)) in
+                          let* (Wrap names) = NameBranches.get in
+                          let cargs, newnames = constr_args names dim args in
+                          let* () = NameBranches.put newnames in
                           let first =
                             Term
-                              (unparse_spine names (`Constr c) (constr_args args) No.Interval.entire
+                              (unparse_spine names (`Constr c) cargs No.Interval.entire
                                  No.Interval.entire) in
                           let* rest = go tms in
                           if List.length rest = 2 then return (first :: rest)
                           else return (first :: tok (Op ",") :: rest)
                       | _ -> fatal (Invalid_split (`Term, "non-datatype")))
                   | _ -> fatal (Nonsynthesizing "splitting term")) in
-            let lines = fst (go data.tms false) in
+            let lines, _ = go data.tms (Wrap names) false in
             locate_opt None
             @@ outfix ~notn:Builtins.implicit_mtch
                  ~inner:
@@ -1175,7 +1207,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                         Emp
                         <@ comma_tms
                         <: tok LBracket
-                        <@ List.flatten (List.map (fun line -> tok (Op "|") :: line) lines),
+                        <@ List.flatten (List.map (fun (line, _) -> tok (Op "|") :: line) lines),
                         Left (RBracket, ([], None)) )) in
       let buf = Buffer.create 10 in
       let s = Display.get () in
