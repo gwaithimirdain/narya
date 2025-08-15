@@ -11,8 +11,10 @@ type t =
   | RBracket (* ] *)
   | LBrace (* { *)
   | RBrace (* } *)
-  | Hole of string option
-    (* None means ?, Some contents means ¿ ... ʔ with the delimiters included.  Also includes ⁇0? etc., with numbers discarded on lexing. *)
+  | Hole of {
+      number : string option; (* Prefix label ⁇n, if present *)
+      contents : string option; (* None means ?, Some means ¿ ... ʔ with delimiters included *)
+    }
   | GeldedQuery (* ʔ *)
   | DblQuery (* ⁇ *)
   | Arrow (* Both -> and → *)
@@ -161,8 +163,8 @@ let to_string = function
   | RBracket -> "]"
   | LBrace -> "{"
   | RBrace -> "}"
-  | Hole None -> "?"
-  | Hole (Some contents) -> contents
+  | Hole { number; contents } ->
+      Option.fold ~some:(fun n -> "⁇" ^ n) ~none:"" number ^ Option.value ~default:"?" contents
   | GeldedQuery -> "ʔ"
   | DblQuery -> "⁇"
   | Arrow -> Display.alt_char "→" "->"

@@ -148,7 +148,10 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
                    (* Constructor names have already been validated by the lexer.  No higher constructors are allowed yet. *)
                    | Constr (x, []) -> Some ((`Constr x, w), state)
                    | Underscore -> Some ((`Placeholder, w), state)
-                   | Hole contents -> Some ((`Hole contents, w), state)
+                   | Hole { number; contents } ->
+                       let open Monad.Ops (Monad.Maybe) in
+                       let* number = int_of_string_opt (Option.value ~default:"0" number) in
+                       return ((`Hole (number, contents), w), state)
                    | _ -> None)) in
           with_supers
             {
@@ -160,7 +163,8 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
                        | `Ident x -> Ident (x, w)
                        | `Constr x -> Constr (x, w)
                        | `Placeholder -> Placeholder w
-                       | `Hole contents -> Hole { li = tight; ri; ws = w; num = ref 0; contents })));
+                       | `Hole (number, contents) ->
+                           Hole { li = tight; ri; ws = w; num = ref number; contents })));
             } in
     (* Then "lclosed" ends by calling "lopen" with its interval and ending ops, and also its own result (with extra argument added if necessary).  Note that we don't incorporate d.tightness here; it is only used to find the delimiter of the right-hand argument if the notation we parsed was right-open.  In particular, therefore, a right-closed notation can be followed by anything, even a left-open notation that binds tighter than it does; the only restriction is if we're inside the right-hand argument of some containing right-open notation, so we inherit a "tight" from there.  *)
     lopen tight stop res
@@ -337,7 +341,10 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
                             | Constr (x, []) -> Some ((`Constr x, w), state)
                             | Underscore -> Some ((`Placeholder, w), state)
                             | Field (x, p) -> Some ((`Field (x, p), w), state)
-                            | Hole contents -> Some ((`Hole contents, w), state)
+                            | Hole { number; contents } ->
+                                let open Monad.Ops (Monad.Maybe) in
+                                let* number = int_of_string_opt (Option.value ~default:"0" number) in
+                                return ((`Hole (number, contents), w), state)
                             | _ -> None)) in
                    let* sups = supers in
                    match first_arg.get No.Interval.plus_omega_only with
@@ -361,13 +368,13 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
                                                   | `Constr x -> Constr (x, w)
                                                   | `Placeholder -> Placeholder w
                                                   | `Field (x, p) -> Field (x, p, w)
-                                                  | `Hole contents ->
+                                                  | `Hole (number, contents) ->
                                                       Hole
                                                         {
                                                           li = No.Interval.empty;
                                                           ri;
                                                           ws = w;
-                                                          num = ref 0;
+                                                          num = ref number;
                                                           contents;
                                                         })));
                                        }
