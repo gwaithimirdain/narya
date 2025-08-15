@@ -290,6 +290,11 @@ handling in Proof General."
         (string-match "\\(un\\)?parenthesized\n" string dpos)
         (setq dpos (match-end 0))
         (setq parenthesized (not (match-string 1 string)))
+        ;; Get the current instant number
+        (string-match "\\([[:digit:]]+\\)\n" string dpos)
+        (setq dpos (match-end 0))
+        (if span (overlay-put span 'instant
+                              (string-to-number (match-string 1 string))))
         ;; Parse hole data from the data section.  This will only be
         ;; used if we are *not* reformatting commands/holes, since the
         ;; reformatted version contains ⁇0? markers for hole positions

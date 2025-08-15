@@ -3,6 +3,7 @@
 open Bwd
 open Util
 open Core
+open Origin
 open Parser
 open React
 open Lwt
@@ -207,6 +208,7 @@ let rec interact_pg () : unit =
               Format.printf "\x0C[data]\x0C\n%!";
               if Parser.Command.parenthesized cmd then Format.printf "parenthesized\n"
               else Format.printf "unparenthesized\n";
+              Format.printf "%s\n" (Origin.to_string (Origin.current ()));
               Mlist.miter
                 (fun [ (h, s, e) ] -> Format.printf "%d %d %d\n" h (s - offset) (e - offset))
                 [ newholes ];
