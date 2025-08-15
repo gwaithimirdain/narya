@@ -47,6 +47,7 @@ type t =
   | Rec
   | Return
   | Section
+  | Fmt
   | Show
   | Sig
   | Solve
@@ -198,6 +199,7 @@ let to_string = function
   | Option -> "option"
   | Undo -> "undo"
   | Section -> "section"
+  | Fmt -> "fmt"
   | End -> "end"
   | Let -> "let"
   | Rec -> "rec"

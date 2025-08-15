@@ -39,6 +39,8 @@ module Instant = struct
       counter := !counter - 1;
       Some !counter)
     else None
+
+  let of_int x = x
 end
 
 module Origin = struct

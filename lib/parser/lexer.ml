@@ -346,6 +346,7 @@ let get_reserved_word = function
   | "option" -> Some Option
   | "undo" -> Some Undo
   | "section" -> Some Section
+  | "fmt" -> Some Fmt
   | "end" -> Some End
   | "_" -> Some Underscore
   | _ -> None
