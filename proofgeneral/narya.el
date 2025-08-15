@@ -37,10 +37,10 @@
 (defvar narya-pending-hole-positions nil
   "Temporary storage for hole positions when executing commands invisibly.")
 
-(defvar narya-pending-hole-reformatted nil
+(defvar narya-pending-reformatted nil
   "Temporary storage for reformatted hole-filling term.")
 
-(defvar narya-pending-hole-parenthesized nil
+(defvar narya-pending-parenthesized nil
   "Temporary storage for parenthesization of hole-filling term.")
 
 (defun narya-create-hole-overlays (start-position relative-positions)
@@ -314,8 +314,8 @@ handling in Proof General."
         (if (member 'invisible flags)
             ;; For invisible commands ("solve"), store the parsed data globally, both the holes and the reformatted term
             (setq narya-pending-hole-positions parsed-hole-data
-                  narya-pending-hole-reformatted reformatted
-                  narya-pending-hole-parenthesized parenthesized)
+                  narya-pending-reformatted reformatted
+                  narya-pending-parenthesized parenthesized)
           ;; For visible commands, create overlays directly
           (when (and span (overlay-buffer span))
             (proof-with-script-buffer
@@ -723,12 +723,12 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
           (if narya-reformat-holes
               ;; If we're splitting or reformatting holes, insert the reformatted version.
               (let ((spaces (concat "\n" (make-string column ? ))))
-                (insert (string-replace "\n" spaces narya-pending-hole-reformatted)))
+                (insert (string-replace "\n" spaces narya-pending-reformatted)))
             ;; If we're not reformatting holes, check whether the
             ;; reformatted version would have put new parentheses
             ;; around the term, and if so put parentheses around
             ;; the user's term.
-            (if narya-pending-hole-parenthesized
+            (if narya-pending-parenthesized
                 (progn
                   (insert "(" term ")")
                   (setq shift 1))
@@ -782,7 +782,7 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
         (if (eq proof-shell-last-output-kind 'error)
             (message "You entered an incorrect term.")
           ;; Now we prompt the user to edit the term, and pass off the edited version to solve.
-          (setq term (read-from-minibuffer "Solve with term: " narya-pending-hole-reformatted nil nil nil nil t))
+          (setq term (read-from-minibuffer "Solve with term: " narya-pending-reformatted nil nil nil nil t))
           (narya-solve-hole-with hole-overlay term))))))
 
 (defun narya-echo-or-synth (cmd prompt)
