@@ -295,34 +295,13 @@ For `after-change-functions' in Narya-mode buffers."
              t))
          narya-error-overlays)))
 
-(defvar narya-pre-change-unprocessed-begin nil)
-
-;; Unlike what the docstrings originally suggested to me, the processed region is adjusted by proof-done-advancing *before* it calls 'proof-state-change-pre-hook.  So to grab the actual processed-end before any change is made, we advise it.
-(define-advice proof-done-advancing
-    (:before (span) narya-save-unprocessed-begin)
-  (setq narya-pre-change-unprocessed-begin (proof-unprocessed-begin)))
-
-;; And proof-done-retracting calls proof-state-change-pre-hook at its *end*, immediately before proof-state-change-hook.
-(define-advice proof-done-retracting
-    (:before (span) narya-save-unprocessed-begin)
-  (setq narya-pre-change-unprocessed-begin (proof-unprocessed-begin)))
-
-(defun narya-clear-error-highlights-on-change ()
-  "Clear error highlights whenever a command moves the processed region.
-
-If we retract something, then the error highlights are no longer
-current, so we should get rid of them.
-
-If we advance successfully, then the errors have been fixed and we no
-longer need them.  (They might have disappeared already by editing them,
-but perhaps the errors were fixed by editing some other part of the term
-instead.)"
-  (when (and narya-pre-change-unprocessed-begin
-             (not (= narya-pre-change-unprocessed-begin (proof-unprocessed-begin))))
+(defun narya-clear-error-highlights-on-visible-cmd ()
+  "Clear error highlights whenever a non-invisible command is executed."
+  (unless (member 'invisible (nth 3 (car proof-action-list)))
     (narya-clear-error-highlights)
     (setq narya-pre-change-unprocessed-begin nil)))
 
-(add-hook 'proof-state-change-hook #'narya-clear-error-highlights-on-change)
+(add-hook 'proof-state-change-hook #'narya-clear-error-highlights-on-visible-cmd)
   
 (defun narya-handle-output (cmd string)
   "Parse and handle Narya's output.
