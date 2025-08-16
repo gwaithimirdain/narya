@@ -343,30 +343,28 @@ handling in Proof General."
         (rstart 0) (rend 0) (gstart 0) (gend 0) (dpos 0)
         ;; Temporary storage for hole data.
         (parsed-hole-data nil)
-        (error-found nil)
         (reformatted nil)
         (parenthesized nil))
     ;; Check for errors in the output first.
-    (when (string-match proof-shell-error-regexp string)
-      (setq error-found t
-            proof-shell-last-output-kind 'error)
-      (proof-with-script-buffer
-       (setq rend (string-match "\f\\[errors\\]\f\n" string))
-       ;; Start parsing the error numbers after the initial "^L[errors]^L" part
-       (when narya-current-error-start
-         (let ((cmd-start-bytes (position-bytes narya-current-error-start))
-               (pos rend))
-           ;; Parse all the error pairs (start-byte, end-byte)
-           (while (string-match "\\([0-9]+\\) \\([0-9]+\\)" string pos)
-             (setq pos (match-end 0))
-             (let ((start-byte (string-to-number (match-string 1 string)))
-                   (end-byte (string-to-number (match-string 2 string))))
-               (narya-highlight-error-range
-                (byte-to-position (+ cmd-start-bytes start-byte))
-                (byte-to-position (+ cmd-start-bytes end-byte))))))))
-      (proof-shell-display-output-as-response flags (substring string rstart rend)))
-    ;; If no errors, proceed with normal processing.
-    (unless error-found
+    (if (string-match proof-shell-error-regexp string)
+        (progn
+          (setq proof-shell-last-output-kind 'error
+                ;; Start parsing the error numbers after the initial "^L[errors]^L" part
+                rend (string-match "\f\\[errors\\]\f\n" string))
+          (when narya-current-error-start
+            (proof-with-script-buffer
+             (let ((cmd-start-bytes (position-bytes narya-current-error-start))
+                   (pos rend))
+               ;; Parse all the error pairs (start-byte, end-byte)
+               (while (string-match "\\([0-9]+\\) \\([0-9]+\\)" string pos)
+                 (setq pos (match-end 0))
+                 (let ((start-byte (string-to-number (match-string 1 string)))
+                       (end-byte (string-to-number (match-string 2 string))))
+                   (narya-highlight-error-range
+                    (byte-to-position (+ cmd-start-bytes start-byte))
+                    (byte-to-position (+ cmd-start-bytes end-byte))))))))
+          (proof-shell-display-output-as-response flags (substring string rstart rend)))
+      ;; If no errors, proceed with normal processing.
       ;; Check for the goals marker in the output, setting positions to slice
       ;; out goals and data sections.
       (when (string-match "\x0C\\[goals\\]\x0C\n" string rstart)
