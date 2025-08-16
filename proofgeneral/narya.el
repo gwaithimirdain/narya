@@ -349,6 +349,7 @@ handling in Proof General."
           (setq proof-shell-last-output-kind 'error
                 ;; Start parsing the error numbers after the initial "^L[errors]^L" part
                 rend (string-match "\f\\[errors\\]\f\n" string))
+          ;; This should only be set for non-invisible commands.
           (when narya-current-error-start
             (proof-with-script-buffer
              (let ((cmd-start-bytes (position-bytes narya-current-error-start))
@@ -360,7 +361,9 @@ handling in Proof General."
                        (end-byte (string-to-number (match-string 2 string))))
                    (narya-highlight-error-range
                     (byte-to-position (+ cmd-start-bytes start-byte))
-                    (byte-to-position (+ cmd-start-bytes end-byte))))))))
+                    (byte-to-position (+ cmd-start-bytes end-byte)))))))
+            ;; We nil it out so that subsequent invisible commands won't see it.
+            (setq narya-current-error-start nil))
           (proof-shell-display-output-as-response flags (substring string rstart rend)))
       ;; If no errors, proceed with normal processing.
       ;; Check for the goals marker in the output, setting positions to slice
