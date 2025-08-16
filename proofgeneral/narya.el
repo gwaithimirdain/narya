@@ -283,7 +283,7 @@ Some code copied from Coq."
 
 (defun narya-clear-error-highlights-on-edit (start end _length)
   "Clear error overlays if they intersect the edit.
-For `after-change-functions'."
+For `after-change-functions' in Narya-mode buffers."
   (setq narya-error-overlays
         (seq-filter
          (lambda (ovl)
@@ -294,8 +294,6 @@ For `after-change-functions'."
                (progn (delete-overlay ovl) nil)
              t))
          narya-error-overlays)))
-
-(add-hook 'after-change-functions 'narya-clear-error-highlights-on-edit)
 
 (defvar narya-pre-change-unprocessed-begin nil)
 
@@ -610,7 +608,8 @@ handling in Proof General."
   (modify-syntax-entry ? " ")           ; Why is this necessary?
   (setq font-lock-multiline t)
   (add-to-list 'font-lock-extend-region-functions 'narya-extend-font-lock-region)
-  (add-hook 'proof-activate-scripting-hook 'narya-chdir-to-current-file))
+  (add-hook 'proof-activate-scripting-hook 'narya-chdir-to-current-file)
+  (add-hook 'after-change-functions 'narya-clear-error-highlights-on-edit nil t))
 
 (add-hook 'narya-mode-hook 'narya-mode-extra-config)
 
