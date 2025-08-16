@@ -280,8 +280,6 @@ Some code copied from Coq."
   (mapc #'delete-overlay narya-error-overlays)
   (setq narya-error-overlays nil))
 
-(add-hook 'proof-shell-pre-send-hook 'narya-clear-error-highlights)
-
 (defun narya-clear-error-highlights-on-edit (start end _length)
   "Clear error overlays if they intersect the edit."
   (setq narya-error-overlays
