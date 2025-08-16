@@ -1,9 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
-
-{` Transport and lifting compute on Σ-types `}
-
-option function boundaries ≔ implicit
-option type boundaries ≔ implicit
+{` Transport and lifting compute on product types `}
 
 def prod (A : Type) (B : Type) : Type ≔ sig ( fst : A, snd : B )
 

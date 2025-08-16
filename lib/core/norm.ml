@@ -82,13 +82,13 @@ and view_type ?(severity = Asai.Diagnostic.Bug) (ty : kinetic value) (err : stri
       | Realize v -> view_type ~severity v err
       | _ -> (
           match inst_of_apps args with
-          | _, Some (Any_tube tyargs) -> (
+          | apps, Some (Any_tube tyargs) -> (
               match D.compare_zero (TubeOf.uninst tyargs) with
               | Pos k -> fatal ~severity (Type_not_fully_instantiated (err, k))
               | Zero ->
                   let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (TubeOf.inst tyargs)) in
-                  Neutral (head, tyargs))
-          | _, None -> Neutral (head, TubeOf.empty D.zero)))
+                  Neutral (head, apps, tyargs))
+          | apps, None -> Neutral (head, apps, TubeOf.empty D.zero)))
   | _ -> fatal ~severity (Type_expected (err, Dump.Val ty))
 
 (* Evaluation of terms and evaluation of case trees are technically separate things.  In particular, evaluating a kinetic (standard) term always produces just a value, whereas evaluating a potential term (a function case tree) can either
@@ -271,9 +271,8 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
       let mn = D.plus_out m m_n in
       let eargs = List.map (eval_args env m_n mn) args in
       Val (Constr (constr, mn, eargs))
-  | Pi
-      (type n)
-      ((x, doms, cods) : string option * (n, (b, kinetic) term) CubeOf.t * (n, b) CodCube.t) ->
+  | Pi (type n) ((x, doms, cods) : n variables * (n, (b, kinetic) term) CubeOf.t * (n, b) CodCube.t)
+    ->
       (* We are starting with an n-dimensional pi-type and evaluating it in an m-dimensional environment, producing an (m+n)-dimensional result. *)
       let n = CubeOf.dim doms in
       let m = dim_env env in
@@ -301,6 +300,7 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
       (* Since we only care about the hashtbl and the top, and we can get that from the hashtbl at the end anyway, we don't bother actually putting the normals into a meaningful cube. *)
       let build : type k. (k, mn) sface -> unit =
        fun fab ->
+        let (SFace_of_plus (ab, fa, fb)) = sface_of_plus m_n fab in
         let kl = dom_sface fab in
         let ty =
           inst (universe kl)
@@ -310,23 +310,26 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
                    (fun fc -> Hashtbl.find pitbl (SFace_of (comp_sface fab (sface_of_tface fc))));
                }) in
         let subdoms, subcods = (CubeOf.subcube fab doms, BindCube.subcube fab cods) in
-        let head : head = Pi (x, subdoms, subcods) in
+        let subx = plus_variables (dom_sface fa) ab (sub_variables fb x) in
+        let head : head = Pi (subx, subdoms, subcods) in
         (* We don't need fibrancy fields for all the boundary types, since once something "is a type" we don't need it to be in Fib any more. *)
         let fields : (k * potential * no_eta) Value.StructfieldAbwd.t =
-          match (is_id_sface fab, Lazy.force Fibrancy.pi) with
+          match (is_id_sface fab, !Fibrancy.pi) with
           | None, _ | _, None -> Bwd.Emp
           | Some Eq, Some fields ->
               (* For the top face, we compute its fibrancy fields by evaluating the generic "fibrancy fields of a pi" at the evaluated domains and codomains.  *)
               let pi_env =
-                Ext (Ext (Emp mn, D.plus_zero mn, Ok doms), D.plus_zero mn, Ok (lam_cube x cods))
-              in
+                Ext
+                  ( Ext (Emp mn, D.plus_zero mn, Ok doms),
+                    D.plus_zero mn,
+                    Ok (lam_cube (plus_variables m m_n x) cods) ) in
               eval_structfield_abwd pi_env mn (D.plus_zero mn) mn fields in
         let value =
           ready
             (Val
                (Canonical
                   {
-                    canonical = Pi (x, subdoms, subcods);
+                    canonical = Pi (subx, subdoms, subcods);
                     tyargs = TubeOf.empty kl;
                     ins = ins_zero kl;
                     fields;
@@ -342,7 +345,7 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
       let args = CubeOf.build m { build = (fun fa -> lazy_eval (act_env env (op_of_sface fa)) v) } in
       eval (LazyExt (env, D.plus_zero m, args)) body
   (* It's tempting to write just "act_value (eval env x) s" here, but that is WRONG!  Pushing a substitution through an operator action requires whiskering the operator by the dimension of the substitution. *)
-  | Act (x, s) ->
+  | Act (x, s, _) ->
       let k = dim_env env in
       let (Plus km) = D.plus (dom_deg s) in
       let (Plus kn) = D.plus (cod_deg s) in
@@ -569,7 +572,7 @@ and field : type n k nk s. s value -> k Field.t -> (nk, n, k) insertion -> s eva
       let (Plus fldplus) = D.plus k in
       let p = deg_of_perm (perm_inv (perm_of_ins_plus fldins fldplus)) in
       match act_value viewed_tm p with
-      (* It must currently be an uninstantiated neutral application.  Later, fibrant types can have (higher) fields. *)
+      (* It must be an uninstantiated neutral application (which could be either an element of a record/codata, or a fibrant type). *)
       | Neu { head; args; value; ty = (lazy ty) } -> (
           let newty = lazy (tyof_field (Ok tm) ty fld ~shuf:Trivial fldins) in
           let args = Field (args, fld, fldplus, ins_zero n) in
@@ -596,13 +599,14 @@ and field : type n k nk s. s value -> k Field.t -> (nk, n, k) insertion -> s eva
             (No_such_field (`Other (Dump.Val tm), `Ins (fld, fldins))))
 
 and struct_field : type s et n k nk.
+    ?unset_ok:bool ->
     string ->
     s energy ->
     (nk * s * et) StructfieldAbwd.t ->
     k Field.t ->
     (nk, n, k) insertion ->
     s evaluation =
- fun err energy fields fld fldins ->
+ fun ?(unset_ok = false) err energy fields fld fldins ->
   match StructfieldAbwd.find_opt fields fld with
   | Found (Lower (v, _)) -> force_eval v
   | Found (Higher (lazy { vals; intrinsic; _ })) -> (
@@ -610,7 +614,7 @@ and struct_field : type s et n k nk.
       | Eq -> (
           match InsmapOf.find fldins vals with
           | Some v -> force_eval v
-          | None -> fatal (Anomaly (err ^ " field value unset")))
+          | None -> if unset_ok then Unrealized else fatal (Anomaly (err ^ " field value unset")))
       | Neq ->
           fatal (Dimension_mismatch (err ^ " field intrinsic", intrinsic, cod_right_ins fldins)))
   | _ -> (
@@ -794,12 +798,16 @@ and tyof_field : type m h s r i c.
       | Some mn -> tyof_field_giventype tm head eta env mn fields tyargs fld ~shuf fldins)
   | Canonical (head, UU m, ins, tyargs) -> (
       let Eq = eq_of_ins_zero ins in
-      let err = Code.No_such_field (`Other errtm, errfld) in
-      match Lazy.force Fibrancy.fields with
+      let err = Code.No_such_field (`Type errtm, errfld) in
+      match !Fibrancy.fields with
       | None -> fatal ~severity err
       | Some fields ->
-          tyof_field_giventype tm head Noeta (Value.Emp m) (D.plus_zero m) fields tyargs fld ~shuf
-            fldins)
+          let tmcube =
+            Result.map
+              (fun tm -> TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
+              tm in
+          let env = Value.Ext (Value.Emp m, D.plus_zero m, tmcube) in
+          tyof_field_giventype tm head Noeta env (D.plus_zero m) fields tyargs fld ~shuf fldins)
   | _ ->
       let p =
         match tm with
@@ -876,12 +884,16 @@ and tyof_field_withname : type a b.
           tyof_field_withname_giventype ctx tm ty eta env mn fields tyargs infld err)
   | Canonical (_head, UU m, ins, tyargs) -> (
       let Eq = eq_of_ins_zero ins in
-      let err = Code.No_such_field (`Other errtm, errfld) in
-      match Lazy.force Fibrancy.fields with
+      let err = Code.No_such_field (`Type errtm, errfld) in
+      match !Fibrancy.fields with
       | None -> fatal err
       | Some fields ->
-          tyof_field_withname_giventype ctx tm ty Noeta (Value.Emp m) (D.plus_zero m) fields tyargs
-            infld err)
+          let tmcube =
+            Result.map
+              (fun tm -> TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
+              tm in
+          let env = Value.Ext (Value.Emp m, D.plus_zero m, tmcube) in
+          tyof_field_withname_giventype ctx tm ty Noeta env (D.plus_zero m) fields tyargs infld err)
   | _ -> fatal (No_such_field (`Other errtm, errfld))
 
 (* Subroutine of tyof_field_withname for after we've identified the type of the head as either a codatatype or a universe (for fibrancy fields). *)
@@ -1208,24 +1220,33 @@ and inst_fibrancy_fields : type m n mn.
               (* TODO: Is it always correct to use the identity fldins? *)
               let mn_1 = D.plus_assocl m_n n_1 m_n1 in
               let fldins = id_ins (D.plus_out m m_n) mn_1 in
-              let idfld = struct_field "fibrancy" Potential fields Fibrancy.fid fldins in
+              let idfld =
+                struct_field ~unset_ok:true "fibrancy" Potential fields Fibrancy.fid fldins in
               let (Snoc (Snoc (Emp, xcube), ycube)) = TubeOf.to_cube_bwv one l outer in
-              match
-                app_eval_apps idfld
-                  (Arg
-                     ( Arg (Emp, xcube, ins_zero (CubeOf.dim xcube)),
-                       ycube,
-                       ins_zero (CubeOf.dim ycube) ))
-              with
-              | Val (Struct { fields; ins; energy = Potential; eta = Noeta }) -> (
+              let v =
+                match
+                  app_eval_apps idfld
+                    (Arg
+                       ( Arg (Emp, xcube, ins_zero (CubeOf.dim xcube)),
+                         ycube,
+                         ins_zero (CubeOf.dim ycube) ))
+                with
+                | Val v -> Some v
+                | Realize (Neu { value; _ }) -> (
+                    match force_eval value with
+                    | Val v -> Some v
+                    | _ -> None)
+                | _ -> None in
+              match v with
+              | Some (Struct { fields; ins; energy = Potential; eta = Noeta }) -> (
                   match (is_id_ins ins, D.compare (cod_left_ins ins) (TubeOf.out middle)) with
                   | Some _, Eq -> inst_fibrancy_fields fields middle
                   | Some _, Neq ->
                       fatal
                         (Dimension_mismatch ("inst_fibrancy", cod_left_ins ins, TubeOf.out middle))
                   | None, _ -> fatal (Anomaly "nonidentity insertion on evaluation of fibrancy id"))
-              | Unrealized -> Some Emp
-              | _ -> fatal (Anomaly "fibrancy id didn't yield a struct"))))
+              | Some _ -> fatal (Anomaly "fibrancy id didn't yield a struct")
+              | None -> Some Emp)))
 
 and get_fibrancy_fields : type m k mk e n.
     (m, k, mk, e, n) inst_canonical -> (m * potential * no_eta) Value.StructfieldAbwd.t =
@@ -1389,7 +1410,7 @@ let get_tyargs ?(severity = Asai.Diagnostic.Bug) (ty : kinetic value) (err : str
     normal TubeOf.full =
   match view_type ~severity ty err with
   | Canonical (_, _, _, tyargs) -> Full_tube tyargs
-  | Neutral (_, tyargs) -> Full_tube tyargs
+  | Neutral (_, _, tyargs) -> Full_tube tyargs
 
 (* Check whether a given type is discrete, or has one of the the supplied constant heads (since for testing whether a newly defined datatype can be discrete, it and members of its mutual families can appear in its own parameters and arguments). *)
 let is_discrete : ?discrete:unit Constant.Map.t -> kinetic value -> bool =
@@ -1399,7 +1420,7 @@ let is_discrete : ?discrete:unit Constant.Map.t -> kinetic value -> bool =
   (* The currently-being-defined types may not be known to be discrete yet, but we treat them as discrete if they are one of the given heads. *)
   | Canonical (Const { name; ins }, _, _, _), Some consts ->
       Option.is_some (is_id_ins ins) && Constant.Map.mem name consts
-  | Neutral (Const { name; ins }, _), Some consts ->
+  | Neutral (Const { name; ins }, _, _), Some consts ->
       Option.is_some (is_id_ins ins) && Constant.Map.mem name consts
       (* In theory, pi-types with discrete codomain, and record types with discrete fields, could also be discrete.  But that would be trickier to check as it would require evaluating their codomain and fields under binders, and eta-conversion for those types should implement direct discreteness automatically.  So the only thing we're missing is that they can't appear as arguments to a constructor of some other discrete datatype. *)
   | _ -> false

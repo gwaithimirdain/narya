@@ -15,63 +15,112 @@
 (defun narya-script-preprocess (file start end cmd)
   "Add a formfeed at the end of a command, as a delimiter."
   (list (concat cmd "\n\x0C\n")))
-
-(defvar narya-hole-overlays nil
-  "List of overlays marking the locations of open holes")
   
 (defun narya-delete-all-holes ()
-  "Delete all hole overlays and reset `narya-hole-overlays' to nil."
-  (mapc #'delete-overlay narya-hole-overlays)
-  (setq narya-hole-overlays nil))
+  "Delete all hole overlays."
+  (dolist (o (overlays-in (point-min) (point-max)))
+    (when (overlay-get o 'narya-hole)
+      (delete-overlay o))))
 
 (add-hook 'proof-shell-kill-function-hooks #'narya-delete-all-holes)
 
-(defface narya-hole-face '((t . (:background "SlateGray4" :foreground "white" :weight bold)))
-  "Face used for open holes in Narya"
-  :group 'narya)
-
-(defcustom narya-reformat-holes t
-  "Automatically reformat terms entered to solve holes."
-  :type 'boolean
-  :group 'narya)
-
 (defcustom narya-reformat-commands t
-  "Automatically reformat processed commands."
+  "Automatically reformat commands upon processing and solving holes."
   :type 'boolean
   :group 'narya)
 
 (defvar narya-pending-hole-positions nil
   "Temporary storage for hole positions when executing commands invisibly.")
 
-(defvar narya-pending-hole-reformatted nil
+(defvar narya-pending-reformatted nil
   "Temporary storage for reformatted hole-filling term.")
+
+(defvar narya-pending-parenthesized nil
+  "Temporary storage for parenthesization of hole-filling term.")
 
 (defun narya-create-hole-overlays (start-position relative-positions)
   "Create overlays for holes given a starting position and a list of relative positions.
-Each entry in RELATIVE-POSITIONS should be a list of the form (START-OFFSET END-OFFSET HOLE-ID)."
-  (dolist (pos relative-positions)
-    (let* ((start-offset (nth 0 pos))
-           (end-offset (nth 1 pos))
-           (hole-id (nth 2 pos))
-           ;; Adjust offsets relative to the starting position
-           (char-start (byte-to-position (+ start-position start-offset)))
-           (char-end (byte-to-position (+ start-position end-offset))))
-      (narya-create-hole-overlay char-start char-end hole-id))))
+Each entry in RELATIVE-POSITIONS should be a list of the form (START-OFFSET END-OFFSET HOLE-ID).
+Also replaces single ? holes with ¿ʔ.
+Return the number of such overlays created."
+  (let ((positions
+         (cl-map 'list
+                 (lambda (pos)
+                   (let ((start (set-marker (make-marker) (byte-to-position (+ start-position (nth 0 pos)))))
+                         (end (set-marker (make-marker) (byte-to-position (+ start-position (nth 1 pos))))))
+                     (set-marker-insertion-type start t)
+                     (list start end (nth 2 pos))))
+                 relative-positions))
+        (count 0))
+    (dolist (pos positions)
+      (let ((start (nth 0 pos))
+            (end (nth 1 pos))
+            (hole-id (nth 2 pos)))
+        (save-excursion
+          (goto-char start)
+          (when (looking-at "\\?")
+            ;; We insert first and then delete, so that the inserted
+            ;; text remains inside the processed region.
+            (insert "¿ʔ")
+            (delete-char 1)
+            (set-marker start (- (point) 2))
+            (set-marker end (point))))
+        (narya-create-hole-overlay start end hole-id))
+      (setq count (+ count 1)))
+    count))
 
 (defun narya-create-hole-overlay (char-start char-end hole-id)
-  "Create a single hole overlay."
+  "Create a single hole overlay.
+The start and end regions should include the already-inserted ¿ and ʔ."
   (when (and char-start char-end)
-    (let ((ovl (make-overlay char-start char-end nil nil nil)))
+    (let ((ovl (make-overlay char-start char-end nil
+                             ;; No text should be inserted outside the
+                             ;; hole anyway.
+                             t nil)))
       (overlay-put ovl 'narya-hole hole-id)
-      (overlay-put ovl 'face 'narya-hole-face)
-      (push ovl narya-hole-overlays))))
+      (overlay-put ovl 'face '(:extend t :inherit highlight))
+      ovl)))
 
 (defun narya-create-marked-hole-overlays (start end)
-  "Create hole overlays from markers of the form ¿0? from START to END."
+  "Create hole overlays from markers of the form ⁇0¿...ʔ from START to END.
+Return the number of such overlays created."
   (goto-char start)
-  (while (re-search-forward "¿\\([[:digit:]]+\\)\\?" end 'limit)
-    (narya-create-hole-overlay (match-beginning 0) (match-end 0) (string-to-number (match-string 1)))
-    (replace-match "?")))
+  (let ((count 0) data)
+    (while (re-search-forward "\\(⁇\\([[:digit:]]+\\)\\)?\\(¿\\)" end 'limit)
+      (let* ((number (string-to-number (match-string 2)))
+             (hole-start (set-marker (make-marker) (match-beginning 3))))
+        (replace-match "" nil nil nil 1)
+        (goto-char (match-end 3))
+        (while
+          (and (setq data (narya-next-hole-subdivision end))
+               data
+               (nth 0 data)))
+        (narya-create-hole-overlay hole-start (nth 2 data) number)
+        (setq count (+ count 1))))
+    count))
+
+(defun narya-get-hole-overlay (pos)
+  "Find the hole overlay that strictly contains the given position, if any.
+Does *not* find overlays that we are at the beginning or end of (outside the markers)."
+  ;; `overlays-at' finds overlays we're at the beginning of, but not
+  ;; those we're at the end of.  So we filter out the beginning ones.
+  (cl-find-if
+   (lambda (ovl)
+     (and (overlay-get ovl 'narya-hole)
+          (< (overlay-start ovl) pos (overlay-end ovl))))
+   (overlays-at pos)))
+
+(defun narya-extend-font-lock-region ()
+  "Extend the font-lock region so it includes any processed hole.
+For unprocessed holes, you're on your own."
+  (let ((beg-ovl (narya-get-hole-overlay font-lock-beg))
+        (end-ovl (narya-get-hole-overlay font-lock-beg)))
+    (or (and beg-ovl
+             (< (overlay-start beg-ovl) font-lock-beg)
+             (setq font-lock-beg (overlay-start beg-ovl)))
+        (and end-ovl
+             (> (overlay-end end-ovl) font-lock-end)
+             (setq font-lock-end (overlay-end end-ovl))))))
 
 (defun narya-skip-comments-backwards ()
   "Skip backwards to the last non-whitespace, non-comment character."
@@ -94,11 +143,31 @@ Each entry in RELATIVE-POSITIONS should be a list of the form (START-OFFSET END-
   (forward-char 1))
 
 (defun narya-parse-cmdstart ()
-  "Parse a complete command, not including any comments that follow it."
-  (let ((parsed (proof-script-generic-parse-cmdstart)))
-    (when (eq parsed 'cmd)
-      (narya-skip-comments-backwards))
-    parsed))
+  "Parse a complete command, not including any comments that follow it.
+For `proof-script-parse-function'.
+Based on `proof-script-generic-parse-cmdstart'."
+  (let ((case-fold-search proof-case-fold-search))
+    (if (looking-at proof-script-comment-start-regexp)
+	;; Find end of comment
+        ;; Narya TODO: Why don't we iterate this moving past whitespace too?
+	(if (proof-script-generic-parse-find-comment-end) 'comment)
+    ;; Handle non-comments: assumed to be commands
+    (when (looking-at proof-script-command-start-regexp)
+      ;; We've got at least the beginnings of a command, skip past it
+      (goto-char (match-end 0))
+      ;; Find next command start or end of buffer
+      (when (or (and (re-search-forward proof-script-command-start-regexp nil 'movetolimit)
+                     (goto-char (match-beginning 0)))
+                (eq (point) (point-max)))
+        ;; If we're in an unclosed comment, back out of it
+	(when (proof-looking-at-syntactic-context)
+          (while (proof-looking-at-syntactic-context)
+            (backward-char 1))
+          ;; That backs up too far
+          (forward-char 1))
+        ;; Then back across complete comments
+        (narya-skip-comments-backwards)
+        'cmd)))))
 
 (defun narya-retract-target (target)
   "Retract the span TARGET as in `proof-retract-target', if it exists.
@@ -177,7 +246,7 @@ Some code copied from Coq."
               (with-selected-window goal-win
                 (goto-char (point-max))
                 (recenter (- 1)))))))))
-                
+
 (defface narya-error-face
   '((t (:foreground "red1" :underline t)))
   "Face used to highlight script errors in Narya."
@@ -222,7 +291,7 @@ Some code copied from Coq."
   (let* ((current-end (proof-unprocessed-begin))
          (prev-end (or (get 'narya-clear-error-highlights-on-change 'last-processed-end) 1)))
     (when (< current-end prev-end)
-      ;; The processed region shrank — clear all error highlights.
+      ;; The processed region shrank -- clear all error highlights.
       (narya-clear-error-highlights))
     ;; Update stored end for next comparison.
     (put 'narya-clear-error-highlights-on-change 'last-processed-end current-end)))
@@ -250,29 +319,30 @@ handling in Proof General."
         ;; Temporary storage for hole data.
         (parsed-hole-data nil)
         (error-found nil)
-        (reformatted nil))
+        (reformatted nil)
+        (parenthesized nil))
     (when (and span (overlay-buffer span))
-    ;; Store the span
-    (setq narya-last-successful-span span))
+      ;; Store the span
+      (setq narya-last-successful-span span))
     ;; Check for errors in the output first.
     (when (and (string-match proof-shell-error-regexp string))
-        (setq error-found t
-              proof-shell-last-output-kind 'error)
-        (setq span narya-last-successful-span)
-        (proof-with-script-buffer
-   	;; Start parsing the error numbers after the initial "^L[errors]^L" part
-        (let ((error-start (string-match "\f\\[errors\\]\f\n" string)))
-           ;; Parse all the error pairs (start-byte, end-byte)
-           (while (string-match "\\([0-9]+\\) \\([0-9]+\\)" string)
-              (let ((start-byte (string-to-number (match-string 1 string)))
-                    (end-byte (string-to-number (match-string 2 string))))
-              ;; Highlight the positions on the current line
-              (if (and span (overlay-buffer span) (overlay-end span)) 
-                  (narya-highlight-error-range (+ (position-bytes (overlay-end span)) 1 start-byte) 
-                                               (+ (position-bytes (overlay-end span)) 1 end-byte))
-                  (narya-highlight-error-range (+ 1 start-byte) (+ 1 end-byte)))
-              ;; Move forward in the string to look for the next error pair
-              (setq string (substring string (match-end 0))))))))
+      (setq error-found t
+            proof-shell-last-output-kind 'error)
+      (setq span narya-last-successful-span)
+      (proof-with-script-buffer
+       ;; Start parsing the error numbers after the initial "^L[errors]^L" part
+       (let ((error-start (string-match "\f\\[errors\\]\f\n" string)))
+         ;; Parse all the error pairs (start-byte, end-byte)
+         (while (string-match "\\([0-9]+\\) \\([0-9]+\\)" string)
+           (let ((start-byte (string-to-number (match-string 1 string)))
+                 (end-byte (string-to-number (match-string 2 string))))
+             ;; Highlight the positions on the current line
+             (if (and span (overlay-buffer span) (overlay-end span))
+                 (narya-highlight-error-range (+ (position-bytes (overlay-end span)) 1 start-byte) 
+                                              (+ (position-bytes (overlay-end span)) 1 end-byte))
+               (narya-highlight-error-range (+ 1 start-byte) (+ 1 end-byte)))
+             ;; Move forward in the string to look for the next error pair
+             (setq string (substring string (match-end 0))))))))
     ;; If no errors, proceed with normal processing.
     (unless error-found
       ;; Check for the goals marker in the output, setting positions to slice
@@ -283,7 +353,19 @@ handling in Proof General."
         (string-match "\x0C\\[data\\]\x0C\n" string gstart)
         (setq gend (match-beginning 0)
               dpos (match-end 0))
-        ;; Parse hole data from the data section
+        ;; Find out whether Narya parenthesized the term
+        (string-match "\\(un\\)?parenthesized\n" string dpos)
+        (setq dpos (match-end 0))
+        (setq parenthesized (not (match-string 1 string)))
+        ;; Get the current instant number
+        (string-match "\\([[:digit:]]+\\)\n" string dpos)
+        (setq dpos (match-end 0))
+        (if span (overlay-put span 'instant
+                              (string-to-number (match-string 1 string))))
+        ;; Parse hole data from the data section.  This will only be
+        ;; used if we are *not* reformatting commands/holes, since the
+        ;; reformatted version contains ⁇0? markers for hole positions
+        ;; and numbers.
         (setq parsed-hole-data
               (cl-loop while (string-match "^\\([0-9]+\\) \\([0-9]+\\) \\([0-9]+\\).*\n" string dpos)
                        collect (let* ((hole (string-to-number (match-string 1 string)))
@@ -294,17 +376,18 @@ handling in Proof General."
         ;; Now grab the reformatting info
         (string-match "\x0C\\[reformat\\]\x0C\n" string dpos)
         ;; Remove trailing newlines and trailing spaces on any line
-        ;(setq reformatted (replace-regexp-in-string "[ \t]+\n" "\n" (string-trim-right (substring string (match-end 0)))))
         (setq reformatted (substring string (match-end 0)))
         ;; Handle parsed hole data based on the visibility of the command
         (if (member 'invisible flags)
             ;; For invisible commands ("solve"), store the parsed data globally, both the holes and the reformatted term
             (setq narya-pending-hole-positions parsed-hole-data
-                  narya-pending-hole-reformatted reformatted)
+                  narya-pending-reformatted reformatted
+                  narya-pending-parenthesized parenthesized)
           ;; For visible commands, create overlays directly
           (when (and span (overlay-buffer span))
             (proof-with-script-buffer
              (if (and narya-reformat-commands (not (equal reformatted "")))
+                 ;; If we are reformatting commands, replace the old command with the new one.
                  (let ((inhibit-read-only t)
                        (start (set-marker (make-marker) (overlay-start span)))
                        (end (set-marker (make-marker) (overlay-end span))))
@@ -329,6 +412,7 @@ handling in Proof General."
                        (unless (equal reformatted (buffer-substring-no-properties (point) end))
                          (insert reformatted)
                          (delete-region (point) end))
+                       ;; In the reformatted command, its holes were printed using the ⁇0? syntax.
                        (narya-create-marked-hole-overlays start end)
                        ;; Add an undo item so that if the reformatting is undone, ProofGeneral will also retract the Narya command.
                        (narya-add-command-undo span)
@@ -336,7 +420,11 @@ handling in Proof General."
                            (recenter)
                          ;; Apparently count-screen-lines is 1-based, but recenter is 0-based.
                          (recenter (- pos 1))))))
-               (let ((bpos (position-bytes (save-excursion
+               ;; If we are not reformatting commands, we just have to
+               ;; create the hole overlays, and without the ⁇0? flags
+               ;; we have to use the info from the [data] block.
+               (let ((inhibit-read-only t)
+                     (bpos (position-bytes (save-excursion
                                              (goto-char (overlay-start span))
                                              (skip-chars-forward " \t\n")
                                              (point)))))
@@ -346,7 +434,10 @@ handling in Proof General."
         (setq proof-shell-last-goals-output (substring string gstart gend))
         (proof-shell-display-output-as-response flags (substring string rstart rend))
         (unless (memq 'no-goals-display flags)
-          (pg-goals-display proof-shell-last-goals-output t)))
+          ;; In May 2025, pg-goals-display added a third argument.  For now, we stay backwards-compatible.
+          (if (= (car (func-arity 'pg-goals-display)) 3)
+              (pg-goals-display proof-shell-last-goals-output t nil)
+            (pg-goals-display proof-shell-last-goals-output t))))
       ;; Update output kind to avoid redundant handling by `proof-shell-handle-delayed-output`
       (setq proof-shell-last-output-kind 'goals))
     ;; Optionally handle proof tree output
@@ -356,15 +447,11 @@ handling in Proof General."
 
 (defun narya-delete-undone-holes ()
   "Delete overlays for holes that are (now) outside the processed region."
-  (let ((pend (proof-unprocessed-begin)))
-    (setq narya-hole-overlays
-	  (seq-filter
-	   (lambda (ovl)
-	     (if (and (overlay-start ovl) (< (overlay-start ovl) pend))
-		 t
-	       (delete-overlay ovl)
-	       nil))
-	   narya-hole-overlays))))
+  (let ((pend (proof-unprocessed-begin))
+        (inhibit-read-only t))
+    (dolist (o (overlays-in pend (point-max)))
+      (when (overlay-get o 'narya-hole)
+        (delete-overlay o)))))
 
 ;; Use Asai's ANSI coloring of error messages
 (defun narya-insert-and-color-text (&rest args)
@@ -485,6 +572,12 @@ handling in Proof General."
 	(comment-style 'extra-line))
     (comment-region-default beg end arg)))
 
+(defun narya-chdir-to-current-file ()
+  "Change Narya's current directory to that of the current buffer file."
+  (proof-shell-invisible-command
+   (concat "chdir " (prin1-to-string (file-name-directory (buffer-file-name))))
+   t))
+
 (defun narya-mode-extra-config ()
   (set (make-local-variable 'block-comment-start) "{` ")
   (set (make-local-variable 'block-comment-end) " `}")
@@ -495,44 +588,56 @@ handling in Proof General."
   (add-hook 'proof-shell-handle-delayed-output-hook 'narya-show-goal)
   (add-hook 'proof-shell-handle-delayed-output-hook 'narya-optimise-resp-windows)
   (modify-syntax-entry ? " ")           ; Why is this necessary?
-  (setq font-lock-multiline t))
+  (setq font-lock-multiline t)
+  (add-to-list 'font-lock-extend-region-functions 'narya-extend-font-lock-region)
+  (add-hook 'proof-activate-scripting-hook 'narya-chdir-to-current-file))
 
 (add-hook 'narya-mode-hook 'narya-mode-extra-config)
 
-;; Interactive commands
+;; Don't retract the processed region when editing in a hole contents.
+(define-advice proof-retract-before-change
+    (:before-until (beg end) narya-holes)
+  (let ((ovl (cl-find-if (lambda (ovl) (and (overlay-get ovl 'narya-hole) ))
+                         (overlays-in beg end))))
+    ;; If the user is trying to delete the starting or ending marker but not the whole goal, signal a read-only error.
+    (and ovl
+         (or (< (overlay-start ovl) beg) (< end (overlay-end ovl)))
+         (or (<= beg (overlay-start ovl)) (<= (overlay-end ovl) end))
+         (signal 'text-read-only nil))
+    ;; Otherwise, if they're editing entirely within the overlay, don't retract.
+    (and ovl (< (overlay-start ovl) beg) (< end (overlay-end ovl)))))
 
-(defun narya-previous-hole ()
-  "Move point to the previous open hole, if any."
-  (interactive)
-  (let ((pos
-	 (seq-reduce
-	  (lambda (pos ovl)
-	    (let ((opos (overlay-start ovl)))
-	      (if (and (< opos (point))
-		       (if pos (< pos opos) t))
-		  opos
-		pos)))
-	  narya-hole-overlays
-	  nil)))
-    (if pos
-	(goto-char pos)
-      (message "No more holes."))))
+;; Interactive commands
 
 (defun narya-next-hole ()
   "Move point to the next open hole, if any."
   (interactive)
-  (let ((pos
-	 (seq-reduce
-	  (lambda (pos ovl)
-	    (let ((opos (overlay-start ovl)))
-	      (if (and (< (point) opos)
-		       (if pos (< opos pos) t))
-		  opos
-		pos)))
-	  narya-hole-overlays
-	  nil)))
-    (if pos
-	(goto-char pos)
+  ;; Get the overlay of the current hole, *including* if we're at the beginning.
+  (let* ((ovl (cl-find-if (lambda (ovl) (overlay-get ovl 'narya-hole)) (overlays-at (point))))
+         (pos (if ovl
+                  (if (= (point) (overlay-start ovl))
+                      ;; But if we're at the start, go to *this* overlay.
+                      (point)
+                    (next-single-char-property-change (overlay-end ovl) 'narya-hole))
+                (next-single-char-property-change (point) 'narya-hole))))
+    (if (< pos (point-max))
+        ;; Go to the beginning of that hole's interior.
+        (goto-char (+ pos 1))
+      (message "No more processed holes."))))
+
+(defun narya-previous-hole ()
+  "Move point to the previous open hole, if any."
+  (interactive)
+  ;; Get the overlay of the current hole.  This does *not* include if we're at the end.
+  (let* ((ovl (cl-find-if (lambda (ovl) (overlay-get ovl 'narya-hole)) (overlays-in (- (point ) 1) (point))))
+         (pos (if ovl
+                  (if (= (point) (overlay-end ovl))
+                      (point)
+                    (previous-single-char-property-change (overlay-start ovl) 'narya-hole))
+                (previous-single-char-property-change (point) 'narya-hole))))
+    (if (> pos (point-min))
+        ;; Go back to the beginning of that hole.
+        (goto-char (+ (previous-single-char-property-change pos 'narya-hole) 1))
       (message "No more holes."))))
 
 (defun narya-show-hole ()
@@ -548,94 +653,290 @@ handling in Proof General."
   (interactive)
   (proof-shell-invisible-command "show holes"))
 
+(defun narya-current-hole-contents ()
+  "Get the contents of the current subdivision of the current hole."
+  (let ((ovl (narya-get-hole-overlay (point)))
+        (pos (point))
+        start
+        (result nil))
+    (when ovl
+      (save-excursion
+        (goto-char (+ (overlay-start ovl) 1))
+        (while (not result)
+          (setq start (point))
+          (setq data (narya-next-hole-subdivision (overlay-end ovl)))
+          (when (or (not data)
+                    (>= (nth 2 data) pos))
+            (setq result (buffer-substring-no-properties start (nth 1 data)))))
+        (string-trim result)))))
+
+(defun narya-hole-subdivisions (ovl)
+  "Parse and return the non-empty subdivisions in a hole overlay, if any.
+Here \"empty\" means containing only whitespace; comments are nonempty."
+  (let ((subdivisions nil)
+        data str)
+    (save-excursion
+      (goto-char (+ (overlay-start ovl) 1))
+      (setq start (point))
+      (while (setq data (narya-next-hole-subdivision (overlay-end ovl)))
+        (setq str (string-trim
+                   (buffer-substring-no-properties start (nth 1 data))))
+        (unless (equal str "")
+          (setq subdivisions (nconc subdivisions (list str))))
+        (setq start (point)))
+      subdivisions)))
+
+(defun narya-choose-delimited-term (terms prompt extra)
+  "Given a hole overlay, prompt the user to choose one of the terms in it."
+  (let* ((concatenated nil)
+         (n 0)
+         (tempbuf (generate-new-buffer "narya terms"))
+         (tempwin (display-buffer tempbuf))
+         choice concatn entern extran)
+    (unwind-protect
+        (progn
+          (with-current-buffer tempbuf
+            (insert "The current hole contains more than one term.\nChoose one (the others will be discarded):\n\n")
+            ;; Extra
+            (setq extran n)
+            (when extra
+              (insert "(" (int-to-string extran) ") " extra "\n")
+              (setq n (+ n 1)))
+            (setq terms
+                  (mapcan (lambda (term)
+                            (setq term (string-trim term))
+                            ;; Skip empty subdivisions
+                            (if (equal term "")
+                                nil
+                              (insert "(" (int-to-string n) ") ")
+                              (if (> (length term) 40)
+                                  (insert (substring term 0 40) "...")
+                                (insert term))
+                              (insert "\n")
+                              (setq n (+ n 1))
+                              (setq concatenated
+                                    (if concatenated
+                                        (concat concatenated " " term)
+                                      term))
+                              (list term)))
+                          terms))
+            ;; Concatenated
+            (setq concatn n)
+            (insert "(" (int-to-string n) ") ")
+            (if (> (length concatenated) 40)
+                (insert (substring concatenated 0 40) "...")
+              (insert concatenated))
+            (insert " (all terms concatenated)\n")
+            (setq n (+ n 1))
+            ;; Enter new one
+            (setq entern n)
+            (insert "(" (int-to-string n) ") enter new term\n"))
+          (while (not choice)
+            (setq choice (ignore-errors (read-from-minibuffer prompt nil nil t t)))
+            (setq choice (and (integerp choice) (>= choice 0) (<= choice n) choice))
+            (unless choice
+              (message "Please enter an integer between 0 and %d." n)
+              (sit-for 1)))
+          (cond
+           ((= choice concatn) concatenated)
+           ((= choice entern) (read-from-minibuffer prompt nil nil nil nil nil t))
+           ((and extra (= choice extran)) "_")
+           (t (string-trim (nth choice terms)))))
+      (quit-window t tempwin))))
+
+(defun narya-get-hole-term (hole-overlay prompt multiprompt extra)
+  "Get a term to solve or split with from the hole contents, perhaps prompting."
+  (let ((subdivisions (narya-hole-subdivisions hole-overlay)))
+    (cond
+     ((not subdivisions)
+      (read-from-minibuffer prompt nil nil nil nil nil t))
+     ((not (cdr subdivisions))
+      (read-from-minibuffer prompt (narya-current-hole-contents) nil nil nil nil t))
+     (t
+      (narya-choose-delimited-term subdivisions multiprompt extra)))))
+
 (defun narya-solve-hole ()
   "Solve the current hole with a user-provided term."
   (interactive)
-  (narya-solve-or-split-hole nil))
-
-(defun narya-split-hole ()
-  "Solve the current hole with a term inferred from its type."
-  (interactive)
-  (narya-solve-or-split-hole t))
-
-(defun narya-solve-or-split-hole (split)
-  "Issue either solve or split command, depending on the argument."
   ;; Check for an overlay marking the current hole at point.
-  (let ((hole-overlay (car (seq-filter (lambda (ovl)
-                                         (overlay-get ovl 'narya-hole))
-                                       (overlays-at (point))))))
+  (let ((hole-overlay (narya-get-hole-overlay (point))))
     ;; If no hole overlay is found, prompt the user to place the cursor on a hole.
     (if (not hole-overlay)
         (message "Place the cursor in a hole to use this command.")
-      ;; Otherwise, proceed to solve/split the hole, perhaps with a user-provided term.
-      (let ((term (if split "_" (read-string "Enter the term to solve the hole: ")))
-            (cmd (if split "split" "solve"))
-            (column (current-column)))
-        ;; Send the solution command invisibly to the proof shell, synchronously.
-        (proof-shell-invisible-command
-         (format "%s %d %d := %s" cmd (overlay-get hole-overlay 'narya-hole) column term) t)
-        ;; Check for errors in the proof shell output.
-        (if (eq proof-shell-last-output-kind 'error)
-            (message "You entered an incorrect term.")
-          ;; If no errors, insert the solution term at the hole position and update overlays.
-          (atomic-change-group
-            (let* ((inhibit-read-only t)
-                   (insert-start (overlay-start hole-overlay))
-                   (byte-insert-start (position-bytes insert-start))
-                   (cmd-span (span-at insert-start 'type))
-                   parens)
-              (goto-char insert-start)
-	      ;; Insert the term and delete the hole.  We do it in this
-	      ;; order so that if the hole is at the very end of the
-	      ;; processed region, the inserted term will end up
-	      ;; *inside* the processed region.
-              (if (or split narya-reformat-holes)
-                  (let ((spaces (concat "\n" (make-string column ? ))))
-                    (insert (string-replace "\n" spaces narya-pending-hole-reformatted)))
-                (setq parens
-                      (and (equal (elt narya-pending-hole-reformatted 0) ?\()
-                           (not (equal (elt term 0) ?\())))
-                (if parens
-                    (insert "(" term ")")
-                  (insert term)))
-              (let ((insert-end (point-marker)))
-                (delete-region (point) (overlay-end hole-overlay))
-                ;; Delete the overlay for the solved hole and update the hole list.
-                (delete-overlay hole-overlay)
-                (setq narya-hole-overlays (delq hole-overlay narya-hole-overlays))
-                ;; Create new overlays from holes in the new term
-                (cond
-                 ((or split narya-reformat-holes)
-                  (narya-create-marked-hole-overlays insert-start insert-end)
-                  (message "Hole solved."))
-                 (narya-pending-hole-positions
-                  (narya-create-hole-overlays (+ byte-insert-start (if parens 1 0)) narya-pending-hole-positions)
-                  (setq narya-pending-hole-positions nil)))
-                ;; Now we add an Emacs undo action so that if the
+      ;; Otherwise, proceed to solve the hole, perhaps with a user-provided term.
+      (let ((term (narya-get-hole-term hole-overlay "Solve hole with: " "Solve hole with: " nil)))
+        (narya-solve-hole-with hole-overlay term)))))
+
+(defun narya-solve-hole-with (hole-overlay term)
+  (let ((column (current-column)))
+    ;; Send the solution command invisibly to the proof shell, synchronously.
+    (proof-shell-invisible-command
+     (format "solve %d %d := %s" (overlay-get hole-overlay 'narya-hole) column term) t)
+    ;; Check for errors in the proof shell output.
+    (if (eq proof-shell-last-output-kind 'error)
+        (message "You entered an incorrect term.")
+      ;; If no errors, insert the solution term at the hole position and update overlays.
+      (atomic-change-group
+        (goto-char (overlay-start hole-overlay))
+        (let ((inhibit-read-only t)
+              (insert-start (point))
+              (byte-insert-start (position-bytes (point)))
+              (cmd-span (span-at (point) 'type))
+              (shift 0))
+	  ;; Insert the term and delete the hole.  We do it in this
+	  ;; order so that if the hole is at the very end of the
+	  ;; processed region, the inserted term will end up
+	  ;; *inside* the processed region.
+          (if narya-reformat-commands
+              ;; If we're splitting or reformatting holes, insert the reformatted version.
+              (let ((spaces (concat "\n" (make-string column ? ))))
+                (insert (string-replace "\n" spaces narya-pending-reformatted)))
+            ;; If we're not reformatting holes, check whether the
+            ;; reformatted version would have put new parentheses
+            ;; around the term, and if so put parentheses around
+            ;; the user's term.
+            (if narya-pending-parenthesized
+                (progn
+                  (insert "(" term ")")
+                  (setq shift 1))
+              (insert term)))
+          (let ((insert-end (point-marker))
+                (new-holes 0))
+            (delete-region (point) (overlay-end hole-overlay))
+            ;; Delete the overlay for the solved hole.
+            (delete-overlay hole-overlay)
+            ;; Create new overlays from holes in the new term.
+            (if narya-reformat-commands
+                ;; If the new term was reformatted, then its holes
+                ;; were printed using the ⁇0? syntax, so we can use
+                ;; narya-create-marked-hole-overlays.
+                ;; (narya-create-marked-hole-overlays insert-start insert-end)
+                (narya-reformat-command cmd-span)
+              ;; Otherwise, we get the hole position information
+              ;; from the [data] block.
+              (let ((new-holes (narya-create-hole-overlays (+ byte-insert-start shift)
+                                                           narya-pending-hole-positions)))
+                (setq narya-pending-hole-positions nil)
+                ;; The rest is done by narya-reformat-command when we
+                ;; call that, but here we have to do it ourselves.
+                ;;
+                ;; First we add an Emacs undo action so that if the
                 ;; "solve" command is undone in Emacs, PG will rewind
                 ;; past the command containing the hole.  This is the
                 ;; only sensible course of action, since the Narya
                 ;; "solve" command can't be undone.
-                (narya-add-command-undo cmd-span)))))))))
+                (narya-add-command-undo cmd-span)
+                ;; Then if any new holes were created, we position the
+                ;; cursor in the first of them.
+                (when (> new-holes 0)
+                  (goto-char insert-start)
+                  (narya-next-hole))))
+            (message "Hole solved.")))))))
 
-(defun narya-echo-or-synth (cmd term)
-  (let* ((n (get-char-property (point) 'narya-hole))
+(defun narya-split-hole ()
+  "Split in the current hole, prompting the user to edit and then solving."
+  (interactive)
+  (let ((hole-overlay (narya-get-hole-overlay (point))))
+    (if (not hole-overlay)
+        (message "Place the cursor in a hole to use this command.")
+      (let* ((userterm (narya-get-hole-term
+                        hole-overlay
+                        "Split on term (leave blank to split on goal): "
+                        "Split on term: "
+                        "none (split on goal)"))
+             (term (if (equal userterm "") "_" userterm)))
+        (proof-shell-invisible-command
+         (format "split %d := %s" (overlay-get hole-overlay 'narya-hole) term) t)
+        (if (eq proof-shell-last-output-kind 'error)
+            (message "You entered an incorrect term.")
+          ;; Now we prompt the user to edit the term, and pass off the edited version to solve.
+          (setq term (read-from-minibuffer "Solve with term: " narya-pending-reformatted nil nil nil nil t))
+          (narya-solve-hole-with hole-overlay term))))))
+
+(defun narya-echo-or-synth (cmd prompt)
+  (let* ((contents (narya-current-hole-contents))
+         (term (read-from-minibuffer prompt contents nil nil nil nil t))
+         (n (get-char-property (point) 'narya-hole))
          (command (concat cmd " "
                           (if n (concat "in " (number-to-string n) " ") "")
                           term)))
     (proof-shell-invisible-command command)))
 
-(defun narya-echo (term)
+(defun narya-echo ()
   "Normalize and display the value and type of a term.
 If cursor is over a hole, the term is interpreted in the context of that hole."
-  (interactive "sTerm to normalize: ")
-  (narya-echo-or-synth "echo" term))
+  (interactive)
+  (narya-echo-or-synth "echo" "Term to normalize: "))
 
-(defun narya-synth (term)
+(defun narya-synth ()
   "Display the type of a term.
 If cursor is over a hole, the term is interpreted in the context of that hole."
-  (interactive "sTerm to synthesize: ")
-  (narya-echo-or-synth "synth" term))
+  (interactive)
+  (narya-echo-or-synth "synth" "Term to synthesize: "))
+
+(defun narya-insert-hole-numbers (start end)
+  "Insert hole-number labels ⁇n in front of hole overlays from START to END."
+  (save-excursion
+    (dolist (ovl (overlays-in start end))
+      (let ((n (overlay-get ovl 'narya-hole)))
+        (when n
+          (goto-char (overlay-start ovl))
+          (insert "⁇" (number-to-string n)))))))
+
+(defun narya-reformat-command (&optional ovl)
+  "Reformat the command with overlay OVL in the processed region.
+Defaults to the command containing point."
+  (interactive)
+  ;; Find the current PG 'cmd overlay
+  (let ((ovl (or ovl
+                 (cl-find-if (lambda (o) (overlay-get o 'cmd))
+                             (overlays-at (point))))))
+    (if ovl
+        ;; That overlay appears to include preceding whitespace (but
+        ;; not comments).  We make our own markers for where its
+        ;; start and end should be after the reformatting, so as not
+        ;; to depend on whatever front-advance and rear-advance
+        ;; properties PG gave it.
+        (let* ((inhibit-read-only t)
+               (ovl-start (copy-marker (overlay-start ovl) nil))
+               (start (save-excursion
+                        (goto-char ovl-start)
+                        (while (looking-at "[ \t\n]")
+                          (forward-char 1))
+                        (skip-syntax-backward " ")
+                        (unless (bolp)
+                          (insert "\n\n"))
+                        (point-marker)))
+               (end (copy-marker (overlay-end ovl) t))
+               (cmd (progn
+                      (narya-insert-hole-numbers start end)
+                      (buffer-substring-no-properties start end)))
+               new-holes)
+          ;; Reformat the command
+          (proof-shell-invisible-command
+           (format "fmt %d := %s" (overlay-get ovl 'instant) cmd) t)
+          (if (eq proof-shell-last-output-kind 'error)
+              (message "Reformatter failed!")
+            ;; Delete the existing hole overlays in the region
+            (atomic-change-group
+              (dolist (h (overlays-in start end))
+                (when (overlay-get h 'narya-hole)
+                  (delete-overlay h)))
+              ;; Insert the reformatted version in place of the old version
+              (goto-char start)
+              (insert narya-pending-reformatted)
+              (delete-region (point) end)
+              ;; Adjust the PG overlay to be in the right place.
+              (move-overlay ovl ovl-start end)
+              ;; Create new hole overlays.  Since we're forcing reformatting
+              ;; here, we can use the marked version.
+              (setq new-holes (narya-create-marked-hole-overlays start end))
+              ;; Add an undo action to retract to here
+              (narya-add-command-undo ovl)
+              (goto-char start)
+              (when (> new-holes 0)
+                (narya-next-hole)))))
+      (message "No current processed command found."))))
 
 (defun narya-display-chars (arg)
   "Set, unset, or toggle display of unicode characters.
@@ -681,8 +982,6 @@ With a negative prefix argument,set display of type boundaries off."
     "synth"
     "show hole"
     "show holes"
-    "display style ≔ compact"
-    "display style ≔ noncompact"
     "display chars ≔ unicode"
     "display chars ≔ ascii"
     "display function boundaries ≔ on"
@@ -753,8 +1052,8 @@ With a negative prefix argument,set display of type boundaries off."
 ;; C-c `   proof-next-error
 ;; C-c C-. proof-goto-end-of-locked
 ;; C-c C-, --> show current hole if any, focused proof if any
-;; C-c C-; pg-insert-last-output-as-comment
-;; C-c C-:
+;; C-c C-; not pg-insert-last-output-as-comment, that's useless; same as C-c ;
+;; C-c C-: same as C-c :
 ;; C-c ?   (help)
 ;; C-c C-? --> show all goals
 ;; C-c C-SPC --> fill hole
@@ -789,11 +1088,14 @@ With a negative prefix argument,set display of type boundaries off."
 (keymap-set narya-mode-map "C-c C-j" 'narya-next-hole)
 (keymap-set narya-mode-map "C-c C-k" 'narya-previous-hole)
 (keymap-set narya-mode-map "C-c ;" 'narya-echo)
+(keymap-set narya-mode-map "C-c C-;" 'narya-echo)
 (keymap-set narya-mode-map "C-c :" 'narya-synth)
+(keymap-set narya-mode-map "C-c C-:" 'narya-synth)
 (keymap-set narya-mode-map "C-c C-v" 'narya-minibuffer-cmd)
 (keymap-set narya-mode-map "C-c C-d C-u" 'narya-display-chars)
 (keymap-set narya-mode-map "C-c C-d C-f" 'narya-display-function-boundaries)
 (keymap-set narya-mode-map "C-c C-d C-t" 'narya-display-type-boundaries)
+(keymap-set narya-mode-map "C-M-q" 'narya-reformat-command)
 
 (provide 'narya)
 

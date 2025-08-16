@@ -5,8 +5,8 @@ open Util
 open Tbwd
 open Reporter
 open Term
-open Status
 open Printable
+open Origin
 
 (* The global environment of constants and definition-local metavariables. *)
 
@@ -16,316 +16,204 @@ type definition =
   (* A parametric constant can have external degeneracies applied to it, while a nonparametric one can't.  A maybe-parametric one is one currently being typechecked which hasn't yet been concluded to be nonparametric. *)
   * [ `Parametric | `Nonparametric | `Maybe_parametric ]
 
+(* The versioned global table of defined constants. *)
+let constants : ((emp, kinetic) term * definition, Code.t) Result.t Constant.Table.t =
+  Constant.Table.make ()
+
 (* Global metavariables have only a definition (or an error indicating that they can't be correctly accessed, such as if typechecking failed earlier). *)
-module Metamap = Meta.Map.Make (struct
+module Metatable = Meta.Table.Make (struct
   type ('x, 'a, 'b, 's) t = (('a, 'b, 's) Metadef.t, Code.t) Result.t
 end)
 
-type metamap = unit Metamap.t
-
-type data = {
-  constants : ((emp, kinetic) term * definition, Code.t) Result.t Constant.Map.t;
-  metas : metamap;
-  (* These three data pertain to the *currently executing command*: they store information about the holes, the global metavariables it has created, and whether it is parametric.  The purpose is that if and when that command completes, we notify the user about the holes and save the metavariables to the correct global state.  In particular, during a "solve" command, the global state is rewound in time, but any newly created global metavariables need to be put into the "present" global state that it was rewound from. *)
-  current_holes : (Meta.wrapped * printable * Asai.Range.t) Bwd.t;
-  current_metas : metamap;
-  (* What's known about whether the current mutual block of definitions is parametric: either they are nonparametric (they are an axiom, or use other nonparametric constants), or they *could* be parametric so far, or they *must* be parametric (they involve external degeneracies applied to themselves). *)
-  parametric : [ `Must_be_parametric | `Maybe_parametric | `Nonparametric ];
-  (* These are the eternal holes that exist.  We store them so that when commands creating holes are undone, those holes can be discarded. *)
-  holes : Meta.WrapSet.t;
-}
-
-(* The empty global state, as at the beginning of execution. *)
-let empty : data =
-  {
-    constants = Constant.Map.empty;
-    metas = Metamap.empty;
-    current_holes = Emp;
-    current_metas = Metamap.empty;
-    parametric = `Maybe_parametric;
-    holes = Meta.WrapSet.empty;
-  }
-
-module S = State.Make (struct
-  type t = data
+module Holetable = Meta.Table.Make (struct
+  type ('x, 'a, 'b, 's) t = ('a, 'b, 's) Metadef.hole
 end)
 
-let () =
-  S.register_printer (function
-    | `Get -> Some "unhandled Global get effect"
-    | `Set _ -> Some "unhandled Global set effect")
+(* The versioned global tables for metavariables (including holes) and for special hole data. *)
+let metas : unit Metatable.t = Metatable.make ()
+let holes : unit Holetable.t = Holetable.make ()
 
 (* Look up a constant. *)
 let find c =
-  let d = S.get () in
-  match Constant.Map.find_opt c d.constants with
+  match Constant.Table.find_opt c constants with
   | Some (Ok (ty, tm)) -> (ty, tm)
   | Some (Error e) -> fatal e
   | None -> fatal (Undefined_constant (PConstant c))
 
-(* We need to make some calls to Eternity, which isn't defined until lib/parser, so we supply a ref here for Eternity to insert its callbacks. *)
-type eternity = {
-  find_opt : 'a 'b 's. ('a, 'b, 's) Meta.t -> ('a, 'b, 's) Metadef.t option;
-  add :
-    'a 'b 's.
-    ('a, 'b, 's) Meta.t ->
-    (string option, 'a) Bwv.t ->
-    ('a, 'b) termctx ->
-    ('b, kinetic) term ->
-    ('b, 's) status ->
-    No.interval option ->
-    No.interval option ->
-    unit;
-  modify : 'a 'b 's. ('a, 'b, 's) Meta.t -> (data -> data) -> unit;
-}
-
-let eternity : eternity ref =
-  ref
-    {
-      find_opt = (fun _ -> raise (Failure "eternity not set"));
-      add = (fun _ _ _ _ _ -> raise (Failure "eternity not set"));
-      modify = (fun _ _ -> raise (Failure "eternity not set"));
-    }
-
-(* When looking up a metavariable, we check both Eternity, the new globals, and the old globals. *)
+(* Similarly, look up a metavariable. *)
 let find_meta m =
-  match !eternity.find_opt m with
-  | Some d -> d
-  | None -> (
-      let data = S.get () in
-      match Metamap.find_opt m data.current_metas with
-      | Some (Ok d) -> d
-      (* If we find an error, we immediately raise it. *)
-      | Some (Error e) -> fatal e
-      | None -> (
-          match Metamap.find_opt m data.metas with
-          | Some (Ok d) -> d
-          | Some (Error e) -> fatal e
-          | None -> fatal (Anomaly ("undefined metavariable: " ^ Meta.name m))))
+  match Metatable.find_opt m metas with
+  | Some (Ok d) -> d
+  | Some (Error e) -> fatal e
+  | None -> fatal (Anomaly ("undefined metavariable: " ^ Meta.name m))
 
-(* Marshal and unmarshal the constants and metavariables pertaining to a single compilation unit.  We ignore the "current" data because that is only relevant during typechecking commands, whereas this comes at the end of typechecking a whole file. *)
+(* Combine all the data for a hole, to return them when looked up. *)
+type find_hole =
+  | Found_hole : {
+      meta : ('a, 'b, 's) Meta.t;
+      instant : Instant.t;
+      termctx : ('a, 'b) termctx;
+      ty : ('b, kinetic) term;
+      status : ('b, 's) Status.status;
+      vars : (string option, 'a) Bwv.t;
+      li : No.interval;
+      ri : No.interval;
+      parametric : [ `Parametric | `Nonparametric ];
+    }
+      -> find_hole
 
-let to_channel_unit chan i flags =
-  let d = S.get () in
-  Constant.Map.to_channel_unit chan i d.constants flags;
-  Metamap.to_channel_unit chan i d.metas flags
+(* Subroutine for returning those data. *)
+let return_hole : type a b s.
+    (a, b, s) Meta.t ->
+    ((a, b, s) Metadef.t, Code.t) Result.t ->
+    (a, b, s) Metadef.hole option ->
+    find_hole option =
+ fun meta def hole ->
+  match (def, hole) with
+  | Ok { tm = `Undefined; termctx; ty; _ }, Some { status; vars; li; ri; parametric } -> (
+      match Meta.origin meta with
+      | Instant instant ->
+          Some (Found_hole { meta; instant; termctx; ty; status; vars; li; ri; parametric })
+      | _ -> fatal (Anomaly "timeless hole"))
+  | Error e, _ -> fatal e
+  | _ -> None
+
+let find_hole i =
+  let open Monad.Ops (Monad.Maybe) in
+  match
+    let* (Entry (meta, def)) = Metatable.find_hole_opt i metas in
+    let hole = Holetable.find_opt meta holes in
+    return_hole meta def hole
+  with
+  | Some found -> found
+  | None -> fatal (No_such_hole i)
+
+let all_holes () =
+  Metatable.fold
+    {
+      fold =
+        (fun m v hs ->
+          match return_hole m v (Holetable.find_opt m holes) with
+          | Some h -> Snoc (hs, h)
+          | None -> hs);
+    }
+    metas Emp
+
+(* Marshal and unmarshal the constants and metavariables pertaining to a single file.  We ignore the "current" data because that is only relevant during typechecking commands, whereas this comes at the end of typechecking a whole file.  We do NOT marshal the "holes" table because compiled files can't contain holes, and holedata potentially contains functional values. *)
+
+let to_channel_file chan file flags =
+  Constant.Table.to_channel_file chan file constants flags;
+  Metatable.to_channel_file chan file metas flags
 
 let link_definition f df =
   match df with
   | `Axiom, p -> (`Axiom, p)
   | `Defined tm, p -> (`Defined (Link.term f tm), p)
 
-type unit_entry =
-  ((emp, kinetic) term * definition, Code.t) Result.t Constant.Map.unit_entry
-  * unit Metamap.unit_entry
+type file_entry =
+  ((emp, kinetic) term * definition, Code.t) Result.t Constant.Table.file_entry
+  * unit Metatable.file_entry
 
-let find_unit i =
-  let d = S.get () in
-  (Constant.Map.find_unit i d.constants, Metamap.find_unit i d.metas)
+let find_file i = (Constant.Table.find_file i constants, Metatable.find_file i metas)
 
-let add_unit i (c, m) =
-  let d = S.get () in
-  let constants = Constant.Map.add_unit i c d.constants in
-  let metas = Metamap.add_unit i m d.metas in
-  S.set { d with constants; metas }
+let add_file i (c, m) =
+  Constant.Table.add_file i c constants;
+  Metatable.add_file i m metas
 
-let from_channel_unit f chan i =
-  let d = S.get () in
-  let constants, new_constants =
-    Constant.Map.from_channel_unit chan
+(* Returns the new file data for constants and metas. *)
+let from_channel_file f chan i =
+  (* NB in a tuple (a,b), OCaml executes b before a!  But we have to unmarshal the constants before the metas, because that's the order we marshaled them in, so we control the order of execution with let.  *)
+  let cs =
+    Constant.Table.from_channel_file chan
       (Result.map (fun (tm, df) -> (Link.term f tm, link_definition f df)))
-      i d.constants in
-  let metas, new_metas =
-    Metamap.from_channel_unit chan { map = (fun _ df -> Result.map (Link.metadef f) df) } i d.metas
-  in
-  S.set { d with constants; metas };
-  (new_constants, new_metas)
+      i constants in
+  let ms =
+    Metatable.from_channel_file chan
+      {
+        map =
+          (fun _ df ->
+            match df with
+            | Ok df -> Ok (Link.metadef f df)
+            | Error e -> Error e);
+      }
+      i metas in
+  (cs, ms)
 
 (* Add a new constant. *)
-let add c ty df =
-  S.modify @@ fun d -> { d with constants = d.constants |> Constant.Map.add c (Ok (ty, df)) }
+let add c ty df = Constant.Table.add c (Ok (ty, df)) constants
 
-(* Set the definition of an already-defined constant. *)
+(* Set the definition of an already-defined constant.  Only works for the current origin. *)
 let set c df =
-  S.modify @@ fun d ->
-  {
-    d with
-    constants =
-      d.constants
-      |> Constant.Map.update c (function
-           | Some (Ok (ty, _)) -> Some (Ok (ty, df))
-           | _ -> raise (Failure "Global.set"));
-  }
+  match Constant.Table.find_opt c constants with
+  | Some (Ok (ty, _)) -> Constant.Table.add c (Ok (ty, df)) constants
+  | _ -> fatal (Anomaly "Global.set: constant not defined")
 
 (* Add a new constant, but make it an error to access it. *)
-let add_error c e =
-  S.modify @@ fun d -> { d with constants = d.constants |> Constant.Map.add c (Error e) }
+let add_error c e = Constant.Table.add c (Error e) constants
 
 (* Add a new Global metavariable (e.g. local let-definition) to the new metas associated to the current command. *)
 let add_meta m ~termctx ~ty ~tm ~energy =
   let tm = (tm :> [ `Defined of ('b, 's) term | `Axiom | `Undefined ]) in
-  S.modify @@ fun d ->
-  {
-    d with
-    current_metas =
-      d.current_metas |> Metamap.add m (Ok { tm; termctx; ty; energy; li = None; ri = None });
-  }
+  Metatable.add m (Ok { tm; termctx; ty; energy }) metas
 
 (* Set the definition of a Global metavariable, required to already exist but not be defined. *)
 let set_meta m ~tm =
-  S.modify @@ fun d ->
-  {
-    d with
-    current_metas =
-      d.current_metas
-      |> Metamap.update m (function
-           | Some (Ok d) -> Some (Ok { d with tm = `Defined tm })
-           | _ -> raise (Failure "set_meta"));
+  match Metatable.find_opt m metas with
+  | Some (Ok d) -> Metatable.add m (Ok { d with tm = `Defined tm }) metas
+  | _ -> fatal (Anomaly "Global.set_meta: metavariable not defined")
+
+(* Count all the unsolved holes, from all origins. *)
+let unsolved_holes () =
+  Metatable.fold
+    {
+      fold =
+        (fun _ v count ->
+          match v with
+          | Ok { tm = `Undefined; _ } -> count + 1
+          | _ -> count);
+    }
+    metas 0
+
+(* Count only the unsolved holes from the current origin. *)
+let current_unsolved_holes () =
+  Metatable.fold_current
+    {
+      fold =
+        (fun _ v count ->
+          match v with
+          | Ok { tm = `Undefined; _ } -> count + 1
+          | _ -> count);
+    }
+    metas 0
+
+(* Notify the user about how many unsolved holes there are. *)
+let notify_holes () =
+  let n = unsolved_holes () in
+  if n > 0 then Reporter.emit (Open_holes n)
+
+(* Since holes are not allowed inside all commands, we need to keep track of whether we're in a command that allows holes and check for it.  We use a state effect for this.  We also record all the holes *created* by the current command in a separate list so they can be reported to the user, and what is known so far about whether the currently executing command must be parametric.. *)
+
+module Command_state = struct
+  type hole = { meta : Meta.wrapped; printable : printable; startpos : int; endpos : int }
+
+  type t = {
+    holes_allowed : (unit, string) Result.t;
+    current_holes : hole Bwd.t;
+    parametric : [ `Must_be_parametric | `Maybe_parametric | `Nonparametric ];
   }
-
-(* Given a map of meta definitions, save them to the permanent Global state.  This is done after a command finishes with the current_metas from this or some other global state. *)
-let save_metas metas =
-  Metamap.iter
-    { it = (fun m def -> S.modify @@ fun d -> { d with metas = d.metas |> Metamap.add m def }) }
-    metas
-
-(* Since holes are not allowed inside all commands, we need to keep track of whether we're in a command that allows holes and check for it. *)
-module HolesAllowed = Algaeff.Reader.Make (struct
-  type t = (unit, [ `Command of string | `File of string ]) Result.t
-end)
-
-let () =
-  HolesAllowed.register_printer (function `Read -> Some "unhandled HolesAllowed.read effect")
-
-(* Add a new hole.  This is an eternal metavariable, so we pass off to Eternity, and also save some information about it locally so that we can discard it if the command errors (in interactive mode this doesn't stop the program) and notify the user if the command succeeds, and also discard it if this command is later undone. *)
-let add_hole m loc ~vars ~termctx ~ty ~status ~li ~ri =
-  match HolesAllowed.read () with
-  | Ok () ->
-      !eternity.add m vars termctx ty status (Some li) (Some ri);
-      S.modify @@ fun d ->
-      {
-        d with
-        current_holes = Snoc (d.current_holes, (Wrap m, PHole (vars, termctx, ty), loc));
-        holes = Meta.WrapSet.add (Wrap m) d.holes;
-      }
-  | Error msg -> fatal (No_holes_allowed msg)
-
-(* Check whether a hole exists in the current time. *)
-let hole_exists : type a b s. (a, b, s) Meta.t -> bool =
- fun m -> Meta.WrapSet.mem (Wrap m) (S.get ()).holes
-
-(* Temporarily set the value of a constant to execute a callback, and restore it afterwards.  We implement this by saving and restoring the value, rather that by calling another S.run, because we want to make sure to keep the 'current' information created by the callback. *)
-let with_definition c df f =
-  let d = S.get () in
-  match Constant.Map.find_opt c d.constants with
-  | Some (Ok (ty, _) as old) ->
-      let p =
-        match d.parametric with
-        | `Nonparametric -> `Nonparametric
-        | `Must_be_parametric | `Maybe_parametric -> `Maybe_parametric in
-      S.set { d with constants = d.constants |> Constant.Map.add c (Ok (ty, (df, p))) };
-      let result = f () in
-      (* Note that f could change the state in other ways, so we can't just reset the whole state to d.  *)
-      S.modify (fun d -> { d with constants = d.constants |> Constant.Map.add c old });
-      result
-  | Some (Error _ as old) ->
-      (* If the constant is currently unusable, we just retain that state. *)
-      let result = f () in
-      S.modify (fun d -> { d with constants = d.constants |> Constant.Map.add c old });
-      result
-  | _ -> fatal (Anomaly "missing definition in with_definition")
-
-(* Similarly, temporarily set the value of a global metavariable, which could be either permanent or current. *)
-let with_meta_definition m tm f =
-  let d = S.get () in
-  match Metamap.find_opt m d.metas with
-  | Some (Ok olddf) ->
-      S.set { d with metas = d.metas |> Metamap.add m (Ok (Metadef.define tm olddf)) };
-      let result = f () in
-      (* Note that f could change the state in other ways, so we can't just reset the whole state to d.  *)
-      S.modify (fun d -> { d with metas = d.metas |> Metamap.add m (Ok olddf) });
-      result
-  | Some (Error _ as old) ->
-      (* If the metavariable is currently unusable, we just retain that state. *)
-      let result = f () in
-      S.modify (fun d -> { d with metas = d.metas |> Metamap.add m old });
-      result
-  | _ -> (
-      match Metamap.find_opt m d.current_metas with
-      | Some (Ok olddf) ->
-          S.set
-            {
-              d with
-              current_metas = d.current_metas |> Metamap.add m (Ok (Metadef.define tm olddf));
-            };
-          let result = f () in
-          (* Note that f could change the state in other ways, so we can't just reset the whole state to d.  *)
-          S.modify (fun d -> { d with metas = d.metas |> Metamap.add m (Ok olddf) });
-          result
-      | _ ->
-          (* If the metavariable isn't found, that means that when we created it we didn't have a type for it.  That, in turn, means that the user doesn't have a name for it, since the metavariable is only bound to a user name in a "let rec".  So we don't need to do anything. *)
-          f ())
-
-(* Temporarily set the value of a constant to produce an error, and restore it afterwards. *)
-let without_definition c err f =
-  let d = S.get () in
-  match Constant.Map.find_opt c d.constants with
-  | Some old ->
-      S.set { d with constants = d.constants |> Constant.Map.add c (Error err) };
-      let result = f () in
-      (* Note that f could change the state in other ways, so we can't just reset the whole state to d.  *)
-      S.modify (fun d -> { d with constants = d.constants |> Constant.Map.add c old });
-      result
-  | _ -> fatal (Anomaly "missing definition in without_definition")
-
-(* Similarly, temporarily set the value of a global metavariable to produce an error. *)
-let without_meta_definition m err f =
-  let d = S.get () in
-  match Metamap.find_opt m d.metas with
-  | Some olddf ->
-      S.set { d with metas = d.metas |> Metamap.add m (Error err) };
-      let result = f () in
-      (* Note that f could change the state in other ways, so we can't just reset the whole state to d.  *)
-      S.modify (fun d -> { d with metas = d.metas |> Metamap.add m olddf });
-      result
-  | _ -> (
-      match Metamap.find_opt m d.current_metas with
-      | Some olddf ->
-          S.set { d with current_metas = d.current_metas |> Metamap.add m (Error err) };
-          let result = f () in
-          (* Note that f could change the state in other ways, so we can't just reset the whole state to d.  *)
-          S.modify (fun d -> { d with metas = d.metas |> Metamap.add m olddf });
-          result
-      | _ ->
-          (* If the metavariable isn't found, that means that when we created it we didn't have a type for it.  That, in turn, means that the user doesn't have a name for it, since the metavariable is only bound to a user name in a "let rec".  So we don't need to do anything. *)
-          f ())
-
-(* Get the entire global state, for saving as part of the data for an eternal metavariable (hole) that is being created.  For this purpose, we throw away the current holes and merge the current metas into the permanent ones, since that gives the global state in which solutions to the hole will have to be checked. *)
-let get () =
-  let d = S.get () in
-  let metas =
-    Metamap.fold { fold = (fun m def metas -> Metamap.add m def metas) } d.current_metas d.metas
-  in
-  { d with current_holes = Emp; current_metas = Metamap.empty; metas }
-
-(* Start with a specified global state.  This is used e.g. for going back in time and solving holes. *)
-let run = S.run
-let try_with = S.try_with
-
-(* Store the hole number, starting position, and ending position of each newly created hole, to report to ProofGeneral. *)
-module HoleState = struct
-  type t = { holes : (int * int * int) Bwd.t; offset : int }
 end
 
-module HolePos = State.Make (HoleState)
+module Current_command = State.Make (Command_state)
 
 let () =
-  HolePos.register_printer (function
-    | `Get -> Some "unhandled Global.HolePos get effect"
-    | `Set _ -> Some "unhandled Global.HolePos set effect")
+  Current_command.register_printer (function
+    | `Get -> Some "unhandled Current_command.get effect"
+    | `Set _ -> Some "unhandled Current_command.set effect")
+
+(* Set and get parametric-ness *)
 
 let set_nonparametric name =
-  S.modify (fun d ->
+  Current_command.modify (fun d ->
       if d.parametric = `Must_be_parametric then
         match name with
         | Some name -> fatal (Axiom_in_parametric_definition (PConstant name))
@@ -333,50 +221,148 @@ let set_nonparametric name =
       else { d with parametric = `Nonparametric })
 
 let set_parametric name =
-  S.modify (fun d ->
+  Current_command.modify (fun d ->
       if d.parametric = `Nonparametric then fatal (Locked_constant (PConstant name))
       else { d with parametric = `Must_be_parametric })
 
-let set_maybe_parametric () = S.modify (fun d -> { d with parametric = `Maybe_parametric })
+let set_maybe_parametric () =
+  Current_command.modify (fun d -> { d with parametric = `Maybe_parametric })
 
 let get_parametric () =
-  match (S.get ()).parametric with
+  match (Current_command.get ()).parametric with
   | `Nonparametric -> `Nonparametric
   | `Must_be_parametric | `Maybe_parametric -> `Parametric
 
-(* Notify the user about currently created holes and add them to the global list. *)
-let do_holes make_msg =
-  let d = S.get () in
-  let parametric =
-    match d.parametric with
-    | `Maybe_parametric when not (Dim.Endpoints.internal ()) -> `Must_be_parametric
-    | _ -> d.parametric in
-  emit (make_msg (Bwd.length d.current_holes));
+(* At successful completion of a command, notify the user of generated holes.  Use make_msg to show the number of holes, and also emit the holes separately to be shown in the goals buffer.  This is a subroutine of run_command and friends, below. *)
+let end_command (offset, make_msg) =
+  let d = Current_command.get () in
+  (* If the command ended up being parametric, we must retroactively label all the holes as parametric, so that they can only be filled using parametric constants, and oppositely. *)
+  let update_parametric : type a b s. (a, b, s) Metadef.hole -> (a, b, s) Metadef.hole =
+   fun h ->
+    let parametric =
+      match d.parametric with
+      | `Must_be_parametric -> `Parametric
+      | `Maybe_parametric when not (Dim.Endpoints.internal ()) -> `Parametric
+      | _ -> `Nonparametric in
+    { h with parametric } in
+  Option.iter emit (make_msg (Bwd.length d.current_holes));
   Mbwd.miter
-    (fun [ (Meta.Wrap m, p, (loc : Asai.Range.t)) ] ->
+    (fun [ ({ meta = Meta.Wrap m; printable; _ } : Command_state.hole) ] ->
       (* We intentionally do not "locate" this emission, since we want to display only the hole context and type, not its location in the source. *)
-      emit (Hole (Meta.name m, p));
-      let s, e = Asai.Range.split loc in
-      HolePos.modify (fun st ->
-          { st with holes = Snoc (st.holes, (Meta.hole_number m, s.offset, e.offset)) });
-      !eternity.modify m (fun d -> { d with parametric }))
+      emit (Hole (Meta.name m, printable));
+      Holetable.update m (Option.map update_parametric) holes)
     [ d.current_holes ];
-  d.current_metas
+  (* Current_command.modify (fun d -> { d with current_holes = Emp; parametric = `Maybe_parametric }) *)
+  ( offset,
+    Bwd_extra.to_list_map
+      (fun ({ meta = Wrap meta; startpos; endpos; _ } : Command_state.hole) ->
+        (Meta.hole_number meta, startpos, endpos))
+      d.current_holes )
 
-(* At the end of a succesful normal command, notify the user of generated holes, save the newly created metavariables, and clear all the information about current holes and metas and parametricness.  (Parametricness must be previously observed with get_parametric.) *)
-let end_command make_msg =
-  let metas = do_holes make_msg in
-  save_metas metas;
-  S.modify (fun d ->
-      { d with current_holes = Emp; current_metas = Metamap.empty; parametric = `Maybe_parametric })
+(* Run a command.  The different versions correspond to the Origin command functions that they call. *)
 
-(* For a command that needs to run in a different state like Solve, wrap it in this function instead.  This does that, and then after it completes, it saves the newly created metavariables to the *old* global state, not the special one that the command ran in. *)
-let run_command_with ~init make_msg f =
-  let metas, result =
-    run ~init @@ fun () ->
-    let result = f () in
-    let metas = do_holes make_msg in
-    (metas, result) in
-  (* Now that we're back in the old context, save the new metas to it. *)
-  save_metas metas;
-  result
+let run_command ~holes_allowed f =
+  Origin.do_command @@ fun () ->
+  Current_command.run ~init:{ holes_allowed; current_holes = Emp; parametric = `Maybe_parametric }
+  @@ fun () -> end_command (f ())
+
+let run_command_then_undo ~holes_allowed f =
+  Origin.do_command_then_undo @@ fun () ->
+  Current_command.run ~init:{ holes_allowed; current_holes = Emp; parametric = `Maybe_parametric }
+  @@ fun () -> end_command (f ())
+
+(* In the rewind cases, we have to restore the parametric-ness information from the past also. *)
+let rewind_command ~parametric ~holes_allowed instant f =
+  let parametric =
+    match parametric with
+    | `Parametric -> `Must_be_parametric
+    | `Nonparametric -> `Nonparametric in
+  Origin.rewind_command instant @@ fun () ->
+  Current_command.run ~init:{ holes_allowed; current_holes = Emp; parametric } @@ fun () ->
+  end_command (f ())
+
+let rewind_command_then_undo ~parametric ~holes_allowed instant f =
+  let parametric =
+    match parametric with
+    | `Parametric -> `Must_be_parametric
+    | `Nonparametric -> `Nonparametric in
+  Origin.rewind_command_then_undo instant @@ fun () ->
+  Current_command.run ~init:{ holes_allowed; current_holes = Emp; parametric } @@ fun () ->
+  end_command (f ())
+
+(* For white box testing *)
+let run f =
+  Current_command.run
+    ~init:{ holes_allowed = Error "run"; current_holes = Emp; parametric = `Maybe_parametric }
+    f
+
+(* Add a new hole. *)
+let add_hole m loc ~vars ~termctx ~ty ~status ~li ~ri =
+  let cmd = Current_command.get () in
+  match (Origin.holes_allowed (), cmd.holes_allowed) with
+  | Error where, _ ->
+      fatal
+        (No_holes_allowed (where :> [ `Command of string | `File of string | `Other of string ]))
+  | _, Error msg -> fatal (No_holes_allowed (`Command msg))
+  | Ok (), Ok () ->
+      Metatable.add m (Ok { tm = `Undefined; termctx; ty; energy = Status.energy status }) metas;
+      Holetable.add m { status; vars; li; ri; parametric = get_parametric () } holes;
+      let s, e = Asai.Range.split loc in
+      Current_command.set
+        {
+          cmd with
+          current_holes =
+            Snoc
+              ( cmd.current_holes,
+                {
+                  meta = Wrap m;
+                  printable = PHole (Origin.current (), vars, termctx, ty);
+                  startpos = s.offset;
+                  endpos = e.offset;
+                } );
+        }
+
+(* Temporarily set the value of a constant to execute a callback, and restore it afterwards. *)
+let with_definition c df f =
+  match Constant.Table.find_opt c constants with
+  | Some (Ok (ty, _) as old) ->
+      let d = Current_command.get () in
+      let p =
+        match d.parametric with
+        | `Nonparametric -> `Nonparametric
+        | `Must_be_parametric | `Maybe_parametric -> `Maybe_parametric in
+      Constant.Table.add c (Ok (ty, (df, p))) constants;
+      Fun.protect ~finally:(fun () -> Constant.Table.add c old constants) f
+  | Some (Error _ as old) ->
+      (* If the constant is currently unusable, we just retain that state. *)
+      Fun.protect ~finally:(fun () -> Constant.Table.add c old constants) f
+  | _ -> fatal (Anomaly "missing definition in with_definition")
+
+(* Similarly, temporarily set the value of a global metavariable, which could be either permanent or current. *)
+let with_meta_definition m tm f =
+  match Metatable.find_opt m metas with
+  | Some (Ok olddf as old) ->
+      Metatable.add m (Ok (Metadef.define tm olddf)) metas;
+      Fun.protect ~finally:(fun () -> Metatable.add m old metas) f
+  | Some (Error _ as old) ->
+      (* If the metavariable is currently unusable, we just retain that state. *)
+      Fun.protect ~finally:(fun () -> Metatable.add m old metas) f
+  | _ ->
+      (* If the metavariable isn't found, that means that when we created it we didn't have a type for it.  That, in turn, means that the user doesn't have a name for it, since the metavariable is only bound to a user name in a "let rec".  So we don't need to do anything. *)
+      f ()
+
+(* Temporarily set the value of a constant to produce an error, and restore it afterwards. *)
+let without_definition c err f =
+  match Constant.Table.find_opt c constants with
+  | Some old ->
+      Constant.Table.add c (Error err) constants;
+      Fun.protect ~finally:(fun () -> Constant.Table.add c old constants) f
+  | _ -> fatal (Anomaly "missing definition in without_definition")
+
+(* Similarly, temporarily set the value of a global metavariable to produce an error. *)
+let without_meta_definition m err f =
+  match Metatable.find_opt m metas with
+  | Some old ->
+      Metatable.add m (Error err) metas;
+      Fun.protect ~finally:(fun () -> Metatable.add m old metas) f
+  | _ -> f ()

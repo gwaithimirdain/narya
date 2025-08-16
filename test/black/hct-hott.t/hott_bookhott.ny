@@ -1,10 +1,7 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-direction" "p,rel,Br") -*- `}
+{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-direction" "p,rel,Br") -*- `}
 
 import "isfibrant"
 import "bookhott"
-
-option function boundaries ≔ implicit
-option type boundaries ≔ implicit
 
 {` Facts about the interaction of Book HoTT equivalences (regarded as the outer 2LTT layer) and HOTT identity types. `}
 
@@ -43,8 +40,8 @@ def Id_eqv (A0 : Type) (A1 : Type) (A2 : Br Type A0 A1) (B0 : Type)
   let ε2 ≔ e2 .to_fro in
   adjointify (A2 (g0 b0) (g1 b1)) (B2 b0 b1)
     (a2 ↦
-     eq.trr2 B0 B1 (b0 b1 ↦ B2 b0 b1) (fg0 b0) b0 (ε0 b0) (fg1 b1) b1 (ε1 b1)
-       (f2 a2)) (b2 ↦ g2 b2)
+     eq.trr2 B0 B1 (b0 b1 ↦ B2 b0 b1) (fg0 b0) b0 (ε0 b0) (fg1 b1) b1
+       (ε1 b1) (f2 a2)) (b2 ↦ g2 b2)
     (a2 ↦
      eq.cat (A2 (g0 b0) (g1 b1))
        (g2
@@ -54,14 +51,15 @@ def Id_eqv (A0 : Type) (A1 : Type) (A2 : Br Type A0 A1) (B0 : Type)
           (ap_g0 (fg0 b0) b0 (ε0 b0)) (gfg1 b1) (g1 b1)
           (ap_g1 (fg1 b1) b1 (ε1 b1)) (g2 (f2 a2))) a2
        (eq.trr2_ap B0 B1 (x y ↦ B2 x y) A0 A1 (x y ↦ A2 x y) g0 g1
-          (x0 x1 x2 ↦ g2 x2) (fg0 b0) b0 (ε0 b0) (fg1 b1) b1 (ε1 b1) (f2 a2))
+          (x0 x1 x2 ↦ g2 x2) (fg0 b0) b0 (ε0 b0) (fg1 b1) b1 (ε1 b1)
+          (f2 a2))
        (Id_eq A0 A1 A2 (gfg0 b0) (gfg1 b1) (g2 (f2 a2)) (g0 b0) (g1 b1) a2
           (ap_g0 (fg0 b0) b0 (ε0 b0)) (ap_g1 (fg1 b1) b1 (ε1 b1))
           (eq.trl2 (eq A0 (gfg0 b0) (g0 b0)) (eq A1 (gfg1 b1) (g1 b1))
-             (u v ↦ Br eq A2 (g2 (f2 a2)) a2 u v) (ap_g0 (fg0 b0) b0 (ε0 b0))
-             (η0 (g0 b0)) (fro_to_fro A0 B0 e0 b0)
-             (ap_g1 (fg1 b1) b1 (ε1 b1)) (η1 (g1 b1))
-             (fro_to_fro A1 B1 e1 b1) (η2 a2))))
+             (u v ↦ Br eq A2 (g2 (f2 a2)) a2 u v)
+             (ap_g0 (fg0 b0) b0 (ε0 b0)) (η0 (g0 b0))
+             (fro_to_fro A0 B0 e0 b0) (ap_g1 (fg1 b1) b1 (ε1 b1))
+             (η1 (g1 b1)) (fro_to_fro A1 B1 e1 b1) (η2 a2))))
     (b2 ↦
      Id_eq B0 B1 B2 (fg0 b0) (fg1 b1) (f2 (g2 b2)) b0 b1 b2 (ε0 b0) (ε1 b1)
        (ε2 b2))

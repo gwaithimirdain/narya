@@ -7,7 +7,7 @@ open Notation
 let must_start_with tok obs =
   match obs with
   | Token (tok', _) :: _ when tok = tok' -> obs
-  | _ -> Token (tok, (None, [])) :: obs
+  | _ -> Token (tok, ([], None)) :: obs
 
 (* Print a variable, with underscore for unnamed variables. *)
 let pp_var : string option -> document = function
@@ -160,18 +160,19 @@ let rec pp_term : type lt ls rt rs.
       let px, wx = pp_term x in
       (px ^^ pp_ws `None wx ^^ pp_superscript s, w)
   | Superscript (None, s, w) -> (pp_superscript s, w)
-  | Hole { num; ws; _ } ->
-      ( utf8string
-          (match Display.holes () with
-          | `With_number -> "¿" ^ string_of_int !num ^ "?"
-          | `Without_number -> "?"),
+  | Hole { num; ws; contents; _ } ->
+      ( (match Display.holes () with
+        | `With_number ->
+            utf8string ("⁇" ^ string_of_int !num)
+            ^^ Option.fold ~some:utf8string ~none:(utf8string "¿ʔ") contents
+        | `Without_number -> utf8string "?"),
         ws )
 
 and pp_superscript str =
   match Display.chars () with
   | `Unicode ->
-      utf8string (Token.super_lparen_string ^ Token.to_super str ^ Token.super_rparen_string)
-  | `ASCII -> utf8string ("^^(" ^ str ^ ")")
+      utf8string (Token.super_lparen_string ^ Token.to_super str.value ^ Token.super_rparen_string)
+  | `ASCII -> utf8string ("^^(" ^ str.value ^ ")")
 
 (* Print a parse tree as a case tree.  Return the "intro" separately so that it can be grouped with any introductory code from a "def" or "let" so that the primary linebreaks are the case tree ones.  Deals with whitespace like pp_term; the whitespace that ends the intro goes into the main doc (including an allowed break).  The intro doesn't need to start with a break. *)
 let pp_case : type lt ls rt rs.

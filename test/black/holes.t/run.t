@@ -1,4 +1,4 @@
-  $ narya -v holes.ny
+  $ narya -parametric -v holes.ny
    ￫ info[I0001]
    ￮ axiom A assumed
   
@@ -41,6 +41,27 @@
      ----------------------------------------------------------------------
      A → B
   
+   ￫ info[I0007]
+   ￮ section sec opened
+  
+   ￫ info[I0002]
+   ￮ notation «&» defined
+  
+   ￫ info[I0000]
+   ￮ constant f' defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?2:
+     
+     ----------------------------------------------------------------------
+     A → B
+  
+   ￫ info[I0008]
+   ￮ section sec closed
+  
+   ￫ info[I0002]
+   ￮ notation «$» defined
+  
    ￫ info[I0000]
    ￮ constant ℕ defined
   
@@ -48,7 +69,7 @@
    ￮ constant plus defined, containing 2 holes
   
    ￫ info[I3003]
-   ￮ hole ?2:
+   ￮ hole ?3:
      
      m : ℕ
      n ≔ 0 : ℕ
@@ -56,11 +77,11 @@
      ℕ
   
    ￫ info[I3003]
-   ￮ hole ?3:
+   ￮ hole ?4:
      
      m : ℕ
      n : ℕ
-     n0 ≔ suc. n : ℕ (not in scope)
+     n′ ≔ suc. n : ℕ (not in scope)
      ----------------------------------------------------------------------
      ℕ
   
@@ -71,10 +92,10 @@
    ￮ constant anop defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?4:
+   ￮ hole ?5:
      
-     n1 : ℕ (not in scope)
-     n0 : ℕ
+     n″ : ℕ (not in scope)
+     n′ : ℕ
      n : ℕ
      ----------------------------------------------------------------------
      P n
@@ -83,10 +104,10 @@
    ￮ constant anop' defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?5:
+   ￮ hole ?6:
      
-     n0 : ℕ
-     n1 : ℕ (not in scope)
+     n′ : ℕ
+     n″ : ℕ (not in scope)
      n : ℕ
      ----------------------------------------------------------------------
      P n
@@ -95,10 +116,10 @@
    ￮ constant anop'' defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?6:
+   ￮ hole ?7:
      
-     n0 : ℕ (not in scope)
-     H : ℕ (not in scope)
+     n′ : ℕ (not in scope)
+     𝑥 : ℕ (not in scope)
      n : ℕ
      ----------------------------------------------------------------------
      P n
@@ -107,10 +128,10 @@
    ￮ constant anop''' defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?7:
+   ￮ hole ?8:
      
-     H : ℕ
-     H0 : ℕ (not in scope)
+     𝑥 : ℕ
+     𝑦 : ℕ (not in scope)
      n : ℕ
      ----------------------------------------------------------------------
      P n
@@ -122,13 +143,13 @@
    ￮ constant pp defined, containing 2 holes
   
    ￫ info[I3003]
-   ￮ hole ?8:
+   ￮ hole ?9:
      
      ----------------------------------------------------------------------
      Type
   
    ￫ info[I3003]
-   ￮ hole ?9:
+   ￮ hole ?10:
      
      ----------------------------------------------------------------------
      pp .fst
@@ -137,22 +158,22 @@
    ￮ constant pp' defined, containing 2 holes
   
    ￫ info[I3003]
-   ￮ hole ?10:
+   ￮ hole ?11:
      
      ----------------------------------------------------------------------
      Type
   
    ￫ info[I3003]
-   ￮ hole ?11:
+   ￮ hole ?12:
      
      ----------------------------------------------------------------------
-     ?10{…}
+     ?11{…}
   
    ￫ info[I0000]
    ￮ constant foo defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?12:
+   ￮ hole ?13:
      
      bar : ℕ
      ----------------------------------------------------------------------
@@ -162,7 +183,7 @@
    ￮ constant foo' defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?13:
+   ￮ hole ?14:
      
      bar : Type
      x : bar
@@ -173,7 +194,7 @@
    ￮ constant gel0 defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?14:
+   ￮ hole ?15:
      
      A : Type
      B : Type
@@ -186,7 +207,7 @@
    ￮ constant gel1 defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?15:
+   ￮ hole ?16:
      
      A : Type
      B : Type
@@ -200,7 +221,7 @@
    ￮ constant gel2 defined, containing 2 holes
   
    ￫ info[I3003]
-   ￮ hole ?16:
+   ￮ hole ?17:
      
      A : Type
      B : Type
@@ -210,13 +231,13 @@
      Type
   
    ￫ info[I3003]
-   ￮ hole ?17:
+   ￮ hole ?18:
      
      A : Type
      B : Type
      x : A
      y : B
-     one : ?16{…}
+     one : ?17{…}
      ----------------------------------------------------------------------
      Type
   
@@ -224,7 +245,7 @@
    ￮ constant gel3 defined, containing 2 holes
   
    ￫ info[I3003]
-   ￮ hole ?18:
+   ￮ hole ?19:
      
      A : Type
      B : Type
@@ -235,7 +256,7 @@
      Type
   
    ￫ info[I3003]
-   ￮ hole ?19:
+   ￮ hole ?20:
      
      A : Type
      B : Type
@@ -255,13 +276,13 @@
    ￮ constant ac defined, containing 2 holes
   
    ￫ info[I3003]
-   ￮ hole ?20:
+   ￮ hole ?21:
      
      ----------------------------------------------------------------------
      ℕ → A
   
    ￫ info[I3003]
-   ￮ hole ?21:
+   ￮ hole ?22:
      
      ----------------------------------------------------------------------
      C (ac .a 0)
@@ -272,32 +293,32 @@
    ￫ info[I0000]
    ￮ constant ideqid defined
   
-  u u0 u1 ↦ u1
-    : refl Π A A (refl A) (_ ↦ A) (_ ↦ A) (_ ⤇ refl A) ida ida
+  {u} {u′} u″ ↦ u″
+    : {𝑥₀ : A} {𝑥₁ : A} (𝑥₂ : Id A 𝑥₀ 𝑥₁) →⁽ᵉ⁾ Id A 𝑥₀ 𝑥₁
   
    ￫ info[I0000]
    ￮ constant ideqid' defined
   
-  u u0 u00 ↦ u00
-    : refl Π A A (refl A) (_ ↦ A) (_ ↦ A) (_ ⤇ refl A) ida ida
+  {u} {u′} u′′ ↦ u′′
+    : {𝑥₀ : A} {𝑥₁ : A} (𝑥₂ : Id A 𝑥₀ 𝑥₁) →⁽ᵉ⁾ Id A 𝑥₀ 𝑥₁
   
    ￫ info[I0000]
    ￮ constant ideqid'' defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?22:
+   ￮ hole ?23:
      
-     u1 : A (not in scope)
-     u0 : A (not in scope)
-     u : refl A u1 u0
+     u″ : A (not in scope)
+     u′ : A (not in scope)
+     u : Id A u″ u′
      ----------------------------------------------------------------------
-     refl A u1 u0
+     refl A u″ u′
   
    ￫ info[I0000]
    ￮ constant afam defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?23:
+   ￮ hole ?24:
      
      X : Type
      ----------------------------------------------------------------------
@@ -313,11 +334,11 @@
    ￮ constant f2 defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?24:
+   ￮ hole ?25:
      
      x.0 : A
      x.1 : A
-     x.2 : refl A x.0 x.1
+     x.2 : Id A x.0 x.1
      ----------------------------------------------------------------------
      refl B (f0 x.0) (f0 x.1)
   
@@ -328,7 +349,7 @@
    ￮ constant p defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?25:
+   ￮ hole ?26:
      
      ----------------------------------------------------------------------
      prod
@@ -340,7 +361,7 @@
    ￮ constant p2 defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?26:
+   ￮ hole ?27:
      
      ----------------------------------------------------------------------
      refl prod p0 p0
@@ -350,16 +371,16 @@
   
    ￫ warning[E2100]
    ￭ $TESTCASE_ROOT/holes.ny
-   122 | def p : prod ≔ ?
+   110 | def p : prod ≔ ?
        ^ previous definition
-   128 | def p : prod' ≔ ?
+   116 | def p : prod' ≔ ?
        ^ redefining constant: p
   
    ￫ info[I0000]
    ￮ constant p defined, containing 1 hole
   
    ￫ info[I3003]
-   ￮ hole ?27:
+   ￮ hole ?28:
      
      ----------------------------------------------------------------------
      prod'
@@ -375,7 +396,7 @@
   
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/dtt-holes.ny
-   4 | def g (X : Type) : Type⁽ᵈ⁾ X ≔ (f ?)⁽ᵈ⁾
+   6 | def g (X : Type) : Type⁽ᵈ⁾ X ≔ (f ?)⁽ᵈ⁾
      ^ term synthesized type
          Type⁽ᵈ⁾ ?0{…}
        but is being checked against type
@@ -387,13 +408,14 @@
   
   [1]
 
-No holes in echo:
+Holes in echo:
 
   $ narya -e 'echo (? : Type)'
-   ￫ error[E2002]
-   ￭ command-line exec string
-   1 | echo (? : Type)
-     ^ command 'echo' cannot contain holes
+  ?0{…}
+    : Type
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
   
   [1]
 
@@ -405,6 +427,6 @@ No holes in imported file
    ￫ error[E2002]
    ￭ $TESTCASE_ROOT/to_import.ny
    1 | def A : Type := ?
-     ^ imported file 'to_import' cannot contain holes
+     ^ imported file '$TESTCASE_ROOT/to_import.ny' cannot contain holes
   
   [1]

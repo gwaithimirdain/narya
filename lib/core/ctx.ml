@@ -242,11 +242,11 @@ module Ordered = struct
             end in
             let module Fold = NICubeOf.Traverse (Lookup) in
             (* This function is called on every step of that iteration through a cube.  It appears that we have to define it with an explicit type signature in order for it to end up sufficiently polymorphic. *)
-            let lookup_folder : type left right l.
+            let lookup_folder : type left l.
                 (l, n) sface ->
-                (left, l, string option, right) NFamOf.t ->
-                right Lookup.t ->
-                left Lookup.t * (left, l, unit, right) NFamOf.t =
+                (left, l, string option) NFamOf.t ->
+                left N.suc Lookup.t ->
+                left Lookup.t * (left, l, unit) NFamOf.t =
              fun fb (NFamOf _) acc ->
               match acc with
               | Found fa -> (Found fa, NFamOf ())
@@ -259,10 +259,9 @@ module Ordered = struct
             | Found fb, _ ->
                 (* Once we find the face in the cube of visible variables, we add it to the face specified by the user for a cube variable, if any, and look up the corresponding binding. *)
                 let (SFace_of fa) =
-                  match (snd k, D.compare_zero dim) with
-                  | None, Zero -> SFace_of (id_sface dim)
-                  | None, Pos _ -> fatal (Missing_variable_face dim)
-                  | Some (Any_sface fa), _ -> (
+                  match snd k with
+                  | None -> SFace_of (id_sface dim)
+                  | Some (Any_sface fa) -> (
                       match D.compare (cod_sface fa) dim with
                       | Neq -> fatal (Invalid_variable_face (dim, fa))
                       | Eq -> SFace_of fa) in
@@ -334,6 +333,14 @@ module Ordered = struct
     let b = Binding.make None v in
     (cube_vis ctx x (CubeOf.singleton b), b)
 
+  (* Remove the last entry in a context.  Only works if that last entry is a fully-cube variable with no fields. *)
+  type (_, _) pop =
+    | Pop : ('a, 'b) t * ('a N.suc, 'asuc) Eq.t * (('b, 'n) snoc, 'bn) Eq.t -> ('asuc, 'bn) pop
+
+  let pop : type a b. (a, b) t -> (a, b) pop option = function
+    | Snoc (ctx, _, Suc Zero) -> Some (Pop (ctx, Eq, Eq))
+    | _ -> None
+
   (* Generate a case tree consisting of a sequence of abstractions corresponding to the (checked) variables in a context.  The context must contain NO LET-BOUND VARIABLES, including field-access variables, since abstracting over them would not be well-defined.  (In general, we couldn't just omit them, because some of the variables in a cube could be bound but not others, and cubes in the context yield cube abstractions.  However, at least when this comment was written, this function was only used for contexts consisting entirely of 0-dimensional cubes without let-bound variables.) *)
   let rec lam : type a b. (a, b) t -> (b, potential) term -> (emp, potential) term =
    fun ctx tree ->
@@ -390,6 +397,14 @@ let vis (Permute { perm; env; level; ctx }) m mn xs vars af =
       level = level + 1;
       ctx = Ordered.vis ctx m mn xs vars bf;
     }
+
+type _ any = Any_ctx : ('a, 'b) t -> 'b any
+
+let variables_vis : type a b mn.
+    (a, b) t -> mn variables -> (mn, Binding.t) CubeOf.t -> (b, mn) snoc any =
+ fun ctx (Variables (m, mn, xs)) vars ->
+  let (Plus af) = N.plus (NICubeOf.out N.zero xs) in
+  Any_ctx (vis ctx m mn xs vars af)
 
 let cube_vis ctx x vars =
   let m = CubeOf.dim vars in
@@ -448,6 +463,21 @@ let ext_let (Permute { perm; env; level; ctx }) xs tm =
       level = level + 1;
       ctx;
     }
+
+(* Remove the last cube entry in a context.  This only works if it is a pure cube variable with no fields and the context has not been permuted after its addition. *)
+type (_, _) pop =
+  | Pop : ('a, 'b) t * ('a N.suc, 'asuc) Eq.t * (('b, 'n) snoc, 'bn) Eq.t -> ('asuc, 'bn) pop
+
+let pop : type a b. (a, b) t -> ((a, b) pop, string) Result.t =
+ fun (Permute { ctx; perm; level; env }) ->
+  match (Ordered.pop ctx, perm, env) with
+  | Some (Pop (ctx, Eq, Eq)), Insert (perm, Top), LazyExt (env, _, _) ->
+      Ok (Pop (Permute { ctx; perm; level; env }, Eq, Eq))
+  | Some (Pop (ctx, Eq, Eq)), Id, LazyExt (env, _, _) ->
+      Ok (Pop (Permute { ctx; perm = Id; level; env }, Eq, Eq))
+  | Some (Pop (_, Eq, Eq)), Insert (_, Top), _ -> Error "not lazyext"
+  | Some (Pop (_, Eq, Eq)), _, _ -> Error "not insert-top"
+  | None, _, _ -> Error "not ordered.pop"
 
 let lam (Permute { ctx; _ }) tm = Ordered.lam ctx tm
 

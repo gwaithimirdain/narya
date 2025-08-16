@@ -7,8 +7,8 @@ type ('a, 'b) actor = { act : 'm 'n. 'a -> ('m, 'n) deg -> 'b }
 val act_cube : ('a, 'b) actor -> ('n, 'a) CubeOf.t -> ('m, 'n) deg -> ('m, 'b) CubeOf.t
 val act_value : 's value -> ('m, 'n) deg -> 's value
 val act_normal : normal -> ('a, 'b) deg -> normal
-val gact_ty : ?err:Code.t -> kinetic value option -> kinetic value -> ('a, 'b) deg -> kinetic value
-val act_ty : ?err:Code.t -> kinetic value -> kinetic value -> ('a, 'b) deg -> kinetic value
+val gact_ty : ?err:dim_err -> kinetic value option -> kinetic value -> ('a, 'b) deg -> kinetic value
+val act_ty : ?err:dim_err -> kinetic value -> kinetic value -> ('a, 'b) deg -> kinetic value
 val act_evaluation : 's evaluation -> ('m, 'n) deg -> 's evaluation
 
 val act_value_cube :

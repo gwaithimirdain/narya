@@ -1,4 +1,4 @@
-  $ narya -v parametric_identity.ny
+  $ narya -v -parametric parametric_identity.ny
    ￫ info[I0000]
    ￮ constant Gel defined
   

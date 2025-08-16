@@ -1,6 +1,6 @@
-open Bwd
 open Util
 open Core
+open Origin
 module Trie = Yuujinchou.Trie
 
 module Param : sig
@@ -45,15 +45,12 @@ module Mod : sig
     (Param.data, Param.tag) Trie.t
 end
 
-exception Locked
-
 type trie = (Param.data, Param.tag) Trie.t
 type t
 
-val empty : unit -> t
+val empty : t
 val resolve : Trie.path -> (Param.data * Param.tag) option
 val modify_export : ?context_export:Param.context -> Param.hook Yuujinchou.Language.t -> unit
-val modify_options : (Options.t -> Options.t) -> unit
 
 val export_visible :
   ?context_modifier:Param.context ->
@@ -78,32 +75,26 @@ val import_subtree :
 
 val get_visible : unit -> trie
 val get_export : unit -> trie
-val get_options : unit -> Options.t
 val set_visible : trie -> unit
 val start_section : string list -> unit
 val end_section : unit -> string list option
 val count_sections : unit -> int
-
-val run :
-  ?export_prefix:string Bwd.t ->
-  ?init_visible:(Param.data, Param.tag) Trie.t ->
-  ?init_situation:Situation.t ->
-  ?options:Options.t ->
-  (unit -> 'a) ->
-  'a
-
-val run_with : ?get:(unit -> t) -> ?set:(t -> unit) -> (unit -> 'a) -> 'a
 val lookup : Trie.path -> Constant.t option
 val find_data : ('a * 'c, 'b) Trie.t -> 'a -> Trie.path option
 val name_of : Constant.t -> Trie.path
-val define : Compunit.t -> ?loc:Asai.Range.t -> Trie.path -> Constant.t
+val marshal_original_names : out_channel -> Marshal.extern_flags list -> unit
+val define : ?loc:Asai.Range.t -> Trie.path -> Constant.t
+val redefine : (Constant.t, string list) Hashtbl.t -> (File.t -> File.t) -> Constant.t -> Constant.t
 val define_notation : User.prenotation -> ?loc:Asai.Range.t -> Trie.path -> User.key list
 val check_name : Trie.path -> Asai.Range.t option -> unit
 
 module Situation : sig
   val get : unit -> Situation.t
+  val left_closeds_at : Origin.t -> (No.plus_omega, No.strict) Notation.entry
   val left_closeds : unit -> (No.plus_omega, No.strict) Notation.entry
+  val tighters_at : Origin.t -> ('tight, 'strict) No.iinterval -> ('tight, 'strict) Notation.entry
   val tighters : ('tight, 'strict) No.iinterval -> ('tight, 'strict) Notation.entry
+  val left_opens_at : Origin.t -> Token.t -> No.interval option
   val left_opens : Token.t -> No.interval option
   val unparse : Situation.PrintKey.t -> User.notation option
   val add : ('left, 'tight, 'right) Notation.notation -> unit

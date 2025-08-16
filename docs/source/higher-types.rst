@@ -64,7 +64,7 @@ Just as the higher-dimensional versions of an ordinary codatatype inherit fields
 
 .. code-block:: none
 
-   x22 : √ℕ⁽ᵉᵉ⁾ x00 x01 x02 x10 x11 x12 x20 x21
+   x22 : √ℕ⁽ᵉᵉ⁾ {x00} {x01} x02 {x10} {x11} x12 x20 x21
 
 with ``x00`` through ``x21`` of appropriate types, then the two projectable fields of ``x22`` and their types are
 
@@ -147,7 +147,7 @@ In other words, ``Id √ℕ n₀ n₁`` behaves like a higher coinductive type i
 Displayed coinductive types
 ---------------------------
 
-In the *displayed coinductive types* of *Displayed Type Theory* (dTT), the *output* of a corecursive method is a higher-dimensional version of the codatatype.  One of the most basic examples is the definition of the type of semi-simplicial types from the `dTT paper <https://arxiv.org/abs/2311.18781>`_:
+In the *displayed coinductive types* of :ref:`Displayed type theory` (dTT), the *output* of a corecursive method is a higher-dimensional version of the codatatype.  One of the most basic examples is the definition of the type of semi-simplicial types from the `dTT paper <https://arxiv.org/abs/2311.18781>`_ (written here in Narya using ``-dtt``, meaning ``-parametric -arity 1 -direction d -external``):
 
 .. code-block:: none
 
@@ -156,4 +156,4 @@ In the *displayed coinductive types* of *Displayed Type Theory* (dTT), the *outp
    | X .s : (X .z) → SST⁽ᵈ⁾ X
    ]
 
-Narya permits displayed coinductives and their generalization to other kinds of parametricity.  Some examples can be found in the test directory `test/black/dtt.t <https://github.com/gwaithimirdain/narya/tree/master/test/black/dtt.t/>`_.
+Narya permits displayed coinductives and their generalization to other kinds of parametricity.  Some more examples can be found in the test directory `test/black/dtt.t <https://github.com/gwaithimirdain/narya/tree/master/test/black/dtt.t/>`_.

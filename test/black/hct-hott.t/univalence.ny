@@ -1,13 +1,10 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-direction" "p,rel,Br") -*- `}
+{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-direction" "p,rel,Br") -*- `}
 
 import "isfibrant"
 import "bookhott"
 import "hott_bookhott"
 import "fibrant_types"
 import "homotopy"
-
-option function boundaries ≔ implicit
-option type boundaries ≔ implicit
 
 {` Univalence `}
 
@@ -25,20 +22,20 @@ def pre_univalence (A : Fib) (B : Fib) (G : Br Type (A .t) (B .t))
 {` This is just the assumption of pointwise fibrancy. `}
 | .id.1 ↦ a b ↦ 𝕗G a b
 {` The first few e-dimensional fields are uniform operations, which also follow from pointwise fibrancy. `}
-| .trr.p ↦ a0 b0 r0 ↦ 𝕗G.2 (A.2 .f .liftr a0) (B.2 .f .liftr b0) .trr r0
-| .trl.p ↦ a1 b1 r1 ↦ 𝕗G.2 (A.2 .f .liftl a1) (B.2 .f .liftl b1) .trl r1
-| .liftr.p ↦ a0 b0 r0 ↦
+| .trr.p ↦ {a0} {b0} r0 ↦ 𝕗G.2 (A.2 .f .liftr a0) (B.2 .f .liftr b0) .trr r0
+| .trl.p ↦ {a1} {b1} r1 ↦ 𝕗G.2 (A.2 .f .liftl a1) (B.2 .f .liftl b1) .trl r1
+| .liftr.p ↦ {a0} {b0} r0 ↦
     sym (𝕗G.2 (A.2 .f .liftr a0) (B.2 .f .liftr b0) .liftr r0)
-| .liftl.p ↦ a1 b1 r1 ↦
+| .liftl.p ↦ {a1} {b1} r1 ↦
     sym (𝕗G.2 (A.2 .f .liftl a1) (B.2 .f .liftl b1) .liftl r1)
 {` Here is the most interesting bit, where we coinductively use the fact that bisimulations are defined to lift to identity types.  We have to transfer it across a symmetry equivalence. `}
-| .id.p ↦ a0 b0 r0 a1 b1 r1 ↦
+| .id.p ↦ {a0} {b0} r0 {a1} {b1} r1 ↦
     let s
       : (a2 : A.2 .t a0 a1) (b2 : B.2 .t b0 b1)
         → G.2 a2 b2 r0 r1 ≅ sym G.2 r0 r1 a2 b2
       ≔ a2 b2 ↦
-        sym_eqv (A.0 .t) (A.1 .t) (A.2 .t) (B.0 .t) (B.1 .t) (B.2 .t) G.0 G.1
-          G.2 a0 a1 a2 b0 b1 b2 r0 r1 in
+        sym_eqv (A.0 .t) (A.1 .t) (A.2 .t) (B.0 .t) (B.1 .t) (B.2 .t) G.0
+          G.1 G.2 a0 a1 a2 b0 b1 b2 r0 r1 in
     let 𝕗sG
       : (a2 : A.2 .t a0 a1) (b2 : B.2 .t b0 b1)
         → isFibrant (sym G.2 r0 r1 a2 b2)
@@ -53,7 +50,8 @@ def pre_univalence (A : Fib) (B : Fib) (G : Br Type (A .t) (B .t))
          (re.2 .id a0 b0 r0 a1 b1 r1))]
 
 {` Now we put this together with Gel to prove univalence for fibrant types, which we can express for bisimulations or for 1-1 correspondences. `}
-def univalence_bisim (A B : Fib) (R : A .t → B .t → Fib) (re : isBisim A B R)
+def univalence_bisim (A B : Fib) (R : A .t → B .t → Fib)
+  (re : isBisim A B R)
   : Br Fib A B
   ≔
   let Rt : A .t → B .t → Type ≔ x y ↦ R x y .t in

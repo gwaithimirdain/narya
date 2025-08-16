@@ -162,32 +162,20 @@ module Applicatic (M : Applicative.Plain) = struct
     match xss with
     | Emp :: _ -> return (Heter.emp ys)
     | Snoc (xs, x) :: xss ->
-        let+ fxs = pmapM f (xs :: Heter.head xss) ys and+ fx = f (x :: Heter.tail xss) in
-        Heter.snoc fxs fx
+        M.apply
+          (M.zip (fun () -> pmapM f (xs :: Heter.head xss) ys) (fun () -> f (x :: Heter.tail xss)))
+        @@ fun (fxs, fx) -> Heter.snoc fxs fx
 
   (* With specializations to simple arity possibly-monadic maps and iterators.  *)
 
   let miterM : type x xs n.
       ((x, xs) cons hlist -> unit M.t) -> ((x, xs) cons, n) Heter.ht -> unit M.t =
-   fun f xss ->
-    let+ [] =
-      pmapM
-        (fun x ->
-          let+ () = f x in
-          [])
-        xss Nil in
-    ()
+   fun f xss -> M.apply (pmapM (fun x -> M.apply (f x) @@ fun () -> []) xss Nil) @@ fun [] -> ()
 
   let mmapM : type x xs y n.
       ((x, xs) cons hlist -> y M.t) -> ((x, xs) cons, n) Heter.ht -> (y, n) t M.t =
-   fun f xss ->
-    let+ [ ys ] =
-      pmapM
-        (fun x ->
-          let+ y = f x in
-          [ y ])
-        xss (Cons Nil) in
-    ys
+   fun f xs ->
+    M.apply (pmapM (fun x -> M.apply (f x) (fun y -> [ y ])) xs (Cons Nil)) (fun [ ys ] -> ys)
 
   let mapM : type x y n. (x -> y M.t) -> (x, n) t -> (y, n) t M.t =
    fun f xs -> mmapM (fun [ x ] -> f x) [ xs ]
@@ -198,25 +186,18 @@ module Applicatic (M : Applicative.Plain) = struct
   let mapM1_2 : type x y z n. (x -> (y * z) M.t) -> (x, n) t -> ((y, n) t * (z, n) t) M.t =
    fun f xs ->
     let open Applicative.Ops (M) in
-    let+ [ ys; zs ] =
-      pmapM
-        (fun [ x ] ->
-          let+ y, z = f x in
-          [ y; z ])
-        [ xs ] (Cons (Cons Nil)) in
-    (ys, zs)
+    M.apply (pmapM (fun [ x ] -> M.apply (f x) @@ fun (y, z) -> [ y; z ]) [ xs ] (Cons (Cons Nil)))
+    @@ fun [ ys; zs ] -> (ys, zs)
 
   let mapM1_3 : type x y z w n.
       (x -> (y * z * w) M.t) -> (x, n) t -> ((y, n) t * (z, n) t * (w, n) t) M.t =
    fun f xs ->
     let open Applicative.Ops (M) in
-    let+ [ ys; zs; ws ] =
-      pmapM
-        (fun [ x ] ->
-          let+ y, z, w = f x in
-          [ y; z; w ])
-        [ xs ] (Cons (Cons (Cons Nil))) in
-    (ys, zs, ws)
+    M.apply
+      (pmapM
+         (fun [ x ] -> M.apply (f x) @@ fun (y, z, w) -> [ y; z; w ])
+         [ xs ] (Cons (Cons (Cons Nil))))
+    @@ fun [ ys; zs; ws ] -> (ys, zs, ws)
 
   let iterM : type x n. (x -> unit M.t) -> (x, n) t -> unit M.t =
    fun f xs -> miterM (fun [ x ] -> f x) [ xs ]

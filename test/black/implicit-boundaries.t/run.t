@@ -17,14 +17,8 @@
    ￫ info[I0001]
    ￮ axiom a2 assumed
   
-  refl f a0 a1 a2
-    : refl B (f a0) (f a1)
-  
-   ￫ info[I0100]
-   ￮ option set function boundaries to implicit
-  
   refl f a2
-    : refl B (f a0) (f a1)
+    : Id B (f a0) (f a1)
   
    ￫ info[I0001]
    ￮ axiom a00 assumed
@@ -54,11 +48,7 @@
    ￮ axiom a22 assumed
   
   f⁽ᵉᵉ⁾ a22
-    : B⁽ᵉᵉ⁾ (f a00) (f a01) (refl f a02) (f a10) (f a11) (refl f a12)
-        (refl f a20) (refl f a21)
-  
-   ￫ info[I0100]
-   ￮ option set type boundaries to implicit
+    : B⁽ᵉᵉ⁾ (refl f a02) (refl f a12) (refl f a20) (refl f a21)
   
   A⁽ᵉᵉ⁾ a02 a12 a20 a21
     : Type
@@ -71,49 +61,12 @@
   
   A⁽ᵉᵉ⁾ a02 a12 a20 a21
     : Type
-  
-   ￫ info[I0100]
-   ￮ option set function boundaries to explicit
-  
-  f⁽ᵉᵉ⁾ a00 a01 a02 a10 a11 a12 a20 a21 a22
-    : B⁽ᵉᵉ⁾ (refl f a00 a01 a02) (refl f a10 a11 a12) (refl f a00 a10 a20)
-        (refl f a01 a11 a21)
-  
-   ￫ info[I0100]
-   ￮ option set type boundaries to explicit
-  
-  f⁽ᵉᵉ⁾ a00 a01 a02 a10 a11 a12 a20 a21 a22
-    : B⁽ᵉᵉ⁾ (f a00) (f a01) (refl f a00 a01 a02) (f a10) (f a11)
-        (refl f a10 a11 a12) (refl f a00 a10 a20) (refl f a01 a11 a21)
-  
-   ￫ info[I0007]
-   ￮ section test opened
-  
-   ￫ info[I0100]
-   ￮ option set function boundaries to implicit
-  
-  f⁽ᵉᵉ⁾ a22
-    : B⁽ᵉᵉ⁾ (f a00) (f a01) (refl f a02) (f a10) (f a11) (refl f a12)
-        (refl f a20) (refl f a21)
-  
-   ￫ info[I0008]
-   ￮ section test closed
-  
-  f⁽ᵉᵉ⁾ a00 a01 a02 a10 a11 a12 a20 a21 a22
-    : B⁽ᵉᵉ⁾ (f a00) (f a01) (refl f a00 a01 a02) (f a10) (f a11)
-        (refl f a10 a11 a12) (refl f a00 a10 a20) (refl f a01 a11 a21)
   
    ￫ info[I0001]
    ￮ axiom g assumed
   
-  refl g a00 a01 a02 a10 a11 a12 a20 a21 a22
-    : refl B (g a00 a10 a20) (g a01 a11 a21)
-  
-   ￫ info[I0100]
-   ￮ option set function boundaries to implicit
-  
   refl g a02 a12 a22
-    : refl B (g a00 a10 a20) (g a01 a11 a21)
+    : Id B (g a00 a10 a20) (g a01 a11 a21)
   
    ￫ info[I0001]
    ￮ axiom C assumed
@@ -134,7 +87,7 @@
    ￮ axiom b2 assumed
   
   refl h {(a0, b0)} {(a1, b1)} (a2, b2)
-    : refl C (h (a0, b0)) (h (a1, b1))
+    : Id C (h (a0, b0)) (h (a1, b1))
   
    ￫ info[I0001]
    ￮ axiom b00 assumed
@@ -165,14 +118,10 @@
   
   h⁽ᵉᵉ⁾ {(a00, b00)} {(a01, b01)} {(a02, b02)} {(a10, b10)} {(a11, b11)}
     {(a12, b12)} {(a20, b20)} {(a21, b21)} (a22, b22)
-    : C⁽ᵉᵉ⁾ (h (a00, b00)) (h (a01, b01))
-        (refl h {(a00, b00)} {(a01, b01)} (a02, b02)) (h (a10, b10))
-        (h (a11, b11)) (refl h {(a10, b10)} {(a11, b11)} (a12, b12))
+    : C⁽ᵉᵉ⁾ (refl h {(a00, b00)} {(a01, b01)} (a02, b02))
+        (refl h {(a10, b10)} {(a11, b11)} (a12, b12))
         (refl h {(a00, b00)} {(a10, b10)} (a20, b20))
         (refl h {(a01, b01)} {(a11, b11)} (a21, b21))
-  
-   ￫ info[I0100]
-   ￮ option set type boundaries to implicit
   
   h⁽ᵉᵉ⁾ {(a00, b00)} {(a01, b01)} {(a02, b02)} {(a10, b10)} {(a11, b11)}
     {(a12, b12)} {(a20, b20)} {(a21, b21)} (a22, b22)
@@ -226,14 +175,8 @@
    ￫ info[I0001]
    ￮ axiom a2 assumed
   
-  refl f a0 a1 a2
-    : refl B (f a0) (f a1)
-  
-   ￫ info[I0100]
-   ￮ option set function boundaries to implicit
-  
   refl f {a0} {a1} a2
-    : refl B (f a0) (f a1)
+    : Id B (f a0) (f a1)
   
    ￫ info[I0001]
    ￮ axiom a00 assumed
@@ -263,12 +206,8 @@
    ￮ axiom a22 assumed
   
   f⁽ᵉᵉ⁾ {a00} {a01} {a02} {a10} {a11} {a12} {a20} {a21} a22
-    : B⁽ᵉᵉ⁾ (f a00) (f a01) (refl f {a00} {a01} a02) (f a10) (f a11)
-        (refl f {a10} {a11} a12) (refl f {a00} {a10} a20)
-        (refl f {a01} {a11} a21)
-  
-   ￫ info[I0100]
-   ￮ option set type boundaries to implicit
+    : B⁽ᵉᵉ⁾ (refl f {a00} {a01} a02) (refl f {a10} {a11} a12)
+        (refl f {a00} {a10} a20) (refl f {a01} {a11} a21)
   
   A⁽ᵉᵉ⁾ a02 a12 a20 a21
     : Type
@@ -281,50 +220,12 @@
   
   A⁽ᵉᵉ⁾ a02 a12 a20 a21
     : Type
-  
-   ￫ info[I0100]
-   ￮ option set function boundaries to explicit
-  
-  f⁽ᵉᵉ⁾ a00 a01 a02 a10 a11 a12 a20 a21 a22
-    : B⁽ᵉᵉ⁾ (refl f a00 a01 a02) (refl f a10 a11 a12) (refl f a00 a10 a20)
-        (refl f a01 a11 a21)
-  
-   ￫ info[I0100]
-   ￮ option set type boundaries to explicit
-  
-  f⁽ᵉᵉ⁾ a00 a01 a02 a10 a11 a12 a20 a21 a22
-    : B⁽ᵉᵉ⁾ (f a00) (f a01) (refl f a00 a01 a02) (f a10) (f a11)
-        (refl f a10 a11 a12) (refl f a00 a10 a20) (refl f a01 a11 a21)
-  
-   ￫ info[I0007]
-   ￮ section test opened
-  
-   ￫ info[I0100]
-   ￮ option set function boundaries to implicit
-  
-  f⁽ᵉᵉ⁾ {a00} {a01} {a02} {a10} {a11} {a12} {a20} {a21} a22
-    : B⁽ᵉᵉ⁾ (f a00) (f a01) (refl f {a00} {a01} a02) (f a10) (f a11)
-        (refl f {a10} {a11} a12) (refl f {a00} {a10} a20)
-        (refl f {a01} {a11} a21)
-  
-   ￫ info[I0008]
-   ￮ section test closed
-  
-  f⁽ᵉᵉ⁾ a00 a01 a02 a10 a11 a12 a20 a21 a22
-    : B⁽ᵉᵉ⁾ (f a00) (f a01) (refl f a00 a01 a02) (f a10) (f a11)
-        (refl f a10 a11 a12) (refl f a00 a10 a20) (refl f a01 a11 a21)
   
    ￫ info[I0001]
    ￮ axiom g assumed
   
-  refl g a00 a01 a02 a10 a11 a12 a20 a21 a22
-    : refl B (g a00 a10 a20) (g a01 a11 a21)
-  
-   ￫ info[I0100]
-   ￮ option set function boundaries to implicit
-  
   refl g {a00} {a01} a02 {a10} {a11} a12 {a20} {a21} a22
-    : refl B (g a00 a10 a20) (g a01 a11 a21)
+    : Id B (g a00 a10 a20) (g a01 a11 a21)
   
    ￫ info[I0001]
    ￮ axiom C assumed
@@ -345,7 +246,7 @@
    ￮ axiom b2 assumed
   
   refl h {(a0, b0)} {(a1, b1)} (a2, b2)
-    : refl C (h (a0, b0)) (h (a1, b1))
+    : Id C (h (a0, b0)) (h (a1, b1))
   
    ￫ info[I0001]
    ￮ axiom b00 assumed
@@ -376,14 +277,10 @@
   
   h⁽ᵉᵉ⁾ {(a00, b00)} {(a01, b01)} {(a02, b02)} {(a10, b10)} {(a11, b11)}
     {(a12, b12)} {(a20, b20)} {(a21, b21)} (a22, b22)
-    : C⁽ᵉᵉ⁾ (h (a00, b00)) (h (a01, b01))
-        (refl h {(a00, b00)} {(a01, b01)} (a02, b02)) (h (a10, b10))
-        (h (a11, b11)) (refl h {(a10, b10)} {(a11, b11)} (a12, b12))
+    : C⁽ᵉᵉ⁾ (refl h {(a00, b00)} {(a01, b01)} (a02, b02))
+        (refl h {(a10, b10)} {(a11, b11)} (a12, b12))
         (refl h {(a00, b00)} {(a10, b10)} (a20, b20))
         (refl h {(a01, b01)} {(a11, b11)} (a21, b21))
-  
-   ￫ info[I0100]
-   ￮ option set type boundaries to implicit
   
   h⁽ᵉᵉ⁾ {(a00, b00)} {(a01, b01)} {(a02, b02)} {(a10, b10)} {(a11, b11)}
     {(a12, b12)} {(a20, b20)} {(a21, b21)} (a22, b22)
@@ -439,14 +336,8 @@
    ￫ info[I0001]
    ￮ axiom a2 assumed
   
-  refl f a0 a1 a2
-    : refl B (f a0) (f a1)
-  
-   ￫ info[I0100]
-   ￮ option set function boundaries to implicit
-  
   refl f a2
-    : refl B (f a0) (f a1)
+    : Id B (f a0) (f a1)
   
    ￫ info[I0001]
    ￮ axiom a00 assumed
@@ -476,11 +367,7 @@
    ￮ axiom a22 assumed
   
   f⁽ᵉᵉ⁾ a22
-    : B⁽ᵉᵉ⁾ (f a00) (f a01) (refl f a02) (f a10) (f a11) (refl f a12)
-        (refl f a20) (refl f a21)
-  
-   ￫ info[I0100]
-   ￮ option set type boundaries to implicit
+    : B⁽ᵉᵉ⁾ (refl f a02) (refl f a12) (refl f a20) (refl f a21)
   
   A⁽ᵉᵉ⁾ a02 a12 a20 a21
     : Type
@@ -493,49 +380,12 @@
   
   A⁽ᵉᵉ⁾ a02 a12 a20 a21
     : Type
-  
-   ￫ info[I0100]
-   ￮ option set function boundaries to explicit
-  
-  f⁽ᵉᵉ⁾ a00 a01 a02 a10 a11 a12 a20 a21 a22
-    : B⁽ᵉᵉ⁾ (refl f a00 a01 a02) (refl f a10 a11 a12) (refl f a00 a10 a20)
-        (refl f a01 a11 a21)
-  
-   ￫ info[I0100]
-   ￮ option set type boundaries to explicit
-  
-  f⁽ᵉᵉ⁾ a00 a01 a02 a10 a11 a12 a20 a21 a22
-    : B⁽ᵉᵉ⁾ (f a00) (f a01) (refl f a00 a01 a02) (f a10) (f a11)
-        (refl f a10 a11 a12) (refl f a00 a10 a20) (refl f a01 a11 a21)
-  
-   ￫ info[I0007]
-   ￮ section test opened
-  
-   ￫ info[I0100]
-   ￮ option set function boundaries to implicit
-  
-  f⁽ᵉᵉ⁾ a22
-    : B⁽ᵉᵉ⁾ (f a00) (f a01) (refl f a02) (f a10) (f a11) (refl f a12)
-        (refl f a20) (refl f a21)
-  
-   ￫ info[I0008]
-   ￮ section test closed
-  
-  f⁽ᵉᵉ⁾ a00 a01 a02 a10 a11 a12 a20 a21 a22
-    : B⁽ᵉᵉ⁾ (f a00) (f a01) (refl f a00 a01 a02) (f a10) (f a11)
-        (refl f a10 a11 a12) (refl f a00 a10 a20) (refl f a01 a11 a21)
   
    ￫ info[I0001]
    ￮ axiom g assumed
   
-  refl g a00 a01 a02 a10 a11 a12 a20 a21 a22
-    : refl B (g a00 a10 a20) (g a01 a11 a21)
-  
-   ￫ info[I0100]
-   ￮ option set function boundaries to implicit
-  
   refl g a02 a12 a22
-    : refl B (g a00 a10 a20) (g a01 a11 a21)
+    : Id B (g a00 a10 a20) (g a01 a11 a21)
   
    ￫ info[I0001]
    ￮ axiom C assumed
@@ -556,7 +406,7 @@
    ￮ axiom b2 assumed
   
   refl h {(a0, b0)} {(a1, b1)} (a2, b2)
-    : refl C (h (a0, b0)) (h (a1, b1))
+    : Id C (h (a0, b0)) (h (a1, b1))
   
    ￫ info[I0001]
    ￮ axiom b00 assumed
@@ -587,14 +437,10 @@
   
   h⁽ᵉᵉ⁾ {(a00, b00)} {(a01, b01)} {(a02, b02)} {(a10, b10)} {(a11, b11)}
     {(a12, b12)} {(a20, b20)} {(a21, b21)} (a22, b22)
-    : C⁽ᵉᵉ⁾ (h (a00, b00)) (h (a01, b01))
-        (refl h {(a00, b00)} {(a01, b01)} (a02, b02)) (h (a10, b10))
-        (h (a11, b11)) (refl h {(a10, b10)} {(a11, b11)} (a12, b12))
+    : C⁽ᵉᵉ⁾ (refl h {(a00, b00)} {(a01, b01)} (a02, b02))
+        (refl h {(a10, b10)} {(a11, b11)} (a12, b12))
         (refl h {(a00, b00)} {(a10, b10)} (a20, b20))
         (refl h {(a01, b01)} {(a11, b11)} (a21, b21))
-  
-   ￫ info[I0100]
-   ￮ option set type boundaries to implicit
   
   h⁽ᵉᵉ⁾ {(a00, b00)} {(a01, b01)} {(a02, b02)} {(a10, b10)} {(a11, b11)}
     {(a12, b12)} {(a20, b20)} {(a21, b21)} (a22, b22)
@@ -648,14 +494,8 @@
    ￫ info[I0001]
    ￮ axiom a2 assumed
   
-  refl f a0 a1 a2
-    : refl B (f a0) (f a1)
-  
-   ￫ info[I0100]
-   ￮ option set function boundaries to implicit
-  
   refl f {a0} {a1} a2
-    : refl B (f a0) (f a1)
+    : Id B (f a0) (f a1)
   
    ￫ info[I0001]
    ￮ axiom a00 assumed
@@ -685,12 +525,8 @@
    ￮ axiom a22 assumed
   
   f⁽ᵉᵉ⁾ {a00} {a01} {a02} {a10} {a11} {a12} {a20} {a21} a22
-    : B⁽ᵉᵉ⁾ (f a00) (f a01) (refl f {a00} {a01} a02) (f a10) (f a11)
-        (refl f {a10} {a11} a12) (refl f {a00} {a10} a20)
-        (refl f {a01} {a11} a21)
-  
-   ￫ info[I0100]
-   ￮ option set type boundaries to implicit
+    : B⁽ᵉᵉ⁾ (refl f {a00} {a01} a02) (refl f {a10} {a11} a12)
+        (refl f {a00} {a10} a20) (refl f {a01} {a11} a21)
   
   A⁽ᵉᵉ⁾ a02 a12 a20 a21
     : Type
@@ -703,50 +539,12 @@
   
   A⁽ᵉᵉ⁾ a02 a12 a20 a21
     : Type
-  
-   ￫ info[I0100]
-   ￮ option set function boundaries to explicit
-  
-  f⁽ᵉᵉ⁾ a00 a01 a02 a10 a11 a12 a20 a21 a22
-    : B⁽ᵉᵉ⁾ (refl f a00 a01 a02) (refl f a10 a11 a12) (refl f a00 a10 a20)
-        (refl f a01 a11 a21)
-  
-   ￫ info[I0100]
-   ￮ option set type boundaries to explicit
-  
-  f⁽ᵉᵉ⁾ a00 a01 a02 a10 a11 a12 a20 a21 a22
-    : B⁽ᵉᵉ⁾ (f a00) (f a01) (refl f a00 a01 a02) (f a10) (f a11)
-        (refl f a10 a11 a12) (refl f a00 a10 a20) (refl f a01 a11 a21)
-  
-   ￫ info[I0007]
-   ￮ section test opened
-  
-   ￫ info[I0100]
-   ￮ option set function boundaries to implicit
-  
-  f⁽ᵉᵉ⁾ {a00} {a01} {a02} {a10} {a11} {a12} {a20} {a21} a22
-    : B⁽ᵉᵉ⁾ (f a00) (f a01) (refl f {a00} {a01} a02) (f a10) (f a11)
-        (refl f {a10} {a11} a12) (refl f {a00} {a10} a20)
-        (refl f {a01} {a11} a21)
-  
-   ￫ info[I0008]
-   ￮ section test closed
-  
-  f⁽ᵉᵉ⁾ a00 a01 a02 a10 a11 a12 a20 a21 a22
-    : B⁽ᵉᵉ⁾ (f a00) (f a01) (refl f a00 a01 a02) (f a10) (f a11)
-        (refl f a10 a11 a12) (refl f a00 a10 a20) (refl f a01 a11 a21)
   
    ￫ info[I0001]
    ￮ axiom g assumed
   
-  refl g a00 a01 a02 a10 a11 a12 a20 a21 a22
-    : refl B (g a00 a10 a20) (g a01 a11 a21)
-  
-   ￫ info[I0100]
-   ￮ option set function boundaries to implicit
-  
   refl g {a00} {a01} a02 {a10} {a11} a12 {a20} {a21} a22
-    : refl B (g a00 a10 a20) (g a01 a11 a21)
+    : Id B (g a00 a10 a20) (g a01 a11 a21)
   
    ￫ info[I0001]
    ￮ axiom C assumed
@@ -767,7 +565,7 @@
    ￮ axiom b2 assumed
   
   refl h {(a0, b0)} {(a1, b1)} (a2, b2)
-    : refl C (h (a0, b0)) (h (a1, b1))
+    : Id C (h (a0, b0)) (h (a1, b1))
   
    ￫ info[I0001]
    ￮ axiom b00 assumed
@@ -798,14 +596,10 @@
   
   h⁽ᵉᵉ⁾ {(a00, b00)} {(a01, b01)} {(a02, b02)} {(a10, b10)} {(a11, b11)}
     {(a12, b12)} {(a20, b20)} {(a21, b21)} (a22, b22)
-    : C⁽ᵉᵉ⁾ (h (a00, b00)) (h (a01, b01))
-        (refl h {(a00, b00)} {(a01, b01)} (a02, b02)) (h (a10, b10))
-        (h (a11, b11)) (refl h {(a10, b10)} {(a11, b11)} (a12, b12))
+    : C⁽ᵉᵉ⁾ (refl h {(a00, b00)} {(a01, b01)} (a02, b02))
+        (refl h {(a10, b10)} {(a11, b11)} (a12, b12))
         (refl h {(a00, b00)} {(a10, b10)} (a20, b20))
         (refl h {(a01, b01)} {(a11, b11)} (a21, b21))
-  
-   ￫ info[I0100]
-   ￮ option set type boundaries to implicit
   
   h⁽ᵉᵉ⁾ {(a00, b00)} {(a01, b01)} {(a02, b02)} {(a10, b10)} {(a11, b11)}
     {(a12, b12)} {(a20, b20)} {(a21, b21)} (a22, b22)
@@ -861,14 +655,8 @@
    ￫ info[I0001]
    ￮ axiom a2 assumed
   
-  refl f a0 a1 a2
-    : refl B (f a0) (f a1)
-  
-   ￫ info[I0100]
-   ￮ option set function boundaries to implicit
-  
   refl f a2
-    : refl B (f a0) (f a1)
+    : Id B (f a0) (f a1)
   
    ￫ info[I0001]
    ￮ axiom a00 assumed
@@ -898,12 +686,9 @@
    ￮ axiom a22 assumed
   
   f⁽ᵉᵉ⁾ a22
-    : B⁽ᵉᵉ⁾ (f a00) (f a01) (refl f a02) (f a10) (f a11) (refl f a12)
+    : B⁽ᵉᵉ⁾ {f a00} {f a01} (refl f a02) {f a10} {f a11} (refl f a12)
         (refl f a20) (refl f a21)
   
-   ￫ info[I0100]
-   ￮ option set type boundaries to implicit
-  
   A⁽ᵉᵉ⁾ {a00} {a01} a02 {a10} {a11} a12 a20 a21
     : Type
   
@@ -915,49 +700,12 @@
   
   A⁽ᵉᵉ⁾ {a00} {a01} a02 {a10} {a11} a12 a20 a21
     : Type
-  
-   ￫ info[I0100]
-   ￮ option set function boundaries to explicit
-  
-  f⁽ᵉᵉ⁾ a00 a01 a02 a10 a11 a12 a20 a21 a22
-    : B⁽ᵉᵉ⁾ {f a00} {f a01} (refl f a00 a01 a02) {f a10} {f a11}
-        (refl f a10 a11 a12) (refl f a00 a10 a20) (refl f a01 a11 a21)
-  
-   ￫ info[I0100]
-   ￮ option set type boundaries to explicit
-  
-  f⁽ᵉᵉ⁾ a00 a01 a02 a10 a11 a12 a20 a21 a22
-    : B⁽ᵉᵉ⁾ (f a00) (f a01) (refl f a00 a01 a02) (f a10) (f a11)
-        (refl f a10 a11 a12) (refl f a00 a10 a20) (refl f a01 a11 a21)
-  
-   ￫ info[I0007]
-   ￮ section test opened
-  
-   ￫ info[I0100]
-   ￮ option set function boundaries to implicit
-  
-  f⁽ᵉᵉ⁾ a22
-    : B⁽ᵉᵉ⁾ (f a00) (f a01) (refl f a02) (f a10) (f a11) (refl f a12)
-        (refl f a20) (refl f a21)
-  
-   ￫ info[I0008]
-   ￮ section test closed
-  
-  f⁽ᵉᵉ⁾ a00 a01 a02 a10 a11 a12 a20 a21 a22
-    : B⁽ᵉᵉ⁾ (f a00) (f a01) (refl f a00 a01 a02) (f a10) (f a11)
-        (refl f a10 a11 a12) (refl f a00 a10 a20) (refl f a01 a11 a21)
   
    ￫ info[I0001]
    ￮ axiom g assumed
   
-  refl g a00 a01 a02 a10 a11 a12 a20 a21 a22
-    : refl B (g a00 a10 a20) (g a01 a11 a21)
-  
-   ￫ info[I0100]
-   ￮ option set function boundaries to implicit
-  
   refl g a02 a12 a22
-    : refl B (g a00 a10 a20) (g a01 a11 a21)
+    : Id B (g a00 a10 a20) (g a01 a11 a21)
   
    ￫ info[I0001]
    ￮ axiom C assumed
@@ -978,7 +726,7 @@
    ￮ axiom b2 assumed
   
   refl h {(a0, b0)} {(a1, b1)} (a2, b2)
-    : refl C (h (a0, b0)) (h (a1, b1))
+    : Id C (h (a0, b0)) (h (a1, b1))
   
    ￫ info[I0001]
    ￮ axiom b00 assumed
@@ -1009,14 +757,11 @@
   
   h⁽ᵉᵉ⁾ {(a00, b00)} {(a01, b01)} {(a02, b02)} {(a10, b10)} {(a11, b11)}
     {(a12, b12)} {(a20, b20)} {(a21, b21)} (a22, b22)
-    : C⁽ᵉᵉ⁾ (h (a00, b00)) (h (a01, b01))
-        (refl h {(a00, b00)} {(a01, b01)} (a02, b02)) (h (a10, b10))
-        (h (a11, b11)) (refl h {(a10, b10)} {(a11, b11)} (a12, b12))
+    : C⁽ᵉᵉ⁾ {h (a00, b00)} {h (a01, b01)}
+        (refl h {(a00, b00)} {(a01, b01)} (a02, b02)) {h (a10, b10)}
+        {h (a11, b11)} (refl h {(a10, b10)} {(a11, b11)} (a12, b12))
         (refl h {(a00, b00)} {(a10, b10)} (a20, b20))
         (refl h {(a01, b01)} {(a11, b11)} (a21, b21))
-  
-   ￫ info[I0100]
-   ￮ option set type boundaries to implicit
   
   h⁽ᵉᵉ⁾ {(a00, b00)} {(a01, b01)} {(a02, b02)} {(a10, b10)} {(a11, b11)}
     {(a12, b12)} {(a20, b20)} {(a21, b21)} (a22, b22)
@@ -1045,7 +790,8 @@
    ￮ axiom ab22 assumed
   
   ab22
-    : A×B⁽ᵉᵉ⁾ {(a00, b00)} {(a01, b01)} (a02, b02) {ab10} {ab11} ab12 ab20 ab21
+    : A×B⁽ᵉᵉ⁾ {(a00, b00)} {(a01, b01)} (a02, b02) {ab10} {ab11} ab12 ab20
+        ab21
   
   h⁽ᵉᵉ⁾ ab22
     : C⁽ᵉᵉ⁾ {h (a00, b00)} {h (a01, b01)}

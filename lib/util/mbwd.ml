@@ -44,28 +44,16 @@ module Applicatic (M : Applicative.Plain) = struct
     match xss with
     | Emp :: _ -> return (Heter.empty ys)
     | Snoc (xs, x) :: xss ->
-        let+ fxs = pmapM f (xs :: Heter.head xss) ys and+ fx = f (x :: Heter.tail xss) in
-        Heter.snoc fxs fx
+        M.apply
+          (M.zip (fun () -> pmapM f (xs :: Heter.head xss) ys) (fun () -> f (x :: Heter.tail xss)))
+        @@ fun (fxs, fx) -> Heter.snoc fxs fx
 
   let miterM : type x xs. ((x, xs) cons Hlist.t -> unit M.t) -> (x, xs) cons Heter.ht -> unit M.t =
-   fun f xss ->
-    let+ [] =
-      pmapM
-        (fun x ->
-          let+ () = f x in
-          [])
-        xss Nil in
-    ()
+   fun f xss -> M.apply (pmapM (fun x -> M.apply (f x) (fun () -> [])) xss Nil) (fun [] -> ())
 
   let mmapM : type x xs y. ((x, xs) cons Hlist.t -> y M.t) -> (x, xs) cons Heter.ht -> y Bwd.t M.t =
    fun f xs ->
-    let+ [ ys ] =
-      pmapM
-        (fun x ->
-          let+ y = f x in
-          [ y ])
-        xs (Cons Nil) in
-    ys
+    M.apply (pmapM (fun x -> M.apply (f x) (fun y -> [ y ])) xs (Cons Nil)) (fun [ ys ] -> ys)
 end
 
 module Monadic (M : Monad.Plain) = struct

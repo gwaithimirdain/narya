@@ -4,7 +4,9 @@ Imports and scoping
 File imports
 ------------
 
-The command ``import FILE`` executes another Narya file and adds (some of) its definitions and notations to the current namespace.  The commands in the imported file cannot access any definitions from other files, including the current one, except those that it imports itself.  Importing is not transitive: if ``a.ny`` imports ``b.ny``, and ``b.ny`` imports ``c.ny``, then the definitions from ``c.ny`` do not appear in the namespace of ``a.ny`` unless it also imports ``c.ny`` explicitly.
+The command ``import "FILE"`` executes another Narya file and adds (some of) its definitions and notations to the current namespace.  The disk file *must* have the ``.ny`` extension, whereas the string given to ``import`` must *not* have it; thus ``import "mylib"`` loads the file ``mylib.ny``.
+
+The commands in the imported file cannot access any definitions from other files, including the current one, except those that it imports itself.  Importing is not transitive: if ``a.ny`` imports ``b.ny``, and ``b.ny`` imports ``c.ny``, then the definitions from ``c.ny`` do not appear in the namespace of ``a.ny`` unless it also imports ``c.ny`` explicitly.
 
 More precisely, there are two namespaces at any time: the "import" namespace, which determines the names that are available to use in the current file, and the "export" namespace, which determines the names that will be made available to other files that import this one.  The command ``import`` only affects the import namespace, but the variant using the word ``export`` instead affects both.
 
@@ -34,6 +36,23 @@ In addition, the ``section`` command allows defining a group of constants withou
 All ordinary commands are valid inside a section, including other section commands.  When a section is closed with ``end``, all the constants that were defined in that section are prefixed by the name of that section and merged into the outer namespace (which might itself be another section, and so on).
 
 Like a file, a section has both a visible namespace and an export namespace, and ``import`` statements in a section only affect the visible namespace.  Thus, imported names are no longer visible after the section is closed.  But as with importing files, if you use ``export`` instead inside a section, then the imported names are placed in export namespace; thus when the section is closed they are treated like constants defined in the section and are merged into the outer namespace with the section name prefix.
+
+Since a namespace simply consists of all constants whose name begins with a certain prefix, you can add to it (or "patch" it) at any time, simply by defining more such constants.  To define many more such constants at once, you can open another section with the same name.  Note, however, that "re-opening" a namespace like this does not automatically import the previously contents of that namespace.  That is:
+
+.. code-block:: none
+
+   section nat ≔
+     def plus ≔ BODY
+     ` Here the above definition is called "plus"
+   end
+
+   ` Here the above definition is called "nat.plus"
+
+   section nat ≔
+     ` Here the above definition is still called "nat.plus"
+   end
+
+If you want to import the previous contents, you can say ``import nat`` in the second ``section``; see :ref:`Importing namespaces`.
 
 
 Import modifiers
@@ -75,7 +94,13 @@ Imported names also remain available in their original locations; there is no wa
 Importing notations
 -------------------
 
-Visibility of notations defined by another file, or in a section, is implemented as a special case of importing names.  Specifically, when a new notation is declared, it is associated to a name in the current namespace prefixed by ``notations``.  The name is obtained from its pattern by replacing variables with underscores, concatenating them with the symbols (unquoted) separated by spaces, and surrounding it in guillemets ``«»`` to make it an atomic identifier.  Thus, for instance, ``notation(1) x "+" y ≔ plus x y`` associates this notation to the name ``notations.«_ + _»``.
+Visibility of notations defined by another file, or in a section, is implemented as a special case of importing names.  Specifically, when a new notation is declared, it is associated to a name in the current namespace prefixed by ``notations``.  The name is obtained from its pattern by replacing variables with underscores, concatenating them with the symbols (unquoted) separated by spaces, and surrounding it in guillemets ``«»`` to make it an atomic identifier (see :ref:`Identifiers`).  Thus, for instance,
+
+.. code-block:: none
+
+   notation(1) x "+" y ≔ plus x y
+
+associates this notation to the name ``notations.«_ + _»``.
 
 Then, whenever another file or section is imported, any notations that are present in the ``notations`` namespace after the modifiers are applied become available in the current file.  Since by default the complete namespace of an imported file is merged with the current one, this means that by default all notations defined in that file also become available.
 
@@ -111,7 +136,7 @@ Whenever a file ``FILE.ny`` is successfully executed, Narya writes a "compiled" 
 1. ``-source-only`` was not specified,
 2. ``FILE.ny`` was not specified explicitly on the command-line (so that it must have been imported by another file),
 3. ``FILE.nyo`` exists in the same directory,
-4. the same type theory flags (``-arity``, ``-direction``, ``-internal``/``-external``, and ``-discreteness``) are in effect now as when ``FILE.nyo`` was compiled,
+4. the same type theory flags (``-parametric``, ``-arity``, ``-direction``, ``-internal``/``-external``, and ``-discreteness``) are in effect now as when ``FILE.nyo`` was compiled,
 5. ``FILE.ny`` has not been modified more recently than ``FILE.nyo``, and
 6. none of the files imported by ``FILE.ny`` are newer than it or their compiled versions,
 

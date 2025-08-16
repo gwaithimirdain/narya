@@ -1,21 +1,12 @@
 Higher Observational Type Theory
 ================================
 
-Although Narya can be used for various different higher type theories, its primary *raison d'être* is Higher Observational Type Theory (HOTT), a computational version of Homotopy Type Theory (HoTT) in which the identity types are defined "observationally".  HOTT can be encoded inside parametricity, and there is a native HOTT mode in development.
-
-Native HOTT mode
-----------------
-
-The native HOTT mode is activated by the command-line flag ``-hott``.  This conflicts with any other flags that modify the direction of parametricity: it must be binary with letter ``e`` and degeneracy names ``Id`` and ``refl``.  (In the future, we plan to allow multiple directions of higher-dimensionality, so that internal parametricity can coexist with HOTT in a different direction.)  In particular, when working in HOTT mode you may want to start all your source files with the line
-
-.. code-block:: none
-
-   {` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
+Although Narya can be used for various different higher type theories, its primary *raison d'être* is Higher Observational Type Theory (HOTT), a computational version of Homotopy Type Theory (HoTT) in which the identity types are defined "observationally".  Narya's HOTT mode is the default, while the command-line flag ``-parametric`` switches it into :ref:`Parametricity` mode.  (In the future, we plan to allow multiple "directions" of higher-dimensionality, so that internal parametricity can coexist with HOTT.)
 
 Transport and lifting
 ^^^^^^^^^^^^^^^^^^^^^
 
-In HOTT mode, types can be treated also like codata, with four one-dimensional higher fields:
+In HOTT mode, types can be treated also like codata, with four one-dimensional higher fields (as in :ref:`Higher coinductive types`):
 
 - ``trr``: transport left to right
 - ``liftr``: path-lifting left to right
@@ -31,7 +22,7 @@ Saying that these are one-dimensional higher fields means that they can only be 
    A₂ .trl : A₁ → A₀
    A₂ .liftr : (x₁ : A₁) → A₂ (A₂ .trl x₁) x₁
 
-More verbosely, these fields can also be denoted ``.trr.1`` and so on.  For a higher-dimensional type, the fields are numbered by dimension and yield "uniform" versions of these operations acting from one face to the opposite face.  For instance, given ``A₂₂ : Type⁽ᵉᵉ⁾ A₀₂ A₁₂ A₂₀ A₂₁`` (using implicit type boundaries):
+More verbosely, these fields can also be denoted ``.trr.1`` and so on.  For a higher-dimensional type, the fields are numbered by dimension and yield "uniform" versions of these operations acting from one face to the opposite face.  For instance, given ``A₂₂ : Type⁽ᵉᵉ⁾ A₀₂ A₁₂ A₂₀ A₂₁``:
 
 - If ``a₀₂ : A₀₂ a₀₀ a₀₁``, then ``A₂₂ .trr.1 a₀₂ : A₁₂ (A₂₀ .trr a₀₀) (A₂₁ .trr a₀₁)``.
 - If ``a₂₀ : A₂₀ a₀₀ a₁₀``, then ``A₂₂ .trr.2 a₂₀ : A₂₁ (A₀₂ .trr a₀₀) (A₁₂ .trr a₁₀)``.
@@ -42,18 +33,19 @@ In theory, these operations should all compute based on the type ``A₂`` or ``A
 
 - Function types
 - Zero-dimensional record types and codatatypes without higher fields
+- Glue types (see below)
 
 
 Glue types and univalence
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The final change in HOTT mode is that gel types are replaced by glue types.  Specifically, it is no longer possible to define elements of ``Id Type A B`` as explicit record or codata types.  Instead, there is a built-in constant ``glue`` with the following type:
+The final change in HOTT mode is that gel types are replaced by glue types.  Specifically, it is no longer possible to define elements of ``Id Type A B`` as explicit record or codata types: all user-defined record and codata types are zero-dimensional.  Instead, there is a built-in constant ``glue`` with the following type:
 
 .. code-block:: none
 
    glue : (A B : Type) (R : A → B → Type) (Rb : isBisim A B R) → Id Type A B
 
-That is, ``glue`` is like the ``Gel`` that under parametricity can be defined as a higher-dimensional record type, but it also requires the given correspondence ``R`` to be a *bisimulation* of types.  Here ``isBisim`` is another built-in constant defined as follows:
+That is, ``glue`` is like the ``Gel`` that under parametricity can be defined as a higher-dimensional record type, but it also requires the given correspondence ``R`` to be a *bisimulation* of types.  Here ``isBisim`` is another built-in constant, but its definition could have been given by a user:
 
 .. code-block:: none
 
@@ -66,7 +58,7 @@ That is, ``glue`` is like the ``Gel`` that under parametricity can be defined as
      : (a0 : A.0) (b0 : B.0) (r0 : R.0 a0 b0) (a1 : A.1) (b1 : B.1) (r1 : R.1 a1 b1)
        → isBisim (A.2 a0 a1) (B.2 b0 b1) (a2 b2 ↦ R.2 a0 a1 a2 b0 b1 b2 r0 r1) ]
 
-Note that it has four ordinary fields that are non-recursive, and one higher field that is recursive.  It is possible to prove that any equivalence gives rise to a bisimulation, and thereby deduce univalence; this can be found in `test/black/hott.t/univalence.ny <https://github.com/gwaithimirdain/narya/tree/master/test/black/hott.t/univalence.ny>`_.  Eventually, the fields of ``isBisim`` will be used to compute the built-in operations ``trr`` on ``glue`` types, making univalence computational.
+Note that it has four ordinary fields that are non-recursive, and one higher field that is recursive.  It is possible to prove that any equivalence gives rise to a bisimulation, and thereby deduce univalence; this can be found in `test/black/hott.t/univalence.ny <https://github.com/gwaithimirdain/narya/tree/master/test/black/hott.t/univalence.ny>`_.  The fields of ``isBisim`` are then used to compute the built-in operations such as ``trr`` on ``glue`` types, making univalence computational; the corecursive higher field ``id`` is used to deal with higher degeneracies of ``glue``.
 
 The syntax of ``glue`` and ``isBisim`` is provisional and may change in the future.
 
@@ -74,7 +66,7 @@ The syntax of ``glue`` and ``isBisim`` is provisional and may change in the futu
 Equational reasoning
 --------------------
 
-In ``-hott`` mode, elements of ``Id`` are equalities, hence in particular are not just reflexive but also symmetric and transitive.  There is a temporary convenient syntax for equational reasoning with such equalities, which is exemplified as follows:
+In HOTT mode, elements of ``Id`` are equalities, hence in particular are not just reflexive but also symmetric and transitive.  There is a temporary convenient syntax for equational reasoning with such equalities, which is exemplified as follows:
 
 .. code-block:: none
 

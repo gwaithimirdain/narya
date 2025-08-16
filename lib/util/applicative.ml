@@ -5,13 +5,13 @@ module type Plain = sig
 
   val return : 'a -> 'a t
   val apply : 'a t -> ('a -> 'b) -> 'b t
-  val zip : 'a t -> 'b t -> ('a * 'b) t
+
+  (* We wrap the arguments of zip in thunks, so that in OfMonad we can wait to evaluate the second argument inside the binder function of the monad.  Unfortunately, that means we can't use OCaml's nice syntax like "let+" and "and+" for applicatives. *)
+  val zip : (unit -> 'a t) -> (unit -> 'b t) -> ('a * 'b) t
 end
 
 module Ops (M : Plain) = struct
   let return = M.return
-  let ( let+ ) = M.apply
-  let ( and+ ) = M.zip
 end
 
 (* Every (strong) monad is an applicative functor. *)
@@ -21,7 +21,9 @@ module OfMonad (M : Monad.Plain) = struct
 
   let return x = M.return x
   let apply mx f = M.bind mx (fun x -> return (f x))
-  let zip mx my = M.bind mx (fun x -> M.bind my (fun y -> M.return (x, y)))
+
+  (* By not forcing the thunk my until inside the binder function, we recover more faithful monadic behavior.  For instance, in an Error or Maybe monad, if mx errors then this way, then my will not be evaluated at all; whereas with a naive "unthunked" definition of zip, it would still be.  (Perhaps the latter is what most people intend with Applicative functors, but it's not what we want.) *)
+  let zip mx my = M.bind (mx ()) (fun x -> M.bind (my ()) (fun y -> M.return (x, y)))
 end
 
 (* Streams are an applicative functor (Haskell's "ZipList"), but not a monad. *)
@@ -38,12 +40,13 @@ module Stream = struct
         (let (Cons (lazy (x, xs))) = xs in
          (f x, apply xs f)))
 
-  let rec zip : type a b. a t -> b t -> (a * b) t =
+  let rec zip : type a b. (unit -> a t) -> (unit -> b t) -> (a * b) t =
    fun xs ys ->
     Cons
       (lazy
-        (let Cons (lazy (x, xs)), Cons (lazy (y, ys)) = (xs, ys) in
-         ((x, y), zip xs ys)))
+        (let (Cons (lazy (x, xs))) = xs () in
+         let (Cons (lazy (y, ys))) = ys () in
+         ((x, y), zip (fun () -> xs) (fun () -> ys))))
 end
 
 (* The "reverse state" effect threads state (and execution order) from right to left, rather than left to right as usual.  It is apparently possible to actually make this a monad in Haskell with laziness, and possibly even in OCaml with Lazy.t, but when I tried that I couldn't get it to work.  Fortunately it is much easier as an applicative functor. *)
@@ -62,11 +65,11 @@ module RevState (S : State_type) = struct
     let x, s2 = mx s1 in
     (f x, s2)
 
-  let zip : type a b. a t -> b t -> (a * b) t =
+  let zip : type a b. (unit -> a t) -> (unit -> b t) -> (a * b) t =
    fun xs ys s1 ->
     (* Here's the reversal: we evaluate ys first and pass its output state "back" to xs. *)
-    let y, s2 = ys s1 in
-    let x, s3 = xs s2 in
+    let y, s2 = ys () s1 in
+    let x, s3 = xs () s2 in
     ((x, y), s3)
 
   let get : S.t t = fun s -> (s, s)
@@ -84,6 +87,5 @@ module ReverseT (M : Plain) = struct
 
   let zip mx my =
     let open Ops (M) in
-    let+ y = my and+ x = mx in
-    (x, y)
+    M.apply (M.zip my mx) @@ fun (y, x) -> (x, y)
 end

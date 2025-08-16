@@ -4,8 +4,9 @@ open Arith
 
 let () =
   Core.Reporter.run ~fatal:(fun _ -> raise (Failure "fatal error")) ~emit:(fun _ -> ()) @@ fun () ->
+  Core.Origin.Origin.run @@ fun () ->
   Parser.Lexer.Specials.run @@ fun () ->
-  Parser.Scope.run ~init_situation:arith @@ fun () ->
+  install_arith ();
   assert (parse "x" = Ident [ "x" ]);
   assert (parse "x + y" = Notn ("+", [ Term (Ident [ "x" ]); Term (Ident [ "y" ]) ]));
 
@@ -159,7 +160,7 @@ let rec cnat n = if n <= 0 then "x" else "(f " ^ cnat (n - 1) ^ ")"
 
 let _ =
   Core.Reporter.run ~fatal:(fun _ -> raise (Failure "fatal error")) ~emit:(fun _ -> ()) @@ fun () ->
+  Core.Origin.Origin.run @@ fun () ->
   Parser.Lexer.Specials.run @@ fun () ->
-  Parser.Scope.run ~init_situation:arith @@ fun () ->
   let _ = parse (cnat 500) in
   ()

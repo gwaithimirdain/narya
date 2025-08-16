@@ -46,3 +46,6 @@ result
 # Github deploy build
 dist/build/*
 dist/narya-*
+
+# Emacs tags file
+TAGS

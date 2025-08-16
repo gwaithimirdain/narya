@@ -1,10 +1,11 @@
 open Util
 open Dim
 open Term
+open Origin
 
-(* When "linking" a pre-compiled file with the current run, we need to walk the unmarshaled terms and replace the old autonumbers of compilation units, from when the file was compiled, with the current ones. *)
+(* When "linking" a pre-compiled file with the current run, we need to walk the unmarshaled terms and replace the old autonumbers of files, from when the file was compiled, with the current ones. *)
 
-let rec term : type a s. (Compunit.t -> Compunit.t) -> (a, s) term -> (a, s) term =
+let rec term : type a s. (File.t -> File.t) -> (a, s) term -> (a, s) term =
  fun f tm ->
   match tm with
   | Var i -> Var i
@@ -23,7 +24,7 @@ let rec term : type a s. (Compunit.t -> Compunit.t) -> (a, s) term -> (a, s) ter
   | Constr (c, n, args) ->
       Constr
         (c, n, List.map (fun arg -> CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ arg ]) args)
-  | Act (tm, s) -> Act (term f tm, s)
+  | Act (tm, s, sort) -> Act (term f tm, s, sort)
   | Let (x, v, body) -> Let (x, term f v, term f body)
   | Lam (x, body) -> Lam (x, term f body)
   | Struct { eta; dim; fields = flds; energy } ->
@@ -47,18 +48,18 @@ let rec term : type a s. (Compunit.t -> Compunit.t) -> (a, s) term -> (a, s) ter
   | Shift (n, plusmap, tm) -> Shift (n, plusmap, term f tm)
   | Weaken tm -> Weaken (term f tm)
 
-and branch : type a n. (Compunit.t -> Compunit.t) -> (a, n) branch -> (a, n) branch =
+and branch : type a n. (File.t -> File.t) -> (a, n) branch -> (a, n) branch =
  fun f br ->
   match br with
   | Branch (ab, p, tm) -> Branch (ab, p, term f tm)
   | Refute -> Refute
 
-and canonical : type a. (Compunit.t -> Compunit.t) -> a canonical -> a canonical =
+and canonical : type a. (File.t -> File.t) -> a canonical -> a canonical =
  fun f can ->
   match can with
   | Data { indices; constrs; discrete } ->
       Data { indices; constrs = Abwd.map (dataconstr f) constrs; discrete }
-  | Codata { eta; opacity; dim; termctx = tc; fields; fibrancy = fib } ->
+  | Codata { eta; opacity; dim; termctx = tc; fields; fibrancy = fib; is_glue } ->
       let trr =
         Mbwd.map
           (fun (StructfieldAbwd.Entry (fld, x)) -> StructfieldAbwd.Entry (fld, structfield f x))
@@ -86,10 +87,11 @@ and canonical : type a. (Compunit.t -> Compunit.t) -> a canonical -> a canonical
               (fun (CodatafieldAbwd.Entry (fld, x)) -> CodatafieldAbwd.Entry (fld, codatafield f x))
               fields;
           fibrancy = { fib with ty = term f fib.ty; trr; trl; liftr; liftl };
+          is_glue;
         }
 
 and structfield : type n a s i et.
-    (Compunit.t -> Compunit.t) ->
+    (File.t -> File.t) ->
     (i, n * a * s * et) Term.Structfield.t ->
     (i, n * a * s * et) Term.Structfield.t =
  fun f fld ->
@@ -109,29 +111,29 @@ and structfield : type n a s i et.
   | LazyHigher _ -> Reporter.fatal (Anomaly "lazy higher field can't be linked")
 
 and codatafield : type a n i et.
-    (Compunit.t -> Compunit.t) -> (i, a * n * et) Codatafield.t -> (i, a * n * et) Codatafield.t =
+    (File.t -> File.t) -> (i, a * n * et) Codatafield.t -> (i, a * n * et) Codatafield.t =
  fun f fld ->
   match fld with
   | Lower tm -> Lower (term f tm)
   | Higher (ka, tm) -> Higher (ka, term f tm)
 
-and dataconstr : type p i. (Compunit.t -> Compunit.t) -> (p, i) dataconstr -> (p, i) dataconstr =
+and dataconstr : type p i. (File.t -> File.t) -> (p, i) dataconstr -> (p, i) dataconstr =
  fun f (Dataconstr { args; indices }) ->
   Dataconstr { args = tel f args; indices = Vec.mmap (fun [ x ] -> term f x) [ indices ] }
 
-and tel : type a b ab. (Compunit.t -> Compunit.t) -> (a, b, ab) tel -> (a, b, ab) tel =
+and tel : type a b ab. (File.t -> File.t) -> (a, b, ab) tel -> (a, b, ab) tel =
  fun f t ->
   match t with
   | Emp -> Emp
   | Ext (x, ty, t) -> Ext (x, term f ty, tel f t)
 
-and env : type a n b. (Compunit.t -> Compunit.t) -> (a, n, b) env -> (a, n, b) env =
+and env : type a n b. (File.t -> File.t) -> (a, n, b) env -> (a, n, b) env =
  fun f e ->
   match e with
   | Emp n -> Emp n
   | Ext (e, nk, xs) -> Ext (env f e, nk, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ xs ])
 
-and entry : type b f mn. (Compunit.t -> Compunit.t) -> (b, f, mn) entry -> (b, f, mn) entry =
+and entry : type b f mn. (File.t -> File.t) -> (b, f, mn) entry -> (b, f, mn) entry =
  fun f e ->
   match e with
   | Vis v ->
@@ -156,17 +158,17 @@ and entry : type b f mn. (Compunit.t -> Compunit.t) -> (b, f, mn) entry -> (b, f
       Invis bindings
 
 and termctx_ordered : type a b.
-    (Compunit.t -> Compunit.t) -> (a, b) ordered_termctx -> (a, b) ordered_termctx =
+    (File.t -> File.t) -> (a, b) ordered_termctx -> (a, b) ordered_termctx =
  fun f ctx ->
   match ctx with
   | Emp -> Emp
   | Ext (ctx, e, ax) -> Ext (termctx_ordered f ctx, entry f e, ax)
   | Lock ctx -> Lock (termctx_ordered f ctx)
 
-and termctx : type a b. (Compunit.t -> Compunit.t) -> (a, b) termctx -> (a, b) termctx =
+and termctx : type a b. (File.t -> File.t) -> (a, b) termctx -> (a, b) termctx =
  fun f (Permute (p, ctx)) -> Permute (p, termctx_ordered f ctx)
 
-let metadef : type x y z. (Compunit.t -> Compunit.t) -> (x, y, z) Metadef.t -> (x, y, z) Metadef.t =
+let metadef : type x y z. (File.t -> File.t) -> (x, y, z) Metadef.t -> (x, y, z) Metadef.t =
  fun f data ->
   let termctx = termctx f data.termctx in
   let ty = term f data.ty in

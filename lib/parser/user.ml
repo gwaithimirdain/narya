@@ -118,10 +118,15 @@ type global_processor = {
     (string option, 'n) Bwv.t ->
     ('lt, 'ls, 'rt, 'rs) parse Asai.Range.located ->
     'n Raw.check Asai.Range.located;
+  pattern : 'lt 'ls 'rt 'rs. ('lt, 'ls, 'rt, 'rs) parse Asai.Range.located -> Matchpattern.t;
 }
 
 let global_processor : global_processor ref =
-  ref { process = (fun _ _ -> fatal (Anomaly "global_processor not set")) }
+  ref
+    {
+      process = (fun _ _ -> fatal (Anomaly "global_processor not set"));
+      pattern = (fun _ -> fatal (Anomaly "global_processor not set"));
+    }
 
 (* Compile a prenotation into a notation.  *)
 
@@ -172,7 +177,7 @@ let make_user : prenotation -> notation =
               (List.filter_map
                  (function
                    | Term x -> Some (Wrap x : wrapped_parse)
-                   | Token _ -> None)
+                   | _ -> None)
                  obs) in
           let value =
             match key with
@@ -180,16 +185,42 @@ let make_user : prenotation -> notation =
                 let spine =
                   List.fold_left
                     (fun acc k ->
-                      Raw.App
-                        ( { value = acc; loc },
-                          StringMap.find_opt k args <|> Anomaly "not found processing user",
-                          Asai.Range.locate_opt None `Explicit ))
+                      match StringMap.find_opt k args with
+                      | None -> fatal (Anomaly "not found processing user")
+                      | Some arg ->
+                          Raw.App
+                            ( { value = Synth acc; loc },
+                              { value = Some arg.value; loc = arg.loc },
+                              Asai.Range.locate_opt None `Explicit ))
                     (Const c) val_vars in
                 Raw.Synth spine
             | `Constr (c, _) ->
                 let args = List.map (fun k -> StringMap.find k args) val_vars in
                 Raw.Constr ({ value = c; loc }, args) in
           { value; loc });
+      pattern =
+        (fun obs loc ->
+          let open Mlist.Monadic (Monad.State (struct
+            type t = Matchpattern.t StringMap.t
+          end)) in
+          let (), args =
+            miterM
+              (fun [ k; (Wrap x : wrapped_parse) ] acc ->
+                ((), acc |> StringMap.add k (!global_processor.pattern x)))
+              [
+                pat_vars;
+                List.filter_map
+                  (function
+                    | Term x -> Some (Wrap x : wrapped_parse)
+                    | _ -> None)
+                  obs;
+              ]
+              StringMap.empty in
+          match key with
+          | `Constr (c, _) ->
+              let (Wrap args) = Vec.of_list_map (fun k -> StringMap.find k args) val_vars in
+              Matchpattern.Constr ({ value = c; loc }, args)
+          | _ -> fatal (Anomaly "TODO"));
       (* We define this function inline here so that it can match against the constructor New.User that was generated above by the inline Make functor application.  The only way I can think of to factor this function out (and, for instance, put it in user.ml instead of this file) would be to pass it a first-class module as an argument.  At the moment, that seems like unnecessary complication. *)
       print_term =
         Some
@@ -198,11 +229,11 @@ let make_user : prenotation -> notation =
                 bool -> (l, r) Pattern.t -> observation list -> document * Whitespace.t list =
              fun first pat obs ->
               match (pat, obs) with
-              | Op ((op, br, _), pat), Token (op', (_, wsop)) :: obs when op = op' ->
+              | Op ((op, br, _), pat), Token (op', (wsop, _)) :: obs when op = op' ->
                   let rest, ws = go false pat obs in
                   (Token.pp op ^^ pp_ws br wsop ^^ rest, ws)
-              | Op_nil (op, _), [ Token (op', (_, wsop)) ] when op = op' -> (Token.pp op, wsop)
-              | Var_nil ((op, opbr, _), _), [ Token (op', (_, wsop)); Term x ] when op = op' ->
+              | Op_nil (op, _), [ Token (op', (wsop, _)) ] when op = op' -> (Token.pp op, wsop)
+              | Var_nil ((op, opbr, _), _), [ Token (op', (wsop, _)); Term x ] when op = op' ->
                   (* Deal with right-associativity *)
                   let xdoc, xws =
                     match x.value with

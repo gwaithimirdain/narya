@@ -123,6 +123,19 @@ let rec plus_of_sface : type m mn. (m, mn) sface -> (m, mn) d_le = function
       let (Le mn) = plus_of_sface d in
       Le (N.suc_plus_eq_suc mn)
 
+(* As long as there is at least one endpoint, any dimension has at least one zero-dimensional face. *)
+
+let rec vertex : type n. n D.t -> (D.zero, n) sface option = function
+  | Nat Zero -> Some Zero
+  | Nat (Suc n) -> (
+      let open Monad.Ops (Monad.Maybe) in
+      let (Wrap l) = Endpoints.wrapped () in
+      match Endpoints.len l with
+      | Nat (Suc _) ->
+          let* s = vertex (Nat n) in
+          Some (End (s, (l, Top)))
+      | Nat Zero -> None)
+
 (* A strict face of a singleton dimension is either the identity or an endpoint. *)
 
 let singleton_sface : type m n l.
@@ -139,12 +152,12 @@ let singleton_sface : type m n l.
 
 type any_sface = Any_sface : ('n, 'k) sface -> any_sface
 
-let rec string_of_sface : type n k. (n, k) sface -> string =
- fun fa ->
+let rec string_of_sface : type n k. ?unicode:bool -> (n, k) sface -> string =
+ fun ?(unicode = false) fa ->
   match fa with
   | Zero -> ""
-  | End (fa, e) -> Endpoints.to_string (Some e) ^ string_of_sface fa
-  | Mid fa -> Endpoints.to_string None ^ string_of_sface fa
+  | End (fa, e) -> Endpoints.to_string ~unicode (Some e) ^ string_of_sface ~unicode fa
+  | Mid fa -> Endpoints.to_string ~unicode None ^ string_of_sface ~unicode fa
 
 let sface_of_string : string -> any_sface option =
  fun str ->

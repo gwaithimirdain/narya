@@ -22,6 +22,7 @@ type printable +=
   | Env : ('n, 'b) Value.env -> printable
   | DeepEnv : ('n, 'b) Value.env * int -> printable
   | Check : 'a check -> printable
+  | Apps : 'any apps -> printable
   | Entry : ('x, 'n) Ctx.entry -> printable
   | OrderedCtx : ('a, 'b) Ctx.Ordered.t -> printable
   | Ctx : ('a, 'b) Ctx.t -> printable
@@ -174,14 +175,15 @@ module F = struct
     | Const { name; ins } ->
         let (To p) = deg_of_ins ins in
         fprintf ppf "Const (%s, %s)" (print_to_string (PConstant name)) (string_of_deg p)
-    | Meta { meta; env = _; ins } ->
+    | Meta { meta; env = e; ins } ->
         let (To p) = deg_of_ins ins in
-        fprintf ppf "Meta (%s, ?, %s)" (Meta.name meta) (string_of_deg p)
+        fprintf ppf "Meta (%s, %a, %s)" (Meta.name meta) env e (string_of_deg p)
     | UU n -> fprintf ppf "UU %a" dim n
     | Pi (x, doms, cods) ->
         fprintf ppf "Pi^%s (%s, %a, (... %a))"
           (string_of_dim (CubeOf.dim doms))
-          (Option.value ~default:"_" x) (cubeof value) doms binder (BindCube.find_top cods)
+          (Option.value ~default:"_" (top_variable x))
+          (cubeof value) doms binder (BindCube.find_top cods)
 
   and binder : type b s. formatter -> (b, s) binder -> unit =
    fun ppf (Bind { env = e; ins = i; body }) ->
@@ -226,12 +228,13 @@ module F = struct
     | UU n -> fprintf ppf "UU %a" dim n
     | Inst (tm, args) -> fprintf ppf "Inst (%a, %a)" term tm (tubeof term) args
     | Pi (x, doms, cods) ->
-        fprintf ppf "Pi^(%a) (%s, %a, (... %a))" dim (CubeOf.dim doms) (Option.value x ~default:"_")
+        fprintf ppf "Pi^(%a) (%s, %a, (... %a))" dim (CubeOf.dim doms)
+          (Option.value (top_variable x) ~default:"_")
           (cubeof term) doms term (CodCube.find_top cods)
     | App (fn, arg) -> fprintf ppf "App (%a, %a)" term fn (cubeof term) arg
     | Lam (x, body) -> fprintf ppf "Lam^(%s) (?, %a)" (string_of_dim (dim_variables x)) term body
     | Constr (c, _, _) -> fprintf ppf "Constr (%s, ?, ?)" (Constr.to_string c)
-    | Act (tm, s) -> fprintf ppf "Act (%a, %s)" term tm (string_of_deg s)
+    | Act (tm, s, _) -> fprintf ppf "Act (%a, %s)" term tm (string_of_deg s)
     | Let (_, _, _) -> fprintf ppf "Let ?"
     | Struct _ -> fprintf ppf "Struct ?"
     | Match _ -> fprintf ppf "Match ?"
@@ -277,8 +280,16 @@ module F = struct
    fun ppf c ->
     match c with
     | Synth s -> synth ppf s
-    | Lam { name; cube = _; body } ->
-        fprintf ppf "Lam(%s, %a)" (Option.value ~default:"_" name.value) check body.value
+    | Lam { name; cube = _; implicit; dom; body } ->
+        fprintf ppf "Lam(%s%s%a%s, %a)"
+          (if implicit = `Implicit then "{" else "")
+          (Option.value ~default:"_" name.value)
+          (fun ppf ->
+            Option.fold ~none:() ~some:(fun (x : a check located) ->
+                fprintf ppf " : %a" check x.value))
+          dom
+          (if implicit = `Implicit then "}" else "")
+          check body.value
     | Struct (_, flds) ->
         fprintf ppf "Struct(";
         Mbwd.miter
@@ -312,6 +323,7 @@ module F = struct
           (pp_print_list ~pp_sep:(fun ppf () -> pp_print_string ppf ", ") check)
           (List.map (fun (_, x, _) -> x) tms)
     | Oracle tm -> fprintf ppf "Oracle(%a)" check tm.value
+    | Weaken (tm, Eq) -> check ppf tm
 
   and synth : type a. formatter -> a synth -> unit =
    fun ppf s ->
@@ -327,12 +339,19 @@ module F = struct
               else "." ^ f ^ "." ^ String.concat "" (List.map string_of_int p)
           | `Int i -> "." ^ string_of_int i)
     | Pi (_, _, _) -> fprintf ppf "Pi(?)"
-    | App (fn, arg, _) -> fprintf ppf "App(%a, %a)" synth fn.value check arg.value
+    | HigherPi (_, _, _) -> fprintf ppf "HigherPi(?)"
+    | InstHigherPi (_, _, _) -> fprintf ppf "InstHigherPi(?)"
+    | App (fn, { value = Some arg; _ }, _) -> fprintf ppf "App(%a, %a)" check fn.value check arg
+    | App (fn, { value = None; _ }, _) -> fprintf ppf "App(%a, .)" check fn.value
     | Asc (tm, ty) -> fprintf ppf "Asc(%a, %a)" check tm.value check ty.value
+    | AscLam (x, dom, body) ->
+        fprintf ppf "AscLam(%s, %a, %a)"
+          (Option.value ~default:"_" x.value)
+          check dom.value synth body.value
     | Let (_, _, _) -> fprintf ppf "Let(?)"
     | Letrec (_, _, _) -> fprintf ppf "LetRec(?)"
     | Act (_, _, _) -> fprintf ppf "Act(?)"
-    | Match { tm; sort = _; branches = br; refutables = _ } ->
+    | Match { tm; sort = _; branches = br; refutables = _; highers = _ } ->
         fprintf ppf "Match (%a, (%a))" synth tm.value branches br
     | UU -> fprintf ppf "Type"
     | Fail _ -> fprintf ppf "Error"
@@ -363,9 +382,9 @@ module F = struct
       | Some x :: xs -> x ^ " " ^ strvars xs
       | None :: xs -> "_ " ^ strvars xs in
     let mapsto =
-      match cube.value with
-      | `Normal -> "↦"
-      | `Cube -> "⤇" in
+      match cube with
+      | `Normal _ -> "↦"
+      | `Cube _ -> "⤇" in
     fprintf ppf "%s %s %s %a" (Constr.to_string c) (strvars vars.value) mapsto check body.value
 
   let entry : type x n. formatter -> (x, n) Ctx.entry -> unit =
@@ -405,6 +424,7 @@ let term v = PPrint.utf8string (Format.asprintf "%a" F.term v)
 let tel v = PPrint.utf8string (Format.asprintf "%a" F.tel v)
 let check v = PPrint.utf8string (Format.asprintf "%a" F.check v)
 let synth v = PPrint.utf8string (Format.asprintf "%a" F.synth v)
+let apps v = PPrint.utf8string (Format.asprintf "%a" F.apps v)
 let entry v = PPrint.utf8string (Format.asprintf "%a" F.entry v)
 let ordered_ctx v = PPrint.utf8string (Format.asprintf "%a" F.ordered_ctx v)
 let ctx v = PPrint.utf8string (Format.asprintf "%a" F.ctx v)

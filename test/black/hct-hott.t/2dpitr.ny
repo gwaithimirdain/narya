@@ -1,13 +1,10 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-direction" "p,rel,Br") -*- `}
+{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-direction" "p,rel,Br") -*- `}
 
 import "isfibrant"
 import "fibrant_types"
 import "bookhott"
 import "hott_bookhott"
 import "homotopy"
-
-option function boundaries ≔ implicit
-option type boundaries ≔ implicit
 
 axiom A00 : Fib
 axiom A01 : Fib

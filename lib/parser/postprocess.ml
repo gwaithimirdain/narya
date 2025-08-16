@@ -9,21 +9,32 @@ open Notation
 open Monad.Ops (Monad.Maybe)
 module StringMap = Map.Make (String)
 
-(* We define this here so we can refer to it in parsing implicit applications. *)
+(* Process a term into a list of strings, to be a multi-word attribute *)
+let strings_of_term : type ls lt rs rt.
+    (ls, lt, rs, rt) parse -> string list * Whitespace.t list list =
+ fun tm ->
+  let rec go : type ls lt rs rt.
+      string list ->
+      Whitespace.t list list ->
+      (ls, lt, rs, rt) parse ->
+      string list * Whitespace.t list list =
+   fun strs wss -> function
+     | Ident ([ str ], ws) -> (str :: strs, ws :: wss)
+     | App { fn; arg = { value = Ident ([ str ], ws); _ }; _ } ->
+         go (str :: strs) (ws :: wss) fn.value
+     | _ -> fatal Unrecognized_attribute in
+  go [] [] tm
 
-type (_, _, _) identity += Braces : (closed, No.plus_omega, closed) identity
+(* We define these here so we can refer to them in parsing implicit and nullary applications and in getting patterns.  Note that parentheses are primarily parsed, processed, and printed along with tuples, since their notation overlaps; but are also used as sub-notations in many other notations.  *)
 
+type (_, _, _) identity +=
+  | Parens : (closed, No.plus_omega, closed) identity
+  | Braces : (closed, No.plus_omega, closed) identity
+  | Dot : (closed, No.plus_omega, closed) identity
+
+let parens : (closed, No.plus_omega, closed) notation = (Parens, Outfix)
 let braces : (closed, No.plus_omega, closed) notation = (Braces, Outfix)
-
-(* Require the argument to be either a valid local variable name (to be bound, so faces of cubical variables are not allowed) or an underscore, and return a corresponding 'string option'. *)
-let get_var : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string option =
- fun { value; loc } ->
-  with_loc loc @@ fun () ->
-  match value with
-  | Ident ([ x ], _) when Lexer.valid_var x -> Some x
-  | Ident (xs, _) -> fatal (Invalid_variable xs)
-  | Placeholder _ -> None
-  | _ -> fatal Parse_error
+let dot : (closed, No.plus_omega, closed) notation = (Dot, Outfix)
 
 (* Process a bare identifier, resolving it into either a variable, a cube variable with face, a constant, a numeral, or a degeneracy name (the latter being an error since it isn't applied to anything). *)
 let process_ident ctx loc parts =
@@ -96,11 +107,14 @@ let rec process : type n lt ls rt rs.
       (* This can happen if the user tries to project a field from a constructor. *)
       fatal Parse_error
   | Superscript (Some x, str, _) -> (
-      match deg_of_string str with
+      match deg_of_string str.value with
       | Some (Any_deg s) ->
-          let body = process ctx x in
+          let body =
+            match x.value with
+            | Placeholder _ -> None
+            | _ -> Some (process ctx x) in
           { value = Synth (Act (str, s, body)); loc }
-      | None -> fatal (Invalid_degeneracy str))
+      | None -> fatal ?loc:str.loc (Invalid_degeneracy str.value))
   | Superscript (None, _, _) -> fatal (Anomaly "degeneracy is head")
   | Hole { li; ri; num; _ } ->
       let hloc = loc <|> Anomaly "missing location in Hole" in
@@ -126,9 +140,11 @@ and process_apps : type n lt ls rt rs.
   | `Deg (str, Any_deg s) -> (
       match args with
       | (Wrap arg, loc) :: args ->
-          process_apply ctx
-            { value = Act (str, s, { value = (process ctx arg).value; loc }); loc }
-            args
+          let arg =
+            match arg.value with
+            | Placeholder _ -> None
+            | _ -> Some { value = (process ctx arg).value; loc } in
+          process_apply ctx { value = Synth (Act (str, s, arg)); loc } args
       | [] -> fatal ?loc:tm.loc (Anomaly "TODO"))
   | `Constr c ->
       let c = { value = c; loc = tm.loc } in
@@ -145,41 +161,60 @@ and process_apps : type n lt ls rt rs.
 and process_head : type n lt ls rt rs.
     (string option, n) Bwv.t ->
     (lt, ls, rt, rs) parse located ->
-    [ `Deg of string * any_deg | `Constr of Constr.t | `Fn of n synth located ] =
+    [ `Deg of string located * any_deg | `Constr of Constr.t | `Fn of n check located ] =
  fun ctx tm ->
   match tm.value with
   | Constr (ident, _) -> `Constr (Constr.intern ident)
   | Ident ([ str ], _) -> (
       match deg_of_name str with
-      | Some s -> `Deg (str, s)
-      | None -> `Fn (process_synth ctx tm "function"))
-  | _ -> `Fn (process_synth ctx tm "function")
+      | Some s -> `Deg (locate_opt tm.loc str, s)
+      | None -> `Fn (process ctx tm))
+  | _ -> `Fn (process ctx tm)
 
 and process_apply : type n.
     (string option, n) Bwv.t ->
-    n synth located ->
+    n check located ->
     (wrapped_parse * Asai.Range.t option) list ->
     n check located =
  fun ctx fn fnargs ->
   match fnargs with
-  | [] -> { value = Synth fn.value; loc = fn.loc }
+  | [] -> fn
   | (Wrap { value = Field (fld, pbij, _); _ }, loc) :: args -> (
       try
         let fld =
-          try `Int (int_of_string fld) with Failure _ -> `Name (fld, List.map int_of_string pbij)
-        in
-        process_apply ctx { value = Field (fn, fld); loc } args
+          match int_of_string_opt fld with
+          | Some n -> `Int n
+          | None -> `Name (fld, List.map int_of_string pbij) in
+        let fn =
+          match fn.value with
+          | Synth sfn -> { value = sfn; loc = fn.loc }
+          | _ -> fatal (Nonsynthesizing "head of field application") in
+        process_apply ctx { value = Synth (Field (fn, fld)); loc } args
       with Failure _ -> fatal (Invalid_field (String.concat "." ("" :: fld :: pbij))))
   | (Wrap { value = Notn ((Braces, _), n); loc = braceloc }, loc) :: rest -> (
       match args n with
       | [ Token (LBrace, _); Term arg; Token (RBrace, _) ] ->
+          let arg = process ctx arg in
           process_apply ctx
-            { value = Raw.App (fn, process ctx arg, locate_opt braceloc `Implicit); loc }
+            {
+              value =
+                Synth (App (fn, locate_opt arg.loc (Some arg.value), locate_opt braceloc `Implicit));
+              loc;
+            }
             rest
       | _ -> fatal (Anomaly "invalid notation arguments for braces"))
-  | (Wrap arg, loc) :: args ->
+  | (Wrap { value = Notn ((Dot, _), _); loc = dotloc }, loc) :: rest ->
       process_apply ctx
-        { value = Raw.App (fn, process ctx arg, locate_opt arg.loc `Explicit); loc }
+        { value = Synth (App (fn, locate_opt dotloc None, locate_opt None `Explicit)); loc }
+        rest
+  | (Wrap arg, loc) :: args ->
+      let arg = process ctx arg in
+      process_apply ctx
+        {
+          value =
+            Synth (App (fn, locate_opt arg.loc (Some arg.value), locate_opt arg.loc `Explicit));
+          loc;
+        }
         args
 
 and process_synth : type n lt ls rt rs.
@@ -215,5 +250,29 @@ and process_vars : type n.
         process_vars (Bwv.snoc ctx name) names (Wrap ty) parameters in
       Processed_tel (Ext (name, pty, tel), ctx, w :: ws)
 
-(* Now that we've defined this function, we can pass it back to User. *)
-let () = User.global_processor := { process = (fun ctx x -> process ctx x) }
+let get_pattern : type lt1 ls1 rt1 rs1. (lt1, ls1, rt1, rs1) parse located -> Matchpattern.t =
+ fun pat ->
+  let rec go : type n lt1 ls1 rt1 rs1.
+      (lt1, ls1, rt1, rs1) parse located -> (Matchpattern.t, n) Vec.t located -> Matchpattern.t =
+   fun pat pats ->
+    match pat.value with
+    | Ident ([ x ], _) when Lexer.valid_var x -> (
+        match pats.value with
+        | [] -> Var (locate_opt pat.loc (Some x))
+        | _ -> fatal ?loc:pat.loc Parse_error)
+    | Ident (xs, _) -> fatal ?loc:pat.loc (Invalid_variable xs)
+    | Placeholder _ -> (
+        match pats.value with
+        | [] -> Var (locate_opt pat.loc None)
+        | _ -> fatal ?loc:pat.loc Parse_error)
+    | Constr (c, _) -> Constr (locate_opt pat.loc (Constr.intern c), pats.value)
+    | App { fn; arg; _ } ->
+        go fn
+          (locate_opt pats.loc
+             (go arg (locate_opt arg.loc Vec.[]) :: pats.value : (Matchpattern.t, n Fwn.suc) Vec.t))
+    | Notn (notn, n) -> pattern notn (args n) pat.loc
+    | _ -> fatal ?loc:pat.loc Parse_error in
+  go pat (locate_opt pat.loc Vec.[])
+
+(* Now that we've defined these functions, we can pass them back to User. *)
+let () = User.global_processor := { process = (fun ctx x -> process ctx x); pattern = get_pattern }

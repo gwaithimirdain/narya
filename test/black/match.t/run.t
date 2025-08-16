@@ -65,7 +65,7 @@
    ￮ constant idvec_nil_or_cons defined
   
 
-  $ narya -v multi.ny
+  $ narya -v -parametric multi.ny
    ￫ info[I0000]
    ￮ constant bool defined
   
@@ -140,7 +140,7 @@
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/multi.ny
-   82 | def ⊤eq⊥ : Id Type ⊤ ⊥ ≔ Gel ⊤ ⊥ []
+   75 | def ⊤eq⊥ : Id Type ⊤ ⊥ ≔ Gel ⊤ ⊥ [ ]
       ^ matching lambda encountered outside case tree, wrapping in implicit let-binding
   
    ￫ info[I0000]
@@ -194,6 +194,21 @@
    ￫ info[I0000]
    ￮ constant is_zero_eq_zero_rev' defined
   
+   ￫ info[I0000]
+   ￮ constant bar defined
+  
+   ￫ info[I0000]
+   ￮ constant bar' defined
+  
+   ￫ info[I0000]
+   ￮ constant bar'' defined
+  
+   ￫ info[I0000]
+   ￮ constant baz defined
+  
+   ￫ info[I0000]
+   ￮ constant bazzz defined
+  
 
 
   $ narya -e 'def bool : Type ≔ data [ true. | false. ]' -e 'def bool.and (x y : bool) : bool ≔ match x,y [ true. , true. ↦ true. | true. , false. ↦ false. | _ , false. ↦ false. ]'
@@ -201,6 +216,14 @@
    ￭ command-line exec string
    1 | def bool.and (x y : bool) : bool ≔ match x,y [ true. , true. ↦ true. | true. , false. ↦ false. | _ , false. ↦ false. ]
      ^ overlapping patterns in match
+  
+  [1]
+
+  $ narya -e 'axiom A : Type axiom B : Type def AB : Type ≔ data [ left. (_:A) | right. (_:B) ]' -e 'def foo (x y : AB) : AB ≔ match x,y [ left. a, right. b ↦ left. a | left. a, left. b ↦ left. b | left. a, right. b ↦ left. a | right. b, _ ↦ right. b ]'
+   ￫ error[E1302]
+   ￭ command-line exec string
+   1 | def foo (x y : AB) : AB ≔ match x,y [ left. a, right. b ↦ left. a | left. a, left. b ↦ left. b | left. a, right. b ↦ left. a | right. b, _ ↦ right. b ]
+     ^ constructor right appears twice in match
   
   [1]
 
@@ -296,5 +319,54 @@
    ￭ command-line exec string
    1 | def foo : Type → bool → bool ≔ [ ]
      ^ can't match on variable belonging to non-datatype Type
+  
+  [1]
+
+  $ narya -v -parametric -e 'def bool : Type ≔ data [ true. | false. ] def bool.not (x : bool) : bool ≔ match x [ true. ⤇ false. | false. ⤇ true.]'
+   ￫ info[I0000]
+   ￮ constant bool defined
+  
+   ￫ error[E0508]
+   ￭ command-line exec string
+   1 | def bool : Type ≔ data [ true. | false. ] def bool.not (x : bool) : bool ≔ match x [ true. ⤇ false. | false. ⤇ true.]
+     ^ cube abstraction not allowed for zero-dimensional match
+  
+  [1]
+
+  $ narya -v -parametric -e 'def bool : Type ≔ data [ true. | false. ] def bool.and (x y : bool) : bool ≔ match x, y [ true., true. ⤇ true. | true., false. ⤇ false. | false., true. ⤇ false. | false., false. ⤇ false.]'
+   ￫ info[I0000]
+   ￮ constant bool defined
+  
+   ￫ error[E0508]
+   ￭ command-line exec string
+   1 | def bool : Type ≔ data [ true. | false. ] def bool.and (x y : bool) : bool ≔ match x, y [ true., true. ⤇ true. | true., false. ⤇ false. | false., true. ⤇ false. | false., false. ⤇ false.]
+     ^ cube abstraction not allowed for zero-dimensional match
+  
+  [1]
+
+  $ narya -v -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bar (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : Type ≔ match y2 [ zero. ↦ ℕ | suc. n ↦ bar n.0 n.1 n.2 ]'
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ error[E0510]
+   ￭ command-line exec string
+   1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bar (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : Type ≔ match y2 [ zero. ↦ ℕ | suc. n ↦ bar n.0 n.1 n.2 ]
+     ^ e-dimensional match requires cube abstraction
+  
+  [1]
+
+  $ narya -v -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bar (x : ℕ) (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : Type ≔ match x, y2 [ zero., zero. ↦ ℕ | zero., suc. n ↦ bar x n.0 n.1 n.2 | suc. _, zero. ↦ ℕ | suc. _, suc. n ↦ bar x n.0 n.1 n.2 ]'
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ error[E0510]
+   ￭ command-line exec string
+   1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bar (x : ℕ) (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : Type ≔ match x, y2 [ zero., zero. ↦ ℕ | zero., suc. n ↦ bar x n.0 n.1 n.2 | suc. _, zero. ↦ ℕ | suc. _, suc. n ↦ bar x n.0 n.1 n.2 ]
+     ^ e-dimensional match requires cube abstraction
+  
+   ￫ error[E0510]
+   ￭ command-line exec string
+   1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bar (x : ℕ) (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : Type ≔ match x, y2 [ zero., zero. ↦ ℕ | zero., suc. n ↦ bar x n.0 n.1 n.2 | suc. _, zero. ↦ ℕ | suc. _, suc. n ↦ bar x n.0 n.1 n.2 ]
+     ^ e-dimensional match requires cube abstraction
   
   [1]

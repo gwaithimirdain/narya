@@ -1,11 +1,8 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-direction" "p,rel,Br") -*- `}
+{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-direction" "p,rel,Br") -*- `}
 
 import "isfibrant"
 import "bookhott"
 import "hott_bookhott"
-
-option function boundaries ≔ implicit
-option type boundaries ≔ implicit
 
 {` Since identity types compute only up to definitional isomorphism, in order to prove that anything is fibrant by corecursion, we need to be able to transport fibrancy across definitional isomorphisms.  In fact, we can transport it across any Book-HoTT equivalence defined using the Martin-Lof identity type. `}
 
@@ -63,7 +60,7 @@ def 𝕗prod (A B : Type) (𝕗A : isFibrant A) (𝕗B : isFibrant B)
 def Σ (A : Type) (B : A → Type) : Type ≔ sig ( fst : A, snd : B fst )
 
 def id_Σ_iso (A0 : Type) (A1 : Type) (A2 : Br Type A0 A1) (B0 : A0 → Type)
-  (B1 : A1 → Type) (B2 : Br Π A2 {_ ↦ Type} {_ ↦ Type} (_ ⤇ rel Type) B0 B1)
+  (B1 : A1 → Type) (B2 : (A2 ⇒ rel Type) B0 B1)
   (a0 : A0) (a1 : A1) (b0 : B0 a0) (b1 : B1 a1)
   : Σ (A2 a0 a1) (a2 ↦ B2 a2 b0 b1) ≅ Br Σ A2 B2 (a0, b0) (a1, b1)
   ≔ (
@@ -105,8 +102,11 @@ def Σ𝕗 (A : Fib) (B : A .t → Fib) : Fib ≔ (
 
 {` Π-types `}
 
+def Π (A : Type) (B : A → Type) : Type := (x : A) → B x
+
 def id_Π_iso (A0 : Type) (A1 : Type) (A2 : Br Type A0 A1) (B0 : A0 → Type)
-  (B1 : A1 → Type) (B2 : Br Π A2 {_ ↦ Type} {_ ↦ Type} (_ ⤇ rel Type) B0 B1)
+  (B1 : A1 → Type)
+  (B2 : Br Π A2 {_ ↦ Type} {_ ↦ Type} (_ ⤇ rel Type) B0 B1)
   (f0 : (a0 : A0) → B0 a0) (f1 : (a1 : A1) → B1 a1)
   : ((a0 : A0) (a1 : A1) (a2 : A2 a0 a1) → B2 a2 (f0 a0) (f1 a1))
     ≅ Br Π A2 B2 f0 f1
@@ -367,7 +367,8 @@ section Indexed_𝕎 ≔
       sup. (a.0, a.1, a.2, f.0, f.1)
         (b ↦
          𝕎_encode s (s .j a.0 (b .b0)) (s .j a.1 (b .b1))
-           (rel (s .j) a.2 (b .b2)) (f.0 (b .b0)) (f.1 (b .b1)) (f.2 (b .b2)))]
+           (rel (s .j) a.2 (b .b2)) (f.0 (b .b0)) (f.1 (b .b1))
+           (f.2 (b .b2)))]
 
   def 𝕎_decode (s : 𝕎spec) (y : code_spec s .I) (y2 : 𝕎 (code_spec s) y)
     : rel (𝕎 s) (y .i2) (y .x0) (y .x1)
@@ -417,8 +418,8 @@ section Indexed_𝕎 ≔
   def 𝕎_encode_decode (s : 𝕎spec) (y : code_spec s .I)
     (y2 : 𝕎 (code_spec s) y)
     : eq (𝕎 (code_spec s) y)
-        (𝕎_encode s (y .i0) (y .i1) (y .i2) (y .x0) (y .x1) (𝕎_decode s y y2))
-        y2
+        (𝕎_encode s (y .i0) (y .i1) (y .i2) (y .x0) (y .x1)
+           (𝕎_decode s y y2)) y2
     ≔ match y2 [
   | sup. a f ↦
       eq.ap ((b : code_spec s .B a) → 𝕎 (code_spec s) (code_spec s .j a b))
@@ -432,7 +433,8 @@ section Indexed_𝕎 ≔
                rel s .j (a .a2) (b .b2),
                a .f0 (b .b0),
                a .f1 (b .b1)) (f (b .b0, b .b1, b .b2)))) f
-        (funext (code_spec s .B a) (b ↦ 𝕎 (code_spec s) (code_spec s .j a b))
+        (funext (code_spec s .B a)
+           (b ↦ 𝕎 (code_spec s) (code_spec s .j a b))
            (b ↦
             𝕎_encode s (s .j (a .a0) (b .b0)) (s .j (a .a1) (b .b1))
               (rel s .j (a .a2) (b .b2)) (a .f0 (b .b0)) (a .f1 (b .b1))
@@ -447,8 +449,9 @@ section Indexed_𝕎 ≔
   def id_𝕎_iso (s : 𝕎spec) (i0 i1 : s .I) (i2 : Br (s .I) i0 i1)
     (x0 : 𝕎 s i0) (x1 : 𝕎 s i1)
     : rel (𝕎 s) i2 x0 x1 ≅ 𝕎 (code_spec s) (i0, i1, i2, x0, x1)
-    ≔ adjointify (rel (𝕎 s) i2 x0 x1) (𝕎 (code_spec s) (i0, i1, i2, x0, x1))
-        (𝕎_encode s i0 i1 i2 x0 x1) (𝕎_decode s (i0, i1, i2, x0, x1))
+    ≔ adjointify (rel (𝕎 s) i2 x0 x1)
+        (𝕎 (code_spec s) (i0, i1, i2, x0, x1)) (𝕎_encode s i0 i1 i2 x0 x1)
+        (𝕎_decode s (i0, i1, i2, x0, x1))
         (x2 ↦ 𝕎_decode_encode s i0 i1 i2 x0 x1 x2)
         (y2 ↦ 𝕎_encode_decode s (i0, i1, i2, x0, x1) y2)
 
@@ -490,14 +493,15 @@ def 𝕎_decode (A0 A1 : Type) (A2 : Br Type A0 A1) (B0 : A0 → Type)
   ≔ match x0, x1 [
 | sup. a0 f0, sup. a1 f1 ↦
     sup. (y2 .fst)
-      (b ⤇ 𝕎_decode A0 A1 A2 B0 B1 B2 (f0 b.0) (f1 b.1) (y2 .snd b.0 b.1 b.2))]
+      (b ⤇
+       𝕎_decode A0 A1 A2 B0 B1 B2 (f0 b.0) (f1 b.1) (y2 .snd b.0 b.1 b.2))]
 
 def 𝕎_decode_encode (A0 A1 : Type) (A2 : Br Type A0 A1) (B0 : A0 → Type)
   (B1 : A1 → Type) (B2 : rel ((X ↦ X → Type) : Type → Type) A2 B0 B1)
   (x0 : 𝕎 A0 B0) (x1 : 𝕎 A1 B1) (x2 : rel 𝕎 A2 B2 x0 x1)
   : eq (rel 𝕎 A2 B2 x0 x1)
-      (𝕎_decode A0 A1 A2 B0 B1 B2 x0 x1 (𝕎_encode A0 A1 A2 B0 B1 B2 x0 x1 x2))
-      x2
+      (𝕎_decode A0 A1 A2 B0 B1 B2 x0 x1
+         (𝕎_encode A0 A1 A2 B0 B1 B2 x0 x1 x2)) x2
   ≔ match x2 [
 | sup. a f ⤇
     eq.ap
@@ -518,8 +522,8 @@ def 𝕎_encode_decode (A0 A1 : Type) (A2 : Br Type A0 A1) (B0 : A0 → Type)
   (B1 : A1 → Type) (B2 : rel ((X ↦ X → Type) : Type → Type) A2 B0 B1)
   (x0 : 𝕎 A0 B0) (x1 : 𝕎 A1 B1) (y2 : 𝕎_code A0 A1 A2 B0 B1 B2 x0 x1)
   : eq (𝕎_code A0 A1 A2 B0 B1 B2 x0 x1)
-      (𝕎_encode A0 A1 A2 B0 B1 B2 x0 x1 (𝕎_decode A0 A1 A2 B0 B1 B2 x0 x1 y2))
-      y2
+      (𝕎_encode A0 A1 A2 B0 B1 B2 x0 x1
+         (𝕎_decode A0 A1 A2 B0 B1 B2 x0 x1 y2)) y2
   ≔ match x0, x1 [
 | sup. a0 f0, sup. a1 f1 ↦
     eq.ap
@@ -580,8 +584,9 @@ def Id_𝕎_iso (A0 A1 : Type) (A2 : Br Type A0 A1) (B0 : A0 → Type)
 
 def 𝕗_𝕎_code (A0 A1 : Type) (A2 : Br Type A0 A1) (B0 : A0 → Type)
   (B1 : A1 → Type) (B2 : rel ((X ↦ X → Type) : Type → Type) A2 B0 B1)
-  (𝕗A0 : isFibrant A0) (𝕗A1 : isFibrant A1) (𝕗A2 : rel isFibrant A2 𝕗A0 𝕗A1)
-  (𝕗B0 : (a0 : A0) → isFibrant (B0 a0)) (𝕗B1 : (a1 : A1) → isFibrant (B1 a1))
+  (𝕗A0 : isFibrant A0) (𝕗A1 : isFibrant A1)
+  (𝕗A2 : rel isFibrant A2 𝕗A0 𝕗A1) (𝕗B0 : (a0 : A0) → isFibrant (B0 a0))
+  (𝕗B1 : (a1 : A1) → isFibrant (B1 a1))
   (𝕗B2 : rel Π A2 {x ↦ isFibrant (B0 x)} {x ↦ isFibrant (B1 x)}
            (x ⤇ rel isFibrant (B2 x.2)) 𝕗B0 𝕗B1) (x0 : 𝕎 A0 B0)
   (x1 : 𝕎 A1 B1)
@@ -603,7 +608,8 @@ def 𝕗_𝕎_code (A0 A1 : Type) (A2 : Br Type A0 A1) (B0 : A0 → Type)
              (b2 : B2 a2 b0 b1) → 𝕎_code A0 A1 A2 B0 B1 B2 (f0 b0) (f1 b1))
             (𝕗B1 a1)
             (b1 ↦
-             𝕗Π (B2 a2 b0 b1) (_ ↦ 𝕎_code A0 A1 A2 B0 B1 B2 (f0 b0) (f1 b1))
+             𝕗Π (B2 a2 b0 b1)
+               (_ ↦ 𝕎_code A0 A1 A2 B0 B1 B2 (f0 b0) (f1 b1))
                (𝕗B2 a2 .id b0 b1)
                (b2 ↦
                 𝕗_𝕎_code A0 A1 A2 B0 B1 B2 𝕗A0 𝕗A1 𝕗A2 𝕗B0 𝕗B1 𝕗B2 (f0 b0)
@@ -688,8 +694,8 @@ section Parametrized_W ≔
          Σ𝕗 (s1 .B (r .r1) (𝕎_proj1 s1 (r .r1) (r .x1)))
            (b1 ↦
             Idd𝕗 (s0 .B (r .r0) (𝕎_proj1 s0 (r .r0) (r .x0)))
-              (s1 .B (r .r1) (𝕎_proj1 s1 (r .r1) (r .x1))) (s2 .B (r .r2) a2)
-              b0 b1)),
+              (s1 .B (r .r1) (𝕎_proj1 s1 (r .r1) (r .x1)))
+              (s2 .B (r .r2) a2) b0 b1)),
     k ≔ r a2 b ↦ (
       r0 ≔ s0 .k (r .r0) (𝕎_proj1 s0 (r .r0) (r .x0)) (b .0),
       r1 ≔ s1 .k (r .r1) (𝕎_proj1 s1 (r .r1) (r .x1)) (b .1 .0),
@@ -760,7 +766,9 @@ section Parametrized_W ≔
   | sup. a0 f0, sup. a1 f1, sup. a2 f2 ↦
       eq.ap
         ((b2
-         : 𝕎_code_spec s0 s1 s2 .B (r0, r1, r2, sup. a0 f0, sup. a1 f1) a2 .t)
+         : 𝕎_code_spec s0 s1 s2
+         .B (r0, r1, r2, sup. a0 f0, sup. a1 f1) a2
+         .t)
          → 𝕎 (𝕎_code_spec s0 s1 s2)
              (𝕎_code_spec s0 s1 s2
               .k (r0, r1, r2, sup. a0 f0, sup. a1 f1) a2 b2))
@@ -769,7 +777,8 @@ section Parametrized_W ≔
          𝕎_encode s0 s1 s2 (s0 .k r0 a0 (b .0)) (s1 .k r1 a1 (b .1 .0))
            (s2 .k r2 a2 (b .1 .1)) (f0 (b .0)) (f1 (b .1 .0))
            (𝕎_decode s0 s1 s2 (s0 .k r0 a0 (b .0)) (s1 .k r1 a1 (b .1 .0))
-              (s2 .k r2 a2 (b .1 .1)) (f0 (b .0)) (f1 (b .1 .0)) (f2 b))) f2
+              (s2 .k r2 a2 (b .1 .1)) (f0 (b .0)) (f1 (b .1 .0)) (f2 b)))
+        f2
         (funext
            (𝕎_code_spec s0 s1 s2
             .B (r0, r1, r2, sup. a0 f0, sup. a1 f1) a2
@@ -781,9 +790,9 @@ section Parametrized_W ≔
            (b ↦
             𝕎_encode s0 s1 s2 (s0 .k r0 a0 (b .0)) (s1 .k r1 a1 (b .1 .0))
               (s2 .k r2 a2 (b .1 .1)) (f0 (b .0)) (f1 (b .1 .0))
-              (𝕎_decode s0 s1 s2 (s0 .k r0 a0 (b .0)) (s1 .k r1 a1 (b .1 .0))
-                 (s2 .k r2 a2 (b .1 .1)) (f0 (b .0)) (f1 (b .1 .0)) (f2 b)))
-           f2
+              (𝕎_decode s0 s1 s2 (s0 .k r0 a0 (b .0))
+                 (s1 .k r1 a1 (b .1 .0)) (s2 .k r2 a2 (b .1 .1))
+                 (f0 (b .0)) (f1 (b .1 .0)) (f2 b))) f2
            (b ↦
             𝕎_encode_decode s0 s1 s2 (s0 .k r0 a0 (b .0))
               (s1 .k r1 a1 (b .1 .0)) (s2 .k r2 a2 (b .1 .1)) (f0 (b .0))
@@ -929,8 +938,8 @@ def 𝕄_bisim (s : 𝕄_spec) (r0 : s .R) (r1 : s .R) (r2 : eq (s .R) r0 r1)
     : eqdd (s .R) (r ↦ s .A r .t) (r a ↦ s .B r a .t) r0 r1 r2 (x0 .recv)
         (x1 .recv) (x2 .recv) b0 b1)
     → 𝕄_bisim s (s .k r0 (x0 .recv) b0) (s .k r1 (x1 .recv) b1)
-        (ap3d (s .R) (r ↦ s .A r .t) (r a ↦ s .B r a .t) (s .R) (s .k) r0 r1
-           r2 (x0 .recv) (x1 .recv) (x2 .recv) b0 b1 b2) (x0 .send b0)
+        (ap3d (s .R) (r ↦ s .A r .t) (r a ↦ s .B r a .t) (s .R) (s .k) r0
+           r1 r2 (x0 .recv) (x1 .recv) (x2 .recv) b0 b1 b2) (x0 .send b0)
         (x1 .send b1) ]
 
 axiom 𝕄_ext (s : 𝕄_spec) (r : s .R) (x0 x1 : 𝕄 s r)
@@ -938,12 +947,12 @@ axiom 𝕄_ext (s : 𝕄_spec) (r : s .R) (x0 x1 : 𝕄 s r)
   : eq (𝕄 s r) x0 x1
 
 def 𝕄_encode_decode_bisim (s0 s1 : 𝕄_spec) (s2 : Br 𝕄_spec s0 s1)
-  (r0 : s0 .R) (r1 : s1 .R) (r2 : s2 .R r0 r1) (x0 : 𝕄 s0 r0) (x1 : 𝕄 s1 r1)
-  (y2 : 𝕄 (𝕄_code_spec s0 s1 s2) (r0, r1, r2, x0, x1))
-  : 𝕄_bisim (𝕄_code_spec s0 s1 s2) (r0, r1, r2, x0, x1) (r0, r1, r2, x0, x1)
-      rfl.
-      (𝕄_encode s0 s1 s2 r0 r1 r2 x0 x1 (𝕄_decode s0 s1 s2 r0 r1 r2 x0 x1 y2))
-      y2
+  (r0 : s0 .R) (r1 : s1 .R) (r2 : s2 .R r0 r1) (x0 : 𝕄 s0 r0)
+  (x1 : 𝕄 s1 r1) (y2 : 𝕄 (𝕄_code_spec s0 s1 s2) (r0, r1, r2, x0, x1))
+  : 𝕄_bisim (𝕄_code_spec s0 s1 s2) (r0, r1, r2, x0, x1)
+      (r0, r1, r2, x0, x1) rfl.
+      (𝕄_encode s0 s1 s2 r0 r1 r2 x0 x1
+         (𝕄_decode s0 s1 s2 r0 r1 r2 x0 x1 y2)) y2
   ≔ [
 | .recv ↦ rfl.
 | .send ↦ b0 b1 b2 ↦ match b2 [
@@ -956,11 +965,12 @@ def 𝕄_encode_decode (s0 s1 : 𝕄_spec) (s2 : Br 𝕄_spec s0 s1) (r0 : s0 .R
   (r1 : s1 .R) (r2 : s2 .R r0 r1) (x0 : 𝕄 s0 r0) (x1 : 𝕄 s1 r1)
   (y2 : 𝕄 (𝕄_code_spec s0 s1 s2) (r0, r1, r2, x0, x1))
   : eq (𝕄 (𝕄_code_spec s0 s1 s2) (r0, r1, r2, x0, x1))
-      (𝕄_encode s0 s1 s2 r0 r1 r2 x0 x1 (𝕄_decode s0 s1 s2 r0 r1 r2 x0 x1 y2))
-      y2
+      (𝕄_encode s0 s1 s2 r0 r1 r2 x0 x1
+         (𝕄_decode s0 s1 s2 r0 r1 r2 x0 x1 y2)) y2
   ≔ 𝕄_ext (𝕄_code_spec s0 s1 s2) (r0, r1, r2, x0, x1)
-      (𝕄_encode s0 s1 s2 r0 r1 r2 x0 x1 (𝕄_decode s0 s1 s2 r0 r1 r2 x0 x1 y2))
-      y2 (𝕄_encode_decode_bisim s0 s1 s2 r0 r1 r2 x0 x1 y2)
+      (𝕄_encode s0 s1 s2 r0 r1 r2 x0 x1
+         (𝕄_decode s0 s1 s2 r0 r1 r2 x0 x1 y2)) y2
+      (𝕄_encode_decode_bisim s0 s1 s2 r0 r1 r2 x0 x1 y2)
 
 {` For the other direction we need a version of this for rel 𝕄. `}
 
@@ -981,8 +991,9 @@ def refl_𝕄_bisim (s0 s1 : 𝕄_spec) (s2 : Br 𝕄_spec s0 s1) (r0 : s0 .R)
     : eqdd (s2 .R r0 r1) (r2 ↦ s2 .A r2 .t (x0 .recv) (x1 .recv))
         (r2 a2 ↦ s2 .B r2 a2 .t b0 b1) r20 r21 r22 (x20 .recv) (x21 .recv)
         (y2 .recv) b20 b21)
-    → refl_𝕄_bisim s0 s1 s2 (s0 .k r0 (x0 .recv) b0) (s1 .k r1 (x1 .recv) b1)
-        (s2 .k r20 (x20 .recv) b20) (s2 .k r21 (x21 .recv) b21)
+    → refl_𝕄_bisim s0 s1 s2 (s0 .k r0 (x0 .recv) b0)
+        (s1 .k r1 (x1 .recv) b1) (s2 .k r20 (x20 .recv) b20)
+        (s2 .k r21 (x21 .recv) b21)
         (ap3d (s2 .R r0 r1) (r2 ↦ s2 .A r2 .t (x0 .recv) (x1 .recv))
            (r2 a2 ↦ s2 .B r2 a2 .t b0 b1)
            (s2 .R (s0 .k r0 (x0 .recv) b0) (s1 .k r1 (x1 .recv) b1))
@@ -997,11 +1008,11 @@ axiom refl_𝕄_ext (s0 s1 : 𝕄_spec) (s2 : Br 𝕄_spec s0 s1) (r0 : s0 .R)
   : eq (rel 𝕄 s2 r2 x0 x1) x20 x21
 
 def 𝕄_decode_encode_bisim (s0 s1 : 𝕄_spec) (s2 : Br 𝕄_spec s0 s1)
-  (r0 : s0 .R) (r1 : s1 .R) (r2 : s2 .R r0 r1) (x0 : 𝕄 s0 r0) (x1 : 𝕄 s1 r1)
-  (x2 : rel 𝕄 s2 r2 x0 x1)
+  (r0 : s0 .R) (r1 : s1 .R) (r2 : s2 .R r0 r1) (x0 : 𝕄 s0 r0)
+  (x1 : 𝕄 s1 r1) (x2 : rel 𝕄 s2 r2 x0 x1)
   : refl_𝕄_bisim s0 s1 s2 r0 r1 r2 r2 rfl. x0 x1
-      (𝕄_decode s0 s1 s2 r0 r1 r2 x0 x1 (𝕄_encode s0 s1 s2 r0 r1 r2 x0 x1 x2))
-      x2
+      (𝕄_decode s0 s1 s2 r0 r1 r2 x0 x1
+         (𝕄_encode s0 s1 s2 r0 r1 r2 x0 x1 x2)) x2
   ≔ [
 | .recv ↦ rfl.
 | .send ↦ b0 b1 b20 b21 b22 ↦ match b22 [
@@ -1014,11 +1025,12 @@ def 𝕄_decode_encode (s0 s1 : 𝕄_spec) (s2 : Br 𝕄_spec s0 s1) (r0 : s0 .R
   (r1 : s1 .R) (r2 : s2 .R r0 r1) (x0 : 𝕄 s0 r0) (x1 : 𝕄 s1 r1)
   (x2 : rel 𝕄 s2 r2 x0 x1)
   : eq (rel 𝕄 s2 r2 x0 x1)
-      (𝕄_decode s0 s1 s2 r0 r1 r2 x0 x1 (𝕄_encode s0 s1 s2 r0 r1 r2 x0 x1 x2))
-      x2
+      (𝕄_decode s0 s1 s2 r0 r1 r2 x0 x1
+         (𝕄_encode s0 s1 s2 r0 r1 r2 x0 x1 x2)) x2
   ≔ refl_𝕄_ext s0 s1 s2 r0 r1 r2 x0 x1
-      (𝕄_decode s0 s1 s2 r0 r1 r2 x0 x1 (𝕄_encode s0 s1 s2 r0 r1 r2 x0 x1 x2))
-      x2 (𝕄_decode_encode_bisim s0 s1 s2 r0 r1 r2 x0 x1 x2)
+      (𝕄_decode s0 s1 s2 r0 r1 r2 x0 x1
+         (𝕄_encode s0 s1 s2 r0 r1 r2 x0 x1 x2)) x2
+      (𝕄_decode_encode_bisim s0 s1 s2 r0 r1 r2 x0 x1 x2)
 
 def Id_𝕄_iso (s0 s1 : 𝕄_spec) (s2 : Br 𝕄_spec s0 s1) (r0 : s0 .R)
   (r1 : s1 .R) (r2 : s2 .R r0 r1) (x0 : 𝕄 s0 r0) (x1 : 𝕄 s1 r1)
@@ -1042,7 +1054,8 @@ def 𝕗𝕄 (s : 𝕄_spec) (r : s .R) : isFibrant (𝕄 s r) ≔ [
           (s.2 .B r.2 (s.2 .A r.2 .f .liftr (x0 .recv)) .f)
           {b0 ↦ 𝕗𝕄 s.0 (s.0 .k r.0 (x0 .recv) b0)}
           {b1 ↦ 𝕗𝕄 s.1 (s.1 .k r.1 (s.2 .A r.2 .f .trr (x0 .recv)) b1)}
-          (b ⤇ rel 𝕗𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftr (x0 .recv)) b.2))
+          (b ⤇
+           rel 𝕗𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftr (x0 .recv)) b.2))
         .trr (b0 ↦ x0 .send b0)]
 | .trl.p ↦ x1 ↦ [
   | .recv ↦ s.2 .A r.2 .f .trl (x1 .recv)
@@ -1054,7 +1067,8 @@ def 𝕗𝕄 (s : 𝕄_spec) (r : s .R) : isFibrant (𝕄 s r) ≔ [
           (s.2 .B r.2 (s.2 .A r.2 .f .liftl (x1 .recv)) .f)
           {b0 ↦ 𝕗𝕄 s.0 (s.0 .k r.0 (s.2 .A r.2 .f .trl (x1 .recv)) b0)}
           {b1 ↦ 𝕗𝕄 s.1 (s.1 .k r.1 (x1 .recv) b1)}
-          (b ⤇ rel 𝕗𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftl (x1 .recv)) b.2))
+          (b ⤇
+           rel 𝕗𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftl (x1 .recv)) b.2))
         .trl (b1 ↦ x1 .send b1)]
 | .liftr.p ↦ x0 ↦ [
   | .recv ↦ s.2 .A r.2 .f .liftr (x0 .recv)
@@ -1066,7 +1080,8 @@ def 𝕗𝕄 (s : 𝕄_spec) (r : s .R) : isFibrant (𝕄 s r) ≔ [
           (s.2 .B r.2 (s.2 .A r.2 .f .liftr (x0 .recv)) .f)
           {b0 ↦ 𝕗𝕄 s.0 (s.0 .k r.0 (x0 .recv) b0)}
           {b1 ↦ 𝕗𝕄 s.1 (s.1 .k r.1 (s.2 .A r.2 .f .trr (x0 .recv)) b1)}
-          (b ⤇ rel 𝕗𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftr (x0 .recv)) b.2))
+          (b ⤇
+           rel 𝕗𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftr (x0 .recv)) b.2))
         .liftr (b0 ↦ x0 .send b0)]
 | .liftl.p ↦ x1 ↦ [
   | .recv ↦ s.2 .A r.2 .f .liftl (x1 .recv)
@@ -1078,7 +1093,8 @@ def 𝕗𝕄 (s : 𝕄_spec) (r : s .R) : isFibrant (𝕄 s r) ≔ [
           (s.2 .B r.2 (s.2 .A r.2 .f .liftl (x1 .recv)) .f)
           {b0 ↦ 𝕗𝕄 s.0 (s.0 .k r.0 (s.2 .A r.2 .f .trl (x1 .recv)) b0)}
           {b1 ↦ 𝕗𝕄 s.1 (s.1 .k r.1 (x1 .recv) b1)}
-          (b ⤇ rel 𝕗𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftl (x1 .recv)) b.2))
+          (b ⤇
+           rel 𝕗𝕄 s.2 (s.2 .k r.2 (s.2 .A r.2 .f .liftl (x1 .recv)) b.2))
         .liftl (b1 ↦ x1 .send b1)]
 | .id.p ↦ x0 x1 ↦
     𝕗eqv (𝕄 (𝕄_code_spec s.0 s.1 s.2) (r.0, r.1, r.2, x0, x1))

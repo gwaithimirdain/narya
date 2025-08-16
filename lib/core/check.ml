@@ -15,6 +15,7 @@ open Subtype
 open Readback
 open Degctx
 open Printable
+open Unact
 open Asai.Range
 include Status
 
@@ -42,7 +43,8 @@ let rec typefam : type a b.
       | Eq ->
           let newargs, newnfs = dom_vars ctx doms in
           let output = tyof_app cods tyargs newargs in
-          let n, d = typefam ?discrete (Ctx.cube_vis ctx x newnfs) output in
+          let (Any_ctx newctx) = Ctx.variables_vis ctx x newnfs in
+          let n, d = typefam ?discrete newctx output in
           let disc =
             (* For indices of discrete datatypes, we only allow zero-dimensional pi-types. *)
             match D.compare (CubeOf.dim doms) D.zero with
@@ -55,24 +57,28 @@ let rec typefam : type a b.
 let rec motive_of_family : type a b.
     (a, b) Ctx.t -> kinetic value -> kinetic value -> (b, kinetic) term =
  fun ctx tm ty ->
-  let module F = struct
-    type (_, _, _, _) t =
-      | Rbtm : ('left, kinetic) term -> ('left, 'c, 'any, ('left, D.zero) snoc) t
+  let module S = struct
+    type 'a suc = ('a, D.zero) snoc
   end in
-  let module FCube = Icube (F) in
+  let module F = struct
+    type (_, _, _) t = Rbtm : ('left, kinetic) term -> ('left, 'c, 'any) t
+  end in
+  let module FCube = Icube (S) (F) in
   let module C = struct
-    type _ t = Any_ctx : ('a, 'c) Ctx.t -> 'c t
+    type 'b t = 'b Ctx.any
   end in
   let module T = struct
     type 'c t = ('c, kinetic) term
   end in
   let module MC = FCube.Traverse (C) in
   let module MT = FCube.Traverse (T) in
-  let folder : type left m any right.
-      (left, m, any, right) F.t -> right T.t -> left T.t * (left, m, any, right) F.t =
-   fun (Rbtm dom) cod -> (Pi (None, CubeOf.singleton dom, CodCube.singleton cod), Rbtm dom) in
+  let folder : type left m any.
+      (left, m, any) F.t -> (left, D.zero) snoc T.t -> left T.t * (left, m, any) F.t =
+   fun (Rbtm dom) cod ->
+    (Pi (singleton_variables D.zero None, CubeOf.singleton dom, CodCube.singleton cod), Rbtm dom)
+  in
   let builder : type left n m.
-      string option ->
+      n variables ->
       (n, Binding.t) CubeOf.t ->
       (m, n) sface ->
       left C.t ->
@@ -80,13 +86,17 @@ let rec motive_of_family : type a b.
    fun x newnfs fa (Any_ctx ctx) ->
     let v = CubeOf.find newnfs fa in
     let cv = readback_val ctx (Binding.value v).ty in
-    Fwrap (Rbtm cv, Any_ctx (Ctx.cube_vis ctx x (CubeOf.singleton v))) in
+    let (Any_ctx newctx) =
+      (* TODO: In the case of a cube variable, should we be annotating the variables by their face somehow?  *)
+      Ctx.variables_vis ctx (singleton_variables D.zero (find_variable fa x)) (CubeOf.singleton v)
+    in
+    Fwrap (Rbtm cv, Any_ctx newctx) in
   match view_type ty "motive_of_family" with
   | Canonical (_, Pi (x, doms, cods), ins, tyargs) ->
       let Eq = eq_of_ins_zero ins in
       let newvars, newnfs = dom_vars ctx doms in
       let newtm = apply_term tm newvars in
-      (* We extend the context, not by the cube of types of newnfs, but by its elements one at a time as singletons.  This is because we want eventually to construct a 0-dimensional pi-type.  As we go, we also read back thesetypes and store them to later take the pi-type over.  Since they are all in different contexts, and we need to keep track of the type-indexed checked length of those contexts to ensure the later pis are well-typed, we use an indexed cube indexed over Tbwds. *)
+      (* We extend the context, not by the cube of types of newnfs, but by its elements one at a time as singletons.  This is because we want eventually to construct a 0-dimensional pi-type.  As we go, we also read back these types and store them to later take the pi-type over.  Since they are all in different contexts, and we need to keep track of the type-indexed checked length of those contexts to ensure the later pis are well-typed, we use an indexed cube indexed over Tbwds. *)
       let (Wrap (newdoms, Any_ctx newctx)) =
         MC.build_left (CubeOf.dim newnfs)
           { build = (fun fa ctx -> builder x newnfs fa ctx) }
@@ -98,9 +108,10 @@ let rec motive_of_family : type a b.
       (* This is similar, except that we add the datatype itself to the instantiation argument to get the cube of domains, and take a pi over the 0-dimensional universe rather than a recursive call. *)
       let doms = TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm) in
       let _, newnfs = dom_vars ctx doms in
+      let m = CubeOf.dim newnfs in
       let (Wrap (newdoms, _)) =
-        MC.build_left (CubeOf.dim newnfs)
-          { build = (fun fa ctx -> builder None newnfs fa ctx) }
+        MC.build_left m
+          { build = (fun fa ctx -> builder (singleton_variables m None) newnfs fa ctx) }
           (Any_ctx ctx) in
       let motive, _ =
         MT.fold_map_right { foldmap = (fun _ x y -> folder x y) } newdoms (UU D.zero) in
@@ -136,15 +147,25 @@ let vars_of_names : type a c abc n.
 
 (* Slurp up an entire application spine.  Returns the function, and all the arguments, where each argument is paired with the location of its application.  So spine "f x y" would return "f" (located) along with [(location of "f x", "x" (located)); (location of "f x y", "y" (located))]. *)
 let spine : type a.
-    a synth located ->
-    a synth located
-    * (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list =
+    a check located ->
+    a check located
+    * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list =
  fun tm ->
   let rec spine tm args =
     match tm.value with
-    | Raw.App (fn, arg, impl) -> spine fn ((tm.loc, arg, impl) :: args)
+    | Synth (App (fn, arg, impl)) -> spine fn ((tm.loc, arg, impl) :: args)
     | _ -> (tm, args) in
   spine tm []
+
+(* Pull all the actions off of a term and compose them. *)
+let rec actions : type a. a check located option -> any_deg * a check located option =
+ fun tm ->
+  match tm with
+  | Some { value = Synth (Act (_, s, tm)); _ } ->
+      let Any_deg s', tm = actions tm in
+      let (DegExt (_, _, ss')) = comp_deg_extending s' s in
+      (Any_deg ss', tm)
+  | _ -> (Any_deg (id_deg D.zero), tm)
 
 (* Temporarily define a given head (constant or meta) to be a given value, in executing a callback.  However, if an error has occurred earlier in typechecking other parts of it, then instead bind that head to an error value that doesn't allow it to be used. *)
 let run_with_definition : type a c.
@@ -206,12 +227,15 @@ let merge_branches : type a m ij.
           match databr with
           | Some db -> db
           | None -> fatal ?loc (No_such_constructor_in_match (phead head, constr)) in
+        (* Check that the abstraction symbol matches the dimension of the discriminee. *)
+        (match (cube, D.compare_zero (dim_env env)) with
+        | `Normal loc, Pos _ ->
+            fatal ?loc (Noncube_abstraction_in_higher_dimensional_match (dim_env env))
+        | `Normal _, Zero -> ()
+        (* Cube abstractions ⤇ can be used with 0-dimensional discriminees if they're generated as part of a multiple/deep match clause that also includes some higher discriminess.  We check for errors in that when the outer match finishes. *)
+        | `Cube _, Zero -> ()
+        | `Cube bs, Pos _ -> List.iter (fun b -> b.value := true) bs);
         (* We also check during preprocessing that the user has supplied the right number of pattern variable arguments to the constructor.  The positive result of this check is then recorded in the common existential types bound by Checkable_branch. *)
-        (match (cube.value, D.compare_zero (dim_env env)) with
-        | `Normal, Pos _ ->
-            fatal ?loc:cube.loc (Noncube_abstraction_in_higher_dimensional_match (dim_env env))
-        | `Cube, Zero -> fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "match")
-        | `Normal, Zero | `Cube, Pos _ -> ());
         match Fwn.compare (Namevec.length xs) (Telescope.length argtys) with
         | Neq ->
             fatal ?loc
@@ -244,6 +268,9 @@ type (_, _, _) meta_tel =
       string option * ('a, 'b, potential) Meta.t * (('b, D.zero) snoc, 'c, 'bc) meta_tel
       -> ('b, 'c Fwn.suc, 'bc) meta_tel
 
+(* In HOTT mode, the user isn't allowed to define gel-types, so we bail out at typechecking time if we detect one.  However, we do want to allow *ourselves* to define glue as a Gel-type later on, so we start out this flag as true and then set it (permanently) to false later. *)
+let gel_ok = ref true
+
 (* Check a term or case tree (depending on the energy: terms are kinetic, case trees are potential).  The ?discrete parameter is supplied if the term we are currently checking might be a discrete datatype, in which case it is a set of all the currently-being-defined mutual constants.  Most term-formers are nondiscrete, so they can just ignore this argument and make their recursive calls without it. *)
 let rec check : type a b s.
     ?discrete:unit Constant.Map.t ->
@@ -264,32 +291,118 @@ let rec check : type a b s.
     | Synth (Letrec (vtys, vs, body)), _ ->
         let clet, Not_some = synth_or_check_letrec status ctx vtys vs body (Some ty) in
         clet
-    (* An action can always synthesize, but can also check if its degeneracy is a pure permutation, since then the type of the argument can be inferred by applying the inverse permutation to the ambient type. *)
     | Synth (Act (str, fa, x) as stm), _ -> (
-        match perm_of_deg fa with
-        | None -> check_of_synth status ctx stm tm.loc ty
-        | Some pfa ->
+        (* An action can always synthesize, but can usually also check. *)
+        match (perm_of_deg fa, x) with
+        | Some pfa, Some x -> (
+            (* It can check if its degeneracy is a pure permutation, since then the type of the argument can be inferred by applying the inverse permutation to the ambient type. *)
             let fainv = deg_of_perm (perm_inv pfa) in
-            Reporter.try_with ~fatal:(fun d ->
-                (* If the user has given a symmetrized term that synthesizes but doesn't match the checking type, we want the error reported to be Unequal_synthesized_type.  So we fall back to synthesizing if the checking type doesn't symmetrize.  *)
-                match d.message with
-                | Low_dimensional_argument_of_degeneracy _ ->
+            match
+              Reporter.try_with ~fatal:(fun d ->
+                  (* If the user has given a symmetrized term that synthesizes but doesn't match the checking type, we want the error reported to be Unequal_synthesized_type.  So we fall back to synthesizing if the checking type doesn't symmetrize.  *)
+                  match d.message with
+                  | Low_dimensional_argument_of_degeneracy _ -> Error d
+                  | _ -> fatal_diagnostic d)
+              @@ fun () -> Ok (gact_ty None ty fainv ~err:(low_dim_arg_err str.value))
+            with
+            | Error nosynth ->
+                (* However, if the given term *doesn't* synthesize, we want to report the low-dimensional error, so we pass that diagnostic on. *)
+                check_of_synth ~nosynth status ctx stm tm.loc ty
+            | Ok ty_fainv ->
+                (* A pure permutation shouldn't ever be locking, but we may as well keep this here for consistency.  *)
+                let ctx = if locking fa then Ctx.lock ctx else ctx in
+                let cx = check (Kinetic `Nolet) ctx x ty_fainv in
+                realize status
+                  (Term.Act (cx, fa, (sort_of_ty ctx (view_type ty "checking act"), `Other))))
+        | Some _, None -> fatal (Nonsynthesizing "pure symmetry of placeholder")
+        | None, _ -> (
+            (* It can also check if it is *not* a permutation and the arity is positive, since then we can extract the needed type of its argument from the boundary of the type it is checking against. *)
+            let (Full_tube tyargs) = get_tyargs ty "type of checking degeneracy" in
+            match factor (TubeOf.inst tyargs) (dom_deg fa) with
+            | None ->
+                (* Again, in this case, if the term synthesizes, we want the error reported to be Unequal_synthesized_type.  So we fall back to synthesizing if the checking type doesn't symmetrize, reporting the low-dimensional error in case of a failure to synthesize. *)
+                let nosynth =
+                  diagnostic
+                    ((low_dim_ty_err str.value).make ~got:(TubeOf.inst tyargs) ~needed:(dom_deg fa))
+                in
+                check_of_synth ~nosynth status ctx stm tm.loc ty
+            | Some (Factor nk) -> (
+                let (Plus mk) = D.plus (D.plus_right nk) in
+                let fa = deg_plus fa mk nk in
+                match section_of_deg fa with
+                | None ->
+                    (* If the arity is zero, we just give up and try to synthesize. *)
                     check_of_synth status ctx stm tm.loc ty
-                | _ -> fatal_diagnostic d)
-            @@ fun () ->
-            let ty_fainv =
-              gact_ty None ty fainv ~err:(Low_dimensional_argument_of_degeneracy (str, cod_deg fa))
-            in
-            (* A pure permutation shouldn't ever be locking, but we may as well keep this here for consistency.  *)
-            let ctx = if locking fa then Ctx.lock ctx else ctx in
-            let cx = check (Kinetic `Nolet) ctx x ty_fainv in
-            realize status (Term.Act (cx, fa)))
-    | Lam { name = { value = x; loc = xloc }; cube; body }, _ -> (
+                | Some (Face (fs, fp)) -> (
+                    match pface_of_sface fs with
+                    | `Id _ ->
+                        fatal (Anomaly "non-permutation degeneracy doesn't have a proper section")
+                    | `Proper fs -> (
+                        let arg = TubeOf.find tyargs fs in
+                        let sxty = arg.ty in
+                        let xty =
+                          gact_ty
+                            ~err:(anomaly_dim_err "dimension confusion in checking degeneracy")
+                            None sxty (deg_of_perm fp) in
+                        let ctx = if locking fa then Ctx.lock ctx else ctx in
+                        let cx, xloc =
+                          match x with
+                          | Some x -> (check (Kinetic `Nolet) ctx x xty, x.loc)
+                          | None -> (readback_nf ctx arg, None) in
+                        (* We also have to check that the rest of the output type is correct. *)
+                        let ex = eval_term (Ctx.env ctx) cx in
+                        let sty =
+                          with_loc xloc @@ fun () ->
+                          act_ty ex xty fa ~err:(low_dim_arg_err str.value) in
+                        match subtype_of ctx sty ty with
+                        | Ok () ->
+                            realize status
+                              (Term.Act
+                                 (cx, fa, (sort_of_ty ctx (view_type ty "checking act"), `Other)))
+                        | Error why ->
+                            fatal
+                              (Unequal_synthesized_type
+                                 {
+                                   got = PVal (ctx, sty);
+                                   expected = PVal (ctx, ty);
+                                   which = None;
+                                   why;
+                                 }))))))
+    (* Similarly, an application can always synthesize, but can also check, as a non-dependent application, if enough domains are ascribed or arguments are synthesizing. *)
+    | Synth (App _), _ -> (
+        let fn, args = spine tm in
+        let ctm, sty = synth_or_check_apps ctx fn args (Some ty) in
+        (* We still have to check that the synthesized type is correct, as in check_of_synth. *)
+        match subtype_of ctx sty ty with
+        | Ok () -> realize status ctm
+        | Error why ->
+            fatal
+              (Unequal_synthesized_type
+                 { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why }))
+    | Lam { name = { value = x; loc = xloc }; cube; implicit; dom; body }, _ -> (
         match view_type ~severity ty "typechecking lambda" with
         | Canonical (_, Pi (_, doms, cods), ins, tyargs) -> (
             let Eq = eq_of_ins_zero ins in
             (* TODO: Move this into a helper function, it's too long to go in here. *)
             let m = CubeOf.dim doms in
+            (* If the domain was supplied, it must be a zero-dimensional lambda and it must match the checking domain, or at least contain it as a subtype (contravariance!). *)
+            (match (dom, D.compare_zero m) with
+            | Some _, Pos _ -> fatal (Unimplemented "domain-ascribed higher abstractions")
+            | Some dom, Zero -> (
+                let cdom = check (Kinetic `Nolet) ctx dom (universe D.zero) in
+                let edom = eval_term (Ctx.env ctx) cdom in
+                match subtype_of ctx (CubeOf.find_top doms) edom with
+                | Ok () -> ()
+                | Error why ->
+                    fatal ?loc:dom.loc
+                      (Unequal_synthesized_type
+                         {
+                           got = PVal (ctx, edom);
+                           expected = PVal (ctx, CubeOf.find_top doms);
+                           which = None;
+                           why;
+                         }))
+            | _ -> ());
             (* A zero-dimensional parameter that is a discrete type doesn't block discreteness, but others do. *)
             let discrete =
               match D.compare m D.zero with
@@ -308,7 +421,7 @@ let rec check : type a b s.
             (* Apply and instantiate the codomain to those arguments to get a type to check the body at. *)
             let output = tyof_app cods tyargs newargs in
             match cube.value with
-            (* If the abstraction is a cube, we slurp up the right number of lambdas for the dimension of the pi-type, and pick up the body inside them.  We do this by building a cube of variables of the right dimension while maintaining the current term as an indexed state.  We also build a sum of raw lengths, since we need that to extend the context.  Note that we never need to manually "count" how many faces there are in a cube of any dimension, or discuss how to put them in order: the counting and ordering is handled automatically by iterating through a cube. *)
+            (* If the abstraction is not a cube, we slurp up the right number of lambdas for the dimension of the pi-type, requiring all but the top variable to be {implicit}, and pick up the body inside them.  We do this by building a cube of variables of the right dimension while maintaining the current term as an indexed state.  We also build a sum of raw lengths, since we need that to extend the context.  Note that we never need to manually "count" how many faces there are in a cube of any dimension, or discuss how to put them in order: the counting and ordering is handled automatically by iterating through a cube. *)
             | `Normal -> (
                 let module S = struct
                   type 'b t =
@@ -320,9 +433,31 @@ let rec check : type a b s.
                   Build.build_left m
                     {
                       build =
-                        (fun _ -> function
-                          | Ok (ab, { value = Lam { name; cube = { value = `Normal; _ }; body }; _ })
-                            -> Fwrap (NFamOf name.value, Ok (Suc ab, body))
+                        (fun fa -> function
+                          | Ok
+                              ( ab,
+                                {
+                                  value =
+                                    Lam
+                                      {
+                                        name;
+                                        cube = { value = `Normal; _ };
+                                        implicit;
+                                        dom = _;
+                                        body;
+                                      };
+                                  _;
+                                } ) -> (
+                              match (is_id_sface fa, implicit) with
+                              | Some _, `Implicit ->
+                                  fatal ?loc:name.loc
+                                    (Unexpected_implicitness
+                                       (`Implicit, "abstraction", "expecting explicit variable"))
+                              | None, `Explicit ->
+                                  fatal ?loc:name.loc
+                                    (Unexpected_implicitness
+                                       (`Explicit, "abstraction", "expecting implicit variable"))
+                              | _ -> Fwrap (NFamOf name.value, Ok (Suc ab, body)))
                           | Ok (_, _) -> Fwrap (NFamOf None, Missing 1)
                           | Missing j -> Fwrap (NFamOf None, Missing (j + 1)));
                     }
@@ -334,9 +469,10 @@ let rec check : type a b s.
                     Lam (xs, check ?discrete (mkstatus xs status) ctx body output)
                 | Wrap (_, Missing j) -> fatal ?loc:cube.loc (Not_enough_lambdas j))
             | `Cube absdim -> (
-                match D.compare_zero m with
-                | Zero -> fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "function")
-                | Pos _ ->
+                match (D.compare_zero m, implicit) with
+                | Zero, _ -> fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "function")
+                | _, `Implicit -> fatal (Unimplemented "general implicit functions")
+                | Pos _, `Explicit ->
                     (match !absdim with
                     | None -> absdim := Some (Wrap m, xloc)
                     | Some (Wrap m', xloc') -> (
@@ -436,6 +572,24 @@ let rec check : type a b s.
                       [ t1s; t2s ])
                   [ constr_indices; ty_indices ];
                 realize status (Term.Constr (constr, dim, newargs)))
+        (* A constructor can also check at a function-type by eta-expansion. *)
+        | Canonical (_, Pi (x, _, _), _, _) ->
+            let name = locate_opt None (top_variable x) in
+            let cube, fa =
+              match D.compare_zero (dim_variables x) with
+              | Zero -> (locate_opt None `Normal, None)
+              | Pos _ ->
+                  (locate_opt None (`Cube (ref None)), Some (Any_sface (id_sface (dim_variables x))))
+            in
+            let args =
+              List.fold_right
+                (fun arg acc -> locate_opt arg.loc (Weaken (arg.value, Eq)) :: acc)
+                args
+                [ locate_opt None (Synth (Var (Top, fa))) ] in
+            let body = locate_opt tm.loc (Constr ({ value = constr; loc = constr_loc }, args)) in
+            check ?discrete status ctx
+              (locate_opt tm.loc (Lam { name; cube; implicit = `Explicit; dom = None; body }))
+              ty
         | _ -> fatal (No_such_constructor (`Other (PVal (ctx, ty)), constr)))
     | Numeral n, _ ->
         if n.num < Z.zero then fatal (Anomaly "negative numeral");
@@ -462,11 +616,11 @@ let rec check : type a b s.
           else { value = Raw.Constr (quot, [ process_nat n.num; process_pos n.den ]); loc = tm.loc }
         in
         check ?discrete status ctx numeral ty
-    | Synth (Match { tm; sort = `Implicit; branches; refutables }), Potential _ ->
-        check_implicit_match status ctx tm branches refutables ty
-    | Synth (Match { tm; sort = `Nondep i; branches; refutables = _ }), Potential _ ->
+    | Synth (Match { tm; sort = `Implicit; branches; refutables; highers }), Potential _ ->
+        check_implicit_match status ctx tm branches refutables highers ty
+    | Synth (Match { tm; sort = `Nondep i; branches; refutables = _; highers }), Potential _ ->
         let stm, sty = synth (Kinetic `Nolet) ctx tm in
-        check_nondep_match status ctx stm sty branches (Some i) ty tm.loc
+        check_nondep_match status ctx stm sty branches (Some i) highers ty tm.loc
     (* We don't need to deal with `Explicit matches here, since they can always synthesize a type and hence be caught by the catch-all for checking synthesizing terms, below. *)
     (* Checking [] at a pi-type interprets it as a pattern-matching lambda over some empty datatype. *)
     | Empty_co_match, _ -> (
@@ -479,8 +633,8 @@ let rec check : type a b s.
     | Codata fields, Potential (head, apps, _) -> (
         match view_type ~severity ty "typechecking codata" with
         | Canonical (_, UU dim, ins, tyargs) -> (
-            match (D.compare_zero dim, Endpoints.hott ()) with
-            | Pos _, Some _ ->
+            match (D.compare_zero dim, Endpoints.hott (), !gel_ok) with
+            | Pos _, Some _, false ->
                 fatal (Unimplemented "general higher-dimensional types in HOTT: use glue")
             | _ ->
                 let Eq = eq_of_ins_zero ins in
@@ -502,8 +656,8 @@ let rec check : type a b s.
     | Record (xs, fields, opacity), Potential (head, apps, _) -> (
         match view_type ~severity ty "typechecking record" with
         | Canonical (_, UU dim, ins, tyargs) -> (
-            match (D.compare_zero dim, Endpoints.hott ()) with
-            | Pos _, Some _ ->
+            match (D.compare_zero dim, Endpoints.hott (), !gel_ok) with
+            | Pos _, Some _, false ->
                 fatal (Unimplemented "general higher-dimensional types in HOTT: use glue")
             | _ ->
                 let Eq = eq_of_ins_zero ins in
@@ -567,8 +721,13 @@ let rec check : type a b s.
                       match args with
                       | _ :: _ ->
                           let args =
-                            List.map (fun (l, x) -> (l, x, locate_opt None `Explicit)) args in
-                          synth_apps (Kinetic `Nolet) ctx new_sfn new_sty fn args
+                            List.map
+                              (fun (l, x) ->
+                                (l, { value = Some x.value; loc = x.loc }, locate_opt None `Explicit))
+                              args in
+                          synth_apps ctx new_sfn new_sty
+                            { value = Synth fn.value; loc = fn.loc }
+                            args
                       | _ -> (new_sfn.value, new_sty) in
                     (* Then we have to check that the resulting type of the whole application agrees with the one we're checking against. *)
                     match equal_val ctx sty ty with
@@ -629,7 +788,12 @@ let rec check : type a b s.
             match status with
             | Kinetic _ -> ctm
             | Potential _ -> Realize ctm)
-        | Error err -> fatal err) in
+        | Error err -> fatal err)
+    | Weaken (body, Eq), _ -> (
+        match Ctx.pop ctx with
+        | Ok (Pop (ctx, Eq, Eq)) ->
+            Weaken (check ?discrete (pop_status status) ctx (locate_opt tm.loc body) ty)
+        | Error e -> fatal (Anomaly ("failed to weaken raw term: " ^ e))) in
   with_loc tm.loc @@ fun () ->
   Annotate.ctx status ctx tm;
   Annotate.ty ctx ty;
@@ -639,9 +803,14 @@ let rec check : type a b s.
 
 (* Deal with a synthesizing term in checking position. *)
 and check_of_synth : type a b s.
-    (b, s) status -> (a, b) Ctx.t -> a synth -> Asai.Range.t option -> kinetic value -> (b, s) term
-    =
- fun status ctx stm loc ty ->
+    ?nosynth:Code.t Asai.Diagnostic.t ->
+    (b, s) status ->
+    (a, b) Ctx.t ->
+    a synth ->
+    Asai.Range.t option ->
+    kinetic value ->
+    (b, s) term =
+ fun ?nosynth status ctx stm loc ty ->
   match stm with
   | Asc (ctm, aty) -> (
       (* If the term is synthesizing because it is ascribed, then we can accumulate errors: if the ascription fails to check, or if it fails to equal the checking type, we can proceed to check the ascribed term against the supplied type instead.  This will rarely happen in normal use, since there is no need to ascribe a term that's in checking position, but it can occur with some alternative frontends. *)
@@ -662,7 +831,7 @@ and check_of_synth : type a b s.
             (Unequal_synthesized_type
                { got = PVal (ctx, ety); expected = PVal (ctx, ty); which = None; why }))
   | _ -> (
-      let sval, sty = synth status ctx { value = stm; loc } in
+      let sval, sty = synth ?nosynth status ctx { value = stm; loc } in
       (* It suffices for the synthesized type to be a subtype of the checking type. *)
       match subtype_of ctx sty ty with
       | Ok () -> sval
@@ -698,6 +867,7 @@ and kinetic_of_potential : type a b.
       Term.Meta (meta, Kinetic)
 
 and synth_or_check_let : type a b s p.
+    ?nosynth:Code.t Asai.Diagnostic.t ->
     (b, s) status ->
     (a, b) Ctx.t ->
     string option ->
@@ -705,7 +875,7 @@ and synth_or_check_let : type a b s p.
     a N.suc check located ->
     (kinetic value, p) Perhaps.t ->
     (b, s) term * (kinetic value, p) Perhaps.not =
- fun status ctx name v body ty ->
+ fun ?nosynth status ctx name v body ty ->
   let v, nf =
     try
       (* We first try checking the bound term first as an ordinary kinetic term. *)
@@ -763,9 +933,10 @@ and synth_or_check_let : type a b s p.
   | None, { value = Synth body; loc } ->
       let sbody, sbodyty = synth status newctx { value = body; loc } in
       (Term.Let (name, v, sbody), Not_none sbodyty)
-  | None, _ -> fatal (Nonsynthesizing "let-expression without synthesizing body")
+  | None, _ -> fatal_or nosynth (Nonsynthesizing "let-expression without synthesizing body")
 
 and synth_or_check_letrec : type a b c ac s p.
+    ?nosynth:Code.t Asai.Diagnostic.t ->
     (b, s) status ->
     (a, b) Ctx.t ->
     (a, c, ac) Raw.tel ->
@@ -773,7 +944,7 @@ and synth_or_check_letrec : type a b c ac s p.
     ac check located ->
     (kinetic value, p) Perhaps.t ->
     (b, s) term * (kinetic value, p) Perhaps.not =
- fun status ctx rvtys vtms body ty ->
+ fun ?nosynth status ctx rvtys vtms body ty ->
   (* First we check the types of all the bound variables, which are a telescope since each can depend on the previous ones. *)
   let Checked_tel (type bc) ((vtys, _) : (_, _, bc) Telescope.t * (_, bc) Ctx.t), _ =
     check_tel ctx rvtys in
@@ -798,7 +969,7 @@ and synth_or_check_letrec : type a b c ac s p.
   | None, { value = Synth body; loc } ->
       let sbody, sbodyty = synth status newctx { value = body; loc } in
       (let_metas metas sbody, Not_none sbodyty)
-  | None, _ -> fatal (Nonsynthesizing "let-expression without synthesizing body")
+  | None, _ -> fatal_or nosynth (Nonsynthesizing "let-expression without synthesizing body")
 
 and check_letrec_bindings : type a xc b ac bc.
     (a, b) Ctx.t ->
@@ -898,9 +1069,10 @@ and check_implicit_match : type a b.
     a synth located ->
     (Constr.t, a branch) Abwd.t ->
     a refutables option ->
+    bool ref located list ->
     kinetic value ->
     (b, potential) term =
- fun status ctx tm brs refutables motive ->
+ fun status ctx tm brs refutables highers motive ->
   match tm with
   (* For a variable match, the variable must not be let-bound to a value or be a field access variable.  Checking that it isn't also gives us its De Bruijn level, its type, and its checked-index.  If it's not a free variable, or if we're not in a case tree or if the motive was supplied explicitly, we obtain its value and type; then we pass on to the appropriate checking function. *)
   | { value = Var ix; loc } -> (
@@ -908,20 +1080,20 @@ and check_implicit_match : type a b.
       | `Field (_, _, fld) ->
           emit ?loc (Matching_wont_refine ("discriminee is record field", Some (PField fld)));
           let stm, varty = synth (Kinetic `Nolet) ctx tm in
-          check_nondep_match status ctx stm varty brs None motive tm.loc
+          check_nondep_match status ctx stm varty brs None highers motive tm.loc
       | `Var (None, _, ix) ->
           emit ?loc (Matching_wont_refine ("discriminee is let-bound", Some (PTerm (ctx, Var ix))));
           let stm, varty = synth (Kinetic `Nolet) ctx tm in
-          check_nondep_match status ctx stm varty brs None motive tm.loc
+          check_nondep_match status ctx stm varty brs None highers motive tm.loc
       | `Var (Some level, { tm = _; ty = varty }, index) ->
           with_loc loc (fun () ->
               Annotate.ctx status ctx (locate_opt loc (Synth (Var ix)));
               Annotate.ty ctx varty;
               Annotate.tm ctx (realize status (Term.Var index)));
-          check_var_match status ctx level index varty brs refutables motive loc)
+          check_var_match status ctx level index varty brs refutables highers motive loc)
   | _ ->
       let stm, varty = synth (Kinetic `Nolet) ctx tm in
-      check_nondep_match status ctx stm varty brs None motive tm.loc
+      check_nondep_match status ctx stm varty brs None highers motive tm.loc
 
 (* Check a non-dependent match against a specified type. *)
 and check_nondep_match : type a b.
@@ -931,10 +1103,11 @@ and check_nondep_match : type a b.
     kinetic value ->
     (Constr.t, a branch) Abwd.t ->
     int located option ->
+    bool ref located list ->
     kinetic value ->
     Asai.Range.t option ->
     (b, potential) term =
- fun status ctx tm varty brs i motive loc ->
+ fun status ctx tm varty brs i highers motive loc ->
   (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
   match view_type varty "check_nondep_match" with
   | Canonical
@@ -985,7 +1158,12 @@ and check_nondep_match : type a b.
           (Constr.Map.empty, Emp) user_branches in
       match errs with
       | Snoc _ -> fatal (Accumulated ("check_nondep_match", errs))
-      | Emp -> Match { tm; dim; branches })
+      | Emp ->
+          List.iter
+            (fun b ->
+              if not !(b.value) then fatal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
+            highers;
+          Match { tm; dim; branches })
   | _ -> fatal ?loc (Matching_on_nondatatype (PVal (ctx, varty)))
 
 (* Try to synthesize a type from all the branches.  If any succeed, check the remaining branches against that synthesized type. *)
@@ -994,9 +1172,10 @@ and synth_nondep_match : type a b.
     (a, b) Ctx.t ->
     a synth located ->
     (Constr.t, a branch) Abwd.t ->
+    bool ref located list ->
     int located option ->
     (b, potential) term * kinetic value =
- fun status ctx tm brs i ->
+ fun status ctx tm brs highers i ->
   (* First we synthesize the discriminee.  If that fails, we give up completely, as we don't even have a context in which to try synthesizing the branches. *)
   let (tm, varty), loc = (synth (Kinetic `Nolet) ctx tm, tm.loc) in
   (* The preprocessing is the same as in check_nondep_match; see there for comments. *)
@@ -1101,7 +1280,12 @@ and synth_nondep_match : type a b.
       match (errs, motive) with
       | Snoc _, _ -> fatal (Accumulated ("synth_nondep_match", errs))
       | Emp, None -> fatal (Anomaly "no synthesized type of match but no errors")
-      | Emp, Some motive -> (Match { tm; dim; branches }, motive))
+      | Emp, Some motive ->
+          List.iter
+            (fun b ->
+              if not !(b.value) then fatal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
+            highers;
+          (Match { tm; dim; branches }, motive))
   | _ -> fatal ?loc (Matching_on_nondatatype (PVal (ctx, varty)))
 
 (* Check a dependently typed match, with motive supplied by the user.  (Thus we have to typecheck the motive as well.) *)
@@ -1110,9 +1294,10 @@ and synth_dep_match : type a b.
     (a, b) Ctx.t ->
     a synth located ->
     (Constr.t, a branch) Abwd.t ->
+    bool ref located list ->
     a check located ->
     (b, potential) term * kinetic value =
- fun status ctx tm brs motive ->
+ fun status ctx tm brs highers motive ->
   let module S = Monad.State (struct
     type t = kinetic value
   end) in
@@ -1200,6 +1385,10 @@ and synth_dep_match : type a b.
                  { it = (fun _ [ x ] fn -> ((), apply_term fn (CubeOf.singleton x.tm))) }
                  [ inst_args ] result) in
           let result = apply_term result (CubeOf.singleton (eval_term (Ctx.env ctx) ctm)) in
+          List.iter
+            (fun b ->
+              if not !(b.value) then fatal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
+            highers;
           (* We readback the result so we can store it in the term, so that when evaluating it we know what its type must be without having to do all the work again. *)
           (Match { tm = ctm; dim; branches }, result))
   | _ -> fatal ?loc:tm.loc (Matching_on_nondatatype (PVal (ctx, varty)))
@@ -1213,10 +1402,11 @@ and check_var_match : type a b.
     kinetic value ->
     (Constr.t, a branch) Abwd.t ->
     a refutables option ->
+    bool ref located list ->
     kinetic value ->
     Asai.Range.t option ->
     (b, potential) term =
- fun status ctx level index varty brs refutables motive loc ->
+ fun status ctx level index varty brs refutables highers motive loc ->
   (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
   match view_type varty "check_var_match" with
   | Canonical
@@ -1269,11 +1459,11 @@ and check_var_match : type a b.
           match d.message with
           | Matching_wont_refine (str, x) ->
               emit ?loc:d.explanation.loc (Matching_wont_refine (str, x));
-              check_nondep_match status ctx (Term.Var index) varty brs None motive loc
+              check_nondep_match status ctx (Term.Var index) varty brs None highers motive loc
           | No_such_level x ->
               emit ?loc:d.explanation.loc
                 (Matching_wont_refine ("index variable occurs in parameter", Some x));
-              check_nondep_match status ctx (Term.Var index) varty brs None motive loc
+              check_nondep_match status ctx (Term.Var index) varty brs None highers motive loc
           | _ -> fatal_diagnostic d)
       @@ fun () ->
       let index_vars =
@@ -1373,14 +1563,10 @@ and check_var_match : type a b.
                         (* The type of the match must be specialized in the branches by substituting different constructors for the match variable, as well as the index values for the index variables, and lower-dimensional versions of each constructor for the instantiation variables.  Thus, we readback-eval this type into the new context, to obtain the type at which the branch body will be checked. *)
                         let newty = eval_term (Ctx.env newctx) (readback_val oldctx motive) in
                         (* Now we have to modify the "status" data by readback-eval on the arguments and adding a hypothesized current branch to the match.  *)
-                        let eval_readback_args x =
-                          let tm = eval_term (Ctx.env newctx) (readback_nf oldctx x) in
-                          let ty = eval_term (Ctx.env newctx) (readback_val oldctx x.ty) in
-                          { tm; ty } in
-                        let perm = checked_perm in
                         let status =
                           make_match_status status (Term.Var index) dim branches efc
-                            (Some eval_readback_args) perm constr in
+                            (Some (oldctx, newctx))
+                            checked_perm constr in
                         (* Finally, we typecheck the "body" of the branch, if the user supplied one. *)
                         match body with
                         | Some body ->
@@ -1391,7 +1577,8 @@ and check_var_match : type a b.
                                 | _ -> (branches, Snoc (errs, e)))
                             @@ fun () ->
                             let branch = check status newctx body newty in
-                            ( branches |> Constr.Map.add constr (Term.Branch (efc, perm, branch)),
+                            ( branches
+                              |> Constr.Map.add constr (Term.Branch (efc, checked_perm, branch)),
                               errs )
                         (* If not, then we look for something to refute. *)
                         | None ->
@@ -1417,36 +1604,66 @@ and check_var_match : type a b.
           (Constr.Map.empty, Emp) user_branches in
       match errs with
       | Snoc _ -> fatal (Accumulated ("check_var_match", errs))
-      | Emp -> Match { tm = Term.Var index; dim; branches })
+      | Emp ->
+          List.iter
+            (fun b ->
+              if not !(b.value) then fatal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
+            highers;
+          Match { tm = Term.Var index; dim; branches })
   | _ -> fatal ?loc (Matching_on_nondatatype (PVal (ctx, varty)))
 
-and make_match_status : type a b ab c n.
+and make_match_status : type a b ab c n x y z.
     (a, potential) status ->
     (a, kinetic) term ->
     n D.t ->
     (a, n) Term.branch Constr.Map.t ->
     (a, b, n, ab) Tbwd.snocs ->
-    (normal -> normal) option ->
+    ((x, z) Ctx.t * (y, z) Ctx.t) option ->
     (c, ab) Tbwd.permute ->
     Constr.t ->
     (c, potential) status =
  fun status newtm dim branches efc eval_readback perm constr ->
-  let (Potential (c, args, hyp)) = status in
-  let args =
+  let (Potential
+         (type d any)
+         ((head, args, hyp) :
+           d potential_head * any apps * ((a, potential) term -> (d, potential) term))) =
+    status in
+  let head, apps =
     match eval_readback with
-    | Some eval_readback ->
+    | Some (oldctx, newctx) ->
+        let newenv = Ctx.env newctx in
         let rec erapps : type any. any apps -> any apps = function
           | Emp -> Emp
           | Arg (rest, xs, ins) ->
-              Arg (erapps rest, CubeOf.mmap { map = (fun _ [ x ] -> eval_readback x) } [ xs ], ins)
+              Arg
+                ( erapps rest,
+                  CubeOf.mmap
+                    {
+                      map =
+                        (fun _ [ x ] ->
+                          let tm = eval_term newenv (readback_nf oldctx x) in
+                          let ty = eval_term newenv (readback_val oldctx x.ty) in
+                          { tm; ty });
+                    }
+                    [ xs ],
+                  ins )
           | Field (rest, x, y, z) -> Field (erapps rest, x, y, z)
           | Inst _ -> fatal (Anomaly "inst in make_match_status") in
-        erapps args
-    | None -> args in
+        let (erhead : d potential_head) =
+          match head with
+          | Meta (meta, metaenv) ->
+              Meta
+                ( meta,
+                  eval_env newenv
+                    (D.zero_plus (dim_env metaenv))
+                    (readback_env oldctx metaenv (Global.find_meta meta).termctx) )
+          | Constant (c, dim) -> Constant (c, dim) in
+        (erhead, erapps args)
+    | None -> (head, args) in
   let hyp tm =
     let branches = branches |> Constr.Map.add constr (Term.Branch (efc, perm, tm)) in
     hyp (Term.Match { tm = newtm; dim; branches }) in
-  Potential (c, args, hyp)
+  Potential (head, apps, hyp)
 
 (* Try matching against all the supplied terms with zero branches, producing an empty match if any succeeds and raising an error if none succeed. *)
 and check_refute : type a b.
@@ -1467,7 +1684,7 @@ and check_refute : type a b.
   | [ tm ] ->
       let stm, sty = synth (Kinetic `Nolet) ctx tm in
       Reporter.try_with
-        (fun () -> check_nondep_match status ctx stm sty Emp None ty tm.loc)
+        (fun () -> check_nondep_match status ctx stm sty Emp None [] ty tm.loc)
         ~fatal:(fun d ->
           match d.message with
           | Missing_constructor_in_match c -> (
@@ -1479,14 +1696,14 @@ and check_refute : type a b.
   | tm :: (_ :: _ as tms) ->
       let stm, sty = synth (Kinetic `Nolet) ctx tm in
       Reporter.try_with
-        (fun () -> check_nondep_match status ctx stm sty Emp None ty tm.loc)
+        (fun () -> check_nondep_match status ctx stm sty Emp None [] ty tm.loc)
         ~fatal:(fun d ->
           match d.message with
           | Missing_constructor_in_match c ->
               check_refute status ctx tms ty i (Some (Option.value missing ~default:c))
           | _ -> fatal_diagnostic d)
 
-(* Try empty-matching against each successive domain in an iterated pi-type. *)
+(* Try empty-matching against each successive domain in an iterated pi-type.  For higher-dimensional pi-types, try empty-matching against each variable in the abstraction cube. *)
 and check_empty_match_lam : type a b.
     (a, b) Ctx.t -> kinetic value -> [ `First | `Notfirst ] -> (b, potential) term =
  fun ctx ty first ->
@@ -1704,7 +1921,9 @@ and with_codata_so_far : type a b n c et.
         (CubeOf.build dim { build = (fun _ -> Ctx.Binding.error (Accumulated (msg, Emp))) }, None)
   in
   let codataterm =
-    Term.Canonical (Codata { eta; opacity; dim; fields = checked_fields; termctx; fibrancy }) in
+    Term.Canonical
+      (Codata { eta; opacity; dim; fields = checked_fields; termctx; fibrancy; is_glue = None })
+  in
   run_with_definition h (hyp codataterm) errs @@ fun () -> cont domvars codataterm
 
 and check_codata : type a b n.
@@ -1734,6 +1953,7 @@ and check_codata : type a b n.
       let newctx = Ctx.cube_vis ctx x domvars in
       match (D.compare_zero (Field.dim fld), D.compare_zero (TubeOf.inst tyargs)) with
       | Zero, _ ->
+          (* Zero-dimensional field *)
           let checked_fields, fibrancy, errs =
             Reporter.try_with ~fatal:(fun e -> (checked_fields, fibrancy, Snoc (errs, e)))
             @@ fun () ->
@@ -1743,10 +1963,10 @@ and check_codata : type a b n.
             (Snoc (checked_fields, entry), Fibrancy.Codata.add_field fibrancy entry, errs) in
           check_codata status ctx tyargs checked_fields fibrancy raw_fields errs ~has_higher_fields
       | Pos _, Zero ->
-          let (Degctx (plusmap, degctx, _)) = degctx newctx (Field.dim fld) in
+          (* Higher-dimensional field, currently requires a zero-dimensional codatatype (non-Gel). *)
           let checked_fields, errs =
             Reporter.try_with ~fatal:(fun e -> (checked_fields, Snoc (errs, e))) @@ fun () ->
-            (* Note the type of each field is checked *kinetically*: it's not part of the case tree. *)
+            let (Degctx (plusmap, degctx, _)) = degctx newctx (Field.dim fld) in
             let cty = check (Kinetic `Nolet) degctx rty (universe D.zero) in
             (Snoc (checked_fields, Entry (fld, Codatafield.Higher (plusmap, cty))), errs) in
           check_codata status ctx tyargs checked_fields fibrancy raw_fields errs ~has_higher_fields
@@ -1775,7 +1995,8 @@ and check_record : type a f1 f2 f af d acd b n.
       | Snoc _ -> fatal (Accumulated ("check_record", errs))
       | Emp ->
           let fields, Fibrancy fibrancy = (checked_fields, fibrancy) in
-          Term.Canonical (Codata { eta = Eta; opacity; dim; fields; termctx = None; fibrancy }))
+          Term.Canonical
+            (Codata { eta = Eta; opacity; dim; fields; termctx = None; fibrancy; is_glue = None }))
   | Ext (None, _, _) -> fatal (Anomaly "unnamed field in check_record")
   | Ext (Some name, rty, raw_fields) ->
       with_codata_so_far status Eta ctx opacity dim tyargs checked_fields fibrancy
@@ -2190,8 +2411,12 @@ and check_higher_field : type a b c d m i ic0.
         errs
 
 and synth : type a b s.
-    (b, s) status -> (a, b) Ctx.t -> a synth located -> (b, s) term * kinetic value =
- fun status ctx tm ->
+    ?nosynth:Code.t Asai.Diagnostic.t ->
+    (b, s) status ->
+    (a, b) Ctx.t ->
+    a synth located ->
+    (b, s) term * kinetic value =
+ fun ?nosynth status ctx tm ->
   let go () =
     match (tm.value, status) with
     | Var i, _ -> (
@@ -2224,26 +2449,220 @@ and synth : type a b s.
         (realize status (Field (stm, fld, ins)), newty)
     | UU, _ -> (realize status (Term.UU D.zero), universe D.zero)
     | Pi (x, dom, cod), _ ->
-        (* User-level pi-types are always dimension zero, so the domain must be a zero-dimensional type. *)
+        (* These user-level pi-types are always dimension zero, so the domain must be a zero-dimensional type. *)
         let cdom = check (Kinetic `Nolet) ctx dom (universe D.zero) in
         let edom = eval_term (Ctx.env ctx) cdom in
         let ccod = check (Kinetic `Nolet) (Ctx.ext ctx x edom) cod (universe D.zero) in
-        (realize status (pi x cdom ccod), universe D.zero)
+        (realize status (pi (singleton_variables D.zero x) cdom ccod), universe D.zero)
+    | HigherPi (x, dom, cod), _ -> (
+        let cdom, domty = synth (Kinetic `Nolet) ctx dom in
+        let edom = eval_term (Ctx.env ctx) cdom in
+        match view_type domty "higher pi domain" with
+        | Canonical
+            (type m n nm)
+            ((_, UU n, ins, edoms) :
+              head * (n, m) canonical * (nm, n, m) insertion * (D.zero, nm, nm, normal) TubeOf.t)
+          -> (
+            let Eq = eq_of_ins_zero ins in
+            let cdomt = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ edoms ] in
+            let cdoms = TubeOf.plus_cube cdomt (CubeOf.singleton cdom) in
+            let edomt = TubeOf.mmap { map = (fun _ [ x ] -> x.tm) } [ edoms ] in
+            let edoms = TubeOf.plus_cube edomt (CubeOf.singleton edom) in
+            let _, binds = dom_vars ctx edoms in
+            let newctx = Ctx.cube_vis ctx x binds in
+            let ccod, codty = synth (Kinetic `Nolet) newctx cod in
+            match view_type codty "higher pi codomain" with
+            | Canonical (_, UU n', ins', ecodt) -> (
+                match D.compare n n' with
+                | Eq ->
+                    let Eq = eq_of_ins_zero ins' in
+                    let ccods =
+                      let build : type k. (k, n) sface -> (k, b) CodFam.t =
+                       fun s ->
+                        match pface_of_sface s with
+                        | `Id Eq -> ccod
+                        | `Proper t ->
+                            let sctx = Ctx.cube_vis ctx x (CubeOf.subcube s binds) in
+                            readback_nf sctx (TubeOf.find ecodt t) in
+                      CodCube.build n { build } in
+                    let tyargstbl = Hashtbl.create 10 in
+                    let tyargs =
+                      TubeOf.build D.zero (D.zero_plus n)
+                        {
+                          build =
+                            (fun t ->
+                              let k = dom_tface t in
+                              let t' = sface_of_tface t in
+                              let ctm =
+                                Term.Pi
+                                  ( singleton_variables k x,
+                                    CubeOf.subcube t' cdoms,
+                                    CodCube.subcube t' ccods ) in
+                              let tm = eval_term (Ctx.env ctx) ctm in
+                              let tyargs =
+                                TubeOf.build D.zero (D.zero_plus k)
+                                  {
+                                    build =
+                                      (fun v ->
+                                        Hashtbl.find tyargstbl
+                                          (Tface_of (tface_comp_sface t (sface_of_tface v))));
+                                  } in
+                              let ty = inst (universe k) tyargs in
+                              let arg = { tm; ty } in
+                              Hashtbl.add tyargstbl (Tface_of t) arg;
+                              arg);
+                        } in
+                    ( realize status (Pi (singleton_variables n x, cdoms, ccods)),
+                      inst (universe n) tyargs )
+                | Neq -> fatal (Invalid_higher_function "invalid single codomain dimension"))
+            | _ -> fatal (Invalid_higher_function "invalid single codomain"))
+        | _ -> fatal (Invalid_higher_function "invalid single domain"))
+    | ( InstHigherPi
+          (type n an)
+          ((n', doms, cod) : n D.pos * (a, n, unit, an) DomCube.t * an check located),
+        _ ) -> (
+        let n = D.pos n' in
+        let module Acc = struct
+          type (_, _) t = Ctx : ('ac, 'b) Ctx.t * (a, 'c, 'ac) N.plus -> ('ac, 'c) t
+        end in
+        let module T = IcubeTraverse2 (DeBruijnIndices) (N) (Indexed.DomFam) (NFamOf) (Acc) in
+        let domstbl = Hashtbl.create 10 in
+        let varstbl = Hashtbl.create 10 in
+        let foldmap : type left1 left2 m g.
+            (m, n) sface ->
+            (left1, left2) Acc.t ->
+            (left1, m, g) Indexed.DomFam.t ->
+            (left2, m, string option) NFamOf.t * (left1 N.suc, left2 N.suc) Acc.t =
+         fun s (Ctx (xctx, ac)) (Indexed.DomFam.DomFam (x, dom)) ->
+          let m = dom_sface s in
+          (* We check the domains against universe 0, since they should be fully instantiated. *)
+          let cdom = check (Kinetic `Nolet) xctx dom (universe D.zero) in
+          let edom = eval_term (Ctx.env xctx) cdom in
+          (* Further errors here should also be reported on the relevant domain term. *)
+          with_loc dom.loc
+          @@ fun () : ((left2, m, string option) NFamOf.t * (left1 N.suc, left2 N.suc) Acc.t) ->
+          (* No_such_level indicates a readback failure, meaning that some domain or boundary was not defined in the correct context (e.g. used unavailable variables). *)
+          Reporter.try_with ~fatal:(fun d ->
+              match d.message with
+              | No_such_level _ ->
+                  fatal ?loc:d.explanation.loc (Invalid_higher_function "invalid domain scope")
+              | _ -> fatal_diagnostic d)
+          @@ fun () : ((left2, m, string option) NFamOf.t * (left1 N.suc, left2 N.suc) Acc.t) ->
+          let dom, tyargs =
+            match D.compare_zero m with
+            | Zero ->
+                (readback_val ctx edom, (TubeOf.empty D.zero : (D.zero, m, m, normal) TubeOf.t))
+            (* If the dimension of this domain is supposed to be positive, the supplied domain must be fully instantiated by at least that dimension (perhaps more, since it could come from something higher-dimensional).  We pull off those instantiation arguments. *)
+            | Pos m -> (
+                match split_inst m (view_term edom) with
+                | Some (head, Any args, tyargs) ->
+                    (* After spliting off those instantiation arguments, we read back the rest of the type in the *original* context, to make sure it makes sense there and yield the term domain. *)
+                    (readback_neu ctx head args, tyargs)
+                | None -> fatal (Invalid_higher_function "invalid domain")) in
+          (* Then we check that the instantiation arguments we pulled off are each equal to the corresponding *variable* from the earlier domains. *)
+          TubeOf.miter
+            {
+              it =
+                (fun t [ arg ] ->
+                  match
+                    equal_nf xctx arg
+                      (Hashtbl.find varstbl (SFace_of (comp_sface s (sface_of_tface t))))
+                  with
+                  | Ok () -> ()
+                  | Error _ -> fatal (Invalid_higher_function "invalid domain boundary"));
+            }
+            [ tyargs ];
+          (* We "return" the domain term by adding it to a hashtbl. *)
+          Hashtbl.add domstbl (SFace_of s) dom;
+          let newctx = Ctx.ext xctx x edom in
+          (* We also get and store the normal corresponding to this variable, for checking the tyargs of later domains. *)
+          (match Ctx.lookup newctx (Top, None) with
+          | `Field (_, v, _) | `Var (_, v, _) -> Hashtbl.add varstbl (SFace_of s) v);
+          (NFamOf x, Ctx (newctx, Suc ac)) in
+        (* We don't care about the produced context, since its checked length is wrong.  We want just one cube of variables, and the total raw length added to the previous one.  *)
+        let (Gfolded (xs, Ctx (_, af))) =
+          T.fold_map_left { foldmap } (Ctx (ctx, Zero) : (a, N.zero) Acc.t) doms in
+        let doms = CubeOf.build n { build = (fun s -> Hashtbl.find domstbl (SFace_of s)) } in
+        let _, binds =
+          dom_vars ctx (CubeOf.mmap { map = (fun _ [ x ] -> eval_term (Ctx.env ctx) x) } [ doms ])
+        in
+        let xsv = Variables (D.zero, D.zero_plus n, xs) in
+        let newctx = Ctx.vis ctx D.zero (D.zero_plus n) xs binds af in
+        (* We likewise check the codomain against universe 0. *)
+        let ccod = check (Kinetic `Nolet) newctx cod (universe D.zero) in
+        with_loc cod.loc @@ fun () ->
+        Reporter.try_with ~fatal:(fun d ->
+            match d.message with
+            | No_such_level _ ->
+                fatal ?loc:d.explanation.loc (Invalid_higher_function "invalid codomain scope")
+            | _ -> fatal_diagnostic d)
+        @@ fun () ->
+        (* It must also be fully instantiated at at least the total dimension. *)
+        match split_inst n' (eval_term (Ctx.env newctx) ccod) with
+        | None -> fatal (Invalid_higher_function "invalid codomain")
+        | Some (head, Any args, tyargs) ->
+            (* After spliting off those instantiation arguments, we read back the rest of the type to yield the top-dimensional codomain. *)
+            let cod = readback_neu newctx head args in
+            (* To get the lower-dimensional codomains, and the instantation arguments of the whole pi-type, we iterate through the split-off tyargs. *)
+            let [ ecods; piargs ] =
+              let map : type m.
+                  (m, D.zero, n, n) tface ->
+                  (m, (normal, Tlist.nil) Tlist.cons) CubeOf.Heter.hft ->
+                  ( m,
+                    ( [ `Neu of head * any_apps | `Val of kinetic value ],
+                      ((b, kinetic) term, Tlist.nil) Tlist.cons )
+                    Tlist.cons )
+                  CubeOf.Heter.hft =
+               fun s [ { tm; ty } ] ->
+                (* The type of this argument must *also* be instantiated at the correct dimension; we want the not-instantiated part. *)
+                let cod =
+                  match D.compare_zero (dom_tface s) with
+                  | Zero -> `Val ty
+                  | Pos m -> (
+                      match split_inst m (view_term ty) with
+                      | Some (head, args, _) ->
+                          (* I don't think we need to check that the instantiation arguments are correct or do anything with them; since this was obtained from typechecking the given cod, they *must* be correct. *)
+                          `Neu (head, args)
+                      | None ->
+                          (* Is this ever possible, or is it a bug? *)
+                          fatal (Invalid_higher_function "invalid codomain weirdness")) in
+                (* The value of this argument must be read back and abstracted over the appropriate variables. *)
+                let s = sface_of_tface s in
+                let codxs = sub_variables s xsv in
+                let (Any_ctx codctx) = Ctx.variables_vis ctx codxs (CubeOf.subcube s binds) in
+                let body = readback_at codctx tm ty in
+                [ cod; Term.Lam (codxs, body) ] in
+              TubeOf.pmap { map } [ tyargs ] (Cons (Cons Nil)) in
+            (* We build the cube of codomains by reading back the lower-dimensional ones in a context extended by the appropriate partial cube of variables, and adding the top-dimensional one. *)
+            let cods =
+              let build : type m. (m, n) sface -> ((b, m) snoc, kinetic) term =
+               fun s ->
+                match pface_of_sface s with
+                | `Proper t -> (
+                    let (Any_ctx codctx) =
+                      Ctx.variables_vis ctx (sub_variables s xsv) (CubeOf.subcube s binds) in
+                    match TubeOf.find ecods t with
+                    | `Neu (head, Any args) -> readback_neu codctx head args
+                    | `Val ty -> readback_val codctx ty)
+                | `Id Eq -> cod in
+              CodCube.build n { build } in
+            let xs = Variables (D.zero, D.zero_plus n, xs) in
+            (realize status (Inst (Pi (xs, doms, cods), piargs)), universe D.zero))
     | App _, _ ->
-        (* If there's at least one application, we slurp up all the applications, synthesize a type for the function, and then pass off to synth_apps to iterate through all the arguments. *)
-        let fn, args = spine tm in
-        let sfn, sty = synth (Kinetic `Nolet) ctx fn in
-        let stm, sty = synth_apps (Kinetic `Nolet) ctx { value = sfn; loc = fn.loc } sty fn args in
+        (* If there's at least one application, we slurp up all the applications and then iterate through them. *)
+        let fn, args = spine { value = Synth tm.value; loc = tm.loc } in
+        let stm, sty = synth_or_check_apps ctx fn args None in
         (realize status stm, sty)
-    | Act (str, fa, { value = Synth x; loc }), _ ->
+    | Act (str, fa, Some { value = Synth x; loc }), _ ->
         let x = { value = x; loc } in
         let ctx = if locking fa then Ctx.lock ctx else ctx in
-        let sx, ety = synth (Kinetic `Nolet) ctx x in
+        (* We pass on the "nosynth" error, so that we can look through multiple degeneracies before noticing a nonsynthesizing term. *)
+        let sx, ety = synth ?nosynth (Kinetic `Nolet) ctx x in
         let ex = eval_term (Ctx.env ctx) sx in
-        ( realize status (Term.Act (sx, fa)),
-          with_loc x.loc @@ fun () ->
-          act_ty ex ety fa ~err:(Low_dimensional_argument_of_degeneracy (str, cod_deg fa)) )
-    | Act _, _ -> fatal (Nonsynthesizing "argument of degeneracy")
+        let sty = with_loc x.loc @@ fun () -> act_ty ex ety fa ~err:(low_dim_arg_err str.value) in
+        ( realize status (Term.Act (sx, fa, (sort_of_ty ctx (view_type sty "synth act"), `Other))),
+          sty )
+    | Act _, _ -> fatal_or nosynth (Nonsynthesizing "argument of degeneracy")
     | Asc (tm, ty), _ ->
         let cty =
           Reporter.try_with ~fatal:(fun d1 ->
@@ -2260,12 +2679,35 @@ and synth : type a b s.
         let ety = eval_term (Ctx.env ctx) cty in
         let ctm = check status ctx tm ety in
         (ctm, ety)
+    | AscLam ({ value = x; loc = _ }, dom, body), _ ->
+        let cdom = check (Kinetic `Nolet) ctx dom (universe D.zero) in
+        let edom = eval_term (Ctx.env ctx) cdom in
+        let newctx = Ctx.ext ctx x edom in
+        let xnf =
+          match Ctx.lookup newctx (Top, None) with
+          | `Field _ -> fatal (Anomaly "field variable in asclam")
+          | `Var (_, nf, _) -> nf in
+        let xs = singleton_variables D.zero x in
+        let newstatus : ((b, D.zero) snoc, s) status =
+          match status with
+          | Kinetic l -> Kinetic l
+          | Potential (c, args, hyp) ->
+              let arg = CubeOf.singleton xnf in
+              Potential (c, Arg (args, arg, ins_zero D.zero), fun tm -> hyp (Lam (xs, tm))) in
+        let cbody, scod = synth newstatus newctx body in
+        let ty =
+          eval_term (Ctx.env ctx)
+            (Pi
+               ( singleton_variables D.zero x,
+                 CubeOf.singleton cdom,
+                 CodCube.singleton (readback_val newctx scod) )) in
+        (Lam (xs, cbody), ty)
     | Let (x, v, body), _ ->
-        let ctm, Not_none ety = synth_or_check_let status ctx x v body None in
+        let ctm, Not_none ety = synth_or_check_let ?nosynth status ctx x v body None in
         (* The synthesized type of the body is also correct for the whole let-expression, because it was synthesized in a context where the variable is bound not just to its type but to its value, so it doesn't include any extra level variables (i.e. it can be silently "strengthened"). *)
         (ctm, ety)
     | Letrec (vtys, vs, body), _ ->
-        let ctm, Not_none ety = synth_or_check_letrec status ctx vtys vs body None in
+        let ctm, Not_none ety = synth_or_check_letrec ?nosynth status ctx vtys vs body None in
         (* The synthesized type of the body is also correct for the whole let-expression, because it was synthesized in a context where the variable is bound not just to its type but to its value, so it doesn't include any extra level variables (i.e. it can be silently "strengthened"). *)
         (ctm, ety)
     | Match _, Kinetic l -> (
@@ -2281,13 +2723,13 @@ and synth : type a b s.
             let termctx = readback_ctx ctx in
             Global.add_meta meta ~termctx ~tm:(`Defined sv) ~ty:vty ~energy:Potential;
             (Term.Meta (meta, Kinetic), svty))
-    | Match { tm; sort = `Explicit motive; branches; refutables = _ }, Potential _ ->
-        synth_dep_match status ctx tm branches motive
-    | Match { tm; sort = `Implicit; branches; refutables = _ }, Potential _ ->
+    | Match { tm; sort = `Explicit motive; branches; refutables = _; highers }, Potential _ ->
+        synth_dep_match status ctx tm branches highers motive
+    | Match { tm; sort = `Implicit; branches; refutables = _; highers }, Potential _ ->
         emit (Matching_wont_refine ("match in synthesizing position", None));
-        synth_nondep_match status ctx tm branches None
-    | Match { tm; sort = `Nondep i; branches; refutables = _ }, Potential _ ->
-        synth_nondep_match status ctx tm branches (Some i)
+        synth_nondep_match status ctx tm branches highers None
+    | Match { tm; sort = `Nondep i; branches; refutables = _; highers }, Potential _ ->
+        synth_nondep_match status ctx tm branches highers (Some i)
     | Fail e, _ -> fatal e
     (* If we're using the synthesized type of an argument as an implicit first argument: *)
     | ImplicitSApp (fn, apploc, arg), _ -> (
@@ -2310,9 +2752,13 @@ and synth : type a b s.
                 let new_sty = tyof_app cods tyargs (CubeOf.singleton sargty) in
                 (* And then apply to the argument. *)
                 let stm, sty =
-                  synth_apps (Kinetic `Nolet) ctx new_sfn new_sty fn
-                    [ (apploc, locate_opt arg.loc (Synth arg.value), locate_opt None `Explicit) ]
-                in
+                  synth_apps ctx new_sfn new_sty
+                    { value = Synth fn.value; loc = fn.loc }
+                    [
+                      ( apploc,
+                        locate_opt arg.loc (Some (Synth arg.value)),
+                        locate_opt None `Explicit );
+                    ] in
                 (realize status stm, sty)
             | Eq, _ ->
                 fatal ?loc:fn.loc (Anomaly "first argument of an ImplicitSMap is not of type Type")
@@ -2369,9 +2815,13 @@ and synth : type a b s.
         let env = Ctx.env ctx in
         let ex = eval_term env cx in
         let nx : normal = { tm = ex; ty } in
-        let creflx = Term.Act (cx, deg_zero Hott.dim) in
+        let creflx = Term.Act (cx, deg_zero Hott.dim, (`Other, `Other)) in
         let idty = act_value ty (deg_zero Hott.dim) in
-        let ididcty = Term.Act (Term.Act (cty, deg_zero Hott.dim), deg_zero Hott.dim) in
+        let ididcty =
+          Term.Act
+            ( Term.Act (cty, deg_zero Hott.dim, (`Other, `Other)),
+              deg_zero Hott.dim,
+              (`Other, `Other) ) in
         let (Plus hh) = D.plus Hott.dim in
         let _, nz, xeqz =
           List.fold_left
@@ -2435,14 +2885,13 @@ and synth : type a b s.
 
 (* Given something that can be applied, its type, and a list of arguments, check the arguments in appropriately-sized groups. *)
 and synth_apps : type a b.
-    (b, kinetic) status ->
     (a, b) Ctx.t ->
     (b, kinetic) term located ->
     kinetic value ->
-    a synth located ->
-    (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list ->
+    a check located ->
+    (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
     (b, kinetic) term * kinetic value =
- fun status ctx sfn sty fn args ->
+ fun ctx sfn sty fn args ->
   (* To determine what to do, we inspect the (fully instantiated) *type* of the function being applied.  Failure of view_type here is really a bug, not a user error: the user can try to check something against an abstraction as if it were a type, but our synthesis functions should never synthesize (say) a lambda-abstraction as if it were a type. *)
   let asfn, aty, afn, aargs =
     match view_type sty "synthesizing application spine" with
@@ -2461,41 +2910,40 @@ and synth_apps : type a b.
   | [] -> (asfn.value, aty)
   | _ :: _ ->
       with_loc asfn.loc (fun () ->
-          Annotate.ctx status ctx (locate_opt afn.loc (Synth afn.value));
+          Annotate.ctx (Kinetic `Nolet) ctx afn;
           Annotate.ty ctx aty;
           Annotate.tm ctx asfn.value);
-      synth_apps status ctx asfn aty afn aargs
+      synth_apps ctx asfn aty afn aargs
 
 (* This is a common subroutine for synth_app and synth_inst that picks up a whole cube of arguments and checks their types.  Since in one case we need a cube of values and the other case a cube of normals, we let the caller choose. *)
 and synth_arg_cube : type a b n c.
     not_enough:Reporter.Code.t ->
-    implicit:[ `Implicit | `Explicit ] ->
     which:string ->
     (a, b) Ctx.t ->
     (kinetic value -> normal -> c) ->
     (n, kinetic value) CubeOf.t ->
     Asai.Range.t option
-    * a synth located
-    * (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list ->
+    * a check located
+    * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
     ((n, (b, kinetic) term) CubeOf.t * (n, c) CubeOf.t)
     * (Asai.Range.t option
-      * a synth located
-      * (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list) =
- fun ~not_enough ~implicit ~which ctx choose doms (sfnloc, fn, args) ->
-  (* Based on the global implicit-function-boundaries setting, the dimension of the application, and whether the first argument is implicit, decide whether we are taking a whole cube of arguments or only one argument with the boundary synthesized from it. *)
+      * a check located
+      * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list) =
+ fun ~not_enough ~which ctx choose doms (sfnloc, fn, args) ->
+  (* Based on the dimension of the application and whether the first argument is implicit, decide whether we are taking a whole cube of arguments or only one argument with the boundary synthesized from it. *)
   let module TakenArgs = struct
     type t =
       | Take
       | Given : Asai.Range.t option * (n, 'k, 'nk) D.plus * (D.zero, 'nk, 'nk, normal) TubeOf.t -> t
   end in
+  let n = CubeOf.dim doms in
   let taken_args : TakenArgs.t =
-    match (args, implicit, D.compare_zero (CubeOf.dim doms)) with
+    match (args, D.compare_zero n, totally_nullary n) with
     | [], _, _ -> fatal not_enough
-    (* If the application if zero-dimensional, or if the global setting is explicit, or if the global setting is implicit and the first argument is implicit, take a whole cube. *)
-    | _, _, Zero | _, `Explicit, Pos _ | (_, _, { value = `Implicit; _ }) :: _, `Implicit, Pos _ ->
-        Take
+    (* If the first argument is implicit, or if the cube would have only one element (i.e. it is 0-dimensional or consists entirely of nullary dimensions) take a whole cube. *)
+    | (_, _, { value = `Implicit; _ }) :: _, Pos _, false | _, Zero, _ | _, _, true -> Take
     (* Otherwise, the first argument must be explicit and synthesizing. *)
-    | (_, { value = Synth toptm; loc }, { value = `Explicit; _ }) :: _, `Implicit, Pos _ -> (
+    | (_, { value = Some (Synth toptm); loc }, { value = `Explicit; _ }) :: _, Pos _, false -> (
         (* We synthesize its type, extract the instantiation arguments, and store them to fill in the boundary arguments. *)
         let _, argty = synth (Kinetic `Nolet) ctx (locate_opt loc toptm) in
         let (Full_tube argtyargs) = get_tyargs argty "primary argument" in
@@ -2506,13 +2954,14 @@ and synth_arg_cube : type a b n c.
             fatal ~severity:Asai.Diagnostic.Error ?loc
               (Insufficient_dimension
                  { needed = CubeOf.dim doms; got = TubeOf.inst argtyargs; which }))
-    | (_, _, { value = `Explicit; _ }) :: _, `Implicit, Pos _ ->
-        fatal (Nonsynthesizing ("primary argument with implicit " ^ which ^ " boundaries")) in
+    | (_, { loc; _ }, { value = `Explicit; _ }) :: _, Pos _, false ->
+        fatal ?loc (Nonsynthesizing ("primary argument with implicit " ^ which ^ " boundaries"))
+  in
   let module M = Monad.State (struct
     type t =
       Asai.Range.t option
-      * a synth located
-      * (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list
+      * a check located
+      * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list
   end) in
   (* Pick up the right number of arguments for the dimension, leaving the others for a later call to synth_app.  Then check each argument against the corresponding type in "doms", instantiated at the appropriate evaluated previous arguments, and evaluate it, producing Cubes of checked terms and values.  Since each argument has to be checked against a type instantiated at the *values* of the previous ones, we also store those in a hashtable as we go. *)
   let eargtbl = Hashtbl.create 10 in
@@ -2557,44 +3006,27 @@ and synth_arg_cube : type a b n c.
                     match ts with
                     | [] -> with_loc loc @@ fun () -> fatal not_enough
                     | (l, t, ({ value = i; loc } as impl)) :: ts ->
-                        (match (is_id_sface fa, i, implicit) with
-                        | Some _, `Implicit, _ ->
+                        (match (is_id_sface fa, i) with
+                        | Some _, `Implicit ->
                             fatal ?loc
                               (Unexpected_implicitness
-                                 (`Implicit, "expecting primary " ^ which ^ " argument"))
-                        | None, `Implicit, `Explicit ->
+                                 ( `Implicit,
+                                   "argument",
+                                   "expecting explicit primary " ^ which ^ " argument" ))
+                        | None, `Explicit ->
                             fatal ?loc
                               (Unexpected_implicitness
-                                 (`Implicit, which ^ " boundaries are explicit"))
-                        | None, `Explicit, `Implicit ->
-                            fatal ?loc
-                              (Unexpected_implicitness
-                                 (`Explicit, which ^ " boundaries are implicit"))
+                                 ( `Explicit,
+                                   "argument",
+                                   "expecting implicit boundary " ^ which ^ " argument" ))
                         | _ -> ());
-                        let* () = M.put (l, locate_opt l (App (f, t, impl)), ts) in
+                        let* () = M.put (l, locate_opt l (Synth (App (f, t, impl))), ts) in
                         return t in
-                  (* If the application is explicit AND we are checking the first argument AND the argument synthesizes something of a high enough dimension to be the primary argument in an implicit application AND it fails to check against the needed type, we hint to the user that arguments are explicit, since they may be expecting them to be implicit. *)
-                  let ctm =
-                    if !first && implicit = `Explicit then
-                      Reporter.try_with ~fatal:(fun d ->
-                          match d.message with
-                          | Unequal_synthesized_type
-                              { got = PVal (_, gotty) as got; expected; which = _; why } -> (
-                              match
-                                Reporter.try_with ~fatal:(fun _ -> None) @@ fun () ->
-                                Some (get_tyargs gotty "primary argument")
-                              with
-                              | None -> fatal_diagnostic d
-                              | Some (Full_tube argtyargs) -> (
-                                  match factor (TubeOf.inst argtyargs) (CubeOf.dim doms) with
-                                  | Some (Factor _) ->
-                                      fatal ?loc:d.explanation.loc
-                                        (Unequal_synthesized_type
-                                           { got; expected; which = Some which; why })
-                                  | None -> fatal_diagnostic d))
-                          | _ -> fatal_diagnostic d)
-                      @@ fun () -> check (Kinetic `Nolet) ctx tm ty
-                    else check (Kinetic `Nolet) ctx tm ty in
+                  let tm =
+                    match tm.value with
+                    | Some value -> { value; loc = tm.loc }
+                    | None -> fatal ?loc:tm.loc Invalid_nullary_application in
+                  let ctm = check (Kinetic `Nolet) ctx tm ty in
                   let etm = eval_term (Ctx.env ctx) ctm in
                   return (ctm, etm) in
             (* In both cases, we store the resulting value term as a normal in the hashtable of previous values, to use in instantiating later types. *)
@@ -2612,38 +3044,38 @@ and synth_app : type a b n.
     (n, kinetic value) CubeOf.t ->
     (n, unit) BindCube.t ->
     (D.zero, n, n, normal) TubeOf.t ->
-    a synth located ->
-    (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list ->
+    a check located ->
+    (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
     (b, kinetic) term located
     * kinetic value
-    * a synth located
-    * (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list =
+    * a check located
+    * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list =
  fun ctx sfn doms cods tyargs fn args ->
-  let implicit = Implicitboundaries.functions () in
   let (cargs, eargs), (newloc, newfn, rest) =
-    synth_arg_cube ~not_enough:Not_enough_arguments_to_function ~implicit ~which:"function" ctx
+    synth_arg_cube ~not_enough:Not_enough_arguments_to_function
+      ~which:"higher-dimensional application" ctx
       (fun tm _ -> tm)
       doms (sfn.loc, fn, args) in
   (* Evaluate cod at these evaluated arguments and instantiate it at the appropriate values of tyargs. *)
   let output = tyof_app cods tyargs eargs in
   ({ value = Term.App (sfn.value, cargs); loc = newloc }, output, newfn, rest)
 
+(* Pick up enough arguments to form a tube for instantiating a higher-dimensional type by a single direction, and return the result along with the remaining arguments not yet picked up.  *)
 and synth_inst : type a b n.
     (a, b) Ctx.t ->
     (b, kinetic) term located ->
     (D.zero, n, n, normal) TubeOf.t ->
-    a synth located ->
-    (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list ->
+    a check located ->
+    (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
     (b, kinetic) term located
     * kinetic value
-    * a synth located
-    * (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list =
+    * a check located
+    * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list =
  fun ctx sfn tyargs fn args ->
   let n = TubeOf.inst tyargs in
   match D.compare_zero n with
   | Zero -> fatal (Instantiating_zero_dimensional_type (PTerm (ctx, sfn.value)))
   | Pos pn ->
-      let implicit = Implicitboundaries.types () in
       (* We take enough arguments to instatiate a type of dimension n by one. *)
       let (Is_suc (m, msuc, k)) = suc_pos pn in
       let tyargs1 =
@@ -2655,19 +3087,141 @@ and synth_inst : type a b n.
       let module M = Monad.State (struct
         type t =
           Asai.Range.t option
-          * a synth located
-          * (Asai.Range.t option * a check located * [ `Implicit | `Explicit ] located) list
+          * a check located
+          * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list
       end) in
       let open Bwv.Monadic (M) in
       let (cargs, nargs), (newloc, newfn, rest) =
-        mapM1_2
-          (synth_arg_cube ~not_enough:Not_enough_arguments_to_instantiation ~implicit ~which:"type"
-             ctx (fun _ ntm -> ntm))
-          doms (sfn.loc, fn, args) in
+        match Bwv.length doms with
+        | Nat (Suc _) ->
+            mapM1_2
+              (synth_arg_cube ~not_enough:Not_enough_arguments_to_instantiation
+                 ~which:"instantiation" ctx (fun _ ntm -> ntm))
+              doms (sfn.loc, fn, args)
+        | Nat Zero -> (
+            (* If instantiating a nullary dimension, we expect a single . argument. *)
+            match args with
+            | (l, ({ value = None; _ } as arg), i) :: rest ->
+                ((Emp, Emp), (l, locate_opt l (Synth (App (fn, arg, i))), rest))
+            | (_, { value = Some _; loc }, _) :: _ -> fatal ?loc Expected_nullary_application
+            | [] -> fatal Not_enough_arguments_to_instantiation) in
       (* The synthesized type *of* the instantiation is itself a full instantiation of a universe, at the instantiations of the type arguments at the evaluated term arguments.  This is computed by tyof_inst. *)
       let cargs = TubeOf.of_cube_bwv m k msuc l cargs in
       let nargs = TubeOf.of_cube_bwv m k msuc l nargs in
       ({ value = Term.Inst (sfn.value, cargs); loc = newloc }, tyof_inst tyargs nargs, newfn, rest)
+
+(* If the head of an application spine doesn't fully synthesize, i.e. it is a possibly-degenerated abstraction, we inspect the arguments and ascriptions in the abstraction to see if we can get types for all the arguments.  Then we can try to synthesize the body of the abstraction, or check it if we are checking the whole application against a (non-dependent) output type. *)
+and synth_or_check_apps : type a b.
+    (a, b) Ctx.t ->
+    a check located ->
+    (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
+    kinetic value option ->
+    (b, kinetic) term * kinetic value =
+ fun ctx fn args ty ->
+  match (fn.value, actions (Some fn)) with
+  (* If we can fully synthesize a type for the function (that is, if it's a synthesizing term perhaps degenerated), we do that and then pass off to synth_apps to iterate through all the arguments. *)
+  | Synth sfn, (_, Some { value = Synth _; _ }) ->
+      let sfn, sty = synth (Kinetic `Nolet) ctx { value = sfn; loc = fn.loc } in
+      let stm, sty = synth_apps ctx { value = sfn; loc = fn.loc } sty fn args in
+      (stm, sty)
+  (* Otherwise, we try getting information from the arguments. *)
+  | _, (_, None) -> fatal (Nonsynthesizing "degeneracy of placeholder function")
+  | _, (Any_deg s, Some fn) -> (
+      match D.compare_zero (cod_deg s) with
+      | Zero ->
+          let ctx = if locking s then Ctx.lock ctx else ctx in
+          let cfn, sty = synth_lam (dom_deg s) ctx fn ctx args ty in
+          let efn = eval_term (Ctx.env ctx) cfn in
+          (* Finally, we still need to degenerate that function and apply it to all the arguments. *)
+          synth_apps ctx
+            (locate_opt fn.loc (Term.Act (cfn, s, (`Function, `Other))))
+            (act_ty efn sty s) fn args
+      | Pos _ -> fatal (Unimplemented "typechecking degenerated higher-dimensional redices"))
+
+(* A helper function for synth_or_check_apps.  It uses information from ascribed abstractions, synthesizing arguments, and supplied type to synthesize a type for the head abstraction.  It *only* uses the arguments for this purpose, and ignores them if unneeded.  Thus its return value must afterwards still be applied to the arguments.  (In particular, therefore, some of the arguments may end up being synthesized twice, which is not great.) *)
+and synth_lam : type a b c d n.
+    n D.t ->
+    (c, d) Ctx.t ->
+    c check located ->
+    (a, b) Ctx.t ->
+    (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
+    kinetic value option ->
+    (d, kinetic) term * kinetic value =
+ fun n ctx fn argctx args ty ->
+  match (fn.value, args) with
+  (* If the current function synthesizes, we do that right away and return it, ignoring the rest of the arguments. *)
+  | Synth sfn, _ -> synth (Kinetic `Nolet) ctx { value = sfn; loc = fn.loc }
+  (* Otherwise, if we're out of arguments, we assume we have a non-dependent function type and check the body against the overall type that must have been supplied to check against. *)
+  | _, [] -> (
+      match ty with
+      | Some ty ->
+          (* We un-act on the checking type to obtain a type for the function inside the degeneracy *)
+          let uty =
+            unact_ty ~err:(Unimplemented "typechecking degenerated redexes with arity 0") ty n in
+          let cfn = check (Kinetic `Nolet) ctx fn uty in
+          (cfn, uty)
+      | None ->
+          fatal ?loc:fn.loc (Nonsynthesizing "head of application spine in synthesizing position"))
+  (* If there are arguments left, and the head is an abstraction with a type ascribed to its variable, we use that type. *)
+  | Lam { name; cube = { value = `Normal; _ }; implicit = `Explicit; dom = Some dom; body }, _ :: _
+    ->
+      (* As in synthesizing an AscLam, we check the supplied domain and extend the context. *)
+      let cdom = check (Kinetic `Nolet) ctx dom (universe D.zero) in
+      let edom = eval_term (Ctx.env ctx) cdom in
+      let newctx = Ctx.ext ctx name.value edom in
+      let xs = singleton_variables D.zero name.value in
+      (* Pull off either one explicit argument or a cube of mostly-implicit ones, of the correct dimension. *)
+      let module M = CubeOf.Monadic (Monad.State (struct
+        type t =
+          (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list
+      end)) in
+      let _, rest =
+        M.buildM n
+          {
+            build =
+              (fun _ -> function
+                | [] -> fatal Not_enough_arguments_to_function
+                | _ :: xs -> ((), xs));
+          }
+          args in
+      (* Then we proceed recursively to check the body of the abstraction. *)
+      let cbody, scod = synth_lam n newctx body argctx rest ty in
+      let scod =
+        eval_term (Ctx.env ctx)
+          (Pi
+             ( singleton_variables D.zero name.value,
+               CubeOf.singleton cdom,
+               CodCube.singleton (readback_val newctx scod) )) in
+      (Lam (xs, cbody), scod)
+  (* If there are arguments left, and the head is a normal explicit abstraction (no higher abstractions are allowed), and the application is also explicit (but might be higher-dimensional, if there is a degeneracy), we try synthesizing a type from the argument. *)
+  | ( Lam { name; cube = { value = `Normal; _ }; implicit = `Explicit; dom = None; body },
+      (_, arg, { value = `Explicit; _ }) :: args ) -> (
+      match arg.value with
+      | Some (Synth sarg) ->
+          let _, sargty = synth (Kinetic `Nolet) argctx (locate_opt arg.loc sarg) in
+          let edom =
+            unact_ty ~err:(Unimplemented "typechecking degenerated redexes with arity 0") sargty n
+          in
+          (* Finally we can extend the context by this obtained domain. *)
+          let newctx = Ctx.ext ctx name.value edom in
+          let xs = singleton_variables D.zero name.value in
+          (* Then we proceed again recursively to check the body of the abstraction. *)
+          let cbody, scod = synth_lam n newctx body argctx args ty in
+          let cdom = readback_val ctx edom in
+          let scod =
+            eval_term (Ctx.env ctx)
+              (Pi
+                 ( singleton_variables D.zero name.value,
+                   CubeOf.singleton cdom,
+                   CodCube.singleton (readback_val newctx scod) )) in
+          (Lam (xs, cbody), scod)
+      | None -> fatal ?loc:arg.loc Invalid_nullary_application
+      | _ ->
+          let extra_remarks = [ Asai.Diagnostic.loctext ?loc:arg.loc "argument" ] in
+          fatal ?loc:fn.loc ~extra_remarks
+            (Nonsynthesizing "head of application spine and corresponding argument"))
+  | _ ->
+      fatal ?loc:fn.loc (Nonsynthesizing "head of higher-dimensional or implicit application spine")
 
 (* Check a list of terms against the types specified in a telescope, evaluating the latter in a supplied environment and in the context of the previously checked terms, and instantiating them at values given in a tube.  See description in context of the call to it above during typechecking of a constructor. *)
 and check_at_tel : type n a b c bc e.

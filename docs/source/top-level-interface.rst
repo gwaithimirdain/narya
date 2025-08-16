@@ -1,6 +1,7 @@
 Top level interface
 ===================
 
+
 Command-line flags
 ------------------
 
@@ -21,19 +22,21 @@ Formatting output
 - ``-no-reformat``: Do not automatically reformat source files (see :ref:`Code formatter`)
 - ``-show-function-boundaries``: Display boundaries of functions, when implicit (see :ref:`Implicit boundaries`)
 - ``-hide-function-boundaries``: Hide boundaries of functions, when implicit
-- ``-show-type-boundaries``: Display boundaries of functions, when implicit
-- ``-hide-type-boundaries``: Hide boundaries of functions, when implicit
+- ``-show-type-boundaries``: Display boundaries of types, when implicit
+- ``-hide-type-boundaries``: Hide boundaries of types, when implicit
+- ``-variables X``: Set the default variable names (see :ref:`Default names`)
 
 Controlling parametricity
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-These options are discussed under :ref:`Parametric observational type theory`.
+These options are discussed under :ref:`Parametricity`.
 
-- ``-arity N``: Set the arity of parametricity to N (1 ≤ N ≤ 9)
+- ``-parametric``: Internal parametricity mode
 - ``-direction X``: Set the symbol and names for reflexivity
+- ``-arity N``: Set the arity of parametricity to N (1 ≤ N ≤ 9)
 - ``-internal`` and ``-external``: Set whether parametricity is internal (default) or external
 - ``-discreteness``: Enable strictly parametrically discrete types
-- ``-dtt``: Poor man's dTT mode (``-arity 1 -direction d -external``)
+- ``-dtt``: Poor man's dTT mode (``-parametric -arity 1 -direction d -external``)
 
 Execution
 ---------
@@ -57,7 +60,7 @@ Def
 
 Define a global constant called ``NAME`` having type ``TYPE`` and value ``TERM``.  Thus ``NAME`` must be a valid identifier (see :ref:`Identifiers`), while ``TYPE`` must parse and typecheck as a type, and ``TERM`` must parse and typecheck at type ``TYPE``.  If ``TYPE`` is omitted, then ``TERM`` must synthesize a type (see :ref:`synth<Echo/Synth>`).  In addition, if ``TYPE`` is specified, then ``TERM`` can also be a case tree or canonical type declaration (see :ref:`canonical types<Canonical types defined by case trees>`).
 
-The optional ``PARAMS`` is a list of parameters of the form ``(x : PTY)``, or more generally ``(x y z : PTY)``, with the effect that the actual type of the constant ``NAME`` is the Π-type of ``TYPE`` (or the synthesized type of ``TERM``) over these parameters, and its value is the λ-abstraction of ``TERM`` over them.  That is, ``def foo (x:A) : B ≔ M`` is equivalent to ``def foo : A → B ≔ x ↦ M``.
+The optional ``PARAMS`` is a list of parameters of the form ``(x : PTY)``, or more generally ``(x y z : PTY)``, with the effect that the actual type of the constant ``NAME`` is the iterated function-type with these parameters as domain and ``TYPE`` (or the synthesized type of ``TERM``) as codomain, and its value is the λ-abstraction of ``TERM`` over them.  That is, ``def foo (x:A) : B ≔ M`` is equivalent to ``def foo : A → B ≔ x ↦ M``.
 
 A family of constants can be defined mutually by using the ``and`` keyword to introduce the second and later ones (see :ref:`mutual definitions<Mutual definitions>`).
 
@@ -138,22 +141,6 @@ Begin a section named ``NAME``, which must be a valid identifier.  All ordinary 
 
 End the section that was most recently opened and not yet closed.  All the constants that were in the export namespace of that section (i.e. those defined with ``def`` and ``axiom`` or imported from elsewhere with ``export``) are prefixed by the name of that section and merged into the previous namespace.  (See :ref:`Namespaces and sections`.)
 
-Option
-^^^^^^
-
-.. code-block:: none
-
-   option NAME ≔ VALUE
-
-Set the value of a configuration option.  Currently the available options and values are
-
-.. code-block:: none
-
-   option function boundaries ≔ implicit
-   option type boundaries ≔ implicit
-   option function boundaries ≔ explicit
-   option type boundaries ≔ explicit
-
 
 Quit
 ^^^^
@@ -162,7 +149,7 @@ Quit
 
    quit
 
-Terminate execution of the current compilation unit.  Whenever this command is found, loading of the current file or command-line string ceases, just as if the file or string had ended right there.  Execution then continues as usual with any file that imported the current one, with the next file or string on the command line, or with interactive mode if that was requested.  The command ``quit`` in interactive mode exits the program (you can also exit interactive mode by typing Control+D).
+Terminate execution of the current current file or command-line string, just as if the file or string had ended right there.  Execution then continues as usual with any file that imported the current one, with the next file or string on the command line, or with interactive mode if that was requested.  The command ``quit`` in interactive mode exits the program (you can also exit interactive mode by typing Control+D).
 
 Interactive commands
 --------------------
@@ -172,7 +159,7 @@ In interactive mode, the following additional commands are also available.  (How
 Show hole(s)
 ^^^^^^^^^^^^
 
-.. code-block:: bash
+.. code-block:: none
 
     show hole HOLE
     show holes
@@ -207,7 +194,7 @@ Display
 
 Set one of the display settings (that are also set by command-line flags).  Possible display settings are
    
-.. code-block:: bash
+.. code-block:: none
 
     display chars ≔ unicode
     display chars ≔ ascii
@@ -220,22 +207,76 @@ Set one of the display settings (that are also set by command-line flags).  Poss
     display type boundaries ≔ toggle
 
 
+Chdir
+^^^^^
+
+.. code-block:: none
+
+   chdir "DIR"
+
+Change the current directory to ``DIR``.  Subsequent ``import`` commands will load files from this directory.
+
+
 ProofGeneral mode
 -----------------
 
 `ProofGeneral <https://proofgeneral.github.io/>`_ is a generic development environment designed for proof assistants that runs inside the text editor Emacs.  Proof General is perhaps best known for its use with `Rocq <https://rocq-prover.org/>`_.  Narya comes with a basic ProofGeneral mode.  Narya does not yet have a true interactive *proof* mode, which ProofGeneral is designed for, but it is still useful for progressive processing of commands in a file.  In addition, the Narya ProofGeneral mode is enhanced with commands for creating, inspecting, and filling holes, similar to Agda's Emacs mode.
 
+Introduction to Emacs
+^^^^^^^^^^^^^^^^^^^^^
+
+Emacs is a very powerful and idiosyncratic editor.  In particular, it has many shortcut key commands that can do a whole lot, but it can be hard to learn them all, especially because the key commands for common operations are often different from those used by all other programs.  (I believe this is due to a sort of "early adopter syndrome": Emacs is older than the convention that, for instance, control+C means copy and control+V means paste, and by the time those conventions were established, it was too late to change Emacs.)
+
+Here are a few of the most important key commands for using Emacs, written using the Emacs convention that ``C-a`` means hold down the Control key and press ``a``, then release both.  Similarly, the prefix ``M`` means Meta (usually the same as "Alt") and ``S`` means Shift, while ``C-M-a`` means hold down both Control and Meta and press ``a``, then release them all.  (See the `Emacs manual <https://www.gnu.org/software/emacs/manual/html_node/emacs/User-Input.html>`_.)
+
+- ``C-w``: Cut the highlighted region
+- ``C-k``: Cut the current line ("kill")
+- ``M-w``: Copy the highlighted region
+- ``C-y``: Paste ("yank")
+- ``C-/``: Undo
+- ``C-S-/`` (a.k.a. ``C-?``): Redo
+- ``ESC ESC ESC``: Abort current mode or operation.  If Emacs ever gets stuck in a weird state, use this command.
+- ``C-x C-f``: Open ("find") a file
+- ``C-x C-s``: Save current file
+- ``C-x C-c``: Quit Emacs
+- ``C-s``: Search forward
+- ``C-r``: Search backward
+
+All of these commands should also be available in the menu bar at the top of the screen in the ``File`` and ``Edit`` menus, with their key shortcuts listed for reference.
+
+Fortunately (unless you are a :ref:`Vim user <For Vim users>`), the usual arrow keys, as well as "Home", "End", "PageUp", etc. work for moving around in Emacs.  In addition, they have equivalent control-key sequences, which can be faster (once you get used to them) as they don't require moving your fingers away from the keyboard:
+
+- ``C-f``: Move forward one character (same as ``Right``)
+- ``C-b``: Move backward one character (same as ``Left``)
+- ``C-n``: Move down one line (same as ``Down``)
+- ``C-p``: Move up one line (same as ``Up``)
+- ``C-a``: Move to the beginning of the line (same as ``Home``)
+- ``C-e``: Move to the end of the line (same as ``End``)
+- ``M-<`` (i.e. ``M-S-,``): Move to the beginning of the file (same as ``C-Home``)
+- ``M->`` (i.e. ``M-S-.``): Move to the end of the file (same as ``C-End``)
+
+A number of Emacs commands will prompt you for input in the line at the very bottom of the Emacs window, which Emacs calls the "minibuffer".  (Informational messages are also displayed there.)  It's good to get in the habit of paying attention to what's shown in the minibuffer, so that in particular you'll notice when a command is prompting you.
+
+Confusingly, if you're currently being prompted for input in the minibuffer, Emacs allows you to click on the main window and continue viewing or editing the document while the incomplete prompt remains in the minibuffer, then click back in the minibuffer and respond to the prompt.  This can actually be useful, e.g. if you're solving a hole and being prompted for a term, you can copy terms from your code or the ProofGeneral output windows and paste it into the prompt.  However, it's also easy to accidentally get into this state.  It normally doesn't cause problems, but if you notice a prompt waiting for you in the minibuffer and you don't know where it came from, you can make it go away with ``ESC ESC ESC``.  It will also go away if you try to run another command that tries to use the minibuffer, although that will also prevent the second command from running and you'll have to do it again.
+
+If you're going to be doing any substantial amount of coding in ProofGeneral (or Emacs more generally), I *highly* recommend the following:
+
+1. Change your keyboard layout so that the ``Control`` key is immediately to the left of the ``a`` key.  This is likely to immeasurably reduce your frustration with the Emacs key sequences.  Instructions can be found under :ref:`Installing Emacs`.
+
+2. Work through the Emacs tutorial.  The best way to do this is inside of Emacs, so you can easily do its exercises: open Emacs and type ``C-h t``.
+
+
 Basic usage
 ^^^^^^^^^^^
 
-Once Narya's ProofGeneral mode is installed either :ref:`automatically<ProofGeneral mode (automatic installation)>` or :ref:`manually<ProofGeneral mode (manual installation)>`, it should start automatically when you open a file with the ``.ny`` extension.  When ProofGeneral mode is active, there is some initial segment of the buffer (which starts out empty) that has been processed (sent to Narya) and is highlighted with a background color (usually blue).  The unprocessed part of the buffer can be freely edited, and as you complete new commands you can process them as well one by one.  You can also undo or "retract" processed commands, removing them from the processed region.  If you edit any part of the processed region (except for editing inside an existing comment, or :ref:`filling a hole<solving holes>` with ``C-c C-SPC``), it will automatically be retracted (using Narya's ``undo`` command) up to the point where you are editing.
+Once Narya's ProofGeneral mode is installed either :ref:`automatically<Automatic ProofGeneral installation>` or :ref:`manually<Manual ProofGeneral installation>`, it should start automatically when you open a file with the ``.ny`` extension.  When ProofGeneral mode is active, there is some initial segment of the buffer (which starts out empty) that has been processed (sent to Narya) and is highlighted with a background color (usually blue).  The unprocessed part of the buffer can be freely edited, and as you complete new commands you can process them as well one by one.  You can also undo or "retract" processed commands, removing them from the processed region.  If you edit any part of the processed region (except for editing inside an existing comment, or :ref:`filling a hole<solving holes>` with ``C-c C-SPC``), it will automatically be retracted (using Narya's ``undo`` command) up to the point where you are editing.
 
 In addition to the main window displaying your source file, there will normally be two other windows in split-screen labeled "goals" and "response" (although this can be customized with the Emacs variables ``proof-three-window-enable`` and ``proof-three-window-mode-policy``).  The "response" window displays Narya's informational and error messages.  The "goals" window displays the contexts and types of holes whenever relevant.
 
 Key commands
 ^^^^^^^^^^^^
 
-The most useful ProofGeneral key commands for Narya are the following.  As usual in Emacs, ``C-a`` means hold down the Control key and press ``a``, then release both.  Similarly, ``C-M-a`` means hold down both Control and Meta (usually the same as "Alt") and press ``a``, then release them all.
+The most useful ProofGeneral key commands for Narya are the following.
 
 - ``C-c C-n`` : Process the next unprocessed command.  Since Narya has no command-terminating string, the "next command" is interpreted as continuing until the following command keyword or until the end of the buffer.  This means that if you've written a complete command but there is garbage following it, in order to process the command you'll need to either comment out the garbage or insert at least the beginning of another command in between (such as ``quit``) so that ProofGeneral can find the end of the command you want to process.
 - ``C-c C-u`` : Retract the last processed command.
@@ -269,13 +310,21 @@ Narya's ProofGeneral mode also defines the following additional key commands.
 For Agda users
 ^^^^^^^^^^^^^^
  
-Agda users should beware: while a few of Narya's key commands are chosen to match those of Agda (like ``C-c C-?`` and ``C-c C-SPC`` and ``C-c C-,``), many of the key sequences used by Agda have already been defined in ProofGeneral to mean something else (notable examples are ``C-c C-n`` and ``C-c C-b`` and ``C-c C-.``), leading Narya to choose different ones.  For reference, here is a mapping of Agda keybindings to approximately comparable Narya ones:
- 
-- Instead of ``C-c C-l``, use ``C-c C-b`` (process the whole buffer).
+Agda users should beware: while a few of Narya's key commands are chosen to match those of Agda, many of the key sequences used by Agda have already been defined in ProofGeneral to mean something else (notable examples are ``C-c C-n`` and ``C-c C-b`` and ``C-c C-.``), leading Narya to choose different ones.
+
+Here are the key commands that are basically the same in Narya and Agda:
+
+- ``C-c C-,``: Show the context and goal type of a hole.  The cursor must be over the hole.
+- ``C-c C-SPC``: Solve a hole.  You'll be prompted in the minibuffer for the term to solve it with.  Again, the cursor must be over the hole.
+- ``C-c C-?``: Display the context and goal type of all open holes.
+
+And here is a mapping of Agda keybindings to approximately comparable Narya ones.
+
+- Instead of ``C-c C-l``, you can use ``C-c C-b`` (process the whole buffer).  However, you may not want to do this: in ProofGeneral it's often better to only process the buffer up until the point of the few definitions you're working on right now, using ``C-c C-RET`` (process buffer up to the cursor) and ``C-c C-n`` (process one more command).
 - Instead of ``C-c C-f``, use ``C-c C-j`` (move to the next hole).
 - Instead of ``C-c C-b``, use ``C-c C-k`` (move to the previous hole).
-- Instead of ``C-c C-n``, use ``C-c ;`` (normalize a term, perhaps in hole context).
-- Instead of ``C-c C-d``, use ``C-c :`` (synthesize a term, perhaps in hole context).
+- Instead of ``C-c C-n``, use ``C-c ;`` (normalize a term; in hole context if the cursor is over a hole).
+- Instead of ``C-c C-d``, use ``C-c :`` (synthesize a term; in hole context if the cursor is over a hole).
 - Instead of ``C-c C-.``, use ``C-c :``  (synthesize a term) and ``C-c C-,`` (display hole context).
 - Instead of ``C-c C-r``, use ``C-c C-y`` (split in a hole).
 - Instead of ``C-c C-c``, use ``C-c C-y`` (split in a hole).
@@ -283,6 +332,7 @@ Agda users should beware: while a few of Narya's key commands are chosen to matc
 - Instead of ``C-c C-x C-a``, use ``C-c C-c`` (interrupt a command).
  
 If there is significant demand, we could implement a configuration option that instead preferentially chooses Agda's key bindings, moving the conflicting ProofGeneral bindings to other key sequences.
+
 
 Syntax highlighting
 ^^^^^^^^^^^^^^^^^^^
@@ -308,44 +358,39 @@ And Narya defines some of its own faces as well.
 - ``narya-hole-face``: the background highlight of open holes.
 
 
-Entering Unicode characters
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Ctags
+-----
 
-When editing Narya files in Emacs, you will probably also want an input-mode for entering Unicode characters.  Narya does not have its own such mode.  I use the one that ships with Agda, customized by adding the following to ``agda-input-user-translations``:
-```
-("r|" "↦")
-("|->" "↦")
-("|=>" "⤇")
-("R|" "⤇")
-("..." "…")
-```
-With this customization added, the Unicode characters that have primitive meanings to Narya can all be entered with short commands:
+If you followed the instructions for :ref:`Installing Ctags`, then you should be able to use Emacs's built-in commands for finding and jumping to definitions in and between Narya source files.  The full documentation can be found in the `Emacs manual <https://www.gnu.org/software/emacs/manual/html_node/emacs/Find-Identifiers.html>`_, but here is a summary of the most useful commands:
 
-- For →, type ``\r`` or ``\to``
-- For ↦, type ``\r|`` or ``\|->``
-- For ⤇, type ``\R|`` or ``\|=>``
-- For ≔, type ``\:=``
-- For …, type ``\...``
+- ``M-.`` : Show the definition of the identifier under the cursor.
+- ``C-u M-.`` : Prompts for any identifier and shows its definition.
+- ``M-,`` : After ``M-.``, go back to the original location.
+- ``C-M-,`` : After ``M-,``, go back to the definition location again.
+- ``C-M-.`` : Search for an identifier matching a pattern.
+- ``M-?`` : Find all uses of an identifier in any file in the current project.
+- ``M-x tags-search`` : Search for a regular expression through all the files in the current project.
+- ``M-x tags-query-replace`` : Search for and replace a regular expression through all the files in the current project.
 
-(These particular characters will be automatically converted from their ASCII versions to their Unicode equivalents by Narya's reformatter (assuming ``display chars`` is set to ``unicode``), so it is not necessary to enter them manually.  But you will probably want to enter other Unicode characters at some point as well.)
+Ctags is implemented with simple regular expressions, which works fairly well but has certain limitations.  It does understand comments, so ``M-.`` will not find commented-out definitions, nor will ``M-?`` find commented-out uses.  It also understands the ``quit`` command and ignores anything that appears after it in a source file.
 
+However, Ctags doesn't understand Narya's :ref:`Import modifiers`.  Thus, if you have renamed an identifier with ``import``, ``M-.`` on that identifier won't be able to find its definition, and ``M-?`` on the original identifier will not find renamed usages.
 
-Other customization
-^^^^^^^^^^^^^^^^^^^
+Ctags has a limited understanding of Narya's :ref:`sections <Namespaces and sections>`.  A constant declared inside a section is saved to the tags file both with its *unqualified* name (the one given in its ``def`` or ``axiom`` command) and with its *fully qualified* name (the one obtained by prefixing its unqualified name with those of *all* the sections it appears inside).  Therefore, the definition can be found with ``M-.`` from both unqualified uses of an identifier (e.g. those appearing in the same section where it is defined) and fully-qualified uses (e.g. those appearing outside of all nested sections that it is defined in, such as in another file that imports the file it was defined in without any renaming).  However, it is not saved with any *partially* qualified names.  For instance, given the following Narya code:
 
-Some other ProofGeneral customization options you may want to consider are:
+.. code-block:: none
 
-- ``proof-output-tooltips``: I recommend turning this off, as the "output" that it displays in tooltips is not very readable or helpful.
+   section foo ≔
+     section bar ≔
+       def baz ≔ …
+     end
+   end
 
-- ``proof-shrink-windows-tofit``: Note that this only affects windows that take up the full width of the frame, and in particular has no effect in the default three-window mode.  However, Narya's ProofGeneral mode includes some custom code (copied from the Rocq mode) that resizes the response window in three-window mode as well.
+the definition ``baz`` can be found under the names ``baz`` and ``foo.bar.baz``,  but not ``bar.baz`` (which it would be referred to by inside the section ``foo`` but outside the section ``bar``).
 
-- ``proof-three-window-enable`` and ``proof-three-window-mode-policy``: I recommend making sure the first is enabled.  If your screen is not especially wide, you may want to set the second to ``horizontal`` to enforce putting the response and goals buffers side-by-side with the script buffer.
+Remember also that if your Emacs version is older than 30.1, so that ``etags-regen-mode`` is not available, you'll need to re-run the command ``etags`` in the root directory of your Narya project every time new definitions are added to an imported file in order for the above commands to find them.
 
-- ``narya-prog-args``: If you want to pass command-line options to alter the behavior of Narya, such as the options like ``-dtt`` that modify the type theory, at present the only way to do this is to change this variable.  You can do that globally, or locally in particular ``ny`` files with Emacs file-local variables.  If you do change this variable, make sure to keep the argument ``-proofgeneral`` in it, which is necessary to put Narya into the correct mode for interacting with ProofGeneral.  As an example, to set the option ``-dtt`` locally in a file, you can add the following line at the top of it:
-
-```
-{` -*- narya-prog-args: ("-proofgeneral" "-dtt") -*- `}
-```
+Eventually we hope to implement a more sophisticated solution for finding definitions, but until then, Ctags can be very useful if you keep aware of these limitations.
 
 
 Code formatter
@@ -355,22 +400,21 @@ Narya comes with an "opinionated code formatter" like `gofmt <https://go.dev/blo
 
 There are currently two ways to use the formatter.  Firstly, every time you run Narya on a source file, it automatically reformats that file.  (It only reformats files supplied explictly on the command line, not other files loaded by these.)  If this resulted in any changes, it copies the original file to a backup file with a ``.bak.N`` extension; this is a temporary feature to ensure you can recover your code in case of bugs in the reformatter, and will probably go away once there is enough evidence that the reformatter is trustworthy.  (Please report any bugs in the reformatter, especially serious ones that change the meaning of the code, make it non-reparseable, lose comments, etc.!  Also, reformatting is supposed to be idempotent: if reformatting code twice without editing it in the middle makes any changes the second time, that is also a bug.)
 
-Secondly, every time you process a command in ProofGeneral, that command is automatically reformatted.  If you retract the command, it remains reformatted.  To undo the reformatting, you can use Emacs' undo operation (``C-/``); this will also retract the command, if it is still in the processed region.
+Secondly, every time you process a command in ProofGeneral, or solve a hole in a previously processed command, that command is automatically reformatted.  If you retract the command, it remains reformatted.  To undo the reformatting, you can use Emacs' undo operation (``C-/``); this will also retract the command, if it is still in the processed region.
 
 Processing an entire file in ProofGeneral does not have *exactly* the same reformatting effect as running Narya on it from the command line.  They should reformat individual commands in the same way, but the command-line reformatter also ensures that distinct commands are separated by single blank lines (suitably interpreted in the presence of comments).  ProofGeneral can't do this, as it doesn't even pass blank lines and comments between commands to the Narya subprocess.  However, most people already separate their commands by single blank lines, so this difference is not usually a serious issue.  If a file has been formatted by the command-line reformatter, processing it in Proof General should not *change* that formatting (if it does, please report a bug).
 
-It is not currently possible to reformat code without simultaneously typechecking it.  The presence of user-definable mixfix notations that can also be imported from other files means that any reformatter must be at least partially context-aware.  It would probably be possible to implement a reformatter that resolves user-defined notations without typechecking definitions, but this is not a high priority.
+It is not currently possible to reformat code without typechecking it.  The presence of user-definable mixfix notations that can also be imported from other files means that any reformatter must be at least partially context-aware.  It would probably be possible to implement a reformatter that resolves user-defined notations without typechecking definitions, but this is not a high priority.
 
 Currently there is only one configuration option for the code formatter: whether to print Unicode characters such as → or their ASCII equivalents such as ``->``.  This can be set on the command line with the flags ``-unicode`` and ``-ascii``, and in ProofGeneral with the state-preserving ``display`` command.  In accord with the goal of opinionated code formatters -- to eliminate time wasted by arguing about formatting, including formatter options -- I do not plan to add more configuration options; although I'll listen if you have a case to make for one.  Suggestions for improvements and changes to the standard formatting style are also welcome, although I can't promise to adopt them.
 
-It is possible to turn off the code formatter.  The Emacs customization variables ``narya-reformat-commands`` and ``narya-reformat-holes`` will turn off reformatting in ProofGeneral, and the command-line option ``-no-format`` will turn off reformatting of input files.  However, if you don't like the way Narya reformats your code, I would appreciate it if you give me feedback about this rather than (or, at least, in addition to) turning it off entirely.
+It is possible to turn off the code formatter.  Unsetting the Emacs customization variable ``narya-reformat-commands`` will turn off reformatting in ProofGeneral, and the command-line option ``-no-format`` will turn off reformatting of input files.  However, if you don't like the way Narya reformats your code, I would appreciate it if you give me feedback about this rather than (or, at least, in addition to) turning it off entirely.  If ``narya-reformat-commands`` is turned off, you can manually reformat a command in the processed region with ``C-M-q``.  (Reformatting unprocessed commands would be too error-prone, as noted above: Narya wouldn't be able to tell which notations are in scope.)
 
-.. _top-level-interface-jsNarya:
 
 jsNarya
 -------
 
 jsNarya is a JavaScript version of Narya that runs in a browser.  Its functionality is limited to the equivalent of ``narya -e "STARTUP" -i``: you can specify a single startup "file" by copying and pasting it into a text box, and then you drop into interactive mode.  Also there is no real Unicode input-mode, although there is a palette of buttons that can be used to enter a number of common Unicode characters.  These limitations are not intrinsic; we just have not yet found or implemented an appropriate frontend for anything more complicated.
 
-jsNarya does accept customization of the arity, direction name, and internality of parametricity, plus discreteness, for :ref:`Parametric Observational Type Theory`.  This can be done with input elements on the page before starting the interactive mode, or with appropriately-named URL parameters.  For instance, supplying the URL query string ``?arity=1&direction=d&external`` yields :ref:`Poor man's dTT<Internal versus external parametricity>`, and this special case admits the shortcut ``?dtt``.  The startup code can also be specified in the URL with the ``?startup=`` parameter.
+jsNarya does accept customization of the arity, direction name, and internality of parametricity, plus discreteness, for :ref:`Observational higher dimensions`.  This can be done with input elements on the page before starting the interactive mode, or with appropriately-named URL parameters.  For instance, supplying the URL query string ``?arity=1&direction=d&external`` yields :ref:`Poor man's dTT<Internal versus external parametricity>`, and this special case admits the shortcut ``?dtt``.  The startup code can also be specified in the URL with the ``?startup=`` parameter.
 

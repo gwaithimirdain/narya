@@ -28,14 +28,13 @@ let () =
   make exp "**" (Open_entry (eop (Op "**") (done_open exp)));
   make parens "()" (Closed_entry (eop LParen (term RParen (Done_closed parens))))
 
-let arith =
-  Situation.empty
-  |> Situation.add plus
-  |> Situation.add minus
-  |> Situation.add times
-  |> Situation.add div
-  |> Situation.add exp
-  |> Situation.add parens
+let install_arith () =
+  Scope.Situation.add plus;
+  Scope.Situation.add minus;
+  Scope.Situation.add times;
+  Scope.Situation.add div;
+  Scope.Situation.add exp;
+  Scope.Situation.add parens
 
 exception Syntax_error
 exception Fraction

@@ -3,6 +3,7 @@
 open Bwd
 open Util
 open Core
+open Origin
 open Parser
 open React
 open Lwt
@@ -48,18 +49,23 @@ let speclist =
     ( "-show-type-boundaries",
       Arg.Set show_type_boundaries,
       "Display implicit boundaries of instantiations of higher-dimensional types" );
+    ("-variables", Arg.String (fun str -> variables := Some str), "Default variable names");
     ("-arity", Arg.Set_int arity, "Arity of parametricity (default = 2)");
     ( "-direction",
       Arg.String set_refls,
       "Names for parametricity direction and reflexivity (default = e,refl,Id)" );
     ("-internal", Arg.Set internal, "Set parametricity to internal (default)");
     ("-external", Arg.Clear internal, "Set parametricity to external");
-    ("-hott", Arg.Set hott, "Enable higher observational type theory (fibrancy)");
+    ( "-parametric",
+      Arg.Clear hott,
+      "Switch from higher observational type theory (fibrancy) to parametricity" );
+    ("-hott", Arg.Set hott_deprecated, "");
     ("-discreteness", Arg.Set discreteness, "Enable discreteness");
     ("-source-only", Arg.Set source_only, "Load all files from source (ignore compiled versions)");
     ( "-dtt",
       Unit
         (fun () ->
+          hott := false;
           arity := 1;
           refl_char := 'd';
           refl_names := [];
@@ -133,8 +139,9 @@ let rec repl terminal history buf =
         @@ fun () ->
           match Command.parse_single str with
           | _, Some cmd ->
-              Execute.execute_command cmd;
-              Eternity.notify_holes ()
+              (* We ignore the hole data, which is only for ProofGeneral. *)
+              let _ = Execute.execute_command cmd in
+              Global.notify_holes ()
           | _ -> () );
         LTerm_history.add history (Zed_string.of_utf8 (String.trim str));
         repl terminal history None)
@@ -191,42 +198,43 @@ let rec interact_pg () : unit =
     done;
     let cmd = Buffer.contents buf in
     let holes = ref Emp in
-    ( Global.HolePos.run ~init:{ holes = Emp; offset = 0 } @@ fun () ->
-      Display.modify (fun s -> { s with holes = `With_number });
-      Reporter.try_with
-      (* ProofGeneral sets TERM=dumb, but in fact it can display ANSI colors, so we tell Asai to override TERM and use colors unconditionally. *)
-        ~emit:(fun d ->
-          match d.message with
-          | Hole _ -> holes := Snoc (!holes, d.message)
-          | _ -> Reporter.display ~use_ansi:true ~output:stdout d)
-        ~fatal:(fun d ->
-          Reporter.display ~use_ansi:true ~output:stdout d;
-          Format.printf "\x0C[errors]\x0C\n%!";
-          print_error_locs d)
-        (fun () ->
-          try
-            match Command.parse_single cmd with
-            | _, None -> ()
-            | prews, Some cmd ->
-                Execute.execute_command cmd;
-                Eternity.notify_holes ();
-                Format.printf "\x0C[goals]\x0C\n%!";
-                Mbwd.miter
-                  (fun [ h ] ->
-                    Reporter.Code.default_text h Format.std_formatter;
-                    Format.printf "\n\n%!")
-                  [ !holes ];
-                Format.printf "\x0C[data]\x0C\n%!";
-                let st = Global.HolePos.get () in
-                Mbwd.miter
-                  (fun [ (h, s, e) ] ->
-                    Format.printf "%d %d %d\n" h (s - st.offset) (e - st.offset))
-                  [ st.holes ];
-                Format.printf "\x0C[reformat]\x0C\n%!";
-                let pcmd, wcmd = Parser.Command.pp_command cmd in
-                ToChannel.pretty 1.0 (Display.columns ()) stdout
-                  (pp_ws `None prews ^^ pcmd ^^ pp_ws `None wcmd)
-          with Sys.Break -> Reporter.fatal Break) );
+    Display.modify (fun s -> { s with holes = `With_number });
+    Reporter.try_with
+    (* ProofGeneral sets TERM=dumb, but in fact it can display ANSI colors, so we tell Asai to override TERM and use colors unconditionally. *)
+      ~emit:(fun d ->
+        match d.message with
+        | Hole _ -> holes := Snoc (!holes, d.message)
+        | _ -> Reporter.display ~use_ansi:true ~output:stdout d)
+      ~fatal:(fun d ->
+        Reporter.display ~use_ansi:true ~output:stdout d;
+        Format.printf "\x0C[errors]\x0C\n%!";
+        print_error_locs d)
+      (fun () ->
+        try
+          match Command.parse_single cmd with
+          | _, None -> ()
+          | prews, Some cmd ->
+              let offset, newholes = Execute.execute_command cmd in
+              let offset = Option.value ~default:0 offset in
+              Global.notify_holes ();
+              Format.printf "\x0C[goals]\x0C\n%!";
+              Mbwd.miter
+                (fun [ h ] ->
+                  Reporter.Code.default_text h Format.std_formatter;
+                  Format.printf "\n\n%!")
+                [ !holes ];
+              Format.printf "\x0C[data]\x0C\n%!";
+              if Parser.Command.parenthesized cmd then Format.printf "parenthesized\n"
+              else Format.printf "unparenthesized\n";
+              Format.printf "%s\n" (Origin.to_string (Origin.current ()));
+              Mlist.miter
+                (fun [ (h, s, e) ] -> Format.printf "%d %d %d\n" h (s - offset) (e - offset))
+                [ newholes ];
+              Format.printf "\x0C[reformat]\x0C\n%!";
+              let pcmd, wcmd = Parser.Command.pp_command cmd in
+              ToChannel.pretty 1.0 (Display.columns ()) stdout
+                (pp_ws `None prews ^^ pcmd ^^ pp_ws `None wcmd)
+        with Sys.Break -> Reporter.fatal Break);
     interact_pg ()
   with End_of_file -> ()
 

@@ -1,5 +1,3 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-hott") -*- `}
-
 axiom A : Type
 axiom x : A
 axiom y : A
@@ -18,8 +16,7 @@ def xy : Id A x y ≔ calc
   = y
       by p ∎
 
-def xydef : Id (Id A x y) xy (A⁽ᵉᵉ⁾ x x (refl x) x y p .trr (refl x))
-  ≔ refl xy
+def xydef : Id (Id A x y) xy (A⁽ᵉᵉ⁾ (refl x) p .trr (refl x)) ≔ refl xy
 
 def xyz : Id A x z ≔ calc
   x
@@ -31,7 +28,7 @@ def xyz : Id A x z ≔ calc
 
 def xyzdef
   : Id (Id A x z) xyz
-      (A⁽ᵉᵉ⁾ x x (refl x) y z q .trr (A⁽ᵉᵉ⁾ x x (refl x) x y p .trr (refl x)))
+      (A⁽ᵉᵉ⁾ (refl x) q .trr (A⁽ᵉᵉ⁾ (refl x) p .trr (refl x)))
   ≔ refl xyz
 
 def xyzw : Id A x w ≔ calc
@@ -47,10 +44,8 @@ def xyzw : Id A x w ≔ calc
 
 def xyzwdef
   : Id (Id A x w) xyzw
-      (A⁽ᵉᵉ⁾ x x (refl x) z w r
-       .trr
-         (A⁽ᵉᵉ⁾ x x (refl x) y z q
-          .trr (A⁽ᵉᵉ⁾ x x (refl x) x y p .trr (refl x))))
+      (A⁽ᵉᵉ⁾ (refl x) r
+       .trr (A⁽ᵉᵉ⁾ (refl x) q .trr (A⁽ᵉᵉ⁾ (refl x) p .trr (refl x))))
   ≔ refl xyzw
 
 axiom s : Id A z y
@@ -64,7 +59,7 @@ def xz' : Id A x z ≔ calc
 
 def xz'def
   : Id (Id A x z) xz'
-      (A⁽ᵉᵉ⁾ x x (refl x) z y s .trl (A⁽ᵉᵉ⁾ x x (refl x) x y p .trr (refl x)))
+      (A⁽ᵉᵉ⁾ (refl x) s .trl (A⁽ᵉᵉ⁾ (refl x) p .trr (refl x)))
   ≔ refl xz'
 
 def ℕ : Type ≔ data [ zero. : ℕ | suc. : ℕ → ℕ ]

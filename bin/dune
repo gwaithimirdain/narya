@@ -4,7 +4,7 @@
     (with-stdout-to version.txt
       (progn
         (echo "Narya development version -- built from commit ")
-        (system "(git show -s --format=%h 2>/dev/null || echo '(unknown)') | tr -d '\n'")
+        (system "(git show -s --format=%h 2>/dev/null || (if [ -z ${GIT_COMMIT+x} ]]; then echo '(unknown)'; else echo $GIT_COMMIT; fi)) | tr -d '\n'")
         (echo " on ")
         (system "date +'%Y-%m-%d'")))))
 

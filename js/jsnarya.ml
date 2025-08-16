@@ -22,8 +22,8 @@ let interact_js : string -> string =
     match Command.parse_single cmd with
     | _, None -> ()
     | _, Some cmd ->
-        Execute.execute_command cmd;
-        Eternity.notify_holes () );
+        let _ = Execute.execute_command cmd in
+        Global.notify_holes () );
   Out_channel.flush stdout;
   Buffer.contents buf
 

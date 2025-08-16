@@ -24,6 +24,7 @@ module Config = struct
     holes : holes;
     function_boundaries : show;
     type_boundaries : show;
+    variables : string list;
   }
 end
 
@@ -36,6 +37,7 @@ let default : Config.t =
     holes = `Without_number;
     function_boundaries = `Hide;
     type_boundaries = `Hide;
+    variables = [ "𝑥"; "𝑦"; "𝑧"; "𝑤"; "𝑢"; "𝑣" ];
   }
 
 module State = Util.State.Make (Config)
@@ -53,6 +55,7 @@ let spacing () = (State.get ()).spacing
 let function_boundaries () = (State.get ()).function_boundaries
 let type_boundaries () = (State.get ()).type_boundaries
 let holes () = (State.get ()).holes
+let variables () = (State.get ()).variables
 
 let alt_char uni asc =
   match (State.get ()).chars with
@@ -94,4 +97,4 @@ let modify_type_boundaries fb =
   type_boundaries
 
 (* For now, we hardcode this. *)
-let columns () = 77
+let columns () = 75

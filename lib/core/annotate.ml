@@ -27,30 +27,15 @@ type ty_handler = printable located -> unit
 
 let trivial_ctx_handler : ctx_handler = { handle = (fun _ _ _ -> ()) }
 
-let handler : type b a.
-    ctx:ctx_handler ->
-    tm:tm_handler ->
-    ty:ty_handler ->
-    b Effect.t ->
-    ((b, a) continuation -> a) option =
- fun ~ctx ~tm ~ty -> function
-  | Tm p ->
-      Some
-        (fun k ->
-          tm p;
-          continue k ())
-  | Ty p ->
-      Some
-        (fun k ->
-          ty p;
-          continue k ())
-  | Ctx (s, c, tm) ->
-      Some
-        (fun k ->
-          ctx.handle s c tm;
-          continue k ())
-  | _ -> None
-
 let run (type a) ?(ctx = trivial_ctx_handler) ?(tm = fun _ -> ()) ?(ty = fun _ -> ())
     (f : unit -> a) =
-  try_with f () { effc = (fun e -> handler ~ctx ~tm ~ty e) }
+  try f () with
+  | effect Tm p, k ->
+      tm p;
+      continue k ()
+  | effect Ty p, k ->
+      ty p;
+      continue k ()
+  | effect Ctx (s, c, tm), k ->
+      ctx.handle s c tm;
+      continue k ()

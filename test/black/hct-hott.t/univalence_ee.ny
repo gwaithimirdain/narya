@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-direction" "p,rel,Br") -*- `}
+{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-direction" "p,rel,Br") -*- `}
 
 import "isfibrant"
 import "bookhott"
@@ -6,9 +6,6 @@ import "hott_bookhott"
 import "fibrant_types"
 import "homotopy"
 import "univalence"
-
-option function boundaries ≔ implicit
-option type boundaries ≔ implicit
 
 {` We prove a version of univalence for 2-dimensional (i.e. ee-dimensional) squares.  Its input is a 2D correspondence that is a "2-dimensional bisimulation" in the following sence. `}
 

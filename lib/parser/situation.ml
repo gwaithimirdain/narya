@@ -40,8 +40,6 @@ let empty : t =
     unparse = PrintMap.empty;
   }
 
-let builtins = ref empty
-
 (* Add a new notation to the current situation of available ones. *)
 let add : type left tight right. (left, tight, right) notation -> t -> t =
  fun n s ->
@@ -125,3 +123,15 @@ let add_user_to : User.prenotation -> t -> (User.notation * User.key list) * t =
   let notn = User.make_user user in
   let shadow = List.filter (fun key -> PrintMap.mem key sit.unparse) notn.keys in
   ((notn, shadow), add_with_print notn sit)
+
+let left_closeds : t -> (No.plus_omega, No.strict) entry =
+ fun s -> (EntryMap.find_opt No.plus_omega s.tighters <|> Anomaly "missing left_closeds").strict
+
+let tighters : type strict tight. t -> (tight, strict) No.iinterval -> (tight, strict) entry =
+ fun s { strictness; endpoint } ->
+  let ep = EntryMap.find_opt endpoint s.tighters <|> Anomaly "missing tighters" in
+  match strictness with
+  | Nonstrict -> ep.nonstrict
+  | Strict -> ep.strict
+
+let left_opens : t -> Token.t -> No.interval option = fun s tok -> TokMap.find_opt tok s.left_opens

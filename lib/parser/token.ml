@@ -11,8 +11,14 @@ type t =
   | RBracket (* ] *)
   | LBrace (* { *)
   | RBrace (* } *)
-  | Query (* ? *)
+  | Hole of {
+      number : string option; (* Prefix label ⁇n, if present *)
+      contents : string option; (* None means ?, Some means ¿ ... ʔ with delimiters included *)
+    }
+  | GeldedQuery (* ʔ *)
+  | DblQuery (* ⁇ *)
   | Arrow (* Both -> and → *)
+  | DblArrow (* Both => and ⇒ *)
   | Mapsto (* Both |-> and ↦ *)
   | DblMapsto (* Both |=> and ⤇ *)
   | Colon (* : *)
@@ -33,6 +39,7 @@ type t =
   | End
   | Export
   | Import
+  | Chdir
   | In
   | Let
   | Match
@@ -42,6 +49,7 @@ type t =
   | Rec
   | Return
   | Section
+  | Fmt
   | Show
   | Sig
   | Solve
@@ -155,8 +163,12 @@ let to_string = function
   | RBracket -> "]"
   | LBrace -> "{"
   | RBrace -> "}"
-  | Query -> "?"
+  | Hole { number; contents } ->
+      Option.fold ~some:(fun n -> "⁇" ^ n) ~none:"" number ^ Option.value ~default:"?" contents
+  | GeldedQuery -> "ʔ"
+  | DblQuery -> "⁇"
   | Arrow -> Display.alt_char "→" "->"
+  | DblArrow -> Display.alt_char "⇒" "=>"
   | Mapsto -> Display.alt_char "↦" "|->"
   | DblMapsto -> Display.alt_char "⤇" "|=>"
   | Colon -> ":"
@@ -180,6 +192,7 @@ let to_string = function
   | Codata -> "codata"
   | Notation -> "notation"
   | Import -> "import"
+  | Chdir -> "chdir"
   | Export -> "export"
   | Solve -> "solve"
   | Split -> "split"
@@ -188,6 +201,7 @@ let to_string = function
   | Option -> "option"
   | Undo -> "undo"
   | Section -> "section"
+  | Fmt -> "fmt"
   | End -> "end"
   | Let -> "let"
   | Rec -> "rec"

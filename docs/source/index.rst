@@ -27,10 +27,14 @@ Narya is very much a work in progress. Expect breaking changes, including even i
    codata-types
    canonical-types
    mutual-definitions
-   parametric-observational-type-theory
+   observational
+   parametricity
    higher-types
    hott
+   displayed
+   nominal
    remarks
+   community
    contributing
    
 

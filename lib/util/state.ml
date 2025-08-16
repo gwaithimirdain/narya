@@ -12,33 +12,19 @@ struct
   let run ~(init : State.t) f =
     let open Effect.Deep in
     let st = ref init in
-    try_with f ()
-      {
-        effc =
-          (fun (type a) (eff : a Effect.t) ->
-            match eff with
-            | Get -> Option.some @@ fun (k : (a, _) continuation) -> continue k !st
-            | Set v ->
-                Option.some @@ fun (k : (a, _) continuation) ->
-                st := v;
-                continue k ()
-            | _ -> None);
-      }
+    try f () with
+    | effect Get, k -> continue k !st
+    | effect Set v, k ->
+        st := v;
+        continue k ()
 
   let try_with ?(get = get) ?(set = set) f =
     let open Effect.Deep in
-    try_with f ()
-      {
-        effc =
-          (fun (type a) (eff : a Effect.t) ->
-            match eff with
-            | Get -> Option.some @@ fun (k : (a, _) continuation) -> continue k (get ())
-            | Set v ->
-                Option.some @@ fun (k : (a, _) continuation) ->
-                set v;
-                continue k ()
-            | _ -> None);
-      }
+    try f () with
+    | effect Get, k -> continue k (get ())
+    | effect Set v, k ->
+        set v;
+        continue k ()
 
   let modify f = set @@ f @@ get ()
 
@@ -48,5 +34,5 @@ struct
     | Effect.Unhandled (Set state) -> f (`Set state)
     | _ -> None
 
-  let () = register_printer @@ fun _ -> Some "Unhandled algaeff effect; use Algaeff.State.run"
+  let () = register_printer @@ fun _ -> Some "Unhandled myalgaeff effect; use Algaeff.State.run"
 end

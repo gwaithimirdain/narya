@@ -99,9 +99,9 @@ It matters what the variable is bound to:
    ￭ command-line exec string
    1 | def untest : Id A a0 a0' := refl a0
      ^ term synthesized type
-         refl A a0 a0
+         Id A a0 a0
        but is being checked against type
-         refl A a0 a1
+         Id A a0 a1
        unequal head constants:
          a0
        does not equal
@@ -111,7 +111,7 @@ It matters what the variable is bound to:
 
 Ap on let:
 
-  $ narya -source-only -v pre.ny -e "def a2' := refl ((y ↦ let id : A → A ≔ x ↦ x in id y) : A → A) a0 a1 a2" -e "def test : Id (Id A a0 a1) a2 a2' := refl a2"
+  $ narya -source-only -v pre.ny -e "def a2' := refl ((y ↦ let id : A → A ≔ x ↦ x in id y) : A → A) a2" -e "def test : Id (Id A a0 a1) a2 a2' := refl a2"
    ￫ info[I0001]
    ￮ axiom A assumed
   
@@ -178,7 +178,6 @@ Let affects typechecking:
          a0
        does not equal
          x
-       (hint: function boundaries are explicit)
   
   [1]
 
@@ -264,7 +263,7 @@ Let can contain case trees:
   true.
     : bool
   
-  _let.0.n{…}
+  _let.F3.0.n{…}
     : bool
   
 
@@ -284,7 +283,7 @@ Let can contain case trees:
   true.
     : bool
   
-  _let.0.n{…} u
+  _let.F3.0.n{…} u
     : bool
   
 
@@ -311,7 +310,7 @@ Synthesizing matches don't need to be annotated
   true.
     : bool
   
-  _let.0.n{…}
+  _let.F3.0.n{…}
     : bool
   
 
@@ -338,7 +337,7 @@ Either branch can synthesize:
   true.
     : bool
   
-  _let.0.n{…}
+  _let.F3.0.n{…}
     : bool
   
 
@@ -392,7 +391,7 @@ Matches outside case trees can be implicitly wrapped in a let-binding:
   true.
     : bool
   
-  _match.0{…}
+  _match.F3.0{…}
     : bool
   
 
@@ -430,7 +429,7 @@ Pattern-matching lambdas can be used in arbitrary places:
    ￫ info[I0001]
    ￮ axiom n assumed
   
-  _match.0{…}
+  _match.F2.0{…}
     : ℕ
   
 
