@@ -15,12 +15,14 @@
 (defun narya-script-preprocess (file start end cmd)
   "Add a formfeed at the end of a command, as a delimiter."
   (list (concat cmd "\n\x0C\n")))
+
+(defvar narya-hole-overlays nil
+  "List of overlays marking the locations of open holes")
   
 (defun narya-delete-all-holes ()
-  "Delete all hole overlays."
-  (dolist (o (overlays-in (point-min) (point-max)))
-    (when (overlay-get o 'narya-hole)
-      (delete-overlay o))))
+  "Delete all hole overlays and reset `narya-hole-overlays' to nil."
+  (mapc #'delete-overlay narya-hole-overlays)
+  (setq narya-hole-overlays nil))
 
 (add-hook 'proof-shell-kill-function-hooks #'narya-delete-all-holes)
 
@@ -79,6 +81,7 @@ The start and end regions should include the already-inserted ¿ and ʔ."
                              t nil)))
       (overlay-put ovl 'narya-hole hole-id)
       (overlay-put ovl 'face '(:extend t :inherit highlight))
+      (push ovl narya-hole-overlays)
       ovl)))
 
 (defun narya-create-marked-hole-overlays (start end)
@@ -449,9 +452,14 @@ handling in Proof General."
   "Delete overlays for holes that are (now) outside the processed region."
   (let ((pend (proof-unprocessed-begin))
         (inhibit-read-only t))
-    (dolist (o (overlays-in pend (point-max)))
-      (when (overlay-get o 'narya-hole)
-        (delete-overlay o)))))
+    (setq narya-hole-overlays
+	  (seq-filter
+	   (lambda (ovl)
+	     (if (and (overlay-start ovl) (< (overlay-start ovl) pend))
+		 t
+	       (delete-overlay ovl)
+	       nil))
+	   narya-hole-overlays))))
 
 ;; Use Asai's ANSI coloring of error messages
 (defun narya-insert-and-color-text (&rest args)
@@ -804,8 +812,9 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
           (let ((insert-end (point-marker))
                 (new-holes 0))
             (delete-region (point) (overlay-end hole-overlay))
-            ;; Delete the overlay for the solved hole.
+            ;; Delete the overlay for the solved hole and update the hole list.
             (delete-overlay hole-overlay)
+            (setq narya-hole-overlays (delq hole-overlay narya-hole-overlays))
             ;; Create new overlays from holes in the new term.
             (if narya-reformat-commands
                 ;; If the new term was reformatted, then its holes
@@ -922,7 +931,8 @@ Defaults to the command containing point."
             (atomic-change-group
               (dolist (h (overlays-in start end))
                 (when (overlay-get h 'narya-hole)
-                  (delete-overlay h)))
+                  (delete-overlay h)
+                  (setq narya-hole-overlays (delq h narya-hole-overlays))))
               ;; Insert the reformatted version in place of the old version
               (goto-char start)
               (insert narya-pending-reformatted)
