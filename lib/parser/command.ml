@@ -135,6 +135,13 @@ module Command = struct
         wsprefix : Whitespace.t list;
         wscoloneq : Whitespace.t list;
       }
+    | Fmt of {
+        wsfmt : Whitespace.t list;
+        instant : Instant.t;
+        wsinstant : Whitespace.t list;
+        wscoloneq : Whitespace.t list;
+        cmd : t;
+      }
     | End of { wsend : Whitespace.t list }
     | Quit of Whitespace.t list
     | Bof of Whitespace.t list
@@ -231,6 +238,12 @@ module Parse = struct
         | Ident [ num ] -> Option.map (fun n -> ((n, ws), state)) (int_of_string_opt num)
         | _ -> None)
 
+  (* Go back in time for parsing only, to use the notations in scope at a given instant.  The usual origin algebraic effect doesn't mesh well with the continuation-based parser monad, so we have to use the built-in parser state. *)
+  let set_instant ?severity past =
+    match Origin.current () with
+    | Instant now when Instant.(past <= now) -> set (Instant past)
+    | _ -> fatal ?severity (Invalid_instant (Origin.to_string (Instant past)))
+
   let echo =
     let* wsecho, eval =
       (let* wsecho = token Echo in
@@ -240,9 +253,8 @@ module Parse = struct
     let* number, wsin, wsnumber, tm =
       (let* wsin = token In in
        let* number, wsnumber = integer in
-       (* Go back in time for parsing, to use the notations in scope at that hole. *)
        let (Found_hole { instant; _ }) = Global.find_hole number in
-       let* () = set (Instant instant) in
+       let* () = set_instant instant in
        let* tm = C.term [] in
        return (Some number, wsin, wsnumber, tm))
       </> let* tm = C.term [] in
@@ -553,9 +565,8 @@ module Parse = struct
     let* number, wsnumber = integer in
     let* column, wscolumn = integer </> return (0, []) in
     let* wscoloneq = token Coloneq in
-    (* Go back in time for parsing, to use the notations in scope at that hole. *)
     let (Found_hole { instant; _ }) = Global.find_hole number in
-    let* () = set (Instant instant) in
+    let* () = set_instant instant in
     let* tm = C.term [] in
     return
       (Solve { wssolve; number; wsnumber; column; wscolumn; wscoloneq; tm; parenthesized = false })
@@ -564,9 +575,8 @@ module Parse = struct
     let* wssplit = token Split in
     let* number, wsnumber = integer in
     let* wscoloneq = token Coloneq in
-    (* Go back in time for parsing, to use the notations in scope at that hole. *)
     let (Found_hole { instant; _ }) = Global.find_hole number in
-    let* () = set (Instant instant) in
+    let* () = set_instant instant in
     let* tm = C.term [] in
     let* tms =
       zero_or_more
@@ -675,7 +685,16 @@ module Parse = struct
     let* () = expect_end () in
     return Command.Eof
 
-  let command () =
+  let rec fmt () =
+    let* wsfmt = token Fmt in
+    let* instant, wsinstant = integer in
+    let instant = Instant.of_int instant in
+    let* wscoloneq = token Coloneq in
+    let* () = set_instant ~severity:Error instant in
+    let* cmd = command () in
+    return (Fmt { wsfmt; instant; wsinstant; wscoloneq; cmd })
+
+  and command () =
     bof
     </> axiom
     </> def_and
@@ -690,6 +709,7 @@ module Parse = struct
     </> option
     </> undo
     </> section
+    </> fmt ()
     </> endcmd
     </> quit
     </> eof
@@ -779,6 +799,7 @@ let to_string : Command.t -> string = function
   | Quit _ -> "quit"
   | Undo _ -> "undo"
   | Section _ -> "section"
+  | Fmt _ -> "fmt"
   | End _ -> "end"
   | Bof _ -> "bof"
   | Eof -> "eof"
@@ -1254,6 +1275,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       Global.run_command ~holes_allowed:(Error (to_string cmd)) @@ fun () ->
       Scope.start_section prefix;
       (None, fun _ -> Some (Section_opened prefix))
+  | Fmt _ -> (None, [])
   | End _ -> (
       Global.run_command ~holes_allowed:(Error (to_string cmd)) @@ fun () ->
       match Scope.end_section () with
@@ -1367,9 +1389,8 @@ let pp_attribute : type a.
 let pp_command : t -> PPrint.document * Whitespace.t list =
  fun cmd ->
   let open PPrint in
-  (* Indent when inside of sections. *)
-  let indent = Scope.count_sections () * 2 in
-  let indent, doc, ws =
+  let rec go cmd =
+    let indent = Scope.count_sections () * 2 in
     match cmd with
     | Axiom { wsaxiom; nonparam; name; loc = _; wsname; parameters; wscolon; ty = Wrap ty } ->
         let pparams, wparams = pp_parameters wsname parameters in
@@ -1526,6 +1547,9 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
           ^^ Token.pp Coloneq
           ^^ pp_ws `None ws,
           rest )
+    | Fmt { instant; cmd; _ } ->
+        (* We ignore the whitespace in the fmt command itself, since its purpose is to pretty-print the argument command.  We also ignore the current indent, since the recursive call takes place in the past and therefore will use the correct indentation for the past. *)
+        Origin.rewind_command instant @@ fun () -> go cmd
     | End { wsend } ->
         let ws, rest = Whitespace.split wsend in
         (indent, Token.pp End ^^ pp_ws `None ws, rest)
@@ -1534,6 +1558,8 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
     | Eof -> (indent, empty, [])
     (* These commands can't appear in a source file, and ProofGeneral doesn't need any reformatting info from them, so we display nothing.  In fact, in the case of Undo, PG uses this emptiness to determine that it should not replace any command in the buffer. *)
     | Show _ | Display _ | Undo _ -> (indent, empty, []) in
+  (* Indent when inside of sections. *)
+  let indent, doc, ws = go cmd in
   (* "nest" only has effect *after* linebreaks, so we have to separately indent the first line. *)
   (nest indent (blank indent ^^ doc), ws)
 

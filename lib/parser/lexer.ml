@@ -112,17 +112,17 @@ let rec hole_contents () : string t =
 
 let hole : Token.t t =
   (let* _ = uchar query in
-   return (Hole None))
+   return (Hole { number = None; contents = None }))
   </> (let* contents = hole_contents () in
-       return (Hole (Some contents)))
+       return (Hole { number = None; contents = Some contents }))
   </> (let* _ = uchar dblquery in
        (* Numbered hole *)
        backtrack
-         (let* _ = word is_digit is_digit "hole number" in
+         (let* number = word is_digit is_digit "hole number" in
           (let* _ = uchar query in
-           return (Hole None))
+           return (Hole { number = Some number; contents = None }))
           </> let* contents = hole_contents () in
-              return (Hole (Some contents)))
+              return (Hole { number = Some number; contents = Some contents }))
          "numbered hole"
        </> return DblQuery)
   (* Grab other hole-like sequences, which won't parse but which we don't want the user to use elsewhere. *)
@@ -346,6 +346,7 @@ let get_reserved_word = function
   | "option" -> Some Option
   | "undo" -> Some Undo
   | "section" -> Some Section
+  | "fmt" -> Some Fmt
   | "end" -> Some End
   | "_" -> Some Underscore
   | _ -> None

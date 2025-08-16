@@ -39,6 +39,9 @@ module Instant = struct
       counter := !counter - 1;
       Some !counter)
     else None
+
+  let of_int x = x
+  let ( <= ) x y = x <= y
 end
 
 module Origin = struct
@@ -149,9 +152,11 @@ module Origin = struct
   (* Go back in time temporarily to a particular instant, run a callback command, and then return to the present.  The callback can modify the past state (of all versioned objects), with resulting effects on the present.  However, if it throws an exception, any such changes that it's made are discarded.  Used for commands like "solve" and "split". *)
   let rewind_command (instant : Instant.t) (f : unit -> 'a) : 'a =
     match S.get () with
-    | Present _ ->
-        S.run ~init:(Past instant) @@ fun () ->
-        List.fold_left (fun g rewinder -> rewinder.wrap instant g) f !rewinds ()
+    | Present now ->
+        if instant <= now then
+          S.run ~init:(Past instant) @@ fun () ->
+          List.fold_left (fun g rewinder -> rewinder.wrap instant g) f !rewinds ()
+        else raise (Failure "can't go back to the future")
     | _ -> raise (Failure "can only go back in time from the present")
 
   (* Similarly, but always behave as if an exception were thrown, so that no changes made in the past are permanent.  Used for commands like "echo" in the context of a hole, which might allow holes that should not be saved. *)
