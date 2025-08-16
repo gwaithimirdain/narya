@@ -247,6 +247,19 @@ Some code copied from Coq."
                 (goto-char (point-max))
                 (recenter (- 1)))))))))
 
+(defvar narya-current-error-start nil)
+
+(define-advice proof-shell-error-or-interrupt-action
+    (:before (err-or-int) narya-save-start)
+  (save-excursion
+    (proof-with-script-buffer
+     ;; For an invisible command, there is no overlay, and no error highlighting.
+     (let ((ovl (nth 0 (car proof-action-list))))
+       (when ovl
+         (goto-char (overlay-start ovl))
+         (skip-chars-forward " \t\n")
+         (setq narya-current-error-start (point-marker)))))))
+
 (defface narya-error-face
   '((t (:foreground "red1" :underline t)))
   "Face used to highlight script errors in Narya."
@@ -255,14 +268,12 @@ Some code copied from Coq."
 (defvar narya-error-overlays nil
   "List of overlays for error highlighting.")
 
-(defun narya-highlight-error-range (start-byte end-byte)
-  "Highlight the byte range START-BYTE to END-BYTE in the script buffer."
-  (let ((start (byte-to-position start-byte))
-        (end (byte-to-position end-byte)))
-    (when (and start end)
-      (let ((ovl (make-overlay start end)))
-        (overlay-put ovl 'face 'narya-error-face)
-        (push ovl narya-error-overlays)))))
+(defun narya-highlight-error-range (start end)
+  "Highlight the byte range START to END in the script buffer."
+  (when (and start end)
+    (let ((ovl (make-overlay start end)))
+      (overlay-put ovl 'face 'narya-error-face)
+      (push ovl narya-error-overlays))))
 
 (defun narya-clear-error-highlights ()
   "Remove all current error overlays."
@@ -297,9 +308,6 @@ Some code copied from Coq."
     (put 'narya-clear-error-highlights-on-change 'last-processed-end current-end)))
 
 (add-hook 'proof-state-change-hook #'narya-clear-error-highlights-on-change)
-
-(defvar narya-last-successful-span nil
-  "Stores the last successful span.")
   
 (defun narya-handle-output (cmd string)
   "Parse and handle Narya's output.
@@ -311,7 +319,7 @@ This function also performs part of `proof-shell-handle-delayed-output''s
 role, updating `proof-shell-last-output-kind' to avoid duplicated output
 handling in Proof General."
   ;; Retrieve action information from `proof-action-list`.
-  (let ((span (caar proof-action-list))
+  (let ((span (nth 0 (car proof-action-list)))
         (cmd (nth 1 (car proof-action-list)))
         (flags (nth 3 (car proof-action-list)))
         ;; Variables to mark positions in `string` as we parse.
@@ -321,28 +329,25 @@ handling in Proof General."
         (error-found nil)
         (reformatted nil)
         (parenthesized nil))
-    (when (and span (overlay-buffer span))
-      ;; Store the span
-      (setq narya-last-successful-span span))
     ;; Check for errors in the output first.
-    (when (and (string-match proof-shell-error-regexp string))
+    (when (string-match proof-shell-error-regexp string)
       (setq error-found t
             proof-shell-last-output-kind 'error)
-      (setq span narya-last-successful-span)
       (proof-with-script-buffer
+       (setq rend (string-match "\f\\[errors\\]\f\n" string))
        ;; Start parsing the error numbers after the initial "^L[errors]^L" part
-       (let ((error-start (string-match "\f\\[errors\\]\f\n" string)))
-         ;; Parse all the error pairs (start-byte, end-byte)
-         (while (string-match "\\([0-9]+\\) \\([0-9]+\\)" string)
-           (let ((start-byte (string-to-number (match-string 1 string)))
-                 (end-byte (string-to-number (match-string 2 string))))
-             ;; Highlight the positions on the current line
-             (if (and span (overlay-buffer span) (overlay-end span))
-                 (narya-highlight-error-range (+ (position-bytes (overlay-end span)) 1 start-byte) 
-                                              (+ (position-bytes (overlay-end span)) 1 end-byte))
-               (narya-highlight-error-range (+ 1 start-byte) (+ 1 end-byte)))
-             ;; Move forward in the string to look for the next error pair
-             (setq string (substring string (match-end 0))))))))
+       (when narya-current-error-start
+         (let ((cmd-start-bytes (position-bytes narya-current-error-start))
+               (pos rend))
+           ;; Parse all the error pairs (start-byte, end-byte)
+           (while (string-match "\\([0-9]+\\) \\([0-9]+\\)" string pos)
+             (setq pos (match-end 0))
+             (let ((start-byte (string-to-number (match-string 1 string)))
+                   (end-byte (string-to-number (match-string 2 string))))
+               (narya-highlight-error-range
+                (byte-to-position (+ cmd-start-bytes start-byte))
+                (byte-to-position (+ cmd-start-bytes end-byte))))))))
+      (proof-shell-display-output-as-response flags (substring string rstart rend)))
     ;; If no errors, proceed with normal processing.
     (unless error-found
       ;; Check for the goals marker in the output, setting positions to slice
