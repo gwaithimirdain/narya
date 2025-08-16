@@ -15,12 +15,14 @@
 (defun narya-script-preprocess (file start end cmd)
   "Add a formfeed at the end of a command, as a delimiter."
   (list (concat cmd "\n\x0C\n")))
+
+(defvar narya-hole-overlays nil
+  "List of overlays marking the locations of open holes")
   
 (defun narya-delete-all-holes ()
-  "Delete all hole overlays."
-  (dolist (o (overlays-in (point-min) (point-max)))
-    (when (overlay-get o 'narya-hole)
-      (delete-overlay o))))
+  "Delete all hole overlays and reset `narya-hole-overlays' to nil."
+  (mapc #'delete-overlay narya-hole-overlays)
+  (setq narya-hole-overlays nil))
 
 (add-hook 'proof-shell-kill-function-hooks #'narya-delete-all-holes)
 
@@ -79,6 +81,7 @@ The start and end regions should include the already-inserted ¿ and ʔ."
                              t nil)))
       (overlay-put ovl 'narya-hole hole-id)
       (overlay-put ovl 'face '(:extend t :inherit highlight))
+      (push ovl narya-hole-overlays)
       ovl)))
 
 (defun narya-create-marked-hole-overlays (start end)
@@ -247,6 +250,62 @@ Some code copied from Coq."
                 (goto-char (point-max))
                 (recenter (- 1)))))))))
 
+(defvar narya-current-error-start nil)
+
+(define-advice proof-shell-error-or-interrupt-action
+    (:before (err-or-int) narya-save-start)
+  (save-excursion
+    (proof-with-script-buffer
+     ;; For an invisible command, there is no overlay, and no error highlighting.
+     (let ((ovl (nth 0 (car proof-action-list))))
+       (when ovl
+         (goto-char (overlay-start ovl))
+         (skip-chars-forward " \t\n")
+         (setq narya-current-error-start (point-marker)))))))
+
+(defface narya-error-face
+  '((t (:foreground "red1" :underline t)))
+  "Face used to highlight script errors in Narya."
+  :group 'narya)
+
+(defvar narya-error-overlays nil
+  "List of overlays for error highlighting.")
+
+(defun narya-highlight-error-range (start end)
+  "Highlight the byte range START to END in the script buffer."
+  (when (and start end)
+    (let ((ovl (make-overlay start end)))
+      (overlay-put ovl 'narya-error t)
+      (overlay-put ovl 'face 'narya-error-face)
+      (push ovl narya-error-overlays))))
+
+(defun narya-clear-error-highlights ()
+  "Remove all current error overlays."
+  (mapc #'delete-overlay narya-error-overlays)
+  (setq narya-error-overlays nil))
+
+(defun narya-clear-error-highlights-on-edit (start end _length)
+  "Clear error overlays if they intersect the edit.
+For `after-change-functions' in Narya-mode buffers."
+  (setq narya-error-overlays
+        (seq-filter
+         (lambda (ovl)
+           (if (and (overlay-start ovl)
+                    (overlay-end ovl)
+                    (<= (overlay-start ovl) end)
+                    (>= (overlay-end ovl) start))
+               (progn (delete-overlay ovl) nil)
+             t))
+         narya-error-overlays)))
+
+(defun narya-clear-error-highlights-on-visible-cmd ()
+  "Clear error highlights whenever a non-invisible command is executed."
+  (unless (member 'invisible (nth 3 (car proof-action-list)))
+    (narya-clear-error-highlights)
+    (setq narya-pre-change-unprocessed-begin nil)))
+
+(add-hook 'proof-state-change-hook #'narya-clear-error-highlights-on-visible-cmd)
+  
 (defun narya-handle-output (cmd string)
   "Parse and handle Narya's output.
 If called with an invisible command (such as 'solve'), store hole data
@@ -257,22 +316,38 @@ This function also performs part of `proof-shell-handle-delayed-output''s
 role, updating `proof-shell-last-output-kind' to avoid duplicated output
 handling in Proof General."
   ;; Retrieve action information from `proof-action-list`.
-  (let ((span (caar proof-action-list))
+  (let ((span (nth 0 (car proof-action-list)))
         (cmd (nth 1 (car proof-action-list)))
         (flags (nth 3 (car proof-action-list)))
         ;; Variables to mark positions in `string` as we parse.
         (rstart 0) (rend 0) (gstart 0) (gend 0) (dpos 0)
         ;; Temporary storage for hole data.
         (parsed-hole-data nil)
-        (error-found nil)
         (reformatted nil)
         (parenthesized nil))
     ;; Check for errors in the output first.
-    (when (string-match proof-shell-error-regexp string)
-      (setq error-found t
-            proof-shell-last-output-kind 'error))
-    ;; If no errors, proceed with normal processing.
-    (unless error-found
+    (if (string-match proof-shell-error-regexp string)
+        (progn
+          (setq proof-shell-last-output-kind 'error
+                ;; Start parsing the error numbers after the initial "^L[errors]^L" part
+                rend (string-match "\f\\[errors\\]\f\n" string))
+          ;; This should only be set for non-invisible commands.
+          (when narya-current-error-start
+            (proof-with-script-buffer
+             (let ((cmd-start-bytes (position-bytes narya-current-error-start))
+                   (pos rend))
+               ;; Parse all the error pairs (start-byte, end-byte)
+               (while (string-match "\\([0-9]+\\) \\([0-9]+\\)" string pos)
+                 (setq pos (match-end 0))
+                 (let ((start-byte (string-to-number (match-string 1 string)))
+                       (end-byte (string-to-number (match-string 2 string))))
+                   (narya-highlight-error-range
+                    (byte-to-position (+ cmd-start-bytes start-byte))
+                    (byte-to-position (+ cmd-start-bytes end-byte)))))))
+            ;; We nil it out so that subsequent invisible commands won't see it.
+            (setq narya-current-error-start nil))
+          (proof-shell-display-output-as-response flags (substring string rstart rend)))
+      ;; If no errors, proceed with normal processing.
       ;; Check for the goals marker in the output, setting positions to slice
       ;; out goals and data sections.
       (when (string-match "\x0C\\[goals\\]\x0C\n" string rstart)
@@ -377,9 +452,14 @@ handling in Proof General."
   "Delete overlays for holes that are (now) outside the processed region."
   (let ((pend (proof-unprocessed-begin))
         (inhibit-read-only t))
-    (dolist (o (overlays-in pend (point-max)))
-      (when (overlay-get o 'narya-hole)
-        (delete-overlay o)))))
+    (setq narya-hole-overlays
+	  (seq-filter
+	   (lambda (ovl)
+	     (if (and (overlay-start ovl) (< (overlay-start ovl) pend))
+		 t
+	       (delete-overlay ovl)
+	       nil))
+	   narya-hole-overlays))))
 
 ;; Use Asai's ANSI coloring of error messages
 (defun narya-insert-and-color-text (&rest args)
@@ -518,7 +598,8 @@ handling in Proof General."
   (modify-syntax-entry ? " ")           ; Why is this necessary?
   (setq font-lock-multiline t)
   (add-to-list 'font-lock-extend-region-functions 'narya-extend-font-lock-region)
-  (add-hook 'proof-activate-scripting-hook 'narya-chdir-to-current-file))
+  (add-hook 'proof-activate-scripting-hook 'narya-chdir-to-current-file)
+  (add-hook 'after-change-functions 'narya-clear-error-highlights-on-edit nil t))
 
 (add-hook 'narya-mode-hook 'narya-mode-extra-config)
 
@@ -731,8 +812,9 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
           (let ((insert-end (point-marker))
                 (new-holes 0))
             (delete-region (point) (overlay-end hole-overlay))
-            ;; Delete the overlay for the solved hole.
+            ;; Delete the overlay for the solved hole and update the hole list.
             (delete-overlay hole-overlay)
+            (setq narya-hole-overlays (delq hole-overlay narya-hole-overlays))
             ;; Create new overlays from holes in the new term.
             (if narya-reformat-commands
                 ;; If the new term was reformatted, then its holes
@@ -849,7 +931,8 @@ Defaults to the command containing point."
             (atomic-change-group
               (dolist (h (overlays-in start end))
                 (when (overlay-get h 'narya-hole)
-                  (delete-overlay h)))
+                  (delete-overlay h)
+                  (setq narya-hole-overlays (delq h narya-hole-overlays))))
               ;; Insert the reformatted version in place of the old version
               (goto-char start)
               (insert narya-pending-reformatted)
