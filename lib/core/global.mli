@@ -27,13 +27,13 @@ type find_hole =
 
 val find_hole : int -> find_hole
 val all_holes : unit -> find_hole Bwd.t
-val to_channel_file : Out_channel.t -> File.t -> Marshal.extern_flags list -> unit
+val to_channel_origin : Out_channel.t -> Origin.t -> Marshal.extern_flags list -> unit
 
-type file_entry
+type origin_entry
 
-val find_file : File.t -> file_entry
-val add_file : File.t -> file_entry -> unit
-val from_channel_file : (File.t -> File.t) -> In_channel.t -> File.t -> file_entry
+val find_file : File.t -> origin_entry
+val add_file : File.t -> origin_entry -> unit
+val from_channel_origin : (File.t -> File.t) -> In_channel.t -> Origin.t -> origin_entry
 val add : Constant.t -> (emp, kinetic) term -> definition -> unit
 val set : Constant.t -> definition -> unit
 val add_error : Constant.t -> Reporter.Code.t -> unit

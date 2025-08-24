@@ -68,7 +68,7 @@ let () = Flags.register_printer (function `Read -> Some "unhandled Flags.read ef
 module Loaded = struct
   type data = {
     trie : Scope.trie;
-    globals : Global.file_entry;
+    globals : Global.origin_entry;
     file : File.t;
     old_imports : (File.t * FilePath.filename) Bwd.t;
     explicit : bool;
@@ -118,7 +118,7 @@ let marshal (file : File.t) (filename : FilePath.filename) (trie : Scope.trie) =
       (Flags.read ()).marshal chan;
       Marshal.to_channel chan file [];
       Marshal.to_channel chan (Loading.get ()).imports [];
-      Global.to_channel_file chan file [];
+      Global.to_channel_origin chan (File file) [];
       Parser.Scope.marshal_original_names chan [];
       Marshal.to_channel chan
         (Trie.map
@@ -175,7 +175,7 @@ let rec unmarshal (file : File.t) (lookup : FilePath.filename -> File.t)
               Hashtbl.find_opt table x
               <|> Anomaly "missing file identifier while unmarshaling compiled file" in
             (* Now we load the definitions from the compiled file, replacing all the old files by the new ones. *)
-            let unit_entry = Global.from_channel_file find_in_table chan file in
+            let unit_entry = Global.from_channel_origin find_in_table chan (File file) in
             let original_names = (Marshal.from_channel chan : (Constant.t, string list) Hashtbl.t) in
             let trie =
               Trie.map
