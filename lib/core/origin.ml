@@ -266,6 +266,18 @@ module Versioned = struct
     grow_files x file;
     Dynarray.set x.files file v
 
+  (* Set the value of the object associated to a given origin.  If we are in the past, only instants before the current time are accessible. *)
+  let set_at (x : 'a t) (i : Origin.t) (v : 'a) : unit option =
+    try
+      match i with
+      | Top -> Some (x.top := v)
+      | File file -> Some (set_file x file v)
+      | Instant instant -> (
+          match Origin.S.get () with
+          | Past now when instant > now -> None
+          | _ -> Some (Dynarray.set x.instants instant v))
+    with Invalid_argument _ -> None
+
   (* Fold over all the entries. *)
   let fold (x : 'a t) (f : 'acc -> 'a -> 'acc) (acc : 'acc) : 'acc =
     let acc = f acc !(x.top) in
