@@ -268,8 +268,8 @@ type (_, _, _) meta_tel =
       string option * ('a, 'b, potential) Meta.t * (('b, D.zero) snoc, 'c, 'bc) meta_tel
       -> ('b, 'c Fwn.suc, 'bc) meta_tel
 
-(* In HOTT mode, the user isn't allowed to define gel-types, so we bail out at typechecking time if we detect one.  However, we do want to allow *ourselves* to define glue as a Gel-type later on, so we start out this flag as true and then set it (permanently) to false later. *)
-let gel_ok = ref true
+(* In HOTT mode, the user isn't allowed to define gel-types, so we bail out at typechecking time if we detect one.  But in parametricity mode, and when bootstrapping the definition of glue, we set this flag to true. *)
+let gel_ok = ref false
 
 (* Check a term or case tree (depending on the energy: terms are kinetic, case trees are potential).  The ?discrete parameter is supplied if the term we are currently checking might be a discrete datatype, in which case it is a set of all the currently-being-defined mutual constants.  Most term-formers are nondiscrete, so they can just ignore this argument and make their recursive calls without it. *)
 let rec check : type a b s.

@@ -1,0 +1,28 @@
+(library
+  (name io)
+  (libraries util core parser)
+  (modules io))
+
+(executable
+  (libraries core parser top io)
+  (name bootstrap)
+  (modules bootstrap)
+  (preprocess (pps ppx_blob))
+  (preprocessor_deps
+    (file visible.ny)
+    (file isfibrant.ny)
+    (file fibrancy.ny)))
+
+(rule
+  (deps bootstrap.exe)
+  (targets hott.nyb)
+  (action
+    (run ./bootstrap.exe hott.nyb)))
+
+(library
+  (name hott)
+  (modules hott)
+  (libraries io)
+  (preprocess (pps ppx_blob))
+  (preprocessor_deps
+    (file hott.nyb)))
