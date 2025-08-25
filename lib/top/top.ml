@@ -78,7 +78,8 @@ let set_refls str =
 exception Exit
 
 (* This function is called to wrap whatever "interactive mode" is implemented by the caller.  It sets up the environment and all the effect handlers based on the global flags, loads all the files and strings specified in the global flags, and then runs the callback. *)
-let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols f =
+let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = true) ~install_hott f
+    =
   Check.Oracle.run ~ask:(fun _ -> Ok ()) @@ fun () ->
   Lexer.Specials.run ?onechar_ops ?ascii_symbols ?digit_vars @@ fun () ->
   Parser.Unparse.install ();
@@ -141,11 +142,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols f =
           | _ -> acc)
         !inputs [] in
     Subtype.run @@ fun () ->
-    if !hott then (
-      let v = !verbose in
-      verbose := false;
-      Parser.Hott.install ();
-      verbose := v);
+    if !hott then install_hott () else Check.gel_ok := true;
     Execute.Flags.run
       ~env:
         {
@@ -180,7 +177,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols f =
       [ !inputs ];
     (* Interactive mode also has all the other units loaded.  Note that this should affect the "Top" origin. *)
     Scope.set_visible (Execute.Loaded.get_scope ());
-    Origin.set_interactive ();
+    if interactive then Origin.set_interactive ();
     f ()
   with Failure str -> fatal (Anomaly ("failure: " ^ str))
 
@@ -212,10 +209,12 @@ module Pauseable (R : Signatures.Type) = struct
     with Halt -> cont := None
 
   (* We initialize the setup by calling run_top inside the effect handler. *)
-  let init ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols f =
+  let init ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ~install_hott f =
     (* First we discontinue any existing continuation, to avoid leaks. *)
     halt ();
-    try run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols @@ fun () -> corun_top f
+    try
+      run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ~install_hott @@ fun () ->
+      corun_top f
     with effect Yield output, k ->
       cont := Some k;
       output

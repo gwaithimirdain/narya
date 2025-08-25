@@ -48,7 +48,7 @@ end
 type trie = (Param.data, Param.tag) Trie.t
 type t
 
-val empty : t
+val set_default : trie -> unit
 val resolve : Trie.path -> (Param.data * Param.tag) option
 val modify_export : ?context_export:Param.context -> Param.hook Yuujinchou.Language.t -> unit
 
@@ -82,9 +82,7 @@ val count_sections : unit -> int
 val lookup : Trie.path -> Constant.t option
 val find_data : ('a * 'c, 'b) Trie.t -> 'a -> Trie.path option
 val name_of : Constant.t -> Trie.path
-val marshal_original_names : out_channel -> Marshal.extern_flags list -> unit
 val define : ?loc:Asai.Range.t -> Trie.path -> Constant.t
-val redefine : (Constant.t, string list) Hashtbl.t -> (File.t -> File.t) -> Constant.t -> Constant.t
 val define_notation : User.prenotation -> ?loc:Asai.Range.t -> Trie.path -> User.key list
 val check_name : Trie.path -> Asai.Range.t option -> unit
 
@@ -100,3 +98,8 @@ module Situation : sig
   val add : ('left, 'tight, 'right) Notation.notation -> unit
   val add_user : User.prenotation -> User.notation * User.key list
 end
+
+val to_channel :
+  Out_channel.t -> (Param.data, Param.tag) Trie.t -> Marshal.extern_flags list -> unit
+
+val from_istream : Istream.t -> (File.t -> File.t) -> (Param.data, Param.tag) Trie.t

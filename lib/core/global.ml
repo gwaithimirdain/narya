@@ -101,18 +101,18 @@ let all_holes () =
 
 (* Marshal and unmarshal the constants and metavariables pertaining to a single file.  We ignore the "current" data because that is only relevant during typechecking commands, whereas this comes at the end of typechecking a whole file.  We do NOT marshal the "holes" table because compiled files can't contain holes, and holedata potentially contains functional values. *)
 
-let to_channel_file chan file flags =
-  Constant.Table.to_channel_file chan file constants flags;
-  Metatable.to_channel_file chan file metas flags
+let to_channel_origin chan origin flags =
+  Constant.Table.to_channel_origin chan origin constants flags;
+  Metatable.to_channel_origin chan origin metas flags
 
 let link_definition f df =
   match df with
   | `Axiom, p -> (`Axiom, p)
   | `Defined tm, p -> (`Defined (Link.term f tm), p)
 
-type file_entry =
-  ((emp, kinetic) term * definition, Code.t) Result.t Constant.Table.file_entry
-  * unit Metatable.file_entry
+type origin_entry =
+  ((emp, kinetic) term * definition, Code.t) Result.t Constant.Table.origin_entry
+  * unit Metatable.origin_entry
 
 let find_file i = (Constant.Table.find_file i constants, Metatable.find_file i metas)
 
@@ -121,14 +121,14 @@ let add_file i (c, m) =
   Metatable.add_file i m metas
 
 (* Returns the new file data for constants and metas. *)
-let from_channel_file f chan i =
+let from_istream_origin f chan i =
   (* NB in a tuple (a,b), OCaml executes b before a!  But we have to unmarshal the constants before the metas, because that's the order we marshaled them in, so we control the order of execution with let.  *)
   let cs =
-    Constant.Table.from_channel_file chan
+    Constant.Table.from_istream_origin chan
       (Result.map (fun (tm, df) -> (Link.term f tm, link_definition f df)))
       i constants in
   let ms =
-    Metatable.from_channel_file chan
+    Metatable.from_istream_origin chan
       {
         map =
           (fun _ df ->
@@ -139,10 +139,10 @@ let from_channel_file f chan i =
       i metas in
   (cs, ms)
 
-(* Add a new constant. *)
+(* Add a new constant.  Only works on the current origin. *)
 let add c ty df = Constant.Table.add c (Ok (ty, df)) constants
 
-(* Set the definition of an already-defined constant.  Only works for the current origin. *)
+(* Set the definition of an already-defined constant.  Only works on the current origin. *)
 let set c df =
   match Constant.Table.find_opt c constants with
   | Some (Ok (ty, _)) -> Constant.Table.add c (Ok (ty, df)) constants

@@ -177,30 +177,29 @@ module Table = struct
      fun f m acc ->
       IdMap.fold (fun _ (Entry (key, value)) acc -> f.fold key value acc) (Versioned.get m) acc
 
-    type 'x file_entry = 'x entry IdMap.t option
+    type 'x origin_entry = 'x entry IdMap.t option
 
-    let find_file (file : File.t) (m : 'a t) : 'a file_entry = Versioned.get_at m (File file)
+    let find_file (file : File.t) (m : 'a t) = Versioned.get_at m (File file)
 
     let add_file file x m =
       match x with
       | Some x -> Versioned.set_file m file x
       | None -> ()
 
-    let to_channel_file : type x.
-        Out_channel.t -> File.t -> x t -> Marshal.extern_flags list -> unit =
-     fun chan file m flags -> Marshal.to_channel chan (find_file file m) flags
+    let to_channel_origin : type x.
+        Out_channel.t -> Origin.t -> x t -> Marshal.extern_flags list -> unit =
+     fun chan origin m flags -> Marshal.to_channel chan (Versioned.get_at m origin) flags
 
     type 'x mapper = {
       map : 'a 'b 's. ('a, 'b, 's) key -> ('x, 'a, 'b, 's) F.t -> ('x, 'a, 'b, 's) F.t;
     }
 
-    let from_channel_file : type x. In_channel.t -> x mapper -> File.t -> x t -> x file_entry =
-     fun chan f file m ->
-      match (Marshal.from_channel chan : x file_entry) with
+    let from_istream_origin : type x. Istream.t -> x mapper -> Origin.t -> x t -> x origin_entry =
+     fun chan f origin m ->
+      match (Istream.unmarshal chan : x origin_entry) with
       | Some n ->
           let fn = IdMap.map (fun (Entry (key, value)) -> Entry (key, f.map key value)) n in
-          add_file file (Some fn) m;
-          Some fn
+          Option.bind (Versioned.set_at m origin fn) @@ fun () -> Some fn
       | None -> None
   end
 end

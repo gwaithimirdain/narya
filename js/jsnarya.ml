@@ -39,7 +39,7 @@ let _ =
          discreteness := disc;
          inputs := Snoc (Emp, `String (Js.to_string startup));
          try
-           let _ = Pauser.init ~use_ansi:true (fun () -> "") in
+           let _ = Pauser.init ~use_ansi:true ~install_hott:(fun () -> ()) (fun () -> "") in
            Js.null
          with Top.Exit ->
            (* If executing the extra startup code raises an error, we catch that error in the error buffer and return it. *)

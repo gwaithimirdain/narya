@@ -53,16 +53,16 @@ module Table : sig
     val fold : ('x, 'acc) folder -> 'x t -> 'acc -> 'acc
     val fold_current : ('x, 'acc) folder -> 'x t -> 'acc -> 'acc
 
-    type 'x file_entry
+    type 'x origin_entry
 
-    val find_file : File.t -> 'x t -> 'x file_entry
-    val add_file : File.t -> 'a file_entry -> 'a t -> unit
-    val to_channel_file : Out_channel.t -> File.t -> 'x t -> Marshal.extern_flags list -> unit
+    val find_file : File.t -> 'x t -> 'x origin_entry
+    val add_file : File.t -> 'a origin_entry -> 'a t -> unit
+    val to_channel_origin : Out_channel.t -> Origin.t -> 'x t -> Marshal.extern_flags list -> unit
 
     type 'x mapper = {
       map : 'a 'b 's. ('a, 'b, 's) key -> ('x, 'a, 'b, 's) F.t -> ('x, 'a, 'b, 's) F.t;
     }
 
-    val from_channel_file : In_channel.t -> 'x mapper -> File.t -> 'x t -> 'x file_entry
+    val from_istream_origin : Istream.t -> 'x mapper -> Origin.t -> 'x t -> 'x origin_entry
   end
 end

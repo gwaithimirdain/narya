@@ -38,5 +38,6 @@ module Versioned : sig
   val set : 'a t -> 'a -> unit
   val modify : 'a t -> ('a -> 'a) -> unit
   val set_file : 'a t -> File.t -> 'a -> unit
+  val set_at : 'a t -> Origin.t -> 'a -> unit option
   val fold : 'a t -> ('acc -> 'a -> 'acc) -> 'acc -> 'acc
 end

@@ -1,5 +1,6 @@
 (* This module should not be opened, but be used qualified. *)
 
+open Util
 open Origin
 
 (* A constant is identified by an autonumber, scoped by an Origin. *)
@@ -44,7 +45,7 @@ module Table = struct
 
   (* Get or set all the data associated to a single file. *)
 
-  type 'a file_entry = 'a IntMap.t option
+  type 'a origin_entry = 'a IntMap.t option
 
   let find_file file tbl = Versioned.get_at tbl (File file)
 
@@ -53,17 +54,16 @@ module Table = struct
     | Some x -> Versioned.set_file tbl file x
     | None -> ()
 
-  (* Marshal the objects associated to a specific file only. *)
-  let to_channel_file chan file (tbl : 'a t) flags =
-    Marshal.to_channel chan (Versioned.get_at tbl (File file)) flags
+  (* Marshal the objects associated to a specific origin only. *)
+  let to_channel_origin chan origin (tbl : 'a t) flags =
+    Marshal.to_channel chan (Versioned.get_at tbl origin) flags
 
-  (* Unmarshal the objects associated to a specific file only, applying f to their elements before adding them to the current map, and returning the new file data. *)
-  let from_channel_file chan f file tbl =
-    match (Marshal.from_channel chan : 'a IntMap.t option) with
+  (* Unmarshal the objects associated to a specific origin only, applying f to their elements before adding them to the current map, and returning the new origin data. *)
+  let from_istream_origin chan f origin tbl =
+    match (Istream.unmarshal chan : 'a IntMap.t option) with
     | Some x ->
         let fx = IntMap.map f x in
-        Versioned.set_file tbl file fx;
-        Some fx
+        Option.bind (Versioned.set_at tbl origin fx) @@ fun () -> Some fx
     | None -> None
 end
 
