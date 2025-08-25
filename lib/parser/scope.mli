@@ -48,7 +48,7 @@ end
 type trie = (Param.data, Param.tag) Trie.t
 type t
 
-val empty : t
+val set_default : trie -> unit
 val resolve : Trie.path -> (Param.data * Param.tag) option
 val modify_export : ?context_export:Param.context -> Param.hook Yuujinchou.Language.t -> unit
 

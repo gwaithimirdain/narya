@@ -74,14 +74,20 @@ type scope = {
 (* A Scope.t has an inner scope (the current file/section) and also maintains a stack of outer scopes. *)
 type t = { outer : scope Bwd.t; inner : scope }
 
-let empty : t =
-  {
-    outer = Emp;
-    inner = { visible = Trie.empty; export = Trie.empty; prefix = Emp; situation = Situation.empty };
-  }
+let default : t ref =
+  ref
+    {
+      outer = Emp;
+      inner =
+        { visible = Trie.empty; export = Trie.empty; prefix = Emp; situation = Situation.empty };
+    }
+
+let set_default trie =
+  let d = !default in
+  default := { d with inner = { d.inner with visible = trie; export = trie } }
 
 (* The default scope is empty, but interactive instants inherit the scope of the previous instant.  (Command-line exec strings, stdin, and interactive mode also start with a scope that includes everything already executed, but this is handled separately.)  *)
-let scopes : t Versioned.t = Versioned.make ~default:(fun () -> empty) ~inherit_values:true
+let scopes : t Versioned.t = Versioned.make ~default:(fun () -> !default) ~inherit_values:true
 
 (* Access the current notation situation.  *)
 
