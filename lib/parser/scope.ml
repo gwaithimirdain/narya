@@ -213,7 +213,6 @@ let include_singleton ?context_visible ?context_export (path, x) =
 
 (* Save the original as-defined names of constants *)
 let original_names = Hashtbl.create 100
-let marshal_original_names chan flags = Marshal.to_channel chan original_names flags
 
 (* Create a new Constant.t and define a name to equal it. *)
 let define ?loc name =
@@ -350,3 +349,33 @@ let check_name name loc =
         | None -> [] in
       emit ?loc ~extra_remarks (Redefining_constant name)
   | None -> ()
+
+(* Marshal a trie, and original names, to a channel. *)
+let to_channel chan trie flags =
+  Marshal.to_channel chan original_names flags;
+  Marshal.to_channel chan
+    (Trie.map
+       (fun _ -> function
+         | (`Constant c, loc), tag -> ((`Constant c, loc), tag)
+         | (`Notation (u, _), loc), tag -> ((`Notation u, loc), tag))
+       trie)
+    flags
+
+let from_istream chan find_in_table =
+  let old_original_names = (Istream.unmarshal chan : (Constant.t, string list) Hashtbl.t) in
+  Trie.map
+    (fun _ (data, tag) ->
+      match data with
+      | `Constant c, loc -> ((`Constant (redefine old_original_names find_in_table c), loc), tag)
+      | `Notation (User.User u), loc ->
+          (* We also have to re-make the notation objects since they contain constant names (print keys) and their own autonumbers (but those are only used for comparison locally so don't need to be walked elsewhere). *)
+          let key =
+            match u.key with
+            | `Constant c -> `Constant (Constant.remake find_in_table c)
+            | `Constr (c, i) -> `Constr (c, i) in
+          let u = User.User { u with key } in
+          ((`Notation (u, User.make_user u), loc), tag))
+    (Istream.unmarshal chan
+      : ( [ `Constant of Constant.t | `Notation of User.prenotation ] * Asai.Range.t option,
+          Param.tag )
+        Trie.t)

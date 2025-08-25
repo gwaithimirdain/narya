@@ -119,14 +119,7 @@ let marshal (file : File.t) (filename : FilePath.filename) (trie : Scope.trie) =
       Marshal.to_channel chan file [];
       Marshal.to_channel chan (Loading.get ()).imports [];
       Global.to_channel_origin chan (File file) [];
-      Parser.Scope.marshal_original_names chan [];
-      Marshal.to_channel chan
-        (Trie.map
-           (fun _ -> function
-             | (`Constant c, loc), tag -> ((`Constant c, loc), tag)
-             | (`Notation (u, _), loc), tag -> ((`Notation u, loc), tag))
-           trie)
-        [];
+      Parser.Scope.to_channel chan trie [];
       Marshal.to_channel chan (Loading.get ()).actions []
       (* Just emit a warning if we can't write the compiled version *)
     with Sys_error _ -> emit (Cant_write_compiled_file ofile)
@@ -176,26 +169,7 @@ let rec unmarshal (file : File.t) (lookup : FilePath.filename -> File.t)
               <|> Anomaly "missing file identifier while unmarshaling compiled file" in
             (* Now we load the definitions from the compiled file, replacing all the old files by the new ones. *)
             let unit_entry = Global.from_istream_origin find_in_table (Channel chan) (File file) in
-            let original_names = (Marshal.from_channel chan : (Constant.t, string list) Hashtbl.t) in
-            let trie =
-              Trie.map
-                (fun _ (data, tag) ->
-                  match data with
-                  | `Constant c, loc ->
-                      ((`Constant (Parser.Scope.redefine original_names find_in_table c), loc), tag)
-                  | `Notation (User.User u), loc ->
-                      (* We also have to re-make the notation objects since they contain constant names (print keys) and their own autonumbers (but those are only used for comparison locally so don't need to be walked elsewhere). *)
-                      let key =
-                        match u.key with
-                        | `Constant c -> `Constant (Constant.remake find_in_table c)
-                        | `Constr (c, i) -> `Constr (c, i) in
-                      let u = User.User { u with key } in
-                      ((`Notation (u, User.make_user u), loc), tag))
-                (Marshal.from_channel chan
-                  : ( [ `Constant of Constant.t | `Notation of User.prenotation ]
-                      * Asai.Range.t option,
-                      Scope.Param.tag )
-                    Trie.t) in
+            let trie = Parser.Scope.from_istream (Channel chan) find_in_table in
             (* We check whether the compiled file had any actions, and issue a warning if so *)
             if (Marshal.from_channel chan : bool) then emit (Actions_in_compiled_file ofile);
             Some (trie, unit_entry, old_imports))
