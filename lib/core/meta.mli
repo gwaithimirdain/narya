@@ -63,6 +63,6 @@ module Table : sig
       map : 'a 'b 's. ('a, 'b, 's) key -> ('x, 'a, 'b, 's) F.t -> ('x, 'a, 'b, 's) F.t;
     }
 
-    val from_channel_origin : In_channel.t -> 'x mapper -> Origin.t -> 'x t -> 'x origin_entry
+    val from_istream_origin : Istream.t -> 'x mapper -> Origin.t -> 'x t -> 'x origin_entry
   end
 end

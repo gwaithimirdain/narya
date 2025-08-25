@@ -194,10 +194,9 @@ module Table = struct
       map : 'a 'b 's. ('a, 'b, 's) key -> ('x, 'a, 'b, 's) F.t -> ('x, 'a, 'b, 's) F.t;
     }
 
-    let from_channel_origin : type x. In_channel.t -> x mapper -> Origin.t -> x t -> x origin_entry
-        =
+    let from_istream_origin : type x. Istream.t -> x mapper -> Origin.t -> x t -> x origin_entry =
      fun chan f origin m ->
-      match (Marshal.from_channel chan : x origin_entry) with
+      match (Istream.unmarshal chan : x origin_entry) with
       | Some n ->
           let fn = IdMap.map (fun (Entry (key, value)) -> Entry (key, f.map key value)) n in
           Option.bind (Versioned.set_at m origin fn) @@ fun () -> Some fn

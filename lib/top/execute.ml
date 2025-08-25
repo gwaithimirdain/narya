@@ -175,7 +175,7 @@ let rec unmarshal (file : File.t) (lookup : FilePath.filename -> File.t)
               Hashtbl.find_opt table x
               <|> Anomaly "missing file identifier while unmarshaling compiled file" in
             (* Now we load the definitions from the compiled file, replacing all the old files by the new ones. *)
-            let unit_entry = Global.from_channel_origin find_in_table chan (File file) in
+            let unit_entry = Global.from_istream_origin find_in_table (Channel chan) (File file) in
             let original_names = (Marshal.from_channel chan : (Constant.t, string list) Hashtbl.t) in
             let trie =
               Trie.map

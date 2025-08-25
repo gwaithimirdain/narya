@@ -121,14 +121,14 @@ let add_file i (c, m) =
   Metatable.add_file i m metas
 
 (* Returns the new file data for constants and metas. *)
-let from_channel_origin f chan i =
+let from_istream_origin f chan i =
   (* NB in a tuple (a,b), OCaml executes b before a!  But we have to unmarshal the constants before the metas, because that's the order we marshaled them in, so we control the order of execution with let.  *)
   let cs =
-    Constant.Table.from_channel_origin chan
+    Constant.Table.from_istream_origin chan
       (Result.map (fun (tm, df) -> (Link.term f tm, link_definition f df)))
       i constants in
   let ms =
-    Metatable.from_channel_origin chan
+    Metatable.from_istream_origin chan
       {
         map =
           (fun _ df ->

@@ -33,7 +33,7 @@ type origin_entry
 
 val find_file : File.t -> origin_entry
 val add_file : File.t -> origin_entry -> unit
-val from_channel_origin : (File.t -> File.t) -> In_channel.t -> Origin.t -> origin_entry
+val from_istream_origin : (File.t -> File.t) -> Istream.t -> Origin.t -> origin_entry
 val add : Constant.t -> (emp, kinetic) term -> definition -> unit
 val set : Constant.t -> definition -> unit
 val add_error : Constant.t -> Reporter.Code.t -> unit

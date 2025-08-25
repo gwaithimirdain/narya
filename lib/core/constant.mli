@@ -1,3 +1,4 @@
+open Util
 open Origin
 
 module Constant : sig
@@ -23,7 +24,7 @@ module Table : sig
   val find_file : File.t -> 'a t -> 'a origin_entry
   val add_file : File.t -> 'a origin_entry -> 'a t -> unit
   val to_channel_origin : out_channel -> Origin.t -> 'a t -> Marshal.extern_flags list -> unit
-  val from_channel_origin : in_channel -> ('a -> 'b) -> Origin.t -> 'b t -> 'b origin_entry
+  val from_istream_origin : Istream.t -> ('a -> 'b) -> Origin.t -> 'b t -> 'b origin_entry
 end
 
 module Map : module type of Map.Make (Constant)

@@ -1,5 +1,6 @@
 (* This module should not be opened, but be used qualified. *)
 
+open Util
 open Origin
 
 (* A constant is identified by an autonumber, scoped by an Origin. *)
@@ -58,8 +59,8 @@ module Table = struct
     Marshal.to_channel chan (Versioned.get_at tbl origin) flags
 
   (* Unmarshal the objects associated to a specific origin only, applying f to their elements before adding them to the current map, and returning the new origin data. *)
-  let from_channel_origin chan f origin tbl =
-    match (Marshal.from_channel chan : 'a IntMap.t option) with
+  let from_istream_origin chan f origin tbl =
+    match (Istream.unmarshal chan : 'a IntMap.t option) with
     | Some x ->
         let fx = IntMap.map f x in
         Option.bind (Versioned.set_at tbl origin fx) @@ fun () -> Some fx
