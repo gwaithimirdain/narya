@@ -308,6 +308,7 @@ module F = struct
     | Data _ -> fprintf ppf "Data(?)"
     | Codata _ -> fprintf ppf "Codata(?)"
     | Record (_, _, _) -> fprintf ppf "Record(?)"
+    | SelfRecord _ -> fprintf ppf "SelfRecord(?)"
     | Refute (_, _) -> fprintf ppf "Refute(?)"
     | Hole _ -> fprintf ppf "Hole"
     | Realize x -> fprintf ppf "Realize %a" check x

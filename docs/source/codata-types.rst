@@ -32,6 +32,20 @@ That is, we use brackets and bars instead of parentheses and commas.  Moreover, 
 It is often helpful to think of a codatatype as akin to an *interface* in an object-oriented programming language, in which case the variable ``x`` is like the ``this`` or ``self`` pointer by which an object refers to itself.  Of course an interface in a simply-typed language does not need a self-pointer to specify the *types* of its methods, but in a dependently typed language it does.  In higher-dimensional type theories, the presence of this variable can be used in other ways than simply accessing previously declared methods, such as in the definition of semi-simplicial types using :ref:`Displayed coinductive types`.
 
 
+Self variables for record types
+-------------------------------
+
+The syntax of self variables is also available as an alternative when defining record types.  For instance, the usual sort of Σ-type, as a record with eta-conversion, can also be defined by
+
+.. code-block:: none
+
+   def Σ (A : Type) (B : A → Type) : Type ≔ sig (
+     x .fst : A,
+     x .snd : B (x .fst))
+
+It should be emphasized that this is just a different notation for record types, not a "codatatype with eta-conversion".  At present there is no practical difference, but in the future recursion will be forbidden in record types, even those that use the self-variable notation.
+
+
 Copattern matching
 ------------------
 

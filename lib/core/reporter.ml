@@ -1076,6 +1076,12 @@ let extra_field_in_struct : type s et. (s, et) eta -> string * string list -> Co
   | Eta -> Extra_field_in_tuple (Some (fst fld))
   | Noeta -> Extra_method_in_comatch fld
 
+let duplicate_field_in_type : type s et i. (s, et) eta -> i Field.t -> Code.t =
+ fun eta fld ->
+  match eta with
+  | Eta -> Duplicate_field_in_record fld
+  | Noeta -> Duplicate_method_in_codata fld
+
 let duplicate_field_in_struct : type s et. (s, et) eta -> string * string list -> Code.t =
  fun eta fld ->
   match eta with

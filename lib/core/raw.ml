@@ -129,6 +129,7 @@ module rec Make : functor (I : Indices) -> sig
     | Data : (Constr.t, 'a dataconstr located) Abwd.t -> 'a check
     | Codata : (Field.wrapped, 'a codatafield) Abwd.t -> 'a check
     | Record : ('a, 'c, 'ac) Namevec.t located * ('ac, 'd, 'acd) tel * opacity -> 'a check
+    | SelfRecord : (Field.wrapped, 'a codatafield) Abwd.t -> 'a check
     | Refute : 'a synth located list * [ `Explicit | `Implicit ] -> 'a check
     | Hole : {
         scope : 'a I.scope;
@@ -302,6 +303,8 @@ functor
       | Codata : (Field.wrapped, 'a codatafield) Abwd.t -> 'a check
       (* A record type binds its "self" variable namelessly, exposing it to the user by additional variables that are bound locally to its fields.  This can't be "cubeified" as easily, so we have the user specify a list of ordinary variables to be its boundary.  Thus, in practice below 'c must be a number of faces associated to a dimension, but the parser doesn't know the dimension, so it can't ensure that.  The unnamed internal variable is included as the last one. *)
       | Record : ('a, 'c, 'ac) Namevec.t located * ('ac, 'd, 'acd) tel * opacity -> 'a check
+      (* There's also a notation for record types that uses self variables like codata. *)
+      | SelfRecord : (Field.wrapped, 'a codatafield) Abwd.t -> 'a check
       (* Empty match against the first one of the arguments belonging to an empty type. *)
       | Refute : 'a synth located list * [ `Explicit | `Implicit ] -> 'a check
       (* A hole must store the entire "state" from when it was entered, so that the user can later go back and fill it with a term that would have been valid in its original position.  This includes the variables in lexical scope, which are available only during parsing, so we store them here at that point.  During typechecking, when the actual metavariable is created, we save the lexical scope along with its other context and type data.  A hole also stores its source location so that proofgeneral can create an overlay at that place, and the notation tightnesses of the hole location. *)
@@ -524,6 +527,12 @@ module Resolve (R : Resolver) = struct
       | Data constrs -> Data (Abwd.map (locate_map (dataconstr ctx)) constrs)
       | Codata fields ->
           Codata
+            (Abwd.map
+               (fun (R.T1.Codatafield (x, fld)) ->
+                 R.T2.Codatafield (R.rename ctx x, check (R.snoc ctx x) fld))
+               fields)
+      | SelfRecord fields ->
+          SelfRecord
             (Abwd.map
                (fun (R.T1.Codatafield (x, fld)) ->
                  R.T2.Codatafield (R.rename ctx x, check (R.snoc ctx x) fld))

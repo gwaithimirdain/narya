@@ -1960,6 +1960,37 @@ let rec codata_fields bar_ok =
              (terms [ (Op "|", Lazy (lazy (codata_fields false))); (RBracket, Done_closed codata) ]));
     }
 
+let process_codata_field : type n lt ls rt rs lt' ls' rt' rs' et.
+    (potential, et) eta ->
+    (Field.wrapped, n Raw.codatafield) Abwd.t ->
+    (string option, n) Bwv.t ->
+    (lt, ls, rt, rs) parse located ->
+    (lt', ls', rt', rs') parse located ->
+    Field.wrapped * n Raw.codatafield =
+ fun eta flds ctx tm ty ->
+  match tm.value with
+  | App
+      { fn = { value = x; loc = xloc }; arg = { value = Field (fstr, fdstr, _); loc = fldloc }; _ }
+    -> (
+      with_loc tm.loc @@ fun () ->
+      if not (Lexer.valid_field fstr) then fatal ?loc:fldloc (Invalid_field fstr);
+      let x =
+        match x with
+        | Ident ([ x ], _) when Lexer.valid_var x -> Some x
+        | Placeholder _ -> None
+        | Ident (x, _) -> fatal ?loc:xloc (Invalid_variable x)
+        | _ -> fatal ?loc:xloc Parse_error in
+      match dim_of_string (String.concat "" fdstr) with
+      | Some (Any fdim) -> (
+          let fld = Field.intern fstr fdim in
+          match Abwd.find_opt (Field.Wrap fld) flds with
+          | Some _ -> fatal ?loc:fldloc (duplicate_field_in_type eta fld)
+          | None ->
+              let ty = process (Bwv.snoc ctx x) ty in
+              (Field.Wrap fld, Raw.Codatafield (x, ty)))
+      | None -> fatal (Invalid_field (String.concat "." ("" :: fstr :: fdstr))))
+  | _ -> fatal ?loc:tm.loc Parse_error
+
 let rec process_codata : type n.
     (Field.wrapped, n Raw.codatafield) Abwd.t ->
     (string option, n) Bwv.t ->
@@ -1969,34 +2000,8 @@ let rec process_codata : type n.
  fun flds ctx obs loc ->
   match obs with
   | [ Token (RBracket, _) ] -> { value = Raw.Codata flds; loc }
-  | Token (Op "|", _) :: Term tm :: Token (Colon, _) :: Term ty :: obs -> (
-      match tm.value with
-      | App
-          {
-            fn = { value = x; loc = xloc };
-            arg = { value = Field (fstr, fdstr, _); loc = fldloc };
-            _;
-          } -> (
-          with_loc tm.loc @@ fun () ->
-          if not (Lexer.valid_field fstr) then fatal ?loc:fldloc (Invalid_field fstr);
-          let x =
-            match x with
-            | Ident ([ x ], _) when Lexer.valid_var x -> Some x
-            | Placeholder _ -> None
-            | Ident (x, _) -> fatal ?loc:xloc (Invalid_variable x)
-            | _ -> fatal ?loc:xloc Parse_error in
-          match dim_of_string (String.concat "" fdstr) with
-          | Some (Any fdim) -> (
-              let fld = Field.intern fstr fdim in
-              match Abwd.find_opt (Field.Wrap fld) flds with
-              | Some _ -> fatal ?loc:fldloc (Duplicate_method_in_codata fld)
-              | None ->
-                  let ty = process (Bwv.snoc ctx x) ty in
-                  process_codata
-                    (Abwd.add (Field.Wrap fld) (Raw.Codatafield (x, ty)) flds)
-                    ctx obs loc)
-          | None -> fatal (Invalid_field (String.concat "." ("" :: fstr :: fdstr))))
-      | _ -> fatal ?loc:tm.loc Parse_error)
+  | Token (Op "|", _) :: Term tm :: Token (Colon, _) :: Term ty :: obs ->
+      process_codata (Snoc (flds, process_codata_field Noeta flds ctx tm ty)) ctx obs loc
   | _ -> invalid "codata 1"
 
 let rec pp_codata_fields first prews accum obs : document * Whitespace.t list =
@@ -2104,7 +2109,22 @@ let rec process_tel : type a.
         let (Any_tel tel) = process_tel ctx (StringSet.add name seen) obs in
         Any_tel (Ext (Some name, ty, tel)))
       else fatal ?loc (Invalid_field name)
+  | Term { loc; _ } :: Token (Colon, _) :: Term _ :: _ -> fatal ?loc Parse_error
   | _ -> invalid "record"
+
+let rec process_self_record : type n.
+    (Field.wrapped, n Raw.codatafield) Abwd.t ->
+    (string option, n) Bwv.t ->
+    observation list ->
+    Asai.Range.t option ->
+    n check located =
+ fun flds ctx obs loc ->
+  match obs with
+  | [ Token (RParen, _) ] -> { value = Raw.SelfRecord flds; loc }
+  | Token (Op ",", _) :: obs -> process_self_record flds ctx obs loc
+  | Term tm :: Token (Colon, _) :: Term ty :: obs ->
+      process_self_record (Snoc (flds, process_codata_field Eta flds ctx tm ty)) ctx obs loc
+  | _ -> invalid "self record"
 
 let process_record ctx obs loc =
   let opacity, obs =
@@ -2137,10 +2157,12 @@ let process_record ctx obs loc =
       let ctx = Bwv.append ac ctx vars in
       let (Any_tel tel) = process_tel ctx StringSet.empty obs in
       Range.locate (Raw.Record (locate_opt x.loc (namevec_of_vec ac vars), tel, opacity)) loc
+  | Token (LParen, _) :: (Term { value = App _; _ } :: _ as obs) ->
+      process_self_record Emp ctx obs loc
   | Token (LParen, _) :: obs ->
       let ctx = Bwv.snoc ctx None in
       let (Any_tel tel) = process_tel ctx StringSet.empty obs in
-      { value = Record ({ value = [ None ]; loc }, tel, opacity); loc }
+      Range.locate (Raw.Record ({ value = [ None ]; loc }, tel, opacity)) loc
   | _ -> invalid "record"
 
 let rec pp_record_fields prews accum obs =
