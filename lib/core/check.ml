@@ -271,17 +271,29 @@ type (_, _, _) meta_tel =
 (* In HOTT mode, the user isn't allowed to define gel-types, so we bail out at typechecking time if we detect one.  But in parametricity mode, and when bootstrapping the definition of glue, we set this flag to true. *)
 let gel_ok = ref false
 
-(* Polymorphic callback for computing the motive of a non-dependent match.  See check_nondep_branches. *)
-type ('a, 'b) match_motive = {
-  get :
-    'm 'ij.
-    'm D.t ->
-    (Constr.t * ('a, 'm, 'ij) checkable_branch) list ->
-    kinetic value option
-    * Code.t Asai.Diagnostic.t Bwd.t
-    * ('b, 'm) Term.branch Constr.Map.t
-    * (Constr.t * ('a, 'm, 'ij) checkable_branch) list;
-}
+(* Polymorphic callback for computing the motive of a non-refining match.  See check_branches. *)
+type (_, _) match_motive =
+  | Motive : {
+      get :
+        'm 'ij.
+        'm D.t ->
+        (Constr.t * ('a, 'm, 'ij) checkable_branch) list ->
+        'motive option
+        * Code.t Asai.Diagnostic.t Bwd.t
+        * ('b, 'm) Term.branch Constr.Map.t
+        * (Constr.t * ('a, 'm, 'ij) checkable_branch) list;
+      use :
+        'm 'bc 'ij.
+        'motive ->
+        Constr.t ->
+        'm D.t ->
+        (('bc, kinetic) term, 'ij) Vec.t ->
+        ('m, 'bc) env ->
+        ('m, kinetic value) CubeOf.t list ->
+        kinetic value;
+      return : 'motive -> kinetic value;
+    }
+      -> ('a, 'b) match_motive
 
 (* Check a term or case tree (depending on the energy: terms are kinetic, case trees are potential).  The ?discrete parameter is supplied if the term we are currently checking might be a discrete datatype, in which case it is a set of all the currently-being-defined mutual constants.  Most term-formers are nondiscrete, so they can just ignore this argument and make their recursive calls without it. *)
 let rec check : type a b s.
@@ -1134,8 +1146,8 @@ and check_implicit_match : type a b.
       let stm, varty = synth (Kinetic `Nolet) ctx tm in
       check_nondep_match status ctx stm varty brs None highers motive tm.loc
 
-(* This subroutine iterates through the branches of a non-dependent match, checking them all in an appropriate context against the same motive.  Since a non-dependent match might be either checking or synthesizing, the motive can be obtained in two ways, either supplied by the caller directly, or deduced from a branch whose body synthesizes.  We abstract away from this variation by having the caller of this subroutine supply a callback that computes a motive from the list of merged branches (see merge_branches).  Since in the process it might also try synthesizing one or more of the branches, it has to also return a list of errors, a list of already-typechecked branches, and the list of branches remaining to check. *)
-and check_nondep_branches : type a b.
+(* This subroutine iterates through the branches of a non-refining match, checking them all in an appropriate context against the same motive.  Since a non-dependent match might be either checking or synthesizing, the motive can be obtained in two ways, either supplied by the caller directly, or deduced from a branch whose body synthesizes.  We abstract away from this variation by having the caller of this subroutine supply a callback that computes a motive from the list of merged branches (see merge_branches).  Since in the process it might also try synthesizing one or more of the branches, it has to also return a list of errors, a list of already-typechecked branches, and the list of branches remaining to check.  Moreover, in the case of a dependent match when the *user* has specified a dependent motive, that motive has to be specialized differently in each branch; we abstract away from that by having the callback return an abstract type which another callback can specialize in each branch. *)
+and check_match_branches : type a b.
     (b, potential) status ->
     (a, b) Ctx.t ->
     (b, kinetic) term ->
@@ -1146,9 +1158,9 @@ and check_nondep_branches : type a b.
     Asai.Range.t option ->
     (a, b) match_motive ->
     (b, potential) term * kinetic value option =
- fun status ctx tm varty brs i highers loc callback ->
+ fun status ctx tm varty brs i highers loc (Motive callbacks) ->
   (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
-  match view_type varty "check_nondep_branches" with
+  match view_type varty "check_match_branches" with
   | Canonical
       (type mn m n)
       (( name,
@@ -1168,17 +1180,17 @@ and check_nondep_branches : type a b.
       (* We start with a preprocesssing step that pairs each user-provided branch with the corresponding constructor information from the datatype. *)
       let user_branches = merge_branches name brs data_constrs in
       (* We use the callback to get the motive and other data. *)
-      let motive, errs, branches, check_branches = callback.get dim user_branches in
+      let motive, errs, branches, check_branches = callbacks.get dim user_branches in
       (* Now we iterate through the constructors, typechecking the corresponding branches and inserting them in the match tree. *)
       let branches, errs =
         List.fold_left
           (fun (branches, errs)
                ( constr,
-                 (Checkable_branch { xs; body; env; argtys; index_terms = _ } :
+                 (Checkable_branch { xs; body; env; argtys; index_terms } :
                    (a, m, ij) checkable_branch) ) ->
             let (Snocs efc) = Tbwd.snocs (Telescope.length argtys) in
             (* Create new level variables for the pattern variables to which the constructor is applied, and add corresponding index variables to the context.  The types of those variables are specified in the telescope argtys, and have to be evaluated at the closure environment 'env' and the previous new variables (this is what ext_tel does).  For a higher-dimensional match, the new variables come with their boundaries in n-dimensional cubes. *)
-            let newctx, _, _, newnfs = ext_tel ctx env xs argtys efc in
+            let newctx, newenv, newvars, newnfs = ext_tel ctx env xs argtys efc in
             let perm = Tbwd.id_perm in
             let status = make_match_status status tm dim branches efc None perm constr in
             (* Recurse into the "body" of the branch.  We catch errors and accumulate them so that later branches can continue to be checked and produce their own errors even if earlier ones fail, but we pass through the errors that are getting caught elsewhere. *)
@@ -1195,7 +1207,11 @@ and check_nondep_branches : type a b.
             | Some body, Some motive ->
                 ( branches
                   |> Constr.Map.add constr
-                       (Term.Branch (efc, perm, check status newctx body motive)),
+                       (Term.Branch
+                          ( efc,
+                            perm,
+                            check status newctx body
+                              (callbacks.use motive constr dim index_terms newenv newvars) )),
                   errs )
             (* If there is no body, the user omitted this constructor, which is valid if and only if one of the pattern variables belongs to an empty type. *)
             | None, _ ->
@@ -1203,14 +1219,14 @@ and check_nondep_branches : type a b.
                 else fatal (Missing_constructor_in_match constr))
           (branches, errs) check_branches in
       match errs with
-      | Snoc _ -> fatal (Accumulated ("check_nondep_branches", errs))
+      | Snoc _ -> fatal (Accumulated ("check_match_branches", errs))
       | Emp ->
           (* Finally, we check that all the abstractions used the correct symbol ↦ or ⤇ *)
           List.iter
             (fun b ->
               if not !(b.value) then fatal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
             highers;
-          (Match { tm; dim; branches }, motive))
+          (Match { tm; dim; branches }, Option.map callbacks.return motive))
   | _ -> fatal ?loc (Matching_on_nondatatype (PVal (ctx, varty)))
 
 (* Check a non-dependent match against a specified type. *)
@@ -1227,9 +1243,14 @@ and check_nondep_match : type a b.
     (b, potential) term =
  fun status ctx tm varty brs i highers motive loc ->
   let result, _ =
-    check_nondep_branches status ctx tm varty brs i highers loc
+    check_match_branches status ctx tm varty brs i highers loc
       (* Since the motive is already given, the callback can just return it. *)
-      { get = (fun _ user_branches -> (Some motive, Emp, Constr.Map.empty, user_branches)) } in
+      (Motive
+         {
+           get = (fun _ user_branches -> (Some motive, Emp, Constr.Map.empty, user_branches));
+           use = (fun x _ _ _ _ _ -> x);
+           return = (fun x -> x);
+         }) in
   result
 
 (* Try to synthesize a type from all the branches.  If any succeed, check the remaining branches against that synthesized type. *)
@@ -1276,7 +1297,7 @@ and synth_nondep_match : type a b.
           (Synthable_branch { xs; body; env; argtys; index_terms = _ } :
             (a, m, ij) synthable_branch) )
         :: brs ->
-          (* This is the same preprocessing that's done for checking branches in check_nondep_branches. *)
+          (* This is the same preprocessing that's done for checking branches in check_match_branches. *)
           let (Snocs efc) = Tbwd.snocs (Telescope.length argtys) in
           let newctx, _, _, _ = ext_tel ctx env xs argtys efc in
           let perm = Tbwd.id_perm in
@@ -1305,7 +1326,9 @@ and synth_nondep_match : type a b.
         synth_branches check_branches in
     (motive, errs, branches, check_branches) in
   (* Now using that callback, we pass off to the subroutine. *)
-  let result, motive = check_nondep_branches status ctx tm varty brs i highers loc { get } in
+  let result, motive =
+    check_match_branches status ctx tm varty brs i highers loc
+      (Motive { get; use = (fun x _ _ _ _ _ -> x); return = (fun x -> x) }) in
   match motive with
   | None -> fatal (Anomaly "no synthesized type of match but no errors")
   | Some motive -> (result, motive)
@@ -1320,13 +1343,8 @@ and synth_dep_match : type a b.
     a check located ->
     (b, potential) term * kinetic value =
  fun status ctx tm brs highers motive ->
-  let module S = Monad.State (struct
-    type t = kinetic value
-  end) in
-  let module MC = CubeOf.Monadic (S) in
-  let module MT = TubeOf.Monadic (S) in
   (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
-  let ctm, varty = synth (Kinetic `Nolet) ctx tm in
+  let (tm, varty), loc = (synth (Kinetic `Nolet) ctx tm, tm.loc) in
   match view_type varty "synth_dep_match" with
   | Canonical
       (type mn m n)
@@ -1358,7 +1376,7 @@ and synth_dep_match : type a b.
             (* Create new level variables for the pattern variables to which the constructor is applied, and add corresponding index variables to the context.  The types of those variables are specified in the telescope argtys, and have to be evaluated at the closure environment 'env' and the previous new variables (this is what ext_tel does).  For a higher-dimensional match, the new variables come with their boundaries in n-dimensional cubes. *)
             let newctx, newenv, newvars, newnfs = ext_tel ctx env xs argtys efc in
             let perm = Tbwd.id_perm in
-            let status = make_match_status status ctm dim branches efc None perm constr in
+            let status = make_match_status status tm dim branches efc None perm constr in
             (* To get the type at which to typecheck the body of the branch, we have to evaluate the general dependent motive at the indices of this constructor, its boundaries, and itself.  First we compute the indices. *)
             let index_vals =
               Vec.mmap (fun [ ixtm ] -> eval_with_boundary newenv ixtm) [ index_terms ] in
@@ -1393,6 +1411,11 @@ and synth_dep_match : type a b.
       | Snoc _ -> fatal (Accumulated ("synth_dep_match", errs))
       | Emp ->
           (* Now we compute the output type by evaluating the dependent motive at the match term's indices, boundary, and itself. *)
+          let module S = Monad.State (struct
+            type t = kinetic value
+          end) in
+          let module MC = CubeOf.Monadic (S) in
+          let module MT = TubeOf.Monadic (S) in
           let result =
             Vec.fold_left
               (fun fn xs ->
@@ -1406,14 +1429,13 @@ and synth_dep_match : type a b.
               (MT.miterM
                  { it = (fun _ [ x ] fn -> ((), apply_term fn (CubeOf.singleton x.tm))) }
                  [ inst_args ] result) in
-          let result = apply_term result (CubeOf.singleton (eval_term (Ctx.env ctx) ctm)) in
+          let result = apply_term result (CubeOf.singleton (eval_term (Ctx.env ctx) tm)) in
           List.iter
             (fun b ->
               if not !(b.value) then fatal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
             highers;
-          (* We readback the result so we can store it in the term, so that when evaluating it we know what its type must be without having to do all the work again. *)
-          (Match { tm = ctm; dim; branches }, result))
-  | _ -> fatal ?loc:tm.loc (Matching_on_nondatatype (PVal (ctx, varty)))
+          (Match { tm; dim; branches }, result))
+  | _ -> fatal ?loc (Matching_on_nondatatype (PVal (ctx, varty)))
 
 (* Check a match against a well-behaved variable, which can only appear in a case tree and refines not only the goal but the context (possibly with permutation). *)
 and check_var_match : type a b.
