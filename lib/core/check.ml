@@ -1168,15 +1168,19 @@ and check_match_branches : type a b.
   (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
   match view_type varty "check_match_branches" with
   | Canonical
-      (type mn m n)
+      (* Data always has intrinsic dimension zero, but it seems that the syntax for binding type variables in a GADT match can't take that into account.  So we have to give "zero" a name here, and two different names for m. *)
+      (type d_zero m m')
       (( name,
          Data
            (type j ij)
            ({ dim; indices = Filled indices; constrs = data_constrs; tyfam; discrete = _ } :
              (_, j, ij) data_args),
-         _,
+         ins,
          inst_args ) :
-        head * (m, n) canonical * _ * (D.zero, mn, mn, normal) TubeOf.t) -> (
+        head * (m, d_zero) canonical * (m', m, d_zero) insertion * (D.zero, m', m', normal) TubeOf.t)
+    -> (
+      (* But we can immediately identify the two different m's. *)
+      let Eq = eq_of_ins_zero ins in
       (* The argument 'i' counts the *number* of arguments to a motive in a match that was made explicitly non-dependent as in "match x return _ _ ↦ _".  In this case, we really don't care *what* the instantiation arguments are, and we really don't care what the indices are either except to check there are the right number of them.  This is because in the non-dependent case, we are just applying a recursor to a value, so we don't need to know that the indices and instantiation arguments are variables; in the branches they will be whatever they will be, but we don't even need to *know* what they will be because the output type isn't getting refined either. *)
       (match i with
       | Some { value; loc } ->
