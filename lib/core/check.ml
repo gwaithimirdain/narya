@@ -271,6 +271,18 @@ type (_, _, _) meta_tel =
 (* In HOTT mode, the user isn't allowed to define gel-types, so we bail out at typechecking time if we detect one.  But in parametricity mode, and when bootstrapping the definition of glue, we set this flag to true. *)
 let gel_ok = ref false
 
+(* Polymorphic callback for computing the motive of a non-dependent match.  See check_nondep_branches. *)
+type ('a, 'b) match_motive = {
+  get :
+    'm 'ij.
+    'm D.t ->
+    (Constr.t * ('a, 'm, 'ij) checkable_branch) list ->
+    kinetic value option
+    * Code.t Asai.Diagnostic.t Bwd.t
+    * ('b, 'm) Term.branch Constr.Map.t
+    * (Constr.t * ('a, 'm, 'ij) checkable_branch) list;
+}
+
 (* Check a term or case tree (depending on the energy: terms are kinetic, case trees are potential).  The ?discrete parameter is supplied if the term we are currently checking might be a discrete datatype, in which case it is a set of all the currently-being-defined mutual constants.  Most term-formers are nondiscrete, so they can just ignore this argument and make their recursive calls without it. *)
 let rec check : type a b s.
     ?discrete:unit Constant.Map.t ->
@@ -1122,6 +1134,85 @@ and check_implicit_match : type a b.
       let stm, varty = synth (Kinetic `Nolet) ctx tm in
       check_nondep_match status ctx stm varty brs None highers motive tm.loc
 
+(* This subroutine iterates through the branches of a non-dependent match, checking them all in an appropriate context against the same motive.  Since a non-dependent match might be either checking or synthesizing, the motive can be obtained in two ways, either supplied by the caller directly, or deduced from a branch whose body synthesizes.  We abstract away from this variation by having the caller of this subroutine supply a callback that computes a motive from the list of merged branches (see merge_branches).  Since in the process it might also try synthesizing one or more of the branches, it has to also return a list of errors, a list of already-typechecked branches, and the list of branches remaining to check. *)
+and check_nondep_branches : type a b.
+    (b, potential) status ->
+    (a, b) Ctx.t ->
+    (b, kinetic) term ->
+    kinetic value ->
+    (Constr.t, a branch) Abwd.t ->
+    int located option ->
+    bool ref located list ->
+    Asai.Range.t option ->
+    (a, b) match_motive ->
+    (b, potential) term * kinetic value option =
+ fun status ctx tm varty brs i highers loc callback ->
+  (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
+  match view_type varty "check_nondep_branches" with
+  | Canonical
+      (type mn m n)
+      (( name,
+         Data
+           (type j ij)
+           ({ dim; indices = Filled indices; constrs = data_constrs; discrete = _; tyfam = _ } :
+             (_, j, ij) data_args),
+         _,
+         _ ) :
+        _ * (m, n) canonical * (mn, m, n) insertion * _) -> (
+      (* Yes, we really don't care what the instantiation arguments are in this case, and we really don't care what the indices are either except to check there are the right number of them.  This is because in the non-dependent case, we are just applying a recursor to a value, so we don't need to know that the indices and instantiation arguments are variables; in the branches they will be whatever they will be, but we don't even need to *know* what they will be because the output type isn't getting refined either. *)
+      (match i with
+      | Some { value; loc } ->
+          let needed = Fwn.to_int (Vec.length indices) + 1 in
+          if value <> needed then fatal ?loc (Wrong_number_of_arguments_to_motive needed)
+      | None -> ());
+      (* We start with a preprocesssing step that pairs each user-provided branch with the corresponding constructor information from the datatype. *)
+      let user_branches = merge_branches name brs data_constrs in
+      (* We use the callback to get the motive and other data. *)
+      let motive, errs, branches, check_branches = callback.get dim user_branches in
+      (* Now we iterate through the constructors, typechecking the corresponding branches and inserting them in the match tree. *)
+      let branches, errs =
+        List.fold_left
+          (fun (branches, errs)
+               ( constr,
+                 (Checkable_branch { xs; body; env; argtys; index_terms = _ } :
+                   (a, m, ij) checkable_branch) ) ->
+            let (Snocs efc) = Tbwd.snocs (Telescope.length argtys) in
+            (* Create new level variables for the pattern variables to which the constructor is applied, and add corresponding index variables to the context.  The types of those variables are specified in the telescope argtys, and have to be evaluated at the closure environment 'env' and the previous new variables (this is what ext_tel does).  For a higher-dimensional match, the new variables come with their boundaries in n-dimensional cubes. *)
+            let newctx, _, _, newnfs = ext_tel ctx env xs argtys efc in
+            let perm = Tbwd.id_perm in
+            let status = make_match_status status tm dim branches efc None perm constr in
+            (* Recurse into the "body" of the branch.  We catch errors and accumulate them so that later branches can continue to be checked and produce their own errors even if earlier ones fail, but we pass through the errors that are getting caught elsewhere. *)
+            Reporter.try_with ~fatal:(fun e ->
+                match e.message with
+                | Missing_constructor_in_match _ -> fatal_diagnostic e
+                | _ -> (branches, Snoc (errs, e)))
+            @@ fun () ->
+            match (body, motive) with
+            (* In the synthesizing case, we might still have no motive, if all the synthesis failed.  In that case, the only reason we're going through this is to annotate the contexts of each branch. *)
+            | Some body, None ->
+                Annotate.ctx status newctx body;
+                (branches, errs)
+            | Some body, Some motive ->
+                ( branches
+                  |> Constr.Map.add constr
+                       (Term.Branch (efc, perm, check status newctx body motive)),
+                  errs )
+            (* If there is no body, the user omitted this constructor, which is valid if and only if one of the pattern variables belongs to an empty type. *)
+            | None, _ ->
+                if any_empty newnfs then (branches |> Constr.Map.add constr Term.Refute, errs)
+                else fatal (Missing_constructor_in_match constr))
+          (branches, errs) check_branches in
+      match errs with
+      | Snoc _ -> fatal (Accumulated ("check_nondep_branches", errs))
+      | Emp ->
+          (* Finally, we check that all the abstractions used the correct symbol ↦ or ⤇ *)
+          List.iter
+            (fun b ->
+              if not !(b.value) then fatal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
+            highers;
+          (Match { tm; dim; branches }, motive))
+  | _ -> fatal ?loc (Matching_on_nondatatype (PVal (ctx, varty)))
+
 (* Check a non-dependent match against a specified type. *)
 and check_nondep_match : type a b.
     (b, potential) status ->
@@ -1135,30 +1226,11 @@ and check_nondep_match : type a b.
     Asai.Range.t option ->
     (b, potential) term =
  fun status ctx tm varty brs i highers motive loc ->
-  (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
-  match view_type varty "check_nondep_match" with
-  | Canonical
-      (type mn m n)
-      (( name,
-         Data
-           (type j ij)
-           ({ dim; indices = Filled indices; constrs = data_constrs; discrete = _; tyfam = _ } :
-             (_, j, ij) data_args),
-         _,
-         _ ) :
-        _ * (m, n) canonical * (mn, m, n) insertion * _) ->
-      (* Yes, we really don't care what the instantiation arguments are in this case, and we really don't care what the indices are either except to check there are the right number of them.  This is because in the non-dependent case, we are just applying a recursor to a value, so we don't need to know that the indices and instantiation arguments are variables; in the branches they will be whatever they will be, but we don't even need to *know* what they will be because the output type isn't getting refined either. *)
-      (match i with
-      | Some { value; loc } ->
-          let needed = Fwn.to_int (Vec.length indices) + 1 in
-          if value <> needed then fatal ?loc (Wrong_number_of_arguments_to_motive needed)
-      | None -> ());
-      (* We start with a preprocesssing step that pairs each user-provided branch with the corresponding constructor information from the datatype. *)
-      let user_branches = merge_branches name brs data_constrs in
-      (* We now iterate through the constructors, typechecking the corresponding branches and inserting them in the match tree. *)
-      check_nondep_branches status ctx tm dim Constr.Map.empty Emp user_branches highers
-        (Some motive)
-  | _ -> fatal ?loc (Matching_on_nondatatype (PVal (ctx, varty)))
+  let result, _ =
+    check_nondep_branches status ctx tm varty brs i highers loc
+      (* Since the motive is already given, the callback can just return it. *)
+      { get = (fun _ user_branches -> (Some motive, Emp, Constr.Map.empty, user_branches)) } in
+  result
 
 (* Try to synthesize a type from all the branches.  If any succeed, check the remaining branches against that synthesized type. *)
 and synth_nondep_match : type a b.
@@ -1172,135 +1244,71 @@ and synth_nondep_match : type a b.
  fun status ctx tm brs highers i ->
   (* First we synthesize the discriminee.  If that fails, we give up completely, as we don't even have a context in which to try synthesizing the branches. *)
   let (tm, varty), loc = (synth (Kinetic `Nolet) ctx tm, tm.loc) in
-  (* The preprocessing is the same as in check_nondep_match; see there for comments. *)
-  match view_type varty "synth_nondep_match" with
-  | Canonical
-      (type mn m n)
-      (( name,
-         Data
-           (type j ij)
-           ({ dim; indices = Filled indices; constrs = data_constrs; discrete = _; tyfam = _ } :
-             (_, j, ij) data_args),
-         _,
-         _ ) :
-        _ * (m, n) canonical * (mn, m, n) insertion * _) -> (
-      (match i with
-      | Some { value; loc } ->
-          let needed = Fwn.to_int (Vec.length indices) + 1 in
-          if value <> needed then fatal ?loc (Wrong_number_of_arguments_to_motive needed)
-      | None -> ());
-      let user_branches = merge_branches name brs data_constrs in
-      (* Now we split the branches into the synthesizing and non-synthesizing ones. *)
-      let synth_branches, check_branches =
-        List.partition_map
-          (fun (c, (Checkable_branch { xs; body; env; argtys; index_terms } as cb)) ->
-            match body with
-            | Some { value = Synth sbody; loc } ->
-                let body = locate_opt loc sbody in
-                Left (c, Synthable_branch { xs; body; env; argtys; index_terms })
-            | _ -> Right (c, cb))
-          user_branches in
-      (* We iterate through the synthesizing branches looking for the first one that succeeds at synthesizing, accumulating errors from the ones that fail. *)
-      let rec find_synthing_branch errs = function
-        | [] ->
-            (* If they all fail, then we report the accumulated errors (we can't go on to the checking branches, since we don't have anything to even try to typecheck them against).  If there weren't any to begin with, we instead report their absence. *)
-            let errs =
-              if Bwd.is_empty errs then
-                Snoc (Emp, diagnostic (Nonsynthesizing "match without synthesizing branches"))
-              else errs in
-            (None, errs, Constr.Map.empty, [])
-        | ( constr,
-            (Synthable_branch { xs; body; env; argtys; index_terms = _ } :
-              (a, m, ij) synthable_branch) )
-          :: brs ->
-            (* Again, same preprocessing as in check_nondep_match. *)
-            let (Snocs efc) = Tbwd.snocs (Telescope.length argtys) in
-            let newctx, _, _, _ = ext_tel ctx env xs argtys efc in
-            let perm = Tbwd.id_perm in
-            let status = make_match_status status tm dim Constr.Map.empty efc None perm constr in
-            Annotate.ctx status newctx (locate_opt body.loc (Synth body.value));
-            (* Trap errors and accumulate them, going on to look for other synthesizing branches. *)
-            Reporter.try_with ~fatal:(fun e -> find_synthing_branch (Snoc (errs, e)) brs)
-            @@ fun () ->
-            let sbr, sty = synth status newctx body in
-            (* The type synthesized is only valid for the whole match if it doesn't depend on the pattern variables.  We check that by reading it back into the original context. *)
-            ( Reporter.try_with ~fatal:(fun d ->
-                  match d.message with
-                  | No_such_level _ ->
-                      fatal ?loc:d.explanation.loc
-                        (Invalid_synthesized_type
-                           ("synthesizing branch of match", PVal (newctx, sty)))
-                  | _ -> fatal_diagnostic d)
-            @@ fun () -> discard (readback_val ctx sty) );
-            (* Finally, if we found a synthesizing branch that works, return the synthesized type, the accumulated errors, the successful typechecked branch, and the remaining synthesizing branches.  We don't need to deal again with any of the ones we've visited before the one that succeeded, as they all must have errored in order to get here, and we've accumulated their errors. *)
-            (Some sty, errs, Constr.Map.singleton constr (Term.Branch (efc, perm, sbr)), brs) in
-      let motive, errs, branches, synth_branches = find_synthing_branch Emp synth_branches in
-      (* We put the remaining synthesizing branches back on the front of the checking ones. *)
-      let check_branches =
-        List.fold_right
-          (fun (c, Synthable_branch { xs; body; env; argtys; index_terms }) cbs ->
-            let body = Some { value = Synth body.value; loc = body.loc } in
-            (c, Checkable_branch { xs; body; env; argtys; index_terms }) :: cbs)
-          synth_branches check_branches in
-      let result =
-        check_nondep_branches status ctx tm dim branches errs check_branches highers motive in
-      match motive with
-      | None -> fatal (Anomaly "no synthesized type of match but no errors")
-      | Some motive -> (result, motive))
-  | _ -> fatal ?loc (Matching_on_nondatatype (PVal (ctx, varty)))
-
-and check_nondep_branches : type a b m ij.
-    (b, potential) status ->
-    (a, b) Ctx.t ->
-    (b, kinetic) term ->
-    m D.t ->
-    (b, m) Term.branch Constr.Map.t ->
-    Code.t Asai.Diagnostic.t Bwd.t ->
-    (Constr.t * (a, m, ij) checkable_branch) list ->
-    bool ref located list ->
-    kinetic value option ->
-    (b, potential) term =
- fun status ctx tm dim branches errs check_branches highers motive ->
-  let branches, errs =
-    List.fold_left
-      (fun (branches, errs)
-           ( constr,
-             (Checkable_branch { xs; body; env; argtys; index_terms = _ } :
-               (a, m, ij) checkable_branch) ) ->
-        let (Snocs efc) = Tbwd.snocs (Telescope.length argtys) in
-        (* Create new level variables for the pattern variables to which the constructor is applied, and add corresponding index variables to the context.  The types of those variables are specified in the telescope argtys, and have to be evaluated at the closure environment 'env' and the previous new variables (this is what ext_tel does).  For a higher-dimensional match, the new variables come with their boundaries in n-dimensional cubes. *)
-        let newctx, _, _, newnfs = ext_tel ctx env xs argtys efc in
-        let perm = Tbwd.id_perm in
-        let status = make_match_status status tm dim branches efc None perm constr in
-        (* Recurse into the "body" of the branch.  We catch errors and accumulate them so that later branches can continue to be checked and produce their own errors even if earlier ones fail, but we pass through the errors that are getting caught elsewhere. *)
-        Reporter.try_with ~fatal:(fun e ->
-            match e.message with
-            | Missing_constructor_in_match _ -> fatal_diagnostic e
-            | _ -> (branches, Snoc (errs, e)))
-        @@ fun () ->
-        match (body, motive) with
-        (* The difference with the checking case is that we might have no motive, if all the synthesis failed.  In that case, the only reason we're going through this is to annotate the contexts of each branch. *)
-        | Some body, None ->
-            Annotate.ctx status newctx body;
-            (branches, errs)
-        | Some body, Some motive ->
-            ( branches
-              |> Constr.Map.add constr (Term.Branch (efc, perm, check status newctx body motive)),
-              errs )
-        (* If there is no body, the user omitted this constructor, which is valid if and only if one of the pattern variables belongs to an empty type. *)
-        | None, _ ->
-            if any_empty newnfs then (branches |> Constr.Map.add constr Term.Refute, errs)
-            else fatal (Missing_constructor_in_match constr))
-      (branches, errs) check_branches in
-  match errs with
-  | Snoc _ -> fatal (Accumulated ("check_nondep_branches", errs))
-  | Emp ->
-      (* Finally, we check that all the abstractions used the correct symbol ↦ or ⤇ *)
-      List.iter
-        (fun b ->
-          if not !(b.value) then fatal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
-        highers;
-      Match { tm; dim; branches }
+  (* Now we define the callback that will try to synthesize a motive from one of the branches. *)
+  let get : type m ij.
+      m D.t ->
+      (Constr.t * (a, m, ij) checkable_branch) list ->
+      kinetic value option
+      * Code.t Asai.Diagnostic.t Bwd.t
+      * (b, m) Term.branch Constr.Map.t
+      * (Constr.t * (a, m, ij) checkable_branch) list =
+   fun dim user_branches ->
+    (* We split the branches into the synthesizing and non-synthesizing ones. *)
+    let synth_branches, check_branches =
+      List.partition_map
+        (fun (c, (Checkable_branch { xs; body; env; argtys; index_terms } as cb)) ->
+          match body with
+          | Some { value = Synth sbody; loc } ->
+              let body = locate_opt loc sbody in
+              Left (c, Synthable_branch { xs; body; env; argtys; index_terms })
+          | _ -> Right (c, cb))
+        user_branches in
+    (* We iterate through the synthesizing branches looking for the first one that succeeds at synthesizing, accumulating errors from the ones that fail. *)
+    let rec find_synthing_branch errs = function
+      | [] ->
+          (* If they all fail, then we report the accumulated errors (we can't go on to the checking branches, since we don't have anything to even try to typecheck them against).  If there weren't any to begin with, we instead report their absence. *)
+          let errs =
+            if Bwd.is_empty errs then
+              Snoc (Emp, diagnostic (Nonsynthesizing "match without synthesizing branches"))
+            else errs in
+          (None, errs, Constr.Map.empty, [])
+      | ( constr,
+          (Synthable_branch { xs; body; env; argtys; index_terms = _ } :
+            (a, m, ij) synthable_branch) )
+        :: brs ->
+          (* This is the same preprocessing that's done for checking branches in check_nondep_branches. *)
+          let (Snocs efc) = Tbwd.snocs (Telescope.length argtys) in
+          let newctx, _, _, _ = ext_tel ctx env xs argtys efc in
+          let perm = Tbwd.id_perm in
+          let status = make_match_status status tm dim Constr.Map.empty efc None perm constr in
+          Annotate.ctx status newctx (locate_opt body.loc (Synth body.value));
+          (* Trap errors and accumulate them, going on to look for other synthesizing branches. *)
+          Reporter.try_with ~fatal:(fun e -> find_synthing_branch (Snoc (errs, e)) brs) @@ fun () ->
+          let sbr, sty = synth status newctx body in
+          (* The type synthesized is only valid for the whole match if it doesn't depend on the pattern variables.  We check that by reading it back into the original context. *)
+          ( Reporter.try_with ~fatal:(fun d ->
+                match d.message with
+                | No_such_level _ ->
+                    fatal ?loc:d.explanation.loc
+                      (Invalid_synthesized_type ("synthesizing branch of match", PVal (newctx, sty)))
+                | _ -> fatal_diagnostic d)
+          @@ fun () -> discard (readback_val ctx sty) );
+          (* Finally, if we found a synthesizing branch that works, return the synthesized type, the accumulated errors, the successful typechecked branch, and the remaining synthesizing branches.  We don't need to deal again with any of the ones we've visited before the one that succeeded, as they all must have errored in order to get here, and we've accumulated their errors. *)
+          (Some sty, errs, Constr.Map.singleton constr (Term.Branch (efc, perm, sbr)), brs) in
+    let motive, errs, branches, synth_branches = find_synthing_branch Emp synth_branches in
+    (* We put the remaining synthesizing branches back on the front of the checking ones, and return them. *)
+    let check_branches =
+      List.fold_right
+        (fun (c, Synthable_branch { xs; body; env; argtys; index_terms }) cbs ->
+          let body = Some { value = Synth body.value; loc = body.loc } in
+          (c, Checkable_branch { xs; body; env; argtys; index_terms }) :: cbs)
+        synth_branches check_branches in
+    (motive, errs, branches, check_branches) in
+  (* Now using that callback, we pass off to the subroutine. *)
+  let result, motive = check_nondep_branches status ctx tm varty brs i highers loc { get } in
+  match motive with
+  | None -> fatal (Anomaly "no synthesized type of match but no errors")
+  | Some motive -> (result, motive)
 
 (* Check a dependently typed match, with motive supplied by the user.  (Thus we have to typecheck the motive as well.) *)
 and synth_dep_match : type a b.
