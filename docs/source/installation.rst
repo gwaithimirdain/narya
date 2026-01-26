@@ -258,13 +258,13 @@ If the automatic ProofGeneral installer doesn't work for you, you can follow the
 
 1. Install `Emacs <https://www.gnu.org/software/emacs/>`_ and ProofGeneral.  The recommended way to install ProofGeneral is from `MELPA <https://melpa.org/>`_ using Emacs' package manager, as described at the `ProofGeneral page <https://proofgeneral.github.io/>`_.
 
-2. Ensure that Emacs can find the Narya executable, by typing ``C-!`` (that is, ``C-S-1``) in Emacs and entering ``narya``.  If the result is ``command not found``, you have a problem.  This happens most often on MacOS, where some versions of Emacs take their environment variables from somewhere else by default.  One solution to this is to install the package `exec-path-from-shell <https://github.com/purcell/exec-path-from-shell>`_.  To do this, type ``M-x package-install``, hit return, then enter ``exec-path-from-shell``, hit return, and wait for it to install.  (If that doesn't work, you may need to run ``M-x package-initialize`` and/or ``M-x package-refresh-contents`` first.)  Then add the following line to the ``.emacs`` file in your home directory:
+2. Ensure that Emacs can find the Narya executable, by typing ``M-!`` in Emacs (that is, hold the meta key, which is usually ``Alt``, and type the ``!`` character), then entering ``narya``.  If the result is ``command not found``, you have a problem.  This happens most often on MacOS, where some versions of Emacs take their environment variables from somewhere else by default.  One solution to this is to install the package `exec-path-from-shell <https://github.com/purcell/exec-path-from-shell>`_.  To do this, type ``M-x package-install``, hit return, then enter ``exec-path-from-shell``, hit return, and wait for it to install.  (If that doesn't work, you may need to run ``M-x package-initialize`` and/or ``M-x package-refresh-contents`` first.)  Then add the following line to the ``.emacs`` file in your home directory:
 
    .. code-block:: elisp
 
       (exec-path-from-shell-initialize)
 
-   Then try ``C-! narya`` again.  If it still doesn't work, please `report a bug <https://github.com/gwaithimirdain/narya>`_.
+   Then try ``M-! narya`` again.  If it still doesn't work, please `report a bug <https://github.com/gwaithimirdain/narya>`_.
 
 3. Find the ProofGeneral installation directory, which may be something like ``$HOME/.emacs.d/elpa/proof-general-XXXXXXXX-XXXX``.
 
