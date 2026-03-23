@@ -22,14 +22,14 @@ let head_of_potential : type mode a. (mode, a) potential_head -> mode Value.head
 type (_, _, _) status =
   | Kinetic : [ `Let | `Nolet ] -> ('mode, 'b, kinetic) status
   | Potential :
-      ('mode, 'a) potential_head * ('mode, 'any) apps * (('b, potential) term -> ('a, potential) term)
+      ('mode, 'a) potential_head * ('mode, 'any) apps * (('mode, 'b, potential) term -> ('mode, 'a, potential) term)
       -> ('mode, 'b, potential) status
 
 let energy : type mode b s. (mode, b, s) status -> s energy = function
   | Kinetic _ -> Kinetic
   | Potential _ -> Potential
 
-let realize : type mode b s. (mode, b, s) status -> (b, kinetic) term -> (b, s) term =
+let realize : type mode b s. (mode, b, s) status -> (mode, b, kinetic) term -> (mode, b, s) term =
  fun status tm ->
   match status with
   | Potential _ -> Realize tm

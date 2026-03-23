@@ -144,7 +144,7 @@ module Act = struct
       (m, n, mn) D.plus ->
       (mode, m, a) env ->
       (p, mn) deg ->
-      (n, i, a) PlusPbijmap.t ->
+      (n, i, mode * a) PlusPbijmap.t ->
       (mode, m, n, mn, q, i, a) Structfield.higher_data =
    fun deg0 vals intrinsic plusdim env deg1 terms ->
     (* Now we want to change p to q by acting by fa : (q, p) deg.  We'll keep almost everything the same and simply compose deg with fa.  The sticky bit is to update vals, which has to become an Insmap with evaluation dimension q rather than p. *)
@@ -187,7 +187,7 @@ module Act = struct
                   match PlusPbijmap.find (Pbij (ins4, shuf4)) terms with
                   | None -> None
                   | Some
-                      (PlusFam (type ra) ((ra, tm) : (r34, a, ra) Plusmap.t * (ra, potential) term))
+                      (PlusFam (type ra) ((ra, tm) : (r34, a, ra) Plusmap.t * (mode, ra, potential) term))
                     ->
                       (* Now the game is to build a degeneracy that we can apply to the m-dimensional environment 'env' so that we can shift it by the plusmap 'ra' and evaluate the term 'tm'.  (Note that 'tm' is s4-dimensional as that is the result dimension of the pbij that indexes it.)  That means we need to get an environment whose dimension is something+r34.  We start by adding r3, and then apply a bunch of permutations.
                              m + r3

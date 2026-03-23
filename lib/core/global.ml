@@ -12,12 +12,12 @@ open Origin
 
 (* Each global constant either is an axiom or has a definition (a case tree).  The latter includes canonical types.  *)
 type definition =
-  [ `Axiom | `Defined of (emp, potential) term ]
+  [ `Axiom | `Defined of (unit, emp, potential) term ]
   (* A parametric constant can have external degeneracies applied to it, while a nonparametric one can't.  A maybe-parametric one is one currently being typechecked which hasn't yet been concluded to be nonparametric. *)
   * [ `Parametric | `Nonparametric | `Maybe_parametric ]
 
 (* The versioned global table of defined constants. *)
-let constants : ((emp, kinetic) term * definition, Code.t) Result.t Constant.Table.t =
+let constants : ((unit, emp, kinetic) term * definition, Code.t) Result.t Constant.Table.t =
   Constant.Table.make ()
 
 (* Global metavariables have only a definition (or an error indicating that they can't be correctly accessed, such as if typechecking failed earlier). *)

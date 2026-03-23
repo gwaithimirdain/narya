@@ -8,6 +8,9 @@ open Monad.Ops (Monad.Maybe)
 
 let other = (`Other, `Other)
 
+(* Safe coercion for phantom 'mode parameter on terms *)
+let coerce_mode : 'a -> 'b = Obj.magic
+
 (* Fibrancy fields *)
 
 (* The names of the fibrancy fields. *)
@@ -19,7 +22,7 @@ let ([ ftrr; fliftr; ftrl; fliftl; fid ] : (Hott.dim Field.t, Fwn.five) Vec.t) =
 
 (* We will later get these fields by typechecking the definition of "isFibrant" in parametric Narya.  That definition has a (non-fibrant) type as a parameter, so together with the self variable all of its fields are in a context of length two; and since the extension by the self variable is accounted for in the definition of Codatafield, what we get here is a context of length one.  However, in HOTT mode we consider (fibrant) types as *themselves* having fields, so the type itself should now act like the "self variable"; we will deal with this at the point of use by evaluating it in an environment with the fibrant type itself appearing for both the type parameter and the element of isFibrant.  The D.zero says that isFibrant is an ordinary (non-Gel) codatatype. *)
 
-let fields : ((emp, D.zero) snoc * D.zero * no_eta) CodatafieldAbwd.t option ref = ref None
+let fields : (unit * (emp, D.zero) snoc * D.zero * no_eta) CodatafieldAbwd.t option ref = ref None
 
 (* Computing the fibrancy fields on canonical type-formers *)
 
@@ -30,13 +33,14 @@ let fields : ((emp, D.zero) snoc * D.zero * no_eta) CodatafieldAbwd.t option ref
 (* In the case of pi-types, we can literally write the definition in Narya, typecheck it, and insert it here.  That makes it easier to get correct.  Thus, for now we leave this empty; it will be filled in after the parser is loaded. *)
 
 let pi :
-    (D.zero * ((emp, D.zero) snoc, D.zero) snoc * potential * no_eta) StructfieldAbwd.t option ref =
+    (unit * D.zero * ((emp, D.zero) snoc, D.zero) snoc * potential * no_eta) StructfieldAbwd.t option ref =
   ref None
 
 (* Glue types *)
 
 let glue :
-    (Hott.dim
+    (unit
+    * Hott.dim
     * ((((emp, D.zero) snoc, D.zero) snoc, D.zero) snoc, D.zero) snoc
     * potential
     * no_eta)
@@ -50,18 +54,18 @@ let glue :
 (* We compute these directly as terms.  This puts the onus on us to define them in a well-typed way, but we try our best to copy the definitions that can be given (and typechecked) internally using the higher coinductive isFibrant.  The outer laziness is only to delay them until we're inside Dim.Endpoints.run.  Eventually when the HOTT dimension is built-in and always present, that won't be necessary (but we will still need the LazyHigher wrapper around the 'id' field in some cases). *)
 
 module Codata = struct
-  type (_, _, _, _) t =
-    | Fibrancy : ('g, 'n, 'nh, 'b, 'hb, 'et) codata_fibrancy -> ('g, 'n, 'b, 'et) t
+  type (_, _, _, _, _) t =
+    | Fibrancy : ('mode, 'g, 'n, 'nh, 'b, 'hb, 'et) codata_fibrancy -> ('mode, 'g, 'n, 'b, 'et) t
 
   (* We compute the fibrancy fields of a codatatype progressively field-by-field as the codatatype declaration is typechecked, starting with an empty one and adding to it. *)
 
-  let empty : type g n b et.
+  let empty : type mode g n b et.
       g D.t ->
       n D.t ->
       b Plusmap.OfDom.t ->
       (potential, et) eta ->
-      (b, kinetic) term ->
-      (g, n, b, et) t =
+      (mode, b, kinetic) term ->
+      (mode, g, n, b, et) t =
    fun glue dim length eta ty ->
     let (Exists (type hb) ((_hb, plusmap) : hb Plusmap.OfCod.t * (Hott.dim, b, hb) Plusmap.t)) =
       Plusmap.exists Hott.dim length in
@@ -70,14 +74,14 @@ module Codata = struct
       { glue; dim; length; plusmap; ty; eta; dimh; trr = Emp; trl = Emp; liftr = Emp; liftl = Emp }
 
   (* Given the typechecked version of a field, add the corresponding behavior of the fibrancy fields. *)
-  let add_field : type g n b et.
-      (g, n, b, et) t -> (b * g * et) CodatafieldAbwd.entry -> (g, n, b, et) t =
-   fun (Fibrancy (type nh hb) (f : (g, n, nh, b, hb, et) codata_fibrancy)) (Entry (fld, fldty)) ->
+  let add_field : type mode g n b et.
+      (mode, g, n, b, et) t -> (mode * b * g * et) CodatafieldAbwd.entry -> (mode, g, n, b, et) t =
+   fun (Fibrancy (type nh hb) (f : (mode, g, n, nh, b, hb, et) codata_fibrancy)) (Entry (fld, fldty)) ->
     (* x is the index-zero variable. *)
     let x = Var (Index (Now, id_sface D.zero)) in
     let ins = zero_ins Hott.dim in
     (* Compute terms that project each fibrancy field out of the codatatype and apply it to the index-zero variable 'x'. *)
-    let onx : Hott.dim Field.t -> ((hb, D.zero) snoc, kinetic) term =
+    let onx : Hott.dim Field.t -> (mode, (hb, D.zero) snoc, kinetic) term =
      fun trlift -> app (Field (Weaken (Shift (Hott.dim, f.plusmap, f.ty)), trlift, ins)) x in
     let trr_x, liftr_x, trl_x, liftl_x = (onx ftrr, onx fliftr, onx ftrl, onx fliftl) in
     (* xrcube and xlcube are 1-dimensional cubes consisting of the index-zero variable 'x' and its transports right or left. *)
@@ -86,8 +90,8 @@ module Codata = struct
         (* This generic functions computes the specified field projection 'fld' of any of the fibrancy fields, by applying that fibrancy field to the corresponding 'fld' of the input. *)
         let trlift : type m.
             Hott.dim Field.t ->
-            (Hott.dim, ((hb, D.zero) snoc, kinetic) term) CubeOf.t ->
-            (m * (hb, D.zero) snoc * potential * et) StructfieldAbwd.entry =
+            (Hott.dim, (mode, (hb, D.zero) snoc, kinetic) term) CubeOf.t ->
+            (mode * m * (hb, D.zero) snoc * potential * et) StructfieldAbwd.entry =
          fun trlift xcube ->
           match fldty with
           | Lower ty ->
@@ -118,10 +122,10 @@ module Codata = struct
     | _ -> Fibrancy f
 
   (* After all the codatafields have been added, we can "finish" the job at the time of evaluation, combining the StructfieldAbwds for the four user fibrancy fields, and a computation of the corecursive field id, to produce a single StructfieldAbwd whose fields are the five fibrancy fields. *)
-  let rec finish : type g n nh b hb et.
-      (b * g * et) CodatafieldAbwd.t ->
-      (g, n, nh, b, hb, et) codata_fibrancy ->
-      (g * b * potential * no_eta) StructfieldAbwd.t =
+  let rec finish : type mode g n nh b hb et.
+      (mode * b * g * et) CodatafieldAbwd.t ->
+      (mode, g, n, nh, b, hb, et) codata_fibrancy ->
+      (mode * g * b * potential * no_eta) StructfieldAbwd.t =
    fun fields { glue; dim; length; plusmap; ty; eta; dimh; trr; trl; liftr; liftl } ->
     let xname = singleton_variables D.zero (Some "x") in
     let yname = singleton_variables D.zero (Some "y") in
@@ -130,9 +134,9 @@ module Codata = struct
     (* Generic function combining trr and trl. *)
     let tr : type r.
         [ `Left | `Right ] ->
-        (n * (hb, D.zero) snoc * potential * et) StructfieldAbwd.t ->
+        (mode * n * (hb, D.zero) snoc * potential * et) StructfieldAbwd.t ->
         (g, Hott.dim, r) pbij ->
-        (r, b) PlusFam.t =
+        (r, mode * b) PlusFam.t =
      fun _which fields p ->
       match singleton_pbij p Hott.singleton with
       (* This is the "tr.e" case when we just pass off to the type of the field. *)
@@ -145,16 +149,16 @@ module Codata = struct
     (* Generic function combining liftr and liftl. *)
     let lift : type r.
         [ `Left | `Right ] ->
-        (nh * (hb, D.zero) snoc * potential * et) StructfieldAbwd.t ->
+        (mode * nh * (hb, D.zero) snoc * potential * et) StructfieldAbwd.t ->
         (g, Hott.dim, r) pbij ->
-        (r, b) PlusFam.t =
+        (r, mode * b) PlusFam.t =
      fun _which fields p ->
       match singleton_pbij p Hott.singleton with
       | Left -> plusfam (Lam (xname, Struct { dim = dimh; eta; energy = Potential; fields }))
       | Right _ins -> None in
     let liftr = PlusPbijmap.build glue Hott.dim { build = (fun p -> lift `Right liftr p) } in
     let liftl = PlusPbijmap.build glue Hott.dim { build = (fun p -> lift `Left liftl p) } in
-    let id : type r. (g, Hott.dim, r) pbij -> (r, b) PlusFam.t =
+    let id : type r. (g, Hott.dim, r) pbij -> (r, mode * b) PlusFam.t =
      fun p ->
       match singleton_pbij p Hott.singleton with
       | Left -> (
@@ -168,11 +172,11 @@ module Codata = struct
               let* xtube = Hott.tube x0 x1 in
               let* xcube = Hott.cube x0 x1 x2 in
               let folder :
-                  (((hb, D.zero) snoc, D.zero) snoc * g * et) CodatafieldAbwd.t
-                  * (g, nh, ((hb, D.zero) snoc, D.zero) snoc, et) t ->
-                  (b * g * et) CodatafieldAbwd.entry ->
-                  (((hb, D.zero) snoc, D.zero) snoc * g * et) CodatafieldAbwd.t
-                  * (g, nh, ((hb, D.zero) snoc, D.zero) snoc, et) t =
+                  (mode * ((hb, D.zero) snoc, D.zero) snoc * g * et) CodatafieldAbwd.t
+                  * (mode, g, nh, ((hb, D.zero) snoc, D.zero) snoc, et) t ->
+                  (mode * b * g * et) CodatafieldAbwd.entry ->
+                  (mode * ((hb, D.zero) snoc, D.zero) snoc * g * et) CodatafieldAbwd.t
+                  * (mode, g, nh, ((hb, D.zero) snoc, D.zero) snoc, et) t =
                fun (fields, fib) (CodatafieldAbwd.Entry (fld, fldty)) ->
                 match fldty with
                 | Lower fldty ->
@@ -194,7 +198,7 @@ module Codata = struct
                     (* TODO *)
                     (fields, fib) in
               let x0 = Var (Index (Later Now, id_sface D.zero)) in
-              let x1 : (((hb, D.zero) snoc, D.zero) snoc, kinetic) term =
+              let x1 : (mode, ((hb, D.zero) snoc, D.zero) snoc, kinetic) term =
                 Var (Index (Now, id_sface D.zero)) in
               let* xtube = Hott.tube x0 x1 in
               let fields, Fibrancy fib =
@@ -225,19 +229,19 @@ module Codata = struct
     <: Entry (fid, LazyHigher id)
 
   (* TODO: It would be nice to memoize the "finish" computation.  But we can't store it as a mutable field inside a Term, because it contains a LazyHigher and so is not marshalable.  Maybe we could use a hashtable, but it would be tricky to ensure the output types depend correctly on the input ones.  I guess we could have a mutable Map depending on 'n' and 'a' and then hashtables inside of that.  But then it starts to get questionable how much time would be saved.  Let's wait until we do some profiling and see if this is actually a pain point. *)
-  let finished : type n c a nh ha et.
-      (n, c, a, nh, ha, et) codata_args -> (n * a * potential * no_eta) StructfieldAbwd.t =
+  let finished : type mode n c a nh ha et.
+      (mode, n, c, a, nh, ha, et) codata_args -> (mode * n * a * potential * no_eta) StructfieldAbwd.t =
    fun c ->
     (* Fibrancy of glue-types is bootstrapped later and saved to the ref above, so here we detect whether the type is glue and insert that value if so. *)
     match c.is_glue with
     | Some Glue -> (
         match !glue with
         | None -> Emp
-        | Some fields -> fields)
+        | Some fields -> coerce_mode fields)
     | None -> finish c.fields c.fibrancy
 end
 
-let universe : (D.zero * emp * potential * no_eta) StructfieldAbwd.t option Lazy.t =
+let universe : (unit * D.zero * emp * potential * no_eta) StructfieldAbwd.t option Lazy.t =
   Lazy.from_val None
 
 let data : unit option Lazy.t = Lazy.from_val None
