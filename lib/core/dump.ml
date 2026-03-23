@@ -13,19 +13,19 @@ open Raw
 (* Functions to dump a partial direct representation of various kinds of syntax, avoiding the machinery of readback, unparsing, etc. that's needed for ordinary pretty-printing.  Intended only for debugging. *)
 
 type printable +=
-  | Val : 's value -> printable
-  | DeepVal : 's value * int -> printable
-  | Head : head -> printable
-  | Binder : ('b, 's) binder -> printable
+  | Val : ('mode, 's) value -> printable
+  | DeepVal : ('mode, 's) value * int -> printable
+  | Head : 'mode head -> printable
+  | Binder : ('mode, 'b, 's) binder -> printable
   | Term : ('b, 's) term -> printable
   | Tel : ('a, 'b, 'ab) Telescope.t -> printable
-  | Env : ('n, 'b) Value.env -> printable
-  | DeepEnv : ('n, 'b) Value.env * int -> printable
+  | Env : ('mode, 'n, 'b) Value.env -> printable
+  | DeepEnv : ('mode, 'n, 'b) Value.env * int -> printable
   | Check : 'a check -> printable
-  | Apps : 'any apps -> printable
-  | Entry : ('x, 'n) Ctx.entry -> printable
-  | OrderedCtx : ('a, 'b) Ctx.Ordered.t -> printable
-  | Ctx : ('a, 'b) Ctx.t -> printable
+  | Apps : ('mode, 'any) apps -> printable
+  | Entry : ('mode, 'x, 'n) Ctx.entry -> printable
+  | OrderedCtx : ('mode, 'a, 'b) Ctx.Ordered.t -> printable
+  | Ctx : ('mode, 'a, 'b) Ctx.t -> printable
 
 (* The dump functions were written using Format, but printable has now been changed to use PPrint instead.  To put off updating the dump functions to PPrint, we wrap the old versions in a module, and then at the end wrap them in functions that convert them to strings and make those into PPrint.documents. *)
 
@@ -63,7 +63,7 @@ module F = struct
       [ args ];
     fprintf ppf ")"
 
-  let rec dvalue : type s. int -> formatter -> s value -> unit =
+  let rec dvalue : type mode s. int -> formatter -> (mode, s) value -> unit =
    fun depth ppf v ->
     match v with
     | Neu { head = h; args = a; value = _; ty } ->
@@ -80,11 +80,11 @@ module F = struct
           (List.map CubeOf.find_top args)
     | Canonical ic -> fprintf ppf "Canonical %a" inst_canonical ic
 
-  and value : type s. formatter -> s value -> unit = fun ppf v -> dvalue 0 ppf v
-  and normal : formatter -> normal -> unit = fun ppf x -> value ppf x.tm
+  and value : type mode s. formatter -> (mode, s) value -> unit = fun ppf v -> dvalue 0 ppf v
+  and normal : type mode. formatter -> mode normal -> unit = fun ppf x -> value ppf x.tm
 
-  and fields : type s n et.
-      int -> n D.t -> formatter -> (n * s * et) Value.StructfieldAbwd.t -> unit =
+  and fields : type mode s n et.
+      int -> n D.t -> formatter -> (mode * n * s * et) Value.StructfieldAbwd.t -> unit =
    fun depth n ppf -> function
     | Emp -> fprintf ppf "Emp"
     | Snoc (flds, Entry (f, Lower (v, l))) ->
@@ -102,8 +102,8 @@ module F = struct
           }
           [ vals ]
 
-  and lazy_field : type s i.
-      int -> formatter -> i Field.t -> string -> s lazy_eval -> [ `Labeled | `Unlabeled ] -> unit =
+  and lazy_field : type mode s i.
+      int -> formatter -> i Field.t -> string -> (mode, s) lazy_eval -> [ `Labeled | `Unlabeled ] -> unit =
    fun depth ppf f p v l ->
     let l =
       match l with
@@ -124,7 +124,7 @@ module F = struct
             (string_of_dim (dom_ins ins))
             apps args l
 
-  and lazy_eval : type s. int -> formatter -> s lazy_eval -> unit =
+  and lazy_eval : type mode s. int -> formatter -> (mode, s) lazy_eval -> unit =
    fun depth ppf v ->
     if depth > 0 then (evaluation (depth - 1)) ppf (View.force_eval v)
     else
@@ -132,7 +132,7 @@ module F = struct
       | Ready v -> (evaluation (depth - 1)) ppf v
       | _ -> fprintf ppf "(Deferred)"
 
-  and evaluation : type s. int -> formatter -> s evaluation -> unit =
+  and evaluation : type mode s. int -> formatter -> (mode, s) evaluation -> unit =
    fun depth ppf v ->
     match v with
     | Unrealized -> fprintf ppf "Unrealized"
@@ -140,7 +140,7 @@ module F = struct
     | Val v -> fprintf ppf "Val (%a)" (dvalue depth) v
 
   (* TODO: display the outer insertion *)
-  and apps : type any. formatter -> any apps -> unit =
+  and apps : type mode any. formatter -> (mode, any) apps -> unit =
    fun ppf args ->
     match args with
     | Emp -> fprintf ppf "Emp"
@@ -168,7 +168,7 @@ module F = struct
 
   and level : formatter -> level -> unit = fun ppf l -> fprintf ppf "LVar (%d,%d)" (fst l) (snd l)
 
-  and head : formatter -> head -> unit =
+  and head : type mode. formatter -> mode head -> unit =
    fun ppf h ->
     match h with
     | Var { level = l; _ } -> level ppf l
@@ -185,11 +185,11 @@ module F = struct
           (Option.value ~default:"_" (top_variable x))
           (cubeof value) doms binder (BindCube.find_top cods)
 
-  and binder : type b s. formatter -> (b, s) binder -> unit =
+  and binder : type mode b s. formatter -> (mode, b, s) binder -> unit =
    fun ppf (Bind { env = e; ins = i; body }) ->
     fprintf ppf "Bind (%a, %s, %a)" env e (string_of_ins i) term body
 
-  and inst_canonical : type m k mk e n. formatter -> (m, k, mk, e, n) inst_canonical -> unit =
+  and inst_canonical : type mode m k mk e n. formatter -> (mode, m, k, mk, e, n) inst_canonical -> unit =
    fun ppf { canonical; tyargs; ins; fields = _; inst_fields = _ } ->
     fprintf ppf "(%s, %a, (evdim=%s)%s, ?)"
       (match canonical with
@@ -201,7 +201,7 @@ module F = struct
       (string_of_dim (cod_left_ins ins))
       (string_of_ins ins)
 
-  and denv : type b n. int -> formatter -> (n, b) Value.env -> unit =
+  and denv : type mode b n. int -> formatter -> (mode, n, b) Value.env -> unit =
    fun depth ppf e ->
     match e with
     | Emp d -> fprintf ppf "Emp %a" dim d
@@ -213,7 +213,7 @@ module F = struct
     | Shift (e, mn, _) -> fprintf ppf "%a << %a" env e dim (D.plus_right mn)
     | Unshift (e, mn, _) -> fprintf ppf "%a >> %a" env e dim (D.plus_right mn)
 
-  and env : type b n. formatter -> (n, b) Value.env -> unit = fun ppf e -> denv 0 ppf e
+  and env : type mode b n. formatter -> (mode, n, b) Value.env -> unit = fun ppf e -> denv 0 ppf e
 
   and term : type b s. formatter -> (b, s) term -> unit =
    fun ppf tm ->
@@ -388,7 +388,7 @@ module F = struct
       | `Cube _ -> "⤇" in
     fprintf ppf "%s %s %s %a" (Constr.to_string c) (strvars vars.value) mapsto check body.value
 
-  let entry : type x n. formatter -> (x, n) Ctx.entry -> unit =
+  let entry : type mode x n. formatter -> (mode, x, n) Ctx.entry -> unit =
    fun ppf -> function
     | Vis { dim; plusdim; hasfields = No_fields; vars; bindings; _ } -> (
         match (D.compare_zero dim, D.compare_zero (D.plus_right plusdim)) with
@@ -403,13 +403,13 @@ module F = struct
         | _ -> fprintf ppf "(?)")
     | _ -> fprintf ppf "(?)"
 
-  let rec ordered_ctx : type a b. formatter -> (a, b) Ctx.Ordered.t -> unit =
+  let rec ordered_ctx : type mode a b. formatter -> (mode, a, b) Ctx.Ordered.t -> unit =
    fun ppf -> function
     | Emp -> ()
     | Snoc (c, e, _) -> fprintf ppf "%a %a" ordered_ctx c entry e
     | Lock c -> fprintf ppf "%a Lock" ordered_ctx c
 
-  let ctx : type a b. formatter -> (a, b) Ctx.t -> unit =
+  let ctx : type mode a b. formatter -> (mode, a, b) Ctx.t -> unit =
    fun ppf (Permute { ctx; _ }) -> fprintf ppf "Ctx (?, ?, %a)" ordered_ctx ctx
 end
 

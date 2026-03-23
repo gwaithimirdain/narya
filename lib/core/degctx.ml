@@ -13,16 +13,16 @@ open Norm
 module Ordered = struct
   open Ctx.Ordered
 
-  let degenerate_binding : type k n kn ax b.
+  let degenerate_binding : type mode k n kn ax b.
       int ->
       k D.t ->
       (k, n, kn) D.plus ->
-      (n, Binding.t) CubeOf.t ->
+      (n, mode Binding.t) CubeOf.t ->
       (* Because the values and types of variables in one cube can refer to other variables in the same cube, we need to be given the extended context with this binding included at the end in order to readback. *)
-      (ax, (b, n) snoc) t ->
+      (mode, ax, (b, n) snoc) t ->
       (* But we are building the degenerating environment as we go, so we don't have the extended version of that yet. *)
-      (k, b) env ->
-      (kn, Binding.t) CubeOf.t * (kn, kinetic value) CubeOf.t =
+      (mode, k, b) env ->
+      (kn, mode Binding.t) CubeOf.t * (kn, (mode, kinetic) value) CubeOf.t =
    fun i k k_n xs ctx env ->
     let kn = D.plus_out k k_n in
     let ctx = Ctx.of_ordered ctx in
@@ -107,11 +107,13 @@ module Ordered = struct
     let newvals = CubeOf.mmap { map = (fun _ [ v ] -> (Binding.value v).tm) } [ newxs ] in
     (newxs, newvals)
 
-  type (_, _, _) degctx =
-    | Degctx : ('k, 'b, 'kb) Plusmap.t * ('a, 'kb) t * ('k, 'b) env -> ('a, 'b, 'k) degctx
+  type (_, _, _, _) degctx =
+    | Degctx :
+        ('k, 'b, 'kb) Plusmap.t * ('mode, 'a, 'kb) t * ('mode, 'k, 'b) env
+        -> ('mode, 'a, 'b, 'k) degctx
 
   (* TODO: Short-circuit if k=0. *)
-  let rec degenerate : type a b k. (a, b) t -> k D.t -> (a, b, k) degctx =
+  let rec degenerate : type mode a b k. (mode, a, b) t -> k D.t -> (mode, a, b, k) degctx =
    fun ctx k ->
     match ctx with
     | Emp -> Degctx (Map_emp, Emp, Emp k)
@@ -139,10 +141,12 @@ module Ordered = struct
         Degctx (kb, Lock newctx, env)
 end
 
-type (_, _, _) degctx =
-  | Degctx : ('k, 'b, 'kb) Plusmap.t * ('a, 'kb) Ctx.t * ('k, 'b) env -> ('a, 'b, 'k) degctx
+type (_, _, _, _) degctx =
+  | Degctx :
+      ('k, 'b, 'kb) Plusmap.t * ('mode, 'a, 'kb) Ctx.t * ('mode, 'k, 'b) env
+      -> ('mode, 'a, 'b, 'k) degctx
 
-let degctx : type a b k. (a, b) Ctx.t -> k D.t -> (a, b, k) degctx =
+let degctx : type mode a b k. (mode, a, b) Ctx.t -> k D.t -> (mode, a, b, k) degctx =
  fun (Permute { perm; ctx; level; _ }) k ->
   let (Degctx (kb, newctx, env)) = Ordered.degenerate ctx k in
   Degctx (kb, Permute { perm; env = Ctx.Ordered.env newctx; level; ctx = newctx }, env)

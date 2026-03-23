@@ -107,22 +107,22 @@ module IdMap = Map.Make (Identity)
 module Table = struct
   type ('a, 'b, 's) key = ('a, 'b, 's) t
 
-  module Make (F : Fam4) = struct
-    type _ entry = Entry : ('a, 'b, 's) key * ('x, 'a, 'b, 's) F.t -> 'x entry
+  module Make (F : Fam5) = struct
+    type _ entry = Entry : ('a, 'b, 's) key * ('x, 'mode, 'a, 'b, 's) F.t -> 'x entry
+    type ('x, 'a, 'b, 's) found = Found : ('x, 'mode, 'a, 'b, 's) F.t -> ('x, 'a, 'b, 's) found
     type 'x t = 'x entry IdMap.t Versioned.t
 
     let make () = Versioned.make ~default:(fun () -> IdMap.empty) ~inherit_values:false
 
-    let find_opt : type x a b s. (a, b, s) key -> x t -> (x, a, b, s) F.t option =
+    let find_opt : type x a b s. (a, b, s) key -> x t -> (x, a, b, s) found option =
      fun key m ->
-      (* Apparently we can't use Monad.Ops(Monad.Maybe) here because the type doesn't get sufficiently refined. *)
       match Versioned.get_at m key.origin with
       | Some m -> (
           match IdMap.find_opt key.identity m with
           | None -> None
           | Some (Entry (key', value)) -> (
               match compare key key' with
-              | Eq -> Some value
+              | Eq -> Some (Found value)
               | Neq -> raise (Failure "Meta.Map.find_opt")))
       | None -> None
 
@@ -135,37 +135,24 @@ module Table = struct
         | None -> None
       with Invalid_argument _ -> None
 
-    let update : type x a b s.
-        (a, b, s) key -> ((x, a, b, s) F.t option -> (x, a, b, s) F.t option) -> x t -> unit =
-     fun key f m ->
+    let add : type x mode a b s. (a, b, s) key -> (x, mode, a, b, s) F.t -> x t -> unit =
+     fun key value m ->
       if key.origin = Origin.current () then
         let a = Option.value ~default:IdMap.empty (Versioned.get_at m key.origin) in
-        let newa =
-          IdMap.update key.identity
-            (function
-              | None -> (
-                  match f None with
-                  | None -> None
-                  | Some fx -> Some (Entry (key, fx)))
-              | Some (Entry (key', value)) -> (
-                  match compare key key' with
-                  | Eq -> (
-                      match f (Some value) with
-                      | None -> None
-                      | Some fx -> Some (Entry (key, fx)))
-                  | Neq -> raise (Failure "Meta.Map.update")))
-            a in
+        let newa = IdMap.add key.identity (Entry (key, value)) a in
         Versioned.set m newa
-      else raise (Failure "Meta.Table: can only update/add to the current origin")
-
-    let add : type x a b s. (a, b, s) key -> (x, a, b, s) F.t -> x t -> unit =
-     fun key value m -> update key (fun _ -> Some value) m
+      else raise (Failure "Meta.Table: can only add to the current origin")
 
     let _remove : type x a b s. (a, b, s) key -> x t -> unit =
-     fun key m -> update key (fun _ -> None) m
+     fun key m ->
+      if key.origin = Origin.current () then
+        let a = Option.value ~default:IdMap.empty (Versioned.get_at m key.origin) in
+        let newa = IdMap.remove key.identity a in
+        Versioned.set m newa
+      else raise (Failure "Meta.Table: can only remove from the current origin")
 
     type ('x, 'acc) folder = {
-      fold : 'a 'b 's. ('a, 'b, 's) key -> ('x, 'a, 'b, 's) F.t -> 'acc -> 'acc;
+      fold : 'mode 'a 'b 's. ('a, 'b, 's) key -> ('x, 'mode, 'a, 'b, 's) F.t -> 'acc -> 'acc;
     }
 
     let fold : type x acc. (x, acc) folder -> x t -> acc -> acc =
@@ -191,7 +178,7 @@ module Table = struct
      fun chan origin m flags -> Marshal.to_channel chan (Versioned.get_at m origin) flags
 
     type 'x mapper = {
-      map : 'a 'b 's. ('a, 'b, 's) key -> ('x, 'a, 'b, 's) F.t -> ('x, 'a, 'b, 's) F.t;
+      map : 'mode 'a 'b 's. ('a, 'b, 's) key -> ('x, 'mode, 'a, 'b, 's) F.t -> ('x, 'mode, 'a, 'b, 's) F.t;
     }
 
     let from_istream_origin : type x. Istream.t -> x mapper -> Origin.t -> x t -> x origin_entry =

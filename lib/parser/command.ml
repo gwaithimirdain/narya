@@ -817,8 +817,8 @@ let condense : Command.t -> [ `Import | `Option | `None | `Bof ] = function
 let tok t : observation = Token (t, ([], None))
 
 (* Subroutine for "split" that generates the cases in a multiple match. *)
-let split_match_cases : type a b.
-    (a, b) Ctx.t ->
+let split_match_cases : type mode a b.
+    (mode, a, b) Ctx.t ->
     (string option, a) Bwv.t ->
     (Whitespace.t list * wrapped_parse) list ->
     observation list list =
@@ -913,13 +913,13 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       Core.Command.execute (Def cdefs)
   | Echo { tm = Wrap tm; eval; number; _ } -> (
       let module Scope_and_ctx = struct
-        type t = Scope_and_ctx : (string option, 'a) Bwv.t * ('a, 'b) Ctx.t -> t
+        type t = Scope_and_ctx : (string option, 'a) Bwv.t * ('mode, 'a, 'b) Ctx.t -> t
       end in
       let open Scope_and_ctx in
       let Scope_and_ctx (vars, ctx), run =
         match number with
         | None ->
-            (Scope_and_ctx (Bwv.Emp, Ctx.empty), Global.run_command_then_undo ~holes_allowed:(Ok ()))
+            (Scope_and_ctx (Bwv.Emp, (Ctx.empty ())), Global.run_command_then_undo ~holes_allowed:(Ok ()))
         | Some number ->
             let num = Global.find_hole number in
             let (Found_hole { instant; termctx; vars; parametric; _ }) = num in

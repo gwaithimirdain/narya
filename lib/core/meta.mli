@@ -30,24 +30,18 @@ val hole_number : ('a, 'b, 's) t -> int
 module Table : sig
   type ('a, 'b, 's) key = ('a, 'b, 's) t
 
-  module Make (F : Fam4) : sig
-    type _ entry = Entry : ('a, 'b, 's) t * ('x, 'a, 'b, 's) F.t -> 'x entry
+  module Make (F : Fam5) : sig
+    type _ entry = Entry : ('a, 'b, 's) t * ('x, 'mode, 'a, 'b, 's) F.t -> 'x entry
+    type ('x, 'a, 'b, 's) found = Found : ('x, 'mode, 'a, 'b, 's) F.t -> ('x, 'a, 'b, 's) found
     type 'x t
 
     val make : unit -> 'x t
-    val find_opt : ('a, 'b, 's) key -> 'x t -> ('x, 'a, 'b, 's) F.t option
+    val find_opt : ('a, 'b, 's) key -> 'x t -> ('x, 'a, 'b, 's) found option
     val find_hole_opt : int -> 'x t -> 'x entry option
-
-    val update :
-      ('a, 'b, 's) key ->
-      (('x, 'a, 'b, 's) F.t option -> ('x, 'a, 'b, 's) F.t option) ->
-      'x t ->
-      unit
-
-    val add : ('a, 'b, 's) key -> ('x, 'a, 'b, 's) F.t -> 'x t -> unit
+    val add : ('a, 'b, 's) key -> ('x, 'mode, 'a, 'b, 's) F.t -> 'x t -> unit
 
     type ('x, 'acc) folder = {
-      fold : 'a 'b 's. ('a, 'b, 's) key -> ('x, 'a, 'b, 's) F.t -> 'acc -> 'acc;
+      fold : 'mode 'a 'b 's. ('a, 'b, 's) key -> ('x, 'mode, 'a, 'b, 's) F.t -> 'acc -> 'acc;
     }
 
     val fold : ('x, 'acc) folder -> 'x t -> 'acc -> 'acc
@@ -60,7 +54,7 @@ module Table : sig
     val to_channel_origin : Out_channel.t -> Origin.t -> 'x t -> Marshal.extern_flags list -> unit
 
     type 'x mapper = {
-      map : 'a 'b 's. ('a, 'b, 's) key -> ('x, 'a, 'b, 's) F.t -> ('x, 'a, 'b, 's) F.t;
+      map : 'mode 'a 'b 's. ('a, 'b, 's) key -> ('x, 'mode, 'a, 'b, 's) F.t -> ('x, 'mode, 'a, 'b, 's) F.t;
     }
 
     val from_istream_origin : Istream.t -> 'x mapper -> Origin.t -> 'x t -> 'x origin_entry

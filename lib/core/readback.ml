@@ -21,8 +21,8 @@ open Readback
 let () =
   Displaying.register_printer (function `Read -> Some "unhandled Readback.Displaying.read effect")
 
-let rec sort_of_ty : type a z.
-    ?isfunc:bool -> (z, a) Ctx.t -> View.view_type -> [ `Type | `Function | `Other ] =
+let rec sort_of_ty : type mode a z.
+    ?isfunc:bool -> (mode, z, a) Ctx.t -> mode View.view_type -> [ `Type | `Function | `Other ] =
  fun ?(isfunc = false) ctx -> function
   | Canonical (_, UU _, _, _) -> `Type
   | Canonical (_, Pi (_, doms, cods), _, tyargs) -> (
@@ -40,11 +40,12 @@ let rec sort_of_ty : type a z.
    1. When reading back at a record type that the user has marked as transparent, we eta-expand tuples.  This is chosen based on the readback type.
    2. When reading back a higher-dimensional pi-type, we eta-expand its instantiation arguments so that we can display it prettily.  This is controlled by the flag ~eta. *)
 
-let rec readback_nf : type a z. ?eta:bool -> (z, a) Ctx.t -> normal -> (a, kinetic) term =
+let rec readback_nf : type mode a z.
+    ?eta:bool -> (mode, z, a) Ctx.t -> mode normal -> (a, kinetic) term =
  fun ?(eta = false) n x -> readback_at ~eta n x.tm x.ty
 
-and readback_at : type a z.
-    ?eta:bool -> (z, a) Ctx.t -> kinetic value -> kinetic value -> (a, kinetic) term =
+and readback_at : type mode a z.
+    ?eta:bool -> (mode, z, a) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> (a, kinetic) term =
  fun ?(eta = false) ctx tm ty ->
   let view = if Displaying.read () then view_term tm else tm in
   let vty = view_type ty "readback_at" in
@@ -76,16 +77,16 @@ and readback_at : type a z.
         (( _,
            Codata
              (type c a et)
-             ({ eta; opacity; fields; env = _; termctx = _ } : (m, n, c, a, et) codata_args),
+             ({ eta; opacity; fields; env = _; termctx = _ } : (mode, m, n, c, a, et) codata_args),
            ins,
            _ ) :
-          head * (m, n) canonical * (mn, m, n) insertion * (D.zero, mn, mn, normal) TubeOf.t),
+          mode head * (mode, m, n) canonical * (mn, m, n) insertion * (D.zero, mn, mn, mode normal) TubeOf.t),
       _ ) -> (
       match (eta, fields) with
       | Eta, (fields : (a * n * has_eta) Term.CodatafieldAbwd.t) -> (
           let dim = cod_left_ins ins in
           let fldins = ins_zero dim in
-          let readback_at_record (tm : kinetic value) ty =
+          let readback_at_record (tm : (mode, kinetic) value) ty =
             match (tm, opacity) with
             (* If the term is a struct, we read back its fields.  Even though this is not technically an eta-expansion, we have to do it here rather than in readback_val because we need the record type to determine the types at which to read back the fields. *)
             | Struct { fields = tmflds; energy; ins = _; eta = _ }, _ ->
@@ -178,14 +179,14 @@ and readback_at : type a z.
                 argtys tyarg_args ))
   | _ -> readback_val_sorted ctx tm vty
 
-and readback_val_sorted : type a z.
-    (z, a) Ctx.t -> kinetic value -> View.view_type -> (a, kinetic) term =
+and readback_val_sorted : type mode a z.
+    (mode, z, a) Ctx.t -> (mode, kinetic) value -> mode View.view_type -> (a, kinetic) term =
  fun ctx tm vty ->
   let sort = sort_of_ty ctx vty in
   readback_val ~sort ctx tm
 
-and readback_val : type a z.
-    ?sort:[ `Type | `Function | `Other ] -> (z, a) Ctx.t -> kinetic value -> (a, kinetic) term =
+and readback_val : type mode a z.
+    ?sort:[ `Type | `Function | `Other ] -> (mode, z, a) Ctx.t -> (mode, kinetic) value -> (a, kinetic) term =
  fun ?(sort = `Other) ctx x ->
   match x with
   | Neu { head; args; value; ty } -> (
@@ -197,11 +198,11 @@ and readback_val : type a z.
   | Struct _ -> fatal (Anomaly "unexpected struct in synthesizing readback")
   | Constr _ -> fatal (Anomaly "unexpected constr in synthesizing readback")
 
-and readback_neu : type a z any.
+and readback_neu : type mode a z any.
     ?sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] ->
-    (z, a) Ctx.t ->
-    head ->
-    any apps ->
+    (mode, z, a) Ctx.t ->
+    mode head ->
+    (mode, any) apps ->
     (a, kinetic) term =
  fun ?(sort = (`Other, `Other)) ctx head apps ->
   match (apps, head) with
@@ -226,10 +227,10 @@ and readback_neu : type a z any.
       let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ args ] in
       Inst (readback_neu ~sort ctx head apps, args)
 
-and readback_head : type c z.
+and readback_head : type mode c z.
     ?sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] ->
-    (z, c) Ctx.t ->
-    head ->
+    (mode, z, c) Ctx.t ->
+    mode head ->
     (c, kinetic) term =
  fun ?(sort = (`Other, `Other)) ctx h ->
   match h with
@@ -269,12 +270,12 @@ and readback_head : type c z.
                   readback_val ~sort:`Type sctx (apply_binder_term (BindCube.find cods fa) sargs));
             } )
 
-and readback_at_tel : type n c a b ab z.
-    (z, c) Ctx.t ->
-    (n, a) env ->
-    kinetic value list ->
+and readback_at_tel : type mode n c a b ab z.
+    (mode, z, c) Ctx.t ->
+    (mode, n, a) env ->
+    (mode, kinetic) value list ->
     (a, b, ab) Telescope.t ->
-    (D.zero, n, n, kinetic value list) TubeOf.t ->
+    (D.zero, n, n, (mode, kinetic) value list) TubeOf.t ->
     (n, (c, kinetic) term) CubeOf.t list =
  fun ctx env xs tys tyargs ->
   match (xs, tys) with
@@ -320,12 +321,12 @@ and readback_at_tel : type n c a b ab z.
   | _ -> fatal (Anomaly "length mismatch in equal_at_tel")
 
 (* To readback an environment, since readback is type-directed we need the types of *all* the terms in it, which is to say its codomain context.  We store this as a Termctx since we need to evaluate and instantiate the types at the previous terms in the environment as we go. *)
-and readback_env : type n a b c d.
-    (a, b) Ctx.t -> (n, d) Value.env -> (c, d) termctx -> (b, n, d) Term.env =
+and readback_env : type mode n a b c d.
+    (mode, a, b) Ctx.t -> (mode, n, d) Value.env -> (c, d) termctx -> (b, n, d) Term.env =
  fun ctx env (Permute (_, envctx)) -> readback_ordered_env ctx env envctx
 
-and readback_ordered_env : type n a b c d.
-    (a, b) Ctx.t -> (n, d) Value.env -> (c, d) ordered_termctx -> (b, n, d) Term.env =
+and readback_ordered_env : type mode n a b c d.
+    (mode, a, b) Ctx.t -> (mode, n, d) Value.env -> (c, d) ordered_termctx -> (b, n, d) Term.env =
  fun ctx env envctx ->
   match envctx with
   | Emp -> Emp (dim_env env)
@@ -365,8 +366,8 @@ and readback_ordered_env : type n a b c d.
 
 (* Read back a context of values into a context of terms. *)
 
-let readback_bindings : type a b n.
-    (a, (b, n) snoc) Ctx.t -> (n, Binding.t) CubeOf.t -> (n, (b, n) snoc binding) CubeOf.t =
+let readback_bindings : type mode a b n.
+    (mode, a, (b, n) snoc) Ctx.t -> (n, mode Binding.t) CubeOf.t -> (n, (b, n) snoc binding) CubeOf.t =
  fun ctx vbs ->
   CubeOf.mmap
     {
@@ -384,7 +385,8 @@ let readback_bindings : type a b n.
     }
     [ vbs ]
 
-let readback_entry : type a b f n. (a, (b, n) snoc) Ctx.t -> (f, n) Ctx.entry -> (b, f, n) entry =
+let readback_entry : type mode a b f n.
+    (mode, a, (b, n) snoc) Ctx.t -> (mode, f, n) Ctx.entry -> (b, f, n) entry =
  fun ctx e ->
   match e with
   | Vis { dim; plusdim; vars; bindings; hasfields; fields; fplus } ->
@@ -403,11 +405,12 @@ let readback_entry : type a b f n. (a, (b, n) snoc) Ctx.t -> (f, n) Ctx.entry ->
       Vis { dim; plusdim; vars; bindings; hasfields; fields; fplus }
   | Invis bindings -> Invis (readback_bindings ctx bindings)
 
-let rec readback_ordered_ctx : type a b. (a, b) Ctx.Ordered.t -> (a, b) ordered_termctx = function
+let rec readback_ordered_ctx : type mode a b.
+    (mode, a, b) Ctx.Ordered.t -> (a, b) ordered_termctx = function
   | Emp -> Emp
   | Snoc (rest, e, af) as ctx ->
       Ext (readback_ordered_ctx rest, readback_entry (Ctx.of_ordered ctx) e, af)
   | Lock ctx -> Lock (readback_ordered_ctx ctx)
 
-let readback_ctx : type a b. (a, b) Ctx.t -> (a, b) termctx = function
+let readback_ctx : type mode a b. (mode, a, b) Ctx.t -> (a, b) termctx = function
   | Permute { perm; ctx; _ } -> Permute (perm, readback_ordered_ctx ctx)

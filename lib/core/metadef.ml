@@ -5,8 +5,8 @@ open Term
 open Status
 
 (* Holes also store their status, vars, and tightness intervals so we can tell whether a term would parse to replace them.  Note that a 'status' contains a functional value, so a 'holedata' cannot be marshaled. *)
-type ('a, 'b, 's) hole = {
-  status : ('b, 's) status;
+type ('mode, 'a, 'b, 's) hole = {
+  status : ('mode, 'b, 's) status;
   vars : (string option, 'a) Bwv.t;
   li : No.interval;
   ri : No.interval;

@@ -17,7 +17,7 @@ type find_hole =
       instant : Instant.t;
       termctx : ('a, 'b) termctx;
       ty : ('b, kinetic) term;
-      status : ('b, 's) Status.status;
+      status : ('mode, 'b, 's) Status.status;
       vars : (string option, 'a) Bwv.t;
       li : No.interval;
       ri : No.interval;
@@ -84,7 +84,7 @@ val add_hole :
   vars:(string option, 'a) Bwv.t ->
   termctx:('a, 'b) termctx ->
   ty:('b, kinetic) term ->
-  status:('b, 's) Status.status ->
+  status:('mode, 'b, 's) Status.status ->
   li:No.interval ->
   ri:No.interval ->
   unit

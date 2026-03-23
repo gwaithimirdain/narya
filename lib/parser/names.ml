@@ -158,7 +158,7 @@ let add_full : type b mn. b t -> mn variables -> mn variables * (b, mn) snoc t =
   (vars, { ctx = Snoc (ctx, vars, Abwd.empty); used })
 
 (* Extract all the names in a context, generating a fresh version of each name from left to right, including field access variables, leaving unnamed variables unnamed. *)
-let rec of_ordered_ctx : type a b. (a, b) Ctx.Ordered.t -> b t = function
+let rec of_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> b t = function
   | Emp -> empty
   | Snoc (ctx, Vis { dim; plusdim; vars; bindings = _; hasfields = _; fields; fplus = _ }, _) ->
       let { ctx; used } = of_ordered_ctx ctx in
@@ -177,7 +177,7 @@ let rec of_ordered_ctx : type a b. (a, b) Ctx.Ordered.t -> b t = function
   | Snoc (ctx, Invis bindings, _) -> snd (add_cube (CubeOf.dim bindings) (of_ordered_ctx ctx) None)
   | Lock ctx -> of_ordered_ctx ctx
 
-let of_ctx : type a b. (a, b) Ctx.t -> b t = function
+let of_ctx : type mode a b. (mode, a, b) Ctx.t -> b t = function
   | Permute { ctx; _ } -> of_ordered_ctx ctx
 
 (* Add a cube of variables WITHOUT replacing them by fresh versions.  Should only be used when the variables have already been so replaced, as in the output of uniquify_vars below. *)

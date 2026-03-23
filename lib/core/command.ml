@@ -57,7 +57,7 @@ let check_term (def : defined_const) (discrete : unit Constant.Map.t option) :
   match def with
   | Defined_check { const; bplus; params; ty; tm } ->
       (* It's essential that we evaluate the type at this point, rather than sooner, so that the evaluation uses the *definitions* of previous constants in the mutual block and not just their types.  For the same reason, we need to re-evaluate the telescope of parameters. *)
-      let ctx = eval_append Ctx.empty bplus params in
+      let ctx = eval_append (Ctx.empty ()) bplus params in
       let ety = eval_term (Ctx.env ctx) ty in
       let tm =
         Ctx.lam ctx
@@ -67,7 +67,7 @@ let check_term (def : defined_const) (discrete : unit Constant.Map.t option) :
       Global.set const (`Defined tm, `Maybe_parametric);
       (const, tm)
   | Defined_synth { const; params; tm } ->
-      let Checked_tel (cparams, ctx), _ = check_tel Ctx.empty params in
+      let Checked_tel (cparams, ctx), _ = check_tel (Ctx.empty ()) params in
       let ctm, ety =
         synth (Potential (Constant (const, D.zero), Ctx.apps ctx, Ctx.lam ctx)) ctx tm in
       let cty = readback_val ctx ety in
@@ -114,7 +114,7 @@ let check_defs (defs : (Constant.t Lazy.t * defconst Lazy.t) list) : printable l
         match Lazy.force defconst with
         | Def_check { params; ty; tm } ->
             let bplus = Raw.bplus_of_tel params in
-            let Checked_tel (params, ctx), disc = check_tel ?discrete Ctx.empty params in
+            let Checked_tel (params, ctx), disc = check_tel ?discrete (Ctx.empty ()) params in
             let ty = check (Kinetic `Nolet) ctx ty (universe D.zero) in
             let pi_cty = Telescope.pis params ty in
             (* We set the type now; the value will be added later.  We mark it as "maybe parametric" so that we can detect if it is used behind an external degeneracy. *)
@@ -133,7 +133,7 @@ let execute : t -> int option * (int -> Reporter.Code.t option) = function
   (* We let Parser.Command do the calling of Global.run_command etc. *)
   | Axiom { name; params; ty; parametric } ->
       if parametric then Global.set_parametric name else Global.set_nonparametric None;
-      let Checked_tel (params, ctx), _ = check_tel Ctx.empty params in
+      let Checked_tel (params, ctx), _ = check_tel (Ctx.empty ()) params in
       let cty = check (Kinetic `Nolet) ctx ty (universe D.zero) in
       let cty = Telescope.pis params cty in
       let p = Global.get_parametric () in

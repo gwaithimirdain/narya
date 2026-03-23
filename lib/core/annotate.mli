@@ -5,12 +5,12 @@ open Reporter
 
 type 'a located = 'a Asai.Range.located
 
-val ty : ('a, 'b) Ctx.t -> kinetic value -> unit
-val tm : ('a, 'b) Ctx.t -> ('b, 's) term -> unit
-val ctx : ('b, 's) status -> ('a, 'b) Ctx.t -> 'a Raw.check located -> unit
+val ty : ('mode, 'a, 'b) Ctx.t -> ('mode, kinetic) value -> unit
+val tm : ('mode, 'a, 'b) Ctx.t -> ('b, 's) term -> unit
+val ctx : ('mode, 'b, 's) status -> ('mode, 'a, 'b) Ctx.t -> 'a Raw.check located -> unit
 
 type ctx_handler = {
-  handle : 'a 'b 's. ('b, 's) status -> ('a, 'b) Ctx.t -> 'a Raw.check located -> unit;
+  handle : 'mode 'a 'b 's. ('mode, 'b, 's) status -> ('mode, 'a, 'b) Ctx.t -> 'a Raw.check located -> unit;
 }
 
 type tm_handler = printable located -> unit

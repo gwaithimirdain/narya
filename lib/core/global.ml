@@ -22,11 +22,11 @@ let constants : ((emp, kinetic) term * definition, Code.t) Result.t Constant.Tab
 
 (* Global metavariables have only a definition (or an error indicating that they can't be correctly accessed, such as if typechecking failed earlier). *)
 module Metatable = Meta.Table.Make (struct
-  type ('x, 'a, 'b, 's) t = (('a, 'b, 's) Metadef.t, Code.t) Result.t
+  type ('x, 'mode, 'a, 'b, 's) t = (('a, 'b, 's) Metadef.t, Code.t) Result.t
 end)
 
 module Holetable = Meta.Table.Make (struct
-  type ('x, 'a, 'b, 's) t = ('a, 'b, 's) Metadef.hole
+  type ('x, 'mode, 'a, 'b, 's) t = ('mode, 'a, 'b, 's) Metadef.hole
 end)
 
 (* The versioned global tables for metavariables (including holes) and for special hole data. *)
@@ -43,8 +43,8 @@ let find c =
 (* Similarly, look up a metavariable. *)
 let find_meta m =
   match Metatable.find_opt m metas with
-  | Some (Ok d) -> d
-  | Some (Error e) -> fatal e
+  | Some (Found (Ok d)) -> d
+  | Some (Found (Error e)) -> fatal e
   | None -> fatal (Anomaly ("undefined metavariable: " ^ Meta.name m))
 
 (* Combine all the data for a hole, to return them when looked up. *)
@@ -54,7 +54,7 @@ type find_hole =
       instant : Instant.t;
       termctx : ('a, 'b) termctx;
       ty : ('b, kinetic) term;
-      status : ('b, 's) Status.status;
+      status : ('mode, 'b, 's) Status.status;
       vars : (string option, 'a) Bwv.t;
       li : No.interval;
       ri : No.interval;
@@ -66,11 +66,11 @@ type find_hole =
 let return_hole : type a b s.
     (a, b, s) Meta.t ->
     ((a, b, s) Metadef.t, Code.t) Result.t ->
-    (a, b, s) Metadef.hole option ->
+    (unit, a, b, s) Holetable.found option ->
     find_hole option =
  fun meta def hole ->
   match (def, hole) with
-  | Ok { tm = `Undefined; termctx; ty; _ }, Some { status; vars; li; ri; parametric } -> (
+  | Ok { tm = `Undefined; termctx; ty; _ }, Some (Found { status; vars; li; ri; parametric }) -> (
       match Meta.origin meta with
       | Instant instant ->
           Some (Found_hole { meta; instant; termctx; ty; status; vars; li; ri; parametric })
@@ -159,7 +159,7 @@ let add_meta m ~termctx ~ty ~tm ~energy =
 (* Set the definition of a Global metavariable, required to already exist but not be defined. *)
 let set_meta m ~tm =
   match Metatable.find_opt m metas with
-  | Some (Ok d) -> Metatable.add m (Ok { d with tm = `Defined tm }) metas
+  | Some (Found (Ok d)) -> Metatable.add m (Ok { d with tm = `Defined tm }) metas
   | _ -> fatal (Anomaly "Global.set_meta: metavariable not defined")
 
 (* Count all the unsolved holes, from all origins. *)
@@ -237,7 +237,7 @@ let get_parametric () =
 let end_command (offset, make_msg) =
   let d = Current_command.get () in
   (* If the command ended up being parametric, we must retroactively label all the holes as parametric, so that they can only be filled using parametric constants, and oppositely. *)
-  let update_parametric : type a b s. (a, b, s) Metadef.hole -> (a, b, s) Metadef.hole =
+  let update_parametric : type mode a b s. (mode, a, b, s) Metadef.hole -> (mode, a, b, s) Metadef.hole =
    fun h ->
     let parametric =
       match d.parametric with
@@ -250,7 +250,9 @@ let end_command (offset, make_msg) =
     (fun [ ({ meta = Meta.Wrap m; printable; _ } : Command_state.hole) ] ->
       (* We intentionally do not "locate" this emission, since we want to display only the hole context and type, not its location in the source. *)
       emit (Hole (Meta.name m, printable));
-      Holetable.update m (Option.map update_parametric) holes)
+      match Holetable.find_opt m holes with
+      | Some (Found h) -> Holetable.add m (update_parametric h) holes
+      | None -> ())
     [ d.current_holes ];
   (* Current_command.modify (fun d -> { d with current_holes = Emp; parametric = `Maybe_parametric }) *)
   ( offset,
@@ -341,13 +343,13 @@ let with_definition c df f =
 (* Similarly, temporarily set the value of a global metavariable, which could be either permanent or current. *)
 let with_meta_definition m tm f =
   match Metatable.find_opt m metas with
-  | Some (Ok olddf as old) ->
+  | Some (Found (Ok olddf as old)) ->
       Metatable.add m (Ok (Metadef.define tm olddf)) metas;
       Fun.protect ~finally:(fun () -> Metatable.add m old metas) f
-  | Some (Error _ as old) ->
+  | Some (Found (Error _ as old)) ->
       (* If the metavariable is currently unusable, we just retain that state. *)
       Fun.protect ~finally:(fun () -> Metatable.add m old metas) f
-  | _ ->
+  | None ->
       (* If the metavariable isn't found, that means that when we created it we didn't have a type for it.  That, in turn, means that the user doesn't have a name for it, since the metavariable is only bound to a user name in a "let rec".  So we don't need to do anything. *)
       f ()
 
@@ -362,7 +364,7 @@ let without_definition c err f =
 (* Similarly, temporarily set the value of a global metavariable to produce an error. *)
 let without_meta_definition m err f =
   match Metatable.find_opt m metas with
-  | Some old ->
+  | Some (Found old) ->
       Metatable.add m (Error err) metas;
       Fun.protect ~finally:(fun () -> Metatable.add m old metas) f
-  | _ -> f ()
+  | None -> f ()

@@ -22,10 +22,10 @@ let parse_term (tm : string) : N.zero check located =
 
 let check_type (rty : N.zero check located) : (emp, kinetic) term =
   Reporter.trace "when checking type" @@ fun () ->
-  check (Kinetic `Nolet) Ctx.empty rty (universe D.zero)
+  check (Kinetic `Nolet) (Ctx.empty ()) rty (universe D.zero)
 
-let check_term (rtm : N.zero check located) (ety : kinetic value) : (emp, kinetic) term =
-  Reporter.trace "when checking term" @@ fun () -> check (Kinetic `Nolet) Ctx.empty rtm ety
+let check_term (rtm : N.zero check located) (ety : (_, kinetic) value) : (emp, kinetic) term =
+  Reporter.trace "when checking term" @@ fun () -> check (Kinetic `Nolet) (Ctx.empty ()) rtm ety
 
 let assume (name : string) (ty : string) : unit =
   Global.run @@ fun () ->
@@ -53,7 +53,7 @@ let def (name : string) (ty : string) (tm : string) : unit =
       let ety = eval_term (Emp D.zero) cty in
       Reporter.trace "when checking case tree" @@ fun () ->
       Global.add const cty (`Axiom, `Parametric);
-      let tree = check (Potential (Constant (const, D.zero), Emp, fun x -> x)) Ctx.empty rtm ety in
+      let tree = check (Potential (Constant (const, D.zero), Emp, fun x -> x)) (Ctx.empty ()) rtm ety in
       Global.add const cty (`Defined tree, `Parametric)
   | _ -> fatal (Invalid_constant_name ([ name ], None))
 
@@ -68,7 +68,7 @@ let equal_at (tm1 : string) (tm2 : string) (ty : string) : unit =
   let ctm2 = check_term rtm2 ety in
   let etm1 = eval_term (Emp D.zero) ctm1 in
   let etm2 = eval_term (Emp D.zero) ctm2 in
-  match Equal.equal_at Ctx.empty etm1 etm2 ety with
+  match Equal.equal_at (Ctx.empty ()) etm1 etm2 ety with
   | Error _ -> raise (Failure "Unequal terms")
   | Ok () -> ()
 
@@ -83,7 +83,7 @@ let unequal_at (tm1 : string) (tm2 : string) (ty : string) : unit =
   let ctm2 = check_term rtm2 ety in
   let etm1 = eval_term (Emp D.zero) ctm1 in
   let etm2 = eval_term (Emp D.zero) ctm2 in
-  match Equal.equal_at Ctx.empty etm1 etm2 ety with
+  match Equal.equal_at (Ctx.empty ()) etm1 etm2 ety with
   | Error _ -> ()
   | Ok () -> raise (Failure "Equal terms")
 
@@ -92,10 +92,10 @@ let print (tm : string) : unit =
   let rtm = parse_term tm in
   match rtm with
   | { value = Synth rtm; loc } ->
-      let ctm, ety = synth (Kinetic `Nolet) Ctx.empty { value = rtm; loc } in
+      let ctm, ety = synth (Kinetic `Nolet) (Ctx.empty ()) { value = rtm; loc } in
       let etm = eval_term (Emp D.zero) ctm in
       Readback.Displaying.run ~env:true @@ fun () ->
-      let btm = readback_at Ctx.empty etm ety in
+      let btm = readback_at (Ctx.empty ()) etm ety in
       let utm = unparse Names.empty btm No.Interval.entire No.Interval.entire in
       PPrint.ToChannel.pretty 1.0 (Display.columns ()) stdout (pp_complete_term (Wrap utm) `None);
       print_newline ()

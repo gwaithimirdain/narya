@@ -24,30 +24,30 @@ open Value
 
 (* The binding of each variable in a context is a "level option * normal".  But instead of exposing this literally as a product type, we use an abstract type with a constructor "Binding.make" and accessors "Binding.level" and "Binding.value".  The reason is that in the "bind_some" machinery below, we work with contexts where the binding of a variable is "known but not yet available" or "not yet computed".  So the internal implementation of Binding is actually a reference cell that usually stores a "Known" "level option * normal", but sometimes is Unknown or other times a Delayed "level option * normal". *)
 module Binding : sig
-  type t
+  type 'mode t
 
-  val make : level option -> normal -> t
-  val level : t -> level option
-  val value : t -> normal
+  val make : level option -> 'mode normal -> 'mode t
+  val level : 'mode t -> level option
+  val value : 'mode t -> 'mode normal
 
   (* An unknown binding can be specified when we have its value. *)
-  val unknown : unit -> t
-  val specify : t -> level option -> normal -> unit
+  val unknown : unit -> 'mode t
+  val specify : 'mode t -> level option -> 'mode normal -> unit
 
   (* A known but not-yet-available value is created by delaying it, and can be made available by forcing it. *)
-  val delay : t -> t
-  val force : t -> unit
+  val delay : 'mode t -> 'mode t
+  val force : 'mode t -> unit
 
   (* An error value raises an exception when accessed. *)
-  val error : Reporter.Code.t -> t
+  val error : Reporter.Code.t -> 'mode t
 end = struct
-  type state =
-    | Known of level option * normal
+  type 'mode state =
+    | Known of level option * 'mode normal
     | Unknown
-    | Delayed of level option * normal
+    | Delayed of level option * 'mode normal
     | Error of Reporter.Code.t
 
-  type t = state ref
+  type 'mode t = 'mode state ref
 
   let make i x = ref (Known (i, x))
 
@@ -76,39 +76,39 @@ end = struct
 end
 
 (* Test whether all the variables in a cube of bindings are free (none are let-bound). *)
-let all_free : type n. (n, Binding.t) CubeOf.t -> bool =
+let all_free : type mode n. (n, mode Binding.t) CubeOf.t -> bool =
  fun b ->
   let open CubeOf.Monadic (Monad.Maybe) in
   Option.is_some (mmapM { map = (fun _ [ x ] -> Option.map (fun _ -> ()) (Binding.level x)) } [ b ])
 
 (* A context is a list of "entries", which can be either visible or invisible in the raw world.  An (f,n) entry contains f raw variables and an n-dimensional cube of checked variables. *)
-type (_, _) entry =
+type ('mode, _, _) entry =
   (* Add a cube of internal variables that are visible to the parser as a list of cubes of variables, the list-of-cubes being obtained by decomposing the dimension as a sum.  Note that the division into a cube and non-cube part, and the sum of dimensions, are only relevant for looking up *raw* indices: they are invisible to the checked world, whose indices store the total face of mn. *)
-  | Vis : ('m, 'n, 'mn, 'f1, 'f2, 'f) vis_data -> ('f, 'mn) entry
+  | Vis : ('mode, 'm, 'n, 'mn, 'f1, 'f2, 'f) vis_data -> ('mode, 'f, 'mn) entry
   (* Add a cube of internal variables that are not visible to the parser.  We also allow a vector of "field view" variables that look to the user like ordinary variables but actually expand *at typechecking time* to field projections of the top invisible variable. *)
-  | Invis : ('n, Binding.t) CubeOf.t -> (N.zero, 'n) entry
+  | Invis : ('n, 'mode Binding.t) CubeOf.t -> ('mode, N.zero, 'n) entry
 
-and ('m, 'n, 'mn, 'f1, 'f2, 'f) vis_data = {
+and ('mode, 'm, 'n, 'mn, 'f1, 'f2, 'f) vis_data = {
   dim : 'm D.t;
   plusdim : ('m, 'n, 'mn) D.plus;
   (* We use an indexed cube to automatically count how many raw variables appear, by starting with zero and incrementing it for each entry in the cube.  It's tempting to want to start instead from the previous raw length of the context, thereby eliminating the "plus" parameter of Snoc, below; but this causes problems with telescopes (forwards contexts), below, whose raw indices are forwards natural numbers instead. *)
   vars : (N.zero, 'n, string option, 'f1) NICubeOf.t;
-  bindings : ('mn, Binding.t) CubeOf.t;
+  bindings : ('mn, 'mode Binding.t) CubeOf.t;
   (* While typechecking a record, we expose the "self" variable as a list of "illusory" variables, visible only to raw terms, that are substituted at typechecking time with the fields of self. *)
   hasfields : ('m, 'f2) has_fields;
   fields : (D.zero Field.t * string, 'f2) Bwv.t;
   fplus : ('f1, 'f2, 'f) N.plus;
 }
 
-let raw_entry : type f n. (f, n) entry -> f N.t = function
+let raw_entry : type mode f n. (mode, f, n) entry -> f N.t = function
   | Vis { vars; fplus; _ } -> N.plus_out (NICubeOf.out N.zero vars) fplus
   | Invis _ -> N.zero
 
-let dim_entry : type f n. (f, n) entry -> n D.t = function
+let dim_entry : type mode f n. (mode, f, n) entry -> n D.t = function
   | Vis { bindings; _ } | Invis bindings -> CubeOf.dim bindings
 
 (* Given an entry containing no let-bound variables, produce an "app" that says how to apply a function to its cube of (free) variables. *)
-let app_entry : type f n any. any apps -> (f, n) entry -> noninst apps =
+let app_entry : type mode f n any. (mode, any) apps -> (mode, f, n) entry -> (mode, noninst) apps =
  fun apps e ->
   match e with
   | Vis { bindings; _ } | Invis bindings ->
@@ -118,90 +118,97 @@ let app_entry : type f n any. any apps -> (f, n) entry -> noninst apps =
       else fatal (Anomaly "let-bound variable in Ctx.apps")
 
 module Ordered = struct
-  type (_, _) t =
-    | Emp : (N.zero, emp) t
-    | Snoc : ('a, 'b) t * ('x, 'n) entry * ('a, 'x, 'ax) N.plus -> ('ax, ('b, 'n) snoc) t
+  type ('mode, _, _) t =
+    | Emp : ('mode, N.zero, emp) t
+    | Snoc :
+        ('mode, 'a, 'b) t * ('mode, 'x, 'n) entry * ('a, 'x, 'ax) N.plus
+        -> ('mode, 'ax, ('b, 'n) snoc) t
     (* A locked context permits no access to the variables behind it. *)
-    | Lock : ('a, 'b) t -> ('a, 'b) t
+    | Lock : ('mode, 'a, 'b) t -> ('mode, 'a, 'b) t
 
-  let vis : type a b f af m n mn.
-      (a, b) t ->
+  let vis : type mode a b f af m n mn.
+      (mode, a, b) t ->
       m D.t ->
       (m, n, mn) D.plus ->
       (N.zero, n, string option, f) NICubeOf.t ->
-      (mn, Binding.t) CubeOf.t ->
+      (mn, mode Binding.t) CubeOf.t ->
       (a, f, af) N.plus ->
-      (af, (b, mn) snoc) t =
+      (mode, af, (b, mn) snoc) t =
    fun ctx dim plusdim vars bindings af ->
     Snoc
       ( ctx,
         Vis { dim; plusdim; vars; bindings; hasfields = No_fields; fields = Emp; fplus = Zero },
         af )
 
-  let cube_vis : type a b n.
-      (a, b) t -> string option -> (n, Binding.t) CubeOf.t -> (a N.suc, (b, n) snoc) t =
+  let cube_vis : type mode a b n.
+      (mode, a, b) t ->
+      string option ->
+      (n, mode Binding.t) CubeOf.t ->
+      (mode, a N.suc, (b, n) snoc) t =
    fun ctx x vars ->
     let m = CubeOf.dim vars in
     vis ctx m (D.plus_zero m) (NICubeOf.singleton x) vars (Suc Zero)
 
-  let vis_fields : type a b f1 f2 f af n.
-      (a, b) t ->
+  let vis_fields : type mode a b f1 f2 f af n.
+      (mode, a, b) t ->
       (N.zero, n, string option, f1) NICubeOf.t ->
-      (n, Binding.t) CubeOf.t ->
+      (n, mode Binding.t) CubeOf.t ->
       (D.zero Field.t * string, f2) Bwv.t ->
       (f1, f2, f) N.plus ->
       (a, f, af) N.plus ->
-      (af, (b, n) snoc) t =
+      (mode, af, (b, n) snoc) t =
    fun ctx vars bindings fields fplus af ->
     let plusdim = D.zero_plus (CubeOf.dim bindings) in
     Snoc
       (ctx, Vis { dim = D.zero; plusdim; vars; bindings; hasfields = Has_fields; fields; fplus }, af)
 
-  let invis : type a b n. (a, b) t -> (n, Binding.t) CubeOf.t -> (a, (b, n) snoc) t =
+  let invis : type mode a b n.
+      (mode, a, b) t -> (n, mode Binding.t) CubeOf.t -> (mode, a, (b, n) snoc) t =
    fun ctx bindings -> Snoc (ctx, Invis bindings, Zero)
 
-  let lock : type a b. (a, b) t -> (a, b) t = fun ctx -> Lock ctx
+  let lock : type mode a b. (mode, a, b) t -> (mode, a, b) t = fun ctx -> Lock ctx
 
-  let rec locked : type a b. (a, b) t -> bool = function
+  let rec locked : type mode a b. (mode, a, b) t -> bool = function
     | Emp -> false
     | Snoc (ctx, _, _) -> locked ctx
     | Lock _ -> true
 
-  let rec checked_length : type a b. (a, b) t -> b Tbwd.t = function
+  let rec checked_length : type mode a b. (mode, a, b) t -> b Tbwd.t = function
     | Emp -> Emp
     | Snoc (ctx, _, _) -> Snoc (checked_length ctx)
     | Lock ctx -> checked_length ctx
 
-  let rec raw_length : type a b. (a, b) t -> a N.t = function
+  let rec raw_length : type mode a b. (mode, a, b) t -> a N.t = function
     | Emp -> N.zero
     | Snoc (ctx, _, ax) -> N.plus_out (raw_length ctx) ax
     | Lock ctx -> raw_length ctx
 
-  let rec length : type a b. (a, b) t -> int = function
+  let rec length : type mode a b. (mode, a, b) t -> int = function
     | Emp -> 0
     | Snoc (ctx, _, _) -> length ctx + 1
     | Lock ctx -> length ctx
 
-  let empty : (N.zero, emp) t = Emp
+  let empty () : ('mode, N.zero, emp) t = Emp
 
-  let rec dbwd : type a b. (a, b) t -> b Dbwd.t = function
+  let rec dbwd : type mode a b. (mode, a, b) t -> b Dbwd.t = function
     | Emp -> Word Zero
     | Snoc (ctx, e, _) ->
         let (Word b) = dbwd ctx in
         Word (Suc (b, dim_entry e))
     | Lock ctx -> dbwd ctx
 
-  let rec apps : type a b. (a, b) t -> noninst apps = function
+  let rec apps : type mode a b. (mode, a, b) t -> (mode, noninst) apps = function
     | Emp -> Emp
     | Snoc (ctx, e, _) -> app_entry (apps ctx) e
     | Lock ctx -> apps ctx
 
   (* The lookup function iterates through entries. *)
-  let rec lookup : type a b.
-      (a, b) t ->
+  let rec lookup : type mode a b.
+      (mode, a, b) t ->
       a Raw.index ->
       (* We return either an ordinary variable or an illusory field-access variable. *)
-      [ `Var of level option * normal * b index | `Field of level * normal * D.zero Field.t ] =
+      [ `Var of level option * mode normal * b index | `Field of level * mode normal * D.zero Field.t ]
+      =
    fun ctx k ->
     match (ctx, k) with
     | Emp, _ -> .
@@ -209,13 +216,13 @@ module Ordered = struct
     | Lock _, _ -> fatal Locked_variable
 
   (* For each entry, we iterate through the list of fields or the cube of names, as appropriate. *)
-  and lookup_entry : type a b f af mn.
-      (a, b) t ->
-      (f, mn) entry ->
+  and lookup_entry : type mode a b f af mn.
+      (mode, a, b) t ->
+      (mode, f, mn) entry ->
       (a, f, af) N.plus ->
       af Raw.index ->
-      [ `Var of level option * normal * (b, mn) snoc index
-      | `Field of level * normal * D.zero Field.t ] =
+      [ `Var of level option * mode normal * (b, mn) snoc index
+      | `Field of level * mode normal * D.zero Field.t ] =
    fun ctx e pf k ->
     let pop = function
       | `Var (i, x, Index (v, fa)) -> `Var (i, x, Index (Later v, fa))
@@ -224,7 +231,7 @@ module Ordered = struct
     | Vis
         (type m n f1 f2)
         ({ dim; plusdim; vars; bindings; hasfields = _; fields; fplus } :
-          (m, n, mn, f1, f2, f) vis_data) -> (
+          (mode, m, n, mn, f1, f2, f) vis_data) -> (
         let (Plus pf1) = N.plus (NICubeOf.out N.zero vars) in
         let pf12 = N.plus_assocl pf1 fplus pf in
         match N.index_in_plus pf12 (fst k) with
@@ -274,7 +281,7 @@ module Ordered = struct
         pop (lookup ctx k)
 
   (* Look up a De Bruijn level in a context and find the corresponding possibly-invisible index, if one exists. *)
-  let rec find_level : type a b. (a, b) t -> level -> b index option =
+  let rec find_level : type mode a b. (mode, a, b) t -> level -> b index option =
    fun ctx i ->
     match ctx with
     | Emp -> None
@@ -282,8 +289,11 @@ module Ordered = struct
     | Snoc (ctx, Invis bindings, _) -> find_level_in_cube ctx bindings i
     | Lock ctx -> find_level ctx i
 
-  and find_level_in_cube : type a b n.
-      (a, b) t -> (n, Binding.t) CubeOf.t -> level -> (b, n) snoc index option =
+  and find_level_in_cube : type mode a b n.
+      (mode, a, b) t ->
+      (n, mode Binding.t) CubeOf.t ->
+      level ->
+      (b, n) snoc index option =
    fun ctx vars i ->
     let open CubeOf.Monadic (Monad.State (struct
       type t = (b, n) snoc index option
@@ -302,7 +312,8 @@ module Ordered = struct
 
   (* Every context has an underlying environment that substitutes each (level) variable for itself (index).  This environment ALWAYS HAS DIMENSION ZERO, and therefore in particular the variables don't need to come with any boundaries. *)
 
-  let env_entry : type n. (n, Binding.t) CubeOf.t -> (n, kinetic lazy_eval) CubeOf.t =
+  let env_entry : type mode n.
+      (n, mode Binding.t) CubeOf.t -> (n, (mode, kinetic) lazy_eval) CubeOf.t =
    fun v ->
     CubeOf.mmap
       (* We defer the value because it might be Unknown or Delayed, but we don't want an error reported unless such a value is actually *used*. *)
@@ -310,7 +321,7 @@ module Ordered = struct
       [ v ]
 
   (* This function traverses the entire context and computes the corresponding environment.  However, when we add permutations to environments below, we will also store a precomputed environment, so this function only needs to be called when the context has been globally modified. *)
-  let rec env : type a b. (a, b) t -> (D.zero, b) env = function
+  let rec env : type mode a b. (mode, a, b) t -> (mode, D.zero, b) env = function
     | Emp -> Emp D.zero
     | Snoc (ctx, Vis { bindings; _ }, _) ->
         LazyExt (env ctx, D.zero_plus (CubeOf.dim bindings), env_entry bindings)
@@ -319,30 +330,38 @@ module Ordered = struct
     | Lock ctx -> env ctx
 
   (* Extend a context by one new variable, without a value but with an assigned type. *)
-  let ext : type a b.
-      (a, b) t -> string option -> kinetic value -> (a N.suc, (b, D.zero) snoc) t * Binding.t =
+  let ext : type mode a b.
+      (mode, a, b) t ->
+      string option ->
+      (mode, kinetic) value ->
+      (mode, a N.suc, (b, D.zero) snoc) t * mode Binding.t =
    fun ctx x ty ->
     let n = length ctx in
     let b = Binding.make (Some (n, 0)) { tm = var (n, 0) ty; ty } in
     (cube_vis ctx x (CubeOf.singleton b), b)
 
   (* Extend a context by one new variable with an assigned value. *)
-  let ext_let : type a b.
-      (a, b) t -> string option -> normal -> (a N.suc, (b, D.zero) snoc) t * Binding.t =
+  let ext_let : type mode a b.
+      (mode, a, b) t ->
+      string option ->
+      mode normal ->
+      (mode, a N.suc, (b, D.zero) snoc) t * mode Binding.t =
    fun ctx x v ->
     let b = Binding.make None v in
     (cube_vis ctx x (CubeOf.singleton b), b)
 
   (* Remove the last entry in a context.  Only works if that last entry is a fully-cube variable with no fields. *)
-  type (_, _) pop =
-    | Pop : ('a, 'b) t * ('a N.suc, 'asuc) Eq.t * (('b, 'n) snoc, 'bn) Eq.t -> ('asuc, 'bn) pop
+  type ('mode, _, _) pop =
+    | Pop :
+        ('mode, 'a, 'b) t * ('a N.suc, 'asuc) Eq.t * (('b, 'n) snoc, 'bn) Eq.t
+        -> ('mode, 'asuc, 'bn) pop
 
-  let pop : type a b. (a, b) t -> (a, b) pop option = function
+  let pop : type mode a b. (mode, a, b) t -> (mode, a, b) pop option = function
     | Snoc (ctx, _, Suc Zero) -> Some (Pop (ctx, Eq, Eq))
     | _ -> None
 
   (* Generate a case tree consisting of a sequence of abstractions corresponding to the (checked) variables in a context.  The context must contain NO LET-BOUND VARIABLES, including field-access variables, since abstracting over them would not be well-defined.  (In general, we couldn't just omit them, because some of the variables in a cube could be bound but not others, and cubes in the context yield cube abstractions.  However, at least when this comment was written, this function was only used for contexts consisting entirely of 0-dimensional cubes without let-bound variables.) *)
-  let rec lam : type a b. (a, b) t -> (b, potential) term -> (emp, potential) term =
+  let rec lam : type mode a b. (mode, a, b) t -> (b, potential) term -> (emp, potential) term =
    fun ctx tree ->
     match ctx with
     | Emp -> tree
@@ -354,9 +373,10 @@ module Ordered = struct
     | _ -> fatal (Anomaly "let-bound variable in Ctx.lam")
 
   (* Delete some level variables from a context by making their bindings into "unknown".  This will cause readback to raise No_such_level if it encounters one of those variables, which can then be trapped as an occurs-check. *)
-  let rec forget_levels : type a b. (a, b) t -> (level -> bool) -> (a, b) t =
+  let rec forget_levels : type mode a b. (mode, a, b) t -> (level -> bool) -> (mode, a, b) t =
    fun ctx forget ->
-    let forget_bindings : type n. (n, Binding.t) CubeOf.t -> (n, Binding.t) CubeOf.t =
+    let forget_bindings : type n.
+        (n, mode Binding.t) CubeOf.t -> (n, mode Binding.t) CubeOf.t =
      fun bindings ->
       CubeOf.mmap
         {
@@ -377,14 +397,14 @@ end
 
 (* Now we define contexts that add a permutation of the raw indices.  For efficiency reasons we also precompute its environment as the context is built and store it.  We also store the next De Bruijn level (cube only, not internal face level) that may be added to the context; in most cases this equals the length of the context, but during bind_some we work temporarily with rearranged contexts containing old De Bruijn levels so it may be greater than the length.  *)
 
-type ('a, 'b) t =
+type ('mode, 'a, 'b) t =
   | Permute : {
       perm : ('a, 'i) N.perm;
-      env : (D.zero, 'b) env;
+      env : ('mode, D.zero, 'b) env;
       level : int;
-      ctx : ('i, 'b) Ordered.t;
+      ctx : ('mode, 'i, 'b) Ordered.t;
     }
-      -> ('a, 'b) t
+      -> ('mode, 'a, 'b) t
 
 (* Nearly all the operations on ordered contexts are lifted to either ignore the permutations or add identities on the right. *)
 
@@ -398,10 +418,10 @@ let vis (Permute { perm; env; level; ctx }) m mn xs vars af =
       ctx = Ordered.vis ctx m mn xs vars bf;
     }
 
-type _ any = Any_ctx : ('a, 'b) t -> 'b any
+type (_, _) any = Any_ctx : ('mode, 'a, 'b) t -> ('mode, 'b) any
 
-let variables_vis : type a b mn.
-    (a, b) t -> mn variables -> (mn, Binding.t) CubeOf.t -> (b, mn) snoc any =
+let variables_vis : type mode a b mn.
+    (mode, a, b) t -> mn variables -> (mn, mode Binding.t) CubeOf.t -> (mode, (b, mn) snoc) any =
  fun ctx (Variables (m, mn, xs)) vars ->
   let (Plus af) = N.plus (NICubeOf.out N.zero xs) in
   Any_ctx (vis ctx m mn xs vars af)
@@ -433,7 +453,8 @@ let lock (Permute { perm; env; level; ctx }) = Permute { perm; env; level; ctx =
 let locked (Permute { ctx; _ }) = Ordered.locked ctx
 let raw_length (Permute { perm; ctx; _ }) = N.perm_dom (Ordered.raw_length ctx) perm
 let level (Permute { level; _ }) = level
-let empty = Permute { perm = N.id_perm N.zero; env = Emp D.zero; level = 0; ctx = Ordered.empty }
+let empty () =
+  Permute { perm = N.id_perm N.zero; env = Emp D.zero; level = 0; ctx = Ordered.empty () }
 let dbwd (Permute { ctx; _ }) = Ordered.dbwd ctx
 let apps (Permute { ctx; _ }) = Ordered.apps ctx
 
@@ -465,10 +486,12 @@ let ext_let (Permute { perm; env; level; ctx }) xs tm =
     }
 
 (* Remove the last cube entry in a context.  This only works if it is a pure cube variable with no fields and the context has not been permuted after its addition. *)
-type (_, _) pop =
-  | Pop : ('a, 'b) t * ('a N.suc, 'asuc) Eq.t * (('b, 'n) snoc, 'bn) Eq.t -> ('asuc, 'bn) pop
+type ('mode, _, _) pop =
+  | Pop :
+      ('mode, 'a, 'b) t * ('a N.suc, 'asuc) Eq.t * (('b, 'n) snoc, 'bn) Eq.t
+      -> ('mode, 'asuc, 'bn) pop
 
-let pop : type a b. (a, b) t -> ((a, b) pop, string) Result.t =
+let pop : type mode a b. (mode, a, b) t -> ((mode, a, b) pop, string) Result.t =
  fun (Permute { ctx; perm; level; env }) ->
   match (Ordered.pop ctx, perm, env) with
   | Some (Pop (ctx, Eq, Eq)), Insert (perm, Top), LazyExt (env, _, _) ->

@@ -8,10 +8,10 @@ open Norm
 
 (* To typecheck a lambda, do an eta-expanding equality check, check pi-types for equality, or read back a pi-type or a term at a pi-type, we must create one new variable for each argument in the boundary.  Sometimes we need these variables as values and other times as normals.  The function dom_vars creates these variables and returns them in two cubes.  It, and the function ext_tel below that follows from it, are in a separate file because it depends on Inst and Ctx and is used in Equal, Readback, and Check, and doesn't seem to be placed naturally in any of those files. *)
 
-let dom_vars : type m a b.
-    (a, b) Ctx.t ->
-    (m, kinetic value) CubeOf.t ->
-    (m, kinetic value) CubeOf.t * (m, Ctx.Binding.t) CubeOf.t =
+let dom_vars : type mode m a b.
+    (mode, a, b) Ctx.t ->
+    (m, (mode, kinetic) value) CubeOf.t ->
+    (m, (mode, kinetic) value) CubeOf.t * (m, mode Ctx.Binding.t) CubeOf.t =
  fun ctx doms ->
   let i = Ctx.level ctx in
   (* To make these variables into values, we need to annotate them with their types, which in general are instantiations of the domains at previous variables.  Thus, we assemble them in a hashtable as we create them for random access to the previous ones. *)
@@ -42,17 +42,17 @@ let dom_vars : type m a b.
 
 (* Extend a context by a finite number of cubes of new visible variables at some dimension, with boundaries, whose types are specified by the evaluation of some telescope in some (possibly higher-dimensional) environment (and hence may depend on the earlier ones).  Also return the new variables in a list of Cubes, and the new environment extended by the *top-dimensional variables only*. *)
 
-let rec ext_tel : type a b c ac bc e ec n.
-    (a, e) Ctx.t ->
-    (n, b) env ->
+let rec ext_tel : type mode a b c ac bc e ec n.
+    (mode, a, e) Ctx.t ->
+    (mode, n, b) env ->
     (* Note that c is a Fwn, since it is the length of a telescope. *)
     (a, c, ac) Raw.Namevec.t ->
     (b, c, bc) Telescope.t ->
     (e, c, n, ec) Tbwd.snocs ->
-    (ac, ec) Ctx.t
-    * (n, bc) env
-    * (n, kinetic value) CubeOf.t list
-    * (n, Ctx.Binding.t) CubeOf.t list =
+    (mode, ac, ec) Ctx.t
+    * (mode, n, bc) env
+    * (n, (mode, kinetic) value) CubeOf.t list
+    * (n, mode Ctx.Binding.t) CubeOf.t list =
  fun ctx env xs tel ec ->
   match (xs, tel, ec) with
   | [], Emp, Zero -> (ctx, env, [], [])
@@ -71,11 +71,11 @@ let rec ext_tel : type a b c ac bc e ec n.
       (ctx, env, newvars :: vars, newnfs :: nfs)
 
 (* Extract a list of all the variables of a given kind in an iterated pi-type. *)
-let rec get_pi_vars : type a b.
-    (a, b) Ctx.t ->
+let rec get_pi_vars : type mode a b.
+    (mode, a, b) Ctx.t ->
     [ `Cube | `Normal ] ->
     string option Bwd.t ->
-    kinetic value ->
+    (mode, kinetic) value ->
     string option Bwd.t =
  fun ctx cube xs ty ->
   match View.view_type ty "get_pi_vars" with

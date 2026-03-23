@@ -50,14 +50,14 @@ let () = Mode.register_printer (function `Read -> Some "unhandled Equal.Mode.rea
 
 module Equal = struct
   (* Compare two normal forms that are *assumed* to have the same type, or at least that the type of the first is a subtype of the type of the second. *)
-  let rec equal_nf : type a b. (a, b) Ctx.t -> normal -> normal -> unit Err.t =
+  let rec equal_nf : type mode a b. (mode, a, b) Ctx.t -> mode normal -> mode normal -> unit Err.t =
    fun n x y ->
     (* Thus, we can do an eta-expanding check at either one of their stored types, since they are assumed equal.  We check them at the type of the *second* argument, since this is also called as a subroutine of subtype checking, in which case the subtype comes first and then the supertype. *)
     equal_at n x.tm y.tm y.ty
 
   (* Compare two values at a type, which they are both assumed to belong to.  We do eta-expansion here if the type is one with an eta-rule, like a pi-type or a record type.  We also deal with the case of terms that don't synthesize, such as structs even in codatatypes without eta, and constructors in datatypes. *)
-  and equal_at : type a b.
-      (a, b) Ctx.t -> kinetic value -> kinetic value -> kinetic value -> unit Err.t =
+  and equal_at : type mode a b.
+      (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> (mode, kinetic) value -> unit Err.t =
    fun ctx x y ty ->
     (* The type must be fully instantiated. *)
     match view_type ty "equal_at" with
@@ -72,8 +72,8 @@ module Equal = struct
     (* Codatatypes (without eta) don't need to be dealt with here, even though structs can't be compared synthesizingly, since codatatypes aren't actually inhabited by (kinetic) structs, only neutral terms that are equal to potential structs.  In the case of record types with eta, if there is a nonidentity insertion outside, then the type isn't actually a record type, *but* it still has an eta-rule since it is *isomorphic* to a record type!  Thus, instead of checking whether the insertion is the identity, we apply its inverse permutation to the terms being compared.  And because we pass off to 'field' and 'tyof_field', we don't need to make explicit use of any of the other data here. *)
     | Canonical
         (type mn m n)
-        ((_, Codata (type c a et) ({ eta; fields; _ } : (m, n, c, a, et) codata_args), ins, _) :
-          head * (m, n) canonical * (mn, m, n) insertion * (D.zero, mn, mn, normal) TubeOf.t) -> (
+        ((_, Codata (type c a et) ({ eta; fields; _ } : (mode, m, n, c, a, et) codata_args), ins, _) :
+          mode head * (mode, m, n) canonical * (mn, m, n) insertion * (D.zero, mn, mn, mode normal) TubeOf.t) -> (
         match eta with
         | Eta ->
             let (Perm_to p) = perm_of_ins ins in
@@ -145,7 +145,7 @@ module Equal = struct
     | _ -> equal_val ctx x y
 
   (* "Synthesizing" equality check of two values, now *not* assumed a priori to have the same type.  If this function concludes that they are equal, then the equality of their types is part of that conclusion. *)
-  and equal_val : type a b. (a, b) Ctx.t -> kinetic value -> kinetic value -> unit Err.t =
+  and equal_val : type mode a b. (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> unit Err.t =
    fun ctx x y ->
     let x, y =
       match Mode.read () with
@@ -170,10 +170,10 @@ module Equal = struct
     | Constr _, _ | _, Constr _ ->
         fatal (Anomaly "unexpected constr in synthesizing equality-check")
 
-  and equal_tyargs : type n1 k1 nk1 n2 k2 nk2 a b.
-      (a, b) Ctx.t ->
-      (n1, k1, nk1, normal) TubeOf.t ->
-      (n2, k2, nk2, normal) TubeOf.t ->
+  and equal_tyargs : type mode n1 k1 nk1 n2 k2 nk2 a b.
+      (mode, a, b) Ctx.t ->
+      (n1, k1, nk1, mode normal) TubeOf.t ->
+      (n2, k2, nk2, mode normal) TubeOf.t ->
       unit ErrOpt.t =
    fun n a1 a2 ->
     match
@@ -188,7 +188,7 @@ module Equal = struct
     | _, Neq -> None
 
   (* Synthesizing equality check for heads.  Again equality of types is part of the conclusion, not a hypothesis.  If some sub-parts of the heads are unequal, such as arguments of a Pi, or variable or constant names (without degeneracies), we report that.  Otherwise, we return None, and the caller should report the entire heads as being unequal. *)
-  and equal_head : type a b. (a, b) Ctx.t -> head -> head -> unit ErrOpt.t =
+  and equal_head : type mode a b. (mode, a, b) Ctx.t -> mode head -> mode head -> unit ErrOpt.t =
    fun ctx x y ->
     let open Monad.Ops (ErrOpt) in
     match (x, y) with
@@ -243,7 +243,7 @@ module Equal = struct
     | _, _ -> None
 
   (* Check that the arguments of two entire application spines of equal functions are equal.  This is basically a left fold, but we make sure to iterate from left to right, and fail rather than raising an exception if the lists have different lengths.  As noted above, here we can go back to *assuming* that they have equal types, and thus passing off to the eta-expanding equality check.  *)
-  and equal_apps : type any1 any2 a b. (a, b) Ctx.t -> any1 apps -> any2 apps -> unit ErrOpt.t =
+  and equal_apps : type mode any1 any2 a b. (mode, a, b) Ctx.t -> (mode, any1) apps -> (mode, any2) apps -> unit ErrOpt.t =
    fun ctx apps1 apps2 ->
     let open Monad.Ops (ErrOpt) in
     (* Iterating from left to right is important because it ensures that at the point of checking equality for any pair of arguments, we know that they have the same type, since they are valid arguments of equal functions with all previous arguments equal.  Thus each case *starts* with its recursive call. *)
@@ -274,13 +274,13 @@ module Equal = struct
         equal_tyargs ctx a1 a2
     | _, _ -> None
 
-  and equal_at_tel : type n a b ab c d.
-      (c, d) Ctx.t ->
-      (n, a) env ->
-      kinetic value list ->
-      kinetic value list ->
+  and equal_at_tel : type mode n a b ab c d.
+      (mode, c, d) Ctx.t ->
+      (mode, n, a) env ->
+      (mode, kinetic) value list ->
+      (mode, kinetic) value list ->
       (a, b, ab) Telescope.t ->
-      (D.zero, n, n, kinetic value list) TubeOf.t ->
+      (D.zero, n, n, (mode, kinetic) value list) TubeOf.t ->
       unit Err.t =
    fun ctx env xs ys tys tyargs ->
     match (xs, ys, tys) with
@@ -324,12 +324,12 @@ module Equal = struct
           xs ys tys tyargs
     | _ -> fatal (Anomaly "length mismatch in equal_at_tel")
 
-  and equal_env : type a b n c d.
-      (c, d) Ctx.t -> (n, b) env -> (n, b) env -> (a, b) termctx -> unit Err.t =
+  and equal_env : type mode a b n c d.
+      (mode, c, d) Ctx.t -> (mode, n, b) env -> (mode, n, b) env -> (a, b) termctx -> unit Err.t =
    fun ctx env1 env2 (Permute (_, envctx)) -> equal_ordered_env ctx env1 env2 envctx
 
-  and equal_ordered_env : type a b n c d.
-      (c, d) Ctx.t -> (n, b) env -> (n, b) env -> (a, b) ordered_termctx -> unit Err.t =
+  and equal_ordered_env : type mode a b n c d.
+      (mode, c, d) Ctx.t -> (mode, n, b) env -> (mode, n, b) env -> (a, b) ordered_termctx -> unit Err.t =
    fun ctx env1 env2 envctx ->
     (* Copied from readback_ordered_env *)
     match envctx with

@@ -16,30 +16,30 @@ module Ordered = struct
      1. A raw length that is a forwards natural number, like the backwards natural numbers that are the raw indices of contexts.
      3. A checked length that is a forwards Tlist of dimensions, like the backwards Tbwd of dimensions that are the checked indices of contexts.
      2. A forwards Tlist of backwards natural numbers that flattens to the raw length.  We could index contexts by an analogous backwards Tbwd of nats, but we don't have any need for that so far.  But retaining this index for telescopes is crucial to constructing the correct permutations in bind_some, below, in an intrinsically well-typed way. *)
-  type (_, _, _) tel =
-    | Nil : (Fwn.zero, nil, nil) tel
+  type (_, _, _, _) tel =
+    | Nil : ('mode, Fwn.zero, nil, nil) tel
     | Cons :
-        ('x, 'n) Ctx.entry * ('a, 'f, 'b) tel * ('x, 'a, 'xa) Fwn.fplus
-        -> ('xa, ('x, 'f) cons, ('n, 'b) cons) tel
-    | Lock : ('i, 'f, 'a) tel -> ('i, 'f, 'a) tel
+        ('mode, 'x, 'n) Ctx.entry * ('mode, 'a, 'f, 'b) tel * ('x, 'a, 'xa) Fwn.fplus
+        -> ('mode, 'xa, ('x, 'f) cons, ('n, 'b) cons) tel
+    | Lock : ('mode, 'i, 'f, 'a) tel -> ('mode, 'i, 'f, 'a) tel
 
   (* The second index does in fact flatten to the first. *)
-  let rec tel_flatten : type i f a. (i, f, a) tel -> (f, i) Tlist.flatten = function
+  let rec tel_flatten : type mode i f a. (mode, i, f, a) tel -> (f, i) Tlist.flatten = function
     | Nil -> Flat_nil
     | Cons (_, tel, xa) -> Flat_cons (xa, tel_flatten tel)
     | Lock tel -> tel_flatten tel
 
   (* Split a (backwards) context into a (backwards) context prefix and a (forwards) telescope suffix, given a way to split the checked indices.  Outputs a corresponding way to split the raw indices.  The opposite way wouldn't make as much sense, since if there were invisible variables at the split point it wouldn't specify which side to put them on. *)
-  type (_, _, _) split_tel =
+  type (_, _, _, _) split_tel =
     | Split_tel :
-        ('i, 'j, 'ij) Fwn.bplus * ('i, 'b) Ctx.Ordered.t * ('j, 'ff, 'c) tel
-        -> ('ij, 'b, 'c) split_tel
+        ('i, 'j, 'ij) Fwn.bplus * ('mode, 'i, 'b) Ctx.Ordered.t * ('mode, 'j, 'ff, 'c) tel
+        -> ('mode, 'ij, 'b, 'c) split_tel
 
-  let rec split_tel_step : type i j ij b ff c x.
+  let rec split_tel_step : type mode i j ij b ff c x.
       (i, j, ij) Fwn.bplus ->
-      (i, (b, x) snoc) Ctx.Ordered.t ->
-      (j, ff, c) tel ->
-      (ij, b, (x, c) cons) split_tel =
+      (mode, i, (b, x) snoc) Ctx.Ordered.t ->
+      (mode, j, ff, c) tel ->
+      (mode, ij, b, (x, c) cons) split_tel =
    fun ij_k newctx newtel ->
     match newctx with
     | Snoc (newctx, x, ij) ->
@@ -48,8 +48,8 @@ module Ordered = struct
         Split_tel (i_jk, newctx, Cons (x, newtel, jk))
     | Lock newctx -> split_tel_step ij_k newctx (Lock newtel)
 
-  let rec split_tel : type ij b c bc.
-      (ij, bc) Ctx.Ordered.t -> (b, c, bc) Tbwd.append -> (ij, b, c) split_tel =
+  let rec split_tel : type mode ij b c bc.
+      (mode, ij, bc) Ctx.Ordered.t -> (b, c, bc) Tbwd.append -> (mode, ij, b, c) split_tel =
    fun ctx b ->
     match b with
     | Append_nil -> Split_tel (Zero, ctx, Nil)
@@ -58,19 +58,19 @@ module Ordered = struct
         split_tel_step ij_k newctx newtel
 
   (* In particular, we can convert an entire context to a telescope.  (This is what we really care about, but to do it we had to strengthen the inductive hypothesis and define all of split_tel.) *)
-  type (_, _) to_tel =
+  type (_, _, _) to_tel =
     | To_tel :
-        (N.zero, 'j, 'i) Fwn.bplus * (emp, 'c, 'b) Tbwd.append * ('j, 'ff, 'c) tel
-        -> ('i, 'b) to_tel
+        (N.zero, 'j, 'i) Fwn.bplus * (emp, 'c, 'b) Tbwd.append * ('mode, 'j, 'ff, 'c) tel
+        -> ('mode, 'i, 'b) to_tel
 
-  let rec bplus_emp : type i j ij.
-      (i, j, ij) Fwn.bplus -> (i, emp) Ctx.Ordered.t -> (N.zero, j, ij) Fwn.bplus =
+  let rec bplus_emp : type mode i j ij.
+      (i, j, ij) Fwn.bplus -> (mode, i, emp) Ctx.Ordered.t -> (N.zero, j, ij) Fwn.bplus =
    fun ij ctx ->
     match ctx with
     | Emp -> ij
     | Lock ctx -> bplus_emp ij ctx
 
-  let to_tel : type i b. (i, b) Ctx.Ordered.t -> (i, b) to_tel =
+  let to_tel : type mode i b. (mode, i, b) Ctx.Ordered.t -> (mode, i, b) to_tel =
    fun ctx ->
     let (To_tlist (_, bc)) = Tbwd.to_tlist (checked_length ctx) in
     let (Split_tel (ij, newctx, tel)) = split_tel ctx bc in
@@ -80,12 +80,12 @@ module Ordered = struct
 
      The 'oldctx' here is nonstandard in that its level variables may appear out of order, because it's been created by partially permuting the variables in an existing context.  Therefore, in order to ensure that new level variables created in that context (during readback) don't conflict with any existing ones, we have to be passed the maximum level of the *original* context it was built from. *)
 
-  let eval_readback_nf : type a b.
+  let eval_readback_nf : type mode a b.
       level:int ->
-      oldctx:(a, b) Ctx.Ordered.t ->
-      newctx:(a, b) Ctx.Ordered.t ->
-      normal ->
-      normal option =
+      oldctx:(mode, a, b) Ctx.Ordered.t ->
+      newctx:(mode, a, b) Ctx.Ordered.t ->
+      mode normal ->
+      mode normal option =
    fun ~level ~oldctx ~newctx nf ->
     Reporter.try_with ~fatal:(fun d ->
         match d.message with
@@ -98,12 +98,12 @@ module Ordered = struct
         ty = eval_term (Ctx.Ordered.env newctx) (readback_val (Ctx.of_ordered ~level oldctx) nf.ty);
       }
 
-  let eval_readback_val : type a b.
+  let eval_readback_val : type mode a b.
       level:int ->
-      oldctx:(a, b) Ctx.Ordered.t ->
-      newctx:(a, b) Ctx.Ordered.t ->
-      kinetic value ->
-      kinetic value option =
+      oldctx:(mode, a, b) Ctx.Ordered.t ->
+      newctx:(mode, a, b) Ctx.Ordered.t ->
+      (mode, kinetic) value ->
+      (mode, kinetic) value option =
    fun ~level ~oldctx ~newctx ty ->
     Reporter.try_with ~fatal:(fun d ->
         match d.message with
@@ -126,14 +126,14 @@ module Ordered = struct
 
      6. go_go_bind_some acts on each entry with bind_some_entry, whose real work is done by bind_some_normal_cube that acts on a cube of variables with the binder callback and readback-eval.  Since that function is the one we define first, we now proceed to comment its definition directly. *)
 
-  let bind_some_normal_cube : type i a n.
+  let bind_some_normal_cube : type mode i a n.
       level:int ->
-      (level -> normal option) ->
+      (level -> mode normal option) ->
       [ `Bindable | `Nonbindable ] ->
-      oldctx:(i, a) Ctx.Ordered.t ->
-      newctx:(i, a) Ctx.Ordered.t ->
-      (n, Binding.t) CubeOf.t ->
-      (n, Binding.t) CubeOf.t option =
+      oldctx:(mode, i, a) Ctx.Ordered.t ->
+      newctx:(mode, i, a) Ctx.Ordered.t ->
+      (n, mode Binding.t) CubeOf.t ->
+      (n, mode Binding.t) CubeOf.t option =
    fun ~level binder bindable ~oldctx ~newctx in_entry ->
     let i = Ctx.Ordered.length newctx in
     let open Monad.Ops (Monad.Maybe) in
@@ -189,13 +189,13 @@ module Ordered = struct
         [ in_entry; oldentry; newentry ] in
     return newentry
 
-  let bind_some_entry : type f i a n.
+  let bind_some_entry : type mode f i a n.
       level:int ->
-      (level -> normal option) ->
-      oldctx:(i, a) Ctx.Ordered.t ->
-      newctx:(i, a) Ctx.Ordered.t ->
-      (f, n) Ctx.entry ->
-      (f, n) Ctx.entry option =
+      (level -> mode normal option) ->
+      oldctx:(mode, i, a) Ctx.Ordered.t ->
+      newctx:(mode, i, a) Ctx.Ordered.t ->
+      (mode, f, n) Ctx.entry ->
+      (mode, f, n) Ctx.entry option =
    fun ~level binder ~oldctx ~newctx e ->
     let open Monad.Ops (Monad.Maybe) in
     match e with
@@ -216,25 +216,25 @@ module Ordered = struct
 
      The one for the raw indices is trickier because it acts as a "block" permutation, with all the raw variables in each Split entry being permuted as a group.  It seems that this permutation should be determined by the permutation of checked indices, but confusingly, that isn't quite true, because the number of raw indices corresponding to a single cube of variables (which is one entry in the checked-index dimension list) depends on what kind of entry it is -- visible, invisible, or split -- which is not recorded in the index *type*.  Our solution is to construct, as we go along, a parallel type list of *natural numbers*, which flattens to the raw index type, and a permutation of it.  Thus go_go_bind some returns *two* 'Tlist.insert's, and go_bind_some returns *two* 'Tbwd.append_permute's, while bind_some flattens and dices them to make a single N.perm and Tbwd.permute. *)
 
-  type (_, _) go_go_bind_some =
+  type (_, _, _) go_go_bind_some =
     | Found : {
-        oldentry : ('f, 'n) Ctx.entry;
-        newentry : ('f, 'n) Ctx.entry;
+        oldentry : ('mode, 'f, 'n) Ctx.entry;
+        newentry : ('mode, 'f, 'n) Ctx.entry;
         ins : ('b, 'n, 'c) Tlist.insert;
         fins : ('bf, 'f, 'cf) Tlist.insert;
-        rest : ('i, 'bf, 'b) tel;
+        rest : ('mode, 'i, 'bf, 'b) tel;
       }
-        -> ('c, 'cf) go_go_bind_some
-    | Nil : (nil, nil) go_go_bind_some
-    | None : ('c, 'cf) go_go_bind_some
+        -> ('mode, 'c, 'cf) go_go_bind_some
+    | Nil : ('mode, nil, nil) go_go_bind_some
+    | None : ('mode, 'c, 'cf) go_go_bind_some
 
-  let rec go_go_bind_some : type i j a c cf.
+  let rec go_go_bind_some : type mode i j a c cf.
       level:int ->
-      (level -> normal option) ->
-      oldctx:(i, a) Ctx.Ordered.t ->
-      newctx:(i, a) Ctx.Ordered.t ->
-      (j, cf, c) tel ->
-      (c, cf) go_go_bind_some =
+      (level -> mode normal option) ->
+      oldctx:(mode, i, a) Ctx.Ordered.t ->
+      newctx:(mode, i, a) Ctx.Ordered.t ->
+      (mode, j, cf, c) tel ->
+      (mode, c, cf) go_go_bind_some =
    fun ~level binder ~oldctx ~newctx tel ->
     match tel with
     | Nil -> Nil
@@ -256,25 +256,25 @@ module Ordered = struct
             | Nil | None -> None))
     | Lock tel -> go_go_bind_some ~level binder ~oldctx ~newctx tel
 
-  type (_, _, _, _, _, _) go_bind_some =
+  type (_, _, _, _, _, _, _) go_bind_some =
     | Go_bind_some : {
         raw_flat : ('cf, 'k) Tbwd.flatten;
         raw_perm : ('af, 'bf, 'cf) Tbwd.append_permute;
         checked_perm : ('a, 'b, 'c) Tbwd.append_permute;
-        newctx : ('k, 'c) Ctx.Ordered.t;
-        oldctx : ('k, 'c) Ctx.Ordered.t;
+        newctx : ('mode, 'k, 'c) Ctx.Ordered.t;
+        oldctx : ('mode, 'k, 'c) Ctx.Ordered.t;
       }
-        -> ('i, 'j, 'a, 'af, 'b, 'bf) go_bind_some
-    | None : ('i, 'j, 'a, 'af, 'b, 'bf) go_bind_some
+        -> ('mode, 'i, 'j, 'a, 'af, 'b, 'bf) go_bind_some
+    | None : ('mode, 'i, 'j, 'a, 'af, 'b, 'bf) go_bind_some
 
-  let rec go_bind_some : type i j a af b bf.
+  let rec go_bind_some : type mode i j a af b bf.
       level:int ->
-      (level -> normal option) ->
-      oldctx:(i, a) Ctx.Ordered.t ->
-      newctx:(i, a) Ctx.Ordered.t ->
+      (level -> mode normal option) ->
+      oldctx:(mode, i, a) Ctx.Ordered.t ->
+      newctx:(mode, i, a) Ctx.Ordered.t ->
       (af, i) Tbwd.flatten ->
-      (j, bf, b) tel ->
-      (i, j, a, af, b, bf) go_bind_some =
+      (mode, j, bf, b) tel ->
+      (mode, i, j, a, af, b, bf) go_bind_some =
    fun ~level binder ~oldctx ~newctx af tel ->
     match go_go_bind_some ~level binder ~oldctx ~newctx tel with
     | Found { ins; fins; oldentry; newentry; rest } -> (
@@ -296,22 +296,22 @@ module Ordered = struct
         Go_bind_some { raw_flat = af; raw_perm = Ap_nil; checked_perm = Ap_nil; oldctx; newctx }
     | None -> None
 
-  type (_, _) bind_some =
+  type (_, _, _) bind_some =
     | Bind_some : {
         raw_perm : ('a, 'i) N.perm;
         checked_perm : ('c, 'b) Tbwd.permute;
-        oldctx : ('i, 'c) Ctx.Ordered.t;
-        newctx : ('i, 'c) Ctx.Ordered.t;
+        oldctx : ('mode, 'i, 'c) Ctx.Ordered.t;
+        newctx : ('mode, 'i, 'c) Ctx.Ordered.t;
       }
-        -> ('a, 'b) bind_some
-    | None : ('a, 'b) bind_some
+        -> ('mode, 'a, 'b) bind_some
+    | None : ('mode, 'a, 'b) bind_some
 
-  let bind_some : type a b.
-      level:int -> (level -> normal option) -> (a, b) Ctx.Ordered.t -> (a, b) bind_some =
+  let bind_some : type mode a b.
+      level:int -> (level -> mode normal option) -> (mode, a, b) Ctx.Ordered.t -> (mode, a, b) bind_some =
    fun ~level binder ctx ->
     let (To_tel (bplus_raw, checked_append, tel)) = to_tel ctx in
     let telf = tel_flatten tel in
-    match go_bind_some ~level binder ~oldctx:empty ~newctx:empty Flat_emp tel with
+    match go_bind_some ~level binder ~oldctx:(empty ()) ~newctx:(empty ()) Flat_emp tel with
     | Go_bind_some { raw_flat; raw_perm; checked_perm; oldctx; newctx } ->
         let (Append raw_append) = Tbwd.append (Tlist.flatten_in telf) in
         let (Bplus_flatten_append (new_flat, bplus_raw')) =
@@ -328,14 +328,14 @@ module Ordered = struct
 end
 
 (* Note the different return type of this bind_some and of Ordered.bind_some.  The latter returns a new ordered context and two permutations, one for the raw indices and one for the checked indices.  This one incorporates the raw permutation into the permutation stored in the context and returns only the checked permutation to the caller. *)
-type (_, _) bind_some =
+type (_, _, _) bind_some =
   | Bind_some : {
       checked_perm : ('c, 'b) Tbwd.permute;
-      oldctx : ('a, 'c) Ctx.t;
-      newctx : ('a, 'c) Ctx.t;
+      oldctx : ('mode, 'a, 'c) Ctx.t;
+      newctx : ('mode, 'a, 'c) Ctx.t;
     }
-      -> ('a, 'b) bind_some
-  | None : ('a, 'b) bind_some
+      -> ('mode, 'a, 'b) bind_some
+  | None : ('mode, 'a, 'b) bind_some
 
 let bind_some g (Ctx.Permute { perm; ctx; level; _ }) =
   match Ordered.bind_some g ~level ctx with
