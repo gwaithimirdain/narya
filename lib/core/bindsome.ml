@@ -69,7 +69,7 @@ module Ordered = struct
       (i, j, ij) Fwn.bplus -> (mode, i, emp) Ctx.Ordered.t -> (N.zero, j, ij) Fwn.bplus =
    fun ij ctx ->
     match ctx with
-    | Emp -> ij
+    | Emp _ -> ij
     | Lock ctx -> bplus_emp ij ctx
 
   let to_tel : type mode i b. (mode, i, b) Ctx.Ordered.t -> (mode, i, b) to_tel =
@@ -314,7 +314,7 @@ module Ordered = struct
     let (To_tel (eq, bplus_raw, checked_append, tel)) = to_tel ctx in
     let Eq.Eq = eq in
     let telf = tel_flatten tel in
-    match go_bind_some ~level binder ~oldctx:(empty ()) ~newctx:(empty ()) Flat_emp tel with
+    match go_bind_some ~level binder ~oldctx:(empty (Sorry.e ())) ~newctx:(empty (Sorry.e ())) Flat_emp tel with
     | Go_bind_some { raw_flat; raw_perm; checked_perm; oldctx; newctx } ->
         let (Append raw_append) = Tbwd.append (Tlist.flatten_in telf) in
         let (Bplus_flatten_append (new_flat, bplus_raw')) =
