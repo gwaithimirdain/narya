@@ -407,7 +407,7 @@ let readback_entry : type mode a b f n.
 
 let rec readback_ordered_ctx : type mode a b.
     (mode, a, b) Ctx.Ordered.t -> (a, b) ordered_termctx = function
-  | Emp -> Emp
+  | Emp _ -> Emp
   | Snoc (rest, e, af) as ctx ->
       Ext (readback_ordered_ctx rest, readback_entry (Ctx.of_ordered ctx) e, af)
   | Lock ctx -> Lock (readback_ordered_ctx ctx)

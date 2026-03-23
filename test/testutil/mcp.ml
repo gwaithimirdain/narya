@@ -1,12 +1,10 @@
 open Util
+open Modal
 open Core
 open Parser
 open Value
 open Norm
 open Asai.Range
-
-(* A dummy type used as the mode parameter for test functions. *)
-type test_mode
 
 (* The current context of assumptions, including names. *)
 type ctx = Ctx : (test_mode, 'n, 'b) Ctx.t * (string option, 'n) Bwv.t -> ctx

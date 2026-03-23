@@ -1,6 +1,7 @@
 (* This module should not be opened, but used qualified *)
 
 open Util
+open Modal
 open Tbwd
 open Dim
 open Dimbwd
@@ -119,7 +120,7 @@ let app_entry : type mode f n any. (mode, any) apps -> (mode, f, n) entry -> (mo
 
 module Ordered = struct
   type ('mode, _, _) t =
-    | Emp : ('mode, N.zero, emp) t
+    | Emp : 'mode mode -> ('mode, N.zero, emp) t
     | Snoc :
         ('mode, 'a, 'b) t * ('mode, 'x, 'n) entry * ('a, 'x, 'ax) N.plus
         -> ('mode, 'ax, ('b, 'n) snoc) t
@@ -169,36 +170,36 @@ module Ordered = struct
   let lock : type mode a b. (mode, a, b) t -> (mode, a, b) t = fun ctx -> Lock ctx
 
   let rec locked : type mode a b. (mode, a, b) t -> bool = function
-    | Emp -> false
+    | Emp _ -> false
     | Snoc (ctx, _, _) -> locked ctx
     | Lock _ -> true
 
   let rec checked_length : type mode a b. (mode, a, b) t -> b Tbwd.t = function
-    | Emp -> Emp
+    | Emp _ -> Emp
     | Snoc (ctx, _, _) -> Snoc (checked_length ctx)
     | Lock ctx -> checked_length ctx
 
   let rec raw_length : type mode a b. (mode, a, b) t -> a N.t = function
-    | Emp -> N.zero
+    | Emp _ -> N.zero
     | Snoc (ctx, _, ax) -> N.plus_out (raw_length ctx) ax
     | Lock ctx -> raw_length ctx
 
   let rec length : type mode a b. (mode, a, b) t -> int = function
-    | Emp -> 0
+    | Emp _ -> 0
     | Snoc (ctx, _, _) -> length ctx + 1
     | Lock ctx -> length ctx
 
-  let empty () : ('mode, N.zero, emp) t = Emp
+  let empty mode : ('mode, N.zero, emp) t = Emp mode
 
   let rec dbwd : type mode a b. (mode, a, b) t -> b Dbwd.t = function
-    | Emp -> Word Zero
+    | Emp _ -> Word Zero
     | Snoc (ctx, e, _) ->
         let (Word b) = dbwd ctx in
         Word (Suc (b, dim_entry e))
     | Lock ctx -> dbwd ctx
 
   let rec apps : type mode a b. (mode, a, b) t -> (mode, noninst) apps = function
-    | Emp -> Emp
+    | Emp _ -> Emp
     | Snoc (ctx, e, _) -> app_entry (apps ctx) e
     | Lock ctx -> apps ctx
 
@@ -211,7 +212,7 @@ module Ordered = struct
       =
    fun ctx k ->
     match (ctx, k) with
-    | Emp, _ -> .
+    | Emp _, _ -> .
     | Snoc (ctx, e, pf), _ -> lookup_entry ctx e pf k
     | Lock _, _ -> fatal Locked_variable
 
@@ -284,7 +285,7 @@ module Ordered = struct
   let rec find_level : type mode a b. (mode, a, b) t -> level -> b index option =
    fun ctx i ->
     match ctx with
-    | Emp -> None
+    | Emp _ -> None
     | Snoc (ctx, Vis { bindings; _ }, _) -> find_level_in_cube ctx bindings i
     | Snoc (ctx, Invis bindings, _) -> find_level_in_cube ctx bindings i
     | Lock ctx -> find_level ctx i
@@ -322,7 +323,7 @@ module Ordered = struct
 
   (* This function traverses the entire context and computes the corresponding environment.  However, when we add permutations to environments below, we will also store a precomputed environment, so this function only needs to be called when the context has been globally modified. *)
   let rec env : type mode a b. (mode, a, b) t -> (mode, D.zero, b) env = function
-    | Emp -> Emp D.zero
+    | Emp _ -> Emp D.zero
     | Snoc (ctx, Vis { bindings; _ }, _) ->
         LazyExt (env ctx, D.zero_plus (CubeOf.dim bindings), env_entry bindings)
     | Snoc (ctx, Invis bindings, _) ->
@@ -364,7 +365,7 @@ module Ordered = struct
   let rec lam : type mode a b. (mode, a, b) t -> (b, potential) term -> (emp, potential) term =
    fun ctx tree ->
     match ctx with
-    | Emp -> tree
+    | Emp _ -> tree
     | Lock ctx -> lam ctx tree
     | Snoc (ctx, Vis { dim; plusdim; vars; bindings; fplus = Zero; _ }, _) when all_free bindings ->
         lam ctx (Lam (Variables (dim, plusdim, vars), tree))
@@ -388,7 +389,7 @@ module Ordered = struct
         }
         [ bindings ] in
     match ctx with
-    | Emp -> Emp
+    | Emp mode -> Emp mode
     | Lock ctx -> Lock (forget_levels ctx forget)
     | Snoc (ctx, Vis ({ bindings; _ } as e), af) ->
         Snoc (ctx, Vis { e with bindings = forget_bindings bindings }, af)
@@ -453,8 +454,8 @@ let lock (Permute { perm; env; level; ctx }) = Permute { perm; env; level; ctx =
 let locked (Permute { ctx; _ }) = Ordered.locked ctx
 let raw_length (Permute { perm; ctx; _ }) = N.perm_dom (Ordered.raw_length ctx) perm
 let level (Permute { level; _ }) = level
-let empty () =
-  Permute { perm = N.id_perm N.zero; env = Emp D.zero; level = 0; ctx = Ordered.empty () }
+let empty mode =
+  Permute { perm = N.id_perm N.zero; env = Emp D.zero; level = 0; ctx = Ordered.empty mode }
 let dbwd (Permute { ctx; _ }) = Ordered.dbwd ctx
 let apps (Permute { ctx; _ }) = Ordered.apps ctx
 

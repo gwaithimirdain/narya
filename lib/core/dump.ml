@@ -405,7 +405,7 @@ module F = struct
 
   let rec ordered_ctx : type mode a b. formatter -> (mode, a, b) Ctx.Ordered.t -> unit =
    fun ppf -> function
-    | Emp -> ()
+    | Emp _ -> ()
     | Snoc (c, e, _) -> fprintf ppf "%a %a" ordered_ctx c entry e
     | Lock c -> fprintf ppf "%a Lock" ordered_ctx c
 

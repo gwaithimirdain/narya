@@ -1,4 +1,5 @@
 open Util
+open Modal
 open Tbwd
 open Tlist
 open Dim

@@ -1385,7 +1385,7 @@ let eval_entry : type mode a b f n. (mode, a, b) Ctx.Ordered.t -> (b, f, n) entr
   | Invis bindings -> Invis (eval_bindings ctx bindings)
 
 let rec eval_ordered_ctx : type mode a b. (a, b) ordered_termctx -> (mode, a, b) Ctx.Ordered.t = function
-  | Emp -> Emp
+  | Emp -> Emp (Sorry.e ())
   | Ext (ctx, e, af) ->
       let ectx = eval_ordered_ctx ctx in
       Snoc (ectx, eval_entry ectx e, af)
