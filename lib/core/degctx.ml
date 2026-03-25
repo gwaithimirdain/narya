@@ -21,7 +21,7 @@ module Ordered = struct
       (* Because the values and types of variables in one cube can refer to other variables in the same cube, we need to be given the extended context with this binding included at the end in order to readback. *)
       (mode, ax, (b, n) snoc) t ->
       (* But we are building the degenerating environment as we go, so we don't have the extended version of that yet. *)
-      (mode, k, b) env ->
+      (k, b) env ->
       (kn, mode Binding.t) CubeOf.t * (kn, (mode, kinetic) value) CubeOf.t =
    fun i k k_n xs ctx env ->
     let kn = D.plus_out k k_n in
@@ -109,7 +109,7 @@ module Ordered = struct
 
   type (_, _, _, _) degctx =
     | Degctx :
-        ('k, 'b, 'kb) Plusmap.t * ('mode, 'a, 'kb) t * ('mode, 'k, 'b) env
+        ('k, 'b, 'kb) Plusmap.t * ('mode, 'a, 'kb) t * ('k, 'b) env
         -> ('mode, 'a, 'b, 'k) degctx
 
   (* TODO: Short-circuit if k=0. *)
@@ -143,7 +143,7 @@ end
 
 type (_, _, _, _) degctx =
   | Degctx :
-      ('k, 'b, 'kb) Plusmap.t * ('mode, 'a, 'kb) Ctx.t * ('mode, 'k, 'b) env
+      ('k, 'b, 'kb) Plusmap.t * ('mode, 'a, 'kb) Ctx.t * ('k, 'b) env
       -> ('mode, 'a, 'b, 'k) degctx
 
 let degctx : type mode a b k. (mode, a, b) Ctx.t -> k D.t -> (mode, a, b, k) degctx =

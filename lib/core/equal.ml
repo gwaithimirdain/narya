@@ -276,7 +276,7 @@ module Equal = struct
 
   and equal_at_tel : type mode n a b ab c d.
       (mode, c, d) Ctx.t ->
-      (mode, n, a) env ->
+      (n, a) env ->
       (mode, kinetic) value list ->
       (mode, kinetic) value list ->
       (mode, a, b, ab) Telescope.t ->
@@ -325,11 +325,11 @@ module Equal = struct
     | _ -> fatal (Anomaly "length mismatch in equal_at_tel")
 
   and equal_env : type mode a b n c d.
-      (mode, c, d) Ctx.t -> (mode, n, b) env -> (mode, n, b) env -> (mode, a, b) termctx -> unit Err.t =
+      (mode, c, d) Ctx.t -> (n, b) env -> (n, b) env -> (mode, a, b) termctx -> unit Err.t =
    fun ctx env1 env2 (Permute (_, envctx)) -> equal_ordered_env ctx env1 env2 envctx
 
   and equal_ordered_env : type mode a b n c d.
-      (mode, c, d) Ctx.t -> (mode, n, b) env -> (mode, n, b) env -> (mode, a, b) ordered_termctx -> unit Err.t =
+      (mode, c, d) Ctx.t -> (n, b) env -> (n, b) env -> (mode, a, b) ordered_termctx -> unit Err.t =
    fun ctx env1 env2 envctx ->
     (* Copied from readback_ordered_env *)
     match envctx with

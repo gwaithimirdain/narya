@@ -127,7 +127,7 @@ and tel : type mode a b ab. (File.t -> File.t) -> (mode, a, b, ab) tel -> (mode,
   | Emp -> Emp
   | Ext (x, ty, t) -> Ext (x, term f ty, tel f t)
 
-and env : type mode a n b. (File.t -> File.t) -> (mode, a, n, b) env -> (mode, a, n, b) env =
+and env : type a n b. (File.t -> File.t) -> (a, n, b) env -> (a, n, b) env =
  fun f e ->
   match e with
   | Emp n -> Emp n

@@ -75,7 +75,7 @@ module Act = struct
 
   (* Acting on a binder and on other sorts of closures will be unified by the function 'act_closure', but its return value involves an existential type, so it has to be a GADT. *)
   type ('mode, _, _, _) act_closure =
-    | Act_closure : ('mode, 'm, 'a) env * ('mn, 'm, 'n) insertion -> ('mode, 'a, 'mn, 'n) act_closure
+    | Act_closure : ('m, 'a) env * ('mn, 'm, 'n) insertion -> ('mode, 'a, 'mn, 'n) act_closure
 
   let rec act_value : type mode m n status. (mode, status) value -> (m, n) deg -> (mode, status) value =
    fun v s ->
@@ -142,7 +142,7 @@ module Act = struct
       (p, i, (mode, potential) lazy_eval option) InsmapOf.t ->
       i D.t ->
       (m, n, mn) D.plus ->
-      (mode, m, a) env ->
+      (m, a) env ->
       (p, mn) deg ->
       (n, i, mode * a) PlusPbijmap.t ->
       (mode, m, n, mn, q, i, a) Structfield.higher_data =
@@ -266,7 +266,7 @@ module Act = struct
 
   (* act_closure and act_binder assume that the degeneracy has exactly the correct codomain.  So if it doesn't, the caller should call deg_plus_to first. *)
   and act_closure : type mode mn m n a kn.
-      (mode, m, a) env -> (mn, m, n) insertion -> (kn, mn) deg -> (mode, a, kn, n) act_closure =
+      (m, a) env -> (mn, m, n) insertion -> (kn, mn) deg -> (mode, a, kn, n) act_closure =
    fun env ins fa ->
     let (Insfact_comp (fc, ins)) = insfact_comp ins fa in
     Act_closure (act_env env (op_of_deg fc), ins)

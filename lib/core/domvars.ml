@@ -44,13 +44,13 @@ let dom_vars : type mode m a b.
 
 let rec ext_tel : type mode a b c ac bc e ec n.
     (mode, a, e) Ctx.t ->
-    (mode, n, b) env ->
+    (n, b) env ->
     (* Note that c is a Fwn, since it is the length of a telescope. *)
     (a, c, ac) Raw.Namevec.t ->
     (mode, b, c, bc) Telescope.t ->
     (e, c, n, ec) Tbwd.snocs ->
     (mode, ac, ec) Ctx.t
-    * (mode, n, bc) env
+    * (n, bc) env
     * (n, (mode, kinetic) value) CubeOf.t list
     * (n, mode Ctx.Binding.t) CubeOf.t list =
  fun ctx env xs tel ec ->

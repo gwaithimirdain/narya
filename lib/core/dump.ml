@@ -19,8 +19,8 @@ type printable +=
   | Binder : ('mode, 'b, 's) binder -> printable
   | Term : ('mode, 'b, 's) term -> printable
   | Tel : ('mode, 'a, 'b, 'ab) Telescope.t -> printable
-  | Env : ('mode, 'n, 'b) Value.env -> printable
-  | DeepEnv : ('mode, 'n, 'b) Value.env * int -> printable
+  | Env : ('n, 'b) Value.env -> printable
+  | DeepEnv : ('n, 'b) Value.env * int -> printable
   | Check : 'a check -> printable
   | Apps : ('mode, 'any) apps -> printable
   | Entry : ('mode, 'x, 'n) Ctx.entry -> printable
@@ -201,7 +201,7 @@ module F = struct
       (string_of_dim (cod_left_ins ins))
       (string_of_ins ins)
 
-  and denv : type mode b n. int -> formatter -> (mode, n, b) Value.env -> unit =
+  and denv : type b n. int -> formatter -> (n, b) Value.env -> unit =
    fun depth ppf e ->
     match e with
     | Emp d -> fprintf ppf "Emp %a" dim d
@@ -213,7 +213,7 @@ module F = struct
     | Shift (e, mn, _) -> fprintf ppf "%a << %a" env e dim (D.plus_right mn)
     | Unshift (e, mn, _) -> fprintf ppf "%a >> %a" env e dim (D.plus_right mn)
 
-  and env : type mode b n. formatter -> (mode, n, b) Value.env -> unit = fun ppf e -> denv 0 ppf e
+  and env : type b n. formatter -> (n, b) Value.env -> unit = fun ppf e -> denv 0 ppf e
 
   and term : type mode b s. formatter -> (mode, b, s) term -> unit =
    fun ppf tm ->

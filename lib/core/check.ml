@@ -191,7 +191,7 @@ type (_, _, _, _) checkable_branch =
       xs : ('a, 'c, 'ac) Namevec.t;
       (* If the body is None, that means the user omitted this branch.  (That might be ok, if it can be refuted by a pattern variable belonging to an empty type.) *)
       body : 'ac check located option;
-      env : ('mode, 'm, 'b) env;
+      env : ('m, 'b) env;
       argtys : ('mode, 'b, 'c, 'bc) Telescope.t;
       index_terms : (('mode, 'bc, kinetic) term, 'ij) Vec.t;
     }
@@ -202,7 +202,7 @@ type (_, _, _, _) synthable_branch =
   | Synthable_branch : {
       xs : ('a, 'c, 'ac) Namevec.t;
       body : 'ac synth located;
-      env : ('mode, 'm, 'b) env;
+      env : ('m, 'b) env;
       argtys : ('mode, 'b, 'c, 'bc) Telescope.t;
       index_terms : (('mode, 'bc, kinetic) term, 'ij) Vec.t;
     }
@@ -290,7 +290,7 @@ type (_, _, _) match_motive =
         Constr.t ->
         'm D.t ->
         (('mode, 'bc, kinetic) term, 'ij) Vec.t ->
-        ('mode, 'm, 'bc) env ->
+        ('m, 'bc) env ->
         ('m, ('mode, kinetic) value) CubeOf.t list ->
         ('mode, kinetic) value;
       return :
@@ -2263,7 +2263,7 @@ and check_higher_field : type mode a b c d m i ic0.
       let r = remaining pbij in
       let (Degctx
              (type rb)
-             ((plusmap, degctx, degenv) : (r, b, rb) Plusmap.t * (mode, a, rb) Ctx.t * (mode, r, b) env)) =
+             ((plusmap, degctx, degenv) : (r, b, rb) Plusmap.t * (mode, a, rb) Ctx.t * (r, b) env)) =
         degctx ctx r in
       (* To make a new status, the arguments need to be eval-readbacked into degctx, and for that to make sense the head needs to be higher-dimensional also. *)
       let newstatus : (mode, rb, potential) status =
@@ -3253,14 +3253,14 @@ and synth_lam : type mode a b c d n.
 and check_at_tel : type mode n a b c bc e.
     Constr.t ->
     (mode, a, e) Ctx.t ->
-    (mode, n, b) env ->
+    (n, b) env ->
     (* This list of terms to check must have the same length *)
     a check located list ->
     (* as this telescope (namely, the Fwn 'c') *)
     (mode, b, c, bc) Telescope.t ->
     (* and as all the lists in this tube. *)
     (D.zero, n, n, (mode, kinetic) value list) TubeOf.t ->
-    (mode, n, bc) env * (n, (mode, e, kinetic) term) CubeOf.t list =
+    (n, bc) env * (n, (mode, e, kinetic) term) CubeOf.t list =
  fun c ctx env tms tys tyargs ->
   match (tms, tys) with
   | [], Emp ->

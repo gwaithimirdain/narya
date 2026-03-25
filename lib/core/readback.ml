@@ -272,7 +272,7 @@ and readback_head : type mode c z.
 
 and readback_at_tel : type mode n c a b ab z.
     (mode, z, c) Ctx.t ->
-    (mode, n, a) env ->
+    (n, a) env ->
     (mode, kinetic) value list ->
     (mode, a, b, ab) Telescope.t ->
     (D.zero, n, n, (mode, kinetic) value list) TubeOf.t ->
@@ -322,11 +322,11 @@ and readback_at_tel : type mode n c a b ab z.
 
 (* To readback an environment, since readback is type-directed we need the types of *all* the terms in it, which is to say its codomain context.  We store this as a Termctx since we need to evaluate and instantiate the types at the previous terms in the environment as we go. *)
 and readback_env : type mode n a b c d.
-    (mode, a, b) Ctx.t -> (mode, n, d) Value.env -> (mode, c, d) termctx -> (mode, b, n, d) Term.env =
+    (mode, a, b) Ctx.t -> (n, d) Value.env -> (mode, c, d) termctx -> (b, n, d) Term.env =
  fun ctx env (Permute (_, envctx)) -> readback_ordered_env ctx env envctx
 
 and readback_ordered_env : type mode n a b c d.
-    (mode, a, b) Ctx.t -> (mode, n, d) Value.env -> (mode, c, d) ordered_termctx -> (mode, b, n, d) Term.env =
+    (mode, a, b) Ctx.t -> (n, d) Value.env -> (mode, c, d) ordered_termctx -> (b, n, d) Term.env =
  fun ctx env envctx ->
   match envctx with
   | Emp -> Emp (dim_env env)

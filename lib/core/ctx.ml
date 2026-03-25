@@ -321,7 +321,7 @@ module Ordered = struct
       [ v ]
 
   (* This function traverses the entire context and computes the corresponding environment.  However, when we add permutations to environments below, we will also store a precomputed environment, so this function only needs to be called when the context has been globally modified. *)
-  let rec env : type mode a b. (mode, a, b) t -> (mode, D.zero, b) env = function
+  let rec env : type mode a b. (mode, a, b) t -> (D.zero, b) env = function
     | Emp -> Emp D.zero
     | Snoc (ctx, Vis { bindings; _ }, _) ->
         LazyExt (env ctx, D.zero_plus (CubeOf.dim bindings), env_entry bindings)
@@ -400,7 +400,7 @@ end
 type ('mode, 'a, 'b) t =
   | Permute : {
       perm : ('a, 'i) N.perm;
-      env : ('mode, D.zero, 'b) env;
+      env : (D.zero, 'b) env;
       level : int;
       ctx : ('mode, 'i, 'b) Ordered.t;
     }

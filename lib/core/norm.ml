@@ -23,11 +23,11 @@ type (_, _) looked_up_cube =
 
 (* Require that the supplied list contains exactly b (which is a Fwn) arguments, and add all of the cubes to the given environment. *)
 let rec take_args : type mode m n mn a b ab.
-    (mode, m, a) env ->
+    (m, a) env ->
     (m, n, mn) D.plus ->
     (mn, (mode, kinetic) value) CubeOf.t list ->
     (a, b, n, ab) Tbwd.snocs ->
-    (mode, m, ab) env =
+    (m, ab) env =
  fun env mn dargs plus ->
   match (dargs, plus) with
   | [], Zero -> env
@@ -44,8 +44,8 @@ type ('mode, _, _, _, _) shuffleable =
         's 'sh 'r_sh.
         ('s, 'h, 'sh) D.plus ->
         ('r, 'sh, 'r_sh) D.plus ->
-        ('mode, 'sh, ('c, D.zero) snoc) env ->
-        ('mode, 'r_sh, ('c, D.zero) snoc) env;
+        ('sh, ('c, D.zero) snoc) env ->
+        ('r_sh, ('c, D.zero) snoc) env;
       deg_nf : 'mode normal -> 'mode normal;
     }
       -> ('mode, 'r, 'h, 'i, 'c) shuffleable
@@ -103,7 +103,7 @@ and view_type : type mode. ?severity:Asai.Diagnostic.severity -> (mode, kinetic)
    These possibilities are encoded in an "evaluation", defined in Syntax.Value.  The point is that, just as with the representation of terms, there is enough commonality between the two (application of lambdas and field projection from structs) that we don't want to duplicate the code, so we define the evaluation functions to return an "evaluation" result that is a GADT parametrized by the kind of energy of the term. *)
 
 (* The master evaluation function. *)
-and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) evaluation =
+and eval : type mode m b s. (m, b) env -> (mode, b, s) term -> (mode, s) evaluation =
  fun env tm ->
   match tm with
   | Var v -> Val (lookup env v)
@@ -414,13 +414,13 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       eval (Unshift (env, mn, plusmap)) tm
   | Weaken tm -> eval (remove_env env Now) tm
 
-and eval_with_boundary : type mode m a. (mode, m, a) env -> (mode, a, kinetic) term -> (m, (mode, kinetic) value) CubeOf.t =
+and eval_with_boundary : type mode m a. (m, a) env -> (mode, a, kinetic) term -> (m, (mode, kinetic) value) CubeOf.t =
  fun env tm ->
   CubeOf.build (dim_env env) { build = (fun fa -> eval_term (act_env env (op_of_sface fa)) tm) }
 
 (* Evaluate a cube of arguments for an application. *)
 and eval_args : type mode m n mn a.
-    (mode, m, a) env ->
+    (m, a) env ->
     (m, n, mn) D.plus ->
     mn D.t ->
     (n, (mode, a, kinetic) term) CubeOf.t ->
@@ -640,7 +640,7 @@ and tyof_codatafield : type mode m n mn a k r s i et.
     ((mode, kinetic) value, Code.t) Result.t ->
     i Field.t ->
     (i, mode * a * n * et) Codatafield.t ->
-    (mode, m, a) env ->
+    (m, a) env ->
     (D.zero, mn, mn, mode normal) TubeOf.t ->
     m D.t ->
     (m, n, mn) D.plus ->
@@ -661,7 +661,7 @@ and tyof_lower_codatafield : type mode m n mn a.
     ((mode, kinetic) value, Code.t) Result.t ->
     D.zero Field.t ->
     (mode, (a, n) snoc, kinetic) term ->
-    (mode, m, a) env ->
+    (m, a) env ->
     (D.zero, mn, mn, mode normal) TubeOf.t ->
     m D.t ->
     (m, n, mn) D.plus ->
@@ -690,7 +690,7 @@ and tyof_higher_codatafield : type mode c n h s r i ic.
     ((mode, kinetic) value, Code.t) Result.t ->
     i Field.t ->
     (* The codatatype is in context of length c.  It has been evaluated at dimension n, in an (n, c) env. *)
-    (mode, n, c) env ->
+    (n, c) env ->
     (* And so it has a boundary n-tube. *)
     (D.zero, n, n, mode normal) TubeOf.t ->
     (* The field has intrinsic dimension i, determined by a pbij from n to i, with result s, remaining r, shared h.  We record the insertion and shuffle separately, with a shuffleable recording explicitly whether the shuffle is nontrivial and including a readback callback if so.  This is because we will have to readback a (s+h, [c;0]) env, in some context, and evaluate in an (r,a) env coming from degenerating that context, to get an (r+s+h, [c;0]) env, but readback depends on this file. *)
@@ -827,7 +827,7 @@ and tyof_field_giventype : type mode m n mn h s r i c et a k.
     ((mode, kinetic) value, Code.t) Result.t ->
     mode head ->
     (potential, et) eta ->
-    (mode, m, a) env ->
+    (m, a) env ->
     (m, n, mn) D.plus ->
     (mode * a * n * et) Term.CodatafieldAbwd.t ->
     (D.zero, mn, mn, mode normal) TubeOf.t ->
@@ -911,7 +911,7 @@ and tyof_field_withname_giventype : type mode a b m n mn c et.
     ((mode, kinetic) value, Code.t) Result.t ->
     (mode, kinetic) value ->
     (potential, et) eta ->
-    (mode, m, c) env ->
+    (m, c) env ->
     (m, n, mn) D.plus ->
     (mode * c * n * et) Term.CodatafieldAbwd.t ->
     (D.zero, mn, mn, mode normal) TubeOf.t ->
@@ -981,7 +981,7 @@ and apply_binder : type mode n s. (mode, n, s) Value.binder -> (n, (mode, kineti
        body)
     (deg_of_perm perm)
 
-and eval_canonical : type mode m a. (mode, m, a) env -> (mode, a) Term.canonical -> (mode, potential) evaluation =
+and eval_canonical : type mode m a. (m, a) env -> (mode, a) Term.canonical -> (mode, potential) evaluation =
  fun env can ->
   match can with
   | Data { indices; constrs; discrete } ->
@@ -1004,7 +1004,7 @@ and eval_canonical : type mode m a. (mode, m, a) env -> (mode, a) Term.canonical
 
 (* We split out this subroutine so it can be called from Check.with_codata_so_far and a lazy termctx.  *)
 and eval_codata : type mode m a c n et.
-    (mode, m, a) env ->
+    (m, a) env ->
     (potential, et) eta ->
     opacity ->
     n D.t ->
@@ -1022,13 +1022,13 @@ and eval_codata : type mode m a c n et.
   let fields = eval_structfield_abwd env m m_n mn fibrancy_fields in
   Val (Canonical { canonical; tyargs; ins; fields; inst_fields = Some fields })
 
-and eval_term : type mode m b. (mode, m, b) env -> (mode, b, kinetic) term -> (mode, kinetic) value =
+and eval_term : type mode m b. (m, b) env -> (mode, b, kinetic) term -> (mode, kinetic) value =
  fun env tm ->
   let (Val v) = eval env tm in
   v
 
-and eval_env : type mode a m n mn b.
-    (mode, m, a) env -> (m, n, mn) D.plus -> (mode, a, n, b) Term.env -> (mode, mn, b) Value.env =
+and eval_env : type a m n mn b.
+    (m, a) env -> (m, n, mn) D.plus -> (a, n, b) Term.env -> (mn, b) Value.env =
  fun env m_n tmenv ->
   let mn = D.plus_out (dim_env env) m_n in
   match tmenv with
@@ -1108,7 +1108,7 @@ and app_eval_apps : type mode s any. (mode, s) evaluation -> (mode, any) apps ->
 
 (* Look up a cube of values in an environment by variable index, accumulating operator actions and shifts as we go.  At the end, we usually use the operator to select a value from the cubes (with its face part) and act on it (with its degeneracy part). *)
 and lookup_cube : type mode n a b k mk nk.
-    (mode, n, b) env -> (n, k, nk) D.plus -> (a, k, b) Tbwd.insert -> (mk, nk) op -> (mode, mk) looked_up_cube =
+    (n, b) env -> (n, k, nk) D.plus -> (a, k, b) Tbwd.insert -> (mk, nk) op -> (mode, mk) looked_up_cube =
  fun env nk v op ->
   match (env, v) with
   (* Since there's an index, the environment can't be empty. *)
@@ -1141,14 +1141,14 @@ and lookup_cube : type mode n a b k mk nk.
   (* Finally, when we find our variable, we decompose the accumulated operator into a strict face and degeneracy, use the face as an index lookup, and act by the degeneracy.  The forcing function is the identity if the entry is not lazy, and force_eval_term if it is lazy. *)
   | Ext (_, nk', Ok entry), Now ->
       let Eq = D.plus_uniq nk nk' in
-      Looked_up { act = act_value; op; entry }
+      Looked_up { act = (fun x s -> act_value (coerce_mode x) s); op; entry }
   (* Looking up a variable that's bound to an error immediately fails with that error.  (In particular, this sort of failure can't currently happen "deeper" inside a term.) *)
   | Ext (_, _, Error e), Now -> fatal e
   | LazyExt (_, nk', entry), Now ->
       let Eq = D.plus_uniq nk nk' in
-      Looked_up { act = (fun x s -> force_eval_term (act_lazy_eval x s)); op; entry }
+      Looked_up { act = (fun x s -> force_eval_term (act_lazy_eval (coerce_mode x) s)); op; entry }
 
-and lookup : type mode n b. (mode, n, b) env -> b Term.index -> (mode, kinetic) value =
+and lookup : type mode n b. (n, b) env -> b Term.index -> (mode, kinetic) value =
  fun env (Index (v, fa)) ->
   let (Plus n_k) = D.plus (cod_sface fa) in
   let n = dim_env env in
