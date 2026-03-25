@@ -1,4 +1,5 @@
 open Util
+open Modal
 open Reporter
 open Printable
 open Dim
@@ -57,23 +58,31 @@ module Equal = struct
 
   (* Compare two values at a type, which they are both assumed to belong to.  We do eta-expansion here if the type is one with an eta-rule, like a pi-type or a record type.  We also deal with the case of terms that don't synthesize, such as structs even in codatatypes without eta, and constructors in datatypes. *)
   and equal_at : type mode a b.
-      (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> (mode, kinetic) value -> unit Err.t =
+      (mode, a, b) Ctx.t ->
+      (mode, kinetic) value ->
+      (mode, kinetic) value ->
+      (mode, kinetic) value ->
+      unit Err.t =
    fun ctx x y ty ->
     (* The type must be fully instantiated. *)
     match view_type ty "equal_at" with
     (* The only interesting thing here happens when the type is one with an eta-rule, such as a pi-type. *)
-    | Canonical (_, Pi (name, doms, cods), ins, tyargs) ->
+    | Canonical (_, Pi (name, modality, doms, cods), ins, tyargs) ->
         let Eq = eq_of_ins_zero ins in
-        let newargs, newnfs = dom_vars ctx doms in
-        let (Any_ctx newctx) = Ctx.variables_vis ctx name newnfs in
-        let output = tyof_app cods tyargs newargs in
+        let lctx = Ctx.lock ctx modality in
+        let newargs, newnfs = dom_vars lctx doms in
+        let (Any_ctx newctx) = Ctx.variables_vis ctx modality name newnfs in
+        let output = tyof_app cods tyargs modality newargs in
         (* If both terms have the given pi-type, then when applied to variables of the domains, they will both have the computed output-type, so we can recurse back to eta-expanding equality at that type. *)
-        equal_at newctx (apply_term x newargs) (apply_term y newargs) output
+        equal_at newctx (apply_term x modality newargs) (apply_term y modality newargs) output
     (* Codatatypes (without eta) don't need to be dealt with here, even though structs can't be compared synthesizingly, since codatatypes aren't actually inhabited by (kinetic) structs, only neutral terms that are equal to potential structs.  In the case of record types with eta, if there is a nonidentity insertion outside, then the type isn't actually a record type, *but* it still has an eta-rule since it is *isomorphic* to a record type!  Thus, instead of checking whether the insertion is the identity, we apply its inverse permutation to the terms being compared.  And because we pass off to 'field' and 'tyof_field', we don't need to make explicit use of any of the other data here. *)
     | Canonical
         (type mn m n)
         ((_, Codata (type c a et) ({ eta; fields; _ } : (mode, m, n, c, a, et) codata_args), ins, _) :
-          mode head * (mode, m, n) canonical * (mn, m, n) insertion * (D.zero, mn, mn, mode normal) TubeOf.t) -> (
+          mode head
+          * (mode, m, n) canonical
+          * (mn, m, n) insertion
+          * (D.zero, mn, mn, mode normal) TubeOf.t) -> (
         match eta with
         | Eta ->
             let (Perm_to p) = perm_of_ins ins in
@@ -145,7 +154,8 @@ module Equal = struct
     | _ -> equal_val ctx x y
 
   (* "Synthesizing" equality check of two values, now *not* assumed a priori to have the same type.  If this function concludes that they are equal, then the equality of their types is part of that conclusion. *)
-  and equal_val : type mode a b. (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> unit Err.t =
+  and equal_val : type mode a b.
+      (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> unit Err.t =
    fun ctx x y ->
     let x, y =
       match Mode.read () with
@@ -217,50 +227,58 @@ module Equal = struct
         match D.compare m n with
         | Eq -> return ()
         | _ -> None)
-    | Pi (name, dom1s, cod1s), Pi (_, dom2s, cod2s) -> (
+    | Pi (name, modality1, dom1s, cod1s), Pi (_, modality2, dom2s, cod2s) -> (
         (* If two pi-types have the same dimension, equal domains, and equal codomains, they are equal and have the same type (an instantiation of the universe of that dimension at pi-types formed from the lower-dimensional domains and codomains). *)
         let k = CubeOf.dim dom1s in
-        match D.compare (CubeOf.dim dom2s) k with
-        | Eq ->
+        match (D.compare (CubeOf.dim dom2s) k, Modality.compare modality1 modality2) with
+        | Eq, Eq ->
+            let lctx = Ctx.lock ctx modality1 in
             Some
               (let open Monad.Ops (Err) in
                let open CubeOf.Monadic (Err) in
-               let* () = miterM { it = (fun _ [ x; y ] -> equal_val ctx x y) } [ dom1s; dom2s ] in
+               let* () = miterM { it = (fun _ [ x; y ] -> equal_val lctx x y) } [ dom1s; dom2s ] in
                (* We create variables for all the domains, in order to equality-check all the codomains.  The codomain boundary types only use some of those variables, but it doesn't hurt to have the others around. *)
-               let newargs, newnfs = dom_vars ctx dom1s in
-               let (Any_ctx newctx) = Ctx.variables_vis ctx name newnfs in
+               let newargs, newnfs = dom_vars lctx dom1s in
+               let (Any_ctx newctx) = Ctx.variables_vis ctx modality1 name newnfs in
                let open BindCube.Monadic (Err) in
                miterM
                  {
                    it =
                      (fun s [ cod1; cod2 ] ->
                        let sargs = CubeOf.subcube s newargs in
-                       equal_val newctx (apply_binder_term cod1 sargs)
-                         (apply_binder_term cod2 sargs));
+                       equal_val newctx
+                         (apply_binder_term cod1 modality1 sargs)
+                         (apply_binder_term cod2 modality2 sargs));
                  }
                  [ cod1s; cod2s ])
-        | Neq -> None)
+        | Neq, _ | _, Neq -> None)
     | _, _ -> None
 
   (* Check that the arguments of two entire application spines of equal functions are equal.  This is basically a left fold, but we make sure to iterate from left to right, and fail rather than raising an exception if the lists have different lengths.  As noted above, here we can go back to *assuming* that they have equal types, and thus passing off to the eta-expanding equality check.  *)
-  and equal_apps : type mode any1 any2 a b. (mode, a, b) Ctx.t -> (mode, any1) apps -> (mode, any2) apps -> unit ErrOpt.t =
+  and equal_apps : type mode any1 any2 a b.
+      (mode, a, b) Ctx.t -> (mode, any1) apps -> (mode, any2) apps -> unit ErrOpt.t =
    fun ctx apps1 apps2 ->
     let open Monad.Ops (ErrOpt) in
     (* Iterating from left to right is important because it ensures that at the point of checking equality for any pair of arguments, we know that they have the same type, since they are valid arguments of equal functions with all previous arguments equal.  Thus each case *starts* with its recursive call. *)
     match (apps1, apps2) with
     | Emp, Emp -> return ()
-    | Arg (rest1, a1, i1), Arg (rest2, a2, i2) -> (
-        let* () = equal_apps ctx rest1 rest2 in
-        let To d1, To d2 = (deg_of_ins i1, deg_of_ins i2) in
-        let* () = ErrOpt.of_opt (deg_equiv d1 d2) in
-        match D.compare (CubeOf.dim a1) (CubeOf.dim a2) with
-        | Eq ->
-            let open CubeOf.Monadic (Err) in
-            Some (miterM { it = (fun _ [ x; y ] -> (equal_nf ctx) x y) } [ a1; a2 ])
-        (* If the dimensions don't match, it is a bug rather than a user error, since they are supposed to both be valid arguments of the same function, and any function has a unique dimension. *)
-        | Neq ->
-            fatal
-              (Dimension_mismatch ("application in equality-check", CubeOf.dim a1, CubeOf.dim a2)))
+    | Arg (rest1, modality1, a1, i1), Arg (rest2, modality2, a2, i2) -> (
+        match Modality.compare modality1 modality2 with
+        | Neq -> None
+        | Eq -> (
+            let* () = equal_apps ctx rest1 rest2 in
+            let To d1, To d2 = (deg_of_ins i1, deg_of_ins i2) in
+            let* () = ErrOpt.of_opt (deg_equiv d1 d2) in
+            let lctx = Ctx.lock ctx modality1 in
+            match D.compare (CubeOf.dim a1) (CubeOf.dim a2) with
+            | Eq ->
+                let open CubeOf.Monadic (Err) in
+                Some (miterM { it = (fun _ [ x; y ] -> equal_nf lctx x y) } [ a1; a2 ])
+            (* If the dimensions don't match, it is a bug rather than a user error, since they are supposed to both be valid arguments of the same function, and any function has a unique dimension. *)
+            | Neq ->
+                fatal
+                  (Dimension_mismatch ("application in equality-check", CubeOf.dim a1, CubeOf.dim a2))
+            ))
     | Field (rest1, f1, _, i1), Field (rest2, f2, _, i2) -> (
         let* () = equal_apps ctx rest1 rest2 in
         let To d1, To d2 = (deg_of_ins i1, deg_of_ins i2) in
@@ -276,7 +294,7 @@ module Equal = struct
 
   and equal_at_tel : type mode n a b ab c d.
       (mode, c, d) Ctx.t ->
-      (mode, n, a) env ->
+      (n, a) env ->
       (mode, kinetic) value list ->
       (mode, kinetic) value list ->
       (a, b, ab) Telescope.t ->
@@ -325,11 +343,11 @@ module Equal = struct
     | _ -> fatal (Anomaly "length mismatch in equal_at_tel")
 
   and equal_env : type mode a b n c d.
-      (mode, c, d) Ctx.t -> (mode, n, b) env -> (mode, n, b) env -> (a, b) termctx -> unit Err.t =
+      (mode, c, d) Ctx.t -> (n, b) env -> (n, b) env -> (a, b) termctx -> unit Err.t =
    fun ctx env1 env2 (Permute (_, envctx)) -> equal_ordered_env ctx env1 env2 envctx
 
   and equal_ordered_env : type mode a b n c d.
-      (mode, c, d) Ctx.t -> (mode, n, b) env -> (mode, n, b) env -> (a, b) ordered_termctx -> unit Err.t =
+      (mode, c, d) Ctx.t -> (n, b) env -> (n, b) env -> (a, b) ordered_termctx -> unit Err.t =
    fun ctx env1 env2 envctx ->
     (* Copied from readback_ordered_env *)
     match envctx with
@@ -371,7 +389,12 @@ module Equal = struct
                       Hashtbl.add xtytbl (SFace_of fb) { tm = tm1; ty };
                       equal_at ctx tm1 tm2 ty);
                 }
-                [ xs1; xs2 ] in
+                [
+                  (let _ = xs1 in
+                   Sorry.e ());
+                  (let _ = xs2 in
+                   Sorry.e ());
+                ] in
             return ())
 end
 

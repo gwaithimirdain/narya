@@ -1,5 +1,6 @@
 open Bwd
 open Util
+open Modal
 open Dim
 open Asai.Diagnostic
 open Format
@@ -179,6 +180,7 @@ module Code = struct
     | Matching_on_nondatatype : printable -> t
     | Matching_wont_refine : string * printable option -> t
     | Dimension_mismatch : string * 'a D.t * 'b D.t -> t
+    | Modality_mismatch : string * ('a, 'm, 'b) Modality.t * ('c, 'n, 'd) Modality.t -> t
     | Invalid_variable_face : 'a D.t * ('n, 'm) sface -> t
     | Anomaly : string -> t
     | No_such_level : printable -> t
@@ -344,6 +346,7 @@ module Code = struct
     | Matching_on_nondatatype _ -> Error
     | Matching_wont_refine _ -> Hint
     | Dimension_mismatch _ -> Bug (* Sometimes Error? *)
+    | Modality_mismatch _ -> Bug
     | Anomaly _ -> Bug
     | No_such_level _ -> Bug
     | Redefining_constant _ -> Warning
@@ -540,6 +543,8 @@ module Code = struct
     (* Tactics *)
     | Choice_mismatch _ -> "E1600"
     | Calc_error _ -> "E1601"
+    (* Modal type theory *)
+    | Modality_mismatch _ -> "E1700"
     (* Commands *)
     | Too_many_commands -> "E2000"
     | Forbidden_interactive_command _ -> "E2001"
@@ -860,6 +865,8 @@ module Code = struct
           textf "match will not refine the goal or context (%s)" msg
       | Dimension_mismatch (op, a, b) ->
           textf "dimension mismatch in %s (%s ≠ %s)" op (string_of_dim0 a) (string_of_dim0 b)
+      | Modality_mismatch (op, a, b) ->
+          textf "modality mismatch in %s (%s ≠ %s)" op (Modality.to_string a) (Modality.to_string b)
       | Anomaly str -> textf "anomaly: %s" str
       | No_such_level i -> textf "@[<hov 2>no level variable@ %a@ in context@]" pp_printed (print i)
       | Redefining_constant name ->

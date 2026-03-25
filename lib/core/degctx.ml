@@ -21,7 +21,7 @@ module Ordered = struct
       (* Because the values and types of variables in one cube can refer to other variables in the same cube, we need to be given the extended context with this binding included at the end in order to readback. *)
       (mode, ax, (b, n) snoc) t ->
       (* But we are building the degenerating environment as we go, so we don't have the extended version of that yet. *)
-      (mode, k, b) env ->
+      (k, b) env ->
       (kn, mode Binding.t) CubeOf.t * (kn, (mode, kinetic) value) CubeOf.t =
    fun i k k_n xs ctx env ->
     let kn = D.plus_out k k_n in
@@ -109,14 +109,14 @@ module Ordered = struct
 
   type (_, _, _, _) degctx =
     | Degctx :
-        ('k, 'b, 'kb) Plusmap.t * ('mode, 'a, 'kb) t * ('mode, 'k, 'b) env
+        ('k, 'b, 'kb) Plusmap.t * ('mode, 'a, 'kb) t * ('k, 'b) env
         -> ('mode, 'a, 'b, 'k) degctx
 
   (* TODO: Short-circuit if k=0. *)
   let rec degenerate : type mode a b k. (mode, a, b) t -> k D.t -> (mode, a, b, k) degctx =
    fun ctx k ->
     match ctx with
-    | Emp -> Degctx (Map_emp, Emp, Emp k)
+    | Emp mode -> Degctx (Map_emp, Emp mode, Emp k)
     | Snoc (ctx', entry, ax) ->
         let (Degctx (kb, newctx', env)) = degenerate ctx' k in
         let mn = Ctx.dim_entry entry in
@@ -125,25 +125,37 @@ module Ordered = struct
           match entry with
           | Vis { hasfields = Has_fields; _ } ->
               fatal (Anomaly "attempt to degenerate a context containing illusory variables")
-          | Vis { dim; plusdim; vars; bindings; hasfields = No_fields; fields; fplus } ->
+          | Vis { dim; modality; plusdim; vars; bindings; hasfields = No_fields; fields; fplus } ->
               let (Plus km) = D.plus dim in
               let plusdim = D.plus_assocl km plusdim k_mn in
-              let bindings, newval = degenerate_binding (length newctx') k k_mn bindings ctx env in
+              let lctx = Ctx.Ordered.lock ctx modality in
+              let bindings, newval = degenerate_binding (length newctx') k k_mn bindings lctx env in
               let hasfields = Term.No_fields in
-              ( Ctx.Vis { dim = D.plus_out k km; plusdim; vars; bindings; hasfields; fields; fplus },
+              ( Ctx.Vis
+                  {
+                    dim = D.plus_out k km;
+                    modality;
+                    plusdim;
+                    vars;
+                    bindings;
+                    hasfields;
+                    fields;
+                    fplus;
+                  },
                 Ext (env, k_mn, Ok newval) )
-          | Invis xs ->
-              let newxs, newval = degenerate_binding (length newctx') k k_mn xs ctx env in
-              (Invis newxs, Ext (env, k_mn, Ok newval)) in
+          | Invis (modality, xs) ->
+              let lctx = Ctx.Ordered.lock ctx modality in
+              let newxs, newval = degenerate_binding (length newctx') k k_mn xs lctx env in
+              (Invis (modality, newxs), Ext (env, k_mn, Ok newval)) in
         Degctx (Map_snoc (kb, k_mn), Snoc (newctx', newentry, ax), newenv)
-    | Lock ctx ->
+    | Lock (ctx, lock) ->
         let (Degctx (kb, newctx, env)) = degenerate ctx k in
-        Degctx (kb, Lock newctx, env)
+        Degctx (kb, Lock (newctx, lock), env)
 end
 
 type (_, _, _, _) degctx =
   | Degctx :
-      ('k, 'b, 'kb) Plusmap.t * ('mode, 'a, 'kb) Ctx.t * ('mode, 'k, 'b) env
+      ('k, 'b, 'kb) Plusmap.t * ('mode, 'a, 'kb) Ctx.t * ('k, 'b) env
       -> ('mode, 'a, 'b, 'k) degctx
 
 let degctx : type mode a b k. (mode, a, b) Ctx.t -> k D.t -> (mode, a, b, k) degctx =

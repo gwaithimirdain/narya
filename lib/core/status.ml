@@ -13,7 +13,7 @@ open Value
 type (_, _) potential_head =
   (* For typechecking higher coinductive types and higher coinduction, we allow a nonzero dimension. *)
   | Constant : Constant.t * 'n D.t -> ('mode, emp) potential_head
-  | Meta : ('x, 'a, potential) Meta.t * ('mode, 'n, 'a) env -> ('mode, 'a) potential_head
+  | Meta : ('x, 'a, potential) Meta.t * ('n, 'a) env -> ('mode, 'a) potential_head
 
 let head_of_potential : type mode a. (mode, a) potential_head -> mode Value.head = function
   | Constant (name, n) -> Const { name; ins = ins_zero n }
@@ -22,7 +22,9 @@ let head_of_potential : type mode a. (mode, a) potential_head -> mode Value.head
 type (_, _, _) status =
   | Kinetic : [ `Let | `Nolet ] -> ('mode, 'b, kinetic) status
   | Potential :
-      ('mode, 'a) potential_head * ('mode, 'any) apps * (('b, potential) term -> ('a, potential) term)
+      ('mode, 'a) potential_head
+      * ('mode, 'any) apps
+      * (('b, potential) term -> ('a, potential) term)
       -> ('mode, 'b, potential) status
 
 let energy : type mode b s. (mode, b, s) status -> s energy = function

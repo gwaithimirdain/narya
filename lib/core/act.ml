@@ -32,7 +32,9 @@ type ('mode, _, _, _) acted_instargs =
       -> ('mode, 'n, 'j, 'p) acted_instargs
 
 type ('mode, _) ty_acted_instargs =
-  | Ty_acted_instargs : ('m, 'n) deg * (D.zero, 'm, 'm, 'mode normal) TubeOf.t -> ('mode, 'n) ty_acted_instargs
+  | Ty_acted_instargs :
+      ('m, 'n) deg * (D.zero, 'm, 'm, 'mode normal) TubeOf.t
+      -> ('mode, 'n) ty_acted_instargs
 
 (* Act on a cube of objects *)
 
@@ -75,9 +77,10 @@ module Act = struct
 
   (* Acting on a binder and on other sorts of closures will be unified by the function 'act_closure', but its return value involves an existential type, so it has to be a GADT. *)
   type ('mode, _, _, _) act_closure =
-    | Act_closure : ('mode, 'm, 'a) env * ('mn, 'm, 'n) insertion -> ('mode, 'a, 'mn, 'n) act_closure
+    | Act_closure : ('m, 'a) env * ('mn, 'm, 'n) insertion -> ('mode, 'a, 'mn, 'n) act_closure
 
-  let rec act_value : type mode m n status. (mode, status) value -> (m, n) deg -> (mode, status) value =
+  let rec act_value : type mode m n status.
+      (mode, status) value -> (m, n) deg -> (mode, status) value =
    fun v s ->
     match v with
     | Neu { head; args; value; ty = (lazy ty) } ->
@@ -89,10 +92,12 @@ module Act = struct
         (* And we "act" on the type with the other kind of action that permutes the instantiated arguments, and by the original s since it is the type of the entire application spine. *)
         let ty = lazy (act_ty v ty s) in
         Neu { head; args; value; ty }
-    | Lam (x, body) ->
+    | Lam (x, modality, body) ->
         let (Of fa) = deg_plus_to s (dim_binder body) ~on:"lambda" in
-        Lam (act_variables x fa, act_binder body fa)
-    | Struct (type p k pk et) ({ fields; ins; energy; eta } : (mode, p, k, pk, status, et) struct_args) ->
+        Lam (act_variables x fa, modality, act_binder body fa)
+    | Struct
+        (type p k pk et)
+        ({ fields; ins; energy; eta } : (mode, p, k, pk, status, et) struct_args) ->
         let (Insfact_comp_ext
                (type q l ql j z)
                ((deg0, new_ins, _, _) :
@@ -129,7 +134,9 @@ module Act = struct
       }
 
   and act_structfield : type mode p q i status et.
-      (q, p) deg -> (i, mode * p * status * et) Structfield.t -> (i, mode * q * status * et) Structfield.t =
+      (q, p) deg ->
+      (i, mode * p * status * et) Structfield.t ->
+      (i, mode * q * status * et) Structfield.t =
    fun deg0 sfld ->
     match sfld with
     (* For a lower structfield, we just act in a straightforward way on each (lazy) value. *)
@@ -142,7 +149,7 @@ module Act = struct
       (p, i, (mode, potential) lazy_eval option) InsmapOf.t ->
       i D.t ->
       (m, n, mn) D.plus ->
-      (mode, m, a) env ->
+      (m, a) env ->
       (p, mn) deg ->
       (n, i, a) PlusPbijmap.t ->
       (mode, m, n, mn, q, i, a) Structfield.higher_data =
@@ -228,7 +235,9 @@ module Act = struct
     { vals; intrinsic; plusdim; env; deg; terms }
 
   and act_structfield_abwd : type mode p q status et.
-      (q, p) deg -> (mode * p * status * et) StructfieldAbwd.t -> (mode * q * status * et) StructfieldAbwd.t =
+      (q, p) deg ->
+      (mode * p * status * et) StructfieldAbwd.t ->
+      (mode * q * status * et) StructfieldAbwd.t =
    fun deg fields ->
     Mbwd.mmap
       (fun [ StructfieldAbwd.Entry (fld, sfld) ] ->
@@ -242,13 +251,14 @@ module Act = struct
     | Realize tm -> Realize (act_value tm s)
     | Val tm -> Val (act_value tm s)
 
-  and act_canonical : type mode m n i. (mode, n, i) canonical -> (m, n) deg -> (mode, m, i) canonical =
+  and act_canonical : type mode m n i.
+      (mode, n, i) canonical -> (m, n) deg -> (mode, m, i) canonical =
    fun tm fa ->
     match tm with
     | UU _ -> UU (dom_deg fa)
-    | Pi (x, doms, cods) ->
+    | Pi (x, modality, doms, cods) ->
         let doms', cods' = act_pi (doms, cods) fa in
-        Pi (act_variables x fa, doms', cods')
+        Pi (act_variables x fa, modality, doms', cods')
     | Data { dim = _; tyfam; indices; constrs; discrete } ->
         let tyfam = ref (Option.map (fun x -> lazy (act_normal (Lazy.force x) fa)) !tyfam) in
         let indices =
@@ -259,14 +269,15 @@ module Act = struct
     | Codata { eta; opacity; env; termctx; fields } ->
         Codata { eta; opacity; env = act_env env (op_of_deg fa); termctx; fields }
 
-  and act_dataconstr : type mode m n i. (mode, n, i) dataconstr -> (m, n) deg -> (mode, m, i) dataconstr =
+  and act_dataconstr : type mode m n i.
+      (mode, n, i) dataconstr -> (m, n) deg -> (mode, m, i) dataconstr =
    fun (Dataconstr { env; args; indices }) s ->
     let env = act_env env (op_of_deg s) in
     Dataconstr { env; args; indices }
 
   (* act_closure and act_binder assume that the degeneracy has exactly the correct codomain.  So if it doesn't, the caller should call deg_plus_to first. *)
   and act_closure : type mode mn m n a kn.
-      (mode, m, a) env -> (mn, m, n) insertion -> (kn, mn) deg -> (mode, a, kn, n) act_closure =
+      (m, a) env -> (mn, m, n) insertion -> (kn, mn) deg -> (mode, a, kn, n) act_closure =
    fun env ins fa ->
     let (Insfact_comp (fc, ins)) = insfact_comp ins fa in
     Act_closure (act_env env (op_of_deg fc), ins)
@@ -281,7 +292,11 @@ module Act = struct
 
   (* When acting on a neutral or normal, we also need to specify the type of the output.  This *isn't* act_value on the original type; instead the type is required to be fully instantiated and the operator acts on the *instantiated* dimensions, in contrast to how act_value on an instantiation acts on the *uninstantiated* dimensions (as well as the instantiated term).  This function computes this "type of acted terms".  In general, it has to be passed the term as well as the type because the instantiation of the result may involve that term, e.g. if x : A then refl x : Id A x x; but we allow that term to be omitted in case the degeneracy is a pure symmetry in which case this doesn't happen. *)
   and gact_ty : type mode a b.
-      ?err:dim_err -> (mode, kinetic) value option -> (mode, kinetic) value -> (a, b) deg -> (mode, kinetic) value =
+      ?err:dim_err ->
+      (mode, kinetic) value option ->
+      (mode, kinetic) value ->
+      (a, b) deg ->
+      (mode, kinetic) value =
    fun ?err tm tmty s ->
     (* We have to normalize the type in order to be sure of exposing the instantiations.  But we can't use view_type, because that discards information and we need to reconstruct the acted type. *)
     match view_term tmty with
@@ -372,7 +387,11 @@ module Act = struct
 
   (* Version of gact_ty that always takes the term value. *)
   and act_ty : type mode a b.
-      ?err:dim_err -> (mode, kinetic) value -> (mode, kinetic) value -> (a, b) deg -> (mode, kinetic) value =
+      ?err:dim_err ->
+      (mode, kinetic) value ->
+      (mode, kinetic) value ->
+      (a, b) deg ->
+      (mode, kinetic) value =
    fun ?err tm tmty s -> gact_ty ?err (Some tm) tmty s
 
   (* Action on a head *)
@@ -394,15 +413,15 @@ module Act = struct
     | UU nk ->
         let (Of fa) = deg_plus_to s nk ~on:"universe head" in
         UU (dom_deg fa)
-    | Pi (x, doms, cods) ->
+    | Pi (x, modality, doms, cods) ->
         let (Of fa) = deg_plus_to s (CubeOf.dim doms) ~on:"pi-type head" in
         let doms', cods' = act_pi (doms, cods) fa in
-        Pi (act_variables x fa, doms', cods')
+        Pi (act_variables x fa, modality, doms', cods')
 
-  and act_pi : type mode m n.
-      (n, (mode, kinetic) value) CubeOf.t * (n, mode) BindCube.t ->
+  and act_pi : type dom mode m n.
+      (n, (dom, kinetic) value) CubeOf.t * (n, mode) BindCube.t ->
       (m, n) deg ->
-      (m, (mode, kinetic) value) CubeOf.t * (m, mode) BindCube.t =
+      (m, (dom, kinetic) value) CubeOf.t * (m, mode) BindCube.t =
    fun (doms, cods) fa ->
     let mi = dom_deg fa in
     let doms' = act_cube { act = (fun x s -> act_value x s) } doms fa in
@@ -422,12 +441,12 @@ module Act = struct
     match apps with
     | Emp -> (Any_deg s, Emp)
     (* To act on an application, we compose the acting degeneracy with the delayed insertion, factor the result into a new insertion to leave outside and a smaller degeneracy to push in, and push the smaller degeneracy action into the application, acting on the function/struct. *)
-    | Arg (rest, args, ins) ->
+    | Arg (rest, modality, args, ins) ->
         let (Insfact_comp_ext (fa, new_ins, _, _)) = insfact_comp_ext ins s in
         (* In the function case, we also act on the arguments by factorization. *)
         let new_arg = act_cube { act = (fun x s -> act_normal x s) } args fa in
         let new_s, new_rest = act_apps rest fa in
-        (new_s, Arg (new_rest, new_arg, new_ins))
+        (new_s, Arg (new_rest, modality, new_arg, new_ins))
     | Field (rest, fld, fldplus, ins) ->
         let (Insfact_comp_ext (fa, new_ins, _, _)) = insfact_comp_ext ins s in
         (* Note that we don't need to change the degeneracy, since it can be extended on the right as needed. *)
@@ -499,7 +518,8 @@ let act_value_cube : type mode a s m n.
  fun force xs s -> act_cube { act = (fun x s -> act_value (force x) s) } xs s
 
 (* Like apply_lazy for fields.  Was deferred to here since it requires pushing the insertion through with act. *)
-let field_lazy : type mode s n t i. (mode, s) lazy_eval -> i Field.t -> (n, t, i) insertion -> (mode, s) lazy_eval =
+let field_lazy : type mode s n t i.
+    (mode, s) lazy_eval -> i Field.t -> (n, t, i) insertion -> (mode, s) lazy_eval =
  fun lev fld fldins ->
   let n, k = (cod_left_ins fldins, cod_right_ins fldins) in
   let (Plus nk) = D.plus k in

@@ -44,13 +44,13 @@ let dom_vars : type mode m a b.
 
 let rec ext_tel : type mode a b c ac bc e ec n.
     (mode, a, e) Ctx.t ->
-    (mode, n, b) env ->
+    (n, b) env ->
     (* Note that c is a Fwn, since it is the length of a telescope. *)
     (a, c, ac) Raw.Namevec.t ->
     (b, c, bc) Telescope.t ->
     (e, c, n, ec) Tbwd.snocs ->
     (mode, ac, ec) Ctx.t
-    * (mode, n, bc) env
+    * (n, bc) env
     * (n, (mode, kinetic) value) CubeOf.t list
     * (n, mode Ctx.Binding.t) CubeOf.t list =
  fun ctx env xs tel ec ->
@@ -66,8 +66,12 @@ let rec ext_tel : type mode a b c ac bc e ec n.
         match x with
         | Some x -> Some x
         | None -> x' in
+      let modality = Sorry.e () in
       let ctx, env, vars, nfs =
-        ext_tel (Ctx.cube_vis ctx x newnfs) (Ext (env, D.plus_zero m, Ok newvars)) xs rest ec in
+        ext_tel
+          (Ctx.cube_vis ctx modality x newnfs)
+          (Ext (env, D.plus_zero m, Ok newvars))
+          xs rest ec in
       (ctx, env, newvars :: vars, newnfs :: nfs)
 
 (* Extract a list of all the variables of a given kind in an iterated pi-type. *)
@@ -79,12 +83,13 @@ let rec get_pi_vars : type mode a b.
     string option Bwd.t =
  fun ctx cube xs ty ->
   match View.view_type ty "get_pi_vars" with
-  | Canonical (_, Pi (x, doms, cods), ins, tyargs) -> (
+  | Canonical (_, Pi (x, modality, doms, cods), ins, tyargs) -> (
       let Eq = eq_of_ins_zero ins in
       match (D.compare_zero (CubeOf.dim doms), cube) with
       | Zero, `Normal | Pos _, `Cube ->
-          let args, newnfs = dom_vars ctx doms in
-          let (Any_ctx sctx) = Ctx.variables_vis ctx x newnfs in
-          get_pi_vars sctx cube (Snoc (xs, top_variable x)) (tyof_app cods tyargs args)
+          let lctx = Ctx.lock ctx modality in
+          let args, newnfs = dom_vars lctx doms in
+          let (Any_ctx sctx) = Ctx.variables_vis ctx modality x newnfs in
+          get_pi_vars sctx cube (Snoc (xs, top_variable x)) (tyof_app cods tyargs modality args)
       | _ -> xs)
   | _ -> xs
