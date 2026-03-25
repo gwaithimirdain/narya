@@ -21,4 +21,4 @@ val uniquify_vars :
 
 val unsafe_add : 'b t -> 'n variables -> (string, string) Abwd.t -> ('b, 'n) snoc t
 
-type named_term = Named : 'a t * ('a, kinetic) term -> named_term
+type named_term = Named : 'a t * (_, 'a, kinetic) term -> named_term

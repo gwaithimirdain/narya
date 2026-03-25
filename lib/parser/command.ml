@@ -827,7 +827,7 @@ let split_match_cases : type mode a b.
   let module LS = Monad.ListT (S) in
   let open Monad.Ops (LS) in
   let rec do_args : type a p ap.
-      (a, p, ap) Term.Telescope.t ->
+      (_, a, p, ap) Term.Telescope.t ->
       (No.plus_omega, No.strict, No.plus_omega, No.nonstrict) parse located list =
    fun args ->
     match args with
@@ -1094,7 +1094,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
             | Canonical (_, Codata { eta; fields; _ }, ins, _) -> (
                 let m = cod_left_ins ins in
                 let do_field : type a n et.
-                    (a * n * et) Term.CodatafieldAbwd.entry ->
+                    (_ * a * n * et) Term.CodatafieldAbwd.entry ->
                     (string * string list) list ->
                     (string * string list) list =
                  fun (Term.CodatafieldAbwd.Entry (fld, cdf)) acc ->
@@ -1180,7 +1180,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                 n Names.t ->
                 k D.t ->
                 ?acc:unparser Bwd.t ->
-                (a, p, ap) Term.Telescope.t ->
+                (_, a, p, ap) Term.Telescope.t ->
                 unparser Bwd.t * Names.wrapped =
              fun names dim ?(acc = Emp) -> function
                | Emp -> (acc, Wrap names)

@@ -8,7 +8,11 @@ open Monad.Ops (Monad.Maybe)
 
 let other = (`Other, `Other)
 
-(* Safe coercion for phantom 'mode parameter on terms *)
+(* Abstract type used as the phantom 'mode parameter for terms stored in top-level refs.
+   This will be replaced by a real mode type once multimode information is added. *)
+type mode
+
+(* Safe coercion for phantom 'mode parameter *)
 let coerce_mode : 'a -> 'b = Obj.magic
 
 (* Fibrancy fields *)
@@ -22,7 +26,7 @@ let ([ ftrr; fliftr; ftrl; fliftl; fid ] : (Hott.dim Field.t, Fwn.five) Vec.t) =
 
 (* We will later get these fields by typechecking the definition of "isFibrant" in parametric Narya.  That definition has a (non-fibrant) type as a parameter, so together with the self variable all of its fields are in a context of length two; and since the extension by the self variable is accounted for in the definition of Codatafield, what we get here is a context of length one.  However, in HOTT mode we consider (fibrant) types as *themselves* having fields, so the type itself should now act like the "self variable"; we will deal with this at the point of use by evaluating it in an environment with the fibrant type itself appearing for both the type parameter and the element of isFibrant.  The D.zero says that isFibrant is an ordinary (non-Gel) codatatype. *)
 
-let fields : (unit * (emp, D.zero) snoc * D.zero * no_eta) CodatafieldAbwd.t option ref = ref None
+let fields : (mode * (emp, D.zero) snoc * D.zero * no_eta) CodatafieldAbwd.t option ref = ref None
 
 (* Computing the fibrancy fields on canonical type-formers *)
 
@@ -33,13 +37,13 @@ let fields : (unit * (emp, D.zero) snoc * D.zero * no_eta) CodatafieldAbwd.t opt
 (* In the case of pi-types, we can literally write the definition in Narya, typecheck it, and insert it here.  That makes it easier to get correct.  Thus, for now we leave this empty; it will be filled in after the parser is loaded. *)
 
 let pi :
-    (unit * D.zero * ((emp, D.zero) snoc, D.zero) snoc * potential * no_eta) StructfieldAbwd.t option ref =
+    (mode * D.zero * ((emp, D.zero) snoc, D.zero) snoc * potential * no_eta) StructfieldAbwd.t option ref =
   ref None
 
 (* Glue types *)
 
 let glue :
-    (unit
+    (mode
     * Hott.dim
     * ((((emp, D.zero) snoc, D.zero) snoc, D.zero) snoc, D.zero) snoc
     * potential
@@ -241,7 +245,7 @@ module Codata = struct
     | None -> finish c.fields c.fibrancy
 end
 
-let universe : (unit * D.zero * emp * potential * no_eta) StructfieldAbwd.t option Lazy.t =
+let universe : (mode * D.zero * emp * potential * no_eta) StructfieldAbwd.t option Lazy.t =
   Lazy.from_val None
 
 let data : unit option Lazy.t = Lazy.from_val None

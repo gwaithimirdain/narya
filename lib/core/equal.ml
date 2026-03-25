@@ -85,7 +85,7 @@ module Equal = struct
               (fun [
                      CodatafieldAbwd.Entry
                        (type i)
-                       ((fld, Lower _) : i Field.t * (i, a * n * has_eta) Codatafield.t);
+                       ((fld, Lower _) : i Field.t * (i, mode * a * n * has_eta) Codatafield.t);
                    ] ->
                 equal_at ctx (field_term x fld fldins) (field_term y fld fldins)
                   (tyof_field (Ok x) ty fld ~shuf:Trivial fldins))
@@ -279,7 +279,7 @@ module Equal = struct
       (mode, n, a) env ->
       (mode, kinetic) value list ->
       (mode, kinetic) value list ->
-      (a, b, ab) Telescope.t ->
+      (mode, a, b, ab) Telescope.t ->
       (D.zero, n, n, (mode, kinetic) value list) TubeOf.t ->
       unit Err.t =
    fun ctx env xs ys tys tyargs ->
@@ -325,11 +325,11 @@ module Equal = struct
     | _ -> fatal (Anomaly "length mismatch in equal_at_tel")
 
   and equal_env : type mode a b n c d.
-      (mode, c, d) Ctx.t -> (mode, n, b) env -> (mode, n, b) env -> (a, b) termctx -> unit Err.t =
+      (mode, c, d) Ctx.t -> (mode, n, b) env -> (mode, n, b) env -> (mode, a, b) termctx -> unit Err.t =
    fun ctx env1 env2 (Permute (_, envctx)) -> equal_ordered_env ctx env1 env2 envctx
 
   and equal_ordered_env : type mode a b n c d.
-      (mode, c, d) Ctx.t -> (mode, n, b) env -> (mode, n, b) env -> (a, b) ordered_termctx -> unit Err.t =
+      (mode, c, d) Ctx.t -> (mode, n, b) env -> (mode, n, b) env -> (mode, a, b) ordered_termctx -> unit Err.t =
    fun ctx env1 env2 envctx ->
     (* Copied from readback_ordered_env *)
     match envctx with

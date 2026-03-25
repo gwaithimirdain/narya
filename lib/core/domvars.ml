@@ -47,7 +47,7 @@ let rec ext_tel : type mode a b c ac bc e ec n.
     (mode, n, b) env ->
     (* Note that c is a Fwn, since it is the length of a telescope. *)
     (a, c, ac) Raw.Namevec.t ->
-    (b, c, bc) Telescope.t ->
+    (mode, b, c, bc) Telescope.t ->
     (e, c, n, ec) Tbwd.snocs ->
     (mode, ac, ec) Ctx.t
     * (mode, n, bc) env

@@ -10,19 +10,22 @@ open Origin
 
 (* The global environment of constants and definition-local metavariables. *)
 
+(* Safe coercion for phantom 'mode parameter *)
+let coerce_mode : 'a -> 'b = Obj.magic
+
 (* Each global constant either is an axiom or has a definition (a case tree).  The latter includes canonical types.  *)
 type definition =
-  [ `Axiom | `Defined of (unit, emp, potential) term ]
+  [ `Axiom | `Defined of (Fibrancy.mode, emp, potential) term ]
   (* A parametric constant can have external degeneracies applied to it, while a nonparametric one can't.  A maybe-parametric one is one currently being typechecked which hasn't yet been concluded to be nonparametric. *)
   * [ `Parametric | `Nonparametric | `Maybe_parametric ]
 
 (* The versioned global table of defined constants. *)
-let constants : ((unit, emp, kinetic) term * definition, Code.t) Result.t Constant.Table.t =
+let constants : ((Fibrancy.mode, emp, kinetic) term * definition, Code.t) Result.t Constant.Table.t =
   Constant.Table.make ()
 
 (* Global metavariables have only a definition (or an error indicating that they can't be correctly accessed, such as if typechecking failed earlier). *)
 module Metatable = Meta.Table.Make (struct
-  type ('x, 'mode, 'a, 'b, 's) t = (('a, 'b, 's) Metadef.t, Code.t) Result.t
+  type ('x, 'mode, 'a, 'b, 's) t = (('mode, 'a, 'b, 's) Metadef.t, Code.t) Result.t
 end)
 
 module Holetable = Meta.Table.Make (struct
@@ -43,7 +46,7 @@ let find c =
 (* Similarly, look up a metavariable. *)
 let find_meta m =
   match Metatable.find_opt m metas with
-  | Some (Found (Ok d)) -> d
+  | Some (Found (Ok d)) -> coerce_mode d
   | Some (Found (Error e)) -> fatal e
   | None -> fatal (Anomaly ("undefined metavariable: " ^ Meta.name m))
 
@@ -52,8 +55,8 @@ type find_hole =
   | Found_hole : {
       meta : ('a, 'b, 's) Meta.t;
       instant : Instant.t;
-      termctx : ('a, 'b) termctx;
-      ty : ('b, kinetic) term;
+      termctx : ('mode, 'a, 'b) termctx;
+      ty : ('mode, 'b, kinetic) term;
       status : ('mode, 'b, 's) Status.status;
       vars : (string option, 'a) Bwv.t;
       li : No.interval;
@@ -63,9 +66,9 @@ type find_hole =
       -> find_hole
 
 (* Subroutine for returning those data. *)
-let return_hole : type a b s.
+let return_hole : type mode a b s.
     (a, b, s) Meta.t ->
-    ((a, b, s) Metadef.t, Code.t) Result.t ->
+    ((mode, a, b, s) Metadef.t, Code.t) Result.t ->
     (unit, a, b, s) Holetable.found option ->
     find_hole option =
  fun meta def hole ->
@@ -73,7 +76,7 @@ let return_hole : type a b s.
   | Ok { tm = `Undefined; termctx; ty; _ }, Some (Found { status; vars; li; ri; parametric }) -> (
       match Meta.origin meta with
       | Instant instant ->
-          Some (Found_hole { meta; instant; termctx; ty; status; vars; li; ri; parametric })
+          Some (Found_hole { meta; instant; termctx; ty; status = coerce_mode status; vars; li; ri; parametric })
       | _ -> fatal (Anomaly "timeless hole"))
   | Error e, _ -> fatal e
   | _ -> None
@@ -111,7 +114,7 @@ let link_definition f df =
   | `Defined tm, p -> (`Defined (Link.term f tm), p)
 
 type origin_entry =
-  ((emp, kinetic) term * definition, Code.t) Result.t Constant.Table.origin_entry
+  ((Fibrancy.mode, emp, kinetic) term * definition, Code.t) Result.t Constant.Table.origin_entry
   * unit Metatable.origin_entry
 
 let find_file i = (Constant.Table.find_file i constants, Metatable.find_file i metas)
@@ -140,12 +143,12 @@ let from_istream_origin f chan i =
   (cs, ms)
 
 (* Add a new constant.  Only works on the current origin. *)
-let add c ty df = Constant.Table.add c (Ok (ty, df)) constants
+let add c ty df = Constant.Table.add c (Ok (coerce_mode ty, coerce_mode df)) constants
 
 (* Set the definition of an already-defined constant.  Only works on the current origin. *)
 let set c df =
   match Constant.Table.find_opt c constants with
-  | Some (Ok (ty, _)) -> Constant.Table.add c (Ok (ty, df)) constants
+  | Some (Ok (ty, _)) -> Constant.Table.add c (Ok (ty, coerce_mode df)) constants
   | _ -> fatal (Anomaly "Global.set: constant not defined")
 
 (* Add a new constant, but make it an error to access it. *)
@@ -153,13 +156,13 @@ let add_error c e = Constant.Table.add c (Error e) constants
 
 (* Add a new Global metavariable (e.g. local let-definition) to the new metas associated to the current command. *)
 let add_meta m ~termctx ~ty ~tm ~energy =
-  let tm = (tm :> [ `Defined of ('b, 's) term | `Axiom | `Undefined ]) in
+  let tm = (tm :> [ `Defined of ('mode, 'b, 's) term | `Axiom | `Undefined ]) in
   Metatable.add m (Ok { tm; termctx; ty; energy }) metas
 
 (* Set the definition of a Global metavariable, required to already exist but not be defined. *)
 let set_meta m ~tm =
   match Metatable.find_opt m metas with
-  | Some (Found (Ok d)) -> Metatable.add m (Ok { d with tm = `Defined tm }) metas
+  | Some (Found (Ok d)) -> Metatable.add m (Ok { (coerce_mode d) with tm = `Defined tm }) metas
   | _ -> fatal (Anomaly "Global.set_meta: metavariable not defined")
 
 (* Count all the unsolved holes, from all origins. *)
@@ -333,7 +336,7 @@ let with_definition c df f =
         match d.parametric with
         | `Nonparametric -> `Nonparametric
         | `Must_be_parametric | `Maybe_parametric -> `Maybe_parametric in
-      Constant.Table.add c (Ok (ty, (df, p))) constants;
+      Constant.Table.add c (Ok (ty, (coerce_mode df, p))) constants;
       Fun.protect ~finally:(fun () -> Constant.Table.add c old constants) f
   | Some (Error _ as old) ->
       (* If the constant is currently unusable, we just retain that state. *)
@@ -344,7 +347,7 @@ let with_definition c df f =
 let with_meta_definition m tm f =
   match Metatable.find_opt m metas with
   | Some (Found (Ok olddf as old)) ->
-      Metatable.add m (Ok (Metadef.define tm olddf)) metas;
+      Metatable.add m (Ok (Metadef.define tm (coerce_mode olddf))) metas;
       Fun.protect ~finally:(fun () -> Metatable.add m old metas) f
   | Some (Found (Error _ as old)) ->
       (* If the metavariable is currently unusable, we just retain that state. *)

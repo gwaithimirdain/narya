@@ -229,4 +229,4 @@ let uniquify_vars : type a.
   let vars, used = go vars used in
   (vars, { ctx = Emp; used })
 
-type named_term = Named : 'a t * ('a, kinetic) term -> named_term
+type named_term = Named : 'a t * (_, 'a, kinetic) term -> named_term
