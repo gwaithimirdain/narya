@@ -430,7 +430,8 @@ module Ordered = struct
     | _ -> None
 
   (* Generate a case tree consisting of a sequence of abstractions corresponding to the (checked) variables in a context.  The context must contain NO LET-BOUND VARIABLES, including field-access variables, since abstracting over them would not be well-defined.  (In general, we couldn't just omit them, because some of the variables in a cube could be bound but not others, and cubes in the context yield cube abstractions.  However, at least when this comment was written, this function was only used for contexts consisting entirely of 0-dimensional cubes without let-bound variables.)  Likewise it must contain NO MODAL LOCKS. *)
-  let rec lam : type mode a b. (mode, a, b) t -> (b, potential) term -> (emp, potential) term =
+  let rec lam : type mode a b.
+      (mode, a, b) t -> (mode, b, potential) term -> (mode, emp, potential) term =
    fun ctx tree ->
     match ctx with
     | Emp _ -> tree

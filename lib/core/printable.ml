@@ -11,10 +11,10 @@ let phead : 'mode head -> printable = function
 
 type printable +=
   | PLevel : level -> printable
-  | PTerm : ('mode, 'a, 'b) Ctx.t * ('b, 's) term -> printable
+  | PTerm : ('mode, 'a, 'b) Ctx.t * ('mode, 'b, 's) term -> printable
   | PVal : ('mode, 'a, 'b) Ctx.t * ('mode, kinetic) value -> printable
   | PNormal : ('mode, 'a, 'b) Ctx.t * 'mode normal -> printable
   | (* When printing a hole we use a termctx, since that's what we store anyway, and we would also have to read back a value context anyway in order to unparse it. *)
       PHole :
-      Origin.t * (string option, 'a) Bwv.t * ('a, 'b) termctx * ('b, kinetic) term
+      Origin.t * (string option, 'a) Bwv.t * ('mode, 'a, 'b) termctx * ('mode, 'b, kinetic) term
       -> printable

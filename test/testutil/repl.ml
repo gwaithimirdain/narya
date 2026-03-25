@@ -20,11 +20,11 @@ let parse_term (tm : string) : N.zero check located =
   let (Wrap tm) = Parse.Term.final p in
   Postprocess.process Emp tm
 
-let check_type (rty : N.zero check located) : (emp, kinetic) term =
+let check_type (rty : N.zero check located) : (_, emp, kinetic) term =
   Reporter.trace "when checking type" @@ fun () ->
   check (Kinetic `Nolet) (Ctx.empty ()) rty (universe D.zero)
 
-let check_term (rtm : N.zero check located) (ety : (_, kinetic) value) : (emp, kinetic) term =
+let check_term (rtm : N.zero check located) (ety : (_, kinetic) value) : (_, emp, kinetic) term =
   Reporter.trace "when checking term" @@ fun () -> check (Kinetic `Nolet) (Ctx.empty ()) rtm ety
 
 let assume (name : string) (ty : string) : unit =

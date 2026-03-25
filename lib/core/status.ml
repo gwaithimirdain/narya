@@ -24,14 +24,14 @@ type (_, _, _) status =
   | Potential :
       ('mode, 'a) potential_head
       * ('mode, 'any) apps
-      * (('b, potential) term -> ('a, potential) term)
+      * (('mode, 'b, potential) term -> ('mode, 'a, potential) term)
       -> ('mode, 'b, potential) status
 
 let energy : type mode b s. (mode, b, s) status -> s energy = function
   | Kinetic _ -> Kinetic
   | Potential _ -> Potential
 
-let realize : type mode b s. (mode, b, s) status -> (b, kinetic) term -> (b, s) term =
+let realize : type mode b s. (mode, b, s) status -> (mode, b, kinetic) term -> (mode, b, s) term =
  fun status tm ->
   match status with
   | Potential _ -> Realize tm

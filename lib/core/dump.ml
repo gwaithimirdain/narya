@@ -17,8 +17,8 @@ type printable +=
   | DeepVal : ('mode, 's) value * int -> printable
   | Head : 'mode head -> printable
   | Binder : ('mode, 'b, 's) binder -> printable
-  | Term : ('b, 's) term -> printable
-  | Tel : ('a, 'b, 'ab) Telescope.t -> printable
+  | Term : ('mode, 'b, 's) term -> printable
+  | Tel : ('mode, 'a, 'b, 'ab) Telescope.t -> printable
   | Env : ('n, 'b) Value.env -> printable
   | DeepEnv : ('n, 'b) Value.env * int -> printable
   | Check : 'a check -> printable
@@ -222,7 +222,7 @@ module F = struct
 
   and env : type b n. formatter -> (n, b) Value.env -> unit = fun ppf e -> denv 0 ppf e
 
-  and term : type b s. formatter -> (b, s) term -> unit =
+  and term : type mode b s. formatter -> (mode, b, s) term -> unit =
    fun ppf tm ->
     match tm with
     | Var (Index (x, fa)) -> fprintf ppf "IVar %d.%s" (Tbwd.int_of_insert x) (string_of_sface fa)
@@ -237,7 +237,9 @@ module F = struct
     | Pi (x, doms, cods) ->
         fprintf ppf "Pi^(%a) (%s, %a, (... %a))" dim (CubeOf.dim doms)
           (Option.value (top_variable x) ~default:"_")
-          (cubeof term) doms term (CodCube.find_top cods)
+          (cubeof term) doms term
+          (let (Cod t) = CodCube.find_top cods in
+           t)
     | App (fn, arg) -> fprintf ppf "App (%a, %a)" term fn (cubeof term) arg
     | Lam (x, body) -> fprintf ppf "Lam^(%s) (?, %a)" (string_of_dim (dim_variables x)) term body
     | Constr (c, _, _) -> fprintf ppf "Constr (%s, ?, ?)" (Constr.to_string c)
@@ -252,7 +254,7 @@ module F = struct
     | Shift (n, _, tm) -> fprintf ppf "Shift (%s, %a)" (string_of_dim n) term tm
     | Weaken tm -> fprintf ppf "Weaken (%a)" term tm
 
-  and canonical : type b. formatter -> b canonical -> unit =
+  and canonical : type mode b. formatter -> (mode, b) canonical -> unit =
    fun ppf c ->
     match c with
     | Data { indices; constrs; discrete = _ } ->
@@ -271,10 +273,10 @@ module F = struct
                 (fun (CodatafieldAbwd.Entry (f, _)) -> Field.to_string f)
                 fields))
 
-  and dataconstr : type p i. formatter -> (p, i) Term.dataconstr -> unit =
+  and dataconstr : type mode p i. formatter -> (mode, p, i) Term.dataconstr -> unit =
    fun ppf (Dataconstr { args; indices = _ }) -> fprintf ppf "%a : ?" tel args
 
-  and tel : type a b ab. formatter -> (a, b, ab) Term.tel -> unit =
+  and tel : type mode a b ab. formatter -> (mode, a, b, ab) Term.tel -> unit =
    fun ppf -> function
     | Emp -> ()
     | Ext (x, ty, rest) ->

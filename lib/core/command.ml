@@ -11,6 +11,8 @@ open Readback
 open Reporter
 open Asai.Range
 
+let coerce_mode : type a b. (a, 'x, 'y) term -> (b, 'x, 'y) term = Obj.magic
+
 (* A mutual "def" command can contain multiple constant definitions, each one checking or synthesizing.  *)
 type defconst =
   | Def_check : {
@@ -38,8 +40,8 @@ type defined_const =
   | Defined_check : {
       const : Constant.t;
       bplus : (N.zero, 'c, 'ac) Fwn.bplus;
-      params : (emp, 'c, 'bc) Telescope.t;
-      ty : ('bc, kinetic) term;
+      params : ('mode, emp, 'c, 'bc) Telescope.t;
+      ty : ('mode, 'bc, kinetic) term;
       tm : 'ac check located Lazy.t;
     }
       -> defined_const
@@ -53,7 +55,7 @@ type defined_const =
 
 (* Given such a thing, we can proceed to check or synthesize the term, producing the type and defined value for the constant, and then define it.  This function returns the constant name as well as the checked term.  *)
 let check_term (def : defined_const) (discrete : unit Constant.Map.t option) :
-    Constant.t * (emp, potential) term =
+    Constant.t * (_, emp, potential) term =
   match def with
   | Defined_check { const; bplus; params; ty; tm } ->
       (* It's essential that we evaluate the type at this point, rather than sooner, so that the evaluation uses the *definitions* of previous constants in the mutual block and not just their types.  For the same reason, we need to re-evaluate the telescope of parameters. *)
@@ -64,8 +66,8 @@ let check_term (def : defined_const) (discrete : unit Constant.Map.t option) :
           (check ?discrete
              (Potential (Constant (const, D.zero), Ctx.apps ctx, Ctx.lam ctx))
              ctx (Lazy.force tm) ety) in
-      Global.set const (`Defined tm, `Maybe_parametric);
-      (const, tm)
+      Global.set const (`Defined (coerce_mode tm), `Maybe_parametric);
+      (const, coerce_mode tm)
   | Defined_synth { const; params; tm } ->
       let Checked_tel (cparams, ctx), _ = check_tel (Ctx.empty ()) params in
       let ctm, ety =
@@ -73,8 +75,8 @@ let check_term (def : defined_const) (discrete : unit Constant.Map.t option) :
       let cty = readback_val ctx ety in
       let ty = Telescope.pis cparams cty in
       let tm = Ctx.lam ctx ctm in
-      Global.add const ty (`Defined tm, `Maybe_parametric);
-      (const, tm)
+      Global.add const (coerce_mode ty) (`Defined (coerce_mode tm), `Maybe_parametric);
+      (const, coerce_mode tm)
 
 (* Iterate through a collection of such things checking them all, and then verify whether they are all potentially-discrete datatypes.  If so, redefine them all to be actually discrete (`Yes instead of `Maybe).  Returns a list of constant names to print, and whether they are discrete. *)
 let check_terms (defs : defined_const list) (discrete : unit Constant.Map.t option) :

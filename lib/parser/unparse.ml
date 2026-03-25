@@ -15,6 +15,15 @@ open Range
 open Readback
 module StringMap = Map.Make (String)
 
+let coerce_mode : type a b. (a, 'x, 'y) term -> (b, 'x, 'y) term = Obj.magic
+
+(* Extract the top codomain term from a CodCube, erasing the mode parameter.
+   CodFam packs mode * a, so we use Obj.magic to extract the term with the
+   actual context type. *)
+let cod_top (type n a) (cods : (n, _ * a) CodCube.t) : (_, (a, n) snoc, kinetic) term =
+  let (CodFam.Cod t) = CodCube.find_top cods in
+  Obj.magic t
+
 let mktok (tok : Token.t) = Token (tok, ([], None))
 let wstok (tok : Token.t) = Either.Left (tok, ([], None))
 let sstok (tok : Token.t) (ss : string) = Either.Right ((tok, ([], None)), [ (unlocated ss, []) ])
@@ -175,7 +184,7 @@ let rec unparse_abs : type li ls ri rs.
       unlocated (App { fn; arg; left_ok; right_ok })
 
 let rec get_list : type n.
-    (n, kinetic) term -> (n, kinetic) term Bwd.t -> (n, kinetic) term Bwd.t option =
+    (_, n, kinetic) term -> (_, n, kinetic) term Bwd.t -> (_, n, kinetic) term Bwd.t option =
  fun tm elts ->
   match tm with
   | Term.Constr (c, _, []) when c = Constr.intern "nil" -> Some elts
@@ -184,7 +193,7 @@ let rec get_list : type n.
   | _ -> None
 
 let rec get_bwd : type n.
-    (n, kinetic) term -> (n, kinetic) term list -> (n, kinetic) term Bwd.t option =
+    (_, n, kinetic) term -> (_, n, kinetic) term list -> (_, n, kinetic) term Bwd.t option =
  fun tm elts ->
   match tm with
   | Term.Constr (c, _, []) when c = Constr.intern "emp" -> Some (Bwd.of_list elts)
@@ -192,7 +201,7 @@ let rec get_bwd : type n.
       get_bwd (CubeOf.find_top rdc) (CubeOf.find_top rac :: elts)
   | _ -> None
 
-let rec synths : type n. (n, kinetic) term -> bool = function
+let rec synths : type n. (_, n, kinetic) term -> bool = function
   | Var _ | Const _
   | Meta (_, _)
   | MetaEnv (_, _)
@@ -221,17 +230,17 @@ let show_ins : type nk n k. (nk, n, k) insertion -> int list =
   | _ -> ints_of_ins ins
 
 (* Given a term, extract its head and arguments as an application spine.  If the spine contains a field projection, stop there and return only the arguments after it, noting the field name and what it is applied to (which itself be another spine). *)
-let rec get_spine : type n.
-    (n, kinetic) term ->
-    [ `App of (n, kinetic) term * ((n, kinetic) term * [ `Implicit | `Explicit ]) Bwd.t
+let rec get_spine : type mode n.
+    (mode, n, kinetic) term ->
+    [ `App of (mode, n, kinetic) term * ((mode, n, kinetic) term * [ `Implicit | `Explicit ]) Bwd.t
     | `Field of
-      (n, kinetic) term * string * int list * ((n, kinetic) term * [ `Implicit | `Explicit ]) Bwd.t
+      (mode, n, kinetic) term * string * int list * ((mode, n, kinetic) term * [ `Implicit | `Explicit ]) Bwd.t
     ] =
  fun tm ->
   match tm with
   | App (fn, arg) -> (
       let module M = CubeOf.Monadic (Monad.State (struct
-        type t = ((n, kinetic) term * [ `Implicit | `Explicit ]) Bwd.t
+        type t = ((mode, n, kinetic) term * [ `Implicit | `Explicit ]) Bwd.t
       end)) in
       (* To append the entries in a cube to a Bwd, we iterate through it with a Bwd state. *)
       let append_bwd args =
@@ -261,7 +270,7 @@ let rec get_spine : type n.
 (* The primary unparsing function.  Given the variable names, unparse a term into given tightness intervals. *)
 let rec unparse : type n lt ls rt rs s.
     n Names.t ->
-    (n, s) term ->
+    (_, n, s) term ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
@@ -336,7 +345,7 @@ let rec unparse : type n lt ls rt rs s.
         | Eq -> `Normal
         | Neq -> `Cube in
       unparse_lam cube vars Emp tm li ri
-  | Struct (type m et) ({ eta = Eta; fields; dim = _; energy = _ } : (m, n, s, et) struct_args) ->
+  | Struct (type m et) ({ eta = Eta; fields; dim = _; energy = _ } : (_, m, n, s, et) struct_args) ->
       unlocated
         (outfix ~notn:Postprocess.parens
            ~inner:
@@ -347,7 +356,7 @@ let rec unparse : type n lt ls rt rs s.
                        (fun acc
                             (Term.StructfieldAbwd.Entry
                                (type i)
-                               ((fld, structfield) : i Field.t * (i, m * n * s * et) Structfield.t))
+                               ((fld, structfield) : i Field.t * (i, _ * m * n * s * et) Structfield.t))
                           ->
                          let (Lower (fldtm, lbl)) = structfield in
                          let fldtm = unparse vars fldtm No.Interval.entire No.Interval.entire in
@@ -389,13 +398,14 @@ let rec unparse : type n lt ls rt rs s.
   | Weaken tm -> unparse (Names.remove vars Now) tm li ri
 
 (* The master unparsing function can easily be delayed. *)
-and make_unparser : type n. n Names.t -> (n, kinetic) term -> unparser =
+and make_unparser : type n. n Names.t -> (_, n, kinetic) term -> unparser =
  fun vars tm -> { unparse = (fun li ri -> unparse vars tm li ri) }
 
 (* A version that wraps implicit arguments in braces. *)
 and make_unparser_implicit : type n.
-    n Names.t -> (n, kinetic) term * [ `Implicit | `Explicit ] -> unparser =
+    n Names.t -> (_, n, kinetic) term * [ `Implicit | `Explicit ] -> unparser =
  fun vars (tm, i) ->
+  let tm = coerce_mode tm in
   match i with
   | `Explicit -> { unparse = (fun li ri -> unparse vars tm li ri) }
   | `Implicit ->
@@ -409,9 +419,9 @@ and make_unparser_implicit : type n.
 (* Unparse a spine with its arguments whose head could be many things: an as-yet-not-unparsed term, a constructor, a field projection, a degeneracy, or a general delayed unparsing. *)
 and unparse_spine : type n lt ls rt rs.
     n Names.t ->
-    [ `Term of (n, kinetic) term
+    [ `Term of (_, n, kinetic) term
     | `Constr of Constr.t
-    | `Field of (n, kinetic) term * string * int list
+    | `Field of (_, n, kinetic) term * string * int list
     | `Degen of string
     | `Unparser of unparser ] ->
     unparser Bwd.t ->
@@ -465,7 +475,7 @@ and unparse_spine : type n lt ls rt rs.
 
 and unparse_field : type n lt ls rt rs.
     n Names.t ->
-    (n, kinetic) term ->
+    (_, n, kinetic) term ->
     string ->
     int list ->
     (lt, ls) No.iinterval ->
@@ -488,7 +498,7 @@ and unparse_field : type n lt ls rt rs.
           parenthesize (unlocated (App { fn; arg; left_ok; right_ok })))
 
 and unparse_field_var : type n lt ls rt rs.
-    n Names.t -> (n, kinetic) term -> string -> (lt, ls, rt, rs) parse located option =
+    n Names.t -> (_, n, kinetic) term -> string -> (lt, ls, rt, rs) parse located option =
  fun vars tm fld ->
   match tm with
   | Var x -> (
@@ -508,7 +518,7 @@ and unparse_lam : type n lt ls rt rs s.
     [ `Cube | `Normal ] ->
     n Names.t ->
     (string option * [ `Explicit | `Implicit ]) Bwd.t ->
-    (n, s) term ->
+    (_, n, s) term ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
@@ -544,7 +554,7 @@ and unparse_lam_done : type n lt ls rt rs s.
     [ `Cube | `Normal ] ->
     n Names.t ->
     (string option * [ `Explicit | `Implicit ]) Bwd.t ->
-    (n, s) term ->
+    (_, n, s) term ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
@@ -571,7 +581,7 @@ and unparse_lam_done : type n lt ls rt rs s.
         (unlocated (infix ~notn ~first ~inner:(Single (wstok mapsto)) ~last ~left_ok ~right_ok))
 
 (* If a term is a natural number numeral (a bunch of 'suc' constructors applied to a 'zero' constructor), unparse it as that numeral; otherwise return None. *)
-and unparse_numeral : type n. (n, kinetic) term -> unparser option =
+and unparse_numeral : type n. (_, n, kinetic) term -> unparser option =
  fun tm ->
   (* As in parsing, it would be better not to hardcode these constructor names. *)
   let zero = Constr.intern "zero" in
@@ -615,9 +625,9 @@ and unparse_act : type n lt ls rt rs a b.
 and unparse_inst : type n n' lt ls rt rs m k mk.
     (* We allow the type and its instantiation arguments to be in different contexts, for use in unparse_higher_pi. *)
     n Names.t ->
-    (n, kinetic) term ->
+    (_, n, kinetic) term ->
     n' Names.t ->
-    (m, k, mk, (n', kinetic) term) TubeOf.t ->
+    (m, k, mk, (_, n', kinetic) term) TubeOf.t ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
@@ -629,6 +639,7 @@ and unparse_inst : type n n' lt ls rt rs m k mk.
       | Eq ->
           let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (TubeOf.inst tyargs)) in
           let tyargs = TubeOf.mmap { map = (fun _ [ x ] -> Names.Named (argvars, x)) } [ tyargs ] in
+          let doms : (_, (_, n, kinetic) term) CubeOf.t = Obj.magic doms in
           unparse_higher_pi vars Emp x doms cods tyargs li ri
       | Neq ->
           fatal (Dimension_mismatch ("unparsing higher pi", TubeOf.inst tyargs, CubeOf.dim doms)))
@@ -638,7 +649,7 @@ and unparse_inst : type n n' lt ls rt rs m k mk.
 
 and unparse_named_inst : type n lt ls rt rs m k mk.
     n Names.t ->
-    (n, kinetic) term ->
+    (_, n, kinetic) term ->
     (m, k, mk, Names.named_term) TubeOf.t ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
@@ -653,6 +664,7 @@ and unparse_named_inst : type n lt ls rt rs m k mk.
       {
         it =
           (fun fa [ Names.Named (xvars, x) ] s ->
+            let x = coerce_mode x in
             (* We include the argument explicitly if it is codimension-1. *)
             match is_codim1 fa with
             | Some () -> ((), Snoc (s, make_unparser_implicit xvars (x, `Explicit)))
@@ -682,7 +694,7 @@ and unparse_pis : type n lt ls rt rs.
     (No.strict opn, No.zero, No.nonstrict opn) notation ->
     n Names.t ->
     unparser Bwd.t ->
-    (n, kinetic) term ->
+    (_, n, kinetic) term ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
@@ -707,7 +719,7 @@ and unparse_pis : type n lt ls rt rs.
                              (unparse vars (CubeOf.find_top doms) (interval_right asc)
                                 No.Interval.entire));
                      } ))
-                (CodCube.find_top cods) li ri
+                (cod_top cods) li ri
           | None ->
               (* non-dependent pi-type *)
               let _, newvars = Names.add vars (singleton_variables (CubeOf.dim doms) None) in
@@ -721,7 +733,7 @@ and unparse_pis : type n lt ls rt rs.
                     (fun li ri ->
                       unparse_arrow dim notn
                         (make_unparser vars (CubeOf.find_top doms))
-                        (make_unparser newvars (CodCube.find_top cods))
+                        (make_unparser newvars (cod_top cods))
                         li ri);
                 }
                 li ri)
@@ -800,8 +812,8 @@ and unparse_higher_pi : type a lt ls rt rs n.
     a Names.t ->
     unparser Bwd.t ->
     n variables ->
-    (n, (a, kinetic) term) CubeOf.t ->
-    (n, a) CodCube.t ->
+    (n, (_, a, kinetic) term) CubeOf.t ->
+    (n, _ * a) CodCube.t ->
     (D.zero, n, n, Names.named_term) TubeOf.t ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
@@ -851,11 +863,12 @@ and unparse_higher_pi : type a lt ls rt rs n.
           Named (lamvars, App (Weaken nonlam, lamargs)) in
     TubeOf.mmap { map = (fun s [ lam ] -> map s lam) } [ tyargs ] in
   (* We only need the top codomain. *)
-  match CodCube.find_top cods with
+  match cod_top cods with
   | Pi (newxs, newdoms, newcods) -> (
       (* If it's another pi-type, it must be of the same dimension since it is an (uninstantiated!) n-dimensional type, and we continue recursively. *)
       match D.compare (CubeOf.dim newdoms) n with
-      | Eq -> unparse_higher_pi newvars accum newxs newdoms newcods tyargs li ri
+      | Eq ->
+          unparse_higher_pi newvars accum newxs newdoms newcods tyargs li ri
       | Neq -> fatal (Dimension_mismatch ("unparse_higher_pi recursion", CubeOf.dim newdoms, n)))
   (* It might also be a *partially* instantiated *higher* dimensional pi-type, in which case we combine the instantiation arguments to make it fully instantiated.  We don't continue accumulating domains as in the previous case, though, because in this case the codomain has different dimension, and hence needs its own arrow. *)
   | Inst (Pi (newxs, newdoms, newcods), newtyargs) -> (
@@ -891,7 +904,7 @@ let rec unparse_ctx : type a b.
     emp Names.t ->
     [ `Locked | `Unlocked ] ->
     (string * [ `Original | `Renamed ], a) Bwv.t ->
-    (a, b) ordered_termctx ->
+    (_, a, b) ordered_termctx ->
     b Names.t
     * (string * [ `Original | `Renamed | `Locked ] * wrapped_parse option * wrapped_parse) Bwd.t =
  fun names lock vars ctx ->
@@ -914,7 +927,7 @@ let rec unparse_ctx : type a b.
       | Invis bindings ->
           (* We treat an invisible binding as consisting of all nameless variables, and autogenerate names for them all. *)
           let x, names = Names.add names (singleton_variables (CubeOf.dim bindings) None) in
-          let do_binding (b : b binding) (res : S.t) : unit * S.t =
+          let do_binding (b : (_, b) binding) (res : S.t) : unit * S.t =
             let ty = Wrap (unparse names b.ty No.Interval.entire No.Interval.entire) in
             let tm =
               Option.map
@@ -951,7 +964,7 @@ let rec unparse_ctx : type a b.
             Bwv.mmap (fun [ (x, _); (f, _, _) ] -> (Field.to_string f, x)) [ fs; fields ] in
           let names = Names.unsafe_add names (Variables (dim, plusdim, xs)) (Bwv.to_bwd fnames) in
           (* Then we iterate forwards through the bindings, unparsing them with these names and adding them to the result. *)
-          let do_binding fab (b : b binding) (res : S.t) : unit * S.t =
+          let do_binding fab (b : (_, b) binding) (res : S.t) : unit * S.t =
             match (hasfields, is_id_sface fab) with
             | Has_fields, Some _ -> ((), res)
             | _ ->

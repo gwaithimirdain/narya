@@ -5,7 +5,7 @@ open Origin
 
 (* When "linking" a pre-compiled file with the current run, we need to walk the unmarshaled terms and replace the old autonumbers of files, from when the file was compiled, with the current ones. *)
 
-let rec term : type a s. (File.t -> File.t) -> (a, s) term -> (a, s) term =
+let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, a, s) term =
  fun f tm ->
   match tm with
   | Var i -> Var i
@@ -19,7 +19,7 @@ let rec term : type a s. (File.t -> File.t) -> (a, s) term -> (a, s) term =
       Pi
         ( x,
           CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ doms ],
-          CodCube.mmap { map = (fun _ [ x ] -> term f x) } [ cods ] )
+          CodCube.mmap { map = (fun _ [ Cod x ] -> Cod (term f x)) } [ cods ] )
   | App (fn, args) -> App (term f fn, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ args ])
   | Constr (c, n, args) ->
       Constr
@@ -48,13 +48,13 @@ let rec term : type a s. (File.t -> File.t) -> (a, s) term -> (a, s) term =
   | Shift (n, plusmap, tm) -> Shift (n, plusmap, term f tm)
   | Weaken tm -> Weaken (term f tm)
 
-and branch : type a n. (File.t -> File.t) -> (a, n) branch -> (a, n) branch =
+and branch : type mode a n. (File.t -> File.t) -> (mode, a, n) branch -> (mode, a, n) branch =
  fun f br ->
   match br with
   | Branch (ab, p, tm) -> Branch (ab, p, term f tm)
   | Refute -> Refute
 
-and canonical : type a. (File.t -> File.t) -> a canonical -> a canonical =
+and canonical : type mode a. (File.t -> File.t) -> (mode, a) canonical -> (mode, a) canonical =
  fun f can ->
   match can with
   | Data { indices; constrs; discrete } ->
@@ -90,10 +90,10 @@ and canonical : type a. (File.t -> File.t) -> a canonical -> a canonical =
           is_glue;
         }
 
-and structfield : type n a s i et.
+and structfield : type mode n a s i et.
     (File.t -> File.t) ->
-    (i, n * a * s * et) Term.Structfield.t ->
-    (i, n * a * s * et) Term.Structfield.t =
+    (i, mode * n * a * s * et) Term.Structfield.t ->
+    (i, mode * n * a * s * et) Term.Structfield.t =
  fun f fld ->
   match fld with
   | Lower (x, l) -> Lower (term f x, l)
@@ -110,18 +110,18 @@ and structfield : type n a s i et.
            [ m ])
   | LazyHigher _ -> Reporter.fatal (Anomaly "lazy higher field can't be linked")
 
-and codatafield : type a n i et.
-    (File.t -> File.t) -> (i, a * n * et) Codatafield.t -> (i, a * n * et) Codatafield.t =
+and codatafield : type mode a n i et.
+    (File.t -> File.t) -> (i, mode * a * n * et) Codatafield.t -> (i, mode * a * n * et) Codatafield.t =
  fun f fld ->
   match fld with
   | Lower tm -> Lower (term f tm)
   | Higher (ka, tm) -> Higher (ka, term f tm)
 
-and dataconstr : type p i. (File.t -> File.t) -> (p, i) dataconstr -> (p, i) dataconstr =
+and dataconstr : type mode p i. (File.t -> File.t) -> (mode, p, i) dataconstr -> (mode, p, i) dataconstr =
  fun f (Dataconstr { args; indices }) ->
   Dataconstr { args = tel f args; indices = Vec.mmap (fun [ x ] -> term f x) [ indices ] }
 
-and tel : type a b ab. (File.t -> File.t) -> (a, b, ab) tel -> (a, b, ab) tel =
+and tel : type mode a b ab. (File.t -> File.t) -> (mode, a, b, ab) tel -> (mode, a, b, ab) tel =
  fun f t ->
   match t with
   | Emp -> Emp
@@ -133,7 +133,7 @@ and env : type a n b. (File.t -> File.t) -> (a, n, b) env -> (a, n, b) env =
   | Emp n -> Emp n
   | Ext (e, nk, xs) -> Ext (env f e, nk, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ xs ])
 
-and entry : type b f mn. (File.t -> File.t) -> (b, f, mn) entry -> (b, f, mn) entry =
+and entry : type mode b f mn. (File.t -> File.t) -> (mode, b, f, mn) entry -> (mode, b, f, mn) entry =
  fun f e ->
   match e with
   | Vis v ->
@@ -141,7 +141,7 @@ and entry : type b f mn. (File.t -> File.t) -> (b, f, mn) entry -> (b, f, mn) en
         CubeOf.mmap
           {
             map =
-              (fun _ [ (b : (b, mn) Tbwd.snoc binding) ] : (b, mn) Tbwd.snoc binding ->
+              (fun _ [ (b : (mode, (b, mn) Tbwd.snoc) binding) ] : (mode, (b, mn) Tbwd.snoc) binding ->
                 { ty = term f b.ty; tm = Option.map (term f) b.tm });
           }
           [ v.bindings ] in
@@ -151,24 +151,24 @@ and entry : type b f mn. (File.t -> File.t) -> (b, f, mn) entry -> (b, f, mn) en
         CubeOf.mmap
           {
             map =
-              (fun _ [ (b : (b, mn) Tbwd.snoc binding) ] : (b, mn) Tbwd.snoc binding ->
+              (fun _ [ (b : (mode, (b, mn) Tbwd.snoc) binding) ] : (mode, (b, mn) Tbwd.snoc) binding ->
                 { ty = term f b.ty; tm = Option.map (term f) b.tm });
           }
           [ bindings ] in
       Invis bindings
 
-and termctx_ordered : type a b.
-    (File.t -> File.t) -> (a, b) ordered_termctx -> (a, b) ordered_termctx =
+and termctx_ordered : type mode a b.
+    (File.t -> File.t) -> (mode, a, b) ordered_termctx -> (mode, a, b) ordered_termctx =
  fun f ctx ->
   match ctx with
   | Emp -> Emp
   | Ext (ctx, e, ax) -> Ext (termctx_ordered f ctx, entry f e, ax)
   | Lock ctx -> Lock (termctx_ordered f ctx)
 
-and termctx : type a b. (File.t -> File.t) -> (a, b) termctx -> (a, b) termctx =
+and termctx : type mode a b. (File.t -> File.t) -> (mode, a, b) termctx -> (mode, a, b) termctx =
  fun f (Permute (p, ctx)) -> Permute (p, termctx_ordered f ctx)
 
-let metadef : type x y z. (File.t -> File.t) -> (x, y, z) Metadef.t -> (x, y, z) Metadef.t =
+let metadef : type mode x y z. (File.t -> File.t) -> (mode, x, y, z) Metadef.t -> (mode, x, y, z) Metadef.t =
  fun f data ->
   let termctx = termctx f data.termctx in
   let ty = term f data.ty in

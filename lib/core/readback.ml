@@ -43,7 +43,7 @@ let rec sort_of_ty : type mode a z.
    2. When reading back a higher-dimensional pi-type, we eta-expand its instantiation arguments so that we can display it prettily.  This is controlled by the flag ~eta. *)
 
 let rec readback_nf : type mode a z.
-    ?eta:bool -> (mode, z, a) Ctx.t -> mode normal -> (a, kinetic) term =
+    ?eta:bool -> (mode, z, a) Ctx.t -> mode normal -> (mode, a, kinetic) term =
  fun ?(eta = false) n x -> readback_at ~eta n x.tm x.ty
 
 and readback_at : type mode a z.
@@ -51,7 +51,7 @@ and readback_at : type mode a z.
     (mode, z, a) Ctx.t ->
     (mode, kinetic) value ->
     (mode, kinetic) value ->
-    (a, kinetic) term =
+    (mode, a, kinetic) term =
  fun ?(eta = false) ctx tm ty ->
   let view = if Displaying.read () then view_term tm else tm in
   let vty = view_type ty "readback_at" in
@@ -98,7 +98,7 @@ and readback_at : type mode a z.
           * (D.zero, mn, mn, mode normal) TubeOf.t),
       _ ) -> (
       match (eta, fields) with
-      | Eta, (fields : (a * n * has_eta) Term.CodatafieldAbwd.t) -> (
+      | Eta, (fields : (mode * a * n * has_eta) Term.CodatafieldAbwd.t) -> (
           let dim = cod_left_ins ins in
           let fldins = ins_zero dim in
           let readback_at_record (tm : (mode, kinetic) value) ty =
@@ -123,7 +123,8 @@ and readback_at : type mode a z.
                   Mbwd.map
                     (fun (CodatafieldAbwd.Entry
                             (type i)
-                            ((fld, Lower _) : i Field.t * (i, a * n * has_eta) Codatafield.t)) ->
+                            ((fld, Lower _) : i Field.t * (i, mode * a * n * has_eta) Codatafield.t))
+                       ->
                       Term.StructfieldAbwd.Entry
                         ( fld,
                           Term.Structfield.Lower
@@ -139,8 +140,8 @@ and readback_at : type mode a z.
                       Mbwd.map
                         (fun (CodatafieldAbwd.Entry
                                 (type i)
-                                ((fld, Lower _) : i Field.t * (i, a * n * has_eta) Codatafield.t))
-                           ->
+                                ((fld, Lower _) :
+                                  i Field.t * (i, mode * a * n * has_eta) Codatafield.t)) ->
                           Term.StructfieldAbwd.Entry
                             ( fld,
                               Term.Structfield.Lower
@@ -195,7 +196,7 @@ and readback_at : type mode a z.
   | _ -> readback_val_sorted ctx tm vty
 
 and readback_val_sorted : type mode a z.
-    (mode, z, a) Ctx.t -> (mode, kinetic) value -> mode View.view_type -> (a, kinetic) term =
+    (mode, z, a) Ctx.t -> (mode, kinetic) value -> mode View.view_type -> (mode, a, kinetic) term =
  fun ctx tm vty ->
   let sort = sort_of_ty ctx vty in
   readback_val ~sort ctx tm
@@ -204,7 +205,7 @@ and readback_val : type mode a z.
     ?sort:[ `Type | `Function | `Other ] ->
     (mode, z, a) Ctx.t ->
     (mode, kinetic) value ->
-    (a, kinetic) term =
+    (mode, a, kinetic) term =
  fun ?(sort = `Other) ctx x ->
   match x with
   | Neu { head; args; value; ty } -> (
@@ -221,7 +222,7 @@ and readback_neu : type mode a z any.
     (mode, z, a) Ctx.t ->
     mode head ->
     (mode, any) apps ->
-    (a, kinetic) term =
+    (mode, a, kinetic) term =
  fun ?(sort = (`Other, `Other)) ctx head apps ->
   match (apps, head) with
   | Emp, _ -> readback_head ~sort ctx head
@@ -250,7 +251,7 @@ and readback_head : type mode c z.
     ?sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] ->
     (mode, z, c) Ctx.t ->
     mode head ->
-    (c, kinetic) term =
+    (mode, c, kinetic) term =
  fun ?(sort = (`Other, `Other)) ctx h ->
   match h with
   | Var { level; deg } -> (
@@ -288,17 +289,18 @@ and readback_head : type mode c z.
                     Ctx.variables_vis ctx modality (sub_variables fa x) (CubeOf.subcube fa newnfs)
                   in
                   let sargs = CubeOf.subcube fa args in
-                  readback_val ~sort:`Type sctx
-                    (apply_binder_term (BindCube.find cods fa) modality sargs));
+                  Cod
+                    (readback_val ~sort:`Type sctx
+                       (apply_binder_term (BindCube.find cods fa) modality sargs)));
             } )
 
 and readback_at_tel : type mode n c a b ab z.
     (mode, z, c) Ctx.t ->
     (n, a) env ->
     (mode, kinetic) value list ->
-    (a, b, ab) Telescope.t ->
+    (mode, a, b, ab) Telescope.t ->
     (D.zero, n, n, (mode, kinetic) value list) TubeOf.t ->
-    (n, (c, kinetic) term) CubeOf.t list =
+    (n, (mode, c, kinetic) term) CubeOf.t list =
  fun ctx env xs tys tyargs ->
   match (xs, tys) with
   | [], Emp -> []
@@ -344,11 +346,11 @@ and readback_at_tel : type mode n c a b ab z.
 
 (* To readback an environment, since readback is type-directed we need the types of *all* the terms in it, which is to say its codomain context.  We store this as a Termctx since we need to evaluate and instantiate the types at the previous terms in the environment as we go. *)
 and readback_env : type mode n a b c d.
-    (mode, a, b) Ctx.t -> (n, d) Value.env -> (c, d) termctx -> (b, n, d) Term.env =
+    (mode, a, b) Ctx.t -> (n, d) Value.env -> (mode, c, d) termctx -> (b, n, d) Term.env =
  fun ctx env (Permute (_, envctx)) -> readback_ordered_env ctx env envctx
 
 and readback_ordered_env : type mode n a b c d.
-    (mode, a, b) Ctx.t -> (n, d) Value.env -> (c, d) ordered_termctx -> (b, n, d) Term.env =
+    (mode, a, b) Ctx.t -> (n, d) Value.env -> (mode, c, d) ordered_termctx -> (b, n, d) Term.env =
  fun ctx env envctx ->
   match envctx with
   | Emp -> Emp (dim_env env)
@@ -394,7 +396,7 @@ and readback_ordered_env : type mode n a b c d.
 let readback_bindings : type mode a b n.
     (mode, a, (b, n) snoc) Ctx.t ->
     (n, mode Binding.t) CubeOf.t ->
-    (n, (b, n) snoc binding) CubeOf.t =
+    (n, (mode, (b, n) snoc) binding) CubeOf.t =
  fun ctx vbs ->
   CubeOf.mmap
     {
@@ -403,7 +405,7 @@ let readback_bindings : type mode a b n.
           match Binding.level b with
           | Some _ ->
               ({ tm = None; ty = readback_val ~sort:`Type ctx (Binding.value b).ty }
-                : (b, n) snoc binding)
+                : (mode, (b, n) snoc) binding)
           | None ->
               {
                 tm = Some (readback_nf ctx (Binding.value b));
@@ -413,7 +415,7 @@ let readback_bindings : type mode a b n.
     [ vbs ]
 
 let readback_entry : type dom modality mode a b f n.
-    (mode, a, (b, n) snoc) Ctx.t -> (dom, modality, mode, f, n) Ctx.entry -> (b, f, n) entry =
+    (mode, a, (b, n) snoc) Ctx.t -> (dom, modality, mode, f, n) Ctx.entry -> (mode, b, f, n) entry =
  fun ctx e ->
   match e with
   | Vis { dim; modality; plusdim; vars; bindings; hasfields; fields; fplus } ->
@@ -430,17 +432,17 @@ let readback_entry : type dom modality mode a b f n.
             (f, x, fldty))
           fields in
       let bindings = readback_bindings lctx bindings in
-      Vis { dim; plusdim; vars; bindings; hasfields; fields; fplus }
+      Vis { dim; plusdim; vars; modality; bindings; hasfields; fields; fplus }
   | Invis (modality, bindings) ->
       let lctx = Ctx.lock ctx modality in
-      Invis (readback_bindings lctx bindings)
+      Invis (modality, readback_bindings lctx bindings)
 
-let rec readback_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> (a, b) ordered_termctx =
-  function
+let rec readback_ordered_ctx : type mode a b.
+    (mode, a, b) Ctx.Ordered.t -> (mode, a, b) ordered_termctx = function
   | Emp _ -> Emp
   | Snoc (rest, e, af) as ctx ->
       Ext (readback_ordered_ctx rest, readback_entry (Ctx.of_ordered ctx) e, af)
   | Lock (ctx, _lock) -> Lock (readback_ordered_ctx ctx)
 
-let readback_ctx : type mode a b. (mode, a, b) Ctx.t -> (a, b) termctx = function
+let readback_ctx : type mode a b. (mode, a, b) Ctx.t -> (mode, a, b) termctx = function
   | Permute { perm; ctx; _ } -> Permute (perm, readback_ordered_ctx ctx)
