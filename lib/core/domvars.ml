@@ -1,5 +1,6 @@
 open Bwd
 open Util
+open Modal
 open Tbwd
 open Dim
 open Term
@@ -42,6 +43,10 @@ let dom_vars : type mode m a b.
 
 (* Extend a context by a finite number of cubes of new visible variables at some dimension, with boundaries, whose types are specified by the evaluation of some telescope in some (possibly higher-dimensional) environment (and hence may depend on the earlier ones).  Also return the new variables in a list of Cubes, and the new environment extended by the *top-dimensional variables only*. *)
 
+module ModalBindingCube = Modality.Cube (struct
+  type ('mode, 'a, 'b) t = 'mode Ctx.Binding.t
+end)
+
 let rec ext_tel : type mode a b c ac bc e ec n.
     (mode, a, e) Ctx.t ->
     (n, b) env ->
@@ -51,15 +56,16 @@ let rec ext_tel : type mode a b c ac bc e ec n.
     (e, c, n, ec) Tbwd.snocs ->
     (mode, ac, ec) Ctx.t
     * (n, bc) env
-    * (n, (mode, kinetic) value) CubeOf.t list
-    * (n, mode Ctx.Binding.t) CubeOf.t list =
+    * (n, mode, kinetic, unit) ModalValueCube.t list
+    * (n, mode, unit, unit) ModalBindingCube.t list =
  fun ctx env xs tel ec ->
   match (xs, tel, ec) with
   | [], Emp, Zero -> (ctx, env, [], [])
-  | x :: xs, Ext (x', rty, rest), Suc ec ->
+  | x :: xs, Ext (x', modality, rty, rest), Suc ec ->
       let m = dim_env env in
+      let lctx = Ctx.lock ctx modality in
       let newvars, newnfs =
-        dom_vars ctx
+        dom_vars lctx
           (CubeOf.build m { build = (fun fa -> Norm.eval_term (act_env env (op_of_sface fa)) rty) })
       in
       let x =
@@ -72,7 +78,7 @@ let rec ext_tel : type mode a b c ac bc e ec n.
           (Ctx.cube_vis ctx modality x newnfs)
           (Ext (env, D.plus_zero m, Ok newvars))
           xs rest ec in
-      (ctx, env, newvars :: vars, newnfs :: nfs)
+      (ctx, env, Modal (modality, newvars) :: vars, Modal (modality, newnfs) :: nfs)
 
 (* Extract a list of all the variables of a given kind in an iterated pi-type. *)
 let rec get_pi_vars : type mode a b.

@@ -76,8 +76,10 @@ module F = struct
         fprintf ppf "Struct %s (%a)" (string_of_dim n) (fields depth n) f
     | Constr (c, d, args) ->
         fprintf ppf "Constr (%s, %a, (%a))" (Constr.to_string c) dim d
-          (pp_print_list ~pp_sep:(fun ppf () -> pp_print_string ppf ", ") value)
-          (List.map CubeOf.find_top args)
+          (pp_print_list
+             ~pp_sep:(fun ppf () -> pp_print_string ppf ", ")
+             (fun ppf (ModalValueCube.Modal (_, c)) -> value ppf (CubeOf.find_top c)))
+          args
     | Canonical ic -> fprintf ppf "Canonical %a" inst_canonical ic
 
   and value : type mode s. formatter -> (mode, s) value -> unit = fun ppf v -> dvalue 0 ppf v
@@ -234,13 +236,13 @@ module F = struct
           (string_of_dim (dom_ins ins))
     | UU n -> fprintf ppf "UU %a" dim n
     | Inst (tm, args) -> fprintf ppf "Inst (%a, %a)" term tm (tubeof term) args
-    | Pi (x, doms, cods) ->
+    | Pi (x, _modality, doms, cods) ->
         fprintf ppf "Pi^(%a) (%s, %a, (... %a))" dim (CubeOf.dim doms)
           (Option.value (top_variable x) ~default:"_")
           (cubeof term) doms term
           (let (Cod t) = CodCube.find_top cods in
            t)
-    | App (fn, arg) -> fprintf ppf "App (%a, %a)" term fn (cubeof term) arg
+    | App (fn, _modality, arg) -> fprintf ppf "App (%a, %a)" term fn (cubeof term) arg
     | Lam (x, body) -> fprintf ppf "Lam^(%s) (?, %a)" (string_of_dim (dim_variables x)) term body
     | Constr (c, _, _) -> fprintf ppf "Constr (%s, ?, ?)" (Constr.to_string c)
     | Act (tm, s, _) -> fprintf ppf "Act (%a, %s)" term tm (string_of_deg s)
@@ -279,7 +281,7 @@ module F = struct
   and tel : type mode a b ab. formatter -> (mode, a, b, ab) Term.tel -> unit =
    fun ppf -> function
     | Emp -> ()
-    | Ext (x, ty, rest) ->
+    | Ext (x, _modality, ty, rest) ->
         fprintf ppf "(%a : %a)"
           (pp_print_option ~none:(fun ppf () -> pp_print_string ppf "_") pp_print_string)
           x term ty;

@@ -170,11 +170,13 @@ and readback_at : type mode a z.
       | Noeta, _ -> readback_val_sorted ctx tm vty)
   | Canonical (_, Data { constrs; _ }, ins, tyargs), Constr (xconstr, xn, xargs) -> (
       let Eq = eq_of_ins_zero ins in
+      (* Pick out the constructor of the datatype that matches the one we're reading back *)
       let (Dataconstr { env; args = argtys; indices = _ }) =
         Abwd.find_opt xconstr constrs <|> Anomaly "constr not found in readback" in
       match D.compare xn (TubeOf.inst tyargs) with
       | Neq -> fatal (Dimension_mismatch ("reading back constrs", xn, TubeOf.inst tyargs))
       | Eq ->
+          (* If a higher-dimensional constructor belongs to a higher version of a datatype, the instantiation arguments of the latter must be lower-dimensional versions of the same constructor.  We extract their arguments to form the boundaries of the arguments of our current constructor. (or something?) *)
           let tyarg_args =
             TubeOf.mmap
               {
@@ -182,17 +184,15 @@ and readback_at : type mode a z.
                   (fun _ [ tm ] ->
                     match view_term tm.tm with
                     | Constr (tmname, _, tmargs) ->
-                        if tmname = xconstr then List.map (fun a -> CubeOf.find_top a) tmargs
+                        if tmname = xconstr then
+                          List.map
+                            (fun (ModalValueCube.Modal (xmod, x)) -> CubeOf.find_top x)
+                            tmargs
                         else fatal (Anomaly "inst arg wrong constr in readback at datatype")
                     | _ -> fatal (Anomaly "inst arg not constr in readback at datatype"));
               }
               [ tyargs ] in
-          Constr
-            ( xconstr,
-              dim_env env,
-              readback_at_tel ctx env
-                (List.fold_right (fun a args -> CubeOf.find_top a :: args) xargs [])
-                argtys tyarg_args ))
+          Constr (xconstr, dim_env env, readback_at_tel ctx env xargs argtys tyarg_args))
   | _ -> readback_val_sorted ctx tm vty
 
 and readback_val_sorted : type mode a z.
@@ -232,6 +232,7 @@ and readback_neu : type mode a z any.
       Term.Act
         ( App
             ( readback_neu ~sort ctx head apps,
+              modality,
               CubeOf.mmap { map = (fun _ [ tm ] -> readback_nf lctx tm) } [ args ] ),
           p,
           sort )
@@ -280,6 +281,7 @@ and readback_head : type mode c z.
       let args, newnfs = dom_vars lctx doms in
       Pi
         ( x,
+          modality,
           CubeOf.mmap { map = (fun _ [ dom ] -> readback_val ~sort:`Type lctx dom) } [ doms ],
           CodCube.build k
             {
@@ -297,51 +299,56 @@ and readback_head : type mode c z.
 and readback_at_tel : type mode n c a b ab z.
     (mode, z, c) Ctx.t ->
     (n, a) env ->
-    (mode, kinetic) value list ->
+    (n, mode, kinetic, unit) ModalValueCube.t list ->
     (mode, a, b, ab) Telescope.t ->
     (D.zero, n, n, (mode, kinetic) value list) TubeOf.t ->
-    (n, (mode, c, kinetic) term) CubeOf.t list =
+    (n, mode, c, kinetic) ModalTermCube.t list =
  fun ctx env xs tys tyargs ->
   match (xs, tys) with
   | [], Emp -> []
-  | x :: xs, Ext (_, ty, tys) ->
-      let ety = eval_term env ty in
-      (* Copied from check_at_tel; TODO: Factor it out *)
-      let tyargtbl = Hashtbl.create 10 in
-      let [ tyarg; tms; tyargs ] =
-        TubeOf.pmap
-          {
-            map =
-              (fun fa [ tyargs ] ->
-                match tyargs with
-                | [] -> fatal (Anomaly "missing arguments in readback_at_tel")
-                | argtm :: argrest ->
-                    let fa = sface_of_tface fa in
-                    let argty =
-                      inst
-                        (eval_term (act_env env (op_of_sface fa)) ty)
-                        (TubeOf.build D.zero
-                           (D.zero_plus (dom_sface fa))
-                           {
-                             build =
-                               (fun fb ->
-                                 Hashtbl.find tyargtbl
-                                   (SFace_of (comp_sface fa (sface_of_tface fb))));
-                           }) in
-                    let argnorm = { tm = argtm; ty = argty } in
-                    let argtm = readback_at ctx argtm argty in
-                    Hashtbl.add tyargtbl (SFace_of fa) argnorm;
-                    [ argnorm; argtm; argrest ]);
-          }
-          [ tyargs ] (Cons (Cons (Cons Nil))) in
-      let ity = inst ety tyarg in
-      TubeOf.plus_cube tms (CubeOf.singleton (readback_at ctx x ity))
-      :: readback_at_tel ctx
-           (Ext
-              ( env,
-                D.plus_zero (TubeOf.inst tyarg),
-                Ok (TubeOf.plus_cube (val_of_norm_tube tyarg) (CubeOf.singleton x)) ))
-           xs tys tyargs
+  | Modal (xmodality, x) :: xs, Ext (_, tymodality, ty, tys) -> (
+      match Modality.compare xmodality tymodality with
+      | Eq ->
+          let x = CubeOf.find_top x in
+          let ety = eval_term env ty in
+          (* Copied from check_at_tel; TODO: Factor it out *)
+          let tyargtbl = Hashtbl.create 10 in
+          let [ tyarg; tms; tyargs ] =
+            TubeOf.pmap
+              {
+                map =
+                  (fun fa [ tyargs ] ->
+                    match tyargs with
+                    | [] -> fatal (Anomaly "missing arguments in readback_at_tel")
+                    | argtm :: argrest ->
+                        let fa = sface_of_tface fa in
+                        let argty =
+                          inst
+                            (eval_term (act_env env (op_of_sface fa)) ty)
+                            (TubeOf.build D.zero
+                               (D.zero_plus (dom_sface fa))
+                               {
+                                 build =
+                                   (fun fb ->
+                                     Hashtbl.find tyargtbl
+                                       (SFace_of (comp_sface fa (sface_of_tface fb))));
+                               }) in
+                        let argnorm = { tm = argtm; ty = argty } in
+                        let argtm = readback_at ctx argtm argty in
+                        Hashtbl.add tyargtbl (SFace_of fa) argnorm;
+                        [ argnorm; argtm; argrest ]);
+              }
+              [ tyargs ] (Cons (Cons (Cons Nil))) in
+          let ity = inst ety tyarg in
+          let lctx = Ctx.lock ctx xmodality in
+          Modal (xmodality, TubeOf.plus_cube tms (CubeOf.singleton (readback_at lctx x ity)))
+          :: readback_at_tel ctx
+               (Ext
+                  ( env,
+                    D.plus_zero (TubeOf.inst tyarg),
+                    Ok (TubeOf.plus_cube (val_of_norm_tube tyarg) (CubeOf.singleton x)) ))
+               xs tys tyargs
+      | Neq -> fatal (Modality_mismatch ("readback_at_tel", xmodality, tymodality)))
   | _ -> fatal (Anomaly "length mismatch in equal_at_tel")
 
 (* To readback an environment, since readback is type-directed we need the types of *all* the terms in it, which is to say its codomain context.  We store this as a Termctx since we need to evaluate and instantiate the types at the previous terms in the environment as we go. *)
@@ -354,14 +361,14 @@ and readback_ordered_env : type mode n a b c d.
  fun ctx env envctx ->
   match envctx with
   | Emp -> Emp (dim_env env)
-  | Lock envctx -> readback_ordered_env ctx env envctx
+  | Lock (envctx, lock) -> readback_ordered_env ctx env envctx
   | Ext (envctx, entry, _) -> (
       let (Plus mk) = D.plus (dim_entry entry) in
       let (Looked_up { act; op = Op (fc, fd); entry = xs }) =
         lookup_cube env mk Now (id_op (D.plus_out (dim_env env) mk)) in
       let xs = act_cube { act } (CubeOf.subcube fc xs) fd in
       match entry with
-      | Vis { bindings; _ } | Invis bindings ->
+      | Vis { modality; bindings; _ } | Invis (modality, bindings) ->
           let xtytbl = Hashtbl.create 10 in
           let tmxs =
             CubeOf.mmap
@@ -415,7 +422,9 @@ let readback_bindings : type mode a b n.
     [ vbs ]
 
 let readback_entry : type dom modality mode a b f n.
-    (mode, a, (b, n) snoc) Ctx.t -> (dom, modality, mode, f, n) Ctx.entry -> (mode, b, f, n) entry =
+    (mode, a, (b, n) snoc) Ctx.t ->
+    (dom, modality, mode, f, n) Ctx.entry ->
+    (dom, modality, mode, b, f, n) entry =
  fun ctx e ->
   match e with
   | Vis { dim; modality; plusdim; vars; bindings; hasfields; fields; fplus } ->
@@ -442,7 +451,7 @@ let rec readback_ordered_ctx : type mode a b.
   | Emp _ -> Emp
   | Snoc (rest, e, af) as ctx ->
       Ext (readback_ordered_ctx rest, readback_entry (Ctx.of_ordered ctx) e, af)
-  | Lock (ctx, _lock) -> Lock (readback_ordered_ctx ctx)
+  | Lock (ctx, lock) -> Lock (readback_ordered_ctx ctx, lock)
 
 let readback_ctx : type mode a b. (mode, a, b) Ctx.t -> (mode, a, b) termctx = function
   | Permute { perm; ctx; _ } -> Permute (perm, readback_ordered_ctx ctx)

@@ -1,4 +1,4 @@
 (library
   (name modal)
   (public_name narya.modal)
-  (libraries util))
+  (libraries util dim))

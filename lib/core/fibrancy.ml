@@ -37,7 +37,9 @@ let fields : (mode * (emp, D.zero) snoc * D.zero * no_eta) CodatafieldAbwd.t opt
 (* In the case of pi-types, we can literally write the definition in Narya, typecheck it, and insert it here.  That makes it easier to get correct.  Thus, for now we leave this empty; it will be filled in after the parser is loaded. *)
 
 let pi :
-    (mode * D.zero * ((emp, D.zero) snoc, D.zero) snoc * potential * no_eta) StructfieldAbwd.t option ref =
+    (mode * D.zero * ((emp, D.zero) snoc, D.zero) snoc * potential * no_eta) StructfieldAbwd.t
+    option
+    ref =
   ref None
 
 (* Glue types *)
@@ -80,13 +82,15 @@ module Codata = struct
   (* Given the typechecked version of a field, add the corresponding behavior of the fibrancy fields. *)
   let add_field : type mode g n b et.
       (mode, g, n, b, et) t -> (mode * b * g * et) CodatafieldAbwd.entry -> (mode, g, n, b, et) t =
-   fun (Fibrancy (type nh hb) (f : (mode, g, n, nh, b, hb, et) codata_fibrancy)) (Entry (fld, fldty)) ->
+   fun (Fibrancy (type nh hb) (f : (mode, g, n, nh, b, hb, et) codata_fibrancy))
+       (Entry (fld, fldty)) ->
     (* x is the index-zero variable. *)
     let x = Var (Index (Now, id_sface D.zero)) in
     let ins = zero_ins Hott.dim in
     (* Compute terms that project each fibrancy field out of the codatatype and apply it to the index-zero variable 'x'. *)
+    let idm = Sorry.e () in
     let onx : Hott.dim Field.t -> (mode, (hb, D.zero) snoc, kinetic) term =
-     fun trlift -> app (Field (Weaken (Shift (Hott.dim, f.plusmap, f.ty)), trlift, ins)) x in
+     fun trlift -> app (Field (Weaken (Shift (Hott.dim, f.plusmap, f.ty)), trlift, ins)) idm x in
     let trr_x, liftr_x, trl_x, liftl_x = (onx ftrr, onx fliftr, onx ftrl, onx fliftl) in
     (* xrcube and xlcube are 1-dimensional cubes consisting of the index-zero variable 'x' and its transports right or left. *)
     match (Hott.cube x trr_x liftr_x, Hott.cube trl_x x liftl_x) with
@@ -105,7 +109,8 @@ module Codata = struct
                   Lower
                     ( Realize
                         (app
-                           (Field (App (Weaken sty, xcube), trlift, ins))
+                           (Field (App (Weaken sty, idm, xcube), trlift, ins))
+                           idm
                            (Field (x, fld, ins_zero f.dim))),
                       `Labeled ) )
           | Higher _ ->
@@ -185,6 +190,7 @@ module Codata = struct
                 match fldty with
                 | Lower fldty ->
                     let xsname = singleton_variables D.zero (Some "x") in
+                    let idm = Sorry.e () in
                     let field =
                       CodatafieldAbwd.Entry
                         ( fld,
@@ -194,6 +200,7 @@ module Codata = struct
                                    ( Weaken
                                        (Weaken
                                           (Weaken (Shift (Hott.dim, plusmap, Lam (xsname, fldty))))),
+                                     idm,
                                      xcube ),
                                  TubeOf.mmap { map = (fun _ [ x ] -> field x fld) } [ xtube ] )) )
                     in
@@ -234,7 +241,8 @@ module Codata = struct
 
   (* TODO: It would be nice to memoize the "finish" computation.  But we can't store it as a mutable field inside a Term, because it contains a LazyHigher and so is not marshalable.  Maybe we could use a hashtable, but it would be tricky to ensure the output types depend correctly on the input ones.  I guess we could have a mutable Map depending on 'n' and 'a' and then hashtables inside of that.  But then it starts to get questionable how much time would be saved.  Let's wait until we do some profiling and see if this is actually a pain point. *)
   let finished : type mode n c a nh ha et.
-      (mode, n, c, a, nh, ha, et) codata_args -> (mode * n * a * potential * no_eta) StructfieldAbwd.t =
+      (mode, n, c, a, nh, ha, et) codata_args ->
+      (mode * n * a * potential * no_eta) StructfieldAbwd.t =
    fun c ->
     (* Fibrancy of glue-types is bootstrapped later and saved to the ref above, so here we detect whether the type is glue and insert that value if so. *)
     match c.is_glue with

@@ -1,4 +1,6 @@
 open Util
+open Signatures
+open Dim
 
 type test_mode
 
@@ -44,6 +46,17 @@ module Modality = struct
 
   let locker : type a. a Mode.t -> (a, a) wrapped = function
     | Test_mode -> Wrap Id_modality
+
+  module Cube (F : Fam3) = struct
+    open struct
+      type ('a, 'm, 'b) modality_t = ('a, 'm, 'b) t
+    end
+
+    type (_, _, _, _) t =
+      | Modal :
+          ('dom, 'modality, 'mode) modality_t * ('n, ('dom, 'a, 'b) F.t) CubeOf.t
+          -> ('n, 'mode, 'a, 'b) t
+  end
 end
 
 module Modalcell = struct

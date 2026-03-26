@@ -1,5 +1,6 @@
 open Bwd
 open Util
+open Modal
 open Tbwd
 open Dim
 open Dimbwd
@@ -21,8 +22,7 @@ type (_, _, _) is_glue =
 (* The codomain of a higher-dimensional pi-type is a cube of terms with bound variables whose number varies with the face of the cube.  We can enforce this with a parametrized instance of Cube, but it has to be defined recursively with term using a recursive module (like BindCube in Value; see there for more commentary).  Since term now has three type parameters ('mode, 'a, 's) but Cube requires a Fam2 with two parameters, we pack 'mode * 'a into the second parameter of CodFam using a GADT constructor. *)
 module rec Term : sig
   module CodFam : sig
-    type ('k, _) t =
-      | Cod : ('mode, ('a, 'k) snoc, kinetic) Term.term -> ('k, 'mode * 'a) t
+    type ('k, _) t = Cod : ('mode, ('a, 'k) snoc, kinetic) Term.term -> ('k, 'mode * 'a) t
   end
 
   module CodCube : module type of Cube (CodFam)
@@ -40,9 +40,7 @@ module rec Term : sig
 
   module Codatafield : sig
     type (_, _) t =
-      | Lower :
-          ('mode, ('a, 'n) snoc, kinetic) Term.term
-          -> (D.zero, 'mode * 'a * 'n * 'et) t
+      | Lower : ('mode, ('a, 'n) snoc, kinetic) Term.term -> (D.zero, 'mode * 'a * 'n * 'et) t
       | Higher :
           ('i, ('a, D.zero) snoc, 'ian) Plusmap.t * ('mode, 'ian, kinetic) Term.term
           -> ('i, 'mode * 'a * D.zero * no_eta) t
@@ -55,15 +53,19 @@ module rec Term : sig
       | Lower :
           ('mode, 'a, 's) Term.term * [ `Labeled | `Unlabeled ]
           -> (D.zero, 'mode * 'n * 'a * 's * 'et) t
-      | Higher :
-          ('n, 'i, 'mode * 'a) PlusPbijmap.t
-          -> ('i, 'mode * 'n * 'a * potential * no_eta) t
+      | Higher : ('n, 'i, 'mode * 'a) PlusPbijmap.t -> ('i, 'mode * 'n * 'a * potential * no_eta) t
       | LazyHigher :
           ('n, 'i, 'mode * 'a) PlusPbijmap.t Lazy.t
           -> ('i, 'mode * 'n * 'a * potential * no_eta) t
   end
 
   module StructfieldAbwd : module type of Field.Abwd (Structfield)
+
+  module TermFam : sig
+    type ('mode, 'a, 's) t = ('mode, 'a, 's) Term.term
+  end
+
+  module ModalTermCube : module type of Modality.Cube (TermFam)
 
   type _ index = Index : ('a, 'n, 'b) Tbwd.insert * ('k, 'n) sface -> 'b index
 
@@ -72,19 +74,26 @@ module rec Term : sig
     | Const : Constant.t -> ('mode, 'a, kinetic) term
     | Meta : ('x, 'b, 'l) Meta.t * 's energy -> ('mode, 'b, 's) term
     | MetaEnv : ('x, 'b, 's) Meta.t * ('a, 'n, 'b) env -> ('mode, 'a, kinetic) term
-    | Field : ('mode, 'a, kinetic) term * 'i Field.t * ('n, 't, 'i) insertion -> ('mode, 'a, kinetic) term
+    | Field :
+        ('mode, 'a, kinetic) term * 'i Field.t * ('n, 't, 'i) insertion
+        -> ('mode, 'a, kinetic) term
     | UU : 'n D.t -> ('mode, 'a, kinetic) term
     | Inst :
         ('mode, 'a, kinetic) term * ('m, 'n, 'mn, ('mode, 'a, kinetic) term) TubeOf.t
         -> ('mode, 'a, kinetic) term
     | Pi :
-        'n variables * ('n, ('mode, 'a, kinetic) term) CubeOf.t * ('n, 'mode * 'a) CodCube.t
+        'n variables
+        * ('dom, 'modality, 'mode) Modality.t
+        * ('n, ('dom, 'a, kinetic) term) CubeOf.t
+        * ('n, 'mode * 'a) CodCube.t
         -> ('mode, 'a, kinetic) term
     | App :
-        ('mode, 'a, kinetic) term * ('n, ('mode, 'a, kinetic) term) CubeOf.t
+        ('mode, 'a, kinetic) term
+        * ('dom, 'modality, 'mode) Modality.t
+        * ('n, ('dom, 'a, kinetic) term) CubeOf.t
         -> ('mode, 'a, kinetic) term
     | Constr :
-        Constr.t * 'n D.t * ('n, ('mode, 'a, kinetic) term) CubeOf.t list
+        Constr.t * 'n D.t * ('n, 'mode, 'a, kinetic) ModalTermCube.t list
         -> ('mode, 'a, kinetic) term
     | Act :
         ('mode, 'a, kinetic) term
@@ -104,13 +113,9 @@ module rec Term : sig
         -> ('mode, 'a, potential) term
     | Realize : ('mode, 'a, kinetic) term -> ('mode, 'a, potential) term
     | Canonical : ('mode, 'a) canonical -> ('mode, 'a, potential) term
-    | Unshift :
-        'n D.t * ('n, 'b, 'nb) Plusmap.t * ('mode, 'nb, 's) term
-        -> ('mode, 'b, 's) term
+    | Unshift : 'n D.t * ('n, 'b, 'nb) Plusmap.t * ('mode, 'nb, 's) term -> ('mode, 'b, 's) term
     | Unact : ('m, 'n) op * ('mode, 'b, 's) term -> ('mode, 'b, 's) term
-    | Shift :
-        'n D.t * ('n, 'b, 'nb) Plusmap.t * ('mode, 'b, 's) term
-        -> ('mode, 'nb, 's) term
+    | Shift : 'n D.t * ('n, 'b, 'nb) Plusmap.t * ('mode, 'b, 's) term -> ('mode, 'nb, 's) term
     | Weaken : ('mode, 'b, 's) term -> ('mode, ('b, 'n) snoc, 's) term
 
   and ('mode, 'n, 'a, 's, 'et) struct_args = {
@@ -169,7 +174,10 @@ module rec Term : sig
   and ('mode, 'a, 'b, 'ab) tel =
     | Emp : ('mode, 'a, Fwn.zero, 'a) tel
     | Ext :
-        string option * ('mode, 'a, kinetic) term * ('mode, ('a, D.zero) snoc, 'b, 'ab) tel
+        string option
+        * ('dom, 'modality, 'mode) Modality.t
+        * ('dom, 'a, kinetic) term
+        * ('mode, ('a, D.zero) snoc, 'b, 'ab) tel
         -> ('mode, 'a, 'b Fwn.suc, 'ab) tel
 
   and (_, _, _) env =
@@ -187,32 +195,38 @@ module rec Term : sig
     | No_fields : ('m, N.zero) has_fields
     | Has_fields : (D.zero, 'f2) has_fields
 
-  and ('mode, _, _, _) entry =
+  and (_, _, _, _, _, _) entry =
     | Vis : {
         dim : 'm D.t;
+        modality : ('dom, 'modality, 'mode) Modality.t;
         plusdim : ('m, 'n, 'mn) D.plus;
         vars : (N.zero, 'n, string option, 'f1) NICubeOf.t;
-        bindings : ('mn, ('mode, ('b, 'mn) snoc) binding) CubeOf.t;
+        bindings : ('mn, ('dom, ('b, 'mn) snoc) binding) CubeOf.t;
         hasfields : ('m, 'f2) has_fields;
-        fields : (D.zero Field.t * string * ('mode, ('b, 'mn) snoc, kinetic) term, 'f2) Bwv.t;
+        fields : (D.zero Field.t * string * ('dom, ('b, 'mn) snoc, kinetic) term, 'f2) Bwv.t;
         fplus : ('f1, 'f2, 'f) N.plus;
       }
-        -> ('mode, 'b, 'f, 'mn) entry
-    | Invis : ('n, ('mode, ('b, 'n) snoc) binding) CubeOf.t -> ('mode, 'b, N.zero, 'n) entry
+        -> ('dom, 'modality, 'mode, 'b, 'f, 'mn) entry
+    | Invis :
+        ('dom, 'modality, 'mode) Modality.t * ('n, ('dom, ('b, 'n) snoc) binding) CubeOf.t
+        -> ('dom, 'modality, 'mode, 'b, N.zero, 'n) entry
 
-  and ('mode, _, _) ordered_termctx =
+  and (_, _, _) ordered_termctx =
     | Emp : ('mode, N.zero, emp) ordered_termctx
     | Ext :
-        ('mode, 'a, 'b) ordered_termctx * ('mode, 'b, 'x, 'n) entry * ('a, 'x, 'ax) N.plus
+        ('mode, 'a, 'b) ordered_termctx
+        * ('dom, 'modality, 'mode, 'b, 'x, 'n) entry
+        * ('a, 'x, 'ax) N.plus
         -> ('mode, 'ax, ('b, 'n) snoc) ordered_termctx
-    | Lock : ('mode, 'a, 'b) ordered_termctx -> ('mode, 'a, 'b) ordered_termctx
+    | Lock :
+        ('mode, 'a, 'b) ordered_termctx * ('dom, 'modality, 'mode) Modality.t
+        -> ('dom, 'a, 'b) ordered_termctx
 
   and ('mode, 'a, 'b) termctx =
     | Permute : ('a, 'i) N.perm * ('mode, 'i, 'b) ordered_termctx -> ('mode, 'a, 'b) termctx
 end = struct
   module CodFam = struct
-    type ('k, _) t =
-      | Cod : ('mode, ('a, 'k) snoc, kinetic) Term.term -> ('k, 'mode * 'a) t
+    type ('k, _) t = Cod : ('mode, ('a, 'k) snoc, kinetic) Term.term -> ('k, 'mode * 'a) t
   end
 
   module CodCube = Cube (CodFam)
@@ -230,9 +244,7 @@ end = struct
 
   module Codatafield = struct
     type (_, _) t =
-      | Lower :
-          ('mode, ('a, 'n) snoc, kinetic) Term.term
-          -> (D.zero, 'mode * 'a * 'n * 'et) t
+      | Lower : ('mode, ('a, 'n) snoc, kinetic) Term.term -> (D.zero, 'mode * 'a * 'n * 'et) t
       | Higher :
           ('i, ('a, D.zero) snoc, 'ian) Plusmap.t * ('mode, 'ian, kinetic) Term.term
           -> ('i, 'mode * 'a * D.zero * no_eta) t
@@ -246,15 +258,19 @@ end = struct
       | Lower :
           ('mode, 'a, 's) Term.term * [ `Labeled | `Unlabeled ]
           -> (D.zero, 'mode * 'n * 'a * 's * 'et) t
-      | Higher :
-          ('n, 'i, 'mode * 'a) PlusPbijmap.t
-          -> ('i, 'mode * 'n * 'a * potential * no_eta) t
+      | Higher : ('n, 'i, 'mode * 'a) PlusPbijmap.t -> ('i, 'mode * 'n * 'a * potential * no_eta) t
       | LazyHigher :
           ('n, 'i, 'mode * 'a) PlusPbijmap.t Lazy.t
           -> ('i, 'mode * 'n * 'a * potential * no_eta) t
   end
 
   module StructfieldAbwd = Field.Abwd (Structfield)
+
+  module TermFam = struct
+    type ('mode, 'a, 's) t = ('mode, 'a, 's) Term.term
+  end
+
+  module ModalTermCube = Modality.Cube (TermFam)
 
   (* A typechecked De Bruijn index is a well-scoped natural number together with a definite strict face (the top face, if none was supplied explicitly).  Unlike a raw De Bruijn index, the scoping is by a tbwd rather than a type-level nat.  This allows the face to also be well-scoped: its codomain must be the dimension appearing in the hctx at that position.  And since we already have defined Tbwd.insert, we can re-use that instead of re-defining this inductively. *)
   type _ index = Index : ('a, 'n, 'b) Tbwd.insert * ('k, 'n) sface -> 'b index
@@ -266,19 +282,26 @@ end = struct
     | Meta : ('x, 'b, 'l) Meta.t * 's energy -> ('mode, 'b, 's) term
     (* Normally, checked metavariables don't require an environment attached, but they do when they arise by readback from a value metavariable. *)
     | MetaEnv : ('x, 'b, 's) Meta.t * ('a, 'n, 'b) env -> ('mode, 'a, kinetic) term
-    | Field : ('mode, 'a, kinetic) term * 'i Field.t * ('n, 't, 'i) insertion -> ('mode, 'a, kinetic) term
+    | Field :
+        ('mode, 'a, kinetic) term * 'i Field.t * ('n, 't, 'i) insertion
+        -> ('mode, 'a, kinetic) term
     | UU : 'n D.t -> ('mode, 'a, kinetic) term
     | Inst :
         ('mode, 'a, kinetic) term * ('m, 'n, 'mn, ('mode, 'a, kinetic) term) TubeOf.t
         -> ('mode, 'a, kinetic) term
     | Pi :
-        'n variables * ('n, ('mode, 'a, kinetic) term) CubeOf.t * ('n, 'mode * 'a) CodCube.t
+        'n variables
+        * ('dom, 'modality, 'mode) Modality.t
+        * ('n, ('dom, 'a, kinetic) term) CubeOf.t
+        * ('n, 'mode * 'a) CodCube.t
         -> ('mode, 'a, kinetic) term
     | App :
-        ('mode, 'a, kinetic) term * ('n, ('mode, 'a, kinetic) term) CubeOf.t
+        ('mode, 'a, kinetic) term
+        * ('dom, 'modality, 'mode) Modality.t
+        * ('n, ('dom, 'a, kinetic) term) CubeOf.t
         -> ('mode, 'a, kinetic) term
     | Constr :
-        Constr.t * 'n D.t * ('n, ('mode, 'a, kinetic) term) CubeOf.t list
+        Constr.t * 'n D.t * ('n, 'mode, 'a, kinetic) ModalTermCube.t list
         -> ('mode, 'a, kinetic) term
     | Act :
         ('mode, 'a, kinetic) term
@@ -303,13 +326,9 @@ end = struct
     | Realize : ('mode, 'a, kinetic) term -> ('mode, 'a, potential) term
     | Canonical : ('mode, 'a) canonical -> ('mode, 'a, potential) term
     (* These operations are easy to evaluate because they are dual to corresponding operations on environments.  They never appear in the output of typechecking, but they are useful when constructing terms "by hand" in OCaml code, such as in fibrancy witnesses. *)
-    | Unshift :
-        'n D.t * ('n, 'b, 'nb) Plusmap.t * ('mode, 'nb, 's) term
-        -> ('mode, 'b, 's) term
+    | Unshift : 'n D.t * ('n, 'b, 'nb) Plusmap.t * ('mode, 'nb, 's) term -> ('mode, 'b, 's) term
     | Unact : ('m, 'n) op * ('mode, 'b, 's) term -> ('mode, 'b, 's) term
-    | Shift :
-        'n D.t * ('n, 'b, 'nb) Plusmap.t * ('mode, 'b, 's) term
-        -> ('mode, 'nb, 's) term
+    | Shift : 'n D.t * ('n, 'b, 'nb) Plusmap.t * ('mode, 'b, 's) term -> ('mode, 'nb, 's) term
     | Weaken : ('mode, 'b, 's) term -> ('mode, ('b, 'n) snoc, 's) term
 
   and ('mode, 'n, 'a, 's, 'et) struct_args = {
@@ -385,7 +404,10 @@ end = struct
   and ('mode, 'a, 'b, 'ab) tel =
     | Emp : ('mode, 'a, Fwn.zero, 'a) tel
     | Ext :
-        string option * ('mode, 'a, kinetic) term * ('mode, ('a, D.zero) snoc, 'b, 'ab) tel
+        string option
+        * ('dom, 'modality, 'mode) Modality.t
+        * ('dom, 'a, kinetic) term
+        * ('mode, ('a, D.zero) snoc, 'b, 'ab) tel
         -> ('mode, 'a, 'b Fwn.suc, 'ab) tel
 
   (* A version of an environment (see below) that involves terms rather than values.  Used mainly when reading back metavariables. *)
@@ -396,32 +418,42 @@ end = struct
         -> ('a, 'n, ('b, 'k) snoc) env
 
   (* A termctx is a data structure analogous to a Ctx.t, but using terms rather than values (and thus we will not explain its structure here; see ctx.ml).  This is used to store the context of a metavariable, as the value context containing level variables is too volatile to store there.  We also store it (lazily) with a codatatype that has higher fields, so we can use it to read back the closure environment to degenerate it. *)
-  and ('mode, 'b) binding = { ty : ('mode, 'b, kinetic) term; tm : ('mode, 'b, kinetic) term option }
+  and ('mode, 'b) binding = {
+    ty : ('mode, 'b, kinetic) term;
+    tm : ('mode, 'b, kinetic) term option;
+  }
 
   and (_, _) has_fields =
     | No_fields : ('m, N.zero) has_fields
     | Has_fields : (D.zero, 'f2) has_fields
 
-  and ('mode, _, _, _) entry =
+  and (_, _, _, _, _, _) entry =
     | Vis : {
         dim : 'm D.t;
+        modality : ('dom, 'modality, 'mode) Modality.t;
         plusdim : ('m, 'n, 'mn) D.plus;
         vars : (N.zero, 'n, string option, 'f1) NICubeOf.t;
         (* The reason for the "snoc" here is so that some of the terms and types in these bindings can refer to other ones.  Of course it should really be only the *later* ones that can refer to the *earlier* ones, but we don't have a way to specify that in the type parameters. *)
-        bindings : ('mn, ('mode, ('b, 'mn) snoc) binding) CubeOf.t;
+        bindings : ('mn, ('dom, ('b, 'mn) snoc) binding) CubeOf.t;
         hasfields : ('m, 'f2) has_fields;
-        fields : (D.zero Field.t * string * ('mode, ('b, 'mn) snoc, kinetic) term, 'f2) Bwv.t;
+        fields : (D.zero Field.t * string * ('dom, ('b, 'mn) snoc, kinetic) term, 'f2) Bwv.t;
         fplus : ('f1, 'f2, 'f) N.plus;
       }
-        -> ('mode, 'b, 'f, 'mn) entry
-    | Invis : ('n, ('mode, ('b, 'n) snoc) binding) CubeOf.t -> ('mode, 'b, N.zero, 'n) entry
+        -> ('dom, 'modality, 'mode, 'b, 'f, 'mn) entry
+    | Invis :
+        ('dom, 'modality, 'mode) Modality.t * ('n, ('dom, ('b, 'n) snoc) binding) CubeOf.t
+        -> ('dom, 'modality, 'mode, 'b, N.zero, 'n) entry
 
-  and ('mode, _, _) ordered_termctx =
+  and (_, _, _) ordered_termctx =
     | Emp : ('mode, N.zero, emp) ordered_termctx
     | Ext :
-        ('mode, 'a, 'b) ordered_termctx * ('mode, 'b, 'x, 'n) entry * ('a, 'x, 'ax) N.plus
+        ('mode, 'a, 'b) ordered_termctx
+        * ('dom, 'modality, 'mode, 'b, 'x, 'n) entry
+        * ('a, 'x, 'ax) N.plus
         -> ('mode, 'ax, ('b, 'n) snoc) ordered_termctx
-    | Lock : ('mode, 'a, 'b) ordered_termctx -> ('mode, 'a, 'b) ordered_termctx
+    | Lock :
+        ('mode, 'a, 'b) ordered_termctx * ('dom, 'modality, 'mode) Modality.t
+        -> ('dom, 'a, 'b) ordered_termctx
 
   and ('mode, 'a, 'b) termctx =
     | Permute : ('a, 'i) N.perm * ('mode, 'i, 'b) ordered_termctx -> ('mode, 'a, 'b) termctx
@@ -439,10 +471,11 @@ let rec nth_var : type mode a b s. (mode, a, s) term -> b Bwd.t -> any_variables
       | Snoc (args, _) -> nth_var body args)
   | _ -> None
 
-let pi x dom cod = Pi (x, CubeOf.singleton dom, CodCube.singleton (Cod cod))
-let app fn arg = App (fn, CubeOf.singleton arg)
-let apps fn args = List.fold_left app fn args
-let constr name args = Constr (name, D.zero, List.map CubeOf.singleton args)
+let pi x modality dom cod = Pi (x, modality, CubeOf.singleton dom, CodCube.singleton (Cod cod))
+let app fn modality arg = App (fn, modality, CubeOf.singleton arg)
+let apps fn modality args = List.fold_left (fun f -> app f modality) fn args
+
+(* let constr name args = Constr (name, D.zero, List.map CubeOf.singleton args) *)
 let field tm f = Field (tm, f, ins_zero D.zero)
 
 module Telescope = struct
@@ -450,54 +483,57 @@ module Telescope = struct
 
   let rec length : type mode a b ab. (mode, a, b, ab) t -> b Fwn.t = function
     | Emp -> Zero
-    | Ext (_, _, tel) -> Suc (length tel)
+    | Ext (_, _, _, tel) -> Suc (length tel)
 
-  let rec pis :
-      type mode a b ab. (mode, a, b, ab) t -> (mode, ab, kinetic) term -> (mode, a, kinetic) term =
+  let rec pis : type mode a b ab.
+      (mode, a, b, ab) t -> (mode, ab, kinetic) term -> (mode, a, kinetic) term =
    fun doms cod ->
     match doms with
     | Emp -> cod
-    | Ext (x, dom, doms) -> pi (singleton_variables D.zero x) dom (pis doms cod)
+    | Ext (x, modality, dom, doms) -> pi (singleton_variables D.zero x) modality dom (pis doms cod)
 
-  let rec lams :
-      type mode a b ab. (mode, a, b, ab) t -> (mode, ab, kinetic) term -> (mode, a, kinetic) term =
+  let rec lams : type mode a b ab.
+      (mode, a, b, ab) t -> (mode, ab, kinetic) term -> (mode, a, kinetic) term =
    fun doms body ->
     match doms with
     | Emp -> body
-    | Ext (x, _, doms) -> Lam (singleton_variables D.zero x, lams doms body)
+    | Ext (x, _, _, doms) -> Lam (singleton_variables D.zero x, lams doms body)
 
   let rec snocs : type mode a b ab. (mode, a, b, ab) t -> (a, b, D.zero, ab) Tbwd.snocs = function
     | Emp -> Zero
-    | Ext (_, _, tel) -> Suc (snocs tel)
+    | Ext (_, _, _, tel) -> Suc (snocs tel)
 end
 
 let rec dim_term_env : type a n b. (a, n, b) env -> n D.t = function
   | Emp n -> n
   | Ext (e, _, _) -> dim_term_env e
 
-let dim_entry : type mode b f n. (mode, b, f, n) entry -> n D.t = function
-  | Vis { bindings; _ } | Invis bindings -> CubeOf.dim bindings
+let dim_entry : type dom modality mode b f n. (dom, modality, mode, b, f, n) entry -> n D.t =
+  function
+  | Vis { bindings; _ } | Invis (_, bindings) -> CubeOf.dim bindings
 
 let rec ordered_dbwd : type mode a b. (mode, a, b) ordered_termctx -> b Dbwd.t = function
   | Emp -> Word Zero
   | Ext (ctx, e, _) ->
       let (Word b) = ordered_dbwd ctx in
       Word (Suc (b, dim_entry e))
-  | Lock ctx -> ordered_dbwd ctx
+  | Lock (ctx, _lock) -> ordered_dbwd ctx
 
 let dbwd (Permute (_, ctx)) = ordered_dbwd ctx
 
-let ordered_ext_let : type mode a b.
+let ordered_ext_let : type dom modality mode a b.
     (mode, a, b) ordered_termctx ->
     string option ->
-    (mode, (b, D.zero) snoc) binding ->
+    (dom, modality, mode) Modality.t ->
+    (dom, (b, D.zero) snoc) binding ->
     (mode, a N.suc, (b, D.zero) snoc) ordered_termctx =
- fun ctx x b ->
+ fun ctx x modality b ->
   Ext
     ( ctx,
       Vis
         {
           dim = D.zero;
+          modality;
           plusdim = D.plus_zero D.zero;
           vars = NICubeOf.singleton x;
           bindings = CubeOf.singleton b;
@@ -507,10 +543,10 @@ let ordered_ext_let : type mode a b.
         },
       Suc Zero )
 
-let ext_let (Permute (p, ctx)) xs b =
-  let ctx = ordered_ext_let ctx xs b in
+let ext_let (Permute (p, ctx)) modality xs b =
+  let ctx = ordered_ext_let ctx modality xs b in
   Permute (Insert (p, Top), ctx)
 
-let ext (Permute (p, ctx)) xs ty =
-  let ctx = ordered_ext_let ctx xs { ty; tm = None } in
+let ext (Permute (p, ctx)) modality xs ty =
+  let ctx = ordered_ext_let ctx modality xs { ty; tm = None } in
   Permute (Insert (p, Top), ctx)

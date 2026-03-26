@@ -47,6 +47,12 @@ module rec Value : sig
 
   module StructfieldAbwd : module type of Field.Abwd (Structfield)
 
+  module ValueFam : sig
+    type ('mode, 'a, 'b) t = ('mode, 'a) Value.value
+  end
+
+  module ModalValueCube : module type of Modality.Cube (ValueFam)
+
   type 'mode head =
     | Var : { level : level; deg : ('m, 'n) deg } -> 'mode head
     | Const : { name : Constant.t; ins : ('a, 'b, 'c) insertion } -> 'mode head
@@ -96,7 +102,7 @@ module rec Value : sig
       }
         -> ('mode, kinetic) value
     | Constr :
-        Constr.t * 'n D.t * ('n, ('mode, kinetic) value) CubeOf.t list
+        Constr.t * 'n D.t * ('n, 'mode, kinetic, unit) ModalValueCube.t list
         -> ('mode, kinetic) value
     | Lam :
         'k variables * ('dom, 'modality, 'mode) Modality.t * ('mode, 'k, 's) binder
@@ -217,6 +223,12 @@ end = struct
 
   module StructfieldAbwd = Field.Abwd (Structfield)
 
+  module ValueFam = struct
+    type ('mode, 'a, 'b) t = ('mode, 'a) Value.value
+  end
+
+  module ModalValueCube = Modality.Cube (ValueFam)
+
   (* The head of an elimination spine is a variable, a constant, or a substituted metavariable.  *)
   type 'mode head =
     (* A variable is determined by a De Bruijn LEVEL, and stores a neutral degeneracy applied to it. *)
@@ -278,7 +290,7 @@ end = struct
         -> ('mode, kinetic) value
     (* A constructor has a name, a dimension, and a list of arguments of that dimension.  It must always be applied to the correct number of arguments (otherwise it can be eta-expanded).  It doesn't have an outer insertion because a primitive datatype is always 0-dimensional (it has higher-dimensional versions, but degeneracies can always be pushed inside these).  *)
     | Constr :
-        Constr.t * 'n D.t * ('n, ('mode, kinetic) value) CubeOf.t list
+        Constr.t * 'n D.t * ('n, 'mode, kinetic, unit) ModalValueCube.t list
         -> ('mode, kinetic) value
     | Lam :
         'k variables * ('dom, 'modality, 'mode) Modality.t * ('mode, 'k, 's) binder

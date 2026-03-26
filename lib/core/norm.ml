@@ -24,13 +24,14 @@ type _ looked_up_cube =
 let rec take_args : type mode m n mn a b ab.
     (m, a) env ->
     (m, n, mn) D.plus ->
-    (mn, (mode, kinetic) value) CubeOf.t list ->
+    (mn, mode, kinetic, unit) ModalValueCube.t list ->
     (a, b, n, ab) Tbwd.snocs ->
     (m, ab) env =
  fun env mn dargs plus ->
   match (dargs, plus) with
   | [], Zero -> env
-  | arg :: args, Suc plus -> take_args (Ext (env, mn, Ok arg)) mn args plus
+  (* We ignore the modality annotations, since all modes in an env are existential. *)
+  | Modal (_, arg) :: args, Suc plus -> take_args (Ext (env, mn, Ok arg)) mn args plus
   | _ -> fatal (Anomaly "wrong number of arguments in argument list")
 
 (* Eval-readback callback for tyof_higher_codatafield *)
@@ -247,7 +248,7 @@ and eval : type mode m b s. (m, b) env -> (mode, b, s) term -> (mode, s) evaluat
       let (Plus m_n) = D.plus n in
       let mn_k = D.plus_assocl m_n n_k m_nk in
       Val (Lam (Variables (D.plus_out m m_n, mn_k, vars), Sorry.e (), eval_binder env m_nk body))
-  | App (fn, args) ->
+  | App (fn, modality, args) ->
       (* First we evaluate the function. *)
       let efn = eval_term env fn in
       (* The environment is m-dimensional and the original application is n-dimensional, so the *substituted* application is m+n dimensional.  Thus must therefore match the dimension of the function being applied. *)
@@ -258,7 +259,7 @@ and eval : type mode m b s. (m, b) env -> (mode, b, s) term -> (mode, s) evaluat
       (* Then we evaluate all the arguments, not just in the given environment (of dimension m), but in that environment acted on by all the strict faces of m.  Since the given arguments are indexed by strict faces of n, the result is a collection of values indexed by strict faces of m+n.  *)
       let eargs = eval_args env m_n mn args in
       (* Having evaluated the function and its arguments, we now pass the job off to a helper function. *)
-      apply efn (Sorry.e ()) eargs
+      apply efn modality eargs
   | Field (tm, fld, fldins) ->
       let m = dim_env env in
       let n, l = (dom_ins fldins, cod_left_ins fldins) in
@@ -275,12 +276,19 @@ and eval : type mode m b s. (m, b) env -> (mode, b, s) term -> (mode, s) evaluat
       let m = dim_env env in
       let (Plus m_n) = D.plus n in
       let mn = D.plus_out m m_n in
-      let eargs = List.map (eval_args env m_n mn) args in
+      let eargs =
+        List.map
+          (fun (ModalTermCube.Modal (modality, tm)) ->
+            ModalValueCube.Modal (modality, eval_args env m_n mn tm))
+          args in
       Val (Constr (constr, mn, eargs))
   | Pi
-      (type n)
-      ((x, doms, cods) :
-        n variables * (n, (mode, b, kinetic) term) CubeOf.t * (n, mode * b) CodCube.t) ->
+      (type dom modality n)
+      ((x, modality, doms, cods) :
+        n variables
+        * (dom, modality, mode) Modality.t
+        * (n, (dom, b, kinetic) term) CubeOf.t
+        * (n, mode * b) CodCube.t) ->
       (* We are starting with an n-dimensional pi-type and evaluating it in an m-dimensional environment, producing an (m+n)-dimensional result. *)
       let n = CubeOf.dim doms in
       let m = dim_env env in
@@ -320,7 +328,6 @@ and eval : type mode m b s. (m, b) env -> (mode, b, s) term -> (mode, s) evaluat
                }) in
         let subdoms, subcods = (CubeOf.subcube fab doms, BindCube.subcube fab cods) in
         let subx = plus_variables (dom_sface fa) ab (sub_variables fb x) in
-        let modality = Sorry.e () in
         let head : mode head = Pi (subx, modality, subdoms, subcods) in
         (* We don't need fibrancy fields for all the boundary types, since once something "is a type" we don't need it to be in Fib any more. *)
         let fields : (mode * k * potential * no_eta) Value.StructfieldAbwd.t =
@@ -1415,13 +1422,13 @@ let apply_singletons : type dom modality mode n.
 
 (* Evaluate a term context to produce a value context. *)
 
-let eval_bindings : type mode a b n.
+let eval_bindings : type dom modality mode a b n.
     (mode, a, b) Ctx.Ordered.t ->
-    (n, (mode, (b, n) snoc) binding) CubeOf.t ->
-    (n, mode Ctx.Binding.t) CubeOf.t =
- fun ctx cbs ->
+    (dom, modality, mode) Modality.t ->
+    (n, (dom, (b, n) snoc) binding) CubeOf.t ->
+    (n, dom Ctx.Binding.t) CubeOf.t =
+ fun ctx modality cbs ->
   let i = Ctx.Ordered.length ctx in
-  let (Wrap modality) = Modality.id (Ctx.Ordered.mode ctx) in
   let vbs = CubeOf.build (CubeOf.dim cbs) { build = (fun _ -> Ctx.Binding.unknown ()) } in
   let tempctx = Ctx.Ordered.invis ctx modality vbs in
   let argtbl = Hashtbl.create 10 in
@@ -1430,14 +1437,14 @@ let eval_bindings : type mode a b n.
     CubeOf.miter
       {
         it =
-          (fun fa [ ({ ty = cty; tm = ctm } : (mode, (b, n) snoc) binding); vb ] ->
+          (fun fa [ ({ ty = cty; tm = ctm } : (dom, (b, n) snoc) binding); vb ] ->
             (* Unlike in dom_vars, we don't need to instantiate the types, since their instantiations should have been preserved by readback and will reappear correctly here. *)
             let ety = eval_term (Ctx.Ordered.env tempctx) cty in
             let level = (i, !j) in
             j := !j + 1;
             let lvl, v =
               match ctm with
-              | None -> (Some level, ({ tm = var level ety; ty = ety } : mode normal))
+              | None -> (Some level, ({ tm = var level ety; ty = ety } : dom normal))
               | Some ctm -> (None, { tm = eval_term (Ctx.Ordered.env tempctx) ctm; ty = ety }) in
             Hashtbl.add argtbl (SFace_of fa) v;
             Ctx.Binding.specify vb lvl v);
@@ -1446,17 +1453,17 @@ let eval_bindings : type mode a b n.
   vbs
 
 (* TODO: Termctx entries will also have a modality *)
-let eval_entry : type modality mode a b f n.
-    (mode, a, b) Ctx.Ordered.t -> (mode, b, f, n) entry -> (mode, modality, mode, f, n) Ctx.entry =
+let eval_entry : type dom modality mode a b f n.
+    (mode, a, b) Ctx.Ordered.t ->
+    (dom, modality, mode, b, f, n) entry ->
+    (dom, modality, mode, f, n) Ctx.entry =
  fun ctx e ->
-  let modality = Sorry.e () in
-  (* let (Wrap modality) = Modality.id (Ctx.Ordered.mode ctx) in *)
   match e with
-  | Vis { dim; plusdim; vars; bindings; hasfields; fields; fplus } ->
-      let bindings = eval_bindings ctx bindings in
+  | Vis { dim; modality; plusdim; vars; bindings; hasfields; fields; fplus } ->
+      let bindings = eval_bindings ctx modality bindings in
       let fields = Bwv.map (fun (f, x, _) -> (f, x)) fields in
       Vis { dim; modality; plusdim; vars; bindings; hasfields; fields; fplus }
-  | Invis bindings -> Invis (modality, eval_bindings ctx bindings)
+  | Invis (modality, bindings) -> Invis (modality, eval_bindings ctx modality bindings)
 
 let rec eval_ordered_ctx : type mode a b. (mode, a, b) ordered_termctx -> (mode, a, b) Ctx.Ordered.t
     = function
@@ -1464,9 +1471,7 @@ let rec eval_ordered_ctx : type mode a b. (mode, a, b) ordered_termctx -> (mode,
   | Ext (ctx, e, af) ->
       let ectx = eval_ordered_ctx ctx in
       Snoc (ectx, eval_entry ectx e, af)
-  | Lock ctx ->
-      let lock = Sorry.e () in
-      Lock (eval_ordered_ctx ctx, lock)
+  | Lock (ctx, lock) -> Lock (eval_ordered_ctx ctx, lock)
 
 let eval_ctx : type mode a b. (mode, a, b) termctx -> (mode, a, b) Ctx.t = function
   | Permute (perm, ctx) ->
@@ -1482,9 +1487,8 @@ let rec eval_append : type mode a b c ac bc.
  fun ctx ac tel ->
   match (ac, tel) with
   | Zero, Emp -> ctx
-  | Suc ac, Ext (x, ty, tel) ->
+  | Suc ac, Ext (x, modality, ty, tel) ->
       let ty = eval_term (Ctx.env ctx) ty in
-      let modality = Sorry.e () in
       eval_append (Ctx.ext ctx modality x ty) ac tel
 
 (* Get the instantiation arguments of a type, of any sort. *)
