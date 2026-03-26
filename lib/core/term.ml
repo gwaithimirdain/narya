@@ -185,6 +185,7 @@ module rec Term : sig
     | Ext :
         ('a, 'n, 'b) env * ('n, 'k, 'nk) D.plus * ('nk, ('mode, 'a, kinetic) term) CubeOf.t
         -> ('a, 'n, ('b, 'k) snoc) env
+    | Key : ('a, 'n, 'b) env * ('dom, 'modality, 'mode) Modality.t -> ('a, 'n, 'b) env
 
   and ('mode, 'b) binding = {
     ty : ('mode, 'b, kinetic) term;
@@ -416,6 +417,7 @@ end = struct
     | Ext :
         ('a, 'n, 'b) env * ('n, 'k, 'nk) D.plus * ('nk, ('mode, 'a, kinetic) term) CubeOf.t
         -> ('a, 'n, ('b, 'k) snoc) env
+    | Key : ('a, 'n, 'b) env * ('dom, 'modality, 'mode) Modality.t -> ('a, 'n, 'b) env
 
   (* A termctx is a data structure analogous to a Ctx.t, but using terms rather than values (and thus we will not explain its structure here; see ctx.ml).  This is used to store the context of a metavariable, as the value context containing level variables is too volatile to store there.  We also store it (lazily) with a codatatype that has higher fields, so we can use it to read back the closure environment to degenerate it. *)
   and ('mode, 'b) binding = {
@@ -507,6 +509,7 @@ end
 let rec dim_term_env : type a n b. (a, n, b) env -> n D.t = function
   | Emp n -> n
   | Ext (e, _, _) -> dim_term_env e
+  | Key (e, _) -> dim_term_env e
 
 let dim_entry : type dom modality mode b f n. (dom, modality, mode, b, f, n) entry -> n D.t =
   function

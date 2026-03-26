@@ -178,6 +178,7 @@ module rec Value : sig
         * (('nk, ('mode, kinetic) value) CubeOf.t, Code.t) Result.t
         -> ('n, ('b, 'k) snoc) env
     | Act : ('n, 'b) env * ('m, 'n) op -> ('m, 'b) env
+    | Key : ('n, 'b) env * ('dom, 'modality, 'mode) Modality.t -> ('n, 'b) env
     | Permute : ('a, 'b) Tbwd.permute * ('n, 'b) env -> ('n, 'a) env
     | Shift : ('mn, 'b) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb) Plusmap.t -> ('m, 'nb) env
     | Unshift : ('m, 'nb) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb) Plusmap.t -> ('mn, 'b) env
@@ -392,6 +393,7 @@ end = struct
         * (('nk, ('mode, kinetic) value) CubeOf.t, Code.t) Result.t
         -> ('n, ('b, 'k) snoc) env
     | Act : ('n, 'b) env * ('m, 'n) op -> ('m, 'b) env
+    | Key : ('n, 'b) env * ('dom, 'modality, 'mode) Modality.t -> ('n, 'b) env
     | Permute : ('a, 'b) Tbwd.permute * ('n, 'b) env -> ('n, 'a) env
     (* Adding a dimension 'n to all the dimensions in a dimension list 'b is the power/cotensor in the dimension-enriched category of contexts.  Shifting an environment (substitution) implements its universal property: an (m+n)-dimensional substitution with codomain b is equivalent to an m-dimensional substitution with codomain n+b. *)
     | Shift : ('mn, 'b) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb) Plusmap.t -> ('m, 'nb) env
@@ -413,6 +415,9 @@ end
 
 include Value
 
+type (_, _) modal_value =
+  | Modal : ('dom, 'modality, 'mode) Modality.t * ('dom, 's) value -> ('mode, 's) modal_value
+
 type any_canonical = Any : ('mode, 'm, 'n) canonical -> any_canonical
 
 (* Every context morphism has a valid dimension. *)
@@ -421,6 +426,7 @@ let rec dim_env : type n b. (n, b) env -> n D.t = function
   | Ext (e, _, _) -> dim_env e
   | LazyExt (e, _, _) -> dim_env e
   | Act (_, op) -> dom_op op
+  | Key (e, _) -> dim_env e
   | Permute (_, e) -> dim_env e
   | Shift (e, mn, _) -> D.plus_left mn (dim_env e)
   | Unshift (e, mn, _) -> D.plus_out (dim_env e) mn
@@ -445,6 +451,7 @@ let rec length_env : type n b. (n, b) env -> b Dbwd.t = function
       let (Word le) = length_env env in
       Word (Suc (le, D.plus_right nk))
   | Act (env, _) -> length_env env
+  | Key (env, _) -> length_env env
   | Permute (p, env) -> Plusmap.OfDom.permute p (length_env env)
   | Shift (env, mn, nb) -> Plusmap.out (D.plus_right mn) (length_env env) nb
   | Unshift (env, mn, nb) -> Plusmap.input (D.plus_right mn) (length_env env) nb
@@ -522,6 +529,7 @@ let rec remove_env : type a k b n. (n, b) env -> (a, k, b) Tbwd.insert -> (n, a)
   match (env, v) with
   | Emp _, _ -> .
   | Act (env, op), _ -> Act (remove_env env v, op)
+  | Key (env, cell), _ -> Key (remove_env env v, cell)
   | Permute (p, env), _ ->
       let (Permute_insert (v', p')) = Tbwd.permute_insert v p in
       Permute (p', remove_env env v')

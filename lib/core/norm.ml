@@ -1084,6 +1084,7 @@ and eval_env : type a m n mn b.
                   let (SFace_of_plus (_, fa, fb)) = sface_of_plus m_nk fab in
                   lazy_eval (act_env env (op_of_sface fa)) (CubeOf.find xss fb));
             } )
+  | Key (tmenv, modality) -> Key (eval_env env m_n tmenv, modality)
 
 and apply_term : type dom modality mode n.
     (mode, kinetic) value ->
@@ -1151,7 +1152,7 @@ and app_eval_apps : type mode s any.
       | Realize tm -> Realize (inst tm args)
       | Unrealized -> Unrealized)
 
-(* Look up a cube of values in an environment by variable index, accumulating operator actions and shifts as we go.  At the end, we usually use the operator to select a value from the cubes (with its face part) and act on it (with its degeneracy part). *)
+(* Look up a cube of values in an environment by variable index, accumulating operator actions, shifts, and keys as we go.  At the end, we usually use the operator to select a value from the cubes (with its face part) and act on it (with its degeneracy part) and then key it. *)
 and lookup_cube : type n a b k mk nk.
     (n, b) env -> (n, k, nk) D.plus -> (a, k, b) Tbwd.insert -> (mk, nk) op -> mk looked_up_cube =
  fun env nk v op ->

@@ -37,6 +37,12 @@ let rec sort_of_ty : type mode a z.
           sort_of_ty ~isfunc:true newctx (view_type output "sort_of_ty"))
   | _ -> if isfunc then `Function else `Other
 
+module ValuePair = struct
+  type ('mode, 'a, 'b) t = ('mode, 'a) Value.value * ('mode, 'a) Value.value
+end
+
+module ModalValuePairCube = Modality.Cube (ValuePair)
+
 (* Readback of values to terms.  Closely follows equality-testing in equal.ml, so most comments are omitted.  However, unlike equality-testing and the "readback" in theoretical NbE, this readback does *not* eta-expand functions and tuples.  It is used for (1) displaying terms to the user, who will usually prefer not to see things eta-expanded, and (2) turning values into terms so that we can re-evaluate them in a new environment, for which purpose eta-expansion is irrelevant.  There are two exceptions:
 
    1. When reading back at a record type that the user has marked as transparent, we eta-expand tuples.  This is chosen based on the readback type.
@@ -176,7 +182,8 @@ and readback_at : type mode a z.
       match D.compare xn (TubeOf.inst tyargs) with
       | Neq -> fatal (Dimension_mismatch ("reading back constrs", xn, TubeOf.inst tyargs))
       | Eq ->
-          (* If a higher-dimensional constructor belongs to a higher version of a datatype, the instantiation arguments of the latter must be lower-dimensional versions of the same constructor.  We extract their arguments to form the boundaries of the arguments of our current constructor. (or something?) *)
+          (* If a higher-dimensional constructor belongs to a higher version of a datatype, the instantiation arguments of the latter must be lower-dimensional versions of the same constructor.  We extract their arguments to form the boundaries of the types of the arguments of our current constructor. *)
+          (* Specifically, tyargs is a tube of normals, each of which is expected to be a lower-dimensional instance of the same constructor, which therefore has a list of modal cubes as arguments.  We want to extract the top element of each of those cubes to form a tube of lists of modal values.  *)
           let tyarg_args =
             TubeOf.mmap
               {
@@ -186,7 +193,8 @@ and readback_at : type mode a z.
                     | Constr (tmname, _, tmargs) ->
                         if tmname = xconstr then
                           List.map
-                            (fun (ModalValueCube.Modal (xmod, x)) -> CubeOf.find_top x)
+                            (fun (ModalValueCube.Modal (xmod, x)) ->
+                              Modal (xmod, CubeOf.find_top x))
                             tmargs
                         else fatal (Anomaly "inst arg wrong constr in readback at datatype")
                     | _ -> fatal (Anomaly "inst arg not constr in readback at datatype"));
@@ -301,7 +309,7 @@ and readback_at_tel : type mode n c a b ab z.
     (n, a) env ->
     (n, mode, kinetic, unit) ModalValueCube.t list ->
     (mode, a, b, ab) Telescope.t ->
-    (D.zero, n, n, (mode, kinetic) value list) TubeOf.t ->
+    (D.zero, n, n, (mode, kinetic) modal_value list) TubeOf.t ->
     (n, mode, c, kinetic) ModalTermCube.t list =
  fun ctx env xs tys tyargs ->
   match (xs, tys) with
@@ -309,9 +317,9 @@ and readback_at_tel : type mode n c a b ab z.
   | Modal (xmodality, x) :: xs, Ext (_, tymodality, ty, tys) -> (
       match Modality.compare xmodality tymodality with
       | Eq ->
+          let lctx = Ctx.lock ctx tymodality in
           let x = CubeOf.find_top x in
           let ety = eval_term env ty in
-          (* Copied from check_at_tel; TODO: Factor it out *)
           let tyargtbl = Hashtbl.create 10 in
           let [ tyarg; tms; tyargs ] =
             TubeOf.pmap
@@ -320,23 +328,29 @@ and readback_at_tel : type mode n c a b ab z.
                   (fun fa [ tyargs ] ->
                     match tyargs with
                     | [] -> fatal (Anomaly "missing arguments in readback_at_tel")
-                    | argtm :: argrest ->
-                        let fa = sface_of_tface fa in
-                        let argty =
-                          inst
-                            (eval_term (act_env env (op_of_sface fa)) ty)
-                            (TubeOf.build D.zero
-                               (D.zero_plus (dom_sface fa))
-                               {
-                                 build =
-                                   (fun fb ->
-                                     Hashtbl.find tyargtbl
-                                       (SFace_of (comp_sface fa (sface_of_tface fb))));
-                               }) in
-                        let argnorm = { tm = argtm; ty = argty } in
-                        let argtm = readback_at ctx argtm argty in
-                        Hashtbl.add tyargtbl (SFace_of fa) argnorm;
-                        [ argnorm; argtm; argrest ]);
+                    | Modal (argmod, argtm) :: argrest -> (
+                        match Modality.compare argmod tymodality with
+                        | Eq ->
+                            let fa = sface_of_tface fa in
+                            let _argty =
+                              inst
+                                (eval_term (act_env env (op_of_sface fa)) ty)
+                                (TubeOf.build D.zero
+                                   (D.zero_plus (dom_sface fa))
+                                   {
+                                     build =
+                                       (fun fb ->
+                                         Hashtbl.find tyargtbl
+                                           (SFace_of (comp_sface fa (sface_of_tface fb))));
+                                   }) in
+                            (* I don't understand why there is a type error here. *)
+                            let argty = Sorry.e () in
+                            let _argnorm = { tm = argtm; ty = argty } in
+                            let argnorm = Sorry.e () in
+                            let argtm = readback_at lctx argtm argty in
+                            Hashtbl.add tyargtbl (SFace_of fa) argnorm;
+                            [ argnorm; argtm; argrest ]
+                        | Neq -> fatal (Modality_mismatch ("readbla_at_tel", argmod, tymodality))));
               }
               [ tyargs ] (Cons (Cons (Cons Nil))) in
           let ity = inst ety tyarg in
@@ -354,14 +368,18 @@ and readback_at_tel : type mode n c a b ab z.
 (* To readback an environment, since readback is type-directed we need the types of *all* the terms in it, which is to say its codomain context.  We store this as a Termctx since we need to evaluate and instantiate the types at the previous terms in the environment as we go. *)
 and readback_env : type mode n a b c d.
     (mode, a, b) Ctx.t -> (n, d) Value.env -> (mode, c, d) termctx -> (b, n, d) Term.env =
- fun ctx env (Permute (_, envctx)) -> readback_ordered_env ctx env envctx
+ (* The permutation in a context only acts on the raw length, not the checked length which is what matches the env, so we can ignore it here. *)
+ fun ctx env (Permute (_, envctx)) ->
+  readback_ordered_env ctx env envctx
 
-and readback_ordered_env : type mode n a b c d.
-    (mode, a, b) Ctx.t -> (n, d) Value.env -> (mode, c, d) ordered_termctx -> (b, n, d) Term.env =
+and readback_ordered_env : type cmode mode n a b c d.
+    (cmode, a, b) Ctx.t -> (n, d) Value.env -> (mode, c, d) ordered_termctx -> (b, n, d) Term.env =
  fun ctx env envctx ->
   match envctx with
   | Emp -> Emp (dim_env env)
-  | Lock (envctx, lock) -> readback_ordered_env ctx env envctx
+  | Lock (envctx, _) ->
+      (* I think locks are irrelevant to giving types to an environment *)
+      readback_ordered_env ctx env envctx
   | Ext (envctx, entry, _) -> (
       let (Plus mk) = D.plus (dim_entry entry) in
       let (Looked_up { act; op = Op (fc, fd); entry = xs }) =
@@ -370,6 +388,8 @@ and readback_ordered_env : type mode n a b c d.
       match entry with
       | Vis { modality; bindings; _ } | Invis (modality, bindings) ->
           let xtytbl = Hashtbl.create 10 in
+          (* TODO: Need to figure out how the modes of these two contexts interact. *)
+          let lctx = Ctx.lock ctx modality in
           let tmxs =
             CubeOf.mmap
               {
@@ -388,7 +408,7 @@ and readback_ordered_env : type mode n a b c d.
                                  Hashtbl.find xtytbl (SFace_of (comp_sface fb (sface_of_tface fc))));
                            }) in
                     Hashtbl.add xtytbl (SFace_of fb) { tm; ty };
-                    readback_at ctx tm ty);
+                    readback_at lctx tm ty);
               }
               [
                 (let _ = xs in

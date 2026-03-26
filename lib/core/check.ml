@@ -3379,7 +3379,7 @@ and check_at_tel : type mode n a b c bc e.
     (mode, b, c, bc) Telescope.t ->
     (* and as all the lists in this tube. *)
     (D.zero, n, n, (mode, kinetic) value list) TubeOf.t ->
-g    (n, bc) env * (n, (mode, e, kinetic) term) CubeOf.t list =
+    (n, bc) env * (n, (mode, e, kinetic) term) CubeOf.t list =
  fun c ctx env tms tys tyargs ->
   match (tms, tys) with
   | [], Emp ->

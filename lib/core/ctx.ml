@@ -202,14 +202,18 @@ module Ordered = struct
       (mode, a, (b, n) snoc) t =
    fun ctx modality bindings -> Snoc (ctx, Invis (modality, bindings), Zero)
 
-  let lock : type dom modality cod a b.
+  (* Smart constructor that collapses multiple subsequent locks and omits identity locks. *)
+  let rec lock : type dom modality cod a b.
       (cod, a, b) t -> (dom, modality, cod) Modality.t -> (dom, a, b) t =
-   fun ctx modality -> Lock (ctx, modality)
-
-  let rec locked : type mode a b. (mode, a, b) t -> bool = function
-    | Emp _ -> false
-    | Snoc (ctx, _, _) -> locked ctx
-    | Lock _ -> true
+   fun ctx mu ->
+    match ctx with
+    | Lock (ctx, nu) ->
+        let (Wrap numu) = Modality.comp mu nu in
+        lock ctx numu
+    | _ -> (
+        match Modality.compare_id mu with
+        | Eq -> ctx
+        | Neq -> Lock (ctx, mu))
 
   let rec checked_length : type mode a b. (mode, a, b) t -> b Tbwd.t = function
     | Emp _ -> Emp
@@ -527,7 +531,6 @@ let invis (Permute { perm; env; level; ctx }) modality vars =
 let lock (Permute { perm; env; level; ctx }) lock =
   Permute { perm; env; level; ctx = Ordered.lock ctx lock }
 
-let locked (Permute { ctx; _ }) = Ordered.locked ctx
 let raw_length (Permute { perm; ctx; _ }) = N.perm_dom (Ordered.raw_length ctx) perm
 let level (Permute { level; _ }) = level
 let mode (Permute { ctx; _ }) = Ordered.mode ctx

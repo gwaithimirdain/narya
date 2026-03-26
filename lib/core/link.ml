@@ -142,6 +142,7 @@ and env : type a n b. (File.t -> File.t) -> (a, n, b) env -> (a, n, b) env =
   match e with
   | Emp n -> Emp n
   | Ext (e, nk, xs) -> Ext (env f e, nk, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ xs ])
+  | Key (e, mu) -> Key (env f e, mu)
 
 and entry : type dom modality mode b f mn.
     (File.t -> File.t) ->
