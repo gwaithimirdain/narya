@@ -39,7 +39,7 @@ module rec Value : sig
       vals : ('p, 'i, ('mode, potential) Value.lazy_eval option) InsmapOf.t;
       intrinsic : 'i D.t;
       plusdim : ('m, 'n, 'mn) D.plus;
-      env : ('m, 'a) Value.env;
+      env : ('mode, 'm, 'a) Value.env;
       deg : ('p, 'mn) deg;
       terms : ('n, 'i, 'mode * 'a) PlusPbijmap.t;
     }
@@ -58,7 +58,7 @@ module rec Value : sig
     | Const : { name : Constant.t; ins : ('a, 'b, 'c) insertion } -> 'mode head
     | Meta : {
         meta : ('a, 'b, 's) Meta.t;
-        env : ('m, 'b) env;
+        env : ('mode, 'm, 'b) env;
         ins : ('mn, 'm, 'n) insertion;
       }
         -> 'mode head
@@ -70,7 +70,7 @@ module rec Value : sig
         * ('m, 'mode) BindCube.t
         -> 'mode head
 
-  and ('mode, _) apps =
+  and (_, _) apps =
     | Emp : ('mode, noninst) apps
     | Arg :
         ('mode, 'any) apps
@@ -85,15 +85,15 @@ module rec Value : sig
         ('mode, noninst) apps * 'k D.pos * ('n, 'k, 'nk, 'mode normal) TubeOf.t
         -> ('mode, inst) apps
 
-  and ('mode, _, _) binder =
+  and (_, _, _) binder =
     | Bind : {
-        env : ('m, 'a) env;
+        env : ('mode, 'm, 'a) env;
         body : ('mode, ('a, 'n) snoc, 's) term;
         ins : ('mn, 'm, 'n) insertion;
       }
         -> ('mode, 'mn, 's) binder
 
-  and ('mode, _) value =
+  and (_, _) value =
     | Neu : {
         head : 'mode head;
         args : ('mode, 'any) apps;
@@ -125,12 +125,12 @@ module rec Value : sig
     mutable inst_fields : ('mode * 'm * potential * no_eta) StructfieldAbwd.t option;
   }
 
-  and ('mode, _) evaluation =
+  and (_, _) evaluation =
     | Val : ('mode, 's) value -> ('mode, 's) evaluation
     | Realize : ('mode, kinetic) value -> ('mode, potential) evaluation
     | Unrealized : ('mode, potential) evaluation
 
-  and ('mode, _, _) canonical =
+  and (_, _, _) canonical =
     | UU : 'm D.t -> ('mode, 'm, D.zero) canonical
     | Pi :
         'm variables
@@ -142,6 +142,7 @@ module rec Value : sig
     | Codata : ('mode, 'm, 'n, 'c, 'a, 'et) codata_args -> ('mode, 'm, 'n) canonical
 
   and ('mode, 'm, 'j, 'ij) data_args = {
+    mode : 'mode Mode.t;
     dim : 'm D.t;
     tyfam : 'mode normal Lazy.t option ref;
     indices : (('m, 'mode normal) CubeOf.t, 'j, 'ij) Fillvec.t;
@@ -152,14 +153,14 @@ module rec Value : sig
   and ('mode, 'm, 'n, 'c, 'a, 'et) codata_args = {
     eta : (potential, 'et) eta;
     opacity : opacity;
-    env : ('m, 'a) env;
+    env : ('mode, 'm, 'a) env;
     termctx : ('mode, 'c, ('a, 'n) snoc) termctx option Lazy.t;
     fields : ('mode * 'a * 'n * 'et) Term.CodatafieldAbwd.t;
   }
 
-  and ('mode, _, _) dataconstr =
+  and (_, _, _) dataconstr =
     | Dataconstr : {
-        env : ('m, 'a) env;
+        env : ('mode, 'm, 'a) env;
         args : ('mode, 'a, 'p, 'ap) Telescope.t;
         indices : (('mode, 'ap, kinetic) term, 'ij) Vec.t;
       }
@@ -167,25 +168,33 @@ module rec Value : sig
 
   and 'mode normal = { tm : ('mode, kinetic) value; ty : ('mode, kinetic) value }
 
-  and (_, _) env =
-    | Emp : 'n D.t -> ('n, emp) env
+  and (_, _, _) env =
+    | Emp : 'mode Mode.t * 'n D.t -> ('mode, 'n, emp) env
     | LazyExt :
-        ('n, 'b) env * ('n, 'k, 'nk) D.plus * ('nk, ('mode, kinetic) lazy_eval) CubeOf.t
-        -> ('n, ('b, 'k) snoc) env
-    | Ext :
-        ('n, 'b) env
+        ('mode, 'n, 'b) env
         * ('n, 'k, 'nk) D.plus
-        * (('nk, ('mode, kinetic) value) CubeOf.t, Code.t) Result.t
-        -> ('n, ('b, 'k) snoc) env
-    | Act : ('n, 'b) env * ('m, 'n) op -> ('m, 'b) env
-    | Key : ('n, 'b) env * ('dom, 'modality, 'mode) Modality.t -> ('n, 'b) env
-    | Permute : ('a, 'b) Tbwd.permute * ('n, 'b) env -> ('n, 'a) env
-    | Shift : ('mn, 'b) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb) Plusmap.t -> ('m, 'nb) env
-    | Unshift : ('m, 'nb) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb) Plusmap.t -> ('mn, 'b) env
+        * ('dom, 'modality, 'mode) Modality.t
+        * ('nk, ('dom, kinetic) lazy_eval) CubeOf.t
+        -> ('mode, 'n, ('b, 'k) snoc) env
+    | Ext :
+        ('mode, 'n, 'b) env
+        * ('n, 'k, 'nk) D.plus
+        * ('dom, 'modality, 'mode) Modality.t
+        * (('nk, ('dom, kinetic) value) CubeOf.t, Code.t) Result.t
+        -> ('mode, 'n, ('b, 'k) snoc) env
+    | Act : ('mode, 'n, 'b) env * ('m, 'n) op -> ('mode, 'm, 'b) env
+    | Key : ('mode, 'n, 'b) env * ('dom, 'mu, 'nu, 'mode) Modalcell.t -> ('dom, 'n, 'b) env
+    | Permute : ('a, 'b) Tbwd.permute * ('mode, 'n, 'b) env -> ('mode, 'n, 'a) env
+    | Shift :
+        ('mode, 'mn, 'b) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb) Plusmap.t
+        -> ('mode, 'm, 'nb) env
+    | Unshift :
+        ('mode, 'm, 'nb) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb) Plusmap.t
+        -> ('mode, 'mn, 'b) env
 
   and ('mode, 's) lazy_state =
     | Deferred_eval :
-        ('m, 'b) env * ('mode, 'b, 's) term * ('mn, 'm, 'n) insertion * ('mode, 'any) apps
+        ('mode, 'm, 'b) env * ('mode, 'b, 's) term * ('mn, 'm, 'n) insertion * ('mode, 'any) apps
         -> ('mode, 's) lazy_state
     | Deferred :
         (unit -> ('mode, 's) evaluation) * ('m, 'n) deg * ('mode, 'any) apps
@@ -216,7 +225,7 @@ end = struct
       vals : ('p, 'i, ('mode, potential) Value.lazy_eval option) InsmapOf.t;
       intrinsic : 'i D.t;
       plusdim : ('m, 'n, 'mn) D.plus;
-      env : ('m, 'a) Value.env;
+      env : ('mode, 'm, 'a) Value.env;
       deg : ('p, 'mn) deg;
       terms : ('n, 'i, 'mode * 'a) PlusPbijmap.t;
     }
@@ -239,7 +248,7 @@ end = struct
     (* A metavariable (i.e. flexible) head stores the metavariable along with a delayed substitution applied to it. *)
     | Meta : {
         meta : ('a, 'b, 's) Meta.t;
-        env : ('m, 'b) env;
+        env : ('mode, 'm, 'b) env;
         ins : ('mn, 'm, 'n) insertion;
       }
         -> 'mode head
@@ -254,7 +263,7 @@ end = struct
         -> 'mode head
 
   (* An application contains the data of an n-dimensional argument and its boundary, together with a neutral insertion applied outside that can't be pushed in.  This represents the *argument list* of a single application, not the function.  Thus, an application spine will be a head together with a list of apps.  Each application could be along a different modality. *)
-  and ('mode, _) apps =
+  and (_, _) apps =
     | Emp : ('mode, noninst) apps
     | Arg :
         ('mode, 'any) apps
@@ -272,15 +281,15 @@ end = struct
         -> ('mode, inst) apps
 
   (* Lambdas and Pis both bind a variable, along with its dependencies.  These are recorded as defunctionalized closures.  Since they are produced by higher-dimensional substitutions and operator actions, the dimension of the binder can be different than the dimension of the environment that closes its body.  Accordingly, in addition to the environment and degeneracy to close its body, we store information about how to map the eventual arguments into the bound variables in the body.  *)
-  and ('mode, _, _) binder =
+  and (_, _, _) binder =
     | Bind : {
-        env : ('m, 'a) env;
+        env : ('mode, 'm, 'a) env;
         body : ('mode, ('a, 'n) snoc, 's) term;
         ins : ('mn, 'm, 'n) insertion;
       }
         -> ('mode, 'mn, 's) binder
 
-  and ('mode, _) value =
+  and (_, _) value =
     (* A neutral is an application spine: a head with a list of applications.  It also stores its type, and (lazily) the up-to-now result of evaluating that application spine.  The type is also lazy because the 0-dimensional universe is morally an infinite data structure Uninst (UU 0, (Uninst (UU 0, Uninst (UU 0, ... )))).  If that result is "Unrealized", then it is a "true neutral", the sort of neutral that is permanently stuck and usually appears in paper proofs of normalization.  If it is "Val" then the spine is still waiting for further arguments for its case tree to compute.  If it is "Realized" then the case tree has already evaluated to an ordinary value; this should only happen when glued evaluation is in effect. *)
     | Neu : {
         head : 'mode head;
@@ -320,14 +329,14 @@ end = struct
   }
 
   (* This is the result of evaluating a term with a given kind of energy.  Evaluating a kinetic term just produces a (kinetic) value, whereas evaluating a potential term might be a potential value (either a lambda waiting for more arguments, a struct waiting for more fields, or a canonical type partially or fully instantiated), or else the information that the case tree has reached a leaf and the resulting kinetic value, or else the information that the case tree is permanently stuck.  *)
-  and ('mode, _) evaluation =
+  and (_, _) evaluation =
     (* When 's = potential, a Val means the case tree is not yet fully applied; while when 's = kinetic, it is the only possible kind of result.  Collapsing these two together seems to unify the code for Lam and Struct as much as possible. *)
     | Val : ('mode, 's) value -> ('mode, 's) evaluation
     | Realize : ('mode, kinetic) value -> ('mode, potential) evaluation
     | Unrealized : ('mode, potential) evaluation
 
   (* A canonical type value is either a universe, a function-type, a datatype, or a codatatype/record.  It is parametrized by its dimension as a type, which might be larger than its evaluation dimension if it has an intrinsic dimension (e.g. Gel), and by that intrinsic dimension. *)
-  and ('mode, _, _) canonical =
+  and (_, _, _) canonical =
     (* At present, we never produce these except as the values of their corresponding heads.  But in principle, we could allow universes and pi-types as potential terms, so that constants could be defined to "behave like" universes or pi-types without reducing to them. *)
     | UU : 'm D.t -> ('mode, 'm, D.zero) canonical
     | Pi :
@@ -342,6 +351,7 @@ end = struct
 
   (* A datatype value stores: *)
   and ('mode, 'm, 'j, 'ij) data_args = {
+    mode : 'mode Mode.t;
     (* The dimension to which it is substituted *)
     dim : 'm D.t;
     (* The datatype family after being applied to the parameters but not the indices, e.g. "Vec A".  This is an option ref because it gets set a little later than the rest of the fields are computed, since only when working with the embedding of neutrals into normals do we have the application spine and its type available.  *)
@@ -360,16 +370,16 @@ end = struct
     eta : (potential, 'et) eta;
     opacity : opacity;
     (* The environment and termctx that it was evaluated in *)
-    env : ('m, 'a) env;
+    env : ('mode, 'm, 'a) env;
     termctx : ('mode, 'c, ('a, 'n) snoc) termctx option Lazy.t;
     (* Its fields, as unevaluted terms that depend on one additional variable belonging to the codatatype itself (usually through its previous fields).  Note that combining env, ins, and any of the field terms in a *lower* codatafield produces the data of a binder; so in the absence of higher codatatypes we can think of this as a family of binders, one for each field, that share the same environment and insertion.  (But with higher fields this is no longer the case, as the context of the types gets degenerated by their dimension.) *)
     fields : ('mode * 'a * 'n * 'et) Term.CodatafieldAbwd.t;
   }
 
   (* Each constructor stores the telescope of types of its arguments, as a closure, and the index values as function values taking its arguments. *)
-  and ('mode, _, _) dataconstr =
+  and (_, _, _) dataconstr =
     | Dataconstr : {
-        env : ('m, 'a) env;
+        env : ('mode, 'm, 'a) env;
         args : ('mode, 'a, 'p, 'ap) Telescope.t;
         indices : (('mode, 'ap, kinetic) term, 'ij) Vec.t;
       }
@@ -379,31 +389,39 @@ end = struct
   and 'mode normal = { tm : ('mode, kinetic) value; ty : ('mode, kinetic) value }
 
   (* An "environment" is a context morphism *from* a De Bruijn LEVEL context *to* a (typechecked) De Bruijn INDEX context.  Specifically, an ('n, 'a) env is an 'n-dimensional substitution from a level context to an index context indexed by the hctx 'a.  Since the index context could have some variables that are labeled by integers together with faces, the values also have to allow that.  The environment is NOT parametrized by a mode: the terms in it could belong to many modes, namely the domains of the modality annotations in the codomain context.  We don't enforce the validity of those modes here. *)
-  and (_, _) env =
-    | Emp : 'n D.t -> ('n, emp) env
+  and (_, _, _) env =
+    | Emp : 'mode Mode.t * 'n D.t -> ('mode, 'n, emp) env
     (* The (n+k)-cube here is morally a k-cube of n-cubes, representing a k-dimensional "cube variable" consisting of some number of "real" variables indexed by the faces of a k-cube, each of which has an n-cube of values representing a value and its boundaries.  But this contains the same data as an (n+k)-cube since a strict face of (n+k) decomposes uniquely as a strict face of n plus a strict face of k, and it seems to be more convenient to store it as a single (n+k)-cube. *)
     (* We have two kinds of variable bindings in an environment: lazy and non-lazy. *)
     | LazyExt :
-        ('n, 'b) env * ('n, 'k, 'nk) D.plus * ('nk, ('mode, kinetic) lazy_eval) CubeOf.t
-        -> ('n, ('b, 'k) snoc) env
+        ('mode, 'n, 'b) env
+        * ('n, 'k, 'nk) D.plus
+        * ('dom, 'modality, 'mode) Modality.t
+        * ('nk, ('dom, kinetic) lazy_eval) CubeOf.t
+        -> ('mode, 'n, ('b, 'k) snoc) env
     (* We also allow Error binding in an environment, indicating that that variable is not actually usable, usually due to an earlier error in typechecking that we've continued on from anyway.  *)
     | Ext :
-        ('n, 'b) env
+        ('mode, 'n, 'b) env
         * ('n, 'k, 'nk) D.plus
-        * (('nk, ('mode, kinetic) value) CubeOf.t, Code.t) Result.t
-        -> ('n, ('b, 'k) snoc) env
-    | Act : ('n, 'b) env * ('m, 'n) op -> ('m, 'b) env
-    | Key : ('n, 'b) env * ('dom, 'modality, 'mode) Modality.t -> ('n, 'b) env
-    | Permute : ('a, 'b) Tbwd.permute * ('n, 'b) env -> ('n, 'a) env
+        * ('dom, 'modality, 'mode) Modality.t
+        * (('nk, ('dom, kinetic) value) CubeOf.t, Code.t) Result.t
+        -> ('mode, 'n, ('b, 'k) snoc) env
+    | Act : ('mode, 'n, 'b) env * ('m, 'n) op -> ('mode, 'm, 'b) env
+    | Key : ('mode, 'n, 'b) env * ('dom, 'mu, 'nu, 'mode) Modalcell.t -> ('dom, 'n, 'b) env
+    | Permute : ('a, 'b) Tbwd.permute * ('mode, 'n, 'b) env -> ('mode, 'n, 'a) env
     (* Adding a dimension 'n to all the dimensions in a dimension list 'b is the power/cotensor in the dimension-enriched category of contexts.  Shifting an environment (substitution) implements its universal property: an (m+n)-dimensional substitution with codomain b is equivalent to an m-dimensional substitution with codomain n+b. *)
-    | Shift : ('mn, 'b) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb) Plusmap.t -> ('m, 'nb) env
+    | Shift :
+        ('mode, 'mn, 'b) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb) Plusmap.t
+        -> ('mode, 'm, 'nb) env
     (* Unshifting is the inverse operation, which semantically is composing with the universal n-dimensional substitution from n+b to b. *)
-    | Unshift : ('m, 'nb) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb) Plusmap.t -> ('mn, 'b) env
+    | Unshift :
+        ('mode, 'm, 'nb) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb) Plusmap.t
+        -> ('mode, 'mn, 'b) env
 
   (* An 's lazy_eval behaves from the outside like an 's evaluation Lazy.t.  But internally, in addition to being able to store an arbitrary thunk, it can also store a term and an environment in which to evaluate it (plus an outer insertion that can't be pushed into the environment).  This allows it to accept degeneracy actions and incorporate them into the environment, so that when it's eventually forced the term only has to be traversed once.  It can also accumulate degeneracies on an arbitrary thunk (which could, of course, be a constant value that was already forced, but now is deferred again until it's done accumulating degeneracy actions).  Both kinds of deferred values can also store more arguments and field projections for it to be applied to; this is only used in glued evaluation. *)
   and ('mode, 's) lazy_state =
     | Deferred_eval :
-        ('m, 'b) env * ('mode, 'b, 's) term * ('mn, 'm, 'n) insertion * ('mode, 'any) apps
+        ('mode, 'm, 'b) env * ('mode, 'b, 's) term * ('mn, 'm, 'n) insertion * ('mode, 'any) apps
         -> ('mode, 's) lazy_state
     | Deferred :
         (unit -> ('mode, 's) evaluation) * ('m, 'n) deg * ('mode, 'any) apps
@@ -421,10 +439,10 @@ type (_, _) modal_value =
 type any_canonical = Any : ('mode, 'm, 'n) canonical -> any_canonical
 
 (* Every context morphism has a valid dimension. *)
-let rec dim_env : type n b. (n, b) env -> n D.t = function
-  | Emp n -> n
-  | Ext (e, _, _) -> dim_env e
-  | LazyExt (e, _, _) -> dim_env e
+let rec dim_env : type mode n b. (mode, n, b) env -> n D.t = function
+  | Emp (_, n) -> n
+  | Ext (e, _, _, _) -> dim_env e
+  | LazyExt (e, _, _, _) -> dim_env e
   | Act (_, op) -> dom_op op
   | Key (e, _) -> dim_env e
   | Permute (_, e) -> dim_env e
@@ -442,12 +460,12 @@ let dim_binder : type mode m s. (mode, m, s) binder -> m D.t = function
      | Codata { ins; _ } -> dom_ins ins *)
 
 (* The length of an environment is a tbwd of dimensions. *)
-let rec length_env : type n b. (n, b) env -> b Dbwd.t = function
+let rec length_env : type mode n b. (mode, n, b) env -> b Dbwd.t = function
   | Emp _ -> Word Zero
-  | Ext (env, nk, _) ->
+  | Ext (env, nk, _, _) ->
       let (Word le) = length_env env in
       Word (Suc (le, D.plus_right nk))
-  | LazyExt (env, nk, _) ->
+  | LazyExt (env, nk, _, _) ->
       let (Word le) = length_env env in
       Word (Suc (le, D.plus_right nk))
   | Act (env, _) -> length_env env
@@ -467,7 +485,7 @@ let lam_cube : type dom modality mode n.
     { build = (fun fa -> Lam (sub_variables fa x, modality, BindCube.find binders fa)) }
 
 (* Smart constructor that composes actions and cancels identities *)
-let rec act_env : type m n b. (n, b) env -> (m, n) op -> (m, b) env =
+let rec act_env : type mode m n b. (mode, n, b) env -> (m, n) op -> (mode, m, b) env =
  fun env s ->
   match env with
   | Act (env, s') -> act_env env (comp_op s' s)
@@ -476,8 +494,21 @@ let rec act_env : type m n b. (n, b) env -> (m, n) op -> (m, b) env =
       | Some Eq -> env
       | None -> Act (env, s))
 
+(* Smart constructor that composes keys and drops identities *)
+let rec key_env : type dom mu nu cod m b.
+    (cod, m, b) env -> (dom, mu, nu, cod) Modalcell.t -> (dom, m, b) env =
+ fun env key ->
+  match env with
+  | Key (env, k') ->
+      let (Wrap key) = Modalcell.hcomp k' key in
+      key_env env key
+  | _ -> (
+      match Modalcell.compare_id key with
+      | Eq -> env
+      | Neq -> Key (env, key))
+
 (* Create a lazy evaluation *)
-let lazy_eval : type mode n b s. (n, b) env -> (mode, b, s) term -> (mode, s) lazy_eval =
+let lazy_eval : type mode n b s. (mode, n, b) env -> (mode, b, s) term -> (mode, s) lazy_eval =
  fun env tm -> ref (Deferred_eval (env, tm, ins_zero (dim_env env), Emp))
 
 (* Safe coercion for phantom 'mode parameter *)
@@ -524,7 +555,8 @@ let val_of_norm_tube : type mode n k nk.
  fun arg -> TubeOf.mmap { map = (fun _ [ { tm; ty = _ } ] -> tm) } [ arg ]
 
 (* Remove an entry from an environment *)
-let rec remove_env : type a k b n. (n, b) env -> (a, k, b) Tbwd.insert -> (n, a) env =
+let rec remove_env : type mode a k b n.
+    (mode, n, b) env -> (a, k, b) Tbwd.insert -> (mode, n, a) env =
  fun env v ->
   match (env, v) with
   | Emp _, _ -> .
@@ -533,10 +565,10 @@ let rec remove_env : type a k b n. (n, b) env -> (a, k, b) Tbwd.insert -> (n, a)
   | Permute (p, env), _ ->
       let (Permute_insert (v', p')) = Tbwd.permute_insert v p in
       Permute (p', remove_env env v')
-  | Ext (env, nk, xs), Later v -> Ext (remove_env env v, nk, xs)
-  | LazyExt (env, nk, xs), Later v -> LazyExt (remove_env env v, nk, xs)
-  | Ext (env, _, _), Now -> env
-  | LazyExt (env, _, _), Now -> env
+  | Ext (env, nk, modality, xs), Later v -> Ext (remove_env env v, nk, modality, xs)
+  | LazyExt (env, nk, modality, xs), Later v -> LazyExt (remove_env env v, nk, modality, xs)
+  | Ext (env, _, _, _), Now -> env
+  | LazyExt (env, _, _, _), Now -> env
   | Shift (env, mn, nb), _ ->
       let (Uncoinsert (_, v', na)) = Plusmap.uncoinsert v nb in
       Shift (remove_env env v', mn, na)
@@ -546,7 +578,10 @@ let rec remove_env : type a k b n. (n, b) env -> (a, k, b) Tbwd.insert -> (n, a)
 
 (* Binders are completely lazy, so we can "evaluate" them independently of the master evaluation functions in norm. *)
 let eval_binder : type mode m n mn b s.
-    (m, b) env -> (m, n, mn) D.plus -> (mode, (b, n) snoc, s) term -> (mode, mn, s) Value.binder =
+    (mode, m, b) env ->
+    (m, n, mn) D.plus ->
+    (mode, (b, n) snoc, s) term ->
+    (mode, mn, s) Value.binder =
  fun env mn body ->
   let m = dim_env env in
   let ins = id_ins m mn in
@@ -554,7 +589,7 @@ let eval_binder : type mode m n mn b s.
 
 (* Same with structfields *)
 let rec eval_structfield : type mode m n mn a status i et.
-    (m, a) env ->
+    (mode, m, a) env ->
     m D.t ->
     (m, n, mn) D.plus ->
     mn D.t ->
@@ -567,7 +602,7 @@ let rec eval_structfield : type mode m n mn a status i et.
   | LazyHigher terms -> Higher (lazy (eval_higher_structfield env m m_n mn (Lazy.force terms)))
 
 and eval_higher_structfield : type mode m n mn a i.
-    (m, a) env ->
+    (mode, m, a) env ->
     m D.t ->
     (m, n, mn) D.plus ->
     mn D.t ->
@@ -605,7 +640,7 @@ and eval_higher_structfield : type mode m n mn a i.
   { intrinsic; plusdim = m_n; terms; env; deg = id_deg mn; vals }
 
 let eval_structfield_abwd : type mode m n mn a status et.
-    (m, a) env ->
+    (mode, m, a) env ->
     m D.t ->
     (m, n, mn) D.plus ->
     mn D.t ->
@@ -618,12 +653,14 @@ let eval_structfield_abwd : type mode m n mn a status et.
     [ fields ]
 
 (* The universe of any dimension belongs to an instantiation of itself.  Note that the result is not itself a type (i.e. in the 0-dimensional universe) unless n=0.  This is the universe itself as a term. *)
-let rec universe : type mode n. n D.t -> (mode, kinetic) value =
- fun n ->
+let rec universe : type mode n. mode Mode.t -> n D.t -> (mode, kinetic) value =
+ fun mode n ->
   let fields =
     match Lazy.force Fibrancy.universe with
     | None -> Bwd.Emp
-    | Some fields -> coerce_mode (eval_structfield_abwd (Emp n) n (D.plus_zero n) n fields) in
+    | Some _fields ->
+        let fields = Sorry.e () in
+        coerce_mode (eval_structfield_abwd (Emp (mode, n)) n (D.plus_zero n) n fields) in
   let value =
     ready
       (Val
@@ -635,16 +672,16 @@ let rec universe : type mode n. n D.t -> (mode, kinetic) value =
               fields;
               inst_fields = Some fields;
             })) in
-  Neu { head = UU n; args = Emp; value; ty = lazy (universe_ty n) }
+  Neu { head = UU n; args = Emp; value; ty = lazy (universe_ty mode n) }
 
-and universe_nf : type mode n. n D.t -> mode normal =
- fun n -> { tm = universe n; ty = universe_ty n }
+and universe_nf : type mode n. mode Mode.t -> n D.t -> mode normal =
+ fun mode n -> { tm = universe mode n; ty = universe_ty mode n }
 
 (* And this is the instantiation of itself that it belongs to.  This is a type (i.e. an element of the 0-dimensional universe), so it must be fully instantiated.  *)
-and universe_ty : type mode n. n D.t -> (mode, kinetic) value =
- fun n ->
+and universe_ty : type mode n. mode Mode.t -> n D.t -> (mode, kinetic) value =
+ fun mode n ->
   match D.compare_zero n with
-  | Zero -> universe D.zero
+  | Zero -> universe mode D.zero
   | Pos n' ->
       let args =
         TubeOf.build D.zero (D.zero_plus n)
@@ -652,20 +689,21 @@ and universe_ty : type mode n. n D.t -> (mode, kinetic) value =
             build =
               (fun fa ->
                 let m = dom_tface fa in
-                universe_nf m);
+                universe_nf mode m);
           } in
       let fields =
         match Lazy.force Fibrancy.universe with
         | None -> Bwd.Emp
-        | Some fields -> coerce_mode (eval_structfield_abwd (Emp n) n (D.plus_zero n) n fields)
-      in
+        | Some _fields ->
+            let fields = Sorry.e () in
+            coerce_mode (eval_structfield_abwd (Emp (mode, n)) n (D.plus_zero n) n fields) in
       let value =
         ready
           (Val
              (Canonical
                 { canonical = UU n; tyargs = args; ins = ins_zero n; fields; inst_fields = None }))
       in
-      Neu { head = UU n; args = Inst (Emp, n', args); value; ty = lazy (universe D.zero) }
+      Neu { head = UU n; args = Inst (Emp, n', args); value; ty = lazy (universe mode D.zero) }
 
 type 'mode any_apps = Any : ('mode, 'any) apps -> 'mode any_apps
 

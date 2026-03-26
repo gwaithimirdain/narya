@@ -85,7 +85,7 @@ module Codata = struct
    fun (Fibrancy (type nh hb) (f : (mode, g, n, nh, b, hb, et) codata_fibrancy))
        (Entry (fld, fldty)) ->
     (* x is the index-zero variable. *)
-    let x = Var (Index (Now, id_sface D.zero)) in
+    let x = Var (Index (Now, id_sface D.zero), Sorry.e ()) in
     let ins = zero_ins Hott.dim in
     (* Compute terms that project each fibrancy field out of the codatatype and apply it to the index-zero variable 'x'. *)
     let idm = Sorry.e () in
@@ -175,9 +175,9 @@ module Codata = struct
           | Zero ->
               let hlength = Plusmap.out Hott.dim length plusmap in
               let hlength00 = Plusmap.OfDom.suc (Plusmap.OfDom.suc hlength D.zero) D.zero in
-              let x0 = Var (Index (Later (Later Now), id_sface D.zero)) in
-              let x1 = Var (Index (Later Now, id_sface D.zero)) in
-              let x2 = Var (Index (Now, id_sface D.zero)) in
+              let x0 = Var (Index (Later (Later Now), id_sface D.zero), Sorry.e ()) in
+              let x1 = Var (Index (Later Now, id_sface D.zero), Sorry.e ()) in
+              let x2 = Var (Index (Now, id_sface D.zero), Sorry.e ()) in
               let* xtube = Hott.tube x0 x1 in
               let* xcube = Hott.cube x0 x1 x2 in
               let folder :
@@ -208,9 +208,9 @@ module Codata = struct
                 | Higher _ ->
                     (* TODO *)
                     (fields, fib) in
-              let x0 = Var (Index (Later Now, id_sface D.zero)) in
+              let x0 = Var (Index (Later Now, id_sface D.zero), Sorry.e ()) in
               let x1 : (mode, ((hb, D.zero) snoc, D.zero) snoc, kinetic) term =
-                Var (Index (Now, id_sface D.zero)) in
+                Var (Index (Now, id_sface D.zero), Sorry.e ()) in
               let* xtube = Hott.tube x0 x1 in
               let fields, Fibrancy fib =
                 Bwd.fold_left folder

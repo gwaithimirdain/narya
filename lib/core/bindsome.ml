@@ -246,7 +246,7 @@ module Ordered = struct
       (lmode, rmode, j, cf, c) tel -> (lmode, rmode, j, cf, c) strip_locks = function
     | Lock (modality1, tel) ->
         let (Locked (modality2, tel)) = strip_locks tel in
-        let (Wrap modality) = Modality.comp modality2 modality1 in
+        let (Wrap modality) = Modality.comp modality1 modality2 in
         Locked (modality, tel)
     | _ -> fatal (Anomaly "strip_locks called on an unlocked telescope")
 

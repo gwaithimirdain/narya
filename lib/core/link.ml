@@ -8,7 +8,7 @@ open Origin
 let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, a, s) term =
  fun f tm ->
   match tm with
-  | Var i -> Var i
+  | Var (i, key) -> Var (i, key)
   | Const c -> Const (Constant.remake f c)
   | Meta (m, s) -> Meta (Meta.remake f m, s)
   | MetaEnv (m, e) -> MetaEnv (Meta.remake f m, env f e)
@@ -137,11 +137,12 @@ and tel : type mode a b ab. (File.t -> File.t) -> (mode, a, b, ab) tel -> (mode,
   | Emp -> Emp
   | Ext (x, modality, ty, t) -> Ext (x, modality, term f ty, tel f t)
 
-and env : type a n b. (File.t -> File.t) -> (a, n, b) env -> (a, n, b) env =
+and env : type mode a n b. (File.t -> File.t) -> (mode, a, n, b) env -> (mode, a, n, b) env =
  fun f e ->
   match e with
-  | Emp n -> Emp n
-  | Ext (e, nk, xs) -> Ext (env f e, nk, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ xs ])
+  | Emp (mode, n) -> Emp (mode, n)
+  | Ext (e, nk, modality, xs) ->
+      Ext (env f e, nk, modality, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ xs ])
   | Key (e, mu) -> Key (env f e, mu)
 
 and entry : type dom modality mode b f mn.

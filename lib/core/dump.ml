@@ -19,8 +19,8 @@ type printable +=
   | Binder : ('mode, 'b, 's) binder -> printable
   | Term : ('mode, 'b, 's) term -> printable
   | Tel : ('mode, 'a, 'b, 'ab) Telescope.t -> printable
-  | Env : ('n, 'b) Value.env -> printable
-  | DeepEnv : ('n, 'b) Value.env * int -> printable
+  | Env : ('mode, 'n, 'b) Value.env -> printable
+  | DeepEnv : ('mode, 'n, 'b) Value.env * int -> printable
   | Check : 'a check -> printable
   | Apps : ('mode, 'any) apps -> printable
   | Entry : ('dom, 'modality, 'mode, 'x, 'n) Ctx.entry -> printable
@@ -210,25 +210,25 @@ module F = struct
       (string_of_dim (cod_left_ins ins))
       (string_of_ins ins)
 
-  and denv : type b n. int -> formatter -> (n, b) Value.env -> unit =
+  and denv : type mode b n. int -> formatter -> (mode, n, b) Value.env -> unit =
    fun depth ppf e ->
     match e with
-    | Emp d -> fprintf ppf "Emp %a" dim d
-    | Ext (e, _, Ok v) -> fprintf ppf "%a <: %a" env e (cubeof (dvalue depth)) v
-    | Ext (e, _, Error _) -> fprintf ppf "%a <: Err" env e
-    | LazyExt (e, _, v) -> fprintf ppf "%a <; %a" env e (cubeof (lazy_eval depth)) v
+    | Emp (_, d) -> fprintf ppf "Emp %a" dim d
+    | Ext (e, _, _, Ok v) -> fprintf ppf "%a <: %a" env e (cubeof (dvalue depth)) v
+    | Ext (e, _, _, Error _) -> fprintf ppf "%a <: Err" env e
+    | LazyExt (e, _, _, v) -> fprintf ppf "%a <; %a" env e (cubeof (lazy_eval depth)) v
     | Act (e, Op (f, d)) -> fprintf ppf "%a <* (%s,%s)" env e (string_of_sface f) (string_of_deg d)
     | Key (e, _mu) -> fprintf ppf "%a <%% ?" env e
     | Permute (_, e) -> fprintf ppf "(%a) permuted(?)" env e
     | Shift (e, mn, _) -> fprintf ppf "%a << %a" env e dim (D.plus_right mn)
     | Unshift (e, mn, _) -> fprintf ppf "%a >> %a" env e dim (D.plus_right mn)
 
-  and env : type b n. formatter -> (n, b) Value.env -> unit = fun ppf e -> denv 0 ppf e
+  and env : type mode b n. formatter -> (mode, n, b) Value.env -> unit = fun ppf e -> denv 0 ppf e
 
   and term : type mode b s. formatter -> (mode, b, s) term -> unit =
    fun ppf tm ->
     match tm with
-    | Var (Index (x, fa)) -> fprintf ppf "IVar %d.%s" (Tbwd.int_of_insert x) (string_of_sface fa)
+    | Var (Index (x, fa), _) -> fprintf ppf "IVar %d.%s" (Tbwd.int_of_insert x) (string_of_sface fa)
     | Const c -> fprintf ppf "Const %s" (print_to_string (PConstant c))
     | Meta (v, _) -> fprintf ppf "Meta %s" (print_to_string (PMeta v))
     | MetaEnv (v, _) -> fprintf ppf "MetaEnv (%s,?)" (print_to_string (PMeta v))

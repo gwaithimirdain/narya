@@ -69,11 +69,11 @@ module rec Term : sig
 
   type _ index = Index : ('a, 'n, 'b) Tbwd.insert * ('k, 'n) sface -> 'b index
 
-  type ('mode, _, _) term =
-    | Var : 'a index -> ('mode, 'a, kinetic) term
+  type (_, _, _) term =
+    | Var : 'a index * ('mode, 'mu, 'nu, 'cod) Modalcell.t -> ('mode, 'a, kinetic) term
     | Const : Constant.t -> ('mode, 'a, kinetic) term
     | Meta : ('x, 'b, 'l) Meta.t * 's energy -> ('mode, 'b, 's) term
-    | MetaEnv : ('x, 'b, 's) Meta.t * ('a, 'n, 'b) env -> ('mode, 'a, kinetic) term
+    | MetaEnv : ('x, 'b, 's) Meta.t * ('mode, 'a, 'n, 'b) env -> ('mode, 'a, kinetic) term
     | Field :
         ('mode, 'a, kinetic) term * 'i Field.t * ('n, 't, 'i) insertion
         -> ('mode, 'a, kinetic) term
@@ -125,13 +125,13 @@ module rec Term : sig
     energy : 's energy;
   }
 
-  and ('mode, _, _) branch =
+  and (_, _, _) branch =
     | Branch :
         ('a, 'b, 'n, 'ab) Tbwd.snocs * ('c, 'ab) Tbwd.permute * ('mode, 'c, potential) term
         -> ('mode, 'a, 'n) branch
     | Refute
 
-  and ('mode, _) canonical =
+  and (_, _) canonical =
     | Data : {
         indices : 'i Fwn.t;
         constrs : (Constr.t, ('mode, 'a, 'i) dataconstr) Abwd.t;
@@ -164,7 +164,7 @@ module rec Term : sig
     liftl : ('mode * 'nh * ('hb, D.zero) snoc * potential * 'et) StructfieldAbwd.t;
   }
 
-  and ('mode, _, _) dataconstr =
+  and (_, _, _) dataconstr =
     | Dataconstr : {
         args : ('mode, 'p, 'a, 'pa) tel;
         indices : (('mode, 'pa, kinetic) term, 'i) Vec.t;
@@ -180,12 +180,15 @@ module rec Term : sig
         * ('mode, ('a, D.zero) snoc, 'b, 'ab) tel
         -> ('mode, 'a, 'b Fwn.suc, 'ab) tel
 
-  and (_, _, _) env =
-    | Emp : 'n D.t -> ('a, 'n, emp) env
+  and (_, _, _, _) env =
+    | Emp : 'mode Mode.t * 'n D.t -> ('mode, 'a, 'n, emp) env
     | Ext :
-        ('a, 'n, 'b) env * ('n, 'k, 'nk) D.plus * ('nk, ('mode, 'a, kinetic) term) CubeOf.t
-        -> ('a, 'n, ('b, 'k) snoc) env
-    | Key : ('a, 'n, 'b) env * ('dom, 'modality, 'mode) Modality.t -> ('a, 'n, 'b) env
+        ('mode, 'a, 'n, 'b) env
+        * ('n, 'k, 'nk) D.plus
+        * ('dom, 'modality, 'mode) Modality.t
+        * ('nk, ('dom, 'a, kinetic) term) CubeOf.t
+        -> ('mode, 'a, 'n, ('b, 'k) snoc) env
+    | Key : ('mode, 'a, 'n, 'b) env * ('dom, 'modality, 'mode) Modality.t -> ('dom, 'a, 'n, 'b) env
 
   and ('mode, 'b) binding = {
     ty : ('mode, 'b, kinetic) term;
@@ -276,13 +279,14 @@ end = struct
   (* A typechecked De Bruijn index is a well-scoped natural number together with a definite strict face (the top face, if none was supplied explicitly).  Unlike a raw De Bruijn index, the scoping is by a tbwd rather than a type-level nat.  This allows the face to also be well-scoped: its codomain must be the dimension appearing in the hctx at that position.  And since we already have defined Tbwd.insert, we can re-use that instead of re-defining this inductively. *)
   type _ index = Index : ('a, 'n, 'b) Tbwd.insert * ('k, 'n) sface -> 'b index
 
-  type ('mode, _, _) term =
+  type (_, _, _) term =
     (* Most term-formers only appear in kinetic (ordinary) terms. *)
-    | Var : 'a index -> ('mode, 'a, kinetic) term
+    (* Variables come along with a modal key 2-cell. *)
+    | Var : 'a index * ('mode, 'mu, 'nu, 'cod) Modalcell.t -> ('mode, 'a, kinetic) term
     | Const : Constant.t -> ('mode, 'a, kinetic) term
     | Meta : ('x, 'b, 'l) Meta.t * 's energy -> ('mode, 'b, 's) term
     (* Normally, checked metavariables don't require an environment attached, but they do when they arise by readback from a value metavariable. *)
-    | MetaEnv : ('x, 'b, 's) Meta.t * ('a, 'n, 'b) env -> ('mode, 'a, kinetic) term
+    | MetaEnv : ('x, 'b, 's) Meta.t * ('mode, 'a, 'n, 'b) env -> ('mode, 'a, kinetic) term
     | Field :
         ('mode, 'a, kinetic) term * 'i Field.t * ('n, 't, 'i) insertion
         -> ('mode, 'a, kinetic) term
@@ -340,7 +344,7 @@ end = struct
   }
 
   (* A branch of a match binds a number of new variables.  If it is a higher-dimensional match, then each of those "variables" is actually a full cube of variables.  In addition, its context must be permuted to put those new variables before the existing variables that are now defined in terms of them. *)
-  and ('mode, _, _) branch =
+  and (_, _, _) branch =
     | Branch :
         ('a, 'b, 'n, 'ab) Tbwd.snocs * ('c, 'ab) Tbwd.permute * ('mode, 'c, potential) term
         -> ('mode, 'a, 'n) branch
@@ -348,7 +352,7 @@ end = struct
     | Refute
 
   (* A canonical type is either a datatype or a codatatype/record. *)
-  and ('mode, _) canonical =
+  and (_, _) canonical =
     (* A datatype stores its family of constructors, whether it is discrete, and also its number of indices.  (The former is not determined in the latter if there happen to be zero constructors). *)
     | Data : {
         indices : 'i Fwn.t;
@@ -394,7 +398,7 @@ end = struct
   }
 
   (* A datatype constructor has a telescope of arguments and a list of index values depending on those arguments. *)
-  and ('mode, _, _) dataconstr =
+  and (_, _, _) dataconstr =
     | Dataconstr : {
         args : ('mode, 'p, 'a, 'pa) tel;
         indices : (('mode, 'pa, kinetic) term, 'i) Vec.t;
@@ -412,12 +416,15 @@ end = struct
         -> ('mode, 'a, 'b Fwn.suc, 'ab) tel
 
   (* A version of an environment (see below) that involves terms rather than values.  Used mainly when reading back metavariables. *)
-  and (_, _, _) env =
-    | Emp : 'n D.t -> ('a, 'n, emp) env
+  and (_, _, _, _) env =
+    | Emp : 'mode Mode.t * 'n D.t -> ('mode, 'a, 'n, emp) env
     | Ext :
-        ('a, 'n, 'b) env * ('n, 'k, 'nk) D.plus * ('nk, ('mode, 'a, kinetic) term) CubeOf.t
-        -> ('a, 'n, ('b, 'k) snoc) env
-    | Key : ('a, 'n, 'b) env * ('dom, 'modality, 'mode) Modality.t -> ('a, 'n, 'b) env
+        ('mode, 'a, 'n, 'b) env
+        * ('n, 'k, 'nk) D.plus
+        * ('dom, 'modality, 'mode) Modality.t
+        * ('nk, ('dom, 'a, kinetic) term) CubeOf.t
+        -> ('mode, 'a, 'n, ('b, 'k) snoc) env
+    | Key : ('mode, 'a, 'n, 'b) env * ('dom, 'modality, 'mode) Modality.t -> ('dom, 'a, 'n, 'b) env
 
   (* A termctx is a data structure analogous to a Ctx.t, but using terms rather than values (and thus we will not explain its structure here; see ctx.ml).  This is used to store the context of a metavariable, as the value context containing level variables is too volatile to store there.  We also store it (lazily) with a codatatype that has higher fields, so we can use it to read back the closure environment to degenerate it. *)
   and ('mode, 'b) binding = {
@@ -506,9 +513,9 @@ module Telescope = struct
     | Ext (_, _, _, tel) -> Suc (snocs tel)
 end
 
-let rec dim_term_env : type a n b. (a, n, b) env -> n D.t = function
-  | Emp n -> n
-  | Ext (e, _, _) -> dim_term_env e
+let rec dim_term_env : type mode a n b. (mode, a, n, b) env -> n D.t = function
+  | Emp (_, n) -> n
+  | Ext (e, _, _, _) -> dim_term_env e
   | Key (e, _) -> dim_term_env e
 
 let dim_entry : type dom modality mode b f n. (dom, modality, mode, b, f, n) entry -> n D.t =

@@ -208,7 +208,7 @@ module Ordered = struct
    fun ctx mu ->
     match ctx with
     | Lock (ctx, nu) ->
-        let (Wrap numu) = Modality.comp mu nu in
+        let (Wrap numu) = Modality.comp nu mu in
         lock ctx numu
     | _ -> (
         match Modality.compare_id mu with
@@ -272,10 +272,10 @@ module Ordered = struct
     | Lock (ctx, lock), _ -> (
         match lookup ctx k with
         | Var var ->
-            let (Wrap lock) = Modality.comp lock var.lock in
+            let (Wrap lock) = Modality.comp var.lock lock in
             Var { var with lock }
         | Field fld ->
-            let (Wrap lock) = Modality.comp lock fld.lock in
+            let (Wrap lock) = Modality.comp fld.lock lock in
             Field { fld with lock })
 
   (* For each entry, we iterate through the list of fields or the cube of names, as appropriate. *)
@@ -392,13 +392,13 @@ module Ordered = struct
       [ v ]
 
   (* This function traverses the entire context and computes the corresponding environment.  However, when we add permutations to environments below, we will also store a precomputed environment, so this function only needs to be called when the context has been globally modified. *)
-  let rec env : type mode a b. (mode, a, b) t -> (D.zero, b) env = function
-    | Emp _ -> Emp D.zero
-    | Snoc (ctx, Vis { bindings; _ }, _) ->
-        LazyExt (env ctx, D.zero_plus (CubeOf.dim bindings), env_entry bindings)
-    | Snoc (ctx, Invis (_, bindings), _) ->
-        LazyExt (env ctx, D.zero_plus (CubeOf.dim bindings), env_entry bindings)
-    | Lock (ctx, _) -> env ctx
+  let rec env : type mode a b. (mode, a, b) t -> (mode, D.zero, b) env = function
+    | Emp mode -> Emp (mode, D.zero)
+    | Snoc (ctx, Vis { bindings; modality; _ }, _) ->
+        LazyExt (env ctx, D.zero_plus (CubeOf.dim bindings), modality, env_entry bindings)
+    | Snoc (ctx, Invis (modality, bindings), _) ->
+        LazyExt (env ctx, D.zero_plus (CubeOf.dim bindings), modality, env_entry bindings)
+    | Lock (ctx, lock) -> Key (env ctx, Modalcell.id lock)
 
   (* Extend a context by one new variable, without a value but with an assigned type. *)
   let ext : type dom modality mode a b.
@@ -475,7 +475,7 @@ end
 type ('mode, 'a, 'b) t =
   | Permute : {
       perm : ('a, 'i) N.perm;
-      env : (D.zero, 'b) env;
+      env : ('mode, D.zero, 'b) env;
       level : int;
       ctx : ('mode, 'i, 'b) Ordered.t;
     }
@@ -488,7 +488,7 @@ let vis (Permute { perm; env; level; ctx }) modality m mn xs vars af =
   Permute
     {
       perm = N.perm_plus perm af bf;
-      env = LazyExt (env, D.zero_plus (CubeOf.dim vars), Ordered.env_entry vars);
+      env = LazyExt (env, D.zero_plus (CubeOf.dim vars), modality, Ordered.env_entry vars);
       level = level + 1;
       ctx = Ordered.vis ctx modality m mn xs vars bf;
     }
@@ -511,10 +511,11 @@ let cube_vis ctx modality x vars =
 
 let vis_fields (Permute { perm; env; level; ctx }) xs vars fields fplus af =
   let (Plus bf) = N.plus (N.plus_right af) in
+  let (Wrap modality) = Modality.id (Ordered.mode ctx) in
   Permute
     {
       perm = N.perm_plus perm af bf;
-      env = LazyExt (env, D.zero_plus (CubeOf.dim vars), Ordered.env_entry vars);
+      env = LazyExt (env, D.zero_plus (CubeOf.dim vars), modality, Ordered.env_entry vars);
       level = level + 1;
       ctx = Ordered.vis_fields ctx xs vars fields fplus bf;
     }
@@ -523,7 +524,7 @@ let invis (Permute { perm; env; level; ctx }) modality vars =
   Permute
     {
       perm;
-      env = LazyExt (env, D.zero_plus (CubeOf.dim vars), Ordered.env_entry vars);
+      env = LazyExt (env, D.zero_plus (CubeOf.dim vars), modality, Ordered.env_entry vars);
       level = level + 1;
       ctx = Ordered.invis ctx modality vars;
     }
@@ -542,7 +543,7 @@ let maybe_lock ctx fa =
   else ctx
 
 let empty mode =
-  Permute { perm = N.id_perm N.zero; env = Emp D.zero; level = 0; ctx = Ordered.empty mode }
+  Permute { perm = N.id_perm N.zero; env = Emp (mode, D.zero); level = 0; ctx = Ordered.empty mode }
 
 let dbwd (Permute { ctx; _ }) = Ordered.dbwd ctx
 let apps (Permute { ctx; _ }) = Ordered.apps ctx
@@ -559,7 +560,7 @@ let ext (Permute { perm; env; level; ctx }) modality xs ty =
   Permute
     {
       perm = Insert (perm, Top);
-      env = LazyExt (env, D.zero_plus D.zero, Ordered.env_entry (CubeOf.singleton b));
+      env = LazyExt (env, D.zero_plus D.zero, modality, Ordered.env_entry (CubeOf.singleton b));
       level = level + 1;
       ctx;
     }
@@ -569,7 +570,7 @@ let ext_let (Permute { perm; env; level; ctx }) modality xs tm =
   Permute
     {
       perm = Insert (perm, Top);
-      env = LazyExt (env, D.zero_plus D.zero, Ordered.env_entry (CubeOf.singleton b));
+      env = LazyExt (env, D.zero_plus D.zero, modality, Ordered.env_entry (CubeOf.singleton b));
       level = level + 1;
       ctx;
     }
@@ -583,9 +584,9 @@ type ('mode, _, _) pop =
 let pop : type mode a b. (mode, a, b) t -> ((mode, a, b) pop, string) Result.t =
  fun (Permute { ctx; perm; level; env }) ->
   match (Ordered.pop ctx, perm, env) with
-  | Some (Pop (ctx, Eq, Eq)), Insert (perm, Top), LazyExt (env, _, _) ->
+  | Some (Pop (ctx, Eq, Eq)), Insert (perm, Top), LazyExt (env, _, _, _) ->
       Ok (Pop (Permute { ctx; perm; level; env }, Eq, Eq))
-  | Some (Pop (ctx, Eq, Eq)), Id, LazyExt (env, _, _) ->
+  | Some (Pop (ctx, Eq, Eq)), Id, LazyExt (env, _, _, _) ->
       Ok (Pop (Permute { ctx; perm = Id; level; env }, Eq, Eq))
   | Some (Pop (_, Eq, Eq)), Insert (_, Top), _ -> Error "not lazyext"
   | Some (Pop (_, Eq, Eq)), _, _ -> Error "not insert-top"

@@ -60,11 +60,11 @@ module Modality = struct
 end
 
 module Modalcell = struct
-  type (_, _) t = Id_cell : (id_modality, id_modality) t
+  type (_, _, _, _) t = Id_cell : (Mode.test, id_modality, id_modality, Mode.test) t
 
   (* If there is a unique 2-cell with given domain and codomain, find it.  (Unique cells can be omitted by the user.)  Also checks that the domains and codomains agree. *)
   type (_, _, _, _, _, _) find_unique =
-    | Unique : ('m, 'n) t -> ('a, 'm, 'b, 'a, 'n, 'b) find_unique
+    | Unique : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'b, 'a, 'n, 'b) find_unique
     | Nonunique : ('a, 'm, 'b, 'c, 'n, 'd) find_unique
 
   let find_unique : type a m b c n d.
@@ -72,6 +72,26 @@ module Modalcell = struct
    fun mu nu ->
     match (mu, nu) with
     | Id_modality, Id_modality -> Unique Id_cell
+
+  let id : type dom modality cod.
+      (dom, modality, cod) Modality.t -> (dom, modality, modality, cod) t = function
+    | Id_modality -> Id_cell
+
+  let compare_id : type dom mu nu cod. (dom, mu, nu, cod) t -> (dom * mu, cod * nu) Eq.compare =
+    function
+    | Id_cell -> Eq
+
+  type (_, _) wrapped = Wrap : ('a, 'm, 'n, 'b) t -> ('a, 'b) wrapped
+
+  let hcomp : type a m n b r s c. (b, m, n, c) t -> (a, r, s, b) t -> (a, c) wrapped =
+   fun x y ->
+    match (x, y) with
+    | Id_cell, Id_cell -> Wrap Id_cell
+
+  let vcomp : type a m n r b. (a, n, r, b) t -> (a, m, n, b) t -> (a, m, r, b) t =
+   fun x y ->
+    match (x, y) with
+    | Id_cell, Id_cell -> Id_cell
 end
 
 let test_mode : test_mode Mode.t = Test_mode

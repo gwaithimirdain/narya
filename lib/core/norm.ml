@@ -12,26 +12,27 @@ open Printable
 open View
 
 (* Since some entries in an environment are lazy and some aren't, lookup_cube returns a cube whose entries belong to an existential type, along with a function to act on any element of that type and force it into a value.  It also returns an accumulated operator by which to act, first selecting an entry in the cube with a face and then acting on that value by a degeneracy.  TODO: Finally, it also returns an accumulated modal key substitution. *)
-type _ looked_up_cube =
+type (_, _) looked_up_cube =
   | Looked_up : {
       act : 'x 'y. 'a -> ('x, 'y) deg -> ('mode, kinetic) value;
       op : ('m, 'n) op;
+      key : ('mode, 'mu, 'nu, 'cod) Modalcell.t;
       entry : ('n, 'a) CubeOf.t;
     }
-      -> 'm looked_up_cube
+      -> ('mode, 'm) looked_up_cube
 
 (* Require that the supplied list contains exactly b (which is a Fwn) arguments, and add all of the cubes to the given environment. *)
 let rec take_args : type mode m n mn a b ab.
-    (m, a) env ->
+    (mode, m, a) env ->
     (m, n, mn) D.plus ->
     (mn, mode, kinetic, unit) ModalValueCube.t list ->
     (a, b, n, ab) Tbwd.snocs ->
-    (m, ab) env =
+    (mode, m, ab) env =
  fun env mn dargs plus ->
   match (dargs, plus) with
   | [], Zero -> env
-  (* We ignore the modality annotations, since all modes in an env are existential. *)
-  | Modal (_, arg) :: args, Suc plus -> take_args (Ext (env, mn, Ok arg)) mn args plus
+  | Modal (modality, arg) :: args, Suc plus ->
+      take_args (Ext (env, mn, modality, Ok arg)) mn args plus
   | _ -> fatal (Anomaly "wrong number of arguments in argument list")
 
 (* Eval-readback callback for tyof_higher_codatafield *)
@@ -44,8 +45,8 @@ type ('mode, _, _, _, _) shuffleable =
         's 'sh 'r_sh.
         ('s, 'h, 'sh) D.plus ->
         ('r, 'sh, 'r_sh) D.plus ->
-        ('sh, ('c, D.zero) snoc) env ->
-        ('r_sh, ('c, D.zero) snoc) env;
+        ('mode, 'sh, ('c, D.zero) snoc) env ->
+        ('mode, 'r_sh, ('c, D.zero) snoc) env;
       deg_nf : 'mode normal -> 'mode normal;
     }
       -> ('mode, 'r, 'h, 'i, 'c) shuffleable
@@ -77,7 +78,8 @@ and view_type : type mode.
       | Val (Canonical { canonical = c; tyargs; ins; fields = _; inst_fields = _ }) -> (
           (match c with
           | Data d when Option.is_none !(d.tyfam) ->
-              d.tyfam := Some (lazy { tm = ty; ty = inst (universe (TubeOf.inst tyargs)) tyargs })
+              d.tyfam :=
+                Some (lazy { tm = ty; ty = inst (universe d.mode (TubeOf.inst tyargs)) tyargs })
           | _ -> ());
           match D.compare_zero (TubeOf.uninst tyargs) with
           | Zero ->
@@ -105,10 +107,10 @@ and view_type : type mode.
    These possibilities are encoded in an "evaluation", defined in Syntax.Value.  The point is that, just as with the representation of terms, there is enough commonality between the two (application of lambdas and field projection from structs) that we don't want to duplicate the code, so we define the evaluation functions to return an "evaluation" result that is a GADT parametrized by the kind of energy of the term. *)
 
 (* The master evaluation function. *)
-and eval : type mode m b s. (m, b) env -> (mode, b, s) term -> (mode, s) evaluation =
+and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) evaluation =
  fun env tm ->
   match tm with
-  | Var v -> Val (lookup env v)
+  | Var (v, key) -> Val (lookup env v)
   | Const name -> (
       let dim = dim_env env in
       let cty, defn =
@@ -117,7 +119,8 @@ and eval : type mode m b s. (m, b) env -> (mode, b, s) term -> (mode, s) evaluat
       (* Its type must also be instantiated at the lower-dimensional versions of itself. *)
       let ty =
         lazy
-          (inst (eval_term (Emp dim) cty)
+          (inst
+             (eval_term (Emp (mode, dim)) cty)
              (TubeOf.build D.zero (D.zero_plus dim)
                 {
                   build =
@@ -135,9 +138,9 @@ and eval : type mode m b s. (m, b) env -> (mode, b, s) term -> (mode, s) evaluat
       | `Defined tree, _ -> (
           if GluedEval.read () then
             (* Glued evaluation: we evaluate the definition lazily and return a neutral with that lazy evaluation stored. *)
-            Val (Neu { head; args = Emp; value = lazy_eval (Emp dim) tree; ty })
+            Val (Neu { head; args = Emp; value = lazy_eval (Emp (mode, dim)) tree; ty })
           else
-            let value = eval (Emp dim) tree in
+            let value = eval (Emp (mode, dim)) tree in
             let newtm = Neu { head; args = Emp; value = ready value; ty } in
             match value with
             | Realize x -> Val x
@@ -191,7 +194,7 @@ and eval : type mode m b s. (m, b) env -> (mode, b, s) term -> (mode, s) evaluat
   | UU n ->
       let m = dim_env env in
       let (Plus mn) = D.plus n in
-      Val (universe (D.plus_out m mn))
+      Val (universe mode (D.plus_out m mn))
   | Inst (tm, args) -> (
       (* The arguments are an (n,k) tube, with k dimensions instantiated and n dimensions uninstantiated. *)
       let n = TubeOf.uninst args in
@@ -319,8 +322,9 @@ and eval : type mode m b s. (m, b) env -> (mode, b, s) term -> (mode, s) evaluat
        fun fab ->
         let (SFace_of_plus (ab, fa, fb)) = sface_of_plus m_n fab in
         let kl = dom_sface fab in
+        let codmode = Modality.cod modality in
         let ty =
-          inst (universe kl)
+          inst (universe codmode kl)
             (TubeOf.build D.zero (D.zero_plus kl)
                {
                  build =
@@ -338,8 +342,9 @@ and eval : type mode m b s. (m, b) env -> (mode, b, s) term -> (mode, s) evaluat
               (* For the top face, we compute its fibrancy fields by evaluating the generic "fibrancy fields of a pi" at the evaluated domains and codomains.  *)
               let pi_env =
                 Ext
-                  ( Ext (Emp mn, D.plus_zero mn, Ok doms),
+                  ( Ext (Emp (codmode, mn), D.plus_zero mn, modality, Ok doms),
                     D.plus_zero mn,
+                    modality,
                     Ok (lam_cube (plus_variables m m_n x) (Sorry.e ()) cods) ) in
               eval_structfield_abwd pi_env mn (D.plus_zero mn) mn fields in
         let value =
@@ -361,7 +366,7 @@ and eval : type mode m b s. (m, b) env -> (mode, b, s) term -> (mode, s) evaluat
       (* We evaluate let-bindings lazily, on the chance they aren't actually used. *)
       let m = dim_env env in
       let args = CubeOf.build m { build = (fun fa -> lazy_eval (act_env env (op_of_sface fa)) v) } in
-      eval (LazyExt (env, D.plus_zero m, args)) body
+      eval (LazyExt (env, D.plus_zero m, modality, args)) body
   (* It's tempting to write just "act_value (eval env x) s" here, but that is WRONG!  Pushing a substitution through an operator action requires whiskering the operator by the dimension of the substitution. *)
   | Act (x, s, _) ->
       let k = dim_env env in
@@ -426,13 +431,13 @@ and eval : type mode m b s. (m, b) env -> (mode, b, s) term -> (mode, s) evaluat
   | Weaken tm -> eval (remove_env env Now) tm
 
 and eval_with_boundary : type mode m a.
-    (m, a) env -> (mode, a, kinetic) term -> (m, (mode, kinetic) value) CubeOf.t =
+    (mode, m, a) env -> (mode, a, kinetic) term -> (m, (mode, kinetic) value) CubeOf.t =
  fun env tm ->
   CubeOf.build (dim_env env) { build = (fun fa -> eval_term (act_env env (op_of_sface fa)) tm) }
 
 (* Evaluate a cube of arguments for an application. *)
 and eval_args : type mode m n mn a.
-    (m, a) env ->
+    (mode, m, a) env ->
     (m, n, mn) D.plus ->
     mn D.t ->
     (n, (mode, a, kinetic) term) CubeOf.t ->
@@ -669,7 +674,7 @@ and tyof_codatafield : type mode m n mn a k r s i et.
     ((mode, kinetic) value, Code.t) Result.t ->
     i Field.t ->
     (i, mode * a * n * et) Codatafield.t ->
-    (m, a) env ->
+    (mode, m, a) env ->
     (D.zero, mn, mn, mode normal) TubeOf.t ->
     m D.t ->
     (m, n, mn) D.plus ->
@@ -690,7 +695,7 @@ and tyof_lower_codatafield : type mode m n mn a.
     ((mode, kinetic) value, Code.t) Result.t ->
     D.zero Field.t ->
     (mode, (a, n) snoc, kinetic) term ->
-    (m, a) env ->
+    (mode, m, a) env ->
     (D.zero, mn, mn, mode normal) TubeOf.t ->
     m D.t ->
     (m, n, mn) D.plus ->
@@ -698,7 +703,7 @@ and tyof_lower_codatafield : type mode m n mn a.
  fun tm fldname fldty env tyargs m mn ->
   let tmcube =
     Result.map (fun tm -> TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm)) tm in
-  let env = Value.Ext (env, mn, tmcube) in
+  let env = Value.Ext (env, mn, modality, tmcube) in
   (* This type is m-dimensional, hence must be instantiated at a full m-tube. *)
   let insttm = eval_term env fldty in
   let instargs =
@@ -719,7 +724,7 @@ and tyof_higher_codatafield : type mode c n h s r i ic.
     ((mode, kinetic) value, Code.t) Result.t ->
     i Field.t ->
     (* The codatatype is in context of length c.  It has been evaluated at dimension n, in an (n, c) env. *)
-    (n, c) env ->
+    (mode, n, c) env ->
     (* And so it has a boundary n-tube. *)
     (D.zero, n, n, mode normal) TubeOf.t ->
     (* The field has intrinsic dimension i, determined by a pbij from n to i, with result s, remaining r, shared h.  We record the insertion and shuffle separately, with a shuffleable recording explicitly whether the shuffle is nontrivial and including a readback callback if so.  This is because we will have to readback a (s+h, [c;0]) env, in some context, and evaluate in an (r,a) env coming from degenerating that context, to get an (r+s+h, [c;0]) env, but readback depends on this file. *)
@@ -746,7 +751,7 @@ and tyof_higher_codatafield : type mode c n h s r i ic.
   (* We extend the (n, c) env by a variable for the current term, getting an (n, [c;0]) env.  *)
   let tmcube =
     Result.map (fun tm -> TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm)) tm in
-  let env = Value.Ext (codataenv, D.plus_zero n, tmcube) in
+  let env = Value.Ext (codataenv, D.plus_zero n, modality, tmcube) in
   (* Now we act on this (n, [c;0]) env by the inverse of the insertion to get an (s+h, [c;0]) env. *)
   let env = Act (env, op_of_deg (deg_of_perm (perm_inv (perm_of_ins_plus fldins sh)))) in
   let env =
@@ -846,7 +851,7 @@ and tyof_field : type mode m h s r i c.
             Result.map
               (fun tm -> TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
               tm in
-          let env = Value.Ext (Value.Emp m, D.plus_zero m, tmcube) in
+          let env = Value.Ext (Value.Emp (mode, m), D.plus_zero m, modality, tmcube) in
           tyof_field_giventype tm head Noeta env (D.plus_zero m) fields tyargs fld ~shuf fldins)
   | _ ->
       let p =
@@ -859,7 +864,7 @@ and tyof_field_giventype : type mode m n mn h s r i c et a k.
     ((mode, kinetic) value, Code.t) Result.t ->
     mode head ->
     (potential, et) eta ->
-    (m, a) env ->
+    (mode, m, a) env ->
     (m, n, mn) D.plus ->
     (mode * a * n * et) Term.CodatafieldAbwd.t ->
     (D.zero, mn, mn, mode normal) TubeOf.t ->
@@ -933,7 +938,7 @@ and tyof_field_withname : type mode a b.
             Result.map
               (fun tm -> TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
               tm in
-          let env = Value.Ext (Value.Emp m, D.plus_zero m, tmcube) in
+          let env = Value.Ext (Value.Emp (mode, m), D.plus_zero m, modality, tmcube) in
           tyof_field_withname_giventype ctx tm ty Noeta env (D.plus_zero m) fields tyargs infld err)
   | _ -> fatal (No_such_field (`Other errtm, errfld))
 
@@ -943,7 +948,7 @@ and tyof_field_withname_giventype : type mode a b m n mn c et.
     ((mode, kinetic) value, Code.t) Result.t ->
     (mode, kinetic) value ->
     (potential, et) eta ->
-    (m, c) env ->
+    (mode, m, c) env ->
     (m, n, mn) D.plus ->
     (mode * c * n * et) Term.CodatafieldAbwd.t ->
     (D.zero, mn, mn, mode normal) TubeOf.t ->
@@ -1007,6 +1012,7 @@ and apply_binder : type dom modality mode n s.
        (LazyExt
           ( env,
             mn,
+            modality,
             CubeOf.build (D.plus_out m mn)
               {
                 build =
@@ -1018,7 +1024,7 @@ and apply_binder : type dom modality mode n s.
     (deg_of_perm perm)
 
 and eval_canonical : type mode m a.
-    (m, a) env -> (mode, a) Term.canonical -> (mode, potential) evaluation =
+    (mode, m, a) env -> (mode, a) Term.canonical -> (mode, potential) evaluation =
  fun env can ->
   match can with
   | Data { indices; constrs; discrete } ->
@@ -1041,7 +1047,7 @@ and eval_canonical : type mode m a.
 
 (* We split out this subroutine so it can be called from Check.with_codata_so_far and a lazy termctx.  *)
 and eval_codata : type mode m a c n et.
-    (m, a) env ->
+    (mode, m, a) env ->
     (potential, et) eta ->
     opacity ->
     n D.t ->
@@ -1059,24 +1065,26 @@ and eval_codata : type mode m a c n et.
   let fields = eval_structfield_abwd env m m_n mn fibrancy_fields in
   Val (Canonical { canonical; tyargs; ins; fields; inst_fields = Some fields })
 
-and eval_term : type mode m b. (m, b) env -> (mode, b, kinetic) term -> (mode, kinetic) value =
+and eval_term : type mode m b. (mode, m, b) env -> (mode, b, kinetic) term -> (mode, kinetic) value
+    =
  fun env tm ->
   let (Val v) = eval env tm in
   v
 
-and eval_env : type a m n mn b.
-    (m, a) env -> (m, n, mn) D.plus -> (a, n, b) Term.env -> (mn, b) Value.env =
+and eval_env : type mode a m n mn b.
+    (mode, m, a) env -> (m, n, mn) D.plus -> (mode, a, n, b) Term.env -> (mode, mn, b) Value.env =
  fun env m_n tmenv ->
   let mn = D.plus_out (dim_env env) m_n in
   match tmenv with
-  | Emp _ -> Emp mn
-  | Ext (tmenv, n_k, xss) ->
+  | Emp (mode, _) -> Emp (mode, mn)
+  | Ext (tmenv, n_k, modality, xss) ->
       let (Plus mn_k) = D.plus (D.plus_right n_k) in
       let m_nk = D.plus_assocr m_n n_k mn_k in
       (* We make everything lazy, since we can, and not everything may end up being used. *)
       LazyExt
         ( eval_env env m_n tmenv,
           mn_k,
+          modality,
           CubeOf.build (D.plus_out mn mn_k)
             {
               build =
@@ -1084,7 +1092,7 @@ and eval_env : type a m n mn b.
                   let (SFace_of_plus (_, fa, fb)) = sface_of_plus m_nk fab in
                   lazy_eval (act_env env (op_of_sface fa)) (CubeOf.find xss fb));
             } )
-  | Key (tmenv, modality) -> Key (eval_env env m_n tmenv, modality)
+  | Key (tmenv, cell) -> Key (eval_env env m_n tmenv, cell)
 
 and apply_term : type dom modality mode n.
     (mode, kinetic) value ->
@@ -1153,8 +1161,12 @@ and app_eval_apps : type mode s any.
       | Unrealized -> Unrealized)
 
 (* Look up a cube of values in an environment by variable index, accumulating operator actions, shifts, and keys as we go.  At the end, we usually use the operator to select a value from the cubes (with its face part) and act on it (with its degeneracy part) and then key it. *)
-and lookup_cube : type n a b k mk nk.
-    (n, b) env -> (n, k, nk) D.plus -> (a, k, b) Tbwd.insert -> (mk, nk) op -> mk looked_up_cube =
+and lookup_cube : type mode n a b k mk nk.
+    (mode, n, b) env ->
+    (n, k, nk) D.plus ->
+    (a, k, b) Tbwd.insert ->
+    (mk, nk) op ->
+    (mode, mk) looked_up_cube =
  fun env nk v op ->
   match (env, v) with
   (* Since there's an index, the environment can't be empty. *)
@@ -1164,6 +1176,8 @@ and lookup_cube : type n a b k mk nk.
       let (Plus lk) = D.plus (D.plus_right nk) in
       let op'k = op_plus op' lk nk in
       lookup_cube env lk v (comp_op op'k op)
+  (* If we encounter a key action, we accumulate it. *)
+  | Key (env, key), _ -> Sorry.e ()
   (* If we encounter a shift or unshift, we just have to edit the insertion and go on. *)
   | Shift (env, n_x, xb), v ->
       (* In this branch, k is renamed to x+k. *)
@@ -1182,26 +1196,28 @@ and lookup_cube : type n a b k mk nk.
       let (Permute_insert (v, _)) = Tbwd.permute_insert v p in
       lookup_cube env nk v op
   (* If we encounter a variable that isn't ours, we skip it and proceed. *)
-  | Ext (env, _, _), Later v -> lookup_cube env nk v op
-  | LazyExt (env, _, _), Later v -> lookup_cube env nk v op
+  | Ext (env, _, _, _), Later v -> lookup_cube env nk v op
+  | LazyExt (env, _, _, _), Later v -> lookup_cube env nk v op
   (* Finally, when we find our variable, we decompose the accumulated operator into a strict face and degeneracy, use the face as an index lookup, and act by the degeneracy.  The forcing function is the identity if the entry is not lazy, and force_eval_term if it is lazy. *)
-  | Ext (_, nk', Ok entry), Now ->
+  | Ext (_, nk', modality, Ok entry), Now ->
       let Eq = D.plus_uniq nk nk' in
-      Looked_up { act = (fun x s -> act_value (coerce_mode x) s); op; entry }
+      Looked_up { act = (fun x s -> act_value (coerce_mode x) s); op; key; entry }
   (* Looking up a variable that's bound to an error immediately fails with that error.  (In particular, this sort of failure can't currently happen "deeper" inside a term.) *)
-  | Ext (_, _, Error e), Now -> fatal e
-  | LazyExt (_, nk', entry), Now ->
+  | Ext (_, _, _, Error e), Now -> fatal e
+  | LazyExt (_, nk', modality, entry), Now ->
       let Eq = D.plus_uniq nk nk' in
-      Looked_up { act = (fun x s -> force_eval_term (act_lazy_eval (coerce_mode x) s)); op; entry }
+      Looked_up
+        { act = (fun x s -> force_eval_term (act_lazy_eval (coerce_mode x) s)); op; key; entry }
 
-and lookup : type mode n b. (n, b) env -> b Term.index -> (mode, kinetic) value =
+and lookup : type mode n b. (mode, n, b) env -> b Term.index -> (mode, kinetic) value =
  fun env (Index (v, fa)) ->
   let (Plus n_k) = D.plus (cod_sface fa) in
   let n = dim_env env in
   match lookup_cube env n_k v (id_op (D.plus_out n n_k)) with
-  | Looked_up { act; op; entry } ->
+  | Looked_up { act; op; key; entry } ->
       let (Plus x) = D.plus (dom_sface fa) in
       let (Op (f, s)) = comp_op op (plus_op n n_k x (op_of_sface fa)) in
+      (* I don't understand the type error here *)
       let _ = act (CubeOf.find entry f) s in
       Sorry.e ()
 
@@ -1403,7 +1419,7 @@ and tyof_inst : type mode m n mn.
             let ty = tyof_inst jntyargs jnargs in
             { tm; ty });
       } in
-  inst (universe m) margs
+  inst (universe mode m) margs
 
 (* Apply a function to all the values in a cube one by one as 0-dimensional applications, rather than as one n-dimensional application. *)
 let apply_singletons : type dom modality mode n.
