@@ -311,7 +311,11 @@ and readback_at_tel : type mode n c a b ab z.
  fun ctx env xs tys tyargs ->
   match (xs, tys) with
   | [], Emp -> []
-  | Modal (xmodality, x) :: xs, Ext (_, tymodality, ty, tys) -> (
+  | ( Modal
+        (type dom modality)
+        ((xmodality, x) : (dom, modality, mode) Modality.t * (n, (dom, kinetic) value) CubeOf.t)
+      :: xs,
+      Ext (_, tymodality, ty, tys) ) -> (
       match Modality.compare xmodality tymodality with
       | Eq ->
           let lctx = Ctx.lock ctx tymodality in
@@ -327,10 +331,10 @@ and readback_at_tel : type mode n c a b ab z.
                     match tyargs with
                     | [] -> fatal (Anomaly "missing arguments in readback_at_tel")
                     | Modal (argmod, argtm) :: argrest -> (
-                        match Modality.compare argmod tymodality with
+                        match Modality.compare argmod xmodality with
                         | Eq ->
                             let fa = sface_of_tface fa in
-                            let argty =
+                            let argty : (dom, kinetic) value =
                               inst
                                 (eval_term (act_env lenv (op_of_sface fa)) ty)
                                 (TubeOf.build D.zero
@@ -341,7 +345,7 @@ and readback_at_tel : type mode n c a b ab z.
                                          Hashtbl.find tyargtbl
                                            (SFace_of (comp_sface fa (sface_of_tface fb))));
                                    }) in
-                            let argnorm = { tm = argtm; ty = argty } in
+                            let argnorm : dom normal = { tm = argtm; ty = argty } in
                             let argtm = readback_at lctx argtm argty in
                             Hashtbl.add tyargtbl (SFace_of fa) argnorm;
                             [ argnorm; argtm; argrest ]
