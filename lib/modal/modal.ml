@@ -11,6 +11,8 @@ module Mode = struct
    fun m n ->
     match (m, n) with
     | Test_mode, Test_mode -> Eq
+
+  let to_string : type a. a t -> string = fun _ -> "Type"
 end
 
 type id_modality
@@ -93,6 +95,12 @@ module Modalcell = struct
 
   let hcod : type a m n b. (a, m, n, b) t -> b Mode.t = function
     | Id_cell -> Test_mode
+
+  let vdom : type a m n b. (a, m, n, b) t -> (a, m, b) Modality.t = function
+    | Id_cell -> Id_modality
+
+  let vcod : type a m n b. (a, m, n, b) t -> (a, n, b) Modality.t = function
+    | Id_cell -> Id_modality
 
   let hcomp : type a m n b r s c. (b, m, n, c) t -> (a, r, s, b) t -> (a, c) wrapped =
    fun x y ->

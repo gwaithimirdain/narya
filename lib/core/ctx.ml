@@ -409,7 +409,7 @@ module Ordered = struct
       (mode, a N.suc, (b, D.zero) snoc) t * dom Binding.t =
    fun ctx modality x ty ->
     let n = length ctx in
-    let b = Binding.make (Some (n, 0)) { tm = var (n, 0) ty; ty } in
+    let b = Binding.make (Some (n, 0)) { tm = var (Modality.dom modality) (n, 0) ty; ty } in
     (cube_vis ctx modality x (CubeOf.singleton b), b)
 
   (* Extend a context by one new variable with an assigned value. *)
@@ -529,7 +529,10 @@ let invis (Permute { perm; env; level; ctx }) modality vars =
       ctx = Ordered.invis ctx modality vars;
     }
 
-let lock (Permute { perm; env; level; ctx }) lock =
+let lock : type dom modality cod a b.
+    (cod, a, b) t -> (dom, modality, cod) Modality.t -> (dom, a, b) t =
+ fun (Permute { perm; env; level; ctx }) lock ->
+  let env = Key (env, Modalcell.id lock) in
   Permute { perm; env; level; ctx = Ordered.lock ctx lock }
 
 let raw_length (Permute { perm; ctx; _ }) = N.perm_dom (Ordered.raw_length ctx) perm

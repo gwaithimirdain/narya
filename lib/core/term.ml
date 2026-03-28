@@ -188,7 +188,7 @@ module rec Term : sig
         * ('dom, 'modality, 'mode) Modality.t
         * ('nk, ('dom, 'a, kinetic) term) CubeOf.t
         -> ('mode, 'a, 'n, ('b, 'k) snoc) env
-    | Key : ('mode, 'a, 'n, 'b) env * ('dom, 'modality, 'mode) Modality.t -> ('dom, 'a, 'n, 'b) env
+    | Key : ('mode, 'a, 'n, 'b) env * ('dom, 'mu, 'nu, 'mode) Modalcell.t -> ('dom, 'a, 'n, 'b) env
 
   and ('mode, 'b) binding = {
     ty : ('mode, 'b, kinetic) term;
@@ -216,7 +216,7 @@ module rec Term : sig
         -> ('dom, 'modality, 'mode, 'b, N.zero, 'n) entry
 
   and (_, _, _) ordered_termctx =
-    | Emp : ('mode, N.zero, emp) ordered_termctx
+    | Emp : 'mode Mode.t -> ('mode, N.zero, emp) ordered_termctx
     | Ext :
         ('mode, 'a, 'b) ordered_termctx
         * ('dom, 'modality, 'mode, 'b, 'x, 'n) entry
@@ -415,7 +415,7 @@ end = struct
         * ('mode, ('a, D.zero) snoc, 'b, 'ab) tel
         -> ('mode, 'a, 'b Fwn.suc, 'ab) tel
 
-  (* A version of an environment (see below) that involves terms rather than values.  Used mainly when reading back metavariables. *)
+  (* A version of an environment that involves terms rather than values.  Used mainly when reading back metavariables.  The first argument is the mode, the second is the checked-length of the context *in* which the environment is defined (its domain, as a context morphism), the third is its dimension, and the fourth is the checked-length of the context of types of the values in the environment (its codomain, as a context morphism).  *)
   and (_, _, _, _) env =
     | Emp : 'mode Mode.t * 'n D.t -> ('mode, 'a, 'n, emp) env
     | Ext :
@@ -424,7 +424,8 @@ end = struct
         * ('dom, 'modality, 'mode) Modality.t
         * ('nk, ('dom, 'a, kinetic) term) CubeOf.t
         -> ('mode, 'a, 'n, ('b, 'k) snoc) env
-    | Key : ('mode, 'a, 'n, 'b) env * ('dom, 'modality, 'mode) Modality.t -> ('dom, 'a, 'n, 'b) env
+    (* TODO: There is a decision to be made here about how to deal with keys.  The problem is that the part of the environment to the left of a key must be defined in a context that has the corresponding locks, and everything to their right, "removed", but simply removing variables from the context fubars the De Bruijn indices.  We could replace the removed indices in the context by a placeholder that extends out its length while containing no data, or we could allow the domain length of a term environment to increase when we pass a key. *)
+    | Key : ('mode, 'a, 'n, 'b) env * ('dom, 'mu, 'nu, 'mode) Modalcell.t -> ('dom, 'a, 'n, 'b) env
 
   (* A termctx is a data structure analogous to a Ctx.t, but using terms rather than values (and thus we will not explain its structure here; see ctx.ml).  This is used to store the context of a metavariable, as the value context containing level variables is too volatile to store there.  We also store it (lazily) with a codatatype that has higher fields, so we can use it to read back the closure environment to degenerate it. *)
   and ('mode, 'b) binding = {
@@ -454,7 +455,7 @@ end = struct
         -> ('dom, 'modality, 'mode, 'b, N.zero, 'n) entry
 
   and (_, _, _) ordered_termctx =
-    | Emp : ('mode, N.zero, emp) ordered_termctx
+    | Emp : 'mode Mode.t -> ('mode, N.zero, emp) ordered_termctx
     | Ext :
         ('mode, 'a, 'b) ordered_termctx
         * ('dom, 'modality, 'mode, 'b, 'x, 'n) entry
@@ -523,7 +524,7 @@ let dim_entry : type dom modality mode b f n. (dom, modality, mode, b, f, n) ent
   | Vis { bindings; _ } | Invis (_, bindings) -> CubeOf.dim bindings
 
 let rec ordered_dbwd : type mode a b. (mode, a, b) ordered_termctx -> b Dbwd.t = function
-  | Emp -> Word Zero
+  | Emp _ -> Word Zero
   | Ext (ctx, e, _) ->
       let (Word b) = ordered_dbwd ctx in
       Word (Suc (b, dim_entry e))

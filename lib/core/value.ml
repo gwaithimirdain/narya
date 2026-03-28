@@ -109,9 +109,7 @@ module rec Value : sig
     | Constr :
         Constr.t * 'n D.t * ('n, 'mode, kinetic, unit) ModalValueCube.t list
         -> ('mode, kinetic) value
-    | Lam :
-        'k variables * ('dom, 'modality, 'mode) Modality.t * ('mode, 'k, 's) binder
-        -> ('mode, 's) value
+    | Lam : 'k variables * ('mode, 'k, 's) binder -> ('mode, 's) value
     | Struct : ('mode, 'p, 'k, 'pk, 's, 'et) struct_args -> ('mode, 's) value
     | Canonical : ('mode, 'm, 'k, 'mk, 'e, 'n) inst_canonical -> ('mode, potential) value
 
@@ -312,9 +310,7 @@ end = struct
     | Constr :
         Constr.t * 'n D.t * ('n, 'mode, kinetic, unit) ModalValueCube.t list
         -> ('mode, kinetic) value
-    | Lam :
-        'k variables * ('dom, 'modality, 'mode) Modality.t * ('mode, 'k, 's) binder
-        -> ('mode, 's) value
+    | Lam : 'k variables * ('mode, 'k, 's) binder -> ('mode, 's) value
     (* Structs have to store an insertion outside, like an application, to deal with higher-dimensional record types like Gel.  Here 'k is the Gel dimension, with 'p the substitution dimension and 'pk the total dimension. *)
     | Struct : ('mode, 'p, 'k, 'pk, 's, 'et) struct_args -> ('mode, 's) value
     (* A canonical type is only a *potential* value, so it appears as the 'value' of a 'neu'.  It may also be instantiated, partially or fully. *)
@@ -409,11 +405,11 @@ end = struct
         * ('dom, 'modality, 'mode) Modality.t
         * ('nk, ('dom, kinetic) lazy_eval) CubeOf.t
         -> ('mode, 'n, ('b, 'k) snoc) env
-    (* We also allow Error binding in an environment, indicating that that variable is not actually usable, usually due to an earlier error in typechecking that we've continued on from anyway.  *)
     | Ext :
         ('mode, 'n, 'b) env
         * ('n, 'k, 'nk) D.plus
         * ('dom, 'modality, 'mode) Modality.t
+        (* We also allow Error binding in an environment, indicating that that variable is not actually usable, usually due to an earlier error in typechecking that we've continued on from anyway.  (There's no need for errors in the lazy case, since the lazy thunk can just raise an error directly when forced.) *)
         * (('nk, ('dom, kinetic) value) CubeOf.t, Code.t) Result.t
         -> ('mode, 'n, ('b, 'k) snoc) env
     | Act : ('mode, 'n, 'b) env * ('m, 'n) op -> ('mode, 'm, 'b) env
@@ -495,14 +491,11 @@ let rec length_env : type mode n b. (mode, n, b) env -> b Dbwd.t = function
   | Unshift (env, mn, nb) -> Plusmap.input (D.plus_right mn) (length_env env) nb
 
 (* Abstract over a cube of binders to make a cube of lambdas.  TODO: This should morally be a Cube.map, but it goes from one instantiation of Cube to another one, and we didn't define a map like that, so for now we just make it a 'build'. *)
-let lam_cube : type dom modality mode n.
-    n variables ->
-    (dom, modality, mode) Modality.t ->
-    (n, mode) BindCube.t ->
-    (n, (mode, kinetic) value) CubeOf.t =
- fun x modality binders ->
+let lam_cube : type mode n.
+    n variables -> (n, mode) BindCube.t -> (n, (mode, kinetic) value) CubeOf.t =
+ fun x binders ->
   CubeOf.build (BindCube.dim binders)
-    { build = (fun fa -> Lam (sub_variables fa x, modality, BindCube.find binders fa)) }
+    { build = (fun fa -> Lam (sub_variables fa x, BindCube.find binders fa)) }
 
 (* Smart constructor that composes actions and cancels identities *)
 let rec act_env : type mode m n b. (mode, n, b) env -> (m, n) op -> (mode, m, b) env =

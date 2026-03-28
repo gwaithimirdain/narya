@@ -11,10 +11,12 @@ open Act
 open Printable
 open View
 
-(* Since some entries in an environment are lazy and some aren't, lookup_cube returns a cube whose entries belong to an existential type, along with a function to act on any element of that type and force it into a value.  It also returns an accumulated operator by which to act, first selecting an entry in the cube with a face and then acting on that value by a degeneracy.  TODO: Finally, it also returns an accumulated modal key substitution. *)
+(* Since some entries in an environment are lazy and some aren't, lookup_cube returns a cube whose entries belong to an existential type, along with a function to act on any element of that type and force it into a value.  It also returns an accumulated operator by which to act, first selecting an entry in the cube with a face and then acting on that value by a degeneracy.  Finally, it also returns an accumulated modal key substitution. *)
 type (_, _) looked_up_cube =
   | Looked_up : {
-      act : 'x 'y. 'a -> ('x, 'y) deg -> ('mode, kinetic) value;
+      act :
+        'x 'y 'mu 'nu 'cod.
+        'a -> ('x, 'y) deg -> ('mode, 'mu, 'nu, 'cod) Modalcell.t option -> ('mode, kinetic) value;
       op : ('m, 'n) op;
       key : ('mode, 'mu, 'nu, 'cod) Modalcell.t;
       entry : ('n, 'a) CubeOf.t;
@@ -110,7 +112,7 @@ and view_type : type mode.
 and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) evaluation =
  fun env tm ->
   match tm with
-  | Var (v, key) -> Val (lookup env v)
+  | Var (v, key) -> Val (lookup env v key)
   | Const name -> (
       let dim = dim_env env in
       let (Definition { mode; ty = cty; tm = defn; parametric = _ }) = Global.find name in
@@ -151,7 +153,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                     Val newtm
                 | _ -> Val newtm)
           | `Axiom -> Val (Neu { head; args = Emp; value = ready Unrealized; ty }))
-      | Neq -> _)
+      | Neq -> fatal (Mode_mismatch ("evaluating a constant", mode, mode_env env)))
   | Meta (meta, ambient) -> (
       let dim = dim_env env in
       let head = Value.Meta { meta; env; ins = ins_zero dim } in
@@ -196,7 +198,6 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
   | UU n ->
       let m = dim_env env in
       let (Plus mn) = D.plus n in
-      (* TODO: UU should really know what mode it's at. *)
       Val (universe (mode_env env) (D.plus_out m mn))
   | Inst (tm, args) -> (
       (* The arguments are an (n,k) tube, with k dimensions instantiated and n dimensions uninstantiated. *)
@@ -253,7 +254,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let (Plus m_nk) = D.plus (D.plus_out n n_k) in
       let (Plus m_n) = D.plus n in
       let mn_k = D.plus_assocl m_n n_k m_nk in
-      Val (Lam (Variables (D.plus_out m m_n, mn_k, vars), Sorry.e (), eval_binder env m_nk body))
+      Val (Lam (Variables (D.plus_out m m_n, mn_k, vars), eval_binder env m_nk body))
   | App (fn, modality, args) ->
       (* First we evaluate the function. *)
       let efn = eval_term env fn in
@@ -352,7 +353,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                   ( Ext (Emp (codmode, mn), D.plus_zero mn, modality, Ok doms),
                     D.plus_zero mn,
                     idcod,
-                    Ok (lam_cube (plus_variables m m_n x) modality cods) ) in
+                    Ok (lam_cube (plus_variables m m_n x) cods) ) in
               eval_structfield_abwd pi_env mn (D.plus_zero mn) mn fields in
         let value =
           ready
@@ -384,7 +385,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       (* We push as much of the resulting degeneracy into the environment as possible, in hopes that the remaining insertion outside will be trivial and act_value will be able to short-circuit.  (Ideally, the insertion would be carried through by eval for a single traversal in all cases.) *)
       let (Insfact (fa, ins)) = insfact ks kn in
       let (To p) = deg_of_ins ins in
-      Val (act_value (eval_term (act_env env (op_of_deg fa)) x) p)
+      Val (act_value (eval_term (act_env env (op_of_deg fa)) x) p None)
   | Match { tm; dim = match_dim; branches } -> (
       let env_dim = dim_env env in
       let (Plus plus_dim) = D.plus match_dim in
@@ -471,12 +472,11 @@ and apply : type dom modality mode n s.
  fun fn modality arg ->
   match view_term fn with
   (* If the function is a lambda-abstraction, we check that it has the correct dimension and mode and then beta-reduce, adding the arguments to the environment. *)
-  | Lam (_, lam_modality, body) -> (
+  | Lam (_, body) -> (
       let m = CubeOf.dim arg in
-      match (D.compare (dim_binder body) m, Modality.compare lam_modality modality) with
-      | Eq, Eq -> apply_binder body modality arg
-      | Neq, _ -> fatal (Dimension_mismatch ("applying a lambda", dim_binder body, m))
-      | _, Neq -> fatal (Modality_mismatch ("applying a lambda", lam_modality, modality)))
+      match D.compare (dim_binder body) m with
+      | Eq -> apply_binder body modality arg
+      | Neq -> fatal (Dimension_mismatch ("applying a lambda", dim_binder body, m)))
   (* If it is a uninstantiated neutral application... *)
   | Neu { head; args; value; ty = (lazy ty) } -> (
       (* ... we check that its type is fully instantiated... *)
@@ -511,7 +511,7 @@ and apply : type dom modality mode n s.
                          canonical =
                            Data
                              {
-                               mode = _;
+                               mode;
                                dim;
                                tyfam;
                                indices = Unfilled _ as indices;
@@ -548,8 +548,7 @@ and apply : type dom modality mode n s.
                           Val
                             (Value.Canonical
                                {
-                                 canonical =
-                                   Data { mode = _; dim; tyfam; indices; constrs; discrete };
+                                 canonical = Data { mode; dim; tyfam; indices; constrs; discrete };
                                  tyargs = TubeOf.empty dim;
                                  ins;
                                  fields;
@@ -628,7 +627,7 @@ and field : type mode n k nk s.
       let n, k = (cod_left_ins fldins, cod_right_ins fldins) in
       let (Plus fldplus) = D.plus k in
       let p = deg_of_perm (perm_inv (perm_of_ins_plus fldins fldplus)) in
-      match act_value viewed_tm p with
+      match act_value viewed_tm p None with
       (* It must be an uninstantiated neutral application (which could be either an element of a record/codata, or a fibrant type). *)
       | Neu { head; args; value; ty = (lazy ty) } -> (
           let newty = lazy (tyof_field (Ok tm) ty fld ~shuf:Trivial fldins) in
@@ -871,8 +870,9 @@ and tyof_field : type mode m h s r i c.
             Result.map
               (fun tm -> TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
               tm in
-          let mode, modality = Sorry.e () in
-          let env = Value.Ext (Value.Emp (mode, m), D.plus_zero m, modality, tmcube) in
+          let mode = Sorry.e () in
+          let (Wrap idm) = Modality.id mode in
+          let env = Value.Ext (Value.Emp (mode, m), D.plus_zero m, idm, tmcube) in
           tyof_field_giventype tm head Noeta env (D.plus_zero m) fields tyargs fld ~shuf fldins)
   | _ ->
       let p =
@@ -959,8 +959,9 @@ and tyof_field_withname : type mode a b.
             Result.map
               (fun tm -> TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
               tm in
-          let mode, modality = Sorry.e () in
-          let env = Value.Ext (Value.Emp (mode, m), D.plus_zero m, modality, tmcube) in
+          let mode = Sorry.e () in
+          let (Wrap idm) = Modality.id mode in
+          let env = Value.Ext (Value.Emp (mode, m), D.plus_zero m, idm, tmcube) in
           tyof_field_withname_giventype ctx tm ty Noeta env (D.plus_zero m) fields tyargs infld err)
   | _ -> fatal (No_such_field (`Other errtm, errfld))
 
@@ -1040,10 +1041,12 @@ and apply_binder : type dom modality mode n s.
                 build =
                   (fun frfs ->
                     let (Face (fa, fb)) = perm_sface (perm_inv perm) frfs in
-                    act_lazy_eval (defer (fun () -> Val (CubeOf.find argstbl fa))) (deg_of_perm fb));
+                    act_lazy_eval
+                      (defer (fun () -> Val (CubeOf.find argstbl fa)))
+                      (deg_of_perm fb) None);
               } ))
        body)
-    (deg_of_perm perm)
+    (deg_of_perm perm) None
 
 and eval_canonical : type mode m a.
     (mode, m, a) env -> (mode, a) Term.canonical -> (mode, potential) evaluation =
@@ -1116,7 +1119,9 @@ and eval_env : type mode a m n mn b.
                   let (SFace_of_plus (_, fa, fb)) = sface_of_plus m_nk fab in
                   lazy_eval (act_env lenv (op_of_sface fa)) (CubeOf.find xss fb));
             } )
-  | Key (tmenv, cell) -> Key (eval_env env m_n tmenv, cell)
+  | Key (tmenv, cell) ->
+      (* TODO: Does this ever happen?  If so, we may need to peel keys off of 'env' to make the modes match.  But then the De Bruijn indices would get fubared too.  Maybe we replace them by a dummy environment extension that stores nothing but just extends out the length, while leaving the mode as that of the shorter environment.  Note that that environment could get further extended by new bindings. *)
+      Key (eval_env env m_n tmenv, cell)
 
 and apply_term : type dom modality mode n.
     (mode, kinetic) value ->
@@ -1140,7 +1145,7 @@ and force_eval : type mode s. (mode, s) lazy_eval -> (mode, s) evaluation =
  fun lev ->
   let undefer tm s apps =
     (* TODO: In an ideal world, there would be one function that would traverse the term once doing both "eval" and "act" by the insertion. *)
-    let etm = act_evaluation tm s in
+    let etm = act_evaluation tm s None in
     let etm = app_eval_apps etm apps in
     lev := Ready etm;
     etm in
@@ -1165,17 +1170,17 @@ and app_eval_apps : type mode s any.
   | Arg (rest, modality, xs, ins) -> (
       let (To p) = deg_of_ins ins in
       match app_eval_apps ev rest with
-      | Val tm -> act_evaluation (apply tm modality (val_of_norm_cube xs)) p
+      | Val tm -> act_evaluation (apply tm modality (val_of_norm_cube xs)) p None
       | Realize tm ->
-          let (Val v) = act_evaluation (apply tm modality (val_of_norm_cube xs)) p in
+          let (Val v) = act_evaluation (apply tm modality (val_of_norm_cube xs)) p None in
           Realize v
       | Unrealized -> Unrealized)
   | Field (rest, fld, fldplus, ins) -> (
       let (To p) = deg_of_ins ins in
       match app_eval_apps ev rest with
-      | Val tm -> act_evaluation (field tm fld (id_ins (cod_left_ins ins) fldplus)) p
+      | Val tm -> act_evaluation (field tm fld (id_ins (cod_left_ins ins) fldplus)) p None
       | Realize tm ->
-          let (Val v) = act_evaluation (field tm fld (id_ins (cod_left_ins ins) fldplus)) p in
+          let (Val v) = act_evaluation (field tm fld (id_ins (cod_left_ins ins) fldplus)) p None in
           Realize v
       | Unrealized -> Unrealized)
   | Inst (rest, _, args) -> (
@@ -1185,14 +1190,15 @@ and app_eval_apps : type mode s any.
       | Unrealized -> Unrealized)
 
 (* Look up a cube of values in an environment by variable index, accumulating operator actions, shifts, and keys as we go.  At the end, we usually use the operator to select a value from the cubes (with its face part) and act on it (with its degeneracy part) and then key it. *)
-and lookup_cube : type dom mod1 mod2 mode n a b k mk nk.
+and lookup_cube : type dom mu1 mu2 cod rmode mod1 mod2 mode n a b k mk nk.
     (mode, n, b) env ->
     (n, k, nk) D.plus ->
     (a, k, b) Tbwd.insert ->
+    (dom, mu1, mu2, cod) Modalcell.t ->
     (mk, nk) op ->
-    (dom, mod1, mod2, mode) Modalcell.t ->
-    (dom, mk) looked_up_cube =
- fun env nk v op cell ->
+    (rmode, mod1, mod2, mode) Modalcell.t ->
+    (rmode, mk) looked_up_cube =
+ fun env nk v vcell op cell ->
   match (env, v) with
   (* Since there's an index, the environment can't be empty. *)
   | Emp _, _ -> .
@@ -1200,70 +1206,82 @@ and lookup_cube : type dom mod1 mod2 mode n a b k mk nk.
   | Act (env, op'), _ ->
       let (Plus lk) = D.plus (D.plus_right nk) in
       let op'k = op_plus op' lk nk in
-      lookup_cube env lk v (comp_op op'k op) cell
+      lookup_cube env lk v vcell (comp_op op'k op) cell
   (* If we encounter a key action, we accumulate it. *)
   | Key (env, key), _ ->
       let (Wrap newcell) = Modalcell.hcomp key cell in
-      lookup_cube env nk v op newcell
+      lookup_cube env nk v vcell op newcell
   (* If we encounter a shift or unshift, we just have to edit the insertion and go on. *)
   | Shift (env, n_x, xb), v ->
       (* In this branch, k is renamed to x+k. *)
       let n_xk = nk in
       let (Uncoinsert (x_k, v, _)) = Plusmap.uncoinsert v xb in
       let nx_k = D.plus_assocl n_x x_k n_xk in
-      lookup_cube env nx_k v op cell
+      lookup_cube env nx_k v vcell op cell
   | Unshift (env, n_x, xb), v ->
       (* In this branch, n is renamed to n+x. *)
       let nx_k = nk in
       let (Uninsert (x_k, v, _)) = Plusmap.uninsert v xb in
       let n_xk = D.plus_assocr n_x x_k nx_k in
-      lookup_cube env n_xk v op cell
+      lookup_cube env n_xk v vcell op cell
   (* If the environment is permuted, we apply the permutation to the index. *)
   | Permute (p, env), v ->
       let (Permute_insert (v, _)) = Tbwd.permute_insert v p in
-      lookup_cube env nk v op cell
+      lookup_cube env nk v vcell op cell
   (* If we encounter a variable that isn't ours, we skip it and proceed. *)
-  | Ext (env, _, _, _), Later v -> lookup_cube env nk v op cell
-  | LazyExt (env, _, _, _), Later v -> lookup_cube env nk v op cell
+  | Ext (env, _, _, _), Later v -> lookup_cube env nk v vcell op cell
+  | LazyExt (env, _, _, _), Later v -> lookup_cube env nk v vcell op cell
   (* Finally, when we find our variable, we decompose the accumulated operator into a strict face and degeneracy, use the face as an index lookup, and act by the degeneracy.  The forcing function is the identity if the entry is not lazy, and force_eval_term if it is lazy. *)
-  | Ext (_, nk', modality, Ok entry), Now ->
+  | Ext (_, nk', modality, Ok entry), Now -> (
       let Eq = D.plus_uniq nk nk' in
-      Looked_up
-        {
-          act =
-            (fun x s c ->
-              let _ = (cell, Sorry.e (), modality) in
-              act_value x s c);
-          op;
-          key = cell;
-          entry;
-        }
+      match
+        ( Modality.compare modality (Modalcell.vdom vcell),
+          Modality.compare (Modalcell.vcod vcell) (Modalcell.vdom cell) )
+      with
+      | Eq, Eq ->
+          let key = Modalcell.vcomp cell vcell in
+          Looked_up { act = (fun x s c -> act_value x s c); op; key; entry }
+      | Neq, _ ->
+          fatal
+            (Modality_mismatch ("lookup_cube cell annotation domain", modality, Modalcell.vdom vcell))
+      | _, Neq ->
+          fatal
+            (Modality_mismatch
+               ("lookup_cube cell annotation codomain", Modalcell.vcod vcell, Modalcell.vdom cell)))
+  | LazyExt (_, nk', modality, entry), Now -> (
+      let Eq = D.plus_uniq nk nk' in
+      match
+        ( Modality.compare modality (Modalcell.vdom vcell),
+          Modality.compare (Modalcell.vcod vcell) (Modalcell.vdom cell) )
+      with
+      | Eq, Eq ->
+          let key = Modalcell.vcomp cell vcell in
+          Looked_up { act = (fun x s c -> force_eval_term (act_lazy_eval x s c)); op; key; entry }
+      | Neq, _ ->
+          fatal
+            (Modality_mismatch
+               ("lookup_cube lazy cell annotation domain", modality, Modalcell.vdom vcell))
+      | _, Neq ->
+          fatal
+            (Modality_mismatch
+               ( "lookup_cube lazy cell annotation codomain",
+                 Modalcell.vcod vcell,
+                 Modalcell.vdom cell )))
   (* Looking up a variable that's bound to an error immediately fails with that error.  (In particular, this sort of failure can't currently happen "deeper" inside a term.) *)
   | Ext (_, _, _, Error e), Now -> fatal e
-  | LazyExt (_, nk', modality, entry), Now ->
-      let Eq = D.plus_uniq nk nk' in
-      Looked_up
-        {
-          act =
-            (fun x s ->
-              let _ = (cell, Sorry.e (), modality) in
-              force_eval_term (act_lazy_eval x s));
-          op;
-          key = cell;
-          entry;
-        }
 
-and lookup : type mode n b. (mode, n, b) env -> b Term.index -> (mode, kinetic) value =
- fun env (Index (v, fa)) ->
+and lookup : type dom mu1 mu2 cod mode n b.
+    (mode, n, b) env -> b Term.index -> (dom, mu1, mu2, cod) Modalcell.t -> (mode, kinetic) value =
+ fun env (Index (v, fa)) vcell ->
   let (Plus n_k) = D.plus (cod_sface fa) in
   let n = dim_env env in
-  match lookup_cube env n_k v (id_op (D.plus_out n n_k)) with
+  let (Wrap idm) = Modality.id (mode_env env) in
+  match lookup_cube env n_k v vcell (id_op (D.plus_out n n_k)) (Modalcell.id idm) with
   | Looked_up { act; op; key; entry } ->
       let (Plus x) = D.plus (dom_sface fa) in
       let (Op (f, s)) = comp_op op (plus_op n n_k x (op_of_sface fa)) in
       (* I don't understand the type error here *)
-      let _ = act (CubeOf.find entry f) s in
-      Sorry.e ()
+      act (CubeOf.find entry f) s (Some key)
 
 (* Instantiate an arbitrary value, combining tubes. *)
 and inst : type mode m n mn s.
@@ -1492,7 +1510,8 @@ let eval_bindings : type dom modality mode a b n.
  fun ctx modality cbs ->
   let i = Ctx.Ordered.length ctx in
   let vbs = CubeOf.build (CubeOf.dim cbs) { build = (fun _ -> Ctx.Binding.unknown ()) } in
-  let (Wrap idm) = Modality.id (Modality.dom modality) in
+  let mode = Modality.dom modality in
+  let (Wrap idm) = Modality.id mode in
   let tempctx = Ctx.Ordered.invis (Ctx.Ordered.lock ctx modality) idm vbs in
   let argtbl = Hashtbl.create 10 in
   let j = ref 0 in
@@ -1507,7 +1526,7 @@ let eval_bindings : type dom modality mode a b n.
             j := !j + 1;
             let lvl, v =
               match ctm with
-              | None -> (Some level, ({ tm = var level ety; ty = ety } : dom normal))
+              | None -> (Some level, ({ tm = var mode level ety; ty = ety } : dom normal))
               | Some ctm -> (None, { tm = eval_term (Ctx.Ordered.env tempctx) ctm; ty = ety }) in
             Hashtbl.add argtbl (SFace_of fa) v;
             Ctx.Binding.specify vb lvl v);
@@ -1515,7 +1534,6 @@ let eval_bindings : type dom modality mode a b n.
       [ cbs; vbs ] in
   vbs
 
-(* TODO: Termctx entries will also have a modality *)
 let eval_entry : type dom modality mode a b f n.
     (mode, a, b) Ctx.Ordered.t ->
     (dom, modality, mode, b, f, n) entry ->
@@ -1530,7 +1548,7 @@ let eval_entry : type dom modality mode a b f n.
 
 let rec eval_ordered_ctx : type mode a b. (mode, a, b) ordered_termctx -> (mode, a, b) Ctx.Ordered.t
     = function
-  | Emp -> Emp (Sorry.e ())
+  | Emp mode -> Emp mode
   | Ext (ctx, e, af) ->
       let ectx = eval_ordered_ctx ctx in
       Snoc (ectx, eval_entry ectx e, af)
@@ -1551,7 +1569,8 @@ let rec eval_append : type mode a b c ac bc.
   match (ac, tel) with
   | Zero, Emp -> ctx
   | Suc ac, Ext (x, modality, ty, tel) ->
-      let ty = eval_term (Ctx.env ctx) ty in
+      let lctx = Ctx.lock ctx modality in
+      let ty = eval_term (Ctx.env lctx) ty in
       eval_append (Ctx.ext ctx modality x ty) ac tel
 
 (* Get the instantiation arguments of a type, of any sort. *)

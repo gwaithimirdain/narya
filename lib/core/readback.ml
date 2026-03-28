@@ -63,17 +63,14 @@ and readback_at : type mode a z.
   let vty = view_type ty "readback_at" in
   match (vty, view) with
   | ( Canonical (_, Pi (_, modality, doms, cods), ins, tyargs),
-      Lam ((Variables (m, mn, xs) as x), lam_modality, body) ) -> (
+      Lam ((Variables (m, mn, xs) as x), body) ) -> (
       let Eq = eq_of_ins_zero ins in
       let k = CubeOf.dim doms in
       let l = dim_binder body in
-      match
-        (D.compare (TubeOf.inst tyargs) k, D.compare k l, Modality.compare lam_modality modality)
-      with
-      | Neq, _, _ -> fatal (Dimension_mismatch ("reading back at pi 1", TubeOf.inst tyargs, k))
-      | _, Neq, _ -> fatal (Dimension_mismatch ("reading back at pi 2", k, l))
-      | _, _, Neq -> fatal (Modality_mismatch ("reading back at pi", lam_modality, modality))
-      | Eq, Eq, Eq ->
+      match (D.compare (TubeOf.inst tyargs) k, D.compare k l) with
+      | Neq, _ -> fatal (Dimension_mismatch ("reading back at pi 1", TubeOf.inst tyargs, k))
+      | _, Neq -> fatal (Dimension_mismatch ("reading back at pi 2", k, l))
+      | Eq, Eq ->
           let lctx = Ctx.lock ctx modality in
           let args, newnfs = dom_vars lctx doms in
           let (Plus af) = N.plus (NICubeOf.out N.zero xs) in
@@ -168,8 +165,8 @@ and readback_at : type mode a z.
               (* A nontrivially permuted record is not a record type, but we can permute its arguments to find elements of a record type that we can then eta-expand and re-permute. *)
               let (Perm_to p) = perm_of_ins ins in
               let pinv = deg_of_perm (perm_inv p) in
-              let ptm = act_value tm pinv in
-              let pty = act_ty tm ty pinv in
+              let ptm = act_value tm pinv None in
+              let pty = act_ty tm ty pinv None in
               match readback_at_record ptm pty with
               | Some res -> Act (res, deg_of_perm p, (`Other, `Other))
               | None -> readback_val_sorted ctx tm vty))
@@ -263,11 +260,11 @@ and readback_head : type mode c z.
     (mode, c, kinetic) term =
  fun ?(sort = (`Other, `Other)) ctx h ->
   match h with
-  | Var { level; deg } -> (
+  | Var { level; deg; key } -> (
       let x = Ctx.find_level ctx level <|> No_such_level (PLevel level) in
       match is_id_deg deg with
-      | Some _ -> Var x
-      | None -> Act (Var x, deg, sort))
+      | Some _ -> Var (x, key)
+      | None -> Act (Var (x, key), deg, sort))
   | Const { name; ins } -> (
       let dim = cod_left_ins ins in
       let (To perm) = deg_of_ins ins in
@@ -282,7 +279,7 @@ and readback_head : type mode c z.
       | None ->
           let (To perm) = deg_of_ins ins in
           Act (tm, perm, sort))
-  | UU m -> UU m
+  | UU n -> UU n
   | Pi (x, modality, doms, cods) ->
       let k = CubeOf.dim doms in
       let lctx = Ctx.lock ctx modality in
@@ -306,7 +303,7 @@ and readback_head : type mode c z.
 
 and readback_at_tel : type mode n c a b ab z.
     (mode, z, c) Ctx.t ->
-    (n, a) env ->
+    (mode, n, a) env ->
     (n, mode, kinetic, unit) ModalValueCube.t list ->
     (mode, a, b, ab) Telescope.t ->
     (D.zero, n, n, (mode, kinetic) modal_value list) TubeOf.t ->
@@ -318,8 +315,9 @@ and readback_at_tel : type mode n c a b ab z.
       match Modality.compare xmodality tymodality with
       | Eq ->
           let lctx = Ctx.lock ctx tymodality in
+          let lenv = key_env env (Modalcell.id tymodality) in
           let x = CubeOf.find_top x in
-          let ety = eval_term env ty in
+          let ety = eval_term lenv ty in
           let tyargtbl = Hashtbl.create 10 in
           let [ tyarg; tms; tyargs ] =
             TubeOf.pmap
@@ -334,7 +332,7 @@ and readback_at_tel : type mode n c a b ab z.
                             let fa = sface_of_tface fa in
                             let _argty =
                               inst
-                                (eval_term (act_env env (op_of_sface fa)) ty)
+                                (eval_term (act_env lenv (op_of_sface fa)) ty)
                                 (TubeOf.build D.zero
                                    (D.zero_plus (dom_sface fa))
                                    {
@@ -360,6 +358,7 @@ and readback_at_tel : type mode n c a b ab z.
                (Ext
                   ( env,
                     D.plus_zero (TubeOf.inst tyarg),
+                    xmodality,
                     Ok (TubeOf.plus_cube (val_of_norm_tube tyarg) (CubeOf.singleton x)) ))
                xs tys tyargs
       | Neq -> fatal (Modality_mismatch ("readback_at_tel", xmodality, tymodality)))
@@ -367,26 +366,32 @@ and readback_at_tel : type mode n c a b ab z.
 
 (* To readback an environment, since readback is type-directed we need the types of *all* the terms in it, which is to say its codomain context.  We store this as a Termctx since we need to evaluate and instantiate the types at the previous terms in the environment as we go. *)
 and readback_env : type mode n a b c d.
-    (mode, a, b) Ctx.t -> (n, d) Value.env -> (mode, c, d) termctx -> (b, n, d) Term.env =
+    (mode, a, b) Ctx.t -> (mode, n, d) Value.env -> (mode, c, d) termctx -> (mode, b, n, d) Term.env
+    =
  (* The permutation in a context only acts on the raw length, not the checked length which is what matches the env, so we can ignore it here. *)
  fun ctx env (Permute (_, envctx)) ->
   readback_ordered_env ctx env envctx
 
-and readback_ordered_env : type cmode mode n a b c d.
-    (cmode, a, b) Ctx.t -> (n, d) Value.env -> (mode, c, d) ordered_termctx -> (b, n, d) Term.env =
+(* TODO: I think we need to match up keys in env with locks in the two contexts and strip them off. As in eval_env, this may require replacing the rightmost part of the contexts by dummies that just extend out the length so the de bruijn indices are ok. *)
+and readback_ordered_env : type mode mode n a b c d.
+    (mode, a, b) Ctx.t ->
+    (mode, n, d) Value.env ->
+    (mode, c, d) ordered_termctx ->
+    (mode, b, n, d) Term.env =
  fun ctx env envctx ->
   match envctx with
-  | Emp -> Emp (dim_env env)
-  | Lock (envctx, _) ->
-      (* I think locks are irrelevant to giving types to an environment *)
-      readback_ordered_env ctx env envctx
+  | Emp mode -> Emp (mode, dim_env env)
+  | Lock (envctx, _) -> readback_ordered_env ctx env envctx
   | Ext (envctx, entry, _) -> (
       let (Plus mk) = D.plus (dim_entry entry) in
-      let (Looked_up { act; op = Op (fc, fd); entry = xs }) =
-        lookup_cube env mk Now (id_op (D.plus_out (dim_env env) mk)) in
-      let xs = act_cube { act } (CubeOf.subcube fc xs) fd in
       match entry with
       | Vis { modality; bindings; _ } | Invis (modality, bindings) ->
+          let (Wrap idm) = Modality.id (Modality.cod modality) in
+          let (Looked_up { act; op = Op (fc, fd); entry = xs; key }) =
+            lookup_cube env mk Now (Modalcell.id modality)
+              (id_op (D.plus_out (dim_env env) mk))
+              (Modalcell.id idm) in
+          let xs = act_cube { act } (CubeOf.subcube fc xs) fd (Some key) in
           let xtytbl = Hashtbl.create 10 in
           (* TODO: Need to figure out how the modes of these two contexts interact. *)
           let lctx = Ctx.lock ctx modality in
@@ -410,10 +415,7 @@ and readback_ordered_env : type cmode mode n a b c d.
                     Hashtbl.add xtytbl (SFace_of fb) { tm; ty };
                     readback_at lctx tm ty);
               }
-              [
-                (let _ = xs in
-                 Sorry.e ());
-              ] in
+              [ xs ] in
           let env = remove_env env Now in
           let tmenv = readback_ordered_env ctx env envctx in
           Ext (tmenv, mk, tmxs))
@@ -468,7 +470,7 @@ let readback_entry : type dom modality mode a b f n.
 
 let rec readback_ordered_ctx : type mode a b.
     (mode, a, b) Ctx.Ordered.t -> (mode, a, b) ordered_termctx = function
-  | Emp _ -> Emp
+  | Emp mode -> Emp mode
   | Snoc (rest, e, af) as ctx ->
       Ext (readback_ordered_ctx rest, readback_entry (Ctx.of_ordered ctx) e, af)
   | Lock (ctx, lock) -> Lock (readback_ordered_ctx ctx, lock)

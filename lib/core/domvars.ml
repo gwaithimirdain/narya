@@ -15,6 +15,7 @@ let dom_vars : type mode m a b.
     (m, (mode, kinetic) value) CubeOf.t * (m, mode Ctx.Binding.t) CubeOf.t =
  fun ctx doms ->
   let i = Ctx.level ctx in
+  let mode = Ctx.mode ctx in
   (* To make these variables into values, we need to annotate them with their types, which in general are instantiations of the domains at previous variables.  Thus, we assemble them in a hashtable as we create them for random access to the previous ones. *)
   let argtbl = Hashtbl.create 10 in
   let j = ref 0 in
@@ -34,7 +35,7 @@ let dom_vars : type mode m a b.
                    }) in
             let level = (i, !j) in
             j := !j + 1;
-            let v = { tm = var level ty; ty } in
+            let v = { tm = var mode level ty; ty } in
             Hashtbl.add argtbl (SFace_of fa) v;
             [ v.tm; Ctx.Binding.make (Some level) v ]);
       }
@@ -49,13 +50,13 @@ end)
 
 let rec ext_tel : type mode a b c ac bc e ec n.
     (mode, a, e) Ctx.t ->
-    (n, b) env ->
+    (mode, n, b) env ->
     (* Note that c is a Fwn, since it is the length of a telescope. *)
     (a, c, ac) Raw.Namevec.t ->
     (mode, b, c, bc) Telescope.t ->
     (e, c, n, ec) Tbwd.snocs ->
     (mode, ac, ec) Ctx.t
-    * (n, bc) env
+    * (mode, n, bc) env
     * (n, mode, kinetic, unit) ModalValueCube.t list
     * (n, mode, unit, unit) ModalBindingCube.t list =
  fun ctx env xs tel ec ->
@@ -64,19 +65,19 @@ let rec ext_tel : type mode a b c ac bc e ec n.
   | x :: xs, Ext (x', modality, rty, rest), Suc ec ->
       let m = dim_env env in
       let lctx = Ctx.lock ctx modality in
+      let lenv = key_env env (Modalcell.id modality) in
       let newvars, newnfs =
         dom_vars lctx
-          (CubeOf.build m { build = (fun fa -> Norm.eval_term (act_env env (op_of_sface fa)) rty) })
-      in
+          (CubeOf.build m
+             { build = (fun fa -> Norm.eval_term (act_env lenv (op_of_sface fa)) rty) }) in
       let x =
         match x with
         | Some x -> Some x
         | None -> x' in
-      let modality = Sorry.e () in
       let ctx, env, vars, nfs =
         ext_tel
           (Ctx.cube_vis ctx modality x newnfs)
-          (Ext (env, D.plus_zero m, Ok newvars))
+          (Ext (env, D.plus_zero m, modality, Ok newvars))
           xs rest ec in
       (ctx, env, Modal (modality, newvars) :: vars, Modal (modality, newnfs) :: nfs)
 

@@ -182,7 +182,7 @@ and termctx_ordered : type mode a b.
     (File.t -> File.t) -> (mode, a, b) ordered_termctx -> (mode, a, b) ordered_termctx =
  fun f ctx ->
   match ctx with
-  | Emp -> Emp
+  | Emp mode -> Emp mode
   | Ext (ctx, e, ax) -> Ext (termctx_ordered f ctx, entry f e, ax)
   | Lock (ctx, lock) -> Lock (termctx_ordered f ctx, lock)
 
