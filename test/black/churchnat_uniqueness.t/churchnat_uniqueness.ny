@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-parametric") `}
+{` -*- narya-prog-args: ("-proofgeneral" "-parametric") -*- `}
 
 {` Uniqueness of iteration for Church encoded Nat from parametricity (from Thorsten) `}
 
@@ -99,7 +99,7 @@ def uniq (A : Type) (zA : A) (sA : A → A) (f : cnat → A)
 
 {` We can define recursor using iterator.
 
-   Using zA : A and fA : N -> (A -> A), we can define 
+   Using zA : A and fA : N -> (A -> A), we can define
 
    f : N -> A as f(n):= proj2 (ite (N x A) (0,zA) ((m,a) ↦ (m+1, fA m a))) `}
 
@@ -107,14 +107,14 @@ def cnat_rec (A : Type) (zA : A) (fA : cnat → (A → A)) (n : cnat) : A
   ≔ ((ite (cnat >< A) (czero, zA) (ma ↦ (csuc (ma .0), fA (ma .0) (ma .1))) n))
       .1
 
-{` For the induction principle, we can use 'uniq' above. 
+{` For the induction principle, we can use 'uniq' above.
 
-   For P : N → Type, p0 : P 0, ps n : P n → P (n + 1), we want to define 
+   For P : N → Type, p0 : P 0, ps n : P n → P (n + 1), we want to define
    a dependent function (n : N) → P n .
 
    Define an auxilary type P' = (Σ cnat P), then we have a nat-algebra (P', pz', ps')
 
-   By uniqueness, we have (proj1 o (ite P' pz' ps')) = id_N  
+   By uniqueness, we have (proj1 o (ite P' pz' ps')) = id_N
 
    Transport along this equality at n : N, we can define the desired dependent function. `}
 
@@ -143,7 +143,7 @@ def cnat_ind (P : cnat → Type) (p0 : (P czero))
            n)) .1)
 
 {` By recursion, we can define _+_ and _x_ on N, and
-   
+
    by induction, we can prove N is a commutative semiring. `}
 
 def cnat_add : cnat → (cnat → cnat)
@@ -166,7 +166,7 @@ def cnat_right_add_zero : (i : cnat) → eq cnat (cnat_add i czero) i
       (i f ↦ cong cnat cnat csuc (cnat_add i czero) i f)
 
 def cnat_left_add_zero : (i : cnat) → eq cnat (cnat_add czero i) i
-  ≔ (i ↦ eqr cnat i)            
+  ≔ (i ↦ eqr cnat i)
 
 def cnat_add_succ
   : (i j : cnat) → eq cnat (cnat_add i (csuc j)) (csuc (cnat_add i j))
@@ -323,7 +323,7 @@ def cnat_right_distr_mul_add
                 (cnat_mul j i) (cnat_mul_comm i j))
              (cong cnat cnat (n ↦ cnat_add (cnat_mul j i) n) (cnat_mul i k)
                 (cnat_mul k i) (cnat_mul_comm i k)))))
-     
+
 def cnat_mul_assoc
   : (i j k : cnat)
     → eq cnat (cnat_mul (cnat_mul i j) k) (cnat_mul i (cnat_mul j k))
