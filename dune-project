@@ -8,7 +8,7 @@
   (synopsis "A proof assistant for higher-dimensional type theories")
   (depends
     (ocaml
-      (>= 5.2.1))
+      (>= 5.3.0))
     dune
     zarith
     zarith_stubs_js
