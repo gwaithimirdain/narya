@@ -54,7 +54,12 @@ module rec Value : sig
   module ModalValueCube : module type of Modality.Cube (ValueFam)
 
   type 'mode head =
-    | Var : { level : level; deg : ('m, 'n) deg } -> 'mode head
+    | Var : {
+        level : level;
+        deg : ('m, 'n) deg;
+        key : ('mode, 'modality, 'lock, 'cod) Modalcell.t;
+      }
+        -> 'mode head
     | Const : { name : Constant.t; ins : ('a, 'b, 'c) insertion } -> 'mode head
     | Meta : {
         meta : ('a, 'b, 's) Meta.t;
@@ -241,8 +246,13 @@ end = struct
 
   (* The head of an elimination spine is a variable, a constant, or a substituted metavariable.  *)
   type 'mode head =
-    (* A variable is determined by a De Bruijn LEVEL, and stores a neutral degeneracy applied to it. *)
-    | Var : { level : level; deg : ('m, 'n) deg } -> 'mode head
+    (* A variable is determined by a De Bruijn LEVEL, and stores a neutral degeneracy applied to it, as well as a modal key 2-cell.  The vertical domain of the key is the modality annotating the variable in the context, and the vertical codomain is the composite of all the locks between that variable and the (rightmost) end of the context.  Accordingly, the horizontal codomain is the mode of the context at the time when the variable was added, and the horizontal domain is the mode of the current context. *)
+    | Var : {
+        level : level;
+        deg : ('m, 'n) deg;
+        key : ('mode, 'modality, 'lock, 'cod) Modalcell.t;
+      }
+        -> 'mode head
     (* A constant also stores a dimension that it is substituted to and a neutral insertion applied to it.  Many constants are zero-dimensional, meaning that 'c' is zero, and hence a=b is just a dimension and the insertion is trivial.  The dimension of a constant is its dimension as a term standing on its own; so in particular if it has any parameters, then it belongs to an ordinary, 0-dimensional, pi-type and therefore is 0-dimensional, even if the eventual codomain of the pi-type is higher-dimensional.  Note also that when nonidentity insertions end up getting stored here, e.g. by Act, the dimension 'c gets extended as necessary; so it is always okay to create a constant with the (0,0,0) insertion to start with, even if you don't know what its actual dimension is. *)
     | Const : { name : Constant.t; ins : ('a, 'b, 'c) insertion } -> 'mode head
     (* A metavariable (i.e. flexible) head stores the metavariable along with a delayed substitution applied to it. *)
@@ -453,6 +463,16 @@ let rec dim_env : type mode n b. (mode, n, b) env -> n D.t = function
 let dim_binder : type mode m s. (mode, m, s) binder -> m D.t = function
   | Bind b -> dom_ins b.ins
 
+let rec mode_env : type mode n b. (mode, n, b) env -> mode Mode.t = function
+  | Emp (mode, _) -> mode
+  | LazyExt (e, _, _, _) -> mode_env e
+  | Ext (e, _, _, _) -> mode_env e
+  | Act (e, _) -> mode_env e
+  | Key (_, key) -> Modalcell.hdom key
+  | Permute (_, e) -> mode_env e
+  | Shift (e, _, _) -> mode_env e
+  | Unshift (e, _, _) -> mode_env e
+
 (* let dim_canonical : type mode m n mn. (mode, m, n, mn) canonical -> mn D.t = function
      | UU dim -> dim
      | Pi (_, doms, _) -> CubeOf.dim doms
@@ -534,12 +554,13 @@ let apply_lazy : type dom modality mode n s.
 
 (* We defer "field_lazy" to act.ml, since it requires pushing a permutation inside the apps. *)
 
-(* Given a De Bruijn level and a type, build the variable of that level having that type. *)
-let var : level -> ('mode, kinetic) value -> ('mode, kinetic) value =
- fun level ty ->
+(* Given a mode, a De Bruijn level, and a type, build the variable of that mode and level having that type. *)
+let var : 'mode Mode.t -> level -> ('mode, kinetic) value -> ('mode, kinetic) value =
+ fun mode level ty ->
+  let (Wrap idm) = Modality.id mode in
   Neu
     {
-      head = Var { level; deg = id_deg D.zero };
+      head = Var { level; deg = id_deg D.zero; key = Modalcell.id idm };
       args = Emp;
       value = ready Unrealized;
       ty = Lazy.from_val ty;

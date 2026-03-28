@@ -2,6 +2,7 @@
 
 open Bwd
 open Util
+open Modal
 open Tbwd
 open Reporter
 open Term
@@ -10,18 +11,22 @@ open Origin
 
 (* The global environment of constants and definition-local metavariables. *)
 
-(* Safe coercion for phantom 'mode parameter *)
+(* Coercion for phantom 'mode parameter.  TODO: Remove this.  We may want to index metavariables by their mode.  Constants could be indexed by their mode too, but we don't *need* to do that yet if we just test modes every time we look one up. *)
 let coerce_mode : 'a -> 'b = Obj.magic
 
 (* Each global constant either is an axiom or has a definition (a case tree).  The latter includes canonical types.  *)
 type definition =
-  [ `Axiom | `Defined of (Fibrancy.mode, emp, potential) term ]
-  (* A parametric constant can have external degeneracies applied to it, while a nonparametric one can't.  A maybe-parametric one is one currently being typechecked which hasn't yet been concluded to be nonparametric. *)
-  * [ `Parametric | `Nonparametric | `Maybe_parametric ]
+  | Definition : {
+      mode : 'mode Mode.t;
+      ty : ('mode, emp, kinetic) term;
+      tm : [ `Axiom | `Defined of ('mode, emp, potential) term ];
+      (* A parametric constant can have external degeneracies applied to it, while a nonparametric one can't.  A maybe-parametric one is one currently being typechecked which hasn't yet been concluded to be nonparametric. *)
+      parametric : [ `Parametric | `Nonparametric | `Maybe_parametric ];
+    }
+      -> definition
 
 (* The versioned global table of defined constants. *)
-let constants : ((Fibrancy.mode, emp, kinetic) term * definition, Code.t) Result.t Constant.Table.t =
-  Constant.Table.make ()
+let constants : (definition, Code.t) Result.t Constant.Table.t = Constant.Table.make ()
 
 (* Global metavariables have only a definition (or an error indicating that they can't be correctly accessed, such as if typechecking failed earlier). *)
 module Metatable = Meta.Table.Make (struct
@@ -39,7 +44,7 @@ let holes : unit Holetable.t = Holetable.make ()
 (* Look up a constant. *)
 let find c =
   match Constant.Table.find_opt c constants with
-  | Some (Ok (ty, tm)) -> (ty, tm)
+  | Some (Ok d) -> d
   | Some (Error e) -> fatal e
   | None -> fatal (Undefined_constant (PConstant c))
 
@@ -76,7 +81,9 @@ let return_hole : type mode a b s.
   | Ok { tm = `Undefined; termctx; ty; _ }, Some (Found { status; vars; li; ri; parametric }) -> (
       match Meta.origin meta with
       | Instant instant ->
-          Some (Found_hole { meta; instant; termctx; ty; status = coerce_mode status; vars; li; ri; parametric })
+          Some
+            (Found_hole
+               { meta; instant; termctx; ty; status = coerce_mode status; vars; li; ri; parametric })
       | _ -> fatal (Anomaly "timeless hole"))
   | Error e, _ -> fatal e
   | _ -> None
@@ -108,14 +115,16 @@ let to_channel_origin chan origin flags =
   Constant.Table.to_channel_origin chan origin constants flags;
   Metatable.to_channel_origin chan origin metas flags
 
-let link_definition f df =
-  match df with
-  | `Axiom, p -> (`Axiom, p)
-  | `Defined tm, p -> (`Defined (Link.term f tm), p)
+let link_definition f (Definition { mode; ty; tm; parametric }) =
+  let ty = Link.term f ty in
+  let tm =
+    match tm with
+    | `Axiom -> `Axiom
+    | `Defined tm -> `Defined (Link.term f tm) in
+  Definition { mode; ty; tm; parametric }
 
 type origin_entry =
-  ((Fibrancy.mode, emp, kinetic) term * definition, Code.t) Result.t Constant.Table.origin_entry
-  * unit Metatable.origin_entry
+  (definition, Code.t) Result.t Constant.Table.origin_entry * unit Metatable.origin_entry
 
 let find_file i = (Constant.Table.find_file i constants, Metatable.find_file i metas)
 
@@ -126,10 +135,7 @@ let add_file i (c, m) =
 (* Returns the new file data for constants and metas. *)
 let from_istream_origin f chan i =
   (* NB in a tuple (a,b), OCaml executes b before a!  But we have to unmarshal the constants before the metas, because that's the order we marshaled them in, so we control the order of execution with let.  *)
-  let cs =
-    Constant.Table.from_istream_origin chan
-      (Result.map (fun (tm, df) -> (Link.term f tm, link_definition f df)))
-      i constants in
+  let cs = Constant.Table.from_istream_origin chan (Result.map (link_definition f)) i constants in
   let ms =
     Metatable.from_istream_origin chan
       {
@@ -143,12 +149,18 @@ let from_istream_origin f chan i =
   (cs, ms)
 
 (* Add a new constant.  Only works on the current origin. *)
-let add c ty df = Constant.Table.add c (Ok (coerce_mode ty, coerce_mode df)) constants
+let add c d = Constant.Table.add c (Ok d) constants
 
 (* Set the definition of an already-defined constant.  Only works on the current origin. *)
-let set c df =
+let set c m tm =
   match Constant.Table.find_opt c constants with
-  | Some (Ok (ty, _)) -> Constant.Table.add c (Ok (ty, coerce_mode df)) constants
+  | Some (Ok (Definition { mode; ty; tm = _; parametric })) ->
+      (* I don't understand why the type error *)
+      (* match Mode.compare mode m with
+         | Eq -> Constant.Table.add c (Ok (Definition { mode; tm; ty; parametric })) constants
+         | Neq -> fatal (Anomaly "Global.set: mode mismatch")) *)
+      let _ = (m, tm, mode, ty, parametric) in
+      Sorry.e ()
   | _ -> fatal (Anomaly "Global.set: constant not defined")
 
 (* Add a new constant, but make it an error to access it. *)
@@ -240,7 +252,8 @@ let get_parametric () =
 let end_command (offset, make_msg) =
   let d = Current_command.get () in
   (* If the command ended up being parametric, we must retroactively label all the holes as parametric, so that they can only be filled using parametric constants, and oppositely. *)
-  let update_parametric : type mode a b s. (mode, a, b, s) Metadef.hole -> (mode, a, b, s) Metadef.hole =
+  let update_parametric : type mode a b s.
+      (mode, a, b, s) Metadef.hole -> (mode, a, b, s) Metadef.hole =
    fun h ->
     let parametric =
       match d.parametric with
@@ -328,16 +341,22 @@ let add_hole m loc ~vars ~termctx ~ty ~status ~li ~ri =
         }
 
 (* Temporarily set the value of a constant to execute a callback, and restore it afterwards. *)
-let with_definition c df f =
+let with_definition c m tm f =
   match Constant.Table.find_opt c constants with
-  | Some (Ok (ty, _) as old) ->
+  | Some (Ok (Definition { mode; ty; _ }) as old) ->
       let d = Current_command.get () in
-      let p =
+      let parametric =
         match d.parametric with
         | `Nonparametric -> `Nonparametric
         | `Must_be_parametric | `Maybe_parametric -> `Maybe_parametric in
-      Constant.Table.add c (Ok (ty, (coerce_mode df, p))) constants;
-      Fun.protect ~finally:(fun () -> Constant.Table.add c old constants) f
+      (* I don't understand the type error  *)
+      (* match Mode.compare mode m with
+         | Eq ->
+             Constant.Table.add c (Ok (Definition { mode; ty; tm; parametric })) constants;
+             Fun.protect ~finally:(fun () -> Constant.Table.add c old constants) f
+         | Neq -> fatal (Anomaly "Global.set: mode mismatch")) *)
+      let _ = (m, tm, mode, ty, old, parametric) in
+      Sorry.e ()
   | Some (Error _ as old) ->
       (* If the constant is currently unusable, we just retain that state. *)
       Fun.protect ~finally:(fun () -> Constant.Table.add c old constants) f

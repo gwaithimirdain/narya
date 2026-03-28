@@ -134,7 +134,7 @@ module Ordered = struct
     | Snoc :
         ('mode, 'a, 'b) t * ('dom, 'modality, 'mode, 'x, 'n) entry * ('a, 'x, 'ax) N.plus
         -> ('mode, 'ax, ('b, 'n) snoc) t
-    (* A locked context permits no access to the variables behind it. *)
+    (* Modal locks change the mode of the context, but are NOT recorded in either length.  This is intentional because it allows multiple locks to be combined, or identity locks removed or treated as inserted without being mentioned, without needing to frobnicate the type parameters.  (Another approach would be to make the length record exactly one lock in between every pair of variables.) *)
     | Lock : ('cod, 'a, 'b) t * ('dom, 'modality, 'cod) Modality.t -> ('dom, 'a, 'b) t
 
   let mode : type mode a b. (mode, a, b) t -> mode Mode.t = function

@@ -29,7 +29,7 @@ module Modality = struct
   let id : type m. m Mode.t -> (m, m) wrapped = function
     | Test_mode -> Wrap Id_modality
 
-  let comp : type a m b n c. (a, m, b) t -> (b, n, c) t -> (a, c) wrapped =
+  let comp : type a m b n c. (b, n, c) t -> (a, m, b) t -> (a, c) wrapped =
    fun mu nu ->
     match (mu, nu) with
     | Id_modality, Id_modality -> Wrap Id_modality
@@ -47,6 +47,11 @@ module Modality = struct
   let locker : type a. a Mode.t -> (a, a) wrapped = function
     | Test_mode -> Wrap Id_modality
 
+  let factor : type a m b n c. (a, m, c) t -> (a, n, b) t -> (b, c) wrapped =
+   fun mu nu ->
+    match (mu, nu) with
+    | Id_modality, Id_modality -> Wrap Id_modality
+
   module Cube (F : Fam3) = struct
     open struct
       type ('a, 'm, 'b) modality_t = ('a, 'm, 'b) t
@@ -60,7 +65,7 @@ module Modality = struct
 end
 
 module Modalcell = struct
-  type (_, _, _, _) t = Id_cell : (Mode.test, id_modality, id_modality, Mode.test) t
+  type (_, _, _, _) t = Id_cell : (test_mode, id_modality, id_modality, test_mode) t
 
   (* If there is a unique 2-cell with given domain and codomain, find it.  (Unique cells can be omitted by the user.)  Also checks that the domains and codomains agree. *)
   type (_, _, _, _, _, _) find_unique =
@@ -83,15 +88,35 @@ module Modalcell = struct
 
   type (_, _) wrapped = Wrap : ('a, 'm, 'n, 'b) t -> ('a, 'b) wrapped
 
+  let hdom : type a m n b. (a, m, n, b) t -> a Mode.t = function
+    | Id_cell -> Test_mode
+
+  let hcod : type a m n b. (a, m, n, b) t -> b Mode.t = function
+    | Id_cell -> Test_mode
+
   let hcomp : type a m n b r s c. (b, m, n, c) t -> (a, r, s, b) t -> (a, c) wrapped =
    fun x y ->
     match (x, y) with
     | Id_cell, Id_cell -> Wrap Id_cell
 
+  let postwhisker : type a r s b m c. (b, m, c) Modality.t -> (a, r, s, b) t -> (a, c) wrapped =
+   fun m x -> hcomp (id m) x
+
+  let prewhisker : type a r b m n c. (b, m, n, c) t -> (a, r, b) Modality.t -> (a, c) wrapped =
+   fun x m -> hcomp x (id m)
+
   let vcomp : type a m n r b. (a, n, r, b) t -> (a, m, n, b) t -> (a, m, r, b) t =
    fun x y ->
     match (x, y) with
     | Id_cell, Id_cell -> Id_cell
+
+  type (_, _, _) with_dom = With_dom : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'b) with_dom
+
+  let vcomp_extending : type a m nn b n s c. (a, m, nn, b) t -> (a, n, s, c) t -> (a, m, c) with_dom
+      =
+   fun x y ->
+    match (x, y) with
+    | Id_cell, Id_cell -> With_dom Id_cell
 end
 
 let test_mode : test_mode Mode.t = Test_mode

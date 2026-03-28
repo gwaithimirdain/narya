@@ -1,14 +1,20 @@
 open Bwd
 open Util
+open Modal
 open Tbwd
 open Term
 open Origin
 
 type definition =
-  [ `Axiom | `Defined of (Fibrancy.mode, emp, potential) term ]
-  * [ `Parametric | `Nonparametric | `Maybe_parametric ]
+  | Definition : {
+      mode : 'mode Mode.t;
+      ty : ('mode, emp, kinetic) term;
+      tm : [ `Axiom | `Defined of ('mode, emp, potential) term ];
+      parametric : [ `Parametric | `Nonparametric | `Maybe_parametric ];
+    }
+      -> definition
 
-val find : Constant.t -> (Fibrancy.mode, emp, kinetic) term * definition
+val find : Constant.t -> definition
 val find_meta : ('a, 'b, 's) Meta.t -> ('mode, 'a, 'b, 's) Metadef.t
 
 type find_hole =
@@ -34,8 +40,8 @@ type origin_entry
 val find_file : File.t -> origin_entry
 val add_file : File.t -> origin_entry -> unit
 val from_istream_origin : (File.t -> File.t) -> Istream.t -> Origin.t -> origin_entry
-val add : Constant.t -> ('mode, emp, kinetic) term -> definition -> unit
-val set : Constant.t -> definition -> unit
+val add : Constant.t -> definition -> unit
+val set : Constant.t -> 'mode Mode.t -> ('mode, emp, kinetic) term -> unit
 val add_error : Constant.t -> Reporter.Code.t -> unit
 
 val add_meta :
@@ -90,7 +96,11 @@ val add_hole :
   unit
 
 val with_definition :
-  Constant.t -> [ `Axiom | `Defined of ('mode, emp, potential) term ] -> (unit -> 'a) -> 'a
+  Constant.t ->
+  'mode Mode.t ->
+  [ `Axiom | `Defined of ('mode, emp, potential) term ] ->
+  (unit -> 'a) ->
+  'a
 
 val with_meta_definition : ('a, 'b, 's) Meta.t -> ('mode, 'b, 's) term -> (unit -> 'x) -> 'x
 val without_definition : Constant.t -> Reporter.Code.t -> (unit -> 'a) -> 'a
