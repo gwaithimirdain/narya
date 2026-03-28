@@ -1119,9 +1119,10 @@ and eval_env : type mode a m n mn b.
                   let (SFace_of_plus (_, fa, fb)) = sface_of_plus m_nk fab in
                   lazy_eval (act_env lenv (op_of_sface fa)) (CubeOf.find xss fb));
             } )
-  | Key (tmenv, cell) ->
+  | Key (_tmenv, _cell) ->
       (* TODO: Does this ever happen?  If so, we may need to peel keys off of 'env' to make the modes match.  But then the De Bruijn indices would get fubared too.  Maybe we replace them by a dummy environment extension that stores nothing but just extends out the length, while leaving the mode as that of the shorter environment.  Note that that environment could get further extended by new bindings. *)
-      Key (eval_env env m_n tmenv, cell)
+      (* Key (eval_env env m_n tmenv, cell) *)
+      Sorry.e ()
 
 and apply_term : type dom modality mode n.
     (mode, kinetic) value ->

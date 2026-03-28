@@ -330,7 +330,7 @@ and readback_at_tel : type mode n c a b ab z.
                         match Modality.compare argmod tymodality with
                         | Eq ->
                             let fa = sface_of_tface fa in
-                            let _argty =
+                            let argty =
                               inst
                                 (eval_term (act_env lenv (op_of_sface fa)) ty)
                                 (TubeOf.build D.zero
@@ -341,10 +341,7 @@ and readback_at_tel : type mode n c a b ab z.
                                          Hashtbl.find tyargtbl
                                            (SFace_of (comp_sface fa (sface_of_tface fb))));
                                    }) in
-                            (* I don't understand why there is a type error here. *)
-                            let argty = Sorry.e () in
-                            let _argnorm = { tm = argtm; ty = argty } in
-                            let argnorm = Sorry.e () in
+                            let argnorm = { tm = argtm; ty = argty } in
                             let argtm = readback_at lctx argtm argty in
                             Hashtbl.add tyargtbl (SFace_of fa) argnorm;
                             [ argnorm; argtm; argrest ]
@@ -373,7 +370,7 @@ and readback_env : type mode n a b c d.
   readback_ordered_env ctx env envctx
 
 (* TODO: I think we need to match up keys in env with locks in the two contexts and strip them off. As in eval_env, this may require replacing the rightmost part of the contexts by dummies that just extend out the length so the de bruijn indices are ok. *)
-and readback_ordered_env : type mode mode n a b c d.
+and readback_ordered_env : type mode n a b c d.
     (mode, a, b) Ctx.t ->
     (mode, n, d) Value.env ->
     (mode, c, d) ordered_termctx ->
@@ -381,11 +378,11 @@ and readback_ordered_env : type mode mode n a b c d.
  fun ctx env envctx ->
   match envctx with
   | Emp mode -> Emp (mode, dim_env env)
-  | Lock (envctx, _) -> readback_ordered_env ctx env envctx
+  | Lock (_envctx, _) -> readback_ordered_env ctx env (* envctx *) (Sorry.e ())
   | Ext (envctx, entry, _) -> (
       let (Plus mk) = D.plus (dim_entry entry) in
       match entry with
-      | Vis { modality; bindings; _ } | Invis (modality, bindings) ->
+      | Vis { modality; bindings = _; _ } | Invis (modality, _) ->
           let (Wrap idm) = Modality.id (Modality.cod modality) in
           let (Looked_up { act; op = Op (fc, fd); entry = xs; key }) =
             lookup_cube env mk Now (Modalcell.id modality)
@@ -393,15 +390,16 @@ and readback_ordered_env : type mode mode n a b c d.
               (Modalcell.id idm) in
           let xs = act_cube { act } (CubeOf.subcube fc xs) fd (Some key) in
           let xtytbl = Hashtbl.create 10 in
-          (* TODO: Need to figure out how the modes of these two contexts interact. *)
-          let lctx = Ctx.lock ctx modality in
+          (* let lctx = Ctx.lock ctx modality in *)
           let tmxs =
             CubeOf.mmap
               {
                 map =
                   (fun fab [ tm ] ->
-                    let (SFace_of_plus (_, fb, fa)) = sface_of_plus mk fab in
-                    let ty = (CubeOf.find bindings fa).ty in
+                    let (SFace_of_plus (_, fb, _fa)) = sface_of_plus mk fab in
+                    let ty =
+                      Sorry.e ()
+                      (* (CubeOf.find bindings fa).ty *) in
                     let k = dom_sface fb in
                     let ty =
                       inst
@@ -413,12 +411,12 @@ and readback_ordered_env : type mode mode n a b c d.
                                  Hashtbl.find xtytbl (SFace_of (comp_sface fb (sface_of_tface fc))));
                            }) in
                     Hashtbl.add xtytbl (SFace_of fb) { tm; ty };
-                    readback_at lctx tm ty);
+                    Sorry.e () (* readback_at lctx tm ty *));
               }
               [ xs ] in
           let env = remove_env env Now in
           let tmenv = readback_ordered_env ctx env envctx in
-          Ext (tmenv, mk, tmxs))
+          Ext (tmenv, mk, modality, tmxs))
 
 (* Read back a context of values into a context of terms. *)
 
