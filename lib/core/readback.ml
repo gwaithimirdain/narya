@@ -382,7 +382,7 @@ and readback_ordered_env : type mode n a b c d.
  fun ctx env envctx ->
   match envctx with
   | Emp mode -> Emp (mode, dim_env env)
-  | Lock (_envctx, _) -> readback_ordered_env ctx env (* envctx *) (Sorry.e ())
+  | Lock (envctx, _) -> readback_ordered_env ctx env envctx
   | Ext (envctx, entry, _) -> (
       let (Plus mk) = D.plus (dim_entry entry) in
       match entry with
@@ -401,9 +401,7 @@ and readback_ordered_env : type mode n a b c d.
                 map =
                   (fun fab [ tm ] ->
                     let (SFace_of_plus (_, fb, _fa)) = sface_of_plus mk fab in
-                    let ty =
-                      Sorry.e ()
-                      (* (CubeOf.find bindings fa).ty *) in
+                    let ty = (CubeOf.find bindings fa).ty in
                     let k = dom_sface fb in
                     let ty =
                       inst
@@ -415,7 +413,7 @@ and readback_ordered_env : type mode n a b c d.
                                  Hashtbl.find xtytbl (SFace_of (comp_sface fb (sface_of_tface fc))));
                            }) in
                     Hashtbl.add xtytbl (SFace_of fb) { tm; ty };
-                    Sorry.e () (* readback_at lctx tm ty *));
+                    readback_at lctx tm ty);
               }
               [ xs ] in
           let env = remove_env env Now in
