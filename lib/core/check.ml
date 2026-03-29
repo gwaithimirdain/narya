@@ -35,7 +35,7 @@ let rec typefam : type mode a b.
     ?discrete:unit Constant.Map.t -> (mode, a, b) Ctx.t -> (mode, kinetic) value -> int * bool =
  fun ?discrete ctx ty ->
   match view_type ~severity:Asai.Diagnostic.Error ty "typefam" with
-  | Canonical (_, UU n, _, _) -> (
+  | Canonical (_, UU (_, n), _, _) -> (
       match D.compare n D.zero with
       | Eq -> (0, true)
       | Neq -> fatal (Unimplemented "higher-dimensional datatypes"))
@@ -79,7 +79,8 @@ let rec motive_of_family : type mode a b.
   let folder : type left m any.
       (left, m, any) F.t -> (left, D.zero) snoc T.t -> left T.t * (left, m, any) F.t =
    fun (Rbtm dom) cod ->
-    ( Pi (singleton_variables D.zero None, CubeOf.singleton dom, CodCube.singleton (Cod cod)),
+    let (Wrap idm) = Modality.id (Sorry.e ()) in
+    ( Pi (singleton_variables D.zero None, idm, CubeOf.singleton dom, CodCube.singleton (Cod cod)),
       Rbtm dom ) in
   let builder : type dom modality left n m.
       n variables ->
@@ -123,7 +124,7 @@ let rec motive_of_family : type mode a b.
           { build = (fun fa ctx -> builder (singleton_variables m None) idm newnfs fa ctx) }
           (Any_ctx ctx) in
       let motive, _ =
-        MT.fold_map_right { foldmap = (fun _ x y -> folder x y) } newdoms (UU D.zero) in
+        MT.fold_map_right { foldmap = (fun _ x y -> folder x y) } newdoms (UU (mode, D.zero)) in
       motive
   | _ -> fatal (Anomaly "non-family in motive_of_family")
 
@@ -214,7 +215,7 @@ type (_, _, _, _) synthable_branch =
   | Synthable_branch : {
       xs : ('a, 'c, 'ac) Namevec.t;
       body : 'ac synth located;
-      env : ('m, 'b) env;
+      env : ('mode, 'm, 'b) env;
       argtys : ('mode, 'b, 'c, 'bc) Telescope.t;
       index_terms : (('mode, 'bc, kinetic) term, 'ij) Vec.t;
     }
@@ -304,7 +305,7 @@ type (_, _, _) match_motive =
         Constr.t ->
         'm D.t ->
         (('mode, 'bc, kinetic) term, 'ij) Vec.t ->
-        ('m, 'bc) env ->
+        ('mode, 'm, 'bc) env ->
         ('m, ('mode, kinetic) value) CubeOf.t list ->
         ('mode, kinetic) value;
       return :
@@ -348,7 +349,7 @@ let rec check : type mode a b s.
                   match d.message with
                   | Low_dimensional_argument_of_degeneracy _ -> Error d
                   | _ -> fatal_diagnostic d)
-              @@ fun () -> Ok (gact_ty None ty fainv ~err:(low_dim_arg_err str.value))
+              @@ fun () -> Ok (gact_ty None ty fainv ~err:(low_dim_arg_err str.value) None)
             with
             | Error nosynth ->
                 (* However, if the given term *doesn't* synthesize, we want to report the low-dimensional error, so we pass that diagnostic on. *)
@@ -388,7 +389,7 @@ let rec check : type mode a b s.
                         let xty =
                           gact_ty
                             ~err:(anomaly_dim_err "dimension confusion in checking degeneracy")
-                            None sxty (deg_of_perm fp) in
+                            None sxty (deg_of_perm fp) None in
                         let ctx = Ctx.maybe_lock ctx fa in
                         let cx, xloc =
                           match x with
@@ -398,7 +399,7 @@ let rec check : type mode a b s.
                         let ex = eval_term (Ctx.env ctx) cx in
                         let sty =
                           with_loc xloc @@ fun () ->
-                          act_ty ex xty fa ~err:(low_dim_arg_err str.value) in
+                          act_ty ex xty fa ~err:(low_dim_arg_err str.value) None in
                         match subtype_of ctx sty ty with
                         | Ok () ->
                             realize status
@@ -435,7 +436,7 @@ let rec check : type mode a b s.
             (match (dom, D.compare_zero m) with
             | Some _, Pos _ -> fatal (Unimplemented "domain-ascribed higher abstractions")
             | Some dom, Zero -> (
-                let cdom = check (Kinetic `Nolet) lctx dom (universe D.zero) in
+                let cdom = check (Kinetic `Nolet) lctx dom (universe mode D.zero) in
                 let edom = eval_term (Ctx.env lctx) cdom in
                 match subtype_of lctx (CubeOf.find_top doms) edom with
                 | Ok () -> ()

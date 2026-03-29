@@ -279,7 +279,7 @@ and readback_head : type mode c z.
       | None ->
           let (To perm) = deg_of_ins ins in
           Act (tm, perm, sort))
-  | UU n -> UU n
+  | UU (mode, n) -> UU (mode, n)
   | Pi (x, modality, doms, cods) ->
       let k = CubeOf.dim doms in
       let lctx = Ctx.lock ctx modality in
@@ -349,7 +349,7 @@ and readback_at_tel : type mode n c a b ab z.
                             let argtm = readback_at lctx argtm argty in
                             Hashtbl.add tyargtbl (SFace_of fa) argnorm;
                             [ argnorm; argtm; argrest ]
-                        | Neq -> fatal (Modality_mismatch ("readbla_at_tel", argmod, tymodality))));
+                        | Neq -> fatal (Modality_mismatch ("readback_at_tel", argmod, tymodality))));
               }
               [ tyargs ] (Cons (Cons (Cons Nil))) in
           let ity = inst ety tyarg in
@@ -373,7 +373,7 @@ and readback_env : type mode n a b c d.
  fun ctx env (Permute (_, envctx)) ->
   readback_ordered_env ctx env envctx
 
-(* TODO: I think we need to match up keys in env with locks in the two contexts and strip them off. As in eval_env, this may require replacing the rightmost part of the contexts by dummies that just extend out the length so the de bruijn indices are ok. *)
+(* TODO: Need to split ctx at locks, and deal with contexts at extensions. *)
 and readback_ordered_env : type mode n a b c d.
     (mode, a, b) Ctx.t ->
     (mode, n, d) Value.env ->
@@ -382,11 +382,13 @@ and readback_ordered_env : type mode n a b c d.
  fun ctx env envctx ->
   match envctx with
   | Emp mode -> Emp (mode, dim_env env)
-  | Lock (envctx, _) -> readback_ordered_env ctx env envctx
+  | Lock (envctx, _) ->
+      let envctx, _ = (Sorry.e (), envctx) in
+      readback_ordered_env ctx env envctx
   | Ext (envctx, entry, _) -> (
       let (Plus mk) = D.plus (dim_entry entry) in
       match entry with
-      | Vis { modality; bindings = _; _ } | Invis (modality, _) ->
+      | Vis { modality; bindings; _ } | Invis (modality, bindings) ->
           let (Wrap idm) = Modality.id (Modality.cod modality) in
           let (Looked_up { act; op = Op (fc, fd); entry = xs; key }) =
             lookup_cube env mk Now (Modalcell.id modality)
@@ -394,28 +396,29 @@ and readback_ordered_env : type mode n a b c d.
               (Modalcell.id idm) in
           let xs = act_cube { act } (CubeOf.subcube fc xs) fd (Some key) in
           let xtytbl = Hashtbl.create 10 in
-          (* let lctx = Ctx.lock ctx modality in *)
-          let tmxs =
-            CubeOf.mmap
-              {
-                map =
-                  (fun fab [ tm ] ->
-                    let (SFace_of_plus (_, fb, _fa)) = sface_of_plus mk fab in
-                    let ty = (CubeOf.find bindings fa).ty in
-                    let k = dom_sface fb in
-                    let ty =
-                      inst
-                        (eval_term (act_env env (op_of_sface fb)) ty)
-                        (TubeOf.build D.zero (D.zero_plus k)
-                           {
-                             build =
-                               (fun fc ->
-                                 Hashtbl.find xtytbl (SFace_of (comp_sface fb (sface_of_tface fc))));
-                           }) in
-                    Hashtbl.add xtytbl (SFace_of fb) { tm; ty };
-                    readback_at lctx tm ty);
-              }
-              [ xs ] in
+          let tmxs, _ =
+            ( Sorry.e (),
+              CubeOf.mmap
+                {
+                  map =
+                    (fun fab [ tm ] ->
+                      let (SFace_of_plus (_, fb, fa)) = sface_of_plus mk fab in
+                      let ty, _ = (Sorry.e (), (CubeOf.find bindings fa).ty) in
+                      let k = dom_sface fb in
+                      let ty =
+                        inst
+                          (eval_term (act_env env (op_of_sface fb)) ty)
+                          (TubeOf.build D.zero (D.zero_plus k)
+                             {
+                               build =
+                                 (fun fc ->
+                                   Hashtbl.find xtytbl
+                                     (SFace_of (comp_sface fb (sface_of_tface fc))));
+                             }) in
+                      Hashtbl.add xtytbl (SFace_of fb) { tm; ty };
+                      readback_at ctx tm ty);
+                }
+                [ xs ] ) in
           let env = remove_env env Now in
           let tmenv = readback_ordered_env ctx env envctx in
           Ext (tmenv, mk, modality, tmxs))

@@ -165,6 +165,7 @@ module Ordered = struct
     (* Now we temporarily add both of those entries to the given contexts.  Since we are not using these contexts for typechecking, they might as well be invisible. *)
     let oldctx = Ctx.Ordered.lock (Ctx.Ordered.invis oldctx modality oldentry) modality in
     let newctx = Ctx.Ordered.lock (Ctx.Ordered.invis newctx modality newentry) modality in
+    let mode = Ctx.Ordered.mode oldctx in
     (* The integer k counts the second component of the new level variables we are creating. *)
     let k = ref 0 in
     let* () =
@@ -198,7 +199,7 @@ module Ordered = struct
                       let oldnf = Binding.value b in
                       let oldty = oldnf.ty in
                       let* newty = eval_readback_val ~level ~oldctx ~newctx oldty in
-                      let newnf = { tm = var new_level newty; ty = newty } in
+                      let newnf = { tm = var mode new_level newty; ty = newty } in
                       Binding.force oldb;
                       Binding.specify newb (Some new_level) newnf;
                       return ()

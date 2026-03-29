@@ -186,7 +186,7 @@ module F = struct
     | Meta { meta; env = e; ins } ->
         let (To p) = deg_of_ins ins in
         fprintf ppf "Meta (%s, %a, %s)" (Meta.name meta) env e (string_of_deg p)
-    | UU n -> fprintf ppf "UU %a" dim n
+    | UU (_, n) -> fprintf ppf "UU %a" dim n
     | Pi (x, _, doms, cods) ->
         fprintf ppf "Pi^%s (%s, %a, (... %a))"
           (string_of_dim (CubeOf.dim doms))
@@ -199,7 +199,7 @@ module F = struct
 
   and inst_canonical : type mode m k mk e n.
       formatter -> (mode, m, k, mk, e, n) inst_canonical -> unit =
-   fun ppf { canonical; tyargs; ins; fields = _; inst_fields = _ } ->
+   fun ppf { mode = _; canonical; tyargs; ins; fields = _; inst_fields = _ } ->
     fprintf ppf "(%s, %a, (evdim=%s)%s, ?)"
       (match canonical with
       | UU _ -> "UU ?"
@@ -235,7 +235,7 @@ module F = struct
     | Field (tm, fld, ins) ->
         fprintf ppf "Field (%a, %s%s(%s))" term tm (Field.to_string fld) (string_of_ins ins)
           (string_of_dim (dom_ins ins))
-    | UU n -> fprintf ppf "UU %a" dim n
+    | UU (_, n) -> fprintf ppf "UU %a" dim n
     | Inst (tm, args) -> fprintf ppf "Inst (%a, %a)" term tm (tubeof term) args
     | Pi (x, _modality, doms, cods) ->
         fprintf ppf "Pi^(%a) (%s, %a, (... %a))" dim (CubeOf.dim doms)

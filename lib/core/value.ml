@@ -67,7 +67,7 @@ module rec Value : sig
         ins : ('mn, 'm, 'n) insertion;
       }
         -> 'mode head
-    | UU : 'n D.t -> 'mode head
+    | UU : 'mode Mode.t * 'n D.t -> 'mode head
     | Pi :
         'm variables
         * ('dom, 'modality, 'mode) Modality.t
@@ -121,6 +121,7 @@ module rec Value : sig
   }
 
   and ('mode, 'm, 'k, 'mk, 'e, 'n) inst_canonical = {
+    mode : 'mode Mode.t;
     canonical : ('mode, 'e, 'n) canonical;
     ins : ('mk, 'e, 'n) insertion;
     tyargs : ('m, 'k, 'mk, 'mode normal) TubeOf.t;
@@ -134,7 +135,7 @@ module rec Value : sig
     | Unrealized : ('mode, potential) evaluation
 
   and (_, _, _) canonical =
-    | UU : 'm D.t -> ('mode, 'm, D.zero) canonical
+    | UU : 'mode Mode.t * 'm D.t -> ('mode, 'm, D.zero) canonical
     | Pi :
         'm variables
         * ('dom, 'modality, 'mode) Modality.t
@@ -145,7 +146,6 @@ module rec Value : sig
     | Codata : ('mode, 'm, 'n, 'c, 'a, 'et) codata_args -> ('mode, 'm, 'n) canonical
 
   and ('mode, 'm, 'j, 'ij) data_args = {
-    mode : 'mode Mode.t;
     dim : 'm D.t;
     tyfam : 'mode normal Lazy.t option ref;
     indices : (('m, 'mode normal) CubeOf.t, 'j, 'ij) Fillvec.t;
@@ -260,8 +260,8 @@ end = struct
         ins : ('mn, 'm, 'n) insertion;
       }
         -> 'mode head
-    (* Universes are parametrized by a dimension *)
-    | UU : 'n D.t -> 'mode head
+    (* Universes are parametrized by a mode and a dimension. *)
+    | UU : 'mode Mode.t * 'n D.t -> 'mode head
     (* Pis must store not just the domain type but all its boundary types.  These domain and boundary types are not fully instantiated.  Note the codomains are stored in a cube of binders. *)
     | Pi :
         'm variables
@@ -324,6 +324,7 @@ end = struct
   }
 
   and ('mode, 'm, 'k, 'mk, 'e, 'n) inst_canonical = {
+    mode : 'mode Mode.t;
     canonical : ('mode, 'e, 'n) canonical;
     (* An insertion that combines its intrinsic dimension n (such as for Gel) with the dimension e it was evaluated at, producing a total dimension mk. *)
     ins : ('mk, 'e, 'n) insertion;
@@ -344,7 +345,7 @@ end = struct
   (* A canonical type value is either a universe, a function-type, a datatype, or a codatatype/record.  It is parametrized by its dimension as a type, which might be larger than its evaluation dimension if it has an intrinsic dimension (e.g. Gel), and by that intrinsic dimension. *)
   and (_, _, _) canonical =
     (* At present, we never produce these except as the values of their corresponding heads.  But in principle, we could allow universes and pi-types as potential terms, so that constants could be defined to "behave like" universes or pi-types without reducing to them. *)
-    | UU : 'm D.t -> ('mode, 'm, D.zero) canonical
+    | UU : 'mode Mode.t * 'm D.t -> ('mode, 'm, D.zero) canonical
     | Pi :
         'm variables
         * ('dom, 'modality, 'mode) Modality.t
@@ -357,7 +358,6 @@ end = struct
 
   (* A datatype value stores: *)
   and ('mode, 'm, 'j, 'ij) data_args = {
-    mode : 'mode Mode.t;
     (* The dimension to which it is substituted *)
     dim : 'm D.t;
     (* The datatype family after being applied to the parameters but not the indices, e.g. "Vec A".  This is an option ref because it gets set a little later than the rest of the fields are computed, since only when working with the embedding of neutrals into normals do we have the application spine and its type available.  *)
@@ -524,9 +524,6 @@ let rec key_env : type dom mu nu cod m b.
 let lazy_eval : type mode n b s. (mode, n, b) env -> (mode, b, s) term -> (mode, s) lazy_eval =
  fun env tm -> ref (Deferred_eval (env, tm, ins_zero (dim_env env), Emp))
 
-(* Safe coercion for phantom 'mode parameter *)
-let coerce_mode : 'a -> 'b = Obj.magic
-
 let defer : type mode s. (unit -> (mode, s) evaluation) -> (mode, s) lazy_eval =
  fun tm -> ref (Deferred (tm, id_deg D.zero, Emp))
 
@@ -589,6 +586,47 @@ let rec remove_env : type mode a k b n.
   | Unshift (env, mn, nb), _ ->
       let (Uninsert (_, v', na)) = Plusmap.uninsert v nb in
       Unshift (remove_env env v', mn, na)
+
+(* Remove the rightmost c values in an environment. *)
+let rec remove_envs : type mode n a c ac.
+    (mode, n, ac) env -> (a, c, ac) Tbwd.append -> (mode, n, a) env =
+ fun env ac ->
+  match ac with
+  | Append_nil -> env
+  | Append_cons ac ->
+      let env = remove_envs env ac in
+      remove_env env Now
+
+(* Remove the rightmost keys in an environment until their codomains total a given modality, returning their composite (given a starting accumulator) along with the truncated environment.  *)
+let rec split_env_keys : type mode nu1 nu2 dom mu cod n a.
+    (dom, n, a) env ->
+    (dom, mu, cod) Modality.t ->
+    (mode, nu1, nu2, dom) Modalcell.t ->
+    (cod, n, a) env * (mode, cod) Modalcell.wrapped =
+ fun env modality keys ->
+  match Modality.compare_id modality with
+  | Eq -> (env, Wrap keys)
+  | Neq -> (
+      match env with
+      | Emp (_, _) -> fatal (Anomaly "empty environment in split_env_keys")
+      | LazyExt (_, _, _, _) -> fatal (Anomaly "LazyExt in split_env_keys")
+      | Ext (_, _, _, _) -> fatal (Anomaly "Ext in split_env_keys")
+      | Permute (p, env) ->
+          let env, keys = split_env_keys env modality keys in
+          (Permute (p, env), keys)
+      | Shift (env, mn, plus) ->
+          let env, keys = split_env_keys env modality keys in
+          (Shift (env, mn, plus), keys)
+      | Unshift (env, mn, plus) ->
+          let env, keys = split_env_keys env modality keys in
+          (Unshift (env, mn, plus), keys)
+      | Act (env, op) ->
+          let env, keys = split_env_keys env modality keys in
+          (Act (env, op), keys)
+      | Key (env, key) ->
+          let (Wrap newmod) = Modality.factor modality (Modalcell.vdom key) in
+          let (Wrap newkeys) = Modalcell.hcomp key keys in
+          split_env_keys env newmod newkeys)
 
 (* Binders are completely lazy, so we can "evaluate" them independently of the master evaluation functions in norm. *)
 let eval_binder : type mode m n mn b s.
@@ -674,19 +712,20 @@ let rec universe : type mode n. mode Mode.t -> n D.t -> (mode, kinetic) value =
     | None -> Bwd.Emp
     | Some _fields ->
         let fields = Sorry.e () in
-        coerce_mode (eval_structfield_abwd (Emp (mode, n)) n (D.plus_zero n) n fields) in
+        eval_structfield_abwd (Emp (mode, n)) n (D.plus_zero n) n fields in
   let value =
     ready
       (Val
          (Canonical
             {
-              canonical = UU n;
+              mode;
+              canonical = UU (mode, n);
               tyargs = TubeOf.empty n;
               ins = ins_zero n;
               fields;
               inst_fields = Some fields;
             })) in
-  Neu { head = UU n; args = Emp; value; ty = lazy (universe_ty mode n) }
+  Neu { head = UU (mode, n); args = Emp; value; ty = lazy (universe_ty mode n) }
 
 and universe_nf : type mode n. mode Mode.t -> n D.t -> mode normal =
  fun mode n -> { tm = universe mode n; ty = universe_ty mode n }
@@ -710,14 +749,26 @@ and universe_ty : type mode n. mode Mode.t -> n D.t -> (mode, kinetic) value =
         | None -> Bwd.Emp
         | Some _fields ->
             let fields = Sorry.e () in
-            coerce_mode (eval_structfield_abwd (Emp (mode, n)) n (D.plus_zero n) n fields) in
+            eval_structfield_abwd (Emp (mode, n)) n (D.plus_zero n) n fields in
       let value =
         ready
           (Val
              (Canonical
-                { canonical = UU n; tyargs = args; ins = ins_zero n; fields; inst_fields = None }))
-      in
-      Neu { head = UU n; args = Inst (Emp, n', args); value; ty = lazy (universe mode D.zero) }
+                {
+                  mode;
+                  canonical = UU (mode, n);
+                  tyargs = args;
+                  ins = ins_zero n;
+                  fields;
+                  inst_fields = None;
+                })) in
+      Neu
+        {
+          head = UU (mode, n);
+          args = Inst (Emp, n', args);
+          value;
+          ty = lazy (universe mode D.zero);
+        }
 
 type 'mode any_apps = Any : ('mode, 'any) apps -> 'mode any_apps
 

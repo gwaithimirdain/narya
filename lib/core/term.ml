@@ -77,7 +77,7 @@ module rec Term : sig
     | Field :
         ('mode, 'a, kinetic) term * 'i Field.t * ('n, 't, 'i) insertion
         -> ('mode, 'a, kinetic) term
-    | UU : 'n D.t -> ('mode, 'a, kinetic) term
+    | UU : 'mode Mode.t * 'n D.t -> ('mode, 'a, kinetic) term
     | Inst :
         ('mode, 'a, kinetic) term * ('m, 'n, 'mn, ('mode, 'a, kinetic) term) TubeOf.t
         -> ('mode, 'a, kinetic) term
@@ -188,7 +188,9 @@ module rec Term : sig
         * ('dom, 'modality, 'mode) Modality.t
         * ('nk, ('dom, 'a, kinetic) term) CubeOf.t
         -> ('mode, 'a, 'n, ('b, 'k) snoc) env
-    | Key : ('mode, 'a, 'n, 'b) env * ('dom, 'mu, 'nu, 'mode) Modalcell.t -> ('dom, 'a, 'n, 'b) env
+    | Key :
+        ('mode, 'a, 'n, 'b) env * ('a, 'c, 'ac) Tbwd.append * ('dom, 'mu, 'nu, 'mode) Modalcell.t
+        -> ('dom, 'ac, 'n, 'b) env
 
   and ('mode, 'b) binding = {
     ty : ('mode, 'b, kinetic) term;
@@ -290,7 +292,7 @@ end = struct
     | Field :
         ('mode, 'a, kinetic) term * 'i Field.t * ('n, 't, 'i) insertion
         -> ('mode, 'a, kinetic) term
-    | UU : 'n D.t -> ('mode, 'a, kinetic) term
+    | UU : 'mode Mode.t * 'n D.t -> ('mode, 'a, kinetic) term
     | Inst :
         ('mode, 'a, kinetic) term * ('m, 'n, 'mn, ('mode, 'a, kinetic) term) TubeOf.t
         -> ('mode, 'a, kinetic) term
@@ -424,8 +426,10 @@ end = struct
         * ('dom, 'modality, 'mode) Modality.t
         * ('nk, ('dom, 'a, kinetic) term) CubeOf.t
         -> ('mode, 'a, 'n, ('b, 'k) snoc) env
-    (* TODO: There is a decision to be made here about how to deal with keys.  The problem is that the part of the environment to the left of a key must be defined in a context that has the corresponding locks, and everything to their right, "removed", but simply removing variables from the context fubars the De Bruijn indices.  We could replace the removed indices in the context by a placeholder that extends out its length while containing no data, or we could allow the domain length of a term environment to increase when we pass a key. *)
-    | Key : ('mode, 'a, 'n, 'b) env * ('dom, 'mu, 'nu, 'mode) Modalcell.t -> ('dom, 'a, 'n, 'b) env
+    (* There is a decision to be made here about how to deal with keys in a term environment.  The problem is that the part of the environment to the left of a key must be defined in a context that has the locks corresponding to the codomain of that keys removed, along with everything to their right.  But simply removing variables from the context fubars the De Bruijn indices.  We could replace the removed indices in the context by a placeholder that extends out its length while containing no data.  Instead, we choose to allow the domain length of a term environment to increase when we pass a key.  This means when working with such environments we must shrink the domain context when we pass a key.  To be really pedantic we should insist that 'c is a Tlist of dimensions, but we don't currently bother. *)
+    | Key :
+        ('mode, 'a, 'n, 'b) env * ('a, 'c, 'ac) Tbwd.append * ('dom, 'mu, 'nu, 'mode) Modalcell.t
+        -> ('dom, 'ac, 'n, 'b) env
 
   (* A termctx is a data structure analogous to a Ctx.t, but using terms rather than values (and thus we will not explain its structure here; see ctx.ml).  This is used to store the context of a metavariable, as the value context containing level variables is too volatile to store there.  We also store it (lazily) with a codatatype that has higher fields, so we can use it to read back the closure environment to degenerate it. *)
   and ('mode, 'b) binding = {
@@ -517,7 +521,7 @@ end
 let rec dim_term_env : type mode a n b. (mode, a, n, b) env -> n D.t = function
   | Emp (_, n) -> n
   | Ext (e, _, _, _) -> dim_term_env e
-  | Key (e, _) -> dim_term_env e
+  | Key (e, _, _) -> dim_term_env e
 
 let dim_entry : type dom modality mode b f n. (dom, modality, mode, b, f, n) entry -> n D.t =
   function

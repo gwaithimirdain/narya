@@ -143,7 +143,7 @@ module Act = struct
       (a, b) deg ->
       (mode, mu1, mu2, cod) Modalcell.t option ->
       (mode, k, n) act_inst_canonical =
-   fun { canonical; tyargs; ins; fields; inst_fields } s cell ->
+   fun { mode; canonical; tyargs; ins; fields; inst_fields } s cell ->
     let (Acted_instargs (fa, new_tyargs, None)) = act_instargs tyargs s cell None in
     let fb = deg_plus fa (TubeOf.plus tyargs) (TubeOf.plus new_tyargs) in
     let (Insfact_comp (fc, new_ins)) = insfact_comp ins fb in
@@ -152,6 +152,7 @@ module Act = struct
     let new_inst_fields = Option.map (act_structfield_abwd fa cell) inst_fields in
     Act_inst_canonical
       {
+        mode;
         canonical = new_c;
         tyargs = new_tyargs;
         ins = new_ins;
@@ -294,18 +295,18 @@ module Act = struct
    fun tm fa cell ->
     (* Unlike degeneracy actions, modal key actions do not change the *identity* of a canonical type, only the *arguments* it is applied to.  Therefore, the modal cell is ignored when acting on a universe, it only acts on the domains and codomains of a pi-type, and on the indices of a datatype and their types (tyfam). *)
     match tm with
-    | UU _ -> UU (dom_deg fa)
+    | UU (mode, _) -> UU (mode, dom_deg fa)
     | Pi (x, modality, doms, cods) ->
         let doms', cods' = act_pi modality doms cods fa cell in
         Pi (act_variables x fa, modality, doms', cods')
-    | Data { mode; dim = _; tyfam; indices; constrs; discrete } ->
+    | Data { dim = _; tyfam; indices; constrs; discrete } ->
         let tyfam = ref (Option.map (fun x -> lazy (act_normal (Lazy.force x) fa cell)) !tyfam) in
         let indices =
           Fillvec.map
             (fun ixs -> act_cube { act = (fun x s c -> act_normal x s c) } ixs fa cell)
             indices in
         let constrs = Abwd.map (fun con -> act_dataconstr con fa) constrs in
-        Data { mode; dim = dom_deg fa; tyfam; indices; constrs; discrete }
+        Data { dim = dom_deg fa; tyfam; indices; constrs; discrete }
     | Codata { eta; opacity; env; termctx; fields } ->
         Codata { eta; opacity; env = act_env env (op_of_deg fa); termctx; fields }
 
@@ -374,7 +375,8 @@ module Act = struct
           match force_eval value with
           | Realize _ -> fatal (Anomaly "Realize in normalized type in act_ty")
           | Unrealized -> ready Unrealized
-          | Val (Canonical { canonical = c; tyargs = ctyargs; ins; fields = _; inst_fields = _ })
+          | Val
+              (Canonical { mode; canonical = c; tyargs = ctyargs; ins; fields = _; inst_fields = _ })
             -> (
               match D.compare_zero (TubeOf.uninst ctyargs) with
               | Zero ->
@@ -388,6 +390,7 @@ module Act = struct
                     (Val
                        (Canonical
                           {
+                            mode;
                             canonical = new_c;
                             tyargs = new_ctyargs;
                             ins = new_ins;
@@ -460,9 +463,9 @@ module Act = struct
     | Meta { meta; env; ins } ->
         let (Insfact_comp_ext (deg, ins, _, _)) = insfact_comp_ext ins s in
         Meta { meta; env = act_env env (op_of_deg deg); ins }
-    | UU nk ->
+    | UU (mode, nk) ->
         let (Of fa) = deg_plus_to s nk ~on:"universe head" in
-        UU (dom_deg fa)
+        UU (mode, dom_deg fa)
     | Pi (x, modality, doms, cods) ->
         let (Of fa) = deg_plus_to s (CubeOf.dim doms) ~on:"pi-type head" in
         let doms', cods' = act_pi modality doms cods fa c in

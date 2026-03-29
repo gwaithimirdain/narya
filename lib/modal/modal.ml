@@ -84,6 +84,14 @@ module Modalcell = struct
       (dom, modality, cod) Modality.t -> (dom, modality, modality, cod) t = function
     | Id_modality -> Id_cell
 
+  let compare : type dom1 mu1 nu1 cod1 dom2 mu2 nu2 cod2.
+      (dom1, mu1, nu1, cod1) t ->
+      (dom2, mu2, nu2, cod2) t ->
+      (dom1 * mu1 * nu1 * cod1, dom2 * mu2 * nu2 * cod2) Eq.compare =
+   fun x y ->
+    match (x, y) with
+    | Id_cell, Id_cell -> Eq
+
   let compare_id : type dom mu nu cod. (dom, mu, nu, cod) t -> (dom * mu, cod * nu) Eq.compare =
     function
     | Id_cell -> Eq

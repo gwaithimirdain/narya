@@ -13,7 +13,7 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
   | Meta (m, s) -> Meta (Meta.remake f m, s)
   | MetaEnv (m, e) -> MetaEnv (Meta.remake f m, env f e)
   | Field (tm, fld, fldins) -> Field (term f tm, fld, fldins)
-  | UU n -> UU n
+  | UU (mode, n) -> UU (mode, n)
   | Inst (tm, args) -> Inst (term f tm, TubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ args ])
   | Pi (x, modality, doms, cods) ->
       Pi
@@ -143,7 +143,7 @@ and env : type mode a n b. (File.t -> File.t) -> (mode, a, n, b) env -> (mode, a
   | Emp (mode, n) -> Emp (mode, n)
   | Ext (e, nk, modality, xs) ->
       Ext (env f e, nk, modality, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ xs ])
-  | Key (e, mu) -> Key (env f e, mu)
+  | Key (e, plus, mu) -> Key (env f e, plus, mu)
 
 and entry : type dom modality mode b f mn.
     (File.t -> File.t) ->

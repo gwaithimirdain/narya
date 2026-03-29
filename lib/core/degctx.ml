@@ -1,6 +1,7 @@
 open Util
 open Tbwd
 open Dim
+open Modal
 open Reporter
 open Value
 open Readback
@@ -13,19 +14,21 @@ open Norm
 module Ordered = struct
   open Ctx.Ordered
 
-  let degenerate_binding : type mode k n kn ax b.
+  let degenerate_binding : type dom modality mode k n kn ax b.
       int ->
       k D.t ->
       (k, n, kn) D.plus ->
-      (n, mode Binding.t) CubeOf.t ->
+      (dom, modality, mode) Modality.t ->
+      (n, dom Binding.t) CubeOf.t ->
       (* Because the values and types of variables in one cube can refer to other variables in the same cube, we need to be given the extended context with this binding included at the end in order to readback. *)
       (mode, ax, (b, n) snoc) t ->
       (* But we are building the degenerating environment as we go, so we don't have the extended version of that yet. *)
-      (k, b) env ->
-      (kn, mode Binding.t) CubeOf.t * (kn, (mode, kinetic) value) CubeOf.t =
-   fun i k k_n xs ctx env ->
+      (mode, k, b) env ->
+      (kn, dom Binding.t) CubeOf.t * (kn, (dom, kinetic) value) CubeOf.t =
+   fun i k k_n modality xs ctx env ->
     let kn = D.plus_out k k_n in
     let ctx = Ctx.of_ordered ctx in
+    let lctx = Ctx.lock ctx modality in
     let readbacks =
       CubeOf.mmap
         {
@@ -33,8 +36,8 @@ module Ordered = struct
             (fun _ [ x ] ->
               let nf = Binding.value x in
               match Binding.level x with
-              | None -> (Some (readback_nf ctx nf), readback_val ctx nf.ty)
-              | Some _ -> (None, readback_val ctx nf.ty));
+              | None -> (Some (readback_nf lctx nf), readback_val lctx nf.ty)
+              | Some _ -> (None, readback_val lctx nf.ty));
         }
         [ xs ] in
     let j = ref 0 in
@@ -56,14 +59,15 @@ module Ordered = struct
                             defer (fun () ->
                                 fatal (Anomaly "variable out of scope in degenerate_binding")));
                   } in
-              let env = LazyExt (env, k_n, prev_vals) in
+              let env = LazyExt (env, k_n, modality, prev_vals) in
+              let lenv = Key (env, Modalcell.id modality) in
               let (SFace_of_plus (_, fa, fb)) = sface_of_plus k_n fab in
               let m = dom_sface fb in
               match CubeOf.find readbacks fb with
               | None, ty ->
                   let level = (i, !j) in
                   j := !j + 1;
-                  let ty = Norm.eval_term (Act (env, op_of_sface fa)) ty in
+                  let ty = Norm.eval_term (Act (lenv, op_of_sface fa)) ty in
                   let ty =
                     inst ty
                       (TubeOf.build D.zero
@@ -78,14 +82,14 @@ module Ordered = struct
                                        (comp_sface fa (sface_of_tface fc))
                                        k_n l_m fb)));
                          }) in
-                  let v = { tm = var level ty; ty } in
+                  let v = { tm = var (Modality.dom modality) level ty; ty } in
                   Hashtbl.add xstbl (SFace_of fab) v;
                   Binding.make (Some level) v
               | Some tm, ty ->
                   (* Incrementing the level isn't really necessary since we aren't going to use it in this case, but we do it anyway for consistency. *)
                   j := !j + 1;
-                  let tm = Norm.eval_term (Act (env, op_of_sface fa)) tm in
-                  let ty = Norm.eval_term (Act (env, op_of_sface fa)) ty in
+                  let tm = Norm.eval_term (Act (lenv, op_of_sface fa)) tm in
+                  let ty = Norm.eval_term (Act (lenv, op_of_sface fa)) ty in
                   let ty =
                     inst ty
                       (TubeOf.build D.zero
@@ -109,14 +113,14 @@ module Ordered = struct
 
   type (_, _, _, _) degctx =
     | Degctx :
-        ('k, 'b, 'kb) Plusmap.t * ('mode, 'a, 'kb) t * ('k, 'b) env
+        ('k, 'b, 'kb) Plusmap.t * ('mode, 'a, 'kb) t * ('mode, 'k, 'b) env
         -> ('mode, 'a, 'b, 'k) degctx
 
   (* TODO: Short-circuit if k=0. *)
   let rec degenerate : type mode a b k. (mode, a, b) t -> k D.t -> (mode, a, b, k) degctx =
    fun ctx k ->
     match ctx with
-    | Emp mode -> Degctx (Map_emp, Emp mode, Emp k)
+    | Emp mode -> Degctx (Map_emp, Emp mode, Emp (mode, k))
     | Snoc (ctx', entry, ax) ->
         let (Degctx (kb, newctx', env)) = degenerate ctx' k in
         let mn = Ctx.dim_entry entry in
@@ -128,8 +132,8 @@ module Ordered = struct
           | Vis { dim; modality; plusdim; vars; bindings; hasfields = No_fields; fields; fplus } ->
               let (Plus km) = D.plus dim in
               let plusdim = D.plus_assocl km plusdim k_mn in
-              let lctx = Ctx.Ordered.lock ctx modality in
-              let bindings, newval = degenerate_binding (length newctx') k k_mn bindings lctx env in
+              let bindings, newval =
+                degenerate_binding (length newctx') k k_mn modality bindings ctx env in
               let hasfields = Term.No_fields in
               ( Ctx.Vis
                   {
@@ -142,20 +146,19 @@ module Ordered = struct
                     fields;
                     fplus;
                   },
-                Ext (env, k_mn, Ok newval) )
+                Ext (env, k_mn, modality, Ok newval) )
           | Invis (modality, xs) ->
-              let lctx = Ctx.Ordered.lock ctx modality in
-              let newxs, newval = degenerate_binding (length newctx') k k_mn xs lctx env in
-              (Invis (modality, newxs), Ext (env, k_mn, Ok newval)) in
+              let newxs, newval = degenerate_binding (length newctx') k k_mn modality xs ctx env in
+              (Invis (modality, newxs), Ext (env, k_mn, modality, Ok newval)) in
         Degctx (Map_snoc (kb, k_mn), Snoc (newctx', newentry, ax), newenv)
     | Lock (ctx, lock) ->
         let (Degctx (kb, newctx, env)) = degenerate ctx k in
-        Degctx (kb, Lock (newctx, lock), env)
+        Degctx (kb, Lock (newctx, lock), Key (env, Modalcell.id lock))
 end
 
 type (_, _, _, _) degctx =
   | Degctx :
-      ('k, 'b, 'kb) Plusmap.t * ('mode, 'a, 'kb) Ctx.t * ('k, 'b) env
+      ('k, 'b, 'kb) Plusmap.t * ('mode, 'a, 'kb) Ctx.t * ('mode, 'k, 'b) env
       -> ('mode, 'a, 'b, 'k) degctx
 
 let degctx : type mode a b k. (mode, a, b) Ctx.t -> k D.t -> (mode, a, b, k) degctx =

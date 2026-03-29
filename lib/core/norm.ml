@@ -77,11 +77,11 @@ and view_type : type mode.
   | Neu { head; args; value; ty = _ } -> (
       (* Glued evaluation: when viewing a type, we force its value and proceed to view that value instead. *)
       match force_eval value with
-      | Val (Canonical { canonical = c; tyargs; ins; fields = _; inst_fields = _ }) -> (
+      | Val (Canonical { mode; canonical = c; tyargs; ins; fields = _; inst_fields = _ }) -> (
           (match c with
           | Data d when Option.is_none !(d.tyfam) ->
               d.tyfam :=
-                Some (lazy { tm = ty; ty = inst (universe d.mode (TubeOf.inst tyargs)) tyargs })
+                Some (lazy { tm = ty; ty = inst (universe mode (TubeOf.inst tyargs)) tyargs })
           | _ -> ());
           match D.compare_zero (TubeOf.uninst tyargs) with
           | Zero ->
@@ -195,10 +195,10 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
   | MetaEnv (meta, metaenv) ->
       let (Plus m_n) = D.plus (dim_term_env metaenv) in
       eval (eval_env env m_n metaenv) (Term.Meta (meta, Kinetic))
-  | UU n ->
+  | UU (mode, n) ->
       let m = dim_env env in
       let (Plus mn) = D.plus n in
-      Val (universe (mode_env env) (D.plus_out m mn))
+      Val (universe mode (D.plus_out m mn))
   | Inst (tm, args) -> (
       (* The arguments are an (n,k) tube, with k dimensions instantiated and n dimensions uninstantiated. *)
       let n = TubeOf.uninst args in
@@ -345,7 +345,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
           match (is_id_sface fab, !Fibrancy.pi) with
           | None, _ | _, None -> Bwd.Emp
           | Some Eq, Some fields ->
-              let fields = coerce_mode fields in
+              let fields, _ = (Sorry.e (), fields) in
               (* For the top face, we compute its fibrancy fields by evaluating the generic "fibrancy fields of a pi" at the evaluated domains and codomains.  *)
               let (Wrap idcod) = Modality.id codmode in
               let pi_env =
@@ -360,6 +360,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
             (Val
                (Canonical
                   {
+                    mode = mode_env env;
                     canonical = Pi (subx, modality, subdoms, subcods);
                     tyargs = TubeOf.empty kl;
                     ins = ins_zero kl;
@@ -508,16 +509,9 @@ and apply : type dom modality mode n s.
                 | Val
                     (Canonical
                        {
+                         mode;
                          canonical =
-                           Data
-                             {
-                               mode;
-                               dim;
-                               tyfam;
-                               indices = Unfilled _ as indices;
-                               constrs;
-                               discrete;
-                             };
+                           Data { dim; tyfam; indices = Unfilled _ as indices; constrs; discrete };
                          tyargs = data_tyargs;
                          ins;
                          fields;
@@ -548,7 +542,8 @@ and apply : type dom modality mode n s.
                           Val
                             (Value.Canonical
                                {
-                                 canonical = Data { mode; dim; tyfam; indices; constrs; discrete };
+                                 mode;
+                                 canonical = Data { dim; tyfam; indices; constrs; discrete };
                                  tyargs = TubeOf.empty dim;
                                  ins;
                                  fields;
@@ -859,18 +854,17 @@ and tyof_field : type mode m h s r i c.
       match is_id_ins codatains with
       | None -> fatal ~severity (No_such_field (`Degenerated_record eta, errfld))
       | Some mn -> tyof_field_giventype tm head eta env mn fields tyargs fld ~shuf fldins)
-  | Canonical (head, UU m, ins, tyargs) -> (
+  | Canonical (head, UU (mode, m), ins, tyargs) -> (
       let Eq = eq_of_ins_zero ins in
       let err = Code.No_such_field (`Type errtm, errfld) in
       match !Fibrancy.fields with
       | None -> fatal ~severity err
       | Some fields ->
-          let fields = coerce_mode fields in
+          let fields, _ = (Sorry.e (), fields) in
           let tmcube =
             Result.map
               (fun tm -> TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
               tm in
-          let mode = Sorry.e () in
           let (Wrap idm) = Modality.id mode in
           let env = Value.Ext (Value.Emp (mode, m), D.plus_zero m, idm, tmcube) in
           tyof_field_giventype tm head Noeta env (D.plus_zero m) fields tyargs fld ~shuf fldins)
@@ -948,18 +942,17 @@ and tyof_field_withname : type mode a b.
       | Some mn ->
           let err = Code.No_such_field (`Record (eta, phead head), errfld) in
           tyof_field_withname_giventype ctx tm ty eta env mn fields tyargs infld err)
-  | Canonical (_head, UU m, ins, tyargs) -> (
+  | Canonical (_head, UU (mode, m), ins, tyargs) -> (
       let Eq = eq_of_ins_zero ins in
       let err = Code.No_such_field (`Type errtm, errfld) in
       match !Fibrancy.fields with
       | None -> fatal err
       | Some fields ->
-          let fields = coerce_mode fields in
+          let fields, _ = (Sorry.e (), fields) in
           let tmcube =
             Result.map
               (fun tm -> TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
               tm in
-          let mode = Sorry.e () in
           let (Wrap idm) = Modality.id mode in
           let env = Value.Ext (Value.Emp (mode, m), D.plus_zero m, idm, tmcube) in
           tyof_field_withname_giventype ctx tm ty Noeta env (D.plus_zero m) fields tyargs infld err)
@@ -1059,14 +1052,15 @@ and eval_canonical : type mode m a.
           (fun (Term.Dataconstr { args; indices }) -> Value.Dataconstr { env; args; indices })
           constrs in
       let dim, mode = (dim_env env, mode_env env) in
-      let canonical =
-        Data { mode; dim; tyfam; indices = Fillvec.empty indices; constrs; discrete } in
+      let canonical = Data { dim; tyfam; indices = Fillvec.empty indices; constrs; discrete } in
       let tyargs = TubeOf.empty (dim_env env) in
       let fields =
         match Lazy.force Fibrancy.data with
         | None -> Bwd.Emp
         | Some () -> fatal (Unimplemented "fibrancy of datatypes") in
-      Val (Canonical { canonical; tyargs; ins = ins_zero dim; fields; inst_fields = Some fields })
+      Val
+        (Canonical
+           { mode; canonical; tyargs; ins = ins_zero dim; fields; inst_fields = Some fields })
   | Codata c ->
       eval_codata env c.eta c.opacity c.dim (Lazy.from_val c.termctx) c.fields
         (Fibrancy.Codata.finished c)
@@ -1089,7 +1083,7 @@ and eval_codata : type mode m a c n et.
   let canonical = Codata { eta; opacity; env; termctx; fields } in
   let tyargs = TubeOf.empty mn in
   let fields = eval_structfield_abwd env m m_n mn fibrancy_fields in
-  Val (Canonical { canonical; tyargs; ins; fields; inst_fields = Some fields })
+  Val (Canonical { mode = mode_env env; canonical; tyargs; ins; fields; inst_fields = Some fields })
 
 and eval_term : type mode m b. (mode, m, b) env -> (mode, b, kinetic) term -> (mode, kinetic) value
     =
@@ -1119,10 +1113,13 @@ and eval_env : type mode a m n mn b.
                   let (SFace_of_plus (_, fa, fb)) = sface_of_plus m_nk fab in
                   lazy_eval (act_env lenv (op_of_sface fa)) (CubeOf.find xss fb));
             } )
-  | Key (_tmenv, _cell) ->
-      (* TODO: Does this ever happen?  If so, we may need to peel keys off of 'env' to make the modes match.  But then the De Bruijn indices would get fubared too.  Maybe we replace them by a dummy environment extension that stores nothing but just extends out the length, while leaving the mode as that of the shorter environment.  Note that that environment could get further extended by new bindings. *)
-      (* Key (eval_env env m_n tmenv, cell) *)
-      Sorry.e ()
+  | Key (tmenv, plus, cell) -> (
+      let env = remove_envs env plus in
+      let (Wrap idm) = Modality.id (Modalcell.hdom cell) in
+      let env, Wrap keys = split_env_keys env (Modalcell.vcod cell) (Modalcell.id idm) in
+      match Modality.compare (Modalcell.vdom keys) (Modalcell.vcod cell) with
+      | Eq -> Key (eval_env env m_n tmenv, Modalcell.vcomp keys cell)
+      | Neq -> fatal (Modality_mismatch ("eval_env Key", Modalcell.vdom keys, Modalcell.vcod cell)))
 
 and apply_term : type dom modality mode n.
     (mode, kinetic) value ->
@@ -1309,16 +1306,16 @@ and inst : type mode m n mn s.
               let value = inst_lazy value args2 in
               (* Now we have to construct the type OF the new instantiation.  The old term must have belonged to some instantiation of the universe of the previously uninstantiated dimension. *)
               match view_type ty "inst" with
-              | Canonical (_, UU m, ins, tys1) -> (
+              | Canonical (_, UU (mode, m), ins, tys1) -> (
                   let Eq = eq_of_ins_zero ins in
                   match D.compare m (TubeOf.uninst args1) with
                   | Neq ->
                       fatal (Dimension_mismatch ("instantiating a type 2", m, TubeOf.uninst args1))
                   | Eq ->
-                      let ty = lazy (tyof_inst tys1 args2) in
+                      let ty = lazy (tyof_inst mode tys1 args2) in
                       Neu { head; args; value; ty })
               | _ -> fatal (Anomaly "can't instantiate non-type")))
-      | Canonical { canonical = c; tyargs = args1; ins; fields; inst_fields = _ } -> (
+      | Canonical { mode; canonical = c; tyargs = args1; ins; fields; inst_fields = _ } -> (
           match D.compare (TubeOf.out args2) (TubeOf.uninst args1) with
           | Neq ->
               fatal
@@ -1326,16 +1323,17 @@ and inst : type mode m n mn s.
           | Eq ->
               let (Plus nk) = D.plus (TubeOf.inst args1) in
               let args = TubeOf.plus_tube nk args1 args2 in
-              let inst_fields = inst_fibrancy_fields fields args in
-              Canonical { canonical = c; tyargs = args; ins; fields; inst_fields })
+              let inst_fields = inst_fibrancy_fields mode fields args in
+              Canonical { mode; canonical = c; tyargs = args; ins; fields; inst_fields })
       | Lam _ | Struct _ | Constr _ -> fatal (Anomaly "instantiating non-type"))
 
 (* Instantiate a list of fibrancy fields by passing repeatedly to its internal corecursive 'id' field. *)
 and inst_fibrancy_fields : type mode m n mn.
+    mode Mode.t ->
     (mode * mn * potential * no_eta) Value.StructfieldAbwd.t ->
     (m, n, mn, mode normal) TubeOf.t ->
     (mode * m * potential * no_eta) Value.StructfieldAbwd.t option =
- fun fields tyargs ->
+ fun mode fields tyargs ->
   let open Monad.Ops (Monad.Maybe) in
   match Hott.faces () with
   | None -> None
@@ -1359,7 +1357,7 @@ and inst_fibrancy_fields : type mode m n mn.
               let idfld =
                 struct_field ~unset_ok:true "fibrancy" Potential fields Fibrancy.fid fldins in
               let (Snoc (Snoc (Emp, xcube), ycube)) = TubeOf.to_cube_bwv one l outer in
-              let (Wrap modality) = Modality.id (Sorry.e ()) in
+              let (Wrap modality) = Modality.id mode in
               let v =
                 match
                   app_eval_apps idfld
@@ -1378,7 +1376,7 @@ and inst_fibrancy_fields : type mode m n mn.
               match v with
               | Some (Struct { fields; ins; energy = Potential; eta = Noeta }) -> (
                   match (is_id_ins ins, D.compare (cod_left_ins ins) (TubeOf.out middle)) with
-                  | Some _, Eq -> inst_fibrancy_fields fields middle
+                  | Some _, Eq -> inst_fibrancy_fields mode fields middle
                   | Some _, Neq ->
                       fatal
                         (Dimension_mismatch ("inst_fibrancy", cod_left_ins ins, TubeOf.out middle))
@@ -1393,7 +1391,7 @@ and get_fibrancy_fields : type mode m k mk e n.
   match c.inst_fields with
   | Some f -> f
   | None -> (
-      match inst_fibrancy_fields c.fields c.tyargs with
+      match inst_fibrancy_fields c.mode c.fields c.tyargs with
       | Some f ->
           c.inst_fields <- Some f;
           f
@@ -1439,10 +1437,11 @@ and norm_of_vals_tube : type mode n k nk.
 
 (* Given a type belonging to the m+n dimensional universe instantiated at tyargs, compute the instantiation of the m-dimensional universe that its instantiation belongs to. *)
 and tyof_inst : type mode m n mn.
+    mode Mode.t ->
     (D.zero, mn, mn, mode normal) TubeOf.t ->
     (m, n, mn, mode normal) TubeOf.t ->
     (mode, kinetic) value =
- fun tyargs eargs ->
+ fun mode tyargs eargs ->
   let m = TubeOf.uninst eargs in
   let n = TubeOf.inst eargs in
   let mn = TubeOf.plus eargs in
@@ -1479,10 +1478,9 @@ and tyof_inst : type mode m n mn.
                       Hashtbl.find tyargtbl (SFace_of (comp_sface fb (sface_of_tface fa))));
                 } in
             let tm = inst (TubeOf.find tyargs (tface_plus fe mn mn jn)).tm jnargs in
-            let ty = tyof_inst jntyargs jnargs in
+            let ty = tyof_inst mode jntyargs jnargs in
             { tm; ty });
       } in
-  let mode = Sorry.e () in
   inst (universe mode m) margs
 
 (* Apply a function to all the values in a cube one by one as 0-dimensional applications, rather than as one n-dimensional application. *)
