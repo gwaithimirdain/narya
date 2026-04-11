@@ -18,6 +18,10 @@ module type Fam4 = sig
   type ('a, 'b, 'c, 'd) t
 end
 
+module type Fam5 = sig
+  type ('a, 'b, 'c, 'd, 'e) t
+end
+
 (* We deal with several kinds of intrinsically well-typed maps, whose output type depends on their input value (which is a type).  They all share this common signature. *)
 
 module type MAP = sig

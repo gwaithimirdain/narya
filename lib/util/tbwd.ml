@@ -143,6 +143,17 @@ module Tbwd = struct
     | Append_nil -> Insert_into ins
     | Append_cons bc -> insert_append (Later ins) bc
 
+  (* Given an insertion into an appended list, return an insert into the original list if it exists, i.e. if it would not be into the appended part. *)
+  let rec append_insert : type a c ac bc n.
+      (a, c, ac) append -> (bc, n, ac) insert -> (n, a) insert_into option =
+   fun ac ins ->
+    match ac with
+    | Append_nil -> Some (Insert_into ins)
+    | Append_cons ac -> (
+        match append_insert ac ins with
+        | None | Some (Insert_into Now) -> None
+        | Some (Insert_into (Later ins)) -> Some (Insert_into ins))
+
   (* Extend a permutation by the identity *)
   let rec permute_append : type a b c ac bc.
       (a, b) permute -> (a, c, ac) append -> (b, c, bc) append -> (ac, bc) permute =

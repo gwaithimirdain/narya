@@ -302,6 +302,12 @@ module Make (G : Gen) = struct
       | Word (Suc (a, x)) -> go (Word a) (Cons (x, b)) (Append_cons abc) in
     go c Nil Append_nil
 
+  let rec of_snocs : type a b n ab. a t -> n G.t -> (a, b, n, ab) Tbwd.snocs -> ab t =
+   fun a n ab ->
+    match ab with
+    | Zero -> a
+    | Suc ab -> of_snocs (suc a n) n ab
+
   (* ********** Positive words ********** *)
 
   (* A "positive" word is one that's not the identity, i.e. is a successor of something. *)
