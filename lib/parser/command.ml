@@ -817,8 +817,8 @@ let condense : Command.t -> [ `Import | `Option | `None | `Bof ] = function
 let tok t : observation = Token (t, ([], None))
 
 (* Subroutine for "split" that generates the cases in a multiple match. *)
-let split_match_cases : type a b.
-    (a, b) Ctx.t ->
+let split_match_cases : type mode a b.
+    (mode, a, b) Ctx.t ->
     (string option, a) Bwv.t ->
     (Whitespace.t list * wrapped_parse) list ->
     observation list list =
@@ -827,13 +827,13 @@ let split_match_cases : type a b.
   let module LS = Monad.ListT (S) in
   let open Monad.Ops (LS) in
   let rec do_args : type a p ap.
-      (a, p, ap) Term.Telescope.t ->
+      (mode, a, p, ap) Term.Telescope.t ->
       (No.plus_omega, No.strict, No.plus_omega, No.nonstrict) parse located list =
    fun args ->
     match args with
     | Emp -> []
-    | Ext (None, _, args) -> locate_opt None (Placeholder []) :: do_args args
-    | Ext (Some x, _, args) -> locate_opt None (Ident ([ x ], [])) :: do_args args in
+    | Ext (None, _, _, args) -> locate_opt None (Placeholder []) :: do_args args
+    | Ext (Some x, _, _, args) -> locate_opt None (Ident ([ x ], [])) :: do_args args in
   let rec go = function
     | [] ->
         let* higher = LS.lift S.get in
@@ -913,24 +913,34 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       Core.Command.execute (Def cdefs)
   | Echo { tm = Wrap tm; eval; number; _ } -> (
       let module Scope_and_ctx = struct
-        type t = Scope_and_ctx : (string option, 'a) Bwv.t * ('a, 'b) Ctx.t -> t
+        type t =
+          | Scope_and_ctx :
+              (string option, 'a) Bwv.t * ('a Raw.check located -> ('a, 'b) Ctx.moded)
+              -> t
       end in
       let open Scope_and_ctx in
       let Scope_and_ctx (vars, ctx), run =
         match number with
         | None ->
-            (Scope_and_ctx (Bwv.Emp, Ctx.empty), Global.run_command_then_undo ~holes_allowed:(Ok ()))
+            ( Scope_and_ctx
+                ( Bwv.Emp,
+                  fun rtm ->
+                    match Check.synth_mode rtm with
+                    | Some (Wrap mode) -> Moded_ctx (Ctx.empty mode)
+                    | None -> fatal (Non_mode_synthesizing "echo") ),
+              Global.run_command_then_undo ~holes_allowed:(Ok ()) )
         | Some number ->
             let num = Global.find_hole number in
             let (Found_hole { instant; termctx; vars; parametric; _ }) = num in
             show_hole num;
-            ( Scope_and_ctx (vars, Norm.eval_ctx termctx),
+            ( Scope_and_ctx (vars, fun _ -> Moded_ctx (Norm.eval_ctx termctx)),
               Global.rewind_command_then_undo ~parametric ~holes_allowed:(Ok ()) instant ) in
       run @@ fun () ->
       let rtm = process vars tm in
       action_taken ();
       match rtm.value with
       | Synth stm ->
+          let (Moded_ctx ctx) = ctx rtm in
           Readback.Displaying.run ~env:true @@ fun () ->
           let ctm, ety = Check.synth (Kinetic `Nolet) ctx { value = stm; loc = rtm.loc } in
           let btm =
@@ -938,7 +948,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
               let etm = Norm.eval_term (Ctx.env ctx) ctm in
               readback_at ctx etm ety
             else ctm in
-          let bty = readback_at ctx ety (Value.universe D.zero) in
+          let bty = readback_at ctx ety (Value.universe (Ctx.mode ctx) D.zero) in
           let utm = unparse (Names.of_ctx ctx) btm No.Interval.entire No.Interval.entire in
           let uty = unparse (Names.of_ctx ctx) bty No.Interval.entire No.Interval.entire in
           PPrint.(
@@ -1034,7 +1044,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       let ctx = Norm.eval_ctx termctx in
       let ety = Norm.eval_term (Ctx.env ctx) ty in
       let ctm = Check.check status ctx ptm ety in
-      Global.set_meta meta ~tm:ctm;
+      Global.set_meta meta ctm;
       let buf = Buffer.create 20 in
       PPrint.ToBuffer.compact buf (pp_complete_term data.tm `None);
       ( Reporter.try_with ~fatal:(fun _ ->
@@ -1060,7 +1070,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
         | [ (_, Wrap { value = Placeholder _; _ }) ] -> (
             let ety = Norm.eval_term (Ctx.env ctx) ty in
             match View.view_type ety "split" with
-            | Canonical (_, Pi (_, doms, _), _, _) ->
+            | Canonical (_, Pi (_, _, doms, _), _, _) ->
                 let dim = CubeOf.dim doms in
                 let cube, mapsto, notn =
                   match D.compare_zero dim with
@@ -1094,7 +1104,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
             | Canonical (_, Codata { eta; fields; _ }, ins, _) -> (
                 let m = cod_left_ins ins in
                 let do_field : type a n et.
-                    (a * n * et) Term.CodatafieldAbwd.entry ->
+                    (_ * a * n * et) Term.CodatafieldAbwd.entry ->
                     (string * string list) list ->
                     (string * string list) list =
                  fun (Term.CodatafieldAbwd.Entry (fld, cdf)) acc ->
@@ -1173,18 +1183,17 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                 (Branches)
                 (struct
                   type t = Names.wrapped
-                end)
-            in
+                end) in
             let open Monad.Ops (NameBranches) in
             let rec constr_args : type a p ap n k.
                 n Names.t ->
                 k D.t ->
                 ?acc:unparser Bwd.t ->
-                (a, p, ap) Term.Telescope.t ->
+                (_, a, p, ap) Term.Telescope.t ->
                 unparser Bwd.t * Names.wrapped =
              fun names dim ?(acc = Emp) -> function
                | Emp -> (acc, Wrap names)
-               | Ext (x, _, args) ->
+               | Ext (x, _, _, args) ->
                    let x, names = Names.add_cube dim names x in
                    constr_args names dim
                      ~acc:(Snoc (acc, { unparse = (fun _ _ -> unparse_var x) }))
@@ -1479,20 +1488,20 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
                  (group
                     (pp_ws `Break ws
                     ^^ (match fixity with
-                       | Infixl _ | Postfixl _ -> Token.pp Ellipsis ^^ pp_ws `Nobreak wsellipsis
-                       | _ -> empty)
+                      | Infixl _ | Postfixl _ -> Token.pp Ellipsis ^^ pp_ws `Nobreak wsellipsis
+                      | _ -> empty)
                     ^^ group (hang 2 ppat))
                  ^^ (match fixity with
-                    | Infixr _ | Prefixr _ ->
-                        pp_ws `Nobreak wpat ^^ Token.pp Ellipsis ^^ pp_ws `Break wsellipsis
-                    | _ -> pp_ws `Break wpat)
+                   | Infixr _ | Prefixr _ ->
+                       pp_ws `Nobreak wpat ^^ Token.pp Ellipsis ^^ pp_ws `Break wsellipsis
+                   | _ -> pp_ws `Break wpat)
                  ^^ Token.pp Coloneq
                  ^^ pp_ws `Nobreak wscoloneq
                  ^^ group
                       (hang 2
                          ((match head with
-                          | `Constr c -> pp_constr c
-                          | `Constant c -> utf8string (String.concat "." c))
+                            | `Constr c -> pp_constr c
+                            | `Constant c -> utf8string (String.concat "." c))
                          ^^ pargs)))),
           rest )
     | Import { wsimport; export; origin; wsorigin; op } ->
@@ -1516,9 +1525,9 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
                (Token.pp (if export then Export else Import)
                ^^ pp_ws `Nobreak wsimport
                ^^ (match origin with
-                  | `File file -> dquotes (utf8string file)
-                  | `Path [] -> Token.pp Dot
-                  | `Path path -> utf8string (String.concat "." path))
+                 | `File file -> dquotes (utf8string file)
+                 | `Path [] -> Token.pp Dot
+                 | `Path path -> utf8string (String.concat "." path))
                ^^ op)),
           rest )
     | Chdir { wschdir; dir; wsdir } ->

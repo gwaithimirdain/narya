@@ -201,13 +201,20 @@ let pp_complete_term : wrapped_parse -> space -> document =
   let doc, ws = pp_term tm in
   doc ^^ pp_ws space ws
 
-let rec pp_ctx
-    (ctx :
-      (string * [ `Original | `Renamed | `Locked ] * wrapped_parse option * wrapped_parse) Bwd.t) :
-    document =
+type printed_entry = {
+  var : string;
+  modality : string;
+  renamed : bool;
+  lock : string option;
+  tm : wrapped_parse option;
+  ty : wrapped_parse;
+}
+
+let rec pp_ctx (ctx : printed_entry Bwd.t) : document =
   match ctx with
   | Emp -> empty
-  | Snoc (ctx, (x, r, tm, Wrap ty)) ->
+  | Snoc (ctx, { var = x; modality = _; renamed; lock; tm; ty = Wrap ty }) ->
+      (* MODALTODO: Print modal variables *)
       let ptm, wtm =
         match tm with
         | Some (Wrap tm) ->
@@ -226,11 +233,12 @@ let rec pp_ctx
               ^^ Token.pp Colon
               ^^ blank 1
               ^^ align
-                   (match r with
-                   | `Original -> group (pty ^^ pp_ws `None wty)
-                   | `Renamed -> group (pty ^^ pp_ws `Break wty ^^ string "(not in scope)")
-                   | `Locked -> group (pty ^^ pp_ws `Break wty ^^ string "(blocked by modal lock)"))
-              ))
+                   (if renamed then group (pty ^^ pp_ws `Break wty ^^ string "(not in scope)")
+                    else
+                      match lock with
+                      | None -> group (pty ^^ pp_ws `None wty)
+                      | Some lock ->
+                          group (pty ^^ pp_ws `Break wty ^^ string ("(locked: " ^ lock ^ ")")))))
 
 let pp_hole ctx ty =
   pp_ctx ctx ^^ hardline ^^ repeat 70 (char '-') ^^ hardline ^^ pp_complete_term ty `None

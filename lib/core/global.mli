@@ -1,23 +1,29 @@
 open Bwd
 open Util
+open Modal
 open Tbwd
 open Term
 open Origin
 
-type definition =
-  [ `Axiom | `Defined of (emp, potential) term ]
-  * [ `Parametric | `Nonparametric | `Maybe_parametric ]
+type 'mode definition_args = {
+  mode : 'mode Mode.t;
+  ty : ('mode, emp, kinetic) term;
+  tm : [ `Axiom | `Defined of ('mode, emp, potential) term ];
+  parametric : [ `Parametric | `Nonparametric | `Maybe_parametric ];
+}
 
-val find : Constant.t -> (emp, kinetic) term * definition
-val find_meta : ('a, 'b, 's) Meta.t -> ('a, 'b, 's) Metadef.t
+type definition = Definition : 'mode definition_args -> definition
+
+val find : Constant.t -> definition
+val find_meta : ('mode, 'a, 'b, 's) Meta.t -> ('mode, 'a, 'b, 's) Metadef.t
 
 type find_hole =
   | Found_hole : {
-      meta : ('a, 'b, 's) Meta.t;
+      meta : ('mode, 'a, 'b, 's) Meta.t;
       instant : Instant.t;
-      termctx : ('a, 'b) termctx;
-      ty : ('b, kinetic) term;
-      status : ('b, 's) Status.status;
+      termctx : ('mode, 'a, 'b) termctx;
+      ty : ('mode, 'b, kinetic) term;
+      status : ('mode, 'b, 's) Status.status;
       vars : (string option, 'a) Bwv.t;
       li : No.interval;
       ri : No.interval;
@@ -34,19 +40,28 @@ type origin_entry
 val find_file : File.t -> origin_entry
 val add_file : File.t -> origin_entry -> unit
 val from_istream_origin : (File.t -> File.t) -> Istream.t -> Origin.t -> origin_entry
-val add : Constant.t -> (emp, kinetic) term -> definition -> unit
-val set : Constant.t -> definition -> unit
+val add : Constant.t -> definition -> unit
+
+val set :
+  Constant.t ->
+  'mode Mode.t ->
+  ?parametric:[ `Parametric | `Maybe_parametric | `Nonparametric ] ->
+  ('mode, emp, potential) term ->
+  unit
+
 val add_error : Constant.t -> Reporter.Code.t -> unit
 
 val add_meta :
-  ('a, 'b, 's) Meta.t ->
-  termctx:('a, 'b) termctx ->
-  ty:('b, kinetic) term ->
-  tm:[ `Defined of ('b, 's) term | `Axiom ] ->
+  ('mode, 'a, 'b, 's) Meta.t ->
+  termctx:('mode, 'a, 'b) termctx ->
+  ty:('mode, 'b, kinetic) term ->
+  tm:[ `Defined of ('mode, 'b, 's) term | `Axiom ] ->
   energy:'s energy ->
   unit
 
-val set_meta : ('a, 'b, 's) Meta.t -> tm:('b, 's) term -> unit
+val set_meta :
+  ('mode, 'a, 'b, 's) Meta.t -> ?termctx:('mode, 'a, 'b) termctx -> ('mode, 'b, 's) term -> unit
+
 val unsolved_holes : unit -> int
 val current_unsolved_holes : unit -> int
 val notify_holes : unit -> unit
@@ -79,22 +94,26 @@ val rewind_command_then_undo :
 val run : (unit -> 'a) -> 'a
 
 val add_hole :
-  ('a, 'b, 's) Meta.t ->
+  ('mode, 'a, 'b, 's) Meta.t ->
   Asai.Range.t ->
   vars:(string option, 'a) Bwv.t ->
-  termctx:('a, 'b) termctx ->
-  ty:('b, kinetic) term ->
-  status:('b, 's) Status.status ->
+  termctx:('mode, 'a, 'b) termctx ->
+  ty:('mode, 'b, kinetic) term ->
+  status:('mode, 'b, 's) Status.status ->
   li:No.interval ->
   ri:No.interval ->
   unit
 
 val with_definition :
-  Constant.t -> [ `Axiom | `Defined of (emp, potential) term ] -> (unit -> 'a) -> 'a
+  Constant.t ->
+  'mode Mode.t ->
+  [ `Axiom | `Defined of ('mode, emp, potential) term ] ->
+  (unit -> 'a) ->
+  'a
 
-val with_meta_definition : ('a, 'b, 's) Meta.t -> ('b, 's) term -> (unit -> 'x) -> 'x
+val with_meta_definition : ('mode, 'a, 'b, 's) Meta.t -> ('mode, 'b, 's) term -> (unit -> 'x) -> 'x
 val without_definition : Constant.t -> Reporter.Code.t -> (unit -> 'a) -> 'a
-val without_meta_definition : ('a, 'b, 's) Meta.t -> Reporter.Code.t -> (unit -> 'x) -> 'x
+val without_meta_definition : ('mode, 'a, 'b, 's) Meta.t -> Reporter.Code.t -> (unit -> 'x) -> 'x
 val set_nonparametric : Constant.t option -> unit
 val set_parametric : Constant.t -> unit
 val set_maybe_parametric : unit -> unit

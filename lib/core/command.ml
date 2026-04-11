@@ -1,5 +1,6 @@
 open Bwd
 open Util
+open Modal
 open Tbwd
 open Dim
 open Raw
@@ -38,8 +39,9 @@ type defined_const =
   | Defined_check : {
       const : Constant.t;
       bplus : (N.zero, 'c, 'ac) Fwn.bplus;
-      params : (emp, 'c, 'bc) Telescope.t;
-      ty : ('bc, kinetic) term;
+      mode : 'mode Mode.t;
+      params : ('mode, emp, 'c, 'bc) Telescope.t;
+      ty : ('mode, 'bc, kinetic) term;
       tm : 'ac check located Lazy.t;
     }
       -> defined_const
@@ -52,29 +54,38 @@ type defined_const =
       -> defined_const
 
 (* Given such a thing, we can proceed to check or synthesize the term, producing the type and defined value for the constant, and then define it.  This function returns the constant name as well as the checked term.  *)
-let check_term (def : defined_const) (discrete : unit Constant.Map.t option) :
-    Constant.t * (emp, potential) term =
+type checked_term =
+  | Checked : Constant.t * 'mode Mode.t * ('mode, emp, potential) term -> checked_term
+
+let check_term (def : defined_const) (discrete : unit Constant.Map.t option) : checked_term =
   match def with
-  | Defined_check { const; bplus; params; ty; tm } ->
+  | Defined_check { const; bplus; mode; params; ty; tm } ->
       (* It's essential that we evaluate the type at this point, rather than sooner, so that the evaluation uses the *definitions* of previous constants in the mutual block and not just their types.  For the same reason, we need to re-evaluate the telescope of parameters. *)
-      let ctx = eval_append Ctx.empty bplus params in
+      let ctx = eval_append (Ctx.empty mode) bplus params in
       let ety = eval_term (Ctx.env ctx) ty in
       let tm =
         Ctx.lam ctx
           (check ?discrete
              (Potential (Constant (const, D.zero), Ctx.apps ctx, Ctx.lam ctx))
              ctx (Lazy.force tm) ety) in
-      Global.set const (`Defined tm, `Maybe_parametric);
-      (const, tm)
+      Global.set const mode ~parametric:`Maybe_parametric tm;
+      Checked (const, mode, tm)
   | Defined_synth { const; params; tm } ->
-      let Checked_tel (cparams, ctx), _ = check_tel Ctx.empty params in
+      let (Wrap mode) =
+        match synth_mode_tel params with
+        | Some mode -> mode
+        | None -> (
+            match synth_mode (locate_opt tm.loc (Synth tm.value)) with
+            | Some mode -> mode
+            | None -> fatal (Non_mode_synthesizing "synthesizing def")) in
+      let Checked_tel (cparams, ctx), _ = check_tel (Ctx.empty mode) params in
       let ctm, ety =
         synth (Potential (Constant (const, D.zero), Ctx.apps ctx, Ctx.lam ctx)) ctx tm in
       let cty = readback_val ctx ety in
       let ty = Telescope.pis cparams cty in
       let tm = Ctx.lam ctx ctm in
-      Global.add const ty (`Defined tm, `Maybe_parametric);
-      (const, tm)
+      Global.add const (Definition { mode; ty; tm = `Defined tm; parametric = `Maybe_parametric });
+      Checked (const, mode, tm)
 
 (* Iterate through a collection of such things checking them all, and then verify whether they are all potentially-discrete datatypes.  If so, redefine them all to be actually discrete (`Yes instead of `Maybe).  Returns a list of constant names to print, and whether they are discrete. *)
 let check_terms (defs : defined_const list) (discrete : unit Constant.Map.t option) :
@@ -84,25 +95,24 @@ let check_terms (defs : defined_const list) (discrete : unit Constant.Map.t opti
     | [] ->
         let open Mbwd.Monadic (Monad.State (struct
           type t = bool
-        end)) in
+        end))
+        in
         let discrete_defineds, disc =
           mmapM
-            (fun [ (c, def) ] disc ->
+            (fun [ Checked (c, mode, def) ] disc ->
               let discrete_def, disc_def = Discrete.discrete_def def in
-              ((c, discrete_def), disc && disc_def))
+              (Checked (c, mode, discrete_def), disc && disc_def))
             [ defineds ] true in
         let p = Global.get_parametric () in
         let parametric = (p :> [ `Parametric | `Nonparametric | `Maybe_parametric ]) in
         ( Bwd_extra.to_list_map
-            (fun (c, def) ->
-              Global.set c (`Defined def, parametric);
+            (fun (Checked (c, mode, def)) ->
+              Global.set c mode ~parametric def;
               PConstant c)
             (if disc then discrete_defineds else defineds),
           disc,
           p = `Parametric )
-    | d :: defs ->
-        let c, v = check_term d discrete in
-        go defs (Snoc (defineds, (c, v))) in
+    | d :: defs -> go defs (Snoc (defineds, check_term d discrete)) in
   go defs Emp
 
 (* When checking a "def", therefore, we first iterate through checking the parameters and types, and then go back and check all the terms.  Moreover, whenever we check a type, we temporarily define the corresponding constant as an axiom having that type, so that its type can be used recursively in typechecking its definition, as well as the types of later mutual constants and the definitions of any other mutual constants. *)
@@ -113,16 +123,24 @@ let check_defs (defs : (Constant.t Lazy.t * defconst Lazy.t) list) : printable l
     | (const, defconst) :: defs -> (
         match Lazy.force defconst with
         | Def_check { params; ty; tm } ->
+            let (Wrap mode) =
+              match synth_mode_tel params with
+              | Some mode -> mode
+              | None -> (
+                  match synth_mode ty with
+                  | Some mode -> mode
+                  | None -> fatal (Non_mode_synthesizing "checking def")) in
             let bplus = Raw.bplus_of_tel params in
-            let Checked_tel (params, ctx), disc = check_tel ?discrete Ctx.empty params in
-            let ty = check (Kinetic `Nolet) ctx ty (universe D.zero) in
+            let Checked_tel (params, ctx), disc = check_tel ?discrete (Ctx.empty mode) params in
+            let ty = check (Kinetic `Nolet) ctx ty (universe mode D.zero) in
             let pi_cty = Telescope.pis params ty in
             (* We set the type now; the value will be added later.  We mark it as "maybe parametric" so that we can detect if it is used behind an external degeneracy. *)
             let const = Lazy.force const in
-            Global.add const pi_cty (`Axiom, `Maybe_parametric);
+            Global.add const
+              (Definition { mode; ty = pi_cty; tm = `Axiom; parametric = `Maybe_parametric });
             go defs
               (if disc then Option.map (Constant.Map.add const ()) discrete else None)
-              (Snoc (defineds, Defined_check { const; bplus; params; ty; tm }))
+              (Snoc (defineds, Defined_check { const; bplus; mode; params; ty; tm }))
         | Def_synth { params; tm } ->
             let const = Lazy.force const in
             Global.add_error const (Synthesizing_recursion (Reporter.PConstant const));
@@ -133,11 +151,18 @@ let execute : t -> int option * (int -> Reporter.Code.t option) = function
   (* We let Parser.Command do the calling of Global.run_command etc. *)
   | Axiom { name; params; ty; parametric } ->
       if parametric then Global.set_parametric name else Global.set_nonparametric None;
-      let Checked_tel (params, ctx), _ = check_tel Ctx.empty params in
-      let cty = check (Kinetic `Nolet) ctx ty (universe D.zero) in
+      let (Wrap mode) =
+        match synth_mode_tel params with
+        | Some mode -> mode
+        | None -> (
+            match synth_mode ty with
+            | Some mode -> mode
+            | None -> fatal (Non_mode_synthesizing "axiom")) in
+      let Checked_tel (params, ctx), _ = check_tel (Ctx.empty mode) params in
+      let cty = check (Kinetic `Nolet) ctx ty (universe mode D.zero) in
       let cty = Telescope.pis params cty in
-      let p = Global.get_parametric () in
-      Global.add name cty (`Axiom, (p :> [ `Parametric | `Nonparametric | `Maybe_parametric ]));
+      let p = (Global.get_parametric () :> [ `Parametric | `Nonparametric | `Maybe_parametric ]) in
+      Global.add name (Definition { mode; ty = cty; tm = `Axiom; parametric = p });
       (None, fun holes -> Some (Constant_assumed { name = PConstant name; parametric; holes }))
   | Def defs ->
       Global.set_maybe_parametric ();

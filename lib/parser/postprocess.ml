@@ -1,6 +1,7 @@
 open Bwd
 open Util
 open Dim
+open Modal
 open Core
 open Raw
 open Reporter
@@ -246,9 +247,11 @@ and process_vars : type n.
   | [] -> process_tel ctx parameters
   | (name, w) :: names ->
       let pty = process ctx ty in
+      (* MODALTODO: The user should be able to specify the modality *)
+      let modality = Option.get (Modality.pre_of_string "") in
       let (Processed_tel (tel, ctx, ws)) =
         process_vars (Bwv.snoc ctx name) names (Wrap ty) parameters in
-      Processed_tel (Ext (name, pty, tel), ctx, w :: ws)
+      Processed_tel (Ext (name, modality, pty, tel), ctx, w :: ws)
 
 let get_pattern : type lt1 ls1 rt1 rs1. (lt1, ls1, rt1, rs1) parse located -> Matchpattern.t =
  fun pat ->

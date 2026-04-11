@@ -1,4 +1,5 @@
 open Util
+open Modal
 open Core
 open Parser
 open Value
@@ -6,20 +7,19 @@ open Norm
 open Asai.Range
 
 (* The current context of assumptions, including names. *)
-type ctx = Ctx : ('n, 'b) Ctx.t * (string option, 'n) Bwv.t -> ctx
+type ctx = Ctx : (test_mode, 'n, 'b) Ctx.t * (string option, 'n) Bwv.t -> ctx
 
-let ectx = Ctx (Ctx.empty, Emp)
+let ectx = Ctx (Ctx.empty test_mode, Emp)
 let context = ref ectx
 
 (* Functions to synth and check terms *)
 
-let parse_term : type n. (string option, n) Bwv.t -> string -> n Raw.check located =
- fun names tm ->
+let parse_term names (tm : string) =
   let p = Parse.Term.parse (`String { content = tm; title = Some "user-supplied term" }) in
   let (Wrap tm) = Parse.Term.final p in
   Postprocess.process names tm
 
-let synth (tm : string) : kinetic value * kinetic value =
+let synth (tm : string) : (test_mode, kinetic) value * (test_mode, kinetic) value =
   let (Ctx (ctx, names)) = !context in
   Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
       Reporter.display d;
@@ -32,7 +32,7 @@ let synth (tm : string) : kinetic value * kinetic value =
       (esyn, ty)
   | _ -> Reporter.fatal (Nonsynthesizing "toplevel synth")
 
-let check (tm : string) (ty : kinetic value) : kinetic value =
+let check (tm : string) (ty : (test_mode, kinetic) value) : (test_mode, kinetic) value =
   let (Ctx (ctx, names)) = !context in
   Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
       Reporter.display d;
@@ -68,7 +68,12 @@ let unsynth : ?print:unit -> ?code:Reporter.Code.t -> ?short:string -> string ->
   | _ -> Reporter.fatal (Nonsynthesizing "top-level unsynth")
 
 let uncheck :
-    ?print:unit -> ?code:Reporter.Code.t -> ?short:string -> string -> kinetic value -> unit =
+    ?print:unit ->
+    ?code:Reporter.Code.t ->
+    ?short:string ->
+    string ->
+    (test_mode, kinetic) value ->
+    unit =
  fun ?print ?code ?short tm ty ->
   let (Ctx (ctx, names)) = !context in
   Reporter.try_with ~fatal:(fun d ->
@@ -105,26 +110,28 @@ let unparse : ?print:unit -> string -> unit =
 
 (* Add to the context of assumptions *)
 
-let assume (x : string) (ty : kinetic value) : kinetic value =
+let assume (x : string) (ty : (test_mode, kinetic) value) : (test_mode, kinetic) value =
   let (Ctx (ctx, names)) = !context in
-  context := Ctx (Ctx.ext ctx (Some x) ty, Bwv.snoc names (Some x));
+  context := Ctx (Ctx.ext ctx (Modality.id test_mode) (Some x) ty, Bwv.snoc names (Some x));
   fst (synth x)
 
 (* Check that two terms are, or aren't, equal, at a type or synthesizing *)
 
-let equal_at (tm1 : kinetic value) (tm2 : kinetic value) (ty : kinetic value) : unit =
+let equal_at (tm1 : (test_mode, kinetic) value) (tm2 : (test_mode, kinetic) value)
+    (ty : (test_mode, kinetic) value) : unit =
   let (Ctx (ctx, _)) = !context in
   if Result.is_ok (Equal.equal_at ctx tm1 tm2 ty) then () else raise (Failure "Unequal terms")
 
-let unequal_at (tm1 : kinetic value) (tm2 : kinetic value) (ty : kinetic value) : unit =
+let unequal_at (tm1 : (test_mode, kinetic) value) (tm2 : (test_mode, kinetic) value)
+    (ty : (test_mode, kinetic) value) : unit =
   let (Ctx (ctx, _)) = !context in
   if Result.is_error (Equal.equal_at ctx tm1 tm2 ty) then () else raise (Failure "Equal terms")
 
-let equal (tm1 : kinetic value) (tm2 : kinetic value) : unit =
+let equal (tm1 : (test_mode, kinetic) value) (tm2 : (test_mode, kinetic) value) : unit =
   let (Ctx (ctx, _)) = !context in
   if Result.is_ok (Equal.equal_val ctx tm1 tm2) then () else raise (Failure "Unequal terms")
 
-let unequal (tm1 : kinetic value) (tm2 : kinetic value) : unit =
+let unequal (tm1 : (test_mode, kinetic) value) (tm2 : (test_mode, kinetic) value) : unit =
   let (Ctx (ctx, _)) = !context in
   if Result.is_error (Equal.equal_val ctx tm1 tm2) then () else raise (Failure "Equal terms")
 

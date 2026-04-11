@@ -1,4 +1,5 @@
 open Util
+open Modal
 open Reporter
 open Printable
 open Dim
@@ -50,42 +51,51 @@ let () = Mode.register_printer (function `Read -> Some "unhandled Equal.Mode.rea
 
 module Equal = struct
   (* Compare two normal forms that are *assumed* to have the same type, or at least that the type of the first is a subtype of the type of the second. *)
-  let rec equal_nf : type a b. (a, b) Ctx.t -> normal -> normal -> unit Err.t =
+  let rec equal_nf : type mode a b. (mode, a, b) Ctx.t -> mode normal -> mode normal -> unit Err.t =
    fun n x y ->
     (* Thus, we can do an eta-expanding check at either one of their stored types, since they are assumed equal.  We check them at the type of the *second* argument, since this is also called as a subroutine of subtype checking, in which case the subtype comes first and then the supertype. *)
     equal_at n x.tm y.tm y.ty
 
   (* Compare two values at a type, which they are both assumed to belong to.  We do eta-expansion here if the type is one with an eta-rule, like a pi-type or a record type.  We also deal with the case of terms that don't synthesize, such as structs even in codatatypes without eta, and constructors in datatypes. *)
-  and equal_at : type a b.
-      (a, b) Ctx.t -> kinetic value -> kinetic value -> kinetic value -> unit Err.t =
+  and equal_at : type mode a b.
+      (mode, a, b) Ctx.t ->
+      (mode, kinetic) value ->
+      (mode, kinetic) value ->
+      (mode, kinetic) value ->
+      unit Err.t =
    fun ctx x y ty ->
     (* The type must be fully instantiated. *)
     match view_type ty "equal_at" with
     (* The only interesting thing here happens when the type is one with an eta-rule, such as a pi-type. *)
-    | Canonical (_, Pi (name, doms, cods), ins, tyargs) ->
+    | Canonical (_, Pi (name, modality, doms, cods), ins, tyargs) ->
         let Eq = eq_of_ins_zero ins in
-        let newargs, newnfs = dom_vars ctx doms in
-        let (Any_ctx newctx) = Ctx.variables_vis ctx name newnfs in
-        let output = tyof_app cods tyargs newargs in
+        let lctx = Ctx.lock ctx modality in
+        let newargs, newnfs = dom_vars lctx doms in
+        let (Any_ctx newctx) = Ctx.variables_vis ctx modality name newnfs in
+        let output = tyof_app cods tyargs modality newargs in
         (* If both terms have the given pi-type, then when applied to variables of the domains, they will both have the computed output-type, so we can recurse back to eta-expanding equality at that type. *)
-        equal_at newctx (apply_term x newargs) (apply_term y newargs) output
+        equal_at newctx (apply_term x modality newargs) (apply_term y modality newargs) output
     (* Codatatypes (without eta) don't need to be dealt with here, even though structs can't be compared synthesizingly, since codatatypes aren't actually inhabited by (kinetic) structs, only neutral terms that are equal to potential structs.  In the case of record types with eta, if there is a nonidentity insertion outside, then the type isn't actually a record type, *but* it still has an eta-rule since it is *isomorphic* to a record type!  Thus, instead of checking whether the insertion is the identity, we apply its inverse permutation to the terms being compared.  And because we pass off to 'field' and 'tyof_field', we don't need to make explicit use of any of the other data here. *)
     | Canonical
         (type mn m n)
-        ((_, Codata (type c a et) ({ eta; fields; _ } : (m, n, c, a, et) codata_args), ins, _) :
-          head * (m, n) canonical * (mn, m, n) insertion * (D.zero, mn, mn, normal) TubeOf.t) -> (
+        ((_, Codata (type c a et) ({ eta; fields; _ } : (mode, m, n, c, a, et) codata_args), ins, _) :
+          mode head
+          * (mode, m, n) canonical
+          * (mn, m, n) insertion
+          * (D.zero, mn, mn, mode normal) TubeOf.t) -> (
         match eta with
         | Eta ->
             let (Perm_to p) = perm_of_ins ins in
             let pinv = deg_of_perm (perm_inv p) in
-            let x, y, ty = (act_value x pinv, act_value y pinv, gact_ty None ty pinv) in
+            let x, y, ty =
+              (act_value x pinv None, act_value y pinv None, gact_ty None ty pinv None) in
             (* Now we take the projections and compare them at appropriate types.  It suffices to use the fields of x when computing the types of the fields, since we proceed to check the fields for equality *in order* and thus by the time we are checking equality of any particular field of x and y, the previous fields of x and y are already known to be equal, and the type of the current field can only depend on these.  (This latter is a semantic constraint on the kinds of generalized records that can sensibly admit eta-conversion.)  In addition, records with eta cannot have higher fields, so as field insertion it suffices to use ins_zero on the substitution dimension. *)
             let fldins = ins_zero (cod_left_ins ins) in
             BwdM.miterM
               (fun [
                      CodatafieldAbwd.Entry
                        (type i)
-                       ((fld, Lower _) : i Field.t * (i, a * n * has_eta) Codatafield.t);
+                       ((fld, Lower _) : i Field.t * (i, mode * a * n * has_eta) Codatafield.t);
                    ] ->
                 equal_at ctx (field_term x fld fldins) (field_term y fld fldins)
                   (tyof_field (Ok x) ty fld ~shuf:Trivial fldins))
@@ -127,17 +137,17 @@ module Equal = struct
                         (fun _ [ tm ] ->
                           match view_term tm.tm with
                           | Constr (tmname, _, tmargs) ->
-                              if tmname = xconstr then List.map (fun a -> CubeOf.find_top a) tmargs
+                              if tmname = xconstr then
+                                List.map
+                                  (fun (ModalValueCube.Modal (xmod, x)) ->
+                                    Modal (xmod, CubeOf.find_top x))
+                                  tmargs
                               else fatal (Anomaly "inst arg wrong constr in equality at datatype")
                           | _ -> fatal (Anomaly "inst arg not constr in equality at datatype"));
                     }
                     [ tyargs ] in
                 (* It suffices to compare the top-dimensional faces of the cubes; the others are only there for evaluating case trees.  It would be nice to do this recursion directly on the Bwds, but equal_at_tel is expressed much more cleanly as an operation on lists. *)
-                equal_at_tel ctx env
-                  (List.fold_right (fun a args -> CubeOf.find_top a :: args) xargs [])
-                  (List.fold_right (fun a args -> CubeOf.find_top a :: args) yargs [])
-                  argtys
-                  (TubeOf.mmap { map = (fun _ [ args ] -> args) } [ tyarg_args ]))
+                equal_at_tel ctx env xargs yargs argtys tyarg_args)
         | Constr _, _ | _, Constr _ ->
             fail (Unequal.Terms (PNormal (ctx, { tm = x; ty }), PNormal (ctx, { tm = y; ty })))
         | _ -> equal_val ctx x y)
@@ -145,7 +155,8 @@ module Equal = struct
     | _ -> equal_val ctx x y
 
   (* "Synthesizing" equality check of two values, now *not* assumed a priori to have the same type.  If this function concludes that they are equal, then the equality of their types is part of that conclusion. *)
-  and equal_val : type a b. (a, b) Ctx.t -> kinetic value -> kinetic value -> unit Err.t =
+  and equal_val : type mode a b.
+      (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> unit Err.t =
    fun ctx x y ->
     let x, y =
       match Mode.read () with
@@ -170,10 +181,10 @@ module Equal = struct
     | Constr _, _ | _, Constr _ ->
         fatal (Anomaly "unexpected constr in synthesizing equality-check")
 
-  and equal_tyargs : type n1 k1 nk1 n2 k2 nk2 a b.
-      (a, b) Ctx.t ->
-      (n1, k1, nk1, normal) TubeOf.t ->
-      (n2, k2, nk2, normal) TubeOf.t ->
+  and equal_tyargs : type mode n1 k1 nk1 n2 k2 nk2 a b.
+      (mode, a, b) Ctx.t ->
+      (n1, k1, nk1, mode normal) TubeOf.t ->
+      (n2, k2, nk2, mode normal) TubeOf.t ->
       unit ErrOpt.t =
    fun n a1 a2 ->
     match
@@ -188,13 +199,18 @@ module Equal = struct
     | _, Neq -> None
 
   (* Synthesizing equality check for heads.  Again equality of types is part of the conclusion, not a hypothesis.  If some sub-parts of the heads are unequal, such as arguments of a Pi, or variable or constant names (without degeneracies), we report that.  Otherwise, we return None, and the caller should report the entire heads as being unequal. *)
-  and equal_head : type a b. (a, b) Ctx.t -> head -> head -> unit ErrOpt.t =
+  and equal_head : type mode a b. (mode, a, b) Ctx.t -> mode head -> mode head -> unit ErrOpt.t =
    fun ctx x y ->
     let open Monad.Ops (ErrOpt) in
     match (x, y) with
-    | Var { level = l1; deg = d1 }, Var { level = l2; deg = d2 } ->
-        (* Two equal variables with the same degeneracy applied are equal, including their types because that variable has only one type. *)
-        if l1 = l2 then if Option.is_some (deg_equiv d1 d2) then return () else None
+    | Var { level = l1; deg = d1; key = k1 }, Var { level = l2; deg = d2; key = k2 } ->
+        (* Two equal variables with the same degeneracy and key applied are equal, including their types because that variable has only one type. *)
+        if l1 = l2 then
+          if Option.is_some (deg_equiv d1 d2) then
+            match Modalcell.compare k1 k2 with
+            | Eq -> return ()
+            | Neq -> None
+          else None
         else
           let v1 = Ctx.find_level ctx l1 <|> No_such_level (PLevel l1) in
           let v2 = Ctx.find_level ctx l2 <|> No_such_level (PLevel l2) in
@@ -212,55 +228,63 @@ module Equal = struct
         | Eq, Eq -> Some (equal_env ctx env1 env2 (Global.find_meta meta1).termctx)
         | Neq, _ -> Some (Error (Metas (meta1, meta2)))
         | _, Neq -> None)
-    | UU m, UU n -> (
-        (* Two universes are equal precisely when they have the same dimension, in which case they also automatically have the same type (a standard instantiation of a (higher) universe of that same dimension). *)
+    | UU (_, m), UU (_, n) -> (
+        (* Two universes are equal precisely when they have the same dimension, in which case they also automatically have the same type (a standard instantiation of a (higher) universe of that same dimension).  We don't need to compare the modes because the type of this function guarantees they are at the same mode. *)
         match D.compare m n with
         | Eq -> return ()
         | _ -> None)
-    | Pi (name, dom1s, cod1s), Pi (_, dom2s, cod2s) -> (
+    | Pi (name, modality1, dom1s, cod1s), Pi (_, modality2, dom2s, cod2s) -> (
         (* If two pi-types have the same dimension, equal domains, and equal codomains, they are equal and have the same type (an instantiation of the universe of that dimension at pi-types formed from the lower-dimensional domains and codomains). *)
         let k = CubeOf.dim dom1s in
-        match D.compare (CubeOf.dim dom2s) k with
-        | Eq ->
+        match (D.compare (CubeOf.dim dom2s) k, Modality.compare modality1 modality2) with
+        | Eq, Eq ->
+            let lctx = Ctx.lock ctx modality1 in
             Some
               (let open Monad.Ops (Err) in
                let open CubeOf.Monadic (Err) in
-               let* () = miterM { it = (fun _ [ x; y ] -> equal_val ctx x y) } [ dom1s; dom2s ] in
+               let* () = miterM { it = (fun _ [ x; y ] -> equal_val lctx x y) } [ dom1s; dom2s ] in
                (* We create variables for all the domains, in order to equality-check all the codomains.  The codomain boundary types only use some of those variables, but it doesn't hurt to have the others around. *)
-               let newargs, newnfs = dom_vars ctx dom1s in
-               let (Any_ctx newctx) = Ctx.variables_vis ctx name newnfs in
+               let newargs, newnfs = dom_vars lctx dom1s in
+               let (Any_ctx newctx) = Ctx.variables_vis ctx modality1 name newnfs in
                let open BindCube.Monadic (Err) in
                miterM
                  {
                    it =
                      (fun s [ cod1; cod2 ] ->
                        let sargs = CubeOf.subcube s newargs in
-                       equal_val newctx (apply_binder_term cod1 sargs)
-                         (apply_binder_term cod2 sargs));
+                       equal_val newctx
+                         (apply_binder_term cod1 modality1 sargs)
+                         (apply_binder_term cod2 modality2 sargs));
                  }
                  [ cod1s; cod2s ])
-        | Neq -> None)
+        | Neq, _ | _, Neq -> None)
     | _, _ -> None
 
   (* Check that the arguments of two entire application spines of equal functions are equal.  This is basically a left fold, but we make sure to iterate from left to right, and fail rather than raising an exception if the lists have different lengths.  As noted above, here we can go back to *assuming* that they have equal types, and thus passing off to the eta-expanding equality check.  *)
-  and equal_apps : type any1 any2 a b. (a, b) Ctx.t -> any1 apps -> any2 apps -> unit ErrOpt.t =
+  and equal_apps : type mode any1 any2 a b.
+      (mode, a, b) Ctx.t -> (mode, any1) apps -> (mode, any2) apps -> unit ErrOpt.t =
    fun ctx apps1 apps2 ->
     let open Monad.Ops (ErrOpt) in
     (* Iterating from left to right is important because it ensures that at the point of checking equality for any pair of arguments, we know that they have the same type, since they are valid arguments of equal functions with all previous arguments equal.  Thus each case *starts* with its recursive call. *)
     match (apps1, apps2) with
     | Emp, Emp -> return ()
-    | Arg (rest1, a1, i1), Arg (rest2, a2, i2) -> (
-        let* () = equal_apps ctx rest1 rest2 in
-        let To d1, To d2 = (deg_of_ins i1, deg_of_ins i2) in
-        let* () = ErrOpt.of_opt (deg_equiv d1 d2) in
-        match D.compare (CubeOf.dim a1) (CubeOf.dim a2) with
-        | Eq ->
-            let open CubeOf.Monadic (Err) in
-            Some (miterM { it = (fun _ [ x; y ] -> (equal_nf ctx) x y) } [ a1; a2 ])
-        (* If the dimensions don't match, it is a bug rather than a user error, since they are supposed to both be valid arguments of the same function, and any function has a unique dimension. *)
-        | Neq ->
-            fatal
-              (Dimension_mismatch ("application in equality-check", CubeOf.dim a1, CubeOf.dim a2)))
+    | Arg (rest1, modality1, a1, i1), Arg (rest2, modality2, a2, i2) -> (
+        match Modality.compare modality1 modality2 with
+        | Neq -> None
+        | Eq -> (
+            let* () = equal_apps ctx rest1 rest2 in
+            let To d1, To d2 = (deg_of_ins i1, deg_of_ins i2) in
+            let* () = ErrOpt.of_opt (deg_equiv d1 d2) in
+            let lctx = Ctx.lock ctx modality1 in
+            match D.compare (CubeOf.dim a1) (CubeOf.dim a2) with
+            | Eq ->
+                let open CubeOf.Monadic (Err) in
+                Some (miterM { it = (fun _ [ x; y ] -> equal_nf lctx x y) } [ a1; a2 ])
+            (* If the dimensions don't match, it is a bug rather than a user error, since they are supposed to both be valid arguments of the same function, and any function has a unique dimension. *)
+            | Neq ->
+                fatal
+                  (Dimension_mismatch ("application in equality-check", CubeOf.dim a1, CubeOf.dim a2))
+            ))
     | Field (rest1, f1, _, i1), Field (rest2, f2, _, i2) -> (
         let* () = equal_apps ctx rest1 rest2 in
         let To d1, To d2 = (deg_of_ins i1, deg_of_ins i2) in
@@ -274,81 +298,120 @@ module Equal = struct
         equal_tyargs ctx a1 a2
     | _, _ -> None
 
-  and equal_at_tel : type n a b ab c d.
-      (c, d) Ctx.t ->
-      (n, a) env ->
-      kinetic value list ->
-      kinetic value list ->
-      (a, b, ab) Telescope.t ->
-      (D.zero, n, n, kinetic value list) TubeOf.t ->
+  and equal_at_tel : type mode n a b ab c d.
+      (mode, c, d) Ctx.t ->
+      (mode, n, a) env ->
+      (n, mode, kinetic, unit) ModalValueCube.t list ->
+      (n, mode, kinetic, unit) ModalValueCube.t list ->
+      (mode, a, b, ab) Telescope.t ->
+      (D.zero, n, n, (mode, kinetic) modal_value list) TubeOf.t ->
       unit Err.t =
    fun ctx env xs ys tys tyargs ->
     match (xs, ys, tys) with
     | [], [], Emp -> ok
-    | x :: xs, y :: ys, Ext (_, ty, tys) ->
-        let ety = eval_term env ty in
-        (* Copied from check_tel; TODO: Factor it out *)
-        let tyargtbl = Hashtbl.create 10 in
-        let [ tyarg; tyargs ] =
-          TubeOf.pmap
-            {
-              map =
-                (fun fa [ tyargs ] ->
-                  match tyargs with
-                  | [] -> fatal (Anomaly "missing arguments in equal_at_tel")
-                  | argtm :: argrest ->
-                      let fa = sface_of_tface fa in
-                      let argty =
-                        inst
-                          (eval_term (act_env env (op_of_sface fa)) ty)
-                          (TubeOf.build D.zero
-                             (D.zero_plus (dom_sface fa))
-                             {
-                               build =
-                                 (fun fb ->
-                                   Hashtbl.find tyargtbl
-                                     (SFace_of (comp_sface fa (sface_of_tface fb))));
-                             }) in
-                      let argnorm = { tm = argtm; ty = argty } in
-                      Hashtbl.add tyargtbl (SFace_of fa) argnorm;
-                      [ argnorm; argrest ]);
-            }
-            [ tyargs ] (Cons (Cons Nil)) in
-        let ity = inst ety tyarg in
-        let* () = equal_at ctx x y ity in
-        equal_at_tel ctx
-          (Ext
-             ( env,
-               D.plus_zero (TubeOf.inst tyarg),
-               Ok (TubeOf.plus_cube (val_of_norm_tube tyarg) (CubeOf.singleton x)) ))
-          xs ys tys tyargs
+    | ( Modal
+          (type xdom xmodality)
+          ((xmodality, x) :
+            (xdom, xmodality, mode) Modality.t * (n, (xdom, kinetic) value) CubeOf.t)
+        :: xs,
+        Modal
+          (type ydom ymodality)
+          ((ymodality, y) :
+            (ydom, ymodality, mode) Modality.t * (n, (ydom, kinetic) value) CubeOf.t)
+        :: ys,
+        Ext (_, tymodality, ty, tys) ) -> (
+        match (Modality.compare xmodality tymodality, Modality.compare ymodality tymodality) with
+        | Eq, Eq ->
+            let lctx = Ctx.lock ctx tymodality in
+            let lenv = key_env env (Modalcell.id tymodality) in
+            let x = CubeOf.find_top x in
+            let y = CubeOf.find_top y in
+            let ety = eval_term lenv ty in
+            let tyargtbl = Hashtbl.create 10 in
+            let [ tyarg; tyargs ] =
+              TubeOf.pmap
+                {
+                  map =
+                    (fun fa [ tyargs ] ->
+                      match tyargs with
+                      | [] -> fatal (Anomaly "missing arguments in equal_at_tel")
+                      | Modal (argmod, argtm) :: argrest -> (
+                          match Modality.compare argmod xmodality with
+                          | Eq ->
+                              let fa = sface_of_tface fa in
+                              let argty : (xdom, kinetic) value =
+                                inst
+                                  (eval_term (act_env lenv (op_of_sface fa)) ty)
+                                  (TubeOf.build D.zero
+                                     (D.zero_plus (dom_sface fa))
+                                     {
+                                       build =
+                                         (fun fb ->
+                                           Hashtbl.find tyargtbl
+                                             (SFace_of (comp_sface fa (sface_of_tface fb))));
+                                     }) in
+                              let argnorm : xdom normal = { tm = argtm; ty = argty } in
+                              Hashtbl.add tyargtbl (SFace_of fa) argnorm;
+                              [ argnorm; argrest ]
+                          | Neq ->
+                              fatal
+                                (Modality_mismatch
+                                   ("equal_at_tel", `Modality argmod, `Modality tymodality))));
+                }
+                [ tyargs ] (Cons (Cons Nil)) in
+            let ity = inst ety tyarg in
+            let* () = equal_at lctx x y ity in
+            equal_at_tel ctx
+              (Ext
+                 ( env,
+                   D.plus_zero (TubeOf.inst tyarg),
+                   xmodality,
+                   Ok (TubeOf.plus_cube (val_of_norm_tube tyarg) (CubeOf.singleton x)) ))
+              xs ys tys tyargs
+        | Neq, _ ->
+            fatal (Modality_mismatch ("equal_at_tel", `Modality xmodality, `Modality tymodality))
+        | _, Neq ->
+            fatal (Modality_mismatch ("equal_at_tel", `Modality ymodality, `Modality tymodality)))
     | _ -> fatal (Anomaly "length mismatch in equal_at_tel")
 
-  and equal_env : type a b n c d.
-      (c, d) Ctx.t -> (n, b) env -> (n, b) env -> (a, b) termctx -> unit Err.t =
+  and equal_env : type mode a b n c d.
+      (mode, c, d) Ctx.t ->
+      (mode, n, b) env ->
+      (mode, n, b) env ->
+      (mode, a, b) termctx ->
+      unit Err.t =
    fun ctx env1 env2 (Permute (_, envctx)) -> equal_ordered_env ctx env1 env2 envctx
 
-  and equal_ordered_env : type a b n c d.
-      (c, d) Ctx.t -> (n, b) env -> (n, b) env -> (a, b) ordered_termctx -> unit Err.t =
+  and equal_ordered_env : type mode a b n c d.
+      (mode, c, d) Ctx.t ->
+      (mode, n, b) env ->
+      (mode, n, b) env ->
+      (mode, a, b) ordered_termctx ->
+      unit Err.t =
    fun ctx env1 env2 envctx ->
     (* Copied from readback_ordered_env *)
     match envctx with
-    | Emp -> ok
-    | Lock envctx -> equal_ordered_env ctx env1 env2 envctx
+    | Emp _ -> ok
     | Ext (envctx, entry, _) -> (
         let open CubeOf.Monadic (Err) in
         let (Plus mk) = D.plus (dim_entry entry) in
-        let (Looked_up { act = act1; op = Op (fc1, fd1); entry = xs1 }) =
-          lookup_cube env1 mk Now (id_op (D.plus_out (dim_env env1) mk)) in
-        let xs1 = act_cube { act = act1 } (CubeOf.subcube fc1 xs1) fd1 in
-        let (Looked_up { act = act2; op = Op (fc2, fd2); entry = xs2 }) =
-          lookup_cube env2 mk Now (id_op (D.plus_out (dim_env env2) mk)) in
-        let xs2 = act_cube { act = act2 } (CubeOf.subcube fc2 xs2) fd2 in
-        let env1' = remove_env env1 Now in
-        let env2' = remove_env env2 Now in
-        let* () = equal_ordered_env ctx env1' env2' envctx in
         match entry with
-        | Vis { bindings; _ } | Invis bindings ->
+        | Vis { modality; bindings; _ } | Invis (modality, bindings) ->
+            let lctx = Ctx.lock ctx modality in
+            let idcell = Modalcell.id modality in
+            let (Looked_up { act = act1; op = Op (fc1, fd1); entry = xs1; key = key1 }) =
+              lookup_cube env1 mk Now (id_op (D.plus_out (dim_env env1) mk)) idcell in
+            let xs1 = act_cube { act = act1 } (CubeOf.subcube fc1 xs1) fd1 (Some key1) in
+            let (Looked_up { act = act2; op = Op (fc2, fd2); entry = xs2; key = key2 }) =
+              lookup_cube env2 mk Now (id_op (D.plus_out (dim_env env2) mk)) idcell in
+            let xs2 = act_cube { act = act2 } (CubeOf.subcube fc2 xs2) fd2 (Some key2) in
+            (match Modalcell.compare key1 key2 with
+            | Eq -> ()
+            | Neq -> fatal (Modalcell_mismatch ("equal_env", key1, key2)));
+            let env1' = remove_env env1 Now in
+            let env2' = remove_env env2 Now in
+            let* () = equal_ordered_env ctx env1' env2' envctx in
+            let lenv = key_env env1 idcell in
             let xtytbl = Hashtbl.create 10 in
             let* _ =
               mmapM
@@ -358,9 +421,9 @@ module Equal = struct
                       let (SFace_of_plus (_, fb, fa)) = sface_of_plus mk fab in
                       let ty = (CubeOf.find bindings fa).ty in
                       let k = dom_sface fb in
+                      let ety = eval_term (act_env lenv (op_of_sface fb)) ty in
                       let ty =
-                        inst
-                          (eval_term (act_env env1 (op_of_sface fb)) ty)
+                        inst ety
                           (TubeOf.build k (D.plus_zero k)
                              {
                                build =
@@ -369,10 +432,18 @@ module Equal = struct
                                      (SFace_of (comp_sface fb (sface_of_tface fc))));
                              }) in
                       Hashtbl.add xtytbl (SFace_of fb) { tm = tm1; ty };
-                      equal_at ctx tm1 tm2 ty);
+                      equal_at lctx tm1 tm2 ty);
                 }
                 [ xs1; xs2 ] in
             return ())
+    | Lock (envctx, lock, _) -> (
+        let env1, Wrap keys1 = split_env_keys env1 lock in
+        let env2, Wrap keys2 = split_env_keys env2 lock in
+        match Modalcell.compare keys1 keys2 with
+        | Neq -> fatal (Modalcell_mismatch ("equal_env", keys1, keys2))
+        | Eq ->
+            let (Remove_lock (ctx, _)) = Ctx.remove_lock ctx (Modalcell.vcod keys1) in
+            equal_ordered_env ctx env1 env2 envctx)
 end
 
 let fallback f =

@@ -30,6 +30,17 @@ let rec remove_ctx : type a n b. b ctx -> (a, n, b) Tbwd.insert -> a ctx =
 let remove : type a n b. b t -> (a, n, b) Tbwd.insert -> a t =
  fun { ctx; used } i -> { ctx = remove_ctx ctx i; used }
 
+let rec split_ctx : type a b ab. ab ctx -> (a, b, ab) Tbwd.append -> a ctx =
+ fun ctx ab ->
+  match ab with
+  | Append_nil -> ctx
+  | Append_cons ab ->
+      let (Snoc (ctx, _, _)) = split_ctx ctx ab in
+      ctx
+
+let split : type a b ab. ab t -> (a, b, ab) Tbwd.append -> a t =
+ fun { ctx; used } ab -> { ctx = split_ctx ctx ab; used }
+
 let cubevar x fa : string list =
   let fa = string_of_sface fa in
   if fa = "" then [ x ] else [ x; fa ]
@@ -93,7 +104,7 @@ let new_name :
         else (namen, `Renamed, used |> StringSet.add namen) in
   go 0 names
 
-(* Make a variable name or placeholder unique.  Leave placeholders as-is, unless force_names = true in which case find a name for them. *)
+(* Make a variable name or placeholder unique. *)
 let uniquify_opt : type a.
     (a -> string option * string) ->
     a ->
@@ -123,17 +134,18 @@ let uniquify_cube : type n left right a.
     (NFamOf name, used) in
   let open NICubeOf.Applicatic (Applicative.OfMonad (Monad.State (struct
     type t = StringSet.t
-  end))) in
+  end)))
+  in
   mapM { map = (fun _ name used -> uniquify_nfamof name used) } names used
 
-(* Add a new cube variable at a specified dimension, generating a fresh version of its name if necessary to avoid conflicts.  Leave unnamed variables unnamed unless force_names = true. *)
+(* Add a new cube variable at a specified dimension, generating a fresh version of its name if necessary to avoid conflicts. *)
 let add_cube : type n b. n D.t -> b t -> string option -> string option * (b, n) snoc t =
  fun n { ctx; used } name ->
   let name, _, used = uniquify_opt (fun x -> (x, "")) name used in
   ( name,
     { ctx = Snoc (ctx, Variables (n, D.plus_zero n, NICubeOf.singleton name), Abwd.empty); used } )
 
-(* Add a cube of variables, generating a fresh version of each of their names.  Again, leave unnamed variables unnamed unless force_names = true. *)
+(* Add a cube of variables, generating a fresh version of each of their names. *)
 let add : type b n. b t -> n variables -> n variables * (b, n) snoc t =
  fun { ctx; used } (Variables (m, mn, names)) ->
   let names, used = uniquify_cube (fun x -> (x, "")) names used in
@@ -158,14 +170,15 @@ let add_full : type b mn. b t -> mn variables -> mn variables * (b, mn) snoc t =
   (vars, { ctx = Snoc (ctx, vars, Abwd.empty); used })
 
 (* Extract all the names in a context, generating a fresh version of each name from left to right, including field access variables, leaving unnamed variables unnamed. *)
-let rec of_ordered_ctx : type a b. (a, b) Ctx.Ordered.t -> b t = function
-  | Emp -> empty
-  | Snoc (ctx, Vis { dim; plusdim; vars; bindings = _; hasfields = _; fields; fplus = _ }, _) ->
+let rec of_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> b t = function
+  | Emp _ -> empty
+  | Snoc (ctx, Vis { dim; plusdim; vars; fields; _ }, _) ->
       let { ctx; used } = of_ordered_ctx ctx in
       let vars, used = uniquify_cube (fun x -> (x, "")) vars used in
       let module M = Mbwd.Monadic (Monad.State (struct
         type t = StringSet.t
-      end)) in
+      end))
+      in
       let fields, used =
         M.mmapM
           (fun [ (f, x) ] used ->
@@ -174,10 +187,11 @@ let rec of_ordered_ctx : type a b. (a, b) Ctx.Ordered.t -> b t = function
           [ Bwv.to_bwd fields ]
           used in
       { ctx = Snoc (ctx, Variables (dim, plusdim, vars), fields); used }
-  | Snoc (ctx, Invis bindings, _) -> snd (add_cube (CubeOf.dim bindings) (of_ordered_ctx ctx) None)
-  | Lock ctx -> of_ordered_ctx ctx
+  | Snoc (ctx, Invis (_, bindings), _) ->
+      snd (add_cube (CubeOf.dim bindings) (of_ordered_ctx ctx) None)
+  | Lock (ctx, _, _) -> of_ordered_ctx ctx
 
-let of_ctx : type a b. (a, b) Ctx.t -> b t = function
+let of_ctx : type mode a b. (mode, a, b) Ctx.t -> b t = function
   | Permute { ctx; _ } -> of_ordered_ctx ctx
 
 (* Add a cube of variables WITHOUT replacing them by fresh versions.  Should only be used when the variables have already been so replaced, as in the output of uniquify_vars below. *)
@@ -229,4 +243,4 @@ let uniquify_vars : type a.
   let vars, used = go vars used in
   (vars, { ctx = Emp; used })
 
-type named_term = Named : 'a t * ('a, kinetic) term -> named_term
+type _ named_term = Named : 'a t * ('mode, 'a, kinetic) term -> 'mode named_term

@@ -1,10 +1,13 @@
 open Dim
+open Modal
 open Core
 open Testutil.Mcp
 
 (* For historical reasons, we do all our testing of readback in the empty context without "assume".  Thus we have a lot of abstractions. *)
 
-let roundtrip tm ty = Norm.eval_term (Emp D.zero) (Readback.readback_at Ctx.empty tm ty)
+let roundtrip tm ty =
+  Norm.eval_term (Emp (test_mode, D.zero)) (Readback.readback_at (Ctx.empty test_mode) tm ty)
+
 let roundtrip_ok tm ty = equal_at tm (roundtrip tm ty) ty
 
 (* The polymorphic identity *)

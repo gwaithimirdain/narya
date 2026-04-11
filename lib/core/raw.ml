@@ -1,5 +1,6 @@
 open Util
 open Dim
+open Modal
 include Energy
 
 type 'a located = 'a Asai.Range.located
@@ -81,16 +82,18 @@ module rec Make : functor (I : Indices) -> sig
     | Var : 'a index -> 'a synth
     | Const : Constant.t -> 'a synth
     | Field : 'a synth located * [ `Name of string * int list | `Int of int ] -> 'a synth
-    | Pi : I.name * 'a check located * 'a I.suc check located -> 'a synth
-    | HigherPi : I.name * 'a synth located * 'a I.suc synth located -> 'a synth
-    | InstHigherPi : 'n D.pos * ('a, 'n, unit, 'an) DomCube.t * 'an check located -> 'a synth
+    | Pi : I.name * Modality.pre * 'a check located * 'a I.suc check located -> 'a synth
+    | HigherPi : I.name * Modality.pre * 'a synth located * 'a I.suc synth located -> 'a synth
+    | InstHigherPi :
+        'n D.pos * Modality.pre * ('a, 'n, unit, 'an) DomCube.t * 'an check located
+        -> 'a synth
     | App :
         'a check located * 'a check option located * [ `Implicit | `Explicit ] located
         -> 'a synth
     | Asc : 'a check located * 'a check located -> 'a synth
-    | AscLam : I.name located * 'a check located * 'a I.suc synth located -> 'a synth
-    | UU : 'a synth
-    | Let : I.name * 'a synth located * 'a I.suc check located -> 'a synth
+    | AscLam : I.name located * Modality.pre * 'a check located * 'a I.suc synth located -> 'a synth
+    | UU : 'mode Mode.t -> 'a synth
+    | Let : I.name * Modality.pre * 'a synth located * 'a I.suc check located -> 'a synth
     | Letrec : ('a, 'b, 'ab) tel * ('ab check located, 'b) Vec.t * 'ab check located -> 'a synth
     | Act : string located * ('m, 'n) deg * 'a check located option -> 'a synth
     | Match : {
@@ -115,7 +118,7 @@ module rec Make : functor (I : Indices) -> sig
         name : I.name located;
         cube : [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ] located;
         implicit : [ `Explicit | `Implicit ];
-        dom : 'a check located option;
+        dom : (Modality.pre * 'a check located) option;
         body : 'a I.suc check located;
       }
         -> 'a check
@@ -161,7 +164,9 @@ module rec Make : functor (I : Indices) -> sig
 
   and (_, _, _) tel =
     | Emp : ('a, Fwn.zero, 'a) tel
-    | Ext : I.name * 'a check located * ('a I.suc, 'b, 'ab) tel -> ('a, 'b Fwn.suc, 'ab) tel
+    | Ext :
+        I.name * Modality.pre * 'a check located * ('a I.suc, 'b, 'ab) tel
+        -> ('a, 'b Fwn.suc, 'ab) tel
 
   val fwn_of_tel : ('a, 'b, 'c) tel -> 'b Fwn.t
 end =
@@ -238,19 +243,24 @@ functor
       | Const : Constant.t -> 'a synth
       (* A field projection from a possibly-higher-coinductive type comes with a suffix that is a string of integers, denoting a partial bijection between n and m that is total on n.  This is the same as an injection from n to m, or equivalently an insertion of n into m∖l to produce m, where l = image(n). *)
       | Field : 'a synth located * [ `Name of string * int list | `Int of int ] -> 'a synth
-      | Pi : I.name * 'a check located * 'a I.suc check located -> 'a synth
-      | HigherPi : I.name * 'a synth located * 'a I.suc synth located -> 'a synth
-      | InstHigherPi : 'n D.pos * ('a, 'n, unit, 'an) DomCube.t * 'an check located -> 'a synth
+      | Pi : I.name * Modality.pre * 'a check located * 'a I.suc check located -> 'a synth
+      | HigherPi : I.name * Modality.pre * 'a synth located * 'a I.suc synth located -> 'a synth
+      | InstHigherPi :
+          'n D.pos * Modality.pre * ('a, 'n, unit, 'an) DomCube.t * 'an check located
+          -> 'a synth
       (* The location of the implicitness flag is, in the implicit case, the location of the braces surrounding the implicit argument. *)
       | App :
           'a check located * 'a check option located * [ `Implicit | `Explicit ] located
           -> 'a synth
       | Asc : 'a check located * 'a check located -> 'a synth
-      (* Abstraction with ascribed variable.  Currently can't be a cube or implicit.  *)
-      | AscLam : I.name located * 'a check located * 'a I.suc synth located -> 'a synth
-      | UU : 'a synth
+      (* Abstraction with ascribed variable and synthesizing body.  Currently can't be a cube or implicit.  *)
+      | AscLam :
+          I.name located * Modality.pre * 'a check located * 'a I.suc synth located
+          -> 'a synth
+      (* A universe knows its mode. *)
+      | UU : 'mode Mode.t -> 'a synth
       (* A Let can either synthesize or (sometimes) check.  It synthesizes only if its body also synthesizes, but we wait until typechecking type to look for that, so that if it occurs in a checking context the body can also be checking.  Thus, we make it a "synthesizing term".  The term being bound must also synthesize; the shorthand notation "let x : A := M" is expanded during parsing to "let x := M : A". *)
-      | Let : I.name * 'a synth located * 'a I.suc check located -> 'a synth
+      | Let : I.name * Modality.pre * 'a synth located * 'a I.suc check located -> 'a synth
       (* Letrec has a telescope of types, so that each can depend on the previous ones, and an equal-length vector of bound terms, all in the context extended by all the variables being bound, plus a body that is also in that context. *)
       | Letrec : ('a, 'b, 'ab) tel * ('ab check located, 'b) Vec.t * 'ab check located -> 'a synth
       (* An Act can also often check, but can also synthesizes if its body does.  *)
@@ -285,7 +295,8 @@ functor
           name : I.name located;
           cube : [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ] located;
           implicit : [ `Explicit | `Implicit ];
-          dom : 'a check located option;
+          (* An abstraction can have its variable ascribed to a type.  If in addition the body is synthesizing, then it is a synthesizing term called AscLam.  If the body is only checking, then it's still a Lam, but with a "dom" supplied here. *)
+          dom : (Modality.pre * 'a check located) option;
           body : 'a I.suc check located;
         }
           -> 'a check
@@ -352,12 +363,14 @@ functor
     (* An ('a, 'b, 'ab) tel is a raw telescope of length 'b in context 'a, with 'ab = 'a+'b the extended context. *)
     and (_, _, _) tel =
       | Emp : ('a, Fwn.zero, 'a) tel
-      | Ext : I.name * 'a check located * ('a I.suc, 'b, 'ab) tel -> ('a, 'b Fwn.suc, 'ab) tel
+      | Ext :
+          I.name * Modality.pre * 'a check located * ('a I.suc, 'b, 'ab) tel
+          -> ('a, 'b Fwn.suc, 'ab) tel
 
     (* The length of a telescope is a forwards nat. *)
     let rec fwn_of_tel : type a b c. (a, b, c) tel -> b Fwn.t = function
       | Emp -> Zero
-      | Ext (_, _, tel) -> Suc (fwn_of_tel tel)
+      | Ext (_, _, _, tel) -> Suc (fwn_of_tel tel)
   end
 
 module Indexed = Make (DeBruijnIndices)
@@ -451,9 +464,11 @@ module Resolve (R : Resolver) = struct
           | Error e -> Fail e)
       | Const c -> Const c
       | Field (tm, fld) -> Field (synth ctx tm, fld)
-      | Pi (x, dom, cod) -> Pi (R.rename ctx x, check ctx dom, check (R.snoc ctx x) cod)
-      | HigherPi (x, dom, cod) -> HigherPi (R.rename ctx x, synth ctx dom, synth (R.snoc ctx x) cod)
-      | InstHigherPi (n, doms, cod) ->
+      | Pi (x, modality, dom, cod) ->
+          Pi (R.rename ctx x, modality, check ctx dom, check (R.snoc ctx x) cod)
+      | HigherPi (x, modality, dom, cod) ->
+          HigherPi (R.rename ctx x, modality, synth ctx dom, synth (R.snoc ctx x) cod)
+      | InstHigherPi (n, modality, doms, cod) ->
           let (Gfolded (doms, ctx)) =
             DomTraverse.fold_map_left
               {
@@ -462,7 +477,7 @@ module Resolve (R : Resolver) = struct
                     (DomFam (R.rename ctx x, check ctx dom), R.snoc ctx x));
               }
               ctx doms in
-          InstHigherPi (n, doms, check ctx cod)
+          InstHigherPi (n, modality, doms, check ctx cod)
       | App (fn, arg, impl) ->
           let arg =
             match arg.value with
@@ -472,10 +487,12 @@ module Resolve (R : Resolver) = struct
             | None -> locate_opt arg.loc None in
           App (check ctx fn, arg, impl)
       | Asc (tm, ty) -> Asc (check ctx tm, check ctx ty)
-      | AscLam (x, dom, body) ->
-          AscLam (locate_map (R.rename ctx) x, check ctx dom, synth (R.snoc ctx x.value) body)
-      | UU -> UU
-      | Let (x, tm, body) -> Let (R.rename ctx x, synth ctx tm, (check (R.snoc ctx x)) body)
+      | AscLam (x, modality, dom, body) ->
+          AscLam
+            (locate_map (R.rename ctx) x, modality, check ctx dom, synth (R.snoc ctx x.value) body)
+      | UU mode -> UU mode
+      | Let (x, modality, tm, body) ->
+          Let (R.rename ctx x, modality, synth ctx tm, (check (R.snoc ctx x)) body)
       | Letrec (tys, tms, body) ->
           let (Bplus ab) = R.T2.bplus (Vec.length tms) in
           let tys2, ctx2 = tel ctx tys ab in
@@ -516,7 +533,7 @@ module Resolve (R : Resolver) = struct
               name = locate_map (R.rename ctx) name;
               cube;
               implicit;
-              dom = Option.map (check ctx) dom;
+              dom = Option.map (fun (mu, dom) -> (mu, check ctx dom)) dom;
               body = check (R.snoc ctx name.value) body;
             }
       | Struct (eta, fields) ->
@@ -595,11 +612,11 @@ module Resolve (R : Resolver) = struct
     | Emp ->
         let Eq = R.T2.bplus_zero ab in
         (Emp, ctx)
-    | Ext (x, ty, rest) ->
+    | Ext (x, modality, ty, rest) ->
         let ctx2 = R.snoc ctx x in
         let ab = R.T2.bplus_suc ab in
         let rest3, ctx3 = tel ctx2 rest ab in
-        (Ext (R.rename ctx x, check ctx ty, rest3), ctx3)
+        (Ext (R.rename ctx x, modality, check ctx ty, rest3), ctx3)
 end
 
 (* Since the De Bruijn index version is the standard one, we include that here. *)
@@ -619,9 +636,9 @@ let rec namevec_of_vec : type a b ab.
 let rec dataconstr_of_pi : type a. a check located -> a dataconstr =
  fun ty ->
   match ty.value with
-  | Synth (Pi (x, dom, cod)) ->
+  | Synth (Pi (x, modality, dom, cod)) ->
       let (Dataconstr (tel, out)) = dataconstr_of_pi cod in
-      Dataconstr (Ext (x, dom, tel), out)
+      Dataconstr (Ext (x, modality, dom, tel), out)
   | _ -> Dataconstr (Emp, Some ty)
 
 (* Produces only explicit lambdas. *)
@@ -650,4 +667,4 @@ let rec lams : type a b ab.
 
 let rec bplus_of_tel : type a b c. (a, b, c) tel -> (a, b, c) Fwn.bplus = function
   | Emp -> Zero
-  | Ext (_, _, tel) -> Suc (bplus_of_tel tel)
+  | Ext (_, _, _, tel) -> Suc (bplus_of_tel tel)

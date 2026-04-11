@@ -1,21 +1,32 @@
 open Util
 open Signatures
+open Modal
 open Dimbwd
 open Energy
 open Origin
 
-type ('a, 'b, 's) t
+type ('mode, 'a, 'b, 's) t
 
-val make_def : string -> string option -> 'a N.t -> 'b Dbwd.t -> 's energy -> ('a, 'b, 's) t
-val make_hole : 'a N.t -> 'b Dbwd.t -> 's energy -> ('a, 'b, 's) t
-val remake : (File.t -> File.t) -> ('a, 'b, 's) t -> ('a, 'b, 's) t
-val name : ('a, 'b, 's) t -> string
-val origin : ('a, 'b, 's) t -> Origin.t
+val make_def :
+  string ->
+  string option ->
+  'mode Mode.t ->
+  'a N.t ->
+  'b Dbwd.t ->
+  's energy ->
+  ('mode, 'a, 'b, 's) t
+
+val make_hole : 'mode Mode.t -> 'a N.t -> 'b Dbwd.t -> 's energy -> ('mode, 'a, 'b, 's) t
+val remake : (File.t -> File.t) -> ('mode, 'a, 'b, 's) t -> ('mode, 'a, 'b, 's) t
+val name : ('mode, 'a, 'b, 's) t -> string
+val origin : ('mode, 'a, 'b, 's) t -> Origin.t
 
 val compare :
-  ('a1, 'b1, 's1) t -> ('a2, 'b2, 's2) t -> ('a1 * 'b1 * 's1, 'a2 * 'b2 * 's2) Eq.compare
+  ('m1, 'a1, 'b1, 's1) t ->
+  ('m2, 'a2, 'b2, 's2) t ->
+  ('m1 * 'a1 * 'b1 * 's1, 'm2 * 'a2 * 'b2 * 's2) Eq.compare
 
-type wrapped = Wrap : ('a, 'b, 's) t -> wrapped
+type wrapped = Wrap : ('mode, 'a, 'b, 's) t -> wrapped
 
 module Wrapped : sig
   type t = wrapped
@@ -25,29 +36,22 @@ end
 
 module WrapSet : module type of Set.Make (Wrapped)
 
-val hole_number : ('a, 'b, 's) t -> int
+val hole_number : ('mode, 'a, 'b, 's) t -> int
 
 module Table : sig
-  type ('a, 'b, 's) key = ('a, 'b, 's) t
+  type ('mode, 'a, 'b, 's) key = ('mode, 'a, 'b, 's) t
 
-  module Make (F : Fam4) : sig
-    type _ entry = Entry : ('a, 'b, 's) t * ('x, 'a, 'b, 's) F.t -> 'x entry
+  module Make (F : Fam5) : sig
+    type _ entry = Entry : ('mode, 'a, 'b, 's) t * ('x, 'mode, 'a, 'b, 's) F.t -> 'x entry
     type 'x t
 
     val make : unit -> 'x t
-    val find_opt : ('a, 'b, 's) key -> 'x t -> ('x, 'a, 'b, 's) F.t option
+    val find_opt : ('mode, 'a, 'b, 's) key -> 'x t -> ('x, 'mode, 'a, 'b, 's) F.t option
     val find_hole_opt : int -> 'x t -> 'x entry option
-
-    val update :
-      ('a, 'b, 's) key ->
-      (('x, 'a, 'b, 's) F.t option -> ('x, 'a, 'b, 's) F.t option) ->
-      'x t ->
-      unit
-
-    val add : ('a, 'b, 's) key -> ('x, 'a, 'b, 's) F.t -> 'x t -> unit
+    val add : ('mode, 'a, 'b, 's) key -> ('x, 'mode, 'a, 'b, 's) F.t -> 'x t -> unit
 
     type ('x, 'acc) folder = {
-      fold : 'a 'b 's. ('a, 'b, 's) key -> ('x, 'a, 'b, 's) F.t -> 'acc -> 'acc;
+      fold : 'mode 'a 'b 's. ('mode, 'a, 'b, 's) key -> ('x, 'mode, 'a, 'b, 's) F.t -> 'acc -> 'acc;
     }
 
     val fold : ('x, 'acc) folder -> 'x t -> 'acc -> 'acc
@@ -60,7 +64,9 @@ module Table : sig
     val to_channel_origin : Out_channel.t -> Origin.t -> 'x t -> Marshal.extern_flags list -> unit
 
     type 'x mapper = {
-      map : 'a 'b 's. ('a, 'b, 's) key -> ('x, 'a, 'b, 's) F.t -> ('x, 'a, 'b, 's) F.t;
+      map :
+        'mode 'a 'b 's.
+        ('mode, 'a, 'b, 's) key -> ('x, 'mode, 'a, 'b, 's) F.t -> ('x, 'mode, 'a, 'b, 's) F.t;
     }
 
     val from_istream_origin : Istream.t -> 'x mapper -> Origin.t -> 'x t -> 'x origin_entry

@@ -1,6 +1,7 @@
 open Bwd
 open Util
 open Dim
+open Modal
 open Postprocess
 open Print
 open PPrint
@@ -54,30 +55,33 @@ let () =
    The universe
  ******************** *)
 
-type (_, _, _) identity += UU : (closed, No.plus_omega, closed) identity
+type (_, _, _) identity += UU : 'mode Mode.t -> (closed, No.plus_omega, closed) identity
 
-let universe : (closed, No.plus_omega, closed) notation = (UU, Outfix)
-
-let () =
-  make universe
-    {
-      name = "universe";
-      tree = Closed_entry (eop (Ident [ "Type" ]) (Done_closed universe));
-      processor =
-        (fun _ obs loc ->
-          match obs with
-          | [ Token (Ident [ "Type" ], _) ] -> { value = Synth UU; loc }
-          | _ -> invalid ?loc "universe");
-      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "universe"));
-      (* Universes are never part of case trees. *)
-      print_term =
-        Some
-          (function
-          | [ Token (Ident [ "Type" ], (wstype, _)) ] -> (string "Type", wstype)
-          | _ -> invalid "universe");
-      print_case = None;
-      is_case = (fun _ -> false);
-    }
+let universes : (string * Mode.wrapped * (closed, No.plus_omega, closed) notation) list =
+  List.map
+    (fun (name, Mode.Wrap mode) ->
+      let universe = (UU mode, Outfix) in
+      make universe
+        {
+          name = "universe";
+          tree = Closed_entry (eop (Ident [ "Type" ]) (Done_closed universe));
+          processor =
+            (fun _ obs loc ->
+              match obs with
+              | [ Token (Ident [ uname ], _) ] when uname = name -> { value = Synth (UU mode); loc }
+              | _ -> invalid ?loc "universe");
+          pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "universe"));
+          (* Universes are never part of case trees. *)
+          print_term =
+            Some
+              (function
+              | [ Token (Ident [ "Type" ], (wstype, _)) ] -> (string "Type", wstype)
+              | _ -> invalid "universe");
+          print_case = None;
+          is_case = (fun _ -> false);
+        };
+      (name, Mode.Wrap mode, universe))
+    Mode.all
 
 (* ********************
    Ascription
@@ -228,13 +232,15 @@ let rec raw_lam : type a b ab.
   | Suc ab, Snoc (locs, (loc, dom, implicit)) ->
       let (Snoc (ctx, x)) = ctx in
       let name = locate_opt loc x in
+      (* MODALTODO: User modality *)
+      let modality = Option.get (Modality.pre_of_string "") in
       let value =
         match (dom, body) with
         | None, _ -> Lam { name; cube; implicit; dom = None; body }
         | Some (Wrap dom), { value = Synth body; loc } ->
-            Synth (AscLam (name, process ctx dom, locate_opt loc body))
+            Synth (AscLam (name, modality, process ctx dom, locate_opt loc body))
         | Some (Wrap dom), _ ->
-            let dom = Some (process ctx dom) in
+            let dom = Some (modality, process ctx dom) in
             Lam { name; cube; implicit; dom; body } in
       raw_lam ctx cube ab locs { value; loc = Range.merge_opt loc body.loc }
 
@@ -284,12 +290,12 @@ let process_let : type n.
       let tm = process ctx tm in
       let body = process (Bwv.snoc ctx x) body in
       let v : n synth located = { value = Asc (tm, ty); loc = Range.merge_opt ty.loc tm.loc } in
-      { value = Synth (Let (x, v, body)); loc }
+      { value = Synth (Let (x, Modality.pre_id, v, body)); loc }
   | [ Token (Let, _); Term x; Token (Coloneq, _); Term tm; Token (In, _); Term body ] ->
       let x = get_var x in
       let term = process_synth ctx tm "value of let" in
       let body = process (Bwv.snoc ctx x) body in
-      { value = Synth (Let (x, term, body)); loc }
+      { value = Synth (Let (x, Modality.pre_id, term, body)); loc }
   | _ -> invalid "let"
 
 let letin_tree =
@@ -328,9 +334,11 @@ let rec process_letrec_terms : type c a.
     ->
       let x = get_var x in
       let ty = process ctx ty in
+      (* MODALTODO: User modality *)
+      let modality = Option.get (Modality.pre_of_string "") in
       let (Letrec_terms (tel, Suc cb, terms, body)) =
         process_letrec_terms (Snoc (ctx, x)) rest (Snoc (terms, Wrap tm)) (N.suc c) in
-      Letrec_terms (Ext (x, ty, tel), cb, terms, body)
+      Letrec_terms (Ext (x, modality, ty, tel), cb, terms, body)
   | [ Token (In, _); Term body ] ->
       let (Fplus cb) = Fwn.fplus c in
       let body = process ctx body in
@@ -796,6 +804,8 @@ let rec process_pi : type n lt ls rt rs.
     (lt, ls, rt, rs) parse located ->
     n check located =
  fun ctx higher doms cod ->
+  (* MODALTODO: User modality *)
+  let modality = Option.get (Modality.pre_of_string "") in
   match doms with
   | [] -> process ctx cod
   | Nondep { ty = Wrap dom; _ } :: doms -> (
@@ -804,10 +814,11 @@ let rec process_pi : type n lt ls rt rs.
       let cod = process_pi ctx higher doms cod in
       let loc = Range.merge_opt cdom.loc cod.loc in
       match (higher, cdom.value, cod.value) with
-      | `Lower, _, _ -> { value = Synth (Pi (None, cdom, cod)); loc }
+      | `Lower, _, _ -> { value = Synth (Pi (None, modality, cdom, cod)); loc }
       | `Higher, Synth sdom, Synth scod ->
           {
-            value = Synth (HigherPi (None, locate_opt cdom.loc sdom, locate_opt cod.loc scod));
+            value =
+              Synth (HigherPi (None, modality, locate_opt cdom.loc sdom, locate_opt cod.loc scod));
             loc;
           }
       | `Higher, Synth _, _ ->
@@ -819,9 +830,13 @@ let rec process_pi : type n lt ls rt rs.
       let cod = process_pi ctx higher (Dep { data with vars = xs } :: doms) cod in
       let loc = Range.merge_opt loc cod.loc in
       match (higher, cdom.value, cod.value) with
-      | `Lower, _, _ -> { value = Synth (Pi (x, cdom, cod)); loc }
+      | `Lower, _, _ -> { value = Synth (Pi (x, modality, cdom, cod)); loc }
       | `Higher, Synth sdom, Synth scod ->
-          { value = Synth (HigherPi (x, locate_opt cdom.loc sdom, locate_opt cod.loc scod)); loc }
+          {
+            value =
+              Synth (HigherPi (x, modality, locate_opt cdom.loc sdom, locate_opt cod.loc scod));
+            loc;
+          }
       | `Higher, Synth _, _ ->
           fatal ?loc:cod.loc (Nonsynthesizing "codomain of higher function type")
       | `Higher, _, _ -> fatal ?loc:cdom.loc (Nonsynthesizing "domain of higher function type"))
@@ -835,6 +850,8 @@ let rec process_inst_higher_pi : type n lt ls rt rs m.
     (lt, ls, rt, rs) parse located ->
     n check located =
  fun ctx dim doms cod ->
+  (* MODALTODO: User modality *)
+  let modality = Option.get (Modality.pre_of_string "") in
   match doms with
   | [] -> process ctx cod
   | _ :: _ ->
@@ -872,7 +889,7 @@ let rec process_inst_higher_pi : type n lt ls rt rs m.
         T.build_left (D.pos dim) { build } (ctx, doms, None) in
       let cod = process_inst_higher_pi newctx dim doms cod in
       let loc = Range.merge_opt loc cod.loc in
-      { value = Synth (InstHigherPi (dim, domcube, cod)); loc }
+      { value = Synth (InstHigherPi (dim, modality, domcube, cod)); loc }
 
 (* Pretty-print the domains of a right-associated iterated function-type that may mix dependent and non-dependent arguments.  Each argument is preceded by an arrow if its wsarrow is given; pi_doms ensures these go in the right place.  If linebreaked, the eventual codomain with its arrow goes on a line by itself with hanging indent, and then the domains are flowed with their own hanging indent.  Arrows never come at the beginnings of lines.  *)
 
@@ -1472,7 +1489,7 @@ let rec process_branches : type a n.
               let xctx = Matchscope.ext xctx None in
               let seen = Snoc (seen, Matchscope.last_num xctx) in
               let mtch, any_constrs = process_branches xctx xs seen branches loc sort in
-              (locate (Synth (Let (name.value, stm, mtch))) loc, any_constrs))
+              (locate (Synth (Let (name.value, Modality.pre_id, stm, mtch))) loc, any_constrs))
             ~fatal:(fun d ->
               match d.message with
               | No_remaining_patterns -> fatal ?loc:name.loc Overlapping_patterns
@@ -1486,14 +1503,13 @@ let rec process_branches : type a n.
             | bodyctx, (Constr (c, pats) :: patterns : (pattern, n) Vec.t), cube, body ->
                 acc
                 |> Abwd.update c.value (function
-                     | None | Some (CBranches (_, Emp)) ->
-                         Some (CBranches (c, Snoc (Emp, (bodyctx, pats, patterns, cube, body))))
-                     | Some (CBranches (c', (Snoc (_, (_, pats', _, _, _)) as cbrs))) -> (
-                         match Fwn.compare (Vec.length pats) (Vec.length pats') with
-                         | Neq -> fatal Inconsistent_patterns
-                         | Eq ->
-                             Some
-                               (CBranches (c', Snoc (cbrs, (bodyctx, pats, patterns, cube, body))))))
+                  | None | Some (CBranches (_, Emp)) ->
+                      Some (CBranches (c, Snoc (Emp, (bodyctx, pats, patterns, cube, body))))
+                  | Some (CBranches (c', (Snoc (_, (_, pats', _, _, _)) as cbrs))) -> (
+                      match Fwn.compare (Vec.length pats) (Vec.length pats') with
+                      | Neq -> fatal Inconsistent_patterns
+                      | Eq ->
+                          Some (CBranches (c', Snoc (cbrs, (bodyctx, pats, patterns, cube, body))))))
             | _, Var x :: _, _, _ -> fatal ?loc:x.loc Overlapping_patterns)
           Abwd.empty branches in
       let (x :: xs) = xs in
@@ -2104,10 +2120,12 @@ let rec process_tel : type a.
       if Lexer.valid_field name then (
         if StringSet.mem name seen then
           fatal ?loc (Duplicate_field_in_record (Field.intern name D.zero));
+        (* MODALTODO: User modality *)
+        let modality = Option.get (Modality.pre_of_string "") in
         let ty = process ctx ty in
         let ctx = Bwv.snoc ctx (Some name) in
         let (Any_tel tel) = process_tel ctx (StringSet.add name seen) obs in
-        Any_tel (Ext (Some name, ty, tel)))
+        Any_tel (Ext (Some name, modality, ty, tel)))
       else fatal ?loc (Invalid_field name)
   | Term { loc; _ } :: Token (Colon, _) :: Term _ :: _ -> fatal ?loc Parse_error
   | _ -> invalid "record"
@@ -2343,10 +2361,12 @@ and process_dataconstr_vars : type n.
   match vars with
   | [] -> process_dataconstr ctx tel_args ty
   | x :: xs ->
+      (* MODALTODO: User modality *)
+      let modality = Option.get (Modality.pre_of_string "") in
       let newctx = Bwv.snoc ctx x in
       let (Dataconstr (args, body)) = process_dataconstr_vars newctx xs (Wrap argty) tel_args ty in
       let arg = process ctx argty in
-      Dataconstr (Ext (x, arg, args), body)
+      Dataconstr (Ext (x, modality, arg, args), body)
 
 let rec process_data : type n.
     (Constr.t, n Raw.dataconstr located) Abwd.t ->
@@ -2529,7 +2549,7 @@ let install () =
     Situation.add cubeabs;
     Situation.add arrow;
     Situation.add dblarrow;
-    Situation.add universe;
+    List.iter (fun (_, _, u) -> Situation.add u) universes;
     Situation.add coloneq;
     Situation.add comatch;
     Situation.add Postprocess.dot;
