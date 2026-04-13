@@ -1513,7 +1513,7 @@ let eval_bindings : type dom modality mode a b n.
             j := !j + 1;
             let lvl, v =
               match ctm with
-              | None -> (Some level, ({ tm = var mode level ety; ty = ety } : dom normal))
+              | None -> (Some level, ({ tm = var modality level ety; ty = ety } : dom normal))
               | Some ctm -> (None, { tm = eval_term (Ctx.Ordered.env tempctx) ctm; ty = ety }) in
             Hashtbl.add argtbl (SFace_of fa) v;
             Ctx.Binding.specify vb lvl v);

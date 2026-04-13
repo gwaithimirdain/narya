@@ -30,8 +30,7 @@ let rec sort_of_ty : type mode a z.
       match D.compare (TubeOf.inst tyargs) (CubeOf.dim doms) with
       | Neq -> fatal (Dimension_mismatch ("sort_of_ty", TubeOf.inst tyargs, CubeOf.dim doms))
       | Eq ->
-          let lctx = Ctx.lock ctx modality in
-          let args, newnfs = dom_vars lctx doms in
+          let args, newnfs = dom_vars ctx modality doms in
           let newctx = Ctx.invis ctx modality newnfs in
           let output = tyof_app cods tyargs modality args in
           sort_of_ty ~isfunc:true newctx (view_type output "sort_of_ty"))
@@ -71,8 +70,7 @@ and readback_at : type mode a z.
       | Neq, _ -> fatal (Dimension_mismatch ("reading back at pi 1", TubeOf.inst tyargs, k))
       | _, Neq -> fatal (Dimension_mismatch ("reading back at pi 2", k, l))
       | Eq, Eq ->
-          let lctx = Ctx.lock ctx modality in
-          let args, newnfs = dom_vars lctx doms in
+          let args, newnfs = dom_vars ctx modality doms in
           let (Plus af) = N.plus (NICubeOf.out N.zero xs) in
           let newctx = Ctx.vis ctx modality m mn xs newnfs af in
           let output = tyof_app cods tyargs modality args in
@@ -81,8 +79,7 @@ and readback_at : type mode a z.
   (* If eta-expansion is enabled, we do an eta-expanding readback of any term. *)
   | Canonical (_, Pi (name, modality, doms, cods), ins, tyargs), tm when eta ->
       let Eq = eq_of_ins_zero ins in
-      let lctx = Ctx.lock ctx modality in
-      let newargs, newnfs = dom_vars lctx doms in
+      let newargs, newnfs = dom_vars ctx modality doms in
       let (Any_ctx newctx) = Ctx.variables_vis ctx modality name newnfs in
       let output = tyof_app cods tyargs modality newargs in
       (* We carry through the eta-expansion flag so that iterated pi-types will eta-expand fully. *)
@@ -284,7 +281,7 @@ and readback_head : type mode c z.
   | Pi (x, modality, doms, cods) ->
       let k = CubeOf.dim doms in
       let lctx = Ctx.lock ctx modality in
-      let args, newnfs = dom_vars lctx doms in
+      let args, newnfs = dom_vars ctx modality doms in
       Pi
         ( x,
           modality,

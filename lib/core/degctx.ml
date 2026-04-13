@@ -82,7 +82,7 @@ module Ordered = struct
                                        (comp_sface fa (sface_of_tface fc))
                                        k_n l_m fb)));
                          }) in
-                  let v = { tm = var (Modality.dom modality) level ty; ty } in
+                  let v = { tm = var modality level ty; ty } in
                   Hashtbl.add xstbl (SFace_of fab) v;
                   Binding.make (Some level) v
               | Some tm, ty ->

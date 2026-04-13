@@ -416,8 +416,7 @@ module Ordered = struct
       (mode, a N.suc, (b, D.zero) snoc) t * dom Binding.t =
    fun ctx modality x ty ->
     let n = length ctx in
-    let dom = Modality.dom modality in
-    let b = Binding.make (Some (n, 0)) { tm = var dom (n, 0) ty; ty } in
+    let b = Binding.make (Some (n, 0)) { tm = var modality (n, 0) ty; ty } in
     (cube_vis ctx modality x (CubeOf.singleton b), b)
 
   (* Extend a context by one new variable with an assigned value. *)

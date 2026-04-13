@@ -42,8 +42,7 @@ let rec typefam : type mode a b.
       (* In practice, these dimensions will always be zero also if the function succeeds, otherwise the eventual output would have to be higher-dimensional too.  But it doesn't hurt to be more general, and will require less change if we eventually implement higher-dimensional datatypes. *)
       match D.compare (TubeOf.inst tyargs) (CubeOf.dim doms) with
       | Eq ->
-          let lctx = Ctx.lock ctx modality in
-          let newargs, newnfs = dom_vars lctx doms in
+          let newargs, newnfs = dom_vars ctx modality doms in
           let output = tyof_app cods tyargs modality newargs in
           let (Any_ctx newctx) = Ctx.variables_vis ctx modality x newnfs in
           let n, d = typefam ?discrete newctx output in
@@ -107,8 +106,7 @@ let rec motive_of_family : type mode a b.
   match view_type ty "motive_of_family" with
   | Canonical (_, Pi (x, modality, doms, cods), ins, tyargs) ->
       let Eq = eq_of_ins_zero ins in
-      let lctx = Ctx.lock ctx modality in
-      let newvars, newnfs = dom_vars lctx doms in
+      let newvars, newnfs = dom_vars ctx modality doms in
       let newtm = apply_term tm modality newvars in
       (* We extend the context, not by the cube of types of newnfs, but by its elements one at a time as singletons.  This is because we want eventually to construct a 0-dimensional pi-type.  As we go, we also read back these types and store them to later take the pi-type over.  Since they are all in different contexts, and we need to keep track of the type-indexed checked length of those contexts to ensure the later pis are well-typed, we use an indexed cube indexed over Tbwds. *)
       let (Wrap (newdoms, Any_ctx newctx)) =
@@ -118,10 +116,10 @@ let rec motive_of_family : type mode a b.
       let motive = motive_of_family newctx newtm (tyof_app cods tyargs modality newvars) in
       let motive, _ = MT.fold_map_right { foldmap = (fun _ x y -> folder x y) } newdoms motive in
       motive
-  | Canonical (_, UU _, _, tyargs) ->
+  | Canonical (_, UU (mode, _), _, tyargs) ->
       (* This is similar, except that we add the datatype itself to the instantiation argument to get the cube of domains, and take a pi over the 0-dimensional universe rather than a recursive call. *)
       let doms = TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm) in
-      let _, newnfs = dom_vars ctx doms in
+      let _, newnfs = dom_vars ctx (Modality.id mode) doms in
       let m = CubeOf.dim newnfs in
       let idm = Modality.id (Ctx.mode ctx) in
       let (Wrap (newdoms, _)) =
@@ -475,7 +473,7 @@ let rec check : type mode a b s.
               | Neq -> None in
             let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus m) in
             (* Extend the context by one variable for each type in doms, instantiated at the appropriate previous ones. *)
-            let newargs, newnfs = dom_vars lctx doms in
+            let newargs, newnfs = dom_vars ctx modality doms in
             (* A helper function to update the status *)
             let mkstatus (type n) (xs : n variables) :
                 (mode, b, s) status -> (mode, (b, n) snoc, s) status = function
@@ -1854,7 +1852,7 @@ and check_empty_match_lam : type mode a b.
       | Eq -> (
           let Eq = eq_of_ins_zero ins in
           let dim = CubeOf.dim doms in
-          let newargs, newnfs = dom_vars ctx doms in
+          let newargs, newnfs = dom_vars ctx modality doms in
           let output = tyof_app cods tyargs modality newargs in
           let module S = struct
             type 'c t =
@@ -2046,7 +2044,7 @@ and with_codata_so_far : type mode a b n c et.
         (* We can always create a constant with the (0,0,0) insertion, even if its dimension is actually higher. *)
         let head = head_of_potential h in
         let fibrancy_fields = Fibrancy.Codata.finish mode checked_fields fibrancy in
-        let idm = Modality.id (Ctx.mode ctx) in
+        let modality = Modality.id (Ctx.mode ctx) in
         let rec domvars () =
           let value =
             eval_codata (Ctx.env ctx) eta opacity dim
@@ -2056,12 +2054,12 @@ and with_codata_so_far : type mode a b n c et.
             Neu { head; args; value = ready value; ty = lazy (inst (universe mode dim) tyargs) }
           in
           snd
-            (dom_vars ctx
+            (dom_vars ctx modality
                (TubeOf.plus_cube
                   (TubeOf.mmap { map = (fun _ [ nf ] -> nf.tm) } [ tyargs ])
                   (CubeOf.singleton prev_ety)))
         and termctx () =
-          let newctx = Ctx.cube_vis ctx idm None (domvars ()) in
+          let newctx = Ctx.cube_vis ctx modality None (domvars ()) in
           (* We don't spend the effort to readback the termctx unless the codatatype has higher fields, since it's only needed in that case (to read back the environment). *)
           Option.map (fun () -> readback_ctx newctx) has_higher_fields in
         (domvars (), termctx ())
@@ -2694,7 +2692,7 @@ and synth : type mode a b s.
                 let cdoms = TubeOf.plus_cube cdomt (CubeOf.singleton cdom) in
                 let edomt = TubeOf.mmap { map = (fun _ [ x ] -> x.tm) } [ edoms ] in
                 let edoms = TubeOf.plus_cube edomt (CubeOf.singleton edom) in
-                let _, binds = dom_vars lctx edoms in
+                let _, binds = dom_vars ctx modality edoms in
                 let newctx = Ctx.cube_vis ctx modality x binds in
                 let ccod, codty = synth (Kinetic `Nolet) newctx cod in
                 match view_type codty "higher pi codomain" with
@@ -2827,7 +2825,7 @@ and synth : type mode a b s.
               T.fold_map_left { foldmap } (Ctx (lctx, Zero) : (a, N.zero) Acc.t) doms in
             let doms = CubeOf.build n { build = (fun s -> Hashtbl.find domstbl (SFace_of s)) } in
             let _, binds =
-              dom_vars lctx
+              dom_vars ctx modality
                 (CubeOf.mmap { map = (fun _ [ x ] -> eval_term (Ctx.env lctx) x) } [ doms ]) in
             let xsv = Variables (D.zero, D.zero_plus n, xs) in
             let newctx = Ctx.vis ctx modality D.zero (D.zero_plus n) xs binds af in
@@ -3609,7 +3607,7 @@ and check_tel : type mode a b c ac.
           let lctx = Ctx.lock ctx modality in
           let cty = check (Kinetic `Nolet) lctx ty (universe (Modality.dom modality) D.zero) in
           let ety = eval_term (Ctx.env lctx) cty in
-          let _, newnfs = dom_vars lctx (CubeOf.singleton ety) in
+          let _, newnfs = dom_vars ctx modality (CubeOf.singleton ety) in
           let ctx = Ctx.cube_vis ctx modality x newnfs in
           let Checked_tel (ctys, ctx), disc = check_tel ?discrete ctx tys in
           let tydisc = is_discrete ?discrete ety in

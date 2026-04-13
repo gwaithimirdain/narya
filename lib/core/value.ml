@@ -545,12 +545,12 @@ let apply_lazy : type dom modality mode n s.
 (* We defer "field_lazy" to act.ml, since it requires pushing a permutation inside the apps. *)
 
 (* Given a mode, a De Bruijn level, and a type, build the variable of that mode and level having that type. *)
-let var : 'mode Mode.t -> level -> ('mode, kinetic) value -> ('mode, kinetic) value =
- fun mode level ty ->
-  let idm = Modality.id mode in
+let var : type dom modality mode.
+    (dom, modality, mode) Modality.t -> level -> (dom, kinetic) value -> (dom, kinetic) value =
+ fun modality level ty ->
   Neu
     {
-      head = Var { level; deg = id_deg D.zero; key = Modalcell.id idm };
+      head = Var { level; deg = id_deg D.zero; key = Modalcell.id modality };
       args = Emp;
       value = ready Unrealized;
       ty = Lazy.from_val ty;

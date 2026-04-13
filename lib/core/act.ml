@@ -455,7 +455,18 @@ module Act = struct
             | Some (Factored (_, comp)) ->
                 let (Wrap key) = Modalcell.vcomp_extending comp c key in
                 Var { level; deg; key }
-            | None -> fatal (Anomaly "act_head: modality doesn't factor"))
+            | None ->
+                fatal
+                  (Anomaly
+                     ("act_head: modality "
+                     ^ Modality.to_string (Modalcell.vcod key)
+                     ^ " (codomain of "
+                     ^ Modalcell.to_string key
+                     ^ ") doesn't factor through "
+                     ^ Modality.to_string (Modalcell.vdom c)
+                     ^ " ( domain of "
+                     ^ Modalcell.to_string c
+                     ^ ")")))
         | None -> Var { level; deg; key })
     (* To act on a constant, we push as much of the degeneracy through the insertion as possible.  The actual degeneracy that gets pushed through doesn't matter, since it just raises the constant to an even higher dimension, and that dimension is stored in the insertion.  The key is actually completely ignored. *)
     | Const { name; ins } ->
