@@ -106,7 +106,7 @@ let rec process : type n lt ls rt rs.
   | Constr (ident, _) -> { value = Raw.Constr ({ value = Constr.intern ident; loc }, []); loc }
   | Field _ ->
       (* This can happen if the user tries to project a field from a constructor. *)
-      fatal Parse_error
+      fatal (Parse_error "invalid location for field projection")
   | Superscript (Some x, str, _) -> (
       match deg_of_string str.value with
       | Some (Any_deg s) ->
@@ -234,23 +234,25 @@ let rec process_tel : type n. (string option, n) Bwv.t -> Parameter.t list -> n 
  fun ctx parameters ->
   match parameters with
   | [] -> Processed_tel (Emp, ctx, [])
-  | { names; ty; _ } :: parameters -> process_vars ctx names ty parameters
+  | { names; colon; ty; _ } :: parameters -> (
+      match Modality.pre_of_colon colon.value with
+      | Some modality -> process_vars ctx names modality ty parameters
+      | None -> fatal ?loc:colon.loc (Unknown_modality colon.value))
 
 and process_vars : type n.
     (string option, n) Bwv.t ->
     (string option * Whitespace.t list) list ->
+    Modality.pre ->
     wrapped_parse ->
     Parameter.t list ->
     n processed_tel =
- fun ctx names (Wrap ty) parameters ->
+ fun ctx names modality (Wrap ty) parameters ->
   match names with
   | [] -> process_tel ctx parameters
   | (name, w) :: names ->
       let pty = process ctx ty in
-      (* MODALTODO: The user should be able to specify the modality *)
-      let modality = Option.get (Modality.pre_of_string "") in
       let (Processed_tel (tel, ctx, ws)) =
-        process_vars (Bwv.snoc ctx name) names (Wrap ty) parameters in
+        process_vars (Bwv.snoc ctx name) names modality (Wrap ty) parameters in
       Processed_tel (Ext (name, modality, pty, tel), ctx, w :: ws)
 
 let get_pattern : type lt1 ls1 rt1 rs1. (lt1, ls1, rt1, rs1) parse located -> Matchpattern.t =
@@ -262,19 +264,19 @@ let get_pattern : type lt1 ls1 rt1 rs1. (lt1, ls1, rt1, rs1) parse located -> Ma
     | Ident ([ x ], _) when Lexer.valid_var x -> (
         match pats.value with
         | [] -> Var (locate_opt pat.loc (Some x))
-        | _ -> fatal ?loc:pat.loc Parse_error)
+        | _ -> fatal ?loc:pat.loc (Parse_error "invalid pattern identifier"))
     | Ident (xs, _) -> fatal ?loc:pat.loc (Invalid_variable xs)
     | Placeholder _ -> (
         match pats.value with
         | [] -> Var (locate_opt pat.loc None)
-        | _ -> fatal ?loc:pat.loc Parse_error)
+        | _ -> fatal ?loc:pat.loc (Parse_error "invalid pattern placeholder"))
     | Constr (c, _) -> Constr (locate_opt pat.loc (Constr.intern c), pats.value)
     | App { fn; arg; _ } ->
         go fn
           (locate_opt pats.loc
              (go arg (locate_opt arg.loc Vec.[]) :: pats.value : (Matchpattern.t, n Fwn.suc) Vec.t))
     | Notn (notn, n) -> pattern notn (args n) pat.loc
-    | _ -> fatal ?loc:pat.loc Parse_error in
+    | _ -> fatal ?loc:pat.loc (Parse_error "invalid pattern") in
   go pat (locate_opt pat.loc Vec.[])
 
 (* Now that we've defined these functions, we can pass them back to User. *)

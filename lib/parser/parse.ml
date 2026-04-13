@@ -3,7 +3,6 @@ open Core.Reporter
 open Core.Origin
 open Fmlib_parse
 open Notation
-module TokMap = Map.Make (Token)
 
 (* Sometimes we want to parse only a single term, other times we want to parse and execute a sequence of commands.  Since these two processes return different results, they have to be based on different instances of Token_parser.Make.  But they share all the code of the combinators for parsing terms, so we make those instances of a functor as well. *)
 
@@ -100,9 +99,9 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
         tree optree (Observations.snoc_sstok obs ((tok, (w, Some loc)), sups))
 
   and entry : type tight strict.
-      (tight, strict) tokmap -> (observations * (tight, strict) notation_in_interval) t =
-   fun ops ->
-    let* obs, op = tree_op ops Observations.empty in
+      (tight, strict) entry -> (observations * (tight, strict) notation_in_interval) t =
+   fun e ->
+    let* obs, op = tree_op e Observations.empty in
     return (Observations.of_partial obs, op)
 
   (* "lclosed" is passed an upper tightness interval and an additional set of ending ops (stored as a map, since that's how they occur naturally, but here we ignore the values and look only at the keys).  It parses an arbitrary left-closed tree (pre-merged).  The interior terms are calls to "lclosed" with the next ops passed as the ending ones. *)
@@ -418,7 +417,7 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
     (* Fmlib_parse has its own built-in error reporting with locations.  However, we instead use Asai's error reporting, so that we have a common "look" for parse errors and typechecking errors. *)
     if has_failed_syntax p then
       (* It should be possible to report more detailed error information from the parser than just the location.  Fmlib supplies "failed_expectations", but I haven't been able to figure out how to make that useful with this parsing algorithm. *)
-      fatal ~loc:(Range.convert (range p)) Parse_error
+      fatal ~loc:(Range.convert (range p)) (Parse_error "invalid syntax")
     else if has_failed_semantic p then
       match failed_semantic p with
       | No_relative_precedence (loc, n1, n2) -> fatal ~loc (No_relative_precedence (n1, n2))

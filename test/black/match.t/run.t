@@ -239,7 +239,7 @@
    ￫ error[E0200]
    ￭ command-line exec string
    1 | def test (x y : bool) : bool ≔ match x,y [ true. , true. ↦ true. | true., false., false. ↦ false. ]
-     ^ parse error
+     ^ parse error: invalid match pattern
   
   [1]
 

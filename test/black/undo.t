@@ -108,5 +108,5 @@ Undo notations
    ￫ error[E0200]
    ￭ undo-notn.ny
    7 | echo a + a
-     ^ parse error
+     ^ parse error: invalid syntax
   

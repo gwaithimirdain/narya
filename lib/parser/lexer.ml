@@ -134,19 +134,33 @@ module Specials = struct
   let default_onechar_ops =
     [|
       (0x28, LParen);
+      (* ( *)
       (0x29, RParen);
+      (* ) *)
       (0x5B, LBracket);
+      (* [ *)
       (0x5D, RBracket);
+      (* ] *)
       (0x7B, LBrace);
+      (* { *)
       (0x7D, RBrace);
+      (* } *)
       (0x21A6, Mapsto);
+      (* ↦ *)
       (0x2907, DblMapsto);
+      (* ⤇ *)
       (0x2192, Arrow);
+      (* → *)
       (0x21D2, DblArrow);
+      (* ⇒ *)
       (0x2254, Coloneq);
+      (* ≔ *)
       (0x2A74, DblColoneq);
+      (* ⩴ *)
       (0x2A72, Pluseq);
+      (* ⩲ *)
       (0x2026, Ellipsis);
+      (* … *)
     |]
 
   (* Any sequence consisting entirely of these characters is its own token. *)
@@ -199,8 +213,9 @@ let ascii_op : Token.t t =
   | ":=" -> return Coloneq
   | "::=" -> return DblColoneq
   | "+=" -> return Pluseq
-  | ":" -> return Colon
+  | "::" -> return (Colon (`Double ""))
   | "..." -> return Ellipsis
+  | _ when op.[0] = ':' -> return (Colon (`Single (String.sub op 1 (String.length op - 1))))
   | _ -> return (Op op)
 
 (* A Unicode superscript is a string of Unicode superscript numbers and letters between superscript parentheses.  We don't ever want to fail lexing, so any string starting with a superscript left parenthesis that *doesn't* look like this, or a superscript right parenthesis occurring before a superscript left parenthesis, is lexed as an "invalid superscript". *)
@@ -319,7 +334,10 @@ and atomic_other_token () =
 let dot_separated_token : [ `Dots of int | `Atom of string ] list t =
   dot_other_token () </> atomic_other_token ()
 
-(* Check for notation parts that are reserved words or single underscores. *)
+let dblcolon = "∷"
+let dblcolon_length = String.length dblcolon
+
+(* Check for notation parts that are reserved words, single underscores, or ∷ typing operators. *)
 let get_reserved_word = function
   | "let" -> Some Let
   | "rec" -> Some Rec
@@ -349,7 +367,11 @@ let get_reserved_word = function
   | "fmt" -> Some Fmt
   | "end" -> Some End
   | "_" -> Some Underscore
-  | _ -> None
+  | str ->
+      if String.starts_with ~prefix:dblcolon str then
+        Some
+          (Colon (`Double (String.sub str dblcolon_length (String.length str - dblcolon_length))))
+      else None
 
 let is_single_reserved_word = function
   | [ `Atom str ] -> get_reserved_word str
@@ -382,7 +404,7 @@ let canonicalize (loc : Asai.Range.t) (parts : [ `Dots of int | `Atom of string 
   match is_single_reserved_word parts with
   | Some tok -> tok
   | None -> (
-      if contains_reserved_word parts then fatal ~loc Parse_error
+      if contains_reserved_word parts then fatal ~loc (Parse_error "reserved word in identifier")
       else
         match parts with
         | [ `Dots 1 ] -> Dot
@@ -396,7 +418,7 @@ let canonicalize (loc : Asai.Range.t) (parts : [ `Dots of int | `Atom of string 
         | `Dots 1 :: `Atom fld :: `Dots 2 :: rest when atomic_ident fld -> (
             match get_higher_parts rest with
             | Some (parts, false) -> Field (fld, parts)
-            | _ -> fatal ~loc Parse_error)
+            | _ -> fatal ~loc (Parse_error "invalid higher field 1"))
         (* Simple constructor *)
         | [ `Atom con; `Dots 1 ] when atomic_ident con -> Constr (con, [])
         (* Higher constructor with multiple suffixes *)
@@ -404,7 +426,7 @@ let canonicalize (loc : Asai.Range.t) (parts : [ `Dots of int | `Atom of string 
             let _ =
               match get_higher_parts rest with
               | Some (parts, true) -> Constr (con, parts)
-              | _ -> fatal ~loc Parse_error in
+              | _ -> fatal ~loc (Parse_error "invalid higher field 2") in
             fatal ~loc (Unimplemented "higher constructors")
         (* Higher constructor with single suffix *)
         | [ `Atom con; `Dots 1; `Atom pbij; `Dots 1 ] when atomic_ident con ->
@@ -414,7 +436,7 @@ let canonicalize (loc : Asai.Range.t) (parts : [ `Dots of int | `Atom of string 
         | _ -> (
             match get_ident parts with
             | Some id -> Ident id
-            | None -> fatal ~loc Parse_error))
+            | None -> fatal ~loc (Parse_error "invalid identifier")))
 
 let other : Token.t t =
   let* rng, parts = located dot_separated_token in

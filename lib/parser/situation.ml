@@ -2,7 +2,6 @@ open Util
 open Core
 open Reporter
 open Notation
-module TokMap = Map.Make (Token)
 
 (* A notation "situation" is the collection of all the notations currently available.  Unfortunately, good words like "state" and "context" and "scope" are taken for other things, so "situation" is the best I've been able to come up with to uniquely identify this object. *)
 

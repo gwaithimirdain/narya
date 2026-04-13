@@ -1,6 +1,8 @@
 open Core
 open Reporter
 
+type colon = [ `Single of string | `Double of string ]
+
 type t =
   (* A Field is an identifier starting with a period, broken into a list of components by internal periods, and with the first component stored separately.  The later components are only used to indicate the partial bijection identifying an instance of a "higher" field of a higher codatatype.  Thus for a record or ordinary codatatype the list is empty.  *)
   | Field of string * string list (* Starting with . *)
@@ -21,7 +23,7 @@ type t =
   | DblArrow (* Both => and ⇒ *)
   | Mapsto (* Both |-> and ↦ *)
   | DblMapsto (* Both |=> and ⤇ *)
-  | Colon (* : *)
+  | Colon of colon (* : or ∷, perhaps with a modal suffix, where :: is the same as ∷. *)
   | Coloneq (* Both := and ≔ *)
   | DblColoneq (* Both ::= and ⩴ *)
   | Pluseq (* Both += and ⩲ *)
@@ -171,7 +173,8 @@ let to_string = function
   | DblArrow -> Display.alt_char "⇒" "=>"
   | Mapsto -> Display.alt_char "↦" "|->"
   | DblMapsto -> Display.alt_char "⤇" "|=>"
-  | Colon -> ":"
+  | Colon (`Single str) -> ":" ^ str
+  | Colon (`Double str) -> if str = "" then Display.alt_char "∷" "::" else "∷" ^ str
   | Coloneq -> Display.alt_char "≔" ":="
   | DblColoneq -> Display.alt_char "⩴" "::="
   | Pluseq -> Display.alt_char "⩲" "+="

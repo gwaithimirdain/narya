@@ -157,6 +157,13 @@ module Parse = struct
 
   let token x = step "" (fun state _ (tok, w) -> if tok = x then Some (w, state) else None)
 
+  let colon =
+    located
+      (step "" (fun state _ (tok, w) ->
+           match tok with
+           | Colon colon -> Some ((colon, w), state)
+           | _ -> None))
+
   let ident =
     step "" (fun state _ (tok, w) ->
         match tok with
@@ -180,10 +187,11 @@ module Parse = struct
     let* wslparen = token LParen in
     let* name, names = one_or_more variable in
     let names = name :: names in
-    let* wscolon = token Colon in
+    let* loc, (colon, wscolon) = colon in
+    let colon = locate (Range.convert loc) colon in
     let* ty = C.term [ RParen ] in
     let* wsrparen = token RParen in
-    return ({ wslparen; names; wscolon; ty; wsrparen } : Parameter.t)
+    return ({ wslparen; names; colon; wscolon; ty; wsrparen } : Parameter.t)
 
   let attribute : type a. a StringsMap.t -> a attribute option t =
    fun values ->
@@ -205,7 +213,8 @@ module Parse = struct
     let* nameloc, (name, wsname) = located ident in
     let loc = Some (Range.convert nameloc) in
     let* parameters = zero_or_more parameter in
-    let* wscolon = token Colon in
+    (* Axioms live at a mode and are always available.  MODALTODO: "Postulates" live under a modality, like variables at the beginning of the context.  *)
+    let* wscolon = token (Colon (`Single "")) in
     let* ty = C.term [] in
     return (Command.Axiom { wsaxiom; nonparam; name; loc; wsname; parameters; wscolon; ty })
 
@@ -216,7 +225,8 @@ module Parse = struct
     if not (Lexer.valid_ident name) then fatal ?loc (Invalid_constant_name (name, None));
     let* parameters = zero_or_more parameter in
     let* ty, wscoloneq, tm =
-      (let* wscolon = token Colon in
+      (* Definitions can't currently be under a modality (though their parameters can).  MODALTODO: Could they? *)
+      (let* wscolon = token (Colon (`Single "")) in
        let* ty = C.term [ Coloneq ] in
        let* wscoloneq = token Coloneq in
        let* tm = C.term [] in
@@ -266,7 +276,8 @@ module Parse = struct
     (let* wslparen = token LParen in
      let* sign =
        (let* minusloc, wsminus = located (token (Op "-")) in
-        if not (List.is_empty wsminus) then fatal ~loc:(Range.convert minusloc) Parse_error;
+        if not (List.is_empty wsminus) then
+          fatal ~loc:(Range.convert minusloc) (Parse_error "invalid sign");
         return Q.neg)
        </> return (fun x -> x) in
      let* tloc, (tight, wstight) = located ident in
@@ -278,6 +289,22 @@ module Parse = struct
          fatal ~loc:(Range.convert tloc) (Invalid_tightness tight))
     </> return ([], None, [], [])
 
+  let is_pattern_token : Token.t -> bool = function
+    | LBracket
+    | RBracket
+    | LBrace
+    | RBrace
+    | Arrow
+    | Mapsto
+    | DblMapsto
+    | Colon _
+    | Coloneq
+    | DblColoneq
+    | Pluseq
+    | Dot
+    | Ellipsis -> true
+    | _ -> false
+
   let pattern_token =
     step "" (fun state _ (tok, ws) ->
         match tok with
@@ -285,23 +312,7 @@ module Parse = struct
             match Lexer.single str with
             (* Currently we hard code a `Nobreak space after each *symbol* in a notation.  Only certain kinds of token are allowed. *)
             | Some (Op _ as tok) | Some (Ident [ _ ] as tok) -> Some (`Op (tok, `Nobreak, ws), state)
-            | Some tok
-              when Array.mem tok
-                     [|
-                       LBracket;
-                       RBracket;
-                       LBrace;
-                       RBrace;
-                       Arrow;
-                       Mapsto;
-                       DblMapsto;
-                       Colon;
-                       Coloneq;
-                       DblColoneq;
-                       Pluseq;
-                       Dot;
-                       Ellipsis;
-                     |] -> Some (`Op (tok, `Nobreak, ws), state)
+            | Some tok when is_pattern_token tok -> Some (`Op (tok, `Nobreak, ws), state)
             | _ -> fatal (Invalid_notation_symbol str))
         | _ -> None)
 
@@ -656,7 +667,7 @@ module Parse = struct
 
   let option =
     let* _ = token Option in
-    fatal Parse_error
+    fatal (Parse_error "option command not implemented")
 
   let undo =
     let* wsundo = token Undo in
@@ -956,7 +967,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
               (hang 2
                  (pp_complete_term (Wrap utm) `None
                  ^^ hardline
-                 ^^ Token.pp Colon
+                 ^^ Token.pp (Colon (`Single ""))
                  ^^ blank 1
                  ^^ pp_complete_term (Wrap uty) `None)));
           print_newline ();
@@ -1311,7 +1322,7 @@ let rec pp_parameters : Whitespace.t list -> Parameter.t list -> PPrint.document
   let open PPrint in
   match params with
   | [] -> (empty, prews)
-  | { wslparen; names; wscolon; ty; wsrparen } :: params ->
+  | { wslparen; names; colon; wscolon; ty; wsrparen } :: params ->
       let pnames, wnames =
         List.fold_left
           (fun (accum, prews) (name, wsname) ->
@@ -1325,7 +1336,7 @@ let rec pp_parameters : Whitespace.t list -> Parameter.t list -> PPrint.document
                ^^ pp_ws `None wslparen
                ^^ group pnames
                ^^ optional (pp_ws `Break) wnames)
-          ^^ Token.pp Colon
+          ^^ Token.pp (Colon colon.value)
           ^^ pp_ws `Nobreak wscolon
           ^^ pp_complete_term ty `None
           ^^ Token.pp RParen)
@@ -1354,7 +1365,11 @@ let rec pp_defs :
         match ty with
         | Some (wscolon, Wrap ty) ->
             let pty, wty = pp_term ty in
-            (pp_ws `Break wparams ^^ Token.pp Colon ^^ pp_ws `Nobreak wscolon ^^ group pty, wty)
+            ( pp_ws `Break wparams
+              ^^ Token.pp (Colon (`Single ""))
+              ^^ pp_ws `Nobreak wscolon
+              ^^ group pty,
+              wty )
         | None -> (empty, wparams) in
       let params_and_ty =
         group
@@ -1416,7 +1431,7 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
                ^^ utf8string (String.concat "." name)
                ^^ pparams
                ^^ pp_ws `Break wparams
-               ^^ Token.pp Colon
+               ^^ Token.pp (Colon (`Single ""))
                ^^ pp_ws `Nobreak wscolon
                ^^ pp_complete_term (Wrap ty) `None)),
           rest )

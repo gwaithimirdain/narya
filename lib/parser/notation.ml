@@ -3,8 +3,46 @@ open Util
 open Core
 open Raw
 open Reporter
-module TokMap = Map.Make (Token)
 open Asai.Range
+
+module TokMap = struct
+  module Internal = Map.Make (Token)
+
+  type 'a t = { ops : 'a Internal.t; colon : 'a option }
+
+  let empty = { ops = Internal.empty; colon = None }
+  let singleton op x = { ops = Internal.singleton op x; colon = None }
+  let singleton_colon c = { ops = Internal.empty; colon = Some c }
+  let singleton_plus_colon op x c = { ops = Internal.singleton op x; colon = Some c }
+  let of_list xs = { ops = Internal.of_list xs; colon = None }
+  let map f { ops; colon } = { ops = Internal.map f ops; colon = Option.map f colon }
+
+  let find_opt tok { ops; colon } =
+    match tok with
+    | Token.Colon _ -> colon
+    | _ -> Internal.find_opt tok ops
+
+  let mem tok { ops; colon } =
+    match tok with
+    | Token.Colon _ -> Option.is_some colon
+    | _ -> Internal.mem tok ops
+
+  let add tok v { ops; colon } =
+    match tok with
+    | Token.Colon _ -> { ops; colon = Some v }
+    | _ -> { ops = Internal.add tok v ops; colon }
+
+  let fold f { ops; colon } acc =
+    Internal.fold
+      (fun k x a -> f (`Op k) x a)
+      ops
+      (Option.fold ~some:(fun x -> f `Colon x acc) ~none:acc colon)
+
+  let update k f { ops; colon } =
+    match k with
+    | `Op op -> { ops = Internal.update op f ops; colon }
+    | `Colon -> { ops; colon = f colon }
+end
 
 type token_ws = Token.t * (Whitespace.t list * Asai.Range.t option)
 type ss_token_ws = token_ws * (string located * Whitespace.t list) list
@@ -95,7 +133,7 @@ and ('t, 's) branch = {
   term : ('t, 's) tokmap option;
 }
 
-(* The entry point of a notation tree must begin with an operator symbol. *)
+(* The entry point of a notation tree must begin with an operator symbol or a colon. *)
 and ('t, 's) entry = ('t, 's) tokmap
 
 (* If we weren't using intrinsically well-scoped De Bruijn indices, then the typechecking context and the type of raw terms would be simply ordinary types, and we could use the one as the parsing State and the other as the parsing Result.  However, the Fmlib parser isn't set up to allow a parametrized family of state types, with the output of a parsing combinator depending on the state (and it would be tricky to do that correctly anyway).  So instead we record the result of parsing as a syntax tree with idents, and have a separate step of "postprocessing" that makes it into a raw term.  This has the additional advantage that by parsing and pretty-printing we can reformat code even if it is not well-scoped. *)
@@ -523,13 +561,20 @@ let rec split_ending_whitespace : type lt ls rt rs.
 (* Helper functions for constructing notation trees *)
 
 let singleton tok br = TokMap.singleton tok (br, `Noss)
+let singleton_colon br = TokMap.singleton_colon (br, `Noss)
+let singleton_plus_colon tok br c = TokMap.singleton_plus_colon tok (br, `Noss) (c, `Noss)
 let oflist brs = TokMap.of_list (List.map (fun (tok, x) -> (tok, (x, `Noss))) brs)
 let op tok x = Inner { empty_branch with ops = TokMap.singleton tok (x, `Noss) }
 
 let ops toks =
   Inner { empty_branch with ops = TokMap.of_list (List.map (fun (k, x) -> (k, (x, `Noss))) toks) }
 
+let colon x = Inner { empty_branch with ops = TokMap.singleton_colon (x, `Noss) }
 let term tok x = Inner { empty_branch with term = Some (TokMap.singleton tok (x, `Noss)) }
+let term_colon x = Inner { empty_branch with term = Some (TokMap.singleton_colon (x, `Noss)) }
+
+let term_plus_colon tok x c =
+  Inner { empty_branch with term = Some (TokMap.singleton_plus_colon tok (x, `Noss) (c, `Noss)) }
 
 let terms toks =
   Inner
@@ -539,15 +584,15 @@ let terms toks =
     }
 
 let field x = Inner { empty_branch with field = Some x }
-let of_entry e = Inner { empty_branch with ops = e }
 
 let done_open n =
   let _, tight, _ = fixprops (snd n) in
   Done_open (No.le_refl tight, n)
 
 (* Similar, but for "entries". *)
-let eop tok x = TokMap.singleton tok (x, `Noss)
+let eop tok ?(ss = `Noss) x = TokMap.singleton tok (x, ss)
 let eops toks = TokMap.of_list (List.map (fun (k, x) -> (k, (x, `Noss))) toks)
+let ecolon toks = TokMap.singleton_colon (toks, `Noss)
 let empty_entry = TokMap.empty
 
 (* Merging notation trees. *)

@@ -188,7 +188,7 @@ This should be an error:
    ￫ error[E0200]
    ￭ command-line exec string
    1 | axiom A:Type axiom f:A->A->A section nat := notation(0) x "+" y := f x y end axiom a:A echo a + a
-     ^ parse error
+     ^ parse error: invalid syntax
   
   [1]
 

@@ -3,7 +3,22 @@ open Util
 open Core
 open Raw
 open Asai.Range
-module TokMap : module type of Map.Make (Token)
+
+module TokMap : sig
+  type 'a t
+
+  val empty : 'a t
+  val singleton : Token.t -> 'a -> 'a t
+  val singleton_colon : 'a -> 'a t
+  val singleton_plus_colon : Token.t -> 'a -> 'a -> 'a t
+  val of_list : (Token.t * 'a) list -> 'a t
+  val map : ('a -> 'b) -> 'a t -> 'b t
+  val find_opt : Token.t -> 'a t -> 'a option
+  val mem : Token.t -> 'a t -> bool
+  val add : Token.t -> 'a -> 'a t -> 'a t
+  val fold : ([ `Colon | `Op of Token.t ] -> 'a -> 'b -> 'b) -> 'a t -> 'b -> 'b
+  val update : [ `Colon | `Op of Token.t ] -> ('a option -> 'a option) -> 'a t -> 'a t
+end
 
 type token_ws = Token.t * (Whitespace.t list * Asai.Range.t option)
 type ss_token_ws = token_ws * (string located * Whitespace.t list) list
@@ -217,18 +232,23 @@ val split_ending_whitespace :
   ('lt, 'ls, 'rt, 'rs) parse located -> ('lt, 'ls, 'rt, 'rs) parse located * Whitespace.t list
 
 (* *)
-val singleton : TokMap.key -> ('t, 's) tree -> ('t, 's) tokmap
-val oflist : (TokMap.key * ('t, 's) tree) list -> ('t, 's) tokmap
-val op : TokMap.key -> ('t, 's) tree -> ('t, 's) tree
-val ops : (TokMap.key * ('t, 's) tree) list -> ('t, 's) tree
-val term : TokMap.key -> ('t, 's) tree -> ('t, 's) tree
-val terms : (TokMap.key * ('t, 's) tree) list -> ('t, 's) tree
+val singleton : Token.t -> ('t, 's) tree -> ('t, 's) tokmap
+val singleton_colon : ('t, 's) tree -> ('t, 's) tokmap
+val singleton_plus_colon : Token.t -> ('t, 's) tree -> ('t, 's) tree -> ('t, 's) tokmap
+val oflist : (Token.t * ('t, 's) tree) list -> ('t, 's) tokmap
+val op : Token.t -> ('t, 's) tree -> ('t, 's) tree
+val ops : (Token.t * ('t, 's) tree) list -> ('t, 's) tree
+val colon : ('t, 's) tree -> ('t, 's) tree
+val term : Token.t -> ('t, 's) tree -> ('t, 's) tree
+val term_colon : ('t, 's) tree -> ('t, 's) tree
+val term_plus_colon : Token.t -> ('t, 's) tree -> ('t, 's) tree -> ('t, 's) tree
+val terms : (Token.t * ('t, 's) tree) list -> ('t, 's) tree
 val field : ('t, 's) tree -> ('t, 's) tree
-val of_entry : ('t, 's) tokmap -> ('t, 's) tree
 val done_open : ('left opn, 'tight, 'right) notation -> ('tight, No.nonstrict) tree
-val eop : TokMap.key -> ('t, 's) tree -> ('t, 's) tokmap
-val eops : (TokMap.key * ('t, 's) tree) list -> ('t, 's) tokmap
-val empty_entry : 'a TokMap.t
+val eop : Token.t -> ?ss:[ `Noss | `Ss ] -> ('t, 's) tree -> ('t, 's) entry
+val eops : (Token.t * ('t, 's) tree) list -> ('t, 's) entry
+val ecolon : ('t, 's) tree -> ('t, 's) entry
+val empty_entry : ('t, 's) entry
 
 (* *)
 val lower : ('t2, 's2, 't1, 's1) No.Interval.subset -> ('t2, 's2) entry -> ('t1, 's1) entry

@@ -222,7 +222,7 @@ Notations are used from explicitly imported files, but not transitively.
    ￫ error[E0200]
    ￭ command-line exec string
    1 | echo a & a
-     ^ parse error
+     ^ parse error: invalid syntax
   
   [1]
 

@@ -166,7 +166,7 @@ let () =
         (Ident [ "a" ], []);
         (In, []);
         (Ident [ "b" ], []);
-        (Colon, []);
+        (Colon (`Single ""), []);
         (Ident [ "coo" ], []);
       ]);
 

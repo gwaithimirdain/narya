@@ -203,7 +203,7 @@ let pp_complete_term : wrapped_parse -> space -> document =
 
 type printed_entry = {
   var : string;
-  modality : string;
+  colon : Token.colon;
   renamed : bool;
   lock : string option;
   tm : wrapped_parse option;
@@ -213,8 +213,7 @@ type printed_entry = {
 let rec pp_ctx (ctx : printed_entry Bwd.t) : document =
   match ctx with
   | Emp -> empty
-  | Snoc (ctx, { var = x; modality = _; renamed; lock; tm; ty = Wrap ty }) ->
-      (* MODALTODO: Print modal variables *)
+  | Snoc (ctx, { var = x; colon; renamed; lock; tm; ty = Wrap ty }) ->
       let ptm, wtm =
         match tm with
         | Some (Wrap tm) ->
@@ -230,7 +229,7 @@ let rec pp_ctx (ctx : printed_entry Bwd.t) : document =
       ^^ group
            (nest 2
               (wtm
-              ^^ Token.pp Colon
+              ^^ Token.pp (Colon colon)
               ^^ blank 1
               ^^ align
                    (if renamed then group (pty ^^ pp_ws `Break wty ^^ string "(not in scope)")

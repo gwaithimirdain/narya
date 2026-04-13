@@ -791,6 +791,7 @@ and unparse_pis : type mode n lt ls rt rs.
                          (fun _ _ ->
                            unparse_pi_dom
                              (NICubeOf.find_top x <|> Anomaly "missing top in unparse_pis")
+                             (Modality.to_colon modality)
                              (unparse vars (CubeOf.find_top doms) (interval_right asc)
                                 No.Interval.entire));
                      } ))
@@ -856,14 +857,15 @@ and unparse_pis_final : type n lt ls rt rs m.
 and unparse_pi_dom : type lt ls rt rs.
     ?implicit:bool ->
     string ->
+    Token.colon ->
     (No.minus_omega, No.strict, No.minus_omega, No.nonstrict) parse located ->
     (lt, ls, rt, rs) parse located =
- fun ?(implicit = false) x dom ->
+ fun ?(implicit = false) x colon dom ->
   (if implicit then braceize else parenthesize)
     (unlocated
        (infix ~notn:asc
           ~first:(unlocated (Ident ([ x ], [])))
-          ~inner:(Single (wstok Colon))
+          ~inner:(Single (wstok (Colon colon)))
           ~last:dom ~left_ok:(No.le_refl No.minus_omega) ~right_ok:(No.le_refl No.minus_omega)))
 
 and unparse_higher_pi : type dom modality mode a lt ls rt rs n.
@@ -901,7 +903,8 @@ and unparse_higher_pi : type dom modality mode a lt ls rt rs n.
             let dom =
               unparse_inst (Names.remove newvars Now) dom newvars xargs (interval_right asc)
                 No.Interval.entire in
-            ((), Snoc (accum, { unparse = (fun _ _ -> unparse_pi_dom ~implicit x dom) })));
+            let colon = Modality.to_colon modality in
+            ((), Snoc (accum, { unparse = (fun _ _ -> unparse_pi_dom ~implicit x colon dom) })));
       }
       [ doms ] accum in
   (* The instantiation arguments 'tyargs' should already all be eta-expanded, since readback eta-expands the instantiation arguments of higher pi-types.  So we can descend into those abstractions and add the appropriate variables on which they depend to their unparsing contexts. *)
@@ -992,14 +995,13 @@ let rec unparse_ctx : type dom modality mode a b.
               Option.map
                 (fun t -> Wrap (unparse names t No.Interval.entire No.Interval.entire))
                 b.tm in
-            let modality = Modality.to_string modality in
+            let colon = Modality.to_colon modality in
             let lock =
               match Modality.compare_id lock with
               | Eq -> None
               | Neq -> Some (Modality.to_string lock) in
             ( (),
-              Snoc
-                (res, { var = Option.get (top_variable x); modality; renamed = true; lock; tm; ty })
+              Snoc (res, { var = Option.get (top_variable x); colon; renamed = true; lock; tm; ty })
             ) in
           let _, result =
             M.miterM { it = (fun _ [ b ] res -> do_binding b res) } [ bindings ] result in
@@ -1030,7 +1032,7 @@ let rec unparse_ctx : type dom modality mode a b.
           let fnames =
             Bwv.mmap (fun [ (x, _); (f, _, _) ] -> (Field.to_string f, x)) [ fs; fields ] in
           let names = Names.unsafe_add names (Variables (dim, plusdim, xs)) (Bwv.to_bwd fnames) in
-          let modality = Modality.to_string modality in
+          let colon = Modality.to_colon modality in
           let lock =
             match Modality.compare_id lock with
             | Eq -> None
@@ -1057,7 +1059,7 @@ let rec unparse_ctx : type dom modality mode a b.
                   match orig with
                   | `Renamed -> true
                   | `Original -> false in
-                let res = Snoc (res, { var = x; modality; renamed; lock; tm; ty }) in
+                let res = Snoc (res, { var = x; colon; renamed; lock; tm; ty }) in
                 ((), res) in
           let _, result =
             M.miterM { it = (fun fab [ b ] res -> do_binding fab b res) } [ bindings ] result in
@@ -1071,7 +1073,7 @@ let rec unparse_ctx : type dom modality mode a b.
                   match orig with
                   | `Renamed -> true
                   | `Original -> false in
-                let res = Snoc (res, { var = x; modality; renamed; lock; tm = None; ty }) in
+                let res = Snoc (res, { var = x; colon; renamed; lock; tm = None; ty }) in
                 ((), res))
               [ fs; fields ] result in
           (names, result))
