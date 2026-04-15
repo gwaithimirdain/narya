@@ -413,8 +413,8 @@ module Modalcell = struct
         | Counit_cell, Id_comonad_cell -> Wrap Counit_cell)
 
   let to_string : type a m n b. (a, m, n, b) t -> string = function
-    | Id_id_cell -> "id"
-    | Id_comonad_cell -> "id"
+    | Id_id_cell -> "idid"
+    | Id_comonad_cell -> "id□"
     | Counit_cell -> "ε"
 end
 
