@@ -126,12 +126,14 @@ module F = struct
       match !v with
       | Ready v -> fprintf ppf "(%s%s, %a, %s)" (Field.to_string f) p (evaluation 0) v l
       | Deferred _ -> fprintf ppf "(%s%s, (Deferred), %s)" (Field.to_string f) p l
-      | Deferred_eval (e, tm, ins, args) ->
-          fprintf ppf "(%s%s, Deferred_eval (?(%s), %a, %s(%s), %a), %s)"
+      | Deferred_eval (e, tm, ins, cell, args) ->
+          fprintf ppf "(%s%s, Deferred_eval (?(%s), %a, %s(%s), %a, %s), %s)"
             (string_of_dim (dim_env e))
             (Field.to_string f) p term tm (string_of_ins ins)
             (string_of_dim (dom_ins ins))
-            apps args l
+            apps args
+            (Option.fold ~some:Modalcell.to_string ~none:"" cell)
+            l
 
   and lazy_eval : type mode s. int -> formatter -> (mode, s) lazy_eval -> unit =
    fun depth ppf v ->
@@ -175,12 +177,13 @@ module F = struct
         fprintf ppf " <: ";
         fprintf ppf "Inst (%a, %a)" dim (D.pos d) (tubeof normal) args
 
-  and level : formatter -> level -> unit = fun ppf l -> fprintf ppf "LVar (%d,%d)" (fst l) (snd l)
+  and level : type a b m n. formatter -> level -> (a, m, n, b) Modalcell.t -> unit =
+   fun ppf l key -> fprintf ppf "LVar (%d,%d,%s)" (fst l) (snd l) (Modalcell.to_string key)
 
   and head : type mode. formatter -> mode head -> unit =
    fun ppf h ->
     match h with
-    | Var { level = l; _ } -> level ppf l
+    | Var { level = l; key; _ } -> level ppf l key
     | Const { name; ins } ->
         let (To p) = deg_of_ins ins in
         fprintf ppf "Const (%s, %s)" (print_to_string (PConstant name)) (string_of_deg p)
@@ -248,7 +251,7 @@ module F = struct
     | Lam (x, body) -> fprintf ppf "Lam^(%s) (?, %a)" (string_of_dim (dim_variables x)) term body
     | Constr (c, _, _) -> fprintf ppf "Constr (%s, ?, ?)" (Constr.to_string c)
     | Act (tm, s, _) -> fprintf ppf "Act (%a, %s)" term tm (string_of_deg s)
-    | Key (tm, _, _key) -> fprintf ppf "Key (%a, ?)" term tm
+    | Key (tm, _, key) -> fprintf ppf "Key (%a, %s)" term tm (Modalcell.to_string key)
     | Let (_, _, _, _) -> fprintf ppf "Let ?"
     | Struct _ -> fprintf ppf "Struct ?"
     | Match _ -> fprintf ppf "Match ?"
@@ -405,7 +408,7 @@ module F = struct
   let entry : type dom modality mode x n. formatter -> (dom, modality, mode, x, n) Ctx.entry -> unit
       =
    fun ppf -> function
-    | Vis { dim; plusdim; hasfields = No_fields; vars; bindings; _ } -> (
+    | Vis { dim; plusdim; hasfields = No_fields; vars; modality; bindings; _ } -> (
         match (D.compare_zero dim, D.compare_zero (D.plus_right plusdim)) with
         | Zero, Zero ->
             let x = NICubeOf.find_top vars in
@@ -413,7 +416,8 @@ module F = struct
             fprintf ppf "(%a%a : %a)"
               (pp_print_option ~none:(fun ppf () -> pp_print_string ppf "_") pp_print_string)
               x
-              (pp_print_option (fun ppf l -> fprintf ppf "(%a)" level l))
+              (pp_print_option (fun ppf l ->
+                   fprintf ppf "(%a)" (fun ppf lvl -> level ppf lvl (Modalcell.id modality)) l))
               (Ctx.Binding.level b) value (Ctx.Binding.value b).ty
         | _ -> fprintf ppf "(?)")
     | _ -> fprintf ppf "(?)"

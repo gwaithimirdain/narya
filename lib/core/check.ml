@@ -2609,9 +2609,7 @@ and synth : type mode a b s.
                     ( realize status (Term.Key (Term.Var (Index (ix, fa)), ac, key)),
                       act_value value.ty (id_deg D.zero) (Some key) )
                 | None -> fatal (Anomaly "failure to adjust index of uniquely keyed variable"))
-            | Neq, Nonunique ->
-                fatal ~severity:Asai.Diagnostic.Error
-                  (Modality_mismatch ("variable use", `Modality modality, `Modality lock)))
+            | Neq, Nonunique -> fatal (Missing_key (modality, lock)))
         | Field { level; value; field; modality; lock } -> (
             match Ctx.find_level ctx level with
             | None -> fatal (Anomaly "level not found in field view")

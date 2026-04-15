@@ -1152,17 +1152,17 @@ and apply_binder_term : type dom modality mode n.
 
 and force_eval : type mode s. (mode, s) lazy_eval -> (mode, s) evaluation =
  fun lev ->
-  let undefer tm s apps =
+  let undefer tm s c apps =
     (* TODO: In an ideal world, there would be one function that would traverse the term once doing both "eval" and "act" by the insertion. *)
-    let etm = act_evaluation tm s None in
+    let etm = act_evaluation tm s c in
     let etm = app_eval_apps etm apps in
     lev := Ready etm;
     etm in
   match !lev with
-  | Deferred_eval (env, tm, ins, apps) ->
+  | Deferred_eval (env, tm, ins, c, apps) ->
       let (To p) = deg_of_ins ins in
-      undefer (eval env tm) p apps
-  | Deferred (tm, s, apps) -> undefer (tm ()) s apps
+      undefer (eval env tm) p c apps
+  | Deferred (tm, s, c, apps) -> undefer (tm ()) s c apps
   | Ready etm -> etm
 
 and force_eval_term : type mode. (mode, kinetic) lazy_eval -> (mode, kinetic) value =

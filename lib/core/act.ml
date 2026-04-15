@@ -22,6 +22,27 @@ let deg_plus_to : type m n nk. on:string -> ?err:dim_err -> (m, n) deg -> nk D.t
       let sk = deg_plus s nk mk in
       Of sk
 
+type _ key_comp = Wrap : ('a, 'm, 'n, 'b) Modalcell.t option -> 'a key_comp
+
+let key_vcomp : type a b c m n p q.
+    (a, m, n, b) Modalcell.t option -> (a, p, q, c) Modalcell.t option -> a key_comp =
+ fun cell2 cell1 ->
+  match (cell1, cell2) with
+  | Some cell1, Some cell2 -> (
+      match Modality.pushout (Modalcell.vcod cell1) (Modalcell.vdom cell2) with
+      | Pushout (mu3, mu4, cod13, dom24) ->
+          let (Composed (_, cod24)) = Modality.comp mu4 (Modalcell.vcod cell2) in
+          let (Composed (_, dom13)) = Modality.comp mu3 (Modalcell.vdom cell1) in
+          Wrap
+            (Some
+               (Modalcell.vcomp
+                  (Modalcell.hcomp dom24 cod24 (Modalcell.id mu4) cell2)
+                  (Modalcell.hcomp dom13 cod13 (Modalcell.id mu3) cell1)))
+      | No_pushout -> fatal (Anomaly "incompatible keys"))
+  | Some cell1, None -> Wrap (Some cell1)
+  | None, Some cell2 -> Wrap (Some cell2)
+  | None, None -> Wrap None
+
 type ('mode, _, _) act_inst_canonical =
   | Act_inst_canonical :
       ('mode, 'm, 'k, 'mk, 'e, 'n) inst_canonical
@@ -577,15 +598,18 @@ module Act = struct
       (mode, s) lazy_eval =
    fun lev s c ->
     match !lev with
-    | Deferred_eval (env, tm, ins, apps) ->
+    | Deferred_eval (env, tm, ins, key, apps) ->
         let Any_deg s, apps = act_apps apps s c in
         let (Insfact_comp_ext (fa, ins, _, _)) = insfact_comp_ext ins s in
-        ref (Deferred_eval (act_env env (op_of_deg fa), tm, ins, apps))
-    | Deferred (tm, s', apps) ->
+        let acted_env = act_env env (op_of_deg fa) in
+        let (Wrap newkey) = key_vcomp key c in
+        ref (Deferred_eval (acted_env, tm, ins, newkey, apps))
+    | Deferred (tm, s', key, apps) ->
         let Any_deg s, apps = act_apps apps s c in
         let (DegExt (_, _, fa)) = comp_deg_extending s' s in
-        ref (Deferred (tm, fa, apps))
-    | Ready tm -> ref (Deferred ((fun () -> tm), s, Emp))
+        let (Wrap newkey) = key_vcomp key c in
+        ref (Deferred (tm, fa, newkey, apps))
+    | Ready tm -> ref (Deferred ((fun () -> tm), s, c, Emp))
 end
 
 let short_circuit : type mode mu1 mu2 cod m n a.
@@ -628,7 +652,9 @@ let field_lazy : type mode s n t i.
   let (Plus nk) = D.plus k in
   let p = deg_of_perm (perm_inv (perm_of_ins_plus fldins nk)) in
   match !(act_lazy_eval lev p None) with
-  | Deferred_eval (env, tm, ins, apps) ->
-      ref (Deferred_eval (env, tm, ins, Field (apps, fld, nk, ins_zero n)))
-  | Deferred (tm, ins, apps) -> ref (Deferred (tm, ins, Field (apps, fld, nk, ins_zero n)))
-  | Ready tm -> ref (Deferred ((fun () -> tm), id_deg D.zero, Field (Emp, fld, nk, ins_zero n)))
+  | Deferred_eval (env, tm, ins, cell, apps) ->
+      ref (Deferred_eval (env, tm, ins, cell, Field (apps, fld, nk, ins_zero n)))
+  | Deferred (tm, ins, cell, apps) ->
+      ref (Deferred (tm, ins, cell, Field (apps, fld, nk, ins_zero n)))
+  | Ready tm ->
+      ref (Deferred ((fun () -> tm), id_deg D.zero, None, Field (Emp, fld, nk, ins_zero n)))

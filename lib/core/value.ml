@@ -197,10 +197,17 @@ module rec Value : sig
 
   and ('mode, 's) lazy_state =
     | Deferred_eval :
-        ('mode, 'm, 'b) env * ('mode, 'b, 's) term * ('mn, 'm, 'n) insertion * ('mode, 'any) apps
+        ('mode, 'm, 'b) env
+        * ('mode, 'b, 's) term
+        * ('mn, 'm, 'n) insertion
+        * ('mode, 'mu, 'nu, 'cod) Modalcell.t option
+        * ('mode, 'any) apps
         -> ('mode, 's) lazy_state
     | Deferred :
-        (unit -> ('mode, 's) evaluation) * ('m, 'n) deg * ('mode, 'any) apps
+        (unit -> ('mode, 's) evaluation)
+        * ('m, 'n) deg
+        * ('mode, 'mu, 'nu, 'cod) Modalcell.t option
+        * ('mode, 'any) apps
         -> ('mode, 's) lazy_state
     | Ready : ('mode, 's) evaluation -> ('mode, 's) lazy_state
 
@@ -427,10 +434,17 @@ end = struct
   (* An 's lazy_eval behaves from the outside like an 's evaluation Lazy.t.  But internally, in addition to being able to store an arbitrary thunk, it can also store a term and an environment in which to evaluate it (plus an outer insertion that can't be pushed into the environment).  This allows it to accept degeneracy actions and incorporate them into the environment, so that when it's eventually forced the term only has to be traversed once.  It can also accumulate degeneracies on an arbitrary thunk (which could, of course, be a constant value that was already forced, but now is deferred again until it's done accumulating degeneracy actions).  Both kinds of deferred values can also store more arguments and field projections for it to be applied to; this is only used in glued evaluation. *)
   and ('mode, 's) lazy_state =
     | Deferred_eval :
-        ('mode, 'm, 'b) env * ('mode, 'b, 's) term * ('mn, 'm, 'n) insertion * ('mode, 'any) apps
+        ('mode, 'm, 'b) env
+        * ('mode, 'b, 's) term
+        * ('mn, 'm, 'n) insertion
+        * ('mode, 'mu, 'nu, 'cod) Modalcell.t option
+        * ('mode, 'any) apps
         -> ('mode, 's) lazy_state
     | Deferred :
-        (unit -> ('mode, 's) evaluation) * ('m, 'n) deg * ('mode, 'any) apps
+        (unit -> ('mode, 's) evaluation)
+        * ('m, 'n) deg
+        * ('mode, 'mu, 'nu, 'cod) Modalcell.t option
+        * ('mode, 'any) apps
         -> ('mode, 's) lazy_state
     | Ready : ('mode, 's) evaluation -> ('mode, 's) lazy_state
 
@@ -522,10 +536,10 @@ let rec key_env : type dom mu nu cod m b.
 
 (* Create a lazy evaluation *)
 let lazy_eval : type mode n b s. (mode, n, b) env -> (mode, b, s) term -> (mode, s) lazy_eval =
- fun env tm -> ref (Deferred_eval (env, tm, ins_zero (dim_env env), Emp))
+ fun env tm -> ref (Deferred_eval (env, tm, ins_zero (dim_env env), None, Emp))
 
 let defer : type mode s. (unit -> (mode, s) evaluation) -> (mode, s) lazy_eval =
- fun tm -> ref (Deferred (tm, id_deg D.zero, Emp))
+ fun tm -> ref (Deferred (tm, id_deg D.zero, None, Emp))
 
 let ready : type mode s. (mode, s) evaluation -> (mode, s) lazy_eval = fun ev -> ref (Ready ev)
 
@@ -537,10 +551,10 @@ let apply_lazy : type dom modality mode n s.
  fun lev modality xs ->
   let xins = ins_zero (CubeOf.dim xs) in
   match !lev with
-  | Deferred_eval (env, tm, ins, apps) ->
-      ref (Deferred_eval (env, tm, ins, Arg (apps, modality, xs, xins)))
-  | Deferred (tm, ins, apps) -> ref (Deferred (tm, ins, Arg (apps, modality, xs, xins)))
-  | Ready tm -> ref (Deferred ((fun () -> tm), id_deg D.zero, Arg (Emp, modality, xs, xins)))
+  | Deferred_eval (env, tm, ins, cell, apps) ->
+      ref (Deferred_eval (env, tm, ins, cell, Arg (apps, modality, xs, xins)))
+  | Deferred (tm, ins, cell, apps) -> ref (Deferred (tm, ins, cell, Arg (apps, modality, xs, xins)))
+  | Ready tm -> ref (Deferred ((fun () -> tm), id_deg D.zero, None, Arg (Emp, modality, xs, xins)))
 
 (* We defer "field_lazy" to act.ml, since it requires pushing a permutation inside the apps. *)
 
@@ -812,13 +826,13 @@ let inst_lazy : type mode m n mn s.
   | Zero -> lev
   | Pos k -> (
       match !lev with
-      | Deferred_eval (env, tm, ins, apps) ->
+      | Deferred_eval (env, tm, ins, cell, apps) ->
           let (Any newargs) = inst_apps apps args in
-          ref (Deferred_eval (env, tm, ins, newargs))
-      | Deferred (tm, ins, apps) ->
+          ref (Deferred_eval (env, tm, ins, cell, newargs))
+      | Deferred (tm, ins, cell, apps) ->
           let (Any newargs) = inst_apps apps args in
-          ref (Deferred (tm, ins, newargs))
-      | Ready tm -> ref (Deferred ((fun () -> tm), id_deg D.zero, Inst (Emp, k, args))))
+          ref (Deferred (tm, ins, cell, newargs))
+      | Ready tm -> ref (Deferred ((fun () -> tm), id_deg D.zero, None, Inst (Emp, k, args))))
 
 let inst_tys : ('mode, kinetic) value -> ('mode, kinetic) value TubeOf.full = function
   | Neu { ty = (lazy (Neu { args = Inst (_, _, tys); _ })); _ } -> (

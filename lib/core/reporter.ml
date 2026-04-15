@@ -228,6 +228,7 @@ module Code = struct
     | Missing_constructor_type : Constr.t -> t
     | Locked_variable : t
     | Locked_constant : printable -> t
+    | Missing_key : ('dom1, 'mu1, 'cod1) Modality.t * ('dom2, 'mu2, 'cod2) Modality.t -> t
     | Axiom_in_parametric_definition : printable -> t
     | Hole : string * printable -> t
     | No_open_holes : t
@@ -389,6 +390,7 @@ module Code = struct
     | Missing_constructor_type _ -> Error
     | Locked_variable -> Error
     | Locked_constant _ -> Error
+    | Missing_key _ -> Error
     | Axiom_in_parametric_definition _ -> Error
     | Hole _ -> Info
     | No_open_holes -> Info
@@ -564,6 +566,7 @@ module Code = struct
     | Modalcell_mismatch _ -> "E1702"
     | Non_mode_synthesizing _ -> "E1703"
     | Unknown_modality _ -> "E1704"
+    | Missing_key _ -> "E1705"
     (* Commands *)
     | Too_many_commands -> "E2000"
     | Forbidden_interactive_command _ -> "E2001"
@@ -913,6 +916,9 @@ module Code = struct
             (match c with
             | `Single s -> ":" ^ s
             | `Double s -> "∷" ^ s)
+      | Missing_key (vdom, vcod) ->
+          textf "use of '%s' variable behind '%s' lock requires a key" (Modality.to_string vdom)
+            (Modality.to_string vcod)
       | Anomaly str -> textf "anomaly: %s" str
       | No_such_level i -> textf "@[<hov 2>no level variable@ %a@ in context@]" pp_printed (print i)
       | Redefining_constant name ->
