@@ -2630,6 +2630,45 @@ let () =
     }
 
 (* ********************
+   Keys (temporary)
+   ******************** *)
+
+type (_, _, _) identity += Key : (No.strict opn, No.plus_omega, closed) identity
+
+let key : (No.strict opn, No.plus_omega, closed) notation = (Key, Postfix No.plus_omega)
+
+let () =
+  make key
+    {
+      name = "key";
+      tree = Open_entry (eop (Op "@<") (term (Op ">") (done_open key)));
+      processor = (fun _ctx _obs _loc -> fatal (Unimplemented "parsing keys"));
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "key"));
+      print_term =
+        Some
+          (fun obs ->
+            match obs with
+            | [
+             Term tm;
+             Token (Op "@<", (wsatlt, _));
+             Term { value = Ident ([ key ], wskey); loc = _ };
+             Token (Op ">", (wsgt, _));
+            ] ->
+                let ptm, wtm = pp_term tm in
+                ( ptm
+                  ^^ pp_ws `Break wtm
+                  ^^ Token.pp (Op "@<")
+                  ^^ pp_ws `None wsatlt
+                  ^^ utf8string key
+                  ^^ pp_ws `None wskey
+                  ^^ Token.pp (Op ">"),
+                  wsgt )
+            | _ -> invalid "key");
+      print_case = None;
+      is_case = (fun _ -> false);
+    }
+
+(* ********************
    Generating the state
  ******************** *)
 
