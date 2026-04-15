@@ -326,14 +326,17 @@ let rec unparse : type mode n lt ls rt rs s.
       match
         (Modalcell.compare_id key, Modalcell.find_unique (Modalcell.vdom key) (Modalcell.vcod key))
       with
-      | Eq, _ | _, Unique _ ->
-          (* MODALTODO: Get rid of this! *)
-          (* let mode = Modalcell.hdom key in *)
-          (* (App (UU (mode, D.zero), Modality.id mode, CubeOf.singleton tm)) *)
-          unparse (Names.split vars ac) tm li ri
-      | Neq, Nonunique ->
-          (* MODALTODO: Print keys *)
-          fatal (Unimplemented "printing keys"))
+      (* Actually for debugging purposes we print all keys *)
+      (* | Eq, _ | _, Unique _ -> unparse (Names.split vars ac) tm li ri *)
+      | _ ->
+          let vars = Names.split vars ac in
+          unparse_notation Builtins.key
+            [
+              make_unparser vars tm;
+              { unparse = (fun _ _ -> unlocated (Ident ([ Modalcell.to_string key ], []))) };
+            ]
+            (`Multiple (Op "@<", [ None ], Op ">"))
+            li ri)
   | Let (x, modality, tm, body) -> (
       (match Modality.compare_id modality with
       | Eq -> ()
