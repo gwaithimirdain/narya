@@ -39,7 +39,8 @@ module Modality : sig
     | Composed : ('a, 'nm, 'b) t * ('n, 'm, 'nm) comp -> ('a, 'n, 'm, 'b) composed
 
   val comp : ('b, 'n, 'c) t -> ('a, 'm, 'b) t -> ('a, 'n, 'm, 'c) composed
-  val eq_of_comp_id_right : ('m, 'a id_modality, 'n) comp -> ('m, 'n) Util.Eq.t
+
+  (* val eq_of_comp_id_right : ('m, 'a id_modality, 'n) comp -> ('m, 'n) Util.Eq.t *)
   val eq_of_comp_id_left : ('a id_modality, 'm, 'n) comp -> ('m, 'n) Util.Eq.t
   val comp_id_right : ('a, 'm, 'b) t -> ('m, 'a id_modality, 'm) comp
   val comp_id_left : ('a, 'm, 'b) t -> ('b id_modality, 'm, 'm) comp
@@ -156,10 +157,11 @@ module Modalcell : sig
   val vcomp : ('a, 'n, 'r, 'b) t -> ('a, 'm, 'n, 'b) t -> ('a, 'm, 'r, 'b) t
 
   val vcomp_extending :
+    ('c, 'k, 'b) Modality.t ->
     ('k, 'n, 'kn) Modality.comp ->
     ('a, 'n, 's, 'c) t ->
     ('a, 'm, 'kn, 'b) t ->
-    ('a, 'm, 'c) cod_wrapped
+    ('a, 'm, 'b) cod_wrapped
 
   val to_string : ('a, 'm, 'n, 'b) t -> string
 end

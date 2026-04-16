@@ -293,8 +293,12 @@ module Modalcell = struct
     | Id_cell, Id_cell -> Id_cell
 
   let vcomp_extending : type a m k kn b n s c.
-      (k, n, kn) Modality.comp -> (a, n, s, c) t -> (a, m, kn, b) t -> (a, m, c) cod_wrapped =
-   fun comp x y ->
+      (c, k, b) Modality.t ->
+      (k, n, kn) Modality.comp ->
+      (a, n, s, c) t ->
+      (a, m, kn, b) t ->
+      (a, m, b) cod_wrapped =
+   fun _ comp x y ->
     match (comp, x, y) with
     | Id_comp, Id_cell, Id_cell -> Wrap Id_cell
 

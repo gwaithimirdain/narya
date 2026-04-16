@@ -473,8 +473,8 @@ module Act = struct
         match c with
         | Some c -> (
             match Modality.factor (Modalcell.vcod key) (Modalcell.vdom c) with
-            | Some (Factored (_, comp)) ->
-                let (Wrap key) = Modalcell.vcomp_extending comp c key in
+            | Some (Factored (k, comp)) ->
+                let (Wrap key) = Modalcell.vcomp_extending k comp c key in
                 Var { level; deg; key }
             | None ->
                 fatal
