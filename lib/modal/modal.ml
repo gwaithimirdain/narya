@@ -1,1 +1,1 @@
-include Trivial
+include Idempotent_comonad
