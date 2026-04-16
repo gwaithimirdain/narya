@@ -218,7 +218,8 @@ module F = struct
    fun depth ppf e ->
     match e with
     | Emp (_, d) -> fprintf ppf "Emp %a" dim d
-    | Ext (e, _, _, Ok v) -> fprintf ppf "%a <: %a" env e (cubeof (dvalue depth)) v
+    | Ext (e, _, mu, Ok v) ->
+        fprintf ppf "%a <%s %a" env e (Modality.to_string mu) (cubeof (dvalue depth)) v
     | Ext (e, _, _, Error _) -> fprintf ppf "%a <: Err" env e
     | LazyExt (e, _, _, v) -> fprintf ppf "%a <; %a" env e (cubeof (lazy_eval depth)) v
     | Act (e, Op (f, d)) -> fprintf ppf "%a <* (%s,%s)" env e (string_of_sface f) (string_of_deg d)

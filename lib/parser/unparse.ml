@@ -1101,6 +1101,7 @@ let () =
       Readback.Displaying.run ~env:true @@ fun () ->
       match pr with
       | PUnit -> empty
+      | PAnd (x, y) -> print x ^^ utf8string " and " ^^ print y
       | PInt i -> string (string_of_int i)
       | PString str -> utf8string str
       | PField f -> utf8string (Field.to_string f)
