@@ -125,6 +125,10 @@ module Tbwd = struct
     | Append_nil : ('a, nil, 'a) append
     | Append_cons : (('a, 'x) snoc, 'b, 'c) append -> ('a, ('x, 'b) cons, 'c) append
 
+  let rec int_of_append : type a b c. (a, b, c) append -> int = function
+    | Append_nil -> 0
+    | Append_cons x -> 1 + int_of_append x
+
   type (_, _) has_append = Append : ('a, 'b, 'c) append -> ('a, 'b) has_append
 
   let rec append : type a b. b Tlist.t -> (a, b) has_append = function
