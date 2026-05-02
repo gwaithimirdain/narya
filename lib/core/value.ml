@@ -374,9 +374,9 @@ let rec length_env : type n b. (n, b) env -> b Dbwd.t = function
       let (Word le) = length_env env in
       Word (Suc (le, D.plus_right nk))
   | Act (env, _) -> length_env env
-  | Permute (p, env) -> Plusmap.OfDom.perm_dom p (length_env env)
-  | Shift (env, mn, nb) -> Plusmap.out (D.plus_right mn) (length_env env) nb
-  | Unshift (env, mn, nb) -> Plusmap.input (D.plus_right mn) (length_env env) nb
+  | Permute (p, env) -> Plusmap.Dom.perm_dom p (length_env env)
+  | Shift (_, mn, nb) -> Plusmap.cod (D.plus_right mn) nb
+  | Unshift (_, mn, nb) -> Plusmap.dom (D.plus_right mn) nb
 
 (* Abstract over a cube of binders to make a cube of lambdas.  TODO: This should morally be a Cube.map, but it goes from one instantiation of Cube to another one, and we didn't define a map like that, so for now we just make it a 'build'. *)
 let lam_cube : type n. n variables -> (n, unit) BindCube.t -> (n, kinetic value) CubeOf.t =

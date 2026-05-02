@@ -125,7 +125,7 @@ module rec Term : sig
   and ('g, 'n, 'nh, 'b, 'hb, 'et) codata_fibrancy = {
     glue : 'g D.t;
     dim : 'n D.t;
-    length : 'b Plusmap.OfDom.t;
+    length : 'b Plusmap.Dom.t;
     plusmap : (Hott.dim, 'b, 'hb) Plusmap.t;
     eta : (potential, 'et) eta;
     ty : ('b, kinetic) term;
@@ -312,7 +312,7 @@ end = struct
     glue : 'g D.t;
     (* The overall dimension.  Note that when it appears as a field of codata_args, above, these two dimensions are the same.  However, as we apply the corecursive 'id' field in computing fibrancy of higher versions of a codatatype, the overall dimension n increases but the glue dimension g does not. *)
     dim : 'n D.t;
-    length : 'b Plusmap.OfDom.t;
+    length : 'b Plusmap.Dom.t;
     plusmap : (Hott.dim, 'b, 'hb) Plusmap.t;
     eta : (potential, 'et) eta;
     (* The codatatype itself. *)

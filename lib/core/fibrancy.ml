@@ -58,12 +58,12 @@ module Codata = struct
   let empty : type g n b et.
       g D.t ->
       n D.t ->
-      b Plusmap.OfDom.t ->
+      b Plusmap.Dom.t ->
       (potential, et) eta ->
       (b, kinetic) term ->
       (g, n, b, et) t =
    fun glue dim length eta ty ->
-    let (Exists (type hb) ((_hb, plusmap) : hb Plusmap.OfCod.t * (Hott.dim, b, hb) Plusmap.t)) =
+    let (Exists (type hb) (plusmap : (Hott.dim, b, hb) Plusmap.t)) =
       Plusmap.exists Hott.dim length in
     let (Plus dimh) = D.plus Hott.dim in
     Fibrancy
@@ -160,8 +160,8 @@ module Codata = struct
       | Left -> (
           match D.compare_zero glue with
           | Zero ->
-              let hlength = Plusmap.out Hott.dim length plusmap in
-              let hlength00 = Plusmap.OfDom.suc (Plusmap.OfDom.suc hlength D.zero) D.zero in
+              let hlength = Plusmap.cod Hott.dim plusmap in
+              let hlength00 = Plusmap.Dom.suc (Plusmap.Dom.suc hlength D.zero) D.zero in
               let x0 = Var (Index (Later (Later Now), id_sface D.zero)) in
               let x1 = Var (Index (Later Now, id_sface D.zero)) in
               let x2 = Var (Index (Now, id_sface D.zero)) in

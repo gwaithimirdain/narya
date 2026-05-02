@@ -952,28 +952,23 @@ module PbijmapOf : module type of Pbijmap (struct
 end)
 
 module Plusmap : sig
-  module OfDom : module type of Word.Make (D)
-  module OfCod : module type of Word.Make (D) with type 'a t = 'a OfDom.t
+  module Dom : module type of Word.Make (D)
+  module Cod : module type of Word.Make (D) with type 'a t = 'a Dom.t
 
-  type ('a, 'b, 'c) t =
-    | Map_emp : ('p, emp, emp) t
-    | Map_snoc : ('p, 'xs, 'ys) t * ('p, 'x, 'y) D.plus -> ('p, ('xs, 'x) snoc, ('ys, 'y) snoc) t
+  type ('a, 'b, 'c) t
 
-  type ('a, 'b) exists = Exists : 'ys OfCod.t * ('p, 'xs, 'ys) t -> ('p, 'xs) exists
+  val zero : ('a, emp, emp) t
 
-  val exists : 'p D.t -> 'xs OfDom.t -> ('p, 'xs) exists
-  val out : 'p D.t -> 'xs OfDom.t -> ('p, 'xs, 'ys) t -> 'ys OfCod.t
-  val input : 'p D.t -> 'ys OfCod.t -> ('p, 'xs, 'ys) t -> 'xs OfDom.t
+  val suc :
+    'p D.t -> ('p, 'a, 'pa) t -> ('p, 'n, 'pn) D.plus -> ('p, ('a, 'n) snoc, ('pa, 'pn) snoc) t
+
+  val dom : 'p D.t -> ('p, 'xs, 'ys) t -> 'xs Dom.t
+  val cod : 'p D.t -> ('p, 'xs, 'ys) t -> 'ys Cod.t
+
+  type ('a, 'b) exists = Exists : ('p, 'xs, 'ys) t -> ('p, 'xs) exists
+
+  val exists : 'p D.t -> 'xs Dom.t -> ('p, 'xs) exists
   val uniq : ('p, 'xs, 'ys) t -> ('p, 'xs, 'zs) t -> ('ys, 'zs) Eq.t
-
-  type (_, _, _, _) insert =
-    | Insert : ('zs, 'fx, 'ws) Tbwd.insert * ('p, 'ys, 'ws) t -> ('p, 'fx, 'ys, 'zs) insert
-
-  val insert :
-    ('p, 'x, 'z) D.plus ->
-    ('xs, 'x, 'ys) Tbwd.insert ->
-    ('p, 'xs, 'zs) t ->
-    ('p, 'z, 'ys, 'zs) insert
 
   type (_, _, _, _) uninsert =
     | Uninsert :
@@ -989,15 +984,10 @@ module Plusmap : sig
 
   val uncoinsert : ('zs, 'z, 'ws) Tbwd.insert -> ('p, 'ys, 'ws) t -> ('p, 'z, 'ys, 'zs) uncoinsert
 
-  type (_, _, _) map_permute =
-    | Map_permute : ('p, 'zs, 'ws) t * ('ys, 'ws) Tbwd.permute -> ('p, 'zs, 'ys) map_permute
-
-  val permute : ('p, 'xs, 'ys) t -> ('xs, 'zs) Tbwd.permute -> ('p, 'zs, 'ys) map_permute
-
   val assocl :
     ('a, 'b, 'ab) D.plus -> ('b, 'cs, 'bcs) t -> ('a, 'bcs, 'abcs) t -> ('ab, 'cs, 'abcs) t
 
-  val zerol : 'bs OfDom.t -> (D.zero, 'bs, 'bs) t
+  val zerol : 'bs Dom.t -> (D.zero, 'bs, 'bs) t
   end
 
 (* *)

@@ -114,7 +114,7 @@ module Ordered = struct
   let rec degenerate : type a b k. (a, b) t -> k D.t -> (a, b, k) degctx =
    fun ctx k ->
     match ctx with
-    | Emp -> Degctx (Map_emp, Emp, Emp k)
+    | Emp -> Degctx (Plusmap.zero, Emp, Emp k)
     | Snoc (ctx', entry, ax) ->
         let (Degctx (kb, newctx', env)) = degenerate ctx' k in
         let mn = Ctx.dim_entry entry in
@@ -133,7 +133,7 @@ module Ordered = struct
           | Invis xs ->
               let newxs, newval = degenerate_binding (length newctx') k k_mn xs ctx env in
               (Invis newxs, Ext (env, k_mn, Ok newval)) in
-        Degctx (Map_snoc (kb, k_mn), Snoc (newctx', newentry, ax), newenv)
+        Degctx (Plusmap.suc k kb k_mn, Snoc (newctx', newentry, ax), newenv)
     | Lock ctx ->
         let (Degctx (kb, newctx, env)) = degenerate ctx k in
         Degctx (kb, Lock newctx, env)

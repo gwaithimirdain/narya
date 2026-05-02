@@ -817,14 +817,18 @@ struct
         ('param, 'm, 'n1) t * ('param, 'g, 'n2) F.t * ('n1, 'n2, 'n3) Cod.plus
         -> ('param, ('m, 'g) Dom.suc, 'n3) t
 
+  let zero = Zero
+  let suc fa fg xy = Suc (fa, fg, xy)
+
   let rec dom : type param a x. param Param.t -> (param, a, x) t -> a Dom.t =
    fun param -> function
     | Zero -> Word Zero
     | Suc (fm, fg, _) -> Dom.suc (dom param fm) (F.dom param fg)
 
-  let rec cod : type param a x. (param, a, x) t -> x Cod.t = function
+  let rec cod : type param a x. param Param.t -> (param, a, x) t -> x Cod.t =
+   fun p -> function
     | Zero -> Cod.zero
-    | Suc (fm, _, n12) -> Cod.plus_out (cod fm) n12
+    | Suc (fm, _, n12) -> Cod.plus_out (cod p fm) n12
 
   type (_, _) exists = Exists : ('param, 'a, 'x) t -> ('param, 'a) exists
 
@@ -858,7 +862,7 @@ struct
       (param, x, y, c) plus =
    fun param fa fb ab ->
     match (fb, ab) with
-    | Zero, Zero -> Plus (fa, Cod.plus_zero (cod fa))
+    | Zero, Zero -> Plus (fa, Cod.plus_zero (cod param fa))
     | Suc (fb, fg, y_fg), Suc (ab, _) ->
         let (Plus (fc, xy)) = plus param fa fb ab in
         let (Plus xy_fg) = Cod.plus (F.cod param fg) in
@@ -872,6 +876,7 @@ module Hom2Perm
     (F : Function2 with module Dom = G and module Cod = Cod) =
 struct
   module H = Hom2 (G) (Cod) (F)
+  module Param = F.Param
   module Dom = H.Dom
 
   type (_, _, _, _, _) uninsert =
@@ -880,16 +885,16 @@ struct
         -> ('param, 'a, 'm, 'b, 'y) uninsert
 
   let rec uninsert : type param a m b y.
-      (a, m, b) Tbwd.insert -> (param, b, y) H.t -> (param, a, m, b, y) uninsert =
-   fun i fb ->
+      param Param.t -> (a, m, b) Tbwd.insert -> (param, b, y) H.t -> (param, a, m, b, y) uninsert =
+   fun param i fb ->
     match i with
     | Now ->
         let (Suc (fa, fm, xn)) = fb in
-        Uninsert (fa, fm, xn, Cod.perm_id (Cod.plus_out (H.cod fa) xn))
+        Uninsert (fa, fm, xn, Cod.perm_id (Cod.plus_out (H.cod param fa) xn))
     | Later i ->
         let (Suc (fb, fk, yl)) = fb in
-        let (Uninsert (fa, fm, xn, perm_xn_y)) = uninsert i fb in
-        let x = H.cod fa in
+        let (Uninsert (fa, fm, xn, perm_xn_y)) = uninsert param i fb in
+        let x = H.cod param fa in
         let l = Cod.plus_right yl in
         let n = Cod.plus_right xn in
         let (Plus nl) = Cod.plus l in
@@ -905,16 +910,96 @@ struct
         Uninsert (Suc (fa, fk, xl), fm, xl_n, perm_xln_yl)
 
   let rec permute : type param a x b y.
-      (param, a, x) H.t -> (param, b, y) H.t -> (a, b) Dom.permute -> (x, y) Cod.permute =
-   fun fa fb p ->
+      param Param.t ->
+      (param, a, x) H.t ->
+      (param, b, y) H.t ->
+      (a, b) Dom.permute ->
+      (x, y) Cod.permute =
+   fun param fa fb p ->
     match p with
     | Id ->
         let Eq = H.uniq fa fb in
-        Cod.perm_id (H.cod fa)
+        Cod.perm_id (H.cod param fa)
     | Insert (p, i) ->
         let (Suc (fa, fg, xy)) = fa in
-        let (Uninsert (fb, fg', wy, wy_z)) = uninsert i fb in
+        let (Uninsert (fb, fg', wy, wy_z)) = uninsert param i fb in
         let Eq = F.uniq fg fg' in
-        let x_w = permute fa fb p in
+        let x_w = permute param fa fb p in
         Cod.perm_comp (Cod.perm_plus_perm x_w xy wy (Cod.perm_id (Cod.plus_right xy))) wy_z
+end
+
+(* (Parametrized) functoriality is the homomorphism induced by a function composed with the monad unit. *)
+
+module Fmap
+    (Dom : Comparable)
+    (Cod : Comparable)
+    (F : Function2 with module Dom = Dom and module Cod = Cod) =
+struct
+  module CodMonoid = Make (Cod)
+  module C = Cod
+
+  module FMonoid = struct
+    module Param = F.Param
+    module Dom = Dom
+    module Cod = CodMonoid
+
+    type (_, _, _) t = Inject : ('p, 'a, 'b) F.t -> ('p, 'a, (Cod.zero, 'b) Cod.suc) t
+
+    let dom : type p a b. p Param.t -> (p, a, b) t -> a Dom.t = fun p (Inject x) -> F.dom p x
+
+    let cod : type p a b. p Param.t -> (p, a, b) t -> b Cod.t =
+     fun p (Inject x) -> Cod.suc Cod.zero (F.cod p x)
+
+    type (_, _) exists = Exists : ('p, 'a, 'b) t -> ('p, 'a) exists
+
+    let exists : type p a. p Param.t -> a Dom.t -> (p, a) exists =
+     fun p x ->
+      let (Exists fx) = F.exists p x in
+      Exists (Inject fx)
+
+    let uniq : type p a b1 b2. (p, a, b1) t -> (p, a, b2) t -> (b1, b2) Eq.t =
+     fun f1 f2 ->
+      match (f1, f2) with
+      | Inject f1, Inject f2 ->
+          let Eq = F.uniq f1 f2 in
+          Eq
+  end
+
+  include Hom2 (Dom) (CodMonoid) (FMonoid)
+
+  let suc p fa fg = Suc (fa, Inject fg, Suc (Zero, F.cod p fg))
+
+  (* In this case, we have insertions in the codomain too, so we can be more precise about how the homomorphism acts on them. *)
+
+  type (_, _, _, _) uninsert =
+    | Uninsert :
+        ('p, 'x, 'fx) F.t * ('zs, 'fx, 'ws) Tbwd.insert * ('p, 'xs, 'zs) t
+        -> ('p, 'x, 'xs, 'ws) uninsert
+
+  let rec uninsert : type p xs x ys ws.
+      (xs, x, ys) Tbwd.insert -> (p, ys, ws) t -> (p, x, xs, ws) uninsert =
+   fun i fxs ->
+    match (fxs, i) with
+    | Suc (fxs, Inject fx, Suc (Zero, _)), Now -> Uninsert (fx, Now, fxs)
+    | Suc (fxs, fx, Suc (Zero, yy)), Later i ->
+        let (Uninsert (u, fi, fxs)) = uninsert i fxs in
+        Uninsert (u, Later fi, Suc (fxs, fx, Suc (Zero, yy)))
+    | Zero, _ -> .
+
+  type (_, _, _, _) uncoinsert =
+    | Uncoinsert :
+        ('p, 'x, 'z) F.t * ('xs, 'x, 'ys) Tbwd.insert * ('p, 'xs, 'zs) t
+        -> ('p, 'z, 'ys, 'zs) uncoinsert
+
+  let rec uncoinsert : type p ys z zs ws.
+      (zs, z, ws) Tbwd.insert -> (p, ys, ws) t -> (p, z, ys, zs) uncoinsert =
+   fun i fxs ->
+    match i with
+    | Now ->
+        let (Suc (fxs, Inject fx, Suc (Zero, _))) = fxs in
+        Uncoinsert (fx, Now, fxs)
+    | Later i ->
+        let (Suc (fxs, fx, Suc (Zero, yy))) = fxs in
+        let (Uncoinsert (fx', fi, fxs)) = uncoinsert i fxs in
+        Uncoinsert (fx', Later fi, Suc (fxs, fx, Suc (Zero, yy)))
 end
