@@ -86,10 +86,10 @@ module type Perm = sig
   val perm_comp : ('a, 'b) permute -> ('b, 'c) permute -> ('a, 'c) permute
   val perm_inv : ('a, 'b) permute -> ('b, 'a) permute
 
-  val perm_plus :
+  val perm_plus_perm :
+    ('a, 'c) permute ->
     ('a, 'b, 'ab) plus ->
     ('c, 'd, 'cd) plus ->
-    ('a, 'c) permute ->
     ('b, 'd) permute ->
     ('ab, 'cd) permute
 end

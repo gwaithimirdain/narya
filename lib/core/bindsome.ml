@@ -8,40 +8,11 @@ open Norm
 open Readback
 module Binding = Ctx.Binding
 
-(* TODO: Standardize naming so we don't need this wrapper *)
-module NPermFwd = struct
+(* We will need to be able to "flatten" lists of nats into single nats, in a way that works on forwards lists (of backwards nats!) as well as backwards ones, and also respects permutations.  We obtain this as the monoid homomorphism from the free monoid on N to N itself induced by the identity function of N. *)
+
+(* We add forwardness from Fwn to the module N to make a MonoidPermFwd. *)
+module NFwd = struct
   include N
-
-  type ('a, 'b) permute = ('a, 'b) perm
-
-  let perm_dom p x = perm_dom x p
-  let perm_id : type a. a t -> (a, a) permute = fun _ -> Id
-
-  let rec perm_plus : type a b ab c d cd.
-      (a, b, ab) plus -> (c, d, cd) plus -> (a, c) permute -> (b, d) permute -> (ab, cd) permute =
-   fun ab cd p q ->
-    match (ab, q) with
-    | Zero, Id ->
-        let Zero = cd in
-        p
-    | Suc _, Id -> perm_plus ab cd p (Insert (Id, Top))
-    | Suc ab, Insert (q, i) ->
-        let i = plus_index cd i in
-        let (Suc cd) = cd in
-        Insert (perm_plus ab cd p q, i)
-
-  let rec perm_swap : type a b ab ba. (a, b, ab) plus -> (b, a, ba) plus -> (ab, ba) permute =
-   fun ab ba ->
-    match ab with
-    | Zero ->
-        let a = plus_right ba in
-        let Eq = plus_uniq ba (zero_plus a) in
-        perm_id a
-    | Suc ab' ->
-        let (Suc b'a) = plus_suc ba in
-        Insert (perm_swap ab' b'a, index_plus Top ba)
-
-  let perm_comp = comp_perm
 
   type 'n fwd = 'n Fwn.t
   type fwd_zero = Fwn.zero
@@ -67,7 +38,7 @@ end
 
 module IdN = struct
   module Dom = N
-  module Cod = NPermFwd
+  module Cod = NFwd
 
   type (_, _) t = Id : 'x N.t -> ('x, 'x) t
 
@@ -84,7 +55,8 @@ module IdN = struct
     | Id _, Id _ -> Eq
 end
 
-module Flatten = Word.HomPermFwd (N) (NPermFwd) (IdN)
+(* Here is the monoid homomorphism. *)
+module Flatten = Word.HomPermFwd (N) (NFwd) (IdN)
 module Nbwd = Flatten.Dom
 
 module Ordered = struct
@@ -378,7 +350,7 @@ module Ordered = struct
 
   type (_, _) bind_some =
     | Bind_some : {
-        raw_perm : ('a, 'i) N.perm;
+        raw_perm : ('a, 'i) N.permute;
         checked_perm : ('c, 'b) Tbwd.permute;
         oldctx : ('i, 'c) Ctx.Ordered.t;
         newctx : ('i, 'c) Ctx.Ordered.t;
@@ -419,7 +391,7 @@ type (_, _) bind_some =
 let bind_some g (Ctx.Permute { perm; ctx; level; _ }) =
   match Ordered.bind_some g ~level ctx with
   | Bind_some { raw_perm; checked_perm; oldctx; newctx } ->
-      let perm = N.comp_perm perm raw_perm in
+      let perm = N.perm_comp perm raw_perm in
       Bind_some
         {
           checked_perm;

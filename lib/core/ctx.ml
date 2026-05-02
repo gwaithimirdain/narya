@@ -287,7 +287,8 @@ module Ordered = struct
    fun ctx vars i ->
     let open CubeOf.Monadic (Monad.State (struct
       type t = (b, n) snoc index option
-    end)) in
+    end))
+    in
     match
       miterM
         {
@@ -379,7 +380,7 @@ end
 
 type ('a, 'b) t =
   | Permute : {
-      perm : ('a, 'i) N.perm;
+      perm : ('a, 'i) N.permute;
       env : (D.zero, 'b) env;
       level : int;
       ctx : ('i, 'b) Ordered.t;
@@ -431,9 +432,9 @@ let invis (Permute { perm; env; level; ctx }) vars =
 
 let lock (Permute { perm; env; level; ctx }) = Permute { perm; env; level; ctx = Ordered.lock ctx }
 let locked (Permute { ctx; _ }) = Ordered.locked ctx
-let raw_length (Permute { perm; ctx; _ }) = N.perm_dom (Ordered.raw_length ctx) perm
+let raw_length (Permute { perm; ctx; _ }) = N.perm_dom perm (Ordered.raw_length ctx)
 let level (Permute { level; _ }) = level
-let empty = Permute { perm = N.id_perm N.zero; env = Emp D.zero; level = 0; ctx = Ordered.empty }
+let empty = Permute { perm = N.perm_id N.zero; env = Emp D.zero; level = 0; ctx = Ordered.empty }
 let dbwd (Permute { ctx; _ }) = Ordered.dbwd ctx
 let apps (Permute { ctx; _ }) = Ordered.apps ctx
 
@@ -491,4 +492,4 @@ let of_ordered ?level ctx =
     match level with
     | None -> Ordered.length ctx
     | Some level -> level in
-  Permute { perm = N.id_perm (Ordered.raw_length ctx); env = Ordered.env ctx; level; ctx }
+  Permute { perm = N.perm_id (Ordered.raw_length ctx); env = Ordered.env ctx; level; ctx }

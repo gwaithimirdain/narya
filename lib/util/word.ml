@@ -279,17 +279,17 @@ module Make (G : Comparable) = struct
         let (Plus b'a) = plus (plus_right ba) in
         Insert (perm_swap ab' b'a, insert_of_plus b'a ba)
 
-  let rec perm_plus : type a b ab c d cd.
-      (a, b, ab) plus -> (c, d, cd) plus -> (a, c) permute -> (b, d) permute -> (ab, cd) permute =
-   fun ab cd p q ->
+  let rec perm_plus_perm : type a b ab c d cd.
+      (a, c) permute -> (a, b, ab) plus -> (c, d, cd) plus -> (b, d) permute -> (ab, cd) permute =
+   fun p ab cd q ->
     match (ab, q) with
     | Zero, Id ->
         let Zero = cd in
         p
-    | Suc _, Id -> perm_plus ab cd p (Insert (Id, Now))
+    | Suc _, Id -> perm_plus_perm p ab cd (Insert (Id, Now))
     | Suc (ab, _), Insert (q, i) ->
         let (Plus_insert (cd, i)) = plus_insert cd i in
-        Insert (perm_plus ab cd p q, i)
+        Insert (perm_plus_perm p ab cd q, i)
 
   (* ********** Subtraction ********** *)
 
@@ -739,8 +739,8 @@ struct
         let (Plus xl_n) = Cod.plus n in
         let x_ln = Cod.plus_assocr xl ln xl_n in
         let x_nl = Cod.plus_assocr xn nl xn_l in
-        let perm_xln_xnl = Cod.perm_plus x_ln x_nl (Cod.perm_id x) (Cod.perm_swap ln nl) in
-        let perm_xnl_yl = Cod.perm_plus xn_l yl perm_xn_y (Cod.perm_id l) in
+        let perm_xln_xnl = Cod.perm_plus_perm (Cod.perm_id x) x_ln x_nl (Cod.perm_swap ln nl) in
+        let perm_xnl_yl = Cod.perm_plus_perm perm_xn_y xn_l yl (Cod.perm_id l) in
         let perm_xln_yl = Cod.perm_comp perm_xln_xnl perm_xnl_yl in
         Uninsert (Suc (fa, fk, xl), fm, xl_n, perm_xln_yl)
 
@@ -756,7 +756,7 @@ struct
         let (Uninsert (fb, fg', wy, wy_z)) = uninsert i fb in
         let Eq = F.uniq fg fg' in
         let x_w = permute fa fb p in
-        Cod.perm_comp (Cod.perm_plus xy wy x_w (Cod.perm_id (Cod.plus_right xy))) wy_z
+        Cod.perm_comp (Cod.perm_plus_perm x_w xy wy (Cod.perm_id (Cod.plus_right xy))) wy_z
 end
 
 (* Homomorphisms with forwards-ness *)
@@ -899,8 +899,8 @@ struct
         let (Plus xl_n) = Cod.plus n in
         let x_ln = Cod.plus_assocr xl ln xl_n in
         let x_nl = Cod.plus_assocr xn nl xn_l in
-        let perm_xln_xnl = Cod.perm_plus x_ln x_nl (Cod.perm_id x) (Cod.perm_swap ln nl) in
-        let perm_xnl_yl = Cod.perm_plus xn_l yl perm_xn_y (Cod.perm_id l) in
+        let perm_xln_xnl = Cod.perm_plus_perm (Cod.perm_id x) x_ln x_nl (Cod.perm_swap ln nl) in
+        let perm_xnl_yl = Cod.perm_plus_perm perm_xn_y xn_l yl (Cod.perm_id l) in
         let perm_xln_yl = Cod.perm_comp perm_xln_xnl perm_xnl_yl in
         Uninsert (Suc (fa, fk, xl), fm, xl_n, perm_xln_yl)
 
@@ -916,5 +916,5 @@ struct
         let (Uninsert (fb, fg', wy, wy_z)) = uninsert i fb in
         let Eq = F.uniq fg fg' in
         let x_w = permute fa fb p in
-        Cod.perm_comp (Cod.perm_plus xy wy x_w (Cod.perm_id (Cod.plus_right xy))) wy_z
+        Cod.perm_comp (Cod.perm_plus_perm x_w xy wy (Cod.perm_id (Cod.plus_right xy))) wy_z
 end

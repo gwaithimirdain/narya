@@ -181,7 +181,8 @@ module rec Term : sig
         -> ('ax, ('b, 'n) snoc) ordered_termctx
     | Lock : ('a, 'b) ordered_termctx -> ('a, 'b) ordered_termctx
 
-  and ('a, 'b) termctx = Permute : ('a, 'i) N.perm * ('i, 'b) ordered_termctx -> ('a, 'b) termctx
+  and ('a, 'b) termctx =
+    | Permute : ('a, 'i) N.permute * ('i, 'b) ordered_termctx -> ('a, 'b) termctx
 end = struct
   module CodFam = struct
     type ('k, 'a) t = (('a, 'k) snoc, kinetic) Term.term
@@ -375,7 +376,8 @@ end = struct
         -> ('ax, ('b, 'n) snoc) ordered_termctx
     | Lock : ('a, 'b) ordered_termctx -> ('a, 'b) ordered_termctx
 
-  and ('a, 'b) termctx = Permute : ('a, 'i) N.perm * ('i, 'b) ordered_termctx -> ('a, 'b) termctx
+  and ('a, 'b) termctx =
+    | Permute : ('a, 'i) N.permute * ('i, 'b) ordered_termctx -> ('a, 'b) termctx
 end
 
 include Term
