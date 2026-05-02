@@ -39,8 +39,11 @@ end
 
 (* Monoids with positivity (i.e. nonzero-ness) predicate *)
 
-module type MonoidPos = sig
-  include Monoid
+(* We first define a "mixin" module, where the types needed from Monoid are abstract, and then combine it with Monoid using a destructive substitution.  This makes it possible to combine multiple mixins at once without a diamond problem. *)
+module type Pos = sig
+  type 'a t
+  type zero
+  type ('a, 'b, 'ab) plus
 
   (* A subtype of elements of the monoid called "positive" *)
   type _ pos
@@ -58,4 +61,77 @@ module type MonoidPos = sig
   type _ compare_zero = Zero : zero compare_zero | Pos : 'n pos -> 'n compare_zero
 
   val compare_zero : 'a t -> 'a compare_zero
+end
+
+module type MonoidPos = sig
+  include Monoid
+
+  include
+    Pos
+      with type 'a t := 'a t
+       and type zero := zero
+       and type ('a, 'b, 'ab) plus := ('a, 'b, 'ab) plus
+end
+
+(* Monoids with permutations (symmetric strict monoidal categories) *)
+
+module type Perm = sig
+  type 'a t
+  type ('a, 'b, 'ab) plus
+  type ('a, 'b) permute
+
+  val perm_dom : ('a, 'b) permute -> 'b t -> 'a t
+  val perm_id : 'a t -> ('a, 'a) permute
+  val perm_swap : ('a, 'b, 'ab) plus -> ('b, 'a, 'ba) plus -> ('ab, 'ba) permute
+  val perm_comp : ('a, 'b) permute -> ('b, 'c) permute -> ('a, 'c) permute
+  val perm_inv : ('a, 'b) permute -> ('b, 'a) permute
+
+  val perm_plus :
+    ('a, 'b, 'ab) plus ->
+    ('c, 'd, 'cd) plus ->
+    ('a, 'c) permute ->
+    ('b, 'd) permute ->
+    ('ab, 'cd) permute
+end
+
+module type MonoidPerm = sig
+  include Monoid
+  include Perm with type 'a t := 'a t and type ('a, 'b, 'ab) plus := ('a, 'b, 'ab) plus
+end
+
+(* Monoids with forwards-ness *)
+
+module type Fwd = sig
+  type 'a t
+  type ('a, 'b, 'ab) plus
+  type 'a fwd
+  type fwd_zero
+
+  val fwd_zero : fwd_zero fwd
+
+  (* backwards + forwards = backwards *)
+  type ('a, 'b, 'ab) bplus
+  type (_, _) has_bplus = Bplus : ('a, 'b, 'ab) bplus -> ('a, 'b) has_bplus
+
+  val bplus : 'b fwd -> ('a, 'b) has_bplus
+  val bplus_zero : 'a t -> ('a, fwd_zero, 'a) bplus
+
+  (* backwards + forwards = forwards *)
+  type ('a, 'b, 'ab) fplus
+
+  val bfplus_assocr :
+    ('a, 'b, 'ab) plus -> ('b, 'c, 'bc) fplus -> ('ab, 'c, 'abc) bplus -> ('a, 'bc, 'abc) bplus
+end
+
+module type MonoidFwd = sig
+  include Monoid
+  include Fwd with type 'a t := 'a t and type ('a, 'b, 'ab) plus := ('a, 'b, 'ab) plus
+end
+
+(* Monoids with permutations AND forwards-ness *)
+
+module type MonoidPermFwd = sig
+  include Monoid
+  include Perm with type 'a t := 'a t and type ('a, 'b, 'ab) plus := ('a, 'b, 'ab) plus
+  include Fwd with type 'a t := 'a t and type ('a, 'b, 'ab) plus := ('a, 'b, 'ab) plus
 end

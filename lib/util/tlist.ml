@@ -22,15 +22,6 @@ module Tlist = struct
         let (Cons a) = a in
         Cons (inserted ins a)
 
-  (* Flatten a tlist of backward nats into a single forwards nat by "adding them up". *)
-  type (_, _) flatten =
-    | Flat_nil : (nil, Fwn.zero) flatten
-    | Flat_cons : ('n, 'm, 'nm) Fwn.fplus * ('ns, 'm) flatten -> (('n, 'ns) cons, 'nm) flatten
-
-  let rec flatten_in : type ns n. (ns, n) flatten -> ns t = function
-    | Flat_nil -> Nil
-    | Flat_cons (_, ns) -> Cons (flatten_in ns)
-
   (* Mapping a simple type-level function *)
 
   module type TFun = sig

@@ -374,7 +374,7 @@ let rec length_env : type n b. (n, b) env -> b Dbwd.t = function
       let (Word le) = length_env env in
       Word (Suc (le, D.plus_right nk))
   | Act (env, _) -> length_env env
-  | Permute (p, env) -> Plusmap.OfDom.permute p (length_env env)
+  | Permute (p, env) -> Plusmap.OfDom.perm_dom p (length_env env)
   | Shift (env, mn, nb) -> Plusmap.out (D.plus_right mn) (length_env env) nb
   | Unshift (env, mn, nb) -> Plusmap.input (D.plus_right mn) (length_env env) nb
 

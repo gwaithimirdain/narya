@@ -8,6 +8,85 @@ open Norm
 open Readback
 module Binding = Ctx.Binding
 
+(* TODO: Standardize naming so we don't need this wrapper *)
+module NPermFwd = struct
+  include N
+
+  type ('a, 'b) permute = ('a, 'b) perm
+
+  let perm_dom p x = perm_dom x p
+  let perm_id : type a. a t -> (a, a) permute = fun _ -> Id
+
+  let rec perm_plus : type a b ab c d cd.
+      (a, b, ab) plus -> (c, d, cd) plus -> (a, c) permute -> (b, d) permute -> (ab, cd) permute =
+   fun ab cd p q ->
+    match (ab, q) with
+    | Zero, Id ->
+        let Zero = cd in
+        p
+    | Suc _, Id -> perm_plus ab cd p (Insert (Id, Top))
+    | Suc ab, Insert (q, i) ->
+        let i = plus_index cd i in
+        let (Suc cd) = cd in
+        Insert (perm_plus ab cd p q, i)
+
+  let rec perm_swap : type a b ab ba. (a, b, ab) plus -> (b, a, ba) plus -> (ab, ba) permute =
+   fun ab ba ->
+    match ab with
+    | Zero ->
+        let a = plus_right ba in
+        let Eq = plus_uniq ba (zero_plus a) in
+        perm_id a
+    | Suc ab' ->
+        let (Suc b'a) = plus_suc ba in
+        Insert (perm_swap ab' b'a, index_plus Top ba)
+
+  let perm_comp = comp_perm
+
+  type 'n fwd = 'n Fwn.t
+  type fwd_zero = Fwn.zero
+
+  let fwd_zero = Fwn.zero
+
+  type ('a, 'n, 'an) bplus = ('a, 'n, 'an) Fwn.bplus
+
+  let bplus_zero = Fwn.bplus_zero
+
+  (* Apparently we can't actually use the type Fwn.has_bplus, since the signature of MonoidFwd requires it to be a *new* type defined there. *)
+  type (_, _) has_bplus = Bplus : ('a, 'b, 'ab) bplus -> ('a, 'b) has_bplus
+
+  let bplus : type a b. b fwd -> (a, b) has_bplus =
+   fun b ->
+    let (Bplus ab) = Fwn.bplus b in
+    Bplus ab
+
+  type ('a, 'n, 'an) fplus = ('a, 'n, 'an) Fwn.fplus
+
+  let bfplus_assocr = Fwn.bfplus_assocr
+end
+
+module IdN = struct
+  module Dom = N
+  module Cod = NPermFwd
+
+  type (_, _) t = Id : 'x N.t -> ('x, 'x) t
+
+  let dom : type a x. (a, x) t -> a Dom.t = fun (Id x) -> x
+  let cod : type a x. (a, x) t -> x Cod.t = fun (Id x) -> x
+
+  type _ exists = Exists : ('a, 'x) t -> 'a exists
+
+  let exists : type a. a Dom.t -> a exists = fun x -> Exists (Id x)
+
+  let uniq : type a x1 x2. (a, x1) t -> (a, x2) t -> (x1, x2) Eq.t =
+   fun ix iy ->
+    match (ix, iy) with
+    | Id _, Id _ -> Eq
+end
+
+module Flatten = Word.HomPermFwd (N) (NPermFwd) (IdN)
+module Nbwd = Flatten.Dom
+
 module Ordered = struct
   open Ctx.Ordered
 
@@ -24,9 +103,9 @@ module Ordered = struct
     | Lock : ('i, 'f, 'a) tel -> ('i, 'f, 'a) tel
 
   (* The second index does in fact flatten to the first. *)
-  let rec tel_flatten : type i f a. (i, f, a) tel -> (f, i) Tlist.flatten = function
-    | Nil -> Flat_nil
-    | Cons (_, tel, xa) -> Flat_cons (xa, tel_flatten tel)
+  let rec tel_flatten : type i f a. (i, f, a) tel -> (f, i) Flatten.fwd = function
+    | Nil -> Zero
+    | Cons (e, tel, xa) -> Suc (Id (Ctx.raw_entry e), tel_flatten tel, xa)
     | Lock tel -> tel_flatten tel
 
   (* Split a (backwards) context into a (backwards) context prefix and a (forwards) telescope suffix, given a way to split the checked indices.  Outputs a corresponding way to split the raw indices.  The opposite way wouldn't make as much sense, since if there were invisible variables at the split point it wouldn't specify which side to put them on. *)
@@ -258,7 +337,7 @@ module Ordered = struct
 
   type (_, _, _, _, _, _) go_bind_some =
     | Go_bind_some : {
-        raw_flat : ('cf, 'k) Tbwd.flatten;
+        raw_flat : ('cf, 'k) Flatten.t;
         raw_perm : ('af, 'bf, 'cf) Tbwd.append_permute;
         checked_perm : ('a, 'b, 'c) Tbwd.append_permute;
         newctx : ('k, 'c) Ctx.Ordered.t;
@@ -272,16 +351,17 @@ module Ordered = struct
       (level -> normal option) ->
       oldctx:(i, a) Ctx.Ordered.t ->
       newctx:(i, a) Ctx.Ordered.t ->
-      (af, i) Tbwd.flatten ->
+      (af, i) Flatten.t ->
       (j, bf, b) tel ->
       (i, j, a, af, b, bf) go_bind_some =
    fun ~level binder ~oldctx ~newctx af tel ->
     match go_go_bind_some ~level binder ~oldctx ~newctx tel with
     | Found { ins; fins; oldentry; newentry; rest } -> (
-        let (Plus faces) = N.plus (Ctx.raw_entry oldentry) in
+        let k = Ctx.raw_entry oldentry in
+        let (Plus faces) = N.plus k in
         let oldctx = Snoc (oldctx, oldentry, faces) in
         let newctx = Snoc (newctx, newentry, faces) in
-        match go_bind_some ~level binder ~oldctx ~newctx (Flat_snoc (af, faces)) rest with
+        match go_bind_some ~level binder ~oldctx ~newctx (Suc (af, Id k, faces)) rest with
         | Go_bind_some { raw_flat; raw_perm; checked_perm; oldctx; newctx } ->
             Go_bind_some
               {
@@ -311,17 +391,16 @@ module Ordered = struct
    fun ~level binder ctx ->
     let (To_tel (bplus_raw, checked_append, tel)) = to_tel ctx in
     let telf = tel_flatten tel in
-    match go_bind_some ~level binder ~oldctx:empty ~newctx:empty Flat_emp tel with
+    match go_bind_some ~level binder ~oldctx:empty ~newctx:empty Zero tel with
     | Go_bind_some { raw_flat; raw_perm; checked_perm; oldctx; newctx } ->
-        let (Append raw_append) = Tbwd.append (Tlist.flatten_in telf) in
-        let (Bplus_flatten_append (new_flat, bplus_raw')) =
-          Tbwd.bplus_flatten_append Flat_emp telf raw_append in
+        let (Bplus raw_append) = Nbwd.bplus (Flatten.fwd_dom telf) in
+        let (Bplus (new_flat, bplus_raw')) = Flatten.bplus Zero telf raw_append in
         let Eq = Fwn.bplus_uniq bplus_raw bplus_raw' in
         (* The N.perm_inv here is absolutely essential.  Our choice to index N.perm by a separate domain and codomain, even though in concrete cases the two are always equal, means that if we leave it off, the typechecker complains.  (We could convince the typechecker to let us leave it off by destructing "perm_eq", but that would be stupid.) *)
         let raw_perm =
           N.perm_inv
-            (Tbwd.permute_flatten raw_flat new_flat
-               (Tbwd.append_append_permute raw_perm raw_append)) in
+            (Flatten.permute raw_flat new_flat (Tbwd.append_append_permute raw_perm raw_append))
+        in
         let checked_perm = Tbwd.append_append_permute checked_perm checked_append in
         Bind_some { raw_perm; checked_perm; oldctx; newctx }
     | None -> None

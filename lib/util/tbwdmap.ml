@@ -1,9 +1,10 @@
+open Signatures
 open Tbwd
 
 (* Map a type-level function. *)
 module type TFun = sig
-  module Dom : Word.Gen
-  module Cod : Word.Gen
+  module Dom : Comparable
+  module Cod : Comparable
 
   (* We add an extra parameter because we want to get out, in particular, a map of monoid addition parametrized by the thing being added, and once a type is wrapped in a module there's no way to get it out as a parameter. *)
   type 'p param
