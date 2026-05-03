@@ -1,5 +1,6 @@
 open Signatures
 open Tbwd
+open Category
 
 (* Type-level free categories. *)
 
@@ -193,3 +194,5 @@ module Make (Q : Quiver) = struct
             | Eq -> Eq
             | Neq -> Neq))
 end
+
+module MakeCheck (Q : Quiver) : Category = Make (Q)
