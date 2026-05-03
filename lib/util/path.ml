@@ -196,3 +196,113 @@ module Make (Q : Quiver) = struct
 end
 
 module MakeCheck (Q : Quiver) : Category = Make (Q)
+
+(* Functors out of a free category, determined by a map on the generating quiver.  Analogous to Word.Hom: given a quiver Q, a target category Cod, and a quiver morphism F sending objects of Q to objects of Cod and edges of Q to morphisms (paths) of Cod, this defines the unique functor Path.Make(Q) -> Cod that extends F. *)
+
+module Hom
+    (Q : Quiver)
+    (Cod : Category)
+    (F : sig
+      module Obj : Function with module Dom = Q.Obj and module Cod = Cod.Obj
+
+      type (_, _, _, _, _, _) t
+
+      val dom : ('a, 'g, 'b, 'x, 'n, 'y) t -> ('a, 'g, 'b) Q.t
+      val cod : ('a, 'g, 'b, 'x, 'n, 'y) t -> ('x, 'n, 'y) Cod.t
+      val src : ('a, 'g, 'b, 'x, 'n, 'y) t -> ('a, 'x) Obj.t
+      val tgt : ('a, 'g, 'b, 'x, 'n, 'y) t -> ('b, 'y) Obj.t
+
+      type (_, _, _) exists = Exists : ('a, 'g, 'b, 'x, 'n, 'y) t -> ('a, 'g, 'b) exists
+
+      val exists : ('a, 'g, 'b) Q.t -> ('a, 'g, 'b) exists
+
+      val uniq :
+        ('a, 'g, 'b, 'x1, 'n1, 'y1) t ->
+        ('a, 'g, 'b, 'x2, 'n2, 'y2) t ->
+        ('x1 * 'n1 * 'y1, 'x2 * 'n2 * 'y2) Eq.t
+    end) =
+struct
+  module Dom = Make (Q)
+  module Cod = Cod
+
+  (* ('a, 'm, 'b, 'x, 'n, 'y) t says that the path 'a -> 'b of shape 'm in Dom is sent to the morphism 'x -> 'y of shape 'n in Cod.  The Zero constructor remembers an object-map witness so we can reconstruct the (identity) image from it. *)
+
+  type (_, _, _, _, _, _) t =
+    | Zero : ('a, 'x) F.Obj.t -> ('a, Dom.zero, 'a, 'x, Cod.zero, 'x) t
+    | Suc :
+        ('a, 'm, 'b, 'x, 'n1, 'y) t
+        * ('b, 'g, 'c, 'y, 'n2, 'z) F.t
+        * ('x, 'n1, 'y, 'n2, 'z, 'n3) Cod.comp
+        -> ('a, ('m, 'g) Dom.suc, 'c, 'x, 'n3, 'z) t
+
+  let rec dom : type a m b x n y. (a, m, b, x, n, y) t -> (a, m, b) Dom.t = function
+    | Zero fab -> Dom.id (F.Obj.dom fab)
+    | Suc (fm, fg, _) -> Dom.suc (dom fm) (F.dom fg)
+
+  let rec cod : type a m b x n y. (a, m, b, x, n, y) t -> (x, n, y) Cod.t = function
+    | Zero fab -> Cod.id (F.Obj.cod fab)
+    | Suc (fm, _, n12) -> Cod.comp_out (cod fm) n12
+
+  (* The object-map witnesses for the source and target of a homomorphism. *)
+
+  let rec src_obj : type a m b x n y. (a, m, b, x, n, y) t -> (a, x) F.Obj.t = function
+    | Zero fab -> fab
+    | Suc (fm, _, _) -> src_obj fm
+
+  let tgt_obj : type a m b x n y. (a, m, b, x, n, y) t -> (b, y) F.Obj.t = function
+    | Zero fab -> fab
+    | Suc (_, fg, _) -> F.tgt fg
+
+  type (_, _, _) exists = Exists : ('a, 'm, 'b, 'x, 'n, 'y) t -> ('a, 'm, 'b) exists
+
+  let rec exists : type a m b. (a, m, b) Dom.t -> (a, m, b) exists =
+   fun path ->
+    match path with
+    | Path (a, Zero) ->
+        let (Exists fab) = F.Obj.exists a in
+        Exists (Zero fab)
+    | Path (a, Suc (m_inner, g_edge)) ->
+        let (Exists fm) = exists (Path (a, m_inner)) in
+        let (Exists fg) = F.exists g_edge in
+        let Eq = F.Obj.uniq (tgt_obj fm) (F.src fg) in
+        let (Comp n12) = Cod.comp (F.cod fg) in
+        Exists (Suc (fm, fg, n12))
+
+  let rec uniq : type a m b x1 n1 y1 x2 n2 y2.
+      (a, m, b, x1, n1, y1) t ->
+      (a, m, b, x2, n2, y2) t ->
+      (x1 * n1 * y1, x2 * n2 * y2) Eq.t =
+   fun f1 f2 ->
+    match (f1, f2) with
+    | Zero fab1, Zero fab2 ->
+        let Eq = F.Obj.uniq fab1 fab2 in
+        Eq
+    | Suc (m1, g1, n1), Suc (m2, g2, n2) ->
+        let Eq = Q.src_uniq (F.dom g1) (F.dom g2) in
+        let Eq = uniq m1 m2 in
+        let Eq = F.uniq g1 g2 in
+        let Eq = Cod.comp_uniq n1 n2 in
+        Eq
+
+  (* The functor preserves composition: given homomorphism evidence for two composable paths and evidence that they compose in Dom, we obtain homomorphism evidence for the composite path together with evidence that the images compose in Cod. *)
+
+  type (_, _, _, _, _, _, _, _) comp =
+    | Comp :
+        ('a, 'p, 'c, 'x, 'n3, 'z) t * ('x, 'n1, 'y, 'n2, 'z, 'n3) Cod.comp
+        -> ('a, 'p, 'c, 'x, 'n1, 'y, 'n2, 'z) comp
+
+  let rec comp : type a m b n c p x y z n1 n2.
+      (a, m, b, x, n1, y) t ->
+      (b, n, c, y, n2, z) t ->
+      (a, m, b, n, c, p) Dom.comp ->
+      (a, p, c, x, n1, y, n2, z) comp =
+   fun fa fb ab ->
+    match (fb, ab) with
+    | Zero _, Zero -> Comp (fa, Cod.comp_id (cod fa))
+    | Suc (fb_inner, fg, y_fg), Suc (ab_inner, edge) ->
+        let Eq = Q.src_uniq (F.dom fg) edge in
+        let (Comp (fc, xy)) = comp fa fb_inner ab_inner in
+        let (Comp xy_fg) = Cod.comp (F.cod fg) in
+        let x_yfg = Cod.comp_assocr xy y_fg xy_fg in
+        Comp (Suc (fc, fg, xy_fg), x_yfg)
+end
