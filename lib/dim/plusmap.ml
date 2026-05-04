@@ -9,8 +9,8 @@ module Anyplus = struct
 
   type ('p, 'a, 'b) t = ('p, 'a, 'b) D.plus
 
+  let dom : type p a b. (p, a, b) t -> a Dom.t = fun pa -> D.plus_right pa
   let cod : type p a b. p Param.t -> (p, a, b) t -> b Cod.t = fun p pa -> D.plus_out p pa
-  let dom : type p a b. p Param.t -> (p, a, b) t -> a Dom.t = fun _ pa -> D.plus_right pa
 
   type (_, _) exists = Exists : ('p, 'a, 'b) t -> ('p, 'a) exists
 

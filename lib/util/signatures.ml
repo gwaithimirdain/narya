@@ -51,7 +51,7 @@ module type Function2 = sig
 
   type (_, _, _) t
 
-  val dom : 'param Param.t -> ('param, 'a, 'x) t -> 'a Dom.t
+  val dom : ('param, 'a, 'x) t -> 'a Dom.t
   val cod : 'param Param.t -> ('param, 'a, 'x) t -> 'x Cod.t
 
   type (_, _) exists = Exists : ('param, 'a, 'x) t -> ('param, 'a) exists

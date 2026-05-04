@@ -962,7 +962,7 @@ module Plusmap : sig
   val suc :
     'p D.t -> ('p, 'a, 'pa) t -> ('p, 'n, 'pn) D.plus -> ('p, ('a, 'n) snoc, ('pa, 'pn) snoc) t
 
-  val dom : 'p D.t -> ('p, 'xs, 'ys) t -> 'xs Dom.t
+  val dom : ('p, 'xs, 'ys) t -> 'xs Dom.t
   val cod : 'p D.t -> ('p, 'xs, 'ys) t -> 'ys Cod.t
 
   type ('a, 'b) exists = Exists : ('p, 'xs, 'ys) t -> ('p, 'xs) exists

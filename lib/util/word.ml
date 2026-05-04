@@ -822,10 +822,9 @@ struct
   let zero = Zero
   let suc fa fg xy = Suc (fa, fg, xy)
 
-  let rec dom : type param a x. param Param.t -> (param, a, x) t -> a Dom.t =
-   fun param -> function
+  let rec dom : type param a x. (param, a, x) t -> a Dom.t = function
     | Zero -> Word Zero
-    | Suc (fm, fg, _) -> Dom.suc (dom param fm) (F.dom param fg)
+    | Suc (fm, fg, _) -> Dom.suc (dom fm) (F.dom fg)
 
   let rec cod : type param a x. param Param.t -> (param, a, x) t -> x Cod.t =
    fun p -> function
@@ -947,7 +946,7 @@ struct
 
     type (_, _, _) t = Inject : ('p, 'a, 'b) F.t -> ('p, 'a, (Cod.zero, 'b) Cod.suc) t
 
-    let dom : type p a b. p Param.t -> (p, a, b) t -> a Dom.t = fun p (Inject x) -> F.dom p x
+    let dom : type p a b. (p, a, b) t -> a Dom.t = fun (Inject x) -> F.dom x
 
     let cod : type p a b. p Param.t -> (p, a, b) t -> b Cod.t =
      fun p (Inject x) -> Cod.suc Cod.zero (F.cod p x)
