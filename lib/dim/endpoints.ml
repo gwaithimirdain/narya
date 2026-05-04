@@ -24,7 +24,7 @@ let hott : unit -> N.two len option =
  fun () ->
   if Option.is_some (Config.read ()).hott then
     let (Wrap arity) = (Config.read ()).arity in
-    match D.compare arity N.two with
+    match N.compare arity N.two with
     | Eq -> Some N.two
     | Neq -> None
   else None

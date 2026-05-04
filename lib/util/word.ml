@@ -34,6 +34,10 @@ module Make (G : Gen) = struct
     match n with
     | Word n -> Word (Suc (n, g))
 
+  let rec length : type n. n t -> int = function
+    | Word Zero -> 0
+    | Word (Suc (n, _)) -> 1 + length (Word n)
+
   type (_, _) has_plus = Plus : ('m, 'n, 'mn) plus -> ('m, 'n) has_plus
 
   let rec plus : type m n. n t -> (m, n) has_plus = function
@@ -132,35 +136,75 @@ module Make (G : Gen) = struct
 
   (* The analogue of these for words is just Tbwd.insert. *)
 
-  type (_, _, _, _) plus_insert =
-    | Plus_index : ('m, 'p, 'mp) plus * ('mp, 'g, 'mn) Tbwd.insert -> ('m, 'p, 'mn, 'g) plus_insert
-
-  let rec plus_insert : type m n mn p g.
-      (m, n, mn) plus -> (p, g, n) Tbwd.insert -> (m, p, mn, g) plus_insert =
-   fun mn i ->
+  let rec plus_insert : type a b c g ab ac.
+      (a, b, ab) plus -> (a, c, ac) plus -> (b, g, c) Tbwd.insert -> (ab, g, ac) Tbwd.insert =
+   fun ab ac i ->
     match i with
     | Now ->
-        let (Suc (mn, _)) = mn in
-        Plus_index (mn, Now)
+        let (Suc (ac, _)) = ac in
+        let Eq = plus_uniq ab ac in
+        Now
     | Later i ->
-        let (Suc (mn, g)) = mn in
-        let (Plus_index (mp, j)) = plus_insert mn i in
-        Plus_index (Suc (mp, g), Later j)
+        let Suc (ab, _), Suc (ac, _) = (ab, ac) in
+        Later (plus_insert ab ac i)
 
   type (_, _, _, _) insert_plus =
-    | Index_plus : ('p, 'n, 'pn) plus * ('pn, 'g, 'mn) Tbwd.insert -> ('p, 'n, 'mn, 'g) insert_plus
+    | Insert_plus : ('p, 'n, 'pn) plus * ('pn, 'g, 'mn) Tbwd.insert -> ('p, 'n, 'mn, 'g) insert_plus
 
   let rec insert_plus : type m n mn g p.
       (p, g, m) Tbwd.insert -> (m, n, mn) plus -> (p, n, mn, g) insert_plus =
    fun i mn ->
     match mn with
-    | Zero -> Index_plus (Zero, i)
+    | Zero -> Insert_plus (Zero, i)
     | Suc (mn, g) ->
-        let (Index_plus (pn, j)) = insert_plus i mn in
-        Index_plus (Suc (pn, g), Later j)
+        let (Insert_plus (pn, j)) = insert_plus i mn in
+        Insert_plus (Suc (pn, g), Later j)
+
+  type (_, _, _, _) insert_in_plus =
+    | Left :
+        ('pred_m, 'g, 'm) Tbwd.insert * ('pred_m, 'n, 'pred_mn) plus
+        -> ('g, 'm, 'n, 'pred_mn) insert_in_plus
+    | Right :
+        ('pred_n, 'g, 'n) Tbwd.insert * ('m, 'pred_n, 'pred_mn) plus
+        -> ('g, 'm, 'n, 'pred_mn) insert_in_plus
+
+  let rec insert_in_plus : type m n g pred_mn mn.
+      (m, n, mn) plus -> (pred_mn, g, mn) Tbwd.insert -> (g, m, n, pred_mn) insert_in_plus =
+   fun mn i ->
+    match mn with
+    | Zero -> Left (i, Zero)
+    | Suc (mn, g) -> (
+        match i with
+        | Now -> Right (Now, mn)
+        | Later i -> (
+            match insert_in_plus mn i with
+            | Left (j, pred_mn) -> Left (j, Suc (pred_mn, g))
+            | Right (k, pred_mn) -> Right (Later k, Suc (pred_mn, g))))
+
+  type (_, _, _, _) insert_into_plus =
+    | Left :
+        ('m, 'g, 'msuc) Tbwd.insert * ('msuc, 'n, 'mn_suc) plus
+        -> ('g, 'm, 'n, 'mn_suc) insert_into_plus
+    | Right :
+        ('n, 'g, 'suc) Tbwd.insert * ('m, 'suc, 'mn_suc) plus
+        -> ('g, 'm, 'n, 'mn_suc) insert_into_plus
+
+  let rec insert_into_plus : type g m n mn mn_suc.
+      g G.t -> (m, n, mn) plus -> (mn, g, mn_suc) Tbwd.insert -> (g, m, n, mn_suc) insert_into_plus
+      =
+   fun g mn i ->
+    match i with
+    | Now -> Right (Now, Suc (mn, g))
+    | Later i -> (
+        match mn with
+        | Zero -> Left (Later i, Zero)
+        | Suc (mn, h) -> (
+            match insert_into_plus g mn i with
+            | Left (j, mn_suc) -> Left (j, Suc (mn_suc, h))
+            | Right (k, mn_suc) -> Right (Later k, Suc (mn_suc, h))))
 
   type (_, _, _, _) swap_inserts =
-    | Swap_indices :
+    | Swap_inserts :
         ('q, 'l, 'm) Tbwd.insert * ('p, 'k, 'q) Tbwd.insert
         -> ('m, 'k, 'l, 'p) swap_inserts
 
@@ -170,14 +214,32 @@ module Make (G : Gen) = struct
     match k with
     | Now -> (
         match l with
-        | Now -> Swap_indices (Later l, Now)
-        | Later _ -> Swap_indices (Later l, Now))
+        | Now -> Swap_inserts (Later l, Now)
+        | Later _ -> Swap_inserts (Later l, Now))
     | Later k' -> (
         match l with
-        | Now -> Swap_indices (Now, k')
+        | Now -> Swap_inserts (Now, k')
         | Later l' ->
-            let (Swap_indices (l'', k'')) = swap_inserts k' l' in
-            Swap_indices (Later l'', Later k''))
+            let (Swap_inserts (l'', k'')) = swap_inserts k' l' in
+            Swap_inserts (Later l'', Later k''))
+
+  type (_, _, _) compare_inserts =
+    | Eq_inserts : ('m, 'g, 'm) compare_inserts
+    | Neq_inserts :
+        ('r, 'g, 'm) Tbwd.insert * ('r, 'g, 'n) Tbwd.insert
+        -> ('m, 'g, 'n) compare_inserts
+
+  let rec compare_inserts : type m n g p.
+      (m, g, p) Tbwd.insert -> (n, g, p) Tbwd.insert -> (m, g, n) compare_inserts =
+   fun m n ->
+    match (m, n) with
+    | Now, Now -> Eq_inserts
+    | Now, Later m -> Neq_inserts (m, Now)
+    | Later n, Now -> Neq_inserts (Now, n)
+    | Later m, Later n -> (
+        match compare_inserts m n with
+        | Eq_inserts -> Eq_inserts
+        | Neq_inserts (m', n') -> Neq_inserts (Later m', Later n'))
 
   let rec insert_equiv : type m n g p q.
       (p, g, m) Tbwd.insert -> (q, g, n) Tbwd.insert -> unit option =
@@ -186,6 +248,15 @@ module Make (G : Gen) = struct
     | Now, Now -> Some ()
     | Later k, Later l -> insert_equiv k l
     | _, _ -> None
+
+  type _ insert_into = Into : 'g G.t * ('m, 'g, 'msuc) Tbwd.insert -> 'msuc insert_into
+
+  let rec all_inserts : type n. n t -> n insert_into Seq.t = function
+    | Word Zero -> Seq.empty
+    | Word (Suc (n, g)) ->
+        Seq.cons
+          (Into (g, Now))
+          (Seq.map (fun (Into (h, k)) -> Into (h, Later k)) (all_inserts (Word n)))
 
   let rec compare : type m n. m t -> n t -> (m, n) Eq.compare =
    fun m n ->
@@ -302,6 +373,40 @@ module Make (G : Gen) = struct
       | Word (Suc (a, x)) -> go (Word a) (Cons (x, b)) (Append_cons abc) in
     go c Nil Append_nil
 
+  type (_, _, _) bplus =
+    | Zero : ('a, nil, 'a) bplus
+    | Suc : (('a, 'g) snoc, 'b, 'ab) bplus -> ('a, ('g, 'b) cons, 'ab) bplus
+
+  type (_, _) has_bplus = Bplus : ('a, 'b, 'ab) bplus -> ('a, 'b) has_bplus
+
+  let rec bplus : type a b. b Tlist.t -> (a, b) has_bplus = function
+    | Nil -> Bplus Zero
+    | Cons rest ->
+        let (Bplus inner) = bplus rest in
+        Bplus (Suc inner)
+
+  let rec bplus_right : type a b ab. (a, b, ab) bplus -> b Tlist.t = function
+    | Zero -> Nil
+    | Suc ab -> Cons (bplus_right ab)
+
+  let rec bplus_uniq : type a b ab ab'. (a, b, ab) bplus -> (a, b, ab') bplus -> (ab, ab') Eq.t =
+   fun ab ab' ->
+    match (ab, ab') with
+    | Zero, Zero -> Eq
+    | Suc ab, Suc ab' ->
+        let Eq = bplus_uniq ab ab' in
+        Eq
+
+  let rec insert_bplus : type a asuc g b ab asucb.
+      (a, g, asuc) Tbwd.insert ->
+      (a, b, ab) bplus ->
+      (asuc, b, asucb) bplus ->
+      (ab, g, asucb) Tbwd.insert =
+   fun i ab asucb ->
+    match (ab, asucb) with
+    | Zero, Zero -> i
+    | Suc ab, Suc asucb -> insert_bplus (Later i) ab asucb
+
   (* ********** Positive words ********** *)
 
   (* A "positive" word is one that's not the identity, i.e. is a successor of something. *)
@@ -321,6 +426,15 @@ module Make (G : Gen) = struct
    fun (Pos (a, g)) ab ->
     let (Plus_suc (_, Suc (ab, h))) = plus_suc g ab in
     Pos (plus_out a ab, h)
+
+  let rec insert_pos : type m g n. m t -> g G.t -> (m, g, n) Tbwd.insert -> n pos =
+   fun m g i ->
+    match i with
+    | Now -> Pos (m, g)
+    | Later i ->
+        let (Word (Suc (m, h))) = m in
+        let (Pos (mi, k)) = insert_pos (Word m) g i in
+        Pos (suc mi k, h)
 
   let pos : type a. a pos -> a t = fun (Pos (Word a, g)) -> Word (Suc (a, g))
 

@@ -633,11 +633,6 @@ type (_, _, _) insfact_comp_ext =
 
 val insfact_comp_ext : ('nk, 'n, 'k) insertion -> ('a, 'b) deg -> ('n, 'k, 'a) insfact_comp_ext
 
-type (_, _, _) deg_lift_ins =
-  | Deg_lift_ins : ('mk, 'm, 'k) insertion * ('mk, 'nk) deg -> ('m, 'k, 'nk) deg_lift_ins
-
-val deg_lift_ins : ('m, 'n) deg -> ('nk, 'n, 'k) insertion -> ('m, 'k, 'nk) deg_lift_ins
-
 type (_, _, _) sface_lift_ins =
   | Sface_lift_ins : ('mk, 'm, 'k) insertion * ('mk, 'nk) sface -> ('m, 'k, 'nk) sface_lift_ins
 

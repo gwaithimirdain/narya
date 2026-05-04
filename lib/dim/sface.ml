@@ -11,26 +11,27 @@ type (_, _) sface =
   | Mid : ('m, 'n) sface -> ('m D.suc, 'n D.suc) sface
 
 let rec id_sface : type n. n D.t -> (n, n) sface = function
-  | Nat Zero -> Zero
-  | Nat (Suc n) -> Mid (id_sface (Nat n))
+  | Word Zero -> Zero
+  | Word (Suc (n, Unit)) -> Mid (id_sface (Word n))
 
 let rec dom_sface : type m n. (m, n) sface -> m D.t = function
-  | Zero -> Nat Zero
+  | Zero -> Word Zero
   | End (f, _) ->
-      let (Nat s) = dom_sface f in
-      Nat s
+      let (Word s) = dom_sface f in
+      Word s
   | Mid f ->
-      let (Nat s) = dom_sface f in
-      Nat (Suc s)
+      let (Word s) = dom_sface f in
+      Word (Suc (s, Unit))
 
 let rec cod_sface : type m n. (m, n) sface -> n D.t = function
-  | Zero -> Nat Zero
+  | Zero -> Word Zero
   | End (f, _) ->
-      let (Nat s) = cod_sface f in
-      Nat (Suc s)
+      let (Word s) = cod_sface f in
+      Word (Suc (s, Unit))
   | Mid f ->
-      let (Nat s) = cod_sface f in
-      Nat (Suc s)
+      let (Word s) = cod_sface f in
+      Word (Suc (s, Unit))
+
 
 let rec is_id_sface : type m n. (m, n) sface -> (m, n) Eq.t option = function
   | Zero -> Some Eq
@@ -78,14 +79,14 @@ let rec sface_plus_sface : type m n mn k p kp.
  fun fkm mn kp fpn ->
   match (fpn, mn, kp) with
   | Zero, Zero, Zero -> fkm
-  | End (fpn, e), Suc mn, kp -> End (sface_plus_sface fkm mn kp fpn, e)
-  | Mid fpn, Suc mn, Suc kp -> Mid (sface_plus_sface fkm mn kp fpn)
+  | End (fpn, e), Suc (mn, Unit), kp -> End (sface_plus_sface fkm mn kp fpn, e)
+  | Mid fpn, Suc (mn, Unit), Suc (kp, Unit) -> Mid (sface_plus_sface fkm mn kp fpn)
 
 (* In particular, we can extend by identities on the right or left. *)
 
 let sface_plus : type m n mn k kn.
     (k, m) sface -> (m, n, mn) D.plus -> (k, n, kn) D.plus -> (kn, mn) sface =
- fun f mn kn -> sface_plus_sface f mn kn (id_sface (Nat mn))
+ fun f mn kn -> sface_plus_sface f mn kn (id_sface (D.plus_right mn))
 
 let plus_sface : type m n nm k nk.
     n D.t -> (n, m, nm) D.plus -> (n, k, nk) D.plus -> (k, m) sface -> (nk, nm) sface =
@@ -103,14 +104,14 @@ let rec sface_of_plus : type ml n k nk.
  fun nk f ->
   match nk with
   | Zero -> SFace_of_plus (D.Zero, f, Zero)
-  | Suc nk -> (
+  | Suc (nk, Unit) -> (
       match f with
       | End (f, e) ->
           let (SFace_of_plus (ml, f1, f2)) = sface_of_plus nk f in
           SFace_of_plus (ml, f1, End (f2, e))
       | Mid f ->
           let (SFace_of_plus (ml, f1, f2)) = sface_of_plus nk f in
-          SFace_of_plus (Suc ml, f1, Mid f2))
+          SFace_of_plus (Suc (ml, Unit), f1, Mid f2))
 
 type (_, _) d_le = Le : ('m, 'n, 'mn) D.plus -> ('m, 'mn) d_le
 
@@ -118,23 +119,23 @@ let rec plus_of_sface : type m mn. (m, mn) sface -> (m, mn) d_le = function
   | Zero -> Le Zero
   | End (d, _) ->
       let (Le mn) = plus_of_sface d in
-      Le (Suc mn)
+      Le (Suc (mn, Unit))
   | Mid d ->
       let (Le mn) = plus_of_sface d in
-      Le (N.suc_plus_eq_suc mn)
+      Le (D.suc_plus_eq_suc mn)
 
 (* As long as there is at least one endpoint, any dimension has at least one zero-dimensional face. *)
 
 let rec vertex : type n. n D.t -> (D.zero, n) sface option = function
-  | Nat Zero -> Some Zero
-  | Nat (Suc n) -> (
+  | Word Zero -> Some Zero
+  | Word (Suc (n, Unit)) -> (
       let open Monad.Ops (Monad.Maybe) in
       let (Wrap l) = Endpoints.wrapped () in
       match Endpoints.len l with
-      | Nat (Suc _) ->
-          let* s = vertex (Nat n) in
+      | N.Nat (Suc _) ->
+          let* s = vertex (Word n) in
           Some (End (s, (l, Top)))
-      | Nat Zero -> None)
+      | N.Nat Zero -> None)
 
 (* A strict face of a singleton dimension is either the identity or an endpoint. *)
 

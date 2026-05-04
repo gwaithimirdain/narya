@@ -17,14 +17,14 @@ let rec sface_of_tface : type m n k nk. (m, n, k, nk) tface -> (m, nk) sface = f
 let rec plus_of_tface : type m n k nk. (m, n, k, nk) tface -> (m, nk) d_le = function
   | End (d, _, _) ->
       let (Le mn) = plus_of_sface d in
-      Le (Suc mn)
+      Le (Suc (mn, Unit))
   | Mid d ->
       let (Le mn) = plus_of_tface d in
-      Le (N.suc_plus_eq_suc mn)
+      Le (D.suc_plus_eq_suc mn)
 
 let rec cod_plus_of_tface : type m n k nk. (m, n, k, nk) tface -> (n, k, nk) D.plus = function
-  | End (_, p, _) -> Suc p
-  | Mid d -> Suc (cod_plus_of_tface d)
+  | End (_, p, _) -> Suc (p, Unit)
+  | Mid d -> Suc (cod_plus_of_tface d, Unit)
 
 let rec dom_tface : type m n k nk. (m, n, k, nk) tface -> m D.t = function
   | End (d, _, _) -> dom_sface d
@@ -54,7 +54,7 @@ let rec tface_plus : type m n k nk l ml kl nkl.
  fun d kl nkl ml ->
   match (kl, nkl, ml) with
   | Zero, Zero, Zero -> d
-  | Suc kl, Suc nkl, Suc ml -> Mid (tface_plus d kl nkl ml)
+  | Suc (kl, Unit), Suc (nkl, Unit), Suc (ml, Unit) -> Mid (tface_plus d kl nkl ml)
 
 let rec plus_tface : type m n k nk l lm ln lnk.
     l D.t ->
@@ -65,8 +65,8 @@ let rec plus_tface : type m n k nk l lm ln lnk.
     (lm, ln, k, lnk) tface =
  fun l lm ln l_nk d ->
   match (d, lm, l_nk) with
-  | Mid d, Suc lm, Suc l_nk -> Mid (plus_tface l lm ln l_nk d)
-  | End (s, nk, ll), _, Suc l_nk ->
+  | Mid d, Suc (lm, Unit), Suc (l_nk, Unit) -> Mid (plus_tface l lm ln l_nk d)
+  | End (s, nk, ll), _, Suc (l_nk, Unit) ->
       let ln_k = D.plus_assocl ln nk l_nk in
       End (plus_sface l l_nk lm s, ln_k, ll)
 
@@ -125,10 +125,10 @@ let rec sface_plus_tface : type m n mn l nl mnl k p kp.
     (kp, mn, l, mnl) tface =
  fun fkm mn m_nl kp fpnl ->
   match (fpnl, m_nl, kp) with
-  | End (fpn, nl, e), Suc m_nl, kp ->
+  | End (fpn, nl, e), Suc (m_nl, Unit), kp ->
       let mn_l = D.plus_assocl mn nl m_nl in
       End (sface_plus_sface fkm m_nl kp fpn, mn_l, e)
-  | Mid fpn, Suc m_nl, Suc kp -> Mid (sface_plus_tface fkm mn m_nl kp fpn)
+  | Mid fpn, Suc (m_nl, Unit), Suc (kp, Unit) -> Mid (sface_plus_tface fkm mn m_nl kp fpn)
 
 let sface_plus_pface : type m n mn k p kp.
     (k, m) sface -> (m, n, mn) D.plus -> (k, p, kp) D.plus -> (p, n) pface -> (kp, m, n, mn) tface =
@@ -144,10 +144,10 @@ let rec tface_plus_sface : type m l ml ln n mln k p kp.
  fun fkm ml_n ln kp fpn ->
   match (fpn, ml_n, ln, kp) with
   | Zero, Zero, Zero, Zero -> fkm
-  | End (fpn, e), Suc ml_n, Suc ln, kp ->
+  | End (fpn, e), Suc (ml_n, Unit), Suc (ln, Unit), kp ->
       let m_ln = D.plus_assocr (cod_plus_of_tface fkm) ln ml_n in
       End (sface_plus_sface (sface_of_tface fkm) ml_n kp fpn, m_ln, e)
-  | Mid fpn, Suc ml_n, Suc ln, Suc kp -> Mid (tface_plus_sface fkm ml_n ln kp fpn)
+  | Mid fpn, Suc (ml_n, Unit), Suc (ln, Unit), Suc (kp, Unit) -> Mid (tface_plus_sface fkm ml_n ln kp fpn)
 
 (* Conversely, every tube face decomposes as an ordinary strict face added to a tube face along a decomposition of its uninstantiated dimensions. *)
 
@@ -167,7 +167,7 @@ let rec tface_of_plus : type m n k nk l nkl.
       TFace_of_plus (pq, d1, End (d2, kl, e))
   | Mid d ->
       let (TFace_of_plus (pq, d1, d2)) = tface_of_plus nk d in
-      TFace_of_plus (Suc pq, d1, Mid d2)
+      TFace_of_plus (Suc (pq, Unit), d1, Mid d2)
 
 (* In particular, any tube face decomposes as a strict face plus a proper face. *)
 

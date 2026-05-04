@@ -43,12 +43,12 @@ module Cube (F : Fam2) = struct
         x
     | Branch (l1, br, _), End (d, (l2, e)) ->
         let (Le km') = plus_of_sface d in
-        let Eq = D.minus_uniq' (dom_sface d) (Suc km') km in
-        let (Suc nm') = nm in
+        let Eq = D.minus_uniq' (dom_sface d) (Suc (km', Unit)) km in
+        let (Suc (nm', Unit)) = nm in
         let Eq = Endpoints.uniq l1 l2 in
         gfind (Bwv.nth e br) km' nm' d
     | Branch (_, _, br), Mid d ->
-        let (Suc km) = N.plus_suc km in
+        let (Suc (km, Unit)) = D.plus_suc km in
         gfind br km nm d
 
   let find : type n k b. (n, b) t -> (k, n) sface -> (k, b) F.t =
@@ -185,7 +185,7 @@ module Cube (F : Fam2) = struct
           let Zero, Zero = (km, lm) in
           M.apply (g.map (sface_of_bw d) (Heter.lab trs)) @@ fun x -> Heter.leaf x
       | Branch (_, _, _) :: _ ->
-          let (Suc km') = km in
+          let (Suc (km', Unit)) = km in
           let (Ends (l, hs, ends)) = Heter.ends trs in
           let mid = Heter.mid trs in
           let (Hgts newhs) = Heter.hgts_of_tlist cst in
@@ -252,20 +252,20 @@ module Cube (F : Fam2) = struct
         (m, mk, b) gt M.t =
      fun m mk ml d g ->
       match m with
-      | Nat Zero ->
+      | Word Zero ->
           let Eq = D.plus_uniq mk (D.zero_plus (dom_bwsface d)) in
           let Eq = D.plus_uniq ml (D.zero_plus (cod_bwsface d)) in
           M.apply (g.build (sface_of_bw d)) @@ fun x -> Leaf x
-      | Nat (Suc m) ->
-          let (Suc mk') = D.plus_suc mk in
+      | Word (Suc (m, Unit)) ->
+          let (Suc (mk', Unit)) = D.plus_suc mk in
           let (Wrap l) = Endpoints.wrapped () in
           M.apply
             (M.zip
                (fun () ->
                  BwvM.mapM
-                   (fun e -> gbuildM (Nat m) mk' (D.plus_suc ml) (End (e, d)) g)
+                   (fun e -> gbuildM (Word m) mk' (D.plus_suc ml) (End (e, d)) g)
                    (Endpoints.indices l))
-               (fun () -> gbuildM (Nat m) (D.plus_suc mk) (D.plus_suc ml) (Mid d) g))
+               (fun () -> gbuildM (Word m) (D.plus_suc mk) (D.plus_suc ml) (Mid d) g))
           @@ fun (ends, mid) -> Branch (l, ends, mid)
 
     let buildM : type n b. n D.t -> (n, b) builderM -> (n, b) t M.t =
@@ -319,7 +319,7 @@ module CubeOf = struct
     match tr with
     | Leaf x -> Leaf x
     | Branch (l, ends, mid) ->
-        let (Suc n12') = N.plus_suc n12 in
+        let (Suc (n12', Unit)) = D.plus_suc n12 in
         Branch (l, Bwv.map (fun t -> lift n12' t) ends, lift n12 mid)
 
   let rec lower : type m k n1 n2 n12 b.
@@ -328,8 +328,9 @@ module CubeOf = struct
     match (tr, n12) with
     | Leaf x, _ -> Leaf x
     | _, Zero -> tr
-    | Branch (l, ends, mid), Suc n12' ->
-        let mk' = N.plus_suc mk in
-        let (Suc mk'') = mk' in
-        Branch (l, Bwv.map (fun t -> lower mk'' (N.plus_suc n12') t) ends, lower mk' n12 mid)
+    | Branch (l, ends, mid), Suc (n12', Unit) ->
+        let mk' = D.plus_suc mk in
+        let (Suc (mk'', Unit)) = mk' in
+        Branch (l, Bwv.map (fun t -> lower mk'' (D.plus_suc n12') t) ends, lower mk' n12 mid)
+
 end
