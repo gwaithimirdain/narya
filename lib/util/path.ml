@@ -1,77 +1,38 @@
-open Signatures
 open Tbwd
 open Category
 
 (* Type-level free categories. *)
 
-module type Quiver = sig
-  module Obj : Comparable
-
-  type ('src, 'g, 'tgt) t
-
-  val src : ('src, 'g, 'tgt) t -> 'src Obj.t
-  val tgt : ('src, 'g, 'tgt) t -> 'tgt Obj.t
-  val src_uniq : ('src1, 'g, 'tgt1) t -> ('src2, 'g, 'tgt2) t -> ('src1, 'src2) Eq.t
-  val tgt_uniq : ('src1, 'g, 'tgt1) t -> ('src2, 'g, 'tgt2) t -> ('tgt1, 'tgt2) Eq.t
-
-  val compare :
-    ('d1, 'g1, 'c1) t -> ('d2, 'g2, 'c2) t -> ('d1 * 'g1 * 'c1, 'd2 * 'g2 * 'c2) Eq.compare
-end
-
-module type Quivermap = sig
-  module Dom : Quiver
-  module Cod : Quiver
-  module Obj : Function with module Dom = Dom.Obj and module Cod = Cod.Obj
-
-  type (_, _, _, _, _, _) t
-
-  val dom : ('a, 'm, 'b, 'x, 'n, 'y) t -> ('a, 'm, 'b) Dom.t
-  val cod : ('a, 'm, 'b, 'x, 'n, 'y) t -> ('x, 'n, 'y) Cod.t
-  val src : ('a, 'm, 'b, 'x, 'n, 'y) t -> ('a, 'x) Obj.t
-  val tgt : ('a, 'm, 'b, 'x, 'n, 'y) t -> ('b, 'y) Obj.t
-
-  type (_, _, _) exists = Exists : ('a, 'm, 'b, 'x, 'n, 'y) t -> ('a, 'm, 'b) exists
-
-  val exists : ('a, 'm, 'b) Dom.t -> ('a, 'm, 'b) exists
-
-  val uniq :
-    ('a, 'm, 'b, 'x1, 'n1, 'y1) t ->
-    ('a, 'm, 'b, 'x2, 'n2, 'y2) t ->
-    ('x1 * 'n1 * 'y1, 'x2 * 'n2 * 'y2) Eq.t
-end
-
-(* The free category on a quiver.  Its objects are those of the quiver, and its morphisms ("paths") are sequences of composable edges.  We follow the design of Word.Make: paths are represented as type-level backwards lists of edge-types (so we can append on the right efficiently), and composition is encoded as a relation. *)
+(* The free category on a quiver.  Its objects are those of the quiver, and its morphisms ("paths") are sequences of composable edges.  As with words (free monoids), paths are represented as type-level backwards lists of edges (so we can append on the right efficiently), and composition is encoded as a relation. *)
 
 module Make (Q : Quiver) = struct
   module Obj = Q.Obj
 
-  (* The "shape" of a path is a type-level backwards list of generators.  As in Word, the list elements are just the edge-type indices; the source and target objects are tracked separately by the path itself. *)
-
-  type zero = emp
+  type 'a id = private Dummy_id
   type ('n, 'g) suc = ('n, 'g) snoc
 
   (* ********** Composition ********** *)
 
-  (* Composition is the analog of Word's addition.  ('a, 'm, 'b, 'n, 'c, 'p) comp says that a path from 'a to 'b of shape 'm composed with a path from 'b to 'c of shape 'n is a path from 'a to 'c of shape 'p.  As with Word, we never carry around the prefix path explicitly; the prefix shape and source are existential, witnessed by the existence of a comp relation. *)
+  (* Composition is the analog of Word's addition.  ('a, 'm, 'b, 'n, 'c, 'p) comp says that a path 'm from 'a to 'b composed with a path 'n from 'b to 'c is a path 'p from 'a to 'c.  As with Word, we never carry around the prefix path explicitly; the prefix shape and source are existential, witnessed by the existence of a comp relation. *)
 
   type (_, _, _, _, _, _) comp =
-    | Zero : ('a, 'm, 'b, zero, 'b, 'm) comp
+    | Zero : ('a, 'm, 'b, 'b id, 'b, 'm) comp
     | Suc :
         ('a, 'm, 'b, 'n, 'c, 'p) comp * ('c, 'g, 'd) Q.t
         -> ('a, 'm, 'b, ('n, 'g) suc, 'd, ('p, 'g) suc) comp
 
-  (* A valid path from 'src to 'tgt of shape 'shape.  Following Word, this is "anything that can sit on the right of a composition"; we additionally remember the source object so that, e.g., the identity path can produce a target object on demand. *)
+  (* A valid path 'morphism from 'src to 'tgt.  Following Word, this is "anything that can sit on the right of a composition"; we additionally remember the source object so that, e.g., the identity path can produce a target object on demand. *)
 
   type (_, _, _) t =
     | Path :
-        'src Obj.t * ('any_a, 'any_m, 'src, 'shape, 'tgt, 'any_p) comp
-        -> ('src, 'shape, 'tgt) t
+        'src Obj.t * ('any_a, 'any_m, 'src, 'morphism, 'tgt, 'any_p) comp
+        -> ('src, 'morphism, 'tgt) t
 
-  type wrapped = Wrap : ('src, 'shape, 'tgt) t -> wrapped
+  type wrapped = Wrap : ('src, 'morphism, 'tgt) t -> wrapped
 
   (* Smart constructors *)
 
-  let id : type a. a Obj.t -> (a, zero, a) t = fun a -> Path (a, Zero)
+  let id : type a. a Obj.t -> (a, a id, a) t = fun a -> Path (a, Zero)
 
   let suc : type a m b g c. (a, m, b) t -> (b, g, c) Q.t -> (a, (m, g) suc, c) t =
    fun (Path (a, n)) g -> Path (a, Suc (n, g))
@@ -85,6 +46,22 @@ module Make (Q : Quiver) = struct
     match p with
     | Zero -> a
     | Suc (_, g) -> Q.tgt g
+
+  let rec src_uniq : type src1 src2 tgt1 tgt2 morphism.
+      (src1, morphism, tgt1) t -> (src2, morphism, tgt2) t -> (src1, src2) Eq.t =
+   fun m1 m2 ->
+    match (m1, m2) with
+    | Path (_, Zero), Path (_, Zero) -> Eq
+    | Path (s1, Suc (m1, _)), Path (s2, Suc (m2, _)) ->
+        let Eq = src_uniq (Path (s1, m1)) (Path (s2, m2)) in
+        Eq
+
+  let tgt_uniq : type src1 src2 tgt1 tgt2 morphism.
+      (src1, morphism, tgt1) t -> (src2, morphism, tgt2) t -> (tgt1, tgt2) Eq.t =
+   fun m1 m2 ->
+    match (m1, m2) with
+    | Path (_, Zero), Path (_, Zero) -> Eq
+    | Path (_, Suc (_, g1)), Path (_, Suc (_, g2)) -> Q.tgt_uniq g1 g2
 
   (* ********** Computing compositions ********** *)
 
@@ -108,8 +85,7 @@ module Make (Q : Quiver) = struct
   let comp_right : type a m b n c p. b Obj.t -> (a, m, b, n, c, p) comp -> (b, n, c) t =
    fun b mn -> Path (b, mn)
 
-  let rec comp_left : type a m b n c p.
-      (a, m, b, n, c, p) comp -> (a, p, c) t -> (a, m, b) t =
+  let rec comp_left : type a m b n c p. (a, m, b, n, c, p) comp -> (a, p, c) t -> (a, m, b) t =
    fun ev result ->
     match (ev, result) with
     | Zero, _ -> result
@@ -129,13 +105,13 @@ module Make (Q : Quiver) = struct
 
   (* ********** Unitality ********** *)
 
-  let rec id_comp : type b n c. (b, n, c) t -> (b, zero, b, n, c, n) comp =
+  let rec id_comp : type b n c. (b, n, c) t -> (b, b id, b, n, c, n) comp =
    fun n ->
     match n with
     | Path (_, Zero) -> Zero
     | Path (b, Suc (n_inner, g)) -> Suc (id_comp (Path (b, n_inner)), g)
 
-  let comp_id : type a m b. (a, m, b) t -> (a, m, b, zero, b, m) comp = fun _ -> Zero
+  let comp_id : type a m b. (a, m, b) t -> (a, m, b, b id, b, m) comp = fun _ -> Zero
 
   (* ********** Associativity ********** *)
 
@@ -199,36 +175,16 @@ module MakeCheck (Q : Quiver) : Category = Make (Q)
 
 (* Functors out of a free category, determined by a map on the generating quiver.  Analogous to Word.Hom: given a quiver Q, a target category Cod, and a quiver morphism F sending objects of Q to objects of Cod and edges of Q to morphisms (paths) of Cod, this defines the unique functor Path.Make(Q) -> Cod that extends F. *)
 
-module Hom
-    (Q : Quiver)
-    (Cod : Category)
-    (F : sig
-      module Obj : Function with module Dom = Q.Obj and module Cod = Cod.Obj
-
-      type (_, _, _, _, _, _) t
-
-      val dom : ('a, 'g, 'b, 'x, 'n, 'y) t -> ('a, 'g, 'b) Q.t
-      val cod : ('a, 'g, 'b, 'x, 'n, 'y) t -> ('x, 'n, 'y) Cod.t
-      val src : ('a, 'g, 'b, 'x, 'n, 'y) t -> ('a, 'x) Obj.t
-      val tgt : ('a, 'g, 'b, 'x, 'n, 'y) t -> ('b, 'y) Obj.t
-
-      type (_, _, _) exists = Exists : ('a, 'g, 'b, 'x, 'n, 'y) t -> ('a, 'g, 'b) exists
-
-      val exists : ('a, 'g, 'b) Q.t -> ('a, 'g, 'b) exists
-
-      val uniq :
-        ('a, 'g, 'b, 'x1, 'n1, 'y1) t ->
-        ('a, 'g, 'b, 'x2, 'n2, 'y2) t ->
-        ('x1 * 'n1 * 'y1, 'x2 * 'n2 * 'y2) Eq.t
-    end) =
+module Hom (Q : Quiver) (Cod : Category) (F : Quivermap with module Dom = Q and module Cod = Cod) =
 struct
   module Dom = Make (Q)
   module Cod = Cod
+  module Obj = F.Obj
 
   (* ('a, 'm, 'b, 'x, 'n, 'y) t says that the path 'a -> 'b of shape 'm in Dom is sent to the morphism 'x -> 'y of shape 'n in Cod.  The Zero constructor remembers an object-map witness so we can reconstruct the (identity) image from it. *)
 
   type (_, _, _, _, _, _) t =
-    | Zero : ('a, 'x) F.Obj.t -> ('a, Dom.zero, 'a, 'x, Cod.zero, 'x) t
+    | Zero : ('a, 'x) F.Obj.t -> ('a, 'a Dom.id, 'a, 'x, 'x Cod.id, 'x) t
     | Suc :
         ('a, 'm, 'b, 'x, 'n1, 'y) t
         * ('b, 'g, 'c, 'y, 'n2, 'z) F.t
@@ -245,11 +201,11 @@ struct
 
   (* The object-map witnesses for the source and target of a homomorphism. *)
 
-  let rec src_obj : type a m b x n y. (a, m, b, x, n, y) t -> (a, x) F.Obj.t = function
+  let rec src : type a m b x n y. (a, m, b, x, n, y) t -> (a, x) F.Obj.t = function
     | Zero fab -> fab
-    | Suc (fm, _, _) -> src_obj fm
+    | Suc (fm, _, _) -> src fm
 
-  let tgt_obj : type a m b x n y. (a, m, b, x, n, y) t -> (b, y) F.Obj.t = function
+  let tgt : type a m b x n y. (a, m, b, x, n, y) t -> (b, y) F.Obj.t = function
     | Zero fab -> fab
     | Suc (_, fg, _) -> F.tgt fg
 
@@ -264,14 +220,12 @@ struct
     | Path (a, Suc (m_inner, g_edge)) ->
         let (Exists fm) = exists (Path (a, m_inner)) in
         let (Exists fg) = F.exists g_edge in
-        let Eq = F.Obj.uniq (tgt_obj fm) (F.src fg) in
+        let Eq = F.Obj.uniq (tgt fm) (F.src fg) in
         let (Comp n12) = Cod.comp (F.cod fg) in
         Exists (Suc (fm, fg, n12))
 
   let rec uniq : type a m b x1 n1 y1 x2 n2 y2.
-      (a, m, b, x1, n1, y1) t ->
-      (a, m, b, x2, n2, y2) t ->
-      (x1 * n1 * y1, x2 * n2 * y2) Eq.t =
+      (a, m, b, x1, n1, y1) t -> (a, m, b, x2, n2, y2) t -> (x1 * n1 * y1, x2 * n2 * y2) Eq.t =
    fun f1 f2 ->
     match (f1, f2) with
     | Zero fab1, Zero fab2 ->
@@ -283,6 +237,10 @@ struct
         let Eq = F.uniq g1 g2 in
         let Eq = Cod.comp_uniq n1 n2 in
         Eq
+
+  (* The functor preserves identities *)
+
+  let id : type a x. (a, x) F.Obj.t -> (a, a Dom.id, a, x, x Cod.id, x) t = fun fa -> Zero fa
 
   (* The functor preserves composition: given homomorphism evidence for two composable paths and evidence that they compose in Dom, we obtain homomorphism evidence for the composite path together with evidence that the images compose in Cod. *)
 
@@ -306,3 +264,10 @@ struct
         let x_yfg = Cod.comp_assocr xy y_fg xy_fg in
         Comp (Suc (fc, fg, xy_fg), x_yfg)
 end
+
+module HomCheck
+    (Q : Quiver)
+    (Cod : Category)
+    (F : Quivermap with module Dom = Q and module Cod = Cod) :
+  Quivermap with module Dom = Make(Q) and module Cod = Cod =
+  Hom (Q) (Cod) (F)

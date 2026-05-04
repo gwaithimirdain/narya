@@ -688,6 +688,8 @@ struct
         let Eq = Cod.plus_uniq n1 n2 in
         Eq
 
+  let zero : (Dom.zero, Cod.zero) t = Zero
+
   type (_, _, _) plus = Plus : ('c, 'z) t * ('x, 'y, 'z) Cod.plus -> ('x, 'y, 'c) plus
 
   let rec plus : type a b c x y. (a, x) t -> (b, y) t -> (a, b, c) Dom.plus -> (x, y, c) plus =
