@@ -43,6 +43,32 @@ module type Quivermap = sig
     ('x1 * 'n1 * 'y1, 'x2 * 'n2 * 'y2) Eq.t
 end
 
+module type Quivermap2 = sig
+  module Param : Fam
+  module Dom : Quiver
+  module Cod : Quiver
+  module Obj : Function2 with module Param = Param and module Dom = Dom.Obj and module Cod = Cod.Obj
+
+  type ('param, 'dom_src, 'dom_morphism, 'dom_tgt, 'cod_src, 'cod_morphism, 'cod_tgt) t
+
+  val dom : ('param, 'a, 'm, 'b, 'x, 'n, 'y) t -> ('a, 'm, 'b) Dom.t
+  val cod : 'param Param.t -> ('param, 'a, 'm, 'b, 'x, 'n, 'y) t -> ('x, 'n, 'y) Cod.t
+
+  (* Images of morphisms are compatible with images of their source and target. *)
+  val src : ('param, 'a, 'm, 'b, 'x, 'n, 'y) t -> ('param, 'a, 'x) Obj.t
+  val tgt : ('param, 'a, 'm, 'b, 'x, 'n, 'y) t -> ('param, 'b, 'y) Obj.t
+
+  type (_, _, _, _) exists =
+    | Exists : ('param, 'a, 'm, 'b, 'x, 'n, 'y) t -> ('param, 'a, 'm, 'b) exists
+
+  val exists : 'param Param.t -> ('a, 'm, 'b) Dom.t -> ('param, 'a, 'm, 'b) exists
+
+  val uniq :
+    ('param, 'a, 'm, 'b, 'x1, 'n1, 'y1) t ->
+    ('param, 'a, 'm, 'b, 'x2, 'n2, 'y2) t ->
+    ('x1 * 'n1 * 'y1, 'x2 * 'n2 * 'y2) Eq.t
+end
+
 module type Category = sig
   include Quiver
 

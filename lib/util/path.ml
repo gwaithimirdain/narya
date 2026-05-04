@@ -1,3 +1,4 @@
+open Signatures
 open Tbwd
 open Category
 
@@ -271,3 +272,116 @@ module HomCheck
     (F : Quivermap with module Dom = Q and module Cod = Cod) :
   Quivermap with module Dom = Make(Q) and module Cod = Cod =
   Hom (Q) (Cod) (F)
+
+(* Parametrized families of functors *)
+
+module Hom2
+    (Param : Fam)
+    (Q : Quiver)
+    (Cod : Category)
+    (F : Quivermap2 with module Param = Param and module Dom = Q and module Cod = Cod) =
+struct
+  module Param = Param
+  module Dom = Make (Q)
+  module Cod = Cod
+  module Obj = F.Obj
+
+  (* ('a, 'm, 'b, 'x, 'n, 'y) t says that the path 'a -> 'b of shape 'm in Dom is sent to the morphism 'x -> 'y of shape 'n in Cod.  The Zero constructor remembers an object-map witness so we can reconstruct the (identity) image from it. *)
+
+  type (_, _, _, _, _, _, _) t =
+    | Zero : ('param, 'a, 'x) F.Obj.t -> ('param, 'a, 'a Dom.id, 'a, 'x, 'x Cod.id, 'x) t
+    | Suc :
+        ('param, 'a, 'm, 'b, 'x, 'n1, 'y) t
+        * ('param, 'b, 'g, 'c, 'y, 'n2, 'z) F.t
+        * ('x, 'n1, 'y, 'n2, 'z, 'n3) Cod.comp
+        -> ('param, 'a, ('m, 'g) Dom.suc, 'c, 'x, 'n3, 'z) t
+
+  let rec dom : type param a m b x n y. (param, a, m, b, x, n, y) t -> (a, m, b) Dom.t = function
+    | Zero fab -> Dom.id (F.Obj.dom fab)
+    | Suc (fm, fg, _) -> Dom.suc (dom fm) (F.dom fg)
+
+  let rec cod : type param a m b x n y.
+      param Param.t -> (param, a, m, b, x, n, y) t -> (x, n, y) Cod.t =
+   fun param -> function
+    | Zero fab -> Cod.id (F.Obj.cod param fab)
+    | Suc (fm, _, n12) -> Cod.comp_out (cod param fm) n12
+
+  (* The object-map witnesses for the source and target of a homomorphism. *)
+
+  let rec src : type param a m b x n y. (param, a, m, b, x, n, y) t -> (param, a, x) F.Obj.t =
+    function
+    | Zero fab -> fab
+    | Suc (fm, _, _) -> src fm
+
+  let tgt : type param a m b x n y. (param, a, m, b, x, n, y) t -> (param, b, y) F.Obj.t = function
+    | Zero fab -> fab
+    | Suc (_, fg, _) -> F.tgt fg
+
+  type (_, _, _, _) exists =
+    | Exists : ('param, 'a, 'm, 'b, 'x, 'n, 'y) t -> ('param, 'a, 'm, 'b) exists
+
+  let rec exists : type param a m b. param Param.t -> (a, m, b) Dom.t -> (param, a, m, b) exists =
+   fun param path ->
+    match path with
+    | Path (a, Zero) ->
+        let (Exists fab) = F.Obj.exists param a in
+        Exists (Zero fab)
+    | Path (a, Suc (m_inner, g_edge)) ->
+        let (Exists fm) = exists param (Path (a, m_inner)) in
+        let (Exists fg) = F.exists param g_edge in
+        let Eq = F.Obj.uniq (tgt fm) (F.src fg) in
+        let (Comp n12) = Cod.comp (F.cod param fg) in
+        Exists (Suc (fm, fg, n12))
+
+  let rec uniq : type param a m b x1 n1 y1 x2 n2 y2.
+      (param, a, m, b, x1, n1, y1) t ->
+      (param, a, m, b, x2, n2, y2) t ->
+      (x1 * n1 * y1, x2 * n2 * y2) Eq.t =
+   fun f1 f2 ->
+    match (f1, f2) with
+    | Zero fab1, Zero fab2 ->
+        let Eq = F.Obj.uniq fab1 fab2 in
+        Eq
+    | Suc (m1, g1, n1), Suc (m2, g2, n2) ->
+        let Eq = Q.src_uniq (F.dom g1) (F.dom g2) in
+        let Eq = uniq m1 m2 in
+        let Eq = F.uniq g1 g2 in
+        let Eq = Cod.comp_uniq n1 n2 in
+        Eq
+
+  (* The functor preserves identities *)
+
+  let id : type param a x. (param, a, x) F.Obj.t -> (param, a, a Dom.id, a, x, x Cod.id, x) t =
+   fun fa -> Zero fa
+
+  (* The functor preserves composition: given homomorphism evidence for two composable paths and evidence that they compose in Dom, we obtain homomorphism evidence for the composite path together with evidence that the images compose in Cod. *)
+
+  type (_, _, _, _, _, _, _, _, _) comp =
+    | Comp :
+        ('param, 'a, 'p, 'c, 'x, 'n3, 'z) t * ('x, 'n1, 'y, 'n2, 'z, 'n3) Cod.comp
+        -> ('param, 'a, 'p, 'c, 'x, 'n1, 'y, 'n2, 'z) comp
+
+  let rec comp : type param a m b n c p x y z n1 n2.
+      param Param.t ->
+      (param, a, m, b, x, n1, y) t ->
+      (param, b, n, c, y, n2, z) t ->
+      (a, m, b, n, c, p) Dom.comp ->
+      (param, a, p, c, x, n1, y, n2, z) comp =
+   fun param fa fb ab ->
+    match (fb, ab) with
+    | Zero _, Zero -> Comp (fa, Cod.comp_id (cod param fa))
+    | Suc (fb_inner, fg, y_fg), Suc (ab_inner, edge) ->
+        let Eq = Q.src_uniq (F.dom fg) edge in
+        let (Comp (fc, xy)) = comp param fa fb_inner ab_inner in
+        let (Comp xy_fg) = Cod.comp (F.cod param fg) in
+        let x_yfg = Cod.comp_assocr xy y_fg xy_fg in
+        Comp (Suc (fc, fg, xy_fg), x_yfg)
+end
+
+module Hom2Check
+    (Param : Fam)
+    (Q : Quiver)
+    (Cod : Category)
+    (F : Quivermap2 with module Param = Param and module Dom = Q and module Cod = Cod) :
+  Quivermap2 with module Param = Param and module Dom = Make(Q) and module Cod = Cod =
+  Hom2 (Param) (Q) (Cod) (F)
