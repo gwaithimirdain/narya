@@ -1,31 +1,41 @@
 open Util
 module D = D
-module Dmap = Word.Map (D.Unit) (struct
-  module Key = D.Unit
-  module Make (F : Signatures.Fam2) :
-    Signatures.MAP with module Key := D.Unit and module F := F = struct
-    type 'b t = ('b, unit) F.t option
-    let empty : type b. b t = None
-    let find_opt : type g b. g D.Unit.t -> b t -> (b, g) F.t option =
-     fun D.Unit.Unit x -> x
-    let add : type g b. g D.Unit.t -> (b, g) F.t -> b t -> b t =
-     fun D.Unit.Unit v _ -> Some v
-    let update : type g b. g D.Unit.t -> ((b, g) F.t option -> (b, g) F.t option) -> b t -> b t =
-     fun D.Unit.Unit f x -> f x
-    let remove : type g b. g D.Unit.t -> b t -> b t = fun D.Unit.Unit _ -> None
-    type 'a mapper = { map : 'g. 'g D.Unit.t -> ('a, 'g) F.t -> ('a, 'g) F.t }
-    let map : type a. a mapper -> a t -> a t = fun f x -> Option.map (f.map D.Unit.Unit) x
-    type 'a iterator = { it : 'g. 'g D.Unit.t -> ('a, 'g) F.t -> unit }
-    let iter : type a. a iterator -> a t -> unit = fun f x -> Option.iter (f.it D.Unit.Unit) x
-  end
-end)
+
+module Dmap =
+  Word.Map
+    (D.Unit)
+    (struct
+      module Key = D.Unit
+
+      module Make (F : Signatures.Fam2) :
+        Signatures.MAP with module Key := D.Unit and module F := F = struct
+        type 'b t = ('b, unit) F.t option
+
+        let empty : type b. b t = None
+        let find_opt : type g b. g D.Unit.t -> b t -> (b, g) F.t option = fun D.Unit.Unit x -> x
+        let add : type g b. g D.Unit.t -> (b, g) F.t -> b t -> b t = fun D.Unit.Unit v _ -> Some v
+
+        let update : type g b. g D.Unit.t -> ((b, g) F.t option -> (b, g) F.t option) -> b t -> b t
+            =
+         fun D.Unit.Unit f x -> f x
+
+        let remove : type g b. g D.Unit.t -> b t -> b t = fun D.Unit.Unit _ -> None
+
+        type 'a mapper = { map : 'g. 'g D.Unit.t -> ('a, 'g) F.t -> ('a, 'g) F.t }
+
+        let map : type a. a mapper -> a t -> a t = fun f x -> Option.map (f.map D.Unit.Unit) x
+
+        type 'a iterator = { it : 'g. 'g D.Unit.t -> ('a, 'g) F.t -> unit }
+
+        let iter : type a. a iterator -> a t -> unit = fun f x -> Option.iter (f.it D.Unit.Unit) x
+      end
+    end)
 
 let is_pos : type n. n D.t -> bool = function
   | Word Zero -> false
   | Word (Suc _) -> true
 
 module Endpoints = Endpoints
-include Arith
 include Singleton
 include Deg
 include Perm

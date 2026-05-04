@@ -634,7 +634,7 @@ let split_inst : type m.
   let m = D.pos m in
   match tm with
   | Neu { head; args = Inst (args, mk, tyargs); _ } -> (
-      match (D.compare_zero (TubeOf.uninst tyargs), factor (D.pos mk) m) with
+      match (D.compare_zero (TubeOf.uninst tyargs), D.factor (D.pos mk) m) with
       | Zero, Some (Factor m_k) -> (
           let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (D.pos mk)) in
           let tyargs, rest = TubeOf.split (D.zero_plus m) m_k tyargs in

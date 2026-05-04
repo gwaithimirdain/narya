@@ -72,3 +72,12 @@ let of_char : type l. l len -> char -> (l t option, unit) result =
       | Some j -> Ok (Some (l, j))
       | None -> Error ()
   with Failure _ -> Error ()
+
+(* A dimension is totally nullary if all its directions have arity zero.  Currently there is only one direction, so it suffices to test whether the overall arity is zero.  *)
+
+let totally_nullary : type a. a D.t -> bool =
+ fun _ ->
+  let (Wrap l) = wrapped () in
+  match len l with
+  | N.Nat Zero -> true
+  | N.Nat (Suc _) -> false

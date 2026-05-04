@@ -11,6 +11,14 @@ module D : sig
   val minus : 'mn t -> ('m, 'n, 'mn) plus -> 'm t
   val minus_uniq : ('m1, 'n, 'mn) plus -> ('m2, 'n, 'mn) plus -> ('m1, 'm2) Eq.t
   val minus_uniq' : 'm t -> ('m, 'n1, 'mn) plus -> ('m, 'n2, 'mn) plus -> ('n1, 'n2) Eq.t
+
+  type (_, _) factor = Factor : ('n, 'k, 'nk) plus -> ('nk, 'n) factor
+
+  val factor : 'nk t -> 'n t -> ('nk, 'n) factor option
+
+  type (_, _) cofactor = Cofactor : ('n, 'k, 'nk) plus -> ('nk, 'k) cofactor
+
+  val cofactor : 'nk t -> 'k t -> ('nk, 'k) cofactor option
 end
 
 module Dmap : MAP_MAKER with module Key := D
@@ -33,6 +41,7 @@ module Endpoints : sig
   val wrapped : unit -> wrapped
   val internal : unit -> bool
   val hott : unit -> N.two len option
+  val totally_nullary : 'a D.t -> bool
 end
 
 type _ is_singleton
@@ -46,15 +55,6 @@ type any_dim = Any : 'n D.t -> any_dim
 val dim_of_string : string -> any_dim option
 val string_of_dim : 'n D.t -> string
 val is_pos : 'a D.t -> bool
-
-type (_, _) factor = Factor : ('n, 'k, 'nk) D.plus -> ('nk, 'n) factor
-
-val factor : 'nk D.t -> 'n D.t -> ('nk, 'n) factor option
-
-type (_, _) cofactor = Cofactor : ('n, 'k, 'nk) D.plus -> ('nk, 'k) cofactor
-
-val cofactor : 'nk D.t -> 'k D.t -> ('nk, 'k) cofactor option
-val totally_nullary : 'a D.t -> bool
 
 type (_, _) deg
 

@@ -1,6 +1,5 @@
 open Util
 open Tbwd
-open Arith
 
 (* ********** Degeneracies ********** *)
 
@@ -185,7 +184,7 @@ let comp_deg_extending : type m n l k. (m, n) deg -> (k, l) deg -> (k, n) deg_ex
   let l = cod_deg b in
   let m = dom_deg a in
   (* let n = cod_deg a in *)
-  let (Pushout (mi, lj)) = pushout m l in
+  let (Pushout (mi, lj)) = D.pushout m l in
   let (Plus kj) = D.plus (Word lj) in
   let (Plus ni) = D.plus (Word mi) in
   DegExt (kj, ni, comp_deg (deg_plus a ni mi) (deg_plus b lj kj))

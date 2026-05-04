@@ -443,6 +443,47 @@ module Make (G : Gen) = struct
   let compare_zero : type a. a t -> a compare_zero = function
     | Word Zero -> Zero
     | Word (Suc (a, g)) -> Pos (Pos (Word a, g))
+
+  (* ********** Factoring ********** *)
+
+  type (_, _) factor = Factor : ('n, 'k, 'nk) plus -> ('nk, 'n) factor
+
+  let rec factor : type nk n. nk t -> n t -> (nk, n) factor option =
+   fun nk n ->
+    let open Monad.Ops (Monad.Maybe) in
+    match compare nk n with
+    | Eq -> Some (Factor Zero)
+    | Neq -> (
+        match nk with
+        | Word Zero -> None
+        | Word (Suc (nk, g)) ->
+            let* (Factor n_k) = factor (Word nk) n in
+            return (Factor (Suc (n_k, g))))
+
+  type (_, _) cofactor = Cofactor : ('n, 'k, 'nk) plus -> ('nk, 'k) cofactor
+
+  let rec cofactor : type nk k. nk t -> k t -> (nk, k) cofactor option =
+   fun nk k ->
+    let open Monad.Ops (Monad.Maybe) in
+    match (nk, k) with
+    | Word Zero, Word Zero -> Some (Cofactor Zero)
+    | Word (Suc (nk, g)), Word (Suc (k, h)) -> (
+        match G.compare g h with
+        | Eq ->
+            let* (Cofactor n) = cofactor (Word nk) (Word k) in
+            return (Cofactor (Suc (n, g)))
+        | Neq -> None)
+    | Word (Suc _), Word Zero -> return (Cofactor (plus_zero nk))
+    | _ -> None
+
+  type (_, _) pushout = Pushout : ('a, 'c, 'p) plus * ('b, 'd, 'p) plus -> ('a, 'b) pushout
+
+  let pushout : type a b. a t -> b t -> (a, b) pushout =
+   fun a b ->
+    match (factor a b, factor b a) with
+    | _, Some (Factor ab) -> Pushout (ab, Zero)
+    | Some (Factor ba), _ -> Pushout (Zero, ba)
+    | _ -> raise (Failure "Word.pushout")
 end
 
 module type GenExp = sig
