@@ -266,7 +266,7 @@ module rec Internal_Pbijmap : functor (F : Fam2) -> sig
           -> ('evaluation, ('intrinsic * 'r) * 'v) t
   end
 
-  module Tup : module type of Tuple.Make (D.Unit) (Param)
+  module Tup : module type of Tuple.Make (Unitcomparable) (Param)
 
   type (_, _, _, _) gt =
     | Zero : ('r, 'v) F.t -> ('evaluation, D.zero, 'r, 'v) gt
@@ -289,7 +289,7 @@ functor
             -> ('evaluation, ('intrinsic * 'r) * 'v) t
     end
 
-    module Tup = Tuple.Make (D.Unit) (Param)
+    module Tup = Tuple.Make (Unitcomparable) (Param)
 
     (* An element of ('evaluation, 'intrinsic, 'v) t is an intrinsically well-typed map that associates to every partial bijection between 'evaluation and 'intrinsic, with remaining dimension 'r, an element of ('r, 'v) F.t.  As with cubes, we define this in terms of a more general type ('evaluation, 'intrinsic, 's, 'v) gt which associates to every such partial bijection an element of ('r+'s, 'v) F.t. *)
     type (_, _, _, _) gt =
@@ -397,8 +397,9 @@ module Pbijmap (F : Fam2) = struct
                 };
             right =
               (let build : type b g.
-                   g D.Unit.t -> (b, g, evaluation) Tbwd.insert -> (b, (_ * remaining) * v) Param.t
-                   =
+                   g Unitcomparable.t ->
+                   (b, g, evaluation) Tbwd.insert ->
+                   (b, (_ * remaining) * v) Param.t =
                 fun g i ->
                  let Unit = g in
                  Wrap
@@ -560,7 +561,7 @@ module Pbijmap (F : Fam2) = struct
           let (Exists_cons irvs) = MapTimes.exists_cons (Heter.params ms) in
           let (Exists irws) = MapTimes.exists ws in
           let map : type a g.
-              g D.Unit.t ->
+              g Unitcomparable.t ->
               (a, g, _) Tbwd.insert ->
               (a, _) Tup.Heter.hft ->
               (a, _) Tup.Heter.hft M.t =

@@ -252,7 +252,7 @@ module rec Internal_Insmap : functor (F : Fam) -> sig
           -> ('evaluation, 'intrinsic * 'v) t
   end
 
-  module Tup : module type of Tuple.Make (D.Unit) (Param)
+  module Tup : module type of Tuple.Make (Unitcomparable) (Param)
 
   type (_, _, _) t =
     | Zero : 'v F.t -> ('evaluation, D.zero, 'v) t
@@ -269,7 +269,7 @@ functor
             -> ('evaluation, 'intrinsic * 'v) t
     end
 
-    module Tup = Tuple.Make (D.Unit) (Param)
+    module Tup = Tuple.Make (Unitcomparable) (Param)
 
     (* In the absence of the 'remaining parametrization, we don't need a "gt" version but can go right to the "t". *)
     type (_, _, _) t =
@@ -320,7 +320,7 @@ module Insmap (F : Fam) = struct
     match iplus with
     | Zero -> Zero (f.build (ins_zero evaluation))
     | Suc (intrinsic, Unit) ->
-        let f : type b h. h D.Unit.t -> (b, h, evaluation) Tbwd.insert -> (b, _) Param.t =
+        let f : type b h. h Unitcomparable.t -> (b, h, evaluation) Tbwd.insert -> (b, _) Param.t =
          fun g i ->
           let Unit = g in
           Wrap
@@ -419,7 +419,7 @@ module Insmap (F : Fam) = struct
           let (Exists_cons irvs) = MapTimes.exists_cons (Heter.params ms) in
           let (Exists irws) = MapTimes.exists ws in
           let map : type a g.
-              g D.Unit.t ->
+              g Unitcomparable.t ->
               (a, g, evaluation) Tbwd.insert ->
               (a, _) Tup.Heter.hft ->
               (a, _) Tup.Heter.hft M.t =

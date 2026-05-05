@@ -1,4 +1,5 @@
 open Signatures
+open Monoid
 
 (* Module signatures for type-level categories.  At least in Util, we use "source" and "target" for morphisms in a small category, and "domain" and "codomain" for morphisms in a large category (e.g. homomorphisms of monoids, quiver maps, functors between small categories). *)
 
@@ -109,3 +110,79 @@ module type Category = sig
     ('a, 'mn, 'c, 'p, 'd, 'mnp) comp ->
     ('a, 'm, 'b, 'np, 'd, 'mnp) comp
 end
+
+module OneObject (M : Monoid) = struct
+  module Obj = Unitcomparable
+
+  type (_, _, _) t = Loop : 'm M.t -> (unit, 'm, unit) t
+
+  let src : type src m tgt. (src, m, tgt) t -> src Obj.t = fun (Loop _) -> Unit
+  let tgt : type src m tgt. (src, m, tgt) t -> tgt Obj.t = fun (Loop _) -> Unit
+
+  (* But a given morphism has exactly one source and target. *)
+  let src_uniq : type src1 m tgt1 src2 tgt2.
+      (src1, m, tgt1) t -> (src2, m, tgt2) t -> (src1, src2) Eq.t =
+   fun (Loop _) (Loop _) -> Eq
+
+  let tgt_uniq : type src1 m tgt1 src2 tgt2.
+      (src1, m, tgt1) t -> (src2, m, tgt2) t -> (tgt1, tgt2) Eq.t =
+   fun (Loop _) (Loop _) -> Eq
+
+  let compare : type d1 g1 c1 d2 g2 c2.
+      (d1, g1, c1) t -> (d2, g2, c2) t -> (d1 * g1 * c1, d2 * g2 * c2) Eq.compare =
+   fun (Loop m1) (Loop m2) ->
+    match M.compare m1 m2 with
+    | Eq -> Eq
+    | Neq -> Neq
+
+  type (_, _, _, _, _, _) comp =
+    | Loopcomp : ('n, 'm, 'nm) M.plus -> (unit, 'm, unit, 'n, 'c, 'nm) comp
+
+  type (_, _, _, _, _) has_comp =
+    | Comp : ('a, 'm, 'b, 'n, 'c, 'p) comp -> ('a, 'm, 'b, 'n, 'c) has_comp
+
+  let comp : type a m b n c. (a, m, b) t -> (a, m, b, n, c) has_comp =
+   fun (Loop m) ->
+    let (Plus mn) = M.plus m in
+    Comp (Loopcomp mn)
+
+  let comp_right : type a m b n c p. b Obj.t -> (a, m, b, n, c, p) comp -> (a, m, b) t =
+   fun Unit (Loopcomp mn) -> Loop (M.plus_right mn)
+
+  let comp_left : type a m b n c nm. (a, m, b, n, c, nm) comp -> (a, nm, c) t -> (b, n, c) t =
+   fun (Loopcomp n_m) (Loop nm) -> Loop (M.plus_left n_m nm)
+
+  let comp_out : type a m b n c p. (b, n, c) t -> (a, m, b, n, c, p) comp -> (a, p, c) t =
+   fun (Loop n) (Loopcomp nm) -> Loop (M.plus_out n nm)
+
+  let comp_uniq : type a m b n c p q.
+      (a, m, b, n, c, p) comp -> (a, m, b, n, c, q) comp -> (p, q) Eq.t =
+   fun (Loopcomp mn) (Loopcomp mn') -> M.plus_uniq mn mn'
+
+  type 'a id = M.zero
+
+  let id : type a. a Obj.t -> (a, a id, a) t = fun Unit -> Loop M.zero
+
+  let id_comp : type a m b. (a, m, b) t -> (a, m, b, b id, b, m) comp =
+   fun (Loop m) -> Loopcomp (M.zero_plus m)
+
+  let comp_id : type b n c. (b, n, c) t -> (b, b id, b, n, c, n) comp =
+   fun (Loop n) -> Loopcomp (M.plus_zero n)
+
+  (* Composition is associative. *)
+  let comp_assocr : type a m b n c mn p d np mnp.
+      (b, n, c, p, d, np) comp ->
+      (a, m, b, n, c, mn) comp ->
+      (a, m, b, np, d, mnp) comp ->
+      (a, mn, c, p, d, mnp) comp =
+   fun (Loopcomp np) (Loopcomp mn) (Loopcomp m_np) -> Loopcomp (M.plus_assocr np mn m_np)
+
+  let comp_assocl : type a m b n c mn p np d mnp.
+      (b, n, c, p, d, np) comp ->
+      (a, m, b, n, c, mn) comp ->
+      (a, mn, c, p, d, mnp) comp ->
+      (a, m, b, np, d, mnp) comp =
+   fun (Loopcomp np) (Loopcomp mn) (Loopcomp mn_p) -> Loopcomp (M.plus_assocl np mn mn_p)
+end
+
+module ObjObjectCheck (M : Monoid) : Quiver = OneObject (M)

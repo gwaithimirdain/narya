@@ -5,16 +5,7 @@ open Tbwd
 
 (* Moreover, instead of using the literal natural numbers N, we use the isomorphic type Word(Unit).  In the future we will generalize this to words over multiple directions of parametricity. *)
 
-module Unit = struct
-  type 'a t = Unit : unit t
-
-  let compare : type a b. a t -> b t -> (a, b) Eq.compare =
-   fun a b ->
-    match (a, b) with
-    | Unit, Unit -> Eq
-end
-
-include Word.Make (Unit)
+include Word.Make (Unitcomparable)
 
 (* Type-level natural numbers are represented by words over Unit, which are isomorphic to natural numbers.  We expose a unary [suc] for compatibility with the rest of the dim library. *)
 type 'n suc = ('n, unit) snoc
