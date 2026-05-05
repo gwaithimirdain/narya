@@ -40,6 +40,9 @@ module Make (Q : Quiver) = struct
   let suc : type a c b m g. (a, m, b) t -> (c, g, a) Q.t -> (c, (m, g) suc, b) t =
    fun (Path (m, b)) g -> Path (Suc (m, g), b)
 
+  let of_gen : type a m b. (a, m, b) Q.t -> (a, (b id, m) suc, b) t =
+   fun m -> Path (Suc (Zero, m), Q.tgt m)
+
   (* ********** Source and target ********** *)
 
   let src : type a m b. (a, m, b) t -> a Obj.t =
@@ -124,11 +127,11 @@ module Make (Q : Quiver) = struct
   (* In applicative reading: given evidence n∘m=mn, p∘n=np, and (p∘n)∘m=mnp (left-assoc input), derive p∘(n∘m)=mnp (right-assoc output).  The implementation walks m. *)
 
   let rec comp_assocr : type a m b n c d p mn np mnp.
-      (a, m, b, n, c, mn) comp ->
       (b, n, c, p, d, np) comp ->
+      (a, m, b, n, c, mn) comp ->
       (a, m, b, np, d, mnp) comp ->
       (a, mn, c, p, d, mnp) comp =
-   fun mn np mn_p ->
+   fun np mn mn_p ->
     match mn with
     | Zero ->
         let Zero = mn_p in
@@ -136,16 +139,16 @@ module Make (Q : Quiver) = struct
     | Suc (mn_inner, edge) ->
         let (Suc (mn_p_inner, edge')) = mn_p in
         let Eq = Q.tgt_uniq edge edge' in
-        Suc (comp_assocr mn_inner np mn_p_inner, edge)
+        Suc (comp_assocr np mn_inner mn_p_inner, edge)
 
   (* Reverse direction: from p∘(n∘m)=mnp (right-assoc input), derive (p∘n)∘m=mnp (left-assoc output). *)
 
   let rec comp_assocl : type a m b n c d p mn np mnp.
-      (a, m, b, n, c, mn) comp ->
       (b, n, c, p, d, np) comp ->
+      (a, m, b, n, c, mn) comp ->
       (a, mn, c, p, d, mnp) comp ->
       (a, m, b, np, d, mnp) comp =
-   fun mn np mnp ->
+   fun np mn mnp ->
     match mn with
     | Zero ->
         let Eq = comp_uniq np mnp in
@@ -153,7 +156,7 @@ module Make (Q : Quiver) = struct
     | Suc (mn_inner, edge) ->
         let (Suc (mnp_inner, edge')) = mnp in
         let Eq = Q.tgt_uniq edge edge' in
-        Suc (comp_assocl mn_inner np mnp_inner, edge)
+        Suc (comp_assocl np mn_inner mnp_inner, edge)
 
   (* ********** Comparison ********** *)
 
@@ -174,6 +177,10 @@ module Make (Q : Quiver) = struct
             match Q.compare g1 g2 with
             | Eq -> Eq
             | Neq -> Neq))
+
+  (* ********** Factoring and pushouts ********** *)
+
+  (* TODO *)
 end
 
 module MakeCheck (Q : Quiver) : Category = Make (Q)
@@ -269,8 +276,30 @@ struct
         let Eq = Q.tgt_uniq (F.dom fg) edge in
         let (Comp (fp_inner, x_yfg)) = comp fm_inner fn mn_inner in
         let (Comp xfg_y) = Cod.comp (F.cod fg) in
-        let x_y = Cod.comp_assocr x_fg x_yfg xfg_y in
+        let x_y = Cod.comp_assocr x_yfg x_fg xfg_y in
         Comp (Suc (fp_inner, fg, xfg_y), x_y)
+
+  (* If instead we know the image of a composite path, we can extract the images of the factors, which compose to the image of the composite.  This would be just taking the images of the factors and then using uniqueness, except that we aren't passed witnesses of the validity of those factors but rather extract them from the witness to the image of the composite. *)
+
+  type (_, _, _, _, _, _, _, _) uncomp =
+    | Uncomp :
+        ('b, 'n, 'c, 'y, 'r, 'z) t * ('a, 'm, 'b, 'x, 'q, 'y) t * ('x, 'q, 'y, 'r, 'z, 'rq) Cod.comp
+        -> ('a, 'm, 'b, 'n, 'c, 'x, 'rq, 'z) uncomp
+
+  let rec uncomp : type a m b n c nm x z rq.
+      (a, m, b, n, c, nm) Dom.comp -> (a, nm, c, x, rq, z) t -> (a, m, b, n, c, x, rq, z) uncomp =
+   fun nm fnm ->
+    match nm with
+    | Zero -> Uncomp (fnm, Zero (src fnm), Cod.comp_id (cod fnm))
+    | Suc (nm, g) ->
+        let (Suc (fnm, fg, rq_h)) = fnm in
+        let Eq = Q.tgt_uniq g (F.dom fg) in
+        let (Uncomp (fn, fm, rq)) = uncomp nm fnm in
+        let h = F.cod fg in
+        let (Comp qh) = Cod.comp h in
+        let r_qh = Cod.comp_assocr rq qh rq_h in
+        let f_mg = Suc (fm, fg, qh) in
+        Uncomp (fn, f_mg, r_qh)
 end
 
 module HomCheck
@@ -362,19 +391,44 @@ struct
 
   let rec comp : type param a m b n c p x y z n1 n2.
       param Param.t ->
-      (param, a, m, b, x, n2, y) t ->
       (param, b, n, c, y, n1, z) t ->
+      (param, a, m, b, x, n2, y) t ->
       (a, m, b, n, c, p) Dom.comp ->
       (param, a, p, c, x, n2, y, n1, z) comp =
-   fun param fm fn mn ->
+   fun param fn fm mn ->
     match (fm, mn) with
     | Zero _, Zero -> Comp (fn, Cod.comp_id (cod param fn))
     | Suc (fm_inner, fg, x_fg), Suc (mn_inner, edge) ->
         let Eq = Q.tgt_uniq (F.dom fg) edge in
-        let (Comp (fp_inner, x_yfg)) = comp param fm_inner fn mn_inner in
+        let (Comp (fp_inner, x_yfg)) = comp param fn fm_inner mn_inner in
         let (Comp xfg_y) = Cod.comp (F.cod param fg) in
-        let x_y = Cod.comp_assocr x_fg x_yfg xfg_y in
+        let x_y = Cod.comp_assocr x_yfg x_fg xfg_y in
         Comp (Suc (fp_inner, fg, xfg_y), x_y)
+
+  type (_, _, _, _, _, _, _, _, _) uncomp =
+    | Uncomp :
+        ('param, 'b, 'n, 'c, 'y, 'r, 'z) t
+        * ('param, 'a, 'm, 'b, 'x, 'q, 'y) t
+        * ('x, 'q, 'y, 'r, 'z, 'rq) Cod.comp
+        -> ('param, 'a, 'm, 'b, 'n, 'c, 'x, 'rq, 'z) uncomp
+
+  let rec uncomp : type param a m b n c nm x z rq.
+      param Param.t ->
+      (a, m, b, n, c, nm) Dom.comp ->
+      (param, a, nm, c, x, rq, z) t ->
+      (param, a, m, b, n, c, x, rq, z) uncomp =
+   fun param nm fnm ->
+    match nm with
+    | Zero -> Uncomp (fnm, Zero (src fnm), Cod.comp_id (cod param fnm))
+    | Suc (nm, g) ->
+        let (Suc (fnm, fg, rq_h)) = fnm in
+        let Eq = Q.tgt_uniq g (F.dom fg) in
+        let (Uncomp (fn, fm, rq)) = uncomp param nm fnm in
+        let h = F.cod param fg in
+        let (Comp qh) = Cod.comp h in
+        let r_qh = Cod.comp_assocr rq qh rq_h in
+        let f_mg = Suc (fm, fg, qh) in
+        Uncomp (fn, f_mg, r_qh)
 end
 
 module Hom2Check

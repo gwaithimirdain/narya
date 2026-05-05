@@ -98,14 +98,14 @@ module type Category = sig
 
   (* Composition is associative. *)
   val comp_assocr :
-    ('a, 'm, 'b, 'n, 'c, 'mn) comp ->
     ('b, 'n, 'c, 'p, 'd, 'np) comp ->
+    ('a, 'm, 'b, 'n, 'c, 'mn) comp ->
     ('a, 'm, 'b, 'np, 'd, 'mnp) comp ->
     ('a, 'mn, 'c, 'p, 'd, 'mnp) comp
 
   val comp_assocl :
-    ('a, 'm, 'b, 'n, 'c, 'mn) comp ->
     ('b, 'n, 'c, 'p, 'd, 'np) comp ->
+    ('a, 'm, 'b, 'n, 'c, 'mn) comp ->
     ('a, 'mn, 'c, 'p, 'd, 'mnp) comp ->
     ('a, 'm, 'b, 'np, 'd, 'mnp) comp
 end
