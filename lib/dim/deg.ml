@@ -1,5 +1,5 @@
 open Util
-open Arith
+open Tbwd
 
 (* ********** Degeneracies ********** *)
 
@@ -19,15 +19,15 @@ type (_, _) deg =
 
 let rec dom_deg : type m n. (m, n) deg -> m D.t = function
   | Zero a -> a
-  | Suc (s, i) -> D.insert_out (dom_deg s) i
+  | Suc (s, i) -> D.insert i (dom_deg s) Unit
 
 let rec cod_deg : type m n. (m, n) deg -> n D.t = function
   | Zero _ -> D.zero
   | Suc (s, _) -> D.suc (cod_deg s)
 
 let rec id_deg : type n. n D.t -> (n, n) deg = function
-  | Nat Zero -> Zero D.zero
-  | Nat (Suc n) -> Suc (id_deg (Nat n), Now)
+  | Word Zero -> Zero D.zero
+  | Word (Suc (n, Unit)) -> Suc (id_deg (Word n), Now)
 
 (* By "residual" of a degeneracy, given an element of its codomain, we mean the image of that element together with the degeneracy obtained by removing that element from the codomain and its image from the domain. *)
 
@@ -63,7 +63,7 @@ let rec deg_coresidual : type mpred m n.
     (m, n) deg -> (mpred, m) D.insert -> (mpred, n) deg_coresidual =
  fun s k ->
   match s with
-  | Zero m -> Coresidual_zero (Zero (D.insert_in m k))
+  | Zero m -> Coresidual_zero (Zero (D.uninsert k m))
   | Suc (s, j) -> (
       match D.compare_inserts j k with
       | Eq_inserts -> Coresidual_suc (s, Now)
@@ -78,7 +78,7 @@ let rec deg_plus : type m n k mk nk.
  fun s nk mk ->
   match (nk, mk) with
   | Zero, Zero -> s
-  | Suc nk, Suc mk -> Suc (deg_plus s nk mk, Now)
+  | Suc (nk, Unit), Suc (mk, Unit) -> Suc (deg_plus s nk mk, Now)
 
 (* Extend the domain of a codegeneracy by a number of degenerate points, leaving the codomain fixed. *)
 let rec deg_plus_dom : type m n k mk. (m, n) deg -> (m, k, mk) D.plus -> (mk, n) deg =
@@ -95,7 +95,7 @@ let rec deg_plus_deg : type m n mn k l kl.
  fun skm mn kl sln ->
   match (mn, sln) with
   | Zero, Zero _ -> deg_plus_dom skm kl
-  | Suc mn', Suc (sln', i) ->
+  | Suc (mn', Unit), Suc (sln', i) ->
       let (Plus kl') = D.plus (dom_deg sln') in
       Suc (deg_plus_deg skm mn' kl' sln', D.plus_insert kl' kl i)
 
@@ -104,20 +104,6 @@ let plus_deg : type m n mn l ml.
     m D.t -> (m, n, mn) D.plus -> (m, l, ml) D.plus -> (l, n) deg -> (ml, mn) deg =
  fun m mn ml s -> deg_plus_deg (id_deg m) mn ml s
 
-(* Insert an element into the codomain of a degeneracy, inserting an element into its domain at the same De Bruijn index. *)
-type (_, _) insert_deg =
-  | Insert_deg : ('m, 'msuc) D.insert * ('msuc, 'nsuc) deg -> ('m, 'nsuc) insert_deg
-
-let rec insert_deg : type m n nsuc. (m, n) deg -> (n, nsuc) D.insert -> (m, nsuc) insert_deg =
- fun s i ->
-  match i with
-  | Now -> Insert_deg (Now, Suc (s, Now))
-  | Later i0 ->
-      let (Suc (s0, j0)) = s in
-      let (Insert_deg (i1, s1)) = insert_deg s0 i0 in
-      let (Commute_insert (i2, j1)) = D.commute_insert ~lift:j0 ~over:i1 in
-      Insert_deg (i2, Suc (s1, j1))
-
 (* The degeneracy (which is a permutation) that swaps two dimensions. *)
 let rec swap_deg : type m n mn nm. (m, n, mn) D.plus -> (n, m, nm) D.plus -> (mn, nm) deg =
  fun mn nm ->
@@ -125,7 +111,7 @@ let rec swap_deg : type m n mn nm. (m, n, mn) D.plus -> (n, m, nm) D.plus -> (mn
   | Zero ->
       let Eq = D.plus_uniq mn (D.zero_plus (D.plus_right mn)) in
       id_deg (D.plus_right mn)
-  | Suc nm' ->
+  | Suc (nm', Unit) ->
       let (Insert_plus (mn', i)) = D.insert_plus Now mn in
       Suc (swap_deg mn' nm', i)
 
@@ -134,7 +120,7 @@ let rec swap_deg : type m n mn nm. (m, n, mn) D.plus -> (n, m, nm) D.plus -> (mn
 (* Check whether a degeneracy is an identity, identifying its domain and codomain if so. *)
 let rec is_id_deg : type m n. (m, n) deg -> (m, n) Eq.t option = function
   | Zero n -> (
-      match N.compare n D.zero with
+      match D.compare n D.zero with
       | Eq -> Some Eq
       | Neq -> None)
   | Suc (p, Now) -> (
@@ -147,12 +133,12 @@ let rec is_id_deg : type m n. (m, n) deg -> (m, n) Eq.t option = function
 let pos_deg : type m n. n D.pos -> (m, n) deg -> m D.pos =
  fun n s ->
   match (n, s) with
-  | Pos _, Suc (s, i) -> D.insert_pos (dom_deg s) i
+  | Pos _, Suc (s, i) -> D.insert_pos (dom_deg s) Unit i
 
 (* Are two degeneracies exactly equal? *)
 let deg_equal : type m n k l. (m, n) deg -> (k, l) deg -> unit option =
  fun s1 s2 ->
-  match (N.compare (dom_deg s1) (dom_deg s2), N.compare (cod_deg s1) (cod_deg s2)) with
+  match (D.compare (dom_deg s1) (dom_deg s2), D.compare (cod_deg s1) (cod_deg s2)) with
   | Eq, Eq ->
       (* Degeneracies with the same domain *and* codomain can be compared with simple structural equality. *)
       if s1 = s2 then Some () else None
@@ -164,13 +150,13 @@ let rec deg_is_idext : type n l nl m k.
  fun nl s1 s2 ->
   match (nl, s2) with
   | Zero, _ -> deg_equal s1 s2
-  | Suc nl, Suc (s2, Now) -> deg_is_idext nl s1 s2
+  | Suc (nl, Unit), Suc (s2, Now) -> deg_is_idext nl s1 s2
   | _ -> None
 
 (* We consider two degeneracies "equivalent" if they differ by an identity extension on the right (i.e. post-whiskering with an identity). *)
 let deg_equiv : type m n k l. (m, n) deg -> (k, l) deg -> unit option =
  fun s1 s2 ->
-  match N.trichotomy (cod_deg s1) (cod_deg s2) with
+  match D.trichotomy (cod_deg s1) (cod_deg s2) with
   | Eq -> deg_equal s1 s2
   | Lt nl -> deg_is_idext nl s1 s2
   | Gt nl -> deg_is_idext nl s2 s1
@@ -185,7 +171,7 @@ type _ deg_of_plus = Of : ('n, 'k, 'nk) D.plus * ('m, 'nk) deg -> 'n deg_of_plus
 
 let comp_deg_of_plus : type m n. (m, n) deg -> m deg_of_plus -> n deg_of_plus =
  fun s2 (Of (mk, s1)) ->
-  let (Plus nk) = D.plus (Nat mk) in
+  let (Plus nk) = D.plus (D.plus_right mk) in
   let s2k = deg_plus s2 nk mk in
   Of (nk, comp_deg s2k s1)
 
@@ -198,9 +184,9 @@ let comp_deg_extending : type m n l k. (m, n) deg -> (k, l) deg -> (k, n) deg_ex
   let l = cod_deg b in
   let m = dom_deg a in
   (* let n = cod_deg a in *)
-  let (Pushout (mi, lj)) = pushout m l in
-  let (Plus kj) = D.plus (Nat lj) in
-  let (Plus ni) = D.plus (Nat mi) in
+  let (Pushout (mi, lj)) = D.pushout m l in
+  let (Plus kj) = D.plus (Word lj) in
+  let (Plus ni) = D.plus (Word mi) in
   DegExt (kj, ni, comp_deg (deg_plus a ni mi) (deg_plus b lj kj))
 
 type any_deg = Any_deg : ('m, 'n) deg -> any_deg
@@ -211,22 +197,23 @@ type any_deg = Any_deg : ('m, 'n) deg -> any_deg
 
 let rec strings_of_deg : type a b. int -> (a, b) deg -> string list =
  fun i -> function
-  | Zero a -> List.init (D.to_int a) (fun _ -> Endpoints.refl_string ())
-  | Suc (s, k) -> List_extra.insert (D.int_of_insert k) (string_of_int i) (strings_of_deg (i + 1) s)
+  | Zero a -> List.init (D.length a) (fun _ -> Endpoints.refl_string ())
+  | Suc (s, k) ->
+      List_extra.insert (Tbwd.int_of_insert k) (string_of_int i) (strings_of_deg (i + 1) s)
 
 let string_of_deg : type a b. (a, b) deg -> string =
- fun s -> String.concat (if D.to_int (cod_deg s) > 9 then "-" else "") (strings_of_deg 1 s)
+ fun s -> String.concat (if D.length (cod_deg s) > 9 then "-" else "") (strings_of_deg 1 s)
 
 type _ deg_to = To : ('m, 'n) deg -> 'm deg_to
 
-(* The list of the Bwv is the length of the domain.  *)
-let rec deg_of_strings : type n.
-    ([ `Int of int | `Str of string ], n) Bwv.t -> int -> n deg_to option =
- fun xs i ->
+(* The Bwv is the list of strings, and n is the dimension of its domain.  Their lengths must agree (both are the length of the input list); the caller is responsible for that.  We could parametrize the Bwv by the dimension, but Bwv is parametrized by N, not D, and after the wordunit refactor those are no longer the same type.  *)
+let rec deg_of_strings : type n a.
+    n D.t -> ([ `Int of int | `Str of string ], a) Bwv.t -> int -> n deg_to option =
+ fun n xs i ->
   let open Monad.Ops (Monad.Maybe) in
   let finished () =
     if Bwv.fold_right (fun x b -> x = `Str (Endpoints.refl_string ()) && b) xs true then
-      Some (To (Zero (Bwv.length xs)))
+      Some (To (Zero n))
     else None in
   (* We find where the expected number of the *codomain* occurs and remove it, remembering its index to supply to Suc.
      If the list is empty, or if we otherwise don't find it, then we must have removed all the numbers and only refl strings are left. *)
@@ -235,10 +222,14 @@ let rec deg_of_strings : type n.
   | Snoc _ -> (
       match Bwv.find_remove (`Int i) xs with
       | None -> finished ()
-      | Some (xs, j) ->
+      | Some (xs, j) -> (
           (* IF we do find it, then what's left we can recurse into with an incremented expectation. *)
-          let* (To s) = deg_of_strings xs (i + 1) in
-          return (To (Suc (s, D.insert_of_index j))))
+          match n with
+          | Word Zero -> None
+          | Word (Suc (n_pred, Unit)) ->
+              let* (Insert_of_int j_idx) = D.insert_of_int n (N.int_of_index j) in
+              let* (To s) = deg_of_strings (Word n_pred) xs (i + 1) in
+              return (To (Suc (s, j_idx)))))
 
 (* We could write the next function monadically to include the errors as options, but it's simpler to just raise a local exception. *)
 exception Invalid_direction_name of string
@@ -262,8 +253,10 @@ let deg_of_string : string -> any_deg option =
           let x, i = parsestr c i in
           (Wrap (Snoc (l, x)), i))
         strs (Wrap Emp, 0) in
+    (* Build a D.t whose int length matches the Bwv strs.  deg_of_strings trusts these to agree at runtime. *)
+    let (D.Wrap n) = D.of_int (N.to_int (Bwv.length strs)) in
     (* Finally we pass off to deg_of_strings. *)
-    match deg_of_strings strs 1 with
+    match deg_of_strings n strs 1 with
     | None -> None
     | Some (To s) -> Some (Any_deg s)
   with Invalid_direction_name _ -> None
@@ -272,6 +265,6 @@ let deg_of_string : string -> any_deg option =
 let rec locking : type a b. (a, b) deg -> bool = function
   | Suc (s, _) -> locking s
   | Zero x -> (
-      match N.compare x D.zero with
+      match D.compare x D.zero with
       | Eq -> false
       | Neq -> true && not (Endpoints.internal ()))

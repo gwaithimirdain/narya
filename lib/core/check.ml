@@ -348,7 +348,7 @@ let rec check : type a b s.
         | None, _ -> (
             (* It can also check if it is *not* a permutation and the arity is positive, since then we can extract the needed type of its argument from the boundary of the type it is checking against. *)
             let (Full_tube tyargs) = get_tyargs ty "type of checking degeneracy" in
-            match factor (TubeOf.inst tyargs) (dom_deg fa) with
+            match D.factor (TubeOf.inst tyargs) (dom_deg fa) with
             | None ->
                 (* Again, in this case, if the term synthesizes, we want the error reported to be Unequal_synthesized_type.  So we fall back to synthesizing if the checking type doesn't symmetrize, reporting the low-dimensional error in case of a failure to synthesize. *)
                 let nosynth =
@@ -1168,7 +1168,7 @@ and check_match_branches : type a b.
   (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
   match view_type varty "check_match_branches" with
   | Canonical
-      (* Data always has intrinsic dimension zero, but it seems that the syntax for binding type variables in a GADT match can't take that into account.  So we have to give "zero" a name here, and two different names for m. *)
+    (* Data always has intrinsic dimension zero, but it seems that the syntax for binding type variables in a GADT match can't take that into account.  So we have to give "zero" a name here, and two different names for m. *)
       (type d_zero m m')
       (( name,
          Data
@@ -2962,7 +2962,7 @@ and synth_arg_cube : type a b n c.
   end in
   let n = CubeOf.dim doms in
   let taken_args : TakenArgs.t =
-    match (args, D.compare_zero n, totally_nullary n) with
+    match (args, D.compare_zero n, Endpoints.totally_nullary n) with
     | [], _, _ -> fatal not_enough
     (* If the first argument is implicit, or if the cube would have only one element (i.e. it is 0-dimensional or consists entirely of nullary dimensions) take a whole cube. *)
     | (_, _, { value = `Implicit; _ }) :: _, Pos _, false | _, Zero, _ | _, _, true -> Take
@@ -2972,7 +2972,7 @@ and synth_arg_cube : type a b n c.
         let _, argty = synth (Kinetic `Nolet) ctx (locate_opt loc toptm) in
         let (Full_tube argtyargs) = get_tyargs argty "primary argument" in
         (* A function of one dimension can be applied to a primary argument of a *higher* dimension, since a cube is also a square.  So we require only that the dimension of argtyargs factors through the application dimension. *)
-        match factor (TubeOf.inst argtyargs) (CubeOf.dim doms) with
+        match D.factor (TubeOf.inst argtyargs) (CubeOf.dim doms) with
         | Some (Factor nk) -> Given (loc, nk, argtyargs)
         | None ->
             fatal ~severity:Asai.Diagnostic.Error ?loc
@@ -3198,7 +3198,8 @@ and synth_lam : type a b c d n.
       let module M = CubeOf.Monadic (Monad.State (struct
         type t =
           (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list
-      end)) in
+      end))
+      in
       let _, rest =
         M.buildM n
           {

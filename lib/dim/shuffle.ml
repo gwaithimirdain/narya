@@ -12,7 +12,7 @@ type (_, _, _) shuffle =
 let rec plus_of_shuffle : type a b c. (a, b, c) shuffle -> (a, b, c) D.plus = function
   | Zero -> Zero
   | Left s -> D.suc_plus_eq_suc (plus_of_shuffle s)
-  | Right s -> Suc (plus_of_shuffle s)
+  | Right s -> Suc (plus_of_shuffle s, Unit)
 
 let rec deg_of_shuffle : type a b c ab. (a, b, c) shuffle -> (a, b, ab) D.plus -> (c, ab) deg =
  fun s ab ->
@@ -21,10 +21,10 @@ let rec deg_of_shuffle : type a b c ab. (a, b, c) shuffle -> (a, b, ab) D.plus -
       let Zero = ab in
       Zero D.zero
   | Left s ->
-      let (Suc ab) = D.plus_suc ab in
+      let (Suc (ab, Unit)) = D.plus_suc ab in
       Suc (deg_of_shuffle s ab, Now)
   | Right s ->
-      let (Suc ab) = ab in
+      let (Suc (ab, Unit)) = ab in
       Suc (deg_of_shuffle s ab, Now)
 
 let rec perm_of_shuffle : type a b c ab. (a, b, c) shuffle -> (a, b, ab) D.plus -> (c, ab) perm =
@@ -34,10 +34,10 @@ let rec perm_of_shuffle : type a b c ab. (a, b, c) shuffle -> (a, b, ab) D.plus 
       let Zero = ab in
       Zero
   | Left s ->
-      let (Suc ab) = D.plus_suc ab in
+      let (Suc (ab, Unit)) = D.plus_suc ab in
       Suc (perm_of_shuffle s ab, Now)
   | Right s ->
-      let (Suc ab) = ab in
+      let (Suc (ab, Unit)) = ab in
       Suc (perm_of_shuffle s ab, Now)
 
 let rec left_shuffle : type a b c. (a, b, c) shuffle -> a D.t = function
@@ -56,12 +56,12 @@ let rec out_shuffle : type a b c. (a, b, c) shuffle -> c D.t = function
   | Right s -> D.suc (out_shuffle s)
 
 let rec shuffle_zero : type a. a D.t -> (a, D.zero, a) shuffle = function
-  | Nat Zero -> Zero
-  | Nat (Suc a) -> Left (shuffle_zero (Nat a))
+  | Word Zero -> Zero
+  | Word (Suc (a, Unit)) -> Left (shuffle_zero (Word a))
 
 let rec zero_shuffle : type a. a D.t -> (D.zero, a, a) shuffle = function
-  | Nat Zero -> Zero
-  | Nat (Suc a) -> Right (zero_shuffle (Nat a))
+  | Word Zero -> Zero
+  | Word (Suc (a, Unit)) -> Right (zero_shuffle (Word a))
 
 let rec eq_of_zero_shuffle : type a b. (D.zero, a, b) shuffle -> (a, b) Eq.t = function
   | Zero -> Eq
@@ -86,7 +86,7 @@ let rec comp_shuffle_right : type a b c bc abc.
   match (bc, abc) with
   | Zero, _ ->
       let Eq = eq_of_shuffle_zero abc in
-      Comp_shuffle_right (shuffle_zero (left_shuffle abc), shuffle_zero (left_shuffle abc))
+      Comp_shuffle_right (shuffle_zero (left_shuffle abc), abc)
   | _, Left abc ->
       let (Comp_shuffle_right (ab, abc')) = comp_shuffle_right bc abc in
       Comp_shuffle_right (Left ab, Left abc')
@@ -102,13 +102,13 @@ type (_, _) shuffle_right = Of_right : ('a, 'b, 'c) shuffle -> ('b, 'c) shuffle_
 let rec all_shuffles_right : type b c. b D.t -> c D.t -> (b, c) shuffle_right Seq.t =
  fun b c ->
   match b with
-  | Nat Zero -> Seq.cons (Of_right (shuffle_zero c)) Seq.empty
-  | Nat (Suc b') -> (
+  | Word Zero -> Seq.cons (Of_right (shuffle_zero c)) Seq.empty
+  | Word (Suc (b', Unit)) -> (
       match c with
-      | Nat Zero -> Seq.empty
-      | Nat (Suc c') ->
+      | Word Zero -> Seq.empty
+      | Word (Suc (c', Unit)) ->
           Seq.append
-            (Seq.map (fun (Of_right s) -> Of_right (Left s)) (all_shuffles_right b (Nat c')))
+            (Seq.map (fun (Of_right s) -> Of_right (Left s)) (all_shuffles_right (Word (Suc (b', Unit))) (Word c')))
             (Seq.map
                (fun (Of_right s) -> Of_right (Right s))
-               (all_shuffles_right (Nat b') (Nat c'))))
+               (all_shuffles_right (Word b') (Word c'))))

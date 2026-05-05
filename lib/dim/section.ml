@@ -9,10 +9,10 @@ let rec section_of_deg : type m n. (m, n) deg -> (n, m) face option =
   let open Monad.Ops (Monad.Maybe) in
   let (Wrap l) = Endpoints.wrapped () in
   match (dom_deg s, Endpoints.len l) with
-  | Nat Zero, _ ->
+  | Word Zero, _ ->
       let (Zero _) = s in
       return (Face (Zero, Zero))
-  | Nat (Suc _), Nat (Suc _) -> (
+  | Word (Suc (_, Unit)), N.Nat (Suc _) -> (
       match deg_coresidual s Now with
       | Coresidual_zero s' ->
           let* (Face (f, p)) = section_of_deg s' in

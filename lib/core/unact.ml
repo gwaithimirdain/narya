@@ -8,7 +8,7 @@ let unact_ty : type n. err:Code.t -> kinetic value -> n D.t -> kinetic value =
  fun ~err ty n ->
   let (Full_tube tyargs) = get_tyargs ty "argument of redex" in
   (* We may need to extend the dimension n to match the dimension of the tyargs. *)
-  match factor (TubeOf.inst tyargs) n with
+  match D.factor (TubeOf.inst tyargs) n with
   | None ->
       fatal
         (Insufficient_dimension

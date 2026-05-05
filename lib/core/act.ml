@@ -11,7 +11,7 @@ open View
 (* Since values don't have a statically specified dimension, we have to act on them by an *arbitrary* degeneracy, which means that in many places we have to check dynamically that the dimensions either match or can be extended to match.  This function encapsulates that. *)
 let deg_plus_to : type m n nk. on:string -> ?err:dim_err -> (m, n) deg -> nk D.t -> nk deg_of =
  fun ~on ?err s nk ->
-  match factor nk (cod_deg s) with
+  match D.factor nk (cod_deg s) with
   | None -> (
       match err with
       | Some err -> fatal (err.make ~needed:(cod_deg s) ~got:nk)

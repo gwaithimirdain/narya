@@ -385,11 +385,11 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
   | Canonical c -> eval_canonical env c
   | Unshift (n, plusmap, tm) ->
       let (Cofactor mn) =
-        cofactor (dim_env env) n
+        D.cofactor (dim_env env) n
         <|> Anomaly "evaluating unshifted term in too low-dimensional environment" in
       eval (Shift (env, mn, plusmap)) tm
   | Unact (op, tm) -> (
-      match cofactor (dim_env env) (cod_op op) with
+      match D.cofactor (dim_env env) (cod_op op) with
       | None ->
           fatal
             (Anomaly
@@ -1342,7 +1342,8 @@ let apply_singletons : type n. kinetic value -> (n, kinetic value) CubeOf.t -> k
  fun fn xs ->
   let module MC = CubeOf.Monadic (Monad.State (struct
     type t = kinetic value
-  end)) in
+  end))
+  in
   snd (MC.miterM { it = (fun _ [ x ] fn -> ((), apply_term fn (CubeOf.singleton x))) } [ xs ] fn)
 
 (* Evaluate a term context to produce a value context. *)

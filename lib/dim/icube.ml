@@ -59,7 +59,7 @@ module Icube (S : Suc) (F : Fam3) = struct
           let Zero, Zero = (km, lm) in
           M.apply (g.map (sface_of_bw d) x) @@ fun x -> Leaf x
       | Branch (l, ends, mid) ->
-          let (Suc km') = km in
+          let (Suc (km', Unit)) = km in
           M.apply
             (M.zip
                (fun () -> gmapM_branches km' (D.suc_plus lm) d g (Endpoints.indices l) ends)
@@ -68,7 +68,7 @@ module Icube (S : Suc) (F : Fam3) = struct
 
     and gmapM_branches : type k m km n b c l len len' left right.
         (k, m, km) D.plus ->
-        (l N.suc, m, n) D.plus ->
+        (l D.suc, m, n) D.plus ->
         (k, l) bwsface ->
         (n, b, c) mapperM ->
         (len Endpoints.t, len') Bwv.t ->
@@ -126,7 +126,7 @@ module Icube (S : Suc) (F : Fam3) = struct
           let x, acc = g.foldmap (sface_of_bw d) acc x in
           (Leaf x, acc)
       | Branch (l, ends, mid) ->
-          let (Suc km') = km in
+          let (Suc (km', Unit)) = km in
           let ends, acc =
             gfold_left_map_branches km' (D.suc_plus lm) d g (Endpoints.indices l) acc ends in
           let mid, acc = gfold_map_left (D.suc_plus km) (D.suc_plus lm) (Mid d) g acc mid in
@@ -134,7 +134,7 @@ module Icube (S : Suc) (F : Fam3) = struct
 
     and gfold_left_map_branches : type k m km n b c l len len' left right.
         (k, m, km) D.plus ->
-        (l N.suc, m, n) D.plus ->
+        (l D.suc, m, n) D.plus ->
         (k, l) bwsface ->
         (n, b, c) left_folder ->
         (len Endpoints.t, len') Bwv.t ->
@@ -184,7 +184,7 @@ module Icube (S : Suc) (F : Fam3) = struct
           let acc, x = g.foldmap (sface_of_bw d) x acc in
           (acc, Leaf x)
       | Branch (l, ends, mid) ->
-          let (Suc km') = km in
+          let (Suc (km', Unit)) = km in
           let acc, mid = gfold_map_right (D.suc_plus km) (D.suc_plus lm) (Mid d) g mid acc in
           let acc, ends =
             gfold_right_map_branches km' (D.suc_plus lm) d g (Endpoints.indices l) ends acc in
@@ -192,7 +192,7 @@ module Icube (S : Suc) (F : Fam3) = struct
 
     and gfold_right_map_branches : type k m km n b c l len len' left right.
         (k, m, km) D.plus ->
-        (l N.suc, m, n) D.plus ->
+        (l D.suc, m, n) D.plus ->
         (k, l) bwsface ->
         (n, b, c) right_folder ->
         (len Endpoints.t, len') Bwv.t ->
@@ -245,24 +245,24 @@ module Icube (S : Suc) (F : Fam3) = struct
         (left, m, mk, b) gwrap_left =
      fun m mk ml d g acc ->
       match m with
-      | Nat Zero ->
+      | Word Zero ->
           let Eq = D.plus_uniq mk (D.zero_plus (dom_bwsface d)) in
           let Eq = D.plus_uniq ml (D.zero_plus (cod_bwsface d)) in
           let (Fwrap (x, acc)) = g.build (sface_of_bw d) acc in
           Wrap (Leaf x, acc)
-      | Nat (Suc m) ->
-          let (Suc mk') = D.plus_suc mk in
+      | Word (Suc (m, Unit)) ->
+          let (Suc (mk', Unit)) = D.plus_suc mk in
           let (Wrap l) = Endpoints.wrapped () in
           let (Wrap_branches (ends, acc)) =
-            gbuild_left_branches (Nat m) mk' (D.plus_suc ml) d g (Endpoints.indices l) acc in
+            gbuild_left_branches (Word m) mk' (D.plus_suc ml) d g (Endpoints.indices l) acc in
           let (Wrap (mid, acc)) =
-            gbuild_left (Nat m) (D.plus_suc mk) (D.plus_suc ml) (Mid d) g acc in
+            gbuild_left (Word m) (D.plus_suc mk) (D.plus_suc ml) (Mid d) g acc in
           Wrap (Branch (l, ends, mid), acc)
 
     and gbuild_left_branches : type k m mk l ml b left len len'.
         m D.t ->
         (m, k, mk) D.plus ->
-        (m, l N.suc, ml) D.plus ->
+        (m, l D.suc, ml) D.plus ->
         (k, l) bwsface ->
         (ml, b) builder_leftM ->
         (len Endpoints.t, len') Bwv.t ->
@@ -299,12 +299,12 @@ module Icube (S : Suc) (F : Fam3) = struct
         Fbiwrap x
     | Branch (l1, br, _), End (d, (l2, e)) ->
         let (Le km') = plus_of_sface d in
-        let Eq = D.minus_uniq' (dom_sface d) (Suc km') km in
-        let (Suc nm') = nm in
+        let Eq = D.minus_uniq' (dom_sface d) (Suc (km', Unit)) km in
+        let (Suc (nm', Unit)) = nm in
         let Eq = Endpoints.uniq l1 l2 in
         gfind_branches br km' nm' d e
     | Branch (_, _, br), Mid d ->
-        let (Suc km) = N.plus_suc km in
+        let (Suc (km, Unit)) = D.plus_suc km in
         gfind br km nm d
 
   and gfind_branches : type m n k km nm b left right l.
@@ -371,7 +371,7 @@ module IcubeTraverse2 (S1 : Suc) (S2 : Suc) (F1 : Fam3) (F2 : Fam3) (Acc : Fam2)
         let x, acc = g.foldmap (sface_of_bw d) acc x in
         Gfolded (Leaf x, acc)
     | Branch (l, ends, mid) ->
-        let (Suc km') = km in
+        let (Suc (km', Unit)) = km in
         let (Gfolded_branches (ends, acc)) =
           gfold_left_map_branches km' (D.suc_plus lm) d g (Endpoints.indices l) acc ends in
         let (Gfolded (mid, acc)) =
@@ -380,7 +380,7 @@ module IcubeTraverse2 (S1 : Suc) (S2 : Suc) (F1 : Fam3) (F2 : Fam3) (Acc : Fam2)
 
   and gfold_left_map_branches : type k m km n b c l len len' left1 left2 right1.
       (k, m, km) D.plus ->
-      (l N.suc, m, n) D.plus ->
+      (l D.suc, m, n) D.plus ->
       (k, l) bwsface ->
       (n, b, c) left_folder ->
       (len Endpoints.t, len') Bwv.t ->
