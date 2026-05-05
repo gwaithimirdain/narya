@@ -4,7 +4,7 @@ open Category
 
 (* Type-level free categories. *)
 
-(* The free category on a quiver.  Its objects are those of the quiver, and its morphisms ("paths") are sequences of composable edges.  As with words (free monoids), paths are represented as type-level backwards lists of edges (so we can append on the right efficiently), and composition is encoded as a relation. *)
+(* The free category on a quiver.  Its objects are those of the quiver, and its morphisms ("paths") are sequences of composable edges.  As with words (free monoids), paths are represented as type-level backwards lists of edges (so we can append on the right efficiently).  Composition is in applicative order: g ∘ f means f is applied first.  Appending an edge on the right of a path PRECOMPOSES that edge: the new edge is applied first, before the rest of the path.  Composition is encoded as a relation. *)
 
 module Make (Q : Quiver) = struct
   module Obj = Q.Obj
@@ -14,85 +14,88 @@ module Make (Q : Quiver) = struct
 
   (* ********** Composition ********** *)
 
-  (* Composition is the analog of Word's addition.  ('a, 'm, 'b, 'n, 'c, 'p) comp says that a path 'm from 'a to 'b composed with a path 'n from 'b to 'c is a path 'p from 'a to 'c.  As with Word, we never carry around the prefix path explicitly; the prefix shape and source are existential, witnessed by the existence of a comp relation. *)
+  (* ('a, 'm, 'b, 'n, 'c, 'p) comp says that a path 'm: 'a → 'b composed (as the inner / first-applied "f") with a path 'n: 'b → 'c (as the outer / second-applied "g") yields a path 'p = n ∘ m: 'a → 'c.  As with Word, we never carry around the outer path 'n explicitly inside this evidence; the outer shape and target object are existential, and the structure of the evidence mirrors the snoc-list structure of the inner path 'm. *)
 
   type (_, _, _, _, _, _) comp =
-    | Zero : ('a, 'm, 'b, 'b id, 'b, 'm) comp
+    | Zero : ('a, 'a id, 'a, 'n, 'c, 'n) comp
     | Suc :
-        ('a, 'm, 'b, 'n, 'c, 'p) comp * ('c, 'g, 'd) Q.t
-        -> ('a, 'm, 'b, ('n, 'g) suc, 'd, ('p, 'g) suc) comp
+        ('a1, 'm, 'b, 'n, 'c, 'p) comp * ('a, 'g, 'a1) Q.t
+        -> ('a, ('m, 'g) suc, 'b, 'n, 'c, ('p, 'g) suc) comp
 
-  (* A valid path 'morphism from 'src to 'tgt.  Following Word, this is "anything that can sit on the right of a composition"; we additionally remember the source object so that, e.g., the identity path can produce a target object on demand. *)
+  (* A valid path 'morphism from 'src to 'tgt.  Following Word, this is "anything that can sit at the inner position of a composition"; we additionally remember the target object so that, e.g., the identity path can produce a source object on demand. *)
 
   type (_, _, _) t =
     | Path :
-        'src Obj.t * ('any_a, 'any_m, 'src, 'morphism, 'tgt, 'any_p) comp
+        ('src, 'morphism, 'tgt, 'any_n, 'any_c, 'any_p) comp * 'tgt Obj.t
         -> ('src, 'morphism, 'tgt) t
 
-  type wrapped = Wrap : ('src, 'morphism, 'tgt) t -> wrapped
+  type (_, _) wrapped = Wrap : ('src, 'morphism, 'tgt) t -> ('src, 'tgt) wrapped
+  type _ src_wrapped = Wrap : ('src, 'morphism, 'tgt) t -> 'tgt src_wrapped
+  type _ tgt_wrapped = Wrap : ('src, 'morphism, 'tgt) t -> 'src tgt_wrapped
 
   (* Smart constructors *)
 
-  let id : type a. a Obj.t -> (a, a id, a) t = fun a -> Path (a, Zero)
+  let id : type a. a Obj.t -> (a, a id, a) t = fun a -> Path (Zero, a)
 
-  let suc : type a m b g c. (a, m, b) t -> (b, g, c) Q.t -> (a, (m, g) suc, c) t =
-   fun (Path (a, n)) g -> Path (a, Suc (n, g))
+  let suc : type a c b m g. (a, m, b) t -> (c, g, a) Q.t -> (c, (m, g) suc, b) t =
+   fun (Path (m, b)) g -> Path (Suc (m, g), b)
 
   (* ********** Source and target ********** *)
 
-  let src : type a m b. (a, m, b) t -> a Obj.t = fun (Path (a, _)) -> a
-
-  let tgt : type a m b. (a, m, b) t -> b Obj.t =
-   fun (Path (a, p)) ->
+  let src : type a m b. (a, m, b) t -> a Obj.t =
+   fun (Path (p, b)) ->
     match p with
-    | Zero -> a
-    | Suc (_, g) -> Q.tgt g
+    | Zero -> b
+    | Suc (_, g) -> Q.src g
 
-  let rec src_uniq : type src1 src2 tgt1 tgt2 morphism.
+  let tgt : type a m b. (a, m, b) t -> b Obj.t = fun (Path (_, b)) -> b
+
+  let src_uniq : type src1 src2 tgt1 tgt2 morphism.
       (src1, morphism, tgt1) t -> (src2, morphism, tgt2) t -> (src1, src2) Eq.t =
    fun m1 m2 ->
     match (m1, m2) with
-    | Path (_, Zero), Path (_, Zero) -> Eq
-    | Path (s1, Suc (m1, _)), Path (s2, Suc (m2, _)) ->
-        let Eq = src_uniq (Path (s1, m1)) (Path (s2, m2)) in
-        Eq
+    | Path (Zero, _), Path (Zero, _) -> Eq
+    | Path (Suc (_, g1), _), Path (Suc (_, g2), _) -> Q.src_uniq g1 g2
 
-  let tgt_uniq : type src1 src2 tgt1 tgt2 morphism.
+  let rec tgt_uniq : type src1 src2 tgt1 tgt2 morphism.
       (src1, morphism, tgt1) t -> (src2, morphism, tgt2) t -> (tgt1, tgt2) Eq.t =
    fun m1 m2 ->
     match (m1, m2) with
-    | Path (_, Zero), Path (_, Zero) -> Eq
-    | Path (_, Suc (_, g1)), Path (_, Suc (_, g2)) -> Q.tgt_uniq g1 g2
+    | Path (Zero, _), Path (Zero, _) -> Eq
+    | Path (Suc (m1_inner, _), b1), Path (Suc (m2_inner, _), b2) ->
+        tgt_uniq (Path (m1_inner, b1)) (Path (m2_inner, b2))
 
   (* ********** Computing compositions ********** *)
 
   type (_, _, _, _, _) has_comp =
     | Comp : ('a, 'm, 'b, 'n, 'c, 'p) comp -> ('a, 'm, 'b, 'n, 'c) has_comp
 
-  let rec comp : type a m b n c. (b, n, c) t -> (a, m, b, n, c) has_comp = function
-    | Path (_, Zero) -> Comp Zero
-    | Path (b, Suc (n, g)) ->
-        let (Comp mn) = comp (Path (b, n)) in
+  (* [comp m] takes the inner ("f") path and proves it can be composed with any outer path. *)
+  let rec comp : type a m b n c. (a, m, b) t -> (a, m, b, n, c) has_comp = function
+    | Path (Zero, _) -> Comp Zero
+    | Path (Suc (m, g), b) ->
+        let (Comp mn) = comp (Path (m, b)) in
         Comp (Suc (mn, g))
 
-  let rec comp_out : type a m b n c p. (a, m, b) t -> (a, m, b, n, c, p) comp -> (a, p, c) t =
-   fun pm mn ->
-    match mn with
-    | Zero -> pm
-    | Suc (mn, g) ->
-        let p_mn = comp_out pm mn in
-        suc p_mn g
+  (* [comp_out n ev]: given the outer path n and comp evidence with m at position 'm', compute the composite path p. *)
+  let rec comp_out : type a m b n c p. (b, n, c) t -> (a, m, b, n, c, p) comp -> (a, p, c) t =
+   fun n ev ->
+    match ev with
+    | Zero -> n
+    | Suc (ev_inner, g) ->
+        let p_inner = comp_out n ev_inner in
+        suc p_inner g
 
-  let comp_right : type a m b n c p. b Obj.t -> (a, m, b, n, c, p) comp -> (b, n, c) t =
-   fun b mn -> Path (b, mn)
+  let comp_right : type a m b n c p. b Obj.t -> (a, m, b, n, c, p) comp -> (a, m, b) t =
+   fun b ev -> Path (ev, b)
 
-  let rec comp_left : type a m b n c p. (a, m, b, n, c, p) comp -> (a, p, c) t -> (a, m, b) t =
+  let rec comp_left : type a m b n c p. (a, m, b, n, c, p) comp -> (a, p, c) t -> (b, n, c) t =
    fun ev result ->
     match (ev, result) with
     | Zero, _ -> result
-    | Suc (ev, edge), Path (a, Suc (inner, edge')) ->
-        let Eq = Q.src_uniq edge edge' in
-        comp_left ev (Path (a, inner))
+    | Suc (ev_inner, edge), Path (Suc (inner, edge'), c_obj) ->
+        let Eq = Q.tgt_uniq edge edge' in
+        comp_left ev_inner (Path (inner, c_obj))
 
   let rec comp_uniq : type a m b n c p p'.
       (a, m, b, n, c, p) comp -> (a, m, b, n, c, p') comp -> (p, p') Eq.t =
@@ -100,56 +103,57 @@ module Make (Q : Quiver) = struct
     match (mn, mn') with
     | Zero, Zero -> Eq
     | Suc (mn, edge), Suc (mn', edge') ->
-        let Eq = Q.src_uniq edge edge' in
+        let Eq = Q.tgt_uniq edge edge' in
         let Eq = comp_uniq mn mn' in
         Eq
 
   (* ********** Unitality ********** *)
 
-  let rec id_comp : type b n c. (b, n, c) t -> (b, b id, b, n, c, n) comp =
-   fun n ->
-    match n with
-    | Path (_, Zero) -> Zero
-    | Path (b, Suc (n_inner, g)) -> Suc (id_comp (Path (b, n_inner)), g)
+  (* [id_comp m]: identity is on the OUTER (g) side: comp id_b m = m.  Built by walking m's structure. *)
+  let rec id_comp : type a m b. (a, m, b) t -> (a, m, b, b id, b, m) comp =
+   fun (Path (ev, b_obj)) ->
+    match ev with
+    | Zero -> Zero
+    | Suc (m_inner, g) -> Suc (id_comp (Path (m_inner, b_obj)), g)
 
-  let comp_id : type a m b. (a, m, b) t -> (a, m, b, b id, b, m) comp = fun _ -> Zero
+  (* [comp_id n]: identity is on the INNER (f) side: comp n id_b = n.  Direct from Zero. *)
+  let comp_id : type b n c. (b, n, c) t -> (b, b id, b, n, c, n) comp = fun _ -> Zero
 
   (* ********** Associativity ********** *)
 
-  (* Given evidence m·n=mn, n·p=np, and m·(n·p)=mnp, we get (m·n)·p=mnp. *)
-
-  let rec comp_assocl : type a m b n c d p mn np mnp.
-      (a, m, b, n, c, mn) comp ->
-      (b, n, c, p, d, np) comp ->
-      (a, m, b, np, d, mnp) comp ->
-      (a, mn, c, p, d, mnp) comp =
-   fun mn np m_np ->
-    match np with
-    | Zero ->
-        let Eq = comp_uniq mn m_np in
-        Zero
-    | Suc (np_inner, edge) ->
-        let (Suc (m_np_inner, edge')) = m_np in
-        let Eq = Q.src_uniq edge edge' in
-        let mn_p = comp_assocl mn np_inner m_np_inner in
-        Suc (mn_p, edge)
-
-  (* The reverse direction: given m·n=mn, n·p=np, and (m·n)·p=mnp, we get m·(n·p)=mnp. *)
+  (* In applicative reading: given evidence n∘m=mn, p∘n=np, and (p∘n)∘m=mnp (left-assoc input), derive p∘(n∘m)=mnp (right-assoc output).  The implementation walks m. *)
 
   let rec comp_assocr : type a m b n c d p mn np mnp.
       (a, m, b, n, c, mn) comp ->
       (b, n, c, p, d, np) comp ->
-      (a, mn, c, p, d, mnp) comp ->
-      (a, m, b, np, d, mnp) comp =
+      (a, m, b, np, d, mnp) comp ->
+      (a, mn, c, p, d, mnp) comp =
    fun mn np mn_p ->
-    match np with
+    match mn with
     | Zero ->
         let Zero = mn_p in
-        mn
-    | Suc (np_inner, edge) ->
+        np
+    | Suc (mn_inner, edge) ->
         let (Suc (mn_p_inner, edge')) = mn_p in
-        let Eq = Q.src_uniq edge edge' in
-        Suc (comp_assocr mn np_inner mn_p_inner, edge)
+        let Eq = Q.tgt_uniq edge edge' in
+        Suc (comp_assocr mn_inner np mn_p_inner, edge)
+
+  (* Reverse direction: from p∘(n∘m)=mnp (right-assoc input), derive (p∘n)∘m=mnp (left-assoc output). *)
+
+  let rec comp_assocl : type a m b n c d p mn np mnp.
+      (a, m, b, n, c, mn) comp ->
+      (b, n, c, p, d, np) comp ->
+      (a, mn, c, p, d, mnp) comp ->
+      (a, m, b, np, d, mnp) comp =
+   fun mn np mnp ->
+    match mn with
+    | Zero ->
+        let Eq = comp_uniq np mnp in
+        Zero
+    | Suc (mn_inner, edge) ->
+        let (Suc (mnp_inner, edge')) = mnp in
+        let Eq = Q.tgt_uniq edge edge' in
+        Suc (comp_assocl mn_inner np mnp_inner, edge)
 
   (* ********** Comparison ********** *)
 
@@ -157,14 +161,14 @@ module Make (Q : Quiver) = struct
       (a1, m1, b1) t -> (a2, m2, b2) t -> (a1 * m1 * b1, a2 * m2 * b2) Eq.compare =
    fun p1 p2 ->
     match (p1, p2) with
-    | Path (a1, Zero), Path (a2, Zero) -> (
-        match Obj.compare a1 a2 with
+    | Path (Zero, b1), Path (Zero, b2) -> (
+        match Obj.compare b1 b2 with
         | Eq -> Eq
         | Neq -> Neq)
-    | Path (_, Zero), Path (_, Suc _) -> Neq
-    | Path (_, Suc _), Path (_, Zero) -> Neq
-    | Path (a1, Suc (m1, g1)), Path (a2, Suc (m2, g2)) -> (
-        match compare (Path (a1, m1)) (Path (a2, m2)) with
+    | Path (Zero, _), Path (Suc _, _) -> Neq
+    | Path (Suc _, _), Path (Zero, _) -> Neq
+    | Path (Suc (m1, g1), b1), Path (Suc (m2, g2), b2) -> (
+        match compare (Path (m1, b1)) (Path (m2, b2)) with
         | Neq -> Neq
         | Eq -> (
             match Q.compare g1 g2 with
@@ -182,15 +186,15 @@ struct
   module Cod = Cod
   module Obj = F.Obj
 
-  (* ('a, 'm, 'b, 'x, 'n, 'y) t says that the path 'a -> 'b of shape 'm in Dom is sent to the morphism 'x -> 'y of shape 'n in Cod.  The Zero constructor remembers an object-map witness so we can reconstruct the (identity) image from it. *)
+  (* ('a, 'm, 'b, 'x, 'n, 'y) t says that the path 'a -> 'b of shape 'm in Dom is sent to the morphism 'x -> 'y of shape 'n in Cod.  In applicative reading: the rightmost edge of m is the FIRST applied; its image is the inner of a Cod composition with the image of the rest of m as the outer. *)
 
   type (_, _, _, _, _, _) t =
     | Zero : ('a, 'x) F.Obj.t -> ('a, 'a Dom.id, 'a, 'x, 'x Cod.id, 'x) t
     | Suc :
-        ('a, 'm, 'b, 'x, 'n1, 'y) t
-        * ('b, 'g, 'c, 'y, 'n2, 'z) F.t
-        * ('x, 'n1, 'y, 'n2, 'z, 'n3) Cod.comp
-        -> ('a, ('m, 'g) Dom.suc, 'c, 'x, 'n3, 'z) t
+        ('a1, 'm, 'b, 'x1, 'n1, 'y) t
+        * ('a, 'g, 'a1, 'x, 'n2, 'x1) F.t
+        * ('x, 'n2, 'x1, 'n1, 'y, 'n3) Cod.comp
+        -> ('a, ('m, 'g) Dom.suc, 'b, 'x, 'n3, 'y) t
 
   let rec dom : type a m b x n y. (a, m, b, x, n, y) t -> (a, m, b) Dom.t = function
     | Zero fab -> Dom.id (F.Obj.dom fab)
@@ -202,26 +206,26 @@ struct
 
   (* The object-map witnesses for the source and target of a homomorphism. *)
 
-  let rec src : type a m b x n y. (a, m, b, x, n, y) t -> (a, x) F.Obj.t = function
+  let src : type a m b x n y. (a, m, b, x, n, y) t -> (a, x) F.Obj.t = function
     | Zero fab -> fab
-    | Suc (fm, _, _) -> src fm
+    | Suc (_, fg, _) -> F.src fg
 
-  let tgt : type a m b x n y. (a, m, b, x, n, y) t -> (b, y) F.Obj.t = function
+  let rec tgt : type a m b x n y. (a, m, b, x, n, y) t -> (b, y) F.Obj.t = function
     | Zero fab -> fab
-    | Suc (_, fg, _) -> F.tgt fg
+    | Suc (fm, _, _) -> tgt fm
 
   type (_, _, _) exists = Exists : ('a, 'm, 'b, 'x, 'n, 'y) t -> ('a, 'm, 'b) exists
 
   let rec exists : type a m b. (a, m, b) Dom.t -> (a, m, b) exists =
    fun path ->
     match path with
-    | Path (a, Zero) ->
-        let (Exists fab) = F.Obj.exists a in
+    | Path (Zero, b_obj) ->
+        let (Exists fab) = F.Obj.exists b_obj in
         Exists (Zero fab)
-    | Path (a, Suc (m_inner, g_edge)) ->
-        let (Exists fm) = exists (Path (a, m_inner)) in
+    | Path (Suc (m_inner, g_edge), b_obj) ->
+        let (Exists fm) = exists (Path (m_inner, b_obj)) in
         let (Exists fg) = F.exists g_edge in
-        let Eq = F.Obj.uniq (tgt fm) (F.src fg) in
+        let Eq = F.Obj.uniq (F.tgt fg) (src fm) in
         let (Comp n12) = Cod.comp (F.cod fg) in
         Exists (Suc (fm, fg, n12))
 
@@ -233,7 +237,7 @@ struct
         let Eq = F.Obj.uniq fab1 fab2 in
         Eq
     | Suc (m1, g1, n1), Suc (m2, g2, n2) ->
-        let Eq = Q.src_uniq (F.dom g1) (F.dom g2) in
+        let Eq = Q.tgt_uniq (F.dom g1) (F.dom g2) in
         let Eq = uniq m1 m2 in
         let Eq = F.uniq g1 g2 in
         let Eq = Cod.comp_uniq n1 n2 in
@@ -243,27 +247,30 @@ struct
 
   let id : type a x. (a, x) F.Obj.t -> (a, a Dom.id, a, x, x Cod.id, x) t = fun fa -> Zero fa
 
-  (* The functor preserves composition: given homomorphism evidence for two composable paths and evidence that they compose in Dom, we obtain homomorphism evidence for the composite path together with evidence that the images compose in Cod. *)
+  (* The functor preserves composition: given homomorphism evidence for two composable paths (fa for the outer/g, fb for the inner/f) and evidence that they compose in Dom, we obtain homomorphism evidence for the composite path together with evidence that the images compose in Cod. *)
 
   type (_, _, _, _, _, _, _, _) comp =
     | Comp :
-        ('a, 'p, 'c, 'x, 'n3, 'z) t * ('x, 'n1, 'y, 'n2, 'z, 'n3) Cod.comp
-        -> ('a, 'p, 'c, 'x, 'n1, 'y, 'n2, 'z) comp
+        ('a, 'p, 'c, 'x, 'n3, 'z) t * ('x, 'n2, 'y, 'n1, 'z, 'n3) Cod.comp
+        -> ('a, 'p, 'c, 'x, 'n2, 'y, 'n1, 'z) comp
+
+  (* Dom.comp evidence: (a, m, b, n, c, p) Dom.comp where m is inner (a→b), n is outer (b→c), p = n∘m.
+     We have fm: (a, m, b, x, n2, y) Hom (image of m is n2: x→y), and fn: (b, n, c, y, n1, z) Hom (image of n is n1: y→z).  We want to construct Hom evidence for the composite p: a→c, with image n3 = n1 ∘ n2: x→z.  Walk the m structure (the inner of Dom.comp). *)
 
   let rec comp : type a m b n c p x y z n1 n2.
-      (a, m, b, x, n1, y) t ->
-      (b, n, c, y, n2, z) t ->
+      (a, m, b, x, n2, y) t ->
+      (b, n, c, y, n1, z) t ->
       (a, m, b, n, c, p) Dom.comp ->
-      (a, p, c, x, n1, y, n2, z) comp =
-   fun fa fb ab ->
-    match (fb, ab) with
-    | Zero _, Zero -> Comp (fa, Cod.comp_id (cod fa))
-    | Suc (fb_inner, fg, y_fg), Suc (ab_inner, edge) ->
-        let Eq = Q.src_uniq (F.dom fg) edge in
-        let (Comp (fc, xy)) = comp fa fb_inner ab_inner in
-        let (Comp xy_fg) = Cod.comp (F.cod fg) in
-        let x_yfg = Cod.comp_assocr xy y_fg xy_fg in
-        Comp (Suc (fc, fg, xy_fg), x_yfg)
+      (a, p, c, x, n2, y, n1, z) comp =
+   fun fm fn mn ->
+    match (fm, mn) with
+    | Zero _, Zero -> Comp (fn, Cod.comp_id (cod fn))
+    | Suc (fm_inner, fg, x_fg), Suc (mn_inner, edge) ->
+        let Eq = Q.tgt_uniq (F.dom fg) edge in
+        let (Comp (fp_inner, x_yfg)) = comp fm_inner fn mn_inner in
+        let (Comp xfg_y) = Cod.comp (F.cod fg) in
+        let x_y = Cod.comp_assocr x_fg x_yfg xfg_y in
+        Comp (Suc (fp_inner, fg, xfg_y), x_y)
 end
 
 module HomCheck
@@ -286,15 +293,13 @@ struct
   module Cod = Cod
   module Obj = F.Obj
 
-  (* ('a, 'm, 'b, 'x, 'n, 'y) t says that the path 'a -> 'b of shape 'm in Dom is sent to the morphism 'x -> 'y of shape 'n in Cod.  The Zero constructor remembers an object-map witness so we can reconstruct the (identity) image from it. *)
-
   type (_, _, _, _, _, _, _) t =
     | Zero : ('param, 'a, 'x) F.Obj.t -> ('param, 'a, 'a Dom.id, 'a, 'x, 'x Cod.id, 'x) t
     | Suc :
-        ('param, 'a, 'm, 'b, 'x, 'n1, 'y) t
-        * ('param, 'b, 'g, 'c, 'y, 'n2, 'z) F.t
-        * ('x, 'n1, 'y, 'n2, 'z, 'n3) Cod.comp
-        -> ('param, 'a, ('m, 'g) Dom.suc, 'c, 'x, 'n3, 'z) t
+        ('param, 'a1, 'm, 'b, 'x1, 'n1, 'y) t
+        * ('param, 'a, 'g, 'a1, 'x, 'n2, 'x1) F.t
+        * ('x, 'n2, 'x1, 'n1, 'y, 'n3) Cod.comp
+        -> ('param, 'a, ('m, 'g) Dom.suc, 'b, 'x, 'n3, 'y) t
 
   let rec dom : type param a m b x n y. (param, a, m, b, x, n, y) t -> (a, m, b) Dom.t = function
     | Zero fab -> Dom.id (F.Obj.dom fab)
@@ -306,16 +311,14 @@ struct
     | Zero fab -> Cod.id (F.Obj.cod param fab)
     | Suc (fm, _, n12) -> Cod.comp_out (cod param fm) n12
 
-  (* The object-map witnesses for the source and target of a homomorphism. *)
+  let src : type param a m b x n y. (param, a, m, b, x, n, y) t -> (param, a, x) F.Obj.t = function
+    | Zero fab -> fab
+    | Suc (_, fg, _) -> F.src fg
 
-  let rec src : type param a m b x n y. (param, a, m, b, x, n, y) t -> (param, a, x) F.Obj.t =
+  let rec tgt : type param a m b x n y. (param, a, m, b, x, n, y) t -> (param, b, y) F.Obj.t =
     function
     | Zero fab -> fab
-    | Suc (fm, _, _) -> src fm
-
-  let tgt : type param a m b x n y. (param, a, m, b, x, n, y) t -> (param, b, y) F.Obj.t = function
-    | Zero fab -> fab
-    | Suc (_, fg, _) -> F.tgt fg
+    | Suc (fm, _, _) -> tgt fm
 
   type (_, _, _, _) exists =
     | Exists : ('param, 'a, 'm, 'b, 'x, 'n, 'y) t -> ('param, 'a, 'm, 'b) exists
@@ -323,13 +326,13 @@ struct
   let rec exists : type param a m b. param Param.t -> (a, m, b) Dom.t -> (param, a, m, b) exists =
    fun param path ->
     match path with
-    | Path (a, Zero) ->
-        let (Exists fab) = F.Obj.exists param a in
+    | Path (Zero, b_obj) ->
+        let (Exists fab) = F.Obj.exists param b_obj in
         Exists (Zero fab)
-    | Path (a, Suc (m_inner, g_edge)) ->
-        let (Exists fm) = exists param (Path (a, m_inner)) in
+    | Path (Suc (m_inner, g_edge), b_obj) ->
+        let (Exists fm) = exists param (Path (m_inner, b_obj)) in
         let (Exists fg) = F.exists param g_edge in
-        let Eq = F.Obj.uniq (tgt fm) (F.src fg) in
+        let Eq = F.Obj.uniq (F.tgt fg) (src fm) in
         let (Comp n12) = Cod.comp (F.cod param fg) in
         Exists (Suc (fm, fg, n12))
 
@@ -343,39 +346,35 @@ struct
         let Eq = F.Obj.uniq fab1 fab2 in
         Eq
     | Suc (m1, g1, n1), Suc (m2, g2, n2) ->
-        let Eq = Q.src_uniq (F.dom g1) (F.dom g2) in
+        let Eq = Q.tgt_uniq (F.dom g1) (F.dom g2) in
         let Eq = uniq m1 m2 in
         let Eq = F.uniq g1 g2 in
         let Eq = Cod.comp_uniq n1 n2 in
         Eq
 
-  (* The functor preserves identities *)
-
   let id : type param a x. (param, a, x) F.Obj.t -> (param, a, a Dom.id, a, x, x Cod.id, x) t =
    fun fa -> Zero fa
 
-  (* The functor preserves composition: given homomorphism evidence for two composable paths and evidence that they compose in Dom, we obtain homomorphism evidence for the composite path together with evidence that the images compose in Cod. *)
-
   type (_, _, _, _, _, _, _, _, _) comp =
     | Comp :
-        ('param, 'a, 'p, 'c, 'x, 'n3, 'z) t * ('x, 'n1, 'y, 'n2, 'z, 'n3) Cod.comp
-        -> ('param, 'a, 'p, 'c, 'x, 'n1, 'y, 'n2, 'z) comp
+        ('param, 'a, 'p, 'c, 'x, 'n3, 'z) t * ('x, 'n2, 'y, 'n1, 'z, 'n3) Cod.comp
+        -> ('param, 'a, 'p, 'c, 'x, 'n2, 'y, 'n1, 'z) comp
 
   let rec comp : type param a m b n c p x y z n1 n2.
       param Param.t ->
-      (param, a, m, b, x, n1, y) t ->
-      (param, b, n, c, y, n2, z) t ->
+      (param, a, m, b, x, n2, y) t ->
+      (param, b, n, c, y, n1, z) t ->
       (a, m, b, n, c, p) Dom.comp ->
-      (param, a, p, c, x, n1, y, n2, z) comp =
-   fun param fa fb ab ->
-    match (fb, ab) with
-    | Zero _, Zero -> Comp (fa, Cod.comp_id (cod param fa))
-    | Suc (fb_inner, fg, y_fg), Suc (ab_inner, edge) ->
-        let Eq = Q.src_uniq (F.dom fg) edge in
-        let (Comp (fc, xy)) = comp param fa fb_inner ab_inner in
-        let (Comp xy_fg) = Cod.comp (F.cod param fg) in
-        let x_yfg = Cod.comp_assocr xy y_fg xy_fg in
-        Comp (Suc (fc, fg, xy_fg), x_yfg)
+      (param, a, p, c, x, n2, y, n1, z) comp =
+   fun param fm fn mn ->
+    match (fm, mn) with
+    | Zero _, Zero -> Comp (fn, Cod.comp_id (cod param fn))
+    | Suc (fm_inner, fg, x_fg), Suc (mn_inner, edge) ->
+        let Eq = Q.tgt_uniq (F.dom fg) edge in
+        let (Comp (fp_inner, x_yfg)) = comp param fm_inner fn mn_inner in
+        let (Comp xfg_y) = Cod.comp (F.cod param fg) in
+        let x_y = Cod.comp_assocr x_fg x_yfg xfg_y in
+        Comp (Suc (fp_inner, fg, xfg_y), x_y)
 end
 
 module Hom2Check

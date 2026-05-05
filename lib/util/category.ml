@@ -72,40 +72,38 @@ end
 module type Category = sig
   include Quiver
 
-  type wrapped = Wrap : ('src, 'shape, 'tgt) t -> wrapped
-
-  (* Composition is defined as a relation: ('a, 'm, 'b, 'n, 'c, 'p) comp says that if 'm is a morphism from 'a to 'b, then 'n is a morphism from 'b to 'c, and their composite is the morphism 'p from 'a to 'c. *)
+  (* The type parameters of composition are in applicative order: ('a, 'm, 'b, 'n, 'c, 'p) comp says that 'm is a morphism from 'a to 'b, 'n is a morphism from 'b to 'c, and 'p is the composite n ∘ m from 'a to 'c. *)
   type (_, _, _, _, _, _) comp
 
   type (_, _, _, _, _) has_comp =
     | Comp : ('a, 'm, 'b, 'n, 'c, 'p) comp -> ('a, 'm, 'b, 'n, 'c) has_comp
 
-  (* As with Monoid, the choice of which arguments must be supplied and which can be deduced mirrors what happens in the free case. *)
-  val comp : ('b, 'n, 'c) t -> ('a, 'm, 'b, 'n, 'c) has_comp
-  val comp_right : 'b Obj.t -> ('a, 'm, 'b, 'n, 'c, 'p) comp -> ('b, 'n, 'c) t
-  val comp_left : ('a, 'm, 'b, 'n, 'c, 'p) comp -> ('a, 'p, 'c) t -> ('a, 'm, 'b) t
-  val comp_out : ('a, 'm, 'b) t -> ('a, 'm, 'b, 'n, 'c, 'p) comp -> ('a, 'p, 'c) t
+  (* As with Monoid, the choice of which arguments must be supplied and which can be deduced mirrors what happens in the free case.  In the free case (Path), the comp evidence is built by walking the precomposed ('m) morphism, so [comp] takes that morphism. *)
+  val comp : ('a, 'm, 'b) t -> ('a, 'm, 'b, 'n, 'c) has_comp
+  val comp_right : 'b Obj.t -> ('a, 'm, 'b, 'n, 'c, 'p) comp -> ('a, 'm, 'b) t
+  val comp_left : ('a, 'm, 'b, 'n, 'c, 'p) comp -> ('a, 'p, 'c) t -> ('b, 'n, 'c) t
+  val comp_out : ('b, 'n, 'c) t -> ('a, 'm, 'b, 'n, 'c, 'p) comp -> ('a, 'p, 'c) t
 
   (* Composites are unique *)
   val comp_uniq : ('a, 'm, 'b, 'n, 'c, 'p) comp -> ('a, 'm, 'b, 'n, 'c, 'q) comp -> ('p, 'q) Eq.t
 
-  (* Identity morphisms.  This type has to be parametrized by the object so that src_uniq and tgt_uniq has a chance of being true. *)
+  (* Identity morphisms.  This type has to be parametrized by the object so that src_uniq and tgt_uniq have a chance of being true. *)
   type 'a id
 
   val id : 'a Obj.t -> ('a, 'a id, 'a) t
 
-  (* Composition is unital *)
-  val id_comp : ('b, 'n, 'c) t -> ('b, 'b id, 'b, 'n, 'c, 'n) comp
-  val comp_id : ('a, 'm, 'b) t -> ('a, 'm, 'b, 'b id, 'b, 'm) comp
+  (* Composition is unital. *)
+  val id_comp : ('a, 'm, 'b) t -> ('a, 'm, 'b, 'b id, 'b, 'm) comp
+  val comp_id : ('b, 'n, 'c) t -> ('b, 'b id, 'b, 'n, 'c, 'n) comp
 
-  (* Composition is associative *)
-  val comp_assocl :
+  (* Composition is associative. *)
+  val comp_assocr :
     ('a, 'm, 'b, 'n, 'c, 'mn) comp ->
     ('b, 'n, 'c, 'p, 'd, 'np) comp ->
     ('a, 'm, 'b, 'np, 'd, 'mnp) comp ->
     ('a, 'mn, 'c, 'p, 'd, 'mnp) comp
 
-  val comp_assocr :
+  val comp_assocl :
     ('a, 'm, 'b, 'n, 'c, 'mn) comp ->
     ('b, 'n, 'c, 'p, 'd, 'np) comp ->
     ('a, 'mn, 'c, 'p, 'd, 'mnp) comp ->
