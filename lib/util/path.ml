@@ -5,11 +5,12 @@ open Category
 (* Type-level free categories. *)
 
 (* The free category on a quiver.  Its objects are those of the quiver, and its morphisms ("paths") are sequences of composable edges.  As with words (free monoids), paths are represented as type-level backwards lists of edges (so we can append on the right efficiently).  Composition is in applicative order: g ∘ f means f is applied first.  Appending an edge on the right of a path PRECOMPOSES that edge: the new edge is applied first, before the rest of the path.  Composition is encoded as a relation. *)
+type 'a id = private Dummy_id
 
 module Make (Q : Quiver) = struct
   module Obj = Q.Obj
 
-  type 'a id = private Dummy_id
+  type nonrec 'a id = 'a id
   type ('n, 'g) suc = ('n, 'g) snoc
 
   (* ********** Composition ********** *)
@@ -32,6 +33,8 @@ module Make (Q : Quiver) = struct
   type (_, _) wrapped = Wrap : ('src, 'morphism, 'tgt) t -> ('src, 'tgt) wrapped
   type _ src_wrapped = Wrap : ('src, 'morphism, 'tgt) t -> 'tgt src_wrapped
   type _ tgt_wrapped = Wrap : ('src, 'morphism, 'tgt) t -> 'src tgt_wrapped
+  type (_, _) has_src = Wrap : ('src, 'morphism, 'tgt) t -> ('morphism, 'tgt) has_src
+  type (_, _) has_tgt = Wrap : ('src, 'morphism, 'tgt) t -> ('src, 'morphism) has_tgt
 
   (* Smart constructors *)
 
