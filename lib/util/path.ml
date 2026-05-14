@@ -544,4 +544,46 @@ struct
   include Hom2 (F.Param) (Dom) (CodCategory) (FCategory)
 
   let suc p fa fg = Suc (fa, Inject fg, Suc (Zero, F.cod p fg))
+
+  (* Free functors not only preserve composition but reflect it: if the image of a domain morphism factors as a composite in the codomain, then there is a unique corresponding factorization in the domain whose factors map to the given codomain factors.  These are the duals of Hom2.comp and Hom2.uncomp: those take dom composition evidence and produce cod composition evidence; these take cod composition evidence and produce dom composition evidence. *)
+
+  type (_, _, _, _, _, _, _, _, _) dom_comp =
+    | Dom_comp :
+        ('param, 'a, 'p, 'c, 'x, 'n3, 'z) t * ('a, 'm, 'b, 'n, 'c, 'p) Dom.comp
+        -> ('param, 'a, 'm, 'b, 'n, 'c, 'x, 'n3, 'z) dom_comp
+
+  let rec dom_comp : type param a m b n c x y z n1 n2 n3.
+      param Param.t ->
+      (param, b, n, c, y, n1, z) t ->
+      (param, a, m, b, x, n2, y) t ->
+      (x, n2, y, n1, z, n3) Cod.comp ->
+      (param, a, m, b, n, c, x, n3, z) dom_comp =
+   fun param fn fm cev ->
+    match (fm, cev) with
+    | Zero _, Zero -> Dom_comp (fn, Zero)
+    | Suc (fm_inner, Inject fg, Suc (Zero, edge_fg)), Suc (cev_inner, edge_cev) ->
+        let Eq = C.tgt_uniq edge_fg edge_cev in
+        let (Dom_comp (fp_inner, dom_ev_inner)) = dom_comp param fn fm_inner cev_inner in
+        Dom_comp (suc param fp_inner fg, Suc (dom_ev_inner, F.dom fg))
+
+  type (_, _, _, _, _, _, _, _, _) dom_uncomp =
+    | Dom_uncomp :
+        ('param, 'b, 'n, 'c, 'y, 'r, 'z) t
+        * ('param, 'a, 'm, 'b, 'x, 'q, 'y) t
+        * ('a, 'm, 'b, 'n, 'c, 'mn) Dom.comp
+        -> ('param, 'a, 'mn, 'c, 'x, 'q, 'y, 'r, 'z) dom_uncomp
+
+  let rec dom_uncomp : type param a mn c x q y r z rq.
+      param Param.t ->
+      (x, q, y, r, z, rq) Cod.comp ->
+      (param, a, mn, c, x, rq, z) t ->
+      (param, a, mn, c, x, q, y, r, z) dom_uncomp =
+   fun param cev fmn ->
+    match cev with
+    | Zero -> Dom_uncomp (fmn, Zero (src fmn), Zero)
+    | Suc (cev_inner, edge_cev) ->
+        let (Suc (fmn_rest, Inject fg, Suc (Zero, edge_fg))) = fmn in
+        let Eq = C.tgt_uniq edge_fg edge_cev in
+        let (Dom_uncomp (fn, fm_inner, dom_ev_rec)) = dom_uncomp param cev_inner fmn_rest in
+        Dom_uncomp (fn, suc param fm_inner fg, Suc (dom_ev_rec, F.dom fg))
 end
