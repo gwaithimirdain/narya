@@ -46,6 +46,10 @@ module Make (Q : Quiver) = struct
   let of_gen : type a m b. (a, m, b) Q.t -> (a, (b id, m) suc, b) t =
    fun m -> Path (Suc (Zero, m), Q.tgt m)
 
+  let rec length : type a m b. (a, m, b) t -> int = function
+    | Path (Zero, _) -> 0
+    | Path (Suc (m, _), mode) -> 1 + length (Path (m, mode))
+
   (* ********** Source and target ********** *)
 
   let src : type a m b. (a, m, b) t -> a Obj.t =
@@ -161,6 +165,20 @@ module Make (Q : Quiver) = struct
         let Eq = Q.tgt_uniq edge edge' in
         Suc (comp_assocl np mn_inner mnp_inner, edge)
 
+  let rec comp_assoc_cancelr : type a m b n c d p nm pn pnm.
+      (a, m, b, n, c, nm) comp ->
+      (a, nm, c, p, d, pnm) comp ->
+      (a, m, b, pn, d, pnm) comp ->
+      (b, n, c, p, d, pn) comp =
+   fun nm p_nm pn_m ->
+    match (nm, pn_m) with
+    | Zero, Zero -> p_nm
+    | Suc (nm, g), Suc (pn_m, g') ->
+        let Eq = Q.tgt_uniq g g' in
+        let (Suc (p_nm, g'')) = p_nm in
+        let Eq = Q.tgt_uniq g g'' in
+        comp_assoc_cancelr nm p_nm pn_m
+
   (* ********** Comparison ********** *)
 
   let rec compare : type a1 m1 b1 a2 m2 b2.
@@ -183,7 +201,36 @@ module Make (Q : Quiver) = struct
 
   (* ********** Factoring and pushouts ********** *)
 
-  (* TODO *)
+  type (_, _, _, _, _) factor =
+    | Factor : ('b, 'n, 'c) t * ('a, 'k, 'b, 'n, 'c, 'nk) comp -> ('a, 'b, 'c, 'nk, 'k) factor
+
+  let rec factor : type a b c nk k. (a, nk, c) t -> (a, k, b) t -> (a, b, c, nk, k) factor option =
+   fun nk k ->
+    let open Monad.Ops (Monad.Maybe) in
+    match (nk, k) with
+    | _, Path (Zero, _) -> Some (Factor (nk, comp_id nk))
+    | Path (Suc (nk, g), base), Path (Suc (k, h), base') -> (
+        match Q.compare g h with
+        | Eq ->
+            let* (Factor (j, n)) = factor (Path (nk, base)) (Path (k, base')) in
+            return (Factor (j, Suc (n, g)))
+        | Neq -> None)
+    | _ -> None
+
+  type (_, _, _, _, _) pushout =
+    | Pushout :
+        ('y, 'c, 'w) t
+        * ('z, 'd, 'w) t
+        * ('x, 'a, 'y, 'c, 'w, 'p) comp
+        * ('x, 'b, 'z, 'd, 'w, 'p) comp
+        -> ('x, 'y, 'z, 'a, 'b) pushout
+
+  let pushout : type x y z a b. (x, a, y) t -> (x, b, z) t -> (x, y, z, a, b) pushout option =
+   fun a b ->
+    match (factor a b, factor b a) with
+    | _, Some (Factor (k, ab)) -> Some (Pushout (k, id (tgt k), ab, id_comp b))
+    | Some (Factor (k, ba)), _ -> Some (Pushout (id (tgt k), k, id_comp a, ba))
+    | _ -> None
 end
 
 module MakeCheck (Q : Quiver) : Category = Make (Q)
