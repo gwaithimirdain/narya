@@ -488,3 +488,60 @@ module Hom2Check
     (F : Quivermap2 with module Param = Param and module Dom = Q and module Cod = Cod) :
   Quivermap2 with module Param = Param and module Dom = Make(Q) and module Cod = Cod =
   Hom2 (Param) (Q) (Cod) (F)
+
+(* (Parametrized) functoriality is the functor between two free categories induced by a map of their generating quivers, composed with the inclusion of generators into a free category. *)
+
+module Fmap
+    (Dom : Quiver)
+    (Cod : Quiver)
+    (F : Quivermap2 with module Dom = Dom and module Cod = Cod) =
+struct
+  module CodCategory = Make (Cod)
+  module C = Cod
+
+  module FCategory = struct
+    module Param = F.Param
+    module Dom = Dom
+    module Cod = CodCategory
+    module Obj = F.Obj
+
+    type (_, _, _, _, _, _, _) t =
+      | Inject :
+          ('p, 'a, 'g, 'b, 'x, 'n, 'y) F.t
+          -> ('p, 'a, 'g, 'b, 'x, ('y CodCategory.id, 'n) CodCategory.suc, 'y) t
+
+    let dom : type p a g b x n y. (p, a, g, b, x, n, y) t -> (a, g, b) Dom.t =
+     fun (Inject f) -> F.dom f
+
+    let cod : type p a g b x n y. p Param.t -> (p, a, g, b, x, n, y) t -> (x, n, y) Cod.t =
+     fun p (Inject f) -> CodCategory.of_gen (F.cod p f)
+
+    let src : type p a g b x n y. (p, a, g, b, x, n, y) t -> (p, a, x) Obj.t =
+     fun (Inject f) -> F.src f
+
+    let tgt : type p a g b x n y. (p, a, g, b, x, n, y) t -> (p, b, y) Obj.t =
+     fun (Inject f) -> F.tgt f
+
+    type (_, _, _, _) exists =
+      | Exists : ('p, 'a, 'g, 'b, 'x, 'n, 'y) t -> ('p, 'a, 'g, 'b) exists
+
+    let exists : type p a g b. p Param.t -> (a, g, b) Dom.t -> (p, a, g, b) exists =
+     fun p path ->
+      let (Exists fx) = F.exists p path in
+      Exists (Inject fx)
+
+    let uniq : type p a g b x1 n1 y1 x2 n2 y2.
+        (p, a, g, b, x1, n1, y1) t ->
+        (p, a, g, b, x2, n2, y2) t ->
+        (x1 * n1 * y1, x2 * n2 * y2) Eq.t =
+     fun f1 f2 ->
+      match (f1, f2) with
+      | Inject f1, Inject f2 ->
+          let Eq = F.uniq f1 f2 in
+          Eq
+  end
+
+  include Hom2 (F.Param) (Dom) (CodCategory) (FCategory)
+
+  let suc p fa fg = Suc (fa, Inject fg, Suc (Zero, F.cod p fg))
+end
