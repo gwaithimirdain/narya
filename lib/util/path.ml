@@ -200,6 +200,32 @@ module Make (Q : Quiver) = struct
             | Eq -> Eq
             | Neq -> Neq))
 
+  (* ********** Forward version ********** *)
+
+  (* Forward chain of composable edges from 'src to 'tgt, with cons head being the target-side edge.  Walking head-to-tail thus traverses the path target-to-source. *)
+  type (_, _, _) fwd =
+    | Nil : ('a, nil, 'a) fwd
+    | Cons : ('mid, 'g, 'tgt) Q.t * ('src, 'rest, 'mid) fwd -> ('src, ('g, 'rest) cons, 'tgt) fwd
+
+  type (_, _, _) to_fwd =
+    | To_fwd :
+        ('src, 'fwd_shape, 'tgt) fwd * ('tgt id, 'fwd_shape, 'm) Tbwd.append
+        -> ('src, 'm, 'tgt) to_fwd
+
+  let to_fwd : type src m tgt. (src, m, tgt) t -> (src, m, tgt) to_fwd =
+   fun path ->
+    let rec go : type cur m_rem src fwd_shape m_full tgt.
+        (cur, m_rem, tgt) t ->
+        (src, fwd_shape, cur) fwd ->
+        (m_rem, fwd_shape, m_full) Tbwd.append ->
+        (src, m_full, tgt) to_fwd =
+     fun path fwd_acc bcomp_acc ->
+      match path with
+      | Path (Zero, _) -> To_fwd (fwd_acc, bcomp_acc)
+      | Path (Suc (m_inner, g_edge), b_obj) ->
+          go (Path (m_inner, b_obj)) (Cons (g_edge, fwd_acc)) (Append_cons bcomp_acc) in
+    go path Nil Append_nil
+
   (* ********** Factoring and pushouts ********** *)
 
   type (_, _, _, _, _) factor =
@@ -630,32 +656,8 @@ module PathMapInternal (Q : Quiver) (QM : MAP3_MAKER with module Key = Q) (F : F
   module Cat = Make (Q)
   module Map = PathMapDef (Q) (QM) (F)
 
-  (* Forward chain of composable edges from 'src to 'tgt, with cons head being the target-side edge.  Walking head-to-tail thus traverses the path target-to-source. *)
-  type (_, _, _) fwd =
-    | Nil : ('a, nil, 'a) fwd
-    | Cons : ('mid, 'g, 'tgt) Q.t * ('src, 'rest, 'mid) fwd -> ('src, ('g, 'rest) cons, 'tgt) fwd
-
-  type (_, _, _) to_fwd =
-    | To_fwd :
-        ('src, 'fwd_shape, 'tgt) fwd * ('tgt id, 'fwd_shape, 'm) Tbwd.append
-        -> ('src, 'm, 'tgt) to_fwd
-
-  let to_fwd : type src m tgt. (src, m, tgt) Cat.t -> (src, m, tgt) to_fwd =
-   fun path ->
-    let rec go : type cur m_rem src fwd_shape m_full tgt.
-        (cur, m_rem, tgt) Cat.t ->
-        (src, fwd_shape, cur) fwd ->
-        (m_rem, fwd_shape, m_full) Tbwd.append ->
-        (src, m_full, tgt) to_fwd =
-     fun path fwd_acc bcomp_acc ->
-      match path with
-      | Path (Zero, _) -> To_fwd (fwd_acc, bcomp_acc)
-      | Path (Suc (m_inner, g_edge), b_obj) ->
-          go (Path (m_inner, b_obj)) (Cons (g_edge, fwd_acc)) (Append_cons bcomp_acc) in
-    go path Nil Append_nil
-
   let rec find_opt : type p src cur fwd_rest m_acc m_full tgt.
-      (src, fwd_rest, cur) fwd ->
+      (src, fwd_rest, cur) Cat.fwd ->
       (m_acc, fwd_rest, m_full) Tbwd.append ->
       (p, cur, m_acc, tgt) Map.map ->
       (p, src, m_full, tgt) F.t option =
@@ -671,7 +673,7 @@ module PathMapInternal (Q : Quiver) (QM : MAP3_MAKER with module Key = Q) (F : F
             find_opt rest_fwd rest_bcomp sub)
 
   let rec add : type p src cur fwd_rest m_acc m_full tgt.
-      (src, fwd_rest, cur) fwd ->
+      (src, fwd_rest, cur) Cat.fwd ->
       (m_acc, fwd_rest, m_full) Tbwd.append ->
       (p, src, m_full, tgt) F.t ->
       (p, cur, m_acc, tgt) Map.map ->
@@ -695,7 +697,7 @@ module PathMapInternal (Q : Quiver) (QM : MAP3_MAKER with module Key = Q) (F : F
               dm )
 
   let rec update : type p src cur fwd_rest m_acc m_full tgt.
-      (src, fwd_rest, cur) fwd ->
+      (src, fwd_rest, cur) Cat.fwd ->
       (m_acc, fwd_rest, m_full) Tbwd.append ->
       ((p, src, m_full, tgt) F.t option -> (p, src, m_full, tgt) F.t option) ->
       (p, cur, m_acc, tgt) Map.map ->
@@ -718,7 +720,7 @@ module PathMapInternal (Q : Quiver) (QM : MAP3_MAKER with module Key = Q) (F : F
               dm )
 
   let rec remove : type p src cur fwd_rest m_acc tgt.
-      (src, fwd_rest, cur) fwd -> (p, cur, m_acc, tgt) Map.map -> (p, cur, m_acc, tgt) Map.map =
+      (src, fwd_rest, cur) Cat.fwd -> (p, cur, m_acc, tgt) Map.map -> (p, cur, m_acc, tgt) Map.map =
    fun fwd m ->
     match (fwd, m) with
     | _, Empty -> Empty
@@ -785,13 +787,13 @@ module Map (Q : Quiver) (QM : MAP3_MAKER with module Key := Q) = struct
     let find_opt : type p src m tgt.
         (src, m, tgt) Cat.t -> (p, tgt) t -> (p, src, m, tgt) F.t option =
      fun path t ->
-      let (I.To_fwd (fwd, bcomp)) = I.to_fwd path in
+      let (To_fwd (fwd, bcomp)) = Cat.to_fwd path in
       I.find_opt fwd bcomp t.m
 
     let add : type p src m tgt.
         (src, m, tgt) Cat.t -> (p, src, m, tgt) F.t -> (p, tgt) t -> (p, tgt) t =
      fun path value t ->
-      let (I.To_fwd (fwd, bcomp)) = I.to_fwd path in
+      let (To_fwd (fwd, bcomp)) = Cat.to_fwd path in
       { t with m = I.add fwd bcomp value t.m }
 
     let update : type p src m tgt.
@@ -800,12 +802,12 @@ module Map (Q : Quiver) (QM : MAP3_MAKER with module Key := Q) = struct
         (p, tgt) t ->
         (p, tgt) t =
      fun path f t ->
-      let (I.To_fwd (fwd, bcomp)) = I.to_fwd path in
+      let (To_fwd (fwd, bcomp)) = Cat.to_fwd path in
       { t with m = I.update fwd bcomp f t.m }
 
     let remove : type p src m tgt. (src, m, tgt) Cat.t -> (p, tgt) t -> (p, tgt) t =
      fun path t ->
-      let (I.To_fwd (fwd, _)) = I.to_fwd path in
+      let (To_fwd (fwd, _)) = Cat.to_fwd path in
       { t with m = I.remove fwd t.m }
 
     type 'p mapper = 'p I.mapper = {
