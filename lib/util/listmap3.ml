@@ -1,16 +1,15 @@
 open Signatures
+open Category
 
 (* A simple implementation of MAP3_MAKER that uses heterogeneous association lists, applicable to any Quiver of triply-parametrized keys.  This is the direct analogue of Listmap.Map for keys whose type has three parameters (source, morphism, target). *)
 
-module Map (Key : Category.Quiver) : MAP3_MAKER with module Key = Key = struct
+module Map (Key : Quiver) : MAP3_MAKER with module Key = Key = struct
   module Key = Key
 
   module Make (F : Fam4) = struct
     module F = F
 
-    type _ t =
-      | [] : 'p t
-      | ( :: ) : (('a, 'b, 'c) Key.t * ('p, 'a, 'b, 'c) F.t) * 'p t -> 'p t
+    type _ t = [] : 'p t | ( :: ) : (('a, 'b, 'c) Key.t * ('p, 'a, 'b, 'c) F.t) * 'p t -> 'p t
 
     let empty = []
 
