@@ -616,7 +616,7 @@ end
 
 (* Intrinsically well-typed maps whose domains are paths in a free category.  This is the analogue of Word.Map for free categories: a recursive trie keyed by paths, with values parametrized by the path's source, morphism shape, and target (plus one ambient parameter), so the value family is a Fam4 rather than a Fam2.
 
-   Each map fixes its target object 'tgt; the keys are paths from any source to 'tgt.  The trie is walked target-side-first: the top-level edge-map (DM) is keyed by edges into 'tgt, and the accumulator path grows on the source side via snoc.  Concretely, converting an input path to a forward representation in target-first order via [to_fwd] then walking that with [Tbwd.append] evidence ties the recursion together. *)
+   Each internal map fixes its target object 'tgt; the keys are paths from any source to 'tgt.  The trie is walked target-side-first: the top-level edge-map (DM) is keyed by edges into 'tgt, and the accumulator path grows on the source side via snoc.  Concretely, converting an input path to a forward representation in target-first order via [to_fwd] then walking that with [Tbwd.append] evidence ties the recursion together. *)
 
 module rec PathMapDef : functor (Q : Quiver) (QM : MAP3_MAKER with module Key = Q) (F : Fam4) -> sig
   module M : sig
@@ -766,8 +766,6 @@ module PathMapInternal (Q : Quiver) (QM : MAP3_MAKER with module Key = Q) (F : F
         Map.DM.iter { it } dm
 end
 
-(* The user-facing functor.  Like Word.Map, this takes a quiver Q and an edge-map maker QM, and produces a Make functor that, for any value family F, builds the intrinsically well-typed map of paths.  Unlike Word.Map, the result is not a MAP3_MAKER: its [t] is parametrized by the fixed target object 'tgt, and [empty] takes a 'tgt Obj.t value so that [map] and [iter] can reconstruct the path at each entry. *)
-
 (* The user-facing functor.  Takes a quiver Q, an object-map maker QObjMap, and an edge-map maker QM, and produces a MAP3_MAKER keyed by paths in the free category Make(Q).  Internally each entry of the top-level object-map QObjMap holds a fixed-target trie of paths; dispatching on the target object recovers a MAP3_MAKER interface (single-parameter ['p t]) from the underlying per-target structure. *)
 
 module Map
@@ -799,12 +797,12 @@ module Map
      fun path t ->
       let open Monad.Ops (Monad.Maybe) in
       let* path_map = ObjMap.find_opt (Cat.tgt path) t in
-      let (I.To_fwd (fwd, bcomp)) = I.to_fwd path in
+      let (To_fwd (fwd, bcomp)) = Cat.to_fwd path in
       I.find_opt fwd bcomp path_map
 
     let add : type p src m tgt. (src, m, tgt) Cat.t -> (p, src, m, tgt) F.t -> p t -> p t =
      fun path value t ->
-      let (I.To_fwd (fwd, bcomp)) = I.to_fwd path in
+      let (To_fwd (fwd, bcomp)) = Cat.to_fwd path in
       ObjMap.update (Cat.tgt path)
         (function
           | None -> Some (I.add fwd bcomp value I.Map.Empty)
@@ -817,7 +815,7 @@ module Map
         p t ->
         p t =
      fun path f t ->
-      let (I.To_fwd (fwd, bcomp)) = I.to_fwd path in
+      let (To_fwd (fwd, bcomp)) = Cat.to_fwd path in
       ObjMap.update (Cat.tgt path)
         (function
           | None -> Some (I.update fwd bcomp f I.Map.Empty)
@@ -826,7 +824,7 @@ module Map
 
     let remove : type p src m tgt. (src, m, tgt) Cat.t -> p t -> p t =
      fun path t ->
-      let (I.To_fwd (fwd, _)) = I.to_fwd path in
+      let (To_fwd (fwd, _)) = Cat.to_fwd path in
       ObjMap.update (Cat.tgt path) (Option.map (fun path_map -> I.remove fwd path_map)) t
 
     type 'p mapper = 'p I.mapper = {
