@@ -768,7 +768,12 @@ end
 
 (* The user-facing functor.  Like Word.Map, this takes a quiver Q and an edge-map maker QM, and produces a Make functor that, for any value family F, builds the intrinsically well-typed map of paths.  Unlike Word.Map, the result is not a MAP3_MAKER: its [t] is parametrized by the fixed target object 'tgt, and [empty] takes a 'tgt Obj.t value so that [map] and [iter] can reconstruct the path at each entry. *)
 
-module Map (Q : Quiver) (QM : MAP3_MAKER with module Key := Q) = struct
+(* The user-facing functor.  Takes a quiver Q, an object-map maker QObjMap, and an edge-map maker QM, and produces a MAP3_MAKER keyed by paths in the free category Make(Q).  Internally each entry of the top-level object-map QObjMap holds a fixed-target trie of paths; dispatching on the target object recovers a MAP3_MAKER interface (single-parameter ['p t]) from the underlying per-target structure. *)
+
+module Map
+    (Q : Quiver)
+    (QObjMap : MAP_MAKER with module Key := Q.Obj)
+    (QM : MAP3_MAKER with module Key := Q) : MAP3_MAKER with module Key := Make(Q) = struct
   module Cat = Make (Q)
 
   module Make (F : Fam4) = struct
@@ -778,51 +783,65 @@ module Map (Q : Quiver) (QM : MAP3_MAKER with module Key := Q) = struct
     end
 
     module I = PathMapInternal (Q) (QM2) (F)
-    module Cat = Cat
 
-    type ('p, 'tgt) t = { tgt_obj : 'tgt Q.Obj.t; m : ('p, 'tgt, 'tgt id, 'tgt) I.Map.map }
+    (* The Fam2 fed to the object-map: at each target object 'tgt, store the fixed-target trie. *)
+    module ObjF = struct
+      type ('p, 'tgt) t = ('p, 'tgt, 'tgt id, 'tgt) I.Map.map
+    end
 
-    let empty : type p tgt. tgt Q.Obj.t -> (p, tgt) t = fun tgt_obj -> { tgt_obj; m = I.Map.Empty }
+    module ObjMap = QObjMap.Make (ObjF)
 
-    let find_opt : type p src m tgt.
-        (src, m, tgt) Cat.t -> (p, tgt) t -> (p, src, m, tgt) F.t option =
+    type 'p t = 'p ObjMap.t
+
+    let empty : type p. p t = ObjMap.empty
+
+    let find_opt : type p src m tgt. (src, m, tgt) Cat.t -> p t -> (p, src, m, tgt) F.t option =
      fun path t ->
-      let (To_fwd (fwd, bcomp)) = Cat.to_fwd path in
-      I.find_opt fwd bcomp t.m
+      let open Monad.Ops (Monad.Maybe) in
+      let* path_map = ObjMap.find_opt (Cat.tgt path) t in
+      let (I.To_fwd (fwd, bcomp)) = I.to_fwd path in
+      I.find_opt fwd bcomp path_map
 
-    let add : type p src m tgt.
-        (src, m, tgt) Cat.t -> (p, src, m, tgt) F.t -> (p, tgt) t -> (p, tgt) t =
+    let add : type p src m tgt. (src, m, tgt) Cat.t -> (p, src, m, tgt) F.t -> p t -> p t =
      fun path value t ->
-      let (To_fwd (fwd, bcomp)) = Cat.to_fwd path in
-      { t with m = I.add fwd bcomp value t.m }
+      let (I.To_fwd (fwd, bcomp)) = I.to_fwd path in
+      ObjMap.update (Cat.tgt path)
+        (function
+          | None -> Some (I.add fwd bcomp value I.Map.Empty)
+          | Some path_map -> Some (I.add fwd bcomp value path_map))
+        t
 
     let update : type p src m tgt.
         (src, m, tgt) Cat.t ->
         ((p, src, m, tgt) F.t option -> (p, src, m, tgt) F.t option) ->
-        (p, tgt) t ->
-        (p, tgt) t =
+        p t ->
+        p t =
      fun path f t ->
-      let (To_fwd (fwd, bcomp)) = Cat.to_fwd path in
-      { t with m = I.update fwd bcomp f t.m }
+      let (I.To_fwd (fwd, bcomp)) = I.to_fwd path in
+      ObjMap.update (Cat.tgt path)
+        (function
+          | None -> Some (I.update fwd bcomp f I.Map.Empty)
+          | Some path_map -> Some (I.update fwd bcomp f path_map))
+        t
 
-    let remove : type p src m tgt. (src, m, tgt) Cat.t -> (p, tgt) t -> (p, tgt) t =
+    let remove : type p src m tgt. (src, m, tgt) Cat.t -> p t -> p t =
      fun path t ->
-      let (To_fwd (fwd, _)) = Cat.to_fwd path in
-      { t with m = I.remove fwd t.m }
+      let (I.To_fwd (fwd, _)) = I.to_fwd path in
+      ObjMap.update (Cat.tgt path) (Option.map (fun path_map -> I.remove fwd path_map)) t
 
     type 'p mapper = 'p I.mapper = {
       map :
         'src 'm 'tgt. ('src, 'm, 'tgt) Cat.t -> ('p, 'src, 'm, 'tgt) F.t -> ('p, 'src, 'm, 'tgt) F.t;
     }
 
-    let map : type p tgt. p mapper -> (p, tgt) t -> (p, tgt) t =
-     fun f t -> { t with m = I.map f (Cat.id t.tgt_obj) t.m }
+    let map : type p. p mapper -> p t -> p t =
+     fun f t -> ObjMap.map { map = (fun tgt_obj path_map -> I.map f (Cat.id tgt_obj) path_map) } t
 
     type 'p iterator = 'p I.iterator = {
       it : 'src 'm 'tgt. ('src, 'm, 'tgt) Cat.t -> ('p, 'src, 'm, 'tgt) F.t -> unit;
     }
 
-    let iter : type p tgt. p iterator -> (p, tgt) t -> unit =
-     fun f t -> I.iter f (Cat.id t.tgt_obj) t.m
+    let iter : type p. p iterator -> p t -> unit =
+     fun f t -> ObjMap.iter { it = (fun tgt_obj path_map -> I.iter f (Cat.id tgt_obj) path_map) } t
   end
 end
