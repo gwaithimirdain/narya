@@ -1,4 +1,5 @@
 open Signatures
+open Tlist
 open Tbwd
 open Category
 
@@ -586,4 +587,286 @@ struct
         let Eq = C.tgt_uniq edge_fg edge_cev in
         let (Dom_uncomp (fn, fm_inner, dom_ev_rec)) = dom_uncomp param cev_inner fmn_rest in
         Dom_uncomp (fn, suc param fm_inner fg, Suc (dom_ev_rec, F.dom fg))
+end
+
+(* Intrinsically well-typed maps whose domains are paths in a free category.  This is the analogue of Word.Map for free categories: a recursive trie keyed by paths, with values parametrized by the path's source, morphism shape, and target (plus one ambient parameter), so the value family is a Fam4 rather than a Fam2.
+
+   Each map fixes its target object 'tgt; the keys are paths from any source to 'tgt.  The trie is walked target-side-first: the top-level edge-map (DM) is keyed by edges into 'tgt, and the accumulator path grows on the source side via snoc.  Concretely, converting an input path to a forward representation in target-first order via [to_fwd] then walking that with [Tbwd.append] evidence ties the recursion together. *)
+
+module rec PathMapDef : functor
+  (Q : Quiver)
+  (QM : MAP3_MAKER with module Key = Q)
+  (F : Fam4)
+  -> sig
+  (* The intended structural invariant is that the only edges stored in the trie at a node with current "source" 'src are those whose target is 'src.  We could try to express this by reusing 'src in M.t's last parameter, but then the outer recursive [map] / [iter] closures would have to be ML-polymorphic in the edge's target — which conflicts with the GADT equation introduced by the Wrapmap pattern.  Instead we make the M.t's last parameter free and pair the wrapped sub-map with an explicit Eq.t witness; pattern-matching the [Eq] constructor inside the closure body locally reintroduces the equation. *)
+  module M : sig
+    type ('outer_p, 'a, 'g, 'b) t =
+      | Wrapmap :
+          ('p, 'a, ('m, 'g) snoc, 'tgt) PathMapDef(Q)(QM)(F).map * ('b, 'src) Eq.t
+          -> ('p * 'm * 'tgt * 'src, 'a, 'g, 'b) t
+  end
+
+  module DM : module type of QM.Make (M)
+
+  type ('p, 'src, 'm, 'tgt) map =
+    | Empty
+    | Entry of ('p, 'src, 'm, 'tgt) F.t option * ('p * 'm * 'tgt * 'src) DM.t
+end =
+functor
+  (Q : Quiver)
+  (QM : MAP3_MAKER with module Key = Q)
+  (F : Fam4)
+  ->
+  struct
+    module M = struct
+      type ('outer_p, 'a, 'g, 'b) t =
+        | Wrapmap :
+            ('p, 'a, ('m, 'g) snoc, 'tgt) PathMapDef(Q)(QM)(F).map * ('b, 'src) Eq.t
+            -> ('p * 'm * 'tgt * 'src, 'a, 'g, 'b) t
+    end
+
+    module DM = QM.Make (M)
+
+    type ('p, 'src, 'm, 'tgt) map =
+      | Empty
+      | Entry of ('p, 'src, 'm, 'tgt) F.t option * ('p * 'm * 'tgt * 'src) DM.t
+  end
+
+module PathMapInternal
+    (Q : Quiver)
+    (QM : MAP3_MAKER with module Key = Q)
+    (F : Fam4) =
+struct
+  module Cat = Make (Q)
+  module Map = PathMapDef (Q) (QM) (F)
+
+  (* Forward chain of composable edges from 'src to 'tgt, with cons head being the target-side edge.  Walking head-to-tail thus traverses the path target-to-source. *)
+  type (_, _, _) fwd =
+    | Nil : ('a, nil, 'a) fwd
+    | Cons :
+        ('mid, 'g, 'tgt) Q.t * ('src, 'rest, 'mid) fwd
+        -> ('src, ('g, 'rest) cons, 'tgt) fwd
+
+  type (_, _, _) to_fwd =
+    | To_fwd :
+        ('src, 'fwd_shape, 'tgt) fwd * ('tgt id, 'fwd_shape, 'm) Tbwd.append
+        -> ('src, 'm, 'tgt) to_fwd
+
+  let to_fwd : type src m tgt. (src, m, tgt) Cat.t -> (src, m, tgt) to_fwd =
+   fun path ->
+    let rec go : type cur m_rem src fwd_shape m_full tgt.
+        (cur, m_rem, tgt) Cat.t ->
+        (src, fwd_shape, cur) fwd ->
+        (m_rem, fwd_shape, m_full) Tbwd.append ->
+        (src, m_full, tgt) to_fwd =
+     fun path fwd_acc bcomp_acc ->
+      match path with
+      | Path (Zero, _) -> To_fwd (fwd_acc, bcomp_acc)
+      | Path (Suc (m_inner, g_edge), b_obj) ->
+          go (Path (m_inner, b_obj)) (Cons (g_edge, fwd_acc)) (Append_cons bcomp_acc)
+    in
+    go path Nil Append_nil
+
+  let rec find_opt : type p src cur fwd_rest m_acc m_full tgt.
+      (src, fwd_rest, cur) fwd ->
+      (m_acc, fwd_rest, m_full) Tbwd.append ->
+      (p, cur, m_acc, tgt) Map.map ->
+      (p, src, m_full, tgt) F.t option =
+   fun fwd bcomp m ->
+    let open Monad.Ops (Monad.Maybe) in
+    match m with
+    | Empty -> None
+    | Entry (x, dm) -> (
+        match (fwd, bcomp) with
+        | Nil, Append_nil -> x
+        | Cons (g_edge, rest_fwd), Append_cons rest_bcomp ->
+            let* (Map.M.Wrapmap (sub, Eq)) = Map.DM.find_opt g_edge dm in
+            find_opt rest_fwd rest_bcomp sub)
+
+  let rec add : type p src cur fwd_rest m_acc m_full tgt.
+      (src, fwd_rest, cur) fwd ->
+      (m_acc, fwd_rest, m_full) Tbwd.append ->
+      (p, src, m_full, tgt) F.t ->
+      (p, cur, m_acc, tgt) Map.map ->
+      (p, cur, m_acc, tgt) Map.map =
+   fun fwd bcomp value m ->
+    match (fwd, bcomp, m) with
+    | Nil, Append_nil, Empty -> Entry (Some value, Map.DM.empty)
+    | Nil, Append_nil, Entry (_, dm) -> Entry (Some value, dm)
+    | Cons (g_edge, rest_fwd), Append_cons rest_bcomp, Empty ->
+        Entry
+          ( None,
+            Map.DM.add g_edge
+              (Map.M.Wrapmap (add rest_fwd rest_bcomp value Empty, Eq))
+              Map.DM.empty )
+    | Cons (g_edge, rest_fwd), Append_cons rest_bcomp, Entry (e, dm) ->
+        Entry
+          ( e,
+            Map.DM.update g_edge
+              (function
+                | Some (Map.M.Wrapmap (sub, Eq)) ->
+                    Some (Map.M.Wrapmap (add rest_fwd rest_bcomp value sub, Eq))
+                | None -> Some (Map.M.Wrapmap (add rest_fwd rest_bcomp value Empty, Eq)))
+              dm )
+
+  let rec update : type p src cur fwd_rest m_acc m_full tgt.
+      (src, fwd_rest, cur) fwd ->
+      (m_acc, fwd_rest, m_full) Tbwd.append ->
+      ((p, src, m_full, tgt) F.t option -> (p, src, m_full, tgt) F.t option) ->
+      (p, cur, m_acc, tgt) Map.map ->
+      (p, cur, m_acc, tgt) Map.map =
+   fun fwd bcomp f m ->
+    match (fwd, bcomp, m) with
+    | Nil, Append_nil, Empty -> Entry (f None, Map.DM.empty)
+    | Nil, Append_nil, Entry (x, dm) -> Entry (f x, dm)
+    | Cons (g_edge, rest_fwd), Append_cons rest_bcomp, Empty ->
+        Entry
+          ( None,
+            Map.DM.add g_edge
+              (Map.M.Wrapmap (update rest_fwd rest_bcomp f Empty, Eq))
+              Map.DM.empty )
+    | Cons (g_edge, rest_fwd), Append_cons rest_bcomp, Entry (e, dm) ->
+        Entry
+          ( e,
+            Map.DM.update g_edge
+              (function
+                | Some (Map.M.Wrapmap (sub, Eq)) ->
+                    Some (Map.M.Wrapmap (update rest_fwd rest_bcomp f sub, Eq))
+                | None -> Some (Map.M.Wrapmap (update rest_fwd rest_bcomp f Empty, Eq)))
+              dm )
+
+  let rec remove : type p src cur fwd_rest m_acc tgt.
+      (src, fwd_rest, cur) fwd ->
+      (p, cur, m_acc, tgt) Map.map ->
+      (p, cur, m_acc, tgt) Map.map =
+   fun fwd m ->
+    match (fwd, m) with
+    | _, Empty -> Empty
+    | Nil, Entry (_, dm) -> Entry (None, dm)
+    | Cons (g_edge, rest_fwd), Entry (e, dm) ->
+        Entry
+          ( e,
+            Map.DM.update g_edge
+              (Option.map (fun (Map.M.Wrapmap (sub, Eq)) ->
+                   Map.M.Wrapmap (remove rest_fwd sub, Eq)))
+              dm )
+
+  type 'p mapper = {
+    map :
+      'src 'm 'tgt.
+      ('src, 'm, 'tgt) Cat.t -> ('p, 'src, 'm, 'tgt) F.t -> ('p, 'src, 'm, 'tgt) F.t;
+  }
+
+  (* A helper that takes the explicit Eq.t witness so the [map]/[iter] closures below don't need to introduce 'b = 'src equations into their own (polymorphic) type signatures.  The witness is consumed locally here and the result type doesn't mention 'b. *)
+  let suc_with_eq : type a g b src m tgt.
+      (src, m, tgt) Cat.t ->
+      (a, g, b) Q.t ->
+      (b, src) Eq.t ->
+      (a, (m, g) snoc, tgt) Cat.t =
+   fun accum_path edge eq -> match eq with Eq -> Cat.suc accum_path edge
+
+  let rec map : type p src m tgt.
+      p mapper ->
+      (src, m, tgt) Cat.t ->
+      (p, src, m, tgt) Map.map ->
+      (p, src, m, tgt) Map.map =
+   fun f accum_path m ->
+    match m with
+    | Empty -> Empty
+    | Entry (x, dm) ->
+        Entry
+          ( Option.map (f.map accum_path) x,
+            Map.DM.map
+              {
+                map =
+                  (fun edge (Map.M.Wrapmap (sub, eq)) ->
+                    Map.M.Wrapmap
+                      (map f (suc_with_eq accum_path edge eq) sub, eq));
+              }
+              dm )
+
+  type 'p iterator = {
+    it : 'src 'm 'tgt. ('src, 'm, 'tgt) Cat.t -> ('p, 'src, 'm, 'tgt) F.t -> unit;
+  }
+
+  let rec iter : type p src m tgt.
+      p iterator -> (src, m, tgt) Cat.t -> (p, src, m, tgt) Map.map -> unit =
+   fun f accum_path m ->
+    match m with
+    | Empty -> ()
+    | Entry (x, dm) ->
+        Option.iter (f.it accum_path) x;
+        Map.DM.iter
+          {
+            it =
+              (fun edge (Map.M.Wrapmap (sub, eq)) ->
+                iter f (suc_with_eq accum_path edge eq) sub);
+          }
+          dm
+end
+
+(* The user-facing functor.  Like Word.Map, this takes a quiver Q and an edge-map maker QM, and produces a Make functor that, for any value family F, builds the intrinsically well-typed map of paths.  Unlike Word.Map, the result is not a MAP3_MAKER: its [t] is parametrized by the fixed target object 'tgt, and [empty] takes a 'tgt Obj.t value so that [map] and [iter] can reconstruct the path at each entry. *)
+
+module Map (Q : Quiver) (QM : MAP3_MAKER with module Key := Q) = struct
+  module Cat = Make (Q)
+
+  module Make (F : Fam4) = struct
+    module QM2 = struct
+      module Key = Q
+      include QM
+    end
+
+    module I = PathMapInternal (Q) (QM2) (F)
+    module Cat = Cat
+
+    type ('p, 'tgt) t = {
+      tgt_obj : 'tgt Q.Obj.t;
+      m : ('p, 'tgt, 'tgt id, 'tgt) I.Map.map;
+    }
+
+    let empty : type p tgt. tgt Q.Obj.t -> (p, tgt) t =
+     fun tgt_obj -> { tgt_obj; m = I.Map.Empty }
+
+    let find_opt : type p src m tgt.
+        (src, m, tgt) Cat.t -> (p, tgt) t -> (p, src, m, tgt) F.t option =
+     fun path t ->
+      let (I.To_fwd (fwd, bcomp)) = I.to_fwd path in
+      I.find_opt fwd bcomp t.m
+
+    let add : type p src m tgt.
+        (src, m, tgt) Cat.t -> (p, src, m, tgt) F.t -> (p, tgt) t -> (p, tgt) t =
+     fun path value t ->
+      let (I.To_fwd (fwd, bcomp)) = I.to_fwd path in
+      { t with m = I.add fwd bcomp value t.m }
+
+    let update : type p src m tgt.
+        (src, m, tgt) Cat.t ->
+        ((p, src, m, tgt) F.t option -> (p, src, m, tgt) F.t option) ->
+        (p, tgt) t ->
+        (p, tgt) t =
+     fun path f t ->
+      let (I.To_fwd (fwd, bcomp)) = I.to_fwd path in
+      { t with m = I.update fwd bcomp f t.m }
+
+    let remove : type p src m tgt. (src, m, tgt) Cat.t -> (p, tgt) t -> (p, tgt) t =
+     fun path t ->
+      let (I.To_fwd (fwd, _)) = I.to_fwd path in
+      { t with m = I.remove fwd t.m }
+
+    type 'p mapper = 'p I.mapper = {
+      map :
+        'src 'm 'tgt.
+        ('src, 'm, 'tgt) Cat.t -> ('p, 'src, 'm, 'tgt) F.t -> ('p, 'src, 'm, 'tgt) F.t;
+    }
+
+    let map : type p tgt. p mapper -> (p, tgt) t -> (p, tgt) t =
+     fun f t -> { t with m = I.map f (Cat.id t.tgt_obj) t.m }
+
+    type 'p iterator = 'p I.iterator = {
+      it : 'src 'm 'tgt. ('src, 'm, 'tgt) Cat.t -> ('p, 'src, 'm, 'tgt) F.t -> unit;
+    }
+
+    let iter : type p tgt. p iterator -> (p, tgt) t -> unit =
+     fun f t -> I.iter f (Cat.id t.tgt_obj) t.m
+  end
 end

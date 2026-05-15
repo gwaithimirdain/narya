@@ -91,3 +91,39 @@ module type MAP_MAKER = sig
   module Key : Fam
   module Make : functor (F : Fam2) -> MAP with module Key := Key and module F := F
 end
+
+(* A similar interface for intrinsically well-typed maps with triply-parametrized keys.  The value family takes one additional parameter alongside the three key parameters. *)
+
+module type MAP3 = sig
+  module Key : Fam3
+  module F : Fam4
+
+  type 'p t
+
+  val empty : 'p t
+  val find_opt : ('a, 'b, 'c) Key.t -> 'p t -> ('p, 'a, 'b, 'c) F.t option
+  val add : ('a, 'b, 'c) Key.t -> ('p, 'a, 'b, 'c) F.t -> 'p t -> 'p t
+
+  val update :
+    ('a, 'b, 'c) Key.t ->
+    (('p, 'a, 'b, 'c) F.t option -> ('p, 'a, 'b, 'c) F.t option) ->
+    'p t ->
+    'p t
+
+  val remove : ('a, 'b, 'c) Key.t -> 'p t -> 'p t
+
+  type 'p mapper = {
+    map : 'a 'b 'c. ('a, 'b, 'c) Key.t -> ('p, 'a, 'b, 'c) F.t -> ('p, 'a, 'b, 'c) F.t;
+  }
+
+  val map : 'p mapper -> 'p t -> 'p t
+
+  type 'p iterator = { it : 'a 'b 'c. ('a, 'b, 'c) Key.t -> ('p, 'a, 'b, 'c) F.t -> unit }
+
+  val iter : 'p iterator -> 'p t -> unit
+end
+
+module type MAP3_MAKER = sig
+  module Key : Fam3
+  module Make : functor (F : Fam4) -> MAP3 with module Key := Key and module F := F
+end
