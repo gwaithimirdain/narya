@@ -204,12 +204,39 @@ module Make (Q : Quiver) = struct
 
   (* Forward chain of composable edges from 'src to 'tgt, with cons head being the target-side edge.  Walking head-to-tail thus traverses the path target-to-source. *)
   type (_, _, _) fwd =
-    | Nil : ('a, nil, 'a) fwd
+    | Nil : ('a, 'a id, 'a) fwd
     | Cons : ('mid, 'g, 'tgt) Q.t * ('src, 'rest, 'mid) fwd -> ('src, ('g, 'rest) cons, 'tgt) fwd
 
+  let fwd_tgt_uniq : type a1 a2 m b1 b2. (a1, m, b1) fwd -> (a2, m, b2) fwd -> (b1, b2) Eq.t =
+   fun m1 m2 ->
+    match (m1, m2) with
+    | Nil, Nil -> Eq
+    | Cons (g1, _), Cons (g2, _) -> Q.tgt_uniq g1 g2
+
+  type (_, _, _, _, _, _) bcomp =
+    | Zero : ('a, 'a id, 'a, 'n, 'c, 'n) bcomp
+    | Suc :
+        ('b1, 'g, 'b) Q.t * ('a, 'm, 'b1, ('n, 'g) suc, 'c, 'p) bcomp
+        -> ('a, ('g, 'm) cons, 'b, 'n, 'c, 'p) bcomp
+
+  let rec bcomp_right : type x m y n z nm. (x, m, y, n, z, nm) bcomp -> (x, m, y) fwd = function
+    | Zero -> Nil
+    | Suc (g, nm) -> Cons (g, bcomp_right nm)
+
+  let rec bcomp_uniq : type x m y n z nm nm'.
+      (x, m, y, n, z, nm) bcomp -> (x, m, y, n, z, nm') bcomp -> (nm, nm') Eq.t =
+   fun nm1 nm2 ->
+    match (nm1, nm2) with
+    | Zero, Zero -> Eq
+    | Suc (g1, nm1), Suc (g2, nm2) ->
+        let Eq = Q.src_uniq g1 g2 in
+        let Eq = bcomp_uniq nm1 nm2 in
+        Eq
+
+  (* TODO: Do we need the "fwd" return value here?  It can be recovered from the "bcomp" with bcomp_right if necessary, and we don't seem to use it often. *)
   type (_, _, _) to_fwd =
     | To_fwd :
-        ('src, 'fwd_shape, 'tgt) fwd * ('tgt id, 'fwd_shape, 'm) Tbwd.append
+        ('src, 'fwd_shape, 'tgt) fwd * ('src, 'fwd_shape, 'tgt, 'tgt id, 'tgt, 'm) bcomp
         -> ('src, 'm, 'tgt) to_fwd
 
   let to_fwd : type src m tgt. (src, m, tgt) t -> (src, m, tgt) to_fwd =
@@ -217,14 +244,23 @@ module Make (Q : Quiver) = struct
     let rec go : type cur m_rem src fwd_shape m_full tgt.
         (cur, m_rem, tgt) t ->
         (src, fwd_shape, cur) fwd ->
-        (m_rem, fwd_shape, m_full) Tbwd.append ->
+        (src, fwd_shape, cur, m_rem, tgt, m_full) bcomp ->
         (src, m_full, tgt) to_fwd =
      fun path fwd_acc bcomp_acc ->
       match path with
       | Path (Zero, _) -> To_fwd (fwd_acc, bcomp_acc)
       | Path (Suc (m_inner, g_edge), b_obj) ->
-          go (Path (m_inner, b_obj)) (Cons (g_edge, fwd_acc)) (Append_cons bcomp_acc) in
-    go path Nil Append_nil
+          go (Path (m_inner, b_obj)) (Cons (g_edge, fwd_acc)) (Suc (g_edge, bcomp_acc)) in
+    go path Nil Zero
+
+  type (_, _, _, _, _) has_bcomp =
+    | Bcomp : ('a, 'm, 'b, 'n, 'c, 'p) bcomp -> ('a, 'm, 'b, 'n, 'c) has_bcomp
+
+  let rec bcomp : type a m b n c. (a, m, b) fwd -> (a, m, b, n, c) has_bcomp = function
+    | Nil -> Bcomp Zero
+    | Cons (g, x) ->
+        let (Bcomp y) = bcomp x in
+        Bcomp (Suc (g, y))
 
   (* ********** Factoring and pushouts ********** *)
 
@@ -569,8 +605,6 @@ struct
 
   include Hom2 (F.Param) (Dom) (CodCategory) (FCategory)
 
-  let suc p fa fg = Suc (fa, Inject fg, Suc (Zero, F.cod p fg))
-
   (* Free functors not only preserve composition but reflect it: if the image of a domain morphism factors as a composite in the codomain, then there is a unique corresponding factorization in the domain whose factors map to the given codomain factors.  These are the duals of Hom2.comp and Hom2.uncomp: those take dom composition evidence and produce cod composition evidence; these take cod composition evidence and produce dom composition evidence. *)
 
   type (_, _, _, _, _, _, _, _, _) dom_comp =
@@ -590,7 +624,8 @@ struct
     | Suc (fm_inner, Inject fg, Suc (Zero, edge_fg)), Suc (cev_inner, edge_cev) ->
         let Eq = C.tgt_uniq edge_fg edge_cev in
         let (Dom_comp (fp_inner, dom_ev_inner)) = dom_comp param fn fm_inner cev_inner in
-        Dom_comp (suc param fp_inner fg, Suc (dom_ev_inner, F.dom fg))
+        Dom_comp
+          (Suc (fp_inner, Inject fg, Suc (Zero, F.cod param fg)), Suc (dom_ev_inner, F.dom fg))
 
   type (_, _, _, _, _, _, _, _, _) dom_uncomp =
     | Dom_uncomp :
@@ -611,7 +646,15 @@ struct
         let (Suc (fmn_rest, Inject fg, Suc (Zero, edge_fg))) = fmn in
         let Eq = C.tgt_uniq edge_fg edge_cev in
         let (Dom_uncomp (fn, fm_inner, dom_ev_rec)) = dom_uncomp param cev_inner fmn_rest in
-        Dom_uncomp (fn, suc param fm_inner fg, Suc (dom_ev_rec, F.dom fg))
+        Dom_uncomp
+          (fn, Suc (fm_inner, Inject fg, Suc (Zero, F.cod param fg)), Suc (dom_ev_rec, F.dom fg))
+
+  (* Forwards version *)
+  type (_, _, _, _, _, _, _) fwd_t =
+    | Zero : ('param, 'a, 'x) F.Obj.t -> ('param, 'a, 'a Dom.id, 'a, 'x, 'x Cod.id, 'x) fwd_t
+    | Suc :
+        ('param, 'a, 'g, 'a1, 'x1, 'n1, 'x) F.t * ('param, 'a1, 'm, 'b, 'x, 'n2, 'x1) fwd_t
+        -> ('param, 'a, ('g, 'm) cons, 'b, 'x, ('n1, 'n2) cons, 'y) fwd_t
 end
 
 (* Intrinsically well-typed maps whose domains are paths in a free category.  This is the analogue of Word.Map for free categories: a recursive trie keyed by paths, with values parametrized by the path's source, morphism shape, and target (plus one ambient parameter), so the value family is a Fam4 rather than a Fam2.
@@ -657,66 +700,58 @@ module PathMapInternal (Q : Quiver) (QM : MAP3_MAKER with module Key = Q) (F : F
   module Map = PathMapDef (Q) (QM) (F)
 
   let rec find_opt : type p src cur fwd_rest m_acc m_full tgt.
-      (src, fwd_rest, cur) Cat.fwd ->
-      (m_acc, fwd_rest, m_full) Tbwd.append ->
+      (src, fwd_rest, cur, m_acc, tgt, m_full) Cat.bcomp ->
       (p, cur, m_acc, tgt) Map.map ->
       (p, src, m_full, tgt) F.t option =
-   fun fwd bcomp m ->
+   fun bcomp m ->
     let open Monad.Ops (Monad.Maybe) in
     match m with
     | Empty -> None
     | Entry (x, dm) -> (
-        match (fwd, bcomp) with
-        | Nil, Append_nil -> x
-        | Cons (g_edge, rest_fwd), Append_cons rest_bcomp ->
-            let* (Map.M.Wrapmap sub) = Map.DM.find_opt g_edge dm in
-            find_opt rest_fwd rest_bcomp sub)
+        match bcomp with
+        | Zero -> x
+        | Suc (g, rest_bcomp) ->
+            let* (Map.M.Wrapmap sub) = Map.DM.find_opt g dm in
+            find_opt rest_bcomp sub)
 
   let rec add : type p src cur fwd_rest m_acc m_full tgt.
-      (src, fwd_rest, cur) Cat.fwd ->
-      (m_acc, fwd_rest, m_full) Tbwd.append ->
+      (src, fwd_rest, cur, m_acc, tgt, m_full) Cat.bcomp ->
       (p, src, m_full, tgt) F.t ->
       (p, cur, m_acc, tgt) Map.map ->
       (p, cur, m_acc, tgt) Map.map =
-   fun fwd bcomp value m ->
-    match (fwd, bcomp, m) with
-    | Nil, Append_nil, Empty -> Entry (Some value, Map.DM.empty)
-    | Nil, Append_nil, Entry (_, dm) -> Entry (Some value, dm)
-    | Cons (g_edge, rest_fwd), Append_cons rest_bcomp, Empty ->
-        Entry
-          ( None,
-            Map.DM.add g_edge (Map.M.Wrapmap (add rest_fwd rest_bcomp value Empty)) Map.DM.empty )
-    | Cons (g_edge, rest_fwd), Append_cons rest_bcomp, Entry (e, dm) ->
+   fun bcomp value m ->
+    match (bcomp, m) with
+    | Zero, Empty -> Entry (Some value, Map.DM.empty)
+    | Zero, Entry (_, dm) -> Entry (Some value, dm)
+    | Suc (g, rest_bcomp), Empty ->
+        Entry (None, Map.DM.add g (Map.M.Wrapmap (add rest_bcomp value Empty)) Map.DM.empty)
+    | Suc (g, rest_bcomp), Entry (e, dm) ->
         Entry
           ( e,
-            Map.DM.update g_edge
+            Map.DM.update g
               (function
-                | Some (Map.M.Wrapmap sub) ->
-                    Some (Map.M.Wrapmap (add rest_fwd rest_bcomp value sub))
-                | None -> Some (Map.M.Wrapmap (add rest_fwd rest_bcomp value Empty)))
+                | Some (Map.M.Wrapmap sub) -> Some (Map.M.Wrapmap (add rest_bcomp value sub))
+                | None -> Some (Map.M.Wrapmap (add rest_bcomp value Empty)))
               dm )
 
   let rec update : type p src cur fwd_rest m_acc m_full tgt.
-      (src, fwd_rest, cur) Cat.fwd ->
-      (m_acc, fwd_rest, m_full) Tbwd.append ->
+      (src, fwd_rest, cur, m_acc, tgt, m_full) Cat.bcomp ->
       ((p, src, m_full, tgt) F.t option -> (p, src, m_full, tgt) F.t option) ->
       (p, cur, m_acc, tgt) Map.map ->
       (p, cur, m_acc, tgt) Map.map =
-   fun fwd bcomp f m ->
-    match (fwd, bcomp, m) with
-    | Nil, Append_nil, Empty -> Entry (f None, Map.DM.empty)
-    | Nil, Append_nil, Entry (x, dm) -> Entry (f x, dm)
-    | Cons (g_edge, rest_fwd), Append_cons rest_bcomp, Empty ->
-        Entry
-          (None, Map.DM.add g_edge (Map.M.Wrapmap (update rest_fwd rest_bcomp f Empty)) Map.DM.empty)
-    | Cons (g_edge, rest_fwd), Append_cons rest_bcomp, Entry (e, dm) ->
+   fun bcomp f m ->
+    match (bcomp, m) with
+    | Zero, Empty -> Entry (f None, Map.DM.empty)
+    | Zero, Entry (x, dm) -> Entry (f x, dm)
+    | Suc (g, rest_bcomp), Empty ->
+        Entry (None, Map.DM.add g (Map.M.Wrapmap (update rest_bcomp f Empty)) Map.DM.empty)
+    | Suc (g, rest_bcomp), Entry (e, dm) ->
         Entry
           ( e,
-            Map.DM.update g_edge
+            Map.DM.update g
               (function
-                | Some (Map.M.Wrapmap sub) ->
-                    Some (Map.M.Wrapmap (update rest_fwd rest_bcomp f sub))
-                | None -> Some (Map.M.Wrapmap (update rest_fwd rest_bcomp f Empty)))
+                | Some (Map.M.Wrapmap sub) -> Some (Map.M.Wrapmap (update rest_bcomp f sub))
+                | None -> Some (Map.M.Wrapmap (update rest_bcomp f Empty)))
               dm )
 
   let rec remove : type p src cur fwd_rest m_acc tgt.
@@ -797,16 +832,16 @@ module Map
      fun path t ->
       let open Monad.Ops (Monad.Maybe) in
       let* path_map = ObjMap.find_opt (Cat.tgt path) t in
-      let (To_fwd (fwd, bcomp)) = Cat.to_fwd path in
-      I.find_opt fwd bcomp path_map
+      let (To_fwd (_, bcomp)) = Cat.to_fwd path in
+      I.find_opt bcomp path_map
 
     let add : type p src m tgt. (src, m, tgt) Cat.t -> (p, src, m, tgt) F.t -> p t -> p t =
      fun path value t ->
-      let (To_fwd (fwd, bcomp)) = Cat.to_fwd path in
+      let (To_fwd (_, bcomp)) = Cat.to_fwd path in
       ObjMap.update (Cat.tgt path)
         (function
-          | None -> Some (I.add fwd bcomp value I.Map.Empty)
-          | Some path_map -> Some (I.add fwd bcomp value path_map))
+          | None -> Some (I.add bcomp value I.Map.Empty)
+          | Some path_map -> Some (I.add bcomp value path_map))
         t
 
     let update : type p src m tgt.
@@ -815,11 +850,11 @@ module Map
         p t ->
         p t =
      fun path f t ->
-      let (To_fwd (fwd, bcomp)) = Cat.to_fwd path in
+      let (To_fwd (_, bcomp)) = Cat.to_fwd path in
       ObjMap.update (Cat.tgt path)
         (function
-          | None -> Some (I.update fwd bcomp f I.Map.Empty)
-          | Some path_map -> Some (I.update fwd bcomp f path_map))
+          | None -> Some (I.update bcomp f I.Map.Empty)
+          | Some path_map -> Some (I.update bcomp f path_map))
         t
 
     let remove : type p src m tgt. (src, m, tgt) Cat.t -> p t -> p t =
