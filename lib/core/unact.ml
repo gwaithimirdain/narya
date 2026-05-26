@@ -4,7 +4,7 @@ open Value
 open Norm
 
 (* At certain points we have to "un-act" on a synthesized type to get a type of which it might be a degeneracy of.  Currently we only try to do this if the arity is nonzero 0, in which case we can "cheat" by just grabbing one of the zero-dimensional boundaries, which is a normal, and taking its type. *)
-let unact_ty : type n. err:Code.t -> kinetic value -> n D.t -> kinetic value =
+let unact_ty : type mode n. err:Code.t -> (mode, kinetic) value -> n D.t -> (mode, kinetic) value =
  fun ~err ty n ->
   let (Full_tube tyargs) = get_tyargs ty "argument of redex" in
   (* We may need to extend the dimension n to match the dimension of the tyargs. *)

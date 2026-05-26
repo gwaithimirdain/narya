@@ -2,7 +2,6 @@ open Bwd
 open Util
 open Signatures
 open Tlist
-open Tbwd
 open Monoid
 
 module D : sig
@@ -945,45 +944,6 @@ end
 module PbijmapOf : module type of Pbijmap (struct
   type ('a, 'b) t = 'b
 end)
-
-module Plusmap : sig
-  module Dom : module type of Word.Make (D)
-  module Cod : module type of Word.Make (D) with type 'a t = 'a Dom.t
-
-  type ('a, 'b, 'c) t
-
-  val zero : ('a, emp, emp) t
-
-  val suc :
-    'p D.t -> ('p, 'a, 'pa) t -> ('p, 'n, 'pn) D.plus -> ('p, ('a, 'n) snoc, ('pa, 'pn) snoc) t
-
-  val dom : ('p, 'xs, 'ys) t -> 'xs Dom.t
-  val cod : 'p D.t -> ('p, 'xs, 'ys) t -> 'ys Cod.t
-
-  type ('a, 'b) exists = Exists : ('p, 'xs, 'ys) t -> ('p, 'xs) exists
-
-  val exists : 'p D.t -> 'xs Dom.t -> ('p, 'xs) exists
-  val uniq : ('p, 'xs, 'ys) t -> ('p, 'xs, 'zs) t -> ('ys, 'zs) Eq.t
-
-  type (_, _, _, _) uninsert =
-    | Uninsert :
-        ('p, 'x, 'fx) D.plus * ('zs, 'fx, 'ws) Tbwd.insert * ('p, 'xs, 'zs) t
-        -> ('p, 'x, 'xs, 'ws) uninsert
-
-  val uninsert : ('xs, 'x, 'ys) Tbwd.insert -> ('p, 'ys, 'ws) t -> ('p, 'x, 'xs, 'ws) uninsert
-
-  type (_, _, _, _) uncoinsert =
-    | Uncoinsert :
-        ('p, 'x, 'z) D.plus * ('xs, 'x, 'ys) Tbwd.insert * ('p, 'xs, 'zs) t
-        -> ('p, 'z, 'ys, 'zs) uncoinsert
-
-  val uncoinsert : ('zs, 'z, 'ws) Tbwd.insert -> ('p, 'ys, 'ws) t -> ('p, 'z, 'ys, 'zs) uncoinsert
-
-  val assocl :
-    ('a, 'b, 'ab) D.plus -> ('b, 'cs, 'bcs) t -> ('a, 'bcs, 'abcs) t -> ('ab, 'cs, 'abcs) t
-
-  val zerol : 'bs Dom.t -> (D.zero, 'bs, 'bs) t
-  end
 
 (* *)
 val deg_of_name : string -> any_deg option

@@ -58,7 +58,6 @@ include Op
 include Insertion
 include Shuffle
 include Pbij
-module Plusmap = Plusmap
 module Hott = Hott
 
 type any_dim = Any : 'n D.t -> any_dim

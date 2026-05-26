@@ -1,5 +1,6 @@
 open Bwd
 open Util
+open Modal
 open Dim
 open Asai.Diagnostic
 open Format
@@ -14,9 +15,11 @@ type printable +=
   | PInt : int -> printable
   | PString : string -> printable
   | PConstant of Constant.t
-  | PMeta : ('x, 'b, 's) Meta.t -> printable
+  | PMeta : ('mode, 'x, 'b, 's) Meta.t -> printable
   | PField : 'i Field.t -> printable
+  | PModality : ('dom, 'mode, 'cod) Modality.t -> printable
   | PConstr : Constr.t -> printable
+  | PAnd : printable * printable -> printable
 
 (* The function that actually does the work of printing a "printable" will be defined in Parser.Unparse.  But we need to be able to "call" that function in this file to define "default_text" that converts structured messages to text.  Thus, in this file we define a mutable global variable to contain that function, starting with a dummy function, and call its value to print "printable"s; then in Parser.Unparse we will set the value of that variable after defining the function it should contain. *)
 
@@ -54,7 +57,7 @@ module Unequal = struct
   type t =
     | Constants of Constant.t * Constant.t
     | Constrs of Constr.t * Constr.t
-    | Metas : ('a1, 'b1, 's1) Meta.t * ('a2, 'b2, 's2) Meta.t -> t
+    | Metas : ('m1, 'a1, 'b1, 's1) Meta.t * ('m2, 'a2, 'b2, 's2) Meta.t -> t
     | Fields : 'i1 Field.t * 'i2 Field.t -> t
     | Variables of printable * printable
     | Terms of printable * printable
@@ -74,7 +77,7 @@ end
 
 module Code = struct
   type t =
-    | Parse_error : t
+    | Parse_error : string -> t
     | Encoding_error : t
     | Parsing_ambiguity : string list -> t
     | No_relative_precedence : string * string -> t
@@ -179,6 +182,17 @@ module Code = struct
     | Matching_on_nondatatype : printable -> t
     | Matching_wont_refine : string * printable option -> t
     | Dimension_mismatch : string * 'a D.t * 'b D.t -> t
+    | Mode_mismatch :
+        string * [ `Mode of 'm1 Mode.t | `Cod of string list | `Dom of string list ] * 'm2 Mode.t
+        -> t
+    | Modality_mismatch :
+        string
+        * [ `Modality of ('a, 'm, 'b) Modality.t | `Name of string list ]
+        * [ `Modality of ('c, 'n, 'd) Modality.t | `Name of string list ]
+        -> t
+    | Unknown_modality : [ `Single of string | `Double of string ] -> t
+    | Modalcell_mismatch : string * ('a, 'm, 'n, 'b) Modalcell.t * ('c, 'r, 's, 'd) Modalcell.t -> t
+    | Non_mode_synthesizing : string -> t
     | Invalid_variable_face : 'a D.t * ('n, 'm) sface -> t
     | Anomaly : string -> t
     | No_such_level : printable -> t
@@ -215,6 +229,7 @@ module Code = struct
     | Missing_constructor_type : Constr.t -> t
     | Locked_variable : t
     | Locked_constant : printable -> t
+    | Missing_key : ('dom1, 'mu1, 'cod1) Modality.t * ('dom2, 'mu2, 'cod2) Modality.t -> t
     | Axiom_in_parametric_definition : printable -> t
     | Hole : string * printable -> t
     | No_open_holes : t
@@ -274,7 +289,7 @@ module Code = struct
 
   (** The default severity of messages with a particular message code. *)
   let default_severity : t -> Asai.Diagnostic.severity = function
-    | Parse_error -> Error
+    | Parse_error _ -> Error
     | Encoding_error -> Error
     | Parsing_ambiguity _ -> Error
     | No_relative_precedence _ -> Error
@@ -344,6 +359,11 @@ module Code = struct
     | Matching_on_nondatatype _ -> Error
     | Matching_wont_refine _ -> Hint
     | Dimension_mismatch _ -> Bug (* Sometimes Error? *)
+    | Mode_mismatch _ -> Bug
+    | Modality_mismatch _ -> Bug (* MODALTODO: Sometimes Error *)
+    | Unknown_modality _ -> Error
+    | Modalcell_mismatch _ -> Error
+    | Non_mode_synthesizing _ -> Error
     | Anomaly _ -> Bug
     | No_such_level _ -> Bug
     | Redefining_constant _ -> Warning
@@ -371,6 +391,7 @@ module Code = struct
     | Missing_constructor_type _ -> Error
     | Locked_variable -> Error
     | Locked_constant _ -> Error
+    | Missing_key _ -> Error
     | Axiom_in_parametric_definition _ -> Error
     | Hole _ -> Info
     | No_open_holes -> Info
@@ -433,7 +454,7 @@ module Code = struct
     | Unimplemented _ -> "E0100"
     | Deprecated _ -> "E0110"
     (* Parse errors *)
-    | Parse_error -> "E0200"
+    | Parse_error _ -> "E0200"
     | Parsing_ambiguity _ -> "E0201"
     | Invalid_variable _ -> "E0202"
     | Invalid_field _ -> "E0203"
@@ -540,6 +561,13 @@ module Code = struct
     (* Tactics *)
     | Choice_mismatch _ -> "E1600"
     | Calc_error _ -> "E1601"
+    (* Modal type theory *)
+    | Mode_mismatch _ -> "E1700"
+    | Modality_mismatch _ -> "E1701"
+    | Modalcell_mismatch _ -> "E1702"
+    | Non_mode_synthesizing _ -> "E1703"
+    | Unknown_modality _ -> "E1704"
+    | Missing_key _ -> "E1705"
     (* Commands *)
     | Too_many_commands -> "E2000"
     | Forbidden_interactive_command _ -> "E2001"
@@ -613,7 +641,7 @@ module Code = struct
       PrintingError.run ~env:(fun d -> printing_errors := Snoc (!printing_errors, d)) @@ fun () ->
       match err with
       | Accumulated _ -> text "anomaly: multiple accumulated errors"
-      | Parse_error -> text "parse error"
+      | Parse_error str -> textf "parse error: %s" str
       | Encoding_error -> text "UTF-8 encoding error"
       | Parsing_ambiguity strs ->
           textf
@@ -860,6 +888,42 @@ module Code = struct
           textf "match will not refine the goal or context (%s)" msg
       | Dimension_mismatch (op, a, b) ->
           textf "dimension mismatch in %s (%s ≠ %s)" op (string_of_dim0 a) (string_of_dim0 b)
+      | Mode_mismatch (op, a, b) -> (
+          match a with
+          | `Mode a -> textf "mode mismatch in %s (%s ≠ %s)" op (Mode.name a) (Mode.name b)
+          | `Cod a ->
+              textf "mode mismatch in %s (modality %a can't have codomain %s)" op pp_printed
+                (print (PString (String.concat " " a)))
+                (Mode.name b)
+          | `Dom a ->
+              textf "mode mismatch in %s (modality %a can't have domain %s)" op pp_printed
+                (print (PString (String.concat " " a)))
+                (Mode.name b))
+      | Modality_mismatch (op, a, b) ->
+          let astr =
+            match a with
+            | `Modality a -> Modality.to_string a
+            | `Name a -> String.concat " " a in
+          let bstr =
+            match b with
+            | `Modality b -> Modality.to_string b
+            | `Name b -> String.concat " " b in
+          textf "modality mismatch in %s (%a ≠ %a)" op pp_printed (print (PString astr)) pp_printed
+            (print (PString bstr))
+      | Modalcell_mismatch (op, a, b) ->
+          textf "modal cell mismatch in %s (%s ≠ %s)" op (Modalcell.to_string a)
+            (Modalcell.to_string b)
+      | Non_mode_synthesizing str -> textf "cannot synthesize a mode: %s" str
+      | Unknown_modality c ->
+          textf "unknown modality %s"
+            (match c with
+            | `Single s -> ":" ^ s
+            | `Double s -> "∷" ^ s)
+      | Missing_key (vdom, vcod) ->
+          textf "use of %a variable behind %a lock requires a key" pp_printed
+            (print (PString (Modality.to_string vdom)))
+            pp_printed
+            (print (PString (Modality.to_string vcod)))
       | Anomaly str -> textf "anomaly: %s" str
       | No_such_level i -> textf "@[<hov 2>no level variable@ %a@ in context@]" pp_printed (print i)
       | Redefining_constant name ->

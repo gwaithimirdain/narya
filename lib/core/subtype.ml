@@ -17,7 +17,7 @@ let () =
 
 let add subtype supertype =
   match (Global.find subtype, Global.find supertype) with
-  | (UU subdim, _), (UU superdim, _) -> (
+  | Definition { ty = UU (_, subdim); _ }, Definition { ty = UU (_, superdim); _ } -> (
       match (D.compare_zero subdim, D.compare_zero superdim) with
       | Zero, Zero ->
           S.modify
@@ -26,9 +26,10 @@ let add subtype supertype =
               | None -> Some (Constant.Map.add supertype () Constant.Map.empty)))
       (* This shouldn't happen, since higher-dimensional universes aren't types unless instantiated. *)
       | _ -> fatal (Anomaly "higher-dimensional universe in subtyping"))
-  | (Inst _, _), _ | _, (Inst _, _) ->
+  | Definition { ty = Inst _; _ }, _ | _, Definition { ty = Inst _; _ } ->
       fatal (Unimplemented "subtyping between higher-dimensional types")
-  | (Pi _, _), _ | _, (Pi _, _) -> fatal (Unimplemented "subtyping relations with parameters")
+  | Definition { ty = Pi _; _ }, _ | _, Definition { ty = Pi _; _ } ->
+      fatal (Unimplemented "subtyping relations with parameters")
   | _ -> fatal (Anomaly "non-type in subtyping")
 
 let run ?(init = Constant.Map.empty) = S.run ~init
