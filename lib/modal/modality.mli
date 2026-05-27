@@ -51,10 +51,34 @@ val compare_id : ('x, 'm, 'y) t -> ('m * 'y, 'x id * 'x) Eq.compare
 (* *)
 val name_bwd : ('a, 'm, 'b) t -> string Bwd.t
 val name : ('a, 'm, 'b) t -> string list
-val of_name_tgt : 'a Mode.t -> string list -> 'a src_wrapped option
-val of_name_src_bwd : string Bwd.t -> 'a Mode.t -> 'a tgt_wrapped option
-val of_name_src : string list -> 'a Mode.t -> 'a tgt_wrapped option
+
+val of_name_tgt :
+  ('s -> string) ->
+  'a Mode.t ->
+  's list ->
+  ('a src_wrapped, [ `Not_found of 's | `Wrong_tgt of Mode.wrapped * 's * Mode.wrapped ]) result
+
+val of_name_src_bwd :
+  ('s -> string) ->
+  's Bwd.t ->
+  'a Mode.t ->
+  ('a tgt_wrapped, [ `Not_found of 's | `Wrong_src of Mode.wrapped * 's * Mode.wrapped ]) result
+
+val of_name_src :
+  ('s -> string) ->
+  's list ->
+  'a Mode.t ->
+  ('a tgt_wrapped, [ `Not_found of 's | `Wrong_src of Mode.wrapped * 's * Mode.wrapped ]) result
+
 val to_string : ('a, 'm, 'b) t -> string
 
 (* *)
-val compare_name : string list -> ('x, 'm, 'y) t -> bool
+val compare_name :
+  ('s -> string) ->
+  's list ->
+  ('x, 'm, 'y) t ->
+  ( unit,
+    [ `Unequal of 'y src_wrapped
+    | `Not_found of 's
+    | `Wrong_tgt of Mode.wrapped * 's * Mode.wrapped ] )
+  result

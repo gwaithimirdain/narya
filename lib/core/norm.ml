@@ -38,7 +38,7 @@ let rec take_args : type mode annotations m n mn a b ab.
       | Eq ->
           let env = Ext (env, mn, mu, Ok arg) in
           take_args env mn args annotate comp
-      | Neq -> fatal (Modality_mismatch ("take_args", `Modality mu, `Modality amu)))
+      | Neq -> fatal (Modality_mismatch (`Internal, "take_args", mu, amu)))
   | _ -> fatal (Anomaly "wrong number of arguments in argument list")
 
 (* Eval-readback callback for tyof_higher_codatafield *)
@@ -157,7 +157,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                     Val newtm
                 | _ -> Val newtm)
           | `Axiom -> Val (Neu { head; args = Emp; value = ready Unrealized; ty }))
-      | Neq -> fatal (Mode_mismatch ("evaluating a constant", `Mode mode, mode_env env)))
+      | Neq -> fatal (Mode_mismatch (`Internal, "evaluating a constant", mode, None, mode_env env)))
   | Meta (meta, ambient) -> (
       let dim = dim_env env in
       let head = Value.Meta { meta; env; ins = ins_zero dim } in
@@ -486,9 +486,8 @@ and apply : type dom modality mode n s.
       | Eq, Eq -> apply_binder body arg
       | Neq, _ -> fatal (Dimension_mismatch ("applying a lambda", dim_binder body, m))
       | _, Neq ->
-          fatal
-            (Modality_mismatch
-               ("applying a lambda", `Modality (modality_binder body), `Modality modality)))
+          fatal (Modality_mismatch (`Internal, "applying a lambda", modality_binder body, modality))
+      )
   (* If it is a uninstantiated neutral application... *)
   | Neu { head; args; value; ty = (lazy ty) } -> (
       (* ... we check that its type is fully instantiated... *)
@@ -501,8 +500,7 @@ and apply : type dom modality mode n s.
           | Neq, _ -> fatal (Dimension_mismatch ("applying a neutral function", CubeOf.dim arg, k))
           | _, Neq ->
               fatal
-                (Modality_mismatch
-                   ("applying a neutral function", `Modality pi_modality, `Modality modality))
+                (Modality_mismatch (`Internal, "applying a neutral function", pi_modality, modality))
           | Eq, Eq -> (
               (* We annotate the new argument by its type, extracted from the domain type of the function being applied. *)
               let newarg = norm_of_vals_cube arg doms in
@@ -545,9 +543,7 @@ and apply : type dom modality mode n s.
                     | _, _, Neq ->
                         fatal
                           (Modality_mismatch
-                             ( "apply",
-                               `Modality modality,
-                               `Modality (Modality.id (Modality.tgt modality)) ))
+                             (`Internal, "apply", modality, Modality.id (Modality.tgt modality)))
                     | Eq, Zero, Eq ->
                         let indices = Fillvec.snoc indices newarg in
                         (* TODO: What happens to these?  What even are the fields of a not-fully-applied indexed datatype? *)
@@ -1238,13 +1234,12 @@ and lookup_cube : type dom mu mode n a b k mk nk.
       let Eq = D.plus_uniq nk nk' in
       match Modality.compare modality mu with
       | Eq -> Looked_up { act = (fun x s c -> act_value x s c); op; entry }
-      | Neq -> fatal (Modality_mismatch ("lookup_cube keys", `Modality modality, `Modality mu)))
+      | Neq -> fatal (Modality_mismatch (`Internal, "lookup_cube keys", modality, mu)))
   | LazyExt (_, nk', modality, entry), Now -> (
       let Eq = D.plus_uniq nk nk' in
       match Modality.compare modality mu with
       | Eq -> Looked_up { act = (fun x s c -> force_eval_term (act_lazy_eval x s c)); op; entry }
-      | Neq -> fatal (Modality_mismatch ("lookup_cube lazy keys", `Modality modality, `Modality mu))
-      )
+      | Neq -> fatal (Modality_mismatch (`Internal, "lookup_cube lazy keys", modality, mu)))
   (* Looking up a variable that's bound to an error immediately fails with that error.  (In particular, this sort of failure can't currently happen "deeper" inside a term.) *)
   | Ext (_, _, _, Error e), Now -> fatal e
 

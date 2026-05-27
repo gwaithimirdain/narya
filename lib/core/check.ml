@@ -57,9 +57,7 @@ let rec typefam : type mode a b.
       | _, Neq ->
           fatal
             (Modality_mismatch
-               ( "indices of datatype",
-                 `Modality modality,
-                 `Modality (Modality.id (Modality.tgt modality)) )))
+               (`Internal, "indices of datatype", modality, Modality.id (Modality.tgt modality))))
   | _ -> fatal (Checking_canonical_at_nonuniverse ("datatype", PVal (ctx, ty)))
 
 (* Given a multi-argument type family, and the type *of* that type family, both as values, and a context for them, compute the type of type families dependent *on* that family, as a term.  For example, if the arguments are
@@ -501,9 +499,13 @@ let rec check : type mode a b s.
             (match (dom, D.compare_zero m) with
             | Some _, Pos _ -> fatal (Unimplemented "domain-ascribed higher abstractions")
             | Some (dmod, dom), Zero -> (
-                if not (Modality.compare_name dmod modality) then
-                  fatal ?loc:dom.loc ~severity:Asai.Diagnostic.Error
-                    (Modality_mismatch ("checking ascribed lambda", `Name dmod, `Modality modality));
+                (match Modality.compare_name (fun m -> m.value) dmod.value modality with
+                | Ok () -> ()
+                | Error (`Unequal (Wrap m)) ->
+                    fatal ?loc:dmod.loc ~severity:Asai.Diagnostic.Error
+                      (Modality_mismatch (`User, "checking ascribed lambda", m, modality))
+                | Error ((`Not_found _ | `Wrong_tgt _) as e) ->
+                    modality_fatal "checking ascribed lambda" (e :> modality_error));
                 let (Locked (_, lctx)) = Ctx.lock ctx modality in
                 let cdom =
                   check (Kinetic `Nolet) lctx dom (universe (Modality.src modality) D.zero) in
@@ -1036,78 +1038,79 @@ and synth_or_check_let : type mode a b s p.
     (mode, b, s) status ->
     (mode, a, b) Ctx.t ->
     string option ->
-    string list ->
+    string located list located ->
     a synth located ->
     a N.suc check located ->
     ((mode, kinetic) value, p) Perhaps.t ->
     (mode, b, s) term * ((mode, kinetic) value, p) Perhaps.not =
  fun ?nosynth status ctx name premod v body ty ->
   (* A non-recursive let-binding can be modal. *)
-  let (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) =
-    Modality.of_name_tgt (Ctx.mode ctx) premod
-    <|> Mode_mismatch ("synth_or_check_let", `Cod premod, Ctx.mode ctx) in
-  let (Locked (plus, lctx)) = Ctx.lock ctx modality in
-  let v, nf =
-    try
-      (* We first try checking the bound term first as an ordinary kinetic term. *)
-      let sv, svty = synth (Kinetic `Let) lctx v in
-      let ev = eval_term (Ctx.env lctx) sv in
-      (sv, { tm = ev; ty = svty })
-    with
-    (* If that encounters case-tree constructs, then we can allow the bound term to be a case tree, i.e. a potential term.  But in a checked "let" expression, the term being bound is a kinetic one, and must be so that its value can be put into the environment when the term is evaluated.  We deal with this by binding a *metavariable* to the bound term and then taking the value of that metavariable as the kinetic term to actually be bound.  *)
-    | Case_tree_construct_in_let ->
-      (* First we make the metavariable. *)
-      let meta =
-        Meta.make_def "let" name (Ctx.mode lctx) (Ctx.raw_length lctx) (Ctx.tctx lctx) Potential
-      in
-      let termctx = readback_ctx lctx in
-      (* A new status in which to check the value of that metavariable; now it is the "current constant" being defined. *)
-      let tmstatus = Potential (Meta (meta, Ctx.env lctx), Emp, fun x -> x) in
-      let sv, svty =
-        match v.value with
-        | Asc (vtm, rvty) ->
-            (* If the bound term is explicitly ascribed, then we can give the metavariable a type while checking its body.  This is probably mainly only useful with "let rec". *)
-            let vty = check (Kinetic `Nolet) lctx rvty (universe (Ctx.mode lctx) D.zero) in
-            Global.add_meta meta ~termctx ~tm:`Axiom ~ty:vty ~energy:Potential;
-            let evty = eval_term (Ctx.env lctx) vty in
-            let cv = check tmstatus lctx vtm evty in
-            Global.set_meta meta cv;
-            (cv, evty)
-        | _ ->
-            (* Otherwise, we just synthesize the term. *)
-            let sv, svty = synth tmstatus lctx v in
-            let vty = readback_val lctx svty in
-            Global.add_meta meta ~termctx ~tm:(`Defined sv) ~ty:vty ~energy:Potential;
-            (sv, svty) in
-      (* We turn that metavariable into a value. *)
-      let head = Value.Meta { meta; env = Ctx.env lctx; ins = zero_ins D.zero } in
-      let tm =
-        if GluedEval.read () then
-          (* Glued evaluation: we delay evaluating the term until it's needed. *)
-          Neu { head; args = Emp; value = lazy_eval (Ctx.env lctx) sv; ty = Lazy.from_val svty }
-        else
-          match eval (Ctx.env lctx) sv with
-          | Realize x -> x
-          | value -> Neu { head; args = Emp; value = ready value; ty = Lazy.from_val svty } in
-      (Term.Meta (meta, Kinetic), { tm; ty = svty }) in
-  (* Either way, we end up with a checked term 'v' and a normal form 'nf'.  We use the latter to extend the context. *)
-  let newctx = Ctx.ext_let ctx modality name nf in
-  (* Now we update the status of the original constant being checked *)
-  let status : (mode, (b, (modality, D.zero) dim_entry) snoc, s) status =
-    match status with
-    | Potential (c, args, hyp) ->
-        Potential (c, args, fun body -> hyp (Let (name, Modal (modality, plus, v), body)))
-    | Kinetic l -> Kinetic l in
-  (* And synthesize or check the body in the extended context. *)
-  Annotate.ctx status newctx body;
-  match (ty, body) with
-  | Some ty, _ ->
-      let sbody = check status newctx body ty in
-      (Term.Let (name, Modal (modality, plus, v), sbody), Not_some)
-  | None, { value = Synth body; loc } ->
-      let sbody, sbodyty = synth status newctx { value = body; loc } in
-      (Term.Let (name, Modal (modality, plus, v), sbody), Not_none sbodyty)
-  | None, _ -> fatal_or nosynth (Nonsynthesizing "let-expression without synthesizing body")
+  match Modality.of_name_tgt (fun x -> x.value) (Ctx.mode ctx) premod.value with
+  | Error e -> modality_fatal "checking let-in" (e :> modality_error)
+  | Ok (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) -> (
+      let (Locked (plus, lctx)) = Ctx.lock ctx modality in
+      let v, nf =
+        try
+          (* We first try checking the bound term first as an ordinary kinetic term. *)
+          let sv, svty = synth (Kinetic `Let) lctx v in
+          let ev = eval_term (Ctx.env lctx) sv in
+          (sv, { tm = ev; ty = svty })
+        with
+        (* If that encounters case-tree constructs, then we can allow the bound term to be a case tree, i.e. a potential term.  But in a checked "let" expression, the term being bound is a kinetic one, and must be so that its value can be put into the environment when the term is evaluated.  We deal with this by binding a *metavariable* to the bound term and then taking the value of that metavariable as the kinetic term to actually be bound.  *)
+        | Case_tree_construct_in_let ->
+          (* First we make the metavariable. *)
+          let meta =
+            Meta.make_def "let" name (Ctx.mode lctx) (Ctx.raw_length lctx) (Ctx.tctx lctx) Potential
+          in
+          let termctx = readback_ctx lctx in
+          (* A new status in which to check the value of that metavariable; now it is the "current constant" being defined. *)
+          let tmstatus = Potential (Meta (meta, Ctx.env lctx), Emp, fun x -> x) in
+          let sv, svty =
+            match v.value with
+            | Asc (vtm, rvty) ->
+                (* If the bound term is explicitly ascribed, then we can give the metavariable a type while checking its body.  This is probably mainly only useful with "let rec". *)
+                let vty = check (Kinetic `Nolet) lctx rvty (universe (Ctx.mode lctx) D.zero) in
+                Global.add_meta meta ~termctx ~tm:`Axiom ~ty:vty ~energy:Potential;
+                let evty = eval_term (Ctx.env lctx) vty in
+                let cv = check tmstatus lctx vtm evty in
+                Global.set_meta meta cv;
+                (cv, evty)
+            | _ ->
+                (* Otherwise, we just synthesize the term. *)
+                let sv, svty = synth tmstatus lctx v in
+                let vty = readback_val lctx svty in
+                Global.add_meta meta ~termctx ~tm:(`Defined sv) ~ty:vty ~energy:Potential;
+                (sv, svty) in
+          (* We turn that metavariable into a value. *)
+          let head = Value.Meta { meta; env = Ctx.env lctx; ins = zero_ins D.zero } in
+          let tm =
+            if GluedEval.read () then
+              (* Glued evaluation: we delay evaluating the term until it's needed. *)
+              Neu { head; args = Emp; value = lazy_eval (Ctx.env lctx) sv; ty = Lazy.from_val svty }
+            else
+              match eval (Ctx.env lctx) sv with
+              | Realize x -> x
+              | value -> Neu { head; args = Emp; value = ready value; ty = Lazy.from_val svty }
+          in
+          (Term.Meta (meta, Kinetic), { tm; ty = svty }) in
+      (* Either way, we end up with a checked term 'v' and a normal form 'nf'.  We use the latter to extend the context. *)
+      let newctx = Ctx.ext_let ctx modality name nf in
+      (* Now we update the status of the original constant being checked *)
+      let status : (mode, (b, (modality, D.zero) dim_entry) snoc, s) status =
+        match status with
+        | Potential (c, args, hyp) ->
+            Potential (c, args, fun body -> hyp (Let (name, Modal (modality, plus, v), body)))
+        | Kinetic l -> Kinetic l in
+      (* And synthesize or check the body in the extended context. *)
+      Annotate.ctx status newctx body;
+      match (ty, body) with
+      | Some ty, _ ->
+          let sbody = check status newctx body ty in
+          (Term.Let (name, Modal (modality, plus, v), sbody), Not_some)
+      | None, { value = Synth body; loc } ->
+          let sbody, sbodyty = synth status newctx { value = body; loc } in
+          (Term.Let (name, Modal (modality, plus, v), sbody), Not_none sbodyty)
+      | None, _ -> fatal_or nosynth (Nonsynthesizing "let-expression without synthesizing body"))
 
 and synth_or_check_letrec : type mode a b c ac s p.
     ?nosynth:Code.t Asai.Diagnostic.t ->
@@ -2254,9 +2257,9 @@ and check_record : type mode a f1 f2 f af d acd b n.
         Reporter.try_with ~fatal:(fun e ->
             (checked_fields, fibrancy, Bwv.Snoc (ctx_fields, (fld, name)), Snoc (errs, e)))
         @@ fun () ->
-        match Modality.of_name_tgt (Ctx.mode ctx) modality with
-        | None -> fatal (Mode_mismatch ("field annotation", `Cod modality, Ctx.mode ctx))
-        | Some (Wrap modality) -> (
+        match Modality.of_name_tgt (fun x -> x.value) (Ctx.mode ctx) modality.value with
+        | Error e -> modality_fatal "field annotation" (e :> modality_error)
+        | Ok (Wrap modality) -> (
             match Modality.compare_id modality with
             (* MODALTODO: This is how we get negative modalities; we have to test that this modality is a declared right adjoint ("dextrous"). *)
             | Neq -> fatal (Unimplemented "modal record fields")
@@ -2729,7 +2732,7 @@ and synth : type mode a b s.
             | `Nonparametric, false -> Global.set_nonparametric (Some name)
             | _ -> ());
             (realize status (Const name), eval_term (Emp (mode, D.zero)) ty)
-        | Neq -> fatal (Mode_mismatch ("synthesizing constant", `Mode mode, Ctx.mode ctx)))
+        | Neq -> fatal (Mode_mismatch (`User, "synthesizing constant", mode, None, Ctx.mode ctx)))
     | Field (tm, fld), _ ->
         let stm, sty = synth (Kinetic `Nolet) ctx tm in
         (* To take a field of something, the type of the something must be a record-type that contains such a field, possibly substituted to a higher dimension and instantiated. *)
@@ -2739,11 +2742,11 @@ and synth : type mode a b s.
     | UU umode, _ -> (
         match Modal.Mode.compare umode mode with
         | Eq -> (realize status (Term.UU (mode, D.zero)), universe mode D.zero)
-        | Neq -> fatal (Mode_mismatch ("synthesizing universe", `Mode umode, mode)))
+        | Neq -> fatal (Mode_mismatch (`User, "synthesizing universe", umode, None, mode)))
     | Pi (x, modality, dom, cod), _ -> (
-        match Modality.of_name_tgt mode modality with
-        | None -> fatal (Mode_mismatch ("synthesizing pi-type", `Cod modality, mode))
-        | Some (Wrap modality) ->
+        match Modality.of_name_tgt (fun x -> x.value) mode modality.value with
+        | Error e -> modality_fatal "synthesizing pi-type" (e :> modality_error)
+        | Ok (Wrap modality) ->
             let (Locked (plus, lctx)) = Ctx.lock ctx modality in
             (* These user-level pi-types are always dimension zero, so the domain must be a zero-dimensional type. *)
             let cdom = check (Kinetic `Nolet) lctx dom (universe (Modality.src modality) D.zero) in
@@ -2753,9 +2756,9 @@ and synth : type mode a b s.
             ( realize status (pi (singleton_variables D.zero x) (Modal (modality, plus, cdom)) ccod),
               universe mode D.zero ))
     | HigherPi (x, modality, dom, cod), _ -> (
-        match Modality.of_name_tgt mode modality with
-        | None -> fatal (Mode_mismatch ("synthesizing higher pi-type", `Cod modality, mode))
-        | Some (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) -> (
+        match Modality.of_name_tgt (fun x -> x.value) mode modality.value with
+        | Error e -> modality_fatal "synthesizing higher pi-type" (e :> modality_error)
+        | Ok (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) -> (
             let (Locked (plus, lctx)) = Ctx.lock ctx modality in
             let cdom, domty = synth (Kinetic `Nolet) lctx dom in
             let edom = eval_term (Ctx.env lctx) cdom in
@@ -2779,7 +2782,8 @@ and synth : type mode a b s.
                 | Canonical (_, UU (codmode, n'), ins', ecodt) -> (
                     match (D.compare n n', Modal.Mode.compare codmode mode) with
                     | Neq, _ -> fatal (Invalid_higher_function "invalid single codomain dimension")
-                    | _, Neq -> fatal (Mode_mismatch ("higher pi codomain", `Mode codmode, mode))
+                    | _, Neq ->
+                        fatal (Mode_mismatch (`User, "higher pi codomain", codmode, None, mode))
                     | Eq, Eq ->
                         let Eq = eq_of_ins_zero ins' in
                         let ccods =
@@ -2825,12 +2829,11 @@ and synth : type mode a b s.
             | _ -> fatal (Invalid_higher_function "invalid single domain")))
     | ( InstHigherPi
           (type n an)
-          ((n', modality, doms, cod) :
-            n D.pos * string list * (a, n, unit, an) DomCube.t * an check located),
+          ((n', modality, doms, cod) : n D.pos * _ * (a, n, unit, an) DomCube.t * an check located),
         _ ) -> (
-        match Modality.of_name_tgt mode modality with
-        | None -> fatal (Mode_mismatch ("synthesizing higher pi-type", `Cod modality, mode))
-        | Some (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) -> (
+        match Modality.of_name_tgt (fun x -> x.value) mode modality.value with
+        | Error e -> modality_fatal "synthesizing higher pi-type" (e :> modality_error)
+        | Ok (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) -> (
             let (Locked (plus, lctx)) = Ctx.lock ctx modality in
             let n = D.pos n' in
             let module Acc = struct
@@ -3002,9 +3005,9 @@ and synth : type mode a b s.
         let ctm = check status ctx tm ety in
         (ctm, ety)
     | AscLam ({ value = x; loc = _ }, modality, dom, body), _ -> (
-        match Modality.of_name_tgt mode modality with
-        | None -> fatal (Mode_mismatch ("synthesizing ascribed lambda", `Cod modality, mode))
-        | Some (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) ->
+        match Modality.of_name_tgt (fun x -> x.value) mode modality.value with
+        | Error e -> modality_fatal "synthesizing ascribed lambda" (e :> modality_error)
+        | Ok (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) ->
             let (Locked (plus, lctx)) = Ctx.lock ctx modality in
             let cdom = check (Kinetic `Nolet) lctx dom (universe (Modality.src modality) D.zero) in
             let edom = eval_term (Ctx.env lctx) cdom in
@@ -3534,9 +3537,9 @@ and synth_lam : type mode a b c d n.
           body;
         },
       _ :: _ ) -> (
-      match Modality.of_name_tgt mode modality with
-      | None -> fatal (Mode_mismatch ("synthesizing ascribed lambda", `Cod modality, mode))
-      | Some (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) ->
+      match Modality.of_name_tgt (fun x -> x.value) mode modality.value with
+      | Error e -> modality_fatal "synthesizing ascribed lambda" (e :> modality_error)
+      | Ok (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) ->
           let (Locked (plus, lctx)) = Ctx.lock ctx modality in
           (* As in synthesizing an AscLam, we check the supplied domain and extend the context. *)
           let cdom = check (Kinetic `Nolet) lctx dom (universe (Modality.src modality) D.zero) in
@@ -3639,9 +3642,7 @@ and check_at_tel : type mode n a b c bc e.
                 | [] -> fatal (Anomaly "missing arguments in check_at_tel")
                 | Modal (argmod, argtm) :: argrest -> (
                     match Modality.compare argmod modality with
-                    | Neq ->
-                        fatal
-                          (Modality_mismatch ("check_at_tel", `Modality argmod, `Modality modality))
+                    | Neq -> fatal (Modality_mismatch (`Internal, "check_at_tel", argmod, modality))
                     | Eq ->
                         let fa = sface_of_tface fa in
                         let argty : (dom, kinetic) value =
@@ -3688,9 +3689,9 @@ and check_tel : type mode a b c ac.
   match tel with
   | Emp -> (Checked_tel (Emp, ctx), Option.is_some discrete)
   | Ext (x, modality, ty, tys) -> (
-      match Modality.of_name_tgt (Ctx.mode ctx) modality with
-      | None -> fatal (Mode_mismatch ("check_tel", `Cod modality, Ctx.mode ctx))
-      | Some (Wrap modality) ->
+      match Modality.of_name_tgt (fun x -> x.value) (Ctx.mode ctx) modality.value with
+      | Error e -> modality_fatal "checking a telescope" (e :> modality_error)
+      | Ok (Wrap modality) ->
           let (Locked (plus, lctx)) = Ctx.lock ctx modality in
           let cty = check (Kinetic `Nolet) lctx ty (universe (Modality.src modality) D.zero) in
           let ety = eval_term (Ctx.env lctx) cty in
@@ -3717,9 +3718,9 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
               | Some (modality, dom) -> (
                   match synth_mode dom with
                   | Some (Wrap dmode) -> (
-                      match Modality.of_name_src modality dmode with
-                      | Some (Wrap modality) -> Some (Wrap (Modality.tgt modality))
-                      | None -> None)
+                      match Modality.of_name_src (fun x -> x.value) modality.value dmode with
+                      | Ok (Wrap modality) -> Some (Wrap (Modality.tgt modality))
+                      | Error _ -> None)
                   | None -> None)
               | None -> None))
       (* We can't tell the mode of a struct from its terms, since they could be modally annotated, and the information about those annotations is contained in the record type it checks against. *)
@@ -3749,9 +3750,9 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
           | None -> (
               match synth_mode dom with
               | Some (Wrap dmode) -> (
-                  match Modality.of_name_src modality dmode with
-                  | Some (Wrap modality) -> Some (Wrap (Modality.tgt modality))
-                  | None -> None)
+                  match Modality.of_name_src (fun x -> x.value) modality.value dmode with
+                  | Ok (Wrap modality) -> Some (Wrap (Modality.tgt modality))
+                  | Error _ -> None)
               | None -> None))
       | Synth (HigherPi (_, modality, dom, cod)) -> (
           match synth_mode (locate_opt cod.loc (Synth cod.value)) with
@@ -3759,9 +3760,9 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
           | None -> (
               match synth_mode (locate_opt dom.loc (Synth dom.value)) with
               | Some (Wrap dmode) -> (
-                  match Modality.of_name_src modality dmode with
-                  | Some (Wrap modality) -> Some (Wrap (Modality.tgt modality))
-                  | None -> None)
+                  match Modality.of_name_src (fun x -> x.value) modality.value dmode with
+                  | Ok (Wrap modality) -> Some (Wrap (Modality.tgt modality))
+                  | Error _ -> None)
               | None -> None))
       | Synth (InstHigherPi (_, _modality, _doms, cod)) ->
           (* MODALTODO: Try inspecting the domains too, if the codomain fails *)
@@ -3778,9 +3779,9 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
           | None -> (
               match synth_mode dom with
               | Some (Wrap dmode) -> (
-                  match Modality.of_name_src modality dmode with
-                  | Some (Wrap modality) -> Some (Wrap (Modality.tgt modality))
-                  | None -> None)
+                  match Modality.of_name_src (fun x -> x.value) modality.value dmode with
+                  | Ok (Wrap modality) -> Some (Wrap (Modality.tgt modality))
+                  | Error _ -> None)
               | None -> None))
       | Synth (UU mode) -> Some (Wrap mode)
       | Synth (Let (_, _, _, body)) -> synth_mode body
@@ -3811,7 +3812,7 @@ let rec synth_mode_tel : type a b ab. (a, b, ab) Raw.tel -> Modal.Mode.wrapped o
   | Ext (_, modality, ty, tel) -> (
       match synth_mode ty with
       | Some (Wrap dmode) -> (
-          match Modality.of_name_src modality dmode with
-          | Some (Wrap modality) -> Some (Wrap (Modality.tgt modality))
-          | None -> None)
+          match Modality.of_name_src (fun x -> x.value) modality.value dmode with
+          | Ok (Wrap modality) -> Some (Wrap (Modality.tgt modality))
+          | Error _ -> None)
       | None -> synth_mode_tel tel)

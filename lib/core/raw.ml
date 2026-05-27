@@ -82,18 +82,26 @@ module rec Make : functor (I : Indices) -> sig
     | Var : 'a index -> 'a synth
     | Const : Constant.t -> 'a synth
     | Field : 'a synth located * [ `Name of string * int list | `Int of int ] -> 'a synth
-    | Pi : I.name * string list * 'a check located * 'a I.suc check located -> 'a synth
-    | HigherPi : I.name * string list * 'a synth located * 'a I.suc synth located -> 'a synth
+    | Pi :
+        I.name * string located list located * 'a check located * 'a I.suc check located
+        -> 'a synth
+    | HigherPi :
+        I.name * string located list located * 'a synth located * 'a I.suc synth located
+        -> 'a synth
     | InstHigherPi :
-        'n D.pos * string list * ('a, 'n, unit, 'an) DomCube.t * 'an check located
+        'n D.pos * string located list located * ('a, 'n, unit, 'an) DomCube.t * 'an check located
         -> 'a synth
     | App :
         'a check located * 'a check option located * [ `Implicit | `Explicit ] located
         -> 'a synth
     | Asc : 'a check located * 'a check located -> 'a synth
-    | AscLam : I.name located * string list * 'a check located * 'a I.suc synth located -> 'a synth
+    | AscLam :
+        I.name located * string located list located * 'a check located * 'a I.suc synth located
+        -> 'a synth
     | UU : 'mode Mode.t -> 'a synth
-    | Let : I.name * string list * 'a synth located * 'a I.suc check located -> 'a synth
+    | Let :
+        I.name * string located list located * 'a synth located * 'a I.suc check located
+        -> 'a synth
     | Letrec : ('a, 'b, 'ab) tel * ('ab check located, 'b) Vec.t * 'ab check located -> 'a synth
     | Act : string located * ('m, 'n) deg * 'a check located option -> 'a synth
     | Match : {
@@ -118,7 +126,7 @@ module rec Make : functor (I : Indices) -> sig
         name : I.name located;
         cube : [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ] located;
         implicit : [ `Explicit | `Implicit ];
-        dom : (string list * 'a check located) option;
+        dom : (string located list located * 'a check located) option;
         body : 'a I.suc check located;
       }
         -> 'a check
@@ -165,7 +173,7 @@ module rec Make : functor (I : Indices) -> sig
   and (_, _, _) tel =
     | Emp : ('a, Fwn.zero, 'a) tel
     | Ext :
-        I.name * string list * 'a check located * ('a I.suc, 'b, 'ab) tel
+        I.name * string located list located * 'a check located * ('a I.suc, 'b, 'ab) tel
         -> ('a, 'b Fwn.suc, 'ab) tel
 
   val fwn_of_tel : ('a, 'b, 'c) tel -> 'b Fwn.t
@@ -243,10 +251,14 @@ functor
       | Const : Constant.t -> 'a synth
       (* A field projection from a possibly-higher-coinductive type comes with a suffix that is a string of integers, denoting a partial bijection between n and m that is total on n.  This is the same as an injection from n to m, or equivalently an insertion of n into m∖l to produce m, where l = image(n). *)
       | Field : 'a synth located * [ `Name of string * int list | `Int of int ] -> 'a synth
-      | Pi : I.name * string list * 'a check located * 'a I.suc check located -> 'a synth
-      | HigherPi : I.name * string list * 'a synth located * 'a I.suc synth located -> 'a synth
+      | Pi :
+          I.name * string located list located * 'a check located * 'a I.suc check located
+          -> 'a synth
+      | HigherPi :
+          I.name * string located list located * 'a synth located * 'a I.suc synth located
+          -> 'a synth
       | InstHigherPi :
-          'n D.pos * string list * ('a, 'n, unit, 'an) DomCube.t * 'an check located
+          'n D.pos * string located list located * ('a, 'n, unit, 'an) DomCube.t * 'an check located
           -> 'a synth
       (* The location of the implicitness flag is, in the implicit case, the location of the braces surrounding the implicit argument. *)
       | App :
@@ -255,12 +267,14 @@ functor
       | Asc : 'a check located * 'a check located -> 'a synth
       (* Abstraction with ascribed variable and synthesizing body.  Currently can't be a cube or implicit.  *)
       | AscLam :
-          I.name located * string list * 'a check located * 'a I.suc synth located
+          I.name located * string located list located * 'a check located * 'a I.suc synth located
           -> 'a synth
       (* A universe knows its mode. *)
       | UU : 'mode Mode.t -> 'a synth
       (* A Let can either synthesize or (sometimes) check.  It synthesizes only if its body also synthesizes, but we wait until typechecking type to look for that, so that if it occurs in a checking context the body can also be checking.  Thus, we make it a "synthesizing term".  The term being bound must also synthesize; the shorthand notation "let x : A := M" is expanded during parsing to "let x := M : A". *)
-      | Let : I.name * string list * 'a synth located * 'a I.suc check located -> 'a synth
+      | Let :
+          I.name * string located list located * 'a synth located * 'a I.suc check located
+          -> 'a synth
       (* Letrec has a telescope of types, so that each can depend on the previous ones, and an equal-length vector of bound terms, all in the context extended by all the variables being bound, plus a body that is also in that context. *)
       | Letrec : ('a, 'b, 'ab) tel * ('ab check located, 'b) Vec.t * 'ab check located -> 'a synth
       (* An Act can also often check, but can also synthesizes if its body does.  *)
@@ -296,7 +310,7 @@ functor
           cube : [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ] located;
           implicit : [ `Explicit | `Implicit ];
           (* An abstraction can have its variable ascribed to a type.  If in addition the body is synthesizing, then it is a synthesizing term called AscLam.  If the body is only checking, then it's still a Lam, but with a "dom" supplied here. *)
-          dom : (string list * 'a check located) option;
+          dom : (string located list located * 'a check located) option;
           body : 'a I.suc check located;
         }
           -> 'a check
@@ -364,7 +378,7 @@ functor
     and (_, _, _) tel =
       | Emp : ('a, Fwn.zero, 'a) tel
       | Ext :
-          I.name * string list * 'a check located * ('a I.suc, 'b, 'ab) tel
+          I.name * string located list located * 'a check located * ('a I.suc, 'b, 'ab) tel
           -> ('a, 'b Fwn.suc, 'ab) tel
 
     (* The length of a telescope is a forwards nat. *)

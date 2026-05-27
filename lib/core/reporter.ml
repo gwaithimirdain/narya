@@ -183,14 +183,16 @@ module Code = struct
     | Matching_wont_refine : string * printable option -> t
     | Dimension_mismatch : string * 'a D.t * 'b D.t -> t
     | Mode_mismatch :
-        string * [ `Mode of 'm1 Mode.t | `Cod of string list | `Dom of string list ] * 'm2 Mode.t
+        [ `User | `Internal ]
+        * string
+        * 'm1 Mode.t
+        * [ `Tgt of string | `Src of string ] option
+        * 'm2 Mode.t
         -> t
     | Modality_mismatch :
-        string
-        * [ `Modality of ('a, 'm, 'b) Modality.t | `Name of string list ]
-        * [ `Modality of ('c, 'n, 'd) Modality.t | `Name of string list ]
+        [ `User | `Internal ] * string * ('a, 'm, 'b) Modality.t * ('c, 'n, 'd) Modality.t
         -> t
-    | Unknown_modality : [ `Single of string | `Double of string ] -> t
+    | Unknown_modality : string -> t
     | Modalcell_mismatch : string * ('a, 'm, 'n, 'b) Modalcell.t * ('c, 'r, 's, 'd) Modalcell.t -> t
     | Non_mode_synthesizing : string -> t
     | Invalid_variable_face : 'a D.t * ('n, 'm) sface -> t
@@ -359,8 +361,10 @@ module Code = struct
     | Matching_on_nondatatype _ -> Error
     | Matching_wont_refine _ -> Hint
     | Dimension_mismatch _ -> Bug (* Sometimes Error? *)
-    | Mode_mismatch _ -> Bug
-    | Modality_mismatch _ -> Bug (* MODALTODO: Sometimes Error *)
+    | Mode_mismatch (`Internal, _, _, _, _) -> Bug
+    | Mode_mismatch (`User, _, _, _, _) -> Error
+    | Modality_mismatch (`Internal, _, _, _) -> Bug
+    | Modality_mismatch (`User, _, _, _) -> Error
     | Unknown_modality _ -> Error
     | Modalcell_mismatch _ -> Error
     | Non_mode_synthesizing _ -> Error
@@ -888,37 +892,23 @@ module Code = struct
           textf "match will not refine the goal or context (%s)" msg
       | Dimension_mismatch (op, a, b) ->
           textf "dimension mismatch in %s (%s ≠ %s)" op (string_of_dim0 a) (string_of_dim0 b)
-      | Mode_mismatch (op, a, b) -> (
-          match a with
-          | `Mode a -> textf "mode mismatch in %s (%s ≠ %s)" op (Mode.name a) (Mode.name b)
-          | `Cod a ->
-              textf "mode mismatch in %s (modality %a can't have codomain %s)" op pp_printed
-                (print (PString (String.concat " " a)))
-                (Mode.name b)
-          | `Dom a ->
-              textf "mode mismatch in %s (modality %a can't have domain %s)" op pp_printed
-                (print (PString (String.concat " " a)))
-                (Mode.name b))
-      | Modality_mismatch (op, a, b) ->
-          let astr =
-            match a with
-            | `Modality a -> Modality.to_string a
-            | `Name a -> String.concat " " a in
-          let bstr =
-            match b with
-            | `Modality b -> Modality.to_string b
-            | `Name b -> String.concat " " b in
-          textf "modality mismatch in %s (%a ≠ %a)" op pp_printed (print (PString astr)) pp_printed
-            (print (PString bstr))
+      | Mode_mismatch (_, op, a, why, b) ->
+          let why =
+            match why with
+            | None -> ""
+            | Some (`Tgt s) -> " (target of " ^ s ^ ")"
+            | Some (`Src s) -> " (source of " ^ s ^ ")" in
+          textf "mode mismatch in %s (%s%s ≠ %s)" op (Mode.name a) why (Mode.name b)
+      | Modality_mismatch (_, op, a, b) ->
+          textf "modality mismatch in %s (%a ≠ %a)" op pp_printed
+            (print (PString (Modality.to_string a)))
+            pp_printed
+            (print (PString (Modality.to_string b)))
       | Modalcell_mismatch (op, a, b) ->
           textf "modal cell mismatch in %s (%s ≠ %s)" op (Modalcell.to_string a)
             (Modalcell.to_string b)
       | Non_mode_synthesizing str -> textf "cannot synthesize a mode: %s" str
-      | Unknown_modality c ->
-          textf "unknown modality %s"
-            (match c with
-            | `Single s -> ":" ^ s
-            | `Double s -> "∷" ^ s)
+      | Unknown_modality c -> textf "unknown modality %s" c
       | Missing_key (vdom, vcod) ->
           textf "use of %a variable behind %a lock requires a key" pp_printed
             (print (PString (Modality.to_string vdom)))
@@ -1211,3 +1201,18 @@ let anomaly_dim_err str : dim_err =
         let _ = (needed, got) in
         Anomaly str);
   }
+
+type modality_error =
+  [ `Not_found of string Asai.Range.located
+  | `Wrong_tgt of Mode.wrapped * string Asai.Range.located * Mode.wrapped
+  | `Wrong_src of Mode.wrapped * string Asai.Range.located * Mode.wrapped ]
+
+let modality_fatal : type a. string -> modality_error -> a =
+ fun str -> function
+  | `Not_found m -> fatal ?loc:m.loc (Unknown_modality m.value)
+  | `Wrong_tgt (Wrap a, m, Wrap b) ->
+      fatal ?loc:m.loc ~severity:Asai.Diagnostic.Error
+        (Mode_mismatch (`User, str, a, Some (`Tgt m.value), b))
+  | `Wrong_src (Wrap a, m, Wrap b) ->
+      fatal ?loc:m.loc ~severity:Asai.Diagnostic.Error
+        (Mode_mismatch (`User, str, a, Some (`Src m.value), b))

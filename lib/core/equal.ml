@@ -353,8 +353,7 @@ module Equal = struct
                               [ argnorm; argrest ]
                           | Neq ->
                               fatal
-                                (Modality_mismatch
-                                   ("equal_at_tel", `Modality argmod, `Modality tymodality))));
+                                (Modality_mismatch (`Internal, "equal_at_tel", argmod, tymodality))));
                 }
                 [ tyargs ] (Cons (Cons Nil)) in
             let ity = inst ety tyarg in
@@ -366,10 +365,8 @@ module Equal = struct
                    xmodality,
                    Ok (TubeOf.plus_cube (val_of_norm_tube tyarg) (CubeOf.singleton x)) ))
               xs ys tys tyargs
-        | Neq, _ ->
-            fatal (Modality_mismatch ("equal_at_tel", `Modality xmodality, `Modality tymodality))
-        | _, Neq ->
-            fatal (Modality_mismatch ("equal_at_tel", `Modality ymodality, `Modality tymodality)))
+        | Neq, _ -> fatal (Modality_mismatch (`Internal, "equal_at_tel", xmodality, tymodality))
+        | _, Neq -> fatal (Modality_mismatch (`Internal, "equal_at_tel", ymodality, tymodality)))
     | _ -> fatal (Anomaly "length mismatch in equal_at_tel")
 
   and equal_env : type mode a b n c d.

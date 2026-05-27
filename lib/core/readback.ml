@@ -281,9 +281,7 @@ and readback_head : type mode c z.
           | Eq, Plus_lock (Zero _, Zero), Plus_with_locks (Empty, Zero, Zero _) -> tm
           | _ -> Key { tm; cell = key; plus_tgt; plus_src })
       | Neq, _, _ ->
-          fatal
-            (Modality_mismatch
-               ("reading back var", `Modality (Modalcell.vsrc key), `Modality modality))
+          fatal (Modality_mismatch (`Internal, "reading back var", Modalcell.vsrc key, modality))
       | _, _, Suc _ -> fatal (Anomaly "reading back var: key has insufficient codomain")
       | _, `Field _, _ -> .)
   | Const { name; ins } -> (
@@ -356,8 +354,7 @@ and readback_at_tel : type mode n c a b ab z.
                         match Modality.compare argmod xmodality with
                         | Neq ->
                             fatal
-                              (Modality_mismatch
-                                 ("readback_at_tel", `Modality argmod, `Modality tymodality))
+                              (Modality_mismatch (`Internal, "readback_at_tel", argmod, tymodality))
                         | Eq ->
                             let fa = sface_of_tface fa in
                             let argty : (dom, kinetic) value =
@@ -386,8 +383,7 @@ and readback_at_tel : type mode n c a b ab z.
                     xmodality,
                     Ok (TubeOf.plus_cube (val_of_norm_tube tyarg) (CubeOf.singleton x)) ))
                xs tys tyargs
-      | Neq ->
-          fatal (Modality_mismatch ("readback_at_tel", `Modality xmodality, `Modality tymodality)))
+      | Neq -> fatal (Modality_mismatch (`Internal, "readback_at_tel", xmodality, tymodality)))
   | _ -> fatal (Anomaly "length mismatch in equal_at_tel")
 
 (* To readback an environment, since readback is type-directed we need the types of *all* the terms in it, which is to say its codomain context.  We store this as a Termctx since we need to evaluate and instantiate the types at the previous terms in the environment as we go. *)
