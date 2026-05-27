@@ -89,7 +89,10 @@ module rec Make : functor (I : Indices) -> sig
         I.name * string located list located * 'a synth located * 'a I.suc synth located
         -> 'a synth
     | InstHigherPi :
-        'n D.pos * string located list located * ('a, 'n, unit, 'an) DomCube.t * 'an check located
+        'n D.pos
+        * string located list located list
+        * ('a, 'n, unit, 'an) DomCube.t
+        * 'an check located
         -> 'a synth
     | App :
         'a check located * 'a check option located * [ `Implicit | `Explicit ] located
@@ -258,7 +261,10 @@ functor
           I.name * string located list located * 'a synth located * 'a I.suc synth located
           -> 'a synth
       | InstHigherPi :
-          'n D.pos * string located list located * ('a, 'n, unit, 'an) DomCube.t * 'an check located
+          'n D.pos
+          * string located list located list
+          * ('a, 'n, unit, 'an) DomCube.t
+          * 'an check located
           -> 'a synth
       (* The location of the implicitness flag is, in the implicit case, the location of the braces surrounding the implicit argument. *)
       | App :

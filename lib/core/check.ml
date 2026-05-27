@@ -2829,11 +2829,23 @@ and synth : type mode a b s.
             | _ -> fatal (Invalid_higher_function "invalid single domain")))
     | ( InstHigherPi
           (type n an)
-          ((n', modality, doms, cod) : n D.pos * _ * (a, n, unit, an) DomCube.t * an check located),
+          ((n', modalities, doms, cod) :
+            n D.pos * _ * (a, n, unit, an) DomCube.t * an check located),
         _ ) -> (
-        match Modality.of_name_tgt (fun x -> x.value) mode modality.value with
-        | Error e -> modality_fatal "synthesizing higher pi-type" (e :> modality_error)
-        | Ok (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) -> (
+        let modality =
+          List.fold_left
+            (fun (m1 : mode Modality.src_wrapped option) m2 ->
+              match (m1, Modality.of_name_tgt (fun x -> x.value) mode m2.value) with
+              | _, Error e -> modality_fatal "synthesizing higher pi-type" (e :> modality_error)
+              | None, Ok m -> Some m
+              | Some (Wrap m1), Ok (Wrap m2) -> (
+                  match Modality.compare m1 m2 with
+                  | Eq -> Some (Wrap m1)
+                  | Neq -> fatal (Modality_mismatch (`User, "synthesizing higher pi-type", m1, m2))))
+            None modalities in
+        match modality with
+        | None -> fatal (Anomaly "no modality found when synthesizing higher pi-type")
+        | Some (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) -> (
             let (Locked (plus, lctx)) = Ctx.lock ctx modality in
             let n = D.pos n' in
             let module Acc = struct
