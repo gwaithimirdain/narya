@@ -31,7 +31,7 @@ let () =
     {
       name = "braces";
       tree = Closed_entry (eop LBrace (term RBrace (Done_closed Postprocess.braces)));
-      processor = (fun _ _ loc -> fatal ?loc Parse_error);
+      processor = (fun _ _ loc -> fatal ?loc (Parse_error "invalid braces"));
       pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "braces"));
       print_term =
         Some
@@ -148,7 +148,7 @@ let get_var : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string option 
   | Ident ([ x ], _) when Lexer.valid_var x -> Some x
   | Ident (xs, _) -> fatal (Invalid_variable xs)
   | Placeholder _ -> None
-  | _ -> fatal Parse_error
+  | _ -> fatal (Parse_error "invalid variable")
 
 (* Similarly, but could be a sequence of variables like "x y z", returned as a Bwd. *)
 let rec get_var_list : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string option Bwd.t =
@@ -159,7 +159,7 @@ let rec get_var_list : type lt ls rt rs. (lt, ls, rt, rs) parse located -> strin
   | Ident ([ x ], _) when Lexer.valid_var x -> Snoc (Emp, Some x)
   | Ident (xs, _) -> fatal (Invalid_variable xs)
   | Placeholder _ -> Snoc (Emp, None)
-  | _ -> fatal Parse_error
+  | _ -> fatal (Parse_error "invalid variable list")
 
 (* Get a list of variables as above, perhaps ascribed. *)
 let get_var_asc : type lt ls rt rs.
@@ -171,7 +171,7 @@ let get_var_asc : type lt ls rt rs.
       | [ Term x; Token (Colon, _); Term ty ] -> (Bwd.to_list (get_var_list x), Some (Wrap ty))
       | _ -> invalid ?loc:v.loc "colon")
   | _, false -> ([ get_var v ], None)
-  | _, true -> fatal ?loc:v.loc Parse_error
+  | _, true -> fatal ?loc:v.loc (Parse_error "ascribed variable required")
 
 (* Get one variable bare, one variable in braces, or one or more variables enclosed in parentheses or braces and ascribed. *)
 let get_var_asc_implicit : type lt ls rt rs.
@@ -182,14 +182,14 @@ let get_var_asc_implicit : type lt ls rt rs.
   | Notn ((Braces, _), n) -> (
       match args n with
       | [ Token (LBrace, _); Term w; Token (RBrace, _) ] -> (get_var_asc ~asc_req:false w, `Implicit)
-      | _ -> fatal ?loc:v.loc Parse_error)
+      | _ -> fatal ?loc:v.loc (Parse_error "invalid implicit variable"))
   | Notn ((Parens, _), n) -> (
       match args n with
       | [ Token (LParen, _); Term w; Token (RParen, _) ] -> (get_var_asc ~asc_req:true w, `Explicit)
       | _ ->
           (* This isn't the bug "invalid", since the user could have (mistakenly) written a tuple. *)
-          fatal ?loc:v.loc Parse_error)
   | _ -> (([ get_var v ], None), `Explicit)
+          fatal ?loc:v.loc (Parse_error "invalid explicit variable"))
 
 (* Get a sequence of variables, as in the domain of an abstraction, some possibly enclosed in braces to mean they are implicit. *)
 let rec get_vars : type n lt ls rt rs.
@@ -952,7 +952,7 @@ let () =
               match D.compare_zero m with
               | Zero -> process_pi ctx `Lower doms cod
               | Pos dim -> process_inst_higher_pi ctx dim doms cod)
-          | None -> fatal Parse_error);
+          | None -> fatal (Parse_error "invalid dimension for function type"));
       pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "arrow"));
       print_term = Some (pp_pi Arrow);
       (* Function-types are never part of case trees. *)
@@ -989,7 +989,7 @@ let () =
     {
       name = "coloneq";
       tree = Open_entry (eop Coloneq (done_open coloneq));
-      processor = (fun _ _ -> fatal Parse_error);
+      processor = (fun _ _ -> fatal (Parse_error "bare colon-equals"));
       pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "colon-equals"));
       print_term =
         Some
@@ -1202,7 +1202,7 @@ let () =
     {
       name = "dot";
       tree = Closed_entry (eop Dot (Done_closed Postprocess.dot));
-      processor = (fun _ _ _ -> fatal Parse_error);
+      processor = (fun _ _ _ -> fatal (Parse_error "bare dot"));
       pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "dot"));
       print_term =
         Some
@@ -1573,8 +1573,9 @@ let rec get_patterns : type n.
       ([ Postprocess.get_pattern tm ], `Normal loc, obs)
   | Suc Zero, Term tm :: Token (DblMapsto, (_, loc)) :: obs ->
       ([ Postprocess.get_pattern tm ], `Cube [ locate (ref false) loc ], obs)
-  | Suc Zero, Term _ :: Term tm :: _ -> fatal ?loc:tm.loc Parse_error
-  | Suc Zero, Term tm :: _ -> fatal ?loc:tm.loc Parse_error
+  | Suc Zero, Term _ :: Term tm :: _ ->
+      fatal ?loc:tm.loc (Parse_error "too many match pattern variables")
+  | Suc Zero, Term tm :: _ -> fatal ?loc:tm.loc (Parse_error "invalid match pattern")
   | Suc (Suc _ as n), Term tm :: Token (Op ",", _) :: obs ->
       let pats, cube, obs = get_patterns n obs in
       (Postprocess.get_pattern tm :: pats, cube, obs)
@@ -1791,7 +1792,7 @@ let () =
               | _, [] -> mtch
               | _, _ :: _ -> fatal (Anomaly "process_branches didn't produce a match"))
           | Token (Match, _) :: _ :: Token (Return, _) :: Term nonabs :: Token (LBracket, _) :: _ ->
-              fatal ?loc:nonabs.loc Parse_error
+              fatal ?loc:nonabs.loc (Parse_error "match motive is not an abstraction")
           | _ -> invalid "match");
       pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "match"));
       print_term = None;
@@ -1979,7 +1980,7 @@ let process_codata_field : type n lt ls rt rs lt' ls' rt' rs' et.
         | Ident ([ x ], _) when Lexer.valid_var x -> Some x
         | Placeholder _ -> None
         | Ident (x, _) -> fatal ?loc:xloc (Invalid_variable x)
-        | _ -> fatal ?loc:xloc Parse_error in
+        | _ -> fatal ?loc:xloc (Parse_error "invalid self-variable") in
       match dim_of_string (String.concat "" fdstr) with
       | Some (Any fdim) -> (
           let fld = Field.intern fstr fdim in
@@ -1989,7 +1990,7 @@ let process_codata_field : type n lt ls rt rs lt' ls' rt' rs' et.
               let ty = process (Bwv.snoc ctx x) ty in
               (Field.Wrap fld, Raw.Codatafield (x, ty)))
       | None -> fatal (Invalid_field (String.concat "." ("" :: fstr :: fdstr))))
-  | _ -> fatal ?loc:tm.loc Parse_error
+  | _ -> fatal ?loc:tm.loc (Parse_error "invalid codata field")
 
 let rec process_codata : type n.
     (Field.wrapped, n Raw.codatafield) Abwd.t ->
@@ -2109,7 +2110,8 @@ let rec process_tel : type a.
         let (Any_tel tel) = process_tel ctx (StringSet.add name seen) obs in
         Any_tel (Ext (Some name, ty, tel)))
       else fatal ?loc (Invalid_field name)
-  | Term { loc; _ } :: Token (Colon, _) :: Term _ :: _ -> fatal ?loc Parse_error
+  | Term { loc; _ } :: Token (Colon _, _) :: Term _ :: _ ->
+      fatal ?loc (Parse_error "invalid record field name")
   | _ -> invalid "record"
 
 let rec process_self_record : type n.
@@ -2151,7 +2153,9 @@ let process_record ctx obs loc =
   match obs with
   | Term x :: Token (Mapsto, _) :: Token (LParen, _) :: obs ->
       with_loc x.loc @@ fun () ->
-      let vars = process_var_list x [ (None, []) ] <|> Parse_error in
+      let vars =
+        process_var_list x [ (None, []) ] <|> Parse_error "invalid higher record specification"
+      in
       let (Wrap vars) = Vec.of_list (List.map fst vars) in
       let (Bplus ac) = Fwn.bplus (Vec.length vars) in
       let ctx = Bwv.append ac ctx vars in
@@ -2317,9 +2321,9 @@ let rec constr_tel :
       | [ Token (LParen, _); Term arg; Token (RParen, _) ] -> (
           match process_typed_vars arg.value with
           | Some (vars, _, ty) -> constr_tel (Term fn) ((List.map fst vars, ty) :: accum)
-          | None -> fatal Parse_error)
+          | None -> fatal (Parse_error "invalid constructor argument variables"))
       | _ -> invalid "tel")
-  | _ -> fatal Parse_error
+  | _ -> fatal (Parse_error "invalid constructor")
 
 let rec process_dataconstr : type n.
     (string option, n) Bwv.t ->

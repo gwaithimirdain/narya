@@ -418,7 +418,7 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
     (* Fmlib_parse has its own built-in error reporting with locations.  However, we instead use Asai's error reporting, so that we have a common "look" for parse errors and typechecking errors. *)
     if has_failed_syntax p then
       (* It should be possible to report more detailed error information from the parser than just the location.  Fmlib supplies "failed_expectations", but I haven't been able to figure out how to make that useful with this parsing algorithm. *)
-      fatal ~loc:(Range.convert (range p)) Parse_error
+      fatal ~loc:(Range.convert (range p)) (Parse_error "invalid syntax")
     else if has_failed_semantic p then
       match failed_semantic p with
       | No_relative_precedence (loc, n1, n2) -> fatal ~loc (No_relative_precedence (n1, n2))

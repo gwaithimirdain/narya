@@ -266,7 +266,8 @@ module Parse = struct
     (let* wslparen = token LParen in
      let* sign =
        (let* minusloc, wsminus = located (token (Op "-")) in
-        if not (List.is_empty wsminus) then fatal ~loc:(Range.convert minusloc) Parse_error;
+        if not (List.is_empty wsminus) then
+          fatal ~loc:(Range.convert minusloc) (Parse_error "invalid sign");
         return Q.neg)
        </> return (fun x -> x) in
      let* tloc, (tight, wstight) = located ident in
@@ -656,7 +657,7 @@ module Parse = struct
 
   let option =
     let* _ = token Option in
-    fatal Parse_error
+    fatal (Parse_error "option command not implemented")
 
   let undo =
     let* wsundo = token Undo in
