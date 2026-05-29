@@ -2695,15 +2695,16 @@ and synth : type mode a b s.
         let lock = Locks.cod locks in
         (* To produce its term as a variable (or illusory field access) we have to replace the lock-containing context by a single lock by its annotating modality. *)
         let (Has_plus_lock plus_src) = plus_lock modality in
-        let tm =
+        let tm, ty =
           match result with
-          | `Var (_, fa) -> Term.Var (Index (insert, fa, plus_src))
+          | `Var (_, fa) -> (Term.Var (Index (insert, fa, plus_src)), value.ty)
           | `Field (_, field) ->
               (* TODO: Double-check that this zero is correct *)
               let ins = ins_zero D.zero in
               (* Illusory field-access variables always refer to the top face. *)
               let _, n = inserted insert (Ctx.tctx ctx) in
-              Term.Field (Var (Index (insert, id_sface n, plus_src)), field, ins) in
+              ( Term.Field (Var (Index (insert, id_sface n, plus_src)), field, ins),
+                tyof_field (Ok value.tm) value.ty field ~shuf:Trivial ins ) in
         (* Any keys supplied explicitly by the user have been stripped off already, but we can insert an identity key or a unique key as well. *)
         match (Modality.compare modality lock, Modalcell.find_unique modality lock) with
         | Eq, _ ->
@@ -2711,11 +2712,11 @@ and synth : type mode a b s.
             ( realize status
                 (Term.Key { tm; cell = Modalcell.id modality; plus_tgt; plus_src }
                   : (mode, b, kinetic) term),
-              (act_value value.ty (id_deg D.zero) None : (mode, kinetic) value) )
+              (act_value ty (id_deg D.zero) None : (mode, kinetic) value) )
         | _, Some (Unique cell) ->
             (* And if the key is unique, we act by that key. *)
             ( realize status (Term.Key { tm; cell; plus_tgt; plus_src }),
-              act_value value.ty (id_deg D.zero) (Some cell) )
+              act_value ty (id_deg D.zero) (Some cell) )
         | Neq, None ->
             (* If the modalities are not equal, and the key is not unique, then the user should have given an explicit key. *)
             fatal (Missing_key (modality, lock)))
