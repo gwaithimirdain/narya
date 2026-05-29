@@ -1207,8 +1207,11 @@ and lookup_cube : type dom mu mode n a b k mk nk.
       let (Plus lk) = D.plus (D.plus_right nk) in
       let op'k = op_plus op' lk nk in
       lookup_cube env lk mu v (comp_op op'k op)
-  (* Keys are disallowed here, because we've already called Env.remove_keys that is supposed to strip them all off. *)
-  | Key _, _ -> fatal (Anomaly "key in lookup_cube")
+  (* Nonidentity keys are disallowed here, because we've already called Env.remove_keys that is supposed to strip them all off. *)
+  | Key (env, cell, plus), _ -> (
+      match (Modalcell.compare_id cell, plus) with
+      | Eq, Plus_lock (Zero _, Zero) -> lookup_cube env nk mu v op
+      | _ -> fatal (Anomaly "nonidentity key in lookup_cube"))
   (* If we encounter a shift or unshift, we just have to edit the insertion and go on. *)
   | Shift (env, n_x, xb), v ->
       (* In this branch, k is renamed to x+k. *)

@@ -546,13 +546,16 @@ let rec act_env : type mode m n b. (mode, n, b) env -> (m, n) op -> (mode, m, b)
       | Some Eq -> env
       | None -> Act (env, s))
 
-(* There is no possibility of a "smart constructor" for keys since we track their domains in the length type parameter. *)
+(* There is very little possibility of a "smart constructor" for keys since we track their domains in the length type parameter; all we can do is ignore identities. *)
 let key_env : type dom mu nu cod m b bmu.
     (cod, m, b) env ->
     (dom, mu, nu, cod) Modalcell.t ->
     (b, cod, mu, dom, bmu) plus_lock ->
     (dom, m, bmu) env =
- fun env key al -> Key (env, key, al)
+ fun env key al ->
+  match (Modalcell.compare_id key, al) with
+  | Eq, Plus_lock (Zero _, Zero) -> env
+  | _ -> Key (env, key, al)
 
 (* Create a lazy evaluation *)
 let lazy_eval : type mode n b s. (mode, n, b) env -> (mode, b, s) term -> (mode, s) lazy_eval =
