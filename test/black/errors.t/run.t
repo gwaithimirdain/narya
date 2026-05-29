@@ -289,7 +289,7 @@
    ￫ error[E0200]
    ￭ command-line exec string
    1 | f (x
-     ^ parse error
+     ^ parse error: invalid syntax
   
   [1]
 
@@ -297,7 +297,7 @@
    ￫ error[E0200]
    ￭ command-line exec string
    1 | .fst x
-     ^ parse error
+     ^ parse error: invalid syntax
   
   [1]
   $ narya -parametric errors.ny -e "echo (x |-> x .fs.t y)"
@@ -346,14 +346,14 @@
    ￫ error[E0200]
    ￭ command-line exec string
    1 | echo (↦ z)
-     ^ parse error
+     ^ parse error: invalid syntax
   
   [1]
   $ narya -parametric errors.ny -e "echo ((f x) y ↦ z)"
    ￫ error[E0200]
    ￭ command-line exec string
    1 | echo ((f x) y ↦ z)
-     ^ parse error
+     ^ parse error: ascribed variable required
   
   [1]
   $ narya -parametric errors.ny -e "echo _"
@@ -391,7 +391,7 @@
    ￫ error[E0200]
    ￭ command-line exec string
    1 | echo ([ | | .head |-> 0 | .tail |-> f ])
-     ^ parse error
+     ^ parse error: invalid syntax
   
   [1]
   $ narya -parametric errors.ny -e "echo (( fst ≔ a ) : Σ A B)"
@@ -546,7 +546,7 @@
    ￫ error[E0200]
    ￭ command-line exec string
    1 | echo x y {` unterminated block comment‹EOF›
-     ^ parse error
+     ^ parse error: invalid syntax
   
   [1]
 
