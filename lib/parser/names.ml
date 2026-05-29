@@ -1,7 +1,10 @@
 open Util
 open Tbwd
 open Dim
+open Modal
 open Core
+open Reporter
+open Tctx
 open Term
 module StringSet = Set.Make (String)
 
@@ -11,59 +14,88 @@ let __ANONYMOUS_VARIABLE__ = "_H"
 
 (* We store a parametrized list of cubes of variable names like a context, along with a mapping of field names to local variable names bound textually to that field of the variable. *)
 type 'b ctx =
-  | Emp : emp ctx
-  | Snoc : 'b ctx * 'n variables * (string, string) Abwd.t -> ('b, 'n) snoc ctx
+  | Emp : 'mode emp ctx
+  | Snoc :
+      'b ctx * 'n variables * (string, string) Abwd.t
+      -> ('b, ('modality, 'n) dim_entry) snoc ctx
+  | Lock : 'b ctx -> ('b, 'modality lock_entry) snoc ctx
 
 (* We also store a set of which variables already exist, so that we can be sure of creating a new unused one. *)
 type 'b t = { ctx : 'b ctx; used : StringSet.t }
 type wrapped = Wrap : 'n t -> wrapped
 
-let empty : emp t = { ctx = Emp; used = StringSet.empty }
+let empty : type mode. mode emp t = { ctx = Emp; used = StringSet.empty }
 
-let rec remove_ctx : type a n b. b ctx -> (a, n, b) Tbwd.insert -> a ctx =
+let rec remove_ctx : type a x n b. b ctx -> (a, x, n, b) insert -> a ctx =
  fun ctx i ->
   match (ctx, i) with
   | Snoc (ctx, vars, flds), Later i -> Snoc (remove_ctx ctx i, vars, flds)
   | Snoc (ctx, _, _), Now -> ctx
   | Emp, _ -> .
+  | Lock _, _ -> .
 
-let remove : type a n b. b t -> (a, n, b) Tbwd.insert -> a t =
+let remove : type a x n b. b t -> (a, x, n, b) insert -> a t =
  fun { ctx; used } i -> { ctx = remove_ctx ctx i; used }
+
+(* let rec bsplit_ctx : type a b ab x y z. ab ctx -> (x, b, y, a, z, ab) Tctx.bcomp -> a ctx =
+    fun ctx ab ->
+     match ab with
+     | Zero -> ctx
+     | Suc (Dim _, ab) ->
+         let (Snoc (ctx, _, _)) = bsplit_ctx ctx ab in
+         ctx
+     | Suc (Lock _, ab) ->
+         let (Lock ctx) = bsplit_ctx ctx ab in
+         ctx
+     | Suc (Proj _, _) -> fatal (Anomaly "Names.bsplit_ctx on Proj") *)
+
+let rec split_ctx : type a b ab x y z. ab ctx -> (x, b, y, a, z, ab) Tctx.comp -> a ctx =
+ fun ctx ab ->
+  match (ctx, ab) with
+  | _, Zero -> ctx
+  | Emp, Suc (_, Proj _) -> fatal (Anomaly "Names.split_ctx on Proj")
+  | Snoc (ctx, _, _), Suc (ab, Dim _) -> split_ctx ctx ab
+  | Lock ctx, Suc (ab, Lock _) -> split_ctx ctx ab
+
+let split : type a b ab x y z. ab t -> (x, b, y, a, z, ab) Tctx.comp -> a t =
+ fun { ctx; used } ab -> { ctx = split_ctx ctx ab; used }
 
 let cubevar x fa : string list =
   let fa = string_of_sface fa in
   if fa = "" then [ x ] else [ x; fa ]
 
 (* Look up an index variable to find a name for it. *)
-let lookup : type n. n t -> n index -> string list =
- fun { ctx; used = _ } x ->
-  let rec lookup : type n. n ctx -> n index -> string list =
-   fun ctx x ->
+let lookup : type mode a. a t -> (mode, a) index -> string list =
+ fun { ctx; used = _ } (Index (x, fa, Plus_lock (_, comp))) ->
+  let rec lookup : type a modality k n an.
+      an ctx -> (a, modality, n, an) insert -> (k, n) sface -> string list =
+   fun ctx x fa ->
     match (ctx, x) with
-    | Emp, _ -> .
-    | Snoc (ctx, _, _), Index (Later x, fa) -> lookup ctx (Index (x, fa))
-    | Snoc (_, Variables (_, mn, xs), _), Index (Now, fa) -> (
+    | Snoc (ctx, _, _), Later x -> lookup ctx x fa
+    | Snoc (_, Variables (_, mn, xs), _), Now -> (
         let (SFace_of_plus (_, fb, fc)) = sface_of_plus mn fa in
         match NICubeOf.find xs fc with
         | Some x -> cubevar x fb
-        | None -> [ __ANONYMOUS_VARIABLE__ ]) in
-  lookup ctx x
+        | None -> [ __ANONYMOUS_VARIABLE__ ])
+    | Emp, _ | Lock _, _ -> . in
+  lookup (split_ctx ctx comp) x fa
 
 (* Look up an index variable together with a field, to find a name for the combination, if there is one. *)
-let lookup_field : type n. n t -> n index -> string -> string list option =
- fun { ctx; used = _ } x f ->
-  let rec lookup : type n. n ctx -> n index -> string list option =
-   fun ctx x ->
+let lookup_field : type mode a. a t -> (mode, a) index -> string -> string list option =
+ fun { ctx; used = _ } (Index (x, fa, Plus_lock (_, comp))) f ->
+  let rec lookup : type a modality k n an.
+      an ctx -> (a, modality, n, an) insert -> (k, n) sface -> string list option =
+   fun ctx x fa ->
     match (ctx, x) with
-    | Emp, _ -> .
-    | Snoc (ctx, _, _), Index (Later x, fa) -> lookup ctx (Index (x, fa))
-    | Snoc (_, Variables (_, mn, _), fields), Index (Now, fa) ->
+    | Snoc (ctx, _, _), Later x -> lookup ctx x fa
+    | Snoc (_, Variables (_, mn, _), fields), Now ->
         let open Monad.Ops (Monad.Maybe) in
         let (SFace_of_plus (_, fb, fc)) = sface_of_plus mn fa in
         let* _ = is_id_sface fc in
         let* y = Abwd.find_opt f fields in
-        return (cubevar y fb) in
-  lookup ctx x
+        return (cubevar y fb)
+    | Emp, _ | Lock _, _ -> . in
+  lookup (split_ctx ctx comp) x fa
 
 let rec primes n =
   if n <= 0 then ""
@@ -93,7 +125,7 @@ let new_name :
         else (namen, `Renamed, used |> StringSet.add namen) in
   go 0 names
 
-(* Make a variable name or placeholder unique.  Leave placeholders as-is, unless force_names = true in which case find a name for them. *)
+(* Make a variable name or placeholder unique. *)
 let uniquify_opt : type a.
     (a -> string option * string) ->
     a ->
@@ -123,25 +155,27 @@ let uniquify_cube : type n left right a.
     (NFamOf name, used) in
   let open NICubeOf.Applicatic (Applicative.OfMonad (Monad.State (struct
     type t = StringSet.t
-  end))) in
+  end)))
+  in
   mapM { map = (fun _ name used -> uniquify_nfamof name used) } names used
 
-(* Add a new cube variable at a specified dimension, generating a fresh version of its name if necessary to avoid conflicts.  Leave unnamed variables unnamed unless force_names = true. *)
-let add_cube : type n b. n D.t -> b t -> string option -> string option * (b, n) snoc t =
+(* Add a new cube variable at a specified dimension, generating a fresh version of its name if necessary to avoid conflicts. *)
+let add_cube : type m n b.
+    n D.t -> b t -> string option -> string option * (b, (m, n) dim_entry) snoc t =
  fun n { ctx; used } name ->
   let name, _, used = uniquify_opt (fun x -> (x, "")) name used in
   ( name,
     { ctx = Snoc (ctx, Variables (n, D.plus_zero n, NICubeOf.singleton name), Abwd.empty); used } )
 
-(* Add a cube of variables, generating a fresh version of each of their names.  Again, leave unnamed variables unnamed unless force_names = true. *)
-let add : type b n. b t -> n variables -> n variables * (b, n) snoc t =
+(* Add a cube of variables, generating a fresh version of each of their names. *)
+let add : type b m n. b t -> n variables -> n variables * (b, (m, n) dim_entry) snoc t =
  fun { ctx; used } (Variables (m, mn, names)) ->
   let names, used = uniquify_cube (fun x -> (x, "")) names used in
   let vars = Variables (m, mn, names) in
   (vars, { ctx = Snoc (ctx, vars, Abwd.empty); used })
 
 (* Add a partially-cube variable as a full cube of non-cube variables, with face names explicitly concatenated with the variable names, making all variables named. *)
-let add_full : type b mn. b t -> mn variables -> mn variables * (b, mn) snoc t =
+let add_full : type b k mn. b t -> mn variables -> mn variables * (b, (k, mn) dim_entry) snoc t =
  fun { ctx; used } (Variables (m, m_n, xs)) ->
   let (Wrap (newxs, _)) =
     NICubeOf.NFold.build_left (D.plus_out m m_n)
@@ -157,15 +191,25 @@ let add_full : type b mn. b t -> mn variables -> mn variables * (b, mn) snoc t =
   let vars = Variables (D.zero, D.zero_plus (D.plus_out m m_n), names) in
   (vars, { ctx = Snoc (ctx, vars, Abwd.empty); used })
 
+let rec add_lock : type a dom modality mode am.
+    a t -> (a, mode, modality, dom, am) plus_lock -> am t =
+ fun ctx -> function
+  | Plus_lock (Zero _, Zero) -> ctx
+  | Plus_lock (Suc (lock, Lock_lock _, Suc (Zero, Lock g1)), Suc (comp, Lock g2)) ->
+      let Eq = Modality.Gen.tgt_uniq g1 g2 in
+      let { ctx; used } = add_lock ctx (Plus_lock (lock, comp)) in
+      { ctx = Lock ctx; used }
+
 (* Extract all the names in a context, generating a fresh version of each name from left to right, including field access variables, leaving unnamed variables unnamed. *)
-let rec of_ordered_ctx : type a b. (a, b) Ctx.Ordered.t -> b t = function
-  | Emp -> empty
-  | Snoc (ctx, Vis { dim; plusdim; vars; bindings = _; hasfields = _; fields; fplus = _ }, _) ->
+let rec of_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> b t = function
+  | Emp _ -> empty
+  | Snoc (ctx, Vis { dim; plusdim; vars; fields; _ }, _) ->
       let { ctx; used } = of_ordered_ctx ctx in
       let vars, used = uniquify_cube (fun x -> (x, "")) vars used in
       let module M = Mbwd.Monadic (Monad.State (struct
         type t = StringSet.t
-      end)) in
+      end))
+      in
       let fields, used =
         M.mmapM
           (fun [ (f, x) ] used ->
@@ -174,14 +218,19 @@ let rec of_ordered_ctx : type a b. (a, b) Ctx.Ordered.t -> b t = function
           [ Bwv.to_bwd fields ]
           used in
       { ctx = Snoc (ctx, Variables (dim, plusdim, vars), fields); used }
-  | Snoc (ctx, Invis bindings, _) -> snd (add_cube (CubeOf.dim bindings) (of_ordered_ctx ctx) None)
-  | Lock ctx -> of_ordered_ctx ctx
+  | Snoc (ctx, Invis (_, bindings), _) ->
+      snd (add_cube (CubeOf.dim bindings) (of_ordered_ctx ctx) None)
+  | Lock (ctx, _) ->
+      let { ctx; used } = of_ordered_ctx ctx in
+      { ctx = Lock ctx; used }
+  | Parametric_lock ctx -> of_ordered_ctx ctx
 
-let of_ctx : type a b. (a, b) Ctx.t -> b t = function
+let of_ctx : type mode a b. (mode, a, b) Ctx.t -> b t = function
   | Permute { ctx; _ } -> of_ordered_ctx ctx
 
 (* Add a cube of variables WITHOUT replacing them by fresh versions.  Should only be used when the variables have already been so replaced, as in the output of uniquify_vars below. *)
-let unsafe_add : 'b t -> 'n variables -> (string, string) Abwd.t -> ('b, 'n) snoc t =
+let unsafe_add : type k n b.
+    b t -> n variables -> (string, string) Abwd.t -> (b, (k, n) dim_entry) snoc t =
  fun { ctx; used } vars fields -> { ctx = Snoc (ctx, vars, fields); used }
 
 (* Given a Bwv of variables, proceed through from the *right* to mark them as visible or shadowed, accumulating a list of the visible names in a map.  Missing variables are marked as shadowed. *)
@@ -203,9 +252,13 @@ let rec used_vars : type n.
       let vars, used = used_vars vars used in
       (Snoc (vars, (x, o)), used)
 
+type uniquified_vars = StringSet.t
+
+let of_uniquified_vars used = { ctx = Emp; used }
+
 (* Uniquify the names in a bwv from the *right*, thus leaving unchanged those that are still in lexical scope.  Also assigns an autogenerated name to previously unnamed variables.  Returns a Names object in the empty context that can then be used to build up a new one including those variables.  Since those variables have already been uniquified, they should be added in with unsafe_add.  (TODO: Can we avoid having to expose unsafe_add?) *)
 let uniquify_vars : type a.
-    (string option, a) Bwv.t -> (string * [ `Original | `Renamed ], a) Bwv.t * emp t =
+    (string option, a) Bwv.t -> (string * [ `Original | `Renamed ], a) Bwv.t * uniquified_vars =
  fun vars ->
   (* First we collect a map of all the visible names, also marking the given names as visible or shadowed. *)
   let vars, used = used_vars vars StringSet.empty in
@@ -227,6 +280,6 @@ let uniquify_vars : type a.
         let vars, used = go vars used in
         (Snoc (vars, (Option.get x, orig)), used) in
   let vars, used = go vars used in
-  (vars, { ctx = Emp; used })
+  (vars, used)
 
-type named_term = Named : 'a t * ('a, kinetic) term -> named_term
+type _ named_term = Named : 'a t * ('mode, 'a, kinetic) term -> 'mode named_term

@@ -2,23 +2,31 @@ open Util
 open Tbwd
 open Dim
 open Core
+open Tctx
 open Term
 
 type 'n t
 type wrapped = Wrap : 'n t -> wrapped
 
-val empty : emp t
-val remove : 'b t -> ('a, 'n, 'b) Tbwd.insert -> 'a t
-val lookup : 'n t -> 'n index -> string list
-val lookup_field : 'n t -> 'n index -> string -> string list option
-val add_cube : 'n D.t -> 'b t -> string option -> string option * ('b, 'n) snoc t
-val add : 'b t -> 'n variables -> 'n variables * ('b, 'n) snoc t
-val add_full : 'b t -> 'mn variables -> 'mn variables * ('b, 'mn) snoc t
-val of_ctx : ('a, 'b) Ctx.t -> 'b t
+val empty : 'mode emp t
+val remove : 'b t -> ('a, 'modality, 'n, 'b) insert -> 'a t
+val split : 'ab t -> ('x, 'b, 'y, 'a, 'z, 'ab) Tctx.comp -> 'a t
+val lookup : 'n t -> ('mode, 'n) index -> string list
+val lookup_field : 'n t -> ('mode, 'n) index -> string -> string list option
+val add_cube : 'n D.t -> 'b t -> string option -> string option * ('b, ('m, 'n) dim_entry) snoc t
+val add : 'b t -> 'n variables -> 'n variables * ('b, ('m, 'n) dim_entry) snoc t
+val add_full : 'b t -> 'mn variables -> 'mn variables * ('b, ('modality, 'mn) dim_entry) snoc t
+val add_lock : 'a t -> ('a, 'mode, 'modality, 'dom, 'am) plus_lock -> 'am t
+val of_ctx : ('mode, 'a, 'b) Ctx.t -> 'b t
+
+type uniquified_vars
+
+val of_uniquified_vars : uniquified_vars -> 'mode emp t
 
 val uniquify_vars :
-  (string option, 'a) Bwv.t -> (string * [ `Original | `Renamed ], 'a) Bwv.t * emp t
+  (string option, 'a) Bwv.t -> (string * [ `Original | `Renamed ], 'a) Bwv.t * uniquified_vars
 
-val unsafe_add : 'b t -> 'n variables -> (string, string) Abwd.t -> ('b, 'n) snoc t
+val unsafe_add :
+  'b t -> 'n variables -> (string, string) Abwd.t -> ('b, ('modality, 'n) dim_entry) snoc t
 
-type named_term = Named : 'a t * ('a, kinetic) term -> named_term
+type _ named_term = Named : 'a t * ('mode, 'a, kinetic) term -> 'mode named_term

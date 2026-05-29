@@ -3,7 +3,6 @@ open Core.Reporter
 open Core.Origin
 open Fmlib_parse
 open Notation
-module TokMap = Map.Make (Token)
 
 (* Sometimes we want to parse only a single term, other times we want to parse and execute a sequence of commands.  Since these two processes return different results, they have to be based on different instances of Token_parser.Make.  But they share all the code of the combinators for parsing terms, so we make those instances of a functor as well. *)
 
@@ -100,9 +99,9 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
         tree optree (Observations.snoc_sstok obs ((tok, (w, Some loc)), sups))
 
   and entry : type tight strict.
-      (tight, strict) tokmap -> (observations * (tight, strict) notation_in_interval) t =
-   fun ops ->
-    let* obs, op = tree_op ops Observations.empty in
+      (tight, strict) entry -> (observations * (tight, strict) notation_in_interval) t =
+   fun e ->
+    let* obs, op = tree_op e Observations.empty in
     return (Observations.of_partial obs, op)
 
   (* "lclosed" is passed an upper tightness interval and an additional set of ending ops (stored as a map, since that's how they occur naturally, but here we ignore the values and look only at the keys).  It parses an arbitrary left-closed tree (pre-merged).  The interior terms are calls to "lclosed" with the next ops passed as the ending ones. *)

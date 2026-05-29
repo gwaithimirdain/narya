@@ -229,26 +229,40 @@ type _ processed_tel =
       ('n, 'k, 'nk) Raw.tel * (string option, 'nk) Bwv.t * (Whitespace.t list, 'k) Vec.t
       -> 'n processed_tel
 
+let locate_modality : 'a Asai.Range.located list -> 'a located list located =
+ fun modality ->
+  let rec last = function
+    | [] -> None
+    | [ x ] -> Some x
+    | _ :: xs -> last xs in
+  match last modality with
+  | None -> locate_opt None []
+  | Some l -> locate_opt (Range.merge_opt (List.hd modality).loc l.loc) modality
+
 let rec process_tel : type n. (string option, n) Bwv.t -> Parameter.t list -> n processed_tel =
  fun ctx parameters ->
   match parameters with
   | [] -> Processed_tel (Emp, ctx, [])
-  | { names; ty; _ } :: parameters -> process_vars ctx names ty parameters
+  | { names; modality; ty; _ } :: parameters ->
+      process_vars ctx names
+        (locate_modality (List.map (fun x -> locate_opt x.loc (fst x.value)) modality))
+        ty parameters
 
 and process_vars : type n.
     (string option, n) Bwv.t ->
     (string option * Whitespace.t list) list ->
+    string located list located ->
     wrapped_parse ->
     Parameter.t list ->
     n processed_tel =
- fun ctx names (Wrap ty) parameters ->
+ fun ctx names modality (Wrap ty) parameters ->
   match names with
   | [] -> process_tel ctx parameters
   | (name, w) :: names ->
       let pty = process ctx ty in
       let (Processed_tel (tel, ctx, ws)) =
-        process_vars (Bwv.snoc ctx name) names (Wrap ty) parameters in
-      Processed_tel (Ext (name, pty, tel), ctx, w :: ws)
+        process_vars (Bwv.snoc ctx name) names modality (Wrap ty) parameters in
+      Processed_tel (Ext (name, modality, pty, tel), ctx, w :: ws)
 
 let get_pattern : type lt1 ls1 rt1 rs1. (lt1, ls1, rt1, rs1) parse located -> Matchpattern.t =
  fun pat ->

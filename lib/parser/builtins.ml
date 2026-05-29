@@ -57,31 +57,9 @@ let () =
 
 type (_, _, _) identity += UU : 'mode Mode.t -> (closed, No.plus_omega, closed) identity
 
-let universes : (string * Mode.wrapped * (closed, No.plus_omega, closed) notation) list =
-  List.map
-    (fun (name, Mode.Wrap mode) ->
-      let universe = (UU mode, Outfix) in
-      make universe
-        {
-          name = "universe";
-          tree = Closed_entry (eop (Ident [ "Type" ]) (Done_closed universe));
-          processor =
-            (fun _ obs loc ->
-              match obs with
-              | [ Token (Ident [ uname ], _) ] when uname = name -> { value = Synth (UU mode); loc }
-              | _ -> invalid ?loc "universe");
-          pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "universe"));
-          (* Universes are never part of case trees. *)
-          print_term =
-            Some
-              (function
-              | [ Token (Ident [ "Type" ], (wstype, _)) ] -> (string "Type", wstype)
-              | _ -> invalid "universe");
-          print_case = None;
-          is_case = (fun _ -> false);
-        };
-      (name, Mode.Wrap mode, universe))
-    (Mode.all ())
+(* We don't define the universes yet since we have to wait for all the modes to be created at run-time. *)
+
+let universes : (string * Mode.wrapped * (closed, No.plus_omega, closed) notation) list ref = ref []
 
 (* ********************
    Ascription
@@ -127,9 +105,10 @@ let () =
  ******************** *)
 
 (* Get a modality as a sequence of identifiers, with their locations. *)
-let get_modality : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string located list located =
- fun m ->
-  let rec go : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string located Bwd.t =
+let get_modality : type lt ls rt rs a.
+    (string * Whitespace.t list -> a) -> (lt, ls, rt, rs) parse located -> a located list located =
+ fun f m ->
+  let rec go : type lt ls rt rs. (lt, ls, rt, rs) parse located -> a located Bwd.t =
    fun { value; loc } ->
     with_loc loc @@ fun () ->
     match value with
@@ -137,19 +116,20 @@ let get_modality : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string lo
         with_loc arg.loc @@ fun () ->
         let x =
           match arg.value with
-          | Ident ([ x ], _) -> x
+          | Ident ([ x ], wsx) -> (x, wsx)
           | _ -> fatal (Parse_error "invalid modality") in
-        Snoc (go fn, locate_opt arg.loc x)
-    | Ident ([ x ], _) -> Snoc (Emp, locate_opt loc x)
+        Snoc (go fn, locate_opt arg.loc (f x))
+    | Ident ([ x ], wsx) -> Snoc (Emp, locate_opt loc (f (x, wsx)))
     | _ -> fatal (Parse_error "invalid modality") in
   locate_modality (Bwd.to_list (go m))
 
-let pp_modality = function
+let pp_modality =
+ fun f -> function
   | [] -> empty
-  | [ (m : _ located) ] -> utf8string m.value ^^ Token.pp (Op "|")
+  | [ (m : _ located) ] -> utf8string (f m.value) ^^ Token.pp (Op "|")
   | ms ->
       break 1
-      ^^ separate_map (break 1) (fun (x : _ located) -> utf8string x.value) ms
+      ^^ separate_map (break 1) (fun (x : _ located) -> utf8string (f x.value)) ms
       ^^ break 1
       ^^ Token.pp (Op "|")
 
@@ -239,7 +219,7 @@ let () =
                                  ^^ Token.pp Colon
                                  (* TODO: Whether to put spaces around the modality should depend on whether it's a single generator or multiple. *)
                                  ^^ pp_ws `Nobreak wscolon
-                                 ^^ pp_modality (get_modality modality).value
+                                 ^^ pp_modality Fun.id (get_modality fst modality).value
                                  ^^ Token.pp (Op "|")
                                  ^^ pp_ws `Nobreak wsbar
                                  ^^ pty))
@@ -325,7 +305,7 @@ let get_var_asc_implicit : type lt ls rt rs.
             | LParen, RParen -> `Explicit
             | LBrace, RBrace -> `Implicit
             | _ -> invalid "delimiters" in
-          let modality = get_modality modality in
+          let modality = get_modality fst modality in
           ((Bwd.to_list (get_var_list x), modality, Some (Wrap ty)), implicit)
       | _ -> invalid "ascvar")
   | Notn ((Braces, _), n) -> (
@@ -480,7 +460,7 @@ let process_let : type n.
       let ty = process ctx ty in
       let tm = process ctx tm in
       let body = process (Bwv.snoc ctx x) body in
-      let modality = get_modality modality in
+      let modality = get_modality fst modality in
       let v : n synth located = { value = Asc (tm, ty); loc = Range.merge_opt ty.loc tm.loc } in
       { value = Synth (Let (x, modality, v, body)); loc }
   | _ -> invalid "let"
@@ -870,8 +850,8 @@ let get_pi_args : type lt ls rt rs.
         | _ -> invalid "asclam delimiters" in
       Dep { wsarrow; vars; tok; modality; ty; wslparen; wscolon; wsbar; wsrparen; loc; implicit }
     in
-    let of_notn : type l t r. (l, t, r) identity -> _ -> _ =
-     fun ident n ->
+    let of_notn : type l t r. arrow_opt -> (l, t, r) identity -> _ -> _ =
+     fun wsarrow ident n ->
       match ident with
       | AscVar -> (
           match args n with
@@ -897,8 +877,8 @@ let get_pi_args : type lt ls rt rs.
           ] ->
               let* vars = process_var_list xs [] in
               return
-                (make_dep wsarrow vars tok ldelim wslparen wscolon ~modality:(get_modality modality)
-                   ~wsbar (Wrap ty) rdelim wsrparen
+                (make_dep wsarrow vars tok ldelim wslparen wscolon
+                   ~modality:(get_modality fst modality) ~wsbar (Wrap ty) rdelim wsrparen
                 :: accum)
           | _ -> None)
       (* TODO: This might be unreachable: I think AscVar should be trapping everything. *)
@@ -919,9 +899,9 @@ let get_pi_args : type lt ls rt rs.
           | _ -> None)
       | _ -> None in
     match value with
-    | Notn ((ident, _), n) -> of_notn ident n
+    | Notn ((ident, _), n) -> of_notn wsarrow ident n
     | App { fn; arg = { value = Notn ((ident, _), n); _ }; _ } ->
-        let* res = of_notn ident n in
+        let* res = of_notn `Noarrow ident n in
         go fn res
     | _ -> None in
   match go doms accum with
@@ -1100,7 +1080,7 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
                     ^^ optional (pp_ws `Break) wvars
                     ^^ Token.pp Colon
                     ^^ pp_ws `Nobreak wscolon
-                    ^^ pp_modality modality.value
+                    ^^ pp_modality Fun.id modality.value
                     ^^ pp_ws `Nobreak wsbar
                     ^^ pty
                     ^^ pp_ws `None wty
@@ -2534,7 +2514,7 @@ let rec constr_tel :
       ] -> (
           match process_var_list xs [] with
           | Some vars ->
-              constr_tel (Term fn) ((List.map fst vars, get_modality modality, Wrap ty) :: accum)
+              constr_tel (Term fn) ((List.map fst vars, get_modality fst modality, Wrap ty) :: accum)
           | None -> fatal (Parse_error "invalid constructor argument variables"))
       | _ -> invalid "tel")
   | _ -> fatal (Parse_error "invalid constructor")
@@ -2779,6 +2759,32 @@ let () =
  ******************** *)
 
 let install () =
+  universes :=
+    List.map
+      (fun (name, Mode.Wrap mode) ->
+        let universe = (UU mode, Outfix) in
+        make universe
+          {
+            name = "universe";
+            tree = Closed_entry (eop (Ident [ "Type" ]) (Done_closed universe));
+            processor =
+              (fun _ obs loc ->
+                match obs with
+                | [ Token (Ident [ uname ], _) ] when uname = name ->
+                    { value = Synth (UU mode); loc }
+                | _ -> invalid ?loc "universe");
+            pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "universe"));
+            (* Universes are never part of case trees. *)
+            print_term =
+              Some
+                (function
+                | [ Token (Ident [ "Type" ], (wstype, _)) ] -> (string "Type", wstype)
+                | _ -> invalid "universe");
+            print_case = None;
+            is_case = (fun _ -> false);
+          };
+        (name, Mode.Wrap mode, universe))
+      (Mode.all ());
   Scope.(
     Situation.add Postprocess.parens;
     Situation.add Postprocess.braces;
@@ -2789,7 +2795,7 @@ let install () =
     Situation.add cubeabs;
     Situation.add arrow;
     Situation.add dblarrow;
-    List.iter (fun (_, _, u) -> Situation.add u) universes;
+    List.iter (fun (_, _, u) -> Situation.add u) !universes;
     Situation.add coloneq;
     Situation.add comatch;
     Situation.add Postprocess.dot;
