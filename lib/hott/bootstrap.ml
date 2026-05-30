@@ -43,10 +43,9 @@ let get name =
   | Some const -> const
   | None -> fatal (Anomaly (String.concat "." name ^ " not in scope"))
 
-(* MODALTODO: We need to do all of this separately for each mode. *)
+(* MODALTODO: We need to do all of this separately for each mode, and in the case of pi-types separately for each modality.  At present, choosing the trivial mode theory here means that we at least get correct fibrancy behavior for any unimodal theory and non-modal pi-types. *)
 
 let () =
-  (* MODALTODO: Deal with other modalities *)
   Modal.Trivial.install ();
 
   (* Wrap everything in the standard effect handlers *)
