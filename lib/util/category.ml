@@ -111,6 +111,42 @@ module type Category = sig
     ('a, 'm, 'b, 'np, 'd, 'mnp) comp
 end
 
+(* A Quivermap whose domain and codomain are categories, that preserves identities and composition.  This is a functor in the category-theoretic sense. *)
+
+module type Functor = sig
+  module Dom : Category
+  module Cod : Category
+  include Quivermap with module Dom := Dom and module Cod := Cod
+
+  (* The functor preserves identities. *)
+  val id : ('a, 'x) Obj.t -> ('a, 'a Dom.id, 'a, 'x, 'x Cod.id, 'x) t
+
+  (* The functor preserves composition: given the images of two composable morphisms in Dom and evidence that they compose, we get the image of the composite together with evidence that the images compose in Cod. *)
+
+  type (_, _, _, _, _, _, _, _) comp =
+    | Comp :
+        ('a, 'p, 'c, 'x, 'n3, 'z) t * ('x, 'n2, 'y, 'n1, 'z, 'n3) Cod.comp
+        -> ('a, 'p, 'c, 'x, 'n2, 'y, 'n1, 'z) comp
+
+  val comp :
+    ('a, 'm, 'b, 'x, 'n2, 'y) t ->
+    ('b, 'n, 'c, 'y, 'n1, 'z) t ->
+    ('a, 'm, 'b, 'n, 'c, 'p) Dom.comp ->
+    ('a, 'p, 'c, 'x, 'n2, 'y, 'n1, 'z) comp
+
+  (* Conversely, the image of a composite morphism factors through images of the factors. *)
+
+  type (_, _, _, _, _, _, _, _) uncomp =
+    | Uncomp :
+        ('b, 'n, 'c, 'y, 'r, 'z) t * ('a, 'm, 'b, 'x, 'q, 'y) t * ('x, 'q, 'y, 'r, 'z, 'rq) Cod.comp
+        -> ('a, 'm, 'b, 'n, 'c, 'x, 'rq, 'z) uncomp
+
+  val uncomp :
+    ('a, 'm, 'b, 'n, 'c, 'nm) Dom.comp ->
+    ('a, 'nm, 'c, 'x, 'rq, 'z) t ->
+    ('a, 'm, 'b, 'n, 'c, 'x, 'rq, 'z) uncomp
+end
+
 module OneObject (M : Monoid) = struct
   module Obj = Unitcomparable
 

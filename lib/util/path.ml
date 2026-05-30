@@ -419,7 +419,7 @@ module HomCheck
     (Q : Quiver)
     (Cod : Category)
     (F : Quivermap with module Dom = Q and module Cod = Cod) :
-  Quivermap with module Dom = Make(Q) and module Cod = Cod =
+  Functor with module Dom = Make(Q) and module Cod = Cod =
   Hom (Q) (Cod) (F)
 
 (* Parametrized families of functors *)
