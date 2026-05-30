@@ -291,8 +291,11 @@ let of_name_src : type a s.
     (a tgt_wrapped, [ `Not_found of s | `Wrong_src of Mode.wrapped * s * Mode.wrapped ]) result =
  fun get_string cs mode -> of_name_src_bwd get_string (Bwd.of_list cs) mode
 
-(* To be used for debugging only *)
-let to_string : type a m b. (a, m, b) t -> string = fun m -> String.concat "" (name m)
+let to_string : type a m b. (a, m, b) t -> string =
+ fun m ->
+  match name m with
+  | [] -> "id"
+  | ms -> String.concat " " ms
 
 (* *)
 let compare_name : type x m y s.
