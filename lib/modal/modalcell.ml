@@ -2,10 +2,9 @@ open Util
 
 type (_, _, _, _) t = ..
 
-type (_, _, _, _, _, _) find_unique =
-  | Unique : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'b, 'a, 'n, 'b) find_unique
-
 module type Theory = sig
+  type ('a, 'm, 'n, 'b) t
+
   val hsrc : ('a, 'm, 'n, 'b) t -> 'a Mode.t
   val htgt : ('a, 'm, 'n, 'b) t -> 'b Mode.t
   val vsrc : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'b) Modality.t
@@ -26,16 +25,13 @@ module type Theory = sig
     ('a, 'mr, 'ns, 'c) t
 
   val vcomp : ('a, 'n, 'r, 'b) t -> ('a, 'm, 'n, 'b) t -> ('a, 'm, 'r, 'b) t
-
-  val find_unique :
-    ('a, 'm, 'b) Modality.t ->
-    ('c, 'n, 'd) Modality.t ->
-    ('a, 'm, 'b, 'c, 'n, 'd) find_unique option
-
+  val find_unique : ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) t option
   val to_string : ('a, 'm, 'n, 'b) t -> string
 end
 
-let theory : (module Theory) ref =
+module type Internal_theory = Theory with type ('a, 'm, 'n, 'b) t := ('a, 'm, 'n, 'b) t
+
+let theory : (module Internal_theory) ref =
   ref
     (module struct
       let hsrc _ = failwith "Modalcell.theory not set"
@@ -48,9 +44,55 @@ let theory : (module Theory) ref =
       let vcomp _ _ = failwith "Modalcell.theory not set"
       let find_unique _ _ = failwith "Modalcell.theory not set"
       let to_string _ = failwith "Modalcell.theory not set"
-    end : Theory)
+    end : Internal_theory)
 
-let set_theory t = theory := t
+let set_theory ((module T) : (module Theory)) =
+  theory :=
+    (module struct
+      type ('a, 'm, 'n, 'b) t += U of ('a, 'm, 'n, 'b) T.t
+
+      let hsrc = function
+        | U a -> T.hsrc a
+        | _ -> failwith "Modalcell: unknown constructor"
+
+      let htgt = function
+        | U a -> T.htgt a
+        | _ -> failwith "Modalcell: unknown constructor"
+
+      let vsrc = function
+        | U a -> T.vsrc a
+        | _ -> failwith "Modalcell: unknown constructor"
+
+      let vtgt = function
+        | U a -> T.vtgt a
+        | _ -> failwith "Modalcell: unknown constructor"
+
+      let compare a b =
+        match (a, b) with
+        | U a, U b -> T.compare a b
+        | _ -> failwith "Modalcell: unknown constructor"
+
+      let id m = U (T.id m)
+
+      let hcomp mn rs a b =
+        match (a, b) with
+        | U a, U b -> U (T.hcomp mn rs a b)
+        | _ -> failwith "Modalcell: unknown constructor"
+
+      let vcomp a b =
+        match (a, b) with
+        | U a, U b -> U (T.vcomp a b)
+        | _ -> failwith "Modalcell: unknown constructor"
+
+      let find_unique m n =
+        match T.find_unique m n with
+        | Some a -> Some (U a)
+        | None -> None
+
+      let to_string = function
+        | U a -> T.to_string a
+        | _ -> failwith "Modalcell: unknown constructor"
+    end : Internal_theory)
 
 type (_, _) wrapped = Wrap : ('a, 'm, 'n, 'b) t -> ('a, 'b) wrapped
 type (_, _, _) cod_wrapped = Wrap : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'b) cod_wrapped
@@ -158,11 +200,21 @@ let vcomp_extending : type a m k kn b n s c.
   let kx = postwhisker compn comps k x in
   Wrap (vcomp kx y)
 
-let find_unique : type a m b c n d.
+type (_, _, _, _, _, _) find_unique =
+  | Unique : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'b, 'a, 'n, 'b) find_unique
+
+let find_unique : type a m n b c d.
     (a, m, b) Modality.t -> (c, n, d) Modality.t -> (a, m, b, c, n, d) find_unique option =
  fun m n ->
   let module T = (val !theory) in
-  T.find_unique m n
+  match
+    (Mode.compare (Modality.src m) (Modality.src n), Mode.compare (Modality.tgt m) (Modality.tgt n))
+  with
+  | Eq, Eq -> (
+      match T.find_unique m n with
+      | Some a -> Some (Unique a)
+      | None -> None)
+  | _ -> None
 
 let to_string : type a m n b. (a, m, n, b) t -> string =
  fun m ->

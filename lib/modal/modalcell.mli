@@ -1,11 +1,10 @@
 open Util
 
-type (_, _, _, _) t = ..
-
-type (_, _, _, _, _, _) find_unique =
-  | Unique : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'b, 'a, 'n, 'b) find_unique
+type (_, _, _, _) t
 
 module type Theory = sig
+  type ('a, 'm, 'n, 'b) t
+
   val hsrc : ('a, 'm, 'n, 'b) t -> 'a Mode.t
   val htgt : ('a, 'm, 'n, 'b) t -> 'b Mode.t
   val vsrc : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'b) Modality.t
@@ -26,16 +25,14 @@ module type Theory = sig
     ('a, 'mr, 'ns, 'c) t
 
   val vcomp : ('a, 'n, 'r, 'b) t -> ('a, 'm, 'n, 'b) t -> ('a, 'm, 'r, 'b) t
-
-  val find_unique :
-    ('a, 'm, 'b) Modality.t ->
-    ('c, 'n, 'd) Modality.t ->
-    ('a, 'm, 'b, 'c, 'n, 'd) find_unique option
-
+  val find_unique : ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) t option
   val to_string : ('a, 'm, 'n, 'b) t -> string
 end
 
 val set_theory : (module Theory) -> unit
+
+type (_, _, _, _, _, _) find_unique =
+  | Unique : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'b, 'a, 'n, 'b) find_unique
 
 val find_unique :
   ('a, 'm, 'b) Modality.t -> ('c, 'n, 'd) Modality.t -> ('a, 'm, 'b, 'c, 'n, 'd) find_unique option
