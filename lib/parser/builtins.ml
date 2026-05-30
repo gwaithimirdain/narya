@@ -124,12 +124,13 @@ let get_modality : type lt ls rt rs a.
   locate_modality (Bwd.to_list (go m))
 
 let pp_modality =
- fun f m wsbar ->
+ fun wscolon f m wsbar ->
   match m with
-  | [] -> pp_ws `None wsbar
-  | [ (m : _ located) ] -> utf8string (f m.value) ^^ Token.pp (Op "|") ^^ pp_ws `Nobreak wsbar
+  | [] -> pp_ws `Nobreak wscolon ^^ pp_ws `None wsbar
+  | [ (m : _ located) ] ->
+      pp_ws `None wscolon ^^ utf8string (f m.value) ^^ Token.pp (Op "|") ^^ pp_ws `Nobreak wsbar
   | ms ->
-      break 1
+      pp_ws `Nobreak wscolon
       ^^ separate_map (break 1) (fun (x : _ located) -> utf8string (f x.value)) ms
       ^^ break 1
       ^^ Token.pp (Op "|")
@@ -220,8 +221,7 @@ let () =
                                  (ptm
                                  ^^ pp_ws `Break wtm
                                  ^^ Token.pp Colon
-                                 ^^ pp_ws `Nobreak wscolon
-                                 ^^ pp_modality Fun.id m wsbar
+                                 ^^ pp_modality wscolon Fun.id m wsbar
                                  ^^ pty))
                          ^^ pp_ws `None wty
                          ^^ Token.pp rdelim)),
@@ -1041,8 +1041,7 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
                     ^^ hang 2 pvars
                     ^^ optional (pp_ws `Break) wvars
                     ^^ Token.pp Colon
-                    ^^ pp_ws `Nobreak wscolon
-                    ^^ pp_modality Fun.id modality.value wsbar
+                    ^^ pp_modality wscolon Fun.id modality.value wsbar
                     ^^ pty
                     ^^ pp_ws `None wty
                     ^^ Token.pp (if implicit = `Implicit then RBrace else RParen)),
