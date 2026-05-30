@@ -814,7 +814,7 @@ and unparse_pis : type mode a lt ls rt rs.
                              (NICubeOf.find_top x <|> Anomaly "missing top in unparse_pis")
                              (Modality.name modality)
                              (unparse (Names.add_lock vars plus) (CubeOf.find_top doms)
-                                (interval_right asc) No.Interval.entire));
+                                No.Interval.entire No.Interval.entire));
                      } ))
                 (cod_top cods) li ri)
       | _ ->
@@ -879,7 +879,7 @@ and unparse_pi_dom : type lt ls rt rs.
     ?implicit:bool ->
     string ->
     string list ->
-    (No.minus_omega, No.strict, No.minus_omega, No.nonstrict) parse located ->
+    (No.minus_omega, No.nonstrict, No.minus_omega, No.nonstrict) parse located ->
     (lt, ls, rt, rs) parse located =
  fun ?(implicit = false) x modality dom ->
   let ldelim, rdelim = if implicit then (Token.LBrace, Token.RBrace) else (LParen, RParen) in
@@ -937,7 +937,7 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs n.
             let dom =
               unparse_inst
                 (Names.add_lock (Names.remove newvars Now) plus)
-                dom lockedvars xargs (interval_right asc) No.Interval.entire in
+                dom lockedvars xargs No.Interval.entire No.Interval.entire in
             let m = Modality.name modality in
             ((), Snoc (accum, { unparse = (fun _ _ -> unparse_pi_dom ~implicit x m dom) })));
       }

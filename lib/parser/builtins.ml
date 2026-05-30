@@ -310,31 +310,9 @@ let get_var_asc_implicit : type lt ls rt rs.
       | _ -> invalid "ascvar")
   | Notn ((Braces, _), n) -> (
       match args n with
-      | [ Token (LBrace, _); Term v; Token (RBrace, _) ] -> (
-          match v.value with
-          | Notn ((Asc, _), n) -> (
-              (* TODO: This might be unreachable: I think AscVar should be trapping it. *)
-              match args n with
-              | [ Term x; Token (Colon, _); Term ty ] ->
-                  ((Bwd.to_list (get_var_list x), locate_opt None [], Some (Wrap ty)), `Implicit)
-              | _ -> invalid ?loc:v.loc "colon")
-          (* A single variable in braces is allowed, and is not caught by AscVar. *)
-          | _ -> (([ get_var v ], locate_opt None [], None), `Implicit))
+      | [ Token (LBrace, _); Term v; Token (RBrace, _) ] ->
+          (([ get_var v ], locate_opt None [], None), `Implicit)
       | _ -> fatal ?loc:v.loc (Parse_error "invalid implicit variable"))
-  | Notn ((Parens, _), n) -> (
-      (* TODO: This might be unreachable: I think AscVar should be trapping it. *)
-      match args n with
-      | [ Token (LParen, _); Term v; Token (RParen, _) ] -> (
-          match v.value with
-          | Notn ((Asc, _), n) -> (
-              match args n with
-              | [ Term x; Token (Colon, _); Term ty ] ->
-                  ((Bwd.to_list (get_var_list x), locate_opt None [], Some (Wrap ty)), `Explicit)
-              | _ -> invalid ?loc:v.loc "colon")
-          | _ -> fatal ?loc:v.loc (Parse_error "ascribed variable required"))
-      | _ ->
-          (* This isn't the bug "invalid", since the user could have (mistakenly) written a tuple. *)
-          fatal ?loc:v.loc (Parse_error "invalid explicit variable"))
   | _ -> (([ get_var v ], locate_opt None [], None), `Explicit)
 
 (* Get a sequence of variables, as in the domain of an abstraction, some possibly enclosed in braces to mean they are implicit. *)
@@ -880,22 +858,6 @@ let get_pi_args : type lt ls rt rs.
                 (make_dep wsarrow vars tok ldelim wslparen wscolon
                    ~modality:(get_modality fst modality) ~wsbar (Wrap ty) rdelim wsrparen
                 :: accum)
-          | _ -> None)
-      (* TODO: This might be unreachable: I think AscVar should be trapping everything. *)
-      | Parens | Braces -> (
-          match args n with
-          | [
-           Token (ldelim, (wslparen, _));
-           Term { value = Notn ((Asc, _), n); _ };
-           Token (rdelim, (wsrparen, _));
-          ] -> (
-              match args n with
-              | [ Term xs; Token (Colon, (wscolon, _)); Term ty ] ->
-                  let* vars = process_var_list xs [] in
-                  return
-                    (make_dep wsarrow vars tok ldelim wslparen wscolon (Wrap ty) rdelim wsrparen
-                    :: accum)
-              | _ -> None)
           | _ -> None)
       | _ -> None in
     match value with
@@ -2482,7 +2444,15 @@ let rec data_constrs bar_ok =
            oflist [ (Op "|", Lazy (lazy (data_constrs false))); (RBracket, Done_closed data) ]
          else TokMap.empty);
       term =
-        Some (oflist [ (Op "|", Lazy (lazy (data_constrs false))); (RBracket, Done_closed data) ]);
+        Some
+          (oflist
+             [
+               (Op "|", Lazy (lazy (data_constrs false)));
+               (RBracket, Done_closed data);
+               ( Colon,
+                 terms [ (Op "|", Lazy (lazy (data_constrs false))); (RBracket, Done_closed data) ]
+               );
+             ]);
     }
 
 (* Extract all the typed arguments of a constructor given before its colon. *)
@@ -2558,16 +2528,13 @@ let rec process_data : type n.
   match obs with
   (* Found all the constructors, done *)
   | [ Token (RBracket, _) ] -> { value = Raw.Data constrs; loc }
-  (* Found the next constructor *)
+  (* Found the next constructor. *)
   | Token (Op "|", _) :: Term tel :: obs -> (
       (* The constructor might have an explicit type given by a colon. *)
-      let Wrap tel, ty =
-        match tel with
-        | { value = Notn ((Asc, _), n); loc = _ } -> (
-            match args n with
-            | [ Term tel; Token (Colon, _); Term ty ] -> (Wrap tel, Some (Wrap ty))
-            | _ -> invalid "data")
-        | _ -> (Wrap tel, None) in
+      let ty, obs =
+        match obs with
+        | Token (Colon, _) :: Term ty :: obs -> (Some (Wrap ty), obs)
+        | _ -> (None, obs) in
       let c, tel_args = constr_tel (Term tel) [] in
       match Abwd.find_opt c.value constrs with
       | Some _ -> fatal ?loc:c.loc (Duplicate_constructor_in_data c.value)
@@ -2584,6 +2551,20 @@ let rec pp_data_constrs first prews accum obs =
       (accum ^^ optional (pp_ws `Nobreak) prews ^^ Token.pp RBracket, wsrbrack)
   | Token (Op "|", (wsbar, _)) :: Term constr :: obs ->
       let pconstr, wconstr = pp_term constr in
+      let pconstr, wconstr, obs =
+        match obs with
+        | Token (Colon, (wscolon, _)) :: Term ty :: obs ->
+            let pty, wty = pp_term ty in
+            ( align
+                (group
+                   (pconstr
+                   ^^ pp_ws `Break wconstr
+                   ^^ Token.pp Colon
+                   ^^ pp_ws `Nobreak wscolon
+                   ^^ pty)),
+              wty,
+              obs )
+        | _ -> (pconstr, wconstr, obs) in
       pp_data_constrs false (Some wconstr)
         (accum
         ^^ optional (pp_ws `Break) prews
