@@ -240,6 +240,7 @@ let rec interact_pg () : unit =
 
 let () =
   try
+    Modal.Trivial.install ();
     run_top ~install_hott:Hott.install @@ fun () ->
     (* Note: run_top executes the input files, so here we only have to do the interaction. *)
     Mbwd.miter
