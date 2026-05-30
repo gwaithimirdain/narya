@@ -353,7 +353,7 @@
    ￫ error[E0200]
    ￭ command-line exec string
    1 | echo ((f x) y ↦ z)
-     ^ parse error: ascribed variable required
+     ^ parse error: invalid variable
   
   [1]
   $ narya -parametric errors.ny -e "echo _"
