@@ -124,14 +124,16 @@ let get_modality : type lt ls rt rs a.
   locate_modality (Bwd.to_list (go m))
 
 let pp_modality =
- fun f -> function
-  | [] -> empty
-  | [ (m : _ located) ] -> utf8string (f m.value) ^^ Token.pp (Op "|")
+ fun f m wsbar ->
+  match m with
+  | [] -> pp_ws `None wsbar
+  | [ (m : _ located) ] -> utf8string (f m.value) ^^ Token.pp (Op "|") ^^ pp_ws `Nobreak wsbar
   | ms ->
       break 1
       ^^ separate_map (break 1) (fun (x : _ located) -> utf8string (f x.value)) ms
       ^^ break 1
       ^^ Token.pp (Op "|")
+      ^^ pp_ws `Nobreak wsbar
 
 (* ********************
    Ascribed variables
@@ -208,6 +210,7 @@ let () =
             ] ->
                 let ptm, wtm = pp_term tm in
                 let pty, wty = pp_term ty in
+                let m = (get_modality fst modality).value in
                 ( group
                     (Token.pp ldelim
                     ^^ align
@@ -217,11 +220,8 @@ let () =
                                  (ptm
                                  ^^ pp_ws `Break wtm
                                  ^^ Token.pp Colon
-                                 (* TODO: Whether to put spaces around the modality should depend on whether it's a single generator or multiple. *)
                                  ^^ pp_ws `Nobreak wscolon
-                                 ^^ pp_modality Fun.id (get_modality fst modality).value
-                                 ^^ Token.pp (Op "|")
-                                 ^^ pp_ws `Nobreak wsbar
+                                 ^^ pp_modality Fun.id m wsbar
                                  ^^ pty))
                          ^^ pp_ws `None wty
                          ^^ Token.pp rdelim)),
@@ -1080,8 +1080,7 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
                     ^^ optional (pp_ws `Break) wvars
                     ^^ Token.pp Colon
                     ^^ pp_ws `Nobreak wscolon
-                    ^^ pp_modality Fun.id modality.value
-                    ^^ pp_ws `Nobreak wsbar
+                    ^^ pp_modality Fun.id modality.value wsbar
                     ^^ pty
                     ^^ pp_ws `None wty
                     ^^ Token.pp (if implicit = `Implicit then RBrace else RParen)),
@@ -2791,6 +2790,7 @@ let install () =
     Situation.add letin;
     Situation.add letrec;
     Situation.add asc;
+    Situation.add ascvar;
     Situation.add abs;
     Situation.add cubeabs;
     Situation.add arrow;

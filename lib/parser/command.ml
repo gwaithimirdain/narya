@@ -1339,8 +1339,7 @@ let rec pp_parameters : Whitespace.t list -> Parameter.t list -> PPrint.document
                ^^ optional (pp_ws `Break) wnames)
           ^^ Token.pp Colon
           ^^ pp_ws `Nobreak wscolon
-          ^^ Builtins.pp_modality fst modality
-          ^^ pp_ws `Nobreak wsbar
+          ^^ Builtins.pp_modality fst modality wsbar
           ^^ pp_complete_term ty `None
           ^^ Token.pp RParen)
         ^^ pparams,
