@@ -1,35 +1,38 @@
 open Util
 
-type (_, _, _, _) t
+type ('a, 'm, 'n, 'b) gen
 
-module type Theory = sig
-  type ('a, 'm, 'n, 'b) t
-
-  val hsrc : ('a, 'm, 'n, 'b) t -> 'a Mode.t
-  val htgt : ('a, 'm, 'n, 'b) t -> 'b Mode.t
-  val vsrc : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'b) Modality.t
-  val vtgt : ('a, 'm, 'n, 'b) t -> ('a, 'n, 'b) Modality.t
+module Gen : sig
+  type ('a, 'm, 'n, 'b) t = ('a, 'm, 'n, 'b) gen
 
   val compare :
     ('dom1, 'mu1, 'nu1, 'cod1) t ->
     ('dom2, 'mu2, 'nu2, 'cod2) t ->
     ('dom1 * 'mu1 * 'nu1 * 'cod1, 'dom2 * 'mu2 * 'nu2 * 'cod2) Eq.compare
+end
 
-  val id : ('dom, 'modality, 'cod) Modality.t -> ('dom, 'modality, 'modality, 'cod) t
+val generate : ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) gen
 
-  val hcomp :
-    ('a, 'm, 'b, 'r, 'c, 'mr) Modality.comp ->
-    ('a, 'n, 'b, 's, 'c, 'ns) Modality.comp ->
-    ('b, 'r, 's, 'c) t ->
-    ('a, 'm, 'n, 'b) t ->
-    ('a, 'mr, 'ns, 'c) t
+type (_, _, _, _) t =
+  | Gen : ('a, 'm, 'n, 'b) gen -> ('a, 'm, 'n, 'b) t
+  | Id : ('a, 'm, 'b) Modality.t -> ('a, 'm, 'm, 'b) t
+  | Hcomp :
+      ('a, 'm, 'b, 'r, 'c, 'mr) Modality.comp
+      * ('a, 'n, 'b, 's, 'c, 'ns) Modality.comp
+      * ('b, 'r, 's, 'c) t
+      * ('a, 'm, 'n, 'b) t
+      -> ('a, 'mr, 'ns, 'c) t
+  | Vcomp : ('a, 'n, 'r, 'b) t * ('a, 'm, 'n, 'b) t -> ('a, 'm, 'r, 'b) t
 
-  val vcomp : ('a, 'n, 'r, 'b) t -> ('a, 'm, 'n, 'b) t -> ('a, 'm, 'r, 'b) t
+val of_gen : ('a, 'm, 'n, 'b) gen -> ('a, 'm, 'n, 'b) t
+
+module type Theory = sig
+  val compare : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'n, 'b) t -> bool
   val find_unique : ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) t option
   val to_string : ('a, 'm, 'n, 'b) t -> string
 end
 
-val set_theory : (module Theory) -> unit
+val choose_theory : (module Theory) -> unit
 
 type (_, _, _, _, _, _) find_unique =
   | Unique : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'b, 'a, 'n, 'b) find_unique

@@ -1,98 +1,57 @@
 open Util
 
-type (_, _, _, _) t = ..
+type ('a, 'm, 'n, 'b) gen =
+  | PK : ('a, 'm, 'b) Modality.t * int * ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) gen
+
+let count = ref 0
+
+module Gen = struct
+  type ('a, 'm, 'n, 'b) t = ('a, 'm, 'n, 'b) gen
+
+  let compare : type dom1 mu1 nu1 cod1 dom2 mu2 nu2 cod2.
+      (dom1, mu1, nu1, cod1) t ->
+      (dom2, mu2, nu2, cod2) t ->
+      (dom1 * mu1 * nu1 * cod1, dom2 * mu2 * nu2 * cod2) Eq.compare =
+   fun (PK (m, x, n)) (PK (r, y, s)) ->
+    match (Modality.compare m r, Modality.compare n s, x = y) with
+    | Eq, Eq, true -> Eq
+    | _ -> Neq
+end
+
+let generate : type a m n b. (a, m, b) Modality.t -> (a, n, b) Modality.t -> (a, m, n, b) gen =
+ fun m n ->
+  let x = !count in
+  count := !count + 1;
+  PK (m, x, n)
+
+type (_, _, _, _) t =
+  | Gen : ('a, 'm, 'n, 'b) gen -> ('a, 'm, 'n, 'b) t
+  | Id : ('a, 'm, 'b) Modality.t -> ('a, 'm, 'm, 'b) t
+  | Hcomp :
+      ('a, 'm, 'b, 'r, 'c, 'mr) Modality.comp
+      * ('a, 'n, 'b, 's, 'c, 'ns) Modality.comp
+      * ('b, 'r, 's, 'c) t
+      * ('a, 'm, 'n, 'b) t
+      -> ('a, 'mr, 'ns, 'c) t
+  | Vcomp : ('a, 'n, 'r, 'b) t * ('a, 'm, 'n, 'b) t -> ('a, 'm, 'r, 'b) t
+
+let of_gen : type a m n b. (a, m, n, b) gen -> (a, m, n, b) t = fun x -> Gen x
 
 module type Theory = sig
-  type ('a, 'm, 'n, 'b) t
-
-  val hsrc : ('a, 'm, 'n, 'b) t -> 'a Mode.t
-  val htgt : ('a, 'm, 'n, 'b) t -> 'b Mode.t
-  val vsrc : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'b) Modality.t
-  val vtgt : ('a, 'm, 'n, 'b) t -> ('a, 'n, 'b) Modality.t
-
-  val compare :
-    ('dom1, 'mu1, 'nu1, 'cod1) t ->
-    ('dom2, 'mu2, 'nu2, 'cod2) t ->
-    ('dom1 * 'mu1 * 'nu1 * 'cod1, 'dom2 * 'mu2 * 'nu2 * 'cod2) Eq.compare
-
-  val id : ('dom, 'modality, 'cod) Modality.t -> ('dom, 'modality, 'modality, 'cod) t
-
-  val hcomp :
-    ('a, 'm, 'b, 'r, 'c, 'mr) Modality.comp ->
-    ('a, 'n, 'b, 's, 'c, 'ns) Modality.comp ->
-    ('b, 'r, 's, 'c) t ->
-    ('a, 'm, 'n, 'b) t ->
-    ('a, 'mr, 'ns, 'c) t
-
-  val vcomp : ('a, 'n, 'r, 'b) t -> ('a, 'm, 'n, 'b) t -> ('a, 'm, 'r, 'b) t
+  val compare : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'n, 'b) t -> bool
   val find_unique : ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) t option
   val to_string : ('a, 'm, 'n, 'b) t -> string
 end
 
-module type Internal_theory = Theory with type ('a, 'm, 'n, 'b) t := ('a, 'm, 'n, 'b) t
-
-let theory : (module Internal_theory) ref =
+let theory : (module Theory) ref =
   ref
     (module struct
-      let hsrc _ = failwith "Modalcell.theory not set"
-      let htgt _ = failwith "Modalcell.theory not set"
-      let vsrc _ = failwith "Modalcell.theory not set"
-      let vtgt _ = failwith "Modalcell.theory not set"
       let compare _ _ = failwith "Modalcell.theory not set"
-      let id _ = failwith "Modalcell.theory not set"
-      let hcomp _ _ _ _ = failwith "Modalcell.theory not set"
-      let vcomp _ _ = failwith "Modalcell.theory not set"
       let find_unique _ _ = failwith "Modalcell.theory not set"
       let to_string _ = failwith "Modalcell.theory not set"
-    end : Internal_theory)
+    end : Theory)
 
-let set_theory ((module T) : (module Theory)) =
-  theory :=
-    (module struct
-      type ('a, 'm, 'n, 'b) t += U of ('a, 'm, 'n, 'b) T.t
-
-      let hsrc = function
-        | U a -> T.hsrc a
-        | _ -> failwith "Modalcell: unknown constructor"
-
-      let htgt = function
-        | U a -> T.htgt a
-        | _ -> failwith "Modalcell: unknown constructor"
-
-      let vsrc = function
-        | U a -> T.vsrc a
-        | _ -> failwith "Modalcell: unknown constructor"
-
-      let vtgt = function
-        | U a -> T.vtgt a
-        | _ -> failwith "Modalcell: unknown constructor"
-
-      let compare a b =
-        match (a, b) with
-        | U a, U b -> T.compare a b
-        | _ -> failwith "Modalcell: unknown constructor"
-
-      let id m = U (T.id m)
-
-      let hcomp mn rs a b =
-        match (a, b) with
-        | U a, U b -> U (T.hcomp mn rs a b)
-        | _ -> failwith "Modalcell: unknown constructor"
-
-      let vcomp a b =
-        match (a, b) with
-        | U a, U b -> U (T.vcomp a b)
-        | _ -> failwith "Modalcell: unknown constructor"
-
-      let find_unique m n =
-        match T.find_unique m n with
-        | Some a -> Some (U a)
-        | None -> None
-
-      let to_string = function
-        | U a -> T.to_string a
-        | _ -> failwith "Modalcell: unknown constructor"
-    end : Internal_theory)
+let choose_theory (t : (module Theory)) = theory := t
 
 type (_, _) wrapped = Wrap : ('a, 'm, 'n, 'b) t -> ('a, 'b) wrapped
 type (_, _, _) cod_wrapped = Wrap : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'b) cod_wrapped
@@ -100,25 +59,29 @@ type (_, _, _) dom_wrapped = Wrap : ('a, 'm, 'n, 'b) t -> ('a, 'n, 'b) dom_wrapp
 type _ cod2_wrapped = Wrap : ('a, 'm, 'n, 'b) t -> 'a cod2_wrapped
 type _ dom2_wrapped = Wrap : ('a, 'm, 'n, 'b) t -> 'b dom2_wrapped
 
-let hsrc : type a m n b. (a, m, n, b) t -> a Mode.t =
- fun x ->
-  let module T = (val !theory) in
-  T.hsrc x
+let rec hsrc : type a m n b. (a, m, n, b) t -> a Mode.t = function
+  | Gen (PK (m, _, _)) -> Modality.src m
+  | Id m -> Modality.src m
+  | Hcomp (_, _, _, x) -> hsrc x
+  | Vcomp (_, x) -> hsrc x
 
-let htgt : type a m n b. (a, m, n, b) t -> b Mode.t =
- fun x ->
-  let module T = (val !theory) in
-  T.htgt x
+let rec htgt : type a m n b. (a, m, n, b) t -> b Mode.t = function
+  | Gen (PK (m, _, _)) -> Modality.tgt m
+  | Id m -> Modality.tgt m
+  | Hcomp (_, _, y, _) -> htgt y
+  | Vcomp (_, x) -> htgt x
 
-let vsrc : type a m n b. (a, m, n, b) t -> (a, m, b) Modality.t =
- fun x ->
-  let module T = (val !theory) in
-  T.vsrc x
+let rec vsrc : type a m n b. (a, m, n, b) t -> (a, m, b) Modality.t = function
+  | Gen (PK (m, _, _)) -> m
+  | Id m -> m
+  | Hcomp (mr, _, y, _) -> Modality.comp_out (vsrc y) mr
+  | Vcomp (_, x) -> vsrc x
 
-let vtgt : type a m n b. (a, m, n, b) t -> (a, n, b) Modality.t =
- fun x ->
-  let module T = (val !theory) in
-  T.vtgt x
+let rec vtgt : type a m n b. (a, m, n, b) t -> (a, n, b) Modality.t = function
+  | Gen (PK (_, _, n)) -> n
+  | Id m -> m
+  | Hcomp (_, ns, y, _) -> Modality.comp_out (vtgt y) ns
+  | Vcomp (y, _) -> vtgt y
 
 let compare : type dom1 mu1 nu1 cod1 dom2 mu2 nu2 cod2.
     (dom1, mu1, nu1, cod1) t ->
@@ -126,13 +89,13 @@ let compare : type dom1 mu1 nu1 cod1 dom2 mu2 nu2 cod2.
     (dom1 * mu1 * nu1 * cod1, dom2 * mu2 * nu2 * cod2) Eq.compare =
  fun x y ->
   let module T = (val !theory) in
-  T.compare x y
+  match (Modality.compare (vsrc x) (vsrc y), Modality.compare (vtgt x) (vtgt y)) with
+  | Eq, Eq -> if T.compare x y then Eq else Neq
+  | _ -> Neq
 
 let id : type dom modality cod. (dom, modality, cod) Modality.t -> (dom, modality, modality, cod) t
     =
- fun m ->
-  let module T = (val !theory) in
-  T.id m
+ fun m -> Id m
 
 let id2 : type mode. mode Mode.t -> (mode, mode Modality.id, mode Modality.id, mode) t =
  fun x -> id (Modality.id x)
@@ -150,9 +113,7 @@ let hcomp : type a m n b r s c mr ns.
     (b, r, s, c) t ->
     (a, m, n, b) t ->
     (a, mr, ns, c) t =
- fun mr ns x y ->
-  let module T = (val !theory) in
-  T.hcomp mr ns x y
+ fun mr ns x y -> Hcomp (mr, ns, x, y)
 
 let hcomp_wrapped : type a m n b r s c. (b, m, n, c) t -> (a, r, s, b) t -> (a, c) wrapped =
  fun x y ->
@@ -185,9 +146,7 @@ let prewhisker_wrapped : type a r b m n c. (b, m, n, c) t -> (a, r, b) Modality.
  fun x m -> hcomp_wrapped x (id m)
 
 let vcomp : type a m n r b. (a, n, r, b) t -> (a, m, n, b) t -> (a, m, r, b) t =
- fun x y ->
-  let module T = (val !theory) in
-  T.vcomp x y
+ fun x y -> Vcomp (x, y)
 
 let vcomp_extending : type a m k kn b n s c.
     (c, k, b) Modality.t ->
