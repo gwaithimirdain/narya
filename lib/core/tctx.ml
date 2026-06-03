@@ -1,5 +1,4 @@
 open Util
-open Perhaps
 open Tbwd
 open Tlist
 open Dim
@@ -216,38 +215,6 @@ end
 
 module Lock = Path.Hom (Modality.Gen) (Tctxcat) (Lockmap)
 open Tctx
-
-(* Sometimes it's important to know whether a partial context starts with a lock, or starts with a lock if it is nonempty. *)
-
-type _ starts_with_lock =
-  | Lock : ('mode id, 'mu lock_entry) suc starts_with_lock
-  | Suc : 'b starts_with_lock -> ('b, 'g) suc starts_with_lock
-
-type (_, _) starts_with_lock_or_empty =
-  | Starts : 'b starts_with_lock -> ('b, some) starts_with_lock_or_empty
-  | Empty : ('mode id, none) starts_with_lock_or_empty
-
-type _ any_starts_with_lock_or_empty =
-  | Any : ('b, 'p) starts_with_lock_or_empty -> 'b any_starts_with_lock_or_empty
-
-let rec lock_starts_with_lock_or_empty : type x m y t.
-    (x, m, y, x, t, y) Lock.t -> t any_starts_with_lock_or_empty = function
-  | Zero _ -> Any Empty
-  | Suc (l, Lock_lock _, Suc (Zero, _)) -> (
-      let Eq _, Eq _ = (Lock.src l, Lock.tgt l) in
-      match lock_starts_with_lock_or_empty l with
-      | Any (Starts s) -> Any (Starts (Suc s))
-      | Any Empty -> Any (Starts Lock))
-
-let rec starts_with_lock_left : type x a y b z ab p.
-    (x, b, y, a, z, ab) Tctx.comp ->
-    (ab, p) starts_with_lock_or_empty ->
-    a any_starts_with_lock_or_empty =
- fun ab l ->
-  match (ab, l) with
-  | Zero, _ -> Any l
-  | Suc (Zero, _), Starts Lock -> Any Empty
-  | Suc (ab, _), Starts (Suc l) -> starts_with_lock_left ab (Starts l)
 
 (* Making a modality into a context, and then extracting a modality, is the identity. *)
 
@@ -1007,52 +974,6 @@ module Plusmap = struct
     | Suc (_, Inject (Plus_dim (_, _)), _), Suc (_, Locks_lock _, _) -> .
     | Suc (_, Inject (Plus_proj _), _), Suc (_, _, _) -> .
     | Suc (_, _, _), Zero _ -> .
-
-  let rec cod_starts_with_lock : type n x a y na.
-      (n, x, a, y, x, na, y) t -> a starts_with_lock -> na starts_with_lock =
-   fun na -> function
-    | Lock ->
-        let (Suc (Zero _, Inject (Plus_lock _), Suc (Zero, _))) = na in
-        Lock
-    | Suc s ->
-        let (Suc (na, Inject _, Suc (Zero, _))) = na in
-        let (Eq _) = src na in
-        Suc (cod_starts_with_lock na s)
-
-  let cod_starts_with_lock_or_empty : type n x a y na p.
-      (n, x, a, y, x, na, y) t ->
-      (a, p) starts_with_lock_or_empty ->
-      (na, p) starts_with_lock_or_empty =
-   fun na -> function
-    | Starts s -> Starts (cod_starts_with_lock na s)
-    | Empty ->
-        let (Zero _) = na in
-        Empty
-
-  let rec dom_starts_with_lock : type n x a y na.
-      (n, x, a, y, x, na, y) t -> na starts_with_lock -> a starts_with_lock =
-   fun na -> function
-    | Lock -> (
-        match na with
-        | Suc (Zero _, Inject (Plus_lock _), Suc (Zero, Lock _)) -> Lock
-        | Suc (Zero _, Inject (Plus_dim _), _) -> .
-        | Suc (Zero _, Inject (Plus_proj _), _) -> .
-        | Suc (Suc (_, _, Zero), Inject _, _) -> .
-        | Suc (Suc (_, Inject _, Suc (_, _)), Inject _, Suc (_, _)) -> .)
-    | Suc s ->
-        let (Suc (na, Inject _, Suc (Zero, _))) = na in
-        let (Eq _) = src na in
-        Suc (dom_starts_with_lock na s)
-
-  let dom_starts_with_lock_or_empty : type n x a y na p.
-      (n, x, a, y, x, na, y) t ->
-      (na, p) starts_with_lock_or_empty ->
-      (a, p) starts_with_lock_or_empty =
-   fun na -> function
-    | Starts s -> Starts (dom_starts_with_lock na s)
-    | Empty ->
-        let (Zero _) = na in
-        Empty
 
   type (_, _, _, _, _, _, _) uninsert =
     | Uninsert :
