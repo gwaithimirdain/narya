@@ -2745,7 +2745,7 @@ let install () =
         make universe
           {
             name = "universe";
-            tree = Closed_entry (eop (Ident [ "Type" ]) (Done_closed universe));
+            tree = Closed_entry (eop (Ident [ name ]) (Done_closed universe));
             processor =
               (fun _ obs loc ->
                 match obs with
@@ -2757,7 +2757,7 @@ let install () =
             print_term =
               Some
                 (function
-                | [ Token (Ident [ "Type" ], (wstype, _)) ] -> (string "Type", wstype)
+                | [ Token (Ident [ name ], (wstype, _)) ] -> (string name, wstype)
                 | _ -> invalid "universe");
             print_case = None;
             is_case = (fun _ -> false);
