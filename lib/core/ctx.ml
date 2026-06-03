@@ -302,12 +302,11 @@ module Ordered = struct
    fun modality n -> function
     | Lookup v -> (
         match v.plus with
-        | Plus_with_locks (Starts _, Suc _, _) ->
+        | Plus_with_locks (Suc _, _) ->
             Lookup { v with plus = plus_with_locks_dim v.plus modality n <|> Anomaly "pop_lookup" }
-        | Plus_with_locks (Empty, Zero, _) ->
+        | Plus_with_locks (Zero, _) ->
             Lookup
-              { v with insert = Later v.insert; plus = plus_with_no_locks (Modality.tgt modality) }
-        | Plus_with_locks (Starts Lock, _, _) -> .)
+              { v with insert = Later v.insert; plus = plus_with_no_locks (Modality.tgt modality) })
 
   let lock_lookup : type dom modality mode b field.
       (dom, modality, mode) Modality.gen ->
@@ -577,20 +576,19 @@ module Ordered = struct
 
   let rec remove_locks : type cod mode modality a b bc.
       (mode, a, bc) t -> (b, cod, modality, mode, bc) plus_with_locks -> (cod, b) any =
-   fun ctx (Plus_with_locks (starts, comp, locks) as plus) ->
-    match (starts, comp, locks, ctx) with
-    | _, Zero, Zero _, _ -> Any ctx
-    | _, _, _, Parametric_lock ctx -> remove_locks ctx plus
-    | Starts (Suc starts), Suc (comp, Dim (_, _)), Suc (locks, Locks_dim (_, _), _), Snoc (ctx, _, _)
-      -> remove_locks ctx (Plus_with_locks (Starts starts, comp, locks))
-    | Starts Lock, Suc (Zero, Lock g1), Suc (Zero _, Locks_lock _, _), Lock (ctx, g3) ->
+   fun ctx (Plus_with_locks (comp, locks) as plus) ->
+    match (comp, locks, ctx) with
+    | Zero, Zero _, _ -> Any ctx
+    | _, _, Parametric_lock ctx -> remove_locks ctx plus
+    | Suc (comp, Dim (_, _)), Suc (locks, Locks_dim (_, _), _), Snoc (ctx, _, _) ->
+        remove_locks ctx (Plus_with_locks (comp, locks))
+    | Suc (Zero, Lock g1), Suc (Zero _, Locks_lock _, _), Lock (ctx, g3) ->
         let Eq = Modality.Gen.tgt_uniq g1 g3 in
         Any ctx
-    | Starts (Suc starts), Suc (comp, TEntry.Lock g1), Suc (locks, Locks_lock g2, _), Lock (ctx, g3)
-      ->
+    | Suc (comp, TEntry.Lock g1), Suc (locks, Locks_lock g2, _), Lock (ctx, g3) ->
         let Eq, Eq = (Modality.Gen.tgt_uniq g1 g2, Modality.Gen.tgt_uniq g2 g3) in
-        remove_locks ctx (Plus_with_locks (Starts starts, comp, locks))
-    | Starts (Suc _), Suc (_, Proj _), Suc (_, _, _), _ -> .
+        remove_locks ctx (Plus_with_locks (comp, locks))
+    | Suc (_, Proj _), Suc (_, _, _), _ -> .
 end
 
 (* Now we define contexts that add a permutation of the raw indices.  For efficiency reasons we also precompute its environment as the context is built and store it.  We also store the next De Bruijn level (cube only, not internal face level) that may be added to the context; in most cases this equals the length of the context, but during bind_some we work temporarily with rearranged contexts containing old De Bruijn levels so it may be greater than the length.  The permutation acts only on variables, not on locks; it should only permute variables with other variables that have NO LOCKS IN BETWEEN, but we don't enforce that statically.  In particular, therefore, the mode of the permuted context is the same as the mode of its ordered version. *)

@@ -1285,7 +1285,7 @@ and check_implicit_match : type mode a b.
         fallback () in
       let (Lookup { result; value = { tm = _; ty = varty }; modality; insert; plus }) =
         Ctx.lookup ctx ix in
-      let (Plus_with_locks (_, comp, locks)) = plus in
+      let (Plus_with_locks (comp, locks)) = plus in
       let lock = Locks.cod locks in
       (* For a variable match, the variable cannot be locked. *)
       match (comp, locks) with
@@ -2689,7 +2689,7 @@ and synth : type mode a b s.
         let (Lookup { result; value; modality; insert; plus = plus_tgt }) = Ctx.lookup ctx i in
         (* We extract the composite locking modality. *)
         let (Any_ctx ctx) = Ctx.remove_locks ctx plus_tgt in
-        let (Plus_with_locks (_, _, locks)) = plus_tgt in
+        let (Plus_with_locks (_, locks)) = plus_tgt in
         let lock = Locks.cod locks in
         (* To produce its term as a variable (or illusory field access) we have to replace the lock-containing context by a single lock by its annotating modality. *)
         let (Has_plus_lock plus_src) = plus_lock modality in
@@ -2904,7 +2904,7 @@ and synth : type mode a b s.
               let idm = Modality.id (Ctx.mode xctx) in
               let newctx = Ctx.ext xctx idm x edom in
               (* We also get and store the normal corresponding to this variable, for checking the tyargs of later domains. *)
-              let (Lookup { value; modality; plus = Plus_with_locks (_, _, locks); _ }) =
+              let (Lookup { value; modality; plus = Plus_with_locks (_, locks); _ }) =
                 Ctx.lookup newctx (Top, None) in
               (* The modality and lock must be trivial since we just added it. *)
               (match (Modality.compare_id modality, Modality.compare_id (Locks.cod locks)) with
@@ -3025,7 +3025,7 @@ and synth : type mode a b s.
             let newctx = Ctx.ext ctx modality x edom in
             (* We get the normal corresponding to the new variable.  The modality must be the one we added it with, and the lock must be trivial since we just added it. *)
             let xnf : dom normal =
-              let (Lookup { value; modality = xmod; plus = Plus_with_locks (_, _, xlocks); _ }) =
+              let (Lookup { value; modality = xmod; plus = Plus_with_locks (_, xlocks); _ }) =
                 Ctx.lookup newctx (Top, None) in
               match (Modality.compare xmod modality, Modality.compare_id (Locks.cod xlocks)) with
               | Eq, Eq -> value

@@ -300,44 +300,32 @@ let plus_lock_modality : type ctx mode modality dom newctx.
 
 type (_, _, _, _, _) plus_with_locks =
   | Plus_with_locks :
-      ('c, 'p) starts_with_lock_or_empty
-      * ('dom, 'c, 'mode, 'a, unit, 'ac) Tctx.comp
-      * ('dom, 'c, 'mode, 'dom, 'modality, 'mode) Locks.t
+      ('dom, 'c, 'mode, 'a, unit, 'ac) Tctx.comp * ('dom, 'c, 'mode, 'dom, 'modality, 'mode) Locks.t
       -> ('a, 'mode, 'modality, 'dom, 'ac) plus_with_locks
 
 let plus_with_locks_of_plus_lock : type a y m x am.
     (a, y, m, x, am) plus_lock -> (a, y, m, x, am) plus_with_locks =
  fun (Plus_lock (lm, bm)) ->
   let llm = locks_lock lm in
-  let (Any s) = lock_starts_with_lock_or_empty lm in
-  Plus_with_locks (s, bm, llm)
+  Plus_with_locks (bm, llm)
 
 let plus_with_no_locks : type b mode. mode Mode.t -> (b, mode, mode id, mode, b) plus_with_locks =
- fun mode -> Plus_with_locks (Empty, Zero, Zero (Eq mode))
+ fun mode -> Plus_with_locks (Zero, Zero (Eq mode))
 
 let plus_with_locks_lock : type a cod modality mode gen dom ac.
     (a, cod, modality, mode, ac) plus_with_locks ->
     (dom, gen, mode) Modality.gen ->
     (a, cod, (modality, gen) suc, dom, (ac, gen lock_entry) suc) plus_with_locks =
- fun (Plus_with_locks (type c p) ((s, c, l) : (c, p) starts_with_lock_or_empty * _ * _)) g ->
-  let (Any s) : (c, gen lock_entry) suc any_starts_with_lock_or_empty =
-    match s with
-    | Empty -> Any (Starts Lock)
-    | Starts s -> Any (Starts (Suc s)) in
-  Plus_with_locks (s, Suc (c, Lock g), Suc (l, Locks_lock g, Suc (Zero, g)))
+ fun (Plus_with_locks (c, l)) g ->
+  Plus_with_locks (Suc (c, Lock g), Suc (l, Locks_lock g, Suc (Zero, g)))
 
 let plus_with_locks_dim : type a cod modality mode dom ac annote n.
     (a, cod, modality, mode, ac) plus_with_locks ->
     (dom, annote, mode) Modality.t ->
     n D.t ->
     (a, cod, modality, mode, (ac, (annote, n) dim_entry) suc) plus_with_locks option =
- fun (Plus_with_locks (type c p) ((s, c, l) : (c, p) starts_with_lock_or_empty * _ * _)) annote n ->
-  match s with
-  | Empty -> None
-  | Starts s ->
-      Some
-        (Plus_with_locks
-           (Starts (Suc s), Suc (c, Dim (annote, n)), Suc (l, Locks_dim (annote, n), Zero)))
+ fun (Plus_with_locks (c, l)) annote n ->
+  Some (Plus_with_locks (Suc (c, Dim (annote, n)), Suc (l, Locks_dim (annote, n), Zero)))
 
 (* Lists of variable-annotation modalities, at the same mode (their codomain), to be made into lists of variables by combining with a dimension. *)
 
@@ -454,11 +442,11 @@ let rec inserted : type a modality n b mode.
       let (Path (Suc (b, Dim _), mode)) = b in
       inserted i (Path (b, mode))
 
-(* If the domain of an insertion is broken up as a composition, we can sometimes likewise break up its codomain.  This is always possible if the right factor in the composition starts with a lock. *)
+(* If the domain of an insertion is broken up as a composition, we can sometimes likewise break up its codomain. *)
 
 type (_, _, _, _, _, _, _, _) insert_from_comp =
   | Insert_from_comp :
-      ('x, 'c, 'y, 'a, 'z, 'ac) Tctx.comp * 'c starts_with_lock * ('b, 'm, 'n, 'c) insert
+      ('x, 'c, 'y, 'a, 'z, 'ac) Tctx.comp * ('b, 'm, 'n, 'c) insert
       -> ('x, 'y, 'a, 'z, 'ac, 'b, 'm, 'n) insert_from_comp
 
 let rec insert_from_comp : type b m n a ab ac w x y z.
@@ -466,16 +454,17 @@ let rec insert_from_comp : type b m n a ab ac w x y z.
     n D.t ->
     (ab, m, n, ac) insert ->
     (x, b, y, a, z, ab) Tctx.comp ->
-    b starts_with_lock ->
-    (x, y, a, z, ac, b, m, n) insert_from_comp =
- fun m n i ab b ->
+    (x, y, a, z, ac, b, m, n) insert_from_comp option =
+ fun m n i ab ->
+  let open Monad.Ops (Monad.Maybe) in
   match i with
-  | Now -> Insert_from_comp (Suc (ab, Dim (m, n)), Suc b, Now)
+  | Now -> return (Insert_from_comp (Suc (ab, Dim (m, n)), Now))
   | Later i -> (
-      match (b, ab) with
-      | Suc b, Suc (ab, Dim (p, k)) ->
-          let (Insert_from_comp (ac, c, j)) = insert_from_comp m n i ab b in
-          Insert_from_comp (Suc (ac, Dim (p, k)), Suc c, Later j))
+      match ab with
+      | Suc (ab, Dim (p, k)) ->
+          let* (Insert_from_comp (ac, j)) = insert_from_comp m n i ab in
+          return (Insert_from_comp (Suc (ac, Dim (p, k)), Later j))
+      | Zero -> None)
 
 (* Inserting doesn't change the total locks *)
 
@@ -801,37 +790,34 @@ let counpermute_plus_lock : type b am bm mode modality dom.
   let (Perm_unlock_cod (acomp, perm)) = perm_unlock_cod lock bcomp permlock in
   Counpermute (perm, Plus_lock (lock, acomp))
 
-(* And to Locks.  In order to ensure that a permutation decomposes along a composite, we require that the right factor in the composite starts with a lock. *)
+(* And to Locks.  This can fail if the permutation tries to mix the two context pieces.  It is possible to prevent such failures statically at the cost of carrying around everywhere a witness that the right-hand part of the decomposition starts with a lock, but this is tedious, and in addition not preserved by modality 2-functors, so we stick with a runtime check.  *)
 
 type (_, _, _, _, _, _, _) unpermute_plus_locks =
   | Unpermute :
       ('a, 'b) permute
-      * ('d, 'p) starts_with_lock_or_empty
       * ('dom, 'd, 'mode, 'b, unit, 'bd) Tctx.comp
       * ('dom, 'd, 'mode, 'dom, 'mu, 'mode) Locks.t
       -> ('a, 'dom, 'mu, 'mode, 'c, 'bd, 'p) unpermute_plus_locks
 
 let rec unpermute_plus_locks : type a c ac bd mode mu dom p.
     (ac, bd) permute ->
-    (c, p) starts_with_lock_or_empty ->
     (dom, c, mode, a, unit, ac) Tctx.comp ->
     (dom, c, mode, dom, mu, mode) Locks.t ->
-    (a, dom, mu, mode, c, bd, p) unpermute_plus_locks =
- fun p c ac lc ->
-  match (p, c, ac, lc) with
-  | _, _, Zero, Zero x -> Unpermute (p, c, Zero, Zero x)
-  | Id, _, _, _ -> Unpermute (Id, c, ac, lc)
-  | Insert (p, i), Starts (Suc c), Suc (ac, Dim (m, k)), Suc (lc, Locks_dim (_, _), Zero) ->
-      let (Unpermute (p, Starts d, bd, ld)) = unpermute_plus_locks p (Starts c) ac lc in
-      let (Insert_from_comp (bd, d, j)) = insert_from_comp m k i bd d in
+    (a, dom, mu, mode, c, bd, p) unpermute_plus_locks option =
+ fun p ac lc ->
+  let open Monad.Ops (Monad.Maybe) in
+  match (p, ac, lc) with
+  | _, Zero, Zero x -> return (Unpermute (p, Zero, Zero x))
+  | Id, _, _ -> return (Unpermute (Id, ac, lc))
+  | Insert (p, i), Suc (ac, Dim (m, k)), Suc (lc, Locks_dim (_, _), Zero) ->
+      let* (Unpermute (p, bd, ld)) = unpermute_plus_locks p ac lc in
+      let* (Insert_from_comp (bd, j)) = insert_from_comp m k i bd in
       let ld = insert_locks m k j ld in
-      Unpermute (p, Starts d, bd, ld)
-  | Lock p, Starts (Suc c), Suc (ac, Lock g), Suc (lc, Locks_lock g', Suc (Zero, _)) ->
+      return (Unpermute (p, bd, ld))
+  | Lock p, Suc (ac, Lock g), Suc (lc, Locks_lock g', Suc (Zero, _)) ->
       let Eq = Modality.Gen.tgt_uniq g g' in
-      let (Unpermute (p, Starts d, bd, ld)) = unpermute_plus_locks p (Starts c) ac lc in
-      Unpermute (p, Starts (Suc d), Suc (bd, Lock g), Suc (ld, Locks_lock g, Suc (Zero, g)))
-  | Lock p, Starts Lock, Suc (Zero, Lock g), Suc (Zero _, Locks_lock _, Suc (Zero, _)) ->
-      Unpermute (p, Starts Lock, Suc (Zero, Lock g), lc)
+      let* (Unpermute (p, bd, ld)) = unpermute_plus_locks p ac lc in
+      return (Unpermute (p, Suc (bd, Lock g), Suc (ld, Locks_lock g, Suc (Zero, g))))
 
 (* Variable indices.  Since we have keys that strip off part of the context and apply a cell, it may seem that as actual variables we only need the "zero variable" that's locked with the same modality it is annotated with, as in the MTT paper.  This isn't quite right, though, because environments can be permuted, and to find the zero variable in a permuted environment we need to look through the unpermuted environment for a non-zero variable.  Thus, we label variables by an insertion (which, recall, can only permute variables, not locks).  However, we do require that the variable's annotation is the same as the composite of all the locks to its right.  Finally, we also include a face to select one of a cube of variables. *)
 

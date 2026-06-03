@@ -264,7 +264,7 @@ and readback_head : type mode c z.
       (* The source of the key is supposed to be the modal annotation of the variable, while its target is supposed to be the composite of all the locks in the context to its right.  So we remove its target from the context. *)
       let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt key) in
       (* Now we look for the level variable in the remaining context. *)
-      let (Lookup { result; value = _; modality; insert; plus = Plus_with_locks (_, c, _) }) =
+      let (Lookup { result; value = _; modality; insert; plus = Plus_with_locks (c, _) }) =
         Ctx.find_level ctx level <|> No_such_level (PLevel level) in
       (* We check that (1) the modality annotating that variable is the source of the key, and (2) there are no more locks remaining to its right in the context. *)
       match (Modality.compare (Modalcell.vsrc key) modality, result, c) with
@@ -278,7 +278,7 @@ and readback_head : type mode c z.
             | None -> Act (Term.Var (Index (insert, fa, plus_src)), deg, sort) in
           (* And if the key is nontrivial, we act by it; otherwise we leave it off. *)
           match (Modality.compare_id modality, plus_src, plus_tgt) with
-          | Eq, Plus_lock (Zero _, Zero), Plus_with_locks (Empty, Zero, Zero _) -> tm
+          | Eq, Plus_lock (Zero _, Zero), Plus_with_locks (Zero, Zero _) -> tm
           | _ -> Key { tm; cell = key; plus_tgt; plus_src })
       | Neq, _, _ ->
           fatal (Modality_mismatch (`Internal, "reading back var", Modalcell.vsrc key, modality))

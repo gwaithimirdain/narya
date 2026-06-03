@@ -285,7 +285,7 @@ let rec get_spine : type mode a.
       | None -> `App (tm, Emp))
   | Key { tm = body; cell; plus_src; plus_tgt } -> (
       match (Modalcell.compare_id cell, plus_tgt, plus_src) with
-      | Eq, Plus_with_locks (_, Zero, Zero _), Plus_lock (Zero _, Zero) -> get_spine body
+      | Eq, Plus_with_locks (Zero, Zero _), Plus_lock (Zero _, Zero) -> get_spine body
       | _ -> `App (tm, Emp))
   | tm -> `App (tm, Emp)
 
@@ -331,7 +331,7 @@ let rec unparse : type mode n lt ls rt rs s.
             li ri)
   | Act (tm, s, sort) ->
       unparse_act ~sort vars { unparse = (fun li ri -> unparse vars tm li ri) } s li ri
-  | Key { tm; cell; plus_tgt = Plus_with_locks (_, comp, _); plus_src } -> (
+  | Key { tm; cell; plus_tgt = Plus_with_locks (comp, _); plus_src } -> (
       (* We omit printing keys that are identities or unique, since they can be reconstructed on parse. *)
       match
         ( Modalcell.compare_id cell,
@@ -552,7 +552,7 @@ and unparse_field_var : type mode n lt ls rt rs.
       match is_id_deg deg with
       | Some _ -> unparse_field_var vars tm fld
       | None -> None)
-  | Key { tm; cell; plus_src; plus_tgt = Plus_with_locks (_, comp, _) } -> (
+  | Key { tm; cell; plus_src; plus_tgt = Plus_with_locks (comp, _) } -> (
       match Modalcell.compare_id cell with
       | Eq -> unparse_field_var (Names.add_lock (Names.split vars comp) plus_src) tm fld
       | Neq -> None)

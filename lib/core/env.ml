@@ -45,7 +45,7 @@ type (_, _, _, _, _) remove_keys =
 let rec remove_keys : type mode mu cod k b bc.
     (mode, k, bc) env -> (b, cod, mu, mode, bc) plus_with_locks -> (mode, mu, cod, k, b) remove_keys
     =
- fun env (Plus_with_locks (swloe, bc, llc)) ->
+ fun env (Plus_with_locks (bc, llc)) ->
   match (bc, llc, env) with
   (* If we encounter a key, we accumulate it.  Note that lmn and b_cmn could be Zero here: we continue accumulating keys until we run out of keys that we *could* include, not just until we run out of nonidentity locks in the codomain. *)
   | b_cn, llcn, Key (env, key, Plus_lock (ln, bc_n)) -> (
@@ -59,38 +59,37 @@ let rec remove_keys : type mode mu cod k b bc.
           let (Uncomp (llc, lln', m_n)) = Locks.uncomp c_n llcn in
           let Eq = Locks.uniq lln lln' in
           let b_c = Tctx.comp_assoc_cancelr c_n b_cn bc_n in
-          let (Any swloe) = starts_with_lock_left c_n swloe in
-          let (Remove_keys (e, keys)) = remove_keys env (Plus_with_locks (swloe, b_c, llc)) in
+          let (Remove_keys (e, keys)) = remove_keys env (Plus_with_locks (b_c, llc)) in
           let (Comp nus) = Modality.comp (Modalcell.vtgt key) in
           Remove_keys (e, Modalcell.hcomp m_n nus keys key))
   (* If we encounter a dimension entry, we skip it. *)
   | Suc (bc, Dim _), Suc (llc, Locks_dim _, Zero), _ ->
-      let (Starts (Suc swloe)) = swloe in
-      remove_keys (remove_top env) (Plus_with_locks (Starts swloe, bc, llc))
+      remove_keys (remove_top env) (Plus_with_locks (bc, llc))
   (* If we encounter some other operation that could still have further keys inside it, we look through it. *)
-  | _, _, Permute (p, env) ->
-      (* This is where carrying around swloe is used, in decomposing the permutation. *)
-      let (Unpermute (p, d, ad, lld)) = unpermute_plus_locks p swloe bc llc in
-      let (Remove_keys (env, keys)) = remove_keys env (Plus_with_locks (d, ad, lld)) in
-      Remove_keys (Permute (p, env), keys)
+  | _, _, Permute (p, env) -> (
+      match unpermute_plus_locks p bc llc with
+      | Some (Unpermute (p, ad, lld)) ->
+          let (Remove_keys (env, keys)) = remove_keys env (Plus_with_locks (ad, lld)) in
+          Remove_keys (Permute (p, env), keys)
+      | None ->
+          (* This isn't ruled out either: the permutation could mix the two parts of the decomposition.  Again, we trust the caller to maintain the invariant. *)
+          fatal (Anomaly "remove_keys: unpermute failure"))
   | nb_nc, ll_nc, Shift (env, mn, nbc) ->
       let n = D.plus_right mn in
       let (Dom_uncomp (nb, nc, b_c)) = Plusmap.dom_uncomp n nb_nc nbc in
       let (Eq _) = Plusmap.tgt nc in
-      let swloe = Plusmap.dom_starts_with_lock_or_empty nc swloe in
       let ll_c = Plusmap.unlocks nc ll_nc in
-      let (Remove_keys (env, keys)) = remove_keys env (Plus_with_locks (swloe, b_c, ll_c)) in
+      let (Remove_keys (env, keys)) = remove_keys env (Plus_with_locks (b_c, ll_c)) in
       Remove_keys (Shift (env, mn, nb), keys)
   | b_c, ll_c, Unshift (env, mn, nbc) ->
       let n = D.plus_right mn in
       let (Uncomp (nb, nc, nb_nc)) = Plusmap.uncomp n b_c nbc in
       let (Eq _) = Plusmap.tgt nc in
-      let swloe = Plusmap.cod_starts_with_lock_or_empty nc swloe in
       let ll_nc = Plusmap.locks n nc ll_c in
-      let (Remove_keys (env, keys)) = remove_keys env (Plus_with_locks (swloe, nb_nc, ll_nc)) in
+      let (Remove_keys (env, keys)) = remove_keys env (Plus_with_locks (nb_nc, ll_nc)) in
       Remove_keys (Unshift (env, mn, nb), keys)
   | _, _, Act (env, op) ->
-      let (Remove_keys (env, keys)) = remove_keys env (Plus_with_locks (swloe, bc, llc)) in
+      let (Remove_keys (env, keys)) = remove_keys env (Plus_with_locks (bc, llc)) in
       Remove_keys (Act (env, op), keys)
   (* If we reach the end of the environment, or a value entry, we bottom out the recursion, returning an identity key. *)
   | Zero, Zero _, Emp _ -> Remove_keys (env, Modalcell.id2 (mode_env env))
