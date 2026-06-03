@@ -36,3 +36,11 @@
      ^ use of id variable behind □ lock requires a key
   
   [1]
+
+  $ narya -v -functor functor.ny
+   ￫ info[I0000]
+   ￮ constant ○ defined
+  
+   ￫ info[I0000]
+   ￮ constant ○map defined
+  

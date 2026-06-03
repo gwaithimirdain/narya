@@ -75,6 +75,9 @@ let speclist =
     ( "-idempotent-comonad",
       Arg.Unit (fun () -> install_mode_theory := Modal.Idempotent_comonad.install),
       "Select the idempotent comonad mode theory" );
+    ( "-functor",
+      Arg.Unit (fun () -> install_mode_theory := Modal.Functor.install),
+      "Select the functor mode theory" );
     ("--help", Arg.Unit (fun () -> ()), "");
     ("-", Arg.Unit (fun () -> inputs := Snoc (!inputs, `Stdin)), "");
     ("-fake-interact", Arg.String (fun str -> fake_interacts := Snoc (!fake_interacts, str)), "");
