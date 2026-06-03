@@ -21,8 +21,6 @@ open Unact
 open Asai.Range
 include Status
 
-let discard : type a. a -> unit = fun _ -> ()
-
 module OracleData = struct
   type question = Ask : ('mode, 'a, 'b) Ctx.t * ('mode, kinetic) value -> question
   type answer = (unit, Code.t) Result.t
@@ -1494,7 +1492,7 @@ and synth_nondep_match : type mode a b.
                     fatal ?loc:d.explanation.loc
                       (Invalid_synthesized_type ("synthesizing branch of match", PVal (newctx, sty)))
                 | _ -> fatal_diagnostic d)
-          @@ fun () -> discard (readback_val ctx sty) );
+          @@ fun () -> ignore (readback_val ctx sty) );
           (* Finally, if we found a synthesizing branch that works, return the synthesized type, the accumulated errors, the successful typechecked branch, and the remaining synthesizing branches.  We don't need to deal again with any of the ones we've visited before the one that succeeded, as they all must have errored in order to get here, and we've accumulated their errors. *)
           ( Some sty,
             errs,
@@ -1662,7 +1660,7 @@ and check_var_match : type mode a b.
       (* Now we also check that none of these free variables occur in the parameters.  We do this by altering the context to replace all these level variables with unknowns and doing a readback of the pre-indices type family into that context.  If the readback encounters one of the missing level variables, it fails with No_such_level; above we catch that, emit a hint, and fall back to matching against a term. *)
       (* TODO: This doesn't seem to be catching things it should, like attempted proofs of Axiom K; they go on and get caught by No_permutation instead. *)
       let ctx_noindices = Ctx.forget_levels ctx (Hashtbl.mem seen) in
-      discard (readback_nf ctx_noindices tyfam);
+      ignore (readback_nf ctx_noindices tyfam);
       (* If all of those checks succeed, we continue on the path of a variable match.  But note that this call is still inside the try_with, so it can still fail and revert back to a non-dependent term match. *)
       (* We start with a preprocesssing step that pairs each user-provided branch with the corresponding constructor information from the datatype. *)
       let user_branches = merge_branches name brs data_constrs in
@@ -1764,7 +1762,7 @@ and check_var_match : type mode a b.
                                        ("free index variable occurs in inferred index value", Some x))
                               | _ -> fatal_diagnostic d)
                         @@ fun () ->
-                          Hashtbl.iter (fun _ v -> discard (readback_nf oldctx v)) new_vals );
+                          Hashtbl.iter (fun _ v -> ignore (readback_nf oldctx v)) new_vals );
                         (* The type of the match must be specialized in the branches by substituting different constructors for the match variable, as well as the index values for the index variables, and lower-dimensional versions of each constructor for the instantiation variables.  Thus, we readback-eval this type into the new context, to obtain the type at which the branch body will be checked. *)
                         let newty = eval_term (Ctx.env newctx) (readback_val oldctx motive) in
                         (* Now we have to modify the "status" data by readback-eval on the arguments and adding a hypothesized current branch to the match.  *)
