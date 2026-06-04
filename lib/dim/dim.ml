@@ -74,7 +74,7 @@ let refl : (one, D.zero) deg = Zero D.one
 
 type two = D.two
 
-let sym : (two, two) deg = Suc (Suc (Zero D.zero, Now), Later Now)
+let sym : (two, two) deg = Suc (Suc (Zero D.zero, D.deg, Now), D.deg, Later Now)
 
 let deg_of_name : string -> any_deg option =
  fun str ->
@@ -92,5 +92,5 @@ let name_of_deg : type a b.
       | _ :: _ :: name :: _, (`Function, _) -> Some name
       | _, (`Type, `Canonical) -> None
       | name :: _, _ -> Some name)
-  | Suc (Suc (Zero (Word Zero), Now), Later Now) -> Some "sym"
+  | Suc (Suc (Zero (Word Zero), _, Now), _, Later Now) -> Some "sym"
   | _ -> None

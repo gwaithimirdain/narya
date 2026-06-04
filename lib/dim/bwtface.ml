@@ -64,7 +64,7 @@ let rec tface_of_bw_r : type m1 m2 m n k1 k2 k nk1 nk.
       let Eq = D.plus_uniq nk12 (D.plus_zero nk1) in
       f
   | End (e, bf) -> tface_of_bw_r m12 (D.suc_plus k12) (D.suc_plus nk12) (tface_end f e) bf
-  | Mid bf -> tface_of_bw_r (D.suc_plus m12) (D.suc_plus k12) (D.suc_plus nk12) (Mid f) bf
+  | Mid bf -> tface_of_bw_r (D.suc_plus m12) (D.suc_plus k12) (D.suc_plus nk12) (Mid (f, D.deg)) bf
 
 let rec tface_of_bw_lt : type m1 m2 m n k1 k2 k nk nk1.
     (m1, m2, m) D.plus ->
@@ -76,9 +76,11 @@ let rec tface_of_bw_lt : type m1 m2 m n k1 k2 k nk nk1.
     (m, n, k, nk) tface =
  fun m12 k12 n12k nk12 f bf ->
   match bf with
-  | REnd (e, bf) -> tface_of_bw_r m12 (D.suc_plus k12) (D.suc_plus n12k) (End (f, nk12, e)) bf
+  | REnd (e, bf) ->
+      tface_of_bw_r m12 (D.suc_plus k12) (D.suc_plus n12k) (End (f, nk12, D.deg, e)) bf
   | RMid bf ->
-      tface_of_bw_lt (D.suc_plus m12) (D.suc_plus k12) (D.suc_plus n12k) (Suc (nk12, Unit)) (Mid f) bf
+      tface_of_bw_lt (D.suc_plus m12) (D.suc_plus k12) (D.suc_plus n12k) (Suc (nk12, Unit))
+        (Mid (f, D.deg)) bf
 
 let rec tface_of_bw_ls : type m1 m2 m n1 n2 k n nk nk2.
     (m1, m2, m) D.plus ->
@@ -89,22 +91,24 @@ let rec tface_of_bw_ls : type m1 m2 m n1 n2 k n nk nk2.
     (m, n, k, nk) tface =
  fun m12 n12 nk12 f bf ->
   match bf with
-  | LEnd (e, bf) -> tface_of_bw_ls m12 (D.suc_plus n12) (D.suc_plus nk12) (End (f, e)) bf
-  | LMid bf -> tface_of_bw_ls (D.suc_plus m12) (D.suc_plus n12) (D.suc_plus nk12) (Mid f) bf
+  | LEnd (e, bf) ->
+      tface_of_bw_ls m12 (D.suc_plus n12) (D.suc_plus nk12) (End (f, D.deg, e)) bf
+  | LMid bf ->
+      tface_of_bw_ls (D.suc_plus m12) (D.suc_plus n12) (D.suc_plus nk12) (Mid (f, D.deg)) bf
   | REnd (e, bf) ->
       let n1 = cod_sface f in
       let Eq = D.plus_uniq n12 (D.plus_zero n1) in
       tface_of_bw_r m12
         (D.suc_plus_eq_suc (D.zero_plus (cod_bwsface bf)))
         (D.suc_plus nk12)
-        (End (f, D.plus_zero n1, e))
+        (End (f, D.plus_zero n1, D.deg, e))
         bf
   | RMid bf ->
       let n1 = cod_sface f in
       let Eq = D.plus_uniq n12 (D.plus_zero n1) in
       tface_of_bw_lt (D.suc_plus m12)
         (D.suc_plus_eq_suc (D.zero_plus (cod_bwtface bf)))
-        (D.suc_plus nk12) (Suc (Zero, Unit)) (Mid f) bf
+        (D.suc_plus nk12) (Suc (Zero, Unit)) (Mid (f, D.deg)) bf
 
 let tface_of_bw : type m n k nk. (m, n, k, nk) bwtface -> (m, n, k, nk) tface =
  fun bf ->

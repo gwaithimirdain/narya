@@ -84,7 +84,7 @@ module Tube (F : Fam2) = struct
       (p, b) F.t =
    fun tr mq pq d ->
     match d with
-    | End (d, _, (l1, e)) ->
+    | End (d, _, _, (l1, e)) ->
         (* End (d,e) : (m,n,k+1,nk+1) tface *)
         (* d : (m,nk) sface *)
         (* tr : (n,k+1,nk+1,pq+1,b) gt *)
@@ -101,7 +101,7 @@ module Tube (F : Fam2) = struct
         (* pq' : p + q = pq *)
         let Eq = Endpoints.uniq l1 l2 in
         C.gfind (Bwv.nth e ends) km' pq' d
-    | Mid d ->
+    | Mid (d, _) ->
         let (Branch (_, _, mid)) = tr in
         let (Suc (mq, Unit)) = D.plus_suc mq in
         gfind mid mq pq d

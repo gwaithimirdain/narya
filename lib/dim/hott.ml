@@ -11,12 +11,13 @@ let dim : dim D.t = D.one
 let singleton : dim is_singleton = One
 
 let sym : type b. (dim, dim, b) D.plus -> (b, b) deg =
- fun (Suc (Zero, Unit)) -> Suc (Suc (Zero D.zero, Now), Later Now)
+ fun (Suc (Zero, Unit)) ->
+  Suc (Suc (Zero D.zero, D.deg, Now), D.deg, Later Now)
 
 let faces : unit -> ((D.zero, dim) sface * (D.zero, dim) sface * N.two Endpoints.len) option =
  fun () ->
   Option.map
-    (fun two -> (End (Zero, (two, Pop Top)), End (Zero, (two, Top)), two))
+    (fun two -> (End (Zero, D.deg, (two, Pop Top)), End (Zero, D.deg, (two, Top)), two))
     (Endpoints.hott ())
 
 let cube : type a. a -> a -> a -> (dim, a) CubeOf.t option =

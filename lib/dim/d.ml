@@ -7,8 +7,11 @@ open Tbwd
 
 include Word.Make (Unitcomparable)
 
+(* Re-export the generator module so consumers can refer to ['g D.G.t] rather than naming Unitcomparable directly.  When generators eventually become multi-direction, only this alias changes. *)
+module G = Unitcomparable
+
 (* The unique generator witness for the (currently single-generator) dimension theory.  To prepare for future multi-generator generalization, consumers should refer to this rather than writing the constructor [Unit] directly. *)
-let deg : unit Unitcomparable.t = Unit
+let deg : unit G.t = G.Unit
 
 (* Type-level natural numbers are represented by words over Unit, which are isomorphic to natural numbers.  The two-argument [suc] is inherited from Word; we only expose alias [one] and [two] for ergonomics in code that talks about specific small dimensions. *)
 type one = (zero, unit) suc
@@ -17,7 +20,7 @@ type two = (one, unit) suc
 let one : one t = suc zero deg
 let two : two t = suc one deg
 
-type ('a, 'b) insert = ('a, unit, 'b) Tbwd.insert
+type ('a, 'g, 'b) insert = ('a, 'g, 'b) Tbwd.insert
 
 (* TODO: temporary scaffolding.  These three functions are commutativity-dependent and will be removed once all call sites in cube/icube/tube/etc. are restructured to use Word.ml's structured forms (Phase 7). *)
 
@@ -46,20 +49,19 @@ let rec of_int : int -> wrapped =
     let (Wrap w) = of_int (n - 1) in
     Wrap (suc w deg)
 
-type _ insert_of_int =
-  | Insert_of_int : ('b, ('b, unit) suc) insert -> ('b, unit) suc insert_of_int
+(* An insert-of-int is just an [insert_into], i.e. an insertion into some prefix at some position, producing the given word. *)
+type 'b insert_of_int = 'b insert_into
 
-let rec insert_of_int : type bsuc. bsuc t -> int -> bsuc insert_of_int option =
+let insert_of_int : type bsuc. bsuc t -> int -> bsuc insert_of_int option =
  fun n x ->
-  match n with
-  | Word Zero -> None
-  | Word (Suc (n, Unit)) -> (
-      if x < 0 then None
-      else if x = 0 then Some (Insert_of_int Now)
-      else
-        match insert_of_int (Word n) (x - 1) with
-        | None -> None
-        | Some (Insert_of_int y) -> Some (Insert_of_int (Later y)))
+  if x < 0 then None
+  else
+    let rec drop : type a. int -> a Seq.t -> a Seq.t =
+     fun k s -> if k <= 0 then s else match s () with Seq.Nil -> s | Seq.Cons (_, t) -> drop (k - 1) t
+    in
+    match drop x (all_inserts n) () with
+    | Seq.Nil -> None
+    | Seq.Cons (i, _) -> Some i
 
 (* Trichotomy.  Should be replaced by factoring/pushouts. *)
 

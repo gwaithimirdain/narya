@@ -41,13 +41,13 @@ module Cube (F : Fam2) = struct
         let Zero = km in
         let Zero = nm in
         x
-    | Branch (l1, br, _), End (d, (l2, e)) ->
+    | Branch (l1, br, _), End (d, _, (l2, e)) ->
         let (Le km') = plus_of_sface d in
         let Eq = D.minus_uniq' (dom_sface d) (Suc (km', Unit)) km in
         let (Suc (nm', Unit)) = nm in
         let Eq = Endpoints.uniq l1 l2 in
         gfind (Bwv.nth e br) km' nm' d
-    | Branch (_, _, br), Mid d ->
+    | Branch (_, _, br), Mid (d, _) ->
         let (Suc (km, Unit)) = D.plus_suc km in
         gfind br km nm d
 

@@ -22,10 +22,10 @@ let rec deg_of_shuffle : type a b c ab. (a, b, c) shuffle -> (a, b, ab) D.plus -
       Zero D.zero
   | Left s ->
       let (Suc (ab, Unit)) = D.plus_suc ab in
-      Suc (deg_of_shuffle s ab, Now)
+      Suc (deg_of_shuffle s ab, D.deg, Now)
   | Right s ->
       let (Suc (ab, Unit)) = ab in
-      Suc (deg_of_shuffle s ab, Now)
+      Suc (deg_of_shuffle s ab, D.deg, Now)
 
 let rec perm_of_shuffle : type a b c ab. (a, b, c) shuffle -> (a, b, ab) D.plus -> (c, ab) perm =
  fun s ab ->
@@ -35,10 +35,10 @@ let rec perm_of_shuffle : type a b c ab. (a, b, c) shuffle -> (a, b, ab) D.plus 
       Zero
   | Left s ->
       let (Suc (ab, Unit)) = D.plus_suc ab in
-      Suc (perm_of_shuffle s ab, Now)
+      Suc (perm_of_shuffle s ab, D.deg, Now)
   | Right s ->
       let (Suc (ab, Unit)) = ab in
-      Suc (perm_of_shuffle s ab, Now)
+      Suc (perm_of_shuffle s ab, D.deg, Now)
 
 let rec left_shuffle : type a b c. (a, b, c) shuffle -> a D.t = function
   | Zero -> D.zero

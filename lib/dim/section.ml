@@ -16,8 +16,12 @@ let rec section_of_deg : type m n. (m, n) deg -> (n, m) face option =
       match deg_coresidual s Now with
       | Coresidual_zero s' ->
           let* (Face (f, p)) = section_of_deg s' in
-          return (Face (End (f, (l, Top)), p))
-      | Coresidual_suc (s', i) ->
-          let* (Face (f, p)) = section_of_deg s' in
-          return (Face (Mid f, Suc (p, i))))
+          return (Face (End (f, D.deg, (l, Top)), p))
+      | Coresidual_suc (s', g_cs, i) -> (
+          (* TODO: bridge to the input deg's outer generator; in a multi-generator world the generator structure should flow through deg_coresidual's result type. *)
+          match D.G.compare g_cs D.deg with
+          | Neq -> None
+          | Eq ->
+              let* (Face (f, p)) = section_of_deg s' in
+              return (Face (Mid (f, g_cs), Suc (p, g_cs, i)))))
   | _ -> None

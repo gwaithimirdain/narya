@@ -11,7 +11,7 @@ open Perm
 (* TODO: Should an insertion be parametrized by b+c as well? *)
 type (_, _, _) insertion =
   | Zero : 'a D.t -> ('a, 'a, D.zero) insertion
-  | Suc : ('a, 'b, 'c) insertion * ('a, 'asuc) D.insert -> ('asuc, 'b, ('c, unit) D.suc) insertion
+  | Suc : ('a, 'b, 'c) insertion * ('a, unit, 'asuc) D.insert -> ('asuc, 'b, ('c, unit) D.suc) insertion
 
 let ins_zero : type a. a D.t -> (a, a, D.zero) insertion = fun a -> Zero a
 
@@ -84,7 +84,7 @@ let rec deg_of_ins_plus : type a b c bc. (a, b, c) insertion -> (b, c, bc) D.plu
  fun i bc ->
   match (i, bc) with
   | Zero a, Zero -> id_deg a
-  | Suc (i, e), Suc (bc, Unit) -> Suc (deg_of_ins_plus i bc, e)
+  | Suc (i, e), Suc (bc, Unit) -> Suc (deg_of_ins_plus i bc, D.deg, e)
 
 let deg_of_ins : type a b c. (a, b, c) insertion -> a deg_to =
  fun ins ->
@@ -95,7 +95,7 @@ let rec perm_of_ins_plus : type a b c bc. (a, b, c) insertion -> (b, c, bc) D.pl
  fun i bc ->
   match (i, bc) with
   | Zero a, Zero -> id_perm a
-  | Suc (i, e), Suc (bc, Unit) -> Suc (perm_of_ins_plus i bc, e)
+  | Suc (i, e), Suc (bc, Unit) -> Suc (perm_of_ins_plus i bc, D.deg, e)
 
 let perm_of_ins : type a b c. (a, b, c) insertion -> a perm_to =
  fun ins ->
@@ -124,7 +124,7 @@ let rec insfact : type ac b c bc. (ac, bc) deg -> (b, c, bc) D.plus -> (ac, b, c
   match bc with
   | Zero -> Insfact (s, Zero (dom_deg s))
   | Suc (bc, Unit) ->
-      let (Suc (s, e)) = s in
+      let (Suc (s, _, e)) = s in
       let (Insfact (s, i)) = insfact s bc in
       Insfact (s, Suc (i, e))
 
@@ -196,8 +196,9 @@ let rec ins_of_ints : type ab. ab D.t -> int list -> ab ins_of option =
   | [] -> Some (Ins_of (Zero ab))
   | n :: ns -> (
       match (ab, D.insert_of_int ab (n - 1)) with
-      | Word (Suc (ab, Unit)), Some (Insert_of_int ix) -> (
-          let ab = D.Word ab in
+      | Word (Suc (ab_inner, Unit)), Some (Into (g, ix)) -> (
+          let ab_outer_word = D.Word (Suc (ab_inner, Unit)) in
+          let ab = D.Word ab_inner in
           try
             let ns =
               List.map
@@ -207,7 +208,14 @@ let rec ins_of_ints : type ab. ab D.t -> int list -> ab ins_of option =
                   else raise (Invalid_argument "ins_of_ints"))
                 ns in
             match ins_of_ints ab ns with
-            | Some (Ins_of ins) -> Some (Ins_of (Suc (ins, ix)))
+            | Some (Ins_of ins) -> (
+                (* TODO: bridge existentials via G.compare and Word.compare; this is needed only because [insertion]'s Suc still hardcodes [unit]. *)
+                match D.G.compare g D.deg with
+                | Neq -> None
+                | Eq -> (
+                    match D.compare (D.uninsert ix ab_outer_word) (dom_ins ins) with
+                    | Eq -> Some (Ins_of (Suc (ins, ix)))
+                    | Neq -> None))
             | None -> None
           with Invalid_argument _ -> None)
       | Word Zero, Some _ -> .

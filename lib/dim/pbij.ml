@@ -36,8 +36,9 @@ let rec pbij_of_int_strings : type e.
   | [] -> Some (Pbij_of (Pbij (ins_zero e, Zero)))
   | `Int n :: strs -> (
       match (e, D.insert_of_int e (n + 1)) with
-      | Word (Suc (e, Unit)), Some (Insert_of_int ix) -> (
-          let e = D.Word e in
+      | Word (Suc (e_inner, Unit)), Some (Into (g, ix)) -> (
+          let e_outer_word = D.Word (Suc (e_inner, Unit)) in
+          let e = D.Word e_inner in
           let strs =
             List.map
               (function
@@ -48,7 +49,14 @@ let rec pbij_of_int_strings : type e.
                 | `Str str -> `Str str)
               strs in
           match pbij_of_int_strings e strs with
-          | Some (Pbij_of (Pbij (ins, shuf))) -> Some (Pbij_of (Pbij (Suc (ins, ix), Right shuf)))
+          | Some (Pbij_of (Pbij (ins, shuf))) -> (
+              (* TODO: bridge existentials via G.compare and Word.compare. *)
+              match D.G.compare g D.deg with
+              | Neq -> None
+              | Eq -> (
+                  match D.compare (D.uninsert ix e_outer_word) (dom_ins ins) with
+                  | Eq -> Some (Pbij_of (Pbij (Suc (ins, ix), Right shuf)))
+                  | Neq -> None))
           | None -> None)
       | Word Zero, Some _ -> .
       | _, None -> None)
@@ -146,9 +154,13 @@ let rec deg_comp_ins : type m n i res.
       | Coresidual_zero deg ->
           let (Deg_comp_ins (ins, shuf, s)) = deg_comp_ins deg ins in
           Deg_comp_ins (ins, Left shuf, s)
-      | Coresidual_suc (deg, j) ->
-          let (Deg_comp_ins (ins, shuf, s)) = deg_comp_ins deg ins in
-          Deg_comp_ins (Suc (ins, j), Right shuf, s))
+      | Coresidual_suc (deg, g_cs, j) -> (
+          (* TODO: bridge via G.compare; not needed once insertion carries its generator explicitly. *)
+          match D.G.compare g_cs D.deg with
+          | Neq -> assert false
+          | Eq ->
+              let (Deg_comp_ins (ins, shuf, s)) = deg_comp_ins deg ins in
+              Deg_comp_ins (Suc (ins, j), Right shuf, s)))
 
 (* A partial bijection can be composed with a degeneracy on the evaluation dimension to produce another partial bijection, with an induced degeneracy on the results. *)
 
@@ -186,9 +198,12 @@ let rec deg_comp_pbij : type m n i res rem sh.
               s,
               function
               | _ -> . )
-      | Coresidual_suc (deg, j) ->
-          let (Deg_comp_pbij (ins, shuf, s, ifzero)) = deg_comp_pbij deg ins shuf in
-          Deg_comp_pbij (Suc (ins, j), Right shuf, s, ifzero))
+      | Coresidual_suc (deg, g_cs, j) -> (
+          match D.G.compare g_cs D.deg with
+          | Neq -> assert false
+          | Eq ->
+              let (Deg_comp_pbij (ins, shuf, s, ifzero)) = deg_comp_pbij deg ins shuf in
+              Deg_comp_pbij (Suc (ins, j), Right shuf, s, ifzero)))
 
 (* This is like deg_comp_pbij (for the insertion only, so far), but for adding a constant on the left rather than acting by an arbitrary degeneracy (for evaluation rather that acting).  This allows it to return more detailed information.  The dimension 'r (new remaining) is the piece of 'i (intrinsic) that lands in 'm (new added dimension on the left), while 'h (new shared) is the part that lands in 'n, and 't is the part of 'm that doesn't come from 'r.  Note that the first two outputs together form an ('n, 'i, 'r) pbij; that's why this is in this file, even though it doesn't refer explicitly to pbij.  *)
 

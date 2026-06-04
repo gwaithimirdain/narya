@@ -17,14 +17,20 @@ let rec deg_sface : type m n k. (n, k) deg -> (m, n) sface -> (m, k) op =
   | Zero _ ->
       let m = dom_sface b in
       Op (Zero, Zero m)
-  | Suc (p, k) -> (
+  | Suc (p, g_deg, k) -> (
       match sface_residual b k with
-      | End (f, e) ->
-          let (Op (f', p')) = deg_sface p f in
-          Op (End (f', e), p')
-      | Mid (f, l) ->
-          let (Op (f', p')) = deg_sface p f in
-          Op (Mid f', Suc (p', l)))
+      | End (f, g, e) -> (
+          match D.G.compare g g_deg with
+          | Eq ->
+              let (Op (f', p')) = deg_sface p f in
+              Op (End (f', g, e), p')
+          | Neq -> assert false)
+      | Mid (f, g, l) -> (
+          match D.G.compare g g_deg with
+          | Eq ->
+              let (Op (f', p')) = deg_sface p f in
+              Op (Mid (f', g), Suc (p', g, l))
+          | Neq -> assert false))
 
 let comp_op : type m n k. (n, k) op -> (m, n) op -> (m, k) op =
  fun (Op (a, b)) (Op (c, d)) ->

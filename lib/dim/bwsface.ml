@@ -34,8 +34,8 @@ let sface_of_bw : type m n. (m, n) bwsface -> (m, n) sface =
     | Zero ->
         let Zero, Zero = (km, ln) in
         f
-    | End (e, bf) -> sface_of_bw_onto km (D.suc_plus ln) (End (f, e)) bf
-    | Mid bf -> sface_of_bw_onto (D.suc_plus km) (D.suc_plus ln) (Mid f) bf in
+    | End (e, bf) -> sface_of_bw_onto km (D.suc_plus ln) (End (f, D.deg, e)) bf
+    | Mid bf -> sface_of_bw_onto (D.suc_plus km) (D.suc_plus ln) (Mid (f, D.deg)) bf in
   sface_of_bw_onto
     (D.zero_plus (dom_bwsface bf))
     (D.zero_plus (cod_bwsface bf))
