@@ -58,6 +58,7 @@ include Op
 include Insertion
 include Shuffle
 include Pbij
+include Except
 module Hott = Hott
 
 type any_dim = Any : 'n D.t -> any_dim

@@ -15,11 +15,14 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
   | Field (tm, fld, fldins) -> Field (term f tm, fld, fldins)
   | UU (mode, n) -> UU (mode, n)
   | Inst (tm, args) -> Inst (term f tm, TubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ args ])
-  | Pi (x, Modal (modality, al, doms), cods) ->
+  | Pi { x; filter; doms = Modal (modality, al, doms); cods } ->
       Pi
-        ( x,
-          Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ doms ]),
-          CodCube.mmap { map = (fun _ [ Cod x ] -> Cod (term f x)) } [ cods ] )
+        {
+          x;
+          filter;
+          doms = Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ doms ]);
+          cods = CodCube.mmap { map = (fun _ [ Cod x ] -> Cod (term f x)) } [ cods ];
+        }
   | App (fn, Modal (modality, al, args)) ->
       App (term f fn, Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ args ]))
   | Constr (c, n, args) ->

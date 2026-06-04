@@ -71,11 +71,13 @@ module rec Value : sig
       }
         -> 'mode head
     | UU : 'mode Mode.t * 'n D.t -> 'mode head
-    | Pi :
-        'm variables
-        * ('dom, 'modality, 'mode) Modality.t
-        * ('m, ('dom, kinetic) value) CubeOf.t
-        * ('m, 'mode * 'modality * 'dom) BindCube.t
+    | Pi : {
+        x : 'n variables;
+        modality : ('dom, 'modality, 'mode) Modality.t;
+        filter : ('modality, 'n, 'm) Modality.filter_dim;
+        doms : ('n, ('dom, kinetic) value) CubeOf.t;
+        cods : ('m, 'mode * 'modality * 'dom) BindCube.t;
+      }
         -> 'mode head
 
   and (_, _) apps =
@@ -140,11 +142,13 @@ module rec Value : sig
 
   and (_, _, _) canonical =
     | UU : 'mode Mode.t * 'm D.t -> ('mode, 'm, D.zero) canonical
-    | Pi :
-        'm variables
-        * ('dom, 'modality, 'mode) Modality.t
-        * ('m, ('dom, kinetic) value) CubeOf.t
-        * ('m, 'mode * 'modality * 'dom) BindCube.t
+    | Pi : {
+        x : 'n variables;
+        modality : ('dom, 'modality, 'mode) Modality.t;
+        filter : ('modality, 'n, 'm) Modality.filter_dim;
+        doms : ('n, ('dom, kinetic) value) CubeOf.t;
+        cods : ('m, 'mode * 'modality * 'dom) BindCube.t;
+      }
         -> ('mode, 'm, D.zero) canonical
     | Data : ('mode, 'm, 'j, 'ij) data_args -> ('mode, 'm, D.zero) canonical
     | Codata : ('mode, 'm, 'n, 'c, 'a, 'et) codata_args -> ('mode, 'm, 'n) canonical
@@ -222,6 +226,7 @@ end = struct
   (* Here is the recursive application of the functor Cube.  First we define a module to pass as its argument, with type defined to equal the yet-to-be-defined binder, referred to recursively. *)
   module BindFam = struct
     type (_, _) t =
+      (* TODO: Ugh, each binder should really bind a filtered number of variables. *)
       | BindFam :
           ('mode, 'modality, 'dom, 'k, kinetic) Value.binder
           -> ('k, 'mode * 'modality * 'dom) t
@@ -279,11 +284,13 @@ end = struct
     (* Universes are parametrized by a mode and a dimension. *)
     | UU : 'mode Mode.t * 'n D.t -> 'mode head
     (* Pis must store not just the domain type but all its boundary types.  These domain and boundary types are not fully instantiated.  Note the codomains are stored in a cube of binders. *)
-    | Pi :
-        'm variables
-        * ('dom, 'modality, 'mode) Modality.t
-        * ('m, ('dom, kinetic) value) CubeOf.t
-        * ('m, 'mode * 'modality * 'dom) BindCube.t
+    | Pi : {
+        x : 'n variables;
+        modality : ('dom, 'modality, 'mode) Modality.t;
+        filter : ('modality, 'n, 'm) Modality.filter_dim;
+        doms : ('n, ('dom, kinetic) value) CubeOf.t;
+        cods : ('m, 'mode * 'modality * 'dom) BindCube.t;
+      }
         -> 'mode head
 
   (* An application contains the data of an n-dimensional argument and its boundary, together with a neutral insertion applied outside that can't be pushed in.  This represents the *argument list* of a single application, not the function.  Thus, an application spine will be a head together with a list of apps.  Each application could be along a different modality. *)
@@ -363,11 +370,13 @@ end = struct
   and (_, _, _) canonical =
     (* At present, we never produce these except as the values of their corresponding heads.  But in principle, we could allow universes and pi-types as potential terms, so that constants could be defined to "behave like" universes or pi-types without reducing to them. *)
     | UU : 'mode Mode.t * 'm D.t -> ('mode, 'm, D.zero) canonical
-    | Pi :
-        'm variables
-        * ('dom, 'modality, 'mode) Modality.t
-        * ('m, ('dom, kinetic) value) CubeOf.t
-        * ('m, 'mode * 'modality * 'dom) BindCube.t
+    | Pi : {
+        x : 'n variables;
+        modality : ('dom, 'modality, 'mode) Modality.t;
+        filter : ('modality, 'n, 'm) Modality.filter_dim;
+        doms : ('n, ('dom, kinetic) value) CubeOf.t;
+        cods : ('m, 'mode * 'modality * 'dom) BindCube.t;
+      }
         -> ('mode, 'm, D.zero) canonical
     (* We define a named record type to encapsulate the arguments of Data and Codata, rather than using an inline one, so that we can bind their existential variables (https://discuss.ocaml.org/t/annotating-by-an-existential-type/14721).  See the definitions of these records below. *)
     | Data : ('mode, 'm, 'j, 'ij) data_args -> ('mode, 'm, D.zero) canonical

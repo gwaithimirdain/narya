@@ -108,11 +108,7 @@ module rec Term : sig
     | Inst :
         ('mode, 'a, kinetic) term * ('m, 'n, 'mn, ('mode, 'a, kinetic) term) TubeOf.t
         -> ('mode, 'a, kinetic) term
-    | Pi :
-        'n variables
-        * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
-        * ('n, 'mode * 'modality * 'a) CodCube.t
-        -> ('mode, 'a, kinetic) term
+    | Pi : ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args -> ('mode, 'a, kinetic) term
     | App :
         ('mode, 'a, kinetic) term * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
         -> ('mode, 'a, kinetic) term
@@ -156,6 +152,13 @@ module rec Term : sig
     | Unact : ('m, 'n) op * ('mode, 'b, 's) term -> ('mode, 'b, 's) term
     | Shift : 'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'b, 's) term -> ('mode, 'nb, 's) term
     | Weaken : ('mode, 'b, 's) term -> ('mode, ('b, ('modality, 'n) dim_entry) snoc, 's) term
+
+  and ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args = {
+    x : 'k variables;
+    filter : ('modality, 'k, 'n) Modality.filter_dim;
+    doms : ('k, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube;
+    cods : ('n, 'mode * 'modality * 'a) CodCube.t;
+  }
 
   and ('mode, 'n, 'a, 's, 'et) struct_args = {
     dim : 'n D.t;
@@ -370,11 +373,7 @@ end = struct
     | Inst :
         ('mode, 'a, kinetic) term * ('m, 'n, 'mn, ('mode, 'a, kinetic) term) TubeOf.t
         -> ('mode, 'a, kinetic) term
-    | Pi :
-        'n variables
-        * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
-        * ('n, 'mode * 'modality * 'a) CodCube.t
-        -> ('mode, 'a, kinetic) term
+    | Pi : ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args -> ('mode, 'a, kinetic) term
     | App :
         ('mode, 'a, kinetic) term * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
         -> ('mode, 'a, kinetic) term
@@ -425,6 +424,13 @@ end = struct
     | Unact : ('m, 'n) op * ('mode, 'b, 's) term -> ('mode, 'b, 's) term
     | Shift : 'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'b, 's) term -> ('mode, 'nb, 's) term
     | Weaken : ('mode, 'b, 's) term -> ('mode, ('b, ('modality, 'n) dim_entry) snoc, 's) term
+
+  and ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args = {
+    x : 'k variables;
+    filter : ('modality, 'k, 'n) Modality.filter_dim;
+    doms : ('k, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube;
+    cods : ('n, 'mode * 'modality * 'a) CodCube.t;
+  }
 
   and ('mode, 'n, 'a, 's, 'et) struct_args = {
     dim : 'n D.t;
@@ -592,7 +598,13 @@ let pi : type mode modality a.
     (mode, (a, (modality, D.zero) dim_entry) snoc, kinetic) term ->
     (mode, a, kinetic) term =
  fun x (Modal (modality, plus, dom)) cod ->
-  Pi (x, Modal (modality, plus, CubeOf.singleton dom), CodCube.singleton (Cod cod))
+  Pi
+    {
+      x;
+      filter = Modality.filter_zero modality;
+      doms = Modal (modality, plus, CubeOf.singleton dom);
+      cods = CodCube.singleton (Cod cod);
+    }
 
 let app fn modality al arg = App (fn, Modal (modality, al, CubeOf.singleton arg))
 let appid fn mode arg = App (fn, Modal (Modality.id mode, plus_no_lock mode, CubeOf.singleton arg))

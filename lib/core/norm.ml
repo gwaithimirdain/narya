@@ -295,26 +295,25 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
             ModalValueCube.Modal (modality, eval_args lenv m_n mn tm))
           args in
       Val (Constr (constr, mn, eargs))
-  | Pi
-      (type n dom modality)
-      ((x, doms, cods) :
-        n variables
-        * (n, dom, modality, mode, b, kinetic) modal_term_cube
-        * (n, mode * modality * b) CodCube.t) ->
-      let (Modal (modality, al, doms)) = doms in
+  | Pi (type k n dom modality) ({ x; filter; doms; cods } : (k, n, dom, modality, mode, b) pi_args)
+    ->
+      let (Term.Modal (modality, al, doms)) = doms in
       (* We are starting with an n-dimensional pi-type and evaluating it in an m-dimensional environment, producing an (m+n)-dimensional result. *)
-      let n = CubeOf.dim doms in
+      let k, n = (CubeOf.dim doms, CodCube.dim cods) in
       let m = dim_env env in
+      (* TODO: Need to filter m and then add it to k *)
+      let (Plus (type mk) (m_k : (m, k, mk) D.plus)) = D.plus k in
+      let mk = D.plus_out m m_k in
       let (Plus (type mn) (m_n : (m, n, mn) D.plus)) = D.plus n in
       let mn = D.plus_out m m_n in
       (* The basic thing we do is evaluate the cubes of domains and codomains. *)
       let lenv = key_env env (Modalcell.id modality) al in
       let doms =
-        CubeOf.build mn
+        CubeOf.build mk
           {
             build =
               (fun fab ->
-                let (SFace_of_plus (_, fa, fb)) = sface_of_plus m_n fab in
+                let (SFace_of_plus (_, fa, fb)) = sface_of_plus m_k fab in
                 eval_term (act_env lenv (op_of_sface fa)) (CubeOf.find doms fb));
           } in
       let cods =
@@ -343,7 +342,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                }) in
         let subdoms, subcods = (CubeOf.subcube fab doms, BindCube.subcube fab cods) in
         let subx = plus_variables (dom_sface fa) ab (sub_variables fb x) in
-        let head : mode head = Pi (subx, modality, subdoms, subcods) in
+        let head : mode head = Pi { x = subx; modality; filter; doms = subdoms; cods = subcods } in
         (* We don't need fibrancy fields for all the boundary types, since once something "is a type" we don't need it to be in Fib any more. *)
         let fields : (mode * k * potential * no_eta) Value.StructfieldAbwd.t =
           match (is_id_sface fab, Fibrancy.PiValuesMap.find_opt modality !Fibrancy.pi) with
@@ -372,7 +371,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                (Canonical
                   {
                     mode = mode_env env;
-                    canonical = Pi (subx, modality, subdoms, subcods);
+                    canonical = Pi { x = subx; modality; filter; doms = subdoms; cods = subcods };
                     tyargs = TubeOf.empty kl;
                     ins = ins_zero kl;
                     fields;
@@ -510,7 +509,7 @@ and apply : type dom modality mode n s.
   | Neu { head; args; value; ty = (lazy ty) } -> (
       (* ... we check that its type is fully instantiated... *)
       match view_type ty "apply" with
-      | Canonical (_, Pi (_, pi_modality, doms, cods), ins, tyargs) -> (
+      | Canonical (_, Pi { modality = pi_modality; doms; cods; _ }, ins, tyargs) -> (
           (* ... and that the pi-type and its instantiation have the correct dimension. *)
           let k = CubeOf.dim doms in
           let Eq = eq_of_ins_zero ins in

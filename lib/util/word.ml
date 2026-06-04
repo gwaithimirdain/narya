@@ -398,6 +398,27 @@ module Make (G : Comparable) = struct
     | Zero, Suc (_, g) -> plus_suc_neq g n2
     | Suc (_, g), Zero -> plus_suc_neq g n1
 
+  (* ********** Occurrence ********** *)
+
+  type (_, _) occurs =
+    | Occurs_now : ('g, ('m, 'g) suc) occurs
+    | Occurs_later : ('g, 'm) occurs -> ('g, ('m, 'h) suc) occurs
+
+  type (_, _) unoccurs =
+    | Unoccurs_emp : ('g, emp) unoccurs
+    | Unoccurs_suc : ('g, 'm) unoccurs -> ('g, ('m, 'h) suc) unoccurs
+
+  let rec occurs : type g m. g G.t -> m t -> ((g, m) occurs, (g, m) unoccurs) Either.t =
+   fun g -> function
+    | Word Zero -> Right Unoccurs_emp
+    | Word (Suc (m, h)) -> (
+        match G.compare g h with
+        | Eq -> Left Occurs_now
+        | Neq -> (
+            match occurs g (Word m) with
+            | Left o -> Left (Occurs_later o)
+            | Right u -> Right (Unoccurs_suc u)))
+
   (* ********** Forwards words ********** *)
 
   type 'b fwd = Nil : nil fwd | Cons : 'n G.t * 'b fwd -> ('n, 'b) cons fwd

@@ -190,7 +190,7 @@ module F = struct
         let (To p) = deg_of_ins ins in
         fprintf ppf "Meta (%s, %a, %s)" (Meta.name meta) env e (string_of_deg p)
     | UU (_, n) -> fprintf ppf "UU %a" dim n
-    | Pi (x, _, doms, cods) ->
+    | Pi { x; doms; cods; _ } ->
         let (BindFam b) = BindCube.find_top cods in
         fprintf ppf "Pi^%s (%s, %a, (... %a))"
           (string_of_dim (CubeOf.dim doms))
@@ -208,7 +208,7 @@ module F = struct
     fprintf ppf "(%s, %a, (evdim=%s)%s, ?)"
       (match canonical with
       | UU _ -> "UU ?"
-      | Pi (_, _, _, _) -> "Pi ?"
+      | Pi _ -> "Pi ?"
       | Data _ -> "Data ?"
       | Codata _ -> "Codata ?")
       (tubeof normal) tyargs
@@ -244,7 +244,7 @@ module F = struct
           (string_of_dim (dom_ins ins))
     | UU (_, n) -> fprintf ppf "UU %a" dim n
     | Inst (tm, args) -> fprintf ppf "Inst (%a, %a)" term tm (tubeof term) args
-    | Pi (x, Modal (_modality, _, doms), cods) ->
+    | Pi { x; doms = Modal (_modality, _, doms); cods; _ } ->
         fprintf ppf "Pi^(%a) (%s, %a, (... %a))" dim (CubeOf.dim doms)
           (Option.value (top_variable x) ~default:"_")
           (cubeof term) doms term

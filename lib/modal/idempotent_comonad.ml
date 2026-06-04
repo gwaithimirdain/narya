@@ -1,4 +1,5 @@
 open Util
+open Dim
 
 (* We define all the "generator" modules at top-level, but don't call the generation code until the "install" function, so that only one mode theory actually gets installed at runtime.  Thus, each generator module has to be parametrized over the results of generation of the previous ones. *)
 
@@ -13,6 +14,10 @@ module ComonadGen (Testmode : Mode.Generated with module G := TestmodeGen) = str
   let src = Testmode.mode
   let tgt = Testmode.mode
   let name = "□"
+
+  type nonparametric = D.zero
+
+  let nonparametric = D.zero
 end
 
 module ComonadCells

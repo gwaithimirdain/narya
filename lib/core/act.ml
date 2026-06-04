@@ -111,6 +111,14 @@ module Act = struct
         ('mode, 'm, 'a) env * ('mn, 'm, 'n) insertion
         -> ('mode, 'a, 'mn, 'n) act_closure
 
+  type (_, _, _, _, _) act_pi =
+    | Act_pi :
+        ('k, 'n) deg
+        * ('modality, 'k, 'm) Modality.filter_dim
+        * ('k, ('dom, kinetic) value) CubeOf.t
+        * ('m, 'mode * 'modality * 'dom) BindCube.t
+        -> ('n, 'm, 'dom, 'modality, 'mode) act_pi
+
   let rec act_value : type cod mu1 mu2 mode m n status.
       (mode, status) value ->
       (m, n) deg ->
@@ -317,9 +325,9 @@ module Act = struct
     (* Unlike degeneracy actions, modal key actions do not change the *identity* of a canonical type, only the *arguments* it is applied to.  Therefore, the modal cell is ignored when acting on a universe, it only acts on the domains and codomains of a pi-type, and on the indices of a datatype and their types (tyfam). *)
     match tm with
     | UU (mode, _) -> UU (mode, dom_deg fa)
-    | Pi (x, modality, doms, cods) ->
-        let doms', cods' = act_pi modality doms cods fa cell in
-        Pi (act_variables x fa, modality, doms', cods')
+    | Pi { x; modality; filter; doms; cods } ->
+        let (Act_pi (fb, filter, doms, cods)) = act_pi modality filter doms cods fa cell in
+        Pi { x = act_variables x fb; filter; modality; doms; cods }
     | Data { dim = _; tyfam; indices; constrs; discrete } ->
         let tyfam = ref (Option.map (fun x -> lazy (act_normal (Lazy.force x) fa cell)) !tyfam) in
         let indices =
@@ -497,26 +505,28 @@ module Act = struct
     | UU (mode, nk) ->
         let (Of fa) = deg_plus_to s nk ~on:"universe head" in
         UU (mode, dom_deg fa)
-    | Pi (x, modality, doms, cods) ->
-        let (Of fa) = deg_plus_to s (CubeOf.dim doms) ~on:"pi-type head" in
-        let doms', cods' = act_pi modality doms cods fa c in
-        Pi (act_variables x fa, modality, doms', cods')
+    | Pi { x; modality; filter; doms; cods } ->
+        let (Of fa) = deg_plus_to s (BindCube.dim cods) ~on:"pi-type head" in
+        let (Act_pi (fb, filter, doms, cods)) = act_pi modality filter doms cods fa c in
+        Pi { x = act_variables x fb; modality; filter; doms; cods }
 
-  and act_pi : type dom modality mode mu1 mu2 cod m n.
+  and act_pi : type dom modality mode mu1 mu2 cod m n k.
       (dom, modality, mode) Modality.t ->
-      (n, (dom, kinetic) value) CubeOf.t ->
+      (modality, k, n) Modality.filter_dim ->
+      (k, (dom, kinetic) value) CubeOf.t ->
       (n, mode * modality * dom) BindCube.t ->
       (m, n) deg ->
       (mode, mu1, mu2, cod) Modalcell.t option ->
-      (m, (dom, kinetic) value) CubeOf.t * (m, mode * modality * dom) BindCube.t =
-   fun modality doms cods fa c ->
+      (k, m, dom, modality, mode) act_pi =
+   fun modality filter doms cods fa c ->
     let mi = dom_deg fa in
+    let (Filter_deg (fa', filter')) = Modality.filter_deg filter fa in
     let doms' =
       match c with
       | Some c ->
           let (Wrap cm) = Modalcell.prewhisker_wrapped c modality in
-          act_cube { act = (fun x s c -> act_value x s c) } doms fa (Some cm)
-      | None -> act_cube { act = (fun x s c -> act_value x s c) } doms fa None in
+          act_cube { act = (fun x s c -> act_value x s c) } doms fa' (Some cm)
+      | None -> act_cube { act = (fun x s c -> act_value x s c) } doms fa' None in
     let cods' =
       BindCube.build mi
         {
@@ -526,7 +536,7 @@ module Act = struct
               let (BindFam codc) = BindCube.find cods fc in
               BindFam (act_binder codc fd));
         } in
-    (doms', cods')
+    Act_pi (fa', filter', doms', cods')
 
   (* Action on a Bwd of applications (each of which is just the argument and its boundary).  Pushes the degeneracy past the stored insertions, factoring it each time and leaving an appropriate insertion on the outside.  Also returns the innermost degeneracy, for acting on the head with. *)
   and act_apps : type mode mu1 mu2 cod a b any.

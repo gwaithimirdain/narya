@@ -1,5 +1,6 @@
 open Bwd
 open Util
+open Dim
 open Signatures
 module StringMap = Map.Make (String)
 
@@ -24,6 +25,8 @@ module Gen = struct
 
   let name : type src gen tgt. (src, gen, tgt) t -> string =
    fun (PK (_, i, _)) -> Dynarray.get names i
+
+  let nonparametric : D.wrapped Dynarray.t = Dynarray.create ()
 
   let src_uniq : type a1 m b1 a2 b2. (a1, m, b1) t -> (a2, m, b2) t -> (a1, a2) Eq.t =
    fun m n ->
@@ -179,6 +182,11 @@ module type Generator = sig
   val src : src Mode.t
   val tgt : tgt Mode.t
   val name : string
+
+  (* Which directions this generator forbids parametricity in *)
+  type nonparametric
+
+  val nonparametric : nonparametric D.t
 end
 
 module type Generated = sig
@@ -196,13 +204,14 @@ module Generate (G : Generator) = struct
 
   let () =
     Dynarray.add_last Gen.names G.name;
+    Dynarray.add_last Gen.nonparametric (Wrap G.nonparametric);
     Gen.by_name := StringMap.add G.name (Wrap modality : Gen.all_wrapped) !Gen.by_name
 end
 
 type ('src, 'tgt) gen_wrapped = Wrap : ('src, 'morphism, 'tgt) Gen.t -> ('src, 'tgt) gen_wrapped
 
-let generate : type a b. a Mode.t -> b Mode.t -> string -> (a, b) gen_wrapped =
- fun a b c ->
+let generate : type a b p. a Mode.t -> b Mode.t -> string -> p D.t -> (a, b) gen_wrapped =
+ fun a b c p ->
   let module G = struct
     type src = a
     type tgt = b
@@ -210,6 +219,10 @@ let generate : type a b. a Mode.t -> b Mode.t -> string -> (a, b) gen_wrapped =
     let src = a
     let tgt = b
     let name = c
+
+    type nonparametric = p
+
+    let nonparametric = p
   end in
   let module M = Generate (G) in
   Wrap M.modality
@@ -297,7 +310,6 @@ let to_string : type a m b. (a, m, b) t -> string =
   | [] -> "id"
   | ms -> String.concat " " ms
 
-(* *)
 let compare_name : type x m y s.
     (s -> string) ->
     s list ->
@@ -313,3 +325,31 @@ let compare_name : type x m y s.
       match compare m n with
       | Eq -> Ok ()
       | Neq -> Error (`Unequal (Wrap n)))
+
+type ('m, 'e) nonparametric = 'e D.t
+type _ has_nonparametric = Nonparametric : ('m, 'e) nonparametric -> 'm has_nonparametric
+
+let rec nonparametric : type x m y. (x, m, y) t -> m has_nonparametric = function
+  | Path (Zero, _) -> Nonparametric D.zero
+  | Path (Suc (Zero, PK (_, m, _)), _) ->
+      let (Wrap e) = Dynarray.get Gen.nonparametric m in
+      Nonparametric e
+  | Path (Suc (m, _), y) ->
+      let (Nonparametric e) = nonparametric (Path (m, y)) in
+      Nonparametric e
+
+type ('m, 'a, 'b) filter_dim =
+  | Filter : ('m, 'e) nonparametric * ('e, 'a, 'b) except -> ('m, 'a, 'b) filter_dim
+
+let filter_zero : type x m y. (x, m, y) t -> (m, D.zero, D.zero) filter_dim =
+ fun m ->
+  let (Nonparametric e) = nonparametric m in
+  Filter (e, except_zero)
+
+type (_, _, _) filter_deg =
+  | Filter_deg : ('d, 'a) deg * ('m, 'd, 'c) filter_dim -> ('m, 'a, 'c) filter_deg
+
+let filter_deg : type m a b c. (m, a, b) filter_dim -> (c, b) deg -> (m, a, c) filter_deg =
+ fun (Filter (e, ex)) s ->
+  let (Except_deg (s, ex)) = except_deg e ex s in
+  Filter_deg (s, Filter (e, ex))

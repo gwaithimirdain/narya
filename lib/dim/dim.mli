@@ -18,6 +18,10 @@ module D : sig
   type (_, _) cofactor = Cofactor : ('n, 'k, 'nk) plus -> ('nk, 'k) cofactor
 
   val cofactor : 'nk t -> 'k t -> ('nk, 'k) cofactor option
+
+  type one
+
+  val one : one t
 end
 
 module Dmap : MAP_MAKER with module Key := D
@@ -944,6 +948,23 @@ end
 module PbijmapOf : module type of Pbijmap (struct
   type ('a, 'b) t = 'b
 end)
+
+type ('e, 'a, 'b) except
+type (_, _) has_except = Except : ('e, 'a, 'b) except -> ('e, 'b) has_except
+
+val except_dirs : 'e D.t -> 'b D.t -> ('e, 'b) has_except
+val except_zero : ('e, D.zero, D.zero) except
+val excepted : ('e, 'a, 'b) except -> 'b D.t -> 'a D.t
+
+type (_, _, _) except_sface =
+  | Except_sface : ('d, 'a) sface * ('e, 'd, 'c) except -> ('e, 'a, 'c) except_sface
+
+val except_sface : ('e, 'a, 'b) except -> ('c, 'b) sface -> ('e, 'a, 'c) except_sface
+
+type (_, _, _) except_deg =
+  | Except_deg : ('d, 'a) deg * ('e, 'd, 'c) except -> ('e, 'a, 'c) except_deg
+
+val except_deg : 'e D.t -> ('e, 'a, 'b) except -> ('c, 'b) deg -> ('e, 'a, 'c) except_deg
 
 (* *)
 val deg_of_name : string -> any_deg option
