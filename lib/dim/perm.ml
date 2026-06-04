@@ -5,7 +5,7 @@ open Deg
 
 type ('m, 'n) perm =
   | Zero : (D.zero, D.zero) perm
-  | Suc : ('a, 'b) perm * ('a, 'c) D.insert -> ('c, 'b D.suc) perm
+  | Suc : ('a, 'b) perm * ('a, 'c) D.insert -> ('c, ('b, unit) D.suc) perm
 
 let rec dom_perm : type m n. (m, n) perm -> m D.t = function
   | Zero -> D.zero
@@ -13,7 +13,7 @@ let rec dom_perm : type m n. (m, n) perm -> m D.t = function
 
 let rec cod_perm : type a b. (a, b) perm -> b D.t = function
   | Zero -> D.zero
-  | Suc (p, _) -> D.suc (cod_perm p)
+  | Suc (p, _) -> D.suc (cod_perm p) Unit
 
 let rec id_perm : type a. a D.t -> (a, a) perm = function
   | Word Zero -> Zero
@@ -46,7 +46,7 @@ let rec perm_of_deg : type m n. (m, n) deg -> (m, n) perm option = function
 (* Residuals of permutations are just like those for degeneracies *)
 
 type (_, _, _) perm_residual =
-  | Residual : ('m, 'n) perm * ('m, 'msuc) D.insert -> ('msuc, 'n, 'n D.suc) perm_residual
+  | Residual : ('m, 'n) perm * ('m, 'msuc) D.insert -> ('msuc, 'n, ('n, unit) D.suc) perm_residual
 
 let rec perm_residual : type m n npred.
     (m, n) perm -> (npred, n) D.insert -> (m, npred, n) perm_residual =
@@ -87,7 +87,7 @@ let rec perm_plus_perm : type m n mn k l kl.
       let (Plus kl') = D.plus (dom_perm sln') in
       Suc (perm_plus_perm skm mn' kl' sln', D.plus_insert kl' kl i)
 
-let rec cosuc : type m n nsuc. (m, n) perm -> (n, nsuc) D.insert -> (m D.suc, nsuc) perm =
+let rec cosuc : type m n nsuc. (m, n) perm -> (n, nsuc) D.insert -> ((m, unit) D.suc, nsuc) perm =
  fun p -> function
   | Now -> Suc (p, Now)
   | Later i ->

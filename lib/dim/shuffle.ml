@@ -6,8 +6,8 @@ open Perm
 
 type (_, _, _) shuffle =
   | Zero : (D.zero, D.zero, D.zero) shuffle
-  | Left : ('a, 'b, 'ab) shuffle -> ('a D.suc, 'b, 'ab D.suc) shuffle
-  | Right : ('a, 'b, 'ab) shuffle -> ('a, 'b D.suc, 'ab D.suc) shuffle
+  | Left : ('a, 'b, 'ab) shuffle -> (('a, unit) D.suc, 'b, ('ab, unit) D.suc) shuffle
+  | Right : ('a, 'b, 'ab) shuffle -> ('a, ('b, unit) D.suc, ('ab, unit) D.suc) shuffle
 
 let rec plus_of_shuffle : type a b c. (a, b, c) shuffle -> (a, b, c) D.plus = function
   | Zero -> Zero
@@ -42,18 +42,18 @@ let rec perm_of_shuffle : type a b c ab. (a, b, c) shuffle -> (a, b, ab) D.plus 
 
 let rec left_shuffle : type a b c. (a, b, c) shuffle -> a D.t = function
   | Zero -> D.zero
-  | Left s -> D.suc (left_shuffle s)
+  | Left s -> D.suc (left_shuffle s) Unit
   | Right s -> left_shuffle s
 
 let rec right_shuffle : type a b c. (a, b, c) shuffle -> b D.t = function
   | Zero -> D.zero
   | Left s -> right_shuffle s
-  | Right s -> D.suc (right_shuffle s)
+  | Right s -> D.suc (right_shuffle s) Unit
 
 let rec out_shuffle : type a b c. (a, b, c) shuffle -> c D.t = function
   | Zero -> D.zero
-  | Left s -> D.suc (out_shuffle s)
-  | Right s -> D.suc (out_shuffle s)
+  | Left s -> D.suc (out_shuffle s) Unit
+  | Right s -> D.suc (out_shuffle s) Unit
 
 let rec shuffle_zero : type a. a D.t -> (a, D.zero, a) shuffle = function
   | Word Zero -> Zero

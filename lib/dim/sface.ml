@@ -7,8 +7,8 @@ open Singleton
 
 type (_, _) sface =
   | Zero : (D.zero, D.zero) sface
-  | End : ('m, 'n) sface * 'l Endpoints.t -> ('m, 'n D.suc) sface
-  | Mid : ('m, 'n) sface -> ('m D.suc, 'n D.suc) sface
+  | End : ('m, 'n) sface * 'l Endpoints.t -> ('m, ('n, unit) D.suc) sface
+  | Mid : ('m, 'n) sface -> (('m, unit) D.suc, ('n, unit) D.suc) sface
 
 let rec id_sface : type n. n D.t -> (n, n) sface = function
   | Word Zero -> Zero
@@ -115,14 +115,11 @@ let rec sface_of_plus : type ml n k nk.
 
 type (_, _) d_le = Le : ('m, 'n, 'mn) D.plus -> ('m, 'mn) d_le
 
-let rec plus_of_sface : type m mn. (m, mn) sface -> (m, mn) d_le = function
-  | Zero -> Le Zero
-  | End (d, _) ->
-      let (Le mn) = plus_of_sface d in
-      Le (Suc (mn, Unit))
-  | Mid d ->
-      let (Le mn) = plus_of_sface d in
-      Le (D.suc_plus_eq_suc mn)
+let plus_of_sface : type m mn. (m, mn) sface -> (m, mn) d_le =
+ fun s ->
+  match D.factor (cod_sface s) (dom_sface s) with
+  | Some (Factor p) -> Le p
+  | None -> assert false
 
 (* As long as there is at least one endpoint, any dimension has at least one zero-dimensional face. *)
 

@@ -267,6 +267,13 @@ module Make (G : Comparable) = struct
             | Eq -> Eq
             | Neq -> Neq))
 
+  (* Cast the middle ("difference") type of a plus to a specific known word type, using Word.compare.  Returns None if the types differ. *)
+  let plus_cast_n : type m n p k. n t -> (m, k, p) plus -> (m, n, p) plus option =
+   fun n p ->
+    match compare (plus_right p) n with
+    | Eq -> Some p
+    | Neq -> None
+
   (* Now we can define suc_plus_eq_suc in a way that correctly records the relationship between 'q and 'p.  *)
   type (_, _, _, _) suc_plus_eq_suc =
     | Suc_plus_eq_suc :

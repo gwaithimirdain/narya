@@ -271,10 +271,10 @@ module rec Internal_Pbijmap : functor (F : Fam2) -> sig
   type (_, _, _, _) gt =
     | Zero : ('r, 'v) F.t -> ('evaluation, D.zero, 'r, 'v) gt
     | Suc : {
-        left : ('evaluation, 'intrinsic, 'r D.suc, 'v) gt;
+        left : ('evaluation, 'intrinsic, ('r, unit) D.suc, 'v) gt;
         right : ('evaluation, ('intrinsic * 'r) * 'v) Tup.t;
       }
-        -> ('evaluation, 'intrinsic D.suc, 'r, 'v) gt
+        -> ('evaluation, ('intrinsic, unit) D.suc, 'r, 'v) gt
 
   type ('evaluation, 'intrinsic, 'v) t = ('evaluation, 'intrinsic, D.zero, 'v) gt * 'evaluation D.t
 end =
@@ -297,10 +297,10 @@ functor
       | Zero : ('r, 'v) F.t -> ('evaluation, D.zero, 'r, 'v) gt
       (* If it's a successor, then the shuffle acting on that last element either sends it into the remaining dimensions or the shared ones.  Thus, we store one subtree with incremented remaining dimension, and a tuple of subtrees with the same remaining dimension, indexed by where the new shared element ends up in the evaluation dimension (and with the image removed from the evaluation dimension; the intrinsically well-typed map Tuple takes care of that). *)
       | Suc : {
-          left : ('evaluation, 'intrinsic, 'r D.suc, 'v) gt;
+          left : ('evaluation, 'intrinsic, ('r, unit) D.suc, 'v) gt;
           right : ('evaluation, ('intrinsic * 'r) * 'v) Tup.t;
         }
-          -> ('evaluation, 'intrinsic D.suc, 'r, 'v) gt
+          -> ('evaluation, ('intrinsic, unit) D.suc, 'r, 'v) gt
 
     type ('evaluation, 'intrinsic, 'v) t =
       ('evaluation, 'intrinsic, D.zero, 'v) gt * 'evaluation D.t
@@ -313,7 +313,7 @@ module Pbijmap (F : Fam2) = struct
   let rec gintrinsic : type evaluation intrinsic r v.
       (evaluation, intrinsic, r, v) gt -> intrinsic D.t = function
     | Zero _ -> D.zero
-    | Suc { left; _ } -> D.suc (gintrinsic left)
+    | Suc { left; _ } -> D.suc (gintrinsic left) Unit
 
   let intrinsic : type evaluation intrinsic v. (evaluation, intrinsic, v) t -> intrinsic D.t =
    fun (ms, _) -> gintrinsic ms
@@ -391,7 +391,7 @@ module Pbijmap (F : Fam2) = struct
             left =
               gbuild evaluation (Word intrinsic)
                 {
-                  remaining = D.suc f.remaining;
+                  remaining = D.suc f.remaining Unit;
                   build =
                     (fun (Pbij (ins, shuf)) r12 -> f.build (Pbij (ins, Left shuf)) (D.plus_suc r12));
                 };
@@ -465,10 +465,10 @@ module Pbijmap (F : Fam2) = struct
       | v :: vs -> Zero v :: zero vs
 
     let rec suc : type e i r vs irvs.
-        (e, i, r D.suc, vs) hgt ->
+        (e, i, (r, unit) D.suc, vs) hgt ->
         (i * r, vs, irvs) MapTimes.t ->
         (e, nil, irvs) Tup.Heter.hgt ->
-        (e, i D.suc, r, vs) hgt =
+        (e, (i, unit) D.suc, r, vs) hgt =
      fun ls irvs rs ->
       match (ls, irvs, rs) with
       | [], [], [] -> []
@@ -478,12 +478,12 @@ module Pbijmap (F : Fam2) = struct
       | [] -> []
       | Zero v :: ms -> v :: zeros ms
 
-    let rec left : type e i r vs. (e, i D.suc, r, vs) hgt -> (e, i, r D.suc, vs) hgt = function
+    let rec left : type e i r vs. (e, (i, unit) D.suc, r, vs) hgt -> (e, i, (r, unit) D.suc, vs) hgt = function
       | [] -> []
       | Suc { left = l; _ } :: ms -> l :: left ms
 
     let rec right : type e i r vs irvs.
-        (e, i D.suc, r, vs) hgt -> (i * r, vs, irvs) MapTimes.t -> (e, nil, irvs) Tup.Heter.hgt =
+        (e, (i, unit) D.suc, r, vs) hgt -> (i * r, vs, irvs) MapTimes.t -> (e, nil, irvs) Tup.Heter.hgt =
      fun ms irvs ->
       match (ms, irvs) with
       | [], [] -> []
@@ -581,7 +581,7 @@ module Pbijmap (F : Fam2) = struct
                (fun () ->
                  gpmapM evaluation
                    {
-                     remaining = D.suc f.remaining;
+                     remaining = D.suc f.remaining Unit;
                      map =
                        (fun (Pbij (ins, shuf)) r12 v ->
                          f.map (Pbij (ins, Left shuf)) (D.plus_suc r12) v);

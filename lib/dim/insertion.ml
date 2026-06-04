@@ -11,7 +11,7 @@ open Perm
 (* TODO: Should an insertion be parametrized by b+c as well? *)
 type (_, _, _) insertion =
   | Zero : 'a D.t -> ('a, 'a, D.zero) insertion
-  | Suc : ('a, 'b, 'c) insertion * ('a, 'asuc) D.insert -> ('asuc, 'b, 'c D.suc) insertion
+  | Suc : ('a, 'b, 'c) insertion * ('a, 'asuc) D.insert -> ('asuc, 'b, ('c, unit) D.suc) insertion
 
 let ins_zero : type a. a D.t -> (a, a, D.zero) insertion = fun a -> Zero a
 
@@ -44,7 +44,7 @@ let rec cod_left_ins : type a b c. (a, b, c) insertion -> b D.t = function
 
 let rec cod_right_ins : type a b c. (a, b, c) insertion -> c D.t = function
   | Zero _ -> D.zero
-  | Suc (ins, _) -> D.suc (cod_right_ins ins)
+  | Suc (ins, _) -> D.suc (cod_right_ins ins) Unit
 
 let rec equal_ins : type a1 b1 c1 a2 b2 c2.
     (a1, b1, c1) insertion -> (a2, b2, c2) insertion -> unit option =
@@ -256,7 +256,7 @@ module rec Internal_Insmap : functor (F : Fam) -> sig
 
   type (_, _, _) t =
     | Zero : 'v F.t -> ('evaluation, D.zero, 'v) t
-    | Suc : ('evaluation, 'intrinsic * 'v) Tup.t -> ('evaluation, 'intrinsic D.suc, 'v) t
+    | Suc : ('evaluation, 'intrinsic * 'v) Tup.t -> ('evaluation, ('intrinsic, unit) D.suc, 'v) t
 end =
 functor
   (F : Fam)
@@ -274,7 +274,7 @@ functor
     (* In the absence of the 'remaining parametrization, we don't need a "gt" version but can go right to the "t". *)
     type (_, _, _) t =
       | Zero : 'v F.t -> ('evaluation, D.zero, 'v) t
-      | Suc : ('evaluation, 'intrinsic * 'v) Tup.t -> ('evaluation, 'intrinsic D.suc, 'v) t
+      | Suc : ('evaluation, 'intrinsic * 'v) Tup.t -> ('evaluation, ('intrinsic, unit) D.suc, 'v) t
   end
 
 module Insmap (F : Fam) = struct
@@ -353,7 +353,7 @@ module Insmap (F : Fam) = struct
       | v :: vs -> Zero v :: zero vs
 
     let rec suc : type e i vs irvs.
-        (i, vs, irvs) MapTimes.t -> (e, nil, irvs) Tup.Heter.hgt -> (e, i D.suc, vs) ht =
+        (i, vs, irvs) MapTimes.t -> (e, nil, irvs) Tup.Heter.hgt -> (e, (i, unit) D.suc, vs) ht =
      fun irvs rs ->
       match (irvs, rs) with
       | [], [] -> []
@@ -364,7 +364,7 @@ module Insmap (F : Fam) = struct
       | Zero v :: ms -> v :: zeros ms
 
     let rec right : type e i vs irvs.
-        (e, i D.suc, vs) ht -> (i, vs, irvs) MapTimes.t -> (e, nil, irvs) Tup.Heter.hgt =
+        (e, (i, unit) D.suc, vs) ht -> (i, vs, irvs) MapTimes.t -> (e, nil, irvs) Tup.Heter.hgt =
      fun ms irvs ->
       match (ms, irvs) with
       | [], [] -> []

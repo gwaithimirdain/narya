@@ -7,28 +7,32 @@ open Tbwd
 
 include Word.Make (Unitcomparable)
 
-(* Type-level natural numbers are represented by words over Unit, which are isomorphic to natural numbers.  We expose a unary [suc] for compatibility with the rest of the dim library. *)
-type 'n suc = ('n, unit) snoc
-type one = zero suc
-type two = one suc
+(* The unique generator witness for the (currently single-generator) dimension theory.  To prepare for future multi-generator generalization, consumers should refer to this rather than writing the constructor [Unit] directly. *)
+let deg : unit Unitcomparable.t = Unit
 
-let suc : type n. n t -> n suc t = fun n -> suc n Unit
-let one : one t = suc zero
-let two : two t = suc one
+(* Type-level natural numbers are represented by words over Unit, which are isomorphic to natural numbers.  The two-argument [suc] is inherited from Word; we only expose alias [one] and [two] for ergonomics in code that talks about specific small dimensions. *)
+type one = (zero, unit) suc
+type two = (one, unit) suc
+
+let one : one t = suc zero deg
+let two : two t = suc one deg
 
 type ('a, 'b) insert = ('a, unit, 'b) Tbwd.insert
 
-(* Properties of the successor that don't generalize to other words.  Functions that use these will need to be rewritten. *)
+(* TODO: temporary scaffolding.  These three functions are commutativity-dependent and will be removed once all call sites in cube/icube/tube/etc. are restructured to use Word.ml's structured forms (Phase 7). *)
 
-let rec plus_suc : type m n p. (m suc, n, p) plus -> (m, n suc, p) plus = function
+let rec plus_suc : type m n p.
+    ((m, unit) suc, n, p) plus -> (m, (n, unit) suc, p) plus = function
   | Zero -> Suc (Zero, Unit)
   | Suc (x, Unit) -> Suc (plus_suc x, Unit)
 
-let rec suc_plus_eq_suc : type m n p. (m, n, p) plus -> (m suc, n, p suc) plus = function
+let rec suc_plus_eq_suc : type m n p.
+    (m, n, p) plus -> ((m, unit) suc, n, (p, unit) suc) plus = function
   | Zero -> Zero
   | Suc (x, Unit) -> Suc (suc_plus_eq_suc x, Unit)
 
-let suc_plus : type m n p. (m, n suc, p) plus -> (m suc, n, p) plus =
+let suc_plus : type m n p.
+    (m, (n, unit) suc, p) plus -> ((m, unit) suc, n, p) plus =
  fun x ->
   let (Suc (y, Unit)) = suc_plus_eq_suc x in
   y
@@ -40,9 +44,10 @@ let rec of_int : int -> wrapped =
   if n <= 0 then Wrap zero
   else
     let (Wrap w) = of_int (n - 1) in
-    Wrap (suc w)
+    Wrap (suc w deg)
 
-type _ insert_of_int = Insert_of_int : ('b, 'b suc) insert -> 'b suc insert_of_int
+type _ insert_of_int =
+  | Insert_of_int : ('b, ('b, unit) suc) insert -> ('b, unit) suc insert_of_int
 
 let rec insert_of_int : type bsuc. bsuc t -> int -> bsuc insert_of_int option =
  fun n x ->
@@ -60,17 +65,16 @@ let rec insert_of_int : type bsuc. bsuc t -> int -> bsuc insert_of_int option =
 
 type (_, _) trichotomy =
   | Eq : ('n, 'n) trichotomy
-  | Lt : ('m, 'n suc, 'mn) plus -> ('m, 'mn) trichotomy
-  | Gt : ('m, 'n suc, 'mn) plus -> ('mn, 'm) trichotomy
+  | Lt : ('m, ('n, unit) suc, 'mn) plus -> ('m, 'mn) trichotomy
+  | Gt : ('m, ('n, unit) suc, 'mn) plus -> ('mn, 'm) trichotomy
 
-let rec trichotomy : type m n. m t -> n t -> (m, n) trichotomy =
+let trichotomy : type m n. m t -> n t -> (m, n) trichotomy =
  fun m n ->
-  match (m, n) with
-  | Word Zero, Word Zero -> Eq
-  | Word Zero, Word (Suc (_, Unit)) -> Lt (zero_plus n)
-  | Word (Suc (_, Unit)), Word Zero -> Gt (zero_plus m)
-  | Word (Suc (m', Unit)), Word (Suc (n', Unit)) -> (
-      match trichotomy (Word m') (Word n') with
-      | Eq -> Eq
-      | Lt p -> Lt (suc_plus_eq_suc p)
-      | Gt p -> Gt (suc_plus_eq_suc p))
+  match factor m n with
+  | Some (Factor Zero) -> Eq
+  | Some (Factor (Suc (_, Unit) as k)) -> Gt k
+  | _ -> (
+      match factor n m with
+      | Some (Factor Zero) -> Eq
+      | Some (Factor (Suc (_, Unit) as k)) -> Lt k
+      | _ -> assert false)

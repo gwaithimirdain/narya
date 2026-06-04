@@ -17,8 +17,8 @@ module Icube (S : Suc) (F : Fam3) = struct
     | Branch :
         'l Endpoints.len
         * ('left, 'l, 'm, 'n, 'b, 'middle) branches
-        * ('middle, 'm, 'n D.suc, 'b, 'right) gt
-        -> ('left, 'm D.suc, 'n D.suc, 'b, 'right) gt
+        * ('middle, 'm, ('n, unit) D.suc, 'b, 'right) gt
+        -> ('left, ('m, unit) D.suc, ('n, unit) D.suc, 'b, 'right) gt
 
   (* The exception is that instead of using a vanilla Bwv, to index the branches we use a custom kind of backwards list that tracks the change in the indices. *)
   and (_, _, _, _, _, _) branches =
@@ -31,7 +31,7 @@ module Icube (S : Suc) (F : Fam3) = struct
 
   let rec gdim : type m n b left right. (left, m, n, b, right) gt -> m D.t = function
     | Leaf _ -> D.zero
-    | Branch (_, _, br) -> D.suc (gdim br)
+    | Branch (_, _, br) -> D.suc (gdim br) Unit
 
   let dim : type n b left right. (left, n, b, right) t -> n D.t = fun tr -> gdim tr
 
@@ -68,7 +68,7 @@ module Icube (S : Suc) (F : Fam3) = struct
 
     and gmapM_branches : type k m km n b c l len len' left right.
         (k, m, km) D.plus ->
-        (l D.suc, m, n) D.plus ->
+        ((l, unit) D.suc, m, n) D.plus ->
         (k, l) bwsface ->
         (n, b, c) mapperM ->
         (len Endpoints.t, len') Bwv.t ->
@@ -134,7 +134,7 @@ module Icube (S : Suc) (F : Fam3) = struct
 
     and gfold_left_map_branches : type k m km n b c l len len' left right.
         (k, m, km) D.plus ->
-        (l D.suc, m, n) D.plus ->
+        ((l, unit) D.suc, m, n) D.plus ->
         (k, l) bwsface ->
         (n, b, c) left_folder ->
         (len Endpoints.t, len') Bwv.t ->
@@ -192,7 +192,7 @@ module Icube (S : Suc) (F : Fam3) = struct
 
     and gfold_right_map_branches : type k m km n b c l len len' left right.
         (k, m, km) D.plus ->
-        (l D.suc, m, n) D.plus ->
+        ((l, unit) D.suc, m, n) D.plus ->
         (k, l) bwsface ->
         (n, b, c) right_folder ->
         (len Endpoints.t, len') Bwv.t ->
@@ -262,7 +262,7 @@ module Icube (S : Suc) (F : Fam3) = struct
     and gbuild_left_branches : type k m mk l ml b left len len'.
         m D.t ->
         (m, k, mk) D.plus ->
-        (m, l D.suc, ml) D.plus ->
+        (m, (l, unit) D.suc, ml) D.plus ->
         (k, l) bwsface ->
         (ml, b) builder_leftM ->
         (len Endpoints.t, len') Bwv.t ->
@@ -380,7 +380,7 @@ module IcubeTraverse2 (S1 : Suc) (S2 : Suc) (F1 : Fam3) (F2 : Fam3) (Acc : Fam2)
 
   and gfold_left_map_branches : type k m km n b c l len len' left1 left2 right1.
       (k, m, km) D.plus ->
-      (l D.suc, m, n) D.plus ->
+      ((l, unit) D.suc, m, n) D.plus ->
       (k, l) bwsface ->
       (n, b, c) left_folder ->
       (len Endpoints.t, len') Bwv.t ->

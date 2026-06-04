@@ -5,20 +5,20 @@ open Tface
 (* Backwards tube faces *)
 
 type (_, _, _, _) bwtface =
-  | LEnd : 'l Endpoints.t * ('m, 'n, 'k, 'nk) bwtface -> ('m, 'n D.suc, 'k, 'nk D.suc) bwtface
-  | LMid : ('m, 'n, 'k, 'nk) bwtface -> ('m D.suc, 'n D.suc, 'k, 'nk D.suc) bwtface
-  | REnd : 'l Endpoints.t * ('m, 'k) bwsface -> ('m, D.zero, 'k D.suc, 'k D.suc) bwtface
-  | RMid : ('m, D.zero, 'k, 'k) bwtface -> ('m D.suc, D.zero, 'k D.suc, 'k D.suc) bwtface
+  | LEnd : 'l Endpoints.t * ('m, 'n, 'k, 'nk) bwtface -> ('m, ('n, unit) D.suc, 'k, ('nk, unit) D.suc) bwtface
+  | LMid : ('m, 'n, 'k, 'nk) bwtface -> (('m, unit) D.suc, ('n, unit) D.suc, 'k, ('nk, unit) D.suc) bwtface
+  | REnd : 'l Endpoints.t * ('m, 'k) bwsface -> ('m, D.zero, ('k, unit) D.suc, ('k, unit) D.suc) bwtface
+  | RMid : ('m, D.zero, 'k, 'k) bwtface -> (('m, unit) D.suc, D.zero, ('k, unit) D.suc, ('k, unit) D.suc) bwtface
 
 let rec dom_bwtface : type m n k nk. (m, n, k, nk) bwtface -> m D.t = function
   | LEnd (_, d) -> dom_bwtface d
-  | LMid d -> D.suc (dom_bwtface d)
+  | LMid d -> D.suc (dom_bwtface d) Unit
   | REnd (_, d) -> dom_bwsface d
-  | RMid d -> D.suc (dom_bwtface d)
+  | RMid d -> D.suc (dom_bwtface d) Unit
 
 let rec codl_bwtface : type m n k nk. (m, n, k, nk) bwtface -> n D.t = function
-  | LEnd (_, d) -> D.suc (codl_bwtface d)
-  | LMid d -> D.suc (codl_bwtface d)
+  | LEnd (_, d) -> D.suc (codl_bwtface d) Unit
+  | LMid d -> D.suc (codl_bwtface d) Unit
   | REnd (_, _) -> D.zero
   | RMid _ -> D.zero
 
@@ -26,15 +26,15 @@ let rec codl_bwtface : type m n k nk. (m, n, k, nk) bwtface -> n D.t = function
 let rec codr_bwtface : type m n k nk. (m, n, k, nk) bwtface -> k D.t = function
   | LEnd (_, d) -> codr_bwtface d
   | LMid d -> codr_bwtface d
-  | REnd (_, d) -> D.suc (cod_bwsface d)
-  | RMid d -> D.suc (codr_bwtface d)
+  | REnd (_, d) -> D.suc (cod_bwsface d) Unit
+  | RMid d -> D.suc (codr_bwtface d) Unit
 *)
 
 let rec cod_bwtface : type m n k nk. (m, n, k, nk) bwtface -> nk D.t = function
-  | LEnd (_, d) -> D.suc (cod_bwtface d)
-  | LMid d -> D.suc (cod_bwtface d)
-  | REnd (_, d) -> D.suc (cod_bwsface d)
-  | RMid d -> D.suc (cod_bwtface d)
+  | LEnd (_, d) -> D.suc (cod_bwtface d) Unit
+  | LMid d -> D.suc (cod_bwtface d) Unit
+  | REnd (_, d) -> D.suc (cod_bwsface d) Unit
+  | RMid d -> D.suc (cod_bwtface d) Unit
 
 let rec bwsface_of_bwtface : type m n k nk. (m, n, k, nk) bwtface -> (m, nk) bwsface = function
   | LEnd (e, d) -> End (e, bwsface_of_bwtface d)
@@ -43,7 +43,7 @@ let rec bwsface_of_bwtface : type m n k nk. (m, n, k, nk) bwtface -> (m, nk) bws
   | RMid d -> Mid (bwsface_of_bwtface d)
 
 let bwtface_rend : type l m k.
-    l Endpoints.t -> (m, D.zero, k, k) bwtface -> (m, D.zero, k D.suc, k D.suc) bwtface =
+    l Endpoints.t -> (m, D.zero, k, k) bwtface -> (m, D.zero, (k, unit) D.suc, (k, unit) D.suc) bwtface =
  fun e d -> REnd (e, bwsface_of_bwtface d)
 
 (* Converting a backwards tube face to a forwards one.  This requires three helper functions. *)

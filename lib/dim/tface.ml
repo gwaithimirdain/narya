@@ -7,20 +7,12 @@ open Sface
 type (_, _, _, _) tface =
   | End :
       ('m, 'nk) sface * ('n, 'k, 'nk) D.plus * 'l Endpoints.t
-      -> ('m, 'n, 'k D.suc, 'nk D.suc) tface
-  | Mid : ('m, 'n, 'k, 'nk) tface -> ('m D.suc, 'n, 'k D.suc, 'nk D.suc) tface
+      -> ('m, 'n, ('k, unit) D.suc, ('nk, unit) D.suc) tface
+  | Mid : ('m, 'n, 'k, 'nk) tface -> (('m, unit) D.suc, 'n, ('k, unit) D.suc, ('nk, unit) D.suc) tface
 
 let rec sface_of_tface : type m n k nk. (m, n, k, nk) tface -> (m, nk) sface = function
   | End (d, _, e) -> End (d, e)
   | Mid d -> Mid (sface_of_tface d)
-
-let rec plus_of_tface : type m n k nk. (m, n, k, nk) tface -> (m, nk) d_le = function
-  | End (d, _, _) ->
-      let (Le mn) = plus_of_sface d in
-      Le (Suc (mn, Unit))
-  | Mid d ->
-      let (Le mn) = plus_of_tface d in
-      Le (D.suc_plus_eq_suc mn)
 
 let rec cod_plus_of_tface : type m n k nk. (m, n, k, nk) tface -> (n, k, nk) D.plus = function
   | End (_, p, _) -> Suc (p, Unit)
@@ -28,21 +20,27 @@ let rec cod_plus_of_tface : type m n k nk. (m, n, k, nk) tface -> (n, k, nk) D.p
 
 let rec dom_tface : type m n k nk. (m, n, k, nk) tface -> m D.t = function
   | End (d, _, _) -> dom_sface d
-  | Mid d -> D.suc (dom_tface d)
+  | Mid d -> D.suc (dom_tface d) Unit
 
 let rec codl_tface : type m n k nk. (m, n, k, nk) tface -> n D.t = function
   | End (d, p, _) -> D.minus (cod_sface d) p
   | Mid d -> codl_tface d
 
 let rec codr_tface : type m n k nk. (m, n, k, nk) tface -> k D.t = function
-  | End (_, nk, _) -> D.suc (D.plus_right nk)
-  | Mid d -> D.suc (codr_tface d)
+  | End (_, nk, _) -> D.suc (D.plus_right nk) Unit
+  | Mid d -> D.suc (codr_tface d) Unit
 
 let cod_tface : type m n k nk. (m, n, k, nk) tface -> nk D.t =
  fun d -> D.plus_out (codl_tface d) (cod_plus_of_tface d)
 
+let plus_of_tface : type m n k nk. (m, n, k, nk) tface -> (m, nk) d_le =
+ fun d ->
+  match D.factor (cod_tface d) (dom_tface d) with
+  | Some (Factor p) -> Le p
+  | None -> assert false
+
 let tface_end : type l m n k nk.
-    (m, n, k, nk) tface -> l Endpoints.t -> (m, n, k D.suc, nk D.suc) tface =
+    (m, n, k, nk) tface -> l Endpoints.t -> (m, n, (k, unit) D.suc, (nk, unit) D.suc) tface =
  fun d e -> End (sface_of_tface d, cod_plus_of_tface d, e)
 
 let rec tface_plus : type m n k nk l ml kl nkl.

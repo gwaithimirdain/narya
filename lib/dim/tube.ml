@@ -20,8 +20,8 @@ module Tube (F : Fam2) = struct
   type (_, _, _, _, _) gt =
     | Leaf : 'n D.t -> ('n, D.zero, 'n, 'nk, 'b) gt
     | Branch :
-        'l Endpoints.len * (('mk, 'n, 'b) C.gt, 'l) Bwv.t * ('m, 'k, 'mk, 'n D.suc, 'b) gt
-        -> ('m, 'k D.suc, 'mk D.suc, 'n D.suc, 'b) gt
+        'l Endpoints.len * (('mk, 'n, 'b) C.gt, 'l) Bwv.t * ('m, 'k, 'mk, ('n, unit) D.suc, 'b) gt
+        -> ('m, ('k, unit) D.suc, ('mk, unit) D.suc, ('n, unit) D.suc, 'b) gt
 
   (* This definition gives a cardinality F(k,m) for (m,k,m+k,n,b) gtube with recurrence relations
 
@@ -169,7 +169,7 @@ module Tube (F : Fam2) = struct
           'l Endpoints.len * ('mk, 'n, 'bs, 'hs) C.Heter.hgts * ('hs, 'l) Bwv.Heter.ht
           -> ('mk, 'n, 'bs) ends
 
-    let rec ends : type m k mk n bs. (m, k D.suc, mk D.suc, n D.suc, bs) hgt -> (mk, n, bs) ends =
+    let rec ends : type m k mk n bs. (m, (k, unit) D.suc, (mk, unit) D.suc, (n, unit) D.suc, bs) hgt -> (mk, n, bs) ends =
      fun xss ->
       match xss with
       | [] ->
@@ -181,7 +181,7 @@ module Tube (F : Fam2) = struct
           Ends (l2, Cons hs, es :: ess)
 
     let rec mid : type m k mk n bs.
-        (m, k D.suc, mk D.suc, n D.suc, bs) hgt -> (m, k, mk, n D.suc, bs) hgt = function
+        (m, (k, unit) D.suc, (mk, unit) D.suc, (n, unit) D.suc, bs) hgt -> (m, k, mk, (n, unit) D.suc, bs) hgt = function
       | [] -> []
       | Branch (_, _, m) :: xs -> m :: mid xs
 
@@ -195,8 +195,8 @@ module Tube (F : Fam2) = struct
         l Endpoints.len ->
         (mk, n, bs, hs) C.Heter.hgts ->
         (hs, l) Bwv.Heter.ht ->
-        (m, k, mk, n D.suc, bs) hgt ->
-        (m, k D.suc, mk D.suc, n D.suc, bs) hgt =
+        (m, k, mk, (n, unit) D.suc, bs) hgt ->
+        (m, (k, unit) D.suc, (mk, unit) D.suc, (n, unit) D.suc, bs) hgt =
      fun l hs endss mids ->
       match (hs, endss, mids) with
       | Nil, [], [] -> []

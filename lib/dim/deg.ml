@@ -7,14 +7,14 @@ open Tbwd
 
 type (_, _) deg =
   | Zero : 'a D.t -> ('a, D.zero) deg
-  | Suc : ('a, 'b) deg * ('a, 'asuc) D.insert -> ('asuc, 'b D.suc) deg
+  | Suc : ('a, 'b) deg * ('a, 'asuc) D.insert -> ('asuc, ('b, unit) D.suc) deg
 
 (* Another possible definition, "inductive on the other side", is:
 
    type (_, _) deg =
      | Zero : (D.zero, D.zero) deg
-     | Deg : ('a, 'b) deg -> ('a D.suc, 'b) deg
-     | Perm : ('a, 'b) deg * ('b, 'bsuc) D.insert -> ('a D.suc, 'bsuc) deg
+     | Deg : ('a, 'b) deg -> (('a, unit) D.suc, 'b) deg
+     | Perm : ('a, 'b) deg * ('b, 'bsuc) D.insert -> (('a, unit) D.suc, 'bsuc) deg
 *)
 
 let rec dom_deg : type m n. (m, n) deg -> m D.t = function
@@ -23,7 +23,7 @@ let rec dom_deg : type m n. (m, n) deg -> m D.t = function
 
 let rec cod_deg : type m n. (m, n) deg -> n D.t = function
   | Zero _ -> D.zero
-  | Suc (s, _) -> D.suc (cod_deg s)
+  | Suc (s, _) -> D.suc (cod_deg s) Unit
 
 let rec id_deg : type n. n D.t -> (n, n) deg = function
   | Word Zero -> Zero D.zero

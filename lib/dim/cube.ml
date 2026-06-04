@@ -12,8 +12,8 @@ module Cube (F : Fam2) = struct
   type (_, _, _) gt =
     | Leaf : ('n, 'b) F.t -> (D.zero, 'n, 'b) gt
     | Branch :
-        'l Endpoints.len * (('m, 'n, 'b) gt, 'l) Bwv.t * ('m, 'n D.suc, 'b) gt
-        -> ('m D.suc, 'n D.suc, 'b) gt
+        'l Endpoints.len * (('m, 'n, 'b) gt, 'l) Bwv.t * ('m, ('n, unit) D.suc, 'b) gt
+        -> (('m, unit) D.suc, ('n, unit) D.suc, 'b) gt
 
   (* Now a cube of dimension 'n with parameter 'b is obtained by coinciding the labeling dimension and the height. *)
   type ('n, 'b) t = ('n, 'n, 'b) gt
@@ -23,7 +23,7 @@ module Cube (F : Fam2) = struct
   (* For instance, we can compute the dimension of a cube. *)
   let rec gdim : type m n b. (m, n, b) gt -> m D.t = function
     | Leaf _ -> D.zero
-    | Branch (_, _, br) -> D.suc (gdim br)
+    | Branch (_, _, br) -> D.suc (gdim br) Unit
 
   let dim : type n b. (n, b) t -> n D.t = fun tr -> gdim tr
 
@@ -119,7 +119,7 @@ module Cube (F : Fam2) = struct
           'l Endpoints.len * ('m, 'n, 'bs, 'hs) hgts * ('hs, 'l) Bwv.Heter.ht
           -> ('m, 'n, 'bs) ends
 
-    let rec ends : type m n bs. (m D.suc, n D.suc, bs) hgt -> (m, n, bs) ends =
+    let rec ends : type m n bs. ((m, unit) D.suc, (n, unit) D.suc, bs) hgt -> (m, n, bs) ends =
      fun xss ->
       match xss with
       | [] ->
@@ -130,7 +130,7 @@ module Cube (F : Fam2) = struct
           let Eq = Endpoints.uniq l1 l2 in
           Ends (l2, Cons hs, es :: ess)
 
-    let rec mid : type m n bs. (m D.suc, n D.suc, bs) hgt -> (m, n D.suc, bs) hgt = function
+    let rec mid : type m n bs. ((m, unit) D.suc, (n, unit) D.suc, bs) hgt -> (m, (n, unit) D.suc, bs) hgt = function
       | [] -> []
       | Branch (_, _, m) :: xs -> m :: mid xs
 
@@ -143,8 +143,8 @@ module Cube (F : Fam2) = struct
         l Endpoints.len ->
         (m, n, bs, hs) hgts ->
         (hs, l) Bwv.Heter.ht ->
-        (m, n D.suc, bs) hgt ->
-        (m D.suc, n D.suc, bs) hgt =
+        (m, (n, unit) D.suc, bs) hgt ->
+        ((m, unit) D.suc, (n, unit) D.suc, bs) hgt =
      fun l hs endss mids ->
       match (hs, endss, mids) with
       | Nil, [], [] -> []
