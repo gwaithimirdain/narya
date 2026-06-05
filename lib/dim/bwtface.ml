@@ -37,10 +37,10 @@ let rec cod_bwtface : type m n k nk. (m, n, k, nk) bwtface -> nk D.t = function
   | RMid d -> D.suc (cod_bwtface d) Unit
 
 let rec bwsface_of_bwtface : type m n k nk. (m, n, k, nk) bwtface -> (m, nk) bwsface = function
-  | LEnd (e, d) -> End (e, bwsface_of_bwtface d)
-  | LMid d -> Mid (bwsface_of_bwtface d)
-  | REnd (e, d) -> End (e, d)
-  | RMid d -> Mid (bwsface_of_bwtface d)
+  | LEnd (e, d) -> End (D.deg, e, bwsface_of_bwtface d)
+  | LMid d -> Mid (D.deg, bwsface_of_bwtface d)
+  | REnd (e, d) -> End (D.deg, e, d)
+  | RMid d -> Mid (D.deg, bwsface_of_bwtface d)
 
 let bwtface_rend : type l m k.
     l Endpoints.t -> (m, D.zero, k, k) bwtface -> (m, D.zero, (k, unit) D.suc, (k, unit) D.suc) bwtface =
@@ -63,8 +63,16 @@ let rec tface_of_bw_r : type m1 m2 m n k1 k2 k nk1 nk.
       let Eq = D.plus_uniq k12 (D.plus_zero k1) in
       let Eq = D.plus_uniq nk12 (D.plus_zero nk1) in
       f
-  | End (e, bf) -> tface_of_bw_r m12 (D.suc_plus k12) (D.suc_plus nk12) (tface_end f e) bf
-  | Mid bf -> tface_of_bw_r (D.suc_plus m12) (D.suc_plus k12) (D.suc_plus nk12) (Mid (f, D.deg)) bf
+  | End (g, e, bf) -> (
+      (* TODO: bridge via G.compare; will be removed once tface_of_bw_r uses word.ml structured forms instead of D.suc_plus. *)
+      match D.G.compare g D.deg with
+      | Neq -> assert false
+      | Eq -> tface_of_bw_r m12 (D.suc_plus k12) (D.suc_plus nk12) (tface_end f e) bf)
+  | Mid (g, bf) -> (
+      match D.G.compare g D.deg with
+      | Neq -> assert false
+      | Eq ->
+          tface_of_bw_r (D.suc_plus m12) (D.suc_plus k12) (D.suc_plus nk12) (Mid (f, D.deg)) bf)
 
 let rec tface_of_bw_lt : type m1 m2 m n k1 k2 k nk nk1.
     (m1, m2, m) D.plus ->

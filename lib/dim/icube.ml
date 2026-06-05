@@ -63,7 +63,7 @@ module Icube (S : Suc) (F : Fam3) = struct
           M.apply
             (M.zip
                (fun () -> gmapM_branches km' (D.suc_plus lm) d g (Endpoints.indices l) ends)
-               (fun () -> gmapM (D.suc_plus km) (D.suc_plus lm) (Mid d) g mid))
+               (fun () -> gmapM (D.suc_plus km) (D.suc_plus lm) (Mid (D.deg, d)) g mid))
           @@ fun (newends, newmid) -> Branch (l, newends, newmid)
 
     and gmapM_branches : type k m km n b c l len len' left right.
@@ -81,7 +81,7 @@ module Icube (S : Suc) (F : Fam3) = struct
           M.apply
             (M.zip
                (fun () -> gmapM_branches km lm d g ixs brs)
-               (fun () -> gmapM km lm (End (e, d)) g br))
+               (fun () -> gmapM km lm (End (D.deg, e, d)) g br))
           @@ fun (newbrs, newbr) -> Snoc (newbrs, newbr)
 
     let mapM : type n b c left right.
@@ -129,7 +129,7 @@ module Icube (S : Suc) (F : Fam3) = struct
           let (Suc (km', Unit)) = km in
           let ends, acc =
             gfold_left_map_branches km' (D.suc_plus lm) d g (Endpoints.indices l) acc ends in
-          let mid, acc = gfold_map_left (D.suc_plus km) (D.suc_plus lm) (Mid d) g acc mid in
+          let mid, acc = gfold_map_left (D.suc_plus km) (D.suc_plus lm) (Mid (D.deg, d)) g acc mid in
           (Branch (l, ends, mid), acc)
 
     and gfold_left_map_branches : type k m km n b c l len len' left right.
@@ -146,7 +146,7 @@ module Icube (S : Suc) (F : Fam3) = struct
       | Emp, Emp -> (Emp, acc)
       | Snoc (brs, br), Snoc (ixs, e) ->
           let brs, acc = gfold_left_map_branches km lm d g ixs acc brs in
-          let br, acc = gfold_map_left km lm (End (e, d)) g acc br in
+          let br, acc = gfold_map_left km lm (End (D.deg, e, d)) g acc br in
           (Snoc (brs, br), acc)
 
     let fold_map_left : type n b c left right.
@@ -185,7 +185,7 @@ module Icube (S : Suc) (F : Fam3) = struct
           (acc, Leaf x)
       | Branch (l, ends, mid) ->
           let (Suc (km', Unit)) = km in
-          let acc, mid = gfold_map_right (D.suc_plus km) (D.suc_plus lm) (Mid d) g mid acc in
+          let acc, mid = gfold_map_right (D.suc_plus km) (D.suc_plus lm) (Mid (D.deg, d)) g mid acc in
           let acc, ends =
             gfold_right_map_branches km' (D.suc_plus lm) d g (Endpoints.indices l) ends acc in
           (acc, Branch (l, ends, mid))
@@ -203,7 +203,7 @@ module Icube (S : Suc) (F : Fam3) = struct
       match (brs, ixs) with
       | Emp, Emp -> (acc, Emp)
       | Snoc (brs, br), Snoc (ixs, e) ->
-          let acc, br = gfold_map_right km lm (End (e, d)) g br acc in
+          let acc, br = gfold_map_right km lm (End (D.deg, e, d)) g br acc in
           let acc, brs = gfold_right_map_branches km lm d g ixs brs acc in
           (acc, Snoc (brs, br))
 
@@ -256,7 +256,7 @@ module Icube (S : Suc) (F : Fam3) = struct
           let (Wrap_branches (ends, acc)) =
             gbuild_left_branches (Word m) mk' (D.plus_suc ml) d g (Endpoints.indices l) acc in
           let (Wrap (mid, acc)) =
-            gbuild_left (Word m) (D.plus_suc mk) (D.plus_suc ml) (Mid d) g acc in
+            gbuild_left (Word m) (D.plus_suc mk) (D.plus_suc ml) (Mid (D.deg, d)) g acc in
           Wrap (Branch (l, ends, mid), acc)
 
     and gbuild_left_branches : type k m mk l ml b left len len'.
@@ -273,7 +273,7 @@ module Icube (S : Suc) (F : Fam3) = struct
       | Emp -> Wrap_branches (Emp, acc)
       | Snoc (ixs, e) ->
           let (Wrap_branches (newbrs, acc)) = gbuild_left_branches m mk ml d g ixs acc in
-          let (Wrap (newbr, acc)) = gbuild_left m mk ml (End (e, d)) g acc in
+          let (Wrap (newbr, acc)) = gbuild_left m mk ml (End (D.deg, e, d)) g acc in
           Wrap_branches (Snoc (newbrs, newbr), acc)
 
     let build_left : type n b left.
@@ -375,7 +375,7 @@ module IcubeTraverse2 (S1 : Suc) (S2 : Suc) (F1 : Fam3) (F2 : Fam3) (Acc : Fam2)
         let (Gfolded_branches (ends, acc)) =
           gfold_left_map_branches km' (D.suc_plus lm) d g (Endpoints.indices l) acc ends in
         let (Gfolded (mid, acc)) =
-          gfold_map_left (D.suc_plus km) (D.suc_plus lm) (Mid d) g acc mid in
+          gfold_map_left (D.suc_plus km) (D.suc_plus lm) (Mid (D.deg, d)) g acc mid in
         Gfolded (Branch (l, ends, mid), acc)
 
   and gfold_left_map_branches : type k m km n b c l len len' left1 left2 right1.
@@ -392,7 +392,7 @@ module IcubeTraverse2 (S1 : Suc) (S2 : Suc) (F1 : Fam3) (F2 : Fam3) (Acc : Fam2)
     | Emp, Emp -> Gfolded_branches (Emp, acc)
     | Snoc (brs, br), Snoc (ixs, e) ->
         let (Gfolded_branches (brs, acc)) = gfold_left_map_branches km lm d g ixs acc brs in
-        let (Gfolded (br, acc)) = gfold_map_left km lm (End (e, d)) g acc br in
+        let (Gfolded (br, acc)) = gfold_map_left km lm (End (D.deg, e, d)) g acc br in
         Gfolded_branches (Snoc (brs, br), acc)
 
   let fold_map_left : type n b c left1 left2 right1.

@@ -195,10 +195,10 @@ module Cube (F : Fam2) = struct
                  BwvM.pmapM
                    (fun (e :: brs) ->
                      M.apply
-                       (gpmapM km' (D.suc_plus lm) (End (e, d)) g (Heter.hgt_of_hlist hs brs) cst)
+                       (gpmapM km' (D.suc_plus lm) (End (D.deg, e, d)) g (Heter.hgt_of_hlist hs brs) cst)
                      @@ fun xs -> Heter.hlist_of_hgt newhs xs)
                    (Endpoints.indices l :: ends) (Heter.tlist_hgts newhs cst))
-               (fun () -> gpmapM (D.suc_plus km) (D.suc_plus lm) (Mid d) g mid cst))
+               (fun () -> gpmapM (D.suc_plus km) (D.suc_plus lm) (Mid (D.deg, d)) g mid cst))
           @@ fun (newends, newmid) -> Heter.branch l newhs newends newmid
 
     (* And the actual one for a t, which we can henceforth restrict our attention to. *)
@@ -263,9 +263,9 @@ module Cube (F : Fam2) = struct
             (M.zip
                (fun () ->
                  BwvM.mapM
-                   (fun e -> gbuildM (Word m) mk' (D.plus_suc ml) (End (e, d)) g)
+                   (fun e -> gbuildM (Word m) mk' (D.plus_suc ml) (End (D.deg, e, d)) g)
                    (Endpoints.indices l))
-               (fun () -> gbuildM (Word m) (D.plus_suc mk) (D.plus_suc ml) (Mid d) g))
+               (fun () -> gbuildM (Word m) (D.plus_suc mk) (D.plus_suc ml) (Mid (D.deg, d)) g))
           @@ fun (ends, mid) -> Branch (l, ends, mid)
 
     let buildM : type n b. n D.t -> (n, b) builderM -> (n, b) t M.t =

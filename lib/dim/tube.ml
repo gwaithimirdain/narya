@@ -326,7 +326,7 @@ module Tube (F : Fam2) = struct
                      | N.Nat Zero, Some ifzero -> ifzero
                      | _ -> return ())
                    (fun () ->
-                     gpmapM_r nk1 (D.plus_suc kl) nk12' (D.plus_suc nkl) (Mid d) g mid ?ifzero cst)))
+                     gpmapM_r nk1 (D.plus_suc kl) nk12' (D.plus_suc nkl) (Mid (D.deg, d)) g mid ?ifzero cst)))
           @@ fun (newends, ((), newmid)) -> Heter.branch l newhs newends newmid
 
     let pmapM : type n k nk b bs cs.
@@ -465,7 +465,7 @@ module Tube (F : Fam2) = struct
                        (REnd (e, d))
                        g)
                    (Endpoints.indices l))
-               (fun () -> gbuildM_r n nk1 (D.plus_suc kl) nk12' (D.plus_suc nkl) (Mid d) g))
+               (fun () -> gbuildM_r n nk1 (D.plus_suc kl) nk12' (D.plus_suc nkl) (Mid (D.deg, d)) g))
           @@ fun (ends, mid) -> Branch (l, ends, mid)
 
     let buildM : type n k nk b.
