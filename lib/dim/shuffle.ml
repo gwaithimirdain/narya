@@ -13,6 +13,47 @@ type (_, _, _) shuffle =
       'g D.G.t * ('a, 'b, 'ab) shuffle
       -> ('a, ('b, 'g) D.suc, ('ab, 'g) D.suc) shuffle
 
+let rec plus_of_shuffle : type a b c. (a, b, c) shuffle -> (a, b, c) D.plus = function
+  | Zero -> Zero
+  | Left (g, s) -> (
+      (* TODO: bridge via G.compare; D.suc_plus_eq_suc still hardcodes unit. *)
+      match D.G.compare g D.deg with
+      | Neq -> assert false
+      | Eq -> D.suc_plus_eq_suc (plus_of_shuffle s))
+  | Right (g, s) -> Suc (plus_of_shuffle s, g)
+
+let rec deg_of_shuffle : type a b c ab. (a, b, c) shuffle -> (a, b, ab) D.plus -> (c, ab) deg =
+ fun s ab ->
+  match s with
+  | Zero ->
+      let Zero = ab in
+      Zero D.zero
+  | Left (g, s) -> (
+      match D.G.compare g D.deg with
+      | Neq -> assert false
+      | Eq ->
+          let (Suc (ab, Unit)) = D.plus_suc ab in
+          Suc (deg_of_shuffle s ab, g, Now))
+  | Right (g, s) ->
+      let (Suc (ab, _)) = ab in
+      Suc (deg_of_shuffle s ab, g, Now)
+
+let rec perm_of_shuffle : type a b c ab. (a, b, c) shuffle -> (a, b, ab) D.plus -> (c, ab) perm =
+ fun s ab ->
+  match s with
+  | Zero ->
+      let Zero = ab in
+      Zero
+  | Left (g, s) -> (
+      match D.G.compare g D.deg with
+      | Neq -> assert false
+      | Eq ->
+          let (Suc (ab, Unit)) = D.plus_suc ab in
+          Suc (perm_of_shuffle s ab, g, Now))
+  | Right (g, s) ->
+      let (Suc (ab, _)) = ab in
+      Suc (perm_of_shuffle s ab, g, Now)
+
 let rec left_shuffle : type a b c. (a, b, c) shuffle -> a D.t = function
   | Zero -> D.zero
   | Left (g, s) -> D.suc (left_shuffle s) g
@@ -27,76 +68,6 @@ let rec out_shuffle : type a b c. (a, b, c) shuffle -> c D.t = function
   | Zero -> D.zero
   | Left (g, s) -> D.suc (out_shuffle s) g
   | Right (g, s) -> D.suc (out_shuffle s) g
-
-(* The Left case of these three functions fundamentally needs commutativity (visible in the [Left] constructor's type: it produces a shuffle whose third type argument [(ab, g) suc] is only equal to [(a suc) + b] when g commutes through b).  We use the structured forms from [Word.Make] (inlined here because [d.ml] currently shadows the inherited names with simple-form scaffolding that will be deleted in Phase 7's final commit) and verify the resulting existentials with [Word.compare].  The [Neq] branches fire precisely when the input shuffle's b-side contains generators other than the outer [g], which doesn't happen in single-generator code. *)
-
-let rec word_suc_plus_eq_suc : type m g n p.
-    (m, n, p) D.plus -> (m, g, n, p) D.suc_plus_eq_suc = function
-  | Zero -> Suc_plus_eq_suc (Zero, Now)
-  | Suc (x, g) ->
-      let (Suc_plus_eq_suc (y, i)) = word_suc_plus_eq_suc x in
-      Suc_plus_eq_suc (Suc (y, g), Later i)
-
-let rec word_plus_suc : type m n p g.
-    g D.G.t -> ((m, g) D.suc, n, p) D.plus -> (m, g, n, p) D.plus_suc =
- fun g -> function
-  | Zero -> Plus_suc (Zero, Suc (Zero, g))
-  | Suc (x, h) ->
-      let (Plus_suc (y, z)) = word_plus_suc g x in
-      Plus_suc (Suc (y, h), Suc (z, h))
-
-let rec plus_of_shuffle : type a b c. (a, b, c) shuffle -> (a, b, c) D.plus = function
-  | Zero -> Zero
-  | Left (g, s) -> (
-      let p_inner = plus_of_shuffle s in
-      let a_word = left_shuffle s in
-      let ab_word = D.plus_out a_word p_inner in
-      let (Suc_plus_eq_suc (y, _)) = word_suc_plus_eq_suc p_inner in
-      (* y : ((a, g) suc, b, q) plus; we need q = (ab, g) suc *)
-      let target = D.suc ab_word g in
-      let y_out = D.plus_out (D.suc a_word g) y in
-      match D.compare y_out target with
-      | Eq -> y
-      | Neq -> assert false)
-  | Right (g, s) -> Suc (plus_of_shuffle s, g)
-
-let rec deg_of_shuffle : type a b c ab. (a, b, c) shuffle -> (a, b, ab) D.plus -> (c, ab) deg =
- fun s ab ->
-  match s with
-  | Zero ->
-      let Zero = ab in
-      Zero D.zero
-  | Left (g, s) -> (
-      let (Plus_suc (_, b_struct)) = word_plus_suc g ab in
-      let (Suc (ab_inner, h)) = b_struct in
-      match D.G.compare g h with
-      | Neq -> assert false
-      | Eq -> (
-          match D.compare (D.plus_right ab_inner) (right_shuffle s) with
-          | Eq -> Suc (deg_of_shuffle s ab_inner, g, Now)
-          | Neq -> assert false))
-  | Right (g, s) ->
-      let (Suc (ab, _)) = ab in
-      Suc (deg_of_shuffle s ab, g, Now)
-
-let rec perm_of_shuffle : type a b c ab. (a, b, c) shuffle -> (a, b, ab) D.plus -> (c, ab) perm =
- fun s ab ->
-  match s with
-  | Zero ->
-      let Zero = ab in
-      Zero
-  | Left (g, s) -> (
-      let (Plus_suc (_, b_struct)) = word_plus_suc g ab in
-      let (Suc (ab_inner, h)) = b_struct in
-      match D.G.compare g h with
-      | Neq -> assert false
-      | Eq -> (
-          match D.compare (D.plus_right ab_inner) (right_shuffle s) with
-          | Eq -> Suc (perm_of_shuffle s ab_inner, g, Now)
-          | Neq -> assert false))
-  | Right (g, s) ->
-      let (Suc (ab, _)) = ab in
-      Suc (perm_of_shuffle s ab, g, Now)
 
 let rec shuffle_zero : type a. a D.t -> (a, D.zero, a) shuffle = function
   | Word Zero -> Zero
