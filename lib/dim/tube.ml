@@ -524,9 +524,12 @@ module TubeOf = struct
    fun n12 tr ->
     match tr with
     | Leaf m -> Leaf m
-    | Branch (_, l, ends, mid) ->
-        let (Suc (n12', Unit)) = D.plus_suc n12 in
-        Branch (D.deg, l, Bwv.map (fun t -> CubeOf.lift n12' t) ends, glift n12 mid)
+    | Branch (g, l, ends, mid) -> (
+        match D.G.compare g D.deg with
+        | Neq -> assert false
+        | Eq ->
+            let (Suc (n12', Unit)) = D.plus_suc n12 in
+            Branch (g, l, Bwv.map (fun t -> CubeOf.lift n12' t) ends, glift n12 mid))
 
   let rec glower : type m k mk n1 n2 n12 l b.
       (mk, l, n1) D.plus -> (n1, n2, n12) D.plus -> (m, k, mk, n12, b) gt -> (m, k, mk, n1, b) gt =
@@ -534,10 +537,17 @@ module TubeOf = struct
     match (tr, n12) with
     | Leaf m, _ -> Leaf m
     | _, Zero -> tr
-    | Branch (_, l, ends, mid), Suc (n12', Unit) ->
-        let mk' = D.plus_suc mk in
-        let (Suc (mk'', Unit)) = mk' in
-        Branch (l, Bwv.map (fun t -> CubeOf.lower mk'' (D.plus_suc n12') t) ends, glower mk' n12 mid)
+    | Branch (g, l, ends, mid), Suc (n12', Unit) -> (
+        match D.G.compare g D.deg with
+        | Neq -> assert false
+        | Eq ->
+            let mk' = D.plus_suc mk in
+            let (Suc (mk'', Unit)) = mk' in
+            Branch
+              ( g,
+                l,
+                Bwv.map (fun t -> CubeOf.lower mk'' (D.plus_suc n12') t) ends,
+                glower mk' n12 mid ))
 
   (* We can fill in the missing pieces of a tube with a cube, yielding a cube. *)
 
@@ -545,7 +555,7 @@ module TubeOf = struct
    fun tl tm ->
     match tl with
     | Leaf _ -> tm
-    | Branch (l, ends, mid) -> Branch (l, ends, gplus_gcube mid tm)
+    | Branch (g, l, ends, mid) -> Branch (g, l, ends, gplus_gcube mid tm)
 
   let plus_cube : type m l ml b. (m, l, ml, b) t -> (m, b) C.t -> (ml, b) C.t =
    fun tl tm ->
@@ -559,7 +569,7 @@ module TubeOf = struct
    fun kl tl tk ->
     match (kl, tl) with
     | Zero, Leaf _ -> tk
-    | Suc (kl, Unit), Branch (l, ends, mid) -> Branch (l, ends, gplus_gtube kl mid tk)
+    | Suc (kl, _), Branch (g, l, ends, mid) -> Branch (g, l, ends, gplus_gtube kl mid tk)
 
   let plus_tube : type m k mk l kl mkl b.
       (k, l, kl) D.plus -> (mk, l, mkl, b) t -> (m, k, mk, b) t -> (m, kl, mkl, b) t =
@@ -579,9 +589,9 @@ module TubeOf = struct
     | Zero, _ ->
         let Eq = D.plus_uniq mk (gplus tr) in
         (tr, Leaf (D.plus_out (guninst tr) mk))
-    | Suc (kl, Unit), Branch (l, ends, mid) ->
+    | Suc (kl, _), Branch (g, l, ends, mid) ->
         let middle, outer = gsplit mk kl mid in
-        (middle, Branch (l, ends, outer))
+        (middle, Branch (g, l, ends, outer))
 
   let split : type m k mk l kl mkl b.
       (m, k, mk) D.plus ->
