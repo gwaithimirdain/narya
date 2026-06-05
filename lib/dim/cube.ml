@@ -12,8 +12,11 @@ module Cube (F : Fam2) = struct
   type (_, _, _) gt =
     | Leaf : ('n, 'b) F.t -> (D.zero, 'n, 'b) gt
     | Branch :
-        'l Endpoints.len * (('m, 'n, 'b) gt, 'l) Bwv.t * ('m, ('n, unit) D.suc, 'b) gt
-        -> (('m, unit) D.suc, ('n, unit) D.suc, 'b) gt
+        'g D.G.t
+        * 'l Endpoints.len
+        * (('m, 'n, 'b) gt, 'l) Bwv.t
+        * ('m, ('n, 'g) D.suc, 'b) gt
+        -> (('m, 'g) D.suc, ('n, 'g) D.suc, 'b) gt
 
   (* Now a cube of dimension 'n with parameter 'b is obtained by coinciding the labeling dimension and the height. *)
   type ('n, 'b) t = ('n, 'n, 'b) gt
@@ -23,7 +26,7 @@ module Cube (F : Fam2) = struct
   (* For instance, we can compute the dimension of a cube. *)
   let rec gdim : type m n b. (m, n, b) gt -> m D.t = function
     | Leaf _ -> D.zero
-    | Branch (_, _, br) -> D.suc (gdim br) Unit
+    | Branch (g, _, _, br) -> D.suc (gdim br) g
 
   let dim : type n b. (n, b) t -> n D.t = fun tr -> gdim tr
 
@@ -41,15 +44,21 @@ module Cube (F : Fam2) = struct
         let Zero = km in
         let Zero = nm in
         x
-    | Branch (l1, br, _), End (d, _, (l2, e)) ->
-        let (Le km') = plus_of_sface d in
-        let Eq = D.minus_uniq' (dom_sface d) (Suc (km', Unit)) km in
-        let (Suc (nm', Unit)) = nm in
-        let Eq = Endpoints.uniq l1 l2 in
-        gfind (Bwv.nth e br) km' nm' d
-    | Branch (_, _, br), Mid (d, _) ->
-        let (Suc (km, Unit)) = D.plus_suc km in
-        gfind br km nm d
+    | Branch (g, l1, br, _), End (d, _, (l2, e)) -> (
+        match D.G.compare g D.deg with
+        | Neq -> assert false
+        | Eq ->
+            let (Le km') = plus_of_sface d in
+            let Eq = D.minus_uniq' (dom_sface d) (Suc (km', Unit)) km in
+            let (Suc (nm', Unit)) = nm in
+            let Eq = Endpoints.uniq l1 l2 in
+            gfind (Bwv.nth e br) km' nm' d)
+    | Branch (g, _, _, br), Mid (d, _) -> (
+        match D.G.compare g D.deg with
+        | Neq -> assert false
+        | Eq ->
+            let (Suc (km, Unit)) = D.plus_suc km in
+            gfind br km nm d)
 
   let find : type n k b. (n, b) t -> (k, n) sface -> (k, b) F.t =
    fun tr d ->
@@ -58,7 +67,7 @@ module Cube (F : Fam2) = struct
 
   let rec gfind_top : type k n b. (k, n, b) gt -> (n, b) F.t = function
     | Leaf x -> x
-    | Branch (_, _, br) -> gfind_top br
+    | Branch (_, _, _, br) -> gfind_top br
 
   let find_top : type n b. (n, b) t -> (n, b) F.t = fun tr -> gfind_top tr
 
@@ -125,14 +134,14 @@ module Cube (F : Fam2) = struct
       | [] ->
           let (Wrap l) = Endpoints.wrapped () in
           Ends (l, Nil, [])
-      | Branch (l1, es, _) :: xs ->
+      | Branch (_, l1, es, _) :: xs ->
           let (Ends (l2, hs, ess)) = ends xs in
           let Eq = Endpoints.uniq l1 l2 in
           Ends (l2, Cons hs, es :: ess)
 
     let rec mid : type m n bs. ((m, unit) D.suc, (n, unit) D.suc, bs) hgt -> (m, (n, unit) D.suc, bs) hgt = function
       | [] -> []
-      | Branch (_, _, m) :: xs -> m :: mid xs
+      | Branch (_, _, _, m) :: xs -> m :: mid xs
 
     (* Construct an hlist of gt's as leaves or branches.  *)
     let rec leaf : type n bs. (n, bs) hft -> (D.zero, n, bs) hgt = function
@@ -148,7 +157,7 @@ module Cube (F : Fam2) = struct
      fun l hs endss mids ->
       match (hs, endss, mids) with
       | Nil, [], [] -> []
-      | Cons hs, ends :: endss, mid :: mids -> Branch (l, ends, mid) :: branch l hs endss mids
+      | Cons hs, ends :: endss, mid :: mids -> Branch (D.deg, l, ends, mid) :: branch l hs endss mids
   end
 
   (* OCaml can't always tell from context what [x ; xs] should be; in particular it often fails to notice hfts.  So we also give a different syntax that is unambiguous.  *)
@@ -184,7 +193,7 @@ module Cube (F : Fam2) = struct
       | Leaf _ :: _ ->
           let Zero, Zero = (km, lm) in
           M.apply (g.map (sface_of_bw d) (Heter.lab trs)) @@ fun x -> Heter.leaf x
-      | Branch (_, _, _) :: _ ->
+      | Branch (_, _, _, _) :: _ ->
           let (Suc (km', Unit)) = km in
           let (Ends (l, hs, ends)) = Heter.ends trs in
           let mid = Heter.mid trs in
@@ -266,7 +275,7 @@ module Cube (F : Fam2) = struct
                    (fun e -> gbuildM (Word m) mk' (D.plus_suc ml) (End (D.deg, e, d)) g)
                    (Endpoints.indices l))
                (fun () -> gbuildM (Word m) (D.plus_suc mk) (D.plus_suc ml) (Mid (D.deg, d)) g))
-          @@ fun (ends, mid) -> Branch (l, ends, mid)
+          @@ fun (ends, mid) -> Branch (D.deg, l, ends, mid)
 
     let buildM : type n b. n D.t -> (n, b) builderM -> (n, b) t M.t =
      fun n g -> gbuildM n (D.plus_zero n) (D.plus_zero n) Zero g
@@ -318,9 +327,12 @@ module CubeOf = struct
    fun n12 tr ->
     match tr with
     | Leaf x -> Leaf x
-    | Branch (l, ends, mid) ->
-        let (Suc (n12', Unit)) = D.plus_suc n12 in
-        Branch (l, Bwv.map (fun t -> lift n12' t) ends, lift n12 mid)
+    | Branch (g, l, ends, mid) -> (
+        match D.G.compare g D.deg with
+        | Neq -> assert false
+        | Eq ->
+            let (Suc (n12', Unit)) = D.plus_suc n12 in
+            Branch (g, l, Bwv.map (fun t -> lift n12' t) ends, lift n12 mid))
 
   let rec lower : type m k n1 n2 n12 b.
       (m, k, n1) D.plus -> (n1, n2, n12) D.plus -> (m, n12, b) gt -> (m, n1, b) gt =
@@ -328,9 +340,13 @@ module CubeOf = struct
     match (tr, n12) with
     | Leaf x, _ -> Leaf x
     | _, Zero -> tr
-    | Branch (l, ends, mid), Suc (n12', Unit) ->
-        let mk' = D.plus_suc mk in
-        let (Suc (mk'', Unit)) = mk' in
-        Branch (l, Bwv.map (fun t -> lower mk'' (D.plus_suc n12') t) ends, lower mk' n12 mid)
+    | Branch (g, l, ends, mid), Suc (n12', Unit) -> (
+        match D.G.compare g D.deg with
+        | Neq -> assert false
+        | Eq ->
+            let mk' = D.plus_suc mk in
+            let (Suc (mk'', Unit)) = mk' in
+            Branch
+              (g, l, Bwv.map (fun t -> lower mk'' (D.plus_suc n12') t) ends, lower mk' n12 mid))
 
 end
