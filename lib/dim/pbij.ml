@@ -293,10 +293,11 @@ module rec Internal_Pbijmap : functor (F : Fam2) -> sig
   type (_, _, _, _) gt =
     | Zero : ('r, 'v) F.t -> ('evaluation, D.zero, 'r, 'v) gt
     | Suc : {
-        left : ('evaluation, 'intrinsic, ('r, unit) D.suc, 'v) gt;
+        g : 'g D.G.t;
+        left : ('evaluation, 'intrinsic, ('r, 'g) D.suc, 'v) gt;
         right : ('evaluation, ('intrinsic * 'r) * 'v) Tup.t;
       }
-        -> ('evaluation, ('intrinsic, unit) D.suc, 'r, 'v) gt
+        -> ('evaluation, ('intrinsic, 'g) D.suc, 'r, 'v) gt
 
   type ('evaluation, 'intrinsic, 'v) t = ('evaluation, 'intrinsic, D.zero, 'v) gt * 'evaluation D.t
 end =
@@ -319,10 +320,11 @@ functor
       | Zero : ('r, 'v) F.t -> ('evaluation, D.zero, 'r, 'v) gt
       (* If it's a successor, then the shuffle acting on that last element either sends it into the remaining dimensions or the shared ones.  Thus, we store one subtree with incremented remaining dimension, and a tuple of subtrees with the same remaining dimension, indexed by where the new shared element ends up in the evaluation dimension (and with the image removed from the evaluation dimension; the intrinsically well-typed map Tuple takes care of that). *)
       | Suc : {
-          left : ('evaluation, 'intrinsic, ('r, unit) D.suc, 'v) gt;
+          g : 'g D.G.t;
+          left : ('evaluation, 'intrinsic, ('r, 'g) D.suc, 'v) gt;
           right : ('evaluation, ('intrinsic * 'r) * 'v) Tup.t;
         }
-          -> ('evaluation, ('intrinsic, unit) D.suc, 'r, 'v) gt
+          -> ('evaluation, ('intrinsic, 'g) D.suc, 'r, 'v) gt
 
     type ('evaluation, 'intrinsic, 'v) t =
       ('evaluation, 'intrinsic, D.zero, 'v) gt * 'evaluation D.t
@@ -335,7 +337,7 @@ module Pbijmap (F : Fam2) = struct
   let rec gintrinsic : type evaluation intrinsic r v.
       (evaluation, intrinsic, r, v) gt -> intrinsic D.t = function
     | Zero _ -> D.zero
-    | Suc { left; _ } -> D.suc (gintrinsic left) Unit
+    | Suc { g; left; _ } -> D.suc (gintrinsic left) g
 
   let intrinsic : type evaluation intrinsic v. (evaluation, intrinsic, v) t -> intrinsic D.t =
    fun (ms, _) -> gintrinsic ms
@@ -352,7 +354,11 @@ module Pbijmap (F : Fam2) = struct
     | Pbij (Zero _, Zero), Zero v ->
         let Zero = r12 in
         v
-    | Pbij (ins, Left (_, shuf)), Suc m -> gfind (Pbij (ins, shuf)) m.left (D.suc_plus r12)
+    | Pbij (ins, Left (g_left, shuf)), Suc m -> (
+        (* TODO: bridge via G.compare; gfind still uses D.suc_plus. *)
+        match D.G.compare g_left D.deg with
+        | Neq -> assert false
+        | Eq -> gfind (Pbij (ins, shuf)) m.left (D.suc_plus r12))
     | Pbij (Suc (ins, i), Right (_, shuf)), Suc m ->
         let (Wrap m) = Tup.find i m.right in
         gfind (Pbij (ins, shuf)) m r12
@@ -373,8 +379,10 @@ module Pbijmap (F : Fam2) = struct
     | Pbij (Zero _, Zero), Zero _ ->
         let Zero = r12 in
         Zero v
-    | Pbij (ins, Left (_, shuf)), Suc m ->
-        Suc { m with left = gset (Pbij (ins, shuf)) v m.left (D.suc_plus r12) }
+    | Pbij (ins, Left (g_left, shuf)), Suc m -> (
+        match D.G.compare g_left D.deg with
+        | Neq -> assert false
+        | Eq -> Suc { m with left = gset (Pbij (ins, shuf)) v m.left (D.suc_plus r12) })
     | Pbij (Suc (ins, i), Right (_, shuf)), Suc m ->
         Suc
           {
@@ -407,33 +415,39 @@ module Pbijmap (F : Fam2) = struct
    fun evaluation intrinsic f ->
     match intrinsic with
     | Word Zero -> Zero (f.build (Pbij (ins_zero evaluation, Zero)) (D.plus_zero f.remaining))
-    | Word (Suc (intrinsic, Unit)) ->
-        Suc
-          {
-            left =
-              gbuild evaluation (Word intrinsic)
-                {
-                  remaining = D.suc f.remaining Unit;
-                  build =
-                    (fun (Pbij (ins, shuf)) r12 -> f.build (Pbij (ins, Left (D.deg, shuf))) (D.plus_suc r12));
-                };
-            right =
-              (let build : type b g.
-                   g Unitcomparable.t ->
-                   (b, g, evaluation) Tbwd.insert ->
-                   (b, (_ * remaining) * v) Param.t =
-                fun g i ->
-                 let Unit = g in
-                 Wrap
-                   (gbuild (D.uninsert i evaluation) (Word intrinsic)
-                      {
-                        f with
-                        build =
-                          (fun (Pbij (ins, shuf)) r12 ->
-                            f.build (Pbij (Suc (ins, i), Right (D.deg, shuf))) r12);
-                      }) in
-               Tup.build evaluation { build });
-          }
+    | Word (Suc (intrinsic, g_intrinsic)) -> (
+        (* TODO: bridge via G.compare; D.plus_suc inside the callback still hardcodes unit. *)
+        match D.G.compare g_intrinsic D.deg with
+        | Neq -> assert false
+        | Eq ->
+            Suc
+              {
+                g = g_intrinsic;
+                left =
+                  gbuild evaluation (Word intrinsic)
+                    {
+                      remaining = D.suc f.remaining g_intrinsic;
+                      build =
+                        (fun (Pbij (ins, shuf)) r12 ->
+                          f.build (Pbij (ins, Left (g_intrinsic, shuf))) (D.plus_suc r12));
+                    };
+                right =
+                  (let build : type b g.
+                       g Unitcomparable.t ->
+                       (b, g, evaluation) Tbwd.insert ->
+                       (b, (_ * remaining) * v) Param.t =
+                    fun g i ->
+                     let Unit = g in
+                     Wrap
+                       (gbuild (D.uninsert i evaluation) (Word intrinsic)
+                          {
+                            f with
+                            build =
+                              (fun (Pbij (ins, shuf)) r12 ->
+                                f.build (Pbij (Suc (ins, i), Right (g_intrinsic, shuf))) r12);
+                          }) in
+                   Tup.build evaluation { build });
+              })
 
   type ('evaluation, 'intrinsic, 'v) builder = {
     build : 'r. ('evaluation, 'intrinsic, 'r) pbij -> ('r, 'v) F.t;
@@ -494,7 +508,8 @@ module Pbijmap (F : Fam2) = struct
      fun ls irvs rs ->
       match (ls, irvs, rs) with
       | [], [], [] -> []
-      | left :: ls, Times :: irvs, right :: rs -> Suc { left; right } :: suc ls irvs rs
+      | left :: ls, Times :: irvs, right :: rs ->
+          Suc { g = D.deg; left; right } :: suc ls irvs rs
 
     let rec zeros : type e r vs. (e, D.zero, r, vs) hgt -> (r, vs) hft = function
       | [] -> []
@@ -578,39 +593,44 @@ module Pbijmap (F : Fam2) = struct
           M.apply
             (f.map (Pbij (ins_zero evaluation, Zero)) (D.plus_zero f.remaining) (Heter.zeros ms))
           @@ fun res -> Heter.zero res
-      | Suc _ :: _ ->
-          let module T = Tup.Applicatic (M) in
-          let (Exists_cons irvs) = MapTimes.exists_cons (Heter.params ms) in
-          let (Exists irws) = MapTimes.exists ws in
-          let map : type a g.
-              g Unitcomparable.t ->
-              (a, g, _) Tbwd.insert ->
-              (a, _) Tup.Heter.hft ->
-              (a, _) Tup.Heter.hft M.t =
-           fun g i x ->
-            let Unit = g in
-            M.apply
-              (gpmapM (D.uninsert i evaluation)
-                 {
-                   f with
-                   map =
-                     (fun (Pbij (ins, shuf)) r12 v -> f.map (Pbij (Suc (ins, i), Right (D.deg, shuf))) r12 v);
-                 }
-                 (Heter.unwrap x irvs) ws)
-            @@ fun res -> Heter.wrap res irws in
-          M.apply
-            (M.zip
-               (fun () ->
-                 gpmapM evaluation
-                   {
-                     remaining = D.suc f.remaining Unit;
-                     map =
-                       (fun (Pbij (ins, shuf)) r12 v ->
-                         f.map (Pbij (ins, Left (D.deg, shuf))) (D.plus_suc r12) v);
-                   }
-                   (Heter.left ms) ws)
-               (fun () -> T.pmapM { map } (Heter.right ms irvs) (MapTimes.cod irws)))
-          @@ fun (lefts, rights) -> Heter.suc lefts irws rights
+      | Suc { g = g_outer; _ } :: _ -> (
+          (* TODO: bridge via G.compare; gpmapM still calls D.plus_suc and D.suc inside the callbacks with hardcoded unit. *)
+          match D.G.compare g_outer D.deg with
+          | Neq -> assert false
+          | Eq ->
+              let module T = Tup.Applicatic (M) in
+              let (Exists_cons irvs) = MapTimes.exists_cons (Heter.params ms) in
+              let (Exists irws) = MapTimes.exists ws in
+              let map : type a g.
+                  g Unitcomparable.t ->
+                  (a, g, _) Tbwd.insert ->
+                  (a, _) Tup.Heter.hft ->
+                  (a, _) Tup.Heter.hft M.t =
+               fun g i x ->
+                let Unit = g in
+                M.apply
+                  (gpmapM (D.uninsert i evaluation)
+                     {
+                       f with
+                       map =
+                         (fun (Pbij (ins, shuf)) r12 v ->
+                           f.map (Pbij (Suc (ins, i), Right (g_outer, shuf))) r12 v);
+                     }
+                     (Heter.unwrap x irvs) ws)
+                @@ fun res -> Heter.wrap res irws in
+              M.apply
+                (M.zip
+                   (fun () ->
+                     gpmapM evaluation
+                       {
+                         remaining = D.suc f.remaining g_outer;
+                         map =
+                           (fun (Pbij (ins, shuf)) r12 v ->
+                             f.map (Pbij (ins, Left (g_outer, shuf))) (D.plus_suc r12) v);
+                       }
+                       (Heter.left ms) ws)
+                   (fun () -> T.pmapM { map } (Heter.right ms irvs) (MapTimes.cod irws)))
+              @@ fun (lefts, rights) -> Heter.suc lefts irws rights)
 
     type ('evaluation, 'intrinsic, 'vs, 'ws) pmapperM = {
       map : 'r. ('evaluation, 'intrinsic, 'r) pbij -> ('r, 'vs) Heter.hft -> ('r, 'ws) Heter.hft M.t;
