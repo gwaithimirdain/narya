@@ -55,14 +55,14 @@ let rec pbij_of_int_strings : type e.
               | Neq -> None
               | Eq -> (
                   match D.compare (D.uninsert ix e_outer_word) (dom_ins ins) with
-                  | Eq -> Some (Pbij_of (Pbij (Suc (ins, ix), Right shuf)))
+                  | Eq -> Some (Pbij_of (Pbij (Suc (ins, ix), Right (D.deg, shuf))))
                   | Neq -> None))
           | None -> None)
       | Word Zero, Some _ -> .
       | _, None -> None)
   | `Str str :: strs when str = Endpoints.refl_string () -> (
       match pbij_of_int_strings e strs with
-      | Some (Pbij_of (Pbij (ins, shuf))) -> Some (Pbij_of (Pbij (ins, Left shuf)))
+      | Some (Pbij_of (Pbij (ins, shuf))) -> Some (Pbij_of (Pbij (ins, Left (D.deg, shuf))))
       | None -> None)
   | `Str _ :: _ -> None
 
@@ -80,8 +80,8 @@ let rec int_strings_of_pbij : type n i r. (n, i, r) pbij -> [ `Int of int | `Str
  fun (Pbij (ins, shuf)) ->
   match shuf with
   | Zero -> []
-  | Left shuf -> `Str (Endpoints.refl_string ()) :: int_strings_of_pbij (Pbij (ins, shuf))
-  | Right shuf ->
+  | Left (_, shuf) -> `Str (Endpoints.refl_string ()) :: int_strings_of_pbij (Pbij (ins, shuf))
+  | Right (_, shuf) ->
       let (Suc (ins, ix)) = ins in
       let x = Tbwd.int_of_insert ix + 1 in
       `Int x
@@ -118,8 +118,8 @@ type (_, _, _) singleton_pbij =
 let singleton_pbij : type a i r. (a, i, r) pbij -> i is_singleton -> (a, i, r) singleton_pbij =
  fun p One ->
   match p with
-  | Pbij (_, Left Zero) -> Left
-  | Pbij (ins, Right Zero) -> Right ins
+  | Pbij (_, Left (_, Zero)) -> Left
+  | Pbij (ins, Right (_, Zero)) -> Right ins
 
 type (_, _) pbij_between =
   | Pbij_between :
@@ -153,14 +153,14 @@ let rec deg_comp_ins : type m n i res.
       match deg_coresidual deg i with
       | Coresidual_zero deg ->
           let (Deg_comp_ins (ins, shuf, s)) = deg_comp_ins deg ins in
-          Deg_comp_ins (ins, Left shuf, s)
+          Deg_comp_ins (ins, Left (D.deg, shuf), s)
       | Coresidual_suc (deg, g_cs, j) -> (
           (* TODO: bridge via G.compare; not needed once insertion carries its generator explicitly. *)
           match D.G.compare g_cs D.deg with
           | Neq -> assert false
           | Eq ->
               let (Deg_comp_ins (ins, shuf, s)) = deg_comp_ins deg ins in
-              Deg_comp_ins (Suc (ins, j), Right shuf, s)))
+              Deg_comp_ins (Suc (ins, j), Right (D.deg, shuf), s)))
 
 (* A partial bijection can be composed with a degeneracy on the evaluation dimension to produce another partial bijection, with an induced degeneracy on the results. *)
 
@@ -179,22 +179,22 @@ let rec deg_comp_pbij : type m n i res rem sh.
   | Zero ->
       let (Zero _) = ins in
       Deg_comp_pbij (ins_zero (cod_deg deg), Zero, deg, fun _ -> Eq)
-  | Left shuf ->
+  | Left (g, shuf) ->
       let (Deg_comp_pbij (ins, shuf, s, _)) = deg_comp_pbij deg ins shuf in
       Deg_comp_pbij
         ( ins,
-          Left shuf,
+          Left (g, shuf),
           s,
           function
           | _ -> . )
-  | Right shuf -> (
+  | Right (g, shuf) -> (
       let (Suc (ins, i)) = ins in
       match deg_coresidual deg i with
       | Coresidual_zero deg ->
           let (Deg_comp_pbij (ins, shuf, s, _)) = deg_comp_pbij deg ins shuf in
           Deg_comp_pbij
             ( ins,
-              Left shuf,
+              Left (g, shuf),
               s,
               function
               | _ -> . )
@@ -203,7 +203,7 @@ let rec deg_comp_pbij : type m n i res rem sh.
           | Neq -> assert false
           | Eq ->
               let (Deg_comp_pbij (ins, shuf, s, ifzero)) = deg_comp_pbij deg ins shuf in
-              Deg_comp_pbij (Suc (ins, j), Right shuf, s, ifzero)))
+              Deg_comp_pbij (Suc (ins, j), Right (g, shuf), s, ifzero)))
 
 (* This is like deg_comp_pbij (for the insertion only, so far), but for adding a constant on the left rather than acting by an arbitrary degeneracy (for evaluation rather that acting).  This allows it to return more detailed information.  The dimension 'r (new remaining) is the piece of 'i (intrinsic) that lands in 'm (new added dimension on the left), while 'h (new shared) is the part that lands in 'n, and 't is the part of 'm that doesn't come from 'r.  Note that the first two outputs together form an ('n, 'i, 'r) pbij; that's why this is in this file, even though it doesn't refer explicitly to pbij.  *)
 
@@ -227,11 +227,11 @@ let rec unplus_ins : type m n mn s i.
       | Left (x, mn') ->
           let (Unplus_ins (nsh, rhi, mtr, ts)) = unplus_ins (D.uninsert x m) mn' ins' in
           (* right-increment i and r, middle-increment m, keep s and h the same *)
-          Unplus_ins (nsh, Left rhi, Suc (mtr, x), ts)
+          Unplus_ins (nsh, Left (D.deg, rhi), Suc (mtr, x), ts)
       | Right (x, mn') ->
           let (Unplus_ins (nsh, rhi, mtr, ts)) = unplus_ins m mn' ins' in
           (* right-increment i and h and s, middle-increment n, keep m and r the same *)
-          Unplus_ins (Suc (nsh, x), Right rhi, mtr, ts))
+          Unplus_ins (Suc (nsh, x), Right (D.deg, rhi), mtr, ts))
 
 type (_, _, _, _, _, _) unplus_pbij =
   | Unplus_pbij :
@@ -261,13 +261,20 @@ let rec ins_plus_of_pbij : type n s h r i rn.
   | Zero ->
       let Eq = D.plus_uniq rn (D.zero_plus (dom_ins ins)) in
       ins
-  | Right shuf' ->
-      let (Suc (ins', x)) = ins in
-      let (Plus rn') = D.plus (D.uninsert x (dom_ins ins)) in
-      Suc (ins_plus_of_pbij ins' shuf' rn', D.plus_insert rn' rn x)
-  | Left shuf' ->
-      let (Insert_plus (rn', x)) = D.insert_plus Now rn in
-      Suc (ins_plus_of_pbij ins shuf' rn', x)
+  | Right (g, shuf') -> (
+      (* TODO: bridge via G.compare; insertion's Suc still hardcodes unit. *)
+      match D.G.compare g D.deg with
+      | Neq -> assert false
+      | Eq ->
+          let (Suc (ins', x)) = ins in
+          let (Plus rn') = D.plus (D.uninsert x (dom_ins ins)) in
+          Suc (ins_plus_of_pbij ins' shuf' rn', D.plus_insert rn' rn x))
+  | Left (g, shuf') -> (
+      match D.G.compare g D.deg with
+      | Neq -> assert false
+      | Eq ->
+          let (Insert_plus (rn', x)) = D.insert_plus Now rn in
+          Suc (ins_plus_of_pbij ins shuf' rn', x))
 
 (* Intrinsically well-typed maps with partial bijections as keys.  Each map has a fixed 'evaluation dimension and 'intrinsic dimension, but the 'result, 'shared, and 'remaining dimensions vary with the keys and values.  The values are parametrized by the 'remaining dimension as well as by an extra parameter that the map depends on; hence the whole notion of map is a functor parametrized by a Fam2.
 
@@ -345,8 +352,8 @@ module Pbijmap (F : Fam2) = struct
     | Pbij (Zero _, Zero), Zero v ->
         let Zero = r12 in
         v
-    | Pbij (ins, Left shuf), Suc m -> gfind (Pbij (ins, shuf)) m.left (D.suc_plus r12)
-    | Pbij (Suc (ins, i), Right shuf), Suc m ->
+    | Pbij (ins, Left (_, shuf)), Suc m -> gfind (Pbij (ins, shuf)) m.left (D.suc_plus r12)
+    | Pbij (Suc (ins, i), Right (_, shuf)), Suc m ->
         let (Wrap m) = Tup.find i m.right in
         gfind (Pbij (ins, shuf)) m r12
 
@@ -366,9 +373,9 @@ module Pbijmap (F : Fam2) = struct
     | Pbij (Zero _, Zero), Zero _ ->
         let Zero = r12 in
         Zero v
-    | Pbij (ins, Left shuf), Suc m ->
+    | Pbij (ins, Left (_, shuf)), Suc m ->
         Suc { m with left = gset (Pbij (ins, shuf)) v m.left (D.suc_plus r12) }
-    | Pbij (Suc (ins, i), Right shuf), Suc m ->
+    | Pbij (Suc (ins, i), Right (_, shuf)), Suc m ->
         Suc
           {
             m with
@@ -408,7 +415,7 @@ module Pbijmap (F : Fam2) = struct
                 {
                   remaining = D.suc f.remaining Unit;
                   build =
-                    (fun (Pbij (ins, shuf)) r12 -> f.build (Pbij (ins, Left shuf)) (D.plus_suc r12));
+                    (fun (Pbij (ins, shuf)) r12 -> f.build (Pbij (ins, Left (D.deg, shuf))) (D.plus_suc r12));
                 };
             right =
               (let build : type b g.
@@ -423,7 +430,7 @@ module Pbijmap (F : Fam2) = struct
                         f with
                         build =
                           (fun (Pbij (ins, shuf)) r12 ->
-                            f.build (Pbij (Suc (ins, i), Right shuf)) r12);
+                            f.build (Pbij (Suc (ins, i), Right (D.deg, shuf))) r12);
                       }) in
                Tup.build evaluation { build });
           }
@@ -587,7 +594,7 @@ module Pbijmap (F : Fam2) = struct
                  {
                    f with
                    map =
-                     (fun (Pbij (ins, shuf)) r12 v -> f.map (Pbij (Suc (ins, i), Right shuf)) r12 v);
+                     (fun (Pbij (ins, shuf)) r12 v -> f.map (Pbij (Suc (ins, i), Right (D.deg, shuf))) r12 v);
                  }
                  (Heter.unwrap x irvs) ws)
             @@ fun res -> Heter.wrap res irws in
@@ -599,7 +606,7 @@ module Pbijmap (F : Fam2) = struct
                      remaining = D.suc f.remaining Unit;
                      map =
                        (fun (Pbij (ins, shuf)) r12 v ->
-                         f.map (Pbij (ins, Left shuf)) (D.plus_suc r12) v);
+                         f.map (Pbij (ins, Left (D.deg, shuf))) (D.plus_suc r12) v);
                    }
                    (Heter.left ms) ws)
                (fun () -> T.pmapM { map } (Heter.right ms irvs) (MapTimes.cod irws)))
