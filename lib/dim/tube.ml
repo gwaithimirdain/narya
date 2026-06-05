@@ -245,10 +245,10 @@ module Tube (F : Fam2) = struct
                  BwvM.pmapM
                    (fun (e :: brs) ->
                      M.apply
-                       (gpmapM_ll mk'' ml' ml1' (LEnd (e, d)) g (C.Heter.hgt_of_hlist hs brs) cst)
+                       (gpmapM_ll mk'' ml' ml1' (LEnd (D.deg, e, d)) g (C.Heter.hgt_of_hlist hs brs) cst)
                      @@ fun xs -> C.Heter.hlist_of_hgt newhs xs)
                    (Endpoints.indices l :: ends) (C.Heter.tlist_hgts newhs cst))
-               (fun () -> gpmapM_ll mk' ml' ml1' (LMid d) g mid cst))
+               (fun () -> gpmapM_ll mk' ml' ml1' (LMid (D.deg, d)) g mid cst))
           @@ fun (newends, newmid) -> C.Heter.branch l newhs newends newmid
 
     let rec gpmapM_l : type k m mk l ml b bs cs m1 m2 m2l.
@@ -284,7 +284,7 @@ module Tube (F : Fam2) = struct
                           (C.Heter.hgt_of_hlist hs brs) cst)
                      @@ fun xs -> C.Heter.hlist_of_hgt newhs xs)
                    (Endpoints.indices l :: ends) (C.Heter.tlist_hgts newhs cst))
-               (fun () -> gpmapM_l mk' ml' m12 m2l' (RMid d) g mid cst))
+               (fun () -> gpmapM_l mk' ml' m12 m2l' (RMid (D.deg, d)) g mid cst))
           @@ fun (newends, newmid) -> C.Heter.branch l newhs newends newmid
 
     let rec gpmapM_r : type n k1 k2 l2 kl nk1 nkl nk b bs cs.
@@ -315,7 +315,7 @@ module Tube (F : Fam2) = struct
                    (fun (e :: brs) ->
                      M.apply
                        (gpmapM_l nk12'' (D.plus_suc nkl) nk1 (D.plus_suc kl)
-                          (REnd (e, d))
+                          (REnd (D.deg, e, d))
                           g (C.Heter.hgt_of_hlist hs brs) cst)
                      @@ fun xs -> C.Heter.hlist_of_hgt newhs xs)
                    (Endpoints.indices l :: ends) (C.Heter.tlist_hgts newhs cst))
@@ -405,9 +405,9 @@ module Tube (F : Fam2) = struct
             (M.zip
                (fun () ->
                  BwvM.mapM
-                   (fun e -> gbuildM_ll (Word m) mk'' ml' ml1' (LEnd (e, d)) g)
+                   (fun e -> gbuildM_ll (Word m) mk'' ml' ml1' (LEnd (D.deg, e, d)) g)
                    (Endpoints.indices l))
-               (fun () -> gbuildM_ll (Word m) mk' ml' ml1' (LMid d) g))
+               (fun () -> gbuildM_ll (Word m) mk' ml' ml1' (LMid (D.deg, d)) g))
           @@ fun (ends, mid) -> C.Branch (l, ends, mid)
 
     let rec gbuildM_l : type k m mk l ml b m1 m2 m2l.
@@ -437,7 +437,7 @@ module Tube (F : Fam2) = struct
                  BwvM.mapM
                    (fun e -> gbuildM_l (Word m) mk'' ml' m12 m2l' (bwtface_rend e d) g)
                    (Endpoints.indices l))
-               (fun () -> gbuildM_l (Word m) mk' ml' m12 m2l' (RMid d) g))
+               (fun () -> gbuildM_l (Word m) mk' ml' m12 m2l' (RMid (D.deg, d)) g))
           @@ fun (ends, mid) -> C.Branch (l, ends, mid)
 
     let rec gbuildM_r : type n k1 k2 l2 kl nk1 nkl nk b.
@@ -462,7 +462,7 @@ module Tube (F : Fam2) = struct
                  BwvM.mapM
                    (fun e ->
                      gbuildM_l (D.plus_out n nk1) nk12'' (D.plus_suc nkl) nk1 (D.plus_suc kl)
-                       (REnd (e, d))
+                       (REnd (D.deg, e, d))
                        g)
                    (Endpoints.indices l))
                (fun () -> gbuildM_r n nk1 (D.plus_suc kl) nk12' (D.plus_suc nkl) (Mid (D.deg, d)) g))
