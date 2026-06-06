@@ -113,15 +113,17 @@ let rec all_shuffles_right : type b c. b D.t -> c D.t -> (b, c) shuffle_right Se
   | Word (Suc (b', g_b)) -> (
       match c with
       | Word Zero -> Seq.empty
-      | Word (Suc (c', g_c)) -> (
-          (* g_b and g_c must agree for [Right] to extend b's word: bridge via G.compare. *)
+      | Word (Suc (c', g_c)) ->
+          (* Left g_c (consuming a's outer, leaving b unchanged) is always available regardless of g_b: [Left]'s a is existential. *)
+          let left_options =
+            Seq.map
+              (fun (Of_right s) -> Of_right (Left (g_c, s)))
+              (all_shuffles_right (Word (Suc (b', g_b))) (Word c')) in
+          (* Right g_c requires b's outer generator to be g_c: this is a genuine check, not a bridge. *)
           match D.G.compare g_b g_c with
-          | Neq -> Seq.empty
+          | Neq -> left_options
           | Eq ->
-              Seq.append
-                (Seq.map
-                   (fun (Of_right s) -> Of_right (Left (g_c, s)))
-                   (all_shuffles_right (Word (Suc (b', g_b))) (Word c')))
+              Seq.append left_options
                 (Seq.map
                    (fun (Of_right s) -> Of_right (Right (g_c, s)))
-                   (all_shuffles_right (Word b') (Word c')))))
+                   (all_shuffles_right (Word b') (Word c'))))
