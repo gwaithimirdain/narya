@@ -13,14 +13,7 @@ type (_, _, _) shuffle =
       'g D.G.t * ('a, 'b, 'ab) shuffle
       -> ('a, ('b, 'g) D.suc, ('ab, 'g) D.suc) shuffle
 
-let rec plus_of_shuffle : type a b c. (a, b, c) shuffle -> (a, b, c) D.plus = function
-  | Zero -> Zero
-  | Left (g, s) -> (
-      (* TODO: bridge via G.compare; D.suc_plus_eq_suc still hardcodes unit. *)
-      match D.G.compare g D.deg with
-      | Neq -> assert false
-      | Eq -> D.suc_plus_eq_suc (plus_of_shuffle s))
-  | Right (g, s) -> Suc (plus_of_shuffle s, g)
+(* [plus_of_shuffle : (a, b, c) shuffle -> (a, b, c) D.plus] would claim that c = a + b at the type level.  In a single-generator world that's tautological, but for multi-generator words the shuffle's c is a specific interleaving while a + b is the canonical concatenation, and they're different word-types in general.  The function only made sense in single-direction; removed in Phase 7a.  No external callers used it. *)
 
 let rec deg_of_shuffle : type a b c ab. (a, b, c) shuffle -> (a, b, ab) D.plus -> (c, ab) deg =
  fun s ab ->

@@ -753,7 +753,6 @@ end)
 
 type (_, _, _) shuffle
 
-val plus_of_shuffle : ('a, 'b, 'c) shuffle -> ('a, 'b, 'c) D.plus
 val deg_of_shuffle : ('a, 'b, 'c) shuffle -> ('a, 'b, 'ab) D.plus -> ('c, 'ab) deg
 val perm_of_shuffle : ('a, 'b, 'c) shuffle -> ('a, 'b, 'ab) D.plus -> ('c, 'ab) perm
 val left_shuffle : ('a, 'b, 'c) shuffle -> 'a D.t
