@@ -15,18 +15,48 @@ type (_, _, _) shuffle =
 
 (* [plus_of_shuffle : (a, b, c) shuffle -> (a, b, c) D.plus] would claim that c = a + b at the type level.  In a single-generator world that's tautological, but for multi-generator words the shuffle's c is a specific interleaving while a + b is the canonical concatenation, and they're different word-types in general.  The function only made sense in single-direction; removed in Phase 7a.  No external callers used it. *)
 
+(* Strip the leftmost g from a [((m, g) suc, n, p) plus]: returns the inner [(m, n, p_inner) plus] and an insertion that recovers p as p_inner with g inserted at the appropriate position.  Inducts on n's plus structure, no commutativity required. *)
+type (_, _, _, _) strip_left_g =
+  | Strip_left_g :
+      ('m, 'n, 'q) D.plus * ('q, 'g, 'p) D.insert
+      -> ('m, 'g, 'n, 'p) strip_left_g
+
+let rec strip_left_g : type m g n p.
+    g D.G.t -> ((m, g) D.suc, n, p) D.plus -> (m, g, n, p) strip_left_g =
+ fun g -> function
+  | Zero -> Strip_left_g (Zero, Now)
+  | Suc (ab, h) ->
+      let (Strip_left_g (q, i)) = strip_left_g g ab in
+      Strip_left_g (Suc (q, h), Later i)
+
+(* Extend a deg [(c, ab) deg] by a new codomain element g inserted at a specified position in ab.  The new element corresponds to a new outermost domain element.  Inducts on the insertion position. *)
+let rec deg_with_extra : type c ab ab_suc g.
+    (c, ab) deg -> g D.G.t -> (ab, g, ab_suc) D.insert -> ((c, g) D.suc, ab_suc) deg =
+ fun d g i ->
+  match i with
+  | Now -> Suc (d, g, Now)
+  | Later j ->
+      let (Suc (d_inner, h, ins_d)) = d in
+      Suc (deg_with_extra d_inner g j, h, Later ins_d)
+
+let rec perm_with_extra : type c ab ab_suc g.
+    (c, ab) perm -> g D.G.t -> (ab, g, ab_suc) D.insert -> ((c, g) D.suc, ab_suc) perm =
+ fun p g i ->
+  match i with
+  | Now -> Suc (p, g, Now)
+  | Later j ->
+      let (Suc (p_inner, h, ins_p)) = p in
+      Suc (perm_with_extra p_inner g j, h, Later ins_p)
+
 let rec deg_of_shuffle : type a b c ab. (a, b, c) shuffle -> (a, b, ab) D.plus -> (c, ab) deg =
  fun s ab ->
   match s with
   | Zero ->
       let Zero = ab in
       Zero D.zero
-  | Left (g, s) -> (
-      match D.G.compare g D.deg with
-      | Neq -> assert false
-      | Eq ->
-          let (Suc (ab, Unit)) = D.plus_suc ab in
-          Suc (deg_of_shuffle s ab, g, Now))
+  | Left (g, s) ->
+      let (Strip_left_g (inner_plus, i)) = strip_left_g g ab in
+      deg_with_extra (deg_of_shuffle s inner_plus) g i
   | Right (g, s) ->
       let (Suc (ab, _)) = ab in
       Suc (deg_of_shuffle s ab, g, Now)
@@ -37,12 +67,9 @@ let rec perm_of_shuffle : type a b c ab. (a, b, c) shuffle -> (a, b, ab) D.plus 
   | Zero ->
       let Zero = ab in
       Zero
-  | Left (g, s) -> (
-      match D.G.compare g D.deg with
-      | Neq -> assert false
-      | Eq ->
-          let (Suc (ab, Unit)) = D.plus_suc ab in
-          Suc (perm_of_shuffle s ab, g, Now))
+  | Left (g, s) ->
+      let (Strip_left_g (inner_plus, i)) = strip_left_g g ab in
+      perm_with_extra (perm_of_shuffle s inner_plus) g i
   | Right (g, s) ->
       let (Suc (ab, _)) = ab in
       Suc (perm_of_shuffle s ab, g, Now)
