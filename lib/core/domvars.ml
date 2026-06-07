@@ -84,7 +84,7 @@ let rec ext_tel : type mode a b c ac bc e n.
       let (Ext_tel { ctx; env; values = vars; normals = nfs; annotate; comp }) =
         ext_tel
           (Ctx.cube_vis ctx modality x newnfs)
-          (Ext (env, D.plus_zero m, modality, Ok newvars))
+          (Ext { env; plus = D.plus_zero m; modality; values = Ok newvars })
           xs rest in
       Ext_tel
         {

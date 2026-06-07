@@ -177,17 +177,20 @@ module rec Value : sig
 
   and (_, _, _) env =
     | Emp : 'mode Mode.t * 'n D.t -> ('mode, 'n, 'mode emp) env
-    | LazyExt :
-        ('mode, 'n, 'b) env
-        * ('n, 'k, 'nk) D.plus
-        * ('dom, 'modality, 'mode) Modality.t
-        * ('nk, ('dom, kinetic) lazy_eval) CubeOf.t
+    | LazyExt : {
+        env : ('mode, 'n, 'b) env;
+        plus : ('n, 'k, 'nk) D.plus;
+        modality : ('dom, 'modality, 'mode) Modality.t;
+        values : ('nk, ('dom, kinetic) lazy_eval) CubeOf.t;
+      }
         -> ('mode, 'n, ('b, ('modality, 'k) dim_entry) snoc) env
-    | Ext :
-        ('mode, 'n, 'b) env
-        * ('n, 'k, 'nk) D.plus
-        * ('dom, 'modality, 'mode) Modality.t
-        * (('nk, ('dom, kinetic) value) CubeOf.t, Code.t) Result.t
+    | Ext : {
+        env : ('mode, 'n, 'b) env;
+        plus : ('n, 'k, 'nk) D.plus;
+        modality : ('dom, 'modality, 'mode) Modality.t;
+        (* We also allow Error binding in an environment, indicating that that variable is not actually usable, usually due to an earlier error in typechecking that we've continued on from anyway.  (There's no need for errors in the lazy case, since the lazy thunk can just raise an error directly when forced.) *)
+        values : (('nk, ('dom, kinetic) value) CubeOf.t, Code.t) Result.t;
+      }
         -> ('mode, 'n, ('b, ('modality, 'k) dim_entry) snoc) env
     | Act : ('mode, 'n, 'b) env * ('m, 'n) op -> ('mode, 'm, 'b) env
     | Key :
@@ -418,18 +421,20 @@ end = struct
     | Emp : 'mode Mode.t * 'n D.t -> ('mode, 'n, 'mode emp) env
     (* The (n+k)-cube here is morally a k-cube of n-cubes, representing a k-dimensional "cube variable" consisting of some number of "real" variables indexed by the faces of a k-cube, each of which has an n-cube of values representing a value and its boundaries.  But this contains the same data as an (n+k)-cube since a strict face of (n+k) decomposes uniquely as a strict face of n plus a strict face of k, and it seems to be more convenient to store it as a single (n+k)-cube. *)
     (* We have two kinds of variable bindings in an environment: lazy and non-lazy. *)
-    | LazyExt :
-        ('mode, 'n, 'b) env
-        * ('n, 'k, 'nk) D.plus
-        * ('dom, 'modality, 'mode) Modality.t
-        * ('nk, ('dom, kinetic) lazy_eval) CubeOf.t
+    | LazyExt : {
+        env : ('mode, 'n, 'b) env;
+        plus : ('n, 'k, 'nk) D.plus;
+        modality : ('dom, 'modality, 'mode) Modality.t;
+        values : ('nk, ('dom, kinetic) lazy_eval) CubeOf.t;
+      }
         -> ('mode, 'n, ('b, ('modality, 'k) dim_entry) snoc) env
-    | Ext :
-        ('mode, 'n, 'b) env
-        * ('n, 'k, 'nk) D.plus
-        * ('dom, 'modality, 'mode) Modality.t
+    | Ext : {
+        env : ('mode, 'n, 'b) env;
+        plus : ('n, 'k, 'nk) D.plus;
+        modality : ('dom, 'modality, 'mode) Modality.t;
         (* We also allow Error binding in an environment, indicating that that variable is not actually usable, usually due to an earlier error in typechecking that we've continued on from anyway.  (There's no need for errors in the lazy case, since the lazy thunk can just raise an error directly when forced.) *)
-        * (('nk, ('dom, kinetic) value) CubeOf.t, Code.t) Result.t
+        values : (('nk, ('dom, kinetic) value) CubeOf.t, Code.t) Result.t;
+      }
         -> ('mode, 'n, ('b, ('modality, 'k) dim_entry) snoc) env
     | Act : ('mode, 'n, 'b) env * ('m, 'n) op -> ('mode, 'm, 'b) env
     | Key :
@@ -477,8 +482,8 @@ type any_canonical = Any : ('mode, 'm, 'n) canonical -> any_canonical
 (* Every context morphism has a valid dimension. *)
 let rec dim_env : type mode n b. (mode, n, b) env -> n D.t = function
   | Emp (_, n) -> n
-  | Ext (e, _, _, _) -> dim_env e
-  | LazyExt (e, _, _, _) -> dim_env e
+  | Ext { env; _ } -> dim_env env
+  | LazyExt { env; _ } -> dim_env env
   | Act (_, op) -> dom_op op
   | Key (e, _, _) -> dim_env e
   | Permute (_, e) -> dim_env e
@@ -495,8 +500,8 @@ let modality_binder : type mode modality dom m s.
 
 let rec mode_env : type mode n b. (mode, n, b) env -> mode Mode.t = function
   | Emp (mode, _) -> mode
-  | LazyExt (e, _, _, _) -> mode_env e
-  | Ext (e, _, _, _) -> mode_env e
+  | LazyExt { env; _ } -> mode_env env
+  | Ext { env; _ } -> mode_env env
   | Act (e, _) -> mode_env e
   | Key (_, key, _) -> Modalcell.hsrc key
   | Permute (_, e) -> mode_env e
@@ -512,12 +517,12 @@ let rec mode_env : type mode n b. (mode, n, b) env -> mode Mode.t = function
 (* The length of an environment is a tctx. *)
 let rec length_env : type mode n b. (mode, n, b) env -> (mode, b) Tctx.t = function
   | Emp (mode, _) -> Tctx.emp mode
-  | Ext (env, nk, modality, _) ->
+  | Ext { env; plus; modality; _ } ->
       let le = length_env env in
-      Tctx.suc le (Dim (modality, D.plus_right nk))
-  | LazyExt (env, nk, modality, _) ->
+      Tctx.suc le (Dim (modality, D.plus_right plus))
+  | LazyExt { env; plus; modality; _ } ->
       let le = length_env env in
-      Tctx.suc le (Dim (modality, D.plus_right nk))
+      Tctx.suc le (Dim (modality, D.plus_right plus))
   | Act (env, _) -> length_env env
   | Key (env, _, al) -> plus_lock_out (length_env env) al
   | Permute (p, env) -> perm_dom p (length_env env)

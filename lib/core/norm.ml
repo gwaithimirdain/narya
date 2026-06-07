@@ -36,7 +36,7 @@ let rec take_args : type mode annotations m n mn a b ab.
   | Modal (mu, arg) :: args, Suc (Annotate amu, annotate), Suc (Dim (_, _), comp) -> (
       match Modality.compare mu amu with
       | Eq ->
-          let env = Ext (env, mn, mu, Ok arg) in
+          let env = Ext { env; plus = mn; modality = mu; values = Ok arg } in
           take_args env mn args annotate comp
       | Neq -> fatal (Modality_mismatch (`Internal, "take_args", mu, amu)))
   | _ -> fatal (Anomaly "wrong number of arguments in argument list")
@@ -352,10 +352,19 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
               (* For the top face, we compute its fibrancy fields by evaluating the generic "fibrancy fields of a pi" at the evaluated domains and codomains.  *)
               let pi_env =
                 Ext
-                  ( Ext (Emp (codmode, mn), D.plus_zero mn, modality, Ok doms),
-                    D.plus_zero mn,
-                    Modality.id codmode,
-                    Ok (lam_cube (plus_variables m m_n x) cods) ) in
+                  {
+                    env =
+                      Ext
+                        {
+                          env = Emp (codmode, mn);
+                          plus = D.plus_zero mn;
+                          modality;
+                          values = Ok doms;
+                        };
+                    plus = D.plus_zero mn;
+                    modality = Modality.id codmode;
+                    values = Ok (lam_cube (plus_variables m m_n x) cods);
+                  } in
               eval_structfield_abwd pi_env mn (D.plus_zero mn) mn fields in
         let value =
           ready
@@ -379,7 +388,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let lenv = key_env env (Modalcell.id modality) al in
       let args =
         CubeOf.build m { build = (fun fa -> lazy_eval (act_env lenv (op_of_sface fa)) v) } in
-      eval (LazyExt (env, D.plus_zero m, modality, args)) body
+      eval (LazyExt { env; plus = D.plus_zero m; modality; values = args }) body
   (* It's tempting to write just "act_value (eval env x) s" here, but that is WRONG!  Pushing a substitution through an operator action requires whiskering the operator by the dimension of the substitution. *)
   | Act (x, s, _) ->
       let k = dim_env env in
@@ -729,7 +738,7 @@ and tyof_lower_codatafield : type mode m n mn a.
   let tmcube =
     Result.map (fun tm -> TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm)) tm in
   (* MODALTODO: Allow nontrivial modalities for modal destructors *)
-  let env = Value.Ext (env, mn, Modality.id (mode_env env), tmcube) in
+  let env = Value.Ext { env; plus = mn; modality = Modality.id (mode_env env); values = tmcube } in
   (* This type is m-dimensional, hence must be instantiated at a full m-tube. *)
   let insttm = eval_term env fldty in
   let instargs =
@@ -778,7 +787,14 @@ and tyof_higher_codatafield : type mode c n h s r i ic.
   let tmcube =
     Result.map (fun tm -> TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm)) tm in
   (* MODALTODO: Allow nontrivial modalities *)
-  let env = Value.Ext (codataenv, D.plus_zero n, Modality.id (mode_env codataenv), tmcube) in
+  let env =
+    Value.Ext
+      {
+        env = codataenv;
+        plus = D.plus_zero n;
+        modality = Modality.id (mode_env codataenv);
+        values = tmcube;
+      } in
   (* Now we act on this (n, [c;0]) env by the inverse of the insertion to get an (s+h, [c;0]) env. *)
   let env = Act (env, op_of_deg (deg_of_perm (perm_inv (perm_of_ins_plus fldins sh)))) in
   let env =
@@ -877,7 +893,14 @@ and tyof_field : type mode m h s r i c.
             Result.map
               (fun tm -> TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
               tm in
-          let env = Value.Ext (Value.Emp (mode, m), D.plus_zero m, Modality.id mode, tmcube) in
+          let env =
+            Value.Ext
+              {
+                env = Value.Emp (mode, m);
+                plus = D.plus_zero m;
+                modality = Modality.id mode;
+                values = tmcube;
+              } in
           tyof_field_giventype tm head Noeta env (D.plus_zero m) fields tyargs fld ~shuf fldins)
   | _ ->
       let p =
@@ -963,7 +986,14 @@ and tyof_field_withname : type mode a b.
             Result.map
               (fun tm -> TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
               tm in
-          let env = Value.Ext (Value.Emp (mode, m), D.plus_zero m, Modality.id mode, tmcube) in
+          let env =
+            Value.Ext
+              {
+                env = Value.Emp (mode, m);
+                plus = D.plus_zero m;
+                modality = Modality.id mode;
+                values = tmcube;
+              } in
           tyof_field_withname_giventype ctx tm ty Noeta env (D.plus_zero m) fields tyargs infld err)
   | _ -> fatal (No_such_field (`Other errtm, errfld))
 
@@ -1034,18 +1064,21 @@ and apply_binder : type dom modality mode n s.
   act_evaluation
     (eval
        (LazyExt
-          ( env,
-            mn,
-            modality,
-            CubeOf.build (D.plus_out m mn)
-              {
-                build =
-                  (fun frfs ->
-                    let (Face (fa, fb)) = perm_sface (perm_inv perm) frfs in
-                    act_lazy_eval
-                      (defer (fun () -> Val (CubeOf.find argstbl fa)))
-                      (deg_of_perm fb) None);
-              } ))
+          {
+            env;
+            plus = mn;
+            modality;
+            values =
+              CubeOf.build (D.plus_out m mn)
+                {
+                  build =
+                    (fun frfs ->
+                      let (Face (fa, fb)) = perm_sface (perm_inv perm) frfs in
+                      act_lazy_eval
+                        (defer (fun () -> Val (CubeOf.find argstbl fa)))
+                        (deg_of_perm fb) None);
+                };
+          })
        body)
     (deg_of_perm perm) None
 
@@ -1111,16 +1144,19 @@ and eval_env : type mode a m n mn b.
       let lenv = Key (env, Modalcell.id modality, al) in
       (* We make everything lazy, since we can, and not everything may end up being used. *)
       LazyExt
-        ( eval_env env m_n tmenv,
-          mn_k,
-          modality,
-          CubeOf.build (D.plus_out mn mn_k)
-            {
-              build =
-                (fun fab ->
-                  let (SFace_of_plus (_, fa, fb)) = sface_of_plus m_nk fab in
-                  lazy_eval (act_env lenv (op_of_sface fa)) (CubeOf.find xss fb));
-            } )
+        {
+          env = eval_env env m_n tmenv;
+          plus = mn_k;
+          modality;
+          values =
+            CubeOf.build (D.plus_out mn mn_k)
+              {
+                build =
+                  (fun fab ->
+                    let (SFace_of_plus (_, fa, fb)) = sface_of_plus m_nk fab in
+                    lazy_eval (act_env lenv (op_of_sface fa)) (CubeOf.find xss fb));
+              };
+        }
   | Key { env = tmenv; cell; plus_src; plus_tgt } ->
       let (Remove_keys (env, keys)) = Env.remove_keys env plus_tgt in
       Key (eval_env env m_n tmenv, Modalcell.vcomp keys cell, plus_src)
@@ -1230,21 +1266,21 @@ and lookup_cube : type dom mu mode n a b k mk nk.
       let (Permute_insert (v, _)) = permute_insert v p in
       lookup_cube env nk mu v op
   (* If we encounter a variable that isn't ours, we skip it and proceed. *)
-  | Ext (env, _, _, _), Later v -> lookup_cube env nk mu v op
-  | LazyExt (env, _, _, _), Later v -> lookup_cube env nk mu v op
+  | Ext { env; _ }, Later v -> lookup_cube env nk mu v op
+  | LazyExt { env; _ }, Later v -> lookup_cube env nk mu v op
   (* Finally, when we find our variable, we decompose the accumulated operator into a strict face and degeneracy, use the face as an index lookup, and act by the degeneracy.  The forcing function is the identity if the entry is not lazy, and force_eval_term if it is lazy. *)
-  | Ext (_, nk', modality, Ok entry), Now -> (
+  | Ext { env = _; plus = nk'; modality; values = Ok entry }, Now -> (
       let Eq = D.plus_uniq nk nk' in
       match Modality.compare modality mu with
       | Eq -> Looked_up { act = (fun x s c -> act_value x s c); op; entry }
       | Neq -> fatal (Modality_mismatch (`Internal, "lookup_cube keys", modality, mu)))
-  | LazyExt (_, nk', modality, entry), Now -> (
+  | LazyExt { env = _; plus = nk'; modality; values = entry }, Now -> (
       let Eq = D.plus_uniq nk nk' in
       match Modality.compare modality mu with
       | Eq -> Looked_up { act = (fun x s c -> force_eval_term (act_lazy_eval x s c)); op; entry }
       | Neq -> fatal (Modality_mismatch (`Internal, "lookup_cube lazy keys", modality, mu)))
   (* Looking up a variable that's bound to an error immediately fails with that error.  (In particular, this sort of failure can't currently happen "deeper" inside a term.) *)
-  | Ext (_, _, _, Error e), Now -> fatal e
+  | Ext { values = Error e; _ }, Now -> fatal e
 
 and lookup : type mode n b. (mode, n, b) env -> (mode, b) index -> (mode, kinetic) value =
  fun env (Index (v, fa, plus)) ->

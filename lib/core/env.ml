@@ -21,10 +21,10 @@ let remove_top : type mode a modality k n.
     | Permute (p, env), _ ->
         let (Permute_insert (v', p')) = permute_insert v p in
         Permute (p', remove_ins env v')
-    | Ext (env, nk, modality, xs), Later v -> Ext (remove_ins env v, nk, modality, xs)
-    | LazyExt (env, nk, modality, xs), Later v -> LazyExt (remove_ins env v, nk, modality, xs)
-    | Ext (env, _, _, _), Now -> env
-    | LazyExt (env, _, _, _), Now -> env
+    | Ext e, Later v -> Ext { e with env = remove_ins e.env v }
+    | LazyExt e, Later v -> LazyExt { e with env = remove_ins e.env v }
+    | Ext { env; _ }, Now -> env
+    | LazyExt { env; _ }, Now -> env
     | Shift (env, mn, nb), _ ->
         let (Uncoinsert (_, v', na)) = Plusmap.uncoinsert v nb in
         Shift (remove_ins env v', mn, na)

@@ -460,9 +460,21 @@ module Ordered = struct
   let rec env : type mode a b. (mode, a, b) t -> (mode, D.zero, b) env = function
     | Emp mode -> Emp (mode, D.zero)
     | Snoc (ctx, Vis { bindings; modality; _ }, _) ->
-        LazyExt (env ctx, D.zero_plus (CubeOf.dim bindings), modality, env_entry bindings)
+        LazyExt
+          {
+            env = env ctx;
+            plus = D.zero_plus (CubeOf.dim bindings);
+            modality;
+            values = env_entry bindings;
+          }
     | Snoc (ctx, Invis (modality, bindings), _) ->
-        LazyExt (env ctx, D.zero_plus (CubeOf.dim bindings), modality, env_entry bindings)
+        LazyExt
+          {
+            env = env ctx;
+            plus = D.zero_plus (CubeOf.dim bindings);
+            modality;
+            values = env_entry bindings;
+          }
     | Lock (ctx, lock) ->
         Key
           ( env ctx,
@@ -609,7 +621,9 @@ let vis (Permute { perm; env; level; ctx }) modality m mn xs vars af =
   Permute
     {
       perm = N.perm_plus perm af bf;
-      env = LazyExt (env, D.zero_plus (CubeOf.dim vars), modality, Ordered.env_entry vars);
+      env =
+        LazyExt
+          { env; plus = D.zero_plus (CubeOf.dim vars); modality; values = Ordered.env_entry vars };
       level = level + 1;
       ctx = Ordered.vis ctx modality m mn xs vars bf;
     }
@@ -637,7 +651,9 @@ let vis_fields (Permute { perm; env; level; ctx }) xs vars fields fplus af =
   Permute
     {
       perm = N.perm_plus perm af bf;
-      env = LazyExt (env, D.zero_plus (CubeOf.dim vars), modality, Ordered.env_entry vars);
+      env =
+        LazyExt
+          { env; plus = D.zero_plus (CubeOf.dim vars); modality; values = Ordered.env_entry vars };
       level = level + 1;
       ctx = Ordered.vis_fields ctx xs vars fields fplus bf;
     }
@@ -646,7 +662,9 @@ let invis (Permute { perm; env; level; ctx }) modality vars =
   Permute
     {
       perm;
-      env = LazyExt (env, D.zero_plus (CubeOf.dim vars), modality, Ordered.env_entry vars);
+      env =
+        LazyExt
+          { env; plus = D.zero_plus (CubeOf.dim vars); modality; values = Ordered.env_entry vars };
       level = level + 1;
       ctx = Ordered.invis ctx modality vars;
     }
@@ -704,7 +722,14 @@ let ext (Permute { perm; env; level; ctx }) modality xs ty =
   Permute
     {
       perm = Insert (perm, Top);
-      env = LazyExt (env, D.zero_plus D.zero, modality, Ordered.env_entry (CubeOf.singleton b));
+      env =
+        LazyExt
+          {
+            env;
+            plus = D.zero_plus D.zero;
+            modality;
+            values = Ordered.env_entry (CubeOf.singleton b);
+          };
       level = level + 1;
       ctx;
     }
@@ -714,7 +739,14 @@ let ext_let (Permute { perm; env; level; ctx }) modality xs tm =
   Permute
     {
       perm = Insert (perm, Top);
-      env = LazyExt (env, D.zero_plus D.zero, modality, Ordered.env_entry (CubeOf.singleton b));
+      env =
+        LazyExt
+          {
+            env;
+            plus = D.zero_plus D.zero;
+            modality;
+            values = Ordered.env_entry (CubeOf.singleton b);
+          };
       level = level + 1;
       ctx;
     }
@@ -728,13 +760,13 @@ type (_, _, _) pop =
 let pop : type mode a b. (mode, a, b) t -> ((mode, a, b) pop, string) Result.t =
  fun (Permute { ctx; perm; level; env }) ->
   match (Ordered.pop ctx, perm, env) with
-  | Some (Pop (ctx, Eq, Eq)), Insert (perm, Top), LazyExt (env, _, _, _) ->
+  | Some (Pop (ctx, Eq, Eq)), Insert (perm, Top), LazyExt { env; _ } ->
       Ok (Pop (Permute { ctx; perm; level; env }, Eq, Eq))
-  | Some (Pop (ctx, Eq, Eq)), Insert (perm, Top), Ext (env, _, _, _) ->
+  | Some (Pop (ctx, Eq, Eq)), Insert (perm, Top), Ext { env; _ } ->
       Ok (Pop (Permute { ctx; perm; level; env }, Eq, Eq))
-  | Some (Pop (ctx, Eq, Eq)), Id, LazyExt (env, _, _, _) ->
+  | Some (Pop (ctx, Eq, Eq)), Id, LazyExt { env; _ } ->
       Ok (Pop (Permute { ctx; perm = Id; level; env }, Eq, Eq))
-  | Some (Pop (ctx, Eq, Eq)), Id, Ext (env, _, _, _) ->
+  | Some (Pop (ctx, Eq, Eq)), Id, Ext { env; _ } ->
       Ok (Pop (Permute { ctx; perm = Id; level; env }, Eq, Eq))
   | Some (Pop (_, Eq, Eq)), _, Permute _ -> Error "env is permuted"
   | Some (Pop (_, Eq, Eq)), _, Act _ -> Error "env is acted"
