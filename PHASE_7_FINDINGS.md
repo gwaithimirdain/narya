@@ -65,3 +65,30 @@ This is a real project, not a session.  Two practical paths from here:
 2. **Land Phases 0–6 as preparation, defer Phase 7** — the current state has every data type generator-ready and every algorithm bridged with `G.compare g D.deg`.  In a future multi-generator world, the bridges would fail loudly at the call sites that need redesign, marking the work to do.  The branch is shippable as honest preparation.
 
 Either way, Phase 7 needs more time than a single session.
+
+## Session 2 progress and learnings (2026-06-08)
+
+### Completed
+- `shuffle.ml`'s `deg_of_shuffle`/`perm_of_shuffle` restructured around `strip_left_g` and `*_with_extra` (no D bridges).  `plus_of_shuffle` dropped.
+- `cube.ml`'s `gfind` dropped its `km` plus argument: the sface and gt types together already encode the dimensional alignment, and `tube.ml`'s caller is updated.
+
+### Confirmed blockers (algorithm redesign needed, not just rewrites)
+
+**`bwsface.ml` `sface_of_bw`**: Naive recursive rewrite type-checks but breaks the hott bootstrap because it flips orientation.  Original semantics: bwsface's outer-End → sface's inner-End.  The bwsface's codom word is the **reverse** of the cube's codom word.  Genuine multi-direction fix requires either (a) a type-level reverse on the codom word, or (b) a different bwsface data design where outer-constructor IS outer-End semantically.  Neither is local.
+
+**`tube.ml`/`icube.ml` `gfind`/`gpmapM`/`gbuildM`**: Carry two plus relations `(m, q, nk)` and `(p, q, pq)` whose `q` is shared.  In the Mid recursion, m and nk both shrink by g while q must absorb the g via `D.plus_suc` (rightmost shift) so that the recursive call sees a consistent q.  In multi-direction, q's g may differ from m/nk's g — there is no commutativity-free way to maintain a single shared q across the shift.  Word.ml's structured `plus_suc`/`suc_plus` give the right relations but with existential q', and the existential doesn't match the recursion's required type.  Fix requires changing the gfind family's type signatures to thread per-step plus relations differently (likely insertion-based throughout), which cascades into every cube/tube/icube algorithm.
+
+**`CubeOf.lift`/`lower`**: Fundamentally commutativity-dependent in type.  The outer generator after lift would be either the input's outer-g or n2's rightmost — the algorithm assumes the former.  In multi-direction, lift/lower as currently typed simply cannot exist; they'd need either restriction to interior dims or a permutation witness.
+
+**`pbij.ml` `gfind`/`gset`/`gpmapM`**: Same shape as cube/tube — `r12 : (r1, r2, r) plus` shifts a g via `D.suc_plus` in the Left case.  Same blocker.
+
+### Where the work actually lives
+
+The unifying redesign is: replace `(a, b, ab) D.plus` tracking in algorithm recursions with `(a, g, ab) D.insert` (insertion) chains.  Insertions naturally describe "where the generator went" without requiring commutativity.  This means redesigning at minimum:
+- cube.ml's `gpmapM`/`gbuildM`/`lift`/`lower` (and their `gt` data dependencies if applicable)
+- tube.ml's `gpmapM_l`/`_ll`/`_r` and `gbuild*` (~10 callsites)
+- icube.ml's `gmapM`/`gfold_*`/`gbuild_*` (parallel to cube/tube)
+- pbij.ml's `gfind`/`gset`/`gpmapM`
+- bwsface.ml — possibly by redesigning bwsface itself to carry an insertion witness for its outer position
+
+This is the ~20-25 day estimate.  Without this, every replacement of `D.plus_suc`/`D.suc_plus`/`D.suc_plus_eq_suc` with a Word-ml structured equivalent triggers a cascade of existential q's that don't match the surrounding algorithm's type signature.
