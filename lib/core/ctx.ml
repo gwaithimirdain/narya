@@ -460,20 +460,20 @@ module Ordered = struct
   let rec env : type mode a b. (mode, a, b) t -> (mode, D.zero, b) env = function
     | Emp mode -> Emp (mode, D.zero)
     | Snoc (ctx, Vis { bindings; modality; _ }, _) ->
-        LazyExt
+        Ext
           {
             env = env ctx;
             plus = D.zero_plus (CubeOf.dim bindings);
             modality;
-            values = env_entry bindings;
+            values = `Lazy (env_entry bindings);
           }
     | Snoc (ctx, Invis (modality, bindings), _) ->
-        LazyExt
+        Ext
           {
             env = env ctx;
             plus = D.zero_plus (CubeOf.dim bindings);
             modality;
-            values = env_entry bindings;
+            values = `Lazy (env_entry bindings);
           }
     | Lock (ctx, lock) ->
         Key
@@ -622,8 +622,13 @@ let vis (Permute { perm; env; level; ctx }) modality m mn xs vars af =
     {
       perm = N.perm_plus perm af bf;
       env =
-        LazyExt
-          { env; plus = D.zero_plus (CubeOf.dim vars); modality; values = Ordered.env_entry vars };
+        Ext
+          {
+            env;
+            plus = D.zero_plus (CubeOf.dim vars);
+            modality;
+            values = `Lazy (Ordered.env_entry vars);
+          };
       level = level + 1;
       ctx = Ordered.vis ctx modality m mn xs vars bf;
     }
@@ -652,8 +657,13 @@ let vis_fields (Permute { perm; env; level; ctx }) xs vars fields fplus af =
     {
       perm = N.perm_plus perm af bf;
       env =
-        LazyExt
-          { env; plus = D.zero_plus (CubeOf.dim vars); modality; values = Ordered.env_entry vars };
+        Ext
+          {
+            env;
+            plus = D.zero_plus (CubeOf.dim vars);
+            modality;
+            values = `Lazy (Ordered.env_entry vars);
+          };
       level = level + 1;
       ctx = Ordered.vis_fields ctx xs vars fields fplus bf;
     }
@@ -663,8 +673,13 @@ let invis (Permute { perm; env; level; ctx }) modality vars =
     {
       perm;
       env =
-        LazyExt
-          { env; plus = D.zero_plus (CubeOf.dim vars); modality; values = Ordered.env_entry vars };
+        Ext
+          {
+            env;
+            plus = D.zero_plus (CubeOf.dim vars);
+            modality;
+            values = `Lazy (Ordered.env_entry vars);
+          };
       level = level + 1;
       ctx = Ordered.invis ctx modality vars;
     }
@@ -723,12 +738,12 @@ let ext (Permute { perm; env; level; ctx }) modality xs ty =
     {
       perm = Insert (perm, Top);
       env =
-        LazyExt
+        Ext
           {
             env;
             plus = D.zero_plus D.zero;
             modality;
-            values = Ordered.env_entry (CubeOf.singleton b);
+            values = `Lazy (Ordered.env_entry (CubeOf.singleton b));
           };
       level = level + 1;
       ctx;
@@ -740,12 +755,12 @@ let ext_let (Permute { perm; env; level; ctx }) modality xs tm =
     {
       perm = Insert (perm, Top);
       env =
-        LazyExt
+        Ext
           {
             env;
             plus = D.zero_plus D.zero;
             modality;
-            values = Ordered.env_entry (CubeOf.singleton b);
+            values = `Lazy (Ordered.env_entry (CubeOf.singleton b));
           };
       level = level + 1;
       ctx;
@@ -760,12 +775,8 @@ type (_, _, _) pop =
 let pop : type mode a b. (mode, a, b) t -> ((mode, a, b) pop, string) Result.t =
  fun (Permute { ctx; perm; level; env }) ->
   match (Ordered.pop ctx, perm, env) with
-  | Some (Pop (ctx, Eq, Eq)), Insert (perm, Top), LazyExt { env; _ } ->
-      Ok (Pop (Permute { ctx; perm; level; env }, Eq, Eq))
   | Some (Pop (ctx, Eq, Eq)), Insert (perm, Top), Ext { env; _ } ->
       Ok (Pop (Permute { ctx; perm; level; env }, Eq, Eq))
-  | Some (Pop (ctx, Eq, Eq)), Id, LazyExt { env; _ } ->
-      Ok (Pop (Permute { ctx; perm = Id; level; env }, Eq, Eq))
   | Some (Pop (ctx, Eq, Eq)), Id, Ext { env; _ } ->
       Ok (Pop (Permute { ctx; perm = Id; level; env }, Eq, Eq))
   | Some (Pop (_, Eq, Eq)), _, Permute _ -> Error "env is permuted"

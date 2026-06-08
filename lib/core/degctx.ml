@@ -60,7 +60,7 @@ module Ordered = struct
                             defer (fun () ->
                                 fatal (Anomaly "variable out of scope in degenerate_binding")));
                   } in
-              let env = LazyExt { env; plus = k_n; modality; values = prev_vals } in
+              let env = Ext { env; plus = k_n; modality; values = `Lazy prev_vals } in
               let lenv = Key (env, Modalcell.id modality, plus) in
               let (SFace_of_plus (_, fa, fb)) = sface_of_plus k_n fab in
               let m = dom_sface fb in
@@ -151,12 +151,12 @@ module Ordered = struct
                     fields;
                     fplus;
                   },
-                Ext { env; plus = k_mn; modality; values = Ok newval },
+                Ext { env; plus = k_mn; modality; values = `Ok newval },
                 modality )
           | Invis (modality, xs) ->
               let newxs, newval = degenerate_binding (length newctx') k k_mn modality xs ctx env in
               ( Invis (modality, newxs),
-                Ext { env; plus = k_mn; modality; values = Ok newval },
+                Ext { env; plus = k_mn; modality; values = `Ok newval },
                 modality ) in
         Degctx
           ( Suc

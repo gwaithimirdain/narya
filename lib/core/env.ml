@@ -22,9 +22,7 @@ let remove_top : type mode a modality k n.
         let (Permute_insert (v', p')) = permute_insert v p in
         Permute (p', remove_ins env v')
     | Ext e, Later v -> Ext { e with env = remove_ins e.env v }
-    | LazyExt e, Later v -> LazyExt { e with env = remove_ins e.env v }
     | Ext { env; _ }, Now -> env
-    | LazyExt { env; _ }, Now -> env
     | Shift (env, mn, nb), _ ->
         let (Uncoinsert (_, v', na)) = Plusmap.uncoinsert v nb in
         Shift (remove_ins env v', mn, na)
@@ -93,7 +91,6 @@ let rec remove_keys : type mode mu cod k b bc.
       Remove_keys (Act (env, op), keys)
   (* If we reach the end of the environment, or a value entry, we bottom out the recursion, returning an identity key. *)
   | Zero, Zero _, Emp _ -> Remove_keys (env, Modalcell.id2 (mode_env env))
-  | Zero, Zero _, LazyExt _ -> Remove_keys (env, Modalcell.id2 (mode_env env))
   | Zero, Zero _, Ext _ -> Remove_keys (env, Modalcell.id2 (mode_env env))
   (* Nothing else is possible, since if the tctx has a nonzero lock on it, the environment can't be empty or end with a value entry. *)
   | Suc (_, Lock _), Suc (_, Locks_lock _, Suc (_, _)), _ -> .

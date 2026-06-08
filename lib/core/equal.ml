@@ -364,7 +364,7 @@ module Equal = struct
                    env;
                    plus = D.plus_zero (TubeOf.inst tyarg);
                    modality = xmodality;
-                   values = Ok (TubeOf.plus_cube (val_of_norm_tube tyarg) (CubeOf.singleton x));
+                   values = `Ok (TubeOf.plus_cube (val_of_norm_tube tyarg) (CubeOf.singleton x));
                  })
               xs ys tys tyargs
         | Neq, _ -> fatal (Modality_mismatch (`Internal, "equal_at_tel", xmodality, tymodality))
