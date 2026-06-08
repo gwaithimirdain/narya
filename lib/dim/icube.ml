@@ -286,51 +286,39 @@ module Icube (S : Suc) (F : Fam3) = struct
 
   type (_, _) fbiwrap = Fbiwrap : ('left, 'n, 'b) F.t -> ('n, 'b) fbiwrap
 
-  let rec gfind : type m n k km nm b left right.
-      (left, km, nm, b, right) gt ->
-      (k, m, km) D.plus ->
-      (n, m, nm) D.plus ->
-      (k, km) sface ->
-      (n, b) fbiwrap =
-   fun tr km nm d ->
+  (* Same restructure as Cube.gfind: drop the km plus argument.  The sface and gt types together encode the dimensional alignment, and stepping (tr, d) in lockstep maintains it. *)
+  let rec gfind : type m n b k n_out m_n left right.
+      (left, m, n, b, right) gt ->
+      (k, m) sface ->
+      (n_out, m_n, n) D.plus ->
+      (n_out, b) fbiwrap =
+   fun tr d nm ->
     match (tr, d) with
-    | Leaf x, Zero ->
-        let Zero = km in
-        let Zero = nm in
-        Fbiwrap x
-    | Branch (g, l1, br, _), End (d, _, (l2, e)) -> (
-        match D.G.compare g D.deg with
-        | Neq -> assert false
-        | Eq ->
-            let (Le km') = plus_of_sface d in
-            let Eq = D.minus_uniq' (dom_sface d) (Suc (km', Unit)) km in
-            let (Suc (nm', Unit)) = nm in
+    | Leaf x, Zero -> ( match nm with Zero -> Fbiwrap x | Suc _ -> assert false)
+    | Branch (_, l1, br, _), End (d, _, (l2, e)) -> (
+        match nm with
+        | Zero -> assert false
+        | Suc (nm', _) ->
             let Eq = Endpoints.uniq l1 l2 in
-            gfind_branches br km' nm' d e)
-    | Branch (g, _, _, br), Mid (d, _) -> (
-        match D.G.compare g D.deg with
-        | Neq -> assert false
-        | Eq ->
-            let (Suc (km, Unit)) = D.plus_suc km in
-            gfind br km nm d)
+            gfind_branches br d nm' e)
+    | Branch (_, _, _, br), Mid (d, _) -> gfind br d nm
 
-  and gfind_branches : type m n k km nm b left right l.
-      (left, l, km, nm, b, right) branches ->
-      (k, m, km) D.plus ->
-      (n, m, nm) D.plus ->
-      (k, km) sface ->
+  and gfind_branches : type m n b k n_out m_n left right l.
+      (left, l, m, n, b, right) branches ->
+      (k, m) sface ->
+      (n_out, m_n, n) D.plus ->
       l N.index ->
-      (n, b) fbiwrap =
-   fun br km nm d e ->
+      (n_out, b) fbiwrap =
+   fun br d nm e ->
     match (br, e) with
     | Emp, _ -> .
-    | Snoc (_, tr), Top -> gfind tr km nm d
-    | Snoc (br, _), Pop e -> gfind_branches br km nm d e
+    | Snoc (_, tr), Top -> gfind tr d nm
+    | Snoc (br, _), Pop e -> gfind_branches br d nm e
 
   let find : type n k b left right. (left, n, b, right) t -> (k, n) sface -> (k, b) fbiwrap =
    fun tr d ->
     let (Le km) = plus_of_sface d in
-    gfind tr km km d
+    gfind tr d km
 
   let rec gfind_top : type k n b left right. (left, k, n, b, right) gt -> (n, b) fbiwrap = function
     | Leaf x -> Fbiwrap x
