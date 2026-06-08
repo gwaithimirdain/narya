@@ -114,7 +114,7 @@ module Act = struct
   type (_, _, _, _, _) act_pi =
     | Act_pi :
         ('k, 'n) deg
-        * ('modality, 'k, 'm) Modality.filter_dim
+        * ('dom, 'modality, 'mode, 'k, 'm) Modality.filter_dim
         * ('k, ('dom, kinetic) value) CubeOf.t
         * ('m, 'mode * 'modality * 'dom) BindCube.t
         -> ('n, 'm, 'dom, 'modality, 'mode) act_pi
@@ -154,15 +154,20 @@ module Act = struct
           ( name,
             dom_deg fa,
             List.map
-              (fun (ModalValueCube.Modal (modality, tm)) ->
+              (fun (Value.Modal (modality, filter, tm)) ->
+                let (Filter_deg (fa, filter)) = Modality.filter_deg filter fa in
                 match c with
                 | Some c ->
                     let (Wrap newc) = Modalcell.hcomp_wrapped c (Modalcell.id modality) in
-                    ModalValueCube.Modal
-                      (modality, act_cube { act = (fun x s c -> act_value x s c) } tm fa (Some newc))
+                    Value.Modal
+                      ( modality,
+                        filter,
+                        act_cube { act = (fun x s c -> act_value x s c) } tm fa (Some newc) )
                 | None ->
-                    ModalValueCube.Modal
-                      (modality, act_cube { act = (fun x s c -> act_value x s c) } tm fa None))
+                    Value.Modal
+                      ( modality,
+                        filter,
+                        act_cube { act = (fun x s c -> act_value x s c) } tm fa None ))
               args )
     | Canonical ic ->
         let (Act_inst_canonical newic) = act_inst_canonical ic s c in
@@ -512,7 +517,7 @@ module Act = struct
 
   and act_pi : type dom modality mode mu1 mu2 cod m n k.
       (dom, modality, mode) Modality.t ->
-      (modality, k, n) Modality.filter_dim ->
+      (dom, modality, mode, k, n) Modality.filter_dim ->
       (k, (dom, kinetic) value) CubeOf.t ->
       (n, mode * modality * dom) BindCube.t ->
       (m, n) deg ->

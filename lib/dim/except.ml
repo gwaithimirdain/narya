@@ -2,6 +2,7 @@ open Util
 open Tbwd
 open Sface
 open Deg
+open Perm
 
 (* ********** Omitting directions ********** *)
 
@@ -14,6 +15,15 @@ type (_, _, _) except =
       ('e, 'a, 'b) except * ('g, 'e) D.unoccurs
       -> ('e, ('a, 'g) snoc, ('b, 'g) snoc) except
 
+let rec excepted : type e a b. (e, a, b) except -> b D.t -> a D.t =
+ fun ex b ->
+  match (ex, b) with
+  | Except_zero, Word Zero -> Word Zero
+  | Except_occurs (ex, _), Word (Suc (b, _)) -> excepted ex (Word b)
+  | Except_unoccurs (ex, _), Word (Suc (b, g)) ->
+      let (Word a) = excepted ex (Word b) in
+      Word (Suc (a, g))
+
 type (_, _) has_except = Except : ('e, 'a, 'b) except -> ('e, 'b) has_except
 
 let rec except_dirs : type e b. e D.t -> b D.t -> (e, b) has_except =
@@ -25,16 +35,87 @@ let rec except_dirs : type e b. e D.t -> b D.t -> (e, b) has_except =
       | Left o -> Except (Except_occurs (ex, o))
       | Right u -> Except (Except_unoccurs (ex, u)))
 
+let rec except_uniq : type e a1 a2 b. (e, a1, b) except -> (e, a2, b) except -> (a1, a2) Eq.t =
+ fun e1 e2 ->
+  match (e1, e2) with
+  | Except_zero, Except_zero -> Eq
+  | Except_occurs (e1, _), Except_occurs (e2, _) ->
+      let Eq = except_uniq e1 e2 in
+      Eq
+  | Except_unoccurs (e1, _), Except_unoccurs (e2, _) ->
+      let Eq = except_uniq e1 e2 in
+      Eq
+  | Except_occurs (_, o), Except_unoccurs (_, u) -> D.occurs_unoccurs o u
+  | Except_unoccurs (_, u), Except_occurs (_, o) -> D.occurs_unoccurs o u
+
 let except_zero : ('e, D.zero, D.zero) except = Except_zero
 
-let rec excepted : type e a b. (e, a, b) except -> b D.t -> a D.t =
- fun ex b ->
-  match (ex, b) with
-  | Except_zero, Word Zero -> Word Zero
-  | Except_occurs (ex, _), Word (Suc (b, _)) -> excepted ex (Word b)
-  | Except_unoccurs (ex, _), Word (Suc (b, g)) ->
-      let (Word a) = excepted ex (Word b) in
-      Word (Suc (a, g))
+let rec except_nothing : type a. a D.t -> (D.zero, a, a) except = function
+  | Word Zero -> Except_zero
+  | Word (Suc (a, _)) -> Except_unoccurs (except_nothing (Word a), Unoccurs_emp)
+
+let rec eq_of_except_nothing : type a b. (D.zero, a, b) except -> (a, b) Eq.t = function
+  | Except_zero -> Eq
+  | Except_unoccurs (e, _) ->
+      let Eq = eq_of_except_nothing e in
+      Eq
+  | Except_occurs (_, _) -> .
+
+let rec except_idempotent : type e a b. (e, a, b) except -> (e, a, a) except = function
+  | Except_zero -> Except_zero
+  | Except_occurs (e, _) -> except_idempotent e
+  | Except_unoccurs (e, u) -> Except_unoccurs (except_idempotent e, u)
+
+let rec except_plus : type e a b c d ac bd.
+    (a, c, ac) D.plus ->
+    (b, d, bd) D.plus ->
+    (e, a, b) except ->
+    (e, c, d) except ->
+    (e, ac, bd) except =
+ fun ac bd eab ecd ->
+  match (bd, ecd) with
+  | Zero, Except_zero ->
+      let Zero = ac in
+      eab
+  | Suc (bd, _), Except_occurs (ecd, o) -> Except_occurs (except_plus ac bd eab ecd, o)
+  | Suc (bd, _), Except_unoccurs (ecd, u) ->
+      let (Suc (ac, _)) = ac in
+      Except_unoccurs (except_plus ac bd eab ecd, u)
+
+type (_, _, _, _) except_of_plus =
+  | Except_of_plus :
+      ('a, 'c, 'ac) D.plus * ('e, 'a, 'b) except * ('e, 'c, 'd) except
+      -> ('e, 'b, 'd, 'ac) except_of_plus
+
+let rec except_of_plus : type e b d ac bd.
+    (b, d, bd) D.plus -> (e, ac, bd) except -> (e, b, d, ac) except_of_plus =
+ fun bd eacbd ->
+  match (bd, eacbd) with
+  | Zero, _ -> Except_of_plus (Zero, eacbd, Except_zero)
+  | Suc (bd, _), Except_occurs (eacbd, o) ->
+      let (Except_of_plus (ac, eab, ecd)) = except_of_plus bd eacbd in
+      Except_of_plus (ac, eab, Except_occurs (ecd, o))
+  | Suc (bd, g), Except_unoccurs (eacbd, u) ->
+      let (Except_of_plus (ac, eab, ecd)) = except_of_plus bd eacbd in
+      Except_of_plus (Suc (ac, g), eab, Except_unoccurs (ecd, u))
+
+type (_, _, _, _) except_of_plus' =
+  | Except_of_plus' :
+      ('b, 'c, 'bc) D.plus * ('bc, 'd) perm * ('e, 'a, 'b) except
+      -> ('e, 'a, 'c, 'd) except_of_plus'
+
+let rec except_of_plus' : type a c ac e d.
+    d D.t -> (a, c, ac) D.plus -> (e, ac, d) except -> (e, a, c, d) except_of_plus' =
+ fun d ac e ->
+  match (e, d, ac) with
+  | _, _, Zero -> Except_of_plus' (Zero, id_perm d, e)
+  | Except_unoccurs (e, _), Word (Suc (d, Unit)), Suc (ac, _) ->
+      let (Except_of_plus' (bc, p, e)) = except_of_plus' (Word d) ac e in
+      Except_of_plus' (Suc (bc, Unit), Suc (p, Now), e)
+  | Except_occurs (e, Occurs i), Word (Suc (d, Unit)), _ ->
+      let (Except_of_plus' (bc, p, e)) = except_of_plus' (Word d) ac e in
+      ignore (i, bc, p, e);
+      Sorry.e ()
 
 type (_, _, _) except_sface =
   | Except_sface : ('d, 'a) sface * ('e, 'd, 'c) except -> ('e, 'a, 'c) except_sface

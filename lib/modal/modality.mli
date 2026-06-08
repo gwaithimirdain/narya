@@ -88,16 +88,70 @@ val compare_name :
     | `Wrong_tgt of Mode.wrapped * 's * Mode.wrapped ] )
   result
 
-type ('m, 'e) nonparametric
-type _ has_nonparametric = Nonparametric : ('m, 'e) nonparametric -> 'm has_nonparametric
+type ('x, 'm, 'y, 'a, 'b) filter_dim
 
-val nonparametric : ('x, 'm, 'y) t -> 'm has_nonparametric
+type (_, _, _, _) has_filter =
+  | Has_filter : ('x, 'm, 'y, 'a, 'b) filter_dim -> ('x, 'm, 'y, 'b) has_filter
 
-type ('m, 'a, 'b) filter_dim
+val filter : ('x, 'm, 'y) t -> 'b D.t -> ('x, 'm, 'y, 'b) has_filter
 
-val filter_zero : ('x, 'm, 'y) t -> ('m, D.zero, D.zero) filter_dim
+val filter_uniq :
+  ('x, 'm, 'y, 'a1, 'b) filter_dim -> ('x, 'm, 'y, 'a2, 'b) filter_dim -> ('a1, 'a2) Eq.t
 
-type (_, _, _) filter_deg =
-  | Filter_deg : ('d, 'a) deg * ('m, 'd, 'c) filter_dim -> ('m, 'a, 'c) filter_deg
+val filtered : 'b D.t -> ('x, 'm, 'y, 'a, 'b) filter_dim -> 'a D.t
+val filter_id : 'mode Mode.t -> 'a D.t -> ('mode, 'mode id, 'mode, 'a, 'a) filter_dim
+val eq_of_filter_id : ('mode, 'mode id, 'mode, 'a, 'b) filter_dim -> ('a, 'b) Eq.t
+val filter_zero : ('x, 'm, 'y) t -> ('x, 'm, 'y, D.zero, D.zero) filter_dim
+val filter_idempotent : ('x, 'm, 'y, 'a, 'b) filter_dim -> ('x, 'm, 'y, 'a, 'a) filter_dim
 
-val filter_deg : ('m, 'a, 'b) filter_dim -> ('c, 'b) deg -> ('m, 'a, 'c) filter_deg
+val filter_plus :
+  ('a, 'c, 'ac) D.plus ->
+  ('b, 'd, 'bd) D.plus ->
+  ('x, 'm, 'y, 'a, 'b) filter_dim ->
+  ('x, 'm, 'y, 'c, 'd) filter_dim ->
+  ('x, 'm, 'y, 'ac, 'bd) filter_dim
+
+type (_, _, _, _, _, _) filter_of_plus =
+  | Filter_of_plus :
+      ('a, 'c, 'ac) D.plus * ('x, 'm, 'y, 'a, 'b) filter_dim * ('x, 'm, 'y, 'c, 'd) filter_dim
+      -> ('x, 'm, 'y, 'b, 'd, 'ac) filter_of_plus
+
+val filter_of_plus :
+  ('b, 'd, 'bd) D.plus ->
+  ('x, 'm, 'y, 'ac, 'bd) filter_dim ->
+  ('x, 'm, 'y, 'b, 'd, 'ac) filter_of_plus
+
+type (_, _, _, _, _, _) filter_of_plus' =
+  | Filter_of_plus' :
+      ('b, 'c, 'bc) D.plus * ('bc, 'd) perm * ('x, 'm, 'y, 'a, 'b) filter_dim
+      -> ('x, 'm, 'y, 'a, 'c, 'd) filter_of_plus'
+
+val filter_of_plus' :
+  'd D.t ->
+  ('a, 'c, 'ac) D.plus ->
+  ('x, 'm, 'y, 'ac, 'd) filter_dim ->
+  ('x, 'm, 'y, 'a, 'c, 'd) filter_of_plus'
+
+type (_, _, _, _, _) filter_sface =
+  | Filter_sface :
+      ('d, 'a) sface * ('x, 'm, 'y, 'd, 'c) filter_dim
+      -> ('x, 'm, 'y, 'a, 'c) filter_sface
+
+val filter_sface :
+  ('x, 'm, 'y, 'a, 'b) filter_dim -> ('c, 'b) sface -> ('x, 'm, 'y, 'a, 'c) filter_sface
+
+type (_, _, _, _, _) filter_deg =
+  | Filter_deg : ('d, 'a) deg * ('x, 'm, 'y, 'd, 'c) filter_dim -> ('x, 'm, 'y, 'a, 'c) filter_deg
+
+val filter_deg : ('x, 'm, 'y, 'a, 'b) filter_dim -> ('c, 'b) deg -> ('x, 'm, 'y, 'a, 'c) filter_deg
+
+type (_, _, _, _, _) filter_op' =
+  | Filter_op' : ('d, 'b) op * ('x, 'm, 'y, 'c, 'd) filter_dim -> ('x, 'm, 'y, 'b, 'c) filter_op'
+
+val filter_op' : ('x, 'm, 'y, 'a, 'b) filter_dim -> ('c, 'a) op -> ('x, 'm, 'y, 'b, 'c) filter_op'
+
+val filter_comp :
+  ('x, 'm, 'y, 'n, 'z, 'nm) comp ->
+  ('y, 'n, 'z, 'b, 'c) filter_dim ->
+  ('x, 'm, 'y, 'a, 'b) filter_dim ->
+  ('x, 'nm, 'z, 'a, 'c) filter_dim

@@ -203,8 +203,9 @@ module Codata = struct
           | Zero ->
               let hlength = Plusmap.cod Hott.dim plusmap in
               let hlength00 =
-                Plusmap.Dom.suc (Plusmap.Dom.suc hlength (Dim (idm, D.zero))) (Dim (idm, D.zero))
-              in
+                Plusmap.Dom.suc
+                  (Plusmap.Dom.suc hlength (Dim (idm, D.zero, Modality.filter_zero idm)))
+                  (Dim (idm, D.zero, Modality.filter_zero idm)) in
               let x0 = Var (Index (Later (Later Now), id_sface D.zero, plus_no_lock mode)) in
               let x1 = Var (Index (Later Now, id_sface D.zero, plus_no_lock mode)) in
               let x2 = Var (Index (Now, id_sface D.zero, plus_no_lock mode)) in

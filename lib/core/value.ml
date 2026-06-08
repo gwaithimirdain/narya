@@ -50,11 +50,12 @@ module rec Value : sig
 
   module StructfieldAbwd : module type of Field.Abwd (Structfield)
 
-  module ValueFam : sig
-    type ('mode, 'a, 'b) t = ('mode, 'a) Value.value
-  end
-
-  module ModalValueCube : module type of Modality.Cube (ValueFam)
+  type (_, _, _) modal_value_cube =
+    | Modal :
+        ('dom, 'modality, 'mode) Modality.t
+        * ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
+        * ('k, ('dom, 'a) Value.value) Dim.CubeOf.t
+        -> ('n, 'mode, 'a) modal_value_cube
 
   type 'mode head =
     | Var : {
@@ -74,7 +75,7 @@ module rec Value : sig
     | Pi : {
         x : 'n variables;
         modality : ('dom, 'modality, 'mode) Modality.t;
-        filter : ('modality, 'n, 'm) Modality.filter_dim;
+        filter : ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim;
         doms : ('n, ('dom, kinetic) value) CubeOf.t;
         cods : ('m, 'mode * 'modality * 'dom) BindCube.t;
       }
@@ -113,7 +114,7 @@ module rec Value : sig
       }
         -> ('mode, kinetic) value
     | Constr :
-        Constr.t * 'n D.t * ('n, 'mode, kinetic, unit) ModalValueCube.t list
+        Constr.t * 'n D.t * ('n, 'mode, kinetic) modal_value_cube list
         -> ('mode, kinetic) value
     | Lam : 'k variables * ('mode, 'modality, 'dom, 'k, 's) binder -> ('mode, 's) value
     | Struct : ('mode, 'p, 'k, 'pk, 's, 'et) struct_args -> ('mode, 's) value
@@ -145,7 +146,7 @@ module rec Value : sig
     | Pi : {
         x : 'n variables;
         modality : ('dom, 'modality, 'mode) Modality.t;
-        filter : ('modality, 'n, 'm) Modality.filter_dim;
+        filter : ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim;
         doms : ('n, ('dom, kinetic) value) CubeOf.t;
         cods : ('m, 'mode * 'modality * 'dom) BindCube.t;
       }
@@ -194,9 +195,10 @@ module rec Value : sig
     | Act : ('mode, 'n, 'b) env * ('m, 'n) op -> ('mode, 'm, 'b) env
     | Key :
         ('mode, 'n, 'b) env
+        * ('dom, 'nu, 'mode, 'k, 'n) Modality.filter_dim
         * ('dom, 'mu, 'nu, 'mode) Modalcell.t
         * ('b, 'mode, 'mu, 'dom, 'bm) plus_lock
-        -> ('dom, 'n, 'bm) env
+        -> ('dom, 'k, 'bm) env
     | Permute : ('a, 'b) permute * ('mode, 'n, 'b) env -> ('mode, 'n, 'a) env
     | Shift :
         ('mode, 'mn, 'b) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb, 'mode) plusmap
@@ -257,11 +259,12 @@ end = struct
 
   module StructfieldAbwd = Field.Abwd (Structfield)
 
-  module ValueFam = struct
-    type ('mode, 'a, 'b) t = ('mode, 'a) Value.value
-  end
-
-  module ModalValueCube = Modality.Cube (ValueFam)
+  type (_, _, _) modal_value_cube =
+    | Modal :
+        ('dom, 'modality, 'mode) Modality.t
+        * ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
+        * ('k, ('dom, 'a) Value.value) Dim.CubeOf.t
+        -> ('n, 'mode, 'a) modal_value_cube
 
   (* The head of an elimination spine is a variable, a constant, or a substituted metavariable.  *)
   type 'mode head =
@@ -287,7 +290,7 @@ end = struct
     | Pi : {
         x : 'n variables;
         modality : ('dom, 'modality, 'mode) Modality.t;
-        filter : ('modality, 'n, 'm) Modality.filter_dim;
+        filter : ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim;
         doms : ('n, ('dom, kinetic) value) CubeOf.t;
         cods : ('m, 'mode * 'modality * 'dom) BindCube.t;
       }
@@ -311,7 +314,7 @@ end = struct
         ('mode, noninst) apps * 'k D.pos * ('n, 'k, 'nk, 'mode normal) TubeOf.t
         -> ('mode, inst) apps
 
-  (* Lambdas and Pis both bind a variable, along with its dependencies.  These are recorded as defunctionalized closures.  Since they are produced by higher-dimensional substitutions and operator actions, the dimension of the binder can be different than the dimension of the environment that closes its body.  Accordingly, in addition to the environment and degeneracy to close its body, we store information about how to map the eventual arguments into the bound variables in the body.  *)
+  (* Lambdas and Pis both bind a variable, along with its dependencies.  These are recorded as defunctionalized closures.  Since they are produced by higher-dimensional substitutions and operator actions, the dimension of the binder can be different than the dimension of the environment that closes its body.  Accordingly, in addition to the environment and degeneracy to close its body, we store information about how to map the eventual arguments into the bound variables in the body; this is the insertion.  *)
   and (_, _, _, _, _) binder =
     | Bind : {
         env : ('mode, 'm, 'a) env;
@@ -332,7 +335,7 @@ end = struct
         -> ('mode, kinetic) value
     (* A constructor has a name, a dimension, and a list of arguments of that dimension.  It must always be applied to the correct number of arguments (otherwise it can be eta-expanded).  It doesn't have an outer insertion because a primitive datatype is always 0-dimensional (it has higher-dimensional versions, but degeneracies can always be pushed inside these).  *)
     | Constr :
-        Constr.t * 'n D.t * ('n, 'mode, kinetic, unit) ModalValueCube.t list
+        Constr.t * 'n D.t * ('n, 'mode, kinetic) modal_value_cube list
         -> ('mode, kinetic) value
     | Lam : 'k variables * ('mode, 'modality, 'dom, 'k, 's) binder -> ('mode, 's) value
     (* Structs have to store an insertion outside, like an application, to deal with higher-dimensional record types like Gel.  Here 'k is the Gel dimension, with 'p the substitution dimension and 'pk the total dimension. *)
@@ -373,7 +376,7 @@ end = struct
     | Pi : {
         x : 'n variables;
         modality : ('dom, 'modality, 'mode) Modality.t;
-        filter : ('modality, 'n, 'm) Modality.filter_dim;
+        filter : ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim;
         doms : ('n, ('dom, kinetic) value) CubeOf.t;
         cods : ('m, 'mode * 'modality * 'dom) BindCube.t;
       }
@@ -427,6 +430,7 @@ end = struct
     | Ext : {
         env : ('mode, 'n, 'b) env;
         plus : ('n, 'k, 'nk) D.plus;
+        (* TODO: Filter the dimension *)
         modality : ('dom, 'modality, 'mode) Modality.t;
         (* We have two kinds of variable bindings in an environment: lazy and non-lazy.   We also allow Error binding in an environment, indicating that that variable is not actually usable, usually due to an earlier error in typechecking that we've continued on from anyway.  (There's no need for errors in the lazy case, since the lazy thunk can just raise an error directly when forced.) *)
         values :
@@ -438,9 +442,10 @@ end = struct
     | Act : ('mode, 'n, 'b) env * ('m, 'n) op -> ('mode, 'm, 'b) env
     | Key :
         ('mode, 'n, 'b) env
+        * ('dom, 'nu, 'mode, 'k, 'n) Modality.filter_dim
         * ('dom, 'mu, 'nu, 'mode) Modalcell.t
         * ('b, 'mode, 'mu, 'dom, 'bm) plus_lock
-        -> ('dom, 'n, 'bm) env
+        -> ('dom, 'k, 'bm) env
     | Permute : ('a, 'b) permute * ('mode, 'n, 'b) env -> ('mode, 'n, 'a) env
     (* Adding a dimension 'n to all the dimensions in a dimension list 'b is the power/cotensor in the dimension-enriched category of contexts.  Shifting an environment (substitution) implements its universal property: an (m+n)-dimensional substitution with codomain b is equivalent to an m-dimensional substitution with codomain n+b. *)
     | Shift :
@@ -483,7 +488,7 @@ let rec dim_env : type mode n b. (mode, n, b) env -> n D.t = function
   | Emp (_, n) -> n
   | Ext { env; _ } -> dim_env env
   | Act (_, op) -> dom_op op
-  | Key (e, _, _) -> dim_env e
+  | Key (e, filter, _, _) -> Modality.filtered (dim_env e) filter
   | Permute (_, e) -> dim_env e
   | Shift (e, mn, _) -> D.plus_left mn (dim_env e)
   | Unshift (e, mn, _) -> D.plus_out (dim_env e) mn
@@ -500,7 +505,7 @@ let rec mode_env : type mode n b. (mode, n, b) env -> mode Mode.t = function
   | Emp (mode, _) -> mode
   | Ext { env; _ } -> mode_env env
   | Act (e, _) -> mode_env e
-  | Key (_, key, _) -> Modalcell.hsrc key
+  | Key (_, _, key, _) -> Modalcell.hsrc key
   | Permute (_, e) -> mode_env e
   | Shift (e, _, _) -> mode_env e
   | Unshift (e, _, _) -> mode_env e
@@ -518,7 +523,7 @@ let rec length_env : type mode n b. (mode, n, b) env -> (mode, b) Tctx.t = funct
       let le = length_env env in
       Tctx.suc le (Dim (modality, D.plus_right plus))
   | Act (env, _) -> length_env env
-  | Key (env, _, al) -> plus_lock_out (length_env env) al
+  | Key (env, _, _, al) -> plus_lock_out (length_env env) al
   | Permute (p, env) -> perm_dom p (length_env env)
   | Shift (_, mn, nb) -> Plusmap.cod (D.plus_right mn) nb
   | Unshift (_, _, nb) -> Plusmap.dom nb
@@ -546,15 +551,18 @@ let rec act_env : type mode m n b. (mode, n, b) env -> (m, n) op -> (mode, m, b)
       | None -> Act (env, s))
 
 (* There is very little possibility of a "smart constructor" for keys since we track their domains in the length type parameter; all we can do is ignore identities. *)
-let key_env : type dom mu nu cod m b bmu.
+let key_env : type dom mu nu cod k m b bmu.
     (cod, m, b) env ->
+    (dom, nu, cod, k, m) Modality.filter_dim ->
     (dom, mu, nu, cod) Modalcell.t ->
     (b, cod, mu, dom, bmu) plus_lock ->
-    (dom, m, bmu) env =
- fun env key al ->
+    (dom, k, bmu) env =
+ fun env filter key al ->
   match (Modalcell.compare_id key, al) with
-  | Eq, Plus_lock (Zero _, Zero) -> env
-  | _ -> Key (env, key, al)
+  | Eq, Plus_lock (Zero _, Zero) ->
+      let Eq = Modality.eq_of_filter_id filter in
+      env
+  | _ -> Key (env, filter, key, al)
 
 (* Create a lazy evaluation *)
 let lazy_eval : type mode n b s. (mode, n, b) env -> (mode, b, s) term -> (mode, s) lazy_eval =

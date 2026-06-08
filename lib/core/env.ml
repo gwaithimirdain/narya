@@ -1,5 +1,6 @@
 (* This module should not be opened, but used qualified. *)
 
+open Util
 open Dim
 open Reporter
 open Value
@@ -35,7 +36,9 @@ let remove_top : type mode a modality k n.
 
 type (_, _, _, _, _) remove_keys =
   | Remove_keys :
-      ('cod, 'n, 'b) env * ('mode, 'mu, 'nu, 'cod) Modalcell.t
+      ('cod, 'k, 'b) env
+      * ('mode, 'nu, 'cod, 'n, 'k) Modality.filter_dim
+      * ('mode, 'mu, 'nu, 'cod) Modalcell.t
       -> ('mode, 'mu, 'cod, 'n, 'b) remove_keys
 
 (* TODO: This could also be a lazy constructor of environments, and we go through this process when we actually look up variables instead.  Then we wouldn't place other lazies like Permute, Shift, and Act back on the environment but rather act with them on the variable being looked up or the return result.  I don't know whether that would be likely to matter for performance. *)
@@ -46,7 +49,7 @@ let rec remove_keys : type mode mu cod k b bc.
  fun env (Plus_with_locks (bc, llc)) ->
   match (bc, llc, env) with
   (* If we encounter a key, we accumulate it.  Note that lmn and b_cmn could be Zero here: we continue accumulating keys until we run out of keys that we *could* include, not just until we run out of nonidentity locks in the codomain. *)
-  | b_cn, llcn, Key (env, key, Plus_lock (ln, bc_n)) -> (
+  | b_cn, llcn, Key (env, new_filter, key, Plus_lock (ln, bc_n)) -> (
       let lln = locks_lock ln in
       let cn, n = (Locks.dom llcn, Lock.cod ln) in
       match Tctx.factor cn n with
@@ -57,9 +60,10 @@ let rec remove_keys : type mode mu cod k b bc.
           let (Uncomp (llc, lln', m_n)) = Locks.uncomp c_n llcn in
           let Eq = Locks.uniq lln lln' in
           let b_c = Tctx.comp_assoc_cancelr c_n b_cn bc_n in
-          let (Remove_keys (e, keys)) = remove_keys env (Plus_with_locks (b_c, llc)) in
+          let (Remove_keys (e, old_filter, keys)) = remove_keys env (Plus_with_locks (b_c, llc)) in
           let (Comp nus) = Modality.comp (Modalcell.vtgt key) in
-          Remove_keys (e, Modalcell.hcomp m_n nus keys key))
+          let filter = Modality.filter_comp nus old_filter new_filter in
+          Remove_keys (e, filter, Modalcell.hcomp m_n nus keys key))
   (* If we encounter a dimension entry, we skip it. *)
   | Suc (bc, Dim _), Suc (llc, Locks_dim _, Zero), _ ->
       remove_keys (remove_top env) (Plus_with_locks (bc, llc))
@@ -67,8 +71,8 @@ let rec remove_keys : type mode mu cod k b bc.
   | _, _, Permute (p, env) -> (
       match unpermute_plus_locks p bc llc with
       | Some (Unpermute (p, ad, lld)) ->
-          let (Remove_keys (env, keys)) = remove_keys env (Plus_with_locks (ad, lld)) in
-          Remove_keys (Permute (p, env), keys)
+          let (Remove_keys (env, filter, keys)) = remove_keys env (Plus_with_locks (ad, lld)) in
+          Remove_keys (Permute (p, env), filter, keys)
       | None ->
           (* This isn't ruled out either: the permutation could mix the two parts of the decomposition.  Again, we trust the caller to maintain the invariant. *)
           fatal (Anomaly "remove_keys: unpermute failure"))
@@ -77,21 +81,30 @@ let rec remove_keys : type mode mu cod k b bc.
       let (Dom_uncomp (nb, nc, b_c)) = Plusmap.dom_uncomp n nb_nc nbc in
       let (Eq _) = Plusmap.tgt nc in
       let ll_c = Plusmap.unlocks nc ll_nc in
-      let (Remove_keys (env, keys)) = remove_keys env (Plus_with_locks (b_c, ll_c)) in
-      Remove_keys (Shift (env, mn, nb), keys)
+      let (Remove_keys (env, filter, keys)) = remove_keys env (Plus_with_locks (b_c, ll_c)) in
+      let (Filter_of_plus' (kl, p, filter)) = Modality.filter_of_plus' (dim_env env) mn filter in
+      Remove_keys (Shift (Act (env, op_of_deg (deg_of_perm p)), kl, nb), filter, keys)
   | b_c, ll_c, Unshift (env, mn, nbc) ->
       let n = D.plus_right mn in
       let (Uncomp (nb, nc, nb_nc)) = Plusmap.uncomp n b_c nbc in
       let (Eq _) = Plusmap.tgt nc in
       let ll_nc = Plusmap.locks n nc ll_c in
-      let (Remove_keys (env, keys)) = remove_keys env (Plus_with_locks (nb_nc, ll_nc)) in
-      Remove_keys (Unshift (env, mn, nb), keys)
+      let (Remove_keys (env, filter, keys)) = remove_keys env (Plus_with_locks (nb_nc, ll_nc)) in
+      let (Plus kn) = D.plus (D.plus_right mn) in
+      (* TODO: This is impossible as written: the dimension n may not be filtered. *)
+      ignore filter;
+      Remove_keys (Unshift (env, kn, nb), Sorry.e (), keys)
   | _, _, Act (env, op) ->
-      let (Remove_keys (env, keys)) = remove_keys env (Plus_with_locks (bc, llc)) in
-      Remove_keys (Act (env, op), keys)
+      let (Remove_keys (env, filter, keys)) = remove_keys env (Plus_with_locks (bc, llc)) in
+      let (Filter_op' (op, filter)) = Modality.filter_op' filter op in
+      Remove_keys (Act (env, op), filter, keys)
   (* If we reach the end of the environment, or a value entry, we bottom out the recursion, returning an identity key. *)
-  | Zero, Zero _, Emp _ -> Remove_keys (env, Modalcell.id2 (mode_env env))
-  | Zero, Zero _, Ext _ -> Remove_keys (env, Modalcell.id2 (mode_env env))
+  | Zero, Zero _, Emp _ ->
+      Remove_keys
+        (env, Modality.filter_id (mode_env env) (dim_env env), Modalcell.id2 (mode_env env))
+  | Zero, Zero _, Ext _ ->
+      Remove_keys
+        (env, Modality.filter_id (mode_env env) (dim_env env), Modalcell.id2 (mode_env env))
   (* Nothing else is possible, since if the tctx has a nonzero lock on it, the environment can't be empty or end with a value entry. *)
   | Suc (_, Lock _), Suc (_, Locks_lock _, Suc (_, _)), _ -> .
   | Suc (_, Proj _), Suc (_, _, _), _ -> .

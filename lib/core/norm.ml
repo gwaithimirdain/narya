@@ -26,14 +26,14 @@ type (_, _) looked_up_cube =
 let rec take_args : type mode annotations m n mn a b ab.
     (mode, m, a) env ->
     (m, n, mn) D.plus ->
-    (mn, mode, kinetic, unit) ModalValueCube.t list ->
+    (mn, mode, kinetic) modal_value_cube list ->
     (n, mode, annotations, mode, mode, b, mode) VarAnnotate.fwd_t ->
     (mode, b, mode, a, unit, ab) Tctx.bcomp ->
     (mode, m, ab) env =
  fun env mn dargs annotate comp ->
   match (dargs, annotate, comp) with
   | [], Zero _, Zero -> env
-  | Modal (mu, arg) :: args, Suc (Annotate amu, annotate), Suc (Dim (_, _), comp) -> (
+  | Modal (mu, filter, arg) :: args, Suc (Annotate amu, annotate), Suc (Dim (_, _), comp) -> (
       match Modality.compare mu amu with
       | Eq ->
           let env = Ext { env; plus = mn; modality = mu; values = `Ok arg } in
@@ -265,11 +265,13 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       (* The environment is m-dimensional and the original application is n-dimensional, so the *substituted* application is m+n dimensional.  Thus must therefore match the dimension of the function being applied. *)
       let m = dim_env env in
       let n = CubeOf.dim args in
-      let (Plus m_n) = D.plus n in
-      let mn = D.plus_out m m_n in
-      (* Then we evaluate all the arguments, not just in the given environment (of dimension m), but in that environment acted on by all the strict faces of m.  Since the given arguments are indexed by strict faces of n, the result is a collection of values indexed by strict faces of m+n.  *)
-      let lenv = key_env env (Modalcell.id modality) al in
-      let eargs = eval_args lenv m_n mn args in
+      (* Then we evaluate all the arguments, not just in the given environment (of dimension m), but in that environment acted on by all the strict faces of m.  Since the given arguments are indexed by strict faces of n, the result is a collection of values indexed by strict faces of m+n.  Furthermore, we have to filter m by the modality first.  *)
+      let (Has_filter filter) = Modality.filter modality m in
+      let k = Modality.filtered m filter in
+      let (Plus k_n) = D.plus n in
+      let kn = D.plus_out k k_n in
+      let lenv = key_env env filter (Modalcell.id modality) al in
+      let eargs = eval_args lenv k_n kn args in
       (* Having evaluated the function and its arguments, we now pass the job off to a helper function. *)
       apply efn modality eargs
   | Field (tm, fld, fldins) ->
@@ -284,36 +286,46 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let ins = ins_zero mn in
       let fields = eval_structfield_abwd env m m_n mn fields in
       Val (Struct { fields; ins; energy; eta })
-  | Constr (constr, n, args) ->
+  | Constr (type n) ((constr, n, args) : _ * n D.t * _) ->
       let m = dim_env env in
       let (Plus m_n) = D.plus n in
       let mn = D.plus_out m m_n in
       let eargs =
         List.map
-          (fun (Term.Modal (modality, al, tm)) ->
-            let lenv = key_env env (Modalcell.id modality) al in
-            ModalValueCube.Modal (modality, eval_args lenv m_n mn tm))
+          (fun (Term.Modal (modality, lfilter, al, tm)) ->
+            let (Has_filter kfilter) = Modality.filter modality m in
+            let k = Modality.filtered m kfilter in
+            let (Plus k_l) = D.plus (Modality.filtered n lfilter) in
+            let kl = D.plus_out k k_l in
+            let filter = Modality.filter_plus k_l m_n kfilter lfilter in
+            let lenv = key_env env kfilter (Modalcell.id modality) al in
+            Value.Modal (modality, filter, eval_args lenv k_l kl tm))
           args in
       Val (Constr (constr, mn, eargs))
-  | Pi (type k n dom modality) ({ x; filter; doms; cods } : (k, n, dom, modality, mode, b) pi_args)
-    ->
+  | Pi
+      (type l n dom modality)
+      ({ x; filter = lfilter; doms; cods } : (l, n, dom, modality, mode, b) pi_args) ->
       let (Term.Modal (modality, al, doms)) = doms in
       (* We are starting with an n-dimensional pi-type and evaluating it in an m-dimensional environment, producing an (m+n)-dimensional result. *)
-      let k, n = (CubeOf.dim doms, CodCube.dim cods) in
+      let l, n = (CubeOf.dim doms, CodCube.dim cods) in
       let m = dim_env env in
-      (* TODO: Need to filter m and then add it to k *)
-      let (Plus (type mk) (m_k : (m, k, mk) D.plus)) = D.plus k in
-      let mk = D.plus_out m m_k in
+      let (Has_filter (type k) (kfilter : (dom, modality, mode, k, m) Modality.filter_dim)) =
+        Modality.filter modality m in
+      (* We filter the dimension m by the modality, and that is what gets added to the dimension of the domains. *)
+      let k = Modality.filtered m kfilter in
+      let (Plus (type kl) (k_l : (k, l, kl) D.plus)) = D.plus l in
+      let kl = D.plus_out k k_l in
       let (Plus (type mn) (m_n : (m, n, mn) D.plus)) = D.plus n in
       let mn = D.plus_out m m_n in
+      let filter = Modality.filter_plus k_l m_n kfilter lfilter in
       (* The basic thing we do is evaluate the cubes of domains and codomains. *)
-      let lenv = key_env env (Modalcell.id modality) al in
+      let lenv = key_env env kfilter (Modalcell.id modality) al in
       let doms =
-        CubeOf.build mk
+        CubeOf.build kl
           {
             build =
               (fun fab ->
-                let (SFace_of_plus (_, fa, fb)) = sface_of_plus m_k fab in
+                let (SFace_of_plus (_, fa, fb)) = sface_of_plus k_l fab in
                 eval_term (act_env lenv (op_of_sface fa)) (CubeOf.find doms fb));
           } in
       let cods =
@@ -328,9 +340,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       (* However, because the result will be a Neu, we need to know its type as well.  The starting n-dimensional pi-type (which is itself uninstantiated) lies in a full instantiation of the n-dimensional universe at lower-dimensional pi-types formed from subcubes of its domains and codomains.  Accordingly, the resulting (m+n)-dimensional pi-type will like in a full instantiation of the (m+n)-dimensional universe at lower-dimensional pi-types obtained by evaluating these at appropriately split faces.  Since each of them *also* belongs to a universe instantiated similarly, and needs to know its type not just because it is an uninst but because it is a normal, we build the whole cube at once and then take its top. *)
       let pitbl = Hashtbl.create 10 in
       (* Since we only care about the hashtbl and the top, and we can get that from the hashtbl at the end anyway, we don't bother actually putting the normals into a meaningful cube. *)
-      let build : type k. (k, mn) sface -> unit =
+      let build : type u. (u, mn) sface -> unit =
        fun fab ->
-        let (SFace_of_plus (ab, fa, fb)) = sface_of_plus m_n fab in
         let kl = dom_sface fab in
         let codmode = mode_env env in
         let ty =
@@ -340,11 +351,14 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                  build =
                    (fun fc -> Hashtbl.find pitbl (SFace_of (comp_sface fab (sface_of_tface fc))));
                }) in
-        let subdoms, subcods = (CubeOf.subcube fab doms, BindCube.subcube fab cods) in
-        let subx = plus_variables (dom_sface fa) ab (sub_variables fb x) in
-        let head : mode head = Pi { x = subx; modality; filter; doms = subdoms; cods = subcods } in
+        let (Filter_sface (fab', ufilter)) = Modality.filter_sface filter fab in
+        let (SFace_of_plus (ab, fa', fb')) = sface_of_plus k_l fab' in
+        let subdoms, subcods = (CubeOf.subcube fab' doms, BindCube.subcube fab cods) in
+        let subx = plus_variables (dom_sface fa') ab (sub_variables fb' x) in
+        let head : mode head =
+          Pi { x = subx; modality; filter = ufilter; doms = subdoms; cods = subcods } in
         (* We don't need fibrancy fields for all the boundary types, since once something "is a type" we don't need it to be in Fib any more. *)
-        let fields : (mode * k * potential * no_eta) Value.StructfieldAbwd.t =
+        let fields : (mode * u * potential * no_eta) Value.StructfieldAbwd.t =
           match (is_id_sface fab, Fibrancy.PiValuesMap.find_opt modality !Fibrancy.pi) with
           | None, _ | _, None -> Bwd.Emp
           | Some Eq, Some fields ->
@@ -371,7 +385,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                (Canonical
                   {
                     mode = mode_env env;
-                    canonical = Pi { x = subx; modality; filter; doms = subdoms; cods = subcods };
+                    canonical =
+                      Pi { x = subx; modality; filter = ufilter; doms = subdoms; cods = subcods };
                     tyargs = TubeOf.empty kl;
                     ins = ins_zero kl;
                     fields;
@@ -409,8 +424,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       Val (act_value (eval_term (act_env env (op_of_deg fa)) x) p None)
   | Key { tm; cell; plus_src; plus_tgt } ->
       (* To evaluate a key, we strip off the part of the environment corresponding to the codomain of the key cell, then compose the keys we found there with the supplied key to make a new key on an environment for evaluating the body. *)
-      let (Remove_keys (env, keys)) = Env.remove_keys env plus_tgt in
-      eval (key_env env (Modalcell.vcomp keys cell) plus_src) tm
+      let (Remove_keys (env, filter, keys)) = Env.remove_keys env plus_tgt in
+      eval (key_env env filter (Modalcell.vcomp keys cell) plus_src) tm
   | Match { tm; dim = match_dim; branches } -> (
       let env_dim = dim_env env in
       let (Plus plus_dim) = D.plus match_dim in
@@ -1150,7 +1165,7 @@ and eval_env : type mode a m n mn b.
   | Ext (tmenv, n_k, Modal (modality, al, xss)) ->
       let (Plus mn_k) = D.plus (D.plus_right n_k) in
       let m_nk = D.plus_assocr m_n n_k mn_k in
-      let lenv = Key (env, Modalcell.id modality, al) in
+      let lenv = key_env env filter (Modalcell.id modality) al in
       (* We make everything lazy, since we can, and not everything may end up being used. *)
       Ext
         {
@@ -1168,8 +1183,8 @@ and eval_env : type mode a m n mn b.
                  });
         }
   | Key { env = tmenv; cell; plus_src; plus_tgt } ->
-      let (Remove_keys (env, keys)) = Env.remove_keys env plus_tgt in
-      Key (eval_env env m_n tmenv, Modalcell.vcomp keys cell, plus_src)
+      let (Remove_keys (env, filter, keys)) = Env.remove_keys env plus_tgt in
+      Key (eval_env env m_n tmenv, filter, Modalcell.vcomp keys cell, plus_src)
 
 and apply_term : type dom modality mode n.
     (mode, kinetic) value ->
@@ -1254,7 +1269,7 @@ and lookup_cube : type dom mu mode n a b k mk nk.
       let op'k = op_plus op' lk nk in
       lookup_cube env lk mu v (comp_op op'k op)
   (* Nonidentity keys are disallowed here, because we've already called Env.remove_keys that is supposed to strip them all off. *)
-  | Key (env, cell, plus), _ -> (
+  | Key (env, filter, cell, plus), _ -> (
       match (Modalcell.compare_id cell, plus) with
       | Eq, Plus_lock (Zero _, Zero) -> lookup_cube env nk mu v op
       | _ -> fatal (Anomaly "nonidentity key in lookup_cube"))
@@ -1292,7 +1307,7 @@ and lookup : type mode n b. (mode, n, b) env -> (mode, b) index -> (mode, kineti
  fun env (Index (v, fa, plus)) ->
   let (Plus n_k) = D.plus (cod_sface fa) in
   let n = dim_env env in
-  let (Remove_keys (env, keys)) = Env.remove_keys_plus_lock env plus in
+  let (Remove_keys (env, filter, keys)) = Env.remove_keys_plus_lock env plus in
   let mu = plus_lock_modality plus in
   match lookup_cube env n_k mu v (id_op (D.plus_out n n_k)) with
   | Looked_up { act; op; entry } ->

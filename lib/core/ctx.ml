@@ -89,14 +89,13 @@ type (_, _, _, _, _) entry =
       ('dom, 'modality, 'mode, 'm, 'n, 'mn, 'f1, 'f2, 'f) vis_data
       -> ('dom, 'modality, 'mode, 'f, 'mn) entry
   (* Add a cube of internal variables that are not visible to the parser.  We also allow a vector of "field view" variables that look to the user like ordinary variables but actually expand *at typechecking time* to field projections of the top invisible variable. *)
-  | Invis :
-      ('dom, 'modality, 'mode) Modality.t * ('n, 'dom Binding.t) CubeOf.t
-      -> ('dom, 'modality, 'mode, N.zero, 'n) entry
+  | Invis : ('dom, 'modality, 'mode, 'n) invis_data -> ('dom, 'modality, 'mode, N.zero, 'n) entry
 
 and ('dom, 'modality, 'mode, 'm, 'n, 'mn, 'f1, 'f2, 'f) vis_data = {
   dim : 'm D.t;
   modality : ('dom, 'modality, 'mode) Modality.t;
   plusdim : ('m, 'n, 'mn) D.plus;
+  filter : ('dom, 'modality, 'mode, 'mn, 'mn) Modality.filter_dim;
   (* We use an indexed cube to automatically count how many raw variables appear, by starting with zero and incrementing it for each entry in the cube.  It's tempting to want to start instead from the previous raw length of the context, thereby eliminating the "plus" parameter of Snoc, below; but this causes problems with telescopes (forwards contexts), used in Bindsome, whose raw indices are forwards natural numbers instead. *)
   vars : (N.zero, 'n, string option, 'f1) NICubeOf.t;
   bindings : ('mn, 'dom Binding.t) CubeOf.t;
@@ -104,6 +103,12 @@ and ('dom, 'modality, 'mode, 'm, 'n, 'mn, 'f1, 'f2, 'f) vis_data = {
   hasfields : ('m, 'f2) has_fields;
   fields : (D.zero Field.t * string, 'f2) Bwv.t;
   fplus : ('f1, 'f2, 'f) N.plus;
+}
+
+and ('dom, 'modality, 'mode, 'n) invis_data = {
+  modality : ('dom, 'modality, 'mode) Modality.t;
+  filter : ('dom, 'modality, 'mode, 'n, 'n) Modality.filter_dim;
+  bindings : ('n, 'dom Binding.t) CubeOf.t;
 }
 
 let raw_entry : type dom modality mode f n. (dom, modality, mode, f, n) entry -> f N.t = function
@@ -476,9 +481,11 @@ module Ordered = struct
             values = `Lazy (env_entry bindings);
           }
     | Lock (ctx, lock) ->
+        let modality = Modality.of_gen lock in
         Key
           ( env ctx,
-            Modalcell.id (Modality.of_gen lock),
+            Modality.filter_zero modality,
+            Modalcell.id modality,
             plus_lock_suc (plus_no_lock (mode ctx)) lock )
     | Parametric_lock ctx -> env ctx
 
@@ -693,7 +700,7 @@ let lock : type dom modality cod a b.
     (cod, a, b) t -> (dom, modality, cod) Modality.t -> (cod, a, b, modality, dom) locked =
  fun (Permute { perm; env; level; ctx }) lock ->
   let (Locked (al, ctx)) = Ordered.lock ctx lock in
-  let env = key_env env (Modalcell.id lock) al in
+  let env = key_env env (Modality.filter_zero lock) (Modalcell.id lock) al in
   Locked (al, Permute { env; perm; level; ctx })
 
 let lock_to : type dom modality cod a b bm.
@@ -703,7 +710,7 @@ let lock_to : type dom modality cod a b bm.
     (dom, a, bm) t =
  fun (Permute { perm; env; level; ctx }) lock al ->
   let ctx = Ordered.lock_to ctx lock al in
-  let env = key_env env (Modalcell.id lock) al in
+  let env = key_env env (Modality.filter_zero lock) (Modalcell.id lock) al in
   Permute { env; perm; level; ctx }
 
 let parametric_lock (Permute c) = Permute { c with ctx = Ordered.parametric_lock c.ctx }

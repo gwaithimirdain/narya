@@ -78,7 +78,7 @@ module F = struct
         fprintf ppf "Constr (%s, %a, (%a))" (Constr.to_string c) dim d
           (pp_print_list
              ~pp_sep:(fun ppf () -> pp_print_string ppf ", ")
-             (fun ppf (ModalValueCube.Modal (_, c)) -> value ppf (CubeOf.find_top c)))
+             (fun ppf (Value.Modal (_, _, c)) -> value ppf (CubeOf.find_top c)))
           args
     | Canonical ic -> fprintf ppf "Canonical %a" inst_canonical ic
 
@@ -225,7 +225,7 @@ module F = struct
     | Ext { env = e; values = `Lazy v; _ } ->
         fprintf ppf "%a <; %a" env e (cubeof (lazy_eval depth)) v
     | Act (e, Op (f, d)) -> fprintf ppf "%a <* (%s,%s)" env e (string_of_sface f) (string_of_deg d)
-    | Key (e, key, _ac) -> fprintf ppf "%a <%% %s" env e (Modalcell.to_string key)
+    | Key (e, _filter, key, _ac) -> fprintf ppf "%a <%% %s" env e (Modalcell.to_string key)
     | Permute (_, e) -> fprintf ppf "(%a) permuted(?)" env e
     | Shift (e, mn, _) -> fprintf ppf "%a << %a" env e dim (D.plus_right mn)
     | Unshift (e, mn, _) -> fprintf ppf "%a >> %a" env e dim (D.plus_right mn)

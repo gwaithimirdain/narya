@@ -398,27 +398,6 @@ module Make (G : Comparable) = struct
     | Zero, Suc (_, g) -> plus_suc_neq g n2
     | Suc (_, g), Zero -> plus_suc_neq g n1
 
-  (* ********** Occurrence ********** *)
-
-  type (_, _) occurs =
-    | Occurs_now : ('g, ('m, 'g) suc) occurs
-    | Occurs_later : ('g, 'm) occurs -> ('g, ('m, 'h) suc) occurs
-
-  type (_, _) unoccurs =
-    | Unoccurs_emp : ('g, emp) unoccurs
-    | Unoccurs_suc : ('g, 'm) unoccurs -> ('g, ('m, 'h) suc) unoccurs
-
-  let rec occurs : type g m. g G.t -> m t -> ((g, m) occurs, (g, m) unoccurs) Either.t =
-   fun g -> function
-    | Word Zero -> Right Unoccurs_emp
-    | Word (Suc (m, h)) -> (
-        match G.compare g h with
-        | Eq -> Left Occurs_now
-        | Neq -> (
-            match occurs g (Word m) with
-            | Left o -> Left (Occurs_later o)
-            | Right u -> Right (Unoccurs_suc u)))
-
   (* ********** Forwards words ********** *)
 
   type 'b fwd = Nil : nil fwd | Cons : 'n G.t * 'b fwd -> ('n, 'b) cons fwd
@@ -567,6 +546,35 @@ module type ComparableExp = sig
   val endpoints_out : ('g, 'n) endpoints -> 'n N.t
   val has_endpoints : 'g t -> 'g has_endpoints
   val endpoints_uniq : ('g, 'n1) endpoints -> ('g, 'n2) endpoints -> ('n1, 'n2) Eq.t
+end
+
+(* ********** Occurrence ********** *)
+
+module MakeDecidable (G : Decidable) = struct
+  include Make (G)
+
+  type (_, _) occurs = Occurs : ('m, 'g, 'mg) Tbwd.insert -> ('g, 'mg) occurs
+
+  type (_, _) unoccurs =
+    | Unoccurs_emp : ('g, emp) unoccurs
+    | Unoccurs_suc : ('g, 'm) unoccurs * ('g, 'h) Eq.neq -> ('g, ('m, 'h) suc) unoccurs
+
+  let rec occurs : type g m. g G.t -> m t -> ((g, m) occurs, (g, m) unoccurs) Either.t =
+   fun g -> function
+    | Word Zero -> Right Unoccurs_emp
+    | Word (Suc (m, h)) -> (
+        match G.decide g h with
+        | Left Eq -> Left (Occurs Now)
+        | Right neq -> (
+            match occurs g (Word m) with
+            | Left (Occurs o) -> Left (Occurs (Later o))
+            | Right u -> Right (Unoccurs_suc (u, neq))))
+
+  let rec occurs_unoccurs : type g m r. (g, m) occurs -> (g, m) unoccurs -> r =
+   fun o u ->
+    match (o, u) with
+    | Occurs Now, Unoccurs_suc (_, neq) -> neq.abort Eq
+    | Occurs (Later i), Unoccurs_suc (u, _) -> occurs_unoccurs (Occurs i) u
 end
 
 module MakeExp (G : ComparableExp) = struct

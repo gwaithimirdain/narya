@@ -227,7 +227,8 @@ let generate : type a b p. a Mode.t -> b Mode.t -> string -> p D.t -> (a, b) gen
   let module M = Generate (G) in
   Wrap M.modality
 
-include Path.Make (Gen)
+module Modality = Path.Make (Gen)
+include Modality
 module Map = Path.Map (Gen) (Mode.Map) (Gen.Map)
 
 let locker : type a. a Mode.t -> (a, a) wrapped = fun _ -> raise (Failure "Modality.locker not set")
@@ -326,30 +327,196 @@ let compare_name : type x m y s.
       | Eq -> Ok ()
       | Neq -> Error (`Unequal (Wrap n)))
 
-type ('m, 'e) nonparametric = 'e D.t
-type _ has_nonparametric = Nonparametric : ('m, 'e) nonparametric -> 'm has_nonparametric
+(* Nonparametric modalities *)
 
-let rec nonparametric : type x m y. (x, m, y) t -> m has_nonparametric = function
-  | Path (Zero, _) -> Nonparametric D.zero
-  | Path (Suc (Zero, PK (_, m, _)), _) ->
-      let (Wrap e) = Dynarray.get Gen.nonparametric m in
-      Nonparametric e
-  | Path (Suc (m, _), y) ->
-      let (Nonparametric e) = nonparametric (Path (m, y)) in
-      Nonparametric e
+(* A modality is nonparametric for a direction if *any* of the generators in it are.  That is, nonparametric modalities are both a sieve and a cosieve.  Since we represent nonparametricity by a word of directions, i.e. a dimension, this means nonparametricity is a functor from the category of modalities to the one-object category of dimensions, determined by its action on generators. *)
 
-type ('m, 'a, 'b) filter_dim =
-  | Filter : ('m, 'e) nonparametric * ('e, 'a, 'b) except -> ('m, 'a, 'b) filter_dim
+module BD = Category.OneObject (D)
 
-let filter_zero : type x m y. (x, m, y) t -> (m, D.zero, D.zero) filter_dim =
+module Nonparam_gen = struct
+  module Dom = Gen
+  module Cod = BD
+
+  module Obj = struct
+    module Dom = Mode
+    module Cod = Unitcomparable
+
+    type (_, _) t = To_unit : 'a Mode.t -> ('a, unit) t
+
+    let dom : type a u. (a, u) t -> a Mode.t = fun (To_unit x) -> x
+    let cod : type a u. (a, u) t -> u Unitcomparable.t = fun (To_unit _) -> Unit
+
+    type _ exists = Exists : ('a, 'x) t -> 'a exists
+
+    let exists x = Exists (To_unit x)
+
+    let uniq : type a x1 x2. (a, x1) t -> (a, x2) t -> (x1, x2) Eq.t =
+     fun (To_unit _) (To_unit _) -> Eq
+  end
+
+  type (_, _, _, _, _, _) t =
+    | Nonparametric : ('x, 'm, 'y) Gen.t * 'e D.t -> ('x, 'm, 'y, unit, 'e, unit) t
+
+  let dom : type x m y u e v. (x, m, y, u, e, v) t -> (x, m, y) Gen.t =
+   fun (Nonparametric (m, _)) -> m
+
+  let cod : type x m y u e v. (x, m, y, u, e, v) t -> (u, e, v) BD.t =
+   fun (Nonparametric (_, e)) -> BD.Loop e
+
+  let src : type x m y u e v. (x, m, y, u, e, v) t -> (x, u) Obj.t =
+   fun (Nonparametric (m, _)) -> Obj.To_unit (Gen.src m)
+
+  let tgt : type x m y u e v. (x, m, y, u, e, v) t -> (y, v) Obj.t =
+   fun (Nonparametric (m, _)) -> Obj.To_unit (Gen.tgt m)
+
+  type (_, _, _) exists = Exists : ('a, 'm, 'b, 'x, 'n, 'y) t -> ('a, 'm, 'b) exists
+
+  let exists : type x m y. (x, m, y) Gen.t -> (x, m, y) exists =
+   fun (PK (_, g, _) as m) ->
+    let (Wrap e) = Dynarray.get Gen.nonparametric g in
+    Exists (Nonparametric (m, e))
+
+  let uniq : type x m y u1 e1 v1 u2 e2 v2.
+      (x, m, y, u1, e1, v1) t -> (x, m, y, u2, e2, v2) t -> (u1 * e1 * v1, u2 * e2 * v2) Eq.t =
+   fun (Nonparametric (_, e1)) (Nonparametric (_, e2)) ->
+    match D.compare e1 e2 with
+    | Eq -> Eq
+    | Neq -> failwith "modality claimed to have two different nonparametricities"
+end
+
+module Nonparametric = Path.Hom (Gen) (BD) (Nonparam_gen)
+
+type (_, _, _, _, _) filter_dim =
+  | Filter :
+      ('x, 'm, 'y, unit, 'e, unit) Nonparametric.t * ('e, 'a, 'b) except
+      -> ('x, 'm, 'y, 'a, 'b) filter_dim
+
+type (_, _, _, _) has_filter =
+  | Has_filter : ('x, 'm, 'y, 'a, 'b) filter_dim -> ('x, 'm, 'y, 'b) has_filter
+
+let filter : type x m y b. (x, m, y) t -> b D.t -> (x, m, y, b) has_filter =
+ fun m b ->
+  let (Exists e) = Nonparametric.exists m in
+  let (Loop d) = Nonparametric.cod e in
+  let (Except ex) = except_dirs d b in
+  Has_filter (Filter (e, ex))
+
+let filter_uniq : type x m y b a1 a2.
+    (x, m, y, a1, b) filter_dim -> (x, m, y, a2, b) filter_dim -> (a1, a2) Eq.t =
+ fun (Filter (m1, e1)) (Filter (m2, e2)) ->
+  let Eq = Nonparametric.uniq m1 m2 in
+  let Eq = except_uniq e1 e2 in
+  Eq
+
+let filtered b (Filter (_, e)) = excepted e b
+
+let filter_id : type mode a. mode Mode.t -> a D.t -> (mode, mode id, mode, a, a) filter_dim =
+ fun mode a -> Filter (Nonparametric.id (To_unit mode), except_nothing a)
+
+let eq_of_filter_id : type mode a b. (mode, mode id, mode, a, b) filter_dim -> (a, b) Eq.t =
+ fun (Filter (p, ex)) ->
+  let (Loop p) = Nonparametric.cod p in
+  match D.compare_zero p with
+  | Zero -> eq_of_except_nothing ex
+  | Pos _ -> failwith "eq_of_filter_id"
+
+let filter_idempotent : type x m y a b. (x, m, y, a, b) filter_dim -> (x, m, y, a, a) filter_dim =
+ fun (Filter (e, ex)) -> Filter (e, except_idempotent ex)
+
+let filter_zero : type x m y. (x, m, y) t -> (x, m, y, D.zero, D.zero) filter_dim =
  fun m ->
-  let (Nonparametric e) = nonparametric m in
+  let (Exists e) = Nonparametric.exists m in
+  let (Loop _) = Nonparametric.cod e in
   Filter (e, except_zero)
 
-type (_, _, _) filter_deg =
-  | Filter_deg : ('d, 'a) deg * ('m, 'd, 'c) filter_dim -> ('m, 'a, 'c) filter_deg
+let filter_plus : type x m y a b c d ac bd.
+    (a, c, ac) D.plus ->
+    (b, d, bd) D.plus ->
+    (x, m, y, a, b) filter_dim ->
+    (x, m, y, c, d) filter_dim ->
+    (x, m, y, ac, bd) filter_dim =
+ fun ac bd (Filter (e1, eab)) (Filter (e2, ecd)) ->
+  let Eq = Nonparametric.uniq e1 e2 in
+  Filter (e1, except_plus ac bd eab ecd)
 
-let filter_deg : type m a b c. (m, a, b) filter_dim -> (c, b) deg -> (m, a, c) filter_deg =
+type (_, _, _, _, _, _) filter_of_plus =
+  | Filter_of_plus :
+      ('a, 'c, 'ac) D.plus * ('x, 'm, 'y, 'a, 'b) filter_dim * ('x, 'm, 'y, 'c, 'd) filter_dim
+      -> ('x, 'm, 'y, 'b, 'd, 'ac) filter_of_plus
+
+let filter_of_plus : type x m y b d ac bd.
+    (b, d, bd) D.plus -> (x, m, y, ac, bd) filter_dim -> (x, m, y, b, d, ac) filter_of_plus =
+ fun bd (Filter (e, eacbd)) ->
+  let (Except_of_plus (ac, eab, ecd)) = except_of_plus bd eacbd in
+  Filter_of_plus (ac, Filter (e, eab), Filter (e, ecd))
+
+type (_, _, _, _, _, _) filter_of_plus' =
+  | Filter_of_plus' :
+      ('b, 'c, 'bc) D.plus * ('bc, 'd) perm * ('x, 'm, 'y, 'a, 'b) filter_dim
+      -> ('x, 'm, 'y, 'a, 'c, 'd) filter_of_plus'
+
+let filter_of_plus' : type a c ac x m y d.
+    d D.t -> (a, c, ac) D.plus -> (x, m, y, ac, d) filter_dim -> (x, m, y, a, c, d) filter_of_plus'
+    =
+ fun d ac (Filter (e, eacd)) ->
+  let (Except_of_plus' (bc, p, eab)) = except_of_plus' d ac eacd in
+  Filter_of_plus' (bc, p, Filter (e, eab))
+
+type (_, _, _, _, _) filter_sface =
+  | Filter_sface :
+      ('d, 'a) sface * ('x, 'm, 'y, 'd, 'c) filter_dim
+      -> ('x, 'm, 'y, 'a, 'c) filter_sface
+
+let filter_sface : type x m y a b c.
+    (x, m, y, a, b) filter_dim -> (c, b) sface -> (x, m, y, a, c) filter_sface =
  fun (Filter (e, ex)) s ->
-  let (Except_deg (s, ex)) = except_deg e ex s in
+  let (Except_sface (s, ex)) = except_sface ex s in
+  Filter_sface (s, Filter (e, ex))
+
+type (_, _, _, _, _) filter_deg =
+  | Filter_deg : ('d, 'a) deg * ('x, 'm, 'y, 'd, 'c) filter_dim -> ('x, 'm, 'y, 'a, 'c) filter_deg
+
+let filter_deg : type x m y a b c.
+    (x, m, y, a, b) filter_dim -> (c, b) deg -> (x, m, y, a, c) filter_deg =
+ fun (Filter (e, ex)) s ->
+  let (Loop p) = Nonparametric.cod e in
+  let (Except_deg (s, ex)) = except_deg p ex s in
   Filter_deg (s, Filter (e, ex))
+
+type (_, _, _, _, _) filter_deg' =
+  | Filter_deg' : ('d, 'b) deg * ('x, 'm, 'y, 'c, 'd) filter_dim -> ('x, 'm, 'y, 'b, 'c) filter_deg'
+
+(* TODO: This is also impossible as written, since c could contain filtered dimensions. *)
+
+let filter_deg' : type x m y a b c.
+    (x, m, y, a, b) filter_dim -> (c, a) deg -> (x, m, y, b, c) filter_deg' =
+ fun _ _ -> Sorry.e ()
+
+type (_, _, _, _, _) filter_sface' =
+  | Filter_sface' :
+      ('d, 'b) sface * ('x, 'm, 'y, 'c, 'd) filter_dim
+      -> ('x, 'm, 'y, 'b, 'c) filter_sface'
+
+let filter_sface' : type x m y a b c.
+    (x, m, y, a, b) filter_dim -> (c, a) sface -> (x, m, y, b, c) filter_sface' =
+ fun _ _ -> Sorry.e ()
+
+type (_, _, _, _, _) filter_op' =
+  | Filter_op' : ('d, 'b) op * ('x, 'm, 'y, 'c, 'd) filter_dim -> ('x, 'm, 'y, 'b, 'c) filter_op'
+
+let filter_op' : type x m y a b c.
+    (x, m, y, a, b) filter_dim -> (c, a) op -> (x, m, y, b, c) filter_op' =
+ fun f (Op (fa, s)) ->
+  let (Filter_sface' (fa', f)) = filter_sface' f fa in
+  let (Filter_deg' (s', f)) = filter_deg' f s in
+  Filter_op' (Op (fa', s'), f)
+
+let filter_comp : type x y z m n nm a b c.
+    (x, m, y, n, z, nm) comp ->
+    (y, n, z, b, c) filter_dim ->
+    (x, m, y, a, b) filter_dim ->
+    (x, nm, z, a, c) filter_dim =
+ fun n_m (Filter (n, ne)) (Filter (m, me)) ->
+  let (Comp (nm, ee)) = Nonparametric.comp m n n_m in
+  ignore (ne, me, nm, ee);
+  Sorry.e ()

@@ -952,9 +952,36 @@ end)
 type ('e, 'a, 'b) except
 type (_, _) has_except = Except : ('e, 'a, 'b) except -> ('e, 'b) has_except
 
-val except_dirs : 'e D.t -> 'b D.t -> ('e, 'b) has_except
-val except_zero : ('e, D.zero, D.zero) except
 val excepted : ('e, 'a, 'b) except -> 'b D.t -> 'a D.t
+val except_dirs : 'e D.t -> 'b D.t -> ('e, 'b) has_except
+val except_uniq : ('e, 'a1, 'b) except -> ('e, 'a2, 'b) except -> ('a1, 'a2) Eq.t
+val except_zero : ('e, D.zero, D.zero) except
+val except_nothing : 'a D.t -> (D.zero, 'a, 'a) except
+val eq_of_except_nothing : (D.zero, 'a, 'b) except -> ('a, 'b) Eq.t
+val except_idempotent : ('e, 'a, 'b) except -> ('e, 'a, 'a) except
+
+val except_plus :
+  ('a, 'c, 'ac) D.plus ->
+  ('b, 'd, 'bd) D.plus ->
+  ('e, 'a, 'b) except ->
+  ('e, 'c, 'd) except ->
+  ('e, 'ac, 'bd) except
+
+type (_, _, _, _) except_of_plus =
+  | Except_of_plus :
+      ('a, 'c, 'ac) D.plus * ('e, 'a, 'b) except * ('e, 'c, 'd) except
+      -> ('e, 'b, 'd, 'ac) except_of_plus
+
+val except_of_plus :
+  ('b, 'd, 'bd) D.plus -> ('e, 'ac, 'bd) except -> ('e, 'b, 'd, 'ac) except_of_plus
+
+type (_, _, _, _) except_of_plus' =
+  | Except_of_plus' :
+      ('b, 'c, 'bc) D.plus * ('bc, 'd) perm * ('e, 'a, 'b) except
+      -> ('e, 'a, 'c, 'd) except_of_plus'
+
+val except_of_plus' :
+  'd D.t -> ('a, 'c, 'ac) D.plus -> ('e, 'ac, 'd) except -> ('e, 'a, 'c, 'd) except_of_plus'
 
 type (_, _, _) except_sface =
   | Except_sface : ('d, 'a) sface * ('e, 'd, 'c) except -> ('e, 'a, 'c) except_sface

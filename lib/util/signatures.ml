@@ -28,6 +28,13 @@ module type Comparable = sig
   val compare : 'g1 t -> 'g2 t -> ('g1, 'g2) Eq.compare
 end
 
+module type Decidable = sig
+  (* This is a bit redundant, since we could derive [compare] from [decide]. *)
+  include Comparable
+
+  val decide : 'g1 t -> 'g2 t -> (('g1, 'g2) Eq.t, ('g1, 'g2) Eq.neq) Either.t
+end
+
 module type Function = sig
   module Dom : Fam
   module Cod : Fam
