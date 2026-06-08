@@ -184,11 +184,13 @@ module rec Value : sig
     | Emp : 'mode Mode.t * 'n D.t -> ('mode, 'n, 'mode emp) env
     | Ext : {
         env : ('mode, 'n, 'b) env;
-        plus : ('n, 'k, 'nk) D.plus;
         modality : ('dom, 'modality, 'mode) Modality.t;
+        filtered : ('dom, 'modality, 'mode, 'k, 'k) Modality.filter_dim;
+        filter : ('dom, 'modality, 'mode, 'm, 'n) Modality.filter_dim;
+        plus : ('m, 'k, 'mk) D.plus;
         values :
-          [ `Lazy of ('nk, ('dom, kinetic) lazy_eval) CubeOf.t
-          | `Ok of ('nk, ('dom, kinetic) value) CubeOf.t
+          [ `Lazy of ('mk, ('dom, kinetic) lazy_eval) CubeOf.t
+          | `Ok of ('mk, ('dom, kinetic) value) CubeOf.t
           | `Error of Code.t ];
       }
         -> ('mode, 'n, ('b, ('modality, 'k) dim_entry) snoc) env
@@ -429,13 +431,14 @@ end = struct
     (* The (n+k)-cube here is morally a k-cube of n-cubes, representing a k-dimensional "cube variable" consisting of some number of "real" variables indexed by the faces of a k-cube, each of which has an n-cube of values representing a value and its boundaries.  But this contains the same data as an (n+k)-cube since a strict face of (n+k) decomposes uniquely as a strict face of n plus a strict face of k, and it seems to be more convenient to store it as a single (n+k)-cube. *)
     | Ext : {
         env : ('mode, 'n, 'b) env;
-        plus : ('n, 'k, 'nk) D.plus;
-        (* TODO: Filter the dimension *)
         modality : ('dom, 'modality, 'mode) Modality.t;
+        filtered : ('dom, 'modality, 'mode, 'k, 'k) Modality.filter_dim;
+        filter : ('dom, 'modality, 'mode, 'm, 'n) Modality.filter_dim;
+        plus : ('m, 'k, 'mk) D.plus;
         (* We have two kinds of variable bindings in an environment: lazy and non-lazy.   We also allow Error binding in an environment, indicating that that variable is not actually usable, usually due to an earlier error in typechecking that we've continued on from anyway.  (There's no need for errors in the lazy case, since the lazy thunk can just raise an error directly when forced.) *)
         values :
-          [ `Lazy of ('nk, ('dom, kinetic) lazy_eval) CubeOf.t
-          | `Ok of ('nk, ('dom, kinetic) value) CubeOf.t
+          [ `Lazy of ('mk, ('dom, kinetic) lazy_eval) CubeOf.t
+          | `Ok of ('mk, ('dom, kinetic) value) CubeOf.t
           | `Error of Code.t ];
       }
         -> ('mode, 'n, ('b, ('modality, 'k) dim_entry) snoc) env
@@ -519,9 +522,9 @@ let rec mode_env : type mode n b. (mode, n, b) env -> mode Mode.t = function
 (* The length of an environment is a tctx. *)
 let rec length_env : type mode n b. (mode, n, b) env -> (mode, b) Tctx.t = function
   | Emp (mode, _) -> Tctx.emp mode
-  | Ext { env; plus; modality; _ } ->
+  | Ext { env; plus; modality; filtered; _ } ->
       let le = length_env env in
-      Tctx.suc le (Dim (modality, D.plus_right plus))
+      Tctx.suc le (Dim (modality, D.plus_right plus, filtered))
   | Act (env, _) -> length_env env
   | Key (env, _, _, al) -> plus_lock_out (length_env env) al
   | Permute (p, env) -> perm_dom p (length_env env)

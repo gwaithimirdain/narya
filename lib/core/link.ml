@@ -164,7 +164,7 @@ and entry : type dom modality mode b f mn bm.
           }
           [ v.bindings ] in
       Vis { v with bindings }
-  | Invis (pl, bindings) ->
+  | Invis v ->
       let bindings =
         CubeOf.mmap
           {
@@ -172,8 +172,8 @@ and entry : type dom modality mode b f mn bm.
               (fun _ [ (b : (dom, bm) binding) ] : (dom, bm) binding ->
                 { ty = term f b.ty; tm = Option.map (term f) b.tm });
           }
-          [ bindings ] in
-      Invis (pl, bindings)
+          [ v.bindings ] in
+      Invis { v with bindings }
 
 and termctx_ordered : type mode a b.
     (File.t -> File.t) -> (mode, a, b) ordered_termctx -> (mode, a, b) ordered_termctx =

@@ -33,10 +33,11 @@ let rec take_args : type mode annotations m n mn a b ab.
  fun env mn dargs annotate comp ->
   match (dargs, annotate, comp) with
   | [], Zero _, Zero -> env
-  | Modal (mu, filter, arg) :: args, Suc (Annotate amu, annotate), Suc (Dim (_, _), comp) -> (
+  | Modal (mu, filter1, arg) :: args, Suc (Annotate (amu, filter2), annotate), Suc (Dim _, comp)
+    -> (
       match Modality.compare mu amu with
       | Eq ->
-          let env = Ext { env; plus = mn; modality = mu; values = `Ok arg } in
+          let env = Ext { env; plus = mn; modality = mu; filter; filtered; values = `Ok arg } in
           take_args env mn args annotate comp
       | Neq -> fatal (Modality_mismatch (`Internal, "take_args", mu, amu)))
   | _ -> fatal (Anomaly "wrong number of arguments in argument list")
@@ -372,10 +373,14 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                           env = Emp (codmode, mn);
                           plus = D.plus_zero mn;
                           modality;
+                          filter;
+                          filtered = Modality.filter_zero modality;
                           values = `Ok doms;
                         };
                     plus = D.plus_zero mn;
                     modality = Modality.id codmode;
+                    filter;
+                    filtered = Modality.filter_zero (Modality.id codmode);
                     values = `Ok (lam_cube (plus_variables m m_n x) cods);
                   } in
               eval_structfield_abwd pi_env mn (D.plus_zero mn) mn fields in
@@ -406,6 +411,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
              env;
              plus = D.plus_zero m;
              modality;
+             filter;
+             filtered;
              values =
                `Lazy
                  (CubeOf.build m
@@ -763,7 +770,9 @@ and tyof_lower_codatafield : type mode m n mn a.
     | Ok tm -> `Ok (TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
     | Error e -> `Error e in
   (* MODALTODO: Allow nontrivial modalities for modal destructors *)
-  let env = Value.Ext { env; plus = mn; modality = Modality.id (mode_env env); values } in
+  let env =
+    Value.Ext { env; plus = mn; filter; filtered; modality = Modality.id (mode_env env); values }
+  in
   (* This type is m-dimensional, hence must be instantiated at a full m-tube. *)
   let insttm = eval_term env fldty in
   let instargs =
@@ -816,8 +825,14 @@ and tyof_higher_codatafield : type mode c n h s r i ic.
   (* MODALTODO: Allow nontrivial modalities *)
   let env =
     Value.Ext
-      { env = codataenv; plus = D.plus_zero n; modality = Modality.id (mode_env codataenv); values }
-  in
+      {
+        env = codataenv;
+        plus = D.plus_zero n;
+        modality = Modality.id (mode_env codataenv);
+        filter;
+        filtered;
+        values;
+      } in
   (* Now we act on this (n, [c;0]) env by the inverse of the insertion to get an (s+h, [c;0]) env. *)
   let env = Act (env, op_of_deg (deg_of_perm (perm_inv (perm_of_ins_plus fldins sh)))) in
   let env =
@@ -922,6 +937,8 @@ and tyof_field : type mode m h s r i c.
                 env = Value.Emp (mode, m);
                 plus = D.plus_zero m;
                 modality = Modality.id mode;
+                filter;
+                filtered;
                 values;
               } in
           tyof_field_giventype tm head Noeta env (D.plus_zero m) fields tyargs fld ~shuf fldins)
@@ -1015,6 +1032,8 @@ and tyof_field_withname : type mode a b.
                 env = Value.Emp (mode, m);
                 plus = D.plus_zero m;
                 modality = Modality.id mode;
+                filter;
+                filtered;
                 values;
               } in
           tyof_field_withname_giventype ctx tm ty Noeta env (D.plus_zero m) fields tyargs infld err)
@@ -1091,6 +1110,8 @@ and apply_binder : type dom modality mode n s.
             env;
             plus = mn;
             modality;
+            filter;
+            filtered;
             values =
               `Lazy
                 (CubeOf.build (D.plus_out m mn)
@@ -1604,14 +1625,14 @@ let eval_entry : type dom modality mode a b f n bm.
     (dom, modality, mode, f, n) Ctx.entry =
  fun ctx e ->
   match e with
-  | Vis { dim; plus_lock; plusdim; vars; bindings; hasfields; fields; fplus } ->
+  | Vis { dim; plus_lock; filter; plusdim; vars; bindings; hasfields; fields; fplus } ->
       let modality = plus_lock_modality plus_lock in
       let bindings = eval_bindings ctx modality plus_lock bindings in
       let fields = Bwv.map (fun (f, x, _) -> (f, x)) fields in
-      Vis { dim; modality; plusdim; vars; bindings; hasfields; fields; fplus }
-  | Invis (plus_lock, bindings) ->
+      Vis { dim; modality; filter; plusdim; vars; bindings; hasfields; fields; fplus }
+  | Invis { plus_lock; bindings; filter } ->
       let modality = plus_lock_modality plus_lock in
-      Invis (modality, eval_bindings ctx modality plus_lock bindings)
+      Invis { modality; filter; bindings = eval_bindings ctx modality plus_lock bindings }
 
 let rec eval_ordered_ctx : type mode a b. (mode, a, b) ordered_termctx -> (mode, a, b) Ctx.Ordered.t
     = function
