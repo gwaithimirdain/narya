@@ -81,34 +81,30 @@ module Tube (F : Fam2) = struct
 
   let rec gfind : type m n k nk p q pq b.
       (n, k, nk, pq, b) gt ->
-      (m, q, nk) D.plus ->
       (p, q, pq) D.plus ->
       (m, n, k, nk) tface ->
       (p, b) F.t =
-   fun tr mq pq d ->
+   fun tr pq d ->
     match d with
     | End (d, _, _, (l1, e)) -> (
         let (Branch (g, l2, ends, _)) = tr in
         match D.G.compare g D.deg with
         | Neq -> assert false
-        | Eq ->
-            let (Le km') = plus_of_sface d in
-            let Eq = D.minus_uniq' (dom_sface d) (Suc (km', Unit)) mq in
-            let (Suc (pq', Unit)) = pq in
+        | Eq -> (
             let Eq = Endpoints.uniq l1 l2 in
-            C.gfind (Bwv.nth e ends) d pq')
+            match pq with
+            | Zero -> assert false
+            | Suc (pq', _) -> C.gfind (Bwv.nth e ends) d pq'))
     | Mid (d, _) -> (
         let (Branch (g, _, _, mid)) = tr in
         match D.G.compare g D.deg with
         | Neq -> assert false
-        | Eq ->
-            let (Suc (mq, Unit)) = D.plus_suc mq in
-            gfind mid mq pq d)
+        | Eq -> gfind mid pq d)
 
   let find : type m n k nk b. (n, k, nk, b) t -> (m, n, k, nk) tface -> (m, b) F.t =
    fun tr d ->
     let (Le km) = plus_of_tface d in
-    gfind tr km km d
+    gfind tr km d
 
   (* The boundary of a cube is a maximal tube. *)
 
