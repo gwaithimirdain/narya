@@ -952,15 +952,29 @@ module Plusmap = struct
         Suc (assocl ab bcs abcs, Inject (Plus_lock m), Suc (Zero, m'))
     | Suc (Zero _, Inject (Plus_proj x), Suc _), Suc (Zero _, Inject (Plus_proj _), Suc (Zero, _))
       -> Suc (Zero (Eq Unit), Inject (Plus_proj x), Suc (Zero, Proj x))
-    | _, Suc (Suc _, Inject (Plus_proj _), _) | Suc (Suc _, Inject (Plus_proj _), _), _ ->
-        (* This should be impossible: there are no generators with Unit as source.  I'm not sure why OCaml can't detect that. *)
-        raise (Failure "Plusmap.assocl Suc-Proj")
+    (* Now a bunch of impossible cases *)
     | Suc (Zero _, Inject (Plus_proj _), _), Suc (_, Inject (Plus_dim _), _) -> .
     | Suc (Zero _, Inject (Plus_proj _), _), Suc (_, Inject (Plus_lock _), _) -> .
     | Suc (Zero _, Inject (Plus_proj _), _), Zero _ -> .
     | Suc (Suc (_, _, _), Inject (Plus_proj _), _), Zero _ -> .
     | Suc (Suc (_, _, _), Inject (Plus_proj _), _), Suc (_, Inject (Plus_dim (_, _)), _) -> .
     | Suc (Suc (_, _, _), Inject (Plus_proj _), _), Suc (_, Inject (Plus_lock _), _) -> .
+    (* And now a bunch of cases that are also impossible, but OCaml can't tell that without help since Mode.t is abstract here so it doesn't know that unit is not a mode.  *)
+    | ( Suc (Suc (_, Inject (Plus_dim (modality, _)), _), Inject (Plus_proj _), _),
+        Suc (_, Inject (Plus_proj _), _) ) -> Mode.not_unit (Modality.tgt modality) Eq
+    | ( Suc (Suc (_, Inject (Plus_lock modality), _), Inject (Plus_proj _), _),
+        Suc (_, Inject (Plus_proj _), _) ) -> Mode.not_unit (Modality.Gen.src modality) Eq
+    | ( Suc (Suc (_, Inject (Plus_proj mode), _), Inject (Plus_proj _), _),
+        Suc (_, Inject (Plus_proj _), _) ) -> Mode.not_unit mode Eq
+    | ( Suc (_, Inject (Plus_proj _), _),
+        Suc (Suc (_, Inject (Plus_dim (modality, _)), _), Inject (Plus_proj _), _) ) ->
+        Mode.not_unit (Modality.tgt modality) Eq
+    | ( Suc (_, Inject (Plus_proj _), _),
+        Suc (Suc (_, Inject (Plus_lock modality), _), Inject (Plus_proj _), _) ) ->
+        Mode.not_unit (Modality.Gen.src modality) Eq
+    | ( Suc (_, Inject (Plus_proj _), _),
+        Suc (Suc (_, Inject (Plus_proj mode), _), Inject (Plus_proj _), _) ) ->
+        Mode.not_unit mode Eq
 
   let rec zerol : type x bs y. (x, bs, y) Dom.t -> (D.zero, x, bs, y, x, bs, y) t = function
     | Path (Zero, mode) -> Zero (Eq mode)
@@ -969,9 +983,10 @@ module Plusmap = struct
     | Path (Suc (bs, Lock m), mode) ->
         Suc (zerol (Path (bs, mode)), Inject (Plus_lock m), Suc (Zero, Lock m))
     | Path (Suc (Zero, Proj x), _) -> Suc (Zero (Eq Unit), Inject (Plus_proj x), Suc (Zero, Proj x))
-    | Path (Suc (Suc (_, _), Proj _), _) ->
-        (* This should be impossible: there are no generators with Unit as source.  I'm not sure why OCaml can't detect that. *)
-        raise (Failure "Plusmap.zerol Suc-Proj")
+    (* Again, we have some manually-proven impossible cases *)
+    | Path (Suc (Suc (_, Dim (modality, _)), Proj _), _) -> Mode.not_unit (Modality.tgt modality) Eq
+    | Path (Suc (Suc (_, Lock modality), Proj _), _) -> Mode.not_unit (Modality.Gen.src modality) Eq
+    | Path (Suc (Suc (_, Proj mode), Proj _), _) -> Mode.not_unit mode Eq
 
   (* Adding a dimension acts as the identity on pure locks. *)
   let rec lock : type a x m y l. (x, m, y, x, l, y) Lock.t -> (a, x, l, y, x, l, y) t = function

@@ -3,6 +3,7 @@ open Signatures
 
 type _ t
 
+val not_unit : 'a t -> ('a, unit) Eq.t -> 'b
 val compare : 'm t -> 'n t -> ('m, 'n) Eq.compare
 
 type wrapped = Wrap : 'mode t -> wrapped

@@ -3,7 +3,13 @@ open Signatures
 
 (* We want the caller to be able to add new types to the type family Mode.t dynamically, as it reads the user's mode theory.  We could use a generative functor to create those types and an extensible variant to add them to Mode.t, but extensible variants don't play well with Marshall.  Therefore, instead we just use unit all the time, with integers to distinguish modes, and pretend the types are different behind an abstraction barrier. *)
 
-type _ t = PK : int -> unit t
+type dummy = private Dummy
+type _ t = PK : int -> dummy t
+
+let not_unit : type a b. a t -> (a, unit) Eq.t -> b =
+ fun a e ->
+  match (a, e) with
+  | PK _, _ -> .
 
 let compare : type m n. m t -> n t -> (m, n) Eq.compare =
  fun m n ->
@@ -26,7 +32,7 @@ module Map = struct
     module F = F
     module Internal = Map.Make (Int)
 
-    type 'a t = ('a, unit) F.t Internal.t
+    type 'a t = ('a, dummy) F.t Internal.t
 
     let empty : type b. b t = Internal.empty
 
@@ -77,7 +83,7 @@ module type Generated = sig
 end
 
 module Generate (G : Generator) = struct
-  type t = unit
+  type t = dummy
 
   let mode : t Mode.t = PK (Dynarray.length Data.names)
 
