@@ -70,7 +70,7 @@ Either way, Phase 7 needs more time than a single session.
 
 ### Completed
 - `shuffle.ml`'s `deg_of_shuffle`/`perm_of_shuffle` restructured around `strip_left_g` and `*_with_extra` (no D bridges).  `plus_of_shuffle` dropped.
-- `cube.ml`'s `gfind` dropped its `km` plus argument: the sface and gt types together already encode the dimensional alignment, and `tube.ml`'s caller is updated.
+- The `gfind` family (cube/icube/tube) dropped their redundant `km`/`mq` plus argument: the gt and sface/tface types together already encode the dimensional alignment, and the result type only needs one plus relation.  This is the only restructure trick we've found that works locally — it eliminates one D.plus_suc per function and removes the End-case `D.minus_uniq'` assertion that established `q`'s suc structure.
 
 ### Confirmed blockers (algorithm redesign needed, not just rewrites)
 
