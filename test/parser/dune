@@ -1,7 +1,6 @@
 (tests
   (names lexer parse_arith ambiguity prefixes permute_args)
-	(libraries parser testutil)
-	(instrumentation (backend landmarks --auto)))
+	(libraries parser testutil))
 (cram
   (deps ../../bin/narya.exe))
 (env (_ (flags (:standard -w -26 -w -27))))
