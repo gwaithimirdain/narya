@@ -36,34 +36,26 @@ module Cube (F : Fam2) = struct
 
   (* A strict face is an index into a face tree.  *)
 
-  let rec gfind : type m n k km nm b.
-      (km, nm, b) gt -> (k, m, km) D.plus -> (n, m, nm) D.plus -> (k, km) sface -> (n, b) F.t =
-   fun tr km nm d ->
+  (* Walk the gt and sface in lockstep; nm tracks where the result lives.  No km argument is needed: the sface's codomain and the gt's first dim are unified by the function's type, and at each step the destructure on (tr, d) keeps them aligned without a separate proof.  This avoids D.plus_suc's rightmost shift entirely.
+
+     Invariant (not type-level): at the leaf, the recursion has peeled nm exactly enough times that nm = Zero, because the number of End steps in the sface equals the codimension n_gt - k_leaf.  Hence the [Suc _ -> .] refutation in the leaf case. *)
+  let rec gfind : type m n b k n_out m_n.
+      (m, n, b) gt -> (k, m) sface -> (n_out, m_n, n) D.plus -> (n_out, b) F.t =
+   fun tr d nm ->
     match (tr, d) with
-    | Leaf x, Zero ->
-        let Zero = km in
-        let Zero = nm in
-        x
-    | Branch (g, l1, br, _), End (d, _, (l2, e)) -> (
-        match D.G.compare g D.deg with
-        | Neq -> assert false
-        | Eq ->
-            let (Le km') = plus_of_sface d in
-            let Eq = D.minus_uniq' (dom_sface d) (Suc (km', Unit)) km in
-            let (Suc (nm', Unit)) = nm in
+    | Leaf x, Zero -> ( match nm with Zero -> x | Suc _ -> assert false)
+    | Branch (_, l1, br, _), End (d, _, (l2, e)) -> (
+        match nm with
+        | Zero -> assert false
+        | Suc (nm', _) ->
             let Eq = Endpoints.uniq l1 l2 in
-            gfind (Bwv.nth e br) km' nm' d)
-    | Branch (g, _, _, br), Mid (d, _) -> (
-        match D.G.compare g D.deg with
-        | Neq -> assert false
-        | Eq ->
-            let (Suc (km, Unit)) = D.plus_suc km in
-            gfind br km nm d)
+            gfind (Bwv.nth e br) d nm')
+    | Branch (_, _, _, br), Mid (d, _) -> gfind br d nm
 
   let find : type n k b. (n, b) t -> (k, n) sface -> (k, b) F.t =
    fun tr d ->
     let (Le km) = plus_of_sface d in
-    gfind tr km km d
+    gfind tr d km
 
   let rec gfind_top : type k n b. (k, n, b) gt -> (n, b) F.t = function
     | Leaf x -> x

@@ -96,7 +96,7 @@ module Tube (F : Fam2) = struct
             let Eq = D.minus_uniq' (dom_sface d) (Suc (km', Unit)) mq in
             let (Suc (pq', Unit)) = pq in
             let Eq = Endpoints.uniq l1 l2 in
-            C.gfind (Bwv.nth e ends) km' pq' d)
+            C.gfind (Bwv.nth e ends) d pq')
     | Mid (d, _) -> (
         let (Branch (g, _, _, mid)) = tr in
         match D.G.compare g D.deg with
