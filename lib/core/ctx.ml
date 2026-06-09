@@ -563,10 +563,18 @@ module Ordered = struct
     match ctx with
     | Emp _ -> tree
     | Lock _ | Parametric_lock _ -> fatal (Anomaly "context lock in Ctx.lam")
-    | Snoc (ctx, Vis { dim; plusdim; vars; modality; bindings; fplus = Zero; _ }, _)
-      when all_free bindings -> lam ctx (Lam (Variables (dim, plusdim, vars), modality, tree))
-    | Snoc (ctx, Invis { modality; bindings; _ }, _) when all_free bindings ->
-        lam ctx (Lam (singleton_variables (CubeOf.dim bindings) None, modality, tree))
+    | Snoc (ctx, Vis { dim; plusdim; vars; modality; filter; bindings; fplus = Zero; _ }, _)
+      when all_free bindings ->
+        lam ctx
+          (Lam (Variables (dim, plusdim, vars), modality, D.plus_out dim plusdim, filter, tree))
+    | Snoc (ctx, Invis { modality; bindings; filter }, _) when all_free bindings ->
+        lam ctx
+          (Lam
+             ( singleton_variables (CubeOf.dim bindings) None,
+               modality,
+               CubeOf.dim bindings,
+               filter,
+               tree ))
     | _ -> fatal (Anomaly "let-bound variable in Ctx.lam")
 
   (* Delete some level variables from a context by making their bindings into "unknown".  This will cause readback to raise No_such_level if it encounters one of those variables, which can then be trapped as an occurs-check. *)

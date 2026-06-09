@@ -993,6 +993,11 @@ type (_, _, _) except_deg =
 
 val except_deg : 'e D.t -> ('e, 'a, 'b) except -> ('c, 'b) deg -> ('e, 'a, 'c) except_deg
 
+type (_, _, _) except_perm =
+  | Except_perm : ('d, 'a) perm * ('e, 'd, 'c) except -> ('e, 'a, 'c) except_perm
+
+val except_perm : 'e D.t -> ('e, 'a, 'b) except -> ('c, 'b) perm -> ('e, 'a, 'c) except_perm
+
 (* *)
 val deg_of_name : string -> any_deg option
 

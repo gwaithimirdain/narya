@@ -23,8 +23,8 @@ module rec Value : sig
   module BindFam : sig
     type (_, _) t =
       | BindFam :
-          ('mode, 'modality, 'dom, 'k, kinetic) Value.binder
-          -> ('k, 'mode * 'modality * 'dom) t
+          ('mode, 'modality, 'dom, 'n, kinetic) Value.binder
+          -> ('n, 'mode * 'modality * 'dom) t
   end
 
   module BindCube : module type of Cube (BindFam)
@@ -100,7 +100,8 @@ module rec Value : sig
     | Bind : {
         env : ('mode, 'm, 'a) env;
         modality : ('dom, 'modality, 'mode) Modality.t;
-        body : ('mode, ('a, ('modality, 'n) dim_entry) snoc, 's) term;
+        filter : ('dom, 'modality, 'mode, 'l, 'n) Modality.filter_dim;
+        body : ('mode, ('a, ('modality, 'l) dim_entry) snoc, 's) term;
         ins : ('mn, 'm, 'n) insertion;
       }
         -> ('mode, 'modality, 'dom, 'mn, 's) binder
@@ -116,7 +117,11 @@ module rec Value : sig
     | Constr :
         Constr.t * 'n D.t * ('n, 'mode, kinetic) modal_value_cube list
         -> ('mode, kinetic) value
-    | Lam : 'k variables * ('mode, 'modality, 'dom, 'k, 's) binder -> ('mode, 's) value
+    | Lam :
+        'k variables
+        * ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
+        * ('mode, 'modality, 'dom, 'n, 's) binder
+        -> ('mode, 's) value
     | Struct : ('mode, 'p, 'k, 'pk, 's, 'et) struct_args -> ('mode, 's) value
     | Canonical : ('mode, 'm, 'k, 'mk, 'e, 'n) inst_canonical -> ('mode, potential) value
 
@@ -230,10 +235,9 @@ end = struct
   (* Here is the recursive application of the functor Cube.  First we define a module to pass as its argument, with type defined to equal the yet-to-be-defined binder, referred to recursively. *)
   module BindFam = struct
     type (_, _) t =
-      (* TODO: Ugh, each binder should really bind a filtered number of variables. *)
       | BindFam :
-          ('mode, 'modality, 'dom, 'k, kinetic) Value.binder
-          -> ('k, 'mode * 'modality * 'dom) t
+          ('mode, 'modality, 'dom, 'n, kinetic) Value.binder
+          -> ('n, 'mode * 'modality * 'dom) t
   end
 
   module BindCube = Cube (BindFam)
@@ -321,7 +325,8 @@ end = struct
     | Bind : {
         env : ('mode, 'm, 'a) env;
         modality : ('dom, 'modality, 'mode) Modality.t;
-        body : ('mode, ('a, ('modality, 'n) dim_entry) snoc, 's) term;
+        filter : ('dom, 'modality, 'mode, 'l, 'n) Modality.filter_dim;
+        body : ('mode, ('a, ('modality, 'l) dim_entry) snoc, 's) term;
         ins : ('mn, 'm, 'n) insertion;
       }
         -> ('mode, 'modality, 'dom, 'mn, 's) binder
@@ -339,7 +344,11 @@ end = struct
     | Constr :
         Constr.t * 'n D.t * ('n, 'mode, kinetic) modal_value_cube list
         -> ('mode, kinetic) value
-    | Lam : 'k variables * ('mode, 'modality, 'dom, 'k, 's) binder -> ('mode, 's) value
+    | Lam :
+        'k variables
+        * ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
+        * ('mode, 'modality, 'dom, 'n, 's) binder
+        -> ('mode, 's) value
     (* Structs have to store an insertion outside, like an application, to deal with higher-dimensional record types like Gel.  Here 'k is the Gel dimension, with 'p the substitution dimension and 'pk the total dimension. *)
     | Struct : ('mode, 'p, 'k, 'pk, 's, 'et) struct_args -> ('mode, 's) value
     (* A canonical type is only a *potential* value, so it appears as the 'value' of a 'neu'.  It may also be instantiated, partially or fully. *)
@@ -531,18 +540,6 @@ let rec length_env : type mode n b. (mode, n, b) env -> (mode, b) Tctx.t = funct
   | Shift (_, mn, nb) -> Plusmap.cod (D.plus_right mn) nb
   | Unshift (_, _, nb) -> Plusmap.dom nb
 
-(* Abstract over a cube of binders to make a cube of lambdas.  TODO: This should morally be a Cube.map, but it goes from one instantiation of Cube to another one, and we didn't define a map like that, so for now we just make it a 'build'. *)
-let lam_cube : type mode modality dom n.
-    n variables -> (n, mode * modality * dom) BindCube.t -> (n, (mode, kinetic) value) CubeOf.t =
- fun x binders ->
-  CubeOf.build (BindCube.dim binders)
-    {
-      build =
-        (fun fa ->
-          let (BindFam b) = BindCube.find binders fa in
-          Lam (sub_variables fa x, b));
-    }
-
 (* Smart constructor that composes actions and cancels identities *)
 let rec act_env : type mode m n b. (mode, n, b) env -> (m, n) op -> (mode, m, b) env =
  fun env s ->
@@ -613,16 +610,17 @@ let val_of_norm_tube : type mode n k nk.
  fun arg -> TubeOf.mmap { map = (fun _ [ { tm; ty = _ } ] -> tm) } [ arg ]
 
 (* Binders are completely lazy, so we can "evaluate" them independently of the master evaluation functions in norm. *)
-let eval_binder : type mode modality dom m n mn b s.
+let eval_binder : type mode modality dom m k n mn b s.
     (mode, m, b) env ->
     (m, n, mn) D.plus ->
     (dom, modality, mode) Modality.t ->
-    (mode, (b, (modality, n) dim_entry) snoc, s) term ->
+    (dom, modality, mode, k, n) Modality.filter_dim ->
+    (mode, (b, (modality, k) dim_entry) snoc, s) term ->
     (mode, modality, dom, mn, s) Value.binder =
- fun env mn modality body ->
+ fun env mn modality filter body ->
   let m = dim_env env in
   let ins = id_ins m mn in
-  Value.Bind { env; modality; ins; body }
+  Value.Bind { env; modality; filter; ins; body }
 
 (* Same with structfields *)
 let rec eval_structfield : type mode m n mn a status i et.

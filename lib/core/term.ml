@@ -30,8 +30,9 @@ module rec Term : sig
   module CodFam : sig
     type (_, _) t =
       | Cod :
-          ('mode, ('a, ('modality, 'k) dim_entry) snoc, kinetic) Term.term
-          -> ('k, 'mode * 'modality * 'a) t
+          ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
+          * ('mode, ('a, ('modality, 'k) dim_entry) snoc, kinetic) Term.term
+          -> ('n, 'dom * 'modality * 'mode * 'a) t
   end
 
   module CodCube : module type of Cube (CodFam)
@@ -134,9 +135,11 @@ module rec Term : sig
         * ('mode, ('a, ('modality, D.zero) dim_entry) snoc, 's) term
         -> ('mode, 'a, 's) term
     | Lam :
-        'n variables
+        'k variables
         * ('dom, 'modality, 'mode) Modality.t
-        * ('mode, ('a, ('modality, 'n) dim_entry) snoc, 's) Term.term
+        * 'n D.t
+        * ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
+        * ('mode, ('a, ('modality, 'k) dim_entry) snoc, 's) Term.term
         -> ('mode, 'a, 's) term
     | Struct : ('mode, 'n, 'a, 's, 'et) struct_args -> ('mode, 'a, 's) term
     | Match : {
@@ -158,7 +161,7 @@ module rec Term : sig
     x : 'k variables;
     filter : ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim;
     doms : ('k, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube;
-    cods : ('n, 'mode * 'modality * 'a) CodCube.t;
+    cods : ('n, 'dom * 'modality * 'mode * 'a) CodCube.t;
   }
 
   and ('mode, 'n, 'a, 's, 'et) struct_args = {
@@ -232,10 +235,13 @@ module rec Term : sig
 
   and (_, _, _, _) env =
     | Emp : 'mode Mode.t * 'n D.t -> ('mode, 'a, 'n, 'mode emp) env
-    | Ext :
-        ('mode, 'a, 'n, 'b) env
-        * ('n, 'k, 'nk) D.plus
-        * ('nk, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
+    | Ext : {
+        env : ('mode, 'a, 'n, 'b) env;
+        filtered : ('dom, 'modality, 'mode, 'k, 'k) Modality.filter_dim;
+        filter : ('dom, 'modality, 'mode, 'm, 'n) Modality.filter_dim;
+        plus : ('m, 'k, 'mk) D.plus;
+        values : ('mk, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube;
+      }
         -> ('mode, 'a, 'n, ('b, ('modality, 'k) dim_entry) snoc) env
     | Key : {
         env : ('cod, 'a, 'n, 'b) env;
@@ -292,8 +298,9 @@ end = struct
   module CodFam = struct
     type ('k, _) t =
       | Cod :
-          ('mode, ('a, ('modality, 'k) dim_entry) snoc, kinetic) Term.term
-          -> ('k, 'mode * 'modality * 'a) t
+          ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
+          * ('mode, ('a, ('modality, 'k) dim_entry) snoc, kinetic) Term.term
+          -> ('n, 'dom * 'modality * 'mode * 'a) t
   end
 
   module CodCube = Cube (CodFam)
@@ -407,9 +414,11 @@ end = struct
         -> ('mode, 'a, 's) term
     (* Abstractions and structs can appear in any kind of term.  The dimension 'n is the substitution dimension of the type being checked against (function-type or codata/record).  *)
     | Lam :
-        'n variables
+        'k variables
         * ('dom, 'modality, 'mode) Modality.t
-        * ('mode, ('a, ('modality, 'n) dim_entry) snoc, 's) Term.term
+        * 'n D.t
+        * ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
+        * ('mode, ('a, ('modality, 'k) dim_entry) snoc, 's) Term.term
         -> ('mode, 'a, 's) term
     | Struct : ('mode, 'n, 'a, 's, 'et) struct_args -> ('mode, 'a, 's) term
     (* Matches can only appear in potential terms.  The dimension 'n is the substitution dimension of the type of the variable being matched against. *)
@@ -434,7 +443,7 @@ end = struct
     x : 'k variables;
     filter : ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim;
     doms : ('k, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube;
-    cods : ('n, 'mode * 'modality * 'a) CodCube.t;
+    cods : ('n, 'dom * 'modality * 'mode * 'a) CodCube.t;
   }
 
   and ('mode, 'n, 'a, 's, 'et) struct_args = {
@@ -526,10 +535,13 @@ end = struct
   (* A version of an environment that involves terms rather than values.  Used mainly when reading back metavariables.  The first argument is the mode, the second is the checked-length of the context *in* which the environment is defined (its domain, as a context morphism), the third is its dimension, and the fourth is the checked-length of the context of types of the values in the environment (its codomain, as a context morphism).  *)
   and (_, _, _, _) env =
     | Emp : 'mode Mode.t * 'n D.t -> ('mode, 'a, 'n, 'mode emp) env
-    | Ext :
-        ('mode, 'a, 'n, 'b) env
-        * ('n, 'k, 'nk) D.plus
-        * ('nk, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
+    | Ext : {
+        env : ('mode, 'a, 'n, 'b) env;
+        filtered : ('dom, 'modality, 'mode, 'k, 'k) Modality.filter_dim;
+        filter : ('dom, 'modality, 'mode, 'm, 'n) Modality.filter_dim;
+        plus : ('m, 'k, 'mk) D.plus;
+        values : ('mk, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube;
+      }
         -> ('mode, 'a, 'n, ('b, ('modality, 'k) dim_entry) snoc) env
     (* There is a decision to be made here about how to deal with keys in a term environment.  The problem is that the part of the environment to the left of a key must be defined in a context that has the locks corresponding to the codomain of that key removed, along with everything interspersed with them and to their right.  But simply removing variables from the context fubars the De Bruijn indices.  We could replace the removed indices in the context by a placeholder that extends out its length while containing no data.  Instead, we choose to allow the domain length of a term environment to increase when we pass a key.  This means when working with such environments we must shrink the domain context when we pass a key. *)
     | Key : {
@@ -594,7 +606,7 @@ include Term
 let rec nth_var : type mode a b s. (mode, a, s) term -> b Bwd.t -> any_variables option =
  fun tr args ->
   match tr with
-  | Lam (x, _, body) -> (
+  | Lam (x, _, _, _, body) -> (
       match args with
       | Emp -> Some (Any x)
       | Snoc (args, _) -> nth_var body args)
@@ -606,12 +618,13 @@ let pi : type mode modality a.
     (mode, (a, (modality, D.zero) dim_entry) snoc, kinetic) term ->
     (mode, a, kinetic) term =
  fun x (Modal (modality, plus, dom)) cod ->
+  let filter = Modality.filter_zero modality in
   Pi
     {
       x;
-      filter = Modality.filter_zero modality;
+      filter;
       doms = Modal (modality, plus, CubeOf.singleton dom);
-      cods = CodCube.singleton (Cod cod);
+      cods = CodCube.singleton (Cod (filter, cod));
     }
 
 let app fn modality al arg = App (fn, Modal (modality, al, CubeOf.singleton arg))
@@ -643,12 +656,17 @@ module Telescope = struct
     match doms with
     | Emp -> body
     | Ext (x, Modal (modality, _, _), doms) ->
-        Lam (singleton_variables D.zero x, modality, lams doms body)
+        Lam
+          ( singleton_variables D.zero x,
+            modality,
+            D.zero,
+            Modality.filter_zero modality,
+            lams doms body )
 end
 
 let rec dim_term_env : type mode a n b. (mode, a, n, b) env -> n D.t = function
   | Emp (_, n) -> n
-  | Ext (e, _, _) -> dim_term_env e
+  | Ext { env; _ } -> dim_term_env env
   | Key { env; _ } -> dim_term_env env
 
 let dim_entry : type dom modality mode b f n bm. (dom, modality, mode, b, bm, f, n) entry -> n D.t =

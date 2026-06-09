@@ -135,9 +135,10 @@ module Act = struct
         (* And we "act" on the type with the other kind of action that permutes the instantiated arguments, and by the original s since it is the type of the entire application spine. *)
         let ty = lazy (act_ty v ty s c) in
         Neu { head; args; value; ty }
-    | Lam (x, body) ->
+    | Lam (x, filter, body) ->
         let (Of fa) = deg_plus_to s (dim_binder body) ~on:"lambda" in
-        Lam (act_variables x fa, act_binder body fa)
+        let (Filter_deg (fa', filter')) = Modality.filter_deg filter fa in
+        Lam (act_variables x fa', filter', act_binder body fa)
     | Struct
         (type p k pk et)
         ({ fields; ins; energy; eta } : (mode, p, k, pk, status, et) struct_args) ->
@@ -360,9 +361,9 @@ module Act = struct
 
   and act_binder : type mode modality dom mn kn s.
       (mode, modality, dom, mn, s) binder -> (kn, mn) deg -> (mode, modality, dom, kn, s) binder =
-   fun (Bind { env; modality; ins; body }) fa ->
+   fun (Bind { env; modality; filter; ins; body }) fa ->
     let (Act_closure (env, ins)) = act_closure env ins fa in
-    Bind { env; modality; ins; body }
+    Bind { env; modality; filter; ins; body }
 
   and act_normal : type mode mu1 mu2 cod a b.
       mode normal -> (a, b) deg -> (mode, mu1, mu2, cod) Modalcell.t option -> mode normal =

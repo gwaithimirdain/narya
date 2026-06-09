@@ -70,7 +70,7 @@ module F = struct
         if depth > 0 then
           fprintf ppf "Neu (%a, %a, %a)" head h apps a (dvalue (depth - 1)) (Lazy.force ty)
         else fprintf ppf "Neu (%a, %a, ?)" head h apps a
-    | Lam (x, body) -> fprintf ppf "Lam (?^%s, %a)" (string_of_dim (dim_variables x)) binder body
+    | Lam (x, _, body) -> fprintf ppf "Lam (?^%s, %a)" (string_of_dim (dim_variables x)) binder body
     | Struct { fields = f; ins; _ } ->
         let n = cod_left_ins ins in
         fprintf ppf "Struct %s (%a)" (string_of_dim n) (fields depth n) f
@@ -198,7 +198,7 @@ module F = struct
           (cubeof value) doms binder b
 
   and binder : type mode modality dom b s. formatter -> (mode, modality, dom, b, s) binder -> unit =
-   fun ppf (Bind { env = e; modality; ins = i; body }) ->
+   fun ppf (Bind { env = e; modality; filter = _; ins = i; body }) ->
     fprintf ppf "Bind (%a, %s, %s, %a)" env e (Modality.to_string modality) (string_of_ins i) term
       body
 
@@ -244,14 +244,18 @@ module F = struct
           (string_of_dim (dom_ins ins))
     | UU (_, n) -> fprintf ppf "UU %a" dim n
     | Inst (tm, args) -> fprintf ppf "Inst (%a, %a)" term tm (tubeof term) args
-    | Pi { x; doms = Modal (_modality, _, doms); cods; _ } ->
+    | Pi
+        (type k n dom modality)
+        ({ x; filter; doms = Modal (_modality, _, doms); cods; _ } :
+          (k, n, dom, modality, mode, b) pi_args) ->
         fprintf ppf "Pi^(%a) (%s, %a, (... %a))" dim (CubeOf.dim doms)
           (Option.value (top_variable x) ~default:"_")
           (cubeof term) doms term
-          (let (Cod t) = CodCube.find_top cods in
-           t)
+          (let (Cod (filt, t)) = CodCube.find_top cods in
+           let Eq = Modality.filter_uniq filter filt in
+           (t : (mode, (b, (modality, k) Tctx.dim_entry) Tctx.suc, s) term))
     | App (fn, Modal (_modality, _al, arg)) -> fprintf ppf "App (%a, %a)" term fn (cubeof term) arg
-    | Lam (x, modality, body) ->
+    | Lam (x, modality, _, _, body) ->
         fprintf ppf "Lam^(%s) (?, %s, %a)"
           (string_of_dim (dim_variables x))
           (Modality.to_string modality) term body

@@ -183,3 +183,19 @@ let rec except_deg : type e a b c. e D.t -> (e, a, b) except -> (c, b) deg -> (e
       let (Except_deg (s, ex)) = except_deg e ex s in
       let (Except_unoccurs_insert (i, ex)) = except_unoccurs_insert ex i u in
       Except_deg (Suc (s, i), ex)
+
+type (_, _, _) except_perm =
+  | Except_perm : ('d, 'a) perm * ('e, 'd, 'c) except -> ('e, 'a, 'c) except_perm
+
+let rec except_perm : type e a b c.
+    e D.t -> (e, a, b) except -> (c, b) perm -> (e, a, c) except_perm =
+ fun e ex s ->
+  match (ex, s) with
+  | Except_zero, Zero -> Except_perm (Zero, ex)
+  | Except_occurs (ex, o), Suc (s, i) ->
+      let (Except_perm (s, ex)) = except_perm e ex s in
+      Except_perm (s, except_occurs_insert ex i o)
+  | Except_unoccurs (ex, u), Suc (s, i) ->
+      let (Except_perm (s, ex)) = except_perm e ex s in
+      let (Except_unoccurs_insert (i, ex)) = except_unoccurs_insert ex i u in
+      Except_perm (Suc (s, i), ex)

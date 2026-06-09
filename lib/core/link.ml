@@ -21,7 +21,7 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
           x;
           filter;
           doms = Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ doms ]);
-          cods = CodCube.mmap { map = (fun _ [ Cod x ] -> Cod (term f x)) } [ cods ];
+          cods = CodCube.mmap { map = (fun _ [ Cod (filt, x) ] -> Cod (filt, term f x)) } [ cods ];
         }
   | App (fn, Modal (modality, al, args)) ->
       App (term f fn, Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ args ]))
@@ -36,7 +36,7 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
   | Act (tm, s, sort) -> Act (term f tm, s, sort)
   | Key v -> Key { v with tm = term f v.tm }
   | Let (x, Modal (modality, al, v), body) -> Let (x, Modal (modality, al, term f v), term f body)
-  | Lam (x, modality, body) -> Lam (x, modality, term f body)
+  | Lam (x, modality, p, filter, body) -> Lam (x, modality, p, filter, term f body)
   | Struct { eta; dim; fields = flds; energy } ->
       Struct
         {
@@ -144,8 +144,13 @@ and env : type mode a n b. (File.t -> File.t) -> (mode, a, n, b) env -> (mode, a
  fun f e ->
   match e with
   | Emp (mode, n) -> Emp (mode, n)
-  | Ext (e, nk, Modal (modality, al, xs)) ->
-      Ext (env f e, nk, Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ xs ]))
+  | Ext ({ env = e; values = Modal (modality, al, xs); _ } as ext) ->
+      Ext
+        {
+          ext with
+          env = env f e;
+          values = Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ xs ]);
+        }
   | Key k -> Key { k with env = env f k.env }
 
 and entry : type dom modality mode b f mn bm.

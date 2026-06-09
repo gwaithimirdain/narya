@@ -145,6 +145,14 @@ type (_, _, _, _, _) filter_deg =
 
 val filter_deg : ('x, 'm, 'y, 'a, 'b) filter_dim -> ('c, 'b) deg -> ('x, 'm, 'y, 'a, 'c) filter_deg
 
+type (_, _, _, _, _) filter_perm =
+  | Filter_perm :
+      ('d, 'a) perm * ('x, 'm, 'y, 'd, 'c) filter_dim
+      -> ('x, 'm, 'y, 'a, 'c) filter_perm
+
+val filter_perm :
+  ('x, 'm, 'y, 'a, 'b) filter_dim -> ('c, 'b) perm -> ('x, 'm, 'y, 'a, 'c) filter_perm
+
 type (_, _, _, _, _) filter_op' =
   | Filter_op' : ('d, 'b) op * ('x, 'm, 'y, 'c, 'd) filter_dim -> ('x, 'm, 'y, 'b, 'c) filter_op'
 

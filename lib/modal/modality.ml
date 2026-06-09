@@ -483,6 +483,18 @@ let filter_deg : type x m y a b c.
   let (Except_deg (s, ex)) = except_deg p ex s in
   Filter_deg (s, Filter (e, ex))
 
+type (_, _, _, _, _) filter_perm =
+  | Filter_perm :
+      ('d, 'a) perm * ('x, 'm, 'y, 'd, 'c) filter_dim
+      -> ('x, 'm, 'y, 'a, 'c) filter_perm
+
+let filter_perm : type x m y a b c.
+    (x, m, y, a, b) filter_dim -> (c, b) perm -> (x, m, y, a, c) filter_perm =
+ fun (Filter (e, ex)) s ->
+  let (Loop p) = Nonparametric.cod e in
+  let (Except_perm (s, ex)) = except_perm p ex s in
+  Filter_perm (s, Filter (e, ex))
+
 type (_, _, _, _, _) filter_deg' =
   | Filter_deg' : ('d, 'b) deg * ('x, 'm, 'y, 'c, 'd) filter_dim -> ('x, 'm, 'y, 'b, 'c) filter_deg'
 

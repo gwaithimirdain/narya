@@ -128,7 +128,15 @@ module Codata = struct
           match fldty with
           | Lower ty ->
               let sty =
-                Shift (Hott.dim, f.plusmap, Lam (singleton_variables f.glue None, idm, ty)) in
+                Shift
+                  ( Hott.dim,
+                    f.plusmap,
+                    Lam
+                      ( singleton_variables f.glue None,
+                        idm,
+                        f.glue,
+                        Modality.filter_id mode f.glue,
+                        ty ) ) in
               StructfieldAbwd.Entry
                 ( fld,
                   Lower
@@ -177,7 +185,14 @@ module Codata = struct
      fun _which fields p ->
       match singleton_pbij p Hott.singleton with
       (* This is the "tr.e" case when we just pass off to the type of the field. *)
-      | Left -> plusfam (Lam (xname, idm, Struct { dim; eta; energy = Potential; fields }))
+      | Left ->
+          plusfam
+            (Lam
+               ( xname,
+                 idm,
+                 D.zero,
+                 Modality.filter_id mode D.zero,
+                 Struct { dim; eta; energy = Potential; fields } ))
       (* This is the tr.1/tr.2 case when we should use the bisimulation data supplied.  The insertion is an insertion into g, the glue dimension.  Currently we don't do anything here, however, because the only case when this could happen is for a glue type, and we deal with those specially by bootstrapping their fibrancy and insesrting it using the is_glue marker.  *)
       | Right _ins -> None in
     let trr = PlusPbijmap.build glue Hott.dim { build = (fun p -> tr `Right trr p) } in
@@ -191,7 +206,14 @@ module Codata = struct
         (r, mode * b) PlusFam.t =
      fun _which fields p ->
       match singleton_pbij p Hott.singleton with
-      | Left -> plusfam (Lam (xname, idm, Struct { dim = dimh; eta; energy = Potential; fields }))
+      | Left ->
+          plusfam
+            (Lam
+               ( xname,
+                 idm,
+                 D.zero,
+                 Modality.filter_id mode D.zero,
+                 Struct { dim = dimh; eta; energy = Potential; fields } ))
       | Right _ins -> None in
     let liftr = PlusPbijmap.build glue Hott.dim { build = (fun p -> lift `Right liftr p) } in
     let liftl = PlusPbijmap.build glue Hott.dim { build = (fun p -> lift `Left liftl p) } in
@@ -249,7 +271,15 @@ module Codata = struct
                                    ( Weaken
                                        (Weaken
                                           (Weaken
-                                             (Shift (Hott.dim, plusmap, Lam (xsname, idm, fldty))))),
+                                             (Shift
+                                                ( Hott.dim,
+                                                  plusmap,
+                                                  Lam
+                                                    ( xsname,
+                                                      idm,
+                                                      D.zero,
+                                                      Modality.filter_id mode D.zero,
+                                                      fldty ) )))),
                                      Modal (idm, plus_no_lock mode, xcube) ),
                                  TubeOf.mmap { map = (fun _ [ x ] -> field x fld) } [ xtube ] )) )
                     in
@@ -276,9 +306,13 @@ module Codata = struct
               @@ Lam
                    ( xname,
                      idm,
+                     D.zero,
+                     Modality.filter_id mode D.zero,
                      Lam
                        ( yname,
                          idm,
+                         D.zero,
+                         Modality.filter_id mode D.zero,
                          Struct { dim = glue; eta = Noeta; energy = Potential; fields = fib } ) )
           | Pos _ ->
               (* The bisim .id case.  Again, this would be only for glue, so we ignore it. *)
