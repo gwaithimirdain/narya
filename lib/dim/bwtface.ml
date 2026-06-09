@@ -54,7 +54,22 @@ let bwtface_rend : type l m k.
     l Endpoints.t -> (m, D.zero, k, k) bwtface -> (m, D.zero, (k, unit) D.suc, (k, unit) D.suc) bwtface =
  fun e d -> REnd (D.deg, e, bwsface_of_bwtface d)
 
-(* Converting a backwards tube face to a forwards one.  This requires three helper functions. *)
+(* Converting a backwards tube face to a forwards one.  This requires three helper functions.
+
+   Phase 7: D.suc_plus_eq_suc and D.suc_plus are replaced by LOCAL helpers (push_unit_left and local_suc_plus below) that do the same recursive transformation but without depending on D.ml's commutativity-dependent functions.  Single-direction only — the helpers use [Suc (_, Unit)] patterns that require g = unit. *)
+
+(* Add unit on the LEFT side of a plus relation: (a, b, c) plus → ((a, unit) suc, b, (c, unit) suc) plus.  Local replacement for D.suc_plus_eq_suc. *)
+let rec push_unit_left : type a b c.
+    (a, b, c) D.plus -> ((a, unit) D.suc, b, (c, unit) D.suc) D.plus = function
+  | Zero -> Zero
+  | Suc (p, Unit) -> Suc (push_unit_left p, Unit)
+
+(* Shift a unit from the middle to the left: (m, (n, unit) suc, p) plus → ((m, unit) suc, n, p) plus.  Local replacement for D.suc_plus. *)
+let local_suc_plus : type m n p.
+    (m, (n, unit) D.suc, p) D.plus -> ((m, unit) D.suc, n, p) D.plus =
+ fun x ->
+  let (Suc (y, Unit)) = push_unit_left x in
+  y
 
 let rec tface_of_bw_r : type m1 m2 m n k1 k2 k nk1 nk.
     (m1, m2, m) D.plus ->
@@ -71,16 +86,12 @@ let rec tface_of_bw_r : type m1 m2 m n k1 k2 k nk1 nk.
       let Eq = D.plus_uniq k12 (D.plus_zero k1) in
       let Eq = D.plus_uniq nk12 (D.plus_zero nk1) in
       f
-  | End (g, e, bf) -> (
-      (* TODO: bridge via G.compare; will be removed once tface_of_bw_r uses word.ml structured forms instead of D.suc_plus. *)
-      match D.G.compare g D.deg with
-      | Neq -> assert false
-      | Eq -> tface_of_bw_r m12 (D.suc_plus k12) (D.suc_plus nk12) (tface_end f e) bf)
-  | Mid (g, bf) -> (
-      match D.G.compare g D.deg with
-      | Neq -> assert false
-      | Eq ->
-          tface_of_bw_r (D.suc_plus m12) (D.suc_plus k12) (D.suc_plus nk12) (Mid (f, D.deg)) bf)
+  | End (g, e, bf) ->
+      let Unit = g in
+      tface_of_bw_r m12 (local_suc_plus k12) (local_suc_plus nk12) (tface_end f e) bf
+  | Mid (g, bf) ->
+      let Unit = g in
+      tface_of_bw_r (local_suc_plus m12) (local_suc_plus k12) (local_suc_plus nk12) (Mid (f, D.deg)) bf
 
 let rec tface_of_bw_lt : type m1 m2 m n k1 k2 k nk nk1.
     (m1, m2, m) D.plus ->
@@ -92,17 +103,13 @@ let rec tface_of_bw_lt : type m1 m2 m n k1 k2 k nk nk1.
     (m, n, k, nk) tface =
  fun m12 k12 n12k nk12 f bf ->
   match bf with
-  | REnd (g, e, bf) -> (
-      (* TODO: bridge via G.compare while tface_of_bw_r still uses D.suc_plus. *)
-      match D.G.compare g D.deg with
-      | Neq -> assert false
-      | Eq -> tface_of_bw_r m12 (D.suc_plus k12) (D.suc_plus n12k) (End (f, nk12, g, e)) bf)
-  | RMid (g, bf) -> (
-      match D.G.compare g D.deg with
-      | Neq -> assert false
-      | Eq ->
-          tface_of_bw_lt (D.suc_plus m12) (D.suc_plus k12) (D.suc_plus n12k) (Suc (nk12, Unit))
-            (Mid (f, g)) bf)
+  | REnd (g, e, bf) ->
+      let Unit = g in
+      tface_of_bw_r m12 (local_suc_plus k12) (local_suc_plus n12k) (End (f, nk12, g, e)) bf
+  | RMid (g, bf) ->
+      let Unit = g in
+      tface_of_bw_lt (local_suc_plus m12) (local_suc_plus k12) (local_suc_plus n12k) (Suc (nk12, Unit))
+        (Mid (f, g)) bf
 
 let rec tface_of_bw_ls : type m1 m2 m n1 n2 k n nk nk2.
     (m1, m2, m) D.plus ->
@@ -113,35 +120,28 @@ let rec tface_of_bw_ls : type m1 m2 m n1 n2 k n nk nk2.
     (m, n, k, nk) tface =
  fun m12 n12 nk12 f bf ->
   match bf with
-  | LEnd (g, e, bf) -> (
-      match D.G.compare g D.deg with
-      | Neq -> assert false
-      | Eq -> tface_of_bw_ls m12 (D.suc_plus n12) (D.suc_plus nk12) (End (f, g, e)) bf)
-  | LMid (g, bf) -> (
-      match D.G.compare g D.deg with
-      | Neq -> assert false
-      | Eq ->
-          tface_of_bw_ls (D.suc_plus m12) (D.suc_plus n12) (D.suc_plus nk12) (Mid (f, g)) bf)
-  | REnd (g, e, bf) -> (
-      match D.G.compare g D.deg with
-      | Neq -> assert false
-      | Eq ->
-          let n1 = cod_sface f in
-          let Eq = D.plus_uniq n12 (D.plus_zero n1) in
-          tface_of_bw_r m12
-            (D.suc_plus_eq_suc (D.zero_plus (cod_bwsface bf)))
-            (D.suc_plus nk12)
-            (End (f, D.plus_zero n1, g, e))
-            bf)
-  | RMid (g, bf) -> (
-      match D.G.compare g D.deg with
-      | Neq -> assert false
-      | Eq ->
-          let n1 = cod_sface f in
-          let Eq = D.plus_uniq n12 (D.plus_zero n1) in
-          tface_of_bw_lt (D.suc_plus m12)
-            (D.suc_plus_eq_suc (D.zero_plus (cod_bwtface bf)))
-            (D.suc_plus nk12) (Suc (Zero, Unit)) (Mid (f, g)) bf)
+  | LEnd (g, e, bf) ->
+      let Unit = g in
+      tface_of_bw_ls m12 (local_suc_plus n12) (local_suc_plus nk12) (End (f, g, e)) bf
+  | LMid (g, bf) ->
+      let Unit = g in
+      tface_of_bw_ls (local_suc_plus m12) (local_suc_plus n12) (local_suc_plus nk12) (Mid (f, g)) bf
+  | REnd (g, e, bf) ->
+      let Unit = g in
+      let n1 = cod_sface f in
+      let Eq = D.plus_uniq n12 (D.plus_zero n1) in
+      tface_of_bw_r m12
+        (push_unit_left (D.zero_plus (cod_bwsface bf)))
+        (local_suc_plus nk12)
+        (End (f, D.plus_zero n1, g, e))
+        bf
+  | RMid (g, bf) ->
+      let Unit = g in
+      let n1 = cod_sface f in
+      let Eq = D.plus_uniq n12 (D.plus_zero n1) in
+      tface_of_bw_lt (local_suc_plus m12)
+        (push_unit_left (D.zero_plus (cod_bwtface bf)))
+        (local_suc_plus nk12) (Suc (Zero, Unit)) (Mid (f, g)) bf
 
 let tface_of_bw : type m n k nk. (m, n, k, nk) bwtface -> (m, n, k, nk) tface =
  fun bf ->
