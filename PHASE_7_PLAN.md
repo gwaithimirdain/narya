@@ -1,18 +1,20 @@
 # Phase 7 Plan: Remove `D.plus_suc` / `D.suc_plus` / `D.suc_plus_eq_suc`
 
-## Current state
+## Current state (as of 2026-06-09)
 
-After Phases 0–6, every data type in `lib/dim/` carries explicit generators in its successor constructors.  All ~63 algorithm uses of D's three commutativity-dependent functions are bridged with `G.compare g D.deg ; assert false on Neq` (67 calls total across 7 files):
+After session 2 work: `shuffle.ml` fully restructured.  `gfind` family restructured in cube/icube/tube (drops the redundant `km`/`mq` plus argument since gt+sface types already encode the dimensional alignment).
 
-| File | `D.plus_suc` / `D.suc_plus_eq_suc` | `D.suc_plus` | TODO comments | Algorithm shape |
+| File | `D.plus_suc` / `D.suc_plus_eq_suc` | `D.suc_plus` | Status | Remaining algorithm shape |
 |---|---|---|---|---|
-| `shuffle.ml` | 4 | 0 | yes | shuffle → plus / deg / perm builders |
-| `cube.ml` | 7 | 2 | partial | gfind, gpmapM, gbuildM, CubeOf.lift/lower |
-| `icube.ml` | 4 | 8 | partial | gmapM, gfind, gset, gfold_map_left/right, gbuild_left |
-| `tube.ml` | 22 | 0 | partial | gfind, gpmapM_l/_ll/_r, gbuildM_l/_ll/_r, glift, glower |
-| `pbij.ml` | 4 | 3 | yes | gfind, gset, gbuild, gpmapM |
-| `bwsface.ml` | 0 | 3 | yes | sface_of_bw_onto (accumulator) |
-| `bwtface.ml` | 2 | 11 | yes | tface_of_bw_r, tface_of_bw_lt, tface_of_bw_ls |
+| `shuffle.ml` | 0 | 0 | **done** | — |
+| `cube.ml` | 5 | 2 | gfind done | gpmapM, gbuildM, CubeOf.lift/lower |
+| `icube.ml` | 3 | 8 | gfind done | gmapM, gset, gfold_map_left/right, gbuild_left |
+| `tube.ml` | 21 | 0 | gfind done | gpmapM_l/_ll/_r, gbuildM_l/_ll/_r, glift, glower |
+| `pbij.ml` | 4 | 3 | TODO | gfind, gset, gbuild, gpmapM |
+| `bwsface.ml` | 0 | 3 | TODO | sface_of_bw_onto (accumulator) |
+| `bwtface.ml` | 2 | 11 | TODO | tface_of_bw_r, tface_of_bw_lt, tface_of_bw_ls |
+
+**Tried in session 2 and reverted**: naive recursive `sface_of_bw`, `sface_plus_sface`-based `sface_of_bw`, dropping `mq` from `tube.gfind` with weaker constraints — all break either type-checking or hott bootstrap.  The hott break confirms the orientation flip is load-bearing semantically, not just a quirk of the original implementation.
 
 ## What "removing" actually means
 
