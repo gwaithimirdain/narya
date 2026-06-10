@@ -11,7 +11,7 @@ open Act
 open Printable
 open View
 
-(* Since some entries in an environment are lazy and some aren't, lookup_cube returns a cube whose entries belong to an existential type, along with a function to act on any element of that type and force it into a value.  It also returns an accumulated operator by which to act, first selecting an entry in the cube with a face and then acting on that value by a degeneracy.  Finally, it also returns an accumulated modal key substitution. *)
+(* Since some entries in an environment are lazy and some aren't, lookup_cube returns a cube whose entries belong to an existential type, along with a function to act on any element of that type and force it into a value.  It also returns an accumulated operator by which to act, first selecting an entry in the cube with a face and then acting on that value by a degeneracy. *)
 type (_, _) looked_up_cube =
   | Looked_up : {
       act :
@@ -1228,37 +1228,63 @@ and eval_term : type mode m b. (mode, m, b) env -> (mode, b, kinetic) term -> (m
   let (Val v) = eval env tm in
   v
 
-and eval_env : type mode a m n mn b.
-    (mode, m, a) env -> (m, n, mn) D.plus -> (mode, a, n, b) Term.env -> (mode, mn, b) Value.env =
- fun env m_n tmenv ->
-  let mn = D.plus_out (dim_env env) m_n in
+and eval_env : type mode a q n qn b.
+    (mode, q, a) env -> (q, n, qn) D.plus -> (mode, a, n, b) Term.env -> (mode, qn, b) Value.env =
+ fun env q_n tmenv ->
+  let q = dim_env env in
+  let qn = D.plus_out q q_n in
+  let n = D.plus_right q_n in
   match tmenv with
-  | Emp (mode, _) -> Emp (mode, mn)
-  | Ext { env = tmenv; plus = n_k; values = Modal (modality, al, xss); filtered; filter } ->
-      let (Plus mn_k) = D.plus (D.plus_right n_k) in
-      let m_nk = D.plus_assocr m_n n_k mn_k in
-      let lenv = key_env env filter (Modalcell.id modality) al in
+  | Emp (mode, _) -> Emp (mode, qn)
+  (* another dimension here *)
+  | Ext
+      {
+        env = tmenv;
+        plus = m_k;
+        values = Modal (modality, al, xss);
+        filtered = filt_k_k;
+        filter = filt_m_n;
+      } ->
+      let evalled_env : (mode, qn, _) Value.env = eval_env env q_n tmenv in
+      let k = D.plus_right m_k in
+      let (Has_filter filt_p_q) = Modality.filter modality q in
+      let p = Modality.filtered q filt_p_q in
+      let m = Modality.filtered n filt_m_n in
+      let (Plus p_m) = D.plus m in
+      let filt_pm_qn = Modality.filter_plus p_m q_n filt_p_q filt_m_n in
+      let (Plus pm_k) = D.plus k in
+      let p_mk = D.plus_assocr p_m m_k pm_k in
+      let pmk = D.plus_out p p_mk in
+      let lenv = key_env env filt_p_q (Modalcell.id modality) al in
       (* We make everything lazy, since we can, and not everything may end up being used. *)
       Value.Ext
         {
-          env = eval_env env m_n tmenv;
-          plus = mn_k;
+          env = evalled_env;
+          plus = pm_k;
           modality;
-          filter;
-          filtered;
+          filter = filt_pm_qn;
+          filtered = filt_k_k;
           values =
             `Lazy
-              (CubeOf.build (D.plus_out mn mn_k)
+              (CubeOf.build pmk
                  {
                    build =
                      (fun fab ->
-                       let (SFace_of_plus (_, fa, fb)) = sface_of_plus m_nk fab in
+                       let (SFace_of_plus (_, fa, fb)) = sface_of_plus p_mk fab in
                        lazy_eval (act_env lenv (op_of_sface fa)) (CubeOf.find xss fb));
                  });
         }
-  | Key { env = tmenv; cell; plus_src; plus_tgt } ->
-      let (Remove_keys (env, filter, keys)) = Env.remove_keys env plus_tgt in
-      Key (eval_env env m_n tmenv, filter, Modalcell.vcomp keys cell, plus_src)
+  | Key
+      (type mu nu cod a m b)
+      ({ env = tmenv; filter = filt_n_m; cell; plus_src; plus_tgt } :
+        (_, mu, nu, cod, _, a, m, b, _, _) key_args) ->
+      let (Remove_keys (env, filt_q_p, keys)) = Env.remove_keys env plus_tgt in
+      (* TODO: A genuine issue here: [filt_n_m] is filtered by the codomain of [cell], while [filt_q_p] is filtered by the codomain of [keys]. *)
+      let p = dim_env env in
+      let m : m D.t = _ in
+      let (Plus p_m) = D.plus m in
+      let filt_qn_pm = Modality.filter_plus q_n p_m filt_q_p filt_n_m in
+      Key (eval_env env p_m tmenv, filt_qn_pm, Modalcell.vcomp keys cell, plus_src)
 
 and apply_term : type dom modality mode n.
     (mode, kinetic) value ->

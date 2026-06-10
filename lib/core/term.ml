@@ -243,13 +243,17 @@ module rec Term : sig
         values : ('mk, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube;
       }
         -> ('mode, 'a, 'n, ('b, ('modality, 'k) dim_entry) snoc) env
-    | Key : {
-        env : ('cod, 'a, 'n, 'b) env;
-        cell : ('mode, 'mu, 'nu, 'cod) Modalcell.t;
-        plus_tgt : ('a, 'cod, 'nu, 'mode, 'ac) plus_with_locks;
-        plus_src : ('b, 'cod, 'mu, 'mode, 'bmu) plus_lock;
-      }
-        -> ('mode, 'ac, 'n, 'bmu) env
+    | Key :
+        ('mode, 'mu, 'nu, 'cod, 'k, 'a, 'n, 'b, 'ac, 'bmu) key_args
+        -> ('mode, 'ac, 'k, 'bmu) env
+
+  and ('mode, 'mu, 'nu, 'cod, 'k, 'a, 'n, 'b, 'ac, 'bmu) key_args = {
+    env : ('cod, 'a, 'n, 'b) env;
+    filter : ('mode, 'nu, 'cod, 'k, 'n) Modality.filter_dim;
+    cell : ('mode, 'mu, 'nu, 'cod) Modalcell.t;
+    plus_tgt : ('a, 'cod, 'nu, 'mode, 'ac) plus_with_locks;
+    plus_src : ('b, 'cod, 'mu, 'mode, 'bmu) plus_lock;
+  }
 
   and ('mode, 'b) binding = {
     ty : ('mode, 'b, kinetic) term;
@@ -544,13 +548,17 @@ end = struct
       }
         -> ('mode, 'a, 'n, ('b, ('modality, 'k) dim_entry) snoc) env
     (* There is a decision to be made here about how to deal with keys in a term environment.  The problem is that the part of the environment to the left of a key must be defined in a context that has the locks corresponding to the codomain of that key removed, along with everything interspersed with them and to their right.  But simply removing variables from the context fubars the De Bruijn indices.  We could replace the removed indices in the context by a placeholder that extends out its length while containing no data.  Instead, we choose to allow the domain length of a term environment to increase when we pass a key.  This means when working with such environments we must shrink the domain context when we pass a key. *)
-    | Key : {
-        env : ('cod, 'a, 'n, 'b) env;
-        cell : ('mode, 'mu, 'nu, 'cod) Modalcell.t;
-        plus_tgt : ('a, 'cod, 'nu, 'mode, 'ac) plus_with_locks;
-        plus_src : ('b, 'cod, 'mu, 'mode, 'bmu) plus_lock;
-      }
-        -> ('mode, 'ac, 'n, 'bmu) env
+    | Key :
+        ('mode, 'mu, 'nu, 'cod, 'k, 'a, 'n, 'b, 'ac, 'bmu) key_args
+        -> ('mode, 'ac, 'k, 'bmu) env
+
+  and ('mode, 'mu, 'nu, 'cod, 'k, 'a, 'n, 'b, 'ac, 'bmu) key_args = {
+    env : ('cod, 'a, 'n, 'b) env;
+    filter : ('mode, 'nu, 'cod, 'k, 'n) Modality.filter_dim;
+    cell : ('mode, 'mu, 'nu, 'cod) Modalcell.t;
+    plus_tgt : ('a, 'cod, 'nu, 'mode, 'ac) plus_with_locks;
+    plus_src : ('b, 'cod, 'mu, 'mode, 'bmu) plus_lock;
+  }
 
   (* A termctx is a data structure analogous to a Ctx.t, but using terms rather than values (and thus we will not explain its structure here; see ctx.ml).  This is used to store the context of a metavariable, as the value context containing level variables is too volatile to store there.  We also store it (lazily) with a codatatype that has higher fields, so we can use it to read back the closure environment to degenerate it. *)
   and ('mode, 'b) binding = {
@@ -667,7 +675,7 @@ end
 let rec dim_term_env : type mode a n b. (mode, a, n, b) env -> n D.t = function
   | Emp (_, n) -> n
   | Ext { env; _ } -> dim_term_env env
-  | Key { env; _ } -> dim_term_env env
+  | Key { env; filter; _ } -> Modality.filtered (dim_term_env env) filter
 
 let dim_entry : type dom modality mode b f n bm. (dom, modality, mode, b, bm, f, n) entry -> n D.t =
   function
