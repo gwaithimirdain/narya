@@ -5,6 +5,24 @@ open Hlist
 open Sface
 open Bwsface
 
+(* Local replacements for D.plus_suc / D.suc_plus, used by gpmapM/gbuildM/lift/lower.  These are commutativity-dependent (single-direction only) recursive transformations on plus relations.  Phase 7: define them locally rather than in d.ml so D's API doesn't carry them.  Each match [Suc (_, Unit)] requires g = unit. *)
+
+let rec local_plus_suc : type m n p.
+    ((m, unit) D.suc, n, p) D.plus -> (m, (n, unit) D.suc, p) D.plus = function
+  | Zero -> Suc (Zero, Unit)
+  | Suc (x, Unit) -> Suc (local_plus_suc x, Unit)
+
+let rec local_push_unit_left : type a b c.
+    (a, b, c) D.plus -> ((a, unit) D.suc, b, (c, unit) D.suc) D.plus = function
+  | Zero -> Zero
+  | Suc (p, Unit) -> Suc (local_push_unit_left p, Unit)
+
+let local_suc_plus : type m n p.
+    (m, (n, unit) D.suc, p) D.plus -> ((m, unit) D.suc, n, p) D.plus =
+ fun x ->
+  let (Suc (y, Unit)) = local_push_unit_left x in
+  y
+
 (* A cube of dimension 'm is a data structure that records one object for each strict face of 'm, in a ternary tree so that they can be accessed randomly by strict face as well as sequentially.  We allow the *type* of each object to depend on the *domain* of the strict face that indexes it, by parametrizing the notion with a functor.  We also allow an extra dependence on some additional type, so that an individual functor application can be parametric. *)
 
 module Cube (F : Fam2) = struct
@@ -196,10 +214,10 @@ module Cube (F : Fam2) = struct
                  BwvM.pmapM
                    (fun (e :: brs) ->
                      M.apply
-                       (gpmapM km' (D.suc_plus lm) (End (D.deg, e, d)) g (Heter.hgt_of_hlist hs brs) cst)
+                       (gpmapM km' (local_suc_plus lm) (End (D.deg, e, d)) g (Heter.hgt_of_hlist hs brs) cst)
                      @@ fun xs -> Heter.hlist_of_hgt newhs xs)
                    (Endpoints.indices l :: ends) (Heter.tlist_hgts newhs cst))
-               (fun () -> gpmapM (D.suc_plus km) (D.suc_plus lm) (Mid (D.deg, d)) g mid cst))
+               (fun () -> gpmapM (local_suc_plus km) (local_suc_plus lm) (Mid (D.deg, d)) g mid cst))
           @@ fun (newends, newmid) -> Heter.branch l newhs newends newmid
 
     (* And the actual one for a t, which we can henceforth restrict our attention to. *)
@@ -258,15 +276,15 @@ module Cube (F : Fam2) = struct
           let Eq = D.plus_uniq ml (D.zero_plus (cod_bwsface d)) in
           M.apply (g.build (sface_of_bw d)) @@ fun x -> Leaf x
       | Word (Suc (m, Unit)) ->
-          let (Suc (mk', Unit)) = D.plus_suc mk in
+          let (Suc (mk', Unit)) = local_plus_suc mk in
           let (Wrap l) = Endpoints.wrapped () in
           M.apply
             (M.zip
                (fun () ->
                  BwvM.mapM
-                   (fun e -> gbuildM (Word m) mk' (D.plus_suc ml) (End (D.deg, e, d)) g)
+                   (fun e -> gbuildM (Word m) mk' (local_plus_suc ml) (End (D.deg, e, d)) g)
                    (Endpoints.indices l))
-               (fun () -> gbuildM (Word m) (D.plus_suc mk) (D.plus_suc ml) (Mid (D.deg, d)) g))
+               (fun () -> gbuildM (Word m) (local_plus_suc mk) (local_plus_suc ml) (Mid (D.deg, d)) g))
           @@ fun (ends, mid) -> Branch (D.deg, l, ends, mid)
 
     let buildM : type n b. n D.t -> (n, b) builderM -> (n, b) t M.t =
@@ -323,7 +341,7 @@ module CubeOf = struct
         match D.G.compare g D.deg with
         | Neq -> assert false
         | Eq ->
-            let (Suc (n12', Unit)) = D.plus_suc n12 in
+            let (Suc (n12', Unit)) = local_plus_suc n12 in
             Branch (g, l, Bwv.map (fun t -> lift n12' t) ends, lift n12 mid))
 
   let rec lower : type m k n1 n2 n12 b.
@@ -336,9 +354,9 @@ module CubeOf = struct
         match D.G.compare g D.deg with
         | Neq -> assert false
         | Eq ->
-            let mk' = D.plus_suc mk in
+            let mk' = local_plus_suc mk in
             let (Suc (mk'', Unit)) = mk' in
             Branch
-              (g, l, Bwv.map (fun t -> lower mk'' (D.plus_suc n12') t) ends, lower mk' n12 mid))
+              (g, l, Bwv.map (fun t -> lower mk'' (local_plus_suc n12') t) ends, lower mk' n12 mid))
 
 end
