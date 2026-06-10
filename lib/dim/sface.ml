@@ -114,14 +114,6 @@ let rec sface_of_plus : type ml n k nk.
           let (SFace_of_plus (ml, f1, f2)) = sface_of_plus nk f in
           SFace_of_plus (Suc (ml, g), f1, Mid (f2, g)))
 
-type (_, _) d_le = Le : ('m, 'n, 'mn) D.plus -> ('m, 'mn) d_le
-
-let plus_of_sface : type m mn. (m, mn) sface -> (m, mn) d_le =
- fun s ->
-  match D.factor (cod_sface s) (dom_sface s) with
-  | Some (Factor p) -> Le p
-  | None -> assert false
-
 (* As long as there is at least one endpoint, any dimension has at least one zero-dimensional face. *)
 
 let rec vertex : type n. n D.t -> (D.zero, n) sface option = function

@@ -35,12 +35,6 @@ let rec codr_tface : type m n k nk. (m, n, k, nk) tface -> k D.t = function
 let cod_tface : type m n k nk. (m, n, k, nk) tface -> nk D.t =
  fun d -> D.plus_out (codl_tface d) (cod_plus_of_tface d)
 
-let plus_of_tface : type m n k nk. (m, n, k, nk) tface -> (m, nk) d_le =
- fun d ->
-  match D.factor (cod_tface d) (dom_tface d) with
-  | Some (Factor p) -> Le p
-  | None -> assert false
-
 let tface_end : type l m n k nk.
     (m, n, k, nk) tface -> l Endpoints.t -> (m, n, (k, unit) D.suc, (nk, unit) D.suc) tface =
  fun d e -> End (sface_of_tface d, cod_plus_of_tface d, D.deg, e)

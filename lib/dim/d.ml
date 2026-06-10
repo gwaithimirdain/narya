@@ -47,20 +47,21 @@ let insert_of_int : type bsuc. bsuc t -> int -> bsuc insert_of_int option =
     | Seq.Nil -> None
     | Seq.Cons (i, _) -> Some i
 
-(* Trichotomy.  Should be replaced by factoring/pushouts. *)
+(* Trichotomy.  With multiple generators, two words need not be comparable, so there is a fourth case. *)
 
 type (_, _) trichotomy =
   | Eq : ('n, 'n) trichotomy
-  | Lt : ('m, ('n, unit) suc, 'mn) plus -> ('m, 'mn) trichotomy
-  | Gt : ('m, ('n, unit) suc, 'mn) plus -> ('mn, 'm) trichotomy
+  | Lt : ('m, ('n, 'g) suc, 'mn) plus -> ('m, 'mn) trichotomy
+  | Gt : ('m, ('n, 'g) suc, 'mn) plus -> ('mn, 'm) trichotomy
+  | Incomparable : ('m, 'n) trichotomy
 
 let trichotomy : type m n. m t -> n t -> (m, n) trichotomy =
  fun m n ->
   match factor m n with
   | Some (Factor Zero) -> Eq
-  | Some (Factor (Suc (_, Unit) as k)) -> Gt k
+  | Some (Factor (Suc _ as k)) -> Gt k
   | _ -> (
       match factor n m with
       | Some (Factor Zero) -> Eq
-      | Some (Factor (Suc (_, Unit) as k)) -> Lt k
-      | _ -> assert false)
+      | Some (Factor (Suc _ as k)) -> Lt k
+      | _ -> Incomparable)

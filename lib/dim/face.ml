@@ -9,26 +9,25 @@ let id_face : type n. n D.t -> (n, n) face = fun n -> Face (id_sface n, id_perm 
 
 (* Faces are closed under composition, by way of a distributive law between permutations and strict faces.  To define this we need a similar sort of "residual" of a strict face and an index, which picks out the image of that index and the strict face with that index and its image (if any) removed. *)
 
-type (_, _) sface_residual =
-  | End : ('m, 'n) sface * 'g D.G.t * 'l Endpoints.t -> ('m, 'n) sface_residual
-  | Mid :
-      ('m, 'n) sface * 'g D.G.t * ('m, 'g, 'msuc) D.insert
-      -> ('msuc, 'n) sface_residual
+(* The residual is indexed by the generator of the extracted element, so that callers can see at the type level that it matches the generator they removed from the codomain. *)
+type (_, _, _) sface_residual =
+  | End : ('m, 'n) sface * 'l Endpoints.t -> ('m, 'g, 'n) sface_residual
+  | Mid : ('m, 'n) sface * ('m, 'g, 'msuc) D.insert -> ('msuc, 'g, 'n) sface_residual
 
 let rec sface_residual : type m n g npred.
-    (m, n) sface -> (npred, g, n) D.insert -> (m, npred) sface_residual =
+    (m, n) sface -> (npred, g, n) D.insert -> (m, g, npred) sface_residual =
  fun f k ->
   match (k, f) with
-  | Now, End (f', g, e) -> End (f', g, e)
-  | Now, Mid (f', g) -> Mid (f', g, Now)
+  | Now, End (f', _, e) -> End (f', e)
+  | Now, Mid (f', _) -> Mid (f', Now)
   | Later k', End (f', g, e) -> (
       match sface_residual f' k' with
-      | End (f'', g', e') -> End (End (f'', g, e), g', e')
-      | Mid (f'', g', l) -> Mid (End (f'', g, e), g', l))
+      | End (f'', e') -> End (End (f'', g, e), e')
+      | Mid (f'', l) -> Mid (End (f'', g, e), l))
   | Later k', Mid (f', g) -> (
       match sface_residual f' k' with
-      | End (f'', g', e') -> End (Mid (f'', g), g', e')
-      | Mid (f'', g', l) -> Mid (Mid (f'', g), g', Later l))
+      | End (f'', e') -> End (Mid (f'', g), e')
+      | Mid (f'', l) -> Mid (Mid (f'', g), Later l))
 
 let rec perm_sface : type m n k. (n, k) perm -> (m, n) sface -> (m, k) face =
  fun a b ->
@@ -36,19 +35,12 @@ let rec perm_sface : type m n k. (n, k) perm -> (m, n) sface -> (m, k) face =
   | Zero -> Face (b, id_perm (dom_sface b))
   | Suc (p, g_perm, k) -> (
       match sface_residual b k with
-      | End (f, g, e) -> (
-          (* TODO: bridge to perm's g via Word's G.compare; in a multi-generator world, sface_residual could return its extracted [g] in the result type. *)
-          match D.G.compare g g_perm with
-          | Eq ->
-              let (Face (f', p')) = perm_sface p f in
-              Face (End (f', g, e), p')
-          | Neq -> assert false)
-      | Mid (f, g, l) -> (
-          match D.G.compare g g_perm with
-          | Eq ->
-              let (Face (f', p')) = perm_sface p f in
-              Face (Mid (f', g), Suc (p', g, l))
-          | Neq -> assert false))
+      | End (f, e) ->
+          let (Face (f', p')) = perm_sface p f in
+          Face (End (f', g_perm, e), p')
+      | Mid (f, l) ->
+          let (Face (f', p')) = perm_sface p f in
+          Face (Mid (f', g_perm), Suc (p', g_perm, l)))
 
 let comp_face : type m n k. (n, k) face -> (m, n) face -> (m, k) face =
  fun (Face (a, b)) (Face (c, d)) ->

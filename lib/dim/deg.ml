@@ -153,7 +153,7 @@ let rec deg_is_idext : type n l nl m k.
  fun nl s1 s2 ->
   match (nl, s2) with
   | Zero, _ -> deg_equal s1 s2
-  | Suc (nl, Unit), Suc (s2, _, Now) -> deg_is_idext nl s1 s2
+  | Suc (nl, _), Suc (s2, _, Now) -> deg_is_idext nl s1 s2
   | _ -> None
 
 (* We consider two degeneracies "equivalent" if they differ by an identity extension on the right (i.e. post-whiskering with an identity). *)
@@ -163,6 +163,7 @@ let deg_equiv : type m n k l. (m, n) deg -> (k, l) deg -> unit option =
   | Eq -> deg_equal s1 s2
   | Lt nl -> deg_is_idext nl s1 s2
   | Gt nl -> deg_is_idext nl s2 s1
+  | Incomparable -> None
 
 (* Every dimension is a degeneracy of zero. *)
 let deg_zero : type a. a D.t -> (a, D.zero) deg = fun a -> Zero a
