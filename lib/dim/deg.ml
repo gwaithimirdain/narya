@@ -57,29 +57,23 @@ let rec comp_deg : type a b c. (b, c) deg -> (a, b) deg -> (a, c) deg =
 
 (* Dually, a "coresidual" of a degeneracy, given an element of its domain, is the coimage of that element, if any, together with the degeneracy obtained by removing that element from the domain and its coimage from the codomain. *)
 
-type (_, _) deg_coresidual =
-  | Coresidual_zero : ('m, 'n) deg -> ('m, 'n) deg_coresidual
-  | Coresidual_suc :
-      ('m, 'n) deg * 'g D.G.t * ('n, 'g, 'nsuc) D.insert
-      -> ('m, 'nsuc) deg_coresidual
+(* The coresidual is indexed by the generator of the removed element, so that callers can see at the type level that the coimage has the same generator. *)
+type (_, _, _) deg_coresidual =
+  | Coresidual_zero : ('m, 'n) deg -> ('m, 'g, 'n) deg_coresidual
+  | Coresidual_suc : ('m, 'n) deg * ('n, 'g, 'nsuc) D.insert -> ('m, 'g, 'nsuc) deg_coresidual
 
-(* TODO: This function is currently single-generator only.  Generalizing to multi-generator requires a multi-generator [compare_inserts] in Word.ml that handles inserts with different middle generator types. *)
-let rec deg_coresidual : type mpred m n.
-    (m, n) deg -> (mpred, unit, m) D.insert -> (mpred, n) deg_coresidual =
+let rec deg_coresidual : type mpred g m n.
+    (m, n) deg -> (mpred, g, m) D.insert -> (mpred, g, n) deg_coresidual =
  fun s k ->
   match s with
   | Zero m -> Coresidual_zero (Zero (D.uninsert k m))
-  | Suc (s, g, j) -> (
-      (* In single-generator code, j's middle generator is always unit; the assert is unreachable.  In a future multi-generator world, this needs proper handling of distinct generators. *)
-      match D.G.compare g D.deg with
-      | Neq -> assert false
-      | Eq -> (
-          match D.compare_inserts j k with
-          | Eq_inserts -> Coresidual_suc (s, g, Now)
-          | Neq_inserts (k', j') -> (
-              match deg_coresidual s k' with
-              | Coresidual_zero s' -> Coresidual_zero (Suc (s', g, j'))
-              | Coresidual_suc (s', g'', i) -> Coresidual_suc (Suc (s', g, j'), g'', Later i))))
+  | Suc (s, g', j) -> (
+      match D.compare_gen_inserts j k with
+      | Eq_gen_inserts -> Coresidual_suc (s, Now)
+      | Neq_gen_inserts (k', j') -> (
+          match deg_coresidual s k' with
+          | Coresidual_zero s' -> Coresidual_zero (Suc (s', g', j'))
+          | Coresidual_suc (s', i) -> Coresidual_suc (Suc (s', g', j'), Later i)))
 
 (* Extend a degeneracy by the identity on the right. *)
 let rec deg_plus : type m n k mk nk.

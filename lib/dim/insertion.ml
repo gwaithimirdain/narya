@@ -11,7 +11,9 @@ open Perm
 (* TODO: Should an insertion be parametrized by b+c as well? *)
 type (_, _, _) insertion =
   | Zero : 'a D.t -> ('a, 'a, D.zero) insertion
-  | Suc : ('a, 'b, 'c) insertion * ('a, unit, 'asuc) D.insert -> ('asuc, 'b, ('c, unit) D.suc) insertion
+  | Suc :
+      ('a, 'b, 'c) insertion * 'g D.G.t * ('a, 'g, 'asuc) D.insert
+      -> ('asuc, 'b, ('c, 'g) D.suc) insertion
 
 let ins_zero : type a. a D.t -> (a, a, D.zero) insertion = fun a -> Zero a
 
@@ -22,29 +24,29 @@ let rec zero_ins : type a. a D.t -> (a, D.zero, a) insertion =
  fun a ->
   match a with
   | Word Zero -> Zero a
-  | Word (Suc (a, Unit)) ->
+  | Word (Suc (a, g)) ->
       let ins = zero_ins (Word a) in
-      Suc (ins, Now)
+      Suc (ins, g, Now)
 
 let rec id_ins : type a b ab. a D.t -> (a, b, ab) D.plus -> (ab, a, b) insertion =
  fun a b ->
   match b with
   | Zero -> Zero a
-  | Suc (b, Unit) ->
+  | Suc (b, g) ->
       let ins = id_ins a b in
-      Suc (ins, Now)
+      Suc (ins, g, Now)
 
 let rec dom_ins : type a b c. (a, b, c) insertion -> a D.t = function
   | Zero a -> a
-  | Suc (ins, i) -> D.insert i (dom_ins ins) Unit
+  | Suc (ins, g, i) -> D.insert i (dom_ins ins) g
 
 let rec cod_left_ins : type a b c. (a, b, c) insertion -> b D.t = function
   | Zero a -> a
-  | Suc (ins, _) -> cod_left_ins ins
+  | Suc (ins, _, _) -> cod_left_ins ins
 
 let rec cod_right_ins : type a b c. (a, b, c) insertion -> c D.t = function
   | Zero _ -> D.zero
-  | Suc (ins, _) -> D.suc (cod_right_ins ins) Unit
+  | Suc (ins, g, _) -> D.suc (cod_right_ins ins) g
 
 let rec equal_ins : type a1 b1 c1 a2 b2 c2.
     (a1, b1, c1) insertion -> (a2, b2, c2) insertion -> unit option =
@@ -54,10 +56,14 @@ let rec equal_ins : type a1 b1 c1 a2 b2 c2.
       match D.compare a1 a2 with
       | Eq -> Some ()
       | Neq -> None)
-  | Suc (i1, x1), Suc (i2, x2) ->
-      let open Monad.Ops (Monad.Maybe) in
-      let* () = D.insert_equiv x1 x2 in
-      equal_ins i1 i2
+  | Suc (i1, g1, x1), Suc (i2, g2, x2) -> (
+      (* Comparing two arbitrary insertions for equality requires comparing their generators at runtime; this is an honest runtime test, not a singleton assumption. *)
+      match D.G.compare g1 g2 with
+      | Neq -> None
+      | Eq ->
+          let open Monad.Ops (Monad.Maybe) in
+          let* () = D.insert_equiv x1 x2 in
+          equal_ins i1 i2)
   | _ -> None
 
 let rec plus_ins : type a b c d ab ac.
@@ -68,23 +74,23 @@ let rec plus_ins : type a b c d ab ac.
   | Zero _ ->
       let Eq = D.plus_uniq ab ac in
       Zero (D.plus_out a ab)
-  | Suc (ins, i) ->
+  | Suc (ins, g, i) ->
       let (Plus ab') = D.plus (D.uninsert i (D.plus_right ab)) in
-      Suc (plus_ins a ab' ac ins, D.plus_insert ab' ab i)
+      Suc (plus_ins a ab' ac ins, g, D.plus_insert ab' ab i)
 
 (* If a+b=ab, then there is an identity permutation that inserts b on the right of a. *)
 let rec ins_of_plus : type a b ab. a D.t -> (a, b, ab) D.plus -> (ab, a, b) insertion =
  fun a ab ->
   match ab with
   | Zero -> Zero a
-  | Suc (ab, Unit) -> Suc (ins_of_plus a ab, Now)
+  | Suc (ab, g) -> Suc (ins_of_plus a ab, g, Now)
 
 (* An insertion induces a degeneracy, which is in fact a permutation. *)
 let rec deg_of_ins_plus : type a b c bc. (a, b, c) insertion -> (b, c, bc) D.plus -> (a, bc) deg =
  fun i bc ->
   match (i, bc) with
   | Zero a, Zero -> id_deg a
-  | Suc (i, e), Suc (bc, Unit) -> Suc (deg_of_ins_plus i bc, D.deg, e)
+  | Suc (i, g, e), Suc (bc, _) -> Suc (deg_of_ins_plus i bc, g, e)
 
 let deg_of_ins : type a b c. (a, b, c) insertion -> a deg_to =
  fun ins ->
@@ -95,7 +101,7 @@ let rec perm_of_ins_plus : type a b c bc. (a, b, c) insertion -> (b, c, bc) D.pl
  fun i bc ->
   match (i, bc) with
   | Zero a, Zero -> id_perm a
-  | Suc (i, e), Suc (bc, Unit) -> Suc (perm_of_ins_plus i bc, D.deg, e)
+  | Suc (i, g, e), Suc (bc, _) -> Suc (perm_of_ins_plus i bc, g, e)
 
 let perm_of_ins : type a b c. (a, b, c) insertion -> a perm_to =
  fun ins ->
@@ -104,11 +110,11 @@ let perm_of_ins : type a b c. (a, b, c) insertion -> a perm_to =
 
 let rec is_id_ins : type a b c. (a, b, c) insertion -> (b, c, a) D.plus option = function
   | Zero _ -> Some Zero
-  | Suc (ins, Now) -> (
+  | Suc (ins, g, Now) -> (
       match is_id_ins ins with
-      | Some bc -> Some (Suc (bc, Unit))
+      | Some bc -> Some (Suc (bc, g))
       | None -> None)
-  | Suc (_, Later _) -> None
+  | Suc (_, _, Later _) -> None
 
 let deg_of_plus_of_ins : type a b c. (a, b, c) insertion -> b deg_of_plus =
  fun ins ->
@@ -123,10 +129,10 @@ let rec insfact : type ac b c bc. (ac, bc) deg -> (b, c, bc) D.plus -> (ac, b, c
  fun s bc ->
   match bc with
   | Zero -> Insfact (s, Zero (dom_deg s))
-  | Suc (bc, Unit) ->
-      let (Suc (s, _, e)) = s in
+  | Suc (bc, _) ->
+      let (Suc (s, g, e)) = s in
       let (Insfact (s, i)) = insfact s bc in
-      Insfact (s, Suc (i, e))
+      Insfact (s, Suc (i, g, e))
 
 (* In particular, since an insertion induces a degeneracy (a permutation) with a decomposition of its codomain, if we compose a degeneracy followed by an insertion, the result factors in the above way as an insertion followed by a whiskered degeneracy. *)
 
@@ -167,10 +173,10 @@ let rec sface_lift_ins : type n k nk m.
  fun fa0 ins0 ->
   match ins0 with
   | Zero _ -> Sface_lift_ins (Zero (dom_sface fa0), fa0)
-  | Suc (ins1, i1) ->
+  | Suc (ins1, g1, i1) ->
       let (Sface_lift_ins (ins2, fa1)) = sface_lift_ins fa0 ins1 in
-      let (Insert_sface (j2, fa2)) = insert_sface fa1 i1 in
-      Sface_lift_ins (Suc (ins2, j2), fa2)
+      let (Insert_sface (j2, fa2)) = insert_sface fa1 g1 i1 in
+      Sface_lift_ins (Suc (ins2, g1, j2), fa2)
 
 (* Or a proper face *)
 
@@ -182,10 +188,10 @@ let rec pface_lift_ins : type n k nk m.
  fun fa0 ins0 ->
   match ins0 with
   | Zero _ -> Pface_lift_ins (Zero (dom_tface fa0), fa0)
-  | Suc (ins1, i1) ->
+  | Suc (ins1, g1, i1) ->
       let (Pface_lift_ins (ins2, fa1)) = pface_lift_ins fa0 ins1 in
-      let (Insert_pface (j2, fa2)) = insert_pface fa1 i1 in
-      Pface_lift_ins (Suc (ins2, j2), fa2)
+      let (Insert_pface (j2, fa2)) = insert_pface fa1 g1 i1 in
+      Pface_lift_ins (Suc (ins2, g1, j2), fa2)
 
 (* Construct an insertion from a domain and a list of numbers. *)
 type _ ins_of = Ins_of : ('ab, 'a, 'b) insertion -> 'ab ins_of
@@ -209,13 +215,10 @@ let rec ins_of_ints : type ab. ab D.t -> int list -> ab ins_of option =
                 ns in
             match ins_of_ints ab ns with
             | Some (Ins_of ins) -> (
-                (* TODO: bridge existentials via G.compare and Word.compare; this is needed only because [insertion]'s Suc still hardcodes [unit]. *)
-                match D.G.compare g D.deg with
-                | Neq -> None
-                | Eq -> (
-                    match D.compare (D.uninsert ix ab_outer_word) (dom_ins ins) with
-                    | Eq -> Some (Ins_of (Suc (ins, ix)))
-                    | Neq -> None))
+                (* Parsing user input requires a runtime check that the recursively-parsed insertion has the expected domain. *)
+                match D.compare (D.uninsert ix ab_outer_word) (dom_ins ins) with
+                | Eq -> Some (Ins_of (Suc (ins, g, ix)))
+                | Neq -> None)
             | None -> None
           with Invalid_argument _ -> None)
       | Word Zero, Some _ -> .
@@ -224,7 +227,7 @@ let rec ins_of_ints : type ab. ab D.t -> int list -> ab ins_of option =
 (* Conversely, display an insertion as a list of numbers. *)
 let rec ints_of_ins : type ab a b. (ab, a, b) insertion -> int list = function
   | Zero _ -> []
-  | Suc (ins, ix) ->
+  | Suc (ins, _, ix) ->
       let x = Tbwd.int_of_insert ix + 1 in
       x :: List.map (fun i -> if i >= x then i + 1 else i) (ints_of_ins ins)
 
@@ -246,9 +249,9 @@ let rec all_ins_of : type ab. ab D.t -> ab ins_of Seq.t =
  fun ab ->
   let open Monad.Ops (Monad.Seq) in
   Seq.cons (Ins_of (Zero ab))
-    (let* (Into (Unit, ix)) = D.all_inserts ab in
+    (let* (Into (g, ix)) = D.all_inserts ab in
      let* (Ins_of ins) = all_ins_of (D.uninsert ix ab) in
-     return (Ins_of (Suc (ins, ix))))
+     return (Ins_of (Suc (ins, g, ix))))
 
 (* Intrinsically well-typed maps.  This is basically a simplified version of Pbijmap where the 'remaining is always equal to 0, and hence is not a parameter.  This means we don't actually need the functorial parametrization either, as the simple version InsmapOf is sufficient for all uses.  But we keep it in case later we want to parametrize the values by the 'shared as well.  We do still need a recursive module, since we are still doing a mutual recursion with the functor Tuple. *)
 
@@ -295,7 +298,7 @@ module Insmap (F : Fam) = struct
    fun p m ->
     match (p, m) with
     | Zero _, Zero v -> v
-    | Suc (ins, i), Suc m ->
+    | Suc (ins, _, i), Suc m ->
         let (Wrap m) = Tup.find i m in
         find ins m
 
@@ -307,7 +310,7 @@ module Insmap (F : Fam) = struct
    fun p v m ->
     match (p, m) with
     | Zero _, Zero _ -> Zero v
-    | Suc (ins, i), Suc m -> Suc (Tup.update i (fun (Wrap m) -> Wrap (set ins v m)) m)
+    | Suc (ins, _, i), Suc m -> Suc (Tup.update i (fun (Wrap m) -> Wrap (set ins v m)) m)
 
   let find_singleton : type evaluation intrinsic v. (evaluation, intrinsic, v) t -> v F.t option =
     function
@@ -333,7 +336,7 @@ module Insmap (F : Fam) = struct
           let Unit = g in
           Wrap
             (build (D.uninsert i evaluation) (Word intrinsic)
-               { build = (fun ins -> f.build (Suc (ins, i))) }) in
+               { build = (fun ins -> f.build (Suc (ins, g, i))) }) in
         Suc (Tup.build evaluation { build = f })
 
   let singleton : type evaluation v. v F.t -> (evaluation, D.zero, v) t = fun v -> Zero v
@@ -435,7 +438,7 @@ module Insmap (F : Fam) = struct
             let Unit = g in
             M.apply
               (pmapM (D.uninsert i evaluation)
-                 { map = (fun ins v -> f.map (Suc (ins, i)) v) }
+                 { map = (fun ins v -> f.map (Suc (ins, g, i)) v) }
                  (Heter.unwrap x irvs) ws)
             @@ fun res -> Heter.wrap res irws in
           M.apply (T.pmapM { map } (Heter.right ms irvs) (MapTimes.cod irws)) @@ fun rights ->

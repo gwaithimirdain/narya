@@ -95,22 +95,22 @@ let rec pface_of_sface : type m n. (m, n) sface -> [ `Proper of (m, n) pface | `
 
 (* Like insert_sface but for pfaces instead.  (It should be possible to do this for general tfaces too, but trickier, and all we need is pfaces.) *)
 
-type (_, _) insert_pface =
-  | Insert_pface : ('m, unit, 'msuc) D.insert * ('msuc, 'nsuc) pface -> ('m, 'nsuc) insert_pface
+type (_, _, _) insert_pface =
+  | Insert_pface : ('m, 'g, 'msuc) D.insert * ('msuc, 'nsuc) pface -> ('m, 'g, 'nsuc) insert_pface
 
-let rec insert_pface : type m n nsuc.
-    (m, n) pface -> (n, unit, nsuc) D.insert -> (m, nsuc) insert_pface =
- fun f i ->
+let rec insert_pface : type m n g nsuc.
+    (m, n) pface -> g D.G.t -> (n, g, nsuc) D.insert -> (m, g, nsuc) insert_pface =
+ fun f g i ->
   match i with
-  | Now -> Insert_pface (Now, Mid (f, D.deg))
+  | Now -> Insert_pface (Now, Mid (f, g))
   | Later i -> (
       match f with
-      | End (f, _, g, e) ->
-          let (Insert_sface (i, f)) = insert_sface f i in
-          Insert_pface (i, End (f, D.zero_plus (cod_sface f), g, e))
-      | Mid (f, g) ->
-          let (Insert_pface (i, f)) = insert_pface f i in
-          Insert_pface (Later i, Mid (f, g)))
+      | End (f, _, h, e) ->
+          let (Insert_sface (i, f)) = insert_sface f g i in
+          Insert_pface (i, End (f, D.zero_plus (cod_sface f), h, e))
+      | Mid (f, h) ->
+          let (Insert_pface (i, f)) = insert_pface f g i in
+          Insert_pface (Later i, Mid (f, h)))
 
 let pface_plus : type m n mn k kn.
     (k, m) pface -> (m, n, mn) D.plus -> (k, n, kn) D.plus -> (kn, mn) pface =

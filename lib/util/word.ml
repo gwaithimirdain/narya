@@ -243,6 +243,25 @@ module Make (G : Comparable) = struct
         | Eq_inserts -> Eq_inserts
         | Neq_inserts (m', n') -> Neq_inserts (Later m', Later n'))
 
+  (* Compare two insertions into the same word whose removed elements may have different generator types.  If they remove the same position, the generators and smaller words agree; otherwise each insert transfers to the other's smaller word. *)
+  type (_, _, _, _, _) compare_gen_inserts =
+    | Eq_gen_inserts : ('a, 'g, 'a, 'g, 'p) compare_gen_inserts
+    | Neq_gen_inserts :
+        ('r, 'h, 'a) Tbwd.insert * ('r, 'g, 'b) Tbwd.insert
+        -> ('a, 'g, 'b, 'h, 'p) compare_gen_inserts
+
+  let rec compare_gen_inserts : type a g b h p.
+      (a, g, p) Tbwd.insert -> (b, h, p) Tbwd.insert -> (a, g, b, h, p) compare_gen_inserts =
+   fun j k ->
+    match (j, k) with
+    | Now, Now -> Eq_gen_inserts
+    | Now, Later k -> Neq_gen_inserts (k, Now)
+    | Later j, Now -> Neq_gen_inserts (Now, j)
+    | Later j, Later k -> (
+        match compare_gen_inserts j k with
+        | Eq_gen_inserts -> Eq_gen_inserts
+        | Neq_gen_inserts (k', j') -> Neq_gen_inserts (Later k', Later j'))
+
   let rec insert_equiv : type m n g p q.
       (p, g, m) Tbwd.insert -> (q, g, n) Tbwd.insert -> unit option =
    fun k l ->

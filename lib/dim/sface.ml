@@ -57,21 +57,22 @@ type _ sface_of = SFace_of : ('m, 'n) sface -> 'n sface_of
 
 (* Insert an element in the codomain and domain of a strict face, with the same numerical De Bruijn index. *)
 
-type (_, _) insert_sface =
-  | Insert_sface : ('m, unit, 'msuc) D.insert * ('msuc, 'nsuc) sface -> ('m, 'nsuc) insert_sface
+type (_, _, _) insert_sface =
+  | Insert_sface : ('m, 'g, 'msuc) D.insert * ('msuc, 'nsuc) sface -> ('m, 'g, 'nsuc) insert_sface
 
-let rec insert_sface : type m n nsuc. (m, n) sface -> (n, unit, nsuc) D.insert -> (m, nsuc) insert_sface =
- fun f i ->
+let rec insert_sface : type m n g nsuc.
+    (m, n) sface -> g D.G.t -> (n, g, nsuc) D.insert -> (m, g, nsuc) insert_sface =
+ fun f g i ->
   match i with
-  | Now -> Insert_sface (Now, Mid (f, D.deg))
+  | Now -> Insert_sface (Now, Mid (f, g))
   | Later i -> (
       match f with
-      | End (f, g, e) ->
-          let (Insert_sface (i, f)) = insert_sface f i in
-          Insert_sface (i, End (f, g, e))
-      | Mid (f, g) ->
-          let (Insert_sface (i, f)) = insert_sface f i in
-          Insert_sface (Later i, Mid (f, g)))
+      | End (f, h, e) ->
+          let (Insert_sface (i, f)) = insert_sface f g i in
+          Insert_sface (i, End (f, h, e))
+      | Mid (f, h) ->
+          let (Insert_sface (i, f)) = insert_sface f g i in
+          Insert_sface (Later i, Mid (f, h)))
 
 (* Concatenate two strict faces left-to-right. *)
 let rec sface_plus_sface : type m n mn k p kp.

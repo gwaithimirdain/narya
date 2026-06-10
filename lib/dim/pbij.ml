@@ -50,13 +50,10 @@ let rec pbij_of_int_strings : type e.
               strs in
           match pbij_of_int_strings e strs with
           | Some (Pbij_of (Pbij (ins, shuf))) -> (
-              (* TODO: bridge existentials via G.compare and Word.compare. *)
-              match D.G.compare g D.deg with
-              | Neq -> None
-              | Eq -> (
-                  match D.compare (D.uninsert ix e_outer_word) (dom_ins ins) with
-                  | Eq -> Some (Pbij_of (Pbij (Suc (ins, ix), Right (D.deg, shuf))))
-                  | Neq -> None))
+              (* Parsing user input requires a runtime check that the recursively-parsed insertion has the expected domain. *)
+              match D.compare (D.uninsert ix e_outer_word) (dom_ins ins) with
+              | Eq -> Some (Pbij_of (Pbij (Suc (ins, g, ix), Right (g, shuf))))
+              | Neq -> None)
           | None -> None)
       | Word Zero, Some _ -> .
       | _, None -> None)
@@ -82,7 +79,7 @@ let rec int_strings_of_pbij : type n i r. (n, i, r) pbij -> [ `Int of int | `Str
   | Zero -> []
   | Left (_, shuf) -> `Str (Endpoints.refl_string ()) :: int_strings_of_pbij (Pbij (ins, shuf))
   | Right (_, shuf) ->
-      let (Suc (ins, ix)) = ins in
+      let (Suc (ins, _, ix)) = ins in
       let x = Tbwd.int_of_insert ix + 1 in
       `Int x
       :: List.map
@@ -149,18 +146,14 @@ let rec deg_comp_ins : type m n i res.
  fun deg ins ->
   match ins with
   | Zero _ -> Deg_comp_ins (Zero (cod_deg deg), Zero, deg)
-  | Suc (ins, i) -> (
+  | Suc (ins, g, i) -> (
       match deg_coresidual deg i with
       | Coresidual_zero deg ->
           let (Deg_comp_ins (ins, shuf, s)) = deg_comp_ins deg ins in
-          Deg_comp_ins (ins, Left (D.deg, shuf), s)
-      | Coresidual_suc (deg, g_cs, j) -> (
-          (* TODO: bridge via G.compare; not needed once insertion carries its generator explicitly. *)
-          match D.G.compare g_cs D.deg with
-          | Neq -> assert false
-          | Eq ->
-              let (Deg_comp_ins (ins, shuf, s)) = deg_comp_ins deg ins in
-              Deg_comp_ins (Suc (ins, j), Right (D.deg, shuf), s)))
+          Deg_comp_ins (ins, Left (g, shuf), s)
+      | Coresidual_suc (deg, j) ->
+          let (Deg_comp_ins (ins, shuf, s)) = deg_comp_ins deg ins in
+          Deg_comp_ins (Suc (ins, g, j), Right (g, shuf), s))
 
 (* A partial bijection can be composed with a degeneracy on the evaluation dimension to produce another partial bijection, with an induced degeneracy on the results. *)
 
@@ -188,7 +181,7 @@ let rec deg_comp_pbij : type m n i res rem sh.
           function
           | _ -> . )
   | Right (g, shuf) -> (
-      let (Suc (ins, i)) = ins in
+      let (Suc (ins, _, i)) = ins in
       match deg_coresidual deg i with
       | Coresidual_zero deg ->
           let (Deg_comp_pbij (ins, shuf, s, _)) = deg_comp_pbij deg ins shuf in
@@ -198,12 +191,9 @@ let rec deg_comp_pbij : type m n i res rem sh.
               s,
               function
               | _ -> . )
-      | Coresidual_suc (deg, g_cs, j) -> (
-          match D.G.compare g_cs D.deg with
-          | Neq -> assert false
-          | Eq ->
-              let (Deg_comp_pbij (ins, shuf, s, ifzero)) = deg_comp_pbij deg ins shuf in
-              Deg_comp_pbij (Suc (ins, j), Right (g, shuf), s, ifzero)))
+      | Coresidual_suc (deg, j) ->
+          let (Deg_comp_pbij (ins, shuf, s, ifzero)) = deg_comp_pbij deg ins shuf in
+          Deg_comp_pbij (Suc (ins, g, j), Right (g, shuf), s, ifzero))
 
 (* This is like deg_comp_pbij (for the insertion only, so far), but for adding a constant on the left rather than acting by an arbitrary degeneracy (for evaluation rather that acting).  This allows it to return more detailed information.  The dimension 'r (new remaining) is the piece of 'i (intrinsic) that lands in 'm (new added dimension on the left), while 'h (new shared) is the part that lands in 'n, and 't is the part of 'm that doesn't come from 'r.  Note that the first two outputs together form an ('n, 'i, 'r) pbij; that's why this is in this file, even though it doesn't refer explicitly to pbij.  *)
 
@@ -222,16 +212,16 @@ let rec unplus_ins : type m n mn s i.
   | Zero _ ->
       (* i=0, r=0, h=0, t=m, tn=mn, s=n *)
       Unplus_ins (Zero (D.plus_right mn), Zero, Zero m, mn)
-  | Suc (ins', x) -> (
+  | Suc (ins', g, x) -> (
       match D.insert_in_plus mn x with
       | Left (x, mn') ->
           let (Unplus_ins (nsh, rhi, mtr, ts)) = unplus_ins (D.uninsert x m) mn' ins' in
           (* right-increment i and r, middle-increment m, keep s and h the same *)
-          Unplus_ins (nsh, Left (D.deg, rhi), Suc (mtr, x), ts)
+          Unplus_ins (nsh, Left (g, rhi), Suc (mtr, g, x), ts)
       | Right (x, mn') ->
           let (Unplus_ins (nsh, rhi, mtr, ts)) = unplus_ins m mn' ins' in
           (* right-increment i and h and s, middle-increment n, keep m and r the same *)
-          Unplus_ins (Suc (nsh, x), Right (D.deg, rhi), mtr, ts))
+          Unplus_ins (Suc (nsh, g, x), Right (g, rhi), mtr, ts))
 
 type (_, _, _, _, _, _) unplus_pbij =
   | Unplus_pbij :
@@ -261,20 +251,13 @@ let rec ins_plus_of_pbij : type n s h r i rn.
   | Zero ->
       let Eq = D.plus_uniq rn (D.zero_plus (dom_ins ins)) in
       ins
-  | Right (g, shuf') -> (
-      (* TODO: bridge via G.compare; insertion's Suc still hardcodes unit. *)
-      match D.G.compare g D.deg with
-      | Neq -> assert false
-      | Eq ->
-          let (Suc (ins', x)) = ins in
-          let (Plus rn') = D.plus (D.uninsert x (dom_ins ins)) in
-          Suc (ins_plus_of_pbij ins' shuf' rn', D.plus_insert rn' rn x))
-  | Left (g, shuf') -> (
-      match D.G.compare g D.deg with
-      | Neq -> assert false
-      | Eq ->
-          let (Insert_plus (rn', x)) = D.insert_plus Now rn in
-          Suc (ins_plus_of_pbij ins shuf' rn', x))
+  | Right (g, shuf') ->
+      let (Suc (ins', _, x)) = ins in
+      let (Plus rn') = D.plus (D.uninsert x (dom_ins ins)) in
+      Suc (ins_plus_of_pbij ins' shuf' rn', g, D.plus_insert rn' rn x)
+  | Left (g, shuf') ->
+      let (Insert_plus (rn', x)) = D.insert_plus Now rn in
+      Suc (ins_plus_of_pbij ins shuf' rn', g, x)
 
 (* Intrinsically well-typed maps with partial bijections as keys.  Each map has a fixed 'evaluation dimension and 'intrinsic dimension, but the 'result, 'shared, and 'remaining dimensions vary with the keys and values.  The values are parametrized by the 'remaining dimension as well as by an extra parameter that the map depends on; hence the whole notion of map is a functor parametrized by a Fam2.
 
@@ -359,7 +342,7 @@ module Pbijmap (F : Fam2) = struct
         v
     | Pbij (ins, Left (g_left, shuf)), Suc m ->
         gfind (Pbij (ins, shuf)) m.left (D.plus_assocr (Suc (Zero, g_left)) m.pw r12)
-    | Pbij (Suc (ins, i), Right (_, shuf)), Suc m ->
+    | Pbij (Suc (ins, _, i), Right (_, shuf)), Suc m ->
         let (Wrap m) = Tup.find i m.right in
         gfind (Pbij (ins, shuf)) m r12
 
@@ -385,7 +368,7 @@ module Pbijmap (F : Fam2) = struct
             m with
             left = gset (Pbij (ins, shuf)) v m.left (D.plus_assocr (Suc (Zero, g_left)) m.pw r12);
           }
-    | Pbij (Suc (ins, i), Right (_, shuf)), Suc m ->
+    | Pbij (Suc (ins, _, i), Right (_, shuf)), Suc m ->
         Suc
           {
             m with
@@ -446,7 +429,7 @@ module Pbijmap (F : Fam2) = struct
                         f with
                         build =
                           (fun (Pbij (ins, shuf)) r12 ->
-                            f.build (Pbij (Suc (ins, i), Right (g_intrinsic, shuf))) r12);
+                            f.build (Pbij (Suc (ins, g, i), Right (g_intrinsic, shuf))) r12);
                       }) in
                Tup.build evaluation { build });
           }
@@ -620,7 +603,7 @@ module Pbijmap (F : Fam2) = struct
                    f with
                    map =
                      (fun (Pbij (ins, shuf)) r12 v ->
-                       f.map (Pbij (Suc (ins, i), Right (g_outer, shuf))) r12 v);
+                       f.map (Pbij (Suc (ins, g, i), Right (g_outer, shuf))) r12 v);
                  }
                  (Heter.unwrap x irvs) ws)
             @@ fun res -> Heter.wrap res irws in
