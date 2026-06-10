@@ -3,6 +3,24 @@ open Signatures
 open Sface
 open Bwsface
 
+(* Local replacements for D.plus_suc / D.suc_plus, used by gmapM/gfold_map_*/gbuild_left.  Single-direction-only recursive transformations on plus relations; the [Suc (_, Unit)] pattern requires g = unit. *)
+
+let rec local_plus_suc : type m n p.
+    ((m, unit) D.suc, n, p) D.plus -> (m, (n, unit) D.suc, p) D.plus = function
+  | Zero -> Suc (Zero, Unit)
+  | Suc (x, Unit) -> Suc (local_plus_suc x, Unit)
+
+let rec local_push_unit_left : type a b c.
+    (a, b, c) D.plus -> ((a, unit) D.suc, b, (c, unit) D.suc) D.plus = function
+  | Zero -> Zero
+  | Suc (p, Unit) -> Suc (local_push_unit_left p, Unit)
+
+let local_suc_plus : type m n p.
+    (m, (n, unit) D.suc, p) D.plus -> ((m, unit) D.suc, n, p) D.plus =
+ fun x ->
+  let (Suc (y, Unit)) = local_push_unit_left x in
+  y
+
 (* This is a version of the cube data structure whose indices can "count" some type-level data that is accumulated by what is stored.  For instance, if each entry is parametrized by a type-level natural number, then the cube data structure is parametrized by the total of all these numbers.  In fact it is parametrized by the operation of addition of this number, or more precisely by both an input and result for this operation. *)
 
 module type Suc = sig
@@ -63,8 +81,8 @@ module Icube (S : Suc) (F : Fam3) = struct
           let (Suc (km', Unit)) = km in
           M.apply
             (M.zip
-               (fun () -> gmapM_branches km' (D.suc_plus lm) d g (Endpoints.indices l) ends)
-               (fun () -> gmapM (D.suc_plus km) (D.suc_plus lm) (Mid (D.deg, d)) g mid))
+               (fun () -> gmapM_branches km' (local_suc_plus lm) d g (Endpoints.indices l) ends)
+               (fun () -> gmapM (local_suc_plus km) (local_suc_plus lm) (Mid (D.deg, d)) g mid))
           @@ fun (newends, newmid) -> Branch (D.deg, l, newends, newmid)
 
     and gmapM_branches : type k m km n b c l len len' left right.
@@ -129,8 +147,8 @@ module Icube (S : Suc) (F : Fam3) = struct
       | Branch (_, l, ends, mid) ->
           let (Suc (km', Unit)) = km in
           let ends, acc =
-            gfold_left_map_branches km' (D.suc_plus lm) d g (Endpoints.indices l) acc ends in
-          let mid, acc = gfold_map_left (D.suc_plus km) (D.suc_plus lm) (Mid (D.deg, d)) g acc mid in
+            gfold_left_map_branches km' (local_suc_plus lm) d g (Endpoints.indices l) acc ends in
+          let mid, acc = gfold_map_left (local_suc_plus km) (local_suc_plus lm) (Mid (D.deg, d)) g acc mid in
           (Branch (D.deg, l, ends, mid), acc)
 
     and gfold_left_map_branches : type k m km n b c l len len' left right.
@@ -186,9 +204,9 @@ module Icube (S : Suc) (F : Fam3) = struct
           (acc, Leaf x)
       | Branch (_, l, ends, mid) ->
           let (Suc (km', Unit)) = km in
-          let acc, mid = gfold_map_right (D.suc_plus km) (D.suc_plus lm) (Mid (D.deg, d)) g mid acc in
+          let acc, mid = gfold_map_right (local_suc_plus km) (local_suc_plus lm) (Mid (D.deg, d)) g mid acc in
           let acc, ends =
-            gfold_right_map_branches km' (D.suc_plus lm) d g (Endpoints.indices l) ends acc in
+            gfold_right_map_branches km' (local_suc_plus lm) d g (Endpoints.indices l) ends acc in
           (acc, Branch (D.deg, l, ends, mid))
 
     and gfold_right_map_branches : type k m km n b c l len len' left right.
@@ -252,12 +270,12 @@ module Icube (S : Suc) (F : Fam3) = struct
           let (Fwrap (x, acc)) = g.build (sface_of_bw d) acc in
           Wrap (Leaf x, acc)
       | Word (Suc (m, Unit)) ->
-          let (Suc (mk', Unit)) = D.plus_suc mk in
+          let (Suc (mk', Unit)) = local_plus_suc mk in
           let (Wrap l) = Endpoints.wrapped () in
           let (Wrap_branches (ends, acc)) =
-            gbuild_left_branches (Word m) mk' (D.plus_suc ml) d g (Endpoints.indices l) acc in
+            gbuild_left_branches (Word m) mk' (local_plus_suc ml) d g (Endpoints.indices l) acc in
           let (Wrap (mid, acc)) =
-            gbuild_left (Word m) (D.plus_suc mk) (D.plus_suc ml) (Mid (D.deg, d)) g acc in
+            gbuild_left (Word m) (local_plus_suc mk) (local_plus_suc ml) (Mid (D.deg, d)) g acc in
           Wrap (Branch (D.deg, l, ends, mid), acc)
 
     and gbuild_left_branches : type k m mk l ml b left len len'.
@@ -368,9 +386,9 @@ module IcubeTraverse2 (S1 : Suc) (S2 : Suc) (F1 : Fam3) (F2 : Fam3) (Acc : Fam2)
     | Branch (_, l, ends, mid) ->
         let (Suc (km', Unit)) = km in
         let (Gfolded_branches (ends, acc)) =
-          gfold_left_map_branches km' (D.suc_plus lm) d g (Endpoints.indices l) acc ends in
+          gfold_left_map_branches km' (local_suc_plus lm) d g (Endpoints.indices l) acc ends in
         let (Gfolded (mid, acc)) =
-          gfold_map_left (D.suc_plus km) (D.suc_plus lm) (Mid (D.deg, d)) g acc mid in
+          gfold_map_left (local_suc_plus km) (local_suc_plus lm) (Mid (D.deg, d)) g acc mid in
         Gfolded (Branch (D.deg, l, ends, mid), acc)
 
   and gfold_left_map_branches : type k m km n b c l len len' left1 left2 right1.
