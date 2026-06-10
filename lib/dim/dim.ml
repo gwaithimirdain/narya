@@ -46,10 +46,8 @@ include Singleton
 include Deg
 include Perm
 include Sface
-include Bwsface
 include Cube
 include Tface
-include Bwtface
 include Tube
 include Icube
 include Face

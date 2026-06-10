@@ -1,25 +1,6 @@
 open Util
 open Signatures
 open Sface
-open Bwsface
-
-(* Local replacements for D.plus_suc / D.suc_plus, used by gmapM/gfold_map_*/gbuild_left.  Single-direction-only recursive transformations on plus relations; the [Suc (_, Unit)] pattern requires g = unit. *)
-
-let rec local_plus_suc : type m n p.
-    ((m, unit) D.suc, n, p) D.plus -> (m, (n, unit) D.suc, p) D.plus = function
-  | Zero -> Suc (Zero, Unit)
-  | Suc (x, Unit) -> Suc (local_plus_suc x, Unit)
-
-let rec local_push_unit_left : type a b c.
-    (a, b, c) D.plus -> ((a, unit) D.suc, b, (c, unit) D.suc) D.plus = function
-  | Zero -> Zero
-  | Suc (p, Unit) -> Suc (local_push_unit_left p, Unit)
-
-let local_suc_plus : type m n p.
-    (m, (n, unit) D.suc, p) D.plus -> ((m, unit) D.suc, n, p) D.plus =
- fun x ->
-  let (Suc (y, Unit)) = local_push_unit_left x in
-  y
 
 (* This is a version of the cube data structure whose indices can "count" some type-level data that is accumulated by what is stored.  For instance, if each entry is parametrized by a type-level natural number, then the cube data structure is parametrized by the total of all these numbers.  In fact it is parametrized by the operation of addition of this number, or more precisely by both an input and result for this operation. *)
 
@@ -29,28 +10,29 @@ end
 
 (* An Icube is parametrized by a "successor" type operation and a 3-variable family for the contents that are also parametrized by the "current count".  *)
 module Icube (S : Suc) (F : Fam3) = struct
-  (* The basic definitions are mostly just like those of Cube, with extra parameters. *)
+  (* The basic definitions are mostly just like those of Cube, with extra parameters.  As in Cube, the second dimension index 'w is the word of generators decided (taken as Mid) along the path leading to a subtree, with the witness for adding a newly decided generator at its inner end stored in the Branch. *)
   type (_, _, _, _, _) gt =
-    | Leaf : ('left, 'n, 'b) F.t -> ('left, D.zero, 'n, 'b, 'left S.suc) gt
+    | Leaf : ('left, 'w, 'b) F.t -> ('left, D.zero, 'w, 'b, 'left S.suc) gt
     | Branch :
         'g D.G.t
+        * ((D.zero, 'g) D.suc, 'w, 'gw) D.plus
         * 'l Endpoints.len
-        * ('left, 'l, 'm, 'n, 'b, 'middle) branches
-        * ('middle, 'm, ('n, 'g) D.suc, 'b, 'right) gt
-        -> ('left, ('m, 'g) D.suc, ('n, 'g) D.suc, 'b, 'right) gt
+        * ('left, 'l, 'm, 'w, 'b, 'middle) branches
+        * ('middle, 'm, 'gw, 'b, 'right) gt
+        -> ('left, ('m, 'g) D.suc, 'w, 'b, 'right) gt
 
   (* The exception is that instead of using a vanilla Bwv, to index the branches we use a custom kind of backwards list that tracks the change in the indices. *)
   and (_, _, _, _, _, _) branches =
-    | Emp : ('left, N.zero, 'm, 'n, 'b, 'left) branches
+    | Emp : ('left, N.zero, 'm, 'w, 'b, 'left) branches
     | Snoc :
-        ('left, 'l, 'm, 'n, 'b, 'middle) branches * ('middle, 'm, 'n, 'b, 'right) gt
-        -> ('left, 'l N.suc, 'm, 'n, 'b, 'right) branches
+        ('left, 'l, 'm, 'w, 'b, 'middle) branches * ('middle, 'm, 'w, 'b, 'right) gt
+        -> ('left, 'l N.suc, 'm, 'w, 'b, 'right) branches
 
-  type ('left, 'n, 'b, 'right) t = ('left, 'n, 'n, 'b, 'right) gt
+  type ('left, 'n, 'b, 'right) t = ('left, 'n, D.zero, 'b, 'right) gt
 
-  let rec gdim : type m n b left right. (left, m, n, b, right) gt -> m D.t = function
+  let rec gdim : type m w b left right. (left, m, w, b, right) gt -> m D.t = function
     | Leaf _ -> D.zero
-    | Branch (g, _, _, br) -> D.suc (gdim br) g
+    | Branch (g, _, _, _, br) -> D.suc (gdim br) g
 
   let dim : type n b left right. (left, n, b, right) t -> n D.t = fun tr -> gdim tr
 
@@ -65,49 +47,52 @@ module Icube (S : Suc) (F : Fam3) = struct
       map : 'left 'right 'm. ('m, 'n) sface -> ('left, 'm, 'b) F.t -> ('left, 'm, 'c) F.t M.t;
     }
 
-    let rec gmapM : type k m km n b c l left right.
-        (k, m, km) D.plus ->
-        (l, m, n) D.plus ->
-        (k, l) bwsface ->
-        (n, b, c) mapperM ->
-        (left, m, km, b, right) gt ->
-        (left, m, km, c, right) gt M.t =
-     fun km lm d g tr ->
+    (* The traversal carries the partial strict face accumulated so far, as in Cube: 'w is the decided word and 'c the consumed word, related to the remaining height 'm and the total dimension 'n by the (m, c, n) plus. *)
+    let rec gmapM : type m w c n b cc left right.
+        (m, c, n) D.plus ->
+        (w, c) sface ->
+        (n, b, cc) mapperM ->
+        (left, m, w, b, right) gt ->
+        (left, m, w, cc, right) gt M.t =
+     fun mc f g tr ->
       match tr with
       | Leaf x ->
-          let Zero, Zero = (km, lm) in
-          M.apply (g.map (sface_of_bw d) x) @@ fun x -> Leaf x
-      | Branch (_, l, ends, mid) ->
-          let (Suc (km', Unit)) = km in
+          let Eq = D.zero_plus_uniq mc in
+          M.apply (g.map f x) @@ fun x -> Leaf x
+      | Branch (g0, pw, l, ends, mid) ->
+          let (Plus plc) = D.plus (cod_sface f) in
+          let mc' = D.plus_assocr (Suc (Zero, g0)) plc mc in
           M.apply
             (M.zip
-               (fun () -> gmapM_branches km' (local_suc_plus lm) d g (Endpoints.indices l) ends)
-               (fun () -> gmapM (local_suc_plus km) (local_suc_plus lm) (Mid (D.deg, d)) g mid))
-          @@ fun (newends, newmid) -> Branch (D.deg, l, newends, newmid)
+               (fun () -> gmapM_branches mc' f plc g0 g (Endpoints.indices l) ends)
+               (fun () -> gmapM mc' (sface_plus_sface (Mid (Zero, g0)) plc pw f) g mid))
+          @@ fun (newends, newmid) -> Branch (g0, pw, l, newends, newmid)
 
-    and gmapM_branches : type k m km n b c l len len' left right.
-        (k, m, km) D.plus ->
-        ((l, unit) D.suc, m, n) D.plus ->
-        (k, l) bwsface ->
-        (n, b, c) mapperM ->
+    and gmapM_branches : type m1 w c gc n b cc len len' left right g0.
+        (m1, gc, n) D.plus ->
+        (w, c) sface ->
+        ((D.zero, g0) D.suc, c, gc) D.plus ->
+        g0 D.G.t ->
+        (n, b, cc) mapperM ->
         (len Endpoints.t, len') Bwv.t ->
-        (left, len', m, km, b, right) branches ->
-        (left, len', m, km, c, right) branches M.t =
-     fun km lm d g ixs brs ->
+        (left, len', m1, w, b, right) branches ->
+        (left, len', m1, w, cc, right) branches M.t =
+     fun mc f plc g0 g ixs brs ->
       match (brs, ixs) with
       | Emp, Emp -> return Emp
       | Snoc (brs, br), Snoc (ixs, e) ->
           M.apply
             (M.zip
-               (fun () -> gmapM_branches km lm d g ixs brs)
-               (fun () -> gmapM km lm (End (D.deg, e, d)) g br))
+               (fun () -> gmapM_branches mc f plc g0 g ixs brs)
+               (fun () ->
+                 gmapM mc
+                   (sface_plus_sface (End (Zero, g0, e)) plc (D.zero_plus (dom_sface f)) f)
+                   g br))
           @@ fun (newbrs, newbr) -> Snoc (newbrs, newbr)
 
     let mapM : type n b c left right.
         (n, b, c) mapperM -> (left, n, b, right) t -> (left, n, c, right) t M.t =
-     fun g x ->
-      let n = dim x in
-      gmapM (D.zero_plus n) (D.zero_plus n) Zero g x
+     fun g x -> gmapM Zero Zero g x
   end
 
   module IdM = Applicatic (Applicative.OfMonad (Monad.Identity))
@@ -130,52 +115,54 @@ module Icube (S : Suc) (F : Fam3) = struct
         ('left, 'm, 'c) F.t * 'left S.suc Acc.t;
     }
 
-    let rec gfold_map_left : type k m km n b c l left right.
-        (k, m, km) D.plus ->
-        (l, m, n) D.plus ->
-        (k, l) bwsface ->
-        (n, b, c) left_folder ->
+    let rec gfold_map_left : type m w c n b cc left right.
+        (m, c, n) D.plus ->
+        (w, c) sface ->
+        (n, b, cc) left_folder ->
         left Acc.t ->
-        (left, m, km, b, right) gt ->
-        (left, m, km, c, right) gt * right Acc.t =
-     fun km lm d g acc tr ->
+        (left, m, w, b, right) gt ->
+        (left, m, w, cc, right) gt * right Acc.t =
+     fun mc f g acc tr ->
       match tr with
       | Leaf x ->
-          let Zero, Zero = (km, lm) in
-          let x, acc = g.foldmap (sface_of_bw d) acc x in
+          let Eq = D.zero_plus_uniq mc in
+          let x, acc = g.foldmap f acc x in
           (Leaf x, acc)
-      | Branch (_, l, ends, mid) ->
-          let (Suc (km', Unit)) = km in
-          let ends, acc =
-            gfold_left_map_branches km' (local_suc_plus lm) d g (Endpoints.indices l) acc ends in
-          let mid, acc = gfold_map_left (local_suc_plus km) (local_suc_plus lm) (Mid (D.deg, d)) g acc mid in
-          (Branch (D.deg, l, ends, mid), acc)
+      | Branch (g0, pw, l, ends, mid) ->
+          let (Plus plc) = D.plus (cod_sface f) in
+          let mc' = D.plus_assocr (Suc (Zero, g0)) plc mc in
+          let ends, acc = gfold_left_map_branches mc' f plc g0 g (Endpoints.indices l) acc ends in
+          let mid, acc =
+            gfold_map_left mc' (sface_plus_sface (Mid (Zero, g0)) plc pw f) g acc mid in
+          (Branch (g0, pw, l, ends, mid), acc)
 
-    and gfold_left_map_branches : type k m km n b c l len len' left right.
-        (k, m, km) D.plus ->
-        ((l, unit) D.suc, m, n) D.plus ->
-        (k, l) bwsface ->
-        (n, b, c) left_folder ->
+    and gfold_left_map_branches : type m1 w c gc n b cc len len' left right g0.
+        (m1, gc, n) D.plus ->
+        (w, c) sface ->
+        ((D.zero, g0) D.suc, c, gc) D.plus ->
+        g0 D.G.t ->
+        (n, b, cc) left_folder ->
         (len Endpoints.t, len') Bwv.t ->
         left Acc.t ->
-        (left, len', m, km, b, right) branches ->
-        (left, len', m, km, c, right) branches * right Acc.t =
-     fun km lm d g ixs acc brs ->
+        (left, len', m1, w, b, right) branches ->
+        (left, len', m1, w, cc, right) branches * right Acc.t =
+     fun mc f plc g0 g ixs acc brs ->
       match (brs, ixs) with
       | Emp, Emp -> (Emp, acc)
       | Snoc (brs, br), Snoc (ixs, e) ->
-          let brs, acc = gfold_left_map_branches km lm d g ixs acc brs in
-          let br, acc = gfold_map_left km lm (End (D.deg, e, d)) g acc br in
+          let brs, acc = gfold_left_map_branches mc f plc g0 g ixs acc brs in
+          let br, acc =
+            gfold_map_left mc
+              (sface_plus_sface (End (Zero, g0, e)) plc (D.zero_plus (dom_sface f)) f)
+              g acc br in
           (Snoc (brs, br), acc)
 
     let fold_map_left : type n b c left right.
         (n, b, c) left_folder ->
         left Acc.t ->
-        (left, n, n, b, right) gt ->
-        (left, n, n, c, right) gt * right Acc.t =
-     fun g acc x ->
-      let n = dim x in
-      gfold_map_left (D.zero_plus n) (D.zero_plus n) Zero g acc x
+        (left, n, b, right) t ->
+        (left, n, c, right) t * right Acc.t =
+     fun g acc x -> gfold_map_left Zero Zero g acc x
 
     (* And dually on the right. *)
 
@@ -188,42 +175,46 @@ module Icube (S : Suc) (F : Fam3) = struct
         'left Acc.t * ('left, 'm, 'c) F.t;
     }
 
-    let rec gfold_map_right : type k m km n b c l left right.
-        (k, m, km) D.plus ->
-        (l, m, n) D.plus ->
-        (k, l) bwsface ->
-        (n, b, c) right_folder ->
-        (left, m, km, b, right) gt ->
+    let rec gfold_map_right : type m w c n b cc left right.
+        (m, c, n) D.plus ->
+        (w, c) sface ->
+        (n, b, cc) right_folder ->
+        (left, m, w, b, right) gt ->
         right Acc.t ->
-        left Acc.t * (left, m, km, c, right) gt =
-     fun km lm d g tr acc ->
+        left Acc.t * (left, m, w, cc, right) gt =
+     fun mc f g tr acc ->
       match tr with
       | Leaf x ->
-          let Zero, Zero = (km, lm) in
-          let acc, x = g.foldmap (sface_of_bw d) x acc in
+          let Eq = D.zero_plus_uniq mc in
+          let acc, x = g.foldmap f x acc in
           (acc, Leaf x)
-      | Branch (_, l, ends, mid) ->
-          let (Suc (km', Unit)) = km in
-          let acc, mid = gfold_map_right (local_suc_plus km) (local_suc_plus lm) (Mid (D.deg, d)) g mid acc in
-          let acc, ends =
-            gfold_right_map_branches km' (local_suc_plus lm) d g (Endpoints.indices l) ends acc in
-          (acc, Branch (D.deg, l, ends, mid))
+      | Branch (g0, pw, l, ends, mid) ->
+          let (Plus plc) = D.plus (cod_sface f) in
+          let mc' = D.plus_assocr (Suc (Zero, g0)) plc mc in
+          let acc, mid =
+            gfold_map_right mc' (sface_plus_sface (Mid (Zero, g0)) plc pw f) g mid acc in
+          let acc, ends = gfold_right_map_branches mc' f plc g0 g (Endpoints.indices l) ends acc in
+          (acc, Branch (g0, pw, l, ends, mid))
 
-    and gfold_right_map_branches : type k m km n b c l len len' left right.
-        (k, m, km) D.plus ->
-        ((l, unit) D.suc, m, n) D.plus ->
-        (k, l) bwsface ->
-        (n, b, c) right_folder ->
+    and gfold_right_map_branches : type m1 w c gc n b cc len len' left right g0.
+        (m1, gc, n) D.plus ->
+        (w, c) sface ->
+        ((D.zero, g0) D.suc, c, gc) D.plus ->
+        g0 D.G.t ->
+        (n, b, cc) right_folder ->
         (len Endpoints.t, len') Bwv.t ->
-        (left, len', m, km, b, right) branches ->
+        (left, len', m1, w, b, right) branches ->
         right Acc.t ->
-        left Acc.t * (left, len', m, km, c, right) branches =
-     fun km lm d g ixs brs acc ->
+        left Acc.t * (left, len', m1, w, cc, right) branches =
+     fun mc f plc g0 g ixs brs acc ->
       match (brs, ixs) with
       | Emp, Emp -> (acc, Emp)
       | Snoc (brs, br), Snoc (ixs, e) ->
-          let acc, br = gfold_map_right km lm (End (D.deg, e, d)) g br acc in
-          let acc, brs = gfold_right_map_branches km lm d g ixs brs acc in
+          let acc, br =
+            gfold_map_right mc
+              (sface_plus_sface (End (Zero, g0, e)) plc (D.zero_plus (dom_sface f)) f)
+              g br acc in
+          let acc, brs = gfold_right_map_branches mc f plc g0 g ixs brs acc in
           (acc, Snoc (brs, br))
 
     let fold_map_right : type n b c left right.
@@ -231,9 +222,7 @@ module Icube (S : Suc) (F : Fam3) = struct
         (left, n, b, right) t ->
         right Acc.t ->
         left Acc.t * (left, n, c, right) t =
-     fun g x acc ->
-      let n = dim x in
-      gfold_map_right (D.zero_plus n) (D.zero_plus n) Zero g x acc
+     fun g x acc -> gfold_map_right Zero Zero g x acc
 
     (* Similarly for building. *)
 
@@ -241,109 +230,112 @@ module Icube (S : Suc) (F : Fam3) = struct
       | Fwrap : ('left, 'm, 'b) F.t * 'left S.suc Acc.t -> ('left, 'm, 'b) fwrap_left
 
     type (_, _, _, _) gwrap_left =
-      | Wrap : ('left, 'm, 'mk, 'b, 'right) gt * 'right Acc.t -> ('left, 'm, 'mk, 'b) gwrap_left
+      | Wrap : ('left, 'm, 'w, 'b, 'right) gt * 'right Acc.t -> ('left, 'm, 'w, 'b) gwrap_left
 
-    type ('left, 'm, 'b) wrap_left = ('left, 'm, 'm, 'b) gwrap_left
+    type ('left, 'm, 'b) wrap_left = ('left, 'm, D.zero, 'b) gwrap_left
 
     type (_, _, _, _, _) wrap_branches_left =
       | Wrap_branches :
-          ('left, 'len, 'm, 'mk, 'b, 'right) branches * 'right Acc.t
-          -> ('left, 'len, 'm, 'mk, 'b) wrap_branches_left
+          ('left, 'len, 'm, 'w, 'b, 'right) branches * 'right Acc.t
+          -> ('left, 'len, 'm, 'w, 'b) wrap_branches_left
 
     type ('n, 'b) builder_leftM = {
       build : 'left 'm. ('m, 'n) sface -> 'left Acc.t -> ('left, 'm, 'b) fwrap_left;
     }
 
-    let rec gbuild_left : type k m mk l ml b left.
+    let rec gbuild_left : type m w c n b left.
         m D.t ->
-        (m, k, mk) D.plus ->
-        (m, l, ml) D.plus ->
-        (k, l) bwsface ->
-        (ml, b) builder_leftM ->
+        (m, c, n) D.plus ->
+        (w, c) sface ->
+        (n, b) builder_leftM ->
         left Acc.t ->
-        (left, m, mk, b) gwrap_left =
-     fun m mk ml d g acc ->
+        (left, m, w, b) gwrap_left =
+     fun m mc f g acc ->
       match m with
       | Word Zero ->
-          let Eq = D.plus_uniq mk (D.zero_plus (dom_bwsface d)) in
-          let Eq = D.plus_uniq ml (D.zero_plus (cod_bwsface d)) in
-          let (Fwrap (x, acc)) = g.build (sface_of_bw d) acc in
+          let Eq = D.zero_plus_uniq mc in
+          let (Fwrap (x, acc)) = g.build f acc in
           Wrap (Leaf x, acc)
-      | Word (Suc (m, Unit)) ->
-          let (Suc (mk', Unit)) = local_plus_suc mk in
+      | Word (Suc (m1, g0)) ->
+          let (Plus plc) = D.plus (cod_sface f) in
+          let (Plus pw) = D.plus (dom_sface f) in
+          let mc' = D.plus_assocr (Suc (Zero, g0)) plc mc in
           let (Wrap l) = Endpoints.wrapped () in
           let (Wrap_branches (ends, acc)) =
-            gbuild_left_branches (Word m) mk' (local_plus_suc ml) d g (Endpoints.indices l) acc in
+            gbuild_left_branches (Word m1) mc' f plc g0 g (Endpoints.indices l) acc in
           let (Wrap (mid, acc)) =
-            gbuild_left (Word m) (local_plus_suc mk) (local_plus_suc ml) (Mid (D.deg, d)) g acc in
-          Wrap (Branch (D.deg, l, ends, mid), acc)
+            gbuild_left (Word m1) mc' (sface_plus_sface (Mid (Zero, g0)) plc pw f) g acc in
+          Wrap (Branch (g0, pw, l, ends, mid), acc)
 
-    and gbuild_left_branches : type k m mk l ml b left len len'.
-        m D.t ->
-        (m, k, mk) D.plus ->
-        (m, (l, unit) D.suc, ml) D.plus ->
-        (k, l) bwsface ->
-        (ml, b) builder_leftM ->
+    and gbuild_left_branches : type m1 w c gc n b left len len' g0.
+        m1 D.t ->
+        (m1, gc, n) D.plus ->
+        (w, c) sface ->
+        ((D.zero, g0) D.suc, c, gc) D.plus ->
+        g0 D.G.t ->
+        (n, b) builder_leftM ->
         (len Endpoints.t, len') Bwv.t ->
         left Acc.t ->
-        (left, len', m, mk, b) wrap_branches_left =
-     fun m mk ml d g ixs acc ->
+        (left, len', m1, w, b) wrap_branches_left =
+     fun m mc f plc g0 g ixs acc ->
       match ixs with
       | Emp -> Wrap_branches (Emp, acc)
       | Snoc (ixs, e) ->
-          let (Wrap_branches (newbrs, acc)) = gbuild_left_branches m mk ml d g ixs acc in
-          let (Wrap (newbr, acc)) = gbuild_left m mk ml (End (D.deg, e, d)) g acc in
+          let (Wrap_branches (newbrs, acc)) = gbuild_left_branches m mc f plc g0 g ixs acc in
+          let (Wrap (newbr, acc)) =
+            gbuild_left m mc
+              (sface_plus_sface (End (Zero, g0, e)) plc (D.zero_plus (dom_sface f)) f)
+              g acc in
           Wrap_branches (Snoc (newbrs, newbr), acc)
 
     let build_left : type n b left.
         n D.t -> (n, b) builder_leftM -> left Acc.t -> (left, n, b) wrap_left =
-     fun n g acc -> gbuild_left n (D.plus_zero n) (D.plus_zero n) Zero g acc
+     fun n g acc -> gbuild_left n Zero Zero g acc
   end
 
   (* Indexing *)
 
   type (_, _) fbiwrap = Fbiwrap : ('left, 'n, 'b) F.t -> ('n, 'b) fbiwrap
 
-  (* Same restructure as Cube.gfind: drop the km plus argument.  The sface and gt types together encode the dimensional alignment, and stepping (tr, d) in lockstep maintains it. *)
-  let rec gfind : type m n b k n_out m_n left right.
-      (left, m, n, b, right) gt ->
-      (k, m) sface ->
-      (n_out, m_n, n) D.plus ->
-      (n_out, b) fbiwrap =
-   fun tr d nm ->
+  (* Walk the gt and the sface in lockstep, as in Cube.gfind; the carried plus relation is transported by associativity using the witnesses stored in the Branches. *)
+  let rec gfind : type m w b j p left right.
+      (left, m, w, b, right) gt -> (j, m) sface -> (j, w, p) D.plus -> (p, b) fbiwrap =
+   fun tr d jw ->
     match (tr, d) with
-    | Leaf x, Zero -> ( match nm with Zero -> Fbiwrap x | Suc _ -> assert false)
-    | Branch (_, l1, br, _), End (d, _, (l2, e)) -> (
-        match nm with
-        | Zero -> assert false
-        | Suc (nm', _) ->
-            let Eq = Endpoints.uniq l1 l2 in
-            gfind_branches br d nm' e)
-    | Branch (_, _, _, br), Mid (d, _) -> gfind br d nm
+    | Leaf x, Zero ->
+        let Eq = D.zero_plus_uniq jw in
+        Fbiwrap x
+    | Branch (_, _, l1, br, _), End (d, _, (l2, e)) ->
+        let Eq = Endpoints.uniq l1 l2 in
+        gfind_branches br d jw e
+    | Branch (_, pw, _, _, br), Mid (d, g) -> gfind br d (D.plus_assocr (Suc (Zero, g)) pw jw)
 
-  and gfind_branches : type m n b k n_out m_n left right l.
-      (left, l, m, n, b, right) branches ->
-      (k, m) sface ->
-      (n_out, m_n, n) D.plus ->
+  and gfind_branches : type m w b j p left right l.
+      (left, l, m, w, b, right) branches ->
+      (j, m) sface ->
+      (j, w, p) D.plus ->
       l N.index ->
-      (n_out, b) fbiwrap =
-   fun br d nm e ->
+      (p, b) fbiwrap =
+   fun br d jw e ->
     match (br, e) with
     | Emp, _ -> .
-    | Snoc (_, tr), Top -> gfind tr d nm
-    | Snoc (br, _), Pop e -> gfind_branches br d nm e
+    | Snoc (_, tr), Top -> gfind tr d jw
+    | Snoc (br, _), Pop e -> gfind_branches br d jw e
 
   let find : type n k b left right. (left, n, b, right) t -> (k, n) sface -> (k, b) fbiwrap =
-   fun tr d ->
-    let (Le km) = plus_of_sface d in
-    gfind tr d km
+   fun tr d -> gfind tr d Zero
 
-  let rec gfind_top : type k n b left right. (left, k, n, b, right) gt -> (n, b) fbiwrap = function
-    | Leaf x -> Fbiwrap x
-    | Branch (_, _, _, br) -> gfind_top br
+  let rec gfind_top : type m w p b left right.
+      (left, m, w, b, right) gt -> (m, w, p) D.plus -> (p, b) fbiwrap =
+   fun tr mw ->
+    match tr with
+    | Leaf x ->
+        let Eq = D.zero_plus_uniq mw in
+        Fbiwrap x
+    | Branch (g, pw, _, _, br) -> gfind_top br (D.plus_assocr (Suc (Zero, g)) pw mw)
 
   let find_top : type n b left right. (left, n, b, right) t -> (n, b) fbiwrap =
-   fun tr -> gfind_top tr
+   fun tr -> gfind_top tr Zero
 end
 
 module IcubeTraverse2 (S1 : Suc) (S2 : Suc) (F1 : Fam3) (F2 : Fam3) (Acc : Fam2) = struct
@@ -361,61 +353,63 @@ module IcubeTraverse2 (S1 : Suc) (S2 : Suc) (F1 : Fam3) (F2 : Fam3) (Acc : Fam2)
 
   type (_, _, _, _, _) gfolded =
     | Gfolded :
-        ('left2, 'm, 'km, 'c, 'right2) C2.gt * ('right1, 'right2) Acc.t
-        -> ('left2, 'm, 'km, 'c, 'right1) gfolded
+        ('left2, 'm, 'w, 'c, 'right2) C2.gt * ('right1, 'right2) Acc.t
+        -> ('left2, 'm, 'w, 'c, 'right1) gfolded
 
   type (_, _, _, _, _, _) gfolded_branches =
     | Gfolded_branches :
-        ('left2, 'len, 'm, 'km, 'c, 'right2) C2.branches * ('right1, 'right2) Acc.t
-        -> ('left2, 'len, 'm, 'km, 'c, 'right1) gfolded_branches
+        ('left2, 'len, 'm, 'w, 'c, 'right2) C2.branches * ('right1, 'right2) Acc.t
+        -> ('left2, 'len, 'm, 'w, 'c, 'right1) gfolded_branches
 
-  let rec gfold_map_left : type k m km n b c l left1 left2 right1.
-      (k, m, km) D.plus ->
-      (l, m, n) D.plus ->
-      (k, l) bwsface ->
-      (n, b, c) left_folder ->
+  let rec gfold_map_left : type m w c n b cc left1 left2 right1.
+      (m, c, n) D.plus ->
+      (w, c) sface ->
+      (n, b, cc) left_folder ->
       (left1, left2) Acc.t ->
-      (left1, m, km, b, right1) C1.gt ->
-      (left2, m, km, c, right1) gfolded =
-   fun km lm d g acc tr ->
+      (left1, m, w, b, right1) C1.gt ->
+      (left2, m, w, cc, right1) gfolded =
+   fun mc f g acc tr ->
     match tr with
     | Leaf x ->
-        let Zero, Zero = (km, lm) in
-        let x, acc = g.foldmap (sface_of_bw d) acc x in
+        let Eq = D.zero_plus_uniq mc in
+        let x, acc = g.foldmap f acc x in
         Gfolded (Leaf x, acc)
-    | Branch (_, l, ends, mid) ->
-        let (Suc (km', Unit)) = km in
+    | Branch (g0, pw, l, ends, mid) ->
+        let (Plus plc) = D.plus (cod_sface f) in
+        let mc' = D.plus_assocr (Suc (Zero, g0)) plc mc in
         let (Gfolded_branches (ends, acc)) =
-          gfold_left_map_branches km' (local_suc_plus lm) d g (Endpoints.indices l) acc ends in
+          gfold_left_map_branches mc' f plc g0 g (Endpoints.indices l) acc ends in
         let (Gfolded (mid, acc)) =
-          gfold_map_left (local_suc_plus km) (local_suc_plus lm) (Mid (D.deg, d)) g acc mid in
-        Gfolded (Branch (D.deg, l, ends, mid), acc)
+          gfold_map_left mc' (sface_plus_sface (Mid (Zero, g0)) plc pw f) g acc mid in
+        Gfolded (Branch (g0, pw, l, ends, mid), acc)
 
-  and gfold_left_map_branches : type k m km n b c l len len' left1 left2 right1.
-      (k, m, km) D.plus ->
-      ((l, unit) D.suc, m, n) D.plus ->
-      (k, l) bwsface ->
-      (n, b, c) left_folder ->
+  and gfold_left_map_branches : type m1 w c gc n b cc len len' left1 left2 right1 g0.
+      (m1, gc, n) D.plus ->
+      (w, c) sface ->
+      ((D.zero, g0) D.suc, c, gc) D.plus ->
+      g0 D.G.t ->
+      (n, b, cc) left_folder ->
       (len Endpoints.t, len') Bwv.t ->
       (left1, left2) Acc.t ->
-      (left1, len', m, km, b, right1) C1.branches ->
-      (left2, len', m, km, c, right1) gfolded_branches =
-   fun km lm d g ixs acc brs ->
+      (left1, len', m1, w, b, right1) C1.branches ->
+      (left2, len', m1, w, cc, right1) gfolded_branches =
+   fun mc f plc g0 g ixs acc brs ->
     match (brs, ixs) with
     | Emp, Emp -> Gfolded_branches (Emp, acc)
     | Snoc (brs, br), Snoc (ixs, e) ->
-        let (Gfolded_branches (brs, acc)) = gfold_left_map_branches km lm d g ixs acc brs in
-        let (Gfolded (br, acc)) = gfold_map_left km lm (End (D.deg, e, d)) g acc br in
+        let (Gfolded_branches (brs, acc)) = gfold_left_map_branches mc f plc g0 g ixs acc brs in
+        let (Gfolded (br, acc)) =
+          gfold_map_left mc
+            (sface_plus_sface (End (Zero, g0, e)) plc (D.zero_plus (dom_sface f)) f)
+            g acc br in
         Gfolded_branches (Snoc (brs, br), acc)
 
   let fold_map_left : type n b c left1 left2 right1.
       (n, b, c) left_folder ->
       (left1, left2) Acc.t ->
-      (left1, n, n, b, right1) C1.gt ->
-      (left2, n, n, c, right1) gfolded =
-   fun g acc x ->
-    let n = C1.dim x in
-    gfold_map_left (D.zero_plus n) (D.zero_plus n) Zero g acc x
+      (left1, n, D.zero, b, right1) C1.gt ->
+      (left2, n, D.zero, c, right1) gfolded =
+   fun g acc x -> gfold_map_left Zero Zero g acc x
 end
 
 (* The most important case of indexed cubes is when the indices are type-level natural numbers that simply count how many entries there are in the cube.  TODO: Would it be easier to implement this case directly rather than as a special case of the more general version above, and if so would it simplify other things?  E.g. require fewer type annotations in uses?  It might also allow generic traversals to work. *)

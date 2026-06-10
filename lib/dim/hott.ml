@@ -23,13 +23,13 @@ let faces : unit -> ((D.zero, dim) sface * (D.zero, dim) sface * N.two Endpoints
 let cube : type a. a -> a -> a -> (dim, a) CubeOf.t option =
  fun x0 x1 x2 ->
   Option.map
-    (fun two -> CubeOf.Branch (D.deg, two, Snoc (Snoc (Emp, Leaf x0), Leaf x1), Leaf x2))
+    (fun two -> CubeOf.Branch (D.deg, Zero, two, Snoc (Snoc (Emp, Leaf x0), Leaf x1), Leaf x2))
     (Endpoints.hott ())
 
 let tube : type a. a -> a -> (D.zero, dim, dim, a) TubeOf.t option =
  fun x0 x1 ->
   Option.map
-    (fun two -> TubeOf.Branch (D.deg, two, Snoc (Snoc (Emp, Leaf x0), Leaf x1), Leaf D.zero))
+    (fun two -> TubeOf.Branch (D.deg, Zero, two, Snoc (Snoc (Emp, Leaf x0), Leaf x1), Leaf D.zero))
     (Endpoints.hott ())
 
 let cube2 : type a b.
@@ -39,13 +39,15 @@ let cube2 : type a b.
     (fun two ->
       CubeOf.Branch
         ( D.deg,
+          Zero,
           two,
           Snoc
             ( Snoc
                 ( Emp,
-                  Branch (D.deg, two, Snoc (Snoc (Emp, Leaf x00), Leaf x01), Leaf x02) ),
-              Branch (D.deg, two, Snoc (Snoc (Emp, Leaf x10), Leaf x11), Leaf x12) ),
-          Branch (D.deg, two, Snoc (Snoc (Emp, Leaf x20), Leaf x21), Leaf x22) ))
+                  Branch (D.deg, Zero, two, Snoc (Snoc (Emp, Leaf x00), Leaf x01), Leaf x02) ),
+              Branch (D.deg, Zero, two, Snoc (Snoc (Emp, Leaf x10), Leaf x11), Leaf x12) ),
+          Branch (D.deg, Suc (Zero, D.deg), two, Snoc (Snoc (Emp, Leaf x20), Leaf x21), Leaf x22)
+        ))
     (Endpoints.hott ())
 
 let tube12 : type a b.
@@ -55,11 +57,12 @@ let tube12 : type a b.
     (fun two ->
       TubeOf.Branch
         ( D.deg,
+          Zero,
           two,
           Snoc
             ( Snoc
                 ( Emp,
-                  Branch (D.deg, two, Snoc (Snoc (Emp, Leaf x00), Leaf x01), Leaf x02) ),
-              Branch (D.deg, two, Snoc (Snoc (Emp, Leaf x10), Leaf x11), Leaf x12) ),
+                  Branch (D.deg, Zero, two, Snoc (Snoc (Emp, Leaf x00), Leaf x01), Leaf x02) ),
+              Branch (D.deg, Zero, two, Snoc (Snoc (Emp, Leaf x10), Leaf x11), Leaf x12) ),
           Leaf dim ))
     (Endpoints.hott ())

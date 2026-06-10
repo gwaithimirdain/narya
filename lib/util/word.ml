@@ -65,6 +65,13 @@ module Make (G : Comparable) = struct
         let Eq = plus_uniq mn mn' in
         Eq
 
+  (* A plus with zero on the left is an equality. *)
+  let rec zero_plus_uniq : type n p. (zero, n, p) plus -> (n, p) Eq.t = function
+    | Zero -> Eq
+    | Suc (p, _) ->
+        let Eq = zero_plus_uniq p in
+        Eq
+
   (* Shifting successors *)
 
   type (_, _, _, _) plus_suc =
