@@ -7,6 +7,24 @@ open Deg
 open Insertion
 open Shuffle
 
+(* Local replacements for D.plus_suc / D.suc_plus, used in Pbijmap.gfind/gset/gbuild/gpmapM.  Single-direction-only; [Suc (_, Unit)] requires g = unit. *)
+
+let rec local_plus_suc : type m n p.
+    ((m, unit) D.suc, n, p) D.plus -> (m, (n, unit) D.suc, p) D.plus = function
+  | Zero -> Suc (Zero, Unit)
+  | Suc (x, Unit) -> Suc (local_plus_suc x, Unit)
+
+let rec local_push_unit_left : type a b c.
+    (a, b, c) D.plus -> ((a, unit) D.suc, b, (c, unit) D.suc) D.plus = function
+  | Zero -> Zero
+  | Suc (p, Unit) -> Suc (local_push_unit_left p, Unit)
+
+let local_suc_plus : type m n p.
+    (m, (n, unit) D.suc, p) D.plus -> ((m, unit) D.suc, n, p) D.plus =
+ fun x ->
+  let (Suc (y, Unit)) = local_push_unit_left x in
+  y
+
 (* A partial bijection is an insertion together with a shuffle.  Specifically, a partial bijection from a dimension 'evaluation to a dimension 'intrinsic consists of:
    - A dimension 'shared (the part of each that are bijective)
    - An insertion of 'shared into another dimension 'result to obtain 'evaluation.  This performs the permutation of 'shared.
@@ -355,10 +373,10 @@ module Pbijmap (F : Fam2) = struct
         let Zero = r12 in
         v
     | Pbij (ins, Left (g_left, shuf)), Suc m -> (
-        (* TODO: bridge via G.compare; gfind still uses D.suc_plus. *)
+        (* In single-direction g_left is unit; in multi-direction this G.compare bridge would need replacing. *)
         match D.G.compare g_left D.deg with
         | Neq -> assert false
-        | Eq -> gfind (Pbij (ins, shuf)) m.left (D.suc_plus r12))
+        | Eq -> gfind (Pbij (ins, shuf)) m.left (local_suc_plus r12))
     | Pbij (Suc (ins, i), Right (_, shuf)), Suc m ->
         let (Wrap m) = Tup.find i m.right in
         gfind (Pbij (ins, shuf)) m r12
@@ -382,7 +400,7 @@ module Pbijmap (F : Fam2) = struct
     | Pbij (ins, Left (g_left, shuf)), Suc m -> (
         match D.G.compare g_left D.deg with
         | Neq -> assert false
-        | Eq -> Suc { m with left = gset (Pbij (ins, shuf)) v m.left (D.suc_plus r12) })
+        | Eq -> Suc { m with left = gset (Pbij (ins, shuf)) v m.left (local_suc_plus r12) })
     | Pbij (Suc (ins, i), Right (_, shuf)), Suc m ->
         Suc
           {
@@ -416,7 +434,7 @@ module Pbijmap (F : Fam2) = struct
     match intrinsic with
     | Word Zero -> Zero (f.build (Pbij (ins_zero evaluation, Zero)) (D.plus_zero f.remaining))
     | Word (Suc (intrinsic, g_intrinsic)) -> (
-        (* TODO: bridge via G.compare; D.plus_suc inside the callback still hardcodes unit. *)
+        (* TODO: bridge via G.compare; local_plus_suc inside the callback still hardcodes unit. *)
         match D.G.compare g_intrinsic D.deg with
         | Neq -> assert false
         | Eq ->
@@ -429,7 +447,7 @@ module Pbijmap (F : Fam2) = struct
                       remaining = D.suc f.remaining g_intrinsic;
                       build =
                         (fun (Pbij (ins, shuf)) r12 ->
-                          f.build (Pbij (ins, Left (g_intrinsic, shuf))) (D.plus_suc r12));
+                          f.build (Pbij (ins, Left (g_intrinsic, shuf))) (local_plus_suc r12));
                     };
                 right =
                   (let build : type b g.
@@ -594,7 +612,7 @@ module Pbijmap (F : Fam2) = struct
             (f.map (Pbij (ins_zero evaluation, Zero)) (D.plus_zero f.remaining) (Heter.zeros ms))
           @@ fun res -> Heter.zero res
       | Suc { g = g_outer; _ } :: _ -> (
-          (* TODO: bridge via G.compare; gpmapM still calls D.plus_suc and D.suc inside the callbacks with hardcoded unit. *)
+          (* TODO: bridge via G.compare; gpmapM still calls local_plus_suc and D.suc inside the callbacks with hardcoded unit. *)
           match D.G.compare g_outer D.deg with
           | Neq -> assert false
           | Eq ->
@@ -626,7 +644,7 @@ module Pbijmap (F : Fam2) = struct
                          remaining = D.suc f.remaining g_outer;
                          map =
                            (fun (Pbij (ins, shuf)) r12 v ->
-                             f.map (Pbij (ins, Left (g_outer, shuf))) (D.plus_suc r12) v);
+                             f.map (Pbij (ins, Left (g_outer, shuf))) (local_plus_suc r12) v);
                        }
                        (Heter.left ms) ws)
                    (fun () -> T.pmapM { map } (Heter.right ms irvs) (MapTimes.cod irws)))
