@@ -10,6 +10,24 @@ open Bwsface
 open Tface
 open Bwtface
 
+(* Local replacements for D.plus_suc / D.suc_plus, used throughout the tube algorithms (gpmapM_*, gbuildM_*, glift, glower).  Single-direction-only; [Suc (_, Unit)] requires g = unit. *)
+
+let rec local_plus_suc : type m n p.
+    ((m, unit) D.suc, n, p) D.plus -> (m, (n, unit) D.suc, p) D.plus = function
+  | Zero -> Suc (Zero, Unit)
+  | Suc (x, Unit) -> Suc (local_plus_suc x, Unit)
+
+let rec local_push_unit_left : type a b c.
+    (a, b, c) D.plus -> ((a, unit) D.suc, b, (c, unit) D.suc) D.plus = function
+  | Zero -> Zero
+  | Suc (p, Unit) -> Suc (local_push_unit_left p, Unit)
+
+let local_suc_plus : type m n p.
+    (m, (n, unit) D.suc, p) D.plus -> ((m, unit) D.suc, n, p) D.plus =
+ fun x ->
+  let (Suc (y, Unit)) = local_push_unit_left x in
+  y
+
 (* Tube data structures *)
 
 module Tube (F : Fam2) = struct
@@ -232,10 +250,10 @@ module Tube (F : Fam2) = struct
           match D.G.compare gen D.deg with
           | Neq -> assert false
           | Eq ->
-              let mk' = D.plus_suc mk in
+              let mk' = local_plus_suc mk in
               let (Suc (mk'', Unit)) = mk' in
-              let ml' = D.plus_suc ml in
-              let ml1' = D.plus_suc ml1 in
+              let ml' = local_plus_suc ml in
+              let ml1' = local_plus_suc ml1 in
               let (Ends (l, hs, ends)) = C.Heter.ends trs in
               let mid = C.Heter.mid trs in
               let (Hgts newhs) = C.Heter.hgts_of_tlist cst in
@@ -268,10 +286,10 @@ module Tube (F : Fam2) = struct
           let Eq = D.plus_uniq m2l (D.zero_plus (D.plus_right ml)) in
           gpmapM_ll mk ml Zero d g trs cst
       | Suc (m12, Unit), Branch (_, _, _, _) :: _ ->
-          let mk' = D.plus_suc mk in
+          let mk' = local_plus_suc mk in
           let (Suc (mk'', Unit)) = mk' in
-          let ml' = D.plus_suc ml in
-          let m2l' = D.plus_suc m2l in
+          let ml' = local_plus_suc ml in
+          let m2l' = local_plus_suc m2l in
           let (Ends (l, hs, ends)) = C.Heter.ends trs in
           let mid = C.Heter.mid trs in
           let (Hgts newhs) = C.Heter.hgts_of_tlist cst in
@@ -304,7 +322,7 @@ module Tube (F : Fam2) = struct
       match (nk1, trs) with
       | Zero, Leaf n :: _ -> return (Heter.leaf n cst)
       | Suc (nk1, Unit), Branch (_, _, _, _) :: _ ->
-          let nk12' = D.plus_suc nk12 in
+          let nk12' = local_plus_suc nk12 in
           let (Suc (nk12'', Unit)) = nk12' in
           let (Ends (l, hs, ends)) = Heter.ends trs in
           let mid = Heter.mid trs in
@@ -315,7 +333,7 @@ module Tube (F : Fam2) = struct
                  BwvM.pmapM
                    (fun (e :: brs) ->
                      M.apply
-                       (gpmapM_l nk12'' (D.plus_suc nkl) nk1 (D.plus_suc kl)
+                       (gpmapM_l nk12'' (local_plus_suc nkl) nk1 (local_plus_suc kl)
                           (REnd (D.deg, e, d))
                           g (C.Heter.hgt_of_hlist hs brs) cst)
                      @@ fun xs -> C.Heter.hlist_of_hgt newhs xs)
@@ -327,7 +345,7 @@ module Tube (F : Fam2) = struct
                      | N.Nat Zero, Some ifzero -> ifzero
                      | _ -> return ())
                    (fun () ->
-                     gpmapM_r nk1 (D.plus_suc kl) nk12' (D.plus_suc nkl) (Mid (D.deg, d)) g mid ?ifzero cst)))
+                     gpmapM_r nk1 (local_plus_suc kl) nk12' (local_plus_suc nkl) (Mid (D.deg, d)) g mid ?ifzero cst)))
           @@ fun (newends, ((), newmid)) -> Heter.branch l newhs newends newmid
 
     let pmapM : type n k nk b bs cs.
@@ -397,10 +415,10 @@ module Tube (F : Fam2) = struct
           let Eq = D.plus_uniq ml1 (D.zero_plus (codl_bwtface d)) in
           M.apply (g.build (tface_of_bw d)) @@ fun x -> C.Leaf x
       | Word (Suc (m, Unit)) ->
-          let mk' = D.plus_suc mk in
+          let mk' = local_plus_suc mk in
           let (Suc (mk'', Unit)) = mk' in
-          let ml' = D.plus_suc ml in
-          let ml1' = D.plus_suc ml1 in
+          let ml' = local_plus_suc ml in
+          let ml1' = local_plus_suc ml1 in
           let (Wrap l) = Endpoints.wrapped () in
           M.apply
             (M.zip
@@ -427,10 +445,10 @@ module Tube (F : Fam2) = struct
           gbuildM_ll m mk ml Zero d g
       | Suc (m12, Unit) ->
           let (Word (Suc (m, Unit))) = m in
-          let mk' = D.plus_suc mk in
+          let mk' = local_plus_suc mk in
           let (Suc (mk'', Unit)) = mk' in
-          let ml' = D.plus_suc ml in
-          let m2l' = D.plus_suc m2l in
+          let ml' = local_plus_suc ml in
+          let m2l' = local_plus_suc m2l in
           let (Wrap l) = Endpoints.wrapped () in
           M.apply
             (M.zip
@@ -454,7 +472,7 @@ module Tube (F : Fam2) = struct
       match nk1 with
       | Zero -> return (Leaf n)
       | Suc (nk1, Unit) ->
-          let nk12' = D.plus_suc nk12 in
+          let nk12' = local_plus_suc nk12 in
           let (Suc (nk12'', Unit)) = nk12' in
           let (Wrap l) = Endpoints.wrapped () in
           M.apply
@@ -462,11 +480,11 @@ module Tube (F : Fam2) = struct
                (fun () ->
                  BwvM.mapM
                    (fun e ->
-                     gbuildM_l (D.plus_out n nk1) nk12'' (D.plus_suc nkl) nk1 (D.plus_suc kl)
+                     gbuildM_l (D.plus_out n nk1) nk12'' (local_plus_suc nkl) nk1 (local_plus_suc kl)
                        (REnd (D.deg, e, d))
                        g)
                    (Endpoints.indices l))
-               (fun () -> gbuildM_r n nk1 (D.plus_suc kl) nk12' (D.plus_suc nkl) (Mid (D.deg, d)) g))
+               (fun () -> gbuildM_r n nk1 (local_plus_suc kl) nk12' (local_plus_suc nkl) (Mid (D.deg, d)) g))
           @@ fun (ends, mid) -> Branch (D.deg, l, ends, mid)
 
     let buildM : type n k nk b.
@@ -524,7 +542,7 @@ module TubeOf = struct
         match D.G.compare g D.deg with
         | Neq -> assert false
         | Eq ->
-            let (Suc (n12', Unit)) = D.plus_suc n12 in
+            let (Suc (n12', Unit)) = local_plus_suc n12 in
             Branch (g, l, Bwv.map (fun t -> CubeOf.lift n12' t) ends, glift n12 mid))
 
   let rec glower : type m k mk n1 n2 n12 l b.
@@ -537,12 +555,12 @@ module TubeOf = struct
         match D.G.compare g D.deg with
         | Neq -> assert false
         | Eq ->
-            let mk' = D.plus_suc mk in
+            let mk' = local_plus_suc mk in
             let (Suc (mk'', Unit)) = mk' in
             Branch
               ( g,
                 l,
-                Bwv.map (fun t -> CubeOf.lower mk'' (D.plus_suc n12') t) ends,
+                Bwv.map (fun t -> CubeOf.lower mk'' (local_plus_suc n12') t) ends,
                 glower mk' n12 mid ))
 
   (* We can fill in the missing pieces of a tube with a cube, yielding a cube. *)
