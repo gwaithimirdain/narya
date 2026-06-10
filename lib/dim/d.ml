@@ -22,23 +22,7 @@ let two : two t = suc one deg
 
 type ('a, 'g, 'b) insert = ('a, 'g, 'b) Tbwd.insert
 
-(* TODO: temporary scaffolding.  These three functions are commutativity-dependent and will be removed once all call sites in cube/icube/tube/etc. are restructured to use Word.ml's structured forms (Phase 7). *)
-
-let rec plus_suc : type m n p.
-    ((m, unit) suc, n, p) plus -> (m, (n, unit) suc, p) plus = function
-  | Zero -> Suc (Zero, Unit)
-  | Suc (x, Unit) -> Suc (plus_suc x, Unit)
-
-let rec suc_plus_eq_suc : type m n p.
-    (m, n, p) plus -> ((m, unit) suc, n, (p, unit) suc) plus = function
-  | Zero -> Zero
-  | Suc (x, Unit) -> Suc (suc_plus_eq_suc x, Unit)
-
-let suc_plus : type m n p.
-    (m, (n, unit) suc, p) plus -> ((m, unit) suc, n, p) plus =
- fun x ->
-  let (Suc (y, Unit)) = suc_plus_eq_suc x in
-  y
+(* Phase 7: D.plus_suc, D.suc_plus, D.suc_plus_eq_suc have been removed from this file.  Each caller that needed them defines its own local recursive helper.  Those helpers are single-direction-only (use [Suc (_, Unit)] patterns); in a multi-direction future they will need to be redesigned algorithmically. *)
 
 (* Integer hackery, for converting from strings to degeneracies.  Should be replaced by something like a Bwv parametrized by a word, perhaps a version of a Tuple. *)
 
