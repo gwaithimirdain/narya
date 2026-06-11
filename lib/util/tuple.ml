@@ -2,9 +2,9 @@ open Signatures
 open Tlist
 open Tbwd
 
-(* A "tuple" is an intrinsically well-typed *total* map whose keys are insertions into some Word over a chosen generator type, and whose values are parametrized by the result of removing that inserted element.  *)
+(* A "tuple" is an intrinsically well-typed *total* map whose keys are insertions into some Word over a chosen generator type, and whose values are parametrized by the generator of the inserted element and the result of removing it.  *)
 
-module Make (G : Comparable) (F : Fam2) = struct
+module Make (G : Comparable) (F : Fam3) = struct
   module W = Word.Make (G)
 
   type (_, _, _) gt =
@@ -12,7 +12,7 @@ module Make (G : Comparable) (F : Fam2) = struct
     | Map : {
         gen : 'g G.t;
         bplus : ('a, 'b, 'ab) W.bplus;
-        now : ('ab, 'p) F.t;
+        now : ('g, 'ab, 'p) F.t;
         later : ('a, ('g, 'b) cons, 'p) gt;
       }
         -> (('a, 'g) snoc, 'b, 'p) gt
@@ -22,7 +22,7 @@ module Make (G : Comparable) (F : Fam2) = struct
   let empty : type b p. (W.zero, b, p) gt = Emp
 
   let rec gfind : type a asuc g b ab p.
-      (a, g, asuc) Tbwd.insert -> (asuc, b, p) gt -> (a, b, ab) W.bplus -> (ab, p) F.t =
+      (a, g, asuc) Tbwd.insert -> (asuc, b, p) gt -> (a, b, ab) W.bplus -> (g, ab, p) F.t =
    fun i m ab ->
     match i with
     | Now ->
@@ -33,12 +33,12 @@ module Make (G : Comparable) (F : Fam2) = struct
         let (Map { later; _ }) = m in
         gfind i later (Append_cons ab)
 
-  let find : type a asuc g p. (a, g, asuc) Tbwd.insert -> (asuc, p) t -> (a, p) F.t =
+  let find : type a asuc g p. (a, g, asuc) Tbwd.insert -> (asuc, p) t -> (g, a, p) F.t =
    fun i m -> gfind i m Append_nil
 
   let rec gset : type a asuc g b ab p.
       (a, g, asuc) Tbwd.insert ->
-      (ab, p) F.t ->
+      (g, ab, p) F.t ->
       (asuc, b, p) gt ->
       (a, b, ab) W.bplus ->
       (asuc, b, p) gt =
@@ -52,12 +52,13 @@ module Make (G : Comparable) (F : Fam2) = struct
         let (Map m) = m in
         Map { m with later = gset i v m.later (Append_cons ab) }
 
-  let set : type a asuc g p. (a, g, asuc) Tbwd.insert -> (a, p) F.t -> (asuc, p) t -> (asuc, p) t =
+  let set : type a asuc g p. (a, g, asuc) Tbwd.insert -> (g, a, p) F.t -> (asuc, p) t -> (asuc, p) t
+      =
    fun i v m -> gset i v m Append_nil
 
   let rec gupdate : type a asuc g b ab p.
       (a, g, asuc) Tbwd.insert ->
-      ((ab, p) F.t -> (ab, p) F.t) ->
+      ((g, ab, p) F.t -> (g, ab, p) F.t) ->
       (asuc, b, p) gt ->
       (a, b, ab) W.bplus ->
       (asuc, b, p) gt =
@@ -72,11 +73,11 @@ module Make (G : Comparable) (F : Fam2) = struct
         Map { m with later = gupdate i f m.later (Append_cons ab) }
 
   let update : type a asuc g p.
-      (a, g, asuc) Tbwd.insert -> ((a, p) F.t -> (a, p) F.t) -> (asuc, p) t -> (asuc, p) t =
+      (a, g, asuc) Tbwd.insert -> ((g, a, p) F.t -> (g, a, p) F.t) -> (asuc, p) t -> (asuc, p) t =
    fun i f m -> gupdate i f m Append_nil
 
   type ('asuc, 'p) builder = {
-    build : 'a 'g. 'g G.t -> ('a, 'g, 'asuc) Tbwd.insert -> ('a, 'p) F.t;
+    build : 'a 'g. 'g G.t -> ('a, 'g, 'asuc) Tbwd.insert -> ('g, 'a, 'p) F.t;
   }
 
   let rec gbuild : type a b ab p. a W.t -> (a, b, ab) W.bplus -> (ab, p) builder -> (a, b, p) gt =
@@ -99,9 +100,9 @@ module Make (G : Comparable) (F : Fam2) = struct
   (* Generic traversal *)
 
   module Heter = struct
-    type (_, _) hft =
-      | [] : ('a, nil) hft
-      | ( :: ) : ('a, 'p) F.t * ('a, 'ps) hft -> ('a, ('p, 'ps) cons) hft
+    type (_, _, _) hft =
+      | [] : ('g, 'a, nil) hft
+      | ( :: ) : ('g, 'a, 'p) F.t * ('g, 'a, 'ps) hft -> ('g, 'a, ('p, 'ps) cons) hft
 
     type (_, _, _) hgt =
       | [] : ('a, 'b, nil) hgt
@@ -114,7 +115,7 @@ module Make (G : Comparable) (F : Fam2) = struct
     let rec map : type a b ab g ps.
         g G.t ->
         (a, b, ab) W.bplus ->
-        (ab, ps) hft ->
+        (g, ab, ps) hft ->
         (a, (g, b) cons, ps) hgt ->
         ((a, g) snoc, b, ps) hgt =
      fun gen ab nows laters ->
@@ -123,7 +124,8 @@ module Make (G : Comparable) (F : Fam2) = struct
       | now :: nows, later :: laters ->
           Map { gen; bplus = ab; now; later } :: map gen ab nows laters
 
-    let rec now : type a b ab g ps. (a, b, ab) W.bplus -> ((a, g) snoc, b, ps) hgt -> (ab, ps) hft =
+    let rec now : type a b ab g ps.
+        (a, b, ab) W.bplus -> ((a, g) snoc, b, ps) hgt -> (g, ab, ps) hft =
      fun ab m ->
       match m with
       | [] -> []
@@ -138,9 +140,10 @@ module Make (G : Comparable) (F : Fam2) = struct
 
   (* OCaml can't always tell from context what [x ; xs] should be; in particular it often fails to notice hfts.  So we also give a different syntax that is unambiguous.  *)
   module Infix = struct
-    let hnil : type n. (n, nil) Heter.hft = []
+    let hnil : type g n. (g, n, nil) Heter.hft = []
 
-    let ( @: ) : type n x xs. (n, x) F.t -> (n, xs) Heter.hft -> (n, (x, xs) cons) Heter.hft =
+    let ( @: ) : type g n x xs.
+        (g, n, x) F.t -> (g, n, xs) Heter.hft -> (g, n, (x, xs) cons) Heter.hft =
      fun x xs -> x :: xs
   end
 
@@ -152,7 +155,10 @@ module Make (G : Comparable) (F : Fam2) = struct
     type ('asuc, 'ps, 'qs) pmapperM = {
       map :
         'a 'g.
-        'g G.t -> ('a, 'g, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> ('a, 'qs) Heter.hft M.t;
+        'g G.t ->
+        ('a, 'g, 'asuc) Tbwd.insert ->
+        ('g, 'a, 'ps) Heter.hft ->
+        ('g, 'a, 'qs) Heter.hft M.t;
     }
 
     let rec gpmapM : type a b ab p ps qs.
@@ -179,7 +185,9 @@ module Make (G : Comparable) (F : Fam2) = struct
      fun f mss qs -> gpmapM Append_nil f mss qs
 
     type ('asuc, 'ps, 'q) mmapperM = {
-      map : 'a 'g. 'g G.t -> ('a, 'g, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> ('a, 'q) F.t M.t;
+      map :
+        'a 'g.
+        'g G.t -> ('a, 'g, 'asuc) Tbwd.insert -> ('g, 'a, 'ps) Heter.hft -> ('g, 'a, 'q) F.t M.t;
     }
 
     let mmapM : type a p ps q.
@@ -190,7 +198,7 @@ module Make (G : Comparable) (F : Fam2) = struct
       @@ fun [ ys ] -> ys
 
     type ('asuc, 'ps) miteratorM = {
-      it : 'a 'g. 'g G.t -> ('a, 'g, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> unit M.t;
+      it : 'a 'g. 'g G.t -> ('a, 'g, 'asuc) Tbwd.insert -> ('g, 'a, 'ps) Heter.hft -> unit M.t;
     }
 
     let miterM : type a p ps.

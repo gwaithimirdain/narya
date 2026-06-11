@@ -2,29 +2,32 @@ open Signatures
 open Tlist
 open Tbwd
 
-module Make (G : Comparable) (F : Fam2) : sig
+module Make (G : Comparable) (F : Fam3) : sig
   module W : module type of Word.Make (G)
 
   type ('a, 'b, 'p) gt
   type ('a, 'p) t = ('a, nil, 'p) gt
 
   val empty : (W.zero, 'p) t
-  val find : ('a, 'g, 'asuc) Tbwd.insert -> ('asuc, 'p) t -> ('a, 'p) F.t
-  val set : ('a, 'g, 'asuc) Tbwd.insert -> ('a, 'p) F.t -> ('asuc, 'p) t -> ('asuc, 'p) t
+  val find : ('a, 'g, 'asuc) Tbwd.insert -> ('asuc, 'p) t -> ('g, 'a, 'p) F.t
+  val set : ('a, 'g, 'asuc) Tbwd.insert -> ('g, 'a, 'p) F.t -> ('asuc, 'p) t -> ('asuc, 'p) t
 
   val update :
-    ('a, 'g, 'asuc) Tbwd.insert -> (('a, 'p) F.t -> ('a, 'p) F.t) -> ('asuc, 'p) t -> ('asuc, 'p) t
+    ('a, 'g, 'asuc) Tbwd.insert ->
+    (('g, 'a, 'p) F.t -> ('g, 'a, 'p) F.t) ->
+    ('asuc, 'p) t ->
+    ('asuc, 'p) t
 
   type ('asuc, 'p) builder = {
-    build : 'a 'g. 'g G.t -> ('a, 'g, 'asuc) Tbwd.insert -> ('a, 'p) F.t;
+    build : 'a 'g. 'g G.t -> ('a, 'g, 'asuc) Tbwd.insert -> ('g, 'a, 'p) F.t;
   }
 
   val build : 'a W.t -> ('a, 'p) builder -> ('a, 'p) t
 
   module Heter : sig
-    type (_, _) hft =
-      | [] : ('a, nil) hft
-      | ( :: ) : ('a, 'p) F.t * ('a, 'ps) hft -> ('a, ('p, 'ps) cons) hft
+    type (_, _, _) hft =
+      | [] : ('g, 'a, nil) hft
+      | ( :: ) : ('g, 'a, 'p) F.t * ('g, 'a, 'ps) hft -> ('g, 'a, ('p, 'ps) cons) hft
 
     type (_, _, _) hgt =
       | [] : ('a, 'b, nil) hgt
@@ -35,7 +38,10 @@ module Make (G : Comparable) (F : Fam2) : sig
     type ('asuc, 'ps, 'qs) pmapperM = {
       map :
         'a 'g.
-        'g G.t -> ('a, 'g, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> ('a, 'qs) Heter.hft M.t;
+        'g G.t ->
+        ('a, 'g, 'asuc) Tbwd.insert ->
+        ('g, 'a, 'ps) Heter.hft ->
+        ('g, 'a, 'qs) Heter.hft M.t;
     }
 
     val pmapM :
@@ -45,7 +51,9 @@ module Make (G : Comparable) (F : Fam2) : sig
       ('a, nil, 'qs) Heter.hgt M.t
 
     type ('asuc, 'ps, 'q) mmapperM = {
-      map : 'a 'g. 'g G.t -> ('a, 'g, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> ('a, 'q) F.t M.t;
+      map :
+        'a 'g.
+        'g G.t -> ('a, 'g, 'asuc) Tbwd.insert -> ('g, 'a, 'ps) Heter.hft -> ('g, 'a, 'q) F.t M.t;
     }
 
     val mmapM :
@@ -54,7 +62,7 @@ module Make (G : Comparable) (F : Fam2) : sig
       ('a, nil, 'q) gt M.t
 
     type ('asuc, 'ps) miteratorM = {
-      it : 'a 'g. 'g G.t -> ('a, 'g, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> unit M.t;
+      it : 'a 'g. 'g G.t -> ('a, 'g, 'asuc) Tbwd.insert -> ('g, 'a, 'ps) Heter.hft -> unit M.t;
     }
 
     val miterM : ('a, ('p, 'ps) cons) miteratorM -> ('a, nil, ('p, 'ps) cons) Heter.hgt -> unit M.t

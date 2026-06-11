@@ -28,6 +28,20 @@ module type Comparable = sig
   val compare : 'g1 t -> 'g2 t -> ('g1, 'g2) Eq.compare
 end
 
+(* A Decidable is a Comparable whose comparison can also produce positive *apartness* witnesses: data (containing no closures, hence marshallable) attesting that two index types are distinct, which can be eliminated when combined with contradictory type-level equalities, so that impossible branches need no runtime assertions. *)
+module type Decidable = sig
+  include Comparable
+
+  type ('g1, 'g2) apart
+
+  type (_, _) decision =
+    | Same : ('g, 'g) decision
+    | Distinct : ('g1, 'g2) apart -> ('g1, 'g2) decision
+
+  val decide : 'g1 t -> 'g2 t -> ('g1, 'g2) decision
+  val apart_irrefl : ('g, 'g) apart -> Empty.t
+end
+
 module type Function = sig
   module Dom : Fam
   module Cod : Fam
