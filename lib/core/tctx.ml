@@ -811,15 +811,16 @@ type (_, _) index =
   | Index :
       ('a, 'modality, 'n, 'an) insert
       * ('k, 'n) sface
+      * ('dom, 'modality, 'mode, 'n, 'n) Modality.filter_dim
       * ('an, 'mode, 'modality, 'dom, 'anm) plus_lock
       -> ('dom, 'anm) index
 
 let permute_index : type anm bnm mode. (anm, bnm) permute -> (mode, anm) index -> (mode, bnm) index
     =
- fun permlock (Index (ia, fa, am)) ->
+ fun permlock (Index (ia, fa, filt, am)) ->
   let (Unpermute (perm, bm)) = unpermute_plus_lock permlock am in
   let (Permute_insert (ib, _)) = permute_insert ia perm in
-  Index (ib, fa, bm)
+  Index (ib, fa, filt, bm)
 
 (* Add the same dimension on the left of all the dimensions in a type-level context. *)
 

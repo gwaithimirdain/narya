@@ -1,4 +1,5 @@
 open Util
+open Dim
 
 type ('a, 'm, 'n, 'b) gen =
   | PK : ('a, 'm, 'b) Modality.t * int * ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) gen
@@ -41,6 +42,13 @@ module type Theory = sig
   val compare : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'n, 'b) t -> bool
   val find_unique : ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) t option
   val to_string : ('a, 'm, 'n, 'b) t -> string
+
+  val filter_deg :
+    ('a, 'm, 'n, 'b) t ->
+    'z D.t ->
+    ('a, 'm, 'b, 'x, 'z) Modality.filter_dim ->
+    ('a, 'n, 'b, 'y, 'z) Modality.filter_dim ->
+    ('y, 'x) deg
 end
 
 let theory : (module Theory) ref =
@@ -49,6 +57,7 @@ let theory : (module Theory) ref =
       let compare _ _ = failwith "Modalcell.theory not set"
       let find_unique _ _ = failwith "Modalcell.theory not set"
       let to_string _ = failwith "Modalcell.theory not set"
+      let filter_deg _ _ _ = failwith "Modalcell.theory not set"
     end : Theory)
 
 let choose_theory (t : (module Theory)) = theory := t
@@ -179,3 +188,13 @@ let to_string : type a m n b. (a, m, n, b) t -> string =
  fun m ->
   let module T = (val !theory) in
   T.to_string m
+
+let filter_deg : type a m n b x y z.
+    (a, m, n, b) t ->
+    z D.t ->
+    (a, m, b, x, z) Modality.filter_dim ->
+    (a, n, b, y, z) Modality.filter_dim ->
+    (y, x) deg =
+ fun a z fm fn ->
+  let module T = (val !theory) in
+  T.filter_deg a z fm fn

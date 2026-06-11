@@ -71,6 +71,19 @@ struct
     ^ string_of_int (Modality.length (Modalcell.vsrc m))
     ^ "_"
     ^ string_of_int (Modality.length (Modalcell.vtgt m))
+
+  let filter_deg : type a m n b x y z.
+      (a, m, n, b) Modalcell.t ->
+      z D.t ->
+      (a, m, b, x, z) Modality.filter_dim ->
+      (a, n, b, y, z) Modality.filter_dim ->
+      (y, x) deg =
+   fun _ z fm fn ->
+    let x = Modality.filtered z fm in
+    let y = Modality.filtered z fn in
+    match D.compare x y with
+    | Eq -> id_deg x
+    | Neq -> failwith "impossible modal cell in idempotent comonad theory"
 end
 
 let install () =

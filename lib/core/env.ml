@@ -92,10 +92,10 @@ let rec remove_keys : type mode mu cod k b bc.
       let (Remove_keys (env, filter, keys)) = remove_keys env (Plus_with_locks (nb_nc, ll_nc)) in
       let (Plus kn) = D.plus (D.plus_right mn) in
       (* TODO: This is impossible as written: the dimension n may not be filtered. *)
-      ignore filter;
-      Remove_keys (Unshift (env, kn, nb), Sorry.e (), keys)
+      Remove_keys (Unshift (env, kn, nb), filter, keys)
   | _, _, Act (env, op) ->
       let (Remove_keys (env, filter, keys)) = remove_keys env (Plus_with_locks (bc, llc)) in
+      (* TODO: This is impossible as written. *)
       let (Filter_op' (op, filter)) = Modality.filter_op' filter op in
       Remove_keys (Act (env, op), filter, keys)
   (* If we reach the end of the environment, or a value entry, we bottom out the recursion, returning an identity key. *)

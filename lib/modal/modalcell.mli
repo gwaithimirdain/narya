@@ -1,4 +1,5 @@
 open Util
+open Dim
 
 type ('a, 'm, 'n, 'b) gen
 
@@ -30,6 +31,13 @@ module type Theory = sig
   val compare : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'n, 'b) t -> bool
   val find_unique : ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) t option
   val to_string : ('a, 'm, 'n, 'b) t -> string
+
+  val filter_deg :
+    ('a, 'm, 'n, 'b) t ->
+    'z D.t ->
+    ('a, 'm, 'b, 'x, 'z) Modality.filter_dim ->
+    ('a, 'n, 'b, 'y, 'z) Modality.filter_dim ->
+    ('y, 'x) deg
 end
 
 val choose_theory : (module Theory) -> unit
@@ -99,3 +107,10 @@ val vcomp_extending :
   ('a, 'm, 'b) cod_wrapped
 
 val to_string : ('a, 'm, 'n, 'b) t -> string
+
+val filter_deg :
+  ('a, 'm, 'n, 'b) t ->
+  'z D.t ->
+  ('a, 'm, 'b, 'x, 'z) Modality.filter_dim ->
+  ('a, 'n, 'b, 'y, 'z) Modality.filter_dim ->
+  ('y, 'x) deg

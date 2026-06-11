@@ -12,15 +12,16 @@ open Printable
 open View
 
 (* Since some entries in an environment are lazy and some aren't, lookup_cube returns a cube whose entries belong to an existential type, along with a function to act on any element of that type and force it into a value.  It also returns an accumulated operator by which to act, first selecting an entry in the cube with a face and then acting on that value by a degeneracy. *)
-type (_, _) looked_up_cube =
+type (_, _, _, _) looked_up_cube =
   | Looked_up : {
       act :
         'x 'y 'mu 'nu 'cod.
         'a -> ('x, 'y) deg -> ('mode, 'mu, 'nu, 'cod) Modalcell.t option -> ('mode, kinetic) value;
       op : ('m, 'n) op;
+      filter : ('mode, 'modality, 'cod, 'm, 'p) Modality.filter_dim;
       entry : ('n, 'a) CubeOf.t;
     }
-      -> ('mode, 'm) looked_up_cube
+      -> ('mode, 'modality, 'cod, 'p) looked_up_cube
 
 (* Require that the supplied list contains exactly one argument for each annotated variable being added, and add all of those cubes to the given environment. *)
 let rec take_args : type mode annotations m n mn a b ab.
@@ -1353,13 +1354,13 @@ and app_eval_apps : type mode s any.
       | Unrealized -> Unrealized)
 
 (* Look up a cube of values in an environment by variable index, accumulating operator actions, shifts, and keys as we go.  At the end, we usually use the operator to select a value from the cubes (with its face part) and act on it (with its degeneracy part).  We assume all the keys on the end of the environment have already been stripped off, even though the input types don't statically rule out a key with identity domain. *)
-and lookup_cube : type dom mu mode n a b k mk nk.
+and lookup_cube : type dom mu mode n a b k p nk.
     (mode, n, b) env ->
     (n, k, nk) D.plus ->
     (dom, mu, mode) Modality.t ->
     (a, mu, k, b) insert ->
-    (mk, nk) op ->
-    (dom, mk) looked_up_cube =
+    (p, nk) op ->
+    (dom, mu, mode, p) looked_up_cube =
  fun env nk mu v op ->
   match (env, v) with
   (* Since there's an index, the environment can't be empty. *)
@@ -1372,21 +1373,37 @@ and lookup_cube : type dom mu mode n a b k mk nk.
   (* Nonidentity keys are disallowed here, because we've already called Env.remove_keys that is supposed to strip them all off. *)
   | Key (env, filter, cell, plus), _ -> (
       match (Modalcell.compare_id cell, plus) with
-      | Eq, Plus_lock (Zero _, Zero) -> lookup_cube env nk mu v op
+      | Eq, Plus_lock (Zero _, Zero) ->
+          let Eq = Modality.eq_of_filter_id filter in
+          lookup_cube env nk mu v op
       | _ -> fatal (Anomaly "nonidentity key in lookup_cube"))
   (* If we encounter a shift or unshift, we just have to edit the insertion and go on. *)
-  | Shift (env, n_x, xb), v ->
-      (* In this branch, k is renamed to x+k. *)
-      let n_xk = nk in
-      let (Uncoinsert (x_k, v, _)) = Plusmap.uncoinsert v xb in
-      let nx_k = D.plus_assocl n_x x_k n_xk in
+  | ( Shift
+        (type x nx b')
+        ((env, n_x, xb) : (mode, nx, b') env * (n, x, nx) D.plus * (x, b', b, mode) plusmap),
+      v ) ->
+      (* In this branch, k is renamed to y+k, where y is the filtered x. *)
+      let n_yk = nk in
+      let (Uncoinsert
+             (type y k d c b'')
+             ((y_k, filter, v, _) :
+               (y, k, _) D.plus * (d, mu, c, y, x) Modality.filter_dim * (b'', mu, k, b') insert * _))
+          =
+        Plusmap.uncoinsert v xb in
+      let k = D.plus_right y_k in
+      let (Plus nx_k) = D.plus k in
+      (* let nx_k = D.plus_assocl n_x x_k n_xk in *)
       lookup_cube env nx_k mu v op
   | Unshift (env, n_x, xb), v ->
       (* In this branch, n is renamed to n+x. *)
       let nx_k = nk in
-      let (Uninsert (x_k, v, _)) = Plusmap.uninsert v xb in
-      let n_xk = D.plus_assocr n_x x_k nx_k in
-      lookup_cube env n_xk mu v op
+      let (Uninsert (y_k, filter, v, _)) = Plusmap.uninsert v xb in
+      (* let n_xk = D.plus_assocr n_x x_k nx_k in *)
+      let x = D.plus_right n_x in
+      let y = Modality.filtered x filter in
+      let yk = D.plus_out y y_k in
+      let (Plus n_yk) = D.plus yk in
+      lookup_cube env n_yk mu v op
   (* If the environment is permuted, we apply the permutation to the index. *)
   | Permute (p, env), v ->
       let (Permute_insert (v, _)) = permute_insert v p in
@@ -1394,26 +1411,52 @@ and lookup_cube : type dom mu mode n a b k mk nk.
   (* If we encounter a variable that isn't ours, we skip it and proceed. *)
   | Ext { env; _ }, Later v -> lookup_cube env nk mu v op
   (* Finally, when we find our variable, we decompose the accumulated operator into a strict face and degeneracy, use the face as an index lookup, and act by the degeneracy.  The forcing function is the identity if the entry is not lazy, and force_eval_term if it is lazy. *)
-  | Ext { env = _; plus = nk'; modality; filter; filtered; values }, Now -> (
-      let Eq = D.plus_uniq nk nk' in
+  | Ext { env = _; plus = mk; modality; filter; filtered; values }, Now -> (
+      let (Filter_op (op, filter)) =
+        Modality.filter_op (Modality.filter_plus mk nk filter filtered) op in
       match (values, Modality.compare modality mu) with
       (* Looking up a variable that's bound to an error immediately fails with that error.  (In particular, this sort of failure can't currently happen "deeper" inside a term.) *)
       | `Error e, _ -> fatal e
-      | `Ok entry, Eq -> Looked_up { act = (fun x s c -> act_value x s c); op; entry }
+      | `Ok entry, Eq -> Looked_up { act = (fun x s c -> act_value x s c); filter; op; entry }
       | `Lazy entry, Eq ->
-          Looked_up { act = (fun x s c -> force_eval_term (act_lazy_eval x s c)); op; entry }
-      | _, Neq -> fatal (Modality_mismatch (`Internal, "lookup_cube keys", modality, mu)))
+          Looked_up
+            { act = (fun x s c -> force_eval_term (act_lazy_eval x s c)); filter; op; entry }
+      | `Ok _, Neq | `Lazy _, Neq ->
+          fatal (Modality_mismatch (`Internal, "lookup_cube keys", modality, mu)))
 
-and lookup : type mode n b. (mode, n, b) env -> (mode, b) index -> (mode, kinetic) value =
- fun env (Index (v, fa, plus)) ->
-  let (Plus n_k) = D.plus (cod_sface fa) in
-  let n = dim_env env in
-  let (Remove_keys (env, filter, keys)) = Env.remove_keys_plus_lock env plus in
+and lookup : type mode m bkm. (mode, m, bkm) env -> (mode, bkm) index -> (mode, kinetic) value =
+ fun env
+     (Index
+        (type b l k bn mu cod)
+        ((v, fa, filter_mu_k_k, plus) :
+          (b, mu, k, bn) insert
+          * (l, k) sface
+          * (mode, mu, cod, k, k) Modality.filter_dim
+          * (bn, cod, mu, mode, bkm) plus_lock)) ->
+  let _m = dim_env env in
+  let k = cod_sface fa in
+  let l = dom_sface fa in
+  let (Plus m_l) = D.plus l in
   let mu = plus_lock_modality plus in
-  match lookup_cube env n_k mu v (id_op (D.plus_out n n_k)) with
-  | Looked_up { act; op; entry } ->
-      let (Plus x) = D.plus (dom_sface fa) in
-      let (Op (f, s)) = comp_op op (plus_op n n_k x (op_of_sface fa)) in
+  let (Remove_keys
+         (type n nu)
+         ((env, filter_nu_m_n, keys) :
+           (cod, n, bn) env
+           * (mode, nu, cod, m, n) Modality.filter_dim
+           * (mode, mu, nu, cod) Modalcell.t)) =
+    Env.remove_keys_plus_lock env plus in
+  let n = dim_env env in
+  let (Plus n_k) = D.plus k in
+  let nk = D.plus_out n n_k in
+  match lookup_cube env n_k mu v (id_op nk) with
+  | Looked_up { act; filter = filter_mu_mk_nk; op; entry } ->
+      let (Has_filter (type q) (filter_mu_q_n : (mode, mu, cod, q, n) Modality.filter_dim)) =
+        Modality.filter mu n in
+      let (Plus q_k) = D.plus k in
+      let filter_mu_qk_nk = Modality.filter_plus q_k n_k filter_mu_q_n filter_mu_k_k in
+      let Eq = Modality.filter_uniq filter_mu_mk_nk filter_mu_qk_nk in
+      let s = Modalcell.filter_deg keys n filter_mu_q_n filter_nu_m_n in
+      let (Op (f, s)) = comp_op op (op_plus_op (op_of_deg s) q_k m_l (op_of_sface fa)) in
       act (CubeOf.find entry f) s (Some keys)
 
 (* Instantiate an arbitrary value, combining tubes. *)

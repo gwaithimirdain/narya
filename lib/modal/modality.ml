@@ -483,6 +483,16 @@ let filter_deg : type x m y a b c.
   let (Except_deg (s, ex)) = except_deg p ex s in
   Filter_deg (s, Filter (e, ex))
 
+type (_, _, _, _, _) filter_op =
+  | Filter_op : ('d, 'a) op * ('x, 'm, 'y, 'd, 'c) filter_dim -> ('x, 'm, 'y, 'a, 'c) filter_op
+
+let filter_op : type x m y a b c.
+    (x, m, y, a, b) filter_dim -> (c, b) op -> (x, m, y, a, c) filter_op =
+ fun filt (Op (fa, s)) ->
+  let (Filter_sface (fa, filt)) = filter_sface filt fa in
+  let (Filter_deg (s, filt)) = filter_deg filt s in
+  Filter_op (Op (fa, s), filt)
+
 type (_, _, _, _, _) filter_perm =
   | Filter_perm :
       ('d, 'a) perm * ('x, 'm, 'y, 'd, 'c) filter_dim
@@ -494,34 +504,6 @@ let filter_perm : type x m y a b c.
   let (Loop p) = Nonparametric.cod e in
   let (Except_perm (s, ex)) = except_perm p ex s in
   Filter_perm (s, Filter (e, ex))
-
-type (_, _, _, _, _) filter_deg' =
-  | Filter_deg' : ('d, 'b) deg * ('x, 'm, 'y, 'c, 'd) filter_dim -> ('x, 'm, 'y, 'b, 'c) filter_deg'
-
-(* TODO: This is also impossible as written, since c could contain filtered dimensions. *)
-
-let filter_deg' : type x m y a b c.
-    (x, m, y, a, b) filter_dim -> (c, a) deg -> (x, m, y, b, c) filter_deg' =
- fun _ _ -> Sorry.e ()
-
-type (_, _, _, _, _) filter_sface' =
-  | Filter_sface' :
-      ('d, 'b) sface * ('x, 'm, 'y, 'c, 'd) filter_dim
-      -> ('x, 'm, 'y, 'b, 'c) filter_sface'
-
-let filter_sface' : type x m y a b c.
-    (x, m, y, a, b) filter_dim -> (c, a) sface -> (x, m, y, b, c) filter_sface' =
- fun _ _ -> Sorry.e ()
-
-type (_, _, _, _, _) filter_op' =
-  | Filter_op' : ('d, 'b) op * ('x, 'm, 'y, 'c, 'd) filter_dim -> ('x, 'm, 'y, 'b, 'c) filter_op'
-
-let filter_op' : type x m y a b c.
-    (x, m, y, a, b) filter_dim -> (c, a) op -> (x, m, y, b, c) filter_op' =
- fun f (Op (fa, s)) ->
-  let (Filter_sface' (fa', f)) = filter_sface' f fa in
-  let (Filter_deg' (s', f)) = filter_deg' f s in
-  Filter_op' (Op (fa', s'), f)
 
 let filter_comp : type x y z m n nm a b c.
     (x, m, y, n, z, nm) comp ->

@@ -105,7 +105,7 @@ module Codata = struct
    fun mode (Fibrancy (type nh hb) (f : (mode, g, n, nh, b, hb, et) codata_fibrancy))
        (Entry (fld, fldty)) ->
     (* x is the index-zero variable. *)
-    let x = Var (Index (Now, id_sface D.zero, plus_no_lock mode)) in
+    let x = Var (Index (Now, id_sface D.zero, Modality.filter_id mode D.zero, plus_no_lock mode)) in
     let ins = zero_ins Hott.dim in
     (* Compute terms that project each fibrancy field out of the codatatype and apply it to the index-zero variable 'x'. *)
     let idm = Modality.id mode in
@@ -228,9 +228,12 @@ module Codata = struct
                 Plusmap.Dom.suc
                   (Plusmap.Dom.suc hlength (Dim (idm, D.zero, Modality.filter_zero idm)))
                   (Dim (idm, D.zero, Modality.filter_zero idm)) in
-              let x0 = Var (Index (Later (Later Now), id_sface D.zero, plus_no_lock mode)) in
-              let x1 = Var (Index (Later Now, id_sface D.zero, plus_no_lock mode)) in
-              let x2 = Var (Index (Now, id_sface D.zero, plus_no_lock mode)) in
+              let makeidx v =
+                Var (Index (v, id_sface D.zero, Modality.filter_id mode D.zero, plus_no_lock mode))
+              in
+              let x0 = makeidx (Later (Later Now)) in
+              let x1 = makeidx (Later Now) in
+              let x2 = makeidx Now in
               let* xtube = Hott.tube x0 x1 in
               let* xcube = Hott.cube x0 x1 x2 in
               let folder :
@@ -287,13 +290,13 @@ module Codata = struct
                 | Higher _ ->
                     (* TODO *)
                     (fields, fib) in
-              let x0 = Var (Index (Later Now, id_sface D.zero, plus_no_lock mode)) in
+              let x0 = makeidx (Later Now) in
               let x1 :
                   ( mode,
                     ((hb, (mode id, D.zero) dim_entry) snoc, (mode id, D.zero) dim_entry) snoc,
                     kinetic )
                   term =
-                Var (Index (Now, id_sface D.zero, plus_no_lock mode)) in
+                makeidx Now in
               let* xtube = Hott.tube x0 x1 in
               let fields, Fibrancy fib =
                 Bwd.fold_left folder
