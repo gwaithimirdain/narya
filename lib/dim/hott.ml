@@ -11,8 +11,7 @@ let dim : dim D.t = D.one
 let singleton : dim is_singleton = One
 
 let sym : type b. (dim, dim, b) D.plus -> (b, b) deg =
- fun (Suc (Zero, Unit)) ->
-  Suc (Suc (Zero D.zero, D.deg, Now), D.deg, Later Now)
+ fun (Suc (Zero, Unit)) -> Suc (Suc (Zero D.zero, D.deg, Now), D.deg, Later Now)
 
 let faces : unit -> ((D.zero, dim) sface * (D.zero, dim) sface * N.two Endpoints.len) option =
  fun () ->
@@ -42,12 +41,9 @@ let cube2 : type a b.
           Zero,
           two,
           Snoc
-            ( Snoc
-                ( Emp,
-                  Branch (D.deg, Zero, two, Snoc (Snoc (Emp, Leaf x00), Leaf x01), Leaf x02) ),
+            ( Snoc (Emp, Branch (D.deg, Zero, two, Snoc (Snoc (Emp, Leaf x00), Leaf x01), Leaf x02)),
               Branch (D.deg, Zero, two, Snoc (Snoc (Emp, Leaf x10), Leaf x11), Leaf x12) ),
-          Branch (D.deg, Suc (Zero, D.deg), two, Snoc (Snoc (Emp, Leaf x20), Leaf x21), Leaf x22)
-        ))
+          Branch (D.deg, Suc (Zero, D.deg), two, Snoc (Snoc (Emp, Leaf x20), Leaf x21), Leaf x22) ))
     (Endpoints.hott ())
 
 let tube12 : type a b.
@@ -60,9 +56,7 @@ let tube12 : type a b.
           Zero,
           two,
           Snoc
-            ( Snoc
-                ( Emp,
-                  Branch (D.deg, Zero, two, Snoc (Snoc (Emp, Leaf x00), Leaf x01), Leaf x02) ),
+            ( Snoc (Emp, Branch (D.deg, Zero, two, Snoc (Snoc (Emp, Leaf x00), Leaf x01), Leaf x02)),
               Branch (D.deg, Zero, two, Snoc (Snoc (Emp, Leaf x10), Leaf x11), Leaf x12) ),
           Leaf dim ))
     (Endpoints.hott ())

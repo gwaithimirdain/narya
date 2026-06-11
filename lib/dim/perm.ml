@@ -46,9 +46,7 @@ let rec perm_of_deg : type m n. (m, n) deg -> (m, n) perm option = function
 (* Residuals of permutations are just like those for degeneracies *)
 
 type (_, _, _) perm_residual =
-  | Residual :
-      ('m, 'n) perm * 'g D.G.t * ('m, 'g, 'msuc) D.insert
-      -> ('msuc, 'n, 'g) perm_residual
+  | Residual : ('m, 'n) perm * 'g D.G.t * ('m, 'g, 'msuc) D.insert -> ('msuc, 'n, 'g) perm_residual
 
 let rec perm_residual : type m n g npred.
     (m, n) perm -> (npred, g, n) D.insert -> (m, npred, g) perm_residual =

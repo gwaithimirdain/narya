@@ -41,8 +41,12 @@ let insert_of_int : type bsuc. bsuc t -> int -> bsuc insert_of_int option =
   if x < 0 then None
   else
     let rec drop : type a. int -> a Seq.t -> a Seq.t =
-     fun k s -> if k <= 0 then s else match s () with Seq.Nil -> s | Seq.Cons (_, t) -> drop (k - 1) t
-    in
+     fun k s ->
+      if k <= 0 then s
+      else
+        match s () with
+        | Seq.Nil -> s
+        | Seq.Cons (_, t) -> drop (k - 1) t in
     match drop x (all_inserts n) () with
     | Seq.Nil -> None
     | Seq.Cons (i, _) -> Some i

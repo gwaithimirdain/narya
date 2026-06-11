@@ -86,8 +86,7 @@ module Tube (F : Fam2) = struct
     | Branch (_, _, l1, ends, _), End (d, _, _, (l2, e)) ->
         let Eq = Endpoints.uniq l1 l2 in
         C.gfind (Bwv.nth e ends) d jw
-    | Branch (_, pw, _, _, mid), Mid (d, g) ->
-        gfind mid d (D.plus_assocr (Suc (Zero, g)) pw jw)
+    | Branch (_, pw, _, _, mid), Mid (d, g) -> gfind mid d (D.plus_assocr (Suc (Zero, g)) pw jw)
 
   let find : type m n k nk b. (n, k, nk, b) t -> (m, n, k, nk) tface -> (m, b) F.t =
    fun tr d -> gfind tr d Zero
@@ -150,8 +149,8 @@ module Tube (F : Fam2) = struct
           'l Endpoints.len * ('mk, 'w, 'bs, 'hs) C.Heter.hgts * ('hs, 'l) Bwv.Heter.ht
           -> ('mk, 'w, 'bs) ends
 
-    let rec ends : type m k mk g w bs. (m, (k, g) D.suc, (mk, g) D.suc, w, bs) hgt -> (mk, w, bs) ends
-        = function
+    let rec ends : type m k mk g w bs.
+        (m, (k, g) D.suc, (mk, g) D.suc, w, bs) hgt -> (mk, w, bs) ends = function
       | [] ->
           let (Wrap l) = Endpoints.wrapped () in
           Ends (l, Nil, [])
@@ -394,8 +393,8 @@ module Tube (F : Fam2) = struct
                (fun () ->
                  BwvM.mapM
                    (fun e ->
-                     gbuildM_cube (D.plus_out n nk1') Zero Zero (D.zero_plus a_run) nk1' pa pnk g0
-                       e g)
+                     gbuildM_cube (D.plus_out n nk1') Zero Zero (D.zero_plus a_run) nk1' pa pnk g0 e
+                       g)
                    (Endpoints.indices l))
                (fun () ->
                  gbuildM_r n nk1'
@@ -432,7 +431,8 @@ module Tube (F : Fam2) = struct
    fun g xs -> IdM.mmapM g xs
 
   let miter : type n k nk b bs.
-      (n, k, nk, (b, bs) cons) IdM.miteratorM -> (n, k, nk, D.zero, (b, bs) cons) Heter.hgt -> unit =
+      (n, k, nk, (b, bs) cons) IdM.miteratorM -> (n, k, nk, D.zero, (b, bs) cons) Heter.hgt -> unit
+      =
    fun g xs -> IdM.miterM g xs
 
   let build : type n k nk b.

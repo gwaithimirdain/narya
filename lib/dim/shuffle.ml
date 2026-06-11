@@ -6,20 +6,14 @@ open Perm
 
 type (_, _, _) shuffle =
   | Zero : (D.zero, D.zero, D.zero) shuffle
-  | Left :
-      'g D.G.t * ('a, 'b, 'ab) shuffle
-      -> (('a, 'g) D.suc, 'b, ('ab, 'g) D.suc) shuffle
-  | Right :
-      'g D.G.t * ('a, 'b, 'ab) shuffle
-      -> ('a, ('b, 'g) D.suc, ('ab, 'g) D.suc) shuffle
+  | Left : 'g D.G.t * ('a, 'b, 'ab) shuffle -> (('a, 'g) D.suc, 'b, ('ab, 'g) D.suc) shuffle
+  | Right : 'g D.G.t * ('a, 'b, 'ab) shuffle -> ('a, ('b, 'g) D.suc, ('ab, 'g) D.suc) shuffle
 
 (* [plus_of_shuffle : (a, b, c) shuffle -> (a, b, c) D.plus] would claim that c = a + b at the type level.  In a single-generator world that's tautological, but for multi-generator words the shuffle's c is a specific interleaving while a + b is the canonical concatenation, and they're different word-types in general.  The function only made sense in single-direction; removed in Phase 7a.  No external callers used it. *)
 
 (* Strip the leftmost g from a [((m, g) suc, n, p) plus]: returns the inner [(m, n, p_inner) plus] and an insertion that recovers p as p_inner with g inserted at the appropriate position.  Inducts on n's plus structure, no commutativity required. *)
 type (_, _, _, _) strip_left_g =
-  | Strip_left_g :
-      ('m, 'n, 'q) D.plus * ('q, 'g, 'p) D.insert
-      -> ('m, 'g, 'n, 'p) strip_left_g
+  | Strip_left_g : ('m, 'n, 'q) D.plus * ('q, 'g, 'p) D.insert -> ('m, 'g, 'n, 'p) strip_left_g
 
 let rec strip_left_g : type m g n p.
     g D.G.t -> ((m, g) D.suc, n, p) D.plus -> (m, g, n, p) strip_left_g =
@@ -140,7 +134,7 @@ let rec all_shuffles_right : type b c. b D.t -> c D.t -> (b, c) shuffle_right Se
   | Word (Suc (b', g_b)) -> (
       match c with
       | Word Zero -> Seq.empty
-      | Word (Suc (c', g_c)) ->
+      | Word (Suc (c', g_c)) -> (
           (* Left g_c (consuming a's outer, leaving b unchanged) is always available regardless of g_b: [Left]'s a is existential. *)
           let left_options =
             Seq.map
@@ -153,4 +147,4 @@ let rec all_shuffles_right : type b c. b D.t -> c D.t -> (b, c) shuffle_right Se
               Seq.append left_options
                 (Seq.map
                    (fun (Of_right s) -> Of_right (Right (g_c, s)))
-                   (all_shuffles_right (Word b') (Word c'))))
+                   (all_shuffles_right (Word b') (Word c')))))

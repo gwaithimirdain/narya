@@ -132,8 +132,7 @@ module Icube (S : Suc) (F : Fam3) = struct
           let (Plus plc) = D.plus (cod_sface f) in
           let mc' = D.plus_assocr (Suc (Zero, g0)) plc mc in
           let ends, acc = gfold_left_map_branches mc' f plc g0 g (Endpoints.indices l) acc ends in
-          let mid, acc =
-            gfold_map_left mc' (sface_plus_sface (Mid (Zero, g0)) plc pw f) g acc mid in
+          let mid, acc = gfold_map_left mc' (sface_plus_sface (Mid (Zero, g0)) plc pw f) g acc mid in
           (Branch (g0, pw, l, ends, mid), acc)
 
     and gfold_left_map_branches : type m1 w c gc n b cc len len' left right g0.

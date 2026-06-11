@@ -32,9 +32,7 @@ let rec id_deg : type n. n D.t -> (n, n) deg = function
 (* By "residual" of a degeneracy, given an element of its codomain, we mean the image of that element together with the degeneracy obtained by removing that element from the codomain and its image from the domain. *)
 
 type (_, _, _) deg_residual =
-  | Residual :
-      ('m, 'n) deg * 'g D.G.t * ('m, 'g, 'msuc) D.insert
-      -> ('msuc, 'n, 'g) deg_residual
+  | Residual : ('m, 'n) deg * 'g D.G.t * ('m, 'g, 'msuc) D.insert -> ('msuc, 'n, 'g) deg_residual
 
 let rec deg_residual : type m n g npred.
     (m, n) deg -> (npred, g, n) D.insert -> (m, npred, g) deg_residual =
@@ -230,13 +228,13 @@ let rec deg_of_strings : type n a.
           (* IF we do find it, then what's left we can recurse into with an incremented expectation. *)
           match n with
           | Word Zero -> None
-          | Word (Suc (n_pred, _)) ->
+          | Word (Suc (n_pred, _)) -> (
               let* (Into (g, j_idx)) = D.insert_of_int n (N.int_of_index j) in
               let* (To s) = deg_of_strings (Word n_pred) xs (i + 1) in
-              (* TODO: bridge existentials via Word.compare; in a future multi-generator world this should be expressed without this comparison. *)
+              (* Parsing user input requires a runtime check that the recursively-parsed degeneracy has the expected domain. *)
               match D.compare (D.uninsert j_idx n) (dom_deg s) with
               | Eq -> return (To (Suc (s, g, j_idx)))
-              | Neq -> None))
+              | Neq -> None)))
 
 (* We could write the next function monadically to include the errors as options, but it's simpler to just raise a local exception. *)
 exception Invalid_direction_name of string

@@ -495,8 +495,7 @@ module Pbijmap (F : Fam2) = struct
      fun g pw ls irvs rs ->
       match (ls, irvs, rs) with
       | [], [], [] -> []
-      | left :: ls, Times :: irvs, right :: rs ->
-          Suc { g; pw; left; right } :: suc g pw ls irvs rs
+      | left :: ls, Times :: irvs, right :: rs -> Suc { g; pw; left; right } :: suc g pw ls irvs rs
 
     let rec zeros : type e r vs. (e, D.zero, r, vs) hgt -> (r, vs) hft = function
       | [] -> []
@@ -591,8 +590,7 @@ module Pbijmap (F : Fam2) = struct
           let (Exists_cons irvs) = MapTimes.exists_cons (Heter.params ms) in
           let (Exists irws) = MapTimes.exists ws in
           let map : type a g.
-              g D.G.t -> (a, g, _) Tbwd.insert -> (a, _) Tup.Heter.hft -> (a, _) Tup.Heter.hft M.t
-              =
+              g D.G.t -> (a, g, _) Tbwd.insert -> (a, _) Tup.Heter.hft -> (a, _) Tup.Heter.hft M.t =
            fun g i x ->
             (* These unit refinements are needed because the [insertion] type still hardcodes unit generators, and the Right shuffle constructor shares its generator between the insertion's shared dimensions and the intrinsic dimensions. *)
             let Unit = g in

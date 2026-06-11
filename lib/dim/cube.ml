@@ -36,8 +36,7 @@ module Cube (F : Fam2) = struct
 
   (* A strict face is an index into a face tree.  We walk the gt and the sface in lockstep: the sface's outermost constructor corresponds to the root branch.  The carried plus relation (j, w, p) records that the value found will live at p = j + w, where j is the part of the sface's domain not yet walked past and w is the decided word so far; at each Mid step the newly decided generator moves from j to w, witnessed by the plus stored in the Branch together with associativity. *)
 
-  let rec gfind : type m w b j p.
-      (m, w, b) gt -> (j, m) sface -> (j, w, p) D.plus -> (p, b) F.t =
+  let rec gfind : type m w b j p. (m, w, b) gt -> (j, m) sface -> (j, w, p) D.plus -> (p, b) F.t =
    fun tr d jw ->
     match (tr, d) with
     | Leaf x, Zero ->
@@ -46,8 +45,7 @@ module Cube (F : Fam2) = struct
     | Branch (_, _, l1, ends, _), End (d, _, (l2, e)) ->
         let Eq = Endpoints.uniq l1 l2 in
         gfind (Bwv.nth e ends) d jw
-    | Branch (_, pw, _, _, mid), Mid (d, g) ->
-        gfind mid d (D.plus_assocr (Suc (Zero, g)) pw jw)
+    | Branch (_, pw, _, _, mid), Mid (d, g) -> gfind mid d (D.plus_assocr (Suc (Zero, g)) pw jw)
 
   let find : type n k b. (n, b) t -> (k, n) sface -> (k, b) F.t = fun tr d -> gfind tr d Zero
 
@@ -205,8 +203,7 @@ module Cube (F : Fam2) = struct
                           g (Heter.hgt_of_hlist hs brs) cst)
                      @@ fun xs -> Heter.hlist_of_hgt newhs xs)
                    (Endpoints.indices l :: ends) (Heter.tlist_hgts newhs cst))
-               (fun () ->
-                 gpmapM pwd (sface_plus_sface (Mid (Zero, g0)) plc pw f) g mid cst))
+               (fun () -> gpmapM pwd (sface_plus_sface (Mid (Zero, g0)) plc pw f) g mid cst))
           @@ fun (newends, newmid) -> Heter.branch g0 pw l newhs newends newmid
 
     (* And the actual one for a t, which we can henceforth restrict our attention to. *)

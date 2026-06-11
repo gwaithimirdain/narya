@@ -197,7 +197,8 @@ module Cube (F : Fam2) : sig
 
     type ('n, 'bs) miteratorM = { it : 'm. ('m, 'n) sface -> ('m, 'bs) Heter.hft -> unit M.t }
 
-    val miterM : ('n, ('b, 'bs) cons) miteratorM -> ('n, D.zero, ('b, 'bs) cons) Heter.hgt -> unit M.t
+    val miterM :
+      ('n, ('b, 'bs) cons) miteratorM -> ('n, D.zero, ('b, 'bs) cons) Heter.hgt -> unit M.t
 
     type ('n, 'b) builderM = { build : 'm. ('m, 'n) sface -> ('m, 'b) F.t M.t }
 

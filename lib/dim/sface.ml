@@ -32,7 +32,6 @@ let rec cod_sface : type m n. (m, n) sface -> n D.t = function
       let (Word s) = cod_sface f in
       Word (Suc (s, g))
 
-
 let rec is_id_sface : type m n. (m, n) sface -> (m, n) Eq.t option = function
   | Zero -> Some Eq
   | End _ -> None
