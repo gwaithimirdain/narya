@@ -24,6 +24,8 @@ def 𝕗⊤ : isFibrant ⊤ ≔ [
 | .liftl.p ↦ _ ↦ ()
 | .id.p ↦ x y ↦ 𝕗eqv ⊤ (Br ⊤ x y) (id_⊤_iso x y) 𝕗⊤]
 
+def ⊤𝕗 : Fib ≔ (⊤, 𝕗⊤)
+
 {` Product types `}
 
 def prod (A B : Type) : Type ≔ sig ( fst : A, snd : B )
@@ -54,6 +56,12 @@ def 𝕗prod (A B : Type) (𝕗A : isFibrant A) (𝕗B : isFibrant B)
          (u1 .snd))
       (𝕗prod (A.2 (u0 .fst) (u1 .fst)) (B.2 (u0 .snd) (u1 .snd))
          (𝕗A.2 .id (u0 .fst) (u1 .fst)) (𝕗B.2 .id (u0 .snd) (u1 .snd)))]
+
+def prod𝕗 (A B : Fib) : Fib ≔ (
+  A .t × B .t,
+  𝕗prod (A .t) (B .t) (A .f) (B .f))
+
+notation(2) A "×𝕗" B ≔ prod𝕗 A B
 
 {` Σ-types `}
 
