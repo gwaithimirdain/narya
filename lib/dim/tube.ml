@@ -124,8 +124,8 @@ module Tube (F : Fam2) = struct
       ((n, b) C.t, l) Bwv.t ->
       (n, k, nk, b) t =
    fun n k nk l cubes ->
-    let One, Suc (Zero, _) = (k, nk) in
-    Branch (D.deg, Zero, l, cubes, Leaf n)
+    let One, Suc (Zero, g) = (k, nk) in
+    Branch (g, Zero, l, cubes, Leaf n)
 
   let to_cube_bwv : type n k nk b l.
       k is_singleton -> l Endpoints.len -> (n, k, nk, b) t -> ((n, b) C.t, l) Bwv.t =

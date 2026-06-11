@@ -202,8 +202,8 @@ let rec ins_of_ints : type ab. ab D.t -> int list -> ab ins_of option =
   | [] -> Some (Ins_of (Zero ab))
   | n :: ns -> (
       match (ab, D.insert_of_int ab (n - 1)) with
-      | Word (Suc (ab_inner, Unit)), Some (Into (g, ix)) -> (
-          let ab_outer_word = D.Word (Suc (ab_inner, Unit)) in
+      | Word (Suc (ab_inner, g_outer)), Some (Into (g, ix)) -> (
+          let ab_outer_word = D.Word (Suc (ab_inner, g_outer)) in
           let ab = D.Word ab_inner in
           try
             let ns =

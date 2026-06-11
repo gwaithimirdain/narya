@@ -22,7 +22,7 @@ let two : two t = suc one deg
 
 type ('a, 'g, 'b) insert = ('a, 'g, 'b) Tbwd.insert
 
-(* Phase 7: D.plus_suc, D.suc_plus, D.suc_plus_eq_suc have been removed from this file.  Each caller that needed them defines its own local recursive helper.  Those helpers are single-direction-only (use [Suc (_, Unit)] patterns); in a multi-direction future they will need to be redesigned algorithmically. *)
+(* The commutativity-dependent operations plus_suc, suc_plus, and suc_plus_eq_suc that this file once provided have been removed entirely: the cube/tube/icube/pbijmap data structures are now indexed so that all their bookkeeping is word associativity (see cube.ml), and the structured generator-generic versions live in Word. *)
 
 (* Integer hackery, for converting from strings to degeneracies.  Should be replaced by something like a Bwv parametrized by a word, perhaps a version of a Tuple. *)
 

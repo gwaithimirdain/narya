@@ -36,8 +36,8 @@ let rec pbij_of_int_strings : type e.
   | [] -> Some (Pbij_of (Pbij (ins_zero e, Zero)))
   | `Int n :: strs -> (
       match (e, D.insert_of_int e (n + 1)) with
-      | Word (Suc (e_inner, Unit)), Some (Into (g, ix)) -> (
-          let e_outer_word = D.Word (Suc (e_inner, Unit)) in
+      | Word (Suc (e_inner, g_outer)), Some (Into (g, ix)) -> (
+          let e_outer_word = D.Word (Suc (e_inner, g_outer)) in
           let e = D.Word e_inner in
           let strs =
             List.map
