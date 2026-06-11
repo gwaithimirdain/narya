@@ -249,7 +249,7 @@ module rec Term : sig
 
   and ('mode, 'mu, 'nu, 'cod, 'k, 'a, 'n, 'b, 'ac, 'bmu) key_args = {
     env : ('cod, 'a, 'n, 'b) env;
-    filter : ('mode, 'nu, 'cod, 'k, 'n) Modality.filter_dim;
+    filter : ('mode, 'mu, 'cod, 'k, 'n) Modality.filter_dim;
     cell : ('mode, 'mu, 'nu, 'cod) Modalcell.t;
     plus_tgt : ('a, 'cod, 'nu, 'mode, 'ac) plus_with_locks;
     plus_src : ('b, 'cod, 'mu, 'mode, 'bmu) plus_lock;
@@ -554,7 +554,7 @@ end = struct
 
   and ('mode, 'mu, 'nu, 'cod, 'k, 'a, 'n, 'b, 'ac, 'bmu) key_args = {
     env : ('cod, 'a, 'n, 'b) env;
-    filter : ('mode, 'nu, 'cod, 'k, 'n) Modality.filter_dim;
+    filter : ('mode, 'mu, 'cod, 'k, 'n) Modality.filter_dim;
     cell : ('mode, 'mu, 'nu, 'cod) Modalcell.t;
     plus_tgt : ('a, 'cod, 'nu, 'mode, 'ac) plus_with_locks;
     plus_src : ('b, 'cod, 'mu, 'mode, 'bmu) plus_lock;

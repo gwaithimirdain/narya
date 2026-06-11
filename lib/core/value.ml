@@ -202,7 +202,7 @@ module rec Value : sig
     | Act : ('mode, 'n, 'b) env * ('m, 'n) op -> ('mode, 'm, 'b) env
     | Key :
         ('mode, 'n, 'b) env
-        * ('dom, 'nu, 'mode, 'k, 'n) Modality.filter_dim
+        * ('dom, 'mu, 'mode, 'k, 'n) Modality.filter_dim
         * ('dom, 'mu, 'nu, 'mode) Modalcell.t
         * ('b, 'mode, 'mu, 'dom, 'bm) plus_lock
         -> ('dom, 'k, 'bm) env
@@ -454,7 +454,8 @@ end = struct
     | Act : ('mode, 'n, 'b) env * ('m, 'n) op -> ('mode, 'm, 'b) env
     | Key :
         ('mode, 'n, 'b) env
-        * ('dom, 'nu, 'mode, 'k, 'n) Modality.filter_dim
+        (* Semantically, a context that is nonparametrically locked has no higher versions (identity/parametricity types), so there should be no higher-dimensional substitutions with it as codomain.  Thus, when we key an environment, its dimension gets filtered by the modality in the *source* of the key (codomain of the substitution).  In the intended models, this is stronger than just filtering by the target, since the source is always at least as nonparametric as the target. *)
+        * ('dom, 'mu, 'mode, 'k, 'n) Modality.filter_dim
         * ('dom, 'mu, 'nu, 'mode) Modalcell.t
         * ('b, 'mode, 'mu, 'dom, 'bm) plus_lock
         -> ('dom, 'k, 'bm) env
@@ -553,7 +554,7 @@ let rec act_env : type mode m n b. (mode, n, b) env -> (m, n) op -> (mode, m, b)
 (* There is very little possibility of a "smart constructor" for keys since we track their domains in the length type parameter; all we can do is ignore identities. *)
 let key_env : type dom mu nu cod k m b bmu.
     (cod, m, b) env ->
-    (dom, nu, cod, k, m) Modality.filter_dim ->
+    (dom, mu, cod, k, m) Modality.filter_dim ->
     (dom, mu, nu, cod) Modalcell.t ->
     (b, cod, mu, dom, bmu) plus_lock ->
     (dom, k, bmu) env =
