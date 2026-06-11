@@ -12,10 +12,13 @@ else
         echo
         echo "I can't find narya in your PATH."
         echo "Please build and install it, then run this script again."
-        echo "Make sure that you ran both commands:"
+        echo "If installing with opam/dune, make sure that you ran both commands:"
         echo
         echo "dune build @install"
         echo "dune install"
+        echo
+        echo "If you are running Narya from Nix without installing it locally, make"
+        echo "a shell script wrapper around it called 'narya' and put it in your PATH."
         echo
         echo "If you did those and it still doesn't work, please open an issue at"
         echo "https://github.com/gwaithimirdain/narya/issues."
@@ -120,14 +123,19 @@ echo -n "Locating the ProofGeneral installation directory..."
 
 PGDIR=$(find ~/.emacs.d/elpa/ -maxdepth 1 -type d -name "proof-general-*" | sort -r | head -n1)
 
-if [ -d $PGDIR ]
+if [ -n $PGDIR && -d $PGDIR ]
 then
     echo "Found."
 else
     echo "Failed."
     echo
     echo "I can't find the ProofGeneral installation directory."
-    echo "Please open an issue at https://github.com/gwaithimirdain/narya/issues."
+    echo
+    echo "If you installed ProofGeneral in some way other than through the Emacs"
+    echo "package manager, such as with apt or nix, please remove that version"
+    echo "of ProofGeneral and then re-run this script."
+    echo
+    echo "Otherwise, please open an issue at https://github.com/gwaithimirdain/narya/issues."
     exit 1
 fi
 

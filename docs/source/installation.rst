@@ -149,6 +149,8 @@ Narya can also be developed and installed with `Nix <https://nixos.org/>`_, whic
 
 Running just ``nix build`` instead will still build a static binary that will work, but it will not know what git commit it was built from.  This has two consequences: it will not report that commit when run with the ``-version`` flag (making it harder to track down any bugs it exhibits); and it will not be able to tell whether compiled ``.nyo`` files are compatible (and therefore will never load them).
 
+If you want to *run* Narya from Nix every time, without installing a static binary, then it's recommended to create a shell script wrapper that passes all its arguments off to the appropriate Nix command (e.g. with `"$@"` in Bash), which is called `narya` and placed in your `PATH`.  This will allow you to then run the `install-pg.sh` script for :ref:`Automatic ProofGeneral installation`.
+
 
 Building the Documentation
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -232,9 +234,11 @@ Narya comes with a shell script that should install ProofGeneral, and the ProofG
 
   ./install-pg.sh
 
-Pay attention to the output of the script!  If it reports any errors, or if it doesn't report any errors but the ProofGeneral mode doesn't seem to work as advertised, please report a bug on `GitHub <https://github.com/gwaithimirdain/narya>`_.  In the meantime, you can follow the instructions for :ref:`Manual ProofGeneral installation`.
+Pay attention to the output of the script!  If it fails and it has a guess about why, it will give you instructions.  In particular, it may fail if you installed ProofGeneral in some way *other* than through the Emacs package manager, such as with `apt` or `nix`, since in that case it won't be able to find the ProofGeneral installation directory to configure ProofGeneral for Narya.  In that case, the script will prompt you to remove the external ProofGeneral so that it can reinstall it with the Emacs package manager.
 
-If the script doesn't report any errors, then it will end by instructing you to add some lines to the file ``.emacs`` in your home directory.  This will include the following, which are not necessary but highly recommended to improve the experience of using ProofGeneral:
+If you follow the instructions of the script but it still doesn't work, or if running the script produces errors, or if it doesn't report any errors but the ProofGeneral mode doesn't seem to work as advertised, please report a bug on `GitHub <https://github.com/gwaithimirdain/narya>`_.  In the meantime, you can follow the instructions for :ref:`Manual ProofGeneral installation`.
+
+If the script succeeds, then it will end by instructing you to add some lines to the file ``.emacs`` in your home directory.  This will include the following, which are not necessary but highly recommended to improve the experience of using ProofGeneral:
 
 .. code-block:: lisp
 
