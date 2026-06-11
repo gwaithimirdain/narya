@@ -505,6 +505,9 @@ let filter_perm : type x m y a b c.
   let (Except_perm (s, ex)) = except_perm p ex s in
   Filter_perm (s, Filter (e, ex))
 
+let deg_of_filter : type x m y a b. b D.t -> (x, m, y, a, b) filter_dim -> (b, a) deg =
+ fun b (Filter (_, ex)) -> deg_of_except b ex
+
 let filter_comp : type x y z m n nm a b c.
     (x, m, y, n, z, nm) comp ->
     (y, n, z, b, c) filter_dim ->

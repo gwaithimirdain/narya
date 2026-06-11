@@ -199,3 +199,13 @@ let rec except_perm : type e a b c.
       let (Except_perm (s, ex)) = except_perm e ex s in
       let (Except_unoccurs_insert (i, ex)) = except_unoccurs_insert ex i u in
       Except_perm (Suc (s, i), ex)
+
+let rec deg_of_except : type e a b. b D.t -> (e, a, b) except -> (b, a) deg =
+ fun b -> function
+  | Except_zero -> deg_zero D.zero
+  | Except_occurs (e, _) ->
+      let (Word (Suc (b, Unit))) = b in
+      deg_plus_dom (deg_of_except (Word b) e) (Suc (Zero, Unit))
+  | Except_unoccurs (e, _) ->
+      let (Word (Suc (b, Unit))) = b in
+      Suc (deg_of_except (Word b) e, Now)
