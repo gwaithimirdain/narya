@@ -11,7 +11,7 @@ open Act
 open Printable
 open View
 
-(* Since some entries in an environment are lazy and some aren't, lookup_cube returns a cube whose entries belong to an existential type, along with a function to act on any element of that type and force it into a value.  It also returns an accumulated operator by which to act, first selecting an entry in the cube with a face and then acting on that value by a degeneracy. *)
+(* Since some entries in an environment are lazy and some aren't, lookup_cube returns a cube whose entries belong to an existential type, along with a function to act on any element of that type and force it into a value.  It also returns an accumulated operator by which to act, first selecting an entry in the cube with a face and then acting on that value by a degeneracy, and the horizontal composite of all the keys it passed through on the way to the entry. *)
 type (_, _, _, _) looked_up_cube =
   | Looked_up : {
       act :
@@ -20,6 +20,7 @@ type (_, _, _, _) looked_up_cube =
       op : ('m, 'n) op;
       filter : ('mode, 'modality, 'cod, 'm, 'p) Modality.filter_dim;
       entry : ('n, 'a) CubeOf.t;
+      cell : ('mode, 'cod) Modalcell.wrapped;
     }
       -> ('mode, 'modality, 'cod, 'p) looked_up_cube
 
@@ -459,9 +460,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let (To p) = deg_of_ins ins in
       Val (act_value (eval_term (act_env env (op_of_deg fa)) x) p None)
   | Key { tm; cell; plus_src; plus_tgt } ->
-      (* To evaluate a key, we strip off the part of the environment corresponding to the codomain of the key cell, then compose the keys we found there with the supplied key to make a new key on an environment for evaluating the body. *)
-      let (Remove_keys (env, filter, keys)) = Env.remove_keys env plus_tgt in
-      eval (key_env env filter (Modalcell.vcomp keys cell) plus_src) tm
+      (* To evaluate a key, we replace the keys in the environment corresponding to the codomain of the key cell by their composite with the supplied cell, producing an environment for evaluating the body. *)
+      eval (Env.replace_keys env plus_tgt cell plus_src) tm
   | Match { tm; dim = match_dim; branches } -> (
       let env_dim = dim_env env in
       let (Plus plus_dim) = D.plus match_dim in
@@ -1277,15 +1277,21 @@ and eval_env : type mode a q n qn b.
         }
   | Key
       (type mu nu cod a m b)
-      ({ env = tmenv; filter = filt_n_m; cell; plus_src; plus_tgt } :
+      ({ env = tmenv; filter = filt_term; cell; plus_src; plus_tgt } :
         (_, mu, nu, cod, _, a, m, b, _, _) key_args) ->
-      let (Remove_keys (env, filt_q_p, keys)) = Env.remove_keys env plus_tgt in
-      (* TODO: A genuine issue here: [filt_n_m] is filtered by the codomain of [cell], while [filt_q_p] is filtered by the codomain of [keys]. *)
-      let p = dim_env env in
-      let m : m D.t = _ in
-      let (Plus p_m) = D.plus m in
-      let filt_qn_pm = Modality.filter_plus q_n p_m filt_q_p filt_n_m in
-      Key (eval_env env p_m tmenv, filt_qn_pm, Modalcell.vcomp keys cell, plus_src)
+      (* We strip the keys corresponding to the codomain of the cell off of the ambient environment, evaluate the term environment in the bare environment underneath them, and re-apply a single composite key.  The composite key filters the dimension by the vertical source of the cell, which can be more filtered than the dimension of the ambient environment (which is filtered by the vertical target); so we apply a degeneracy outside, along with the operators stripped off of the ambient environment, to produce the correct dimension. *)
+      let (Stripped (senv, f_nu_p, sop, keys)) = Env.strip_keys env plus_tgt in
+      let p = dim_env senv in
+      let mm = dim_term_env tmenv in
+      let (Plus p_m) = D.plus mm in
+      let evalled = eval_env senv p_m tmenv in
+      let pm = D.plus_out p p_m in
+      let (Has_filter f_mu_pm) = Modality.filter (Modalcell.vsrc cell) pm in
+      let (Filter_of_plus (mup_muk, f_mu_p, f_mu_m)) = Modality.filter_of_plus p_m f_mu_pm in
+      let Eq = Modality.filter_uniq f_mu_m filt_term in
+      let keyed = key_env evalled f_mu_pm (Modalcell.vcomp keys cell) plus_src in
+      let d = Modalcell.filter_deg cell p f_mu_p f_nu_p in
+      act_env keyed (op_plus (comp_op (op_of_deg d) sop) mup_muk q_n)
 
 and apply_term : type dom modality mode n.
     (mode, kinetic) value ->
@@ -1353,76 +1359,123 @@ and app_eval_apps : type mode s any.
       | Realize tm -> Realize (inst tm args)
       | Unrealized -> Unrealized)
 
-(* Look up a cube of values in an environment by variable index, accumulating operator actions, shifts, and keys as we go.  At the end, we usually use the operator to select a value from the cubes (with its face part) and act on it (with its degeneracy part).  We assume all the keys on the end of the environment have already been stripped off, even though the input types don't statically rule out a key with identity domain. *)
-and lookup_cube : type dom mu mode n a b k p nk.
-    (mode, n, b) env ->
+(* Look up a cube of values in an environment by variable index, accumulating operator actions, shifts, unshifts, and keys as we go.  At the end, we use the operator to select a value from the cubes (with its face part) and act on it (with its degeneracy part).  The variable index points into the prefix of a decomposition of the codomain of the environment whose remaining part consists of the locks annotating the variable; the keys whose sources make up those locks are consumed as we pass them, accumulating their horizontal composite, and restricting along the inclusion of the filtered sub-cube as we go under each key. *)
+and lookup_cube : type dom mu cod murest mcur n a bn b k p nk.
+    (mcur, n, b) env ->
+    (bn, cod, murest, mcur, b) plus_with_locks ->
     (n, k, nk) D.plus ->
-    (dom, mu, mode) Modality.t ->
-    (a, mu, k, b) insert ->
+    (dom, mu, cod) Modality.t ->
+    (a, mu, k, bn) insert ->
     (p, nk) op ->
-    (dom, mu, mode, p) looked_up_cube =
- fun env nk mu v op ->
-  match (env, v) with
-  (* Since there's an index, the environment can't be empty. *)
-  | Emp _, _ -> .
+    (dom, mcur) Modalcell.wrapped ->
+    (dom, mu, cod, p) looked_up_cube =
+ fun env (Plus_with_locks (bc, llc)) n_k mu v op keys ->
+  match (bc, llc, env) with
+  (* If we encounter a key, we consume it: we accumulate its cell horizontally, and compose the operator with the inclusion of the sub-cube picked out by its filter.  Note that the remaining locks could be Zero here: keys with identity locks are consumed whenever they appear. *)
+  | b_cn, llcn, Key (env1, filt1, key1, Plus_lock (ln, bc_n)) -> (
+      let lln = locks_lock ln in
+      let cn, nn = (Locks.dom llcn, Lock.cod ln) in
+      match Tctx.factor cn nn with
+      | None -> fatal (Anomaly "lookup_cube: key sources cross the decomposition")
+      | Some (Factor (_c, c_n)) ->
+          let (Uncomp (llc, lln', _)) = Locks.uncomp c_n llcn in
+          let Eq = Locks.uniq lln lln' in
+          let b_c = Tctx.comp_assoc_cancelr c_n b_cn bc_n in
+          let n1 = dim_env env1 in
+          let fc = Modality.sface_of_filter n1 filt1 in
+          let (Plus n1_k) = D.plus (D.plus_right n_k) in
+          let op' = comp_op (op_of_sface (sface_plus fc n1_k n_k)) op in
+          let (Wrap keys1) = keys in
+          lookup_cube env1
+            (Plus_with_locks (b_c, llc))
+            n1_k mu v op'
+            (Modalcell.hcomp_wrapped key1 keys1))
+  (* A dimension entry in the lock region of the decomposition can't be our variable, so we skip it. *)
+  | Suc (b_cn, Dim _), Suc (llcn, Locks_dim _, Zero), Ext { env = env1; _ } ->
+      lookup_cube env1 (Plus_with_locks (b_cn, llcn)) n_k mu v op keys
   (* If we encounter an operator action, we accumulate it. *)
-  | Act (env, op'), _ ->
-      let (Plus lk) = D.plus (D.plus_right nk) in
-      let op'k = op_plus op' lk nk in
-      lookup_cube env lk mu v (comp_op op'k op)
-  (* Nonidentity keys are disallowed here, because we've already called Env.remove_keys that is supposed to strip them all off. *)
-  | Key (env, filter, cell, plus), _ -> (
-      match (Modalcell.compare_id cell, plus) with
-      | Eq, Plus_lock (Zero _, Zero) ->
-          let Eq = Modality.eq_of_filter_id filter in
-          lookup_cube env nk mu v op
-      | _ -> fatal (Anomaly "nonidentity key in lookup_cube"))
-  (* If we encounter a shift or unshift, we just have to edit the insertion and go on. *)
-  | ( Shift
-        (type x nx b')
-        ((env, n_x, xb) : (mode, nx, b') env * (n, x, nx) D.plus * (x, b', b, mode) plusmap),
-      v ) ->
-      (* In this branch, k is renamed to y+k, where y is the filtered x. *)
-      let n_yk = nk in
-      let (Uncoinsert
-             (type y k d c b'')
-             ((y_k, filter, v, _) :
-               (y, k, _) D.plus * (d, mu, c, y, x) Modality.filter_dim * (b'', mu, k, b') insert * _))
-          =
-        Plusmap.uncoinsert v xb in
-      let k = D.plus_right y_k in
-      let (Plus nx_k) = D.plus k in
-      (* let nx_k = D.plus_assocl n_x x_k n_xk in *)
-      lookup_cube env nx_k mu v op
-  | Unshift (env, n_x, xb), v ->
-      (* In this branch, n is renamed to n+x. *)
-      let nx_k = nk in
-      let (Uninsert (y_k, filter, v, _)) = Plusmap.uninsert v xb in
-      (* let n_xk = D.plus_assocr n_x x_k nx_k in *)
+  | _, _, Act (env1, op') ->
+      let (Plus lk) = D.plus (D.plus_right n_k) in
+      let op'k = op_plus op' lk n_k in
+      lookup_cube env1 (Plus_with_locks (bc, llc)) lk mu v (comp_op op'k op) keys
+  (* If the environment is permuted, we transfer the decomposition and the index across the permutation. *)
+  | _, _, Permute (perm, env1) -> (
+      match unpermute_plus_locks perm bc llc with
+      | None -> fatal (Anomaly "lookup_cube: permutation crosses the decomposition")
+      | Some (Unpermute (perm2, bd, lld)) ->
+          let (Permute_insert (v, _)) = permute_insert v perm2 in
+          lookup_cube env1 (Plus_with_locks (bd, lld)) n_k mu v op keys)
+  (* If we encounter a shift, the index is transferred across the prefix part of its plusmap.  The variable's outer dimension contains the filtering (by the variable's annotation) of the shift dimension, while the inner environment contains the full shift dimension; so we compose the operator with the inclusion of the corresponding sub-cube. *)
+  | b_cn, llcn, Shift (env1, n_x, xb) ->
       let x = D.plus_right n_x in
-      let y = Modality.filtered x filter in
-      let yk = D.plus_out y y_k in
-      let (Plus n_yk) = D.plus yk in
-      lookup_cube env n_yk mu v op
-  (* If the environment is permuted, we apply the permutation to the index. *)
-  | Permute (p, env), v ->
-      let (Permute_insert (v, _)) = permute_insert v p in
-      lookup_cube env nk mu v op
-  (* If we encounter a variable that isn't ours, we skip it and proceed. *)
-  | Ext { env; _ }, Later v -> lookup_cube env nk mu v op
-  (* Finally, when we find our variable, we decompose the accumulated operator into a strict face and degeneracy, use the face as an index lookup, and act by the degeneracy.  The forcing function is the identity if the entry is not lazy, and force_eval_term if it is lazy. *)
-  | Ext { env = _; plus = mk; modality; filter; filtered; values }, Now -> (
-      let (Filter_op (op, filter)) =
-        Modality.filter_op (Modality.filter_plus mk nk filter filtered) op in
-      match (values, Modality.compare modality mu) with
-      (* Looking up a variable that's bound to an error immediately fails with that error.  (In particular, this sort of failure can't currently happen "deeper" inside a term.) *)
-      | `Error e, _ -> fatal e
-      | `Ok entry, Eq -> Looked_up { act = (fun x s c -> act_value x s c); filter; op; entry }
-      | `Lazy entry, Eq ->
-          Looked_up
-            { act = (fun x s c -> force_eval_term (act_lazy_eval x s c)); filter; op; entry }
-      | `Ok _, Neq | `Lazy _, Neq ->
-          fatal (Modality_mismatch (`Internal, "lookup_cube keys", modality, mu)))
+      let (Dom_uncomp (nbm, ncm, b_c)) = Plusmap.dom_uncomp x b_cn xb in
+      let (Eq _) = Plusmap.tgt ncm in
+      let ll_c = Plusmap.unlocks ncm llcn in
+      let (Uncoinsert (q_k, f_q, v, _)) = Plusmap.uncoinsert v nbm in
+      let nnode = D.plus_left n_x (dim_env env1) in
+      let fcq = Modality.sface_of_filter x f_q in
+      let (Plus n_q) = D.plus (dom_sface fcq) in
+      let left = sface_plus_sface (id_sface nnode) n_x n_q fcq in
+      let k_in = D.plus_right q_k in
+      let (Plus nx_kin) = D.plus k_in in
+      let whole = sface_plus_sface left nx_kin (D.plus_assocl n_q q_k n_k) (id_sface k_in) in
+      lookup_cube env1
+        (Plus_with_locks (b_c, ll_c))
+        nx_kin mu v
+        (comp_op (op_of_sface whole) op)
+        keys
+  (* If we encounter an unshift, the index is likewise transferred across the prefix part of its plusmap.  Here the variable's inner dimension contains the filtering of the unshift dimension while the outer environment contains the full unshift dimension, so we compose the operator with a degeneracy filling the missing directions. *)
+  | b_cn, llcn, Unshift (env1, n_x, xb) ->
+      let x = D.plus_right n_x in
+      let (Uncomp (nbm, ncm, nb_nc)) = Plusmap.uncomp x b_cn xb in
+      let (Eq _) = Plusmap.tgt ncm in
+      let ll_nc = Plusmap.locks x ncm llcn in
+      let (Uninsert (q_k, f_q, v, _)) = Plusmap.uninsert v nbm in
+      let nin = dim_env env1 in
+      let d0 = Modality.deg_of_filter x f_q in
+      let q = Modality.filtered x f_q in
+      let (Plus nin_q) = D.plus q in
+      let dleft = plus_deg nin nin_q n_x d0 in
+      let qk = D.plus_out q q_k in
+      let (Plus nin_qk) = D.plus qk in
+      let whole = deg_plus dleft (D.plus_assocl nin_q q_k nin_qk) n_k in
+      lookup_cube env1
+        (Plus_with_locks (nb_nc, ll_nc))
+        nin_qk mu v
+        (comp_op (op_of_deg whole) op)
+        keys
+  (* Below all the locks, if we encounter a variable that isn't ours, we skip it and proceed.  When we find our variable, we decompose the accumulated operator into a strict face and degeneracy, use the face as an index lookup, and act by the degeneracy.  The forcing function is the identity if the entry is not lazy, and force_eval_term if it is lazy. *)
+  | ( (Zero as bc0),
+      (Zero _ as llc0),
+      Ext { env = env1; plus = mk; modality; filter; filtered; values } ) -> (
+      match v with
+      | Later v -> lookup_cube env1 (Plus_with_locks (bc0, llc0)) n_k mu v op keys
+      | Now -> (
+          let (Filter_op (op, filter)) =
+            Modality.filter_op (Modality.filter_plus mk n_k filter filtered) op in
+          match (values, Modality.compare modality mu) with
+          (* Looking up a variable that's bound to an error immediately fails with that error.  (In particular, this sort of failure can't currently happen "deeper" inside a term.) *)
+          | `Error e, _ -> fatal e
+          | `Ok entry, Eq ->
+              Looked_up { act = (fun x s c -> act_value x s c); filter; op; entry; cell = keys }
+          | `Lazy entry, Eq ->
+              Looked_up
+                {
+                  act = (fun x s c -> force_eval_term (act_lazy_eval x s c));
+                  filter;
+                  op;
+                  entry;
+                  cell = keys;
+                }
+          | `Ok _, Neq | `Lazy _, Neq ->
+              fatal (Modality_mismatch (`Internal, "lookup_cube keys", modality, mu))))
+  (* Since there's an index into the prefix, the environment can't be empty when the decomposition runs out. *)
+  | Zero, Zero _, Emp _ -> (
+      match v with
+      | _ -> .)
+  (* Nothing else is possible, since if the tctx has a nonzero lock on it, the environment can't be empty or end with a value entry. *)
+  | Suc (_, Lock _), Suc (_, Locks_lock _, Suc (_, _)), _ -> .
+  | Suc (_, Proj _), Suc (_, _, _), _ -> .
 
 and lookup : type mode m bkm. (mode, m, bkm) env -> (mode, bkm) index -> (mode, kinetic) value =
  fun env
@@ -1433,30 +1486,27 @@ and lookup : type mode m bkm. (mode, m, bkm) env -> (mode, bkm) index -> (mode, 
           * (l, k) sface
           * (mode, mu, cod, k, k) Modality.filter_dim
           * (bn, cod, mu, mode, bkm) plus_lock)) ->
-  let _m = dim_env env in
+  let m = dim_env env in
   let k = cod_sface fa in
   let l = dom_sface fa in
   let (Plus m_l) = D.plus l in
   let mu = plus_lock_modality plus in
-  let (Remove_keys
-         (type n nu)
-         ((env, filter_nu_m_n, keys) :
-           (cod, n, bn) env
-           * (mode, nu, cod, m, n) Modality.filter_dim
-           * (mode, mu, nu, cod) Modalcell.t)) =
-    Env.remove_keys_plus_lock env plus in
-  let n = dim_env env in
-  let (Plus n_k) = D.plus k in
-  let nk = D.plus_out n n_k in
-  match lookup_cube env n_k mu v (id_op nk) with
-  | Looked_up { act; filter = filter_mu_mk_nk; op; entry } ->
-      let (Has_filter (type q) (filter_mu_q_n : (mode, mu, cod, q, n) Modality.filter_dim)) =
-        Modality.filter mu n in
-      let (Plus q_k) = D.plus k in
-      let filter_mu_qk_nk = Modality.filter_plus q_k n_k filter_mu_q_n filter_mu_k_k in
-      let Eq = Modality.filter_uniq filter_mu_mk_nk filter_mu_qk_nk in
-      let s = Modalcell.filter_deg keys n filter_mu_q_n filter_nu_m_n in
-      let (Op (f, s)) = comp_op op (op_plus_op (op_of_deg s) q_k m_l (op_of_sface fa)) in
+  let (Plus m_k) = D.plus k in
+  let mk = D.plus_out m m_k in
+  match
+    lookup_cube env
+      (plus_with_locks_of_plus_lock plus)
+      m_k mu v (id_op mk)
+      (Wrap (Modalcell.id2 (mode_env env)))
+  with
+  | Looked_up { act; filter = filter_mu_q_mk; op; entry; cell = Wrap keys } ->
+      (* The looked-up cube produces values at the filtering of the dimension of the environment by the variable's annotation; we expand them to the full dimension by a degeneracy, which is semantically harmless since the data in the missing directions is inaccessible behind the locks. *)
+      let (Filter_of_plus (qm_qk, f_m', f_k')) = Modality.filter_of_plus m_k filter_mu_q_mk in
+      let (Has_filter f_mu_m) = Modality.filter mu m in
+      let Eq = Modality.filter_uniq f_m' f_mu_m in
+      let Eq = Modality.filter_uniq f_k' filter_mu_k_k in
+      let s0 = Modality.deg_of_filter m f_mu_m in
+      let (Op (f, s)) = comp_op op (op_plus_op (op_of_deg s0) qm_qk m_l (op_of_sface fa)) in
       act (CubeOf.find entry f) s (Some keys)
 
 (* Instantiate an arbitrary value, combining tubes. *)

@@ -29,6 +29,7 @@ module Dmap : MAP_MAKER with module Key := D
 module Endpoints : sig
   type 'l len
   type wrapped = Wrap : 'l len -> wrapped
+  type 'l t = 'l len * 'l N.index
 
   val run :
     arity:int ->
@@ -41,6 +42,7 @@ module Endpoints : sig
 
   val uniq : 'l1 len -> 'l2 len -> ('l1, 'l2) Eq.t
   val len : 'l len -> 'l N.t
+  val indices : 'l len -> ('l t, 'l) Bwv.t
   val wrapped : unit -> wrapped
   val internal : unit -> bool
   val hott : unit -> N.two len option
@@ -997,6 +999,7 @@ type (_, _, _) except_perm =
   | Except_perm : ('d, 'a) perm * ('e, 'd, 'c) except -> ('e, 'a, 'c) except_perm
 
 val except_perm : 'e D.t -> ('e, 'a, 'b) except -> ('c, 'b) perm -> ('e, 'a, 'c) except_perm
+val sface_of_except : 'l Endpoints.t -> 'b D.t -> ('e, 'a, 'b) except -> ('a, 'b) sface
 val deg_of_except : 'b D.t -> ('e, 'a, 'b) except -> ('b, 'a) deg
 
 (* *)

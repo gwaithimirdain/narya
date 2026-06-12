@@ -159,6 +159,7 @@ val filter_perm :
   ('x, 'm, 'y, 'a, 'b) filter_dim -> ('c, 'b) perm -> ('x, 'm, 'y, 'a, 'c) filter_perm
 
 val deg_of_filter : 'b D.t -> ('x, 'm, 'y, 'a, 'b) filter_dim -> ('b, 'a) deg
+val sface_of_filter : 'b D.t -> ('x, 'm, 'y, 'a, 'b) filter_dim -> ('a, 'b) sface
 
 val filter_comp :
   ('x, 'm, 'y, 'n, 'z, 'nm) comp ->

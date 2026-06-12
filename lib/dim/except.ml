@@ -200,6 +200,14 @@ let rec except_perm : type e a b c.
       let (Except_unoccurs_insert (i, ex)) = except_unoccurs_insert ex i u in
       Except_perm (Suc (s, i), ex)
 
+(* The degeneracy deg_of_except has a section given by choosing an endpoint for each omitted direction.  The choice of endpoint is arbitrary, so this is semantically justified only when the data lying in the omitted directions is degenerate or inaccessible, as when restricting along the filter of a nonparametric modality. *)
+let rec sface_of_except : type l e a b. l Endpoints.t -> b D.t -> (e, a, b) except -> (a, b) sface =
+ fun endpt b ex ->
+  match (ex, b) with
+  | Except_zero, _ -> Zero
+  | Except_occurs (ex, _), Word (Suc (b, Unit)) -> End (sface_of_except endpt (Word b) ex, endpt)
+  | Except_unoccurs (ex, _), Word (Suc (b, Unit)) -> Mid (sface_of_except endpt (Word b) ex)
+
 let rec deg_of_except : type e a b. b D.t -> (e, a, b) except -> (b, a) deg =
  fun b -> function
   | Except_zero -> deg_zero D.zero

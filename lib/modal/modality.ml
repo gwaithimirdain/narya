@@ -508,6 +508,14 @@ let filter_perm : type x m y a b c.
 let deg_of_filter : type x m y a b. b D.t -> (x, m, y, a, b) filter_dim -> (b, a) deg =
  fun b (Filter (_, ex)) -> deg_of_except b ex
 
+(* The strict face including the filtered sub-cube, a section of deg_of_filter.  It fixes an arbitrarily chosen endpoint in each filtered-away direction, which is semantically justified because the data in those directions is inaccessible behind a nonparametric lock. *)
+let sface_of_filter : type x m y a b. b D.t -> (x, m, y, a, b) filter_dim -> (a, b) sface =
+ fun b (Filter (_, ex)) ->
+  let (Wrap l) = Endpoints.wrapped () in
+  match Endpoints.indices l with
+  | Snoc (_, e) -> sface_of_except e b ex
+  | Emp -> failwith "sface_of_filter with no endpoints"
+
 let filter_comp : type x y z m n nm a b c.
     (x, m, y, n, z, nm) comp ->
     (y, n, z, b, c) filter_dim ->
