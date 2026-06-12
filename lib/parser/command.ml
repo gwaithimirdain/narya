@@ -125,6 +125,8 @@ module Command = struct
             Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
           | `Type_boundaries of
             Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
+          | (* Each variable name is paired with the whitespace of the comma preceding it (empty for the first one) and the whitespace following it. *)
+            `Variables of Whitespace.t list * (Whitespace.t list * string * Whitespace.t list) list
           ];
       }
     | Option of { wsoption : Whitespace.t list; wscoloneq : Whitespace.t list; what : Empty.t }
@@ -614,6 +616,20 @@ module Parse = struct
     | Ident [ "toggle" ] -> Some `Toggle
     | _ -> None
 
+  (* A variable name in "display variables" is like "variable" above, except that underscores are not allowed. *)
+  let display_variable =
+    let* loc, (xs, w) =
+      located
+        (step "" (fun state _ (tok, w) ->
+             match tok with
+             | Ident xs -> Some ((Some xs, w), state)
+             | Underscore -> Some ((None, w), state)
+             | _ -> None)) in
+    match xs with
+    | Some [ x ] when Lexer.valid_var x -> return (x, w)
+    | Some xs -> fatal ~loc:(Range.convert loc) (Invalid_variable xs)
+    | None -> fatal ~loc:(Range.convert loc) (Invalid_variable [ "_" ])
+
   let display =
     let* wsdisplay = token Display in
     let* what, wswhat =
@@ -622,6 +638,7 @@ module Parse = struct
           | Ident [ "chars" ] -> Some ((`Chars, ws), state)
           | Ident [ "function" ] -> Some ((`Function, ws), state)
           | Ident [ "type" ] -> Some ((`Type, ws), state)
+          | Ident [ "variables" ] -> Some ((`Variables, ws), state)
           | _ -> None) in
     match what with
     | `Chars ->
@@ -648,6 +665,15 @@ module Parse = struct
             return
               ( Display { wsdisplay; wscoloneq; what = `Type_boundaries (wswhat, wsb, show, ws) },
                 state ))
+    | `Variables ->
+        let* wscoloneq = token Coloneq in
+        let* x, wsx = display_variable in
+        let* xs =
+          zero_or_more
+            (let* wscomma = token (Op ",") in
+             let* x, wsx = display_variable in
+             return (wscomma, x, wsx)) in
+        return (Display { wsdisplay; wscoloneq; what = `Variables (wswhat, ([], x, wsx) :: xs) })
 
   let implicit_of_token : Token.t -> [ `Implicit | `Explicit ] option = function
     | Ident [ "implicit" ] -> Some `Implicit
@@ -1173,8 +1199,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                 (Branches)
                 (struct
                   type t = Names.wrapped
-                end)
-            in
+                end) in
             let open Monad.Ops (NameBranches) in
             let rec constr_args : type a p ap n k.
                 n Names.t ->
@@ -1259,7 +1284,11 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
           emit (Display_set ("function boundaries", Display.to_string (fb :> Display.values)))
       | `Type_boundaries (_, _, tb, _) ->
           let tb = Display.modify_type_boundaries tb in
-          emit (Display_set ("type boundaries", Display.to_string (tb :> Display.values))));
+          emit (Display_set ("type boundaries", Display.to_string (tb :> Display.values)))
+      | `Variables (_, xs) ->
+          let variables = List.map (fun (_, x, _) -> x) xs in
+          Display.modify (fun s -> { s with variables });
+          emit (Display_set ("variables", String.concat "," variables)));
       (None, [])
   | Option _ -> .
   | Undo { count; _ } ->
@@ -1479,20 +1508,20 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
                  (group
                     (pp_ws `Break ws
                     ^^ (match fixity with
-                       | Infixl _ | Postfixl _ -> Token.pp Ellipsis ^^ pp_ws `Nobreak wsellipsis
-                       | _ -> empty)
+                      | Infixl _ | Postfixl _ -> Token.pp Ellipsis ^^ pp_ws `Nobreak wsellipsis
+                      | _ -> empty)
                     ^^ group (hang 2 ppat))
                  ^^ (match fixity with
-                    | Infixr _ | Prefixr _ ->
-                        pp_ws `Nobreak wpat ^^ Token.pp Ellipsis ^^ pp_ws `Break wsellipsis
-                    | _ -> pp_ws `Break wpat)
+                   | Infixr _ | Prefixr _ ->
+                       pp_ws `Nobreak wpat ^^ Token.pp Ellipsis ^^ pp_ws `Break wsellipsis
+                   | _ -> pp_ws `Break wpat)
                  ^^ Token.pp Coloneq
                  ^^ pp_ws `Nobreak wscoloneq
                  ^^ group
                       (hang 2
                          ((match head with
-                          | `Constr c -> pp_constr c
-                          | `Constant c -> utf8string (String.concat "." c))
+                            | `Constr c -> pp_constr c
+                            | `Constant c -> utf8string (String.concat "." c))
                          ^^ pargs)))),
           rest )
     | Import { wsimport; export; origin; wsorigin; op } ->
@@ -1516,9 +1545,9 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
                (Token.pp (if export then Export else Import)
                ^^ pp_ws `Nobreak wsimport
                ^^ (match origin with
-                  | `File file -> dquotes (utf8string file)
-                  | `Path [] -> Token.pp Dot
-                  | `Path path -> utf8string (String.concat "." path))
+                 | `File file -> dquotes (utf8string file)
+                 | `Path [] -> Token.pp Dot
+                 | `Path path -> utf8string (String.concat "." path))
                ^^ op)),
           rest )
     | Chdir { wschdir; dir; wsdir } ->

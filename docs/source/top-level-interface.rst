@@ -24,7 +24,7 @@ Formatting output
 - ``-hide-function-boundaries``: Hide boundaries of functions, when implicit
 - ``-show-type-boundaries``: Display boundaries of types, when implicit
 - ``-hide-type-boundaries``: Hide boundaries of types, when implicit
-- ``-variables X``: Set the default variable names (see :ref:`Default names`)
+- ``-variables X,Y,Z``: Set the default variable names (see :ref:`Default names`)
 
 Controlling parametricity
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -205,6 +205,7 @@ Set one of the display settings (that are also set by command-line flags).  Poss
     display type boundaries ≔ on
     display type boundaries ≔ off
     display type boundaries ≔ toggle
+    display variables ≔ X,Y,Z
 
 
 Chdir

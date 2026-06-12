@@ -67,3 +67,80 @@ The argument of -variables must be a nonempty comma-separated list of valid vari
    ￮ invalid local variable name: 
   
   [1]
+
+The "display variables" command changes the variable names at runtime.
+
+  $ cat - >dispvars.ny <<EOF
+  > def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]
+  > def kinetic_suc : ℕ → ℕ ≔ ((x : ℕ → ℕ) ↦ x : ℕ → ℕ) suc.
+  > echo kinetic_suc
+  > display variables ≔ a,b
+  > echo kinetic_suc
+  > display variables ≔ v
+  > echo kinetic_suc
+  > EOF
+
+  $ narya -fake-interact=dispvars.ny
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0000]
+   ￮ constant kinetic_suc defined
+  
+  𝑥 ↦ suc. 𝑥
+    : ℕ → ℕ
+  
+   ￫ info[I0101]
+   ￮ display set variables to a,b
+  
+  a ↦ suc. a
+    : ℕ → ℕ
+  
+   ￫ info[I0101]
+   ￮ display set variables to v
+  
+  v ↦ suc. v
+    : ℕ → ℕ
+  
+
+Its argument must also be a nonempty comma-separated list of valid variable names.
+
+  $ narya -e "display variables ≔ 42"
+   ￫ error[E0202]
+   ￭ command-line exec string
+   1 | display variables ≔ 42
+     ^ invalid local variable name: 42
+  
+  [1]
+
+  $ narya -e "display variables ≔ a.b"
+   ￫ error[E0202]
+   ￭ command-line exec string
+   1 | display variables ≔ a.b
+     ^ invalid local variable name: a.b
+  
+  [1]
+
+  $ narya -e "display variables ≔ _"
+   ￫ error[E0202]
+   ￭ command-line exec string
+   1 | display variables ≔ _
+     ^ invalid local variable name: _
+  
+  [1]
+
+  $ narya -e "display variables ≔ a,,b"
+   ￫ error[E0200]
+   ￭ command-line exec string
+   1 | display variables ≔ a,,b
+     ^ parse error
+  
+  [1]
+
+  $ narya -e "display variables ≔"
+   ￫ error[E0200]
+   ￭ command-line exec string
+   1 | display variables ≔‹EOF›
+     ^ parse error
+  
+  [1]
