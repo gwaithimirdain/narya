@@ -75,8 +75,8 @@ let rec motive_of_family : type a b.
   let folder : type left m any.
       (left, m, any) F.t -> (left, D.zero) snoc T.t -> left T.t * (left, m, any) F.t =
    fun (Rbtm dom) cod ->
-    (Pi (singleton_variables D.zero None, CubeOf.singleton dom, CodCube.singleton cod), Rbtm dom)
-  in
+    ( Pi (singleton_variables D.zero (`Anon []), CubeOf.singleton dom, CodCube.singleton cod),
+      Rbtm dom ) in
   let builder : type left n m.
       n variables ->
       (n, Binding.t) CubeOf.t ->
@@ -111,7 +111,7 @@ let rec motive_of_family : type a b.
       let m = CubeOf.dim newnfs in
       let (Wrap (newdoms, _)) =
         MC.build_left m
-          { build = (fun fa ctx -> builder (singleton_variables m None) newnfs fa ctx) }
+          { build = (fun fa ctx -> builder (singleton_variables m (`Anon [])) newnfs fa ctx) }
           (Any_ctx ctx) in
       let motive, _ =
         MT.fold_map_right { foldmap = (fun _ x y -> folder x y) } newdoms (UU D.zero) in
@@ -120,7 +120,7 @@ let rec motive_of_family : type a b.
 
 type (_, _, _) vars_of_names =
   | Vars :
-      ('a, 'b, 'abc) N.plus * (N.zero, 'n, string option, 'b) NICubeOf.t
+      ('a, 'b, 'abc) N.plus * (N.zero, 'n, binder_name, 'b) NICubeOf.t
       -> ('a, 'abc, 'n) vars_of_names
 
 let vars_of_names : type a c abc n.
@@ -135,9 +135,9 @@ let vars_of_names : type a c abc n.
       {
         build =
           (fun _ -> function
-            | Ok (ab, x :: xs) -> Fwrap (NFamOf x, Ok (Suc ab, xs))
-            | Ok _ -> Fwrap (NFamOf None, Missing (-1))
-            | Missing j -> Fwrap (NFamOf None, Missing (j - 1)));
+            | Ok (ab, x :: xs) -> Fwrap (NFamOf (binder_name_of_option x), Ok (Suc ab, xs))
+            | Ok _ -> Fwrap (NFamOf (`Anon []), Missing (-1))
+            | Missing j -> Fwrap (NFamOf (`Anon []), Missing (j - 1)));
       }
       (Ok (Zero, xs))
   with
@@ -487,9 +487,11 @@ let rec check : type a b s.
                                   fatal ?loc:name.loc
                                     (Unexpected_implicitness
                                        (`Explicit, "abstraction", "expecting implicit variable"))
-                              | _ -> Fwrap (NFamOf name.value, Ok (Suc ab, body)))
-                          | Ok (_, _) -> Fwrap (NFamOf None, Missing 1)
-                          | Missing j -> Fwrap (NFamOf None, Missing (j + 1)));
+                              | _ ->
+                                  Fwrap
+                                    (NFamOf (binder_name_of_option name.value), Ok (Suc ab, body)))
+                          | Ok (_, _) -> Fwrap (NFamOf (`Anon []), Missing 1)
+                          | Missing j -> Fwrap (NFamOf (`Anon []), Missing (j + 1)));
                     }
                     (Ok (Zero, tm))
                 with
@@ -517,7 +519,7 @@ let rec check : type a b s.
                             fatal ?loc:xloc ~extra_remarks
                               (Mismatched_dimensions_in_cube_abstraction (m', m))));
                     (* Here we don't need to slurp up lots of lambdas, but can make do with one. *)
-                    let xs = singleton_variables m x in
+                    let xs = singleton_variables m (binder_name_of_option x) in
                     let ctx = Ctx.cube_vis ctx x newnfs in
                     Lam (xs, check ?discrete (mkstatus xs status) ctx body output)))
         | _ -> fatal (Checking_lambda_at_nonfunction (PVal (ctx, ty))))
@@ -604,7 +606,7 @@ let rec check : type a b s.
                 realize status (Term.Constr (constr, dim, newargs)))
         (* A constructor can also check at a function-type by eta-expansion. *)
         | Canonical (_, Pi (x, _, _), _, _) ->
-            let name = locate_opt None (top_variable x) in
+            let name = locate_opt None (option_of_binder_name (top_variable x)) in
             let cube, fa =
               match D.compare_zero (dim_variables x) with
               | Zero -> (locate_opt None `Normal, None)
@@ -1168,7 +1170,7 @@ and check_match_branches : type a b.
   (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
   match view_type varty "check_match_branches" with
   | Canonical
-      (* Data always has intrinsic dimension zero, but it seems that the syntax for binding type variables in a GADT match can't take that into account.  So we have to give "zero" a name here, and two different names for m. *)
+    (* Data always has intrinsic dimension zero, but it seems that the syntax for binding type variables in a GADT match can't take that into account.  So we have to give "zero" a name here, and two different names for m. *)
       (type d_zero m m')
       (( name,
          Data
@@ -1749,8 +1751,8 @@ and check_empty_match_lam : type a b.
                     let ty = (Binding.value (CubeOf.find newnfs fb)).ty in
                     let firstty = Option.value firstty ~default:ty in
                     if is_empty ty then
-                      Fwrap (NFamOf None, Ok (Some firstty, Suc ab, Some (SFace_of fb)))
-                    else Fwrap (NFamOf None, Ok (Some firstty, Suc ab, fa)));
+                      Fwrap (NFamOf (`Anon []), Ok (Some firstty, Suc ab, Some (SFace_of fb)))
+                    else Fwrap (NFamOf (`Anon []), Ok (Some firstty, Suc ab, fa)));
           }
           (Ok (None, Zero, None))
       with
@@ -2013,7 +2015,7 @@ and check_record : type a f1 f2 f af d acd b n.
     (a, b) Ctx.t ->
     opacity ->
     (D.zero, n, n, normal) TubeOf.t ->
-    (N.zero, n, string option, f1) NICubeOf.t ->
+    (N.zero, n, binder_name, f1) NICubeOf.t ->
     (D.zero Field.t * string, f2) Bwv.t ->
     (f1, f2, f) N.plus ->
     (a, f, af) N.plus ->
@@ -2488,7 +2490,8 @@ and synth : type a b s.
         let cdom = check (Kinetic `Nolet) ctx dom (universe D.zero) in
         let edom = eval_term (Ctx.env ctx) cdom in
         let ccod = check (Kinetic `Nolet) (Ctx.ext ctx x edom) cod (universe D.zero) in
-        (realize status (pi (singleton_variables D.zero x) cdom ccod), universe D.zero)
+        ( realize status (pi (singleton_variables D.zero (binder_name_of_option x)) cdom ccod),
+          universe D.zero )
     | HigherPi (x, dom, cod), _ -> (
         let cdom, domty = synth (Kinetic `Nolet) ctx dom in
         let edom = eval_term (Ctx.env ctx) cdom in
@@ -2530,7 +2533,7 @@ and synth : type a b s.
                               let t' = sface_of_tface t in
                               let ctm =
                                 Term.Pi
-                                  ( singleton_variables k x,
+                                  ( singleton_variables k (binder_name_of_option x),
                                     CubeOf.subcube t' cdoms,
                                     CodCube.subcube t' ccods ) in
                               let tm = eval_term (Ctx.env ctx) ctm in
@@ -2547,7 +2550,8 @@ and synth : type a b s.
                               Hashtbl.add tyargstbl (Tface_of t) arg;
                               arg);
                         } in
-                    ( realize status (Pi (singleton_variables n x, cdoms, ccods)),
+                    ( realize status
+                        (Pi (singleton_variables n (binder_name_of_option x), cdoms, ccods)),
                       inst (universe n) tyargs )
                 | Neq -> fatal (Invalid_higher_function "invalid single codomain dimension"))
             | _ -> fatal (Invalid_higher_function "invalid single codomain"))
@@ -2567,7 +2571,7 @@ and synth : type a b s.
             (m, n) sface ->
             (left1, left2) Acc.t ->
             (left1, m, g) Indexed.DomFam.t ->
-            (left2, m, string option) NFamOf.t * (left1 N.suc, left2 N.suc) Acc.t =
+            (left2, m, binder_name) NFamOf.t * (left1 N.suc, left2 N.suc) Acc.t =
          fun s (Ctx (xctx, ac)) (Indexed.DomFam.DomFam (x, dom)) ->
           let m = dom_sface s in
           (* We check the domains against universe 0, since they should be fully instantiated. *)
@@ -2575,14 +2579,14 @@ and synth : type a b s.
           let edom = eval_term (Ctx.env xctx) cdom in
           (* Further errors here should also be reported on the relevant domain term. *)
           with_loc dom.loc
-          @@ fun () : ((left2, m, string option) NFamOf.t * (left1 N.suc, left2 N.suc) Acc.t) ->
+          @@ fun () : ((left2, m, binder_name) NFamOf.t * (left1 N.suc, left2 N.suc) Acc.t) ->
           (* No_such_level indicates a readback failure, meaning that some domain or boundary was not defined in the correct context (e.g. used unavailable variables). *)
           Reporter.try_with ~fatal:(fun d ->
               match d.message with
               | No_such_level _ ->
                   fatal ?loc:d.explanation.loc (Invalid_higher_function "invalid domain scope")
               | _ -> fatal_diagnostic d)
-          @@ fun () : ((left2, m, string option) NFamOf.t * (left1 N.suc, left2 N.suc) Acc.t) ->
+          @@ fun () : ((left2, m, binder_name) NFamOf.t * (left1 N.suc, left2 N.suc) Acc.t) ->
           let dom, tyargs =
             match D.compare_zero m with
             | Zero ->
@@ -2613,7 +2617,7 @@ and synth : type a b s.
           (* We also get and store the normal corresponding to this variable, for checking the tyargs of later domains. *)
           (match Ctx.lookup newctx (Top, None) with
           | `Field (_, v, _) | `Var (_, v, _) -> Hashtbl.add varstbl (SFace_of s) v);
-          (NFamOf x, Ctx (newctx, Suc ac)) in
+          (NFamOf (binder_name_of_option x), Ctx (newctx, Suc ac)) in
         (* We don't care about the produced context, since its checked length is wrong.  We want just one cube of variables, and the total raw length added to the previous one.  *)
         let (Gfolded (xs, Ctx (_, af))) =
           T.fold_map_left { foldmap } (Ctx (ctx, Zero) : (a, N.zero) Acc.t) doms in
@@ -2722,7 +2726,7 @@ and synth : type a b s.
           match Ctx.lookup newctx (Top, None) with
           | `Field _ -> fatal (Anomaly "field variable in asclam")
           | `Var (_, nf, _) -> nf in
-        let xs = singleton_variables D.zero x in
+        let xs = singleton_variables D.zero (binder_name_of_option x) in
         let newstatus : ((b, D.zero) snoc, s) status =
           match status with
           | Kinetic l -> Kinetic l
@@ -2733,7 +2737,7 @@ and synth : type a b s.
         let ty =
           eval_term (Ctx.env ctx)
             (Pi
-               ( singleton_variables D.zero x,
+               ( singleton_variables D.zero (binder_name_of_option x),
                  CubeOf.singleton cdom,
                  CodCube.singleton (readback_val newctx scod) )) in
         (Lam (xs, cbody), ty)
@@ -3204,12 +3208,13 @@ and synth_lam : type a b c d n.
       let cdom = check (Kinetic `Nolet) ctx dom (universe D.zero) in
       let edom = eval_term (Ctx.env ctx) cdom in
       let newctx = Ctx.ext ctx name.value edom in
-      let xs = singleton_variables D.zero name.value in
+      let xs = singleton_variables D.zero (binder_name_of_option name.value) in
       (* Pull off either one explicit argument or a cube of mostly-implicit ones, of the correct dimension. *)
       let module M = CubeOf.Monadic (Monad.State (struct
         type t =
           (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list
-      end)) in
+      end))
+      in
       let _, rest =
         M.buildM n
           {
@@ -3224,7 +3229,7 @@ and synth_lam : type a b c d n.
       let scod =
         eval_term (Ctx.env ctx)
           (Pi
-             ( singleton_variables D.zero name.value,
+             ( singleton_variables D.zero (binder_name_of_option name.value),
                CubeOf.singleton cdom,
                CodCube.singleton (readback_val newctx scod) )) in
       (Lam (xs, cbody), scod)
@@ -3239,14 +3244,14 @@ and synth_lam : type a b c d n.
           in
           (* Finally we can extend the context by this obtained domain. *)
           let newctx = Ctx.ext ctx name.value edom in
-          let xs = singleton_variables D.zero name.value in
+          let xs = singleton_variables D.zero (binder_name_of_option name.value) in
           (* Then we proceed again recursively to check the body of the abstraction. *)
           let cbody, scod = synth_lam n newctx body argctx args ty in
           let cdom = readback_val ctx edom in
           let scod =
             eval_term (Ctx.env ctx)
               (Pi
-                 ( singleton_variables D.zero name.value,
+                 ( singleton_variables D.zero (binder_name_of_option name.value),
                    CubeOf.singleton cdom,
                    CodCube.singleton (readback_val newctx scod) )) in
           (Lam (xs, cbody), scod)

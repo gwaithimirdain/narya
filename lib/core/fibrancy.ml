@@ -91,7 +91,8 @@ module Codata = struct
          fun trlift xcube ->
           match fldty with
           | Lower ty ->
-              let sty = Shift (Hott.dim, f.plusmap, Lam (singleton_variables f.glue None, ty)) in
+              let sty =
+                Shift (Hott.dim, f.plusmap, Lam (singleton_variables f.glue (`Anon []), ty)) in
               StructfieldAbwd.Entry
                 ( fld,
                   Lower
@@ -123,8 +124,8 @@ module Codata = struct
       (g, n, nh, b, hb, et) codata_fibrancy ->
       (g * b * potential * no_eta) StructfieldAbwd.t =
    fun fields { glue; dim; length; plusmap; ty; eta; dimh; trr; trl; liftr; liftl } ->
-    let xname = singleton_variables D.zero (Some "x") in
-    let yname = singleton_variables D.zero (Some "y") in
+    let xname = singleton_variables D.zero (`Named "x") in
+    let yname = singleton_variables D.zero (`Named "y") in
     let plusfam x = Some (PlusFam.PlusFam (plusmap, x)) in
     let _pluszero x = Some (PlusFam.PlusFam (Plusmap.zerol length, x)) in
     (* Generic function combining trr and trl. *)
@@ -176,7 +177,7 @@ module Codata = struct
                fun (fields, fib) (CodatafieldAbwd.Entry (fld, fldty)) ->
                 match fldty with
                 | Lower fldty ->
-                    let xsname = singleton_variables D.zero (Some "x") in
+                    let xsname = singleton_variables D.zero (`Named "x") in
                     let field =
                       CodatafieldAbwd.Entry
                         ( fld,

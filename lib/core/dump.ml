@@ -182,7 +182,9 @@ module F = struct
     | Pi (x, doms, cods) ->
         fprintf ppf "Pi^%s (%s, %a, (... %a))"
           (string_of_dim (CubeOf.dim doms))
-          (Option.value ~default:"_" (top_variable x))
+          (match top_variable x with
+          | `Named x -> x
+          | `Anon _ -> "_")
           (cubeof value) doms binder (BindCube.find_top cods)
 
   and binder : type b s. formatter -> (b, s) binder -> unit =
@@ -229,7 +231,9 @@ module F = struct
     | Inst (tm, args) -> fprintf ppf "Inst (%a, %a)" term tm (tubeof term) args
     | Pi (x, doms, cods) ->
         fprintf ppf "Pi^(%a) (%s, %a, (... %a))" dim (CubeOf.dim doms)
-          (Option.value (top_variable x) ~default:"_")
+          (match top_variable x with
+          | `Named x -> x
+          | `Anon _ -> "_")
           (cubeof term) doms term (CodCube.find_top cods)
     | App (fn, arg) -> fprintf ppf "App (%a, %a)" term fn (cubeof term) arg
     | Lam (x, body) -> fprintf ppf "Lam^(%s) (?, %a)" (string_of_dim (dim_variables x)) term body
@@ -393,11 +397,12 @@ module F = struct
     | Vis { dim; plusdim; hasfields = No_fields; vars; bindings; _ } -> (
         match (D.compare_zero dim, D.compare_zero (D.plus_right plusdim)) with
         | Zero, Zero ->
-            let x = NICubeOf.find_top vars in
+            let x =
+              match NICubeOf.find_top vars with
+              | `Named x -> x
+              | `Anon _ -> "_" in
             let b = CubeOf.find_top bindings in
-            fprintf ppf "(%a%a : %a)"
-              (pp_print_option ~none:(fun ppf () -> pp_print_string ppf "_") pp_print_string)
-              x
+            fprintf ppf "(%s%a : %a)" x
               (pp_print_option (fun ppf l -> fprintf ppf "(%a)" level l))
               (Ctx.Binding.level b) value (Ctx.Binding.value b).ty
         | _ -> fprintf ppf "(?)")

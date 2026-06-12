@@ -85,6 +85,8 @@ let rec get_pi_vars : type a b.
       | Zero, `Normal | Pos _, `Cube ->
           let args, newnfs = dom_vars ctx doms in
           let (Any_ctx sctx) = Ctx.variables_vis ctx x newnfs in
-          get_pi_vars sctx cube (Snoc (xs, top_variable x)) (tyof_app cods tyargs args)
+          get_pi_vars sctx cube
+            (Snoc (xs, option_of_binder_name (top_variable x)))
+            (tyof_app cods tyargs args)
       | _ -> xs)
   | _ -> xs

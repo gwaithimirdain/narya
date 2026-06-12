@@ -165,7 +165,7 @@ module rec Term : sig
     | Vis : {
         dim : 'm D.t;
         plusdim : ('m, 'n, 'mn) D.plus;
-        vars : (N.zero, 'n, string option, 'f1) NICubeOf.t;
+        vars : (N.zero, 'n, binder_name, 'f1) NICubeOf.t;
         bindings : ('mn, ('b, 'mn) snoc binding) CubeOf.t;
         hasfields : ('m, 'f2) has_fields;
         fields : (D.zero Field.t * string * (('b, 'mn) snoc, kinetic) term, 'f2) Bwv.t;
@@ -358,7 +358,7 @@ end = struct
     | Vis : {
         dim : 'm D.t;
         plusdim : ('m, 'n, 'mn) D.plus;
-        vars : (N.zero, 'n, string option, 'f1) NICubeOf.t;
+        vars : (N.zero, 'n, binder_name, 'f1) NICubeOf.t;
         (* The reason for the "snoc" here is so that some of the terms and types in these bindings can refer to other ones.  Of course it should really be only the *later* ones that can refer to the *earlier* ones, but we don't have a way to specify that in the type parameters. *)
         bindings : ('mn, ('b, 'mn) snoc binding) CubeOf.t;
         hasfields : ('m, 'f2) has_fields;
@@ -407,13 +407,14 @@ module Telescope = struct
    fun doms cod ->
     match doms with
     | Emp -> cod
-    | Ext (x, dom, doms) -> pi (singleton_variables D.zero x) dom (pis doms cod)
+    | Ext (x, dom, doms) ->
+        pi (singleton_variables D.zero (binder_name_of_option x)) dom (pis doms cod)
 
   let rec lams : type a b ab. (a, b, ab) t -> (ab, kinetic) term -> (a, kinetic) term =
    fun doms body ->
     match doms with
     | Emp -> body
-    | Ext (x, _, doms) -> Lam (singleton_variables D.zero x, lams doms body)
+    | Ext (x, _, doms) -> Lam (singleton_variables D.zero (binder_name_of_option x), lams doms body)
 
   let rec snocs : type a b ab. (a, b, ab) t -> (a, b, D.zero, ab) Tbwd.snocs = function
     | Emp -> Zero
@@ -448,7 +449,7 @@ let ordered_ext_let : type a b.
         {
           dim = D.zero;
           plusdim = D.plus_zero D.zero;
-          vars = NICubeOf.singleton x;
+          vars = NICubeOf.singleton (binder_name_of_option x);
           bindings = CubeOf.singleton b;
           hasfields = No_fields;
           fields = Emp;

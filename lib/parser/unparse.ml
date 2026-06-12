@@ -691,10 +691,10 @@ and unparse_pis : type n lt ls rt rs.
       match (D.compare_zero (CubeOf.dim doms), dim) with
       | Zero, `Arrow | Pos _, `DblArrow -> (
           match top_variable x with
-          | Some x ->
+          | `Named x ->
               (* dependent pi-type *)
               let Variables (_, _, x), newvars =
-                Names.add vars (singleton_variables (CubeOf.dim doms) (Some x)) in
+                Names.add vars (singleton_variables (CubeOf.dim doms) (`Named x)) in
               unparse_pis dim notn newvars
                 (Snoc
                    ( accum,
@@ -706,9 +706,9 @@ and unparse_pis : type n lt ls rt rs.
                                 No.Interval.entire));
                      } ))
                 (CodCube.find_top cods) li ri
-          | None ->
+          | `Anon _ as anon ->
               (* non-dependent pi-type *)
-              let _, newvars = Names.add vars (singleton_variables (CubeOf.dim doms) None) in
+              let _, newvars = Names.add vars (singleton_variables (CubeOf.dim doms) anon) in
               let dim =
                 match dim with
                 | `Arrow -> `Arrow None
@@ -911,7 +911,7 @@ let rec unparse_ctx : type a b.
       match entry with
       | Invis bindings ->
           (* We treat an invisible binding as consisting of all nameless variables, and autogenerate names for them all. *)
-          let x, names = Names.add names (singleton_variables (CubeOf.dim bindings) None) in
+          let x, names = Names.add names (singleton_variables (CubeOf.dim bindings) (`Anon [])) in
           let do_binding (b : b binding) (res : S.t) : unit * S.t =
             let ty = Wrap (unparse names b.ty No.Interval.entire No.Interval.entire) in
             let tm =
@@ -932,7 +932,7 @@ let rec unparse_ctx : type a b.
           let module Fold = NICubeOf.Traverse (T) in
           let do_var : type left m n.
               (m, n) sface ->
-              (left, m, string option) NFamOf.t ->
+              (left, m, binder_name) NFamOf.t ->
               left N.suc T.t ->
               left T.t * (left, m, string * [ `Original | `Renamed ]) NFamOf.t =
            fun _ (NFamOf _) (Snoc (xs, x)) -> (xs, NFamOf x) in
