@@ -1972,12 +1972,22 @@ and check_codata : type a b n et.
         ~has_higher_fields errs
       @@ fun domvars _ ->
       let newctx = Ctx.cube_vis ctx x domvars in
+      (* A lower field and a higher field can't share a name, since projections at that name would be ambiguous. *)
+      let check_name_clash () =
+        match CodatafieldAbwd.find_string_opt checked_fields (Field.to_string fld) with
+        | Some (CodatafieldAbwd.Entry (fld', _)) -> (
+            match (D.compare_zero (Field.dim fld), D.compare_zero (Field.dim fld')) with
+            | Zero, Pos _ | Pos _, Zero ->
+                fatal (Lower_and_higher_methods_in_codata (Field.to_string fld))
+            | _ -> ())
+        | None -> () in
       match (D.compare_zero (Field.dim fld), D.compare_zero (TubeOf.inst tyargs), eta) with
       | Zero, _, _ ->
           (* Zero-dimensional field *)
           let checked_fields, fibrancy, errs =
             Reporter.try_with ~fatal:(fun e -> (checked_fields, fibrancy, Snoc (errs, e)))
             @@ fun () ->
+            check_name_clash ();
             (* Note the type of each field is checked *kinetically*: it's not part of the case tree. *)
             let cty = check (Kinetic `Nolet) newctx rty (universe D.zero) in
             let entry = CodatafieldAbwd.Entry (fld, Lower cty) in
@@ -1988,6 +1998,7 @@ and check_codata : type a b n et.
           (* Higher-dimensional field, currently requires a zero-dimensional codatatype (non-Gel). *)
           let checked_fields, errs =
             Reporter.try_with ~fatal:(fun e -> (checked_fields, Snoc (errs, e))) @@ fun () ->
+            check_name_clash ();
             let (Degctx (plusmap, degctx, _)) = degctx newctx (Field.dim fld) in
             let cty = check (Kinetic `Nolet) degctx rty (universe D.zero) in
             (Snoc (checked_fields, Entry (fld, Codatafield.Higher (plusmap, cty))), errs) in
