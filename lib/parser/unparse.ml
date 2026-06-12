@@ -146,21 +146,18 @@ let unparse_notation : type left tight right lt ls rt rs.
       let inner = observations_of_symbols args inner_symbols in
       unlocated (outfix ~notn ~inner)
 
-(* Unparse a variable name, possibly anonymous. *)
-let unparse_var : type lt ls rt rs. string option -> (lt, ls, rt, rs) parse located = function
-  | Some x -> unlocated (Ident ([ x ], []))
-  | None -> unlocated (Placeholder [])
+(* Unparse a variable name. *)
+let unparse_var : type lt ls rt rs. string -> (lt, ls, rt, rs) parse located =
+ fun x -> unlocated (Ident ([ x ], []))
 
 let unparse_var_with_implicitness : type lt ls rt rs.
-    string option * [ `Explicit | `Implicit ] -> (lt, ls, rt, rs) parse located = function
-  | Some x, `Explicit -> unlocated (Ident ([ x ], []))
-  | None, `Explicit -> unlocated (Placeholder [])
-  | Some x, `Implicit -> braceize (unlocated (Ident ([ x ], [])))
-  | None, `Implicit -> braceize (unlocated (Placeholder []))
+    string * [ `Explicit | `Implicit ] -> (lt, ls, rt, rs) parse located = function
+  | x, `Explicit -> unlocated (Ident ([ x ], []))
+  | x, `Implicit -> braceize (unlocated (Ident ([ x ], [])))
 
 (* Unparse a Bwd of variables to occur in an iterated abstraction.  If there is more than one variable, the result is an "application spine".  Can occur in any tightness interval that contains +ω. *)
 let rec unparse_abs : type li ls ri rs.
-    (string option * [ `Explicit | `Implicit ]) Bwd.t ->
+    (string * [ `Explicit | `Implicit ]) Bwd.t ->
     (li, ls) No.iinterval ->
     (li, ls, No.plus_omega) No.lt ->
     (ri, rs, No.plus_omega) No.lt ->
@@ -232,7 +229,8 @@ let rec get_spine : type n.
   | App (fn, arg) -> (
       let module M = CubeOf.Monadic (Monad.State (struct
         type t = ((n, kinetic) term * [ `Implicit | `Explicit ]) Bwd.t
-      end)) in
+      end))
+      in
       (* To append the entries in a cube to a Bwd, we iterate through it with a Bwd state. *)
       let append_bwd args =
         let all_args = not (synths (CubeOf.find_top arg)) in
@@ -507,7 +505,7 @@ and unparse_field_var : type n lt ls rt rs.
 and unparse_lam : type n lt ls rt rs s.
     [ `Cube | `Normal ] ->
     n Names.t ->
-    (string option * [ `Explicit | `Implicit ]) Bwd.t ->
+    (string * [ `Explicit | `Implicit ]) Bwd.t ->
     (n, s) term ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
@@ -519,14 +517,14 @@ and unparse_lam : type n lt ls rt rs s.
       | `Normal, Eq | `Cube, Neq ->
           let Variables (_, _, x), vars = Names.add vars boundvars in
           let module Fold = NICubeOf.Traverse (struct
-            type 'acc t = (string option * [ `Explicit | `Implicit ]) Bwd.t
+            type 'acc t = (string * [ `Explicit | `Implicit ]) Bwd.t
           end) in
           (* Apparently we need to define the folding function explicitly with a type to make it come out sufficiently polymorphic. *)
           let folder : type left k m.
               (k, m) sface ->
-              (string option * [ `Explicit | `Implicit ]) Bwd.t ->
-              (left, k, string option) NFamOf.t ->
-              (left, k, unit) NFamOf.t * (string option * [ `Explicit | `Implicit ]) Bwd.t =
+              (string * [ `Explicit | `Implicit ]) Bwd.t ->
+              (left, k, string) NFamOf.t ->
+              (left, k, unit) NFamOf.t * (string * [ `Explicit | `Implicit ]) Bwd.t =
            fun s acc (NFamOf x) ->
             let implicit =
               match is_id_sface s with
@@ -543,7 +541,7 @@ and unparse_lam : type n lt ls rt rs s.
 and unparse_lam_done : type n lt ls rt rs s.
     [ `Cube | `Normal ] ->
     n Names.t ->
-    (string option * [ `Explicit | `Implicit ]) Bwd.t ->
+    (string * [ `Explicit | `Implicit ]) Bwd.t ->
     (n, s) term ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
@@ -646,7 +644,8 @@ and unparse_named_inst : type n lt ls rt rs m k mk.
  fun vars ty tyargs li ri ->
   let module M = TubeOf.Monadic (Monad.State (struct
     type t = unparser Bwd.t
-  end)) in
+  end))
+  in
   (* To append the entries in a tube to a Bwd, we iterate through it with a Bwd state. *)
   let (), args =
     M.miterM
@@ -702,8 +701,7 @@ and unparse_pis : type n lt ls rt rs.
                      {
                        unparse =
                          (fun _ _ ->
-                           unparse_pi_dom
-                             (NICubeOf.find_top x <|> Anomaly "missing top in unparse_pis")
+                           unparse_pi_dom (NICubeOf.find_top x)
                              (unparse vars (CubeOf.find_top doms) (interval_right asc)
                                 No.Interval.entire));
                      } ))
@@ -821,7 +819,7 @@ and unparse_higher_pi : type a lt ls rt rs n.
         it =
           (fun s [ dom ] accum ->
             let k = dom_sface s in
-            let x = find_variable s xs <|> Anomaly "missing variable in unparse_higher_pi" in
+            let x = find_variable s xs in
             let xargs =
               TubeOf.build D.zero (D.zero_plus k)
                 { build = (fun fa -> Var (Index (Now, comp_sface s (sface_of_tface fa)))) } in
@@ -839,7 +837,7 @@ and unparse_higher_pi : type a lt ls rt rs n.
      fun s (Names.Named (lamvars, lam)) ->
       let k = dom_tface s in
       let lam_xs = sub_variables (sface_of_tface s) xs in
-      let _, lamvars = Names.add lamvars lam_xs in
+      let _, lamvars = Names.add_strings lamvars lam_xs in
       match lam with
       | Lam (ys, body) -> (
           match D.compare (dim_variables ys) k with
@@ -920,7 +918,7 @@ let rec unparse_ctx : type a b.
               Option.map
                 (fun t -> Wrap (unparse names t No.Interval.entire No.Interval.entire))
                 b.tm in
-            ((), Snoc (res, (Option.get (top_variable x), `Renamed, tm, ty))) in
+            ((), Snoc (res, (top_variable x, `Renamed, tm, ty))) in
           let _, result =
             M.miterM { it = (fun _ [ b ] res -> do_binding b res) } [ bindings ] result in
           (names, result)
@@ -943,8 +941,8 @@ let rec unparse_ctx : type a b.
           let projector : type left m n.
               (m, n) sface ->
               (left, m, string * [ `Original | `Renamed ]) NFamOf.t ->
-              (left, m, string option) NFamOf.t =
-           fun _ (NFamOf (x, _)) -> NFamOf (Some x) in
+              (left, m, string) NFamOf.t =
+           fun _ (NFamOf (x, _)) -> NFamOf x in
           let xs = NICubeOf.map { map = projector } vardata in
           (* With the variables projected out, we add them to the Names.t.  We use Names.unsafe_add because at this point the variables have already been uniquified by Names.uniquify_vars. *)
           let fnames =
