@@ -143,7 +143,7 @@ and process_apps : type n lt ls rt rs.
           let arg =
             match arg.value with
             | Placeholder _ -> None
-            | _ -> Some { value = (process ctx arg).value; loc } in
+            | _ -> Some (process ctx arg) in
           process_apply ctx { value = Synth (Act (str, s, arg)); loc } args
       | [] -> fatal ?loc:tm.loc (Anomaly "process_apps"))
   | `Constr c ->
