@@ -106,3 +106,13 @@ To deal with cases like this, Narya maintains a list of "default variable names"
    𝑥 𝑦 𝑧 𝑤 𝑢 𝑣
 
 Here ``𝑥`` is the unicode character MATHEMATICAL ITALIC SMALL X, and so on.  These are chosen because *x*, *y*, and so on are common "neutral" variable names in mathematics, while their unicode italic versions are not commonly used in coding.  However, you can change the default variable names with the command-line flag ``-variables``, which takes a comma-separated list of variable names, such as ``-variables 𝑎,𝑏,𝑐`` if you prefer the beginning of the alphabet, or ``-variables 𝓍,𝓎,𝓏`` if you prefer a different font.  You can also change them at runtime with the command ``display variables ≔ 𝑎,𝑏,𝑐`` (see :ref:`Display`).
+
+In addition, you can associate a separate list of default variable names to a particular datatype, record type, or codatatype, to be used for unnamed variables belonging to that type.  This is done with the ``variables`` *attribute* when defining the type (see :ref:`Eta-expansion and opacity` for more about attributes):
+
+.. code-block:: none
+
+   def ℕ : Type ≔ data #(variables ≔ n,m,k) [ zero. | suc. (_ : ℕ) ]
+   def prod (A B : Type) : Type ≔ sig #(variables ≔ u,v) (fst : A, snd : B)
+   def Stream (A : Type) : Type ≔ codata #(variables ≔ s) [ x .head : A | x .tail : Stream A ]
+
+When generating a name for an unnamed variable, the names associated to its type, if any, are tried first, before the global default names, with the same fallback to primed versions if all of them are taken.  These names also apply to variables of a higher-dimensional version of the type, such as the boundary variables of ``Id (ℕ → ℕ) f g``.

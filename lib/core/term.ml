@@ -108,6 +108,8 @@ module rec Term : sig
         indices : 'i Fwn.t;
         constrs : (Constr.t, ('a, 'i) dataconstr) Abwd.t;
         discrete : [ `Yes | `Maybe | `No ];
+        (* Variable-name hints, for displaying anonymous variables of this type. *)
+        hints : string list;
       }
         -> 'a canonical
     | Codata : ('n, 'c, 'a, 'nh, 'ha, 'et) codata_args -> 'a canonical
@@ -115,6 +117,8 @@ module rec Term : sig
   and ('n, 'c, 'a, 'nh, 'ha, 'et) codata_args = {
     eta : (potential, 'et) eta;
     opacity : opacity;
+    (* Variable-name hints, for displaying anonymous variables of this type. *)
+    hints : string list;
     dim : 'n D.t;
     termctx : ('c, ('a, 'n) snoc) termctx option;
     fields : ('a * 'n * 'et) CodatafieldAbwd.t;
@@ -286,6 +290,8 @@ end = struct
         indices : 'i Fwn.t;
         constrs : (Constr.t, ('a, 'i) dataconstr) Abwd.t;
         discrete : [ `Yes | `Maybe | `No ];
+        (* Variable-name hints, for displaying anonymous variables of this type. *)
+        hints : string list;
       }
         -> 'a canonical
     | Codata : ('n, 'c, 'a, 'nh, 'ha, 'et) codata_args -> 'a canonical
@@ -294,6 +300,8 @@ end = struct
     (* An eta flag and its opacity *)
     eta : (potential, 'et) eta;
     opacity : opacity;
+    (* Variable-name hints, for displaying anonymous variables of this type. *)
+    hints : string list;
     (* An intrinsic dimension (like Gel) *)
     dim : 'n D.t;
     (* The termctx in which it was checked, since that is needed to eval-readback the env to degenerate it when checking higher fields. *)

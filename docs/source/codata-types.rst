@@ -29,6 +29,8 @@ That is, we use brackets and bars instead of parentheses and commas.  Moreover, 
    | x .snd : B (x .fst)
    ]
 
+Like a record type, a codatatype can be given *attributes*, written ``codata #(ATTR) [ … ]``.  The only attribute currently allowed on a codatatype is ``variables``, which specifies default variable names for unnamed variables belonging to that type, e.g. ``codata #(variables ≔ s) [ … ]``; see :ref:`Default names`.
+
 It is often helpful to think of a codatatype as akin to an *interface* in an object-oriented programming language, in which case the variable ``x`` is like the ``this`` or ``self`` pointer by which an object refers to itself.  Of course an interface in a simply-typed language does not need a self-pointer to specify the *types* of its methods, but in a dependently typed language it does.  In higher-dimensional type theories, the presence of this variable can be used in other ways than simply accessing previously declared methods, such as in the definition of semi-simplicial types using :ref:`Displayed coinductive types`.
 
 

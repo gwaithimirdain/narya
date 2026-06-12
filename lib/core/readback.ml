@@ -49,23 +49,26 @@ and readback_at : type a z.
   let view = if Displaying.read () then view_term tm else tm in
   let vty = view_type ty "readback_at" in
   match (vty, view) with
-  | Canonical (_, Pi (_, doms, cods), ins, tyargs), Lam ((Variables (m, mn, xs) as x), body) -> (
+  | Canonical (_, Pi (_, doms, cods), ins, tyargs), Lam (x, body) -> (
       let Eq = eq_of_ins_zero ins in
       let k = CubeOf.dim doms in
       let l = dim_binder body in
       match (D.compare (TubeOf.inst tyargs) k, D.compare k l) with
       | Neq, _ -> fatal (Dimension_mismatch ("reading back at pi 1", TubeOf.inst tyargs, k))
       | _, Neq -> fatal (Dimension_mismatch ("reading back at pi 2", k, l))
-      | Eq, Eq ->
-          let args, newnfs = dom_vars ctx doms in
-          let (Plus af) = N.plus (NICubeOf.out N.zero xs) in
-          let newctx = Ctx.vis ctx m mn xs newnfs af in
-          let output = tyof_app cods tyargs args in
-          let body = readback_at ~eta newctx (apply_term tm args) output in
-          Term.Lam (x, body))
+      | Eq, Eq -> (
+          match View.fill_hints doms x with
+          | Variables (m, mn, xs) as x ->
+              let args, newnfs = dom_vars ctx doms in
+              let (Plus af) = N.plus (NICubeOf.out N.zero xs) in
+              let newctx = Ctx.vis ctx m mn xs newnfs af in
+              let output = tyof_app cods tyargs args in
+              let body = readback_at ~eta newctx (apply_term tm args) output in
+              Term.Lam (x, body)))
   (* If eta-expansion is enabled, we do an eta-expanding readback of any term. *)
   | Canonical (_, Pi (name, doms, cods), ins, tyargs), tm when eta ->
       let Eq = eq_of_ins_zero ins in
+      let name = View.fill_hints doms name in
       let newargs, newnfs = dom_vars ctx doms in
       let (Any_ctx newctx) = Ctx.variables_vis ctx name newnfs in
       let output = tyof_app cods tyargs newargs in
@@ -76,7 +79,8 @@ and readback_at : type a z.
         (( _,
            Codata
              (type c a et)
-             ({ eta; opacity; fields; env = _; termctx = _ } : (m, n, c, a, et) codata_args),
+             ({ eta; opacity; fields; env = _; termctx = _; hints = _ } :
+               (m, n, c, a, et) codata_args),
            ins,
            _ ) :
           head * (m, n) canonical * (mn, m, n) insertion * (D.zero, mn, mn, normal) TubeOf.t),
@@ -255,6 +259,7 @@ and readback_head : type c z.
   | UU m -> UU m
   | Pi (x, doms, cods) ->
       let k = CubeOf.dim doms in
+      let x = View.fill_hints doms x in
       let args, newnfs = dom_vars ctx doms in
       Pi
         ( x,

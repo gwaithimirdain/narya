@@ -19,6 +19,8 @@ Note that each constructor ends with a period.  This is intentionally dual to th
 
 Also as with record types, this is not defining ``Bool`` to equal a pre-existing thing, but declaring it to be a new type that didn't previously exist and doesn't reduce to anything else.
 
+Like a record type, a datatype can be given *attributes*, written ``data #(ATTR) [ … ]``.  The only attribute currently allowed on a datatype is ``variables``, which specifies default variable names for unnamed variables belonging to that type, e.g. ``data #(variables ≔ n,m,k) [ … ]``; see :ref:`Default names`.
+
 Datatypes can have parameters:
 
 .. code-block:: none

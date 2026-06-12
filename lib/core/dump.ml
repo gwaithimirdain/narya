@@ -252,7 +252,7 @@ module F = struct
   and canonical : type b. formatter -> b canonical -> unit =
    fun ppf c ->
     match c with
-    | Data { indices; constrs; discrete = _ } ->
+    | Data { indices; constrs; discrete = _; hints = _ } ->
         fprintf ppf "Data (%d, (%a))" (Fwn.to_int indices)
           (pp_print_list
              ~pp_sep:(fun ppf () -> pp_print_string ppf " | ")
@@ -311,7 +311,7 @@ module F = struct
     | Empty_co_match -> fprintf ppf "Emptycomatch(?)"
     | Data _ -> fprintf ppf "Data(?)"
     | Codata _ -> fprintf ppf "Codata(?)"
-    | Record (_, _, _) -> fprintf ppf "Record(?)"
+    | Record (_, _, _, _) -> fprintf ppf "Record(?)"
     | SelfRecord _ -> fprintf ppf "SelfRecord(?)"
     | Refute (_, _) -> fprintf ppf "Refute(?)"
     | Hole _ -> fprintf ppf "Hole"

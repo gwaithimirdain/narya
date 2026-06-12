@@ -470,7 +470,15 @@ and apply : type n s. s value -> (n, kinetic value) CubeOf.t -> s evaluation =
                     (Canonical
                        {
                          canonical =
-                           Data { dim; tyfam; indices = Unfilled _ as indices; constrs; discrete };
+                           Data
+                             {
+                               dim;
+                               tyfam;
+                               indices = Unfilled _ as indices;
+                               constrs;
+                               discrete;
+                               hints;
+                             };
                          tyargs = data_tyargs;
                          ins;
                          fields;
@@ -494,7 +502,7 @@ and apply : type n s. s value -> (n, kinetic value) CubeOf.t -> s evaluation =
                           Val
                             (Value.Canonical
                                {
-                                 canonical = Data { dim; tyfam; indices; constrs; discrete };
+                                 canonical = Data { dim; tyfam; indices; constrs; discrete; hints };
                                  tyargs = TubeOf.empty dim;
                                  ins;
                                  fields;
@@ -788,7 +796,8 @@ and tyof_field : type m h s r i c.
       (( head,
          Codata
            (type d a et)
-           ({ env; fields; opacity = _; eta; termctx = _ } : (m, n, d, a, et) codata_args),
+           ({ env; fields; opacity = _; eta; termctx = _; hints = _ } :
+             (m, n, d, a, et) codata_args),
          codatains,
          tyargs ) :
         head * (m, n) canonical * (mn, m, n) insertion * (D.zero, mn, mn, normal) TubeOf.t) -> (
@@ -875,7 +884,9 @@ and tyof_field_withname : type a b.
     | Ok tm -> PVal (ctx, tm)
     | Error _err -> PString "[ERROR]" in
   match view_type ~severity:Asai.Diagnostic.Error ty "tyof_field" with
-  | Canonical (head, Codata { env; fields; opacity = _; eta; termctx = _ }, codatains, tyargs) -> (
+  | Canonical
+      (head, Codata { env; fields; opacity = _; eta; termctx = _; hints = _ }, codatains, tyargs)
+    -> (
       (* The type cannot have a nonidentity degeneracy applied to it (though it can be at a higher dimension). *)
       match is_id_ins codatains with
       | None -> fatal (No_such_field (`Degenerated_record eta, errfld))
@@ -975,14 +986,15 @@ and apply_binder : type n s. (n, s) Value.binder -> (n, kinetic value) CubeOf.t 
 and eval_canonical : type m a. (m, a) env -> a Term.canonical -> potential evaluation =
  fun env can ->
   match can with
-  | Data { indices; constrs; discrete } ->
+  | Data { indices; constrs; discrete; hints } ->
       let tyfam = ref None in
       let constrs =
         Abwd.map
           (fun (Term.Dataconstr { args; indices }) -> Value.Dataconstr { env; args; indices })
           constrs in
       let dim = dim_env env in
-      let canonical = Data { dim; tyfam; indices = Fillvec.empty indices; constrs; discrete } in
+      let canonical =
+        Data { dim; tyfam; indices = Fillvec.empty indices; constrs; discrete; hints } in
       let tyargs = TubeOf.empty (dim_env env) in
       let fields =
         match Lazy.force Fibrancy.data with
@@ -990,7 +1002,7 @@ and eval_canonical : type m a. (m, a) env -> a Term.canonical -> potential evalu
         | Some () -> fatal (Unimplemented "fibrancy of datatypes") in
       Val (Canonical { canonical; tyargs; ins = ins_zero dim; fields; inst_fields = Some fields })
   | Codata c ->
-      eval_codata env c.eta c.opacity c.dim (Lazy.from_val c.termctx) c.fields
+      eval_codata env c.eta c.opacity c.hints c.dim (Lazy.from_val c.termctx) c.fields
         (Fibrancy.Codata.finished c)
 
 (* We split out this subroutine so it can be called from Check.with_codata_so_far and a lazy termctx.  *)
@@ -998,17 +1010,18 @@ and eval_codata : type m a c n et.
     (m, a) env ->
     (potential, et) eta ->
     opacity ->
+    string list ->
     n D.t ->
     (c, (a, n) snoc) termctx option Lazy.t ->
     (a * n * et) CodatafieldAbwd.t ->
     (n * a * potential * no_eta) Term.StructfieldAbwd.t ->
     potential evaluation =
- fun env eta opacity n termctx fields fibrancy_fields ->
+ fun env eta opacity hints n termctx fields fibrancy_fields ->
   let m = dim_env env in
   let (Plus (type mn) (m_n : (m, n, mn) D.plus)) = D.plus n in
   let mn = D.plus_out m m_n in
   let ins = id_ins m m_n in
-  let canonical = Codata { eta; opacity; env; termctx; fields } in
+  let canonical = Codata { eta; opacity; hints; env; termctx; fields } in
   let tyargs = TubeOf.empty mn in
   let fields = eval_structfield_abwd env m m_n mn fibrancy_fields in
   Val (Canonical { canonical; tyargs; ins; fields; inst_fields = Some fields })
@@ -1342,7 +1355,8 @@ let apply_singletons : type n. kinetic value -> (n, kinetic value) CubeOf.t -> k
  fun fn xs ->
   let module MC = CubeOf.Monadic (Monad.State (struct
     type t = kinetic value
-  end)) in
+  end))
+  in
   snd (MC.miterM { it = (fun _ [ x ] fn -> ((), apply_term fn (CubeOf.singleton x))) } [ xs ] fn)
 
 (* Evaluate a term context to produce a value context. *)
