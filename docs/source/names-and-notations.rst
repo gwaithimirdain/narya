@@ -94,6 +94,19 @@ An *identifier* consists of one or more atomic identifiers joined by periods.  V
 
 In addition, enclosing guillemets ``«`` and ``»`` can be used to make an atomic identifier out of *any* sequence of characters at all, including spaces, periods, comment sequences, and special characters.  Thus, for instance, ``«a long string»`` is a single atomic identifier, and likewise ``«foo.bar»`` is a single *atomic* identifier (unlike ``foo.bar`` which is ``bar`` in namespace ``foo``).  Note that the guillemets in such cases are *part* of the identifier: thus for instance ``«foo»`` is a different identifier than ``foo``.  Guillemets can also be nested: ``«a«b»c»`` is a single atomic identifier.
 
+Attributes
+----------
+
+The keywords ``sig``, ``data``, and ``codata`` that define new canonical types (:ref:`record types <Record types and tuples>`, :ref:`datatypes <Inductive datatypes and matching>`, and :ref:`codatatypes <Codatatypes and comatching>`, respectively) can be modified by *attributes*.  These are an experimental feature, particularly their syntax, and may change radically in the future.
+
+The current syntax for defining a record type with an attribute is ``sig #(ATTR) ( … )``, and similarly for ``data`` and ``codata``.  Multiple attributes can be specified with multiple ``#(ATTR)`` groups.  Currently, attributes can only be set at the moment when a canonical type is defined; in the future it may be possible to alter them after the fact.
+
+At present, the available attributes are the following:
+
+1. Attributes of record type related to :ref:`Eta-expansion and opacity`.
+
+2. ``variables``, which specifies default variable names for a type (see :ref:`Default names`).
+
 Default names
 -------------
 
@@ -105,9 +118,9 @@ To deal with cases like this, Narya maintains a list of "default variable names"
 
    𝑥 𝑦 𝑧 𝑤 𝑢 𝑣
 
-Here ``𝑥`` is the unicode character MATHEMATICAL ITALIC SMALL X, and so on.  These are chosen because *x*, *y*, and so on are common "neutral" variable names in mathematics, while their unicode italic versions are not commonly used in coding.  However, you can change the default variable names with the command-line flag ``-variables``, which takes a comma-separated list of variable names, such as ``-variables 𝑎,𝑏,𝑐`` if you prefer the beginning of the alphabet, or ``-variables 𝓍,𝓎,𝓏`` if you prefer a different font.  You can also change them at runtime with the command ``display variables ≔ 𝑎,𝑏,𝑐`` (see :ref:`Display`).
+Here ``𝑥`` is the unicode character MATHEMATICAL ITALIC SMALL X, and so on.  These are chosen because *x*, *y*, and so on are common "neutral" variable names in mathematics, while their unicode italic versions are not commonly used in coding.  However, you can change the default variable names with the command-line flag ``-variables``, which takes a comma-separated list of variable names, such as ``-variables 𝑎,𝑏,𝑐`` if you prefer the beginning of the alphabet, or ``-variables 𝓍,𝓎,𝓏`` if you prefer a different font.  You can also change them at runtime in interactive mode with the command ``display variables ≔ 𝑎,𝑏,𝑐`` (see :ref:`Display`).
 
-In addition, you can associate a separate list of default variable names to a particular datatype, record type, or codatatype, to be used for unnamed variables belonging to that type.  This is done with the ``variables`` *attribute* when defining the type (see :ref:`Eta-expansion and opacity` for more about attributes):
+In addition, you can associate a separate list of default variable names to a particular canonical type, which will be used for unnamed variables belonging to that type.  This is done with the ``variables`` *attribute* when defining the type:
 
 .. code-block:: none
 
@@ -115,4 +128,4 @@ In addition, you can associate a separate list of default variable names to a pa
    def prod (A B : Type) : Type ≔ sig #(variables ≔ u,v) (fst : A, snd : B)
    def Stream (A : Type) : Type ≔ codata #(variables ≔ s) [ x .head : A | x .tail : Stream A ]
 
-When generating a name for an unnamed variable, the names associated to its type, if any, are tried first, before the global default names, with the same fallback to primed versions if all of them are taken.  These names also apply to variables of a higher-dimensional version of the type, such as the boundary variables of ``Id (ℕ → ℕ) f g``.
+When generating a name for an unnamed variable, the names associated to its type, if any, are tried first, before the global default names, with the same fallback to primed versions if all of them are taken.  These names also apply to variables of a :ref:`higher-dimensional version <Observational higher dimensions>` of the type, such as the boundary variables of ``Id (ℕ → ℕ) f g``.

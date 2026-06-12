@@ -1963,7 +1963,7 @@ let rec codata_fields bar_ok =
    Attributes
    ******************** *)
 
-(* Several "case" notations (sig, codata, data) admit attributes written #(...) after the keyword.  Each attribute group contains either a multiword string attribute like #(transparent labeled), or a valued attribute like #(variables â x,y,z).  This tree combinator allows any number of attribute groups before continuing with the given branch. *)
+(* Several "case" notations (sig, codata, data) admit attributes written #(...) after the keyword.  Each attribute group contains either a multiword string attribute like #(transparent labeled), or a valued attribute like #(variables ≔ x,y,z).  This tree combinator allows any number of attribute groups before continuing with the given branch. *)
 let rec attributes rest () =
   let r = rest () in
   {
