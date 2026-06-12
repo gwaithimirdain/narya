@@ -117,7 +117,19 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
     if !arity < 0 || !arity > 9 then Reporter.fatal (Unimplemented "arities outside [1,9]");
     if !discreteness && !arity > 1 then Reporter.fatal (Unimplemented "discreteness with arity > 1");
     if !hott && (!arity <> 2 || !discreteness || not !internal) then Reporter.fatal Invalid_flags;
-    if !hott_deprecated then Reporter.emit (Deprecated "-hott (this is now the default)") );
+    if !hott_deprecated then Reporter.emit (Deprecated "-hott (this is now the default)");
+    (* The argument of -variables must be a nonempty comma-separated list of valid variable names. *)
+    match !variables with
+    | Some str ->
+        List.iter
+          (fun x ->
+            Reporter.try_with ~fatal:(fun _ -> Reporter.fatal (Invalid_variable [ x ])) @@ fun () ->
+            match Lexer.single x with
+            (* We require y = x so that names with surrounding whitespace, which the lexer would skip over, are also rejected, since the raw string is what gets stored in the Display state. *)
+            | Some (Ident [ y ]) when y = x && Lexer.valid_var y -> ()
+            | _ -> Reporter.fatal (Invalid_variable [ x ]))
+          (String.split_on_char ',' str)
+    | None -> () );
   Dim.Endpoints.run ~arity:!arity ~refl_char:!refl_char ~refl_names:!refl_names ~internal:!internal
     ?hott:(if !hott then Some () else None)
   @@ fun () ->
