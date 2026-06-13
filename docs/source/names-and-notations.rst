@@ -120,18 +120,14 @@ To deal with cases like this, Narya maintains a list of "default variable names"
 
 Here ``𝑥`` is the unicode character MATHEMATICAL ITALIC SMALL X, and so on.  These are chosen because *x*, *y*, and so on are common "neutral" variable names in mathematics, while their unicode italic versions are not commonly used in coding.  However, you can change the default variable names with the command-line flag ``-variables``, which takes a comma-separated list of variable names, such as ``-variables 𝑎,𝑏,𝑐`` if you prefer the beginning of the alphabet, or ``-variables 𝓍,𝓎,𝓏`` if you prefer a different font.  You can also change them at runtime in interactive mode with the command ``display variables ≔ 𝑎,𝑏,𝑐`` (see :ref:`Display`), or the Emacs command ``C-c C-d C-v`` in ProofGeneral.
 
-In addition, you can associate a separate list of default variable names to a particular canonical type, which will be used for unnamed variables belonging to that type.  This is done with the ``variables`` *attribute* when defining the type:
+In addition, you can associate a separate list of default variable names to a particular canonical type, which will be used for unnamed variables belonging to that type.  This is done with the ``variables`` :ref:`attribute <Attributes>` when defining the type, which must be followed by either ``≔`` or ``⩲`` (or their ASCII variants ``:=`` and ``+=``) and a comma-separated list of variables, for example:
 
 .. code-block:: none
 
    def ℕ : Type ≔ data #(variables ≔ n,m,k) [ zero. | suc. (_ : ℕ) ]
-   def prod (A B : Type) : Type ≔ sig #(variables ≔ u,v) (fst : A, snd : B)
+   def prod (A B : Type) : Type ≔ sig #(variables ⩲ u,v) (fst : A, snd : B)
    def Stream (A : Type) : Type ≔ codata #(variables ≔ s) [ x .head : A | x .tail : Stream A ]
 
 When generating a name for an unnamed variable, the names associated to its type, if any, are tried first.  These names also apply to variables of a :ref:`higher-dimensional version <Observational higher dimensions>` of the type, such as the boundary variables of ``Id (ℕ → ℕ) f g``, and to the variables of the abstractions and matches proposed by the interactive ``split`` command (see :ref:`Splitting in holes`).
 
-The two possible separators in the attribute control what happens when the type-specific names run out.  If you write ``≔``, as above, the type-specific names *replace* the global default names: if all of them are taken, Narya tries them again with primes (``n′``, ``m′``, and so on) rather than falling back to the global defaults.  If instead you write ``⩲`` (or its ASCII equivalent ``+=``), the type-specific names are *prepended* to the global default names, which are therefore used as a fallback before resorting to primes:
-
-.. code-block:: none
-
-   def ℕ : Type ≔ data #(variables ⩲ n,m,k) [ zero. | suc. (_ : ℕ) ]
+The two possible separators in the attribute control what happens when the type-specific names run out.  The separator ``≔`` (or ``:=``) means that the type-specific names *replace* the global default names: if all of them are taken, Narya tries them again with primes (``n′``, ``m′``, and so on) rather than falling back to the global defaults.  The separator ``⩲`` (or ``+=``) means instead that the type-specific names are *prepended* to the global default names, which are therefore used as a fallback before resorting to primes.
