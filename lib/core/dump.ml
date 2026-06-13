@@ -224,6 +224,8 @@ module F = struct
     | Ext { env = e; values = `Error _; _ } -> fprintf ppf "%a <: Err" env e
     | Ext { env = e; values = `Lazy v; _ } ->
         fprintf ppf "%a <; %a" env e (cubeof (lazy_eval depth)) v
+    | Locked_ext { env = e; modality; _ } ->
+        fprintf ppf "%a <%s [locked]" env e (Modality.to_string modality)
     | Act (e, Op (f, d)) -> fprintf ppf "%a <* (%s,%s)" env e (string_of_sface f) (string_of_deg d)
     | Key (e, _filter, key, _ac) -> fprintf ppf "%a <%% %s" env e (Modalcell.to_string key)
     | Permute (_, e) -> fprintf ppf "(%a) permuted(?)" env e

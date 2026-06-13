@@ -1408,6 +1408,8 @@ and lookup_cube : type dom mu sigma tau cod murest mcur n a bn b k.
   (* A dimension entry in the lock region of the decomposition can't be our variable, so we skip it. *)
   | Suc (b_cn, Dim _), Suc (llcn, Locks_dim _, Zero), Ext { env = env1; _ } ->
       lookup_cube env1 (Plus_with_locks (b_cn, llcn)) sigma_comp acc mu v
+  | Suc (b_cn, Dim _), Suc (llcn, Locks_dim _, Zero), Locked_ext { env = env1; _ } ->
+      lookup_cube env1 (Plus_with_locks (b_cn, llcn)) sigma_comp acc mu v
   (* An operator action is pushed onto the (returned) operator by filtering it by the deeper filter, exactly the degeneracy-direction move that replace_keys_rec uses to push an action outside a key. *)
   | _, _, Act (env1, op') ->
       let (Looked_up { act; op; filter = f1; filtered; plus; entry; cell }) =
@@ -1500,6 +1502,11 @@ and lookup_cube : type dom mu sigma tau cod murest mcur n a bn b k.
                 }
           | `Ok _, Neq | `Lazy _, Neq ->
               fatal (Modality_mismatch (`Internal, "lookup_cube keys", modality, mu))))
+  (* A locked-out entry carries no data: if it's not our variable we skip it, but looking it up directly is an anomaly (its values were discarded when the environment was rebuilt behind a nonparametric key). *)
+  | (Zero as bc0), (Zero _ as llc0), Locked_ext { env = env1; _ } -> (
+      match v with
+      | Later v -> lookup_cube env1 (Plus_with_locks (bc0, llc0)) sigma_comp acc mu v
+      | Now -> fatal (Anomaly "lookup of locked-out (permanently inaccessible) variable"))
   (* Since there's an index into the prefix, the environment can't be empty when the decomposition runs out. *)
   | Zero, Zero _, Emp _ -> (
       match v with

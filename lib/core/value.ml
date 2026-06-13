@@ -199,6 +199,14 @@ module rec Value : sig
           | `Error of Code.t ];
       }
         -> ('mode, 'n, ('b, ('modality, 'k) dim_entry) snoc) env
+    (* A dummy entry carrying no data, just extending the codomain context by a dimension variable.  It is used when an environment is rebuilt behind a nonparametric key and an entry's intrinsic dimension is not already filtered for that key's modality: the variable's values are then permanently inaccessible, so rather than try (and fail, without choosing endpoints) to filter its value cube, we discard the data and leave a placeholder.  Looking it up raises an anomaly. *)
+    | Locked_ext : {
+        env : ('mode, 'n, 'b) env;
+        modality : ('dom, 'modality, 'mode) Modality.t;
+        dim : 'k D.t;
+        filtered : ('dom, 'modality, 'mode, 'k, 'k) Modality.filter_dim;
+      }
+        -> ('mode, 'n, ('b, ('modality, 'k) dim_entry) snoc) env
     | Act : ('mode, 'n, 'b) env * ('m, 'n) op -> ('mode, 'm, 'b) env
     | Key :
         ('mode, 'n, 'b) env
@@ -451,6 +459,14 @@ end = struct
           | `Error of Code.t ];
       }
         -> ('mode, 'n, ('b, ('modality, 'k) dim_entry) snoc) env
+    (* A dummy entry carrying no data, just extending the codomain context by a dimension variable.  It is used when an environment is rebuilt behind a nonparametric key and an entry's intrinsic dimension is not already filtered for that key's modality: the variable's values are then permanently inaccessible, so rather than try (and fail, without choosing endpoints) to filter its value cube, we discard the data and leave a placeholder.  Looking it up raises an anomaly. *)
+    | Locked_ext : {
+        env : ('mode, 'n, 'b) env;
+        modality : ('dom, 'modality, 'mode) Modality.t;
+        dim : 'k D.t;
+        filtered : ('dom, 'modality, 'mode, 'k, 'k) Modality.filter_dim;
+      }
+        -> ('mode, 'n, ('b, ('modality, 'k) dim_entry) snoc) env
     | Act : ('mode, 'n, 'b) env * ('m, 'n) op -> ('mode, 'm, 'b) env
     | Key :
         ('mode, 'n, 'b) env
@@ -500,6 +516,7 @@ type any_canonical = Any : ('mode, 'm, 'n) canonical -> any_canonical
 let rec dim_env : type mode n b. (mode, n, b) env -> n D.t = function
   | Emp (_, n) -> n
   | Ext { env; _ } -> dim_env env
+  | Locked_ext { env; _ } -> dim_env env
   | Act (_, op) -> dom_op op
   | Key (e, filter, _, _) -> Modality.filtered (dim_env e) filter
   | Permute (_, e) -> dim_env e
@@ -517,6 +534,7 @@ let modality_binder : type mode modality dom m s.
 let rec mode_env : type mode n b. (mode, n, b) env -> mode Mode.t = function
   | Emp (mode, _) -> mode
   | Ext { env; _ } -> mode_env env
+  | Locked_ext { env; _ } -> mode_env env
   | Act (e, _) -> mode_env e
   | Key (_, _, key, _) -> Modalcell.hsrc key
   | Permute (_, e) -> mode_env e
@@ -535,6 +553,9 @@ let rec length_env : type mode n b. (mode, n, b) env -> (mode, b) Tctx.t = funct
   | Ext { env; plus; modality; filtered; _ } ->
       let le = length_env env in
       Tctx.suc le (Dim (modality, D.plus_right plus, filtered))
+  | Locked_ext { env; modality; dim; filtered } ->
+      let le = length_env env in
+      Tctx.suc le (Dim (modality, dim, filtered))
   | Act (env, _) -> length_env env
   | Key (env, _, _, al) -> plus_lock_out (length_env env) al
   | Permute (p, env) -> perm_dom p (length_env env)

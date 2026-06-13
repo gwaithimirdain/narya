@@ -23,6 +23,8 @@ let remove_top : type mode a modality k n.
         Permute (p', remove_ins env v')
     | Ext e, Later v -> Ext { e with env = remove_ins e.env v }
     | Ext { env; _ }, Now -> env
+    | Locked_ext e, Later v -> Locked_ext { e with env = remove_ins e.env v }
+    | Locked_ext { env; _ }, Now -> env
     | Shift (env, mn, nb), _ ->
         let (Uncoinsert (_, _, v', na)) = Plusmap.uncoinsert v nb in
         Shift (remove_ins env v', mn, na)
@@ -97,6 +99,12 @@ let rec strip_keys : type mode nu cod k b bc.
           id_op (dim_env env),
           Modalcell.id2 (mode_env env) )
   | Zero, Zero _, Ext _ ->
+      Stripped
+        ( env,
+          Modality.filter_id (mode_env env) (dim_env env),
+          id_op (dim_env env),
+          Modalcell.id2 (mode_env env) )
+  | Zero, Zero _, Locked_ext _ ->
       Stripped
         ( env,
           Modality.filter_id (mode_env env) (dim_env env),
@@ -221,6 +229,7 @@ let rec replace_keys_rec : type amode mu nu tau cod sigma mcur murest k b bc brh
   (* If we reach the end of the environment, or a value entry, we bottom out the recursion.  Here the locks are all consumed, so sigma is the total nu, as witnessed by sigma_comp. *)
   | Zero, Zero _, Emp _ -> replace_bottom env sigma_comp acc cell plus_src
   | Zero, Zero _, Ext _ -> replace_bottom env sigma_comp acc cell plus_src
+  | Zero, Zero _, Locked_ext _ -> replace_bottom env sigma_comp acc cell plus_src
   (* Nothing else is possible, since if the tctx has a nonzero lock on it, the environment can't be empty or end with a value entry. *)
   | Suc (_, Lock _), Suc (_, Locks_lock _, Suc (_, _)), _ -> .
   | Suc (_, Proj _), Suc (_, _, _), _ -> .

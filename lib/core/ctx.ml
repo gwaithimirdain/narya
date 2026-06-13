@@ -840,6 +840,10 @@ let pop : type mode a b. (mode, a, b) t -> ((mode, a, b) pop, string) Result.t =
       Ok (Pop (Permute { ctx; perm; level; env }, Eq, Eq))
   | Some (Pop (ctx, Eq, Eq)), Id, Ext { env; _ } ->
       Ok (Pop (Permute { ctx; perm = Id; level; env }, Eq, Eq))
+  | Some (Pop (ctx, Eq, Eq)), Insert (perm, Top), Locked_ext { env; _ } ->
+      Ok (Pop (Permute { ctx; perm; level; env }, Eq, Eq))
+  | Some (Pop (ctx, Eq, Eq)), Id, Locked_ext { env; _ } ->
+      Ok (Pop (Permute { ctx; perm = Id; level; env }, Eq, Eq))
   | Some (Pop (_, Eq, Eq)), _, Permute _ -> Error "env is permuted"
   | Some (Pop (_, Eq, Eq)), _, Act _ -> Error "env is acted"
   | Some (Pop (_, Eq, Eq)), _, Key _ -> Error "env is keyed"
