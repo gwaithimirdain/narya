@@ -1502,10 +1502,8 @@ and lookup : type mode m bkm. (mode, m, bkm) env -> (mode, bkm) index -> (mode, 
   | Looked_up { act; filter = filter_mu_q_mk; op; entry; cell = Wrap keys } ->
       (* The looked-up cube produces values at the filtering of the dimension of the environment by the variable's annotation; we expand them to the full dimension by a degeneracy, which is semantically harmless since the data in the missing directions is inaccessible behind the locks. *)
       let (Filter_of_plus (qm_qk, f_m', f_k')) = Modality.filter_of_plus m_k filter_mu_q_mk in
-      let (Has_filter f_mu_m) = Modality.filter mu m in
-      let Eq = Modality.filter_uniq f_m' f_mu_m in
       let Eq = Modality.filter_uniq f_k' filter_mu_k_k in
-      let s0 = Modality.deg_of_filter m f_mu_m in
+      let s0 = Modality.deg_of_filter m f_m' in
       let (Op (f, s)) = comp_op op (op_plus_op (op_of_deg s0) qm_qk m_l (op_of_sface fa)) in
       act (CubeOf.find entry f) s (Some keys)
 
