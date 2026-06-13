@@ -33,7 +33,7 @@ let remove_top : type mode a modality k n.
 
 (* ******************** Stripping keys ******************** *)
 
-(* Given an environment whose codomain context is extended by a partial context containing some locks, and starting with a lock if nonempty, split off as many keys as possible that could go with those locks, compose them up, and return them along with the bare environment lying underneath all of them.  Since the dimension of an environment is filtered as keys are added to it, the dimension of the bare environment can be larger than that of the input; we record the relation between the two by a filter (by the composite of the lock modalities, which is the vertical *source* of the composite of the keys) together with an operator collecting the intermediate operator actions, pushed outside the keys by filtering them.
+(* Given an environment whose codomain context is extended by a partial context containing some locks, split off as many keys as possible that could go with those locks, compose them up, and return them along with the bare environment lying underneath all of them.  Since the dimension of an environment is filtered as keys are added to it, the dimension of the bare environment can be larger than that of the input; we record the relation between the two by a filter (by the composite of the lock modalities, which is the vertical *source* of the composite of the keys) together with an operator collecting the intermediate operator actions, pushed outside the keys by filtering them.
 
    Note that intermediate shifts and unshifts can NOT be pushed outside the keys in this form, since they are not dimensional operators (they change the codomain context); so this function fails on them.  Use replace_keys, which rebuilds a complete environment, when they need to be handled. *)
 
@@ -70,7 +70,7 @@ let rec strip_keys : type mode nu cod k b bc.
           let (Comp nus) = Modality.comp (Modalcell.vtgt key1) in
           Stripped (senv, Modality.filter_comp m_n f1 f_q1, op1', Modalcell.hcomp m_n nus keys key1)
       )
-  (* If we encounter a dimension entry, we skip it: the values in it are inaccessible behind the locks. *)
+  (* If we encounter a dimension entry while we have locks remaining to strip, we skip it. *)
   | Suc (bc, Dim _), Suc (llc, Locks_dim _, Zero), _ ->
       strip_keys (remove_top env) (Plus_with_locks (bc, llc))
   (* A permutation only permutes dimension entries, so we can transfer it to the bare environment, which has the same dimension entries in its prefix. *)
@@ -86,10 +86,10 @@ let rec strip_keys : type mode nu cod k b bc.
   | _, _, Act (env1, op') ->
       let (Stripped (senv, f, op, keys)) = strip_keys env1 (Plus_with_locks (bc, llc)) in
       Stripped (senv, f, comp_op op op', keys)
-  (* A shift or unshift interleaved with the keys cannot be expressed in the output of this function, since it modifies the codomain context of the bare environment as well as its dimension.  We don't expect these to occur at the call sites of this function; when they can occur, replace_keys must be used instead. *)
-  | _, _, Shift _ -> fatal (Anomaly "strip_keys: shift interleaved with keys")
-  | _, _, Unshift _ -> fatal (Anomaly "strip_keys: unshift interleaved with keys")
-  (* If we reach the end of the environment, or a value entry, we bottom out the recursion, returning an identity key. *)
+  (* A shift or unshift interleaved with the keys cannot be expressed in the output of this function, since it modifies the codomain context of the bare environment as well as its dimension.  TODO: I don't see any reason why this couldn't happen, so we may eventually need to restructure. *)
+  | _, _, Shift _ -> fatal (Anomaly "strip_keys: shift interleaved with keys unimplemented")
+  | _, _, Unshift _ -> fatal (Anomaly "strip_keys: unshift interleaved with keys unimplemented")
+  (* If we are out of locks to strip and we reach the end of the environment, or a value entry, we bottom out the recursion, returning an identity key. *)
   | Zero, Zero _, Emp _ ->
       Stripped
         ( env,
@@ -108,7 +108,7 @@ let rec strip_keys : type mode nu cod k b bc.
 
 (* ******************** Replacing keys ******************** *)
 
-(* Given an environment whose codomain context is extended by a partial context containing some locks, and starting with a lock if nonempty, replace all the keys that go with those locks by a single key: their horizontal composite, vertically composed with a given cell whose vertical target is the composite of those locks.  The locks on the new environment are those of the vertical source of the given cell, supplied as a plus_lock.
+(* Given an environment whose codomain context is extended by a partial context containing some locks, replace all the keys that go with those locks by a single key: their horizontal composite, vertically composed with a given cell whose vertical target is the composite of those locks.  The locks on the new environment are those of the vertical source of the given cell, supplied as a plus_lock.
 
    Unlike strip_keys, this produces a complete new environment, so intermediate operator actions, shifts, and unshifts can be re-applied on the outside of the new key, pushed there by filtering them.  Since the given cell might have a more nonparametric source than the composite of the keys it replaces, the new key could filter the dimension more; we correct for this with degeneracies (filling the missing dimensions degenerately) so that the new environment has exactly the same dimension as the original.
 
@@ -120,13 +120,15 @@ type (_, _, _, _, _) replaced =
       -> ('amode, 'sigma, 'mcur, 'k, 'brho) replaced
 
 (* At the bottom of the recursion, we attach the new key (the total accumulated keys vertically composed with the given cell) to the bare environment, and apply a degeneracy outside to bring the dimension back up from the mu-filtering to the nu-filtering. *)
-let replace_bottom : type amode mu nu tau cod k b brho.
+let replace_bottom : type amode mu nu sigma tau cod k b brho.
     (cod, k, b) env ->
+    (amode, nu, cod, cod id, cod, sigma) Modality.comp ->
     (amode, nu, tau, cod) Modalcell.t ->
-    (amode, mu, nu, cod) Modalcell.t ->
+    (amode, mu, sigma, cod) Modalcell.t ->
     (b, cod, mu, amode, brho) plus_lock ->
     (amode, nu, cod, k, brho) replaced =
- fun env acc cell plus_src ->
+ fun env sigma_comp acc cell plus_src ->
+  let Eq = Modality.comp_uniq sigma_comp (Modality.id_comp (Modalcell.vsrc acc)) in
   let p = dim_env env in
   let (Has_filter f_mu) = Modality.filter (Modalcell.vsrc cell) p in
   let (Has_filter f_nu) = Modality.filter (Modalcell.vtgt cell) p in
@@ -166,7 +168,7 @@ let rec replace_keys_rec : type amode mu nu tau cod sigma mcur murest k b bc brh
           let f_comb = Modality.filter_comp s_mu1 filt1 f_sig in
           let Eq = Modality.filter_uniq f_comb f1 in
           Replaced (env', f_sig))
-  (* If we encounter a dimension entry, we skip it: the values in it are inaccessible behind the locks. *)
+  (* If we encounter a dimension entry while we still have locks to strip off, we skip it. *)
   | Suc (bc, Dim _), Suc (llc, Locks_dim _, Zero), _ ->
       replace_keys_rec (remove_top env) (Plus_with_locks (bc, llc)) sigma_comp acc cell plus_src
   (* A permutation transfers to the rebuilt environment, extended by the identity on the new locks. *)
@@ -217,12 +219,8 @@ let rec replace_keys_rec : type amode mu nu tau cod sigma mcur murest k b bc brh
       let env'' = act_env unshifted (op_of_sface (plus_sface kk1 kk1_x kk1_sx fc)) in
       Replaced (env'', Modality.filter_plus kk1_sx n_x f1 f_x)
   (* If we reach the end of the environment, or a value entry, we bottom out the recursion.  Here the locks are all consumed, so sigma is the total nu, as witnessed by sigma_comp. *)
-  | Zero, Zero _, Emp _ ->
-      let Eq = Modality.comp_uniq sigma_comp (Modality.id_comp (Modalcell.vsrc acc)) in
-      replace_bottom env acc cell plus_src
-  | Zero, Zero _, Ext _ ->
-      let Eq = Modality.comp_uniq sigma_comp (Modality.id_comp (Modalcell.vsrc acc)) in
-      replace_bottom env acc cell plus_src
+  | Zero, Zero _, Emp _ -> replace_bottom env sigma_comp acc cell plus_src
+  | Zero, Zero _, Ext _ -> replace_bottom env sigma_comp acc cell plus_src
   (* Nothing else is possible, since if the tctx has a nonzero lock on it, the environment can't be empty or end with a value entry. *)
   | Suc (_, Lock _), Suc (_, Locks_lock _, Suc (_, _)), _ -> .
   | Suc (_, Proj _), Suc (_, _, _), _ -> .
