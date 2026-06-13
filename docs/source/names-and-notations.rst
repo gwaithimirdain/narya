@@ -118,7 +118,7 @@ To deal with cases like this, Narya maintains a list of "default variable names"
 
    𝑥 𝑦 𝑧 𝑤 𝑢 𝑣
 
-Here ``𝑥`` is the unicode character MATHEMATICAL ITALIC SMALL X, and so on.  These are chosen because *x*, *y*, and so on are common "neutral" variable names in mathematics, while their unicode italic versions are not commonly used in coding.  However, you can change the default variable names with the command-line flag ``-variables``, which takes a comma-separated list of variable names, such as ``-variables 𝑎,𝑏,𝑐`` if you prefer the beginning of the alphabet, or ``-variables 𝓍,𝓎,𝓏`` if you prefer a different font.  You can also change them at runtime in interactive mode with the command ``display variables ≔ 𝑎,𝑏,𝑐`` (see :ref:`Display`).
+Here ``𝑥`` is the unicode character MATHEMATICAL ITALIC SMALL X, and so on.  These are chosen because *x*, *y*, and so on are common "neutral" variable names in mathematics, while their unicode italic versions are not commonly used in coding.  However, you can change the default variable names with the command-line flag ``-variables``, which takes a comma-separated list of variable names, such as ``-variables 𝑎,𝑏,𝑐`` if you prefer the beginning of the alphabet, or ``-variables 𝓍,𝓎,𝓏`` if you prefer a different font.  You can also change them at runtime in interactive mode with the command ``display variables ≔ 𝑎,𝑏,𝑐`` (see :ref:`Display`), or the Emacs command ``C-c C-d C-v`` in ProofGeneral.
 
 In addition, you can associate a separate list of default variable names to a particular canonical type, which will be used for unnamed variables belonging to that type.  This is done with the ``variables`` *attribute* when defining the type:
 
