@@ -163,3 +163,39 @@ The contexts of holes also use the hints for anonymous variables.
    ￮ file holes.ny contains open holes
   
   [1]
+
+
+The "split" interactive command also uses the hints when generating names
+for the variables of the abstractions and matches that it proposes.
+
+  $ narya -fake-interact "def ℕ : Type ≔ data #(variables ≔ n,m,k) [ zero. | suc. (_ : ℕ) | pair. (_ : ℕ) (_ : ℕ) ] def foo : ℕ → ℕ → ℕ ≔ ? split 0 ≔ _ def bar (x : ℕ) : ℕ ≔ ? split 1 ≔ x"
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0000]
+   ￮ constant foo defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     ----------------------------------------------------------------------
+     ℕ → ℕ → ℕ
+  
+   ￫ info[I0009]
+   ￮ split successful, hole could be solved by:
+       n m ↦ ?
+  
+   ￫ info[I0000]
+   ￮ constant bar defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?1:
+     
+     x : ℕ
+     ----------------------------------------------------------------------
+     ℕ
+  
+   ￫ info[I0009]
+   ￮ split successful, hole could be solved by:
+       match x [ zero. ↦ ? | suc. n ↦ ? | pair. n m ↦ ? ]
+  

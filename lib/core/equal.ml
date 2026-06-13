@@ -348,7 +348,7 @@ module Equal = struct
         let env2' = remove_env env2 Now in
         let* () = equal_ordered_env ctx env1' env2' envctx in
         match entry with
-        | Vis { bindings; _ } | Invis bindings ->
+        | Vis { bindings; _ } | Invis (bindings, _) ->
             let xtytbl = Hashtbl.create 10 in
             let* _ =
               mmapM

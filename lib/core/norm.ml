@@ -1395,7 +1395,7 @@ let eval_entry : type a b f n. (a, b) Ctx.Ordered.t -> (b, f, n) entry -> (f, n)
       let bindings = eval_bindings ctx bindings in
       let fields = Bwv.map (fun (f, x, _) -> (f, x)) fields in
       Vis { dim; plusdim; vars; bindings; hasfields; fields; fplus }
-  | Invis bindings -> Invis (eval_bindings ctx bindings)
+  | Invis (bindings, _) -> Invis (eval_bindings ctx bindings)
 
 let rec eval_ordered_ctx : type a b. (a, b) ordered_termctx -> (a, b) Ctx.Ordered.t = function
   | Emp -> Emp

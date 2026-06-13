@@ -11,15 +11,12 @@ val empty : emp t
 val remove : 'b t -> ('a, 'n, 'b) Tbwd.insert -> 'a t
 val lookup : 'n t -> 'n index -> string list
 val lookup_field : 'n t -> 'n index -> string -> string list option
-val add_cube : 'n D.t -> 'b t -> string option -> string * ('b, 'n) snoc t
+val add_cube : 'n D.t -> 'b t -> binder_name -> string * ('b, 'n) snoc t
 val add : 'b t -> 'n variables -> ('n, string) gvariables * ('b, 'n) snoc t
 val add_strings : 'b t -> ('n, string) gvariables -> ('n, string) gvariables * ('b, 'n) snoc t
 val add_full : 'b t -> 'mn variables -> ('mn, string) gvariables * ('b, 'mn) snoc t
 val of_ctx : ('a, 'b) Ctx.t -> 'b t
-
-val uniquify_vars :
-  (binder_name, 'a) Bwv.t -> (string * [ `Original | `Renamed ], 'a) Bwv.t * emp t
-
+val uniquify_vars : (binder_name, 'a) Bwv.t -> (string * [ `Original | `Renamed ], 'a) Bwv.t * emp t
 val unsafe_add : 'b t -> ('n, string) gvariables -> (string, string) Abwd.t -> ('b, 'n) snoc t
 
 type named_term = Named : 'a t * ('a, kinetic) term -> named_term

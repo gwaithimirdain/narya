@@ -351,7 +351,11 @@ module Ordered = struct
     | Snoc (ctx, Vis { dim; plusdim; vars; bindings; fplus = Zero; _ }, _) when all_free bindings ->
         lam ctx (Lam (Variables (dim, plusdim, vars), tree))
     | Snoc (ctx, Invis bindings, _) when all_free bindings ->
-        lam ctx (Lam (singleton_variables (CubeOf.dim bindings) (`Anon []), tree))
+        (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints. *)
+        let hints =
+          Reporter.try_with ~fatal:(fun _ -> []) @@ fun () ->
+          View.hints_of_ty (Binding.value (CubeOf.find_top bindings)).ty in
+        lam ctx (Lam (singleton_variables (CubeOf.dim bindings) (`Anon hints), tree))
     | _ -> fatal (Anomaly "let-bound variable in Ctx.lam")
 
   (* Delete some level variables from a context by making their bindings into "unknown".  This will cause readback to raise No_such_level if it encounters one of those variables, which can then be trapped as an occurs-check. *)

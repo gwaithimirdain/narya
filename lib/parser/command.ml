@@ -1204,14 +1204,24 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
             let rec constr_args : type a p ap n k.
                 n Names.t ->
                 k D.t ->
+                string list list ->
                 ?acc:unparser Bwd.t ->
                 (a, p, ap) Term.Telescope.t ->
                 unparser Bwd.t * Names.wrapped =
-             fun names dim ?(acc = Emp) -> function
+             fun names dim hints ?(acc = Emp) -> function
                | Emp -> (acc, Wrap names)
                | Ext (x, _, args) ->
-                   let x, names = Names.add_cube dim names x in
-                   constr_args names dim
+                   (* If the argument is anonymous, use any display hints from its type. *)
+                   let hint, hints =
+                     match hints with
+                     | [] -> ([], [])
+                     | h :: hs -> (h, hs) in
+                   let name =
+                     match x with
+                     | Some x -> `Named x
+                     | None -> `Anon hint in
+                   let x, names = Names.add_cube dim names name in
+                   constr_args names dim hints
                      ~acc:(Snoc (acc, { unparse = (fun _ _ -> unparse_var x) }))
                      args in
             let rec go = function
@@ -1230,10 +1240,13 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                             | Zero -> return ()
                             | Pos _ ->
                                 NameBranches.stateless (Branches.lift (HigherBranch.put true)) in
-                          let* c, Dataconstr { args; _ } =
+                          let* c, Dataconstr { env; args; _ } =
                             NameBranches.stateless (HigherBranch.return (Bwd.to_list constrs)) in
                           let* (Wrap names) = NameBranches.get in
-                          let cargs, newnames = constr_args names dim args in
+                          let arg_hints =
+                            Reporter.try_with ~fatal:(fun _ -> Emp) @@ fun () ->
+                            Domvars.constr_arg_hints ctx env args in
+                          let cargs, newnames = constr_args names dim (Bwd.to_list arg_hints) args in
                           let* () = NameBranches.put newnames in
                           let first =
                             Term
