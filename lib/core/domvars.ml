@@ -51,7 +51,7 @@ type ('mode, 'n, 'ac, 'bc, 'e) ext_tel =
   | Ext_tel : {
       ctx : ('mode, 'ac, 'em) Ctx.t;
       env : ('mode, 'n, 'bc) env;
-      values : ('n, 'mode, kinetic, unit) ModalValueCube.t list;
+      values : ('n, 'mode, kinetic) modal_value_cube list;
       normals : ('n, 'mode, unit, unit) ModalBindingCube.t list;
       annotate : ('n, 'mode, 'annotations, 'mode, 'mode, 'm, 'mode) VarAnnotate.fwd_t;
       comp : ('mode, 'm, 'mode, 'e, unit, 'em) Tctx.bcomp;
