@@ -12,17 +12,27 @@ open Printable
 open View
 
 (* Since some entries in an environment are lazy and some aren't, lookup_cube returns a cube whose entries belong to an existential type, along with a function to act on any element of that type and force it into a value.  It also returns an accumulated operator by which to act, first selecting an entry in the cube with a face and then acting on that value by a degeneracy, and the horizontal composite of all the keys it passed through on the way to the entry. *)
-type (_, _, _, _) looked_up_cube =
+(* The result of looking up a cube of values in an environment.  The lookup is built up on the *return* path of the recursion (see lookup_cube), so that we only ever push operators and shifts *along* a filter in the degeneracy direction (with filter_op, filter_comp, deg_of_filter), never in the section direction; this avoids needing to choose endpoints to fill in filtered-away directions, so that it works even in a theory with no endpoints.
+
+   The 'op and 'filter concern only the dimension of the *environment* (not the intrinsic dimension 'k of the cube variable); the latter is carried separately by 'filtered and 'plus, and recombined with the variable's own face only at the very end in lookup.  This is what lets the recursion mirror replace_keys_rec exactly, with no need to extend any filter or operator across the intrinsic dimension when crossing a key.
+
+   'filter (by the partial composite 'sigma of the keys consumed so far) relates the environment dimension 'n at this level to the dimension 'm at which the op acts; 'op relates 'm to the filtered environment-part 'mfilt of the entry cube; 'filtered and 'plus express that the entry cube has dimension 'mfilt + 'k, with the intrinsic part 'k left fixed by the variable's modality 'mu. *)
+type (_, _, _, _, _, _, _) looked_up_cube =
   | Looked_up : {
       act :
-        'x 'y 'mu 'nu 'cod.
-        'a -> ('x, 'y) deg -> ('mode, 'mu, 'nu, 'cod) Modalcell.t option -> ('mode, kinetic) value;
-      op : ('m, 'n) op;
-      filter : ('mode, 'modality, 'cod, 'm, 'p) Modality.filter_dim;
-      entry : ('n, 'a) CubeOf.t;
+        'x 'y 'mu2 'nu2 'cod2.
+        'a ->
+        ('x, 'y) deg ->
+        ('mode, 'mu2, 'nu2, 'cod2) Modalcell.t option ->
+        ('mode, kinetic) value;
+      op : ('m, 'mfilt) op;
+      filter : ('mode, 'sigma, 'mcur, 'm, 'n) Modality.filter_dim;
+      filtered : ('mode, 'mu, 'cod, 'k, 'k) Modality.filter_dim;
+      plus : ('mfilt, 'k, 'nentry) D.plus;
+      entry : ('nentry, 'a) CubeOf.t;
       cell : ('mode, 'cod) Modalcell.wrapped;
     }
-      -> ('mode, 'modality, 'cod, 'p) looked_up_cube
+      -> ('mode, 'sigma, 'mcur, 'cod, 'mu, 'k, 'n) looked_up_cube
 
 (* Require that the supplied list contains exactly one argument for each annotated variable being added, and add all of those cubes to the given environment. *)
 let rec take_args : type mode annotations m n mn a b ab.
@@ -1359,113 +1369,95 @@ and app_eval_apps : type mode s any.
       | Realize tm -> Realize (inst tm args)
       | Unrealized -> Unrealized)
 
-(* Look up a cube of values in an environment by variable index, accumulating operator actions, shifts, unshifts, and keys as we go.  At the end, we use the operator to select a value from the cubes (with its face part) and act on it (with its degeneracy part).  The variable index points into the prefix of a decomposition of the codomain of the environment whose remaining part consists of the locks annotating the variable; the keys whose sources make up those locks are consumed as we pass them, accumulating their horizontal composite, and restricting along the inclusion of the filtered sub-cube as we go under each key. *)
-and lookup_cube : type dom mu cod murest mcur n a bn b k p nk.
+(* Look up a cube of values in an environment by variable index.  The variable index points into the prefix of a decomposition of the codomain of the environment whose remaining part consists of the locks annotating the variable; the keys whose sources make up those locks are consumed as we pass them, accumulating their horizontal composite into 'acc.
+
+   Crucially, this recursion proceeds *bottom-up* (just like replace_keys_rec): the navigation down to the entry is driven by the index 'v and the decomposition, but the operator that selects and acts on the looked-up cube is assembled on the *return* path.  This means every operator and shift is pushed *along* a filter in the degeneracy direction (with filter_op, filter_comp, deg_of_filter), never in the section direction, so we never have to choose an endpoint to fill in a filtered-away direction.  It therefore works even in a theory with no endpoints.
+
+   As in replace_keys_rec, we thread 'acc (the horizontal composite of the keys consumed so far, whose vertical source 'sigma is the composite of the consumed locks) and 'sigma_comp (witnessing that the remaining locks composed with 'sigma equal the variable's total modality 'mu).  The returned filter, at each level, is by 'sigma; at the top, 'sigma is the identity (no keys consumed yet) so the filter is the identity.  The intrinsic dimension 'k of the cube variable is carried along untouched (in 'filtered and 'plus) and recombined with the variable's own face only at the end, in lookup. *)
+and lookup_cube : type dom mu sigma tau cod murest mcur n a bn b k.
     (mcur, n, b) env ->
     (bn, cod, murest, mcur, b) plus_with_locks ->
-    (n, k, nk) D.plus ->
+    (dom, sigma, mcur, murest, cod, mu) Modality.comp ->
+    (dom, sigma, tau, mcur) Modalcell.t ->
     (dom, mu, cod) Modality.t ->
     (a, mu, k, bn) insert ->
-    (p, nk) op ->
-    (dom, mcur) Modalcell.wrapped ->
-    (dom, mu, cod, p) looked_up_cube =
- fun env (Plus_with_locks (bc, llc)) n_k mu v op keys ->
+    (dom, sigma, mcur, cod, mu, k, n) looked_up_cube =
+ fun env (Plus_with_locks (bc, llc)) sigma_comp acc mu v ->
   match (bc, llc, env) with
-  (* If we encounter a key, we consume it: we accumulate its cell horizontally, and compose the operator with the inclusion of the sub-cube picked out by its filter.  Note that the remaining locks could be Zero here: keys with identity locks are consumed whenever they appear. *)
+  (* When we encounter a key, we accumulate it horizontally onto acc (exactly as in replace_keys_rec), recurse, and on the way back recompute the filter at this (more-filtered) level, confirming with the key that it composes to the deeper filter.  The operator passes through unchanged: crossing a key does not change the filtered dimension at which the operator acts. *)
   | b_cn, llcn, Key (env1, filt1, key1, Plus_lock (ln, bc_n)) -> (
       let lln = locks_lock ln in
       let cn, nn = (Locks.dom llcn, Lock.cod ln) in
       match Tctx.factor cn nn with
       | None -> fatal (Anomaly "lookup_cube: key sources cross the decomposition")
       | Some (Factor (_c, c_n)) ->
-          let (Uncomp (llc, lln', _)) = Locks.uncomp c_n llcn in
+          let (Uncomp (llc, lln', m_n)) = Locks.uncomp c_n llcn in
           let Eq = Locks.uniq lln lln' in
           let b_c = Tctx.comp_assoc_cancelr c_n b_cn bc_n in
-          let n1 = dim_env env1 in
-          let fc = Modality.sface_of_filter n1 filt1 in
-          let (Plus n1_k) = D.plus (D.plus_right n_k) in
-          let op' = comp_op (op_of_sface (sface_plus fc n1_k n_k)) op in
-          let (Wrap keys1) = keys in
-          lookup_cube env1
-            (Plus_with_locks (b_c, llc))
-            n1_k mu v op'
-            (Modalcell.hcomp_wrapped key1 keys1))
+          let sigma = Modalcell.vsrc acc in
+          let (Comp s_mu1) = Modality.comp sigma in
+          let sigma1_comp = Modality.comp_assocr m_n s_mu1 sigma_comp in
+          let (Comp nus) = Modality.comp (Modalcell.vtgt acc) in
+          let acc' = Modalcell.hcomp s_mu1 nus key1 acc in
+          let (Looked_up { act; op; filter = f1; filtered; plus; entry; cell }) =
+            lookup_cube env1 (Plus_with_locks (b_c, llc)) sigma1_comp acc' mu v in
+          let (Has_filter f_sig) = Modality.filter sigma (dim_env env) in
+          let f_comb = Modality.filter_comp s_mu1 filt1 f_sig in
+          let Eq = Modality.filter_uniq f_comb f1 in
+          Looked_up { act; op; filter = f_sig; filtered; plus; entry; cell })
   (* A dimension entry in the lock region of the decomposition can't be our variable, so we skip it. *)
   | Suc (b_cn, Dim _), Suc (llcn, Locks_dim _, Zero), Ext { env = env1; _ } ->
-      lookup_cube env1 (Plus_with_locks (b_cn, llcn)) n_k mu v op keys
-  (* If we encounter an operator action, we accumulate it. *)
+      lookup_cube env1 (Plus_with_locks (b_cn, llcn)) sigma_comp acc mu v
+  (* An operator action is pushed onto the (returned) operator by filtering it by the deeper filter, exactly the degeneracy-direction move that replace_keys_rec uses to push an action outside a key. *)
   | _, _, Act (env1, op') ->
-      let (Plus lk) = D.plus (D.plus_right n_k) in
-      let op'k = op_plus op' lk n_k in
-      lookup_cube env1 (Plus_with_locks (bc, llc)) lk mu v (comp_op op'k op) keys
-  (* If the environment is permuted, we transfer the decomposition and the index across the permutation. *)
+      let (Looked_up { act; op; filter = f1; filtered; plus; entry; cell }) =
+        lookup_cube env1 (Plus_with_locks (bc, llc)) sigma_comp acc mu v in
+      let (Filter_op (op'f, f')) = Modality.filter_op f1 op' in
+      Looked_up { act; op = comp_op op op'f; filter = f'; filtered; plus; entry; cell }
+  (* If the environment is permuted, we transfer the decomposition and the index across the permutation; the permutation only touches dimension entries, not the dimension, so the looked-up cube passes through unchanged. *)
   | _, _, Permute (perm, env1) -> (
       match unpermute_plus_locks perm bc llc with
       | None -> fatal (Anomaly "lookup_cube: permutation crosses the decomposition")
       | Some (Unpermute (perm2, bd, lld)) ->
           let (Permute_insert (v, _)) = permute_insert v perm2 in
-          lookup_cube env1 (Plus_with_locks (bd, lld)) n_k mu v op keys)
-  (* If we encounter a shift, the index is transferred across the prefix part of its plusmap.  The variable's outer dimension contains the filtering (by the variable's annotation) of the shift dimension, while the inner environment contains the full shift dimension; so we compose the operator with the inclusion of the corresponding sub-cube. *)
-  | b_cn, llcn, Shift (env1, n_x, xb) ->
-      let x = D.plus_right n_x in
-      let (Dom_uncomp (nbm, ncm, b_c)) = Plusmap.dom_uncomp x b_cn xb in
-      let (Eq _) = Plusmap.tgt ncm in
-      let ll_c = Plusmap.unlocks ncm llcn in
-      let (Uncoinsert (q_k, f_q, v, _)) = Plusmap.uncoinsert v nbm in
-      let nnode = D.plus_left n_x (dim_env env1) in
-      let fcq = Modality.sface_of_filter x f_q in
-      let (Plus n_q) = D.plus (dom_sface fcq) in
-      let left = sface_plus_sface (id_sface nnode) n_x n_q fcq in
-      let k_in = D.plus_right q_k in
-      let (Plus nx_kin) = D.plus k_in in
-      let whole = sface_plus_sface left nx_kin (D.plus_assocl n_q q_k n_k) (id_sface k_in) in
-      lookup_cube env1
-        (Plus_with_locks (b_c, ll_c))
-        nx_kin mu v
-        (comp_op (op_of_sface whole) op)
-        keys
-  (* If we encounter an unshift, the index is likewise transferred across the prefix part of its plusmap.  Here the variable's inner dimension contains the filtering of the unshift dimension while the outer environment contains the full unshift dimension, so we compose the operator with a degeneracy filling the missing directions. *)
-  | b_cn, llcn, Unshift (env1, n_x, xb) ->
-      let x = D.plus_right n_x in
-      let (Uncomp (nbm, ncm, nb_nc)) = Plusmap.uncomp x b_cn xb in
-      let (Eq _) = Plusmap.tgt ncm in
-      let ll_nc = Plusmap.locks x ncm llcn in
-      let (Uninsert (q_k, f_q, v, _)) = Plusmap.uninsert v nbm in
-      let nin = dim_env env1 in
-      let d0 = Modality.deg_of_filter x f_q in
-      let q = Modality.filtered x f_q in
-      let (Plus nin_q) = D.plus q in
-      let dleft = plus_deg nin nin_q n_x d0 in
-      let qk = D.plus_out q q_k in
-      let (Plus nin_qk) = D.plus qk in
-      let whole = deg_plus dleft (D.plus_assocl nin_q q_k nin_qk) n_k in
-      lookup_cube env1
-        (Plus_with_locks (nb_nc, ll_nc))
-        nin_qk mu v
-        (comp_op (op_of_deg whole) op)
-        keys
-  (* Below all the locks, if we encounter a variable that isn't ours, we skip it and proceed.  When we find our variable, we decompose the accumulated operator into a strict face and degeneracy, use the face as an index lookup, and act by the degeneracy.  The forcing function is the identity if the entry is not lazy, and force_eval_term if it is lazy. *)
+          lookup_cube env1 (Plus_with_locks (bd, lld)) sigma_comp acc mu v)
+  (* TODO: A shift or unshift moves dimensions between the substitution dimension and the codomain, i.e. between the environment dimension and the looked-up variable's *intrinsic* dimension 'k.  Handling them endpoint-free therefore requires letting 'k vary as we return up through the recursion (the migrating dimensions are filtered, in the degeneracy direction, not selected with an endpoint-choosing face).  That needs an extension of the "env-dimension-only, 'k fixed" separation this recursion currently relies on, so it is left as an anomaly for now.  Note that it is already endpoint-free: neither case calls sface_of_filter. *)
+  | _, _, Shift _ -> fatal (Anomaly "lookup_cube: shift not yet reimplemented endpoint-free")
+  | _, _, Unshift _ -> fatal (Anomaly "lookup_cube: unshift not yet reimplemented endpoint-free")
+  (* Below all the locks, if we encounter a variable that isn't ours, we skip it and proceed.  When we find our variable, the consumed locks are exactly the variable's annotation: sigma = mu, so acc is the composite of the keys and the entry's filter is by mu.  We start the operator at the identity on the filtered dimension; it gets composed with the variable's own face in lookup.  The forcing function is the identity if the entry is not lazy, and force_eval_term if it is lazy. *)
   | ( (Zero as bc0),
       (Zero _ as llc0),
       Ext { env = env1; plus = mk; modality; filter; filtered; values } ) -> (
       match v with
-      | Later v -> lookup_cube env1 (Plus_with_locks (bc0, llc0)) n_k mu v op keys
+      | Later v -> lookup_cube env1 (Plus_with_locks (bc0, llc0)) sigma_comp acc mu v
       | Now -> (
-          let (Filter_op (op, filter)) =
-            Modality.filter_op (Modality.filter_plus mk n_k filter filtered) op in
+          let Eq = Modality.comp_uniq sigma_comp (Modality.id_comp (Modalcell.vsrc acc)) in
           match (values, Modality.compare modality mu) with
           (* Looking up a variable that's bound to an error immediately fails with that error.  (In particular, this sort of failure can't currently happen "deeper" inside a term.) *)
           | `Error e, _ -> fatal e
           | `Ok entry, Eq ->
-              Looked_up { act = (fun x s c -> act_value x s c); filter; op; entry; cell = keys }
+              let mfilt = Modality.filtered (dim_env env1) filter in
+              Looked_up
+                {
+                  act = (fun x s c -> act_value x s c);
+                  op = id_op mfilt;
+                  filter;
+                  filtered;
+                  plus = mk;
+                  entry;
+                  cell = Wrap acc;
+                }
           | `Lazy entry, Eq ->
+              let mfilt = Modality.filtered (dim_env env1) filter in
               Looked_up
                 {
                   act = (fun x s c -> force_eval_term (act_lazy_eval x s c));
+                  op = id_op mfilt;
                   filter;
-                  op;
+                  filtered;
+                  plus = mk;
                   entry;
-                  cell = keys;
+                  cell = Wrap acc;
                 }
           | `Ok _, Neq | `Lazy _, Neq ->
               fatal (Modality_mismatch (`Internal, "lookup_cube keys", modality, mu))))
@@ -1489,22 +1481,21 @@ and lookup : type mode m bkm. (mode, m, bkm) env -> (mode, bkm) index -> (mode, 
   let m = dim_env env in
   let k = cod_sface fa in
   let l = dom_sface fa in
-  let (Plus m_l) = D.plus l in
   let mu = plus_lock_modality plus in
-  let (Plus m_k) = D.plus k in
-  let mk = D.plus_out m m_k in
+  ignore (k, m);
   match
     lookup_cube env
       (plus_with_locks_of_plus_lock plus)
-      m_k mu v (id_op mk)
-      (Wrap (Modalcell.id2 (mode_env env)))
+      (Modality.comp_id mu)
+      (Modalcell.id2 (mode_env env))
+      mu v
   with
-  | Looked_up { act; filter = filter_mu_q_mk; op; entry; cell = Wrap keys } ->
-      (* The looked-up cube produces values at the filtering of the dimension of the environment by the variable's annotation; we expand them to the full dimension by a degeneracy, which is semantically harmless since the data in the missing directions is inaccessible behind the locks. *)
-      let (Filter_of_plus (qm_qk, f_m', f_k')) = Modality.filter_of_plus m_k filter_mu_q_mk in
-      let Eq = Modality.filter_uniq f_k' filter_mu_k_k in
-      let s0 = Modality.deg_of_filter m f_m' in
-      let (Op (f, s)) = comp_op op (op_plus_op (op_of_deg s0) qm_qk m_l (op_of_sface fa)) in
+  | Looked_up { act; op; filter; filtered; plus = mfk; entry; cell = Wrap keys } ->
+      (* At the top no keys have been consumed, so the returned filter is the identity; the operator already acts at the variable's filtered dimension (the values in the inaccessible directions behind the locks have simply not been touched).  We recombine the variable's intrinsic dimension by composing with its own face, and confirm that the entry's intrinsic part matches the variable's annotation. *)
+      let Eq = Modality.eq_of_filter_id filter in
+      let Eq = Modality.filter_uniq filtered filter_mu_k_k in
+      let (Plus m_l) = D.plus l in
+      let (Op (f, s)) = op_plus_op op mfk m_l (op_of_sface fa) in
       act (CubeOf.find entry f) s (Some keys)
 
 (* Instantiate an arbitrary value, combining tubes. *)
