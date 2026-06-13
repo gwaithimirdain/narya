@@ -308,7 +308,7 @@ let rec unparse : type n lt ls rt rs s.
   | Let (x, tm, body) -> (
       let tm = unparse vars tm No.Interval.entire No.Interval.entire in
       (* If a let-in doesn't fit in its interval, we have to parenthesize it. *)
-      let x, vars = Names.add_cube D.zero vars x in
+      let x, vars = Names.add_cube D.zero vars (binder_name_of_option x) in
       match No.Interval.contains ri No.minus_omega with
       | Some right_ok ->
           let body = unparse vars body No.Interval.entire ri in
