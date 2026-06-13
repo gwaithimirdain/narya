@@ -124,3 +124,42 @@ unrecognized attributes are errors.
      ^ unrecognized attribute
   
   [1]
+
+The contexts of holes also use the hints for anonymous variables.
+
+  $ cat - >holes.ny <<EOF
+  > def ℕ : Type ≔ data #(variables ≔ n,m,k) [ zero. | suc. (_ : ℕ) ]
+  > def foo : ℕ → ℕ → ℕ ≔ _ _ ↦ ?
+  > def bar (n : ℕ) : ℕ → ℕ ≔ _ ↦ ?
+  > EOF
+
+  $ narya -v holes.ny
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0000]
+   ￮ constant foo defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     m : ℕ (not in scope)
+     n : ℕ (not in scope)
+     ----------------------------------------------------------------------
+     ℕ
+  
+   ￫ info[I0000]
+   ￮ constant bar defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?1:
+     
+     n : ℕ
+     m : ℕ (not in scope)
+     ----------------------------------------------------------------------
+     ℕ
+  
+   ￫ error[E3002]
+   ￮ file holes.ny contains open holes
+  
+  [1]

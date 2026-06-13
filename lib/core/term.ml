@@ -472,3 +472,54 @@ let ext_let (Permute (p, ctx)) xs b =
 let ext (Permute (p, ctx)) xs ty =
   let ctx = ordered_ext_let ctx xs { ty; tm = None } in
   Permute (Insert (p, Top), ctx)
+
+(* Merge the binder names stored in a termctx, which carry display hints for anonymous variables, into a flat scope of raw variable names such as is stored for a hole.  Raw names that are present take precedence; absent ones pick up the hints (if any) from the corresponding termctx binder.  This is used when generating display names for the context of a hole. *)
+let rec ordered_hole_vars : type a b.
+    (a, b) ordered_termctx -> (string option, a) Bwv.t -> (binder_name, a) Bwv.t =
+ fun ctx vars ->
+  match ctx with
+  | Emp ->
+      let Emp = vars in
+      Emp
+  | Lock ctx -> ordered_hole_vars ctx vars
+  | Ext (ctx, entry, af) -> (
+      let vars, xs = Bwv.unappend af vars in
+      let rest = ordered_hole_vars ctx vars in
+      match entry with
+      | Invis _ ->
+          let Zero = af in
+          rest
+      | Vis { vars = cube; fplus; _ } ->
+          let xs, fs = Bwv.unappend fplus xs in
+          (* First merge the raw names into the cube of binder names, consuming the Bwv from the right so that its indices match the cube's. *)
+          let module TR = NICubeOf.Traverse (struct
+            type 'a t = (string option, 'a) Bwv.t
+          end) in
+          let merge : type left m n.
+              (m, n) sface ->
+              (left, m, binder_name) NFamOf.t ->
+              (string option, left N.suc) Bwv.t ->
+              (string option, left) Bwv.t * (left, m, binder_name) NFamOf.t =
+           fun _ (NFamOf y) (Snoc (xs, x)) ->
+            match x with
+            | Some x -> (xs, NFamOf (`Named x))
+            | None -> (
+                match y with
+                | `Anon _ -> (xs, NFamOf y)
+                | `Named _ -> (xs, NFamOf (`Anon []))) in
+          let _, merged = TR.fold_map_right { foldmap = (fun fb y xs -> merge fb y xs) } cube xs in
+          (* Then convert the merged cube of binder names back into a Bwv. *)
+          let module TL = NICubeOf.Traverse (struct
+            type 'a t = (binder_name, 'a) Bwv.t
+          end) in
+          let _, xs =
+            TL.fold_map_left
+              { foldmap = (fun _ acc (NFamOf y) -> (NFamOf y, Snoc (acc, y))) }
+              Emp merged in
+          (* Field variables have no hints. *)
+          let fs = Bwv.map binder_name_of_option fs in
+          Bwv.bappend af rest (Bwv.bappend fplus xs fs))
+
+let hole_vars : type a b. (a, b) termctx -> (string option, a) Bwv.t -> (binder_name, a) Bwv.t =
+ fun (Permute (p, ctx)) vars ->
+  Bwv.permute (ordered_hole_vars ctx (Bwv.permute vars p)) (N.perm_inv p)
