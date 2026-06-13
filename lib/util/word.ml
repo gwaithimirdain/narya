@@ -575,6 +575,30 @@ module MakeDecidable (G : Decidable) = struct
     match (o, u) with
     | Occurs Now, Unoccurs_suc (_, neq) -> neq.abort Eq
     | Occurs (Later i), Unoccurs_suc (u, _) -> occurs_unoccurs (Occurs i) u
+
+  let rec occurs_plus_right : type g m n mn. (m, n, mn) plus -> (g, n) occurs -> (g, mn) occurs =
+   fun mn (Occurs i) ->
+    match (mn, i) with
+    | Zero, _ -> .
+    | Suc _, Now -> Occurs Now
+    | Suc (mn, _), Later i ->
+        let (Occurs i) = occurs_plus_right mn (Occurs i) in
+        Occurs (Later i)
+
+  let rec occurs_plus_left : type g m n mn. (m, n, mn) plus -> (g, m) occurs -> (g, mn) occurs =
+   fun mn o ->
+    match mn with
+    | Zero -> o
+    | Suc (mn, _) ->
+        let (Occurs i) = occurs_plus_left mn o in
+        Occurs (Later i)
+
+  let rec unoccurs_plus : type g m n mn.
+      (m, n, mn) plus -> (g, m) unoccurs -> (g, n) unoccurs -> (g, mn) unoccurs =
+   fun mn um un ->
+    match (mn, un) with
+    | Zero, Unoccurs_emp -> um
+    | Suc (mn, _), Unoccurs_suc (un, neq) -> Unoccurs_suc (unoccurs_plus mn um un, neq)
 end
 
 module MakeExp (G : ComparableExp) = struct

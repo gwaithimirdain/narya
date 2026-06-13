@@ -217,3 +217,33 @@ let rec deg_of_except : type e a b. b D.t -> (e, a, b) except -> (b, a) deg =
   | Except_unoccurs (e, _) ->
       let (Word (Suc (b, Unit))) = b in
       Suc (deg_of_except (Word b) e, Now)
+
+let rec except_comp : type e1 e2 e12 a b c.
+    (e1, e2, e12) D.plus -> (e2, a, b) except -> (e1, b, c) except -> (e12, a, c) except =
+ fun e12 ex2 ex1 ->
+  match ex1 with
+  | Except_zero ->
+      let Except_zero = ex2 in
+      Except_zero
+  | Except_occurs (ex1, o) -> Except_occurs (except_comp e12 ex2 ex1, D.occurs_plus_left e12 o)
+  | Except_unoccurs (ex1, u1) -> (
+      match ex2 with
+      | Except_occurs (ex2, o2) ->
+          Except_occurs (except_comp e12 ex2 ex1, D.occurs_plus_right e12 o2)
+      | Except_unoccurs (ex2, u2) ->
+          Except_unoccurs (except_comp e12 ex2 ex1, D.unoccurs_plus e12 u1 u2))
+
+let rec except_comp' : type e1 e2 e12 a b c.
+    (e1, e2, e12) D.plus -> (e2, b, c) except -> (e1, a, b) except -> (e12, a, c) except =
+ fun e12 ex2 ex1 ->
+  match ex2 with
+  | Except_zero ->
+      let Except_zero = ex1 in
+      Except_zero
+  | Except_occurs (ex2, o) -> Except_occurs (except_comp' e12 ex2 ex1, D.occurs_plus_right e12 o)
+  | Except_unoccurs (ex2, u2) -> (
+      match ex1 with
+      | Except_occurs (ex1, o1) ->
+          Except_occurs (except_comp' e12 ex2 ex1, D.occurs_plus_left e12 o1)
+      | Except_unoccurs (ex1, u1) ->
+          Except_unoccurs (except_comp' e12 ex2 ex1, D.unoccurs_plus e12 u1 u2))

@@ -521,7 +521,6 @@ let filter_comp : type x y z m n nm a b c.
     (y, n, z, b, c) filter_dim ->
     (x, m, y, a, b) filter_dim ->
     (x, nm, z, a, c) filter_dim =
- fun n_m (Filter (n, ne)) (Filter (m, me)) ->
-  let (Comp (nm, ee)) = Nonparametric.comp m n n_m in
-  ignore (ne, me, nm, ee);
-  Sorry.e ()
+ fun n_m (Filter (f_n, ex_n)) (Filter (f_m, ex_m)) ->
+  let (Comp (f_nm, Loopcomp n_m)) = Nonparametric.comp f_m f_n n_m in
+  Filter (f_nm, except_comp n_m ex_m ex_n)

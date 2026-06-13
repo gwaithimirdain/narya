@@ -1002,6 +1002,9 @@ val except_perm : 'e D.t -> ('e, 'a, 'b) except -> ('c, 'b) perm -> ('e, 'a, 'c)
 val sface_of_except : 'l Endpoints.t -> 'b D.t -> ('e, 'a, 'b) except -> ('a, 'b) sface
 val deg_of_except : 'b D.t -> ('e, 'a, 'b) except -> ('b, 'a) deg
 
+val except_comp :
+  ('e1, 'e2, 'e12) D.plus -> ('e2, 'a, 'b) except -> ('e1, 'b, 'c) except -> ('e12, 'a, 'c) except
+
 (* *)
 val deg_of_name : string -> any_deg option
 
