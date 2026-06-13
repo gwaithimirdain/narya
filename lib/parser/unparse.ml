@@ -909,9 +909,9 @@ let rec unparse_ctx : type a b.
       let vars, xs = Bwv.unappend af vars in
       let names, result = unparse_ctx names lock vars ctx in
       match entry with
-      | Invis bindings ->
-          (* We treat an invisible binding as consisting of all nameless variables, and autogenerate names for them all. *)
-          let x, names = Names.add names (singleton_variables (CubeOf.dim bindings) (`Anon [])) in
+      | Invis (bindings, hints) ->
+          (* We treat an invisible binding as consisting of all nameless variables, and autogenerate names for them all, using any display hints recorded from their types at readback time. *)
+          let x, names = Names.add names (singleton_variables (CubeOf.dim bindings) (`Anon hints)) in
           let do_binding (b : b binding) (res : S.t) : unit * S.t =
             let ty = Wrap (unparse names b.ty No.Interval.entire No.Interval.entire) in
             let tm =

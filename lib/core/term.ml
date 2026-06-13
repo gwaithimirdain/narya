@@ -176,7 +176,7 @@ module rec Term : sig
         fplus : ('f1, 'f2, 'f) N.plus;
       }
         -> ('b, 'f, 'mn) entry
-    | Invis : ('n, ('b, 'n) snoc binding) CubeOf.t -> ('b, N.zero, 'n) entry
+    | Invis : ('n, ('b, 'n) snoc binding) CubeOf.t * string list -> ('b, N.zero, 'n) entry
 
   and (_, _) ordered_termctx =
     | Emp : (N.zero, emp) ordered_termctx
@@ -374,7 +374,7 @@ end = struct
         fplus : ('f1, 'f2, 'f) N.plus;
       }
         -> ('b, 'f, 'mn) entry
-    | Invis : ('n, ('b, 'n) snoc binding) CubeOf.t -> ('b, N.zero, 'n) entry
+    | Invis : ('n, ('b, 'n) snoc binding) CubeOf.t * string list -> ('b, N.zero, 'n) entry
 
   and (_, _) ordered_termctx =
     | Emp : (N.zero, emp) ordered_termctx
@@ -434,7 +434,7 @@ let rec dim_term_env : type a n b. (a, n, b) env -> n D.t = function
   | Ext (e, _, _) -> dim_term_env e
 
 let dim_entry : type b f n. (b, f, n) entry -> n D.t = function
-  | Vis { bindings; _ } | Invis bindings -> CubeOf.dim bindings
+  | Vis { bindings; _ } | Invis (bindings, _) -> CubeOf.dim bindings
 
 let rec ordered_dbwd : type a b. (a, b) ordered_termctx -> b Dbwd.t = function
   | Emp -> Word Zero

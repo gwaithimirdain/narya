@@ -147,7 +147,7 @@ and entry : type b f mn. (File.t -> File.t) -> (b, f, mn) entry -> (b, f, mn) en
           }
           [ v.bindings ] in
       Vis { v with bindings }
-  | Invis bindings ->
+  | Invis (bindings, hints) ->
       let bindings =
         CubeOf.mmap
           {
@@ -156,7 +156,7 @@ and entry : type b f mn. (File.t -> File.t) -> (b, f, mn) entry -> (b, f, mn) en
                 { ty = term f b.ty; tm = Option.map (term f) b.tm });
           }
           [ bindings ] in
-      Invis bindings
+      Invis (bindings, hints)
 
 and termctx_ordered : type a b.
     (File.t -> File.t) -> (a, b) ordered_termctx -> (a, b) ordered_termctx =

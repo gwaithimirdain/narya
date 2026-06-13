@@ -341,7 +341,7 @@ and readback_ordered_env : type n a b c d.
         lookup_cube env mk Now (id_op (D.plus_out (dim_env env) mk)) in
       let xs = act_cube { act } (CubeOf.subcube fc xs) fd in
       match entry with
-      | Vis { bindings; _ } | Invis bindings ->
+      | Vis { bindings; _ } | Invis (bindings, _) ->
           let xtytbl = Hashtbl.create 10 in
           let tmxs =
             CubeOf.mmap
@@ -406,7 +406,12 @@ let readback_entry : type a b f n. (a, (b, n) snoc) Ctx.t -> (f, n) Ctx.entry ->
           fields in
       let bindings = readback_bindings ctx bindings in
       Vis { dim; plusdim; vars; bindings; hasfields; fields; fplus }
-  | Invis bindings -> Invis (readback_bindings ctx bindings)
+  | Invis bindings ->
+      (* Invisible variables are anonymous, but we can still record display hints from their types, since after readback the types are terms and the hints can no longer be computed on demand.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints. *)
+      let hints =
+        Reporter.try_with ~fatal:(fun _ -> []) @@ fun () ->
+        View.hints_of_ty (Binding.value (CubeOf.find_top bindings)).ty in
+      Invis (readback_bindings ctx bindings, hints)
 
 let rec readback_ordered_ctx : type a b. (a, b) Ctx.Ordered.t -> (a, b) ordered_termctx = function
   | Emp -> Emp
