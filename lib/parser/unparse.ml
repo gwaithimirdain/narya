@@ -1017,7 +1017,7 @@ let () =
             `None
       | PConstant name -> utf8string (String.concat "." (Scope.name_of name))
       | PMeta v -> utf8string (Meta.name v)
-      | PHole (origin, vars, Permute (p, ctx), ty) ->
+      | PHole (origin, vars, (Permute (p, ctx) as termctx), ty) ->
           let run =
             match origin with
             (* If the hole comes from an earlier time, we rewind to that time before displaying, so that the correct notations and names will be in scope. *)
@@ -1026,7 +1026,7 @@ let () =
             (* Otherwise, we give up.  Normally this would only happen when it's from the current origin (e.g. being created right now in a file) anyway. *)
             | _ -> fun f -> f () in
           run @@ fun () ->
-          let vars, names = Names.uniquify_vars vars in
+          let vars, names = Names.uniquify_vars (hole_vars termctx vars) in
           let names, ctx = unparse_ctx names `Unlocked (Bwv.permute vars p) ctx in
           let ty = unparse names ty No.Interval.entire No.Interval.entire in
           pp_hole ctx (Wrap ty)

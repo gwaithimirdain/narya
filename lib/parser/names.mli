@@ -18,7 +18,7 @@ val add_full : 'b t -> 'mn variables -> ('mn, string) gvariables * ('b, 'mn) sno
 val of_ctx : ('a, 'b) Ctx.t -> 'b t
 
 val uniquify_vars :
-  (string option, 'a) Bwv.t -> (string * [ `Original | `Renamed ], 'a) Bwv.t * emp t
+  (binder_name, 'a) Bwv.t -> (string * [ `Original | `Renamed ], 'a) Bwv.t * emp t
 
 val unsafe_add : 'b t -> ('n, string) gvariables -> (string, string) Abwd.t -> ('b, 'n) snoc t
 

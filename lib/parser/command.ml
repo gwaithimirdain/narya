@@ -1080,7 +1080,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       let hole li ri = locate_opt None (Hole { li; ri; num = ref (-1); ws = []; contents = None }) in
       let ehole = hole No.Interval.entire No.Interval.entire in
       let ctx = Norm.eval_ctx termctx in
-      let _, names = Names.uniquify_vars vars in
+      let _, names = Names.uniquify_vars (Term.hole_vars termctx vars) in
       let term =
         match data.tms with
         | [ (_, Wrap { value = Placeholder _; _ }) ] -> (
