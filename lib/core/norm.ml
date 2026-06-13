@@ -1422,8 +1422,47 @@ and lookup_cube : type dom mu sigma tau cod murest mcur n a bn b k.
           let (Permute_insert (v, _)) = permute_insert v perm2 in
           lookup_cube env1 (Plus_with_locks (bd, lld)) sigma_comp acc mu v)
   (* TODO: A shift or unshift moves dimensions between the substitution dimension and the codomain, i.e. between the environment dimension and the looked-up variable's *intrinsic* dimension 'k.  Handling them endpoint-free therefore requires letting 'k vary as we return up through the recursion (the migrating dimensions are filtered, in the degeneracy direction, not selected with an endpoint-choosing face).  That needs an extension of the "env-dimension-only, 'k fixed" separation this recursion currently relies on, so it is left as an anomaly for now.  Note that it is already endpoint-free: neither case calls sface_of_filter. *)
+  (* TODO: A shift is dual to the unshift below: it moves dimensions from the substitution dimension into the codomain, so going back up the looked-up variable's intrinsic dimension k *grows* (from x to z = q + x, via uncoinsert), with the migrated q directions being degenerate for the looked-up value (they come from the environment, not from the stored cube).  The environment/operator bookkeeping is the dual of the unshift case (split the returned sigma-filter with filter_of_plus, push a collapse through it with filter_deg), but realizing the k-growth requires the stored entry cube to be *extended by degenerate directions* (or the final degeneracy applied in lookup to carry them), which the env-dimension-only / cube-valued representation here doesn't yet express.  Still endpoint-free: no sface_of_filter. *)
   | _, _, Shift _ -> fatal (Anomaly "lookup_cube: shift not yet reimplemented endpoint-free")
-  | _, _, Unshift _ -> fatal (Anomaly "lookup_cube: unshift not yet reimplemented endpoint-free")
+  (* An unshift pulls dimensions out of the codomain into the substitution dimension.  For the looked-up variable, those dimensions were part of its intrinsic dimension in the inner environment, so the recursion runs at a larger intrinsic dimension px = q + vx; on the return path we migrate the q part back into the environment dimension by re-associating the entry's mfilt+px split.  The shift dimension is decomposed in the order dictated by sigma_comp (mu = murest o sigma; NO filter commutativity assumed): collapse it by the not-yet-consumed keys murest, then filter that by sigma.  Pushing the murest-collapse through the sigma-filter with filter_deg yields, consistently, the environment-side sigma-filter g (keeping the residual that murest will eventually remove) and the degeneracy d_sn collapsing it to the migrated part q (in which the looked-up value is constant).  All in the degeneracy direction, so endpoint-free. *)
+  | b_cn, llcn, Unshift (env1, n_x, xb) ->
+      let sx = D.plus_right n_x in
+      let (Uncomp (nbm, ncm, nb_nc)) = Plusmap.uncomp sx b_cn xb in
+      let (Eq _) = Plusmap.tgt ncm in
+      let ll_nc = Plusmap.locks sx ncm llcn in
+      let (Uninsert (q_vx, f_q, v, _)) = Plusmap.uninsert v nbm in
+      (* uninsert binds f_q's source/target modes existentially; recover that they are mu's. *)
+      let Eq, Eq = Modality.filter_dim_modes f_q mu in
+      let (Looked_up { act; op; filter = f1; filtered; plus; entry; cell }) =
+        lookup_cube env1 (Plus_with_locks (nb_nc, ll_nc)) sigma_comp acc mu v in
+      (* Decompose the shift dimension as murest then sigma (the order of sigma_comp; no commutativity), and push the murest-collapse through the sigma-filter to get the environment filter g and the collapsing degeneracy d_sn together; q is the migrated (mu-filtered) part. *)
+      let murest = Modality.comp_left sigma_comp mu in
+      let (Has_filter h) = Modality.filter murest sx in
+      let deg_collapse = Modality.deg_of_filter sx h in
+      let (Has_filter g_b) = Modality.filter (Modalcell.vsrc acc) (Modality.filtered sx h) in
+      let (Filter_deg (d_sn, g)) = Modality.filter_deg g_b deg_collapse in
+      let Eq = Modality.filter_uniq (Modality.filter_comp sigma_comp h g_b) f_q in
+      let q = Modality.filtered (Modality.filtered sx h) g_b in
+      (* Re-split the recursion's intrinsic dimension px = q + vx.  Since px is mu-invariant (filtered is the identity on px), so is the leftover vx: the q-part of the split is the identity (filter_idempotent of f_q), and right-cancellation then forces the vx-part to be (vx, vx). *)
+      let (Filter_of_plus (plus_avc, f_a, filtered_vx)) = Modality.filter_of_plus q_vx filtered in
+      let Eq = Modality.filter_uniq f_a (Modality.filter_idempotent f_q) in
+      let Eq = D.minus_uniq' q plus_avc q_vx in
+      let (Plus mfilt_q) = D.plus q in
+      let plus_node = D.plus_assocl mfilt_q q_vx plus in
+      let sn = Modality.filtered sx g in
+      let (Plus m_in_sn) = D.plus sn in
+      let f_node = Modality.filter_plus m_in_sn n_x f1 g in
+      let op_node = op_plus_op op mfilt_q m_in_sn (op_of_deg d_sn) in
+      Looked_up
+        {
+          act;
+          op = op_node;
+          filter = f_node;
+          filtered = filtered_vx;
+          plus = plus_node;
+          entry;
+          cell;
+        }
   (* Below all the locks, if we encounter a variable that isn't ours, we skip it and proceed.  When we find our variable, the consumed locks are exactly the variable's annotation: sigma = mu, so acc is the composite of the keys and the entry's filter is by mu.  We start the operator at the identity on the filtered dimension; it gets composed with the variable's own face in lookup.  The forcing function is the identity if the entry is not lazy, and force_eval_term if it is lazy. *)
   | ( (Zero as bc0),
       (Zero _ as llc0),

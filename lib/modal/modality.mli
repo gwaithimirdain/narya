@@ -98,6 +98,10 @@ val filter : ('x, 'm, 'y) t -> 'b D.t -> ('x, 'm, 'y, 'b) has_filter
 val filter_uniq :
   ('x, 'm, 'y, 'a1, 'b) filter_dim -> ('x, 'm, 'y, 'a2, 'b) filter_dim -> ('a1, 'a2) Eq.t
 
+(* A filter_dim by a modality 'm has the same source and target as 'm; this recovers modes that have been bound existentially elsewhere. *)
+val filter_dim_modes :
+  ('x, 'm, 'y, 'a, 'b) filter_dim -> ('x2, 'm, 'y2) t -> ('x, 'x2) Eq.t * ('y, 'y2) Eq.t
+
 val filtered : 'b D.t -> ('x, 'm, 'y, 'a, 'b) filter_dim -> 'a D.t
 val filter_id : 'mode Mode.t -> 'a D.t -> ('mode, 'mode id, 'mode, 'a, 'a) filter_dim
 val eq_of_filter_id : ('mode, 'mode id, 'mode, 'a, 'b) filter_dim -> ('a, 'b) Eq.t

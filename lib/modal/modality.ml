@@ -408,6 +408,13 @@ let filter_uniq : type x m y b a1 a2.
   let Eq = except_uniq e1 e2 in
   Eq
 
+(* A filter_dim is by a particular modality, which determines its source and target modes; so two filter_dims by the same modality (or a filter_dim and a modality) have the same source and target.  This is needed to recover modes that have been bound existentially elsewhere (e.g. in Plusmap.uninsert) before they can be compared with filter_uniq. *)
+let filter_dim_modes : type x m y a b x2 y2.
+    (x, m, y, a, b) filter_dim -> (x2, m, y2) t -> (x, x2) Eq.t * (y, y2) Eq.t =
+ fun (Filter (n, _)) mu ->
+  let d = Nonparametric.dom n in
+  (src_uniq d mu, tgt_uniq d mu)
+
 let filtered b (Filter (_, e)) = excepted e b
 
 let filter_id : type mode a. mode Mode.t -> a D.t -> (mode, mode id, mode, a, a) filter_dim =
