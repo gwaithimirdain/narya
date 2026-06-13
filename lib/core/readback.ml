@@ -409,7 +409,7 @@ let readback_entry : type a b f n. (a, (b, n) snoc) Ctx.t -> (f, n) Ctx.entry ->
   | Invis bindings ->
       (* Invisible variables are anonymous, but we can still record display hints from their types, since after readback the types are terms and the hints can no longer be computed on demand.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints. *)
       let hints =
-        Reporter.try_with ~fatal:(fun _ -> []) @@ fun () ->
+        Reporter.try_with ~fatal:(fun _ -> no_hints) @@ fun () ->
         View.hints_of_ty (Binding.value (CubeOf.find_top bindings)).ty in
       Invis (readback_bindings ctx bindings, hints)
 

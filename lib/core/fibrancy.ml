@@ -92,7 +92,8 @@ module Codata = struct
           match fldty with
           | Lower ty ->
               let sty =
-                Shift (Hott.dim, f.plusmap, Lam (singleton_variables f.glue (`Anon []), ty)) in
+                Shift (Hott.dim, f.plusmap, Lam (singleton_variables f.glue (`Anon no_hints), ty))
+              in
               StructfieldAbwd.Entry
                 ( fld,
                   Lower

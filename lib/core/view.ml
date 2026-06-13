@@ -28,16 +28,16 @@ let view_type ty = !type_viewer ty
 let force_eval : type s. s lazy_eval -> s evaluation = fun tm -> !eval_forcer.force tm
 
 (* Extract the variable-name hints associated to a type value, if it is a canonical datatype or codatatype with such hints declared.  This is used when generating names to display anonymous variables of that type.  We can't use view_type, since it requires higher-dimensional types to be fully instantiated, whereas the domains of a higher-dimensional pi-type are not.  Instead we force the value of the neutral directly.  Since this only affects display, if anything goes wrong (e.g. the value is not actually a type) we just return no hints rather than failing. *)
-let hints_of_ty : kinetic value -> string list =
+let hints_of_ty : kinetic value -> hints =
  fun ty ->
-  Reporter.try_with ~fatal:(fun _ -> []) @@ fun () ->
+  Reporter.try_with ~fatal:(fun _ -> no_hints) @@ fun () ->
   match view_term ty with
   | Neu { value; _ } -> (
       match force_eval value with
       | Val (Canonical { canonical = Data { hints; _ }; _ }) -> hints
       | Val (Canonical { canonical = Codata { hints; _ }; _ }) -> hints
-      | _ -> [])
-  | _ -> []
+      | _ -> no_hints)
+  | _ -> no_hints
 
 (* Convert a possibly-absent user-supplied variable name to a binder_name, attaching hints derived from the type of the variable if it is anonymous. *)
 let hinted : string option -> kinetic value -> binder_name =

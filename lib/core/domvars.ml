@@ -90,10 +90,9 @@ let rec get_pi_vars : type a b.
 
 (* Given a datatype constructor (its parameter environment and the telescope of its argument types), compute the variable-name display hints for each argument, by evaluating each argument type and extracting hints from its head canonical type.  Used by "split" to generate readable names for the pattern variables of a match.  The fresh variables created to extend the environment are only used to substitute into later argument types so as to find their heads, so we needn't track them carefully. *)
 let constr_arg_hints : type m a p ap e b.
-    (e, b) Ctx.t -> (m, a) env -> (a, p, ap) Telescope.t -> string list Bwd.t =
+    (e, b) Ctx.t -> (m, a) env -> (a, p, ap) Telescope.t -> hints Bwd.t =
  fun ctx env args ->
-  let rec go : type a p ap.
-      (m, a) env -> (a, p, ap) Telescope.t -> string list Bwd.t -> string list Bwd.t =
+  let rec go : type a p ap. (m, a) env -> (a, p, ap) Telescope.t -> hints Bwd.t -> hints Bwd.t =
    fun env tel acc ->
     match tel with
     | Emp -> acc

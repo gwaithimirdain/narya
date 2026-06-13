@@ -1975,6 +1975,7 @@ let rec attributes rest () =
                [
                  (RParen, Lazy (lazy (Inner (attributes rest ()))));
                  (Coloneq, Lazy (lazy (attribute_values rest ())));
+                 (Pluseq, Lazy (lazy (attribute_values rest ())));
                ]),
           `Noss )
         r.ops;
@@ -1987,10 +1988,11 @@ and attribute_values rest () =
       (RParen, Lazy (lazy (Inner (attributes rest ()))));
     ]
 
-(* Extract the attribute groups from the beginning of an observation list, as a list of multiword names with optional value lists. *)
+(* Extract the attribute groups from the beginning of an observation list, as a list of multiword names with optional value lists.  A valued attribute records whether its values were given with ≔ (replacing any global defaults, [`Replace]) or with ⩲ (prepended to the global defaults, [`Prepend]). *)
 let rec get_attributes :
     observation list ->
-    (string list * wrapped_parse list option * Asai.Range.t option) list * observation list =
+    (string list * (wrapped_parse list * [ `Replace | `Prepend ]) option * Asai.Range.t option) list
+    * observation list =
  fun obs ->
   match obs with
   | Token (Op "#", _) :: Token (LParen, _) :: Term attr :: rest -> (
@@ -1999,10 +2001,11 @@ let rec get_attributes :
       | Token (RParen, _) :: rest ->
           let attrs, rest = get_attributes rest in
           ((strs, None, attr.loc) :: attrs, rest)
-      | Token (Coloneq, _) :: rest ->
+      | Token (((Coloneq | Pluseq) as sep), _) :: rest ->
+          let mode = if sep = Pluseq then `Prepend else `Replace in
           let vals, rest = get_attribute_values rest in
           let attrs, rest = get_attributes rest in
-          ((strs, Some vals, attr.loc) :: attrs, rest)
+          ((strs, Some (vals, mode), attr.loc) :: attrs, rest)
       | _ -> invalid "attribute")
   | _ -> ([], obs)
 
@@ -2024,25 +2027,32 @@ let var_of_attribute_value : wrapped_parse -> string =
   | Placeholder _ -> fatal ?loc:x.loc (Invalid_variable [ "_" ])
   | _ -> fatal ?loc:x.loc Unrecognized_attribute
 
+(* Construct the variable-name hints specified by a "variables" attribute value list and its mode (≔ replaces the global defaults, ⩲ prepends to them). *)
+let hints_of_attribute (vals : wrapped_parse list) (mode : [ `Replace | `Prepend ]) :
+    Variables.hints =
+  { names = List.map var_of_attribute_value vals; fallback = mode = `Prepend }
+
 (* Interpret the attributes of a datatype or codatatype declaration, which currently can only be "variables", giving a list of variable-name hints. *)
 let process_data_attributes :
-    (string list * wrapped_parse list option * Asai.Range.t option) list -> string list =
+    (string list * (wrapped_parse list * [ `Replace | `Prepend ]) option * Asai.Range.t option) list ->
+    Variables.hints =
  fun attrs ->
   List.fold_left
     (fun _hints (strs, vals, loc) ->
       match (strs, vals) with
-      | [ "variables" ], Some vals -> List.map var_of_attribute_value vals
+      | [ "variables" ], Some (vals, mode) -> hints_of_attribute vals mode
       | _ -> fatal ?loc Unrecognized_attribute)
-    [] attrs
+    Variables.no_hints attrs
 
 (* Interpret the attributes of a record type declaration: opacity attributes and "variables". *)
 let process_record_attributes :
-    (string list * wrapped_parse list option * Asai.Range.t option) list -> opacity * string list =
+    (string list * (wrapped_parse list * [ `Replace | `Prepend ]) option * Asai.Range.t option) list ->
+    opacity * Variables.hints =
  fun attrs ->
   List.fold_left
     (fun (opacity, hints) (strs, vals, loc) ->
       match (strs, vals) with
-      | [ "variables" ], Some vals -> (opacity, List.map var_of_attribute_value vals)
+      | [ "variables" ], Some (vals, mode) -> (opacity, hints_of_attribute vals mode)
       | [ "opaque" ], None -> (`Opaque, hints)
       | [ "transparent" ], None -> (`Transparent `Labeled, hints)
       | [ "translucent" ], None -> (`Translucent `Labeled, hints)
@@ -2051,7 +2061,7 @@ let process_record_attributes :
       | [ "translucent"; "labeled" ], None -> (`Translucent `Labeled, hints)
       | [ "translucent"; "positional" ], None -> (`Translucent `Unlabeled, hints)
       | _ -> fatal ?loc Unrecognized_attribute)
-    (`Opaque, []) attrs
+    (`Opaque, Variables.no_hints) attrs
 
 (* Print the attribute groups at the beginning of an observation list, appended to the given document with the given whitespace pending before them.  Returns the extended document, the pending whitespace after it, and the remaining observations. *)
 let rec pp_attributes (accum : document) (prews : Whitespace.t list) (obs : observation list) :
@@ -2067,7 +2077,7 @@ let rec pp_attributes (accum : document) (prews : Whitespace.t list) (obs : obse
           pp_attributes
             (accum ^^ group (pp_ws `Break prews ^^ start ^^ pp_ws `None wattr ^^ Token.pp RParen))
             wsrattr rest
-      | Token (Coloneq, (wscoloneq, _)) :: rest ->
+      | Token (((Coloneq | Pluseq) as sep), (wssep, _)) :: rest ->
           let vals, wsrattr, rest = pp_attribute_values empty rest in
           pp_attributes
             (accum
@@ -2075,8 +2085,8 @@ let rec pp_attributes (accum : document) (prews : Whitespace.t list) (obs : obse
                  (pp_ws `Break prews
                  ^^ start
                  ^^ pp_ws `Nobreak wattr
-                 ^^ Token.pp Coloneq
-                 ^^ pp_ws `Nobreak wscoloneq
+                 ^^ Token.pp sep
+                 ^^ pp_ws `Nobreak wssep
                  ^^ vals
                  ^^ Token.pp RParen))
             wsrattr rest
@@ -2128,7 +2138,7 @@ let process_codata_field : type n lt ls rt rs lt' ls' rt' rs' et.
   | _ -> fatal ?loc:tm.loc Parse_error
 
 let rec process_codata : type n.
-    string list ->
+    Variables.hints ->
     (Field.wrapped, n Raw.codatafield) Abwd.t ->
     (string option, n) Bwv.t ->
     observation list ->
@@ -2263,7 +2273,7 @@ let rec process_tel : type a.
   | _ -> invalid "record"
 
 let rec process_self_record : type n.
-    string list ->
+    Variables.hints ->
     (Field.wrapped, n Raw.codatafield) Abwd.t ->
     (string option, n) Bwv.t ->
     observation list ->
@@ -2455,7 +2465,7 @@ and process_dataconstr_vars : type n.
       Dataconstr (Ext (x, arg, args), body)
 
 let rec process_data : type n.
-    string list ->
+    Variables.hints ->
     (Constr.t, n Raw.dataconstr located) Abwd.t ->
     (string option, n) Bwv.t ->
     observation list ->

@@ -1010,7 +1010,7 @@ and eval_codata : type m a c n et.
     (m, a) env ->
     (potential, et) eta ->
     opacity ->
-    string list ->
+    hints ->
     n D.t ->
     (c, (a, n) snoc) termctx option Lazy.t ->
     (a * n * et) CodatafieldAbwd.t ->

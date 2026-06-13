@@ -58,13 +58,24 @@ The file is reformatted with the attributes preserved.
   
   echo Id (Stream A → ℕ) g g
 
-If there are more unnamed variables than hints, the global default names
-are used as a fallback.
+When the hints are given with ≔, they replace the global default names, so if
+there are more unnamed variables than hints, primed versions of the hints are
+used rather than the global defaults.
 
   $ narya -e "def P : Type ≔ data #(variables ≔ p) [ mk. (_ : P) (_ : P) ] def kmk : P → P → P ≔ ((x : P → P → P) ↦ x : P → P → P) mk. echo kmk"
+  p p′ ↦ mk. p p′
+    : P → P → P
+  
+
+
+When the hints are given with ⩲ instead, they are prepended to the global
+default names, which are therefore used as a fallback if the hints run out.
+
+  $ narya -e "def P : Type ≔ data #(variables ⩲ p) [ mk. (_ : P) (_ : P) ] def kmk : P → P → P ≔ ((x : P → P → P) ↦ x : P → P → P) mk. echo kmk"
   p 𝑥 ↦ mk. p 𝑥
     : P → P → P
   
+
 
 Type-specific hints take precedence over the global default names set with
 the -variables flag.

@@ -109,7 +109,7 @@ module rec Term : sig
         constrs : (Constr.t, ('a, 'i) dataconstr) Abwd.t;
         discrete : [ `Yes | `Maybe | `No ];
         (* Variable-name hints, for displaying anonymous variables of this type. *)
-        hints : string list;
+        hints : hints;
       }
         -> 'a canonical
     | Codata : ('n, 'c, 'a, 'nh, 'ha, 'et) codata_args -> 'a canonical
@@ -118,7 +118,7 @@ module rec Term : sig
     eta : (potential, 'et) eta;
     opacity : opacity;
     (* Variable-name hints, for displaying anonymous variables of this type. *)
-    hints : string list;
+    hints : hints;
     dim : 'n D.t;
     termctx : ('c, ('a, 'n) snoc) termctx option;
     fields : ('a * 'n * 'et) CodatafieldAbwd.t;
@@ -176,7 +176,7 @@ module rec Term : sig
         fplus : ('f1, 'f2, 'f) N.plus;
       }
         -> ('b, 'f, 'mn) entry
-    | Invis : ('n, ('b, 'n) snoc binding) CubeOf.t * string list -> ('b, N.zero, 'n) entry
+    | Invis : ('n, ('b, 'n) snoc binding) CubeOf.t * hints -> ('b, N.zero, 'n) entry
 
   and (_, _) ordered_termctx =
     | Emp : (N.zero, emp) ordered_termctx
@@ -291,7 +291,7 @@ end = struct
         constrs : (Constr.t, ('a, 'i) dataconstr) Abwd.t;
         discrete : [ `Yes | `Maybe | `No ];
         (* Variable-name hints, for displaying anonymous variables of this type. *)
-        hints : string list;
+        hints : hints;
       }
         -> 'a canonical
     | Codata : ('n, 'c, 'a, 'nh, 'ha, 'et) codata_args -> 'a canonical
@@ -301,7 +301,7 @@ end = struct
     eta : (potential, 'et) eta;
     opacity : opacity;
     (* Variable-name hints, for displaying anonymous variables of this type. *)
-    hints : string list;
+    hints : hints;
     (* An intrinsic dimension (like Gel) *)
     dim : 'n D.t;
     (* The termctx in which it was checked, since that is needed to eval-readback the env to degenerate it when checking higher fields. *)
@@ -374,7 +374,7 @@ end = struct
         fplus : ('f1, 'f2, 'f) N.plus;
       }
         -> ('b, 'f, 'mn) entry
-    | Invis : ('n, ('b, 'n) snoc binding) CubeOf.t * string list -> ('b, N.zero, 'n) entry
+    | Invis : ('n, ('b, 'n) snoc binding) CubeOf.t * hints -> ('b, N.zero, 'n) entry
 
   and (_, _) ordered_termctx =
     | Emp : (N.zero, emp) ordered_termctx
@@ -506,7 +506,7 @@ let rec ordered_hole_vars : type a b.
             | None -> (
                 match y with
                 | `Anon _ -> (xs, NFamOf y)
-                | `Named _ -> (xs, NFamOf (`Anon []))) in
+                | `Named _ -> (xs, NFamOf (`Anon no_hints))) in
           let _, merged = TR.fold_map_right { foldmap = (fun fb y xs -> merge fb y xs) } cube xs in
           (* Then convert the merged cube of binder names back into a Bwv. *)
           let module TL = NICubeOf.Traverse (struct

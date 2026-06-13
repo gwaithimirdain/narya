@@ -116,14 +116,14 @@ module rec Value : sig
     constrs : (Constr.t, ('m, 'ij) dataconstr) Abwd.t;
     discrete : [ `Yes | `Maybe | `No ];
     (* Variable-name hints, for displaying anonymous variables of this type. *)
-    hints : string list;
+    hints : hints;
   }
 
   and ('m, 'n, 'c, 'a, 'et) codata_args = {
     eta : (potential, 'et) eta;
     opacity : opacity;
     (* Variable-name hints, for displaying anonymous variables of this type. *)
-    hints : string list;
+    hints : hints;
     env : ('m, 'a) env;
     termctx : ('c, ('a, 'n) snoc) termctx option Lazy.t;
     fields : ('a * 'n * 'et) Term.CodatafieldAbwd.t;
@@ -289,7 +289,7 @@ end = struct
     (* Whether it is discrete.  The value `Maybe means that it could be discrete based on its own parameters, indices, and constructor arguments, but either is waiting for its mutual companions to be typechecked, or at least one of them failed to be discrete.  Thus for equality-testing purposes, `Maybe is treated like `No. *)
     discrete : [ `Yes | `Maybe | `No ];
     (* Variable-name hints, for displaying anonymous variables of this type. *)
-    hints : string list;
+    hints : hints;
   }
 
   (* A codatatype stores: *)
@@ -298,7 +298,7 @@ end = struct
     eta : (potential, 'et) eta;
     opacity : opacity;
     (* Variable-name hints, for displaying anonymous variables of this type. *)
-    hints : string list;
+    hints : hints;
     (* The environment and termctx that it was evaluated in *)
     env : ('m, 'a) env;
     termctx : ('c, ('a, 'n) snoc) termctx option Lazy.t;

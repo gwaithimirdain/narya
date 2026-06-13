@@ -75,7 +75,7 @@ let rec motive_of_family : type a b.
   let folder : type left m any.
       (left, m, any) F.t -> (left, D.zero) snoc T.t -> left T.t * (left, m, any) F.t =
    fun (Rbtm dom) cod ->
-    ( Pi (singleton_variables D.zero (`Anon []), CubeOf.singleton dom, CodCube.singleton cod),
+    ( Pi (singleton_variables D.zero (`Anon no_hints), CubeOf.singleton dom, CodCube.singleton cod),
       Rbtm dom ) in
   let builder : type left n m.
       n variables ->
@@ -114,7 +114,7 @@ let rec motive_of_family : type a b.
       let m = CubeOf.dim newnfs in
       let (Wrap (newdoms, _)) =
         MC.build_left m
-          { build = (fun fa ctx -> builder (singleton_variables m (`Anon [])) newnfs fa ctx) }
+          { build = (fun fa ctx -> builder (singleton_variables m (`Anon no_hints)) newnfs fa ctx) }
           (Any_ctx ctx) in
       let motive, _ =
         MT.fold_map_right { foldmap = (fun _ x y -> folder x y) } newdoms (UU D.zero) in
@@ -139,8 +139,8 @@ let vars_of_names : type a c abc n.
         build =
           (fun _ -> function
             | Ok (ab, x :: xs) -> Fwrap (NFamOf (binder_name_of_option x), Ok (Suc ab, xs))
-            | Ok _ -> Fwrap (NFamOf (`Anon []), Missing (-1))
-            | Missing j -> Fwrap (NFamOf (`Anon []), Missing (j - 1)));
+            | Ok _ -> Fwrap (NFamOf (`Anon no_hints), Missing (-1))
+            | Missing j -> Fwrap (NFamOf (`Anon no_hints), Missing (j - 1)));
       }
       (Ok (Zero, xs))
   with
@@ -496,8 +496,8 @@ let rec check : type a b s.
                                         (View.hinted name.value
                                            (Ctx.Binding.value (CubeOf.find newnfs fa)).ty),
                                       Ok (Suc ab, body) ))
-                          | Ok (_, _) -> Fwrap (NFamOf (`Anon []), Missing 1)
-                          | Missing j -> Fwrap (NFamOf (`Anon []), Missing (j + 1)));
+                          | Ok (_, _) -> Fwrap (NFamOf (`Anon no_hints), Missing 1)
+                          | Missing j -> Fwrap (NFamOf (`Anon no_hints), Missing (j + 1)));
                     }
                     (Ok (Zero, tm))
                 with
@@ -1816,7 +1816,7 @@ and any_empty : type n. (n, Binding.t) CubeOf.t list -> bool =
 
 and check_data : type a b i.
     discrete:unit Constant.Map.t option ->
-    hints:string list ->
+    hints:hints ->
     (b, potential) status ->
     (a, b) Ctx.t ->
     kinetic value ->
@@ -1927,7 +1927,7 @@ and with_codata_so_far : type a b n c et.
     (potential, et) eta ->
     (a, b) Ctx.t ->
     opacity ->
-    string list ->
+    hints ->
     n D.t ->
     (D.zero, n, n, normal) TubeOf.t ->
     (b * n * et) Term.CodatafieldAbwd.t ->
@@ -1979,7 +1979,7 @@ and check_codata : type a b n et.
     (b, potential) status ->
     (a, b) Ctx.t ->
     (potential, et) eta ->
-    string list ->
+    hints ->
     (D.zero, n, n, normal) TubeOf.t ->
     (b * n * et) Term.CodatafieldAbwd.t ->
     (n, n, b, et) Fibrancy.Codata.t ->
@@ -2042,7 +2042,7 @@ and check_record : type a f1 f2 f af d acd b n.
     n D.t ->
     (a, b) Ctx.t ->
     opacity ->
-    string list ->
+    hints ->
     (D.zero, n, n, normal) TubeOf.t ->
     (N.zero, n, binder_name, f1) NICubeOf.t ->
     (D.zero Field.t * string, f2) Bwv.t ->

@@ -97,7 +97,8 @@ let uniquify_opt : type a.
     string * [ `Original | `Renamed ] * StringSet.t =
  fun f name used ->
   match f name with
-  | `Anon hints, face -> new_name face (hints @ Display.variables ()) used
+  | `Anon { names; fallback }, face ->
+      new_name face (if fallback then names @ Display.variables () else names) used
   | `Named name, face -> uniquify (name ^ face) used
 
 (* Do the same thing to a whole cube of variable names. *)
@@ -179,7 +180,7 @@ let rec of_ordered_ctx : type a b. (a, b) Ctx.Ordered.t -> b t = function
   | Snoc (ctx, Invis bindings, _) ->
       (* Invisible variables are anonymous, but we can still give them hints from their types.  Since this is only for display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints. *)
       let hints =
-        Reporter.try_with ~fatal:(fun _ -> []) @@ fun () ->
+        Reporter.try_with ~fatal:(fun _ -> no_hints) @@ fun () ->
         View.hints_of_ty (Ctx.Binding.value (CubeOf.find_top bindings)).ty in
       snd (add (of_ordered_ctx ctx) (singleton_variables (CubeOf.dim bindings) (`Anon hints)))
   | Lock ctx -> of_ordered_ctx ctx

@@ -1204,7 +1204,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
             let rec constr_args : type a p ap n k.
                 n Names.t ->
                 k D.t ->
-                string list list ->
+                Variables.hints list ->
                 ?acc:unparser Bwd.t ->
                 (a, p, ap) Term.Telescope.t ->
                 unparser Bwd.t * Names.wrapped =
@@ -1214,7 +1214,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                    (* If the argument is anonymous, use any display hints from its type. *)
                    let hint, hints =
                      match hints with
-                     | [] -> ([], [])
+                     | [] -> (Variables.no_hints, [])
                      | h :: hs -> (h, hs) in
                    let name =
                      match x with

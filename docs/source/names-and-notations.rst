@@ -128,4 +128,10 @@ In addition, you can associate a separate list of default variable names to a pa
    def prod (A B : Type) : Type ≔ sig #(variables ≔ u,v) (fst : A, snd : B)
    def Stream (A : Type) : Type ≔ codata #(variables ≔ s) [ x .head : A | x .tail : Stream A ]
 
-When generating a name for an unnamed variable, the names associated to its type, if any, are tried first, before the global default names, with the same fallback to primed versions if all of them are taken.  These names also apply to variables of a :ref:`higher-dimensional version <Observational higher dimensions>` of the type, such as the boundary variables of ``Id (ℕ → ℕ) f g``.  They are likewise used for the variables of the abstractions and matches proposed by the interactive ``split`` command (see :ref:`Splitting in holes`).
+When generating a name for an unnamed variable, the names associated to its type, if any, are tried first.  These names also apply to variables of a :ref:`higher-dimensional version <Observational higher dimensions>` of the type, such as the boundary variables of ``Id (ℕ → ℕ) f g``, and to the variables of the abstractions and matches proposed by the interactive ``split`` command (see :ref:`Splitting in holes`).
+
+The two possible separators in the attribute control what happens when the type-specific names run out.  If you write ``≔``, as above, the type-specific names *replace* the global default names: if all of them are taken, Narya tries them again with primes (``n′``, ``m′``, and so on) rather than falling back to the global defaults.  If instead you write ``⩲`` (or its ASCII equivalent ``+=``), the type-specific names are *prepended* to the global default names, which are therefore used as a fallback before resorting to primes:
+
+.. code-block:: none
+
+   def ℕ : Type ≔ data #(variables ⩲ n,m,k) [ zero. | suc. (_ : ℕ) ]

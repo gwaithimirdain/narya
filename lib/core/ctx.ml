@@ -353,7 +353,7 @@ module Ordered = struct
     | Snoc (ctx, Invis bindings, _) when all_free bindings ->
         (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints. *)
         let hints =
-          Reporter.try_with ~fatal:(fun _ -> []) @@ fun () ->
+          Reporter.try_with ~fatal:(fun _ -> no_hints) @@ fun () ->
           View.hints_of_ty (Binding.value (CubeOf.find_top bindings)).ty in
         lam ctx (Lam (singleton_variables (CubeOf.dim bindings) (`Anon hints), tree))
     | _ -> fatal (Anomaly "let-bound variable in Ctx.lam")
