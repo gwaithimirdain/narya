@@ -45,3 +45,13 @@ A neutral that is an applied canonical type is read back and displayed as the co
   | cons. (n : N) (𝑥 : N) (𝑦 : Vec N n) ]
     : Type
   
+
+
+A higher-dimensional (Gel-like) codatatype is read back at its intrinsic dimension.
+
+  $ narya -dtt -e 'axiom A : Type' -e 'axiom Aʹ : A → Type' -e 'def Gel (A : Type) (Aʹ : A → Type) : Type⁽ᵈ⁾ A ≔ sig x ↦ ( ungel : Aʹ x )' -e 'about (Gel A Aʹ)'
+  sig (
+    𝑥 .ungel : Aʹ 𝑥.0 )
+    : Type⁽ᵈ⁾ A
+  
+
