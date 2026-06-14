@@ -170,3 +170,14 @@ val filter_comp :
   ('y, 'n, 'z, 'b, 'c) filter_dim ->
   ('x, 'm, 'y, 'a, 'b) filter_dim ->
   ('x, 'nm, 'z, 'a, 'c) filter_dim
+
+(* Filtering commutes (regardless of composability): from the mu-filter of b (to a) and the sigma-filter of b (to c), produce the sigma-filter of a and the mu-filter of c, landing on a common dimension.  Currently declared but unproven. *)
+type (_, _, _, _, _, _, _, _) filter_comm =
+  | Filter_comm :
+      ('xs, 'sigma, 'ys, 'e, 'a) filter_dim * ('xm, 'mu, 'ym, 'e, 'c) filter_dim
+      -> ('xm, 'mu, 'ym, 'xs, 'sigma, 'ys, 'a, 'c) filter_comm
+
+val filter_comm :
+  ('xm, 'mu, 'ym, 'a, 'b) filter_dim ->
+  ('xs, 'sigma, 'ys, 'c, 'b) filter_dim ->
+  ('xm, 'mu, 'ym, 'xs, 'sigma, 'ys, 'a, 'c) filter_comm

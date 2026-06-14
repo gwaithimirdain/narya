@@ -531,3 +531,15 @@ let filter_comp : type x y z m n nm a b c.
  fun n_m (Filter (f_n, ex_n)) (Filter (f_m, ex_m)) ->
   let (Comp (f_nm, Loopcomp n_m)) = Nonparametric.comp f_m f_n n_m in
   Filter (f_nm, except_comp n_m ex_m ex_n)
+
+(* Filtering commutes: filtering a dimension by mu and then by sigma yields the same dimension as filtering by sigma and then by mu, regardless of whether mu and sigma are even composable.  Given the mu-filter of b (down to a) and the sigma-filter of b (down to c), this produces the sigma-filter of a and the mu-filter of c, which land on a common dimension e.  TODO: This is currently declared but left unproven (it is a fact about commutativity of generator removal at the except level). *)
+type (_, _, _, _, _, _, _, _) filter_comm =
+  | Filter_comm :
+      ('xs, 'sigma, 'ys, 'e, 'a) filter_dim * ('xm, 'mu, 'ym, 'e, 'c) filter_dim
+      -> ('xm, 'mu, 'ym, 'xs, 'sigma, 'ys, 'a, 'c) filter_comm
+
+let filter_comm : type xm mu ym xs sigma ys a b c.
+    (xm, mu, ym, a, b) filter_dim ->
+    (xs, sigma, ys, c, b) filter_dim ->
+    (xm, mu, ym, xs, sigma, ys, a, c) filter_comm =
+ fun _ _ -> Sorry.e ()

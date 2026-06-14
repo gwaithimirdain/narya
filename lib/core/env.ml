@@ -33,6 +33,42 @@ let remove_top : type mode a modality k n.
         Unshift (remove_ins env v', mn, na) in
   remove_ins env Now
 
+(* ******************** Filtering an environment's codomain ******************** *)
+
+(* Filter an environment's codomain by a modality (the source of a nonparametric key under which it is being placed).  Each variable whose intrinsic dimension is already filtered for that modality is kept exactly as-is; each variable whose dimension is NOT already filtered "vanishes" -- its values are permanently inaccessible behind the key, so rather than try to filter its value cube (which would require choosing endpoints) we discard the data and leave a Locked_ext placeholder carrying the filtered dimension.  This relies on the fact that filtering commutes (Modality.filter_comm).  The new codomain is existential. *)
+
+type (_, _) filtered_codomain =
+  | Filtered_codomain : ('mode, 'm, 'b2) env -> ('mode, 'm) filtered_codomain
+
+let rec filter_codomain : type mode m b dom sigma.
+    (dom, sigma, mode) Modality.t -> (mode, m, b) env -> (mode, m) filtered_codomain =
+ fun sigma env ->
+  match env with
+  | Emp (mode, m) -> Filtered_codomain (Emp (mode, m))
+  | Ext { env = e; modality; filtered; filter; plus; values } -> (
+      let (Filtered_codomain e') = filter_codomain sigma e in
+      let k = D.plus_right plus in
+      let (Has_filter f_sk) = Modality.filter sigma k in
+      let k_s = Modality.filtered k f_sk in
+      match D.compare k_s k with
+      | Eq -> Filtered_codomain (Ext { env = e'; modality; filtered; filter; plus; values })
+      | Neq ->
+          (* The variable's dimension is not sigma-invariant, so it vanishes. *)
+          let (Filter_comm (f_sk', fkk_s)) = Modality.filter_comm filtered f_sk in
+          let Eq = Modality.filter_uniq f_sk' f_sk in
+          Filtered_codomain (Locked_ext { env = e'; modality; dim = k_s; filtered = fkk_s }))
+  | Locked_ext { env = e; modality; dim; filtered } ->
+      let (Filtered_codomain e') = filter_codomain sigma e in
+      Filtered_codomain (Locked_ext { env = e'; modality; dim; filtered })
+  | Act (e, op) ->
+      let (Filtered_codomain e') = filter_codomain sigma e in
+      Filtered_codomain (Act (e', op))
+  (* TODO: A permutation, nested key, shift, or unshift in the environment being filtered needs the codomain change transported across it; not yet implemented. *)
+  | Permute _ -> fatal (Anomaly "filter_codomain: permutation not yet implemented")
+  | Key _ -> fatal (Anomaly "filter_codomain: nested key not yet implemented")
+  | Shift _ -> fatal (Anomaly "filter_codomain: nested shift not yet implemented")
+  | Unshift _ -> fatal (Anomaly "filter_codomain: nested unshift not yet implemented")
+
 (* ******************** Stripping keys ******************** *)
 
 (* Given an environment whose codomain context is extended by a partial context containing some locks, split off as many keys as possible that could go with those locks, compose them up, and return them along with the bare environment lying underneath all of them.  Since the dimension of an environment is filtered as keys are added to it, the dimension of the bare environment can be larger than that of the input; we record the relation between the two by a filter (by the composite of the lock modalities, which is the vertical *source* of the composite of the keys) together with an operator collecting the intermediate operator actions, pushed outside the keys by filtering them.
