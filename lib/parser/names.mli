@@ -9,6 +9,7 @@ type wrapped = Wrap : 'n t -> wrapped
 
 val empty : emp t
 val remove : 'b t -> ('a, 'n, 'b) Tbwd.insert -> 'a t
+val permute : ('c, 'b) Tbwd.permute -> 'b t -> 'c t
 val lookup : 'n t -> 'n index -> string list
 val lookup_field : 'n t -> 'n index -> string -> string list option
 val add_cube : 'n D.t -> 'b t -> string option -> string * ('b, 'n) snoc t

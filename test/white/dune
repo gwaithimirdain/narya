@@ -1,4 +1,4 @@
 (tests
-  (names readback)
+  (names readback unparse_tree)
 	(libraries core parser testutil zarith))
 (env (_ (flags (:standard -w -26 -w -27))))

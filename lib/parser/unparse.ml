@@ -256,6 +256,30 @@ let rec get_spine : type n.
       | None -> `App (tm, Emp))
   | tm -> `App (tm, Emp)
 
+(* Build a field projection "x .fld" as a parse tree, for use as the "self" pattern in unparsing codatatypes and records.  It is built in the "entire" tightness interval and packed existentially into an observation at the call site. *)
+let unparse_field_app (x : string) (fld : string) (pbij : string list) :
+    (No.minus_omega, No.nonstrict, No.minus_omega, No.nonstrict) parse located =
+  match
+    ( No.Interval.contains No.Interval.entire No.plus_omega,
+      No.Interval.contains No.Interval.entire No.plus_omega )
+  with
+  | Some left_ok, Some right_ok ->
+      let fn = unparse_var x in
+      let arg = unlocated (Field (fld, pbij, [])) in
+      unlocated (App { fn; arg; left_ok; right_ok })
+  | _ -> fatal (Anomaly "impossible interval in unparse_field_app")
+
+(* Add the new variables bound by a match branch to the name context, returning their names in order. *)
+let rec add_match_vars : type a b m ab.
+    m D.t -> a Names.t -> (a, b, m, ab) Tbwd.snocs -> ab Names.t * string list =
+ fun dim vars snocs ->
+  match snocs with
+  | Zero -> (vars, [])
+  | Suc snocs ->
+      let x, vars = Names.add_cube dim vars None in
+      let vars, xs = add_match_vars dim vars snocs in
+      (vars, x :: xs)
+
 (* The primary unparsing function.  Given the variable names, unparse a term into given tightness intervals. *)
 let rec unparse : type n lt ls rt rs s.
     n Names.t ->
@@ -378,11 +402,12 @@ let rec unparse : type n lt ls rt rs s.
           let args = of_list_map (fun x -> make_unparser vars (CubeOf.find_top x)) args in
           unparse_spine vars (`Constr c) args li ri)
   | Realize tm -> unparse vars tm li ri
-  | Canonical _ -> fatal (Unimplemented "unparsing canonical types")
-  | Struct { eta = Noeta; _ } -> fatal (Unimplemented "unparsing comatches")
-  | Match _ -> fatal (Unimplemented "unparsing matches")
+  | Canonical c -> unparse_canonical vars c li ri
+  | Struct { eta = Noeta; dim; fields; energy = _ } -> unparse_comatch vars dim fields li ri
+  | Match { tm; dim; branches } -> unparse_match vars tm dim branches li ri
   | Unshift _ -> fatal (Unimplemented "unparsing unshifts")
-  | Unact _ -> fatal (Unimplemented "unparsing unacts")
+  (* An Unact only changes the dimension/action, not which variables are in scope, so for display we can simply unparse its body. *)
+  | Unact (_, tm) -> unparse vars tm li ri
   | Shift _ -> fatal (Unimplemented "unparsing shifts")
   | Weaken tm -> unparse (Names.remove vars Now) tm li ri
 
@@ -403,6 +428,174 @@ and make_unparser_implicit : type n.
             let tm = unparse vars tm No.Interval.entire No.Interval.entire in
             braceize tm);
       }
+
+(* Unparse a canonical type (a datatype or codatatype/record). *)
+and unparse_canonical : type n lt ls rt rs.
+    n Names.t ->
+    n Term.canonical ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun vars c li ri ->
+  match c with
+  | Data { indices = _; constrs; discrete = _ } -> unparse_data vars constrs li ri
+  | Codata { eta; dim; fields; _ } -> unparse_codata vars eta dim fields li ri
+
+(* Unparse a codatatype (Noeta, "codata [ x .fld : ty | ... ]") or record type (Eta, "sig ( x .fld : ty, ... )").  In both cases we use a single self-variable, and the "self record" surface syntax with explicit field projections, which handles dependence of later field types on earlier ones. *)
+and unparse_codata : type n a et lt ls rt rs.
+    a Names.t ->
+    (potential, et) eta ->
+    n D.t ->
+    (a * n * et) Term.CodatafieldAbwd.t ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun vars eta _dim fields _li _ri ->
+  let x, selfvars = Names.add_cube _dim vars None in
+  let unparse_field : type i.
+      observation Bwd.t ->
+      (observation Bwd.t -> observation Bwd.t) ->
+      i Field.t ->
+      (i, a * n * et) Term.Codatafield.t ->
+      observation Bwd.t =
+   fun acc sep fld cf ->
+    match cf with
+    | Term.Codatafield.Lower tm ->
+        let pat = unparse_field_app x (Field.to_string fld) [] in
+        let ty = unparse selfvars tm No.Interval.entire No.Interval.entire in
+        sep acc <: Term pat <: mktok Colon <: Term ty
+    | Term.Codatafield.Higher _ -> fatal (Unimplemented "unparsing higher codata fields") in
+  match eta with
+  | Noeta ->
+      let inner =
+        Bwd.fold_left
+          (fun acc (Term.CodatafieldAbwd.Entry (fld, cf)) ->
+            unparse_field acc (fun acc -> acc <: mktok (Op "|")) fld cf)
+          (Snoc (Emp, mktok LBracket))
+          fields in
+      unlocated (outfix ~notn:codata ~inner:(Multiple (wstok Codata, inner, wstok RBracket)))
+  | Eta ->
+      let inner, _ =
+        Bwd.fold_left
+          (fun (acc, first) (Term.CodatafieldAbwd.Entry (fld, cf)) ->
+            ( unparse_field acc (fun acc -> if first then acc else acc <: mktok (Op ",")) fld cf,
+              false ))
+          (Snoc (Emp, mktok LParen), true)
+          fields in
+      unlocated (outfix ~notn:record ~inner:(Multiple (wstok Sig, inner, wstok RParen)))
+
+(* Unparse a datatype "data [ | constr. (x:A) ... | ... ]". *)
+and unparse_data : type a i lt ls rt rs.
+    a Names.t ->
+    (Constr.t, (a, i) Term.dataconstr) Abwd.t ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun vars constrs _li _ri ->
+  let inner =
+    Bwd.fold_left
+      (fun acc (c, dc) ->
+        let cterm = unparse_dataconstr vars c dc No.Interval.entire No.Interval.entire in
+        acc <: mktok (Op "|") <: Term cterm)
+      (Snoc (Emp, mktok LBracket))
+      constrs in
+  unlocated (outfix ~notn:data ~inner:(Multiple (wstok Data, inner, wstok RBracket)))
+
+(* Unparse a single datatype constructor: its name applied to its telescope of arguments, ascribed with its index values (if any). *)
+and unparse_dataconstr : type a i lt ls rt rs.
+    a Names.t ->
+    Constr.t ->
+    (a, i) Term.dataconstr ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun vars c (Dataconstr { args; indices }) li ri ->
+  let rec take_args : type b bc cc.
+      b Names.t -> (b, cc, bc) Term.tel -> unparser Bwd.t -> bc Names.t * unparser Bwd.t =
+   fun vars tel acc ->
+    match tel with
+    | Emp -> (vars, acc)
+    | Ext (name, ty, rest) ->
+        let uty = unparse vars ty (interval_right asc) No.Interval.entire in
+        let x, newvars = Names.add_cube D.zero vars name in
+        take_args newvars rest (acc <: { unparse = (fun _ _ -> unparse_pi_dom x uty) }) in
+  let bcvars, argunps = take_args vars args Emp in
+  let head = { unparse = (fun _ _ -> unlocated (Constr (Constr.to_string c, []))) } in
+  match Vec.to_list indices with
+  | [] -> unparse_spine vars (`Unparser head) argunps li ri
+  | idxs -> (
+      let first = unparse_spine vars (`Unparser head) argunps li (interval_left asc) in
+      let idxargs =
+        Bwd.of_list
+          (List.map (fun idx -> { unparse = (fun li ri -> unparse bcvars idx li ri) }) idxs) in
+      let ph = { unparse = (fun _ _ -> unlocated (Placeholder [])) } in
+      let last = unparse_spine bcvars (`Unparser ph) idxargs (interval_right asc) ri in
+      match (No.Interval.contains li No.minus_omega, No.Interval.contains ri No.minus_omega) with
+      | Some left_ok, Some right_ok ->
+          unlocated (infix ~notn:asc ~first ~inner:(Single (wstok Colon)) ~last ~left_ok ~right_ok)
+      | _ -> fatal (Anomaly "impossible interval unparsing datatype constructor"))
+
+(* Unparse a match "match tm [ | constr. x ... |-> body | ... ]".  Refuted branches are omitted; an all-refuted (or empty) match prints as "match tm [ ]". *)
+and unparse_match : type n m lt ls rt rs.
+    n Names.t ->
+    (n, kinetic) term ->
+    m D.t ->
+    (n, m) Term.branch Constr.Map.t ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun vars tm dim branches _li _ri ->
+  let mapsto =
+    match D.compare_zero dim with
+    | Zero -> Token.Mapsto
+    | Pos _ -> Token.DblMapsto in
+  let disc = unparse vars tm No.Interval.entire No.Interval.entire in
+  let inner =
+    Constr.Map.fold
+      (fun c br acc ->
+        match br with
+        | Term.Refute -> acc
+        | Term.Branch (snocs, perm, body) ->
+            let newvars, xs = add_match_vars dim vars snocs in
+            let bodyvars = Names.permute perm newvars in
+            let args =
+              Bwd.of_list (List.map (fun x -> { unparse = (fun _ _ -> unparse_var x) }) xs) in
+            let pat = unparse_spine vars (`Constr c) args No.Interval.entire No.Interval.entire in
+            let ubody = unparse bodyvars body No.Interval.entire No.Interval.entire in
+            acc <: mktok (Op "|") <: Term pat <: mktok mapsto <: Term ubody)
+      branches
+      (Snoc (Emp, Term disc) <: mktok LBracket) in
+  unlocated (outfix ~notn:implicit_mtch ~inner:(Multiple (wstok Match, inner, wstok RBracket)))
+
+(* Unparse a comatch "[ .fld |-> body | ... ]".  An empty comatch prints with the empty (co)match notation. *)
+and unparse_comatch : type n a s et lt ls rt rs.
+    a Names.t ->
+    n D.t ->
+    (n * a * s * et) Term.StructfieldAbwd.t ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun vars _dim fields _li _ri ->
+  match fields with
+  | Emp ->
+      unlocated
+        (outfix ~notn:empty_co_match ~inner:(Multiple (wstok LBracket, Emp, wstok RBracket)))
+  | _ ->
+      let inner =
+        Bwd.fold_left
+          (fun acc
+               (Term.StructfieldAbwd.Entry
+                  (type i)
+                  ((fld, sf) : i Field.t * (i, n * a * s * et) Term.Structfield.t)) ->
+            match sf with
+            | Term.Structfield.Lower (tm, _) ->
+                let pat = unlocated (Field (Field.to_string fld, [], [])) in
+                let ubody = unparse vars tm No.Interval.entire No.Interval.entire in
+                acc <: mktok (Op "|") <: Term pat <: mktok Mapsto <: Term ubody
+            | Term.Structfield.Higher _ | Term.Structfield.LazyHigher _ ->
+                fatal (Unimplemented "unparsing higher comatch fields"))
+          Emp fields in
+      unlocated (outfix ~notn:comatch ~inner:(Multiple (wstok LBracket, inner, wstok RBracket)))
 
 (* Unparse a spine with its arguments whose head could be many things: an as-yet-not-unparsed term, a constructor, a field projection, a degeneracy, or a general delayed unparsing. *)
 and unparse_spine : type n lt ls rt rs.

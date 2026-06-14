@@ -101,6 +101,28 @@ let print (tm : string) : unit =
       print_newline ()
   | _ -> fatal (Nonsynthesizing "argument of print")
 
+(* Define a constant and return its stored case tree, unparsed back to a string.  This exercises the unparsing of canonical types, matches, and comatches. *)
+let unparse_def (name : string) (ty : string) (tm : string) : string =
+  Global.run @@ fun () ->
+  let p = Parse.Term.parse (`String { title = Some "constant name"; content = name }) in
+  match Parse.Term.final p with
+  | Wrap { value = Ident (name, _); _ } ->
+      Scope.check_name name None;
+      let const = Scope.define name in
+      let rty = parse_term ty in
+      let rtm = parse_term tm in
+      let cty = check_type rty in
+      let ety = eval_term (Emp D.zero) cty in
+      Global.add const cty (`Axiom, `Parametric);
+      let tree = check (Potential (Constant (const, D.zero), Emp, fun x -> x)) Ctx.empty rtm ety in
+      Global.add const cty (`Defined tree, `Parametric);
+      Readback.Displaying.run ~env:true @@ fun () ->
+      let utm = unparse Names.empty tree No.Interval.entire No.Interval.entire in
+      let buf = Buffer.create 64 in
+      PPrint.ToBuffer.pretty 1.0 (Display.columns ()) buf (pp_complete_term (Wrap utm) `None);
+      Buffer.contents buf
+  | _ -> fatal (Invalid_constant_name ([ name ], None))
+
 let run f =
   Lexer.Specials.run @@ fun () ->
   Parser.Unparse.install ();

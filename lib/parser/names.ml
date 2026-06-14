@@ -28,6 +28,29 @@ let rec remove_ctx : type a n b. b ctx -> (a, n, b) Tbwd.insert -> a ctx =
 let remove : type a n b. b t -> (a, n, b) Tbwd.insert -> a t =
  fun { ctx; used } i -> { ctx = remove_ctx ctx i; used }
 
+(* Extract the entry at an insertion position, returning the rest of the context and the extracted entry. *)
+let rec extract_ctx : type a n b.
+    b ctx -> (a, n, b) Tbwd.insert -> a ctx * ((n, string) gvariables * (string, string) Abwd.t) =
+ fun ctx i ->
+  match (ctx, i) with
+  | Snoc (ctx, vars, flds), Now -> (ctx, (vars, flds))
+  | Snoc (ctx, vars, flds), Later i ->
+      let ctx, e = extract_ctx ctx i in
+      (Snoc (ctx, vars, flds), e)
+  | Emp, _ -> .
+
+(* Permute a context, e.g. to match the permutation stored in a match branch. *)
+let rec permute_ctx : type c b. (c, b) Tbwd.permute -> b ctx -> c ctx =
+ fun perm ctx ->
+  match perm with
+  | Id -> ctx
+  | Insert (p, ins) ->
+      let ctx, (vars, flds) = extract_ctx ctx ins in
+      Snoc (permute_ctx p ctx, vars, flds)
+
+let permute : type c b. (c, b) Tbwd.permute -> b t -> c t =
+ fun perm { ctx; used } -> { ctx = permute_ctx perm ctx; used }
+
 let cubevar x fa : string list =
   let fa = string_of_sface fa in
   if fa = "" then [ x ] else [ x; fa ]
