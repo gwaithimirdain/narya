@@ -500,7 +500,7 @@ handling in Proof General."
 
  ;; Undo
  proof-non-undoables-regexp            "undo"
- proof-ignore-for-undo-count           "echo\\|synth\\|show\\|undo"
+ proof-ignore-for-undo-count           "echo\\|synth\\|about\\|show\\|undo"
  proof-undo-n-times-cmd                "undo %s\n\x0C" ;; has to end with a formfeed to terminate a PG-mode command
  proof-state-preserving-p              'narya-state-preserving-p
  ;; The difference between proof-count-undos-fn and proof-find-and-forget-fn seems to be that the former is called iff staying inside a single proof.  However, as far as I can see, for Narya the default value of the former also works for the latter.
@@ -991,6 +991,7 @@ With a negative prefix argument,set display of type boundaries off."
 (defvar narya-minibuffer-commands
   '("echo"
     "synth"
+    "about"
     "show hole"
     "show holes"
     "display chars ≔ unicode"

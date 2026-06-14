@@ -90,6 +90,12 @@ Normalize ``TERM`` and print its value and its type to standard output.  Note th
 
 Like ``echo``, but does not normalize the term, only computes its type.
 
+.. code-block:: none
+
+   about TERM
+
+Like ``echo``, but if the normalized result is a neutral application of a defined constant (such as a :ref:`canonical type<Canonical types defined by case trees>` or a not-yet-reducing function), it displays that constant's underlying definition — its canonical type declaration or case tree — instead of just its name.  If the result is not such a neutral, it behaves exactly like ``echo``.
+
 Notation
 ^^^^^^^^
 
@@ -183,7 +189,7 @@ Undo
 
    undo N
 
-Undo the last ``N`` commands that modify the global state, rewinding to a previous situation.  This includes all commands except ``echo``, ``synth``, ``show``, ``solve``, ``split``, and ``display``: those commands are skipped over when undoing.  (Of course ``solve`` does modify the global state, but it is not undoable because it doesn't affect the "processed position" in ProofGeneral; it exists "outside the timestream".)  The command ``undo`` itself is also not "undoable" and there is no "redo": after a command is undone, it is lost permanently from Narya's memory (although you can press Up-arrow or Meta+P to find it in the interactive history and re-execute it).  Following an ``undo`` with another ``undo`` will just undo additional commands: ``undo 1`` followed by ``undo 1`` is the same as ``undo 2``.
+Undo the last ``N`` commands that modify the global state, rewinding to a previous situation.  This includes all commands except ``echo``, ``synth``, ``about``, ``show``, ``solve``, ``split``, and ``display``: those commands are skipped over when undoing.  (Of course ``solve`` does modify the global state, but it is not undoable because it doesn't affect the "processed position" in ProofGeneral; it exists "outside the timestream".)  The command ``undo`` itself is also not "undoable" and there is no "redo": after a command is undone, it is lost permanently from Narya's memory (although you can press Up-arrow or Meta+P to find it in the interactive history and re-execute it).  Following an ``undo`` with another ``undo`` will just undo additional commands: ``undo 1`` followed by ``undo 1`` is the same as ``undo 2``.
 
 Display
 ^^^^^^^
@@ -287,7 +293,7 @@ The most useful ProofGeneral key commands for Narya are the following.
 - ``C-c C-.`` : Move the cursor to the end of the processed region.
 - ``C-M-a`` : Move the cursor to the beginning of the command it is inside.
 - ``C-M-e`` : Move the cursor to the end of the command it is inside.
-- ``C-c C-v`` : Read a "state-preserving" command from the minibuffer and execute it, displaying its output in the result buffer.  Currently the only state-preserving commands are ``echo``, ``synth``, ``show``, and ``display``.
+- ``C-c C-v`` : Read a "state-preserving" command from the minibuffer and execute it, displaying its output in the result buffer.  Currently the only state-preserving commands are ``echo``, ``synth``, ``about``, ``show``, and ``display``.
 - ``C-c C-c`` : Interrupt Narya if a command is taking too long.  Narya attempts to recover, but its state may be unreliable afterwards.
 - ``C-c C-x`` : Retract the buffer and kill the Narya subprocess.
 - ``M-;`` : Insert a comment, remove a comment, or comment out a region.  This is a standard Emacs command, but is customized to use line comments on code lines and block comments elsewhere.

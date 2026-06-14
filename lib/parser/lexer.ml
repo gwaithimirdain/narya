@@ -329,6 +329,7 @@ let get_reserved_word = function
   | "and" -> Some And
   | "echo" -> Some Echo
   | "synth" -> Some Synth
+  | "about" -> Some About
   | "quit" -> Some Quit
   | "match" -> Some Match
   | "return" -> Some Return

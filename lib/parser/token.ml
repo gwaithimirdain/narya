@@ -33,6 +33,7 @@ type t =
   | Axiom
   | Codata
   | Data
+  | About
   | Def
   | Display
   | Echo
@@ -184,6 +185,7 @@ let to_string = function
   | And -> "and"
   | Echo -> "echo"
   | Synth -> "synth"
+  | About -> "about"
   | Quit -> "quit"
   | Match -> "match"
   | Return -> "return"
