@@ -280,6 +280,56 @@ let rec add_match_vars : type a b m ab.
       let vars, xs = add_match_vars dim vars snocs in
       (vars, x :: xs)
 
+(* The result of reading back a constructor's argument telescope from a value: the telescope as a term, plus the context and environment extended by fresh variables for its arguments (needed to read back the index values that follow it). *)
+type (_, _, _) rb_tel =
+  | Rb_tel :
+      ('e, 'c, 'ec) Term.tel * ('lev, 'ec) Ctx.t * (D.zero, 'ac) Value.env
+      -> ('e, 'c, 'ac) rb_tel
+
+(* Read back a (zero-dimensional) telescope of value-level types into a term-level telescope in the readback context, introducing a fresh variable for each entry. *)
+let rec readback_tel : type lev e a c ac.
+    (lev, e) Ctx.t -> (D.zero, a) Value.env -> (a, c, ac) Term.tel -> (e, c, ac) rb_tel =
+ fun ctx env tel ->
+  match tel with
+  | Emp -> Rb_tel (Emp, ctx, env)
+  | Ext (name, rty, rest) ->
+      let ety = Norm.eval_term env rty in
+      let newvars, newnfs = Domvars.dom_vars ctx (CubeOf.singleton ety) in
+      let trty = readback_val ~sort:`Type ctx ety in
+      let ctx = Ctx.cube_vis ctx name newnfs in
+      let env = Value.Ext (env, D.plus_zero D.zero, Ok newvars) in
+      let (Rb_tel (resttel, fctx, fenv)) = readback_tel ctx env rest in
+      Rb_tel (Ext (name, trty, resttel), fctx, fenv)
+
+(* Read back a value-level datatype constructor (at dimension zero) into a term-level one in the readback context.  We read back the constructor's argument telescope, but omit its output index values: reconstructing those faithfully would require recovering the index types (in order to read back index values that may themselves be constructors), and for displaying the shape of a datatype the argument telescopes are the important part.  Thus the result always has zero indices. *)
+let readback_dataconstr : type lev e ij.
+    (lev, e) Ctx.t -> (D.zero, ij) Value.dataconstr -> (e, Fwn.zero) Term.dataconstr =
+ fun ctx (Dataconstr { env; args; indices = _ }) ->
+  let (Rb_tel (tel, _, _)) = readback_tel ctx env args in
+  Dataconstr { args = tel; indices = [] }
+
+(* Read back the (zero-dimensional, lower) fields of a value-level codatatype/record into term-level fields in the readback context extended by a "self" variable.  The self variable is given the codatatype itself as its type; since it only ever appears as the head of a field projection, no eta-expansion is triggered. *)
+let readback_codata_fields : type lev e a et.
+    (lev, e) Ctx.t ->
+    kinetic Value.value ->
+    (D.zero, a) Value.env ->
+    (a * D.zero * et) Term.CodatafieldAbwd.t ->
+    (e * D.zero * et) Term.CodatafieldAbwd.t =
+ fun ctx selfty env fields ->
+  let selfvars, selfnfs = Domvars.dom_vars ctx (CubeOf.singleton selfty) in
+  let ctx = Ctx.cube_vis ctx None selfnfs in
+  let env = Value.Ext (env, D.plus_zero D.zero, Ok selfvars) in
+  Bwd.map
+    (fun (Term.CodatafieldAbwd.Entry
+            (type i)
+            ((fld, cf) : i Field.t * (i, a * D.zero * et) Term.Codatafield.t)) ->
+      match cf with
+      | Term.Codatafield.Lower tm ->
+          let trty = readback_val ~sort:`Type ctx (Norm.eval_term env tm) in
+          Term.CodatafieldAbwd.Entry (fld, Term.Codatafield.Lower trty)
+      | Term.Codatafield.Higher _ -> fatal (Unimplemented "reading back higher codata fields"))
+    fields
+
 (* The primary unparsing function.  Given the variable names, unparse a term into given tightness intervals. *)
 let rec unparse : type n lt ls rt rs s.
     n Names.t ->
@@ -596,6 +646,45 @@ and unparse_comatch : type n a s et lt ls rt rs.
                 fatal (Unimplemented "unparsing higher comatch fields"))
           Emp fields in
       unlocated (outfix ~notn:comatch ~inner:(Multiple (wstok LBracket, inner, wstok RBracket)))
+
+(* If a (normalized) value is a neutral whose potential value is a canonical type (a datatype, codatatype, or record), read it back and unparse it as the corresponding canonical-type declaration.  This lets us display, for instance, "List Nat" as "data [ nil. | cons. (x : Nat) (xs : List Nat) ]".  Returns None if the value is not such a neutral, or if it is higher-dimensional (in which case the caller falls back to other display methods). *)
+and unparse_canonical_value : type a b lt ls rt rs.
+    (a, b) Ctx.t ->
+    kinetic Value.value ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located option =
+ fun ctx tm li ri ->
+  match tm with
+  | Value.Neu { value; _ } -> (
+      match Norm.force_eval value with
+      | Val (Value.Canonical { canonical; ins; _ }) -> (
+          match is_id_ins ins with
+          | None -> None
+          | Some _ -> (
+              match canonical with
+              | Value.Data data_args -> (
+                  match D.compare_zero data_args.dim with
+                  | Zero ->
+                      let names = Names.of_ctx ctx in
+                      let constrs =
+                        Abwd.map (fun dc -> readback_dataconstr ctx dc) data_args.constrs in
+                      Some (unparse_data names constrs li ri)
+                  | Pos _ -> None)
+              | Value.Codata codata_args -> (
+                  match
+                    ( D.compare_zero (cod_right_ins ins),
+                      D.compare_zero (Value.dim_env codata_args.env) )
+                  with
+                  | Zero, Zero ->
+                      let names = Names.of_ctx ctx in
+                      let fields =
+                        readback_codata_fields ctx tm codata_args.env codata_args.fields in
+                      Some (unparse_codata names codata_args.eta D.zero fields li ri)
+                  | _ -> None)
+              | Value.UU _ | Value.Pi _ -> None))
+      | _ -> None)
+  | _ -> None
 
 (* Unparse a spine with its arguments whose head could be many things: an as-yet-not-unparsed term, a constructor, a field projection, a degeneracy, or a general delayed unparsing. *)
 and unparse_spine : type n lt ls rt rs.

@@ -963,7 +963,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
           Readback.Displaying.run ~env:true @@ fun () ->
           let ctm, ety = Check.synth (Kinetic `Nolet) ctx { value = stm; loc = rtm.loc } in
           let names = Names.of_ctx ctx in
-          (* In "echo" and "about" mode we normalize the term; in "about" mode, if the result is a neutral whose head is a defined constant, we additionally display the constant's potential value (its canonical type or case tree) rather than just its name. *)
+          (* In "echo" and "about" mode we normalize the term.  In "about" mode, if the result is a neutral, we additionally try to display its potential value: first by reading back a canonical type (e.g. displaying "List Nat" as the corresponding datatype), and failing that, if it is a bare defined constant, by displaying that constant's stored case tree. *)
           let utm =
             match mode with
             | `Synth -> unparse names ctm No.Interval.entire No.Interval.entire
@@ -972,17 +972,21 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                 unparse names (readback_at ctx etm ety) No.Interval.entire No.Interval.entire
             | `About -> (
                 let etm = Norm.eval_term (Ctx.env ctx) ctm in
-                match etm with
-                | Value.Neu { head = Value.Const { name; ins }; args = Value.Emp; _ }
-                  when Option.is_some (is_id_ins ins) -> (
-                    match Global.find name with
-                    | _, (`Defined tree, _) ->
-                        unparse Names.empty tree No.Interval.entire No.Interval.entire
-                    | _, (`Axiom, _) ->
+                match unparse_canonical_value ctx etm No.Interval.entire No.Interval.entire with
+                | Some utm -> utm
+                | None -> (
+                    match etm with
+                    | Value.Neu { head = Value.Const { name; ins }; args = Value.Emp; _ }
+                      when Option.is_some (is_id_ins ins) -> (
+                        match Global.find name with
+                        | _, (`Defined tree, _) ->
+                            unparse Names.empty tree No.Interval.entire No.Interval.entire
+                        | _, (`Axiom, _) ->
+                            unparse names (readback_at ctx etm ety) No.Interval.entire
+                              No.Interval.entire)
+                    | _ ->
                         unparse names (readback_at ctx etm ety) No.Interval.entire
-                          No.Interval.entire)
-                | _ -> unparse names (readback_at ctx etm ety) No.Interval.entire No.Interval.entire
-                ) in
+                          No.Interval.entire)) in
           let bty = readback_at ctx ety (Value.universe D.zero) in
           let uty = unparse names bty No.Interval.entire No.Interval.entire in
           PPrint.(

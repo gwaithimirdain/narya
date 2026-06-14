@@ -94,7 +94,7 @@ Like ``echo``, but does not normalize the term, only computes its type.
 
    about TERM
 
-Like ``echo``, but if the normalized result is a neutral application of a defined constant (such as a :ref:`canonical type<Canonical types defined by case trees>` or a not-yet-reducing function), it displays that constant's underlying definition — its canonical type declaration or case tree — instead of just its name.  If the result is not such a neutral, it behaves exactly like ``echo``.
+Like ``echo``, but if the normalized result is a neutral, it tries to display the term's *potential value* instead of just its name.  In particular, if the result is (or is an application reducing to) a :ref:`canonical type<Canonical types defined by case trees>`, the canonical type declaration is read back and displayed; for instance, if ``List`` is defined as ``A ↦ data [ nil. | cons. (x : A) (xs : List A) ]``, then ``about (List N)`` displays ``data [ nil. | cons. (x : N) (xs : List N) ]``.  Failing that, if the result is a bare defined constant, its stored case tree is displayed.  If neither applies, ``about`` behaves exactly like ``echo``.  (Index values of indexed datatype constructors are omitted when reading back a canonical type value, since their types are not recoverable from the value alone.)
 
 Notation
 ^^^^^^^^
