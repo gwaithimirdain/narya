@@ -308,41 +308,6 @@ let readback_dataconstr : type lev e ij.
   let (Rb_tel (tel, _, _)) = readback_tel ctx env args in
   Dataconstr { args = tel; indices = [] }
 
-(* Read back the (lower) fields of a value-level codatatype/record into term-level fields in the readback context extended by a "self" variable of the codatatype's intrinsic dimension.  The self variable's faces are all given the codatatype itself as their type: this is dimensionally imprecise for a positive-dimensional codatatype (Gel-like), but since the self variable only ever appears as the head of a field projection, synthesizing readback never inspects those types, so the result is still correct.  This is why we read back the field types with the synthesizing [readback_val] rather than a type-directed readback. *)
-let readback_codata_fields : type lev e a n et.
-    (lev, e) Ctx.t ->
-    kinetic Value.value ->
-    n D.t ->
-    (D.zero, a) Value.env ->
-    (a * n * et) Term.CodatafieldAbwd.t ->
-    (e * n * et) Term.CodatafieldAbwd.t =
- fun ctx selfty n env fields ->
-  (* Build a cube of fresh variables for the self variable, one per face, as in Domvars.dom_vars but without computing precise boundary types (which aren't recoverable from the value). *)
-  let i = Ctx.level ctx in
-  let j = ref 0 in
-  let selfnfs =
-    CubeOf.build n
-      {
-        build =
-          (fun _ ->
-            let level = (i, !j) in
-            j := !j + 1;
-            Ctx.Binding.make (Some level) { tm = Value.var level selfty; ty = selfty });
-      } in
-  let selfvars = CubeOf.mmap { map = (fun _ [ b ] -> (Ctx.Binding.value b).tm) } [ selfnfs ] in
-  let ctx = Ctx.cube_vis ctx None selfnfs in
-  let env = Value.Ext (env, D.zero_plus n, Ok selfvars) in
-  Bwd.map
-    (fun (Term.CodatafieldAbwd.Entry
-            (type i)
-            ((fld, cf) : i Field.t * (i, a * n * et) Term.Codatafield.t)) ->
-      match cf with
-      | Term.Codatafield.Lower tm ->
-          let trty = readback_val ~sort:`Type ctx (Norm.eval_term env tm) in
-          Term.CodatafieldAbwd.Entry (fld, Term.Codatafield.Lower trty)
-      | Term.Codatafield.Higher _ -> fatal (Unimplemented "reading back higher codata fields"))
-    fields
-
 (* The primary unparsing function.  Given the variable names, unparse a term into given tightness intervals. *)
 let rec unparse : type n lt ls rt rs s.
     n Names.t ->
@@ -672,29 +637,63 @@ and unparse_canonical_value : type a b lt ls rt rs.
   | Value.Neu { value; _ } -> (
       match Norm.force_eval value with
       | Val (Value.Canonical { canonical; ins; _ }) -> (
-          match is_id_ins ins with
-          | None -> None
-          | Some _ -> (
-              match canonical with
-              | Value.Data data_args -> (
-                  match D.compare_zero data_args.dim with
-                  | Zero ->
-                      let names = Names.of_ctx ctx in
-                      let constrs =
-                        Abwd.map (fun dc -> readback_dataconstr ctx dc) data_args.constrs in
-                      Some (unparse_data names constrs li ri)
-                  | Pos _ -> None)
-              | Value.Codata codata_args -> (
-                  (* The codatatype may have positive intrinsic dimension (e.g. a Gel-type), which we pass to unparse_codata for the self variable; but we still require its substitution dimension to be zero. *)
-                  match D.compare_zero (Value.dim_env codata_args.env) with
-                  | Zero ->
-                      let n = cod_right_ins ins in
-                      let names = Names.of_ctx ctx in
-                      let fields =
-                        readback_codata_fields ctx tm n codata_args.env codata_args.fields in
-                      Some (unparse_codata names codata_args.eta n fields li ri)
-                  | Pos _ -> None)
-              | Value.UU _ | Value.Pi _ -> None))
+          match canonical with
+          | Value.Data data_args -> (
+              (* Degenerate (positive substitution dimension) datatypes are not yet handled: those would require reconstructing the higher-dimensional constructor types. *)
+              match (is_id_ins ins, D.compare_zero data_args.dim) with
+              | Some _, Zero ->
+                  let names = Names.of_ctx ctx in
+                  let constrs = Abwd.map (fun dc -> readback_dataconstr ctx dc) data_args.constrs in
+                  Some (unparse_data names constrs li ri)
+              | _ -> None)
+          (* Codatatypes/records are handled uniformly whether 0-dimensional, intrinsically higher (Gel-like), or degenerate: we introduce a self variable of the codatatype's full dimension and read back each field's type with tyof_field.  The evaluation (substitution) dimension, cod_left_ins of the insertion, is needed to form the field projections. *)
+          | Value.Codata codata_args ->
+              unparse_codata_value ctx tm (cod_left_ins ins) codata_args.eta codata_args.fields li
+                ri
+          | Value.UU _ | Value.Pi _ -> None)
+      | _ -> None)
+  | _ -> None
+
+(* Unparse a value-level codatatype/record by introducing a self variable of its full dimension (via dom_vars, which gives the top self-variable the fully-instantiated codatatype as its type) and reading back the type of each field with tyof_field.  This handles 0-dimensional, intrinsically-higher (Gel-like), and degenerate codatatypes uniformly, displaying the in-practice (possibly higher-dimensional) field types. *)
+and unparse_codata_value : type a b m p q et lt ls rt rs.
+    (a, b) Ctx.t ->
+    kinetic Value.value ->
+    m D.t ->
+    (potential, et) eta ->
+    (p * q * et) Term.CodatafieldAbwd.t ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located option =
+ fun ctx tm evaldim eta orig_fields li ri ->
+  match tm with
+  | Value.Neu { ty; _ } -> (
+      match View.view_type (Lazy.force ty) "unparse_codata_value" with
+      | Canonical (_, UU mk, ins, boundary) ->
+          (* The universe has intrinsic dimension zero, so its substitution dimension equals its total dimension mk. *)
+          let Eq = eq_of_ins_zero ins in
+          (* The self variable ranges over the codatatype; dom_vars builds its boundary faces and gives the top face the fully-instantiated codatatype as its type. *)
+          let dom = TubeOf.plus_cube (Value.val_of_norm_tube boundary) (CubeOf.singleton tm) in
+          let selfvars, selfnfs = Domvars.dom_vars ctx dom in
+          let self_top = CubeOf.find_top selfvars in
+          let self_top_ty = (Ctx.Binding.value (CubeOf.find_top selfnfs)).ty in
+          let ctx' = Ctx.cube_vis ctx None selfnfs in
+          let names = Names.of_ctx ctx in
+          let fields =
+            Bwd.map
+              (fun (Term.CodatafieldAbwd.Entry
+                      (type i)
+                      ((fld, cf) : i Field.t * (i, p * q * et) Term.Codatafield.t)) ->
+                match cf with
+                | Term.Codatafield.Lower _ ->
+                    let fldty =
+                      Norm.tyof_field (Ok self_top) self_top_ty fld ~shuf:Norm.Trivial
+                        (ins_zero evaldim) in
+                    let fldty = readback_val ~sort:`Type ctx' fldty in
+                    Term.CodatafieldAbwd.Entry (fld, Term.Codatafield.Lower fldty)
+                | Term.Codatafield.Higher _ ->
+                    fatal (Unimplemented "unparsing higher codata fields"))
+              orig_fields in
+          Some (unparse_codata names eta mk fields li ri)
       | _ -> None)
   | _ -> None
 

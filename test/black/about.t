@@ -55,3 +55,21 @@ A higher-dimensional (Gel-like) codatatype is read back at its intrinsic dimensi
     : Type⁽ᵈ⁾ A
   
 
+
+A degenerate codatatype or record is read back at its full dimension, showing the in-practice (higher-dimensional) field types, including higher-pi field types with their boundary faces.
+
+  $ narya -e 'axiom X : Type' -e 'def Stream : Type → Type ≔ A ↦ codata [ x .head : A | x .tail : Stream A ]' -e 'def R : Type ≔ sig ( a : Type, b : (a → Type) )' -e 'about (refl (Stream X))' -e 'about (refl R)'
+  codata [
+  | 𝑥 .head : Id X (𝑥.0 .head) (𝑥.1 .head)
+  | 𝑥 .tail : Stream⁽ᵉ⁾ (Id X) (𝑥.0 .tail) (𝑥.1 .tail) ]
+    : Type⁽ᵉ⁾ (Stream X) (Stream X)
+  
+  sig (
+    𝑥 .a : Type⁽ᵉ⁾ (𝑥.0 .a) (𝑥.1 .a),
+    𝑥 .b : {𝑥₀ : 𝑥.0 .a} {𝑥₁ : 𝑥.1 .a} (𝑥₂ : 𝑥.2 .a 𝑥₀ 𝑥₁)
+           →⁽ᵉ⁾ Type⁽ᵉ⁾ (𝑥.0 .b 𝑥₀) (𝑥.1 .b 𝑥₁) )
+    : Type⁽ᵉ⁾ R R
+  
+
+
+
