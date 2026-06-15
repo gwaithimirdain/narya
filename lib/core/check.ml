@@ -212,20 +212,19 @@ let rec namevec_to_vec : type a b ab. (a, b, ab) Namevec.t -> (string option, b)
   | [] -> Vec.nil
   | x :: xs -> Vec.cons x (namevec_to_vec xs)
 
-(* Extract the index *values* of a constructor (the trailing 'i arguments of its output type "D params indices"), as terms over the constructor's argument context.  The output is a zero-dimensional application spine, so the indices are simply its last 'i applied arguments. *)
+(* Extract the index *values* of a constructor (the trailing 'i arguments of its output type "D params indices"), as terms over the constructor's argument context.  The output is a zero-dimensional application spine, so we peel off its last 'i applied arguments in a single pass, mirroring Vec.take_bwd by returning the remaining function along with the arguments taken so far. *)
 let indices_of_output : type a i. (a, kinetic) term -> i Fwn.t -> ((a, kinetic) term, i) Vec.t =
  fun output i ->
-  let rec peel : (a, kinetic) term -> int -> (a, kinetic) term list -> (a, kinetic) term list =
-   fun tm n acc ->
-    if n <= 0 then acc
-    else
-      match tm with
-      | Term.App (fn, args) -> peel fn (n - 1) (CubeOf.find_top args :: acc)
-      | _ -> fatal (Anomaly "constructor output is not a full application") in
-  let (Wrap idxs) = Vec.of_list (peel output (Fwn.to_int i) []) in
-  match Fwn.compare (Vec.length idxs) i with
-  | Eq -> idxs
-  | _ -> fatal (Anomaly "wrong number of indices extracted from constructor output")
+  let rec peel : type j.
+      j Fwn.t -> (a, kinetic) term -> (a, kinetic) term * ((a, kinetic) term, j) Vec.t =
+   fun j tm ->
+    match j with
+    | Zero -> (tm, [])
+    | Suc j -> (
+        match peel j tm with
+        | Term.App (fn, args), ys -> (fn, CubeOf.find_top args :: ys)
+        | _ -> fatal (Anomaly "constructor output is not a full application")) in
+  snd (peel i output)
 
 (* This preprocesssing step pairs each user-provided branch with the corresponding constructor information from the datatype. *)
 let merge_branches : type a m ij.
