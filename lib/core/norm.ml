@@ -979,7 +979,8 @@ and eval_canonical : type m a. (m, a) env -> a Term.canonical -> potential evalu
       let tyfam = ref None in
       let constrs =
         Abwd.map
-          (fun (Term.Dataconstr { args; indices }) -> Value.Dataconstr { env; args; indices })
+          (fun (Term.Dataconstr { args; indices; output }) ->
+            Value.Dataconstr { env; args; indices; output })
           constrs in
       let dim = dim_env env in
       let canonical = Data { dim; tyfam; indices = Fillvec.empty indices; constrs; discrete } in

@@ -143,6 +143,8 @@ module rec Term : sig
     | Dataconstr : {
         args : ('p, 'a, 'pa) tel;
         indices : (('pa, kinetic) term, 'i) Vec.t;
+        (* The output type of the constructor, i.e. the datatype family applied to the parameters and indices, as written by the user (if any).  It is redundant with 'indices' but stored separately so that the full function-type of the constructor can be reconstructed, e.g. for displaying degenerate (higher-dimensional) datatypes. *)
+        output : ('pa, kinetic) term option;
       }
         -> ('p, 'i) dataconstr
 
@@ -336,6 +338,7 @@ end = struct
     | Dataconstr : {
         args : ('p, 'a, 'pa) tel;
         indices : (('pa, kinetic) term, 'i) Vec.t;
+        output : ('pa, kinetic) term option;
       }
         -> ('p, 'i) dataconstr
 

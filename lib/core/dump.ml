@@ -265,7 +265,7 @@ module F = struct
                 fields))
 
   and dataconstr : type p i. formatter -> (p, i) Term.dataconstr -> unit =
-   fun ppf (Dataconstr { args; indices = _ }) -> fprintf ppf "%a : ?" tel args
+   fun ppf (Dataconstr { args; indices = _; output = _ }) -> fprintf ppf "%a : ?" tel args
 
   and tel : type a b ab. formatter -> (a, b, ab) Term.tel -> unit =
    fun ppf -> function

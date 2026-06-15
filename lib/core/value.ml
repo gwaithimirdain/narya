@@ -130,6 +130,7 @@ module rec Value : sig
         env : ('m, 'a) env;
         args : ('a, 'p, 'ap) Telescope.t;
         indices : (('ap, kinetic) term, 'ij) Vec.t;
+        output : ('ap, kinetic) term option;
       }
         -> ('m, 'ij) dataconstr
 
@@ -304,6 +305,7 @@ end = struct
         env : ('m, 'a) env;
         args : ('a, 'p, 'ap) Telescope.t;
         indices : (('ap, kinetic) term, 'ij) Vec.t;
+        output : ('ap, kinetic) term option;
       }
         -> ('m, 'ij) dataconstr
 

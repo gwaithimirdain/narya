@@ -228,7 +228,7 @@ let merge_branches : type a m ij.
         (* We check at the preprocessing stage that there are no duplicate constructors in the match. *)
         if Abwd.mem constr userbrs then fatal ?loc (Duplicate_constructor_in_match constr);
         let databrs, databr = Abwd.extract constr databrs in
-        let (Value.Dataconstr { env; args = argtys; indices = index_terms }) =
+        let (Value.Dataconstr { env; args = argtys; indices = index_terms; output = _ }) =
           match databr with
           | Some db -> db
           | None -> fatal ?loc (No_such_constructor_in_match (phead head, constr)) in
@@ -253,7 +253,7 @@ let merge_branches : type a m ij.
   (* If there are any constructors in the datatype left over that the user didn't supply branches for, we add them to the list at the end.  They will be tested for refutability. *)
   Bwd.prepend user_branches
     (Bwd_extra.to_list_map
-       (fun (c, Value.Dataconstr { env; args = argtys; indices = index_terms }) ->
+       (fun (c, Value.Dataconstr { env; args = argtys; indices = index_terms; output = _ }) ->
          let b = Telescope.length argtys in
          let (Bplus plus_args) = Raw.Indexed.bplus b in
          let xs = Namevec.none plus_args in
@@ -550,7 +550,8 @@ let rec check : type a b s.
             (* We don't need the *types* of the parameters or indices, which are stored in the type of the constant name.  The variable ty_indices (defined above) contains the *values* of the indices of this instance of the datatype, while tyargs (defined by view_type, way above) contains the instantiation arguments of this instance of the datatype.  We check that the dimensions agree, and find our current constructor in the datatype definition. *)
             match Abwd.find_opt constr constrs with
             | None -> fatal ?loc:constr_loc (No_such_constructor (`Data (phead name), constr))
-            | Some (Dataconstr { env; args = constr_arg_tys; indices = constr_indices }) ->
+            | Some (Dataconstr { env; args = constr_arg_tys; indices = constr_indices; output = _ })
+              ->
                 (* To typecheck a higher-dimensional instance of our constructor constr at the datatype, all the instantiation arguments must also be applications of lower-dimensional versions of that same constructor.  We check this, and extract the arguments of those lower-dimensional constructors as a tube of lists in the variable "tyarg_args". *)
                 let tyarg_args =
                   TubeOf.mmap
@@ -1855,7 +1856,8 @@ and check_data : type a b i.
                         match Fwn.compare (Vec.length indices) num_indices with
                         | Eq ->
                             ( disc,
-                              checked_constrs |> Abwd.add c (Term.Dataconstr { args; indices }),
+                              checked_constrs
+                              |> Abwd.add c (Term.Dataconstr { args; indices; output = Some coutput }),
                               errs )
                         | _ ->
                             (* I think this shouldn't ever happen, no matter what the user writes, since we know at this point that the output is a full application of the correct constant, so it must have the right number of arguments. *)
@@ -1872,7 +1874,10 @@ and check_data : type a b i.
                 Reporter.try_with ~fatal:(fun e -> (true, checked_constrs, Snoc (errs, e)))
                 @@ fun () ->
                 let Checked_tel (args, _), disc = check_tel ?discrete ctx args in
-                (disc, checked_constrs |> Abwd.add c (Term.Dataconstr { args; indices = [] }), errs)
+                ( disc,
+                  checked_constrs
+                  |> Abwd.add c (Term.Dataconstr { args; indices = []; output = None }),
+                  errs )
               in
               check_data
                 ~discrete:(if disc then discrete else None)

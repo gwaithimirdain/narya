@@ -105,6 +105,30 @@ For a codatatype with a higher field, every instance of that field that a comatc
   
 
 
+A degenerate (non-indexed) datatype is read back by reconstructing each constructor's higher-dimensional function-type: the constructor-as-a-function is degenerated, which instantiates the codomain at the lower-dimensional constructors (so e.g. cons. lands in List⁽ᵉ⁾ (Id X) (cons. x₀ xs₀) (cons. x₁ xs₁)).  Indexed degenerate datatypes are not yet supported and fall back to displaying the neutral.
+
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'axiom X : Type' -e 'def List : Type → Type ≔ A ↦ data [ nil. | cons. (x : A) (xs : List A) ]' -e 'def Vec : Type → N → Type ≔ A ↦ data [ nil. : Vec A zero. | cons. : (n : N) → A → Vec A n → Vec A (suc. n) ]' -e 'about (refl (List X))' -e 'about (refl N)' -e 'about (refl (Vec X zero.))'
+  data [
+  | nil. : List⁽ᵉ⁾ (Id X) nil. nil.
+  | cons.
+    : {x₀ : X} {x₁ : X} (x₂ : Id X x₀ x₁) {xs₀ : List X} {xs₁ : List X}
+      (xs₂ : List⁽ᵉ⁾ (Id X) xs₀ xs₁)
+      →⁽ᵉ⁾ List⁽ᵉ⁾ (Id X) (cons. x₀ xs₀) (cons. x₁ xs₁) ]
+    : Type⁽ᵉ⁾ (List X) (List X)
+  
+  data [
+  | zero. : N⁽ᵉ⁾ 0 0
+  | suc. : {𝑥₀ : N} {𝑥₁ : N} (𝑥₂ : N⁽ᵉ⁾ 𝑥₀ 𝑥₁) →⁽ᵉ⁾ N⁽ᵉ⁾ (suc. 𝑥₀) (suc. 𝑥₁) ]
+    : Type⁽ᵉ⁾ N N
+  
+  Vec⁽ᵉ⁾ (Id X) {0} {0} (refl 0)
+    : Type⁽ᵉ⁾ (Vec X 0) (Vec X 0)
+  
+
+
+
+
+
 
 
 

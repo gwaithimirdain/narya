@@ -102,7 +102,7 @@ module Equal = struct
           | `Full -> (view_term x, view_term y) in
         match (x, y) with
         | Constr (xconstr, xn, xargs), Constr (yconstr, yn, yargs) -> (
-            let (Dataconstr { env; args = argtys; indices = _ }) =
+            let (Dataconstr { env; args = argtys; indices = _; output = _ }) =
               match Abwd.find_opt xconstr constrs with
               | Some x -> x
               | None -> fatal (Anomaly "constr not found in equality-check") in

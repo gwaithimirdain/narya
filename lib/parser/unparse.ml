@@ -284,10 +284,13 @@ let rec add_match_vars : type a b m ab.
       let vars, xs = add_match_vars dim vars names snocs in
       (vars, x :: xs)
 
-(* The result of reading back a constructor's argument telescope from a value: the telescope as a term, plus the context and environment extended by fresh variables for its arguments (needed to read back the index values that follow it). *)
+(* The result of reading back a constructor's argument telescope from a value: the telescope as a term, plus the context and environment extended by fresh variables for its arguments (needed to read back the index values that follow it), and the (top-dimensional) values of those fresh argument variables in order (needed to build the constructor-as-a-function for degenerate datatypes). *)
 type (_, _, _) rb_tel =
   | Rb_tel :
-      ('e, 'c, 'ec) Term.tel * ('lev, 'ec) Ctx.t * (D.zero, 'ac) Value.env
+      ('e, 'c, 'ec) Term.tel
+      * ('lev, 'ec) Ctx.t
+      * (D.zero, 'ac) Value.env
+      * kinetic Value.value list
       -> ('e, 'c, 'ac) rb_tel
 
 (* Read back a (zero-dimensional) telescope of value-level types into a term-level telescope in the readback context, introducing a fresh variable for each entry. *)
@@ -295,15 +298,15 @@ let rec readback_tel : type lev e a c ac.
     (lev, e) Ctx.t -> (D.zero, a) Value.env -> (a, c, ac) Term.tel -> (e, c, ac) rb_tel =
  fun ctx env tel ->
   match tel with
-  | Emp -> Rb_tel (Emp, ctx, env)
+  | Emp -> Rb_tel (Emp, ctx, env, [])
   | Ext (name, rty, rest) ->
       let ety = Norm.eval_term env rty in
       let newvars, newnfs = Domvars.dom_vars ctx (CubeOf.singleton ety) in
       let trty = readback_val ~sort:`Type ctx ety in
       let ctx = Ctx.cube_vis ctx name newnfs in
       let env = Value.Ext (env, D.plus_zero D.zero, Ok newvars) in
-      let (Rb_tel (resttel, fctx, fenv)) = readback_tel ctx env rest in
-      Rb_tel (Ext (name, trty, resttel), fctx, fenv)
+      let (Rb_tel (resttel, fctx, fenv, restvals)) = readback_tel ctx env rest in
+      Rb_tel (Ext (name, trty, resttel), fctx, fenv, CubeOf.find_top newvars :: restvals)
 
 (* The result of reading back a value-level datatype constructor: its argument telescope and, for an indexed datatype, the output type (the datatype family applied to the constructor's index values). *)
 type _ rb_constr = Rb_constr : ('e, 'c, 'ec) Term.tel * ('ec, kinetic) term option -> 'e rb_constr
@@ -311,8 +314,8 @@ type _ rb_constr = Rb_constr : ('e, 'c, 'ec) Term.tel * ('ec, kinetic) term opti
 (* Read back a value-level datatype constructor (at dimension zero) into the readback context: its argument telescope, and its output type if the datatype is indexed.  The output type is the datatype family (passed in, e.g. "Vec N") applied to the constructor's index values, which are obtained by evaluating its stored index terms at the fresh argument variables (as in the Constr branch of Check.check). *)
 let readback_dataconstr : type lev e ij.
     (lev, e) Ctx.t -> Value.normal option -> (D.zero, ij) Value.dataconstr -> e rb_constr =
- fun ctx family (Dataconstr { env; args; indices }) ->
-  let (Rb_tel (tel, fctx, fenv)) = readback_tel ctx env args in
+ fun ctx family (Dataconstr { env; args; indices; output = _ }) ->
+  let (Rb_tel (tel, fctx, fenv, _)) = readback_tel ctx env args in
   let output =
     match (family, indices) with
     | _, [] -> None
@@ -323,6 +326,29 @@ let readback_dataconstr : type lev e ij.
         let out = List.fold_left Norm.apply_term family.tm idxvals in
         Some (readback_val ~sort:`Type fctx out) in
   Rb_constr (tel, output)
+
+(* Read back the (higher-dimensional) function-type of a constructor of a *degenerate* (positive substitution dimension m) datatype.  The idea is that a constructor's type is morally a function type "(args) → D ...", and the type of the degenerate constructor is the degeneration of that function.  We can't take the degeneration of a constructor directly (there's no "tyof_constr"), but we *can* form the constructor-as-a-function "λ args. c args" together with its function-type "(args) → D0", and then act on it by the pure degeneracy deg_zero m using act_ty.  Acting on a function-type instantiates its codomain at the faces of the function, which here are the lower-dimensional constructors, exactly producing e.g. "List⁽ᵉ⁾ (Id A) (cons. x₀ xs₀) (cons. x₁ xs₁)".  Reading back the result gives a higher-dimensional pi-type term, which unparses (via unparse_higher_pi) as "{x₀ x₁ : A} (x₂ : Id A x₀ x₁) … →⁽ᵉ⁾ …".  Here d0 is the underlying zero-dimensional datatype (one face of the degenerate one), used as the constructor's output type.  Returns None for indexed datatypes, which aren't yet supported (their output type would need the zero-dimensional family applied to the constructor's index values). *)
+let readback_degenerate_constr : type lev e m ij.
+    (lev, e) Ctx.t ->
+    m D.t ->
+    kinetic Value.value ->
+    Constr.t ->
+    (D.zero, ij) Value.dataconstr ->
+    (e, kinetic) term option =
+ fun ctx m d0 c (Dataconstr { env; args; indices; output = _ }) ->
+  match indices with
+  | _ :: _ -> None
+  | [] ->
+      let (Rb_tel (tel, fctx, _fenv, argvals)) = readback_tel ctx env args in
+      let output_term = readback_val ~sort:`Type fctx d0 in
+      let argvar_terms = List.map (fun v -> readback_val fctx v) argvals in
+      let cbody = Term.Constr (c, D.zero, List.map CubeOf.singleton argvar_terms) in
+      let cfun = Telescope.lams tel cbody in
+      let cty = Telescope.pis tel output_term in
+      let cfun = Norm.eval_term (Ctx.env ctx) cfun in
+      let cty = Norm.eval_term (Ctx.env ctx) cty in
+      let ft = Act.act_ty cfun cty (deg_zero m) in
+      Some (readback_val ~sort:`Type ctx ft)
 
 (* The primary unparsing function.  Given the variable names, unparse a term into given tightness intervals. *)
 let rec unparse : type n lt ls rt rs s.
@@ -583,7 +609,7 @@ and unparse_dataconstr : type a i lt ls rt rs.
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun vars c (Dataconstr { args; indices }) li ri ->
+ fun vars c (Dataconstr { args; indices; output = _ }) li ri ->
   let bcvars, argunps = unparse_tel_args vars args Emp in
   let output =
     match Vec.to_list indices with
@@ -618,6 +644,57 @@ and unparse_data_value : type lev e ij lt ls rt rs.
       (Snoc (Emp, mktok LBracket))
       constrs in
   unlocated (outfix ~notn:data ~inner:(Multiple (wstok Data, inner, wstok RBracket)))
+
+(* Unparse a value-level *degenerate* (positive substitution dimension) datatype, displaying each constructor as "c. : <higher-dimensional function type>" (e.g. "cons. : {x₀ x₁ : A} (x₂ : Id A x₀ x₁) … →⁽ᵉ⁾ List⁽ᵉ⁾ (Id A) (cons. x₀ xs₀) (cons. x₁ xs₁)").  We obtain the underlying zero-dimensional datatype d0 as a face of the degenerate one (the boundary of its type, a degenerate universe), and read back each constructor's degenerate function-type with readback_degenerate_constr.  Returns None (falling back to displaying the neutral) for indexed datatypes, which aren't yet supported. *)
+and unparse_degenerate_data_value : type a b lt ls rt rs.
+    (a, b) Ctx.t ->
+    kinetic Value.value ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located option =
+ fun ctx tm _li _ri ->
+  match tm with
+  | Value.Neu { ty; _ } -> (
+      match View.view_type (Lazy.force ty) "unparse_degenerate_data_value" with
+      | Canonical (_, UU m, ins0, boundary) -> (
+          let Eq = eq_of_ins_zero ins0 in
+          (* The underlying zero-dimensional datatype is a vertex of the degenerate one, recovered from the boundary faces of its (degenerate-universe) type. *)
+          let dom = TubeOf.plus_cube (Value.val_of_norm_tube boundary) (CubeOf.singleton tm) in
+          match vertex m with
+          | None -> None
+          | Some v -> (
+              let d0 = CubeOf.find dom v in
+              match View.view_type d0 "unparse_degenerate_data_value d0" with
+              | Canonical (_, Data d0_args, _, _) -> (
+                  match D.compare_zero d0_args.dim with
+                  | Pos _ -> None
+                  | Zero ->
+                      let names = Names.of_ctx ctx in
+                      let constr_terms =
+                        List.map
+                          (fun (c, dc) -> (c, readback_degenerate_constr ctx m d0 c dc))
+                          (Bwd.to_list d0_args.constrs) in
+                      (* If any constructor is indexed (None), fall back to displaying the neutral. *)
+                      if List.exists (fun (_, t) -> Option.is_none t) constr_terms then None
+                      else
+                        let inner =
+                          List.fold_left
+                            (fun acc (c, t) ->
+                              let ft = Option.get t in
+                              let output = { unparse = (fun li ri -> unparse names ft li ri) } in
+                              let cterm =
+                                unparse_constr_display c Emp (Some output) No.Interval.entire
+                                  No.Interval.entire in
+                              acc <: mktok (Op "|") <: Term cterm)
+                            (Snoc (Emp, mktok LBracket))
+                            constr_terms in
+                        Some
+                          (unlocated
+                             (outfix ~notn:data
+                                ~inner:(Multiple (wstok Data, inner, wstok RBracket)))))
+              | _ -> None))
+      | _ -> None)
+  | _ -> None
 
 (* "about" on a bare datatype *constant* such as Vec, whose value is a function (the parameter abstraction) eventually reaching a datatype.  We apply it to fresh parameter variables until we reach the datatype value (whose family "tyfam" is then populated), display that with unparse_data_value, and re-abstract over the parameters.  This is what lets "about Vec" show "A ↦ data [ ... : Vec A ... ]" with the real family head rather than a placeholder.  Returns None for anything that isn't a (parameterized) datatype, so the caller falls back to displaying the stored case tree.
 
@@ -767,12 +844,13 @@ and unparse_canonical_value : type a b lt ls rt rs.
       | Val (Value.Canonical { canonical; ins; _ }) -> (
           match canonical with
           | Value.Data data_args -> (
-              (* Degenerate (positive substitution dimension) datatypes are not yet handled: those would require reconstructing the higher-dimensional constructor types. *)
               match (is_id_ins ins, D.compare_zero data_args.dim) with
               | Some _, Zero ->
                   let family = Option.map Lazy.force !(data_args.tyfam) in
                   Some (unparse_data_value ctx family data_args.constrs li ri)
-              | _ -> None)
+              (* A degenerate (positive substitution dimension) datatype is displayed by reconstructing each constructor's higher-dimensional function-type; see readback_degenerate_constr.  Currently only non-indexed degenerate datatypes are supported; indexed ones fall back to displaying the neutral. *)
+              | Some _, Pos _ -> unparse_degenerate_data_value ctx tm li ri
+              | None, _ -> None)
           (* Codatatypes/records are handled uniformly whether 0-dimensional, intrinsically higher (Gel-like), or degenerate: we introduce a self variable of the codatatype's full dimension and read back each field's type with tyof_field. *)
           | Value.Codata codata_args -> unparse_codata_value ctx tm codata_args li ri
           | Value.UU _ | Value.Pi _ -> None)
