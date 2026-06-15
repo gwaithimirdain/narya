@@ -154,7 +154,7 @@ and readback_at : type a z.
       | Noeta, _ -> readback_val_sorted ctx tm vty)
   | Canonical (_, Data { constrs; _ }, ins, tyargs), Constr (xconstr, xn, xargs) -> (
       let Eq = eq_of_ins_zero ins in
-      let (Dataconstr { env; args = argtys; output = _; nindices = _ }) =
+      let (Dataconstr { env; args = argtys; output = _ }) =
         Abwd.find_opt xconstr constrs <|> Anomaly "constr not found in readback" in
       match D.compare xn (TubeOf.inst tyargs) with
       | Neq -> fatal (Dimension_mismatch ("reading back constrs", xn, TubeOf.inst tyargs))

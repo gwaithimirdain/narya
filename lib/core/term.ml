@@ -109,7 +109,7 @@ module rec Term : sig
   and _ canonical =
     | Data : {
         indices : 'i Fwn.t;
-        constrs : (Constr.t, ('a, 'i) dataconstr) Abwd.t;
+        constrs : (Constr.t, 'a dataconstr) Abwd.t;
         discrete : [ `Yes | `Maybe | `No ];
       }
         -> 'a canonical
@@ -139,15 +139,13 @@ module rec Term : sig
     liftl : ('nh * ('hb, D.zero) snoc * potential * 'et) StructfieldAbwd.t;
   }
 
-  and (_, _) dataconstr =
+  and _ dataconstr =
     | Dataconstr : {
         args : ('p, 'a, 'pa) tel;
         (* The output type of the constructor, i.e. the datatype family applied to the parameters and indices.  The index *values* are the trailing arguments of this application; they are extracted on demand rather than stored separately.  For a non-indexed datatype, where the user need not write an output type, it is synthesized as the datatype applied to its parameters. *)
         output : ('pa, kinetic) term;
-        (* The number of indices, retained so that they can be extracted from 'output'. *)
-        nindices : 'i Fwn.t;
       }
-        -> ('p, 'i) dataconstr
+        -> 'p dataconstr
 
   and ('a, 'b, 'ab) tel =
     | Emp : ('a, Fwn.zero, 'a) tel
@@ -293,7 +291,7 @@ end = struct
     (* A datatype stores its family of constructors, whether it is discrete, and also its number of indices.  (The former is not determined in the latter if there happen to be zero constructors). *)
     | Data : {
         indices : 'i Fwn.t;
-        constrs : (Constr.t, ('a, 'i) dataconstr) Abwd.t;
+        constrs : (Constr.t, 'a dataconstr) Abwd.t;
         discrete : [ `Yes | `Maybe | `No ];
       }
         -> 'a canonical
@@ -335,13 +333,8 @@ end = struct
   }
 
   (* A datatype constructor has a telescope of arguments and a list of index values depending on those arguments. *)
-  and (_, _) dataconstr =
-    | Dataconstr : {
-        args : ('p, 'a, 'pa) tel;
-        output : ('pa, kinetic) term;
-        nindices : 'i Fwn.t;
-      }
-        -> ('p, 'i) dataconstr
+  and _ dataconstr =
+    | Dataconstr : { args : ('p, 'a, 'pa) tel; output : ('pa, kinetic) term } -> 'p dataconstr
 
   (* A telescope is a list of types, each dependent on the previous ones.  Note that 'a and 'ab are lists of dimensions, but 'b is just a forwards natural number counting the number of *zero-dimensional* variables added to 'a to get 'ab.  *)
   and ('a, 'b, 'ab) tel =

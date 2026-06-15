@@ -113,7 +113,7 @@ module rec Value : sig
     dim : 'm D.t;
     tyfam : normal Lazy.t option ref;
     indices : (('m, normal) CubeOf.t, 'j, 'ij) Fillvec.t;
-    constrs : (Constr.t, ('m, 'ij) dataconstr) Abwd.t;
+    constrs : (Constr.t, 'm dataconstr) Abwd.t;
     discrete : [ `Yes | `Maybe | `No ];
   }
 
@@ -125,14 +125,13 @@ module rec Value : sig
     fields : ('a * 'n * 'et) Term.CodatafieldAbwd.t;
   }
 
-  and (_, _) dataconstr =
+  and _ dataconstr =
     | Dataconstr : {
         env : ('m, 'a) env;
         args : ('a, 'p, 'ap) Telescope.t;
         output : ('ap, kinetic) term;
-        nindices : 'ij Fwn.t;
       }
-        -> ('m, 'ij) dataconstr
+        -> 'm dataconstr
 
   and normal = { tm : kinetic value; ty : kinetic value }
 
@@ -282,7 +281,7 @@ end = struct
     (* The indices applied so far, and the number remaining *)
     indices : (('m, normal) CubeOf.t, 'j, 'ij) Fillvec.t;
     (* All the constructors *)
-    constrs : (Constr.t, ('m, 'ij) dataconstr) Abwd.t;
+    constrs : (Constr.t, 'm dataconstr) Abwd.t;
     (* Whether it is discrete.  The value `Maybe means that it could be discrete based on its own parameters, indices, and constructor arguments, but either is waiting for its mutual companions to be typechecked, or at least one of them failed to be discrete.  Thus for equality-testing purposes, `Maybe is treated like `No. *)
     discrete : [ `Yes | `Maybe | `No ];
   }
@@ -300,14 +299,13 @@ end = struct
   }
 
   (* Each constructor stores the telescope of types of its arguments, as a closure, and its output type (the datatype applied to the parameters and indices); the index values are the trailing arguments of the output, extracted on demand. *)
-  and (_, _) dataconstr =
+  and _ dataconstr =
     | Dataconstr : {
         env : ('m, 'a) env;
         args : ('a, 'p, 'ap) Telescope.t;
         output : ('ap, kinetic) term;
-        nindices : 'ij Fwn.t;
       }
-        -> ('m, 'ij) dataconstr
+        -> 'm dataconstr
 
   (* A "normal form" is a value paired with its type.  The type is used for eta-expansion and equality-checking. *)
   and normal = { tm : kinetic value; ty : kinetic value }

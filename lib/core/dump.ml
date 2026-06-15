@@ -264,8 +264,8 @@ module F = struct
                 (fun (CodatafieldAbwd.Entry (f, _)) -> Field.to_string f)
                 fields))
 
-  and dataconstr : type p i. formatter -> (p, i) Term.dataconstr -> unit =
-   fun ppf (Dataconstr { args; output = _; nindices = _ }) -> fprintf ppf "%a : ?" tel args
+  and dataconstr : type p. formatter -> p Term.dataconstr -> unit =
+   fun ppf (Dataconstr { args; output = _ }) -> fprintf ppf "%a : ?" tel args
 
   and tel : type a b ab. formatter -> (a, b, ab) Term.tel -> unit =
    fun ppf -> function

@@ -231,19 +231,19 @@ let indices_of_output : type a i. (a, kinetic) term -> i Fwn.t -> ((a, kinetic) 
 let merge_branches : type a m ij.
     head ->
     (Constr.t, a branch) Abwd.t ->
-    (Constr.t, (m, ij) Value.dataconstr) Abwd.t ->
+    (Constr.t, m Value.dataconstr) Abwd.t ->
+    ij Fwn.t ->
     (Constr.t * (a, m, ij) checkable_branch) list =
- fun head user_branches data_constrs ->
+ fun head user_branches data_constrs nindices ->
   let user_branches, leftovers =
     Bwd.fold_left
       (fun ((userbrs, databrs) :
-             (Constr.t, (a, m, ij) checkable_branch) Abwd.t
-             * (Constr.t, (m, ij) Value.dataconstr) Abwd.t)
+             (Constr.t, (a, m, ij) checkable_branch) Abwd.t * (Constr.t, m Value.dataconstr) Abwd.t)
            (constr, Branch ({ value = xs; loc }, cube, body)) ->
         (* We check at the preprocessing stage that there are no duplicate constructors in the match. *)
         if Abwd.mem constr userbrs then fatal ?loc (Duplicate_constructor_in_match constr);
         let databrs, databr = Abwd.extract constr databrs in
-        let (Value.Dataconstr { env; args = argtys; output; nindices }) =
+        let (Value.Dataconstr { env; args = argtys; output }) =
           match databr with
           | Some db -> db
           | None -> fatal ?loc (No_such_constructor_in_match (phead head, constr)) in
@@ -269,7 +269,7 @@ let merge_branches : type a m ij.
   (* If there are any constructors in the datatype left over that the user didn't supply branches for, we add them to the list at the end.  They will be tested for refutability. *)
   Bwd.prepend user_branches
     (Bwd_extra.to_list_map
-       (fun (c, Value.Dataconstr { env; args = argtys; output; nindices }) ->
+       (fun (c, Value.Dataconstr { env; args = argtys; output }) ->
          let index_terms = indices_of_output output nindices in
          let b = Telescope.length argtys in
          let (Bplus plus_args) = Raw.Indexed.bplus b in
@@ -567,7 +567,7 @@ let rec check : type a b s.
             (* We don't need the *types* of the parameters or indices, which are stored in the type of the constant name.  The variable ty_indices (defined above) contains the *values* of the indices of this instance of the datatype, while tyargs (defined by view_type, way above) contains the instantiation arguments of this instance of the datatype.  We check that the dimensions agree, and find our current constructor in the datatype definition. *)
             match Abwd.find_opt constr constrs with
             | None -> fatal ?loc:constr_loc (No_such_constructor (`Data (phead name), constr))
-            | Some (Dataconstr { env; args = constr_arg_tys; output; nindices }) ->
+            | Some (Dataconstr { env; args = constr_arg_tys; output }) ->
                 (* To typecheck a higher-dimensional instance of our constructor constr at the datatype, all the instantiation arguments must also be applications of lower-dimensional versions of that same constructor.  We check this, and extract the arguments of those lower-dimensional constructors as a tube of lists in the variable "tyarg_args". *)
                 let tyarg_args =
                   TubeOf.mmap
@@ -600,7 +600,7 @@ let rec check : type a b s.
                     (fun [ ix ] ->
                       CubeOf.build dim
                         { build = (fun fa -> eval_term (act_env env (op_of_sface fa)) ix) })
-                    [ indices_of_output output nindices ] in
+                    [ indices_of_output output (Vec.length ty_indices) ] in
                 (* The last thing to do is check that these indices are equal to those of the type we are checking against.  (So a constructor application "checks against the parameters but synthesizes the indices" in some sense.)  I *think* it should suffice to check the top-dimensional ones, the lower-dimensional ones being automatic.  For now, we check all of them, raising an anomaly in case I was wrong about that.  *)
                 Vec.miter
                   (fun [ t1s; t2s ] ->
@@ -1210,7 +1210,7 @@ and check_match_branches : type a b.
           if value <> needed then fatal ?loc (Wrong_number_of_arguments_to_motive needed)
       | None -> ());
       (* We start with a preprocesssing step that pairs each user-provided branch with the corresponding constructor information from the datatype. *)
-      let user_branches = merge_branches name brs data_constrs in
+      let user_branches = merge_branches name brs data_constrs (Vec.length indices) in
       (* We use the callback to get the motive and other data. *)
       let motive, errs, branches, check_branches = callbacks.get dim user_branches tyfam in
       (* Now we iterate through the constructors, typechecking the corresponding branches and inserting them in the match tree. *)
@@ -1528,7 +1528,7 @@ and check_var_match : type a b.
       discard (readback_nf ctx_noindices tyfam);
       (* If all of those checks succeed, we continue on the path of a variable match.  But note that this call is still inside the try_with, so it can still fail and revert back to a non-dependent term match. *)
       (* We start with a preprocesssing step that pairs each user-provided branch with the corresponding constructor information from the datatype. *)
-      let user_branches = merge_branches name brs data_constrs in
+      let user_branches = merge_branches name brs data_constrs (Vec.length var_indices) in
       (* We now iterate through the constructors, typechecking the corresponding branches and inserting them in the match tree. *)
       let branches, errs =
         List.fold_left
@@ -1827,7 +1827,7 @@ and check_data : type a b i.
     (a, b) Ctx.t ->
     kinetic value ->
     i Fwn.t ->
-    (Constr.t, (b, i) Term.dataconstr) Abwd.t ->
+    (Constr.t, b Term.dataconstr) Abwd.t ->
     (Constr.t * a Raw.dataconstr located) list ->
     Code.t Asai.Diagnostic.t Bwd.t ->
     (b, potential) term =
@@ -1853,7 +1853,7 @@ and check_data : type a b i.
       match (Abwd.find_opt c checked_constrs, output) with
       | Some _, _ -> fatal (Duplicate_constructor_in_data c)
       | None, Some output ->
-          let disc, (checked_constrs : (Constr.t, (b, i) Term.dataconstr) Abwd.t), errs =
+          let disc, (checked_constrs : (Constr.t, b Term.dataconstr) Abwd.t), errs =
             Reporter.try_with ~fatal:(fun e -> (true, checked_constrs, Snoc (errs, e))) @@ fun () ->
             let Checked_tel (args, newctx), disc = check_tel ?discrete ctx args in
             (* Note the type of each field is checked *kinetically*: it's not part of the case tree. *)
@@ -1874,9 +1874,7 @@ and check_data : type a b i.
                         | Eq ->
                             ( disc,
                               checked_constrs
-                              |> Abwd.add c
-                                   (Term.Dataconstr
-                                      { args; output = coutput; nindices = num_indices }),
+                              |> Abwd.add c (Term.Dataconstr { args; output = coutput }),
                               errs )
                         | _ ->
                             (* I think this shouldn't ever happen, no matter what the user writes, since we know at this point that the output is a full application of the correct constant, so it must have the right number of arguments. *)
@@ -1889,16 +1887,13 @@ and check_data : type a b i.
       | None, None -> (
           match num_indices with
           | Zero ->
-              let disc, (checked_constrs : (Constr.t, (b, i) Term.dataconstr) Abwd.t), errs =
+              let disc, (checked_constrs : (Constr.t, b Term.dataconstr) Abwd.t), errs =
                 Reporter.try_with ~fatal:(fun e -> (true, checked_constrs, Snoc (errs, e)))
                 @@ fun () ->
                 let Checked_tel (args, newctx), disc = check_tel ?discrete ctx args in
                 (* A non-indexed constructor needs no user-written output type, so we synthesize it as the datatype (head) applied to its parameters, read back as a term over the argument context. *)
                 let output = readback_neu newctx (head_of_potential head) current_apps in
-                ( disc,
-                  checked_constrs
-                  |> Abwd.add c (Term.Dataconstr { args; output; nindices = num_indices }),
-                  errs ) in
+                (disc, checked_constrs |> Abwd.add c (Term.Dataconstr { args; output }), errs) in
               check_data
                 ~discrete:(if disc then discrete else None)
                 status ctx ty Fwn.zero checked_constrs raw_constrs errs

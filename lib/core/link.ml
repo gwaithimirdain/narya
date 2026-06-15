@@ -117,9 +117,8 @@ and codatafield : type a n i et.
   | Lower tm -> Lower (term f tm)
   | Higher (ka, tm) -> Higher (ka, term f tm)
 
-and dataconstr : type p i. (File.t -> File.t) -> (p, i) dataconstr -> (p, i) dataconstr =
- fun f (Dataconstr { args; output; nindices }) ->
-  Dataconstr { args = tel f args; output = term f output; nindices }
+and dataconstr : type p. (File.t -> File.t) -> p dataconstr -> p dataconstr =
+ fun f (Dataconstr { args; output }) -> Dataconstr { args = tel f args; output = term f output }
 
 and tel : type a b ab. (File.t -> File.t) -> (a, b, ab) tel -> (a, b, ab) tel =
  fun f t ->

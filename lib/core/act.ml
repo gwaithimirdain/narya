@@ -257,10 +257,10 @@ module Act = struct
     | Codata { eta; opacity; env; termctx; fields } ->
         Codata { eta; opacity; env = act_env env (op_of_deg fa); termctx; fields }
 
-  and act_dataconstr : type m n i. (n, i) dataconstr -> (m, n) deg -> (m, i) dataconstr =
-   fun (Dataconstr { env; args; output; nindices }) s ->
+  and act_dataconstr : type m n. n dataconstr -> (m, n) deg -> m dataconstr =
+   fun (Dataconstr { env; args; output }) s ->
     let env = act_env env (op_of_deg s) in
-    Dataconstr { env; args; output; nindices }
+    Dataconstr { env; args; output }
 
   (* act_closure and act_binder assume that the degeneracy has exactly the correct codomain.  So if it doesn't, the caller should call deg_plus_to first. *)
   and act_closure : type mn m n a kn.
