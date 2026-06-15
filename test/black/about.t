@@ -105,7 +105,7 @@ For a codatatype with a higher field, every instance of that field that a comatc
   
 
 
-A degenerate (non-indexed) datatype is read back by reconstructing each constructor's higher-dimensional function-type: the constructor-as-a-function is degenerated, which instantiates the codomain at the lower-dimensional constructors (so e.g. cons. lands in List⁽ᵉ⁾ (Id X) (cons. x₀ xs₀) (cons. x₁ xs₁)).  Indexed degenerate datatypes are not yet supported and fall back to displaying the neutral.
+A degenerate datatype is read back by reconstructing each constructor's higher-dimensional function-type: the constructor-as-a-function is degenerated, which instantiates the codomain at the lower-dimensional constructors (so e.g. cons. lands in List⁽ᵉ⁾ (Id X) (cons. x₀ xs₀) (cons. x₁ xs₁)).  This includes indexed datatypes, whose indices are degenerated as well (e.g. cons. lands in Vec⁽ᵉ⁾ (Id X) (suc. n₂) …).
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'axiom X : Type' -e 'def List : Type → Type ≔ A ↦ data [ nil. | cons. (x : A) (xs : List A) ]' -e 'def Vec : Type → N → Type ≔ A ↦ data [ nil. : Vec A zero. | cons. : (n : N) → A → Vec A n → Vec A (suc. n) ]' -e 'about (refl (List X))' -e 'about (refl N)' -e 'about (refl (Vec X zero.))'
   data [

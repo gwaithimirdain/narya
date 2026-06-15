@@ -684,7 +684,8 @@ and unparse_degenerate_data_value : type a b lt ls rt rs.
                           d0_args.constrs in
                       Some
                         (unlocated
-                           (outfix ~notn:data ~inner:(Multiple (wstok Data, inner, wstok RBracket)))))
+                           (outfix ~notn:data ~inner:(Multiple (wstok Data, inner, wstok RBracket))))
+                  )
               | _ -> None))
       | _ -> None)
   | _ -> None

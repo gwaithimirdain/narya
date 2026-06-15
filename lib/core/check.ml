@@ -1857,7 +1857,8 @@ and check_data : type a b i.
                         | Eq ->
                             ( disc,
                               checked_constrs
-                              |> Abwd.add c (Term.Dataconstr { args; indices; output = Some coutput }),
+                              |> Abwd.add c
+                                   (Term.Dataconstr { args; indices; output = Some coutput }),
                               errs )
                         | _ ->
                             (* I think this shouldn't ever happen, no matter what the user writes, since we know at this point that the output is a full application of the correct constant, so it must have the right number of arguments. *)
@@ -1877,8 +1878,7 @@ and check_data : type a b i.
                 ( disc,
                   checked_constrs
                   |> Abwd.add c (Term.Dataconstr { args; indices = []; output = None }),
-                  errs )
-              in
+                  errs ) in
               check_data
                 ~discrete:(if disc then discrete else None)
                 status ctx ty Fwn.zero checked_constrs raw_constrs errs
