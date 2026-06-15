@@ -301,12 +301,24 @@ let rec readback_tel : type lev e a c ac.
       let (Rb_tel (resttel, fctx, fenv)) = readback_tel ctx env rest in
       Rb_tel (Ext (name, trty, resttel), fctx, fenv)
 
-(* Read back a value-level datatype constructor (at dimension zero) into a term-level one in the readback context.  We read back the constructor's argument telescope, but omit its output index values: reconstructing those faithfully would require recovering the index types (in order to read back index values that may themselves be constructors), and for displaying the shape of a datatype the argument telescopes are the important part.  Thus the result always has zero indices. *)
+(* The result of reading back a value-level datatype constructor: its argument telescope and, for an indexed datatype, the output type (the datatype family applied to the constructor's index values). *)
+type _ rb_constr = Rb_constr : ('e, 'c, 'ec) Term.tel * ('ec, kinetic) term option -> 'e rb_constr
+
+(* Read back a value-level datatype constructor (at dimension zero) into the readback context: its argument telescope, and its output type if the datatype is indexed.  The output type is the datatype family (passed in, e.g. "Vec N") applied to the constructor's index values, which are obtained by evaluating its stored index terms at the fresh argument variables (as in the Constr branch of Check.check). *)
 let readback_dataconstr : type lev e ij.
-    (lev, e) Ctx.t -> (D.zero, ij) Value.dataconstr -> (e, Fwn.zero) Term.dataconstr =
- fun ctx (Dataconstr { env; args; indices = _ }) ->
-  let (Rb_tel (tel, _, _)) = readback_tel ctx env args in
-  Dataconstr { args = tel; indices = [] }
+    (lev, e) Ctx.t -> Value.normal option -> (D.zero, ij) Value.dataconstr -> e rb_constr =
+ fun ctx family (Dataconstr { env; args; indices }) ->
+  let (Rb_tel (tel, fctx, fenv)) = readback_tel ctx env args in
+  let output =
+    match (family, indices) with
+    | _, [] -> None
+    | None, _ -> None
+    | Some family, _ ->
+        let idxvals =
+          Vec.to_list_map (fun ix -> CubeOf.singleton (Norm.eval_term fenv ix)) indices in
+        let out = List.fold_left Norm.apply_term family.tm idxvals in
+        Some (readback_val ~sort:`Type fctx out) in
+  Rb_constr (tel, output)
 
 (* The primary unparsing function.  Given the variable names, unparse a term into given tightness intervals. *)
 let rec unparse : type n lt ls rt rs s.
@@ -512,7 +524,38 @@ and unparse_codata : type n a et lt ls rt rs.
           fields in
       unlocated (outfix ~notn:record ~inner:(Multiple (wstok Sig, inner, wstok RParen)))
 
-(* Unparse a datatype "data [ | constr. (x:A) ... | ... ]". *)
+(* Unparse the argument telescope of a datatype constructor as a Bwd of "(x : A)" pi-domain unparsers, returning also the name context extended by the telescope variables. *)
+and unparse_tel_args : type b bc cc.
+    b Names.t -> (b, cc, bc) Term.tel -> unparser Bwd.t -> bc Names.t * unparser Bwd.t =
+ fun vars tel acc ->
+  match tel with
+  | Emp -> (vars, acc)
+  | Ext (name, ty, rest) ->
+      let uty = unparse vars ty (interval_right asc) No.Interval.entire in
+      let x, newvars = Names.add_cube D.zero vars name in
+      unparse_tel_args newvars rest (acc <: { unparse = (fun _ _ -> unparse_pi_dom x uty) })
+
+(* Assemble the display of a constructor "constr. (x:A) ...", optionally ascribed by an output type "constr. (x:A) ... : OUT". *)
+and unparse_constr_display : type lt ls rt rs.
+    Constr.t ->
+    unparser Bwd.t ->
+    unparser option ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun c argunps output li ri ->
+  let head = { unparse = (fun _ _ -> unlocated (Constr (Constr.to_string c, []))) } in
+  match output with
+  | None -> unparse_spine Names.empty (`Unparser head) argunps li ri
+  | Some output -> (
+      let first = unparse_spine Names.empty (`Unparser head) argunps li (interval_left asc) in
+      let last = output.unparse (interval_right asc) ri in
+      match (No.Interval.contains li No.minus_omega, No.Interval.contains ri No.minus_omega) with
+      | Some left_ok, Some right_ok ->
+          unlocated (infix ~notn:asc ~first ~inner:(Single (wstok Colon)) ~last ~left_ok ~right_ok)
+      | _ -> fatal (Anomaly "impossible interval unparsing datatype constructor"))
+
+(* Unparse a datatype "data [ | constr. (x:A) ... | ... ]" from a term-level datatype.  Since a term-level (anonymous) datatype doesn't know its own name, the head of a constructor's output type is displayed as a placeholder. *)
 and unparse_data : type a i lt ls rt rs.
     a Names.t ->
     (Constr.t, (a, i) Term.dataconstr) Abwd.t ->
@@ -529,7 +572,6 @@ and unparse_data : type a i lt ls rt rs.
       constrs in
   unlocated (outfix ~notn:data ~inner:(Multiple (wstok Data, inner, wstok RBracket)))
 
-(* Unparse a single datatype constructor: its name applied to its telescope of arguments, ascribed with its index values (if any). *)
 and unparse_dataconstr : type a i lt ls rt rs.
     a Names.t ->
     Constr.t ->
@@ -538,30 +580,40 @@ and unparse_dataconstr : type a i lt ls rt rs.
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
  fun vars c (Dataconstr { args; indices }) li ri ->
-  let rec take_args : type b bc cc.
-      b Names.t -> (b, cc, bc) Term.tel -> unparser Bwd.t -> bc Names.t * unparser Bwd.t =
-   fun vars tel acc ->
-    match tel with
-    | Emp -> (vars, acc)
-    | Ext (name, ty, rest) ->
-        let uty = unparse vars ty (interval_right asc) No.Interval.entire in
-        let x, newvars = Names.add_cube D.zero vars name in
-        take_args newvars rest (acc <: { unparse = (fun _ _ -> unparse_pi_dom x uty) }) in
-  let bcvars, argunps = take_args vars args Emp in
-  let head = { unparse = (fun _ _ -> unlocated (Constr (Constr.to_string c, []))) } in
-  match Vec.to_list indices with
-  | [] -> unparse_spine vars (`Unparser head) argunps li ri
-  | idxs -> (
-      let first = unparse_spine vars (`Unparser head) argunps li (interval_left asc) in
-      let idxargs =
-        Bwd.of_list
-          (List.map (fun idx -> { unparse = (fun li ri -> unparse bcvars idx li ri) }) idxs) in
-      let ph = { unparse = (fun _ _ -> unlocated (Placeholder [])) } in
-      let last = unparse_spine bcvars (`Unparser ph) idxargs (interval_right asc) ri in
-      match (No.Interval.contains li No.minus_omega, No.Interval.contains ri No.minus_omega) with
-      | Some left_ok, Some right_ok ->
-          unlocated (infix ~notn:asc ~first ~inner:(Single (wstok Colon)) ~last ~left_ok ~right_ok)
-      | _ -> fatal (Anomaly "impossible interval unparsing datatype constructor"))
+  let bcvars, argunps = unparse_tel_args vars args Emp in
+  let output =
+    match Vec.to_list indices with
+    | [] -> None
+    | idxs ->
+        let idxargs =
+          Bwd.of_list
+            (List.map (fun idx -> { unparse = (fun li ri -> unparse bcvars idx li ri) }) idxs) in
+        let ph = { unparse = (fun _ _ -> unlocated (Placeholder [])) } in
+        Some { unparse = (fun li ri -> unparse_spine bcvars (`Unparser ph) idxargs li ri) } in
+  unparse_constr_display c argunps output li ri
+
+(* Unparse a value-level datatype, including each constructor's output type, computed by readback_dataconstr from the datatype family. *)
+and unparse_data_value : type lev e ij lt ls rt rs.
+    (lev, e) Ctx.t ->
+    Value.normal option ->
+    (Constr.t, (D.zero, ij) Value.dataconstr) Abwd.t ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun ctx family constrs _li _ri ->
+  let names = Names.of_ctx ctx in
+  let inner =
+    Bwd.fold_left
+      (fun acc (c, dc) ->
+        let (Rb_constr (tel, output)) = readback_dataconstr ctx family dc in
+        let bcvars, argunps = unparse_tel_args names tel Emp in
+        let output =
+          Option.map (fun out -> { unparse = (fun li ri -> unparse bcvars out li ri) }) output in
+        let cterm = unparse_constr_display c argunps output No.Interval.entire No.Interval.entire in
+        acc <: mktok (Op "|") <: Term cterm)
+      (Snoc (Emp, mktok LBracket))
+      constrs in
+  unlocated (outfix ~notn:data ~inner:(Multiple (wstok Data, inner, wstok RBracket)))
 
 (* Unparse a match "match tm [ | constr. x ... |-> body | ... ]".  Refuted branches are omitted; an all-refuted (or empty) match prints as "match tm [ ]". *)
 and unparse_match : type n m lt ls rt rs.
@@ -642,9 +694,8 @@ and unparse_canonical_value : type a b lt ls rt rs.
               (* Degenerate (positive substitution dimension) datatypes are not yet handled: those would require reconstructing the higher-dimensional constructor types. *)
               match (is_id_ins ins, D.compare_zero data_args.dim) with
               | Some _, Zero ->
-                  let names = Names.of_ctx ctx in
-                  let constrs = Abwd.map (fun dc -> readback_dataconstr ctx dc) data_args.constrs in
-                  Some (unparse_data names constrs li ri)
+                  let family = Option.map Lazy.force !(data_args.tyfam) in
+                  Some (unparse_data_value ctx family data_args.constrs li ri)
               | _ -> None)
           (* Codatatypes/records are handled uniformly whether 0-dimensional, intrinsically higher (Gel-like), or degenerate: we introduce a self variable of the codatatype's full dimension and read back each field's type with tyof_field. *)
           | Value.Codata codata_args -> unparse_codata_value ctx tm codata_args li ri

@@ -41,8 +41,8 @@ A neutral that is an applied canonical type is read back and displayed as the co
     : Type
   
   data [
-  | nil.
-  | cons. (n : N) (𝑥 : N) (𝑦 : Vec N n) ]
+  | nil. : Vec N 0
+  | cons. (n : N) (𝑥 : N) (𝑦 : Vec N n) : Vec N (suc. n) ]
     : Type
   
 
