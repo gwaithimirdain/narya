@@ -118,13 +118,8 @@ and codatafield : type a n i et.
   | Higher (ka, tm) -> Higher (ka, term f tm)
 
 and dataconstr : type p i. (File.t -> File.t) -> (p, i) dataconstr -> (p, i) dataconstr =
- fun f (Dataconstr { args; indices; output }) ->
-  Dataconstr
-    {
-      args = tel f args;
-      indices = Vec.mmap (fun [ x ] -> term f x) [ indices ];
-      output = term f output;
-    }
+ fun f (Dataconstr { args; output; nindices }) ->
+  Dataconstr { args = tel f args; output = term f output; nindices }
 
 and tel : type a b ab. (File.t -> File.t) -> (a, b, ab) tel -> (a, b, ab) tel =
  fun f t ->

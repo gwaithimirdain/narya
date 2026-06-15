@@ -129,8 +129,8 @@ module rec Value : sig
     | Dataconstr : {
         env : ('m, 'a) env;
         args : ('a, 'p, 'ap) Telescope.t;
-        indices : (('ap, kinetic) term, 'ij) Vec.t;
         output : ('ap, kinetic) term;
+        nindices : 'ij Fwn.t;
       }
         -> ('m, 'ij) dataconstr
 
@@ -299,13 +299,13 @@ end = struct
     fields : ('a * 'n * 'et) Term.CodatafieldAbwd.t;
   }
 
-  (* Each constructor stores the telescope of types of its arguments, as a closure, and the index values as function values taking its arguments. *)
+  (* Each constructor stores the telescope of types of its arguments, as a closure, and its output type (the datatype applied to the parameters and indices); the index values are the trailing arguments of the output, extracted on demand. *)
   and (_, _) dataconstr =
     | Dataconstr : {
         env : ('m, 'a) env;
         args : ('a, 'p, 'ap) Telescope.t;
-        indices : (('ap, kinetic) term, 'ij) Vec.t;
         output : ('ap, kinetic) term;
+        nindices : 'ij Fwn.t;
       }
         -> ('m, 'ij) dataconstr
 

@@ -212,6 +212,21 @@ let rec namevec_to_vec : type a b ab. (a, b, ab) Namevec.t -> (string option, b)
   | [] -> Vec.nil
   | x :: xs -> Vec.cons x (namevec_to_vec xs)
 
+(* Extract the index *values* of a constructor (the trailing 'i arguments of its output type "D params indices"), as terms over the constructor's argument context.  The output is a zero-dimensional application spine, so the indices are simply its last 'i applied arguments. *)
+let indices_of_output : type a i. (a, kinetic) term -> i Fwn.t -> ((a, kinetic) term, i) Vec.t =
+ fun output i ->
+  let rec peel : (a, kinetic) term -> int -> (a, kinetic) term list -> (a, kinetic) term list =
+   fun tm n acc ->
+    if n <= 0 then acc
+    else
+      match tm with
+      | Term.App (fn, args) -> peel fn (n - 1) (CubeOf.find_top args :: acc)
+      | _ -> fatal (Anomaly "constructor output is not a full application") in
+  let (Wrap idxs) = Vec.of_list (peel output (Fwn.to_int i) []) in
+  match Fwn.compare (Vec.length idxs) i with
+  | Eq -> idxs
+  | _ -> fatal (Anomaly "wrong number of indices extracted from constructor output")
+
 (* This preprocesssing step pairs each user-provided branch with the corresponding constructor information from the datatype. *)
 let merge_branches : type a m ij.
     head ->
@@ -228,10 +243,11 @@ let merge_branches : type a m ij.
         (* We check at the preprocessing stage that there are no duplicate constructors in the match. *)
         if Abwd.mem constr userbrs then fatal ?loc (Duplicate_constructor_in_match constr);
         let databrs, databr = Abwd.extract constr databrs in
-        let (Value.Dataconstr { env; args = argtys; indices = index_terms; output = _ }) =
+        let (Value.Dataconstr { env; args = argtys; output; nindices }) =
           match databr with
           | Some db -> db
           | None -> fatal ?loc (No_such_constructor_in_match (phead head, constr)) in
+        let index_terms = indices_of_output output nindices in
         (* Check that the abstraction symbol matches the dimension of the discriminee. *)
         (match (cube, D.compare_zero (dim_env env)) with
         | `Normal loc, Pos _ ->
@@ -253,7 +269,8 @@ let merge_branches : type a m ij.
   (* If there are any constructors in the datatype left over that the user didn't supply branches for, we add them to the list at the end.  They will be tested for refutability. *)
   Bwd.prepend user_branches
     (Bwd_extra.to_list_map
-       (fun (c, Value.Dataconstr { env; args = argtys; indices = index_terms; output = _ }) ->
+       (fun (c, Value.Dataconstr { env; args = argtys; output; nindices }) ->
+         let index_terms = indices_of_output output nindices in
          let b = Telescope.length argtys in
          let (Bplus plus_args) = Raw.Indexed.bplus b in
          let xs = Namevec.none plus_args in
@@ -550,8 +567,7 @@ let rec check : type a b s.
             (* We don't need the *types* of the parameters or indices, which are stored in the type of the constant name.  The variable ty_indices (defined above) contains the *values* of the indices of this instance of the datatype, while tyargs (defined by view_type, way above) contains the instantiation arguments of this instance of the datatype.  We check that the dimensions agree, and find our current constructor in the datatype definition. *)
             match Abwd.find_opt constr constrs with
             | None -> fatal ?loc:constr_loc (No_such_constructor (`Data (phead name), constr))
-            | Some (Dataconstr { env; args = constr_arg_tys; indices = constr_indices; output = _ })
-              ->
+            | Some (Dataconstr { env; args = constr_arg_tys; output; nindices }) ->
                 (* To typecheck a higher-dimensional instance of our constructor constr at the datatype, all the instantiation arguments must also be applications of lower-dimensional versions of that same constructor.  We check this, and extract the arguments of those lower-dimensional constructors as a tube of lists in the variable "tyarg_args". *)
                 let tyarg_args =
                   TubeOf.mmap
@@ -578,13 +594,13 @@ let rec check : type a b s.
                    3. Check the coressponding argument *value*, supplied by the user, against this type;
                    4. Evaluate this argument value and add it to the environment, to substitute into the subsequent types, and also later to the indices. *)
                 let env, newargs = check_at_tel constr ctx env args constr_arg_tys tyarg_args in
-                (* Now we substitute all those evaluated arguments into the indices, to get the actual (higher-dimensional) indices of our constructor application. *)
+                (* Now we substitute all those evaluated arguments into the indices (the trailing arguments of the constructor's output type), to get the actual (higher-dimensional) indices of our constructor application. *)
                 let constr_indices =
                   Vec.mmap
                     (fun [ ix ] ->
                       CubeOf.build dim
                         { build = (fun fa -> eval_term (act_env env (op_of_sface fa)) ix) })
-                    [ constr_indices ] in
+                    [ indices_of_output output nindices ] in
                 (* The last thing to do is check that these indices are equal to those of the type we are checking against.  (So a constructor application "checks against the parameters but synthesizes the indices" in some sense.)  I *think* it should suffice to check the top-dimensional ones, the lower-dimensional ones being automatic.  For now, we check all of them, raising an anomaly in case I was wrong about that.  *)
                 Vec.miter
                   (fun [ t1s; t2s ] ->
@@ -1852,12 +1868,15 @@ and check_data : type a b i.
                         fatal ?loc:output.loc
                           (Unimplemented "indexed inductive types nested inside higher comatches")
                     | Zero -> (
+                        (* We re-extract the indices only to validate that the output is the current datatype applied to the correct parameters and the right number of indices; the index values themselves are recovered on demand from the stored output. *)
                         let (Wrap indices) = get_indices newctx c current_apps out_apps output.loc in
                         match Fwn.compare (Vec.length indices) num_indices with
                         | Eq ->
                             ( disc,
                               checked_constrs
-                              |> Abwd.add c (Term.Dataconstr { args; indices; output = coutput }),
+                              |> Abwd.add c
+                                   (Term.Dataconstr
+                                      { args; output = coutput; nindices = num_indices }),
                               errs )
                         | _ ->
                             (* I think this shouldn't ever happen, no matter what the user writes, since we know at this point that the output is a full application of the correct constant, so it must have the right number of arguments. *)
@@ -1877,7 +1896,8 @@ and check_data : type a b i.
                 (* A non-indexed constructor needs no user-written output type, so we synthesize it as the datatype (head) applied to its parameters, read back as a term over the argument context. *)
                 let output = readback_neu newctx (head_of_potential head) current_apps in
                 ( disc,
-                  checked_constrs |> Abwd.add c (Term.Dataconstr { args; indices = []; output }),
+                  checked_constrs
+                  |> Abwd.add c (Term.Dataconstr { args; output; nindices = num_indices }),
                   errs ) in
               check_data
                 ~discrete:(if disc then discrete else None)

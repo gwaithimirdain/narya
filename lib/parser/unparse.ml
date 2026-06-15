@@ -311,26 +311,21 @@ let rec readback_tel : type lev e a c ac.
 (* The result of reading back a value-level datatype constructor: its argument telescope and, for an indexed datatype, the output type (the datatype family applied to the constructor's index values). *)
 type _ rb_constr = Rb_constr : ('e, 'c, 'ec) Term.tel * ('ec, kinetic) term option -> 'e rb_constr
 
-(* Read back a value-level datatype constructor (at dimension zero) into the readback context: its argument telescope, and its output type if the datatype is indexed.  The output type is the datatype family (passed in, e.g. "Vec N") applied to the constructor's index values, which are obtained by evaluating its stored index terms at the fresh argument variables (as in the Constr branch of Check.check). *)
+(* Read back a value-level datatype constructor (at dimension zero) into the readback context: its argument telescope, and, for an indexed datatype, its output type.  The output type is the stored output term (the datatype applied to the parameters and indices) evaluated at the fresh argument variables; it is shown only for indexed datatypes (where the constructor has at least one index), matching the convention that non-indexed constructors are displayed without an output ascription. *)
 let readback_dataconstr : type lev e ij.
-    (lev, e) Ctx.t -> Value.normal option -> (D.zero, ij) Value.dataconstr -> e rb_constr =
- fun ctx family (Dataconstr { env; args; indices; output = _ }) ->
+    (lev, e) Ctx.t -> (D.zero, ij) Value.dataconstr -> e rb_constr =
+ fun ctx (Dataconstr { env; args; output; nindices }) ->
   let (Rb_tel (tel, fctx, fenv, _)) = readback_tel ctx env args in
   let output =
-    match (family, indices) with
-    | _, [] -> None
-    | None, _ -> None
-    | Some family, _ ->
-        let idxvals =
-          Vec.to_list_map (fun ix -> CubeOf.singleton (Norm.eval_term fenv ix)) indices in
-        let out = List.fold_left Norm.apply_term family.tm idxvals in
-        Some (readback_val ~sort:`Type fctx out) in
+    match nindices with
+    | Zero -> None
+    | Suc _ -> Some (readback_val ~sort:`Type fctx (Norm.eval_term fenv output)) in
   Rb_constr (tel, output)
 
 (* Read back the (higher-dimensional) function-type of a constructor of a *degenerate* (positive substitution dimension m) datatype.  The idea is that a constructor's type is morally a function type "(args) → out", and the type of the degenerate constructor is the degeneration of that function.  We can't take the degeneration of a constructor directly (there's no "tyof_constr"), but we *can* form the constructor-as-a-function "λ args. c args" together with its function-type "(args) → out", and then act on it by the pure degeneracy deg_zero m using act_ty.  Acting on a function-type instantiates its codomain at the faces of the function, which here are the lower-dimensional constructors, exactly producing e.g. "List⁽ᵉ⁾ (Id A) (cons. x₀ xs₀) (cons. x₁ xs₁)".  Reading back the result gives a higher-dimensional pi-type term, which unparses (via unparse_higher_pi) as "{x₀ x₁ : A} (x₂ : Id A x₀ x₁) … →⁽ᵉ⁾ …".  The constructor's output type "out" is the stored output term (e.g. "Vec A (suc. n)" for an indexed datatype, or the datatype itself for a non-indexed one) evaluated at the fresh argument variables. *)
 let readback_degenerate_constr : type lev e m ij.
     (lev, e) Ctx.t -> m D.t -> Constr.t -> (D.zero, ij) Value.dataconstr -> (e, kinetic) term =
- fun ctx m c (Dataconstr { env; args; indices = _; output }) ->
+ fun ctx m c (Dataconstr { env; args; output; nindices = _ }) ->
   let (Rb_tel (tel, fctx, fenv, argvals)) = readback_tel ctx env args in
   let output_term = readback_val ~sort:`Type fctx (Norm.eval_term fenv output) in
   let argvar_terms = List.map (fun v -> readback_val fctx v) argvals in
@@ -601,33 +596,28 @@ and unparse_dataconstr : type a i lt ls rt rs.
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun vars c (Dataconstr { args; indices; output = _ }) li ri ->
+ fun vars c (Dataconstr { args; output; nindices }) li ri ->
   let bcvars, argunps = unparse_tel_args vars args Emp in
-  let output =
-    match Vec.to_list indices with
-    | [] -> None
-    | idxs ->
-        let idxargs =
-          Bwd.of_list
-            (List.map (fun idx -> { unparse = (fun li ri -> unparse bcvars idx li ri) }) idxs) in
-        let ph = { unparse = (fun _ _ -> unlocated (Placeholder [])) } in
-        Some { unparse = (fun li ri -> unparse_spine bcvars (`Unparser ph) idxargs li ri) } in
-  unparse_constr_display c argunps output li ri
+  (* Show the output type only for indexed datatypes; the stored output already includes the real datatype head and indices. *)
+  let output_display =
+    match nindices with
+    | Zero -> None
+    | Suc _ -> Some { unparse = (fun li ri -> unparse bcvars output li ri) } in
+  unparse_constr_display c argunps output_display li ri
 
-(* Unparse a value-level datatype, including each constructor's output type, computed by readback_dataconstr from the datatype family. *)
+(* Unparse a value-level datatype, including each indexed constructor's output type, computed by readback_dataconstr from the stored output. *)
 and unparse_data_value : type lev e ij lt ls rt rs.
     (lev, e) Ctx.t ->
-    Value.normal option ->
     (Constr.t, (D.zero, ij) Value.dataconstr) Abwd.t ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun ctx family constrs _li _ri ->
+ fun ctx constrs _li _ri ->
   let names = Names.of_ctx ctx in
   let inner =
     Bwd.fold_left
       (fun acc (c, dc) ->
-        let (Rb_constr (tel, output)) = readback_dataconstr ctx family dc in
+        let (Rb_constr (tel, output)) = readback_dataconstr ctx dc in
         let bcvars, argunps = unparse_tel_args names tel Emp in
         let output =
           Option.map (fun out -> { unparse = (fun li ri -> unparse bcvars out li ri) }) output in
@@ -692,9 +682,7 @@ and unparse_constant_value : type a b. (a, b) Ctx.t -> kinetic Value.value -> un
       | Val (Value.Canonical { canonical = Value.Data data_args; ins; _ }) -> (
           match (is_id_ins ins, D.compare_zero data_args.dim) with
           | Some _, Zero ->
-              let family = Option.map Lazy.force !(data_args.tyfam) in
-              Some
-                { unparse = (fun li ri -> unparse_data_value ctx family data_args.constrs li ri) }
+              Some { unparse = (fun li ri -> unparse_data_value ctx data_args.constrs li ri) }
           | _ -> None)
       | Val (Value.Lam (xs, _)) -> (
           (* A function: apply it to a fresh parameter variable and recurse, then re-abstract.  We take the parameter's name from the lambda-abstraction (the definition), not the function-type (whose binder may be anonymous). *)
@@ -830,9 +818,7 @@ and unparse_canonical_value : type a b lt ls rt rs.
           match canonical with
           | Value.Data data_args -> (
               match (is_id_ins ins, D.compare_zero data_args.dim) with
-              | Some _, Zero ->
-                  let family = Option.map Lazy.force !(data_args.tyfam) in
-                  Some (unparse_data_value ctx family data_args.constrs li ri)
+              | Some _, Zero -> Some (unparse_data_value ctx data_args.constrs li ri)
               (* A degenerate (positive substitution dimension) datatype is displayed by reconstructing each constructor's higher-dimensional function-type; see readback_degenerate_constr.  Currently only non-indexed degenerate datatypes are supported; indexed ones fall back to displaying the neutral. *)
               | Some _, Pos _ -> unparse_degenerate_data_value ctx tm li ri
               | None, _ -> None)
