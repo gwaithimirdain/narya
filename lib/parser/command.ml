@@ -978,12 +978,16 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                     match etm with
                     | Value.Neu { head = Value.Const { name; ins }; args = Value.Emp; _ }
                       when Option.is_some (is_id_ins ins) -> (
-                        match Global.find name with
-                        | _, (`Defined tree, _) ->
-                            unparse Names.empty tree No.Interval.entire No.Interval.entire
-                        | _, (`Axiom, _) ->
-                            unparse names (readback_at ctx etm ety) No.Interval.entire
-                              No.Interval.entire)
+                        (* A datatype constant such as Vec is a function reaching a datatype; display it with its real family head, falling back to the stored case tree otherwise. *)
+                        match unparse_constant_value ctx etm with
+                        | Some u -> u.unparse No.Interval.entire No.Interval.entire
+                        | None -> (
+                            match Global.find name with
+                            | _, (`Defined tree, _) ->
+                                unparse Names.empty tree No.Interval.entire No.Interval.entire
+                            | _, (`Axiom, _) ->
+                                unparse names (readback_at ctx etm ety) No.Interval.entire
+                                  No.Interval.entire))
                     | _ ->
                         unparse names (readback_at ctx etm ety) No.Interval.entire
                           No.Interval.entire)) in

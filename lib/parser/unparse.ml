@@ -615,6 +615,76 @@ and unparse_data_value : type lev e ij lt ls rt rs.
       constrs in
   unlocated (outfix ~notn:data ~inner:(Multiple (wstok Data, inner, wstok RBracket)))
 
+(* "about" on a bare datatype *constant* such as Vec, whose value is a function (the parameter abstraction) eventually reaching a datatype.  We apply it to fresh parameter variables until we reach the datatype value (whose family "tyfam" is then populated), display that with unparse_data_value, and re-abstract over the parameters.  This is what lets "about Vec" show "A ↦ data [ ... : Vec A ... ]" with the real family head rather than a placeholder.  Returns None for anything that isn't a (parameterized) datatype, so the caller falls back to displaying the stored case tree. *)
+and unparse_constant_value : type a b. (a, b) Ctx.t -> kinetic Value.value -> unparser option =
+ fun ctx value ->
+  match value with
+  | Value.Neu { value = v; ty; _ } -> (
+      match Norm.force_eval v with
+      | Val (Value.Canonical { canonical = Value.Data data_args; ins; _ }) -> (
+          match (is_id_ins ins, D.compare_zero data_args.dim) with
+          | Some _, Zero ->
+              let family = Option.map Lazy.force !(data_args.tyfam) in
+              Some
+                { unparse = (fun li ri -> unparse_data_value ctx family data_args.constrs li ri) }
+          | _ -> None)
+      | Val (Value.Lam (xs, _)) -> (
+          (* A function: apply it to a fresh parameter variable and recurse, then re-abstract.  We take the parameter's name from the lambda-abstraction (the definition), not the function-type (whose binder may be anonymous). *)
+          match View.view_type (Lazy.force ty) "unparse_constant_value" with
+          | Canonical (_, Pi (_, doms, _), pins, _) -> (
+              let Eq = eq_of_ins_zero pins in
+              match D.compare_zero (CubeOf.dim doms) with
+              | Zero -> (
+                  let pname, _ = Names.add_cube D.zero (Names.of_ctx ctx) (top_variable xs) in
+                  let argvar, argnf = Domvars.dom_vars ctx doms in
+                  let ctx = Ctx.cube_vis ctx (Some pname) argnf in
+                  let value = Norm.apply_term value argvar in
+                  match unparse_constant_value ctx value with
+                  | None -> None
+                  | Some body ->
+                      Some
+                        {
+                          unparse =
+                            (fun (type lt ls rt rs)
+                              (li : (lt, ls) No.iinterval)
+                              (ri : (rt, rs) No.iinterval)
+                            ->
+                              match
+                                ( No.Interval.contains li No.minus_omega,
+                                  No.Interval.contains ri No.minus_omega )
+                              with
+                              | Some left_ok, Some right_ok ->
+                                  let li_ok =
+                                    No.lt_trans Any_strict left_ok No.minusomega_lt_plusomega in
+                                  let first =
+                                    unparse_abs
+                                      (Snoc (Emp, (pname, `Explicit)))
+                                      li li_ok No.minusomega_lt_plusomega in
+                                  let last = body.unparse No.Interval.entire ri in
+                                  unlocated
+                                    (infix ~notn:abs ~first
+                                       ~inner:(Single (wstok Mapsto))
+                                       ~last ~left_ok ~right_ok)
+                              | _ ->
+                                  let first =
+                                    unparse_abs
+                                      (Snoc (Emp, (pname, `Explicit)))
+                                      No.Interval.entire (No.le_plusomega No.minus_omega)
+                                      No.minusomega_lt_plusomega in
+                                  let last = body.unparse No.Interval.entire No.Interval.entire in
+                                  let left_ok = No.le_refl No.minus_omega in
+                                  let right_ok = No.le_refl No.minus_omega in
+                                  parenthesize
+                                    (unlocated
+                                       (infix ~notn:abs ~first
+                                          ~inner:(Single (wstok Mapsto))
+                                          ~last ~left_ok ~right_ok)));
+                        })
+              | Pos _ -> None)
+          | _ -> None)
+      | _ -> None)
+  | _ -> None
+
 (* Unparse a match "match tm [ | constr. x ... |-> body | ... ]".  Refuted branches are omitted; an all-refuted (or empty) match prints as "match tm [ ]". *)
 and unparse_match : type n m lt ls rt rs.
     n Names.t ->

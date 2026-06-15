@@ -47,6 +47,17 @@ A neutral that is an applied canonical type is read back and displayed as the co
   
 
 
+"about" on a datatype constant itself (a parameter abstraction reaching a datatype) shows the parameters abstracted and the constructors' output types referring to the parameterized family.
+
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Vec : Type → N → Type ≔ A ↦ data [ nil. : Vec A zero. | cons. : (n : N) → A → Vec A n → Vec A (suc. n) ]' -e 'about Vec'
+  A ↦
+  data [
+  | nil. : Vec A 0
+  | cons. (n : N) (𝑥 : A) (𝑦 : Vec A n) : Vec A (suc. n) ]
+    : Type → N → Type
+  
+
+
 A higher-dimensional (Gel-like) codatatype is read back at its intrinsic dimension.
 
   $ narya -dtt -e 'axiom A : Type' -e 'axiom Aʹ : A → Type' -e 'def Gel (A : Type) (Aʹ : A → Type) : Type⁽ᵈ⁾ A ≔ sig x ↦ ( ungel : Aʹ x )' -e 'about (Gel A Aʹ)'
