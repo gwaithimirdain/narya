@@ -72,4 +72,24 @@ A degenerate codatatype or record is read back at its full dimension, showing th
   
 
 
+For a codatatype with a higher field, the projectable instances of that field (one per partial bijection with no remaining dimensions) are enumerated at each degeneracy.  (The non-projectable "declaration" instances such as .root.e are not yet shown, so the undegenerate type shows no higher-field instances.)
+
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def √N : Type ≔ codata [ x .root.e : N ]' -e 'about √N' -e 'about (refl √N)' -e 'about (refl (refl √N))'
+  codata [ ]
+    : Type
+  
+  codata [
+  | 𝑥 .root.1 : N ]
+    : Type⁽ᵉ⁾ √N √N
+  
+  codata [
+  | 𝑥 .root.1 : N⁽ᵉ⁾ (𝑥.20 .root) (𝑥.21 .root)
+  | 𝑥 .root.2 : N⁽ᵉ⁾ (𝑥.02 .root) (𝑥.12 .root) ]
+    : Type⁽ᵉᵉ⁾ √N⁽ᵉ⁾ √N⁽ᵉ⁾ √N⁽ᵉ⁾ √N⁽ᵉ⁾
+  
+
+
+
+
+
 

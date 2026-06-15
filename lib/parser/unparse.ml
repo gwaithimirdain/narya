@@ -664,23 +664,37 @@ and unparse_codata_value : type a b m p q et lt ls rt rs.
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located option =
- fun ctx tm evaldim eta orig_fields li ri ->
+ fun ctx tm evaldim eta orig_fields _li _ri ->
   match tm with
   | Value.Neu { ty; _ } -> (
       match View.view_type (Lazy.force ty) "unparse_codata_value" with
       | Canonical (_, UU mk, ins, boundary) ->
           (* The universe has intrinsic dimension zero, so its substitution dimension equals its total dimension mk. *)
           let Eq = eq_of_ins_zero ins in
-          (* The self variable ranges over the codatatype; dom_vars builds its boundary faces and gives the top face the fully-instantiated codatatype as its type. *)
+          (* The self variable ranges over the codatatype; dom_vars builds its boundary faces and gives the top face the fully-instantiated codatatype as its type.  We add a corresponding self variable to the name context for displaying the field types. *)
           let dom = TubeOf.plus_cube (Value.val_of_norm_tube boundary) (CubeOf.singleton tm) in
           let selfvars, selfnfs = Domvars.dom_vars ctx dom in
           let self_top = CubeOf.find_top selfvars in
           let self_top_ty = (Ctx.Binding.value (CubeOf.find_top selfnfs)).ty in
-          let ctx' = Ctx.cube_vis ctx None selfnfs in
           let names = Names.of_ctx ctx in
-          let fields =
-            Bwd.map
-              (fun (Term.CodatafieldAbwd.Entry
+          let ctx = Ctx.cube_vis ctx None selfnfs in
+          let selfname, selfnames = Names.add_cube mk names None in
+          (* Build one displayed field instance: its projection pattern and its type. *)
+          let instance : type i.
+              i Field.t ->
+              string list ->
+              kinetic Value.value ->
+              (No.minus_omega, No.nonstrict, No.minus_omega, No.nonstrict) parse located
+              * (No.minus_omega, No.nonstrict, No.minus_omega, No.nonstrict) parse located =
+           fun fld pbij ty ->
+            ( unparse_field_app selfname (Field.to_string fld) pbij,
+              unparse selfnames (readback_val ~sort:`Type ctx ty) No.Interval.entire
+                No.Interval.entire ) in
+          (* Collect every field instance, i.e. every field that must be given when comatching against this codatatype.  Lower fields have exactly one instance; a higher field of intrinsic dimension i has one instance for each partial bijection between the codatatype's evaluation dimension and i.  For now we display only the projectable (zero-remaining) instances. *)
+          let instances =
+            Bwd.fold_left
+              (fun acc
+                   (Term.CodatafieldAbwd.Entry
                       (type i)
                       ((fld, cf) : i Field.t * (i, p * q * et) Term.Codatafield.t)) ->
                 match cf with
@@ -688,12 +702,49 @@ and unparse_codata_value : type a b m p q et lt ls rt rs.
                     let fldty =
                       Norm.tyof_field (Ok self_top) self_top_ty fld ~shuf:Norm.Trivial
                         (ins_zero evaldim) in
-                    let fldty = readback_val ~sort:`Type ctx' fldty in
-                    Term.CodatafieldAbwd.Entry (fld, Term.Codatafield.Lower fldty)
+                    acc <: instance fld [] fldty
                 | Term.Codatafield.Higher _ ->
-                    fatal (Unimplemented "unparsing higher codata fields"))
-              orig_fields in
-          Some (unparse_codata names eta mk fields li ri)
+                    Seq.fold_left
+                      (fun acc (Pbij_between (pbij : (m, i, _) pbij)) ->
+                        let (Pbij (fldins, fldshuf)) = pbij in
+                        match D.compare_zero (left_shuffle fldshuf) with
+                        | Zero ->
+                            let Eq = eq_of_zero_shuffle fldshuf in
+                            let fldty =
+                              Norm.tyof_field (Ok self_top) self_top_ty fld ~shuf:Norm.Trivial
+                                fldins in
+                            acc <: instance fld (strings_of_pbij pbij) fldty
+                        (* Non-projectable (declaration/intermediate) instances are not yet handled. *)
+                        | Pos _ -> acc)
+                      acc
+                      (all_pbij_between evaldim (Field.dim fld)))
+              Emp orig_fields in
+          (* Assemble the codata or record notation. *)
+          let result =
+            match eta with
+            | Noeta ->
+                let inner =
+                  Bwd.fold_left
+                    (fun acc (pat, ty) ->
+                      acc <: mktok (Op "|") <: Term pat <: mktok Colon <: Term ty)
+                    (Snoc (Emp, mktok LBracket))
+                    instances in
+                unlocated
+                  (outfix ~notn:codata ~inner:(Multiple (wstok Codata, inner, wstok RBracket)))
+            | Eta ->
+                let inner, _ =
+                  Bwd.fold_left
+                    (fun (acc, first) (pat, ty) ->
+                      ( (if first then acc else acc <: mktok (Op ","))
+                        <: Term pat
+                        <: mktok Colon
+                        <: Term ty,
+                        false ))
+                    (Snoc (Emp, mktok LParen), true)
+                    instances in
+                unlocated (outfix ~notn:record ~inner:(Multiple (wstok Sig, inner, wstok RParen)))
+          in
+          Some result
       | _ -> None)
   | _ -> None
 
