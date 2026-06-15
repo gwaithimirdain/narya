@@ -327,21 +327,12 @@ let readback_dataconstr : type lev e ij.
         Some (readback_val ~sort:`Type fctx out) in
   Rb_constr (tel, output)
 
-(* Read back the (higher-dimensional) function-type of a constructor of a *degenerate* (positive substitution dimension m) datatype.  The idea is that a constructor's type is morally a function type "(args) → D ...", and the type of the degenerate constructor is the degeneration of that function.  We can't take the degeneration of a constructor directly (there's no "tyof_constr"), but we *can* form the constructor-as-a-function "λ args. c args" together with its function-type "(args) → out", and then act on it by the pure degeneracy deg_zero m using act_ty.  Acting on a function-type instantiates its codomain at the faces of the function, which here are the lower-dimensional constructors, exactly producing e.g. "List⁽ᵉ⁾ (Id A) (cons. x₀ xs₀) (cons. x₁ xs₁)".  Reading back the result gives a higher-dimensional pi-type term, which unparses (via unparse_higher_pi) as "{x₀ x₁ : A} (x₂ : Id A x₀ x₁) … →⁽ᵉ⁾ …".  The constructor's output type "out" is the stored output term (for an indexed datatype, e.g. "Vec A (suc. n)") evaluated at the fresh argument variables; if there is no stored output (a non-indexed datatype), it is the underlying zero-dimensional datatype d0 itself (one face of the degenerate one). *)
+(* Read back the (higher-dimensional) function-type of a constructor of a *degenerate* (positive substitution dimension m) datatype.  The idea is that a constructor's type is morally a function type "(args) → out", and the type of the degenerate constructor is the degeneration of that function.  We can't take the degeneration of a constructor directly (there's no "tyof_constr"), but we *can* form the constructor-as-a-function "λ args. c args" together with its function-type "(args) → out", and then act on it by the pure degeneracy deg_zero m using act_ty.  Acting on a function-type instantiates its codomain at the faces of the function, which here are the lower-dimensional constructors, exactly producing e.g. "List⁽ᵉ⁾ (Id A) (cons. x₀ xs₀) (cons. x₁ xs₁)".  Reading back the result gives a higher-dimensional pi-type term, which unparses (via unparse_higher_pi) as "{x₀ x₁ : A} (x₂ : Id A x₀ x₁) … →⁽ᵉ⁾ …".  The constructor's output type "out" is the stored output term (e.g. "Vec A (suc. n)" for an indexed datatype, or the datatype itself for a non-indexed one) evaluated at the fresh argument variables. *)
 let readback_degenerate_constr : type lev e m ij.
-    (lev, e) Ctx.t ->
-    m D.t ->
-    kinetic Value.value ->
-    Constr.t ->
-    (D.zero, ij) Value.dataconstr ->
-    (e, kinetic) term =
- fun ctx m d0 c (Dataconstr { env; args; indices = _; output }) ->
+    (lev, e) Ctx.t -> m D.t -> Constr.t -> (D.zero, ij) Value.dataconstr -> (e, kinetic) term =
+ fun ctx m c (Dataconstr { env; args; indices = _; output }) ->
   let (Rb_tel (tel, fctx, fenv, argvals)) = readback_tel ctx env args in
-  let output_value =
-    match output with
-    | Some o -> Norm.eval_term fenv o
-    | None -> d0 in
-  let output_term = readback_val ~sort:`Type fctx output_value in
+  let output_term = readback_val ~sort:`Type fctx (Norm.eval_term fenv output) in
   let argvar_terms = List.map (fun v -> readback_val fctx v) argvals in
   let cbody = Term.Constr (c, D.zero, List.map CubeOf.singleton argvar_terms) in
   let cfun = Telescope.lams tel cbody in
@@ -674,7 +665,7 @@ and unparse_degenerate_data_value : type a b lt ls rt rs.
                       let inner =
                         Bwd.fold_left
                           (fun acc (c, dc) ->
-                            let ft = readback_degenerate_constr ctx m d0 c dc in
+                            let ft = readback_degenerate_constr ctx m c dc in
                             let output = { unparse = (fun li ri -> unparse names ft li ri) } in
                             let cterm =
                               unparse_constr_display c Emp (Some output) No.Interval.entire

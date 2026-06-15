@@ -123,7 +123,7 @@ and dataconstr : type p i. (File.t -> File.t) -> (p, i) dataconstr -> (p, i) dat
     {
       args = tel f args;
       indices = Vec.mmap (fun [ x ] -> term f x) [ indices ];
-      output = Option.map (term f) output;
+      output = term f output;
     }
 
 and tel : type a b ab. (File.t -> File.t) -> (a, b, ab) tel -> (a, b, ab) tel =

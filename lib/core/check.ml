@@ -1857,8 +1857,7 @@ and check_data : type a b i.
                         | Eq ->
                             ( disc,
                               checked_constrs
-                              |> Abwd.add c
-                                   (Term.Dataconstr { args; indices; output = Some coutput }),
+                              |> Abwd.add c (Term.Dataconstr { args; indices; output = coutput }),
                               errs )
                         | _ ->
                             (* I think this shouldn't ever happen, no matter what the user writes, since we know at this point that the output is a full application of the correct constant, so it must have the right number of arguments. *)
@@ -1874,10 +1873,11 @@ and check_data : type a b i.
               let disc, (checked_constrs : (Constr.t, (b, i) Term.dataconstr) Abwd.t), errs =
                 Reporter.try_with ~fatal:(fun e -> (true, checked_constrs, Snoc (errs, e)))
                 @@ fun () ->
-                let Checked_tel (args, _), disc = check_tel ?discrete ctx args in
+                let Checked_tel (args, newctx), disc = check_tel ?discrete ctx args in
+                (* A non-indexed constructor needs no user-written output type, so we synthesize it as the datatype (head) applied to its parameters, read back as a term over the argument context. *)
+                let output = readback_neu newctx (head_of_potential head) current_apps in
                 ( disc,
-                  checked_constrs
-                  |> Abwd.add c (Term.Dataconstr { args; indices = []; output = None }),
+                  checked_constrs |> Abwd.add c (Term.Dataconstr { args; indices = []; output }),
                   errs ) in
               check_data
                 ~discrete:(if disc then discrete else None)
