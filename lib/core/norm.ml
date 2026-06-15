@@ -369,7 +369,7 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
                 (Anomaly
                    (Printf.sprintf "constructor %s missing from compiled match"
                       (Constr.to_string name)))
-          | Some (Branch (plus, perm, body)) -> (
+          | Some (Branch (_, plus, perm, body)) -> (
               match D.compare constr_dim total_dim with
               | Neq -> fatal (Dimension_mismatch ("evaluating match", constr_dim, total_dim))
               | Eq ->

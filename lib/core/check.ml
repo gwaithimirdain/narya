@@ -207,6 +207,11 @@ type (_, _, _) synthable_branch =
     }
       -> ('a, 'm, 'ij) synthable_branch
 
+(* The pattern-variable names of a branch, extracted to be stored in the checked Term.Branch so they can be displayed when reading back a case tree. *)
+let rec namevec_to_vec : type a b ab. (a, b, ab) Namevec.t -> (string option, b) Vec.t = function
+  | [] -> Vec.nil
+  | x :: xs -> Vec.cons x (namevec_to_vec xs)
+
 (* This preprocesssing step pairs each user-provided branch with the corresponding constructor information from the datatype. *)
 let merge_branches : type a m ij.
     head ->
@@ -1202,7 +1207,9 @@ and check_match_branches : type a b.
             (* Create new level variables for the pattern variables to which the constructor is applied, and add corresponding index variables to the context.  The types of those variables are specified in the telescope argtys, and have to be evaluated at the closure environment 'env' and the previous new variables (this is what ext_tel does).  For a higher-dimensional match, the new variables come with their boundaries in n-dimensional cubes. *)
             let newctx, newenv, newvars, newnfs = ext_tel ctx env xs argtys efc in
             let perm = Tbwd.id_perm in
-            let status = make_match_status status tm dim branches efc None perm constr in
+            let status =
+              make_match_status status tm dim branches (namevec_to_vec xs) efc None perm constr
+            in
             (* Recurse into the "body" of the branch.  We catch errors and accumulate them so that later branches can continue to be checked and produce their own errors even if earlier ones fail, but we pass through the errors that are getting caught elsewhere. *)
             Reporter.try_with ~fatal:(fun e ->
                 match e.message with
@@ -1218,7 +1225,8 @@ and check_match_branches : type a b.
                 ( branches
                   |> Constr.Map.add constr
                        (Term.Branch
-                          ( efc,
+                          ( namevec_to_vec xs,
+                            efc,
                             perm,
                             check status newctx body
                               (callbacks.use motive constr dim index_terms newenv newvars) )),
@@ -1312,7 +1320,9 @@ and synth_nondep_match : type a b.
           let (Snocs efc) = Tbwd.snocs (Telescope.length argtys) in
           let newctx, _, _, _ = ext_tel ctx env xs argtys efc in
           let perm = Tbwd.id_perm in
-          let status = make_match_status status tm dim Constr.Map.empty efc None perm constr in
+          let status =
+            make_match_status status tm dim Constr.Map.empty (namevec_to_vec xs) efc None perm
+              constr in
           Annotate.ctx status newctx (locate_opt body.loc (Synth body.value));
           (* Trap errors and accumulate them, going on to look for other synthesizing branches. *)
           Reporter.try_with ~fatal:(fun e -> find_synthing_branch (Snoc (errs, e)) brs) @@ fun () ->
@@ -1326,7 +1336,10 @@ and synth_nondep_match : type a b.
                 | _ -> fatal_diagnostic d)
           @@ fun () -> discard (readback_val ctx sty) );
           (* Finally, if we found a synthesizing branch that works, return the synthesized type, the accumulated errors, the successful typechecked branch, and the remaining synthesizing branches.  We don't need to deal again with any of the ones we've visited before the one that succeeded, as they all must have errored in order to get here, and we've accumulated their errors. *)
-          (Some sty, errs, Constr.Map.singleton constr (Term.Branch (efc, perm, sbr)), brs) in
+          ( Some sty,
+            errs,
+            Constr.Map.singleton constr (Term.Branch (namevec_to_vec xs, efc, perm, sbr)),
+            brs ) in
     let motive, errs, branches, synth_branches = find_synthing_branch Emp synth_branches in
     (* We put the remaining synthesizing branches back on the front of the checking ones, and return them. *)
     let check_branches =
@@ -1584,7 +1597,8 @@ and check_var_match : type a b.
                         let newty = eval_term (Ctx.env newctx) (readback_val oldctx motive) in
                         (* Now we have to modify the "status" data by readback-eval on the arguments and adding a hypothesized current branch to the match.  *)
                         let status =
-                          make_match_status status (Term.Var index) dim branches efc
+                          make_match_status status (Term.Var index) dim branches (namevec_to_vec xs)
+                            efc
                             (Some (oldctx, newctx))
                             checked_perm constr in
                         (* Finally, we typecheck the "body" of the branch, if the user supplied one. *)
@@ -1598,7 +1612,8 @@ and check_var_match : type a b.
                             @@ fun () ->
                             let branch = check status newctx body newty in
                             ( branches
-                              |> Constr.Map.add constr (Term.Branch (efc, checked_perm, branch)),
+                              |> Constr.Map.add constr
+                                   (Term.Branch (namevec_to_vec xs, efc, checked_perm, branch)),
                               errs )
                         (* If not, then we look for something to refute. *)
                         | None ->
@@ -1637,12 +1652,13 @@ and make_match_status : type a b ab c n x y z.
     (a, kinetic) term ->
     n D.t ->
     (a, n) Term.branch Constr.Map.t ->
+    (string option, b) Vec.t ->
     (a, b, n, ab) Tbwd.snocs ->
     ((x, z) Ctx.t * (y, z) Ctx.t) option ->
     (c, ab) Tbwd.permute ->
     Constr.t ->
     (c, potential) status =
- fun status newtm dim branches efc eval_readback perm constr ->
+ fun status newtm dim branches xs efc eval_readback perm constr ->
   let (Potential
          (type d any)
          ((head, args, hyp) :
@@ -1681,7 +1697,7 @@ and make_match_status : type a b ab c n x y z.
         (erhead, erapps args)
     | None -> (head, args) in
   let hyp tm =
-    let branches = branches |> Constr.Map.add constr (Term.Branch (efc, perm, tm)) in
+    let branches = branches |> Constr.Map.add constr (Term.Branch (xs, efc, perm, tm)) in
     hyp (Term.Match { tm = newtm; dim; branches }) in
   Potential (head, apps, hyp)
 

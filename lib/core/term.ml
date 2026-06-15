@@ -99,7 +99,10 @@ module rec Term : sig
 
   and (_, _) branch =
     | Branch :
-        ('a, 'b, 'n, 'ab) Tbwd.snocs * ('c, 'ab) Tbwd.permute * ('c, potential) term
+        (string option, 'b) Vec.t
+        * ('a, 'b, 'n, 'ab) Tbwd.snocs
+        * ('c, 'ab) Tbwd.permute
+        * ('c, potential) term
         -> ('a, 'n) branch
     | Refute
 
@@ -274,7 +277,10 @@ end = struct
   (* A branch of a match binds a number of new variables.  If it is a higher-dimensional match, then each of those "variables" is actually a full cube of variables.  In addition, its context must be permuted to put those new variables before the existing variables that are now defined in terms of them. *)
   and (_, _) branch =
     | Branch :
-        ('a, 'b, 'n, 'ab) Tbwd.snocs * ('c, 'ab) Tbwd.permute * ('c, potential) term
+        (string option, 'b) Vec.t
+        * ('a, 'b, 'n, 'ab) Tbwd.snocs
+        * ('c, 'ab) Tbwd.permute
+        * ('c, potential) term
         -> ('a, 'n) branch
     (* A branch that was refuted during typechecking doesn't need a body to compute with, but we still mark its presence as a signal that it should be stuck (this can occur when normalizing in an inconsistent context). *)
     | Refute

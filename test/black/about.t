@@ -17,7 +17,7 @@ About: display the potential value (canonical type or case tree) of a neutral
     𝑥 .b : 𝑥 .a → Type )
     : Type
   
-  𝑥 ↦ match 𝑥 [ suc. 𝑦 ↦ 𝑦 | zero. ↦ 0 ]
+  𝑥 ↦ match 𝑥 [ suc. n ↦ n | zero. ↦ 0 ]
     : N → N
   
   ax

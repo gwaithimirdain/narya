@@ -269,15 +269,19 @@ let unparse_field_app (x : string) (fld : string) (pbij : string list) :
       unlocated (App { fn; arg; left_ok; right_ok })
   | _ -> fatal (Anomaly "impossible interval in unparse_field_app")
 
-(* Add the new variables bound by a match branch to the name context, returning their names in order. *)
+(* Add the new variables bound by a match branch to the name context, using the branch's stored pattern-variable names, and returning the (possibly freshened) names in order. *)
 let rec add_match_vars : type a b m ab.
-    m D.t -> a Names.t -> (a, b, m, ab) Tbwd.snocs -> ab Names.t * string list =
- fun dim vars snocs ->
-  match snocs with
-  | Zero -> (vars, [])
-  | Suc snocs ->
-      let x, vars = Names.add_cube dim vars None in
-      let vars, xs = add_match_vars dim vars snocs in
+    m D.t ->
+    a Names.t ->
+    (string option, b) Vec.t ->
+    (a, b, m, ab) Tbwd.snocs ->
+    ab Names.t * string list =
+ fun dim vars names snocs ->
+  match (names, snocs) with
+  | [], Zero -> (vars, [])
+  | name :: names, Suc snocs ->
+      let x, vars = Names.add_cube dim vars name in
+      let vars, xs = add_match_vars dim vars names snocs in
       (vars, x :: xs)
 
 (* The result of reading back a constructor's argument telescope from a value: the telescope as a term, plus the context and environment extended by fresh variables for its arguments (needed to read back the index values that follow it). *)
@@ -707,8 +711,8 @@ and unparse_match : type n m lt ls rt rs.
       (fun c br acc ->
         match br with
         | Term.Refute -> acc
-        | Term.Branch (snocs, perm, body) ->
-            let newvars, xs = add_match_vars dim vars snocs in
+        | Term.Branch (names, snocs, perm, body) ->
+            let newvars, xs = add_match_vars dim vars names snocs in
             let bodyvars = Names.permute perm newvars in
             let args =
               Bwd.of_list (List.map (fun x -> { unparse = (fun _ _ -> unparse_var x) }) xs) in

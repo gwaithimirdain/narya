@@ -23,7 +23,7 @@ let () =
     "codata [\n| 𝑥 .head : Type\n| 𝑥 .tail : Type ]";
   (* A match (pattern-matching lambda).  Branches come out in constructor-name order. *)
   check "pred" "Nat → Nat" "[ zero. ↦ zero. | suc. n ↦ n ]"
-    "𝑥 ↦ match 𝑥 [ suc. 𝑦 ↦ 𝑦 | zero. ↦ 0 ]";
+    "𝑥 ↦ match 𝑥 [ suc. n ↦ n | zero. ↦ 0 ]";
   (* A comatch. *)
   check "consts" "Stream" "[ .head ↦ Nat | .tail ↦ Empty ]" "[ .head ↦ Nat | .tail ↦ Empty ]";
   ()

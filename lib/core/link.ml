@@ -51,7 +51,7 @@ let rec term : type a s. (File.t -> File.t) -> (a, s) term -> (a, s) term =
 and branch : type a n. (File.t -> File.t) -> (a, n) branch -> (a, n) branch =
  fun f br ->
   match br with
-  | Branch (ab, p, tm) -> Branch (ab, p, term f tm)
+  | Branch (xs, ab, p, tm) -> Branch (xs, ab, p, term f tm)
   | Refute -> Refute
 
 and canonical : type a. (File.t -> File.t) -> a canonical -> a canonical =
