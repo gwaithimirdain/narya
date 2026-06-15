@@ -615,7 +615,9 @@ and unparse_data_value : type lev e ij lt ls rt rs.
       constrs in
   unlocated (outfix ~notn:data ~inner:(Multiple (wstok Data, inner, wstok RBracket)))
 
-(* "about" on a bare datatype *constant* such as Vec, whose value is a function (the parameter abstraction) eventually reaching a datatype.  We apply it to fresh parameter variables until we reach the datatype value (whose family "tyfam" is then populated), display that with unparse_data_value, and re-abstract over the parameters.  This is what lets "about Vec" show "A ↦ data [ ... : Vec A ... ]" with the real family head rather than a placeholder.  Returns None for anything that isn't a (parameterized) datatype, so the caller falls back to displaying the stored case tree. *)
+(* "about" on a bare datatype *constant* such as Vec, whose value is a function (the parameter abstraction) eventually reaching a datatype.  We apply it to fresh parameter variables until we reach the datatype value (whose family "tyfam" is then populated), display that with unparse_data_value, and re-abstract over the parameters.  This is what lets "about Vec" show "A ↦ data [ ... : Vec A ... ]" with the real family head rather than a placeholder.  Returns None for anything that isn't a (parameterized) datatype, so the caller falls back to displaying the stored case tree.
+
+   LIMITATION: this only descends through *parameter abstractions* (lambdas).  If a datatype appears nested inside a match or comatch/tuple in the case tree (e.g. "def Vec (n:N) : Type → Type ≔ match n [ zero. ↦ data [ ... : Vec n A ] | suc. m ↦ data [ ... : Vec (suc. m) A ] ]"), we hit a stuck (Unrealized) neutral here and fall back to unparsing the stored case tree, where the nested datatype is anonymous and its constructors' output-type heads are shown as a placeholder "_".  Recovering those heads would require re-deriving the case tree by splitting each match and evaluating its branches (the only way to repopulate "tyfam" per branch); since it's a rare shape, we don't do it. *)
 and unparse_constant_value : type a b. (a, b) Ctx.t -> kinetic Value.value -> unparser option =
  fun ctx value ->
   match value with

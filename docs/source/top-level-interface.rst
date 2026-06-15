@@ -96,6 +96,8 @@ Like ``echo``, but does not normalize the term, only computes its type.
 
 Like ``echo``, but if the normalized result is a neutral, it tries to display the term's *potential value* instead of just its name.  In particular, if the result is (or is an application reducing to) a :ref:`canonical type<Canonical types defined by case trees>`, the canonical type declaration is read back and displayed; for instance, if ``List`` is defined as ``A ↦ data [ nil. | cons. (x : A) (xs : List A) ]``, then ``about (List N)`` displays ``data [ nil. | cons. (x : N) (xs : List N) ]``.  For an indexed datatype, each constructor's output type is shown as well, e.g. ``about (Vec N 1)`` displays the constructors ``nil. : Vec N 0`` and ``cons. (n : N) … : Vec N (suc. n)``.  For a codatatype or record (including higher-dimensional ones), each field is shown with its in-practice type, including, for higher fields, all the instances that a comatch would have to provide.  Failing all that, if the result is a bare defined constant, its stored case tree is displayed; and if nothing applies, ``about`` behaves exactly like ``echo``.
 
+One limitation: a datatype's constructor output types are only reconstructed when the datatype is reached through parameter abstractions.  If a datatype is defined nested inside a ``match`` or comatch (for instance ``def Vec (n : N) : Type → Type ≔ match n [ zero. ↦ data [ … : Vec n A ] | suc. m ↦ data [ … : Vec (suc. m) A ] ]``), then ``about`` falls back to displaying the stored case tree, in which the nested datatype is anonymous and its constructors' output-type heads are shown as ``_`` (the argument telescopes are still shown correctly).
+
 Notation
 ^^^^^^^^
 
