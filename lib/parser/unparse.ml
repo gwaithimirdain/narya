@@ -646,79 +646,90 @@ and unparse_canonical_value : type a b lt ls rt rs.
                   let constrs = Abwd.map (fun dc -> readback_dataconstr ctx dc) data_args.constrs in
                   Some (unparse_data names constrs li ri)
               | _ -> None)
-          (* Codatatypes/records are handled uniformly whether 0-dimensional, intrinsically higher (Gel-like), or degenerate: we introduce a self variable of the codatatype's full dimension and read back each field's type with tyof_field.  The evaluation (substitution) dimension, cod_left_ins of the insertion, is needed to form the field projections. *)
-          | Value.Codata codata_args ->
-              unparse_codata_value ctx tm (cod_left_ins ins) codata_args.eta codata_args.fields li
-                ri
+          (* Codatatypes/records are handled uniformly whether 0-dimensional, intrinsically higher (Gel-like), or degenerate: we introduce a self variable of the codatatype's full dimension and read back each field's type with tyof_field. *)
+          | Value.Codata codata_args -> unparse_codata_value ctx tm codata_args li ri
           | Value.UU _ | Value.Pi _ -> None)
       | _ -> None)
   | _ -> None
 
 (* Unparse a value-level codatatype/record by introducing a self variable of its full dimension (via dom_vars, which gives the top self-variable the fully-instantiated codatatype as its type) and reading back the type of each field with tyof_field.  This handles 0-dimensional, intrinsically-higher (Gel-like), and degenerate codatatypes uniformly, displaying the in-practice (possibly higher-dimensional) field types. *)
-and unparse_codata_value : type a b m p q et lt ls rt rs.
+and unparse_codata_value : type a b cm cn cc ca cet lt ls rt rs.
     (a, b) Ctx.t ->
     kinetic Value.value ->
-    m D.t ->
-    (potential, et) eta ->
-    (p * q * et) Term.CodatafieldAbwd.t ->
+    (cm, cn, cc, ca, cet) Value.codata_args ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located option =
- fun ctx tm evaldim eta orig_fields _li _ri ->
+ fun ctx tm codata_args _li _ri ->
+  let eta = codata_args.eta in
+  let evaldim = Value.dim_env codata_args.env in
   match tm with
   | Value.Neu { ty; _ } -> (
       match View.view_type (Lazy.force ty) "unparse_codata_value" with
-      | Canonical (_, UU mk, ins, boundary) ->
+      | Canonical (_, UU mk, ins0, boundary) ->
           (* The universe has intrinsic dimension zero, so its substitution dimension equals its total dimension mk. *)
-          let Eq = eq_of_ins_zero ins in
-          (* The self variable ranges over the codatatype; dom_vars builds its boundary faces and gives the top face the fully-instantiated codatatype as its type.  We add a corresponding self variable to the name context for displaying the field types. *)
+          let Eq = eq_of_ins_zero ins0 in
+          (* The self variable ranges over the codatatype; dom_vars builds its boundary faces and gives the top face the fully-instantiated codatatype as its type. *)
           let dom = TubeOf.plus_cube (Value.val_of_norm_tube boundary) (CubeOf.singleton tm) in
           let selfvars, selfnfs = Domvars.dom_vars ctx dom in
           let self_top = CubeOf.find_top selfvars in
           let self_top_ty = (Ctx.Binding.value (CubeOf.find_top selfnfs)).ty in
-          let names = Names.of_ctx ctx in
-          let ctx = Ctx.cube_vis ctx None selfnfs in
-          let selfname, selfnames = Names.add_cube mk names None in
-          (* Build one displayed field instance: its projection pattern and its type. *)
-          let instance : type i.
+          (* Pick a name for the self variable, and add it to the readback context so we can read back the field types referring to it. *)
+          let selfname, _ = Names.add_cube mk (Names.of_ctx ctx) None in
+          let ctx = Ctx.cube_vis ctx (Some selfname) selfnfs in
+          (* Read back and unparse the type of one field instance, in the given (possibly degenerated) display context. *)
+          let display_instance : type da db i.
+              (da, db) Ctx.t ->
               i Field.t ->
               string list ->
               kinetic Value.value ->
               (No.minus_omega, No.nonstrict, No.minus_omega, No.nonstrict) parse located
               * (No.minus_omega, No.nonstrict, No.minus_omega, No.nonstrict) parse located =
-           fun fld pbij ty ->
+           fun dctx fld pbij ety ->
             ( unparse_field_app selfname (Field.to_string fld) pbij,
-              unparse selfnames (readback_val ~sort:`Type ctx ty) No.Interval.entire
-                No.Interval.entire ) in
-          (* Collect every field instance, i.e. every field that must be given when comatching against this codatatype.  Lower fields have exactly one instance; a higher field of intrinsic dimension i has one instance for each partial bijection between the codatatype's evaluation dimension and i.  For now we display only the projectable (zero-remaining) instances. *)
+              unparse (Names.of_ctx dctx)
+                (readback_val ~sort:`Type dctx ety)
+                No.Interval.entire No.Interval.entire ) in
+          (* Collect every field instance, i.e. every field that must be given when comatching against this codatatype.  Lower fields have exactly one instance; a higher field of intrinsic dimension i has one instance for each partial bijection between the codatatype's evaluation dimension and i.  Projectable instances (zero remaining) are read back in the self-variable context; non-projectable ones (the declaration form .e and intermediate forms .e1) are read back in a context degenerated by the remaining dimensions. *)
           let instances =
             Bwd.fold_left
               (fun acc
                    (Term.CodatafieldAbwd.Entry
                       (type i)
-                      ((fld, cf) : i Field.t * (i, p * q * et) Term.Codatafield.t)) ->
+                      ((fld, cf) : i Field.t * (i, ca * cn * cet) Term.Codatafield.t)) ->
                 match cf with
                 | Term.Codatafield.Lower _ ->
-                    let fldty =
+                    let ety =
                       Norm.tyof_field (Ok self_top) self_top_ty fld ~shuf:Norm.Trivial
                         (ins_zero evaldim) in
-                    acc <: instance fld [] fldty
-                | Term.Codatafield.Higher _ ->
+                    acc <: display_instance ctx fld [] ety
+                | Term.Codatafield.Higher (_, _) ->
                     Seq.fold_left
-                      (fun acc (Pbij_between (pbij : (m, i, _) pbij)) ->
+                      (fun acc (Pbij_between (pbij : (cm, i, _) pbij)) ->
                         let (Pbij (fldins, fldshuf)) = pbij in
                         match D.compare_zero (left_shuffle fldshuf) with
                         | Zero ->
                             let Eq = eq_of_zero_shuffle fldshuf in
-                            let fldty =
+                            let ety =
                               Norm.tyof_field (Ok self_top) self_top_ty fld ~shuf:Norm.Trivial
                                 fldins in
-                            acc <: instance fld (strings_of_pbij pbij) fldty
-                        (* Non-projectable (declaration/intermediate) instances are not yet handled. *)
-                        | Pos _ -> acc)
+                            acc <: display_instance ctx fld (strings_of_pbij pbij) ety
+                        | Pos _ ->
+                            (* Non-projectable instance: degenerate the context by the remaining dimensions, and build the nontrivial shuffleable to compute the field type there. *)
+                            let r = left_shuffle fldshuf in
+                            let (Degctx.Degctx (_, dctx, denv)) = Degctx.degctx ctx r in
+                            let termctx =
+                              Lazy.force codata_args.termctx
+                              <|> Anomaly "missing termctx for higher codata field" in
+                            let shuf =
+                              higher_codatafield_shuffleable ctx
+                                (Value.length_env codata_args.env)
+                                termctx denv r fldshuf in
+                            let ety = Norm.tyof_field (Ok self_top) self_top_ty fld ~shuf fldins in
+                            acc <: display_instance dctx fld (strings_of_pbij pbij) ety)
                       acc
                       (all_pbij_between evaldim (Field.dim fld)))
-              Emp orig_fields in
+              Emp codata_args.fields in
           (* Assemble the codata or record notation. *)
           let result =
             match eta with
