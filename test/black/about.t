@@ -121,7 +121,13 @@ A degenerate (non-indexed) datatype is read back by reconstructing each construc
   | suc. : {𝑥₀ : N} {𝑥₁ : N} (𝑥₂ : N⁽ᵉ⁾ 𝑥₀ 𝑥₁) →⁽ᵉ⁾ N⁽ᵉ⁾ (suc. 𝑥₀) (suc. 𝑥₁) ]
     : Type⁽ᵉ⁾ N N
   
-  Vec⁽ᵉ⁾ (Id X) {0} {0} (refl 0)
+  data [
+  | nil. : Vec⁽ᵉ⁾ (Id X) {0} {0} (refl 0) nil. nil.
+  | cons.
+    : {n₀ : N} {n₁ : N} (n₂ : N⁽ᵉ⁾ n₀ n₁) {𝑥₀ : X} {𝑥₁ : X} (𝑥₂ : Id X 𝑥₀ 𝑥₁)
+      {𝑦₀ : Vec X n₀} {𝑦₁ : Vec X n₁} (𝑦₂ : Vec⁽ᵉ⁾ (Id X) n₂ 𝑦₀ 𝑦₁)
+      →⁽ᵉ⁾ Vec⁽ᵉ⁾ (Id X) {suc. n₀} {suc. n₁} (suc. n₂) (cons. n₀ 𝑥₀ 𝑦₀)
+             (cons. n₁ 𝑥₁ 𝑦₁) ]
     : Type⁽ᵉ⁾ (Vec X 0) (Vec X 0)
   
 

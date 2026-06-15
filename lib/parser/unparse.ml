@@ -327,28 +327,29 @@ let readback_dataconstr : type lev e ij.
         Some (readback_val ~sort:`Type fctx out) in
   Rb_constr (tel, output)
 
-(* Read back the (higher-dimensional) function-type of a constructor of a *degenerate* (positive substitution dimension m) datatype.  The idea is that a constructor's type is morally a function type "(args) → D ...", and the type of the degenerate constructor is the degeneration of that function.  We can't take the degeneration of a constructor directly (there's no "tyof_constr"), but we *can* form the constructor-as-a-function "λ args. c args" together with its function-type "(args) → D0", and then act on it by the pure degeneracy deg_zero m using act_ty.  Acting on a function-type instantiates its codomain at the faces of the function, which here are the lower-dimensional constructors, exactly producing e.g. "List⁽ᵉ⁾ (Id A) (cons. x₀ xs₀) (cons. x₁ xs₁)".  Reading back the result gives a higher-dimensional pi-type term, which unparses (via unparse_higher_pi) as "{x₀ x₁ : A} (x₂ : Id A x₀ x₁) … →⁽ᵉ⁾ …".  Here d0 is the underlying zero-dimensional datatype (one face of the degenerate one), used as the constructor's output type.  Returns None for indexed datatypes, which aren't yet supported (their output type would need the zero-dimensional family applied to the constructor's index values). *)
+(* Read back the (higher-dimensional) function-type of a constructor of a *degenerate* (positive substitution dimension m) datatype.  The idea is that a constructor's type is morally a function type "(args) → D ...", and the type of the degenerate constructor is the degeneration of that function.  We can't take the degeneration of a constructor directly (there's no "tyof_constr"), but we *can* form the constructor-as-a-function "λ args. c args" together with its function-type "(args) → out", and then act on it by the pure degeneracy deg_zero m using act_ty.  Acting on a function-type instantiates its codomain at the faces of the function, which here are the lower-dimensional constructors, exactly producing e.g. "List⁽ᵉ⁾ (Id A) (cons. x₀ xs₀) (cons. x₁ xs₁)".  Reading back the result gives a higher-dimensional pi-type term, which unparses (via unparse_higher_pi) as "{x₀ x₁ : A} (x₂ : Id A x₀ x₁) … →⁽ᵉ⁾ …".  The constructor's output type "out" is the stored output term (for an indexed datatype, e.g. "Vec A (suc. n)") evaluated at the fresh argument variables; if there is no stored output (a non-indexed datatype), it is the underlying zero-dimensional datatype d0 itself (one face of the degenerate one). *)
 let readback_degenerate_constr : type lev e m ij.
     (lev, e) Ctx.t ->
     m D.t ->
     kinetic Value.value ->
     Constr.t ->
     (D.zero, ij) Value.dataconstr ->
-    (e, kinetic) term option =
- fun ctx m d0 c (Dataconstr { env; args; indices; output = _ }) ->
-  match indices with
-  | _ :: _ -> None
-  | [] ->
-      let (Rb_tel (tel, fctx, _fenv, argvals)) = readback_tel ctx env args in
-      let output_term = readback_val ~sort:`Type fctx d0 in
-      let argvar_terms = List.map (fun v -> readback_val fctx v) argvals in
-      let cbody = Term.Constr (c, D.zero, List.map CubeOf.singleton argvar_terms) in
-      let cfun = Telescope.lams tel cbody in
-      let cty = Telescope.pis tel output_term in
-      let cfun = Norm.eval_term (Ctx.env ctx) cfun in
-      let cty = Norm.eval_term (Ctx.env ctx) cty in
-      let ft = Act.act_ty cfun cty (deg_zero m) in
-      Some (readback_val ~sort:`Type ctx ft)
+    (e, kinetic) term =
+ fun ctx m d0 c (Dataconstr { env; args; indices = _; output }) ->
+  let (Rb_tel (tel, fctx, fenv, argvals)) = readback_tel ctx env args in
+  let output_value =
+    match output with
+    | Some o -> Norm.eval_term fenv o
+    | None -> d0 in
+  let output_term = readback_val ~sort:`Type fctx output_value in
+  let argvar_terms = List.map (fun v -> readback_val fctx v) argvals in
+  let cbody = Term.Constr (c, D.zero, List.map CubeOf.singleton argvar_terms) in
+  let cfun = Telescope.lams tel cbody in
+  let cty = Telescope.pis tel output_term in
+  let cfun = Norm.eval_term (Ctx.env ctx) cfun in
+  let cty = Norm.eval_term (Ctx.env ctx) cty in
+  let ft = Act.act_ty cfun cty (deg_zero m) in
+  readback_val ~sort:`Type ctx ft
 
 (* The primary unparsing function.  Given the variable names, unparse a term into given tightness intervals. *)
 let rec unparse : type n lt ls rt rs s.
@@ -670,28 +671,20 @@ and unparse_degenerate_data_value : type a b lt ls rt rs.
                   | Pos _ -> None
                   | Zero ->
                       let names = Names.of_ctx ctx in
-                      let constr_terms =
-                        List.map
-                          (fun (c, dc) -> (c, readback_degenerate_constr ctx m d0 c dc))
-                          (Bwd.to_list d0_args.constrs) in
-                      (* If any constructor is indexed (None), fall back to displaying the neutral. *)
-                      if List.exists (fun (_, t) -> Option.is_none t) constr_terms then None
-                      else
-                        let inner =
-                          List.fold_left
-                            (fun acc (c, t) ->
-                              let ft = Option.get t in
-                              let output = { unparse = (fun li ri -> unparse names ft li ri) } in
-                              let cterm =
-                                unparse_constr_display c Emp (Some output) No.Interval.entire
-                                  No.Interval.entire in
-                              acc <: mktok (Op "|") <: Term cterm)
-                            (Snoc (Emp, mktok LBracket))
-                            constr_terms in
-                        Some
-                          (unlocated
-                             (outfix ~notn:data
-                                ~inner:(Multiple (wstok Data, inner, wstok RBracket)))))
+                      let inner =
+                        Bwd.fold_left
+                          (fun acc (c, dc) ->
+                            let ft = readback_degenerate_constr ctx m d0 c dc in
+                            let output = { unparse = (fun li ri -> unparse names ft li ri) } in
+                            let cterm =
+                              unparse_constr_display c Emp (Some output) No.Interval.entire
+                                No.Interval.entire in
+                            acc <: mktok (Op "|") <: Term cterm)
+                          (Snoc (Emp, mktok LBracket))
+                          d0_args.constrs in
+                      Some
+                        (unlocated
+                           (outfix ~notn:data ~inner:(Multiple (wstok Data, inner, wstok RBracket)))))
               | _ -> None))
       | _ -> None)
   | _ -> None
