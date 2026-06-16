@@ -151,7 +151,7 @@ module rec Term : sig
 
   (* Display-only reflections of canonical types, produced by readback for the "about" command. *)
   and _ canonical_display =
-    | Data_display : (Constr.t * 'a dataconstr_display) Bwd.t -> 'a canonical_display
+    | Data_display : (Constr.t, 'a dataconstr_display) Abwd.t -> 'a canonical_display
 
   and _ dataconstr_display =
     (* A zero-dimensional constructor: a telescope of arguments, plus its output type for an indexed datatype. *)
@@ -351,7 +351,7 @@ end = struct
     | Dataconstr : { args : ('p, 'a, 'pa) tel; output : ('pa, kinetic) term } -> 'p dataconstr
 
   and _ canonical_display =
-    | Data_display : (Constr.t * 'a dataconstr_display) Bwd.t -> 'a canonical_display
+    | Data_display : (Constr.t, 'a dataconstr_display) Abwd.t -> 'a canonical_display
 
   and _ dataconstr_display =
     | Tel_constr : ('a, 'b, 'ab) tel * ('ab, kinetic) term option -> 'a dataconstr_display

@@ -284,69 +284,6 @@ let rec add_match_vars : type a b m ab.
       let vars, xs = add_match_vars dim vars names snocs in
       (vars, x :: xs)
 
-(* The result of reading back a constructor's argument telescope from a value: the telescope as a term, plus the context and environment extended by fresh variables for its arguments (needed to read back the index values that follow it), and the (top-dimensional) values of those fresh argument variables in order (needed to build the constructor-as-a-function for degenerate datatypes). *)
-type (_, _, _) rb_tel =
-  | Rb_tel :
-      ('e, 'c, 'ec) Term.tel
-      * ('lev, 'ec) Ctx.t
-      * (D.zero, 'ac) Value.env
-      * kinetic Value.value list
-      -> ('e, 'c, 'ac) rb_tel
-
-(* Read back a (zero-dimensional) telescope of value-level types into a term-level telescope in the readback context, introducing a fresh variable for each entry. *)
-let rec readback_tel : type lev e a c ac.
-    (lev, e) Ctx.t -> (D.zero, a) Value.env -> (a, c, ac) Term.tel -> (e, c, ac) rb_tel =
- fun ctx env tel ->
-  match tel with
-  | Emp -> Rb_tel (Emp, ctx, env, [])
-  | Ext (name, rty, rest) ->
-      let ety = Norm.eval_term env rty in
-      let newvars, newnfs = Domvars.dom_vars ctx (CubeOf.singleton ety) in
-      let trty = readback_val ~sort:`Type ctx ety in
-      let ctx = Ctx.cube_vis ctx name newnfs in
-      let env = Value.Ext (env, D.plus_zero D.zero, Ok newvars) in
-      let (Rb_tel (resttel, fctx, fenv, restvals)) = readback_tel ctx env rest in
-      Rb_tel (Ext (name, trty, resttel), fctx, fenv, CubeOf.find_top newvars :: restvals)
-
-(* The result of reading back a value-level datatype constructor: its argument telescope and, for an indexed datatype, the output type (the datatype family applied to the constructor's index values). *)
-type _ rb_constr = Rb_constr : ('e, 'c, 'ec) Term.tel * ('ec, kinetic) term option -> 'e rb_constr
-
-(* Read back a value-level datatype constructor (at dimension zero) into the readback context: its argument telescope, and, for an indexed datatype, its output type.  The output type is the stored output term (the datatype applied to the parameters and indices) evaluated at the fresh argument variables; it is shown only for indexed datatypes (the caller passes whether the datatype is indexed), matching the convention that non-indexed constructors are displayed without an output ascription. *)
-let readback_dataconstr : type lev e.
-    (lev, e) Ctx.t -> bool -> D.zero Value.dataconstr -> e rb_constr =
- fun ctx indexed (Dataconstr { env; args; output }) ->
-  let (Rb_tel (tel, fctx, fenv, _)) = readback_tel ctx env args in
-  let output =
-    if indexed then Some (readback_val ~sort:`Type fctx (Norm.eval_term fenv output)) else None
-  in
-  Rb_constr (tel, output)
-
-(* Read back the (higher-dimensional) function-type of a constructor of a *degenerate* (positive substitution dimension m) datatype.  The idea is that a constructor's type is morally a function type "(args) → out", and the type of the degenerate constructor is the degeneration of that function.  We can't take the degeneration of a constructor directly (there's no "tyof_constr"), but we *can* form the constructor-as-a-function "λ args. c args" together with its function-type "(args) → out", and then act on it by the pure degeneracy deg_zero m using act_ty.  Acting on a function-type instantiates its codomain at the faces of the function, which here are the lower-dimensional constructors, exactly producing e.g. "List⁽ᵉ⁾ (Id A) (cons. x₀ xs₀) (cons. x₁ xs₁)".  Reading back the result gives a higher-dimensional pi-type term, which unparses (via unparse_higher_pi) as "{x₀ x₁ : A} (x₂ : Id A x₀ x₁) … →⁽ᵉ⁾ …".  The constructor's output type "out" is the stored output term (e.g. "Vec A (suc. n)" for an indexed datatype, or the datatype itself for a non-indexed one) evaluated at the fresh argument variables. *)
-let readback_degenerate_constr : type lev e m.
-    (lev, e) Ctx.t -> m D.t -> Constr.t -> D.zero Value.dataconstr -> (e, kinetic) term =
- fun ctx m c (Dataconstr { env; args; output }) ->
-  let (Rb_tel (tel, fctx, fenv, argvals)) = readback_tel ctx env args in
-  let output_term = readback_val ~sort:`Type fctx (Norm.eval_term fenv output) in
-  let argvar_terms = List.map (fun v -> readback_val fctx v) argvals in
-  let cbody = Term.Constr (c, D.zero, List.map CubeOf.singleton argvar_terms) in
-  let cfun = Telescope.lams tel cbody in
-  let cty = Telescope.pis tel output_term in
-  let cfun = Norm.eval_term (Ctx.env ctx) cfun in
-  let cty = Norm.eval_term (Ctx.env ctx) cty in
-  let ft = Act.act_ty cfun cty (deg_zero m) in
-  readback_val ~sort:`Type ctx ft
-
-(* Read back a degenerate constructor's function-type in a configuration with *no endpoints* (arity 0).  Then an m-cube has no proper faces, so we don't need the zero-dimensional base (which is unreachable anyway, as it would be a vertex of a faceless cube): we evaluate the constructor's function-type "(args) → output" directly in the degenerate (m-dimensional) environment that the constructor already carries.  There is still a (trivial, empty) instantiation, displayed as ".", so we instantiate the resulting m-dimensional function-type at the empty boundary tube before reading back.  Since the cube has no proper faces, the tube's builder is never called. *)
-let readback_degenerate_constr_uninst : type lev e m.
-    (lev, e) Ctx.t -> m Value.dataconstr -> (e, kinetic) term =
- fun ctx (Dataconstr { env; args; output }) ->
-  let m = Value.dim_env env in
-  let ft = Norm.eval_term env (Telescope.pis args output) in
-  let boundary =
-    TubeOf.build D.zero (D.zero_plus m)
-      { build = (fun _ -> fatal (Anomaly "arity-0 cube has no boundary faces")) } in
-  readback_val ~sort:`Type ctx (Norm.inst ft boundary)
-
 (* The primary unparsing function.  Given the variable names, unparse a term into given tightness intervals. *)
 let rec unparse : type n lt ls rt rs s.
     n Names.t ->
@@ -651,56 +588,6 @@ and unparse_canonical_display : type a lt ls rt rs.
           (Snoc (Emp, mktok LBracket))
           constrs in
       unlocated (outfix ~notn:data ~inner:(Multiple (wstok Data, inner, wstok RBracket)))
-
-(* Build the display node for a value-level (zero-dimensional) datatype: each constructor as a telescope of arguments plus, for an indexed datatype, its output type. *)
-and data_display_value : type lev e.
-    (lev, e) Ctx.t -> bool -> (Constr.t, D.zero Value.dataconstr) Abwd.t -> e Term.canonical_display
-    =
- fun ctx indexed constrs ->
-  Data_display
-    (Bwd.fold_left
-       (fun acc (c, dc) ->
-         let (Rb_constr (tel, output)) = readback_dataconstr ctx indexed dc in
-         Snoc (acc, (c, Term.Tel_constr (tel, output))))
-       Emp constrs)
-
-(* Build the display node for a value-level *degenerate* (positive substitution dimension) datatype: each constructor as its (higher-dimensional) function-type.  Normally (arity ≥ 1) we obtain the underlying zero-dimensional datatype d0 as a vertex of the degenerate one (a boundary face of its degenerate-universe type) and read back each constructor's function-type via readback_degenerate_constr, which instantiates the codomain at the lower-dimensional constructors.  In a configuration with no endpoints (arity 0) the cube has no vertex, but it also has no boundary to instantiate, so we read back each constructor's function-type directly in its degenerate environment via readback_degenerate_constr_uninst. *)
-and degenerate_data_display : type a b m j ij.
-    (a, b) Ctx.t -> kinetic Value.value -> (m, j, ij) Value.data_args -> b Term.canonical_display =
- fun ctx tm data_args ->
-  let pi_constrs : type d.
-      (Constr.t -> d Value.dataconstr -> (b, kinetic) term) ->
-      (Constr.t, d Value.dataconstr) Abwd.t ->
-      b Term.canonical_display =
-   fun readback_constr constrs ->
-    Data_display
-      (Bwd.fold_left
-         (fun acc (c, dc) -> Snoc (acc, (c, Term.Pi_constr (readback_constr c dc))))
-         Emp constrs) in
-  (* The caller (unparse_potential) has already forced tm to a Canonical datatype, so its type is a (degenerate) universe. *)
-  match tm with
-  | Value.Neu { ty; _ } -> (
-      match View.view_type (Lazy.force ty) "degenerate_data_display" with
-      | Canonical (_, UU mm, ins0, boundary) -> (
-          let Eq = eq_of_ins_zero ins0 in
-          (* The underlying zero-dimensional datatype is a vertex of the degenerate one, recovered from the boundary faces of its (degenerate-universe) type.  In arity 0 there is no vertex; then there is also no boundary, so we display directly from the degenerate environment. *)
-          let dom = TubeOf.plus_cube (Value.val_of_norm_tube boundary) (CubeOf.singleton tm) in
-          match vertex mm with
-          | None ->
-              pi_constrs (fun _ dc -> readback_degenerate_constr_uninst ctx dc) data_args.constrs
-          | Some v -> (
-              let d0 = CubeOf.find dom v in
-              match View.view_type d0 "degenerate_data_display d0" with
-              | Canonical (_, Data d0_args, _, _) -> (
-                  match D.compare_zero d0_args.dim with
-                  | Pos _ -> fatal (Anomaly "boundary vertex of degenerate datatype is not 0-dim")
-                  | Zero ->
-                      pi_constrs
-                        (fun c dc -> readback_degenerate_constr ctx mm c dc)
-                        d0_args.constrs)
-              | _ -> fatal (Anomaly "boundary vertex of degenerate datatype is not a datatype")))
-      | _ -> fatal (Anomaly "type of degenerate datatype is not a universe"))
-  | _ -> fatal (Anomaly "degenerate datatype value is not neutral")
 
 (* "about" on a bare datatype *constant* such as Vec, whose value is a function (the parameter abstraction) eventually reaching a datatype.  We apply it to fresh parameter variables until we reach the datatype value, display that with unparse_data_value, and re-abstract over the parameters.  This is what lets "about Vec" show "A ↦ data [ ... : Vec A ... ]" with the real family head.  Returns None for anything that isn't a (parameterized) datatype, so the caller falls back to displaying the stored case tree.
 
