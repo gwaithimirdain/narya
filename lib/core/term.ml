@@ -179,6 +179,8 @@ module rec Term : sig
         indices : 'i Fwn.t;
         constrs : (Constr.t, ('mode, 'a, 'i) dataconstr) Abwd.t;
         discrete : [ `Yes | `Maybe | `No ];
+        (* Variable-name hints, for displaying anonymous variables of this type. *)
+        hints : hints;
       }
         -> ('mode, 'a) canonical
     | Codata : ('mode, 'n, 'c, 'a, 'nh, 'ha, 'et) codata_args -> ('mode, 'a) canonical
@@ -186,6 +188,8 @@ module rec Term : sig
   and ('mode, 'n, 'c, 'a, 'nh, 'ha, 'et) codata_args = {
     eta : (potential, 'et) eta;
     opacity : opacity;
+    (* Variable-name hints, for displaying anonymous variables of this type. *)
+    hints : hints;
     dim : 'n D.t;
     termctx : ('mode, 'c, ('a, ('mode id, 'n) dim_entry) snoc) termctx option;
     fields : ('mode * 'a * 'n * 'et) CodatafieldAbwd.t;
@@ -255,7 +259,7 @@ module rec Term : sig
         dim : 'm D.t;
         plus_lock : (('b, ('modality, 'mn) dim_entry) snoc, 'mode, 'modality, 'dom, 'bm) plus_lock;
         plusdim : ('m, 'n, 'mn) D.plus;
-        vars : (N.zero, 'n, string option, 'f1) NICubeOf.t;
+        vars : (N.zero, 'n, binder_name, 'f1) NICubeOf.t;
         bindings : ('mn, ('dom, 'bm) binding) CubeOf.t;
         hasfields : ('m, 'f2) has_fields;
         fields : (D.zero Field.t * string * ('dom, 'bm, kinetic) term, 'f2) Bwv.t;
@@ -265,6 +269,7 @@ module rec Term : sig
     | Invis :
         (('b, ('modality, 'n) dim_entry) snoc, 'mode, 'modality, 'dom, 'bm) plus_lock
         * ('n, ('dom, 'bm) binding) CubeOf.t
+        * hints
         -> ('dom, 'modality, 'mode, 'b, 'bm, N.zero, 'n) entry
 
   and (_, _, _) ordered_termctx =
@@ -452,6 +457,8 @@ end = struct
         indices : 'i Fwn.t;
         constrs : (Constr.t, ('mode, 'a, 'i) dataconstr) Abwd.t;
         discrete : [ `Yes | `Maybe | `No ];
+        (* Variable-name hints, for displaying anonymous variables of this type. *)
+        hints : hints;
       }
         -> ('mode, 'a) canonical
     | Codata : ('mode, 'n, 'c, 'a, 'nh, 'ha, 'et) codata_args -> ('mode, 'a) canonical
@@ -460,6 +467,8 @@ end = struct
     (* An eta flag and its opacity *)
     eta : (potential, 'et) eta;
     opacity : opacity;
+    (* Variable-name hints, for displaying anonymous variables of this type. *)
+    hints : hints;
     (* An intrinsic dimension (like Gel) *)
     dim : 'n D.t;
     (* The termctx in which it was checked, since that is needed to eval-readback the env to degenerate it when checking higher fields. *)
@@ -545,7 +554,7 @@ end = struct
         (* The reason for the dimension "snoc" here is so that some of the terms and types in these bindings can refer to other ones.  Of course it should really be only the *later* ones that can refer to the *earlier* ones, but we don't have a way to specify that in the type parameters. *)
         plus_lock : (('b, ('modality, 'mn) dim_entry) snoc, 'mode, 'modality, 'dom, 'bm) plus_lock;
         plusdim : ('m, 'n, 'mn) D.plus;
-        vars : (N.zero, 'n, string option, 'f1) NICubeOf.t;
+        vars : (N.zero, 'n, binder_name, 'f1) NICubeOf.t;
         bindings : ('mn, ('dom, 'bm) binding) CubeOf.t;
         hasfields : ('m, 'f2) has_fields;
         fields : (D.zero Field.t * string * ('dom, 'bm, kinetic) term, 'f2) Bwv.t;
@@ -555,6 +564,7 @@ end = struct
     | Invis :
         (('b, ('modality, 'n) dim_entry) snoc, 'mode, 'modality, 'dom, 'bm) plus_lock
         * ('n, ('dom, 'bm) binding) CubeOf.t
+        * hints
         -> ('dom, 'modality, 'mode, 'b, 'bm, N.zero, 'n) entry
 
   and (_, _, _) ordered_termctx =
@@ -615,7 +625,8 @@ module Telescope = struct
    fun doms cod ->
     match doms with
     | Emp -> cod
-    | Ext (x, dom, doms) -> pi (singleton_variables D.zero x) dom (pis doms cod)
+    | Ext (x, dom, doms) ->
+        pi (singleton_variables D.zero (binder_name_of_option x)) dom (pis doms cod)
 
   let rec lams : type mode a b ab.
       (mode, a, b, ab) t -> (mode, ab, kinetic) term -> (mode, a, kinetic) term =
@@ -623,7 +634,7 @@ module Telescope = struct
     match doms with
     | Emp -> body
     | Ext (x, Modal (modality, _, _), doms) ->
-        Lam (singleton_variables D.zero x, modality, lams doms body)
+        Lam (singleton_variables D.zero (binder_name_of_option x), modality, lams doms body)
 end
 
 let rec dim_term_env : type mode a n b. (mode, a, n, b) env -> n D.t = function
@@ -634,13 +645,13 @@ let rec dim_term_env : type mode a n b. (mode, a, n, b) env -> n D.t = function
 let dim_entry : type dom modality mode b f n bm. (dom, modality, mode, b, bm, f, n) entry -> n D.t =
   function
   | Vis { bindings; _ } -> CubeOf.dim bindings
-  | Invis (_, bindings) -> CubeOf.dim bindings
+  | Invis (_, bindings, _) -> CubeOf.dim bindings
 
 let plus_lock_entry : type dom modality mode b f n bm.
     (dom, modality, mode, b, bm, f, n) entry ->
     ((b, (modality, n) dim_entry) snoc, mode, modality, dom, bm) plus_lock = function
   | Vis { plus_lock; _ } -> plus_lock
-  | Invis (plus_lock, _) -> plus_lock
+  | Invis (plus_lock, _, _) -> plus_lock
 
 let modality_entry : type dom modality mode b f n bm.
     (dom, modality, mode, b, bm, f, n) entry -> (dom, modality, mode) Modality.t =
@@ -660,7 +671,7 @@ module Termctx = struct
 
   let ordered_ext_let : type dom modality mode a b bm.
       (mode, a, b) ordered_termctx ->
-      string option ->
+      binder_name ->
       ((b, (modality, D.zero) dim_entry) snoc, mode, modality, dom, bm) plus_lock ->
       (dom, bm) binding ->
       (mode, a N.suc, (b, (modality, D.zero) dim_entry) snoc) ordered_termctx =
@@ -724,4 +735,61 @@ module Termctx = struct
    fun (Permute (p, ctx)) ->
     let (Ordered_remove_locks (ctx, plus)) = ordered_remove_locks ctx in
     Remove_locks (Permute (p, ctx), plus)
+
+  (* let ext (Permute (p, ctx)) xs ty =
+       let ctx = ordered_ext_let ctx xs { ty; tm = None } in
+       Permute (Insert (p, Top), ctx) *)
 end
+
+(* Merge the binder names stored in a termctx, which carry display hints for anonymous variables, into a flat scope of raw variable names such as is stored for a hole.  Raw names that are present take precedence; absent ones pick up the hints (if any) from the corresponding termctx binder.  This is used when generating display names for the context of a hole. *)
+let rec ordered_hole_vars : type mode a b.
+    (mode, a, b) ordered_termctx -> (string option, a) Bwv.t -> (binder_name, a) Bwv.t =
+ fun ctx vars ->
+  match ctx with
+  | Emp _ ->
+      let Emp = vars in
+      Emp
+  | Lock (ctx, _) -> ordered_hole_vars ctx vars
+  | Parametric_lock ctx -> ordered_hole_vars ctx vars
+  | Ext (ctx, entry, af) -> (
+      let vars, xs = Bwv.unappend af vars in
+      let rest = ordered_hole_vars ctx vars in
+      match entry with
+      | Invis _ ->
+          let Zero = af in
+          rest
+      | Vis { vars = cube; fplus; _ } ->
+          let xs, fs = Bwv.unappend fplus xs in
+          (* First merge the raw names into the cube of binder names, consuming the Bwv from the right so that its indices match the cube's. *)
+          let module TR = NICubeOf.Traverse (struct
+            type 'a t = (string option, 'a) Bwv.t
+          end) in
+          let merge : type left m n.
+              (m, n) sface ->
+              (left, m, binder_name) NFamOf.t ->
+              (string option, left N.suc) Bwv.t ->
+              (string option, left) Bwv.t * (left, m, binder_name) NFamOf.t =
+           fun _ (NFamOf y) (Snoc (xs, x)) ->
+            match x with
+            | Some x -> (xs, NFamOf (`Named x))
+            | None -> (
+                match y with
+                | `Anon _ -> (xs, NFamOf y)
+                | `Named _ -> (xs, NFamOf (`Anon no_hints))) in
+          let _, merged = TR.fold_map_right { foldmap = (fun fb y xs -> merge fb y xs) } cube xs in
+          (* Then convert the merged cube of binder names back into a Bwv. *)
+          let module TL = NICubeOf.Traverse (struct
+            type 'a t = (binder_name, 'a) Bwv.t
+          end) in
+          let _, xs =
+            TL.fold_map_left
+              { foldmap = (fun _ acc (NFamOf y) -> (NFamOf y, Snoc (acc, y))) }
+              Emp merged in
+          (* Field variables have no hints. *)
+          let fs = Bwv.map binder_name_of_option fs in
+          Bwv.bappend af rest (Bwv.bappend fplus xs fs))
+
+let hole_vars : type mode a b.
+    (mode, a, b) termctx -> (string option, a) Bwv.t -> (binder_name, a) Bwv.t =
+ fun (Permute (p, ctx)) vars ->
+  Bwv.permute (ordered_hole_vars ctx (Bwv.permute vars p)) (N.perm_inv p)

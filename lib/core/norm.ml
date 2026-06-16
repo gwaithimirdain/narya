@@ -540,7 +540,15 @@ and apply : type dom modality mode n s.
                        {
                          mode;
                          canonical =
-                           Data { dim; tyfam; indices = Unfilled _ as indices; constrs; discrete };
+                           Data
+                             {
+                               dim;
+                               tyfam;
+                               indices = Unfilled _ as indices;
+                               constrs;
+                               discrete;
+                               hints;
+                             };
                          tyargs = data_tyargs;
                          ins;
                          fields;
@@ -574,7 +582,7 @@ and apply : type dom modality mode n s.
                             (Value.Canonical
                                {
                                  mode;
-                                 canonical = Data { dim; tyfam; indices; constrs; discrete };
+                                 canonical = Data { dim; tyfam; indices; constrs; discrete; hints };
                                  tyargs = TubeOf.empty dim;
                                  ins;
                                  fields;
@@ -881,7 +889,8 @@ and tyof_field : type mode m h s r i c.
       (( head,
          Codata
            (type d a et)
-           ({ env; fields; opacity = _; eta; termctx = _ } : (mode, m, n, d, a, et) codata_args),
+           ({ env; fields; opacity = _; eta; termctx = _; hints = _ } :
+             (mode, m, n, d, a, et) codata_args),
          codatains,
          tyargs ) :
         mode head
@@ -978,7 +987,9 @@ and tyof_field_withname : type mode a b.
     | Ok tm -> PVal (ctx, tm)
     | Error _err -> PString "[ERROR]" in
   match view_type ~severity:Asai.Diagnostic.Error ty "tyof_field" with
-  | Canonical (head, Codata { env; fields; opacity = _; eta; termctx = _ }, codatains, tyargs) -> (
+  | Canonical
+      (head, Codata { env; fields; opacity = _; eta; termctx = _; hints = _ }, codatains, tyargs)
+    -> (
       (* The type cannot have a nonidentity degeneracy applied to it (though it can be at a higher dimension). *)
       match is_id_ins codatains with
       | None -> fatal (No_such_field (`Degenerated_record eta, errfld))
@@ -1096,14 +1107,15 @@ and eval_canonical : type mode m a.
     (mode, m, a) env -> (mode, a) Term.canonical -> (mode, potential) evaluation =
  fun env can ->
   match can with
-  | Data { indices; constrs; discrete } ->
+  | Data { indices; constrs; discrete; hints } ->
       let tyfam = ref None in
       let constrs =
         Abwd.map
           (fun (Term.Dataconstr { args; indices }) -> Value.Dataconstr { env; args; indices })
           constrs in
       let dim, mode = (dim_env env, mode_env env) in
-      let canonical = Data { dim; tyfam; indices = Fillvec.empty indices; constrs; discrete } in
+      let canonical =
+        Data { dim; tyfam; indices = Fillvec.empty indices; constrs; discrete; hints } in
       let tyargs = TubeOf.empty (dim_env env) in
       let fields =
         match Lazy.force Fibrancy.data with
@@ -1113,7 +1125,7 @@ and eval_canonical : type mode m a.
         (Canonical
            { mode; canonical; tyargs; ins = ins_zero dim; fields; inst_fields = Some fields })
   | Codata c ->
-      eval_codata env c.eta c.opacity c.dim (Lazy.from_val c.termctx) c.fields
+      eval_codata env c.eta c.opacity c.hints c.dim (Lazy.from_val c.termctx) c.fields
         (Fibrancy.Codata.finished (mode_env env) c)
 
 (* We split out this subroutine so it can be called from Check.with_codata_so_far and a lazy termctx.  *)
@@ -1121,17 +1133,18 @@ and eval_codata : type mode m a c n et.
     (mode, m, a) env ->
     (potential, et) eta ->
     opacity ->
+    hints ->
     n D.t ->
     (mode, c, (a, (mode id, n) dim_entry) snoc) termctx option Lazy.t ->
     (mode * a * n * et) CodatafieldAbwd.t ->
     (mode * (n * a * potential * no_eta)) Term.StructfieldAbwd.t ->
     (mode, potential) evaluation =
- fun env eta opacity n termctx fields fibrancy_fields ->
+ fun env eta opacity hints n termctx fields fibrancy_fields ->
   let m = dim_env env in
   let (Plus (type mn) (m_n : (m, n, mn) D.plus)) = D.plus n in
   let mn = D.plus_out m m_n in
   let ins = id_ins m m_n in
-  let canonical = Codata { eta; opacity; env; termctx; fields } in
+  let canonical = Codata { eta; opacity; hints; env; termctx; fields } in
   let tyargs = TubeOf.empty mn in
   let fields = eval_structfield_abwd env m m_n mn fibrancy_fields in
   Val (Canonical { mode = mode_env env; canonical; tyargs; ins; fields; inst_fields = Some fields })
@@ -1595,7 +1608,7 @@ let eval_entry : type dom modality mode a b f n bm.
       let bindings = eval_bindings ctx modality plus_lock bindings in
       let fields = Bwv.map (fun (f, x, _) -> (f, x)) fields in
       Vis { dim; modality; plusdim; vars; bindings; hasfields; fields; fplus }
-  | Invis (plus_lock, bindings) ->
+  | Invis (plus_lock, bindings, _) ->
       let modality = plus_lock_modality plus_lock in
       Invis (modality, eval_bindings ctx modality plus_lock bindings)
 

@@ -642,3 +642,19 @@
    ￮ file match_in_type.ny contains open holes
   
   [1]
+
+This bug was in highlighting the whole degeneracy term rather than just its argument.
+
+  $ narya -use-ansi check_refl_loc.ny 2>&1 | sed 's/\x1b/ESC/g'
+   ￫ ESC[31merror[E0401]ESC[m
+   ￭ $TESTCASE_ROOT/check_refl_loc.ny
+   ESC[2m9 |ESC[m def idx : Id A x x := refl ESC[4;31myESC[m
+     ESC[2m^ESC[m ESC[31mterm synthesized type
+         B
+       but is being checked against type
+         A
+       unequal head constants:
+         B
+       does not equal
+         AESC[m
+  

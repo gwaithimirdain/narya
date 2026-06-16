@@ -393,7 +393,7 @@ module Equal = struct
         let open CubeOf.Monadic (Err) in
         let (Plus mk) = D.plus (dim_entry entry) in
         match entry with
-        | Vis { plus_lock = bplus; bindings; _ } | Invis (bplus, bindings) ->
+        | Vis { plus_lock = bplus; bindings; _ } | Invis (bplus, bindings, _) ->
             let modality = plus_lock_modality bplus in
             let (Locked (_, lctx)) = Ctx.lock ctx modality in
             let idcell = Modalcell.id modality in

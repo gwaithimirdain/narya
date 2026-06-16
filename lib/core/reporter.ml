@@ -120,6 +120,7 @@ module Code = struct
     | Invalid_field_in_tuple : t
     | Duplicate_field_in_tuple : string -> t
     | Duplicate_method_in_codata : 'i Field.t -> t
+    | Lower_and_higher_methods_in_codata : string -> t
     | Duplicate_field_in_record : 'i Field.t -> t
     | Invalid_method_in_comatch : t
     | Duplicate_method_in_comatch : string * string list -> t
@@ -319,6 +320,7 @@ module Code = struct
     | Invalid_field_in_tuple -> Error
     | Duplicate_field_in_tuple _ -> Error
     | Duplicate_method_in_codata _ -> Error
+    | Lower_and_higher_methods_in_codata _ -> Error
     | Duplicate_field_in_record _ -> Error
     | Invalid_method_in_comatch -> Error
     | Duplicate_method_in_comatch _ -> Error
@@ -562,6 +564,7 @@ module Code = struct
     | Wrong_boundary_of_record _ -> "E1504"
     | Invalid_constructor_type _ -> "E1505"
     | Missing_constructor_type _ -> "E1506"
+    | Lower_and_higher_methods_in_codata _ -> "E1507"
     (* Tactics *)
     | Choice_mismatch _ -> "E1600"
     | Calc_error _ -> "E1601"
@@ -979,6 +982,8 @@ module Code = struct
           textf "%s encountered outside case tree, wrapping in implicit let-binding" str
       | Duplicate_method_in_codata fld ->
           textf "duplicate method in codatatype: %s" (Field.to_string fld)
+      | Lower_and_higher_methods_in_codata fld ->
+          textf "codatatype has both lower and higher methods named '%s'" fld
       | Duplicate_field_in_record fld ->
           textf "duplicate field in record type: %s" (Field.to_string fld)
       | Duplicate_constructor_in_data c ->

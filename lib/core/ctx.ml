@@ -98,7 +98,7 @@ and ('dom, 'modality, 'mode, 'm, 'n, 'mn, 'f1, 'f2, 'f) vis_data = {
   modality : ('dom, 'modality, 'mode) Modality.t;
   plusdim : ('m, 'n, 'mn) D.plus;
   (* We use an indexed cube to automatically count how many raw variables appear, by starting with zero and incrementing it for each entry in the cube.  It's tempting to want to start instead from the previous raw length of the context, thereby eliminating the "plus" parameter of Snoc, below; but this causes problems with telescopes (forwards contexts), used in Bindsome, whose raw indices are forwards natural numbers instead. *)
-  vars : (N.zero, 'n, string option, 'f1) NICubeOf.t;
+  vars : (N.zero, 'n, binder_name, 'f1) NICubeOf.t;
   bindings : ('mn, 'dom Binding.t) CubeOf.t;
   (* While typechecking a record, we expose the "self" variable as a list of "illusory" variables, visible only to raw terms, that are substituted at typechecking time with the fields of self.  The type has_fields enforces that if 'f2 is nonzero, so that we're checking a record in this way, then 'm must be zero.  In the record case, the dimension 'n is the "gel dimension" of the record type being checked, so that 'vars' above names all the boundary variables and then ends with the unnamed self variable that is "split" into all the field variables. *)
   hasfields : ('m, 'f2) has_fields;
@@ -156,7 +156,7 @@ module Ordered = struct
       (dom, modality, mode) Modality.t ->
       m D.t ->
       (m, n, mn) D.plus ->
-      (N.zero, n, string option, f) NICubeOf.t ->
+      (N.zero, n, binder_name, f) NICubeOf.t ->
       (mn, dom Binding.t) CubeOf.t ->
       (a, f, af) N.plus ->
       (mode, af, (b, (modality, mn) dim_entry) snoc) t =
@@ -184,11 +184,13 @@ module Ordered = struct
       (mode, a N.suc, (b, (modality, n) dim_entry) snoc) t =
    fun ctx modality x vars ->
     let m = CubeOf.dim vars in
-    vis ctx modality m (D.plus_zero m) (NICubeOf.singleton x) vars (Suc Zero)
+    vis ctx modality m (D.plus_zero m)
+      (NICubeOf.singleton (binder_name_of_option x))
+      vars (Suc Zero)
 
   let vis_fields : type mode a b f1 f2 f af n.
       (mode, a, b) t ->
-      (N.zero, n, string option, f1) NICubeOf.t ->
+      (N.zero, n, binder_name, f1) NICubeOf.t ->
       (n, mode Binding.t) CubeOf.t ->
       (D.zero Field.t * string, f2) Bwv.t ->
       (f1, f2, f) N.plus ->
@@ -365,7 +367,7 @@ module Ordered = struct
             (* This function is called on every step of that iteration through a cube.  It appears that we have to define it with an explicit type signature in order for it to end up sufficiently polymorphic. *)
             let lookup_folder : type left l.
                 (l, n) sface ->
-                (left, l, string option) NFamOf.t ->
+                (left, l, binder_name) NFamOf.t ->
                 left N.suc Lookup.t ->
                 left Lookup.t * (left, l, unit) NFamOf.t =
              fun fb (NFamOf _) acc ->
@@ -527,7 +529,11 @@ module Ordered = struct
     | Snoc (ctx, Vis { dim; plusdim; vars; modality; bindings; fplus = Zero; _ }, _)
       when all_free bindings -> lam ctx (Lam (Variables (dim, plusdim, vars), modality, tree))
     | Snoc (ctx, Invis (modality, bindings), _) when all_free bindings ->
-        lam ctx (Lam (singleton_variables (CubeOf.dim bindings) None, modality, tree))
+        (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints. *)
+        let hints =
+          Reporter.try_with ~fatal:(fun _ -> no_hints) @@ fun () ->
+          View.hints_of_ty (Binding.value (CubeOf.find_top bindings)).ty in
+        lam ctx (Lam (singleton_variables (CubeOf.dim bindings) (`Anon hints), modality, tree))
     | _ -> fatal (Anomaly "let-bound variable in Ctx.lam")
 
   (* Delete some level variables from a context by making their bindings into "unknown".  This will cause readback to raise No_such_level if it encounters one of those variables, which can then be trapped as an occurs-check. *)
@@ -648,7 +654,7 @@ let variables_vis : type dom modality mode a b mn.
 
 let cube_vis ctx modality x vars =
   let m = CubeOf.dim vars in
-  vis ctx modality m (D.plus_zero m) (NICubeOf.singleton x) vars (Suc Zero)
+  vis ctx modality m (D.plus_zero m) (NICubeOf.singleton (binder_name_of_option x)) vars (Suc Zero)
 
 let vis_fields (Permute { perm; env; level; ctx }) xs vars fields fplus af =
   let (Plus bf) = N.plus (N.plus_right af) in

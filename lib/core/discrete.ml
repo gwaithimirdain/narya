@@ -13,6 +13,6 @@ let rec discrete_def : type mode b. (mode, b, potential) term -> (mode, b, poten
   | Lam (x, modality, body) ->
       let t, d = discrete_def body in
       (Lam (x, modality, t), d)
-  | Canonical (Data { indices; constrs; discrete = `Maybe }) ->
-      (Canonical (Data { indices; constrs; discrete = `Yes }), true)
+  | Canonical (Data { indices; constrs; discrete = `Maybe; hints }) ->
+      (Canonical (Data { indices; constrs; discrete = `Yes; hints }), true)
   | tm -> (tm, false)

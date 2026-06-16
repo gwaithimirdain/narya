@@ -155,21 +155,18 @@ let unparse_notation : type left tight right lt ls rt rs.
       let inner = observations_of_symbols args inner_symbols in
       unlocated (outfix ~notn ~inner)
 
-(* Unparse a variable name, possibly anonymous. *)
-let unparse_var : type lt ls rt rs. string option -> (lt, ls, rt, rs) parse located = function
-  | Some x -> unlocated (Ident ([ x ], []))
-  | None -> unlocated (Placeholder [])
+(* Unparse a variable name. *)
+let unparse_var : type lt ls rt rs. string -> (lt, ls, rt, rs) parse located =
+ fun x -> unlocated (Ident ([ x ], []))
 
 let unparse_var_with_implicitness : type lt ls rt rs.
-    string option * [ `Explicit | `Implicit ] -> (lt, ls, rt, rs) parse located = function
-  | Some x, `Explicit -> unlocated (Ident ([ x ], []))
-  | None, `Explicit -> unlocated (Placeholder [])
-  | Some x, `Implicit -> braceize (unlocated (Ident ([ x ], [])))
-  | None, `Implicit -> braceize (unlocated (Placeholder []))
+    string * [ `Explicit | `Implicit ] -> (lt, ls, rt, rs) parse located = function
+  | x, `Explicit -> unlocated (Ident ([ x ], []))
+  | x, `Implicit -> braceize (unlocated (Ident ([ x ], [])))
 
 (* Unparse a Bwd of variables to occur in an iterated abstraction.  If there is more than one variable, the result is an "application spine".  Can occur in any tightness interval that contains +ω. *)
 let rec unparse_abs : type li ls ri rs.
-    (string option * [ `Explicit | `Implicit ]) Bwd.t ->
+    (string * [ `Explicit | `Implicit ]) Bwd.t ->
     (li, ls) No.iinterval ->
     (li, ls, No.plus_omega) No.lt ->
     (ri, rs, No.plus_omega) No.lt ->
@@ -349,7 +346,7 @@ let rec unparse : type mode n lt ls rt rs s.
       | Neq -> fatal (Unimplemented "unparsing modal let-bindings"));
       let tm = unparse (Names.add_lock vars plus) tm No.Interval.entire No.Interval.entire in
       (* If a let-in doesn't fit in its interval, we have to parenthesize it. *)
-      let x, vars = Names.add_cube D.zero vars x in
+      let x, vars = Names.add_cube D.zero vars (binder_name_of_option x) in
       match No.Interval.contains ri No.minus_omega with
       | Some right_ok ->
           let body = unparse vars body No.Interval.entire ri in
@@ -585,7 +582,7 @@ and unparse_universe : type mode n k lt ls rt rs.
 and unparse_lam : type mode n lt ls rt rs s.
     [ `Cube | `Normal ] ->
     n Names.t ->
-    (string option * [ `Explicit | `Implicit ]) Bwd.t ->
+    (string * [ `Explicit | `Implicit ]) Bwd.t ->
     (mode, n, s) term ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
@@ -598,14 +595,14 @@ and unparse_lam : type mode n lt ls rt rs s.
       | `Normal, Eq | `Cube, Neq ->
           let Variables (_, _, x), vars = Names.add vars boundvars in
           let module Fold = NICubeOf.Traverse (struct
-            type 'acc t = (string option * [ `Explicit | `Implicit ]) Bwd.t
+            type 'acc t = (string * [ `Explicit | `Implicit ]) Bwd.t
           end) in
           (* Apparently we need to define the folding function explicitly with a type to make it come out sufficiently polymorphic. *)
           let folder : type left k m.
               (k, m) sface ->
-              (string option * [ `Explicit | `Implicit ]) Bwd.t ->
-              (left, k, string option) NFamOf.t ->
-              (left, k, unit) NFamOf.t * (string option * [ `Explicit | `Implicit ]) Bwd.t =
+              (string * [ `Explicit | `Implicit ]) Bwd.t ->
+              (left, k, string) NFamOf.t ->
+              (left, k, unit) NFamOf.t * (string * [ `Explicit | `Implicit ]) Bwd.t =
            fun s acc (NFamOf x) ->
             let implicit =
               match is_id_sface s with
@@ -622,7 +619,7 @@ and unparse_lam : type mode n lt ls rt rs s.
 and unparse_lam_done : type mode n lt ls rt rs s.
     [ `Cube | `Normal ] ->
     n Names.t ->
-    (string option * [ `Explicit | `Implicit ]) Bwd.t ->
+    (string * [ `Explicit | `Implicit ]) Bwd.t ->
     (mode, n, s) term ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
@@ -783,9 +780,9 @@ and unparse_pis : type mode a lt ls rt rs.
       | Zero, `Arrow | Pos _, `DblArrow -> (
           (* Nontrivially modal pi-types are always printed dependently *)
           match (top_variable x, Modality.compare_id modality) with
-          | None, Eq ->
+          | (`Anon _ as anon), Eq ->
               (* non-dependent pi-type *)
-              let _, newvars = Names.add vars (singleton_variables (CubeOf.dim doms) None) in
+              let _, newvars = Names.add vars (singleton_variables (CubeOf.dim doms) anon) in
               let dim =
                 match dim with
                 | `Arrow -> `Arrow None
@@ -810,9 +807,7 @@ and unparse_pis : type mode a lt ls rt rs.
                      {
                        unparse =
                          (fun _ _ ->
-                           unparse_pi_dom
-                             (NICubeOf.find_top x <|> Anomaly "missing top in unparse_pis")
-                             (Modality.name modality)
+                           unparse_pi_dom (NICubeOf.find_top x) (Modality.name modality)
                              (unparse (Names.add_lock vars plus) (CubeOf.find_top doms)
                                 No.Interval.entire No.Interval.entire));
                      } ))
@@ -927,7 +922,7 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs n.
         it =
           (fun s [ (dom : (dom, am, kinetic) term) ] accum ->
             let k = dom_sface s in
-            let x = find_variable s xs <|> Anomaly "missing variable in unparse_higher_pi" in
+            let x = find_variable s xs in
             let xargs =
               TubeOf.build D.zero (D.zero_plus k)
                 { build = (fun fa -> Var (Index (Now, comp_sface s (sface_of_tface fa), xsplus))) }
@@ -948,7 +943,8 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs n.
      fun s (Names.Named (type b) ((lamvars, lam) : b Names.t * (mode, b, kinetic) term)) ->
       let k = dom_tface s in
       let lam_xs = sub_variables (sface_of_tface s) xs in
-      let _, (lamvars : (b, (modality, k) dim_entry) snoc Names.t) = Names.add lamvars lam_xs in
+      let _, (lamvars : (b, (modality, k) dim_entry) snoc Names.t) =
+        Names.add_strings lamvars lam_xs in
       match lam with
       | Lam (ys, lammod, body) -> (
           match (D.compare (dim_variables ys) k, Modality.compare lammod modality) with
@@ -1028,10 +1024,10 @@ let rec unparse_ctx : type dom modality mode a b.
       let vars, xs = Bwv.unappend af vars in
       let names, result = unparse_ctx names lock vars ctx in
       match entry with
-      | Invis (plus_lock, bindings) ->
+      | Invis (plus_lock, bindings, hints) ->
           let modality = Modality.name (plus_lock_modality plus_lock) in
-          (* We treat an invisible binding as consisting of all nameless variables, and autogenerate names for them all. *)
-          let x, names = Names.add names (singleton_variables (CubeOf.dim bindings) None) in
+          (* We treat an invisible binding as consisting of all nameless variables, and autogenerate names for them all, using any display hints recorded from their types at readback time. *)
+          let x, names = Names.add names (singleton_variables (CubeOf.dim bindings) (`Anon hints)) in
           let xnames = Names.add_lock names plus_lock in
           let do_binding (b : (edom, bm) binding) (res : S.t) : unit * S.t =
             let ty = Wrap (unparse xnames b.ty No.Interval.entire No.Interval.entire) in
@@ -1040,7 +1036,7 @@ let rec unparse_ctx : type dom modality mode a b.
                 (fun t -> Wrap (unparse xnames t No.Interval.entire No.Interval.entire))
                 b.tm in
             let lock = Modality.name lock in
-            let var = Option.get (top_variable x) in
+            let var = top_variable x in
             ((), Snoc (res, { var; modality; renamed = true; lock; tm; ty })) in
           let _, result =
             M.miterM { it = (fun _ [ b ] res -> do_binding b res) } [ bindings ] result in
@@ -1056,7 +1052,7 @@ let rec unparse_ctx : type dom modality mode a b.
           let module Fold = NICubeOf.Traverse (T) in
           let do_var : type left m n.
               (m, n) sface ->
-              (left, m, string option) NFamOf.t ->
+              (left, m, binder_name) NFamOf.t ->
               left N.suc T.t ->
               left T.t * (left, m, string * [ `Original | `Renamed ]) NFamOf.t =
            fun _ (NFamOf _) (Snoc (xs, x)) -> (xs, NFamOf x) in
@@ -1065,8 +1061,8 @@ let rec unparse_ctx : type dom modality mode a b.
           let projector : type left m n.
               (m, n) sface ->
               (left, m, string * [ `Original | `Renamed ]) NFamOf.t ->
-              (left, m, string option) NFamOf.t =
-           fun _ (NFamOf (x, _)) -> NFamOf (Some x) in
+              (left, m, string) NFamOf.t =
+           fun _ (NFamOf (x, _)) -> NFamOf x in
           let xs = NICubeOf.map { map = projector } vardata in
           (* With the variables projected out, we add them to the Names.t.  We use Names.unsafe_add because at this point the variables have already been uniquified by Names.uniquify_vars. *)
           let fnames =
@@ -1152,7 +1148,7 @@ let () =
             `None
       | PConstant name -> utf8string (String.concat "." (Scope.name_of name))
       | PMeta v -> utf8string (Meta.name v)
-      | PHole (origin, vars, Permute (p, ctx), ty) ->
+      | PHole (origin, vars, (Permute (p, ctx) as termctx), ty) ->
           let run =
             match origin with
             (* If the hole comes from an earlier time, we rewind to that time before displaying, so that the correct notations and names will be in scope. *)
@@ -1161,7 +1157,7 @@ let () =
             (* Otherwise, we give up.  Normally this would only happen when it's from the current origin (e.g. being created right now in a file) anyway. *)
             | _ -> fun f -> f () in
           run @@ fun () ->
-          let vars, names = Names.uniquify_vars vars in
+          let vars, names = Names.uniquify_vars (hole_vars termctx vars) in
           let names, ctx =
             unparse_ctx names (Modality.id (Termctx.ordered_mode ctx)) (Bwv.permute vars p) ctx
           in

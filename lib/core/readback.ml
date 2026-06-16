@@ -62,8 +62,7 @@ and readback_at : type mode a z.
   let view = if Displaying.read () then view_term tm else tm in
   let vty = view_type ty "readback_at" in
   match (vty, view) with
-  | ( Canonical (_, Pi (_, modality, doms, cods), ins, tyargs),
-      Lam ((Variables (m, mn, xs) as x), body) ) -> (
+  | Canonical (_, Pi (_, modality, doms, cods), ins, tyargs), Lam (x, body) -> (
       let Eq = eq_of_ins_zero ins in
       let k = CubeOf.dim doms in
       let l = dim_binder body in
@@ -71,6 +70,7 @@ and readback_at : type mode a z.
       | Neq, _ -> fatal (Dimension_mismatch ("reading back at pi 1", TubeOf.inst tyargs, k))
       | _, Neq -> fatal (Dimension_mismatch ("reading back at pi 2", k, l))
       | Eq, Eq ->
+          let (Variables (m, mn, xs) as x) = View.fill_hints doms x in
           let args, newnfs = dom_vars ctx modality doms in
           let (Plus af) = N.plus (NICubeOf.out N.zero xs) in
           let newctx = Ctx.vis ctx modality m mn xs newnfs af in
@@ -80,6 +80,7 @@ and readback_at : type mode a z.
   (* If eta-expansion is enabled, we do an eta-expanding readback of any term. *)
   | Canonical (_, Pi (name, modality, doms, cods), ins, tyargs), tm when eta ->
       let Eq = eq_of_ins_zero ins in
+      let name = View.fill_hints doms name in
       let newargs, newnfs = dom_vars ctx modality doms in
       let (Any_ctx newctx) = Ctx.variables_vis ctx modality name newnfs in
       let output = tyof_app cods tyargs newargs in
@@ -90,7 +91,8 @@ and readback_at : type mode a z.
         (( _,
            Codata
              (type c a et)
-             ({ eta; opacity; fields; env = _; termctx = _ } : (mode, m, n, c, a, et) codata_args),
+             ({ eta; opacity; fields; env = _; termctx = _; hints = _ } :
+               (mode, m, n, c, a, et) codata_args),
            ins,
            _ ) :
           mode head
@@ -301,6 +303,7 @@ and readback_head : type mode c z.
   | UU (mode, n) -> UU (mode, n)
   | Pi (x, modality, doms, cods) ->
       let k = CubeOf.dim doms in
+      let x = View.fill_hints doms x in
       let (Locked (plus, lctx)) = Ctx.lock ctx modality in
       let args, newnfs = dom_vars ctx modality doms in
       Pi
@@ -407,7 +410,7 @@ and readback_ordered_env : type mode n a b c d.
   | Ext (envctx, entry, _) -> (
       let (Plus mk) = D.plus (dim_entry entry) in
       match entry with
-      | Vis { plus_lock = dplus; bindings; _ } | Invis (dplus, bindings) ->
+      | Vis { plus_lock = dplus; bindings; _ } | Invis (dplus, bindings, _) ->
           let modality = plus_lock_modality dplus in
           let idcell = Modalcell.id modality in
           (* We are reading back bindings that were defined under a modality, so they are defined in a locked context. *)
@@ -505,8 +508,12 @@ let readback_entry : type dom modality mode a b f n.
       let bindings = readback_bindings lctx bindings in
       Readback_entry (Vis { dim; plusdim; plus_lock; vars; bindings; hasfields; fields; fplus })
   | Invis (modality, bindings) ->
+      (* Invisible variables are anonymous, but we can still record display hints from their types, since after readback the types are terms and the hints can no longer be computed on demand.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints. *)
+      let hints =
+        Reporter.try_with ~fatal:(fun _ -> no_hints) @@ fun () ->
+        View.hints_of_ty (Binding.value (CubeOf.find_top bindings)).ty in
       let (Locked (plus_lock, lctx)) = Ctx.lock ctx modality in
-      Readback_entry (Invis (plus_lock, readback_bindings lctx bindings))
+      Readback_entry (Invis (plus_lock, readback_bindings lctx bindings, hints))
 
 let rec readback_ordered_ctx : type mode a b.
     (mode, a, b) Ctx.Ordered.t -> (mode, a, b) ordered_termctx = function

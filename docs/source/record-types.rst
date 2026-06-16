@@ -191,9 +191,9 @@ then ``unpairfn f .fst`` does not reduce until applied to a further argument.  A
 Eta-expansion and opacity
 -------------------------
 
-Often the behavior described above is convenient, e.g. when printing a term belonging to a large record type with many fields, such as ``ℤ : Ring`` or ``Grp : Cat``, you don't want to see the explicit definitions of all the fields.  However, there are times when you do want to see the definitions of the fields, and for this purpose you can change the "opacity" of a record type.
+Often the behavior described above is convenient, e.g. when printing a term belonging to a large record type with many fields, such as ``ℤ : Ring`` or ``Grp : Cat``, you don't want to see the explicit definitions of all the fields.  However, there are times when you do want to see the definitions of the fields, and for this purpose you can change the "opacity" of a record type using :ref:`Attributes`.
 
-Opacity is an *attribute* of a record type.  Attributes are an experimental feature, particularly their syntax, and may change radically in the future.  At present, only record types can have attributes, and the only attributes are those relating to opacity.  The current syntax for defining a record type with an attribute is ``sig #(ATTR) ( … )``.  Currently attributes can only be set when a record type is defined; in the future it may be possible to alter them after the fact.  Opacity attributes do *not* affect convertibility of terms; η-conversion is always valid internally.  Opacity attributes only affect how terms are *displayed* to the user.  (If you want a record-like type without η-conversion, use a non-recursive codatatype; see :ref:`Codatatypes and comatching`.)
+Opacity attributes do *not* affect convertibility of terms; η-conversion is always valid internally.  Opacity attributes only affect how terms are *displayed* to the user.  (If you want a record-like type without η-conversion, use a non-recursive codatatype; see :ref:`Codatatypes and comatching`.)
 
 To explain the opacity attributes, suppose that with the definitions above, we also have
 
