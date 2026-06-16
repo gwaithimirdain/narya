@@ -57,9 +57,9 @@ and branch : type a n. (File.t -> File.t) -> (a, n) branch -> (a, n) branch =
 and canonical : type a. (File.t -> File.t) -> a canonical -> a canonical =
  fun f can ->
   match can with
-  | Data { indices; constrs; discrete } ->
-      Data { indices; constrs = Abwd.map (dataconstr f) constrs; discrete }
-  | Codata { eta; opacity; dim; termctx = tc; fields; fibrancy = fib; is_glue } ->
+  | Data { indices; constrs; discrete; hints } ->
+      Data { indices; constrs = Abwd.map (dataconstr f) constrs; discrete; hints }
+  | Codata { eta; opacity; hints; dim; termctx = tc; fields; fibrancy = fib; is_glue } ->
       let trr =
         Mbwd.map
           (fun (StructfieldAbwd.Entry (fld, x)) -> StructfieldAbwd.Entry (fld, structfield f x))
@@ -80,6 +80,7 @@ and canonical : type a. (File.t -> File.t) -> a canonical -> a canonical =
         {
           eta;
           opacity;
+          hints;
           dim;
           termctx = Option.map (termctx f) tc;
           fields =
@@ -146,7 +147,7 @@ and entry : type b f mn. (File.t -> File.t) -> (b, f, mn) entry -> (b, f, mn) en
           }
           [ v.bindings ] in
       Vis { v with bindings }
-  | Invis bindings ->
+  | Invis (bindings, hints) ->
       let bindings =
         CubeOf.mmap
           {
@@ -155,7 +156,7 @@ and entry : type b f mn. (File.t -> File.t) -> (b, f, mn) entry -> (b, f, mn) en
                 { ty = term f b.ty; tm = Option.map (term f) b.tm });
           }
           [ bindings ] in
-      Invis bindings
+      Invis (bindings, hints)
 
 and termctx_ordered : type a b.
     (File.t -> File.t) -> (a, b) ordered_termctx -> (a, b) ordered_termctx =

@@ -308,7 +308,7 @@ let rec unparse : type n lt ls rt rs s.
   | Let (x, tm, body) -> (
       let tm = unparse vars tm No.Interval.entire No.Interval.entire in
       (* If a let-in doesn't fit in its interval, we have to parenthesize it. *)
-      let x, vars = Names.add_cube D.zero vars x in
+      let x, vars = Names.add_cube D.zero vars (binder_name_of_option x) in
       match No.Interval.contains ri No.minus_omega with
       | Some right_ok ->
           let body = unparse vars body No.Interval.entire ri in
@@ -691,10 +691,10 @@ and unparse_pis : type n lt ls rt rs.
       match (D.compare_zero (CubeOf.dim doms), dim) with
       | Zero, `Arrow | Pos _, `DblArrow -> (
           match top_variable x with
-          | Some x ->
+          | `Named x ->
               (* dependent pi-type *)
               let Variables (_, _, x), newvars =
-                Names.add vars (singleton_variables (CubeOf.dim doms) (Some x)) in
+                Names.add vars (singleton_variables (CubeOf.dim doms) (`Named x)) in
               unparse_pis dim notn newvars
                 (Snoc
                    ( accum,
@@ -706,9 +706,9 @@ and unparse_pis : type n lt ls rt rs.
                                 No.Interval.entire));
                      } ))
                 (CodCube.find_top cods) li ri
-          | None ->
+          | `Anon _ as anon ->
               (* non-dependent pi-type *)
-              let _, newvars = Names.add vars (singleton_variables (CubeOf.dim doms) None) in
+              let _, newvars = Names.add vars (singleton_variables (CubeOf.dim doms) anon) in
               let dim =
                 match dim with
                 | `Arrow -> `Arrow None
@@ -909,9 +909,9 @@ let rec unparse_ctx : type a b.
       let vars, xs = Bwv.unappend af vars in
       let names, result = unparse_ctx names lock vars ctx in
       match entry with
-      | Invis bindings ->
-          (* We treat an invisible binding as consisting of all nameless variables, and autogenerate names for them all. *)
-          let x, names = Names.add names (singleton_variables (CubeOf.dim bindings) None) in
+      | Invis (bindings, hints) ->
+          (* We treat an invisible binding as consisting of all nameless variables, and autogenerate names for them all, using any display hints recorded from their types at readback time. *)
+          let x, names = Names.add names (singleton_variables (CubeOf.dim bindings) (`Anon hints)) in
           let do_binding (b : b binding) (res : S.t) : unit * S.t =
             let ty = Wrap (unparse names b.ty No.Interval.entire No.Interval.entire) in
             let tm =
@@ -932,7 +932,7 @@ let rec unparse_ctx : type a b.
           let module Fold = NICubeOf.Traverse (T) in
           let do_var : type left m n.
               (m, n) sface ->
-              (left, m, string option) NFamOf.t ->
+              (left, m, binder_name) NFamOf.t ->
               left N.suc T.t ->
               left T.t * (left, m, string * [ `Original | `Renamed ]) NFamOf.t =
            fun _ (NFamOf _) (Snoc (xs, x)) -> (xs, NFamOf x) in
@@ -1017,7 +1017,7 @@ let () =
             `None
       | PConstant name -> utf8string (String.concat "." (Scope.name_of name))
       | PMeta v -> utf8string (Meta.name v)
-      | PHole (origin, vars, Permute (p, ctx), ty) ->
+      | PHole (origin, vars, (Permute (p, ctx) as termctx), ty) ->
           let run =
             match origin with
             (* If the hole comes from an earlier time, we rewind to that time before displaying, so that the correct notations and names will be in scope. *)
@@ -1026,7 +1026,7 @@ let () =
             (* Otherwise, we give up.  Normally this would only happen when it's from the current origin (e.g. being created right now in a file) anyway. *)
             | _ -> fun f -> f () in
           run @@ fun () ->
-          let vars, names = Names.uniquify_vars vars in
+          let vars, names = Names.uniquify_vars (hole_vars termctx vars) in
           let names, ctx = unparse_ctx names `Unlocked (Bwv.permute vars p) ctx in
           let ty = unparse names ty No.Interval.entire No.Interval.entire in
           pp_hole ctx (Wrap ty)

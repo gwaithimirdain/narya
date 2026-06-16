@@ -12,6 +12,6 @@ let rec discrete_def : type b. (b, potential) term -> (b, potential) term * bool
   | Lam (x, body) ->
       let t, d = discrete_def body in
       (Lam (x, t), d)
-  | Canonical (Data { indices; constrs; discrete = `Maybe }) ->
-      (Canonical (Data { indices; constrs; discrete = `Yes }), true)
+  | Canonical (Data { indices; constrs; discrete = `Maybe; hints }) ->
+      (Canonical (Data { indices; constrs; discrete = `Yes; hints }), true)
   | tm -> (tm, false)

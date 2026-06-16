@@ -172,7 +172,7 @@ After installing the required dependencies, navigate to the documentation direct
    
    make html
 
-The output will be saved in the ``_build/html`` directory. You can open ``index.html`` in a browser to view the documentation.
+The output will be saved in the ``docs/build/html`` directory. You can open ``index.html`` in a browser to view the documentation.
 
 For more advanced configuration, refer to the `Sphinx documentation <https://www.sphinx-doc.org/>`_
 

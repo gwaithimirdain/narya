@@ -126,10 +126,12 @@ module rec Make : functor (I : Indices) -> sig
     | Constr : Constr.t located * 'a check located list -> 'a check
     | Numeral : Q.t -> 'a check
     | Empty_co_match : 'a check
-    | Data : (Constr.t, 'a dataconstr located) Abwd.t -> 'a check
-    | Codata : (Field.wrapped, 'a codatafield) Abwd.t -> 'a check
-    | Record : ('a, 'c, 'ac) Namevec.t located * ('ac, 'd, 'acd) tel * opacity -> 'a check
-    | SelfRecord : (Field.wrapped, 'a codatafield) Abwd.t -> 'a check
+    | Data : (Constr.t, 'a dataconstr located) Abwd.t * Variables.hints -> 'a check
+    | Codata : (Field.wrapped, 'a codatafield) Abwd.t * Variables.hints -> 'a check
+    | Record :
+        ('a, 'c, 'ac) Namevec.t located * ('ac, 'd, 'acd) tel * opacity * Variables.hints
+        -> 'a check
+    | SelfRecord : (Field.wrapped, 'a codatafield) Abwd.t * Variables.hints -> 'a check
     | Refute : 'a synth located list * [ `Explicit | `Implicit ] -> 'a check
     | Hole : {
         scope : 'a I.scope;
@@ -298,13 +300,15 @@ functor
       | Numeral : Q.t -> 'a check
       (* "[]", which could be either an empty pattern-matching lambda or an empty comatch *)
       | Empty_co_match : 'a check
-      | Data : (Constr.t, 'a dataconstr located) Abwd.t -> 'a check
+      | Data : (Constr.t, 'a dataconstr located) Abwd.t * Variables.hints -> 'a check
       (* A codatatype binds one more "self" variable in the types of each of its fields.  For a higher-dimensional codatatype (like a codata version of Gel), this becomes a cube of variables.  The field also knows its dimension already. *)
-      | Codata : (Field.wrapped, 'a codatafield) Abwd.t -> 'a check
+      | Codata : (Field.wrapped, 'a codatafield) Abwd.t * Variables.hints -> 'a check
       (* A record type binds its "self" variable namelessly, exposing it to the user by additional variables that are bound locally to its fields.  This can't be "cubeified" as easily, so we have the user specify a list of ordinary variables to be its boundary.  Thus, in practice below 'c must be a number of faces associated to a dimension, but the parser doesn't know the dimension, so it can't ensure that.  The unnamed internal variable is included as the last one. *)
-      | Record : ('a, 'c, 'ac) Namevec.t located * ('ac, 'd, 'acd) tel * opacity -> 'a check
+      | Record :
+          ('a, 'c, 'ac) Namevec.t located * ('ac, 'd, 'acd) tel * opacity * Variables.hints
+          -> 'a check
       (* There's also a notation for record types that uses self variables like codata. *)
-      | SelfRecord : (Field.wrapped, 'a codatafield) Abwd.t -> 'a check
+      | SelfRecord : (Field.wrapped, 'a codatafield) Abwd.t * Variables.hints -> 'a check
       (* Empty match against the first one of the arguments belonging to an empty type. *)
       | Refute : 'a synth located list * [ `Explicit | `Implicit ] -> 'a check
       (* A hole must store the entire "state" from when it was entered, so that the user can later go back and fill it with a term that would have been valid in its original position.  This includes the variables in lexical scope, which are available only during parsing, so we store them here at that point.  During typechecking, when the actual metavariable is created, we save the lexical scope along with its other context and type data.  A hole also stores its source location so that proofgeneral can create an overlay at that place, and the notation tightnesses of the hole location. *)
@@ -524,26 +528,28 @@ module Resolve (R : Resolver) = struct
       | Constr (c, args) -> Constr (c, List.map (check ctx) args)
       | Numeral x -> Numeral x
       | Empty_co_match -> Empty_co_match
-      | Data constrs -> Data (Abwd.map (locate_map (dataconstr ctx)) constrs)
-      | Codata fields ->
+      | Data (constrs, hints) -> Data (Abwd.map (locate_map (dataconstr ctx)) constrs, hints)
+      | Codata (fields, hints) ->
           Codata
-            (Abwd.map
-               (fun (R.T1.Codatafield (x, fld)) ->
-                 R.T2.Codatafield (R.rename ctx x, check (R.snoc ctx x) fld))
-               fields)
-      | SelfRecord fields ->
+            ( Abwd.map
+                (fun (R.T1.Codatafield (x, fld)) ->
+                  R.T2.Codatafield (R.rename ctx x, check (R.snoc ctx x) fld))
+                fields,
+              hints )
+      | SelfRecord (fields, hints) ->
           SelfRecord
-            (Abwd.map
-               (fun (R.T1.Codatafield (x, fld)) ->
-                 R.T2.Codatafield (R.rename ctx x, check (R.snoc ctx x) fld))
-               fields)
-      | Record (xs, fields, opaq) ->
+            ( Abwd.map
+                (fun (R.T1.Codatafield (x, fld)) ->
+                  R.T2.Codatafield (R.rename ctx x, check (R.snoc ctx x) fld))
+                fields,
+              hints )
+      | Record (xs, fields, opaq, hints) ->
           let (Bplus ac2) = R.T2.bplus (R.T1.Namevec.length xs.value) in
           let xs2 = renames ctx xs.value ac2 in
           let ctx2 = append ctx xs.value ac2 in
           let (Bplus ad) = R.T2.bplus (R.T1.fwn_of_tel fields) in
           let fields2, _ = tel ctx2 fields ad in
-          Record (locate_opt xs.loc xs2, fields2, opaq)
+          Record (locate_opt xs.loc xs2, fields2, opaq, hints)
       | Refute (args, sort) -> Refute (List.map (synth ctx) args, sort)
       | Hole { scope; loc; li; ri; num } -> Hole { scope = R.rescope ctx scope; loc; li; ri; num }
       | Realize x -> Realize (check ctx (locate_opt tm.loc x)).value
