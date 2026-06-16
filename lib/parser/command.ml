@@ -963,7 +963,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
           Readback.Displaying.run ~env:true @@ fun () ->
           let ctm, ety = Check.synth (Kinetic `Nolet) ctx { value = stm; loc = rtm.loc } in
           let names = Names.of_ctx ctx in
-          (* In "echo" and "about" mode we normalize the term.  In "about" mode, if the result is a neutral, we additionally try to display its potential value: first by reading back a canonical type (e.g. displaying "List Nat" as the corresponding datatype), and failing that, if it is a bare defined constant, by displaying that constant's stored case tree. *)
+          (* In "echo" and "about" mode we normalize the term.  In "about" mode, if the result is a neutral, we additionally try to display its potential value: first, if it reduces (possibly under parameter abstractions) to a canonical type, displaying that declaration; failing that, if it is a bare defined constant, displaying that constant's stored case tree. *)
           let utm =
             match mode with
             | `Synth -> unparse names ctm No.Interval.entire No.Interval.entire
@@ -972,22 +972,19 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                 unparse names (readback_at ctx etm ety) No.Interval.entire No.Interval.entire
             | `About -> (
                 let etm = Norm.eval_term (Ctx.env ctx) ctm in
-                match unparse_canonical_value ctx etm No.Interval.entire No.Interval.entire with
-                | Some utm -> utm
+                match unparse_potential ctx etm with
+                | Some u -> u.unparse No.Interval.entire No.Interval.entire
                 | None -> (
                     match etm with
+                    (* A defined constant whose normal form is a genuine case tree (matches/comatches) can't be read back from its value, so we display the stored case tree by name. *)
                     | Value.Neu { head = Value.Const { name; ins }; args = Value.Emp; _ }
                       when Option.is_some (is_id_ins ins) -> (
-                        (* A datatype constant such as Vec is a function reaching a datatype; display it with its real family head, falling back to the stored case tree otherwise. *)
-                        match unparse_constant_value ctx etm with
-                        | Some u -> u.unparse No.Interval.entire No.Interval.entire
-                        | None -> (
-                            match Global.find name with
-                            | _, (`Defined tree, _) ->
-                                unparse Names.empty tree No.Interval.entire No.Interval.entire
-                            | _, (`Axiom, _) ->
-                                unparse names (readback_at ctx etm ety) No.Interval.entire
-                                  No.Interval.entire))
+                        match Global.find name with
+                        | _, (`Defined tree, _) ->
+                            unparse Names.empty tree No.Interval.entire No.Interval.entire
+                        | _, (`Axiom, _) ->
+                            unparse names (readback_at ctx etm ety) No.Interval.entire
+                              No.Interval.entire)
                     | _ ->
                         unparse names (readback_at ctx etm ety) No.Interval.entire
                           No.Interval.entire)) in

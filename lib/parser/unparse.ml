@@ -670,8 +670,9 @@ and unparse_degenerate_data_value : type a b m j ij lt ls rt rs.
     (m, j, ij) Value.data_args ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
-    (lt, ls, rt, rs) parse located option =
+    (lt, ls, rt, rs) parse located =
  fun ctx tm data_args _li _ri ->
+  (* The caller (unparse_potential) has already forced tm to a Canonical datatype, so its type is a (degenerate) universe. *)
   match tm with
   | Value.Neu { ty; _ } -> (
       match View.view_type (Lazy.force ty) "unparse_degenerate_data_value" with
@@ -681,43 +682,58 @@ and unparse_degenerate_data_value : type a b m j ij lt ls rt rs.
           let dom = TubeOf.plus_cube (Value.val_of_norm_tube boundary) (CubeOf.singleton tm) in
           match vertex mm with
           | None ->
-              Some
-                (unparse_degenerate_data ctx
-                   (fun _ dc -> readback_degenerate_constr_uninst ctx dc)
-                   data_args.constrs)
+              unparse_degenerate_data ctx
+                (fun _ dc -> readback_degenerate_constr_uninst ctx dc)
+                data_args.constrs
           | Some v -> (
               let d0 = CubeOf.find dom v in
               match View.view_type d0 "unparse_degenerate_data_value d0" with
               | Canonical (_, Data d0_args, _, _) -> (
                   match D.compare_zero d0_args.dim with
-                  | Pos _ -> None
+                  | Pos _ -> fatal (Anomaly "boundary vertex of degenerate datatype is not 0-dim")
                   | Zero ->
-                      Some
-                        (unparse_degenerate_data ctx
-                           (fun c dc -> readback_degenerate_constr ctx mm c dc)
-                           d0_args.constrs))
-              | _ -> None))
-      | _ -> None)
-  | _ -> None
+                      unparse_degenerate_data ctx
+                        (fun c dc -> readback_degenerate_constr ctx mm c dc)
+                        d0_args.constrs)
+              | _ -> fatal (Anomaly "boundary vertex of degenerate datatype is not a datatype")))
+      | _ -> fatal (Anomaly "type of degenerate datatype is not a universe"))
+  | _ -> fatal (Anomaly "degenerate datatype value is not neutral")
 
 (* "about" on a bare datatype *constant* such as Vec, whose value is a function (the parameter abstraction) eventually reaching a datatype.  We apply it to fresh parameter variables until we reach the datatype value, display that with unparse_data_value, and re-abstract over the parameters.  This is what lets "about Vec" show "A ↦ data [ ... : Vec A ... ]" with the real family head.  Returns None for anything that isn't a (parameterized) datatype, so the caller falls back to displaying the stored case tree.
 
    This only descends through *parameter abstractions* (lambdas).  If a datatype appears nested inside a match or comatch/tuple in the case tree (e.g. "def W (n:N) : N → Type ≔ match n [ zero. ↦ data [ w0. : W n zero. ] | suc. m ↦ data [ w1. : W n (suc. m) ] ]"), we hit a stuck (Unrealized) neutral here and fall back to unparsing the stored case tree.  The nested datatypes are then displayed term-level (unparse_data), where each constructor's output type is shown faithfully from the stored output term — including the real datatype head — so no information is lost. *)
-and unparse_constant_value : type a b. (a, b) Ctx.t -> kinetic Value.value -> unparser option =
+(* If a (normalized) value is a neutral whose potential value is (or, under parameter abstractions, reduces to) a canonical type — a datatype, degenerate datatype, codatatype, or record — read it back and unparse it as the corresponding canonical-type declaration, abstracted over any parameters.  This lets us display "List Nat" as "data [ nil. | cons. (x : Nat) (xs : List Nat) ]", "Vec" as "A ↦ data [ ... : Vec A ... ]", "refl (List X)" as a degenerate datatype, and so on.  Returns None for anything that does not reduce to a canonical type (e.g. a genuine case tree with matches/comatches, or a stuck neutral), so the caller can fall back to other display methods. *)
+and unparse_potential : type a b. (a, b) Ctx.t -> kinetic Value.value -> unparser option =
  fun ctx value ->
   match value with
   | Value.Neu { value = v; ty; _ } -> (
       match Norm.force_eval v with
-      | Val (Value.Canonical { canonical = Value.Data data_args; ins; _ }) -> (
-          match (is_id_ins ins, D.compare_zero data_args.dim) with
-          | Some _, Zero ->
-              let indexed = Fillvec.intended_pos data_args.indices in
-              Some
-                { unparse = (fun li ri -> unparse_data_value ctx indexed data_args.constrs li ri) }
-          | _ -> None)
+      | Val (Value.Canonical { canonical; ins; _ }) -> (
+          match canonical with
+          | Value.Data data_args -> (
+              match (is_id_ins ins, D.compare_zero data_args.dim) with
+              | Some _, Zero ->
+                  let indexed = Fillvec.intended_pos data_args.indices in
+                  Some
+                    {
+                      unparse =
+                        (fun li ri -> unparse_data_value ctx indexed data_args.constrs li ri);
+                    }
+              | Some _, Pos _ ->
+                  (* A degenerate (positive substitution dimension) datatype. *)
+                  Some
+                    {
+                      unparse =
+                        (fun li ri -> unparse_degenerate_data_value ctx value data_args li ri);
+                    }
+              | None, _ -> None)
+          (* Codatatypes/records are handled uniformly whether 0-dimensional, intrinsically higher (Gel-like), or degenerate. *)
+          | Value.Codata codata_args ->
+              Some { unparse = (fun li ri -> unparse_codata_value ctx value codata_args li ri) }
+          | Value.UU _ | Value.Pi _ -> None)
       | Val (Value.Lam (xs, _)) -> (
-          (* A function: apply it to a fresh parameter variable and recurse, then re-abstract.  We take the parameter's name from the lambda-abstraction (the definition), not the function-type (whose binder may be anonymous). *)
-          match View.view_type (Lazy.force ty) "unparse_constant_value" with
+          (* A function (e.g. a parameterized datatype family): apply it to a fresh parameter variable and recurse, then re-abstract.  We take the parameter's name from the lambda-abstraction (the definition), not the function-type (whose binder may be anonymous). *)
+          match View.view_type (Lazy.force ty) "unparse_potential" with
           | Canonical (_, Pi (_, doms, _), pins, _) -> (
               let Eq = eq_of_ins_zero pins in
               match D.compare_zero (CubeOf.dim doms) with
@@ -726,7 +742,7 @@ and unparse_constant_value : type a b. (a, b) Ctx.t -> kinetic Value.value -> un
                   let argvar, argnf = Domvars.dom_vars ctx doms in
                   let ctx = Ctx.cube_vis ctx (Some pname) argnf in
                   let value = Norm.apply_term value argvar in
-                  match unparse_constant_value ctx value with
+                  match unparse_potential ctx value with
                   | None -> None
                   | Some body ->
                       Some
@@ -834,33 +850,6 @@ and unparse_comatch : type n a s et lt ls rt rs.
           Emp fields in
       unlocated (outfix ~notn:comatch ~inner:(Multiple (wstok LBracket, inner, wstok RBracket)))
 
-(* If a (normalized) value is a neutral whose potential value is a canonical type (a datatype, codatatype, or record), read it back and unparse it as the corresponding canonical-type declaration.  This lets us display, for instance, "List Nat" as "data [ nil. | cons. (x : Nat) (xs : List Nat) ]".  Returns None if the value is not such a neutral, or if it is higher-dimensional (in which case the caller falls back to other display methods). *)
-and unparse_canonical_value : type a b lt ls rt rs.
-    (a, b) Ctx.t ->
-    kinetic Value.value ->
-    (lt, ls) No.iinterval ->
-    (rt, rs) No.iinterval ->
-    (lt, ls, rt, rs) parse located option =
- fun ctx tm li ri ->
-  match tm with
-  | Value.Neu { value; _ } -> (
-      match Norm.force_eval value with
-      | Val (Value.Canonical { canonical; ins; _ }) -> (
-          match canonical with
-          | Value.Data data_args -> (
-              match (is_id_ins ins, D.compare_zero data_args.dim) with
-              | Some _, Zero ->
-                  let indexed = Fillvec.intended_pos data_args.indices in
-                  Some (unparse_data_value ctx indexed data_args.constrs li ri)
-              (* A degenerate (positive substitution dimension) datatype is displayed by reconstructing each constructor's higher-dimensional function-type; see readback_degenerate_constr.  Currently only non-indexed degenerate datatypes are supported; indexed ones fall back to displaying the neutral. *)
-              | Some _, Pos _ -> unparse_degenerate_data_value ctx tm data_args li ri
-              | None, _ -> None)
-          (* Codatatypes/records are handled uniformly whether 0-dimensional, intrinsically higher (Gel-like), or degenerate: we introduce a self variable of the codatatype's full dimension and read back each field's type with tyof_field. *)
-          | Value.Codata codata_args -> unparse_codata_value ctx tm codata_args li ri
-          | Value.UU _ | Value.Pi _ -> None)
-      | _ -> None)
-  | _ -> None
-
 (* Unparse a value-level codatatype/record by introducing a self variable of its full dimension (via dom_vars, which gives the top self-variable the fully-instantiated codatatype as its type) and reading back the type of each field with tyof_field.  This handles 0-dimensional, intrinsically-higher (Gel-like), and degenerate codatatypes uniformly, displaying the in-practice (possibly higher-dimensional) field types. *)
 and unparse_codata_value : type a b cm cn cc ca cet lt ls rt rs.
     (a, b) Ctx.t ->
@@ -868,7 +857,7 @@ and unparse_codata_value : type a b cm cn cc ca cet lt ls rt rs.
     (cm, cn, cc, ca, cet) Value.codata_args ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
-    (lt, ls, rt, rs) parse located option =
+    (lt, ls, rt, rs) parse located =
  fun ctx tm codata_args _li _ri ->
   let eta = codata_args.eta in
   let evaldim = Value.dim_env codata_args.env in
@@ -964,9 +953,9 @@ and unparse_codata_value : type a b cm cn cc ca cet lt ls rt rs.
                     instances in
                 unlocated (outfix ~notn:record ~inner:(Multiple (wstok Sig, inner, wstok RParen)))
           in
-          Some result
-      | _ -> None)
-  | _ -> None
+          result
+      | _ -> fatal (Anomaly "type of codatatype/record is not a universe"))
+  | _ -> fatal (Anomaly "codatatype/record value is not neutral")
 
 (* Unparse a spine with its arguments whose head could be many things: an as-yet-not-unparsed term, a constructor, a field projection, a degeneracy, or a general delayed unparsing. *)
 and unparse_spine : type n lt ls rt rs.
