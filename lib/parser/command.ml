@@ -972,8 +972,8 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                 unparse names (readback_at ctx etm ety) No.Interval.entire No.Interval.entire
             | `About -> (
                 let etm = Norm.eval_term (Ctx.env ctx) ctm in
-                match unparse_potential ctx etm with
-                | Some u -> u.unparse No.Interval.entire No.Interval.entire
+                match Canonical_display.readback_about ctx etm with
+                | Some tm -> unparse names tm No.Interval.entire No.Interval.entire
                 | None -> (
                     match etm with
                     (* A defined constant whose normal form is a genuine case tree (matches/comatches) can't be read back from its value, so we display the stored case tree by name. *)

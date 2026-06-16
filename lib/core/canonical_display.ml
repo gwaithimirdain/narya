@@ -1,4 +1,5 @@
 open Bwd
+open Util
 open Reporter
 open Dim
 open Term
@@ -81,3 +82,46 @@ let codata_display_value : type a b cm cn cc ca cet.
           Term.Codata_display { eta; dim = mk; fields }
       | _ -> fatal (Anomaly "type of codatatype/record is not a universe"))
   | _ -> fatal (Anomaly "codatatype/record value is not neutral")
+
+(* Read back the *potential* value of a neutral, for the "about" command, into a display term: if it reduces (possibly under parameter abstractions) to a canonical type, a Canonical_display leaf wrapped in lambdas for the parameters; otherwise None, so the caller can fall back to displaying the stored case tree or the normal form.
+
+   This relocates the former parser-side "unparse_potential": all the type-directed work (forcing the value, dispatching on the canonical kind, descending through parameter abstractions by applying to fresh variables) now lives here in core, producing an ordinary (potential) display term that unparse renders purely syntactically.  The parameter abstraction is reconstructed as a real Term.Lam carrying the definition's parameter name, so e.g. "about Vec" reads back as "A ↦ data [ … : Vec A … ]".  We descend only through zero-dimensional parameter abstractions; anything else (a genuine case tree with matches/comatches, a higher-dimensional abstraction, or a stuck neutral) returns None. *)
+let rec readback_about : type a b.
+    (a, b) Ctx.t -> kinetic Value.value -> (b, potential) Term.term option =
+ fun ctx value ->
+  match value with
+  | Neu { value = v; ty; _ } -> (
+      match force_eval v with
+      | Val (Value.Canonical { canonical; ins; _ }) -> (
+          match canonical with
+          | Data data_args -> (
+              match (is_id_ins ins, D.compare_zero data_args.dim) with
+              | Some _, Zero ->
+                  let indexed = Fillvec.intended_pos data_args.indices in
+                  Some (Term.Canonical_display (data_display_value ctx indexed data_args.constrs))
+              | Some _, Pos _ ->
+                  (* A degenerate (positive substitution dimension) datatype. *)
+                  Some (Term.Canonical_display (degenerate_data_display ctx value data_args))
+              | None, _ -> None)
+          (* Codatatypes/records are handled uniformly whether 0-dimensional, intrinsically higher (Gel-like), or degenerate. *)
+          | Codata codata_args ->
+              Some (Term.Canonical_display (codata_display_value ctx value codata_args))
+          | UU _ | Pi _ -> None)
+      | Val (Lam (xs, _)) -> (
+          (* A function (e.g. a parameterized datatype family): apply it to a fresh parameter variable and recurse, then re-abstract.  The parameter name comes from the lambda-abstraction (the definition), not the function-type (whose binder may be anonymous). *)
+          match view_type (Lazy.force ty) "readback_about" with
+          | Canonical (_, Pi (_, doms, _), pins, _) -> (
+              let Eq = eq_of_ins_zero pins in
+              match D.compare_zero (CubeOf.dim doms) with
+              | Zero -> (
+                  let argvar, argnf = dom_vars ctx doms in
+                  let ctx = Ctx.cube_vis ctx (top_variable xs) argnf in
+                  let value = apply_term value argvar in
+                  match readback_about ctx value with
+                  | None -> None
+                  | Some body ->
+                      Some (Term.Lam (singleton_variables D.zero (top_variable xs), body)))
+              | Pos _ -> None)
+          | _ -> None)
+      | _ -> None)
+  | _ -> None
