@@ -383,6 +383,7 @@ and eval : type m b s. (m, b) env -> (b, s) term -> s evaluation =
       | _ -> Unrealized)
   | Realize tm -> Realize (eval_term env tm)
   | Canonical c -> eval_canonical env c
+  | Canonical_display _ -> fatal (Anomaly "Canonical_display in eval")
   | Unshift (n, plusmap, tm) ->
       let (Cofactor mn) =
         cofactor (dim_env env) n

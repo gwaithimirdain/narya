@@ -85,6 +85,8 @@ module rec Term : sig
         -> ('a, potential) term
     | Realize : ('a, kinetic) term -> ('a, potential) term
     | Canonical : 'a canonical -> ('a, potential) term
+    (* A display-only leaf, produced by readback for the "about" command to render a canonical type as its declaration ("data [ … ]"/"codata [ … ]").  It carries already-read-back terms, never a value, and is never evaluated, serialized, or typechecked; all those paths raise an anomaly on it. *)
+    | Canonical_display : 'a canonical_display -> ('a, 's) term
     | Unshift : 'n D.t * ('n, 'b, 'nb) Plusmap.t * ('nb, 's) term -> ('b, 's) term
     | Unact : ('m, 'n) op * ('b, 's) term -> ('b, 's) term
     | Shift : 'n D.t * ('n, 'b, 'nb) Plusmap.t * ('b, 's) term -> ('nb, 's) term
@@ -146,6 +148,16 @@ module rec Term : sig
         output : ('pa, kinetic) term;
       }
         -> 'p dataconstr
+
+  (* Display-only reflections of canonical types, produced by readback for the "about" command. *)
+  and _ canonical_display =
+    | Data_display : (Constr.t * 'a dataconstr_display) Bwd.t -> 'a canonical_display
+
+  and _ dataconstr_display =
+    (* A zero-dimensional constructor: a telescope of arguments, plus its output type for an indexed datatype. *)
+    | Tel_constr : ('a, 'b, 'ab) tel * ('ab, kinetic) term option -> 'a dataconstr_display
+    (* A constructor of a degenerate (higher-dimensional) datatype, displayed as its full function-type. *)
+    | Pi_constr : ('a, kinetic) term -> 'a dataconstr_display
 
   and ('a, 'b, 'ab) tel =
     | Emp : ('a, Fwn.zero, 'a) tel
@@ -262,6 +274,8 @@ end = struct
     (* A potential term is "realized" by kinetic terms, or canonical types, at its leaves. *)
     | Realize : ('a, kinetic) term -> ('a, potential) term
     | Canonical : 'a canonical -> ('a, potential) term
+    (* A display-only leaf; see the signature above. *)
+    | Canonical_display : 'a canonical_display -> ('a, 's) term
     (* These operations are easy to evaluate because they are dual to corresponding operations on environments.  They never appear in the output of typechecking, but they are useful when constructing terms "by hand" in OCaml code, such as in fibrancy witnesses. *)
     | Unshift : 'n D.t * ('n, 'b, 'nb) Plusmap.t * ('nb, 's) term -> ('b, 's) term
     | Unact : ('m, 'n) op * ('b, 's) term -> ('b, 's) term
@@ -335,6 +349,13 @@ end = struct
   (* A datatype constructor has a telescope of arguments and a list of index values depending on those arguments. *)
   and _ dataconstr =
     | Dataconstr : { args : ('p, 'a, 'pa) tel; output : ('pa, kinetic) term } -> 'p dataconstr
+
+  and _ canonical_display =
+    | Data_display : (Constr.t * 'a dataconstr_display) Bwd.t -> 'a canonical_display
+
+  and _ dataconstr_display =
+    | Tel_constr : ('a, 'b, 'ab) tel * ('ab, kinetic) term option -> 'a dataconstr_display
+    | Pi_constr : ('a, kinetic) term -> 'a dataconstr_display
 
   (* A telescope is a list of types, each dependent on the previous ones.  Note that 'a and 'ab are lists of dimensions, but 'b is just a forwards natural number counting the number of *zero-dimensional* variables added to 'a to get 'ab.  *)
   and ('a, 'b, 'ab) tel =

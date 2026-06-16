@@ -200,7 +200,7 @@ let rec synths : type n. (n, kinetic) term -> bool = function
   | App (_, _)
   | Act (_, _, _)
   | Let (_, _, _) -> true
-  | Constr (_, _, _) | Lam (_, _) | Struct _ -> false
+  | Constr (_, _, _) | Lam (_, _) | Struct _ | Canonical_display _ -> false
   | Unshift (_, _, tm) -> synths tm
   | Unact (_, tm) -> synths tm
   | Shift (_, _, tm) -> synths tm
@@ -470,6 +470,7 @@ let rec unparse : type n lt ls rt rs s.
           unparse_spine vars (`Constr c) args li ri)
   | Realize tm -> unparse vars tm li ri
   | Canonical c -> unparse_canonical vars c li ri
+  | Canonical_display d -> unparse_canonical_display vars d li ri
   | Struct { eta = Noeta; dim; fields; energy = _ } -> unparse_comatch vars dim fields li ri
   | Match { tm; dim; branches } -> unparse_match vars tm dim branches li ri
   | Unshift _ -> fatal (Unimplemented "unparsing unshifts")
@@ -620,79 +621,81 @@ and unparse_dataconstr : type a lt ls rt rs.
     if indexed then Some { unparse = (fun li ri -> unparse bcvars output li ri) } else None in
   unparse_constr_display c argunps output_display li ri
 
-(* Unparse a value-level datatype, including each indexed constructor's output type, computed by readback_dataconstr from the stored output. *)
-and unparse_data_value : type lev e lt ls rt rs.
-    (lev, e) Ctx.t ->
-    bool ->
-    (Constr.t, D.zero Value.dataconstr) Abwd.t ->
+(* Render a display-only canonical-declaration node (produced by readback for "about"): purely syntactic assembly of already-read-back constructor displays into "data [ … ]". *)
+and unparse_canonical_display : type a lt ls rt rs.
+    a Names.t ->
+    a Term.canonical_display ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun ctx indexed constrs _li _ri ->
-  let names = Names.of_ctx ctx in
-  let inner =
-    Bwd.fold_left
-      (fun acc (c, dc) ->
-        let (Rb_constr (tel, output)) = readback_dataconstr ctx indexed dc in
-        let bcvars, argunps = unparse_tel_args names tel Emp in
-        let output =
-          Option.map (fun out -> { unparse = (fun li ri -> unparse bcvars out li ri) }) output in
-        let cterm = unparse_constr_display c argunps output No.Interval.entire No.Interval.entire in
-        acc <: mktok (Op "|") <: Term cterm)
-      (Snoc (Emp, mktok LBracket))
-      constrs in
-  unlocated (outfix ~notn:data ~inner:(Multiple (wstok Data, inner, wstok RBracket)))
+ fun vars cd _li _ri ->
+  match cd with
+  | Data_display constrs ->
+      let inner =
+        Bwd.fold_left
+          (fun acc (c, dcd) ->
+            let cterm =
+              match dcd with
+              | Term.Tel_constr (tel, output) ->
+                  let bcvars, argunps = unparse_tel_args vars tel Emp in
+                  let output =
+                    Option.map
+                      (fun out -> { unparse = (fun li ri -> unparse bcvars out li ri) })
+                      output in
+                  unparse_constr_display c argunps output No.Interval.entire No.Interval.entire
+              | Term.Pi_constr fn ->
+                  let output = { unparse = (fun li ri -> unparse vars fn li ri) } in
+                  unparse_constr_display c Emp (Some output) No.Interval.entire No.Interval.entire
+            in
+            acc <: mktok (Op "|") <: Term cterm)
+          (Snoc (Emp, mktok LBracket))
+          constrs in
+      unlocated (outfix ~notn:data ~inner:(Multiple (wstok Data, inner, wstok RBracket)))
 
-(* Assemble the "data [ | c. : <type> | ... ]" display for a degenerate datatype, given a function that reads back each constructor's (higher-dimensional) function-type. *)
-and unparse_degenerate_data : type lev e d lt ls rt rs.
-    (lev, e) Ctx.t ->
-    (Constr.t -> d Value.dataconstr -> (e, kinetic) term) ->
-    (Constr.t, d Value.dataconstr) Abwd.t ->
-    (lt, ls, rt, rs) parse located =
- fun ctx readback_constr constrs ->
-  let names = Names.of_ctx ctx in
-  let inner =
-    Bwd.fold_left
-      (fun acc (c, dc) ->
-        let ft = readback_constr c dc in
-        let output = { unparse = (fun li ri -> unparse names ft li ri) } in
-        let cterm =
-          unparse_constr_display c Emp (Some output) No.Interval.entire No.Interval.entire in
-        acc <: mktok (Op "|") <: Term cterm)
-      (Snoc (Emp, mktok LBracket))
-      constrs in
-  unlocated (outfix ~notn:data ~inner:(Multiple (wstok Data, inner, wstok RBracket)))
+(* Build the display node for a value-level (zero-dimensional) datatype: each constructor as a telescope of arguments plus, for an indexed datatype, its output type. *)
+and data_display_value : type lev e.
+    (lev, e) Ctx.t -> bool -> (Constr.t, D.zero Value.dataconstr) Abwd.t -> e Term.canonical_display
+    =
+ fun ctx indexed constrs ->
+  Data_display
+    (Bwd.fold_left
+       (fun acc (c, dc) ->
+         let (Rb_constr (tel, output)) = readback_dataconstr ctx indexed dc in
+         Snoc (acc, (c, Term.Tel_constr (tel, output))))
+       Emp constrs)
 
-(* Unparse a value-level *degenerate* (positive substitution dimension) datatype, displaying each constructor as "c. : <higher-dimensional function type>" (e.g. "cons. : {x₀ x₁ : A} (x₂ : Id A x₀ x₁) … →⁽ᵉ⁾ List⁽ᵉ⁾ (Id A) (cons. x₀ xs₀) (cons. x₁ xs₁)").  Normally (arity ≥ 1) we obtain the underlying zero-dimensional datatype d0 as a vertex of the degenerate one (a boundary face of its degenerate-universe type) and read back each constructor's function-type via readback_degenerate_constr, which instantiates the codomain at the lower-dimensional constructors.  In a configuration with no endpoints (arity 0) the cube has no vertex, but it also has no boundary to instantiate, so we read back each constructor's function-type directly in its degenerate environment via readback_degenerate_constr_uninst. *)
-and unparse_degenerate_data_value : type a b m j ij lt ls rt rs.
-    (a, b) Ctx.t ->
-    kinetic Value.value ->
-    (m, j, ij) Value.data_args ->
-    (lt, ls) No.iinterval ->
-    (rt, rs) No.iinterval ->
-    (lt, ls, rt, rs) parse located =
- fun ctx tm data_args _li _ri ->
+(* Build the display node for a value-level *degenerate* (positive substitution dimension) datatype: each constructor as its (higher-dimensional) function-type.  Normally (arity ≥ 1) we obtain the underlying zero-dimensional datatype d0 as a vertex of the degenerate one (a boundary face of its degenerate-universe type) and read back each constructor's function-type via readback_degenerate_constr, which instantiates the codomain at the lower-dimensional constructors.  In a configuration with no endpoints (arity 0) the cube has no vertex, but it also has no boundary to instantiate, so we read back each constructor's function-type directly in its degenerate environment via readback_degenerate_constr_uninst. *)
+and degenerate_data_display : type a b m j ij.
+    (a, b) Ctx.t -> kinetic Value.value -> (m, j, ij) Value.data_args -> b Term.canonical_display =
+ fun ctx tm data_args ->
+  let pi_constrs : type d.
+      (Constr.t -> d Value.dataconstr -> (b, kinetic) term) ->
+      (Constr.t, d Value.dataconstr) Abwd.t ->
+      b Term.canonical_display =
+   fun readback_constr constrs ->
+    Data_display
+      (Bwd.fold_left
+         (fun acc (c, dc) -> Snoc (acc, (c, Term.Pi_constr (readback_constr c dc))))
+         Emp constrs) in
   (* The caller (unparse_potential) has already forced tm to a Canonical datatype, so its type is a (degenerate) universe. *)
   match tm with
   | Value.Neu { ty; _ } -> (
-      match View.view_type (Lazy.force ty) "unparse_degenerate_data_value" with
+      match View.view_type (Lazy.force ty) "degenerate_data_display" with
       | Canonical (_, UU mm, ins0, boundary) -> (
           let Eq = eq_of_ins_zero ins0 in
           (* The underlying zero-dimensional datatype is a vertex of the degenerate one, recovered from the boundary faces of its (degenerate-universe) type.  In arity 0 there is no vertex; then there is also no boundary, so we display directly from the degenerate environment. *)
           let dom = TubeOf.plus_cube (Value.val_of_norm_tube boundary) (CubeOf.singleton tm) in
           match vertex mm with
           | None ->
-              unparse_degenerate_data ctx
-                (fun _ dc -> readback_degenerate_constr_uninst ctx dc)
-                data_args.constrs
+              pi_constrs (fun _ dc -> readback_degenerate_constr_uninst ctx dc) data_args.constrs
           | Some v -> (
               let d0 = CubeOf.find dom v in
-              match View.view_type d0 "unparse_degenerate_data_value d0" with
+              match View.view_type d0 "degenerate_data_display d0" with
               | Canonical (_, Data d0_args, _, _) -> (
                   match D.compare_zero d0_args.dim with
                   | Pos _ -> fatal (Anomaly "boundary vertex of degenerate datatype is not 0-dim")
                   | Zero ->
-                      unparse_degenerate_data ctx
+                      pi_constrs
                         (fun c dc -> readback_degenerate_constr ctx mm c dc)
                         d0_args.constrs)
               | _ -> fatal (Anomaly "boundary vertex of degenerate datatype is not a datatype")))
@@ -714,17 +717,19 @@ and unparse_potential : type a b. (a, b) Ctx.t -> kinetic Value.value -> unparse
               match (is_id_ins ins, D.compare_zero data_args.dim) with
               | Some _, Zero ->
                   let indexed = Fillvec.intended_pos data_args.indices in
+                  let node = data_display_value ctx indexed data_args.constrs in
                   Some
                     {
                       unparse =
-                        (fun li ri -> unparse_data_value ctx indexed data_args.constrs li ri);
+                        (fun li ri -> unparse_canonical_display (Names.of_ctx ctx) node li ri);
                     }
               | Some _, Pos _ ->
                   (* A degenerate (positive substitution dimension) datatype. *)
+                  let node = degenerate_data_display ctx value data_args in
                   Some
                     {
                       unparse =
-                        (fun li ri -> unparse_degenerate_data_value ctx value data_args li ri);
+                        (fun li ri -> unparse_canonical_display (Names.of_ctx ctx) node li ri);
                     }
               | None, _ -> None)
           (* Codatatypes/records are handled uniformly whether 0-dimensional, intrinsically higher (Gel-like), or degenerate. *)

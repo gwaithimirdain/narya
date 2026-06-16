@@ -43,6 +43,7 @@ let rec term : type a s. (File.t -> File.t) -> (a, s) term -> (a, s) term =
       Match { tm = term f tm; dim; branches = Constr.Map.map (branch f) branches }
   | Realize tm -> Realize (term f tm)
   | Canonical can -> Canonical (canonical f can)
+  | Canonical_display _ -> Reporter.fatal (Anomaly "Canonical_display in link")
   | Unshift (n, plusmap, tm) -> Unshift (n, plusmap, term f tm)
   | Unact (o, tm) -> Unact (o, term f tm)
   | Shift (n, plusmap, tm) -> Shift (n, plusmap, term f tm)
