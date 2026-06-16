@@ -132,7 +132,7 @@ A degenerate datatype is read back by reconstructing each constructor's higher-d
   
 
 
-In a parametricity configuration with no endpoints (arity 0), a degenerate datatype still displays: an arity-0 cube has no boundary face to recover the zero-dimensional datatype from, but it also has no boundary to instantiate, so each constructor's function type is read back directly in its degenerate environment (no implicit boundary arguments, and an uninstantiated codomain).
+In a parametricity configuration with no endpoints (arity 0), a degenerate datatype still displays: an arity-0 cube has no boundary face to recover the zero-dimensional datatype from, but each constructor's function type is read back directly in its degenerate environment.  There are no implicit boundary arguments, but there is still the (empty) instantiation, displayed as ".".
 
   $ narya -arity 0 -parametric -e 'axiom X : Type' -e 'def List : Type → Type ≔ A ↦ data [ nil. | cons. (x : A) (xs : List A) ]' -e 'about (List X)⁽ᵉ⁾'
   data [
@@ -140,6 +140,20 @@ In a parametricity configuration with no endpoints (arity 0), a degenerate datat
   | cons. : (x₀ : Id X .) (xs₀ : List⁽ᵉ⁾ (Id X) .) →⁽ᵉ⁾ List⁽ᵉ⁾ (Id X) . ]
     : Type⁽ᵉ⁾ .
   
+
+
+A datatype defined nested inside a case tree is reached through the tree rather than as a top-level canonical type, so "about" displays the stored case tree.  Each nested datatype's constructor output types are shown faithfully (with the real datatype head) from the stored output term.
+
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def W (n : N) : N → Type ≔ match n [ zero. ↦ data [ w0. : W n zero. ] | suc. m ↦ data [ w1. : W n (suc. m) ] ]' -e 'about W'
+  n ↦
+  match n [
+  | suc. m ↦ data [
+    | w1. : W n (suc. m) ]
+  | zero. ↦ data [
+    | w0. : W n 0 ]]
+    : (n : N) → N → Type
+  
+
 
 
 
