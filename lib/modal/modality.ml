@@ -217,7 +217,21 @@ let generate : type a b. a Mode.t -> b Mode.t -> string -> (a, b) gen_wrapped =
 include Path.Make (Gen)
 module Map = Path.Map (Gen) (Mode.Map) (Gen.Map)
 
-let locker : type a. a Mode.t -> (a, a) wrapped = fun _ -> raise (Failure "Modality.locker not set")
+module type Theory = sig
+  val sharp : ('a, 'm, 'b) t -> bool
+end
+
+let theory : (module Theory) ref =
+  ref
+    (module struct
+      let sharp _ = true
+    end : Theory)
+
+let choose_theory (t : (module Theory)) = theory := t
+
+let sharp m =
+  let module T = (val !theory) in
+  T.sharp m
 
 module Cube (F : Fam3) = struct
   module Parent = struct

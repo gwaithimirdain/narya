@@ -195,6 +195,7 @@ module Code = struct
         -> t
     | Unknown_modality : string -> t
     | Modalcell_mismatch : string * ('a, 'm, 'n, 'b) Modalcell.t * ('c, 'r, 's, 'd) Modalcell.t -> t
+    | Nonsharp_modality : ('a, 'm, 'b) Modality.t -> t
     | Non_mode_synthesizing : string -> t
     | Invalid_variable_face : 'a D.t * ('n, 'm) sface -> t
     | Anomaly : string -> t
@@ -369,6 +370,7 @@ module Code = struct
     | Modality_mismatch (`User, _, _, _) -> Error
     | Unknown_modality _ -> Error
     | Modalcell_mismatch _ -> Error
+    | Nonsharp_modality _ -> Error
     | Non_mode_synthesizing _ -> Error
     | Anomaly _ -> Bug
     | No_such_level _ -> Bug
@@ -575,6 +577,7 @@ module Code = struct
     | Non_mode_synthesizing _ -> "E1703"
     | Unknown_modality _ -> "E1704"
     | Missing_key _ -> "E1705"
+    | Nonsharp_modality _ -> "E1706"
     (* Commands *)
     | Too_many_commands -> "E2000"
     | Forbidden_interactive_command _ -> "E2001"
@@ -912,6 +915,7 @@ module Code = struct
             (Modalcell.to_string b)
       | Non_mode_synthesizing str -> textf "cannot synthesize a mode: %s" str
       | Unknown_modality c -> textf "unknown modality %s" c
+      | Nonsharp_modality m -> textf "modality %s is not sharp" (Modality.to_string m)
       | Missing_key (vdom, vcod) ->
           textf "use of %a variable behind %a lock requires a key" pp_printed
             (print (PString (Modality.to_string vdom)))

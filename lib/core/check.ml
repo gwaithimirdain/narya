@@ -2791,6 +2791,7 @@ and synth : type mode a b s.
         match Modality.of_name_tgt (fun x -> x.value) mode modality.value with
         | Error e -> modality_fatal "synthesizing pi-type" (e :> modality_error)
         | Ok (Wrap modality) ->
+            if not (Modality.sharp modality) then fatal (Nonsharp_modality modality);
             let (Locked (plus, lctx)) = Ctx.lock ctx modality in
             (* These user-level pi-types are always dimension zero, so the domain must be a zero-dimensional type. *)
             let cdom = check (Kinetic `Nolet) lctx dom (universe (Modality.src modality) D.zero) in
@@ -3757,6 +3758,7 @@ and check_tel : type mode a b c ac.
       match Modality.of_name_tgt (fun x -> x.value) (Ctx.mode ctx) modality.value with
       | Error e -> modality_fatal "checking a telescope" (e :> modality_error)
       | Ok (Wrap modality) ->
+          if not (Modality.sharp modality) then fatal (Nonsharp_modality modality);
           let (Locked (plus, lctx)) = Ctx.lock ctx modality in
           let cty = check (Kinetic `Nolet) lctx ty (universe (Modality.src modality) D.zero) in
           let ety = eval_term (Ctx.env lctx) cty in
