@@ -336,6 +336,17 @@ let readback_degenerate_constr : type lev e m.
   let ft = Act.act_ty cfun cty (deg_zero m) in
   readback_val ~sort:`Type ctx ft
 
+(* Read back a degenerate constructor's function-type in a configuration with *no endpoints* (arity 0).  Then an m-cube has no proper faces, so we don't need the zero-dimensional base (which is unreachable anyway, as it would be a vertex of a faceless cube): we evaluate the constructor's function-type "(args) → output" directly in the degenerate (m-dimensional) environment that the constructor already carries.  There is still a (trivial, empty) instantiation, displayed as ".", so we instantiate the resulting m-dimensional function-type at the empty boundary tube before reading back.  Since the cube has no proper faces, the tube's builder is never called. *)
+let readback_degenerate_constr_uninst : type lev e m.
+    (lev, e) Ctx.t -> m Value.dataconstr -> (e, kinetic) term =
+ fun ctx (Dataconstr { env; args; output }) ->
+  let m = Value.dim_env env in
+  let ft = Norm.eval_term env (Telescope.pis args output) in
+  let boundary =
+    TubeOf.build D.zero (D.zero_plus m)
+      { build = (fun _ -> fatal (Anomaly "arity-0 cube has no boundary faces")) } in
+  readback_val ~sort:`Type ctx (Norm.inst ft boundary)
+
 (* The primary unparsing function.  Given the variable names, unparse a term into given tightness intervals. *)
 let rec unparse : type n lt ls rt rs s.
     n Names.t ->
@@ -632,23 +643,48 @@ and unparse_data_value : type lev e lt ls rt rs.
       constrs in
   unlocated (outfix ~notn:data ~inner:(Multiple (wstok Data, inner, wstok RBracket)))
 
-(* Unparse a value-level *degenerate* (positive substitution dimension) datatype, displaying each constructor as "c. : <higher-dimensional function type>" (e.g. "cons. : {x₀ x₁ : A} (x₂ : Id A x₀ x₁) … →⁽ᵉ⁾ List⁽ᵉ⁾ (Id A) (cons. x₀ xs₀) (cons. x₁ xs₁)").  We obtain the underlying zero-dimensional datatype d0 as a face of the degenerate one (the boundary of its type, a degenerate universe), and read back each constructor's degenerate function-type with readback_degenerate_constr.  Returns None (falling back to displaying the neutral) for indexed datatypes, which aren't yet supported. *)
-and unparse_degenerate_data_value : type a b lt ls rt rs.
+(* Assemble the "data [ | c. : <type> | ... ]" display for a degenerate datatype, given a function that reads back each constructor's (higher-dimensional) function-type. *)
+and unparse_degenerate_data : type lev e d lt ls rt rs.
+    (lev, e) Ctx.t ->
+    (Constr.t -> d Value.dataconstr -> (e, kinetic) term) ->
+    (Constr.t, d Value.dataconstr) Abwd.t ->
+    (lt, ls, rt, rs) parse located =
+ fun ctx readback_constr constrs ->
+  let names = Names.of_ctx ctx in
+  let inner =
+    Bwd.fold_left
+      (fun acc (c, dc) ->
+        let ft = readback_constr c dc in
+        let output = { unparse = (fun li ri -> unparse names ft li ri) } in
+        let cterm =
+          unparse_constr_display c Emp (Some output) No.Interval.entire No.Interval.entire in
+        acc <: mktok (Op "|") <: Term cterm)
+      (Snoc (Emp, mktok LBracket))
+      constrs in
+  unlocated (outfix ~notn:data ~inner:(Multiple (wstok Data, inner, wstok RBracket)))
+
+(* Unparse a value-level *degenerate* (positive substitution dimension) datatype, displaying each constructor as "c. : <higher-dimensional function type>" (e.g. "cons. : {x₀ x₁ : A} (x₂ : Id A x₀ x₁) … →⁽ᵉ⁾ List⁽ᵉ⁾ (Id A) (cons. x₀ xs₀) (cons. x₁ xs₁)").  Normally (arity ≥ 1) we obtain the underlying zero-dimensional datatype d0 as a vertex of the degenerate one (a boundary face of its degenerate-universe type) and read back each constructor's function-type via readback_degenerate_constr, which instantiates the codomain at the lower-dimensional constructors.  In a configuration with no endpoints (arity 0) the cube has no vertex, but it also has no boundary to instantiate, so we read back each constructor's function-type directly in its degenerate environment via readback_degenerate_constr_uninst. *)
+and unparse_degenerate_data_value : type a b m j ij lt ls rt rs.
     (a, b) Ctx.t ->
     kinetic Value.value ->
+    (m, j, ij) Value.data_args ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located option =
- fun ctx tm _li _ri ->
+ fun ctx tm data_args _li _ri ->
   match tm with
   | Value.Neu { ty; _ } -> (
       match View.view_type (Lazy.force ty) "unparse_degenerate_data_value" with
-      | Canonical (_, UU m, ins0, boundary) -> (
+      | Canonical (_, UU mm, ins0, boundary) -> (
           let Eq = eq_of_ins_zero ins0 in
-          (* The underlying zero-dimensional datatype is a vertex of the degenerate one, recovered from the boundary faces of its (degenerate-universe) type. *)
+          (* The underlying zero-dimensional datatype is a vertex of the degenerate one, recovered from the boundary faces of its (degenerate-universe) type.  In arity 0 there is no vertex; then there is also no boundary, so we display directly from the degenerate environment. *)
           let dom = TubeOf.plus_cube (Value.val_of_norm_tube boundary) (CubeOf.singleton tm) in
-          match vertex m with
-          | None -> None
+          match vertex mm with
+          | None ->
+              Some
+                (unparse_degenerate_data ctx
+                   (fun _ dc -> readback_degenerate_constr_uninst ctx dc)
+                   data_args.constrs)
           | Some v -> (
               let d0 = CubeOf.find dom v in
               match View.view_type d0 "unparse_degenerate_data_value d0" with
@@ -656,22 +692,10 @@ and unparse_degenerate_data_value : type a b lt ls rt rs.
                   match D.compare_zero d0_args.dim with
                   | Pos _ -> None
                   | Zero ->
-                      let names = Names.of_ctx ctx in
-                      let inner =
-                        Bwd.fold_left
-                          (fun acc (c, dc) ->
-                            let ft = readback_degenerate_constr ctx m c dc in
-                            let output = { unparse = (fun li ri -> unparse names ft li ri) } in
-                            let cterm =
-                              unparse_constr_display c Emp (Some output) No.Interval.entire
-                                No.Interval.entire in
-                            acc <: mktok (Op "|") <: Term cterm)
-                          (Snoc (Emp, mktok LBracket))
-                          d0_args.constrs in
                       Some
-                        (unlocated
-                           (outfix ~notn:data ~inner:(Multiple (wstok Data, inner, wstok RBracket))))
-                  )
+                        (unparse_degenerate_data ctx
+                           (fun c dc -> readback_degenerate_constr ctx mm c dc)
+                           d0_args.constrs))
               | _ -> None))
       | _ -> None)
   | _ -> None
@@ -829,7 +853,7 @@ and unparse_canonical_value : type a b lt ls rt rs.
                   let indexed = Fillvec.intended_pos data_args.indices in
                   Some (unparse_data_value ctx indexed data_args.constrs li ri)
               (* A degenerate (positive substitution dimension) datatype is displayed by reconstructing each constructor's higher-dimensional function-type; see readback_degenerate_constr.  Currently only non-indexed degenerate datatypes are supported; indexed ones fall back to displaying the neutral. *)
-              | Some _, Pos _ -> unparse_degenerate_data_value ctx tm li ri
+              | Some _, Pos _ -> unparse_degenerate_data_value ctx tm data_args li ri
               | None, _ -> None)
           (* Codatatypes/records are handled uniformly whether 0-dimensional, intrinsically higher (Gel-like), or degenerate: we introduce a self variable of the codatatype's full dimension and read back each field's type with tyof_field. *)
           | Value.Codata codata_args -> unparse_codata_value ctx tm codata_args li ri

@@ -132,6 +132,17 @@ A degenerate datatype is read back by reconstructing each constructor's higher-d
   
 
 
+In a parametricity configuration with no endpoints (arity 0), a degenerate datatype still displays: an arity-0 cube has no boundary face to recover the zero-dimensional datatype from, but it also has no boundary to instantiate, so each constructor's function type is read back directly in its degenerate environment (no implicit boundary arguments, and an uninstantiated codomain).
+
+  $ narya -arity 0 -parametric -e 'axiom X : Type' -e 'def List : Type → Type ≔ A ↦ data [ nil. | cons. (x : A) (xs : List A) ]' -e 'about (List X)⁽ᵉ⁾'
+  data [
+  | nil. : List⁽ᵉ⁾ (Id X) .
+  | cons. : (x₀ : Id X .) (xs₀ : List⁽ᵉ⁾ (Id X) .) →⁽ᵉ⁾ List⁽ᵉ⁾ (Id X) . ]
+    : Type⁽ᵉ⁾ .
+  
+
+
+
 
 
 

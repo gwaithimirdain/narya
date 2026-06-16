@@ -114,7 +114,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
         Reporter.display ?use_ansi ~output:stderr d;
         raise Exit)
   @@ fun () ->
-    if !arity < 0 || !arity > 9 then Reporter.fatal (Unimplemented "arities outside [1,9]");
+    if !arity < 0 || !arity > 9 then Reporter.fatal (Unimplemented "arities outside [0,9]");
     if !discreteness && !arity > 1 then Reporter.fatal (Unimplemented "discreteness with arity > 1");
     if !hott && (!arity <> 2 || !discreteness || not !internal) then Reporter.fatal Invalid_flags;
     if !hott_deprecated then Reporter.emit (Deprecated "-hott (this is now the default)");
