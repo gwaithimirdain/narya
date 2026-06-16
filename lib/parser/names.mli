@@ -17,6 +17,7 @@ val add : 'b t -> 'n variables -> ('n, string) gvariables * ('b, 'n) snoc t
 val add_strings : 'b t -> ('n, string) gvariables -> ('n, string) gvariables * ('b, 'n) snoc t
 val add_full : 'b t -> 'mn variables -> ('mn, string) gvariables * ('b, 'mn) snoc t
 val of_ctx : ('a, 'b) Ctx.t -> 'b t
+val degenerate : 'r D.t -> ('r, 'b, 'kb) Plusmap.t -> 'b t -> 'kb t
 
 val uniquify_vars :
   (string option, 'a) Bwv.t -> (string * [ `Original | `Renamed ], 'a) Bwv.t * emp t

@@ -205,6 +205,17 @@ let rec of_ordered_ctx : type a b. (a, b) Ctx.Ordered.t -> b t = function
 let of_ctx : type a b. (a, b) Ctx.t -> b t = function
   | Permute { ctx; _ } -> of_ordered_ctx ctx
 
+(* Degenerate a name-context by a dimension r, mirroring Degctx.degctx: each variable cube is re-dimensioned from its intrinsic n-cube up to a (r+n)-cube, keeping the same base names (Variables.plus_variables changes only the substitution dimension, not the stored name cube).  This reproduces exactly the names that "of_ctx" would produce for the degenerated context, so it lets the renderer name the (degenerated) variables of a non-projectable higher codata field instance without rebuilding the value-level degenerate context. *)
+let rec degenerate_ctx : type r b kb. r D.t -> (r, b, kb) Plusmap.t -> b ctx -> kb ctx =
+ fun r pm ctx ->
+  match (pm, ctx) with
+  | Map_emp, Emp -> Emp
+  | Map_snoc (pm, k_mn), Snoc (ctx, vars, flds) ->
+      Snoc (degenerate_ctx r pm ctx, plus_variables r k_mn vars, flds)
+
+let degenerate : type r b kb. r D.t -> (r, b, kb) Plusmap.t -> b t -> kb t =
+ fun r pm { ctx; used } -> { ctx = degenerate_ctx r pm ctx; used }
+
 (* Add a cube of variables WITHOUT replacing them by fresh versions.  Should only be used when the variables have already been so replaced, as in the output of uniquify_vars below. *)
 let unsafe_add : 'b t -> ('n, string) gvariables -> (string, string) Abwd.t -> ('b, 'n) snoc t =
  fun { ctx; used } vars fields -> { ctx = Snoc (ctx, vars, fields); used }
