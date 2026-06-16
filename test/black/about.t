@@ -155,6 +155,19 @@ A datatype defined nested inside a case tree is reached through the tree rather 
   
 
 
+A neutral whose value is a comatch (a coinductive record without eta) is read back and displayed as that comatch, by projecting each field.  This includes comatches that are only partially applied, and hence are not stored case trees that could be displayed by name.
+
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Stream : Type → Type ≔ A ↦ codata [ x .head : A | x .tail : Stream A ]' -e 'def s : Stream N ≔ [ .head ↦ 0 | .tail ↦ s ]' -e 'def const : (A : Type) → A → Stream A ≔ A a ↦ [ .head ↦ a | .tail ↦ const A a ]' -e 'about s' -e 'about (const N 0)'
+  [ .head ↦ 0 | .tail ↦ s ]
+    : Stream N
+  
+  [ .head ↦ 0 | .tail ↦ const N 0 ]
+    : Stream N
+  
+
+
+
+
 
 
 

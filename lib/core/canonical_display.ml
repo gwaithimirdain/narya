@@ -123,5 +123,40 @@ let rec readback_about : type a b.
                       Some (Term.Lam (singleton_variables D.zero (top_variable xs), body)))
               | Pos _ -> None)
           | _ -> None)
+      | Val (Struct { eta = Noeta; _ }) -> (
+          (* A comatch.  We display it by projecting each field of the codatatype, exactly as the eta-expanding readback of a transparent record does — but for a (no-eta) codatatype, where this expansion is display-only.  Each field body is read back kinetically and wrapped in Realize to make the (potential) comatch field.  If the codatatype has a higher field we give up (there is no higher-comatch surface syntax to display yet) and fall back. *)
+          match view_type (Lazy.force ty) "readback_about comatch" with
+          | Canonical
+              (type mn m n)
+              ((_, Codata (type c aa et) ({ fields; _ } : (m, n, c, aa, et) codata_args), ins, _) :
+                head * (m, n) canonical * (mn, m, n) insertion * (D.zero, mn, mn, normal) TubeOf.t)
+            -> (
+              match is_id_ins ins with
+              | None -> None
+              | Some _ -> (
+                  let dim = cod_left_ins ins in
+                  let fldins = ins_zero dim in
+                  let exception Has_higher in
+                  try
+                    let fields =
+                      Mbwd.map
+                        (fun (Term.CodatafieldAbwd.Entry
+                                (type i)
+                                ((fld, cf) : i Field.t * (i, aa * n * et) Term.Codatafield.t)) ->
+                          match cf with
+                          | Term.Codatafield.Lower _ ->
+                              Term.StructfieldAbwd.Entry
+                                ( fld,
+                                  Term.Structfield.Lower
+                                    ( Term.Realize
+                                        (readback_at ctx (field_term value fld fldins)
+                                           (tyof_field (Ok value) (Lazy.force ty) fld ~shuf:Trivial
+                                              fldins)),
+                                      `Labeled ) )
+                          | Term.Codatafield.Higher _ -> raise Has_higher)
+                        fields in
+                    Some (Term.Struct { eta = Noeta; dim; fields; energy = Potential })
+                  with Has_higher -> None))
+          | _ -> None)
       | _ -> None)
   | _ -> None
