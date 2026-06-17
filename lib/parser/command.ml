@@ -976,9 +976,13 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                 | Some tm -> unparse names tm No.Interval.entire No.Interval.entire
                 | None -> (
                     match etm with
-                    (* A defined constant whose normal form is a genuine case tree (matches/comatches) can't be read back from its value, so we display the stored case tree by name. *)
+                    (* A defined *zero-dimensional* constant whose normal form is a genuine case tree (matches/comatches) can't be read back from its value, so we display the stored case tree by name.  We require dimension zero so that a degeneracy of such a constant (e.g. "refl r" of a comatch) isn't shown as the undegenerated stored tree, which would be wrong; it falls through to readback_at, displaying the application spine ("refl r"). *)
                     | Value.Neu { head = Value.Const { name; ins }; args = Value.Emp; _ }
-                      when Option.is_some (is_id_ins ins) -> (
+                      when Option.is_some (is_id_ins ins)
+                           &&
+                           match D.compare_zero (cod_left_ins ins) with
+                           | Zero -> true
+                           | Pos _ -> false -> (
                         match Global.find name with
                         | _, (`Defined tree, _) ->
                             unparse Names.empty tree No.Interval.entire No.Interval.entire

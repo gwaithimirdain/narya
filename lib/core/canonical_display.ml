@@ -140,71 +140,82 @@ let readback_comatch_impl : type a z.
   | ( Neu { value = nval; _ },
       Canonical
         (type mn m n)
-        ((_, Codata (type c aa et) (codata_args : (m, n, c, aa, et) codata_args), ins, _) :
+        ((_, Codata (type c aa et) (codata_args : (m, n, c, aa, et) codata_args), ins, tyargs) :
           head * (m, n) canonical * (mn, m, n) insertion * (D.zero, mn, mn, normal) TubeOf.t) ) -> (
       match force_eval nval with
-      | Val (Struct { fields = comatch_fields; _ }) ->
-          let dim = cod_left_ins ins in
-          let evaldim = dim_env codata_args.env in
-          let fields =
-            Mbwd.map
-              (fun (Term.CodatafieldAbwd.Entry
-                      (type i)
-                      ((fld, cf) : i Field.t * (i, aa * n * et) Term.Codatafield.t)) ->
-                match cf with
-                | Term.Codatafield.Lower _ ->
-                    let ety = tyof_field (Ok neutral) ty fld ~shuf:Trivial (ins_zero evaldim) in
-                    let body = field_term neutral fld (ins_zero dim) in
-                    Term.StructfieldAbwd.Entry
-                      ( fld,
-                        Term.Structfield.Lower (Term.Realize (readback_at ctx body ety), `Labeled)
-                      )
-                | Term.Codatafield.Higher _ -> (
-                    match Value.StructfieldAbwd.find_opt comatch_fields fld with
-                    | Found (Value.Structfield.Higher (lazy hd)) -> (
-                        (* We handle only an undegenerated comatch (identity deg) with an empty closure environment (a top-level comatch), where the stored term can be evaluated directly in the empty environment.  A degenerate comatch (e.g. refl of a comatch) or a partially-applied one falls back to the stored case tree. *)
-                        match
-                          (hd.env, D.compare dim (D.plus_right hd.plusdim), is_id_deg hd.deg)
-                        with
-                        | Emp _, Eq, Some _ ->
-                            let pbm =
-                              Term.PlusPbijmap.build dim (Field.dim fld)
-                                {
-                                  build =
-                                    (fun (type r) (pbij : (m, i, r) pbij) : (r, a) Term.PlusFam.t ->
-                                      match Term.PlusPbijmap.find pbij hd.terms with
-                                      | None -> raise Comatch_fallback
-                                      (* The closure environment is empty (aa = emp), so the stored degenerated context is also empty: Map_emp refines rb = emp, matching hd.env's domain. *)
-                                      | Some (Term.PlusFam.PlusFam (Map_emp, term)) ->
-                                          let (Pbij (fldins, fldshuf)) = pbij in
-                                          let r = left_shuffle fldshuf in
-                                          let (Degctx (plusmap, dctx, denv)) = degctx ctx r in
-                                          let ety =
-                                            match D.compare_zero r with
-                                            | Zero ->
-                                                let Eq = eq_of_zero_shuffle fldshuf in
-                                                tyof_field (Ok neutral) ty fld ~shuf:Trivial fldins
-                                            | Pos _ ->
-                                                let termctx =
-                                                  Lazy.force codata_args.termctx
-                                                  <|> Anomaly "missing termctx for higher comatch"
-                                                in
-                                                let shuf =
-                                                  higher_codatafield_shuffleable ctx
-                                                    (length_env codata_args.env) termctx denv r
-                                                    fldshuf in
-                                                tyof_field (Ok neutral) ty fld ~shuf fldins in
-                                          (* The closure environment is empty, so degenerating it leaves it unchanged; evaluate the closed stored term in it directly. *)
-                                          let body = eval hd.env term in
-                                          Some
-                                            (Term.PlusFam.PlusFam
-                                               (plusmap, readback_eval dctx body ety)));
-                                } in
-                            Term.StructfieldAbwd.Entry (fld, Term.Structfield.Higher pbm)
-                        | _ -> raise Comatch_fallback)
-                    | _ -> raise Comatch_fallback))
-              codata_args.fields in
-          Term.Struct { eta = Noeta; dim; fields; energy = Potential }
+      | Val (Struct { fields = comatch_fields; _ }) -> (
+          (* The comatch is undegenerated when the codatatype instance's total dimension equals the intrinsic dimension.  A degenerate comatch (e.g. refl of a comatch) has a larger total dimension; displaying it as "[ … ]⁽ᵉ⁾" isn't representable as a term (Term.Act is kinetic, a comatch is potential) and a full readback of its degenerated instances is out of scope, so it falls back to the neutral's application spine ("refl r"), which is at least correct. *)
+          match D.compare (TubeOf.inst tyargs) (cod_left_ins ins) with
+          | Neq -> raise Comatch_fallback
+          | Eq ->
+              let dim = cod_left_ins ins in
+              let evaldim = dim_env codata_args.env in
+              let fields =
+                Mbwd.map
+                  (fun (Term.CodatafieldAbwd.Entry
+                          (type i)
+                          ((fld, cf) : i Field.t * (i, aa * n * et) Term.Codatafield.t)) ->
+                    match cf with
+                    | Term.Codatafield.Lower _ ->
+                        let ety = tyof_field (Ok neutral) ty fld ~shuf:Trivial (ins_zero evaldim) in
+                        let body = field_term neutral fld (ins_zero dim) in
+                        Term.StructfieldAbwd.Entry
+                          ( fld,
+                            Term.Structfield.Lower
+                              (Term.Realize (readback_at ctx body ety), `Labeled) )
+                    | Term.Codatafield.Higher _ -> (
+                        match Value.StructfieldAbwd.find_opt comatch_fields fld with
+                        | Found (Value.Structfield.Higher (lazy hd)) -> (
+                            (* We handle only an undegenerated comatch (identity deg) with an empty closure environment (a top-level comatch), where the stored term can be evaluated directly in the empty environment.  A degenerate comatch (e.g. refl of a comatch) or a partially-applied one falls back to the stored case tree. *)
+                            match
+                              (hd.env, D.compare dim (D.plus_right hd.plusdim), is_id_deg hd.deg)
+                            with
+                            | Emp _, Eq, Some _ ->
+                                let pbm =
+                                  Term.PlusPbijmap.build dim (Field.dim fld)
+                                    {
+                                      build =
+                                        (fun (type r)
+                                          (pbij : (m, i, r) pbij)
+                                          :
+                                          (r, a) Term.PlusFam.t
+                                        ->
+                                          match Term.PlusPbijmap.find pbij hd.terms with
+                                          | None -> raise Comatch_fallback
+                                          (* The closure environment is empty (aa = emp), so the stored degenerated context is also empty: Map_emp refines rb = emp, matching hd.env's domain. *)
+                                          | Some (Term.PlusFam.PlusFam (Map_emp, term)) ->
+                                              let (Pbij (fldins, fldshuf)) = pbij in
+                                              let r = left_shuffle fldshuf in
+                                              let (Degctx (plusmap, dctx, denv)) = degctx ctx r in
+                                              let ety =
+                                                match D.compare_zero r with
+                                                | Zero ->
+                                                    let Eq = eq_of_zero_shuffle fldshuf in
+                                                    tyof_field (Ok neutral) ty fld ~shuf:Trivial
+                                                      fldins
+                                                | Pos _ ->
+                                                    let termctx =
+                                                      Lazy.force codata_args.termctx
+                                                      <|> Anomaly
+                                                            "missing termctx for higher comatch"
+                                                    in
+                                                    let shuf =
+                                                      higher_codatafield_shuffleable ctx
+                                                        (length_env codata_args.env) termctx denv r
+                                                        fldshuf in
+                                                    tyof_field (Ok neutral) ty fld ~shuf fldins
+                                              in
+                                              (* The closure environment is empty, so degenerating it leaves it unchanged; evaluate the closed stored term in it directly. *)
+                                              let body = eval hd.env term in
+                                              Some
+                                                (Term.PlusFam.PlusFam
+                                                   (plusmap, readback_eval dctx body ety)));
+                                    } in
+                                Term.StructfieldAbwd.Entry (fld, Term.Structfield.Higher pbm)
+                            | _ -> raise Comatch_fallback)
+                        | _ -> raise Comatch_fallback))
+                  codata_args.fields in
+              Term.Struct { eta = Noeta; dim; fields; energy = Potential })
       | _ -> fatal (Anomaly "comatch readback: neutral value is not a struct"))
   | _ -> fatal (Anomaly "comatch readback: not a neutral at a codatatype")
 
