@@ -22,6 +22,14 @@ open Readback
 let () =
   Displaying.register_printer (function `Read -> Some "unhandled Readback.Displaying.read effect")
 
+(* Reading back a comatch (the potential value of a neutral) as a display comatch requires degenerating the context for the non-projectable instances of its higher fields, and Degctx depends on Readback, so the implementation can't live here.  Instead it's a forward reference, set by a downstream module (Canonical_display).  It's invoked by "about" with the neutral (used as the self-variable) whose value is the comatch; ordinary readback never reaches it. *)
+type readback_comatch_type = {
+  rbc : 'a 'z. ('z, 'a) Ctx.t -> kinetic value -> kinetic value -> ('a, potential) term;
+}
+
+let readback_comatch : readback_comatch_type ref =
+  ref { rbc = (fun _ _ _ -> fatal (Anomaly "readback_comatch not set (load Canonical_display)")) }
+
 let rec sort_of_ty : type a z.
     ?isfunc:bool -> (z, a) Ctx.t -> View.view_type -> [ `Type | `Function | `Other ] =
  fun ?(isfunc = false) ctx -> function
@@ -44,8 +52,17 @@ let rec sort_of_ty : type a z.
 let rec readback_nf : type a z. ?eta:bool -> (z, a) Ctx.t -> normal -> (a, kinetic) term =
  fun ?(eta = false) n x -> readback_at ~eta n x.tm x.ty
 
-and readback_at : type a z.
-    ?eta:bool -> (z, a) Ctx.t -> kinetic value -> kinetic value -> (a, kinetic) term =
+(* Read back an evaluation: a Val recurses, a Realize wraps the (kinetic) realization in Realize, and an Unrealized (a genuinely stuck case tree) can't be read back as a value.  This is how we read back the result of *applying* a potential value (a case-tree lambda); for a kinetic value, apply always returns Val, so only that arm is live. *)
+and readback_eval : type a z s.
+    ?eta:bool -> (z, a) Ctx.t -> s evaluation -> kinetic value -> (a, s) term =
+ fun ?(eta = false) ctx ev ty ->
+  match ev with
+  | Val v -> readback_at ~eta ctx v ty
+  | Realize v -> Realize (readback_at ~eta ctx v ty)
+  | Unrealized -> fatal (Anomaly "unrealized value in readback")
+
+(* Readback is energy-polymorphic: it reads back a value of any energy 's into an ('a, 's) term.  In practice it is only ever called on a *potential* value by "about" (which reads back the forced value of a neutral); that's the only way a comatch (a no-eta struct) reaches the Codata branch and gets eta-expanded.  All other callers read back kinetic values (neutrals, etc.) and get their application spines as before. *)
+and readback_at : type a z s. ?eta:bool -> (z, a) Ctx.t -> s value -> kinetic value -> (a, s) term =
  fun ?(eta = false) ctx tm ty ->
   let view = if Displaying.read () then view_term tm else tm in
   let vty = view_type ty "readback_at" in
@@ -62,16 +79,16 @@ and readback_at : type a z.
           let (Plus af) = N.plus (NICubeOf.out N.zero xs) in
           let newctx = Ctx.vis ctx m mn xs newnfs af in
           let output = tyof_app cods tyargs args in
-          let body = readback_at ~eta newctx (apply_term tm args) output in
+          let body = readback_eval ~eta newctx (apply tm args) output in
           Term.Lam (x, body))
   (* If eta-expansion is enabled, we do an eta-expanding readback of any term. *)
-  | Canonical (_, Pi (name, doms, cods), ins, tyargs), tm when eta ->
+  | Canonical (_, Pi (name, doms, cods), ins, tyargs), _ when eta ->
       let Eq = eq_of_ins_zero ins in
       let newargs, newnfs = dom_vars ctx doms in
       let (Any_ctx newctx) = Ctx.variables_vis ctx name newnfs in
       let output = tyof_app cods tyargs newargs in
       (* We carry through the eta-expansion flag so that iterated pi-types will eta-expand fully. *)
-      Term.Lam (name, readback_at ~eta newctx (apply_term tm newargs) output)
+      Term.Lam (name, readback_eval ~eta newctx (apply tm newargs) output)
   | ( Canonical
         (type mn m n)
         (( _,
@@ -82,8 +99,11 @@ and readback_at : type a z.
            _ ) :
           head * (m, n) canonical * (mn, m, n) insertion * (D.zero, mn, mn, normal) TubeOf.t),
       _ ) -> (
-      match (eta, fields) with
-      | Eta, (fields : (a * n * has_eta) Term.CodatafieldAbwd.t) -> (
+      match eta with
+      (* A no-eta codatatype: an ordinary readback of a (kinetic) neutral here yields its application spine.  Displaying a comatch as a comatch is done by "about" via readback_comatch, which forces the neutral's potential value; it is not reached through readback_at. *)
+      | Noeta -> readback_val_sorted ctx tm vty
+      | Eta -> (
+          (* An eta-record type.  Only kinetic values are ever read back here (records, and tuples reached via their neutral); a tuple in a case tree (a potential eta-struct) is never passed to readback for display. *)
           let dim = cod_left_ins ins in
           let fldins = ins_zero dim in
           let readback_at_record (tm : kinetic value) ty =
@@ -137,21 +157,25 @@ and readback_at : type a z.
                 | _ -> None)
             (* If the term is not a struct and the record type is not transparent/translucent, we pass off to synthesizing readback. *)
             | _ -> None in
-          match is_id_ins ins with
-          | Some _ -> (
-              match readback_at_record tm ty with
-              | Some res -> res
-              | None -> readback_val_sorted ctx tm vty)
-          | None -> (
-              (* A nontrivially permuted record is not a record type, but we can permute its arguments to find elements of a record type that we can then eta-expand and re-permute. *)
-              let (Perm_to p) = perm_of_ins ins in
-              let pinv = deg_of_perm (perm_inv p) in
-              let ptm = act_value tm pinv in
-              let pty = act_ty tm ty pinv in
-              match readback_at_record ptm pty with
-              | Some res -> Act (res, deg_of_perm p, (`Other, `Other))
-              | None -> readback_val_sorted ctx tm vty))
-      | Noeta, _ -> readback_val_sorted ctx tm vty)
+          let do_record (rtm : kinetic value) =
+            match is_id_ins ins with
+            | Some _ -> (
+                match readback_at_record rtm ty with
+                | Some res -> res
+                | None -> readback_val_sorted ctx rtm vty)
+            | None -> (
+                (* A nontrivially permuted record is not a record type, but we can permute its arguments to find elements of a record type that we can then eta-expand and re-permute. *)
+                let (Perm_to p) = perm_of_ins ins in
+                let pinv = deg_of_perm (perm_inv p) in
+                let ptm = act_value rtm pinv in
+                let pty = act_ty rtm ty pinv in
+                match readback_at_record ptm pty with
+                | Some res -> Act (res, deg_of_perm p, (`Other, `Other))
+                | None -> readback_val_sorted ctx rtm vty) in
+          match view with
+          | Struct { energy = Kinetic; _ } -> do_record view
+          | Neu _ -> do_record view
+          | _ -> readback_val_sorted ctx tm vty))
   | Canonical (_, Data { constrs; _ }, ins, tyargs), Constr (xconstr, xn, xargs) -> (
       let Eq = eq_of_ins_zero ins in
       let (Dataconstr { env; args = argtys; output = _ }) =
@@ -179,14 +203,14 @@ and readback_at : type a z.
                 argtys tyarg_args ))
   | _ -> readback_val_sorted ctx tm vty
 
-and readback_val_sorted : type a z.
-    (z, a) Ctx.t -> kinetic value -> View.view_type -> (a, kinetic) term =
+and readback_val_sorted : type a z s. (z, a) Ctx.t -> s value -> View.view_type -> (a, s) term =
  fun ctx tm vty ->
   let sort = sort_of_ty ctx vty in
   readback_val ~sort ctx tm
 
-and readback_val : type a z.
-    ?sort:[ `Type | `Function | `Other ] -> (z, a) Ctx.t -> kinetic value -> (a, kinetic) term =
+(* The synthesizing readback only ever applies to neutrals (a kinetic value); any other value reaching it (which can only be a potential value, since other callers pass kinetic neutrals) is an anomaly. *)
+and readback_val : type a z s.
+    ?sort:[ `Type | `Function | `Other ] -> (z, a) Ctx.t -> s value -> (a, s) term =
  fun ?(sort = `Other) ctx x ->
   match x with
   | Neu { head; args; value; ty } -> (
@@ -197,6 +221,7 @@ and readback_val : type a z.
   | Lam _ -> fatal (Anomaly "unexpected lambda in synthesizing readback")
   | Struct _ -> fatal (Anomaly "unexpected struct in synthesizing readback")
   | Constr _ -> fatal (Anomaly "unexpected constr in synthesizing readback")
+  | Canonical _ -> fatal (Anomaly "unexpected canonical in synthesizing readback")
 
 and readback_neu : type a z any.
     ?sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] ->
