@@ -498,8 +498,8 @@ and unparse_codata : type n a et lt ls rt rs.
         unlocated (outfix ~notn:record ~inner:(Multiple (wstok Sig, inner, wstok RParen))) in
   match eta with
   | Noeta -> self_var_render ()
-  | Eta ->
-      (* Try the field-variable syntax "sig (a : ..., b : a → ..., ...)", exposing the anonymous self-variable's fields as named variables.  If a field type references the self-variable other than via a field projection, "Names.lookup" reports the Self_used bug, which we catch to fall back to the self-variable syntax. *)
+  | Eta -> (
+      (* Try the field-variable syntax "sig (a : ..., b : a → ..., ...)", exposing the anonymous self-variable's fields as named variables.  We fall back to the self-variable syntax if a field name clashes with a name already in scope (add_fields returns None), or if a field type references the self-variable other than via a field projection ("Names.lookup" reports the Self_used bug, which we catch). *)
       Reporter.try_with ~fatal:(fun d ->
           match d.message with
           | Self_used -> self_var_render ()
@@ -509,24 +509,26 @@ and unparse_codata : type n a et lt ls rt rs.
         Bwd.fold_left
           (fun acc (Term.CodatafieldAbwd.Entry (fld, _)) -> acc @ [ Field.to_string fld ])
           [] fields in
-      let selfvars, var_names = Names.add_fields _dim vars field_names in
-      let inner, _, _ =
-        Bwd.fold_left
-          (fun (acc, first, var_names) (Term.CodatafieldAbwd.Entry (_, cf)) ->
-            let var_name, var_names =
-              match var_names with
-              | v :: vs -> (v, vs)
-              | [] -> ("", []) in
-            let pat = unlocated (Ident ([ var_name ], [])) in
-            ( (if first then acc else acc <: mktok (Op ","))
-              <: Term pat
-              <: mktok Colon
-              <: Term (field_ty selfvars cf),
-              false,
-              var_names ))
-          (Snoc (Emp, mktok LParen), true, var_names)
-          fields in
-      unlocated (outfix ~notn:record ~inner:(Multiple (wstok Sig, inner, wstok RParen)))
+      match Names.add_fields _dim vars field_names with
+      | None -> self_var_render ()
+      | Some (selfvars, var_names) ->
+          let inner, _, _ =
+            Bwd.fold_left
+              (fun (acc, first, var_names) (Term.CodatafieldAbwd.Entry (_, cf)) ->
+                let var_name, var_names =
+                  match var_names with
+                  | v :: vs -> (v, vs)
+                  | [] -> ("", []) in
+                let pat = unlocated (Ident ([ var_name ], [])) in
+                ( (if first then acc else acc <: mktok (Op ","))
+                  <: Term pat
+                  <: mktok Colon
+                  <: Term (field_ty selfvars cf),
+                  false,
+                  var_names ))
+              (Snoc (Emp, mktok LParen), true, var_names)
+              fields in
+          unlocated (outfix ~notn:record ~inner:(Multiple (wstok Sig, inner, wstok RParen))))
 
 (* Unparse the argument telescope of a datatype constructor as a Bwd of "(x : A)" pi-domain unparsers, returning also the name context extended by the telescope variables. *)
 and unparse_tel_args : type b bc cc.
@@ -670,8 +672,8 @@ and unparse_canonical_display : type a lt ls rt rs.
             unlocated (outfix ~notn:record ~inner:(Multiple (wstok Sig, inner, wstok RParen))) in
       match eta with
       | Noeta -> self_var_render ()
-      | Eta ->
-          (* A record type has only (projectable, lower) fields, displayed with the field-variable syntax "sig (a : ..., b : a → ..., ...)": we introduce an anonymous self-variable with its fields exposed as named variables, so that the field types' projections of the self read back as field variables.  A direct use of the self instead reports the Self_used bug, which we catch to fall back to the self-variable syntax. *)
+      | Eta -> (
+          (* A record type has only (projectable, lower) fields, displayed with the field-variable syntax "sig (a : ..., b : a → ..., ...)": we introduce an anonymous self-variable with its fields exposed as named variables, so that the field types' projections of the self read back as field variables.  We fall back to the self-variable syntax if a field name clashes with a name already in scope (add_fields returns None), or if a field type uses the self directly (the Self_used bug, which we catch). *)
           Reporter.try_with ~fatal:(fun d ->
               match d.message with
               | Self_used -> self_var_render ()
@@ -684,31 +686,33 @@ and unparse_canonical_display : type a lt ls rt rs.
                 | Term.Cfd (fld, _, _) -> acc @ [ Field.to_string fld ]
                 | Term.Cfd_deg (fld, _, _, _, _) -> acc @ [ Field.to_string fld ])
               [] fields in
-          let selfnames, var_names = Names.add_fields mk vars field_names in
-          let inner, _, _ =
-            Bwd.fold_left
-              (fun (acc, first, var_names) entry ->
-                let var_name, var_names =
-                  match var_names with
-                  | v :: vs -> (v, vs)
-                  | [] -> ("", []) in
-                let pat = unlocated (Ident ([ var_name ], [])) in
-                let ty =
-                  match entry with
-                  | Term.Cfd (_, _, tm) ->
-                      unparse selfnames tm No.Interval.entire No.Interval.entire
-                  | Term.Cfd_deg (_, _, r, plusmap, tm) ->
-                      let dnames = Names.degenerate r plusmap selfnames in
-                      unparse dnames tm No.Interval.entire No.Interval.entire in
-                ( (if first then acc else acc <: mktok (Op ","))
-                  <: Term pat
-                  <: mktok Colon
-                  <: Term ty,
-                  false,
-                  var_names ))
-              (Snoc (Emp, mktok LParen), true, var_names)
-              fields in
-          unlocated (outfix ~notn:record ~inner:(Multiple (wstok Sig, inner, wstok RParen))))
+          match Names.add_fields mk vars field_names with
+          | None -> self_var_render ()
+          | Some (selfnames, var_names) ->
+              let inner, _, _ =
+                Bwd.fold_left
+                  (fun (acc, first, var_names) entry ->
+                    let var_name, var_names =
+                      match var_names with
+                      | v :: vs -> (v, vs)
+                      | [] -> ("", []) in
+                    let pat = unlocated (Ident ([ var_name ], [])) in
+                    let ty =
+                      match entry with
+                      | Term.Cfd (_, _, tm) ->
+                          unparse selfnames tm No.Interval.entire No.Interval.entire
+                      | Term.Cfd_deg (_, _, r, plusmap, tm) ->
+                          let dnames = Names.degenerate r plusmap selfnames in
+                          unparse dnames tm No.Interval.entire No.Interval.entire in
+                    ( (if first then acc else acc <: mktok (Op ","))
+                      <: Term pat
+                      <: mktok Colon
+                      <: Term ty,
+                      false,
+                      var_names ))
+                  (Snoc (Emp, mktok LParen), true, var_names)
+                  fields in
+              unlocated (outfix ~notn:record ~inner:(Multiple (wstok Sig, inner, wstok RParen)))))
 
 (* Unparse a match "match tm [ | constr. x ... |-> body | ... ]".  Refuted branches are omitted; an all-refuted (or empty) match prints as "match tm [ ]". *)
 and unparse_match : type n m lt ls rt rs.

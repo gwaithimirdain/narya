@@ -13,7 +13,7 @@ val permute : ('c, 'b) Tbwd.permute -> 'b t -> 'c t
 val lookup : 'n t -> 'n index -> string list
 val lookup_field : 'n t -> 'n index -> string -> string list option
 val add_cube : 'n D.t -> 'b t -> string option -> string * ('b, 'n) snoc t
-val add_fields : 'n D.t -> 'b t -> string list -> ('b, 'n) snoc t * string list
+val add_fields : 'n D.t -> 'b t -> string list -> (('b, 'n) snoc t * string list) option
 val add : 'b t -> 'n variables -> ('n, string) gvariables * ('b, 'n) snoc t
 val add_strings : 'b t -> ('n, string) gvariables -> ('n, string) gvariables * ('b, 'n) snoc t
 val add_full : 'b t -> 'mn variables -> ('mn, string) gvariables * ('b, 'mn) snoc t
