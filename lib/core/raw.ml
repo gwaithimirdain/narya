@@ -109,6 +109,7 @@ module rec Make : functor (I : Indices) -> sig
     | Act : string located * ('m, 'n) deg * 'a check located option -> 'a synth
     | Match : {
         tm : 'a synth located;
+        window : string located list located option;
         sort : [ `Implicit | `Explicit of 'a check located | `Nondep of int located ];
         branches : (Constr.t, 'a branch) Abwd.t;
         refutables : 'a refutables option;
@@ -290,6 +291,8 @@ functor
       (* A Match can also sometimes check, but synthesizes if it has an explicit return type or if it is nondependent and its first branch synthesizes. *)
       | Match : {
           tm : 'a synth located;
+          (* An optionally specified window modality *)
+          window : string located list located option;
           (* Implicit means no "return" statement was given, so Narya has to guess what to do.  Explicit means a "return" statement was given with a motive.  "Nondep" means a placeholder return statement like "_ ↦ _" was given, indicating that a non-dependent matching is intended (to silence hints about fallback from the implicit case). *)
           sort : [ `Implicit | `Explicit of 'a check located | `Nondep of int located ];
           branches : (Constr.t, 'a branch) Abwd.t;
@@ -523,7 +526,7 @@ module Resolve (R : Resolver) = struct
           let tms2 = Vec.map (check ctx2) tms in
           Letrec (tys2, tms2, check ctx2 body)
       | Act (s, fa, tm) -> Act (s, fa, Option.map (check ctx) tm)
-      | Match { tm; sort; branches; refutables = r; highers } ->
+      | Match { tm; window; sort; branches; refutables = r; highers } ->
           let tm = synth ctx tm in
           let sort =
             match sort with
@@ -532,7 +535,7 @@ module Resolve (R : Resolver) = struct
             | `Implicit -> `Implicit in
           let branches = Abwd.map (branch ctx) branches in
           let refutables = Option.map (refutables ctx) r in
-          Match { tm; sort; branches; refutables; highers }
+          Match { tm; window; sort; branches; refutables; highers }
       | Fail e -> Fail e
       | ImplicitSApp (fn, apploc, arg) -> ImplicitSApp (synth ctx fn, apploc, synth ctx arg)
       | SFirst (tms, arg) ->

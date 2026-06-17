@@ -47,32 +47,36 @@ module ModalBindingCube = Modality.Cube (struct
   type ('mode, 'a, 'b) t = 'mode Ctx.Binding.t
 end)
 
-type ('mode, 'n, 'ac, 'bc, 'e) ext_tel =
+type ('dom, 'window, 'mode, 'n, 'ac, 'bc, 'e) ext_tel =
   | Ext_tel : {
       ctx : ('mode, 'ac, 'em) Ctx.t;
-      env : ('mode, 'n, 'bc) env;
-      values : ('n, 'mode, kinetic, unit) ModalValueCube.t list;
+      env : ('dom, 'n, 'bc) env;
+      values : ('n, 'dom, kinetic, unit) ModalValueCube.t list;
       normals : ('n, 'mode, unit, unit) ModalBindingCube.t list;
       annotate : ('n, 'mode, 'annotations, 'mode, 'mode, 'm, 'mode) VarAnnotate.fwd_t;
       comp : ('mode, 'm, 'mode, 'e, unit, 'em) Tctx.bcomp;
     }
-      -> ('mode, 'n, 'ac, 'bc, 'e) ext_tel
+      -> ('dom, 'window, 'mode, 'n, 'ac, 'bc, 'e) ext_tel
 
-let rec ext_tel : type mode a b c ac bc e n.
+let rec ext_tel : type dom window mode a b c ac bc e n.
     (mode, a, e) Ctx.t ->
-    (mode, n, b) env ->
+    (dom, window, mode) Modality.t ->
+    (dom, n, b) env ->
     (* Note that c is a Fwn, since it is the length of a telescope. *)
     (a, c, ac) Raw.Namevec.t ->
-    (mode, b, c, bc) Telescope.t ->
-    (mode, n, ac, bc, e) ext_tel =
- fun ctx env xs tel ->
+    (dom, b, c, bc) Telescope.t ->
+    (dom, window, mode, n, ac, bc, e) ext_tel =
+ fun ctx window env xs tel ->
   match (xs, tel) with
   | [], Emp ->
       Ext_tel
         { ctx; env; values = []; normals = []; annotate = Zero (Eq (Ctx.mode ctx)); comp = Zero }
-  | x :: xs, Ext (x', Modal (modality, plus, rty), rest) ->
+  | x :: xs, Ext (x', Modal (annotation, plus, rty), rest) ->
       let m = dim_env env in
-      let lenv = key_env env (Modalcell.id modality) plus in
+      let lenv = key_env env (Modalcell.id annotation) plus in
+      (* We compose the window modality with the telescope annotation to produce the eventual annotation. *)
+      let (Comp wx) = Modality.comp annotation in
+      let modality = Modality.comp_out window wx in
       let newvars, newnfs =
         dom_vars ctx modality
           (CubeOf.build m
@@ -84,13 +88,14 @@ let rec ext_tel : type mode a b c ac bc e n.
       let (Ext_tel { ctx; env; values = vars; normals = nfs; annotate; comp }) =
         ext_tel
           (Ctx.cube_vis ctx modality x newnfs)
-          (Ext { env; plus = D.plus_zero m; modality; values = `Ok newvars })
+          window
+          (Ext { env; plus = D.plus_zero m; modality = annotation; values = `Ok newvars })
           xs rest in
       Ext_tel
         {
           ctx;
           env;
-          values = Modal (modality, newvars) :: vars;
+          values = Modal (annotation, newvars) :: vars;
           normals = Modal (modality, newnfs) :: nfs;
           annotate = Suc (Annotate modality, annotate);
           comp = Suc (Dim (modality, m), comp);

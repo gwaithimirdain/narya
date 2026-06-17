@@ -379,7 +379,7 @@ module F = struct
     | Let (_, _, _, _) -> fprintf ppf "Let(?)"
     | Letrec (_, _, _) -> fprintf ppf "LetRec(?)"
     | Act (_, _, _) -> fprintf ppf "Act(?)"
-    | Match { tm; sort = _; branches = br; refutables = _; highers = _ } ->
+    | Match { tm; window = _; sort = _; branches = br; refutables = _; highers = _ } ->
         fprintf ppf "Match (%a, (%a))" synth tm.value branches br
     | UU mode -> fprintf ppf "%s" (Mode.name mode)
     | Fail _ -> fprintf ppf "Error"

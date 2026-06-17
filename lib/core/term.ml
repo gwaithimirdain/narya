@@ -143,7 +143,9 @@ module rec Term : sig
         -> ('mode, 'a, 's) term
     | Struct : ('mode, 'n, 'a, 's, 'et) struct_args -> ('mode, 'a, 's) term
     | Match : {
-        tm : ('mode, 'a, kinetic) term;
+        window : ('dom, 'window, 'mode) Modality.t;
+        plus_lock : ('a, 'mode, 'window, 'dom, 'aw) plus_lock;
+        tm : ('dom, 'aw, kinetic) term;
         dim : 'n D.t;
         branches : ('mode, 'a, 'n) branch Constr.Map.t;
       }
@@ -413,9 +415,11 @@ end = struct
         * ('mode, ('a, ('modality, 'n) dim_entry) snoc, 's) Term.term
         -> ('mode, 'a, 's) term
     | Struct : ('mode, 'n, 'a, 's, 'et) struct_args -> ('mode, 'a, 's) term
-    (* Matches can only appear in potential terms.  The dimension 'n is the substitution dimension of the type of the variable being matched against. *)
+    (* Matches can only appear in potential terms.  The dimension 'n is the substitution dimension of the type of the variable being matched against.  The term, and its datatype, live at a domain mode, and the window modality maps that to some other mode where the branches live. *)
     | Match : {
-        tm : ('mode, 'a, kinetic) term;
+        window : ('dom, 'window, 'mode) Modality.t;
+        plus_lock : ('a, 'mode, 'window, 'dom, 'aw) plus_lock;
+        tm : ('dom, 'aw, kinetic) term;
         dim : 'n D.t;
         branches : ('mode, 'a, 'n) branch Constr.Map.t;
       }
@@ -441,6 +445,7 @@ end = struct
   (* A branch of a match binds a number of new variables.  If it is a higher-dimensional match, then each of those "variables" is actually a full cube of variables.  In addition, its context must be permuted to put those new variables before the existing variables that are now defined in terms of them.  Finally, each of the variables might be annotated by a different modality, so we include a list of such modalities and make it into a tctx extension that all have the same dimension. *)
   and (_, _, _) branch =
     | Branch : {
+        (* The annotations must be those given to the constructor arguments, postcomposed by the window modality *)
         annotate : ('n, 'mode, 'annotations, 'mode, 'mode, 'b, 'mode) VarAnnotate.fwd_t;
         comp : ('mode, 'b, 'mode, 'a, unit, 'ab) Tctx.bcomp;
         perm : ('c, 'ab) permute;

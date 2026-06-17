@@ -1536,6 +1536,7 @@ let rec process_branches : type a n.
                      (Match
                         {
                           tm = locate tm loc;
+                          window = None;
                           sort;
                           branches = Emp;
                           refutables = None;
@@ -1554,6 +1555,7 @@ let rec process_branches : type a n.
                      (Match
                         {
                           tm = locate tm loc;
+                          window = None;
                           sort;
                           branches = Emp;
                           refutables = None;
@@ -1683,7 +1685,7 @@ let rec process_branches : type a n.
         | `Implicit -> `Implicit
         | `Nondep i -> `Nondep i
         | `Explicit (Wrap motive) -> `Explicit (process (Matchscope.names xctx) motive) in
-      ( locate (Synth (Match { tm; sort; branches; refutables; highers = [] })) loc,
+      ( locate (Synth (Match { tm; window = None; sort; branches; refutables; highers = [] })) loc,
         List.flatten (Bwd.to_list highers) )
 
 let rec get_discriminees :

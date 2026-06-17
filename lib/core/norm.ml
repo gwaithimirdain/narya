@@ -23,21 +23,24 @@ type (_, _) looked_up_cube =
       -> ('mode, 'm) looked_up_cube
 
 (* Require that the supplied list contains exactly one argument for each annotated variable being added, and add all of those cubes to the given environment. *)
-let rec take_args : type mode annotations m n mn a b ab.
+let rec take_args : type dom window mode annotations m n mn a b ab.
     (mode, m, a) env ->
     (m, n, mn) D.plus ->
-    (mn, mode, kinetic, unit) ModalValueCube.t list ->
+    (mn, dom, kinetic, unit) ModalValueCube.t list ->
+    (dom, window, mode) Modality.t ->
     (n, mode, annotations, mode, mode, b, mode) VarAnnotate.fwd_t ->
     (mode, b, mode, a, unit, ab) Tctx.bcomp ->
     (mode, m, ab) env =
- fun env mn dargs annotate comp ->
+ fun env mn dargs window annotate comp ->
   match (dargs, annotate, comp) with
   | [], Zero _, Zero -> env
   | Modal (mu, arg) :: args, Suc (Annotate amu, annotate), Suc (Dim (_, _), comp) -> (
-      match Modality.compare mu amu with
+      let (Comp window_mu) = Modality.comp mu in
+      let wmu = Modality.comp_out window window_mu in
+      match Modality.compare wmu amu with
       | Eq ->
-          let env = Ext { env; plus = mn; modality = mu; values = `Ok arg } in
-          take_args env mn args annotate comp
+          let env = Ext { env; plus = mn; modality = wmu; values = `Ok arg } in
+          take_args env mn args window annotate comp
       | Neq -> fatal (Modality_mismatch (`Internal, "take_args", mu, amu)))
   | _ -> fatal (Anomaly "wrong number of arguments in argument list")
 
@@ -412,12 +415,13 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       (* To evaluate a key, we strip off the part of the environment corresponding to the codomain of the key cell, then compose the keys we found there with the supplied key to make a new key on an environment for evaluating the body. *)
       let (Remove_keys (env, keys)) = Env.remove_keys env plus_tgt in
       eval (key_env env (Modalcell.vcomp keys cell) plus_src) tm
-  | Match { tm; dim = match_dim; branches } -> (
+  | Match { tm; window; plus_lock; dim = match_dim; branches } -> (
       let env_dim = dim_env env in
       let (Plus plus_dim) = D.plus match_dim in
       let total_dim = D.plus_out env_dim plus_dim in
+      let kenv = key_env env (Modalcell.id window) plus_lock in
       (* Get the argument being inspected *)
-      match view_term (eval_term env tm) with
+      match view_term (eval_term kenv tm) with
       (* To reduce nontrivially, the discriminee must be an application of a constructor. *)
       | Constr (name, constr_dim, dargs) -> (
           match Constr.Map.find_opt name branches with
@@ -432,7 +436,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
               | Neq -> fatal (Dimension_mismatch ("evaluating match", constr_dim, total_dim))
               | Eq ->
                   (* If we have a branch with a matching constructor, then our constructor must be applied to exactly the right number of elements (in dargs).  In that case, we pick them out and add them to the environment. *)
-                  let env = take_args env plus_dim dargs annotate comp in
+                  let env = take_args env plus_dim dargs window annotate comp in
                   (* Then we proceed recursively with the body of that branch. *)
                   eval (Permute (perm, env)) tm)
           (* If this constructor belongs to a refuted case, it must be that we are in an inconsistent context with some neutral belonging to an empty type.  In that case, the match must be stuck. *)
