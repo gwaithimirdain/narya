@@ -76,9 +76,8 @@ A degenerate codatatype or record is read back at its full dimension, showing th
     : Type⁽ᵉ⁾ (Stream X) (Stream X)
   
   sig (
-    𝑥 .a : Type⁽ᵉ⁾ (𝑥.0 .a) (𝑥.1 .a),
-    𝑥 .b : {𝑥₀ : 𝑥.0 .a} {𝑥₁ : 𝑥.1 .a} (𝑥₂ : 𝑥.2 .a 𝑥₀ 𝑥₁)
-           →⁽ᵉ⁾ Type⁽ᵉ⁾ (𝑥.0 .b 𝑥₀) (𝑥.1 .b 𝑥₁) )
+    a : Type⁽ᵉ⁾ a.0 a.1,
+    b : {𝑥₀ : a.0} {𝑥₁ : a.1} (𝑥₂ : a.2 𝑥₀ 𝑥₁) →⁽ᵉ⁾ Type⁽ᵉ⁾ (b.0 𝑥₀) (b.1 𝑥₁) )
     : Type⁽ᵉ⁾ R R
   
 
