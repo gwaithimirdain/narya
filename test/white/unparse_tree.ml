@@ -11,7 +11,7 @@ let () =
   Repl.run @@ fun () ->
   (* Record type, with a dependent field. *)
   check "R" "Type" "sig ( a : Type, b : (a → Type) )"
-    "sig (\n  𝑥 .a : Type,\n  𝑥 .b : 𝑥 .a → Type )";
+    "sig (\n  a : Type,\n  b : a → Type )";
   (* Empty record. *)
   check "Unit" "Type" "sig ()" "sig ()";
   (* Datatype with a recursive constructor argument. *)

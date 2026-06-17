@@ -451,7 +451,7 @@ and unparse_canonical : type n lt ls rt rs.
       unparse_data vars indexed constrs li ri
   | Codata { eta; dim; fields; _ } -> unparse_codata vars eta dim fields li ri
 
-(* Unparse a codatatype (Noeta, "codata [ x .fld : ty | ... ]") or record type (Eta, "sig ( x .fld : ty, ... )").  In both cases we use a single self-variable, and the "self record" surface syntax with explicit field projections, which handles dependence of later field types on earlier ones. *)
+(* Unparse a codatatype (Noeta, "codata [ x .fld : ty | ... ]") or record type (Eta).  A codatatype, or a higher-dimensional record type (whose field types may reference the self-variable directly, e.g. Gel), uses a single self-variable and the "self record" surface syntax with explicit field projections, which handles dependence of later field types on earlier ones.  A zero-dimensional record type uses the field-variable surface syntax "sig ( a : ty, ... )", exposing the (anonymous) self-variable's fields as named variables, so that field-projections of the self read back as field variables. *)
 and unparse_codata : type n a et lt ls rt rs.
     a Names.t ->
     (potential, et) eta ->
@@ -461,38 +461,64 @@ and unparse_codata : type n a et lt ls rt rs.
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
  fun vars eta _dim fields _li _ri ->
-  let x, selfvars = Names.add_cube _dim vars None in
-  let unparse_field : type i.
-      observation Bwd.t ->
-      (observation Bwd.t -> observation Bwd.t) ->
-      i Field.t ->
+  (* Unparse the type of a single field, in a names-context that exposes the self-variable (and, for records, its fields). *)
+  let field_ty : type i.
+      (a, n) snoc Names.t ->
       (i, a * n * et) Term.Codatafield.t ->
-      observation Bwd.t =
-   fun acc sep fld cf ->
+      (No.minus_omega, No.nonstrict, No.minus_omega, No.nonstrict) parse located =
+   fun selfvars cf ->
     match cf with
-    | Term.Codatafield.Lower tm ->
-        let pat = unparse_field_app x (Field.to_string fld) [] in
-        let ty = unparse selfvars tm No.Interval.entire No.Interval.entire in
-        sep acc <: Term pat <: mktok Colon <: Term ty
+    | Term.Codatafield.Lower tm -> unparse selfvars tm No.Interval.entire No.Interval.entire
     | Term.Codatafield.Higher _ -> fatal (Unimplemented "unparsing higher codata fields") in
-  match eta with
-  | Noeta ->
-      let inner =
+  match (eta, D.compare_zero _dim) with
+  | Eta, Zero ->
+      let field_names =
         Bwd.fold_left
-          (fun acc (Term.CodatafieldAbwd.Entry (fld, cf)) ->
-            unparse_field acc (fun acc -> acc <: mktok (Op "|")) fld cf)
-          (Snoc (Emp, mktok LBracket))
-          fields in
-      unlocated (outfix ~notn:codata ~inner:(Multiple (wstok Codata, inner, wstok RBracket)))
-  | Eta ->
-      let inner, _ =
+          (fun acc (Term.CodatafieldAbwd.Entry (fld, _)) -> acc @ [ Field.to_string fld ])
+          [] fields in
+      let selfvars, var_names = Names.add_fields _dim vars field_names in
+      let inner, _, _ =
         Bwd.fold_left
-          (fun (acc, first) (Term.CodatafieldAbwd.Entry (fld, cf)) ->
-            ( unparse_field acc (fun acc -> if first then acc else acc <: mktok (Op ",")) fld cf,
-              false ))
-          (Snoc (Emp, mktok LParen), true)
+          (fun (acc, first, var_names) (Term.CodatafieldAbwd.Entry (_, cf)) ->
+            let var_name, var_names =
+              match var_names with
+              | v :: vs -> (v, vs)
+              | [] -> ("", []) in
+            let pat = unlocated (Ident ([ var_name ], [])) in
+            ( (if first then acc else acc <: mktok (Op ","))
+              <: Term pat
+              <: mktok Colon
+              <: Term (field_ty selfvars cf),
+              false,
+              var_names ))
+          (Snoc (Emp, mktok LParen), true, var_names)
           fields in
       unlocated (outfix ~notn:record ~inner:(Multiple (wstok Sig, inner, wstok RParen)))
+  | _ -> (
+      let x, selfvars = Names.add_cube _dim vars None in
+      match eta with
+      | Noeta ->
+          let inner =
+            Bwd.fold_left
+              (fun acc (Term.CodatafieldAbwd.Entry (fld, cf)) ->
+                let pat = unparse_field_app x (Field.to_string fld) [] in
+                acc <: mktok (Op "|") <: Term pat <: mktok Colon <: Term (field_ty selfvars cf))
+              (Snoc (Emp, mktok LBracket))
+              fields in
+          unlocated (outfix ~notn:codata ~inner:(Multiple (wstok Codata, inner, wstok RBracket)))
+      | Eta ->
+          let inner, _ =
+            Bwd.fold_left
+              (fun (acc, first) (Term.CodatafieldAbwd.Entry (fld, cf)) ->
+                let pat = unparse_field_app x (Field.to_string fld) [] in
+                ( (if first then acc else acc <: mktok (Op ","))
+                  <: Term pat
+                  <: mktok Colon
+                  <: Term (field_ty selfvars cf),
+                  false ))
+              (Snoc (Emp, mktok LParen), true)
+              fields in
+          unlocated (outfix ~notn:record ~inner:(Multiple (wstok Sig, inner, wstok RParen))))
 
 (* Unparse the argument telescope of a datatype constructor as a Bwd of "(x : A)" pi-domain unparsers, returning also the name context extended by the telescope variables. *)
 and unparse_tel_args : type b bc cc.
@@ -589,50 +615,87 @@ and unparse_canonical_display : type a lt ls rt rs.
           constrs in
       unlocated (outfix ~notn:data ~inner:(Multiple (wstok Data, inner, wstok RBracket)))
   | Codata_display { eta; dim = mk; fields } -> (
-      (* Introduce a single self-variable cube of the codatatype's dimension; readback produced the field types relative to this self-variable.  Each non-projectable instance's type lives in a context degenerated by its remaining dimension, whose names we reconstruct with Names.degenerate. *)
-      let selfname, selfnames = Names.add_cube mk vars None in
-      let display_field : type i.
-          string list ->
-          i Field.t ->
-          (No.minus_omega, No.nonstrict, No.minus_omega, No.nonstrict) parse located ->
-          (No.minus_omega, No.nonstrict, No.minus_omega, No.nonstrict) parse located
-          * (No.minus_omega, No.nonstrict, No.minus_omega, No.nonstrict) parse located =
-       fun suffix fld ty -> (unparse_field_app selfname (Field.to_string fld) suffix, ty) in
-      let instances =
-        Bwd.fold_left
-          (fun acc entry ->
-            match entry with
-            | Term.Cfd (fld, suffix, tm) ->
-                acc
-                <: display_field suffix fld
-                     (unparse selfnames tm No.Interval.entire No.Interval.entire)
-            | Term.Cfd_deg (fld, suffix, r, plusmap, tm) ->
-                let dnames = Names.degenerate r plusmap selfnames in
-                acc
-                <: display_field suffix fld
-                     (unparse dnames tm No.Interval.entire No.Interval.entire))
-          Emp fields in
       (* Assemble the codata or record notation, matching the field-instance display of a value-level codatatype. *)
-      match eta with
-      | Noeta ->
-          let inner =
+      match (eta, D.compare_zero mk) with
+      | Eta, Zero ->
+          (* A zero-dimensional record type has only (projectable, lower) fields, displayed with the field-variable syntax "sig (a : ..., b : a → ..., ...)": we introduce an anonymous self-variable with its fields exposed as named variables, so that the field types' projections of the self read back as field variables.  (A zero-dimensional record cannot reference its self except via field projections, so no self-variable is needed.) *)
+          let field_names =
             Bwd.fold_left
-              (fun acc (pat, ty) -> acc <: mktok (Op "|") <: Term pat <: mktok Colon <: Term ty)
-              (Snoc (Emp, mktok LBracket))
-              instances in
-          unlocated (outfix ~notn:codata ~inner:(Multiple (wstok Codata, inner, wstok RBracket)))
-      | Eta ->
-          let inner, _ =
+              (fun acc entry ->
+                match entry with
+                | Term.Cfd (fld, _, _) -> acc @ [ Field.to_string fld ]
+                | Term.Cfd_deg (fld, _, _, _, _) -> acc @ [ Field.to_string fld ])
+              [] fields in
+          let selfnames, var_names = Names.add_fields mk vars field_names in
+          let inner, _, _ =
             Bwd.fold_left
-              (fun (acc, first) (pat, ty) ->
+              (fun (acc, first, var_names) entry ->
+                let var_name, var_names =
+                  match var_names with
+                  | v :: vs -> (v, vs)
+                  | [] -> ("", []) in
+                let pat = unlocated (Ident ([ var_name ], [])) in
+                let ty =
+                  match entry with
+                  | Term.Cfd (_, _, tm) ->
+                      unparse selfnames tm No.Interval.entire No.Interval.entire
+                  | Term.Cfd_deg (_, _, r, plusmap, tm) ->
+                      let dnames = Names.degenerate r plusmap selfnames in
+                      unparse dnames tm No.Interval.entire No.Interval.entire in
                 ( (if first then acc else acc <: mktok (Op ","))
                   <: Term pat
                   <: mktok Colon
                   <: Term ty,
-                  false ))
-              (Snoc (Emp, mktok LParen), true)
-              instances in
-          unlocated (outfix ~notn:record ~inner:(Multiple (wstok Sig, inner, wstok RParen))))
+                  false,
+                  var_names ))
+              (Snoc (Emp, mktok LParen), true, var_names)
+              fields in
+          unlocated (outfix ~notn:record ~inner:(Multiple (wstok Sig, inner, wstok RParen)))
+      | _ -> (
+          (* A codatatype, or a higher-dimensional record type (whose field types may reference the self-variable directly, e.g. Gel's "Aʹ 𝑥.0", which is not expressible with field variables): use the "self record" syntax with an explicit self-variable and field projections.  Introduce a single self-variable cube of the codatatype's dimension; readback produced the field types relative to this self-variable.  Each non-projectable instance's type lives in a context degenerated by its remaining dimension, whose names we reconstruct with Names.degenerate. *)
+          let selfname, selfnames = Names.add_cube mk vars None in
+          let display_field : type i.
+              string list ->
+              i Field.t ->
+              (No.minus_omega, No.nonstrict, No.minus_omega, No.nonstrict) parse located ->
+              (No.minus_omega, No.nonstrict, No.minus_omega, No.nonstrict) parse located
+              * (No.minus_omega, No.nonstrict, No.minus_omega, No.nonstrict) parse located =
+           fun suffix fld ty -> (unparse_field_app selfname (Field.to_string fld) suffix, ty) in
+          let instances =
+            Bwd.fold_left
+              (fun acc entry ->
+                match entry with
+                | Term.Cfd (fld, suffix, tm) ->
+                    acc
+                    <: display_field suffix fld
+                         (unparse selfnames tm No.Interval.entire No.Interval.entire)
+                | Term.Cfd_deg (fld, suffix, r, plusmap, tm) ->
+                    let dnames = Names.degenerate r plusmap selfnames in
+                    acc
+                    <: display_field suffix fld
+                         (unparse dnames tm No.Interval.entire No.Interval.entire))
+              Emp fields in
+          match eta with
+          | Noeta ->
+              let inner =
+                Bwd.fold_left
+                  (fun acc (pat, ty) -> acc <: mktok (Op "|") <: Term pat <: mktok Colon <: Term ty)
+                  (Snoc (Emp, mktok LBracket))
+                  instances in
+              unlocated
+                (outfix ~notn:codata ~inner:(Multiple (wstok Codata, inner, wstok RBracket)))
+          | Eta ->
+              let inner, _ =
+                Bwd.fold_left
+                  (fun (acc, first) (pat, ty) ->
+                    ( (if first then acc else acc <: mktok (Op ","))
+                      <: Term pat
+                      <: mktok Colon
+                      <: Term ty,
+                      false ))
+                  (Snoc (Emp, mktok LParen), true)
+                  instances in
+              unlocated (outfix ~notn:record ~inner:(Multiple (wstok Sig, inner, wstok RParen)))))
 
 (* Unparse a match "match tm [ | constr. x ... |-> body | ... ]".  Refuted branches are omitted; an all-refuted (or empty) match prints as "match tm [ ]". *)
 and unparse_match : type n m lt ls rt rs.

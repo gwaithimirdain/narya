@@ -13,8 +13,8 @@ About: display the potential value (canonical type or case tree) of a neutral
     : Type → Type
   
   sig (
-    𝑥 .a : Type,
-    𝑥 .b : 𝑥 .a → Type )
+    a : Type,
+    b : a → Type )
     : Type
   
   𝑥 ↦ match 𝑥 [ suc. n ↦ n | zero. ↦ 0 ]
