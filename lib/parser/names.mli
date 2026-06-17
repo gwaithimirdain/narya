@@ -8,10 +8,6 @@ type 'n t
 type wrapped = Wrap : 'n t -> wrapped
 
 val empty : emp t
-
-(* Raised by "lookup" when an anonymous self-variable that has associated fields (added by "add_fields" for field-variable record display) is looked up directly rather than through a field.  The renderer catches this to fall back to self-variable record syntax. *)
-exception Self_used
-
 val remove : 'b t -> ('a, 'n, 'b) Tbwd.insert -> 'a t
 val permute : ('c, 'b) Tbwd.permute -> 'b t -> 'c t
 val lookup : 'n t -> 'n index -> string list

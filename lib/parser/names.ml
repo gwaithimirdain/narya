@@ -18,9 +18,6 @@ type wrapped = Wrap : 'n t -> wrapped
 
 let empty : emp t = { ctx = Emp; used = StringSet.empty }
 
-(* Raised by "lookup" when a self-variable that has associated fields (i.e. an anonymous self-variable of a record being displayed with field-variable syntax) is looked up *directly*, rather than through one of its fields (which goes through "lookup_field" instead).  Such a use of the self-variable cannot be displayed with the field-variable record syntax, so the renderer catches this and falls back to the self-variable ("self record") syntax. *)
-exception Self_used
-
 let rec remove_ctx : type a n b. b ctx -> (a, n, b) Tbwd.insert -> a ctx =
  fun ctx i ->
   match (ctx, i) with
@@ -67,9 +64,10 @@ let lookup : type n. n t -> n index -> string list =
     | Emp, _ -> .
     | Snoc (ctx, _, _), Index (Later x, fa) -> lookup ctx (Index (x, fa))
     | Snoc (_, Variables (_, mn, xs), fields), Index (Now, fa) ->
+        (* A self-variable with associated fields (added by "add_fields" for field-variable record display) being looked up directly, rather than through a field (which goes through "lookup_field"), cannot be displayed with field-variable syntax.  We signal this with the Self_used bug, which the unparser catches to fall back to self-variable syntax. *)
         (match fields with
         | Emp -> ()
-        | Snoc _ -> raise Self_used);
+        | Snoc _ -> Reporter.fatal Reporter.Code.Self_used);
         let (SFace_of_plus (_, fb, fc)) = sface_of_plus mn fa in
         cubevar (NICubeOf.find xs fc) fb in
   lookup ctx x
