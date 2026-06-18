@@ -18,6 +18,11 @@ module D : sig
   type (_, _) cofactor = Cofactor : ('n, 'k, 'nk) plus -> ('nk, 'k) cofactor
 
   val cofactor : 'nk t -> 'k t -> ('nk, 'k) cofactor option
+
+  (* TODO: Once we have multidirection, this won't be exported any more. *)
+  type one
+
+  val one : one t
 end
 
 module Dmap : MAP_MAKER with module Key := D
@@ -944,6 +949,59 @@ end
 module PbijmapOf : module type of Pbijmap (struct
   type ('a, 'b) t = 'b
 end)
+
+type ('e, 'a, 'b) except
+type (_, _) has_except = Except : ('e, 'a, 'b) except -> ('e, 'b) has_except
+
+val excepted : ('e, 'a, 'b) except -> 'b D.t -> 'a D.t
+val except_dirs : 'e D.t -> 'b D.t -> ('e, 'b) has_except
+val except_uniq : ('e, 'a1, 'b) except -> ('e, 'a2, 'b) except -> ('a1, 'a2) Eq.t
+val except_zero : ('e, D.zero, D.zero) except
+val except_nothing : 'a D.t -> (D.zero, 'a, 'a) except
+val eq_of_except_nothing : (D.zero, 'a, 'b) except -> ('a, 'b) Eq.t
+val except_idempotent : ('e, 'a, 'b) except -> ('e, 'a, 'a) except
+
+val except_plus :
+  ('a, 'c, 'ac) D.plus ->
+  ('b, 'd, 'bd) D.plus ->
+  ('e, 'a, 'b) except ->
+  ('e, 'c, 'd) except ->
+  ('e, 'ac, 'bd) except
+
+type (_, _, _, _) except_of_plus =
+  | Except_of_plus :
+      ('a, 'c, 'ac) D.plus * ('e, 'a, 'b) except * ('e, 'c, 'd) except
+      -> ('e, 'b, 'd, 'ac) except_of_plus
+
+val except_of_plus :
+  ('b, 'd, 'bd) D.plus -> ('e, 'ac, 'bd) except -> ('e, 'b, 'd, 'ac) except_of_plus
+
+type (_, _, _, _) except_of_plus' =
+  | Except_of_plus' :
+      ('b, 'c, 'bc) D.plus * ('bc, 'd) perm * ('e, 'a, 'b) except
+      -> ('e, 'a, 'c, 'd) except_of_plus'
+
+val except_of_plus' :
+  'd D.t -> ('a, 'c, 'ac) D.plus -> ('e, 'ac, 'd) except -> ('e, 'a, 'c, 'd) except_of_plus'
+
+type (_, _, _) except_sface =
+  | Except_sface : ('d, 'a) sface * ('e, 'd, 'c) except -> ('e, 'a, 'c) except_sface
+
+val except_sface : ('e, 'a, 'b) except -> ('c, 'b) sface -> ('e, 'a, 'c) except_sface
+
+type (_, _, _) except_deg =
+  | Except_deg : ('d, 'a) deg * ('e, 'd, 'c) except -> ('e, 'a, 'c) except_deg
+
+val except_deg : 'e D.t -> ('e, 'a, 'b) except -> ('c, 'b) deg -> ('e, 'a, 'c) except_deg
+
+type (_, _, _) except_perm =
+  | Except_perm : ('d, 'a) perm * ('e, 'd, 'c) except -> ('e, 'a, 'c) except_perm
+
+val except_perm : 'e D.t -> ('e, 'a, 'b) except -> ('c, 'b) perm -> ('e, 'a, 'c) except_perm
+val deg_of_except : 'b D.t -> ('e, 'a, 'b) except -> ('b, 'a) deg
+
+val except_comp :
+  ('e1, 'e2, 'e12) D.plus -> ('e2, 'a, 'b) except -> ('e1, 'b, 'c) except -> ('e12, 'a, 'c) except
 
 (* *)
 val deg_of_name : string -> any_deg option
