@@ -1,5 +1,6 @@
 open Bwd
 open Util
+open Dim
 open Signatures
 module StringMap = Map.Make (String)
 
@@ -24,6 +25,8 @@ module Gen = struct
 
   let name : type src gen tgt. (src, gen, tgt) t -> string =
    fun (PK (_, i, _)) -> Dynarray.get names i
+
+  let nonparametric : D.wrapped Dynarray.t = Dynarray.create ()
 
   let src_uniq : type a1 m b1 a2 b2. (a1, m, b1) t -> (a2, m, b2) t -> (a1, a2) Eq.t =
    fun m n ->
@@ -179,6 +182,11 @@ module type Generator = sig
   val src : src Mode.t
   val tgt : tgt Mode.t
   val name : string
+
+  (* Which directions this generator forbids parametricity in *)
+  type nonparametric
+
+  val nonparametric : nonparametric D.t
 end
 
 module type Generated = sig
@@ -196,13 +204,14 @@ module Generate (G : Generator) = struct
 
   let () =
     Dynarray.add_last Gen.names G.name;
+    Dynarray.add_last Gen.nonparametric (Wrap G.nonparametric);
     Gen.by_name := StringMap.add G.name (Wrap modality : Gen.all_wrapped) !Gen.by_name
 end
 
 type ('src, 'tgt) gen_wrapped = Wrap : ('src, 'morphism, 'tgt) Gen.t -> ('src, 'tgt) gen_wrapped
 
-let generate : type a b. a Mode.t -> b Mode.t -> string -> (a, b) gen_wrapped =
- fun a b c ->
+let generate : type a b p. a Mode.t -> b Mode.t -> string -> p D.t -> (a, b) gen_wrapped =
+ fun a b c p ->
   let module G = struct
     type src = a
     type tgt = b
@@ -210,11 +219,16 @@ let generate : type a b. a Mode.t -> b Mode.t -> string -> (a, b) gen_wrapped =
     let src = a
     let tgt = b
     let name = c
+
+    type nonparametric = p
+
+    let nonparametric = p
   end in
   let module M = Generate (G) in
   Wrap M.modality
 
-include Path.Make (Gen)
+module Modality = Path.Make (Gen)
+include Modality
 module Map = Path.Map (Gen) (Mode.Map) (Gen.Map)
 
 let locker : type a. a Mode.t -> (a, a) wrapped = fun _ -> raise (Failure "Modality.locker not set")
@@ -297,7 +311,6 @@ let to_string : type a m b. (a, m, b) t -> string =
   | [] -> "id"
   | ms -> String.concat " " ms
 
-(* *)
 let compare_name : type x m y s.
     (s -> string) ->
     s list ->
@@ -313,3 +326,200 @@ let compare_name : type x m y s.
       match compare m n with
       | Eq -> Ok ()
       | Neq -> Error (`Unequal (Wrap n)))
+
+(* Nonparametric modalities *)
+
+(* A modality is nonparametric for a direction if *any* of the generators in it are.  That is, nonparametric modalities are both a sieve and a cosieve.  Since we represent nonparametricity by a word of directions, i.e. a dimension, this means nonparametricity is a functor from the category of modalities to the one-object category of dimensions, determined by its action on generators. *)
+
+module BD = Category.OneObject (D)
+
+module Nonparam_gen = struct
+  module Dom = Gen
+  module Cod = BD
+
+  module Obj = struct
+    module Dom = Mode
+    module Cod = Unitcomparable
+
+    type (_, _) t = To_unit : 'a Mode.t -> ('a, unit) t
+
+    let dom : type a u. (a, u) t -> a Mode.t = fun (To_unit x) -> x
+    let cod : type a u. (a, u) t -> u Unitcomparable.t = fun (To_unit _) -> Unit
+
+    type _ exists = Exists : ('a, 'x) t -> 'a exists
+
+    let exists x = Exists (To_unit x)
+
+    let uniq : type a x1 x2. (a, x1) t -> (a, x2) t -> (x1, x2) Eq.t =
+     fun (To_unit _) (To_unit _) -> Eq
+  end
+
+  type (_, _, _, _, _, _) t =
+    | Nonparametric : ('x, 'm, 'y) Gen.t * 'e D.t -> ('x, 'm, 'y, unit, 'e, unit) t
+
+  let dom : type x m y u e v. (x, m, y, u, e, v) t -> (x, m, y) Gen.t =
+   fun (Nonparametric (m, _)) -> m
+
+  let cod : type x m y u e v. (x, m, y, u, e, v) t -> (u, e, v) BD.t =
+   fun (Nonparametric (_, e)) -> BD.Loop e
+
+  let src : type x m y u e v. (x, m, y, u, e, v) t -> (x, u) Obj.t =
+   fun (Nonparametric (m, _)) -> Obj.To_unit (Gen.src m)
+
+  let tgt : type x m y u e v. (x, m, y, u, e, v) t -> (y, v) Obj.t =
+   fun (Nonparametric (m, _)) -> Obj.To_unit (Gen.tgt m)
+
+  type (_, _, _) exists = Exists : ('a, 'm, 'b, 'x, 'n, 'y) t -> ('a, 'm, 'b) exists
+
+  let exists : type x m y. (x, m, y) Gen.t -> (x, m, y) exists =
+   fun (PK (_, g, _) as m) ->
+    let (Wrap e) = Dynarray.get Gen.nonparametric g in
+    Exists (Nonparametric (m, e))
+
+  let uniq : type x m y u1 e1 v1 u2 e2 v2.
+      (x, m, y, u1, e1, v1) t -> (x, m, y, u2, e2, v2) t -> (u1 * e1 * v1, u2 * e2 * v2) Eq.t =
+   fun (Nonparametric (_, e1)) (Nonparametric (_, e2)) ->
+    match D.compare e1 e2 with
+    | Eq -> Eq
+    | Neq -> failwith "modality claimed to have two different nonparametricities"
+end
+
+module Nonparametric = Path.Hom (Gen) (BD) (Nonparam_gen)
+
+type (_, _, _, _, _) filter_dim =
+  | Filter :
+      ('x, 'm, 'y, unit, 'e, unit) Nonparametric.t * ('e, 'a, 'b) except
+      -> ('x, 'm, 'y, 'a, 'b) filter_dim
+
+type (_, _, _, _) has_filter =
+  | Has_filter : ('x, 'm, 'y, 'a, 'b) filter_dim -> ('x, 'm, 'y, 'b) has_filter
+
+let filter : type x m y b. (x, m, y) t -> b D.t -> (x, m, y, b) has_filter =
+ fun m b ->
+  let (Exists e) = Nonparametric.exists m in
+  let (Loop d) = Nonparametric.cod e in
+  let (Except ex) = except_dirs d b in
+  Has_filter (Filter (e, ex))
+
+let filter_uniq : type x m y b a1 a2.
+    (x, m, y, a1, b) filter_dim -> (x, m, y, a2, b) filter_dim -> (a1, a2) Eq.t =
+ fun (Filter (m1, e1)) (Filter (m2, e2)) ->
+  let Eq = Nonparametric.uniq m1 m2 in
+  let Eq = except_uniq e1 e2 in
+  Eq
+
+(* A filter_dim is by a particular modality, which determines its source and target modes; so two filter_dims by the same modality (or a filter_dim and a modality) have the same source and target.  This is needed to recover modes that have been bound existentially elsewhere (e.g. in Plusmap.uninsert) before they can be compared with filter_uniq. *)
+let filter_dim_modes : type x m y a b x2 y2.
+    (x, m, y, a, b) filter_dim -> (x2, m, y2) t -> (x, x2) Eq.t * (y, y2) Eq.t =
+ fun (Filter (n, _)) mu ->
+  let d = Nonparametric.dom n in
+  (src_uniq d mu, tgt_uniq d mu)
+
+let filtered b (Filter (_, e)) = excepted e b
+
+let filter_id : type mode a. mode Mode.t -> a D.t -> (mode, mode id, mode, a, a) filter_dim =
+ fun mode a -> Filter (Nonparametric.id (To_unit mode), except_nothing a)
+
+let eq_of_filter_id : type mode a b. (mode, mode id, mode, a, b) filter_dim -> (a, b) Eq.t =
+ fun (Filter (p, ex)) ->
+  let (Loop p) = Nonparametric.cod p in
+  match D.compare_zero p with
+  | Zero -> eq_of_except_nothing ex
+  | Pos _ -> failwith "eq_of_filter_id"
+
+let filter_idempotent : type x m y a b. (x, m, y, a, b) filter_dim -> (x, m, y, a, a) filter_dim =
+ fun (Filter (e, ex)) -> Filter (e, except_idempotent ex)
+
+let filter_zero : type x m y. (x, m, y) t -> (x, m, y, D.zero, D.zero) filter_dim =
+ fun m ->
+  let (Exists e) = Nonparametric.exists m in
+  let (Loop _) = Nonparametric.cod e in
+  Filter (e, except_zero)
+
+let filter_plus : type x m y a b c d ac bd.
+    (a, c, ac) D.plus ->
+    (b, d, bd) D.plus ->
+    (x, m, y, a, b) filter_dim ->
+    (x, m, y, c, d) filter_dim ->
+    (x, m, y, ac, bd) filter_dim =
+ fun ac bd (Filter (e1, eab)) (Filter (e2, ecd)) ->
+  let Eq = Nonparametric.uniq e1 e2 in
+  Filter (e1, except_plus ac bd eab ecd)
+
+type (_, _, _, _, _, _) filter_of_plus =
+  | Filter_of_plus :
+      ('a, 'c, 'ac) D.plus * ('x, 'm, 'y, 'a, 'b) filter_dim * ('x, 'm, 'y, 'c, 'd) filter_dim
+      -> ('x, 'm, 'y, 'b, 'd, 'ac) filter_of_plus
+
+let filter_of_plus : type x m y b d ac bd.
+    (b, d, bd) D.plus -> (x, m, y, ac, bd) filter_dim -> (x, m, y, b, d, ac) filter_of_plus =
+ fun bd (Filter (e, eacbd)) ->
+  let (Except_of_plus (ac, eab, ecd)) = except_of_plus bd eacbd in
+  Filter_of_plus (ac, Filter (e, eab), Filter (e, ecd))
+
+type (_, _, _, _, _, _) filter_of_plus' =
+  | Filter_of_plus' :
+      ('b, 'c, 'bc) D.plus * ('bc, 'd) perm * ('x, 'm, 'y, 'a, 'b) filter_dim
+      -> ('x, 'm, 'y, 'a, 'c, 'd) filter_of_plus'
+
+let filter_of_plus' : type a c ac x m y d.
+    d D.t -> (a, c, ac) D.plus -> (x, m, y, ac, d) filter_dim -> (x, m, y, a, c, d) filter_of_plus'
+    =
+ fun d ac (Filter (e, eacd)) ->
+  let (Except_of_plus' (bc, p, eab)) = except_of_plus' d ac eacd in
+  Filter_of_plus' (bc, p, Filter (e, eab))
+
+type (_, _, _, _, _) filter_sface =
+  | Filter_sface :
+      ('d, 'a) sface * ('x, 'm, 'y, 'd, 'c) filter_dim
+      -> ('x, 'm, 'y, 'a, 'c) filter_sface
+
+let filter_sface : type x m y a b c.
+    (x, m, y, a, b) filter_dim -> (c, b) sface -> (x, m, y, a, c) filter_sface =
+ fun (Filter (e, ex)) s ->
+  let (Except_sface (s, ex)) = except_sface ex s in
+  Filter_sface (s, Filter (e, ex))
+
+type (_, _, _, _, _) filter_deg =
+  | Filter_deg : ('d, 'a) deg * ('x, 'm, 'y, 'd, 'c) filter_dim -> ('x, 'm, 'y, 'a, 'c) filter_deg
+
+let filter_deg : type x m y a b c.
+    (x, m, y, a, b) filter_dim -> (c, b) deg -> (x, m, y, a, c) filter_deg =
+ fun (Filter (e, ex)) s ->
+  let (Loop p) = Nonparametric.cod e in
+  let (Except_deg (s, ex)) = except_deg p ex s in
+  Filter_deg (s, Filter (e, ex))
+
+type (_, _, _, _, _) filter_op =
+  | Filter_op : ('d, 'a) op * ('x, 'm, 'y, 'd, 'c) filter_dim -> ('x, 'm, 'y, 'a, 'c) filter_op
+
+let filter_op : type x m y a b c.
+    (x, m, y, a, b) filter_dim -> (c, b) op -> (x, m, y, a, c) filter_op =
+ fun filt (Op (fa, s)) ->
+  let (Filter_sface (fa, filt)) = filter_sface filt fa in
+  let (Filter_deg (s, filt)) = filter_deg filt s in
+  Filter_op (Op (fa, s), filt)
+
+type (_, _, _, _, _) filter_perm =
+  | Filter_perm :
+      ('d, 'a) perm * ('x, 'm, 'y, 'd, 'c) filter_dim
+      -> ('x, 'm, 'y, 'a, 'c) filter_perm
+
+let filter_perm : type x m y a b c.
+    (x, m, y, a, b) filter_dim -> (c, b) perm -> (x, m, y, a, c) filter_perm =
+ fun (Filter (e, ex)) s ->
+  let (Loop p) = Nonparametric.cod e in
+  let (Except_perm (s, ex)) = except_perm p ex s in
+  Filter_perm (s, Filter (e, ex))
+
+let deg_of_filter : type x m y a b. b D.t -> (x, m, y, a, b) filter_dim -> (b, a) deg =
+ fun b (Filter (_, ex)) -> deg_of_except b ex
+
+let filter_comp : type x y z m n nm a b c.
+    (x, m, y, n, z, nm) comp ->
+    (y, n, z, b, c) filter_dim ->
+    (x, m, y, a, b) filter_dim ->
+    (x, nm, z, a, c) filter_dim =
+ fun n_m (Filter (f_n, ex_n)) (Filter (f_m, ex_m)) ->
+  let (Comp (f_nm, Loopcomp n_m)) = Nonparametric.comp f_m f_n n_m in
+  Filter (f_nm, except_comp n_m ex_m ex_n)

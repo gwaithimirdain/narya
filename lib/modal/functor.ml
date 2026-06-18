@@ -1,3 +1,5 @@
+open Dim
+
 module DomGen = struct
   let name = "DomType"
 end
@@ -16,6 +18,10 @@ struct
   let src = DomMode.mode
   let tgt = CodMode.mode
   let name = "○"
+
+  type nonparametric = D.zero
+
+  let nonparametric = D.zero
 end
 
 module Functorcell
