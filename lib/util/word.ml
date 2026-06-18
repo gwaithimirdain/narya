@@ -548,6 +548,59 @@ module type ComparableExp = sig
   val endpoints_uniq : ('g, 'n1) endpoints -> ('g, 'n2) endpoints -> ('n1, 'n2) Eq.t
 end
 
+(* ********** Occurrence ********** *)
+
+module MakeDecidable (G : Decidable) = struct
+  include Make (G)
+
+  type (_, _) occurs = Occurs : ('m, 'g, 'mg) Tbwd.insert -> ('g, 'mg) occurs
+
+  type (_, _) unoccurs =
+    | Unoccurs_emp : ('g, emp) unoccurs
+    | Unoccurs_suc : ('g, 'm) unoccurs * ('g, 'h) Eq.neq -> ('g, ('m, 'h) suc) unoccurs
+
+  let rec occurs : type g m. g G.t -> m t -> ((g, m) occurs, (g, m) unoccurs) Either.t =
+   fun g -> function
+    | Word Zero -> Right Unoccurs_emp
+    | Word (Suc (m, h)) -> (
+        match G.decide g h with
+        | Left Eq -> Left (Occurs Now)
+        | Right neq -> (
+            match occurs g (Word m) with
+            | Left (Occurs o) -> Left (Occurs (Later o))
+            | Right u -> Right (Unoccurs_suc (u, neq))))
+
+  let rec occurs_unoccurs : type g m r. (g, m) occurs -> (g, m) unoccurs -> r =
+   fun o u ->
+    match (o, u) with
+    | Occurs Now, Unoccurs_suc (_, neq) -> neq.abort Eq
+    | Occurs (Later i), Unoccurs_suc (u, _) -> occurs_unoccurs (Occurs i) u
+
+  let rec occurs_plus_right : type g m n mn. (m, n, mn) plus -> (g, n) occurs -> (g, mn) occurs =
+   fun mn (Occurs i) ->
+    match (mn, i) with
+    | Zero, _ -> .
+    | Suc _, Now -> Occurs Now
+    | Suc (mn, _), Later i ->
+        let (Occurs i) = occurs_plus_right mn (Occurs i) in
+        Occurs (Later i)
+
+  let rec occurs_plus_left : type g m n mn. (m, n, mn) plus -> (g, m) occurs -> (g, mn) occurs =
+   fun mn o ->
+    match mn with
+    | Zero -> o
+    | Suc (mn, _) ->
+        let (Occurs i) = occurs_plus_left mn o in
+        Occurs (Later i)
+
+  let rec unoccurs_plus : type g m n mn.
+      (m, n, mn) plus -> (g, m) unoccurs -> (g, n) unoccurs -> (g, mn) unoccurs =
+   fun mn um un ->
+    match (mn, un) with
+    | Zero, Unoccurs_emp -> um
+    | Suc (mn, _), Unoccurs_suc (un, neq) -> Unoccurs_suc (unoccurs_plus mn um un, neq)
+end
+
 module MakeExp (G : ComparableExp) = struct
   include Make (G)
 
