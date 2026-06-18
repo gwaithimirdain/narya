@@ -92,7 +92,7 @@ let rec ext_tel : type mode a b c ac bc e n.
           env;
           values = Modal (modality, newvars) :: vars;
           normals = Modal (modality, newnfs) :: nfs;
-          annotate = Suc (Annotate modality, annotate);
+          annotate = Suc (Annotate (x, modality), annotate);
           comp = Suc (Dim (modality, m), comp);
         }
 

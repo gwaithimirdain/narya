@@ -35,7 +35,34 @@ let rec remove_ctx : type a x n b. b ctx -> (a, x, n, b) insert -> a ctx =
 let remove : type a x n b. b t -> (a, x, n, b) insert -> a t =
  fun { ctx; used } i -> { ctx = remove_ctx ctx i; used }
 
-(* TODO(about-merge): about defined `extract_ctx`/`permute_ctx`/`permute` here (Tbwd-permutation of the name context, used by match-branch display in unparse.ml).  They are built on Tbwd.insert/Tbwd.permute over plain type-lists, which don't fit modal's dim_entry/lock_entry-indexed context.  Match display is deferred, so these are omitted for now. *)
+(* Extract the entry at an insertion position from a name-context, returning the rest of the context and the extracted variable-cube and field-map.  Mirrors "remove_ctx" but also returns the removed entry; used by "permute_ctx" below. *)
+let rec extract_ctx : type a x n b.
+    b ctx ->
+    (a, x, n, b) insert ->
+    a ctx * ((n, string) gvariables * (string, string) Abwd.t) =
+ fun ctx i ->
+  match (ctx, i) with
+  | Snoc (ctx, vars, flds), Now -> (ctx, (vars, flds))
+  | Snoc (ctx, vars, flds), Later i ->
+      let rest, e = extract_ctx ctx i in
+      (Snoc (rest, vars, flds), e)
+  | Emp, _ -> .
+  | Lock _, _ -> .
+
+(* Permute a name-context, e.g. to match the permutation stored in a match branch (which moves the new pattern variables before the existing variables now defined in terms of them).  Mirrors Tctx.perm_dom over the name context. *)
+let rec permute_ctx : type a b. (a, b) permute -> b ctx -> a ctx =
+ fun p ctx ->
+  match p with
+  | Id -> ctx
+  | Insert (p, i) ->
+      let rest, (vars, flds) = extract_ctx ctx i in
+      Snoc (permute_ctx p rest, vars, flds)
+  | Lock p ->
+      let (Lock ctx) = ctx in
+      Lock (permute_ctx p ctx)
+
+let permute : type a b. (a, b) permute -> b t -> a t =
+ fun p { ctx; used } -> { ctx = permute_ctx p ctx; used }
 
 (* let rec bsplit_ctx : type a b ab x y z. ab ctx -> (x, b, y, a, z, ab) Tctx.bcomp -> a ctx =
     fun ctx ab ->
@@ -164,6 +191,20 @@ let add_cube : type m n b. n D.t -> b t -> binder_name -> string * (b, (m, n) di
   let name, _, used = uniquify_opt (fun x -> (x, "")) name used in
   ( name,
     { ctx = Snoc (ctx, Variables (n, D.plus_zero n, NICubeOf.singleton name), Abwd.empty); used } )
+
+(* Extend a name-context by the pattern variables of a match branch, using the names stored in the branch's "annotate" witness (one per variable) and the dimensions stored in its "comp" witness.  Returns the extended name-context (for the branch's pre-permutation context) together with the variable names in order, for displaying the constructor pattern.  Mirrors Norm.take_args, which does the same for the value environment. *)
+let rec add_match_vars : type n mode annotations a b ab.
+    a t ->
+    (n, mode, annotations, mode, mode, b, mode) VarAnnotate.fwd_t ->
+    (mode, b, mode, a, unit, ab) Tctx.bcomp ->
+    ab t * string list =
+ fun names annotate comp ->
+  match (annotate, comp) with
+  | Zero _, Zero -> (names, [])
+  | Suc (Annotate (name, _), annotate), Suc (Dim (_, m), comp) ->
+      let x, names = add_cube m names (Variables.binder_name_of_option name) in
+      let names, xs = add_match_vars names annotate comp in
+      (names, x :: xs)
 
 (* Add a single (cube) self-variable for a record type, with its fields exposed as named variables (mirroring Ctx.vis_fields and of_ordered_ctx).  The self-variable itself is anonymous: its fields are exposed so that field-projections of the self read back as field variables.  Unlike other bound variables, the field variables are NOT uniquified: their names are exactly the record's field names, which cannot be renamed without changing the meaning.  Hence if any field name clashes with a name already in scope (so that displaying it as a field variable would shadow that name), we return None, and the caller falls back to self-variable syntax.  On success, returns the field variable names (= the field names, in order) for use as the field patterns. *)
 let add_fields : type b n m.

@@ -33,7 +33,7 @@ let rec take_args : type mode annotations m n mn a b ab.
  fun env mn dargs annotate comp ->
   match (dargs, annotate, comp) with
   | [], Zero _, Zero -> env
-  | Modal (mu, arg) :: args, Suc (Annotate amu, annotate), Suc (Dim (_, _), comp) -> (
+  | Modal (mu, arg) :: args, Suc (Annotate (_, amu), annotate), Suc (Dim (_, _), comp) -> (
       match Modality.compare mu amu with
       | Eq ->
           let env = Ext { env; plus = mn; modality = mu; values = `Ok arg } in

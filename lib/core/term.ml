@@ -166,7 +166,7 @@ module rec Term : sig
     energy : 's energy;
   }
 
-  (* TODO(about-merge): about prepended a `(string option, 'b) Vec.t` of pattern-variable names here, used by unparse.ml to display match branches with the user's variable names ("about pred").  modal restructured Branch into this record (with no names) and never unparses matches.  Restoring about's stored names requires threading a name vector through modal's path-based context (bcomp); deferred to the display phase. *)
+  (* The pattern-variable display names are carried inside the "annotate" witness (one per variable, in VarAnnote/VarAnnotator), so unparse.ml can recover them when displaying a match branch ("about pred"). *)
   and (_, _, _) branch =
     | Branch : {
         annotate : ('n, 'mode, 'annotations, 'mode, 'mode, 'b, 'mode) VarAnnotate.fwd_t;
@@ -480,7 +480,7 @@ end = struct
   }
 
   (* A branch of a match binds a number of new variables.  If it is a higher-dimensional match, then each of those "variables" is actually a full cube of variables.  In addition, its context must be permuted to put those new variables before the existing variables that are now defined in terms of them.  Finally, each of the variables might be annotated by a different modality, so we include a list of such modalities and make it into a tctx extension that all have the same dimension. *)
-  (* TODO(about-merge): see the matching note on the signature-side Branch; about's pattern-variable names are not yet restored here. *)
+  (* The pattern-variable display names are carried inside the "annotate" witness; see the signature-side Branch. *)
   and (_, _, _) branch =
     | Branch : {
         annotate : ('n, 'mode, 'annotations, 'mode, 'mode, 'b, 'mode) VarAnnotate.fwd_t;

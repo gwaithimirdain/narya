@@ -299,8 +299,6 @@ let unparse_field_app (x : string) (fld : string) (pbij : string list) :
       unlocated (App { fn; arg; left_ok; right_ok })
   | _ -> fatal (Anomaly "impossible interval in unparse_field_app")
 
-(* TODO(about-merge): about defined "add_match_vars" here to extend the name context by a match branch's stored pattern-variable names (a (string option, b) Vec.t) over a Tbwd.snocs.  modal's Branch is a record with no names, built on Tctx path machinery, so match display is deferred (see unparse_match) and this helper is omitted. *)
-
 (* The primary unparsing function.  Given the variable names, unparse a term into given tightness intervals. *)
 let rec unparse : type mode n lt ls rt rs s.
     n Names.t ->
@@ -760,9 +758,29 @@ and unparse_match : type mode n m lt ls rt rs.
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun _vars _tm _dim _branches _li _ri ->
-  (* TODO(about-merge): displaying a stored match requires extending the name context by each branch's pattern variables (modal's Branch record carries them as a Tctx bcomp, with no stored names) and permuting it (modal replaced Tbwd.permute with Tctx path machinery).  Deferred. *)
-  fatal (Unimplemented "displaying matches (post-modal-merge)")
+ fun vars tm dim branches _li _ri ->
+  let mapsto =
+    match D.compare_zero dim with
+    | Zero -> Token.Mapsto
+    | Pos _ -> Token.DblMapsto in
+  let disc = unparse vars tm No.Interval.entire No.Interval.entire in
+  let inner =
+    Constr.Map.fold
+      (fun c br acc ->
+        match br with
+        | Term.Refute -> acc
+        | Term.Branch { annotate; comp; perm; tm = body } ->
+            (* Extend the name context by the branch's pattern variables (named via the stored "annotate" witness), then permute it to the body's context. *)
+            let abvars, xs = Names.add_match_vars vars annotate comp in
+            let bodyvars = Names.permute perm abvars in
+            let args =
+              Bwd.of_list (List.map (fun x -> { unparse = (fun _ _ -> unparse_var x) }) xs) in
+            let pat = unparse_spine vars (`Constr c) args No.Interval.entire No.Interval.entire in
+            let ubody = unparse bodyvars body No.Interval.entire No.Interval.entire in
+            acc <: mktok (Op "|") <: Term pat <: mktok mapsto <: Term ubody)
+      branches
+      (Snoc (Emp, Term disc) <: mktok LBracket) in
+  unlocated (outfix ~notn:implicit_mtch ~inner:(Multiple (wstok Match, inner, wstok RBracket)))
 
 (* Unparse a comatch "[ .fld |-> body | ... ]".  An empty comatch prints with the empty (co)match notation. *)
 and unparse_comatch : type mode n a s et lt ls rt rs.
