@@ -75,8 +75,8 @@ let rec motive_of_family : type a b.
   let folder : type left m any.
       (left, m, any) F.t -> (left, D.zero) snoc T.t -> left T.t * (left, m, any) F.t =
    fun (Rbtm dom) cod ->
-    (Pi (singleton_variables D.zero None, CubeOf.singleton dom, CodCube.singleton cod), Rbtm dom)
-  in
+    ( Pi (singleton_variables D.zero (`Anon no_hints), CubeOf.singleton dom, CodCube.singleton cod),
+      Rbtm dom ) in
   let builder : type left n m.
       n variables ->
       (n, Binding.t) CubeOf.t ->
@@ -86,10 +86,13 @@ let rec motive_of_family : type a b.
    fun x newnfs fa (Any_ctx ctx) ->
     let v = CubeOf.find newnfs fa in
     let cv = readback_val ctx (Binding.value v).ty in
+    let name =
+      match find_variable fa x with
+      | `Named _ as x -> x
+      | `Anon _ -> `Anon (View.hints_of_ty (Binding.value v).ty) in
     let (Any_ctx newctx) =
       (* TODO: In the case of a cube variable, should we be annotating the variables by their face somehow?  *)
-      Ctx.variables_vis ctx (singleton_variables D.zero (find_variable fa x)) (CubeOf.singleton v)
-    in
+      Ctx.variables_vis ctx (singleton_variables D.zero name) (CubeOf.singleton v) in
     Fwrap (Rbtm cv, Any_ctx newctx) in
   match view_type ty "motive_of_family" with
   | Canonical (_, Pi (x, doms, cods), ins, tyargs) ->
@@ -111,7 +114,7 @@ let rec motive_of_family : type a b.
       let m = CubeOf.dim newnfs in
       let (Wrap (newdoms, _)) =
         MC.build_left m
-          { build = (fun fa ctx -> builder (singleton_variables m None) newnfs fa ctx) }
+          { build = (fun fa ctx -> builder (singleton_variables m (`Anon no_hints)) newnfs fa ctx) }
           (Any_ctx ctx) in
       let motive, _ =
         MT.fold_map_right { foldmap = (fun _ x y -> folder x y) } newdoms (UU D.zero) in
@@ -120,7 +123,7 @@ let rec motive_of_family : type a b.
 
 type (_, _, _) vars_of_names =
   | Vars :
-      ('a, 'b, 'abc) N.plus * (N.zero, 'n, string option, 'b) NICubeOf.t
+      ('a, 'b, 'abc) N.plus * (N.zero, 'n, binder_name, 'b) NICubeOf.t
       -> ('a, 'abc, 'n) vars_of_names
 
 let vars_of_names : type a c abc n.
@@ -135,9 +138,9 @@ let vars_of_names : type a c abc n.
       {
         build =
           (fun _ -> function
-            | Ok (ab, x :: xs) -> Fwrap (NFamOf x, Ok (Suc ab, xs))
-            | Ok _ -> Fwrap (NFamOf None, Missing (-1))
-            | Missing j -> Fwrap (NFamOf None, Missing (j - 1)));
+            | Ok (ab, x :: xs) -> Fwrap (NFamOf (binder_name_of_option x), Ok (Suc ab, xs))
+            | Ok _ -> Fwrap (NFamOf (`Anon no_hints), Missing (-1))
+            | Missing j -> Fwrap (NFamOf (`Anon no_hints), Missing (j - 1)));
       }
       (Ok (Zero, xs))
   with
@@ -508,9 +511,14 @@ let rec check : type a b s.
                                   fatal ?loc:name.loc
                                     (Unexpected_implicitness
                                        (`Explicit, "abstraction", "expecting implicit variable"))
-                              | _ -> Fwrap (NFamOf name.value, Ok (Suc ab, body)))
-                          | Ok (_, _) -> Fwrap (NFamOf None, Missing 1)
-                          | Missing j -> Fwrap (NFamOf None, Missing (j + 1)));
+                              | _ ->
+                                  Fwrap
+                                    ( NFamOf
+                                        (View.hinted name.value
+                                           (Ctx.Binding.value (CubeOf.find newnfs fa)).ty),
+                                      Ok (Suc ab, body) ))
+                          | Ok (_, _) -> Fwrap (NFamOf (`Anon no_hints), Missing 1)
+                          | Missing j -> Fwrap (NFamOf (`Anon no_hints), Missing (j + 1)));
                     }
                     (Ok (Zero, tm))
                 with
@@ -538,7 +546,9 @@ let rec check : type a b s.
                             fatal ?loc:xloc ~extra_remarks
                               (Mismatched_dimensions_in_cube_abstraction (m', m))));
                     (* Here we don't need to slurp up lots of lambdas, but can make do with one. *)
-                    let xs = singleton_variables m x in
+                    let xs =
+                      singleton_variables m
+                        (View.hinted x (Ctx.Binding.value (CubeOf.find_top newnfs)).ty) in
                     let ctx = Ctx.cube_vis ctx x newnfs in
                     Lam (xs, check ?discrete (mkstatus xs status) ctx body output)))
         | _ -> fatal (Checking_lambda_at_nonfunction (PVal (ctx, ty))))
@@ -559,7 +569,7 @@ let rec check : type a b s.
         match view_type ~severity ty "typechecking constr" with
         | Canonical
             ( name,
-              Data { dim; indices = Filled ty_indices; constrs; discrete = _; tyfam = _ },
+              Data { dim; indices = Filled ty_indices; constrs; discrete = _; tyfam = _; hints = _ },
               ins,
               tyargs ) -> (
             let Eq = eq_of_ins_zero ins in
@@ -625,7 +635,7 @@ let rec check : type a b s.
                 realize status (Term.Constr (constr, dim, newargs)))
         (* A constructor can also check at a function-type by eta-expansion. *)
         | Canonical (_, Pi (x, _, _), _, _) ->
-            let name = locate_opt None (top_variable x) in
+            let name = locate_opt None (option_of_binder_name (top_variable x)) in
             let cube, fa =
               match D.compare_zero (dim_variables x) with
               | Zero -> (locate_opt None `Normal, None)
@@ -681,7 +691,7 @@ let rec check : type a b s.
         | _, _ -> check status ctx { value = Struct (Noeta, Abwd.empty); loc = tm.loc } ty)
     | Refute (tms, i), Potential _ -> check_refute status ctx tms ty i None
     (* Now we go through the canonical types. *)
-    | Codata fields, Potential (head, apps, _) -> (
+    | Codata (fields, hints), Potential (head, apps, _) -> (
         match view_type ~severity ty "typechecking codata" with
         | Canonical (_, UU dim, ins, tyargs) -> (
             match (D.compare_zero dim, Endpoints.hott (), !gel_ok) with
@@ -699,12 +709,12 @@ let rec check : type a b s.
                           | Eq -> None
                           | Neq -> Some ()))
                     None fields in
-                check_codata status ctx Noeta tyargs Emp
+                check_codata status ctx Noeta hints tyargs Emp
                   (Fibrancy.Codata.empty dim dim (Ctx.dbwd ctx) Noeta
                      (readback_neu ctx (head_of_potential head) apps))
                   (Bwd.to_list fields) Emp ~has_higher_fields)
         | _ -> fatal (Checking_canonical_at_nonuniverse ("codatatype", PVal (ctx, ty))))
-    | SelfRecord fields, Potential (head, apps, _) -> (
+    | SelfRecord (fields, hints), Potential (head, apps, _) -> (
         match view_type ~severity ty "typechecking self-record" with
         | Canonical (_, UU dim, ins, tyargs) -> (
             match (D.compare_zero dim, Endpoints.hott (), !gel_ok) with
@@ -725,12 +735,12 @@ let rec check : type a b s.
                 match has_higher_fields with
                 | Some () -> fatal (Unimplemented "higher fields in record types: use codata")
                 | None ->
-                    check_codata status ctx Eta tyargs Emp
+                    check_codata status ctx Eta hints tyargs Emp
                       (Fibrancy.Codata.empty dim dim (Ctx.dbwd ctx) Eta
                          (readback_neu ctx (head_of_potential head) apps))
                       (Bwd.to_list fields) Emp ~has_higher_fields))
         | _ -> fatal (Checking_canonical_at_nonuniverse ("codatatype", PVal (ctx, ty))))
-    | Record (xs, fields, opacity), Potential (head, apps, _) -> (
+    | Record (xs, fields, opacity, hints), Potential (head, apps, _) -> (
         match view_type ~severity ty "typechecking record" with
         | Canonical (_, UU dim, ins, tyargs) -> (
             match (D.compare_zero dim, Endpoints.hott (), !gel_ok) with
@@ -739,18 +749,18 @@ let rec check : type a b s.
             | _ ->
                 let Eq = eq_of_ins_zero ins in
                 let (Vars (af, vars)) = vars_of_names xs.loc dim xs.value in
-                check_record status dim ctx opacity tyargs vars Emp Zero af Emp
+                check_record status dim ctx opacity hints tyargs vars Emp Zero af Emp
                   (Fibrancy.Codata.empty dim dim (Ctx.dbwd ctx) Eta
                      (readback_neu ctx (head_of_potential head) apps))
                   fields Emp)
         | _ -> fatal (Checking_canonical_at_nonuniverse ("record type", PVal (ctx, ty))))
-    | Data constrs, Potential _ ->
+    | Data (constrs, hints), Potential _ ->
         (* For a datatype, the type to check against might not be a universe, it could include indices.  We also check whether all the types of all the indices are discrete or a type being defined, to decide whether to keep evaluating the type for discreteness. *)
         let n, disc = typefam ?discrete ctx ty in
         let (Wrap num_indices) = Fwn.of_int n in
         check_data
           ~discrete:(if disc then discrete else None)
-          status ctx ty num_indices Abwd.empty (Bwd.to_list constrs) Emp
+          ~hints status ctx ty num_indices Abwd.empty (Bwd.to_list constrs) Emp
     (* If we have a term that's not valid outside a case tree, we bind it to a global metavariable. *)
     | Struct (Noeta, _), Kinetic l -> kinetic_of_potential l ctx tm ty "comatch"
     | Synth (Match _), Kinetic l -> kinetic_of_potential l ctx tm ty "match"
@@ -1194,7 +1204,14 @@ and check_match_branches : type a b.
       (( name,
          Data
            (type j ij)
-           ({ dim; indices = Filled indices; constrs = data_constrs; tyfam; discrete = _ } :
+           ({
+              dim;
+              indices = Filled indices;
+              constrs = data_constrs;
+              tyfam;
+              discrete = _;
+              hints = _;
+            } :
              (_, j, ij) data_args),
          ins,
          inst_args ) :
@@ -1463,7 +1480,14 @@ and check_var_match : type a b.
       (( name,
          Data
            (type j ij)
-           ({ dim; indices = Filled var_indices; constrs = data_constrs; discrete = _; tyfam } :
+           ({
+              dim;
+              indices = Filled var_indices;
+              constrs = data_constrs;
+              discrete = _;
+              tyfam;
+              hints = _;
+            } :
              (_, j, ij) data_args),
          ins,
          inst_args ) :
@@ -1781,8 +1805,10 @@ and check_empty_match_lam : type a b.
                     let ty = (Binding.value (CubeOf.find newnfs fb)).ty in
                     let firstty = Option.value firstty ~default:ty in
                     if is_empty ty then
-                      Fwrap (NFamOf None, Ok (Some firstty, Suc ab, Some (SFace_of fb)))
-                    else Fwrap (NFamOf None, Ok (Some firstty, Suc ab, fa)));
+                      Fwrap
+                        ( NFamOf (`Anon (View.hints_of_ty ty)),
+                          Ok (Some firstty, Suc ab, Some (SFace_of fb)) )
+                    else Fwrap (NFamOf (`Anon (View.hints_of_ty ty)), Ok (Some firstty, Suc ab, fa)));
           }
           (Ok (None, Zero, None))
       with
@@ -1822,6 +1848,7 @@ and any_empty : type n. (n, Binding.t) CubeOf.t list -> bool =
 
 and check_data : type a b i.
     discrete:unit Constant.Map.t option ->
+    hints:hints ->
     (b, potential) status ->
     (a, b) Ctx.t ->
     kinetic value ->
@@ -1830,7 +1857,7 @@ and check_data : type a b i.
     (Constr.t * a Raw.dataconstr located) list ->
     Code.t Asai.Diagnostic.t Bwd.t ->
     (b, potential) term =
- fun ~discrete status ctx ty num_indices checked_constrs raw_constrs errs ->
+ fun ~discrete ~hints status ctx ty num_indices checked_constrs raw_constrs errs ->
   match (raw_constrs, status) with
   | [], Potential _ -> (
       match errs with
@@ -1838,7 +1865,7 @@ and check_data : type a b i.
       | Emp ->
           (* If we get to this point and discreteness is still a possibility, we mark it as "Maybe" discrete.  Later, after all the types in a mutual block are checked, if they're all discrete we go through and change the "Maybe"s to "Yes"es.  *)
           let discrete = Option.fold ~none:`No ~some:(fun _ -> `Maybe) discrete in
-          Canonical (Data { indices = num_indices; constrs = checked_constrs; discrete }))
+          Canonical (Data { indices = num_indices; constrs = checked_constrs; discrete; hints }))
   | ( (c, { value = Dataconstr (args, output); loc }) :: raw_constrs,
       Potential (head, current_apps, hyp) ) -> (
       with_loc loc @@ fun () ->
@@ -1846,7 +1873,7 @@ and check_data : type a b i.
       run_with_definition head
         (hyp
            (Term.Canonical
-              (Data { indices = num_indices; constrs = checked_constrs; discrete = `No })))
+              (Data { indices = num_indices; constrs = checked_constrs; discrete = `No; hints })))
         Emp
       @@ fun () ->
       match (Abwd.find_opt c checked_constrs, output) with
@@ -1882,7 +1909,7 @@ and check_data : type a b i.
             | _ -> fatal ?loc:output.loc err in
           check_data
             ~discrete:(if disc then discrete else None)
-            status ctx ty num_indices checked_constrs raw_constrs errs
+            ~hints status ctx ty num_indices checked_constrs raw_constrs errs
       | None, None -> (
           match num_indices with
           | Zero ->
@@ -1895,7 +1922,7 @@ and check_data : type a b i.
                 (disc, checked_constrs |> Abwd.add c (Term.Dataconstr { args; output }), errs) in
               check_data
                 ~discrete:(if disc then discrete else None)
-                status ctx ty Fwn.zero checked_constrs raw_constrs errs
+                ~hints status ctx ty Fwn.zero checked_constrs raw_constrs errs
           | Suc _ -> fatal (Missing_constructor_type c)))
 
 and get_indices : type a b any1 any2.
@@ -1935,6 +1962,7 @@ and with_codata_so_far : type a b n c et.
     (potential, et) eta ->
     (a, b) Ctx.t ->
     opacity ->
+    hints ->
     n D.t ->
     (D.zero, n, n, normal) TubeOf.t ->
     (b * n * et) Term.CodatafieldAbwd.t ->
@@ -1943,7 +1971,7 @@ and with_codata_so_far : type a b n c et.
     Code.t Asai.Diagnostic.t Bwd.t ->
     ((n, Ctx.Binding.t) CubeOf.t -> (b, potential) term -> c) ->
     c =
- fun (Potential (h, args, hyp)) eta ctx opacity dim tyargs checked_fields (Fibrancy fibrancy)
+ fun (Potential (h, args, hyp)) eta ctx opacity hints dim tyargs checked_fields (Fibrancy fibrancy)
      ~has_higher_fields errs cont ->
   let domvars, termctx =
     match errs with
@@ -1953,7 +1981,7 @@ and with_codata_so_far : type a b n c et.
         let fibrancy_fields = Fibrancy.Codata.finish checked_fields fibrancy in
         let rec domvars () =
           let value =
-            eval_codata (Ctx.env ctx) eta opacity dim
+            eval_codata (Ctx.env ctx) eta opacity hints dim
               (lazy (termctx ()))
               checked_fields fibrancy_fields in
           let prev_ety =
@@ -1977,7 +2005,8 @@ and with_codata_so_far : type a b n c et.
   in
   let codataterm =
     Term.Canonical
-      (Codata { eta; opacity; dim; fields = checked_fields; termctx; fibrancy; is_glue = None })
+      (Codata
+         { eta; opacity; hints; dim; fields = checked_fields; termctx; fibrancy; is_glue = None })
   in
   run_with_definition h (hyp codataterm) errs @@ fun () -> cont domvars codataterm
 
@@ -1985,6 +2014,7 @@ and check_codata : type a b n et.
     (b, potential) status ->
     (a, b) Ctx.t ->
     (potential, et) eta ->
+    hints ->
     (D.zero, n, n, normal) TubeOf.t ->
     (b * n * et) Term.CodatafieldAbwd.t ->
     (n, n, b, et) Fibrancy.Codata.t ->
@@ -1992,18 +2022,18 @@ and check_codata : type a b n et.
     Code.t Asai.Diagnostic.t Bwd.t ->
     has_higher_fields:unit option ->
     (b, potential) term =
- fun status ctx eta tyargs checked_fields fibrancy raw_fields errs ~has_higher_fields ->
+ fun status ctx eta hints tyargs checked_fields fibrancy raw_fields errs ~has_higher_fields ->
   let dim = TubeOf.inst tyargs in
   match raw_fields with
   | [] -> (
       match errs with
       | Emp ->
-          with_codata_so_far status eta ctx `Opaque dim tyargs checked_fields fibrancy
+          with_codata_so_far status eta ctx `Opaque hints dim tyargs checked_fields fibrancy
             ~has_higher_fields errs
           @@ fun _ codataterm -> codataterm
       | Snoc _ -> fatal (Accumulated ("check_codata", errs)))
   | (Wrap fld, Codatafield (x, rty)) :: raw_fields -> (
-      with_codata_so_far status eta ctx `Opaque dim tyargs checked_fields fibrancy
+      with_codata_so_far status eta ctx `Opaque hints dim tyargs checked_fields fibrancy
         ~has_higher_fields errs
       @@ fun domvars _ ->
       let newctx = Ctx.cube_vis ctx x domvars in
@@ -2027,7 +2057,7 @@ and check_codata : type a b n et.
             let cty = check (Kinetic `Nolet) newctx rty (universe D.zero) in
             let entry = CodatafieldAbwd.Entry (fld, Lower cty) in
             (Snoc (checked_fields, entry), Fibrancy.Codata.add_field fibrancy entry, errs) in
-          check_codata status ctx eta tyargs checked_fields fibrancy raw_fields errs
+          check_codata status ctx eta hints tyargs checked_fields fibrancy raw_fields errs
             ~has_higher_fields
       | Pos _, Zero, Noeta ->
           (* Higher-dimensional field, currently requires a zero-dimensional codatatype (non-Gel). *)
@@ -2037,7 +2067,7 @@ and check_codata : type a b n et.
             let (Degctx (plusmap, degctx, _)) = degctx newctx (Field.dim fld) in
             let cty = check (Kinetic `Nolet) degctx rty (universe D.zero) in
             (Snoc (checked_fields, Entry (fld, Codatafield.Higher (plusmap, cty))), errs) in
-          check_codata status ctx eta tyargs checked_fields fibrancy raw_fields errs
+          check_codata status ctx eta hints tyargs checked_fields fibrancy raw_fields errs
             ~has_higher_fields
       | Pos _, Zero, Eta -> fatal (Unimplemented "higher fields in record types")
       | Pos _, Pos _, _ -> fatal (Unimplemented "higher fields in higher-dimensional codatatypes"))
@@ -2047,8 +2077,9 @@ and check_record : type a f1 f2 f af d acd b n.
     n D.t ->
     (a, b) Ctx.t ->
     opacity ->
+    hints ->
     (D.zero, n, n, normal) TubeOf.t ->
-    (N.zero, n, string option, f1) NICubeOf.t ->
+    (N.zero, n, binder_name, f1) NICubeOf.t ->
     (D.zero Field.t * string, f2) Bwv.t ->
     (f1, f2, f) N.plus ->
     (a, f, af) N.plus ->
@@ -2057,7 +2088,7 @@ and check_record : type a f1 f2 f af d acd b n.
     (af, d, acd) Raw.tel ->
     Code.t Asai.Diagnostic.t Bwd.t ->
     (b, potential) term =
- fun status dim ctx opacity tyargs vars ctx_fields fplus af checked_fields fibrancy raw_fields
+ fun status dim ctx opacity hints tyargs vars ctx_fields fplus af checked_fields fibrancy raw_fields
      errs ->
   match raw_fields with
   | Emp -> (
@@ -2066,10 +2097,12 @@ and check_record : type a f1 f2 f af d acd b n.
       | Emp ->
           let fields, Fibrancy fibrancy = (checked_fields, fibrancy) in
           Term.Canonical
-            (Codata { eta = Eta; opacity; dim; fields; termctx = None; fibrancy; is_glue = None }))
+            (Codata
+               { eta = Eta; opacity; hints; dim; fields; termctx = None; fibrancy; is_glue = None })
+      )
   | Ext (None, _, _) -> fatal (Anomaly "unnamed field in check_record")
   | Ext (Some name, rty, raw_fields) ->
-      with_codata_so_far status Eta ctx opacity dim tyargs checked_fields fibrancy
+      with_codata_so_far status Eta ctx opacity hints dim tyargs checked_fields fibrancy
         ~has_higher_fields:None errs
       @@ fun domvars _ ->
       let fld = Field.intern name D.zero in
@@ -2084,8 +2117,8 @@ and check_record : type a f1 f2 f af d acd b n.
           Fibrancy.Codata.add_field fibrancy entry,
           Bwv.Snoc (ctx_fields, (fld, name)),
           errs ) in
-      check_record status dim ctx opacity tyargs vars ctx_fields (Suc fplus) (Suc af) checked_fields
-        fibrancy raw_fields errs
+      check_record status dim ctx opacity hints tyargs vars ctx_fields (Suc fplus) (Suc af)
+        checked_fields fibrancy raw_fields errs
 
 and check_struct : type a b c d s m n mn et.
     (b, s) status ->
@@ -2488,7 +2521,8 @@ and synth : type a b s.
         let cdom = check (Kinetic `Nolet) ctx dom (universe D.zero) in
         let edom = eval_term (Ctx.env ctx) cdom in
         let ccod = check (Kinetic `Nolet) (Ctx.ext ctx x edom) cod (universe D.zero) in
-        (realize status (pi (singleton_variables D.zero x) cdom ccod), universe D.zero)
+        ( realize status (pi (singleton_variables D.zero (View.hinted x edom)) cdom ccod),
+          universe D.zero )
     | HigherPi (x, dom, cod), _ -> (
         let cdom, domty = synth (Kinetic `Nolet) ctx dom in
         let edom = eval_term (Ctx.env ctx) cdom in
@@ -2530,7 +2564,7 @@ and synth : type a b s.
                               let t' = sface_of_tface t in
                               let ctm =
                                 Term.Pi
-                                  ( singleton_variables k x,
+                                  ( singleton_variables k (View.hinted x (CubeOf.find edoms t')),
                                     CubeOf.subcube t' cdoms,
                                     CodCube.subcube t' ccods ) in
                               let tm = eval_term (Ctx.env ctx) ctm in
@@ -2547,7 +2581,7 @@ and synth : type a b s.
                               Hashtbl.add tyargstbl (Tface_of t) arg;
                               arg);
                         } in
-                    ( realize status (Pi (singleton_variables n x, cdoms, ccods)),
+                    ( realize status (Pi (singleton_variables n (View.hinted x edom), cdoms, ccods)),
                       inst (universe n) tyargs )
                 | Neq -> fatal (Invalid_higher_function "invalid single codomain dimension"))
             | _ -> fatal (Invalid_higher_function "invalid single codomain"))
@@ -2567,7 +2601,7 @@ and synth : type a b s.
             (m, n) sface ->
             (left1, left2) Acc.t ->
             (left1, m, g) Indexed.DomFam.t ->
-            (left2, m, string option) NFamOf.t * (left1 N.suc, left2 N.suc) Acc.t =
+            (left2, m, binder_name) NFamOf.t * (left1 N.suc, left2 N.suc) Acc.t =
          fun s (Ctx (xctx, ac)) (Indexed.DomFam.DomFam (x, dom)) ->
           let m = dom_sface s in
           (* We check the domains against universe 0, since they should be fully instantiated. *)
@@ -2575,14 +2609,14 @@ and synth : type a b s.
           let edom = eval_term (Ctx.env xctx) cdom in
           (* Further errors here should also be reported on the relevant domain term. *)
           with_loc dom.loc
-          @@ fun () : ((left2, m, string option) NFamOf.t * (left1 N.suc, left2 N.suc) Acc.t) ->
+          @@ fun () : ((left2, m, binder_name) NFamOf.t * (left1 N.suc, left2 N.suc) Acc.t) ->
           (* No_such_level indicates a readback failure, meaning that some domain or boundary was not defined in the correct context (e.g. used unavailable variables). *)
           Reporter.try_with ~fatal:(fun d ->
               match d.message with
               | No_such_level _ ->
                   fatal ?loc:d.explanation.loc (Invalid_higher_function "invalid domain scope")
               | _ -> fatal_diagnostic d)
-          @@ fun () : ((left2, m, string option) NFamOf.t * (left1 N.suc, left2 N.suc) Acc.t) ->
+          @@ fun () : ((left2, m, binder_name) NFamOf.t * (left1 N.suc, left2 N.suc) Acc.t) ->
           let dom, tyargs =
             match D.compare_zero m with
             | Zero ->
@@ -2613,7 +2647,7 @@ and synth : type a b s.
           (* We also get and store the normal corresponding to this variable, for checking the tyargs of later domains. *)
           (match Ctx.lookup newctx (Top, None) with
           | `Field (_, v, _) | `Var (_, v, _) -> Hashtbl.add varstbl (SFace_of s) v);
-          (NFamOf x, Ctx (newctx, Suc ac)) in
+          (NFamOf (View.hinted x edom), Ctx (newctx, Suc ac)) in
         (* We don't care about the produced context, since its checked length is wrong.  We want just one cube of variables, and the total raw length added to the previous one.  *)
         let (Gfolded (xs, Ctx (_, af))) =
           T.fold_map_left { foldmap } (Ctx (ctx, Zero) : (a, N.zero) Acc.t) doms in
@@ -2722,7 +2756,7 @@ and synth : type a b s.
           match Ctx.lookup newctx (Top, None) with
           | `Field _ -> fatal (Anomaly "field variable in asclam")
           | `Var (_, nf, _) -> nf in
-        let xs = singleton_variables D.zero x in
+        let xs = singleton_variables D.zero (View.hinted x edom) in
         let newstatus : ((b, D.zero) snoc, s) status =
           match status with
           | Kinetic l -> Kinetic l
@@ -2733,7 +2767,7 @@ and synth : type a b s.
         let ty =
           eval_term (Ctx.env ctx)
             (Pi
-               ( singleton_variables D.zero x,
+               ( singleton_variables D.zero (View.hinted x edom),
                  CubeOf.singleton cdom,
                  CodCube.singleton (readback_val newctx scod) )) in
         (Lam (xs, cbody), ty)
@@ -3204,7 +3238,7 @@ and synth_lam : type a b c d n.
       let cdom = check (Kinetic `Nolet) ctx dom (universe D.zero) in
       let edom = eval_term (Ctx.env ctx) cdom in
       let newctx = Ctx.ext ctx name.value edom in
-      let xs = singleton_variables D.zero name.value in
+      let xs = singleton_variables D.zero (View.hinted name.value edom) in
       (* Pull off either one explicit argument or a cube of mostly-implicit ones, of the correct dimension. *)
       let module M = CubeOf.Monadic (Monad.State (struct
         type t =
@@ -3225,7 +3259,7 @@ and synth_lam : type a b c d n.
       let scod =
         eval_term (Ctx.env ctx)
           (Pi
-             ( singleton_variables D.zero name.value,
+             ( singleton_variables D.zero (View.hinted name.value edom),
                CubeOf.singleton cdom,
                CodCube.singleton (readback_val newctx scod) )) in
       (Lam (xs, cbody), scod)
@@ -3240,14 +3274,14 @@ and synth_lam : type a b c d n.
           in
           (* Finally we can extend the context by this obtained domain. *)
           let newctx = Ctx.ext ctx name.value edom in
-          let xs = singleton_variables D.zero name.value in
+          let xs = singleton_variables D.zero (View.hinted name.value edom) in
           (* Then we proceed again recursively to check the body of the abstraction. *)
           let cbody, scod = synth_lam n newctx body argctx args ty in
           let cdom = readback_val ctx edom in
           let scod =
             eval_term (Ctx.env ctx)
               (Pi
-                 ( singleton_variables D.zero name.value,
+                 ( singleton_variables D.zero (View.hinted name.value edom),
                    CubeOf.singleton cdom,
                    CodCube.singleton (readback_val newctx scod) )) in
           (Lam (xs, cbody), scod)

@@ -988,6 +988,15 @@ With a negative prefix argument,set display of type boundaries off."
          "display type boundaries := off")
      "display type boundaries := toggle")))
 
+(defun narya-display-variables (vars)
+  "Set, unset, or toggle display of type boundaries.
+With no prefix argument, toggle display of type boundaries.
+With a positive prefix argument, set display of type boundaries on.
+With a negative prefix argument,set display of type boundaries off."
+  (interactive "MDefault variables: ")
+  (proof-shell-invisible-command
+   (concat "display variables := " vars)))
+
 (defvar narya-minibuffer-commands
   '("echo"
     "synth"
@@ -1107,6 +1116,7 @@ With a negative prefix argument,set display of type boundaries off."
 (keymap-set narya-mode-map "C-c C-d C-u" 'narya-display-chars)
 (keymap-set narya-mode-map "C-c C-d C-f" 'narya-display-function-boundaries)
 (keymap-set narya-mode-map "C-c C-d C-t" 'narya-display-type-boundaries)
+(keymap-set narya-mode-map "C-c C-d C-v" 'narya-display-variables)
 (keymap-set narya-mode-map "C-M-q" 'narya-reformat-command)
 
 (provide 'narya)

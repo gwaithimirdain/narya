@@ -317,6 +317,7 @@ Narya's ProofGeneral mode also defines the following additional key commands.
 - ``C-c C-d C-u``: Toggle display of unicode characters.
 - ``C-c C-d C-f``: Toggle display of function boundaries.
 - ``C-c C-d C-t``: Toggle display of type boundaries.
+- ``C-c C-d C-v``: Set the default variable names.
 
 For Agda users
 ^^^^^^^^^^^^^^

@@ -118,7 +118,7 @@ let rec readback_about : type a b.
               match D.compare_zero (CubeOf.dim doms) with
               | Zero -> (
                   let argvar, argnf = dom_vars ctx doms in
-                  let ctx = Ctx.cube_vis ctx (top_variable xs) argnf in
+                  let ctx = Ctx.cube_vis ctx (option_of_binder_name (top_variable xs)) argnf in
                   let value = apply_term value argvar in
                   match readback_about ctx value with
                   | None -> None
