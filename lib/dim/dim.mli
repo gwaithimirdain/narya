@@ -2,7 +2,6 @@ open Bwd
 open Util
 open Signatures
 open Tlist
-open Tbwd
 open Monoid
 
 module D : sig
@@ -11,6 +10,14 @@ module D : sig
   val minus : 'mn t -> ('m, 'n, 'mn) plus -> 'm t
   val minus_uniq : ('m1, 'n, 'mn) plus -> ('m2, 'n, 'mn) plus -> ('m1, 'm2) Eq.t
   val minus_uniq' : 'm t -> ('m, 'n1, 'mn) plus -> ('m, 'n2, 'mn) plus -> ('n1, 'n2) Eq.t
+
+  type (_, _) factor = Factor : ('n, 'k, 'nk) plus -> ('nk, 'n) factor
+
+  val factor : 'nk t -> 'n t -> ('nk, 'n) factor option
+
+  type (_, _) cofactor = Cofactor : ('n, 'k, 'nk) plus -> ('nk, 'k) cofactor
+
+  val cofactor : 'nk t -> 'k t -> ('nk, 'k) cofactor option
 end
 
 module Dmap : MAP_MAKER with module Key := D
@@ -33,6 +40,7 @@ module Endpoints : sig
   val wrapped : unit -> wrapped
   val internal : unit -> bool
   val hott : unit -> N.two len option
+  val totally_nullary : 'a D.t -> bool
 end
 
 type _ is_singleton
@@ -46,15 +54,6 @@ type any_dim = Any : 'n D.t -> any_dim
 val dim_of_string : string -> any_dim option
 val string_of_dim : 'n D.t -> string
 val is_pos : 'a D.t -> bool
-
-type (_, _) factor = Factor : ('n, 'k, 'nk) D.plus -> ('nk, 'n) factor
-
-val factor : 'nk D.t -> 'n D.t -> ('nk, 'n) factor option
-
-type (_, _) cofactor = Cofactor : ('n, 'k, 'nk) D.plus -> ('nk, 'k) cofactor
-
-val cofactor : 'nk D.t -> 'k D.t -> ('nk, 'k) cofactor option
-val totally_nullary : 'a D.t -> bool
 
 type (_, _) deg
 
@@ -633,11 +632,6 @@ type (_, _, _) insfact_comp_ext =
 
 val insfact_comp_ext : ('nk, 'n, 'k) insertion -> ('a, 'b) deg -> ('n, 'k, 'a) insfact_comp_ext
 
-type (_, _, _) deg_lift_ins =
-  | Deg_lift_ins : ('mk, 'm, 'k) insertion * ('mk, 'nk) deg -> ('m, 'k, 'nk) deg_lift_ins
-
-val deg_lift_ins : ('m, 'n) deg -> ('nk, 'n, 'k) insertion -> ('m, 'k, 'nk) deg_lift_ins
-
 type (_, _, _) sface_lift_ins =
   | Sface_lift_ins : ('mk, 'm, 'k) insertion * ('mk, 'nk) sface -> ('m, 'k, 'nk) sface_lift_ins
 
@@ -950,55 +944,6 @@ end
 module PbijmapOf : module type of Pbijmap (struct
   type ('a, 'b) t = 'b
 end)
-
-module Plusmap : sig
-  module OfDom : module type of Word.Make (D)
-  module OfCod : module type of Word.Make (D) with type 'a t = 'a OfDom.t
-
-  type ('a, 'b, 'c) t =
-    | Map_emp : ('p, emp, emp) t
-    | Map_snoc : ('p, 'xs, 'ys) t * ('p, 'x, 'y) D.plus -> ('p, ('xs, 'x) snoc, ('ys, 'y) snoc) t
-
-  type ('a, 'b) exists = Exists : 'ys OfCod.t * ('p, 'xs, 'ys) t -> ('p, 'xs) exists
-
-  val exists : 'p D.t -> 'xs OfDom.t -> ('p, 'xs) exists
-  val out : 'p D.t -> 'xs OfDom.t -> ('p, 'xs, 'ys) t -> 'ys OfCod.t
-  val input : 'p D.t -> 'ys OfCod.t -> ('p, 'xs, 'ys) t -> 'xs OfDom.t
-  val uniq : ('p, 'xs, 'ys) t -> ('p, 'xs, 'zs) t -> ('ys, 'zs) Eq.t
-
-  type (_, _, _, _) insert =
-    | Insert : ('zs, 'fx, 'ws) Tbwd.insert * ('p, 'ys, 'ws) t -> ('p, 'fx, 'ys, 'zs) insert
-
-  val insert :
-    ('p, 'x, 'z) D.plus ->
-    ('xs, 'x, 'ys) Tbwd.insert ->
-    ('p, 'xs, 'zs) t ->
-    ('p, 'z, 'ys, 'zs) insert
-
-  type (_, _, _, _) uninsert =
-    | Uninsert :
-        ('p, 'x, 'fx) D.plus * ('zs, 'fx, 'ws) Tbwd.insert * ('p, 'xs, 'zs) t
-        -> ('p, 'x, 'xs, 'ws) uninsert
-
-  val uninsert : ('xs, 'x, 'ys) Tbwd.insert -> ('p, 'ys, 'ws) t -> ('p, 'x, 'xs, 'ws) uninsert
-
-  type (_, _, _, _) uncoinsert =
-    | Uncoinsert :
-        ('p, 'x, 'z) D.plus * ('xs, 'x, 'ys) Tbwd.insert * ('p, 'xs, 'zs) t
-        -> ('p, 'z, 'ys, 'zs) uncoinsert
-
-  val uncoinsert : ('zs, 'z, 'ws) Tbwd.insert -> ('p, 'ys, 'ws) t -> ('p, 'z, 'ys, 'zs) uncoinsert
-
-  type (_, _, _) map_permute =
-    | Map_permute : ('p, 'zs, 'ws) t * ('ys, 'ws) Tbwd.permute -> ('p, 'zs, 'ys) map_permute
-
-  val permute : ('p, 'xs, 'ys) t -> ('xs, 'zs) Tbwd.permute -> ('p, 'zs, 'ys) map_permute
-
-  val assocl :
-    ('a, 'b, 'ab) D.plus -> ('b, 'cs, 'bcs) t -> ('a, 'bcs, 'abcs) t -> ('ab, 'cs, 'abcs) t
-
-  val zerol : 'bs OfDom.t -> (D.zero, 'bs, 'bs) t
-  end
 
 (* *)
 val deg_of_name : string -> any_deg option

@@ -183,9 +183,17 @@ module Parse = struct
     let* name, names = one_or_more variable in
     let names = name :: names in
     let* wscolon = token Colon in
-    let* ty = C.term [ RParen ] in
-    let* wsrparen = token RParen in
-    return ({ wslparen; names; wscolon; ty; wsrparen } : Parameter.t)
+    let* modality_or_ty = C.term [ RParen; Op "|" ] in
+    let* modality, wsbar, ty, wsrparen =
+      (let* wsrparen = token RParen in
+       return ([], [], modality_or_ty, wsrparen))
+      </> let* wsbar = token (Op "|") in
+          let* ty = C.term [ RParen ] in
+          let* wsrparen = token RParen in
+          let (Wrap modality) = modality_or_ty in
+          let modality = (Builtins.get_modality Fun.id modality).value in
+          return (modality, wsbar, ty, wsrparen) in
+    return ({ wslparen; names; wscolon; modality; wsbar; ty; wsrparen } : Parameter.t)
 
   let attribute : type a. a StringsMap.t -> a attribute option t =
    fun values ->
@@ -208,6 +216,7 @@ module Parse = struct
     let loc = Some (Range.convert nameloc) in
     let* parameters = zero_or_more parameter in
     let* wscolon = token Colon in
+    (* Axioms live at a mode and are always available.  MODALTODO: "Postulates" live under a modality, like variables at the beginning of the context.  *)
     let* ty = C.term [] in
     return (Command.Axiom { wsaxiom; nonparam; name; loc; wsname; parameters; wscolon; ty })
 
@@ -219,6 +228,7 @@ module Parse = struct
     let* parameters = zero_or_more parameter in
     let* ty, wscoloneq, tm =
       (let* wscolon = token Colon in
+       (* Definitions can't currently be under a modality (though their parameters can).  MODALTODO: Could they? *)
        let* ty = C.term [ Coloneq ] in
        let* wscoloneq = token Coloneq in
        let* tm = C.term [] in
@@ -270,7 +280,8 @@ module Parse = struct
     (let* wslparen = token LParen in
      let* sign =
        (let* minusloc, wsminus = located (token (Op "-")) in
-        if not (List.is_empty wsminus) then fatal ~loc:(Range.convert minusloc) Parse_error;
+        if not (List.is_empty wsminus) then
+          fatal ~loc:(Range.convert minusloc) (Parse_error "invalid sign");
         return Q.neg)
        </> return (fun x -> x) in
      let* tloc, (tight, wstight) = located ident in
@@ -282,6 +293,22 @@ module Parse = struct
          fatal ~loc:(Range.convert tloc) (Invalid_tightness tight))
     </> return ([], None, [], [])
 
+  let is_pattern_token : Token.t -> bool = function
+    | LBracket
+    | RBracket
+    | LBrace
+    | RBrace
+    | Arrow
+    | Mapsto
+    | DblMapsto
+    | Colon
+    | Coloneq
+    | DblColoneq
+    | Pluseq
+    | Dot
+    | Ellipsis -> true
+    | _ -> false
+
   let pattern_token =
     step "" (fun state _ (tok, ws) ->
         match tok with
@@ -289,23 +316,7 @@ module Parse = struct
             match Lexer.single str with
             (* Currently we hard code a `Nobreak space after each *symbol* in a notation.  Only certain kinds of token are allowed. *)
             | Some (Op _ as tok) | Some (Ident [ _ ] as tok) -> Some (`Op (tok, `Nobreak, ws), state)
-            | Some tok
-              when Array.mem tok
-                     [|
-                       LBracket;
-                       RBracket;
-                       LBrace;
-                       RBrace;
-                       Arrow;
-                       Mapsto;
-                       DblMapsto;
-                       Colon;
-                       Coloneq;
-                       DblColoneq;
-                       Pluseq;
-                       Dot;
-                       Ellipsis;
-                     |] -> Some (`Op (tok, `Nobreak, ws), state)
+            | Some tok when is_pattern_token tok -> Some (`Op (tok, `Nobreak, ws), state)
             | _ -> fatal (Invalid_notation_symbol str))
         | _ -> None)
 
@@ -684,7 +695,7 @@ module Parse = struct
 
   let option =
     let* _ = token Option in
-    fatal Parse_error
+    fatal (Parse_error "option command not implemented")
 
   let undo =
     let* wsundo = token Undo in
@@ -846,8 +857,8 @@ let condense : Command.t -> [ `Import | `Option | `None | `Bof ] = function
 let tok t : observation = Token (t, ([], None))
 
 (* Subroutine for "split" that generates the cases in a multiple match. *)
-let split_match_cases : type a b.
-    (a, b) Ctx.t ->
+let split_match_cases : type mode a b.
+    (mode, a, b) Ctx.t ->
     (string option, a) Bwv.t ->
     (Whitespace.t list * wrapped_parse) list ->
     observation list list =
@@ -856,7 +867,7 @@ let split_match_cases : type a b.
   let module LS = Monad.ListT (S) in
   let open Monad.Ops (LS) in
   let rec do_args : type a p ap.
-      (a, p, ap) Term.Telescope.t ->
+      (mode, a, p, ap) Term.Telescope.t ->
       (No.plus_omega, No.strict, No.plus_omega, No.nonstrict) parse located list =
    fun args ->
     match args with
@@ -942,24 +953,34 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       Core.Command.execute (Def cdefs)
   | Echo { tm = Wrap tm; mode; number; _ } -> (
       let module Scope_and_ctx = struct
-        type t = Scope_and_ctx : (string option, 'a) Bwv.t * ('a, 'b) Ctx.t -> t
+        type _ ctx_of_raw = Of_raw : ('mode, 'a, 'b) Ctx.t -> 'a ctx_of_raw
+
+        type t =
+          | Scope_and_ctx : (string option, 'a) Bwv.t * ('a Raw.check located -> 'a ctx_of_raw) -> t
       end in
       let open Scope_and_ctx in
       let Scope_and_ctx (vars, ctx), run =
         match number with
         | None ->
-            (Scope_and_ctx (Bwv.Emp, Ctx.empty), Global.run_command_then_undo ~holes_allowed:(Ok ()))
+            ( Scope_and_ctx
+                ( Bwv.Emp,
+                  fun rtm ->
+                    match Check.synth_mode rtm with
+                    | Some (Wrap mode) -> Of_raw (Ctx.empty mode)
+                    | None -> fatal (Non_mode_synthesizing "echo") ),
+              Global.run_command_then_undo ~holes_allowed:(Ok ()) )
         | Some number ->
             let num = Global.find_hole number in
             let (Found_hole { instant; termctx; vars; parametric; _ }) = num in
             show_hole num;
-            ( Scope_and_ctx (vars, Norm.eval_ctx termctx),
+            ( Scope_and_ctx (vars, fun _ -> Of_raw (Norm.eval_ctx termctx)),
               Global.rewind_command_then_undo ~parametric ~holes_allowed:(Ok ()) instant ) in
       run @@ fun () ->
       let rtm = process vars tm in
       action_taken ();
       match rtm.value with
       | Synth stm ->
+          let (Of_raw ctx) = ctx rtm in
           Readback.Displaying.run ~env:true @@ fun () ->
           let ctm, ety = Check.synth (Kinetic `Nolet) ctx { value = stm; loc = rtm.loc } in
           let names = Names.of_ctx ctx in
@@ -984,15 +1005,15 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                            | Zero -> true
                            | Pos _ -> false -> (
                         match Global.find name with
-                        | _, (`Defined tree, _) ->
+                        | Definition { tm = `Defined tree; _ } ->
                             unparse Names.empty tree No.Interval.entire No.Interval.entire
-                        | _, (`Axiom, _) ->
+                        | Definition { tm = `Axiom; _ } ->
                             unparse names (readback_at ctx etm ety) No.Interval.entire
                               No.Interval.entire)
                     | _ ->
                         unparse names (readback_at ctx etm ety) No.Interval.entire
                           No.Interval.entire)) in
-          let bty = readback_at ctx ety (Value.universe D.zero) in
+          let bty = readback_at ctx ety (Value.universe (Ctx.mode ctx) D.zero) in
           let uty = unparse names bty No.Interval.entire No.Interval.entire in
           PPrint.(
             ToChannel.pretty 1.0 (Display.columns ()) stdout
@@ -1095,7 +1116,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       let ctx = Norm.eval_ctx termctx in
       let ety = Norm.eval_term (Ctx.env ctx) ty in
       let ctm = Check.check status ctx ptm ety in
-      Global.set_meta meta ~tm:ctm;
+      Global.set_meta meta ctm;
       let buf = Buffer.create 20 in
       PPrint.ToBuffer.compact buf (pp_complete_term data.tm `None);
       ( Reporter.try_with ~fatal:(fun _ ->
@@ -1116,12 +1137,13 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       let ehole = hole No.Interval.entire No.Interval.entire in
       let ctx = Norm.eval_ctx termctx in
       let _, names = Names.uniquify_vars (Term.hole_vars termctx vars) in
+      let names = Names.of_uniquified_vars names in
       let term =
         match data.tms with
         | [ (_, Wrap { value = Placeholder _; _ }) ] -> (
             let ety = Norm.eval_term (Ctx.env ctx) ty in
             match View.view_type ety "split" with
-            | Canonical (_, Pi (_, doms, _), _, _) ->
+            | Canonical (_, Pi (_, _, doms, _), _, _) ->
                 let dim = CubeOf.dim doms in
                 let cube, mapsto, notn =
                   match D.compare_zero dim with
@@ -1155,7 +1177,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
             | Canonical (_, Codata { eta; fields; _ }, ins, _) -> (
                 let m = cod_left_ins ins in
                 let do_field : type a n et.
-                    (a * n * et) Term.CodatafieldAbwd.entry ->
+                    (_ * a * n * et) Term.CodatafieldAbwd.entry ->
                     (string * string list) list ->
                     (string * string list) list =
                  fun (Term.CodatafieldAbwd.Entry (fld, cdf)) acc ->
@@ -1241,7 +1263,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                 k D.t ->
                 Variables.hints list ->
                 ?acc:unparser Bwd.t ->
-                (a, p, ap) Term.Telescope.t ->
+                (_, a, p, ap) Term.Telescope.t ->
                 unparser Bwd.t * Names.wrapped =
              fun names dim hints ?(acc = Emp) -> function
                | Emp -> (acc, Wrap names)
@@ -1379,7 +1401,7 @@ let rec pp_parameters : Whitespace.t list -> Parameter.t list -> PPrint.document
   let open PPrint in
   match params with
   | [] -> (empty, prews)
-  | { wslparen; names; wscolon; ty; wsrparen } :: params ->
+  | { wslparen; names; modality; wsbar; wscolon; ty; wsrparen } :: params ->
       let pnames, wnames =
         List.fold_left
           (fun (accum, prews) (name, wsname) ->
@@ -1394,7 +1416,7 @@ let rec pp_parameters : Whitespace.t list -> Parameter.t list -> PPrint.document
                ^^ group pnames
                ^^ optional (pp_ws `Break) wnames)
           ^^ Token.pp Colon
-          ^^ pp_ws `Nobreak wscolon
+          ^^ Builtins.pp_modality wscolon fst modality wsbar
           ^^ pp_complete_term ty `None
           ^^ Token.pp RParen)
         ^^ pparams,

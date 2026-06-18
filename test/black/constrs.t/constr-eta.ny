@@ -4,7 +4,7 @@ def suc : ℕ → ℕ ≔ suc.
 
 echo suc (suc (suc 0))
 
-def kinetic_suc : ℕ → ℕ ≔ ((x : ℕ → ℕ) ↦ x : ℕ → ℕ) suc.
+def kinetic_suc : ℕ → ℕ ≔ ((x : ℕ → ℕ) ↦ (x : ℕ → ℕ)) suc.
 
 {` TODO: Get a generic variable name for this. `}
 echo kinetic_suc

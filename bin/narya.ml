@@ -16,6 +16,7 @@ let usage_msg = "narya [options] <file1> [<file2> ...]"
 let interactive = ref false
 let proofgeneral = ref false
 let show_version = ref false
+let install_mode_theory = ref Modal.Trivial.install
 
 (* Undocumented flag used for testing: interpret a given file or command-line string as if it were entered in interactive mode. *)
 let fake_interacts : string Bwd.t ref = ref Emp
@@ -74,6 +75,12 @@ let speclist =
           refl_names := [];
           internal := false),
       "Abbreviation for -arity 1 -direction d -external" );
+    ( "-idempotent-comonad",
+      Arg.Unit (fun () -> install_mode_theory := Modal.Idempotent_comonad.install),
+      "Select the idempotent comonad mode theory" );
+    ( "-functor",
+      Arg.Unit (fun () -> install_mode_theory := Modal.Functor.install),
+      "Select the functor mode theory" );
     ("--help", Arg.Unit (fun () -> ()), "");
     ("-", Arg.Unit (fun () -> inputs := Snoc (!inputs, `Stdin)), "");
     ("-fake-interact", Arg.String (fun str -> fake_interacts := Snoc (!fake_interacts, str)), "");
@@ -245,6 +252,7 @@ let rec interact_pg () : unit =
 
 let () =
   try
+    !install_mode_theory ();
     let use_ansi = if !use_ansi then Some true else None in
     run_top ?use_ansi ~install_hott:Hott.install @@ fun () ->
     (* Note: run_top executes the input files, so here we only have to do the interaction. *)

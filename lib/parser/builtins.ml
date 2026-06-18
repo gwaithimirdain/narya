@@ -1,5 +1,6 @@
 open Bwd
 open Util
+open Modal
 open Dim
 open Postprocess
 open Print
@@ -31,7 +32,7 @@ let () =
     {
       name = "braces";
       tree = Closed_entry (eop LBrace (term RBrace (Done_closed Postprocess.braces)));
-      processor = (fun _ _ loc -> fatal ?loc Parse_error);
+      processor = (fun _ _ loc -> fatal ?loc (Parse_error "invalid braces"));
       pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "braces"));
       print_term =
         Some
@@ -54,30 +55,11 @@ let () =
    The universe
  ******************** *)
 
-type (_, _, _) identity += UU : (closed, No.plus_omega, closed) identity
+type (_, _, _) identity += UU : 'mode Mode.t -> (closed, No.plus_omega, closed) identity
 
-let universe : (closed, No.plus_omega, closed) notation = (UU, Outfix)
+(* We don't define the universes yet since we have to wait for all the modes to be created at run-time. *)
 
-let () =
-  make universe
-    {
-      name = "universe";
-      tree = Closed_entry (eop (Ident [ "Type" ]) (Done_closed universe));
-      processor =
-        (fun _ obs loc ->
-          match obs with
-          | [ Token (Ident [ "Type" ], _) ] -> { value = Synth UU; loc }
-          | _ -> invalid ?loc "universe");
-      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "universe"));
-      (* Universes are never part of case trees. *)
-      print_term =
-        Some
-          (function
-          | [ Token (Ident [ "Type" ], (wstype, _)) ] -> (string "Type", wstype)
-          | _ -> invalid "universe");
-      print_case = None;
-      is_case = (fun _ -> false);
-    }
+let universes : (string * Mode.wrapped * (closed, No.plus_omega, closed) notation) list ref = ref []
 
 (* ********************
    Ascription
@@ -119,6 +101,137 @@ let () =
     }
 
 (* ********************
+   Modalities
+ ******************** *)
+
+(* Get a modality as a sequence of identifiers, with their locations. *)
+let get_modality : type lt ls rt rs a.
+    (string * Whitespace.t list -> a) -> (lt, ls, rt, rs) parse located -> a located list located =
+ fun f m ->
+  let rec go : type lt ls rt rs. (lt, ls, rt, rs) parse located -> a located Bwd.t =
+   fun { value; loc } ->
+    with_loc loc @@ fun () ->
+    match value with
+    | App { fn; arg; _ } ->
+        with_loc arg.loc @@ fun () ->
+        let x =
+          match arg.value with
+          | Ident ([ x ], wsx) -> (x, wsx)
+          | _ -> fatal (Parse_error "invalid modality") in
+        Snoc (go fn, locate_opt arg.loc (f x))
+    | Ident ([ x ], wsx) -> Snoc (Emp, locate_opt loc (f (x, wsx)))
+    | _ -> fatal (Parse_error "invalid modality") in
+  locate_modality (Bwd.to_list (go m))
+
+let pp_modality =
+ fun wscolon f m wsbar ->
+  match m with
+  | [] -> pp_ws `Nobreak wscolon ^^ pp_ws `None wsbar
+  | [ (m : _ located) ] ->
+      pp_ws `None wscolon ^^ utf8string (f m.value) ^^ Token.pp (Op "|") ^^ pp_ws `Nobreak wsbar
+  | ms ->
+      pp_ws `Nobreak wscolon
+      ^^ separate_map (break 1) (fun (x : _ located) -> utf8string (f x.value)) ms
+      ^^ break 1
+      ^^ Token.pp (Op "|")
+      ^^ pp_ws `Nobreak wsbar
+
+(* ********************
+   Ascribed variables
+ ******************** *)
+
+(* We implement a special notation for ascribed variable lists in parentheses, such as "(x y : A)".  On its own, this is processed the same as an ascription inside parentheses, but as a component of other notations like abstractions and pi-types it is looked for specially.  We do it this way so that modal ascriptions "(x y : □ | A)" can also be included in ascribed variables but not in ordinary ascriptions.  Also allows { braces } for implicit arguments. *)
+
+type (_, _, _) identity += AscVar : (closed, No.plus_omega, closed) identity
+
+let ascvar : (closed, No.plus_omega, closed) notation = (AscVar, Outfix)
+
+let ascvar_body rdelim =
+  term Colon (terms [ (rdelim, Done_closed ascvar); (Op "|", term rdelim (Done_closed ascvar)) ])
+
+let () =
+  make ascvar
+    {
+      name = "parenthesized ascription";
+      tree = Closed_entry (eops [ (LParen, ascvar_body RParen); (LBrace, ascvar_body RBrace) ]);
+      processor =
+        (fun ctx obs loc ->
+          match obs with
+          | [ Token (LParen, _); Term tm; Token (Colon, _); Term ty; Token (RParen, _) ] ->
+              let tm = process ctx tm in
+              let ty = process ctx ty in
+              { value = Synth (Asc (tm, ty)); loc }
+          | [
+           Token (LParen, _);
+           Term _;
+           Token (Colon, _);
+           Term _;
+           Token (Op "|", (_, loc));
+           Term _;
+           Token (RParen, _);
+          ] -> fatal ?loc (Parse_error "bare modal ascriptions not allowed")
+          | Token (LBrace, (_, loc)) :: _ -> fatal ?loc (Parse_error "bare braces")
+          | _ -> invalid ?loc "parenthesized ascription");
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "parenthesized ascription"));
+      print_term =
+        Some
+          (fun obs ->
+            match obs with
+            | [
+             Token (ldelim, (wslparen, _));
+             Term tm;
+             Token (Colon, (wscolon, _));
+             Term ty;
+             Token (rdelim, (wsrparen, _));
+            ] ->
+                let ptm, wtm = pp_term tm in
+                let pty, wty = pp_term ty in
+                ( group
+                    (Token.pp ldelim
+                    ^^ align
+                         (pp_ws `None wslparen
+                         ^^ align
+                              (group
+                                 (ptm
+                                 ^^ pp_ws `Break wtm
+                                 ^^ Token.pp Colon
+                                 ^^ pp_ws `Nobreak wscolon
+                                 ^^ pty))
+                         ^^ pp_ws `None wty
+                         ^^ Token.pp rdelim)),
+                  wsrparen )
+            | [
+             Token (ldelim, (wslparen, _));
+             Term tm;
+             Token (Colon, (wscolon, _));
+             Term modality;
+             Token (Op "|", (wsbar, _));
+             Term ty;
+             Token (rdelim, (wsrparen, _));
+            ] ->
+                let ptm, wtm = pp_term tm in
+                let pty, wty = pp_term ty in
+                let m = (get_modality fst modality).value in
+                ( group
+                    (Token.pp ldelim
+                    ^^ align
+                         (pp_ws `None wslparen
+                         ^^ align
+                              (group
+                                 (ptm
+                                 ^^ pp_ws `Break wtm
+                                 ^^ Token.pp Colon
+                                 ^^ pp_modality wscolon Fun.id m wsbar
+                                 ^^ pty))
+                         ^^ pp_ws `None wty
+                         ^^ Token.pp rdelim)),
+                  wsrparen )
+            | _ -> invalid "parenthesized ascription");
+      print_case = None;
+      is_case = (fun _ -> false);
+    }
+
+(* ********************
    Abstraction
  ******************** *)
 
@@ -138,6 +251,7 @@ type _ extended_ctx =
       ('n, 'm, 'nm) N.plus
       * (Asai.Range.t option * wrapped_parse option * [ `Implicit | `Explicit ], 'm) Bwv.t
       * (string option, 'nm) Bwv.t
+      * (string located list located, 'm) Bwv.t
       -> 'n extended_ctx
 
 (* Require the argument to be either a valid local variable name (to be bound, so faces of cubical variables are not allowed) or an underscore, and return a corresponding 'string option'. *)
@@ -148,7 +262,7 @@ let get_var : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string option 
   | Ident ([ x ], _) when Lexer.valid_var x -> Some x
   | Ident (xs, _) -> fatal (Invalid_variable xs)
   | Placeholder _ -> None
-  | _ -> fatal Parse_error
+  | _ -> fatal (Parse_error "invalid variable")
 
 (* Similarly, but could be a sequence of variables like "x y z", returned as a Bwd. *)
 let rec get_var_list : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string option Bwd.t =
@@ -159,37 +273,47 @@ let rec get_var_list : type lt ls rt rs. (lt, ls, rt, rs) parse located -> strin
   | Ident ([ x ], _) when Lexer.valid_var x -> Snoc (Emp, Some x)
   | Ident (xs, _) -> fatal (Invalid_variable xs)
   | Placeholder _ -> Snoc (Emp, None)
-  | _ -> fatal Parse_error
-
-(* Get a list of variables as above, perhaps ascribed. *)
-let get_var_asc : type lt ls rt rs.
-    asc_req:bool -> (lt, ls, rt, rs) parse located -> string option list * wrapped_parse option =
- fun ~asc_req v ->
-  match (v.value, asc_req) with
-  | Notn ((Asc, _), n), _ -> (
-      match args n with
-      | [ Term x; Token (Colon, _); Term ty ] -> (Bwd.to_list (get_var_list x), Some (Wrap ty))
-      | _ -> invalid ?loc:v.loc "colon")
-  | _, false -> ([ get_var v ], None)
-  | _, true -> fatal ?loc:v.loc Parse_error
+  | _ -> fatal (Parse_error "invalid variable list")
 
 (* Get one variable bare, one variable in braces, or one or more variables enclosed in parentheses or braces and ascribed. *)
 let get_var_asc_implicit : type lt ls rt rs.
     (lt, ls, rt, rs) parse located ->
-    (string option list * wrapped_parse option) * [ `Implicit | `Explicit ] =
+    (string option list * string located list located * wrapped_parse option)
+    * [ `Implicit | `Explicit ] =
  fun v ->
   match v.value with
+  | Notn ((AscVar, _), n) -> (
+      match args n with
+      | [ Token (ldelim, _); Term x; Token (Colon, _); Term ty; Token (rdelim, _) ] ->
+          let implicit =
+            match (ldelim, rdelim) with
+            | LParen, RParen -> `Explicit
+            | LBrace, RBrace -> `Implicit
+            | _ -> invalid "delimiters" in
+          ((Bwd.to_list (get_var_list x), locate_opt None [], Some (Wrap ty)), implicit)
+      | [
+       Token (ldelim, _);
+       Term x;
+       Token (Colon, _);
+       Term modality;
+       Token (Op "|", _);
+       Term ty;
+       Token (rdelim, _);
+      ] ->
+          let implicit =
+            match (ldelim, rdelim) with
+            | LParen, RParen -> `Explicit
+            | LBrace, RBrace -> `Implicit
+            | _ -> invalid "delimiters" in
+          let modality = get_modality fst modality in
+          ((Bwd.to_list (get_var_list x), modality, Some (Wrap ty)), implicit)
+      | _ -> invalid "ascvar")
   | Notn ((Braces, _), n) -> (
       match args n with
-      | [ Token (LBrace, _); Term w; Token (RBrace, _) ] -> (get_var_asc ~asc_req:false w, `Implicit)
-      | _ -> fatal ?loc:v.loc Parse_error)
-  | Notn ((Parens, _), n) -> (
-      match args n with
-      | [ Token (LParen, _); Term w; Token (RParen, _) ] -> (get_var_asc ~asc_req:true w, `Explicit)
-      | _ ->
-          (* This isn't the bug "invalid", since the user could have (mistakenly) written a tuple. *)
-          fatal ?loc:v.loc Parse_error)
-  | _ -> (([ get_var v ], None), `Explicit)
+      | [ Token (LBrace, _); Term v; Token (RBrace, _) ] ->
+          (([ get_var v ], locate_opt None [], None), `Implicit)
+      | _ -> fatal ?loc:v.loc (Parse_error "invalid implicit variable"))
+  | _ -> (([ get_var v ], locate_opt None [], None), `Explicit)
 
 (* Get a sequence of variables, as in the domain of an abstraction, some possibly enclosed in braces to mean they are implicit. *)
 let rec get_vars : type n lt ls rt rs.
@@ -199,56 +323,64 @@ let rec get_vars : type n lt ls rt rs.
       n extended_ctx ->
       Asai.Range.t option ->
       string option list ->
+      string located list located ->
       wrapped_parse option ->
       [ `Implicit | `Explicit ] ->
       n extended_ctx =
-   fun extctx loc xs dom implicit ->
+   fun extctx loc xs modality dom implicit ->
     match (extctx, xs) with
-    | Extctx (ab, locs, ctx), x :: xs ->
-        go (Extctx (Suc ab, Snoc (locs, (loc, dom, implicit)), Bwv.snoc ctx x)) loc xs dom implicit
+    | Extctx (ab, locs, ctx, modalities), x :: xs ->
+        go
+          (Extctx
+             ( Suc ab,
+               Snoc (locs, (loc, dom, implicit)),
+               Bwv.snoc ctx x,
+               Bwv.snoc modalities modality ))
+          loc xs modality dom implicit
     | _, [] -> extctx in
   match vars.value with
   | App { fn; arg; _ } ->
-      let (xs, dom), implicit = get_var_asc_implicit arg in
-      go (get_vars ctx fn) arg.loc xs dom implicit
+      let (xs, modality, dom), implicit = get_var_asc_implicit arg in
+      go (get_vars ctx fn) arg.loc xs modality dom implicit
   | _ ->
-      let (xs, dom), implicit = get_var_asc_implicit vars in
-      go (Extctx (Zero, Emp, ctx)) vars.loc xs dom implicit
+      let (xs, modality, dom), implicit = get_var_asc_implicit vars in
+      go (Extctx (Zero, Emp, ctx, Emp)) vars.loc xs modality dom implicit
 
 let rec raw_lam : type a b ab.
     (string option, ab) Bwv.t ->
     [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ] located ->
     (a, b, ab) N.plus ->
+    (string located list located, b) Bwv.t ->
     (Asai.Range.t option * wrapped_parse option * [ `Explicit | `Implicit ], b) Bwv.t ->
     ab check located ->
     a check located =
- fun ctx cube ab locs body ->
-  match (ab, locs) with
-  | Zero, Emp -> body
-  | Suc ab, Snoc (locs, (loc, dom, implicit)) ->
+ fun ctx cube ab modalities locs body ->
+  match (ab, modalities, locs) with
+  | Zero, Emp, Emp -> body
+  | Suc ab, Snoc (modalities, modality), Snoc (locs, (loc, dom, implicit)) ->
       let (Snoc (ctx, x)) = ctx in
       let name = locate_opt loc x in
       let value =
         match (dom, body) with
         | None, _ -> Lam { name; cube; implicit; dom = None; body }
         | Some (Wrap dom), { value = Synth body; loc } ->
-            Synth (AscLam (name, process ctx dom, locate_opt loc body))
+            Synth (AscLam (name, modality, process ctx dom, locate_opt loc body))
         | Some (Wrap dom), _ ->
-            let dom = Some (process ctx dom) in
+            let dom = Some (modality, process ctx dom) in
             Lam { name; cube; implicit; dom; body } in
-      raw_lam ctx cube ab locs { value; loc = Range.merge_opt loc body.loc }
+      raw_lam ctx cube ab modalities locs { value; loc = Range.merge_opt loc body.loc }
 
 let process_abs cube ctx obs _loc =
   (* The loc argument isn't used here since we can deduce the locations of each lambda by merging its variables with its body. *)
   match obs with
   | [ Term vars; Token (tok, (_, mloc)); Term body ]
     when (tok = DblMapsto && cube = `Cube) || (tok = Mapsto && cube = `Normal) ->
-      let (Extctx (ab, data, ctx)) = get_vars ctx vars in
+      let (Extctx (ab, data, ctx, modalities)) = get_vars ctx vars in
       let cube =
         match cube with
         | `Normal -> locate `Normal mloc
         | `Cube -> locate (`Cube (ref None)) mloc in
-      raw_lam ctx cube ab data (process ctx body)
+      raw_lam ctx cube ab modalities data (process ctx body)
   | _ -> invalid "abstraction"
 
 (* Abstractions are printed bundled with let-bindings. *)
@@ -284,12 +416,31 @@ let process_let : type n.
       let tm = process ctx tm in
       let body = process (Bwv.snoc ctx x) body in
       let v : n synth located = { value = Asc (tm, ty); loc = Range.merge_opt ty.loc tm.loc } in
-      { value = Synth (Let (x, v, body)); loc }
+      { value = Synth (Let (x, locate_opt None [], v, body)); loc }
   | [ Token (Let, _); Term x; Token (Coloneq, _); Term tm; Token (In, _); Term body ] ->
       let x = get_var x in
       let term = process_synth ctx tm "value of let" in
       let body = process (Bwv.snoc ctx x) body in
-      { value = Synth (Let (x, term, body)); loc }
+      { value = Synth (Let (x, locate_opt None [], term, body)); loc }
+  | [
+   Token (Let, _);
+   Term x;
+   Token (Colon, _);
+   Term modality;
+   Token (Op "|", _);
+   Term ty;
+   Token (Coloneq, _);
+   Term tm;
+   Token (In, _);
+   Term body;
+  ] ->
+      let x = get_var x in
+      let ty = process ctx ty in
+      let tm = process ctx tm in
+      let body = process (Bwv.snoc ctx x) body in
+      let modality = get_modality fst modality in
+      let v : n synth located = { value = Asc (tm, ty); loc = Range.merge_opt ty.loc tm.loc } in
+      { value = Synth (Let (x, modality, v, body)); loc }
   | _ -> invalid "let"
 
 let letin_tree =
@@ -298,7 +449,12 @@ let letin_tree =
        (terms
           [
             (Coloneq, term In (Done_closed letin));
-            (Colon, term Coloneq (term In (Done_closed letin)));
+            ( Colon,
+              terms
+                [
+                  (Coloneq, term In (Done_closed letin));
+                  (Op "|", term Coloneq (term In (Done_closed letin)));
+                ] );
           ]))
 
 (* ********************
@@ -330,7 +486,7 @@ let rec process_letrec_terms : type c a.
       let ty = process ctx ty in
       let (Letrec_terms (tel, Suc cb, terms, body)) =
         process_letrec_terms (Snoc (ctx, x)) rest (Snoc (terms, Wrap tm)) (N.suc c) in
-      Letrec_terms (Ext (x, ty, tel), cb, terms, body)
+      Letrec_terms (Ext (x, locate_opt None [], ty, tel), cb, terms, body)
   | [ Token (In, _); Term body ] ->
       let (Fplus cb) = Fwn.fplus c in
       let body = process ctx body in
@@ -626,21 +782,6 @@ let rec process_var_list : type lt ls rt rs.
   | App { arg = { value = Ident (xs, _); loc }; _ } -> fatal ?loc (Invalid_variable xs)
   | _ -> None
 
-(* Inspect 'arg', expecting it to be of the form 'x y z : A', and return the list of variables, the type, and the whitespace of the colon.  Return None if it is not of that form, causing callers to fall back to alternative interpretations.*)
-let process_typed_vars : type lt ls rt rs.
-    (lt, ls, rt, rs) parse ->
-    ((string option * Whitespace.t list) list * Whitespace.t list * wrapped_parse) option =
- fun arg ->
-  let open Monad.Ops (Monad.Maybe) in
-  match arg with
-  | Notn ((Asc, _), n) -> (
-      match args n with
-      | [ Term xs; Token (Colon, (wscolon, _)); Term ty ] ->
-          let* vars = process_var_list xs [] in
-          return (vars, wscolon, Wrap ty)
-      | _ -> None)
-  | _ -> None
-
 (* ****************************************
    Function types (dependent and non)
  **************************************** *)
@@ -659,9 +800,11 @@ type pi_dom =
       wsarrow : arrow_opt;
       vars : (string option * Whitespace.t list) list;
       tok : Token.t;
+      modality : string located list located;
       ty : wrapped_parse;
       wslparen : Whitespace.t list;
       wscolon : Whitespace.t list;
+      wsbar : Whitespace.t list;
       wsrparen : Whitespace.t list;
       loc : Asai.Range.t option;
       implicit : [ `Implicit | `Explicit ];
@@ -675,84 +818,53 @@ let get_pi_args : type lt ls rt rs.
   let open Monad.Ops (Monad.Maybe) in
   let rec go : type lt ls rt rs. (lt, ls, rt, rs) parse located -> pi_dom list -> pi_dom list option
       =
-   fun doms accum ->
-    match doms.value with
-    | Notn ((Parens, _), n) -> (
-        match args n with
-        | [ Token (LParen, (wslparen, _)); Term body; Token (RParen, (wsrparen, _)) ] ->
-            let* vars, wscolon, ty = process_typed_vars body.value in
-            return
-              (Dep
-                 {
-                   wsarrow;
-                   vars;
-                   tok;
-                   ty;
-                   wslparen;
-                   wscolon;
-                   wsrparen;
-                   loc = doms.loc;
-                   implicit = `Explicit;
-                 }
-              :: accum)
-        | _ -> None)
-    | Notn ((Braces, _), n) -> (
-        match args n with
-        | [ Token (LBrace, (wslparen, _)); Term body; Token (RBrace, (wsrparen, _)) ] ->
-            let* vars, wscolon, ty = process_typed_vars body.value in
-            return
-              (Dep
-                 {
-                   wsarrow;
-                   vars;
-                   tok;
-                   ty;
-                   wslparen;
-                   wscolon;
-                   wsrparen;
-                   loc = doms.loc;
-                   implicit = `Implicit;
-                 }
-              :: accum)
-        | _ -> None)
-    | App { fn; arg = { value = Notn ((Parens, _), n); _ }; _ } -> (
-        match args n with
-        | [ Token (LParen, (wslparen, _)); Term body; Token (RParen, (wsrparen, _)) ] ->
-            let* vars, wscolon, ty = process_typed_vars body.value in
-            go fn
-              (Dep
-                 {
-                   wsarrow = `Noarrow;
-                   vars;
-                   tok;
-                   ty;
-                   wslparen;
-                   wscolon;
-                   wsrparen;
-                   loc = doms.loc;
-                   implicit = `Explicit;
-                 }
-              :: accum)
-        | _ -> None)
-    | App { fn; arg = { value = Notn ((Braces, _), n); _ }; _ } -> (
-        match args n with
-        | [ Token (LBrace, (wslparen, _)); Term body; Token (RBrace, (wsrparen, _)) ] ->
-            let* vars, wscolon, ty = process_typed_vars body.value in
-            go fn
-              (Dep
-                 {
-                   wsarrow = `Noarrow;
-                   vars;
-                   tok;
-                   ty;
-                   wslparen;
-                   wscolon;
-                   wsrparen;
-                   loc = doms.loc;
-                   implicit = `Implicit;
-                 }
-              :: accum)
-        | _ -> None)
+   fun { value; loc } accum ->
+    let make_dep ?(modality = locate_opt None []) ?(wsbar = []) wsarrow vars tok ldelim wslparen
+        wscolon ty rdelim wsrparen =
+      let implicit =
+        match (ldelim, rdelim) with
+        | Token.LParen, Token.RParen -> `Explicit
+        | LBrace, RBrace -> `Implicit
+        | _ -> invalid "asclam delimiters" in
+      Dep { wsarrow; vars; tok; modality; ty; wslparen; wscolon; wsbar; wsrparen; loc; implicit }
+    in
+    let of_notn : type l t r. arrow_opt -> (l, t, r) identity -> _ -> _ =
+     fun wsarrow ident n ->
+      match ident with
+      | AscVar -> (
+          match args n with
+          | [
+           Token (ldelim, (wslparen, _));
+           Term xs;
+           Token (Colon, (wscolon, _));
+           Term ty;
+           Token (rdelim, (wsrparen, _));
+          ] ->
+              let* vars = process_var_list xs [] in
+              return
+                (make_dep wsarrow vars tok ldelim wslparen wscolon (Wrap ty) rdelim wsrparen
+                :: accum)
+          | [
+           Token (ldelim, (wslparen, _));
+           Term xs;
+           Token (Colon, (wscolon, _));
+           Term modality;
+           Token (Op "|", (wsbar, _));
+           Term ty;
+           Token (rdelim, (wsrparen, _));
+          ] ->
+              let* vars = process_var_list xs [] in
+              return
+                (make_dep wsarrow vars tok ldelim wslparen wscolon
+                   ~modality:(get_modality fst modality) ~wsbar (Wrap ty) rdelim wsrparen
+                :: accum)
+          | _ -> None)
+      | _ -> None in
+    match value with
+    | Notn ((ident, _), n) -> of_notn wsarrow ident n
+    | App { fn; arg = { value = Notn ((ident, _), n); _ }; _ } ->
+        let* res = of_notn `Noarrow ident n in
+        go fn res
     | _ -> None in
   match go doms accum with
   | Some result -> result
@@ -799,29 +911,37 @@ let rec process_pi : type n lt ls rt rs.
   match doms with
   | [] -> process ctx cod
   | Nondep { ty = Wrap dom; _ } :: doms -> (
+      (* Non-dependent function notations cannot be modal. *)
+      let modality = locate_opt None [] in
       let cdom = process ctx dom in
       let ctx = Bwv.snoc ctx None in
       let cod = process_pi ctx higher doms cod in
       let loc = Range.merge_opt cdom.loc cod.loc in
       match (higher, cdom.value, cod.value) with
-      | `Lower, _, _ -> { value = Synth (Pi (None, cdom, cod)); loc }
+      | `Lower, _, _ -> { value = Synth (Pi (None, modality, cdom, cod)); loc }
       | `Higher, Synth sdom, Synth scod ->
           {
-            value = Synth (HigherPi (None, locate_opt cdom.loc sdom, locate_opt cod.loc scod));
+            value =
+              Synth (HigherPi (None, modality, locate_opt cdom.loc sdom, locate_opt cod.loc scod));
             loc;
           }
       | `Higher, Synth _, _ ->
           fatal ?loc:cod.loc (Nonsynthesizing "codomain of higher function type")
       | `Higher, _, _ -> fatal ?loc:cdom.loc (Nonsynthesizing "domain of higher function type"))
-  | Dep ({ vars = (x, _) :: xs; ty = Wrap dom; loc; implicit = `Explicit; _ } as data) :: doms -> (
+  | Dep ({ vars = (x, _) :: xs; modality; ty = Wrap dom; loc; implicit = `Explicit; _ } as data)
+    :: doms -> (
       let cdom = process ctx dom in
       let ctx = Bwv.snoc ctx x in
       let cod = process_pi ctx higher (Dep { data with vars = xs } :: doms) cod in
       let loc = Range.merge_opt loc cod.loc in
       match (higher, cdom.value, cod.value) with
-      | `Lower, _, _ -> { value = Synth (Pi (x, cdom, cod)); loc }
+      | `Lower, _, _ -> { value = Synth (Pi (x, modality, cdom, cod)); loc }
       | `Higher, Synth sdom, Synth scod ->
-          { value = Synth (HigherPi (x, locate_opt cdom.loc sdom, locate_opt cod.loc scod)); loc }
+          {
+            value =
+              Synth (HigherPi (x, modality, locate_opt cdom.loc sdom, locate_opt cod.loc scod));
+            loc;
+          }
       | `Higher, Synth _, _ ->
           fatal ?loc:cod.loc (Nonsynthesizing "codomain of higher function type")
       | `Higher, _, _ -> fatal ?loc:cdom.loc (Nonsynthesizing "domain of higher function type"))
@@ -839,16 +959,21 @@ let rec process_inst_higher_pi : type n lt ls rt rs m.
   | [] -> process ctx cod
   | _ :: _ ->
       let module Acc = struct
-        type 'left t = (string option, 'left) Bwv.t * pi_dom list * Asai.Range.t option
+        type 'left t =
+          (string option, 'left) Bwv.t
+          * string located list located list
+          * pi_dom list
+          * Asai.Range.t option
       end in
       let module T = DomCube.Traverse (Acc) in
-      let (Wrap (domcube, (newctx, doms, loc))) =
+      let (Wrap (domcube, (newctx, modalities, doms, loc))) =
         let build : type left k b. (k, m) sface -> left Acc.t -> (left, k, b) T.fwrap_left =
-         fun s (ctx, doms, loc) ->
+         fun s (ctx, modalities, doms, loc) ->
           match doms with
           | [] -> fatal (Not_enough_domains (D.pos dim))
-          | Dep ({ vars = (x, _) :: xs; ty = Wrap dom; loc = xloc; implicit; _ } as data) :: doms
-            -> (
+          | Dep ({ vars = (x, _) :: xs; modality; ty = Wrap dom; loc = xloc; implicit; _ } as data)
+            :: doms -> (
+              let modalities = modality :: modalities in
               match (is_id_sface s, implicit) with
               | Some Eq, `Explicit | None, `Implicit ->
                   let cdom = process ctx dom in
@@ -861,7 +986,7 @@ let rec process_inst_higher_pi : type n lt ls rt rs m.
                     match loc with
                     | Some loc -> Some loc
                     | None -> xloc in
-                  Fwrap (DomFam (x, cdom), (ctx, doms, loc))
+                  Fwrap (DomFam (x, cdom), (ctx, modalities, doms, loc))
               | _ ->
                   fatal
                     (Unexpected_implicitness
@@ -869,10 +994,10 @@ let rec process_inst_higher_pi : type n lt ls rt rs m.
                          "domain",
                          "all boundary domains must be implicit and primary domain explicit" )))
           | _ -> invalid "higher pi" in
-        T.build_left (D.pos dim) { build } (ctx, doms, None) in
+        T.build_left (D.pos dim) { build } (ctx, [], doms, None) in
       let cod = process_inst_higher_pi newctx dim doms cod in
       let loc = Range.merge_opt loc cod.loc in
-      { value = Synth (InstHigherPi (dim, domcube, cod)); loc }
+      { value = Synth (InstHigherPi (dim, modalities, domcube, cod)); loc }
 
 (* Pretty-print the domains of a right-associated iterated function-type that may mix dependent and non-dependent arguments.  Each argument is preceded by an arrow if its wsarrow is given; pi_doms ensures these go in the right place.  If linebreaked, the eventual codomain with its arrow goes on a line by itself with hanging indent, and then the domains are flowed with their own hanging indent.  Arrows never come at the beginnings of lines.  *)
 
@@ -884,8 +1009,20 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
       (fun (acc, prews) dom ->
         let tok, wsarrow, (pty, wty) =
           match dom with
-          | Dep { wsarrow; vars; tok; ty = Wrap ty; wslparen; wscolon; wsrparen; implicit; loc = _ }
-            ->
+          | Dep
+              {
+                wsarrow;
+                vars;
+                tok;
+                modality;
+                ty = Wrap ty;
+                wslparen;
+                wscolon;
+                wsbar;
+                wsrparen;
+                implicit;
+                loc = _;
+              } ->
               let pvars, wvars =
                 List.fold_left
                   (fun (acc, prews) (x, wx) ->
@@ -904,7 +1041,7 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
                     ^^ hang 2 pvars
                     ^^ optional (pp_ws `Break) wvars
                     ^^ Token.pp Colon
-                    ^^ pp_ws `Nobreak wscolon
+                    ^^ pp_modality wscolon Fun.id modality.value wsbar
                     ^^ pty
                     ^^ pp_ws `None wty
                     ^^ Token.pp (if implicit = `Implicit then RBrace else RParen)),
@@ -952,7 +1089,7 @@ let () =
               match D.compare_zero m with
               | Zero -> process_pi ctx `Lower doms cod
               | Pos dim -> process_inst_higher_pi ctx dim doms cod)
-          | None -> fatal Parse_error);
+          | None -> fatal (Parse_error "invalid dimension for function type"));
       pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "arrow"));
       print_term = Some (pp_pi Arrow);
       (* Function-types are never part of case trees. *)
@@ -989,7 +1126,7 @@ let () =
     {
       name = "coloneq";
       tree = Open_entry (eop Coloneq (done_open coloneq));
-      processor = (fun _ _ -> fatal Parse_error);
+      processor = (fun _ _ -> fatal (Parse_error "bare colon-equals"));
       pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "colon-equals"));
       print_term =
         Some
@@ -1202,7 +1339,7 @@ let () =
     {
       name = "dot";
       tree = Closed_entry (eop Dot (Done_closed Postprocess.dot));
-      processor = (fun _ _ _ -> fatal Parse_error);
+      processor = (fun _ _ _ -> fatal (Parse_error "bare dot"));
       pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "dot"));
       print_term =
         Some
@@ -1472,7 +1609,7 @@ let rec process_branches : type a n.
               let xctx = Matchscope.ext xctx None in
               let seen = Snoc (seen, Matchscope.last_num xctx) in
               let mtch, any_constrs = process_branches xctx xs seen branches loc sort in
-              (locate (Synth (Let (name.value, stm, mtch))) loc, any_constrs))
+              (locate (Synth (Let (name.value, locate_opt None [], stm, mtch))) loc, any_constrs))
             ~fatal:(fun d ->
               match d.message with
               | No_remaining_patterns -> fatal ?loc:name.loc Overlapping_patterns
@@ -1572,8 +1709,9 @@ let rec get_patterns : type n.
       ([ Postprocess.get_pattern tm ], `Normal loc, obs)
   | Suc Zero, Term tm :: Token (DblMapsto, (_, loc)) :: obs ->
       ([ Postprocess.get_pattern tm ], `Cube [ locate (ref false) loc ], obs)
-  | Suc Zero, Term _ :: Term tm :: _ -> fatal ?loc:tm.loc Parse_error
-  | Suc Zero, Term tm :: _ -> fatal ?loc:tm.loc Parse_error
+  | Suc Zero, Term _ :: Term tm :: _ ->
+      fatal ?loc:tm.loc (Parse_error "too many match pattern variables")
+  | Suc Zero, Term tm :: _ -> fatal ?loc:tm.loc (Parse_error "invalid match pattern")
   | Suc (Suc _ as n), Term tm :: Token (Op ",", _) :: obs ->
       let pats, cube, obs = get_patterns n obs in
       (Postprocess.get_pattern tm :: pats, cube, obs)
@@ -1781,7 +1919,8 @@ let () =
               let sort =
                 match args n with
                 | [ Term vars; Token (Mapsto, _); Term { value = Placeholder _; _ } ] ->
-                    let (Extctx (mn, _, _)) = get_vars (Matchscope.names ctx) vars in
+                    (* TODO: Should not be ascribed, and especially not modal *)
+                    let (Extctx (mn, _, _, _)) = get_vars (Matchscope.names ctx) vars in
                     `Nondep ({ value = N.to_int (N.plus_right mn); loc = vars.loc } : int located)
                 | _ -> `Explicit (Wrap motive) in
               let mtch, highers = process_branches ctx [ Left (Wrap tm) ] Emp branches loc sort in
@@ -1790,7 +1929,7 @@ let () =
               | _, [] -> mtch
               | _, _ :: _ -> fatal (Anomaly "process_branches didn't produce a match"))
           | Token (Match, _) :: _ :: Token (Return, _) :: Term nonabs :: Token (LBracket, _) :: _ ->
-              fatal ?loc:nonabs.loc Parse_error
+              fatal ?loc:nonabs.loc (Parse_error "match motive is not an abstraction")
           | _ -> invalid "match");
       pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "match"));
       print_term = None;
@@ -2125,7 +2264,7 @@ let process_codata_field : type n lt ls rt rs lt' ls' rt' rs' et.
         | Ident ([ x ], _) when Lexer.valid_var x -> Some x
         | Placeholder _ -> None
         | Ident (x, _) -> fatal ?loc:xloc (Invalid_variable x)
-        | _ -> fatal ?loc:xloc Parse_error in
+        | _ -> fatal ?loc:xloc (Parse_error "invalid self-variable") in
       match dim_of_string (String.concat "" fdstr) with
       | Some (Any fdim) -> (
           let fld = Field.intern fstr fdim in
@@ -2135,7 +2274,7 @@ let process_codata_field : type n lt ls rt rs lt' ls' rt' rs' et.
               let ty = process (Bwv.snoc ctx x) ty in
               (Field.Wrap fld, Raw.Codatafield (x, ty)))
       | None -> fatal (Invalid_field (String.concat "." ("" :: fstr :: fdstr))))
-  | _ -> fatal ?loc:tm.loc Parse_error
+  | _ -> fatal ?loc:tm.loc (Parse_error "invalid codata field")
 
 let rec process_codata : type n.
     Variables.hints ->
@@ -2148,6 +2287,7 @@ let rec process_codata : type n.
   match obs with
   | [ Token (RBracket, _) ] -> { value = Raw.Codata (flds, hints); loc }
   | Token (Op "|", _) :: Term tm :: Token (Colon, _) :: Term ty :: obs ->
+      (* MODALTODO: Modal fields *)
       process_codata hints (Snoc (flds, process_codata_field Noeta flds ctx tm ty)) ctx obs loc
   | _ -> invalid "codata 1"
 
@@ -2264,12 +2404,14 @@ let rec process_tel : type a.
       if Lexer.valid_field name then (
         if StringSet.mem name seen then
           fatal ?loc (Duplicate_field_in_record (Field.intern name D.zero));
+        (* MODALTODO: Modal fields *)
         let ty = process ctx ty in
         let ctx = Bwv.snoc ctx (Some name) in
         let (Any_tel tel) = process_tel ctx (StringSet.add name seen) obs in
-        Any_tel (Ext (Some name, ty, tel)))
+        Any_tel (Ext (Some name, locate_opt None [], ty, tel)))
       else fatal ?loc (Invalid_field name)
-  | Term { loc; _ } :: Token (Colon, _) :: Term _ :: _ -> fatal ?loc Parse_error
+  | Term { loc; _ } :: Token (Colon, _) :: Term _ :: _ ->
+      fatal ?loc (Parse_error "invalid record field name")
   | _ -> invalid "record"
 
 let rec process_self_record : type n.
@@ -2284,6 +2426,7 @@ let rec process_self_record : type n.
   | [ Token (RParen, _) ] -> { value = Raw.SelfRecord (flds, hints); loc }
   | Token (Op ",", _) :: obs -> process_self_record hints flds ctx obs loc
   | Term tm :: Token (Colon, _) :: Term ty :: obs ->
+      (* MODALTODO: Other way of specifying modal records *)
       process_self_record hints (Snoc (flds, process_codata_field Eta flds ctx tm ty)) ctx obs loc
   | _ -> invalid "self record"
 
@@ -2296,7 +2439,9 @@ let process_record ctx obs loc =
   match obs with
   | Term x :: Token (Mapsto, _) :: Token (LParen, _) :: obs ->
       with_loc x.loc @@ fun () ->
-      let vars = process_var_list x [ (None, []) ] <|> Parse_error in
+      let vars =
+        process_var_list x [ (None, []) ] <|> Parse_error "invalid higher record specification"
+      in
       let (Wrap vars) = Vec.of_list (List.map fst vars) in
       let (Bplus ac) = Fwn.bplus (Vec.length vars) in
       let ctx = Bwv.append ac ctx vars in
@@ -2415,54 +2560,79 @@ let rec data_constrs bar_ok =
            oflist [ (Op "|", Lazy (lazy (data_constrs false))); (RBracket, Done_closed data) ]
          else TokMap.empty);
       term =
-        Some (oflist [ (Op "|", Lazy (lazy (data_constrs false))); (RBracket, Done_closed data) ]);
+        Some
+          (oflist
+             [
+               (Op "|", Lazy (lazy (data_constrs false)));
+               (RBracket, Done_closed data);
+               ( Colon,
+                 terms [ (Op "|", Lazy (lazy (data_constrs false))); (RBracket, Done_closed data) ]
+               );
+             ]);
     }
 
 (* Extract all the typed arguments of a constructor given before its colon. *)
 let rec constr_tel :
     observation ->
-    (string option list * wrapped_parse) list ->
-    Constr.t located * (string option list * wrapped_parse) list =
+    (string option list * string located list located * wrapped_parse) list ->
+    Constr.t located * (string option list * string located list located * wrapped_parse) list =
  fun tel accum ->
   match tel with
   (* Found all the arguments and reached the constructor. *)
   | Term { value = Constr (c, _); loc } -> ({ value = Constr.intern c; loc }, accum)
   (* Each argument set is given with its type in parentheses. *)
-  | Term { value = App { fn; arg = { value = Notn ((Parens, _), n); loc = _ }; _ }; loc = _ } -> (
+  | Term { value = App { fn; arg = { value = Notn ((AscVar, _), n); loc = _ }; _ }; loc = _ } -> (
       match args n with
-      | [ Token (LParen, _); Term arg; Token (RParen, _) ] -> (
-          match process_typed_vars arg.value with
-          | Some (vars, _, ty) -> constr_tel (Term fn) ((List.map fst vars, ty) :: accum)
-          | None -> fatal Parse_error)
+      | [ Token (LParen, _); Term xs; Token (Colon, _); Term ty; Token (RParen, _) ] -> (
+          match process_var_list xs [] with
+          | Some vars ->
+              constr_tel (Term fn) ((List.map fst vars, locate_opt None [], Wrap ty) :: accum)
+          | None -> fatal (Parse_error "invalid constructor argument variables"))
+      | [
+       Token (LParen, _);
+       Term xs;
+       Token (Colon, _);
+       Term modality;
+       Token (Op "|", _);
+       Term ty;
+       Token (RParen, _);
+      ] -> (
+          match process_var_list xs [] with
+          | Some vars ->
+              constr_tel (Term fn) ((List.map fst vars, get_modality fst modality, Wrap ty) :: accum)
+          | None -> fatal (Parse_error "invalid constructor argument variables"))
       | _ -> invalid "tel")
-  | _ -> fatal Parse_error
+  | _ -> fatal (Parse_error "invalid constructor")
 
 let rec process_dataconstr : type n.
     (string option, n) Bwv.t ->
-    (string option list * wrapped_parse) list ->
+    (string option list * string located list located * wrapped_parse) list ->
     wrapped_parse option ->
     n Raw.dataconstr =
  fun ctx tel_args ty ->
   match (tel_args, ty) with
-  | (vars, argty) :: tel_args, _ -> process_dataconstr_vars ctx vars argty tel_args ty
+  | (vars, modality, argty) :: tel_args, _ ->
+      process_dataconstr_vars ctx vars modality argty tel_args ty
   | [], Some (Wrap ty) -> dataconstr_of_pi (process ctx ty)
   | [], None -> Dataconstr (Emp, None)
 
 and process_dataconstr_vars : type n.
     (string option, n) Bwv.t ->
     string option list ->
+    string located list located ->
     wrapped_parse ->
-    (string option list * wrapped_parse) list ->
+    (string option list * string located list located * wrapped_parse) list ->
     wrapped_parse option ->
     n Raw.dataconstr =
- fun ctx vars (Wrap argty) tel_args ty ->
+ fun ctx vars modality (Wrap argty) tel_args ty ->
   match vars with
   | [] -> process_dataconstr ctx tel_args ty
   | x :: xs ->
       let newctx = Bwv.snoc ctx x in
-      let (Dataconstr (args, body)) = process_dataconstr_vars newctx xs (Wrap argty) tel_args ty in
+      let (Dataconstr (args, body)) =
+        process_dataconstr_vars newctx xs modality (Wrap argty) tel_args ty in
       let arg = process ctx argty in
-      Dataconstr (Ext (x, arg, args), body)
+      Dataconstr (Ext (x, modality, arg, args), body)
 
 let rec process_data : type n.
     Variables.hints ->
@@ -2475,16 +2645,13 @@ let rec process_data : type n.
   match obs with
   (* Found all the constructors, done *)
   | [ Token (RBracket, _) ] -> { value = Raw.Data (constrs, hints); loc }
-  (* Found the next constructor *)
+  (* Found the next constructor. *)
   | Token (Op "|", _) :: Term tel :: obs -> (
       (* The constructor might have an explicit type given by a colon. *)
-      let Wrap tel, ty =
-        match tel with
-        | { value = Notn ((Asc, _), n); loc = _ } -> (
-            match args n with
-            | [ Term tel; Token (Colon, _); Term ty ] -> (Wrap tel, Some (Wrap ty))
-            | _ -> invalid "data")
-        | _ -> (Wrap tel, None) in
+      let ty, obs =
+        match obs with
+        | Token (Colon, _) :: Term ty :: obs -> (Some (Wrap ty), obs)
+        | _ -> (None, obs) in
       let c, tel_args = constr_tel (Term tel) [] in
       match Abwd.find_opt c.value constrs with
       | Some _ -> fatal ?loc:c.loc (Duplicate_constructor_in_data c.value)
@@ -2501,6 +2668,20 @@ let rec pp_data_constrs first prews accum obs =
       (accum ^^ optional (pp_ws `Nobreak) prews ^^ Token.pp RBracket, wsrbrack)
   | Token (Op "|", (wsbar, _)) :: Term constr :: obs ->
       let pconstr, wconstr = pp_term constr in
+      let pconstr, wconstr, obs =
+        match obs with
+        | Token (Colon, (wscolon, _)) :: Term ty :: obs ->
+            let pty, wty = pp_term ty in
+            ( align
+                (group
+                   (pconstr
+                   ^^ pp_ws `Break wconstr
+                   ^^ Token.pp Colon
+                   ^^ pp_ws `Nobreak wscolon
+                   ^^ pty)),
+              wty,
+              obs )
+        | _ -> (pconstr, wconstr, obs) in
       pp_data_constrs false (Some wconstr)
         (accum
         ^^ optional (pp_ws `Break) prews
@@ -2646,21 +2827,87 @@ let () =
     }
 
 (* ********************
+   Keys (temporary)
+   ******************** *)
+
+type (_, _, _) identity += Key : (No.strict opn, No.plus_omega, closed) identity
+
+let key : (No.strict opn, No.plus_omega, closed) notation = (Key, Postfix No.plus_omega)
+
+let () =
+  make key
+    {
+      name = "key";
+      tree = Open_entry (eop (Op "@<") (term (Op ">") (done_open key)));
+      processor = (fun _ctx _obs _loc -> fatal (Unimplemented "parsing keys"));
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "key"));
+      print_term =
+        Some
+          (fun obs ->
+            match obs with
+            | [
+             Term tm;
+             Token (Op "@<", (wsatlt, _));
+             Term { value = Ident ([ key ], wskey); loc = _ };
+             Token (Op ">", (wsgt, _));
+            ] ->
+                let ptm, wtm = pp_term tm in
+                ( ptm
+                  ^^ pp_ws `Break wtm
+                  ^^ Token.pp (Op "@<")
+                  ^^ pp_ws `None wsatlt
+                  ^^ utf8string key
+                  ^^ pp_ws `None wskey
+                  ^^ Token.pp (Op ">"),
+                  wsgt )
+            | _ -> invalid "key");
+      print_case = None;
+      is_case = (fun _ -> false);
+    }
+
+(* ********************
    Generating the state
  ******************** *)
 
 let install () =
+  universes :=
+    List.map
+      (fun (name, Mode.Wrap mode) ->
+        let universe = (UU mode, Outfix) in
+        make universe
+          {
+            name = "universe";
+            tree = Closed_entry (eop (Ident [ name ]) (Done_closed universe));
+            processor =
+              (fun _ obs loc ->
+                match obs with
+                | [ Token (Ident [ uname ], _) ] when uname = name ->
+                    { value = Synth (UU mode); loc }
+                | _ -> invalid ?loc "universe");
+            pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "universe"));
+            (* Universes are never part of case trees. *)
+            print_term =
+              Some
+                (function
+                | [ Token (Ident [ name ], (wstype, _)) ] -> (string name, wstype)
+                | _ -> invalid "universe");
+            print_case = None;
+            is_case = (fun _ -> false);
+          };
+        (name, Mode.Wrap mode, universe))
+      (Mode.all ());
   Scope.(
     Situation.add Postprocess.parens;
     Situation.add Postprocess.braces;
     Situation.add letin;
     Situation.add letrec;
     Situation.add asc;
+    Situation.add ascvar;
     Situation.add abs;
     Situation.add cubeabs;
     Situation.add arrow;
     Situation.add dblarrow;
-    Situation.add universe;
+    List.iter (fun (_, _, u) -> Situation.add u) !universes;
     Situation.add coloneq;
     Situation.add comatch;
     Situation.add Postprocess.dot;

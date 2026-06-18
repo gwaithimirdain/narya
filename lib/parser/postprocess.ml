@@ -105,7 +105,7 @@ let rec process : type n lt ls rt rs.
   | Constr (ident, _) -> { value = Raw.Constr ({ value = Constr.intern ident; loc }, []); loc }
   | Field _ ->
       (* This can happen if the user tries to project a field from a constructor. *)
-      fatal Parse_error
+      fatal (Parse_error "invalid location for field projection")
   | Superscript (Some x, str, _) -> (
       match deg_of_string str.value with
       | Some (Any_deg s) ->
@@ -229,26 +229,40 @@ type _ processed_tel =
       ('n, 'k, 'nk) Raw.tel * (string option, 'nk) Bwv.t * (Whitespace.t list, 'k) Vec.t
       -> 'n processed_tel
 
+let locate_modality : 'a Asai.Range.located list -> 'a located list located =
+ fun modality ->
+  let rec last = function
+    | [] -> None
+    | [ x ] -> Some x
+    | _ :: xs -> last xs in
+  match last modality with
+  | None -> locate_opt None []
+  | Some l -> locate_opt (Range.merge_opt (List.hd modality).loc l.loc) modality
+
 let rec process_tel : type n. (string option, n) Bwv.t -> Parameter.t list -> n processed_tel =
  fun ctx parameters ->
   match parameters with
   | [] -> Processed_tel (Emp, ctx, [])
-  | { names; ty; _ } :: parameters -> process_vars ctx names ty parameters
+  | { names; modality; ty; _ } :: parameters ->
+      process_vars ctx names
+        (locate_modality (List.map (fun x -> locate_opt x.loc (fst x.value)) modality))
+        ty parameters
 
 and process_vars : type n.
     (string option, n) Bwv.t ->
     (string option * Whitespace.t list) list ->
+    string located list located ->
     wrapped_parse ->
     Parameter.t list ->
     n processed_tel =
- fun ctx names (Wrap ty) parameters ->
+ fun ctx names modality (Wrap ty) parameters ->
   match names with
   | [] -> process_tel ctx parameters
   | (name, w) :: names ->
       let pty = process ctx ty in
       let (Processed_tel (tel, ctx, ws)) =
-        process_vars (Bwv.snoc ctx name) names (Wrap ty) parameters in
-      Processed_tel (Ext (name, pty, tel), ctx, w :: ws)
+        process_vars (Bwv.snoc ctx name) names modality (Wrap ty) parameters in
+      Processed_tel (Ext (name, modality, pty, tel), ctx, w :: ws)
 
 let get_pattern : type lt1 ls1 rt1 rs1. (lt1, ls1, rt1, rs1) parse located -> Matchpattern.t =
  fun pat ->
@@ -259,19 +273,19 @@ let get_pattern : type lt1 ls1 rt1 rs1. (lt1, ls1, rt1, rs1) parse located -> Ma
     | Ident ([ x ], _) when Lexer.valid_var x -> (
         match pats.value with
         | [] -> Var (locate_opt pat.loc (Some x))
-        | _ -> fatal ?loc:pat.loc Parse_error)
+        | _ -> fatal ?loc:pat.loc (Parse_error "invalid pattern identifier"))
     | Ident (xs, _) -> fatal ?loc:pat.loc (Invalid_variable xs)
     | Placeholder _ -> (
         match pats.value with
         | [] -> Var (locate_opt pat.loc None)
-        | _ -> fatal ?loc:pat.loc Parse_error)
+        | _ -> fatal ?loc:pat.loc (Parse_error "invalid pattern placeholder"))
     | Constr (c, _) -> Constr (locate_opt pat.loc (Constr.intern c), pats.value)
     | App { fn; arg; _ } ->
         go fn
           (locate_opt pats.loc
              (go arg (locate_opt arg.loc Vec.[]) :: pats.value : (Matchpattern.t, n Fwn.suc) Vec.t))
     | Notn (notn, n) -> pattern notn (args n) pat.loc
-    | _ -> fatal ?loc:pat.loc Parse_error in
+    | _ -> fatal ?loc:pat.loc (Parse_error "invalid pattern") in
   go pat (locate_opt pat.loc Vec.[])
 
 (* Now that we've defined these functions, we can pass them back to User. *)

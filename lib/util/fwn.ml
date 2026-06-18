@@ -23,6 +23,7 @@ let suc : type n. n t -> n suc t = function
   | n -> Suc n
 
 let one : one t = suc zero
+let bplus_zero : type a. a N.t -> (a, zero, a) bplus = fun _ -> Zero
 
 let rec bplus_right : type a b ab. (a, b, ab) bplus -> b t = function
   | Zero -> Zero

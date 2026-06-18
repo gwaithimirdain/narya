@@ -102,7 +102,7 @@ and ('t, 's) entry = ('t, 's) tokmap
 and observation =
   | Term : ('lt, 'ls, 'rt, 'rs) parse located -> observation
   | Token : token_ws -> observation
-  (* Superscripted tokens are only used here when there is at least one superscript. *)
+  (* Superscripted tokens are used whenever the parse tree instructions indicate that superscripts are allowed. *)
   | Ss_token : ss_token_ws -> observation
 
 and observations =

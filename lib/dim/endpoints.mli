@@ -26,3 +26,4 @@ val len : 'l len -> 'l N.t
 val indices : 'l len -> ('l t, 'l) Bwv.t
 val to_string : ?unicode:bool -> 'l t option -> string
 val of_char : 'l len -> char -> ('l t option, unit) result
+val totally_nullary : 'a D.t -> bool

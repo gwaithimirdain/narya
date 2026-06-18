@@ -89,7 +89,7 @@ Or import some of the notations but not others
    ￫ error[E0200]
    ￭ command-line exec string
    1 | import "nat" | in notations union (only «_ + _», only «_ * _») echo 1+1 echo 1*1 echo (1-1 : Nat)
-     ^ parse error
+     ^ parse error: invalid syntax
   
   [1]
 

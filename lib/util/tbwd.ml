@@ -3,7 +3,7 @@
 open Tlist
 
 type emp = private Dummy_emp
-type ('xs, 'x) snoc = private Dummy_ext
+type ('xs, 'x) snoc = private Dummy_snoc
 
 module Tbwd = struct
   type _ t = Emp : emp t | Snoc : 'xs t -> ('xs, 'x) snoc t
@@ -125,6 +125,10 @@ module Tbwd = struct
     | Append_nil : ('a, nil, 'a) append
     | Append_cons : (('a, 'x) snoc, 'b, 'c) append -> ('a, ('x, 'b) cons, 'c) append
 
+  let rec int_of_append : type a b c. (a, b, c) append -> int = function
+    | Append_nil -> 0
+    | Append_cons x -> 1 + int_of_append x
+
   type (_, _) has_append = Append : ('a, 'b, 'c) append -> ('a, 'b) has_append
 
   let rec append : type a b. b Tlist.t -> (a, b) has_append = function
@@ -142,6 +146,17 @@ module Tbwd = struct
     match bc with
     | Append_nil -> Insert_into ins
     | Append_cons bc -> insert_append (Later ins) bc
+
+  (* Given an insertion into an appended list, return an insert into the original list if it exists, i.e. if it would not be into the appended part. *)
+  let rec append_insert : type a c ac bc n.
+      (a, c, ac) append -> (bc, n, ac) insert -> (n, a) insert_into option =
+   fun ac ins ->
+    match ac with
+    | Append_nil -> Some (Insert_into ins)
+    | Append_cons ac -> (
+        match append_insert ac ins with
+        | None | Some (Insert_into Now) -> None
+        | Some (Insert_into (Later ins)) -> Some (Insert_into ins))
 
   (* Extend a permutation by the identity *)
   let rec permute_append : type a b c ac bc.
@@ -204,84 +219,4 @@ module Tbwd = struct
         let perm1 = append_append_permute d a in
         let perm2 = ins_ins_permute Now ins a c in
         comp_permute perm1 perm2
-
-  (* Flatten a tbwd of (backward) nats into a single nat. *)
-  type (_, _) flatten =
-    | Flat_emp : (emp, N.zero) flatten
-    | Flat_snoc : ('ns, 'm) flatten * ('m, 'n, 'mn) N.plus -> (('ns, 'n) snoc, 'mn) flatten
-
-  (* This is a partial function. *)
-  let rec flatten_uniq : type ns m n. (ns, m) flatten -> (ns, n) flatten -> (m, n) Eq.t =
-   fun m n ->
-    match (m, n) with
-    | Flat_emp, Flat_emp -> Eq
-    | Flat_snoc (m, x), Flat_snoc (n, y) ->
-        let Eq = flatten_uniq m n in
-        let Eq = N.plus_uniq x y in
-        Eq
-
-  (* Flattening maps appending to adding. *)
-  type (_, _, _) bplus_flatten_append =
-    | Bplus_flatten_append :
-        ('ps, 'p) flatten * ('m, 'n, 'p) Fwn.bplus
-        -> ('m, 'n, 'ps) bplus_flatten_append
-
-  let rec bplus_flatten_append : type ms ns ps m n.
-      (ms, m) flatten ->
-      (ns, n) Tlist.flatten ->
-      (ms, ns, ps) append ->
-      (m, n, ps) bplus_flatten_append =
-   fun ms ns mnp ->
-    match mnp with
-    | Append_nil ->
-        let Flat_nil = ns in
-        Bplus_flatten_append (ms, Zero)
-    | Append_cons mnp ->
-        let (Flat_cons (n, ns)) = ns in
-        let (Plus m) = N.plus (Fwn.fplus_left n) in
-        let (Bplus_flatten_append (ps, mn)) = bplus_flatten_append (Flat_snoc (ms, m)) ns mnp in
-        Bplus_flatten_append (ps, Fwn.bfplus_assocr m n mn)
-
-  (* If we remove an entry from a flattenable list, the result is again flattenable, and the missing entry can be added to its flattening to obtain the original one.  (Note that the latter fact uses commutativity of addition for nat). *)
-  type (_, _, _) flatten_uninsert =
-    | Flatten_uninsert : ('bs, 'b) flatten * ('b, 'n, 'c) N.plus -> ('bs, 'n, 'c) flatten_uninsert
-
-  let rec flatten_uninsert : type bs cs n c.
-      (bs, n, cs) insert -> (cs, c) flatten -> (bs, n, c) flatten_uninsert =
-   fun ins cs ->
-    match (ins, cs) with
-    | Now, Flat_snoc (cs, c) -> Flatten_uninsert (cs, c)
-    | Later ins, Flat_snoc (cs, xy_z) ->
-        let (Flatten_uninsert (bs, x_y)) = flatten_uninsert ins cs in
-        let (Plus x_z) = N.plus (N.plus_right xy_z) in
-        let (Plus y_z) = N.plus (N.plus_right xy_z) in
-        let z_y = N.plus_comm (N.plus_right x_y) y_z in
-        let x_yz = N.plus_assocr x_y y_z xy_z in
-        let xz_y = N.plus_assocl x_z z_y x_yz in
-        Flatten_uninsert (Flat_snoc (bs, x_z), xz_y)
-
-  (* An insertion determines an index for inserting into the flattened version of the list inserted into. *)
-  let rec index_of_flattened_insert : type xs n ys x.
-      (xs, n, ys) insert -> (xs, x) flatten -> x N.suc N.index =
-   fun i xs ->
-    match i with
-    | Now -> Top
-    | Later i ->
-        let (Flat_snoc (xs, x)) = xs in
-        N.index_plus (index_of_flattened_insert i xs) (N.suc_plus_eq_suc x)
-
-  (* A permutation of lists of nats inducse a ("block") permutation on flattenings. *)
-  let rec permute_flatten : type ms m ns n.
-      (ms, m) flatten -> (ns, n) flatten -> (ms, ns) permute -> (m, n) N.perm =
-   fun ms ns p ->
-    match p with
-    | Id ->
-        let Eq = flatten_uniq ms ns in
-        Id
-    | Insert (p, i) ->
-        let (Flat_snoc (ms, m)) = ms in
-        let (Flatten_uninsert (ns, n)) = flatten_uninsert i ns in
-        let q = permute_flatten ms ns p in
-        let j = index_of_flattened_insert i ns in
-        N.insert_many q j m n
 end
