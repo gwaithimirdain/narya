@@ -251,7 +251,7 @@ let () =
     Mbwd.miter
       (fun [ file ] ->
         let source : Asai.Range.source =
-          if FileUtil.test Is_file file then `File file
+          if try FileUtil.test Is_file file with _ -> false then `File file
           else `String { title = Some "command line fake-interact"; content = file } in
         let p, src = Parser.Command.Parse.start_parse source in
         Reporter.try_with ~emit:(Reporter.display ?use_ansi ~output:stdout)
