@@ -29,6 +29,13 @@ let hott : unit -> N.two len option =
     | Neq -> None
   else None
 
+let unary : unit -> N.one len option =
+ fun () ->
+  let (Wrap arity) = (Config.read ()).arity in
+  match N.compare arity N.one with
+  | Eq -> Some N.one
+  | Neq -> None
+
 let run ~arity ~refl_char ~refl_names ~internal ?hott f =
   let (Plus_something arity) = N.plus_of_int arity in
   let refl_string = String.make 1 refl_char in

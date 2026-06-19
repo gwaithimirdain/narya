@@ -210,6 +210,19 @@ let rec deg_of_except : type e a b. b D.t -> (e, a, b) except -> (b, a) deg =
       let (Word (Suc (b, Unit))) = b in
       Suc (deg_of_except (Word b) e, Now)
 
+(* In the unary case, the degeneracy deg_of_except has a section given by choosing the unique endpoint for each omitted direction.  This is convenient when formulating algorithms for pushing filtered dimensions through environments.  We therefore generalize it to other arities by using an "optional sface", trusting that the missing endpoints will be canceled out by a degeneracy at the other end.  Consistent mode/dimension theories will ensure this.  In particular, in the non-unary case there should not be any modal 2-cells from a less-nonparametric modality to a more non-parametric one.  *)
+let sface_of_except : type e a b. b D.t -> (e, a, b) except -> (a, b) opt_sface =
+ fun b ex ->
+  let rec go : type l e a b. l Endpoints.t option -> b D.t -> (e, a, b) except -> (a, b) opt_sface =
+   fun endpt b ex ->
+    match (ex, b) with
+    | Except_zero, _ -> Zero
+    | Except_occurs (ex, _), Word (Suc (b, Unit)) -> End (go endpt (Word b) ex, endpt)
+    | Except_unoccurs (ex, _), Word (Suc (b, Unit)) -> Mid (go endpt (Word b) ex) in
+  match Endpoints.unary () with
+  | Some e -> go (Some (e, Top)) b ex
+  | None -> go None b ex
+
 let rec except_comp : type e1 e2 e12 a b c.
     (e1, e2, e12) D.plus -> (e2, a, b) except -> (e1, b, c) except -> (e12, a, c) except =
  fun e12 ex2 ex1 ->

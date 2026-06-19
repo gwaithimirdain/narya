@@ -5,6 +5,7 @@ type wrapped = Wrap : 'l len -> wrapped
 type 'l t = 'l len * 'l N.index
 
 val hott : unit -> N.two len option
+val unary : unit -> N.one len option
 
 val run :
   arity:int ->

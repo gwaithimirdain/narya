@@ -30,6 +30,7 @@ module Dmap : MAP_MAKER with module Key := D
 module Endpoints : sig
   type 'l len
   type wrapped = Wrap : 'l len -> wrapped
+  type 'l t = 'l len * 'l N.index
 
   val run :
     arity:int ->
@@ -42,6 +43,7 @@ module Endpoints : sig
 
   val uniq : 'l1 len -> 'l2 len -> ('l1, 'l2) Eq.t
   val len : 'l len -> 'l N.t
+  val indices : 'l len -> ('l t, 'l) Bwv.t
   val wrapped : unit -> wrapped
   val internal : unit -> bool
   val hott : unit -> N.two len option
@@ -113,7 +115,10 @@ val string_of_deg : ('a, 'b) deg -> string
 val deg_of_string : string -> any_deg option
 
 type (_, _) sface
+type ('a, 'b) opt_sface
 
+val sface_of_opt : ('a, 'b) opt_sface -> ('a, 'b) sface option
+val opt_of_sface : ('a, 'b) sface -> ('a, 'b) opt_sface
 val id_sface : 'n D.t -> ('n, 'n) sface
 val dom_sface : ('m, 'n) sface -> 'm D.t
 val cod_sface : ('m, 'n) sface -> 'n D.t
@@ -577,17 +582,37 @@ type (_, _) op = Op : ('n, 'k) sface * ('m, 'n) deg -> ('m, 'k) op
 val id_op : 'n D.t -> ('n, 'n) op
 val deg_sface : ('n, 'k) deg -> ('m, 'n) sface -> ('m, 'k) op
 val comp_op : ('n, 'k) op -> ('m, 'n) op -> ('m, 'k) op
+
+type ('a, 'b) opt_op
+
+val id_opt_op : 'n D.t -> ('n, 'n) opt_op
+val comp_opt_op : ('n, 'k) opt_op -> ('m, 'n) opt_op -> ('m, 'k) opt_op
+val dom_opt_op : ('m, 'n) opt_op -> 'm D.t
+val op_of_opt : ('a, 'b) opt_op -> ('a, 'b) op option
+val opt_of_op : ('a, 'b) op -> ('a, 'b) opt_op
+val is_id_opt_op : ('m, 'n) opt_op -> ('m, 'n) Eq.t option
+
+(* *)
 val dom_op : ('m, 'n) op -> 'm D.t
 val cod_op : ('m, 'n) op -> 'n D.t
 val is_id_op : ('m, 'n) op -> ('m, 'n) Eq.t option
 val op_of_deg : ('m, 'n) deg -> ('m, 'n) op
 val op_of_sface : ('m, 'n) sface -> ('m, 'n) op
+val opt_op_of_deg : ('m, 'n) deg -> ('m, 'n) opt_op
+val opt_op_of_sface : ('m, 'n) sface -> ('m, 'n) opt_op
+val opt_op_of_opt_sface : ('m, 'n) opt_sface -> ('m, 'n) opt_op
 
 val op_plus_op :
   ('k, 'm) op -> ('m, 'n, 'mn) D.plus -> ('k, 'l, 'kl) D.plus -> ('l, 'n) op -> ('kl, 'mn) op
 
 val plus_op : 'm D.t -> ('m, 'n, 'mn) D.plus -> ('m, 'l, 'ml) D.plus -> ('l, 'n) op -> ('ml, 'mn) op
 val op_plus : ('k, 'm) op -> ('m, 'n, 'mn) D.plus -> ('k, 'n, 'kn) D.plus -> ('kn, 'mn) op
+
+val plus_opt_op :
+  'm D.t -> ('m, 'n, 'mn) D.plus -> ('m, 'l, 'ml) D.plus -> ('l, 'n) opt_op -> ('ml, 'mn) opt_op
+
+val opt_op_plus :
+  ('k, 'm) opt_op -> ('m, 'n, 'mn) D.plus -> ('k, 'n, 'kn) D.plus -> ('kn, 'mn) opt_op
 
 type _ op_of = Of : ('m, 'n) op -> 'n op_of
 type _ op_of_plus = Of : ('m, 'n) sface * 'm deg_of_plus -> 'n op_of_plus
@@ -998,6 +1023,7 @@ type (_, _, _) except_perm =
   | Except_perm : ('d, 'a) perm * ('e, 'd, 'c) except -> ('e, 'a, 'c) except_perm
 
 val except_perm : 'e D.t -> ('e, 'a, 'b) except -> ('c, 'b) perm -> ('e, 'a, 'c) except_perm
+val sface_of_except : 'b D.t -> ('e, 'a, 'b) except -> ('a, 'b) opt_sface
 val deg_of_except : 'b D.t -> ('e, 'a, 'b) except -> ('b, 'a) deg
 
 val except_comp :

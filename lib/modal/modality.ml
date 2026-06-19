@@ -515,6 +515,9 @@ let filter_perm : type x m y a b c.
 let deg_of_filter : type x m y a b. b D.t -> (x, m, y, a, b) filter_dim -> (b, a) deg =
  fun b (Filter (_, ex)) -> deg_of_except b ex
 
+let sface_of_filter : type x m y a b. b D.t -> (x, m, y, a, b) filter_dim -> (a, b) opt_sface =
+ fun b (Filter (_, ex)) -> sface_of_except b ex
+
 let filter_comp : type x y z m n nm a b c.
     (x, m, y, n, z, nm) comp ->
     (y, n, z, b, c) filter_dim ->
