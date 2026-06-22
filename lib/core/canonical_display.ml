@@ -154,7 +154,7 @@ let readback_comatch_impl : type mode a z.
           * (mn, m, n) insertion
           * (D.zero, mn, mn, mode normal) TubeOf.t) ) -> (
       match force_eval nval with
-      | Val (Struct _) -> (
+      | Val (Struct { fields = comatch_fields; _ }) -> (
           (* The comatch is undegenerated when the codatatype instance's total dimension equals the intrinsic dimension.  A degenerate comatch (e.g. refl of a comatch) has a larger total dimension; displaying it as "[ … ]⁽ᵉ⁾" isn't representable as a term (Term.Act is kinetic, a comatch is potential) and a full readback of its degenerated instances is out of scope, so it falls back to the neutral's application spine ("refl r"), which is at least correct. *)
           match D.compare (TubeOf.inst tyargs) (cod_left_ins ins) with
           | Neq -> raise Comatch_fallback
@@ -174,9 +174,62 @@ let readback_comatch_impl : type mode a z.
                           ( fld,
                             Term.Structfield.Lower
                               (Term.Realize (readback_at ctx body ety), `Labeled) )
-                    | Term.Codatafield.Higher _ ->
-                        (* TODO(about-merge): reading back a *higher* field of a comatch into a display PlusPbijmap is entangled with modal's Plusmap representation (the former Map_emp refinement of an empty closure environment).  Until that's ported, fall back to displaying the stored case tree. *)
-                        raise Comatch_fallback)
+                    | Term.Codatafield.Higher _ -> (
+                        match Value.StructfieldAbwd.find_opt comatch_fields fld with
+                        | Found (Value.Structfield.Higher (lazy hd)) -> (
+                            (* We handle only an undegenerated comatch (identity deg) with an empty closure environment (a top-level comatch), where the stored term can be evaluated directly in the empty environment.  A degenerate comatch (e.g. refl of a comatch) or a partially-applied one falls back to the stored case tree. *)
+                            match
+                              (hd.env, D.compare dim (D.plus_right hd.plusdim), is_id_deg hd.deg)
+                            with
+                            | Emp _, Eq, Some _ ->
+                                let pbm =
+                                  Term.PlusPbijmap.build dim (Field.dim fld)
+                                    {
+                                      build =
+                                        (fun (type r)
+                                          (pbij : (m, i, r) pbij)
+                                          :
+                                          (r, mode * a) Term.PlusFam.t
+                                        ->
+                                          match Term.PlusPbijmap.find pbij hd.terms with
+                                          | None -> raise Comatch_fallback
+                                          | Some (Term.PlusFam.PlusFam (stored_pm, term)) -> (
+                                              (* The closure environment is empty, so degenerating it leaves it empty: the stored plus-map is the proj-only one (matched below) and the stored term lives over the empty context, so it can be evaluated directly in hd.env. *)
+                                              match stored_pm with
+                                              | Suc
+                                                  ( Zero (Eq Unit),
+                                                    Inject (Plus_proj _),
+                                                    Suc (Zero, Proj _) ) ->
+                                                  let (Pbij (fldins, fldshuf)) = pbij in
+                                                  let r = left_shuffle fldshuf in
+                                                  let (Degctx (plusmap, dctx, denv)) = degctx ctx r in
+                                                  let ety =
+                                                    match D.compare_zero r with
+                                                    | Zero ->
+                                                        let Eq = eq_of_zero_shuffle fldshuf in
+                                                        tyof_field (Ok neutral) ty fld ~shuf:Trivial
+                                                          fldins
+                                                    | Pos _ ->
+                                                        let termctx =
+                                                          Lazy.force codata_args.termctx
+                                                          <|> Anomaly
+                                                                "missing termctx for higher comatch"
+                                                        in
+                                                        let shuf =
+                                                          higher_codatafield_shuffleable ctx
+                                                            (length_env codata_args.env) termctx denv
+                                                            r fldshuf in
+                                                        tyof_field (Ok neutral) ty fld ~shuf fldins
+                                                  in
+                                                  let body = eval hd.env term in
+                                                  Some
+                                                    (Term.PlusFam.PlusFam
+                                                       (plusmap, readback_eval dctx body ety))
+                                              | _ -> raise Comatch_fallback));
+                                    } in
+                                Term.StructfieldAbwd.Entry (fld, Term.Structfield.Higher pbm)
+                            | _ -> raise Comatch_fallback)
+                        | _ -> raise Comatch_fallback))
                   codata_args.fields in
               Term.Struct { eta = Noeta; dim; fields; energy = Potential })
       | _ -> fatal (Anomaly "comatch readback: neutral value is not a struct"))
