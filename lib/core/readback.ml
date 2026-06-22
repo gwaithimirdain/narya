@@ -613,10 +613,13 @@ let higher_codatafield_shuffleable : type mode a b c d r h i.
 (* Reading back canonical types as display-only declarations, for "about".    *)
 (* ------------------------------------------------------------------------- *)
 
-(* The result of reading back a constructor's argument telescope from a value: the telescope as a term, plus the context and environment extended by fresh variables for its arguments (needed to read back the index values that follow it), and the (top-dimensional) values of those fresh argument variables in order (needed to build the constructor-as-a-function for degenerate datatypes). *)
+(* The result of reading back a constructor's argument telescope from a value: the telescope as a term, plus the context and environment extended by fresh variables for its arguments (needed to read back the index values that follow it), and the (zero-dimensional) values of those fresh argument variables in order (needed to build the constructor-as-a-function for degenerate datatypes; we read them back via readback_at_tel). *)
 type (_, _, _, _) rb_tel =
   | Rb_tel :
-      ('mode, 'e, 'c, 'ec) Term.tel * ('mode, 'lev, 'ec) Ctx.t * ('mode, D.zero, 'ac) Value.env
+      ('mode, 'e, 'c, 'ec) Term.tel
+      * ('mode, 'lev, 'ec) Ctx.t
+      * ('mode, D.zero, 'ac) Value.env
+      * (D.zero, 'mode, kinetic, unit) ModalValueCube.t list
       -> ('mode, 'e, 'c, 'ac) rb_tel
 
 (* Read back a (zero-dimensional) telescope of value-level types into a term-level telescope in the readback context, introducing a fresh variable for each entry.  Each entry may carry a modality (constructor arguments, unlike indices, can be modal); we evaluate its type under the corresponding lock and reconstruct the modal telescope entry over the readback context, following check_tel/ext_tel. *)
@@ -627,7 +630,7 @@ let rec readback_tel : type mode lev e a c ac.
     (mode, e, c, ac) rb_tel =
  fun ctx env tel ->
   match tel with
-  | Emp -> Rb_tel (Emp, ctx, env)
+  | Emp -> Rb_tel (Emp, ctx, env, [])
   | Ext (name, Modal (modality, plus, rty), rest) ->
       let m = dim_env env in
       let lenv = key_env env (Modalcell.id modality) plus in
@@ -640,8 +643,12 @@ let rec readback_tel : type mode lev e a c ac.
       let trty = readback_val ~sort:`Type lctx ety in
       let ctx = Ctx.cube_vis ctx modality name newnfs in
       let env = Value.Ext { env; plus = D.plus_zero m; modality; values = `Ok newvars } in
-      let (Rb_tel (resttel, fctx, fenv)) = readback_tel ctx env rest in
-      Rb_tel (Ext (name, Modal (modality, rplus, trty), resttel), fctx, fenv)
+      let (Rb_tel (resttel, fctx, fenv, restargvals)) = readback_tel ctx env rest in
+      Rb_tel
+        ( Ext (name, Modal (modality, rplus, trty), resttel),
+          fctx,
+          fenv,
+          ModalValueCube.Modal (modality, newvars) :: restargvals )
 
 (* The result of reading back a value-level datatype constructor: its argument telescope and, for an indexed datatype, the output type (the datatype family applied to the constructor's index values). *)
 type (_, _) rb_constr =
@@ -653,7 +660,7 @@ type (_, _) rb_constr =
 let readback_dataconstr : type mode lev e.
     (mode, lev, e) Ctx.t -> bool -> (mode, D.zero) Value.dataconstr -> (mode, e) rb_constr =
  fun ctx indexed (Dataconstr { env; args; output }) ->
-  let (Rb_tel (tel, fctx, fenv)) = readback_tel ctx env args in
+  let (Rb_tel (tel, fctx, fenv, _)) = readback_tel ctx env args in
   let output =
     if indexed then Some (readback_val ~sort:`Type fctx (Norm.eval_term fenv output)) else None
   in
@@ -661,18 +668,34 @@ let readback_dataconstr : type mode lev e.
 
 (* Read back the (higher-dimensional) function-type of a constructor of a *degenerate* (positive substitution dimension m) datatype.  The idea is that a constructor's type is morally a function type "(args) → out", and the type of the degenerate constructor is the degeneration of that function.  We can't take the degeneration of a constructor directly (there's no "tyof_constr"), but we *can* form the constructor-as-a-function "λ args. c args" together with its function-type "(args) → out", and then act on it by the pure degeneracy deg_zero m using act_ty.  Acting on a function-type instantiates its codomain at the faces of the function, which here are the lower-dimensional constructors, exactly producing e.g. "List⁽ᵉ⁾ (Id A) (cons. x₀ xs₀) (cons. x₁ xs₁)".  Reading back the result gives a higher-dimensional pi-type term, which unparses as "{x₀ x₁ : A} (x₂ : Id A x₀ x₁) … →⁽ᵉ⁾ …".  The constructor's output type "out" is the stored output term (e.g. "Vec A (suc. n)" for an indexed datatype, or the datatype itself for a non-indexed one) evaluated at the fresh argument variables. *)
 let readback_degenerate_constr : type mode lev e m.
-    (mode, lev, e) Ctx.t -> m D.t -> Constr.t -> (mode, D.zero) Value.dataconstr -> (mode, e, kinetic) term
-    =
- fun _ctx _m _c _dc ->
-  (* TODO(about-merge): displaying a constructor of a *degenerate* (higher-dimensional) datatype as its function-type builds a Term.Constr from modal cubes and acts on the constructor-as-a-function by a pure degeneracy; this is entangled with modal's modal-cube constructor representation and is deferred. *)
-  fatal (Unimplemented "about-display of degenerate datatypes (post-modal-merge)")
+    (mode, lev, e) Ctx.t ->
+    m D.t ->
+    Constr.t ->
+    (mode, D.zero) Value.dataconstr ->
+    (mode, e, kinetic) term =
+ fun ctx m c (Dataconstr { env; args; output }) ->
+  let (Rb_tel (tel, fctx, fenv, argvals)) = readback_tel ctx env args in
+  let output_term = readback_val ~sort:`Type fctx (Norm.eval_term fenv output) in
+  (* Build the constructor-as-a-function "λ args. c args".  The body "c args" is the constructor applied to its (just-bound) argument variables; we read those variables' values back into the extended context fctx with readback_at_tel (a zero-dimensional constructor, so the instantiation tube is empty), reusing the modal machinery that reads back any constructor's argument spine. *)
+  let cargs = readback_at_tel fctx env argvals args (TubeOf.empty D.zero) in
+  let cbody = Term.Constr (c, D.zero, cargs) in
+  let cfun = Telescope.lams tel cbody in
+  let cty = Telescope.pis tel output_term in
+  let cfun = Norm.eval_term (Ctx.env ctx) cfun in
+  let cty = Norm.eval_term (Ctx.env ctx) cty in
+  let ft = Act.act_ty cfun cty (deg_zero m) None in
+  readback_val ~sort:`Type ctx ft
 
 (* Read back a degenerate constructor's function-type in a configuration with *no endpoints* (arity 0).  Then an m-cube has no proper faces, so we don't need the zero-dimensional base (which is unreachable anyway, as it would be a vertex of a faceless cube): we evaluate the constructor's function-type "(args) → output" directly in the degenerate (m-dimensional) environment that the constructor already carries.  There is still a (trivial, empty) instantiation, displayed as ".", so we instantiate the resulting m-dimensional function-type at the empty boundary tube before reading back.  Since the cube has no proper faces, the tube's builder is never called. *)
 let readback_degenerate_constr_uninst : type mode lev e m.
     (mode, lev, e) Ctx.t -> (mode, m) Value.dataconstr -> (mode, e, kinetic) term =
- fun _ctx _dc ->
-  (* TODO(about-merge): see readback_degenerate_constr; the arity-0 degenerate case is deferred too. *)
-  fatal (Unimplemented "about-display of degenerate datatypes (post-modal-merge)")
+ fun ctx (Dataconstr { env; args; output }) ->
+  let m = dim_env env in
+  let ft = Norm.eval_term env (Telescope.pis args output) in
+  let boundary =
+    TubeOf.build D.zero (D.zero_plus m)
+      { build = (fun _ -> fatal (Anomaly "arity-0 cube has no boundary faces")) } in
+  readback_val ~sort:`Type ctx (Norm.inst ft boundary)
 
 (* Build the display node for a value-level (zero-dimensional) datatype: each constructor as a telescope of arguments plus, for an indexed datatype, its output type. *)
 let data_display_value : type mode lev e.
@@ -694,6 +717,34 @@ let degenerate_data_display : type mode a b m j ij.
     (mode, kinetic) Value.value ->
     (mode, m, j, ij) Value.data_args ->
     (mode, b) Term.canonical_display =
- fun _ctx _tm _data_args ->
-  (* TODO(about-merge): see readback_degenerate_constr; whole degenerate-datatype display deferred. *)
-  fatal (Unimplemented "about-display of degenerate datatypes (post-modal-merge)")
+ fun ctx tm data_args ->
+  let pi_constrs : type d.
+      (Constr.t -> (mode, d) Value.dataconstr -> (mode, b, kinetic) term) ->
+      (Constr.t, (mode, d) Value.dataconstr) Abwd.t ->
+      (mode, b) Term.canonical_display =
+   fun readback_constr constrs ->
+    Data_display (Abwd.mapi (fun c dc -> Term.Pi_constr (readback_constr c dc)) constrs) in
+  (* The caller has already forced tm to a Canonical datatype, so its type is a (degenerate) universe. *)
+  match tm with
+  | Value.Neu { ty; _ } -> (
+      match View.view_type (Lazy.force ty) "degenerate_data_display" with
+      | Canonical (_, UU (_, mm), ins0, boundary) -> (
+          let Eq = eq_of_ins_zero ins0 in
+          (* The underlying zero-dimensional datatype is a vertex of the degenerate one, recovered from the boundary faces of its (degenerate-universe) type.  In arity 0 there is no vertex; then there is also no boundary, so we display directly from the degenerate environment. *)
+          let dom = TubeOf.plus_cube (val_of_norm_tube boundary) (CubeOf.singleton tm) in
+          match vertex mm with
+          | None ->
+              pi_constrs (fun _ dc -> readback_degenerate_constr_uninst ctx dc) data_args.constrs
+          | Some v -> (
+              let d0 = CubeOf.find dom v in
+              match View.view_type d0 "degenerate_data_display d0" with
+              | Canonical (_, Data d0_args, _, _) -> (
+                  match D.compare_zero d0_args.dim with
+                  | Pos _ -> fatal (Anomaly "boundary vertex of degenerate datatype is not 0-dim")
+                  | Zero ->
+                      pi_constrs
+                        (fun c dc -> readback_degenerate_constr ctx mm c dc)
+                        d0_args.constrs)
+              | _ -> fatal (Anomaly "boundary vertex of degenerate datatype is not a datatype")))
+      | _ -> fatal (Anomaly "type of degenerate datatype is not a universe"))
+  | _ -> fatal (Anomaly "degenerate datatype value is not neutral")
