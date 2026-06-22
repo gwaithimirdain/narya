@@ -303,10 +303,26 @@ let rec of_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> b t = func
 let of_ctx : type mode a b. (mode, a, b) Ctx.t -> b t = function
   | Permute { ctx; _ } -> of_ordered_ctx ctx
 
-(* Degenerate a name-context by a dimension r, mirroring Degctx.degctx: each variable cube is re-dimensioned from its intrinsic n-cube up to a (r+n)-cube, keeping the same base names (Variables.plus_variables changes only the substitution dimension, not the stored name cube).  This reproduces exactly the names that "of_ctx" would produce for the degenerated context, so it lets the renderer name the (degenerated) variables of a non-projectable higher codata field instance without rebuilding the value-level degenerate context. *)
-(* TODO(about-merge): about walked its own (r, b, kb) Plusmap.t (Map_emp/Map_snoc) here; modal's plusmap is a different (Tctx.Plusmap.t-based) representation, so porting this name-context degeneration to modal (mirroring degctx.ml) is still pending.  Used for displaying non-projectable higher codata field instances (Cfd_deg); deferred. *)
+(* Degenerate a name-context by a dimension r, mirroring Degctx.degctx: each variable cube is re-dimensioned from its intrinsic n-cube up to a (r+n)-cube, keeping the same base names (Variables.plus_variables changes only the substitution dimension, not the stored name cube).  This reproduces exactly the names that "of_ctx" would produce for the degenerated context, so it lets the renderer name the (degenerated) variables of a non-projectable higher codata field instance without rebuilding the value-level degenerate context.  We drive the transformation by walking the plus-map (a Tctx.Plusmap.t = Path.Fmap, whose entries are Plus_proj at the empty base, Plus_dim for a variable, Plus_lock for a lock) in parallel with the name-context. *)
 let degenerate : type r b kb mode. r D.t -> (r, b, kb, mode) plusmap -> b t -> kb t =
- fun _r _pm _names -> fatal (Unimplemented "about-display of non-projectable higher codata fields (post-modal-merge)")
+ fun r pm { ctx; used } ->
+  (* The name-context is mode-agnostic, but the plus-map's mode changes across a lock, so we quantify over the mode in the recursion.  We drive the recursion by the name-context, which pins down the dom object 'c and hence the outermost plus-map edge. *)
+  let rec go : type c kc m. (r, c, kc, m) plusmap -> c ctx -> kc ctx =
+   fun pm ctx ->
+    match ctx with
+    | Emp -> (
+        match pm with
+        | Suc (Zero (Eq Unit), Inject (Plus_proj _), Suc (Zero, Proj _)) -> Emp
+        (* Mode.t is abstract here, so the empty base's object can't be seen to be "unit"; refute the spurious "Mode" alternative. *)
+        | Suc (Zero (Eq (Mode m)), Inject (Plus_proj _), _) -> Mode.not_unit m Eq)
+    | Snoc (ctx, vars, flds) -> (
+        match pm with
+        | Suc (pm, Inject (Plus_dim (_, k_mn)), Suc (Zero, Dim _)) ->
+            Snoc (go pm ctx, plus_variables r k_mn vars, flds))
+    | Lock ctx -> (
+        match pm with
+        | Suc (pm, Inject (Plus_lock _), Suc (Zero, Lock _)) -> Lock (go pm ctx)) in
+  { ctx = go pm ctx; used }
 
 (* Add a cube of variables WITHOUT replacing them by fresh versions.  Should only be used when the variables have already been so replaced, as in the output of uniquify_vars below. *)
 let unsafe_add : type k n b.
