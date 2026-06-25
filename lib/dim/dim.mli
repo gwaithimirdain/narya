@@ -390,6 +390,17 @@ module Tube (F : Fam2) : sig
 
     val buildM :
       'n D.t -> ('n, 'k, 'nk) D.plus -> ('n, 'k, 'nk, 'b) builderM -> ('n, 'k, 'nk, 'b) t M.t
+
+    type ('n, 'k, 'nk, 'bs) pbuilderM = {
+      build : 'm. ('m, 'n, 'k, 'nk) tface -> ('m, 'bs) C.Heter.hft M.t;
+    }
+
+    val pbuildM :
+      'n D.t ->
+      ('n, 'k, 'nk) D.plus ->
+      ('n, 'k, 'nk, 'bs) pbuilderM ->
+      'bs Tlist.t ->
+      ('n, 'k, 'nk, 'nk, 'bs) Heter.hgt M.t
   end
 
   module Monadic (M : Monad.Plain) : sig
@@ -417,6 +428,13 @@ module Tube (F : Fam2) : sig
 
   val build :
     'n D.t -> ('n, 'k, 'nk) D.plus -> ('n, 'k, 'nk, 'b) IdM.builderM -> ('n, 'k, 'nk, 'b) t
+
+  val pbuild :
+    'n D.t ->
+    ('n, 'k, 'nk) D.plus ->
+    ('n, 'k, 'nk, 'bs) IdM.pbuilderM ->
+    'bs Tlist.t ->
+    ('n, 'k, 'nk, 'nk, 'bs) Heter.hgt
 end
 
 module TubeOf : sig

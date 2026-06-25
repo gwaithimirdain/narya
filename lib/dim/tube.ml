@@ -476,6 +476,18 @@ module Tube (F : Fam2) = struct
         (D.plus_zero (D.plus_out n nk))
         (D.plus_zero (D.plus_out n nk))
         Zero g
+
+    type ('n, 'k, 'nk, 'bs) pbuilderM = {
+      build : 'm. ('m, 'n, 'k, 'nk) tface -> ('m, 'bs) C.Heter.hft M.t;
+    }
+
+    let pbuildM : type n k nk bs.
+        n D.t ->
+        (n, k, nk) D.plus ->
+        (n, k, nk, bs) pbuilderM ->
+        bs Tlist.t ->
+        (n, k, nk, nk, bs) Heter.hgt M.t =
+     fun _ _ _ _ -> Sorry.e ()
   end
 
   module Monadic (M : Monad.Plain) = struct
@@ -507,6 +519,14 @@ module Tube (F : Fam2) = struct
   let build : type n k nk b.
       n D.t -> (n, k, nk) D.plus -> (n, k, nk, b) IdM.builderM -> (n, k, nk, b) t =
    fun n nk g -> IdM.buildM n nk g
+
+  let pbuild : type n k nk bs.
+      n D.t ->
+      (n, k, nk) D.plus ->
+      (n, k, nk, bs) IdM.pbuilderM ->
+      bs Tlist.t ->
+      (n, k, nk, nk, bs) Heter.hgt =
+   fun n nk g bs -> IdM.pbuildM n nk g bs
 end
 
 module TubeOf = struct
