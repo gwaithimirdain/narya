@@ -481,13 +481,120 @@ module Tube (F : Fam2) = struct
       build : 'm. ('m, 'n, 'k, 'nk) tface -> ('m, 'bs) C.Heter.hft M.t;
     }
 
+    (* The multi-output builder is to the single builder buildM as the multi-output traversal pmapM is to the single traversal mmapM: it produces a whole hlist of tubes at once, with no inputs.  Like buildM, it requires three helper functions for the three stages of instantiated/uninstantiated dimensions; like the gpmapM_* family, each one produces an hlist of (cube or tube) gt's rather than a single one. *)
+
+    let rec gpbuildM_ll : type k m mk l1 l2 l ml ml1 bs.
+        m D.t ->
+        (m, k, mk) D.plus ->
+        (m, l, ml) D.plus ->
+        (m, l1, ml1) D.plus ->
+        (k, l1, l2, l) bwtface ->
+        (ml1, l2, ml, bs) pbuilderM ->
+        bs Tlist.t ->
+        (m, mk, bs) C.Heter.hgt M.t =
+     fun m mk ml ml1 d g bs ->
+      match m with
+      | Nat Zero ->
+          let Eq = D.plus_uniq mk (D.zero_plus (dom_bwtface d)) in
+          let Eq = D.plus_uniq ml (D.zero_plus (cod_bwtface d)) in
+          let Eq = D.plus_uniq ml1 (D.zero_plus (codl_bwtface d)) in
+          M.apply (g.build (tface_of_bw d)) @@ fun x -> C.Heter.leaf x
+      | Nat (Suc m) ->
+          let mk' = D.plus_suc mk in
+          let (Suc mk'') = mk' in
+          let ml' = D.plus_suc ml in
+          let ml1' = D.plus_suc ml1 in
+          let (Wrap l) = Endpoints.wrapped () in
+          let (Hgts newhs) = C.Heter.hgts_of_tlist bs in
+          M.apply
+            (M.zip
+               (fun () ->
+                 BwvM.pmapM
+                   (fun [ e ] ->
+                     M.apply (gpbuildM_ll (Nat m) mk'' ml' ml1' (LEnd (e, d)) g bs)
+                     @@ fun xs -> C.Heter.hlist_of_hgt newhs xs)
+                   [ Endpoints.indices l ] (C.Heter.tlist_hgts newhs bs))
+               (fun () -> gpbuildM_ll (Nat m) mk' ml' ml1' (LMid d) g bs))
+          @@ fun (newends, newmid) -> C.Heter.branch l newhs newends newmid
+
+    let rec gpbuildM_l : type k m mk l ml bs m1 m2 m2l.
+        m D.t ->
+        (m, k, mk) D.plus ->
+        (m, l, ml) D.plus ->
+        (m1, m2, m) D.plus ->
+        (m2, l, m2l) D.plus ->
+        (k, D.zero, l, l) bwtface ->
+        (m1, m2l, ml, bs) pbuilderM ->
+        bs Tlist.t ->
+        (m, mk, bs) C.Heter.hgt M.t =
+     fun m mk ml m12 m2l d g bs ->
+      match m12 with
+      | Zero ->
+          let Eq = D.plus_uniq m2l (D.zero_plus (D.plus_right ml)) in
+          gpbuildM_ll m mk ml Zero d g bs
+      | Suc m12 ->
+          let (Nat (Suc m)) = m in
+          let mk' = D.plus_suc mk in
+          let (Suc mk'') = mk' in
+          let ml' = D.plus_suc ml in
+          let m2l' = D.plus_suc m2l in
+          let (Wrap l) = Endpoints.wrapped () in
+          let (Hgts newhs) = C.Heter.hgts_of_tlist bs in
+          M.apply
+            (M.zip
+               (fun () ->
+                 BwvM.pmapM
+                   (fun [ e ] ->
+                     M.apply (gpbuildM_l (Nat m) mk'' ml' m12 m2l' (bwtface_rend e d) g bs)
+                     @@ fun xs -> C.Heter.hlist_of_hgt newhs xs)
+                   [ Endpoints.indices l ] (C.Heter.tlist_hgts newhs bs))
+               (fun () -> gpbuildM_l (Nat m) mk' ml' m12 m2l' (RMid d) g bs))
+          @@ fun (newends, newmid) -> C.Heter.branch l newhs newends newmid
+
+    let rec gpbuildM_r : type n k1 k2 l2 kl nk1 nkl nk bs.
+        n D.t ->
+        (n, k1, nk1) D.plus ->
+        (k1, l2, kl) D.plus ->
+        (nk1, k2, nk) D.plus ->
+        (nk1, l2, nkl) D.plus ->
+        (k2, l2) bwsface ->
+        (n, kl, nkl, bs) pbuilderM ->
+        bs Tlist.t ->
+        (n, k1, nk1, nk, bs) Heter.hgt M.t =
+     fun n nk1 kl nk12 nkl d g bs ->
+      match nk1 with
+      | Zero -> return (Heter.leaf n bs)
+      | Suc nk1 ->
+          let nk12' = D.plus_suc nk12 in
+          let (Suc nk12'') = nk12' in
+          let (Wrap l) = Endpoints.wrapped () in
+          let (Hgts newhs) = C.Heter.hgts_of_tlist bs in
+          M.apply
+            (M.zip
+               (fun () ->
+                 BwvM.pmapM
+                   (fun [ e ] ->
+                     M.apply
+                       (gpbuildM_l (D.plus_out n nk1) nk12'' (D.plus_suc nkl) nk1 (D.plus_suc kl)
+                          (REnd (e, d))
+                          g bs)
+                     @@ fun xs -> C.Heter.hlist_of_hgt newhs xs)
+                   [ Endpoints.indices l ] (C.Heter.tlist_hgts newhs bs))
+               (fun () -> gpbuildM_r n nk1 (N.plus_suc kl) nk12' (D.plus_suc nkl) (Mid d) g bs))
+          @@ fun (newends, newmid) -> Heter.branch l newhs newends newmid
+
     let pbuildM : type n k nk bs.
         n D.t ->
         (n, k, nk) D.plus ->
         (n, k, nk, bs) pbuilderM ->
         bs Tlist.t ->
         (n, k, nk, nk, bs) Heter.hgt M.t =
-     fun _ _ _ _ -> Sorry.e ()
+     fun n nk g bs ->
+      gpbuildM_r n nk
+        (D.plus_zero (D.plus_right nk))
+        (D.plus_zero (D.plus_out n nk))
+        (D.plus_zero (D.plus_out n nk))
+        Zero g bs
   end
 
   module Monadic (M : Monad.Plain) = struct
