@@ -129,7 +129,9 @@ module Specials = struct
 
   let run ?(onechar_ops = Array.of_list []) ?(ascii_symbols = Array.of_list []) ?(digit_vars = true)
       f =
-    let onechar_ops = Array.append default_onechar_ops onechar_ops in
+    (* Caller-supplied one-char ops come first so they override any default with the same character
+       (e.g. a caller reclaiming ⇒ as a plain identifier rather than the built-in DblArrow). *)
+    let onechar_ops = Array.append onechar_ops default_onechar_ops in
     let ascii_symbols = Array.append default_ascii_symbols ascii_symbols in
     R.run ~env:{ onechar_ops; ascii_symbols; digit_vars } f
 
@@ -227,14 +229,14 @@ let valid_var x = not (all_digits x)
 let atomic_ident s =
   String.length s > 0
   && s.[0] <> '_'
-  && (Specials.digit_vars () || s.[0] < '0' || s.[1] > '9')
+  && (Specials.digit_vars () || String.length s < 2 || s.[0] < '0' || s.[1] > '9')
   && not (all_digits s)
 
 (* A field name is like an identifier, but it could be all numeric for positional projections. *)
 let valid_field s =
   String.length s > 0
   && s.[0] <> '_'
-  && ((Specials.digit_vars () || s.[0] < '0' || s.[1] > '9') || all_digits s)
+  && ((Specials.digit_vars () || String.length s < 2 || s.[0] < '0' || s.[1] > '9') || all_digits s)
 
 let valid_ident = List.for_all atomic_ident
 

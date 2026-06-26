@@ -109,5 +109,6 @@ module Situation : sig
   val left_opens : Token.t -> No.interval option
   val unparse : Situation.PrintKey.t -> User.notation option
   val add : ('left, 'tight, 'right) Notation.notation -> unit
+  val add_with_print : User.notation -> unit
   val add_user : User.prenotation -> User.notation * User.key list
 end
