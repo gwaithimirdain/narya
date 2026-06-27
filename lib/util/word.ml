@@ -624,7 +624,7 @@ module rec Def : functor (G : Comparable) (GM : MAP_MAKER with module Key = G) (
     type (_, _) t = Wrapmap : ('a, ('b, 'n) snoc) Def(G)(GM)(F).map -> ('a * 'b, 'n) t
   end
 
-  module DM : module type of GM.Make (M)
+  module DM : MAP with module Key := G and module F := M
 
   type ('a, 'b) map = Empty | Entry of ('a, 'b) F.t option * ('a * 'b) DM.t
 end =

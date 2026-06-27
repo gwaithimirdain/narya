@@ -669,7 +669,7 @@ module rec PathMapDef : functor (Q : Quiver) (QM : MAP3_MAKER with module Key = 
           -> ('p * 'm * 'tgt * 'b, 'a, 'g, 'b) t
   end
 
-  module DM : module type of QM.Make (M)
+  module DM : MAP3 with module Key := Q and module F := M
 
   type ('p, 'src, 'm, 'tgt) map =
     | Empty

@@ -266,7 +266,9 @@ module rec Internal_Pbijmap : functor (F : Fam2) -> sig
           -> ('evaluation, ('intrinsic * 'r) * 'v) t
   end
 
-  module Tup : module type of Tuple.Make (Unitcomparable) (Param)
+  module Tup : sig
+    type ('a, 'p) t = ('a, 'p) Tuple.Make(Unitcomparable)(Param).t
+  end
 
   type (_, _, _, _) gt =
     | Zero : ('r, 'v) F.t -> ('evaluation, D.zero, 'r, 'v) gt
@@ -308,6 +310,7 @@ functor
 
 module Pbijmap (F : Fam2) = struct
   include Internal_Pbijmap (F)
+  module Tup = Tuple.Make (Unitcomparable) (Param)
 
   (* The intrinsic dimension is automatically a dimension. *)
   let rec gintrinsic : type evaluation intrinsic r v.

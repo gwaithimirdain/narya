@@ -252,7 +252,9 @@ module rec Internal_Insmap : functor (F : Fam) -> sig
           -> ('evaluation, 'intrinsic * 'v) t
   end
 
-  module Tup : module type of Tuple.Make (Unitcomparable) (Param)
+  module Tup : sig
+    type ('a, 'p) t = ('a, 'p) Tuple.Make(Unitcomparable)(Param).t
+  end
 
   type (_, _, _) t =
     | Zero : 'v F.t -> ('evaluation, D.zero, 'v) t
@@ -279,6 +281,7 @@ functor
 
 module Insmap (F : Fam) = struct
   include Internal_Insmap (F)
+  module Tup = Tuple.Make (Unitcomparable) (Param)
 
   type (_, _) wrapped = Wrap : ('evaluation, 'intrinsic, 'v) t -> ('evaluation, 'v) wrapped
 
