@@ -130,8 +130,8 @@ let rec readback_about : type mode a b.
                         (Term.Lam (singleton_variables D.zero (top_variable xs), modality, body)))
               | Pos _ -> None)
           | _ -> None)
-      | Val (Struct { eta = Noeta; _ }) -> (
-          (* A comatch.  Read it back type-directed via readback_comatch, passing the neutral (whose forced value is this comatch) to serve as the self-variable.  If that gives up (e.g. on a higher field with a non-empty closure environment), fall back to displaying the stored case tree. *)
+      | Val (Struct _) -> (
+          (* A partially-evaluated struct: a comatch, or an eta-record tuple that hasn't reduced to a leaf (e.g. the componentwise transport "(Prod A B)⁽ᵉ⁾ .trr p", which is stuck on abstract A B).  Read it back type-directed via readback_comatch, passing the neutral (whose forced value is this struct) to serve as the self-variable, so its field types resolve even though the struct itself is a non-kinetic case-tree value.  If that gives up (e.g. on a higher comatch field with a non-empty closure environment), fall back to the application spine. *)
           try Some (!readback_comatch.rbc ctx value (Lazy.force ty)) with Comatch_fallback -> None)
       | _ -> None)
   | _ -> None
@@ -161,19 +161,22 @@ let readback_comatch_impl : type mode a z.
           | Eq ->
               let dim = cod_left_ins ins in
               let evaldim = dim_env codata_args.env in
+              (* Read back a lower field via the neutral-as-self: project the field out of the neutral, and use the neutral (a kinetic value, even though its potential value is this struct) to resolve the possibly-dependent field type. *)
+              let lower_field (fld : D.zero Field.t) : (mode, a, potential) term =
+                let ety = tyof_field (Ok neutral) ty fld ~shuf:Trivial (ins_zero evaldim) in
+                let body = field_term neutral fld (ins_zero dim) in
+                Term.Realize (readback_at ctx body ety) in
+              (* The return-type annotation keeps the field-map's eta ('et) polymorphic.  The higher-field branch below constrains 'et = no_eta, but only locally where it is actually reached; so a record (where 'et = has_eta and there are no higher fields) reads back its (non-leaf) tuple value through exactly the same code.  This is what lets "about (Prod A B)⁽ᵉ⁾ .trr p" display the componentwise transport rather than the stuck spine. *)
               let fields =
                 Mbwd.map
                   (fun (Term.CodatafieldAbwd.Entry
                           (type i)
-                          ((fld, cf) : i Field.t * (i, mode * aa * n * et) Term.Codatafield.t)) ->
+                          ((fld, cf) : i Field.t * (i, mode * aa * n * et) Term.Codatafield.t)) :
+                       (mode * (mn * a * potential * et)) Term.StructfieldAbwd.entry ->
                     match cf with
                     | Term.Codatafield.Lower _ ->
-                        let ety = tyof_field (Ok neutral) ty fld ~shuf:Trivial (ins_zero evaldim) in
-                        let body = field_term neutral fld (ins_zero dim) in
                         Term.StructfieldAbwd.Entry
-                          ( fld,
-                            Term.Structfield.Lower
-                              (Term.Realize (readback_at ctx body ety), `Labeled) )
+                          (fld, Term.Structfield.Lower (lower_field fld, `Labeled))
                     | Term.Codatafield.Higher _ -> (
                         match Value.StructfieldAbwd.find_opt comatch_fields fld with
                         | Found (Value.Structfield.Higher (lazy hd)) -> (
@@ -231,7 +234,7 @@ let readback_comatch_impl : type mode a z.
                             | _ -> raise Comatch_fallback)
                         | _ -> raise Comatch_fallback))
                   codata_args.fields in
-              Term.Struct { eta = Noeta; dim; fields; energy = Potential })
+              Term.Struct { eta = codata_args.eta; dim; fields; energy = Potential })
       | _ -> fatal (Anomaly "comatch readback: neutral value is not a struct"))
   | _ -> fatal (Anomaly "comatch readback: not a neutral at a codatatype")
 
