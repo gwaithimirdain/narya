@@ -1532,8 +1532,8 @@ and inst : type mode m n mn s.
           | Eq ->
               let (Plus nk) = D.plus (TubeOf.inst args1) in
               let args = TubeOf.plus_tube nk args1 args2 in
-              let inst_fields = inst_fibrancy_fields mode fields args in
-              Canonical { mode; canonical = c; tyargs = args; ins; fields; inst_fields })
+              (* The instantiated fibrancy fields are computed lazily, on demand, by get_fibrancy_fields, which caches them in the mutable inst_fields. *)
+              Canonical { mode; canonical = c; tyargs = args; ins; fields; inst_fields = None })
       | Lam _ | Struct _ | Constr _ -> fatal (Anomaly "instantiating non-type"))
 
 (* Instantiate a list of fibrancy fields by passing repeatedly to its internal corecursive 'id' field. *)
