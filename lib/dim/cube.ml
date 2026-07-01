@@ -239,6 +239,14 @@ module Cube (F : Fam2) = struct
       M.apply (pmapM { map = (fun fa x -> M.apply (g.it fa x) @@ fun () -> hnil) } xs Nil)
       @@ fun [] -> ()
 
+    (* A binary iterator over two cubes of the *same* functor F (but possibly different parameters b1, b2).  It is defined in terms of the generic variadic miterM, but crucially the existential-opening of the element family (e.g. BindFam) happens in the *caller's* it2, checked against this plain fixed-arity-2 signature, NOT inside the rank-2 field passed to miterM (where x and y stay abstract and are merely forwarded).  So miterM is only ever instantiated at an abstract 2-element Tlist with no existential-opening in the rank-2 field, which is cheap.  Calling miterM [ c1; c2 ] *directly* on two GADT-family cubes, opening the existentials in its rank-2 field at the concrete Tlist, is what causes a catastrophic type-inference blowup (see the Pi arm of equal_head in core/equal.ml); this wrapper keeps the two ingredients apart. *)
+    type ('n, 'b1, 'b2) miterator2M = {
+      it2 : 'm. ('m, 'n) sface -> ('m, 'b1) F.t -> ('m, 'b2) F.t -> unit M.t;
+    }
+
+    let miter2M : type n b1 b2. (n, b1, b2) miterator2M -> (n, b1) t -> (n, b2) t -> unit M.t =
+     fun g xs ys -> miterM { it = (fun fa [ x; y ] -> g.it2 fa x y) } [ xs; ys ]
+
     (* The builder function isn't quite a special case of the generic traversal, since it needs to maintain different information when constructing a cube from scratch. *)
 
     type ('n, 'b) builderM = { build : 'm. ('m, 'n) sface -> ('m, 'b) F.t M.t }

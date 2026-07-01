@@ -245,16 +245,17 @@ module Equal = struct
                (* We create variables for all the domains, in order to equality-check all the codomains.  The codomain boundary types only use some of those variables, but it doesn't hurt to have the others around. *)
                let newargs, newnfs = dom_vars ctx modality1 dom1s in
                let (Any_ctx newctx) = Ctx.variables_vis ctx modality1 name newnfs in
+               (* We compare the two cubes of codomains with the binary iterator miter2M, which recurses directly on the two trees.  We cannot use the generic n-ary miterM [ cod1s; cod2s ] here: iterating two cubes whose element family (BindFam) is a multi-parameter GADT via the heterogeneous Tlist machinery sends type inference into a catastrophic blowup (~15s and 14GB to compile this one expression). *)
                let open BindCube.Monadic (Err) in
-               miterM
+               miter2M
                  {
-                   it =
-                     (fun s [ BindFam cod1; BindFam cod2 ] ->
+                   it2 =
+                     (fun s (BindFam cod1) (BindFam cod2) ->
                        let sargs = CubeOf.subcube s newargs in
                        equal_val newctx (apply_binder_term cod1 sargs)
                          (apply_binder_term cod2 sargs));
                  }
-                 [ cod1s; cod2s ])
+                 cod1s cod2s)
         | Neq, _ | _, Neq -> None)
     | _, _ -> None
 
