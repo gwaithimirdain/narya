@@ -820,25 +820,43 @@ let eval_structfield_abwd : type mode m n mn a status et.
     [ fields ]
 
 (* The universe of any dimension belongs to an instantiation of itself.  Note that the result is not itself a type (i.e. in the 0-dimensional universe) unless n=0.  This is the universe itself as a term. *)
+(* Since the universe of a given mode and dimension depends on nothing else (Fibrancy.universe is fixed at startup), we memoize it. *)
+type cached_universe =
+  | Cached_universe : 'mode Mode.t * 'n D.t * ('mode, kinetic) value -> cached_universe
+
+let universe_cache : cached_universe list ref = ref []
+
 let rec universe : type mode n. mode Mode.t -> n D.t -> (mode, kinetic) value =
  fun mode n ->
-  let fields =
-    match Lazy.force (Fibrancy.universe mode) with
-    | None -> Bwd.Emp
-    | Some fields -> eval_structfield_abwd (Emp (mode, n)) n (D.plus_zero n) n fields in
-  let value =
-    ready
-      (Val
-         (Canonical
-            {
-              mode;
-              canonical = UU (mode, n);
-              tyargs = TubeOf.empty n;
-              ins = ins_zero n;
-              fields;
-              inst_fields = Some fields;
-            })) in
-  Neu { head = UU (mode, n); args = Emp; value; ty = lazy (universe_ty mode n) }
+  let found =
+    List.find_map
+      (fun (Cached_universe (mode', n', v)) ->
+        match (Mode.compare mode' mode, D.compare n' n) with
+        | Eq, Eq -> Some (v : (mode, kinetic) value)
+        | _ -> None)
+      !universe_cache in
+  match found with
+  | Some v -> v
+  | None ->
+      let fields =
+        match Lazy.force (Fibrancy.universe mode) with
+        | None -> Bwd.Emp
+        | Some fields -> eval_structfield_abwd (Emp (mode, n)) n (D.plus_zero n) n fields in
+      let value =
+        ready
+          (Val
+             (Canonical
+                {
+                  mode;
+                  canonical = UU (mode, n);
+                  tyargs = TubeOf.empty n;
+                  ins = ins_zero n;
+                  fields;
+                  inst_fields = Some fields;
+                })) in
+      let v = Neu { head = UU (mode, n); args = Emp; value; ty = lazy (universe_ty mode n) } in
+      universe_cache := Cached_universe (mode, n, v) :: !universe_cache;
+      v
 
 and universe_nf : type mode n. mode Mode.t -> n D.t -> mode normal =
  fun mode n -> { tm = universe mode n; ty = universe_ty mode n }
