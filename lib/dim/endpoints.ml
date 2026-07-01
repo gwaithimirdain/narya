@@ -55,8 +55,23 @@ let uniq : type l1 l2. l1 len -> l2 len -> (l1, l2) Eq.t =
 
 let len l = l
 
+(* Since 'indices' is called at every branch node of the generic cube and tube traversals, and rebuilding it is quadratic in the arity, we memoize it per arity.  The cache is keyed by the length with N.compare, recomputing on a mismatch, so it remains correct even if different arities appear in one process. *)
+type indices_cache = Indices : 'l len * ('l t, 'l) Bwv.t -> indices_cache
+
+let indices_cache : indices_cache list ref = ref []
+
 let indices : type l. l len -> (l t, l) Bwv.t =
- fun l -> Bwv.map (fun i -> (l, i)) (Bwv.all_indices (len l))
+ fun l ->
+  let rec lookup = function
+    | [] ->
+        let ixs = Bwv.map (fun i -> (l, i)) (Bwv.all_indices (len l)) in
+        indices_cache := Indices (l, ixs) :: !indices_cache;
+        ixs
+    | Indices (l', ixs) :: rest -> (
+        match N.compare l' l with
+        | Eq -> ixs
+        | Neq -> lookup rest) in
+  lookup !indices_cache
 
 let subscripts = [| "₀"; "₁"; "₂"; "₃"; "₄"; "₅"; "₆"; "₇"; "₈"; "₉" |]
 
