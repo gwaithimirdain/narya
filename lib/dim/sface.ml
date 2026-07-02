@@ -113,6 +113,9 @@ let rec opt_of_sface : type a b. (a, b) sface -> (a, b) opt_sface =
   | End (f, e) -> End (opt_of_sface f, Some e)
   | Mid f -> Mid (opt_of_sface f)
 
+let comp_opt_sface : type m n k. (n, k) opt_sface -> (m, n) opt_sface -> (m, k) opt_sface =
+ fun x y -> Opt.comp_sface x y
+
 let rec cod_sface : type m n. (m, n) sface -> n D.t = function
   | Zero -> Word Zero
   | End (f, _) ->

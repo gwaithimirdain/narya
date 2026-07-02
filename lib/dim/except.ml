@@ -1,6 +1,7 @@
 open Util
 open Tbwd
 open Sface
+open Tface
 open Deg
 open Perm
 
@@ -117,6 +118,8 @@ let rec except_of_plus' : type a c ac e d.
       ignore (i, bc, p, e);
       Sorry.e ()
 
+(* We can transfer faces, degeneracies and permutations "downwards" along an except. *)
+
 type (_, _, _) except_sface =
   | Except_sface : ('d, 'a) sface * ('e, 'd, 'c) except -> ('e, 'a, 'c) except_sface
 
@@ -199,6 +202,54 @@ let rec except_perm : type e a b c.
       let (Except_perm (s, ex)) = except_perm e ex s in
       let (Except_unoccurs_insert (i, ex)) = except_unoccurs_insert ex i u in
       Except_perm (Suc (s, i), ex)
+
+(* We can also transfer faces, though not degeneracies, "upwards". *)
+
+type (_, _, _) sface_except =
+  | Sface_except : ('e, 'c, 'd) except * ('d, 'b) sface -> ('e, 'b, 'c) sface_except
+
+let rec sface_except : type e a b c.
+    b D.t -> (c, a) sface -> (e, a, b) except -> (e, b, c) sface_except =
+ fun b s e ->
+  match (b, e) with
+  | Word Zero, Except_zero ->
+      let Zero = s in
+      Sface_except (Except_zero, Zero)
+  | Word (Suc (b, Unit)), Except_occurs (e, o) ->
+      let (Sface_except (e, s)) = sface_except (Word b) s e in
+      Sface_except (Except_occurs (e, o), Mid s)
+  | Word (Suc (b, Unit)), Except_unoccurs (e, u) -> (
+      match s with
+      | End (s, p) ->
+          let (Sface_except (e, s)) = sface_except (Word b) s e in
+          Sface_except (e, End (s, p))
+      | Mid s ->
+          let (Sface_except (e, s)) = sface_except (Word b) s e in
+          Sface_except (Except_unoccurs (e, u), Mid s))
+
+type (_, _, _) pface_except =
+  | Pface_except : ('e, 'c, 'd) except * ('d, 'b) pface -> ('e, 'b, 'c) pface_except
+
+let rec pface_except : type e a b c.
+    b D.t -> (c, a) pface -> (e, a, b) except -> (e, b, c) pface_except =
+ fun b s e ->
+  match (b, e) with
+  | Word Zero, Except_zero -> (
+      match s with
+      | _ -> .)
+  | Word (Suc (b, Unit)), Except_occurs (e, o) ->
+      let (Pface_except (e, s)) = pface_except (Word b) s e in
+      Pface_except (Except_occurs (e, o), Mid s)
+  | Word (Suc (b, Unit)), Except_unoccurs (e, u) -> (
+      match s with
+      | End (s, _, p) ->
+          let (Sface_except (e, s)) = sface_except (Word b) s e in
+          Pface_except (e, End (s, D.zero_plus (cod_sface s), p))
+      | Mid s ->
+          let (Pface_except (e, s)) = pface_except (Word b) s e in
+          Pface_except (Except_unoccurs (e, u), Mid s))
+
+(* But every except does give rise to a degeneracy that adds in the excepted directions.  *)
 
 let rec deg_of_except : type e a b. b D.t -> (e, a, b) except -> (b, a) deg =
  fun b -> function

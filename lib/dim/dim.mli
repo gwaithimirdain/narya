@@ -119,6 +119,7 @@ type ('a, 'b) opt_sface
 
 val sface_of_opt : ('a, 'b) opt_sface -> ('a, 'b) sface option
 val opt_of_sface : ('a, 'b) sface -> ('a, 'b) opt_sface
+val comp_opt_sface : ('n, 'k) opt_sface -> ('m, 'n) opt_sface -> ('m, 'k) opt_sface
 val id_sface : 'n D.t -> ('n, 'n) sface
 val dom_sface : ('m, 'n) sface -> 'm D.t
 val cod_sface : ('m, 'n) sface -> 'n D.t
@@ -1052,6 +1053,16 @@ type (_, _, _) except_perm =
   | Except_perm : ('d, 'a) perm * ('e, 'd, 'c) except -> ('e, 'a, 'c) except_perm
 
 val except_perm : 'e D.t -> ('e, 'a, 'b) except -> ('c, 'b) perm -> ('e, 'a, 'c) except_perm
+
+type (_, _, _) sface_except =
+  | Sface_except : ('e, 'c, 'd) except * ('d, 'b) sface -> ('e, 'b, 'c) sface_except
+
+val sface_except : 'b D.t -> ('c, 'a) sface -> ('e, 'a, 'b) except -> ('e, 'b, 'c) sface_except
+
+type (_, _, _) pface_except =
+  | Pface_except : ('e, 'c, 'd) except * ('d, 'b) pface -> ('e, 'b, 'c) pface_except
+
+val pface_except : 'b D.t -> ('c, 'a) pface -> ('e, 'a, 'b) except -> ('e, 'b, 'c) pface_except
 val sface_of_except : 'b D.t -> ('e, 'a, 'b) except -> ('a, 'b) opt_sface
 val deg_of_except : 'b D.t -> ('e, 'a, 'b) except -> ('b, 'a) deg
 
