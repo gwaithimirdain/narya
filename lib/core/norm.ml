@@ -283,14 +283,17 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
   | App (fn, Modal (modality, al, args)) ->
       (* First we evaluate the function. *)
       let efn = eval_term env fn in
-      (* The environment is m-dimensional and the original application is n-dimensional, so the *substituted* application is m+n dimensional.  Thus must therefore match the dimension of the function being applied. *)
+      (* The environment is m-dimensional and the original application is n-dimensional, so the *substituted* application is m+n dimensional.  However, the stored cube of arguments is at the *filtered* dimension of the original application, and likewise the arguments of the substituted application must be at *its* filtered dimension, which is (filtered m)+n.  So, as in the Constr case below, we filter the dimension m of the environment by the modality, acting on the environment by a face to cut it down to the filtered dimension. *)
       let m = dim_env env in
       let n = CubeOf.dim args in
-      (* Then we evaluate all the arguments, not just in the given environment (of dimension m), but in that environment acted on by all the strict faces of m.  Since the given arguments are indexed by strict faces of n, the result is a collection of values indexed by strict faces of m+n.  *)
-      let (Plus m_n) = D.plus n in
-      let mn = D.plus_out m m_n in
+      let (Has_filter filter_lm) = Modality.filter modality m in
+      let l = Modality.filtered m filter_lm in
+      let (Plus l_n) = D.plus n in
+      let ln = D.plus_out l l_n in
+      (* Then we evaluate all the arguments, not just in the (filtered, keyed) environment, but in that environment acted on by all the strict faces of l.  Since the given arguments are indexed by strict faces of n, the result is a collection of values indexed by strict faces of l+n.  *)
       let lenv = key_env env (Modalcell.id modality) al in
-      let eargs = eval_args lenv m_n mn args in
+      let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter m filter_lm)) in
+      let eargs = eval_args flenv l_n ln args in
       (* Having evaluated the function and its arguments, we now pass the job off to a helper function. *)
       apply efn modality eargs
   | Field (tm, fld, fldins) ->

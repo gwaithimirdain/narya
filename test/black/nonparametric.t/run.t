@@ -92,3 +92,28 @@ Iterated reflexivity keeps the filtered single-variable domain.
   ♭T⁽ᵉᵉ⁾
     : (A :♭| Type) →⁽ᵉᵉ⁾ Type⁽ᵉᵉ⁾ (♭T⁽ᵉ⁾ A) (♭T⁽ᵉ⁾ A) (♭T⁽ᵉ⁾ A) (♭T⁽ᵉ⁾ A)
   
+
+
+Reflexivity of modal *lambdas* (not just constants) also reads back with a
+filtered domain, and computes when applied.
+
+  $ narya -parametric -nonparametric-comonad nonparametric.ny -e "echo refl ((A : ♭| Type) ↦ A)"
+  A ↦ Id A
+    : (A :♭| Type) →⁽ᵉ⁾ Type⁽ᵉ⁾ A A
+  
+
+  $ narya -parametric -nonparametric-comonad nonparametric.ny -e "echo refl ((A : ♭| Type) ↦ ♭T A)"
+  A ↦ ♭T⁽ᵉ⁾ A
+    : (A :♭| Type) →⁽ᵉ⁾ Type⁽ᵉ⁾ (♭T A) (♭T A)
+  
+
+  $ narya -parametric -nonparametric-comonad nonparametric.ny -e "echo refl ((A : ♭| Type) ↦ ♭T A) Type"
+  ♭T⁽ᵉ⁾ Type
+    : Type⁽ᵉ⁾ (♭T Type) (♭T Type)
+  
+
+  $ narya -parametric -nonparametric-comonad nonparametric.ny -e "echo refl (refl ((A : ♭| Type) ↦ ♭T A))"
+  A ↦ ♭T⁽ᵉᵉ⁾ A
+    : (A :♭| Type) →⁽ᵉᵉ⁾ Type⁽ᵉᵉ⁾ (♭T⁽ᵉ⁾ A) (♭T⁽ᵉ⁾ A) (♭T⁽ᵉ⁾ A) (♭T⁽ᵉ⁾ A)
+  
+

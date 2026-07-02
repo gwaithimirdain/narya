@@ -67,16 +67,17 @@ and readback_at : type mode a z.
   | ( Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs),
       Lam ((Variables (m, mn, xs) as x), filter2, body) ) -> (
       let Eq = eq_of_ins_zero ins in
-      let k = CubeOf.dim doms in
+      (* The instantiation of the type, and the dimension of the binder, are both the *outer* (unfiltered) dimension of the pi-type; the variable cube and the domains live at the filtered dimension. *)
+      let n = BindCube.dim cods in
       let l = dim_binder body in
       let modality = Modality.filter_modality filter in
       match
-        ( D.compare (TubeOf.inst tyargs) k,
-          D.compare k l,
+        ( D.compare (TubeOf.inst tyargs) n,
+          D.compare n l,
           Modality.compare modality (Modality.filter_modality filter2) )
       with
-      | Neq, _, _ -> fatal (Dimension_mismatch ("reading back at pi 1", TubeOf.inst tyargs, k))
-      | _, Neq, _ -> fatal (Dimension_mismatch ("reading back at pi 2", k, l))
+      | Neq, _, _ -> fatal (Dimension_mismatch ("reading back at pi 1", TubeOf.inst tyargs, n))
+      | _, Neq, _ -> fatal (Dimension_mismatch ("reading back at pi 2", n, l))
       | _, _, Neq ->
           fatal
             (Modality_mismatch
@@ -85,10 +86,10 @@ and readback_at : type mode a z.
           let Eq = Modality.filter_uniq filter filter2 in
           let args, newnfs = dom_vars ctx modality doms in
           let (Plus af) = N.plus (NICubeOf.out N.zero xs) in
-          let newctx = Ctx.vis ctx filter m mn xs newnfs af in
+          let newctx = Ctx.vis ctx (Modality.filter_idempotent filter) m mn xs newnfs af in
           let output = tyof_app cods tyargs filter args in
           let body = readback_at ~eta newctx (apply_term tm modality args) output in
-          Term.Lam (x, D.plus_out m mn, filter, body))
+          Term.Lam (x, n, filter, body))
   (* If eta-expansion is enabled, we do an eta-expanding readback of any term. *)
   | Canonical (_, Pi { x = name; filter; doms; cods }, ins, tyargs), tm when eta ->
       let modality = Modality.filter_modality filter in
