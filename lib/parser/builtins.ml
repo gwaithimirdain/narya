@@ -948,6 +948,39 @@ let rec process_pi : type n lt ls rt rs.
   | Dep { vars = []; implicit = `Explicit; _ } :: doms -> process_pi ctx higher doms cod
   | Dep { implicit = `Implicit; _ } :: _ -> fatal (Unimplemented "general implicit function-types")
 
+(* One group of domains for an instantiated higher pi-type: a telescope consisting of the implicit boundary domains and ending with the (first) explicit primary domain.  The number of domains needed is not known until typechecking time (it is determined by the modality, which can't be parsed until the modes are known), so we just collect them all in a telescope; but the *grouping* into successive higher pi-types is visible at parse time, since each group consists of implicit domains followed by a single explicit one. *)
+type _ higher_dom_group =
+  | Higher_dom_group :
+      ('n, 'b, 'nb) tel * (string option, 'nb) Bwv.t * pi_dom list * Asai.Range.t option
+      -> 'n higher_dom_group
+
+let rec process_higher_dom_group : type n.
+    (string option, n) Bwv.t -> pi_dom list -> Asai.Range.t option -> n higher_dom_group =
+ fun ctx doms loc ->
+  match doms with
+  | [] ->
+      fatal
+        (Unexpected_implicitness
+           (`Implicit, "domain", "the primary domain of a higher function-type must be explicit"))
+  | Dep ({ vars = (x, _) :: xs; modality; ty = Wrap dom; loc = xloc; implicit; _ } as data) :: rest
+    -> (
+      let cdom = process ctx dom in
+      let newdoms =
+        match xs with
+        | [] -> rest
+        | _ :: _ -> Dep { data with vars = xs } :: rest in
+      let loc =
+        match loc with
+        | Some loc -> Some loc
+        | None -> xloc in
+      match implicit with
+      | `Explicit -> Higher_dom_group (Ext (x, modality, cdom, Emp), Bwv.snoc ctx x, newdoms, loc)
+      | `Implicit ->
+          let (Higher_dom_group (tele, newctx, rest2, loc2)) =
+            process_higher_dom_group (Bwv.snoc ctx x) newdoms loc in
+          Higher_dom_group (Ext (x, modality, cdom, tele), newctx, rest2, loc2))
+  | _ -> invalid "higher pi"
+
 let rec process_inst_higher_pi : type n lt ls rt rs m.
     (string option, n) Bwv.t ->
     m D.pos ->
@@ -958,46 +991,10 @@ let rec process_inst_higher_pi : type n lt ls rt rs m.
   match doms with
   | [] -> process ctx cod
   | _ :: _ ->
-      let module Acc = struct
-        type 'left t =
-          (string option, 'left) Bwv.t
-          * string located list located list
-          * pi_dom list
-          * Asai.Range.t option
-      end in
-      let module T = DomCube.Traverse (Acc) in
-      let (Wrap (domcube, (newctx, modalities, doms, loc))) =
-        let build : type left k b. (k, m) sface -> left Acc.t -> (left, k, b) T.fwrap_left =
-         fun s (ctx, modalities, doms, loc) ->
-          match doms with
-          | [] -> fatal (Not_enough_domains (D.pos dim))
-          | Dep ({ vars = (x, _) :: xs; modality; ty = Wrap dom; loc = xloc; implicit; _ } as data)
-            :: doms -> (
-              let modalities = modality :: modalities in
-              match (is_id_sface s, implicit) with
-              | Some Eq, `Explicit | None, `Implicit ->
-                  let cdom = process ctx dom in
-                  let ctx = Bwv.snoc ctx x in
-                  let doms =
-                    match xs with
-                    | [] -> doms
-                    | _ :: _ -> Dep { data with vars = xs } :: doms in
-                  let loc =
-                    match loc with
-                    | Some loc -> Some loc
-                    | None -> xloc in
-                  Fwrap (DomFam (x, cdom), (ctx, modalities, doms, loc))
-              | _ ->
-                  fatal
-                    (Unexpected_implicitness
-                       ( implicit,
-                         "domain",
-                         "all boundary domains must be implicit and primary domain explicit" )))
-          | _ -> invalid "higher pi" in
-        T.build_left (D.pos dim) { build } (ctx, [], doms, None) in
+      let (Higher_dom_group (tele, newctx, doms, loc)) = process_higher_dom_group ctx doms None in
       let cod = process_inst_higher_pi newctx dim doms cod in
       let loc = Range.merge_opt loc cod.loc in
-      { value = Synth (InstHigherPi (dim, modalities, domcube, cod)); loc }
+      { value = Synth (InstHigherPi (dim, tele, cod)); loc }
 
 (* Pretty-print the domains of a right-associated iterated function-type that may mix dependent and non-dependent arguments.  Each argument is preceded by an arrow if its wsarrow is given; pi_doms ensures these go in the right place.  If linebreaked, the eventual codomain with its arrow goes on a line by itself with hanging indent, and then the domains are flowed with their own hanging indent.  Arrows never come at the beginnings of lines.  *)
 
