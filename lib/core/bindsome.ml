@@ -132,7 +132,7 @@ module Ordered = struct
           go ctx
             (Cons (e, tel, xf))
             (Fwn.bfplus_assocr ax xf ij)
-            (Suc (Dim (Ctx.modality_entry e, Ctx.dim_entry e), bc))
+            (Suc (Dim (Ctx.dim_entry e, Ctx.filter_entry e), bc))
       | Lock (ctx, modality) -> go ctx (Lock (modality, tel)) ij (Suc (Lock modality, bc))
       | Parametric_lock ctx -> go ctx (Parametric_lock tel) ij bc in
     go ctx (Nil (mode ctx)) Zero Zero
@@ -187,17 +187,19 @@ module Ordered = struct
 
      6. go_go_bind_some acts on each entry with bind_some_entry, whose real work is done by bind_some_normal_cube that acts on a cube of variables with the binder callback and readback-eval.  Since that function is the one we define first, we now proceed to comment its definition directly. *)
 
-  let bind_some_normal_cube : type dom modality mode bindmode i a n.
+  let bind_some_normal_cube : type dom modality mode bindmode i a k n.
       level:int ->
       bindmode var_binder ->
       [ `Bindable | `Nonbindable ] ->
       oldctx:(mode, i, a) Ctx.Ordered.t ->
       newctx:(mode, i, a) Ctx.Ordered.t ->
-      (dom, modality, mode) Modality.t ->
-      (n, dom Binding.t) CubeOf.t ->
-      (n, dom Binding.t) CubeOf.t option =
-   fun ~level binder bindable ~oldctx ~newctx modality in_entry ->
+      (dom, modality, mode, k, n) Modality.filter_dim ->
+      (k, dom Binding.t) CubeOf.t ->
+      (k, dom Binding.t) CubeOf.t option =
+   fun ~level binder bindable ~oldctx ~newctx filter in_entry ->
     let i = Ctx.Ordered.length newctx in
+    let modality = Modality.filter_modality filter in
+    let filtered = Modality.filter_idempotent filter in
     let open Monad.Ops (Monad.Maybe) in
     let open CubeOf.Monadic (Monad.Maybe) in
     (* The tricky thing we have to deal with is that in a *cube* of variables, when doing readback-eval on each variable, we should be allowed to use the *preceeding* variables in the dependency order of the cube, but not the *subsequent* ones.  Unfortunately we don't have a direct way for a context to contain only "some" of a cube of variables.  Thus, we use the ability of Binder.t to be Unknown or Delayed.  *)
@@ -208,8 +210,8 @@ module Ordered = struct
         [ in_entry ] (Cons (Cons Nil)) in
     (* Now we temporarily add both of those entries to the given contexts.  Since we are not using these contexts for typechecking, they might as well be invisible. *)
     let (Locked (plus, oldctx)) =
-      Ctx.Ordered.lock (Ctx.Ordered.invis oldctx modality oldentry) modality in
-    let newctx = Ctx.Ordered.lock_to (Ctx.Ordered.invis newctx modality newentry) modality plus in
+      Ctx.Ordered.lock (Ctx.Ordered.invis oldctx filtered oldentry) modality in
+    let newctx = Ctx.Ordered.lock_to (Ctx.Ordered.invis newctx filtered newentry) modality plus in
     (* The integer k counts the second component of the new level variables we are creating. *)
     let k = ref 0 in
     let* () =
@@ -262,18 +264,18 @@ module Ordered = struct
    fun ~level binder ~oldctx ~newctx e ->
     let open Monad.Ops (Monad.Maybe) in
     match e with
-    | Vis ({ modality; bindings; fplus = Zero; _ } as v) ->
+    | Vis ({ filter; bindings; fplus = Zero; _ } as v) ->
         let* bindings =
-          bind_some_normal_cube ~level binder `Bindable ~oldctx ~newctx modality bindings in
+          bind_some_normal_cube ~level binder `Bindable ~oldctx ~newctx filter bindings in
         return (Ctx.Vis { v with bindings })
-    | Invis (modality, bindings) ->
+    | Invis { filter; bindings } ->
         let* bindings =
-          bind_some_normal_cube ~level binder `Bindable ~oldctx ~newctx modality bindings in
-        return (Ctx.Invis (modality, bindings))
-    | Vis ({ modality; bindings; _ } as v) ->
+          bind_some_normal_cube ~level binder `Bindable ~oldctx ~newctx filter bindings in
+        return (Ctx.Invis { filter; bindings })
+    | Vis ({ filter; bindings; _ } as v) ->
         (* A variable that has views of its fields can't be bound. *)
         let* bindings =
-          bind_some_normal_cube ~level binder `Nonbindable ~oldctx ~newctx modality bindings in
+          bind_some_normal_cube ~level binder `Nonbindable ~oldctx ~newctx filter bindings in
         return (Ctx.Vis { v with bindings })
 
   (* This seems an appropriate place to comment about the "insert" and "append_permute" data being returned from (go_)go_bind_some.  The issue is that in addition to a permuted context, we need to compute the permutation relating it to the original context.  In fact we need *two* permutations, one for the raw indices and one for the checked indices.
@@ -315,7 +317,7 @@ module Ordered = struct
         | Some newentry ->
             Found
               {
-                ins = Now (Ctx.modality_entry newentry, Ctx.dim_entry newentry);
+                ins = Now (Ctx.dim_entry newentry, Ctx.filter_entry newentry);
                 fins = Now;
                 oldentry = entry;
                 newentry;

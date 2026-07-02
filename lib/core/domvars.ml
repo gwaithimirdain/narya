@@ -43,16 +43,17 @@ let dom_vars : type dom modality mode m a b.
 
 (* Extend a context by a finite number of cubes of new visible variables at some dimension, with boundaries, whose types are specified by the evaluation of some telescope in some (possibly higher-dimensional) environment (and hence may depend on the earlier ones).  Also return the new variables in a list of Cubes, and the new environment extended by the *top-dimensional variables only*. *)
 
-module ModalBindingCube = Modality.Cube (struct
-  type ('mode, 'a, 'b) t = 'mode Ctx.Binding.t
-end)
+type (_, _) modal_binding_cube =
+  | Modal :
+      ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim * ('k, 'dom Ctx.Binding.t) CubeOf.t
+      -> ('n, 'mode) modal_binding_cube
 
 type ('mode, 'n, 'ac, 'bc, 'e) ext_tel =
   | Ext_tel : {
       ctx : ('mode, 'ac, 'em) Ctx.t;
       env : ('mode, 'n, 'bc) env;
-      values : ('n, 'mode, kinetic, unit) ModalValueCube.t list;
-      normals : ('n, 'mode, unit, unit) ModalBindingCube.t list;
+      values : ('n, 'mode, kinetic) modal_value_cube list;
+      normals : ('n, 'mode) modal_binding_cube list;
       annotate : ('n, 'mode, 'annotations, 'mode, 'mode, 'm, 'mode) VarAnnotate.fwd_t;
       comp : ('mode, 'm, 'mode, 'e, unit, 'em) Tctx.bcomp;
     }
@@ -73,27 +74,38 @@ let rec ext_tel : type mode a b c ac bc e n.
   | x :: xs, Ext (x', Modal (modality, plus, rty), rest) ->
       let m = dim_env env in
       let lenv = key_env env (Modalcell.id modality) plus in
+      let (Has_filter filter_k_m) = Modality.filter modality m in
+      let k = Modality.filtered m filter_k_m in
+      let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter m filter_k_m)) in
       let newvars, newnfs =
         dom_vars ctx modality
-          (CubeOf.build m
-             { build = (fun fa -> Norm.eval_term (act_env lenv (op_of_sface fa)) rty) }) in
+          (CubeOf.build k
+             { build = (fun fa -> Norm.eval_term (act_env flenv (opt_op_of_sface fa)) rty) }) in
       let x =
         match x with
         | Some x -> Some x
         | None -> x' in
+      let filter_k_k = Modality.filter_idempotent filter_k_m in
       let (Ext_tel { ctx; env; values = vars; normals = nfs; annotate; comp }) =
         ext_tel
-          (Ctx.cube_vis ctx modality x newnfs)
-          (Ext { env; plus = D.plus_zero m; modality; values = `Ok newvars })
+          (Ctx.cube_vis ctx filter_k_k x newnfs)
+          (Ext
+             {
+               env;
+               plus = D.plus_zero k;
+               values = `Ok newvars;
+               filter = filter_k_m;
+               filtered = Modality.filter_zero modality;
+             })
           xs rest in
       Ext_tel
         {
           ctx;
           env;
-          values = Modal (modality, newvars) :: vars;
-          normals = Modal (modality, newnfs) :: nfs;
-          annotate = Suc (Annotate modality, annotate);
-          comp = Suc (Dim (modality, m), comp);
+          values = Modal (filter_k_m, newvars) :: vars;
+          normals = Modal (filter_k_m, newnfs) :: nfs;
+          annotate = Suc (Annotate filter_k_m, annotate);
+          comp = Suc (Dim (k, filter_k_k), comp);
         }
 
 (* Extract a list of all the variables of a given kind in an iterated pi-type. *)
@@ -105,12 +117,13 @@ let rec get_pi_vars : type mode a b.
     string option Bwd.t =
  fun ctx cube xs ty ->
   match View.view_type ty "get_pi_vars" with
-  | Canonical (_, Pi (x, modality, doms, cods), ins, tyargs) -> (
+  | Canonical (_, Pi { x; filter; doms; cods }, ins, tyargs) -> (
+      let modality = Modality.filter_modality filter in
       let Eq = eq_of_ins_zero ins in
       match (D.compare_zero (CubeOf.dim doms), cube) with
       | Zero, `Normal | Pos _, `Cube ->
           let args, newnfs = dom_vars ctx modality doms in
-          let (Any_ctx sctx) = Ctx.variables_vis ctx modality x newnfs in
-          get_pi_vars sctx cube (Snoc (xs, top_variable x)) (tyof_app cods tyargs args)
+          let (Any_ctx sctx) = Ctx.variables_vis ctx (Modality.filter_idempotent filter) x newnfs in
+          get_pi_vars sctx cube (Snoc (xs, top_variable x)) (tyof_app cods tyargs filter args)
       | _ -> xs)
   | _ -> xs
