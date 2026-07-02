@@ -93,6 +93,16 @@ module Cube (F : Fam2) = struct
       | Nil, [] -> []
       | Cons hs, x :: xs -> x :: hgt_of_hlist hs xs
 
+    (* We can also make an hft of constant types from a vector of the right length. *)
+    let rec hft_of_vec : type b k n bs.
+        (b, k, bs) Tlist.conses -> ((n, b) F.t, k) Vec.t -> (n, bs) hft =
+     fun bs xs ->
+      match (bs, xs) with
+      | Nil, [] -> []
+      | Cons bs, x :: xs ->
+          let xs = hft_of_vec bs xs in
+          x :: xs
+
     (* hgts preserves validity of tlists. *)
     let rec tlist_hgts : type m n xs ys. (m, n, xs, ys) hgts -> xs Tlist.t -> ys Tlist.t =
      fun hs xs ->
@@ -270,6 +280,42 @@ module Cube (F : Fam2) = struct
 
     let buildM : type n b. n D.t -> (n, b) builderM -> (n, b) t M.t =
      fun n g -> gbuildM n (D.plus_zero n) (D.plus_zero n) Zero g
+
+    (* TODO: Redefine buildM in terms of pbuildM *)
+
+    type ('n, 'bs) pbuilderM = { build : 'm. ('m, 'n) sface -> ('m, 'bs) Heter.hft M.t }
+
+    let rec gpbuildM : type k m mk l ml bs.
+        m D.t ->
+        (m, k, mk) D.plus ->
+        (m, l, ml) D.plus ->
+        (k, l) bwsface ->
+        (ml, bs) pbuilderM ->
+        bs Tlist.t ->
+        (m, mk, bs) Heter.hgt M.t =
+     fun m mk ml d g bs ->
+      match m with
+      | Word Zero ->
+          let Eq = D.plus_uniq mk (D.zero_plus (dom_bwsface d)) in
+          let Eq = D.plus_uniq ml (D.zero_plus (cod_bwsface d)) in
+          M.apply (g.build (sface_of_bw d)) @@ fun x -> Heter.leaf x
+      | Word (Suc (m, Unit)) ->
+          let (Suc (mk', Unit)) = D.plus_suc mk in
+          let (Wrap l) = Endpoints.wrapped () in
+          let (Hgts newhs) = Heter.hgts_of_tlist bs in
+          M.apply
+            ( M.zip (fun () ->
+                  BwvM.pmapM
+                    (fun [ e ] ->
+                      M.apply (gpbuildM (Word m) mk' (D.plus_suc ml) (End (e, d)) g bs) @@ fun xs ->
+                      Heter.hlist_of_hgt newhs xs)
+                    [ Endpoints.indices l ]
+                    (Heter.tlist_hgts newhs bs))
+            @@ fun () -> gpbuildM (Word m) (D.plus_suc mk) (D.plus_suc ml) (Mid d) g bs )
+          @@ fun (ends, mid) -> Heter.branch l newhs ends mid
+
+    let pbuildM : type n bs. n D.t -> (n, bs) pbuilderM -> bs Tlist.t -> (n, n, bs) Heter.hgt M.t =
+     fun n g bs -> gpbuildM n (D.plus_zero n) (D.plus_zero n) Zero g bs
   end
 
   module Monadic (M : Monad.Plain) = struct
@@ -332,5 +378,4 @@ module CubeOf = struct
         let mk' = D.plus_suc mk in
         let (Suc (mk'', Unit)) = mk' in
         Branch (l, Bwv.map (fun t -> lower mk'' (D.plus_suc n12') t) ends, lower mk' n12 mid)
-
 end

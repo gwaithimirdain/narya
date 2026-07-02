@@ -177,6 +177,8 @@ module Cube (F : Fam2) : sig
       | [] : ('m, 'n, nil) hgt
       | ( :: ) : ('m, 'n, 'x) gt * ('m, 'n, 'xs) hgt -> ('m, 'n, ('x, 'xs) cons) hgt
 
+    val hft_of_vec : ('b, 'k, 'bs) Tlist.conses -> (('n, 'b) F.t, 'k) Vec.t -> ('n, 'bs) hft
+
     (* val hft_nil : ('n, Hlist.nil) hft *)
     (* val hft_cons : ('n, 'x) F.t -> ('n, 'xs) hft -> ('n, ('x, 'xs) Hlist.cons) hft *)
   end
@@ -211,6 +213,10 @@ module Cube (F : Fam2) : sig
     type ('n, 'b) builderM = { build : 'm. ('m, 'n) sface -> ('m, 'b) F.t M.t }
 
     val buildM : 'n D.t -> ('n, 'b) builderM -> ('n, 'b) t M.t
+
+    type ('n, 'bs) pbuilderM = { build : 'm. ('m, 'n) sface -> ('m, 'bs) Heter.hft M.t }
+
+    val pbuildM : 'n D.t -> ('n, 'bs) pbuilderM -> 'bs Tlist.t -> ('n, 'n, 'bs) Heter.hgt M.t
   end
 
   module Monadic (M : Monad.Plain) : sig
@@ -359,6 +365,11 @@ module Tube (F : Fam2) : sig
       | ( :: ) :
           ('m, 'k, 'mk, 'nk, 'x) gt * ('m, 'k, 'mk, 'nk, 'xs) hgt
           -> ('m, 'k, 'mk, 'nk, ('x, 'xs) cons) hgt
+
+    val vec_of_hgt :
+      ('b, 'k, 'bs) Tlist.conses ->
+      (D.zero, 'n, 'n, 'n, 'bs) hgt ->
+      ((D.zero, 'n, 'n, 'b) t, 'k) Vec.t
   end
 
   module Infix : module type of C.Infix
@@ -399,6 +410,17 @@ module Tube (F : Fam2) : sig
 
     val buildM :
       'n D.t -> ('n, 'k, 'nk) D.plus -> ('n, 'k, 'nk, 'b) builderM -> ('n, 'k, 'nk, 'b) t M.t
+
+    type ('n, 'k, 'nk, 'bs) pbuilderM = {
+      build : 'm. ('m, 'n, 'k, 'nk) tface -> ('m, 'bs) C.Heter.hft M.t;
+    }
+
+    val pbuildM :
+      'n D.t ->
+      ('n, 'k, 'nk) D.plus ->
+      ('n, 'k, 'nk, 'bs) pbuilderM ->
+      'bs Tlist.t ->
+      ('n, 'k, 'nk, 'nk, 'bs) Heter.hgt M.t
   end
 
   module Monadic (M : Monad.Plain) : sig
@@ -426,6 +448,13 @@ module Tube (F : Fam2) : sig
 
   val build :
     'n D.t -> ('n, 'k, 'nk) D.plus -> ('n, 'k, 'nk, 'b) IdM.builderM -> ('n, 'k, 'nk, 'b) t
+
+  val pbuild :
+    'n D.t ->
+    ('n, 'k, 'nk) D.plus ->
+    ('n, 'k, 'nk, 'bs) IdM.pbuilderM ->
+    'bs Tlist.t ->
+    ('n, 'k, 'nk, 'nk, 'bs) Heter.hgt
 end
 
 module TubeOf : sig
