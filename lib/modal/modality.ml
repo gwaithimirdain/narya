@@ -415,6 +415,9 @@ let filter_dim_modes : type x m y a b x2 y2.
   let d = Nonparametric.dom n in
   (src_uniq d mu, tgt_uniq d mu)
 
+let filter_modality : type x m y a b. (x, m, y, a, b) filter_dim -> (x, m, y) t =
+ fun (Filter (e, _)) -> Nonparametric.dom e
+
 let filtered b (Filter (_, e)) = excepted e b
 
 let filter_id : type mode a. mode Mode.t -> a D.t -> (mode, mode id, mode, a, a) filter_dim =
@@ -511,6 +514,17 @@ let filter_perm : type x m y a b c.
   let (Loop p) = Nonparametric.cod e in
   let (Except_perm (s, ex)) = except_perm p ex s in
   Filter_perm (s, Filter (e, ex))
+
+type (_, _, _, _, _) pface_filter =
+  | Pface_filter :
+      ('x, 'm, 'y, 'c, 'd) filter_dim * ('d, 'b) pface
+      -> ('x, 'm, 'y, 'b, 'c) pface_filter
+
+let pface_filter : type x m y a b c.
+    b D.t -> (c, a) pface -> (x, m, y, a, b) filter_dim -> (x, m, y, b, c) pface_filter =
+ fun b s (Filter (e, ex)) ->
+  let (Pface_except (ex, s)) = pface_except b s ex in
+  Pface_filter (Filter (e, ex), s)
 
 let deg_of_filter : type x m y a b. b D.t -> (x, m, y, a, b) filter_dim -> (b, a) deg =
  fun b (Filter (_, ex)) -> deg_of_except b ex

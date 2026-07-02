@@ -98,10 +98,10 @@ val filter : ('x, 'm, 'y) t -> 'b D.t -> ('x, 'm, 'y, 'b) has_filter
 val filter_uniq :
   ('x, 'm, 'y, 'a1, 'b) filter_dim -> ('x, 'm, 'y, 'a2, 'b) filter_dim -> ('a1, 'a2) Eq.t
 
-(* A filter_dim by a modality 'm has the same source and target as 'm; this recovers modes that have been bound existentially elsewhere. *)
 val filter_dim_modes :
   ('x, 'm, 'y, 'a, 'b) filter_dim -> ('x2, 'm, 'y2) t -> ('x, 'x2) Eq.t * ('y, 'y2) Eq.t
 
+val filter_modality : ('x, 'm, 'y, 'a, 'b) filter_dim -> ('x, 'm, 'y) t
 val filtered : 'b D.t -> ('x, 'm, 'y, 'a, 'b) filter_dim -> 'a D.t
 val filter_id : 'mode Mode.t -> 'a D.t -> ('mode, 'mode id, 'mode, 'a, 'a) filter_dim
 val eq_of_filter_id : ('mode, 'mode id, 'mode, 'a, 'b) filter_dim -> ('a, 'b) Eq.t
@@ -161,6 +161,14 @@ type (_, _, _, _, _) filter_perm =
 
 val filter_perm :
   ('x, 'm, 'y, 'a, 'b) filter_dim -> ('c, 'b) perm -> ('x, 'm, 'y, 'a, 'c) filter_perm
+
+type (_, _, _, _, _) pface_filter =
+  | Pface_filter :
+      ('x, 'm, 'y, 'c, 'd) filter_dim * ('d, 'b) pface
+      -> ('x, 'm, 'y, 'b, 'c) pface_filter
+
+val pface_filter :
+  'b D.t -> ('c, 'a) pface -> ('x, 'm, 'y, 'a, 'b) filter_dim -> ('x, 'm, 'y, 'b, 'c) pface_filter
 
 val deg_of_filter : 'b D.t -> ('x, 'm, 'y, 'a, 'b) filter_dim -> ('b, 'a) deg
 val sface_of_filter : 'b D.t -> ('x, 'm, 'y, 'a, 'b) filter_dim -> ('a, 'b) opt_sface
