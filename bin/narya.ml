@@ -17,6 +17,7 @@ let interactive = ref false
 let proofgeneral = ref false
 let show_version = ref false
 let install_mode_theory = ref Modal.Trivial.install
+let nonparametric_comonad = ref false
 
 (* Undocumented flag used for testing: interpret a given file or command-line string as if it were entered in interactive mode. *)
 let fake_interacts : string Bwd.t ref = ref Emp
@@ -78,6 +79,12 @@ let speclist =
     ( "-functor",
       Arg.Unit (fun () -> install_mode_theory := Modal.Functor.install),
       "Select the functor mode theory" );
+    ( "-nonparametric-comonad",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Nonparametric_comonad.install;
+          nonparametric_comonad := true),
+      "Select the nonparametric comonad mode theory (currently requires -parametric)" );
     ("--help", Arg.Unit (fun () -> ()), "");
     ("-", Arg.Unit (fun () -> inputs := Snoc (!inputs, `Stdin)), "");
     ("-fake-interact", Arg.String (fun str -> fake_interacts := Snoc (!fake_interacts, str)), "");
@@ -94,6 +101,9 @@ let () =
   if !show_version then (
     print_endline (String.trim [%blob "version.txt"]);
     exit 0);
+  if !nonparametric_comonad && !hott then (
+    Printf.fprintf stderr "-nonparametric-comonad currently requires -parametric\n";
+    exit 1);
   if
     Bwd.is_empty !inputs
     && (not !interactive)
