@@ -30,8 +30,9 @@ module rec Term : sig
   module CodFam : sig
     type (_, _) t =
       | Cod :
-          ('mode, ('a, ('modality, 'k) dim_entry) snoc, kinetic) Term.term
-          -> ('k, 'mode * 'modality * 'a) t
+          ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
+          * ('mode, ('a, ('modality, 'k) dim_entry) snoc, kinetic) Term.term
+          -> ('n, 'dom * 'modality * 'mode * 'a) t
   end
 
   module CodCube : module type of Cube (CodFam)
@@ -91,9 +92,9 @@ module rec Term : sig
 
   type (_, _, _, _) any_modal_term_cube =
     | Modal :
-        ('dom, 'modality, 'mode) Modality.t
+        ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
         * ('a, 'mode, 'modality, 'dom, 'am) plus_lock
-        * ('n, ('dom, 'am, 's) Term.term) CubeOf.t
+        * ('k, ('dom, 'am, 's) Term.term) CubeOf.t
         -> ('n, 'mode, 'a, 's) any_modal_term_cube
 
   type (_, _, _) term =
@@ -108,11 +109,7 @@ module rec Term : sig
     | Inst :
         ('mode, 'a, kinetic) term * ('m, 'n, 'mn, ('mode, 'a, kinetic) term) TubeOf.t
         -> ('mode, 'a, kinetic) term
-    | Pi :
-        'n variables
-        * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
-        * ('n, 'mode * 'modality * 'a) CodCube.t
-        -> ('mode, 'a, kinetic) term
+    | Pi : ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args -> ('mode, 'a, kinetic) term
     | App :
         ('mode, 'a, kinetic) term * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
         -> ('mode, 'a, kinetic) term
@@ -137,9 +134,10 @@ module rec Term : sig
         * ('mode, ('a, ('modality, D.zero) dim_entry) snoc, 's) term
         -> ('mode, 'a, 's) term
     | Lam :
-        'n variables
-        * ('dom, 'modality, 'mode) Modality.t
-        * ('mode, ('a, ('modality, 'n) dim_entry) snoc, 's) Term.term
+        'k variables
+        * 'n D.t
+        * ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
+        * ('mode, ('a, ('modality, 'k) dim_entry) snoc, 's) Term.term
         -> ('mode, 'a, 's) term
     | Struct : ('mode, 'n, 'a, 's, 'et) struct_args -> ('mode, 'a, 's) term
     | Match : {
@@ -156,6 +154,13 @@ module rec Term : sig
     | Unact : ('m, 'n) op * ('mode, 'b, 's) term -> ('mode, 'b, 's) term
     | Shift : 'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'b, 's) term -> ('mode, 'nb, 's) term
     | Weaken : ('mode, 'b, 's) term -> ('mode, ('b, ('modality, 'n) dim_entry) snoc, 's) term
+
+  and ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args = {
+    x : 'k variables;
+    filter : ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim;
+    doms : ('k, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube;
+    cods : ('n, 'dom * 'modality * 'mode * 'a) CodCube.t;
+  }
 
   and ('mode, 'n, 'a, 's, 'et) struct_args = {
     dim : 'n D.t;
@@ -228,10 +233,13 @@ module rec Term : sig
 
   and (_, _, _, _) env =
     | Emp : 'mode Mode.t * 'n D.t -> ('mode, 'a, 'n, 'mode emp) env
-    | Ext :
-        ('mode, 'a, 'n, 'b) env
-        * ('n, 'k, 'nk) D.plus
-        * ('nk, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
+    | Ext : {
+        env : ('mode, 'a, 'n, 'b) env;
+        filtered : ('dom, 'modality, 'mode, 'k, 'k) Modality.filter_dim;
+        filter : ('dom, 'modality, 'mode, 'm, 'n) Modality.filter_dim;
+        plus : ('m, 'k, 'mk) D.plus;
+        values : ('mk, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube;
+      }
         -> ('mode, 'a, 'n, ('b, ('modality, 'k) dim_entry) snoc) env
     | Key : {
         env : ('cod, 'a, 'n, 'b) env;
@@ -255,6 +263,7 @@ module rec Term : sig
         dim : 'm D.t;
         plus_lock : (('b, ('modality, 'mn) dim_entry) snoc, 'mode, 'modality, 'dom, 'bm) plus_lock;
         plusdim : ('m, 'n, 'mn) D.plus;
+        filter : ('dom, 'modality, 'mode, 'mn, 'mn) Modality.filter_dim;
         vars : (N.zero, 'n, string option, 'f1) NICubeOf.t;
         bindings : ('mn, ('dom, 'bm) binding) CubeOf.t;
         hasfields : ('m, 'f2) has_fields;
@@ -262,9 +271,11 @@ module rec Term : sig
         fplus : ('f1, 'f2, 'f) N.plus;
       }
         -> ('dom, 'modality, 'mode, 'b, 'bm, 'f, 'mn) entry
-    | Invis :
-        (('b, ('modality, 'n) dim_entry) snoc, 'mode, 'modality, 'dom, 'bm) plus_lock
-        * ('n, ('dom, 'bm) binding) CubeOf.t
+    | Invis : {
+        plus_lock : (('b, ('modality, 'n) dim_entry) snoc, 'mode, 'modality, 'dom, 'bm) plus_lock;
+        filter : ('dom, 'modality, 'mode, 'n, 'n) Modality.filter_dim;
+        bindings : ('n, ('dom, 'bm) binding) CubeOf.t;
+      }
         -> ('dom, 'modality, 'mode, 'b, 'bm, N.zero, 'n) entry
 
   and (_, _, _) ordered_termctx =
@@ -285,8 +296,9 @@ end = struct
   module CodFam = struct
     type ('k, _) t =
       | Cod :
-          ('mode, ('a, ('modality, 'k) dim_entry) snoc, kinetic) Term.term
-          -> ('k, 'mode * 'modality * 'a) t
+          ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
+          * ('mode, ('a, ('modality, 'k) dim_entry) snoc, kinetic) Term.term
+          -> ('n, 'dom * 'modality * 'mode * 'a) t
   end
 
   module CodCube = Cube (CodFam)
@@ -348,12 +360,12 @@ end = struct
         * ('n, ('dom, 'am, 's) Term.term) CubeOf.t
         -> ('n, 'dom, 'modality, 'mode, 'a, 's) modal_term_cube
 
-  (* Similarly, but when we don't know what the modality might be. *)
+  (* Similarly, but when we don't know what the modality might be, and the filtering is included. *)
   type (_, _, _, _) any_modal_term_cube =
     | Modal :
-        ('dom, 'modality, 'mode) Modality.t
+        ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
         * ('a, 'mode, 'modality, 'dom, 'am) plus_lock
-        * ('n, ('dom, 'am, 's) Term.term) CubeOf.t
+        * ('k, ('dom, 'am, 's) Term.term) CubeOf.t
         -> ('n, 'mode, 'a, 's) any_modal_term_cube
 
   type (_, _, _) term =
@@ -370,11 +382,7 @@ end = struct
     | Inst :
         ('mode, 'a, kinetic) term * ('m, 'n, 'mn, ('mode, 'a, kinetic) term) TubeOf.t
         -> ('mode, 'a, kinetic) term
-    | Pi :
-        'n variables
-        * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
-        * ('n, 'mode * 'modality * 'a) CodCube.t
-        -> ('mode, 'a, kinetic) term
+    | Pi : ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args -> ('mode, 'a, kinetic) term
     | App :
         ('mode, 'a, kinetic) term * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
         -> ('mode, 'a, kinetic) term
@@ -403,9 +411,10 @@ end = struct
         -> ('mode, 'a, 's) term
     (* Abstractions and structs can appear in any kind of term.  The dimension 'n is the substitution dimension of the type being checked against (function-type or codata/record).  *)
     | Lam :
-        'n variables
-        * ('dom, 'modality, 'mode) Modality.t
-        * ('mode, ('a, ('modality, 'n) dim_entry) snoc, 's) Term.term
+        'k variables
+        * 'n D.t
+        * ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
+        * ('mode, ('a, ('modality, 'k) dim_entry) snoc, 's) Term.term
         -> ('mode, 'a, 's) term
     | Struct : ('mode, 'n, 'a, 's, 'et) struct_args -> ('mode, 'a, 's) term
     (* Matches can only appear in potential terms.  The dimension 'n is the substitution dimension of the type of the variable being matched against. *)
@@ -425,6 +434,13 @@ end = struct
     | Unact : ('m, 'n) op * ('mode, 'b, 's) term -> ('mode, 'b, 's) term
     | Shift : 'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'b, 's) term -> ('mode, 'nb, 's) term
     | Weaken : ('mode, 'b, 's) term -> ('mode, ('b, ('modality, 'n) dim_entry) snoc, 's) term
+
+  and ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args = {
+    x : 'k variables;
+    filter : ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim;
+    doms : ('k, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube;
+    cods : ('n, 'dom * 'modality * 'mode * 'a) CodCube.t;
+  }
 
   and ('mode, 'n, 'a, 's, 'et) struct_args = {
     dim : 'n D.t;
@@ -515,10 +531,13 @@ end = struct
   (* A version of an environment that involves terms rather than values.  Used mainly when reading back metavariables.  The first argument is the mode, the second is the checked-length of the context *in* which the environment is defined (its domain, as a context morphism), the third is its dimension, and the fourth is the checked-length of the context of types of the values in the environment (its codomain, as a context morphism).  *)
   and (_, _, _, _) env =
     | Emp : 'mode Mode.t * 'n D.t -> ('mode, 'a, 'n, 'mode emp) env
-    | Ext :
-        ('mode, 'a, 'n, 'b) env
-        * ('n, 'k, 'nk) D.plus
-        * ('nk, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
+    | Ext : {
+        env : ('mode, 'a, 'n, 'b) env;
+        filtered : ('dom, 'modality, 'mode, 'k, 'k) Modality.filter_dim;
+        filter : ('dom, 'modality, 'mode, 'm, 'n) Modality.filter_dim;
+        plus : ('m, 'k, 'mk) D.plus;
+        values : ('mk, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube;
+      }
         -> ('mode, 'a, 'n, ('b, ('modality, 'k) dim_entry) snoc) env
     (* There is a decision to be made here about how to deal with keys in a term environment.  The problem is that the part of the environment to the left of a key must be defined in a context that has the locks corresponding to the codomain of that key removed, along with everything interspersed with them and to their right.  But simply removing variables from the context fubars the De Bruijn indices.  We could replace the removed indices in the context by a placeholder that extends out its length while containing no data.  Instead, we choose to allow the domain length of a term environment to increase when we pass a key.  This means when working with such environments we must shrink the domain context when we pass a key. *)
     | Key : {
@@ -545,6 +564,7 @@ end = struct
         (* The reason for the dimension "snoc" here is so that some of the terms and types in these bindings can refer to other ones.  Of course it should really be only the *later* ones that can refer to the *earlier* ones, but we don't have a way to specify that in the type parameters. *)
         plus_lock : (('b, ('modality, 'mn) dim_entry) snoc, 'mode, 'modality, 'dom, 'bm) plus_lock;
         plusdim : ('m, 'n, 'mn) D.plus;
+        filter : ('dom, 'modality, 'mode, 'mn, 'mn) Modality.filter_dim;
         vars : (N.zero, 'n, string option, 'f1) NICubeOf.t;
         bindings : ('mn, ('dom, 'bm) binding) CubeOf.t;
         hasfields : ('m, 'f2) has_fields;
@@ -552,9 +572,11 @@ end = struct
         fplus : ('f1, 'f2, 'f) N.plus;
       }
         -> ('dom, 'modality, 'mode, 'b, 'bm, 'f, 'mn) entry
-    | Invis :
-        (('b, ('modality, 'n) dim_entry) snoc, 'mode, 'modality, 'dom, 'bm) plus_lock
-        * ('n, ('dom, 'bm) binding) CubeOf.t
+    | Invis : {
+        plus_lock : (('b, ('modality, 'n) dim_entry) snoc, 'mode, 'modality, 'dom, 'bm) plus_lock;
+        filter : ('dom, 'modality, 'mode, 'n, 'n) Modality.filter_dim;
+        bindings : ('n, ('dom, 'bm) binding) CubeOf.t;
+      }
         -> ('dom, 'modality, 'mode, 'b, 'bm, N.zero, 'n) entry
 
   and (_, _, _) ordered_termctx =
@@ -580,7 +602,7 @@ include Term
 let rec nth_var : type mode a b s. (mode, a, s) term -> b Bwd.t -> any_variables option =
  fun tr args ->
   match tr with
-  | Lam (x, _, body) -> (
+  | Lam (x, _, _, body) -> (
       match args with
       | Emp -> Some (Any x)
       | Snoc (args, _) -> nth_var body args)
@@ -592,7 +614,14 @@ let pi : type mode modality a.
     (mode, (a, (modality, D.zero) dim_entry) snoc, kinetic) term ->
     (mode, a, kinetic) term =
  fun x (Modal (modality, plus, dom)) cod ->
-  Pi (x, Modal (modality, plus, CubeOf.singleton dom), CodCube.singleton (Cod cod))
+  let filter = Modality.filter_zero modality in
+  Pi
+    {
+      x;
+      filter;
+      doms = Modal (modality, plus, CubeOf.singleton dom);
+      cods = CodCube.singleton (Cod (filter, cod));
+    }
 
 let app fn modality al arg = App (fn, Modal (modality, al, CubeOf.singleton arg))
 let appid fn mode arg = App (fn, Modal (Modality.id mode, plus_no_lock mode, CubeOf.singleton arg))
@@ -623,28 +652,34 @@ module Telescope = struct
     match doms with
     | Emp -> body
     | Ext (x, Modal (modality, _, _), doms) ->
-        Lam (singleton_variables D.zero x, modality, lams doms body)
+        Lam (singleton_variables D.zero x, D.zero, Modality.filter_zero modality, lams doms body)
 end
 
 let rec dim_term_env : type mode a n b. (mode, a, n, b) env -> n D.t = function
   | Emp (_, n) -> n
-  | Ext (e, _, _) -> dim_term_env e
+  | Ext { env; _ } -> dim_term_env env
   | Key { env; _ } -> dim_term_env env
 
 let dim_entry : type dom modality mode b f n bm. (dom, modality, mode, b, bm, f, n) entry -> n D.t =
   function
   | Vis { bindings; _ } -> CubeOf.dim bindings
-  | Invis (_, bindings) -> CubeOf.dim bindings
+  | Invis { bindings; _ } -> CubeOf.dim bindings
 
 let plus_lock_entry : type dom modality mode b f n bm.
     (dom, modality, mode, b, bm, f, n) entry ->
     ((b, (modality, n) dim_entry) snoc, mode, modality, dom, bm) plus_lock = function
   | Vis { plus_lock; _ } -> plus_lock
-  | Invis (plus_lock, _) -> plus_lock
+  | Invis { plus_lock; _ } -> plus_lock
 
 let modality_entry : type dom modality mode b f n bm.
     (dom, modality, mode, b, bm, f, n) entry -> (dom, modality, mode) Modality.t =
  fun e -> plus_lock_modality (plus_lock_entry e)
+
+let filter_entry : type dom modality mode b f n bm.
+    (dom, modality, mode, b, bm, f, n) entry -> (dom, modality, mode, n, n) Modality.filter_dim =
+  function
+  | Vis { filter; _ } -> filter
+  | Invis { filter; _ } -> filter
 
 module Termctx = struct
   type ('mode, 'a, 'b) ordered = ('mode, 'a, 'b) ordered_termctx
@@ -652,7 +687,7 @@ module Termctx = struct
 
   let rec ordered_tctx : type mode a b. (mode, a, b) ordered_termctx -> (mode, b) Tctx.t = function
     | Emp mode -> Path (Suc (Zero, Proj mode), Unit)
-    | Ext (ctx, e, _) -> Tctx.suc (ordered_tctx ctx) (Dim (modality_entry e, dim_entry e))
+    | Ext (ctx, e, _) -> Tctx.suc (ordered_tctx ctx) (Dim (dim_entry e, filter_entry e))
     | Lock (ctx, modality) -> Tctx.suc (ordered_tctx ctx) (Lock modality)
     | Parametric_lock ctx -> ordered_tctx ctx
 
@@ -672,6 +707,7 @@ module Termctx = struct
             dim = D.zero;
             plus_lock;
             plusdim = D.plus_zero D.zero;
+            filter = Modality.filter_zero (plus_lock_modality plus_lock);
             vars = NICubeOf.singleton x;
             bindings = CubeOf.singleton b;
             hasfields = No_fields;

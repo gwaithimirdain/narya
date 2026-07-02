@@ -28,18 +28,18 @@ module TEntry = struct
 
   type (_, _, _) t =
     | Dim :
-        ('dom, 'modality, 'mode) Modality.t * 'a D.t
+        'a D.t * ('dom, 'modality, 'mode, 'a, 'a) Modality.filter_dim
         -> ('mode, ('modality, 'a) dim_entry, 'mode) t
     | Lock : ('dom, 'mu, 'cod) Modality.gen -> ('dom, 'mu lock_entry, 'cod) t
     | Proj : 'mode Mode.t -> ('mode, 'mode proj, unit) t
 
   let src : type src m tgt. (src, m, tgt) t -> src Obj.t = function
-    | Dim (x, _) -> Mode (Modality.tgt x)
+    | Dim (_, f) -> Mode (Modality.tgt (Modality.filter_modality f))
     | Lock m -> Mode (Modality.Gen.src m)
     | Proj m -> Mode m
 
   let tgt : type src m tgt. (src, m, tgt) t -> tgt Obj.t = function
-    | Dim (x, _) -> Mode (Modality.tgt x)
+    | Dim (_, f) -> Mode (Modality.tgt (Modality.filter_modality f))
     | Lock m -> Mode (Modality.Gen.tgt m)
     | Proj _ -> Unit
 
@@ -47,7 +47,8 @@ module TEntry = struct
       (src1, m, tgt1) t -> (src2, m, tgt2) t -> (src1, src2) Eq.t =
    fun m1 m2 ->
     match (m1, m2) with
-    | Dim (m1, _), Dim (m2, _) -> Modality.tgt_uniq m1 m2
+    | Dim (_, f1), Dim (_, f2) ->
+        Modality.tgt_uniq (Modality.filter_modality f1) (Modality.filter_modality f2)
     | Lock m1, Lock m2 -> Modality.Gen.src_uniq m1 m2
     | Proj _, Proj _ -> Eq
 
@@ -55,7 +56,8 @@ module TEntry = struct
       (src1, m, tgt1) t -> (src2, m, tgt2) t -> (tgt1, tgt2) Eq.t =
    fun m1 m2 ->
     match (m1, m2) with
-    | Dim (m1, _), Dim (m2, _) -> Modality.tgt_uniq m1 m2
+    | Dim (_, f1), Dim (_, f2) ->
+        Modality.tgt_uniq (Modality.filter_modality f1) (Modality.filter_modality f2)
     | Lock m1, Lock m2 -> Modality.Gen.tgt_uniq m1 m2
     | Proj _, Proj _ -> Eq
 
@@ -63,8 +65,11 @@ module TEntry = struct
       (d1, g1, c1) t -> (d2, g2, c2) t -> (d1 * g1 * c1, d2 * g2 * c2) Eq.compare =
    fun x y ->
     match (x, y) with
-    | Dim (x, a), Dim (y, b) -> (
-        match (Modality.compare x y, D.compare a b) with
+    | Dim (a, f1), Dim (b, f2) -> (
+        match
+          ( Modality.compare (Modality.filter_modality f1) (Modality.filter_modality f2),
+            D.compare a b )
+        with
         | Eq, Eq -> Eq
         | _ -> Neq)
     | Lock x, Lock y -> (
@@ -121,32 +126,32 @@ module Locksmap = struct
 
   type (_, _, _, _, _, _) t =
     | Locks_dim :
-        ('dom, 'annote, 'mode) Modality.t * 'a D.t
+        'a D.t * ('dom, 'annote, 'mode, 'a, 'a) Modality.filter_dim
         -> ('mode, ('annote, 'a) dim_entry, 'mode, 'mode, 'mode Modality.id, 'mode) t
     | Locks_lock :
         ('x, 'm, 'y) Modality.gen
         -> ('x, 'm lock_entry, 'y, 'x, ('y Modality.id, 'm) snoc, 'y) t
 
   let dom : type a m b x n y. (a, m, b, x, n, y) t -> (a, m, b) Dom.t = function
-    | Locks_dim (x, a) -> Dim (x, a)
+    | Locks_dim (a, f) -> Dim (a, f)
     | Locks_lock m -> Lock m
 
   let cod : type a m b x n y. (a, m, b, x, n, y) t -> (x, n, y) Cod.t = function
-    | Locks_dim (x, _) -> Modality.id (Modality.tgt x)
+    | Locks_dim (_, f) -> Modality.id (Modality.tgt (Modality.filter_modality f))
     | Locks_lock m -> Modality.of_gen m
 
   let src : type a m b x n y. (a, m, b, x, n, y) t -> (a, x) Obj.t = function
-    | Locks_dim (x, _) -> Eq (Modality.tgt x)
+    | Locks_dim (_, f) -> Eq (Modality.tgt (Modality.filter_modality f))
     | Locks_lock m -> Eq (Modality.Gen.src m)
 
   let tgt : type a m b x n y. (a, m, b, x, n, y) t -> (b, y) Obj.t = function
-    | Locks_dim (x, _) -> Eq (Modality.tgt x)
+    | Locks_dim (_, f) -> Eq (Modality.tgt (Modality.filter_modality f))
     | Locks_lock m -> Eq (Modality.Gen.tgt m)
 
   type (_, _, _) exists = Exists : ('a, 'm, 'b, 'x, 'n, 'y) t -> ('a, 'm, 'b) exists
 
   let exists : type a m b. (a, m, b) Dom.t -> (a, m, b) exists = function
-    | Dim (x, a) -> Exists (Locks_dim (x, a))
+    | Dim (a, f) -> Exists (Locks_dim (a, f))
     | Lock m -> Exists (Locks_lock m)
     | Proj _ -> raise (Failure "Locksmap.exists on Proj")
 
@@ -154,7 +159,7 @@ module Locksmap = struct
       (a, m, b, x1, n1, y1) t -> (a, m, b, x2, n2, y2) t -> (x1 * n1 * y1, x2 * n2 * y2) Eq.t =
    fun f1 f2 ->
     match (f1, f2) with
-    | Locks_dim (_, _), Locks_dim (_, _) -> Eq
+    | Locks_dim _, Locks_dim _ -> Eq
     | Locks_lock _, Locks_lock _ -> Eq
 end
 
@@ -288,11 +293,11 @@ let plus_with_locks_lock : type a cod modality mode gen dom ac.
 
 let plus_with_locks_dim : type a cod modality mode dom ac annote n.
     (a, cod, modality, mode, ac) plus_with_locks ->
-    (dom, annote, mode) Modality.t ->
     n D.t ->
+    (dom, annote, mode, n, n) Modality.filter_dim ->
     (a, cod, modality, mode, (ac, (annote, n) dim_entry) suc) plus_with_locks option =
- fun (Plus_with_locks (c, l)) annote n ->
-  Some (Plus_with_locks (Suc (c, Dim (annote, n)), Suc (l, Locks_dim (annote, n), Zero)))
+ fun (Plus_with_locks (c, l)) n f ->
+  Some (Plus_with_locks (Suc (c, Dim (n, f)), Suc (l, Locks_dim (n, f), Zero)))
 
 (* Lists of variable-annotation modalities, at the same mode (their codomain), to be made into lists of variables by combining with a dimension. *)
 
@@ -347,33 +352,38 @@ module VarAnnotator = struct
 
   type (_, _, _, _, _, _, _) t =
     | Annotate :
-        ('dom, 'modality, 'mode) Modality.t
-        -> ('n, 'mode, 'modality, 'mode, 'mode, ('modality, 'n) dim_entry, 'mode) t
+        ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
+        -> ('n, 'mode, 'modality, 'mode, 'mode, ('modality, 'k) dim_entry, 'mode) t
 
   type (_, _, _, _) exists =
     | Exists : ('param, 'a, 'm, 'b, 'x, 'n, 'y) t -> ('param, 'a, 'm, 'b) exists
 
   let dom : type param a m b x n y. (param, a, m, b, x, n, y) t -> (a, m, b) Dom.t =
-   fun (Annotate m) -> Annote m
+   fun (Annotate f) -> Annote (Modality.filter_modality f)
 
   let cod : type param a m b x n y. param Param.t -> (param, a, m, b, x, n, y) t -> (x, n, y) Cod.t
       =
-   fun p (Annotate m) -> Dim (m, p)
+   fun p (Annotate f) -> Dim (Modality.filtered p f, Modality.filter_idempotent f)
 
   let src : type param a m b x n y. (param, a, m, b, x, n, y) t -> (param, a, x) Obj.t =
-   fun (Annotate m) -> Eq (Modality.tgt m)
+   fun (Annotate f) -> Eq (Modality.tgt (Modality.filter_modality f))
 
   let tgt : type param a m b x n y. (param, a, m, b, x, n, y) t -> (param, b, y) Obj.t =
-   fun (Annotate m) -> Eq (Modality.tgt m)
+   fun (Annotate f) -> Eq (Modality.tgt (Modality.filter_modality f))
 
   let exists : type param a m b. param Param.t -> (a, m, b) Dom.t -> (param, a, m, b) exists =
-   fun _ (Annote m) -> Exists (Annotate m)
+   fun n (Annote m) ->
+    let (Has_filter f) = Modality.filter m n in
+    Exists (Annotate f)
 
   let uniq : type param a m b x1 n1 y1 x2 n2 y2.
       (param, a, m, b, x1, n1, y1) t ->
       (param, a, m, b, x2, n2, y2) t ->
       (x1 * n1 * y1, x2 * n2 * y2) Eq.t =
-   fun (Annotate _) (Annotate _) -> Eq
+   fun (Annotate f1) (Annotate f2) ->
+    let Eq = Modality.src_uniq (Modality.filter_modality f1) (Modality.filter_modality f2) in
+    let Eq = Modality.filter_uniq f1 f2 in
+    Eq
 end
 
 module VarAnnotate = Path.Fmap (VarAnnote) (TEntry) (VarAnnotator)
@@ -394,17 +404,22 @@ let rec insert_dom : type a x n b mode. (a, x, n, b) insert -> (mode, b) Tctx.t 
       let (Path (Suc (a, Dim _), mode)) = b in
       Path (a, mode)
   | Later i ->
-      let (Path (Suc (b, Dim (x, n)), mode)) = b in
+      let (Path (Suc (b, Dim (n, f)), mode)) = b in
       let a = insert_dom i (Path (b, mode)) in
-      Tctx.suc a (Dim (x, n))
+      Tctx.suc a (Dim (n, f))
+
+type (_, _, _) inserted =
+  | Inserted :
+      'n D.t * ('dom, 'modality, 'mode, 'n, 'n) Modality.filter_dim
+      -> ('modality, 'mode, 'n) inserted
 
 let rec inserted : type a modality n b mode.
-    (a, modality, n, b) insert -> (mode, b) Tctx.t -> (modality, mode) Modality.has_src * n D.t =
+    (a, modality, n, b) insert -> (mode, b) Tctx.t -> (modality, mode, n) inserted =
  fun i b ->
   match i with
   | Now ->
-      let (Path (Suc (_, Dim (modality, n)), _)) = b in
-      (Wrap modality, n)
+      let (Path (Suc (_, Dim (n, f)), _)) = b in
+      Inserted (n, f)
   | Later i ->
       let (Path (Suc (b, Dim _), mode)) = b in
       inserted i (Path (b, mode))
@@ -417,35 +432,35 @@ type (_, _, _, _, _, _, _, _) insert_from_comp =
       -> ('x, 'y, 'a, 'z, 'ac, 'b, 'm, 'n) insert_from_comp
 
 let rec insert_from_comp : type b m n a ab ac w x y z.
-    (w, m, x) Modality.t ->
     n D.t ->
+    (w, m, x, n, n) Modality.filter_dim ->
     (ab, m, n, ac) insert ->
     (x, b, y, a, z, ab) Tctx.comp ->
     (x, y, a, z, ac, b, m, n) insert_from_comp option =
- fun m n i ab ->
+ fun n f i ab ->
   let open Monad.Ops (Monad.Maybe) in
   match i with
-  | Now -> return (Insert_from_comp (Suc (ab, Dim (m, n)), Now))
+  | Now -> return (Insert_from_comp (Suc (ab, Dim (n, f)), Now))
   | Later i -> (
       match ab with
-      | Suc (ab, Dim (p, k)) ->
-          let* (Insert_from_comp (ac, j)) = insert_from_comp m n i ab in
-          return (Insert_from_comp (Suc (ac, Dim (p, k)), Later j))
+      | Suc (ab, Dim (k, f2)) ->
+          let* (Insert_from_comp (ac, j)) = insert_from_comp n f i ab in
+          return (Insert_from_comp (Suc (ac, Dim (k, f2)), Later j))
       | Zero -> None)
 
 (* Inserting doesn't change the total locks *)
 
 let rec insert_locks : type a p n b w x y m.
-    (w, p, x) Modality.t ->
     n D.t ->
+    (w, p, x, n, n) Modality.filter_dim ->
     (a, p, n, b) insert ->
     (x, a, y, x, m, y) Locks.t ->
     (x, b, y, x, m, y) Locks.t =
- fun p n i l ->
+ fun n f i l ->
   match (i, l) with
-  | Now, _ -> Suc (l, Locks_dim (p, n), Zero)
-  | Later i, Suc (l, Locks_dim (p', n'), Zero) ->
-      Suc (insert_locks p n i l, Locks_dim (p', n'), Zero)
+  | Now, _ -> Suc (l, Locks_dim (n, f), Zero)
+  | Later i, Suc (l, Locks_dim (n', f'), Zero) ->
+      Suc (insert_locks n f i l, Locks_dim (n', f'), Zero)
 
 (* Two successive insertions can be performed in the other order. *)
 type (_, _, _, _, _, _) comp_insert =
@@ -484,8 +499,8 @@ let rec perm_dom : type mode a b. (a, b) permute -> (mode, b) Tctx.t -> (mode, a
   | Insert (p, i) ->
       let c = insert_dom i b in
       let a = perm_dom p c in
-      let Wrap modality, n = inserted i b in
-      Tctx.suc a (Dim (modality, n))
+      let (Inserted (n, f)) = inserted i b in
+      Tctx.suc a (Dim (n, f))
   | Lock p ->
       let (Path (Suc (b, Lock l), mode)) = b in
       Tctx.suc (perm_dom p (Path (b, mode))) (Lock l)
@@ -520,7 +535,7 @@ let rec perm_comp : type a b c m n p mp np.
       let Eq, Eq = (TEntry.src_uniq g1 g2, TEntry.tgt_uniq g1 g2) in
       let mnp = perm_comp mp np mn in
       match (g1, g2) with
-      | Dim (_, _), Dim (_, _) -> Insert (mnp, Now)
+      | Dim _, Dim _ -> Insert (mnp, Now)
       | Lock _, Lock _ -> Lock mnp
       | Proj _, Proj _ -> raise (Failure "perm_comp on Proj"))
 
@@ -635,7 +650,7 @@ let rec inv_perm : type a b. (a, b) permute -> (b, a) permute = function
 
 type (_, _, _, _, _) fwd_insert =
   | Now :
-      ('u, 'x, 'mode) Modality.t * 'n D.t
+      'n D.t * ('u, 'x, 'mode, 'n, 'n) Modality.filter_dim
       -> ('a, 'x, 'n, (('x, 'n) dim_entry, 'a) cons, 'mode) fwd_insert
   | Later :
       ('u, 'y, 'mode) Modality.t * ('a, 'x, 'n, 'b, 'mode) fwd_insert
@@ -645,11 +660,10 @@ let rec fwd_insert_cod : type u v a x n b.
     (a, x, n, b, v) fwd_insert -> (u, a, v) fwd -> (u, b, v) fwd =
  fun i a ->
   match i with
-  | Now (x, n) -> Cons (Dim (x, n), a)
-  | Later (y, i) ->
-      let (Cons (Dim (k, n), a)) = a in
-      let Eq = Modality.tgt_uniq y k in
-      Cons (Dim (k, n), fwd_insert_cod i a)
+  | Now (n, f) -> Cons (Dim (n, f), a)
+  | Later (_, i) ->
+      let (Cons (Dim (n, f), a)) = a in
+      Cons (Dim (n, f), fwd_insert_cod i a)
 
 type (_, _, _, _, _, _) bcomp_fwd_inserted =
   | Bcomp_fwd_inserted :
@@ -663,14 +677,13 @@ let rec bcomp_fwd_inserted : type x y z a b c cb d m n.
     (x, d, y, a, z, cb) bcomp_fwd_inserted =
  fun cb bins fins ->
   match fins with
-  | Now (m, n) ->
+  | Now (n, f) ->
       let (Bcomp ad) = bcomp (bcomp_right cb) in
-      Bcomp_fwd_inserted (Suc (Dim (m, n), ad), perm_bcomp ad cb (Insert (Id, bins)))
-  | Later (m1, fins) ->
-      let (Suc (Dim (m2, n), cb)) = cb in
-      let Eq = Modality.tgt_uniq m1 m2 in
+      Bcomp_fwd_inserted (Suc (Dim (n, f), ad), perm_bcomp ad cb (Insert (Id, bins)))
+  | Later (_, fins) ->
+      let (Suc (Dim (n, f), cb)) = cb in
       let (Bcomp_fwd_inserted (ad, p)) = bcomp_fwd_inserted cb (Later bins) fins in
-      Bcomp_fwd_inserted (Suc (Dim (m2, n), ad), p)
+      Bcomp_fwd_inserted (Suc (Dim (n, f), ad), p)
 
 (* ('x, 'b, 'y, 'a, 'z, 'ab) bcomp_permute says that the backwards 'ab : 'x -> 'z is obtained from the backwards 'a : 'y -> 'z by composing with a permutation of the forwards 'b : 'x -> 'y. *)
 type (_, _, _, _, _, _) bcomp_permute =
@@ -776,10 +789,10 @@ let rec unpermute_plus_locks : type a c ac bd mode mu dom p.
   match (p, ac, lc) with
   | _, Zero, Zero x -> return (Unpermute (p, Zero, Zero x))
   | Id, _, _ -> return (Unpermute (Id, ac, lc))
-  | Insert (p, i), Suc (ac, Dim (m, k)), Suc (lc, Locks_dim (_, _), Zero) ->
+  | Insert (p, i), Suc (ac, Dim (k, f)), Suc (lc, Locks_dim _, Zero) ->
       let* (Unpermute (p, bd, ld)) = unpermute_plus_locks p ac lc in
-      let* (Insert_from_comp (bd, j)) = insert_from_comp m k i bd in
-      let ld = insert_locks m k j ld in
+      let* (Insert_from_comp (bd, j)) = insert_from_comp k f i bd in
+      let ld = insert_locks k f j ld in
       return (Unpermute (p, bd, ld))
   | Lock p, Suc (ac, Lock g), Suc (lc, Locks_lock g', Suc (Zero, _)) ->
       let Eq = Modality.Gen.tgt_uniq g g' in
@@ -792,15 +805,16 @@ type (_, _) index =
   | Index :
       ('a, 'modality, 'n, 'an) insert
       * ('k, 'n) sface
+      * ('dom, 'modality, 'mode, 'n, 'n) Modality.filter_dim
       * ('an, 'mode, 'modality, 'dom, 'anm) plus_lock
       -> ('dom, 'anm) index
 
 let permute_index : type anm bnm mode. (anm, bnm) permute -> (mode, anm) index -> (mode, bnm) index
     =
- fun permlock (Index (ia, fa, am)) ->
+ fun permlock (Index (ia, fa, filt, am)) ->
   let (Unpermute (perm, bm)) = unpermute_plus_lock permlock am in
   let (Permute_insert (ib, _)) = permute_insert ia perm in
-  Index (ib, fa, bm)
+  Index (ib, fa, filt, bm)
 
 (* Add the same dimension on the left of all the dimensions in a type-level context. *)
 
@@ -831,32 +845,36 @@ module Anyplus = struct
 
   type (_, _, _, _, _, _, _) t =
     | Plus_dim :
-        ('dom, 'modality, 'mode) Modality.t * ('p, 'n, 'pn) D.plus
-        -> ('p, 'mode, ('modality, 'n) dim_entry, 'mode, 'mode, ('modality, 'pn) dim_entry, 'mode) t
+        ('q, 'n, 'qn) D.plus
+        * ('dom, 'modality, 'mode, 'n, 'n) Modality.filter_dim
+        * ('dom, 'modality, 'mode, 'q, 'p) Modality.filter_dim
+        -> ('p, 'mode, ('modality, 'n) dim_entry, 'mode, 'mode, ('modality, 'qn) dim_entry, 'mode) t
     | Plus_lock :
         ('dom, 'mu, 'cod) Modality.gen
         -> ('p, 'dom, 'mu lock_entry, 'cod, 'dom, 'mu lock_entry, 'cod) t
     | Plus_proj : 'mode Mode.t -> ('p, 'mode, 'mode proj, unit, 'mode, 'mode proj, unit) t
 
   let dom : type param a m b x n y. (param, a, m, b, x, n, y) t -> (a, m, b) Dom.t = function
-    | Plus_dim (x, a) -> Dim (x, D.plus_right a)
+    | Plus_dim (a, fn, _) -> Dim (D.plus_right a, fn)
     | Plus_lock m -> Lock m
     | Plus_proj x -> Proj x
 
   let cod : type param a m b x n y. param Param.t -> (param, a, m, b, x, n, y) t -> (x, n, y) Cod.t
       =
    fun p -> function
-    | Plus_dim (x, a) -> Dim (x, D.plus_out p a)
+    | Plus_dim (a, fn, fq) ->
+        let q = Modality.filtered p fq in
+        Dim (D.plus_out q a, Modality.filter_plus a a (Modality.filter_idempotent fq) fn)
     | Plus_lock m -> Lock m
     | Plus_proj x -> Proj x
 
   let src : type param a m b x n y. (param, a, m, b, x, n, y) t -> (param, a, x) Obj.t = function
-    | Plus_dim (x, _) -> Eq (Mode (Modality.tgt x))
+    | Plus_dim (_, f, _) -> Eq (Mode (Modality.tgt (Modality.filter_modality f)))
     | Plus_lock m -> Eq (Mode (Modality.Gen.src m))
     | Plus_proj x -> Eq (Mode x)
 
   let tgt : type param a m b x n y. (param, a, m, b, x, n, y) t -> (param, b, y) Obj.t = function
-    | Plus_dim (x, _) -> Eq (Mode (Modality.tgt x))
+    | Plus_dim (_, f, _) -> Eq (Mode (Modality.tgt (Modality.filter_modality f)))
     | Plus_lock m -> Eq (Mode (Modality.Gen.tgt m))
     | Plus_proj _ -> Eq Unit
 
@@ -864,10 +882,11 @@ module Anyplus = struct
     | Exists : ('param, 'a, 'm, 'b, 'x, 'n, 'y) t -> ('param, 'a, 'm, 'b) exists
 
   let exists : type param a m b. param Param.t -> (a, m, b) Dom.t -> (param, a, m, b) exists =
-   fun _ -> function
-    | Dim (x, a) ->
-        let (Plus pa) = D.plus a in
-        Exists (Plus_dim (x, pa))
+   fun p -> function
+    | Dim (a, fn) ->
+        let (Has_filter fq) = Modality.filter (Modality.filter_modality fn) p in
+        let (Plus qa) = D.plus a in
+        Exists (Plus_dim (qa, fn, fq))
     | Lock m -> Exists (Plus_lock m)
     | Proj x -> Exists (Plus_proj x)
 
@@ -877,7 +896,10 @@ module Anyplus = struct
       (x1 * n1 * y1, x2 * n2 * y2) Eq.t =
    fun f1 f2 ->
     match (f1, f2) with
-    | Plus_dim (_, n1), Plus_dim (_, n2) ->
+    | Plus_dim (n1, fn1, fq1), Plus_dim (n2, fn2, fq2) ->
+        let Eq = Modality.src_uniq (Modality.filter_modality fn1) (Modality.filter_modality fn2) in
+        let Eq = Modality.filter_uniq fn1 fn2 in
+        let Eq = Modality.filter_uniq fq1 fq2 in
         let Eq = D.plus_uniq n1 n2 in
         Eq
     | Plus_lock _, Plus_lock _ -> Eq
@@ -887,57 +909,64 @@ end
 module Plusmap = struct
   include Path.Fmap (TEntry) (TEntry) (Anyplus)
 
-  let rec assocl : type a b ab cs bcs abcs x y.
-      (a, b, ab) D.plus ->
-      (b, x, cs, y, x, bcs, y) t ->
-      (a, x, bcs, y, x, abcs, y) t ->
-      (ab, x, cs, y, x, abcs, y) t =
-   fun ab bcs abcs ->
-    match (bcs, abcs) with
-    | Zero (Eq mode), Zero _ -> Zero (Eq mode)
-    | ( Suc (bcs, Inject (Plus_dim (x, bc)), Suc (Zero, _)),
-        Suc (abcs, Inject (Plus_dim (_, a_bc)), Suc (Zero, Dim (_, abc'))) ) ->
-        let ab_c = D.plus_assocl ab bc a_bc in
-        Suc (assocl ab bcs abcs, Inject (Plus_dim (x, ab_c)), Suc (Zero, Dim (x, abc')))
-    | ( Suc (bcs, Inject (Plus_lock m), Suc (Zero, m')),
-        Suc (abcs, Inject (Plus_lock n), Suc (Zero, _)) ) ->
-        let Eq = Modality.Gen.tgt_uniq m n in
-        Suc (assocl ab bcs abcs, Inject (Plus_lock m), Suc (Zero, m'))
-    | Suc (Zero _, Inject (Plus_proj x), Suc _), Suc (Zero _, Inject (Plus_proj _), Suc (Zero, _))
-      -> Suc (Zero (Eq Unit), Inject (Plus_proj x), Suc (Zero, Proj x))
-    (* Now a bunch of impossible cases *)
-    | Suc (Zero _, Inject (Plus_proj _), _), Suc (_, Inject (Plus_dim _), _) -> .
-    | Suc (Zero _, Inject (Plus_proj _), _), Suc (_, Inject (Plus_lock _), _) -> .
-    | Suc (Zero _, Inject (Plus_proj _), _), Zero _ -> .
-    | Suc (Suc (_, _, _), Inject (Plus_proj _), _), Zero _ -> .
-    | Suc (Suc (_, _, _), Inject (Plus_proj _), _), Suc (_, Inject (Plus_dim (_, _)), _) -> .
-    | Suc (Suc (_, _, _), Inject (Plus_proj _), _), Suc (_, Inject (Plus_lock _), _) -> .
-    (* And now a bunch of cases that are also impossible, but OCaml can't tell that without help since Mode.t is abstract here so it doesn't know that unit is not a mode.  *)
-    | ( Suc (Suc (_, Inject (Plus_dim (modality, _)), _), Inject (Plus_proj _), _),
-        Suc (_, Inject (Plus_proj _), _) ) -> Mode.not_unit (Modality.tgt modality) Eq
-    | ( Suc (Suc (_, Inject (Plus_lock modality), _), Inject (Plus_proj _), _),
-        Suc (_, Inject (Plus_proj _), _) ) -> Mode.not_unit (Modality.Gen.src modality) Eq
-    | ( Suc (Suc (_, Inject (Plus_proj mode), _), Inject (Plus_proj _), _),
-        Suc (_, Inject (Plus_proj _), _) ) -> Mode.not_unit mode Eq
-    | ( Suc (_, Inject (Plus_proj _), _),
-        Suc (Suc (_, Inject (Plus_dim (modality, _)), _), Inject (Plus_proj _), _) ) ->
-        Mode.not_unit (Modality.tgt modality) Eq
-    | ( Suc (_, Inject (Plus_proj _), _),
-        Suc (Suc (_, Inject (Plus_lock modality), _), Inject (Plus_proj _), _) ) ->
-        Mode.not_unit (Modality.Gen.src modality) Eq
-    | ( Suc (_, Inject (Plus_proj _), _),
-        Suc (Suc (_, Inject (Plus_proj mode), _), Inject (Plus_proj _), _) ) ->
-        Mode.not_unit mode Eq
+  (* let rec assocl : type a b ab cs bcs abcs x y.
+         (a, b, ab) D.plus ->
+         (b, x, cs, y, x, bcs, y) t ->
+         (a, x, bcs, y, x, abcs, y) t ->
+         (ab, x, cs, y, x, abcs, y) t =
+      fun ab bcs abcs ->
+       match (bcs, abcs) with
+       | Zero (Eq mode), Zero _ -> Zero (Eq mode)
+       | ( Suc (bcs, Inject (Plus_dim (x, bc, fc, fb)), Suc (Zero, _)),
+           Suc (abcs, Inject (Plus_dim (_, a_bc, fbc, fa)), Suc (Zero, Dim (_, abc, fabc))) ) ->
+           let ab_c = D.plus_assocl ab bc a_bc in
+           Suc
+             ( assocl ab bcs abcs,
+               Inject (Plus_dim (x, ab_c, sorry, sorry)),
+               Suc (Zero, Dim (x, abc, sorry)) )
+       | ( Suc (bcs, Inject (Plus_lock m), Suc (Zero, m')),
+           Suc (abcs, Inject (Plus_lock n), Suc (Zero, _)) ) ->
+           let Eq = Modality.Gen.tgt_uniq m n in
+           Suc (assocl ab bcs abcs, Inject (Plus_lock m), Suc (Zero, m'))
+       | Suc (Zero _, Inject (Plus_proj x), Suc _), Suc (Zero _, Inject (Plus_proj _), Suc (Zero, _))
+         -> Suc (Zero (Eq Unit), Inject (Plus_proj x), Suc (Zero, Proj x))
+       (\* Now a bunch of impossible cases *\)
+       | Suc (Zero _, Inject (Plus_proj _), _), Suc (_, Inject (Plus_dim _), _) -> .
+       | Suc (Zero _, Inject (Plus_proj _), _), Suc (_, Inject (Plus_lock _), _) -> .
+       | Suc (Zero _, Inject (Plus_proj _), _), Zero _ -> .
+       | Suc (Suc _, Inject (Plus_proj _), _), Zero _ -> .
+       | Suc (Suc _, Inject (Plus_proj _), _), Suc (_, Inject (Plus_dim _), _) -> .
+       | Suc (Suc _, Inject (Plus_proj _), _), Suc (_, Inject (Plus_lock _), _) -> .
+       (\* And now a bunch of cases that are also impossible, but OCaml can't tell that without help since Mode.t is abstract here so it doesn't know that unit is not a mode.  *\)
+       | ( Suc (Suc (_, Inject (Plus_dim (modality, _, _, _)), _), Inject (Plus_proj _), _),
+           Suc (_, Inject (Plus_proj _), _) ) -> Mode.not_unit (Modality.tgt modality) Eq
+       | ( Suc (Suc (_, Inject (Plus_lock modality), _), Inject (Plus_proj _), _),
+           Suc (_, Inject (Plus_proj _), _) ) -> Mode.not_unit (Modality.Gen.src modality) Eq
+       | ( Suc (Suc (_, Inject (Plus_proj mode), _), Inject (Plus_proj _), _),
+           Suc (_, Inject (Plus_proj _), _) ) -> Mode.not_unit mode Eq
+       | ( Suc (_, Inject (Plus_proj _), _),
+           Suc (Suc (_, Inject (Plus_dim (modality, _, _, _)), _), Inject (Plus_proj _), _) ) ->
+           Mode.not_unit (Modality.tgt modality) Eq
+       | ( Suc (_, Inject (Plus_proj _), _),
+           Suc (Suc (_, Inject (Plus_lock modality), _), Inject (Plus_proj _), _) ) ->
+           Mode.not_unit (Modality.Gen.src modality) Eq
+       | ( Suc (_, Inject (Plus_proj _), _),
+           Suc (Suc (_, Inject (Plus_proj mode), _), Inject (Plus_proj _), _) ) ->
+           Mode.not_unit mode Eq *)
 
   let rec zerol : type x bs y. (x, bs, y) Dom.t -> (D.zero, x, bs, y, x, bs, y) t = function
     | Path (Zero, mode) -> Zero (Eq mode)
-    | Path (Suc (bs, Dim (x, b)), mode) ->
-        Suc (zerol (Path (bs, mode)), Inject (Plus_dim (x, D.zero_plus b)), Suc (Zero, Dim (x, b)))
+    | Path (Suc (bs, Dim (b, f)), mode) ->
+        Suc
+          ( zerol (Path (bs, mode)),
+            Inject (Plus_dim (D.zero_plus b, f, Modality.filter_zero (Modality.filter_modality f))),
+            Suc (Zero, Dim (b, f)) )
     | Path (Suc (bs, Lock m), mode) ->
         Suc (zerol (Path (bs, mode)), Inject (Plus_lock m), Suc (Zero, Lock m))
     | Path (Suc (Zero, Proj x), _) -> Suc (Zero (Eq Unit), Inject (Plus_proj x), Suc (Zero, Proj x))
     (* Again, we have some manually-proven impossible cases *)
-    | Path (Suc (Suc (_, Dim (modality, _)), Proj _), _) -> Mode.not_unit (Modality.tgt modality) Eq
+    | Path (Suc (Suc (_, Dim (_, filter)), Proj _), _) ->
+        Mode.not_unit (Modality.tgt (Modality.filter_modality filter)) Eq
     | Path (Suc (Suc (_, Lock modality), Proj _), _) -> Mode.not_unit (Modality.Gen.src modality) Eq
     | Path (Suc (Suc (_, Proj mode), Proj _), _) -> Mode.not_unit mode Eq
 
@@ -953,8 +982,10 @@ module Plusmap = struct
    fun n n_b ll_b ->
     match (n_b, ll_b) with
     | Zero _, Zero m -> Zero m
-    | Suc (n_b, Inject (Plus_dim (mu, nm)), Suc (Zero, _)), Suc (ll_b, Locks_dim _, Zero) ->
-        Suc (locks n n_b ll_b, Locks_dim (mu, D.plus_out n nm), Zero)
+    | Suc (n_b, Inject (Plus_dim (qm, fm, fq)), Suc (Zero, _)), Suc (ll_b, Locks_dim _, Zero) ->
+        let q = Modality.filtered n fq in
+        let fqm = Modality.filter_plus qm qm (Modality.filter_idempotent fq) fm in
+        Suc (locks n n_b ll_b, Locks_dim (D.plus_out q qm, fqm), Zero)
     | Suc (n_b, Inject (Plus_lock mu), Suc (Zero, _)), Suc (ll_b, Locks_lock mu', Suc (Zero, _)) ->
         let Eq = Modality.Gen.tgt_uniq mu mu' in
         Suc (locks n n_b ll_b, Locks_lock mu, Suc (Zero, mu))
@@ -965,49 +996,59 @@ module Plusmap = struct
    fun n_b ll_nb ->
     match (n_b, ll_nb) with
     | Zero _, Zero m -> Zero m
-    | Suc (n_b, Inject (Plus_dim (mu, nm)), Suc (Zero, _)), Suc (ll_nb, Locks_dim _, Zero) ->
-        Suc (unlocks n_b ll_nb, Locks_dim (mu, D.plus_right nm), Zero)
+    | Suc (n_b, Inject (Plus_dim (qm, fm, _)), Suc (Zero, _)), Suc (ll_nb, Locks_dim _, Zero) ->
+        Suc (unlocks n_b ll_nb, Locks_dim (D.plus_right qm, fm), Zero)
     | Suc (n_b, Inject (Plus_lock mu), Suc (Zero, _)), Suc (ll_nb, Locks_lock mu', Suc (Zero, _)) ->
         let Eq = Modality.Gen.tgt_uniq mu mu' in
         Suc (unlocks n_b ll_nb, Locks_lock mu, Suc (Zero, mu))
-    | Suc (_, Inject (Plus_lock _), _), Suc (_, Locks_dim (_, _), _) -> .
-    | Suc (_, Inject (Plus_dim (_, _)), _), Suc (_, Locks_lock _, _) -> .
-    | Suc (_, Inject (Plus_proj _), _), Suc (_, _, _) -> .
-    | Suc (_, _, _), Zero _ -> .
+    | Suc (_, Inject (Plus_lock _), _), Suc (_, Locks_dim _, _) -> .
+    | Suc (_, Inject (Plus_dim _), _), Suc (_, Locks_lock _, _) -> .
+    | Suc (_, Inject (Plus_proj _), _), Suc _ -> .
+    | Suc _, Zero _ -> .
+
+  (* Commuting plusmap with insert in both directions.  It's probable that the 'dom and 'cod here will eventually need to parametrize the functions and output rather than being existential. *)
 
   type (_, _, _, _, _, _, _) uninsert =
     | Uninsert :
-        ('p, 'x, 'fx) D.plus * ('zs, 'm, 'fx, 'ws) insert * ('p, 'a, 'xs, 'b, 'a, 'zs, 'b) t
+        ('q, 'x, 'qx) D.plus
+        * ('dom, 'm, 'cod, 'q, 'p) Modality.filter_dim
+        * ('zs, 'm, 'qx, 'ws) insert
+        * ('p, 'a, 'xs, 'b, 'a, 'zs, 'b) t
         -> ('p, 'x, 'm, 'a, 'xs, 'b, 'ws) uninsert
 
   let rec uninsert : type p a b m xs x ys ws.
       (xs, m, x, ys) insert -> (p, a, ys, b, a, ws, b) t -> (p, x, m, a, xs, b, ws) uninsert =
-   fun i fxs ->
-    match (fxs, i) with
-    | Suc (fxs, Inject (Plus_dim (_, fx)), Suc (Zero, _)), Now -> Uninsert (fx, Now, fxs)
-    | Suc (fxs, Inject (Plus_dim (m, fx)), Suc (Zero, yy)), Later i ->
-        let (Uninsert (u, fi, fxs)) = uninsert i fxs in
-        Uninsert (u, Later fi, Suc (fxs, Inject (Plus_dim (m, fx)), Suc (Zero, yy)))
+   fun i pxs ->
+    match (pxs, i) with
+    | Suc (pxs, Inject (Plus_dim (qx, _, fq)), Suc (Zero, _)), Now -> Uninsert (qx, fq, Now, pxs)
+    | Suc (pxs, Inject (Plus_dim (px, filtern, filterq)), Suc (Zero, yy)), Later i ->
+        let (Uninsert (u, f, fi, pxs)) = uninsert i pxs in
+        Uninsert
+          (u, f, Later fi, Suc (pxs, Inject (Plus_dim (px, filtern, filterq)), Suc (Zero, yy)))
     | Suc (_, Inject (Plus_lock _), Suc (Zero, _)), _ -> .
     | Suc (_, Inject (Plus_proj _), Suc (Zero, _)), _ -> .
     | Zero _, _ -> .
 
   type (_, _, _, _, _, _, _) uncoinsert =
     | Uncoinsert :
-        ('p, 'x, 'z) D.plus * ('xs, 'm, 'x, 'ys) insert * ('p, 'a, 'xs, 'b, 'a, 'zs, 'b) t
+        ('q, 'x, 'z) D.plus
+        * ('dom, 'm, 'cod, 'q, 'p) Modality.filter_dim
+        * ('xs, 'm, 'x, 'ys) insert
+        * ('p, 'a, 'xs, 'b, 'a, 'zs, 'b) t
         -> ('p, 'z, 'm, 'a, 'ys, 'b, 'zs) uncoinsert
 
   let rec uncoinsert : type p a b m ys z zs ws.
       (zs, m, z, ws) insert -> (p, a, ys, b, a, ws, b) t -> (p, z, m, a, ys, b, zs) uncoinsert =
-   fun i fxs ->
+   fun i pxs ->
     match i with
     | Now ->
-        let (Suc (fxs, Inject (Plus_dim (_, fx)), Suc (Zero, _))) = fxs in
-        Uncoinsert (fx, Now, fxs)
+        let (Suc (pxs, Inject (Plus_dim (qx, _, fq)), Suc (Zero, _))) = pxs in
+        Uncoinsert (qx, fq, Now, pxs)
     | Later i ->
-        let (Suc (fxs, Inject (Plus_dim (m, fx)), Suc (Zero, yy))) = fxs in
-        let (Uncoinsert (fx', fi, fxs)) = uncoinsert i fxs in
-        Uncoinsert (fx', Later fi, Suc (fxs, Inject (Plus_dim (m, fx)), Suc (Zero, yy)))
+        let (Suc (pxs, Inject (Plus_dim (px, filtern, filterq)), Suc (Zero, yy))) = pxs in
+        let (Uncoinsert (px', f, fi, pxs)) = uncoinsert i pxs in
+        Uncoinsert
+          (px', f, Later fi, Suc (pxs, Inject (Plus_dim (px, filtern, filterq)), Suc (Zero, yy)))
 end
 
 (* Four helper functions for commuting plus_lock with Plusmap.  Yes, all four are really different.  Suggestions of better names for them are welcome. *)

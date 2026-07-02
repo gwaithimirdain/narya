@@ -24,10 +24,10 @@ let remove_top : type mode a modality k n.
     | Ext e, Later v -> Ext { e with env = remove_ins e.env v }
     | Ext { env; _ }, Now -> env
     | Shift (env, mn, nb), _ ->
-        let (Uncoinsert (_, v', na)) = Plusmap.uncoinsert v nb in
+        let (Uncoinsert (_, _, v', na)) = Plusmap.uncoinsert v nb in
         Shift (remove_ins env v', mn, na)
     | Unshift (env, mn, nb), _ ->
-        let (Uninsert (_, v', na)) = Plusmap.uninsert v nb in
+        let (Uninsert (_, _, v', na)) = Plusmap.uninsert v nb in
         Unshift (remove_ins env v', mn, na) in
   remove_ins env Now
 

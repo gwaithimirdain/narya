@@ -70,7 +70,7 @@ module F = struct
         if depth > 0 then
           fprintf ppf "Neu (%a, %a, %a)" head h apps a (dvalue (depth - 1)) (Lazy.force ty)
         else fprintf ppf "Neu (%a, %a, ?)" head h apps a
-    | Lam (x, body) -> fprintf ppf "Lam (?^%s, %a)" (string_of_dim (dim_variables x)) binder body
+    | Lam (x, _, body) -> fprintf ppf "Lam (?^%s, %a)" (string_of_dim (dim_variables x)) binder body
     | Struct { fields = f; ins; _ } ->
         let n = cod_left_ins ins in
         fprintf ppf "Struct %s (%a)" (string_of_dim n) (fields depth n) f
@@ -78,7 +78,7 @@ module F = struct
         fprintf ppf "Constr (%s, %a, (%a))" (Constr.to_string c) dim d
           (pp_print_list
              ~pp_sep:(fun ppf () -> pp_print_string ppf ", ")
-             (fun ppf (ModalValueCube.Modal (_, c)) -> value ppf (CubeOf.find_top c)))
+             (fun ppf (Value.Modal (_, c)) -> value ppf (CubeOf.find_top c)))
           args
     | Canonical ic -> fprintf ppf "Canonical %a" inst_canonical ic
 
@@ -190,7 +190,7 @@ module F = struct
         let (To p) = deg_of_ins ins in
         fprintf ppf "Meta (%s, %a, %s)" (Meta.name meta) env e (string_of_deg p)
     | UU (_, n) -> fprintf ppf "UU %a" dim n
-    | Pi (x, _, doms, cods) ->
+    | Pi { x; doms; cods; _ } ->
         let (BindFam b) = BindCube.find_top cods in
         fprintf ppf "Pi^%s (%s, %a, (... %a))"
           (string_of_dim (CubeOf.dim doms))
@@ -198,7 +198,7 @@ module F = struct
           (cubeof value) doms binder b
 
   and binder : type mode modality dom b s. formatter -> (mode, modality, dom, b, s) binder -> unit =
-   fun ppf (Bind { env = e; modality; ins = i; body }) ->
+   fun ppf (Bind { env = e; modality; filter = _; ins = i; body }) ->
     fprintf ppf "Bind (%a, %s, %s, %a)" env e (Modality.to_string modality) (string_of_ins i) term
       body
 
@@ -208,7 +208,7 @@ module F = struct
     fprintf ppf "(%s, %a, (evdim=%s)%s, ?)"
       (match canonical with
       | UU _ -> "UU ?"
-      | Pi (_, _, _, _) -> "Pi ?"
+      | Pi _ -> "Pi ?"
       | Data _ -> "Data ?"
       | Codata _ -> "Codata ?")
       (tubeof normal) tyargs
@@ -219,12 +219,20 @@ module F = struct
    fun depth ppf e ->
     match e with
     | Emp (_, d) -> fprintf ppf "Emp %a" dim d
-    | Ext { env = e; modality; values = `Ok v; _ } ->
-        fprintf ppf "%a <%s %a" env e (Modality.to_string modality) (cubeof (dvalue depth)) v
+    | Ext { env = e; filter; values = `Ok v; _ } ->
+        fprintf ppf "%a <%s %a" env e
+          (Modality.to_string (Modality.filter_modality filter))
+          (cubeof (dvalue depth))
+          v
     | Ext { env = e; values = `Error _; _ } -> fprintf ppf "%a <: Err" env e
     | Ext { env = e; values = `Lazy v; _ } ->
         fprintf ppf "%a <; %a" env e (cubeof (lazy_eval depth)) v
-    | Act (e, Op (f, d)) -> fprintf ppf "%a <* (%s,%s)" env e (string_of_sface f) (string_of_deg d)
+    | Act (e, o) ->
+        let opstr =
+          match op_of_opt o with
+          | Some (Op (f, d)) -> string_of_sface f ^ "," ^ string_of_deg d
+          | None -> "None" in
+        fprintf ppf "%a <* (%s)" env e opstr
     | Key (e, key, _ac) -> fprintf ppf "%a <%% %s" env e (Modalcell.to_string key)
     | Permute (_, e) -> fprintf ppf "(%a) permuted(?)" env e
     | Shift (e, mn, _) -> fprintf ppf "%a << %a" env e dim (D.plus_right mn)
@@ -235,7 +243,8 @@ module F = struct
   and term : type mode b s. formatter -> (mode, b, s) term -> unit =
    fun ppf tm ->
     match tm with
-    | Var (Index (x, fa, _)) -> fprintf ppf "IVar %d.%s" (Tctx.int_of_insert x) (string_of_sface fa)
+    | Var (Index (x, fa, _, _)) ->
+        fprintf ppf "IVar %d.%s" (Tctx.int_of_insert x) (string_of_sface fa)
     | Const c -> fprintf ppf "Const %s" (print_to_string (PConstant c))
     | Meta (v, _) -> fprintf ppf "Meta %s" (print_to_string (PMeta v))
     | MetaEnv (v, _) -> fprintf ppf "MetaEnv (%s,?)" (print_to_string (PMeta v))
@@ -244,17 +253,22 @@ module F = struct
           (string_of_dim (dom_ins ins))
     | UU (_, n) -> fprintf ppf "UU %a" dim n
     | Inst (tm, args) -> fprintf ppf "Inst (%a, %a)" term tm (tubeof term) args
-    | Pi (x, Modal (_modality, _, doms), cods) ->
+    | Pi
+        (type k n dom modality)
+        ({ x; filter; doms = Modal (_modality, _, doms); cods; _ } :
+          (k, n, dom, modality, mode, b) pi_args) ->
         fprintf ppf "Pi^(%a) (%s, %a, (... %a))" dim (CubeOf.dim doms)
           (Option.value (top_variable x) ~default:"_")
           (cubeof term) doms term
-          (let (Cod t) = CodCube.find_top cods in
-           t)
+          (let (Cod (filt, t)) = CodCube.find_top cods in
+           let Eq = Modality.filter_uniq filter filt in
+           (t : (mode, (b, (modality, k) Tctx.dim_entry) Tctx.suc, s) term))
     | App (fn, Modal (_modality, _al, arg)) -> fprintf ppf "App (%a, %a)" term fn (cubeof term) arg
-    | Lam (x, modality, body) ->
+    | Lam (x, _, filter, body) ->
         fprintf ppf "Lam^(%s) (?, %s, %a)"
           (string_of_dim (dim_variables x))
-          (Modality.to_string modality) term body
+          (Modality.to_string (Modality.filter_modality filter))
+          term body
     | Constr (c, _, _) -> fprintf ppf "Constr (%s, ?, ?)" (Constr.to_string c)
     | Act (tm, s, _) -> fprintf ppf "Act (%a, %s)" term tm (string_of_deg s)
     | Key { tm; cell; _ } -> fprintf ppf "Key (%a, %s)" term tm (Modalcell.to_string cell)
@@ -414,11 +428,12 @@ module F = struct
   let entry : type dom modality mode x n. formatter -> (dom, modality, mode, x, n) Ctx.entry -> unit
       =
    fun ppf -> function
-    | Vis { dim; plusdim; hasfields = No_fields; vars; modality; bindings; _ } -> (
+    | Vis { dim; plusdim; hasfields = No_fields; vars; bindings; filter; _ } -> (
         match (D.compare_zero dim, D.compare_zero (D.plus_right plusdim)) with
         | Zero, Zero ->
             let x = NICubeOf.find_top vars in
             let b = CubeOf.find_top bindings in
+            let modality = Modality.filter_modality filter in
             fprintf ppf "(%a%a : %a)"
               (pp_print_option ~none:(fun ppf () -> pp_print_string ppf "_") pp_print_string)
               x
