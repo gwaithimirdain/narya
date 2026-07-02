@@ -1082,7 +1082,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
         | [ (_, Wrap { value = Placeholder _; _ }) ] -> (
             let ety = Norm.eval_term (Ctx.env ctx) ty in
             match View.view_type ety "split" with
-            | Canonical (_, Pi (_, _, doms, _), _, _) ->
+            | Canonical (_, Pi { doms; _ }, _, _) ->
                 let dim = CubeOf.dim doms in
                 let cube, mapsto, notn =
                   match D.compare_zero dim with
