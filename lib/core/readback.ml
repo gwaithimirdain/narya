@@ -1,5 +1,6 @@
 open Util
 open Modal
+open Tlist
 open Tbwd
 open Reporter
 open Dim
@@ -12,7 +13,7 @@ open Norm
 open Printable
 module Binding = Ctx.Binding
 
-(* Wrapping the "Displaying" module in another module called "Readback" and opening that module allows us to refer to the module as just "Displaying" here, but exports it as "Readback.Displaying" to other files even when they open this file. *)
+(* The "Displaying" reader records whether we're reading back for printing to the user or for internal purposes.  For instance, when printing we do more eta-expansion if the user requested it.  Wrapping the "Displaying" module in another module called "Readback" and opening that module allows us to refer to the module as just "Displaying" here, but exports it as "Readback.Displaying" to other files even when they open this file. *)
 
 module Readback = struct
   module Displaying = Algaeff.Reader.Make (Bool)
@@ -23,17 +24,18 @@ open Readback
 let () =
   Displaying.register_printer (function `Read -> Some "unhandled Readback.Displaying.read effect")
 
+(* Given a (viewed) type, compute whether its elements are type families, functions of another sort, or neither.  Right now, we do this by descending through Pi binders, extending the context. *)
 let rec sort_of_ty : type mode a z.
     ?isfunc:bool -> (mode, z, a) Ctx.t -> mode View.view_type -> [ `Type | `Function | `Other ] =
  fun ?(isfunc = false) ctx -> function
   | Canonical (_, UU _, _, _) -> `Type
-  | Canonical (_, Pi (_, modality, doms, cods), _, tyargs) -> (
-      match D.compare (TubeOf.inst tyargs) (CubeOf.dim doms) with
+  | Canonical (_, Pi { x = _; filter; doms; cods }, _, tyargs) -> (
+      match D.compare (TubeOf.inst tyargs) (BindCube.dim cods) with
       | Neq -> fatal (Dimension_mismatch ("sort_of_ty", TubeOf.inst tyargs, CubeOf.dim doms))
       | Eq ->
-          let args, newnfs = dom_vars ctx modality doms in
-          let newctx = Ctx.invis ctx modality newnfs in
-          let output = tyof_app cods tyargs args in
+          let args, newnfs = dom_vars ctx (Modality.filter_modality filter) doms in
+          let newctx = Ctx.invis ctx (Modality.filter_idempotent filter) newnfs in
+          let output = tyof_app cods tyargs filter args in
           sort_of_ty ~isfunc:true newctx (view_type output "sort_of_ty"))
   | _ -> if isfunc then `Function else `Other
 
@@ -62,29 +64,44 @@ and readback_at : type mode a z.
   let view = if Displaying.read () then view_term tm else tm in
   let vty = view_type ty "readback_at" in
   match (vty, view) with
-  | ( Canonical (_, Pi (_, modality, doms, cods), ins, tyargs),
-      Lam ((Variables (m, mn, xs) as x), body) ) -> (
+  | ( Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs),
+      Lam ((Variables (m, mn, xs) as x), filter2, body) ) -> (
       let Eq = eq_of_ins_zero ins in
       let k = CubeOf.dim doms in
       let l = dim_binder body in
-      match (D.compare (TubeOf.inst tyargs) k, D.compare k l) with
-      | Neq, _ -> fatal (Dimension_mismatch ("reading back at pi 1", TubeOf.inst tyargs, k))
-      | _, Neq -> fatal (Dimension_mismatch ("reading back at pi 2", k, l))
-      | Eq, Eq ->
+      let modality = Modality.filter_modality filter in
+      match
+        ( D.compare (TubeOf.inst tyargs) k,
+          D.compare k l,
+          Modality.compare modality (Modality.filter_modality filter2) )
+      with
+      | Neq, _, _ -> fatal (Dimension_mismatch ("reading back at pi 1", TubeOf.inst tyargs, k))
+      | _, Neq, _ -> fatal (Dimension_mismatch ("reading back at pi 2", k, l))
+      | _, _, Neq ->
+          fatal
+            (Modality_mismatch
+               (`Internal, "reading back at pi 3", modality, Modality.filter_modality filter2))
+      | Eq, Eq, Eq ->
+          let Eq = Modality.filter_uniq filter filter2 in
           let args, newnfs = dom_vars ctx modality doms in
           let (Plus af) = N.plus (NICubeOf.out N.zero xs) in
-          let newctx = Ctx.vis ctx modality m mn xs newnfs af in
-          let output = tyof_app cods tyargs args in
+          let newctx = Ctx.vis ctx filter m mn xs newnfs af in
+          let output = tyof_app cods tyargs filter args in
           let body = readback_at ~eta newctx (apply_term tm modality args) output in
-          Term.Lam (x, modality, body))
+          Term.Lam (x, D.plus_out m mn, filter, body))
   (* If eta-expansion is enabled, we do an eta-expanding readback of any term. *)
-  | Canonical (_, Pi (name, modality, doms, cods), ins, tyargs), tm when eta ->
+  | Canonical (_, Pi { x = name; filter; doms; cods }, ins, tyargs), tm when eta ->
+      let modality = Modality.filter_modality filter in
       let Eq = eq_of_ins_zero ins in
       let newargs, newnfs = dom_vars ctx modality doms in
-      let (Any_ctx newctx) = Ctx.variables_vis ctx modality name newnfs in
-      let output = tyof_app cods tyargs newargs in
+      let (Any_ctx newctx) = Ctx.variables_vis ctx (Modality.filter_idempotent filter) name newnfs in
+      let output = tyof_app cods tyargs filter newargs in
       (* We carry through the eta-expansion flag so that iterated pi-types will eta-expand fully. *)
-      Term.Lam (name, modality, readback_at ~eta newctx (apply_term tm modality newargs) output)
+      Term.Lam
+        ( name,
+          BindCube.dim cods,
+          filter,
+          readback_at ~eta newctx (apply_term tm modality newargs) output )
   | ( Canonical
         (type mn m n)
         (( _,
@@ -177,24 +194,34 @@ and readback_at : type mode a z.
       match D.compare xn (TubeOf.inst tyargs) with
       | Neq -> fatal (Dimension_mismatch ("reading back constrs", xn, TubeOf.inst tyargs))
       | Eq ->
-          (* If a higher-dimensional constructor belongs to a higher version of a datatype, the instantiation arguments of the latter must be lower-dimensional versions of the same constructor.  We extract their arguments to form the boundaries of the types of the arguments of our current constructor. *)
-          (* Specifically, tyargs is a tube of normals, each of which is expected to be a lower-dimensional instance of the same constructor, which therefore has a list of modal cubes as arguments.  We want to extract the top element of each of those cubes to form a tube of lists of modal values.  *)
+          (* We need the same number of arguments as there are types in the telescope. *)
+          let lgth = Telescope.length argtys in
+          let xargs =
+            Vec.of_list_length lgth xargs
+            <|> Anomaly "wrong number of constructor arguments in readback_at" in
+          (* If a higher-dimensional constructor belongs to a higher version of a datatype, the instantiation arguments of the latter must be lower-dimensional versions of the same constructor.  We extract their arguments to form the boundaries of the types of the arguments of our current constructor. Specifically, tyargs is a tube of normals, each of which is expected to be a lower-dimensional instance of the same constructor, which therefore has a list of modal cubes as arguments.  We want to extract the top element of each of those cubes to form a *list of tubes* of modal values, whereas what we naturally have, after peeling off the constructors, is a *tube of lists*.  We do the conversion with our multiple-output traversal with a variable number of outputs, specifically the length of the telescope. *)
+          let (Conses (cs, bs)) = Tlist.conses lgth in
           let tyarg_args =
-            TubeOf.mmap
-              {
-                map =
-                  (fun _ [ tm ] ->
-                    match view_term tm.tm with
-                    | Constr (tmname, _, tmargs) ->
-                        if tmname = xconstr then
-                          List.map
-                            (fun (ModalValueCube.Modal (xmod, x)) ->
-                              Modal (xmod, CubeOf.find_top x))
-                            tmargs
-                        else fatal (Anomaly "inst arg wrong constr in readback at datatype")
-                    | _ -> fatal (Anomaly "inst arg not constr in readback at datatype"));
-              }
-              [ tyargs ] in
+            TubeOf.Heter.vec_of_hgt cs
+            @@ TubeOf.pmap
+                 {
+                   map =
+                     (fun _ [ tm ] ->
+                       match view_term tm.tm with
+                       | Constr (tmname, _, tmargs) ->
+                           if tmname = xconstr then
+                             let ys =
+                               Vec.of_list_length_map
+                                 (fun (Value.Modal (xfilt, x)) : (_, _) modal_value ->
+                                   Modal (Modality.filter_modality xfilt, CubeOf.find_top x))
+                                 lgth tmargs
+                               <|> Anomaly "inst arg wrong num args in readback at datatype" in
+                             CubeOf.Heter.hft_of_vec cs ys
+                           else fatal (Anomaly "inst arg wrong constr in readback at datatype")
+                       | _ -> fatal (Anomaly "inst arg not constr in readback at datatype"));
+                 }
+                 [ tyargs ] bs in
+          (* Now xargs, argtys, and tyarg_args are all guaranteed to have the same length, so readback_at_tel doesn't have to worry. *)
           Constr (xconstr, dim_env env, readback_at_tel ctx env xargs argtys tyarg_args))
   | _ -> readback_val_sorted ctx tm vty
 
@@ -264,7 +291,7 @@ and readback_head : type mode c z.
       (* The source of the key is supposed to be the modal annotation of the variable, while its target is supposed to be the composite of all the locks in the context to its right.  So we remove its target from the context. *)
       let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt key) in
       (* Now we look for the level variable in the remaining context. *)
-      let (Lookup { result; value = _; modality; insert; plus = Plus_with_locks (c, _) }) =
+      let (Lookup { result; value = _; modality; filter; insert; plus = Plus_with_locks (c, _) }) =
         Ctx.find_level ctx level <|> No_such_level (PLevel level) in
       (* We check that (1) the modality annotating that variable is the source of the key, and (2) there are no more locks remaining to its right in the context. *)
       match (Modality.compare (Modalcell.vsrc key) modality, result, c) with
@@ -274,8 +301,8 @@ and readback_head : type mode c z.
           (* If there's a nontrivial degeneracy, we act by it; otherwise we leave it off. *)
           let tm =
             match is_id_deg deg with
-            | Some _ -> Term.Var (Index (insert, fa, plus_src))
-            | None -> Act (Term.Var (Index (insert, fa, plus_src)), deg, sort) in
+            | Some _ -> Term.Var (Index (insert, fa, filter, plus_src))
+            | None -> Act (Term.Var (Index (insert, fa, filter, plus_src)), deg, sort) in
           (* And if the key is nontrivial, we act by it; otherwise we leave it off. *)
           match (Modality.compare_id modality, plus_src, plus_tgt) with
           | Eq, Plus_lock (Zero _, Zero), Plus_with_locks (Zero, Zero _) -> tm
@@ -299,94 +326,113 @@ and readback_head : type mode c z.
           let (To perm) = deg_of_ins ins in
           Act (tm, perm, sort))
   | UU (mode, n) -> UU (mode, n)
-  | Pi (x, modality, doms, cods) ->
-      let k = CubeOf.dim doms in
+  | Pi (type dom modality k n) ({ x; filter; doms; cods } : (dom, modality, mode, k, n) pi_args) ->
+      let n = BindCube.dim cods in
+      let modality = Modality.filter_modality filter in
       let (Locked (plus, lctx)) = Ctx.lock ctx modality in
       let args, newnfs = dom_vars ctx modality doms in
+      let build : type l. (l, n) sface -> (l, dom * modality * mode * c) CodFam.t =
+       fun fa ->
+        let (Filter_sface (fb, kfilter)) = Modality.filter_sface filter fa in
+        let (Any_ctx sctx) =
+          Ctx.variables_vis ctx
+            (Modality.filter_idempotent kfilter)
+            (sub_variables fb x) (CubeOf.subcube fb newnfs) in
+        let sargs = CubeOf.subcube fb args in
+        let (BindFam b) = BindCube.find cods fa in
+        Cod (kfilter, readback_val ~sort:`Type sctx (apply_binder_term b kfilter sargs)) in
       Pi
-        ( x,
-          Modal
-            ( modality,
-              plus,
-              CubeOf.mmap { map = (fun _ [ dom ] -> readback_val ~sort:`Type lctx dom) } [ doms ] ),
-          CodCube.build k
-            {
-              build =
-                (fun fa ->
-                  let (Any_ctx sctx) =
-                    Ctx.variables_vis ctx modality (sub_variables fa x) (CubeOf.subcube fa newnfs)
-                  in
-                  let sargs = CubeOf.subcube fa args in
-                  let (BindFam b) = BindCube.find cods fa in
-                  Cod (readback_val ~sort:`Type sctx (apply_binder_term b sargs)));
-            } )
+        {
+          x;
+          filter;
+          doms =
+            Modal
+              ( modality,
+                plus,
+                CubeOf.mmap { map = (fun _ [ dom ] -> readback_val ~sort:`Type lctx dom) } [ doms ]
+              );
+          cods = CodCube.build n { build };
+        }
 
+(* Read back a vector of values, with their types specified in a term telescope.  The environment is used for evaluating each type at the previous values, for use in reading back the later values.  Each type also has to be instantiated at a boundary, supplied as a vector of tubes. *)
 and readback_at_tel : type mode n c a b ab z.
     (mode, z, c) Ctx.t ->
     (mode, n, a) env ->
-    (n, mode, kinetic, unit) ModalValueCube.t list ->
+    ((n, mode, kinetic) modal_value_cube, b) Vec.t ->
     (mode, a, b, ab) Telescope.t ->
-    (D.zero, n, n, (mode, kinetic) modal_value list) TubeOf.t ->
+    ((D.zero, n, n, (mode, kinetic) modal_value) TubeOf.t, b) Vec.t ->
     (n, mode, c, kinetic) any_modal_term_cube list =
  fun ctx env xs tys tyargs ->
-  match (xs, tys) with
-  | [], Emp -> []
+  match (xs, tys, tyargs) with
+  | [], Emp, [] -> []
   | ( Modal
-        (type dom modality)
-        ((xmodality, x) : (dom, modality, mode) Modality.t * (n, (dom, kinetic) value) CubeOf.t)
+        (type dom modality k)
+        ((filter, x) :
+          (dom, modality, mode, k, n) Modality.filter_dim * (k, (dom, kinetic) value) CubeOf.t)
       :: xs,
-      Ext (_, Modal (tymodality, aplus, ty), tys) ) -> (
+      Ext (_, Modal (tymodality, aplus, ty), tys),
+      tyargs :: tyargs_rest ) -> (
+      let xmodality = Modality.filter_modality filter in
       match Modality.compare xmodality tymodality with
+      | Neq -> fatal (Modality_mismatch (`Internal, "readback_at_tel", xmodality, tymodality))
       | Eq ->
           let (Locked (cplus, lctx)) = Ctx.lock ctx tymodality in
           let lenv = key_env env (Modalcell.id tymodality) aplus in
           let x = CubeOf.find_top x in
           let ety = eval_term lenv ty in
+          (* The argument is k-dimensional, where k is the modal filtering of the dimension n of the entire constructor.  We build k-cubes of read-back terms and values in parallel. *)
+          let n = dim_env env in
+          let k = Modality.filtered n filter in
           let tyargtbl = Hashtbl.create 10 in
-          let [ tyarg; tms; tyargs ] =
-            TubeOf.pmap
+          let [ tyarg; tms ] =
+            TubeOf.pbuild D.zero (D.zero_plus k)
               {
-                map =
-                  (fun fa [ tyargs ] ->
-                    match tyargs with
-                    | [] -> fatal (Anomaly "missing arguments in readback_at_tel")
-                    | Modal (argmod, argtm) :: argrest -> (
-                        match Modality.compare argmod xmodality with
-                        | Neq ->
-                            fatal
-                              (Modality_mismatch (`Internal, "readback_at_tel", argmod, tymodality))
-                        | Eq ->
-                            let fa = sface_of_tface fa in
-                            let argty : (dom, kinetic) value =
-                              inst
-                                (eval_term (act_env lenv (op_of_sface fa)) ty)
-                                (TubeOf.build D.zero
-                                   (D.zero_plus (dom_sface fa))
-                                   {
-                                     build =
-                                       (fun fb ->
-                                         Hashtbl.find tyargtbl
-                                           (SFace_of (comp_sface fa (sface_of_tface fb))));
-                                   }) in
-                            let argnorm : dom normal = { tm = argtm; ty = argty } in
-                            let argtm = readback_at lctx argtm argty in
-                            Hashtbl.add tyargtbl (SFace_of fa) argnorm;
-                            [ argnorm; argtm; argrest ]));
+                build =
+                  (fun fa ->
+                    (* The value associated to some face of k in the cube of arguments is derived from the corresponding argument of the n-dimensional constructor associated to the corresponding face of n lifted along the filter.  This makes sense because when a constructor is evaluated, the modally filtered arguments are degenerated to obtain values for the boundary constructors, and the face and degeneracy cancel out. *)
+                    let (Pface_filter (_, fb)) = Modality.pface_filter n fa filter in
+                    let (Modal (argmod, argtm)) = TubeOf.find tyargs fb in
+                    match Modality.compare argmod xmodality with
+                    | Neq ->
+                        fatal (Modality_mismatch (`Internal, "readback_at_tel", argmod, tymodality))
+                    | Eq ->
+                        let fa = sface_of_tface fa in
+                        let fb = sface_of_tface fb in
+                        let argty : (dom, kinetic) value =
+                          inst
+                            (eval_term
+                               (act_env lenv
+                                  (opt_op_of_opt_sface
+                                     (comp_opt_sface
+                                        (Modality.sface_of_filter n filter)
+                                        (opt_of_sface fa))))
+                               ty)
+                            (TubeOf.build D.zero
+                               (D.zero_plus (dom_sface fb))
+                               {
+                                 build =
+                                   (fun fc ->
+                                     Hashtbl.find tyargtbl
+                                       (SFace_of (comp_sface fb (sface_of_tface fc))));
+                               }) in
+                        let argnorm : dom normal = { tm = argtm; ty = argty } in
+                        let argtm = readback_at lctx argtm argty in
+                        Hashtbl.add tyargtbl (SFace_of fb) argnorm;
+                        [ argnorm; argtm ]);
               }
-              [ tyargs ] (Cons (Cons (Cons Nil))) in
+              (Cons (Cons Nil)) in
           let ity = inst ety tyarg in
-          Modal (xmodality, cplus, TubeOf.plus_cube tms (CubeOf.singleton (readback_at lctx x ity)))
+          Modal (filter, cplus, TubeOf.plus_cube tms (CubeOf.singleton (readback_at lctx x ity)))
           :: readback_at_tel ctx
                (Ext
                   {
                     env;
                     plus = D.plus_zero (TubeOf.inst tyarg);
-                    modality = xmodality;
                     values = `Ok (TubeOf.plus_cube (val_of_norm_tube tyarg) (CubeOf.singleton x));
+                    filter;
+                    filtered = Modality.filter_zero xmodality;
                   })
-               xs tys tyargs
-      | Neq -> fatal (Modality_mismatch (`Internal, "readback_at_tel", xmodality, tymodality)))
-  | _ -> fatal (Anomaly "length mismatch in equal_at_tel")
+               xs tys tyargs_rest)
 
 (* To readback an environment, since readback is type-directed we need the types of *all* the terms in it, which is to say its codomain context.  We store this as a Termctx since we need to evaluate and instantiate the types at the previous terms in the environment as we go. *)
 and readback_env : type mode n a b c d.
@@ -405,17 +451,31 @@ and readback_ordered_env : type mode n a b c d.
   match envctx with
   | Emp mode -> Emp (mode, dim_env env)
   | Ext (envctx, entry, _) -> (
-      let (Plus mk) = D.plus (dim_entry entry) in
       match entry with
-      | Vis { plus_lock = dplus; bindings; _ } | Invis (dplus, bindings) ->
+      | Vis { plus_lock = dplus; bindings; filter = filtered; _ }
+      | Invis { plus_lock = dplus; bindings; filter = filtered; _ } ->
           let modality = plus_lock_modality dplus in
-          let idcell = Modalcell.id modality in
+          (* The dimension n of the environment gets filtered to m. *)
+          let n = dim_env env in
+          let (Has_filter filter) = Modality.filter modality n in
+          let m = Modality.filtered n filter in
+          (* The dimension of the context entry is k. *)
+          let k = dim_entry entry in
+          (* The dimension of the cube in the environment must therefore be m+k. *)
+          let (Plus m_k) = D.plus k in
+          let mk = D.plus_out m m_k in
+          (* We act by a sface_of_filter to reduce the dimension of the environment to m, so that we can get an (m+k)-dimensional cube out of it. *)
+          let aenv = act_env env (opt_op_of_opt_sface (Modality.sface_of_filter n filter)) in
+          (* We get the top entry (Now) from the environment we're reading back.  We can't just match it against Ext or LazyExt because it could have other lazy operations applied to it like Shift, Unshift, Permute, etc. *)
+          let (Looked_up { act; op; entry = xs }) =
+            lookup_cube aenv m_k modality Now (id_opt_op mk) in
+          (* As usual, the missing endpoints in sface_of_filter should be canceled by degeneracies in the non-unary case. *)
+          let (Op (fc, fd)) =
+            op_of_opt op <|> Anomaly "unexpected missing endpoint in readback_ordered_env" in
           (* We are reading back bindings that were defined under a modality, so they are defined in a locked context. *)
           let (Locked (bplus, lctx)) = Ctx.lock ctx modality in
-          (* We get the top entry (Now) from the environment we're reading back.  We can't just match it against Ext or LazyExt because it could have other lazy operations applied to it like Shift, Unshift, Permute, etc. *)
-          let (Looked_up { act; op = Op (fc, fd); entry = xs }) =
-            lookup_cube env mk modality Now (id_op (D.plus_out (dim_env env) mk)) in
-          let lenv = key_env env idcell dplus in
+          (* We also analogously key the environment we're reading back, for purposes of evaluating types. *)
+          let lenv = key_env aenv (Modalcell.id modality) dplus in
           (* We apply the accumulated operators and keys to the entry we found. *)
           let xs = act_cube { act } (CubeOf.subcube fc xs) fd None in
           (* Now we read back all the terms and types in that environment entry.  We record the normal forms in a hashtbl as we go, to use as instantiation arguments to types of higher-dimensional terms. *)
@@ -425,10 +485,10 @@ and readback_ordered_env : type mode n a b c d.
               {
                 map =
                   (fun fab [ tm ] ->
-                    let (SFace_of_plus (_, fb, fa)) = sface_of_plus mk fab in
+                    let (SFace_of_plus (_, fb, fa)) = sface_of_plus m_k fab in
                     (* The type to read back at comes from the top entry in the codomain context.  This is a term, so we have to evaluate it to get a value before reading back at it.  We evaluate it in our given environment, so that it can use the terms to the left and also lower-dimensional terms in the current entry.  We have to lock that environment to make those latter entries available. *)
                     let ty = (CubeOf.find bindings fa).ty in
-                    let ety = eval_term (act_env lenv (op_of_sface fb)) ty in
+                    let ety = eval_term (act_env lenv (opt_op_of_sface fb)) ty in
                     (* Now we instantiate it at the lower-dimensional normal forms that we already computed. *)
                     let ty =
                       inst ety
@@ -447,7 +507,14 @@ and readback_ordered_env : type mode n a b c d.
               [ xs ] in
           (* For the recursive call, we remove the entry we found. *)
           let tmenv = readback_ordered_env ctx (Env.remove_top env) envctx in
-          Ext (tmenv, mk, Term.Modal (modality, bplus, tmxs)))
+          Ext
+            {
+              env = tmenv;
+              plus = m_k;
+              values = Term.Modal (modality, bplus, tmxs);
+              filter;
+              filtered;
+            })
   | Lock _ ->
       (* We remove as many locks as there are at the end of the codomain context, since keys in the environment could have composite modalities as their domain. *)
       let (Ordered_remove_locks (envctx, plus_src)) = Termctx.ordered_remove_locks envctx in
@@ -489,7 +556,8 @@ let readback_entry : type dom modality mode a b f n.
     (dom, modality, mode, b, f, n) readback_entry =
  fun ctx e ->
   match e with
-  | Vis { dim; modality; plusdim; vars; bindings; hasfields; fields; fplus } ->
+  | Vis { dim; plusdim; vars; bindings; hasfields; fields; fplus; filter } ->
+      let modality = Modality.filter_modality filter in
       let top = Binding.value (CubeOf.find_top bindings) in
       (* Fields as illusory variables are only used when typechecking records, which have substitution dimension 0 and can have no higher fields, so as field insertion we can use the identity on zero. *)
       let fins = ins_zero D.zero in
@@ -503,10 +571,12 @@ let readback_entry : type dom modality mode a b f n.
             (f, x, fldty))
           fields in
       let bindings = readback_bindings lctx bindings in
-      Readback_entry (Vis { dim; plusdim; plus_lock; vars; bindings; hasfields; fields; fplus })
-  | Invis (modality, bindings) ->
+      Readback_entry
+        (Vis { dim; plusdim; plus_lock; vars; bindings; hasfields; fields; fplus; filter })
+  | Invis { filter; bindings } ->
+      let modality = Modality.filter_modality filter in
       let (Locked (plus_lock, lctx)) = Ctx.lock ctx modality in
-      Readback_entry (Invis (plus_lock, readback_bindings lctx bindings))
+      Readback_entry (Invis { plus_lock; filter; bindings = readback_bindings lctx bindings })
 
 let rec readback_ordered_ctx : type mode a b.
     (mode, a, b) Ctx.Ordered.t -> (mode, a, b) ordered_termctx = function

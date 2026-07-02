@@ -195,6 +195,7 @@ module Code = struct
     | Unknown_modality : string -> t
     | Modalcell_mismatch : string * ('a, 'm, 'n, 'b) Modalcell.t * ('c, 'r, 's, 'd) Modalcell.t -> t
     | Non_mode_synthesizing : string -> t
+    | Invalid_mode_theory : t
     | Invalid_variable_face : 'a D.t * ('n, 'm) sface -> t
     | Anomaly : string -> t
     | No_such_level : printable -> t
@@ -368,6 +369,7 @@ module Code = struct
     | Unknown_modality _ -> Error
     | Modalcell_mismatch _ -> Error
     | Non_mode_synthesizing _ -> Error
+    | Invalid_mode_theory -> Bug
     | Anomaly _ -> Bug
     | No_such_level _ -> Bug
     | Redefining_constant _ -> Warning
@@ -572,6 +574,7 @@ module Code = struct
     | Non_mode_synthesizing _ -> "E1703"
     | Unknown_modality _ -> "E1704"
     | Missing_key _ -> "E1705"
+    | Invalid_mode_theory -> "E1710"
     (* Commands *)
     | Too_many_commands -> "E2000"
     | Forbidden_interactive_command _ -> "E2001"
@@ -908,6 +911,7 @@ module Code = struct
           textf "modal cell mismatch in %s (%s ≠ %s)" op (Modalcell.to_string a)
             (Modalcell.to_string b)
       | Non_mode_synthesizing str -> textf "cannot synthesize a mode: %s" str
+      | Invalid_mode_theory -> text "invalid mode theory"
       | Unknown_modality c -> textf "unknown modality %s" c
       | Missing_key (vdom, vcod) ->
           textf "use of %a variable behind %a lock requires a key" pp_printed
