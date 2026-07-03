@@ -7,7 +7,7 @@ module TestmodeGen = struct
   let name = "Type"
 end
 
-module ComonadGen (Testmode : Mode.Generated with module G := TestmodeGen) = struct
+module CoreflectorGen (Testmode : Mode.Generated with module G := TestmodeGen) = struct
   type src = Testmode.t
   type tgt = Testmode.t
 
@@ -20,17 +20,17 @@ module ComonadGen (Testmode : Mode.Generated with module G := TestmodeGen) = str
   let nonparametric = D.zero
 end
 
-module ComonadCells
+module CoreflectorCells
     (Testmode : Mode.Generated with module G := TestmodeGen)
-    (Comonad : Modality.Generated with module G := ComonadGen(Testmode)) =
+    (Coreflector : Modality.Generated with module G := CoreflectorGen(Testmode)) =
 struct
-  let comonad = Modality.of_gen Comonad.modality
+  let comonad = Modality.of_gen Coreflector.modality
   let counit = Modalcell.of_gen (Modalcell.generate comonad (Modality.id Testmode.mode))
 
   let comult =
     Modalcell.of_gen
       (Modalcell.generate comonad
-         (Path (Suc (Suc (Zero, Comonad.modality), Comonad.modality), Testmode.mode)))
+         (Path (Suc (Suc (Zero, Coreflector.modality), Coreflector.modality), Testmode.mode)))
 
   let compare : type a m n b. (a, m, n, b) Modalcell.t -> (a, m, n, b) Modalcell.t -> bool =
    fun _ _ -> true
@@ -42,7 +42,7 @@ struct
     match (x, y) with
     | Path (Zero, _), Path (Zero, _) -> Some (Modalcell.id x)
     | Path (Suc (m, g), mode), Path (Zero, _) -> (
-        match Modality.Gen.compare g Comonad.modality with
+        match Modality.Gen.compare g Coreflector.modality with
         | Eq ->
             let* x = find_unique (Path (m, mode)) y in
             Some (Modalcell.hcomp (Suc (Zero, g)) Zero x counit)
@@ -50,9 +50,9 @@ struct
     | Path (Zero, _), Path (Suc (_, _), _) -> None
     | Path (Suc (m, g), mmode), Path (Suc (Suc (n, k), h), nmode) -> (
         match
-          ( Modality.Gen.compare g Comonad.modality,
-            Modality.Gen.compare k Comonad.modality,
-            Modality.Gen.compare h Comonad.modality )
+          ( Modality.Gen.compare g Coreflector.modality,
+            Modality.Gen.compare k Coreflector.modality,
+            Modality.Gen.compare h Coreflector.modality )
         with
         | Eq, Eq, Eq ->
             let* x = find_unique (Path (m, mmode)) (Path (n, nmode)) in
@@ -75,5 +75,5 @@ end
 
 let install () =
   let module Testmode = Mode.Generate (TestmodeGen) in
-  let module Comonad = Modality.Generate (ComonadGen (Testmode)) in
-  Modalcell.choose_theory (module ComonadCells (Testmode) (Comonad) : Modalcell.Theory)
+  let module Coreflector = Modality.Generate (CoreflectorGen (Testmode)) in
+  Modalcell.choose_theory (module CoreflectorCells (Testmode) (Coreflector) : Modalcell.Theory)

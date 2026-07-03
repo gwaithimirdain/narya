@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-idempotent-comonad") -*- `}
+{` -*- narya-prog-args: ("-proofgeneral" "-coreflector") -*- `}
 
 def f (A :□| Type) (x :□| A) : A ≔ x
 

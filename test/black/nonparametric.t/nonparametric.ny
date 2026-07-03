@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-nonparametric-comonad") -*- `}
+{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-direction" "p,rel,Br" "-discrete-coreflector") -*- `}
 
 ` The modality ♭ is a *nonparametric* comonad: working under a ♭ lock filters
 ` out the parametric dimensions.  We set up the usual comonad structure, plus a

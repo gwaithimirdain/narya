@@ -2,7 +2,7 @@ Higher coinductive types with filtering-modal (♭) parameters: the ♭ paramete
 not degenerated in the contexts of higher fields, so field types can refer to it
 directly, and its instances construct and project as expected.
 
-  $ narya -v -parametric -nonparametric-comonad nphct.ny
+  $ narya -v -parametric -discrete-coreflector nphct.ny
    ￫ info[I0000]
    ￮ constant ♭√ defined
   
@@ -44,7 +44,7 @@ Without the modality, an ordinary parameter IS degenerated in the higher field's
 context, so the same field type fails to check: the parameter A becomes a square
 of type Type⁽ᵉ⁾ A.0 A.1, which is not a Type.
 
-  $ narya -parametric -nonparametric-comonad -e "def sqrt (A : Type) : Type ≔ codata [ x .root.e : A ]"
+  $ narya -parametric -discrete-coreflector -e "def sqrt (A : Type) : Type ≔ codata [ x .root.e : A ]"
    ￫ error[E0401]
    ￭ command-line exec string
    1 | def sqrt (A : Type) : Type ≔ codata [ x .root.e : A ]
