@@ -1502,9 +1502,35 @@ let process_ix : type a. a Matchscope.t -> int -> a synth located =
   | Some k -> unlocated (Raw.Var (k, None))
   | None -> fatal (Anomaly "invalid parse-level in processing match")
 
-let process_obs_or_ix : type a. a Matchscope.t -> (wrapped_parse, int) Either.t -> a synth located =
+(* A discriminee of a match, along with an optional window modality with which to lock the discriminee.  A window modality is written by ascribing the discriminee with a modality and a placeholder type, as in "match (x :m| _) [...". *)
+type discriminee = { tm : wrapped_parse; window : string located list located option }
+
+let get_discriminee_window (w : wrapped_parse) : discriminee =
+  let (Wrap tm) = w in
+  match tm.value with
+  | Notn ((AscVar, _), n) -> (
+      match args n with
+      | [
+       Token (LParen, _);
+       Term x;
+       Token (Colon, _);
+       Term modality;
+       Token (Op "|", _);
+       Term { value = Placeholder _; _ };
+       Token (RParen, _);
+      ] -> { tm = Wrap x; window = Some (get_modality fst modality) }
+      | _ -> { tm = w; window = None })
+  | _ -> { tm = w; window = None }
+
+let discriminee_window : (discriminee, int) Either.t -> string located list located option =
+  function
+  | Left { window; _ } -> window
+  | Right _ -> None
+
+let process_obs_or_ix : type a. a Matchscope.t -> (discriminee, int) Either.t -> a synth located =
  fun ctx -> function
-  | Left (Wrap x) -> process_synth (Matchscope.names ctx) x "discriminee of match"
+  | Left { tm = Wrap x; window = _ } ->
+      process_synth (Matchscope.names ctx) x "discriminee of match"
   | Right i -> (
       match Matchscope.lookup_num i ctx with
       | Some k -> unlocated (Raw.Var (k, None))
@@ -1513,7 +1539,7 @@ let process_obs_or_ix : type a. a Matchscope.t -> (wrapped_parse, int) Either.t 
 (* Given a scope of 'a variables, a vector of 'n not-yet-processed discriminees or previous match variables, and a list of branches with 'n patterns each, compile them into a nested match.  The scope given as an argument to this function is used only for the discriminees; it is the original scope extended by unnamed variables (since the discriminees can't actually depend on the pattern variables).  The scopes used for the branches, which also include pattern variables, are stored in the branch data structures. *)
 let rec process_branches : type a n.
     a Matchscope.t ->
-    ((wrapped_parse, int) Either.t, n) Vec.t ->
+    ((discriminee, int) Either.t, n) Vec.t ->
     int Bwd.t ->
     (a, n) branch list ->
     Asai.Range.t option ->
@@ -1526,7 +1552,7 @@ let rec process_branches : type a n.
       let tms = Vec.to_list_map (process_obs_or_ix xctx) xs in
       match (sort, xs) with
       | `Implicit, _ -> (locate (Refute (tms, `Implicit)) loc, [])
-      | `Explicit (Wrap motive), [ Left (Wrap tm) ] -> (
+      | `Explicit (Wrap motive), [ Left { tm = Wrap tm; window } ] -> (
           let ctx = Matchscope.names xctx in
           let sort = `Explicit (process ctx motive) in
           match process ctx tm with
@@ -1536,7 +1562,7 @@ let rec process_branches : type a n.
                      (Match
                         {
                           tm = locate tm loc;
-                          window = None;
+                          window;
                           sort;
                           branches = Emp;
                           refutables = None;
@@ -1545,7 +1571,7 @@ let rec process_branches : type a n.
                   loc,
                 [] )
           | _ -> fatal (Nonsynthesizing "motive of explicit match"))
-      | `Nondep i, [ Left (Wrap tm) ] -> (
+      | `Nondep i, [ Left { tm = Wrap tm; window } ] -> (
           let ctx = Matchscope.names xctx in
           let sort = `Nondep i in
           match process ctx tm with
@@ -1555,7 +1581,7 @@ let rec process_branches : type a n.
                      (Match
                         {
                           tm = locate tm loc;
-                          window = None;
+                          window;
                           sort;
                           branches = Emp;
                           refutables = None;
@@ -1596,8 +1622,14 @@ let rec process_branches : type a n.
               branches in
           let seen = Snoc (seen, i) in
           process_branches xctx xs seen branches loc sort
-      | Left (Wrap tm) ->
+      | Left { tm = Wrap tm; window } ->
           (* Otherwise, we have to let-bind it to the discriminee term, adding it as a new variable to the scope. *)
+          (match window with
+          | None -> ()
+          | Some _ ->
+              fatal ?loc:tm.loc
+                (Parse_error
+                   "window modality requires the discriminee to be matched against a constructor pattern"));
           let branches =
             List.map
               (function
@@ -1671,6 +1703,7 @@ let rec process_branches : type a n.
                 Hlist.Hlist.cons (x, Raw.Branch (locate names loc, cube, rest)) [ bs ])
           [ cbranches ] (Cons (Cons Nil)) in
       let tm = process_obs_or_ix xctx x in
+      let window = discriminee_window x in
       let refutables =
         Some
           {
@@ -1685,17 +1718,17 @@ let rec process_branches : type a n.
         | `Implicit -> `Implicit
         | `Nondep i -> `Nondep i
         | `Explicit (Wrap motive) -> `Explicit (process (Matchscope.names xctx) motive) in
-      ( locate (Synth (Match { tm; window = None; sort; branches; refutables; highers = [] })) loc,
+      ( locate (Synth (Match { tm; window; sort; branches; refutables; highers = [] })) loc,
         List.flatten (Bwd.to_list highers) )
 
 let rec get_discriminees :
-    observation list -> (wrapped_parse, int) Either.t Vec.wrapped * observation list =
+    observation list -> (discriminee, int) Either.t Vec.wrapped * observation list =
  fun obs ->
   match obs with
   | Term tm :: Token (Op ",", _) :: obs ->
       let Wrap xs, obs = get_discriminees obs in
-      (Wrap (Left (Wrap tm) :: xs), obs)
-  | Term tm :: obs -> (Wrap [ Left (Wrap tm) ], obs)
+      (Wrap (Left (get_discriminee_window (Wrap tm)) :: xs), obs)
+  | Term tm :: obs -> (Wrap [ Left (get_discriminee_window (Wrap tm)) ], obs)
   | _ -> invalid "match"
 
 let rec get_patterns : type n.
@@ -1925,7 +1958,10 @@ let () =
                     let (Extctx (mn, _, _, _)) = get_vars (Matchscope.names ctx) vars in
                     `Nondep ({ value = N.to_int (N.plus_right mn); loc = vars.loc } : int located)
                 | _ -> `Explicit (Wrap motive) in
-              let mtch, highers = process_branches ctx [ Left (Wrap tm) ] Emp branches loc sort in
+              let mtch, highers =
+                process_branches ctx
+                  [ Left (get_discriminee_window (Wrap tm)) ]
+                  Emp branches loc sort in
               match (mtch.value, highers) with
               | Synth (Match data), _ -> locate_opt mtch.loc (Synth (Match { data with highers }))
               | _, [] -> mtch
