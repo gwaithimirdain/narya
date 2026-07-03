@@ -84,9 +84,9 @@ module rec Value : sig
     | Emp : ('mode, noninst) apps
     | Arg :
         ('mode, 'any) apps
-        * ('dom, 'modality, 'mode) Modality.t
+        * ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
         * ('n, 'dom normal) CubeOf.t
-        * ('nk, 'n, 'k) insertion
+        * ('mk, 'm, 'k) insertion
         -> ('mode, noninst) apps
     | Field :
         ('mode, 'any) apps * 'i Field.t * ('t, 'i, 'n) D.plus * ('tk, 't, 'k) insertion
@@ -294,11 +294,12 @@ end = struct
   (* An application contains the data of an n-dimensional argument and its boundary, together with a neutral insertion applied outside that can't be pushed in.  This represents the *argument list* of a single application, not the function.  Thus, an application spine will be a head together with a list of apps.  Each application could be along a different modality. *)
   and (_, _) apps =
     | Emp : ('mode, noninst) apps
+    (* m is the dimension of the function being applied, n is the dimension of the arguments *)
     | Arg :
         ('mode, 'any) apps
-        * ('dom, 'modality, 'mode) Modality.t
+        * ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
         * ('n, 'dom normal) CubeOf.t
-        * ('nk, 'n, 'k) insertion
+        * ('mk, 'm, 'k) insertion
         -> ('mode, noninst) apps
     (* For a higher field with ('n, 't, 'i) insertion, the actual evaluation dimension is 'n, but the result dimension is only 't.  So the dimension of the arg is 't, since that's the output dimension that a degeneracy acting on could be pushed through.  However, since a degeneracy of dimension up to 'n can act on the inside, we can push in the whole insertion and store only a plus outside. *)
     | Field :
@@ -550,18 +551,19 @@ let defer : type mode s. (unit -> (mode, s) evaluation) -> (mode, s) lazy_eval =
 
 let ready : type mode s. (mode, s) evaluation -> (mode, s) lazy_eval = fun ev -> ref (Ready ev)
 
-let apply_lazy : type dom modality mode n s.
+let apply_lazy : type dom modality mode m n s.
     (mode, s) lazy_eval ->
-    (dom, modality, mode) Modality.t ->
+    m D.t ->
+    (dom, modality, mode, n, m) Modality.filter_dim ->
     (n, dom normal) CubeOf.t ->
     (mode, s) lazy_eval =
- fun lev modality xs ->
-  let xins = ins_zero (CubeOf.dim xs) in
+ fun lev m filter xs ->
+  let xins = ins_zero m in
   match !lev with
   | Deferred_eval (env, tm, ins, cell, apps) ->
-      ref (Deferred_eval (env, tm, ins, cell, Arg (apps, modality, xs, xins)))
-  | Deferred (tm, ins, cell, apps) -> ref (Deferred (tm, ins, cell, Arg (apps, modality, xs, xins)))
-  | Ready tm -> ref (Deferred ((fun () -> tm), id_deg D.zero, None, Arg (Emp, modality, xs, xins)))
+      ref (Deferred_eval (env, tm, ins, cell, Arg (apps, filter, xs, xins)))
+  | Deferred (tm, ins, cell, apps) -> ref (Deferred (tm, ins, cell, Arg (apps, filter, xs, xins)))
+  | Ready tm -> ref (Deferred ((fun () -> tm), id_deg D.zero, None, Arg (Emp, filter, xs, xins)))
 
 (* We defer "field_lazy" to act.ml, since it requires pushing a permutation inside the apps. *)
 
@@ -806,14 +808,16 @@ module Fwd_app = struct
   (* Make an apps without instantiations into a forwards list *)
   type 'mode t =
     | Arg :
-        ('dom, 'modality, 'mode) Modality.t * ('n, 'dom normal) CubeOf.t * ('nk, 'n, 'k) insertion
+        ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
+        * ('n, 'dom normal) CubeOf.t
+        * ('mk, 'm, 'k) insertion
         -> 'mode t
     | Field : 'i Field.t * ('t, 'i, 'n) D.plus * ('tk, 't, 'k) insertion -> 'mode t
 
   let snoc : type mode any. (mode, any) apps -> mode t -> (mode, noninst) apps =
    fun apps app ->
     match app with
-    | Arg (modality, arg, ins) -> Arg (apps, modality, arg, ins)
+    | Arg (filter, arg, ins) -> Arg (apps, filter, arg, ins)
     | Field (fld, plus, ins) -> Field (apps, fld, plus, ins)
 
   let of_apps apps =
@@ -821,7 +825,7 @@ module Fwd_app = struct
      fun apps fwds ->
       match apps with
       | Emp -> fwds
-      | Arg (apps, modality, arg, ins) -> go apps (Arg (modality, arg, ins) :: fwds)
+      | Arg (apps, filter, arg, ins) -> go apps (Arg (filter, arg, ins) :: fwds)
       | Field (apps, fld, plus, ins) -> go apps (Field (fld, plus, ins) :: fwds)
       | Inst _ -> fatal (Anomaly "instantiation in fwd_of_apps") in
     go apps []

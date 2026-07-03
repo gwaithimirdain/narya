@@ -552,17 +552,19 @@ module Act = struct
     match apps with
     | Emp -> (Any_deg s, Emp)
     (* To act on an application, we compose the acting degeneracy with the delayed insertion, factor the result into a new insertion to leave outside and a smaller degeneracy to push in, and push the smaller degeneracy action into the application, acting on the function/struct. *)
-    | Arg (rest, modality, args, ins) ->
-        let (Insfact_comp_ext (fa, new_ins, _, _)) = insfact_comp_ext ins s in
+    | Arg (rest, filter, args, ins) ->
         (* In the function case, we also act on the arguments by factorization of dimensions and by whiskering of keys. *)
+        let modality = Modality.filter_modality filter in
+        let (Insfact_comp_ext (fa, new_ins, _, _)) = insfact_comp_ext ins s in
+        let (Filter_deg (fb, arg_filter)) = Modality.filter_deg filter fa in
         let new_arg =
           match c with
           | Some c ->
               let (Wrap newc) = Modalcell.prewhisker_wrapped c modality in
-              act_cube { act = (fun x s c -> act_normal x s c) } args fa (Some newc)
-          | None -> act_cube { act = (fun x s c -> act_normal x s c) } args fa None in
+              act_cube { act = (fun x s c -> act_normal x s c) } args fb (Some newc)
+          | None -> act_cube { act = (fun x s c -> act_normal x s c) } args fb None in
         let new_s, new_rest = act_apps rest fa c in
-        (new_s, Arg (new_rest, modality, new_arg, new_ins))
+        (new_s, Arg (new_rest, arg_filter, new_arg, new_ins))
     | Field (rest, fld, fldplus, ins) ->
         let (Insfact_comp_ext (fa, new_ins, _, _)) = insfact_comp_ext ins s in
         (* Note that we don't need to change the degeneracy, since it can be extended on the right as needed. *)

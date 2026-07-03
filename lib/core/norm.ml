@@ -280,7 +280,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
            ( Variables (D.plus_out l l_n, ln_k, vars),
              Modality.filter_plus l_nk m_p filter_lm filter,
              eval_binder env m_p modality filter body ))
-  | App (fn, Modal (modality, al, args)) ->
+  | App (fn, k, filter_nk, Modal (modality, al, args)) ->
       (* First we evaluate the function. *)
       let efn = eval_term env fn in
       (* The environment is m-dimensional and the original application is n-dimensional, so the *substituted* application is m+n dimensional.  However, the stored cube of arguments is at the *filtered* dimension of the original application, and likewise the arguments of the substituted application must be at *its* filtered dimension, which is (filtered m)+n.  So, as in the Constr case below, we filter the dimension m of the environment by the modality, acting on the environment by a face to cut it down to the filtered dimension. *)
@@ -295,7 +295,9 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter m filter_lm)) in
       let eargs = eval_args flenv l_n ln args in
       (* Having evaluated the function and its arguments, we now pass the job off to a helper function. *)
-      apply efn modality eargs
+      let (Plus m_k) = D.plus k in
+      let filter_total = Modality.filter_plus l_n m_k filter_lm filter_nk in
+      apply efn filter_total eargs
   | Field (tm, fld, fldins) ->
       let m = dim_env env in
       let n, l = (dom_ins fldins, cod_left_ins fldins) in
@@ -547,23 +549,28 @@ and eval_args : type mode m n mn a.
     }
 
 (* Apply a function value to an argument (with its boundaries). *)
-and apply : type dom modality mode n s.
+and apply : type dom modality mode n m s.
     (mode, s) value ->
-    (dom, modality, mode) Modality.t ->
+    (dom, modality, mode, n, m) Modality.filter_dim ->
     (n, (dom, kinetic) value) CubeOf.t ->
     (mode, s) evaluation =
- fun fn modality arg ->
+ fun fn filter_nm arg ->
+  let modality = Modality.filter_modality filter_nm in
   match view_term fn with
   (* If the function is a lambda-abstraction, we check that it has the correct dimension and mode and then beta-reduce, adding the arguments to the environment. *)
-  | Lam (_, _, body) -> (
+  | Lam (_, lam_filter, body) -> (
       let m = dim_binder body in
-      let bmod = modality_binder body in
-      let (Has_filter filter) = Modality.filter bmod m in
       let n = CubeOf.dim arg in
-      match (D.compare (Modality.filtered m filter) n, Modality.compare bmod modality) with
-      | Eq, Eq -> apply_binder body filter arg
+      match
+        ( D.compare (Modality.filtered m lam_filter) n,
+          Modality.compare (Modality.filter_modality lam_filter) modality )
+      with
+      | Eq, Eq -> apply_binder body lam_filter arg
       | Neq, _ -> fatal (Dimension_mismatch ("applying a lambda", m, n))
-      | _, Neq -> fatal (Modality_mismatch (`Internal, "applying a lambda", bmod, modality)))
+      | _, Neq ->
+          fatal
+            (Modality_mismatch
+               (`Internal, "applying a lambda", Modality.filter_modality lam_filter, modality)))
   (* If it is a uninstantiated neutral application... *)
   | Neu { head; args; value; ty = (lazy ty) } -> (
       (* ... we check that its type is fully instantiated... *)
@@ -572,6 +579,7 @@ and apply : type dom modality mode n s.
           let pi_modality = Modality.filter_modality filter in
           (* ... and that the pi-type and its instantiation have the correct dimension. *)
           let k = CubeOf.dim doms in
+          let m = BindCube.dim cods in
           let Eq = eq_of_ins_zero ins in
           match (D.compare (CubeOf.dim arg) k, Modality.compare pi_modality modality) with
           | Neq, _ -> fatal (Dimension_mismatch ("applying a neutral function", CubeOf.dim arg, k))
@@ -584,10 +592,10 @@ and apply : type dom modality mode n s.
               (* We compute the output type of the application. *)
               let newty = lazy (tyof_app cods tyargs filter arg) in
               (* We add the new argument to the existing application spine. *)
-              let args = Arg (args, modality, newarg, ins_zero k) in
+              let args = Arg (args, filter, newarg, ins_zero m) in
               if GluedEval.read () then
                 (* We add the argument to the lazy value and return a glued neutral. *)
-                let value = apply_lazy value modality newarg in
+                let value = apply_lazy value m filter newarg in
                 Val (Neu { head; args; value; ty = newty })
               else
                 (* We evaluate further with a case tree. *)
@@ -641,7 +649,7 @@ and apply : type dom modality mode n s.
                                }) in
                         Val (Neu { head; args; value = ready value; ty = newty }))
                 | Val tm -> (
-                    let value = apply tm modality arg in
+                    let value = apply tm filter_nm arg in
                     let newtm = Neu { head; args; value = ready value; ty = newty } in
                     match value with
                     | Realize x -> Val x
@@ -663,18 +671,17 @@ and tyof_app : type dom modality mode k n.
     (mode, kinetic) value =
  fun cods fns filter args ->
   let out_arg_tbl = Hashtbl.create 10 in
-  (* TODO: These idempotents seem wrong.  It's BindFam that's forcing the parameter dimension of its binders to be already filtered, but they aren't filtered when created. *)
   let out_args =
     TubeOf.mmap
       {
         map =
           (fun fa [ { tm = afn; ty = _ } ] ->
             let fa = sface_of_tface fa in
-            let (Filter_sface (fb, bf1)) = Modality.filter_sface filter fa in
+            let (Filter_sface (fb, bf)) = Modality.filter_sface filter fa in
             let tmargs = CubeOf.subcube fb args in
             let (BindFam b) = BindCube.find cods fa in
-            let tm = apply_term afn (modality_binder b) tmargs in
-            let cod = apply_binder_term b bf1 tmargs in
+            let tm = apply_term afn bf tmargs in
+            let cod = apply_binder_term b bf tmargs in
             let ty =
               inst cod
                 (TubeOf.build D.zero
@@ -1282,13 +1289,13 @@ and eval_env : type mode a q n qn b.
       let (Remove_keys (env, keys)) = Env.remove_keys env plus_tgt in
       Key (eval_env env q_n tmenv, Modalcell.vcomp keys cell, plus_src)
 
-and apply_term : type dom modality mode n.
+and apply_term : type dom modality mode n m.
     (mode, kinetic) value ->
-    (dom, modality, mode) Modality.t ->
+    (dom, modality, mode, n, m) Modality.filter_dim ->
     (n, (dom, kinetic) value) CubeOf.t ->
     (mode, kinetic) value =
- fun fn modality arg ->
-  let (Val v) = apply fn modality arg in
+ fun fn filter arg ->
+  let (Val v) = apply fn filter arg in
   v
 
 and apply_binder_term : type dom modality mode k n.
@@ -1326,12 +1333,12 @@ and app_eval_apps : type mode s any.
  fun ev x ->
   match x with
   | Emp -> ev
-  | Arg (rest, modality, xs, ins) -> (
+  | Arg (rest, filter, xs, ins) -> (
       let (To p) = deg_of_ins ins in
       match app_eval_apps ev rest with
-      | Val tm -> act_evaluation (apply tm modality (val_of_norm_cube xs)) p None
+      | Val tm -> act_evaluation (apply tm filter (val_of_norm_cube xs)) p None
       | Realize tm ->
-          let (Val v) = act_evaluation (apply tm modality (val_of_norm_cube xs)) p None in
+          let (Val v) = act_evaluation (apply tm filter (val_of_norm_cube xs)) p None in
           Realize v
       | Unrealized -> Unrealized)
   | Field (rest, fld, fldplus, ins) -> (
@@ -1512,13 +1519,16 @@ and inst_fibrancy_fields : type mode m n mn.
               let idfld =
                 struct_field ~unset_ok:true "fibrancy" Potential fields Fibrancy.fid fldins in
               let (Snoc (Snoc (Emp, xcube), ycube)) = TubeOf.to_cube_bwv one l outer in
-              let idm = Modality.id mode in
               let v =
                 match
                   app_eval_apps idfld
                     (Arg
-                       ( Arg (Emp, idm, xcube, ins_zero (CubeOf.dim xcube)),
-                         idm,
+                       ( Arg
+                           ( Emp,
+                             Modality.filter_id mode (CubeOf.dim xcube),
+                             xcube,
+                             ins_zero (CubeOf.dim xcube) ),
+                         Modality.filter_id mode (CubeOf.dim ycube),
                          ycube,
                          ins_zero (CubeOf.dim ycube) ))
                 with
@@ -1645,13 +1655,14 @@ let apply_singletons : type dom modality mode n.
     (n, (dom, kinetic) value) CubeOf.t ->
     (mode, kinetic) value =
  fun modality fn xs ->
+  let filter = Modality.filter_zero modality in
   let module MC = CubeOf.Monadic (Monad.State (struct
     type t = (mode, kinetic) value
   end))
   in
   snd
     (MC.miterM
-       { it = (fun _ [ x ] fn -> ((), apply_term fn modality (CubeOf.singleton x))) }
+       { it = (fun _ [ x ] fn -> ((), apply_term fn filter (CubeOf.singleton x))) }
        [ xs ] fn)
 
 let apply_singleton_nfs : type dom modality mode n.
@@ -1660,13 +1671,14 @@ let apply_singleton_nfs : type dom modality mode n.
     (n, dom normal) CubeOf.t ->
     (mode, kinetic) value =
  fun modality fn xs ->
+  let filter = Modality.filter_zero modality in
   let module MC = CubeOf.Monadic (Monad.State (struct
     type t = (mode, kinetic) value
   end))
   in
   snd
     (MC.miterM
-       { it = (fun _ [ x ] fn -> ((), apply_term fn modality (CubeOf.singleton x.tm))) }
+       { it = (fun _ [ x ] fn -> ((), apply_term fn filter (CubeOf.singleton x.tm))) }
        [ xs ] fn)
 
 let apply_singleton_tube_nfs : type dom modality mode n.
@@ -1675,13 +1687,14 @@ let apply_singleton_tube_nfs : type dom modality mode n.
     (D.zero, n, n, dom normal) TubeOf.t ->
     (mode, kinetic) value =
  fun modality fn xs ->
+  let filter = Modality.filter_zero modality in
   let module MC = TubeOf.Monadic (Monad.State (struct
     type t = (mode, kinetic) value
   end))
   in
   snd
     (MC.miterM
-       { it = (fun _ [ x ] fn -> ((), apply_term fn modality (CubeOf.singleton x.tm))) }
+       { it = (fun _ [ x ] fn -> ((), apply_term fn filter (CubeOf.singleton x.tm))) }
        [ xs ] fn)
 
 (* Evaluate a term context to produce a value context. *)

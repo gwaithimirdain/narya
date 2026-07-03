@@ -135,7 +135,7 @@ let app_entry : type dom modality mode f n any.
         let n = CubeOf.dim bindings in
         Arg
           ( apps,
-            Modality.filter_modality filter,
+            filter,
             CubeOf.mmap { map = (fun _ [ x ] -> Binding.value x) } [ bindings ],
             ins_zero n )
       else fatal (Anomaly "let-bound variable in Ctx.apps")

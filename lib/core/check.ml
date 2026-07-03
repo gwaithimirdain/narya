@@ -143,7 +143,7 @@ let rec motive_of_family : type mode a b.
               { build = (fun fa ctx -> builder x newnfs fa ctx) }
               (Any_ctx ctx) in
           (* Now we recurse into the codomain of the pi-type, having applied the type family itself to the new variables we introduced. *)
-          let newtm = apply_term tm idm newvars in
+          let newtm = apply_term tm filter newvars in
           let motive = motive_of_family newctx newtm (tyof_app cods tyargs filter newvars) in
           (* Finally, we postprocess that result by adding the pi-type domains we computed for this argument. *)
           let motive, _ = MT.fold_map_right { foldmap = (fun _ x y -> folder x y) } newdoms motive in
@@ -548,9 +548,8 @@ let rec check : type mode a b s.
               | Potential (c, args, hyp) ->
                   let arg = CubeOf.mmap { map = (fun _ [ x ] -> Ctx.Binding.value x) } [ newnfs ] in
                   Potential
-                    ( c,
-                      Arg (args, modality, arg, ins_zero k),
-                      fun tm -> hyp (Lam (xs, m, filter, tm)) ) in
+                    (c, Arg (args, filter, arg, ins_zero m), fun tm -> hyp (Lam (xs, m, filter, tm)))
+            in
             (* Apply and instantiate the codomain to those arguments to get a type to check the body at. *)
             let output = tyof_app cods tyargs filter newargs in
             match cube.value with
@@ -903,7 +902,11 @@ let rec check : type mode a b s.
                     let idm = Modality.id mode in
                     let new_sfn =
                       locate_opt fn.loc
-                        (Term.App (sfn, Modal (idm, plus_no_lock mode, CubeOf.singleton cty))) in
+                        (Term.App
+                           ( sfn,
+                             D.zero,
+                             Modality.filter_id mode D.zero,
+                             Modal (idm, plus_no_lock mode, CubeOf.singleton cty) )) in
                     let new_sty = tyof_app cods tyargs filter (CubeOf.singleton ty) in
                     (* And then proceed applying to the rest of the arguments, if any. *)
                     let stm, sty =
@@ -1554,7 +1557,8 @@ and synth_dep_match : type mode a b.
  fun status ctx tm brs highers motive ->
   (* We synthesize the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
   let (tm, varty), loc = (synth (Kinetic `Nolet) ctx tm, tm.loc) in
-  let idm = Modality.id (Ctx.mode ctx) in
+  let mode = Ctx.mode ctx in
+  let idm = Modality.id mode in
   let result, result_ty =
     check_match_branches status ctx tm varty brs None highers loc
       (* In this case when the motive is dependent, the definition of the motive callbacks is more involved. *)
@@ -1600,7 +1604,8 @@ and synth_dep_match : type mode a b.
                (* We compute the output type of the match by applying the dependent motive to the discriminee's indices, boundary, and itself. *)
                let result = Vec.fold_left (apply_singleton_nfs idm) emotive indices in
                let result = apply_singleton_tube_nfs idm result inst_args in
-               apply_term result idm (CubeOf.singleton (eval_term (Ctx.env ctx) tm)));
+               apply_term result (Modality.filter_id mode D.zero)
+                 (CubeOf.singleton (eval_term (Ctx.env ctx) tm)));
          }) in
   match result_ty with
   | None -> fatal (Anomaly "synth_dep_match: no type of match but no errors")
@@ -1721,7 +1726,6 @@ and check_var_match : type mode a b.
             let constr_tys = TubeOf.plus_cube tyfam_args (CubeOf.singleton tyfam) in
             let argtbl = Hashtbl.create 10 in
             (* Indices cannot have nontrivial modal dependence. *)
-            let idm = Modality.id (Ctx.mode ctx) in
             let constr_nfs =
               CubeOf.mmap
                 {
@@ -1740,7 +1744,10 @@ and check_var_match : type mode a b.
                       let ty =
                         inst
                           (Vec.fold_left
-                             (fun f a -> apply_term f idm (CubeOf.subcube fa a))
+                             (fun f a ->
+                               apply_term f
+                                 (Modality.filter_id (Ctx.mode ctx) (dom_sface fa))
+                                 (CubeOf.subcube fa a))
                              constrty.tm index_vals)
                           (TubeOf.build D.zero (D.zero_plus k)
                              {
@@ -1870,12 +1877,13 @@ and make_match_status : type mode annotations a b ab c n x y z.
         let newenv = Ctx.env newctx in
         let rec erapps : type any. (mode, any) apps -> (mode, any) apps = function
           | Emp -> Emp
-          | Arg (rest, modality, xs, ins) ->
+          | Arg (rest, filter, xs, ins) ->
+              let modality = Modality.filter_modality filter in
               let (Locked (plus, oldctx)) = Ctx.lock oldctx modality in
               let newenv = key_env newenv (Modalcell.id modality) plus in
               Arg
                 ( erapps rest,
-                  modality,
+                  filter,
                   CubeOf.mmap
                     {
                       map =
@@ -2128,10 +2136,12 @@ and get_indices : type mode a b any1 any2.
       Vec.of_list_map
         (function
           | Fwd_app.Arg
-              (type dom modality n k nk)
-              ((modality, arg, ins) :
-                (dom, modality, mode) Modality.t * (n, dom normal) CubeOf.t * (nk, n, k) insertion)
-            -> (
+              (type dom modality n k m mk)
+              ((filter, arg, ins) :
+                (dom, modality, mode, n, m) Modality.filter_dim
+                * (n, dom normal) CubeOf.t
+                * (mk, m, k) insertion) -> (
+              let modality = Modality.filter_modality filter in
               match
                 (is_id_ins ins, Modality.compare_id modality, D.compare (CubeOf.dim arg) D.zero)
               with
@@ -2559,16 +2569,22 @@ and check_higher_field : type mode a b c d m i ic0.
                   let newins = plus_ins r r_nz rn appins in
                   Value.Field (erapps apps, f, rn_k, newins)
               | Arg
-                  (type dom modality any' n nz z)
-                  ((apps, modality, arg, appins) :
+                  (type dom modality any' n m mz z)
+                  ((apps, filter_nm, arg, appins) :
                     (mode, any') apps
-                    * (dom, modality, mode) Modality.t
+                    * (dom, modality, mode, n, m) Modality.filter_dim
                     * (n, dom normal) CubeOf.t
-                    * (nz, n, z) insertion) ->
+                    * (mz, m, z) insertion) ->
                   let n = CubeOf.dim arg in
-                  let (Plus rn) = D.plus n in
-                  let (Plus r_nz) = D.plus (dom_ins appins) in
-                  let newins = plus_ins r r_nz rn appins in
+                  let m = cod_left_ins appins in
+                  let (Plus rm) = D.plus m in
+                  let (Plus r_mz) = D.plus (dom_ins appins) in
+                  let newins = plus_ins r r_mz rm appins in
+                  let modality = Modality.filter_modality filter_nm in
+                  let (Has_filter filter_sr) = Modality.filter modality r in
+                  let s = Modality.filtered r filter_sr in
+                  let (Plus sn) = D.plus n in
+                  let filter_sn_rm = Modality.filter_plus sn rm filter_sr filter_nm in
                   (* First we readback the terms and types. *)
                   let (Locked (plus, lctx)) = Ctx.lock ctx modality in
                   let [ tms; tys ] =
@@ -2577,8 +2593,11 @@ and check_higher_field : type mode a b c d m i ic0.
                       [ arg ] (Cons (Cons Nil)) in
                   let ldegenv = key_env degenv (Modalcell.id modality) plus in
                   (* Now we evaluate them in degenv to increase the dimension.  *)
-                  let etms = eval_args ldegenv rn (D.plus_out r rn) tms in
-                  let etys = eval_args ldegenv rn (D.plus_out r rn) tys in
+                  let sldegenv =
+                    act_env ldegenv (opt_op_of_opt_sface (Modality.sface_of_filter r filter_sr))
+                  in
+                  let etms = eval_args sldegenv sn (D.plus_out s sn) tms in
+                  let etys = eval_args sldegenv sn (D.plus_out s sn) tys in
                   (* Now we have to reassociate the terms with the types to make a new cube of normals.  This is like norm_of_vals_cube, except that the types are already instantiated to dimension n, and we have only to instantiate them the rest of the way at dimension r. *)
                   let new_tm_tbl = Hashtbl.create 10 in
                   let newarg =
@@ -2586,7 +2605,7 @@ and check_higher_field : type mode a b c d m i ic0.
                       {
                         map =
                           (fun fab [ tm; ty ] ->
-                            let (SFace_of_plus (ml, fa, fb)) = sface_of_plus rn fab in
+                            let (SFace_of_plus (ml, fa, fb)) = sface_of_plus sn fab in
                             let instargs =
                               TubeOf.build D.zero
                                 (D.zero_plus (dom_sface fa))
@@ -2598,7 +2617,7 @@ and check_higher_field : type mode a b c d m i ic0.
                                         (SFace_of
                                            (sface_plus_sface
                                               (comp_sface fa (sface_of_tface fc))
-                                              rn kl fb)));
+                                              sn kl fb)));
                                 } in
                             let ty = inst ty instargs in
                             let newtm = { tm; ty } in
@@ -2606,7 +2625,7 @@ and check_higher_field : type mode a b c d m i ic0.
                             newtm);
                       }
                       [ etms; etys ] in
-                  Arg (erapps apps, modality, newarg, newins)
+                  Arg (erapps apps, filter_sn_rm, newarg, newins)
               | Inst _ -> fatal (Anomaly "inst in eval-readback when checking higher field") in
             let args = erapps args in
             let (Plus ni) = D.plus intrinsic in
@@ -3136,6 +3155,7 @@ and synth : type mode a b s.
               | Eq, Eq -> value
               | _ -> fatal (Anomaly "invalid modalities when checking AscLam") in
             let xs = singleton_variables D.zero x in
+            let filter = Modality.filter_zero modality in
             let newstatus : (mode, (b, (modality, D.zero) dim_entry) snoc, s) status =
               match status with
               | Kinetic l -> Kinetic l
@@ -3143,7 +3163,7 @@ and synth : type mode a b s.
                   let arg = CubeOf.singleton xnf in
                   Potential
                     ( c,
-                      Arg (args, modality, arg, ins_zero D.zero),
+                      Arg (args, filter, arg, ins_zero D.zero),
                       fun tm -> hyp (Lam (xs, D.zero, Modality.filter_zero modality, tm)) ) in
             let cbody, scod = synth newstatus newctx body in
             let ty =
@@ -3151,7 +3171,7 @@ and synth : type mode a b s.
                 (pi (singleton_variables D.zero x)
                    (Modal (modality, plus, cdom))
                    (readback_val newctx scod)) in
-            (Lam (xs, D.zero, Modality.filter_zero modality, cbody), ty))
+            (Lam (xs, D.zero, filter, cbody), ty))
     | Let (x, modality, v, body), _ ->
         let ctm, Not_none ety = synth_or_check_let ?nosynth status ctx x modality v body None in
         (* The synthesized type of the body is also correct for the whole let-expression, because it was synthesized in a context where the variable is bound not just to its type but to its value, so it doesn't include any extra level variables (i.e. it can be silently "strengthened"). *)
@@ -3205,7 +3225,10 @@ and synth : type mode a b s.
                 let new_sfn =
                   locate_opt fn.loc
                     (Term.App
-                       (sfn, Modal (Modality.id mode, plus_no_lock mode, CubeOf.singleton cargty)))
+                       ( sfn,
+                         BindCube.dim cods,
+                         filter,
+                         Modal (Modality.id mode, plus_no_lock mode, CubeOf.singleton cargty) ))
                 in
                 let new_sty = tyof_app cods tyargs filter (CubeOf.singleton sargty) in
                 (* And then apply to the argument. *)
@@ -3528,7 +3551,10 @@ and synth_app : type dom modality mode a b k n.
       doms (sfn.loc, fn, args) in
   (* Evaluate cod at these evaluated arguments and instantiate it at the appropriate values of tyargs. *)
   let output = tyof_app cods tyargs filter eargs in
-  ({ value = Term.App (sfn.value, cargs); loc = newloc }, output, newfn, rest)
+  ( { value = Term.App (sfn.value, BindCube.dim cods, filter, cargs); loc = newloc },
+    output,
+    newfn,
+    rest )
 
 (* Pick up enough arguments to form a tube for instantiating a higher-dimensional type by a single direction, and return the result along with the remaining arguments not yet picked up.  *)
 and synth_inst : type mode a b n.

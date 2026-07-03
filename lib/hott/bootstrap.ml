@@ -190,7 +190,20 @@ let () =
                                             Realize
                                               (App
                                                  ( App
-                                                     (App (App (App (App (Const c, _), _), _), _), _),
+                                                     ( App
+                                                         ( App
+                                                             ( App (App (Const c, _, _, _), _, _, _),
+                                                               _,
+                                                               _,
+                                                               _ ),
+                                                           _,
+                                                           _,
+                                                           _ ),
+                                                       _,
+                                                       _,
+                                                       _ ),
+                                                   _,
+                                                   _,
                                                    Modal (modality, plus, tm) )) ) :
                                            k variables
                                            * kn D.t
@@ -284,18 +297,42 @@ let () =
                          bm,
                          Realize
                            (App
-                              (type dom modality n)
+                              (type dom modality n m)
                               (( App
                                    ( App
                                        ( App
                                            ( App
-                                               ( App (App (App (App (App (Const c, _), _), _), _), _),
+                                               ( App
+                                                   ( App
+                                                       ( App
+                                                           ( App (App (Const c, _, _, _), _, _, _),
+                                                             _,
+                                                             _,
+                                                             _ ),
+                                                         _,
+                                                         _,
+                                                         _ ),
+                                                     _,
+                                                     _,
+                                                     _ ),
+                                                 _,
+                                                 _,
                                                  _ ),
+                                             _,
+                                             _,
                                              _ ),
+                                         _,
+                                         _,
                                          _ ),
+                                     _,
+                                     _,
                                      _ ),
+                                 _,
+                                 _,
                                  Modal (modality, plus, tm) ) :
                                 _
+                                * m D.t
+                                * _
                                 * ( n,
                                     dom,
                                     modality,

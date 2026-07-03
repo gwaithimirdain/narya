@@ -77,7 +77,7 @@ module Equal = struct
           Ctx.variables_vis ctx (Modality.filter_idempotent filter) name newnfs in
         let output = tyof_app cods tyargs filter newargs in
         (* If both terms have the given pi-type, then when applied to variables of the domains, they will both have the computed output-type, so we can recurse back to eta-expanding equality at that type. *)
-        equal_at newctx (apply_term x modality newargs) (apply_term y modality newargs) output
+        equal_at newctx (apply_term x filter newargs) (apply_term y filter newargs) output
     (* Codatatypes (without eta) don't need to be dealt with here, even though structs can't be compared synthesizingly, since codatatypes aren't actually inhabited by (kinetic) structs, only neutral terms that are equal to potential structs.  In the case of record types with eta, if there is a nonidentity insertion outside, then the type isn't actually a record type, *but* it still has an eta-rule since it is *isomorphic* to a record type!  Thus, instead of checking whether the insertion is the identity, we apply its inverse permutation to the terms being compared.  And because we pass off to 'field' and 'tyof_field', we don't need to make explicit use of any of the other data here. *)
     | Canonical
         (type mn m n)
@@ -288,7 +288,9 @@ module Equal = struct
     (* Iterating from left to right is important because it ensures that at the point of checking equality for any pair of arguments, we know that they have the same type, since they are valid arguments of equal functions with all previous arguments equal.  Thus each case *starts* with its recursive call. *)
     match (apps1, apps2) with
     | Emp, Emp -> return ()
-    | Arg (rest1, modality1, a1, i1), Arg (rest2, modality2, a2, i2) -> (
+    | Arg (rest1, filter1, a1, i1), Arg (rest2, filter2, a2, i2) -> (
+        let modality1 = Modality.filter_modality filter1 in
+        let modality2 = Modality.filter_modality filter2 in
         match Modality.compare modality1 modality2 with
         | Neq -> None
         | Eq -> (

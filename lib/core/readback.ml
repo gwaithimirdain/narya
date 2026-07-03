@@ -88,7 +88,7 @@ and readback_at : type mode a z.
           let (Plus af) = N.plus (NICubeOf.out N.zero xs) in
           let newctx = Ctx.vis ctx (Modality.filter_idempotent filter) m mn xs newnfs af in
           let output = tyof_app cods tyargs filter args in
-          let body = readback_at ~eta newctx (apply_term tm modality args) output in
+          let body = readback_at ~eta newctx (apply_term tm filter args) output in
           Term.Lam (x, n, filter, body))
   (* If eta-expansion is enabled, we do an eta-expanding readback of any term. *)
   | Canonical (_, Pi { x = name; filter; doms; cods }, ins, tyargs), tm when eta ->
@@ -102,7 +102,7 @@ and readback_at : type mode a z.
         ( name,
           BindCube.dim cods,
           filter,
-          readback_at ~eta newctx (apply_term tm modality newargs) output )
+          readback_at ~eta newctx (apply_term tm filter newargs) output )
   | ( Canonical
         (type mn m n)
         (( _,
@@ -257,12 +257,15 @@ and readback_neu : type mode a z any.
  fun ?(sort = (`Other, `Other)) ctx head apps ->
   match (apps, head) with
   | Emp, _ -> readback_head ~sort ctx head
-  | Arg (apps, modality, args, ins), _ ->
+  | Arg (apps, filter, args, ins), _ ->
+      let modality = Modality.filter_modality filter in
       let (To p) = deg_of_ins ins in
       let (Locked (plus, lctx)) = Ctx.lock ctx modality in
       Term.Act
         ( App
             ( readback_neu ~sort ctx head apps,
+              cod_left_ins ins,
+              filter,
               Modal
                 ( modality,
                   plus,

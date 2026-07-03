@@ -111,7 +111,10 @@ module rec Term : sig
         -> ('mode, 'a, kinetic) term
     | Pi : ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args -> ('mode, 'a, kinetic) term
     | App :
-        ('mode, 'a, kinetic) term * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
+        ('mode, 'a, kinetic) term
+        * 'm D.t
+        * ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
+        * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
         -> ('mode, 'a, kinetic) term
     | Constr :
         Constr.t * 'n D.t * ('n, 'mode, 'a, kinetic) any_modal_term_cube list
@@ -384,7 +387,10 @@ end = struct
         -> ('mode, 'a, kinetic) term
     | Pi : ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args -> ('mode, 'a, kinetic) term
     | App :
-        ('mode, 'a, kinetic) term * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
+        ('mode, 'a, kinetic) term
+        * 'm D.t
+        * ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
+        * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
         -> ('mode, 'a, kinetic) term
     | Constr :
         Constr.t * 'n D.t * ('n, 'mode, 'a, kinetic) any_modal_term_cube list
@@ -623,8 +629,15 @@ let pi : type mode modality a.
       cods = CodCube.singleton (Cod (filter, cod));
     }
 
-let app fn modality al arg = App (fn, Modal (modality, al, CubeOf.singleton arg))
-let appid fn mode arg = App (fn, Modal (Modality.id mode, plus_no_lock mode, CubeOf.singleton arg))
+let app fn modality al arg =
+  App (fn, D.zero, Modality.filter_zero modality, Modal (modality, al, CubeOf.singleton arg))
+
+let appid fn mode arg =
+  App
+    ( fn,
+      D.zero,
+      Modality.filter_id mode D.zero,
+      Modal (Modality.id mode, plus_no_lock mode, CubeOf.singleton arg) )
 
 let apps fn mode args =
   List.fold_left (fun f -> app f (Modality.id mode) (plus_no_lock mode)) fn args

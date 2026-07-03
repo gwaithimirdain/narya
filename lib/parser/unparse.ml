@@ -262,6 +262,8 @@ let rec get_spine : type mode a.
   match tm with
   | App
       ( fn,
+        _,
+        _,
         (* Modalities are not printed with applications *)
         Modal (type am) ((_modality, plus, arg) : _ * _ * (_, (_, am, kinetic) Term.term) CubeOf.t)
       ) -> (
@@ -992,7 +994,10 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
               let lamargs =
                 CubeOf.build (dom_sface fb)
                   { build = (fun fa -> Var (Index (Now, fa, sfilter', plusm))) } in
-              Named (lamvars, App (Weaken nonlam, Modal (modality, plusm, lamargs)))) in
+              Named
+                ( lamvars,
+                  App (Weaken nonlam, dom_tface s, sfilter, Modal (modality, plusm, lamargs)) ))
+    in
     TubeOf.mmap { map = (fun s [ lam ] -> map s lam) } [ tyargs ] in
   (* We only need the top codomain. *)
   match cod_top filter cods with

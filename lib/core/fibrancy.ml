@@ -109,6 +109,7 @@ module Codata = struct
     let ins = zero_ins Hott.dim in
     (* Compute terms that project each fibrancy field out of the codatatype and apply it to the index-zero variable 'x'. *)
     let idm = Modality.id mode in
+    let idf = Modality.filter_id mode Hott.dim in
     let onx : Hott.dim Field.t -> (mode, (hb, (mode id, D.zero) dim_entry) snoc, kinetic) term =
      fun trlift ->
       app
@@ -139,7 +140,10 @@ module Codata = struct
                     ( Realize
                         (app
                            (Field
-                              (App (Weaken sty, Modal (idm, plus_no_lock mode, xcube)), trlift, ins))
+                              ( App
+                                  (Weaken sty, Hott.dim, idf, Modal (idm, plus_no_lock mode, xcube)),
+                                trlift,
+                                ins ))
                            idm (plus_no_lock mode)
                            (Field (x, fld, ins_zero f.dim))),
                       `Labeled ) )
@@ -259,6 +263,7 @@ module Codata = struct
                 | Lower fldty ->
                     let xsname = singleton_variables D.zero (Some "x") in
                     let idm = Modality.id mode in
+                    let idf = Modality.filter_id mode Hott.dim in
                     let field =
                       CodatafieldAbwd.Entry
                         ( fld,
@@ -276,6 +281,8 @@ module Codata = struct
                                                       D.zero,
                                                       Modality.filter_id mode D.zero,
                                                       fldty ) )))),
+                                     Hott.dim,
+                                     idf,
                                      Modal (idm, plus_no_lock mode, xcube) ),
                                  TubeOf.mmap { map = (fun _ [ x ] -> field x fld) } [ xtube ] )) )
                     in
