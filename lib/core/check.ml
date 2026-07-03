@@ -396,6 +396,17 @@ let get_window mode = function
       | Ok w -> w)
   | None -> Wrap (Modality.id mode)
 
+(* A window modality must be transparent, unless the datatype being matched against has exactly one constructor, in which case translucent suffices. *)
+let check_window_transparency : type dom window mode k a.
+    (dom, window, mode) Modality.t -> (k, a) Abwd.t -> unit =
+ fun window constrs ->
+  let single =
+    match Abwd.bindings constrs with
+    | [ _ ] -> true
+    | _ -> false in
+  if Modality.transparent window || (single && Modality.translucent window) then ()
+  else fatal (Nontransparent_window_modality (window, single))
+
 (* Check a term or case tree (depending on the energy: terms are kinetic, case trees are potential).  The ?discrete parameter is supplied if the term we are currently checking might be a discrete datatype, in which case it is a set of all the currently-being-defined mutual constants.  Most term-formers are nondiscrete, so they can just ignore this argument and make their recursive calls without it. *)
 let rec check : type mode a b s.
     ?discrete:unit Constant.Map.t ->
@@ -1397,6 +1408,7 @@ and check_match_branches : type dom window mode a b bm.
         * (D.zero, m', m', dom normal) TubeOf.t) -> (
       (* But we can immediately identify the two different m's. *)
       let Eq = eq_of_ins_zero ins in
+      check_window_transparency window data_constrs;
       (* The argument 'i' counts the *number* of arguments to a motive in a match that was made explicitly non-dependent as in "match x return _ _ ↦ _".  In this case, we really don't care *what* the instantiation arguments are, and we really don't care what the indices are either except to check there are the right number of them.  This is because in the non-dependent case, we are just applying a recursor to a value, so we don't need to know that the indices and instantiation arguments are variables; in the branches they will be whatever they will be, but we don't even need to *know* what they will be because the output type isn't getting refined either. *)
       (match i with
       | Some { value; loc } ->
@@ -1686,6 +1698,7 @@ and check_var_match : type dom modality mode a b bm.
          inst_args ) :
         _ * (dom, m, n) canonical * (mn, m, n) insertion * _) -> (
       let Eq = eq_of_ins_zero ins in
+      check_window_transparency window data_constrs;
       let tyfam =
         match !tyfam with
         | Some tyfam -> Lazy.force tyfam
