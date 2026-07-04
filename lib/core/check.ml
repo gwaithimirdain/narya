@@ -804,7 +804,7 @@ let rec check : type mode a b s.
         | Canonical (_, Pi _, _, _), Potential _ -> check_empty_match_lam ctx ty `First
         | Canonical (_, Pi _, _, _), Kinetic l -> kinetic_of_potential l ctx tm ty "matching lambda"
         | _, _ -> check status ctx { value = Struct (Noeta, Abwd.empty); loc = tm.loc } ty)
-    | Refute (tms, i), Potential _ -> check_refute status ctx tms ty None i None
+    | Refute (tms, i), Potential _ -> check_refute status ctx tms ty i None
     (* Now we go through the canonical types. *)
     | Codata (fields, hints), Potential (head, apps, _) -> (
         match view_type ~severity ty "typechecking codata" with
@@ -1986,24 +1986,23 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
     hyp (Term.Match { window; plus_lock; tm = newtm; dim; branches }) in
   Potential (head, apps, hyp)
 
-(* Try matching against all the supplied terms with zero branches, producing an empty match if any succeeds and raising an error if none succeed. *)
+(* Try matching against all the supplied terms with zero branches, producing an empty match if any succeeds and raising an error if none succeed.  Each term carries its own optional window modality. *)
 and check_refute : type mode a b.
     (mode, b, potential) status ->
     (mode, a, b) Ctx.t ->
-    a synth located list ->
+    (a synth located * string located list located option) list ->
     (mode, kinetic) value ->
-    string located list located option ->
     [ `Explicit | `Implicit ] ->
     Constr.t option ->
     (mode, b, potential) term =
- fun status ctx tms ty window_name i missing ->
+ fun status ctx tms ty i missing ->
   match tms with
   | [] -> (
       match i with
       | `Implicit -> fatal (Anomaly "no discriminees to refute")
       | `Explicit -> fatal Invalid_refutation)
   (* If all the possibilities fail, we want to report a "missing constructor" error for the particular constructor supplied as an argument, if any, which comes from the first place where the refutation began. *)
-  | [ tm ] ->
+  | [ (tm, window_name) ] ->
       let (Wrap window) = get_window (Ctx.mode ctx) window_name in
       let (Locked (plus, wctx)) = Ctx.lock ctx window in
       let stm, sty = synth (Kinetic `Nolet) wctx tm in
@@ -2017,7 +2016,7 @@ and check_refute : type mode a b.
               | `Implicit, Some missing -> fatal (Missing_constructor_in_match missing)
               | `Implicit, None -> fatal (Missing_constructor_in_match c))
           | _ -> fatal_diagnostic d)
-  | tm :: (_ :: _ as tms) ->
+  | (tm, window_name) :: (_ :: _ as tms) ->
       let (Wrap window) = get_window (Ctx.mode ctx) window_name in
       let (Locked (plus, wctx)) = Ctx.lock ctx window in
       let stm, sty = synth (Kinetic `Nolet) wctx tm in
@@ -2026,7 +2025,7 @@ and check_refute : type mode a b.
         ~fatal:(fun d ->
           match d.message with
           | Missing_constructor_in_match c ->
-              check_refute status ctx tms ty window_name i (Some (Option.value missing ~default:c))
+              check_refute status ctx tms ty i (Some (Option.value missing ~default:c))
           | _ -> fatal_diagnostic d)
 
 (* Try empty-matching against each successive domain in an iterated pi-type.  For higher-dimensional pi-types, try empty-matching against each variable in the abstraction cube. *)

@@ -1549,7 +1549,7 @@ let rec process_branches : type a n.
   match branches with
   (* An empty match, having no branches, compiles to a refutation that will check by looking for any discriminee with an empty type.  This can only happen as the top-level call, so 'seen' should be empty and we really can just take all the discriminees. *)
   | [] -> (
-      let tms = Vec.to_list_map (process_obs_or_ix xctx) xs in
+      let tms = Vec.to_list_map (fun x -> (process_obs_or_ix xctx x, discriminee_window x)) xs in
       match (sort, xs) with
       | `Implicit, _ -> (locate (Refute (tms, `Implicit)) loc, [])
       | `Explicit (Wrap motive), [ Left { tm = Wrap tm; window } ] -> (
@@ -1596,7 +1596,7 @@ let rec process_branches : type a n.
   (* If that one remaining branch is a refutation, we refute all the "seen" terms or variables. *)
   | [ (_, [], _, Wrap { value = Notn ((Dot, _), _); loc }) ] ->
       let [] = xs in
-      let tms = Bwd_extra.to_list_map (process_ix xctx) seen in
+      let tms = Bwd_extra.to_list_map (fun i -> (process_ix xctx i, None)) seen in
       (locate (Refute (tms, `Explicit)) loc, [])
   (* Otherwise, the result is just the body of that branch. *)
   | [ (bodyctx, [], cube, Wrap body) ] ->

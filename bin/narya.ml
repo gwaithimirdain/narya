@@ -81,6 +81,9 @@ let speclist =
     ( "-functor",
       Arg.Unit (fun () -> install_mode_theory := Modal.Functor.install),
       "Select the functor mode theory" );
+    ( "-composed-functors",
+      Arg.Unit (fun () -> install_mode_theory := Modal.Composed_functors.install),
+      "Select the composed functors mode theory" );
     ("--help", Arg.Unit (fun () -> ()), "");
     ("-", Arg.Unit (fun () -> inputs := Snoc (!inputs, `Stdin)), "");
     ("-fake-interact", Arg.String (fun str -> fake_interacts := Snoc (!fake_interacts, str)), "");
