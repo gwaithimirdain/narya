@@ -234,6 +234,8 @@ module F = struct
           | None -> "None" in
         fprintf ppf "%a <* (%s)" env e opstr
     | Key (e, key, _ac) -> fprintf ppf "%a <%% %s" env e (Modalcell.to_string key)
+    | Postkey (e, _, _, key, _) -> fprintf ppf "%a <%%post %s" env e (Modalcell.to_string key)
+    | Prekey (e, key) -> fprintf ppf "%a <%%pre %s" env e (Modalcell.to_string key)
     | Permute (_, e) -> fprintf ppf "(%a) permuted(?)" env e
     | Shift (e, mn, _) -> fprintf ppf "%a << %a" env e dim (D.plus_right mn)
     | Unshift (e, mn, _) -> fprintf ppf "%a >> %a" env e dim (D.plus_right mn)

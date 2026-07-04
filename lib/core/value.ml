@@ -196,6 +196,14 @@ module rec Value : sig
         * ('dom, 'mu, 'nu, 'mode) Modalcell.t
         * ('b, 'mode, 'mu, 'dom, 'bm) plus_lock
         -> ('dom, 'n, 'bm) env
+    | Postkey :
+        ('dom, 'n, 'bn) env
+        * ('mode, 'b) Tctx.t
+        * ('b, 'mode, 'nu, 'dom, 'bn) plus_with_locks
+        * ('dom, 'mu, 'nu, 'mode) Modalcell.t
+        * ('b, 'mode, 'mu, 'dom, 'bm) plus_lock
+        -> ('dom, 'n, 'bm) env
+    | Prekey : ('mode, 'n, 'b) env * ('mode, 'mu, 'nu, 'cod) Modalcell.t -> ('mode, 'n, 'b) env
     | Permute : ('a, 'b) permute * ('mode, 'n, 'b) env -> ('mode, 'n, 'a) env
     | Shift :
         ('mode, 'mn, 'b) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb, 'mode) plusmap
@@ -439,6 +447,14 @@ end = struct
         * ('dom, 'mu, 'nu, 'mode) Modalcell.t
         * ('b, 'mode, 'mu, 'dom, 'bm) plus_lock
         -> ('dom, 'n, 'bm) env
+    | Postkey :
+        ('dom, 'n, 'bn) env
+        * ('mode, 'b) Tctx.t
+        * ('b, 'mode, 'nu, 'dom, 'bn) plus_with_locks
+        * ('dom, 'mu, 'nu, 'mode) Modalcell.t
+        * ('b, 'mode, 'mu, 'dom, 'bm) plus_lock
+        -> ('dom, 'n, 'bm) env
+    | Prekey : ('mode, 'n, 'b) env * ('mode, 'mu, 'nu, 'cod) Modalcell.t -> ('mode, 'n, 'b) env
     | Permute : ('a, 'b) permute * ('mode, 'n, 'b) env -> ('mode, 'n, 'a) env
     (* Adding a dimension 'n to all the dimensions in a dimension list 'b is the power/cotensor in the dimension-enriched category of contexts.  Shifting an environment (substitution) implements its universal property: an (m+n)-dimensional substitution with codomain b is equivalent to an m-dimensional substitution with codomain n+b. *)
     | Shift :
@@ -482,6 +498,8 @@ let rec dim_env : type mode n b. (mode, n, b) env -> n D.t = function
   | Ext { env; _ } -> dim_env env
   | Act (_, op) -> dom_opt_op op
   | Key (e, _, _) -> dim_env e
+  | Postkey (e, _, _, _, _) -> dim_env e
+  | Prekey (e, _) -> dim_env e
   | Permute (_, e) -> dim_env e
   | Shift (e, mn, _) -> D.plus_left mn (dim_env e)
   | Unshift (e, mn, _) -> D.plus_out (dim_env e) mn
@@ -499,6 +517,8 @@ let rec mode_env : type mode n b. (mode, n, b) env -> mode Mode.t = function
   | Ext { env; _ } -> mode_env env
   | Act (e, _) -> mode_env e
   | Key (_, key, _) -> Modalcell.hsrc key
+  | Postkey (e, _, _, _, _) -> mode_env e
+  | Prekey (e, _) -> mode_env e
   | Permute (_, e) -> mode_env e
   | Shift (e, _, _) -> mode_env e
   | Unshift (e, _, _) -> mode_env e
@@ -517,6 +537,8 @@ let rec length_env : type mode n b. (mode, n, b) env -> (mode, b) Tctx.t = funct
       Tctx.suc le (Dim (D.plus_right plus, filtered))
   | Act (env, _) -> length_env env
   | Key (env, _, al) -> plus_lock_out (length_env env) al
+  | Postkey (_, b, _, _, al) -> plus_lock_out b al
+  | Prekey (env, _) -> length_env env
   | Permute (p, env) -> perm_dom p (length_env env)
   | Shift (_, mn, nb) -> Plusmap.cod (D.plus_right mn) nb
   | Unshift (_, _, nb) -> Plusmap.dom nb

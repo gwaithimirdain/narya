@@ -268,7 +268,7 @@ let plus_lock_modality : type ctx mode modality dom newctx.
     (ctx, mode, modality, dom, newctx) plus_lock -> (dom, modality, mode) Modality.t =
  fun (Plus_lock (l, _)) -> Lock.dom l
 
-(* Append some arbitrary context that, if nonempty, starts with a lock, and has locks that compose to a given result. *)
+(* Append some arbitrary context that has locks that compose to a given result. *)
 
 type (_, _, _, _, _) plus_with_locks =
   | Plus_with_locks :
