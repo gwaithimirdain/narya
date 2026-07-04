@@ -320,14 +320,14 @@ module Act = struct
     | Pi (x, modality, doms, cods) ->
         let doms', cods' = act_pi modality doms cods fa cell in
         Pi (act_variables x fa, modality, doms', cods')
-    | Data { dim = _; tyfam; indices; constrs; discrete; hints } ->
+    | Data { dim = _; tyfam; indices; constrs; discrete; recursive; hints } ->
         let tyfam = ref (Option.map (fun x -> lazy (act_normal (Lazy.force x) fa cell)) !tyfam) in
         let indices =
           Fillvec.map
             (fun ixs -> act_cube { act = (fun x s c -> act_normal x s c) } ixs fa cell)
             indices in
         let constrs = Abwd.map (fun con -> act_dataconstr con fa) constrs in
-        Data { dim = dom_deg fa; tyfam; indices; constrs; discrete; hints }
+        Data { dim = dom_deg fa; tyfam; indices; constrs; discrete; recursive; hints }
     | Codata { eta; opacity; hints; env; termctx; fields } ->
         Codata { eta; opacity; hints; env = act_env env (op_of_deg fa); termctx; fields }
 

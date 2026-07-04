@@ -396,16 +396,41 @@ let get_window mode = function
       | Ok w -> w)
   | None -> Wrap (Modality.id mode)
 
-(* A window modality must be transparent, unless the datatype being matched against has exactly one constructor, in which case translucent suffices. *)
+(* Resolve the recursion verdict of a datatype by chasing the recorded verdicts of any blocking metavariables through Global, just as evaluation of a term containing metavariables consults their definitions.  A hole that has been solved has the verdict of its solution recorded; a still-unsolved hole remains unknown (and is treated conservatively as recursive by the window check, but nothing is cached, so a later check after solving it can succeed). *)
+let rec chase_recursion : Positivity.recursion -> [ `Nonrecursive | `Recursive | `Unknown ] =
+  function
+  | `Nonrecursive -> `Nonrecursive
+  | `Recursive -> `Recursive
+  | `Unknown ms ->
+      Meta.WrapSet.fold
+        (fun (Meta.Wrap m) acc ->
+          match acc with
+          | `Recursive -> `Recursive
+          | `Nonrecursive | `Unknown -> (
+              let (df : _ Metadef.t) = Global.find_meta m in
+              match df.tm with
+              | `Defined _ -> (
+                  match (chase_recursion df.recursion, acc) with
+                  | `Recursive, _ | _, `Recursive -> `Recursive
+                  | `Unknown, _ | _, `Unknown -> `Unknown
+                  | `Nonrecursive, `Nonrecursive -> `Nonrecursive)
+              | `Axiom | `Undefined -> `Unknown))
+        ms `Nonrecursive
+
+(* A window modality is always allowed if it is pellucid.  Otherwise, the datatype being matched against must have no recursive constructors, and the modality must be transparent, unless the datatype also has exactly one constructor, in which case translucent suffices. *)
 let check_window_transparency : type dom window mode k a.
-    (dom, window, mode) Modality.t -> (k, a) Abwd.t -> unit =
- fun window constrs ->
-  let single =
-    match Abwd.bindings constrs with
-    | [ _ ] -> true
-    | _ -> false in
-  if Modality.transparent window || (single && Modality.translucent window) then ()
-  else fatal (Nontransparent_window_modality (window, single))
+    (dom, window, mode) Modality.t -> (k, a) Abwd.t -> Positivity.recursion -> unit =
+ fun window constrs recursive ->
+  if Modality.pellucid window then ()
+  else
+    let single =
+      match Abwd.bindings constrs with
+      | [ _ ] -> true
+      | _ -> false in
+    match chase_recursion recursive with
+    | `Nonrecursive when Modality.transparent window || (single && Modality.translucent window) ->
+        ()
+    | r -> fatal (Nontransparent_window_modality (window, single, r))
 
 (* Check a term or case tree (depending on the energy: terms are kinetic, case trees are potential).  The ?discrete parameter is supplied if the term we are currently checking might be a discrete datatype, in which case it is a set of all the currently-being-defined mutual constants.  Most term-formers are nondiscrete, so they can just ignore this argument and make their recursive calls without it. *)
 let rec check : type mode a b s.
@@ -672,7 +697,15 @@ let rec check : type mode a b s.
             (type mn m n)
             (( name,
                Data
-                 { dim; indices = Filled ty_indices; constrs; discrete = _; tyfam = _; hints = _ },
+                 {
+                   dim;
+                   indices = Filled ty_indices;
+                   constrs;
+                   discrete = _;
+                   recursive = _;
+                   tyfam = _;
+                   hints = _;
+                 },
                ins,
                tyargs ) :
               _ * _ * (mn, m, n) insertion * (D.zero, mn, mn, mode normal) TubeOf.t) -> (
@@ -875,7 +908,8 @@ let rec check : type mode a b s.
         let (Wrap num_indices) = Fwn.of_int n in
         check_data
           ~discrete:(if disc then discrete else None)
-          ~hints status ctx ty num_indices Abwd.empty (Bwd.to_list constrs) Emp
+          ~recursive:`Nonrecursive ~hints status ctx ty num_indices Abwd.empty (Bwd.to_list constrs)
+          Emp
     (* If we have a term that's not valid outside a case tree, we bind it to a global metavariable. *)
     | Struct (Noeta, _), Kinetic l -> kinetic_of_potential l ctx tm ty "comatch"
     | Synth (Match _), Kinetic l -> kinetic_of_potential l ctx tm ty "match"
@@ -894,6 +928,8 @@ let rec check : type mode a b s.
           Readback.Displaying.run ~env:true @@ fun () -> (readback_val ctx ty, readback_ctx ctx)
         in
         Global.add_hole meta pos ~vars ~termctx ~ty ~status ~li ~ri;
+        (* The hole might be solved later with a term containing occurrences of currently-being-defined constants, so we record it as blocking any enclosing occurrence-analysis scope. *)
+        Positivity.record_hole meta;
         Meta (meta, energy status)
     (* If we have a synthesizing term, we synthesize it. *)
     | Synth stm, _ -> check_of_synth status ctx stm tm.loc ty
@@ -1092,7 +1128,9 @@ and synth_or_check_let : type mode a b s p.
   | Error e -> modality_fatal "checking let-in" (e :> modality_error)
   | Ok (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) -> (
       let (Locked (plus, lctx)) = Ctx.lock ctx modality in
-      let v, nf =
+      (* The bound value is checked in an occurrence-analysis scope, and the resulting verdict is stored as the "dirt" of the new variable's binding, so that references to the variable from datatype constructor types can detect occurrences of currently-being-defined constants hiding in its value. *)
+      let (v, nf), dirt =
+        Positivity.scope @@ fun () ->
         try
           (* We first try checking the bound term first as an ordinary kinetic term. *)
           let sv, svty = synth (Kinetic `Let) lctx v in
@@ -1137,7 +1175,7 @@ and synth_or_check_let : type mode a b s p.
           in
           (Term.Meta (meta, Kinetic), { tm; ty = svty }) in
       (* Either way, we end up with a checked term 'v' and a normal form 'nf'.  We use the latter to extend the context. *)
-      let newctx = Ctx.ext_let ctx modality name nf in
+      let newctx = Ctx.ext_let ~dirt ctx modality name nf in
       (* Now we update the status of the original constant being checked *)
       let status : (mode, (b, (modality, D.zero) dim_entry) snoc, s) status =
         match status with
@@ -1225,8 +1263,9 @@ and check_letrec_bindings : type mode a xc b ac bc.
               Term.Let (name, Modal (modality, plus, Meta (meta, Kinetic)), let_metas mode metas b)
             in
             let tmstatus = Potential (Meta (meta, Ctx.env ctx), Emp, hyp) in
-            let cv = check tmstatus tmctx v evty in
-            Global.set_meta meta (hyp cv);
+            (* The bound value is checked in an occurrence-analysis scope, and the verdict is recorded on the metavariable, whence ext_metas reads it as the "dirt" of the corresponding context variable.  (While this value is being checked, the metavariables of it and its mutual companions are still undefined in Global, so ext_metas marks all the variables of tmctx as dirty; thus self- and companion-references count as recursive occurrences.) *)
+            let cv, recursion = Positivity.scope @@ fun () -> check tmstatus tmctx v evty in
+            Global.set_meta meta ~recursion (hyp cv);
             (* And recurse. *)
             go (Fwn.bplus_suc_eq_suc ax) (Fwn.suc_plus xc) (Tbwd.snocs_suc_eq_snoc bx) ac metas vtys
               vs
@@ -1253,7 +1292,7 @@ and make_letrec_metas : type mode x a b ab.
           let evty = eval_term (Ctx.env ctx) vty in
           let head = Value.Meta { meta; env = Ctx.env ctx; ins = zero_ins D.zero } in
           let neutm = Neu { head; args = Emp; value = ready Unrealized; ty = Lazy.from_val evty } in
-          let ctx = Ctx.ext_let ctx modality x { tm = neutm; ty = evty } in
+          let ctx = Ctx.ext_let ~dirt:(dirt_of_meta meta) ctx modality x { tm = neutm; ty = evty } in
           (* And recurse. *)
           Ext (x, meta, make_letrec_metas ctx tel)
       | _ -> fatal (Unimplemented "modal let-rec variables"))
@@ -1266,6 +1305,14 @@ and let_metas : type mode b c bc s.
   | Ext (x, m, metas) ->
       Let
         (x, Modal (Modality.id mode, plus_no_lock mode, Meta (m, Kinetic)), let_metas mode metas tm)
+
+(* The "dirt" of a context variable bound to a let-rec metavariable: if the metavariable is still undefined, it is currently being defined, so a reference to it is a recursive occurrence; once it is defined, we use the recursion verdict that was recorded when its value was checked. *)
+and dirt_of_meta : type mode x a s. (mode, x, a, s) Meta.t -> Positivity.recursion =
+ fun meta ->
+  let df = Global.find_meta meta in
+  match df.tm with
+  | `Defined _ -> df.recursion
+  | `Axiom | `Undefined -> `Recursive
 
 (* Extend a context by evaluated metavariables to be used for let-rec.  We return both the fully extended context and a partially extended one. *)
 and ext_metas : type mode a b c ac bc d cd acd bcd.
@@ -1293,7 +1340,9 @@ and ext_metas : type mode a b c ac bc d cd acd bcd.
         | Eq, Plus_lock (Zero _, Zero) ->
             let tm = eval_term (Ctx.env ctx) (Meta (meta, Kinetic)) in
             let ty = eval_term (Ctx.env ctx) vty in
-            ext_metas' (Ctx.ext_let ctx modality x { tm; ty }) acd metas vtys
+            ext_metas'
+              (Ctx.ext_let ~dirt:(dirt_of_meta meta) ctx modality x { tm; ty })
+              acd metas vtys
         | _ -> fatal (Unimplemented "modal let-rec variables")) in
   match (ac, cd, bc, acd, metas, vtys) with
   | Zero, Zero, Zero, _, _, _ -> (ctx, ext_metas' ctx acd metas vtys)
@@ -1303,7 +1352,9 @@ and ext_metas : type mode a b c ac bc d cd acd bcd.
       | Eq, Plus_lock (Zero _, Zero) ->
           let tm = eval_term (Ctx.env ctx) (Meta (meta, Kinetic)) in
           let ty = eval_term (Ctx.env ctx) vty in
-          ext_metas (Ctx.ext_let ctx modality x { tm; ty }) acd metas vtys ac cd bc
+          ext_metas
+            (Ctx.ext_let ~dirt:(dirt_of_meta meta) ctx modality x { tm; ty })
+            acd metas vtys ac cd bc
       | _ -> fatal (Unimplemented "modal let-rec variables"))
 
 (* Check a match statement without an explicit motive supplied by the user.  This means if the discriminee is a well-behaved variable, it can be a variable match; otherwise it reverts back to a non-dependent match. *)
@@ -1331,8 +1382,10 @@ and check_implicit_match : type mode a b.
       let fallback reason arg =
         emit ?loc (Matching_wont_refine (reason, Some arg));
         fallback () in
-      let (Lookup { result; value = { tm = _; ty = varty }; modality; insert; plus }) =
+      let (Lookup { result; value = { tm = _; ty = varty }; dirt; modality; insert; plus }) =
         Ctx.lookup ctx ix in
+      (* This is a use of the variable, so we record its dirt for any active occurrence-analysis scope. *)
+      Positivity.record dirt;
       let (Plus_with_locks (comp, locks)) = plus in
       let lock = Locks.cod locks in
       (* For a variable match, the variable cannot be locked. *)
@@ -1397,6 +1450,7 @@ and check_match_branches : type dom window mode a b bm.
               constrs = data_constrs;
               tyfam;
               discrete = _;
+              recursive;
               hints = _;
             } :
              (_, _, j, ij) data_args),
@@ -1408,7 +1462,7 @@ and check_match_branches : type dom window mode a b bm.
         * (D.zero, m', m', dom normal) TubeOf.t) -> (
       (* But we can immediately identify the two different m's. *)
       let Eq = eq_of_ins_zero ins in
-      check_window_transparency window data_constrs;
+      check_window_transparency window data_constrs recursive;
       (* The argument 'i' counts the *number* of arguments to a motive in a match that was made explicitly non-dependent as in "match x return _ _ ↦ _".  In this case, we really don't care *what* the instantiation arguments are, and we really don't care what the indices are either except to check there are the right number of them.  This is because in the non-dependent case, we are just applying a recursor to a value, so we don't need to know that the indices and instantiation arguments are variables; in the branches they will be whatever they will be, but we don't even need to *know* what they will be because the output type isn't getting refined either. *)
       (match i with
       | Some { value; loc } ->
@@ -1690,6 +1744,7 @@ and check_var_match : type dom modality mode a b bm.
               indices = Filled var_indices;
               constrs = data_constrs;
               discrete = _;
+              recursive;
               tyfam;
               hints = _;
             } :
@@ -1698,7 +1753,7 @@ and check_var_match : type dom modality mode a b bm.
          inst_args ) :
         _ * (dom, m, n) canonical * (mn, m, n) insertion * _) -> (
       let Eq = eq_of_ins_zero ins in
-      check_window_transparency window data_constrs;
+      check_window_transparency window data_constrs recursive;
       let tyfam =
         match !tyfam with
         | Some tyfam -> Lazy.force tyfam
@@ -2121,6 +2176,7 @@ and any_empty : type mode n. (n, mode, unit, unit) ModalBindingCube.t list -> bo
 
 and check_data : type mode a b i.
     discrete:unit Constant.Map.t option ->
+    recursive:Positivity.recursion ->
     hints:hints ->
     (mode, b, potential) status ->
     (mode, a, b) Ctx.t ->
@@ -2130,7 +2186,7 @@ and check_data : type mode a b i.
     (Constr.t * a Raw.dataconstr located) list ->
     Code.t Asai.Diagnostic.t Bwd.t ->
     (mode, b, potential) term =
- fun ~discrete ~hints status ctx ty num_indices checked_constrs raw_constrs errs ->
+ fun ~discrete ~recursive ~hints status ctx ty num_indices checked_constrs raw_constrs errs ->
   match (raw_constrs, status) with
   | [], Potential _ -> (
       match errs with
@@ -2138,7 +2194,8 @@ and check_data : type mode a b i.
       | Emp ->
           (* If we get to this point and discreteness is still a possibility, we mark it as "Maybe" discrete.  Later, after all the types in a mutual block are checked, if they're all discrete we go through and change the "Maybe"s to "Yes"es.  *)
           let discrete = Option.fold ~none:`No ~some:(fun _ -> `Maybe) discrete in
-          Canonical (Data { indices = num_indices; constrs = checked_constrs; discrete; hints }))
+          Canonical
+            (Data { indices = num_indices; constrs = checked_constrs; discrete; recursive; hints }))
   | ( (c, { value = Dataconstr (args, output); loc }) :: raw_constrs,
       Potential (head, current_apps, hyp) ) -> (
       with_loc loc @@ fun () ->
@@ -2146,15 +2203,26 @@ and check_data : type mode a b i.
       run_with_definition (Ctx.mode ctx) head
         (hyp
            (Term.Canonical
-              (Data { indices = num_indices; constrs = checked_constrs; discrete = `No; hints })))
+              (Data
+                 {
+                   indices = num_indices;
+                   constrs = checked_constrs;
+                   discrete = `No;
+                   recursive = `Recursive;
+                   hints;
+                 })))
         Emp
       @@ fun () ->
       match (Abwd.find_opt c checked_constrs, output) with
       | Some _, _ -> fatal (Duplicate_constructor_in_data c)
       | None, Some output ->
-          let disc, (checked_constrs : (Constr.t, (mode, b, i) Term.dataconstr) Abwd.t), errs =
-            Reporter.try_with ~fatal:(fun e -> (true, checked_constrs, Snoc (errs, e))) @@ fun () ->
-            let Checked_tel (args, newctx), disc = check_tel ?discrete ctx args in
+          let disc, crec, (checked_constrs : (Constr.t, (mode, b, i) Term.dataconstr) Abwd.t), errs
+              =
+            Reporter.try_with ~fatal:(fun e -> (true, `Recursive, checked_constrs, Snoc (errs, e)))
+            @@ fun () ->
+            (* The argument telescope is checked in an occurrence-analysis scope, to detect whether this constructor is recursive.  The output type is NOT included in the scope: its head is by definition the current datatype, and occurrences there are not recursion. *)
+            let (Checked_tel (args, newctx), disc), crec =
+              Positivity.scope @@ fun () -> check_tel ?discrete ctx args in
             (* Note the type of each field is checked *kinetically*: it's not part of the case tree. *)
             let coutput = check (Kinetic `Nolet) newctx output (universe (Ctx.mode ctx) D.zero) in
             let err = Code.Invalid_constructor_type (c, Left "head must be current datatype") in
@@ -2171,6 +2239,7 @@ and check_data : type mode a b i.
                         match Fwn.compare (Vec.length indices) num_indices with
                         | Eq ->
                             ( disc,
+                              crec,
                               checked_constrs |> Abwd.add c (Term.Dataconstr { args; indices }),
                               errs )
                         | _ ->
@@ -2180,19 +2249,28 @@ and check_data : type mode a b i.
             | _ -> fatal ?loc:output.loc err in
           check_data
             ~discrete:(if disc then discrete else None)
-            ~hints status ctx ty num_indices checked_constrs raw_constrs errs
+            ~recursive:(Positivity.merge recursive crec) ~hints status ctx ty num_indices
+            checked_constrs raw_constrs errs
       | None, None -> (
           match num_indices with
           | Zero ->
-              let disc, (checked_constrs : (Constr.t, (mode, b, i) Term.dataconstr) Abwd.t), errs =
-                Reporter.try_with ~fatal:(fun e -> (true, checked_constrs, Snoc (errs, e)))
+              let ( disc,
+                    crec,
+                    (checked_constrs : (Constr.t, (mode, b, i) Term.dataconstr) Abwd.t),
+                    errs ) =
+                Reporter.try_with ~fatal:(fun e ->
+                    (true, `Recursive, checked_constrs, Snoc (errs, e)))
                 @@ fun () ->
-                let Checked_tel (args, _), disc = check_tel ?discrete ctx args in
-                (disc, checked_constrs |> Abwd.add c (Term.Dataconstr { args; indices = [] }), errs)
-              in
+                let (Checked_tel (args, _), disc), crec =
+                  Positivity.scope @@ fun () -> check_tel ?discrete ctx args in
+                ( disc,
+                  crec,
+                  checked_constrs |> Abwd.add c (Term.Dataconstr { args; indices = [] }),
+                  errs ) in
               check_data
                 ~discrete:(if disc then discrete else None)
-                ~hints status ctx ty Fwn.zero checked_constrs raw_constrs errs
+                ~recursive:(Positivity.merge recursive crec) ~hints status ctx ty Fwn.zero
+                checked_constrs raw_constrs errs
           | Suc _ -> fatal (Missing_constructor_type c)))
 
 (* Get the indices from the codomain of a constructor's type. *)
@@ -2824,7 +2902,9 @@ and synth : type mode a b s.
     match (tm.value, status) with
     | Var i, _ -> (
         (* We look up the raw variable index in the context.  This returns its De Bruijn level (which we don't need), its value, its annotating modality, and the information that goes into its De Bruijn index (insertion and plus_with_locks). *)
-        let (Lookup { result; value; modality; insert; plus = plus_tgt }) = Ctx.lookup ctx i in
+        let (Lookup { result; value; dirt; modality; insert; plus = plus_tgt }) = Ctx.lookup ctx i in
+        (* If this is a let-bound variable whose value contains occurrences of currently-being-defined constants, record that for any active occurrence-analysis scope. *)
+        Positivity.record dirt;
         (* We extract the composite locking modality. *)
         let (Any_ctx ctx) = Ctx.remove_locks ctx plus_tgt in
         let (Plus_with_locks (_, locks)) = plus_tgt in
@@ -2857,6 +2937,8 @@ and synth : type mode a b s.
             (* If the modalities are not equal, and the key is not unique, then the user should have given an explicit key. *)
             fatal (Missing_key (modality, lock)))
     | Const name, _ -> (
+        (* If this is one of the constants currently being defined, record the occurrence for any active occurrence-analysis scope (e.g. the argument telescope of a datatype constructor, or the value of a let binding). *)
+        Positivity.record_const name;
         let (Definition { mode; ty; parametric; _ }) = Global.find name in
         match Modal.Mode.compare mode (Ctx.mode ctx) with
         | Eq ->

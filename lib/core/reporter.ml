@@ -196,7 +196,9 @@ module Code = struct
     | Unknown_modality : string -> t
     | Modalcell_mismatch : string * ('a, 'm, 'n, 'b) Modalcell.t * ('c, 'r, 's, 'd) Modalcell.t -> t
     | Nonsharp_modality : ('a, 'm, 'b) Modality.t -> t
-    | Nontransparent_window_modality : ('a, 'm, 'b) Modality.t * bool -> t
+    | Nontransparent_window_modality :
+        ('a, 'm, 'b) Modality.t * bool * [ `Nonrecursive | `Recursive | `Unknown ]
+        -> t
     | Non_mode_synthesizing : string -> t
     | Invalid_variable_face : 'a D.t * ('n, 'm) sface -> t
     | Anomaly : string -> t
@@ -919,11 +921,18 @@ module Code = struct
       | Non_mode_synthesizing str -> textf "cannot synthesize a mode: %s" str
       | Unknown_modality c -> textf "unknown modality %s" c
       | Nonsharp_modality m -> textf "modality %s is not sharp" (Modality.to_string m)
-      | Nontransparent_window_modality (m, false) ->
-          textf "window modality %s must be transparent" (Modality.to_string m)
-      | Nontransparent_window_modality (m, true) ->
+      | Nontransparent_window_modality (m, _, `Recursive) ->
+          textf "window modality %s must be pellucid since the datatype has recursive constructors"
+            (Modality.to_string m)
+      | Nontransparent_window_modality (m, _, `Unknown) ->
           textf
-            "window modality %s must be transparent, or translucent since the datatype has only one constructor"
+            "window modality %s must be pellucid since it is not yet known whether the datatype has recursive constructors, due to unsolved holes in its constructor types"
+            (Modality.to_string m)
+      | Nontransparent_window_modality (m, false, `Nonrecursive) ->
+          textf "window modality %s must be pellucid or transparent" (Modality.to_string m)
+      | Nontransparent_window_modality (m, true, `Nonrecursive) ->
+          textf
+            "window modality %s must be pellucid or transparent, or translucent since the datatype has only one constructor"
             (Modality.to_string m)
       | Missing_key (vdom, vcod) ->
           textf "use of %a variable behind %a lock requires a key" pp_printed

@@ -23,13 +23,17 @@ open Value
 
 (* To fourth approximation, a context (qua substitution) can also incorporate a permutation of the raw indices.  This is because the raw indices occur in the order that they are bound *textually*, whereas we require that the checked indices occur in a "logical" order so that the type and possible value of each variable involves only those appearing prior to it.  These can disconnect during a match, where the new variables bound as arguments of the matched constructor are last textually, but must be inserted earlier in the context to retain logical order.  We postpone this modification until later, first defining "Ordered" contexts and then adding the permutations. *)
 
-(* The binding of each variable in a context is a "level option * normal".  But instead of exposing this literally as a product type, we use an abstract type with a constructor "Binding.make" and accessors "Binding.level" and "Binding.value".  The reason is that in the "bind_some" machinery below, we work with contexts where the binding of a variable is "known but not yet available" or "not yet computed".  So the internal implementation of Binding is actually a reference cell that usually stores a "Known" "level option * normal", but sometimes is Unknown or other times a Delayed "level option * normal". *)
+(* The binding of each variable in a context is a "level option * normal".  But instead of exposing this literally as a product type, we use an abstract type with a constructor "Binding.make" and accessors "Binding.level" and "Binding.value".  The reason is that in the "bind_some" machinery below, we work with contexts where the binding of a variable is "known but not yet available" or "not yet computed".  So the internal implementation of Binding is actually a reference cell that usually stores a "Known" "level option * normal", but sometimes is Unknown or other times a Delayed "level option * normal".
+
+   A binding also carries a mutable "dirt" verdict recording whether its value contains occurrences of constants currently being defined (see Positivity).  This applies only to let-bound variables, whose values were typechecked; free variables are always clean.  It is mutable, separately from the state reference, so that letrec can pre-mark its bindings as recursive while checking their bodies and update them to the real verdict afterwards.  (Note that bind_some's "specify" installs computed values without computing their dirt; free pattern variables are clean in practice, but this could be revisited along with strict positivity.) *)
 module Binding : sig
   type 'mode t
 
-  val make : level option -> 'mode normal -> 'mode t
+  val make : ?dirt:Positivity.recursion -> level option -> 'mode normal -> 'mode t
   val level : 'mode t -> level option
   val value : 'mode t -> 'mode normal
+  val dirt : 'mode t -> Positivity.recursion
+  val set_dirt : 'mode t -> Positivity.recursion -> unit
 
   (* An unknown binding can be specified when we have its value. *)
   val unknown : unit -> 'mode t
@@ -48,31 +52,33 @@ end = struct
     | Delayed of level option * 'mode normal
     | Error of Reporter.Code.t
 
-  type 'mode t = 'mode state ref
+  type 'mode t = { state : 'mode state ref; mutable dirt : Positivity.recursion }
 
-  let make i x = ref (Known (i, x))
+  let make ?(dirt = `Nonrecursive) i x = { state = ref (Known (i, x)); dirt }
 
   let level b =
-    match !b with
+    match !(b.state) with
     | Known (i, _) -> i
     | Unknown | Delayed _ -> None
     | Error e -> fatal e
 
   let value b =
-    match !b with
+    match !(b.state) with
     | Known (_, x) -> x
     | Unknown | Delayed _ -> fatal (Anomaly "Undetermined context variable")
     | Error e -> fatal e
 
-  let unknown () = ref Unknown
-  let specify b i x = b := Known (i, x)
-  let delay b = ref (Delayed (level b, value b))
-  let error e = ref (Error e)
+  let dirt b = b.dirt
+  let set_dirt b d = b.dirt <- d
+  let unknown () = { state = ref Unknown; dirt = `Nonrecursive }
+  let specify b i x = b.state := Known (i, x)
+  let delay b = { state = ref (Delayed (level b, value b)); dirt = b.dirt }
+  let error e = { state = ref (Error e); dirt = `Nonrecursive }
 
   let force b =
-    match !b with
+    match !(b.state) with
     | Known _ | Unknown -> ()
-    | Delayed (i, x) -> b := Known (i, x)
+    | Delayed (i, x) -> b.state := Known (i, x)
     | Error e -> fatal e
 end
 
@@ -290,6 +296,8 @@ module Ordered = struct
     | Lookup : {
         result : [ `Var of level option * ('k, 'n) sface | `Field of 'field ];
         value : 'dom normal;
+        (* Whether the value of this (let-bound) variable contains occurrences of currently-being-defined constants (see Positivity); free variables are always clean. *)
+        dirt : Positivity.recursion;
         modality : ('dom, 'modality, 'cod) Modality.t;
         insert : ('a, 'modality, 'n, 'an) insert;
         plus : ('an, 'cod, 'm, 'mode, 'anm) plus_with_locks;
@@ -352,6 +360,7 @@ module Ordered = struct
                     result = `Field (level, fst (Bwv.nth i fields));
                     modality;
                     value = Binding.value b;
+                    dirt = Binding.dirt b;
                     insert = Now;
                     plus = plus_with_no_locks (Modality.tgt modality);
                   }
@@ -396,6 +405,7 @@ module Ordered = struct
                     result = `Var (Binding.level x, fab);
                     modality;
                     value = Binding.value x;
+                    dirt = Binding.dirt x;
                     insert = Now;
                     plus = plus_with_no_locks (Modality.tgt modality);
                   }))
@@ -438,6 +448,7 @@ module Ordered = struct
                          insert = Now;
                          result = `Var (Some i, fa);
                          value = Binding.value x;
+                         dirt = Binding.dirt x;
                          modality;
                          plus = plus_with_no_locks (Modality.tgt modality);
                        }) )
@@ -496,15 +507,16 @@ module Ordered = struct
     let b = Binding.make (Some (n, 0)) { tm = var modality (n, 0) ty; ty } in
     (cube_vis ctx modality x (CubeOf.singleton b), b)
 
-  (* Extend a context by one new variable with an assigned value. *)
+  (* Extend a context by one new variable with an assigned value.  The optional ?dirt records whether that value contains occurrences of currently-being-defined constants. *)
   let ext_let : type dom modality mode a b.
+      ?dirt:Positivity.recursion ->
       (mode, a, b) t ->
       (dom, modality, mode) Modality.t ->
       string option ->
       dom normal ->
       (mode, a N.suc, (b, (modality, D.zero) dim_entry) snoc) t * dom Binding.t =
-   fun ctx modality x v ->
-    let b = Binding.make None v in
+   fun ?dirt ctx modality x v ->
+    let b = Binding.make ?dirt None v in
     (cube_vis ctx modality x (CubeOf.singleton b), b)
 
   (* Remove the last entry in a context.  Only works if that last entry is a fully-cube variable with no fields. *)
@@ -755,8 +767,8 @@ let ext (Permute { perm; env; level; ctx }) modality xs ty =
       ctx;
     }
 
-let ext_let (Permute { perm; env; level; ctx }) modality xs tm =
-  let ctx, b = Ordered.ext_let ctx modality xs tm in
+let ext_let ?dirt (Permute { perm; env; level; ctx }) modality xs tm =
+  let ctx, b = Ordered.ext_let ?dirt ctx modality xs tm in
   Permute
     {
       perm = Insert (perm, Top);

@@ -551,6 +551,7 @@ and apply : type dom modality mode n s.
                                indices = Unfilled _ as indices;
                                constrs;
                                discrete;
+                               recursive;
                                hints;
                              };
                          tyargs = data_tyargs;
@@ -586,7 +587,8 @@ and apply : type dom modality mode n s.
                             (Value.Canonical
                                {
                                  mode;
-                                 canonical = Data { dim; tyfam; indices; constrs; discrete; hints };
+                                 canonical =
+                                   Data { dim; tyfam; indices; constrs; discrete; recursive; hints };
                                  tyargs = TubeOf.empty dim;
                                  ins;
                                  fields;
@@ -1111,7 +1113,7 @@ and eval_canonical : type mode m a.
     (mode, m, a) env -> (mode, a) Term.canonical -> (mode, potential) evaluation =
  fun env can ->
   match can with
-  | Data { indices; constrs; discrete; hints } ->
+  | Data { indices; constrs; discrete; recursive; hints } ->
       let tyfam = ref None in
       let constrs =
         Abwd.map
@@ -1119,7 +1121,8 @@ and eval_canonical : type mode m a.
           constrs in
       let dim, mode = (dim_env env, mode_env env) in
       let canonical =
-        Data { dim; tyfam; indices = Fillvec.empty indices; constrs; discrete; hints } in
+        Data { dim; tyfam; indices = Fillvec.empty indices; constrs; discrete; recursive; hints }
+      in
       let tyargs = TubeOf.empty (dim_env env) in
       let fields =
         match Lazy.force Fibrancy.data with

@@ -53,3 +53,28 @@ def sfwd∘sbwd (A B :○| DomType) (v : sum' (○ A) (○ B))
   ≔ match v [
 | inl. p ↦ match p [ circle. a ↦ refl (inl. (circle. a)) ]
 | inr. q ↦ match q [ circle. b ↦ refl (inr. (circle. b)) ]]
+
+` Some recursive datatypes, on whose contents ○ cannot be used as a window
+` since it is transparent but not pellucid.
+
+def ℕ : DomType ≔ data [ zero. | suc. (_ : ℕ) ]
+
+def R : DomType ≔ data [ r. (_ : R) ]
+
+` A mutual pair: X mentions its companion Y, so it is conservatively counted
+` as recursive, but Y itself is not.
+
+def X : DomType ≔ data [ x. (_ : Y) ]
+
+and Y : DomType ≔ data [ y. ]
+
+def ytest (u : ○ Y) : ○ Y ≔ match u [
+| circle. w ↦ match (w :○| _) [ y. ↦ circle. (y.) ]]
+
+` An occurrence only in the output type of a constructor, as for indexed
+` families, is not recursive.
+
+def V : ℕ → DomType ≔ data [ vnil. : V zero. ]
+
+def vtest (u : ○ (V zero.)) : ○ (V zero.) ≔ match u [
+| circle. w ↦ match (w :○| _) [ vnil. ↦ circle. (vnil.) ]]

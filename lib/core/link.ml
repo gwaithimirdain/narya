@@ -65,8 +65,15 @@ and branch : type mode a n. (File.t -> File.t) -> (mode, a, n) branch -> (mode, 
 and canonical : type mode a. (File.t -> File.t) -> (mode, a) canonical -> (mode, a) canonical =
  fun f can ->
   match can with
-  | Data { indices; constrs; discrete; hints } ->
-      Data { indices; constrs = Abwd.map (dataconstr f) constrs; discrete; hints }
+  | Data { indices; constrs; discrete; recursive; hints } ->
+      Data
+        {
+          indices;
+          constrs = Abwd.map (dataconstr f) constrs;
+          discrete;
+          recursive = Positivity.link_recursion f recursive;
+          hints;
+        }
   | Codata { eta; opacity; hints; dim; termctx = tc; fields; fibrancy = fib; is_glue } ->
       let trr =
         Mbwd.map
@@ -195,4 +202,5 @@ let metadef : type mode x y z.
     match data.tm with
     | `Defined tm -> `Defined (term f tm)
     | x -> x in
-  { data with tm; termctx; ty }
+  let recursion = Positivity.link_recursion f data.recursion in
+  { data with tm; termctx; ty; recursion }

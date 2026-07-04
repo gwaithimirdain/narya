@@ -105,6 +105,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
   Annotate.run @@ fun () ->
   Readback.Displaying.run ~env:false @@ fun () ->
   Core.Discrete.run ~env:!discreteness @@ fun () ->
+  Core.Positivity.run @@ fun () ->
   (* A temporary Reporter.run to report these errors *)
   ( Reporter.run
       ~emit:(fun d ->

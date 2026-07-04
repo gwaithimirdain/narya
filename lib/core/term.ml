@@ -181,6 +181,7 @@ module rec Term : sig
         indices : 'i Fwn.t;
         constrs : (Constr.t, ('mode, 'a, 'i) dataconstr) Abwd.t;
         discrete : [ `Yes | `Maybe | `No ];
+        recursive : Positivity.recursion;
         (* Variable-name hints, for displaying anonymous variables of this type. *)
         hints : hints;
       }
@@ -457,11 +458,12 @@ end = struct
 
   (* A canonical type is either a datatype or a codatatype/record. *)
   and (_, _) canonical =
-    (* A datatype stores its family of constructors, whether it is discrete, and also its number of indices.  (The former is not determined in the latter if there happen to be zero constructors). *)
+    (* A datatype stores its family of constructors, whether it is discrete, whether it has recursive constructors, and also its number of indices.  (The former two are not determined in the latter if there happen to be zero constructors). *)
     | Data : {
         indices : 'i Fwn.t;
         constrs : (Constr.t, ('mode, 'a, 'i) dataconstr) Abwd.t;
         discrete : [ `Yes | `Maybe | `No ];
+        recursive : Positivity.recursion;
         (* Variable-name hints, for displaying anonymous variables of this type. *)
         hints : hints;
       }

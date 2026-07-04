@@ -219,6 +219,7 @@ module Map = Path.Map (Gen) (Mode.Map) (Gen.Map)
 
 module type Theory = sig
   val sharp : ('a, 'm, 'b) t -> bool
+  val pellucid : ('a, 'm, 'b) t -> bool
   val transparent : ('a, 'm, 'b) t -> bool
   val translucent : ('a, 'm, 'b) t -> bool
 end
@@ -227,6 +228,7 @@ let theory : (module Theory) ref =
   ref
     (module struct
       let sharp _ = true
+      let pellucid _ = true
       let transparent _ = true
       let translucent _ = true
     end : Theory)
@@ -236,6 +238,10 @@ let choose_theory (t : (module Theory)) = theory := t
 let sharp m =
   let module T = (val !theory) in
   T.sharp m
+
+let pellucid m =
+  let module T = (val !theory) in
+  T.pellucid m
 
 let transparent m =
   let module T = (val !theory) in
