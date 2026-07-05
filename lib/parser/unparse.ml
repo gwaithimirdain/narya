@@ -946,7 +946,13 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
               TubeOf.build D.zero (D.zero_plus k)
                 {
                   build =
-                    (fun fa -> Var (Index (Now, comp_sface s (sface_of_tface fa), kfilter, xsplus)));
+                    (fun fa ->
+                      Var
+                        (Index
+                           ( Now,
+                             comp_sface s (sface_of_tface fa),
+                             kfilter,
+                             plus_with_locks_of_plus_lock xsplus )));
                 } in
             let implicit = Option.is_none (is_id_sface s) in
             (* Here we use the flexibility allowed by unparse_inst to have the type and the instantiation arguments in different contexts, since the type is not in the context extended by the new variables.  However, it's important that we get the context for the type by *removing* those new variables from newvars, rather than using the original vars, since that retains the extra information stored in a Names.t about how many copies of a variable there have been, for future renaming use.  *)
@@ -991,9 +997,10 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
               (* This case happens when we are recursively working with the domains of another higher pi-type. *)
               let (Has_plus_lock plusm) = plus_lock modality in
               let sfilter' = Modality.filter_idempotent sfilter in
+              let iplusm = plus_with_locks_of_plus_lock plusm in
               let lamargs =
                 CubeOf.build (dom_sface fb)
-                  { build = (fun fa -> Var (Index (Now, fa, sfilter', plusm))) } in
+                  { build = (fun fa -> Var (Index (Now, fa, sfilter', iplusm))) } in
               Named
                 ( lamvars,
                   App (Weaken nonlam, dom_tface s, sfilter, Modal (modality, plusm, lamargs)) ))

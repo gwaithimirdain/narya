@@ -800,7 +800,6 @@ let pop : type mode a b. (mode, a, b) t -> ((mode, a, b) pop, string) Result.t =
   | Some (Pop (_, Eq, Eq)), _, Permute _ -> Error "env is permuted"
   | Some (Pop (_, Eq, Eq)), _, Act _ -> Error "env is acted"
   | Some (Pop (_, Eq, Eq)), _, Key _ -> Error "env is keyed"
-  | Some (Pop (_, Eq, Eq)), _, Postkey _ -> Error "env is postkeyed"
   | Some (Pop (_, Eq, Eq)), _, Prekey _ -> Error "env is prekeyed"
   | Some (Pop (_, Eq, Eq)), _, Shift _ -> Error "env is shifted"
   | Some (Pop (_, Eq, Eq)), _, Unshift _ -> Error "env is unshifted"

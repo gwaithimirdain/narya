@@ -454,8 +454,8 @@ module Equal = struct
             (* compare *)
             let (Locked (_, lctx)) = Ctx.lock ctx modality in
             let lenv = key_env aenv1 (Modalcell.id modality) dplus in
-            let env1' = Env.remove_top env1 in
-            let env2' = Env.remove_top env2 in
+            let env1' = remove_top env1 in
+            let env2' = remove_top env2 in
             let* () = equal_ordered_env ctx env1' env2' envctx in
             let xtytbl = Hashtbl.create 10 in
             let* _ =
@@ -483,8 +483,8 @@ module Equal = struct
             return ())
     | Lock _ -> (
         let (Ordered_remove_locks (envctx, locks)) = Termctx.ordered_remove_locks envctx in
-        let (Remove_keys (env1, keys1)) = Env.remove_keys_plus_lock env1 locks in
-        let (Remove_keys (env2, keys2)) = Env.remove_keys_plus_lock env2 locks in
+        let (Restrict_keys (env1, keys1, _)) = restrict_keys_plus_lock env1 locks in
+        let (Restrict_keys (env2, keys2, _)) = restrict_keys_plus_lock env2 locks in
         match Modalcell.compare keys1 keys2 with
         | Neq -> fatal (Modalcell_mismatch ("equal_env", keys1, keys2))
         | Eq ->

@@ -60,4 +60,7 @@ of type Type⁽ᵉ⁾ A.0 A.1, which is not a Type.
   [1]
 
   $ narya -v -parametric -discrete-coreflector -direction p,rel,Br param_sqrt.ny
+   ￫ info[I0000]
+   ￮ constant √ defined
+  
 

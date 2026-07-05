@@ -468,9 +468,14 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let (To p) = deg_of_ins ins in
       Val (act_value (eval_term (act_env env (opt_op_of_deg is)) x) p None)
   | Key { tm; cell; plus_src; plus_tgt } ->
-      (* To evaluate a key, we strip off the part of the environment corresponding to the codomain of the key cell, then compose the keys we found there with the supplied key to make a new key on an environment for evaluating the body. *)
-      let (Remove_keys (env, keys)) = Env.remove_keys env plus_tgt in
-      eval (key_env env (Modalcell.vcomp keys cell) plus_src) tm
+      (* To evaluate a key, we strip off the part of the environment corresponding to the codomain of the key cell, then compose the keys we found there with the supplied key to make a new key on an environment for evaluating the body.  The resulting environment is back at the original mode, so any prekey action stripped along the way is re-applied as a prekey on top. *)
+      let (Restrict_keys (env, keys, pre)) = restrict_keys env plus_tgt in
+      let env = key_env env (Modalcell.vcomp keys cell) plus_src in
+      let env =
+        match pre with
+        | None -> env
+        | Some pre -> prekey_env env pre in
+      eval env tm
   | Match { tm; dim = match_dim; branches } -> (
       let env_dim = dim_env env in
       let (Plus plus_dim) = D.plus match_dim in
@@ -522,7 +527,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
   | Shift (n, plusmap, tm) ->
       let (Plus mn) = D.plus n in
       eval (Unshift (env, mn, plusmap)) tm
-  | Weaken tm -> eval (Env.remove_top env) tm
+  | Weaken tm -> eval (remove_top env) tm
 
 and eval_with_boundary : type mode m a.
     (mode, m, a) env -> (mode, a, kinetic) term -> (m, (mode, kinetic) value) CubeOf.t =
@@ -1286,8 +1291,11 @@ and eval_env : type mode a q n qn b.
                  });
         }
   | Key { env = tmenv; cell; plus_src; plus_tgt } ->
-      let (Remove_keys (env, keys)) = Env.remove_keys env plus_tgt in
-      Key (eval_env env q_n tmenv, Modalcell.vcomp keys cell, plus_src)
+      let (Restrict_keys (env, keys, pre)) = restrict_keys env plus_tgt in
+      let env = Key (eval_env env q_n tmenv, Modalcell.vcomp keys cell, plus_src) in
+      match pre with
+      | None -> env
+      | Some pre -> prekey_env env pre
 
 and apply_term : type dom modality mode n m.
     (mode, kinetic) value ->
@@ -1375,11 +1383,16 @@ and lookup_cube : type dom mu mode n a b k mk nk.
       let (Plus lk) = D.plus (D.plus_right nk) in
       let op'k = opt_op_plus op' lk nk in
       lookup_cube env lk mu v (comp_opt_op op'k op)
-  (* Nonidentity keys are disallowed here, because we've already called Env.remove_keys that is supposed to strip them all off. *)
+  (* Keys, prekeys, and restricts are disallowed here, because we've already called restrict_keys that is supposed to strip them all off. *)
   | Key (env, cell, plus) -> (
       match (Modalcell.compare_id cell, plus) with
       | Eq, Plus_lock (Zero _, Zero) -> lookup_cube env nk mu v op
       | _ -> fatal (Anomaly "nonidentity key in lookup_cube"))
+  (* Prekeys are stripped off by restrict_keys before lookup_cube is called, and applied to the looked-up value there. *)
+  | Prekey (env, cell) -> (
+      match Modalcell.compare_id cell with
+      | Eq -> lookup_cube env nk mu v op
+      | Neq -> fatal (Anomaly "nonidentity prekey in lookup_cube"))
   (* If we encounter a shift or unshift, we just have to edit the insertion and go on. *)
   | Shift (env, n_x, xb) ->
       (* In this branch, k is renamed to x+k. *)
@@ -1430,16 +1443,20 @@ and lookup_cube : type dom mu mode n a b k mk nk.
           | _, Neq -> fatal (Modality_mismatch (`Internal, "lookup_cube keys", modality, mu))))
 
 and lookup : type mode n b. (mode, n, b) env -> (mode, b) index -> (mode, kinetic) value =
- fun env (Index (v, fa, _, plus)) ->
+ fun env (Index (v, fa, _, (Plus_with_locks (_, locks) as plus))) ->
   let (Plus n_k) = D.plus (cod_sface fa) in
   let n = dim_env env in
-  let (Remove_keys (env, keys)) = Env.remove_keys_plus_lock env plus in
-  let mu = plus_lock_modality plus in
+  (* We strip off the keys and prekeys corresponding to the locks to the right of the variable, composing them on the way out into a composite key cell (for the variable's own locks) and a separate prekey action, both to be applied to the looked-up value. *)
+  let (Restrict_keys (env, keys, pre)) = restrict_keys env plus in
+  let mu = Locks.cod locks in
   match lookup_cube env n_k mu v (id_opt_op (D.plus_out n n_k)) with
   | Looked_up { act; op; entry } -> (
       let (Plus x) = D.plus (dom_sface fa) in
       match op_of_opt (comp_opt_op op (plus_opt_op n n_k x (opt_op_of_sface fa))) with
-      | Some (Op (f, s)) -> act (CubeOf.find entry f) s (Some keys)
+      | Some (Op (f, s)) ->
+          (* Apply the composite key cell, then any prekey action (outermost). *)
+          let tm = act (CubeOf.find entry f) s (Some keys) in
+          Option.fold pre ~none:tm ~some:(fun pre -> act_value tm (id_deg D.zero) (Some pre))
       (* This means that in the non-unary case, some dummy endpoints in an opt_sface didn't get canceled out by a degeneracy.  I think that could only happen if a non-unary mode theory has a 2-cell from a sharp parametric modality to a sharp non-parametric modality.  In all the models I know, the primary nonparametric modalities are *comonadic*, plus in the unary case *only* a left adjoint monad to it (which is also right adjoint if the parametricity is internal), and in the external non-unary case another non-monadic non-comonadic functor.  In the internal non-unary case there is a *right* adjoint to the nonparametric comonad, but it is not "nonparametric" in this sense: its parametricity is *codiscrete* rather than discrete; I haven't thought about how to enforce that for a tangible modality, although it comes naturally for a negative presentation that is right adjoint to a tangible discrete modality. *)
       | None -> fatal Invalid_mode_theory)
 

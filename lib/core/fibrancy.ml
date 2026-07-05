@@ -105,7 +105,7 @@ module Codata = struct
    fun mode (Fibrancy (type nh hb) (f : (mode, g, n, nh, b, hb, et) codata_fibrancy))
        (Entry (fld, fldty)) ->
     (* x is the index-zero variable. *)
-    let x = Var (Index (Now, id_sface D.zero, Modality.filter_id mode D.zero, plus_no_lock mode)) in
+    let x = Var (Index (Now, id_sface D.zero, Modality.filter_id mode D.zero, plus_with_no_locks mode)) in
     let ins = zero_ins Hott.dim in
     (* Compute terms that project each fibrancy field out of the codatatype and apply it to the index-zero variable 'x'. *)
     let idm = Modality.id mode in
@@ -227,7 +227,7 @@ module Codata = struct
                   (Plusmap.Dom.suc hlength (Dim (D.zero, Modality.filter_zero idm)))
                   (Dim (D.zero, Modality.filter_zero idm)) in
               let makeidx v =
-                Var (Index (v, id_sface D.zero, Modality.filter_id mode D.zero, plus_no_lock mode))
+                Var (Index (v, id_sface D.zero, Modality.filter_id mode D.zero, plus_with_no_locks mode))
               in
               let x0 = makeidx (Later (Later Now)) in
               let x1 = makeidx (Later Now) in

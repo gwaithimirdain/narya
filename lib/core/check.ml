@@ -1325,7 +1325,7 @@ and check_implicit_match : type mode a b.
               (* MODALTODO: Eventually, a modal annotation on the variable can become a window modality. *)
               fallback "discriminee is modal" (PModality modality)
           | Eq -> (
-              let plus = plus_no_lock (Ctx.mode ctx) in
+              let plus = plus_with_no_locks (Ctx.mode ctx) in
               (* For a variable match, the variable must not be let-bound to a value or be a field access variable. *)
               match result with
               | `Field (_, field) -> fallback "discriminee is record field" (PField field)
@@ -2006,7 +2006,8 @@ and check_empty_match_lam : type mode a b.
                       filter,
                       Match
                         {
-                          tm = Var (Index (Now, fa, filter, plus_no_lock (Modality.tgt modality)));
+                          tm =
+                            Var (Index (Now, fa, filter, plus_with_no_locks (Modality.tgt modality)));
                           dim;
                           branches = Constr.Map.empty;
                         } )
@@ -2748,13 +2749,17 @@ and synth : type mode a b s.
         let (Has_plus_lock plus_src) = plus_lock modality in
         let tm, ty =
           match result with
-          | `Var (_, fa) -> (Term.Var (Index (insert, fa, filter, plus_src)), value.ty)
+          | `Var (_, fa) ->
+              (Term.Var (Index (insert, fa, filter, plus_with_locks_of_plus_lock plus_src)), value.ty)
           | `Field (_, field) ->
               (* TODO: Double-check that this zero is correct *)
               let ins = ins_zero D.zero in
               (* Illusory field-access variables always refer to the top face. *)
               let (Inserted (n, _)) = inserted insert (Ctx.tctx ctx) in
-              ( Term.Field (Var (Index (insert, id_sface n, filter, plus_src)), field, ins),
+              ( Term.Field
+                  ( Var (Index (insert, id_sface n, filter, plus_with_locks_of_plus_lock plus_src)),
+                    field,
+                    ins ),
                 tyof_field (Ok value.tm) value.ty field ~shuf:Trivial ins ) in
         (* Any keys supplied explicitly by the user have been stripped off already, but we can insert an identity key or a unique key as well. *)
         match (Modality.compare modality lock, Modalcell.find_unique modality lock) with

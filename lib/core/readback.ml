@@ -303,10 +303,11 @@ and readback_head : type mode c z.
           (* We put the source/annotation modality back onto the context as a lock, as the "Var" term expects. *)
           let (Has_plus_lock plus_src) = plus_lock modality in
           (* If there's a nontrivial degeneracy, we act by it; otherwise we leave it off. *)
+          let iplus = plus_with_locks_of_plus_lock plus_src in
           let tm =
             match is_id_deg deg with
-            | Some _ -> Term.Var (Index (insert, fa, filter, plus_src))
-            | None -> Act (Term.Var (Index (insert, fa, filter, plus_src)), deg, sort) in
+            | Some _ -> Term.Var (Index (insert, fa, filter, iplus))
+            | None -> Act (Term.Var (Index (insert, fa, filter, iplus)), deg, sort) in
           (* And if the key is nontrivial, we act by it; otherwise we leave it off. *)
           match (Modality.compare_id modality, plus_src, plus_tgt) with
           | Eq, Plus_lock (Zero _, Zero), Plus_with_locks (Zero, Zero _) -> tm
@@ -510,7 +511,7 @@ and readback_ordered_env : type mode n a b c d.
               }
               [ xs ] in
           (* For the recursive call, we remove the entry we found. *)
-          let tmenv = readback_ordered_env ctx (Env.remove_top env) envctx in
+          let tmenv = readback_ordered_env ctx (remove_top env) envctx in
           Ext
             {
               env = tmenv;
@@ -523,7 +524,8 @@ and readback_ordered_env : type mode n a b c d.
       (* We remove as many locks as there are at the end of the codomain context, since keys in the environment could have composite modalities as their domain. *)
       let (Ordered_remove_locks (envctx, plus_src)) = Termctx.ordered_remove_locks envctx in
       (* Then we remove all the corresponding keys from the environment being read back, and their domain from the context we're reading back *into*. *)
-      let (Remove_keys (env, cell)) = Env.remove_keys_plus_lock env plus_src in
+      let (Restrict_keys (env, cell, pre)) = restrict_keys_plus_lock env plus_src in
+      let () = match pre with None -> () | Some _ -> fatal (Anomaly "prekey in readback env") in
       let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt cell) in
       Key { env = readback_ordered_env ctx env envctx; cell; plus_src; plus_tgt }
   | Parametric_lock envctx -> readback_ordered_env ctx env envctx

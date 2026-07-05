@@ -66,7 +66,7 @@ let cubevar x fa : string list =
 
 (* Look up an index variable to find a name for it. *)
 let lookup : type mode a. a t -> (mode, a) index -> string list =
- fun { ctx; used = _ } (Index (x, fa, _, Plus_lock (_, comp))) ->
+ fun { ctx; used = _ } (Index (x, fa, _, Plus_with_locks (comp, _))) ->
   let rec lookup : type a modality k n an.
       an ctx -> (a, modality, n, an) insert -> (k, n) sface -> string list =
    fun ctx x fa ->
@@ -82,7 +82,7 @@ let lookup : type mode a. a t -> (mode, a) index -> string list =
 
 (* Look up an index variable together with a field, to find a name for the combination, if there is one. *)
 let lookup_field : type mode a. a t -> (mode, a) index -> string -> string list option =
- fun { ctx; used = _ } (Index (x, fa, _, Plus_lock (_, comp))) f ->
+ fun { ctx; used = _ } (Index (x, fa, _, Plus_with_locks (comp, _))) f ->
   let rec lookup : type a modality k n an.
       an ctx -> (a, modality, n, an) insert -> (k, n) sface -> string list option =
    fun ctx x fa ->

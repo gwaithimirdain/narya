@@ -138,7 +138,7 @@ module Act = struct
     | Lam (x, filter, body) ->
         let (Of fa) = deg_plus_to s (dim_binder body) ~on:"lambda" in
         let (Filter_deg (fa', filter')) = Modality.filter_deg filter fa in
-        Lam (act_variables x fa', filter', act_binder body fa)
+        Lam (act_variables x fa', filter', act_binder body fa c)
     | Struct
         (type p k pk et)
         ({ fields; ins; energy; eta } : (mode, p, k, pk, status, et) struct_args) ->
@@ -219,6 +219,11 @@ module Act = struct
    fun deg0 cell vals intrinsic plusdim env deg1 terms ->
     (* Now we want to change p to q by acting by fa : (q, p) deg.  We'll keep almost everything the same and simply compose deg with fa.  The sticky bit is to update vals, which has to become an Insmap with evaluation dimension q rather than p. *)
     let deg = comp_deg deg1 deg0 in
+    (* The modal key acts on the stored environment by prekeying it, so that values rebuilt from 'terms' (either below or by a later action) incorporate it.  The old 'vals' do not include this key, so we act on them by it separately below. *)
+    let env =
+      match cell with
+      | Some cell -> prekey_env env cell
+      | None -> env in
     let vals =
       InsmapOf.build (dom_deg deg0) intrinsic
         {
@@ -293,8 +298,8 @@ module Act = struct
                       let env4 = act_env env3 (opt_op_of_deg drr) in
                       (* env4 has dimension t + r34 *)
                       let env5 = Shift (env4, t_r34, ra) in
-                      (* env5 has dimension t.  So when we evaluate the s4-dimensional term 'tm' in this environment, we get an object of dimension t + s4, which is equal to s3.  Therefore, we can act on it by deg3 to get an s-dimensional object, which is what we want. *)
-                      Some (act_lazy_eval (lazy_eval env5 tm) deg3 cell)));
+                      (* env5 has dimension t.  So when we evaluate the s4-dimensional term 'tm' in this environment, we get an object of dimension t + s4, which is equal to s3.  Therefore, we can act on it by deg3 to get an s-dimensional object, which is what we want.  The current key cell is already incorporated in env5 by the prekey above, so we don't act by it again here. *)
+                      Some (act_lazy_eval (lazy_eval env5 tm) deg3 None)));
         } in
     { vals; intrinsic; plusdim; env; deg; terms }
 
@@ -338,16 +343,28 @@ module Act = struct
           Fillvec.map
             (fun ixs -> act_cube { act = (fun x s c -> act_normal x s c) } ixs fa cell)
             indices in
-        let constrs = Abwd.map (fun con -> act_dataconstr con fa) constrs in
+        let constrs = Abwd.map (fun con -> act_dataconstr con fa cell) constrs in
         Data { dim = dom_deg fa; tyfam; indices; constrs; discrete }
     | Codata { eta; opacity; env; termctx; fields } ->
-        Codata { eta; opacity; env = act_env env (opt_op_of_deg fa); termctx; fields }
+        let env = act_env env (opt_op_of_deg fa) in
+        let env =
+          match cell with
+          | Some cell -> prekey_env env cell
+          | None -> env in
+        Codata { eta; opacity; env; termctx; fields }
 
-  and act_dataconstr : type mode m n i.
-      (mode, n, i) dataconstr -> (m, n) deg -> (mode, m, i) dataconstr =
-   fun (Dataconstr { env; args; indices }) s ->
-    (* Hmm, how to key on an environment without changing its mode? *)
+  and act_dataconstr : type mode mu1 mu2 cod m n i.
+      (mode, n, i) dataconstr ->
+      (m, n) deg ->
+      (mode, mu1, mu2, cod) Modalcell.t option ->
+      (mode, m, i) dataconstr =
+   fun (Dataconstr { env; args; indices }) s cell ->
+    (* We key on the environment without changing its mode by prekeying it. *)
     let env = act_env env (opt_op_of_deg s) in
+    let env =
+      match cell with
+      | Some cell -> prekey_env env cell
+      | None -> env in
     Dataconstr { env; args; indices }
 
   (* act_closure and act_binder assume that the degeneracy has exactly the correct codomain.  So if it doesn't, the caller should call deg_plus_to first. *)
@@ -357,10 +374,18 @@ module Act = struct
     let (Insfact_comp (fc, ins)) = insfact_comp ins fa in
     Act_closure (act_env env (opt_op_of_deg fc), ins)
 
-  and act_binder : type mode modality dom mn kn s.
-      (mode, modality, dom, mn, s) binder -> (kn, mn) deg -> (mode, modality, dom, kn, s) binder =
-   fun (Bind { env; modality; filter; ins; body }) fa ->
+  and act_binder : type mode modality dom mn kn s mu1 mu2 cod.
+      (mode, modality, dom, mn, s) binder ->
+      (kn, mn) deg ->
+      (mode, mu1, mu2, cod) Modalcell.t option ->
+      (mode, modality, dom, kn, s) binder =
+   fun (Bind { env; modality; filter; ins; body }) fa c ->
     let (Act_closure (env, ins)) = act_closure env ins fa in
+    (* A modal key acts on a binder by prekeying its captured environment.  The variables bound by the binder itself, which will be added on top of the Prekey when it is applied, are unaffected. *)
+    let env =
+      match c with
+      | Some c -> prekey_env env c
+      | None -> env in
     Bind { env; modality; filter; ins; body }
 
   and act_normal : type mode mu1 mu2 cod a b.
@@ -505,7 +530,12 @@ module Act = struct
     (* Acting on a metavariable is similar to a constant, but now the inner degeneracy acts on the stored environment. *)
     | Meta { meta; env; ins } ->
         let (Insfact_comp_ext (deg, ins, _, _)) = insfact_comp_ext ins s in
-        Meta { meta; env = act_env env (opt_op_of_deg deg); ins }
+        let env = act_env env (opt_op_of_deg deg) in
+        let env =
+          match c with
+          | Some c -> prekey_env env c
+          | None -> env in
+        Meta { meta; env; ins }
     | UU (mode, nk) ->
         let (Of fa) = deg_plus_to s nk ~on:"universe head" in
         UU (mode, dom_deg fa)
@@ -538,7 +568,8 @@ module Act = struct
             (fun fb ->
               let (Op (fc, fd)) = deg_sface fa fb in
               let (BindFam codc) = BindCube.find cods fc in
-              BindFam (act_binder codc fd));
+              (* The codomain binder gets the un-whiskered cell, since its captured environment is at the ambient mode; only the bound variable is under the domain modality, and it is unaffected by the prekey. *)
+              BindFam (act_binder codc fd c));
         } in
     Act_pi (fa', filter', doms', cods')
 

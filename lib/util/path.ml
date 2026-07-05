@@ -280,6 +280,23 @@ module Make (Q : Quiver) = struct
         | Neq -> None)
     | _ -> None
 
+  (* Dually to factor, [cofactor nk n] checks whether the path n : b -> c is a *suffix* (target-side segment) of nk : a -> c, and if so returns the prefix k : a -> b together with evidence that n ∘ k = nk.  Implemented by peeling source-side edges off nk until the remainder equals n. *)
+  type (_, _, _, _, _) cofactor =
+    | Cofactor : ('a, 'k, 'b) t * ('a, 'k, 'b, 'n, 'c, 'nk) comp -> ('a, 'b, 'c, 'nk, 'n) cofactor
+
+  let rec cofactor : type a b c nk n. (a, nk, c) t -> (b, n, c) t -> (a, b, c, nk, n) cofactor option
+      =
+   fun nk n ->
+    let open Monad.Ops (Monad.Maybe) in
+    match compare nk n with
+    | Eq -> Some (Cofactor (Path (Zero, src nk), comp_id n))
+    | Neq -> (
+        match nk with
+        | Path (Zero, _) -> None
+        | Path (Suc (nk', g), base) ->
+            let* (Cofactor (k, ev)) = cofactor (Path (nk', base)) n in
+            return (Cofactor (suc k g, Suc (ev, g))))
+
   type (_, _, _, _, _) pushout =
     | Pushout :
         ('y, 'c, 'w) t
