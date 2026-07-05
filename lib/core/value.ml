@@ -556,7 +556,7 @@ let prekey_env : type mode mu nu cod n b.
   | Eq -> env
   | Neq -> Prekey (env, key)
 
-(* Remove the top entry from an environment.  Looks through lazy operations like Act, Prekey, Shift, Unshift, and Permute.  No Keys or Restricts are allowed to the right of the entry: for Key this is (almost) ensured by the type, since its codomain context ends with a lock, and for Restrict we trust the caller. *)
+(* Remove the top entry from an environment.  Looks through lazy operations like Act, Prekey, Shift, Unshift, and Permute.  No Keys are allowed to the right of the entry: this is (almost) ensured by the type, since its codomain context ends with a lock. *)
 let remove_top : type mode a modality k n.
     (mode, n, (a, (modality, k) dim_entry) snoc) env -> (mode, n, a) env =
  fun env ->
@@ -585,8 +585,7 @@ let remove_top : type mode a modality k n.
 (* Given an environment whose codomain context is extended by a partial context containing some locks (and dimensions), split off all the keys corresponding to those locks, compose them up on the way out, and return them along with the remainder of the environment.  This is the incremental version of the operation that lookup uses to key on a variable; the prekeys and (post)keys are composed on the way out rather than being stripped off eagerly at the beginning.  Identity-domain keys and prekeys are always accumulated into the returned cell. *)
 
 (* A prekey action is a key cell with a given mode as vertical source but existential vertical target. *)
-type _ prekey_action =
-  | Prekey_action : ('mode, 'm, 'n, 'cod) Modalcell.t -> 'mode prekey_action
+type _ prekey_action = Prekey_action : ('mode, 'm, 'n, 'cod) Modalcell.t -> 'mode prekey_action
 
 (* An optional prekey action, existentially wrapped so it can be stored. *)
 type _ prekey_action_opt =
@@ -604,9 +603,7 @@ let prekey_prewhisker : type mode a b m n r.
 
 (* Compose a prekey cell after an optional accumulated prekey action, both sharing the environment's mode as vertical source.  This is the general composition of key cells (as in act.ml's key_vcomp), using a pushout to reconcile the accumulated action's vertical target with the new prekey's vertical source. *)
 let prekey_vcomp : type mode m n cod pm pn pcod.
-    (mode, m, n, cod) Modalcell.t ->
-    (mode, pm, pn, pcod) Modalcell.t option ->
-    mode prekey_action =
+    (mode, m, n, cod) Modalcell.t -> (mode, pm, pn, pcod) Modalcell.t option -> mode prekey_action =
  fun key -> function
   | None -> Prekey_action key
   | Some pre -> (
@@ -648,7 +645,7 @@ let rec restrict_keys : type mode mu cod k b bc.
           let b_c = Tctx.comp_assoc_cancelr c_n b_cn bc_n in
           let (Restrict_keys (e, keys, pre)) = restrict_keys env (Plus_with_locks (b_c, llc)) in
           (* A key changes the mode: any prekey action accumulated inside it acts at the inner mode, so to carry it outward we prewhisker it by the key's vertical source, transporting its source to the outer mode. *)
-          let (Prekey_action_opt pre) = prekey_prewhisker pre (Modalcell.vsrc key) in
+          let (Prekey_action_opt pre) = prekey_prewhisker pre (Modalcell.vtgt key) in
           let (Comp nus) = Modality.comp (Modalcell.vtgt key) in
           Restrict_keys (e, Modalcell.hcomp m_n nus keys key, pre))
   (* A prekey doesn't correspond to any locks in the codomain context, and its cell may have a different vertical target than the composite keys of the actual variable's locks (which is fixed by the codomain-context extension), so we can't fold it into that cell.  Instead we accumulate it into the separate prekey-action cell, which shares the environment's (unchanging) mode, composing it after any inner prekeys with the general key-cell composition. *)
