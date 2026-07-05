@@ -38,7 +38,18 @@ val generate : 'a Mode.t -> 'b Mode.t -> string -> 'e D.t -> ('a, 'b) gen_wrappe
 include module type of Path.Make (Gen)
 module Map : MAP3_MAKER with module Key := Path.Make(Gen)
 
-val locker : 'a Mode.t -> ('a, 'a) wrapped
+module type Theory = sig
+  val sharp : ('a, 'm, 'b) t -> bool
+  val pellucid : ('a, 'm, 'b) t -> bool
+  val transparent : ('a, 'm, 'b) t -> bool
+  val translucent : ('a, 'm, 'b) t -> bool
+end
+
+val choose_theory : (module Theory) -> unit
+val sharp : ('a, 'm, 'b) t -> bool
+val pellucid : ('a, 'm, 'b) t -> bool
+val transparent : ('a, 'm, 'b) t -> bool
+val translucent : ('a, 'm, 'b) t -> bool
 
 module Cube : (F : Signatures.Fam3) -> sig
   module Parent : sig

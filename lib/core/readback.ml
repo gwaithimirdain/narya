@@ -65,7 +65,7 @@ and readback_at : type mode a z.
   let vty = view_type ty "readback_at" in
   match (vty, view) with
   | ( Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs),
-      Lam ((Variables (m, mn, xs) as x), filter2, body) ) -> (
+      Lam (x, filter2, body) ) -> (
       let Eq = eq_of_ins_zero ins in
       (* The instantiation of the type, and the dimension of the binder, are both the *outer* (unfiltered) dimension of the pi-type; the variable cube and the domains live at the filtered dimension. *)
       let n = BindCube.dim cods in
@@ -84,6 +84,7 @@ and readback_at : type mode a z.
                (`Internal, "reading back at pi 3", modality, Modality.filter_modality filter2))
       | Eq, Eq, Eq ->
           let Eq = Modality.filter_uniq filter filter2 in
+          let (Variables (m, mn, xs) as x) = View.fill_hints doms x in
           let args, newnfs = dom_vars ctx modality doms in
           let (Plus af) = N.plus (NICubeOf.out N.zero xs) in
           let newctx = Ctx.vis ctx (Modality.filter_idempotent filter) m mn xs newnfs af in
@@ -94,6 +95,7 @@ and readback_at : type mode a z.
   | Canonical (_, Pi { x = name; filter; doms; cods }, ins, tyargs), tm when eta ->
       let modality = Modality.filter_modality filter in
       let Eq = eq_of_ins_zero ins in
+      let name = View.fill_hints doms name in
       let newargs, newnfs = dom_vars ctx modality doms in
       let (Any_ctx newctx) = Ctx.variables_vis ctx (Modality.filter_idempotent filter) name newnfs in
       let output = tyof_app cods tyargs filter newargs in
@@ -108,7 +110,8 @@ and readback_at : type mode a z.
         (( _,
            Codata
              (type c a et)
-             ({ eta; opacity; fields; env = _; termctx = _ } : (mode, m, n, c, a, et) codata_args),
+             ({ eta; opacity; fields; env = _; termctx = _; hints = _ } :
+               (mode, m, n, c, a, et) codata_args),
            ins,
            _ ) :
           mode head
@@ -295,7 +298,9 @@ and readback_head : type mode c z.
       (* The source of the key is supposed to be the modal annotation of the variable, while its target is supposed to be the composite of all the locks in the context to its right.  So we remove its target from the context. *)
       let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt key) in
       (* Now we look for the level variable in the remaining context. *)
-      let (Lookup { result; value = _; modality; filter; insert; plus = Plus_with_locks (c, _) }) =
+      let (Lookup
+             { result; value = _; dirt = _; modality; filter; insert; plus = Plus_with_locks (c, _) })
+          =
         Ctx.find_level ctx level <|> No_such_level (PLevel level) in
       (* We check that (1) the modality annotating that variable is the source of the key, and (2) there are no more locks remaining to its right in the context. *)
       match (Modality.compare (Modalcell.vsrc key) modality, result, c) with
@@ -334,6 +339,7 @@ and readback_head : type mode c z.
   | Pi (type dom modality k n) ({ x; filter; doms; cods } : (dom, modality, mode, k, n) pi_args) ->
       let n = BindCube.dim cods in
       let modality = Modality.filter_modality filter in
+      let x = View.fill_hints doms x in
       let (Locked (plus, lctx)) = Ctx.lock ctx modality in
       let args, newnfs = dom_vars ctx modality doms in
       let build : type l. (l, n) sface -> (l, dom * modality * mode * c) CodFam.t =
@@ -583,10 +589,15 @@ let readback_entry : type dom modality mode a b f n.
       let bindings = readback_bindings lctx bindings in
       Readback_entry
         (Vis { dim; plusdim; plus_lock; vars; bindings; hasfields; fields; fplus; filter })
-  | Invis { filter; bindings } ->
+  | Invis { filter; bindings; _ } ->
       let modality = Modality.filter_modality filter in
+      (* Invisible variables are anonymous, but we can still record display hints from their types, since after readback the types are terms and the hints can no longer be computed on demand.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints. *)
+      let hints =
+        Reporter.try_with ~fatal:(fun _ -> no_hints) @@ fun () ->
+        View.hints_of_ty (Binding.value (CubeOf.find_top bindings)).ty in
       let (Locked (plus_lock, lctx)) = Ctx.lock ctx modality in
-      Readback_entry (Invis { plus_lock; filter; bindings = readback_bindings lctx bindings })
+      Readback_entry
+        (Invis { plus_lock; filter; bindings = readback_bindings lctx bindings; hints })
 
 let rec readback_ordered_ctx : type mode a b.
     (mode, a, b) Ctx.Ordered.t -> (mode, a, b) ordered_termctx = function

@@ -42,8 +42,23 @@ module Functorcell
   let to_string : type a m n b. (a, m, n, b) Modalcell.t -> string = fun _ -> "id"
 end
 
+(* An arbitrary functor is transparent and translucent, but not pellucid: it can be used as a window modality only for datatypes without recursive constructors.  Identity modalities are always pellucid. *)
+module Functormodality : Modality.Theory = struct
+  let sharp _ = true
+
+  let pellucid : type a m b. (a, m, b) Modality.t -> bool =
+   fun m ->
+    match Modality.compare_id m with
+    | Eq -> true
+    | Neq -> false
+
+  let transparent _ = true
+  let translucent _ = true
+end
+
 let install () =
   let module DomMode = Mode.Generate (DomGen) in
   let module CodMode = Mode.Generate (CodGen) in
   let module Functor = Modality.Generate (FunctorGen (DomMode) (CodMode)) in
-  Modalcell.choose_theory (module Functorcell (DomMode) (CodMode) (Functor) : Modalcell.Theory)
+  Modalcell.choose_theory (module Functorcell (DomMode) (CodMode) (Functor) : Modalcell.Theory);
+  Modality.choose_theory (module Functormodality : Modality.Theory)

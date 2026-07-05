@@ -125,6 +125,8 @@ module Command = struct
             Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
           | `Type_boundaries of
             Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
+          | (* Each variable name is paired with the whitespace of the comma preceding it (empty for the first one) and the whitespace following it. *)
+            `Variables of Whitespace.t list * (Whitespace.t list * string * Whitespace.t list) list
           ];
       }
     | Option of { wsoption : Whitespace.t list; wscoloneq : Whitespace.t list; what : Empty.t }
@@ -625,6 +627,20 @@ module Parse = struct
     | Ident [ "toggle" ] -> Some `Toggle
     | _ -> None
 
+  (* A variable name in "display variables" is like "variable" above, except that underscores are not allowed. *)
+  let display_variable =
+    let* loc, (xs, w) =
+      located
+        (step "" (fun state _ (tok, w) ->
+             match tok with
+             | Ident xs -> Some ((Some xs, w), state)
+             | Underscore -> Some ((None, w), state)
+             | _ -> None)) in
+    match xs with
+    | Some [ x ] when Lexer.valid_var x -> return (x, w)
+    | Some xs -> fatal ~loc:(Range.convert loc) (Invalid_variable xs)
+    | None -> fatal ~loc:(Range.convert loc) (Invalid_variable [ "_" ])
+
   let display =
     let* wsdisplay = token Display in
     let* what, wswhat =
@@ -633,6 +649,7 @@ module Parse = struct
           | Ident [ "chars" ] -> Some ((`Chars, ws), state)
           | Ident [ "function" ] -> Some ((`Function, ws), state)
           | Ident [ "type" ] -> Some ((`Type, ws), state)
+          | Ident [ "variables" ] -> Some ((`Variables, ws), state)
           | _ -> None) in
     match what with
     | `Chars ->
@@ -659,6 +676,15 @@ module Parse = struct
             return
               ( Display { wsdisplay; wscoloneq; what = `Type_boundaries (wswhat, wsb, show, ws) },
                 state ))
+    | `Variables ->
+        let* wscoloneq = token Coloneq in
+        let* x, wsx = display_variable in
+        let* xs =
+          zero_or_more
+            (let* wscomma = token (Op ",") in
+             let* x, wsx = display_variable in
+             return (wscomma, x, wsx)) in
+        return (Display { wsdisplay; wscoloneq; what = `Variables (wswhat, ([], x, wsx) :: xs) })
 
   let implicit_of_token : Token.t -> [ `Implicit | `Explicit ] option = function
     | Ident [ "implicit" ] -> Some `Implicit
@@ -1044,18 +1070,21 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       let (Found_hole { instant; parametric; _ } as found) = Global.find_hole data.number in
       Global.rewind_command ~parametric ~holes_allowed:(Ok ()) instant @@ fun () ->
       let (Global.Found_hole
-             { meta; instant = _; termctx; ty; status; vars; li; ri; parametric = _ }) =
+             { meta; instant = _; termctx; ty; status; vars; li; ri; parametric = _; beingdefined })
+          =
         found in
       let (Wrap tm) = data.tm in
       let ptm = process vars tm in
       (* We set the hole location offset to the start of the *term*, so that ProofGeneral can create hole overlays in the right places when solving a hole and creating new holes. *)
       let tmloc = ptm.loc <|> Anomaly "missing location in solve" in
       let offset = (fst (split tmloc)).offset in
-      (* Now we typecheck the supplied term. *)
+      (* Now we typecheck the supplied term, in an occurrence-analysis scope with the set of constants that were being defined when the hole was created, and record the resulting recursion verdict on the metavariable so that it can be chased by the window checks of datatypes whose constructor types contained this hole. *)
       let ctx = Norm.eval_ctx termctx in
       let ety = Norm.eval_term (Ctx.env ctx) ty in
-      let ctm = Check.check status ctx ptm ety in
-      Global.set_meta meta ctm;
+      let ctm, recursion =
+        Positivity.run_beingdefined beingdefined @@ fun () ->
+        Positivity.scope @@ fun () -> Check.check status ctx ptm ety in
+      Global.set_meta meta ~recursion ctm;
       let buf = Buffer.create 20 in
       PPrint.ToBuffer.compact buf (pp_complete_term data.tm `None);
       ( Reporter.try_with ~fatal:(fun _ ->
@@ -1075,7 +1104,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       let hole li ri = locate_opt None (Hole { li; ri; num = ref (-1); ws = []; contents = None }) in
       let ehole = hole No.Interval.entire No.Interval.entire in
       let ctx = Norm.eval_ctx termctx in
-      let _, names = Names.uniquify_vars vars in
+      let _, names = Names.uniquify_vars (Term.hole_vars termctx vars) in
       let names = Names.of_uniquified_vars names in
       let term =
         match data.tms with
@@ -1200,14 +1229,24 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
             let rec constr_args : type a p ap n k.
                 n Names.t ->
                 k D.t ->
+                Variables.hints list ->
                 ?acc:unparser Bwd.t ->
                 (_, a, p, ap) Term.Telescope.t ->
                 unparser Bwd.t * Names.wrapped =
-             fun names dim ?(acc = Emp) -> function
+             fun names dim hints ?(acc = Emp) -> function
                | Emp -> (acc, Wrap names)
                | Ext (x, _, args) ->
-                   let x, names = Names.add_cube dim names x in
-                   constr_args names dim
+                   (* If the argument is anonymous, use any display hints from its type. *)
+                   let hint, hints =
+                     match hints with
+                     | [] -> (Variables.no_hints, [])
+                     | h :: hs -> (h, hs) in
+                   let name =
+                     match x with
+                     | Some x -> `Named x
+                     | None -> `Anon hint in
+                   let x, names = Names.add_cube dim names name in
+                   constr_args names dim hints
                      ~acc:(Snoc (acc, { unparse = (fun _ _ -> unparse_var x) }))
                      args in
             let rec go = function
@@ -1226,10 +1265,13 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                             | Zero -> return ()
                             | Pos _ ->
                                 NameBranches.stateless (Branches.lift (HigherBranch.put true)) in
-                          let* c, Dataconstr { args; _ } =
+                          let* c, Dataconstr { env; args; _ } =
                             NameBranches.stateless (HigherBranch.return (Bwd.to_list constrs)) in
                           let* (Wrap names) = NameBranches.get in
-                          let cargs, newnames = constr_args names dim args in
+                          let arg_hints =
+                            Reporter.try_with ~fatal:(fun _ -> Emp) @@ fun () ->
+                            Domvars.constr_arg_hints ctx env args in
+                          let cargs, newnames = constr_args names dim (Bwd.to_list arg_hints) args in
                           let* () = NameBranches.put newnames in
                           let first =
                             Term
@@ -1280,7 +1322,11 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
           emit (Display_set ("function boundaries", Display.to_string (fb :> Display.values)))
       | `Type_boundaries (_, _, tb, _) ->
           let tb = Display.modify_type_boundaries tb in
-          emit (Display_set ("type boundaries", Display.to_string (tb :> Display.values))));
+          emit (Display_set ("type boundaries", Display.to_string (tb :> Display.values)))
+      | `Variables (_, xs) ->
+          let variables = List.map (fun (_, x, _) -> x) xs in
+          Display.modify (fun s -> { s with variables });
+          emit (Display_set ("variables", String.concat "," variables)));
       (None, [])
   | Option _ -> .
   | Undo { count; _ } ->

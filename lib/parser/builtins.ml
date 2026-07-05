@@ -1499,9 +1499,35 @@ let process_ix : type a. a Matchscope.t -> int -> a synth located =
   | Some k -> unlocated (Raw.Var (k, None))
   | None -> fatal (Anomaly "invalid parse-level in processing match")
 
-let process_obs_or_ix : type a. a Matchscope.t -> (wrapped_parse, int) Either.t -> a synth located =
+(* A discriminee of a match, along with an optional window modality with which to lock the discriminee.  A window modality is written by ascribing the discriminee with a modality and a placeholder type, as in "match (x :m| _) [...". *)
+type discriminee = { tm : wrapped_parse; window : string located list located option }
+
+let get_discriminee_window (w : wrapped_parse) : discriminee =
+  let (Wrap tm) = w in
+  match tm.value with
+  | Notn ((AscVar, _), n) -> (
+      match args n with
+      | [
+       Token (LParen, _);
+       Term x;
+       Token (Colon, _);
+       Term modality;
+       Token (Op "|", _);
+       Term { value = Placeholder _; _ };
+       Token (RParen, _);
+      ] -> { tm = Wrap x; window = Some (get_modality fst modality) }
+      | _ -> { tm = w; window = None })
+  | _ -> { tm = w; window = None }
+
+let discriminee_window : (discriminee, int) Either.t -> string located list located option =
+  function
+  | Left { window; _ } -> window
+  | Right _ -> None
+
+let process_obs_or_ix : type a. a Matchscope.t -> (discriminee, int) Either.t -> a synth located =
  fun ctx -> function
-  | Left (Wrap x) -> process_synth (Matchscope.names ctx) x "discriminee of match"
+  | Left { tm = Wrap x; window = _ } ->
+      process_synth (Matchscope.names ctx) x "discriminee of match"
   | Right i -> (
       match Matchscope.lookup_num i ctx with
       | Some k -> unlocated (Raw.Var (k, None))
@@ -1510,7 +1536,7 @@ let process_obs_or_ix : type a. a Matchscope.t -> (wrapped_parse, int) Either.t 
 (* Given a scope of 'a variables, a vector of 'n not-yet-processed discriminees or previous match variables, and a list of branches with 'n patterns each, compile them into a nested match.  The scope given as an argument to this function is used only for the discriminees; it is the original scope extended by unnamed variables (since the discriminees can't actually depend on the pattern variables).  The scopes used for the branches, which also include pattern variables, are stored in the branch data structures. *)
 let rec process_branches : type a n.
     a Matchscope.t ->
-    ((wrapped_parse, int) Either.t, n) Vec.t ->
+    ((discriminee, int) Either.t, n) Vec.t ->
     int Bwd.t ->
     (a, n) branch list ->
     Asai.Range.t option ->
@@ -1520,10 +1546,10 @@ let rec process_branches : type a n.
   match branches with
   (* An empty match, having no branches, compiles to a refutation that will check by looking for any discriminee with an empty type.  This can only happen as the top-level call, so 'seen' should be empty and we really can just take all the discriminees. *)
   | [] -> (
-      let tms = Vec.to_list_map (process_obs_or_ix xctx) xs in
+      let tms = Vec.to_list_map (fun x -> (process_obs_or_ix xctx x, discriminee_window x)) xs in
       match (sort, xs) with
       | `Implicit, _ -> (locate (Refute (tms, `Implicit)) loc, [])
-      | `Explicit (Wrap motive), [ Left (Wrap tm) ] -> (
+      | `Explicit (Wrap motive), [ Left { tm = Wrap tm; window } ] -> (
           let ctx = Matchscope.names xctx in
           let sort = `Explicit (process ctx motive) in
           match process ctx tm with
@@ -1533,6 +1559,7 @@ let rec process_branches : type a n.
                      (Match
                         {
                           tm = locate tm loc;
+                          window;
                           sort;
                           branches = Emp;
                           refutables = None;
@@ -1541,7 +1568,7 @@ let rec process_branches : type a n.
                   loc,
                 [] )
           | _ -> fatal (Nonsynthesizing "motive of explicit match"))
-      | `Nondep i, [ Left (Wrap tm) ] -> (
+      | `Nondep i, [ Left { tm = Wrap tm; window } ] -> (
           let ctx = Matchscope.names xctx in
           let sort = `Nondep i in
           match process ctx tm with
@@ -1551,6 +1578,7 @@ let rec process_branches : type a n.
                      (Match
                         {
                           tm = locate tm loc;
+                          window;
                           sort;
                           branches = Emp;
                           refutables = None;
@@ -1565,7 +1593,7 @@ let rec process_branches : type a n.
   (* If that one remaining branch is a refutation, we refute all the "seen" terms or variables. *)
   | [ (_, [], _, Wrap { value = Notn ((Dot, _), _); loc }) ] ->
       let [] = xs in
-      let tms = Bwd_extra.to_list_map (process_ix xctx) seen in
+      let tms = Bwd_extra.to_list_map (fun i -> (process_ix xctx i, None)) seen in
       (locate (Refute (tms, `Explicit)) loc, [])
   (* Otherwise, the result is just the body of that branch. *)
   | [ (bodyctx, [], cube, Wrap body) ] ->
@@ -1591,8 +1619,14 @@ let rec process_branches : type a n.
               branches in
           let seen = Snoc (seen, i) in
           process_branches xctx xs seen branches loc sort
-      | Left (Wrap tm) ->
+      | Left { tm = Wrap tm; window } ->
           (* Otherwise, we have to let-bind it to the discriminee term, adding it as a new variable to the scope. *)
+          (match window with
+          | None -> ()
+          | Some _ ->
+              fatal ?loc:tm.loc
+                (Parse_error
+                   "window modality requires the discriminee to be matched against a constructor pattern"));
           let branches =
             List.map
               (function
@@ -1666,6 +1700,7 @@ let rec process_branches : type a n.
                 Hlist.Hlist.cons (x, Raw.Branch (locate names loc, cube, rest)) [ bs ])
           [ cbranches ] (Cons (Cons Nil)) in
       let tm = process_obs_or_ix xctx x in
+      let window = discriminee_window x in
       let refutables =
         Some
           {
@@ -1680,17 +1715,17 @@ let rec process_branches : type a n.
         | `Implicit -> `Implicit
         | `Nondep i -> `Nondep i
         | `Explicit (Wrap motive) -> `Explicit (process (Matchscope.names xctx) motive) in
-      ( locate (Synth (Match { tm; sort; branches; refutables; highers = [] })) loc,
+      ( locate (Synth (Match { tm; window; sort; branches; refutables; highers = [] })) loc,
         List.flatten (Bwd.to_list highers) )
 
 let rec get_discriminees :
-    observation list -> (wrapped_parse, int) Either.t Vec.wrapped * observation list =
+    observation list -> (discriminee, int) Either.t Vec.wrapped * observation list =
  fun obs ->
   match obs with
   | Term tm :: Token (Op ",", _) :: obs ->
       let Wrap xs, obs = get_discriminees obs in
-      (Wrap (Left (Wrap tm) :: xs), obs)
-  | Term tm :: obs -> (Wrap [ Left (Wrap tm) ], obs)
+      (Wrap (Left (get_discriminee_window (Wrap tm)) :: xs), obs)
+  | Term tm :: obs -> (Wrap [ Left (get_discriminee_window (Wrap tm)) ], obs)
   | _ -> invalid "match"
 
 let rec get_patterns : type n.
@@ -1920,7 +1955,10 @@ let () =
                     let (Extctx (mn, _, _, _)) = get_vars (Matchscope.names ctx) vars in
                     `Nondep ({ value = N.to_int (N.plus_right mn); loc = vars.loc } : int located)
                 | _ -> `Explicit (Wrap motive) in
-              let mtch, highers = process_branches ctx [ Left (Wrap tm) ] Emp branches loc sort in
+              let mtch, highers =
+                process_branches ctx
+                  [ Left (get_discriminee_window (Wrap tm)) ]
+                  Emp branches loc sort in
               match (mtch.value, highers) with
               | Synth (Match data), _ -> locate_opt mtch.loc (Synth (Match { data with highers }))
               | _, [] -> mtch
@@ -2095,6 +2133,153 @@ let rec codata_fields bar_ok =
              (terms [ (Op "|", Lazy (lazy (codata_fields false))); (RBracket, Done_closed codata) ]));
     }
 
+(* ********************
+   Attributes
+   ******************** *)
+
+(* Several "case" notations (sig, codata, data) admit attributes written #(...) after the keyword.  Each attribute group contains either a multiword string attribute like #(transparent labeled), or a valued attribute like #(variables ≔ x,y,z).  This tree combinator allows any number of attribute groups before continuing with the given branch. *)
+let rec attributes rest () =
+  let r = rest () in
+  {
+    r with
+    ops =
+      TokMap.add (Op "#")
+        ( op LParen
+            (terms
+               [
+                 (RParen, Lazy (lazy (Inner (attributes rest ()))));
+                 (Coloneq, Lazy (lazy (attribute_values rest ())));
+                 (Pluseq, Lazy (lazy (attribute_values rest ())));
+               ]),
+          `Noss )
+        r.ops;
+  }
+
+and attribute_values rest () =
+  terms
+    [
+      (Op ",", Lazy (lazy (attribute_values rest ())));
+      (RParen, Lazy (lazy (Inner (attributes rest ()))));
+    ]
+
+(* Extract the attribute groups from the beginning of an observation list, as a list of multiword names with optional value lists.  A valued attribute records whether its values were given with ≔ (replacing any global defaults, [`Replace]) or with ⩲ (prepended to the global defaults, [`Prepend]). *)
+let rec get_attributes :
+    observation list ->
+    (string list * (wrapped_parse list * [ `Replace | `Prepend ]) option * Asai.Range.t option) list
+    * observation list =
+ fun obs ->
+  match obs with
+  | Token (Op "#", _) :: Token (LParen, _) :: Term attr :: rest -> (
+      let strs = fst (Postprocess.strings_of_term attr.value) in
+      match rest with
+      | Token (RParen, _) :: rest ->
+          let attrs, rest = get_attributes rest in
+          ((strs, None, attr.loc) :: attrs, rest)
+      | Token (((Coloneq | Pluseq) as sep), _) :: rest ->
+          let mode = if sep = Pluseq then `Prepend else `Replace in
+          let vals, rest = get_attribute_values rest in
+          let attrs, rest = get_attributes rest in
+          ((strs, Some (vals, mode), attr.loc) :: attrs, rest)
+      | _ -> invalid "attribute")
+  | _ -> ([], obs)
+
+and get_attribute_values : observation list -> wrapped_parse list * observation list =
+ fun obs ->
+  match obs with
+  | Term v :: Token (Op ",", _) :: rest ->
+      let vals, rest = get_attribute_values rest in
+      (Wrap v :: vals, rest)
+  | Term v :: Token (RParen, _) :: rest -> ([ Wrap v ], rest)
+  | _ -> invalid "attribute"
+
+(* Require an attribute value to be a valid local variable name. *)
+let var_of_attribute_value : wrapped_parse -> string =
+ fun (Wrap x) ->
+  match x.value with
+  | Ident ([ s ], _) when Lexer.valid_var s -> s
+  | Ident (xs, _) -> fatal ?loc:x.loc (Invalid_variable xs)
+  | Placeholder _ -> fatal ?loc:x.loc (Invalid_variable [ "_" ])
+  | _ -> fatal ?loc:x.loc Unrecognized_attribute
+
+(* Construct the variable-name hints specified by a "variables" attribute value list and its mode (≔ replaces the global defaults, ⩲ prepends to them). *)
+let hints_of_attribute (vals : wrapped_parse list) (mode : [ `Replace | `Prepend ]) :
+    Variables.hints =
+  { names = List.map var_of_attribute_value vals; fallback = mode = `Prepend }
+
+(* Interpret the attributes of a datatype or codatatype declaration, which currently can only be "variables", giving a list of variable-name hints. *)
+let process_data_attributes :
+    (string list * (wrapped_parse list * [ `Replace | `Prepend ]) option * Asai.Range.t option) list ->
+    Variables.hints =
+ fun attrs ->
+  List.fold_left
+    (fun _hints (strs, vals, loc) ->
+      match (strs, vals) with
+      | [ "variables" ], Some (vals, mode) -> hints_of_attribute vals mode
+      | _ -> fatal ?loc Unrecognized_attribute)
+    Variables.no_hints attrs
+
+(* Interpret the attributes of a record type declaration: opacity attributes and "variables". *)
+let process_record_attributes :
+    (string list * (wrapped_parse list * [ `Replace | `Prepend ]) option * Asai.Range.t option) list ->
+    opacity * Variables.hints =
+ fun attrs ->
+  List.fold_left
+    (fun (opacity, hints) (strs, vals, loc) ->
+      match (strs, vals) with
+      | [ "variables" ], Some (vals, mode) -> (opacity, hints_of_attribute vals mode)
+      | [ "opaque" ], None -> (`Opaque, hints)
+      | [ "transparent" ], None -> (`Transparent `Labeled, hints)
+      | [ "translucent" ], None -> (`Translucent `Labeled, hints)
+      | [ "transparent"; "labeled" ], None -> (`Transparent `Labeled, hints)
+      | [ "transparent"; "positional" ], None -> (`Transparent `Unlabeled, hints)
+      | [ "translucent"; "labeled" ], None -> (`Translucent `Labeled, hints)
+      | [ "translucent"; "positional" ], None -> (`Translucent `Unlabeled, hints)
+      | _ -> fatal ?loc Unrecognized_attribute)
+    (`Opaque, Variables.no_hints) attrs
+
+(* Print the attribute groups at the beginning of an observation list, appended to the given document with the given whitespace pending before them.  Returns the extended document, the pending whitespace after it, and the remaining observations. *)
+let rec pp_attributes (accum : document) (prews : Whitespace.t list) (obs : observation list) :
+    document * Whitespace.t list * observation list =
+  match obs with
+  | Token (Op "#", (wshash, _)) :: Token (LParen, (wslattr, _)) :: Term attr :: rest -> (
+      let pattr, wattr = pp_term attr in
+      let start =
+        Token.pp (Op "#") ^^ pp_ws `None wshash ^^ Token.pp LParen ^^ pp_ws `None wslattr ^^ pattr
+      in
+      match rest with
+      | Token (RParen, (wsrattr, _)) :: rest ->
+          pp_attributes
+            (accum ^^ group (pp_ws `Break prews ^^ start ^^ pp_ws `None wattr ^^ Token.pp RParen))
+            wsrattr rest
+      | Token (((Coloneq | Pluseq) as sep), (wssep, _)) :: rest ->
+          let vals, wsrattr, rest = pp_attribute_values empty rest in
+          pp_attributes
+            (accum
+            ^^ group
+                 (pp_ws `Break prews
+                 ^^ start
+                 ^^ pp_ws `Nobreak wattr
+                 ^^ Token.pp sep
+                 ^^ pp_ws `Nobreak wssep
+                 ^^ vals
+                 ^^ Token.pp RParen))
+            wsrattr rest
+      | _ -> invalid "attribute")
+  | _ -> (accum, prews, obs)
+
+and pp_attribute_values (accum : document) (obs : observation list) :
+    document * Whitespace.t list * observation list =
+  match obs with
+  | Term v :: Token (Op ",", (wscomma, _)) :: rest ->
+      let pv, wv = pp_term v in
+      pp_attribute_values
+        (accum ^^ pv ^^ pp_ws `None wv ^^ Token.pp (Op ",") ^^ pp_ws `Nobreak wscomma)
+        rest
+  | Term v :: Token (RParen, (wsrparen, _)) :: rest ->
+      let pv, wv = pp_term v in
+      (accum ^^ pv ^^ pp_ws `None wv, wsrparen, rest)
+  | _ -> invalid "attribute"
+
 let process_codata_field : type n lt ls rt rs lt' ls' rt' rs' et.
     (potential, et) eta ->
     (Field.wrapped, n Raw.codatafield) Abwd.t ->
@@ -2127,17 +2312,18 @@ let process_codata_field : type n lt ls rt rs lt' ls' rt' rs' et.
   | _ -> fatal ?loc:tm.loc (Parse_error "invalid codata field")
 
 let rec process_codata : type n.
+    Variables.hints ->
     (Field.wrapped, n Raw.codatafield) Abwd.t ->
     (string option, n) Bwv.t ->
     observation list ->
     Asai.Range.t option ->
     n check located =
- fun flds ctx obs loc ->
+ fun hints flds ctx obs loc ->
   match obs with
-  | [ Token (RBracket, _) ] -> { value = Raw.Codata flds; loc }
+  | [ Token (RBracket, _) ] -> { value = Raw.Codata (flds, hints); loc }
   | Token (Op "|", _) :: Term tm :: Token (Colon, _) :: Term ty :: obs ->
       (* MODALTODO: Modal fields *)
-      process_codata (Snoc (flds, process_codata_field Noeta flds ctx tm ty)) ctx obs loc
+      process_codata hints (Snoc (flds, process_codata_field Noeta flds ctx tm ty)) ctx obs loc
   | _ -> invalid "codata 1"
 
 let rec pp_codata_fields first prews accum obs : document * Whitespace.t list =
@@ -2172,36 +2358,49 @@ let rec pp_codata_fields first prews accum obs : document * Whitespace.t list =
   | _ -> invalid "codata 2"
 
 let pp_codata _triv = function
-  (* The empty codatatype fits all on one line *)
-  | [
-      Token (Codata, (wscodata, _)); Token (LBracket, (wslbrack, _)); Token (RBracket, (wsrbrack, _));
-    ] ->
-      ( Token.pp Codata
-        ^^ pp_ws `Nobreak wscodata
-        ^^ Token.pp LBracket
-        ^^ pp_ws `Nobreak wslbrack
-        ^^ Token.pp RBracket,
-        empty,
-        wsrbrack )
-  | Token (Codata, (wscodata, _)) :: Token (LBracket, (wslbrack, _)) :: obs ->
-      let fields, ws = pp_codata_fields true None empty (must_start_with (Op "|") obs) in
-      ( Token.pp Codata ^^ pp_ws `Nobreak wscodata ^^ Token.pp LBracket,
-        pp_ws `Break wslbrack ^^ fields,
-        ws )
+  | Token (Codata, (wscodata, _)) :: obs -> (
+      let withattr, wsattr, obs = pp_attributes (Token.pp Codata) wscodata obs in
+      match obs with
+      (* The empty codatatype fits all on one line *)
+      | [ Token (LBracket, (wslbrack, _)); Token (RBracket, (wsrbrack, _)) ] ->
+          ( withattr
+            ^^ pp_ws `Nobreak wsattr
+            ^^ Token.pp LBracket
+            ^^ pp_ws `Nobreak wslbrack
+            ^^ Token.pp RBracket,
+            empty,
+            wsrbrack )
+      | Token (LBracket, (wslbrack, _)) :: obs ->
+          let fields, ws = pp_codata_fields true None empty (must_start_with (Op "|") obs) in
+          ( withattr ^^ pp_ws `Nobreak wsattr ^^ Token.pp LBracket,
+            pp_ws `Break wslbrack ^^ fields,
+            ws )
+      | _ -> invalid "codata 3")
   | _ -> invalid "codata 3"
 
 let () =
   make codata
     {
       name = "codata";
-      tree = Closed_entry (eop Codata (op LBracket (codata_fields true)));
+      tree =
+        Closed_entry
+          (eop Codata
+             (Inner
+                (attributes
+                   (fun () -> { empty_branch with ops = oflist [ (LBracket, codata_fields true) ] })
+                   ())));
       processor =
         (fun ctx obs loc ->
           match obs with
-          | [ Token (Codata, _); Token (LBracket, _); Token (RBracket, _) ] ->
-              { value = Raw.Codata Emp; loc }
-          | Token (Codata, _) :: Token (LBracket, _) :: obs ->
-              process_codata Emp ctx (must_start_with (Op "|") obs) loc
+          | Token (Codata, _) :: obs -> (
+              let attrs, obs = get_attributes obs in
+              let hints = process_data_attributes attrs in
+              match obs with
+              | [ Token (LBracket, _); Token (RBracket, _) ] ->
+                  { value = Raw.Codata (Emp, hints); loc }
+              | Token (LBracket, _) :: obs ->
+                  process_codata hints Emp ctx (must_start_with (Op "|") obs) loc
+              | _ -> invalid "codata 4")
           | _ -> invalid "codata 4");
       pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "codata"));
       print_term = None;
@@ -2251,42 +2450,27 @@ let rec process_tel : type a.
   | _ -> invalid "record"
 
 let rec process_self_record : type n.
+    Variables.hints ->
     (Field.wrapped, n Raw.codatafield) Abwd.t ->
     (string option, n) Bwv.t ->
     observation list ->
     Asai.Range.t option ->
     n check located =
- fun flds ctx obs loc ->
+ fun hints flds ctx obs loc ->
   match obs with
-  | [ Token (RParen, _) ] -> { value = Raw.SelfRecord flds; loc }
-  | Token (Op ",", _) :: obs -> process_self_record flds ctx obs loc
+  | [ Token (RParen, _) ] -> { value = Raw.SelfRecord (flds, hints); loc }
+  | Token (Op ",", _) :: obs -> process_self_record hints flds ctx obs loc
   | Term tm :: Token (Colon, _) :: Term ty :: obs ->
       (* MODALTODO: Other way of specifying modal records *)
-      process_self_record (Snoc (flds, process_codata_field Eta flds ctx tm ty)) ctx obs loc
+      process_self_record hints (Snoc (flds, process_codata_field Eta flds ctx tm ty)) ctx obs loc
   | _ -> invalid "self record"
 
 let process_record ctx obs loc =
-  let opacity, obs =
+  let attrs, obs =
     match obs with
-    | Token (Sig, _)
-      :: Token (Op "#", _)
-      :: Token (LParen, _)
-      :: Term attr
-      :: Token (RParen, _)
-      :: obs ->
-        let opacity =
-          match fst (Postprocess.strings_of_term attr.value) with
-          | [ "opaque" ] -> `Opaque
-          | [ "transparent" ] -> `Transparent `Labeled
-          | [ "translucent" ] -> `Translucent `Labeled
-          | [ "transparent"; "labeled" ] -> `Transparent `Labeled
-          | [ "transparent"; "positional" ] -> `Transparent `Unlabeled
-          | [ "translucent"; "labeled" ] -> `Translucent `Labeled
-          | [ "translucent"; "positional" ] -> `Translucent `Unlabeled
-          | _ -> fatal ?loc:attr.loc Unrecognized_attribute in
-        (opacity, obs)
-    | Token (Sig, _) :: obs -> (`Opaque, obs)
+    | Token (Sig, _) :: obs -> get_attributes obs
     | _ -> invalid "record" in
+  let opacity, hints = process_record_attributes attrs in
   match obs with
   | Term x :: Token (Mapsto, _) :: Token (LParen, _) :: obs ->
       with_loc x.loc @@ fun () ->
@@ -2297,13 +2481,13 @@ let process_record ctx obs loc =
       let (Bplus ac) = Fwn.bplus (Vec.length vars) in
       let ctx = Bwv.append ac ctx vars in
       let (Any_tel tel) = process_tel ctx StringSet.empty obs in
-      Range.locate (Raw.Record (locate_opt x.loc (namevec_of_vec ac vars), tel, opacity)) loc
+      Range.locate (Raw.Record (locate_opt x.loc (namevec_of_vec ac vars), tel, opacity, hints)) loc
   | Token (LParen, _) :: (Term { value = App _; _ } :: _ as obs) ->
-      process_self_record Emp ctx obs loc
+      process_self_record hints Emp ctx obs loc
   | Token (LParen, _) :: obs ->
       let ctx = Bwv.snoc ctx None in
       let (Any_tel tel) = process_tel ctx StringSet.empty obs in
-      Range.locate (Raw.Record ({ value = [ None ]; loc }, tel, opacity)) loc
+      Range.locate (Raw.Record ({ value = [ None ]; loc }, tel, opacity, hints)) loc
   | _ -> invalid "record"
 
 let rec pp_record_fields prews accum obs =
@@ -2344,26 +2528,7 @@ let rec pp_record_fields prews accum obs =
 let pp_record _triv obs =
   let withattr, wsattr, obs =
     match obs with
-    | Token (Sig, (wssig, _))
-      :: Token (Op "#", (wshash, _))
-      :: Token (LParen, (wslattr, _))
-      :: Term attr
-      :: Token (RParen, (wsrattr, _))
-      :: obs ->
-        let pattr, wattr = pp_term attr in
-        ( Token.pp Sig
-          ^^ group
-               (pp_ws `Break wssig
-               ^^ Token.pp (Op "#")
-               ^^ pp_ws `None wshash
-               ^^ Token.pp LParen
-               ^^ pp_ws `None wslattr
-               ^^ pattr
-               ^^ pp_ws `None wattr
-               ^^ Token.pp RParen),
-          wsrattr,
-          obs )
-    | Token (Sig, (wssig, _)) :: obs -> (Token.pp Sig, wssig, obs)
+    | Token (Sig, (wssig, _)) :: obs -> pp_attributes (Token.pp Sig) wssig obs
     | _ -> invalid "record" in
   let withlparen, wslparen, obs =
     match obs with
@@ -2398,24 +2563,14 @@ let () =
         Closed_entry
           (eop Sig
              (Inner
-                {
-                  empty_branch with
-                  ops =
-                    oflist
-                      [
-                        (LParen, record_fields ());
-                        ( Op "#",
-                          op LParen
-                            (term RParen
-                               (Inner
-                                  {
-                                    empty_branch with
-                                    ops = singleton LParen (record_fields ());
-                                    term = Some (singleton Mapsto (op LParen (record_fields ())));
-                                  })) );
-                      ];
-                  term = Some (singleton Mapsto (op LParen (record_fields ())));
-                }));
+                (attributes
+                   (fun () ->
+                     {
+                       empty_branch with
+                       ops = oflist [ (LParen, record_fields ()) ];
+                       term = Some (singleton Mapsto (op LParen (record_fields ())));
+                     })
+                   ())));
       processor = (fun ctx obs loc -> process_record ctx obs loc);
       pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "record"));
       print_term = None;
@@ -2515,15 +2670,16 @@ and process_dataconstr_vars : type n.
       Dataconstr (Ext (x, modality, arg, args), body)
 
 let rec process_data : type n.
+    Variables.hints ->
     (Constr.t, n Raw.dataconstr located) Abwd.t ->
     (string option, n) Bwv.t ->
     observation list ->
     Asai.Range.t option ->
     n check located =
- fun constrs ctx obs loc ->
+ fun hints constrs ctx obs loc ->
   match obs with
   (* Found all the constructors, done *)
-  | [ Token (RBracket, _) ] -> { value = Raw.Data constrs; loc }
+  | [ Token (RBracket, _) ] -> { value = Raw.Data (constrs, hints); loc }
   (* Found the next constructor. *)
   | Token (Op "|", _) :: Term tel :: obs -> (
       (* The constructor might have an explicit type given by a colon. *)
@@ -2536,7 +2692,7 @@ let rec process_data : type n.
       | Some _ -> fatal ?loc:c.loc (Duplicate_constructor_in_data c.value)
       | None ->
           let dc = process_dataconstr ctx tel_args ty in
-          process_data
+          process_data hints
             (Abwd.add c.value ({ value = dc; loc = tel.loc } : n dataconstr located) constrs)
             ctx obs loc)
   | _ -> invalid "data"
@@ -2575,33 +2731,47 @@ let rec pp_data_constrs first prews accum obs =
   | _ -> invalid "data"
 
 let pp_data _triv = function
-  (* The empty datatype fits all on one line *)
-  | [ Token (Data, (wsdata, _)); Token (LBracket, (wslbrack, _)); Token (RBracket, (wsrbrack, _)) ]
-    ->
-      ( Token.pp Data
-        ^^ pp_ws `Nobreak wsdata
-        ^^ Token.pp LBracket
-        ^^ pp_ws `None wslbrack
-        ^^ Token.pp RBracket,
-        empty,
-        wsrbrack )
-  | Token (Data, (wsdata, _)) :: Token (LBracket, (wslbrack, _)) :: obs ->
-      let doc, ws = pp_data_constrs true None empty (must_start_with (Op "|") obs) in
-      (Token.pp Data ^^ pp_ws `Nobreak wsdata ^^ Token.pp LBracket, pp_ws `Break wslbrack ^^ doc, ws)
+  | Token (Data, (wsdata, _)) :: obs -> (
+      let withattr, wsattr, obs = pp_attributes (Token.pp Data) wsdata obs in
+      match obs with
+      (* The empty datatype fits all on one line *)
+      | [ Token (LBracket, (wslbrack, _)); Token (RBracket, (wsrbrack, _)) ] ->
+          ( withattr
+            ^^ pp_ws `Nobreak wsattr
+            ^^ Token.pp LBracket
+            ^^ pp_ws `None wslbrack
+            ^^ Token.pp RBracket,
+            empty,
+            wsrbrack )
+      | Token (LBracket, (wslbrack, _)) :: obs ->
+          let doc, ws = pp_data_constrs true None empty (must_start_with (Op "|") obs) in
+          (withattr ^^ pp_ws `Nobreak wsattr ^^ Token.pp LBracket, pp_ws `Break wslbrack ^^ doc, ws)
+      | _ -> invalid "data")
   | _ -> invalid "data"
 
 let () =
   make data
     {
       name = "data";
-      tree = Closed_entry (eop Data (op LBracket (data_constrs true)));
+      tree =
+        Closed_entry
+          (eop Data
+             (Inner
+                (attributes
+                   (fun () -> { empty_branch with ops = oflist [ (LBracket, data_constrs true) ] })
+                   ())));
       processor =
         (fun ctx obs loc ->
           match obs with
-          | [ Token (Data, _); Token (LBracket, _); Token (RBracket, _) ] ->
-              { value = Raw.Data Emp; loc }
-          | Token (Data, _) :: Token (LBracket, _) :: obs ->
-              process_data Emp ctx (must_start_with (Op "|") obs) loc
+          | Token (Data, _) :: obs -> (
+              let attrs, obs = get_attributes obs in
+              let hints = process_data_attributes attrs in
+              match obs with
+              | [ Token (LBracket, _); Token (RBracket, _) ] ->
+                  { value = Raw.Data (Emp, hints); loc }
+              | Token (LBracket, _) :: obs ->
+                  process_data hints Emp ctx (must_start_with (Op "|") obs) loc
+              | _ -> invalid "data")
           | _ -> invalid "data");
       pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "data"));
       print_term = None;

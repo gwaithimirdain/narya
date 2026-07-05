@@ -132,8 +132,11 @@ module Codata = struct
                 Shift
                   ( Hott.dim,
                     f.plusmap,
-                    Lam (singleton_variables f.glue None, f.glue, Modality.filter_id mode f.glue, ty)
-                  ) in
+                    Lam
+                      ( singleton_variables f.glue (`Anon no_hints),
+                        f.glue,
+                        Modality.filter_id mode f.glue,
+                        ty ) ) in
               StructfieldAbwd.Entry
                 ( fld,
                   Lower
@@ -172,8 +175,8 @@ module Codata = struct
       (mode * (g * b * potential * no_eta)) StructfieldAbwd.t =
    fun mode fields { glue; dim; length; plusmap; ty; eta; dimh; trr; trl; liftr; liftl } ->
     let idm = Modality.id mode in
-    let xname = singleton_variables D.zero (Some "x") in
-    let yname = singleton_variables D.zero (Some "y") in
+    let xname = singleton_variables D.zero (`Named "x") in
+    let yname = singleton_variables D.zero (`Named "y") in
     let plusfam x = Some (PlusFam.PlusFam (plusmap, x)) in
     let _pluszero x = Some (PlusFam.PlusFam (Plusmap.zerol length, x)) in
     (* Generic function combining trr and trl. *)
@@ -261,7 +264,7 @@ module Codata = struct
                fun (fields, fib) (CodatafieldAbwd.Entry (fld, fldty)) ->
                 match fldty with
                 | Lower fldty ->
-                    let xsname = singleton_variables D.zero (Some "x") in
+                    let xsname = singleton_variables D.zero (`Named "x") in
                     let idm = Modality.id mode in
                     let idf = Modality.filter_id mode Hott.dim in
                     let field =

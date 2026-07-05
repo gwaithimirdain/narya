@@ -23,13 +23,17 @@ open Value
 
 (* To fourth approximation, a context (qua substitution) can also incorporate a permutation of the raw indices.  This is because the raw indices occur in the order that they are bound *textually*, whereas we require that the checked indices occur in a "logical" order so that the type and possible value of each variable involves only those appearing prior to it.  These can disconnect during a match, where the new variables bound as arguments of the matched constructor are last textually, but must be inserted earlier in the context to retain logical order.  We postpone this modification until later, first defining "Ordered" contexts and then adding the permutations. *)
 
-(* The binding of each variable in a context is a "level option * normal".  But instead of exposing this literally as a product type, we use an abstract type with a constructor "Binding.make" and accessors "Binding.level" and "Binding.value".  The reason is that in the "bind_some" machinery below, we work with contexts where the binding of a variable is "known but not yet available" or "not yet computed".  So the internal implementation of Binding is actually a reference cell that usually stores a "Known" "level option * normal", but sometimes is Unknown or other times a Delayed "level option * normal". *)
+(* The binding of each variable in a context is a "level option * normal".  But instead of exposing this literally as a product type, we use an abstract type with a constructor "Binding.make" and accessors "Binding.level" and "Binding.value".  The reason is that in the "bind_some" machinery below, we work with contexts where the binding of a variable is "known but not yet available" or "not yet computed".  So the internal implementation of Binding is actually a reference cell that usually stores a "Known" "level option * normal", but sometimes is Unknown or other times a Delayed "level option * normal".
+
+   A binding also carries a mutable "dirt" verdict recording whether its value contains occurrences of constants currently being defined (see Positivity).  This applies only to let-bound variables, whose values were typechecked; free variables are always clean.  It is mutable, separately from the state reference, so that letrec can pre-mark its bindings as recursive while checking their bodies and update them to the real verdict afterwards.  (Note that bind_some's "specify" installs computed values without computing their dirt; free pattern variables are clean in practice, but this could be revisited along with strict positivity.) *)
 module Binding : sig
   type 'mode t
 
-  val make : level option -> 'mode normal -> 'mode t
+  val make : ?dirt:Positivity.recursion -> level option -> 'mode normal -> 'mode t
   val level : 'mode t -> level option
   val value : 'mode t -> 'mode normal
+  val dirt : 'mode t -> Positivity.recursion
+  val set_dirt : 'mode t -> Positivity.recursion -> unit
 
   (* An unknown binding can be specified when we have its value. *)
   val unknown : unit -> 'mode t
@@ -48,31 +52,33 @@ end = struct
     | Delayed of level option * 'mode normal
     | Error of Reporter.Code.t
 
-  type 'mode t = 'mode state ref
+  type 'mode t = { state : 'mode state ref; mutable dirt : Positivity.recursion }
 
-  let make i x = ref (Known (i, x))
+  let make ?(dirt = `Nonrecursive) i x = { state = ref (Known (i, x)); dirt }
 
   let level b =
-    match !b with
+    match !(b.state) with
     | Known (i, _) -> i
     | Unknown | Delayed _ -> None
     | Error e -> fatal e
 
   let value b =
-    match !b with
+    match !(b.state) with
     | Known (_, x) -> x
     | Unknown | Delayed _ -> fatal (Anomaly "Undetermined context variable")
     | Error e -> fatal e
 
-  let unknown () = ref Unknown
-  let specify b i x = b := Known (i, x)
-  let delay b = ref (Delayed (level b, value b))
-  let error e = ref (Error e)
+  let dirt b = b.dirt
+  let set_dirt b d = b.dirt <- d
+  let unknown () = { state = ref Unknown; dirt = `Nonrecursive }
+  let specify b i x = b.state := Known (i, x)
+  let delay b = { state = ref (Delayed (level b, value b)); dirt = b.dirt }
+  let error e = { state = ref (Error e); dirt = `Nonrecursive }
 
   let force b =
-    match !b with
+    match !(b.state) with
     | Known _ | Unknown -> ()
-    | Delayed (i, x) -> b := Known (i, x)
+    | Delayed (i, x) -> b.state := Known (i, x)
     | Error e -> fatal e
 end
 
@@ -96,7 +102,7 @@ and ('dom, 'modality, 'mode, 'm, 'n, 'mn, 'f1, 'f2, 'f) vis_data = {
   plusdim : ('m, 'n, 'mn) D.plus;
   filter : ('dom, 'modality, 'mode, 'mn, 'mn) Modality.filter_dim;
   (* We use an indexed cube to automatically count how many raw variables appear, by starting with zero and incrementing it for each entry in the cube.  It's tempting to want to start instead from the previous raw length of the context, thereby eliminating the "plus" parameter of Snoc, below; but this causes problems with telescopes (forwards contexts), used in Bindsome, whose raw indices are forwards natural numbers instead. *)
-  vars : (N.zero, 'n, string option, 'f1) NICubeOf.t;
+  vars : (N.zero, 'n, binder_name, 'f1) NICubeOf.t;
   bindings : ('mn, 'dom Binding.t) CubeOf.t;
   (* While typechecking a record, we expose the "self" variable as a list of "illusory" variables, visible only to raw terms, that are substituted at typechecking time with the fields of self.  The type has_fields enforces that if 'f2 is nonzero, so that we're checking a record in this way, then 'm must be zero.  In the record case, the dimension 'n is the "gel dimension" of the record type being checked, so that 'vars' above names all the boundary variables and then ends with the unnamed self variable that is "split" into all the field variables. *)
   hasfields : ('m, 'f2) has_fields;
@@ -163,7 +169,7 @@ module Ordered = struct
       (dom, modality, mode, mn, mn) Modality.filter_dim ->
       m D.t ->
       (m, n, mn) D.plus ->
-      (N.zero, n, string option, f) NICubeOf.t ->
+      (N.zero, n, binder_name, f) NICubeOf.t ->
       (mn, dom Binding.t) CubeOf.t ->
       (a, f, af) N.plus ->
       (mode, af, (b, (modality, mn) dim_entry) snoc) t =
@@ -191,11 +197,11 @@ module Ordered = struct
       (mode, a N.suc, (b, (modality, n) dim_entry) snoc) t =
    fun ctx filter x vars ->
     let m = CubeOf.dim vars in
-    vis ctx filter m (D.plus_zero m) (NICubeOf.singleton x) vars (Suc Zero)
+    vis ctx filter m (D.plus_zero m) (NICubeOf.singleton (binder_name_of_option x)) vars (Suc Zero)
 
   let vis_fields : type mode a b f1 f2 f af n.
       (mode, a, b) t ->
-      (N.zero, n, string option, f1) NICubeOf.t ->
+      (N.zero, n, binder_name, f1) NICubeOf.t ->
       (n, mode Binding.t) CubeOf.t ->
       (D.zero Field.t * string, f2) Bwv.t ->
       (f1, f2, f) N.plus ->
@@ -294,6 +300,8 @@ module Ordered = struct
     | Lookup : {
         result : [ `Var of level option * ('k, 'n) sface | `Field of 'field ];
         value : 'dom normal;
+        (* Whether the value of this (let-bound) variable contains occurrences of currently-being-defined constants (see Positivity); free variables are always clean. *)
+        dirt : Positivity.recursion;
         insert : ('a, 'modality, 'n, 'an) insert;
         (* The modality can be recovered from the filter, but we have it anyway, so we may as well return it. *)
         modality : ('dom, 'modality, 'cod) Modality.t;
@@ -358,6 +366,7 @@ module Ordered = struct
                   {
                     result = `Field (level, fst (Bwv.nth i fields));
                     value = Binding.value b;
+                    dirt = Binding.dirt b;
                     insert = Now;
                     modality;
                     filter;
@@ -375,7 +384,7 @@ module Ordered = struct
             (* This function is called on every step of that iteration through a cube.  It appears that we have to define it with an explicit type signature in order for it to end up sufficiently polymorphic. *)
             let lookup_folder : type left l.
                 (l, n) sface ->
-                (left, l, string option) NFamOf.t ->
+                (left, l, binder_name) NFamOf.t ->
                 left N.suc Lookup.t ->
                 left Lookup.t * (left, l, unit) NFamOf.t =
              fun fb (NFamOf _) acc ->
@@ -406,6 +415,7 @@ module Ordered = struct
                     modality;
                     filter;
                     value = Binding.value x;
+                    dirt = Binding.dirt x;
                     insert = Now;
                     plus = plus_with_no_locks (Modality.tgt modality);
                   }))
@@ -450,6 +460,7 @@ module Ordered = struct
                          insert = Now;
                          result = `Var (Some i, fa);
                          value = Binding.value x;
+                         dirt = Binding.dirt x;
                          modality;
                          filter;
                          plus = plus_with_no_locks (Modality.tgt modality);
@@ -509,15 +520,16 @@ module Ordered = struct
     let b = Binding.make (Some (n, 0)) { tm = var modality (n, 0) ty; ty } in
     (cube_vis ctx (Modality.filter_zero modality) x (CubeOf.singleton b), b)
 
-  (* Extend a context by one new variable with an assigned value. *)
+  (* Extend a context by one new variable with an assigned value.  The optional ?dirt records whether that value contains occurrences of currently-being-defined constants. *)
   let ext_let : type dom modality mode a b.
+      ?dirt:Positivity.recursion ->
       (mode, a, b) t ->
       (dom, modality, mode) Modality.t ->
       string option ->
       dom normal ->
       (mode, a N.suc, (b, (modality, D.zero) dim_entry) snoc) t * dom Binding.t =
-   fun ctx modality x v ->
-    let b = Binding.make None v in
+   fun ?dirt ctx modality x v ->
+    let b = Binding.make ?dirt None v in
     (cube_vis ctx (Modality.filter_zero modality) x (CubeOf.singleton b), b)
 
   (* Remove the last entry in a context.  Only works if that last entry is a fully-cube variable with no fields. *)
@@ -542,9 +554,17 @@ module Ordered = struct
     | Snoc (ctx, Vis { dim; plusdim; vars; filter; bindings; fplus = Zero; _ }, _)
       when all_free bindings ->
         lam ctx (Lam (Variables (dim, plusdim, vars), D.plus_out dim plusdim, filter, tree))
-    | Snoc (ctx, Invis { bindings; filter }, _) when all_free bindings ->
+    | Snoc (ctx, Invis { bindings; filter; _ }, _) when all_free bindings ->
+        (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints. *)
+        let hints =
+          Reporter.try_with ~fatal:(fun _ -> no_hints) @@ fun () ->
+          View.hints_of_ty (Binding.value (CubeOf.find_top bindings)).ty in
         lam ctx
-          (Lam (singleton_variables (CubeOf.dim bindings) None, CubeOf.dim bindings, filter, tree))
+          (Lam
+             ( singleton_variables (CubeOf.dim bindings) (`Anon hints),
+               CubeOf.dim bindings,
+               filter,
+               tree ))
     | _ -> fatal (Anomaly "let-bound variable in Ctx.lam")
 
   (* Delete some level variables from a context by making their bindings into "unknown".  This will cause readback to raise No_such_level if it encounters one of those variables, which can then be trapped as an occurs-check. *)
@@ -665,7 +685,7 @@ let variables_vis : type dom modality mode a b mn.
 
 let cube_vis ctx filter x vars =
   let m = CubeOf.dim vars in
-  vis ctx filter m (D.plus_zero m) (NICubeOf.singleton x) vars (Suc Zero)
+  vis ctx filter m (D.plus_zero m) (NICubeOf.singleton (binder_name_of_option x)) vars (Suc Zero)
 
 let vis_fields (Permute { perm; env; level; ctx }) xs vars fields fplus af =
   let (Plus bf) = N.plus (N.plus_right af) in
@@ -766,8 +786,8 @@ let ext (Permute { perm; env; level; ctx }) modality xs ty =
       ctx;
     }
 
-let ext_let (Permute { perm; env; level; ctx }) modality xs tm =
-  let ctx, b = Ordered.ext_let ctx modality xs tm in
+let ext_let ?dirt (Permute { perm; env; level; ctx }) modality xs tm =
+  let ctx, b = Ordered.ext_let ?dirt ctx modality xs tm in
   Permute
     {
       perm = Insert (perm, Top);

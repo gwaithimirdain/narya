@@ -231,7 +231,39 @@ module Modality = Path.Make (Gen)
 include Modality
 module Map = Path.Map (Gen) (Mode.Map) (Gen.Map)
 
-let locker : type a. a Mode.t -> (a, a) wrapped = fun _ -> raise (Failure "Modality.locker not set")
+module type Theory = sig
+  val sharp : ('a, 'm, 'b) t -> bool
+  val pellucid : ('a, 'm, 'b) t -> bool
+  val transparent : ('a, 'm, 'b) t -> bool
+  val translucent : ('a, 'm, 'b) t -> bool
+end
+
+let theory : (module Theory) ref =
+  ref
+    (module struct
+      let sharp _ = true
+      let pellucid _ = true
+      let transparent _ = true
+      let translucent _ = true
+    end : Theory)
+
+let choose_theory (t : (module Theory)) = theory := t
+
+let sharp m =
+  let module T = (val !theory) in
+  T.sharp m
+
+let pellucid m =
+  let module T = (val !theory) in
+  T.pellucid m
+
+let transparent m =
+  let module T = (val !theory) in
+  T.transparent m
+
+let translucent m =
+  let module T = (val !theory) in
+  T.translucent m
 
 module Cube (F : Fam3) = struct
   module Parent = struct

@@ -53,8 +53,9 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
               flds;
           energy;
         }
-  | Match { tm; dim; branches } ->
-      Match { tm = term f tm; dim; branches = Constr.Map.map (branch f) branches }
+  | Match { tm; plus_lock; window; dim; branches } ->
+      Match
+        { tm = term f tm; plus_lock; window; dim; branches = Constr.Map.map (branch f) branches }
   | Realize tm -> Realize (term f tm)
   | Canonical can -> Canonical (canonical f can)
   | Unshift (n, plusmap, tm) -> Unshift (n, plusmap, term f tm)
@@ -71,9 +72,16 @@ and branch : type mode a n. (File.t -> File.t) -> (mode, a, n) branch -> (mode, 
 and canonical : type mode a. (File.t -> File.t) -> (mode, a) canonical -> (mode, a) canonical =
  fun f can ->
   match can with
-  | Data { indices; constrs; discrete } ->
-      Data { indices; constrs = Abwd.map (dataconstr f) constrs; discrete }
-  | Codata { eta; opacity; dim; termctx = tc; fields; fibrancy = fib; is_glue } ->
+  | Data { indices; constrs; discrete; recursive; hints } ->
+      Data
+        {
+          indices;
+          constrs = Abwd.map (dataconstr f) constrs;
+          discrete;
+          recursive = Positivity.link_recursion f recursive;
+          hints;
+        }
+  | Codata { eta; opacity; hints; dim; termctx = tc; fields; fibrancy = fib; is_glue } ->
       let trr =
         Mbwd.map
           (fun (StructfieldAbwd.Entry (fld, x)) -> StructfieldAbwd.Entry (fld, structfield f x))
@@ -94,6 +102,7 @@ and canonical : type mode a. (File.t -> File.t) -> (mode, a) canonical -> (mode,
         {
           eta;
           opacity;
+          hints;
           dim;
           termctx = Option.map (termctx f) tc;
           fields =
@@ -206,4 +215,5 @@ let metadef : type mode x y z.
     match data.tm with
     | `Defined tm -> `Defined (term f tm)
     | x -> x in
-  { data with tm; termctx; ty }
+  let recursion = Positivity.link_recursion f data.recursion in
+  { data with tm; termctx; ty; recursion }

@@ -282,23 +282,22 @@ module Equal = struct
                let open CubeOf.Monadic (Err) in
                let* () = miterM { it = (fun _ [ x; y ] -> equal_val lctx x y) } [ dom1s; dom2s ] in
                (* We create variables for all the domains, in order to equality-check all the codomains.  The codomain boundary types only use some of those variables, but it doesn't hurt to have the others around. *)
-               let args, newnfs = dom_vars ctx modality1 dom1s in
+               let newargs, newnfs = dom_vars ctx modality1 dom1s in
                let (Any_ctx newctx) =
                  Ctx.variables_vis ctx (Modality.filter_idempotent filter1) name newnfs in
+               (* We compare the two cubes of codomains with the binary iterator miter2M, which recurses directly on the two trees.  We cannot use the generic n-ary miterM [ cod1s; cod2s ] here: iterating two cubes whose element family (BindFam) is a multi-parameter GADT via the heterogeneous Tlist machinery sends type inference into a catastrophic blowup (~15s and 14GB to compile this one expression). *)
                let open BindCube.Monadic (Err) in
-               let build : type l. (l, n) sface -> (l, nil) BindCube.Heter.hft Err.t =
-                fun fa ->
-                 let (Filter_sface (fb, kfilter)) = Modality.filter_sface filter1 fa in
-                 let sargs = CubeOf.subcube fb args in
-                 let (BindFam b1) = BindCube.find cod1s fa in
-                 let (BindFam b2) = BindCube.find cod2s fa in
-                 let* () =
-                   equal_val newctx
-                     (apply_binder_term b1 kfilter sargs)
-                     (apply_binder_term b2 kfilter sargs) in
-                 return ([] : (l, nil) BindCube.Heter.hft) in
-               let* [] = pbuildM n { build } Nil in
-               return ())
+               miter2M
+                 {
+                   it2 =
+                     (fun s (BindFam cod1) (BindFam cod2) ->
+                       let (Filter_sface (fb, kfilter)) = Modality.filter_sface filter1 s in
+                       let sargs = CubeOf.subcube fb newargs in
+                       equal_val newctx
+                         (apply_binder_term cod1 kfilter sargs)
+                         (apply_binder_term cod2 kfilter sargs));
+                 }
+                 cod1s cod2s)
         | Neq, _ | _, Neq -> None)
     | _, _ -> None
 

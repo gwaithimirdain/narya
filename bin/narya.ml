@@ -22,6 +22,9 @@ let discrete_coreflector = ref false
 (* Undocumented flag used for testing: interpret a given file or command-line string as if it were entered in interactive mode. *)
 let fake_interacts : string Bwd.t ref = ref Emp
 
+(* Undocumented flag used for testing: always display ANSI colors even if the terminal doesn't support them. *)
+let use_ansi = ref false
+
 let speclist =
   [
     ("-version", Arg.Set show_version, "Show version and exit");
@@ -85,6 +88,9 @@ let speclist =
           install_mode_theory := Modal.Discrete_coreflector.install;
           discrete_coreflector := true),
       "Select the nonparametric comonad mode theory (currently requires -parametric)" );
+    ( "-composed-functors",
+      Arg.Unit (fun () -> install_mode_theory := Modal.Composed_functors.install),
+      "Select the composed functors mode theory" );
     ("--help", Arg.Unit (fun () -> ()), "");
     ("-", Arg.Unit (fun () -> inputs := Snoc (!inputs, `Stdin)), "");
     ("-fake-interact", Arg.String (fun str -> fake_interacts := Snoc (!fake_interacts, str)), "");
@@ -93,6 +99,7 @@ let speclist =
     ("-parenthesize-arguments", Arg.Set parenthesize_arguments, "");
     ("-juxtapose-arguments", Arg.Clear parenthesize_arguments, "");
     ("-remove-spaces", Arg.Clear extra_spaces, "");
+    ("-use-ansi", Arg.Set use_ansi, "");
   ]
 
 (* Parse the command-line arguments and ensure that we have something to do. *)
@@ -145,11 +152,12 @@ let rec repl terminal history buf =
       if str = "" then (
         let str = Buffer.contents buf in
         let* () = Lwt_io.flush Lwt_io.stdout in
+        let use_ansi = if !use_ansi then Some true else None in
         (* In interactive mode, we display all messages verbosely, and don't quit on fatal errors except for the Quit command. *)
         ( Reporter.try_with
-            ~emit:(fun d -> Reporter.display ~output:stdout d)
+            ~emit:(fun d -> Reporter.display ?use_ansi ~output:stdout d)
             ~fatal:(fun d ->
-              Reporter.display ~output:stdout d;
+              Reporter.display ?use_ansi ~output:stdout d;
               match d.message with
               | Quit _ -> exit 0
               | _ -> ())
@@ -258,16 +266,18 @@ let rec interact_pg () : unit =
 let () =
   try
     !install_mode_theory ();
-    run_top ~install_hott:Hott.install @@ fun () ->
+    let use_ansi = if !use_ansi then Some true else None in
+    run_top ?use_ansi ~install_hott:Hott.install @@ fun () ->
     (* Note: run_top executes the input files, so here we only have to do the interaction. *)
     Mbwd.miter
       (fun [ file ] ->
         let source : Asai.Range.source =
-          if FileUtil.test Is_file file then `File file
+          if try FileUtil.test Is_file file with _ -> false then `File file
           else `String { title = Some "command line fake-interact"; content = file } in
         let p, src = Parser.Command.Parse.start_parse source in
-        Reporter.try_with ~emit:(Reporter.display ~output:stdout)
-          ~fatal:(Reporter.display ~output:stdout) (fun () -> Execute.batch None p src `None []))
+        Reporter.try_with ~emit:(Reporter.display ?use_ansi ~output:stdout)
+          ~fatal:(Reporter.display ?use_ansi ~output:stdout) (fun () ->
+            Execute.batch None p src `None []))
       [ !fake_interacts ];
     if !interactive then Lwt_main.run (interact ())
     else if !proofgeneral then (

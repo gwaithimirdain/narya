@@ -117,9 +117,12 @@ let check_terms (defs : defined_const list) (discrete : unit Constant.Map.t opti
 
 (* When checking a "def", therefore, we first iterate through checking the parameters and types, and then go back and check all the terms.  Moreover, whenever we check a type, we temporarily define the corresponding constant as an axiom having that type, so that its type can be used recursively in typechecking its definition, as well as the types of later mutual constants and the definitions of any other mutual constants. *)
 let check_defs (defs : (Constant.t Lazy.t * defconst Lazy.t) list) : printable list * bool * bool =
-  let rec go defs discrete defineds =
+  let rec go defs discrete beingdefined defineds =
     match defs with
-    | [] -> check_terms (Bwd.to_list defineds) discrete
+    | [] ->
+        (* The bodies are checked knowing the set of all the constants of this mutual block, so that occurrences of them in datatype constructor types can be detected as recursive.  (Unlike the discreteness set, this set is unconditional: it must contain exactly the being-defined constants, since real axioms appearing in constructor types are not recursion.) *)
+        Positivity.run_beingdefined beingdefined @@ fun () ->
+        check_terms (Bwd.to_list defineds) discrete
     | (const, defconst) :: defs -> (
         match Lazy.force defconst with
         | Def_check { params; ty; tm } ->
@@ -140,12 +143,15 @@ let check_defs (defs : (Constant.t Lazy.t * defconst Lazy.t) list) : printable l
               (Definition { mode; ty = pi_cty; tm = `Axiom; parametric = `Maybe_parametric });
             go defs
               (if disc then Option.map (Constant.Map.add const ()) discrete else None)
+              (Constant.Map.add const () beingdefined)
               (Snoc (defineds, Defined_check { const; bplus; mode; params; ty; tm }))
         | Def_synth { params; tm } ->
             let const = Lazy.force const in
             Global.add_error const (Synthesizing_recursion (Reporter.PConstant const));
-            go defs None (Snoc (defineds, Defined_synth { const; params; tm }))) in
-  go defs (if Discrete.enabled () then Some Constant.Map.empty else None) Emp
+            go defs None
+              (Constant.Map.add const () beingdefined)
+              (Snoc (defineds, Defined_synth { const; params; tm }))) in
+  go defs (if Discrete.enabled () then Some Constant.Map.empty else None) Constant.Map.empty Emp
 
 let execute : t -> int option * (int -> Reporter.Code.t option) = function
   (* We let Parser.Command do the calling of Global.run_command etc. *)

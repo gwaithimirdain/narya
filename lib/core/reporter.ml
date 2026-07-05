@@ -120,6 +120,7 @@ module Code = struct
     | Invalid_field_in_tuple : t
     | Duplicate_field_in_tuple : string -> t
     | Duplicate_method_in_codata : 'i Field.t -> t
+    | Lower_and_higher_methods_in_codata : string -> t
     | Duplicate_field_in_record : 'i Field.t -> t
     | Invalid_method_in_comatch : t
     | Duplicate_method_in_comatch : string * string list -> t
@@ -194,6 +195,10 @@ module Code = struct
         -> t
     | Unknown_modality : string -> t
     | Modalcell_mismatch : string * ('a, 'm, 'n, 'b) Modalcell.t * ('c, 'r, 's, 'd) Modalcell.t -> t
+    | Nonsharp_modality : ('a, 'm, 'b) Modality.t -> t
+    | Nontransparent_window_modality :
+        ('a, 'm, 'b) Modality.t * bool * [ `Nonrecursive | `Recursive | `Unknown ]
+        -> t
     | Non_mode_synthesizing : string -> t
     | Invalid_mode_theory : t
     | Invalid_variable_face : 'a D.t * ('n, 'm) sface -> t
@@ -320,6 +325,7 @@ module Code = struct
     | Invalid_field_in_tuple -> Error
     | Duplicate_field_in_tuple _ -> Error
     | Duplicate_method_in_codata _ -> Error
+    | Lower_and_higher_methods_in_codata _ -> Error
     | Duplicate_field_in_record _ -> Error
     | Invalid_method_in_comatch -> Error
     | Duplicate_method_in_comatch _ -> Error
@@ -368,6 +374,8 @@ module Code = struct
     | Modality_mismatch (`User, _, _, _) -> Error
     | Unknown_modality _ -> Error
     | Modalcell_mismatch _ -> Error
+    | Nonsharp_modality _ -> Error
+    | Nontransparent_window_modality _ -> Error
     | Non_mode_synthesizing _ -> Error
     | Invalid_mode_theory -> Bug
     | Anomaly _ -> Bug
@@ -564,6 +572,7 @@ module Code = struct
     | Wrong_boundary_of_record _ -> "E1504"
     | Invalid_constructor_type _ -> "E1505"
     | Missing_constructor_type _ -> "E1506"
+    | Lower_and_higher_methods_in_codata _ -> "E1507"
     (* Tactics *)
     | Choice_mismatch _ -> "E1600"
     | Calc_error _ -> "E1601"
@@ -575,6 +584,8 @@ module Code = struct
     | Unknown_modality _ -> "E1704"
     | Missing_key _ -> "E1705"
     | Invalid_mode_theory -> "E1710"
+    | Nonsharp_modality _ -> "E1706"
+    | Nontransparent_window_modality _ -> "E1707"
     (* Commands *)
     | Too_many_commands -> "E2000"
     | Forbidden_interactive_command _ -> "E2001"
@@ -913,6 +924,20 @@ module Code = struct
       | Non_mode_synthesizing str -> textf "cannot synthesize a mode: %s" str
       | Invalid_mode_theory -> text "invalid mode theory"
       | Unknown_modality c -> textf "unknown modality %s" c
+      | Nonsharp_modality m -> textf "modality %s is not sharp" (Modality.to_string m)
+      | Nontransparent_window_modality (m, _, `Recursive) ->
+          textf "window modality %s must be pellucid since the datatype has recursive constructors"
+            (Modality.to_string m)
+      | Nontransparent_window_modality (m, _, `Unknown) ->
+          textf
+            "window modality %s must be pellucid since it is not yet known whether the datatype has recursive constructors, due to unsolved holes in its constructor types"
+            (Modality.to_string m)
+      | Nontransparent_window_modality (m, false, `Nonrecursive) ->
+          textf "window modality %s must be pellucid or transparent" (Modality.to_string m)
+      | Nontransparent_window_modality (m, true, `Nonrecursive) ->
+          textf
+            "window modality %s must be pellucid or transparent, or translucent since the datatype has only one constructor"
+            (Modality.to_string m)
       | Missing_key (vdom, vcod) ->
           textf "use of %a variable behind %a lock requires a key" pp_printed
             (print (PString (Modality.to_string vdom)))
@@ -983,6 +1008,8 @@ module Code = struct
           textf "%s encountered outside case tree, wrapping in implicit let-binding" str
       | Duplicate_method_in_codata fld ->
           textf "duplicate method in codatatype: %s" (Field.to_string fld)
+      | Lower_and_higher_methods_in_codata fld ->
+          textf "codatatype has both lower and higher methods named '%s'" fld
       | Duplicate_field_in_record fld ->
           textf "duplicate field in record type: %s" (Field.to_string fld)
       | Duplicate_constructor_in_data c ->

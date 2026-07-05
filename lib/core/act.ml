@@ -337,21 +337,21 @@ module Act = struct
     | Pi { x; filter; doms; cods } ->
         let (Act_pi (fb, filter, doms, cods)) = act_pi filter doms cods fa cell in
         Pi { x = act_variables x fb; filter; doms; cods }
-    | Data { dim = _; tyfam; indices; constrs; discrete } ->
+    | Data { dim = _; tyfam; indices; constrs; discrete; recursive; hints } ->
         let tyfam = ref (Option.map (fun x -> lazy (act_normal (Lazy.force x) fa cell)) !tyfam) in
         let indices =
           Fillvec.map
             (fun ixs -> act_cube { act = (fun x s c -> act_normal x s c) } ixs fa cell)
             indices in
         let constrs = Abwd.map (fun con -> act_dataconstr con fa cell) constrs in
-        Data { dim = dom_deg fa; tyfam; indices; constrs; discrete }
-    | Codata { eta; opacity; env; termctx; fields } ->
+        Data { dim = dom_deg fa; tyfam; indices; constrs; discrete; recursive; hints }
+    | Codata { eta; opacity; hints; env; termctx; fields } ->
         let env = act_env env (opt_op_of_deg fa) in
         let env =
           match cell with
           | Some cell -> prekey_env env cell
           | None -> env in
-        Codata { eta; opacity; env; termctx; fields }
+        Codata { eta; opacity; hints; env; termctx; fields }
 
   and act_dataconstr : type mode mu1 mu2 cod m n i.
       (mode, n, i) dataconstr ->

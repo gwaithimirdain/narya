@@ -194,7 +194,9 @@ module F = struct
         let (BindFam b) = BindCube.find_top cods in
         fprintf ppf "Pi^%s (%s, %a, (... %a))"
           (string_of_dim (CubeOf.dim doms))
-          (Option.value ~default:"_" (top_variable x))
+          (match top_variable x with
+          | `Named x -> x
+          | `Anon _ -> "_")
           (cubeof value) doms binder b
 
   and binder : type mode modality dom b s. formatter -> (mode, modality, dom, b, s) binder -> unit =
@@ -259,7 +261,9 @@ module F = struct
         ({ x; filter; doms = Modal (_modality, _, doms); cods; _ } :
           (k, n, dom, modality, mode, b) pi_args) ->
         fprintf ppf "Pi^(%a) (%s, %a, (... %a))" dim (CubeOf.dim doms)
-          (Option.value (top_variable x) ~default:"_")
+          (match top_variable x with
+          | `Named x -> x
+          | `Anon _ -> "_")
           (cubeof term) doms term
           (let (Cod (filt, t)) = CodCube.find_top cods in
            let Eq = Modality.filter_uniq filter filt in
@@ -287,7 +291,7 @@ module F = struct
   and canonical : type mode b. formatter -> (mode, b) canonical -> unit =
    fun ppf c ->
     match c with
-    | Data { indices; constrs; discrete = _ } ->
+    | Data { indices; constrs; discrete = _; recursive = _; hints = _ } ->
         fprintf ppf "Data (%d, (%a))" (Fwn.to_int indices)
           (pp_print_list
              ~pp_sep:(fun ppf () -> pp_print_string ppf " | ")
@@ -346,7 +350,7 @@ module F = struct
     | Empty_co_match -> fprintf ppf "Emptycomatch(?)"
     | Data _ -> fprintf ppf "Data(?)"
     | Codata _ -> fprintf ppf "Codata(?)"
-    | Record (_, _, _) -> fprintf ppf "Record(?)"
+    | Record (_, _, _, _) -> fprintf ppf "Record(?)"
     | SelfRecord _ -> fprintf ppf "SelfRecord(?)"
     | Refute (_, _) -> fprintf ppf "Refute(?)"
     | Hole _ -> fprintf ppf "Hole"
@@ -391,7 +395,7 @@ module F = struct
     | Let (_, _, _, _) -> fprintf ppf "Let(?)"
     | Letrec (_, _, _) -> fprintf ppf "LetRec(?)"
     | Act (_, _, _) -> fprintf ppf "Act(?)"
-    | Match { tm; sort = _; branches = br; refutables = _; highers = _ } ->
+    | Match { tm; window = _; sort = _; branches = br; refutables = _; highers = _ } ->
         fprintf ppf "Match (%a, (%a))" synth tm.value branches br
     | UU mode -> fprintf ppf "%s" (Mode.name mode)
     | Fail _ -> fprintf ppf "Error"
@@ -433,12 +437,13 @@ module F = struct
     | Vis { dim; plusdim; hasfields = No_fields; vars; bindings; filter; _ } -> (
         match (D.compare_zero dim, D.compare_zero (D.plus_right plusdim)) with
         | Zero, Zero ->
-            let x = NICubeOf.find_top vars in
+            let x =
+              match NICubeOf.find_top vars with
+              | `Named x -> x
+              | `Anon _ -> "_" in
             let b = CubeOf.find_top bindings in
             let modality = Modality.filter_modality filter in
-            fprintf ppf "(%a%a : %a)"
-              (pp_print_option ~none:(fun ppf () -> pp_print_string ppf "_") pp_print_string)
-              x
+            fprintf ppf "(%s%a : %a)" x
               (pp_print_option (fun ppf l ->
                    fprintf ppf "(%a)" (fun ppf lvl -> level ppf lvl (Modalcell.id modality)) l))
               (Ctx.Binding.level b) value (Ctx.Binding.value b).ty

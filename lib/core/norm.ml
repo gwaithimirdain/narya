@@ -25,14 +25,15 @@ type (_, _) looked_up_cube =
       -> ('mode, 'm) looked_up_cube
 
 (* Require that the supplied list contains exactly one argument for each annotated variable being added, and add all of those cubes to the given environment. *)
-let rec take_args : type mode annotations m n mn a b ab.
+let rec take_args : type dom window mode annotations m n mn a b ab.
     (mode, m, a) env ->
     (m, n, mn) D.plus ->
-    (mn, mode, kinetic) modal_value_cube list ->
+    (mn, dom, kinetic) modal_value_cube list ->
+    (dom, window, mode) Modality.t ->
     (n, mode, annotations, mode, mode, b, mode) VarAnnotate.fwd_t ->
     (mode, b, mode, a, unit, ab) Tctx.bcomp ->
     (mode, m, ab) env =
- fun env mn dargs annotate comp ->
+ fun env mn dargs window annotate comp ->
   match (dargs, annotate, comp) with
   | [], Zero _, Zero -> env
   | Modal (fmn, arg) :: args, Suc (Annotate fn, annotate), Suc (Dim _, comp) -> (
@@ -51,7 +52,7 @@ let rec take_args : type mode annotations m n mn a b ab.
                 filtered = Modality.filter_idempotent fn;
                 values = `Ok arg;
               } in
-          take_args env mn args annotate comp
+          take_args env mn args window annotate comp
       | Neq -> fatal (Modality_mismatch (`Internal, "take_args", mu, amu)))
   | _ -> fatal (Anomaly "wrong number of arguments in argument list")
 
@@ -475,12 +476,13 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let env = key_env env (Modalcell.vcomp keys cell) plus_src in
       let env = prekey_env env pre in
       eval env tm
-  | Match { tm; dim = match_dim; branches } -> (
+  | Match { tm; window; plus_lock; dim = match_dim; branches } -> (
       let env_dim = dim_env env in
       let (Plus plus_dim) = D.plus match_dim in
       let total_dim = D.plus_out env_dim plus_dim in
+      let kenv = key_env env (Modalcell.id window) plus_lock in
       (* Get the argument being inspected *)
-      match view_term (eval_term env tm) with
+      match view_term (eval_term kenv tm) with
       (* To reduce nontrivially, the discriminee must be an application of a constructor. *)
       | Constr (name, constr_dim, dargs) -> (
           match Constr.Map.find_opt name branches with
@@ -495,7 +497,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
               | Neq -> fatal (Dimension_mismatch ("evaluating match", constr_dim, total_dim))
               | Eq ->
                   (* If we have a branch with a matching constructor, then our constructor must be applied to exactly the right number of elements (in dargs).  In that case, we pick them out and add them to the environment. *)
-                  let env = take_args env plus_dim dargs annotate comp in
+                  let env = take_args env plus_dim dargs window annotate comp in
                   (* Then we proceed recursively with the body of that branch. *)
                   eval (Permute (perm, env)) tm)
           (* If this constructor belongs to a refuted case, it must be that we are in an inconsistent context with some neutral belonging to an empty type.  In that case, the match must be stuck. *)
@@ -611,7 +613,16 @@ and apply : type dom modality mode n m s.
                        {
                          mode;
                          canonical =
-                           Data { dim; tyfam; indices = Unfilled _ as indices; constrs; discrete };
+                           Data
+                             {
+                               dim;
+                               tyfam;
+                               indices = Unfilled _ as indices;
+                               constrs;
+                               discrete;
+                               recursive;
+                               hints;
+                             };
                          tyargs = data_tyargs;
                          ins;
                          fields;
@@ -645,7 +656,8 @@ and apply : type dom modality mode n m s.
                             (Value.Canonical
                                {
                                  mode;
-                                 canonical = Data { dim; tyfam; indices; constrs; discrete };
+                                 canonical =
+                                   Data { dim; tyfam; indices; constrs; discrete; recursive; hints };
                                  tyargs = TubeOf.empty dim;
                                  ins;
                                  fields;
@@ -969,7 +981,8 @@ and tyof_field : type mode m h s r i c.
       (( head,
          Codata
            (type d a et)
-           ({ env; fields; opacity = _; eta; termctx = _ } : (mode, m, n, d, a, et) codata_args),
+           ({ env; fields; opacity = _; eta; termctx = _; hints = _ } :
+             (mode, m, n, d, a, et) codata_args),
          codatains,
          tyargs ) :
         mode head
@@ -1067,7 +1080,9 @@ and tyof_field_withname : type mode a b.
     | Ok tm -> PVal (ctx, tm)
     | Error _err -> PString "[ERROR]" in
   match view_type ~severity:Asai.Diagnostic.Error ty "tyof_field" with
-  | Canonical (head, Codata { env; fields; opacity = _; eta; termctx = _ }, codatains, tyargs) -> (
+  | Canonical
+      (head, Codata { env; fields; opacity = _; eta; termctx = _; hints = _ }, codatains, tyargs)
+    -> (
       (* The type cannot have a nonidentity degeneracy applied to it (though it can be at a higher dimension). *)
       match is_id_ins codatains with
       | None -> fatal (No_such_field (`Degenerated_record eta, errfld))
@@ -1197,14 +1212,16 @@ and eval_canonical : type mode m a.
     (mode, m, a) env -> (mode, a) Term.canonical -> (mode, potential) evaluation =
  fun env can ->
   match can with
-  | Data { indices; constrs; discrete } ->
+  | Data { indices; constrs; discrete; recursive; hints } ->
       let tyfam = ref None in
       let constrs =
         Abwd.map
           (fun (Term.Dataconstr { args; indices }) -> Value.Dataconstr { env; args; indices })
           constrs in
       let dim, mode = (dim_env env, mode_env env) in
-      let canonical = Data { dim; tyfam; indices = Fillvec.empty indices; constrs; discrete } in
+      let canonical =
+        Data { dim; tyfam; indices = Fillvec.empty indices; constrs; discrete; recursive; hints }
+      in
       let tyargs = TubeOf.empty (dim_env env) in
       let fields =
         match Lazy.force Fibrancy.data with
@@ -1214,7 +1231,7 @@ and eval_canonical : type mode m a.
         (Canonical
            { mode; canonical; tyargs; ins = ins_zero dim; fields; inst_fields = Some fields })
   | Codata c ->
-      eval_codata env c.eta c.opacity c.dim (Lazy.from_val c.termctx) c.fields
+      eval_codata env c.eta c.opacity c.hints c.dim (Lazy.from_val c.termctx) c.fields
         (Fibrancy.Codata.finished (mode_env env) c)
 
 (* We split out this subroutine so it can be called from Check.with_codata_so_far and a lazy termctx.  *)
@@ -1222,17 +1239,18 @@ and eval_codata : type mode m a c n et.
     (mode, m, a) env ->
     (potential, et) eta ->
     opacity ->
+    hints ->
     n D.t ->
     (mode, c, (a, (mode id, n) dim_entry) snoc) termctx option Lazy.t ->
     (mode * a * n * et) CodatafieldAbwd.t ->
     (mode * (n * a * potential * no_eta)) Term.StructfieldAbwd.t ->
     (mode, potential) evaluation =
- fun env eta opacity n termctx fields fibrancy_fields ->
+ fun env eta opacity hints n termctx fields fibrancy_fields ->
   let m = dim_env env in
   let (Plus (type mn) (m_n : (m, n, mn) D.plus)) = D.plus n in
   let mn = D.plus_out m m_n in
   let ins = id_ins m m_n in
-  let canonical = Codata { eta; opacity; env; termctx; fields } in
+  let canonical = Codata { eta; opacity; hints; env; termctx; fields } in
   let tyargs = TubeOf.empty mn in
   let fields = eval_structfield_abwd env m m_n mn fibrancy_fields in
   Val (Canonical { mode = mode_env env; canonical; tyargs; ins; fields; inst_fields = Some fields })
@@ -1762,7 +1780,7 @@ let eval_entry : type dom modality mode a b f n bm.
       let bindings = eval_bindings ctx filter plus_lock bindings in
       let fields = Bwv.map (fun (f, x, _) -> (f, x)) fields in
       Vis { dim; filter; plusdim; vars; bindings; hasfields; fields; fplus }
-  | Invis { plus_lock; bindings; filter } ->
+  | Invis { plus_lock; bindings; filter; _ } ->
       Invis { filter; bindings = eval_bindings ctx filter plus_lock bindings }
 
 let rec eval_ordered_ctx : type mode a b. (mode, a, b) ordered_termctx -> (mode, a, b) Ctx.Ordered.t

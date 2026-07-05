@@ -28,6 +28,7 @@ type find_hole =
       li : No.interval;
       ri : No.interval;
       parametric : [ `Parametric | `Nonparametric ];
+      beingdefined : unit Constant.Map.t;
     }
       -> find_hole
 
@@ -60,7 +61,11 @@ val add_meta :
   unit
 
 val set_meta :
-  ('mode, 'a, 'b, 's) Meta.t -> ?termctx:('mode, 'a, 'b) termctx -> ('mode, 'b, 's) term -> unit
+  ('mode, 'a, 'b, 's) Meta.t ->
+  ?termctx:('mode, 'a, 'b) termctx ->
+  ?recursion:Positivity.recursion ->
+  ('mode, 'b, 's) term ->
+  unit
 
 val unsolved_holes : unit -> int
 val current_unsolved_holes : unit -> int

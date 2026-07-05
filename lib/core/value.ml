@@ -157,11 +157,14 @@ module rec Value : sig
     indices : (('m, 'mode normal) CubeOf.t, 'j, 'ij) Fillvec.t;
     constrs : (Constr.t, ('mode, 'm, 'ij) dataconstr) Abwd.t;
     discrete : [ `Yes | `Maybe | `No ];
+    recursive : Positivity.recursion;
+    hints : hints;
   }
 
   and ('mode, 'm, 'n, 'c, 'a, 'et) codata_args = {
     eta : (potential, 'et) eta;
     opacity : opacity;
+    hints : hints;
     env : ('mode, 'm, 'a) env;
     termctx : ('mode, 'c, ('a, ('mode id, 'n) dim_entry) snoc) termctx option Lazy.t;
     fields : ('mode * 'a * 'n * 'et) Term.CodatafieldAbwd.t;
@@ -392,6 +395,10 @@ end = struct
     constrs : (Constr.t, ('mode, 'm, 'ij) dataconstr) Abwd.t;
     (* Whether it is discrete.  The value `Maybe means that it could be discrete based on its own parameters, indices, and constructor arguments, but either is waiting for its mutual companions to be typechecked, or at least one of them failed to be discrete.  Thus for equality-testing purposes, `Maybe is treated like `No. *)
     discrete : [ `Yes | `Maybe | `No ];
+    (* Whether it has recursive constructors. *)
+    recursive : Positivity.recursion;
+    (* Variable-name hints, for displaying anonymous variables of this type. *)
+    hints : hints;
   }
 
   (* A codatatype stores: *)
@@ -399,6 +406,8 @@ end = struct
     (* An eta flag and an opacity *)
     eta : (potential, 'et) eta;
     opacity : opacity;
+    (* Variable-name hints, for displaying anonymous variables of this type. *)
+    hints : hints;
     (* The environment and termctx that it was evaluated in *)
     env : ('mode, 'm, 'a) env;
     termctx : ('mode, 'c, ('a, ('mode id, 'n) dim_entry) snoc) termctx option Lazy.t;
