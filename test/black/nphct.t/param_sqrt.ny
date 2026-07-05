@@ -26,6 +26,8 @@ def id_√ (Γ :♭| Type) (A :♭| (x₀ x₁ : Γ) (x₂ : Br Γ x₀ x₁) �
   (u1 : √ Γ A B x1)
   : Type
   ≔ √ (Γhat Γ A B)
-       (y0 y1 y2 ↦ Br A (y0 .x2) (y1 .x2) (sym (y2 .x2)) (y2 .u0 .fst) (y2 .u1 .fst))
-       (y ↦ A (y .x0) (y .x1) (y .x2) × Br B (y .x2) (y .u0 .snd) (y .u1 .snd))
-       (x0, x1, x2, u0, u1)
+      (y0 y1 y2 ↦
+       Br A (y0 .x2) (y1 .x2) (sym (y2 .x2)) (y2 .u0 .root) (y2 .u1 .root))
+      (y ↦
+       A (y .x0) (y .x1) (y .x2) × Br B (y .x2) (y .u0 .else) (y .u1 .else))
+      (x0, x1, x2, u0, u1)

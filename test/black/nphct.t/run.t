@@ -63,4 +63,16 @@ of type Type⁽ᵉ⁾ A.0 A.1, which is not a Type.
    ￫ info[I0000]
    ￮ constant √ defined
   
+   ￫ info[I0000]
+   ￮ constant prod defined
+  
+   ￫ info[I0002]
+   ￮ notation «_ × _» defined
+  
+   ￫ info[I0000]
+   ￮ constant Γhat defined
+  
+   ￫ info[I0000]
+   ￮ constant id_√ defined
+  
 
