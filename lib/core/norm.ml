@@ -471,10 +471,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       (* To evaluate a key, we strip off the part of the environment corresponding to the codomain of the key cell, then compose the keys we found there with the supplied key to make a new key on an environment for evaluating the body.  The resulting environment is back at the original mode, so any prekey action stripped along the way is re-applied as a prekey on top. *)
       let (Restrict_keys (env, keys, pre)) = restrict_keys env plus_tgt in
       let env = key_env env (Modalcell.vcomp keys cell) plus_src in
-      let env =
-        match pre with
-        | None -> env
-        | Some pre -> prekey_env env pre in
+      let env = prekey_env env pre in
       eval env tm
   | Match { tm; dim = match_dim; branches } -> (
       let env_dim = dim_env env in
@@ -1292,10 +1289,8 @@ and eval_env : type mode a q n qn b.
         }
   | Key { env = tmenv; cell; plus_src; plus_tgt } ->
       let (Restrict_keys (env, keys, pre)) = restrict_keys env plus_tgt in
-      let env = Key (eval_env env q_n tmenv, Modalcell.vcomp keys cell, plus_src) in
-      match pre with
-      | None -> env
-      | Some pre -> prekey_env env pre
+      prekey_env (Key (eval_env env q_n tmenv, Modalcell.vcomp keys cell, plus_src)) pre
+  | Prekey (tmenv, cell) -> prekey_env (eval_env env q_n tmenv) cell
 
 and apply_term : type dom modality mode n m.
     (mode, kinetic) value ->
@@ -1454,9 +1449,9 @@ and lookup : type mode n b. (mode, n, b) env -> (mode, b) index -> (mode, kineti
       let (Plus x) = D.plus (dom_sface fa) in
       match op_of_opt (comp_opt_op op (plus_opt_op n n_k x (opt_op_of_sface fa))) with
       | Some (Op (f, s)) ->
-          (* Apply the composite key cell, then any prekey action (outermost). *)
+          (* Apply the composite key cell, then the prekey action (outermost); the latter is a no-op if it is an identity cell. *)
           let tm = act (CubeOf.find entry f) s (Some keys) in
-          Option.fold pre ~none:tm ~some:(fun pre -> act_value tm (id_deg D.zero) (Some pre))
+          act_value tm (id_deg D.zero) (Some pre)
       (* This means that in the non-unary case, some dummy endpoints in an opt_sface didn't get canceled out by a degeneracy.  I think that could only happen if a non-unary mode theory has a 2-cell from a sharp parametric modality to a sharp non-parametric modality.  In all the models I know, the primary nonparametric modalities are *comonadic*, plus in the unary case *only* a left adjoint monad to it (which is also right adjoint if the parametricity is internal), and in the external non-unary case another non-monadic non-comonadic functor.  In the internal non-unary case there is a *right* adjoint to the nonparametric comonad, but it is not "nonparametric" in this sense: its parametricity is *codiscrete* rather than discrete; I haven't thought about how to enforce that for a tangible modality, although it comes naturally for a negative presentation that is right adjoint to a tangible discrete modality. *)
       | None -> fatal Invalid_mode_theory)
 

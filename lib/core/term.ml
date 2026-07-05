@@ -251,6 +251,10 @@ module rec Term : sig
         plus_src : ('b, 'cod, 'mu, 'mode, 'bmu) plus_lock;
       }
         -> ('mode, 'ac, 'n, 'bmu) env
+    (* A prekey acts by a key cell on all the values of a term environment, without changing its mode or contexts (the term-level analogue of Value.Prekey). *)
+    | Prekey :
+        ('mode, 'a, 'n, 'b) env * ('mode, 'mu, 'nu, 'cod) Modalcell.t
+        -> ('mode, 'a, 'n, 'b) env
 
   and ('mode, 'b) binding = {
     ty : ('mode, 'b, kinetic) term;
@@ -553,6 +557,9 @@ end = struct
         plus_src : ('b, 'cod, 'mu, 'mode, 'bmu) plus_lock;
       }
         -> ('mode, 'ac, 'n, 'bmu) env
+    | Prekey :
+        ('mode, 'a, 'n, 'b) env * ('mode, 'mu, 'nu, 'cod) Modalcell.t
+        -> ('mode, 'a, 'n, 'b) env
 
   (* A termctx is a data structure analogous to a Ctx.t, but using terms rather than values (and thus we will not explain its structure here; see ctx.ml).  This is used to store the context of a metavariable, as the value context containing level variables is too volatile to store there.  We also store it (lazily) with a codatatype that has higher fields, so we can use it to read back the closure environment to degenerate it. *)
   and ('mode, 'b) binding = {
@@ -672,6 +679,7 @@ let rec dim_term_env : type mode a n b. (mode, a, n, b) env -> n D.t = function
   | Emp (_, n) -> n
   | Ext { env; _ } -> dim_term_env env
   | Key { env; _ } -> dim_term_env env
+  | Prekey (env, _) -> dim_term_env env
 
 let dim_entry : type dom modality mode b f n bm. (dom, modality, mode, b, bm, f, n) entry -> n D.t =
   function

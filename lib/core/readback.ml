@@ -520,14 +520,17 @@ and readback_ordered_env : type mode n a b c d.
               filter;
               filtered;
             })
-  | Lock _ ->
+  | Lock _ -> (
       (* We remove as many locks as there are at the end of the codomain context, since keys in the environment could have composite modalities as their domain. *)
       let (Ordered_remove_locks (envctx, plus_src)) = Termctx.ordered_remove_locks envctx in
       (* Then we remove all the corresponding keys from the environment being read back, and their domain from the context we're reading back *into*. *)
       let (Restrict_keys (env, cell, pre)) = restrict_keys_plus_lock env plus_src in
-      let () = match pre with None -> () | Some _ -> fatal (Anomaly "prekey in readback env") in
       let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt cell) in
-      Key { env = readback_ordered_env ctx env envctx; cell; plus_src; plus_tgt }
+      (* We read back the residual environment as a keyed term environment, and wrap it in a prekey carrying the accumulated prekey action, dropping the latter if it is an identity (as when no prekeys were present). *)
+      let keyed = Term.Key { env = readback_ordered_env ctx env envctx; cell; plus_src; plus_tgt } in
+      match Modalcell.compare_id pre with
+      | Eq -> keyed
+      | Neq -> Prekey (keyed, pre))
   | Parametric_lock envctx -> readback_ordered_env ctx env envctx
 
 (* Read back a context of values into a context of terms. *)

@@ -17,6 +17,28 @@ open Monad.Ops (Err)
 let guard test err = if test then Ok () else Error err
 let fail err = Error err
 
+(* Whether one prekey action is a postwhiskering of another: there is a modality that, composed onto the vertical target of pre2, yields pre1.  Since a prekey acts on a value (which lies behind the appropriate modality) by extending its key with factoring, the extra target modality is absorbed, so a postwhiskering acts the same way.  In particular an identity 2-cell is a postwhiskering of an identity (id2), so the two are prekey-equal. *)
+let prekey_le : type mode m1 n1 c1 m2 n2 c2.
+    (mode, m1, n1, c1) Modalcell.t -> (mode, m2, n2, c2) Modalcell.t -> bool =
+ fun pre1 pre2 ->
+  match Modality.factor (Modalcell.vsrc pre1) (Modalcell.vsrc pre2) with
+  | None -> false
+  | Some (Factor (m, _)) -> (
+      let (Wrap p) = Modalcell.postwhisker_wrapped m pre2 in
+      match Modalcell.compare p pre1 with
+      | Eq -> true
+      | Neq -> false)
+
+(* Two prekey actions are considered equal if they compare equal or if either is a postwhiskering of the other. *)
+let prekey_equal : type mode m1 n1 c1 m2 n2 c2.
+    (mode, m1, n1, c1) Modalcell.t -> (mode, m2, n2, c2) Modalcell.t -> bool =
+ fun pre1 pre2 ->
+  (match Modalcell.compare pre1 pre2 with
+    | Eq -> true
+    | Neq -> false)
+  || prekey_le pre1 pre2
+  || prekey_le pre2 pre1
+
 let if_known (test : 'a Err.t option) err =
   match test with
   | None -> Error (err ())
@@ -483,11 +505,16 @@ module Equal = struct
             return ())
     | Lock _ -> (
         let (Ordered_remove_locks (envctx, locks)) = Termctx.ordered_remove_locks envctx in
-        let (Restrict_keys (env1, keys1, _)) = restrict_keys_plus_lock env1 locks in
-        let (Restrict_keys (env2, keys2, _)) = restrict_keys_plus_lock env2 locks in
+        let (Restrict_keys (env1, keys1, pre1)) = restrict_keys_plus_lock env1 locks in
+        let (Restrict_keys (env2, keys2, pre2)) = restrict_keys_plus_lock env2 locks in
         match Modalcell.compare keys1 keys2 with
         | Neq -> fatal (Modalcell_mismatch ("equal_env", keys1, keys2))
         | Eq ->
+            (* The composite lock keys are determined by the (shared) codomain context, so a mismatch is an anomaly; but the prekeys come from the actual values and can genuinely differ, so a mismatch there is an ordinary inequality. *)
+            let* () =
+              guard (prekey_equal pre1 pre2)
+                (Unequal.Variables
+                   (PString (Modalcell.to_string pre1), PString (Modalcell.to_string pre2))) in
             let (Remove_lock (ctx, _)) = Ctx.remove_lock ctx (Modalcell.vtgt keys1) in
             equal_ordered_env ctx env1 env2 envctx)
     | Parametric_lock envctx -> equal_ordered_env ctx env1 env2 envctx
