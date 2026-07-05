@@ -472,8 +472,9 @@ and readback_ordered_env : type mode n a b c d.
           (* We act by a sface_of_filter to reduce the dimension of the environment to m, so that we can get an (m+k)-dimensional cube out of it. *)
           let aenv = act_env env (opt_op_of_opt_sface (Modality.sface_of_filter n filter)) in
           (* We get the top entry (Now) from the environment we're reading back.  We can't just match it against Ext or LazyExt because it could have other lazy operations applied to it like Shift, Unshift, Permute, etc. *)
-          let (Looked_up { act; op; entry = xs }) =
-            lookup_cube aenv m_k modality Now (id_opt_op mk) in
+          (* Since no keys are stripped here, the prekey transport modality is just the entry's annotating modality. *)
+          let (Looked_up { act; op; entry = xs; pre }) =
+            lookup_cube aenv m_k modality modality Now (id_opt_op mk) in
           (* As usual, the missing endpoints in sface_of_filter should be canceled by degeneracies in the non-unary case. *)
           let (Op (fc, fd)) =
             op_of_opt op <|> Anomaly "unexpected missing endpoint in readback_ordered_env" in
@@ -481,8 +482,8 @@ and readback_ordered_env : type mode n a b c d.
           let (Locked (bplus, lctx)) = Ctx.lock ctx modality in
           (* We also analogously key the environment we're reading back, for purposes of evaluating types. *)
           let lenv = key_env aenv (Modalcell.id modality) dplus in
-          (* We apply the accumulated operators and keys to the entry we found. *)
-          let xs = act_cube { act } (CubeOf.subcube fc xs) fd None in
+          (* We apply the accumulated operators, degeneracies, and any prekey action to the entry we found. *)
+          let xs = act_cube { act } (CubeOf.subcube fc xs) fd (Some pre) in
           (* Now we read back all the terms and types in that environment entry.  We record the normal forms in a hashtbl as we go, to use as instantiation arguments to types of higher-dimensional terms. *)
           let xtytbl = Hashtbl.create 10 in
           let tmxs =
