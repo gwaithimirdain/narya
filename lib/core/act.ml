@@ -647,12 +647,13 @@ module Act = struct
         let Any_deg s, apps = act_apps apps s c in
         let (Insfact_comp_ext (fa, ins, _, _)) = insfact_comp_ext ins s in
         let acted_env = act_env env (opt_op_of_deg fa) in
-        let (Wrap newkey) = key_vcomp key c in
+        (* The stored key is applied to the evaluated value when forcing, and the new cell acts on the result of that, so the stored key is applied first in the composite. *)
+        let (Wrap newkey) = key_vcomp c key in
         ref (Deferred_eval (acted_env, tm, ins, newkey, apps))
     | Deferred (tm, s', key, apps) ->
         let Any_deg s, apps = act_apps apps s c in
         let (DegExt (_, _, fa)) = comp_deg_extending s' s in
-        let (Wrap newkey) = key_vcomp key c in
+        let (Wrap newkey) = key_vcomp c key in
         ref (Deferred (tm, fa, newkey, apps))
     | Ready tm -> ref (Deferred ((fun () -> tm), s, c, Emp))
 end
