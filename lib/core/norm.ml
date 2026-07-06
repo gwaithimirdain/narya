@@ -37,23 +37,32 @@ let rec take_args : type dom window mode annotations m n mn a b ab.
   match (dargs, annotate, comp) with
   | [], Zero _, Zero -> env
   | Modal (fmn, arg) :: args, Suc (Annotate fn, annotate), Suc (Dim _, comp) -> (
+      (* The value's stored filter is that of its constructor annotation mu, whose codomain is the (inner) mode of the datatype, while the context annotation is the composite of the window modality with mu, whose codomain is the outer mode.  So we compose mu with the window before comparing. *)
       let mu = Modality.filter_modality fmn in
+      let (Comp wx) = Modality.comp mu in
+      let wmu = Modality.comp_out window wx in
       let amu = Modality.filter_modality fn in
-      match Modality.compare mu amu with
-      | Eq ->
-          let (Filter_of_plus (ij, fm, fn2)) = Modality.filter_of_plus mn fmn in
-          let Eq = Modality.filter_uniq fn2 fn in
-          let env =
-            Ext
-              {
-                env;
-                plus = ij;
-                filter = fm;
-                filtered = Modality.filter_idempotent fn;
-                values = `Ok arg;
-              } in
-          take_args env mn args window annotate comp
-      | Neq -> fatal (Modality_mismatch (`Internal, "take_args", mu, amu)))
+      match Modality.compare wmu amu with
+      | Neq -> fatal (Modality_mismatch (`Internal, "take_args", wmu, amu))
+      | Eq -> (
+          (* A window modality must not do any dimension filtering, so composing it with mu must filter the dimension to the same result.  We can currently only check this at runtime. *)
+          let mn' = D.plus_out (dim_env env) mn in
+          let (Has_filter wfmn) = Modality.filter wmu mn' in
+          match D.compare (Modality.filtered mn' wfmn) (Modality.filtered mn' fmn) with
+          | Neq -> fatal Invalid_mode_theory
+          | Eq ->
+              let (Filter_of_plus (ij, fm, fn2)) = Modality.filter_of_plus mn wfmn in
+              let Eq = Modality.filter_uniq fn2 fn in
+              let env =
+                Ext
+                  {
+                    env;
+                    plus = ij;
+                    filter = fm;
+                    filtered = Modality.filter_idempotent fn;
+                    values = `Ok arg;
+                  } in
+              take_args env mn args window annotate comp))
   | _ -> fatal (Anomaly "wrong number of arguments in argument list")
 
 (* Eval-readback callback for tyof_higher_codatafield *)

@@ -91,10 +91,8 @@ let rec motive_of_family : type dom window mode a b.
     (dom, kinetic) value ->
     (mode, b, kinetic) term =
  fun ctx window tm ty ->
-  let (Locked (_, wctx)) = Ctx.lock ctx window in
-  let dom = Ctx.mode wctx in
-  let idm = Modality.id dom in
-  let filter = Modality.filter_id dom D.zero in
+  (* The motive's pi-type domains are window-modal, so their dimension filter is the (zero-dimensional) filter of the window modality. *)
+  let filter = Modality.filter_zero window in
   (* First we define some auxiliary modules and traversal functions. *)
   let module S = struct
     type 'a suc = ('a, (window, D.zero) dim_entry) snoc
@@ -689,7 +687,7 @@ let rec check : type mode a b s.
                               (Mismatched_dimensions_in_cube_abstraction (m', m))));
                     (* Here we don't need to slurp up lots of lambdas, but can make do with one. *)
                     let xs =
-                      singleton_variables m
+                      singleton_variables k
                         (View.hinted x (Ctx.Binding.value (CubeOf.find_top newnfs)).ty) in
                     let ctx = Ctx.cube_vis ctx (Modality.filter_idempotent filter) x newnfs in
                     Lam (xs, m, filter, check ?discrete (mkstatus xs status) ctx body output)))
@@ -1436,18 +1434,20 @@ and check_implicit_match : type mode a b.
                       fatal (Modality_mismatch (`User, "checking implicit match", window, modality))
                   )));
           let (Locked (plus, lctx)) = Ctx.lock ctx modality in
+          let iplus = plus_with_locks_of_plus_lock plus in
           (* For a variable match, the variable must not be let-bound to a value or be a field access variable. *)
           match result with
           | `Field (_, field) -> fallback "discriminee is record field" (PField field)
           | `Var (None, fa) ->
-              fallback "discriminee is let-bound" (PTerm (lctx, Var (Index (insert, fa, filter, plus))))
+              fallback "discriminee is let-bound"
+                (PTerm (lctx, Var (Index (insert, fa, filter, iplus))))
           | `Var (Some level, fa) ->
               (* In this case we do have a valid variable match. *)
-              let index = Index (insert, fa, filter, plus) in
+              let index = Index (insert, fa, filter, iplus) in
               with_loc loc (fun () ->
                   Annotate.ctx status ctx (locate_opt loc (Synth (Var ix)));
                   Annotate.ty lctx varty;
-                  Annotate.tm lctx (realize status (Term.Var index)));
+                  Annotate.tm lctx (Term.Var index));
               check_var_match status ctx level index varty modality plus brs refutables highers
                 motive loc))
   | _ -> fallback ()
@@ -2438,7 +2438,6 @@ and check_codata : type mode a b n et.
       with_codata_so_far status eta ctx `Opaque hints dim tyargs checked_fields fibrancy
         ~has_higher_fields errs
       @@ fun domvars _ ->
-      let idm = Modality.id (Ctx.mode ctx) in
       let newctx = Ctx.cube_vis ctx (Modality.filter_id (Ctx.mode ctx) dim) x domvars in
       (* A lower field and a higher field can't share a name, since projections at that name would be ambiguous. *)
       let check_name_clash () =
@@ -3115,7 +3114,7 @@ and synth : type mode a b s.
                                           {
                                             x =
                                               singleton_variables (dom_sface fb)
-                                                (View.hinted x (CubeOf.find edoms t'));
+                                                (View.hinted x (CubeOf.find edoms fb));
                                             filter = tfilter;
                                             doms = Modal (modality, plus, CubeOf.subcube fb cdoms);
                                             cods = CodCube.subcube t' ccods;
@@ -3186,7 +3185,7 @@ and synth : type mode a b s.
             end in
             let module Build = NICubeOf.Traverse (S) in
             let build : type left m.
-                (m, kf) sface -> left S.t -> (left, m, string option) Build.fwrap_left =
+                (m, kf) sface -> left S.t -> (left, m, binder_name) Build.fwrap_left =
              fun s (State { xctx; plus = ac; tele }) ->
               match tele with
               | Emp -> fatal (Not_enough_domains k)
@@ -3197,7 +3196,7 @@ and synth : type mode a b s.
                     check (Kinetic `Nolet) xctx dom (universe (Modality.src modality) D.zero) in
                   let edom = eval_term (Ctx.env xctx) cdom in
                   (* Further errors here should also be reported on the relevant domain term. *)
-                  with_loc dom.loc @@ fun () : (left, m, string option) Build.fwrap_left ->
+                  with_loc dom.loc @@ fun () : (left, m, binder_name) Build.fwrap_left ->
                   (* No_such_level indicates a readback failure, meaning that some domain or boundary was not defined in the correct context (e.g. used unavailable variables). *)
                   Reporter.try_with ~fatal:(fun d ->
                       match d.message with
@@ -3205,7 +3204,7 @@ and synth : type mode a b s.
                           fatal ?loc:d.explanation.loc
                             (Invalid_higher_function "invalid domain scope")
                       | _ -> fatal_diagnostic d)
-                  @@ fun () : (left, m, string option) Build.fwrap_left ->
+                  @@ fun () : (left, m, binder_name) Build.fwrap_left ->
                   let dom, tyargs =
                     match D.compare_zero m with
                     | Zero ->
@@ -3243,7 +3242,9 @@ and synth : type mode a b s.
                   (match (Modality.compare_id modality, Modality.compare_id (Locks.cod locks)) with
                   | Eq, Eq -> Hashtbl.add varstbl (SFace_of s) value
                   | _ -> fatal (Anomaly "invalid modalities when checking InstHigherPi"));
-                  Fwrap (NFamOf x, State { xctx = newctx; plus = Suc ac; tele = rest })) in
+                  Fwrap
+                    ( NFamOf (View.hinted x edom),
+                      State { xctx = newctx; plus = Suc ac; tele = rest } )) in
             (* We don't care about the produced context, since its checked length is wrong.  We want just one cube of variables, the total raw length added to the previous one, and the leftover telescope.  *)
             let (Wrap (xs, State { xctx = _; plus = af; tele = rest })) =
               Build.build_left k { build } (State { xctx = lctx; plus = Zero; tele = doms }) in

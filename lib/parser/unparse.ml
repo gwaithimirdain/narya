@@ -969,7 +969,8 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
           (type ks)
           ((fb, sfilter) : (ks, k) sface * (dom, modality, mode, ks, kk) Modality.filter_dim) -> (
           let lam_xs = sub_variables fb xs in
-          let _, (lamvars : (b, (modality, ks) dim_entry) snoc Names.t) = Names.add lamvars lam_xs in
+          let _, (lamvars : (b, (modality, ks) dim_entry) snoc Names.t) =
+            Names.add_strings lamvars lam_xs in
           match lam with
           | Lam (ys, nd, lfilter, body) -> (
               let _ = ys in
