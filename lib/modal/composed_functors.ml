@@ -76,25 +76,10 @@ module Composedcell : Modalcell.Theory = struct
   let to_string : type a m n b. (a, m, n, b) Modalcell.t -> string = fun _ -> "id"
 end
 
-(* Like arbitrary functors, F and G and their composites are transparent and translucent but not pellucid; identity modalities are always pellucid. *)
-module Composedmodality : Modality.Theory = struct
-  let sharp _ = true
-
-  let pellucid : type a m b. (a, m, b) Modality.t -> bool =
-   fun m ->
-    match Modality.compare_id m with
-    | Eq -> true
-    | Neq -> false
-
-  let transparent _ = true
-  let translucent _ = true
-end
-
 let install () =
   let module AMode = Mode.Generate (AGen) in
   let module BMode = Mode.Generate (BGen) in
   let module CMode = Mode.Generate (CGen) in
   let module _ = Modality.Generate (FGen (AMode) (BMode)) in
   let module _ = Modality.Generate (GGen (BMode) (CMode)) in
-  Modalcell.choose_theory (module Composedcell : Modalcell.Theory);
-  Modality.choose_theory (module Composedmodality : Modality.Theory)
+  Modalcell.choose_theory (module Composedcell : Modalcell.Theory)

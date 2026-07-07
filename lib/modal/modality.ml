@@ -231,27 +231,40 @@ module Modality = Path.Make (Gen)
 include Modality
 module Map = Path.Map (Gen) (Mode.Map) (Gen.Map)
 
+let compare_id : type x m y. (x, m, y) t -> (m * y, x id * x) Eq.compare =
+ fun m ->
+  match compare m (id (src m)) with
+  | Eq -> Eq
+  | Neq -> Neq
+
 module type Theory = sig
-  val sharp : ('a, 'm, 'b) t -> bool
+  val tangible : ('a, 'm, 'b) t -> bool
   val pellucid : ('a, 'm, 'b) t -> bool
   val transparent : ('a, 'm, 'b) t -> bool
   val translucent : ('a, 'm, 'b) t -> bool
 end
 
+(* By default, all modalities are tangible and translucent, but none are pellucid or transparent. *)
 let theory : (module Theory) ref =
   ref
     (module struct
-      let sharp _ = true
-      let pellucid _ = true
-      let transparent _ = true
+      let tangible _ = true
+
+      let pellucid : type a m b. (a, m, b) t -> bool =
+       fun m ->
+        match compare_id m with
+        | Eq -> true
+        | Neq -> false
+
+      let transparent m = pellucid m
       let translucent _ = true
     end : Theory)
 
 let choose_theory (t : (module Theory)) = theory := t
 
-let sharp m =
+let tangible m =
   let module T = (val !theory) in
-  T.sharp m
+  T.tangible m
 
 let pellucid m =
   let module T = (val !theory) in
@@ -277,12 +290,6 @@ module Cube (F : Fam3) = struct
         ('dom, 'modality, 'mode) modality_t * ('n, ('dom, 'a, 'b) F.t) Dim.CubeOf.t
         -> ('n, 'mode, 'a, 'b) t
 end
-
-let compare_id : type x m y. (x, m, y) t -> (m * y, x id * x) Eq.compare =
- fun m ->
-  match compare m (id (src m)) with
-  | Eq -> Eq
-  | Neq -> Neq
 
 (* String names.  A modality is named by a string list of generator names.  Note that the empty list therefore represents the identity modality at *any* mode, so to convert such a name to a modality we need either the source or the target mode given. *)
 

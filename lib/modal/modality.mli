@@ -39,14 +39,14 @@ include module type of Path.Make (Gen)
 module Map : MAP3_MAKER with module Key := Path.Make(Gen)
 
 module type Theory = sig
-  val sharp : ('a, 'm, 'b) t -> bool
+  val tangible : ('a, 'm, 'b) t -> bool
   val pellucid : ('a, 'm, 'b) t -> bool
   val transparent : ('a, 'm, 'b) t -> bool
   val translucent : ('a, 'm, 'b) t -> bool
 end
 
 val choose_theory : (module Theory) -> unit
-val sharp : ('a, 'm, 'b) t -> bool
+val tangible : ('a, 'm, 'b) t -> bool
 val pellucid : ('a, 'm, 'b) t -> bool
 val transparent : ('a, 'm, 'b) t -> bool
 val translucent : ('a, 'm, 'b) t -> bool

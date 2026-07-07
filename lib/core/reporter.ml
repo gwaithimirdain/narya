@@ -195,7 +195,7 @@ module Code = struct
         -> t
     | Unknown_modality : string -> t
     | Modalcell_mismatch : string * ('a, 'm, 'n, 'b) Modalcell.t * ('c, 'r, 's, 'd) Modalcell.t -> t
-    | Nonsharp_modality : ('a, 'm, 'b) Modality.t -> t
+    | Intangible_modality : ('a, 'm, 'b) Modality.t -> t
     | Nontransparent_window_modality :
         ('a, 'm, 'b) Modality.t * bool * [ `Nonrecursive | `Recursive | `Unknown ]
         -> t
@@ -375,7 +375,7 @@ module Code = struct
     | Modality_mismatch (`User, _, _, _) -> Error
     | Unknown_modality _ -> Error
     | Modalcell_mismatch _ -> Error
-    | Nonsharp_modality _ -> Error
+    | Intangible_modality _ -> Error
     | Nontransparent_window_modality _ -> Error
     | Non_mode_synthesizing _ -> Error
     | Invalid_mode_theory -> Bug
@@ -586,7 +586,7 @@ module Code = struct
     | Unknown_modality _ -> "E1704"
     | Missing_key _ -> "E1705"
     | Invalid_mode_theory -> "E1710"
-    | Nonsharp_modality _ -> "E1706"
+    | Intangible_modality _ -> "E1706"
     | Nontransparent_window_modality _ -> "E1707"
     | Nonparametric_mode_degeneracy _ -> "E1708"
     (* Commands *)
@@ -930,7 +930,7 @@ module Code = struct
           textf "degeneracy %s is not allowed at mode %s, which is nonparametric" name
             (Mode.name mode)
       | Unknown_modality c -> textf "unknown modality %s" c
-      | Nonsharp_modality m -> textf "modality %s is not sharp" (Modality.to_string m)
+      | Intangible_modality m -> textf "modality %s is not tangible" (Modality.to_string m)
       | Nontransparent_window_modality (m, _, `Recursive) ->
           textf "window modality %s must be pellucid since the datatype has recursive constructors"
             (Modality.to_string m)
