@@ -60,7 +60,7 @@ module Ordered = struct
                         match Hashtbl.find_opt xstbl (SFace_of fab') with
                         | Some x -> ready (Val x.tm)
                         | None ->
-                            defer (fun () ->
+                            defer (Modality.src modality) (fun () ->
                                 fatal (Anomaly "variable out of scope in degenerate_binding")));
                   } in
               let env = Ext { env; plus = k_n; values = `Lazy prev_vals; filter; filtered } in

@@ -213,13 +213,13 @@ module rec Value : sig
         ('mode, 'm, 'b) env
         * ('mode, 'b, 's) term
         * ('mn, 'm, 'n) insertion
-        * ('mode, 'mu, 'nu, 'cod) Modalcell.t option
+        * ('mode, 'mu, 'nu, 'cod) Modalcell.t
         * ('mode, 'any) apps
         -> ('mode, 's) lazy_state
     | Deferred :
         (unit -> ('mode, 's) evaluation)
         * ('m, 'n) deg
-        * ('mode, 'mu, 'nu, 'cod) Modalcell.t option
+        * ('mode, 'mu, 'nu, 'cod) Modalcell.t
         * ('mode, 'any) apps
         -> ('mode, 's) lazy_state
     | Ready : ('mode, 's) evaluation -> ('mode, 's) lazy_state
@@ -467,13 +467,13 @@ end = struct
         ('mode, 'm, 'b) env
         * ('mode, 'b, 's) term
         * ('mn, 'm, 'n) insertion
-        * ('mode, 'mu, 'nu, 'cod) Modalcell.t option
+        * ('mode, 'mu, 'nu, 'cod) Modalcell.t
         * ('mode, 'any) apps
         -> ('mode, 's) lazy_state
     | Deferred :
         (unit -> ('mode, 's) evaluation)
         * ('m, 'n) deg
-        * ('mode, 'mu, 'nu, 'cod) Modalcell.t option
+        * ('mode, 'mu, 'nu, 'cod) Modalcell.t
         * ('mode, 'any) apps
         -> ('mode, 's) lazy_state
     | Ready : ('mode, 's) evaluation -> ('mode, 's) lazy_state
@@ -697,10 +697,11 @@ let restrict_keys_plus_lock : type mode mu cod k b bm.
 
 (* Create a lazy evaluation *)
 let lazy_eval : type mode n b s. (mode, n, b) env -> (mode, b, s) term -> (mode, s) lazy_eval =
- fun env tm -> ref (Deferred_eval (env, tm, ins_zero (dim_env env), None, Emp))
+ fun env tm ->
+  ref (Deferred_eval (env, tm, ins_zero (dim_env env), Modalcell.id2 (mode_env env), Emp))
 
-let defer : type mode s. (unit -> (mode, s) evaluation) -> (mode, s) lazy_eval =
- fun tm -> ref (Deferred (tm, id_deg D.zero, None, Emp))
+let defer : type mode s. mode Mode.t -> (unit -> (mode, s) evaluation) -> (mode, s) lazy_eval =
+ fun mode tm -> ref (Deferred (tm, id_deg D.zero, Modalcell.id2 mode, Emp))
 
 let ready : type mode s. (mode, s) evaluation -> (mode, s) lazy_eval = fun ev -> ref (Ready ev)
 
@@ -716,7 +717,13 @@ let apply_lazy : type dom modality mode m n s.
   | Deferred_eval (env, tm, ins, cell, apps) ->
       ref (Deferred_eval (env, tm, ins, cell, Arg (apps, filter, xs, xins)))
   | Deferred (tm, ins, cell, apps) -> ref (Deferred (tm, ins, cell, Arg (apps, filter, xs, xins)))
-  | Ready tm -> ref (Deferred ((fun () -> tm), id_deg D.zero, None, Arg (Emp, filter, xs, xins)))
+  | Ready tm ->
+      ref
+        (Deferred
+           ( (fun () -> tm),
+             id_deg D.zero,
+             Modalcell.id2 (Modality.tgt (Modality.filter_modality filter)),
+             Arg (Emp, filter, xs, xins) ))
 
 (* We defer "field_lazy" to act.ml, since it requires pushing a permutation inside the apps. *)
 
@@ -923,8 +930,8 @@ let inst_apps : type mode any m n mn.
 
 (* Instantiate a lazy value *)
 let inst_lazy : type mode m n mn s.
-    (mode, s) lazy_eval -> (m, n, mn, mode normal) TubeOf.t -> (mode, s) lazy_eval =
- fun lev args ->
+    mode Mode.t -> (mode, s) lazy_eval -> (m, n, mn, mode normal) TubeOf.t -> (mode, s) lazy_eval =
+ fun mode lev args ->
   match D.compare_zero (TubeOf.inst args) with
   | Zero -> lev
   | Pos k -> (
@@ -935,7 +942,8 @@ let inst_lazy : type mode m n mn s.
       | Deferred (tm, ins, cell, apps) ->
           let (Any newargs) = inst_apps apps args in
           ref (Deferred (tm, ins, cell, newargs))
-      | Ready tm -> ref (Deferred ((fun () -> tm), id_deg D.zero, None, Inst (Emp, k, args))))
+      | Ready tm ->
+          ref (Deferred ((fun () -> tm), id_deg D.zero, Modalcell.id2 mode, Inst (Emp, k, args))))
 
 let inst_tys : ('mode, kinetic) value -> ('mode, kinetic) value TubeOf.full = function
   | Neu { ty = (lazy (Neu { args = Inst (_, _, tys); _ })); _ } -> (

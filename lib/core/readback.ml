@@ -150,7 +150,7 @@ and readback_at : type mode a z.
                       Term.StructfieldAbwd.Entry
                         ( fld,
                           Term.Structfield.Lower
-                            ( readback_at ctx (field_term tm fld fldins)
+                            ( readback_at ctx (field_term (Ctx.mode ctx) tm fld fldins)
                                 (tyof_field (Ok tm) ty fld ~shuf:Trivial fldins),
                               l ) ))
                     fields in
@@ -167,7 +167,7 @@ and readback_at : type mode a z.
                           Term.StructfieldAbwd.Entry
                             ( fld,
                               Term.Structfield.Lower
-                                ( readback_at ctx (field_term tm fld fldins)
+                                ( readback_at ctx (field_term (Ctx.mode ctx) tm fld fldins)
                                     (tyof_field (Ok tm) ty fld ~shuf:Trivial fldins),
                                   l ) ))
                         fields in
@@ -184,8 +184,8 @@ and readback_at : type mode a z.
               (* A nontrivially permuted record is not a record type, but we can permute its arguments to find elements of a record type that we can then eta-expand and re-permute. *)
               let (Perm_to p) = perm_of_ins ins in
               let pinv = deg_of_perm (perm_inv p) in
-              let ptm = act_value tm pinv None in
-              let pty = act_ty tm ty pinv None in
+              let ptm = act_value tm pinv (Modalcell.id2 (Ctx.mode ctx)) in
+              let pty = act_ty tm ty pinv (Modalcell.id2 (Ctx.mode ctx)) in
               match readback_at_record ptm pty with
               | Some res -> Act (res, deg_of_perm p, (`Other, `Other))
               | None -> readback_val_sorted ctx tm vty))
@@ -489,7 +489,7 @@ and readback_ordered_env : type mode n a b c d.
           (* We also analogously key the environment we're reading back, for purposes of evaluating types. *)
           let lenv = key_env aenv (Modalcell.id modality) dplus in
           (* We apply the accumulated operators, degeneracies, and any prekey action to the entry we found. *)
-          let xs = act_cube { act } (CubeOf.subcube fc xs) fd (Some pre) in
+          let xs = act_cube { act } (CubeOf.subcube fc xs) fd pre in
           (* Now we read back all the terms and types in that environment entry.  We record the normal forms in a hashtbl as we go, to use as instantiation arguments to types of higher-dimensional terms. *)
           let xtytbl = Hashtbl.create 10 in
           let tmxs =

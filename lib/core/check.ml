@@ -475,7 +475,10 @@ let rec check : type mode a b s.
                   match d.message with
                   | Low_dimensional_argument_of_degeneracy _ -> Error d
                   | _ -> fatal_diagnostic d)
-              @@ fun () -> Ok (gact_ty None ty fainv ~err:(low_dim_arg_err str.value) None)
+              @@ fun () ->
+              Ok
+                (gact_ty None ty fainv ~err:(low_dim_arg_err str.value)
+                   (Modalcell.id2 (Ctx.mode ctx)))
             with
             | Error nosynth ->
                 (* However, if the given term *doesn't* synthesize, we want to report the low-dimensional error, so we pass that diagnostic on. *)
@@ -517,7 +520,8 @@ let rec check : type mode a b s.
                         let xty =
                           gact_ty
                             ~err:(anomaly_dim_err "dimension confusion in checking degeneracy")
-                            None sxty (deg_of_perm fp) None in
+                            None sxty (deg_of_perm fp)
+                            (Modalcell.id2 (Ctx.mode ctx)) in
                         let ctx = Ctx.maybe_lock ctx fa in
                         let cx, xloc =
                           match x with
@@ -527,7 +531,8 @@ let rec check : type mode a b s.
                         let ex = eval_term (Ctx.env ctx) cx in
                         let sty =
                           with_loc xloc @@ fun () ->
-                          act_ty ex xty fa ~err:(low_dim_arg_err str.value) None in
+                          act_ty ex xty fa ~err:(low_dim_arg_err str.value)
+                            (Modalcell.id2 (Ctx.mode ctx)) in
                         match subtype_of ctx sty ty with
                         | Ok () ->
                             realize status
@@ -2993,11 +2998,11 @@ and synth : type mode a b s.
             ( realize status
                 (Term.Key { tm; cell = Modalcell.id modality; plus_tgt; plus_src }
                   : (mode, b, kinetic) term),
-              (act_value ty (id_deg D.zero) None : (mode, kinetic) value) )
+              (act_value ty (id_deg D.zero) (Modalcell.id2 mode) : (mode, kinetic) value) )
         | _, Some (Unique cell) ->
             (* And if the key is unique, we act by that key. *)
             ( realize status (Term.Key { tm; cell; plus_tgt; plus_src }),
-              act_value ty (id_deg D.zero) (Some cell) )
+              act_value ty (id_deg D.zero) cell )
         | Neq, None ->
             (* If the modalities are not equal, and the key is not unique, then the user should have given an explicit key. *)
             fatal (Missing_key (modality, lock)))
@@ -3362,7 +3367,8 @@ and synth : type mode a b s.
         let sx, ety = synth ?nosynth (Kinetic `Nolet) ctx x in
         let ex = eval_term (Ctx.env ctx) sx in
         let sty =
-          with_loc x.loc @@ fun () -> act_ty ex ety fa None ~err:(low_dim_arg_err str.value) in
+          with_loc x.loc @@ fun () ->
+          act_ty ex ety fa (Modalcell.id2 (Ctx.mode ctx)) ~err:(low_dim_arg_err str.value) in
         ( realize status (Term.Act (sx, fa, (sort_of_ty ctx (view_type sty "synth act"), `Other))),
           sty )
     | Act _, _ -> fatal_or nosynth (Nonsynthesizing "argument of degeneracy")
@@ -3543,7 +3549,7 @@ and synth : type mode a b s.
         let ex = eval_term env cx in
         let nx : mode normal = { tm = ex; ty } in
         let creflx = Term.Act (cx, deg_zero Hott.dim, (`Other, `Other)) in
-        let idty = act_value ty (deg_zero Hott.dim) None in
+        let idty = act_value ty (deg_zero Hott.dim) (Modalcell.id2 mode) in
         let ididcty =
           Term.Act
             ( Term.Act (cty, deg_zero Hott.dim, (`Other, `Other)),
@@ -3887,7 +3893,8 @@ and synth_or_check_apps : type mode a b.
           (* Finally, we still need to degenerate that function and apply it to all the arguments. *)
           synth_apps ctx
             (locate_opt fn.loc (Term.Act (cfn, s, (`Function, `Other))))
-            (act_ty efn sty s None) fn args
+            (act_ty efn sty s (Modalcell.id2 (Ctx.mode ctx)))
+            fn args
       | Pos _ -> fatal (Unimplemented "typechecking degenerated higher-dimensional redices"))
 
 (* A helper function for synth_or_check_apps.  It uses information from ascribed abstractions, synthesizing arguments, and supplied type to synthesize a type for the head abstraction.  It *only* uses the arguments for this purpose, and ignores them if unneeded.  Thus its return value must afterwards still be applied to the arguments.  (In particular, therefore, some of the arguments may end up being synthesized twice, which is not great.) *)

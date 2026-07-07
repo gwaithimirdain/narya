@@ -131,7 +131,7 @@ module F = struct
             (Field.to_string f) p term tm (string_of_ins ins)
             (string_of_dim (dom_ins ins))
             apps args
-            (Option.fold ~some:Modalcell.to_string ~none:"" cell)
+            (Modalcell.to_string cell)
             l
 
   and lazy_eval : type mode s. int -> formatter -> (mode, s) lazy_eval -> unit =

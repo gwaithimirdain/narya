@@ -475,11 +475,11 @@ module Ordered = struct
   (* Every context has an underlying environment that substitutes each (level) variable for itself (index).  This environment ALWAYS HAS DIMENSION ZERO, and therefore in particular the variables don't need to come with any boundaries. *)
 
   let env_entry : type mode n.
-      (n, mode Binding.t) CubeOf.t -> (n, (mode, kinetic) lazy_eval) CubeOf.t =
-   fun v ->
+      mode Mode.t -> (n, mode Binding.t) CubeOf.t -> (n, (mode, kinetic) lazy_eval) CubeOf.t =
+   fun mode v ->
     CubeOf.mmap
       (* We defer the value because it might be Unknown or Delayed, but we don't want an error reported unless such a value is actually *used*. *)
-      { map = (fun _ [ x ] -> defer (fun () -> Val (Binding.value x).tm)) }
+      { map = (fun _ [ x ] -> defer mode (fun () -> Val (Binding.value x).tm)) }
       [ v ]
 
   (* This function traverses the entire context and computes the corresponding environment.  However, when we add permutations to environments below, we will also store a precomputed environment, so this function only needs to be called when the context has been globally modified. *)
@@ -492,7 +492,7 @@ module Ordered = struct
             plus = D.zero_plus (CubeOf.dim bindings);
             filtered = filter;
             filter = Modality.filter_zero (Modality.filter_modality filter);
-            values = `Lazy (env_entry bindings);
+            values = `Lazy (env_entry (Modality.src (Modality.filter_modality filter)) bindings);
           }
     | Snoc (ctx, Invis { bindings; filter }, _) ->
         Ext
@@ -501,7 +501,7 @@ module Ordered = struct
             plus = D.zero_plus (CubeOf.dim bindings);
             filtered = filter;
             filter = Modality.filter_zero (Modality.filter_modality filter);
-            values = `Lazy (env_entry bindings);
+            values = `Lazy (env_entry (Modality.src (Modality.filter_modality filter)) bindings);
           }
     | Lock (ctx, lock) ->
         let modality = Modality.of_gen lock in
@@ -664,7 +664,8 @@ let vis (Permute { perm; env; level; ctx }) filter m mn xs vars af =
             plus = D.zero_plus (CubeOf.dim vars);
             filtered = filter;
             filter = Modality.filter_zero (Modality.filter_modality filter);
-            values = `Lazy (Ordered.env_entry vars);
+            values =
+              `Lazy (Ordered.env_entry (Modality.src (Modality.filter_modality filter)) vars);
           };
       level = level + 1;
       ctx = Ordered.vis ctx filter m mn xs vars bf;
@@ -698,7 +699,8 @@ let vis_fields (Permute { perm; env; level; ctx }) xs vars fields fplus af =
     {
       perm = N.perm_plus perm af bf;
       env =
-        Ext { env; plus = D.zero_plus n; filter; filtered; values = `Lazy (Ordered.env_entry vars) };
+        Ext
+          { env; plus = D.zero_plus n; filter; filtered; values = `Lazy (Ordered.env_entry mode vars) };
       level = level + 1;
       ctx = Ordered.vis_fields ctx xs vars fields fplus bf;
     }
@@ -714,7 +716,8 @@ let invis (Permute { perm; env; level; ctx }) filter vars =
             plus = D.zero_plus (CubeOf.dim vars);
             filtered = filter;
             filter = Modality.filter_zero (Modality.filter_modality filter);
-            values = `Lazy (Ordered.env_entry vars);
+            values =
+              `Lazy (Ordered.env_entry (Modality.src (Modality.filter_modality filter)) vars);
           };
       level = level + 1;
       ctx = Ordered.invis ctx filter vars;
@@ -780,7 +783,7 @@ let ext (Permute { perm; env; level; ctx }) modality xs ty =
             plus = D.zero_plus D.zero;
             filter = Modality.filter_zero modality;
             filtered = Modality.filter_zero modality;
-            values = `Lazy (Ordered.env_entry (CubeOf.singleton b));
+            values = `Lazy (Ordered.env_entry (Modality.src modality) (CubeOf.singleton b));
           };
       level = level + 1;
       ctx;
@@ -798,7 +801,7 @@ let ext_let ?dirt (Permute { perm; env; level; ctx }) modality xs tm =
             plus = D.zero_plus D.zero;
             filter = Modality.filter_zero modality;
             filtered = Modality.filter_zero modality;
-            values = `Lazy (Ordered.env_entry (CubeOf.singleton b));
+            values = `Lazy (Ordered.env_entry (Modality.src modality) (CubeOf.singleton b));
           };
       level = level + 1;
       ctx;

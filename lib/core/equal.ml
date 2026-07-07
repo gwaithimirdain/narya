@@ -113,7 +113,8 @@ module Equal = struct
             let (Perm_to p) = perm_of_ins ins in
             let pinv = deg_of_perm (perm_inv p) in
             let x, y, ty =
-              (act_value x pinv None, act_value y pinv None, gact_ty None ty pinv None) in
+              let idc = Modalcell.id2 (Ctx.mode ctx) in
+              (act_value x pinv idc, act_value y pinv idc, gact_ty None ty pinv idc) in
             (* Now we take the projections and compare them at appropriate types.  It suffices to use the fields of x when computing the types of the fields, since we proceed to check the fields for equality *in order* and thus by the time we are checking equality of any particular field of x and y, the previous fields of x and y are already known to be equal, and the type of the current field can only depend on these.  (This latter is a semantic constraint on the kinds of generalized records that can sensibly admit eta-conversion.)  In addition, records with eta cannot have higher fields, so as field insertion it suffices to use ins_zero on the substitution dimension. *)
             let fldins = ins_zero (cod_left_ins ins) in
             BwdM.miterM
@@ -122,7 +123,9 @@ module Equal = struct
                        (type i)
                        ((fld, Lower _) : i Field.t * (i, mode * a * n * has_eta) Codatafield.t);
                    ] ->
-                equal_at ctx (field_term x fld fldins) (field_term y fld fldins)
+                equal_at ctx
+                  (field_term (Ctx.mode ctx) x fld fldins)
+                  (field_term (Ctx.mode ctx) y fld fldins)
                   (tyof_field (Ok x) ty fld ~shuf:Trivial fldins))
               [ fields ]
         (* At a codatatype without eta, there are no kinetic structs, only comatches, and those are not compared componentwise, only as neutrals, since they are generative. *)
@@ -464,14 +467,14 @@ module Equal = struct
               lookup_cube aenv1 m_k modality modality Now (id_opt_op mk) in
             let (Op (fc1, fd1)) =
               op_of_opt op1 <|> Anomaly "unexpected missing endpoint 1 in equal_ordered_env" in
-            let xs1 = act_cube { act = act1 } (CubeOf.subcube fc1 xs1) fd1 (Some pre1) in
+            let xs1 = act_cube { act = act1 } (CubeOf.subcube fc1 xs1) fd1 pre1 in
             (* 2 *)
             let aenv2 = act_env env2 (opt_op_of_opt_sface (Modality.sface_of_filter n filter)) in
             let (Looked_up { act = act2; op = op2; entry = xs2; pre = pre2 }) =
               lookup_cube aenv2 m_k modality modality Now (id_opt_op mk) in
             let (Op (fc2, fd2)) =
               op_of_opt op2 <|> Anomaly "unexpected missing endpoint 1 in equal_ordered_env" in
-            let xs2 = act_cube { act = act2 } (CubeOf.subcube fc2 xs2) fd2 (Some pre2) in
+            let xs2 = act_cube { act = act2 } (CubeOf.subcube fc2 xs2) fd2 pre2 in
             (* compare *)
             let (Locked (_, lctx)) = Ctx.lock ctx modality in
             let lenv = key_env aenv1 (Modalcell.id modality) dplus in
