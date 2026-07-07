@@ -89,6 +89,12 @@ let speclist =
           install_mode_theory := Modal.Reflector.install;
           mode_theories := !mode_theories + 1),
       "Select the reflector mode theory" );
+    ( "-spatial",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Spatial.install;
+          mode_theories := !mode_theories + 1),
+      "Select the spatial mode theory (coreflector ♭ left adjoint to reflector ♯)" );
     ( "-functor",
       Arg.Unit
         (fun () ->
