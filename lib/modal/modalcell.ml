@@ -174,6 +174,23 @@ let prewhisker_wrapped : type a r b m n c. (b, m, n, c) t -> (a, r, b) Modality.
     =
  fun x m -> hcomp_wrapped x (id m)
 
+let rec bprewhisker : type a r b m n c mr nr.
+    (a, r, b, m, c, mr) Modality.bcomp ->
+    (a, r, b, n, c, nr) Modality.bcomp ->
+    (b, m, n, c) t ->
+    (a, mr, nr, c) t =
+ fun mr nr x ->
+  match (mr, nr) with
+  | Zero, Zero -> x
+  | Suc (g1, mr), Suc (g2, nr) ->
+      let Eq = Modality.Gen.src_uniq g1 g2 in
+      bprewhisker mr nr
+        (prewhisker
+           (Suc (Zero, g1))
+           (Suc (Zero, g2))
+           x
+           (Path (Suc (Zero, g2), Modality.Gen.tgt g2)))
+
 let vcomp : type a m n r b. (a, n, r, b) t -> (a, m, n, b) t -> (a, m, r, b) t =
  fun x y -> Vcomp (x, y)
 

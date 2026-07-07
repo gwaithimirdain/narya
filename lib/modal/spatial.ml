@@ -98,76 +98,154 @@ struct
   let compare : type a m n b. (a, m, n, b) Modalcell.t -> (a, m, n, b) Modalcell.t -> bool =
    fun _ _ -> true
 
-  open Monad.Ops (Monad.Maybe)
+  (* The normal forms of modalities are the generators id, flat, and sharp: everything is isomorphic to exactly one of those. *)
+  type _ normal =
+    | Normal_id : mode Modality.id normal
+    | Normal_flat : (mode Modality.id, Flat.t) Modality.suc normal
+    | Normal_sharp : (mode Modality.id, Sharp.t) Modality.suc normal
 
-  (* Repeatedly peel an innermost ♭ (via flat_counit) or an innermost ♭∘♯ pair (via adj_counit) to reach a cell x ⇒ id. *)
-  let rec to_id : type a m b. (a, m, b) Modality.t -> (a, m, b Modality.id, b) Modalcell.t option =
-   fun x ->
-    match x with
-    | Path (Zero, _) -> Some (Modalcell.id x)
-    | Path (Suc (m, g), mode) -> (
-        match Modality.Gen.compare g Flat.modality with
+  type (_, _, _) normalize =
+    | Normalize :
+        'n normal * (mode, 'm, 'n, mode) Modalcell.t * (mode, 'n, 'm, mode) Modalcell.t
+        -> (mode, 'm, mode) normalize
+
+  let rec iso_flat : type flatm m.
+      (mode, m, mode, (mode Path.id, Flat.t) Modality.suc, mode, flatm) Modality.bcomp ->
+      (mode, flatm, (mode Path.id, Flat.t) Modality.suc, mode) Modalcell.t
+      * (mode, (mode Path.id, Flat.t) Modality.suc, flatm, mode) Modalcell.t =
+   fun bplus ->
+    match bplus with
+    | Modality.Zero -> (Modalcell.id flat, Modalcell.id flat)
+    | Modality.Suc (type a g) ((g, bplus) : (a, g, mode) Modality.gen * _) -> (
+        let (Bcomp rest) = Modality.bcomp (Modality.bcomp_right bplus) in
+        match Mode.compare (Modality.Gen.src g) Testmode.mode with
         | Eq ->
-            let* c = to_id (Path (m, mode)) in
-            Some (Modalcell.hcomp (Suc (Zero, g)) Zero c flat_counit)
-        | Neq -> (
-            match Modality.Gen.compare g Sharp.modality with
-            | Neq -> None
-            | Eq -> (
-                match m with
-                | Suc (m', g') -> (
-                    match Modality.Gen.compare g' Flat.modality with
-                    | Eq ->
-                        let* c = to_id (Path (m', mode)) in
-                        Some (Modalcell.hcomp (Suc (Suc (Zero, g'), g)) Zero c adj_counit)
-                    | Neq -> None)
-                | Zero -> None)))
+            let to_flat, from_flat = iso_flat rest in
+            let ( (remove_me :
+                    ( mode,
+                      ((mode Path.id, Flat.t) Tbwd.snoc, g) Tbwd.snoc,
+                      (mode Path.id, Flat.t) Tbwd.snoc,
+                      mode )
+                    Modalcell.t),
+                  (add_me :
+                    ( mode,
+                      (mode Path.id, Flat.t) Tbwd.snoc,
+                      ((mode Path.id, Flat.t) Tbwd.snoc, g) Tbwd.snoc,
+                      mode )
+                    Modalcell.t) ) =
+              match
+                (Modality.Gen.compare g Sharp.modality, Modality.Gen.compare g Flat.modality)
+              with
+              | Eq, _ ->
+                  ( Modalcell.vcomp
+                      (Modalcell.postwhisker
+                         (Suc (Suc (Zero, Flat.modality), Sharp.modality))
+                         Zero flat adj_counit)
+                      (Modalcell.prewhisker
+                         (Suc (Zero, Sharp.modality))
+                         (Suc (Zero, Sharp.modality))
+                         flat_comult sharp),
+                    Modalcell.postwhisker Zero (Suc (Zero, Sharp.modality)) flat sharp_unit )
+              | _, Eq ->
+                  ( Modalcell.postwhisker (Suc (Zero, Flat.modality)) Zero flat flat_counit,
+                    flat_comult )
+              | Neq, Neq -> failwith "spatial: unknown modality" in
+            ( Modalcell.vcomp to_flat (Modalcell.bprewhisker bplus rest remove_me),
+              Modalcell.vcomp (Modalcell.bprewhisker rest bplus add_me) from_flat )
+        | Neq -> failwith "spatial: unknown mode")
 
-  (* Dually, repeatedly peel an innermost ♯ (via sharp_unit) or an innermost ♯∘♭ pair (via adj_unit) to reach a cell id ⇒ y. *)
-  let rec from_id : type a n b. (a, n, b) Modality.t -> (a, b Modality.id, n, b) Modalcell.t option
-      =
-   fun y ->
-    match y with
-    | Path (Zero, _) -> Some (Modalcell.id y)
-    | Path (Suc (n, h), mode) -> (
-        match Modality.Gen.compare h Sharp.modality with
+  let rec iso_sharp : type sharpm m.
+      (mode, m, mode, (mode Path.id, Sharp.t) Modality.suc, mode, sharpm) Modality.bcomp ->
+      (mode, sharpm, (mode Path.id, Sharp.t) Modality.suc, mode) Modalcell.t
+      * (mode, (mode Path.id, Sharp.t) Modality.suc, sharpm, mode) Modalcell.t =
+   fun bplus ->
+    match bplus with
+    | Modality.Zero -> (Modalcell.id sharp, Modalcell.id sharp)
+    | Modality.Suc (type a g) ((g, bplus) : (a, g, mode) Modality.gen * _) -> (
+        let (Bcomp rest) = Modality.bcomp (Modality.bcomp_right bplus) in
+        match Mode.compare (Modality.Gen.src g) Testmode.mode with
         | Eq ->
-            let* c = from_id (Path (n, mode)) in
-            Some (Modalcell.hcomp Zero (Suc (Zero, h)) c sharp_unit)
-        | Neq -> (
-            match Modality.Gen.compare h Flat.modality with
-            | Neq -> None
-            | Eq -> (
-                match n with
-                | Suc (n', h') -> (
-                    match Modality.Gen.compare h' Sharp.modality with
-                    | Eq ->
-                        let* c = from_id (Path (n', mode)) in
-                        Some (Modalcell.hcomp Zero (Suc (Suc (Zero, h'), h)) c adj_unit)
-                    | Neq -> None)
-                | Zero -> None)))
+            let to_flat, from_flat = iso_sharp rest in
+            let ( (remove_me :
+                    ( mode,
+                      ((mode Path.id, Sharp.t) Tbwd.snoc, g) Tbwd.snoc,
+                      (mode Path.id, Sharp.t) Tbwd.snoc,
+                      mode )
+                    Modalcell.t),
+                  (add_me :
+                    ( mode,
+                      (mode Path.id, Sharp.t) Tbwd.snoc,
+                      ((mode Path.id, Sharp.t) Tbwd.snoc, g) Tbwd.snoc,
+                      mode )
+                    Modalcell.t) ) =
+              match
+                (Modality.Gen.compare g Sharp.modality, Modality.Gen.compare g Flat.modality)
+              with
+              | Eq, _ ->
+                  ( sharp_mult,
+                    Modalcell.postwhisker Zero (Suc (Zero, Sharp.modality)) sharp sharp_unit )
+              | _, Eq ->
+                  ( Modalcell.postwhisker (Suc (Zero, Flat.modality)) Zero sharp flat_counit,
+                    Modalcell.vcomp
+                      (Modalcell.prewhisker
+                         (Suc (Zero, Flat.modality))
+                         (Suc (Zero, Flat.modality))
+                         sharp_mult flat)
+                      (Modalcell.postwhisker Zero
+                         (Suc (Suc (Zero, Sharp.modality), Flat.modality))
+                         sharp adj_unit) )
+              | Neq, Neq -> failwith "spatial: unknown modality" in
+            ( Modalcell.vcomp to_flat (Modalcell.bprewhisker bplus rest remove_me),
+              Modalcell.vcomp (Modalcell.bprewhisker rest bplus add_me) from_flat )
+        | Neq -> failwith "spatial: unknown mode")
 
-  let bridge : type a m n b.
-      (a, m, b) Modality.t -> (a, n, b) Modality.t -> (a, m, n, b) Modalcell.t option =
-   fun x y ->
-    let* cx = to_id x in
-    let* cy = from_id y in
-    Some (Modalcell.vcomp cy cx)
+  let normalize : type a m b. (a, m, b) Modality.t -> (a, m, b) normalize =
+   fun m ->
+    let mode = Modality.src m in
+    let (To_fwd (_, bplus)) = Modality.to_fwd m in
+    match
+      ( Mode.compare (Modality.src m) Testmode.mode,
+        Mode.compare (Modality.tgt m) Testmode.mode,
+        bplus )
+    with
+    | Eq, Eq, Zero -> Normalize (Normal_id, Modalcell.id2 mode, Modalcell.id2 mode)
+    | Eq, Eq, Suc (g, bplus) -> (
+        match (Modality.Gen.compare g Flat.modality, Modality.Gen.compare g Sharp.modality) with
+        | Eq, _ ->
+            let to_flat, from_flat = iso_flat bplus in
+            Normalize (Normal_flat, to_flat, from_flat)
+        | _, Eq ->
+            let to_sharp, from_sharp = iso_sharp bplus in
+            Normalize (Normal_sharp, to_sharp, from_sharp)
+        | Neq, Neq -> failwith "spatial: unrecognized generator")
+    | _ -> failwith "spatial: unknown mode"
 
-  let rec find_unique : type a m n b.
+  let find_unique : type a m n b.
       (a, m, b) Modality.t -> (a, n, b) Modality.t -> (a, m, n, b) Modalcell.t option =
-   fun x y ->
-    match Modality.compare x y with
-    | Eq -> Some (Modalcell.id x)
-    | Neq -> (
-        match (x, y) with
-        | Path (Suc (m, g), mmode), Path (Suc (n, h), nmode) -> (
-            match Modality.Gen.compare g h with
-            | Eq ->
-                let* c = find_unique (Path (m, mmode)) (Path (n, nmode)) in
-                Some (Modalcell.prewhisker (Suc (Zero, g)) (Suc (Zero, h)) c (Modality.of_gen g))
-            | Neq -> bridge x y)
-        | _ -> bridge x y)
+   fun m n ->
+    let ( Normalize (type mnorm) ((mnorm, mto, _) : mnorm normal * _ * _),
+          Normalize (type nnorm) ((nnorm, _, nfrom) : nnorm normal * _ * _) ) =
+      (normalize m, normalize n) in
+    match
+      (Mode.compare (Modality.src m) Testmode.mode, Mode.compare (Modality.tgt m) Testmode.mode)
+    with
+    | Eq, Eq -> (
+        match
+          (match (mnorm, nnorm) with
+           | Normal_id, Normal_id -> Some (Modalcell.id2 Testmode.mode)
+           | Normal_id, Normal_flat -> None
+           | Normal_id, Normal_sharp -> Some sharp_unit
+           | Normal_flat, Normal_id -> Some flat_counit
+           | Normal_flat, Normal_flat -> Some (Modalcell.id flat)
+           | Normal_flat, Normal_sharp -> Some (Modalcell.vcomp sharp_unit flat_counit)
+           | Normal_sharp, Normal_id -> None
+           | Normal_sharp, Normal_flat -> None
+           | Normal_sharp, Normal_sharp -> Some (Modalcell.id sharp)
+            : (a, mnorm, nnorm, b) Modalcell.t option)
+        with
+        | Some bridge -> Some (Modalcell.vcomp (Modalcell.vcomp nfrom bridge) mto)
+        | None -> None)
+    | _ -> failwith "spatial: unknown mode"
 
   let to_string : type a m n b. (a, m, n, b) Modalcell.t -> string =
    fun m ->

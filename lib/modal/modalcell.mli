@@ -107,6 +107,12 @@ val prewhisker :
 val prewhisker_wrapped : ('b, 'm, 'n, 'c) t -> ('a, 'r, 'b) Modality.t -> ('a, 'c) wrapped
 val vcomp : ('a, 'n, 'r, 'b) t -> ('a, 'm, 'n, 'b) t -> ('a, 'm, 'r, 'b) t
 
+val bprewhisker :
+  ('a, 'r, 'b, 'm, 'c, 'mr) Modality.bcomp ->
+  ('a, 'r, 'b, 'n, 'c, 'nr) Modality.bcomp ->
+  ('b, 'm, 'n, 'c) t ->
+  ('a, 'mr, 'nr, 'c) t
+
 val vcomp_extending :
   ('c, 'k, 'b) Modality.t ->
   ('a, 'n, 'c, 'k, 'b, 'kn) Modality.comp ->
