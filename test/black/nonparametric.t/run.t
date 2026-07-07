@@ -1,7 +1,7 @@
 The nonparametric comonad mode theory currently requires -parametric.
 
   $ narya -discrete-coreflector nonparametric.ny
-  -discrete-coreflector currently requires -parametric
+  -discrete-coreflector requires -parametric
   [1]
 
 The comonad structure typechecks, and the modal type is parametrically trivial.

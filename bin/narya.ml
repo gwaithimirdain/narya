@@ -18,6 +18,7 @@ let proofgeneral = ref false
 let show_version = ref false
 let install_mode_theory = ref Modal.Trivial.install
 let discrete_coreflector = ref false
+let mode_theories = ref 0
 
 (* Undocumented flag used for testing: interpret a given file or command-line string as if it were entered in interactive mode. *)
 let fake_interacts : string Bwd.t ref = ref Emp
@@ -77,19 +78,29 @@ let speclist =
           internal := false),
       "Abbreviation for -arity 1 -direction d -external" );
     ( "-coreflector",
-      Arg.Unit (fun () -> install_mode_theory := Modal.Coreflector.install),
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Coreflector.install;
+          mode_theories := !mode_theories + 1),
       "Select the coreflector mode theory" );
     ( "-functor",
-      Arg.Unit (fun () -> install_mode_theory := Modal.Functor.install),
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Functor.install;
+          mode_theories := !mode_theories + 1),
       "Select the functor mode theory" );
     ( "-discrete-coreflector",
       Arg.Unit
         (fun () ->
           install_mode_theory := Modal.Discrete_coreflector.install;
+          mode_theories := !mode_theories + 1;
           discrete_coreflector := true),
       "Select the nonparametric comonad mode theory (currently requires -parametric)" );
     ( "-composed-functors",
-      Arg.Unit (fun () -> install_mode_theory := Modal.Composed_functors.install),
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Composed_functors.install;
+          mode_theories := !mode_theories + 1),
       "Select the composed functors mode theory" );
     ("--help", Arg.Unit (fun () -> ()), "");
     ("-", Arg.Unit (fun () -> inputs := Snoc (!inputs, `Stdin)), "");
@@ -108,9 +119,17 @@ let () =
   if !show_version then (
     print_endline (String.trim [%blob "version.txt"]);
     exit 0);
-  if !discrete_coreflector && !hott then (
-    Printf.fprintf stderr "-discrete-coreflector currently requires -parametric\n";
+  if (!mode_theories + if !internal then 0 else 1) > 1 then (
+    Printf.fprintf stderr "too many mode theories! specify only one.";
     exit 1);
+  if !discrete_coreflector && !hott then (
+    Printf.fprintf stderr "-discrete-coreflector requires -parametric\n";
+    exit 1);
+  (* External parametricity implies the discrete coreflector mode theory. *)
+  if (not !internal) && !hott then (
+    Printf.fprintf stderr "-external requires -parametric\n";
+    exit 1);
+  if not !internal then install_mode_theory := Modal.Discrete_coreflector.install;
   if
     Bwd.is_empty !inputs
     && (not !interactive)
