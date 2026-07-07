@@ -26,7 +26,21 @@ type (_, _, _, _) t =
 
 val of_gen : ('a, 'm, 'n, 'b) gen -> ('a, 'm, 'n, 'b) t
 
+type (_, _, _, _) adjunction =
+  | Adjunction : {
+      left : ('a, 'f, 'b) Modality.t;
+      right : ('b, 'g, 'a) Modality.t;
+      right_left : ('a, 'f, 'b, 'g, 'a, 'gf) Modality.comp;
+      unit : ('a, 'a Modality.id, 'gf, 'a) t;
+      left_right : ('b, 'g, 'a, 'f, 'b, 'fg) Modality.comp;
+      counit : ('b, 'fg, 'b Modality.id, 'b) t;
+    }
+      -> ('a, 'f, 'g, 'b) adjunction
+
+type (_, _, _) sinister = Sinister : ('a, 'f, 'g, 'b) adjunction -> ('a, 'f, 'b) sinister
+
 module type Theory = sig
+  val sinister : ('a, 'm, 'b) Modality.t -> ('a, 'm, 'b) sinister option
   val compare : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'n, 'b) t -> bool
   val find_unique : ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) t option
   val to_string : ('a, 'm, 'n, 'b) t -> string

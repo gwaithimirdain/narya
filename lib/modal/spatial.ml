@@ -46,9 +46,10 @@ module SpatialCells
     (Flat : Modality.Generated with module G := FlatGen(Testmode))
     (Sharp : Modality.Generated with module G := SharpGen(Testmode)) =
 struct
+  type mode = Testmode.t
+
   let flat = Modality.of_gen Flat.modality
   let sharp = Modality.of_gen Sharp.modality
-
   let flat_counit = Modalcell.of_gen (Modalcell.generate flat (Modality.id Testmode.mode))
 
   let flat_comult =
@@ -68,13 +69,30 @@ struct
   let adj_unit =
     Modalcell.of_gen
       (Modalcell.generate (Modality.id Testmode.mode)
-         (Path (Suc (Suc (Zero, Sharp.modality), Flat.modality), Testmode.mode)))
+         (Modality.Path (Suc (Suc (Zero, Sharp.modality), Flat.modality), Testmode.mode)))
 
   let adj_counit =
     Modalcell.of_gen
       (Modalcell.generate
-         (Path (Suc (Suc (Zero, Flat.modality), Sharp.modality), Testmode.mode))
+         (Modality.Path (Suc (Suc (Zero, Flat.modality), Sharp.modality), Testmode.mode))
          (Modality.id Testmode.mode))
+
+  let sinister : type a f b. (a, f, b) Modality.t -> (a, f, b) Modalcell.sinister option =
+   fun f ->
+    match Modality.compare f flat with
+    | Eq ->
+        Some
+          (Sinister
+             (Adjunction
+                {
+                  left = flat;
+                  right = sharp;
+                  right_left = Suc (Zero, Flat.modality);
+                  unit = adj_unit;
+                  left_right = Suc (Zero, Sharp.modality);
+                  counit = adj_counit;
+                }))
+    | Neq -> None
 
   let compare : type a m n b. (a, m, n, b) Modalcell.t -> (a, m, n, b) Modalcell.t -> bool =
    fun _ _ -> true
@@ -162,5 +180,4 @@ let install () =
   let module Testmode = Mode.Generate (TestmodeGen) in
   let module Flat = Modality.Generate (FlatGen (Testmode)) in
   let module Sharp = Modality.Generate (SharpGen (Testmode)) in
-  Modalcell.choose_theory
-    (module SpatialCells (Testmode) (Flat) (Sharp) : Modalcell.Theory)
+  Modalcell.choose_theory (module SpatialCells (Testmode) (Flat) (Sharp) : Modalcell.Theory)
