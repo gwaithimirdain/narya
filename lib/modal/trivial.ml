@@ -1,7 +1,13 @@
 (* We define all the "generator" modules at top-level, but don't call the generation code until the "install" function, so that only one mode theory actually gets installed at runtime.  Thus, each generator module has to be parametrized over the results of generation of the previous ones. *)
 
+open Dim
+
 module TestmodeGen = struct
   let name = "Type"
+
+  type nonparametric = D.zero
+
+  let nonparametric = D.zero
 end
 
 (* We don't need to generate any modalities; the identity automatically exists. *)

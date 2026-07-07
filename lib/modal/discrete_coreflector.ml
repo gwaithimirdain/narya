@@ -5,6 +5,10 @@ open Dim
 
 module TestmodeGen = struct
   let name = "Type"
+
+  type nonparametric = D.zero
+
+  let nonparametric = D.zero
 end
 
 module CoreflectorGen (Testmode : Mode.Generated with module G := TestmodeGen) = struct

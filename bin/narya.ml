@@ -95,6 +95,12 @@ let speclist =
           install_mode_theory := Modal.Functor.install;
           mode_theories := !mode_theories + 1),
       "Select the functor mode theory" );
+    ( "-discrete-functor",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Discrete_functor.install;
+          mode_theories := !mode_theories + 1),
+      "Select the functor mode theory with a nonparametric domain mode" );
     ( "-discrete-coreflector",
       Arg.Unit
         (fun () ->

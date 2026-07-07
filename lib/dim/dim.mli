@@ -1077,6 +1077,7 @@ val name_of_deg :
 
 (* *)
 val locking : ('a, 'b) deg -> bool
+val degenerated_dims : ('a, 'b) deg -> D.wrapped
 
 module Hott : sig
   type dim

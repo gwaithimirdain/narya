@@ -201,6 +201,7 @@ module Code = struct
         -> t
     | Non_mode_synthesizing : string -> t
     | Invalid_mode_theory : t
+    | Nonparametric_mode_degeneracy : string * 'a Mode.t -> t
     | Invalid_variable_face : 'a D.t * ('n, 'm) sface -> t
     | Anomaly : string -> t
     | No_such_level : printable -> t
@@ -378,6 +379,7 @@ module Code = struct
     | Nontransparent_window_modality _ -> Error
     | Non_mode_synthesizing _ -> Error
     | Invalid_mode_theory -> Bug
+    | Nonparametric_mode_degeneracy _ -> Error
     | Anomaly _ -> Bug
     | No_such_level _ -> Bug
     | Redefining_constant _ -> Warning
@@ -586,6 +588,7 @@ module Code = struct
     | Invalid_mode_theory -> "E1710"
     | Nonsharp_modality _ -> "E1706"
     | Nontransparent_window_modality _ -> "E1707"
+    | Nonparametric_mode_degeneracy _ -> "E1708"
     (* Commands *)
     | Too_many_commands -> "E2000"
     | Forbidden_interactive_command _ -> "E2001"
@@ -923,6 +926,9 @@ module Code = struct
             (Modalcell.to_string b)
       | Non_mode_synthesizing str -> textf "cannot synthesize a mode: %s" str
       | Invalid_mode_theory -> text "invalid mode theory"
+      | Nonparametric_mode_degeneracy (name, mode) ->
+          textf "degeneracy %s is not allowed at mode %s, which is nonparametric" name
+            (Mode.name mode)
       | Unknown_modality c -> textf "unknown modality %s" c
       | Nonsharp_modality m -> textf "modality %s is not sharp" (Modality.to_string m)
       | Nontransparent_window_modality (m, _, `Recursive) ->

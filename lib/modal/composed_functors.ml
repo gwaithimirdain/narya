@@ -4,14 +4,26 @@ open Dim
 
 module AGen = struct
   let name = "AType"
+
+  type nonparametric = D.zero
+
+  let nonparametric = D.zero
 end
 
 module BGen = struct
   let name = "BType"
+
+  type nonparametric = D.zero
+
+  let nonparametric = D.zero
 end
 
 module CGen = struct
   let name = "CType"
+
+  type nonparametric = D.zero
+
+  let nonparametric = D.zero
 end
 
 module FGen

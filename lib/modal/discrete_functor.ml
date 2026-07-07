@@ -1,11 +1,13 @@
+(* Like Functor, but with a nonparametric domain mode: DomType forbids the (single) direction of parametricity, so no degeneracy that adds dimensions (e.g. refl/sym) is allowed on a term directly at mode DomType.  Per the invariant that a modality out of a nonparametric domain must itself be nonparametric in the same directions, the functor ○ : DomType → CodType is nonparametric too.  Used to test mode-level nonparametricity. *)
+
 open Dim
 
 module DomGen = struct
   let name = "DomType"
 
-  type nonparametric = D.zero
+  type nonparametric = D.one
 
-  let nonparametric = D.zero
+  let nonparametric = D.one
 end
 
 module CodGen = struct
@@ -27,9 +29,9 @@ struct
   let tgt = CodMode.mode
   let name = "○"
 
-  type nonparametric = D.zero
+  type nonparametric = D.one
 
-  let nonparametric = D.zero
+  let nonparametric = D.one
 end
 
 module Functorcell

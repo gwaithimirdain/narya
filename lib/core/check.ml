@@ -159,8 +159,7 @@ let rec motive_of_family : type dom window mode a b.
               (Any_ctx ctx) in
           (* Now we recurse into the codomain of the pi-type, having applied the type family itself to the new variables we introduced. *)
           let newtm = apply_term tm ffilter newvars in
-          let motive =
-            motive_of_family newctx window newtm (tyof_app cods tyargs ffilter newvars) in
+          let motive = motive_of_family newctx window newtm (tyof_app cods tyargs ffilter newvars) in
           (* Finally, we postprocess that result by adding the pi-type domains we computed for this argument. *)
           let motive, _ = MT.fold_map_right { foldmap = (fun _ x y -> folder x y) } newdoms motive in
           motive)
@@ -508,6 +507,8 @@ let rec check : type mode a b s.
                     | `Id _ ->
                         fatal (Anomaly "non-permutation degeneracy doesn't have a proper section")
                     | `Proper fs -> (
+                        if not (Modal.Mode.allows_deg (Ctx.mode ctx) fa) then
+                          fatal (Nonparametric_mode_degeneracy (str.value, Ctx.mode ctx));
                         let arg = TubeOf.find tyargs fs in
                         let sxty = arg.ty in
                         let xty =
@@ -1411,7 +1412,8 @@ and check_implicit_match : type mode a b.
       let fallback reason arg =
         emit ?loc (Matching_wont_refine (reason, Some arg));
         fallback () in
-      let (Lookup { result; value = { tm = _; ty = varty }; dirt; modality; filter; insert; plus }) =
+      let (Lookup { result; value = { tm = _; ty = varty }; dirt; modality; filter; insert; plus })
+          =
         Ctx.lookup ctx ix in
       (* This is a use of the variable, so we record its dirt for any active occurrence-analysis scope. *)
       Positivity.record dirt;
@@ -2181,7 +2183,9 @@ and check_empty_match_lam : type mode a b.
                         {
                           window = Modality.id (Modality.tgt modality);
                           plus_lock = plus_no_lock (Modality.tgt modality);
-                          tm = Var (Index (Now, fa, filter, plus_with_no_locks (Modality.tgt modality)));
+                          tm =
+                            Var
+                              (Index (Now, fa, filter, plus_with_no_locks (Modality.tgt modality)));
                           dim;
                           branches = Constr.Map.empty;
                         } )
@@ -2954,7 +2958,8 @@ and synth : type mode a b s.
     match (tm.value, status) with
     | Var i, _ -> (
         (* We look up the raw variable index in the context.  This returns its De Bruijn level (which we don't need), its value, its annotating modality, and the information that goes into its De Bruijn index (insertion and plus_with_locks). *)
-        let (Lookup { result; value; dirt; modality; filter; insert; plus = plus_tgt }) = Ctx.lookup ctx i in
+        let (Lookup { result; value; dirt; modality; filter; insert; plus = plus_tgt }) =
+          Ctx.lookup ctx i in
         (* If this is a let-bound variable whose value contains occurrences of currently-being-defined constants, record that for any active occurrence-analysis scope. *)
         Positivity.record dirt;
         (* We extract the composite locking modality. *)
@@ -2966,7 +2971,8 @@ and synth : type mode a b s.
         let tm, ty =
           match result with
           | `Var (_, fa) ->
-              (Term.Var (Index (insert, fa, filter, plus_with_locks_of_plus_lock plus_src)), value.ty)
+              ( Term.Var (Index (insert, fa, filter, plus_with_locks_of_plus_lock plus_src)),
+                value.ty )
           | `Field (_, field) ->
               (* TODO: Double-check that this zero is correct *)
               let ins = ins_zero D.zero in
@@ -3346,6 +3352,8 @@ and synth : type mode a b s.
         (realize status stm, sty)
     | Act (str, fa, Some { value = Synth x; loc }), _ ->
         let x = { value = x; loc } in
+        if not (Modal.Mode.allows_deg (Ctx.mode ctx) fa) then
+          fatal (Nonparametric_mode_degeneracy (str.value, Ctx.mode ctx));
         let ctx = Ctx.maybe_lock ctx fa in
         (* We pass on the "nosynth" error, so that we can look through multiple degeneracies before noticing a nonsynthesizing term. *)
         let sx, ety = synth ?nosynth (Kinetic `Nolet) ctx x in
@@ -3400,7 +3408,8 @@ and synth : type mode a b s.
             let cbody, scod = synth newstatus newctx body in
             let ty =
               eval_term (Ctx.env ctx)
-                (pi (singleton_variables D.zero (View.hinted x edom))
+                (pi
+                   (singleton_variables D.zero (View.hinted x edom))
                    (Modal (modality, plus, cdom))
                    (readback_val newctx scod)) in
             (Lam (xs, D.zero, filter, cbody), ty))
@@ -3867,6 +3876,8 @@ and synth_or_check_apps : type mode a b.
   | _, (Any_deg s, Some fn) -> (
       match D.compare_zero (cod_deg s) with
       | Zero ->
+          if not (Modal.Mode.allows_deg (Ctx.mode ctx) s) then
+            fatal (Nonparametric_mode_degeneracy (string_of_deg s, Ctx.mode ctx));
           let ctx = Ctx.maybe_lock ctx s in
           let cfn, sty = synth_lam (dom_deg s) ctx fn ctx args ty in
           let efn = eval_term (Ctx.env ctx) cfn in
