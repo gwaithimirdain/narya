@@ -83,6 +83,12 @@ let speclist =
           install_mode_theory := Modal.Coreflector.install;
           mode_theories := !mode_theories + 1),
       "Select the coreflector mode theory" );
+    ( "-reflector",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Reflector.install;
+          mode_theories := !mode_theories + 1),
+      "Select the reflector mode theory" );
     ( "-functor",
       Arg.Unit
         (fun () ->
