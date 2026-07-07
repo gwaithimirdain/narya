@@ -50,6 +50,20 @@ type (_, _, _, _) adjunction =
 
 type (_, _, _) sinister = Sinister : ('a, 'f, 'g, 'b) adjunction -> ('a, 'f, 'b) sinister
 
+let id_sinister : type a. a Mode.t -> (a, a Modality.id, a) sinister =
+ fun a ->
+  let id = Modality.id a in
+  Sinister
+    (Adjunction
+       {
+         left = id;
+         right = id;
+         right_left = Modality.comp_id id;
+         left_right = Modality.comp_id id;
+         unit = Id id;
+         counit = Id id;
+       })
+
 module type Theory = sig
   val sinister : ('a, 'm, 'b) Modality.t -> ('a, 'm, 'b) sinister option
   val compare : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'n, 'b) t -> bool

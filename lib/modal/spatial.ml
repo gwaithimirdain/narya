@@ -79,8 +79,9 @@ struct
 
   let sinister : type a f b. (a, f, b) Modality.t -> (a, f, b) Modalcell.sinister option =
    fun f ->
-    match Modality.compare f flat with
-    | Eq ->
+    match (Modality.compare_id f, Modality.compare f flat) with
+    | Eq, _ -> Some (Modalcell.id_sinister (Modality.src f))
+    | _, Eq ->
         Some
           (Sinister
              (Adjunction
@@ -92,7 +93,7 @@ struct
                   left_right = Suc (Zero, Sharp.modality);
                   counit = adj_counit;
                 }))
-    | Neq -> None
+    | Neq, Neq -> None
 
   let compare : type a m n b. (a, m, n, b) Modalcell.t -> (a, m, n, b) Modalcell.t -> bool =
    fun _ _ -> true

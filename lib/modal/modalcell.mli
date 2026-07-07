@@ -39,6 +39,8 @@ type (_, _, _, _) adjunction =
 
 type (_, _, _) sinister = Sinister : ('a, 'f, 'g, 'b) adjunction -> ('a, 'f, 'b) sinister
 
+val id_sinister : 'a Mode.t -> ('a, 'a Modality.id, 'a) sinister
+
 module type Theory = sig
   val sinister : ('a, 'm, 'b) Modality.t -> ('a, 'm, 'b) sinister option
   val compare : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'n, 'b) t -> bool

@@ -59,8 +59,9 @@ struct
 end
 
 module Composedcell : Modalcell.Theory = struct
-  let sinister : type a f b. (a, f, b) Modality.t -> (a, f, b) Modalcell.sinister option =
-   fun _ -> None
+  let sinister : type a f b. (a, f, b) Modality.t -> (a, f, b) Modalcell.sinister option = function
+    | Path (Zero, mode) -> Some (Modalcell.id_sinister mode)
+    | _ -> None
 
   let compare : type a m n b. (a, m, n, b) Modalcell.t -> (a, m, n, b) Modalcell.t -> bool =
    fun _ _ -> true
