@@ -101,6 +101,12 @@ let speclist =
           install_mode_theory := Modal.Functor.install;
           mode_theories := !mode_theories + 1),
       "Select the functor mode theory" );
+    ( "-transparent-functor",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Transparent_functor.install;
+          mode_theories := !mode_theories + 1),
+      "Select the transparent functor mode theory" );
     ( "-discrete-functor",
       Arg.Unit
         (fun () ->

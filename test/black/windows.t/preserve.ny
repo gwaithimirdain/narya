@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-functor") -*- `}
+{` -*- narya-prog-args: ("-proofgeneral" "-transparent-functor") -*- `}
 
 ` A transparent modal operator preserves the empty type and binary disjoint
 ` unions, up to isomorphism.

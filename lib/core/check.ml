@@ -425,20 +425,23 @@ let rec chase_recursion : Positivity.recursion -> [ `Nonrecursive | `Recursive |
               | `Axiom | `Undefined -> `Unknown))
         ms `Nonrecursive
 
-(* A window modality is always allowed if it is pellucid.  Otherwise, the datatype being matched against must have no recursive constructors, and the modality must be transparent, unless the datatype also has exactly one constructor, in which case translucent suffices. *)
+(* The identity window modality is always allowed; we special-case that so that mode theories don't have to worry about explicitly marking it as pellucid.  A window modality is always allowed if it is pellucid.  Otherwise, the datatype being matched against must have no recursive constructors, and the modality must be transparent, unless the datatype also has exactly one constructor, in which case translucent suffices. *)
 let check_window_transparency : type dom window mode k a.
     (dom, window, mode) Modality.t -> (k, a) Abwd.t -> Positivity.recursion -> unit =
  fun window constrs recursive ->
-  if Modality.pellucid window then ()
-  else
-    let single =
-      match Abwd.bindings constrs with
-      | [ _ ] -> true
-      | _ -> false in
-    match chase_recursion recursive with
-    | `Nonrecursive when Modality.transparent window || (single && Modality.translucent window) ->
-        ()
-    | r -> fatal (Nontransparent_window_modality (window, single, r))
+  match Modality.compare_id window with
+  | Eq -> ()
+  | Neq -> (
+      if Modality.pellucid window then ()
+      else
+        let single =
+          match Abwd.bindings constrs with
+          | [ _ ] -> true
+          | _ -> false in
+        match chase_recursion recursive with
+        | `Nonrecursive when Modality.transparent window || (single && Modality.translucent window)
+          -> ()
+        | r -> fatal (Nontransparent_window_modality (window, single, r)))
 
 (* Check a term or case tree (depending on the energy: terms are kinetic, case trees are potential).  The ?discrete parameter is supplied if the term we are currently checking might be a discrete datatype, in which case it is a set of all the currently-being-defined mutual constants.  Most term-formers are nondiscrete, so they can just ignore this argument and make their recursive calls without it. *)
 let rec check : type mode a b s.

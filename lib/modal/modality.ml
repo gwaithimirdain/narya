@@ -244,19 +244,13 @@ module type Theory = sig
   val translucent : ('a, 'm, 'b) t -> bool
 end
 
-(* By default, all modalities are tangible and translucent, but none are pellucid or transparent. *)
+(* By default, all modalities are tangible and translucent, but none (except identities, which are special-cased in the typechecker) are pellucid or transparent. *)
 let theory : (module Theory) ref =
   ref
     (module struct
       let tangible _ = true
-
-      let pellucid : type a m b. (a, m, b) t -> bool =
-       fun m ->
-        match compare_id m with
-        | Eq -> true
-        | Neq -> false
-
-      let transparent m = pellucid m
+      let pellucid _ = false
+      let transparent _ = false
       let translucent _ = true
     end : Theory)
 

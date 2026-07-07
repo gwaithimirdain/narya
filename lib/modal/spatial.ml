@@ -255,8 +255,30 @@ struct
     ^ string_of_int (Modality.length (Modalcell.vtgt m))
 end
 
+(* Only modalities that normalize to to id or flat are tangible and translucent, and they are also transparent. *)
+module SpatialModalities
+    (Testmode : Mode.Generated with module G := TestmodeGen)
+    (Flat : Modality.Generated with module G := FlatGen(Testmode))
+    (Sharp : Modality.Generated with module G := SharpGen(Testmode)) : Modality.Theory = struct
+  open SpatialCells (Testmode) (Flat) (Sharp)
+
+  let pellucid _ = false
+
+  let transparent : type a m b. (a, m, b) Modality.t -> bool =
+   fun m ->
+    match normalize m with
+    | Normalize (Normal_id, _, _) | Normalize (Normal_flat, _, _) -> true
+    | Normalize (Normal_sharp, _, _) -> false
+
+  let translucent : type a m b. (a, m, b) Modality.t -> bool = fun m -> transparent m
+
+  (* TODO: For now, we actually make sharp tangible for testing.  Once we have modal records working, we'll make sharp no longer tangible. *)
+  let tangible : type a m b. (a, m, b) Modality.t -> bool = fun _ -> true
+end
+
 let install () =
   let module Testmode = Mode.Generate (TestmodeGen) in
   let module Flat = Modality.Generate (FlatGen (Testmode)) in
   let module Sharp = Modality.Generate (SharpGen (Testmode)) in
-  Modalcell.choose_theory (module SpatialCells (Testmode) (Flat) (Sharp) : Modalcell.Theory)
+  Modalcell.choose_theory (module SpatialCells (Testmode) (Flat) (Sharp) : Modalcell.Theory);
+  Modality.choose_theory (module SpatialModalities (Testmode) (Flat) (Sharp) : Modality.Theory)
