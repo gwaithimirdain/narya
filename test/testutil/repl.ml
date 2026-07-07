@@ -117,7 +117,7 @@ let run f =
   Readback.Displaying.run ~env:false @@ fun () ->
   Discrete.run ~env:false @@ fun () ->
   Positivity.run @@ fun () ->
-  Dim.Endpoints.run ~arity:2 ~refl_char:'e' ~refl_names:[ "refl"; "Id" ] ~internal:true @@ fun () ->
+  Dim.Endpoints.set ~arity:2 ~refl_char:'e' ~refl_names:[ "refl"; "Id" ] ~internal:true ~hott:false;
   Reporter.run
     ~emit:(fun d -> Reporter.display d)
     ~fatal:(fun d ->

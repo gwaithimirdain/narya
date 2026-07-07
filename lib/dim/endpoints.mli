@@ -7,14 +7,8 @@ type 'l t = 'l len * 'l N.index
 val hott : unit -> N.two len option
 val unary : unit -> N.one len option
 
-val run :
-  arity:int ->
-  refl_char:char ->
-  refl_names:string list ->
-  internal:bool ->
-  ?hott:unit ->
-  (unit -> 'a) ->
-  'a
+val set :
+  arity:int -> refl_char:char -> refl_names:string list -> internal:bool -> hott:bool -> unit
 
 val wrapped : unit -> wrapped
 val refl_string : unit -> string

@@ -131,10 +131,9 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
             | _ -> Reporter.fatal (Invalid_variable [ x ]))
           (String.split_on_char ',' str)
     | None -> () );
-  Dim.Endpoints.run ~arity:!arity ~refl_char:!refl_char ~refl_names:!refl_names ~internal:!internal
-    ?hott:(if !hott then Some () else None)
-  @@ fun () ->
-  (* We have to put the main Reporter.run inside Endpoints.run, so we can display dimensions *)
+  Dim.Endpoints.set ~arity:!arity ~refl_char:!refl_char ~refl_names:!refl_names ~internal:!internal
+    ~hott:!hott;
+  (* We have to put the main Reporter.run after Endpoints.run, so we can display dimensions. *)
   Reporter.run
     ~emit:(fun d ->
       if !verbose || d.severity = Error || d.severity = Warning then

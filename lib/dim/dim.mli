@@ -32,14 +32,8 @@ module Endpoints : sig
   type wrapped = Wrap : 'l len -> wrapped
   type 'l t = 'l len * 'l N.index
 
-  val run :
-    arity:int ->
-    refl_char:char ->
-    refl_names:string list ->
-    internal:bool ->
-    ?hott:unit ->
-    (unit -> 'a) ->
-    'a
+  val set :
+    arity:int -> refl_char:char -> refl_names:string list -> internal:bool -> hott:bool -> unit
 
   val uniq : 'l1 len -> 'l2 len -> ('l1, 'l2) Eq.t
   val len : 'l len -> 'l N.t
