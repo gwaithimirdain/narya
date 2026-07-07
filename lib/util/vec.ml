@@ -19,6 +19,8 @@ let rec length : type a n. (a, n) t -> n Fwn.t = function
   | [] -> Zero
   | _ :: xs -> Suc (length xs)
 
+(* Converting to and from lists *)
+
 type _ wrapped = Wrap : ('a, 'n) t -> 'a wrapped
 
 let rec of_list_map : type a b. (a -> b) -> a list -> b wrapped =
@@ -30,6 +32,19 @@ let rec of_list_map : type a b. (a -> b) -> a list -> b wrapped =
 
 let of_list : type a. a list -> a wrapped = fun xs -> of_list_map (fun x -> x) xs
 
+let rec of_list_length_map : type a b n. (a -> b) -> n Fwn.t -> a list -> (b, n) t option =
+ fun f n xs ->
+  match (n, xs) with
+  | Zero, [] -> Some []
+  | Suc n, x :: xs -> (
+      match of_list_length_map f n xs with
+      | Some xs -> Some (f x :: xs)
+      | None -> None)
+  | _ -> None
+
+let of_list_length : type a n. n Fwn.t -> a list -> (a, n) t option =
+ fun n xs -> of_list_length_map (fun x -> x) n xs
+
 let rec to_list_map : type a b n. (a -> b) -> (a, n) t -> b list =
  fun f -> function
   | [] -> []
@@ -38,12 +53,6 @@ let rec to_list_map : type a b n. (a -> b) -> (a, n) t -> b list =
 let rec to_list : type a n. (a, n) t -> a list = function
   | [] -> []
   | x :: xs -> x :: to_list xs
-
-let rec fold_left : type a n acc. (acc -> a -> acc) -> acc -> (a, n) t -> acc =
- fun f acc xs ->
-  match xs with
-  | [] -> acc
-  | x :: xs -> fold_left f (f acc x) xs
 
 let rec take_bwd : type a n. n Fwn.t -> a Bwd.t -> a Bwd.t * (a, n) t =
  fun n xs ->
@@ -54,11 +63,25 @@ let rec take_bwd : type a n. n Fwn.t -> a Bwd.t -> a Bwd.t * (a, n) t =
       | Snoc (xs, x), ys -> (xs, x :: ys)
       | Emp, _ -> raise Not_found)
 
+(* Converting to and from hlists *)
+
+type (_, _) to_hlist = To_hlist : ('b, 'n, 'bs) Tlist.conses * 'bs hlist -> ('b, 'n) to_hlist
+
+let rec to_hlist : type b n. (b, n) t -> (b, n) to_hlist = function
+  | [] -> To_hlist (Nil, [])
+  | x :: xs ->
+      let (To_hlist (bs, xs)) = to_hlist xs in
+      To_hlist (Cons bs, x :: xs)
+
+(* Appending *)
+
 let rec append : type a m n mn. (m, n, mn) Fwn.plus -> (a, m) t -> (a, n) t -> (a, mn) t =
  fun mn xs ys ->
   match (mn, xs) with
   | Zero, [] -> ys
   | Suc mn, x :: xs -> x :: append mn xs ys
+
+(* Initialization *)
 
 let rec init : type a s n. (s -> a * s) -> n Fwn.t -> s -> (a, n) t =
  fun f n s ->
@@ -67,6 +90,14 @@ let rec init : type a s n. (s -> a * s) -> n Fwn.t -> s -> (a, n) t =
   | Suc n ->
       let x, s = f s in
       x :: init f n s
+
+(* Traversal *)
+
+let rec fold_left : type a n acc. (acc -> a -> acc) -> acc -> (a, n) t -> acc =
+ fun f acc xs ->
+  match xs with
+  | [] -> acc
+  | x :: xs -> fold_left f (f acc x) xs
 
 (* Generic traversal *)
 

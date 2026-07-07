@@ -5,13 +5,14 @@ open Tbwd
 
 (* Moreover, instead of using the literal natural numbers N, we use the isomorphic type Word(Unit).  In the future we will generalize this to words over multiple directions of parametricity. *)
 
-include Word.Make (Unitcomparable)
+include Word.MakeDecidable (Unitcomparable)
 
 (* Type-level natural numbers are represented by words over Unit, which are isomorphic to natural numbers.  We expose a unary [suc] for compatibility with the rest of the dim library. *)
 type 'n suc = ('n, unit) snoc
 type one = zero suc
 type two = one suc
 
+let snoc = suc
 let suc : type n. n t -> n suc t = fun n -> suc n Unit
 let one : one t = suc zero
 let two : two t = suc one

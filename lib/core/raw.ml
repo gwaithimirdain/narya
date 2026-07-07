@@ -70,14 +70,6 @@ module rec Make : functor (I : Indices) -> sig
 
   type 'a index = 'a I.index * any_sface option
 
-  module DomFam : sig
-    type (_, _, _) t = DomFam : I.name * 'left Make(I).check located -> ('left, 'n, 'b) t
-  end
-
-  module DomCube : module type of struct
-    include Icube (I) (DomFam)
-  end
-
   type _ synth =
     | Var : 'a index -> 'a synth
     | Const : Constant.t -> 'a synth
@@ -88,12 +80,7 @@ module rec Make : functor (I : Indices) -> sig
     | HigherPi :
         I.name * string located list located * 'a synth located * 'a I.suc synth located
         -> 'a synth
-    | InstHigherPi :
-        'n D.pos
-        * string located list located list
-        * ('a, 'n, unit, 'an) DomCube.t
-        * 'an check located
-        -> 'a synth
+    | InstHigherPi : 'n D.pos * ('a, 'b, 'ab) tel * 'ab check located -> 'a synth
     | App :
         'a check located * 'a check option located * [ `Implicit | `Explicit ] located
         -> 'a synth
@@ -109,6 +96,7 @@ module rec Make : functor (I : Indices) -> sig
     | Act : string located * ('m, 'n) deg * 'a check located option -> 'a synth
     | Match : {
         tm : 'a synth located;
+        window : string located list located option;
         sort : [ `Implicit | `Explicit of 'a check located | `Nondep of int located ];
         branches : (Constr.t, 'a branch) Abwd.t;
         refutables : 'a refutables option;
@@ -146,7 +134,9 @@ module rec Make : functor (I : Indices) -> sig
         ('a, 'c, 'ac) Namevec.t located * ('ac, 'd, 'acd) tel * opacity * Variables.hints
         -> 'a check
     | SelfRecord : (Field.wrapped, 'a codatafield) Abwd.t * Variables.hints -> 'a check
-    | Refute : 'a synth located list * [ `Explicit | `Implicit ] -> 'a check
+    | Refute :
+        ('a synth located * string located list located option) list * [ `Explicit | `Implicit ]
+        -> 'a check
     | Hole : {
         scope : 'a I.scope;
         loc : Asai.Range.t;
@@ -182,6 +172,7 @@ module rec Make : functor (I : Indices) -> sig
         -> ('a, 'b Fwn.suc, 'ab) tel
 
   val fwn_of_tel : ('a, 'b, 'c) tel -> 'b Fwn.t
+  val mods_of_tel : ('a, 'b, 'c) tel -> string located list located list
 end =
 functor
   (I : Indices)
@@ -244,12 +235,6 @@ functor
     (* A raw De Bruijn index is a well-scoped (backwards) natural number (or, more generally, an element of I.index) together with a possible face.  During typechecking we will verify that the face, if given, is applicable to the variable as a "cube variable", and compile the combination into a more strongly well-scoped kind of index. *)
     type 'a index = 'a I.index * any_sface option
 
-    module DomFam = struct
-      type (_, _, _) t = DomFam : I.name * 'left Make(I).check located -> ('left, 'n, 'b) t
-    end
-
-    module DomCube = Icube (I) (DomFam)
-
     (* Synthesizable raw terms *)
     type _ synth =
       | Var : 'a index -> 'a synth
@@ -262,12 +247,8 @@ functor
       | HigherPi :
           I.name * string located list located * 'a synth located * 'a I.suc synth located
           -> 'a synth
-      | InstHigherPi :
-          'n D.pos
-          * string located list located list
-          * ('a, 'n, unit, 'an) DomCube.t
-          * 'an check located
-          -> 'a synth
+      (* An n-dimensional pi-type, fully instantiated, with all its domains supplied.  The dimension 'n is the outer (unfiltered) dimension; the domains form a telescope whose length must match the number of faces of the *filtered* dimension, which is not known until typechecking (since parsing the modality annotations requires knowing the modes). *)
+      | InstHigherPi : 'n D.pos * ('a, 'b, 'ab) tel * 'ab check located -> 'a synth
       (* The location of the implicitness flag is, in the implicit case, the location of the braces surrounding the implicit argument. *)
       | App :
           'a check located * 'a check option located * [ `Implicit | `Explicit ] located
@@ -290,6 +271,8 @@ functor
       (* A Match can also sometimes check, but synthesizes if it has an explicit return type or if it is nondependent and its first branch synthesizes. *)
       | Match : {
           tm : 'a synth located;
+          (* An optionally specified window modality *)
+          window : string located list located option;
           (* Implicit means no "return" statement was given, so Narya has to guess what to do.  Explicit means a "return" statement was given with a motive.  "Nondep" means a placeholder return statement like "_ ↦ _" was given, indicating that a non-dependent matching is intended (to silence hints about fallback from the implicit case). *)
           sort : [ `Implicit | `Explicit of 'a check located | `Nondep of int located ];
           branches : (Constr.t, 'a branch) Abwd.t;
@@ -340,8 +323,10 @@ functor
           -> 'a check
       (* There's also a notation for record types that uses self variables like codata. *)
       | SelfRecord : (Field.wrapped, 'a codatafield) Abwd.t * Variables.hints -> 'a check
-      (* Empty match against the first one of the arguments belonging to an empty type. *)
-      | Refute : 'a synth located list * [ `Explicit | `Implicit ] -> 'a check
+      (* Empty match against the first one of the arguments belonging to an empty type.  Each argument carries an optional window modality. *)
+      | Refute :
+          ('a synth located * string located list located option) list * [ `Explicit | `Implicit ]
+          -> 'a check
       (* A hole must store the entire "state" from when it was entered, so that the user can later go back and fill it with a term that would have been valid in its original position.  This includes the variables in lexical scope, which are available only during parsing, so we store them here at that point.  During typechecking, when the actual metavariable is created, we save the lexical scope along with its other context and type data.  A hole also stores its source location so that proofgeneral can create an overlay at that place, and the notation tightnesses of the hole location. *)
       | Hole : {
           scope : 'a I.scope;
@@ -395,6 +380,11 @@ functor
     let rec fwn_of_tel : type a b c. (a, b, c) tel -> b Fwn.t = function
       | Emp -> Zero
       | Ext (_, _, _, tel) -> Suc (fwn_of_tel tel)
+
+    (* The modality annotations of the entries of a telescope. *)
+    let rec mods_of_tel : type a b c. (a, b, c) tel -> string located list located list = function
+      | Emp -> []
+      | Ext (_, modality, _, tel) -> modality :: mods_of_tel tel
   end
 
 module Indexed = Make (DeBruijnIndices)
@@ -471,12 +461,6 @@ module Resolve (R : Resolver) = struct
         let ab = R.T2.bplus_suc ab in
         R.rename ctx x :: renames (R.snoc ctx x) xs ab
 
-  module DomTraverse =
-    IcubeTraverse2 (R.I1) (R.I2) (R.T1.DomFam) (R.T2.DomFam)
-      (struct
-        type ('a1, 'a2) t = ('a1, 'a2) R.scope
-      end)
-
   let rec synth : type a1 a2. (a1, a2) R.scope -> a1 R.T1.synth located -> a2 R.T2.synth located =
    fun ctx tm ->
     let newtm : a2 R.T2.synth =
@@ -492,16 +476,10 @@ module Resolve (R : Resolver) = struct
           Pi (R.rename ctx x, modality, check ctx dom, check (R.snoc ctx x) cod)
       | HigherPi (x, modality, dom, cod) ->
           HigherPi (R.rename ctx x, modality, synth ctx dom, synth (R.snoc ctx x) cod)
-      | InstHigherPi (n, modality, doms, cod) ->
-          let (Gfolded (doms, ctx)) =
-            DomTraverse.fold_map_left
-              {
-                foldmap =
-                  (fun _ ctx (DomFam (x, dom)) ->
-                    (DomFam (R.rename ctx x, check ctx dom), R.snoc ctx x));
-              }
-              ctx doms in
-          InstHigherPi (n, modality, doms, check ctx cod)
+      | InstHigherPi (n, doms, cod) ->
+          let (Bplus ab) = R.T2.bplus (R.T1.fwn_of_tel doms) in
+          let doms2, ctx2 = tel ctx doms ab in
+          InstHigherPi (n, doms2, check ctx2 cod)
       | App (fn, arg, impl) ->
           let arg =
             match arg.value with
@@ -523,7 +501,7 @@ module Resolve (R : Resolver) = struct
           let tms2 = Vec.map (check ctx2) tms in
           Letrec (tys2, tms2, check ctx2 body)
       | Act (s, fa, tm) -> Act (s, fa, Option.map (check ctx) tm)
-      | Match { tm; sort; branches; refutables = r; highers } ->
+      | Match { tm; window; sort; branches; refutables = r; highers } ->
           let tm = synth ctx tm in
           let sort =
             match sort with
@@ -532,7 +510,7 @@ module Resolve (R : Resolver) = struct
             | `Implicit -> `Implicit in
           let branches = Abwd.map (branch ctx) branches in
           let refutables = Option.map (refutables ctx) r in
-          Match { tm; sort; branches; refutables; highers }
+          Match { tm; window; sort; branches; refutables; highers }
       | Fail e -> Fail e
       | ImplicitSApp (fn, apploc, arg) -> ImplicitSApp (synth ctx fn, apploc, synth ctx arg)
       | SFirst (tms, arg) ->
@@ -587,7 +565,7 @@ module Resolve (R : Resolver) = struct
           let (Bplus ad) = R.T2.bplus (R.T1.fwn_of_tel fields) in
           let fields2, _ = tel ctx2 fields ad in
           Record (locate_opt xs.loc xs2, fields2, opaq, hints)
-      | Refute (args, sort) -> Refute (List.map (synth ctx) args, sort)
+      | Refute (args, sort) -> Refute (List.map (fun (tm, w) -> (synth ctx tm, w)) args, sort)
       | Hole { scope; loc; li; ri; num } -> Hole { scope = R.rescope ctx scope; loc; li; ri; num }
       | Realize x -> Realize (check ctx (locate_opt tm.loc x)).value
       | ImplicitApp (fn, args) ->

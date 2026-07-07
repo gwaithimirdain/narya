@@ -64,6 +64,7 @@ type find_hole =
       li : No.interval;
       ri : No.interval;
       parametric : [ `Parametric | `Nonparametric ];
+      beingdefined : unit Constant.Map.t;
     }
       -> find_hole
 
@@ -75,10 +76,13 @@ let return_hole : type mode a b s.
     find_hole option =
  fun meta def hole ->
   match (def, hole) with
-  | Ok { tm = `Undefined; termctx; ty; _ }, Some { status; vars; li; ri; parametric } -> (
+  | Ok { tm = `Undefined; termctx; ty; _ }, Some { status; vars; li; ri; parametric; beingdefined }
+    -> (
       match Meta.origin meta with
       | Instant instant ->
-          Some (Found_hole { meta; instant; termctx; ty; status; vars; li; ri; parametric })
+          Some
+            (Found_hole
+               { meta; instant; termctx; ty; status; vars; li; ri; parametric; beingdefined })
       | _ -> fatal (Anomaly "timeless hole"))
   | Error e, _ -> fatal e
   | _ -> None
@@ -170,16 +174,17 @@ let add_error c e = Constant.Table.add c (Error e) constants
 (* Add a new Global metavariable (e.g. local let-definition) to the new metas associated to the current command. *)
 let add_meta m ~termctx ~ty ~tm ~energy =
   let tm = (tm :> [ `Defined of ('mode, 'b, 's) term | `Axiom | `Undefined ]) in
-  Metatable.add m (Ok { tm; termctx; ty; energy }) metas
+  Metatable.add m (Ok { tm; termctx; ty; energy; recursion = `Nonrecursive }) metas
 
-(* Set the definition of a Global metavariable, required to already exist but not be defined. *)
-let set_meta m ?termctx tm =
+(* Set the definition of a Global metavariable, required to already exist but not be defined.  The optional ?recursion argument records whether the definition contains occurrences of constants that were being defined when the metavariable was created (used when solving holes). *)
+let set_meta m ?termctx ?recursion tm =
   match Metatable.find_opt m metas with
   | Some (Ok d) ->
+      let d = Metadef.define ?recursion tm d in
       let d =
         match termctx with
-        | Some termctx -> { d with termctx; tm = `Defined tm }
-        | None -> { d with tm = `Defined tm } in
+        | Some termctx -> { d with termctx }
+        | None -> d in
       Metatable.add m (Ok d) metas
   | _ -> fatal (Anomaly "Global.set_meta: metavariable not defined")
 
@@ -329,8 +334,26 @@ let add_hole m loc ~vars ~termctx ~ty ~status ~li ~ri =
         (No_holes_allowed (where :> [ `Command of string | `File of string | `Other of string ]))
   | _, Error msg -> fatal (No_holes_allowed (`Command msg))
   | Ok (), Ok () ->
-      Metatable.add m (Ok { tm = `Undefined; termctx; ty; energy = Status.energy status }) metas;
-      Holetable.add m { status; vars; li; ri; parametric = get_parametric () } holes;
+      Metatable.add m
+        (Ok
+           {
+             tm = `Undefined;
+             termctx;
+             ty;
+             energy = Status.energy status;
+             recursion = `Nonrecursive;
+           })
+        metas;
+      Holetable.add m
+        {
+          status;
+          vars;
+          li;
+          ri;
+          parametric = get_parametric ();
+          beingdefined = Positivity.beingdefined ();
+        }
+        holes;
       let s, e = Asai.Range.split loc in
       Current_command.set
         {

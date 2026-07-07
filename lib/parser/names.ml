@@ -93,7 +93,7 @@ let cubevar x fa : string list =
 
 (* Look up an index variable to find a name for it. *)
 let lookup : type mode a. a t -> (mode, a) index -> string list =
- fun { ctx; used = _ } (Index (x, fa, Plus_lock (_, comp))) ->
+ fun { ctx; used = _ } (Index (x, fa, _, Plus_with_locks (comp, _))) ->
   let rec lookup : type a modality k n an.
       an ctx -> (a, modality, n, an) insert -> (k, n) sface -> string list =
    fun ctx x fa ->
@@ -111,7 +111,7 @@ let lookup : type mode a. a t -> (mode, a) index -> string list =
 
 (* Look up an index variable together with a field, to find a name for the combination, if there is one. *)
 let lookup_field : type mode a. a t -> (mode, a) index -> string -> string list option =
- fun { ctx; used = _ } (Index (x, fa, Plus_lock (_, comp))) f ->
+ fun { ctx; used = _ } (Index (x, fa, _, Plus_with_locks (comp, _))) f ->
   let rec lookup : type a modality k n an.
       an ctx -> (a, modality, n, an) insert -> (k, n) sface -> string list option =
    fun ctx x fa ->
@@ -201,7 +201,7 @@ let rec add_match_vars : type n mode annotations a b ab.
  fun names annotate comp ->
   match (annotate, comp) with
   | Zero _, Zero -> (names, [])
-  | Suc (Annotate (name, _), annotate), Suc (Dim (_, m), comp) ->
+  | Suc (Annotate (name, _), annotate), Suc (Dim (m, _), comp) ->
       let x, names = add_cube m names (Variables.binder_name_of_option name) in
       let names, xs = add_match_vars names annotate comp in
       (names, x :: xs)
@@ -289,7 +289,7 @@ let rec of_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> b t = func
           [ Bwv.to_bwd fields ]
           used in
       { ctx = Snoc (ctx, Variables (dim, plusdim, vars), fields); used }
-  | Snoc (ctx, Invis (_, bindings), _) ->
+  | Snoc (ctx, Invis { bindings; _ }, _) ->
       (* Invisible variables are anonymous, but we can still give them hints from their types.  Since this is only for display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints. *)
       let hints =
         Reporter.try_with ~fatal:(fun _ -> no_hints) @@ fun () ->
@@ -317,8 +317,9 @@ let degenerate : type r b kb mode. r D.t -> (r, b, kb, mode) plusmap -> b t -> k
         | Suc (Zero (Eq (Mode m)), Inject (Plus_proj _), _) -> Mode.not_unit m Eq)
     | Snoc (ctx, vars, flds) -> (
         match pm with
-        | Suc (pm, Inject (Plus_dim (_, k_mn)), Suc (Zero, Dim _)) ->
-            Snoc (go pm ctx, plus_variables r k_mn vars, flds))
+        (* The degenerating dimension r is filtered by the variable's modality (witnessed by the third component of Plus_dim) before being added to its cube dimension. *)
+        | Suc (pm, Inject (Plus_dim (k_mn, _, fq)), Suc (Zero, Dim _)) ->
+            Snoc (go pm ctx, plus_variables (Modality.filtered r fq) k_mn vars, flds))
     | Lock ctx -> (
         match pm with
         | Suc (pm, Inject (Plus_lock _), Suc (Zero, Lock _)) -> Lock (go pm ctx)) in

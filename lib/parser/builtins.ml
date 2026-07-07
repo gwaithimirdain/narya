@@ -948,6 +948,39 @@ let rec process_pi : type n lt ls rt rs.
   | Dep { vars = []; implicit = `Explicit; _ } :: doms -> process_pi ctx higher doms cod
   | Dep { implicit = `Implicit; _ } :: _ -> fatal (Unimplemented "general implicit function-types")
 
+(* One group of domains for an instantiated higher pi-type: a telescope consisting of the implicit boundary domains and ending with the (first) explicit primary domain.  The number of domains needed is not known until typechecking time (it is determined by the modality, which can't be parsed until the modes are known), so we just collect them all in a telescope; but the *grouping* into successive higher pi-types is visible at parse time, since each group consists of implicit domains followed by a single explicit one. *)
+type _ higher_dom_group =
+  | Higher_dom_group :
+      ('n, 'b, 'nb) tel * (string option, 'nb) Bwv.t * pi_dom list * Asai.Range.t option
+      -> 'n higher_dom_group
+
+let rec process_higher_dom_group : type n.
+    (string option, n) Bwv.t -> pi_dom list -> Asai.Range.t option -> n higher_dom_group =
+ fun ctx doms loc ->
+  match doms with
+  | [] ->
+      fatal
+        (Unexpected_implicitness
+           (`Implicit, "domain", "the primary domain of a higher function-type must be explicit"))
+  | Dep ({ vars = (x, _) :: xs; modality; ty = Wrap dom; loc = xloc; implicit; _ } as data) :: rest
+    -> (
+      let cdom = process ctx dom in
+      let newdoms =
+        match xs with
+        | [] -> rest
+        | _ :: _ -> Dep { data with vars = xs } :: rest in
+      let loc =
+        match loc with
+        | Some loc -> Some loc
+        | None -> xloc in
+      match implicit with
+      | `Explicit -> Higher_dom_group (Ext (x, modality, cdom, Emp), Bwv.snoc ctx x, newdoms, loc)
+      | `Implicit ->
+          let (Higher_dom_group (tele, newctx, rest2, loc2)) =
+            process_higher_dom_group (Bwv.snoc ctx x) newdoms loc in
+          Higher_dom_group (Ext (x, modality, cdom, tele), newctx, rest2, loc2))
+  | _ -> invalid "higher pi"
+
 let rec process_inst_higher_pi : type n lt ls rt rs m.
     (string option, n) Bwv.t ->
     m D.pos ->
@@ -958,46 +991,10 @@ let rec process_inst_higher_pi : type n lt ls rt rs m.
   match doms with
   | [] -> process ctx cod
   | _ :: _ ->
-      let module Acc = struct
-        type 'left t =
-          (string option, 'left) Bwv.t
-          * string located list located list
-          * pi_dom list
-          * Asai.Range.t option
-      end in
-      let module T = DomCube.Traverse (Acc) in
-      let (Wrap (domcube, (newctx, modalities, doms, loc))) =
-        let build : type left k b. (k, m) sface -> left Acc.t -> (left, k, b) T.fwrap_left =
-         fun s (ctx, modalities, doms, loc) ->
-          match doms with
-          | [] -> fatal (Not_enough_domains (D.pos dim))
-          | Dep ({ vars = (x, _) :: xs; modality; ty = Wrap dom; loc = xloc; implicit; _ } as data)
-            :: doms -> (
-              let modalities = modality :: modalities in
-              match (is_id_sface s, implicit) with
-              | Some Eq, `Explicit | None, `Implicit ->
-                  let cdom = process ctx dom in
-                  let ctx = Bwv.snoc ctx x in
-                  let doms =
-                    match xs with
-                    | [] -> doms
-                    | _ :: _ -> Dep { data with vars = xs } :: doms in
-                  let loc =
-                    match loc with
-                    | Some loc -> Some loc
-                    | None -> xloc in
-                  Fwrap (DomFam (x, cdom), (ctx, modalities, doms, loc))
-              | _ ->
-                  fatal
-                    (Unexpected_implicitness
-                       ( implicit,
-                         "domain",
-                         "all boundary domains must be implicit and primary domain explicit" )))
-          | _ -> invalid "higher pi" in
-        T.build_left (D.pos dim) { build } (ctx, [], doms, None) in
+      let (Higher_dom_group (tele, newctx, doms, loc)) = process_higher_dom_group ctx doms None in
       let cod = process_inst_higher_pi newctx dim doms cod in
       let loc = Range.merge_opt loc cod.loc in
-      { value = Synth (InstHigherPi (dim, modalities, domcube, cod)); loc }
+      { value = Synth (InstHigherPi (dim, tele, cod)); loc }
 
 (* Pretty-print the domains of a right-associated iterated function-type that may mix dependent and non-dependent arguments.  Each argument is preceded by an arrow if its wsarrow is given; pi_doms ensures these go in the right place.  If linebreaked, the eventual codomain with its arrow goes on a line by itself with hanging indent, and then the domains are flowed with their own hanging indent.  Arrows never come at the beginnings of lines.  *)
 
@@ -1502,9 +1499,35 @@ let process_ix : type a. a Matchscope.t -> int -> a synth located =
   | Some k -> unlocated (Raw.Var (k, None))
   | None -> fatal (Anomaly "invalid parse-level in processing match")
 
-let process_obs_or_ix : type a. a Matchscope.t -> (wrapped_parse, int) Either.t -> a synth located =
+(* A discriminee of a match, along with an optional window modality with which to lock the discriminee.  A window modality is written by ascribing the discriminee with a modality and a placeholder type, as in "match (x :m| _) [...". *)
+type discriminee = { tm : wrapped_parse; window : string located list located option }
+
+let get_discriminee_window (w : wrapped_parse) : discriminee =
+  let (Wrap tm) = w in
+  match tm.value with
+  | Notn ((AscVar, _), n) -> (
+      match args n with
+      | [
+       Token (LParen, _);
+       Term x;
+       Token (Colon, _);
+       Term modality;
+       Token (Op "|", _);
+       Term { value = Placeholder _; _ };
+       Token (RParen, _);
+      ] -> { tm = Wrap x; window = Some (get_modality fst modality) }
+      | _ -> { tm = w; window = None })
+  | _ -> { tm = w; window = None }
+
+let discriminee_window : (discriminee, int) Either.t -> string located list located option =
+  function
+  | Left { window; _ } -> window
+  | Right _ -> None
+
+let process_obs_or_ix : type a. a Matchscope.t -> (discriminee, int) Either.t -> a synth located =
  fun ctx -> function
-  | Left (Wrap x) -> process_synth (Matchscope.names ctx) x "discriminee of match"
+  | Left { tm = Wrap x; window = _ } ->
+      process_synth (Matchscope.names ctx) x "discriminee of match"
   | Right i -> (
       match Matchscope.lookup_num i ctx with
       | Some k -> unlocated (Raw.Var (k, None))
@@ -1513,7 +1536,7 @@ let process_obs_or_ix : type a. a Matchscope.t -> (wrapped_parse, int) Either.t 
 (* Given a scope of 'a variables, a vector of 'n not-yet-processed discriminees or previous match variables, and a list of branches with 'n patterns each, compile them into a nested match.  The scope given as an argument to this function is used only for the discriminees; it is the original scope extended by unnamed variables (since the discriminees can't actually depend on the pattern variables).  The scopes used for the branches, which also include pattern variables, are stored in the branch data structures. *)
 let rec process_branches : type a n.
     a Matchscope.t ->
-    ((wrapped_parse, int) Either.t, n) Vec.t ->
+    ((discriminee, int) Either.t, n) Vec.t ->
     int Bwd.t ->
     (a, n) branch list ->
     Asai.Range.t option ->
@@ -1523,10 +1546,10 @@ let rec process_branches : type a n.
   match branches with
   (* An empty match, having no branches, compiles to a refutation that will check by looking for any discriminee with an empty type.  This can only happen as the top-level call, so 'seen' should be empty and we really can just take all the discriminees. *)
   | [] -> (
-      let tms = Vec.to_list_map (process_obs_or_ix xctx) xs in
+      let tms = Vec.to_list_map (fun x -> (process_obs_or_ix xctx x, discriminee_window x)) xs in
       match (sort, xs) with
       | `Implicit, _ -> (locate (Refute (tms, `Implicit)) loc, [])
-      | `Explicit (Wrap motive), [ Left (Wrap tm) ] -> (
+      | `Explicit (Wrap motive), [ Left { tm = Wrap tm; window } ] -> (
           let ctx = Matchscope.names xctx in
           let sort = `Explicit (process ctx motive) in
           match process ctx tm with
@@ -1536,6 +1559,7 @@ let rec process_branches : type a n.
                      (Match
                         {
                           tm = locate tm loc;
+                          window;
                           sort;
                           branches = Emp;
                           refutables = None;
@@ -1544,7 +1568,7 @@ let rec process_branches : type a n.
                   loc,
                 [] )
           | _ -> fatal (Nonsynthesizing "motive of explicit match"))
-      | `Nondep i, [ Left (Wrap tm) ] -> (
+      | `Nondep i, [ Left { tm = Wrap tm; window } ] -> (
           let ctx = Matchscope.names xctx in
           let sort = `Nondep i in
           match process ctx tm with
@@ -1554,6 +1578,7 @@ let rec process_branches : type a n.
                      (Match
                         {
                           tm = locate tm loc;
+                          window;
                           sort;
                           branches = Emp;
                           refutables = None;
@@ -1568,7 +1593,7 @@ let rec process_branches : type a n.
   (* If that one remaining branch is a refutation, we refute all the "seen" terms or variables. *)
   | [ (_, [], _, Wrap { value = Notn ((Dot, _), _); loc }) ] ->
       let [] = xs in
-      let tms = Bwd_extra.to_list_map (process_ix xctx) seen in
+      let tms = Bwd_extra.to_list_map (fun i -> (process_ix xctx i, None)) seen in
       (locate (Refute (tms, `Explicit)) loc, [])
   (* Otherwise, the result is just the body of that branch. *)
   | [ (bodyctx, [], cube, Wrap body) ] ->
@@ -1594,8 +1619,14 @@ let rec process_branches : type a n.
               branches in
           let seen = Snoc (seen, i) in
           process_branches xctx xs seen branches loc sort
-      | Left (Wrap tm) ->
+      | Left { tm = Wrap tm; window } ->
           (* Otherwise, we have to let-bind it to the discriminee term, adding it as a new variable to the scope. *)
+          (match window with
+          | None -> ()
+          | Some _ ->
+              fatal ?loc:tm.loc
+                (Parse_error
+                   "window modality requires the discriminee to be matched against a constructor pattern"));
           let branches =
             List.map
               (function
@@ -1669,6 +1700,7 @@ let rec process_branches : type a n.
                 Hlist.Hlist.cons (x, Raw.Branch (locate names loc, cube, rest)) [ bs ])
           [ cbranches ] (Cons (Cons Nil)) in
       let tm = process_obs_or_ix xctx x in
+      let window = discriminee_window x in
       let refutables =
         Some
           {
@@ -1683,17 +1715,17 @@ let rec process_branches : type a n.
         | `Implicit -> `Implicit
         | `Nondep i -> `Nondep i
         | `Explicit (Wrap motive) -> `Explicit (process (Matchscope.names xctx) motive) in
-      ( locate (Synth (Match { tm; sort; branches; refutables; highers = [] })) loc,
+      ( locate (Synth (Match { tm; window; sort; branches; refutables; highers = [] })) loc,
         List.flatten (Bwd.to_list highers) )
 
 let rec get_discriminees :
-    observation list -> (wrapped_parse, int) Either.t Vec.wrapped * observation list =
+    observation list -> (discriminee, int) Either.t Vec.wrapped * observation list =
  fun obs ->
   match obs with
   | Term tm :: Token (Op ",", _) :: obs ->
       let Wrap xs, obs = get_discriminees obs in
-      (Wrap (Left (Wrap tm) :: xs), obs)
-  | Term tm :: obs -> (Wrap [ Left (Wrap tm) ], obs)
+      (Wrap (Left (get_discriminee_window (Wrap tm)) :: xs), obs)
+  | Term tm :: obs -> (Wrap [ Left (get_discriminee_window (Wrap tm)) ], obs)
   | _ -> invalid "match"
 
 let rec get_patterns : type n.
@@ -1923,7 +1955,10 @@ let () =
                     let (Extctx (mn, _, _, _)) = get_vars (Matchscope.names ctx) vars in
                     `Nondep ({ value = N.to_int (N.plus_right mn); loc = vars.loc } : int located)
                 | _ -> `Explicit (Wrap motive) in
-              let mtch, highers = process_branches ctx [ Left (Wrap tm) ] Emp branches loc sort in
+              let mtch, highers =
+                process_branches ctx
+                  [ Left (get_discriminee_window (Wrap tm)) ]
+                  Emp branches loc sort in
               match (mtch.value, highers) with
               | Synth (Match data), _ -> locate_opt mtch.loc (Synth (Match { data with highers }))
               | _, [] -> mtch

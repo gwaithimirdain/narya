@@ -22,6 +22,19 @@ module Tlist = struct
         let (Cons a) = a in
         Cons (inserted ins a)
 
+  (* Repeating a single type *)
+  type (_, _, _) conses =
+    | Nil : ('a, Fwn.zero, nil) conses
+    | Cons : ('b, 'n, 'bs) conses -> ('b, 'n Fwn.suc, ('b, 'bs) cons) conses
+
+  type (_, _) has_conses = Conses : ('b, 'n, 'bs) conses * 'bs t -> ('b, 'n) has_conses
+
+  let rec conses : type b n. n Fwn.t -> (b, n) has_conses = function
+    | Zero -> Conses (Nil, Nil)
+    | Suc n ->
+        let (Conses (cs, bs)) = conses n in
+        Conses (Cons cs, Cons bs)
+
   (* Mapping a simple type-level function *)
 
   module type TFun = sig

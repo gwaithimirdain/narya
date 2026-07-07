@@ -15,20 +15,23 @@ open Norm
 module Ordered = struct
   open Ctx.Ordered
 
-  let degenerate_binding : type dom modality mode k n kn ax b.
+  let degenerate_binding : type dom modality mode k l n kn ax b.
       int ->
       k D.t ->
+      l D.t ->
       (k, n, kn) D.plus ->
-      (dom, modality, mode) Modality.t ->
+      (dom, modality, mode, k, l) Modality.filter_dim ->
+      (dom, modality, mode, n, n) Modality.filter_dim ->
       (n, dom Binding.t) CubeOf.t ->
       (* Because the values and types of variables in one cube can refer to other variables in the same cube, we need to be given the extended context with this binding included at the end in order to readback. *)
       (mode, ax, (b, (modality, n) dim_entry) snoc) t ->
       (* But we are building the degenerating environment as we go, so we don't have the extended version of that yet. *)
-      (mode, k, b) env ->
+      (mode, l, b) env ->
       (kn, dom Binding.t) CubeOf.t * (kn, (dom, kinetic) value) CubeOf.t =
-   fun i k k_n modality xs ctx env ->
+   fun i k l k_n filter filtered xs ctx env ->
     let kn = D.plus_out k k_n in
     let ctx = Ctx.of_ordered ctx in
+    let modality = Modality.filter_modality filter in
     let (Locked (plus, lctx)) = Ctx.lock ctx modality in
     let readbacks =
       CubeOf.mmap
@@ -60,15 +63,19 @@ module Ordered = struct
                             defer (fun () ->
                                 fatal (Anomaly "variable out of scope in degenerate_binding")));
                   } in
-              let env = Ext { env; plus = k_n; modality; values = `Lazy prev_vals } in
+              let env = Ext { env; plus = k_n; values = `Lazy prev_vals; filter; filtered } in
               let lenv = Key (env, Modalcell.id modality, plus) in
               let (SFace_of_plus (_, fa, fb)) = sface_of_plus k_n fab in
+              let alenv =
+                act_env lenv
+                  (opt_op_of_opt_sface
+                     (comp_opt_sface (Modality.sface_of_filter l filter) (opt_of_sface fa))) in
               let m = dom_sface fb in
               match CubeOf.find readbacks fb with
               | None, ty ->
                   let level = (i, !j) in
                   j := !j + 1;
-                  let ty = Norm.eval_term (Act (lenv, op_of_sface fa)) ty in
+                  let ty = Norm.eval_term alenv ty in
                   let ty =
                     inst ty
                       (TubeOf.build D.zero
@@ -89,8 +96,8 @@ module Ordered = struct
               | Some tm, ty ->
                   (* Incrementing the level isn't really necessary since we aren't going to use it in this case, but we do it anyway for consistency. *)
                   j := !j + 1;
-                  let tm = Norm.eval_term (Act (lenv, op_of_sface fa)) tm in
-                  let ty = Norm.eval_term (Act (lenv, op_of_sface fa)) ty in
+                  let tm = Norm.eval_term alenv tm in
+                  let ty = Norm.eval_term alenv ty in
                   let ty =
                     inst ty
                       (TubeOf.build D.zero
@@ -118,32 +125,49 @@ module Ordered = struct
         -> ('mode, 'a, 'b, 'k) degctx
 
   (* TODO: Short-circuit if k=0. *)
-  let rec degenerate : type mode a b k. (mode, a, b) t -> k D.t -> (mode, a, b, k) degctx =
-   fun ctx k ->
+  let rec degenerate : type mode a b l. (mode, a, b) t -> l D.t -> (mode, a, b, l) degctx =
+   fun ctx l ->
     match ctx with
     | Emp mode ->
         Degctx
           ( Suc (Zero (Eq Unit), Inject (Plus_proj mode), Suc (Zero, Proj mode)),
             Emp mode,
-            Emp (mode, k) )
+            Emp (mode, l) )
     | Snoc (ctx', entry, ax) ->
-        let (Degctx (kb, newctx', env)) = degenerate ctx' k in
+        let (Degctx (kb, newctx', env)) = degenerate ctx' l in
         let mn = Ctx.dim_entry entry in
+        let modality = Ctx.modality_entry entry in
+        let (Has_filter filter_k_l) = Modality.filter modality l in
+        let k = Modality.filtered l filter_k_l in
         let (Plus k_mn) = D.plus mn in
-        let newentry, newenv, modality =
+        let newentry, newenv, filter_kmn, filter_mn =
           match entry with
           | Vis { hasfields = Has_fields; _ } ->
               fatal (Anomaly "attempt to degenerate a context containing illusory variables")
-          | Vis { dim; modality; plusdim; vars; bindings; hasfields = No_fields; fields; fplus } ->
+          | Vis
+              {
+                dim;
+                filter = filter_mn;
+                plusdim;
+                vars;
+                bindings;
+                hasfields = No_fields;
+                fields;
+                fplus;
+              } ->
               let (Plus km) = D.plus dim in
               let plusdim = D.plus_assocl km plusdim k_mn in
               let bindings, newval =
-                degenerate_binding (length newctx') k k_mn modality bindings ctx env in
+                degenerate_binding (length newctx') k l k_mn filter_k_l filter_mn bindings ctx env
+              in
               let hasfields = Term.No_fields in
+              let filter_kmn =
+                Modality.filter_plus k_mn k_mn (Modality.filter_idempotent filter_k_l) filter_mn
+              in
               ( Ctx.Vis
                   {
                     dim = D.plus_out k km;
-                    modality;
+                    filter = filter_kmn;
                     plusdim;
                     vars;
                     bindings;
@@ -151,21 +175,42 @@ module Ordered = struct
                     fields;
                     fplus;
                   },
-                Ext { env; plus = k_mn; modality; values = `Ok newval },
-                modality )
-          | Invis (modality, xs) ->
-              let newxs, newval = degenerate_binding (length newctx') k k_mn modality xs ctx env in
-              ( Invis (modality, newxs),
-                Ext { env; plus = k_mn; modality; values = `Ok newval },
-                modality ) in
+                Ext
+                  {
+                    env;
+                    plus = k_mn;
+                    filter = filter_k_l;
+                    filtered = filter_mn;
+                    values = `Ok newval;
+                  },
+                filter_kmn,
+                filter_mn )
+          | Invis { filter = filter_mn; bindings = xs } ->
+              let newxs, newval =
+                degenerate_binding (length newctx') k l k_mn filter_k_l filter_mn xs ctx env in
+              let filter_kmn =
+                Modality.filter_plus k_mn k_mn (Modality.filter_idempotent filter_k_l) filter_mn
+              in
+              ( Invis { filter = filter_kmn; bindings = newxs },
+                Ext
+                  {
+                    env;
+                    plus = k_mn;
+                    filter = filter_k_l;
+                    filtered = filter_mn;
+                    values = `Ok newval;
+                  },
+                filter_kmn,
+                filter_mn ) in
         Degctx
           ( Suc
-              (kb, Inject (Plus_dim (modality, k_mn)), Suc (Zero, Dim (modality, D.plus_out k k_mn))),
+              ( kb,
+                Inject (Plus_dim (k_mn, filter_mn, filter_k_l)),
+                Suc (Zero, Dim (D.plus_out k k_mn, filter_kmn)) ),
             Snoc (newctx', newentry, ax),
             newenv )
     | Lock (ctx, lock) ->
-        (* MODALTODO: Should depend on the lock *)
-        let (Degctx (kb, newctx, env)) = degenerate ctx k in
+        let (Degctx (kb, newctx, env)) = degenerate ctx l in
         Degctx
           ( Suc (kb, Inject (Plus_lock lock), Suc (Zero, Lock lock)),
             Lock (newctx, lock),
@@ -176,7 +221,7 @@ module Ordered = struct
                   ( Suc (Zero (Eq (Ctx.Ordered.mode ctx)), Lock_lock lock, Suc (Zero, Lock lock)),
                     Suc (Zero, Lock lock) ) ) )
     | Parametric_lock ctx ->
-        let (Degctx (kb, newctx, env)) = degenerate ctx k in
+        let (Degctx (kb, newctx, env)) = degenerate ctx l in
         Degctx (kb, Parametric_lock newctx, env)
 end
 

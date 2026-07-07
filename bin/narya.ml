@@ -17,6 +17,7 @@ let interactive = ref false
 let proofgeneral = ref false
 let show_version = ref false
 let install_mode_theory = ref Modal.Trivial.install
+let discrete_coreflector = ref false
 
 (* Undocumented flag used for testing: interpret a given file or command-line string as if it were entered in interactive mode. *)
 let fake_interacts : string Bwd.t ref = ref Emp
@@ -75,12 +76,21 @@ let speclist =
           refl_names := [];
           internal := false),
       "Abbreviation for -arity 1 -direction d -external" );
-    ( "-idempotent-comonad",
-      Arg.Unit (fun () -> install_mode_theory := Modal.Idempotent_comonad.install),
-      "Select the idempotent comonad mode theory" );
+    ( "-coreflector",
+      Arg.Unit (fun () -> install_mode_theory := Modal.Coreflector.install),
+      "Select the coreflector mode theory" );
     ( "-functor",
       Arg.Unit (fun () -> install_mode_theory := Modal.Functor.install),
       "Select the functor mode theory" );
+    ( "-discrete-coreflector",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Discrete_coreflector.install;
+          discrete_coreflector := true),
+      "Select the nonparametric comonad mode theory (currently requires -parametric)" );
+    ( "-composed-functors",
+      Arg.Unit (fun () -> install_mode_theory := Modal.Composed_functors.install),
+      "Select the composed functors mode theory" );
     ("--help", Arg.Unit (fun () -> ()), "");
     ("-", Arg.Unit (fun () -> inputs := Snoc (!inputs, `Stdin)), "");
     ("-fake-interact", Arg.String (fun str -> fake_interacts := Snoc (!fake_interacts, str)), "");
@@ -98,6 +108,9 @@ let () =
   if !show_version then (
     print_endline (String.trim [%blob "version.txt"]);
     exit 0);
+  if !discrete_coreflector && !hott then (
+    Printf.fprintf stderr "-discrete-coreflector currently requires -parametric\n";
+    exit 1);
   if
     Bwd.is_empty !inputs
     && (not !interactive)

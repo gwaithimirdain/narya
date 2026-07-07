@@ -93,6 +93,16 @@ module Cube (F : Fam2) = struct
       | Nil, [] -> []
       | Cons hs, x :: xs -> x :: hgt_of_hlist hs xs
 
+    (* We can also make an hft of constant types from a vector of the right length. *)
+    let rec hft_of_vec : type b k n bs.
+        (b, k, bs) Tlist.conses -> ((n, b) F.t, k) Vec.t -> (n, bs) hft =
+     fun bs xs ->
+      match (bs, xs) with
+      | Nil, [] -> []
+      | Cons bs, x :: xs ->
+          let xs = hft_of_vec bs xs in
+          x :: xs
+
     (* hgts preserves validity of tlists. *)
     let rec tlist_hgts : type m n xs ys. (m, n, xs, ys) hgts -> xs Tlist.t -> ys Tlist.t =
      fun hs xs ->
@@ -239,6 +249,14 @@ module Cube (F : Fam2) = struct
       M.apply (pmapM { map = (fun fa x -> M.apply (g.it fa x) @@ fun () -> hnil) } xs Nil)
       @@ fun [] -> ()
 
+    (* A binary iterator over two cubes of the *same* functor F (but possibly different parameters b1, b2).  It is defined in terms of the generic variadic miterM, but crucially the existential-opening of the element family (e.g. BindFam) happens in the *caller's* it2, checked against this plain fixed-arity-2 signature, NOT inside the rank-2 field passed to miterM (where x and y stay abstract and are merely forwarded).  So miterM is only ever instantiated at an abstract 2-element Tlist with no existential-opening in the rank-2 field, which is cheap.  Calling miterM [ c1; c2 ] *directly* on two GADT-family cubes, opening the existentials in its rank-2 field at the concrete Tlist, is what causes a catastrophic type-inference blowup (see the Pi arm of equal_head in core/equal.ml); this wrapper keeps the two ingredients apart. *)
+    type ('n, 'b1, 'b2) miterator2M = {
+      it2 : 'm. ('m, 'n) sface -> ('m, 'b1) F.t -> ('m, 'b2) F.t -> unit M.t;
+    }
+
+    let miter2M : type n b1 b2. (n, b1, b2) miterator2M -> (n, b1) t -> (n, b2) t -> unit M.t =
+     fun g xs ys -> miterM { it = (fun fa [ x; y ] -> g.it2 fa x y) } [ xs; ys ]
+
     (* The builder function isn't quite a special case of the generic traversal, since it needs to maintain different information when constructing a cube from scratch. *)
 
     type ('n, 'b) builderM = { build : 'm. ('m, 'n) sface -> ('m, 'b) F.t M.t }
@@ -270,6 +288,42 @@ module Cube (F : Fam2) = struct
 
     let buildM : type n b. n D.t -> (n, b) builderM -> (n, b) t M.t =
      fun n g -> gbuildM n (D.plus_zero n) (D.plus_zero n) Zero g
+
+    (* TODO: Redefine buildM in terms of pbuildM *)
+
+    type ('n, 'bs) pbuilderM = { build : 'm. ('m, 'n) sface -> ('m, 'bs) Heter.hft M.t }
+
+    let rec gpbuildM : type k m mk l ml bs.
+        m D.t ->
+        (m, k, mk) D.plus ->
+        (m, l, ml) D.plus ->
+        (k, l) bwsface ->
+        (ml, bs) pbuilderM ->
+        bs Tlist.t ->
+        (m, mk, bs) Heter.hgt M.t =
+     fun m mk ml d g bs ->
+      match m with
+      | Word Zero ->
+          let Eq = D.plus_uniq mk (D.zero_plus (dom_bwsface d)) in
+          let Eq = D.plus_uniq ml (D.zero_plus (cod_bwsface d)) in
+          M.apply (g.build (sface_of_bw d)) @@ fun x -> Heter.leaf x
+      | Word (Suc (m, Unit)) ->
+          let (Suc (mk', Unit)) = D.plus_suc mk in
+          let (Wrap l) = Endpoints.wrapped () in
+          let (Hgts newhs) = Heter.hgts_of_tlist bs in
+          M.apply
+            ( M.zip (fun () ->
+                  BwvM.pmapM
+                    (fun [ e ] ->
+                      M.apply (gpbuildM (Word m) mk' (D.plus_suc ml) (End (e, d)) g bs) @@ fun xs ->
+                      Heter.hlist_of_hgt newhs xs)
+                    [ Endpoints.indices l ]
+                    (Heter.tlist_hgts newhs bs))
+            @@ fun () -> gpbuildM (Word m) (D.plus_suc mk) (D.plus_suc ml) (Mid d) g bs )
+          @@ fun (ends, mid) -> Heter.branch l newhs ends mid
+
+    let pbuildM : type n bs. n D.t -> (n, bs) pbuilderM -> bs Tlist.t -> (n, n, bs) Heter.hgt M.t =
+     fun n g bs -> gpbuildM n (D.plus_zero n) (D.plus_zero n) Zero g bs
   end
 
   module Monadic (M : Monad.Plain) = struct
@@ -332,5 +386,4 @@ module CubeOf = struct
         let mk' = D.plus_suc mk in
         let (Suc (mk'', Unit)) = mk' in
         Branch (l, Bwv.map (fun t -> lower mk'' (D.plus_suc n12') t) ends, lower mk' n12 mid)
-
 end

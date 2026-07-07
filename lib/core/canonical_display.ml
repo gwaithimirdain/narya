@@ -35,7 +35,7 @@ let codata_display_value : type mode a b cm cn cc ca cet.
           let selfvars, selfnfs = dom_vars ctx self_modality dom in
           let self_top = CubeOf.find_top selfvars in
           let self_top_ty = (Ctx.Binding.value (CubeOf.find_top selfnfs)).ty in
-          let ctx = Ctx.cube_vis ctx self_modality None selfnfs in
+          let ctx = Ctx.cube_vis ctx (Modality.filter_id (Ctx.mode ctx) (CubeOf.dim dom)) None selfnfs in
           let fields =
             Bwd.fold_left
               (fun acc
@@ -112,23 +112,28 @@ let rec readback_about : type mode a b.
           | Codata codata_args ->
               Some (Term.Canonical_display (codata_display_value ctx value codata_args))
           | UU _ | Pi _ -> None)
-      | Val (Lam (xs, _)) -> (
+      | Val (Lam (xs, _, _)) -> (
           (* A function (e.g. a parameterized datatype family): apply it to a fresh parameter variable and recurse, then re-abstract.  The parameter name comes from the lambda-abstraction (the definition), not the function-type (whose binder may be anonymous). *)
           match view_type (Lazy.force ty) "readback_about" with
-          | Canonical (_, Pi (_, modality, doms, _), pins, _) -> (
+          | Canonical (_, Pi { x = _; filter; doms; cods }, pins, _) -> (
               let Eq = eq_of_ins_zero pins in
-              match D.compare_zero (CubeOf.dim doms) with
-              | Zero -> (
+              let modality = Modality.filter_modality filter in
+              match (D.compare_zero (CubeOf.dim doms), D.compare_zero (BindCube.dim cods)) with
+              | Zero, Zero -> (
                   let argvar, argnf = dom_vars ctx modality doms in
                   let ctx =
-                    Ctx.cube_vis ctx modality (option_of_binder_name (top_variable xs)) argnf in
-                  let value = apply_term value modality argvar in
+                    Ctx.cube_vis ctx
+                      (Modality.filter_idempotent filter)
+                      (option_of_binder_name (top_variable xs))
+                      argnf in
+                  let value = apply_term value filter argvar in
                   match readback_about ctx value with
                   | None -> None
                   | Some body ->
                       Some
-                        (Term.Lam (singleton_variables D.zero (top_variable xs), modality, body)))
-              | Pos _ -> None)
+                        (Term.Lam
+                           (singleton_variables D.zero (top_variable xs), D.zero, filter, body)))
+              | _ -> None)
           | _ -> None)
       | Val (Struct _) -> (
           (* A partially-evaluated struct: a comatch, or an eta-record tuple that hasn't reduced to a leaf (e.g. the componentwise transport "(Prod A B)⁽ᵉ⁾ .trr p", which is stuck on abstract A B).  Read it back type-directed via readback_comatch, passing the neutral (whose forced value is this struct) to serve as the self-variable, so its field types resolve even though the struct itself is a non-kinetic case-tree value.  If that gives up (e.g. on a higher comatch field with a non-empty closure environment), fall back to the application spine. *)

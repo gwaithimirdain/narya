@@ -23,8 +23,8 @@ module rec Value : sig
   module BindFam : sig
     type (_, _) t =
       | BindFam :
-          ('mode, 'modality, 'dom, 'k, kinetic) Value.binder
-          -> ('k, 'mode * 'modality * 'dom) t
+          ('mode, 'modality, 'dom, 'n, kinetic) Value.binder
+          -> ('n, 'mode * 'modality * 'dom) t
   end
 
   module BindCube : module type of Cube (BindFam)
@@ -50,11 +50,11 @@ module rec Value : sig
 
   module StructfieldAbwd : module type of Field.Abwd (Structfield)
 
-  module ValueFam : sig
-    type ('mode, 'a, 'b) t = ('mode, 'a) Value.value
-  end
-
-  module ModalValueCube : module type of Modality.Cube (ValueFam)
+  type (_, _, _) modal_value_cube =
+    | Modal :
+        ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
+        * ('k, ('dom, 'a) Value.value) Dim.CubeOf.t
+        -> ('n, 'mode, 'a) modal_value_cube
 
   type 'mode head =
     | Var : {
@@ -71,20 +71,22 @@ module rec Value : sig
       }
         -> 'mode head
     | UU : 'mode Mode.t * 'n D.t -> 'mode head
-    | Pi :
-        'm variables
-        * ('dom, 'modality, 'mode) Modality.t
-        * ('m, ('dom, kinetic) value) CubeOf.t
-        * ('m, 'mode * 'modality * 'dom) BindCube.t
-        -> 'mode head
+    | Pi : ('dom, 'modality, 'mode, 'n, 'm) pi_args -> 'mode head
+
+  and ('dom, 'modality, 'mode, 'n, 'm) pi_args = {
+    x : 'n variables;
+    filter : ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim;
+    doms : ('n, ('dom, kinetic) value) CubeOf.t;
+    cods : ('m, 'mode * 'modality * 'dom) BindCube.t;
+  }
 
   and (_, _) apps =
     | Emp : ('mode, noninst) apps
     | Arg :
         ('mode, 'any) apps
-        * ('dom, 'modality, 'mode) Modality.t
+        * ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
         * ('n, 'dom normal) CubeOf.t
-        * ('nk, 'n, 'k) insertion
+        * ('mk, 'm, 'k) insertion
         -> ('mode, noninst) apps
     | Field :
         ('mode, 'any) apps * 'i Field.t * ('t, 'i, 'n) D.plus * ('tk, 't, 'k) insertion
@@ -97,7 +99,8 @@ module rec Value : sig
     | Bind : {
         env : ('mode, 'm, 'a) env;
         modality : ('dom, 'modality, 'mode) Modality.t;
-        body : ('mode, ('a, ('modality, 'n) dim_entry) snoc, 's) term;
+        filter : ('dom, 'modality, 'mode, 'l, 'n) Modality.filter_dim;
+        body : ('mode, ('a, ('modality, 'l) dim_entry) snoc, 's) term;
         ins : ('mn, 'm, 'n) insertion;
       }
         -> ('mode, 'modality, 'dom, 'mn, 's) binder
@@ -111,9 +114,13 @@ module rec Value : sig
       }
         -> ('mode, kinetic) value
     | Constr :
-        Constr.t * 'n D.t * ('n, 'mode, kinetic, unit) ModalValueCube.t list
+        Constr.t * 'n D.t * ('n, 'mode, kinetic) modal_value_cube list
         -> ('mode, kinetic) value
-    | Lam : 'k variables * ('mode, 'modality, 'dom, 'k, 's) binder -> ('mode, 's) value
+    | Lam :
+        'k variables
+        * ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
+        * ('mode, 'modality, 'dom, 'n, 's) binder
+        -> ('mode, 's) value
     | Struct : ('mode, 'p, 'k, 'pk, 's, 'et) struct_args -> ('mode, 's) value
     | Canonical : ('mode, 'm, 'k, 'mk, 'e, 'n) inst_canonical -> ('mode, potential) value
 
@@ -140,12 +147,7 @@ module rec Value : sig
 
   and (_, _, _) canonical =
     | UU : 'mode Mode.t * 'm D.t -> ('mode, 'm, D.zero) canonical
-    | Pi :
-        'm variables
-        * ('dom, 'modality, 'mode) Modality.t
-        * ('m, ('dom, kinetic) value) CubeOf.t
-        * ('m, 'mode * 'modality * 'dom) BindCube.t
-        -> ('mode, 'm, D.zero) canonical
+    | Pi : ('dom, 'modality, 'mode, 'n, 'm) pi_args -> ('mode, 'm, D.zero) canonical
     | Data : ('mode, 'm, 'j, 'ij) data_args -> ('mode, 'm, D.zero) canonical
     | Codata : ('mode, 'm, 'n, 'c, 'a, 'et) codata_args -> ('mode, 'm, 'n) canonical
 
@@ -155,6 +157,7 @@ module rec Value : sig
     indices : (('m, 'mode normal) CubeOf.t, 'j, 'ij) Fillvec.t;
     constrs : (Constr.t, ('mode, 'm) dataconstr) Abwd.t;
     discrete : [ `Yes | `Maybe | `No ];
+    recursive : Positivity.recursion;
     hints : hints;
   }
 
@@ -181,20 +184,22 @@ module rec Value : sig
     | Emp : 'mode Mode.t * 'n D.t -> ('mode, 'n, 'mode emp) env
     | Ext : {
         env : ('mode, 'n, 'b) env;
-        plus : ('n, 'k, 'nk) D.plus;
-        modality : ('dom, 'modality, 'mode) Modality.t;
+        plus : ('m, 'k, 'mk) D.plus;
+        filter : ('dom, 'modality, 'mode, 'm, 'n) Modality.filter_dim;
+        filtered : ('dom, 'modality, 'mode, 'k, 'k) Modality.filter_dim;
         values :
-          [ `Lazy of ('nk, ('dom, kinetic) lazy_eval) CubeOf.t
-          | `Ok of ('nk, ('dom, kinetic) value) CubeOf.t
+          [ `Lazy of ('mk, ('dom, kinetic) lazy_eval) CubeOf.t
+          | `Ok of ('mk, ('dom, kinetic) value) CubeOf.t
           | `Error of Code.t ];
       }
         -> ('mode, 'n, ('b, ('modality, 'k) dim_entry) snoc) env
-    | Act : ('mode, 'n, 'b) env * ('m, 'n) op -> ('mode, 'm, 'b) env
+    | Act : ('mode, 'n, 'b) env * ('m, 'n) opt_op -> ('mode, 'm, 'b) env
     | Key :
         ('mode, 'n, 'b) env
         * ('dom, 'mu, 'nu, 'mode) Modalcell.t
         * ('b, 'mode, 'mu, 'dom, 'bm) plus_lock
         -> ('dom, 'n, 'bm) env
+    | Prekey : ('mode, 'n, 'b) env * ('mode, 'mu, 'nu, 'cod) Modalcell.t -> ('mode, 'n, 'b) env
     | Permute : ('a, 'b) permute * ('mode, 'n, 'b) env -> ('mode, 'n, 'a) env
     | Shift :
         ('mode, 'mn, 'b) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb, 'mode) plusmap
@@ -225,8 +230,8 @@ end = struct
   module BindFam = struct
     type (_, _) t =
       | BindFam :
-          ('mode, 'modality, 'dom, 'k, kinetic) Value.binder
-          -> ('k, 'mode * 'modality * 'dom) t
+          ('mode, 'modality, 'dom, 'n, kinetic) Value.binder
+          -> ('n, 'mode * 'modality * 'dom) t
   end
 
   module BindCube = Cube (BindFam)
@@ -254,11 +259,11 @@ end = struct
 
   module StructfieldAbwd = Field.Abwd (Structfield)
 
-  module ValueFam = struct
-    type ('mode, 'a, 'b) t = ('mode, 'a) Value.value
-  end
-
-  module ModalValueCube = Modality.Cube (ValueFam)
+  type (_, _, _) modal_value_cube =
+    | Modal :
+        ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
+        * ('k, ('dom, 'a) Value.value) Dim.CubeOf.t
+        -> ('n, 'mode, 'a) modal_value_cube
 
   (* The head of an elimination spine is a variable, a constant, or a substituted metavariable.  *)
   type 'mode head =
@@ -281,21 +286,24 @@ end = struct
     (* Universes are parametrized by a mode and a dimension. *)
     | UU : 'mode Mode.t * 'n D.t -> 'mode head
     (* Pis must store not just the domain type but all its boundary types.  These domain and boundary types are not fully instantiated.  Note the codomains are stored in a cube of binders. *)
-    | Pi :
-        'm variables
-        * ('dom, 'modality, 'mode) Modality.t
-        * ('m, ('dom, kinetic) value) CubeOf.t
-        * ('m, 'mode * 'modality * 'dom) BindCube.t
-        -> 'mode head
+    | Pi : ('dom, 'modality, 'mode, 'n, 'm) pi_args -> 'mode head
+
+  and ('dom, 'modality, 'mode, 'n, 'm) pi_args = {
+    x : 'n variables;
+    filter : ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim;
+    doms : ('n, ('dom, kinetic) value) CubeOf.t;
+    cods : ('m, 'mode * 'modality * 'dom) BindCube.t;
+  }
 
   (* An application contains the data of an n-dimensional argument and its boundary, together with a neutral insertion applied outside that can't be pushed in.  This represents the *argument list* of a single application, not the function.  Thus, an application spine will be a head together with a list of apps.  Each application could be along a different modality. *)
   and (_, _) apps =
     | Emp : ('mode, noninst) apps
+    (* m is the dimension of the function being applied, n is the dimension of the arguments *)
     | Arg :
         ('mode, 'any) apps
-        * ('dom, 'modality, 'mode) Modality.t
+        * ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
         * ('n, 'dom normal) CubeOf.t
-        * ('nk, 'n, 'k) insertion
+        * ('mk, 'm, 'k) insertion
         -> ('mode, noninst) apps
     (* For a higher field with ('n, 't, 'i) insertion, the actual evaluation dimension is 'n, but the result dimension is only 't.  So the dimension of the arg is 't, since that's the output dimension that a degeneracy acting on could be pushed through.  However, since a degeneracy of dimension up to 'n can act on the inside, we can push in the whole insertion and store only a plus outside. *)
     | Field :
@@ -306,12 +314,13 @@ end = struct
         ('mode, noninst) apps * 'k D.pos * ('n, 'k, 'nk, 'mode normal) TubeOf.t
         -> ('mode, inst) apps
 
-  (* Lambdas and Pis both bind a variable, along with its dependencies.  These are recorded as defunctionalized closures.  Since they are produced by higher-dimensional substitutions and operator actions, the dimension of the binder can be different than the dimension of the environment that closes its body.  Accordingly, in addition to the environment and degeneracy to close its body, we store information about how to map the eventual arguments into the bound variables in the body.  *)
+  (* Lambdas and Pis both bind a variable, along with its dependencies.  These are recorded as defunctionalized closures.  Since they are produced by higher-dimensional substitutions and operator actions, the dimension of the binder can be different than the dimension of the environment that closes its body.  Accordingly, in addition to the environment and degeneracy to close its body, we store information about how to map the eventual arguments into the bound variables in the body; this is the insertion.  *)
   and (_, _, _, _, _) binder =
     | Bind : {
         env : ('mode, 'm, 'a) env;
         modality : ('dom, 'modality, 'mode) Modality.t;
-        body : ('mode, ('a, ('modality, 'n) dim_entry) snoc, 's) term;
+        filter : ('dom, 'modality, 'mode, 'l, 'n) Modality.filter_dim;
+        body : ('mode, ('a, ('modality, 'l) dim_entry) snoc, 's) term;
         ins : ('mn, 'm, 'n) insertion;
       }
         -> ('mode, 'modality, 'dom, 'mn, 's) binder
@@ -327,9 +336,13 @@ end = struct
         -> ('mode, kinetic) value
     (* A constructor has a name, a dimension, and a list of arguments of that dimension.  It must always be applied to the correct number of arguments (otherwise it can be eta-expanded).  It doesn't have an outer insertion because a primitive datatype is always 0-dimensional (it has higher-dimensional versions, but degeneracies can always be pushed inside these).  *)
     | Constr :
-        Constr.t * 'n D.t * ('n, 'mode, kinetic, unit) ModalValueCube.t list
+        Constr.t * 'n D.t * ('n, 'mode, kinetic) modal_value_cube list
         -> ('mode, kinetic) value
-    | Lam : 'k variables * ('mode, 'modality, 'dom, 'k, 's) binder -> ('mode, 's) value
+    | Lam :
+        'k variables
+        * ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
+        * ('mode, 'modality, 'dom, 'n, 's) binder
+        -> ('mode, 's) value
     (* Structs have to store an insertion outside, like an application, to deal with higher-dimensional record types like Gel.  Here 'k is the Gel dimension, with 'p the substitution dimension and 'pk the total dimension. *)
     | Struct : ('mode, 'p, 'k, 'pk, 's, 'et) struct_args -> ('mode, 's) value
     (* A canonical type is only a *potential* value, so it appears as the 'value' of a 'neu'.  It may also be instantiated, partially or fully. *)
@@ -365,12 +378,7 @@ end = struct
   and (_, _, _) canonical =
     (* At present, we never produce these except as the values of their corresponding heads.  But in principle, we could allow universes and pi-types as potential terms, so that constants could be defined to "behave like" universes or pi-types without reducing to them. *)
     | UU : 'mode Mode.t * 'm D.t -> ('mode, 'm, D.zero) canonical
-    | Pi :
-        'm variables
-        * ('dom, 'modality, 'mode) Modality.t
-        * ('m, ('dom, kinetic) value) CubeOf.t
-        * ('m, 'mode * 'modality * 'dom) BindCube.t
-        -> ('mode, 'm, D.zero) canonical
+    | Pi : ('dom, 'modality, 'mode, 'n, 'm) pi_args -> ('mode, 'm, D.zero) canonical
     (* We define a named record type to encapsulate the arguments of Data and Codata, rather than using an inline one, so that we can bind their existential variables (https://discuss.ocaml.org/t/annotating-by-an-existential-type/14721).  See the definitions of these records below. *)
     | Data : ('mode, 'm, 'j, 'ij) data_args -> ('mode, 'm, D.zero) canonical
     | Codata : ('mode, 'm, 'n, 'c, 'a, 'et) codata_args -> ('mode, 'm, 'n) canonical
@@ -387,6 +395,8 @@ end = struct
     constrs : (Constr.t, ('mode, 'm) dataconstr) Abwd.t;
     (* Whether it is discrete.  The value `Maybe means that it could be discrete based on its own parameters, indices, and constructor arguments, but either is waiting for its mutual companions to be typechecked, or at least one of them failed to be discrete.  Thus for equality-testing purposes, `Maybe is treated like `No. *)
     discrete : [ `Yes | `Maybe | `No ];
+    (* Whether it has recursive constructors. *)
+    recursive : Positivity.recursion;
     (* Variable-name hints, for displaying anonymous variables of this type. *)
     hints : hints;
   }
@@ -423,21 +433,24 @@ end = struct
     (* The (n+k)-cube here is morally a k-cube of n-cubes, representing a k-dimensional "cube variable" consisting of some number of "real" variables indexed by the faces of a k-cube, each of which has an n-cube of values representing a value and its boundaries.  But this contains the same data as an (n+k)-cube since a strict face of (n+k) decomposes uniquely as a strict face of n plus a strict face of k, and it seems to be more convenient to store it as a single (n+k)-cube. *)
     | Ext : {
         env : ('mode, 'n, 'b) env;
-        plus : ('n, 'k, 'nk) D.plus;
-        modality : ('dom, 'modality, 'mode) Modality.t;
+        plus : ('m, 'k, 'mk) D.plus;
+        filter : ('dom, 'modality, 'mode, 'm, 'n) Modality.filter_dim;
+        filtered : ('dom, 'modality, 'mode, 'k, 'k) Modality.filter_dim;
         (* We have two kinds of variable bindings in an environment: lazy and non-lazy.   We also allow Error binding in an environment, indicating that that variable is not actually usable, usually due to an earlier error in typechecking that we've continued on from anyway.  (There's no need for errors in the lazy case, since the lazy thunk can just raise an error directly when forced.) *)
         values :
-          [ `Lazy of ('nk, ('dom, kinetic) lazy_eval) CubeOf.t
-          | `Ok of ('nk, ('dom, kinetic) value) CubeOf.t
+          [ `Lazy of ('mk, ('dom, kinetic) lazy_eval) CubeOf.t
+          | `Ok of ('mk, ('dom, kinetic) value) CubeOf.t
           | `Error of Code.t ];
       }
         -> ('mode, 'n, ('b, ('modality, 'k) dim_entry) snoc) env
-    | Act : ('mode, 'n, 'b) env * ('m, 'n) op -> ('mode, 'm, 'b) env
+    | Act : ('mode, 'n, 'b) env * ('m, 'n) opt_op -> ('mode, 'm, 'b) env
     | Key :
         ('mode, 'n, 'b) env
         * ('dom, 'mu, 'nu, 'mode) Modalcell.t
         * ('b, 'mode, 'mu, 'dom, 'bm) plus_lock
         -> ('dom, 'n, 'bm) env
+    (* A Prekey lazily acts by a key cell on all the values in an environment, without changing its mode or codomain context.  Semantically, it is precomposition of the substitution with a key substitution.  This is how a key acts on the captured environment of a closure: variables bound by the closure itself (added on top of the Prekey) are not affected. *)
+    | Prekey : ('mode, 'n, 'b) env * ('mode, 'mu, 'nu, 'cod) Modalcell.t -> ('mode, 'n, 'b) env
     | Permute : ('a, 'b) permute * ('mode, 'n, 'b) env -> ('mode, 'n, 'a) env
     (* Adding a dimension 'n to all the dimensions in a dimension list 'b is the power/cotensor in the dimension-enriched category of contexts.  Shifting an environment (substitution) implements its universal property: an (m+n)-dimensional substitution with codomain b is equivalent to an m-dimensional substitution with codomain n+b. *)
     | Shift :
@@ -479,8 +492,9 @@ type any_canonical = Any : ('mode, 'm, 'n) canonical -> any_canonical
 let rec dim_env : type mode n b. (mode, n, b) env -> n D.t = function
   | Emp (_, n) -> n
   | Ext { env; _ } -> dim_env env
-  | Act (_, op) -> dom_op op
+  | Act (_, op) -> dom_opt_op op
   | Key (e, _, _) -> dim_env e
+  | Prekey (e, _) -> dim_env e
   | Permute (_, e) -> dim_env e
   | Shift (e, mn, _) -> D.plus_left mn (dim_env e)
   | Unshift (e, mn, _) -> D.plus_out (dim_env e) mn
@@ -498,6 +512,7 @@ let rec mode_env : type mode n b. (mode, n, b) env -> mode Mode.t = function
   | Ext { env; _ } -> mode_env env
   | Act (e, _) -> mode_env e
   | Key (_, key, _) -> Modalcell.hsrc key
+  | Prekey (e, _) -> mode_env e
   | Permute (_, e) -> mode_env e
   | Shift (e, _, _) -> mode_env e
   | Unshift (e, _, _) -> mode_env e
@@ -511,34 +526,23 @@ let rec mode_env : type mode n b. (mode, n, b) env -> mode Mode.t = function
 (* The length of an environment is a tctx. *)
 let rec length_env : type mode n b. (mode, n, b) env -> (mode, b) Tctx.t = function
   | Emp (mode, _) -> Tctx.emp mode
-  | Ext { env; plus; modality; _ } ->
+  | Ext { env; plus; filtered; _ } ->
       let le = length_env env in
-      Tctx.suc le (Dim (modality, D.plus_right plus))
+      Tctx.suc le (Dim (D.plus_right plus, filtered))
   | Act (env, _) -> length_env env
   | Key (env, _, al) -> plus_lock_out (length_env env) al
+  | Prekey (env, _) -> length_env env
   | Permute (p, env) -> perm_dom p (length_env env)
   | Shift (_, mn, nb) -> Plusmap.cod (D.plus_right mn) nb
   | Unshift (_, _, nb) -> Plusmap.dom nb
 
-(* Abstract over a cube of binders to make a cube of lambdas.  TODO: This should morally be a Cube.map, but it goes from one instantiation of Cube to another one, and we didn't define a map like that, so for now we just make it a 'build'. *)
-let lam_cube : type mode modality dom n.
-    n variables -> (n, mode * modality * dom) BindCube.t -> (n, (mode, kinetic) value) CubeOf.t =
- fun x binders ->
-  CubeOf.build (BindCube.dim binders)
-    {
-      build =
-        (fun fa ->
-          let (BindFam b) = BindCube.find binders fa in
-          Lam (sub_variables fa x, b));
-    }
-
 (* Smart constructor that composes actions and cancels identities *)
-let rec act_env : type mode m n b. (mode, n, b) env -> (m, n) op -> (mode, m, b) env =
+let rec act_env : type mode m n b. (mode, n, b) env -> (m, n) opt_op -> (mode, m, b) env =
  fun env s ->
   match env with
-  | Act (env, s') -> act_env env (comp_op s' s)
+  | Act (env, s') -> act_env env (comp_opt_op s' s)
   | _ -> (
-      match is_id_op s with
+      match is_id_opt_op s with
       | Some Eq -> env
       | None -> Act (env, s))
 
@@ -553,6 +557,144 @@ let key_env : type dom mu nu cod m b bmu.
   | Eq, Plus_lock (Zero _, Zero) -> env
   | _ -> Key (env, key, al)
 
+(* Similarly, for prekeys all we can do is ignore identities. *)
+let prekey_env : type mode mu nu cod n b.
+    (mode, n, b) env -> (mode, mu, nu, cod) Modalcell.t -> (mode, n, b) env =
+ fun env key ->
+  match Modalcell.compare_id key with
+  | Eq -> env
+  | Neq -> Prekey (env, key)
+
+(* Remove the top entry from an environment.  Looks through lazy operations like Act, Prekey, Shift, Unshift, and Permute.  No Keys are allowed to the right of the entry: this is (almost) ensured by the type, since its codomain context ends with a lock. *)
+let remove_top : type mode a modality k n.
+    (mode, n, (a, (modality, k) dim_entry) snoc) env -> (mode, n, a) env =
+ fun env ->
+  (* Because of the possibility of permutations, the recursion has to allow for the possibility of non-top elements. *)
+  let rec remove_ins : type mode modality a k b n.
+      (mode, n, b) env -> (a, modality, k, b) insert -> (mode, n, a) env =
+   fun env v ->
+    match (env, v) with
+    | Emp _, _ -> .
+    | Act (env, op), _ -> Act (remove_ins env v, op)
+    | Key _, _ -> fatal (Anomaly "Key in remove_ins")
+    | Prekey (env, key), _ -> Prekey (remove_ins env v, key)
+    | Permute (p, env), _ ->
+        let (Permute_insert (v', p')) = permute_insert v p in
+        Permute (p', remove_ins env v')
+    | Ext e, Later v -> Ext { e with env = remove_ins e.env v }
+    | Ext { env; _ }, Now -> env
+    | Shift (env, mn, nb), _ ->
+        let (Uncoinsert (_, _, v', na)) = Plusmap.uncoinsert v nb in
+        Shift (remove_ins env v', mn, na)
+    | Unshift (env, mn, nb), _ ->
+        let (Uninsert (_, _, v', na)) = Plusmap.uninsert v nb in
+        Unshift (remove_ins env v', mn, na) in
+  remove_ins env Now
+
+(* Given an environment whose codomain context is extended by a partial context containing some locks (and dimensions), split off all the keys corresponding to those locks, compose them up on the way out, and return them along with the remainder of the environment.  This is the incremental version of the operation that lookup uses to key on a variable; the prekeys and (post)keys are composed on the way out rather than being stripped off eagerly at the beginning.  Identity-domain keys and prekeys are always accumulated into the returned cell. *)
+
+(* A prekey action is a key cell with a given mode as vertical source but existential vertical target (and horizontal target). *)
+type _ prekey_action = Prekey_action : ('mode, 'm, 'n, 'cod) Modalcell.t -> 'mode prekey_action
+
+(* Prewhisker a prekey action by a modality, transporting its vertical (and horizontal) source. *)
+let prekey_prewhisker : type mode a b m n r.
+    (mode, m, n, b) Modalcell.t -> (a, r, mode) Modality.t -> a prekey_action =
+ fun pre mu ->
+  let (Wrap pre) = Modalcell.prewhisker_wrapped pre mu in
+  Prekey_action pre
+
+(* Compose a prekey cell after an accumulated prekey action, both sharing the environment's mode as vertical source.  This is the general composition of key cells (as in act.ml's key_vcomp), using a pushout to reconcile the accumulated action's vertical target with the new prekey's vertical source. *)
+let prekey_vcomp : type mode m n cod pm pn pcod.
+    (mode, m, n, cod) Modalcell.t -> (mode, pm, pn, pcod) Modalcell.t -> mode prekey_action =
+ fun key pre ->
+  match Modality.pushout (Modalcell.vtgt pre) (Modalcell.vsrc key) with
+  | Some (Pushout (mu3, mu4, cod13, dom24)) ->
+      let (Comp cod24) = Modality.comp (Modalcell.vtgt key) in
+      let (Comp dom13) = Modality.comp (Modalcell.vsrc pre) in
+      Prekey_action
+        (Modalcell.vcomp
+           (Modalcell.hcomp dom24 cod24 (Modalcell.id mu4) key)
+           (Modalcell.hcomp dom13 cod13 (Modalcell.id mu3) pre))
+  | None -> fatal (Anomaly "restrict_keys: prekeys don't compose")
+
+(* In addition to the residual environment and the composite key cell (which maps the looked-up value's own annotating modality, at the environment's mode, to the base after stripping the locks), we return a "prekey action" cell.  Prekeys act on the looked-up value at the environment's mode with a possibly-different vertical target than the composite locks, so they can't be folded into the same cell; instead we compose them separately (into this second cell) and apply them to the value after the composite key cell.  When no prekeys are encountered, this cell is an identity, and hence dropped by the smart constructor prekey_env. *)
+type (_, _, _, _, _) restrict_keys =
+  | Restrict_keys :
+      ('cod, 'n, 'b) env
+      * ('mode, 'mu, 'nu, 'cod) Modalcell.t
+      * ('mode, 'pmu, 'pnu, 'pcod) Modalcell.t
+      -> ('mode, 'mu, 'cod, 'n, 'b) restrict_keys
+
+let rec restrict_keys : type mode mu cod k b bc.
+    (mode, k, bc) env ->
+    (b, cod, mu, mode, bc) plus_with_locks ->
+    (mode, mu, cod, k, b) restrict_keys =
+ fun env (Plus_with_locks (bc, llc)) ->
+  match (bc, llc, env) with
+  (* If we encounter a key, we accumulate it, consuming the corresponding locks from the codomain-context extension.  Note that the extension could be identity here: we continue accumulating keys until we run out of keys that we *could* include, not just until we run out of nonidentity locks in the codomain. *)
+  | b_cn, llcn, Key (env, key, Plus_lock (ln, bc_n)) -> (
+      let lln = locks_lock ln in
+      let cn, n = (Locks.dom llcn, Lock.cod ln) in
+      match Tctx.factor cn n with
+      | None ->
+          (* The type of this function doesn't rule this out: the decomposition of the length of the environment could land in the middle of the domain of a key.  We have to trust the caller to maintain the invariant. *)
+          fatal (Anomaly "restrict_keys: factor failure")
+      | Some (Factor (_c, c_n)) ->
+          let (Uncomp (llc, lln', m_n)) = Locks.uncomp c_n llcn in
+          let Eq = Locks.uniq lln lln' in
+          let b_c = Tctx.comp_assoc_cancelr c_n b_cn bc_n in
+          let (Restrict_keys (e, keys, pre)) = restrict_keys env (Plus_with_locks (b_c, llc)) in
+          (* A key changes the mode: the prekey action accumulated inside it acts at the inner mode, so to carry it outward we prewhisker it by the key's vertical target, transporting its source to the outer mode. *)
+          let (Prekey_action pre) = prekey_prewhisker pre (Modalcell.vtgt key) in
+          let (Comp nus) = Modality.comp (Modalcell.vtgt key) in
+          Restrict_keys (e, Modalcell.hcomp m_n nus keys key, pre))
+  (* A prekey doesn't correspond to any locks in the codomain context, and its cell may have a different vertical target than the composite keys of the actual variable's locks (which is fixed by the codomain-context extension), so we can't fold it into that cell.  Instead we accumulate it into the separate prekey-action cell, which shares the environment's (unchanging) mode, composing it after any inner prekeys with the general key-cell composition. *)
+  | bc, llc, Prekey (env, key) ->
+      let (Restrict_keys (env, keys, pre)) = restrict_keys env (Plus_with_locks (bc, llc)) in
+      let (Prekey_action pre) = prekey_vcomp key pre in
+      Restrict_keys (env, keys, pre)
+  (* If we encounter a dimension entry, we skip it. *)
+  | Suc (bc, Dim _), Suc (llc, Locks_dim _, Zero), _ ->
+      restrict_keys (remove_top env) (Plus_with_locks (bc, llc))
+  (* If we encounter some other operation that could still have further keys inside it, we look through it. *)
+  | _, _, Permute (p, env) -> (
+      match unpermute_plus_locks p bc llc with
+      | Some (Unpermute (p, ad, lld)) ->
+          let (Restrict_keys (env, keys, pre)) = restrict_keys env (Plus_with_locks (ad, lld)) in
+          Restrict_keys (Permute (p, env), keys, pre)
+      | None ->
+          (* This isn't ruled out either: the permutation could mix the two parts of the decomposition.  Again, we trust the caller to maintain the invariant. *)
+          fatal (Anomaly "restrict_keys: unpermute failure"))
+  | nb_nc, ll_nc, Shift (env, mn, nbc) ->
+      let n = D.plus_right mn in
+      let (Dom_uncomp (nb, nc, b_c)) = Plusmap.dom_uncomp n nb_nc nbc in
+      let (Eq _) = Plusmap.tgt nc in
+      let ll_c = Plusmap.unlocks nc ll_nc in
+      let (Restrict_keys (env, keys, pre)) = restrict_keys env (Plus_with_locks (b_c, ll_c)) in
+      Restrict_keys (Shift (env, mn, nb), keys, pre)
+  | b_c, ll_c, Unshift (env, mn, nbc) ->
+      let n = D.plus_right mn in
+      let (Uncomp (nb, nc, nb_nc)) = Plusmap.uncomp n b_c nbc in
+      let (Eq _) = Plusmap.tgt nc in
+      let ll_nc = Plusmap.locks n nc ll_c in
+      let (Restrict_keys (env, keys, pre)) = restrict_keys env (Plus_with_locks (nb_nc, ll_nc)) in
+      Restrict_keys (Unshift (env, mn, nb), keys, pre)
+  | _, _, Act (env, op) ->
+      let (Restrict_keys (env, keys, pre)) = restrict_keys env (Plus_with_locks (bc, llc)) in
+      Restrict_keys (Act (env, op), keys, pre)
+  (* If we reach the end of the environment, or a value entry, we bottom out the recursion, returning identity key and prekey cells. *)
+  | Zero, Zero _, Emp _ ->
+      Restrict_keys (env, Modalcell.id2 (mode_env env), Modalcell.id2 (mode_env env))
+  | Zero, Zero _, Ext _ ->
+      Restrict_keys (env, Modalcell.id2 (mode_env env), Modalcell.id2 (mode_env env))
+  (* Nothing else is possible, since if the tctx has a nonzero lock on it, the environment can't be empty or end with a value entry. *)
+  | Suc (_, Lock _), Suc (_, Locks_lock _, Suc (_, _)), _ -> .
+  | Suc (_, Proj _), Suc (_, _, _), _ -> .
+
+let restrict_keys_plus_lock : type mode mu cod k b bm.
+    (mode, k, bm) env -> (b, cod, mu, mode, bm) plus_lock -> (mode, mu, cod, k, b) restrict_keys =
+ fun env plus -> restrict_keys env (plus_with_locks_of_plus_lock plus)
+
 (* Create a lazy evaluation *)
 let lazy_eval : type mode n b s. (mode, n, b) env -> (mode, b, s) term -> (mode, s) lazy_eval =
  fun env tm -> ref (Deferred_eval (env, tm, ins_zero (dim_env env), None, Emp))
@@ -562,18 +704,19 @@ let defer : type mode s. (unit -> (mode, s) evaluation) -> (mode, s) lazy_eval =
 
 let ready : type mode s. (mode, s) evaluation -> (mode, s) lazy_eval = fun ev -> ref (Ready ev)
 
-let apply_lazy : type dom modality mode n s.
+let apply_lazy : type dom modality mode m n s.
     (mode, s) lazy_eval ->
-    (dom, modality, mode) Modality.t ->
+    m D.t ->
+    (dom, modality, mode, n, m) Modality.filter_dim ->
     (n, dom normal) CubeOf.t ->
     (mode, s) lazy_eval =
- fun lev modality xs ->
-  let xins = ins_zero (CubeOf.dim xs) in
+ fun lev m filter xs ->
+  let xins = ins_zero m in
   match !lev with
   | Deferred_eval (env, tm, ins, cell, apps) ->
-      ref (Deferred_eval (env, tm, ins, cell, Arg (apps, modality, xs, xins)))
-  | Deferred (tm, ins, cell, apps) -> ref (Deferred (tm, ins, cell, Arg (apps, modality, xs, xins)))
-  | Ready tm -> ref (Deferred ((fun () -> tm), id_deg D.zero, None, Arg (Emp, modality, xs, xins)))
+      ref (Deferred_eval (env, tm, ins, cell, Arg (apps, filter, xs, xins)))
+  | Deferred (tm, ins, cell, apps) -> ref (Deferred (tm, ins, cell, Arg (apps, filter, xs, xins)))
+  | Ready tm -> ref (Deferred ((fun () -> tm), id_deg D.zero, None, Arg (Emp, filter, xs, xins)))
 
 (* We defer "field_lazy" to act.ml, since it requires pushing a permutation inside the apps. *)
 
@@ -599,16 +742,17 @@ let val_of_norm_tube : type mode n k nk.
  fun arg -> TubeOf.mmap { map = (fun _ [ { tm; ty = _ } ] -> tm) } [ arg ]
 
 (* Binders are completely lazy, so we can "evaluate" them independently of the master evaluation functions in norm. *)
-let eval_binder : type mode modality dom m n mn b s.
+let eval_binder : type mode modality dom m k n mn b s.
     (mode, m, b) env ->
     (m, n, mn) D.plus ->
     (dom, modality, mode) Modality.t ->
-    (mode, (b, (modality, n) dim_entry) snoc, s) term ->
+    (dom, modality, mode, k, n) Modality.filter_dim ->
+    (mode, (b, (modality, k) dim_entry) snoc, s) term ->
     (mode, modality, dom, mn, s) Value.binder =
- fun env mn modality body ->
+ fun env mn modality filter body ->
   let m = dim_env env in
   let ins = id_ins m mn in
-  Value.Bind { env; modality; ins; body }
+  Value.Bind { env; modality; filter; ins; body }
 
 (* Same with structfields *)
 let rec eval_structfield : type mode m n mn a status i et.
@@ -654,7 +798,7 @@ and eval_higher_structfield : type mode m n mn a i.
                 (* mtrp : m ≅ t+r *)
                 let mtrp = deg_of_perm (perm_inv (perm_of_ins_plus mtr tr)) in
                 (* env2 is (t+r)-dimensional *)
-                let env2 = act_env env (op_of_deg mtrp) in
+                let env2 = act_env env (opt_op_of_deg mtrp) in
                 (* env3 is t-dimensional *)
                 let env3 = Shift (env2, tr, ra) in
                 (* We don't need to further permute the result, as all the information about the permutation ins was captured in newpbij and mtr. *)
@@ -817,14 +961,16 @@ module Fwd_app = struct
   (* Make an apps without instantiations into a forwards list *)
   type 'mode t =
     | Arg :
-        ('dom, 'modality, 'mode) Modality.t * ('n, 'dom normal) CubeOf.t * ('nk, 'n, 'k) insertion
+        ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
+        * ('n, 'dom normal) CubeOf.t
+        * ('mk, 'm, 'k) insertion
         -> 'mode t
     | Field : 'i Field.t * ('t, 'i, 'n) D.plus * ('tk, 't, 'k) insertion -> 'mode t
 
   let snoc : type mode any. (mode, any) apps -> mode t -> (mode, noninst) apps =
    fun apps app ->
     match app with
-    | Arg (modality, arg, ins) -> Arg (apps, modality, arg, ins)
+    | Arg (filter, arg, ins) -> Arg (apps, filter, arg, ins)
     | Field (fld, plus, ins) -> Field (apps, fld, plus, ins)
 
   let of_apps apps =
@@ -832,7 +978,7 @@ module Fwd_app = struct
      fun apps fwds ->
       match apps with
       | Emp -> fwds
-      | Arg (apps, modality, arg, ins) -> go apps (Arg (modality, arg, ins) :: fwds)
+      | Arg (apps, filter, arg, ins) -> go apps (Arg (filter, arg, ins) :: fwds)
       | Field (apps, fld, plus, ins) -> go apps (Field (fld, plus, ins) :: fwds)
       | Inst _ -> fatal (Anomaly "instantiation in fwd_of_apps") in
     go apps []

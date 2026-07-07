@@ -18,6 +18,11 @@ module D : sig
   type (_, _) cofactor = Cofactor : ('n, 'k, 'nk) plus -> ('nk, 'k) cofactor
 
   val cofactor : 'nk t -> 'k t -> ('nk, 'k) cofactor option
+
+  (* TODO: Once we have multidirection, this won't be exported any more. *)
+  type one
+
+  val one : one t
 end
 
 module Dmap : MAP_MAKER with module Key := D
@@ -25,6 +30,7 @@ module Dmap : MAP_MAKER with module Key := D
 module Endpoints : sig
   type 'l len
   type wrapped = Wrap : 'l len -> wrapped
+  type 'l t = 'l len * 'l N.index
 
   val run :
     arity:int ->
@@ -37,6 +43,7 @@ module Endpoints : sig
 
   val uniq : 'l1 len -> 'l2 len -> ('l1, 'l2) Eq.t
   val len : 'l len -> 'l N.t
+  val indices : 'l len -> ('l t, 'l) Bwv.t
   val wrapped : unit -> wrapped
   val internal : unit -> bool
   val hott : unit -> N.two len option
@@ -108,7 +115,11 @@ val string_of_deg : ('a, 'b) deg -> string
 val deg_of_string : string -> any_deg option
 
 type (_, _) sface
+type ('a, 'b) opt_sface
 
+val sface_of_opt : ('a, 'b) opt_sface -> ('a, 'b) sface option
+val opt_of_sface : ('a, 'b) sface -> ('a, 'b) opt_sface
+val comp_opt_sface : ('n, 'k) opt_sface -> ('m, 'n) opt_sface -> ('m, 'k) opt_sface
 val id_sface : 'n D.t -> ('n, 'n) sface
 val dom_sface : ('m, 'n) sface -> 'm D.t
 val cod_sface : ('m, 'n) sface -> 'n D.t
@@ -167,6 +178,8 @@ module Cube (F : Fam2) : sig
       | [] : ('m, 'n, nil) hgt
       | ( :: ) : ('m, 'n, 'x) gt * ('m, 'n, 'xs) hgt -> ('m, 'n, ('x, 'xs) cons) hgt
 
+    val hft_of_vec : ('b, 'k, 'bs) Tlist.conses -> (('n, 'b) F.t, 'k) Vec.t -> ('n, 'bs) hft
+
     (* val hft_nil : ('n, Hlist.nil) hft *)
     (* val hft_cons : ('n, 'x) F.t -> ('n, 'xs) hft -> ('n, ('x, 'xs) Hlist.cons) hft *)
   end
@@ -198,9 +211,19 @@ module Cube (F : Fam2) : sig
 
     val miterM : ('n, ('b, 'bs) cons) miteratorM -> ('n, 'n, ('b, 'bs) cons) Heter.hgt -> unit M.t
 
+    type ('n, 'b1, 'b2) miterator2M = {
+      it2 : 'm. ('m, 'n) sface -> ('m, 'b1) F.t -> ('m, 'b2) F.t -> unit M.t;
+    }
+
+    val miter2M : ('n, 'b1, 'b2) miterator2M -> ('n, 'b1) t -> ('n, 'b2) t -> unit M.t
+
     type ('n, 'b) builderM = { build : 'm. ('m, 'n) sface -> ('m, 'b) F.t M.t }
 
     val buildM : 'n D.t -> ('n, 'b) builderM -> ('n, 'b) t M.t
+
+    type ('n, 'bs) pbuilderM = { build : 'm. ('m, 'n) sface -> ('m, 'bs) Heter.hft M.t }
+
+    val pbuildM : 'n D.t -> ('n, 'bs) pbuilderM -> 'bs Tlist.t -> ('n, 'n, 'bs) Heter.hgt M.t
   end
 
   module Monadic (M : Monad.Plain) : sig
@@ -349,6 +372,11 @@ module Tube (F : Fam2) : sig
       | ( :: ) :
           ('m, 'k, 'mk, 'nk, 'x) gt * ('m, 'k, 'mk, 'nk, 'xs) hgt
           -> ('m, 'k, 'mk, 'nk, ('x, 'xs) cons) hgt
+
+    val vec_of_hgt :
+      ('b, 'k, 'bs) Tlist.conses ->
+      (D.zero, 'n, 'n, 'n, 'bs) hgt ->
+      ((D.zero, 'n, 'n, 'b) t, 'k) Vec.t
   end
 
   module Infix : module type of C.Infix
@@ -389,6 +417,17 @@ module Tube (F : Fam2) : sig
 
     val buildM :
       'n D.t -> ('n, 'k, 'nk) D.plus -> ('n, 'k, 'nk, 'b) builderM -> ('n, 'k, 'nk, 'b) t M.t
+
+    type ('n, 'k, 'nk, 'bs) pbuilderM = {
+      build : 'm. ('m, 'n, 'k, 'nk) tface -> ('m, 'bs) C.Heter.hft M.t;
+    }
+
+    val pbuildM :
+      'n D.t ->
+      ('n, 'k, 'nk) D.plus ->
+      ('n, 'k, 'nk, 'bs) pbuilderM ->
+      'bs Tlist.t ->
+      ('n, 'k, 'nk, 'nk, 'bs) Heter.hgt M.t
   end
 
   module Monadic (M : Monad.Plain) : sig
@@ -416,6 +455,13 @@ module Tube (F : Fam2) : sig
 
   val build :
     'n D.t -> ('n, 'k, 'nk) D.plus -> ('n, 'k, 'nk, 'b) IdM.builderM -> ('n, 'k, 'nk, 'b) t
+
+  val pbuild :
+    'n D.t ->
+    ('n, 'k, 'nk) D.plus ->
+    ('n, 'k, 'nk, 'bs) IdM.pbuilderM ->
+    'bs Tlist.t ->
+    ('n, 'k, 'nk, 'nk, 'bs) Heter.hgt
 end
 
 module TubeOf : sig
@@ -572,17 +618,37 @@ type (_, _) op = Op : ('n, 'k) sface * ('m, 'n) deg -> ('m, 'k) op
 val id_op : 'n D.t -> ('n, 'n) op
 val deg_sface : ('n, 'k) deg -> ('m, 'n) sface -> ('m, 'k) op
 val comp_op : ('n, 'k) op -> ('m, 'n) op -> ('m, 'k) op
+
+type ('a, 'b) opt_op
+
+val id_opt_op : 'n D.t -> ('n, 'n) opt_op
+val comp_opt_op : ('n, 'k) opt_op -> ('m, 'n) opt_op -> ('m, 'k) opt_op
+val dom_opt_op : ('m, 'n) opt_op -> 'm D.t
+val op_of_opt : ('a, 'b) opt_op -> ('a, 'b) op option
+val opt_of_op : ('a, 'b) op -> ('a, 'b) opt_op
+val is_id_opt_op : ('m, 'n) opt_op -> ('m, 'n) Eq.t option
+
+(* *)
 val dom_op : ('m, 'n) op -> 'm D.t
 val cod_op : ('m, 'n) op -> 'n D.t
 val is_id_op : ('m, 'n) op -> ('m, 'n) Eq.t option
 val op_of_deg : ('m, 'n) deg -> ('m, 'n) op
 val op_of_sface : ('m, 'n) sface -> ('m, 'n) op
+val opt_op_of_deg : ('m, 'n) deg -> ('m, 'n) opt_op
+val opt_op_of_sface : ('m, 'n) sface -> ('m, 'n) opt_op
+val opt_op_of_opt_sface : ('m, 'n) opt_sface -> ('m, 'n) opt_op
 
 val op_plus_op :
   ('k, 'm) op -> ('m, 'n, 'mn) D.plus -> ('k, 'l, 'kl) D.plus -> ('l, 'n) op -> ('kl, 'mn) op
 
 val plus_op : 'm D.t -> ('m, 'n, 'mn) D.plus -> ('m, 'l, 'ml) D.plus -> ('l, 'n) op -> ('ml, 'mn) op
 val op_plus : ('k, 'm) op -> ('m, 'n, 'mn) D.plus -> ('k, 'n, 'kn) D.plus -> ('kn, 'mn) op
+
+val plus_opt_op :
+  'm D.t -> ('m, 'n, 'mn) D.plus -> ('m, 'l, 'ml) D.plus -> ('l, 'n) opt_op -> ('ml, 'mn) opt_op
+
+val opt_op_plus :
+  ('k, 'm) opt_op -> ('m, 'n, 'mn) D.plus -> ('k, 'n, 'kn) D.plus -> ('kn, 'mn) opt_op
 
 type _ op_of = Of : ('m, 'n) op -> 'n op_of
 type _ op_of_plus = Of : ('m, 'n) sface * 'm deg_of_plus -> 'n op_of_plus
@@ -944,6 +1010,70 @@ end
 module PbijmapOf : module type of Pbijmap (struct
   type ('a, 'b) t = 'b
 end)
+
+type ('e, 'a, 'b) except
+type (_, _) has_except = Except : ('e, 'a, 'b) except -> ('e, 'b) has_except
+
+val excepted : ('e, 'a, 'b) except -> 'b D.t -> 'a D.t
+val except_dirs : 'e D.t -> 'b D.t -> ('e, 'b) has_except
+val except_uniq : ('e, 'a1, 'b) except -> ('e, 'a2, 'b) except -> ('a1, 'a2) Eq.t
+val except_zero : ('e, D.zero, D.zero) except
+val except_nothing : 'a D.t -> (D.zero, 'a, 'a) except
+val eq_of_except_nothing : (D.zero, 'a, 'b) except -> ('a, 'b) Eq.t
+val except_idempotent : ('e, 'a, 'b) except -> ('e, 'a, 'a) except
+
+val except_plus :
+  ('a, 'c, 'ac) D.plus ->
+  ('b, 'd, 'bd) D.plus ->
+  ('e, 'a, 'b) except ->
+  ('e, 'c, 'd) except ->
+  ('e, 'ac, 'bd) except
+
+type (_, _, _, _) except_of_plus =
+  | Except_of_plus :
+      ('a, 'c, 'ac) D.plus * ('e, 'a, 'b) except * ('e, 'c, 'd) except
+      -> ('e, 'b, 'd, 'ac) except_of_plus
+
+val except_of_plus :
+  ('b, 'd, 'bd) D.plus -> ('e, 'ac, 'bd) except -> ('e, 'b, 'd, 'ac) except_of_plus
+
+type (_, _, _, _) except_of_plus' =
+  | Except_of_plus' :
+      ('b, 'c, 'bc) D.plus * ('bc, 'd) perm * ('e, 'a, 'b) except
+      -> ('e, 'a, 'c, 'd) except_of_plus'
+
+val except_of_plus' :
+  'd D.t -> ('a, 'c, 'ac) D.plus -> ('e, 'ac, 'd) except -> ('e, 'a, 'c, 'd) except_of_plus'
+
+type (_, _, _) except_sface =
+  | Except_sface : ('d, 'a) sface * ('e, 'd, 'c) except -> ('e, 'a, 'c) except_sface
+
+val except_sface : ('e, 'a, 'b) except -> ('c, 'b) sface -> ('e, 'a, 'c) except_sface
+
+type (_, _, _) except_deg =
+  | Except_deg : ('d, 'a) deg * ('e, 'd, 'c) except -> ('e, 'a, 'c) except_deg
+
+val except_deg : 'e D.t -> ('e, 'a, 'b) except -> ('c, 'b) deg -> ('e, 'a, 'c) except_deg
+
+type (_, _, _) except_perm =
+  | Except_perm : ('d, 'a) perm * ('e, 'd, 'c) except -> ('e, 'a, 'c) except_perm
+
+val except_perm : 'e D.t -> ('e, 'a, 'b) except -> ('c, 'b) perm -> ('e, 'a, 'c) except_perm
+
+type (_, _, _) sface_except =
+  | Sface_except : ('e, 'c, 'd) except * ('d, 'b) sface -> ('e, 'b, 'c) sface_except
+
+val sface_except : 'b D.t -> ('c, 'a) sface -> ('e, 'a, 'b) except -> ('e, 'b, 'c) sface_except
+
+type (_, _, _) pface_except =
+  | Pface_except : ('e, 'c, 'd) except * ('d, 'b) pface -> ('e, 'b, 'c) pface_except
+
+val pface_except : 'b D.t -> ('c, 'a) pface -> ('e, 'a, 'b) except -> ('e, 'b, 'c) pface_except
+val sface_of_except : 'b D.t -> ('e, 'a, 'b) except -> ('a, 'b) opt_sface
+val deg_of_except : 'b D.t -> ('e, 'a, 'b) except -> ('b, 'a) deg
+
+val except_comp :
+  ('e1, 'e2, 'e12) D.plus -> ('e2, 'a, 'b) except -> ('e1, 'b, 'c) except -> ('e12, 'a, 'c) except
 
 (* *)
 val deg_of_name : string -> any_deg option

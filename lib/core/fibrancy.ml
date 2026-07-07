@@ -105,10 +105,11 @@ module Codata = struct
    fun mode (Fibrancy (type nh hb) (f : (mode, g, n, nh, b, hb, et) codata_fibrancy))
        (Entry (fld, fldty)) ->
     (* x is the index-zero variable. *)
-    let x = Var (Index (Now, id_sface D.zero, plus_no_lock mode)) in
+    let x = Var (Index (Now, id_sface D.zero, Modality.filter_id mode D.zero, plus_with_no_locks mode)) in
     let ins = zero_ins Hott.dim in
     (* Compute terms that project each fibrancy field out of the codatatype and apply it to the index-zero variable 'x'. *)
     let idm = Modality.id mode in
+    let idf = Modality.filter_id mode Hott.dim in
     let onx : Hott.dim Field.t -> (mode, (hb, (mode id, D.zero) dim_entry) snoc, kinetic) term =
      fun trlift ->
       app
@@ -129,15 +130,23 @@ module Codata = struct
           | Lower ty ->
               let sty =
                 Shift
-                  (Hott.dim, f.plusmap, Lam (singleton_variables f.glue (`Anon no_hints), idm, ty))
-              in
+                  ( Hott.dim,
+                    f.plusmap,
+                    Lam
+                      ( singleton_variables f.glue (`Anon no_hints),
+                        f.glue,
+                        Modality.filter_id mode f.glue,
+                        ty ) ) in
               StructfieldAbwd.Entry
                 ( fld,
                   Lower
                     ( Realize
                         (app
                            (Field
-                              (App (Weaken sty, Modal (idm, plus_no_lock mode, xcube)), trlift, ins))
+                              ( App
+                                  (Weaken sty, Hott.dim, idf, Modal (idm, plus_no_lock mode, xcube)),
+                                trlift,
+                                ins ))
                            idm (plus_no_lock mode)
                            (Field (x, fld, ins_zero f.dim))),
                       `Labeled ) )
@@ -179,7 +188,13 @@ module Codata = struct
      fun _which fields p ->
       match singleton_pbij p Hott.singleton with
       (* This is the "tr.e" case when we just pass off to the type of the field. *)
-      | Left -> plusfam (Lam (xname, idm, Struct { dim; eta; energy = Potential; fields }))
+      | Left ->
+          plusfam
+            (Lam
+               ( xname,
+                 D.zero,
+                 Modality.filter_id mode D.zero,
+                 Struct { dim; eta; energy = Potential; fields } ))
       (* This is the tr.1/tr.2 case when we should use the bisimulation data supplied.  The insertion is an insertion into g, the glue dimension.  Currently we don't do anything here, however, because the only case when this could happen is for a glue type, and we deal with those specially by bootstrapping their fibrancy and insesrting it using the is_glue marker.  *)
       | Right _ins -> None in
     let trr = PlusPbijmap.build glue Hott.dim { build = (fun p -> tr `Right trr p) } in
@@ -193,7 +208,13 @@ module Codata = struct
         (r, mode * b) PlusFam.t =
      fun _which fields p ->
       match singleton_pbij p Hott.singleton with
-      | Left -> plusfam (Lam (xname, idm, Struct { dim = dimh; eta; energy = Potential; fields }))
+      | Left ->
+          plusfam
+            (Lam
+               ( xname,
+                 D.zero,
+                 Modality.filter_id mode D.zero,
+                 Struct { dim = dimh; eta; energy = Potential; fields } ))
       | Right _ins -> None in
     let liftr = PlusPbijmap.build glue Hott.dim { build = (fun p -> lift `Right liftr p) } in
     let liftl = PlusPbijmap.build glue Hott.dim { build = (fun p -> lift `Left liftl p) } in
@@ -205,11 +226,15 @@ module Codata = struct
           | Zero ->
               let hlength = Plusmap.cod Hott.dim plusmap in
               let hlength00 =
-                Plusmap.Dom.suc (Plusmap.Dom.suc hlength (Dim (idm, D.zero))) (Dim (idm, D.zero))
+                Plusmap.Dom.suc
+                  (Plusmap.Dom.suc hlength (Dim (D.zero, Modality.filter_zero idm)))
+                  (Dim (D.zero, Modality.filter_zero idm)) in
+              let makeidx v =
+                Var (Index (v, id_sface D.zero, Modality.filter_id mode D.zero, plus_with_no_locks mode))
               in
-              let x0 = Var (Index (Later (Later Now), id_sface D.zero, plus_no_lock mode)) in
-              let x1 = Var (Index (Later Now, id_sface D.zero, plus_no_lock mode)) in
-              let x2 = Var (Index (Now, id_sface D.zero, plus_no_lock mode)) in
+              let x0 = makeidx (Later (Later Now)) in
+              let x1 = makeidx (Later Now) in
+              let x2 = makeidx Now in
               let* xtube = Hott.tube x0 x1 in
               let* xcube = Hott.cube x0 x1 x2 in
               let folder :
@@ -241,6 +266,7 @@ module Codata = struct
                 | Lower fldty ->
                     let xsname = singleton_variables D.zero (`Named "x") in
                     let idm = Modality.id mode in
+                    let idf = Modality.filter_id mode Hott.dim in
                     let field =
                       CodatafieldAbwd.Entry
                         ( fld,
@@ -250,7 +276,16 @@ module Codata = struct
                                    ( Weaken
                                        (Weaken
                                           (Weaken
-                                             (Shift (Hott.dim, plusmap, Lam (xsname, idm, fldty))))),
+                                             (Shift
+                                                ( Hott.dim,
+                                                  plusmap,
+                                                  Lam
+                                                    ( xsname,
+                                                      D.zero,
+                                                      Modality.filter_id mode D.zero,
+                                                      fldty ) )))),
+                                     Hott.dim,
+                                     idf,
                                      Modal (idm, plus_no_lock mode, xcube) ),
                                  TubeOf.mmap { map = (fun _ [ x ] -> field x fld) } [ xtube ] )) )
                     in
@@ -258,13 +293,13 @@ module Codata = struct
                 | Higher _ ->
                     (* TODO *)
                     (fields, fib) in
-              let x0 = Var (Index (Later Now, id_sface D.zero, plus_no_lock mode)) in
+              let x0 = makeidx (Later Now) in
               let x1 :
                   ( mode,
                     ((hb, (mode id, D.zero) dim_entry) snoc, (mode id, D.zero) dim_entry) snoc,
                     kinetic )
                   term =
-                Var (Index (Now, id_sface D.zero, plus_no_lock mode)) in
+                makeidx Now in
               let* xtube = Hott.tube x0 x1 in
               let fields, Fibrancy fib =
                 Bwd.fold_left folder
@@ -276,10 +311,12 @@ module Codata = struct
               plusfam
               @@ Lam
                    ( xname,
-                     idm,
+                     D.zero,
+                     Modality.filter_id mode D.zero,
                      Lam
                        ( yname,
-                         idm,
+                         D.zero,
+                         Modality.filter_id mode D.zero,
                          Struct { dim = glue; eta = Noeta; energy = Potential; fields = fib } ) )
           | Pos _ ->
               (* The bisim .id case.  Again, this would be only for glue, so we ignore it. *)

@@ -1,5 +1,6 @@
 open Bwd
 open Modal
+open Reporter
 open Dim
 open Tctx
 open Term
@@ -43,58 +44,83 @@ let dom_vars : type dom modality mode m a b.
 
 (* Extend a context by a finite number of cubes of new visible variables at some dimension, with boundaries, whose types are specified by the evaluation of some telescope in some (possibly higher-dimensional) environment (and hence may depend on the earlier ones).  Also return the new variables in a list of Cubes, and the new environment extended by the *top-dimensional variables only*. *)
 
-module ModalBindingCube = Modality.Cube (struct
-  type ('mode, 'a, 'b) t = 'mode Ctx.Binding.t
-end)
+type (_, _) modal_binding_cube =
+  | Modal :
+      ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim * ('k, 'dom Ctx.Binding.t) CubeOf.t
+      -> ('n, 'mode) modal_binding_cube
 
-type ('mode, 'n, 'ac, 'bc, 'e) ext_tel =
+type ('dom, 'window, 'mode, 'n, 'ac, 'bc, 'e) ext_tel =
   | Ext_tel : {
       ctx : ('mode, 'ac, 'em) Ctx.t;
-      env : ('mode, 'n, 'bc) env;
-      values : ('n, 'mode, kinetic, unit) ModalValueCube.t list;
-      normals : ('n, 'mode, unit, unit) ModalBindingCube.t list;
+      env : ('dom, 'n, 'bc) env;
+      values : ('n, 'dom, kinetic) modal_value_cube list;
+      normals : ('n, 'mode) modal_binding_cube list;
       annotate : ('n, 'mode, 'annotations, 'mode, 'mode, 'm, 'mode) VarAnnotate.fwd_t;
       comp : ('mode, 'm, 'mode, 'e, unit, 'em) Tctx.bcomp;
     }
-      -> ('mode, 'n, 'ac, 'bc, 'e) ext_tel
+      -> ('dom, 'window, 'mode, 'n, 'ac, 'bc, 'e) ext_tel
 
-let rec ext_tel : type mode a b c ac bc e n.
+let rec ext_tel : type dom window mode a b c ac bc e n.
     (mode, a, e) Ctx.t ->
-    (mode, n, b) env ->
+    (dom, window, mode) Modality.t ->
+    (dom, n, b) env ->
     (* Note that c is a Fwn, since it is the length of a telescope. *)
     (a, c, ac) Raw.Namevec.t ->
-    (mode, b, c, bc) Telescope.t ->
-    (mode, n, ac, bc, e) ext_tel =
- fun ctx env xs tel ->
+    (dom, b, c, bc) Telescope.t ->
+    (dom, window, mode, n, ac, bc, e) ext_tel =
+ fun ctx window env xs tel ->
   match (xs, tel) with
   | [], Emp ->
       Ext_tel
         { ctx; env; values = []; normals = []; annotate = Zero (Eq (Ctx.mode ctx)); comp = Zero }
-  | x :: xs, Ext (x', Modal (modality, plus, rty), rest) ->
+  | x :: xs, Ext (x', Modal (annotation, plus, rty), rest) ->
       let m = dim_env env in
-      let lenv = key_env env (Modalcell.id modality) plus in
-      let newvars, newnfs =
-        dom_vars ctx modality
-          (CubeOf.build m
-             { build = (fun fa -> Norm.eval_term (act_env lenv (op_of_sface fa)) rty) }) in
-      let x =
-        match x with
-        | Some x -> Some x
-        | None -> x' in
-      let (Ext_tel { ctx; env; values = vars; normals = nfs; annotate; comp }) =
-        ext_tel
-          (Ctx.cube_vis ctx modality x newnfs)
-          (Ext { env; plus = D.plus_zero m; modality; values = `Ok newvars })
-          xs rest in
-      Ext_tel
-        {
-          ctx;
-          env;
-          values = Modal (modality, newvars) :: vars;
-          normals = Modal (modality, newnfs) :: nfs;
-          annotate = Suc (Annotate (x, modality), annotate);
-          comp = Suc (Dim (modality, m), comp);
-        }
+      let lenv = key_env env (Modalcell.id annotation) plus in
+      (* The dimension filter of the telescope annotation itself, at its (inner) codomain mode. *)
+      let (Has_filter afilter) = Modality.filter annotation m in
+      (* We compose the window modality with the telescope annotation to produce the eventual modality at the outer mode, and derive its dimension filter. *)
+      let (Comp wx) = Modality.comp annotation in
+      let modality = Modality.comp_out window wx in
+      let (Has_filter filter_k_m) = Modality.filter modality m in
+      (* A window modality must not do any dimension filtering, so composing it with the annotation must filter the dimension to the same result.  We can currently only check this at runtime. *)
+      match D.compare (Modality.filtered m afilter) (Modality.filtered m filter_k_m) with
+      | Neq -> fatal Invalid_mode_theory
+      | Eq ->
+          let k = Modality.filtered m filter_k_m in
+          let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter m filter_k_m)) in
+          let newvars, newnfs =
+            dom_vars ctx modality
+              (CubeOf.build k
+                 { build = (fun fa -> Norm.eval_term (act_env flenv (opt_op_of_sface fa)) rty) })
+          in
+          let x =
+            match x with
+            | Some x -> Some x
+            | None -> x' in
+          let filter_k_k = Modality.filter_idempotent filter_k_m in
+          let (Ext_tel { ctx; env; values = vars; normals = nfs; annotate; comp }) =
+            ext_tel
+              (Ctx.cube_vis ctx filter_k_k x newnfs)
+              window
+              (* The value environment lives at the annotation's (inner) mode, so it is extended by the annotation's filter, not the windowed one. *)
+              (Ext
+                 {
+                   env;
+                   plus = D.plus_zero k;
+                   values = `Ok newvars;
+                   filter = afilter;
+                   filtered = Modality.filter_zero annotation;
+                 })
+              xs rest in
+          Ext_tel
+            {
+              ctx;
+              env;
+              values = Modal (afilter, newvars) :: vars;
+              normals = Modal (filter_k_m, newnfs) :: nfs;
+              annotate = Suc (Annotate (x, filter_k_m), annotate);
+              comp = Suc (Dim (k, filter_k_k), comp);
+            }
 
 (* Extract a list of all the variables of a given kind in an iterated pi-type. *)
 let rec get_pi_vars : type mode a b.
@@ -105,16 +131,17 @@ let rec get_pi_vars : type mode a b.
     binder_name Bwd.t =
  fun ctx cube xs ty ->
   match View.view_type ty "get_pi_vars" with
-  | Canonical (_, Pi (x, modality, doms, cods), ins, tyargs) -> (
+  | Canonical (_, Pi { x; filter; doms; cods }, ins, tyargs) -> (
+      let modality = Modality.filter_modality filter in
       let Eq = eq_of_ins_zero ins in
       match (D.compare_zero (CubeOf.dim doms), cube) with
       | Zero, `Normal | Pos _, `Cube ->
           let args, newnfs = dom_vars ctx modality doms in
-          let (Any_ctx sctx) = Ctx.variables_vis ctx modality x newnfs in
+          let (Any_ctx sctx) = Ctx.variables_vis ctx (Modality.filter_idempotent filter) x newnfs in
           (* If the variable is anonymous, fill in any display hints from its type. *)
           get_pi_vars sctx cube
             (Snoc (xs, top_variable (View.fill_hints doms x)))
-            (tyof_app cods tyargs args)
+            (tyof_app cods tyargs filter args)
       | _ -> xs)
   | _ -> xs
 
@@ -130,13 +157,23 @@ let constr_arg_hints : type mode m a p ap e b.
     | Ext (_, Modal (modality, plus_lock, rty), rest) ->
         let m = dim_env env in
         let lenv = key_env env (Modalcell.id modality) plus_lock in
+        let (Has_filter filter) = Modality.filter modality m in
+        let k = Modality.filtered m filter in
+        let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter m filter)) in
         let doms =
-          CubeOf.build m { build = (fun fa -> Norm.eval_term (act_env lenv (op_of_sface fa)) rty) }
-        in
+          CubeOf.build k
+            { build = (fun fa -> Norm.eval_term (act_env flenv (opt_op_of_sface fa)) rty) } in
         let newvars, _ = dom_vars ctx modality doms in
         let hints = View.hints_of_ty (CubeOf.find_top doms) in
         go
-          (Ext { env; plus = D.plus_zero m; modality; values = `Ok newvars })
+          (Ext
+             {
+               env;
+               plus = D.plus_zero k;
+               filter;
+               filtered = Modality.filter_zero modality;
+               values = `Ok newvars;
+             })
           rest
           (Snoc (acc, hints)) in
   go env args Emp

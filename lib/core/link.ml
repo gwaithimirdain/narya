@@ -15,25 +15,32 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
   | Field (tm, fld, fldins) -> Field (term f tm, fld, fldins)
   | UU (mode, n) -> UU (mode, n)
   | Inst (tm, args) -> Inst (term f tm, TubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ args ])
-  | Pi (x, Modal (modality, al, doms), cods) ->
+  | Pi { x; filter; doms = Modal (modality, al, doms); cods } ->
       Pi
-        ( x,
-          Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ doms ]),
-          CodCube.mmap { map = (fun _ [ Cod x ] -> Cod (term f x)) } [ cods ] )
-  | App (fn, Modal (modality, al, args)) ->
-      App (term f fn, Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ args ]))
+        {
+          x;
+          filter;
+          doms = Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ doms ]);
+          cods = CodCube.mmap { map = (fun _ [ Cod (filt, x) ] -> Cod (filt, term f x)) } [ cods ];
+        }
+  | App (fn, m, filter, Modal (modality, al, args)) ->
+      App
+        ( term f fn,
+          m,
+          filter,
+          Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ args ]) )
   | Constr (c, n, args) ->
       Constr
         ( c,
           n,
           List.map
-            (fun (Term.Modal (modality, al, arg)) ->
-              Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ arg ]))
+            (fun (Term.Modal (filter, al, arg)) ->
+              Modal (filter, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ arg ]))
             args )
   | Act (tm, s, sort) -> Act (term f tm, s, sort)
   | Key v -> Key { v with tm = term f v.tm }
   | Let (x, Modal (modality, al, v), body) -> Let (x, Modal (modality, al, term f v), term f body)
-  | Lam (x, modality, body) -> Lam (x, modality, term f body)
+  | Lam (x, p, filter, body) -> Lam (x, p, filter, term f body)
   | Struct { eta; dim; fields = flds; energy } ->
       Struct
         {
@@ -46,8 +53,9 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
               flds;
           energy;
         }
-  | Match { tm; dim; branches } ->
-      Match { tm = term f tm; dim; branches = Constr.Map.map (branch f) branches }
+  | Match { tm; plus_lock; window; dim; branches } ->
+      Match
+        { tm = term f tm; plus_lock; window; dim; branches = Constr.Map.map (branch f) branches }
   | Realize tm -> Realize (term f tm)
   | Canonical can -> Canonical (canonical f can)
   | Canonical_display _ -> Reporter.fatal (Anomaly "Canonical_display in link")
@@ -65,8 +73,15 @@ and branch : type mode a n. (File.t -> File.t) -> (mode, a, n) branch -> (mode, 
 and canonical : type mode a. (File.t -> File.t) -> (mode, a) canonical -> (mode, a) canonical =
  fun f can ->
   match can with
-  | Data { indices; constrs; discrete; hints } ->
-      Data { indices; constrs = Abwd.map (dataconstr f) constrs; discrete; hints }
+  | Data { indices; constrs; discrete; recursive; hints } ->
+      Data
+        {
+          indices;
+          constrs = Abwd.map (dataconstr f) constrs;
+          discrete;
+          recursive = Positivity.link_recursion f recursive;
+          hints;
+        }
   | Codata { eta; opacity; hints; dim; termctx = tc; fields; fibrancy = fib; is_glue } ->
       let trr =
         Mbwd.map
@@ -141,9 +156,15 @@ and env : type mode a n b. (File.t -> File.t) -> (mode, a, n, b) env -> (mode, a
  fun f e ->
   match e with
   | Emp (mode, n) -> Emp (mode, n)
-  | Ext (e, nk, Modal (modality, al, xs)) ->
-      Ext (env f e, nk, Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ xs ]))
+  | Ext ({ env = e; values = Modal (modality, al, xs); _ } as ext) ->
+      Ext
+        {
+          ext with
+          env = env f e;
+          values = Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ xs ]);
+        }
   | Key k -> Key { k with env = env f k.env }
+  | Prekey (e, cell) -> Prekey (env f e, cell)
 
 and entry : type dom modality mode b f mn bm.
     (File.t -> File.t) ->
@@ -161,7 +182,7 @@ and entry : type dom modality mode b f mn bm.
           }
           [ v.bindings ] in
       Vis { v with bindings }
-  | Invis (pl, bindings, hints) ->
+  | Invis v ->
       let bindings =
         CubeOf.mmap
           {
@@ -169,8 +190,8 @@ and entry : type dom modality mode b f mn bm.
               (fun _ [ (b : (dom, bm) binding) ] : (dom, bm) binding ->
                 { ty = term f b.ty; tm = Option.map (term f) b.tm });
           }
-          [ bindings ] in
-      Invis (pl, bindings, hints)
+          [ v.bindings ] in
+      Invis { v with bindings }
 
 and termctx_ordered : type mode a b.
     (File.t -> File.t) -> (mode, a, b) ordered_termctx -> (mode, a, b) ordered_termctx =
@@ -193,4 +214,5 @@ let metadef : type mode x y z.
     match data.tm with
     | `Defined tm -> `Defined (term f tm)
     | x -> x in
-  { data with tm; termctx; ty }
+  let recursion = Positivity.link_recursion f data.recursion in
+  { data with tm; termctx; ty; recursion }

@@ -1,4 +1,4 @@
-  $ narya -v -idempotent-comonad box.ny
+  $ narya -v -coreflector box.ny
    ￫ info[I0000]
    ￮ constant f defined
   
@@ -21,7 +21,7 @@
    ￮ constant ε□∘△ defined
   
 
-  $ narya -idempotent-comonad box.ny -e "def g (A : Type) (x : A) : A := f A x"
+  $ narya -coreflector box.ny -e "def g (A : Type) (x : A) : A := f A x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def g (A : Type) (x : A) : A := f A x
@@ -29,7 +29,7 @@
   
   [1]
 
-  $ narya -idempotent-comonad box.ny -e "def η (A :□| Type) (x : A) : □ A := box. x"
+  $ narya -coreflector box.ny -e "def η (A :□| Type) (x : A) : □ A := box. x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def η (A :□| Type) (x : A) : □ A := box. x

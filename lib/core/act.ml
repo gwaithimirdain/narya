@@ -111,6 +111,14 @@ module Act = struct
         ('mode, 'm, 'a) env * ('mn, 'm, 'n) insertion
         -> ('mode, 'a, 'mn, 'n) act_closure
 
+  type (_, _, _, _, _) act_pi =
+    | Act_pi :
+        ('k, 'n) deg
+        * ('dom, 'modality, 'mode, 'k, 'm) Modality.filter_dim
+        * ('k, ('dom, kinetic) value) CubeOf.t
+        * ('m, 'mode * 'modality * 'dom) BindCube.t
+        -> ('n, 'm, 'dom, 'modality, 'mode) act_pi
+
   let rec act_value : type cod mu1 mu2 mode m n status.
       (mode, status) value ->
       (m, n) deg ->
@@ -127,9 +135,10 @@ module Act = struct
         (* And we "act" on the type with the other kind of action that permutes the instantiated arguments, and by the original s since it is the type of the entire application spine. *)
         let ty = lazy (act_ty v ty s c) in
         Neu { head; args; value; ty }
-    | Lam (x, body) ->
+    | Lam (x, filter, body) ->
         let (Of fa) = deg_plus_to s (dim_binder body) ~on:"lambda" in
-        Lam (act_variables x fa, act_binder body fa)
+        let (Filter_deg (fa', filter')) = Modality.filter_deg filter fa in
+        Lam (act_variables x fa', filter', act_binder body fa c)
     | Struct
         (type p k pk et)
         ({ fields; ins; energy; eta } : (mode, p, k, pk, status, et) struct_args) ->
@@ -146,15 +155,18 @@ module Act = struct
           ( name,
             dom_deg fa,
             List.map
-              (fun (ModalValueCube.Modal (modality, tm)) ->
+              (fun (Value.Modal (filter, tm)) ->
+                let (Filter_deg (fa, filter)) = Modality.filter_deg filter fa in
                 match c with
                 | Some c ->
-                    let (Wrap newc) = Modalcell.hcomp_wrapped c (Modalcell.id modality) in
-                    ModalValueCube.Modal
-                      (modality, act_cube { act = (fun x s c -> act_value x s c) } tm fa (Some newc))
+                    let (Wrap newc) =
+                      Modalcell.hcomp_wrapped c (Modalcell.id (Modality.filter_modality filter))
+                    in
+                    Value.Modal
+                      (filter, act_cube { act = (fun x s c -> act_value x s c) } tm fa (Some newc))
                 | None ->
-                    ModalValueCube.Modal
-                      (modality, act_cube { act = (fun x s c -> act_value x s c) } tm fa None))
+                    Value.Modal
+                      (filter, act_cube { act = (fun x s c -> act_value x s c) } tm fa None))
               args )
     | Canonical ic ->
         let (Act_inst_canonical newic) = act_inst_canonical ic s c in
@@ -207,6 +219,11 @@ module Act = struct
    fun deg0 cell vals intrinsic plusdim env deg1 terms ->
     (* Now we want to change p to q by acting by fa : (q, p) deg.  We'll keep almost everything the same and simply compose deg with fa.  The sticky bit is to update vals, which has to become an Insmap with evaluation dimension q rather than p. *)
     let deg = comp_deg deg1 deg0 in
+    (* The modal key acts on the stored environment by prekeying it, so that values rebuilt from 'terms' (either below or by a later action) incorporate it.  The old 'vals' do not include this key, so we act on them by it separately below. *)
+    let env =
+      match cell with
+      | Some cell -> prekey_env env cell
+      | None -> env in
     let vals =
       InsmapOf.build (dom_deg deg0) intrinsic
         {
@@ -259,13 +276,13 @@ module Act = struct
                       let r3 = left_shuffle rr in
                       let (Plus mr3) = D.plus r3 in
                       let plusr3 = plus_deg m (D.plus_zero m) mr3 (deg_zero r3) in
-                      let env1 = act_env env (op_of_deg plusr3) in
+                      let env1 = act_env env (opt_op_of_deg plusr3) in
                       (* env1 has dimension m + r3 *)
                       let r4 = cod_right_ins mtr in
                       let (Plus tr4) = D.plus r4 in
                       let mtrp = deg_of_perm (perm_inv (perm_of_ins_plus mtr tr4)) in
                       let (Plus tr4_r3) = D.plus r3 in
-                      let env2 = act_env env1 (op_of_deg (deg_plus mtrp mr3 tr4_r3)) in
+                      let env2 = act_env env1 (opt_op_of_deg (deg_plus mtrp mr3 tr4_r3)) in
                       (* env2 has dimension (t + r4) + r3 *)
                       let (Plus r4r3) = D.plus r3 in
                       let (Plus r3r4) = D.plus r4 in
@@ -273,16 +290,16 @@ module Act = struct
                       let (Plus t_r3r4) = D.plus (D.plus_out r3 r3r4) in
                       let rrswap = swap_deg r3r4 r4r3 in
                       let t = cod_left_ins mtr in
-                      let env3 = act_env env2 (op_of_deg (plus_deg t t_r4r3 t_r3r4 rrswap)) in
+                      let env3 = act_env env2 (opt_op_of_deg (plus_deg t t_r4r3 t_r3r4 rrswap)) in
                       (* env3 has dimension t + (r3 + r4). *)
                       let r34 = out_shuffle rr in
                       let (Plus t_r34) = D.plus r34 in
                       let drr = plus_deg t t_r3r4 t_r34 (deg_of_shuffle rr r3r4) in
-                      let env4 = act_env env3 (op_of_deg drr) in
+                      let env4 = act_env env3 (opt_op_of_deg drr) in
                       (* env4 has dimension t + r34 *)
                       let env5 = Shift (env4, t_r34, ra) in
-                      (* env5 has dimension t.  So when we evaluate the s4-dimensional term 'tm' in this environment, we get an object of dimension t + s4, which is equal to s3.  Therefore, we can act on it by deg3 to get an s-dimensional object, which is what we want. *)
-                      Some (act_lazy_eval (lazy_eval env5 tm) deg3 cell)));
+                      (* env5 has dimension t.  So when we evaluate the s4-dimensional term 'tm' in this environment, we get an object of dimension t + s4, which is equal to s3.  Therefore, we can act on it by deg3 to get an s-dimensional object, which is what we want.  The current key cell is already incorporated in env5 by the prekey above, so we don't act by it again here. *)
+                      Some (act_lazy_eval (lazy_eval env5 tm) deg3 None)));
         } in
     { vals; intrinsic; plusdim; env; deg; terms }
 
@@ -317,25 +334,37 @@ module Act = struct
     (* Unlike degeneracy actions, modal key actions do not change the *identity* of a canonical type, only the *arguments* it is applied to.  Therefore, the modal cell is ignored when acting on a universe, it only acts on the domains and codomains of a pi-type, and on the indices of a datatype and their types (tyfam). *)
     match tm with
     | UU (mode, _) -> UU (mode, dom_deg fa)
-    | Pi (x, modality, doms, cods) ->
-        let doms', cods' = act_pi modality doms cods fa cell in
-        Pi (act_variables x fa, modality, doms', cods')
-    | Data { dim = _; tyfam; indices; constrs; discrete; hints } ->
+    | Pi { x; filter; doms; cods } ->
+        let (Act_pi (fb, filter, doms, cods)) = act_pi filter doms cods fa cell in
+        Pi { x = act_variables x fb; filter; doms; cods }
+    | Data { dim = _; tyfam; indices; constrs; discrete; recursive; hints } ->
         let tyfam = ref (Option.map (fun x -> lazy (act_normal (Lazy.force x) fa cell)) !tyfam) in
         let indices =
           Fillvec.map
             (fun ixs -> act_cube { act = (fun x s c -> act_normal x s c) } ixs fa cell)
             indices in
-        let constrs = Abwd.map (fun con -> act_dataconstr con fa) constrs in
-        Data { dim = dom_deg fa; tyfam; indices; constrs; discrete; hints }
+        let constrs = Abwd.map (fun con -> act_dataconstr con fa cell) constrs in
+        Data { dim = dom_deg fa; tyfam; indices; constrs; discrete; recursive; hints }
     | Codata { eta; opacity; hints; env; termctx; fields } ->
-        Codata { eta; opacity; hints; env = act_env env (op_of_deg fa); termctx; fields }
+        let env = act_env env (opt_op_of_deg fa) in
+        let env =
+          match cell with
+          | Some cell -> prekey_env env cell
+          | None -> env in
+        Codata { eta; opacity; hints; env; termctx; fields }
 
-  and act_dataconstr : type mode m n.
-      (mode, n) dataconstr -> (m, n) deg -> (mode, m) dataconstr =
-   fun (Dataconstr { env; args; output }) s ->
-    (* Hmm, how to key on an environment without changing its mode? *)
-    let env = act_env env (op_of_deg s) in
+  and act_dataconstr : type mode mu1 mu2 cod m n.
+      (mode, n) dataconstr ->
+      (m, n) deg ->
+      (mode, mu1, mu2, cod) Modalcell.t option ->
+      (mode, m) dataconstr =
+   fun (Dataconstr { env; args; output }) s cell ->
+    (* We key on the environment without changing its mode by prekeying it. *)
+    let env = act_env env (opt_op_of_deg s) in
+    let env =
+      match cell with
+      | Some cell -> prekey_env env cell
+      | None -> env in
     Dataconstr { env; args; output }
 
   (* act_closure and act_binder assume that the degeneracy has exactly the correct codomain.  So if it doesn't, the caller should call deg_plus_to first. *)
@@ -343,13 +372,21 @@ module Act = struct
       (mode, m, a) env -> (mn, m, n) insertion -> (kn, mn) deg -> (mode, a, kn, n) act_closure =
    fun env ins fa ->
     let (Insfact_comp (fc, ins)) = insfact_comp ins fa in
-    Act_closure (act_env env (op_of_deg fc), ins)
+    Act_closure (act_env env (opt_op_of_deg fc), ins)
 
-  and act_binder : type mode modality dom mn kn s.
-      (mode, modality, dom, mn, s) binder -> (kn, mn) deg -> (mode, modality, dom, kn, s) binder =
-   fun (Bind { env; modality; ins; body }) fa ->
+  and act_binder : type mode modality dom mn kn s mu1 mu2 cod.
+      (mode, modality, dom, mn, s) binder ->
+      (kn, mn) deg ->
+      (mode, mu1, mu2, cod) Modalcell.t option ->
+      (mode, modality, dom, kn, s) binder =
+   fun (Bind { env; modality; filter; ins; body }) fa c ->
     let (Act_closure (env, ins)) = act_closure env ins fa in
-    Bind { env; modality; ins; body }
+    (* A modal key acts on a binder by prekeying its captured environment.  The variables bound by the binder itself, which will be added on top of the Prekey when it is applied, are unaffected. *)
+    let env =
+      match c with
+      | Some c -> prekey_env env c
+      | None -> env in
+    Bind { env; modality; filter; ins; body }
 
   and act_normal : type mode mu1 mu2 cod a b.
       mode normal -> (a, b) deg -> (mode, mu1, mu2, cod) Modalcell.t option -> mode normal =
@@ -493,30 +530,37 @@ module Act = struct
     (* Acting on a metavariable is similar to a constant, but now the inner degeneracy acts on the stored environment. *)
     | Meta { meta; env; ins } ->
         let (Insfact_comp_ext (deg, ins, _, _)) = insfact_comp_ext ins s in
-        Meta { meta; env = act_env env (op_of_deg deg); ins }
+        let env = act_env env (opt_op_of_deg deg) in
+        let env =
+          match c with
+          | Some c -> prekey_env env c
+          | None -> env in
+        Meta { meta; env; ins }
     | UU (mode, nk) ->
         let (Of fa) = deg_plus_to s nk ~on:"universe head" in
         UU (mode, dom_deg fa)
-    | Pi (x, modality, doms, cods) ->
-        let (Of fa) = deg_plus_to s (CubeOf.dim doms) ~on:"pi-type head" in
-        let doms', cods' = act_pi modality doms cods fa c in
-        Pi (act_variables x fa, modality, doms', cods')
+    | Pi { x; filter; doms; cods } ->
+        let (Of fa) = deg_plus_to s (BindCube.dim cods) ~on:"pi-type head" in
+        let (Act_pi (fb, filter, doms, cods)) = act_pi filter doms cods fa c in
+        Pi { x = act_variables x fb; filter; doms; cods }
 
-  and act_pi : type dom modality mode mu1 mu2 cod m n.
-      (dom, modality, mode) Modality.t ->
-      (n, (dom, kinetic) value) CubeOf.t ->
+  and act_pi : type dom modality mode mu1 mu2 cod m n k.
+      (dom, modality, mode, k, n) Modality.filter_dim ->
+      (k, (dom, kinetic) value) CubeOf.t ->
       (n, mode * modality * dom) BindCube.t ->
       (m, n) deg ->
       (mode, mu1, mu2, cod) Modalcell.t option ->
-      (m, (dom, kinetic) value) CubeOf.t * (m, mode * modality * dom) BindCube.t =
-   fun modality doms cods fa c ->
+      (k, m, dom, modality, mode) act_pi =
+   fun filter doms cods fa c ->
     let mi = dom_deg fa in
+    let (Filter_deg (fa', filter')) = Modality.filter_deg filter fa in
+    let modality = Modality.filter_modality filter in
     let doms' =
       match c with
       | Some c ->
           let (Wrap cm) = Modalcell.prewhisker_wrapped c modality in
-          act_cube { act = (fun x s c -> act_value x s c) } doms fa (Some cm)
-      | None -> act_cube { act = (fun x s c -> act_value x s c) } doms fa None in
+          act_cube { act = (fun x s c -> act_value x s c) } doms fa' (Some cm)
+      | None -> act_cube { act = (fun x s c -> act_value x s c) } doms fa' None in
     let cods' =
       BindCube.build mi
         {
@@ -524,9 +568,10 @@ module Act = struct
             (fun fb ->
               let (Op (fc, fd)) = deg_sface fa fb in
               let (BindFam codc) = BindCube.find cods fc in
-              BindFam (act_binder codc fd));
+              (* The codomain binder gets the un-whiskered cell, since its captured environment is at the ambient mode; only the bound variable is under the domain modality, and it is unaffected by the prekey. *)
+              BindFam (act_binder codc fd c));
         } in
-    (doms', cods')
+    Act_pi (fa', filter', doms', cods')
 
   (* Action on a Bwd of applications (each of which is just the argument and its boundary).  Pushes the degeneracy past the stored insertions, factoring it each time and leaving an appropriate insertion on the outside.  Also returns the innermost degeneracy, for acting on the head with. *)
   and act_apps : type mode mu1 mu2 cod a b any.
@@ -538,17 +583,19 @@ module Act = struct
     match apps with
     | Emp -> (Any_deg s, Emp)
     (* To act on an application, we compose the acting degeneracy with the delayed insertion, factor the result into a new insertion to leave outside and a smaller degeneracy to push in, and push the smaller degeneracy action into the application, acting on the function/struct. *)
-    | Arg (rest, modality, args, ins) ->
-        let (Insfact_comp_ext (fa, new_ins, _, _)) = insfact_comp_ext ins s in
+    | Arg (rest, filter, args, ins) ->
         (* In the function case, we also act on the arguments by factorization of dimensions and by whiskering of keys. *)
+        let modality = Modality.filter_modality filter in
+        let (Insfact_comp_ext (fa, new_ins, _, _)) = insfact_comp_ext ins s in
+        let (Filter_deg (fb, arg_filter)) = Modality.filter_deg filter fa in
         let new_arg =
           match c with
           | Some c ->
               let (Wrap newc) = Modalcell.prewhisker_wrapped c modality in
-              act_cube { act = (fun x s c -> act_normal x s c) } args fa (Some newc)
-          | None -> act_cube { act = (fun x s c -> act_normal x s c) } args fa None in
+              act_cube { act = (fun x s c -> act_normal x s c) } args fb (Some newc)
+          | None -> act_cube { act = (fun x s c -> act_normal x s c) } args fb None in
         let new_s, new_rest = act_apps rest fa c in
-        (new_s, Arg (new_rest, modality, new_arg, new_ins))
+        (new_s, Arg (new_rest, arg_filter, new_arg, new_ins))
     | Field (rest, fld, fldplus, ins) ->
         let (Insfact_comp_ext (fa, new_ins, _, _)) = insfact_comp_ext ins s in
         (* Note that we don't need to change the degeneracy, since it can be extended on the right as needed. *)
@@ -599,13 +646,14 @@ module Act = struct
     | Deferred_eval (env, tm, ins, key, apps) ->
         let Any_deg s, apps = act_apps apps s c in
         let (Insfact_comp_ext (fa, ins, _, _)) = insfact_comp_ext ins s in
-        let acted_env = act_env env (op_of_deg fa) in
-        let (Wrap newkey) = key_vcomp key c in
+        let acted_env = act_env env (opt_op_of_deg fa) in
+        (* The stored key is applied to the evaluated value when forcing, and the new cell acts on the result of that, so the stored key is applied first in the composite. *)
+        let (Wrap newkey) = key_vcomp c key in
         ref (Deferred_eval (acted_env, tm, ins, newkey, apps))
     | Deferred (tm, s', key, apps) ->
         let Any_deg s, apps = act_apps apps s c in
         let (DegExt (_, _, fa)) = comp_deg_extending s' s in
-        let (Wrap newkey) = key_vcomp key c in
+        let (Wrap newkey) = key_vcomp c key in
         ref (Deferred (tm, fa, newkey, apps))
     | Ready tm -> ref (Deferred ((fun () -> tm), s, c, Emp))
 end
