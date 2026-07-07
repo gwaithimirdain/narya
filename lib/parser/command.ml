@@ -917,6 +917,8 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       | [ str ] ->
           if Option.is_some (deg_of_name str) then
             fatal (Invalid_constant_name (name, Some "that's a degeneracy name"))
+          else if List.mem_assoc str (Modal.Mode.all ()) then
+            fatal (Invalid_constant_name (name, Some "that's a mode name"))
       | _ -> ());
       Scope.check_name name loc;
       let const = Scope.define ?loc name in
@@ -932,6 +934,8 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
             | [ str ] ->
                 if Option.is_some (deg_of_name str) then
                   fatal (Invalid_constant_name (name, Some "that's a degeneracy name"))
+                else if List.mem_assoc str (Modal.Mode.all ()) then
+                  fatal (Invalid_constant_name (name, Some "that's a mode name"))
             | _ -> ());
             Scope.check_name name loc;
             ( lazy (Scope.define ?loc name),
