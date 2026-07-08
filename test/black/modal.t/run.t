@@ -185,6 +185,15 @@ the corresponding locks.
    ￫ info[I0000]
    ￮ constant d_test defined
   
+   ￫ info[I0000]
+   ￮ constant ♯ defined
+  
+   ￫ info[I0000]
+   ￮ constant ♯_unit defined
+  
+   ￫ info[I0000]
+   ￮ constant ♯_mult defined
+  
 
 A modal field projection computes on a comatch/tuple.
 

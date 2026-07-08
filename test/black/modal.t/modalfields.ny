@@ -36,3 +36,11 @@ def D : Type ≔ codata [ y .snd : N ]
 def d : D ≔ [ .snd ↦ zero. ]
 
 def d_test : Id N (d .snd) zero. ≔ refl zero.
+
+` Parametrized negative modal operators
+def ♯ (A :♯| Type) : Type ≔ sig ( (x :♭| _) .unsharp : A )
+
+def ♯_unit (A :♯| Type) (x :♯| A) : ♯ A ≔ (unsharp ≔ x)
+
+def ♯_mult (A :♯| Type) (x : ♯ (♯ A)) : ♯ A ≔ (
+  unsharp ≔ ((x :♭| _) .unsharp :♭| _) .unsharp)
