@@ -285,7 +285,13 @@ let rec get_spine : type mode a.
       match get_spine fn with
       | `App (head, args) -> `App (head, append_bwd args)
       | `Field (head, fld, ins, args) -> `Field (head, fld, ins, append_bwd args))
-  | Field (head, fld, ins) -> `Field (head, Field.to_string fld, show_ins ins, Emp)
+  | Field (Modal (fm, plus_lock, head), fld, ins) -> (
+      match Modality.compare_id fm with
+      | Eq ->
+          let Eq = plus_lock_id plus_lock in
+          `Field (head, Field.to_string fld, show_ins ins, Emp)
+      (* A nonidentity modal projection is not folded into the spine; it is unparsed as an opaque head, which routes back to the modal-field case of 'unparse'. *)
+      | Neq -> `App (tm, Emp))
   (* We have to look through identity degeneracies and keys here. *)
   | Act (body, s, _) -> (
       match is_id_deg s with
@@ -318,8 +324,14 @@ let rec unparse : type mode n lt ls rt rs s.
   | MetaEnv (v, _) ->
       unlocated
         (Ident ([ (if Display.metas () == `Numbered then Meta.name v ^ "{…}" else "?") ], []))
-  | Field (tm, fld, ins) ->
-      unparse_spine vars (`Field (tm, Field.to_string fld, show_ins ins)) Emp li ri
+  | Field (Modal (fm, plus_lock, itm), fld, ins) -> (
+      match Modality.compare_id fm with
+      | Eq ->
+          let Eq = plus_lock_id plus_lock in
+          unparse_spine vars (`Field (itm, Field.to_string fld, show_ins ins)) Emp li ri
+      | Neq ->
+          (* A modal projection prints as "(inner :f| _) .fld", with the inner term unparsed in the context locked by the left adjoint. *)
+          unparse_modal_field vars fm plus_lock itm (Field.to_string fld) (show_ins ins) li ri)
   | UU (mode, n) -> unparse_universe vars mode n !universes li ri
   | Inst (ty, tyargs) -> unparse_inst vars ty vars tyargs li ri
   | Pi { cods; _ } ->
@@ -400,8 +412,10 @@ let rec unparse : type mode n lt ls rt rs s.
                                (type i)
                                ((fld, structfield) :
                                  i Field.t * (i, _ * (m * n * s * et)) Structfield.t)) ->
-                         let (Lower (fldtm, lbl)) = structfield in
-                         let fldtm = unparse vars fldtm No.Interval.entire No.Interval.entire in
+                         let (Lower (_adj, plus_lock, fldtm, lbl)) = structfield in
+                         (* A modal field's value lives in the context locked by the right adjoint; unparse it there. *)
+                         let fldvars = Names.add_lock vars plus_lock in
+                         let fldtm = unparse fldvars fldtm No.Interval.entire No.Interval.entire in
                          Snoc
                            ( acc,
                              Term
@@ -521,6 +535,60 @@ and unparse_spine : type mode n lt ls rt rs.
               let left_ok = No.le_refl No.plus_omega in
               let right_ok = No.le_refl No.plus_omega in
               parenthesize (unlocated (App { fn; arg; left_ok; right_ok }))))
+
+(* Print a modal field projection "(inner :f| _) .fld", where the term being projected lives in the context locked by the left adjoint f. *)
+and unparse_modal_field : type mode dom f n am lt ls rt rs.
+    n Names.t ->
+    (dom, f, mode) Modality.t ->
+    (n, mode, f, dom, am) plus_lock ->
+    (dom, am, kinetic) term ->
+    string ->
+    int list ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun vars fm plus_lock itm fld ins li ri ->
+  let lvars = Names.add_lock vars plus_lock in
+  let inner = unparse lvars itm No.Interval.entire No.Interval.entire in
+  (* Build the modality name as an application spine of identifiers. *)
+  let modality =
+    match Modality.name fm with
+    | [] -> unlocated (Placeholder [])
+    | x :: xs ->
+        List.fold_left
+          (fun fn y ->
+            unlocated
+              (App
+                 {
+                   fn;
+                   arg = unlocated (Ident ([ y ], []));
+                   left_ok = No.le_refl No.plus_omega;
+                   right_ok = No.le_refl No.plus_omega;
+                 }))
+          (unlocated (Ident ([ x ], [])))
+          xs in
+  (* Thunks, so that each use below is polymorphic in the surrounding tightness interval. *)
+  let asc () =
+    unlocated
+      (outfix ~notn:Postprocess.ascvar
+         ~inner:
+           (Multiple
+              ( Left (LParen, ([], None)),
+                Emp
+                <: Term inner
+                <: mktok Colon
+                <: Term modality
+                <: mktok (Op "|")
+                <: Term (unlocated (Placeholder [])),
+                Left (RParen, ([], None)) ))) in
+  let arg () = unlocated (Field (fld, List.map string_of_int ins, [])) in
+  match (No.Interval.contains li No.plus_omega, No.Interval.contains ri No.plus_omega) with
+  | Some left_ok, Some right_ok ->
+      unlocated (App { fn = asc (); arg = arg (); left_ok; right_ok })
+  | _ ->
+      let left_ok = No.le_refl No.plus_omega in
+      let right_ok = No.le_refl No.plus_omega in
+      parenthesize (unlocated (App { fn = asc (); arg = arg (); left_ok; right_ok }))
 
 and unparse_field : type mode n lt ls rt rs.
     n Names.t ->
@@ -903,7 +971,7 @@ and unparse_pi_dom : type lt ls rt rs.
               unlocated (App { fn; arg = unlocated (Ident ([ m ], [])); left_ok; right_ok }))
             fn ms in
         obs <: Term modalities <: mktok (Op "|") in
-  unlocated (outfix ~notn:ascvar ~inner:(Multiple (wstok ldelim, obs <: Term dom, wstok rdelim)))
+  unlocated (outfix ~notn:Postprocess.ascvar ~inner:(Multiple (wstok ldelim, obs <: Term dom, wstok rdelim)))
 
 and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
     a Names.t ->

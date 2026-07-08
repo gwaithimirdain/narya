@@ -56,8 +56,8 @@ val act_lazy_eval :
   ('mode, 's) lazy_eval
 
 val field_lazy :
-  'mode Mode.t ->
-  ('mode, 's) lazy_eval ->
+  ('src, 'f, 'mode) Modality.t ->
+  ('src, 's) lazy_eval ->
   'i Field.t ->
   ('n, 't, 'i) insertion ->
   ('mode, 's) lazy_eval

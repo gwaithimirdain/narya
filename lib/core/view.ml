@@ -8,13 +8,13 @@ open Reporter
 
 type 'mode view_type =
   | Canonical :
-      ('mode head
+      ('hmode head
       * ('mode, 'm, 'n) canonical
       * ('mn, 'm, 'n) insertion
       * (D.zero, 'mn, 'mn, 'mode normal) TubeOf.t)
       -> 'mode view_type
   | Neutral :
-      ('mode head * ('mode, noninst) apps * (D.zero, 'k, 'k, 'mode normal) TubeOf.t)
+      ('hmode head * ('hmode, 'mode, noninst) apps * (D.zero, 'k, 'k, 'mode normal) TubeOf.t)
       -> 'mode view_type
 
 type term_viewer_type = { view : 'mode. ('mode, kinetic) value -> ('mode, kinetic) value }

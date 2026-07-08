@@ -142,9 +142,7 @@ let pp_modality =
 
 (* We implement a special notation for ascribed variable lists in parentheses, such as "(x y : A)".  On its own, this is processed the same as an ascription inside parentheses, but as a component of other notations like abstractions and pi-types it is looked for specially.  We do it this way so that modal ascriptions "(x y : □ | A)" can also be included in ascribed variables but not in ordinary ascriptions.  Also allows { braces } for implicit arguments. *)
 
-type (_, _, _) identity += AscVar : (closed, No.plus_omega, closed) identity
-
-let ascvar : (closed, No.plus_omega, closed) notation = (AscVar, Outfix)
+(* AscVar's identity and notation are declared in Postprocess (so that modal projections can be recognized there); here we define its parsing and printing. *)
 
 let ascvar_body rdelim =
   term Colon (terms [ (rdelim, Done_closed ascvar); (Op "|", term rdelim (Done_closed ascvar)) ])
@@ -2288,18 +2286,26 @@ let process_codata_field : type n lt ls rt rs lt' ls' rt' rs' et.
     (lt', ls', rt', rs') parse located ->
     Field.wrapped * n Raw.codatafield =
  fun eta flds ctx tm ty ->
+  (* The self variable can be a bare identifier or placeholder, or (for a modal field) a modal ascription "(x :f| _)" specifying the locking modality f. *)
+  let self_var_of : type lt ls rt rs.
+      (lt, ls, rt, rs) parse located -> string option * string located list located option =
+   fun { value = x; loc = xloc } ->
+    match x with
+    | Ident ([ x ], _) when Lexer.valid_var x -> (Some x, None)
+    | Placeholder _ -> (None, None)
+    | Notn ((AscVar, _), n) -> (
+        match Postprocess.args_of_ascvar (args n) with
+        | Some (Wrap { value = Ident ([ x ], _); _ }, modality) when Lexer.valid_var x ->
+            (Some x, Some modality)
+        | Some (Wrap { value = Placeholder _; _ }, modality) -> (None, Some modality)
+        | _ -> fatal ?loc:xloc (Parse_error "invalid modal self-variable"))
+    | Ident (x, _) -> fatal ?loc:xloc (Invalid_variable x)
+    | _ -> fatal ?loc:xloc (Parse_error "invalid self-variable") in
   match tm.value with
-  | App
-      { fn = { value = x; loc = xloc }; arg = { value = Field (fstr, fdstr, _); loc = fldloc }; _ }
-    -> (
+  | App { fn; arg = { value = Field (fstr, fdstr, _); loc = fldloc }; _ } -> (
       with_loc tm.loc @@ fun () ->
       if not (Lexer.valid_field fstr) then fatal ?loc:fldloc (Invalid_field fstr);
-      let x =
-        match x with
-        | Ident ([ x ], _) when Lexer.valid_var x -> Some x
-        | Placeholder _ -> None
-        | Ident (x, _) -> fatal ?loc:xloc (Invalid_variable x)
-        | _ -> fatal ?loc:xloc (Parse_error "invalid self-variable") in
+      let x, lock = self_var_of fn in
       match dim_of_string (String.concat "" fdstr) with
       | Some (Any fdim) -> (
           let fld = Field.intern fstr fdim in
@@ -2307,7 +2313,7 @@ let process_codata_field : type n lt ls rt rs lt' ls' rt' rs' et.
           | Some _ -> fatal ?loc:fldloc (duplicate_field_in_type eta fld)
           | None ->
               let ty = process (Bwv.snoc ctx x) ty in
-              (Field.Wrap fld, Raw.Codatafield (x, ty)))
+              (Field.Wrap fld, Raw.Codatafield (x, lock, ty)))
       | None -> fatal (Invalid_field (String.concat "." ("" :: fstr :: fdstr))))
   | _ -> fatal ?loc:tm.loc (Parse_error "invalid codata field")
 

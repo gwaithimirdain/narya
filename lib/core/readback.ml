@@ -64,8 +64,7 @@ and readback_at : type mode a z.
   let view = if Displaying.read () then view_term tm else tm in
   let vty = view_type ty "readback_at" in
   match (vty, view) with
-  | ( Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs),
-      Lam (x, filter2, body) ) -> (
+  | Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs), Lam (x, filter2, body) -> (
       let Eq = eq_of_ins_zero ins in
       (* The instantiation of the type, and the dimension of the binder, are both the *outer* (unfiltered) dimension of the pi-type; the variable cube and the domains live at the filtered dimension. *)
       let n = BindCube.dim cods in
@@ -106,7 +105,7 @@ and readback_at : type mode a z.
           filter,
           readback_at ~eta newctx (apply_term tm filter newargs) output )
   | ( Canonical
-        (type mn m n)
+        (type hmode mn m n)
         (( _,
            Codata
              (type c a et)
@@ -114,7 +113,7 @@ and readback_at : type mode a z.
                (mode, m, n, c, a, et) codata_args),
            ins,
            _ ) :
-          mode head
+          hmode head
           * (mode, m, n) canonical
           * (mn, m, n) insertion
           * (D.zero, mn, mn, mode normal) TubeOf.t),
@@ -130,13 +129,19 @@ and readback_at : type mode a z.
                 let fields =
                   Mbwd.map
                     (* We don't need to consider the Higher case since we are kinetic. *)
-                    (fun (Value.StructfieldAbwd.Entry (fld, Value.Structfield.Lower (fldtm, l))) ->
-                      Term.StructfieldAbwd.Entry
-                        ( fld,
-                          Term.Structfield.Lower
-                            ( readback_at ctx (force_eval_term fldtm)
-                                (tyof_field (Ok tm) ty fld ~shuf:Trivial fldins),
-                              l ) ))
+                    (fun (Value.StructfieldAbwd.Entry
+                            (fld, Value.Structfield.Lower (adj, fldtm, lbl))) ->
+                      (* The component of a modal field lives behind a lock by the right adjoint, so we read it back in the locked context, at the non-keyed component type. *)
+                      let (Tyof_modal_field (adj', ety)) = tyof_field_nokey (Ok tm) ty fld in
+                      match Modality.compare (Modalcell.adj_left adj') (Modalcell.adj_left adj) with
+                      | Neq -> fatal (Anomaly "adjunction mismatch in struct readback")
+                      | Eq ->
+                          let (Locked (plus_lock, lctx)) = Ctx.lock ctx (Modalcell.adj_right adj') in
+                          Term.StructfieldAbwd.Entry
+                            ( fld,
+                              Term.Structfield.Lower
+                                (adj', plus_lock, readback_at lctx (force_eval_term fldtm) ety, lbl)
+                            ))
                     tmflds in
                 Some (Term.Struct { eta = Eta; dim; fields; energy })
             (* In addition, if the record type is transparent, or if it's translucent and the term is a tuple in a case tree, and we are reading back for display (rather than for internal typechecking purposes), we do an eta-expanding readback. *)
@@ -145,13 +150,20 @@ and readback_at : type mode a z.
                   Mbwd.map
                     (fun (CodatafieldAbwd.Entry
                             (type i)
-                            ((fld, Lower _) : i Field.t * (i, mode * a * n * has_eta) Codatafield.t))
-                       ->
+                            ((fld, Lower (adj, _, _)) :
+                              i Field.t * (i, mode * a * n * has_eta) Codatafield.t)) ->
+                      (* Eta-expansion of a modal field: key the term by the adjunction unit, project, and read back the component in the context locked by the right adjoint (as in the eta-rule for equality). *)
+                      let (Adjunction { left; right; unit; _ }) = adj in
+                      let xu = act_value tm (id_deg D.zero) unit in
+                      let tyu = act_ty tm ty (id_deg D.zero) unit in
+                      let (Locked (plus_lock, lctx)) = Ctx.lock ctx right in
                       Term.StructfieldAbwd.Entry
                         ( fld,
                           Term.Structfield.Lower
-                            ( readback_at ctx (field_term (Ctx.mode ctx) tm fld fldins)
-                                (tyof_field (Ok tm) ty fld ~shuf:Trivial fldins),
+                            ( adj,
+                              plus_lock,
+                              readback_at lctx (field_term left xu fld fldins)
+                                (tyof_field left (Ok xu) tyu fld ~shuf:Trivial fldins),
                               l ) ))
                     fields in
                 Some (Struct { eta = Eta; dim; fields; energy = Kinetic })
@@ -162,13 +174,19 @@ and readback_at : type mode a z.
                       Mbwd.map
                         (fun (CodatafieldAbwd.Entry
                                 (type i)
-                                ((fld, Lower _) :
+                                ((fld, Lower (adj, _, _)) :
                                   i Field.t * (i, mode * a * n * has_eta) Codatafield.t)) ->
+                          let (Adjunction { left; right; unit; _ }) = adj in
+                          let xu = act_value tm (id_deg D.zero) unit in
+                          let tyu = act_ty tm ty (id_deg D.zero) unit in
+                          let (Locked (plus_lock, lctx)) = Ctx.lock ctx right in
                           Term.StructfieldAbwd.Entry
                             ( fld,
                               Term.Structfield.Lower
-                                ( readback_at ctx (field_term (Ctx.mode ctx) tm fld fldins)
-                                    (tyof_field (Ok tm) ty fld ~shuf:Trivial fldins),
+                                ( adj,
+                                  plus_lock,
+                                  readback_at lctx (field_term left xu fld fldins)
+                                    (tyof_field left (Ok xu) tyu fld ~shuf:Trivial fldins),
                                   l ) ))
                         fields in
                     Some (Struct { eta = Eta; dim; fields; energy = Kinetic })
@@ -251,11 +269,11 @@ and readback_val : type mode a z.
   | Struct _ -> fatal (Anomaly "unexpected struct in synthesizing readback")
   | Constr _ -> fatal (Anomaly "unexpected constr in synthesizing readback")
 
-and readback_neu : type mode a z any.
+and readback_neu : type hmode mode a z any.
     ?sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] ->
     (mode, z, a) Ctx.t ->
-    mode head ->
-    (mode, any) apps ->
+    hmode head ->
+    (hmode, mode, any) apps ->
     (mode, a, kinetic) term =
  fun ?(sort = (`Other, `Other)) ctx head apps ->
   match (apps, head) with
@@ -275,10 +293,17 @@ and readback_neu : type mode a z any.
                   CubeOf.mmap { map = (fun _ [ tm ] -> readback_nf lctx tm) } [ args ] ) ),
           p,
           sort )
-  | Field (apps, fld, fldplus, ins), _ ->
+  | Field (apps, fm, fld, fldplus, ins), _ ->
       let (To p) = deg_of_ins ins in
+      (* The spine inside a modal field projection lives behind a lock by the left adjoint, so we read it back in the locked context. *)
+      let (Locked (plus_lock, lctx)) = Ctx.lock ctx fm in
       Term.Act
-        (Field (readback_neu ~sort ctx head apps, fld, id_ins (cod_left_ins ins) fldplus), p, sort)
+        ( Field
+            ( Modal (fm, plus_lock, readback_neu ~sort lctx head apps),
+              fld,
+              id_ins (cod_left_ins ins) fldplus ),
+          p,
+          sort )
   | Inst (Emp, _, args), Pi _ when TubeOf.is_full args ->
       (* When reading back a fully instantiated higher-dimensional pi-type, we eta-expand the instantiation arguments so that it can be printed with a nice notation. *)
       let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ~eta:true ctx x) } [ args ] in
@@ -299,8 +324,15 @@ and readback_head : type mode c z.
       let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt key) in
       (* Now we look for the level variable in the remaining context. *)
       let (Lookup
-             { result; value = _; dirt = _; modality; filter; insert; plus = Plus_with_locks (c, _) })
-          =
+             {
+               result;
+               value = _;
+               dirt = _;
+               modality;
+               filter;
+               insert;
+               plus = Plus_with_locks (c, _);
+             }) =
         Ctx.find_level ctx level <|> No_such_level (PLevel level) in
       (* We check that (1) the modality annotating that variable is the source of the key, and (2) there are no more locks remaining to its right in the context. *)
       match (Modality.compare (Modalcell.vsrc key) modality, result, c) with
@@ -582,7 +614,8 @@ let readback_entry : type dom modality mode a b f n.
         Bwv.map
           (fun (f, x) ->
             let fldty =
-              readback_val ~sort:`Type lctx (tyof_field (Ok top.tm) top.ty f ~shuf:Trivial fins)
+              readback_val ~sort:`Type lctx
+                (tyof_field (Modality.id (Ctx.mode lctx)) (Ok top.tm) top.ty f ~shuf:Trivial fins)
             in
             (f, x, fldty))
           fields in

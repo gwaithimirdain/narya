@@ -253,6 +253,11 @@ let plus_no_lock : type ctx mode. mode Mode.t -> (ctx, mode, mode Modality.id, m
     =
  fun mode -> Plus_lock (Zero (Eq mode), Zero)
 
+(* A plus_lock for the identity modality doesn't actually extend the context. *)
+let plus_lock_id : type ctx mode newctx.
+    (ctx, mode, mode Modality.id, mode, newctx) plus_lock -> (ctx, newctx) Eq.t = function
+  | Plus_lock (Zero _, Zero) -> Eq
+
 let plus_lock_suc : type ctx mode modality dom newctx x m.
     (ctx, mode, modality, dom, newctx) plus_lock ->
     (x, m, dom) Modality.gen ->

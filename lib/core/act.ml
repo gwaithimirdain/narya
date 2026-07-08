@@ -126,8 +126,8 @@ module Act = struct
     match v with
     | Neu { head; args; value; ty = (lazy ty) } ->
         (* We act on the applications from the outside (last) to the inside, since the degeneracy has to be factored and may leave neutral insertions behind.  The resulting inner degeneracy then acts on the head. *)
-        let Any_deg s', args = act_apps args s c in
-        let head = act_head head s' c in
+        let Any_deg s', Wrap hc, args = act_apps args s c in
+        let head = act_head head s' hc in
         (* We act on the value separately with the original s, since it is a "value" of the entire application spine, not just the head. *)
         let value = act_lazy_eval value s c in
         (* And we "act" on the type with the other kind of action that permutes the instantiated arguments, and by the original s since it is the type of the entire application spine. *)
@@ -192,8 +192,13 @@ module Act = struct
       (i, mode * q * status * et) Structfield.t =
    fun deg0 cell sfld ->
     match sfld with
-    (* For a lower structfield, we just act in a straightforward way on each (lazy) value. *)
-    | Lower (v, l) -> Lower (act_lazy_eval v deg0 cell, l)
+    (* For a lower structfield, we act in a straightforward way on each (lazy) value.  For a modal field, whose value lives behind a lock by the right adjoint, the cell gets prewhiskered by that right adjoint. *)
+    | Lower (adj, v, lbl) -> (
+        match Modalcell.compare_adjunction_id adj with
+        | Eq -> Lower (adj, act_lazy_eval v deg0 cell, lbl)
+        | Neq ->
+            let (Wrap cell) = Modalcell.prewhisker_wrapped cell (Modalcell.adj_right adj) in
+            Lower (adj, act_lazy_eval v deg0 cell, lbl))
     | Higher (lazy { vals; intrinsic; plusdim; env; deg = deg1; terms }) ->
         Higher (lazy (act_higher_structfield deg0 cell vals intrinsic plusdim env deg1 terms))
 
@@ -402,9 +407,9 @@ module Act = struct
           | Emp -> (args, TubeOf.Full_tube (TubeOf.empty D.zero)) in
         let (Ty_acted_instargs (fa, new_inst_args)) =
           gact_ty_instargs ?err tm tmty inst_args s cell in
-        (* Now we act on the rest of the spine in the ordinary way. *)
-        let Any_deg fa, new_base_args = act_apps base_args fa cell in
-        let head = act_head head fa cell in
+        (* Now we act on the rest of the spine in the ordinary way.  The cell for the head is the one returned by act_apps, which has been prewhiskered by the left adjoints of any modal field projections in the spine. *)
+        let Any_deg fa, Wrap hcell, new_base_args = act_apps base_args fa cell in
+        let head = act_head head fa hcell in
         (* And put back on the instantiation, if it's nontrivial.  (It should always be nontrivial unless 's' was the identity degeneracy of D.zero, which should be prevented by short-circuiting.) *)
         let (Any args) =
           match D.compare_zero (TubeOf.inst new_inst_args) with
@@ -548,15 +553,15 @@ module Act = struct
         } in
     Act_pi (fa', filter', doms', cods')
 
-  (* Action on a Bwd of applications (each of which is just the argument and its boundary).  Pushes the degeneracy past the stored insertions, factoring it each time and leaving an appropriate insertion on the outside.  Also returns the innermost degeneracy, for acting on the head with. *)
-  and act_apps : type mode mu1 mu2 cod a b any.
-      (mode, any) apps ->
+  (* Action on a Bwd of applications (each of which is just the argument and its boundary).  Pushes the degeneracy past the stored insertions, factoring it each time and leaving an appropriate insertion on the outside.  Also returns the innermost degeneracy and key cell, for acting on the head with: the cell gets prewhiskered by the left adjoint each time it crosses a modal field projection. *)
+  and act_apps : type hmode mode mu1 mu2 cod a b any.
+      (hmode, mode, any) apps ->
       (a, b) deg ->
       (mode, mu1, mu2, cod) Modalcell.t ->
-      any_deg * (mode, any) apps =
+      any_deg * hmode Modalcell.cod2_wrapped * (hmode, mode, any) apps =
    fun apps s c ->
     match apps with
-    | Emp -> (Any_deg s, Emp)
+    | Emp -> (Any_deg s, Wrap c, Emp)
     (* To act on an application, we compose the acting degeneracy with the delayed insertion, factor the result into a new insertion to leave outside and a smaller degeneracy to push in, and push the smaller degeneracy action into the application, acting on the function/struct. *)
     | Arg (rest, filter, args, ins) ->
         (* In the function case, we also act on the arguments by factorization of dimensions and by whiskering of keys. *)
@@ -566,18 +571,25 @@ module Act = struct
         let new_arg =
           let (Wrap newc) = Modalcell.prewhisker_wrapped c modality in
           act_cube { act = (fun x s c -> act_normal x s c) } args fb newc in
-        let new_s, new_rest = act_apps rest fa c in
-        (new_s, Arg (new_rest, arg_filter, new_arg, new_ins))
-    | Field (rest, fld, fldplus, ins) ->
+        let new_s, new_c, new_rest = act_apps rest fa c in
+        (new_s, new_c, Arg (new_rest, arg_filter, new_arg, new_ins))
+    | Field (rest, f, fld, fldplus, ins) -> (
         let (Insfact_comp_ext (fa, new_ins, _, _)) = insfact_comp_ext ins s in
         (* Note that we don't need to change the degeneracy, since it can be extended on the right as needed. *)
         let (Plus new_fldplus) = D.plus (D.plus_right fldplus) in
-        let new_s, new_rest = act_apps rest fa c in
-        (new_s, Field (new_rest, fld, new_fldplus, new_ins))
+        (* Crossing a modal field projection, the cell is prewhiskered by the left adjoint, since the spine inside lives behind a lock by it.  For ordinary fields the left adjoint is the identity and the cell passes through unchanged. *)
+        match Modality.compare_id f with
+        | Eq ->
+            let new_s, new_c, new_rest = act_apps rest fa c in
+            (new_s, new_c, Field (new_rest, f, fld, new_fldplus, new_ins))
+        | Neq ->
+            let (Wrap c) = Modalcell.prewhisker_wrapped c f in
+            let new_s, new_c, new_rest = act_apps rest fa c in
+            (new_s, new_c, Field (new_rest, f, fld, new_fldplus, new_ins)))
     | Inst (rest, dim, args) ->
         let (Acted_instargs (fa, new_args, None)) = act_instargs args s c None in
-        let new_s, new_rest = act_apps rest fa c in
-        (new_s, Inst (new_rest, dim, new_args))
+        let new_s, new_c, new_rest = act_apps rest fa c in
+        (new_s, new_c, Inst (new_rest, dim, new_args))
 
   and act_instargs : type mode mu1 mu2 cod a b n j nj p.
       (n, j, nj, mode normal) TubeOf.t ->
@@ -614,16 +626,16 @@ module Act = struct
    fun lev s c ->
     match !lev with
     | Deferred_eval (env, tm, ins, key, apps) ->
-        let Any_deg s, apps = act_apps apps s c in
+        let Any_deg s, Wrap hc, apps = act_apps apps s c in
         let (Insfact_comp_ext (fa, ins, _, _)) = insfact_comp_ext ins s in
         let acted_env = act_env env (opt_op_of_deg fa) in
-        (* The stored key is applied to the evaluated value when forcing, and the new cell acts on the result of that, so the stored key is applied first in the composite. *)
-        let (Wrap newkey) = key_vcomp c key in
+        (* The stored key is applied to the evaluated value when forcing, and the new cell acts on the result of that, so the stored key is applied first in the composite.  We use the cell returned by act_apps, which lives at the mode inside the pending spine. *)
+        let (Wrap newkey) = key_vcomp hc key in
         ref (Deferred_eval (acted_env, tm, ins, newkey, apps))
     | Deferred (tm, s', key, apps) ->
-        let Any_deg s, apps = act_apps apps s c in
+        let Any_deg s, Wrap hc, apps = act_apps apps s c in
         let (DegExt (_, _, fa)) = comp_deg_extending s' s in
-        let (Wrap newkey) = key_vcomp c key in
+        let (Wrap newkey) = key_vcomp hc key in
         ref (Deferred (tm, fa, newkey, apps))
     | Ready tm -> ref (Deferred ((fun () -> tm), s, c, Emp))
 end
@@ -654,19 +666,24 @@ let act_value_cube : type mode mu1 mu2 cod a s m n.
     (m, (mode, s) value) CubeOf.t =
  fun force xs s c -> act_cube { act = (fun x s c -> act_value (force x) s c) } xs s c
 
-(* Like apply_lazy for fields.  Was deferred to here since it requires pushing the insertion through with act. *)
-let field_lazy : type mode s n t i.
-    mode Mode.t -> (mode, s) lazy_eval -> i Field.t -> (n, t, i) insertion -> (mode, s) lazy_eval =
- fun mode lev fld fldins ->
+(* Like apply_lazy for fields.  Was deferred to here since it requires pushing the insertion through with act.  The modality is the left adjoint of the field's adjunction, so the input lives at its source mode and the output at its target mode. *)
+let field_lazy : type src f mode s n t i.
+    (src, f, mode) Modality.t ->
+    (src, s) lazy_eval ->
+    i Field.t ->
+    (n, t, i) insertion ->
+    (mode, s) lazy_eval =
+ fun f lev fld fldins ->
+  let src = Modality.src f in
   let n, k = (cod_left_ins fldins, cod_right_ins fldins) in
   let (Plus nk) = D.plus k in
   let p = deg_of_perm (perm_inv (perm_of_ins_plus fldins nk)) in
-  match !(act_lazy_eval lev p (Modalcell.id2 mode)) with
+  match !(act_lazy_eval lev p (Modalcell.id2 src)) with
   | Deferred_eval (env, tm, ins, cell, apps) ->
-      ref (Deferred_eval (env, tm, ins, cell, Field (apps, fld, nk, ins_zero n)))
+      ref (Deferred_eval (env, tm, ins, cell, Field (apps, f, fld, nk, ins_zero n)))
   | Deferred (tm, ins, cell, apps) ->
-      ref (Deferred (tm, ins, cell, Field (apps, fld, nk, ins_zero n)))
+      ref (Deferred (tm, ins, cell, Field (apps, f, fld, nk, ins_zero n)))
   | Ready tm ->
       ref
         (Deferred
-           ((fun () -> tm), id_deg D.zero, Modalcell.id2 mode, Field (Emp, fld, nk, ins_zero n)))
+           ((fun () -> tm), id_deg D.zero, Modalcell.id2 src, Field (Emp, f, fld, nk, ins_zero n)))

@@ -38,8 +38,15 @@ type (_, _, _, _) adjunction =
       -> ('a, 'f, 'g, 'b) adjunction
 
 type (_, _, _) sinister = Sinister : ('a, 'f, 'g, 'b) adjunction -> ('a, 'f, 'b) sinister
+type _ any_adjunction = Any_adjunction : ('a, 'f, 'g, 'b) adjunction -> 'a any_adjunction
 
+val id_adjunction : 'a Mode.t -> ('a, 'a Modality.id, 'a Modality.id, 'a) adjunction
 val id_sinister : 'a Mode.t -> ('a, 'a Modality.id, 'a) sinister
+val adj_left : ('a, 'f, 'g, 'b) adjunction -> ('a, 'f, 'b) Modality.t
+val adj_right : ('a, 'f, 'g, 'b) adjunction -> ('b, 'g, 'a) Modality.t
+
+val compare_adjunction_id :
+  ('a, 'f, 'g, 'b) adjunction -> ('f * 'g * 'b, 'a Modality.id * 'a Modality.id * 'a) Eq.compare
 
 module type Theory = sig
   val sinister : ('a, 'm, 'b) Modality.t -> ('a, 'm, 'b) sinister option
@@ -49,6 +56,7 @@ module type Theory = sig
 end
 
 val choose_theory : (module Theory) -> unit
+val sinister : ('a, 'f, 'b) Modality.t -> ('a, 'f, 'b) sinister option
 
 type (_, _, _, _, _, _) find_unique =
   | Unique : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'b, 'a, 'n, 'b) find_unique

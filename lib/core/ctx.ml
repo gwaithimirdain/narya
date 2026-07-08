@@ -132,8 +132,8 @@ let filter_entry : type dom modality mode f n.
   | Vis { filter; _ } | Invis { filter; _ } -> filter
 
 (* Given an entry containing no let-bound variables, produce an "app" that says how to apply a function to its cube of (free) variables. *)
-let app_entry : type dom modality mode f n any.
-    (mode, any) apps -> (dom, modality, mode, f, n) entry -> (mode, noninst) apps =
+let app_entry : type hmode dom modality mode f n any.
+    (hmode, mode, any) apps -> (dom, modality, mode, f, n) entry -> (hmode, mode, noninst) apps =
  fun apps e ->
   match e with
   | Vis { bindings; filter; _ } | Invis { filter; bindings; _ } ->
@@ -290,7 +290,7 @@ module Ordered = struct
         let newctx = lock_to ctx (Path (modality, mode)) (Plus_lock (l, al)) in
         Lock (newctx, mu)
 
-  let rec apps : type mode a b. (mode, a, b) t -> (mode, noninst) apps = function
+  let rec apps : type mode a b. (mode, a, b) t -> (mode, mode, noninst) apps = function
     | Emp _ -> Emp
     | Snoc (ctx, e, _) -> app_entry (apps ctx) e
     | Lock _ | Parametric_lock _ -> fatal (Anomaly "context lock in Ctx.apps")

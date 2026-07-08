@@ -1,6 +1,7 @@
 open Util
 open Tbwd
 open Dim
+open Modal
 open Tctx
 open Term
 open Value
@@ -12,20 +13,25 @@ open Value
 
    We parametrize this "status" datatype over the energy of the term (kinetic or potential), since only potential terms have any status to remember.  This implies that status also serves the purpose of recording which kind of term we are checking, so we don't need to pass that around separately. *)
 type (_, _) potential_head =
-  (* For typechecking higher coinductive types and higher coinduction, we allow a nonzero dimension. *)
-  | Constant : Constant.t * 'n D.t -> ('mode, 'mode emp) potential_head
+  (* For typechecking higher coinductive types and higher coinduction, we allow a nonzero dimension.  We also store the mode, so that it remains available when the head is buried inside a mode-crossing application spine. *)
+  | Constant : Constant.t * 'mode Mode.t * 'n D.t -> ('mode, 'mode emp) potential_head
   | Meta : ('mode, 'x, 'a, potential) Meta.t * ('mode, 'n, 'a) env -> ('mode, 'a) potential_head
 
 let head_of_potential : type mode a. (mode, a) potential_head -> mode Value.head = function
-  | Constant (name, n) -> Const { name; ins = ins_zero n }
+  | Constant (name, _, n) -> Const { name; ins = ins_zero n }
   | Meta (meta, env) -> Meta { meta; env; ins = ins_zero (dim_env env) }
+
+let mode_of_potential : type mode a. (mode, a) potential_head -> mode Mode.t = function
+  | Constant (_, mode, _) -> mode
+  | Meta (meta, _) -> Meta.mode meta
 
 type (_, _, _) status =
   | Kinetic : [ `Let | `Nolet ] -> ('mode, 'b, kinetic) status
+  (* The head (the constant or metavariable being defined) lives at its own mode, which differs from the current checking mode when the spine of arguments crosses a modal field projection (i.e. when we are checking the component of a modal field in a comatch or tuple).  The hypothesizing callback takes a term in the current context to a definition of the head in its own context. *)
   | Potential :
-      ('mode, 'a) potential_head
-      * ('mode, 'any) apps
-      * (('mode, 'b, potential) term -> ('mode, 'a, potential) term)
+      ('hmode, 'a) potential_head
+      * ('hmode, 'mode, 'any) apps
+      * (('mode, 'b, potential) term -> ('hmode, 'a, potential) term)
       -> ('mode, 'b, potential) status
 
 let energy : type mode b s. (mode, b, s) status -> s energy = function

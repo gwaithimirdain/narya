@@ -67,6 +67,8 @@ let remake : type mode a b s. (File.t -> File.t) -> (mode, a, b, s) t -> (mode, 
   | Instant _ -> raise (Failure "can't remake interactive metavariable")
 
 (* Printable names. *)
+let mode : type mode a b s. (mode, a, b, s) t -> mode Mode.t = fun m -> m.mode
+
 let name : type mode a b s. (mode, a, b, s) t -> string =
  fun x ->
   match x.identity with

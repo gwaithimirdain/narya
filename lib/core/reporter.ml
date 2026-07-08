@@ -240,6 +240,13 @@ module Code = struct
     | Locked_constant : printable -> t
     | Missing_key : ('dom1, 'mu1, 'cod1) Modality.t * ('dom2, 'mu2, 'cod2) Modality.t -> t
     | Axiom_in_parametric_definition : printable -> t
+    | Modality_not_sinister : ('dom, 'mu, 'cod) Modality.t -> t
+    | Wrong_locking_modality : {
+        field : string;
+        expected : ('dom1, 'mu1, 'cod1) Modality.t option;
+        got : ('dom2, 'mu2, 'cod2) Modality.t option;
+      }
+        -> t
     | Hole : string * printable -> t
     | No_open_holes : t
     | Open_holes : int -> t
@@ -409,6 +416,8 @@ module Code = struct
     | Locked_constant _ -> Error
     | Missing_key _ -> Error
     | Axiom_in_parametric_definition _ -> Error
+    | Modality_not_sinister _ -> Error
+    | Wrong_locking_modality _ -> Error
     | Hole _ -> Info
     | No_open_holes -> Info
     | Open_holes _ -> Warning
@@ -585,6 +594,8 @@ module Code = struct
     | Non_mode_synthesizing _ -> "E1703"
     | Unknown_modality _ -> "E1704"
     | Missing_key _ -> "E1705"
+    | Modality_not_sinister _ -> "E1711"
+    | Wrong_locking_modality _ -> "E1712"
     | Invalid_mode_theory -> "E1710"
     | Intangible_modality _ -> "E1706"
     | Nontransparent_window_modality _ -> "E1707"
@@ -949,6 +960,24 @@ module Code = struct
             (print (PString (Modality.to_string vdom)))
             pp_printed
             (print (PString (Modality.to_string vcod)))
+      | Modality_not_sinister m ->
+          textf
+            "modality %s is not sinister: it has no declared right adjoint, so it cannot parametrize a modal field"
+            (Modality.to_string m)
+      | Wrong_locking_modality { field; expected; got } -> (
+          match (expected, got) with
+          | Some expected, Some got ->
+              textf
+                "field %s is modal with left adjoint %s, but was projected with locking modality %s"
+                field (Modality.to_string expected) (Modality.to_string got)
+          | Some expected, None ->
+              textf
+                "field %s is modal with left adjoint %s, so projecting it requires a locking annotation such as (_ : %s | _) .%s"
+                field (Modality.to_string expected) (Modality.to_string expected) field
+          | None, Some got ->
+              textf "field %s is not modal, but was projected with locking modality %s" field
+                (Modality.to_string got)
+          | None, None -> textf "field %s has mismatched locking modalities" field)
       | Anomaly str -> textf "anomaly: %s" str
       | No_such_level i -> textf "@[<hov 2>no level variable@ %a@ in context@]" pp_printed (print i)
       | Redefining_constant name ->

@@ -66,7 +66,7 @@ let check_term (def : defined_const) (discrete : unit Constant.Map.t option) : c
       let tm =
         Ctx.lam ctx
           (check ?discrete
-             (Potential (Constant (const, D.zero), Ctx.apps ctx, Ctx.lam ctx))
+             (Potential (Constant (const, Ctx.mode ctx, D.zero), Ctx.apps ctx, Ctx.lam ctx))
              ctx (Lazy.force tm) ety) in
       Global.set const mode ~parametric:`Maybe_parametric tm;
       Checked (const, mode, tm)
@@ -80,7 +80,7 @@ let check_term (def : defined_const) (discrete : unit Constant.Map.t option) : c
             | None -> fatal (Non_mode_synthesizing "synthesizing def")) in
       let Checked_tel (cparams, ctx), _ = check_tel (Ctx.empty mode) params in
       let ctm, ety =
-        synth (Potential (Constant (const, D.zero), Ctx.apps ctx, Ctx.lam ctx)) ctx tm in
+        synth (Potential (Constant (const, Ctx.mode ctx, D.zero), Ctx.apps ctx, Ctx.lam ctx)) ctx tm in
       let cty = readback_val ctx ety in
       let ty = Telescope.pis cparams cty in
       let tm = Ctx.lam ctx ctm in

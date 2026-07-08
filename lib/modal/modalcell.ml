@@ -50,19 +50,42 @@ type (_, _, _, _) adjunction =
 
 type (_, _, _) sinister = Sinister : ('a, 'f, 'g, 'b) adjunction -> ('a, 'f, 'b) sinister
 
-let id_sinister : type a. a Mode.t -> (a, a Modality.id, a) sinister =
+(* An adjunction with a specified source mode but everything else existential. *)
+type _ any_adjunction = Any_adjunction : ('a, 'f, 'g, 'b) adjunction -> 'a any_adjunction
+
+let id_adjunction : type a. a Mode.t -> (a, a Modality.id, a Modality.id, a) adjunction =
  fun a ->
   let id = Modality.id a in
-  Sinister
-    (Adjunction
-       {
-         left = id;
-         right = id;
-         right_left = Modality.comp_id id;
-         left_right = Modality.comp_id id;
-         unit = Id id;
-         counit = Id id;
-       })
+  Adjunction
+    {
+      left = id;
+      right = id;
+      right_left = Modality.comp_id id;
+      left_right = Modality.comp_id id;
+      unit = Id id;
+      counit = Id id;
+    }
+
+let id_sinister : type a. a Mode.t -> (a, a Modality.id, a) sinister =
+ fun a -> Sinister (id_adjunction a)
+
+(* Accessors for the data of an adjunction. *)
+let adj_left : type a f g b. (a, f, g, b) adjunction -> (a, f, b) Modality.t = function
+  | Adjunction { left; _ } -> left
+
+let adj_right : type a f g b. (a, f, g, b) adjunction -> (b, g, a) Modality.t = function
+  | Adjunction { right; _ } -> right
+
+(* Decide whether an adjunction is the identity adjunction, giving type-level equations if so.  This is used to take fast paths (and preserve pre-modal behavior exactly) for ordinary non-modal fields, which are stored as fields modal over the identity adjunction. *)
+let compare_adjunction_id : type a f g b.
+    (a, f, g, b) adjunction -> (f * g * b, a Modality.id * a Modality.id * a) Eq.compare = function
+  | Adjunction { left; right; _ } -> (
+      match Modality.compare_id left with
+      | Neq -> Neq
+      | Eq -> (
+          match Modality.compare_id right with
+          | Neq -> Neq
+          | Eq -> Eq))
 
 module type Theory = sig
   val sinister : ('a, 'm, 'b) Modality.t -> ('a, 'm, 'b) sinister option
@@ -81,6 +104,12 @@ let theory : (module Theory) ref =
     end : Theory)
 
 let choose_theory (t : (module Theory)) = theory := t
+
+(* Ask the current theory whether a modality is sinister (a declared left adjoint), obtaining the adjunction data if so. *)
+let sinister : type a f b. (a, f, b) Modality.t -> (a, f, b) sinister option =
+ fun f ->
+  let module T = (val !theory) in
+  T.sinister f
 
 type (_, _) wrapped = Wrap : ('a, 'm, 'n, 'b) t -> ('a, 'b) wrapped
 type (_, _, _) cod_wrapped = Wrap : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'b) cod_wrapped

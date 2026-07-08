@@ -46,6 +46,17 @@ let if_known (test : 'a Err.t option) err =
 
 let ok = Ok ()
 
+(* If an application spine crosses no modal field projection (every field has the identity left adjoint), then its head lives at the ambient mode; this returns a witness of that mode equality, or None if the spine is modal. *)
+let rec nonmodal_apps : type hmode mode any. (hmode, mode, any) apps -> (hmode, mode) Eq.t option =
+  function
+  | Emp -> Some Eq
+  | Arg (rest, _, _, _) -> nonmodal_apps rest
+  | Inst (rest, _, _) -> nonmodal_apps rest
+  | Field (rest, fm, _, _, _) -> (
+      match Modality.compare_id fm with
+      | Eq -> nonmodal_apps rest
+      | Neq -> None)
+
 module ErrOpt = struct
   type 'a t = 'a Err.t option
 
@@ -102,9 +113,9 @@ module Equal = struct
         equal_at newctx (apply_term x filter newargs) (apply_term y filter newargs) output
     (* Codatatypes (without eta) don't need to be dealt with here, even though structs can't be compared synthesizingly, since codatatypes aren't actually inhabited by (kinetic) structs, only neutral terms that are equal to potential structs.  In the case of record types with eta, if there is a nonidentity insertion outside, then the type isn't actually a record type, *but* it still has an eta-rule since it is *isomorphic* to a record type!  Thus, instead of checking whether the insertion is the identity, we apply its inverse permutation to the terms being compared.  And because we pass off to 'field' and 'tyof_field', we don't need to make explicit use of any of the other data here. *)
     | Canonical
-        (type mn m n)
+        (type hmode mn m n)
         ((_, Codata (type c a et) ({ eta; fields; _ } : (mode, m, n, c, a, et) codata_args), ins, _) :
-          mode head
+          hmode head
           * (mode, m, n) canonical
           * (mn, m, n) insertion
           * (D.zero, mn, mn, mode normal) TubeOf.t) -> (
@@ -121,12 +132,19 @@ module Equal = struct
               (fun [
                      CodatafieldAbwd.Entry
                        (type i)
-                       ((fld, Lower _) : i Field.t * (i, mode * a * n * has_eta) Codatafield.t);
+                       ((fld, Lower (adj, _, _)) :
+                         i Field.t * (i, mode * a * n * has_eta) Codatafield.t);
                    ] ->
-                equal_at ctx
-                  (field_term (Ctx.mode ctx) x fld fldins)
-                  (field_term (Ctx.mode ctx) y fld fldins)
-                  (tyof_field (Ok x) ty fld ~shuf:Trivial fldins))
+                (* For a modal field, both terms are keyed by the adjunction unit to put them into a context where the modal field can be projected, and the projections are compared in the context locked by the right adjoint.  For ordinary fields the unit is the identity and the lock is trivial. *)
+                let (Adjunction { left; right; unit; _ }) = adj in
+                let xu = act_value x (id_deg D.zero) unit in
+                let yu = act_value y (id_deg D.zero) unit in
+                let tyu = gact_ty None ty (id_deg D.zero) unit in
+                let (Locked (_, lctx)) = Ctx.lock ctx right in
+                equal_at lctx
+                  (field_term left xu fld fldins)
+                  (field_term left yu fld fldins)
+                  (tyof_field left (Ok xu) tyu fld ~shuf:Trivial fldins))
               [ fields ]
         (* At a codatatype without eta, there are no kinetic structs, only comatches, and those are not compared componentwise, only as neutrals, since they are generative. *)
         | Noeta -> equal_val ctx x y)
@@ -200,14 +218,22 @@ module Equal = struct
     match (x, y) with
     | ( Neu { head = head1; args = apps1; value = _; ty = _ },
         Neu { head = head2; args = apps2; value = _; ty = _ } ) -> (
-        (* To check two neutral applications are equal, with their types, we first check if the functions are equal, including their types and hence also their domains and codomains (and also they have the same insertion applied outside).  We don't need to check that the types agree; this procedure concludes equality of types rather than assumes it. *)
-        match equal_head ctx head1 head2 with
-        | Some (Error err) -> Error (Unequal.Heads err)
-        | None ->
-            let h1, h2 = (readback_head ctx head1, readback_head ctx head2) in
-            Error (Unequal.Heads (Terms (PTerm (ctx, h1), PTerm (ctx, h2))))
-        | Some (Ok ()) -> (
-            match equal_apps ctx apps1 apps2 with
+        (* To check two neutral applications are equal, with their types, we check if the functions are equal, including their types and hence also their domains and codomains (and also they have the same insertion applied outside).  We don't need to check that the types agree; this procedure concludes equality of types rather than assumes it. *)
+        match (nonmodal_apps apps1, nonmodal_apps apps2) with
+        (* If neither spine crosses a modal field projection, the heads are at the ambient mode and we can compare them first (as we always did before modal fields), which gives more precise "unequal heads" error messages. *)
+        | Some Eq, Some Eq -> (
+            match equal_head ctx head1 head2 with
+            | Some (Error err) -> Error (Unequal.Heads err)
+            | None ->
+                let h1, h2 = (readback_head ctx head1, readback_head ctx head2) in
+                Error (Unequal.Heads (Terms (PTerm (ctx, h1), PTerm (ctx, h2))))
+            | Some (Ok ()) -> (
+                match equal_apps ctx apps1 apps2 ~heads:None with
+                | None -> Error (Unequal.Terms (PVal (ctx, x), PVal (ctx, y)))
+                | Some x -> x))
+        (* Otherwise, the heads live at the mode at the head end of the spine, so the head comparison happens at the bottom of the spine recursion, in the context locked by the modal field projections crossed on the way. *)
+        | _ -> (
+            match equal_apps ctx apps1 apps2 ~heads:(Some (head1, head2)) with
             | None -> Error (Unequal.Terms (PVal (ctx, x), PVal (ctx, y)))
             | Some x -> x))
     | Lam _, _ | _, Lam _ -> fatal (Anomaly "unexpected lambda in synthesizing equality-check")
@@ -304,21 +330,34 @@ module Equal = struct
         | Neq, _ | _, Neq -> None)
     | _, _ -> None
 
-  (* Check that the arguments of two entire application spines of equal functions are equal.  This is basically a left fold, but we make sure to iterate from left to right, and fail rather than raising an exception if the lists have different lengths.  As noted above, here we can go back to *assuming* that they have equal types, and thus passing off to the eta-expanding equality check.  *)
-  and equal_apps : type mode any1 any2 a b.
-      (mode, a, b) Ctx.t -> (mode, any1) apps -> (mode, any2) apps -> unit ErrOpt.t =
-   fun ctx apps1 apps2 ->
+  (* Check that the arguments of two entire application spines of equal functions are equal.  This is basically a left fold, but we make sure to iterate from left to right, and fail rather than raising an exception if the lists have different lengths.  As noted above, here we can go back to *assuming* that they have equal types, and thus passing off to the eta-expanding equality check.  If heads are supplied, they are compared at the bottom of the recursion, where the context has been locked by the left adjoints of any modal field projections crossed on the way in, so that it lives at the heads' mode. *)
+  and equal_apps : type h1 h2 mode any1 any2 a b.
+      (mode, a, b) Ctx.t ->
+      (h1, mode, any1) apps ->
+      (h2, mode, any2) apps ->
+      heads:(h1 head * h2 head) option ->
+      unit ErrOpt.t =
+   fun ctx apps1 apps2 ~heads ->
     let open Monad.Ops (ErrOpt) in
     (* Iterating from left to right is important because it ensures that at the point of checking equality for any pair of arguments, we know that they have the same type, since they are valid arguments of equal functions with all previous arguments equal.  Thus each case *starts* with its recursive call. *)
     match (apps1, apps2) with
-    | Emp, Emp -> return ()
+    | Emp, Emp -> (
+        match heads with
+        | None -> return ()
+        | Some (head1, head2) -> (
+            match equal_head ctx head1 head2 with
+            | Some (Ok ()) -> return ()
+            | Some (Error err) -> Some (Error (Unequal.Heads err))
+            | None ->
+                let t1, t2 = (readback_head ctx head1, readback_head ctx head2) in
+                Some (Error (Unequal.Heads (Terms (PTerm (ctx, t1), PTerm (ctx, t2)))))))
     | Arg (rest1, filter1, a1, i1), Arg (rest2, filter2, a2, i2) -> (
         let modality1 = Modality.filter_modality filter1 in
         let modality2 = Modality.filter_modality filter2 in
         match Modality.compare modality1 modality2 with
         | Neq -> None
         | Eq -> (
-            let* () = equal_apps ctx rest1 rest2 in
+            let* () = equal_apps ctx rest1 rest2 ~heads in
             let To d1, To d2 = (deg_of_ins i1, deg_of_ins i2) in
             let* () = ErrOpt.of_opt (deg_equiv d1 d2) in
             let (Locked (_, lctx)) = Ctx.lock ctx modality1 in
@@ -331,16 +370,21 @@ module Equal = struct
                 fatal
                   (Dimension_mismatch ("application in equality-check", CubeOf.dim a1, CubeOf.dim a2))
             ))
-    | Field (rest1, f1, _, i1), Field (rest2, f2, _, i2) -> (
-        let* () = equal_apps ctx rest1 rest2 in
-        let To d1, To d2 = (deg_of_ins i1, deg_of_ins i2) in
-        let* () = ErrOpt.of_opt (deg_equiv d1 d2) in
-        (* The 'plus' parts must automatically be equal if the fields are equal and well-typed. *)
-        match Field.equal f1 f2 with
-        | Eq -> Some (Ok ())
-        | Neq -> Some (Error (Unequal.Fields (f1, f2))))
+    | Field (rest1, fm1, f1, _, i1), Field (rest2, fm2, f2, _, i2) -> (
+        (* The spines inside a modal field projection live behind a lock by the left adjoint, so we compare them in the locked context. *)
+        match Modality.compare fm1 fm2 with
+        | Neq -> None
+        | Eq -> (
+            let (Locked (_, lctx)) = Ctx.lock ctx fm1 in
+            let* () = equal_apps lctx rest1 rest2 ~heads in
+            let To d1, To d2 = (deg_of_ins i1, deg_of_ins i2) in
+            let* () = ErrOpt.of_opt (deg_equiv d1 d2) in
+            (* The 'plus' parts must automatically be equal if the fields are equal and well-typed. *)
+            match Field.equal f1 f2 with
+            | Eq -> Some (Ok ())
+            | Neq -> Some (Error (Unequal.Fields (f1, f2)))))
     | Inst (rest1, _, a1), Inst (rest2, _, a2) ->
-        let* () = equal_apps ctx rest1 rest2 in
+        let* () = equal_apps ctx rest1 rest2 ~heads in
         equal_tyargs ctx a1 a2
     | _, _ -> None
 
@@ -537,4 +581,4 @@ let equal_at ctx x y ty = fallback @@ fun () -> Equal.equal_at ctx x y ty
 let equal_val ctx x y = fallback @@ fun () -> Equal.equal_val ctx x y
 let equal_nf ctx x y = fallback @@ fun () -> Equal.equal_nf ctx x y
 let equal_tyargs ctx a1 a2 = fallback_opt @@ fun () -> Equal.equal_tyargs ctx a1 a2
-let equal_apps ctx a1 a2 = fallback_opt @@ fun () -> Equal.equal_apps ctx a1 a2
+let equal_apps ctx a1 a2 = fallback_opt @@ fun () -> Equal.equal_apps ctx a1 a2 ~heads:None

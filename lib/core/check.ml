@@ -232,18 +232,17 @@ let rec actions : type a. a check located option -> any_deg * a check located op
 
 (* Temporarily define a given head (constant or meta) to be a given value, in executing a callback.  However, if an error has occurred earlier in typechecking other parts of it, then instead bind that head to an error value that doesn't allow it to be used. *)
 let run_with_definition : type mode a c.
-    mode Modal.Mode.t ->
     (mode, a) potential_head ->
     (mode, a, potential) term ->
     Code.t Asai.Diagnostic.t Bwd.t ->
     (unit -> c) ->
     c =
- fun mode head tm errs f ->
+ fun head tm errs f ->
   match (head, errs) with
   (* In the case of an error, we bind the head to the error "Accumulated Emp".  That has the effect that accesses to it fail, but aren't displayed to the user as anything, since what's really going on is that we refuse to even try to typecheck later parts of a term that depend on previous parts that already failed, and this "error" is just detecting that dependence. *)
   (* We ignore the substituted dimension of the head, since this is really setting the *global* definition, which is not substituted. *)
-  | Constant (c, _), Emp -> Global.with_definition c mode (`Defined tm) f
-  | Constant (c, _), Snoc _ -> Global.without_definition c (Accumulated ("dependence", Emp)) f
+  | Constant (c, mode, _), Emp -> Global.with_definition c mode (`Defined tm) f
+  | Constant (c, _, _), Snoc _ -> Global.without_definition c (Accumulated ("dependence", Emp)) f
   | Meta (m, _), Emp -> Global.with_meta_definition m tm f
   | Meta (m, _), Snoc _ -> Global.without_meta_definition m (Accumulated ("dependence", Emp)) f
 
@@ -276,8 +275,8 @@ type (_, _, _, _) synthable_branch =
       -> ('mode, 'a, 'm, 'ij) synthable_branch
 
 (* This preprocesssing step pairs each user-provided branch with the corresponding constructor information from the datatype.  Curiously, the only mode parameter that appears here is the *source* of the window modality, i.e. the mode at which the datatype and discriminee live. *)
-let merge_branches : type dom a m ij.
-    dom head ->
+let merge_branches : type hmode dom a m ij.
+    hmode head ->
     (Constr.t, a branch) Abwd.t ->
     (Constr.t, (dom, m, ij) Value.dataconstr) Abwd.t ->
     (Constr.t * (dom, a, m, ij) checkable_branch) list =
@@ -717,7 +716,7 @@ let rec check : type mode a b s.
         (* TODO: Move this into a helper function, it's too long to go in here. *)
         match view_type ~severity ty "typechecking constr" with
         | Canonical
-            (type mn m n)
+            (type hmode mn m n)
             (( name,
                Data
                  {
@@ -731,7 +730,7 @@ let rec check : type mode a b s.
                  },
                ins,
                tyargs ) :
-              _ * _ * (mn, m, n) insertion * (D.zero, mn, mn, mode normal) TubeOf.t) -> (
+              hmode head * _ * (mn, m, n) insertion * (D.zero, mn, mn, mode normal) TubeOf.t) -> (
             let Eq = eq_of_ins_zero ins in
             (* We don't need the *types* of the parameters or indices, which are stored in the type of the constant name.  The variable ty_indices (defined above) contains the *values* of the indices of this instance of the datatype, while tyargs (defined by view_type, above) contains the instantiation arguments of this instance of the datatype.  We check that the dimensions agree, and find our current constructor in the datatype definition. *)
             match Abwd.find_opt constr constrs with
@@ -1481,7 +1480,7 @@ and check_match_branches : type dom window mode a b bm.
   match view_type varty "check_match_branches" with
   | Canonical
     (* Data always has intrinsic dimension zero, but it seems that the syntax for binding type variables in a GADT match can't take that into account.  So we have to give "zero" a name here, and two different names for m. *)
-      (type d_zero m m')
+      (type hmode d_zero m m')
       (( name,
          Data
            (type j ij)
@@ -1497,7 +1496,7 @@ and check_match_branches : type dom window mode a b bm.
              (_, _, j, ij) data_args),
          ins,
          inst_args ) :
-        dom head
+        hmode head
         * (dom, m, d_zero) canonical
         * (m', m, d_zero) insertion
         * (D.zero, m', m', dom normal) TubeOf.t) -> (
@@ -1778,7 +1777,7 @@ and check_var_match : type dom modality mode a b bm.
   (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
   match view_type varty "check_var_match" with
   | Canonical
-      (type mn m n)
+      (type hmode mn m n)
       (( name,
          Data
            (type j ij)
@@ -1794,7 +1793,7 @@ and check_var_match : type dom modality mode a b bm.
              (_, _, j, ij) data_args),
          ins,
          inst_args ) :
-        _ * (dom, m, n) canonical * (mn, m, n) insertion * _) -> (
+        hmode head * (dom, m, n) canonical * (mn, m, n) insertion * _) -> (
       let Eq = eq_of_ins_zero ins in
       check_window_transparency window data_constrs recursive;
       let tyfam =
@@ -2041,47 +2040,60 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
     (mode, c, potential) status =
  fun status window plus_lock newtm dim branches annotate comp eval_readback perm constr ->
   let (Potential
-         (type d any)
+         (type hm d any)
          ((head, args, hyp) :
-           (mode, d) potential_head
-           * (mode, any) apps
-           * ((mode, a, potential) term -> (mode, d, potential) term))) =
+           (hm, d) potential_head
+           * (hm, mode, any) apps
+           * ((mode, a, potential) term -> (hm, d, potential) term))) =
     status in
   let head, apps =
     match eval_readback with
     | Some (oldctx, newctx) ->
-        let newenv = Ctx.env newctx in
-        let rec erapps : type any. (mode, any) apps -> (mode, any) apps = function
-          | Emp -> Emp
+        (* The head is transformed at the bottom of the spine recursion, where the accumulated locks put the contexts at its mode. *)
+        let rec erapps : type m2 any2 x1 z1 k.
+            (m2, x1, z1) Ctx.t ->
+            (m2, k, z1) env ->
+            (hm, m2, any2) apps ->
+            (hm, d) potential_head * (hm, m2, any2) apps =
+         fun oldctx newenv -> function
+          | Emp ->
+              let (erhead : (hm, d) potential_head) =
+                match head with
+                | Meta (meta, metaenv) ->
+                    let (Plus qn) = D.plus (dim_env metaenv) in
+                    Meta
+                      ( meta,
+                        eval_env newenv qn
+                          (readback_env oldctx metaenv (Global.find_meta meta).termctx) )
+                | Constant (c, cmode, dim) -> Constant (c, cmode, dim) in
+              (erhead, Emp)
           | Arg (rest, filter, xs, ins) ->
               let modality = Modality.filter_modality filter in
-              let (Locked (plus, oldctx)) = Ctx.lock oldctx modality in
-              let newenv = key_env newenv (Modalcell.id modality) plus in
-              Arg
-                ( erapps rest,
-                  filter,
-                  CubeOf.mmap
-                    {
-                      map =
-                        (fun _ [ x ] ->
-                          let tm = eval_term newenv (readback_nf oldctx x) in
-                          let ty = eval_term newenv (readback_val oldctx x.ty) in
-                          { tm; ty });
-                    }
-                    [ xs ],
-                  ins )
-          | Field (rest, x, y, z) -> Field (erapps rest, x, y, z)
+              let (Locked (plus, loldctx)) = Ctx.lock oldctx modality in
+              let lnewenv = key_env newenv (Modalcell.id modality) plus in
+              let erhead, errest = erapps oldctx newenv rest in
+              ( erhead,
+                Arg
+                  ( errest,
+                    filter,
+                    CubeOf.mmap
+                      {
+                        map =
+                          (fun _ [ x ] ->
+                            let tm = eval_term lnewenv (readback_nf loldctx x) in
+                            let ty = eval_term lnewenv (readback_val loldctx x.ty) in
+                            { tm; ty });
+                      }
+                      [ xs ],
+                    ins ) )
+          | Field (rest, f, x, y, z) ->
+              (* The spine inside a modal field projection lives behind a lock by the left adjoint. *)
+              let (Locked (plus, loldctx)) = Ctx.lock oldctx f in
+              let lnewenv = key_env newenv (Modalcell.id f) plus in
+              let erhead, errest = erapps loldctx lnewenv rest in
+              (erhead, Field (errest, f, x, y, z))
           | Inst _ -> fatal (Anomaly "inst in make_match_status") in
-        let (erhead : (mode, d) potential_head) =
-          match head with
-          | Meta (meta, metaenv) ->
-              Meta
-                ( meta,
-                  eval_env newenv
-                    (D.zero_plus (dim_env metaenv))
-                    (readback_env oldctx metaenv (Global.find_meta meta).termctx) )
-          | Constant (c, dim) -> Constant (c, dim) in
-        (erhead, erapps args)
+        erapps oldctx (Ctx.env newctx) args
     | None -> (head, args) in
   let hyp tm =
     let branches = branches |> Constr.Map.add constr (Term.Branch { annotate; comp; perm; tm }) in
@@ -2139,9 +2151,9 @@ and check_empty_match_lam : type mode a b.
  fun ctx ty first ->
   match view_type ty "check_empty_match_lam" with
   | Canonical
-      (type kn k n)
+      (type hmode kn k n)
       ((_, Pi { x = _; filter; doms; cods }, ins, tyargs) :
-        mode head
+        hmode head
         * (mode, k, n) canonical
         * (kn, k, n) insertion
         * (D.zero, kn, kn, mode normal) TubeOf.t) -> (
@@ -2254,7 +2266,7 @@ and check_data : type mode a b i.
       Potential (head, current_apps, hyp) ) -> (
       with_loc loc @@ fun () ->
       (* Temporarily bind the current constant to the up-until-now value, for recursive purposes, and also for specifying the output types for indexed inductive families (and presumably, one day, for higher inductive types). *)
-      run_with_definition (Ctx.mode ctx) head
+      run_with_definition head
         (hyp
            (Term.Canonical
               (Data
@@ -2283,7 +2295,7 @@ and check_data : type mode a b i.
             match eval_term (Ctx.env newctx) coutput with
             | Neu { head = Const { name = out_head; ins }; args = out_apps; value = _; ty = _ } -> (
                 match head with
-                | Constant (cc, n) when cc = out_head && Option.is_some (is_id_ins ins) -> (
+                | Constant (cc, _, n) when cc = out_head && Option.is_some (is_id_ins ins) -> (
                     match D.compare_zero n with
                     | Pos _ ->
                         fatal ?loc:output.loc
@@ -2328,44 +2340,45 @@ and check_data : type mode a b i.
           | Suc _ -> fatal (Missing_constructor_type c)))
 
 (* Get the indices from the codomain of a constructor's type. *)
-and get_indices : type mode a b any1 any2.
+and get_indices : type mode hmode1 hmode2 a b any1 any2.
     (mode, a, b) Ctx.t ->
     Constr.t ->
-    (mode, any1) apps ->
-    (mode, any2) apps ->
+    (hmode1, mode, any1) apps ->
+    (hmode2, mode, any2) apps ->
     Asai.Range.t option ->
     (mode, b, kinetic) term Vec.wrapped =
  fun ctx c current output loc ->
   with_loc loc @@ fun () ->
-  let output_params, output_indices =
+  let (Split_apps (output_params, output_indices)) =
     split_apps_at_length current output
     <|> Invalid_constructor_type (c, Left "wrong number of index arguments") in
+  (* We walk the remaining forward sequence of applications, which must consist of ordinary Args at the ambient mode: Fields (in particular modal ones) cannot be indices.  The mode equation between the start of the remainder and the ambient mode only becomes available once we reach the end of the sequence, so we return it from the recursion. *)
+  let rec go : type m1. (m1, mode) Fwd_app.fwd -> (m1, mode) Eq.t * (mode, b, kinetic) term list =
+    function
+    | Nil -> (Eq, [])
+    | Cons
+        ( Fwd_app.Arg
+            (type dom modality n k m mk)
+            ((filter, arg, ins) :
+              (dom, modality, m1, n, m) Modality.filter_dim
+              * (n, dom normal) CubeOf.t
+              * (mk, m, k) insertion),
+          rest ) -> (
+        let Eq, tms = go rest in
+        let modality = Modality.filter_modality filter in
+        match (is_id_ins ins, Modality.compare_id modality, D.compare (CubeOf.dim arg) D.zero) with
+        | Some _, Eq, Eq ->
+            (Eq, (readback_nf ctx (CubeOf.find_top arg) : (mode, b, kinetic) term) :: tms)
+        | None, _, _ -> fatal (Invalid_constructor_type (c, Left "no degeneracies are allowed"))
+        | _, Neq, _ -> fatal (Invalid_constructor_type (c, Left "no modal applications are allowed"))
+        | _, _, Neq ->
+            fatal (Invalid_constructor_type (c, Left "applications must be zero-dimensional")))
+    | Cons (Field _, _) -> fatal (Anomaly "field is not an index") in
+  let Eq, tms = go output_indices in
   match equal_apps ctx current output_params with
   | None -> fatal (Invalid_constructor_type (c, Left "unequal parameters"))
   | Some (Error why) -> fatal (Invalid_constructor_type (c, Right why))
-  | Some (Ok ()) ->
-      Vec.of_list_map
-        (function
-          | Fwd_app.Arg
-              (type dom modality n k m mk)
-              ((filter, arg, ins) :
-                (dom, modality, mode, n, m) Modality.filter_dim
-                * (n, dom normal) CubeOf.t
-                * (mk, m, k) insertion) -> (
-              let modality = Modality.filter_modality filter in
-              match
-                (is_id_ins ins, Modality.compare_id modality, D.compare (CubeOf.dim arg) D.zero)
-              with
-              | Some _, Eq, Eq -> (readback_nf ctx (CubeOf.find_top arg) : (mode, b, kinetic) term)
-              | None, _, _ ->
-                  fatal (Invalid_constructor_type (c, Left "no degeneracies are allowed"))
-              | _, Neq, _ ->
-                  fatal (Invalid_constructor_type (c, Left "no modal applications are allowed"))
-              | _, _, Neq ->
-                  fatal (Invalid_constructor_type (c, Left "applications must be zero-dimensional"))
-              )
-          | Field _ -> fatal (Anomaly "field is not an index"))
-        output_indices
+  | Some (Ok ()) -> Vec.of_list tms
 
 (* The common prefix of checking a codatatype or record type, which returns a (cube of) variables belonging to the up-until-now type so that later fields can refer to earlier ones.  It also dynamically binds the current constant or metavariable, if possible, to that value for recursive purposes.  Since this binding has to scope over the rest of the functions that are specific to codata or records, it uses CPS. *)
 and with_codata_so_far : type mode a b n c et.
@@ -2422,7 +2435,7 @@ and with_codata_so_far : type mode a b n c et.
       (Codata
          { eta; opacity; hints; dim; fields = checked_fields; termctx; fibrancy; is_glue = None })
   in
-  run_with_definition mode h (hyp codataterm) errs @@ fun () -> cont domvars codataterm
+  run_with_definition h (hyp codataterm) errs @@ fun () -> cont domvars codataterm
 
 and check_codata : type mode a b n et.
     (mode, b, potential) status ->
@@ -2446,7 +2459,7 @@ and check_codata : type mode a b n et.
             ~has_higher_fields errs
           @@ fun _ codataterm -> codataterm
       | Snoc _ -> fatal (Accumulated ("check_codata", errs)))
-  | (Wrap fld, Codatafield (x, rty)) :: raw_fields -> (
+  | (Wrap fld, Codatafield (x, lock, rty)) :: raw_fields -> (
       with_codata_so_far status eta ctx `Opaque hints dim tyargs checked_fields fibrancy
         ~has_higher_fields errs
       @@ fun domvars _ ->
@@ -2460,6 +2473,17 @@ and check_codata : type mode a b n et.
                 fatal (Lower_and_higher_methods_in_codata (Field.to_string fld))
             | _ -> ())
         | None -> () in
+      (* A modal field is specified by giving the left adjoint of its adjunction as a locking annotation on the self variable; we ask the mode theory whether that modality is sinister to obtain the adjunction data.  An unannotated field is modal over the identity adjunction. *)
+      let get_adjunction () : mode Modalcell.any_adjunction =
+        match lock with
+        | None -> Any_adjunction (Modalcell.id_adjunction (Ctx.mode ctx))
+        | Some lockname -> (
+            match Modality.of_name_src (fun x -> x.value) lockname.value (Ctx.mode ctx) with
+            | Error e -> modality_fatal "field locking annotation" (e :> modality_error)
+            | Ok (Wrap f) -> (
+                match Modalcell.sinister f with
+                | Some (Sinister adj) -> Any_adjunction adj
+                | None -> fatal (Modality_not_sinister f))) in
       match (D.compare_zero (Field.dim fld), D.compare_zero (TubeOf.inst tyargs), eta) with
       | Zero, _, _ ->
           (* Zero-dimensional field *)
@@ -2467,24 +2491,32 @@ and check_codata : type mode a b n et.
             Reporter.try_with ~fatal:(fun e -> (checked_fields, fibrancy, Snoc (errs, e)))
             @@ fun () ->
             check_name_clash ();
+            let (Any_adjunction adj) = get_adjunction () in
+            let (Adjunction { right; _ }) = adj in
+            (* The type of a modal field is checked in a context locked by the right adjoint. *)
+            let (Locked (plus_lock, lctx)) = Ctx.lock newctx right in
             (* Note the type of each field is checked *kinetically*: it's not part of the case tree. *)
-            let cty = check (Kinetic `Nolet) newctx rty (universe (Ctx.mode ctx) D.zero) in
-            let entry = CodatafieldAbwd.Entry (fld, Lower cty) in
+            let cty = check (Kinetic `Nolet) lctx rty (universe (Modality.src right) D.zero) in
+            let entry =
+              CodatafieldAbwd.Entry (fld, Codatafield.Lower (adj, plus_lock, cty)) in
             ( Snoc (checked_fields, entry),
               Fibrancy.Codata.add_field (Ctx.mode ctx) fibrancy entry,
               errs ) in
           check_codata status ctx eta hints tyargs checked_fields fibrancy raw_fields errs
             ~has_higher_fields
-      | Pos _, Zero, Noeta ->
-          (* Higher-dimensional field, currently requires a zero-dimensional codatatype (non-Gel). *)
-          let checked_fields, errs =
-            Reporter.try_with ~fatal:(fun e -> (checked_fields, Snoc (errs, e))) @@ fun () ->
-            check_name_clash ();
-            let (Degctx (plusmap, degctx, _)) = degctx newctx (Field.dim fld) in
-            let cty = check (Kinetic `Nolet) degctx rty (universe (Ctx.mode ctx) D.zero) in
-            (Snoc (checked_fields, Entry (fld, Codatafield.Higher (plusmap, cty))), errs) in
-          check_codata status ctx eta hints tyargs checked_fields fibrancy raw_fields errs
-            ~has_higher_fields
+      | Pos _, Zero, Noeta -> (
+          match lock with
+          | Some _ -> fatal (Unimplemented "modal higher fields")
+          | None ->
+              (* Higher-dimensional field, currently requires a zero-dimensional codatatype (non-Gel). *)
+              let checked_fields, errs =
+                Reporter.try_with ~fatal:(fun e -> (checked_fields, Snoc (errs, e))) @@ fun () ->
+                check_name_clash ();
+                let (Degctx (plusmap, degctx, _)) = degctx newctx (Field.dim fld) in
+                let cty = check (Kinetic `Nolet) degctx rty (universe (Ctx.mode ctx) D.zero) in
+                (Snoc (checked_fields, Entry (fld, Codatafield.Higher (plusmap, cty))), errs) in
+              check_codata status ctx eta hints tyargs checked_fields fibrancy raw_fields errs
+                ~has_higher_fields)
       | Pos _, Zero, Eta -> fatal (Unimplemented "higher fields in record types")
       | Pos _, Pos _, _ -> fatal (Unimplemented "higher fields in higher-dimensional codatatypes"))
 
@@ -2530,12 +2562,17 @@ and check_record : type mode a f1 f2 f af d acd b n.
         | Error e -> modality_fatal "field annotation" (e :> modality_error)
         | Ok (Wrap modality) -> (
             match Modality.compare_id modality with
-            (* MODALTODO: This is how we get negative modalities; we have to test that this modality is a declared right adjoint ("dextrous"). *)
-            | Neq -> fatal (Unimplemented "modal record fields")
+            (* MODALTODO: Records with modal fields must currently be defined using self-variable syntax (which goes through check_codata).  An alternative would be to allow annotating a telescope-style record field with the *right* adjoint, testing that it is a declared right adjoint ("dextrous"); this is how we would get negative modalities. *)
+            | Neq -> fatal (Unimplemented "modal record fields in telescope syntax")
             | Eq ->
                 let newctx = Ctx.vis_fields ctx vars domvars ctx_fields fplus af in
                 let cty = check (Kinetic `Nolet) newctx rty (universe (Ctx.mode ctx) D.zero) in
-                let entry = CodatafieldAbwd.Entry (fld, Lower cty) in
+                let entry =
+                  CodatafieldAbwd.Entry
+                    ( fld,
+                      Codatafield.Lower
+                        (Modalcell.id_adjunction (Ctx.mode ctx), plus_no_lock (Ctx.mode ctx), cty) )
+                in
                 ( Snoc (checked_fields, entry),
                   Fibrancy.Codata.add_field (Ctx.mode ctx) fibrancy entry,
                   Bwv.Snoc (ctx_fields, (fld, name)),
@@ -2622,7 +2659,7 @@ and check_fields : type mode a b c d s m n mn et.
       | Snoc _ -> fatal (Accumulated ("check_struct", errs)))
   | Entry (fld, cdf) :: fields, Potential (name, args, hyp) ->
       (* Temporarily bind the current constant to the up-until-now value (or an error, if any have occurred yet), for (co)recursive purposes.  Note that this means as soon as one field fails, no other fields can be typechecked if they depend *at all* on earlier ones, even ones that didn't fail.  This could be improved in the future. *)
-      run_with_definition (Ctx.mode ctx) name
+      run_with_definition name
         (hyp (Term.Struct { eta; dim = m; fields = ctms; energy = energy status }))
         errs
       @@ fun () ->
@@ -2664,14 +2701,33 @@ and check_field : type mode a b c d s m n mn i et.
  fun status eta ctx ty m mn ({ env; termctx; _ } as codata_args) fields tyargs fld cdf prev_etm tms
      ctms etms errs ->
   match (cdf, status, eta, termctx) with
-  | Lower fldty, _, _, _ ->
+  | ( Lower
+        (type f g gmode ag)
+        ((adj, fld_plus_lock, fldty) :
+          (mode, f, g, gmode) Modalcell.adjunction
+          * ((c, (mode id, n) dim_entry) snoc, mode, g, gmode, ag) plus_lock
+          * (gmode, ag, kinetic) term),
+      _,
+      _,
+      _ ) ->
+      let (Adjunction { left; right; _ }) = adj in
       let ins = ins_zero m in
-      let mkstatus lbl : (mode, b, s) status -> (mode, b, s) status = function
+      (* The component of a modal field is checked in the context locked by the right adjoint of the field's adjunction (which is trivial for ordinary fields). *)
+      let (Locked
+             (type bl)
+             ((ctx_plus_lock, lctx) : (b, mode, g, gmode, bl) plus_lock * (gmode, a, bl) Ctx.t)) =
+        Ctx.lock ctx right in
+      let mkstatus lbl : (mode, b, s) status -> (gmode, bl, s) status = function
         | Kinetic l -> Kinetic l
         | Potential (c, args, hyp) ->
-            let args = Value.Field (args, fld, D.plus_zero m, ins) in
+            let args = Value.Field (args, left, fld, D.plus_zero m, ins) in
             let hyp tm =
-              let ctms = Snoc (ctms, Entry (fld, Lower (tm, lbl))) in
+              let ctms =
+                Snoc
+                  ( ctms,
+                    Term.StructfieldAbwd.Entry
+                      (fld, Term.Structfield.Lower (adj, ctx_plus_lock, tm, lbl)) )
+              in
               hyp (Term.Struct { eta; dim = m; fields = ctms; energy = energy status }) in
             Potential (c, args, hyp) in
       let key = Some (Field.to_string fld, []) in
@@ -2700,10 +2756,21 @@ and check_field : type mode a b c d s m n mn i et.
         (* We trap any errors produced by 'check', adding them instead to the list of accumulated errors and going on.  Note that if any previous fields that have already failed, then prev_etm will be bound to an error value, and so if the type of this field depends on the value of any previous one, tyof_field will raise that error, which we catch and add to the list; but it will be (Accumulated Emp) so it won't be displayed to the user. *)
         Reporter.try_with ~fatal:(fun e -> (etms, ctms, Snoc (errs, e))) @@ fun () ->
         (* We don't need the error-checking of tyof_field, since we are getting our fields directly from the codatatype definition and so we already know that they have the right dimensions.  So we can call directly into the helper function tyof_lower_codatafield.  Note that we pass it prev_etm, env, and tyargs that consist of values in the old context, but the return value ety is in the new degenerated context. *)
-        let ety = tyof_lower_codatafield prev_etm fld fldty env tyargs m mn in
-        let ctm = check (mkstatus lbl status) ctx tm ety in
-        let etms = Snoc (etms, Entry (fld, Lower (lazy_eval (Ctx.env ctx) ctm, lbl))) in
-        let ctms = Snoc (ctms, Entry (fld, Lower (ctm, lbl))) in
+        let ety =
+          tyof_lower_codatafield prev_etm fld adj fld_plus_lock fldty env tyargs m mn ~key:`Nokey
+        in
+        let ctm = check (mkstatus lbl status) lctx tm ety in
+        let etms =
+          Snoc
+            ( etms,
+              Value.StructfieldAbwd.Entry
+                (fld, Value.Structfield.Lower (adj, lazy_eval (Ctx.env lctx) ctm, lbl)) ) in
+        let ctms =
+          Snoc
+            ( ctms,
+              Term.StructfieldAbwd.Entry
+                (fld, Term.Structfield.Lower (adj, ctx_plus_lock, ctm, lbl)) )
+        in
         (etms, ctms, errs) in
       check_fields status eta ctx ty m mn codata_args fields tyargs tms ctms etms errs
   | Higher (ic0, fldty), Potential _, Noeta, (lazy (Some termctx)) ->
@@ -2770,37 +2837,46 @@ and check_higher_field : type mode a b c d m i ic0.
       let newstatus : (mode, rb, potential) status =
         match status with
         | Potential
-            (type aa any)
+            (type hm aa any)
             ((head, args, hyp) :
-              (mode, aa) potential_head
-              * (mode, any) apps
-              * ((mode, b, potential) term -> (mode, aa, potential) term)) ->
-            (* We increase the dimension of the potential_head, and also compute a value for the head.  This value is in the *old* context (not the degenerated one)! *)
-            let head : (mode, aa) potential_head =
-              match head with
-              | Constant (c, n) ->
-                  let (Plus rn) = D.plus n in
-                  Constant (c, D.plus_out r rn)
-              | Meta (meta, metaenv) ->
-                  let (Plus rn) = D.plus (dim_env metaenv) in
-                  let d = Global.find_meta meta in
-                  (* In the case of a metavariable, we eval-readback its stored environment to raise it to degctx. *)
-                  Meta (meta, eval_env degenv rn (readback_env ctx metaenv d.termctx)) in
-            (* We also eval-readback the args to raise them to degctx. *)
-            let rec erapps : type any. (mode, any) apps -> (mode, any) apps = function
-              | Emp -> Emp
-              | Field (apps, f, nk, appins) ->
+              (hm, aa) potential_head
+              * (hm, mode, any) apps
+              * ((mode, b, potential) term -> (hm, aa, potential) term)) ->
+            (* We eval-readback the args to raise them to degctx.  We also increase the dimension of the potential_head; this happens at the bottom of the spine recursion, where the accumulated locks from any modal field projections put the contexts at the head's mode. *)
+            let rec erapps : type m2 any2 x2 z2.
+                (m2, x2, z2) Ctx.t ->
+                (m2, r, z2) env ->
+                (hm, m2, any2) apps ->
+                (hm, aa) potential_head * (hm, m2, any2) apps =
+             fun ctx degenv -> function
+              | Emp ->
+                  let (head : (hm, aa) potential_head) =
+                    match head with
+                    | Constant (c, cmode, n) ->
+                        let (Plus rn) = D.plus n in
+                        Constant (c, cmode, D.plus_out r rn)
+                    | Meta (meta, metaenv) ->
+                        let (Plus rn) = D.plus (dim_env metaenv) in
+                        let d = Global.find_meta meta in
+                        (* In the case of a metavariable, we eval-readback its stored environment to raise it to degctx. *)
+                        Meta (meta, eval_env degenv rn (readback_env ctx metaenv d.termctx)) in
+                  (head, Emp)
+              | Field (apps, fm, fldname, nk, appins) ->
                   let n = cod_left_ins appins in
                   let (Plus rn) = D.plus n in
                   let (Plus rn_k) = D.plus (D.plus_right nk) in
                   let (Plus r_nz) = D.plus (dom_ins appins) in
                   let newins = plus_ins r r_nz rn appins in
-                  Value.Field (erapps apps, f, rn_k, newins)
+                  (* The spine inside a modal field projection lives behind a lock by the left adjoint. *)
+                  let (Locked (plus, lctx)) = Ctx.lock ctx fm in
+                  let ldegenv = key_env degenv (Modalcell.id fm) plus in
+                  let head, newapps = erapps lctx ldegenv apps in
+                  (head, Value.Field (newapps, fm, fldname, rn_k, newins))
               | Arg
                   (type dom modality any' n m mz z)
                   ((apps, filter_nm, arg, appins) :
-                    (mode, any') apps
-                    * (dom, modality, mode, n, m) Modality.filter_dim
+                    (hm, m2, any') apps
+                    * (dom, modality, m2, n, m) Modality.filter_dim
                     * (n, dom normal) CubeOf.t
                     * (mz, m, z) insertion) ->
                   let n = CubeOf.dim arg in
@@ -2853,16 +2929,18 @@ and check_higher_field : type mode a b c d m i ic0.
                             newtm);
                       }
                       [ etms; etys ] in
-                  Arg (erapps apps, filter_sn_rm, newarg, newins)
+                  let head, newapps = erapps ctx degenv apps in
+                  (head, Arg (newapps, filter_sn_rm, newarg, newins))
               | Inst _ -> fatal (Anomaly "inst in eval-readback when checking higher field") in
-            let args = erapps args in
+            let head, args = erapps ctx degenv args in
             let (Plus ni) = D.plus intrinsic in
             (* We add the current field projection to the args, with an insertion obtained by incorporating the remaining dimensions into the evaluation. *)
             let (Plus rm) = D.plus m in
             let newins = ins_plus_of_pbij fldins fldshuf rm in
-            let args = Value.Field (args, fld, ni, newins) in
+            (* Higher fields are never modal, so the projecting modality is the identity. *)
+            let args = Value.Field (args, Modality.id (Ctx.mode ctx), fld, ni, newins) in
             (* To hypothesize a value for the current term, we insert the supposed value as the value of this field.  Note the context rb of the supposed value is the degenerated rb instead of the original b, but this is exactly right for the value that's supposed to go in at this pbij.  *)
-            let hyp (tm : (mode, rb, potential) term) : (mode, aa, potential) term =
+            let hyp (tm : (mode, rb, potential) term) : (hm, aa, potential) term =
               let hsf =
                 Term.Structfield.Higher (PlusPbijmap.set pbij (Some (PlusFam (plusmap, tm))) cvals)
               in
@@ -2984,13 +3062,16 @@ and synth : type mode a b s.
           | `Field (_, field) ->
               (* TODO: Double-check that this zero is correct *)
               let ins = ins_zero D.zero in
-              (* Illusory field-access variables always refer to the top face. *)
+              (* Illusory field-access variables always refer to the top face.  They are used only for record fields, which are never modal, so the projecting modality is the identity. *)
               let (Inserted (n, _)) = inserted insert (Ctx.tctx ctx) in
+              (* The self-variable and its field projection live at the variable's own mode (its annotating modality's source); the ambient Key later transports to the context mode. *)
+              let dmode = Modality.src modality in
               ( Term.Field
-                  ( Var (Index (insert, id_sface n, filter, plus_with_locks_of_plus_lock plus_src)),
+                  ( modal_id dmode
+                      (Var (Index (insert, id_sface n, filter, plus_with_locks_of_plus_lock plus_src))),
                     field,
                     ins ),
-                tyof_field (Ok value.tm) value.ty field ~shuf:Trivial ins ) in
+                tyof_field (Modality.id dmode) (Ok value.tm) value.ty field ~shuf:Trivial ins ) in
         (* Any keys supplied explicitly by the user have been stripped off already, but we can insert an identity key or a unique key as well. *)
         match (Modality.compare modality lock, Modalcell.find_unique modality lock) with
         | Eq, _ ->
@@ -3022,12 +3103,22 @@ and synth : type mode a b s.
             | _ -> ());
             (realize status (Const name), eval_term (Emp (mode, D.zero)) ty)
         | Neq -> fatal (Mode_mismatch (`User, "synthesizing constant", mode, None, Ctx.mode ctx)))
-    | Field (tm, fld), _ ->
-        let stm, sty = synth (Kinetic `Nolet) ctx tm in
-        (* To take a field of something, the type of the something must be a record-type that contains such a field, possibly substituted to a higher dimension and instantiated. *)
-        let etm = eval_term (Ctx.env ctx) stm in
-        let WithIns (fld, ins), newty = tyof_field_withname ctx (Ok etm) sty fld in
-        (realize status (Field (stm, fld, ins)), newty)
+    | Field (tm, fld, lock), _ ->
+        (* To take a field of something, the type of the something must be a record-type that contains such a field, possibly substituted to a higher dimension and instantiated.  For a modal field the term is synthesized in a context locked by the left adjoint of the field's adjunction, which the user must specify (since we don't yet know the field's adjunction, different types could reuse the field name).  An unannotated projection uses the identity modality. *)
+        (* tyof_field_withname verifies that fm is the left adjoint of the field's adjunction, so the resulting type is keyed by the counit into the ambient context. *)
+        let synth_field : type dom f. (dom, f, mode) Modality.t -> _ =
+         fun fm ->
+          let (Locked (plus_lock, lctx)) = Ctx.lock ctx fm in
+          let stm, sty = synth (Kinetic `Nolet) lctx tm in
+          let etm = eval_term (Ctx.env lctx) stm in
+          let WithIns (fld, ins), newty = tyof_field_withname fm lctx (Ok etm) sty fld in
+          (realize status (Field (Modal (fm, plus_lock, stm), fld, ins)), newty) in
+        (match lock with
+        | None -> synth_field (Modality.id (Ctx.mode ctx))
+        | Some lockname -> (
+            match Modality.of_name_tgt (fun x -> x.value) (Ctx.mode ctx) lockname.value with
+            | Error e -> modality_fatal "field projection locking annotation" (e :> modality_error)
+            | Ok (Wrap fm) -> synth_field fm))
     | UU umode, _ -> (
         match Modal.Mode.compare umode mode with
         | Eq -> (realize status (Term.UU (mode, D.zero)), universe mode D.zero)
@@ -3058,9 +3149,9 @@ and synth : type mode a b s.
             let edom = eval_term (Ctx.env lctx) cdom in
             match view_type domty "higher pi domain" with
             | Canonical
-                (type m k km)
+                (type hmode m k km)
                 ((_, UU (_dmode, k), ins, edoms) :
-                  dom head
+                  hmode head
                   * (dom, k, m) canonical
                   * (km, k, m) insertion
                   * (D.zero, km, km, dom normal) TubeOf.t) -> (
@@ -3080,9 +3171,9 @@ and synth : type mode a b s.
                     let ccod, codty = synth (Kinetic `Nolet) newctx cod in
                     match view_type codty "higher pi codomain" with
                     | Canonical
-                        (type n2 m2 nm2)
+                        (type hmode n2 m2 nm2)
                         ((_, UU (codmode, n), ins', ecodt) :
-                          mode head
+                          hmode head
                           * (mode, n2, m2) canonical
                           * (nm2, n2, m2) insertion
                           * (D.zero, nm2, nm2, mode normal) TubeOf.t) -> (
@@ -3227,7 +3318,7 @@ and synth : type mode a b s.
                     (* If the dimension of this domain is supposed to be positive, the supplied domain must be fully instantiated by at least that dimension (perhaps more, since it could come from something higher-dimensional).  We pull off those instantiation arguments. *)
                     | Pos m -> (
                         match split_inst m (view_term edom) with
-                        | Some (head, Any args, tyargs) ->
+                        | Some (Head_apps (head, Any args), tyargs) ->
                             (* After spliting off those instantiation arguments, we read back the rest of the type in the *original* context, to make sure it makes sense there and yield the term domain. *)
                             (readback_neu lctx head args, tyargs)
                         | None -> fatal (Invalid_higher_function "invalid domain")) in
@@ -3288,7 +3379,7 @@ and synth : type mode a b s.
                 (* It must also be fully instantiated at at least the total dimension. *)
                 match split_inst n' (eval_term (Ctx.env newctx) ccod) with
                 | None -> fatal (Invalid_higher_function "invalid codomain")
-                | Some (head, Any args, tyargs) ->
+                | Some (Head_apps (head, Any args), tyargs) ->
                     (* After spliting off those instantiation arguments, we read back the rest of the type to yield the top-dimensional codomain. *)
                     let cod = readback_neu newctx head args in
                     (* To get the lower-dimensional codomains, and the instantation arguments of the whole pi-type, we iterate through the split-off tyargs. *)
@@ -3297,7 +3388,7 @@ and synth : type mode a b s.
                           (m, D.zero, n, n) tface ->
                           (m, (mode normal, Tlist.nil) Tlist.cons) CubeOf.Heter.hft ->
                           ( m,
-                            ( [ `Neu of mode head * mode any_apps | `Val of (mode, kinetic) value ],
+                            ( [ `Neu of mode head_apps | `Val of (mode, kinetic) value ],
                               ((mode, b, kinetic) term, Tlist.nil) Tlist.cons )
                             Tlist.cons )
                           CubeOf.Heter.hft =
@@ -3308,9 +3399,9 @@ and synth : type mode a b s.
                           | Zero -> `Val ty
                           | Pos m -> (
                               match split_inst m (view_term ty) with
-                              | Some (head, args, _) ->
+                              | Some (head_apps, _) ->
                                   (* I don't think we need to check that the instantiation arguments are correct or do anything with them; since this was obtained from typechecking the given cod, they *must* be correct. *)
-                                  `Neu (head, args)
+                                  `Neu head_apps
                               | None ->
                                   (* Is this ever possible, or is it a bug? *)
                                   fatal (Invalid_higher_function "invalid codomain weirdness"))
@@ -3338,7 +3429,8 @@ and synth : type mode a b s.
                                 (Modality.filter_idempotent sfilter)
                                 (sub_variables fb xsv) (CubeOf.subcube fb binds) in
                             match TubeOf.find ecods t with
-                            | `Neu (head, Any args) -> Cod (sfilter, readback_neu codctx head args)
+                            | `Neu (Head_apps (head, Any args)) ->
+                                Cod (sfilter, readback_neu codctx head args)
                             | `Val ty -> Cod (sfilter, readback_val codctx ty))
                         | `Id Eq -> Cod (nfilter, cod) in
                       CodCube.build n { build } in
@@ -3577,7 +3669,7 @@ and synth : type mode a b s.
                         nz,
                         app
                           (Field
-                             ( Inst (ididcty, pqtube),
+                             ( modal_id mode (Inst (ididcty, pqtube)),
                                Field.intern "trr" Hott.dim,
                                id_ins D.zero (D.zero_plus Hott.dim) ))
                           idm (plus_no_lock mode) xeqy ))
@@ -3597,7 +3689,7 @@ and synth : type mode a b s.
                         nz,
                         app
                           (Field
-                             ( Inst (ididcty, pqtube),
+                             ( modal_id mode (Inst (ididcty, pqtube)),
                                Field.intern "trl" Hott.dim,
                                id_ins D.zero (D.zero_plus Hott.dim) ))
                           idm (plus_no_lock mode) xeqy ))
@@ -4150,8 +4242,15 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
       | Synth (Const name) ->
           let (Definition { mode; _ }) = Global.find name in
           Some (Wrap mode)
-      (* MODALTODO: Rethink this once we have modal fields.  Actually it's not at all clear even how to synthesize a modal field projection. *)
-      | Synth (Field (x, _)) -> synth_mode (locate_opt tm.loc (Synth x.value))
+      (* A field projection's mode is the mode of the term being projected, unless there is a modal locking annotation, in which case it is the target of that modality (the annotation names the left adjoint, whose source is the term's mode and whose target is the projection's mode). *)
+      | Synth (Field (x, _, None)) -> synth_mode (locate_opt tm.loc (Synth x.value))
+      | Synth (Field (x, _, Some lock)) -> (
+          match synth_mode (locate_opt tm.loc (Synth x.value)) with
+          | Some (Wrap xmode) -> (
+              match Modality.of_name_src (fun x -> x.value) lock.value xmode with
+              | Ok (Wrap modality) -> Some (Wrap (Modality.tgt modality))
+              | Error _ -> None)
+          | None -> None)
       | Synth (Pi (_, modality, dom, cod)) -> (
           match synth_mode cod with
           | Some mode -> Some mode

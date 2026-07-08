@@ -51,7 +51,9 @@ module rec Term : sig
   module Codatafield : sig
     type (_, _) t =
       | Lower :
-          ('mode, ('a, ('mode id, 'n) dim_entry) snoc, kinetic) Term.term
+          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          * (('a, ('mode id, 'n) dim_entry) snoc, 'mode, 'g, 'gmode, 'ag) plus_lock
+          * ('gmode, 'ag, kinetic) Term.term
           -> (D.zero, 'mode * 'a * 'n * 'et) t
       | Higher :
           ('i, ('a, ('mode id, D.zero) dim_entry) snoc, 'ian, 'mode) plusmap
@@ -64,7 +66,10 @@ module rec Term : sig
   module Structfield : sig
     type (_, _) t =
       | Lower :
-          ('mode, 'a, 's) Term.term * [ `Labeled | `Unlabeled ]
+          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
+          * ('gmode, 'ag, 's) Term.term
+          * [ `Labeled | `Unlabeled ]
           -> (D.zero, 'mode * ('n * 'a * 's * 'et)) t
       | Higher :
           ('n, 'i, 'mode * 'a) PlusPbijmap.t
@@ -102,8 +107,9 @@ module rec Term : sig
     | Const : Constant.t -> ('mode, 'a, kinetic) term
     | Meta : ('mode, 'x, 'b, 'l) Meta.t * 's energy -> ('mode, 'b, 's) term
     | MetaEnv : ('mode, 'x, 'b, 's) Meta.t * ('mode, 'a, 'n, 'b) env -> ('mode, 'a, kinetic) term
+    (* A field projection.  For a modal field, the term being projected lives behind a lock by the left adjoint of the field's adjunction; for ordinary fields that modality is the identity. *)
     | Field :
-        ('mode, 'a, kinetic) term * 'i Field.t * ('n, 't, 'i) insertion
+        ('mode, 'f, 'a, kinetic) modal_term * 'i Field.t * ('n, 't, 'i) insertion
         -> ('mode, 'a, kinetic) term
     | UU : 'mode Mode.t * 'n D.t -> ('mode, 'a, kinetic) term
     | Inst :
@@ -330,10 +336,12 @@ end = struct
   module PlusPbijmap = Pbijmap (PlusFam)
 
   module Codatafield = struct
-    (* MODALTODO: Allow modal fields *)
+    (* A lower codata field is parametrized by an adjunction in the mode 2-category.  Its type is a term in the context extended by the self variable and then locked by the right adjoint, hence lives at the right adjoint's source mode.  Ordinary non-modal fields are the special case of the identity adjunction.  (Higher fields are not yet allowed to be modal.) *)
     type (_, _) t =
       | Lower :
-          ('mode, ('a, ('mode id, 'n) dim_entry) snoc, kinetic) Term.term
+          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          * (('a, ('mode id, 'n) dim_entry) snoc, 'mode, 'g, 'gmode, 'ag) plus_lock
+          * ('gmode, 'ag, kinetic) Term.term
           -> (D.zero, 'mode * 'a * 'n * 'et) t
       | Higher :
           ('i, ('a, ('mode id, D.zero) dim_entry) snoc, 'ian, 'mode) plusmap
@@ -346,8 +354,12 @@ end = struct
   module Structfield = struct
     (* Lazy fields are not allowed in ordinary terms, because a term is supposed to be a completed data object that can be, for instance, serialized to a file and reloaded.  But when we use this to store fibrancy fields, which are recomputed on evaluation and are corecursively infinite, we have to allow laziness.  *)
     type (_, _) t =
+      (* Like a codata field, a lower struct field is parametrized by an adjunction: the supplied term lives behind a lock by the right adjoint.  Ordinary non-modal fields use the identity adjunction. *)
       | Lower :
-          ('mode, 'a, 's) Term.term * [ `Labeled | `Unlabeled ]
+          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
+          * ('gmode, 'ag, 's) Term.term
+          * [ `Labeled | `Unlabeled ]
           -> (D.zero, 'mode * ('n * 'a * 's * 'et)) t
       | Higher :
           ('n, 'i, 'mode * 'a) PlusPbijmap.t
@@ -390,8 +402,9 @@ end = struct
     | Meta : ('mode, 'x, 'b, 'l) Meta.t * 's energy -> ('mode, 'b, 's) term
     (* Normally, checked metavariables don't require an environment attached, but they do when they arise by readback from a value metavariable. *)
     | MetaEnv : ('mode, 'x, 'b, 's) Meta.t * ('mode, 'a, 'n, 'b) env -> ('mode, 'a, kinetic) term
+    (* A field projection.  For a modal field, the term being projected lives behind a lock by the left adjoint of the field's adjunction; for ordinary fields that modality is the identity. *)
     | Field :
-        ('mode, 'a, kinetic) term * 'i Field.t * ('n, 't, 'i) insertion
+        ('mode, 'f, 'a, kinetic) modal_term * 'i Field.t * ('n, 't, 'i) insertion
         -> ('mode, 'a, kinetic) term
     | UU : 'mode Mode.t * 'n D.t -> ('mode, 'a, kinetic) term
     | Inst :
@@ -667,7 +680,12 @@ let apps fn mode args =
   List.fold_left (fun f -> app f (Modality.id mode) (plus_no_lock mode)) fn args
 
 (* let constr name args = Constr (name, D.zero, List.map CubeOf.singleton args) *)
-let field tm f = Field (tm, f, ins_zero D.zero)
+
+(* A non-modal field projection, whose lock is the identity. *)
+let modal_id : type mode a s. mode Mode.t -> (mode, a, s) term -> (mode, mode Modality.id, a, s) modal_term =
+ fun mode tm -> Modal (Modality.id mode, plus_no_lock mode, tm)
+
+let field mode tm f = Field (modal_id mode tm, f, ins_zero D.zero)
 
 module Telescope = struct
   type ('mode, 'a, 'b, 'ab) t = ('mode, 'a, 'b, 'ab) Term.tel

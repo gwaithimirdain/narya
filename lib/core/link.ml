@@ -12,7 +12,7 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
   | Const c -> Const (Constant.remake f c)
   | Meta (m, s) -> Meta (Meta.remake f m, s)
   | MetaEnv (m, e) -> MetaEnv (Meta.remake f m, env f e)
-  | Field (tm, fld, fldins) -> Field (term f tm, fld, fldins)
+  | Field (Modal (modality, al, tm), fld, fldins) -> Field (Modal (modality, al, term f tm), fld, fldins)
   | UU (mode, n) -> UU (mode, n)
   | Inst (tm, args) -> Inst (term f tm, TubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ args ])
   | Pi { x; filter; doms = Modal (modality, al, doms); cods } ->
@@ -119,7 +119,7 @@ and structfield : type mode n a s i et.
     (i, mode * (n * a * s * et)) Term.Structfield.t =
  fun f fld ->
   match fld with
-  | Lower (x, l) -> Lower (term f x, l)
+  | Lower (adj, plus_lock, tm, lbl) -> Lower (adj, plus_lock, term f tm, lbl)
   | Higher m ->
       Higher
         (PlusPbijmap.mmap
@@ -139,7 +139,7 @@ and codatafield : type mode a n i et.
     (i, mode * a * n * et) Codatafield.t =
  fun f fld ->
   match fld with
-  | Lower tm -> Lower (term f tm)
+  | Lower (adj, plus_lock, ty) -> Lower (adj, plus_lock, term f ty)
   | Higher (ka, tm) -> Higher (ka, term f tm)
 
 and dataconstr : type mode p i.
