@@ -2056,43 +2056,44 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
             (hm, m2, any2) apps ->
             (hm, d) potential_head * (hm, m2, any2) apps =
          fun oldctx newenv -> function
-          | Emp ->
-              let (erhead : (hm, d) potential_head) =
-                match head with
-                | Meta (meta, metaenv) ->
-                    let (Plus qn) = D.plus (dim_env metaenv) in
-                    Meta
-                      ( meta,
-                        eval_env newenv qn
-                          (readback_env oldctx metaenv (Global.find_meta meta).termctx) )
-                | Constant (c, cmode, dim) -> Constant (c, cmode, dim) in
-              (erhead, Emp)
-          | Arg (rest, filter, xs, ins) ->
-              let modality = Modality.filter_modality filter in
-              let (Locked (plus, loldctx)) = Ctx.lock oldctx modality in
-              let lnewenv = key_env newenv (Modalcell.id modality) plus in
-              let erhead, errest = erapps oldctx newenv rest in
-              ( erhead,
-                Arg
-                  ( errest,
-                    filter,
-                    CubeOf.mmap
-                      {
-                        map =
-                          (fun _ [ x ] ->
-                            let tm = eval_term lnewenv (readback_nf loldctx x) in
-                            let ty = eval_term lnewenv (readback_val loldctx x.ty) in
-                            { tm; ty });
-                      }
-                      [ xs ],
-                    ins ) )
-          | Field (rest, f, x, y, z) ->
-              (* The spine inside a modal field projection lives behind a lock by the left adjoint. *)
-              let (Locked (plus, loldctx)) = Ctx.lock oldctx f in
-              let lnewenv = key_env newenv (Modalcell.id f) plus in
-              let erhead, errest = erapps loldctx lnewenv rest in
-              (erhead, Field (errest, f, x, y, z))
-          | Inst _ -> fatal (Anomaly "inst in make_match_status") in
+           | Emp ->
+               let (erhead : (hm, d) potential_head) =
+                 match head with
+                 | Meta (meta, metaenv) ->
+                     let (Plus qn) = D.plus (dim_env metaenv) in
+                     Meta
+                       ( meta,
+                         eval_env newenv qn
+                           (readback_env oldctx metaenv (Global.find_meta meta).termctx) )
+                 | Constant (c, cmode, dim) -> Constant (c, cmode, dim) in
+               (erhead, Emp)
+           | Arg (rest, filter, xs, ins) ->
+               let modality = Modality.filter_modality filter in
+               let (Locked (plus, loldctx)) = Ctx.lock oldctx modality in
+               let lnewenv = key_env newenv (Modalcell.id modality) plus in
+               let erhead, errest = erapps oldctx newenv rest in
+               ( erhead,
+                 Arg
+                   ( errest,
+                     filter,
+                     CubeOf.mmap
+                       {
+                         map =
+                           (fun _ [ x ] ->
+                             let tm = eval_term lnewenv (readback_nf loldctx x) in
+                             let ty = eval_term lnewenv (readback_val loldctx x.ty) in
+                             { tm; ty });
+                       }
+                       [ xs ],
+                     ins ) )
+           | Field (rest, filter, x, y, z) ->
+               (* The spine inside a modal field projection lives behind a lock by the left adjoint. *)
+               let fm = Modality.filter_modality filter in
+               let (Locked (plus, loldctx)) = Ctx.lock oldctx fm in
+               let lnewenv = key_env newenv (Modalcell.id fm) plus in
+               let erhead, errest = erapps loldctx lnewenv rest in
+               (erhead, Field (errest, filter, x, y, z))
+           | Inst _ -> fatal (Anomaly "inst in make_match_status") in
         erapps oldctx (Ctx.env newctx) args
     | None -> (head, args) in
   let hyp tm =
@@ -2370,7 +2371,8 @@ and get_indices : type mode hmode1 hmode2 a b any1 any2.
         | Some _, Eq, Eq ->
             (Eq, (readback_nf ctx (CubeOf.find_top arg) : (mode, b, kinetic) term) :: tms)
         | None, _, _ -> fatal (Invalid_constructor_type (c, Left "no degeneracies are allowed"))
-        | _, Neq, _ -> fatal (Invalid_constructor_type (c, Left "no modal applications are allowed"))
+        | _, Neq, _ ->
+            fatal (Invalid_constructor_type (c, Left "no modal applications are allowed"))
         | _, _, Neq ->
             fatal (Invalid_constructor_type (c, Left "applications must be zero-dimensional")))
     | Cons (Field _, _) -> fatal (Anomaly "field is not an index") in
@@ -2497,8 +2499,7 @@ and check_codata : type mode a b n et.
             let (Locked (plus_lock, lctx)) = Ctx.lock newctx right in
             (* Note the type of each field is checked *kinetically*: it's not part of the case tree. *)
             let cty = check (Kinetic `Nolet) lctx rty (universe (Modality.src right) D.zero) in
-            let entry =
-              CodatafieldAbwd.Entry (fld, Codatafield.Lower (adj, plus_lock, cty)) in
+            let entry = CodatafieldAbwd.Entry (fld, Codatafield.Lower (adj, plus_lock, cty)) in
             ( Snoc (checked_fields, entry),
               Fibrancy.Codata.add_field (Ctx.mode ctx) fibrancy entry,
               errs ) in
@@ -2571,8 +2572,8 @@ and check_record : type mode a f1 f2 f af d acd b n.
                   CodatafieldAbwd.Entry
                     ( fld,
                       Codatafield.Lower
-                        (Modalcell.id_adjunction (Ctx.mode ctx), plus_no_lock (Ctx.mode ctx), cty) )
-                in
+                        (Modalcell.id_adjunction (Ctx.mode ctx), plus_no_lock (Ctx.mode ctx), cty)
+                    ) in
                 ( Snoc (checked_fields, entry),
                   Fibrancy.Codata.add_field (Ctx.mode ctx) fibrancy entry,
                   Bwv.Snoc (ctx_fields, (fld, name)),
@@ -2709,70 +2710,91 @@ and check_field : type mode a b c d s m n mn i et.
           * (gmode, ag, kinetic) term),
       _,
       _,
-      _ ) ->
+      _ ) -> (
       let (Adjunction { left; right; _ }) = adj in
-      let ins = ins_zero m in
-      (* The component of a modal field is checked in the context locked by the right adjoint of the field's adjunction (which is trivial for ordinary fields). *)
-      let (Locked
-             (type bl)
-             ((ctx_plus_lock, lctx) : (b, mode, g, gmode, bl) plus_lock * (gmode, a, bl) Ctx.t)) =
-        Ctx.lock ctx right in
-      let mkstatus lbl : (mode, b, s) status -> (gmode, bl, s) status = function
-        | Kinetic l -> Kinetic l
-        | Potential (c, args, hyp) ->
-            let args = Value.Field (args, left, fld, D.plus_zero m, ins) in
-            let hyp tm =
-              let ctms =
-                Snoc
-                  ( ctms,
-                    Term.StructfieldAbwd.Entry
-                      (fld, Term.Structfield.Lower (adj, ctx_plus_lock, tm, lbl)) )
-              in
-              hyp (Term.Struct { eta; dim = m; fields = ctms; energy = energy status }) in
-            Potential (c, args, hyp) in
-      let key = Some (Field.to_string fld, []) in
-      let tm, tms, lbl =
-        match
-          Abwd.find_opt_and_update key key (fun (cube, x) -> (cube, locate_opt x.loc None)) tms
-        with
-        | Some ((cube, { value = Some tm; loc }), tms) ->
-            (match (cube.value, D.compare_zero m) with
-            | `Cube, Zero -> fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "comatch")
-            | _ -> ());
-            ({ value = tm; loc }, tms, `Labeled)
-        | Some ((_, { value = None; _ }), _) -> fatal (Anomaly "accessing same field twice")
-        | None -> (
+      (* A modal field whose (left adjoint) modality is nonparametric disappears at a dimension it filters nontrivially: it must be omitted from the tuple/comatch (an explicit occurrence is an error) and we skip it.  Otherwise its filter at the result dimension m is trivial and we check it normally. *)
+      let (Has_filter left_filter) = Modality.filter left m in
+      match Modality.filter_is_trivial m left_filter with
+      | None ->
+          let key = Some (Field.to_string fld, []) in
+          let tms, errs =
             match
-              Abwd.find_opt_and_update None key (fun (cube, x) -> (cube, locate_opt x.loc None)) tms
+              Abwd.find_opt_and_update key key (fun (cube, x) -> (cube, locate_opt x.loc None)) tms
+            with
+            | Some ((_, { value = Some _; loc }), tms) ->
+                ( tms,
+                  Snoc
+                    ( errs,
+                      diagnostic ?loc (Extra_filtered_field_in_tuple (Field.to_string fld, left)) )
+                )
+            | Some ((_, { value = None; _ }), _) -> fatal (Anomaly "accessing same field twice")
+            | None -> (tms, errs) in
+          check_fields status eta ctx ty m mn codata_args fields tyargs tms ctms etms errs
+      | Some Eq ->
+          let ins = ins_zero m in
+          (* The component of a modal field is checked in the context locked by the right adjoint of the field's adjunction (which is trivial for ordinary fields). *)
+          let (Locked
+                 (type bl)
+                 ((ctx_plus_lock, lctx) : (b, mode, g, gmode, bl) plus_lock * (gmode, a, bl) Ctx.t))
+              =
+            Ctx.lock ctx right in
+          let mkstatus lbl : (mode, b, s) status -> (gmode, bl, s) status = function
+            | Kinetic l -> Kinetic l
+            | Potential (c, args, hyp) ->
+                let args = Value.Field (args, left_filter, fld, D.plus_zero m, ins) in
+                let hyp tm =
+                  let ctms =
+                    Snoc
+                      ( ctms,
+                        Term.StructfieldAbwd.Entry
+                          (fld, Term.Structfield.Lower (adj, ctx_plus_lock, tm, lbl)) ) in
+                  hyp (Term.Struct { eta; dim = m; fields = ctms; energy = energy status }) in
+                Potential (c, args, hyp) in
+          let key = Some (Field.to_string fld, []) in
+          let tm, tms, lbl =
+            match
+              Abwd.find_opt_and_update key key (fun (cube, x) -> (cube, locate_opt x.loc None)) tms
             with
             | Some ((cube, { value = Some tm; loc }), tms) ->
                 (match (cube.value, D.compare_zero m) with
                 | `Cube, Zero -> fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "comatch")
                 | _ -> ());
-                ({ value = tm; loc }, tms, `Unlabeled)
+                ({ value = tm; loc }, tms, `Labeled)
             | Some ((_, { value = None; _ }), _) -> fatal (Anomaly "accessing same field twice")
-            | None -> fatal (missing_field_in_struct eta fld)) in
-      let etms, ctms, errs =
-        (* We trap any errors produced by 'check', adding them instead to the list of accumulated errors and going on.  Note that if any previous fields that have already failed, then prev_etm will be bound to an error value, and so if the type of this field depends on the value of any previous one, tyof_field will raise that error, which we catch and add to the list; but it will be (Accumulated Emp) so it won't be displayed to the user. *)
-        Reporter.try_with ~fatal:(fun e -> (etms, ctms, Snoc (errs, e))) @@ fun () ->
-        (* We don't need the error-checking of tyof_field, since we are getting our fields directly from the codatatype definition and so we already know that they have the right dimensions.  So we can call directly into the helper function tyof_lower_codatafield.  Note that we pass it prev_etm, env, and tyargs that consist of values in the old context, but the return value ety is in the new degenerated context. *)
-        let ety =
-          tyof_lower_codatafield prev_etm fld adj fld_plus_lock fldty env tyargs m mn ~key:`Nokey
-        in
-        let ctm = check (mkstatus lbl status) lctx tm ety in
-        let etms =
-          Snoc
-            ( etms,
-              Value.StructfieldAbwd.Entry
-                (fld, Value.Structfield.Lower (adj, lazy_eval (Ctx.env lctx) ctm, lbl)) ) in
-        let ctms =
-          Snoc
-            ( ctms,
-              Term.StructfieldAbwd.Entry
-                (fld, Term.Structfield.Lower (adj, ctx_plus_lock, ctm, lbl)) )
-        in
-        (etms, ctms, errs) in
-      check_fields status eta ctx ty m mn codata_args fields tyargs tms ctms etms errs
+            | None -> (
+                match
+                  Abwd.find_opt_and_update None key
+                    (fun (cube, x) -> (cube, locate_opt x.loc None))
+                    tms
+                with
+                | Some ((cube, { value = Some tm; loc }), tms) ->
+                    (match (cube.value, D.compare_zero m) with
+                    | `Cube, Zero ->
+                        fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "comatch")
+                    | _ -> ());
+                    ({ value = tm; loc }, tms, `Unlabeled)
+                | Some ((_, { value = None; _ }), _) -> fatal (Anomaly "accessing same field twice")
+                | None -> fatal (missing_field_in_struct eta fld)) in
+          let etms, ctms, errs =
+            (* We trap any errors produced by 'check', adding them instead to the list of accumulated errors and going on.  Note that if any previous fields that have already failed, then prev_etm will be bound to an error value, and so if the type of this field depends on the value of any previous one, tyof_field will raise that error, which we catch and add to the list; but it will be (Accumulated Emp) so it won't be displayed to the user. *)
+            Reporter.try_with ~fatal:(fun e -> (etms, ctms, Snoc (errs, e))) @@ fun () ->
+            (* We don't need the error-checking of tyof_field, since we are getting our fields directly from the codatatype definition and so we already know that they have the right dimensions.  So we can call directly into the helper function tyof_lower_codatafield.  Note that we pass it prev_etm, env, and tyargs that consist of values in the old context, but the return value ety is in the new degenerated context. *)
+            let ety =
+              tyof_lower_codatafield prev_etm fld adj fld_plus_lock fldty env tyargs m mn
+                ~key:`Nokey in
+            let ctm = check (mkstatus lbl status) lctx tm ety in
+            let etms =
+              Snoc
+                ( etms,
+                  Value.StructfieldAbwd.Entry
+                    (fld, Value.Structfield.Lower (adj, lazy_eval (Ctx.env lctx) ctm, lbl)) ) in
+            let ctms =
+              Snoc
+                ( ctms,
+                  Term.StructfieldAbwd.Entry
+                    (fld, Term.Structfield.Lower (adj, ctx_plus_lock, ctm, lbl)) ) in
+            (etms, ctms, errs) in
+          check_fields status eta ctx ty m mn codata_args fields tyargs tms ctms etms errs)
   | Higher (ic0, fldty), Potential _, Noeta, (lazy (Some termctx)) ->
       let Eq = D.plus_uniq mn (D.plus_zero m) in
       let i = Field.dim fld in
@@ -2849,96 +2871,101 @@ and check_higher_field : type mode a b c d m i ic0.
                 (hm, m2, any2) apps ->
                 (hm, aa) potential_head * (hm, m2, any2) apps =
              fun ctx degenv -> function
-              | Emp ->
-                  let (head : (hm, aa) potential_head) =
-                    match head with
-                    | Constant (c, cmode, n) ->
-                        let (Plus rn) = D.plus n in
-                        Constant (c, cmode, D.plus_out r rn)
-                    | Meta (meta, metaenv) ->
-                        let (Plus rn) = D.plus (dim_env metaenv) in
-                        let d = Global.find_meta meta in
-                        (* In the case of a metavariable, we eval-readback its stored environment to raise it to degctx. *)
-                        Meta (meta, eval_env degenv rn (readback_env ctx metaenv d.termctx)) in
-                  (head, Emp)
-              | Field (apps, fm, fldname, nk, appins) ->
-                  let n = cod_left_ins appins in
-                  let (Plus rn) = D.plus n in
-                  let (Plus rn_k) = D.plus (D.plus_right nk) in
-                  let (Plus r_nz) = D.plus (dom_ins appins) in
-                  let newins = plus_ins r r_nz rn appins in
-                  (* The spine inside a modal field projection lives behind a lock by the left adjoint. *)
-                  let (Locked (plus, lctx)) = Ctx.lock ctx fm in
-                  let ldegenv = key_env degenv (Modalcell.id fm) plus in
-                  let head, newapps = erapps lctx ldegenv apps in
-                  (head, Value.Field (newapps, fm, fldname, rn_k, newins))
-              | Arg
-                  (type dom modality any' n m mz z)
-                  ((apps, filter_nm, arg, appins) :
-                    (hm, m2, any') apps
-                    * (dom, modality, m2, n, m) Modality.filter_dim
-                    * (n, dom normal) CubeOf.t
-                    * (mz, m, z) insertion) ->
-                  let n = CubeOf.dim arg in
-                  let m = cod_left_ins appins in
-                  let (Plus rm) = D.plus m in
-                  let (Plus r_mz) = D.plus (dom_ins appins) in
-                  let newins = plus_ins r r_mz rm appins in
-                  let modality = Modality.filter_modality filter_nm in
-                  let (Has_filter filter_sr) = Modality.filter modality r in
-                  let s = Modality.filtered r filter_sr in
-                  let (Plus sn) = D.plus n in
-                  let filter_sn_rm = Modality.filter_plus sn rm filter_sr filter_nm in
-                  (* First we readback the terms and types. *)
-                  let (Locked (plus, lctx)) = Ctx.lock ctx modality in
-                  let [ tms; tys ] =
-                    CubeOf.pmap
-                      { map = (fun _ [ x ] -> [ readback_nf lctx x; readback_val lctx x.ty ]) }
-                      [ arg ] (Cons (Cons Nil)) in
-                  let ldegenv = key_env degenv (Modalcell.id modality) plus in
-                  (* Now we evaluate them in degenv to increase the dimension.  *)
-                  let sldegenv =
-                    act_env ldegenv (opt_op_of_opt_sface (Modality.sface_of_filter r filter_sr))
-                  in
-                  let etms = eval_args sldegenv sn (D.plus_out s sn) tms in
-                  let etys = eval_args sldegenv sn (D.plus_out s sn) tys in
-                  (* Now we have to reassociate the terms with the types to make a new cube of normals.  This is like norm_of_vals_cube, except that the types are already instantiated to dimension n, and we have only to instantiate them the rest of the way at dimension r. *)
-                  let new_tm_tbl = Hashtbl.create 10 in
-                  let newarg =
-                    CubeOf.mmap
-                      {
-                        map =
-                          (fun fab [ tm; ty ] ->
-                            let (SFace_of_plus (ml, fa, fb)) = sface_of_plus sn fab in
-                            let instargs =
-                              TubeOf.build D.zero
-                                (D.zero_plus (dom_sface fa))
-                                {
-                                  build =
-                                    (fun fc ->
-                                      let (Plus kl) = D.plus (D.plus_right ml) in
-                                      Hashtbl.find new_tm_tbl
-                                        (SFace_of
-                                           (sface_plus_sface
-                                              (comp_sface fa (sface_of_tface fc))
-                                              sn kl fb)));
-                                } in
-                            let ty = inst ty instargs in
-                            let newtm = { tm; ty } in
-                            Hashtbl.add new_tm_tbl (SFace_of fab) newtm;
-                            newtm);
-                      }
-                      [ etms; etys ] in
-                  let head, newapps = erapps ctx degenv apps in
-                  (head, Arg (newapps, filter_sn_rm, newarg, newins))
-              | Inst _ -> fatal (Anomaly "inst in eval-readback when checking higher field") in
+               | Emp ->
+                   let (head : (hm, aa) potential_head) =
+                     match head with
+                     | Constant (c, cmode, n) ->
+                         let (Plus rn) = D.plus n in
+                         Constant (c, cmode, D.plus_out r rn)
+                     | Meta (meta, metaenv) ->
+                         let (Plus rn) = D.plus (dim_env metaenv) in
+                         let d = Global.find_meta meta in
+                         (* In the case of a metavariable, we eval-readback its stored environment to raise it to degctx. *)
+                         Meta (meta, eval_env degenv rn (readback_env ctx metaenv d.termctx)) in
+                   (head, Emp)
+               | Field (apps, filter, fldname, nk, appins) ->
+                   let fm = Modality.filter_modality filter in
+                   let n = cod_left_ins appins in
+                   let (Plus rn) = D.plus n in
+                   let (Plus rn_k) = D.plus (D.plus_right nk) in
+                   let (Plus r_nz) = D.plus (dom_ins appins) in
+                   let newins = plus_ins r r_nz rn appins in
+                   (* The result dimension of the projection is raised by r, so we recompute the field's filter at the new (outer) result dimension; the inner spine is raised correspondingly.  MODALTODO: for a nonparametric field this raising can interact nontrivially with the filter (only reachable with modal higher fields, which are unimplemented). *)
+                   let (Has_filter newfilter) = Modality.filter fm (cod_left_ins newins) in
+                   (* The spine inside a modal field projection lives behind a lock by the left adjoint. *)
+                   let (Locked (plus, lctx)) = Ctx.lock ctx fm in
+                   let ldegenv = key_env degenv (Modalcell.id fm) plus in
+                   let head, newapps = erapps lctx ldegenv apps in
+                   (head, Value.Field (newapps, newfilter, fldname, rn_k, newins))
+               | Arg
+                   (type dom modality any' n m mz z)
+                   ((apps, filter_nm, arg, appins) :
+                     (hm, m2, any') apps
+                     * (dom, modality, m2, n, m) Modality.filter_dim
+                     * (n, dom normal) CubeOf.t
+                     * (mz, m, z) insertion) ->
+                   let n = CubeOf.dim arg in
+                   let m = cod_left_ins appins in
+                   let (Plus rm) = D.plus m in
+                   let (Plus r_mz) = D.plus (dom_ins appins) in
+                   let newins = plus_ins r r_mz rm appins in
+                   let modality = Modality.filter_modality filter_nm in
+                   let (Has_filter filter_sr) = Modality.filter modality r in
+                   let s = Modality.filtered r filter_sr in
+                   let (Plus sn) = D.plus n in
+                   let filter_sn_rm = Modality.filter_plus sn rm filter_sr filter_nm in
+                   (* First we readback the terms and types. *)
+                   let (Locked (plus, lctx)) = Ctx.lock ctx modality in
+                   let [ tms; tys ] =
+                     CubeOf.pmap
+                       { map = (fun _ [ x ] -> [ readback_nf lctx x; readback_val lctx x.ty ]) }
+                       [ arg ] (Cons (Cons Nil)) in
+                   let ldegenv = key_env degenv (Modalcell.id modality) plus in
+                   (* Now we evaluate them in degenv to increase the dimension.  *)
+                   let sldegenv =
+                     act_env ldegenv (opt_op_of_opt_sface (Modality.sface_of_filter r filter_sr))
+                   in
+                   let etms = eval_args sldegenv sn (D.plus_out s sn) tms in
+                   let etys = eval_args sldegenv sn (D.plus_out s sn) tys in
+                   (* Now we have to reassociate the terms with the types to make a new cube of normals.  This is like norm_of_vals_cube, except that the types are already instantiated to dimension n, and we have only to instantiate them the rest of the way at dimension r. *)
+                   let new_tm_tbl = Hashtbl.create 10 in
+                   let newarg =
+                     CubeOf.mmap
+                       {
+                         map =
+                           (fun fab [ tm; ty ] ->
+                             let (SFace_of_plus (ml, fa, fb)) = sface_of_plus sn fab in
+                             let instargs =
+                               TubeOf.build D.zero
+                                 (D.zero_plus (dom_sface fa))
+                                 {
+                                   build =
+                                     (fun fc ->
+                                       let (Plus kl) = D.plus (D.plus_right ml) in
+                                       Hashtbl.find new_tm_tbl
+                                         (SFace_of
+                                            (sface_plus_sface
+                                               (comp_sface fa (sface_of_tface fc))
+                                               sn kl fb)));
+                                 } in
+                             let ty = inst ty instargs in
+                             let newtm = { tm; ty } in
+                             Hashtbl.add new_tm_tbl (SFace_of fab) newtm;
+                             newtm);
+                       }
+                       [ etms; etys ] in
+                   let head, newapps = erapps ctx degenv apps in
+                   (head, Arg (newapps, filter_sn_rm, newarg, newins))
+               | Inst _ -> fatal (Anomaly "inst in eval-readback when checking higher field") in
             let head, args = erapps ctx degenv args in
             let (Plus ni) = D.plus intrinsic in
             (* We add the current field projection to the args, with an insertion obtained by incorporating the remaining dimensions into the evaluation. *)
             let (Plus rm) = D.plus m in
             let newins = ins_plus_of_pbij fldins fldshuf rm in
-            (* Higher fields are never modal, so the projecting modality is the identity. *)
-            let args = Value.Field (args, Modality.id (Ctx.mode ctx), fld, ni, newins) in
+            (* Higher fields are never modal, so the projecting modality is the identity and its filter (at the result dimension) is trivial. *)
+            let (Has_filter idfilter) =
+              Modality.filter (Modality.id (Ctx.mode ctx)) (cod_left_ins newins) in
+            let args = Value.Field (args, idfilter, fld, ni, newins) in
             (* To hypothesize a value for the current term, we insert the supposed value as the value of this field.  Note the context rb of the supposed value is the degenerated rb instead of the original b, but this is exactly right for the value that's supposed to go in at this pbij.  *)
             let hyp (tm : (mode, rb, potential) term) : (hm, aa, potential) term =
               let hsf =
@@ -3068,10 +3095,12 @@ and synth : type mode a b s.
               let dmode = Modality.src modality in
               ( Term.Field
                   ( modal_id dmode
-                      (Var (Index (insert, id_sface n, filter, plus_with_locks_of_plus_lock plus_src))),
+                      (Var
+                         (Index (insert, id_sface n, filter, plus_with_locks_of_plus_lock plus_src))),
                     field,
                     ins ),
-                tyof_field (Modality.id dmode) (Ok value.tm) value.ty field ~shuf:Trivial ins ) in
+                tyof_field (Modality.id dmode) (Ok value.tm) value.ty field ~shuf:Trivial ins )
+        in
         (* Any keys supplied explicitly by the user have been stripped off already, but we can insert an identity key or a unique key as well. *)
         match (Modality.compare modality lock, Modalcell.find_unique modality lock) with
         | Eq, _ ->
@@ -3103,7 +3132,7 @@ and synth : type mode a b s.
             | _ -> ());
             (realize status (Const name), eval_term (Emp (mode, D.zero)) ty)
         | Neq -> fatal (Mode_mismatch (`User, "synthesizing constant", mode, None, Ctx.mode ctx)))
-    | Field (tm, fld, lock), _ ->
+    | Field (tm, fld, lock), _ -> (
         (* To take a field of something, the type of the something must be a record-type that contains such a field, possibly substituted to a higher dimension and instantiated.  For a modal field the term is synthesized in a context locked by the left adjoint of the field's adjunction, which the user must specify (since we don't yet know the field's adjunction, different types could reuse the field name).  An unannotated projection uses the identity modality. *)
         (* tyof_field_withname verifies that fm is the left adjoint of the field's adjunction, so the resulting type is keyed by the counit into the ambient context. *)
         let synth_field : type dom f. (dom, f, mode) Modality.t -> _ =
@@ -3113,7 +3142,7 @@ and synth : type mode a b s.
           let etm = eval_term (Ctx.env lctx) stm in
           let WithIns (fld, ins), newty = tyof_field_withname fm lctx (Ok etm) sty fld in
           (realize status (Field (Modal (fm, plus_lock, stm), fld, ins)), newty) in
-        (match lock with
+        match lock with
         | None -> synth_field (Modality.id (Ctx.mode ctx))
         | Some lockname -> (
             match Modality.of_name_tgt (fun x -> x.value) (Ctx.mode ctx) lockname.value with

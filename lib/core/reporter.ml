@@ -247,6 +247,9 @@ module Code = struct
         got : ('dom2, 'mu2, 'cod2) Modality.t option;
       }
         -> t
+    (* A modal field whose modality is nonparametric "disappears" at a dimension it filters nontrivially: it cannot be projected there, nor supplied in a tuple/comatch at that dimension. *)
+    | Modal_field_filtered_away : string * ('dom, 'mu, 'cod) Modality.t -> t
+    | Extra_filtered_field_in_tuple : string * ('dom, 'mu, 'cod) Modality.t -> t
     | Hole : string * printable -> t
     | No_open_holes : t
     | Open_holes : int -> t
@@ -418,6 +421,8 @@ module Code = struct
     | Axiom_in_parametric_definition _ -> Error
     | Modality_not_sinister _ -> Error
     | Wrong_locking_modality _ -> Error
+    | Modal_field_filtered_away _ -> Error
+    | Extra_filtered_field_in_tuple _ -> Error
     | Hole _ -> Info
     | No_open_holes -> Info
     | Open_holes _ -> Warning
@@ -596,6 +601,8 @@ module Code = struct
     | Missing_key _ -> "E1705"
     | Modality_not_sinister _ -> "E1711"
     | Wrong_locking_modality _ -> "E1712"
+    | Modal_field_filtered_away _ -> "E1713"
+    | Extra_filtered_field_in_tuple _ -> "E1714"
     | Invalid_mode_theory -> "E1710"
     | Intangible_modality _ -> "E1706"
     | Nontransparent_window_modality _ -> "E1707"
@@ -978,6 +985,14 @@ module Code = struct
               textf "field %s is not modal, but was projected with locking modality %s" field
                 (Modality.to_string got)
           | None, None -> textf "field %s has mismatched locking modalities" field)
+      | Modal_field_filtered_away (field, m) ->
+          textf
+            "field %s does not exist at this dimension: its modality %s is nonparametric and filters this dimension away"
+            field (Modality.to_string m)
+      | Extra_filtered_field_in_tuple (field, m) ->
+          textf
+            "field %s must be omitted at this dimension: its modality %s is nonparametric and filters this dimension away"
+            field (Modality.to_string m)
       | Anomaly str -> textf "anomaly: %s" str
       | No_such_level i -> textf "@[<hov 2>no level variable@ %a@ in context@]" pp_printed (print i)
       | Redefining_constant name ->

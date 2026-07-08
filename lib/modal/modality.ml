@@ -562,6 +562,13 @@ let pface_filter : type x m y a b c.
 let deg_of_filter : type x m y a b. b D.t -> (x, m, y, a, b) filter_dim -> (b, a) deg =
  fun b (Filter (_, ex)) -> deg_of_except b ex
 
+(* A filter is "trivial" at a dimension if the modality doesn't actually remove any directions there, i.e. the filtered dimension equals the outer dimension.  This decides whether a modal field is present (projectable, and required/allowed in a tuple) at a given dimension: it is present exactly when its modality's filter is trivial there.  We detect triviality by checking whether the degeneracy from the outer to the filtered dimension is the identity, which also yields the type-level equality of the two dimensions. *)
+let filter_is_trivial : type x m y a b. b D.t -> (x, m, y, a, b) filter_dim -> (a, b) Eq.t option =
+ fun b filt ->
+  match is_id_deg (deg_of_filter b filt) with
+  | Some Eq -> Some Eq
+  | None -> None
+
 let sface_of_filter : type x m y a b. b D.t -> (x, m, y, a, b) filter_dim -> (a, b) opt_sface =
  fun b (Filter (_, ex)) -> sface_of_except b ex
 

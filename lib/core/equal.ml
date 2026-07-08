@@ -52,8 +52,8 @@ let rec nonmodal_apps : type hmode mode any. (hmode, mode, any) apps -> (hmode, 
   | Emp -> Some Eq
   | Arg (rest, _, _, _) -> nonmodal_apps rest
   | Inst (rest, _, _) -> nonmodal_apps rest
-  | Field (rest, fm, _, _, _) -> (
-      match Modality.compare_id fm with
+  | Field (rest, filter, _, _, _) -> (
+      match Modality.compare_id (Modality.filter_modality filter) with
       | Eq -> nonmodal_apps rest
       | Neq -> None)
 
@@ -141,9 +141,7 @@ module Equal = struct
                 let yu = act_value y (id_deg D.zero) unit in
                 let tyu = gact_ty None ty (id_deg D.zero) unit in
                 let (Locked (_, lctx)) = Ctx.lock ctx right in
-                equal_at lctx
-                  (field_term left xu fld fldins)
-                  (field_term left yu fld fldins)
+                equal_at lctx (field_term left xu fld fldins) (field_term left yu fld fldins)
                   (tyof_field left (Ok xu) tyu fld ~shuf:Trivial fldins))
               [ fields ]
         (* At a codatatype without eta, there are no kinetic structs, only comatches, and those are not compared componentwise, only as neutrals, since they are generative. *)
@@ -370,8 +368,10 @@ module Equal = struct
                 fatal
                   (Dimension_mismatch ("application in equality-check", CubeOf.dim a1, CubeOf.dim a2))
             ))
-    | Field (rest1, fm1, f1, _, i1), Field (rest2, fm2, f2, _, i2) -> (
-        (* The spines inside a modal field projection live behind a lock by the left adjoint, so we compare them in the locked context. *)
+    | Field (rest1, filter1, f1, _, i1), Field (rest2, filter2, f2, _, i2) -> (
+        (* The spines inside a modal field projection live behind a lock by the left adjoint, so we compare them in the locked context.  Comparing the field modalities suffices; the filters are then determined by the (equal) result dimensions of the two spines. *)
+        let fm1 = Modality.filter_modality filter1 in
+        let fm2 = Modality.filter_modality filter2 in
         match Modality.compare fm1 fm2 with
         | Neq -> None
         | Eq -> (

@@ -182,6 +182,7 @@ val pface_filter :
   'b D.t -> ('c, 'a) pface -> ('x, 'm, 'y, 'a, 'b) filter_dim -> ('x, 'm, 'y, 'b, 'c) pface_filter
 
 val deg_of_filter : 'b D.t -> ('x, 'm, 'y, 'a, 'b) filter_dim -> ('b, 'a) deg
+val filter_is_trivial : 'b D.t -> ('x, 'm, 'y, 'a, 'b) filter_dim -> ('a, 'b) Eq.t option
 val sface_of_filter : 'b D.t -> ('x, 'm, 'y, 'a, 'b) filter_dim -> ('a, 'b) opt_sface
 
 val filter_comp :

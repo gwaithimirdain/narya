@@ -573,19 +573,22 @@ module Act = struct
           act_cube { act = (fun x s c -> act_normal x s c) } args fb newc in
         let new_s, new_c, new_rest = act_apps rest fa c in
         (new_s, new_c, Arg (new_rest, arg_filter, new_arg, new_ins))
-    | Field (rest, f, fld, fldplus, ins) -> (
+    | Field (rest, filter, fld, fldplus, ins) -> (
         let (Insfact_comp_ext (fa, new_ins, _, _)) = insfact_comp_ext ins s in
-        (* Note that we don't need to change the degeneracy, since it can be extended on the right as needed. *)
+        (* Note that we don't need to change the degeneracy on the outside, since it can be extended on the right as needed. *)
         let (Plus new_fldplus) = D.plus (D.plus_right fldplus) in
+        (* The spine inside a modal field projection lives at the *filtered* dimension of the field's modality.  So we factor the degeneracy fa (pushed past the outer insertion) through the filter with filter_deg: this yields the smaller degeneracy fb that acts on the filtered inner spine, and the new filter for the acted result. *)
+        let (Filter_deg (fb, new_filter)) = Modality.filter_deg filter fa in
+        let modality = Modality.filter_modality filter in
         (* Crossing a modal field projection, the cell is prewhiskered by the left adjoint, since the spine inside lives behind a lock by it.  For ordinary fields the left adjoint is the identity and the cell passes through unchanged. *)
-        match Modality.compare_id f with
+        match Modality.compare_id modality with
         | Eq ->
-            let new_s, new_c, new_rest = act_apps rest fa c in
-            (new_s, new_c, Field (new_rest, f, fld, new_fldplus, new_ins))
+            let new_s, new_c, new_rest = act_apps rest fb c in
+            (new_s, new_c, Field (new_rest, new_filter, fld, new_fldplus, new_ins))
         | Neq ->
-            let (Wrap c) = Modalcell.prewhisker_wrapped c f in
-            let new_s, new_c, new_rest = act_apps rest fa c in
-            (new_s, new_c, Field (new_rest, f, fld, new_fldplus, new_ins)))
+            let (Wrap c) = Modalcell.prewhisker_wrapped c modality in
+            let new_s, new_c, new_rest = act_apps rest fb c in
+            (new_s, new_c, Field (new_rest, new_filter, fld, new_fldplus, new_ins)))
     | Inst (rest, dim, args) ->
         let (Acted_instargs (fa, new_args, None)) = act_instargs args s c None in
         let new_s, new_c, new_rest = act_apps rest fa c in
@@ -678,12 +681,17 @@ let field_lazy : type src f mode s n t i.
   let n, k = (cod_left_ins fldins, cod_right_ins fldins) in
   let (Plus nk) = D.plus k in
   let p = deg_of_perm (perm_inv (perm_of_ins_plus fldins nk)) in
+  (* The stored filter is that of the field's modality at the (outer) result dimension n; the inner spine already lives at the filtered dimension.  Trivial for a fresh projection. *)
+  let (Has_filter filter) = Modality.filter f n in
   match !(act_lazy_eval lev p (Modalcell.id2 src)) with
   | Deferred_eval (env, tm, ins, cell, apps) ->
-      ref (Deferred_eval (env, tm, ins, cell, Field (apps, f, fld, nk, ins_zero n)))
+      ref (Deferred_eval (env, tm, ins, cell, Field (apps, filter, fld, nk, ins_zero n)))
   | Deferred (tm, ins, cell, apps) ->
-      ref (Deferred (tm, ins, cell, Field (apps, f, fld, nk, ins_zero n)))
+      ref (Deferred (tm, ins, cell, Field (apps, filter, fld, nk, ins_zero n)))
   | Ready tm ->
       ref
         (Deferred
-           ((fun () -> tm), id_deg D.zero, Modalcell.id2 src, Field (Emp, f, fld, nk, ins_zero n)))
+           ( (fun () -> tm),
+             id_deg D.zero,
+             Modalcell.id2 src,
+             Field (Emp, filter, fld, nk, ins_zero n) ))

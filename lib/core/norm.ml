@@ -316,13 +316,26 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let (Plus m_k) = D.plus k in
       let filter_total = Modality.filter_plus l_n m_k filter_lm filter_nk in
       apply efn filter_total eargs
-  | Field (Modal (fm, plus_lock, tm), fld, fldins) ->
+  | Field (Modal (fm, plus_lock, tm), fld, fldins) -> (
       let m = dim_env env in
       let n, l = (dom_ins fldins, cod_left_ins fldins) in
-      let Plus m_n, Plus m_l = (D.plus n, D.plus l) in
-      (* The term being projected lives behind a lock by the left adjoint, so we evaluate it in the environment keyed by the identity cell of that modality. *)
-      let ltm = eval_term (key_env env (Modalcell.id fm) plus_lock) tm in
-      field fm ltm fld (plus_ins m m_n m_l fldins)
+      match Modality.compare_id fm with
+      | Eq ->
+          (* An ordinary field (identity adjunction), including all higher fields, does no dimension filtering: the term being projected lives behind a (trivial) lock by the identity, evaluated in the environment keyed by the identity cell. *)
+          let Plus m_n, Plus m_l = (D.plus n, D.plus l) in
+          let ltm = eval_term (key_env env (Modalcell.id fm) plus_lock) tm in
+          field fm ltm fld (plus_ins m m_n m_l fldins)
+      | Neq ->
+          (* A genuinely modal field over a (possibly nonparametric) left adjoint fm.  The term being projected lives behind a lock by fm, hence at the dimension m filtered by fm; we evaluate it in the keyed, locked environment cut down to that filtered dimension k by a face.  We then project at dimension k and degenerate the result back up to the outer dimension m.  For a nonparametric fm at a dimension it filters nontrivially, the field "disappears": k < m, so this projection is genuinely a degeneracy of a lower-dimensional one.  (For a lower field, cod_left_ins fldins = 0, so k is the whole result dimension.) *)
+          let (Has_filter kfilter) = Modality.filter fm m in
+          let k = Modality.filtered m kfilter in
+          let (Plus k_n) = D.plus n in
+          let (Plus k_l) = D.plus l in
+          let lenv = key_env env (Modalcell.id fm) plus_lock in
+          let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter m kfilter)) in
+          let ltm = eval_term flenv tm in
+          let proj = field fm ltm fld (plus_ins k k_n k_l fldins) in
+          act_evaluation proj (Modality.deg_of_filter m kfilter) (Modalcell.id2 (Modality.tgt fm)))
   | Struct { eta; dim = n; fields; energy } ->
       let m = dim_env env in
       let (Plus m_n) = D.plus n in
@@ -486,7 +499,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       (* We push as much of the resulting degeneracy into the environment as possible, in hopes that the remaining insertion outside will be trivial and act_value will be able to short-circuit.  (Ideally, the insertion would be carried through by eval for a single traversal in all cases.) *)
       let (Insfact (is, ins)) = insfact ks kn in
       let (To p) = deg_of_ins ins in
-      Val (act_value (eval_term (act_env env (opt_op_of_deg is)) x) p (Modalcell.id2 (mode_env env)))
+      Val
+        (act_value (eval_term (act_env env (opt_op_of_deg is)) x) p (Modalcell.id2 (mode_env env)))
   | Key { tm; cell; plus_src; plus_tgt } ->
       (* To evaluate a key, we strip off the part of the environment corresponding to the codomain of the key cell, then compose the keys we found there with the supplied key to make a new key on an environment for evaluating the body.  The resulting environment is back at the original mode, so any prekey action stripped along the way is re-applied as a prekey on top. *)
       let (Restrict_keys (env, keys, pre)) = restrict_keys env plus_tgt in
@@ -765,7 +779,9 @@ and field : type src f mode n k nk s.
       (* It must be an uninstantiated neutral application (which could be either an element of a record/codata, or a fibrant type). *)
       | Neu { head; args; value; ty = (lazy ty) } -> (
           let newty = lazy (tyof_field fm (Ok tm) ty fld ~shuf:Trivial fldins) in
-          let args = Field (args, fm, fld, fldplus, ins_zero n) in
+          (* The stored filter is that of the field's modality at the (outer) result dimension n; the inner spine already lives at the corresponding filtered dimension.  For a fresh projection this filter is trivial; a nontrivial one arises only from a degeneracy having acted (see act_apps), which is exactly the situation when this is called from app_eval_apps to replay a filtered spine. *)
+          let (Has_filter filter) = Modality.filter fm n in
+          let args = Field (args, filter, fld, fldplus, ins_zero n) in
           if GluedEval.read () then
             let value = field_lazy fm value fld fldins in
             Val (Neu { head; args; value; ty = newty })
@@ -816,8 +832,8 @@ and struct_field : type src f mode s et n k nk.
           | Eq -> (
               match InsmapOf.find fldins vals with
               | Some v -> force_eval v
-              | None -> if unset_ok then Unrealized else fatal (Anomaly (err ^ " field value unset"))
-              )
+              | None ->
+                  if unset_ok then Unrealized else fatal (Anomaly (err ^ " field value unset")))
           | Neq ->
               fatal (Dimension_mismatch (err ^ " field intrinsic", intrinsic, cod_right_ins fldins))
           ))
@@ -936,8 +952,7 @@ and tyof_field_nokey : type amode.
           match Term.CodatafieldAbwd.find_opt fields fld with
           | Found (Lower (adj, plus_lock, fldty)) ->
               Tyof_modal_field
-                ( adj,
-                  tyof_lower_codatafield tm fld adj plus_lock fldty env tyargs m mn ~key:`Nokey )
+                (adj, tyof_lower_codatafield tm fld adj plus_lock fldty env tyargs m mn ~key:`Nokey)
           | _ -> fatal (Anomaly "field not found in tyof_field_nokey")))
   | _ -> fatal (Anomaly "non-codatatype in tyof_field_nokey")
 
@@ -1033,7 +1048,9 @@ and tyof_higher_codatafield : type mode c n h s r i ic.
                 let (Plus rm) = D.plus (dom_tface faplus) in
                 let arg_ins = ins_plus_of_pbij fains shuffle rm in
                 let tm = field_term (Modality.id mode) arg.tm fldname arg_ins in
-                let ty = tyof_field (Modality.id mode) (Ok arg.tm) arg.ty fldname ~shuf:Trivial arg_ins in
+                let ty =
+                  tyof_field (Modality.id mode) (Ok arg.tm) arg.ty fldname ~shuf:Trivial arg_ins
+                in
                 { tm; ty });
       } in
   inst insttm instargs
@@ -1212,7 +1229,8 @@ and tyof_field_withname_giventype : type src f mode a b m n mn c et.
     Code.t ->
     Field.with_ins * (mode, kinetic) value =
  fun fm ctx tm ty eta env mn fields tyargs infld err ->
-  (* Check that the locking modality supplied by the user (or the identity, if none) agrees with the left adjoint of the adjunction stored with the field. *)
+  let m = dim_env env in
+  (* Check that the locking modality supplied by the user (or the identity, if none) agrees with the left adjoint of the adjunction stored with the field, and that the field is present (not filtered away by a nonparametric modality) at the current dimension. *)
   let check_modality : type i. i Field.t -> (i, src * c * n * et) Term.Codatafield.t -> unit =
    fun fld fldty ->
     let mismatch : type d1 m1 c1. (d1, m1, c1) Modality.t -> unit =
@@ -1228,15 +1246,20 @@ and tyof_field_withname_giventype : type src f mode a b m n mn c et.
     | Lower (adj, _, _) -> (
         let left = Modalcell.adj_left adj in
         match Modality.compare left fm with
-        | Eq -> ()
-        | Neq -> mismatch left)
+        | Neq -> mismatch left
+        | Eq -> (
+            (* The field disappears if its nonparametric modality filters this dimension nontrivially. *)
+            let (Has_filter left_filter) = Modality.filter left m in
+            match Modality.filter_is_trivial m left_filter with
+            | Some Eq -> ()
+            | None -> fatal (Modal_field_filtered_away (Field.to_string fld, left))))
     | Higher _ -> (
         match Modality.compare_id fm with
         | Eq -> ()
         | Neq ->
             fatal
-              (Wrong_locking_modality { field = Field.to_string fld; expected = None; got = Some fm })
-        ) in
+              (Wrong_locking_modality
+                 { field = Field.to_string fld; expected = None; got = Some fm })) in
   let m = dim_env env in
   match infld with
   | `Name (fldname, ints) -> (
@@ -1483,16 +1506,20 @@ and app_eval_apps : type hmode mode s any.
             act_evaluation (apply tm filter (val_of_norm_cube xs)) p (Modalcell.id2 mode) in
           Realize v
       | Unrealized -> Unrealized)
-  | Field (rest, f, fld, fldplus, ins) -> (
-      let mode = Modality.tgt f in
+  | Field (rest, filter, fld, fldplus, ins) -> (
+      let fm = Modality.filter_modality filter in
+      let mode = Modality.tgt fm in
       let (To p) = deg_of_ins ins in
       match app_eval_apps ev rest with
       | Val tm ->
-          act_evaluation (field f tm fld (id_ins (cod_left_ins ins) fldplus)) p (Modalcell.id2 mode)
+          act_evaluation
+            (field fm tm fld (id_ins (cod_left_ins ins) fldplus))
+            p (Modalcell.id2 mode)
       | Realize tm ->
           let (Val v) =
-            act_evaluation (field f tm fld (id_ins (cod_left_ins ins) fldplus)) p
-              (Modalcell.id2 mode) in
+            act_evaluation
+              (field fm tm fld (id_ins (cod_left_ins ins) fldplus))
+              p (Modalcell.id2 mode) in
           Realize v
       | Unrealized -> Unrealized)
   | Inst (rest, _, args) -> (

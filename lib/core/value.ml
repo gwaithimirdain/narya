@@ -92,7 +92,7 @@ module rec Value : sig
         -> ('hmode, 'mode, noninst) apps
     | Field :
         ('hmode, 'src, 'any) apps
-        * ('src, 'f, 'mode) Modality.t
+        * ('src, 'f, 'mode, 'ft, 't) Modality.filter_dim
         * 'i Field.t
         * ('t, 'i, 'n) D.plus
         * ('tk, 't, 'k) insertion
@@ -314,10 +314,10 @@ end = struct
         * ('n, 'dom normal) CubeOf.t
         * ('mk, 'm, 'k) insertion
         -> ('hmode, 'mode, noninst) apps
-    (* For a higher field with ('n, 't, 'i) insertion, the actual evaluation dimension is 'n, but the result dimension is only 't.  So the dimension of the arg is 't, since that's the output dimension that a degeneracy acting on could be pushed through.  However, since a degeneracy of dimension up to 'n can act on the inside, we can push in the whole insertion and store only a plus outside.  The stored modality is the left adjoint of the field's adjunction: the spine inside lives at its source mode (behind a lock by it). *)
+    (* For a higher field with ('n, 't, 'i) insertion, the actual evaluation dimension is 'n, but the result dimension is only 't.  So the dimension of the arg is 't, since that's the output dimension that a degeneracy acting on could be pushed through.  However, since a degeneracy of dimension up to 'n can act on the inside, we can push in the whole insertion and store only a plus outside.  The stored filter_dim is by the left adjoint of the field's adjunction: the spine inside lives at its source mode (behind a lock by it), and at the *filtered* dimension 'ft of the (outer) result dimension 't.  These differ when the field's modality is nonparametric and a degeneracy has acted, filtering some directions of 't away from the projected term; a fresh projection always has a trivial filter with 'ft = 't. *)
     | Field :
         ('hmode, 'src, 'any) apps
-        * ('src, 'f, 'mode) Modality.t
+        * ('src, 'f, 'mode, 'ft, 't) Modality.filter_dim
         * 'i Field.t
         * ('t, 'i, 'n) D.plus
         * ('tk, 't, 'k) insertion
@@ -1012,7 +1012,10 @@ module Fwd_app = struct
         * ('mk, 'm, 'k) insertion
         -> ('mode, 'mode) t
     | Field :
-        ('src, 'f, 'mode) Modality.t * 'i Field.t * ('t, 'i, 'n) D.plus * ('tk, 't, 'k) insertion
+        ('src, 'f, 'mode, 'ft, 't) Modality.filter_dim
+        * 'i Field.t
+        * ('t, 'i, 'n) D.plus
+        * ('tk, 't, 'k) insertion
         -> ('src, 'mode) t
 
   type (_, _) fwd = Nil : ('mode, 'mode) fwd | Cons : ('a, 'b) t * ('b, 'c) fwd -> ('a, 'c) fwd

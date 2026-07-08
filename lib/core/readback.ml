@@ -293,17 +293,25 @@ and readback_neu : type hmode mode a z any.
                   CubeOf.mmap { map = (fun _ [ tm ] -> readback_nf lctx tm) } [ args ] ) ),
           p,
           sort )
-  | Field (apps, fm, fld, fldplus, ins), _ ->
+  | Field (apps, filter, fld, fldplus, ins), _ -> (
+      let fm = Modality.filter_modality filter in
       let (To p) = deg_of_ins ins in
-      (* The spine inside a modal field projection lives behind a lock by the left adjoint, so we read it back in the locked context. *)
+      (* The spine inside a modal field projection lives behind a lock by the left adjoint, so we read it back in the locked context, at the filtered dimension. *)
       let (Locked (plus_lock, lctx)) = Ctx.lock ctx fm in
-      Term.Act
-        ( Field
-            ( Modal (fm, plus_lock, readback_neu ~sort lctx head apps),
-              fld,
-              id_ins (cod_left_ins ins) fldplus ),
-          p,
-          sort )
+      let t = cod_left_ins ins in
+      let inner = readback_neu ~sort lctx head apps in
+      match Modality.filter_is_trivial t filter with
+      | Some Eq ->
+          (* Trivial filter: the inner spine is at the full result dimension t, and we build the projection there directly. *)
+          Term.Act (Field (Modal (fm, plus_lock, inner), fld, id_ins t fldplus), p, sort)
+      | None ->
+          (* Nontrivial filter: the field's modality is nonparametric and a degeneracy has acted, so the inner spine lives at a strictly smaller filtered dimension ft than the result dimension t.  We read back the projection at ft and lift it to t by the filter's degeneracy, which reconstructs (and prints as) the acting degeneracy — this is exactly the "disappeared" projection viewed as a degeneracy of a lower-dimensional one, and it re-evaluates correctly since eval filters the environment dimension. *)
+          let ft = Modality.filtered t filter in
+          let (Plus new_fldplus) = D.plus (D.plus_right fldplus) in
+          let fieldterm : (_, _, kinetic) Term.term =
+            Term.Field (Modal (fm, plus_lock, inner), fld, id_ins ft new_fldplus) in
+          let liftdeg = Modality.deg_of_filter t filter in
+          Term.Act (Term.Act (fieldterm, liftdeg, sort), p, sort))
   | Inst (Emp, _, args), Pi _ when TubeOf.is_full args ->
       (* When reading back a fully instantiated higher-dimensional pi-type, we eta-expand the instantiation arguments so that it can be printed with a nice notation. *)
       let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ~eta:true ctx x) } [ args ] in
@@ -320,7 +328,7 @@ and readback_head : type mode c z.
  fun ?(sort = (`Other, `Other)) ctx h ->
   match h with
   | Var { level; deg; key } -> (
-      (* The source of the key is supposed to be the modal annotation of the variable, while its target is supposed to be the composite of all the locks in the context to its right.  So we remove its target from the context. *)
+      (* The source of the key is supposed to be the modal annotation of the variable, while its target is supposed to be the composite of all the locks in the context to its right (including any added by the degeneracy).  So we remove its target from the context. *)
       let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt key) in
       (* Now we look for the level variable in the remaining context. *)
       let (Lookup
