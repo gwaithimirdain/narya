@@ -75,8 +75,9 @@ let speclist =
           arity := 1;
           refl_char := 'd';
           refl_names := [];
-          internal := false),
-      "Abbreviation for -arity 1 -direction d -external" );
+          internal := false;
+          install_mode_theory := Modal.Dtt.install),
+      "Abbreviation for -arity 1 -direction d -external, with the Dtt mode theory (△ ⊣ □, ◇ ⊣ △)" );
     ( "-coreflector",
       Arg.Unit
         (fun () ->
@@ -155,11 +156,9 @@ let () =
   if !discrete_coreflector && !hott then (
     Printf.fprintf stderr "-discrete-coreflector requires -parametric\n";
     exit 1);
-  (* External parametricity implies the discrete coreflector mode theory. *)
   if (not !internal) && !hott then (
     Printf.fprintf stderr "-external requires -parametric\n";
     exit 1);
-  if not !internal then install_mode_theory := Modal.Discrete_coreflector.install;
   if
     Bwd.is_empty !inputs
     && (not !interactive)
