@@ -326,3 +326,36 @@ General displayed coinductives
    ￫ info[I0000]
    ￮ constant △◇ᵈ_eq defined
   
+  $ narya -v -dtt -discreteness higher-display.ny
+   ￫ info[I0000]
+   ￮ discrete constant ℕ defined
+  
+   ￫ info[I0000]
+   ￮ constant ℕᵈ defined
+  
+   ￫ info[I0000]
+   ￮ constants defined mutually:
+       ∂
+       d
+  
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0000]
+   ￮ constant ∂0 defined
+  
+   ￫ info[I0000]
+   ￮ constant d0 defined
+  
+   ￫ info[I0000]
+   ￮ constant ∂1 defined
+  
+   ￫ info[I0000]
+   ￮ constant d1 defined
+  
+   ￫ info[I0000]
+   ￮ constant ∂2 defined
+  
+   ￫ info[I0000]
+   ￮ constant d2 defined
+  
