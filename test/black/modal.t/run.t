@@ -254,6 +254,9 @@ disappears at dimensions it filters (the reflexivity/parametric direction).
    ￮ constant c defined
   
    ￫ info[I0000]
+   ￮ constant c2 defined
+  
+   ￫ info[I0000]
    ￮ constant p defined
   
    ￫ info[I0000]
@@ -267,6 +270,30 @@ disappears at dimensions it filters (the reflexivity/parametric direction).
   
    ￫ info[I0000]
    ￮ constant cc defined
+  
+   ￫ info[I0000]
+   ￮ constant ♯ defined
+  
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a0 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a1 assumed
+  
+   ￫ info[I0000]
+   ￮ constant a2 defined
+  
+   ￫ info[I0001]
+   ￮ axiom a20 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a21 assumed
+  
+   ￫ info[I0000]
+   ￮ constant a22 defined
   
 
 At dimension 0 the field projects and computes.

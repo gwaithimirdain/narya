@@ -137,12 +137,18 @@ module Equal = struct
                    ] ->
                 (* For a modal field, both terms are keyed by the adjunction unit to put them into a context where the modal field can be projected, and the projections are compared in the context locked by the right adjoint.  For ordinary fields the unit is the identity and the lock is trivial. *)
                 let (Adjunction { left; right; unit; _ }) = adj in
-                let xu = act_value x (id_deg D.zero) unit in
-                let yu = act_value y (id_deg D.zero) unit in
-                let tyu = gact_ty None ty (id_deg D.zero) unit in
-                let (Locked (_, lctx)) = Ctx.lock ctx right in
-                equal_at lctx (field_term left xu fld fldins) (field_term left yu fld fldins)
-                  (tyof_field left (Ok xu) tyu fld ~shuf:Trivial fldins))
+                (* A modal field whose (left adjoint) modality is nonparametric disappears at a dimension it filters nontrivially, so it plays no role in checikng equality. *)
+                let m = cod_left_ins ins in
+                let (Has_filter left_filter) = Modality.filter left m in
+                match Modality.filter_is_trivial m left_filter with
+                | None -> return ()
+                | Some Eq ->
+                    let xu = act_value x (id_deg D.zero) unit in
+                    let yu = act_value y (id_deg D.zero) unit in
+                    let tyu = gact_ty None ty (id_deg D.zero) unit in
+                    let (Locked (_, lctx)) = Ctx.lock ctx right in
+                    equal_at lctx (field_term left xu fld fldins) (field_term left yu fld fldins)
+                      (tyof_field left (Ok xu) tyu fld ~shuf:Trivial fldins))
               [ fields ]
         (* At a codatatype without eta, there are no kinetic structs, only comatches, and those are not compared componentwise, only as neutrals, since they are generative. *)
         | Noeta -> equal_val ctx x y)
