@@ -130,11 +130,12 @@ let pp_modality =
   | [ (m : _ located) ] ->
       pp_ws `None wscolon ^^ utf8string (f m.value) ^^ Token.pp (Op "|") ^^ pp_ws `Nobreak wsbar
   | ms ->
-      pp_ws `Nobreak wscolon
-      ^^ separate_map (break 1) (fun (x : _ located) -> utf8string (f x.value)) ms
-      ^^ break 1
-      ^^ Token.pp (Op "|")
-      ^^ pp_ws `Nobreak wsbar
+      group
+        (pp_ws `Nobreak wscolon
+        ^^ separate_map (break 1) (fun (x : _ located) -> utf8string (f x.value)) ms
+        ^^ break 1
+        ^^ Token.pp (Op "|")
+        ^^ pp_ws `Nobreak wsbar)
 
 (* ********************
    Ascribed variables
