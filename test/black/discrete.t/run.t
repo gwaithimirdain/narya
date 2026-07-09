@@ -1,12 +1,12 @@
 The nonparametric comonad mode theory currently requires -parametric.
 
-  $ narya -discrete-coreflector nonparametric.ny
+  $ narya -discrete-coreflector discrete.ny
   -discrete-coreflector requires -parametric
   [1]
 
 The comonad structure typechecks, and the modal type is parametrically trivial.
 
-  $ narya -v -parametric -direction p,rel,Br -discrete-coreflector nonparametric.ny
+  $ narya -v -parametric -direction p,rel,Br -discrete-coreflector discrete.ny
    ￫ info[I0000]
    ￮ constant f defined
   
@@ -40,7 +40,7 @@ The comonad structure typechecks, and the modal type is parametrically trivial.
 
 Using a ♭-locked variable without a key requires the counit key.
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector nonparametric.ny -e "def g (A : Type) (x : A) : A ≔ f A x"
+  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "def g (A : Type) (x : A) : A ≔ f A x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def g (A : Type) (x : A) : A ≔ f A x
@@ -52,7 +52,7 @@ The reflexivity of the *modal* family ♭T has a *filtered* domain: instead of t
 usual square of arguments, it takes a single (A :♭| Type), because ♭ removes the
 parametric dimension.
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector nonparametric.ny -e "echo rel ♭T"
+  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel ♭T"
   Br ♭T
     : (A :♭| Type) →⁽ᵖ⁾ Type⁽ᵖ⁾ (♭T A) (♭T A)
   
@@ -60,14 +60,14 @@ parametric dimension.
 By contrast, the reflexivity of the *non-modal* family T has the usual full
 square domain {A₀} {A₁} (A₂).
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector nonparametric.ny -e "echo rel T"
+  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel T"
   Br T
     : {A₀ : Type} {A₁ : Type} (A₂ : Type⁽ᵖ⁾ A₀ A₁) →⁽ᵖ⁾ Type⁽ᵖ⁾ (T A₀) (T A₁)
   
 
 The filtered reflexivity computes correctly when applied to an argument.
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector nonparametric.ny -e "echo rel ♭T Type"
+  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel ♭T Type"
   ♭T⁽ᵖ⁾ Type
     : Type⁽ᵖ⁾ (♭T Type) (♭T Type)
   
@@ -75,7 +75,7 @@ The filtered reflexivity computes correctly when applied to an argument.
 The filtered higher pi-type can be written explicitly, and refl ♭T checks
 against it.
 
-  $ narya -v -parametric -direction p,rel,Br -discrete-coreflector nonparametric.ny -e "def rT : (A :♭| Type) →⁽ᵖ⁾ Type⁽ᵖ⁾ (♭T A) (♭T A) ≔ rel ♭T"
+  $ narya -v -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "def rT : (A :♭| Type) →⁽ᵖ⁾ Type⁽ᵖ⁾ (♭T A) (♭T A) ≔ rel ♭T"
    ￫ info[I0000]
    ￮ constant f defined
   
@@ -112,7 +112,7 @@ against it.
 
 Iterated reflexivity keeps the filtered single-variable domain.
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector nonparametric.ny -e "echo rel (rel ♭T)"
+  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel (rel ♭T)"
   ♭T⁽ᵖᵖ⁾
     : (A :♭| Type) →⁽ᵖᵖ⁾ Type⁽ᵖᵖ⁾ (♭T⁽ᵖ⁾ A) (♭T⁽ᵖ⁾ A) (♭T⁽ᵖ⁾ A) (♭T⁽ᵖ⁾ A)
   
@@ -121,22 +121,22 @@ Iterated reflexivity keeps the filtered single-variable domain.
 Reflexivity of modal *lambdas* (not just constants) also reads back with a
 filtered domain, and computes when applied.
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector nonparametric.ny -e "echo rel ((A : ♭| Type) ↦ A)"
+  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel ((A : ♭| Type) ↦ A)"
   A ↦ Br A
     : (A :♭| Type) →⁽ᵖ⁾ Type⁽ᵖ⁾ A A
   
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector nonparametric.ny -e "echo rel ((A : ♭| Type) ↦ ♭T A)"
+  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel ((A : ♭| Type) ↦ ♭T A)"
   A ↦ ♭T⁽ᵖ⁾ A
     : (A :♭| Type) →⁽ᵖ⁾ Type⁽ᵖ⁾ (♭T A) (♭T A)
   
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector nonparametric.ny -e "echo rel ((A : ♭| Type) ↦ ♭T A) Type"
+  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel ((A : ♭| Type) ↦ ♭T A) Type"
   ♭T⁽ᵖ⁾ Type
     : Type⁽ᵖ⁾ (♭T Type) (♭T Type)
   
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector nonparametric.ny -e "echo rel (rel ((A : ♭| Type) ↦ ♭T A))"
+  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel (rel ((A : ♭| Type) ↦ ♭T A))"
   A ↦ ♭T⁽ᵖᵖ⁾ A
     : (A :♭| Type) →⁽ᵖᵖ⁾ Type⁽ᵖᵖ⁾ (♭T⁽ᵖ⁾ A) (♭T⁽ᵖ⁾ A) (♭T⁽ᵖ⁾ A) (♭T⁽ᵖ⁾ A)
   
