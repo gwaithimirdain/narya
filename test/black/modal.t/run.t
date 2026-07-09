@@ -243,7 +243,7 @@ not sinister.
 In the discrete spatial mode theory, ♭ is nonparametric, so a ♭-modal field
 disappears at dimensions it filters (the reflexivity/parametric direction).
 
-  $ narya -v -discrete-spatial discretefields.ny
+  $ narya -v -discrete-spatial discretefields.ny -e 'echo a2'
    ￫ info[I0000]
    ￮ constant N defined
   
@@ -294,6 +294,9 @@ disappears at dimensions it filters (the reflexivity/parametric direction).
   
    ￫ info[I0000]
    ￮ constant a22 defined
+  
+  ()
+    : ♯⁽ᵉ⁾ (Id A) (_ ≔ (a0 :♭| _) .unsharp) (_ ≔ (a1 :♭| _) .unsharp)
   
 
 At dimension 0 the field projects and computes.

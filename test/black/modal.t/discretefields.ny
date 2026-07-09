@@ -28,7 +28,7 @@ def d : D ≔ [ .snd ↦ zero. ]
 def cc : Id C c c2 ≔ [ ]
 
 ` The same for records, whose bridge types additionally have eta.
-def ♯ (A : Type) : Type ≔ sig ( (x :♭| _) .unsharp : A )
+def ♯ (A : Type) : Type ≔ sig #(transparent positional) ( (x :♭| _) .unsharp : A )
 
 axiom A : Type
 axiom a0 : ♯ A
