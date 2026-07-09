@@ -106,12 +106,11 @@ struct
   let transparent _ = false
   let translucent _ = true
 
-  (* Every nonidentity modality is a power of the coreflector, so it is an unlocker. *)
-  let parametric_unlocker : type a m b. (a, m, b) Modality.t -> bool =
+  let parametric_locker : type a. a Mode.t -> (a, a) Modality.wrapped option =
    fun m ->
-    match Modality.compare_id m with
-    | Eq -> false
-    | Neq -> true
+    match Mode.compare m Testmode.mode with
+    | Eq -> Some (Wrap (Modality.of_gen Coreflector.modality))
+    | Neq -> failwith "discrete spatial: unknown mode"
 
   let one_char = true
 end

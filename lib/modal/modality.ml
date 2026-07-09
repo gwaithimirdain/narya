@@ -243,7 +243,7 @@ module type Theory = sig
   val pellucid : ('a, 'm, 'b) t -> bool
   val transparent : ('a, 'm, 'b) t -> bool
   val translucent : ('a, 'm, 'b) t -> bool
-  val parametric_unlocker : ('a, 'm, 'b) t -> bool
+  val parametric_locker : 'a Mode.t -> ('a, 'a) wrapped option
   val one_char : bool
 end
 
@@ -255,7 +255,7 @@ let theory : (module Theory) ref =
       let pellucid _ = false
       let transparent _ = false
       let translucent _ = true
-      let parametric_unlocker _ = false
+      let parametric_locker _ = None
       let one_char = true
     end : Theory)
 
@@ -277,9 +277,9 @@ let translucent m =
   let module T = (val !theory) in
   T.translucent m
 
-let parametric_unlocker m =
+let parametric_locker m =
   let module T = (val !theory) in
-  T.parametric_unlocker m
+  T.parametric_locker m
 
 let one_char () =
   let module T = (val !theory) in

@@ -251,6 +251,17 @@ let unless_error (v : 'a) (err : 'b Bwd.t) : ('a, Code.t) Result.t =
   | Emp -> Ok v
   | Snoc _ -> Error (Accumulated ("dependence", Emp))
 
+(* If parametricity is external, we check accessibility by the mere existence of a 2-cell. *)
+let check_parametricity : type a m b c n d.
+    (a, m, b) Modality.t -> (c, n, d) Modality.t option -> unit =
+ fun modality parametric_lock ->
+  match parametric_lock with
+  | None -> ()
+  | Some lock -> (
+      match Modalcell.find_unique modality lock with
+      | Some _ -> ()
+      | None -> fatal (Locked_variable modality))
+
 (* A "checkable branch" stores all the information about a branch in a match, both that coming from what the user wrote in the match and what is stored as properties of the datatype.  *)
 type (_, _, _, _) checkable_branch =
   | Checkable_branch : {
@@ -1419,8 +1430,17 @@ and check_implicit_match : type mode a b.
       let fallback reason arg =
         emit ?loc (Matching_wont_refine (reason, Some arg));
         fallback () in
-      let (Lookup { result; value = { tm = _; ty = varty }; dirt; modality; filter; insert; plus })
-          =
+      let (Lookup
+             {
+               result;
+               value = { tm = _; ty = varty };
+               dirt;
+               modality;
+               filter;
+               insert;
+               plus;
+               parametric_lock;
+             }) =
         Ctx.lookup ctx ix in
       (* This is a use of the variable, so we record its dirt for any active occurrence-analysis scope. *)
       Positivity.record dirt;
@@ -1430,6 +1450,7 @@ and check_implicit_match : type mode a b.
       match (comp, locks) with
       | Suc _, Suc _ -> fallback "discriminee is locked" (PModality lock)
       | Zero, Zero _ -> (
+          check_parametricity modality parametric_lock;
           (* The modal annotation on the variable must match the window modality *if* that was given. *)
           (match window_name with
           | None -> ()
@@ -3073,7 +3094,9 @@ and synth : type mode a b s.
     match (tm.value, status) with
     | Var i, _ -> (
         (* We look up the raw variable index in the context.  This returns its De Bruijn level (which we don't need), its value, its annotating modality, and the information that goes into its De Bruijn index (insertion and plus_with_locks). *)
-        let (Lookup { result; value; dirt; modality; filter; insert; plus = plus_tgt }) =
+        let (Lookup
+               { result; value; dirt; modality; filter; insert; plus = plus_tgt; parametric_lock })
+            =
           Ctx.lookup ctx i in
         (* If this is a let-bound variable whose value contains occurrences of currently-being-defined constants, record that for any active occurrence-analysis scope. *)
         Positivity.record dirt;
@@ -3106,12 +3129,14 @@ and synth : type mode a b s.
         (* Any keys supplied explicitly by the user have been stripped off already, but we can insert an identity key or a unique key as well. *)
         match (Modality.compare modality lock, Modalcell.find_unique modality lock) with
         | Eq, _ ->
+            check_parametricity modality parametric_lock;
             (* If the two modalities are equal, we still technically need an "identity key" substitution to replace the lock-containing context with a lock-only context. *)
             ( realize status
                 (Term.Key { tm; cell = Modalcell.id modality; plus_tgt; plus_src }
                   : (mode, b, kinetic) term),
               (act_value ty (id_deg D.zero) (Modalcell.id2 mode) : (mode, kinetic) value) )
         | _, Some (Unique cell) ->
+            check_parametricity modality parametric_lock;
             (* And if the key is unique, we act by that key. *)
             ( realize status (Term.Key { tm; cell; plus_tgt; plus_src }),
               act_value ty (id_deg D.zero) cell )

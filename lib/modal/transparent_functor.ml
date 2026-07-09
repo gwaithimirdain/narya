@@ -59,7 +59,7 @@ module TransparentFunctorModalities : Modality.Theory = struct
   let transparent _ = true
   let translucent _ = true
   let tangible _ = true
-  let parametric_unlocker _ = false
+  let parametric_locker : type a. a Mode.t -> (a, a) Modality.wrapped option = fun _ -> None
   let one_char = true
 end
 

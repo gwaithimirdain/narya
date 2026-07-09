@@ -291,13 +291,11 @@ struct
   let transparent m = pellucid m
   let translucent _ = true
 
-  (* Anything normalizing to △□ is a parametric unlocker. *)
-  let parametric_unlocker : type a m b. (a, m, b) Modality.t -> bool =
+  let parametric_locker : type a. a Mode.t -> (a, a) Modality.wrapped option =
    fun m ->
-    let (Normalize (m, _, _)) = normalize m in
-    match Modality.compare m tribox with
-    | Eq -> true
-    | Neq -> false
+    match Mode.compare m Type.mode with
+    | Eq -> Some (Wrap tribox)
+    | Neq -> failwith "discrete spatial: unknown mode"
 
   let one_char = true
 end
