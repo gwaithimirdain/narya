@@ -1,4 +1,5 @@
 open Bwd
+open Asai.Range
 open Util
 open Dim
 open Signatures
@@ -300,16 +301,18 @@ let rec name_bwd : type a m b. (a, m, b) t -> string Bwd.t = function
 
 let name : type a m b. (a, m, b) t -> string list = fun m -> Bwd.to_list (name_bwd m)
 
-let of_name_tgt : type a s.
-    (s -> string) ->
+let of_name_tgt : type a.
     a Mode.t ->
-    s list ->
-    (a src_wrapped, [ `Not_found of s | `Wrong_tgt of Mode.wrapped * s * Mode.wrapped ]) result =
- fun get_string mode cs ->
+    string located list ->
+    ( a src_wrapped,
+      [ `Not_found of string located | `Wrong_tgt of Mode.wrapped * string located * Mode.wrapped ]
+    )
+    result =
+ fun mode cs ->
   let rec go (m : a src_wrapped) = function
     | [] -> Ok m
     | c :: cs -> (
-        match StringMap.find_opt (get_string c) !Gen.by_name with
+        match StringMap.find_opt c.value !Gen.by_name with
         | None -> Error (`Not_found c)
         | Some (Wrap n) -> (
             let (Wrap m) = m in
@@ -318,31 +321,35 @@ let of_name_tgt : type a s.
             | Neq -> Error (`Wrong_tgt (Mode.Wrap (Gen.tgt n), c, Mode.Wrap (src m))))) in
   go (Wrap (id mode)) cs
 
-let rec of_name_src_bwd : type a s.
-    (s -> string) ->
-    s Bwd.t ->
+let rec of_name_src_bwd : type a.
+    string located Bwd.t ->
     a Mode.t ->
-    (a tgt_wrapped, [ `Not_found of s | `Wrong_src of Mode.wrapped * s * Mode.wrapped ]) result =
- fun get_string cs mode ->
+    ( a tgt_wrapped,
+      [ `Not_found of string located | `Wrong_src of Mode.wrapped * string located * Mode.wrapped ]
+    )
+    result =
+ fun cs mode ->
   match cs with
   | Emp -> Ok (Wrap (id mode))
   | Snoc (cs, c) -> (
-      match StringMap.find_opt (get_string c) !Gen.by_name with
+      match StringMap.find_opt c.value !Gen.by_name with
       | None -> Error (`Not_found c)
       | Some (Wrap n) -> (
           match Mode.compare (Gen.src n) mode with
           | Eq -> (
-              match of_name_src_bwd get_string cs (Gen.tgt n) with
+              match of_name_src_bwd cs (Gen.tgt n) with
               | Ok (Wrap m) -> Ok (Wrap (suc m n) : a tgt_wrapped)
               | Error e -> Error e)
           | Neq -> Error (`Wrong_src (Wrap (Gen.src n), c, Wrap mode))))
 
-let of_name_src : type a s.
-    (s -> string) ->
-    s list ->
+let of_name_src : type a.
+    string located list ->
     a Mode.t ->
-    (a tgt_wrapped, [ `Not_found of s | `Wrong_src of Mode.wrapped * s * Mode.wrapped ]) result =
- fun get_string cs mode -> of_name_src_bwd get_string (Bwd.of_list cs) mode
+    ( a tgt_wrapped,
+      [ `Not_found of string located | `Wrong_src of Mode.wrapped * string located * Mode.wrapped ]
+    )
+    result =
+ fun cs mode -> of_name_src_bwd (Bwd.of_list cs) mode
 
 let to_string : type a m b. (a, m, b) t -> string =
  fun m ->
@@ -350,17 +357,18 @@ let to_string : type a m b. (a, m, b) t -> string =
   | [] -> "id"
   | ms -> String.concat " " ms
 
-let compare_name : type x m y s.
-    (s -> string) ->
-    s list ->
+let compare_name : type x m y.
+    string located list ->
     (x, m, y) t ->
     ( unit,
-      [ `Unequal of y src_wrapped | `Not_found of s | `Wrong_tgt of Mode.wrapped * s * Mode.wrapped ]
-    )
+      [ `Unequal of y src_wrapped
+      | `Not_found of string located
+      | `Wrong_tgt of Mode.wrapped * string located * Mode.wrapped ] )
     result =
- fun get_string name m ->
-  match of_name_tgt get_string (tgt m) name with
-  | Error e -> Error (e :> [ `Unequal of y src_wrapped | `Not_found of s | `Wrong_tgt of _ ])
+ fun name m ->
+  match of_name_tgt (tgt m) name with
+  | Error e ->
+      Error (e :> [ `Unequal of y src_wrapped | `Not_found of string located | `Wrong_tgt of _ ])
   | Ok (Wrap n) -> (
       match compare m n with
       | Eq -> Ok ()

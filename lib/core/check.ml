@@ -398,7 +398,7 @@ type (_, _, _, _, _) match_motive =
 (* Get a window modality if one was supplied, defaulting to the identity if not. *)
 let get_window mode = function
   | Some w -> (
-      match Modality.of_name_tgt (fun x -> x.value) mode w.value with
+      match Modality.of_name_tgt mode w.value with
       | Error e -> modality_fatal "checking let-in" (e :> modality_error)
       | Ok w -> w)
   | None -> Wrap (Modality.id mode)
@@ -576,7 +576,7 @@ let rec check : type mode a b s.
             (match (dom, D.compare_zero m) with
             | Some _, Pos _ -> fatal (Unimplemented "domain-ascribed higher abstractions")
             | Some (dmod, dom), Zero -> (
-                (match Modality.compare_name (fun m -> m.value) dmod.value modality with
+                (match Modality.compare_name dmod.value modality with
                 | Ok () -> ()
                 | Error (`Unequal (Wrap m)) ->
                     fatal ?loc:dmod.loc ~severity:Asai.Diagnostic.Error
@@ -1161,7 +1161,7 @@ and synth_or_check_let : type mode a b s p.
     (mode, b, s) term * ((mode, kinetic) value, p) Perhaps.not =
  fun ?nosynth status ctx name premod v body ty ->
   (* A non-recursive let-binding can be modal. *)
-  match Modality.of_name_tgt (fun x -> x.value) (Ctx.mode ctx) premod.value with
+  match Modality.of_name_tgt (Ctx.mode ctx) premod.value with
   | Error e -> modality_fatal "checking let-in" (e :> modality_error)
   | Ok (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) -> (
       let (Locked (plus, lctx)) = Ctx.lock ctx modality in
@@ -1434,7 +1434,7 @@ and check_implicit_match : type mode a b.
           (match window_name with
           | None -> ()
           | Some w -> (
-              match Modality.of_name_tgt (fun x -> x.value) (Ctx.mode ctx) w.value with
+              match Modality.of_name_tgt (Ctx.mode ctx) w.value with
               | Error e -> modality_fatal "checking let-in" (e :> modality_error)
               | Ok (Wrap window) -> (
                   match Modality.compare window modality with
@@ -2480,7 +2480,7 @@ and check_codata : type mode a b n et.
         match lock with
         | None -> Any_adjunction (Modalcell.id_adjunction (Ctx.mode ctx))
         | Some lockname -> (
-            match Modality.of_name_src (fun x -> x.value) lockname.value (Ctx.mode ctx) with
+            match Modality.of_name_src lockname.value (Ctx.mode ctx) with
             | Error e -> modality_fatal "field locking annotation" (e :> modality_error)
             | Ok (Wrap f) -> (
                 match Modalcell.sinister f with
@@ -2559,7 +2559,7 @@ and check_record : type mode a f1 f2 f af d acd b n.
         Reporter.try_with ~fatal:(fun e ->
             (checked_fields, fibrancy, Bwv.Snoc (ctx_fields, (fld, name)), Snoc (errs, e)))
         @@ fun () ->
-        match Modality.of_name_tgt (fun x -> x.value) (Ctx.mode ctx) modality.value with
+        match Modality.of_name_tgt (Ctx.mode ctx) modality.value with
         | Error e -> modality_fatal "field annotation" (e :> modality_error)
         | Ok (Wrap modality) -> (
             match Modality.compare_id modality with
@@ -3145,7 +3145,7 @@ and synth : type mode a b s.
         match lock with
         | None -> synth_field (Modality.id (Ctx.mode ctx))
         | Some lockname -> (
-            match Modality.of_name_tgt (fun x -> x.value) (Ctx.mode ctx) lockname.value with
+            match Modality.of_name_tgt (Ctx.mode ctx) lockname.value with
             | Error e -> modality_fatal "field projection locking annotation" (e :> modality_error)
             | Ok (Wrap fm) -> synth_field fm))
     | UU umode, _ -> (
@@ -3153,7 +3153,7 @@ and synth : type mode a b s.
         | Eq -> (realize status (Term.UU (mode, D.zero)), universe mode D.zero)
         | Neq -> fatal (Mode_mismatch (`User, "synthesizing universe", umode, None, mode)))
     | Pi (x, modality, dom, cod), _ -> (
-        match Modality.of_name_tgt (fun x -> x.value) mode modality.value with
+        match Modality.of_name_tgt mode modality.value with
         | Error e -> modality_fatal "synthesizing pi-type" (e :> modality_error)
         | Ok (Wrap modality) ->
             if not (Modality.tangible modality) then fatal (Intangible_modality modality);
@@ -3170,7 +3170,7 @@ and synth : type mode a b s.
                    ccod),
               universe mode D.zero ))
     | HigherPi (x, modality, dom, cod), _ -> (
-        match Modality.of_name_tgt (fun x -> x.value) mode modality.value with
+        match Modality.of_name_tgt mode modality.value with
         | Error e -> modality_fatal "synthesizing higher pi-type" (e :> modality_error)
         | Ok (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) -> (
             let (Locked (plus, lctx)) = Ctx.lock ctx modality in
@@ -3286,7 +3286,7 @@ and synth : type mode a b s.
         let modality =
           List.fold_left
             (fun (m1 : mode Modality.src_wrapped option) m2 ->
-              match (m1, Modality.of_name_tgt (fun x -> x.value) mode m2.value) with
+              match (m1, Modality.of_name_tgt mode m2.value) with
               | _, Error e -> modality_fatal "synthesizing higher pi-type" (e :> modality_error)
               | None, Ok m -> Some m
               | Some (Wrap m1), Ok (Wrap m2) -> (
@@ -3510,7 +3510,7 @@ and synth : type mode a b s.
         let ctm = check status ctx tm ety in
         (ctm, ety)
     | AscLam ({ value = x; loc = _ }, modality, dom, body), _ -> (
-        match Modality.of_name_tgt (fun x -> x.value) mode modality.value with
+        match Modality.of_name_tgt mode modality.value with
         | Error e -> modality_fatal "synthesizing ascribed lambda" (e :> modality_error)
         | Ok (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) ->
             let (Locked (plus, lctx)) = Ctx.lock ctx modality in
@@ -4053,7 +4053,7 @@ and synth_lam : type mode a b c d n.
           body;
         },
       _ :: _ ) -> (
-      match Modality.of_name_tgt (fun x -> x.value) mode modality.value with
+      match Modality.of_name_tgt mode modality.value with
       | Error e -> modality_fatal "synthesizing ascribed lambda" (e :> modality_error)
       | Ok (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) ->
           let (Locked (plus, lctx)) = Ctx.lock ctx modality in
@@ -4217,7 +4217,7 @@ and check_tel : type mode a b c ac.
   match tel with
   | Emp -> (Checked_tel (Emp, ctx), Option.is_some discrete)
   | Ext (x, modality, ty, tys) -> (
-      match Modality.of_name_tgt (fun x -> x.value) (Ctx.mode ctx) modality.value with
+      match Modality.of_name_tgt (Ctx.mode ctx) modality.value with
       | Error e -> modality_fatal "checking a telescope" (e :> modality_error)
       | Ok (Wrap modality) ->
           if not (Modality.tangible modality) then fatal (Intangible_modality modality);
@@ -4247,7 +4247,7 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
               | Some (modality, dom) -> (
                   match synth_mode dom with
                   | Some (Wrap dmode) -> (
-                      match Modality.of_name_src (fun x -> x.value) modality.value dmode with
+                      match Modality.of_name_src modality.value dmode with
                       | Ok (Wrap modality) -> Some (Wrap (Modality.tgt modality))
                       | Error _ -> None)
                   | None -> None)
@@ -4276,7 +4276,7 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
       | Synth (Field (x, _, Some lock)) -> (
           match synth_mode (locate_opt tm.loc (Synth x.value)) with
           | Some (Wrap xmode) -> (
-              match Modality.of_name_src (fun x -> x.value) lock.value xmode with
+              match Modality.of_name_src lock.value xmode with
               | Ok (Wrap modality) -> Some (Wrap (Modality.tgt modality))
               | Error _ -> None)
           | None -> None)
@@ -4286,7 +4286,7 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
           | None -> (
               match synth_mode dom with
               | Some (Wrap dmode) -> (
-                  match Modality.of_name_src (fun x -> x.value) modality.value dmode with
+                  match Modality.of_name_src modality.value dmode with
                   | Ok (Wrap modality) -> Some (Wrap (Modality.tgt modality))
                   | Error _ -> None)
               | None -> None))
@@ -4296,7 +4296,7 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
           | None -> (
               match synth_mode (locate_opt dom.loc (Synth dom.value)) with
               | Some (Wrap dmode) -> (
-                  match Modality.of_name_src (fun x -> x.value) modality.value dmode with
+                  match Modality.of_name_src modality.value dmode with
                   | Ok (Wrap modality) -> Some (Wrap (Modality.tgt modality))
                   | Error _ -> None)
               | None -> None))
@@ -4315,7 +4315,7 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
           | None -> (
               match synth_mode dom with
               | Some (Wrap dmode) -> (
-                  match Modality.of_name_src (fun x -> x.value) modality.value dmode with
+                  match Modality.of_name_src modality.value dmode with
                   | Ok (Wrap modality) -> Some (Wrap (Modality.tgt modality))
                   | Error _ -> None)
               | None -> None))
@@ -4348,7 +4348,7 @@ let rec synth_mode_tel : type a b ab. (a, b, ab) Raw.tel -> Modal.Mode.wrapped o
   | Ext (_, modality, ty, tel) -> (
       match synth_mode ty with
       | Some (Wrap dmode) -> (
-          match Modality.of_name_src (fun x -> x.value) modality.value dmode with
+          match Modality.of_name_src modality.value dmode with
           | Ok (Wrap modality) -> Some (Wrap (Modality.tgt modality))
           | Error _ -> None)
       | None -> synth_mode_tel tel)

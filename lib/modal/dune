@@ -1,5 +1,5 @@
 (library
   (name modal)
   (public_name narya.modal)
-  (libraries util dim))
+  (libraries util dim asai))
 (env (_ (flags (:standard -w -37 -w -30))))

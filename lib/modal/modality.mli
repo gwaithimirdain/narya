@@ -1,4 +1,4 @@
-open Bwd
+open Asai.Range
 open Util
 open Signatures
 open Dim
@@ -67,38 +67,34 @@ end
 val compare_id : ('x, 'm, 'y) t -> ('m * 'y, 'x id * 'x) Eq.compare
 
 (* *)
-val name_bwd : ('a, 'm, 'b) t -> string Bwd.t
 val name : ('a, 'm, 'b) t -> string list
 
 val of_name_tgt :
-  ('s -> string) ->
   'a Mode.t ->
-  's list ->
-  ('a src_wrapped, [ `Not_found of 's | `Wrong_tgt of Mode.wrapped * 's * Mode.wrapped ]) result
-
-val of_name_src_bwd :
-  ('s -> string) ->
-  's Bwd.t ->
-  'a Mode.t ->
-  ('a tgt_wrapped, [ `Not_found of 's | `Wrong_src of Mode.wrapped * 's * Mode.wrapped ]) result
+  string located list ->
+  ( 'a src_wrapped,
+    [ `Not_found of string located | `Wrong_tgt of Mode.wrapped * string located * Mode.wrapped ]
+  )
+  result
 
 val of_name_src :
-  ('s -> string) ->
-  's list ->
+  string located list ->
   'a Mode.t ->
-  ('a tgt_wrapped, [ `Not_found of 's | `Wrong_src of Mode.wrapped * 's * Mode.wrapped ]) result
+  ( 'a tgt_wrapped,
+    [ `Not_found of string located | `Wrong_src of Mode.wrapped * string located * Mode.wrapped ]
+  )
+  result
 
 val to_string : ('a, 'm, 'b) t -> string
 
 (* *)
 val compare_name :
-  ('s -> string) ->
-  's list ->
+  string located list ->
   ('x, 'm, 'y) t ->
   ( unit,
     [ `Unequal of 'y src_wrapped
-    | `Not_found of 's
-    | `Wrong_tgt of Mode.wrapped * 's * Mode.wrapped ] )
+    | `Not_found of string located
+    | `Wrong_tgt of Mode.wrapped * string located * Mode.wrapped ] )
   result
 
 type ('x, 'm, 'y, 'a, 'b) filter_dim
