@@ -225,11 +225,21 @@ module Ordered = struct
   let parametric_lock : type mode a b. (mode, a, b) t -> (mode, a, b) t =
    fun ctx -> Parametric_lock ctx
 
-  let rec parametric_locked : type mode a b. (mode, a, b) t -> bool = function
-    | Emp _ -> false
+  (* The composite parametric lock for the entire context, to test nonparametric constants and axioms. *)
+  let rec parametric_locked : type mode a b. (mode, a, b) t -> mode Modality.tgt_wrapped = function
+    | Emp mode -> Wrap (Modality.id mode)
     | Snoc (ctx, _, _) -> parametric_locked ctx
-    | Parametric_lock _ -> true
-    | Lock (ctx, _) -> parametric_locked ctx
+    | Parametric_lock ctx -> (
+        match Modality.parametric_locker (mode ctx) with
+        | Some (Wrap lock) ->
+            let (Wrap nu) = parametric_locked ctx in
+            let (Comp mu) = Modality.comp lock in
+            (Wrap (Modality.comp_out nu mu) : mode Modality.tgt_wrapped)
+        | None -> parametric_locked ctx)
+    | Lock (ctx, lock) ->
+        let (Wrap nu) = parametric_locked ctx in
+        let (Comp mu) = Modality.comp (Modality.of_gen lock) in
+        (Wrap (Modality.comp_out nu mu) : mode Modality.tgt_wrapped)
 
   let rec checked_length : type mode a b. (mode, a, b) t -> (mode, b) Tctx.t = function
     | Emp mode -> Tctx.emp mode

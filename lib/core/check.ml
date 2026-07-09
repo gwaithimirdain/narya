@@ -3149,13 +3149,16 @@ and synth : type mode a b s.
         let (Definition { mode; ty; parametric; _ }) = Global.find name in
         match Modal.Mode.compare mode (Ctx.mode ctx) with
         | Eq ->
-            (match (parametric, Ctx.parametric_locked ctx) with
+            let (Wrap parametric_lock) = Ctx.parametric_locked ctx in
+            (* The context is locked for constants if there is no cell from the identity to the composite parametric lock (all locks plus any parametric lockers). *)
+            let ctx_locked = Modalcell.find_unique (Modality.id mode) parametric_lock in
+            (match (parametric, ctx_locked) with
             (* If the context is locked, then nonparametric constants are not allowed.  *)
-            | `Nonparametric, true -> fatal (Locked_constant (PConstant name))
+            | `Nonparametric, None -> fatal (Locked_constant (PConstant name))
             (* Thus, if one of the currently-being-defined constants is encountered in a locked context, they *must* be parametric. *)
-            | `Maybe_parametric, true -> Global.set_parametric name
-            (* On the other hand, if the context is not locked and we encounter a nonparametric constant, then the current constants must be nonparametric.  (The Global.set functions handle checking for conflicts between requirements of parametricness of the current definitions.) *)
-            | `Nonparametric, false -> Global.set_nonparametric (Some name)
+            | `Maybe_parametric, None -> Global.set_parametric name
+            (* On the other hand, if the context is not locked and we encounter a nonparametric constant, then the current constants must also be nonparametric.  (The Global.set functions handle checking for conflicts between requirements of parametricness of the current definitions.) *)
+            | `Nonparametric, Some _ -> Global.set_nonparametric (Some name)
             | _ -> ());
             (realize status (Const name), eval_term (Emp (mode, D.zero)) ty)
         | Neq -> fatal (Mode_mismatch (`User, "synthesizing constant", mode, None, Ctx.mode ctx)))
