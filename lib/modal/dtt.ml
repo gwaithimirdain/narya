@@ -110,12 +110,17 @@ struct
   let diamond_counit_inv = Modalcell.of_gen (Modalcell.generate (Modality.id disc) diatri)
   let box_to_dia = Modalcell.of_gen (Modalcell.generate box dia)
 
-  (* A modality is sinister (a declared left adjoint) if it is the identity, △ (left adjoint to □), or ◇ (left adjoint to △). *)
+  (* A modality is sinister (a declared left adjoint) if it is the identity, △ (left adjoint to □), or ◇ (left adjoint to △), or △◇ (left adjoint to △□). *)
   let sinister : type a f b. (a, f, b) Modality.t -> (a, f, b) Modalcell.sinister option =
    fun f ->
-    match (Modality.compare_id f, Modality.compare f tri, Modality.compare f dia) with
-    | Eq, _, _ -> Some (Modalcell.id_sinister (Modality.src f))
-    | _, Eq, _ ->
+    match
+      ( Modality.compare_id f,
+        Modality.compare f tri,
+        Modality.compare f dia,
+        Modality.compare f tridia )
+    with
+    | Eq, _, _, _ -> Some (Modalcell.id_sinister (Modality.src f))
+    | _, Eq, _, _ ->
         (* △ ⊣ □ *)
         Some
           (Sinister
@@ -128,7 +133,7 @@ struct
                   left_right = Suc (Zero, Box.modality);
                   counit = box_counit;
                 }))
-    | _, _, Eq ->
+    | _, _, Eq, _ ->
         (* ◇ ⊣ △ *)
         Some
           (Sinister
@@ -140,6 +145,36 @@ struct
                   unit = diamond_unit;
                   left_right = Suc (Zero, Triangle.modality);
                   counit = diamond_counit;
+                }))
+    | _, _, _, Eq ->
+        (* △◇ ⊣ △□ *)
+        Some
+          (Sinister
+             (Adjunction
+                {
+                  left = tridia;
+                  right = tribox;
+                  right_left = Suc (Suc (Zero, Triangle.modality), Diamond.modality);
+                  unit =
+                    Modalcell.vcomp
+                      (Modalcell.prewhisker
+                         (Suc (Zero, Diamond.modality))
+                         (Suc (Zero, Diamond.modality))
+                         (Modalcell.postwhisker Zero
+                            (Suc (Suc (Zero, Box.modality), Triangle.modality))
+                            tri box_unit)
+                         dia)
+                      diamond_unit;
+                  left_right = Suc (Suc (Zero, Triangle.modality), Box.modality);
+                  counit =
+                    Modalcell.vcomp box_counit
+                      (Modalcell.prewhisker
+                         (Suc (Zero, Box.modality))
+                         (Suc (Zero, Box.modality))
+                         (Modalcell.postwhisker
+                            (Suc (Suc (Zero, Diamond.modality), Triangle.modality))
+                            Zero tri diamond_counit)
+                         box);
                 }))
     | _ -> None
 

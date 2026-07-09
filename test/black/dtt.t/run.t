@@ -288,3 +288,41 @@ General displayed coinductives
    ￫ info[I0000]
    ￮ constant dCoind defined
   
+
+  $ narya -dtt -v discrete.ny
+   ￫ info[I0000]
+   ￮ constant eq defined
+  
+   ￫ info[I0000]
+   ￮ constant △ defined
+  
+   ￫ info[I0000]
+   ￮ constant □ defined
+  
+   ￫ info[I0000]
+   ￮ constant △□ defined
+  
+   ￫ info[I0000]
+   ￮ constant △ᵈ defined
+  
+   ￫ info[I0000]
+   ￮ constant △ᵈ_eq defined
+  
+   ￫ info[I0000]
+   ￮ constant △□ᵈ defined
+  
+   ￫ info[I0000]
+   ￮ constant △□ᵈ_eq defined
+  
+   ￫ info[I0000]
+   ￮ constant ◇ defined
+  
+   ￫ info[I0000]
+   ￮ constant △◇ defined
+  
+   ￫ info[I0000]
+   ￮ constant △◇ᵈ defined
+  
+   ￫ info[I0000]
+   ￮ constant △◇ᵈ_eq defined
+  
