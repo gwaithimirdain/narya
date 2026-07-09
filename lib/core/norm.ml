@@ -49,7 +49,7 @@ let rec take_args : type dom window mode annotations m n mn a b ab.
           let mn' = D.plus_out (dim_env env) mn in
           let (Has_filter wfmn) = Modality.filter wmu mn' in
           match D.compare (Modality.filtered mn' wfmn) (Modality.filtered mn' fmn) with
-          | Neq -> fatal Invalid_mode_theory
+          | Neq -> fatal (Invalid_mode_theory "filtering window modality")
           | Eq ->
               let (Filter_of_plus (ij, fm, fn2)) = Modality.filter_of_plus mn wfmn in
               let Eq = Modality.filter_uniq fn2 fn in
@@ -1629,7 +1629,7 @@ and lookup : type mode n b. (mode, n, b) env -> (mode, b) index -> (mode, kineti
           let (Prekey_action c) = prekey_vcomp pre c in
           act (CubeOf.find entry f) s c
       (* This means that in the non-unary case, some dummy endpoints in an opt_sface didn't get canceled out by a degeneracy.  I think that could only happen if a non-unary mode theory has a 2-cell from a sharp parametric modality to a sharp non-parametric modality.  In all the models I know, the primary nonparametric modalities are *comonadic*, plus in the unary case *only* a left adjoint monad to it (which is also right adjoint if the parametricity is internal), and in the external non-unary case another non-monadic non-comonadic functor.  In the internal non-unary case there is a *right* adjoint to the nonparametric comonad, but it is not "nonparametric" in this sense: its parametricity is *codiscrete* rather than discrete; I haven't thought about how to enforce that for a tangible modality, although it comes naturally for a negative presentation that is right adjoint to a tangible discrete modality. *)
-      | None -> fatal Invalid_mode_theory)
+      | None -> fatal (Invalid_mode_theory "uncanceled dummy endpoints"))
 
 (* Instantiate an arbitrary value, combining tubes. *)
 and inst : type mode m n mn s.

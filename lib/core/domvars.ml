@@ -73,7 +73,7 @@ let rec ext_tel : type dom window mode a b c ac bc e n.
   | [], Emp ->
       Ext_tel
         { ctx; env; values = []; normals = []; annotate = Zero (Eq (Ctx.mode ctx)); comp = Zero }
-  | x :: xs, Ext (x', Modal (annotation, plus, rty), rest) ->
+  | x :: xs, Ext (x', Modal (annotation, plus, rty), rest) -> (
       let m = dim_env env in
       let lenv = key_env env (Modalcell.id annotation) plus in
       (* The dimension filter of the telescope annotation itself, at its (inner) codomain mode. *)
@@ -84,7 +84,7 @@ let rec ext_tel : type dom window mode a b c ac bc e n.
       let (Has_filter filter_k_m) = Modality.filter modality m in
       (* A window modality must not do any dimension filtering, so composing it with the annotation must filter the dimension to the same result.  We can currently only check this at runtime. *)
       match D.compare (Modality.filtered m afilter) (Modality.filtered m filter_k_m) with
-      | Neq -> fatal Invalid_mode_theory
+      | Neq -> fatal (Invalid_mode_theory "filtering window modality")
       | Eq ->
           let k = Modality.filtered m filter_k_m in
           let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter m filter_k_m)) in
@@ -120,7 +120,7 @@ let rec ext_tel : type dom window mode a b c ac bc e n.
               normals = Modal (filter_k_m, newnfs) :: nfs;
               annotate = Suc (Annotate filter_k_m, annotate);
               comp = Suc (Dim (k, filter_k_k), comp);
-            }
+            })
 
 (* Extract a list of all the variables of a given kind in an iterated pi-type. *)
 let rec get_pi_vars : type mode a b.

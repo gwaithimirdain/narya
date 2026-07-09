@@ -200,7 +200,7 @@ module Code = struct
         ('a, 'm, 'b) Modality.t * bool * [ `Nonrecursive | `Recursive | `Unknown ]
         -> t
     | Non_mode_synthesizing : string -> t
-    | Invalid_mode_theory : t
+    | Invalid_mode_theory : string -> t
     | Nonparametric_mode_degeneracy : string * 'a Mode.t -> t
     | Invalid_variable_face : 'a D.t * ('n, 'm) sface -> t
     | Anomaly : string -> t
@@ -388,7 +388,7 @@ module Code = struct
     | Intangible_modality _ -> Error
     | Nontransparent_window_modality _ -> Error
     | Non_mode_synthesizing _ -> Error
-    | Invalid_mode_theory -> Bug
+    | Invalid_mode_theory _ -> Bug
     | Nonparametric_mode_degeneracy _ -> Error
     | Anomaly _ -> Bug
     | No_such_level _ -> Bug
@@ -603,7 +603,7 @@ module Code = struct
     | Wrong_locking_modality _ -> "E1712"
     | Modal_field_filtered_away _ -> "E1713"
     | Extra_filtered_field_in_tuple _ -> "E1714"
-    | Invalid_mode_theory -> "E1710"
+    | Invalid_mode_theory _ -> "E1710"
     | Intangible_modality _ -> "E1706"
     | Nontransparent_window_modality _ -> "E1707"
     | Nonparametric_mode_degeneracy _ -> "E1708"
@@ -943,7 +943,7 @@ module Code = struct
           textf "modal cell mismatch in %s (%s ≠ %s)" op (Modalcell.to_string a)
             (Modalcell.to_string b)
       | Non_mode_synthesizing str -> textf "cannot synthesize a mode: %s" str
-      | Invalid_mode_theory -> text "invalid mode theory"
+      | Invalid_mode_theory str -> textf "invalid mode theory: %s" str
       | Nonparametric_mode_degeneracy (name, mode) ->
           textf "degeneracy %s is not allowed at mode %s, which is nonparametric" name
             (Mode.name mode)
