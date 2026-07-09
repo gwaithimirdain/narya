@@ -17,7 +17,8 @@ let interactive = ref false
 let proofgeneral = ref false
 let show_version = ref false
 let install_mode_theory = ref Modal.Trivial.install
-let discrete_coreflector = ref false
+let hott_forbidden : string option ref = ref None
+let external_ok = ref false
 let mode_theories = ref 0
 
 (* Undocumented flag used for testing: interpret a given file or command-line string as if it were entered in interactive mode. *)
@@ -76,6 +77,9 @@ let speclist =
           refl_char := 'd';
           refl_names := [];
           internal := false;
+          external_ok := true;
+          hott_forbidden := Some "-dtt";
+          mode_theories := !mode_theories + 1;
           install_mode_theory := Modal.Dtt.install),
       "Abbreviation for -arity 1 -direction d -external, with the Dtt mode theory (△ ⊣ □, ◇ ⊣ △)" );
     ( "-coreflector",
@@ -100,6 +104,7 @@ let speclist =
       Arg.Unit
         (fun () ->
           install_mode_theory := Modal.Discrete_spatial.install;
+          hott_forbidden := Some "-discrete-spatial";
           mode_theories := !mode_theories + 1),
       "Select the spatial mode theory with discrete coreflector" );
     ( "-functor",
@@ -118,6 +123,7 @@ let speclist =
       Arg.Unit
         (fun () ->
           install_mode_theory := Modal.Discrete_functor.install;
+          hott_forbidden := Some "-discrete-functor";
           mode_theories := !mode_theories + 1),
       "Select the functor mode theory with a nonparametric domain mode" );
     ( "-discrete-coreflector",
@@ -125,7 +131,8 @@ let speclist =
         (fun () ->
           install_mode_theory := Modal.Discrete_coreflector.install;
           mode_theories := !mode_theories + 1;
-          discrete_coreflector := true),
+          hott_forbidden := Some "-discrete-coreflector";
+          external_ok := true),
       "Select the nonparametric comonad mode theory (currently requires -parametric)" );
     ( "-composed-functors",
       Arg.Unit
@@ -150,14 +157,19 @@ let () =
   if !show_version then (
     print_endline (String.trim [%blob "version.txt"]);
     exit 0);
-  if (!mode_theories + if !internal then 0 else 1) > 1 then (
+  if !mode_theories > 1 then (
     Printf.fprintf stderr "too many mode theories! specify only one.";
     exit 1);
-  if !discrete_coreflector && !hott then (
-    Printf.fprintf stderr "-discrete-coreflector requires -parametric\n";
-    exit 1);
+  (match (!hott, !hott_forbidden) with
+  | true, Some thy ->
+      Printf.fprintf stderr "%s requires -parametric\n" thy;
+      exit 1
+  | _ -> ());
   if (not !internal) && !hott then (
     Printf.fprintf stderr "-external requires -parametric\n";
+    exit 1);
+  if (not !internal) && not !external_ok then (
+    Printf.fprintf stderr "-external requires a suitable mode theory\n";
     exit 1);
   if
     Bwd.is_empty !inputs

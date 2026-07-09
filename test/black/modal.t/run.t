@@ -243,7 +243,7 @@ not sinister.
 In the discrete spatial mode theory, ♭ is nonparametric, so a ♭-modal field
 disappears at dimensions it filters (the reflexivity/parametric direction).
 
-  $ narya -v -discrete-spatial discretefields.ny -e 'echo a2'
+  $ narya -v -discrete-spatial -parametric discretefields.ny -e 'echo a2'
    ￫ info[I0000]
    ￮ constant N defined
   
@@ -301,7 +301,7 @@ disappears at dimensions it filters (the reflexivity/parametric direction).
 
 At dimension 0 the field projects and computes.
 
-  $ narya -discrete-spatial discretefields.ny -e "echo p"
+  $ narya -discrete-spatial -parametric discretefields.ny -e "echo p"
   1
     : N
   
@@ -310,14 +310,14 @@ Degenerating a stuck modal projection: the projected term stays at the filtered
 dimension and the degeneracy is externalized (here as refl), printing
 faithfully and round-tripping.
 
-  $ narya -discrete-spatial discretefields.ny -e "axiom z : C" -e "echo refl ((z :♭| _) .fld)"
+  $ narya -discrete-spatial -parametric discretefields.ny -e "axiom z : C" -e "echo refl ((z :♭| _) .fld)"
   refl ((z :♭| _) .fld)
     : N⁽ᵉ⁾ ((z :♭| _) .fld) ((z :♭| _) .fld)
   
 
 A two-dimensional degeneracy prints with the superscript notation.
 
-  $ narya -discrete-spatial discretefields.ny -e "axiom z : C" -e "echo sym (refl (refl ((z :♭| _) .fld)))"
+  $ narya -discrete-spatial -parametric discretefields.ny -e "axiom z : C" -e "echo sym (refl (refl ((z :♭| _) .fld)))"
   ((z :♭| _) .fld)⁽ᵉᵉ⁾
     : N⁽ᵉᵉ⁾ (refl ((z :♭| _) .fld)) (refl ((z :♭| _) .fld))
         (refl ((z :♭| _) .fld)) (refl ((z :♭| _) .fld))
@@ -325,7 +325,7 @@ A two-dimensional degeneracy prints with the superscript notation.
 
 Projecting a disappeared field (from a 1-dimensional element) is an error.
 
-  $ narya -discrete-spatial discretefields.ny -e "echo (refl c :♭| _) .fld"
+  $ narya -discrete-spatial -parametric discretefields.ny -e "echo (refl c :♭| _) .fld"
    ￫ error[E1713]
    ￭ command-line exec string
    1 | echo (refl c :♭| _) .fld
@@ -335,7 +335,7 @@ Projecting a disappeared field (from a 1-dimensional element) is an error.
 
 Supplying a disappeared field in a tuple/comatch is an error.
 
-  $ narya -discrete-spatial discretefields.ny -e "def bad : Id C c c ≔ [ .fld ↦ refl (suc. zero.) ]"
+  $ narya -discrete-spatial -parametric discretefields.ny -e "def bad : Id C c c ≔ [ .fld ↦ refl (suc. zero.) ]"
    ￫ error[E1714]
    ￭ command-line exec string
    1 | def bad : Id C c c ≔ [ .fld ↦ refl (suc. zero.) ]
@@ -345,7 +345,7 @@ Supplying a disappeared field in a tuple/comatch is an error.
 
 An ordinary (non-modal) field never disappears: it projects at any dimension.
 
-  $ narya -discrete-spatial discretefields.ny -e "echo (refl d) .snd"
+  $ narya -discrete-spatial -parametric discretefields.ny -e "echo (refl d) .snd"
   refl 0
     : N⁽ᵉ⁾ 0 0
   
