@@ -244,6 +244,7 @@ module type Theory = sig
   val transparent : ('a, 'm, 'b) t -> bool
   val translucent : ('a, 'm, 'b) t -> bool
   val parametric_unlocker : ('a, 'm, 'b) t -> bool
+  val one_char : bool
 end
 
 (* By default, all modalities are tangible and translucent, but none (except identities, which are special-cased in the typechecker) are pellucid or transparent. *)
@@ -255,6 +256,7 @@ let theory : (module Theory) ref =
       let transparent _ = false
       let translucent _ = true
       let parametric_unlocker _ = false
+      let one_char = true
     end : Theory)
 
 let choose_theory (t : (module Theory)) = theory := t
@@ -279,6 +281,10 @@ let parametric_unlocker m =
   let module T = (val !theory) in
   T.parametric_unlocker m
 
+let one_char () =
+  let module T = (val !theory) in
+  T.one_char
+
 module Cube (F : Fam3) = struct
   module Parent = struct
     type ('a, 'm, 'b) modality_t = ('a, 'm, 'b) t
@@ -292,14 +298,24 @@ module Cube (F : Fam3) = struct
         -> ('n, 'mode, 'a, 'b) t
 end
 
-(* String names.  A modality is named by a string list of generator names.  Note that the empty list therefore represents the identity modality at *any* mode, so to convert such a name to a modality we need either the source or the target mode given. *)
+(* String names.  A modality is named by a string list of generator names.  Note that the empty list therefore represents the identity modality at *any* mode, so to convert such a name to a modality we need either the source or the target mode given.  Moreover, if one_char is true, then all generators are a single unicode character, and any strings that are longer than that are split into characters. *)
 
 let rec name_bwd : type a m b. (a, m, b) t -> string Bwd.t = function
   | Path (Zero, _) -> Emp
   | Path (Suc (Zero, g), _) -> Snoc (Emp, Gen.name g)
   | Path (Suc ((Suc (_, _) as gs), g), mode) -> Snoc (name_bwd (Path (gs, mode)), Gen.name g)
 
-let name : type a m b. (a, m, b) t -> string list = fun m -> Bwd.to_list (name_bwd m)
+let name : type a m b. (a, m, b) t -> string list =
+ fun m ->
+  let names = name_bwd m in
+  match (one_char (), names) with
+  | true, Snoc _ -> [ Bwd.fold_right (fun x y -> x ^ y) names "" ]
+  | _ -> Bwd.to_list names
+
+let split_names cs =
+  if one_char () then
+    List.flatten (List.map (fun x -> List.map (locate_opt x.loc) (Unicode.split_utf8 x.value)) cs)
+  else cs
 
 let of_name_tgt : type a.
     a Mode.t ->
@@ -319,7 +335,7 @@ let of_name_tgt : type a.
             match Mode.compare (Gen.tgt n) (src m) with
             | Eq -> go (Wrap (suc m n)) cs
             | Neq -> Error (`Wrong_tgt (Mode.Wrap (Gen.tgt n), c, Mode.Wrap (src m))))) in
-  go (Wrap (id mode)) cs
+  go (Wrap (id mode)) (split_names cs)
 
 let rec of_name_src_bwd : type a.
     string located Bwd.t ->
@@ -349,13 +365,13 @@ let of_name_src : type a.
       [ `Not_found of string located | `Wrong_src of Mode.wrapped * string located * Mode.wrapped ]
     )
     result =
- fun cs mode -> of_name_src_bwd (Bwd.of_list cs) mode
+ fun cs mode -> of_name_src_bwd (Bwd.of_list (split_names cs)) mode
 
 let to_string : type a m b. (a, m, b) t -> string =
  fun m ->
   match name m with
   | [] -> "id"
-  | ms -> String.concat " " ms
+  | ms -> String.concat (if one_char () then "" else " ") ms
 
 let compare_name : type x m y.
     string located list ->

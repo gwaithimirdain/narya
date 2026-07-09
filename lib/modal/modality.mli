@@ -44,6 +44,7 @@ module type Theory = sig
   val transparent : ('a, 'm, 'b) t -> bool
   val translucent : ('a, 'm, 'b) t -> bool
   val parametric_unlocker : ('a, 'm, 'b) t -> bool
+  val one_char : bool
 end
 
 val choose_theory : (module Theory) -> unit

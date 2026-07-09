@@ -112,6 +112,8 @@ struct
     match Modality.compare_id m with
     | Eq -> false
     | Neq -> true
+
+  let one_char = true
 end
 
 let install () =

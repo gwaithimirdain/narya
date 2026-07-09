@@ -29,7 +29,7 @@ Matching with the wrong window modality is an error:
    ￫ error[E1701]
    ￭ command-line exec string
    1 | def fwd2 (X :G F| AType) (u : G (F X)) : GF X ≔ match u [ g. y ↦ match (y :G F| _) [ f. x ↦ gf. x ]]
-     ^ modality mismatch in checking implicit match (G F ≠ G)
+     ^ modality mismatch in checking implicit match (GF ≠ G)
   
   [1]
 

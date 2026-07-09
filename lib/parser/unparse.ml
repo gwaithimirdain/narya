@@ -583,8 +583,7 @@ and unparse_modal_field : type mode dom f n am lt ls rt rs.
                 Left (RParen, ([], None)) ))) in
   let arg () = unlocated (Field (fld, List.map string_of_int ins, [])) in
   match (No.Interval.contains li No.plus_omega, No.Interval.contains ri No.plus_omega) with
-  | Some left_ok, Some right_ok ->
-      unlocated (App { fn = asc (); arg = arg (); left_ok; right_ok })
+  | Some left_ok, Some right_ok -> unlocated (App { fn = asc (); arg = arg (); left_ok; right_ok })
   | _ ->
       let left_ok = No.le_refl No.plus_omega in
       let right_ok = No.le_refl No.plus_omega in
@@ -971,7 +970,9 @@ and unparse_pi_dom : type lt ls rt rs.
               unlocated (App { fn; arg = unlocated (Ident ([ m ], [])); left_ok; right_ok }))
             fn ms in
         obs <: Term modalities <: mktok (Op "|") in
-  unlocated (outfix ~notn:Postprocess.ascvar ~inner:(Multiple (wstok ldelim, obs <: Term dom, wstok rdelim)))
+  unlocated
+    (outfix ~notn:Postprocess.ascvar
+       ~inner:(Multiple (wstok ldelim, obs <: Term dom, wstok rdelim)))
 
 and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
     a Names.t ->

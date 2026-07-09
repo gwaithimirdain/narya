@@ -298,6 +298,8 @@ struct
     match Modality.compare m tribox with
     | Eq -> true
     | Neq -> false
+
+  let one_char = true
 end
 
 let install () =

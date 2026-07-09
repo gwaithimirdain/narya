@@ -123,20 +123,20 @@ The coreflector ♭ has no unit of its own, unlike the reflector ♯.
 
 The adjunction ♭ ⊣ ♯ only gives cells ♭∘♯ ⇒ id and id ⇒ ♯∘♭, not the other way around.
 
-  $ narya -spatial spatial.ny -e "def nocounit (A :♯ ♭| Type) (x :♯ ♭| A) : A := x"
+  $ narya -spatial spatial.ny -e "def nocounit (A :♯♭| Type) (x :♯♭| A) : A := x"
    ￫ error[E1705]
    ￭ command-line exec string
-   1 | def nocounit (A :♯ ♭| Type) (x :♯ ♭| A) : A := x
-     ^ use of ♯ ♭ variable behind id lock requires a key
+   1 | def nocounit (A :♯♭| Type) (x :♯♭| A) : A := x
+     ^ use of ♯♭ variable behind id lock requires a key
   
   [1]
 
 
-  $ narya -spatial spatial.ny -e "def wu2 (x : Type) : (data [ unit2. (_ :♭ ♯| Type) ]) := unit2. x"
+  $ narya -spatial spatial.ny -e "def wu2 (x : Type) : (data [ unit2. (_ :♭♯| Type) ]) := unit2. x"
    ￫ error[E1705]
    ￭ command-line exec string
-   1 | def wu2 (x : Type) : (data [ unit2. (_ :♭ ♯| Type) ]) := unit2. x
-     ^ use of id variable behind ♭ ♯ lock requires a key
+   1 | def wu2 (x : Type) : (data [ unit2. (_ :♭♯| Type) ]) := unit2. x
+     ^ use of id variable behind ♭♯ lock requires a key
   
   [1]
 
