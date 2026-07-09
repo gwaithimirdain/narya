@@ -889,12 +889,12 @@ let rec check : type mode a b s.
                           | Eq -> None
                           | Neq -> Some ()))
                     None fields in
-                check_codata status ctx Noeta hints tyargs Emp
+                check_codata status ctx `Opaque Noeta hints tyargs Emp
                   (Fibrancy.Codata.empty dim dim (Ctx.tctx ctx) Noeta
                      (readback_neu ctx (head_of_potential head) apps))
                   (Bwd.to_list fields) Emp ~has_higher_fields)
         | _ -> fatal (Checking_canonical_at_nonuniverse ("codatatype", PVal (ctx, ty))))
-    | SelfRecord (fields, hints), Potential (head, apps, _) -> (
+    | SelfRecord (fields, opacity, hints), Potential (head, apps, _) -> (
         match view_type ~severity ty "typechecking self-record" with
         | Canonical (_, UU (_mode, dim), ins, tyargs) -> (
             match (D.compare_zero dim, Endpoints.hott (), !gel_ok) with
@@ -915,7 +915,7 @@ let rec check : type mode a b s.
                 match has_higher_fields with
                 | Some () -> fatal (Unimplemented "higher fields in record types: use codata")
                 | None ->
-                    check_codata status ctx Eta hints tyargs Emp
+                    check_codata status ctx opacity Eta hints tyargs Emp
                       (Fibrancy.Codata.empty dim dim (Ctx.tctx ctx) Eta
                          (readback_neu ctx (head_of_potential head) apps))
                       (Bwd.to_list fields) Emp ~has_higher_fields))
@@ -2442,6 +2442,7 @@ and with_codata_so_far : type mode a b n c et.
 and check_codata : type mode a b n et.
     (mode, b, potential) status ->
     (mode, a, b) Ctx.t ->
+    opacity ->
     (potential, et) eta ->
     hints ->
     (D.zero, n, n, mode normal) TubeOf.t ->
@@ -2451,18 +2452,19 @@ and check_codata : type mode a b n et.
     Code.t Asai.Diagnostic.t Bwd.t ->
     has_higher_fields:unit option ->
     (mode, b, potential) term =
- fun status ctx eta hints tyargs checked_fields fibrancy raw_fields errs ~has_higher_fields ->
+ fun status ctx opacity eta hints tyargs checked_fields fibrancy raw_fields errs
+     ~has_higher_fields ->
   let dim = TubeOf.inst tyargs in
   match raw_fields with
   | [] -> (
       match errs with
       | Emp ->
-          with_codata_so_far status eta ctx `Opaque hints dim tyargs checked_fields fibrancy
+          with_codata_so_far status eta ctx opacity hints dim tyargs checked_fields fibrancy
             ~has_higher_fields errs
           @@ fun _ codataterm -> codataterm
       | Snoc _ -> fatal (Accumulated ("check_codata", errs)))
   | (Wrap fld, Codatafield (x, lock, rty)) :: raw_fields -> (
-      with_codata_so_far status eta ctx `Opaque hints dim tyargs checked_fields fibrancy
+      with_codata_so_far status eta ctx opacity hints dim tyargs checked_fields fibrancy
         ~has_higher_fields errs
       @@ fun domvars _ ->
       let newctx = Ctx.cube_vis ctx (Modality.filter_id (Ctx.mode ctx) dim) x domvars in
@@ -2503,7 +2505,7 @@ and check_codata : type mode a b n et.
             ( Snoc (checked_fields, entry),
               Fibrancy.Codata.add_field (Ctx.mode ctx) fibrancy entry,
               errs ) in
-          check_codata status ctx eta hints tyargs checked_fields fibrancy raw_fields errs
+          check_codata status ctx opacity eta hints tyargs checked_fields fibrancy raw_fields errs
             ~has_higher_fields
       | Pos _, Zero, Noeta -> (
           match lock with
@@ -2516,8 +2518,8 @@ and check_codata : type mode a b n et.
                 let (Degctx (plusmap, degctx, _)) = degctx newctx (Field.dim fld) in
                 let cty = check (Kinetic `Nolet) degctx rty (universe (Ctx.mode ctx) D.zero) in
                 (Snoc (checked_fields, Entry (fld, Codatafield.Higher (plusmap, cty))), errs) in
-              check_codata status ctx eta hints tyargs checked_fields fibrancy raw_fields errs
-                ~has_higher_fields)
+              check_codata status ctx opacity eta hints tyargs checked_fields fibrancy raw_fields
+                errs ~has_higher_fields)
       | Pos _, Zero, Eta -> fatal (Unimplemented "higher fields in record types")
       | Pos _, Pos _, _ -> fatal (Unimplemented "higher fields in higher-dimensional codatatypes"))
 

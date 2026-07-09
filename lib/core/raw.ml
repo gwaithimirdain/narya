@@ -137,7 +137,7 @@ module rec Make : functor (I : Indices) -> sig
     | Record :
         ('a, 'c, 'ac) Namevec.t located * ('ac, 'd, 'acd) tel * opacity * Variables.hints
         -> 'a check
-    | SelfRecord : (Field.wrapped, 'a codatafield) Abwd.t * Variables.hints -> 'a check
+    | SelfRecord : (Field.wrapped, 'a codatafield) Abwd.t * opacity * Variables.hints -> 'a check
     | Refute :
         ('a synth located * string located list located option) list * [ `Explicit | `Implicit ]
         -> 'a check
@@ -166,10 +166,12 @@ module rec Make : functor (I : Indices) -> sig
         -> 'a branch
 
   and _ dataconstr = Dataconstr : ('a, 'b, 'ab) tel * 'ab check located option -> 'a dataconstr
+
   and _ codatafield =
     | Codatafield :
         I.name * string located list located option * 'a I.suc check located
         -> 'a codatafield
+
   and 'a refutables = { refutables : 'b 'ab. ('a, 'b, 'ab) bplus -> 'ab synth located list }
 
   and (_, _, _) tel =
@@ -334,7 +336,7 @@ functor
           ('a, 'c, 'ac) Namevec.t located * ('ac, 'd, 'acd) tel * opacity * Variables.hints
           -> 'a check
       (* There's also a notation for record types that uses self variables like codata. *)
-      | SelfRecord : (Field.wrapped, 'a codatafield) Abwd.t * Variables.hints -> 'a check
+      | SelfRecord : (Field.wrapped, 'a codatafield) Abwd.t * opacity * Variables.hints -> 'a check
       (* Empty match against the first one of the arguments belonging to an empty type.  Each argument carries an optional window modality. *)
       | Refute :
           ('a synth located * string located list located option) list * [ `Explicit | `Implicit ]
@@ -567,12 +569,13 @@ module Resolve (R : Resolver) = struct
                   R.T2.Codatafield (R.rename ctx x, lock, check (R.snoc ctx x) fld))
                 fields,
               hints )
-      | SelfRecord (fields, hints) ->
+      | SelfRecord (fields, opaq, hints) ->
           SelfRecord
             ( Abwd.map
                 (fun (R.T1.Codatafield (x, lock, fld)) ->
                   R.T2.Codatafield (R.rename ctx x, lock, check (R.snoc ctx x) fld))
                 fields,
+              opaq,
               hints )
       | Record (xs, fields, opaq, hints) ->
           let (Bplus ac2) = R.T2.bplus (R.T1.Namevec.length xs.value) in

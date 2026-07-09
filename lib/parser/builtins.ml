@@ -2457,19 +2457,21 @@ let rec process_tel : type a.
   | _ -> invalid "record"
 
 let rec process_self_record : type n.
+    opacity ->
     Variables.hints ->
     (Field.wrapped, n Raw.codatafield) Abwd.t ->
     (string option, n) Bwv.t ->
     observation list ->
     Asai.Range.t option ->
     n check located =
- fun hints flds ctx obs loc ->
+ fun opacity hints flds ctx obs loc ->
   match obs with
-  | [ Token (RParen, _) ] -> { value = Raw.SelfRecord (flds, hints); loc }
-  | Token (Op ",", _) :: obs -> process_self_record hints flds ctx obs loc
+  | [ Token (RParen, _) ] -> { value = Raw.SelfRecord (flds, opacity, hints); loc }
+  | Token (Op ",", _) :: obs -> process_self_record opacity hints flds ctx obs loc
   | Term tm :: Token (Colon, _) :: Term ty :: obs ->
-      (* MODALTODO: Other way of specifying modal records *)
-      process_self_record hints (Snoc (flds, process_codata_field Eta flds ctx tm ty)) ctx obs loc
+      process_self_record opacity hints
+        (Snoc (flds, process_codata_field Eta flds ctx tm ty))
+        ctx obs loc
   | _ -> invalid "self record"
 
 let process_record ctx obs loc =
@@ -2490,7 +2492,7 @@ let process_record ctx obs loc =
       let (Any_tel tel) = process_tel ctx StringSet.empty obs in
       Range.locate (Raw.Record (locate_opt x.loc (namevec_of_vec ac vars), tel, opacity, hints)) loc
   | Token (LParen, _) :: (Term { value = App _; _ } :: _ as obs) ->
-      process_self_record hints Emp ctx obs loc
+      process_self_record opacity hints Emp ctx obs loc
   | Token (LParen, _) :: obs ->
       let ctx = Bwv.snoc ctx None in
       let (Any_tel tel) = process_tel ctx StringSet.empty obs in
