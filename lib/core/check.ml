@@ -4174,13 +4174,17 @@ and check_at_tel : type mode n a b c bc e.
            tys ) :
           _ * (mode, modality, b, kinetic) modal_term * _),
       tyargs :: tyargs_rest ) ->
-      let (Locked (eplus, lctx)) = Ctx.lock ctx modality in
-      let lenv = key_env env (Modalcell.id modality) bplus in
-      let ety = eval_term lenv ty in
       (* The argument to check is k-dimensional, where k is the modal filtering of the dimension n of the entire constructor. *)
       let n = dim_env env in
       let (Has_filter filter) = Modality.filter modality n in
       let k = Modality.filtered n filter in
+      let filter_face = Modality.sface_of_filter n filter in
+      (* We lock the context and environment, and act on the environment by the filter face before evaluating the type. *)
+      let (Locked (eplus, lctx)) = Ctx.lock ctx modality in
+      let lenv = key_env env (Modalcell.id modality) bplus in
+      let alenv = act_env lenv (opt_op_of_opt_sface filter_face) in
+      let ety = eval_term alenv ty in
+      (* Now we build the boundary tube for this type. *)
       let tyargtbl = Hashtbl.create 10 in
       let tyarg =
         TubeOf.build D.zero (D.zero_plus k)
@@ -4199,10 +4203,7 @@ and check_at_tel : type mode n a b c bc e.
                       inst
                         (eval_term
                            (act_env lenv
-                              (opt_op_of_opt_sface
-                                 (comp_opt_sface
-                                    (Modality.sface_of_filter n filter)
-                                    (opt_of_sface fa))))
+                              (opt_op_of_opt_sface (comp_opt_sface filter_face (opt_of_sface fa))))
                            ty)
                         (TubeOf.build D.zero
                            (D.zero_plus (dom_sface fb))

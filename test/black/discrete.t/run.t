@@ -29,6 +29,9 @@ The comonad structure typechecks, and the modal type is parametrically trivial.
    ￮ constant eq defined
   
    ￫ info[I0000]
+   ￮ constant Br_♭T defined
+  
+   ￫ info[I0000]
    ￮ constant Br_♭T_trivial defined
   
    ￫ info[I0000]
@@ -96,6 +99,9 @@ against it.
   
    ￫ info[I0000]
    ￮ constant eq defined
+  
+   ￫ info[I0000]
+   ￮ constant Br_♭T defined
   
    ￫ info[I0000]
    ￮ constant Br_♭T_trivial defined

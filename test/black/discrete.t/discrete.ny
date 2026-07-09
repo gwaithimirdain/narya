@@ -22,6 +22,8 @@ def T (A : Type) : Type ≔ data [ mk. (x : A) ]
 ` The parametricity translation is trivial on a modal type.
 def eq (A : Type) (a : A) : A → Type ≔ data [ rfl. : eq A a a ]
 
+def Br_♭T (A :♭| Type) (a :♭| A) : Br (♭T A) (box. a) (box. a) ≔ box. a
+
 def Br_♭T_trivial (A :♭| Type) (a₀ a₁ : ♭T A) (a₂ : Br (♭T A) a₀ a₁)
   : eq (♭T A) a₀ a₁
   ≔ match a₂ [ box. a ⤇ rfl. ]
