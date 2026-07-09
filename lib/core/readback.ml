@@ -145,7 +145,16 @@ and readback_at : type mode a z.
                     tmflds in
                 Some (Term.Struct { eta = Eta; dim; fields; energy })
             (* In addition, if the record type is transparent, or if it's translucent and the term is a tuple in a case tree, and we are reading back for display (rather than for internal typechecking purposes), we do an eta-expanding readback. *)
-            | _, `Transparent l when Displaying.read () ->
+            | (_, `Transparent l | _, `Translucent l)
+              when Displaying.read ()
+                   &&
+                   match (tm, opacity) with
+                   | Neu { value; _ }, `Translucent _ -> (
+                       match force_eval value with
+                       | Val (Struct _) -> true
+                       | _ -> false)
+                   | _, `Transparent _ -> true
+                   | _ -> false ->
                 let fields =
                   Mbwd.map
                     (fun (CodatafieldAbwd.Entry
@@ -167,30 +176,6 @@ and readback_at : type mode a z.
                               l ) ))
                     fields in
                 Some (Struct { eta = Eta; dim; fields; energy = Kinetic })
-            | Neu { value; _ }, `Translucent l when Displaying.read () -> (
-                match force_eval value with
-                | Val (Struct _) ->
-                    let fields =
-                      Mbwd.map
-                        (fun (CodatafieldAbwd.Entry
-                                (type i)
-                                ((fld, Lower (adj, _, _)) :
-                                  i Field.t * (i, mode * a * n * has_eta) Codatafield.t)) ->
-                          let (Adjunction { left; right; unit; _ }) = adj in
-                          let xu = act_value tm (id_deg D.zero) unit in
-                          let tyu = act_ty tm ty (id_deg D.zero) unit in
-                          let (Locked (plus_lock, lctx)) = Ctx.lock ctx right in
-                          Term.StructfieldAbwd.Entry
-                            ( fld,
-                              Term.Structfield.Lower
-                                ( adj,
-                                  plus_lock,
-                                  readback_at lctx (field_term left xu fld fldins)
-                                    (tyof_field left (Ok xu) tyu fld ~shuf:Trivial fldins),
-                                  l ) ))
-                        fields in
-                    Some (Struct { eta = Eta; dim; fields; energy = Kinetic })
-                | _ -> None)
             (* If the term is not a struct and the record type is not transparent/translucent, we pass off to synthesizing readback. *)
             | _ -> None in
           match is_id_ins ins with
