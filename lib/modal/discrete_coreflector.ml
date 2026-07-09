@@ -97,7 +97,25 @@ struct
         | Pos _ -> failwith "impossible modal cell in nonparametric comonad theory")
 end
 
+module CoreflectorModality
+    (Testmode : Mode.Generated with module G := TestmodeGen)
+    (Coreflector : Modality.Generated with module G := CoreflectorGen(Testmode)) : Modality.Theory =
+struct
+  let tangible _ = true
+  let pellucid _ = false
+  let transparent _ = false
+  let translucent _ = true
+
+  (* Every nonidentity modality is a power of the coreflector, so it is an unlocker. *)
+  let parametric_unlocker : type a m b. (a, m, b) Modality.t -> bool =
+   fun m ->
+    match Modality.compare_id m with
+    | Eq -> false
+    | Neq -> true
+end
+
 let install () =
   let module Testmode = Mode.Generate (TestmodeGen) in
   let module Coreflector = Modality.Generate (CoreflectorGen (Testmode)) in
-  Modalcell.choose_theory (module CoreflectorCells (Testmode) (Coreflector) : Modalcell.Theory)
+  Modalcell.choose_theory (module CoreflectorCells (Testmode) (Coreflector) : Modalcell.Theory);
+  Modality.choose_theory (module CoreflectorModality (Testmode) (Coreflector) : Modality.Theory)

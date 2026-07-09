@@ -74,6 +74,11 @@ axiom a₁₂₃ : 2s (Sing A) a₁ a₂ a₁₂ a₃ a₁₃ a₂₃
 
 echo 3s (Sing A) a₀ a₁ a₀₁ a₂ a₀₂ a₁₂ a₀₁₂ a₃ a₀₃ a₁₃ a₀₁₃ a₂₃ a₀₂₃ a₁₂₃
 
+{` Every global type can be regarded as a "synthetic" augmented SST has a "fiber" over a point that is an (analytic) SST. `}
+def sst.Fib (X : △ □ | Type) (x : X) : SST ≔ [
+| .z ↦ X⁽ᵈ⁾ x
+| .s ↦ y ↦ sst.Fib⁽ᵈ⁾ X y]
+
 {` The empty SST `}
 def sst.∅ : SST ≔ [ .z ↦ data [] | .s ↦ [ ] ]
 
@@ -126,15 +131,28 @@ def sst.sum (X Y : SST) : SST ≔ [
   | inl. x ↦ sst.sum⁽ᵈ⁾ (X .s x) (sst.const Y sst.∅)
   | inr. y ↦ sst.sum⁽ᵈ⁾ (sst.const X sst.∅) (Y .s y)]]
 
+{` The product of a family of SSTs indexed by a discrete type. `}
+def sst.discprod (A :△| Disc) (X : (a :△| A) → SST) : SST ≔ [
+| .z ↦ (a :△| A) → X a .z
+| .s ↦ p ↦ sst.discprod⁽ᵈ⁾ A {X} (a ↦ X a .s (p a))]
+
 {` Augmented SSTs are another displayed coinductive. `}
 def ASST : Type ≔ codata [ X .z : Type | X .s : ASST⁽ᵈ⁾ X ]
 
-{` As is pointedness of an SST. `}
+{` Every global type can be regarded as a synthetic augmented SST, hence an analytic one. `}
+def asst.Int (X : △ □ | Type) : ASST ≔ [ .z ↦ X | .s ↦ asst.Int⁽ᵈ⁾ X ]
+
+{` Every ASST has a fiber over a point that is an SST.  (Combining this with asst.Int produces sst.Fib). `}
+def asst.Fib (X : ASST) (x : X .z) : SST ≔ [
+| .z ↦ X .s .z x
+| .s ↦ y ↦ asst.Fib⁽ᵈ⁾ (X .s) y]
+
+{` Pointedness of an SST is another displayed coinductive. `}
 def sst.pt (X : SST) : Type ≔ codata [
 | p .z : X .z
 | p .s : sst.pt⁽ᵈ⁾ (X .s (p .z)) p ]
 
-{` And maps of SSTs. `}
+{` As are maps of SSTs. `}
 def sst.hom (X Y : SST) : Type ≔ codata [
 | f .z : X .z → Y .z
 | f .s : (x : X .z) → sst.hom⁽ᵈ⁾ (X .s x) (Y .s (f .z x)) f ]
@@ -144,7 +162,8 @@ def sst.id (X : SST) : sst.hom X X ≔ [
 | .z ↦ x ↦ x
 | .s ↦ x ↦ sst.id⁽ᵈ⁾ (X .s x)]
 
-def sst.comp (X Y Z : SST) (g : sst.hom Y Z) (f : sst.hom X Y) : sst.hom X Z
+def sst.comp (X Y Z : SST) (g : sst.hom Y Z) (f : sst.hom X Y)
+  : sst.hom X Z
   ≔ [
 | .z ↦ x ↦ g .z (f .z x)
 | .s ↦ x ↦

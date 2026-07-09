@@ -274,6 +274,7 @@ module SpatialModalities
 
   (* TODO: For now, we actually make sharp tangible for testing.  Once we have modal records working, we'll make sharp no longer tangible. *)
   let tangible : type a m b. (a, m, b) Modality.t -> bool = fun _ -> true
+  let parametric_unlocker : type a m b. (a, m, b) Modality.t -> bool = fun _ -> false
 end
 
 let install () =

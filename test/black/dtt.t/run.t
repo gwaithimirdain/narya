@@ -91,6 +91,9 @@
     : Type
   
    ￫ info[I0000]
+   ￮ constant sst.Fib defined
+  
+   ￫ info[I0000]
    ￮ constant sst.∅ defined
   
    ￫ info[I0000]
@@ -109,7 +112,16 @@
    ￮ constant sst.sum defined
   
    ￫ info[I0000]
+   ￮ constant sst.discprod defined
+  
+   ￫ info[I0000]
    ￮ constant ASST defined
+  
+   ￫ info[I0000]
+   ￮ constant asst.Int defined
+  
+   ￫ info[I0000]
+   ￮ constant asst.Fib defined
   
    ￫ info[I0000]
    ￮ constant sst.pt defined
@@ -159,7 +171,7 @@
    ￫ error[E0310]
    ￭ command-line exec string
    1 | def foo (X:Type) : Type^^(d) X := X^^(d)
-     ^ variable not available inside external degeneracy
+     ^ variable annotated with id not available inside external degeneracy
   
   [1]
 
@@ -268,4 +280,11 @@ When a constant is defined containing a hole, it is allowed to be parametric, bu
    ￭ command line fake-interact
    1 | axiom #(nonparametric) A:Type def B:Type := ? echo B⁽ᵈ⁾ solve 0 := A
      ^ constant A is or uses a nonparametric axiom, can't be used in a parametric command
+  
+
+General displayed coinductives
+
+  $ narya -dtt -v dcoind.ny
+   ￫ info[I0000]
+   ￮ constant dCoind defined
   

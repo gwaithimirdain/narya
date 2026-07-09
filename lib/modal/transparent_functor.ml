@@ -59,6 +59,7 @@ module TransparentFunctorModalities : Modality.Theory = struct
   let transparent _ = true
   let translucent _ = true
   let tangible _ = true
+  let parametric_unlocker _ = false
 end
 
 let install () =

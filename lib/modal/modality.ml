@@ -242,6 +242,7 @@ module type Theory = sig
   val pellucid : ('a, 'm, 'b) t -> bool
   val transparent : ('a, 'm, 'b) t -> bool
   val translucent : ('a, 'm, 'b) t -> bool
+  val parametric_unlocker : ('a, 'm, 'b) t -> bool
 end
 
 (* By default, all modalities are tangible and translucent, but none (except identities, which are special-cased in the typechecker) are pellucid or transparent. *)
@@ -252,6 +253,7 @@ let theory : (module Theory) ref =
       let pellucid _ = false
       let transparent _ = false
       let translucent _ = true
+      let parametric_unlocker _ = false
     end : Theory)
 
 let choose_theory (t : (module Theory)) = theory := t
@@ -271,6 +273,10 @@ let transparent m =
 let translucent m =
   let module T = (val !theory) in
   T.translucent m
+
+let parametric_unlocker m =
+  let module T = (val !theory) in
+  T.parametric_unlocker m
 
 module Cube (F : Fam3) = struct
   module Parent = struct

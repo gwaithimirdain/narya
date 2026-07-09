@@ -265,6 +265,41 @@ struct
     ^ string_of_int (Modality.length (Modalcell.vtgt m))
 end
 
+module DttModalities
+    (Disc : Mode.Generated with module G := DiscGen)
+    (Type : Mode.Generated with module G := TypeGen)
+    (Triangle : Modality.Generated with module G := TriangleGen(Disc)(Type))
+    (Box : Modality.Generated with module G := BoxGen(Disc)(Type))
+    (Diamond : Modality.Generated with module G := DiamondGen(Disc)(Type)) : Modality.Theory =
+struct
+  open DttCells (Disc) (Type) (Triangle) (Box) (Diamond)
+
+  let tangible _ = true
+
+  (* Every modality whose normalization doesn't contain a □ is pellucid (that is, identities, ◇, △, and △◇). *)
+  let rec pellucid_normal : type a m b. (a, m, b) Modality.t -> bool = function
+    | Path (Zero, _) -> true
+    | Path (Suc (m, g), mode) -> (
+        match Modality.Gen.compare g Box.modality with
+        | Eq -> false
+        | Neq -> pellucid_normal (Path (m, mode)))
+
+  let pellucid m =
+    let (Normalize (m, _, _)) = normalize m in
+    pellucid_normal m
+
+  let transparent m = pellucid m
+  let translucent _ = true
+
+  (* Anything normalizing to △□ is a parametric unlocker. *)
+  let parametric_unlocker : type a m b. (a, m, b) Modality.t -> bool =
+   fun m ->
+    let (Normalize (m, _, _)) = normalize m in
+    match Modality.compare m tribox with
+    | Eq -> true
+    | Neq -> false
+end
+
 let install () =
   let module Disc = Mode.Generate (DiscGen) in
   let module Type = Mode.Generate (TypeGen) in
@@ -272,4 +307,6 @@ let install () =
   let module Box = Modality.Generate (BoxGen (Disc) (Type)) in
   let module Diamond = Modality.Generate (DiamondGen (Disc) (Type)) in
   Modalcell.choose_theory
-    (module DttCells (Disc) (Type) (Triangle) (Box) (Diamond) : Modalcell.Theory)
+    (module DttCells (Disc) (Type) (Triangle) (Box) (Diamond) : Modalcell.Theory);
+  Modality.choose_theory
+    (module DttModalities (Disc) (Type) (Triangle) (Box) (Diamond) : Modality.Theory)

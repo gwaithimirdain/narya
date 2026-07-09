@@ -266,6 +266,7 @@ module SpatialModalities
 
   let translucent : type a m b. (a, m, b) Modality.t -> bool = fun m -> transparent m
   let tangible : type a m b. (a, m, b) Modality.t -> bool = fun m -> transparent m
+  let parametric_unlocker : type a m b. (a, m, b) Modality.t -> bool = fun _ -> false
 end
 
 let install () =

@@ -333,22 +333,28 @@ module Ordered = struct
 
   (* The lookup function iterates through entries. *)
   let rec lookup : type mode a b.
-      (mode, a, b) t -> a Raw.index -> (mode, b, level * D.zero Field.t) lookup =
-   fun ctx k ->
-    match (ctx, k) with
-    | Emp _, _ -> .
-    | Snoc (ctx, e, pf), _ -> lookup_entry ctx e pf k
-    | Parametric_lock _, _ -> fatal Locked_variable
-    | Lock (ctx, mu), _ -> lock_lookup mu (lookup ctx k)
+      ?parametric_locked:bool ->
+      (mode, a, b) t ->
+      a Raw.index ->
+      (mode, b, level * D.zero Field.t) lookup =
+   fun ?(parametric_locked = false) ctx k ->
+    match ctx with
+    | Emp _ -> (
+        match k with
+        | _ -> .)
+    | Snoc (ctx, e, pf) -> lookup_entry ~parametric_locked ctx e pf k
+    | Parametric_lock ctx -> lookup ~parametric_locked:true ctx k
+    | Lock (ctx, mu) -> lock_lookup mu (lookup ~parametric_locked ctx k)
 
   (* For each entry, we iterate through the list of fields or the cube of names, as appropriate. *)
   and lookup_entry : type dom modality mode a b f af mn.
+      parametric_locked:bool ->
       (mode, a, b) t ->
       (dom, modality, mode, f, mn) entry ->
       (a, f, af) N.plus ->
       af Raw.index ->
       (mode, (b, (modality, mn) dim_entry) snoc, level * D.zero Field.t) lookup =
-   fun ctx e pf k ->
+   fun ~parametric_locked ctx e pf k ->
     match e with
     | Vis
         (type m n f1 f2)
@@ -362,6 +368,8 @@ module Ordered = struct
             let b = CubeOf.find_top bindings in
             match Binding.level b with
             | Some level ->
+                if parametric_locked && not (Modality.parametric_unlocker modality) then
+                  fatal (Locked_variable modality);
                 Lookup
                   {
                     result = `Field (level, fst (Bwv.nth i fields));
@@ -396,8 +404,11 @@ module Ordered = struct
               Fold.fold_map_right { foldmap = (fun fb -> lookup_folder fb) } vars (Unfound (pf1, i))
             with
             | Unfound (Zero, j), _ ->
-                pop_lookup modality (CubeOf.dim bindings) filter (lookup ctx (j, snd k))
+                pop_lookup modality (CubeOf.dim bindings) filter
+                  (lookup ~parametric_locked ctx (j, snd k))
             | Found fb, _ ->
+                if parametric_locked && not (Modality.parametric_unlocker modality) then
+                  fatal (Locked_variable modality);
                 (* Once we find the face in the cube of visible variables, we add it to the face specified by the user for a cube variable, if any, and look up the corresponding binding. *)
                 let (SFace_of fa) =
                   match snd k with
@@ -423,7 +434,7 @@ module Ordered = struct
     | Invis { filter; bindings } ->
         let modality = Modality.filter_modality filter in
         let Zero = pf in
-        pop_lookup modality (CubeOf.dim bindings) filter (lookup ctx k)
+        pop_lookup modality (CubeOf.dim bindings) filter (lookup ~parametric_locked ctx k)
 
   (* Look up a De Bruijn level in a context and find the corresponding possibly-invisible index, if one exists. *)
   let rec find_level : type mode a b. (mode, a, b) t -> level -> (mode, b, Empty.t) lookup option =
@@ -664,8 +675,7 @@ let vis (Permute { perm; env; level; ctx }) filter m mn xs vars af =
             plus = D.zero_plus (CubeOf.dim vars);
             filtered = filter;
             filter = Modality.filter_zero (Modality.filter_modality filter);
-            values =
-              `Lazy (Ordered.env_entry (Modality.src (Modality.filter_modality filter)) vars);
+            values = `Lazy (Ordered.env_entry (Modality.src (Modality.filter_modality filter)) vars);
           };
       level = level + 1;
       ctx = Ordered.vis ctx filter m mn xs vars bf;
@@ -700,7 +710,13 @@ let vis_fields (Permute { perm; env; level; ctx }) xs vars fields fplus af =
       perm = N.perm_plus perm af bf;
       env =
         Ext
-          { env; plus = D.zero_plus n; filter; filtered; values = `Lazy (Ordered.env_entry mode vars) };
+          {
+            env;
+            plus = D.zero_plus n;
+            filter;
+            filtered;
+            values = `Lazy (Ordered.env_entry mode vars);
+          };
       level = level + 1;
       ctx = Ordered.vis_fields ctx xs vars fields fplus bf;
     }
@@ -716,8 +732,7 @@ let invis (Permute { perm; env; level; ctx }) filter vars =
             plus = D.zero_plus (CubeOf.dim vars);
             filtered = filter;
             filter = Modality.filter_zero (Modality.filter_modality filter);
-            values =
-              `Lazy (Ordered.env_entry (Modality.src (Modality.filter_modality filter)) vars);
+            values = `Lazy (Ordered.env_entry (Modality.src (Modality.filter_modality filter)) vars);
           };
       level = level + 1;
       ctx = Ordered.invis ctx filter vars;
@@ -749,13 +764,7 @@ let parametric_lock (Permute c) = Permute { c with ctx = Ordered.parametric_lock
 let raw_length (Permute { perm; ctx; _ }) = N.perm_dom perm (Ordered.raw_length ctx)
 let level (Permute { level; _ }) = level
 let mode (Permute { ctx; _ }) = Ordered.mode ctx
-
-let maybe_lock ctx fa =
-  if locking fa then
-    (* let (Wrap modality) = Modality.locker (mode ctx) in *)
-    parametric_lock ctx
-  else ctx
-
+let maybe_lock ctx fa = if locking fa then parametric_lock ctx else ctx
 let parametric_locked (Permute { ctx; _ }) = Ordered.parametric_locked ctx
 
 let empty mode =
