@@ -25,44 +25,59 @@ type (_, _) looked_up_cube =
       -> ('mode, 'm) looked_up_cube
 
 (* Require that the supplied list contains exactly one argument for each annotated variable being added, and add all of those cubes to the given environment. *)
-let rec take_args : type dom window mode annotations m n mn a b ab.
+let rec take_args : type dom window mode annotations m n k kn a b ab.
     (mode, m, a) env ->
-    (m, n, mn) D.plus ->
-    (mn, dom, kinetic) modal_value_cube list ->
+    (k, n, kn) D.plus ->
+    (kn, dom, kinetic) modal_value_cube list ->
     (dom, window, mode) Modality.t ->
+    (dom, window, mode, k, m) Modality.filter_dim ->
     (n, mode, annotations, mode, mode, b, mode) VarAnnotate.fwd_t ->
     (mode, b, mode, a, unit, ab) Tctx.bcomp ->
     (mode, m, ab) env =
- fun env mn dargs window annotate comp ->
+ fun env k_n dargs window_modality filter_window_k_m annotate comp ->
   match (dargs, annotate, comp) with
   | [], Zero _, Zero -> env
-  | Modal (fmn, arg) :: args, Suc (Annotate fn, annotate), Suc (Dim _, comp) -> (
+  | ( Modal
+        (type mdom mmod pq)
+        ((filter_constr_pq_kn, arg) : (mdom, mmod, dom, pq, kn) Modality.filter_dim * _)
+      :: args,
+      Suc (Annotate filter_window_constr_q_n, annotate),
+      Suc (Dim _, comp) ) -> (
       (* The value's stored filter is that of its constructor annotation mu, whose codomain is the (inner) mode of the datatype, while the context annotation is the composite of the window modality with mu, whose codomain is the outer mode.  So we compose mu with the window before comparing. *)
-      let mu = Modality.filter_modality fmn in
-      let (Comp wx) = Modality.comp mu in
-      let wmu = Modality.comp_out window wx in
-      let amu = Modality.filter_modality fn in
-      match Modality.compare wmu amu with
-      | Neq -> fatal (Modality_mismatch (`Internal, "take_args", wmu, amu))
+      let _m = dim_env env in
+      let _k = Modality.filtered _m filter_window_k_m in
+      let n = D.plus_right k_n in
+      let (Has_filter filter_window_n_n) = Modality.filter window_modality n in
+      match D.compare (Modality.filtered n filter_window_n_n) n with
+      | Neq -> fatal (Unimplemented "filtering window modalities for higher-dimensional matches")
       | Eq -> (
-          (* A window modality must not do any dimension filtering, so composing it with mu must filter the dimension to the same result.  We can currently only check this at runtime. *)
-          let mn' = D.plus_out (dim_env env) mn in
-          let (Has_filter wfmn) = Modality.filter wmu mn' in
-          match D.compare (Modality.filtered mn' wfmn) (Modality.filtered mn' fmn) with
-          | Neq -> fatal (Invalid_mode_theory "filtering window modality")
+          let constr_modality = Modality.filter_modality filter_constr_pq_kn in
+          let (Comp window_constr_comp) = Modality.comp constr_modality in
+          let window_constr_modality = Modality.comp_out window_modality window_constr_comp in
+          let window_constr_modality' = Modality.filter_modality filter_window_constr_q_n in
+          match Modality.compare window_constr_modality window_constr_modality' with
+          | Neq ->
+              fatal
+                (Modality_mismatch
+                   (`Internal, "take_args", window_constr_modality, window_constr_modality'))
           | Eq ->
-              let (Filter_of_plus (ij, fm, fn2)) = Modality.filter_of_plus mn wfmn in
-              let Eq = Modality.filter_uniq fn2 fn in
+              let (Filter_of_plus (p_q, filter_constr_p_k, filter_constr_q_n)) =
+                Modality.filter_of_plus k_n filter_constr_pq_kn in
+              let filter_window_constr_p_m =
+                Modality.filter_comp window_constr_comp filter_window_k_m filter_constr_p_k in
+              let filter_window_constr_q_n' =
+                Modality.filter_comp window_constr_comp filter_window_n_n filter_constr_q_n in
+              let Eq = Modality.filter_uniq filter_window_constr_q_n filter_window_constr_q_n' in
               let env =
                 Ext
                   {
                     env;
-                    plus = ij;
-                    filter = fm;
-                    filtered = Modality.filter_idempotent fn;
+                    plus = p_q;
+                    filter = filter_window_constr_p_m;
+                    filtered = Modality.filter_idempotent filter_window_constr_q_n;
                     values = `Ok arg;
                   } in
-              take_args env mn args window annotate comp))
+              take_args env k_n args window_modality filter_window_k_m annotate comp))
   | _ -> fatal (Anomaly "wrong number of arguments in argument list")
 
 (* The adjunction of a (lower) field of a record type, together with the non-keyed type of its component: the type at which the component of a tuple is checked or read back, living behind the lock by the right adjoint. *)
@@ -509,11 +524,12 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       eval env tm
   | Match { tm; window; plus_lock; dim = match_dim; branches } -> (
       let env_dim = dim_env env in
-      let (Plus plus_dim) = D.plus match_dim in
-      let total_dim = D.plus_out env_dim plus_dim in
       let kenv = key_env env (Modalcell.id window) plus_lock in
+      let (Has_filter fw) = Modality.filter window env_dim in
+      let akenv = act_env kenv (opt_op_of_opt_sface (Modality.sface_of_filter env_dim fw)) in
+      let (Plus plus_dim) = D.plus match_dim in
       (* Get the argument being inspected *)
-      match view_term (eval_term kenv tm) with
+      match view_term (eval_term akenv tm) with
       (* To reduce nontrivially, the discriminee must be an application of a constructor. *)
       | Constr (name, constr_dim, dargs) -> (
           match Constr.Map.find_opt name branches with
@@ -524,11 +540,12 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                    (Printf.sprintf "constructor %s missing from compiled match"
                       (Constr.to_string name)))
           | Some (Branch { annotate; comp; perm; tm }) -> (
+              let total_dim = D.plus_out (Modality.filtered env_dim fw) plus_dim in
               match D.compare constr_dim total_dim with
               | Neq -> fatal (Dimension_mismatch ("evaluating match", constr_dim, total_dim))
               | Eq ->
                   (* If we have a branch with a matching constructor, then our constructor must be applied to exactly the right number of elements (in dargs).  In that case, we pick them out and add them to the environment. *)
-                  let env = take_args env plus_dim dargs window annotate comp in
+                  let env = take_args env plus_dim dargs window fw annotate comp in
                   (* Then we proceed recursively with the body of that branch. *)
                   eval (Permute (perm, env)) tm)
           (* If this constructor belongs to a refuted case, it must be that we are in an inconsistent context with some neutral belonging to an empty type.  In that case, the match must be stuck. *)

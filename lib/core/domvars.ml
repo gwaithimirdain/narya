@@ -82,9 +82,9 @@ let rec ext_tel : type dom window mode a b c ac bc e n.
       let (Comp wx) = Modality.comp annotation in
       let modality = Modality.comp_out window wx in
       let (Has_filter filter_k_m) = Modality.filter modality m in
-      (* A window modality must not do any dimension filtering, so composing it with the annotation must filter the dimension to the same result.  We can currently only check this at runtime. *)
+      (* A window modality must not further filter the annotation dimension. *)
       match D.compare (Modality.filtered m afilter) (Modality.filtered m filter_k_m) with
-      | Neq -> fatal (Invalid_mode_theory "filtering window modality")
+      | Neq -> fatal (Unimplemented "filtering window modalities for higher-dimensional matches")
       | Eq ->
           let k = Modality.filtered m filter_k_m in
           let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter m filter_k_m)) in

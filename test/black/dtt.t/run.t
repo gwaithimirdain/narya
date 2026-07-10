@@ -331,9 +331,6 @@ General displayed coinductives
    ￮ discrete constant ℕ defined
   
    ￫ info[I0000]
-   ￮ constant ℕᵈ defined
-  
-   ￫ info[I0000]
    ￮ constants defined mutually:
        ∂
        d
@@ -358,4 +355,10 @@ General displayed coinductives
   
    ￫ info[I0000]
    ￮ constant d2 defined
+  
+   ￫ info[I0000]
+   ￮ constant ∂3 defined
+  
+   ￫ info[I0000]
+   ￮ constant d3 defined
   

@@ -311,8 +311,7 @@ struct
 
   let tangible _ = true
 
-  (* In theory, every modality whose normalization doesn't contain a □ should be pellucid (that is, identities, ◇, △, and △◇). *)
-  (*
+  (* Every modality whose normalization doesn't contain a □ is pellucid (that is, identities, ◇, △, and △◇).  But note that since they are nonparametric, they can't be used as windows for higher-dimensional matches (yet). *)
   let rec pellucid_normal : type a m b. (a, m, b) Modality.t -> bool = function
     | Path (Zero, _) -> true
     | Path (Suc (m, g), mode) -> (
@@ -326,12 +325,6 @@ struct
 
   let transparent m = pellucid m
   let translucent _ = true
-  *)
-
-  (* However, in practice I haven't yet figured out how to deal with non-parametric window modalities, so nothing can even be translucent without producing Invalid_mode_theory errors. *)
-  let pellucid _ = false
-  let transparent _ = false
-  let translucent _ = false
 
   let parametric_locker : type a. a Mode.t -> (a, a) Modality.wrapped option =
    fun m ->
