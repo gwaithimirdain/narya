@@ -12,6 +12,8 @@ open Print
 open PPrint
 open Top
 
+type arity = [ `One of string | `Any ]
+
 let usage_msg = "narya [options] <file1> [<file2> ...]"
 let interactive = ref false
 let proofgeneral = ref false
@@ -19,6 +21,7 @@ let show_version = ref false
 let install_mode_theory = ref Modal.Trivial.install
 let hott_forbidden : string option ref = ref None
 let external_ok = ref false
+let arity_ok : arity ref = ref `Any
 let mode_theories = ref 0
 let old_discreteness = ref false
 
@@ -71,25 +74,21 @@ let speclist =
     ("-deprecated-discreteness", Arg.Set discreteness, "Enable discrete datatypes (deprecated)");
     ("-discreteness", Arg.Set old_discreteness, "");
     ("-source-only", Arg.Set source_only, "Load all files from source (ignore compiled versions)");
-    ( "-dtt",
-      Unit
-        (fun () ->
-          hott := false;
-          arity := 1;
-          refl_char := 'd';
-          refl_names := [];
-          internal := false;
-          external_ok := true;
-          hott_forbidden := Some "-dtt";
-          mode_theories := !mode_theories + 1;
-          install_mode_theory := Modal.Dtt.install),
-      "Abbreviation for -arity 1 -direction d -external, with the Dtt mode theory (△ ⊣ □, ◇ ⊣ △)" );
+    (* Mode theories *)
     ( "-coreflector",
       Arg.Unit
         (fun () ->
           install_mode_theory := Modal.Coreflector.install;
           mode_theories := !mode_theories + 1),
       "Select the coreflector mode theory" );
+    ( "-discrete-coreflector",
+      Arg.Unit
+        (fun () ->
+          hott_forbidden := Some "-discrete-coreflector";
+          external_ok := true;
+          install_mode_theory := Modal.Discrete_coreflector.install;
+          mode_theories := !mode_theories + 1),
+      "Select the nonparametric comonad mode theory (requires -parametric, allows -external)" );
     ( "-reflector",
       Arg.Unit
         (fun () ->
@@ -108,7 +107,7 @@ let speclist =
           install_mode_theory := Modal.Discrete_spatial.install;
           hott_forbidden := Some "-discrete-spatial";
           mode_theories := !mode_theories + 1),
-      "Select the spatial mode theory with discrete coreflector" );
+      "Select the spatial mode theory with discrete coreflector (requires -parametric)" );
     ( "-functor",
       Arg.Unit
         (fun () ->
@@ -127,21 +126,57 @@ let speclist =
           install_mode_theory := Modal.Discrete_functor.install;
           hott_forbidden := Some "-discrete-functor";
           mode_theories := !mode_theories + 1),
-      "Select the functor mode theory with a nonparametric domain mode" );
-    ( "-discrete-coreflector",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory := Modal.Discrete_coreflector.install;
-          mode_theories := !mode_theories + 1;
-          hott_forbidden := Some "-discrete-coreflector";
-          external_ok := true),
-      "Select the nonparametric comonad mode theory (currently requires -parametric)" );
+      "Select the functor mode theory with discrete domain mode (requires -parametric)" );
     ( "-composed-functors",
       Arg.Unit
         (fun () ->
           install_mode_theory := Modal.Composed_functors.install;
           mode_theories := !mode_theories + 1),
       "Select the composed functors mode theory" );
+    ( "-glconn",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Glconn.install;
+          mode_theories := !mode_theories + 1),
+      "Select the globally and locally connected geometric morphism mode theory" );
+    ( "-discrete-glconn",
+      Arg.Unit
+        (fun () ->
+          hott_forbidden := Some "-discrete-glconn";
+          external_ok := true;
+          arity_ok := `One "-discrete-glconn";
+          install_mode_theory := Modal.Discrete_glconn.install;
+          mode_theories := !mode_theories + 1),
+      "Select the discrete glconn mode theory (requires -parametric and -arity 1, allows -external)"
+    );
+    ( "-pseudo-glconn",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Pseudo_glconn.install;
+          mode_theories := !mode_theories + 1),
+      "Select the pseudo globally and locally connected geometric morphism mode theory" );
+    ( "-discrete-pseudo-glconn",
+      Arg.Unit
+        (fun () ->
+          hott_forbidden := Some "-discrete-pseudo-glconn";
+          external_ok := true;
+          install_mode_theory := Modal.Discrete_pseudo_glconn.install;
+          mode_theories := !mode_theories + 1),
+      "Select the discrete pseudo-glconn mode theory (requires -parametric, allows -external)" );
+    ( "-dtt",
+      Unit
+        (fun () ->
+          hott := false;
+          arity := 1;
+          refl_char := 'd';
+          refl_names := [];
+          internal := false;
+          external_ok := true;
+          arity_ok := `One "-dtt";
+          hott_forbidden := Some "-dtt";
+          install_mode_theory := Modal.Discrete_glconn.install;
+          mode_theories := !mode_theories + 1),
+      "Abbreviation for -parametric -arity 1 -direction d -external -discrete-glconn" );
     ("--help", Arg.Unit (fun () -> ()), "");
     ("-", Arg.Unit (fun () -> inputs := Snoc (!inputs, `Stdin)), "");
     ("-fake-interact", Arg.String (fun str -> fake_interacts := Snoc (!fake_interacts, str)), "");
@@ -177,6 +212,12 @@ let () =
   if (not !internal) && not !external_ok then (
     Printf.fprintf stderr "-external requires a suitable mode theory\n";
     exit 1);
+  (match (!arity_ok, !arity) with
+  | `One _, 1 -> ()
+  | `One str, _ ->
+      Printf.fprintf stderr "%s requires -arity 1\n" str;
+      exit 1
+  | _ -> ());
   if
     Bwd.is_empty !inputs
     && (not !interactive)

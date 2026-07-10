@@ -1,16 +1,7 @@
 open Dim
 
-(* The "Dtt" mode theory has two modes, Disc(rete) and Type, and three generating modalities:
+(* A pseudo-globally-and-locally-connected geometric morphism lacks only the unit Id → △◇.  This is the discrete version, analogous to Dtt.  *)
 
-     △ : Disc → Type
-     □ : Type → Disc
-     ◇ : Type → Disc
-
-   with an adjoint triple ◇ ⊣ △ ⊣ □, where the counit of ◇ ⊣ △ (namely ◇△ ⇒ id_Disc) and the unit of △ ⊣ □ (namely id_Disc ⇒ □△) are isomorphisms.  The theory is locally posetal (any two parallel 2-cells are equal).
-
-   Every composite modality is isomorphic to exactly one normal form: an identity, one of the three generators, or one of the composites △□ or △◇ (both Type → Type).  This is because the only nontrivial reductions are the two isomorphisms ◇△ ≅ id_Disc and □△ ≅ id_Disc, which cancel a △ immediately followed (in application order) by a ◇ or a □.  The remaining nonidentity 2-cells between normal forms are the counit △□ ⇒ id, the unit id ⇒ △◇, their composite △□ ⇒ △◇, and an induced 2-cell □ ⇒ ◇. *)
-
-(* The mode Disc is itself nonparametric: it forbids parametricity (degeneracies) in the single external direction, so nothing at mode Disc can be degenerated.  Mode Type is parametric, with the coreflector △□ installed as its locker (see install). *)
 module DiscGen = struct
   let name = "Disc"
 
@@ -38,7 +29,6 @@ struct
   let tgt = Type.mode
   let name = "△"
 
-  (* Every nonidentity modality of the Dtt theory is nonparametric. *)
   type nonparametric = D.one
 
   let nonparametric = D.one
@@ -76,7 +66,7 @@ struct
   let nonparametric = D.one
 end
 
-module DttCells
+module GlconnCells
     (Disc : Mode.Generated with module G := DiscGen)
     (Type : Mode.Generated with module G := TypeGen)
     (Triangle : Modality.Generated with module G := TriangleGen(Disc)(Type))
@@ -98,29 +88,23 @@ struct
   let diatri = Modality.Path (Suc (Suc (Zero, Diamond.modality), Triangle.modality), disc)
 
   (* The generating 2-cells (source ⇒ target).  Both isomorphisms (◇△ ≅ id and □△ ≅ id) get an explicit inverse generator; since the theory is posetal, any parallel cell acts identically, so it does not matter that these are freely generated rather than literally inverse.
-       box_counit : △□ ⇒ id_Type            diamond_unit : id_Type ⇒ △◇
+       box_counit : △□ ⇒ id_Type
        box_unit : id_Disc ⇒ □△ (iso)        box_unit_inv : □△ ⇒ id_Disc
        diamond_counit : ◇△ ⇒ id_Disc (iso)  diamond_counit_inv : id_Disc ⇒ ◇△
        box_to_dia : □ ⇒ ◇ *)
   let box_counit = Modalcell.of_gen (Modalcell.generate tribox (Modality.id typ))
-  let diamond_unit = Modalcell.of_gen (Modalcell.generate (Modality.id typ) tridia)
   let box_unit = Modalcell.of_gen (Modalcell.generate (Modality.id disc) boxtri)
   let box_unit_inv = Modalcell.of_gen (Modalcell.generate boxtri (Modality.id disc))
   let diamond_counit = Modalcell.of_gen (Modalcell.generate diatri (Modality.id disc))
   let diamond_counit_inv = Modalcell.of_gen (Modalcell.generate (Modality.id disc) diatri)
   let box_to_dia = Modalcell.of_gen (Modalcell.generate box dia)
 
-  (* A modality is sinister (a declared left adjoint) if it is the identity, △ (left adjoint to □), or ◇ (left adjoint to △), or △◇ (left adjoint to △□). *)
+  (* A modality is sinister (a declared left adjoint) if it is the identity or △ (left adjoint to □). *)
   let sinister : type a f b. (a, f, b) Modality.t -> (a, f, b) Modalcell.sinister option =
    fun f ->
-    match
-      ( Modality.compare_id f,
-        Modality.compare f tri,
-        Modality.compare f dia,
-        Modality.compare f tridia )
-    with
-    | Eq, _, _, _ -> Some (Modalcell.id_sinister (Modality.src f))
-    | _, Eq, _, _ ->
+    match (Modality.compare_id f, Modality.compare f tri) with
+    | Eq, _ -> Some (Modalcell.id_sinister (Modality.src f))
+    | _, Eq ->
         (* △ ⊣ □ *)
         Some
           (Sinister
@@ -133,56 +117,13 @@ struct
                   left_right = Suc (Zero, Box.modality);
                   counit = box_counit;
                 }))
-    | _, _, Eq, _ ->
-        (* ◇ ⊣ △ *)
-        Some
-          (Sinister
-             (Adjunction
-                {
-                  left = dia;
-                  right = tri;
-                  right_left = Suc (Zero, Diamond.modality);
-                  unit = diamond_unit;
-                  left_right = Suc (Zero, Triangle.modality);
-                  counit = diamond_counit;
-                }))
-    | _, _, _, Eq ->
-        (* △◇ ⊣ △□ *)
-        Some
-          (Sinister
-             (Adjunction
-                {
-                  left = tridia;
-                  right = tribox;
-                  right_left = Suc (Suc (Zero, Triangle.modality), Diamond.modality);
-                  unit =
-                    Modalcell.vcomp
-                      (Modalcell.prewhisker
-                         (Suc (Zero, Diamond.modality))
-                         (Suc (Zero, Diamond.modality))
-                         (Modalcell.postwhisker Zero
-                            (Suc (Suc (Zero, Box.modality), Triangle.modality))
-                            tri box_unit)
-                         dia)
-                      diamond_unit;
-                  left_right = Suc (Suc (Zero, Triangle.modality), Box.modality);
-                  counit =
-                    Modalcell.vcomp box_counit
-                      (Modalcell.prewhisker
-                         (Suc (Zero, Box.modality))
-                         (Suc (Zero, Box.modality))
-                         (Modalcell.postwhisker
-                            (Suc (Suc (Zero, Diamond.modality), Triangle.modality))
-                            Zero tri diamond_counit)
-                         box);
-                }))
     | _ -> None
 
   (* Locally posetal: any two parallel 2-cells are equal. *)
   let compare : type a m n b. (a, m, n, b) Modalcell.t -> (a, m, n, b) Modalcell.t -> bool =
    fun _ _ -> true
 
-  (* The unique 2-cell between two *normal-form* modalities, if one exists.  The nonidentity 2-cells between normal forms are exactly: the counit △□ ⇒ id, the unit id ⇒ △◇, their composite △□ ⇒ △◇, and the induced □ ⇒ ◇.  (Since the theory is posetal, any 2-cell of the correct source and target is "the" one.) *)
+  (* The unique 2-cell between two *normal-form* modalities, if one exists.  The nonidentity 2-cells between normal forms are exactly: the counit △□ ⇒ id, the unit id ⇒ △◇, the map □ ⇒ ◇, and the induced △□ ⇒ △◇.  (Since the theory is posetal, any 2-cell of the correct source and target is "the" one.) *)
   let bridge : type a p q b.
       (a, p, b) Modality.t -> (a, q, b) Modality.t -> (a, p, q, b) Modalcell.t option =
    fun m n ->
@@ -193,14 +134,18 @@ struct
           ( Modality.compare m tribox,
             Modality.compare n (Modality.id typ),
             Modality.compare n tridia,
-            Modality.compare m (Modality.id typ),
             Modality.compare m box,
             Modality.compare n dia )
         with
-        | Eq, Eq, _, _, _, _ -> Some box_counit (* △□ ⇒ id *)
-        | Eq, _, Eq, _, _, _ -> Some (Modalcell.vcomp diamond_unit box_counit) (* △□ ⇒ △◇ *)
-        | _, _, Eq, Eq, _, _ -> Some diamond_unit (* id ⇒ △◇ *)
-        | _, _, _, _, Eq, Eq -> Some box_to_dia (* □ ⇒ ◇ *)
+        | Eq, Eq, _, _, _ -> Some box_counit (* △□ ⇒ id *)
+        | Eq, _, Eq, _, _ ->
+            Some
+              (Modalcell.postwhisker
+                 (Suc (Zero, Box.modality))
+                 (Suc (Zero, Diamond.modality))
+                 tri box_to_dia)
+            (* △□ ⇒ △◇ *)
+        | _, _, _, Eq, Eq -> Some box_to_dia (* □ ⇒ ◇ *)
         | _ -> None)
 
   (* The normalization of a modality: an isomorphic normal form together with the isomorphism (in both directions).  Every modality is isomorphic to exactly one normal form. *)
@@ -300,18 +245,18 @@ struct
     ^ string_of_int (Modality.length (Modalcell.vtgt m))
 end
 
-module DttModalities
+module GlconnModalities
     (Disc : Mode.Generated with module G := DiscGen)
     (Type : Mode.Generated with module G := TypeGen)
     (Triangle : Modality.Generated with module G := TriangleGen(Disc)(Type))
     (Box : Modality.Generated with module G := BoxGen(Disc)(Type))
     (Diamond : Modality.Generated with module G := DiamondGen(Disc)(Type)) : Modality.Theory =
 struct
-  open DttCells (Disc) (Type) (Triangle) (Box) (Diamond)
+  open GlconnCells (Disc) (Type) (Triangle) (Box) (Diamond)
 
   let tangible _ = true
 
-  (* Every modality whose normalization doesn't contain a □ is pellucid (that is, identities, ◇, △, and △◇).  But note that since they are nonparametric, they can't be used as windows for higher-dimensional matches (yet). *)
+  (* Every modality whose normalization doesn't contain a □ is pellucid (that is, identities, ◇, △, and △◇). *)
   let rec pellucid_normal : type a m b. (a, m, b) Modality.t -> bool = function
     | Path (Zero, _) -> true
     | Path (Suc (m, g), mode) -> (
@@ -330,7 +275,7 @@ struct
    fun m ->
     match Mode.compare m Type.mode with
     | Eq -> Some (Wrap tribox)
-    | Neq -> failwith "discrete spatial: unknown mode"
+    | Neq -> failwith "pseudo discrete glconn: unknown mode"
 
   let one_char = true
 end
@@ -342,6 +287,6 @@ let install () =
   let module Box = Modality.Generate (BoxGen (Disc) (Type)) in
   let module Diamond = Modality.Generate (DiamondGen (Disc) (Type)) in
   Modalcell.choose_theory
-    (module DttCells (Disc) (Type) (Triangle) (Box) (Diamond) : Modalcell.Theory);
+    (module GlconnCells (Disc) (Type) (Triangle) (Box) (Diamond) : Modalcell.Theory);
   Modality.choose_theory
-    (module DttModalities (Disc) (Type) (Triangle) (Box) (Diamond) : Modality.Theory)
+    (module GlconnModalities (Disc) (Type) (Triangle) (Box) (Diamond) : Modality.Theory)
