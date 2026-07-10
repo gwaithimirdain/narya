@@ -20,6 +20,7 @@ let install_mode_theory = ref Modal.Trivial.install
 let hott_forbidden : string option ref = ref None
 let external_ok = ref false
 let mode_theories = ref 0
+let old_discreteness = ref false
 
 (* Undocumented flag used for testing: interpret a given file or command-line string as if it were entered in interactive mode. *)
 let fake_interacts : string Bwd.t ref = ref Emp
@@ -67,7 +68,8 @@ let speclist =
       Arg.Clear hott,
       "Switch from higher observational type theory (fibrancy) to parametricity" );
     ("-hott", Arg.Set hott_deprecated, "");
-    ("-discreteness", Arg.Set discreteness, "Enable discreteness");
+    ("-deprecated-discreteness", Arg.Set discreteness, "Enable discrete datatypes (deprecated)");
+    ("-discreteness", Arg.Set old_discreteness, "");
     ("-source-only", Arg.Set source_only, "Load all files from source (ignore compiled versions)");
     ( "-dtt",
       Unit
@@ -157,6 +159,10 @@ let () =
   if !show_version then (
     print_endline (String.trim [%blob "version.txt"]);
     exit 0);
+  if !old_discreteness then (
+    Printf.eprintf
+      "-discreteness is deprecated; use discrete modalities instead.\nYou can use -deprecated-discreteness while porting old code.";
+    exit 1);
   if !mode_theories > 1 then (
     Printf.fprintf stderr "too many mode theories! specify only one.";
     exit 1);

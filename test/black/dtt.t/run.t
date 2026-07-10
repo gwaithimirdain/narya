@@ -326,9 +326,10 @@ General displayed coinductives
    ￫ info[I0000]
    ￮ constant △◇ᵈ_eq defined
   
-  $ narya -v -dtt -discreteness higher-display.ny
+
+  $ narya -v -dtt higher-display.ny
    ￫ info[I0000]
-   ￮ discrete constant ℕ defined
+   ￮ constant ℕ defined
   
    ￫ info[I0000]
    ￮ constants defined mutually:

@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-discreteness" "-dtt") -*- `}
+{` -*- narya-prog-args: ("-proofgeneral" "-dtt") -*- `}
 
 {` We can define higher display of a modal type at arbitrary dimensions, mutually recursively along with its boundary. `}
 
