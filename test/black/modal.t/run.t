@@ -44,6 +44,37 @@
    ￫ info[I0000]
    ￮ constant ○map defined
   
+   ￫ info[I0000]
+   ￮ constant Id○ defined
+  
+   ￫ info[I0000]
+   ￮ constant refl_circ defined
+  
+   ￫ info[I0000]
+   ￮ constant to_Id defined
+  
+   ￫ hint[H0403]
+   ￭ $TESTCASE_ROOT/functor.ny
+   28 |            match u0, u1 [ circle. x0, circle. x1 ↦ ○ (Id A x0 x1) ] [
+      ^ match encountered outside case tree, wrapping in implicit let-binding
+  
+   ￫ info[I0000]
+   ￮ constant from_Id defined
+  
+   ￫ hint[H0403]
+   ￭ $TESTCASE_ROOT/functor.ny
+   37 |            match u0, u1 [
+   38 |            | circle. x0, circle. x1 ↦
+   39 |                Id (Id (○ A) (circle. x0) (circle. x1))
+   40 |                  (to_Id A x0 x1 (from_Id A x0 x1 u2)) u2] [
+      ^ match encountered outside case tree, wrapping in implicit let-binding
+  
+   ￫ info[I0000]
+   ￮ constant to_from_id defined
+  
+   ￫ info[I0000]
+   ￮ constant from_to_Id defined
+  
 
 
   $ narya -v -reflector reflector.ny
