@@ -2296,9 +2296,9 @@ let process_codata_field : type n lt ls rt rs lt' ls' rt' rs' et.
     | Placeholder _ -> (None, None)
     | Notn ((AscVar, _), n) -> (
         match Postprocess.args_of_ascvar (args n) with
-        | Some (Wrap { value = Ident ([ x ], _); _ }, modality) when Lexer.valid_var x ->
+        | Some (Wrap { value = Ident ([ x ], _); _ }, modality, _ty) when Lexer.valid_var x ->
             (Some x, Some modality)
-        | Some (Wrap { value = Placeholder _; _ }, modality) -> (None, Some modality)
+        | Some (Wrap { value = Placeholder _; _ }, modality, _ty) -> (None, Some modality)
         | _ -> fatal ?loc:xloc (Parse_error "invalid modal self-variable"))
     | Ident (x, _) -> fatal ?loc:xloc (Invalid_variable x)
     | _ -> fatal ?loc:xloc (Parse_error "invalid self-variable") in

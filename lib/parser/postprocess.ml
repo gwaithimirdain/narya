@@ -34,8 +34,9 @@ type (_, _, _) identity +=
   | Parens : (closed, No.plus_omega, closed) identity
   | Braces : (closed, No.plus_omega, closed) identity
   | Dot : (closed, No.plus_omega, closed) identity
-  (* AscVar is defined (parsed and printed) in builtins.ml, but we declare its identity here so that process_apply can recognize a modal ascription "(x :f| _)" used as the head of a field projection. *)
-  | AscVar : (closed, No.plus_omega, closed) identity
+  | (* AscVar is defined (parsed and printed) in builtins.ml, but we declare its identity here so that process_apply can recognize a modal ascription "(x :f| _)" used as the head of a field projection. *)
+      AscVar :
+      (closed, No.plus_omega, closed) identity
 
 let parens : (closed, No.plus_omega, closed) notation = (Parens, Outfix)
 let braces : (closed, No.plus_omega, closed) notation = (Braces, Outfix)
@@ -143,44 +144,42 @@ and process_apps : type n lt ls rt rs.
     n check located =
  fun ctx tm args ->
   match (tm.value, args) with
-  (* A modal field projection "(x :f| _) .field" has the modal ascription "(x :f| _)" as the head of a field application.  We recognize it here, extracting the term x and the locking modality f, and attach the modality name to the raw field projection. *)
+  (* A modal field projection "(x :f| _) .field" has the modal ascription "(x :f| _)" as the head of a field application.  We recognize it here, extracting the term x and the locking modality f, and attach the modality name to the raw field projection.  If a non-placeholder type is supplied, we put it on the term as an ascription. *)
   | Notn ((AscVar, _), n), (Wrap { value = Field (fld, pbij, _); loc = fldloc }, _) :: rest -> (
       match args_of_ascvar (notation_args n) with
-      | Some (Wrap x, modality) -> (
+      | Some (Wrap x, modality, Wrap ty) -> (
           let x = process ctx x in
           let fn =
-            match x.value with
-            | Synth sfn -> { value = sfn; loc = x.loc }
-            | _ -> fatal (Nonsynthesizing "head of modal field projection") in
+            match ty.value with
+            | Placeholder _ -> (
+                match x.value with
+                | Synth sfn -> { value = sfn; loc = x.loc }
+                | _ -> fatal (Nonsynthesizing "head of modal field projection"))
+            | _ ->
+                let ty = process ctx ty in
+                { value = Asc (x, ty); loc = tm.loc } in
           try
             let fld =
               match int_of_string_opt fld with
               | Some k -> `Int k
               | None -> `Name (fld, List.map int_of_string pbij) in
-            process_apply ctx
-              { value = Synth (Field (fn, fld, Some modality)); loc = fldloc }
-              rest
+            process_apply ctx { value = Synth (Field (fn, fld, Some modality)); loc = fldloc } rest
           with Failure _ -> fatal (Invalid_field (String.concat "." ("" :: fld :: pbij))))
       | None -> process_apps_head ctx tm args)
   | _ -> process_apps_head ctx tm args
 
 (* Extract the term and locking-modality name from the observations of a modal ascription "(x :f| _)".  Returns None for a non-modal ascription. *)
 and args_of_ascvar :
-    observation list -> (wrapped_parse * string located list located) option = function
+    observation list -> (wrapped_parse * string located list located * wrapped_parse) option =
+  function
   | [
-   Token (_, _);
-   Term x;
-   Token (Colon, _);
-   Term modality;
-   Token (Op "|", _);
-   Term _ty;
-   Token (_, _);
-  ] -> Some (Wrap x, modality_name modality)
+      Token (_, _); Term x; Token (Colon, _); Term modality; Token (Op "|", _); Term ty; Token (_, _);
+    ] -> Some (Wrap x, modality_name modality, Wrap ty)
   | _ -> None
 
 (* Extract a modality name (a sequence of identifiers) from its parse tree. *)
-and modality_name : type lt ls rt rs.
-    (lt, ls, rt, rs) parse located -> string located list located =
+and modality_name : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string located list located
+    =
  fun m ->
   let rec go : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string located Bwd.t =
    fun { value; loc } ->

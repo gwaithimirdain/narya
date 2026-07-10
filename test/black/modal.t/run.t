@@ -349,3 +349,20 @@ An ordinary (non-modal) field never disappears: it projects at any dimension.
   refl 0
     : N⁽ᵉ⁾ 0 0
   
+
+If a type is given in a modal field projection, it must be correct.
+
+  $ narya -coreflection -e "def □′ (A :□| Type) : Disc ≔ sig ((x :△| A) .unbox : A)" -e "def unbox (A :△□| Type) (u :△| □′ A) : A ≔ (u :△| Disc) .unbox"
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def unbox (A :△□| Type) (u :△| □′ A) : A ≔ (u :△| Disc) .unbox
+     ^ term synthesized type
+         □′ A
+       but is being checked against type
+         Disc
+       unequal head terms:
+         □′
+       does not equal
+         Disc
+  
+  [1]
