@@ -178,6 +178,9 @@
 Can't take external degeneracies of nonparametric axioms.
 
   $ narya -dtt -v -e "axiom #(nonparametric) A : Type" -e "echo A⁽ᵈ⁾"
+   ￫ warning[E0110]
+   ￮ deprecated: nonparametric axioms: use modalities instead
+  
    ￫ info[I0001]
    ￮ nonparametric axiom A assumed
   
@@ -191,6 +194,9 @@ Can't take external degeneracies of nonparametric axioms.
 Or of anything that uses a nonparametric axiom.
 
   $ narya -dtt -v -e "axiom #(nonparametric) A : Type def f : A → A ≔ x ↦ x echo f⁽ᵈ⁾"
+   ￫ warning[E0110]
+   ￮ deprecated: nonparametric axioms: use modalities instead
+  
    ￫ info[I0001]
    ￮ nonparametric axiom A assumed
   
@@ -207,8 +213,14 @@ Or of anything that uses a nonparametric axiom.
 All axioms using a nonparametric axiom must also be nonparametric
 
   $ narya -dtt -v -e "axiom #(nonparametric) A : Type axiom #(nonparametric) a : A axiom a' : A"
+   ￫ warning[E0110]
+   ￮ deprecated: nonparametric axioms: use modalities instead
+  
    ￫ info[I0001]
    ￮ nonparametric axiom A assumed
+  
+   ￫ warning[E0110]
+   ￮ deprecated: nonparametric axioms: use modalities instead
   
    ￫ info[I0001]
    ￮ nonparametric axiom a assumed
@@ -243,6 +255,9 @@ We check that a family of mutual definitions can apply external degeneracies to 
 But if one of them uses an axiom, the others don't have external degeneracies either.
 
   $ narya -dtt -v -e "axiom #(nonparametric) A:Type def f : Type := A and g : Type := sig () echo g⁽ᵈ⁾"
+   ￫ warning[E0110]
+   ￮ deprecated: nonparametric axioms: use modalities instead
+  
    ￫ info[I0001]
    ￮ nonparametric axiom A assumed
   
@@ -261,6 +276,9 @@ But if one of them uses an axiom, the others don't have external degeneracies ei
 When a constant is defined containing a hole, it is allowed to be parametric, but then the hole cannot be filled by any term that uses an axiom.
 
   $ narya -dtt -v -fake-interact "axiom #(nonparametric) A:Type def B:Type := ? echo B⁽ᵈ⁾ solve 0 := A"
+   ￫ warning[E0110]
+   ￮ deprecated: nonparametric axioms: use modalities instead
+  
    ￫ info[I0001]
    ￮ nonparametric axiom A assumed
   
