@@ -15,7 +15,7 @@ module FlatGen (Testmode : Mode.Generated with module G := TestmodeGen) = struct
 
   let src = Testmode.mode
   let tgt = Testmode.mode
-  let name = "♭"
+  let name = ref "♭"
 
   type nonparametric = D.one
 
@@ -28,7 +28,7 @@ module SharpGen (Testmode : Mode.Generated with module G := TestmodeGen) = struc
 
   let src = Testmode.mode
   let tgt = Testmode.mode
-  let name = "♯"
+  let name = ref "♯"
 
   type nonparametric = D.zero
 
@@ -267,20 +267,24 @@ module SpatialModalities
   let translucent : type a m b. (a, m, b) Modality.t -> bool = fun m -> transparent m
   let tangible : type a m b. (a, m, b) Modality.t -> bool = fun m -> transparent m
   let parametric_locker : type a. a Mode.t -> (a, a) Modality.wrapped option = fun _ -> None
-  let one_char = true
 end
 
 let install modes modalities =
   (match modes with
   | [ ty ] -> TestmodeGen.name := ty
   | [] -> ()
-  | _ -> failwith "wrong number of mode names for spatial mode theory");
-  (match modalities with
-  | [ _flat; _sharp ] -> ()
-  | [] -> ()
-  | _ -> failwith "wrong number of modality names for spatial mode theory");
+  | _ -> failwith "wrong number of mode names for discrete spatial mode theory");
   let module Testmode = Mode.Generate (TestmodeGen) in
-  let module Flat = Modality.Generate (FlatGen (Testmode)) in
-  let module Sharp = Modality.Generate (SharpGen (Testmode)) in
+  let module Flat = FlatGen (Testmode) in
+  let module Sharp = SharpGen (Testmode) in
+  (match modalities with
+  | [ flat; sharp ] ->
+      Flat.name := flat;
+      Sharp.name := sharp
+  | [] -> ()
+  | _ -> failwith "wrong number of modality names for discrete spatial mode theory");
+  Modality.set_one_char true modalities;
+  let module Flat = Modality.Generate (Flat) in
+  let module Sharp = Modality.Generate (Sharp) in
   Modalcell.choose_theory (module SpatialCells (Testmode) (Flat) (Sharp) : Modalcell.Theory);
   Modality.choose_theory (module SpatialModalities (Testmode) (Flat) (Sharp) : Modality.Theory)

@@ -14,7 +14,7 @@ module type Generator = sig
 
   val src : src Mode.t
   val tgt : tgt Mode.t
-  val name : string
+  val name : string ref
 
   type nonparametric
 
@@ -33,8 +33,6 @@ module Generate : functor (G : Generator) -> Generated with module G := G
 
 type ('src, 'tgt) gen_wrapped = Wrap : ('src, 'morphism, 'tgt) Gen.t -> ('src, 'tgt) gen_wrapped
 
-val generate : 'a Mode.t -> 'b Mode.t -> string -> 'e D.t -> ('a, 'b) gen_wrapped
-
 include module type of Path.Make (Gen)
 module Map : MAP3_MAKER with module Key := Path.Make(Gen)
 
@@ -44,7 +42,6 @@ module type Theory = sig
   val transparent : ('a, 'm, 'b) t -> bool
   val translucent : ('a, 'm, 'b) t -> bool
   val parametric_locker : 'a Mode.t -> ('a, 'a) wrapped option
-  val one_char : bool
 end
 
 val choose_theory : (module Theory) -> unit
@@ -66,6 +63,7 @@ module Cube : (F : Signatures.Fam3) -> sig
 end
 
 val compare_id : ('x, 'm, 'y) t -> ('m * 'y, 'x id * 'x) Eq.compare
+val set_one_char : bool -> string list -> unit
 
 (* *)
 val name : ('a, 'm, 'b) t -> string list

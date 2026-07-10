@@ -17,7 +17,7 @@ module CoreflectorGen (Testmode : Mode.Generated with module G := TestmodeGen) =
 
   let src = Testmode.mode
   let tgt = Testmode.mode
-  let name = "♭"
+  let name = ref "♭"
 
   type nonparametric = D.one
 
@@ -111,20 +111,19 @@ struct
     match Mode.compare m Testmode.mode with
     | Eq -> Some (Wrap (Modality.of_gen Coreflector.modality))
     | Neq -> failwith "discrete spatial: unknown mode"
-
-  let one_char = true
 end
 
 let install modes modalities =
   (match modes with
   | [ ty ] -> TestmodeGen.name := ty
   | [] -> ()
-  | _ -> failwith "wrong number of mode names for coreflector mode theory");
-  (match modalities with
-  | [ _box ] -> ()
-  | [] -> ()
-  | _ -> failwith "wrong number of modality names for coreflector mode theory");
+  | _ -> failwith "wrong number of mode names for discrete coreflector mode theory");
   let module Testmode = Mode.Generate (TestmodeGen) in
-  let module Coreflector = Modality.Generate (CoreflectorGen (Testmode)) in
-  Modalcell.choose_theory (module CoreflectorCells (Testmode) (Coreflector) : Modalcell.Theory);
-  Modality.choose_theory (module CoreflectorModality (Testmode) (Coreflector) : Modality.Theory)
+  let module Box = CoreflectorGen (Testmode) in
+  (match modalities with
+  | [ box ] -> Box.name := box
+  | [] -> ()
+  | _ -> failwith "wrong number of modality names for discrete coreflector mode theory");
+  Modality.set_one_char true modalities;
+  let module Coreflector = Modality.Generate (Box) in
+  Modalcell.choose_theory (module CoreflectorCells (Testmode) (Coreflector) : Modalcell.Theory)

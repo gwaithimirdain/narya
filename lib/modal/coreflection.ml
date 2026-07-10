@@ -27,7 +27,7 @@ struct
 
   let src = Disc.mode
   let tgt = Type.mode
-  let name = "△"
+  let name = ref "△"
 
   type nonparametric = D.zero
 
@@ -43,7 +43,7 @@ struct
 
   let src = Type.mode
   let tgt = Disc.mode
-  let name = "□"
+  let name = ref "□"
 
   type nonparametric = D.zero
 
@@ -211,7 +211,6 @@ module CoreflectionModalities
   let transparent m = pellucid m
   let translucent _ = true
   let parametric_locker _ = None
-  let one_char = true
 end
 
 let install modes modalities =
@@ -221,14 +220,19 @@ let install modes modalities =
       TypeGen.name := ty
   | [] -> ()
   | _ -> failwith "wrong number of mode names for coreflection mode theory");
-  (match modalities with
-  | [ _tri; _box ] -> ()
-  | [] -> ()
-  | _ -> failwith "wrong number of modality names for coreflection mode theory");
   let module Disc = Mode.Generate (DiscGen) in
   let module Type = Mode.Generate (TypeGen) in
-  let module Triangle = Modality.Generate (TriangleGen (Disc) (Type)) in
-  let module Box = Modality.Generate (BoxGen (Disc) (Type)) in
+  let module Triangle = TriangleGen (Disc) (Type) in
+  let module Box = BoxGen (Disc) (Type) in
+  (match modalities with
+  | [ tri; box ] ->
+      Triangle.name := tri;
+      Box.name := box
+  | [] -> ()
+  | _ -> failwith "wrong number of modality names for coreflection mode theory");
+  Modality.set_one_char true modalities;
+  let module Triangle = Modality.Generate (Triangle) in
+  let module Box = Modality.Generate (Box) in
   Modalcell.choose_theory
     (module CoreflectionCells (Disc) (Type) (Triangle) (Box) : Modalcell.Theory);
   Modality.choose_theory

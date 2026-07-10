@@ -182,7 +182,7 @@ module type Generator = sig
 
   val src : src Mode.t
   val tgt : tgt Mode.t
-  val name : string
+  val name : string ref
 
   (* Which directions this generator forbids parametricity in *)
   type nonparametric
@@ -204,29 +204,12 @@ module Generate (G : Generator) = struct
   let modality : (G.src, t, G.tgt) gen = PK (G.src, Dynarray.length Gen.names, G.tgt)
 
   let () =
-    Dynarray.add_last Gen.names G.name;
+    Dynarray.add_last Gen.names !G.name;
     Dynarray.add_last Gen.nonparametric (Wrap G.nonparametric);
-    Gen.by_name := StringMap.add G.name (Wrap modality : Gen.all_wrapped) !Gen.by_name
+    Gen.by_name := StringMap.add !G.name (Wrap modality : Gen.all_wrapped) !Gen.by_name
 end
 
 type ('src, 'tgt) gen_wrapped = Wrap : ('src, 'morphism, 'tgt) Gen.t -> ('src, 'tgt) gen_wrapped
-
-let generate : type a b p. a Mode.t -> b Mode.t -> string -> p D.t -> (a, b) gen_wrapped =
- fun a b c p ->
-  let module G = struct
-    type src = a
-    type tgt = b
-
-    let src = a
-    let tgt = b
-    let name = c
-
-    type nonparametric = p
-
-    let nonparametric = p
-  end in
-  let module M = Generate (G) in
-  Wrap M.modality
 
 module Modality = Path.Make (Gen)
 include Modality
@@ -244,7 +227,6 @@ module type Theory = sig
   val transparent : ('a, 'm, 'b) t -> bool
   val translucent : ('a, 'm, 'b) t -> bool
   val parametric_locker : 'a Mode.t -> ('a, 'a) wrapped option
-  val one_char : bool
 end
 
 (* By default, all modalities are tangible and translucent, but none (except identities, which are special-cased in the typechecker) are pellucid or transparent. *)
@@ -256,7 +238,6 @@ let theory : (module Theory) ref =
       let transparent _ = false
       let translucent _ = true
       let parametric_locker _ = None
-      let one_char = true
     end : Theory)
 
 let choose_theory (t : (module Theory)) = theory := t
@@ -281,9 +262,19 @@ let parametric_locker m =
   let module T = (val !theory) in
   T.parametric_locker m
 
-let one_char () =
-  let module T = (val !theory) in
-  T.one_char
+let one_char_ref = ref true
+let one_char () = !one_char_ref
+
+let is_exactly_one_utf8_char s =
+  let len = String.length s in
+  if len = 0 then false
+  else
+    let dec = String.get_utf_8_uchar s 0 in
+    Uchar.utf_decode_is_valid dec && Uchar.utf_decode_length dec = len
+
+let set_one_char default modalities =
+  one_char_ref :=
+    if List.is_empty modalities then default else List.for_all is_exactly_one_utf8_char modalities
 
 module Cube (F : Fam3) = struct
   module Parent = struct

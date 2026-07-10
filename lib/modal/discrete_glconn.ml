@@ -36,7 +36,7 @@ struct
 
   let src = Disc.mode
   let tgt = Type.mode
-  let name = "△"
+  let name = ref "△"
 
   (* Every nonidentity modality of the Dtt theory is nonparametric. *)
   type nonparametric = D.one
@@ -53,7 +53,7 @@ struct
 
   let src = Type.mode
   let tgt = Disc.mode
-  let name = "□"
+  let name = ref "□"
 
   type nonparametric = D.one
 
@@ -69,14 +69,14 @@ struct
 
   let src = Type.mode
   let tgt = Disc.mode
-  let name = "◇"
+  let name = ref "◇"
 
   type nonparametric = D.one
 
   let nonparametric = D.one
 end
 
-module DttCells
+module GlconnCells
     (Disc : Mode.Generated with module G := DiscGen)
     (Type : Mode.Generated with module G := TypeGen)
     (Triangle : Modality.Generated with module G := TriangleGen(Disc)(Type))
@@ -300,14 +300,14 @@ struct
     ^ string_of_int (Modality.length (Modalcell.vtgt m))
 end
 
-module DttModalities
+module GlconnModalities
     (Disc : Mode.Generated with module G := DiscGen)
     (Type : Mode.Generated with module G := TypeGen)
     (Triangle : Modality.Generated with module G := TriangleGen(Disc)(Type))
     (Box : Modality.Generated with module G := BoxGen(Disc)(Type))
     (Diamond : Modality.Generated with module G := DiamondGen(Disc)(Type)) : Modality.Theory =
 struct
-  open DttCells (Disc) (Type) (Triangle) (Box) (Diamond)
+  open GlconnCells (Disc) (Type) (Triangle) (Box) (Diamond)
 
   let tangible _ = true
 
@@ -331,8 +331,6 @@ struct
     match Mode.compare m Type.mode with
     | Eq -> Some (Wrap tribox)
     | Neq -> failwith "discrete glconn: unknown mode"
-
-  let one_char = true
 end
 
 let install modes modalities =
@@ -342,16 +340,23 @@ let install modes modalities =
       TypeGen.name := ty
   | [] -> ()
   | _ -> failwith "wrong number of mode names for discrete glconn mode theory");
-  (match modalities with
-  | [ _dia; _tri; _box ] -> ()
-  | [] -> ()
-  | _ -> failwith "wrong number of modality names for discrete glconn mode theory");
   let module Disc = Mode.Generate (DiscGen) in
   let module Type = Mode.Generate (TypeGen) in
-  let module Triangle = Modality.Generate (TriangleGen (Disc) (Type)) in
-  let module Box = Modality.Generate (BoxGen (Disc) (Type)) in
-  let module Diamond = Modality.Generate (DiamondGen (Disc) (Type)) in
+  let module Tri = TriangleGen (Disc) (Type) in
+  let module Box = BoxGen (Disc) (Type) in
+  let module Dia = DiamondGen (Disc) (Type) in
+  (match modalities with
+  | [ dia; tri; box ] ->
+      Dia.name := dia;
+      Tri.name := tri;
+      Box.name := box
+  | [] -> ()
+  | _ -> failwith "wrong number of modality names for discrete glconn mode theory");
+  Modality.set_one_char true modalities;
+  let module Triangle = Modality.Generate (Tri) in
+  let module Box = Modality.Generate (Box) in
+  let module Diamond = Modality.Generate (Dia) in
   Modalcell.choose_theory
-    (module DttCells (Disc) (Type) (Triangle) (Box) (Diamond) : Modalcell.Theory);
+    (module GlconnCells (Disc) (Type) (Triangle) (Box) (Diamond) : Modalcell.Theory);
   Modality.choose_theory
-    (module DttModalities (Disc) (Type) (Triangle) (Box) (Diamond) : Modality.Theory)
+    (module GlconnModalities (Disc) (Type) (Triangle) (Box) (Diamond) : Modality.Theory)

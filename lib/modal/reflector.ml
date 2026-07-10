@@ -17,7 +17,7 @@ module ReflectorGen (Testmode : Mode.Generated with module G := TestmodeGen) = s
 
   let src = Testmode.mode
   let tgt = Testmode.mode
-  let name = "◇"
+  let name = ref "◇"
 
   type nonparametric = D.zero
 
@@ -88,10 +88,12 @@ let install modes modalities =
   | [ ty ] -> TestmodeGen.name := ty
   | [] -> ()
   | _ -> failwith "wrong number of mode names for reflector mode theory");
+  let module Testmode = Mode.Generate (TestmodeGen) in
+  let module Dia = ReflectorGen (Testmode) in
   (match modalities with
-  | [ _dia ] -> ()
+  | [ dia ] -> Dia.name := dia
   | [] -> ()
   | _ -> failwith "wrong number of modality names for reflector mode theory");
-  let module Testmode = Mode.Generate (TestmodeGen) in
-  let module Reflector = Modality.Generate (ReflectorGen (Testmode)) in
+  Modality.set_one_char true modalities;
+  let module Reflector = Modality.Generate (Dia) in
   Modalcell.choose_theory (module ReflectorCells (Testmode) (Reflector) : Modalcell.Theory)

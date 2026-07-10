@@ -25,7 +25,7 @@ struct
 
   let src = DomMode.mode
   let tgt = CodMode.mode
-  let name = "○"
+  let name = ref "○"
 
   type nonparametric = D.zero
 
@@ -61,11 +61,13 @@ let install modes modalities =
       CodGen.name := cod
   | [] -> ()
   | _ -> failwith "wrong number of mode names for functor mode theory");
-  (match modalities with
-  | [ _circ ] -> ()
-  | [] -> ()
-  | _ -> failwith "wrong number of modality names for functor mode theory");
   let module DomMode = Mode.Generate (DomGen) in
   let module CodMode = Mode.Generate (CodGen) in
-  let module Functor = Modality.Generate (FunctorGen (DomMode) (CodMode)) in
+  let module CircGen = FunctorGen (DomMode) (CodMode) in
+  (match modalities with
+  | [ circ ] -> CircGen.name := circ
+  | [] -> ()
+  | _ -> failwith "wrong number of modality names for functor mode theory");
+  Modality.set_one_char true modalities;
+  let module Functor = Modality.Generate (CircGen) in
   Modalcell.choose_theory (module Functorcell (DomMode) (CodMode) (Functor) : Modalcell.Theory)

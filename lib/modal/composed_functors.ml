@@ -35,7 +35,7 @@ struct
 
   let src = AMode.mode
   let tgt = BMode.mode
-  let name = "F"
+  let name = ref "F"
 
   type nonparametric = D.zero
 
@@ -51,7 +51,7 @@ struct
 
   let src = BMode.mode
   let tgt = CMode.mode
-  let name = "G"
+  let name = ref "G"
 
   type nonparametric = D.zero
 
@@ -84,13 +84,18 @@ let install modes modalities =
       CGen.name := c
   | [] -> ()
   | _ -> failwith "wrong number of mode names for composed functors mode theory");
-  (match modalities with
-  | [ _f; _g ] -> ()
-  | [] -> ()
-  | _ -> failwith "wrong number of modality names for composed functors mode theory");
   let module AMode = Mode.Generate (AGen) in
   let module BMode = Mode.Generate (BGen) in
   let module CMode = Mode.Generate (CGen) in
-  let module _ = Modality.Generate (FGen (AMode) (BMode)) in
-  let module _ = Modality.Generate (GGen (BMode) (CMode)) in
+  let module F = FGen (AMode) (BMode) in
+  let module G = GGen (BMode) (CMode) in
+  (match modalities with
+  | [ f; g ] ->
+      F.name := f;
+      G.name := g
+  | [] -> ()
+  | _ -> failwith "wrong number of modality names for composed functors mode theory");
+  Modality.set_one_char true modalities;
+  let module _ = Modality.Generate (F) in
+  let module _ = Modality.Generate (G) in
   Modalcell.choose_theory (module Composedcell : Modalcell.Theory)

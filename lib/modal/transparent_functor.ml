@@ -25,7 +25,7 @@ struct
 
   let src = DomMode.mode
   let tgt = CodMode.mode
-  let name = "○"
+  let name = ref "○"
 
   type nonparametric = D.zero
 
@@ -60,7 +60,6 @@ module TransparentFunctorModalities : Modality.Theory = struct
   let translucent _ = true
   let tangible _ = true
   let parametric_locker : type a. a Mode.t -> (a, a) Modality.wrapped option = fun _ -> None
-  let one_char = true
 end
 
 let install modes modalities =
@@ -70,12 +69,14 @@ let install modes modalities =
       CodGen.name := cod
   | [] -> ()
   | _ -> failwith "wrong number of mode names for transparent functor mode theory");
-  (match modalities with
-  | [ _circ ] -> ()
-  | [] -> ()
-  | _ -> failwith "wrong number of modality names for transparent functor mode theory");
   let module DomMode = Mode.Generate (DomGen) in
   let module CodMode = Mode.Generate (CodGen) in
-  let module Functor = Modality.Generate (FunctorGen (DomMode) (CodMode)) in
+  let module CircGen = FunctorGen (DomMode) (CodMode) in
+  (match modalities with
+  | [ circ ] -> CircGen.name := circ
+  | [] -> ()
+  | _ -> failwith "wrong number of modality names for transparent functor mode theory");
+  Modality.set_one_char true modalities;
+  let module Functor = Modality.Generate (CircGen) in
   Modalcell.choose_theory (module Functorcell (DomMode) (CodMode) (Functor) : Modalcell.Theory);
   Modality.choose_theory (module TransparentFunctorModalities : Modality.Theory)
