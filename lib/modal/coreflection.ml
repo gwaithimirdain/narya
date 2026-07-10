@@ -195,20 +195,20 @@ module CoreflectionModalities
   open CoreflectionCells (Disc) (Type) (Triangle) (Box)
 
   let tangible _ = true
+  let pellucid _ = false
 
-  (* Every modality whose normalization doesn't contain a □ is pellucid (that is, identities, ◇, △, and △◇). *)
-  let rec pellucid_normal : type a m b. (a, m, b) Modality.t -> bool = function
+  (* Every modality that normalizes to △ is transparent. *)
+  let transparent_normal : type a m b. (a, m, b) Modality.t -> bool = function
     | Path (Zero, _) -> true
-    | Path (Suc (m, g), mode) -> (
-        match Modality.Gen.compare g Box.modality with
-        | Eq -> false
-        | Neq -> pellucid_normal (Path (m, mode)))
+    | Path (Suc (_, g), _) -> (
+        match Modality.Gen.compare g Triangle.modality with
+        | Eq -> true
+        | Neq -> false)
 
-  let pellucid m =
+  let transparent m =
     let (Normalize (m, _, _)) = normalize m in
-    pellucid_normal m
+    transparent_normal m
 
-  let transparent m = pellucid m
   let translucent _ = true
   let parametric_locker _ = None
 end

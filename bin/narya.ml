@@ -83,6 +83,12 @@ let speclist =
           install_mode_theory := Modal.Coreflector.install;
           mode_theories := !mode_theories + 1),
       "Select the coreflector mode theory" );
+    ( "-crisp",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Coreflector.install;
+          mode_theories := !mode_theories + 1),
+      "alias of -coreflector" );
     ( "-discrete-coreflector",
       Arg.Unit
         (fun () ->
