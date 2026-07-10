@@ -255,7 +255,6 @@ struct
     ^ string_of_int (Modality.length (Modalcell.vtgt m))
 end
 
-(* Only modalities that normalize to to id or flat are tangible and translucent, and they are also transparent. *)
 module SpatialModalities
     (Testmode : Mode.Generated with module G := TestmodeGen)
     (Flat : Modality.Generated with module G := FlatGen(Testmode))
@@ -264,15 +263,14 @@ module SpatialModalities
 
   let pellucid _ = false
 
+  (* Modalities that normalize to to id or flat are transparent, since they are left adjoints. *)
   let transparent : type a m b. (a, m, b) Modality.t -> bool =
    fun m ->
     match normalize m with
     | Normalize (Normal_id, _, _) | Normalize (Normal_flat, _, _) -> true
     | Normalize (Normal_sharp, _, _) -> false
 
-  let translucent : type a m b. (a, m, b) Modality.t -> bool = fun m -> transparent m
-
-  (* TODO: For now, we actually make sharp tangible for testing.  Once we have modal records working, we'll make sharp no longer tangible. *)
+  let translucent : type a m b. (a, m, b) Modality.t -> bool = fun _ -> true
   let tangible : type a m b. (a, m, b) Modality.t -> bool = fun _ -> true
   let parametric_locker : type a. a Mode.t -> (a, a) Modality.wrapped option = fun _ -> None
   let one_char = true
