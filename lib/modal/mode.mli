@@ -26,7 +26,7 @@ end
 module Map : MAP_MAKER with module Key := Mode
 
 module type Generator = sig
-  val name : string
+  val name : string ref
 
   (* Which directions this mode forbids parametricity in *)
   type nonparametric
@@ -43,5 +43,3 @@ module type Generated = sig
 end
 
 module Generate : functor (G : Generator) -> Generated with module G := G
-
-val generate : string -> wrapped

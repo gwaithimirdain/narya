@@ -46,7 +46,7 @@ let get name =
 (* MODALTODO: We need to do all of this separately for each mode, and in the case of pi-types separately for each modality.  At present, choosing the trivial mode theory here means that we at least get correct fibrancy behavior for any unimodal theory and non-modal pi-types. *)
 
 let () =
-  Modal.Trivial.install ();
+  Modal.Trivial.install [] [];
 
   (* Wrap everything in the standard effect handlers *)
   Top.hott := false;

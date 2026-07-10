@@ -3,7 +3,7 @@ open Dim
 (* A coreflection, i.e. connected geometric morphism.  *)
 
 module DiscGen = struct
-  let name = "Disc"
+  let name = ref "Disc"
 
   type nonparametric = D.zero
 
@@ -11,7 +11,7 @@ module DiscGen = struct
 end
 
 module TypeGen = struct
-  let name = "Type"
+  let name = ref "Type"
 
   type nonparametric = D.zero
 
@@ -214,7 +214,17 @@ module CoreflectionModalities
   let one_char = true
 end
 
-let install () =
+let install modes modalities =
+  (match modes with
+  | [ disc; ty ] ->
+      DiscGen.name := disc;
+      TypeGen.name := ty
+  | [] -> ()
+  | _ -> failwith "wrong number of mode names for coreflection mode theory");
+  (match modalities with
+  | [ _tri; _box ] -> ()
+  | [] -> ()
+  | _ -> failwith "wrong number of modality names for coreflection mode theory");
   let module Disc = Mode.Generate (DiscGen) in
   let module Type = Mode.Generate (TypeGen) in
   let module Triangle = Modality.Generate (TriangleGen (Disc) (Type)) in

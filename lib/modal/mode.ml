@@ -83,7 +83,7 @@ let allows_deg : type m n a. a t -> (m, n) deg -> bool =
   | Neq -> false
 
 module type Generator = sig
-  val name : string
+  val name : string ref
 
   (* Which directions this mode forbids parametricity in *)
   type nonparametric
@@ -105,18 +105,8 @@ module Generate (G : Generator) = struct
   let mode : t Mode.t = PK (Dynarray.length Data.names)
 
   let () =
-    Dynarray.add_last Data.names G.name;
+    Dynarray.add_last Data.names !G.name;
     Dynarray.add_last Data.nonparametric (Wrap G.nonparametric);
-    Data.all := (G.name, Wrap mode) :: !Data.all;
+    Data.all := (!G.name, Wrap mode) :: !Data.all;
     Data.unique := if Dynarray.length Data.names = 1 then Some (Wrap mode) else None
 end
-
-let generate str =
-  let module M = Generate (struct
-    let name = str
-
-    type nonparametric = D.zero
-
-    let nonparametric = D.zero
-  end) in
-  Wrap M.mode

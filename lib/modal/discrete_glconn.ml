@@ -12,7 +12,7 @@ open Dim
 
 (* The mode Disc is itself nonparametric: it forbids parametricity (degeneracies) in the single external direction, so nothing at mode Disc can be degenerated.  Mode Type is parametric, with the coreflector △□ installed as its locker (see install). *)
 module DiscGen = struct
-  let name = "Disc"
+  let name = ref "Disc"
 
   type nonparametric = D.one
 
@@ -20,7 +20,7 @@ module DiscGen = struct
 end
 
 module TypeGen = struct
-  let name = "Type"
+  let name = ref "Type"
 
   type nonparametric = D.zero
 
@@ -335,7 +335,17 @@ struct
   let one_char = true
 end
 
-let install () =
+let install modes modalities =
+  (match modes with
+  | [ disc; ty ] ->
+      DiscGen.name := disc;
+      TypeGen.name := ty
+  | [] -> ()
+  | _ -> failwith "wrong number of mode names for discrete glconn mode theory");
+  (match modalities with
+  | [ _dia; _tri; _box ] -> ()
+  | [] -> ()
+  | _ -> failwith "wrong number of modality names for discrete glconn mode theory");
   let module Disc = Mode.Generate (DiscGen) in
   let module Type = Mode.Generate (TypeGen) in
   let module Triangle = Modality.Generate (TriangleGen (Disc) (Type)) in

@@ -3,7 +3,7 @@
 open Dim
 
 module AGen = struct
-  let name = "AType"
+  let name = ref "AType"
 
   type nonparametric = D.zero
 
@@ -11,7 +11,7 @@ module AGen = struct
 end
 
 module BGen = struct
-  let name = "BType"
+  let name = ref "BType"
 
   type nonparametric = D.zero
 
@@ -19,7 +19,7 @@ module BGen = struct
 end
 
 module CGen = struct
-  let name = "CType"
+  let name = ref "CType"
 
   type nonparametric = D.zero
 
@@ -76,7 +76,18 @@ module Composedcell : Modalcell.Theory = struct
   let to_string : type a m n b. (a, m, n, b) Modalcell.t -> string = fun _ -> "id"
 end
 
-let install () =
+let install modes modalities =
+  (match modes with
+  | [ a; b; c ] ->
+      AGen.name := a;
+      BGen.name := b;
+      CGen.name := c
+  | [] -> ()
+  | _ -> failwith "wrong number of mode names for composed functors mode theory");
+  (match modalities with
+  | [ _f; _g ] -> ()
+  | [] -> ()
+  | _ -> failwith "wrong number of modality names for composed functors mode theory");
   let module AMode = Mode.Generate (AGen) in
   let module BMode = Mode.Generate (BGen) in
   let module CMode = Mode.Generate (CGen) in

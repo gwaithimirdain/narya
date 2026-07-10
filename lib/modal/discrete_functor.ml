@@ -3,7 +3,7 @@
 open Dim
 
 module DomGen = struct
-  let name = "DomType"
+  let name = ref "DomType"
 
   type nonparametric = D.one
 
@@ -11,7 +11,7 @@ module DomGen = struct
 end
 
 module CodGen = struct
-  let name = "CodType"
+  let name = ref "CodType"
 
   type nonparametric = D.zero
 
@@ -56,7 +56,17 @@ module Functorcell
   let to_string : type a m n b. (a, m, n, b) Modalcell.t -> string = fun _ -> "id"
 end
 
-let install () =
+let install modes modalities =
+  (match modes with
+  | [ dom; cod ] ->
+      DomGen.name := dom;
+      CodGen.name := cod
+  | [] -> ()
+  | _ -> failwith "wrong number of mode names for discrete functor mode theory");
+  (match modalities with
+  | [ _circ ] -> ()
+  | [] -> ()
+  | _ -> failwith "wrong number of modality names for discrete functor mode theory");
   let module DomMode = Mode.Generate (DomGen) in
   let module CodMode = Mode.Generate (CodGen) in
   let module Functor = Modality.Generate (FunctorGen (DomMode) (CodMode)) in

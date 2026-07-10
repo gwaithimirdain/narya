@@ -2,7 +2,7 @@ open Util
 open Dim
 
 module TestmodeGen = struct
-  let name = "Type"
+  let name = ref "Type"
 
   type nonparametric = D.zero
 
@@ -270,7 +270,15 @@ module SpatialModalities
   let one_char = true
 end
 
-let install () =
+let install modes modalities =
+  (match modes with
+  | [ ty ] -> TestmodeGen.name := ty
+  | [] -> ()
+  | _ -> failwith "wrong number of mode names for spatial mode theory");
+  (match modalities with
+  | [ _flat; _sharp ] -> ()
+  | [] -> ()
+  | _ -> failwith "wrong number of modality names for spatial mode theory");
   let module Testmode = Mode.Generate (TestmodeGen) in
   let module Flat = Modality.Generate (FlatGen (Testmode)) in
   let module Sharp = Modality.Generate (SharpGen (Testmode)) in

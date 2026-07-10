@@ -4,7 +4,7 @@ open Dim
 (* We define all the "generator" modules at top-level, but don't call the generation code until the "install" function, so that only one mode theory actually gets installed at runtime.  Thus, each generator module has to be parametrized over the results of generation of the previous ones. *)
 
 module TestmodeGen = struct
-  let name = "Type"
+  let name = ref "Type"
 
   type nonparametric = D.zero
 
@@ -81,7 +81,15 @@ struct
     ^ string_of_int (Modality.length (Modalcell.vtgt m))
 end
 
-let install () =
+let install modes modalities =
+  (match modes with
+  | [ ty ] -> TestmodeGen.name := ty
+  | [] -> ()
+  | _ -> failwith "wrong number of mode names for coreflector mode theory");
+  (match modalities with
+  | [ _box ] -> ()
+  | [] -> ()
+  | _ -> failwith "wrong number of modality names for coreflector mode theory");
   let module Testmode = Mode.Generate (TestmodeGen) in
   let module Coreflector = Modality.Generate (CoreflectorGen (Testmode)) in
   Modalcell.choose_theory (module CoreflectorCells (Testmode) (Coreflector) : Modalcell.Theory)

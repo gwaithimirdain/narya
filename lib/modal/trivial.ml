@@ -3,7 +3,7 @@
 open Dim
 
 module TestmodeGen = struct
-  let name = "Type"
+  let name = ref "Type"
 
   type nonparametric = D.zero
 
@@ -30,6 +30,13 @@ module Idcell (Testmode : Mode.Generated with module G := TestmodeGen) : Modalce
   let to_string : type a m n b. (a, m, n, b) Modalcell.t -> string = fun _ -> "id"
 end
 
-let install () =
+let install modes modalities =
+  (match modes with
+  | [ name ] -> TestmodeGen.name := name
+  | [] -> ()
+  | _ -> failwith "wrong number of mode names for trivial mode theory");
+  (match modalities with
+  | [] -> ()
+  | _ -> failwith "wrong number of modality names for trivial mode theory");
   let module Testmode = Mode.Generate (TestmodeGen) in
   Modalcell.choose_theory (module Idcell (Testmode) : Modalcell.Theory)

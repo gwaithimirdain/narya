@@ -24,6 +24,8 @@ let external_ok = ref false
 let arity_ok : arity ref = ref `Any
 let mode_theories = ref 0
 let old_discreteness = ref false
+let modes = ref ""
+let modalities = ref ""
 
 (* Undocumented flag used for testing: interpret a given file or command-line string as if it were entered in interactive mode. *)
 let fake_interacts : string Bwd.t ref = ref Emp
@@ -192,6 +194,8 @@ let speclist =
           install_mode_theory := Modal.Discrete_glconn.install;
           mode_theories := !mode_theories + 1),
       "Abbreviation for -parametric -arity 1 -direction d -external -discrete-glconn" );
+    ("-modes", Arg.Set_string modes, "set the names of modes");
+    ("-modalities", Arg.Set_string modalities, "set the names of modalities");
     ("--help", Arg.Unit (fun () -> ()), "");
     ("-", Arg.Unit (fun () -> inputs := Snoc (!inputs, `Stdin)), "");
     ("-fake-interact", Arg.String (fun str -> fake_interacts := Snoc (!fake_interacts, str)), "");
@@ -387,7 +391,9 @@ let rec interact_pg () : unit =
 
 let () =
   try
-    !install_mode_theory ();
+    let modes = List.filter (fun x -> x <> "") (String.split_on_char ',' !modes) in
+    let modalities = List.filter (fun x -> x <> "") (String.split_on_char ',' !modalities) in
+    !install_mode_theory modes modalities;
     let use_ansi = if !use_ansi then Some true else None in
     run_top ?use_ansi ~install_hott:Hott.install @@ fun () ->
     (* Note: run_top executes the input files, so here we only have to do the interaction. *)
