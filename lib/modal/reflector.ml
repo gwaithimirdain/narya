@@ -17,14 +17,14 @@ module ReflectorGen (Testmode : Mode.Generated with module G := TestmodeGen) = s
 
   let src = Testmode.mode
   let tgt = Testmode.mode
-  let name = ref "◇"
+  let name = ref "♯"
 
   type nonparametric = D.zero
 
   let nonparametric = D.zero
 end
 
-(* Dual to CoreflectorCells: ◇ is an idempotent monad (a reflector) rather than an idempotent comonad, so it has a unit id ⇒ ◇ and a multiplication ◇∘◇ ⇒ ◇, rather than a counit ◇ ⇒ id and a comultiplication ◇ ⇒ ◇∘◇.  Consequently a 2-cell m ⇒ n exists between two words in ◇ exactly when n is "at least as long as" m: from nothing you can only reach a nonempty word (via the unit, never the reverse), while between any two nonempty words there is always a (unique, since ◇ is idempotent) cell in either direction. *)
+(* Dual to CoreflectorCells: ♯ is an idempotent monad (a reflector) rather than an idempotent comonad, so it has a unit id ⇒ ♯ and a multiplication ♯∘♯ ⇒ ♯, rather than a counit ♯ ⇒ id and a comultiplication ♯ ⇒ ♯∘♯.  Consequently a 2-cell m ⇒ n exists between two words in ♯ exactly when n is "at least as long as" m: from nothing you can only reach a nonempty word (via the unit, never the reverse), while between any two nonempty words there is always a (unique, since ♯ is idempotent) cell in either direction. *)
 module ReflectorCells
     (Testmode : Mode.Generated with module G := TestmodeGen)
     (Reflector : Modality.Generated with module G := ReflectorGen(Testmode)) =
@@ -89,11 +89,11 @@ let install modes modalities =
   | [] -> ()
   | _ -> failwith "wrong number of mode names for reflector mode theory");
   let module Testmode = Mode.Generate (TestmodeGen) in
-  let module Dia = ReflectorGen (Testmode) in
+  let module Sharp = ReflectorGen (Testmode) in
   (match modalities with
-  | [ dia ] -> Dia.name := dia
+  | [ sharp ] -> Sharp.name := sharp
   | [] -> ()
   | _ -> failwith "wrong number of modality names for reflector mode theory");
   Modality.set_one_char true modalities;
-  let module Reflector = Modality.Generate (Dia) in
+  let module Reflector = Modality.Generate (Sharp) in
   Modalcell.choose_theory (module ReflectorCells (Testmode) (Reflector) : Modalcell.Theory)

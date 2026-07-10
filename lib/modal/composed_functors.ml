@@ -35,7 +35,7 @@ struct
 
   let src = AMode.mode
   let tgt = BMode.mode
-  let name = ref "F"
+  let name = ref "○"
 
   type nonparametric = D.zero
 
@@ -51,7 +51,7 @@ struct
 
   let src = BMode.mode
   let tgt = CMode.mode
-  let name = ref "G"
+  let name = ref "▱"
 
   type nonparametric = D.zero
 

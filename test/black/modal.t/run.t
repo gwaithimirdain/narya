@@ -3,10 +3,10 @@
    ￮ constant f defined
   
    ￫ info[I0000]
-   ￮ constant □ defined
+   ￮ constant ♭ defined
   
    ￫ info[I0000]
-   ￮ constant □map defined
+   ￮ constant ♭map defined
   
    ￫ info[I0000]
    ￮ constant ε defined
@@ -15,25 +15,25 @@
    ￮ constant △ defined
   
    ￫ info[I0000]
-   ￮ constant □ε∘△ defined
+   ￮ constant ♭ε∘△ defined
   
    ￫ info[I0000]
-   ￮ constant ε□∘△ defined
+   ￮ constant ε♭∘△ defined
   
 
   $ narya -coreflector box.ny -e "def g (A : Type) (x : A) : A := f A x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def g (A : Type) (x : A) : A := f A x
-     ^ use of id variable behind □ lock requires a key
+     ^ use of id variable behind ♭ lock requires a key
   
   [1]
 
-  $ narya -coreflector box.ny -e "def η (A :□| Type) (x : A) : □ A := box. x"
+  $ narya -coreflector box.ny -e "def η (A :♭| Type) (x : A) : ♭ A := box. x"
    ￫ error[E1705]
    ￭ command-line exec string
-   1 | def η (A :□| Type) (x : A) : □ A := box. x
-     ^ use of id variable behind □ lock requires a key
+   1 | def η (A :♭| Type) (x : A) : ♭ A := box. x
+     ^ use of id variable behind ♭ lock requires a key
   
   [1]
 
@@ -67,13 +67,13 @@
   
 
 
-Unlike the coreflector, the reflector has no counit, so a ◇-locked variable cannot be used directly at its unlocked type.
+Unlike the coreflector, the reflector has no counit, so a ♯-locked variable cannot be used directly at its unlocked type.
 
-  $ narya -reflector reflector.ny -e "def ε (A :◇| Type) (x :◇| A) : A := x"
+  $ narya -reflector reflector.ny -e "def ε (A :♯| Type) (x :♯| A) : A := x"
    ￫ error[E1705]
    ￭ command-line exec string
-   1 | def ε (A :◇| Type) (x :◇| A) : A := x
-     ^ use of ◇ variable behind id lock requires a key
+   1 | def ε (A :♯| Type) (x :♯| A) : A := x
+     ^ use of ♯ variable behind id lock requires a key
   
   [1]
 

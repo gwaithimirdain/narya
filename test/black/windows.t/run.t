@@ -25,11 +25,11 @@ Composition of modal operators is preserved up to isomorphism:
 
 Matching with the wrong window modality is an error:
 
-  $ narya -composed-functors compose.ny -e "def fwd2 (X :G F| AType) (u : G (F X)) : GF X ≔ match u [ g. y ↦ match (y :G F| _) [ f. x ↦ gf. x ]]"
+  $ narya -composed-functors compose.ny -e "def fwd2 (X :▱○| AType) (u : G (F X)) : GF X ≔ match u [ g. y ↦ match (y :▱○| _) [ f. x ↦ gf. x ]]"
    ￫ error[E1701]
    ￭ command-line exec string
-   1 | def fwd2 (X :G F| AType) (u : G (F X)) : GF X ≔ match u [ g. y ↦ match (y :G F| _) [ f. x ↦ gf. x ]]
-     ^ modality mismatch in checking implicit match (GF ≠ G)
+   1 | def fwd2 (X :▱○| AType) (u : G (F X)) : GF X ≔ match u [ g. y ↦ match (y :▱○| _) [ f. x ↦ gf. x ]]
+     ^ modality mismatch in checking implicit match (▱○ ≠ ▱)
   
   [1]
 

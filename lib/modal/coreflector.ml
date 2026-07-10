@@ -17,7 +17,7 @@ module CoreflectorGen (Testmode : Mode.Generated with module G := TestmodeGen) =
 
   let src = Testmode.mode
   let tgt = Testmode.mode
-  let name = ref "□"
+  let name = ref "♭"
 
   type nonparametric = D.zero
 
@@ -87,11 +87,11 @@ let install modes modalities =
   | [] -> ()
   | _ -> failwith "wrong number of mode names for coreflector mode theory");
   let module Testmode = Mode.Generate (TestmodeGen) in
-  let module Box = CoreflectorGen (Testmode) in
+  let module Flat = CoreflectorGen (Testmode) in
   (match modalities with
-  | [ box ] -> Box.name := box
+  | [ flat ] -> Flat.name := flat
   | [] -> ()
   | _ -> failwith "wrong number of modality names for coreflector mode theory");
   Modality.set_one_char true modalities;
-  let module Coreflector = Modality.Generate (Box) in
+  let module Coreflector = Modality.Generate (Flat) in
   Modalcell.choose_theory (module CoreflectorCells (Testmode) (Coreflector) : Modalcell.Theory)
