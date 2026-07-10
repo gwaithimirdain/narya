@@ -88,7 +88,7 @@ let speclist =
           external_ok := true;
           install_mode_theory := Modal.Discrete_coreflector.install;
           mode_theories := !mode_theories + 1),
-      "Select the nonparametric comonad mode theory (requires -parametric, allows -external)" );
+      "Select the nonparametric coreflector mode theory (requires -parametric, allows -external)" );
     ( "-reflector",
       Arg.Unit
         (fun () ->
@@ -133,6 +133,21 @@ let speclist =
           install_mode_theory := Modal.Composed_functors.install;
           mode_theories := !mode_theories + 1),
       "Select the composed functors mode theory" );
+    ( "-coreflection",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Coreflection.install;
+          mode_theories := !mode_theories + 1),
+      "Select the coreflection mode theory" );
+    ( "-discrete-coreflection",
+      Arg.Unit
+        (fun () ->
+          hott_forbidden := Some "-discrete-coreflector";
+          external_ok := true;
+          install_mode_theory := Modal.Discrete_coreflection.install;
+          mode_theories := !mode_theories + 1),
+      "Select the nonparametric coreflection mode theory (requires -parametric, allows -external)"
+    );
     ( "-glconn",
       Arg.Unit
         (fun () ->
