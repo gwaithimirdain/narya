@@ -146,36 +146,42 @@ and process_apps : type n lt ls rt rs.
   match (tm.value, args) with
   (* A modal field projection "(x :f| _) .field" has the modal ascription "(x :f| _)" as the head of a field application.  We recognize it here, extracting the term x and the locking modality f, and attach the modality name to the raw field projection.  If a non-placeholder type is supplied, we put it on the term as an ascription. *)
   | Notn ((AscVar, _), n), (Wrap { value = Field (fld, pbij, _); loc = fldloc }, _) :: rest -> (
-      match args_of_ascvar (notation_args n) with
-      | Some (Wrap x, modality, Wrap ty) -> (
-          let x = process ctx x in
-          let fn =
-            match ty.value with
-            | Placeholder _ -> (
-                match x.value with
-                | Synth sfn -> { value = sfn; loc = x.loc }
-                | _ -> fatal (Nonsynthesizing "head of modal field projection"))
-            | _ ->
-                let ty = process ctx ty in
-                { value = Asc (x, ty); loc = tm.loc } in
-          try
-            let fld =
-              match int_of_string_opt fld with
-              | Some k -> `Int k
-              | None -> `Name (fld, List.map int_of_string pbij) in
-            process_apply ctx { value = Synth (Field (fn, fld, Some modality)); loc = fldloc } rest
-          with Failure _ -> fatal (Invalid_field (String.concat "." ("" :: fld :: pbij))))
-      | None -> process_apps_head ctx tm args)
+      let Wrap x, modality, Wrap ty = args_of_ascvar (notation_args n) in
+      let x = process ctx x in
+      let fn =
+        match ty.value with
+        | Placeholder _ -> (
+            match x.value with
+            | Synth sfn -> { value = sfn; loc = x.loc }
+            | _ -> fatal (Nonsynthesizing "head of modal field projection"))
+        | _ ->
+            let ty = process ctx ty in
+            { value = Asc (x, ty); loc = tm.loc } in
+      try
+        let fld =
+          match int_of_string_opt fld with
+          | Some k -> `Int k
+          | None -> `Name (fld, List.map int_of_string pbij) in
+        process_apply ctx { value = Synth (Field (fn, fld, Some modality)); loc = fldloc } rest
+      with Failure _ -> fatal (Invalid_field (String.concat "." ("" :: fld :: pbij))))
   | _ -> process_apps_head ctx tm args
 
 (* Extract the term and locking-modality name from the observations of a modal ascription "(x :f| _)".  Returns None for a non-modal ascription. *)
 and args_of_ascvar :
-    observation list -> (wrapped_parse * string located list located * wrapped_parse) option =
-  function
+    ?loc:Asai.Range.t ->
+    observation list ->
+    wrapped_parse * string located list located * wrapped_parse =
+ fun ?loc -> function
   | [
-      Token (_, _); Term x; Token (Colon, _); Term modality; Token (Op "|", _); Term ty; Token (_, _);
-    ] -> Some (Wrap x, modality_name modality, Wrap ty)
-  | _ -> None
+      Token (LParen, _);
+      Term x;
+      Token (Colon, _);
+      Term modality;
+      Token (Op "|", _);
+      Term ty;
+      Token (RParen, _);
+    ] -> (Wrap x, modality_name modality, Wrap ty)
+  | _ -> fatal ?loc (Anomaly "invalid notation arguments for ascvar")
 
 (* Extract a modality name (a sequence of identifiers) from its parse tree. *)
 and modality_name : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string located list located

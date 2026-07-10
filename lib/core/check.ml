@@ -2493,10 +2493,30 @@ and check_codata : type mode a b n et.
             ~has_higher_fields errs
           @@ fun _ codataterm -> codataterm
       | Snoc _ -> fatal (Accumulated ("check_codata", errs)))
-  | (Wrap fld, Codatafield (x, lock, rty)) :: raw_fields -> (
+  | (Wrap fld, Codatafield (x, lock, self_ty, rty)) :: raw_fields -> (
       with_codata_so_far status eta ctx opacity hints dim tyargs checked_fields fibrancy
         ~has_higher_fields errs
       @@ fun domvars _ ->
+      (* If a type was given for the self variable, it must be equal to the current codatatype with its parameters. *)
+      (match self_ty with
+      | Some self_ty -> (
+          let cself_ty = check (Kinetic `Nolet) ctx self_ty (universe (Ctx.mode ctx) D.zero) in
+          let eself_ty = eval_term (Ctx.env ctx) cself_ty in
+          let err : Code.t =
+            Invalid_self_variable_type (fld, Left ("head must be current " ^ record_or_codata eta))
+          in
+          with_loc self_ty.loc @@ fun () ->
+          match (eself_ty, status) with
+          | ( Neu { head = Const { name; ins = _ }; args; value = _; ty = _ },
+              Potential (Constant (pname, _, _), pargs, _) ) ->
+              if name = pname then
+                match equal_apps ctx args pargs with
+                | None -> fatal (Invalid_self_variable_type (fld, Left "unequal parameters"))
+                | Some (Error why) -> fatal (Invalid_self_variable_type (fld, Right why))
+                | Some (Ok ()) -> ()
+              else fatal err
+          | _ -> fatal err)
+      | None -> ());
       let newctx = Ctx.cube_vis ctx (Modality.filter_id (Ctx.mode ctx) dim) x domvars in
       (* A lower field and a higher field can't share a name, since projections at that name would be ambiguous. *)
       let check_name_clash () =

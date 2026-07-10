@@ -235,6 +235,7 @@ module Code = struct
     | Bare_case_tree_construct : string -> t
     | Wrong_boundary_of_record : int -> t
     | Invalid_constructor_type : Constr.t * (string, Unequal.t) Either.t -> t
+    | Invalid_self_variable_type : 'i Field.t * (string, Unequal.t) Either.t -> t
     | Missing_constructor_type : Constr.t -> t
     | Locked_variable : ('dom, 'mu, 'cod) Modality.t -> t
     | Locked_constant : printable -> t
@@ -414,6 +415,7 @@ module Code = struct
     | Bare_case_tree_construct _ -> Hint
     | Wrong_boundary_of_record _ -> Error
     | Invalid_constructor_type _ -> Error
+    | Invalid_self_variable_type _ -> Error
     | Missing_constructor_type _ -> Error
     | Locked_variable _ -> Error
     | Locked_constant _ -> Error
@@ -589,6 +591,7 @@ module Code = struct
     | Invalid_constructor_type _ -> "E1505"
     | Missing_constructor_type _ -> "E1506"
     | Lower_and_higher_methods_in_codata _ -> "E1507"
+    | Invalid_self_variable_type _ -> "E1508"
     (* Tactics *)
     | Choice_mismatch _ -> "E1600"
     | Calc_error _ -> "E1601"
@@ -1078,6 +1081,14 @@ module Code = struct
               textf
                 "invalid output type for constructor %s:@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a"
                 (Constr.to_string c) str pp_printed (print p1) pp_printed (print p2))
+      | Invalid_self_variable_type (f, why) -> (
+          match why with
+          | Left str -> textf "invalid self variable type for field %s:@ %s" (Field.to_string f) str
+          | Right why ->
+              let str, p1, p2 = Unequal.printables why in
+              textf
+                "invalid self variable type for field %s:@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a"
+                (Field.to_string f) str pp_printed (print p1) pp_printed (print p2))
       | Missing_constructor_type c ->
           textf "missing type for constructor %s of indexed datatype" (Constr.to_string c)
       | Locked_variable m ->

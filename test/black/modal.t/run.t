@@ -383,7 +383,7 @@ An ordinary (non-modal) field never disappears: it projects at any dimension.
 
 If a type is given in a modal field projection, it must be correct.
 
-  $ narya -coreflection -e "def □′ (A :□| Type) : Disc ≔ sig ((x :△| A) .unbox : A)" -e "def unbox (A :△□| Type) (u :△| □′ A) : A ≔ (u :△| Disc) .unbox"
+  $ narya -coreflection -e "def □′ (A :□| Type) : Disc ≔ sig ((x :△| □′ A) .unbox : A)" -e "def unbox (A :△□| Type) (u :△| □′ A) : A ≔ (u :△| Disc) .unbox"
    ￫ error[E0401]
    ￭ command-line exec string
    1 | def unbox (A :△□| Type) (u :△| □′ A) : A ≔ (u :△| Disc) .unbox
@@ -395,5 +395,23 @@ If a type is given in a modal field projection, it must be correct.
          □′
        does not equal
          Disc
+  
+  [1]
+
+And likewise in a record definition.
+
+  $ narya -coreflection -e "def □′ (A :□| Type) : Disc ≔ sig ((x :△| Disc) .unbox : A)"
+   ￫ error[E1508]
+   ￭ command-line exec string
+   1 | def □′ (A :□| Type) : Disc ≔ sig ((x :△| Disc) .unbox : A)
+     ^ invalid self variable type for field unbox: head must be current record
+  
+  [1]
+
+  $ narya -coreflection -e "def □′ (A :□| Type) : Disc ≔ sig ((x :△| □′ Type) .unbox : A)"
+   ￫ error[E1508]
+   ￭ command-line exec string
+   1 | def □′ (A :□| Type) : Disc ≔ sig ((x :△| □′ Type) .unbox : A)
+     ^ invalid self variable type for field unbox: unequal parameters
   
   [1]

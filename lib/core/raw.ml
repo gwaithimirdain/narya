@@ -169,7 +169,10 @@ module rec Make : functor (I : Indices) -> sig
 
   and _ codatafield =
     | Codatafield :
-        I.name * string located list located option * 'a I.suc check located
+        I.name
+        * string located list located option
+        * 'a check located option
+        * 'a I.suc check located
         -> 'a codatafield
 
   and 'a refutables = { refutables : 'b 'ab. ('a, 'b, 'ab) bplus -> 'ab synth located list }
@@ -378,10 +381,13 @@ functor
     and _ dataconstr = Dataconstr : ('a, 'b, 'ab) tel * 'ab check located option -> 'a dataconstr
 
     (* A field of a codatatype has a self variable and a type.  At the raw level we don't need any more information about higher fields. *)
-    (* A codata field records the name of the locking modality (the left adjoint of its adjunction), if any, specified by the user with a modal ascription of the self variable such as "(x : f | _) .fld : A". *)
+    (* A codata field records the name of the locking modality (the left adjoint of its adjunction), if any, specified by the user with a modal ascription of the self variable such as "(x :f| _) .fld : A".  The type can be supplied instead of a placeholder. *)
     and _ codatafield =
       | Codatafield :
-          I.name * string located list located option * 'a I.suc check located
+          I.name
+          * string located list located option
+          * 'a check located option
+          * 'a I.suc check located
           -> 'a codatafield
 
     (* A raw match stores the information about the pattern variables available from previous matches that could be used to refute missing cases.  But it can't store them as raw terms, since they have to be in the correct context extended by the new pattern variables generated in any such case.  So it stores them as a callback that puts them in any such extended context. *)
@@ -565,15 +571,17 @@ module Resolve (R : Resolver) = struct
       | Codata (fields, hints) ->
           Codata
             ( Abwd.map
-                (fun (R.T1.Codatafield (x, lock, fld)) ->
-                  R.T2.Codatafield (R.rename ctx x, lock, check (R.snoc ctx x) fld))
+                (fun (R.T1.Codatafield (x, lock, ty, fld)) ->
+                  R.T2.Codatafield
+                    (R.rename ctx x, lock, Option.map (check ctx) ty, check (R.snoc ctx x) fld))
                 fields,
               hints )
       | SelfRecord (fields, opaq, hints) ->
           SelfRecord
             ( Abwd.map
-                (fun (R.T1.Codatafield (x, lock, fld)) ->
-                  R.T2.Codatafield (R.rename ctx x, lock, check (R.snoc ctx x) fld))
+                (fun (R.T1.Codatafield (x, lock, ty, fld)) ->
+                  R.T2.Codatafield
+                    (R.rename ctx x, lock, Option.map (check ctx) ty, check (R.snoc ctx x) fld))
                 fields,
               opaq,
               hints )

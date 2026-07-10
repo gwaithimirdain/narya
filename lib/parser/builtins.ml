@@ -2289,32 +2289,40 @@ let process_codata_field : type n lt ls rt rs lt' ls' rt' rs' et.
  fun eta flds ctx tm ty ->
   (* The self variable can be a bare identifier or placeholder, or (for a modal field) a modal ascription "(x :f| _)" specifying the locking modality f. *)
   let self_var_of : type lt ls rt rs.
-      (lt, ls, rt, rs) parse located -> string option * string located list located option =
+      (lt, ls, rt, rs) parse located ->
+      string option * string located list located option * wrapped_parse option =
    fun { value = x; loc = xloc } ->
     match x with
-    | Ident ([ x ], _) when Lexer.valid_var x -> (Some x, None)
-    | Placeholder _ -> (None, None)
-    | Notn ((AscVar, _), n) -> (
-        match Postprocess.args_of_ascvar (args n) with
-        | Some (Wrap { value = Ident ([ x ], _); _ }, modality, _ty) when Lexer.valid_var x ->
-            (Some x, Some modality)
-        | Some (Wrap { value = Placeholder _; _ }, modality, _ty) -> (None, Some modality)
-        | _ -> fatal ?loc:xloc (Parse_error "invalid modal self-variable"))
+    | Ident ([ x ], _) when Lexer.valid_var x -> (Some x, None, None)
+    | Placeholder _ -> (None, None, None)
+    | Notn ((AscVar, _), n) ->
+        let Wrap v, modality, Wrap ty = Postprocess.args_of_ascvar ?loc:xloc (args n) in
+        let x =
+          match v with
+          | { value = Ident ([ x ], _); _ } when Lexer.valid_var x -> Some x
+          | { value = Placeholder _; _ } -> None
+          | _ -> fatal ?loc:xloc (Parse_error "invalid modal self-variable") in
+        let ty =
+          match ty with
+          | { value = Placeholder _; _ } -> None
+          | _ -> Some (Wrap ty) in
+        (x, Some modality, ty)
     | Ident (x, _) -> fatal ?loc:xloc (Invalid_variable x)
     | _ -> fatal ?loc:xloc (Parse_error "invalid self-variable") in
   match tm.value with
   | App { fn; arg = { value = Field (fstr, fdstr, _); loc = fldloc }; _ } -> (
       with_loc tm.loc @@ fun () ->
       if not (Lexer.valid_field fstr) then fatal ?loc:fldloc (Invalid_field fstr);
-      let x, lock = self_var_of fn in
+      let x, lock, self_ty = self_var_of fn in
       match dim_of_string (String.concat "" fdstr) with
       | Some (Any fdim) -> (
           let fld = Field.intern fstr fdim in
           match Abwd.find_opt (Field.Wrap fld) flds with
           | Some _ -> fatal ?loc:fldloc (duplicate_field_in_type eta fld)
           | None ->
+              let self_ty = Option.map (fun (Wrap t) -> (process ctx) t) self_ty in
               let ty = process (Bwv.snoc ctx x) ty in
-              (Field.Wrap fld, Raw.Codatafield (x, lock, ty)))
+              (Field.Wrap fld, Raw.Codatafield (x, lock, self_ty, ty)))
       | None -> fatal (Invalid_field (String.concat "." ("" :: fstr :: fdstr))))
   | _ -> fatal ?loc:tm.loc (Parse_error "invalid codata field")
 
