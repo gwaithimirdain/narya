@@ -172,20 +172,6 @@ let speclist =
           mode_theories := !mode_theories + 1),
       "Select the discrete tconn mode theory (requires -parametric and -arity 1, allows -external)"
     );
-    ( "-pseudo-tconn",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory := Modal.Pseudo_tconn.install;
-          mode_theories := !mode_theories + 1),
-      "Select the pseudo totally connected geometric morphism mode theory" );
-    ( "-discrete-pseudo-tconn",
-      Arg.Unit
-        (fun () ->
-          hott_forbidden := Some "-discrete-pseudo-tconn";
-          external_ok := true;
-          install_mode_theory := Modal.Discrete_pseudo_tconn.install;
-          mode_theories := !mode_theories + 1),
-      "Select the discrete pseudo-tconn mode theory (requires -parametric, allows -external)" );
     ( "-dtt",
       Unit
         (fun () ->

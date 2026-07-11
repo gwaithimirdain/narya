@@ -1,6 +1,14 @@
 open Dim
 
-(* A totally connected geometric morphism is like dtt (which see) but without discreteness and fully parametric. *)
+(* A totally connected geometric morphism has two modes, Disc(rete) and Type, and three generating modalities:
+
+     △ : Disc → Type
+     □ : Type → Disc
+     ◇ : Type → Disc
+
+   with an adjoint triple ◇ ⊣ △ ⊣ □, where the counit of ◇ ⊣ △ (namely ◇△ ⇒ id_Disc) and the unit of △ ⊣ □ (namely id_Disc ⇒ □△) are isomorphisms.  The theory is locally posetal (any two parallel 2-cells are equal).
+
+   Every composite modality is isomorphic to exactly one normal form: an identity, one of the three generators, or one of the composites △□ or △◇ (both Type → Type).  This is because the only nontrivial reductions are the two isomorphisms ◇△ ≅ id_Disc and □△ ≅ id_Disc, which cancel a △ immediately followed (in application order) by a ◇ or a □.  The remaining nonidentity 2-cells between normal forms are the counit △□ ⇒ id, the unit id ⇒ △◇, their composite △□ ⇒ △◇, and an induced 2-cell □ ⇒ ◇. *)
 
 module DiscGen = struct
   let name = ref "Disc"

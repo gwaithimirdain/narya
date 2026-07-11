@@ -1,15 +1,5 @@
 open Dim
 
-(* The "Dtt" mode theory, or discrete totally connected geometric morphism, has two modes, Disc(rete) and Type, and three generating modalities:
-
-     △ : Disc → Type
-     □ : Type → Disc
-     ◇ : Type → Disc
-
-   with an adjoint triple ◇ ⊣ △ ⊣ □, where the counit of ◇ ⊣ △ (namely ◇△ ⇒ id_Disc) and the unit of △ ⊣ □ (namely id_Disc ⇒ □△) are isomorphisms.  The theory is locally posetal (any two parallel 2-cells are equal).
-
-   Every composite modality is isomorphic to exactly one normal form: an identity, one of the three generators, or one of the composites △□ or △◇ (both Type → Type).  This is because the only nontrivial reductions are the two isomorphisms ◇△ ≅ id_Disc and □△ ≅ id_Disc, which cancel a △ immediately followed (in application order) by a ◇ or a □.  The remaining nonidentity 2-cells between normal forms are the counit △□ ⇒ id, the unit id ⇒ △◇, their composite △□ ⇒ △◇, and an induced 2-cell □ ⇒ ◇. *)
-
 (* The mode Disc is itself nonparametric: it forbids parametricity (degeneracies) in the single external direction, so nothing at mode Disc can be degenerated.  Mode Type is parametric, with the coreflector △□ installed as its locker (see install). *)
 module DiscGen = struct
   let name = ref "Disc"
@@ -38,7 +28,7 @@ struct
   let tgt = Type.mode
   let name = ref "△"
 
-  (* Every nonidentity modality of the Dtt theory is nonparametric. *)
+  (* Every nonidentity modality of this theory is nonparametric. *)
   type nonparametric = D.one
 
   let nonparametric = D.one
