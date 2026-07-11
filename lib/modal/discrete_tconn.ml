@@ -315,12 +315,6 @@ struct
 
   let transparent m = pellucid m
   let translucent _ = true
-
-  let parametric_locker : type a. a Mode.t -> (a, a) Modality.wrapped option =
-   fun m ->
-    match Mode.compare m Type.mode with
-    | Eq -> Some (Wrap tribox)
-    | Neq -> failwith "discrete tconn: unknown mode"
 end
 
 let install modes modalities =

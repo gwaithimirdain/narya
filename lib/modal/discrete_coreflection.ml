@@ -210,12 +210,6 @@ module CoreflectionModalities
     transparent_normal m
 
   let translucent _ = true
-
-  let parametric_locker : type a. a Mode.t -> (a, a) Modality.wrapped option =
-   fun m ->
-    match Mode.compare m Type.mode with
-    | Eq -> Some (Wrap tribox)
-    | Neq -> failwith "discrete coreflection: unknown mode"
 end
 
 let install modes modalities =

@@ -210,7 +210,6 @@ module CoreflectionModalities
     transparent_normal m
 
   let translucent _ = true
-  let parametric_locker _ = None
 end
 
 let install modes modalities =
