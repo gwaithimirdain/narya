@@ -126,6 +126,11 @@ def sst.sum (X Y : SST) : SST ≔ [
   | inl. x ↦ sst.sum⁽ᵈ⁾ (X .s x) (sst.const Y sst.∅)
   | inr. y ↦ sst.sum⁽ᵈ⁾ (sst.const X sst.∅) (Y .s y)]]
 
+{` The product of a family of SSTs indexed by a discrete type. `}
+def sst.discprod (A :△| Disc) (X : (a :△| A) → SST) : SST ≔ [
+| .z ↦ (a :△| A) → X a .z
+| .s ↦ p ↦ sst.discprod⁽ᵈ⁾ A {X} (a ↦ X a .s (p a))]
+
 {` Augmented SSTs are another displayed coinductive. `}
 def ASST : Type ≔ codata [ X .z : Type | X .s : ASST⁽ᵈ⁾ X ]
 

@@ -109,6 +109,9 @@
    ￮ constant sst.sum defined
   
    ￫ info[I0000]
+   ￮ constant sst.discprod defined
+  
+   ￫ info[I0000]
    ￮ constant ASST defined
   
    ￫ info[I0000]
