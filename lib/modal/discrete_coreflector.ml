@@ -105,12 +105,6 @@ struct
   let pellucid _ = false
   let transparent _ = false
   let translucent _ = true
-
-  let parametric_locker : type a. a Mode.t -> (a, a) Modality.wrapped option =
-   fun m ->
-    match Mode.compare m Testmode.mode with
-    | Eq -> Some (Wrap (Modality.of_gen Coreflector.modality))
-    | Neq -> failwith "discrete spatial: unknown mode"
 end
 
 let install modes modalities =

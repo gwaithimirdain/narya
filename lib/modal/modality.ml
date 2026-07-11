@@ -226,7 +226,6 @@ module type Theory = sig
   val pellucid : ('a, 'm, 'b) t -> bool
   val transparent : ('a, 'm, 'b) t -> bool
   val translucent : ('a, 'm, 'b) t -> bool
-  val parametric_locker : 'a Mode.t -> ('a, 'a) wrapped option
 end
 
 (* By default, all modalities are tangible and translucent, but none (except identities, which are special-cased in the typechecker) are pellucid or transparent. *)
@@ -237,7 +236,6 @@ let theory : (module Theory) ref =
       let pellucid _ = false
       let transparent _ = false
       let translucent _ = true
-      let parametric_locker _ = None
     end : Theory)
 
 let choose_theory (t : (module Theory)) = theory := t
@@ -257,10 +255,6 @@ let transparent m =
 let translucent m =
   let module T = (val !theory) in
   T.translucent m
-
-let parametric_locker m =
-  let module T = (val !theory) in
-  T.parametric_locker m
 
 let one_char_ref = ref true
 let one_char () = !one_char_ref

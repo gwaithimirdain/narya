@@ -41,7 +41,6 @@ module type Theory = sig
   val pellucid : ('a, 'm, 'b) t -> bool
   val transparent : ('a, 'm, 'b) t -> bool
   val translucent : ('a, 'm, 'b) t -> bool
-  val parametric_locker : 'a Mode.t -> ('a, 'a) wrapped option
 end
 
 val choose_theory : (module Theory) -> unit
@@ -49,7 +48,7 @@ val tangible : ('a, 'm, 'b) t -> bool
 val pellucid : ('a, 'm, 'b) t -> bool
 val transparent : ('a, 'm, 'b) t -> bool
 val translucent : ('a, 'm, 'b) t -> bool
-val parametric_locker : 'a Mode.t -> ('a, 'a) wrapped option
+val parametric_unlocker : ('a, 'm, 'b) t -> bool
 
 module Cube : (F : Signatures.Fam3) -> sig
   module Parent : sig

@@ -307,7 +307,6 @@ module Ordered = struct
         modality : ('dom, 'modality, 'cod) Modality.t;
         filter : ('dom, 'modality, 'cod, 'n, 'n) Modality.filter_dim;
         plus : ('an, 'cod, 'm, 'mode, 'anm) plus_with_locks;
-        parametric_lock : ('mode, 'plock, 'cod) Modality.t option;
       }
         -> ('mode, 'anm, 'field) lookup
 
@@ -327,47 +326,35 @@ module Ordered = struct
               { v with insert = Later v.insert; plus = plus_with_no_locks (Modality.tgt modality) })
 
   let lock_lookup : type dom modality mode b field.
-      (mode, b, field) lookup ->
       (dom, modality, mode) Modality.gen ->
+      (mode, b, field) lookup ->
       (dom, (b, modality lock_entry) snoc, field) lookup =
-   fun (Lookup v) mu ->
-    let (Comp p_mu) = Modality.comp (Modality.of_gen mu) in
-    Lookup
-      {
-        v with
-        plus = plus_with_locks_lock v.plus mu;
-        parametric_lock = Option.map (fun l -> Modality.comp_out l p_mu) v.parametric_lock;
-      }
-
-  let parametric_lock_lookup : type mode b field.
-      mode Mode.t -> (mode, b, field) lookup -> (mode, b, field) lookup =
-   fun mode (Lookup v) ->
-    match (v.parametric_lock, Modality.parametric_locker mode) with
-    | Some lock, Some (Wrap mu) ->
-        let (Comp p_mu) = Modality.comp mu in
-        Lookup { v with parametric_lock = Some (Modality.comp_out lock p_mu) }
-    | _ -> Lookup v
+   fun mu (Lookup v) -> Lookup { v with plus = plus_with_locks_lock v.plus mu }
 
   (* The lookup function iterates through entries. *)
   let rec lookup : type mode a b.
-      (mode, a, b) t -> a Raw.index -> (mode, b, level * D.zero Field.t) lookup =
-   fun ctx k ->
+      ?parametric_locked:bool ->
+      (mode, a, b) t ->
+      a Raw.index ->
+      (mode, b, level * D.zero Field.t) lookup =
+   fun ?(parametric_locked = false) ctx k ->
     match ctx with
     | Emp _ -> (
         match k with
         | _ -> .)
-    | Snoc (ctx, e, pf) -> lookup_entry ctx e pf k
-    | Parametric_lock ctx -> parametric_lock_lookup (mode ctx) (lookup ctx k)
-    | Lock (ctx, mu) -> lock_lookup (lookup ctx k) mu
+    | Snoc (ctx, e, pf) -> lookup_entry ~parametric_locked ctx e pf k
+    | Parametric_lock ctx -> lookup ~parametric_locked:true ctx k
+    | Lock (ctx, mu) -> lock_lookup mu (lookup ~parametric_locked ctx k)
 
   (* For each entry, we iterate through the list of fields or the cube of names, as appropriate. *)
   and lookup_entry : type dom modality mode a b f af mn.
+      parametric_locked:bool ->
       (mode, a, b) t ->
       (dom, modality, mode, f, mn) entry ->
       (a, f, af) N.plus ->
       af Raw.index ->
       (mode, (b, (modality, mn) dim_entry) snoc, level * D.zero Field.t) lookup =
-   fun ctx e pf k ->
+   fun ~parametric_locked ctx e pf k ->
     match e with
     | Vis
         (type m n f1 f2)
@@ -381,6 +368,8 @@ module Ordered = struct
             let b = CubeOf.find_top bindings in
             match Binding.level b with
             | Some level ->
+                if parametric_locked && not (Modality.parametric_unlocker modality) then
+                  fatal (Locked_variable modality);
                 Lookup
                   {
                     result = `Field (level, fst (Bwv.nth i fields));
@@ -390,8 +379,6 @@ module Ordered = struct
                     modality;
                     filter;
                     plus = plus_with_no_locks (mode ctx);
-                    parametric_lock =
-                      (if Endpoints.internal () then None else Some (Modality.id (mode ctx)));
                   }
             | None -> fatal (Anomaly "missing level in field view"))
         | Left i -> (
@@ -417,8 +404,11 @@ module Ordered = struct
               Fold.fold_map_right { foldmap = (fun fb -> lookup_folder fb) } vars (Unfound (pf1, i))
             with
             | Unfound (Zero, j), _ ->
-                pop_lookup modality (CubeOf.dim bindings) filter (lookup ctx (j, snd k))
+                pop_lookup modality (CubeOf.dim bindings) filter
+                  (lookup ~parametric_locked ctx (j, snd k))
             | Found fb, _ ->
+                if parametric_locked && not (Modality.parametric_unlocker modality) then
+                  fatal (Locked_variable modality);
                 (* Once we find the face in the cube of visible variables, we add it to the face specified by the user for a cube variable, if any, and look up the corresponding binding. *)
                 let (SFace_of fa) =
                   match snd k with
@@ -439,14 +429,12 @@ module Ordered = struct
                     dirt = Binding.dirt x;
                     insert = Now;
                     plus = plus_with_no_locks (Modality.tgt modality);
-                    parametric_lock =
-                      (if Endpoints.internal () then None else Some (Modality.id (mode ctx)));
                   }))
     (* By definition, an invisible entry can't be looked up into, and doesn't increment the raw indices. *)
     | Invis { filter; bindings } ->
         let modality = Modality.filter_modality filter in
         let Zero = pf in
-        pop_lookup modality (CubeOf.dim bindings) filter (lookup ctx k)
+        pop_lookup modality (CubeOf.dim bindings) filter (lookup ~parametric_locked ctx k)
 
   (* Look up a De Bruijn level in a context and find the corresponding possibly-invisible index, if one exists. *)
   let rec find_level : type mode a b. (mode, a, b) t -> level -> (mode, b, Empty.t) lookup option =
@@ -455,7 +443,7 @@ module Ordered = struct
     | Emp _ -> None
     | Snoc (ctx, Vis { bindings; filter; _ }, _) -> find_level_in_cube ctx bindings filter i
     | Snoc (ctx, Invis { bindings; filter }, _) -> find_level_in_cube ctx bindings filter i
-    | Lock (ctx, mu) -> Option.map (fun l -> lock_lookup l mu) (find_level ctx i)
+    | Lock (ctx, mu) -> Option.map (lock_lookup mu) (find_level ctx i)
     | Parametric_lock ctx -> find_level ctx i
 
   and find_level_in_cube : type dom modality mode a b n.
@@ -487,8 +475,6 @@ module Ordered = struct
                          modality;
                          filter;
                          plus = plus_with_no_locks (Modality.tgt modality);
-                         parametric_lock =
-                           (if Endpoints.internal () then None else Some (Modality.id (mode ctx)));
                        }) )
               else ((), s));
         }

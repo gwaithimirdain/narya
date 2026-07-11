@@ -338,7 +338,6 @@ and readback_head : type mode c z.
                filter;
                insert;
                plus = Plus_with_locks (c, _);
-               parametric_lock = _;
              }) =
         Ctx.find_level ctx level <|> No_such_level (PLevel level) in
       (* We check that (1) the modality annotating that variable is the source of the key, and (2) there are no more locks remaining to its right in the context. *)
