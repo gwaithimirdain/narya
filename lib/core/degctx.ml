@@ -220,9 +220,6 @@ module Ordered = struct
                 Plus_lock
                   ( Suc (Zero (Eq (Ctx.Ordered.mode ctx)), Lock_lock lock, Suc (Zero, Lock lock)),
                     Suc (Zero, Lock lock) ) ) )
-    | Parametric_lock ctx ->
-        let (Degctx (kb, newctx, env)) = degenerate ctx l in
-        Degctx (kb, Parametric_lock newctx, env)
 end
 
 type (_, _, _, _) degctx =

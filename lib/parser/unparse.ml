@@ -1129,7 +1129,6 @@ let rec unparse_ctx : type dom modality mode a b.
       let (Comp ll) = Modality.comp lock in
       let names, out = unparse_ctx names (Modality.comp_out (Modality.of_gen newlock) ll) vars ctx in
       (Names.add_lock names (plus_lock_suc (plus_no_lock (Modality.Gen.tgt newlock)) newlock), out)
-  | Parametric_lock ctx -> unparse_ctx names lock vars ctx
   | Ext
       (type edom emod a' x b' bm n)
       ((ctx, entry, af) :

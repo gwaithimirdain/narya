@@ -203,6 +203,9 @@ struct
     | Some b -> Some (Modalcell.vcomp (Modalcell.vcomp yfrom b) xto)
     | None -> None
 
+  let parametric_locker : type a. a Mode.t -> (a Modalcell.parametric_locker, string) Result.t =
+   fun _ -> Error "coreflection"
+
   let to_string : type a m n b. (a, m, n, b) Modalcell.t -> string =
    fun m ->
     "cell_"

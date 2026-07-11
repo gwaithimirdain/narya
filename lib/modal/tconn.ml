@@ -15,6 +15,7 @@ module type Variant = sig
 
   val nonparametric : nonparametric D.t
   val name : string
+  val locker : bool
 end
 
 module Ordinary = struct
@@ -22,6 +23,7 @@ module Ordinary = struct
 
   let nonparametric = D.zero
   let name = "tconn"
+  let locker = false
 end
 
 module Discrete = struct
@@ -29,6 +31,7 @@ module Discrete = struct
 
   let nonparametric = D.one
   let name = "discrete tconn"
+  let locker = true
 end
 
 module DiscGen (V : Variant) = struct
@@ -314,6 +317,14 @@ struct
     match bridge (Modalcell.vtgt xto) (Modalcell.vsrc yfrom) with
     | Some b -> Some (Modalcell.vcomp (Modalcell.vcomp yfrom b) xto)
     | None -> None
+
+  let parametric_locker : type a. a Mode.t -> (a Modalcell.parametric_locker, string) Result.t =
+   fun m ->
+    if V.locker then
+      match Mode.compare m Type.mode with
+      | Eq -> Ok (Modalcell.Locker (tribox, box_counit))
+      | Neq -> Ok (Locker (Modality.id m, Id (Modality.id m)))
+    else Error "tconn"
 
   let to_string : type a m n b. (a, m, n, b) Modalcell.t -> string =
    fun m ->

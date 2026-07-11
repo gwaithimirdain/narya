@@ -569,7 +569,6 @@ module Equal = struct
                    (PString (Modalcell.to_string pre1), PString (Modalcell.to_string pre2))) in
             let (Remove_lock (ctx, _)) = Ctx.remove_lock ctx (Modalcell.vtgt keys1) in
             equal_ordered_env ctx env1 env2 envctx)
-    | Parametric_lock envctx -> equal_ordered_env ctx env1 env2 envctx
 end
 
 let fallback f =

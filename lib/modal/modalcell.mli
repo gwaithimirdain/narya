@@ -48,10 +48,14 @@ val adj_right : ('a, 'f, 'g, 'b) adjunction -> ('b, 'g, 'a) Modality.t
 val compare_adjunction_id :
   ('a, 'f, 'g, 'b) adjunction -> ('f * 'g * 'b, 'a Modality.id * 'a Modality.id * 'a) Eq.compare
 
+type _ parametric_locker =
+  | Locker : ('a, 'm, 'a) Modality.t * ('a, 'm, 'a Modality.id, 'a) t -> 'a parametric_locker
+
 module type Theory = sig
   val sinister : ('a, 'm, 'b) Modality.t -> ('a, 'm, 'b) sinister option
   val compare : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'n, 'b) t -> bool
   val find_unique : ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) t option
+  val parametric_locker : 'a Mode.t -> ('a parametric_locker, string) Result.t
   val to_string : ('a, 'm, 'n, 'b) t -> string
 end
 
@@ -128,4 +132,5 @@ val vcomp_extending :
   ('a, 'm, 'kn, 'b) t ->
   ('a, 'm, 'b) cod_wrapped
 
+val parametric_locker : 'a Mode.t -> 'a parametric_locker
 val to_string : ('a, 'm, 'n, 'b) t -> string

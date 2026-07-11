@@ -130,9 +130,7 @@ module F = struct
             (string_of_dim (dim_env e))
             (Field.to_string f) p term tm (string_of_ins ins)
             (string_of_dim (dom_ins ins))
-            apps args
-            (Modalcell.to_string cell)
-            l
+            apps args (Modalcell.to_string cell) l
 
   and lazy_eval : type mode s. int -> formatter -> (mode, s) lazy_eval -> unit =
    fun depth ppf v ->
@@ -455,7 +453,6 @@ module F = struct
     | Emp _ -> ()
     | Snoc (c, e, _) -> fprintf ppf "%a %a" ordered_ctx c entry e
     | Lock (c, _) -> fprintf ppf "%a Lock" ordered_ctx c
-    | Parametric_lock c -> fprintf ppf "%a PLock" ordered_ctx c
 
   let ctx : type mode a b. formatter -> (mode, a, b) Ctx.t -> unit =
    fun ppf (Permute { ctx; _ }) -> fprintf ppf "Ctx (?, ?, %a)" ordered_ctx ctx

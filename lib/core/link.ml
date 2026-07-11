@@ -12,7 +12,8 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
   | Const c -> Const (Constant.remake f c)
   | Meta (m, s) -> Meta (Meta.remake f m, s)
   | MetaEnv (m, e) -> MetaEnv (Meta.remake f m, env f e)
-  | Field (Modal (modality, al, tm), fld, fldins) -> Field (Modal (modality, al, term f tm), fld, fldins)
+  | Field (Modal (modality, al, tm), fld, fldins) ->
+      Field (Modal (modality, al, term f tm), fld, fldins)
   | UU (mode, n) -> UU (mode, n)
   | Inst (tm, args) -> Inst (term f tm, TubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ args ])
   | Pi { x; filter; doms = Modal (modality, al, doms); cods } ->
@@ -201,7 +202,6 @@ and termctx_ordered : type mode a b.
   | Emp mode -> Emp mode
   | Ext (ctx, e, ax) -> Ext (termctx_ordered f ctx, entry f e, ax)
   | Lock (ctx, lock) -> Lock (termctx_ordered f ctx, lock)
-  | Parametric_lock ctx -> Parametric_lock (termctx_ordered f ctx)
 
 and termctx : type mode a b. (File.t -> File.t) -> (mode, a, b) termctx -> (mode, a, b) termctx =
  fun f (Permute (p, ctx)) -> Permute (p, termctx_ordered f ctx)

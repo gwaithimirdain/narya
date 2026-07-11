@@ -309,7 +309,6 @@ module rec Term : sig
     | Lock :
         ('cod, 'a, 'b) ordered_termctx * ('dom, 'modality, 'cod) Modality.gen
         -> ('dom, 'a, ('b, 'modality lock_entry) snoc) ordered_termctx
-    | Parametric_lock : ('mode, 'a, 'b) ordered_termctx -> ('mode, 'a, 'b) ordered_termctx
 
   and ('mode, 'a, 'b) termctx =
     | Permute : ('a, 'i) N.permute * ('mode, 'i, 'b) ordered_termctx -> ('mode, 'a, 'b) termctx
@@ -633,7 +632,6 @@ end = struct
     | Lock :
         ('cod, 'a, 'b) ordered_termctx * ('dom, 'modality, 'cod) Modality.gen
         -> ('dom, 'a, ('b, 'modality lock_entry) snoc) ordered_termctx
-    | Parametric_lock : ('mode, 'a, 'b) ordered_termctx -> ('mode, 'a, 'b) ordered_termctx
 
   and ('mode, 'a, 'b) termctx =
     | Permute : ('a, 'i) N.permute * ('mode, 'i, 'b) ordered_termctx -> ('mode, 'a, 'b) termctx
@@ -682,7 +680,8 @@ let apps fn mode args =
 (* let constr name args = Constr (name, D.zero, List.map CubeOf.singleton args) *)
 
 (* A non-modal field projection, whose lock is the identity. *)
-let modal_id : type mode a s. mode Mode.t -> (mode, a, s) term -> (mode, mode Modality.id, a, s) modal_term =
+let modal_id : type mode a s.
+    mode Mode.t -> (mode, a, s) term -> (mode, mode Modality.id, a, s) modal_term =
  fun mode tm -> Modal (Modality.id mode, plus_no_lock mode, tm)
 
 let field mode tm f = Field (modal_id mode tm, f, ins_zero D.zero)
@@ -750,7 +749,6 @@ module Termctx = struct
     | Emp mode -> Path (Suc (Zero, Proj mode), Unit)
     | Ext (ctx, e, _) -> Tctx.suc (ordered_tctx ctx) (Dim (dim_entry e, filter_entry e))
     | Lock (ctx, modality) -> Tctx.suc (ordered_tctx ctx) (Lock modality)
-    | Parametric_lock ctx -> ordered_tctx ctx
 
   let tctx (Permute (_, ctx)) = ordered_tctx ctx
 
@@ -789,7 +787,6 @@ module Termctx = struct
     | Emp mode -> mode
     | Ext (ctx, _, _) -> ordered_mode ctx
     | Lock (_, lock) -> Modality.Gen.src lock
-    | Parametric_lock ctx -> ordered_mode ctx
 
   let mode (Permute (_, ctx)) = ordered_mode ctx
 
@@ -805,9 +802,6 @@ module Termctx = struct
    fun ctx ->
     match ctx with
     | Emp _ | Ext (_, _, _) -> Ordered_remove_locks (ctx, plus_no_lock (ordered_mode ctx))
-    | Parametric_lock ctx ->
-        (* Not going to think about whether this is quite correct, since Parametric_lock is going away the first chance we get. *)
-        ordered_remove_locks ctx
     | Lock (ctx, g) ->
         let (Ordered_remove_locks (ctx, plus)) = ordered_remove_locks ctx in
         Ordered_remove_locks (ctx, plus_lock_suc plus g)
@@ -836,7 +830,6 @@ let rec ordered_hole_vars : type mode a b.
       let Emp = vars in
       Emp
   | Lock (ctx, _) -> ordered_hole_vars ctx vars
-  | Parametric_lock ctx -> ordered_hole_vars ctx vars
   | Ext (ctx, entry, af) -> (
       let vars, xs = Bwv.unappend af vars in
       let rest = ordered_hole_vars ctx vars in

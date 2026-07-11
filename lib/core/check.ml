@@ -483,8 +483,7 @@ let rec check : type mode a b s.
                 (* However, if the given term *doesn't* synthesize, we want to report the low-dimensional error, so we pass that diagnostic on. *)
                 check_of_synth ~nosynth status ctx stm tm.loc ty
             | Ok ty_fainv ->
-                (* A pure permutation shouldn't ever be locking, but we may as well keep this here for consistency.  *)
-                let ctx = Ctx.maybe_lock ctx fa in
+                (* A pure permutation is never locking.  *)
                 let cx = check (Kinetic `Nolet) ctx x ty_fainv in
                 realize status
                   (Term.Act (cx, fa, (sort_of_ty ctx (view_type ty "checking act"), `Other))))
@@ -503,11 +502,10 @@ let rec check : type mode a b s.
             | Some (Factor nk) -> (
                 let (Plus mk) = D.plus (D.plus_right nk) in
                 let fa = deg_plus fa mk nk in
-                match section_of_deg fa with
-                | None ->
-                    (* If the arity is zero, we just give up and try to synthesize. *)
-                    check_of_synth status ctx stm tm.loc ty
-                | Some (Face (fs, fp)) -> (
+                (* If the arity is zero, or if parametricity is external (since they we'd have to un-key the boundary somehow to get the term to degenerate), we just give up and try to synthesize. *)
+                match (section_of_deg fa, Endpoints.internal ()) with
+                | None, _ | Some _, false -> check_of_synth status ctx stm tm.loc ty
+                | Some (Face (fs, fp)), true -> (
                     match pface_of_sface fs with
                     | `Id _ ->
                         fatal (Anomaly "non-permutation degeneracy doesn't have a proper section")
@@ -521,7 +519,6 @@ let rec check : type mode a b s.
                             ~err:(anomaly_dim_err "dimension confusion in checking degeneracy")
                             None sxty (deg_of_perm fp)
                             (Modalcell.id2 (Ctx.mode ctx)) in
-                        let ctx = Ctx.maybe_lock ctx fa in
                         let cx, xloc =
                           match x with
                           | Some x -> (check (Kinetic `Nolet) ctx x xty, x.loc)
@@ -3144,13 +3141,14 @@ and synth : type mode a b s.
         let (Definition { mode; ty; parametric; _ }) = Global.find name in
         match Modal.Mode.compare mode (Ctx.mode ctx) with
         | Eq ->
-            (match (parametric, Ctx.parametric_locked ctx) with
+            let (Wrap locks) = Ctx.total_locks ctx in
+            (match (parametric, Modalcell.find_unique (Modality.id mode) locks) with
             (* If the context is locked, then nonparametric constants are not allowed.  *)
-            | `Nonparametric, true -> fatal (Locked_constant (PConstant name))
+            | `Nonparametric, None -> fatal (Locked_constant (PConstant name))
             (* Thus, if one of the currently-being-defined constants is encountered in a locked context, they *must* be parametric. *)
-            | `Maybe_parametric, true -> Global.set_parametric name
+            | `Maybe_parametric, None -> Global.set_parametric name
             (* On the other hand, if the context is not locked and we encounter a nonparametric constant, then the current constants must be nonparametric.  (The Global.set functions handle checking for conflicts between requirements of parametricness of the current definitions.) *)
-            | `Nonparametric, false -> Global.set_nonparametric (Some name)
+            | `Nonparametric, Some _ -> Global.set_nonparametric (Some name)
             | _ -> ());
             (realize status (Const name), eval_term (Emp (mode, D.zero)) ty)
         | Neq -> fatal (Mode_mismatch (`User, "synthesizing constant", mode, None, Ctx.mode ctx)))
@@ -3503,16 +3501,21 @@ and synth : type mode a b s.
         (realize status stm, sty)
     | Act (str, fa, Some { value = Synth x; loc }), _ ->
         let x = { value = x; loc } in
+        let mode = Ctx.mode ctx in
         if not (Modal.Mode.allows_deg (Ctx.mode ctx) fa) then
-          fatal (Nonparametric_mode_degeneracy (str.value, Ctx.mode ctx));
-        let ctx = Ctx.maybe_lock ctx fa in
+          fatal (Nonparametric_mode_degeneracy (str.value, mode));
+        let (Maybe_locked (lctx, plus_src, cell)) =
+          Ctx.maybe_lock ctx (Modalcell.parametric_locker mode) fa in
         (* We pass on the "nosynth" error, so that we can look through multiple degeneracies before noticing a nonsynthesizing term. *)
-        let sx, ety = synth ?nosynth (Kinetic `Nolet) ctx x in
-        let ex = eval_term (Ctx.env ctx) sx in
+        let sx, ety = synth ?nosynth (Kinetic `Nolet) lctx x in
+        let ex = eval_term (Ctx.env lctx) sx in
         let sty =
-          with_loc x.loc @@ fun () ->
-          act_ty ex ety fa (Modalcell.id2 (Ctx.mode ctx)) ~err:(low_dim_arg_err str.value) in
-        ( realize status (Term.Act (sx, fa, (sort_of_ty ctx (view_type sty "synth act"), `Other))),
+          with_loc x.loc @@ fun () -> act_ty ex ety fa cell ~err:(low_dim_arg_err str.value) in
+        ( realize status
+            (Term.Act
+               ( Term.Key { tm = sx; cell; plus_tgt = plus_with_no_locks mode; plus_src },
+                 fa,
+                 (sort_of_ty ctx (view_type sty "synth act"), `Other) )),
           sty )
     | Act _, _ -> fatal_or nosynth (Nonsynthesizing "argument of degeneracy")
     | Asc (tm, ty), _ ->
@@ -4028,16 +4031,21 @@ and synth_or_check_apps : type mode a b.
   | _, (Any_deg s, Some fn) -> (
       match D.compare_zero (cod_deg s) with
       | Zero ->
+          let mode = Ctx.mode ctx in
           if not (Modal.Mode.allows_deg (Ctx.mode ctx) s) then
-            fatal (Nonparametric_mode_degeneracy (string_of_deg s, Ctx.mode ctx));
-          let ctx = Ctx.maybe_lock ctx s in
-          let cfn, sty = synth_lam (dom_deg s) ctx fn ctx args ty in
-          let efn = eval_term (Ctx.env ctx) cfn in
+            fatal (Nonparametric_mode_degeneracy (string_of_deg s, mode));
+          let (Maybe_locked (lctx, plus_src, cell)) =
+            Ctx.maybe_lock ctx (Modalcell.parametric_locker mode) s in
+          let cfn, sty = synth_lam (dom_deg s) lctx fn ctx args ty in
+          let efn = eval_term (Ctx.env lctx) cfn in
           (* Finally, we still need to degenerate that function and apply it to all the arguments. *)
           synth_apps ctx
-            (locate_opt fn.loc (Term.Act (cfn, s, (`Function, `Other))))
-            (act_ty efn sty s (Modalcell.id2 (Ctx.mode ctx)))
-            fn args
+            (locate_opt fn.loc
+               (Term.Act
+                  ( Term.Key { tm = cfn; cell; plus_tgt = plus_with_no_locks mode; plus_src },
+                    s,
+                    (`Function, `Other) )))
+            (act_ty efn sty s cell) fn args
       | Pos _ -> fatal (Unimplemented "typechecking degenerated higher-dimensional redices"))
 
 (* A helper function for synth_or_check_apps.  It uses information from ascribed abstractions, synthesizing arguments, and supplied type to synthesize a type for the head abstraction.  It *only* uses the arguments for this purpose, and ignores them if unneeded.  Thus its return value must afterwards still be applied to the arguments.  (In particular, therefore, some of the arguments may end up being synthesized twice, which is not great.) *)

@@ -133,8 +133,7 @@ module Ordered = struct
             (Cons (e, tel, xf))
             (Fwn.bfplus_assocr ax xf ij)
             (Suc (Dim (Ctx.dim_entry e, Ctx.filter_entry e), bc))
-      | Lock (ctx, modality) -> go ctx (Lock (modality, tel)) ij (Suc (Lock modality, bc))
-      | Parametric_lock ctx -> go ctx (Parametric_lock tel) ij bc in
+      | Lock (ctx, modality) -> go ctx (Lock (modality, tel)) ij (Suc (Lock modality, bc)) in
     go ctx (Nil (mode ctx)) Zero Zero
 
   (* Now we begin the suite of helper functions for bind_some.  This is an operation that happens during typechecking a pattern match, when the match variable along with all its indices have to be replaced by values determined by the constructor of each branch.  This requires the context to be re-sorted at the same time to maintain a consistent dependency structure, with each type and value depending only on the variables to its left.  It also requires "substitution into values", which we do by reading back values into the old context and then evaluating them in the new context.  This readback also has the double purpose of checking which types make sense in a given context, to determine a correct permutation.

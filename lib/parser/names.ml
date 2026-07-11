@@ -228,7 +228,6 @@ let rec of_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> b t = func
   | Lock (ctx, _) ->
       let { ctx; used } = of_ordered_ctx ctx in
       { ctx = Lock ctx; used }
-  | Parametric_lock ctx -> of_ordered_ctx ctx
 
 let of_ctx : type mode a b. (mode, a, b) Ctx.t -> b t = function
   | Permute { ctx; _ } -> of_ordered_ctx ctx

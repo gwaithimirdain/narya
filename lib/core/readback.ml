@@ -576,7 +576,6 @@ and readback_ordered_env : type mode n a b c d.
       match Modalcell.compare_id pre with
       | Eq -> keyed
       | Neq -> Prekey (keyed, pre))
-  | Parametric_lock envctx -> readback_ordered_env ctx env envctx
 
 (* Read back a context of values into a context of terms. *)
 
@@ -645,7 +644,6 @@ let rec readback_ordered_ctx : type mode a b.
       let (Readback_entry re) = readback_entry (Ctx.of_ordered ctx) e in
       Ext (readback_ordered_ctx rest, re, af)
   | Lock (ctx, lock) -> Lock (readback_ordered_ctx ctx, lock)
-  | Parametric_lock ctx -> Parametric_lock (readback_ordered_ctx ctx)
 
 let readback_ctx : type mode a b. (mode, a, b) Ctx.t -> (mode, a, b) termctx = function
   | Permute { perm; ctx; _ } -> Permute (perm, readback_ordered_ctx ctx)

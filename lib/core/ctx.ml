@@ -155,14 +155,12 @@ module Ordered = struct
     | Lock :
         ('cod, 'a, 'b) t * ('dom, 'modality, 'cod) Modality.gen
         -> ('dom, 'a, ('b, 'modality lock_entry) snoc) t
-    | Parametric_lock : ('cod, 'a, 'b) t -> ('cod, 'a, 'b) t
 
   let rec mode : type mode a b. (mode, a, b) t -> mode Mode.t = function
     | Emp mode -> mode
     | Snoc (ctx, Vis _, _) -> mode ctx
     | Snoc (ctx, Invis _, _) -> mode ctx
     | Lock (_, modality) -> Modality.src (Modality.of_gen modality)
-    | Parametric_lock ctx -> mode ctx
 
   let vis : type dom modality mode a b f af m n mn.
       (mode, a, b) t ->
@@ -222,20 +220,10 @@ module Ordered = struct
       (mode, a, (b, (modality, n) dim_entry) snoc) t =
    fun ctx filter bindings -> Snoc (ctx, Invis { bindings; filter }, Zero)
 
-  let parametric_lock : type mode a b. (mode, a, b) t -> (mode, a, b) t =
-   fun ctx -> Parametric_lock ctx
-
-  let rec parametric_locked : type mode a b. (mode, a, b) t -> bool = function
-    | Emp _ -> false
-    | Snoc (ctx, _, _) -> parametric_locked ctx
-    | Parametric_lock _ -> true
-    | Lock (ctx, _) -> parametric_locked ctx
-
   let rec checked_length : type mode a b. (mode, a, b) t -> (mode, b) Tctx.t = function
     | Emp mode -> Tctx.emp mode
     | Snoc (ctx, e, _) -> Tctx.suc (checked_length ctx) (Dim (dim_entry e, filter_entry e))
     | Lock (ctx, l) -> Tctx.suc (checked_length ctx) (Lock l)
-    | Parametric_lock ctx -> checked_length ctx
 
   let tctx = checked_length
 
@@ -243,15 +231,20 @@ module Ordered = struct
     | Emp _ -> N.zero
     | Snoc (ctx, _, ax) -> N.plus_out (raw_length ctx) ax
     | Lock (ctx, _) -> raw_length ctx
-    | Parametric_lock ctx -> raw_length ctx
 
   let rec length : type mode a b. (mode, a, b) t -> int = function
     | Emp _ -> 0
     | Snoc (ctx, _, _) -> length ctx + 1
     | Lock (ctx, _) -> length ctx
-    | Parametric_lock ctx -> length ctx
 
   let empty : type mode. mode Mode.t -> (mode, N.zero, mode emp) t = fun mode -> Emp mode
+
+  let rec total_locks : type mode a b. (mode, a, b) t -> mode Modality.tgt_wrapped = function
+    | Emp mode -> Wrap (Modality.id mode)
+    | Snoc (ctx, _, _) -> total_locks ctx
+    | Lock (ctx, g) ->
+        let (Wrap (Path (m, mode))) = total_locks ctx in
+        Wrap (Path (Modality.Suc (m, g), mode))
 
   (* Lock a context by a given modality (which entails breaking the modality up into generators). *)
 
@@ -293,7 +286,7 @@ module Ordered = struct
   let rec apps : type mode a b. (mode, a, b) t -> (mode, mode, noninst) apps = function
     | Emp _ -> Emp
     | Snoc (ctx, e, _) -> app_entry (apps ctx) e
-    | Lock _ | Parametric_lock _ -> fatal (Anomaly "context lock in Ctx.apps")
+    | Lock _ -> fatal (Anomaly "context lock in Ctx.apps")
 
   (* When looking up a raw variable, we return either an ordinary value variable or an illusory field-access variable.  We also return its modal annotation, and the composite of all the locks to its right.  (These will later be forced to agree, but in the intermediate recursive calls to lookup they may not.) *)
   type (_, _, _) lookup =
@@ -338,7 +331,6 @@ module Ordered = struct
     match (ctx, k) with
     | Emp _, _ -> .
     | Snoc (ctx, e, pf), _ -> lookup_entry ctx e pf k
-    | Parametric_lock _, _ -> fatal Locked_variable
     | Lock (ctx, mu), _ -> lock_lookup mu (lookup ctx k)
 
   (* For each entry, we iterate through the list of fields or the cube of names, as appropriate. *)
@@ -433,7 +425,6 @@ module Ordered = struct
     | Snoc (ctx, Vis { bindings; filter; _ }, _) -> find_level_in_cube ctx bindings filter i
     | Snoc (ctx, Invis { bindings; filter }, _) -> find_level_in_cube ctx bindings filter i
     | Lock (ctx, mu) -> Option.map (lock_lookup mu) (find_level ctx i)
-    | Parametric_lock ctx -> find_level ctx i
 
   and find_level_in_cube : type dom modality mode a b n.
       (mode, a, b) t ->
@@ -506,7 +497,6 @@ module Ordered = struct
     | Lock (ctx, lock) ->
         let modality = Modality.of_gen lock in
         key_env (env ctx) (Modalcell.id modality) (plus_lock_suc (plus_no_lock (mode ctx)) lock)
-    | Parametric_lock ctx -> env ctx
 
   (* Extend a context by one new variable, without a value but with an assigned type. *)
   let ext : type dom modality mode a b.
@@ -550,7 +540,7 @@ module Ordered = struct
    fun ctx tree ->
     match ctx with
     | Emp _ -> tree
-    | Lock _ | Parametric_lock _ -> fatal (Anomaly "context lock in Ctx.lam")
+    | Lock _ -> fatal (Anomaly "context lock in Ctx.lam")
     | Snoc (ctx, Vis { dim; plusdim; vars; filter; bindings; fplus = Zero; _ }, _)
       when all_free bindings ->
         lam ctx (Lam (Variables (dim, plusdim, vars), D.plus_out dim plusdim, filter, tree))
@@ -585,7 +575,6 @@ module Ordered = struct
     match ctx with
     | Emp mode -> Emp mode
     | Lock (ctx, lock) -> Lock (forget_levels ctx forget, lock)
-    | Parametric_lock ctx -> Parametric_lock (forget_levels ctx forget)
     | Snoc (ctx, Vis e, af) -> Snoc (ctx, Vis { e with bindings = forget_bindings e.bindings }, af)
     | Snoc (ctx, Invis e, af) ->
         Snoc (ctx, Invis { e with bindings = forget_bindings e.bindings }, af)
@@ -615,8 +604,7 @@ module Ordered = struct
             | Some (Factor (modality, Suc (Zero, _))) ->
                 let (Remove_lock (ctx, plus)) = remove_lock ctx modality in
                 Remove_lock (ctx, plus_with_locks_lock plus l)
-            | None -> fatal (Anomaly "Ctx.remove_lock: modalities don't factor"))
-        | Parametric_lock ctx -> remove_lock ctx modality)
+            | None -> fatal (Anomaly "Ctx.remove_lock: modalities don't factor")))
 
   (* The same, but with a supplied plus_with_locks *)
 
@@ -624,10 +612,9 @@ module Ordered = struct
 
   let rec remove_locks : type cod mode modality a b bc.
       (mode, a, bc) t -> (b, cod, modality, mode, bc) plus_with_locks -> (cod, b) any =
-   fun ctx (Plus_with_locks (comp, locks) as plus) ->
+   fun ctx (Plus_with_locks (comp, locks)) ->
     match (comp, locks, ctx) with
     | Zero, Zero _, _ -> Any ctx
-    | _, _, Parametric_lock ctx -> remove_locks ctx plus
     | Suc (comp, Dim _), Suc (locks, Locks_dim _, _), Snoc (ctx, _, _) ->
         remove_locks ctx (Plus_with_locks (comp, locks))
     | Suc (Zero, Lock g1), Suc (Zero _, Locks_lock _, _), Lock (ctx, g3) ->
@@ -749,15 +736,30 @@ let lock_to : type dom modality cod a b bm.
   let env = key_env env (Modalcell.id lock) al in
   Permute { env; perm; level; ctx }
 
-let parametric_lock (Permute c) = Permute { c with ctx = Ordered.parametric_lock c.ctx }
 let raw_length (Permute { perm; ctx; _ }) = N.perm_dom perm (Ordered.raw_length ctx)
 let level (Permute { level; _ }) = level
 let mode (Permute { ctx; _ }) = Ordered.mode ctx
-let maybe_lock ctx fa = if locking fa then parametric_lock ctx else ctx
-let parametric_locked (Permute { ctx; _ }) = Ordered.parametric_locked ctx
+
+type (_, _, _) maybe_locked =
+  | Maybe_locked :
+      ('mode, 'a, 'bm) t
+      * ('b, 'mode, 'm, 'mode, 'bm) plus_lock
+      * ('mode, 'm, 'mode Modality.id, 'mode) Modalcell.t
+      -> ('mode, 'a, 'b) maybe_locked
+
+let maybe_lock : type mode a b x y.
+    (mode, a, b) t -> mode Modalcell.parametric_locker -> (x, y) deg -> (mode, a, b) maybe_locked =
+ fun ctx (Modalcell.Locker (locker, counit)) fa ->
+  if locking fa then
+    let (Locked (plus_lock, ctx)) = lock ctx locker in
+    Maybe_locked (ctx, plus_lock, counit)
+  else Maybe_locked (ctx, plus_no_lock (mode ctx), Modalcell.id2 (mode ctx))
 
 let empty mode =
   Permute { perm = N.perm_id N.zero; env = Emp (mode, D.zero); level = 0; ctx = Ordered.empty mode }
+
+let total_locks : type mode a b. (mode, a, b) t -> mode Modality.tgt_wrapped =
+ fun (Permute { ctx; _ }) -> Ordered.total_locks ctx
 
 let tctx (Permute { ctx; _ }) = Ordered.tctx ctx
 let apps (Permute { ctx; _ }) = Ordered.apps ctx

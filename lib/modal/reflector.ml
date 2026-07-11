@@ -75,6 +75,9 @@ struct
             Some (Modalcell.prewhisker (Suc (Zero, g)) (Suc (Zero, h)) c (Modality.of_gen g))
         | Neq -> None)
 
+  let parametric_locker : type a. a Mode.t -> (a Modalcell.parametric_locker, string) Result.t =
+   fun _ -> Error "reflector"
+
   let to_string : type a m n b. (a, m, n, b) Modalcell.t -> string =
    fun m ->
     "η_"

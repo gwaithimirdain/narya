@@ -1,4 +1,5 @@
 open Util
+open Dim
 
 type ('a, 'm, 'n, 'b) gen =
   | PK : ('a, 'm, 'b) Modality.t * int * ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) gen
@@ -87,10 +88,14 @@ let compare_adjunction_id : type a f g b.
           | Neq -> Neq
           | Eq -> Eq))
 
+type _ parametric_locker =
+  | Locker : ('a, 'm, 'a) Modality.t * ('a, 'm, 'a Modality.id, 'a) t -> 'a parametric_locker
+
 module type Theory = sig
   val sinister : ('a, 'm, 'b) Modality.t -> ('a, 'm, 'b) sinister option
   val compare : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'n, 'b) t -> bool
   val find_unique : ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) t option
+  val parametric_locker : 'a Mode.t -> ('a parametric_locker, string) Result.t
   val to_string : ('a, 'm, 'n, 'b) t -> string
 end
 
@@ -100,6 +105,7 @@ let theory : (module Theory) ref =
       let sinister _ = failwith "Modalcell.theory not set"
       let compare _ _ = failwith "Modalcell.theory not set"
       let find_unique _ _ = failwith "Modalcell.theory not set"
+      let parametric_locker _ = Error "undefined mode theory"
       let to_string _ = failwith "Modalcell.theory not set"
     end : Theory)
 
@@ -249,6 +255,14 @@ let find_unique : type a m n b c d.
       | Some a -> Some (Unique a)
       | None -> None)
   | _ -> None
+
+let parametric_locker m =
+  let module T = (val !theory) in
+  if Endpoints.internal () then Locker (Modality.id m, id2 m)
+  else
+    match T.parametric_locker m with
+    | Ok l -> l
+    | Error str -> failwith ("mode theory " ^ str ^ " doesn't support external parametricity")
 
 let to_string : type a m n b. (a, m, n, b) t -> string =
  fun m ->

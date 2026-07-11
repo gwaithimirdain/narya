@@ -163,7 +163,7 @@
    ￮ constant sst.copair defined
   
 
-  $ narya -parametric -arity 2 -direction p -external -v sct.ny
+  $ narya -parametric -arity 2 -direction p -v sct.ny
    ￫ info[I0000]
    ￮ constant SCT defined
   
@@ -177,10 +177,10 @@
    ￮ constant 2s defined
   
   $ narya -dtt -e "def foo (X:Type) : Type^^(d) X := X^^(d)"
-   ￫ error[E0310]
+   ￫ error[E1705]
    ￭ command-line exec string
    1 | def foo (X:Type) : Type^^(d) X := X^^(d)
-     ^ variable not available inside external degeneracy
+     ^ use of id variable behind △□ lock requires a key
   
   [1]
 
