@@ -923,12 +923,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       Scope.check_name name loc;
       let const = Scope.define ?loc name in
       let (Processed_tel (params, ctx, _)) = process_tel Emp parameters in
-      let parametric =
-        match nonparam with
-        | None -> true
-        | Some _ ->
-            emit (Deprecated "nonparametric axioms: use modalities instead");
-            false in
+      let parametric = Option.is_none nonparam in
       Core.Command.execute (Axiom { name = const; params; ty = process ctx ty; parametric })
   | Def defs ->
       Global.run_command ~holes_allowed:(Ok ()) @@ fun () ->
