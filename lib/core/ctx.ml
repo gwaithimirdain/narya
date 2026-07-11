@@ -664,8 +664,7 @@ let vis (Permute { perm; env; level; ctx }) filter m mn xs vars af =
             plus = D.zero_plus (CubeOf.dim vars);
             filtered = filter;
             filter = Modality.filter_zero (Modality.filter_modality filter);
-            values =
-              `Lazy (Ordered.env_entry (Modality.src (Modality.filter_modality filter)) vars);
+            values = `Lazy (Ordered.env_entry (Modality.src (Modality.filter_modality filter)) vars);
           };
       level = level + 1;
       ctx = Ordered.vis ctx filter m mn xs vars bf;
@@ -700,7 +699,13 @@ let vis_fields (Permute { perm; env; level; ctx }) xs vars fields fplus af =
       perm = N.perm_plus perm af bf;
       env =
         Ext
-          { env; plus = D.zero_plus n; filter; filtered; values = `Lazy (Ordered.env_entry mode vars) };
+          {
+            env;
+            plus = D.zero_plus n;
+            filter;
+            filtered;
+            values = `Lazy (Ordered.env_entry mode vars);
+          };
       level = level + 1;
       ctx = Ordered.vis_fields ctx xs vars fields fplus bf;
     }
@@ -716,8 +721,7 @@ let invis (Permute { perm; env; level; ctx }) filter vars =
             plus = D.zero_plus (CubeOf.dim vars);
             filtered = filter;
             filter = Modality.filter_zero (Modality.filter_modality filter);
-            values =
-              `Lazy (Ordered.env_entry (Modality.src (Modality.filter_modality filter)) vars);
+            values = `Lazy (Ordered.env_entry (Modality.src (Modality.filter_modality filter)) vars);
           };
       level = level + 1;
       ctx = Ordered.invis ctx filter vars;
@@ -749,13 +753,7 @@ let parametric_lock (Permute c) = Permute { c with ctx = Ordered.parametric_lock
 let raw_length (Permute { perm; ctx; _ }) = N.perm_dom perm (Ordered.raw_length ctx)
 let level (Permute { level; _ }) = level
 let mode (Permute { ctx; _ }) = Ordered.mode ctx
-
-let maybe_lock ctx fa =
-  if locking fa then
-    (* let (Wrap modality) = Modality.locker (mode ctx) in *)
-    parametric_lock ctx
-  else ctx
-
+let maybe_lock ctx fa = if locking fa then parametric_lock ctx else ctx
 let parametric_locked (Permute { ctx; _ }) = Ordered.parametric_locked ctx
 
 let empty mode =
