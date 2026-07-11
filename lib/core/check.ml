@@ -1450,25 +1450,16 @@ and check_implicit_match : type mode a b.
       match (comp, locks) with
       | Suc _, Suc _ -> fallback "discriminee is locked" (PModality lock)
       | Zero, Zero _ -> (
-          (* The modal annotation on the variable must match the window modality *if* that was given; otherwise it must be the identity.  In addition, we check parametricity-accessibility. *)
+          check_parametricity modality parametric_lock;
+          (* The modal annotation on the variable must match the window modality *if* that was given. *)
           (match window_name with
-          | None -> (
-              match Modality.compare_id modality with
-              | Eq -> with_loc loc @@ fun () -> check_parametricity modality parametric_lock
-              | Neq -> fatal (Missing_key (modality, Modality.id (Ctx.mode ctx))))
+          | None -> ()
           | Some w -> (
               match Modality.of_name_tgt (Ctx.mode ctx) w.value with
               | Error e -> modality_fatal "checking let-in" (e :> modality_error)
               | Ok (Wrap window) -> (
                   match Modality.compare window modality with
-                  | Eq -> (
-                      match parametric_lock with
-                      | Some pl ->
-                          (* In this case, we add the window modality to the parametric lock, since the variable is technically being typechecked in that locked context. *)
-                          let (Comp lw) = Modality.comp window in
-                          with_loc loc @@ fun () ->
-                          check_parametricity modality (Some (Modality.comp_out pl lw))
-                      | None -> ())
+                  | Eq -> ()
                   | Neq ->
                       fatal (Modality_mismatch (`User, "checking implicit match", window, modality))
                   )));
