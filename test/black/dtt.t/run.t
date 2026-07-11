@@ -112,6 +112,24 @@
    ￮ constant ASST defined
   
    ￫ info[I0000]
+   ￮ constant asst.Int defined
+  
+   ￫ info[I0000]
+   ￮ constant asst.Fib defined
+  
+   ￫ info[I0000]
+   ￮ constant sst.Fib defined
+  
+   ￫ info[I0000]
+   ￮ constant disp defined
+  
+   ￫ info[I0000]
+   ￮ constant disp′ defined
+  
+   ￫ info[I0000]
+   ￮ constant d defined
+  
+   ￫ info[I0000]
    ￮ constant sst.pt defined
   
    ￫ info[I0000]
@@ -274,10 +292,16 @@ General displayed coinductives
 
   $ narya -dtt -v dcoind.ny
    ￫ info[I0000]
+   ￮ constant disp defined
+  
+   ￫ info[I0000]
    ￮ constant dCoind defined
   
 
   $ narya -dtt -v discrete.ny
+   ￫ info[I0000]
+   ￮ constant disp defined
+  
    ￫ info[I0000]
    ￮ constant eq defined
   
