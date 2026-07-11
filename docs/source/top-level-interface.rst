@@ -35,8 +35,18 @@ These options are discussed under :ref:`Parametricity`.
 - ``-direction X``: Set the symbol and names for reflexivity
 - ``-arity N``: Set the arity of parametricity to N (1 ≤ N ≤ 9)
 - ``-internal`` and ``-external``: Set whether parametricity is internal (default) or external
-- ``-discreteness``: Enable strictly parametrically discrete types
-- ``-dtt``: Poor man's dTT mode (``-parametric -arity 1 -direction d -external``)
+- ``-discreteness``: Enable strictly parametrically discrete types (deprecated)
+
+Modal type theory
+^^^^^^^^^^^^^^^^^
+
+These options are discussed under :ref:`Modal type theory` and :ref:`Modal discreteness`.
+
+- Mode theory selection flags (see :ref:`Modal type theory` and :ref:`Modal discreteness`)
+- ``-modes X``: Rename the modes (universes)
+- ``-modalities X``: Rename the modalities
+
+- ``-dtt``: Poor man's dTT mode (``-parametric -arity 1 -direction d -external -discrete-tconn``)
 
 Execution
 ---------

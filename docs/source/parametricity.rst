@@ -68,8 +68,7 @@ Syntactically, nullary parametricity is a bit special because when instantiating
 Internal versus external parametricity
 --------------------------------------
 
-Parametricity can also be set to be *internal* or *external* with the like-named flags ``-internal`` and ``-external``.  Internal is the default and the behavior that we have described up until now.  Setting it to external instead means that dimension-changing degeneracies (such as ``rel``, but not ``sym``) can only be applied to *closed terms*.  Since degeneracies also compute fully on closed terms (at least in the "up-to-definitional-isomorphism" sense), we can then more or less think of these operations as meta-operations on syntax rather than intrinsic aspects of the theory.  This is the usual meaning of "external parametricity", although Narya's is of course at least partially internalized.  (Semantically, what Narya calls "external parametricity" is modeled in a diagram of *semi-cubical* types, in contrast to internal parametricity which is modeled in *cubical* types.)
-
+Parametricity can also be set to be *internal* or *external* with the like-named flags ``-internal`` and ``-external``.  Internal is the default and the behavior that we have described up until now.  Setting it to external instead means that dimension-changing degeneracies (such as ``rel``, but not ``sym``) can only be applied to *closed terms*.  Since degeneracies also compute fully on closed terms (at least in the "up-to-definitional-isomorphism" sense), we can then more or less think of these operations as meta-operations on syntax rather than intrinsic aspects of the theory.  This is the usual meaning of "external parametricity", although Narya's is of course at least partially internalized.
 
 When parametricity is external, there are two different possibilities for how to treat *axioms*.  The default kind of axiom is a *parametric axiom*, which can have dimension-changing degeneracies applied to it like a defined constant.  But it is also possible to define a *nonparametric axiom*, which is treated like a variable and thus cannot appear inside of dimension-changing degeneracies.  For example, axioms such as excluded middle that are inconsistent with parametricity can be assumed as nonparametric axioms.  To define a nonparametric axiom, use the attribute ``nonparametric``:
 
@@ -82,10 +81,20 @@ Other constants that use nonparametric axioms in their types or definitions, her
 When a definition contains :ref:`holes` but does not (yet) use any nonparametric constants, it is considered parametric, and hence can have dimension-changing degeneracies applied to it.  Therefore, if you later try to fill one of those holes with a term that uses a nonparametric constant, an error will be emitted; it is not possible to retroactively set a definition to be nonparametric since it might already have had dimension-changing degeneracies applied to it by other definitions.  In this case, you have to undo back to the original definition and manually copy your desired nonparametric term in place of the hole.  (If there is significant demand, we may implement an easier solution.)
 
 
-Parametrically discrete types
+Semantics of parametricity
+--------------------------
+
+Internal parametricity, as implemented in Narya, has semantics in the topos of *n*-ary semicartesian cubical sets (or spaces, or objects of some other topos).  Semicartesian cubical sets have faces, degeneracies, and symmetries, but no diagonals or connections, and to say they are *n*-ary means that each 1-cube has *n* "endpoints".
+
+Similarly, what Narya calls "external parametricity" is modeled in a diagram of *semi-cubical* sets (or whatever), which have faces and symmetries but no degeneracies.
+
+
+Discrete datatypes (experimental and deprecated)
 -----------------------------
 
-Discreteness is an experimental (and probably temporary) feature.  A (strictly parametrically) *discrete* type, in the sense meant here, is one whose higher-dimensional versions are all definitionally subsingletons.  That is, if ``b1 : A⁽ᵈ⁾ a`` and ``b2 : A⁽ᵈ⁾ a``, then ``b1`` and ``b2`` are convertible (this is implemented as an η-rule).  Discreteness is currently restricted to arity 1 (including dTT), and can be enabled by the ``-discreteness`` flag.  When discreteness is enabled, a mutual family of datatypes will be marked as discrete if
+*Discreteness was an experimental feature that is now deprecated in favor of modal treatments.  See* :ref:`Discrete modalities`.  *We include the old documentation of this feature here for reference, but it will eventually go away along with the feature.*
+
+A (strictly parametrically) *discrete* type, in the sense meant here, is one whose higher-dimensional versions are all definitionally subsingletons.  That is, if ``b1 : A⁽ᵈ⁾ a`` and ``b2 : A⁽ᵈ⁾ a``, then ``b1`` and ``b2`` are convertible (this is implemented as an η-rule).  Discreteness is currently restricted to arity 1 (including dTT), and can be enabled by the ``-discreteness`` flag.  When discreteness is enabled, a mutual family of datatypes will be marked as discrete if
 
 1. All elements of the mutual family are datatypes; and
 2. The types of all of their parameters, indices, and constructor arguments are either types belonging to the same family or previously defined discrete datatypes.
