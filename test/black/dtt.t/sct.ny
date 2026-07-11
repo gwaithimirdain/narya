@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-arity" "2" "-direction" "p" "-external" "-discrete-coreflector") -*- `}
+{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-arity" "2" "-direction" "p" "-external") -*- `}
 
 ` (Binary) semi-cubical types
 def SCT : Type ≔ codata [ X .z : Type | X .s : SCT⁽ᵖ⁾ X X ]

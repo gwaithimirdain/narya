@@ -12,7 +12,7 @@ open Print
 open PPrint
 open Top
 
-type arity = [ `One of string | `Any ]
+type arity = [ `One of string | `Any | `None of string ]
 
 let usage_msg = "narya [options] <file1> [<file2> ...]"
 let interactive = ref false
@@ -20,7 +20,7 @@ let proofgeneral = ref false
 let show_version = ref false
 let install_mode_theory = ref Modal.Trivial.install
 let hott_forbidden : string option ref = ref None
-let external_ok = ref false
+let external_ok : arity ref = ref `Any
 let arity_ok : arity ref = ref `Any
 let mode_theories = ref 0
 let old_discreteness = ref false
@@ -93,7 +93,7 @@ let speclist =
       Arg.Unit
         (fun () ->
           hott_forbidden := Some "-discrete-coreflector";
-          external_ok := true;
+          external_ok := `One "-discrete-coreflector";
           install_mode_theory := Modal.Discrete_coreflector.install;
           mode_theories := !mode_theories + 1),
       "Select the nonparametric coreflector mode theory (requires -parametric, allows -external)" );
@@ -113,6 +113,7 @@ let speclist =
       Arg.Unit
         (fun () ->
           install_mode_theory := Modal.Discrete_spatial.install;
+          external_ok := `None "-discrete-spatial";
           hott_forbidden := Some "-discrete-spatial";
           mode_theories := !mode_theories + 1),
       "Select the spatial mode theory with discrete coreflector (requires -parametric)" );
@@ -132,6 +133,7 @@ let speclist =
       Arg.Unit
         (fun () ->
           install_mode_theory := Modal.Discrete_functor.install;
+          external_ok := `None "-discrete-functor";
           hott_forbidden := Some "-discrete-functor";
           mode_theories := !mode_theories + 1),
       "Select the functor mode theory with discrete domain mode (requires -parametric)" );
@@ -151,7 +153,7 @@ let speclist =
       Arg.Unit
         (fun () ->
           hott_forbidden := Some "-discrete-coreflector";
-          external_ok := true;
+          external_ok := `One "-discrete-coreflector";
           install_mode_theory := Modal.Discrete_coreflection.install;
           mode_theories := !mode_theories + 1),
       "Select the nonparametric coreflection mode theory (requires -parametric, allows -external)"
@@ -166,7 +168,7 @@ let speclist =
       Arg.Unit
         (fun () ->
           hott_forbidden := Some "-discrete-tconn";
-          external_ok := true;
+          external_ok := `One "-discrete-tconn";
           arity_ok := `One "-discrete-tconn";
           install_mode_theory := Modal.Discrete_tconn.install;
           mode_theories := !mode_theories + 1),
@@ -180,7 +182,7 @@ let speclist =
           refl_char := 'd';
           refl_names := [];
           internal := false;
-          external_ok := true;
+          external_ok := `One "-dtt";
           arity_ok := `One "-dtt";
           hott_forbidden := Some "-dtt";
           install_mode_theory := Modal.Discrete_tconn.install;
@@ -220,9 +222,16 @@ let () =
   if (not !internal) && !hott then (
     Printf.fprintf stderr "-external requires -parametric\n";
     exit 1);
-  if (not !internal) && not !external_ok then (
-    Printf.fprintf stderr "-external requires a suitable mode theory\n";
-    exit 1);
+  (if not !internal then
+     match (!external_ok, !arity) with
+     | `None str, _ ->
+         Printf.fprintf stderr "%s is incompatible with -external" str;
+         exit 1
+     | `One _, 1 -> ()
+     | `One str, _ ->
+         Printf.fprintf stderr "%s and -external require -arity 1" str;
+         exit 1
+     | `Any, _ -> ());
   (match (!arity_ok, !arity) with
   | `One _, 1 -> ()
   | `One str, _ ->
