@@ -249,7 +249,7 @@ struct
     ^ string_of_int (Modality.length (Modalcell.vtgt m))
 end
 
-(* Only modalities that normalize to to id or flat are tangible and translucent, and they are also transparent. *)
+(* Only modalities that normalize to to id or flat are tangible and translucent, and they are also transparent.  Unlike -spatial, we cannot make sharp tangible, since then it would be either discrete (if nonparametric) or bridge-preserving (if not), and it is neither (it is codiscrete, as ensured by its negative definition using discreteness of flat). *)
 module SpatialModalities
     (Testmode : Mode.Generated with module G := TestmodeGen)
     (Flat : Modality.Generated with module G := FlatGen(Testmode))

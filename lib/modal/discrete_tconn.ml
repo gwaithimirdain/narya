@@ -1,13 +1,22 @@
 open Dim
 
-(* A globally and locally connected geometric morphism is like dtt (which see) but without discreteness and fully parametric. *)
+(* The "Dtt" mode theory, or discrete totally connected geometric morphism, has two modes, Disc(rete) and Type, and three generating modalities:
 
+     △ : Disc → Type
+     □ : Type → Disc
+     ◇ : Type → Disc
+
+   with an adjoint triple ◇ ⊣ △ ⊣ □, where the counit of ◇ ⊣ △ (namely ◇△ ⇒ id_Disc) and the unit of △ ⊣ □ (namely id_Disc ⇒ □△) are isomorphisms.  The theory is locally posetal (any two parallel 2-cells are equal).
+
+   Every composite modality is isomorphic to exactly one normal form: an identity, one of the three generators, or one of the composites △□ or △◇ (both Type → Type).  This is because the only nontrivial reductions are the two isomorphisms ◇△ ≅ id_Disc and □△ ≅ id_Disc, which cancel a △ immediately followed (in application order) by a ◇ or a □.  The remaining nonidentity 2-cells between normal forms are the counit △□ ⇒ id, the unit id ⇒ △◇, their composite △□ ⇒ △◇, and an induced 2-cell □ ⇒ ◇. *)
+
+(* The mode Disc is itself nonparametric: it forbids parametricity (degeneracies) in the single external direction, so nothing at mode Disc can be degenerated.  Mode Type is parametric, with the coreflector △□ installed as its locker (see install). *)
 module DiscGen = struct
   let name = ref "Disc"
 
-  type nonparametric = D.zero
+  type nonparametric = D.one
 
-  let nonparametric = D.zero
+  let nonparametric = D.one
 end
 
 module TypeGen = struct
@@ -29,9 +38,10 @@ struct
   let tgt = Type.mode
   let name = ref "△"
 
-  type nonparametric = D.zero
+  (* Every nonidentity modality of the Dtt theory is nonparametric. *)
+  type nonparametric = D.one
 
-  let nonparametric = D.zero
+  let nonparametric = D.one
 end
 
 module BoxGen
@@ -45,9 +55,9 @@ struct
   let tgt = Disc.mode
   let name = ref "□"
 
-  type nonparametric = D.zero
+  type nonparametric = D.one
 
-  let nonparametric = D.zero
+  let nonparametric = D.one
 end
 
 module DiamondGen
@@ -61,12 +71,12 @@ struct
   let tgt = Disc.mode
   let name = ref "◇"
 
-  type nonparametric = D.zero
+  type nonparametric = D.one
 
-  let nonparametric = D.zero
+  let nonparametric = D.one
 end
 
-module GlconnCells
+module TconnCells
     (Disc : Mode.Generated with module G := DiscGen)
     (Type : Mode.Generated with module G := TypeGen)
     (Triangle : Modality.Generated with module G := TriangleGen(Disc)(Type))
@@ -290,18 +300,18 @@ struct
     ^ string_of_int (Modality.length (Modalcell.vtgt m))
 end
 
-module GlconnModalities
+module TconnModalities
     (Disc : Mode.Generated with module G := DiscGen)
     (Type : Mode.Generated with module G := TypeGen)
     (Triangle : Modality.Generated with module G := TriangleGen(Disc)(Type))
     (Box : Modality.Generated with module G := BoxGen(Disc)(Type))
     (Diamond : Modality.Generated with module G := DiamondGen(Disc)(Type)) : Modality.Theory =
 struct
-  open GlconnCells (Disc) (Type) (Triangle) (Box) (Diamond)
+  open TconnCells (Disc) (Type) (Triangle) (Box) (Diamond)
 
   let tangible _ = true
 
-  (* Every modality whose normalization doesn't contain a □ is pellucid (that is, identities, ◇, △, and △◇). *)
+  (* Every modality whose normalization doesn't contain a □ is pellucid (that is, identities, ◇, △, and △◇).  But note that since they are nonparametric, they can't be used as windows for higher-dimensional matches (yet). *)
   let rec pellucid_normal : type a m b. (a, m, b) Modality.t -> bool = function
     | Path (Zero, _) -> true
     | Path (Suc (m, g), mode) -> (
@@ -315,7 +325,12 @@ struct
 
   let transparent m = pellucid m
   let translucent _ = true
-  let parametric_locker _ = None
+
+  let parametric_locker : type a. a Mode.t -> (a, a) Modality.wrapped option =
+   fun m ->
+    match Mode.compare m Type.mode with
+    | Eq -> Some (Wrap tribox)
+    | Neq -> failwith "discrete tconn: unknown mode"
 end
 
 let install modes modalities =
@@ -324,7 +339,7 @@ let install modes modalities =
       DiscGen.name := disc;
       TypeGen.name := ty
   | [] -> ()
-  | _ -> failwith "wrong number of mode names for glconn mode theory");
+  | _ -> failwith "wrong number of mode names for discrete tconn mode theory");
   let module Disc = Mode.Generate (DiscGen) in
   let module Type = Mode.Generate (TypeGen) in
   let module Tri = TriangleGen (Disc) (Type) in
@@ -336,12 +351,12 @@ let install modes modalities =
       Tri.name := tri;
       Box.name := box
   | [] -> ()
-  | _ -> failwith "wrong number of modality names for glconn mode theory");
+  | _ -> failwith "wrong number of modality names for discrete tconn mode theory");
   Modality.set_one_char true modalities;
   let module Triangle = Modality.Generate (Tri) in
   let module Box = Modality.Generate (Box) in
   let module Diamond = Modality.Generate (Dia) in
   Modalcell.choose_theory
-    (module GlconnCells (Disc) (Type) (Triangle) (Box) (Diamond) : Modalcell.Theory);
+    (module TconnCells (Disc) (Type) (Triangle) (Box) (Diamond) : Modalcell.Theory);
   Modality.choose_theory
-    (module GlconnModalities (Disc) (Type) (Triangle) (Box) (Diamond) : Modality.Theory)
+    (module TconnModalities (Disc) (Type) (Triangle) (Box) (Diamond) : Modality.Theory)

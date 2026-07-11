@@ -156,36 +156,36 @@ let speclist =
           mode_theories := !mode_theories + 1),
       "Select the nonparametric coreflection mode theory (requires -parametric, allows -external)"
     );
-    ( "-glconn",
+    ( "-tconn",
       Arg.Unit
         (fun () ->
-          install_mode_theory := Modal.Glconn.install;
+          install_mode_theory := Modal.Tconn.install;
           mode_theories := !mode_theories + 1),
-      "Select the globally and locally connected geometric morphism mode theory" );
-    ( "-discrete-glconn",
+      "Select the totally connected geometric morphism mode theory" );
+    ( "-discrete-tconn",
       Arg.Unit
         (fun () ->
-          hott_forbidden := Some "-discrete-glconn";
+          hott_forbidden := Some "-discrete-tconn";
           external_ok := true;
-          arity_ok := `One "-discrete-glconn";
-          install_mode_theory := Modal.Discrete_glconn.install;
+          arity_ok := `One "-discrete-tconn";
+          install_mode_theory := Modal.Discrete_tconn.install;
           mode_theories := !mode_theories + 1),
-      "Select the discrete glconn mode theory (requires -parametric and -arity 1, allows -external)"
+      "Select the discrete tconn mode theory (requires -parametric and -arity 1, allows -external)"
     );
-    ( "-pseudo-glconn",
+    ( "-pseudo-tconn",
       Arg.Unit
         (fun () ->
-          install_mode_theory := Modal.Pseudo_glconn.install;
+          install_mode_theory := Modal.Pseudo_tconn.install;
           mode_theories := !mode_theories + 1),
-      "Select the pseudo globally and locally connected geometric morphism mode theory" );
-    ( "-discrete-pseudo-glconn",
+      "Select the pseudo totally connected geometric morphism mode theory" );
+    ( "-discrete-pseudo-tconn",
       Arg.Unit
         (fun () ->
-          hott_forbidden := Some "-discrete-pseudo-glconn";
+          hott_forbidden := Some "-discrete-pseudo-tconn";
           external_ok := true;
-          install_mode_theory := Modal.Discrete_pseudo_glconn.install;
+          install_mode_theory := Modal.Discrete_pseudo_tconn.install;
           mode_theories := !mode_theories + 1),
-      "Select the discrete pseudo-glconn mode theory (requires -parametric, allows -external)" );
+      "Select the discrete pseudo-tconn mode theory (requires -parametric, allows -external)" );
     ( "-dtt",
       Unit
         (fun () ->
@@ -197,9 +197,9 @@ let speclist =
           external_ok := true;
           arity_ok := `One "-dtt";
           hott_forbidden := Some "-dtt";
-          install_mode_theory := Modal.Discrete_glconn.install;
+          install_mode_theory := Modal.Discrete_tconn.install;
           mode_theories := !mode_theories + 1),
-      "Abbreviation for -parametric -arity 1 -direction d -external -discrete-glconn" );
+      "Abbreviation for -parametric -arity 1 -direction d -external -discrete-tconn" );
     ("-modes", Arg.Set_string modes, "set the names of modes");
     ("-modalities", Arg.Set_string modalities, "set the names of modalities");
     ("--help", Arg.Unit (fun () -> ()), "");
