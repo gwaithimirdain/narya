@@ -237,7 +237,7 @@ module Code = struct
     | Invalid_constructor_type : Constr.t * (string, Unequal.t) Either.t -> t
     | Invalid_self_variable_type : 'i Field.t * (string, Unequal.t) Either.t -> t
     | Missing_constructor_type : Constr.t -> t
-    | Locked_variable : ('dom, 'mu, 'cod) Modality.t -> t
+    | Locked_variable : t
     | Locked_constant : printable -> t
     | Missing_key : ('dom1, 'mu1, 'cod1) Modality.t * ('dom2, 'mu2, 'cod2) Modality.t -> t
     | Axiom_in_parametric_definition : printable -> t
@@ -417,7 +417,7 @@ module Code = struct
     | Invalid_constructor_type _ -> Error
     | Invalid_self_variable_type _ -> Error
     | Missing_constructor_type _ -> Error
-    | Locked_variable _ -> Error
+    | Locked_variable -> Error
     | Locked_constant _ -> Error
     | Missing_key _ -> Error
     | Axiom_in_parametric_definition _ -> Error
@@ -503,7 +503,7 @@ module Code = struct
     | Undefined_constant _ -> "E0301"
     | Undefined_metavariable _ -> "E0302"
     | Ill_scoped_connection -> "E0303"
-    | Locked_variable _ -> "E0310"
+    | Locked_variable -> "E0310"
     | Locked_constant _ -> "E0311"
     | Axiom_in_parametric_definition _ -> "E0312"
     (* Bidirectional typechecking and case trees *)
@@ -1091,9 +1091,7 @@ module Code = struct
                 (Field.to_string f) str pp_printed (print p1) pp_printed (print p2))
       | Missing_constructor_type c ->
           textf "missing type for constructor %s of indexed datatype" (Constr.to_string c)
-      | Locked_variable m ->
-          textf "variable annotated with %s not available inside external degeneracy"
-            (Modality.to_string m)
+      | Locked_variable -> text "variable not available inside external degeneracy"
       | Locked_constant a ->
           textf
             "constant %a is or uses a nonparametric axiom, can't appear inside an external degeneracy"

@@ -91,9 +91,6 @@
     : Type
   
    ￫ info[I0000]
-   ￮ constant sst.Fib defined
-  
-   ￫ info[I0000]
    ￮ constant sst.∅ defined
   
    ￫ info[I0000]
@@ -112,16 +109,7 @@
    ￮ constant sst.sum defined
   
    ￫ info[I0000]
-   ￮ constant sst.discprod defined
-  
-   ￫ info[I0000]
    ￮ constant ASST defined
-  
-   ￫ info[I0000]
-   ￮ constant asst.Int defined
-  
-   ￫ info[I0000]
-   ￮ constant asst.Fib defined
   
    ￫ info[I0000]
    ￮ constant sst.pt defined
@@ -171,7 +159,7 @@
    ￫ error[E0310]
    ￭ command-line exec string
    1 | def foo (X:Type) : Type^^(d) X := X^^(d)
-     ^ variable annotated with id not available inside external degeneracy
+     ^ variable not available inside external degeneracy
   
   [1]
 

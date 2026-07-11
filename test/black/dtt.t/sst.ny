@@ -131,11 +131,6 @@ def sst.sum (X Y : SST) : SST ≔ [
   | inl. x ↦ sst.sum⁽ᵈ⁾ (X .s x) (sst.const Y sst.∅)
   | inr. y ↦ sst.sum⁽ᵈ⁾ (sst.const X sst.∅) (Y .s y)]]
 
-{` The product of a family of SSTs indexed by a discrete type. `}
-def sst.discprod (A :△| Disc) (X : (a :△| A) → SST) : SST ≔ [
-| .z ↦ (a :△| A) → X a .z
-| .s ↦ p ↦ sst.discprod⁽ᵈ⁾ A {X} (a ↦ X a .s (p a))]
-
 {` Augmented SSTs are another displayed coinductive. `}
 def ASST : Type ≔ codata [ X .z : Type | X .s : ASST⁽ᵈ⁾ X ]
 
@@ -152,7 +147,7 @@ def sst.pt (X : SST) : Type ≔ codata [
 | p .z : X .z
 | p .s : sst.pt⁽ᵈ⁾ (X .s (p .z)) p ]
 
-{` As are maps of SSTs. `}
+{` And maps of SSTs. `}
 def sst.hom (X Y : SST) : Type ≔ codata [
 | f .z : X .z → Y .z
 | f .s : (x : X .z) → sst.hom⁽ᵈ⁾ (X .s x) (Y .s (f .z x)) f ]
@@ -162,8 +157,7 @@ def sst.id (X : SST) : sst.hom X X ≔ [
 | .z ↦ x ↦ x
 | .s ↦ x ↦ sst.id⁽ᵈ⁾ (X .s x)]
 
-def sst.comp (X Y Z : SST) (g : sst.hom Y Z) (f : sst.hom X Y)
-  : sst.hom X Z
+def sst.comp (X Y Z : SST) (g : sst.hom Y Z) (f : sst.hom X Y) : sst.hom X Z
   ≔ [
 | .z ↦ x ↦ g .z (f .z x)
 | .s ↦ x ↦
