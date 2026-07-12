@@ -1,6 +1,27 @@
 open Util
 open Dim
 
+module type Variant = sig
+  type nonparametric
+
+  val nonparametric : nonparametric D.t
+  val name : string
+end
+
+module Ordinary = struct
+  type nonparametric = D.zero
+
+  let nonparametric = D.zero
+  let name = "coreflector"
+end
+
+module Discrete = struct
+  type nonparametric = D.one
+
+  let nonparametric = D.one
+  let name = "discrete coreflector"
+end
+
 (* We define all the "generator" modules at top-level, but don't call the generation code until the "install" function, so that only one mode theory actually gets installed at runtime.  Thus, each generator module has to be parametrized over the results of generation of the previous ones. *)
 
 module TestmodeGen = struct
@@ -11,7 +32,8 @@ module TestmodeGen = struct
   let nonparametric = D.zero
 end
 
-module CoreflectorGen (Testmode : Mode.Generated with module G := TestmodeGen) = struct
+module CoreflectorGen (V : Variant) (Testmode : Mode.Generated with module G := TestmodeGen) =
+struct
   type src = Testmode.t
   type tgt = Testmode.t
 
@@ -19,14 +41,15 @@ module CoreflectorGen (Testmode : Mode.Generated with module G := TestmodeGen) =
   let tgt = Testmode.mode
   let name = ref "♭"
 
-  type nonparametric = D.zero
+  type nonparametric = V.nonparametric
 
-  let nonparametric = D.zero
+  let nonparametric = V.nonparametric
 end
 
 module CoreflectorCells
+    (V : Variant)
     (Testmode : Mode.Generated with module G := TestmodeGen)
-    (Coreflector : Modality.Generated with module G := CoreflectorGen(Testmode)) =
+    (Coreflector : Modality.Generated with module G := CoreflectorGen(V)(Testmode)) =
 struct
   let comonad = Modality.of_gen Coreflector.modality
   let counit = Modalcell.of_gen (Modalcell.generate comonad (Modality.id Testmode.mode))
@@ -81,17 +104,17 @@ struct
     ^ string_of_int (Modality.length (Modalcell.vtgt m))
 end
 
-let install modes modalities =
+let install (module V : Variant) modes modalities =
   (match modes with
   | [ ty ] -> TestmodeGen.name := ty
   | [] -> ()
-  | _ -> failwith "wrong number of mode names for coreflector mode theory");
+  | _ -> failwith ("wrong number of mode names for " ^ V.name ^ " mode theory"));
   let module Testmode = Mode.Generate (TestmodeGen) in
-  let module Flat = CoreflectorGen (Testmode) in
+  let module Flat = CoreflectorGen (V) (Testmode) in
   (match modalities with
   | [ flat ] -> Flat.name := flat
   | [] -> ()
-  | _ -> failwith "wrong number of modality names for coreflector mode theory");
+  | _ -> failwith ("wrong number of modality names for " ^ V.name ^ " mode theory"));
   Modality.set_one_char true modalities;
   let module Coreflector = Modality.Generate (Flat) in
-  Modalcell.choose_theory (module CoreflectorCells (Testmode) (Coreflector) : Modalcell.Theory)
+  Modalcell.choose_theory (module CoreflectorCells (V) (Testmode) (Coreflector) : Modalcell.Theory)

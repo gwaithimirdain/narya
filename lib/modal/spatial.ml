@@ -1,11 +1,35 @@
+open Util
+open Dim
+
 (* A "spatial" mode theory: one mode with two self-modality generators, a coreflector ♭ (idempotent comonad) and a reflector ♯ (idempotent monad), such that ♭ is left adjoint to ♯.  Everything is fully parametric.  As with Coreflector/Reflector, this theory is locally posetal (any two parallel 2-cells are declared equal), so we only need to decide *existence* of a 2-cell and exhibit *some* witness, not worry about coherence among different witnesses.
 
    The generating 2-cells are: the comonad counit/comultiplication of ♭ (flat_counit : ♭ ⇒ id, flat_comult : ♭ ⇒ ♭∘♭), the monad unit/multiplication of ♯ (sharp_unit : id ⇒ ♯, sharp_mult : ♯∘♯ ⇒ ♯), and the unit/counit of the adjunction ♭ ⊣ ♯ (adj_unit : id ⇒ ♯∘♭, adj_counit : ♭∘♯ ⇒ id).
 
    find_unique below decides existence of a 2-cell x ⇒ y between two words in {♭,♯} by: (1) checking definitional equality; (2) peeling a shared innermost generator via prewhisker and recursing; (3) otherwise trying to bridge through the identity, using "to_id" (repeatedly peeling an innermost ♭ via flat_counit, or an innermost ♭∘♯ pair via adj_counit) and "from_id" (dually, peeling an innermost ♯ via sharp_unit, or an innermost ♯∘♭ pair via adj_unit) and composing vertically.  This correctly handles words built by iterating ♭ alone, ♯ alone, or a single adjoint pair ♭∘♯ / ♯∘♭, which covers ordinary uses of the modalities, but it is not a complete decision procedure for the free theory of an adjoint pair of idempotent (co)monads: e.g. it will not find the (valid) cell ♭∘♯ ⇒ ♭∘♯∘♭, which requires inserting an adjunction cell at a non-innermost position. *)
 
-open Util
-open Dim
+module type Variant = sig
+  type nonparametric
+
+  val nonparametric : nonparametric D.t
+  val name : string
+  val tangible_sharp : bool
+end
+
+module Ordinary = struct
+  type nonparametric = D.zero
+
+  let nonparametric = D.zero
+  let name = "spatial"
+  let tangible_sharp = true
+end
+
+module Discrete = struct
+  type nonparametric = D.one
+
+  let nonparametric = D.one
+  let name = "discrete spatial"
+  let tangible_sharp = false
+end
 
 module TestmodeGen = struct
   let name = ref "Type"
@@ -15,7 +39,7 @@ module TestmodeGen = struct
   let nonparametric = D.zero
 end
 
-module FlatGen (Testmode : Mode.Generated with module G := TestmodeGen) = struct
+module FlatGen (V : Variant) (Testmode : Mode.Generated with module G := TestmodeGen) = struct
   type src = Testmode.t
   type tgt = Testmode.t
 
@@ -23,12 +47,12 @@ module FlatGen (Testmode : Mode.Generated with module G := TestmodeGen) = struct
   let tgt = Testmode.mode
   let name = ref "♭"
 
-  type nonparametric = D.zero
+  type nonparametric = V.nonparametric
 
-  let nonparametric = D.zero
+  let nonparametric = V.nonparametric
 end
 
-module SharpGen (Testmode : Mode.Generated with module G := TestmodeGen) = struct
+module SharpGen (V : Variant) (Testmode : Mode.Generated with module G := TestmodeGen) = struct
   type src = Testmode.t
   type tgt = Testmode.t
 
@@ -36,15 +60,16 @@ module SharpGen (Testmode : Mode.Generated with module G := TestmodeGen) = struc
   let tgt = Testmode.mode
   let name = ref "♯"
 
-  type nonparametric = D.zero
+  type nonparametric = V.nonparametric
 
-  let nonparametric = D.zero
+  let nonparametric = V.nonparametric
 end
 
 module SpatialCells
+    (V : Variant)
     (Testmode : Mode.Generated with module G := TestmodeGen)
-    (Flat : Modality.Generated with module G := FlatGen(Testmode))
-    (Sharp : Modality.Generated with module G := SharpGen(Testmode)) =
+    (Flat : Modality.Generated with module G := FlatGen(V)(Testmode))
+    (Sharp : Modality.Generated with module G := SharpGen(V)(Testmode)) =
 struct
   type mode = Testmode.t
 
@@ -256,10 +281,11 @@ struct
 end
 
 module SpatialModalities
+    (V : Variant)
     (Testmode : Mode.Generated with module G := TestmodeGen)
-    (Flat : Modality.Generated with module G := FlatGen(Testmode))
-    (Sharp : Modality.Generated with module G := SharpGen(Testmode)) : Modality.Theory = struct
-  open SpatialCells (Testmode) (Flat) (Sharp)
+    (Flat : Modality.Generated with module G := FlatGen(V)(Testmode))
+    (Sharp : Modality.Generated with module G := SharpGen(V)(Testmode)) : Modality.Theory = struct
+  open SpatialCells (V) (Testmode) (Flat) (Sharp)
 
   let pellucid _ = false
 
@@ -270,26 +296,31 @@ module SpatialModalities
     | Normalize (Normal_id, _, _) | Normalize (Normal_flat, _, _) -> true
     | Normalize (Normal_sharp, _, _) -> false
 
-  let translucent : type a m b. (a, m, b) Modality.t -> bool = fun _ -> true
-  let tangible : type a m b. (a, m, b) Modality.t -> bool = fun _ -> true
+  (* In the discrete case, we cannot make sharp tangible, since then it would be either discrete (if nonparametric) or bridge-preserving (if not), and it is neither (it is codiscrete, as ensured by its negative definition using discreteness of flat). *)
+
+  let translucent : type a m b. (a, m, b) Modality.t -> bool =
+   fun m -> V.tangible_sharp || transparent m
+
+  let tangible : type a m b. (a, m, b) Modality.t -> bool =
+   fun m -> V.tangible_sharp || transparent m
 end
 
-let install modes modalities =
+let install (module V : Variant) modes modalities =
   (match modes with
   | [ ty ] -> TestmodeGen.name := ty
   | [] -> ()
-  | _ -> failwith "wrong number of mode names for spatial mode theory");
+  | _ -> failwith ("wrong number of mode names for " ^ V.name ^ " mode theory"));
   let module Testmode = Mode.Generate (TestmodeGen) in
-  let module Flat = FlatGen (Testmode) in
-  let module Sharp = SharpGen (Testmode) in
+  let module Flat = FlatGen (V) (Testmode) in
+  let module Sharp = SharpGen (V) (Testmode) in
   (match modalities with
   | [ flat; sharp ] ->
       Flat.name := flat;
       Sharp.name := sharp
   | [] -> ()
-  | _ -> failwith "wrong number of modality names for spatial mode theory");
+  | _ -> failwith ("wrong number of modality names for " ^ V.name ^ " mode theory"));
   Modality.set_one_char true modalities;
   let module Flat = Modality.Generate (Flat) in
   let module Sharp = Modality.Generate (Sharp) in
-  Modalcell.choose_theory (module SpatialCells (Testmode) (Flat) (Sharp) : Modalcell.Theory);
-  Modality.choose_theory (module SpatialModalities (Testmode) (Flat) (Sharp) : Modality.Theory)
+  Modalcell.choose_theory (module SpatialCells (V) (Testmode) (Flat) (Sharp) : Modalcell.Theory);
+  Modality.choose_theory (module SpatialModalities (V) (Testmode) (Flat) (Sharp) : Modality.Theory)

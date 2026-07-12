@@ -1,11 +1,43 @@
 open Dim
 
-module DomGen = struct
-  let name = ref "DomType"
+module type Variant = sig
+  type nonparametric
 
+  val nonparametric : nonparametric D.t
+  val name : string
+  val transparent : bool
+end
+
+module Ordinary = struct
   type nonparametric = D.zero
 
   let nonparametric = D.zero
+  let name = "functor"
+  let transparent = false
+end
+
+module Transparent = struct
+  type nonparametric = D.zero
+
+  let nonparametric = D.zero
+  let name = "functor"
+  let transparent = true
+end
+
+module Discrete = struct
+  type nonparametric = D.one
+
+  let nonparametric = D.one
+  let name = "discrete functor"
+  let transparent = false
+end
+
+module DomGen (V : Variant) = struct
+  let name = ref "DomType"
+
+  type nonparametric = V.nonparametric
+
+  let nonparametric = V.nonparametric
 end
 
 module CodGen = struct
@@ -17,7 +49,8 @@ module CodGen = struct
 end
 
 module FunctorGen
-    (DomMode : Mode.Generated with module G := DomGen)
+    (V : Variant)
+    (DomMode : Mode.Generated with module G := DomGen(V))
     (CodMode : Mode.Generated with module G := CodGen) =
 struct
   type src = DomMode.t
@@ -27,15 +60,16 @@ struct
   let tgt = CodMode.mode
   let name = ref "○"
 
-  type nonparametric = D.zero
+  type nonparametric = V.nonparametric
 
-  let nonparametric = D.zero
+  let nonparametric = V.nonparametric
 end
 
 module Functorcell
-    (DomMode : Mode.Generated with module G := DomGen)
+    (V : Variant)
+    (DomMode : Mode.Generated with module G := DomGen(V))
     (CodMode : Mode.Generated with module G := CodGen)
-    (Functor : Modality.Generated with module G := FunctorGen(DomMode)(CodMode)) :
+    (Functor : Modality.Generated with module G := FunctorGen(V)(DomMode)(CodMode)) :
   Modalcell.Theory = struct
   let sinister : type a f b. (a, f, b) Modality.t -> (a, f, b) Modalcell.sinister option = function
     | Path (Zero, mode) -> Some (Modalcell.id_sinister mode)
@@ -54,20 +88,29 @@ module Functorcell
   let to_string : type a m n b. (a, m, n, b) Modalcell.t -> string = fun _ -> "id"
 end
 
-let install modes modalities =
+module FunctorModalities (V : Variant) : Modality.Theory = struct
+  let tangible _ = true
+  let pellucid _ = false
+  let transparent _ = V.transparent
+  let translucent _ = true
+end
+
+let install (module V : Variant) modes modalities =
+  let module Dom = DomGen (V) in
   (match modes with
   | [ dom; cod ] ->
-      DomGen.name := dom;
+      Dom.name := dom;
       CodGen.name := cod
   | [] -> ()
   | _ -> failwith "wrong number of mode names for functor mode theory");
-  let module DomMode = Mode.Generate (DomGen) in
+  let module DomMode = Mode.Generate (Dom) in
   let module CodMode = Mode.Generate (CodGen) in
-  let module CircGen = FunctorGen (DomMode) (CodMode) in
+  let module CircGen = FunctorGen (V) (DomMode) (CodMode) in
   (match modalities with
   | [ circ ] -> CircGen.name := circ
   | [] -> ()
   | _ -> failwith "wrong number of modality names for functor mode theory");
   Modality.set_one_char true modalities;
   let module Functor = Modality.Generate (CircGen) in
-  Modalcell.choose_theory (module Functorcell (DomMode) (CodMode) (Functor) : Modalcell.Theory)
+  Modalcell.choose_theory (module Functorcell (V) (DomMode) (CodMode) (Functor) : Modalcell.Theory);
+  Modality.choose_theory (module FunctorModalities (V) : Modality.Theory)

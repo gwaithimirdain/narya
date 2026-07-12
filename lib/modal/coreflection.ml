@@ -2,12 +2,33 @@ open Dim
 
 (* A coreflection, i.e. connected geometric morphism.  *)
 
-module DiscGen = struct
-  let name = ref "Disc"
+module type Variant = sig
+  type nonparametric
 
+  val nonparametric : nonparametric D.t
+  val name : string
+end
+
+module Ordinary = struct
   type nonparametric = D.zero
 
   let nonparametric = D.zero
+  let name = "coreflection"
+end
+
+module Discrete = struct
+  type nonparametric = D.one
+
+  let nonparametric = D.one
+  let name = "discrete coreflection"
+end
+
+module DiscGen (V : Variant) = struct
+  let name = ref "Disc"
+
+  type nonparametric = V.nonparametric
+
+  let nonparametric = V.nonparametric
 end
 
 module TypeGen = struct
@@ -19,7 +40,8 @@ module TypeGen = struct
 end
 
 module TriangleGen
-    (Disc : Mode.Generated with module G := DiscGen)
+    (V : Variant)
+    (Disc : Mode.Generated with module G := DiscGen(V))
     (Type : Mode.Generated with module G := TypeGen) =
 struct
   type src = Disc.t
@@ -29,13 +51,14 @@ struct
   let tgt = Type.mode
   let name = ref "△"
 
-  type nonparametric = D.zero
+  type nonparametric = V.nonparametric
 
-  let nonparametric = D.zero
+  let nonparametric = V.nonparametric
 end
 
 module BoxGen
-    (Disc : Mode.Generated with module G := DiscGen)
+    (V : Variant)
+    (Disc : Mode.Generated with module G := DiscGen(V))
     (Type : Mode.Generated with module G := TypeGen) =
 struct
   type src = Type.t
@@ -45,16 +68,17 @@ struct
   let tgt = Disc.mode
   let name = ref "□"
 
-  type nonparametric = D.zero
+  type nonparametric = V.nonparametric
 
-  let nonparametric = D.zero
+  let nonparametric = V.nonparametric
 end
 
 module CoreflectionCells
-    (Disc : Mode.Generated with module G := DiscGen)
+    (V : Variant)
+    (Disc : Mode.Generated with module G := DiscGen(V))
     (Type : Mode.Generated with module G := TypeGen)
-    (Triangle : Modality.Generated with module G := TriangleGen(Disc)(Type))
-    (Box : Modality.Generated with module G := BoxGen(Disc)(Type)) =
+    (Triangle : Modality.Generated with module G := TriangleGen(V)(Disc)(Type))
+    (Box : Modality.Generated with module G := BoxGen(V)(Disc)(Type)) =
 struct
   let disc = Disc.mode
   let typ = Type.mode
@@ -188,11 +212,12 @@ struct
 end
 
 module CoreflectionModalities
-    (Disc : Mode.Generated with module G := DiscGen)
+    (V : Variant)
+    (Disc : Mode.Generated with module G := DiscGen(V))
     (Type : Mode.Generated with module G := TypeGen)
-    (Triangle : Modality.Generated with module G := TriangleGen(Disc)(Type))
-    (Box : Modality.Generated with module G := BoxGen(Disc)(Type)) : Modality.Theory = struct
-  open CoreflectionCells (Disc) (Type) (Triangle) (Box)
+    (Triangle : Modality.Generated with module G := TriangleGen(V)(Disc)(Type))
+    (Box : Modality.Generated with module G := BoxGen(V)(Disc)(Type)) : Modality.Theory = struct
+  open CoreflectionCells (V) (Disc) (Type) (Triangle) (Box)
 
   let tangible _ = true
   let pellucid _ = false
@@ -212,27 +237,28 @@ module CoreflectionModalities
   let translucent _ = true
 end
 
-let install modes modalities =
+let install (module V : Variant) modes modalities =
+  let module Disc = DiscGen (V) in
   (match modes with
   | [ disc; ty ] ->
-      DiscGen.name := disc;
+      Disc.name := disc;
       TypeGen.name := ty
   | [] -> ()
-  | _ -> failwith "wrong number of mode names for coreflection mode theory");
-  let module Disc = Mode.Generate (DiscGen) in
+  | _ -> failwith ("wrong number of mode names for " ^ V.name ^ " mode theory"));
+  let module Disc = Mode.Generate (Disc) in
   let module Type = Mode.Generate (TypeGen) in
-  let module Triangle = TriangleGen (Disc) (Type) in
-  let module Box = BoxGen (Disc) (Type) in
+  let module Triangle = TriangleGen (V) (Disc) (Type) in
+  let module Box = BoxGen (V) (Disc) (Type) in
   (match modalities with
   | [ tri; box ] ->
       Triangle.name := tri;
       Box.name := box
   | [] -> ()
-  | _ -> failwith "wrong number of modality names for coreflection mode theory");
+  | _ -> failwith ("wrong number of modality names for " ^ V.name ^ " mode theory"));
   Modality.set_one_char true modalities;
   let module Triangle = Modality.Generate (Triangle) in
   let module Box = Modality.Generate (Box) in
   Modalcell.choose_theory
-    (module CoreflectionCells (Disc) (Type) (Triangle) (Box) : Modalcell.Theory);
+    (module CoreflectionCells (V) (Disc) (Type) (Triangle) (Box) : Modalcell.Theory);
   Modality.choose_theory
-    (module CoreflectionModalities (Disc) (Type) (Triangle) (Box) : Modality.Theory)
+    (module CoreflectionModalities (V) (Disc) (Type) (Triangle) (Box) : Modality.Theory)

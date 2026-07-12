@@ -80,13 +80,17 @@ let speclist =
     ( "-coreflector",
       Arg.Unit
         (fun () ->
-          install_mode_theory := Modal.Coreflector.install;
+          install_mode_theory :=
+            Modal.Coreflector.install
+              (module Modal.Coreflector.Ordinary : Modal.Coreflector.Variant);
           mode_theories := !mode_theories + 1),
       "Select the coreflector mode theory" );
     ( "-crisp",
       Arg.Unit
         (fun () ->
-          install_mode_theory := Modal.Coreflector.install;
+          install_mode_theory :=
+            Modal.Coreflector.install
+              (module Modal.Coreflector.Ordinary : Modal.Coreflector.Variant);
           mode_theories := !mode_theories + 1),
       "alias of -coreflector" );
     ( "-discrete-coreflector",
@@ -94,7 +98,9 @@ let speclist =
         (fun () ->
           hott_forbidden := Some "-discrete-coreflector";
           external_ok := `One "-discrete-coreflector";
-          install_mode_theory := Modal.Discrete_coreflector.install;
+          install_mode_theory :=
+            Modal.Coreflector.install
+              (module Modal.Coreflector.Discrete : Modal.Coreflector.Variant);
           mode_theories := !mode_theories + 1),
       "Select the nonparametric coreflector mode theory (requires -parametric, allows -external)" );
     ( "-reflector",
@@ -106,13 +112,15 @@ let speclist =
     ( "-spatial",
       Arg.Unit
         (fun () ->
-          install_mode_theory := Modal.Spatial.install;
+          install_mode_theory :=
+            Modal.Spatial.install (module Modal.Spatial.Ordinary : Modal.Spatial.Variant);
           mode_theories := !mode_theories + 1),
       "Select the spatial mode theory (coreflector ♭ left adjoint to reflector ♯)" );
     ( "-discrete-spatial",
       Arg.Unit
         (fun () ->
-          install_mode_theory := Modal.Discrete_spatial.install;
+          install_mode_theory :=
+            Modal.Spatial.install (module Modal.Spatial.Discrete : Modal.Spatial.Variant);
           external_ok := `None "-discrete-spatial";
           hott_forbidden := Some "-discrete-spatial";
           mode_theories := !mode_theories + 1),
@@ -120,19 +128,22 @@ let speclist =
     ( "-functor",
       Arg.Unit
         (fun () ->
-          install_mode_theory := Modal.Functor.install;
+          install_mode_theory :=
+            Modal.Functor.install (module Modal.Functor.Ordinary : Modal.Functor.Variant);
           mode_theories := !mode_theories + 1),
       "Select the functor mode theory" );
     ( "-transparent-functor",
       Arg.Unit
         (fun () ->
-          install_mode_theory := Modal.Transparent_functor.install;
+          install_mode_theory :=
+            Modal.Functor.install (module Modal.Functor.Transparent : Modal.Functor.Variant);
           mode_theories := !mode_theories + 1),
       "Select the transparent functor mode theory" );
     ( "-discrete-functor",
       Arg.Unit
         (fun () ->
-          install_mode_theory := Modal.Discrete_functor.install;
+          install_mode_theory :=
+            Modal.Functor.install (module Modal.Functor.Discrete : Modal.Functor.Variant);
           external_ok := `None "-discrete-functor";
           hott_forbidden := Some "-discrete-functor";
           mode_theories := !mode_theories + 1),
@@ -146,7 +157,9 @@ let speclist =
     ( "-coreflection",
       Arg.Unit
         (fun () ->
-          install_mode_theory := Modal.Coreflection.install;
+          install_mode_theory :=
+            Modal.Coreflection.install
+              (module Modal.Coreflection.Ordinary : Modal.Coreflection.Variant);
           mode_theories := !mode_theories + 1),
       "Select the coreflection mode theory" );
     ( "-discrete-coreflection",
@@ -154,14 +167,17 @@ let speclist =
         (fun () ->
           hott_forbidden := Some "-discrete-coreflector";
           external_ok := `One "-discrete-coreflector";
-          install_mode_theory := Modal.Discrete_coreflection.install;
+          install_mode_theory :=
+            Modal.Coreflection.install
+              (module Modal.Coreflection.Discrete : Modal.Coreflection.Variant);
           mode_theories := !mode_theories + 1),
       "Select the nonparametric coreflection mode theory (requires -parametric, allows -external)"
     );
     ( "-tconn",
       Arg.Unit
         (fun () ->
-          install_mode_theory := Modal.Tconn.install;
+          install_mode_theory :=
+            Modal.Tconn.install (module Modal.Tconn.Ordinary : Modal.Tconn.Variant);
           mode_theories := !mode_theories + 1),
       "Select the totally connected geometric morphism mode theory" );
     ( "-discrete-tconn",
@@ -170,7 +186,8 @@ let speclist =
           hott_forbidden := Some "-discrete-tconn";
           external_ok := `One "-discrete-tconn";
           arity_ok := `One "-discrete-tconn";
-          install_mode_theory := Modal.Discrete_tconn.install;
+          install_mode_theory :=
+            Modal.Tconn.install (module Modal.Tconn.Discrete : Modal.Tconn.Variant);
           mode_theories := !mode_theories + 1),
       "Select the discrete tconn mode theory (requires -parametric and -arity 1, allows -external)"
     );
@@ -185,7 +202,8 @@ let speclist =
           external_ok := `One "-dtt";
           arity_ok := `One "-dtt";
           hott_forbidden := Some "-dtt";
-          install_mode_theory := Modal.Discrete_tconn.install;
+          install_mode_theory :=
+            Modal.Tconn.install (module Modal.Tconn.Discrete : Modal.Tconn.Variant);
           mode_theories := !mode_theories + 1),
       "Abbreviation for -parametric -arity 1 -direction d -external -discrete-tconn" );
     ("-modes", Arg.Set_string modes, "set the names of modes");
