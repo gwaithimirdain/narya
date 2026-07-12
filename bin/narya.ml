@@ -173,6 +173,21 @@ let speclist =
           mode_theories := !mode_theories + 1),
       "Select the nonparametric coreflection mode theory (requires -parametric, allows -external)"
     );
+    ( "-local",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory :=
+            Modal.Local.install (module Modal.Local.Ordinary : Modal.Local.Variant);
+          mode_theories := !mode_theories + 1),
+      "Select the local geometric morphism mode theory" );
+    ( "-discrete-local",
+      Arg.Unit
+        (fun () ->
+          hott_forbidden := Some "-discrete-local";
+          install_mode_theory :=
+            Modal.Local.install (module Modal.Local.Discrete : Modal.Local.Variant);
+          mode_theories := !mode_theories + 1),
+      "Select the discrete local mode theory (requires -parametric)" );
     ( "-tconn",
       Arg.Unit
         (fun () ->
