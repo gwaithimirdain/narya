@@ -7,6 +7,7 @@ module type Variant = sig
 
   val nonparametric : nonparametric D.t
   val name : string
+  val locker : bool
 end
 
 module Ordinary = struct
@@ -14,6 +15,7 @@ module Ordinary = struct
 
   let nonparametric = D.zero
   let name = "coreflection"
+  let locker = false
 end
 
 module Discrete = struct
@@ -21,6 +23,7 @@ module Discrete = struct
 
   let nonparametric = D.one
   let name = "discrete coreflection"
+  let locker = true
 end
 
 module DiscGen (V : Variant) = struct
@@ -87,15 +90,14 @@ struct
   let tri = Modality.of_gen Triangle.modality
   let box = Modality.of_gen Box.modality
 
-  (* The two-generator composite modalities.  A modality Path (Suc (Suc (Zero, X), Y), tgt) applies Y first (source side) and then X, i.e. it is X ∘ Y.  So: tribox = △∘□ (Type→Type), tridia = △∘◇ (Type→Type), boxtri = □∘△ (Disc→Disc), diatri = ◇∘△ (Disc→Disc). *)
+  (* The two-generator composite modalities.  A modality Path (Suc (Suc (Zero, X), Y), tgt) applies Y first (source side) and then X, i.e. it is X ∘ Y.  So: tribox = △∘□ (Type→Type), boxtri = □∘△ (Disc→Disc). *)
   let tribox = Modality.Path (Suc (Suc (Zero, Triangle.modality), Box.modality), typ)
   let boxtri = Modality.Path (Suc (Suc (Zero, Box.modality), Triangle.modality), disc)
 
   (* The generating 2-cells (source ⇒ target).  Both isomorphisms (◇△ ≅ id and □△ ≅ id) get an explicit inverse generator; since the theory is posetal, any parallel cell acts identically, so it does not matter that these are freely generated rather than literally inverse.
        box_counit : △□ ⇒ id_Type
        box_unit : id_Disc ⇒ □△ (iso)        box_unit_inv : □△ ⇒ id_Disc
-       diamond_counit : ◇△ ⇒ id_Disc (iso)  diamond_counit_inv : id_Disc ⇒ ◇△
-       box_to_dia : □ ⇒ ◇ *)
+  *)
   let box_counit = Modalcell.of_gen (Modalcell.generate tribox (Modality.id typ))
   let box_unit = Modalcell.of_gen (Modalcell.generate (Modality.id disc) boxtri)
   let box_unit_inv = Modalcell.of_gen (Modalcell.generate boxtri (Modality.id disc))
@@ -140,7 +142,7 @@ struct
         ('a, 'nf, 'b) Modality.t * ('a, 'm, 'nf, 'b) Modalcell.t * ('a, 'nf, 'm, 'b) Modalcell.t
         -> ('a, 'm, 'b) normalize
 
-  (* Prepend a generator g (on the source side, i.e. applied first) to an already-normalized modality, and renormalize.  The only reductions are ◇△ ≅ id and □△ ≅ id, which fire when g = △ is prepended to a normal form beginning with ◇ or □.  We are given the isomorphisms g·rest ⇒ g·nf (g_to) and g·nf ⇒ g·rest (g_from) obtained by prewhiskering the sub-isomorphisms by g, and we postcompose the reduction cell between g·nf and its normal form nf'. *)
+  (* Prepend a generator g (on the source side, i.e. applied first) to an already-normalized modality, and renormalize.  The only reduction is □△ ≅ id, which fires when g = △ is prepended to a normal form beginning with □.  We are given the isomorphisms g·rest ⇒ g·nf (g_to) and g·nf ⇒ g·rest (g_from) obtained by prewhiskering the sub-isomorphisms by g, and we postcompose the reduction cell between g·nf and its normal form nf'. *)
   let prepend : type c gg a nf b gm.
       (c, gg, a) Modality.Gen.t ->
       (a, nf, b) Modality.t ->
@@ -193,7 +195,7 @@ struct
           Modalcell.prewhisker (Suc (Zero, g)) (Suc (Zero, g)) from_nf (Modality.of_gen g) in
         prepend g nf g_to g_from
 
-  (* Every composite modality is isomorphic to a normal form (id, a generator, △□, or △◇).  find_unique normalizes both modalities, looks up the bridge 2-cell between the normal forms, and composes with the isomorphisms. *)
+  (* Every composite modality is isomorphic to a normal form (id, a generator or △□).  find_unique normalizes both modalities, looks up the bridge 2-cell between the normal forms, and composes with the isomorphisms. *)
   let find_unique : type a m n b.
       (a, m, b) Modality.t -> (a, n, b) Modality.t -> (a, m, n, b) Modalcell.t option =
    fun x y ->
@@ -204,7 +206,12 @@ struct
     | None -> None
 
   let parametric_locker : type a. a Mode.t -> (a Modalcell.parametric_locker, string) Result.t =
-   fun _ -> Error "coreflection"
+   fun m ->
+    if V.locker then
+      match Mode.compare m Type.mode with
+      | Eq -> Ok (Modalcell.Locker (tribox, box_counit))
+      | Neq -> Ok (Locker (Modality.id m, Id (Modality.id m)))
+    else Error "coreflection"
 
   let to_string : type a m n b. (a, m, n, b) Modalcell.t -> string =
    fun m ->

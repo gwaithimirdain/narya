@@ -6,6 +6,7 @@ module type Variant = sig
 
   val nonparametric : nonparametric D.t
   val name : string
+  val locker : bool
 end
 
 module Ordinary = struct
@@ -13,6 +14,7 @@ module Ordinary = struct
 
   let nonparametric = D.zero
   let name = "coreflector"
+  let locker = false
 end
 
 module Discrete = struct
@@ -20,6 +22,7 @@ module Discrete = struct
 
   let nonparametric = D.one
   let name = "discrete coreflector"
+  let locker = true
 end
 
 (* We define all the "generator" modules at top-level, but don't call the generation code until the "install" function, so that only one mode theory actually gets installed at runtime.  Thus, each generator module has to be parametrized over the results of generation of the previous ones. *)
@@ -97,7 +100,12 @@ struct
         | Neq -> None)
 
   let parametric_locker : type a. a Mode.t -> (a Modalcell.parametric_locker, string) Result.t =
-   fun _ -> Error "coreflector"
+   fun m ->
+    if V.locker then
+      match Mode.compare m Testmode.mode with
+      | Eq -> Ok (Modalcell.Locker (comonad, counit))
+      | Neq -> Ok (Locker (Modality.id m, Id (Modality.id m)))
+    else Error "coreflector"
 
   let to_string : type a m n b. (a, m, n, b) Modalcell.t -> string =
    fun m ->
