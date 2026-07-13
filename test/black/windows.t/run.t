@@ -2,33 +2,39 @@ Composition of modal operators is preserved up to isomorphism:
 
   $ narya -v -composed-functors compose.ny
    ￫ info[I0000]
-   ￮ constant F defined
+   ￮ constant ○ defined
   
    ￫ info[I0000]
-   ￮ constant G defined
+   ￮ constant ▱ defined
   
    ￫ info[I0000]
-   ￮ constant GF defined
+   ￮ constant ▱○ defined
   
    ￫ info[I0000]
-   ￮ constant fwd defined
+   ￮ constant colax defined
   
    ￫ info[I0000]
-   ￮ constant bwd defined
+   ￮ constant lax defined
   
    ￫ info[I0000]
-   ￮ constant fwd∘bwd defined
+   ￮ constant lax′ defined
   
    ￫ info[I0000]
-   ￮ constant bwd∘fwd defined
+   ￮ constant lax″ defined
+  
+   ￫ info[I0000]
+   ￮ constant lax∘colax defined
+  
+   ￫ info[I0000]
+   ￮ constant colax∘lax defined
   
 
 Matching with the wrong window modality is an error:
 
-  $ narya -composed-functors compose.ny -e "def fwd2 (X :▱○| AType) (u : G (F X)) : GF X ≔ match u [ g. y ↦ match (y :▱○| _) [ f. x ↦ gf. x ]]"
+  $ narya -composed-functors compose.ny -e "def fwd2 (X :▱○| AType) (u : ▱ (○ X)) : ▱○ X ≔ match u [ par. y ↦ match (y :▱○| _) [ circ. x ↦ parcirc. x ]]"
    ￫ error[E1701]
    ￭ command-line exec string
-   1 | def fwd2 (X :▱○| AType) (u : G (F X)) : GF X ≔ match u [ g. y ↦ match (y :▱○| _) [ f. x ↦ gf. x ]]
+   1 | def fwd2 (X :▱○| AType) (u : ▱ (○ X)) : ▱○ X ≔ match u [ par. y ↦ match (y :▱○| _) [ circ. x ↦ parcirc. x ]]
      ^ modality mismatch in checking implicit match (▱○ ≠ ▱)
   
   [1]

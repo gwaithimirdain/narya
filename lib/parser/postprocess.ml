@@ -166,21 +166,24 @@ and process_apps : type n lt ls rt rs.
       with Failure _ -> fatal (Invalid_field (String.concat "." ("" :: fld :: pbij))))
   | _ -> process_apps_head ctx tm args
 
-(* Extract the term and locking-modality name from the observations of a modal ascription "(x :f| _)".  Returns None for a non-modal ascription. *)
+(* Extract the term and locking-modality name from the observations of a modal ascription "(x :f| _)". *)
 and args_of_ascvar :
     ?loc:Asai.Range.t ->
     observation list ->
     wrapped_parse * string located list located * wrapped_parse =
  fun ?loc -> function
   | [
-      Token (LParen, _);
+      Token (ldelim, _);
       Term x;
       Token (Colon, _);
       Term modality;
       Token (Op "|", _);
       Term ty;
-      Token (RParen, _);
-    ] -> (Wrap x, modality_name modality, Wrap ty)
+      Token (rdelim, _);
+    ] -> (
+      match (ldelim, rdelim) with
+      | LParen, RParen -> (Wrap x, modality_name modality, Wrap ty)
+      | _ -> fatal ?loc (Parse_error "invalid braces"))
   | _ -> fatal ?loc (Anomaly "invalid notation arguments for ascvar")
 
 (* Extract a modality name (a sequence of identifiers) from its parse tree. *)
