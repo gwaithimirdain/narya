@@ -71,7 +71,6 @@ module ErrOpt = struct
     | Some () -> Some (Ok ())
 end
 
-module ListM = Mlist.Monadic (Err)
 module BwdM = Mbwd.Monadic (Err)
 
 (* Eta-expanding equality checks.  In all functions, the integer is the current De Bruijn level, i.e. the length of the current context (we don't need any other information about the context). *)
