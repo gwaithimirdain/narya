@@ -32,50 +32,40 @@ module Heter = struct
     | _ :: xs -> Cons (tlist xs)
 end
 
-module Applicatic (M : Applicative.Plain) = struct
-  open Applicative.Ops (M)
-
-  let rec pmapM : type x xs ys.
-      ((x, xs) cons Hlist.t -> ys Hlist.t M.t) ->
-      (x, xs) cons Heter.ht ->
-      ys Tlist.t ->
-      ys Heter.ht M.t =
-   fun f xss ys ->
-    match xss with
-    | Emp :: _ -> return (Heter.empty ys)
-    | Snoc (xs, x) :: xss ->
-        M.apply
-          (M.zip (fun () -> pmapM f (xs :: Heter.head xss) ys) (fun () -> f (x :: Heter.tail xss)))
-        @@ fun (fxs, fx) -> Heter.snoc fxs fx
-
-  let miterM : type x xs. ((x, xs) cons Hlist.t -> unit M.t) -> (x, xs) cons Heter.ht -> unit M.t =
-   fun f xss -> M.apply (pmapM (fun x -> M.apply (f x) (fun () -> [])) xss Nil) (fun [] -> ())
-
-  let mmapM : type x xs y. ((x, xs) cons Hlist.t -> y M.t) -> (x, xs) cons Heter.ht -> y Bwd.t M.t =
-   fun f xs ->
-    M.apply (pmapM (fun x -> M.apply (f x) (fun y -> [ y ])) xs (Cons Nil)) (fun [ ys ] -> ys)
-end
-
-module Monadic (M : Monad.Plain) = struct
-  module A = Applicative.OfMonad (M)
-  include Applicatic (A)
-end
-
-let pmap : type x xs ys.
+let rec pmap : type x xs ys.
     ((x, xs) cons Hlist.t -> ys Hlist.t) -> (x, xs) cons Heter.ht -> ys Tlist.t -> ys Heter.ht =
  fun f xss ys ->
-  let open Monadic (Monad.Identity) in
-  pmapM f xss ys
+  match xss with
+  | Emp :: _ -> Heter.empty ys
+  | Snoc (xs, x) :: xss ->
+      let fxs = pmap f (xs :: Heter.head xss) ys in
+      let fx = f (x :: Heter.tail xss) in
+      Heter.snoc fxs fx
 
 let miter : type x xs. ((x, xs) cons Hlist.t -> unit) -> (x, xs) cons Heter.ht -> unit =
  fun f xss ->
-  let open Monadic (Monad.Identity) in
-  miterM f xss
+  let [] =
+    pmap
+      (fun x ->
+        f x;
+        [])
+      xss Nil in
+  ()
 
 let mmap : type x xs y. ((x, xs) cons Hlist.t -> y) -> (x, xs) cons Heter.ht -> y Bwd.t =
  fun f xs ->
-  let open Monadic (Monad.Identity) in
-  mmapM f xs
+  let [ ys ] = pmap (fun x -> [ f x ]) xs (Cons Nil) in
+  ys
+
+let mfold_left : type x xs acc.
+    (acc -> (x, xs) cons Hlist.t -> acc) -> acc -> (x, xs) cons Heter.ht -> acc =
+ fun f start xss ->
+  let acc = ref start in
+  miter (fun xs -> acc := f !acc xs) xss;
+  !acc
+
+let fold_left : type x acc. (acc -> x -> acc) -> acc -> x Bwd.t -> acc =
+ fun f start xs -> mfold_left (fun acc [ x ] -> f acc x) start [ xs ]
 
 let map : type x y. (x -> y) -> x Bwd.t -> y Bwd.t = fun f xs -> mmap (fun [ x ] -> f x) [ xs ]
 

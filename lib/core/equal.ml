@@ -71,8 +71,6 @@ module ErrOpt = struct
     | Some () -> Some (Ok ())
 end
 
-module BwdM = Mbwd.Monadic (Err)
-
 (* Eta-expanding equality checks.  In all functions, the integer is the current De Bruijn level, i.e. the length of the current context (we don't need any other information about the context). *)
 
 (* Compare two normal forms that are *assumed* to have the same type, or at least that the type of the first is a subtype of the type of the second. *)
@@ -136,28 +134,31 @@ and equal_at : type mode a b.
                 (act_value x pinv idc, act_value y pinv idc, gact_ty None ty pinv idc) in
               (* Now we take the projections and compare them at appropriate types.  It suffices to use the fields of x when computing the types of the fields, since we proceed to check the fields for equality *in order* and thus by the time we are checking equality of any particular field of x and y, the previous fields of x and y are already known to be equal, and the type of the current field can only depend on these.  (This latter is a semantic constraint on the kinds of generalized records that can sensibly admit eta-conversion.)  In addition, records with eta cannot have higher fields, so as field insertion it suffices to use ins_zero on the substitution dimension. *)
               let fldins = ins_zero (cod_left_ins ins) in
-              BwdM.miterM
-                (fun [
-                       CodatafieldAbwd.Entry
-                         (type i)
-                         ((fld, Lower (adj, _, _)) :
-                           i Field.t * (i, mode * a * n * has_eta) Codatafield.t);
-                     ] ->
-                  (* For a modal field, both terms are keyed by the adjunction unit to put them into a context where the modal field can be projected, and the projections are compared in the context locked by the right adjoint.  For ordinary fields the unit is the identity and the lock is trivial. *)
-                  let (Adjunction { left; right; unit; _ }) = adj in
-                  (* A modal field whose (left adjoint) modality is nonparametric disappears at a dimension it filters nontrivially, so it plays no role in checikng equality. *)
-                  let m = cod_left_ins ins in
-                  let (Has_filter left_filter) = Modality.filter left m in
-                  match Modality.filter_is_trivial m left_filter with
-                  | None -> return ()
-                  | Some Eq ->
-                      let xu = act_value x (id_deg D.zero) unit in
-                      let yu = act_value y (id_deg D.zero) unit in
-                      let tyu = gact_ty None ty (id_deg D.zero) unit in
-                      let (Locked (_, lctx)) = Ctx.lock ctx right in
-                      equal_at lctx (field_term left xu fld fldins) (field_term left yu fld fldins)
-                        (tyof_field left (Ok xu) tyu fld ~shuf:Trivial fldins))
-                [ fields ]
+              let rec do_fields = function
+                | Bwd.Emp -> return ()
+                | Snoc
+                    ( fields,
+                      CodatafieldAbwd.Entry
+                        (type i)
+                        ((fld, Lower (adj, _, _)) :
+                          i Field.t * (i, mode * a * n * has_eta) Codatafield.t) ) -> (
+                    let* () = do_fields fields in
+                    (* For a modal field, both terms are keyed by the adjunction unit to put them into a context where the modal field can be projected, and the projections are compared in the context locked by the right adjoint.  For ordinary fields the unit is the identity and the lock is trivial. *)
+                    let (Adjunction { left; right; unit; _ }) = adj in
+                    (* A modal field whose (left adjoint) modality is nonparametric disappears at a dimension it filters nontrivially, so it plays no role in checikng equality. *)
+                    let m = cod_left_ins ins in
+                    let (Has_filter left_filter) = Modality.filter left m in
+                    match Modality.filter_is_trivial m left_filter with
+                    | None -> return ()
+                    | Some Eq ->
+                        let xu = act_value x (id_deg D.zero) unit in
+                        let yu = act_value y (id_deg D.zero) unit in
+                        let tyu = gact_ty None ty (id_deg D.zero) unit in
+                        let (Locked (_, lctx)) = Ctx.lock ctx right in
+                        equal_at lctx (field_term left xu fld fldins)
+                          (field_term left yu fld fldins)
+                          (tyof_field left (Ok xu) tyu fld ~shuf:Trivial fldins)) in
+              do_fields fields
         (* At a codatatype without eta, there are no kinetic structs, only comatches, and those are not compared componentwise, only as neutrals, since they are generative. *)
         | Noeta -> equal_val ctx x y)
     (* At a higher-dimensional version of a discrete datatype, any two terms are equal.  Note that we do not check here whether discreteness is on: that affects datatypes when they are *defined*, not when they are used. *)

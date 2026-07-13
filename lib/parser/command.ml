@@ -1133,20 +1133,15 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                   | Zero -> (`Normal, Token.Mapsto, Builtins.abs)
                   | Pos _ -> (`Cube, Token.DblMapsto, Builtins.cubeabs) in
                 (* Uniquify the variable names relative to the context *)
-                let module NameState = Monad.State (struct
-                  type t = Names.wrapped
-                end) in
-                let module M = Mbwd.Monadic (NameState) in
-                let xs, _ =
-                  M.mmapM
-                    (fun [ x ] ->
-                      let open Monad.Ops (NameState) in
-                      let* (Wrap names) = NameState.get in
-                      let x, names = Names.add_cube dim names x in
-                      let* () = NameState.put (Wrap names) in
-                      return x)
-                    [ Domvars.get_pi_vars ctx cube Emp ety ]
-                    (Wrap names) in
+                let names = ref (Wrap names : Names.wrapped) in
+                let xs =
+                  Mbwd.map
+                    (fun x ->
+                      let (Wrap old_names) = !names in
+                      let x, new_names = Names.add_cube dim old_names x in
+                      names := Wrap new_names;
+                      x)
+                    (Domvars.get_pi_vars ctx cube Emp ety) in
                 let vars =
                   unparse_abs
                     (Bwd.map (fun x -> (x, `Explicit)) xs)
