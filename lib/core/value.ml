@@ -645,6 +645,9 @@ let rec restrict_keys : type mode mu cod k b bc.
     (mode, mu, cod, k, b) restrict_keys =
  fun env (Plus_with_locks (bc, llc)) ->
   match (bc, llc, env) with
+  (* If the extension is exhausted but the top of the environment is a key over a nonidentity modality, that key corresponds to a lock in the base context itself (such as an ambient modal annotation), not to the extension, so we stop and leave it in the environment. *)
+  | Zero, Zero _, (Key (_, _, Plus_lock (Suc _, _)) as env) ->
+      Restrict_keys (env, Modalcell.id2 (mode_env env), Modalcell.id2 (mode_env env))
   (* If we encounter a key, we accumulate it, consuming the corresponding locks from the codomain-context extension.  Note that the extension could be identity here: we continue accumulating keys until we run out of keys that we *could* include, not just until we run out of nonidentity locks in the codomain. *)
   | b_cn, llcn, Key (env, key, Plus_lock (ln, bc_n)) -> (
       let lln = locks_lock ln in
