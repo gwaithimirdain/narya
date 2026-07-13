@@ -371,9 +371,9 @@ let rec unparse : type mode n lt ls rt rs s.
       let tm = unparse (Names.add_lock vars plus) tm No.Interval.entire No.Interval.entire in
       (* If a let-in doesn't fit in its interval, we have to parenthesize it. *)
       let x, vars = Names.add_cube D.zero vars (binder_name_of_option x) in
-      match No.Interval.contains ri No.minus_omega with
+      match No.Interval.contains ri No.minus_omega_plus_one with
       | Some right_ok ->
-          let body = unparse vars body No.Interval.entire ri in
+          let body = unparse vars body (interval_right letin) ri in
           unlocated
             (prefix ~notn:letin
                ~inner:
@@ -381,8 +381,8 @@ let rec unparse : type mode n lt ls rt rs s.
                     (wstok Let, Emp <: Term (unparse_var x) <: mktok Coloneq <: Term tm, wstok In))
                ~last:body ~right_ok)
       | None ->
-          let body = unparse vars body No.Interval.entire No.Interval.entire in
-          let right_ok = No.le_refl No.minus_omega in
+          let body = unparse vars body (interval_right letin) No.Interval.entire in
+          let right_ok = No.minusomega_lt_minusomegaplusone in
           parenthesize
             (unlocated
                (prefix ~notn:letin
@@ -709,19 +709,22 @@ and unparse_lam_done : type mode n lt ls rt rs s.
     | `Cube -> (cubeabs, Token.DblMapsto)
     | `Normal -> (abs, Mapsto) in
   (* Of course, if we don't fit in the tightness interval, we have to parenthesize. *)
-  match (No.Interval.contains li No.minus_omega, No.Interval.contains ri No.minus_omega) with
+  match
+    ( No.Interval.contains li No.minus_omega_plus_one,
+      No.Interval.contains ri No.minus_omega_plus_one )
+  with
   | Some left_ok, Some right_ok ->
-      let li_ok = No.lt_trans Any_strict left_ok No.minusomega_lt_plusomega in
-      let first = unparse_abs xs li li_ok No.minusomega_lt_plusomega in
-      let last = unparse vars body No.Interval.entire ri in
+      let li_ok = No.lt_trans Any_strict left_ok No.minusomegaplusone_lt_plusomega in
+      let first = unparse_abs xs li li_ok No.minusomegaplusone_lt_plusomega in
+      let last = unparse vars body (interval_right notn) ri in
       unlocated (infix ~notn ~first ~inner:(Single (wstok mapsto)) ~last ~left_ok ~right_ok)
   | _ ->
       let first =
         unparse_abs xs No.Interval.entire (No.le_plusomega No.minus_omega)
-          No.minusomega_lt_plusomega in
-      let last = unparse vars body No.Interval.entire No.Interval.entire in
-      let left_ok = No.le_refl No.minus_omega in
-      let right_ok = No.le_refl No.minus_omega in
+          No.minusomegaplusone_lt_plusomega in
+      let last = unparse vars body (interval_right notn) No.Interval.entire in
+      let left_ok = No.minusomega_lt_minusomegaplusone in
+      let right_ok = No.minusomega_lt_minusomegaplusone in
       parenthesize
         (unlocated (infix ~notn ~first ~inner:(Single (wstok mapsto)) ~last ~left_ok ~right_ok))
 

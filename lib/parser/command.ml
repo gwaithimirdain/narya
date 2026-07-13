@@ -1140,12 +1140,13 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                   unparse_abs
                     (Bwd.map (fun x -> (x, `Explicit)) xs)
                     { strictness = No.Nonstrict; endpoint = No.minus_omega }
-                    (No.minusomega_le No.plus_omega) No.minusomega_lt_plusomega in
+                    (No.minusomega_le No.plus_omega) No.minusomegaplusone_lt_plusomega in
                 locate_opt None
                 @@ infix ~notn ~first:vars
                      ~inner:(Single (Left (mapsto, ([], None))))
-                     ~last:ehole ~left_ok:(No.le_refl No.minus_omega)
-                     ~right_ok:(No.le_refl No.minus_omega)
+                     ~last:(hole (interval_right notn) No.Interval.entire)
+                     ~left_ok:No.minusomega_lt_minusomegaplusone
+                     ~right_ok:No.minusomega_lt_minusomegaplusone
             | Canonical (_, Codata { eta; fields; _ }, ins, _) -> (
                 let m = cod_left_ins ins in
                 let do_field : type a n et.

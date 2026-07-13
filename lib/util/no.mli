@@ -4,6 +4,7 @@ type zero
 type 'a plus
 type 'a minus
 type minus_omega
+type minus_omega_plus_one
 type plus_omega
 type _ t
 type one = zero plus
@@ -37,6 +38,7 @@ val eight : eight t
 val minus_one : minus_one t
 val minus_two : minus_two t
 val minus_omega : minus_omega t
+val minus_omega_plus_one : minus_omega_plus_one t
 val plus_omega : plus_omega t
 val one_half : one_half t
 val one_fourth : one_fourth t
@@ -60,6 +62,9 @@ val minusomega_le : 'a t -> (minus_omega, nonstrict, 'a) lt
 val minusomega_lt_plusomega : (minus_omega, strict, plus_omega) lt
 val zero_lt_plusomega : (zero, 's, plus_omega) lt
 val minusomega_lt_zero : (minus_omega, 's, zero) lt
+val minusomega_lt_minusomegaplusone : (minus_omega, 's, minus_omega_plus_one) lt
+val minusomegaplusone_lt_zero : (minus_omega_plus_one, 's, zero) lt
+val minusomegaplusone_lt_plusomega : (minus_omega_plus_one, strict, plus_omega) lt
 
 type (_, _, _) strict_trans =
   | Strict_any : (strict, 'a, 'b) strict_trans
