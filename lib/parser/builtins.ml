@@ -237,13 +237,14 @@ let () =
 (* Abstractions (and cube abstractions) are encoded as a right-associative infix operator that inspects its left-hand argument deeply before processing it, expecting it to look like an application spine of variables, and then instead binds those variables in its right-hand argument. *)
 
 type (_, _, _) identity +=
-  | Abs : (No.strict opn, No.minus_omega, No.nonstrict opn) identity
-  | Cubeabs : (No.strict opn, No.minus_omega, No.nonstrict opn) identity
+  | Abs : (No.strict opn, No.minus_omega_plus_one, No.nonstrict opn) identity
+  | Cubeabs : (No.strict opn, No.minus_omega_plus_one, No.nonstrict opn) identity
 
-let abs : (No.strict opn, No.minus_omega, No.nonstrict opn) notation = (Abs, Infixr No.minus_omega)
+let abs : (No.strict opn, No.minus_omega_plus_one, No.nonstrict opn) notation =
+  (Abs, Infixr No.minus_omega_plus_one)
 
-let cubeabs : (No.strict opn, No.minus_omega, No.nonstrict opn) notation =
-  (Cubeabs, Infixr No.minus_omega)
+let cubeabs : (No.strict opn, No.minus_omega_plus_one, No.nonstrict opn) notation =
+  (Cubeabs, Infixr No.minus_omega_plus_one)
 
 type _ extended_ctx =
   | Extctx :
@@ -391,10 +392,11 @@ let process_abs cube ctx obs _loc =
 (* Let-in doesn't need to be right-associative in order to chain, because it is left-closed, but we make it right-associative anyway for consistency.  *)
 
 type (_, _, _) identity +=
-  | Let : (closed, No.minus_omega, No.nonstrict opn) identity
-  | Letrec : (closed, No.minus_omega, No.nonstrict opn) identity
+  | Let : (closed, No.minus_omega_plus_one, No.nonstrict opn) identity
+  | Letrec : (closed, No.minus_omega_plus_one, No.nonstrict opn) identity
 
-let letin : (closed, No.minus_omega, No.nonstrict opn) notation = (Let, Prefixr No.minus_omega)
+let letin : (closed, No.minus_omega_plus_one, No.nonstrict opn) notation =
+  (Let, Prefixr No.minus_omega_plus_one)
 
 let process_let : type n.
     (string option, n) Bwv.t -> observation list -> Asai.Range.t option -> n check located =
@@ -460,7 +462,8 @@ let letin_tree =
    Let rec
  ******************** *)
 
-let letrec : (closed, No.minus_omega, No.nonstrict opn) notation = (Letrec, Prefixr No.minus_omega)
+let letrec : (closed, No.minus_omega_plus_one, No.nonstrict opn) notation =
+  (Letrec, Prefixr No.minus_omega_plus_one)
 
 type (_, _) letrec_terms =
   | Letrec_terms :
