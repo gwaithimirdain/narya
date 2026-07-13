@@ -65,9 +65,9 @@ let universes : (string * Mode.wrapped * (closed, No.plus_omega, closed) notatio
    Ascription
  ******************** *)
 
-type (_, _, _) identity += Asc : (No.strict opn, No.minus_omega, No.strict opn) identity
+type (_, _, _) identity += Asc : (No.strict opn, No.minus_omega, No.nonstrict opn) identity
 
-let asc : (No.strict opn, No.minus_omega, No.strict opn) notation = (Asc, Infix No.minus_omega)
+let asc : (No.strict opn, No.minus_omega, No.nonstrict opn) notation = (Asc, Infixr No.minus_omega)
 
 let () =
   make asc
