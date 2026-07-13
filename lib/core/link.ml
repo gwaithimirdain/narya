@@ -166,7 +166,7 @@ and env : type mode a n b. (File.t -> File.t) -> (mode, a, n, b) env -> (mode, a
           values = Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ xs ]);
         }
   | Key k -> Key { k with env = env f k.env }
-  | Prekey (e, cell) -> Prekey (env f e, cell)
+  | Prekey k -> Prekey { k with env = env f k.env }
 
 and entry : type dom modality mode b f mn bm.
     (File.t -> File.t) ->

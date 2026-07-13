@@ -1467,7 +1467,10 @@ and eval_env : type mode a q n qn b.
   | Key { env = tmenv; cell; plus_src; plus_tgt } ->
       let (Restrict_keys (env, keys, pre)) = restrict_keys env plus_tgt in
       prekey_env (Key (eval_env env q_n tmenv, Modalcell.vcomp keys cell, plus_src)) pre
-  | Prekey (tmenv, cell) -> prekey_env (eval_env env q_n tmenv) cell
+  (* A term prekey is evaluated just like a key, except that the composite cell mediates the value environment on the domain side, before evaluating the inner term environment, rather than being wrapped around the result on the codomain side. *)
+  | Prekey { env = tmenv; cell; plus_src; plus_tgt } ->
+      let (Restrict_keys (env, keys, pre)) = restrict_keys env plus_tgt in
+      prekey_env (eval_env (key_env env (Modalcell.vcomp keys cell) plus_src) q_n tmenv) pre
 
 and apply_term : type dom modality mode n m.
     (mode, kinetic) value ->

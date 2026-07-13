@@ -568,14 +568,25 @@ and readback_ordered_env : type mode n a b c d.
   | Lock _ -> (
       (* We remove as many locks as there are at the end of the codomain context, since keys in the environment could have composite modalities as their domain. *)
       let (Ordered_remove_locks (envctx, plus_src)) = Termctx.ordered_remove_locks envctx in
-      (* Then we remove all the corresponding keys from the environment being read back, and their domain from the context we're reading back *into*. *)
+      (* Then we remove all the corresponding keys from the environment being read back. *)
       let (Restrict_keys (env, cell, pre)) = restrict_keys_plus_lock env plus_src in
-      let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt cell) in
-      (* We read back the residual environment as a keyed term environment, and wrap it in a prekey carrying the accumulated prekey action, dropping the latter if it is an identity (as when no prekeys were present). *)
-      let keyed = Term.Key { env = readback_ordered_env ctx env envctx; cell; plus_src; plus_tgt } in
       match Modalcell.compare_id pre with
-      | Eq -> keyed
-      | Neq -> Prekey (keyed, pre))
+      | Eq ->
+          (* If there is no prekey action, we just remove the target of the composite key cell from the context we're reading back *into*, and read back the residual environment as a keyed term environment. *)
+          let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt cell) in
+          Term.Key { env = readback_ordered_env ctx env envctx; cell; plus_src; plus_tgt }
+      | Neq ->
+          (* A prekey action mediates between a context locked by its vertical source (where the keyed value was created, e.g. behind a parametric locker's locks) and one locked by its vertical target (the actual ambient context, e.g. after the locker's counit discharged those locks).  So before removing the target of the key cell, we remove the target of the prekey from the context and re-lock it with the prekey's source, recording both in the term-level Prekey. *)
+          let (Remove_lock (ctx, pre_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt pre) in
+          let (Locked (pre_src, ctx)) = Ctx.lock ctx (Modalcell.vsrc pre) in
+          let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt cell) in
+          Prekey
+            {
+              env = Term.Key { env = readback_ordered_env ctx env envctx; cell; plus_src; plus_tgt };
+              cell = pre;
+              plus_src = pre_src;
+              plus_tgt = pre_tgt;
+            })
 
 (* Read back a context of values into a context of terms. *)
 

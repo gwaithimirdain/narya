@@ -567,6 +567,9 @@ module Equal = struct
               guard (prekey_equal pre1 pre2)
                 (Unequal.Variables
                    (PString (Modalcell.to_string pre1), PString (Modalcell.to_string pre2))) in
+            (* The (equal) prekey actions mediate between a context locked by their vertical source and the actual ambient context, locked by their vertical target.  So we remove the prekey's target from the context and re-lock with its source (both no-ops when there was no prekey) before removing the target of the composite key cell as usual. *)
+            let (Remove_lock (ctx, _)) = Ctx.remove_lock ctx (Modalcell.vtgt pre1) in
+            let (Locked (_, ctx)) = Ctx.lock ctx (Modalcell.vsrc pre1) in
             let (Remove_lock (ctx, _)) = Ctx.remove_lock ctx (Modalcell.vtgt keys1) in
             equal_ordered_env ctx env1 env2 envctx)
 end
