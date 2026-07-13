@@ -332,42 +332,34 @@ struct
     ^ string_of_int (Modality.length (Modalcell.vsrc m))
     ^ "_"
     ^ string_of_int (Modality.length (Modalcell.vtgt m))
-end
 
-module TconnModalities
-    (V : Variant)
-    (Disc : Mode.Generated with module G := DiscGen(V))
-    (Type : Mode.Generated with module G := TypeGen)
-    (Triangle : Modality.Generated with module G := TriangleGen(V)(Disc)(Type))
-    (Box : Modality.Generated with module G := BoxGen(V)(Disc)(Type))
-    (Diamond : Modality.Generated with module G := DiamondGen(V)(Disc)(Type)) : Modality.Theory =
-struct
-  open TconnCells (V) (Disc) (Type) (Triangle) (Box) (Diamond)
+  (* The theory of modality properties is nested inside the cells module, so that installing both theories instantiates this functor -- and in particular Modalcell.generate, which allocates fresh generating 2-cells -- only once. *)
+  module Modalities : Modality.Theory = struct
+    let tangible _ = true
 
-  let tangible _ = true
+    (* All left adjoints are transparent (△, ◇, and △◇). *)
+    let rec transparent_normal : type a m b. (a, m, b) Modality.t -> bool = function
+      | Path (Zero, _) -> true
+      | Path (Suc (m, g), mode) -> (
+          match Modality.Gen.compare g Box.modality with
+          | Eq -> false
+          | Neq -> transparent_normal (Path (m, mode)))
 
-  (* All left adjoints are transparent (△, ◇, and △◇). *)
-  let rec transparent_normal : type a m b. (a, m, b) Modality.t -> bool = function
-    | Path (Zero, _) -> true
-    | Path (Suc (m, g), mode) -> (
-        match Modality.Gen.compare g Box.modality with
-        | Eq -> false
-        | Neq -> transparent_normal (Path (m, mode)))
+    let transparent m =
+      let (Normalize (m, _, _)) = normalize m in
+      transparent_normal m
 
-  let transparent m =
-    let (Normalize (m, _, _)) = normalize m in
-    transparent_normal m
+    (* In the external case, every modality whose normalization doesn't contain a □ is pellucid (that is, identities, ◇, △, and △◇) -- although since they are nonparametric, they can't be used as windows for higher-dimensional matches (yet).  Otherwise, only △ is pellucid. *)
+    let pellucid : type a m b. (a, m, b) Modality.t -> bool =
+     fun m ->
+      if Endpoints.internal () then
+        match Modality.compare m tri with
+        | Eq -> true
+        | Neq -> false
+      else transparent m
 
-  (* In the external case, every modality whose normalization doesn't contain a □ is pellucid (that is, identities, ◇, △, and △◇) -- although since they are nonparametric, they can't be used as windows for higher-dimensional matches (yet).  Otherwise, only △ is pellucid. *)
-  let pellucid : type a m b. (a, m, b) Modality.t -> bool =
-   fun m ->
-    if Endpoints.internal () then
-      match Modality.compare m tri with
-      | Eq -> true
-      | Neq -> false
-    else transparent m
-
-  let translucent _ = true
+    let translucent _ = true
+  end
 end
 
 let install (module V : Variant) modes modalities =
@@ -394,7 +386,6 @@ let install (module V : Variant) modes modalities =
   let module Triangle = Modality.Generate (Tri) in
   let module Box = Modality.Generate (Box) in
   let module Diamond = Modality.Generate (Dia) in
-  Modalcell.choose_theory
-    (module TconnCells (V) (Disc) (Type) (Triangle) (Box) (Diamond) : Modalcell.Theory);
-  Modality.choose_theory
-    (module TconnModalities (V) (Disc) (Type) (Triangle) (Box) (Diamond) : Modality.Theory)
+  let module Cells = TconnCells (V) (Disc) (Type) (Triangle) (Box) (Diamond) in
+  Modalcell.choose_theory (module Cells : Modalcell.Theory);
+  Modality.choose_theory (module Cells.Modalities : Modality.Theory)

@@ -344,39 +344,32 @@ struct
     ^ string_of_int (Modality.length (Modalcell.vsrc m))
     ^ "_"
     ^ string_of_int (Modality.length (Modalcell.vtgt m))
-end
 
-module LocalModalities
-    (V : Variant)
-    (Disc : Mode.Generated with module G := DiscGen(V))
-    (Type : Mode.Generated with module G := TypeGen)
-    (Triangle : Modality.Generated with module G := TriangleGen(V)(Disc)(Type))
-    (Box : Modality.Generated with module G := BoxGen(V)(Disc)(Type))
-    (Nabla : Modality.Generated with module G := NablaGen(V)(Disc)(Type)) : Modality.Theory = struct
-  open LocalCells (V) (Disc) (Type) (Triangle) (Box) (Nabla)
+  (* The theory of modality properties is nested inside the cells module, so that installing both theories instantiates this functor -- and in particular Modalcell.generate, which allocates fresh generating 2-cells -- only once. *)
+  module Modalities : Modality.Theory = struct
+    let pellucid _ = false
 
-  let pellucid _ = false
+    (* Every modality whose normalization doesn't contain a ∇ is transparent (that is, identities, □, △, and △□). *)
+    let rec transparent_normal : type a m b. (a, m, b) Modality.t -> bool = function
+      | Path (Zero, _) -> true
+      | Path (Suc (m, g), mode) -> (
+          match Modality.Gen.compare g Nabla.modality with
+          | Eq -> false
+          | Neq -> transparent_normal (Path (m, mode)))
 
-  (* Every modality whose normalization doesn't contain a ∇ is transparent (that is, identities, □, △, and △□). *)
-  let rec transparent_normal : type a m b. (a, m, b) Modality.t -> bool = function
-    | Path (Zero, _) -> true
-    | Path (Suc (m, g), mode) -> (
-        match Modality.Gen.compare g Nabla.modality with
-        | Eq -> false
-        | Neq -> transparent_normal (Path (m, mode)))
+    let transparent m =
+      let (Normalize (m, _, _)) = normalize m in
+      transparent_normal m
 
-  let transparent m =
-    let (Normalize (m, _, _)) = normalize m in
-    transparent_normal m
+    (* In the discrete case, ∇ is not tangible or translucent, so that it doesn't become discrete (it should be codiscrete). *)
+    let tangible : type a m b. (a, m, b) Modality.t -> bool =
+     fun m ->
+      match Modality.compare m nab with
+      | Eq -> V.nabla_tangible
+      | Neq -> true
 
-  (* In the discrete case, ∇ is not tangible or translucent, so that it doesn't become discrete (it should be codiscrete). *)
-  let tangible : type a m b. (a, m, b) Modality.t -> bool =
-   fun m ->
-    match Modality.compare m nab with
-    | Eq -> V.nabla_tangible
-    | Neq -> true
-
-  let translucent m = tangible m
+    let translucent m = tangible m
+  end
 end
 
 let install (module V : Variant) modes modalities =
@@ -403,7 +396,6 @@ let install (module V : Variant) modes modalities =
   let module Triangle = Modality.Generate (Tri) in
   let module Box = Modality.Generate (Box) in
   let module Nabla = Modality.Generate (Nabla) in
-  Modalcell.choose_theory
-    (module LocalCells (V) (Disc) (Type) (Triangle) (Box) (Nabla) : Modalcell.Theory);
-  Modality.choose_theory
-    (module LocalModalities (V) (Disc) (Type) (Triangle) (Box) (Nabla) : Modality.Theory)
+  let module Cells = LocalCells (V) (Disc) (Type) (Triangle) (Box) (Nabla) in
+  Modalcell.choose_theory (module Cells : Modalcell.Theory);
+  Modality.choose_theory (module Cells.Modalities : Modality.Theory)
