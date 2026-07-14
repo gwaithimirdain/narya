@@ -166,6 +166,12 @@ let speclist =
           install_mode_theory := Modal.Gwpt.install;
           mode_theories := !mode_theories + 1),
       "Select the geometrically well-pointed topos mode theory" );
+    ( "-cospatial",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Cospatial.install;
+          mode_theories := !mode_theories + 1),
+      "Select the cospatial mode theory (reflector ♯ left adjoint to coreflector ♭)" );
     ( "-coreflection",
       Arg.Unit
         (fun () ->
