@@ -281,31 +281,26 @@ struct
     ^ string_of_int (Modality.length (Modalcell.vsrc m))
     ^ "_"
     ^ string_of_int (Modality.length (Modalcell.vtgt m))
-end
 
-module SpatialModalities
-    (V : Variant)
-    (Testmode : Mode.Generated with module G := TestmodeGen)
-    (Flat : Modality.Generated with module G := FlatGen(V)(Testmode))
-    (Sharp : Modality.Generated with module G := SharpGen(V)(Testmode)) : Modality.Theory = struct
-  open SpatialCells (V) (Testmode) (Flat) (Sharp)
+  (* The theory of modality properties is nested inside the cells module, so that installing both theories instantiates this functor -- and in particular Modalcell.generate, which allocates fresh generating 2-cells -- only once. *)
+  module Modalities : Modality.Theory = struct
+    let pellucid _ = false
 
-  let pellucid _ = false
+    (* Modalities that normalize to to id or flat are transparent, since they are left adjoints. *)
+    let transparent : type a m b. (a, m, b) Modality.t -> bool =
+     fun m ->
+      match normalize m with
+      | Normalize (Normal_id, _, _) | Normalize (Normal_flat, _, _) -> true
+      | Normalize (Normal_sharp, _, _) -> false
 
-  (* Modalities that normalize to to id or flat are transparent, since they are left adjoints. *)
-  let transparent : type a m b. (a, m, b) Modality.t -> bool =
-   fun m ->
-    match normalize m with
-    | Normalize (Normal_id, _, _) | Normalize (Normal_flat, _, _) -> true
-    | Normalize (Normal_sharp, _, _) -> false
+    (* In the discrete case, we cannot make sharp tangible, since then it would be either discrete (if nonparametric) or bridge-preserving (if not), and it is neither (it is codiscrete, as ensured by its negative definition using discreteness of flat). *)
 
-  (* In the discrete case, we cannot make sharp tangible, since then it would be either discrete (if nonparametric) or bridge-preserving (if not), and it is neither (it is codiscrete, as ensured by its negative definition using discreteness of flat). *)
+    let translucent : type a m b. (a, m, b) Modality.t -> bool =
+     fun m -> V.tangible_sharp || transparent m
 
-  let translucent : type a m b. (a, m, b) Modality.t -> bool =
-   fun m -> V.tangible_sharp || transparent m
-
-  let tangible : type a m b. (a, m, b) Modality.t -> bool =
-   fun m -> V.tangible_sharp || transparent m
+    let tangible : type a m b. (a, m, b) Modality.t -> bool =
+     fun m -> V.tangible_sharp || transparent m
+  end
 end
 
 let install (module V : Variant) modes modalities =
@@ -325,5 +320,6 @@ let install (module V : Variant) modes modalities =
   Modality.set_one_char true modalities;
   let module Flat = Modality.Generate (Flat) in
   let module Sharp = Modality.Generate (Sharp) in
-  Modalcell.choose_theory (module SpatialCells (V) (Testmode) (Flat) (Sharp) : Modalcell.Theory);
-  Modality.choose_theory (module SpatialModalities (V) (Testmode) (Flat) (Sharp) : Modality.Theory)
+  let module Cells = SpatialCells (V) (Testmode) (Flat) (Sharp) in
+  Modalcell.choose_theory (module Cells : Modalcell.Theory);
+  Modality.choose_theory (module Cells.Modalities : Modality.Theory)

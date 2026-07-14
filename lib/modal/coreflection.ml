@@ -219,32 +219,26 @@ struct
     ^ string_of_int (Modality.length (Modalcell.vsrc m))
     ^ "_"
     ^ string_of_int (Modality.length (Modalcell.vtgt m))
-end
 
-module CoreflectionModalities
-    (V : Variant)
-    (Disc : Mode.Generated with module G := DiscGen(V))
-    (Type : Mode.Generated with module G := TypeGen)
-    (Triangle : Modality.Generated with module G := TriangleGen(V)(Disc)(Type))
-    (Box : Modality.Generated with module G := BoxGen(V)(Disc)(Type)) : Modality.Theory = struct
-  open CoreflectionCells (V) (Disc) (Type) (Triangle) (Box)
+  (* The theory of modality properties is nested inside the cells module, so that installing both theories instantiates this functor -- and in particular Modalcell.generate, which allocates fresh generating 2-cells -- only once. *)
+  module Modalities : Modality.Theory = struct
+    let tangible _ = true
+    let pellucid _ = false
 
-  let tangible _ = true
-  let pellucid _ = false
+    (* Every modality that normalizes to △ is transparent. *)
+    let transparent_normal : type a m b. (a, m, b) Modality.t -> bool = function
+      | Path (Zero, _) -> true
+      | Path (Suc (_, g), _) -> (
+          match Modality.Gen.compare g Triangle.modality with
+          | Eq -> true
+          | Neq -> false)
 
-  (* Every modality that normalizes to △ is transparent. *)
-  let transparent_normal : type a m b. (a, m, b) Modality.t -> bool = function
-    | Path (Zero, _) -> true
-    | Path (Suc (_, g), _) -> (
-        match Modality.Gen.compare g Triangle.modality with
-        | Eq -> true
-        | Neq -> false)
+    let transparent m =
+      let (Normalize (m, _, _)) = normalize m in
+      transparent_normal m
 
-  let transparent m =
-    let (Normalize (m, _, _)) = normalize m in
-    transparent_normal m
-
-  let translucent _ = true
+    let translucent _ = true
+  end
 end
 
 let install (module V : Variant) modes modalities =
@@ -268,7 +262,6 @@ let install (module V : Variant) modes modalities =
   Modality.set_one_char true modalities;
   let module Triangle = Modality.Generate (Triangle) in
   let module Box = Modality.Generate (Box) in
-  Modalcell.choose_theory
-    (module CoreflectionCells (V) (Disc) (Type) (Triangle) (Box) : Modalcell.Theory);
-  Modality.choose_theory
-    (module CoreflectionModalities (V) (Disc) (Type) (Triangle) (Box) : Modality.Theory)
+  let module Cells = CoreflectionCells (V) (Disc) (Type) (Triangle) (Box) in
+  Modalcell.choose_theory (module Cells : Modalcell.Theory);
+  Modality.choose_theory (module Cells.Modalities : Modality.Theory)
