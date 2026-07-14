@@ -160,6 +160,12 @@ let speclist =
           install_mode_theory := Modal.Adjunction.install;
           mode_theories := !mode_theories + 1),
       "Select the walking adjunction mode theory" );
+    ( "-gwpt",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Gwpt.install;
+          mode_theories := !mode_theories + 1),
+      "Select the geometrically well-pointed topos mode theory" );
     ( "-coreflection",
       Arg.Unit
         (fun () ->

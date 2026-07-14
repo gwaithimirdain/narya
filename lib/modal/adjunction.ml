@@ -1,4 +1,5 @@
 open Dim
+open Pairing
 
 (* The "walking adjunction" has two modes, Disc and Type, and two generating modalities:
 
@@ -59,63 +60,6 @@ struct
   let nonparametric = D.zero
 end
 
-(* An endpoint of a strand in the pairing induced by a 2-cell m ⇒ n: a generator of m or of n, numbered in application order starting from 0. *)
-type endpoint = Dom of int | Cod of int
-
-module EndpointMap = Map.Make (struct
-  type t = endpoint
-
-  let compare = (Stdlib.compare : endpoint -> endpoint -> int)
-end)
-
-(* A pairing is stored as its graph: an involutive map on endpoints. *)
-let add_pair map (p, q) = EndpointMap.add p q (EndpointMap.add q p map)
-
-(* Vertical composition of pairings follows the strings through the middle word: px is the pairing of a cell m ⇒ n and py that of a cell n ⇒ r, so the Cod endpoints of px and the Dom endpoints of py both refer to the middle word n, of length mid.  Each strand of the composite starts at an outer endpoint (a Dom of px or a Cod of py) and alternately applies px and py until it emerges at another outer endpoint.  As explained above, closed loops within the middle word cannot occur, but we check anyway that every middle generator was traversed. *)
-let compose_pairings mid px py =
-  let mx = List.fold_left add_pair EndpointMap.empty px in
-  let my = List.fold_left add_pair EndpointMap.empty py in
-  let seen = Array.make mid false in
-  let rec follow_x e =
-    match EndpointMap.find e mx with
-    | Dom i -> Dom i
-    | Cod i ->
-        seen.(i) <- true;
-        follow_y (Dom i)
-  and follow_y e =
-    match EndpointMap.find e my with
-    | Cod i -> Cod i
-    | Dom i ->
-        seen.(i) <- true;
-        follow_x (Cod i) in
-  let result = ref [] in
-  let paired = ref EndpointMap.empty in
-  let start follow e =
-    if not (EndpointMap.mem e !paired) then begin
-      let p = follow e in
-      paired := add_pair !paired (e, p);
-      result := (e, p) :: !result
-    end in
-  List.iter
-    (fun (p, q) ->
-      List.iter
-        (function
-          | Dom i -> start follow_x (Dom i)
-          | Cod _ -> ())
-        [ p; q ])
-    px;
-  List.iter
-    (fun (p, q) ->
-      List.iter
-        (function
-          | Cod j -> start follow_y (Cod j)
-          | Dom _ -> ())
-        [ p; q ])
-    py;
-  if not (Array.for_all Fun.id seen) then
-    failwith "adjunction: closed loop in composite 2-cell (should be impossible)";
-  List.rev !result
-
 module AdjunctionCells
     (Disc : Mode.Generated with module G := DiscGen)
     (Type : Mode.Generated with module G := TypeGen)
@@ -158,13 +102,14 @@ struct
           | Cod i -> Cod (i + cn) in
         pairs x @ List.map (fun (p, q) -> (shift p, shift q)) (pairs y)
     | Modalcell.Vcomp (y, x) ->
-        compose_pairings (Modality.length (Modalcell.vtgt x)) (pairs x) (pairs y)
+        (* As explained above, closed loops cannot occur in this theory. *)
+        compose ~allow_loops:false (Modality.length (Modalcell.vtgt x)) (pairs x) (pairs y)
 
-  let pairing c = List.fold_left add_pair EndpointMap.empty (pairs c)
+  let pairing c = of_pairs (pairs c)
 
   (* Two parallel 2-cells are equal exactly when they induce the same pairing. *)
   let compare : type a m n b. (a, m, n, b) Modalcell.t -> (a, m, n, b) Modalcell.t -> bool =
-   fun c1 c2 -> EndpointMap.equal (fun (p : endpoint) q -> p = q) (pairing c1) (pairing c2)
+   fun c1 c2 -> Pairing.equal (pairing c1) (pairing c2)
 
   (* A modality is sinister (a declared left adjoint) if it is an identity or △ (left adjoint to □).  These are the only left adjoints: any longer word contains a □, which has no right adjoint. *)
   let sinister : type a f b. (a, f, b) Modality.t -> (a, f, b) Modalcell.sinister option =
@@ -278,15 +223,7 @@ struct
 
   (* Since parallel 2-cells can differ, we display a cell by its pairing. *)
   let to_string : type a m n b. (a, m, n, b) Modalcell.t -> string =
-   fun c ->
-    let endpoint_str = function
-      | Dom i -> "d" ^ string_of_int i
-      | Cod i -> "c" ^ string_of_int i in
-    let ps = List.map (fun (p, q) -> if p <= q then (p, q) else (q, p)) (pairs c) in
-    "cell("
-    ^ String.concat ","
-        (List.map (fun (p, q) -> endpoint_str p ^ endpoint_str q) (List.sort Stdlib.compare ps))
-    ^ ")"
+   fun c -> Pairing.to_string (pairs c)
 end
 
 module AdjunctionModalities
