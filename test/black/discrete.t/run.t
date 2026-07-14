@@ -147,3 +147,12 @@ filtered domain, and computes when applied.
     : (A :♭| Type) →⁽ᵖᵖ⁾ Type⁽ᵖᵖ⁾ (♭T⁽ᵖ⁾ A) (♭T⁽ᵖ⁾ A) (♭T⁽ᵖ⁾ A) (♭T⁽ᵖ⁾ A)
   
 
+If there is a 2-cell from a non-discrete modality (such as an identity) to a discrete one (such as △◇), then the arity of parametricity must be 1 in order to have a canonical result to compute expressions like this to.
+
+  $ narya -parametric -direction p,rel,Br -arity 1 -discrete-tconn discrete_unary.ny
+  rel (x ↦ f x (a x)) x₁
+    : Br B (f x₀ (a x₀))
+  
+  rel f x₁ (a x₀)
+    : Br B (f x₀ (a x₀))
+  

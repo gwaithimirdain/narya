@@ -60,41 +60,19 @@ Varying the arity of parametricity
 
 The parametricity described above, which is Narya's default, is *binary* in that the bridge type ``Br A x y`` takes *two* elements of ``A`` as arguments.  However, a different "arity" can be specified with the ``-arity`` command-line flag (which also requires the ``-parametric`` flag).  For instance, under ``-arity 1`` we have bridge types ``Br A x``, and under ``-arity 3`` they look like ``Br A x y z``.  Everything else also alters according, e.g. under ``-arity 1`` the type ``Br (A → B) f`` is isomorphic to ``{x₀ : A} (x₁ : Br A x) → Br B (f x)``, and a cube variable has pieces numbered with only ``0`` s and ``1`` s.
 
+Semantically, parametric Narya with arity *n* has a model in the topos of *n*-ary semicartesian cubical sets (or spaces, or objects of some other topos).  Semicartesian cubical sets have faces, degeneracies, and symmetries, but no diagonals or connections, and to say they are *n*-ary means that each 1-cube has *n* "endpoints".  For instance, 1-ary cubes can be thought of as powers of a half-open interval; the category of 1-ary cubes happens to be equivalent to the category of augmented symmetric simplicial sets.
+
 In principle, the arity could be any natural number, but for syntactic reasons Narya currently requires it to be between 0 and 9 inclusive.  The problem with arities greater than 9 is that the syntax ``x.10`` for cube variables would become ambiguous: does ``10`` mean "one-zero" or "ten"?  It would probably be possible to resolve this similarly to how we deal with degeneracies for dimensions above 9, for instance writing ``x..1.0`` for one-zero and ``x..10`` for ten (while keeping the simpler ``x.10`` to mean ``x..1.0``), but this is not a priority because at present we are unaware of any applications of n-ary parametricity for n>2.
 
 Syntactically, nullary parametricity is a bit special because when instantiating a higher-dimensional type there are zero arguments to be supplied, so it is not obvious how to indicate that an instantiation has happened.  To resolve this, each dimension of instantiation that takes zero arguments is indicated by syntactic application to a dot ``.`` that denotes "zero arguments".  Thus, if ``A : Type`` then ``Br A : Type⁽ᵖ⁾ .``, and if ``a : A`` then ``rel a : A⁽ᵖ⁾ .``, while ``rel (rel a) : A⁽ᵖᵖ⁾ . .``, and so on.  Note that each dot must be separated from others by spaces.
 
 
-Internal versus external parametricity
---------------------------------------
-
-Parametricity can also be set to be *internal* or *external* with the like-named flags ``-internal`` and ``-external``.  Internal is the default and the behavior that we have described up until now.  Setting it to external instead means that dimension-changing degeneracies (such as ``rel``, but not ``sym``) can only be applied to *closed terms*.  Since degeneracies also compute fully on closed terms (at least in the "up-to-definitional-isomorphism" sense), we can then more or less think of these operations as meta-operations on syntax rather than intrinsic aspects of the theory.  This is the usual meaning of "external parametricity", although Narya's is of course at least partially internalized.
-
-When parametricity is external, there are two different possibilities for how to treat *axioms*.  The default kind of axiom is a *parametric axiom*, which can have dimension-changing degeneracies applied to it like a defined constant.  But it is also possible to define a *nonparametric axiom*, which is treated like a variable and thus cannot appear inside of dimension-changing degeneracies.  For example, axioms such as excluded middle that are inconsistent with parametricity can be assumed as nonparametric axioms.  To define a nonparametric axiom, use the attribute ``nonparametric``:
-
-.. code-block:: none
-
-   axiom #(nonparametric) LEM : (P : Type) → P ⊔ ¬ P
-
-Other constants that use nonparametric axioms in their types or definitions, hereditarily, must also be nonparametric.  For definitions, this is deduced automatically, while for axioms it must be marked explicitly with ``nonparametric``.  Similarly, if any of the definitions in a mutual block use a nonparametric constant, then all the constants in the mutual block are nonparametric.
-
-When a definition contains :ref:`holes` but does not (yet) use any nonparametric constants, it is considered parametric, and hence can have dimension-changing degeneracies applied to it.  Therefore, if you later try to fill one of those holes with a term that uses a nonparametric constant, an error will be emitted; it is not possible to retroactively set a definition to be nonparametric since it might already have had dimension-changing degeneracies applied to it by other definitions.  In this case, you have to undo back to the original definition and manually copy your desired nonparametric term in place of the hole.  (If there is significant demand, we may implement an easier solution.)
-
-
-Semantics of parametricity
---------------------------
-
-Internal parametricity, as implemented in Narya, has semantics in the topos of *n*-ary semicartesian cubical sets (or spaces, or objects of some other topos).  Semicartesian cubical sets have faces, degeneracies, and symmetries, but no diagonals or connections, and to say they are *n*-ary means that each 1-cube has *n* "endpoints".
-
-Similarly, what Narya calls "external parametricity" is modeled in a diagram of *semi-cubical* sets (or whatever), which have faces and symmetries but no degeneracies.
-
-
-Discrete datatypes (experimental and deprecated)
------------------------------
+Strictly discrete datatypes (experimental and deprecated)
+---------------------------------------------------------
 
 *Discreteness was an experimental feature that is now deprecated in favor of modal treatments.  See* :ref:`Discrete modalities`.  *We include the old documentation of this feature here for reference, but it will eventually go away along with the feature.*
 
-A (strictly parametrically) *discrete* type, in the sense meant here, is one whose higher-dimensional versions are all definitionally subsingletons.  That is, if ``b1 : A⁽ᵈ⁾ a`` and ``b2 : A⁽ᵈ⁾ a``, then ``b1`` and ``b2`` are convertible (this is implemented as an η-rule).  Discreteness is currently restricted to arity 1 (including dTT), and can be enabled by the ``-discreteness`` flag.  When discreteness is enabled, a mutual family of datatypes will be marked as discrete if
+A (strictly parametrically) *discrete* type is one whose higher-dimensional versions are all definitionally subsingletons.  That is, if ``b1 : A⁽ᵈ⁾ a`` and ``b2 : A⁽ᵈ⁾ a``, then ``b1`` and ``b2`` are convertible (this is implemented as an η-rule).  Discreteness is restricted to arity 1 and enabled by the ``-discreteness`` flag.  When discreteness is enabled, a mutual family of datatypes is marked as discrete if
 
 1. All elements of the mutual family are datatypes; and
 2. The types of all of their parameters, indices, and constructor arguments are either types belonging to the same family or previously defined discrete datatypes.
@@ -146,5 +124,5 @@ The higher-dimensional versions of a discrete datatype are also still themselves
    ]
 
 
-Currently, the test for discreteness is performed immediately and only upon completion of the ``def`` command that defines a family of datatypes.  In particular, if the definition of a datatype contains a hole, it will not be considered discrete, even if the hole is later filled to make the definition one that would have been discrete if given from the get-go.  This could in theory be improved, but I am more likely to feel like putting effort into implementing the "correct" replacement for discrete types, namely modally-guarded parametricity such as full dTT.  Note that if you are using :ref:`ProofGeneral mode` (as you should be), you can just retract and re-process the ``def`` command after filling all the holes in it, and it will then be discrete.
+The test for discreteness is performed immediately and only upon completion of the ``def`` command that defines a family of datatypes.  In particular, if the definition of a datatype contains a hole, it will not be considered discrete, even if the hole is later filled to make the definition one that would have been discrete if given from the get-go.  If you are using :ref:`ProofGeneral mode` (as you should be), you can just retract and re-process the ``def`` command after filling all the holes in it, and it will then be discrete.  However, a better approach is to use :ref:`Modal datatypes`.
 

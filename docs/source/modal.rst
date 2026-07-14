@@ -17,7 +17,7 @@ The morphisms of the mode theory are called *modalities*: each may induce a moda
 
 Although Narya supports arbitrary mode theories internally, at present there is no way for the user to specify a mode theory directly: all mode theories have to be coded in OCaml and built in to Narya at compile-time.  This limitation will be overcome in the future, but it is tricky because specifying a mode theory involves not only defining a 2-category but also giving *algorithms* for computing with it, specifically for finding 2-cells and testing whether two composites of 2-cells are equal.
 
-The currently available mode theories are selected by command-line flags, and are summarized in the following table.  (There are also some variants of these, discussed below and particularly in :ref:`Modal discreteness`.)  The default names for the modes and modalities shown in the table can be overridden by additional command-line flags ``-modes`` and ``-modalities``.
+The currently available mode theories are selected by command-line flags, and are summarized in the following table.  (There are also some variants of these, discussed below and particularly in :ref:`Modal parametricity`.)  The default names for the modes and modalities shown in the table can be overridden by additional command-line flags ``-modes`` and ``-modalities``.
 
 .. csv-table:: Mode theories
    :widths: auto
