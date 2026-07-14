@@ -38,6 +38,10 @@ The currently available mode theories are selected by command-line flags, and ar
    | ``♯ : Type → Type``", "| ``♭∘♭ ≅ ♭``, ``♭ ⇒ 1``,
    | ``♯∘♯ ≅ ♯``, ``1 ⇒ ♯``,
    | ``♭ ⊣ ♯``"
+   "``-cospatial``", "``Type``", "| ``♯ : Type → Type``
+   | ``♭ : Type → Type``", "| ``♯∘♯ ≅ ♯``, ``1 ⇒ ♯``,
+   | ``♭∘♭ ≅ ♭``, ``♭ ⇒ 1``,
+   | ``♯♭ ≅ ♭``, ``♭♯ ≅ ♯``"
    "``-coreflection``", "``Disc``, ``Type``", "| ``△ : Disc → Type``,
    | ``□ : Type → Disc``", "| ``△ ⊣ □`` with
    | ``△□ ⇒ 1`` and ``□△ ≅ 1``"
@@ -65,6 +69,7 @@ Just as ordinary dependent type theory has semantics in any (∞-)topos, modal t
 On the names for these theories that may not be self-explanatory:
 
 * ``-spatial`` type theory was so-called in the paper `Brouwer's fixed-point theorem in real-cohesive homotopy type theory <https://arxiv.org/abs/1509.07584>`_ because its intended models were toposes of spaces, with ``♭`` assigning the discrete topology and ``♯`` the codiscrete one.
+* ``-cospatial`` is a dual variant of ``-spatial`` with the same reflector ``♯`` and coreflector ``♭``, but instead of a directly postulated adjunction ``♭ ⊣ ♯``, it postulates isomorphisms ``♯♭ ≅ ♭`` and ``♭♯ ≅ ♯`` (so that composing the two, in either order, is governed by whichever one was applied first), which induce an adjunction in the *other* direction, ``♯ ⊣ ♭``.
 * ``-crisp`` type theory was so-called in the paper `Internal Universes in Models of Homotopy Type Theory <https://arxiv.org/abs/1801.07664>`_ because its ``♭``-annotated variables (see below) were called "crisp" variables (taken from the previous paper).
 * ``-local`` indicates a "local geometric morphism", which is the name in topos theory for such an adjoint triple of finite-limit-preserving functors between toposes with the outer adjoints ``△`` and ``∇`` fully faithful.  Note that in this case the composites ``△□`` and ``∇□`` are an adjoint pair of a coreflector and a reflector on ``Type``, so this contains ``-spatial`` as a sub-theory.
 * ``-tconn`` is short for "totally connected geometric morphism", which is the name in topos theory for such an adjoint triple of finite-limit-preserving functors, with the inner adjoint ``△`` fully faithful.  (The mode theory ``-coreflection`` is also known as a merely *connected* geometric morphism.)
@@ -275,7 +280,7 @@ In principle, a window modality can be applied to *any* match: the datatype does
 
 * A *pellucid* modality can be a window for any match at all.  This is a very strong property: it implies, for instance, that the modal operator preserves recursive datatypes such as the natural numbers.  The only nonidentity pellucid modality in the standard mode theories is ``△`` in ``-tconn``; this is semantically justified because it is the inverse image of a locally connected geometric morphism, so it preserves both colimits and function-types, out of which inductive types are constructed by transfinite iteration.
 
-* A *transparent* modality can be a window for a match on any *non-recursive* datatype.  This means that the modal operator preserves finite colimits (or, at least, finite coproducts; other finite colimits must wait for :ref:`Higher inductive types`).  Since left adjoints preserve colimits, all the left adjoints in the standard mode theories are transparent: ``△`` in ``-adjunction`` and ``-coreflection``; ``♭`` in ``-spatial``; ``△``, ``□``, and ``△□`` in ``-local``; and ``△``, ``◇``, and ``△◇`` in ``-tconn``; and ``△``, ``◇``, and ``△◇`` in ``-gwpt``.  In addition, there is a variant of ``-functor`` called ``-transparent-functor`` that makes the modality ``○`` transparent.
+* A *transparent* modality can be a window for a match on any *non-recursive* datatype.  This means that the modal operator preserves finite colimits (or, at least, finite coproducts; other finite colimits must wait for :ref:`Higher inductive types`).  Since left adjoints preserve colimits, all the left adjoints in the standard mode theories are transparent: ``△`` in ``-adjunction`` and ``-coreflection``; ``♭`` in ``-spatial``; ``△``, ``□``, and ``△□`` in ``-local``; and ``△``, ``◇``, and ``△◇`` in ``-tconn``; and ``△``, ``◇``, and ``△◇`` in ``-gwpt``; and ``♯`` in ``-cospatial``.  In addition, there is a variant of ``-functor`` called ``-transparent-functor`` that makes the modality ``○`` transparent.
 
 * A *translucent* modality can be a window for a match on any *non-recursive single-constructor* datatype.  This is the minimum necessary to ensure we can prove functoriality of modal operators, as above.  All the modalities in the standard mode theories are translucent.
 
@@ -289,7 +294,7 @@ The "positive" modal operators obtained as a special case of modal datatypes are
 
 Dually to modal constructors of datatypes, any record or codatatype can have *modal fields*.  And just as a modal constructor can be viewed as a modal function, so can a modal field.  But now since the domain of a field-qua-function is the record/codata type itself, that is what gets modally annotated.
 
-For technical reasons, the modality which is used in such an annotation is required to have a right adjoint (that is, to be a left adjoint) in the mode 2-category.  (Theoretically, it suffices for it to have a "parametric right adjoint", but ordinary right adjoints are much easier to implement and cover a wide range of applications, so Narya sticks to those.)  Each mode theory can mark some of its modalities as *sinister* by supplying a right adjoint to them; they can then annotate modal fields.  The sinister modalities in the standard mode theories are ``♭`` in ``-spatial``; ``△`` in ``-adjunction`` and ``-coreflection``; ``◇`` and ``△`` and ``△◇`` in ``-tconn``; and ``△``, ``◇``, and ``△◇`` in ``-gwpt``.
+For technical reasons, the modality which is used in such an annotation is required to have a right adjoint (that is, to be a left adjoint) in the mode 2-category.  (Theoretically, it suffices for it to have a "parametric right adjoint", but ordinary right adjoints are much easier to implement and cover a wide range of applications, so Narya sticks to those.)  Each mode theory can mark some of its modalities as *sinister* by supplying a right adjoint to them; they can then annotate modal fields.  The sinister modalities in the standard mode theories are ``♭`` in ``-spatial``; ``△`` in ``-adjunction`` and ``-coreflection``; ``◇`` and ``△`` and ``△◇`` in ``-tconn``; ``△``, ``◇``, and ``△◇`` in ``-gwpt``; and ``♯`` in ``-cospatial``.
 
 The simplest sort of modal codatatype has one field that is modally annotated.  For instance, in the mode theory ``-coreflection`` we have
 
@@ -305,7 +310,7 @@ The placeholder ``_`` stands for the codatatype being defined, which can be used
    def □ (A :□| Type) : Disc ≔ codata [
    | (x :△| □ A) .unbox : A ]
 
-Note that the ``△``-annotation appears on the self-variable ``x`` to which the field ``.unbox`` is applied.  We have named the modal operator ``□``, the right adjoint of ``△``, because it goes in that direction, and indeed is equivalent to the positive modal operator associated to ``□``.  (Thus, the modal operators that can be defined negatively in the supplied mode theories are ``♯`` in ``-spatial``; ``□`` in ``-adjunction`` and ``-coreflection``; ``△``, ``□``, and ``△□`` in ``-tconn``; and ``□``, ``∇``, and ``∇□`` in ``-gwpt``.)
+Note that the ``△``-annotation appears on the self-variable ``x`` to which the field ``.unbox`` is applied.  We have named the modal operator ``□``, the right adjoint of ``△``, because it goes in that direction, and indeed is equivalent to the positive modal operator associated to ``□``.  (Thus, the modal operators that can be defined negatively in the supplied mode theories are ``♯`` in ``-spatial``; ``□`` in ``-adjunction`` and ``-coreflection``; ``△``, ``□``, and ``△□`` in ``-tconn``; ``□``, ``∇``, and ``∇□`` in ``-gwpt``; and ``♭`` in ``-cospatial``.)
 
 Note also that ``A`` itself is ``□``-annotated and lives at the mode ``Type``, the domain of ``□``.  In general, the type of a modal field is typechecked in a context locked by the *right adjoint*, which in the above case is ``□`` so that we can use the ``□``-annotated variable ``A``.
 
