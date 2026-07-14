@@ -159,7 +159,7 @@ let speclist =
         (fun () ->
           install_mode_theory := Modal.Adjunction.install;
           mode_theories := !mode_theories + 1),
-      "Select the walking adjunction mode theory" );
+      "Select the adjunction mode theory" );
     ( "-gwpt",
       Arg.Unit
         (fun () ->

@@ -3,7 +3,7 @@
    ￮ constant counit defined
   
    ￫ info[I0000]
-   ￮ constant T defined
+   ￮ constant □△ defined
   
    ￫ info[I0000]
    ￮ constant eta defined
@@ -15,7 +15,7 @@
    ￮ constant epsilon defined
   
    ￫ info[I0000]
-   ￮ constant E defined
+   ￮ constant ◇∇ defined
   
    ￫ info[I0000]
    ￮ constant epsilon_inv defined
@@ -30,13 +30,13 @@
    ￮ constant isos defined
   
    ￫ info[I0000]
-   ￮ constant C defined
+   ￮ constant ∇◇ defined
   
    ￫ info[I0000]
    ￮ constant eta' defined
   
    ￫ info[I0000]
-   ￮ constant C2 defined
+   ￮ constant ∇□△◇ defined
   
    ￫ info[I0000]
    ￮ constant eta'2 defined
@@ -84,7 +84,7 @@
    ￮ constant nab_eta defined
   
    ￫ info[I0000]
-   ￮ constant NB defined
+   ￮ constant ∇□ defined
   
    ￫ info[I0000]
    ￮ constant mk defined
@@ -126,18 +126,18 @@ Nor are there 2-cells □△ ⇒ 1 or 1 ⇒ △□ (the adjunction △ ⊣ □ i
 
 The induced 2-cells go from □ to ◇ and from △ to ∇, not the other way.
 
-  $ narya -gwpt gwpt.ny -e "def bad4 (X : ◇ | Type) : Disc ≔ data [ bad4. (_ : □ | X) ]"
+  $ narya -gwpt gwpt.ny -e "def bad4 (X :◇| Type) : Disc ≔ data [ bad4. (_ : □ | X) ]"
    ￫ error[E1705]
    ￭ command-line exec string
-   1 | def bad4 (X : ◇ | Type) : Disc ≔ data [ bad4. (_ : □ | X) ]
+   1 | def bad4 (X :◇| Type) : Disc ≔ data [ bad4. (_ : □ | X) ]
      ^ use of ◇ variable behind □ lock requires a key
   
   [1]
 
-  $ narya -gwpt gwpt.ny -e "def bad5 (X : ∇ | Disc) : Type ≔ data [ bad5. (_ : △ | X) ]"
+  $ narya -gwpt gwpt.ny -e "def bad5 (X :∇| Disc) : Type ≔ data [ bad5. (_ : △ | X) ]"
    ￫ error[E1705]
    ￭ command-line exec string
-   1 | def bad5 (X : ∇ | Disc) : Type ≔ data [ bad5. (_ : △ | X) ]
+   1 | def bad5 (X :∇| Disc) : Type ≔ data [ bad5. (_ : △ | X) ]
      ^ use of ∇ variable behind △ lock requires a key
   
   [1]
@@ -146,20 +146,20 @@ There are two distinct 2-cells △□ ⇒ ∇◇: the counit ε followed by the 
 or the two induced strands □ ⇒ ◇ and △ ⇒ ∇ side by side.  So an implicit key
 cannot be inserted.
 
-  $ narya -gwpt gwpt.ny -e "def amb (A : △□ | Type) (x : △□ | A) : C A ≔ c. x"
+  $ narya -gwpt gwpt.ny -e "def amb (A :△□| Type) (x : △□ | A) : ∇◇ A ≔ c. x"
    ￫ error[E1705]
    ￭ command-line exec string
-   1 | def amb (A : △□ | Type) (x : △□ | A) : C A ≔ c. x
+   1 | def amb (A :△□| Type) (x : △□ | A) : ∇◇ A ≔ c. x
      ^ use of △□ variable behind ∇◇ lock requires a key
   
   [1]
 
 Likewise there are two distinct 2-cells △□ ⇒ ∇□△◇.
 
-  $ narya -gwpt gwpt.ny -e "def amb2 (A : △□ | Type) (x : △□ | A) : C2 A ≔ c2. x"
+  $ narya -gwpt gwpt.ny -e "def amb2 (A :△□| Type) (x :△□| A) : ∇□△◇ A ≔ c2. x"
    ￫ error[E1705]
    ￭ command-line exec string
-   1 | def amb2 (A : △□ | Type) (x : △□ | A) : C2 A ≔ c2. x
+   1 | def amb2 (A :△□| Type) (x :△□| A) : ∇□△◇ A ≔ c2. x
      ^ use of △□ variable behind ∇□△◇ lock requires a key
   
   [1]
@@ -167,10 +167,10 @@ Likewise there are two distinct 2-cells △□ ⇒ ∇□△◇.
 And the walking-adjunction ambiguity of the two whiskered units □△ ⇒ □△□△ is
 still present.
 
-  $ narya -gwpt gwpt.ny -e "def amb3 (A : Disc) (x : □△ | A) : T (T A) ≔ t. (t. x)"
+  $ narya -gwpt gwpt.ny -e "def amb3 (A : Disc) (x :□△| A) : □△ (□△ A) ≔ t. (t. x)"
    ￫ error[E1705]
    ￭ command-line exec string
-   1 | def amb3 (A : Disc) (x : □△ | A) : T (T A) ≔ t. (t. x)
+   1 | def amb3 (A : Disc) (x :□△| A) : □△ (□△ A) ≔ t. (t. x)
      ^ use of □△ variable behind □△□△ lock requires a key
   
   [1]

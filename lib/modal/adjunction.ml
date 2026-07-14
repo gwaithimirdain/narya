@@ -6,9 +6,9 @@ open Pairing
      △ : Disc → Type
      □ : Type → Disc
 
-   with a single adjunction △ ⊣ □ and nothing else: the unit η : 1_Disc ⇒ □△ and counit ε : △□ ⇒ 1_Type satisfy the triangle identities, but neither is invertible.  Thus, unlike the other mode theories, there is no "normalization" of modalities: no composite reduces, so (since sources and targets must match up) the modalities are exactly the alternating words in △ and □, none of which are isomorphic.
+   with a single adjunction △ ⊣ □ and nothing else: the unit η : 1_Disc ⇒ □△ and counit ε : △□ ⇒ 1_Type satisfy the triangle identities, but neither is invertible.  Thus, unlike mode theories such as Spatial and Local, there is no "normalization" of modalities: no composite reduces, so (since sources and targets must match up) the modalities are exactly the alternating words in △ and □, none of which are isomorphic.
 
-   The theory is also not locally posetal: parallel 2-cells can differ.  By the Schanuel-Street description of the free adjunction, a 2-cell between two words is uniquely determined by the "pairing" it induces on the generators occurring in its domain and codomain words: every generator is paired with exactly one other generator, either in the other word (a strand passing straight through, connecting two copies of the same generator) or in the same word (a strand that turns back).  An identity 2-cell pairs its domain with its codomain one-for-one; a counit pairs the △ and the □ in its domain; a unit pairs the □ and the △ in its codomain; horizontal composition takes disjoint unions of pairings; and vertical composition "follows the strings" through the middle word.  Two parallel 2-cells are equal exactly when they induce the same pairing.
+   The theory is also not locally posetal: parallel 2-cells can differ.  By the Schanuel-Street description of the free adjunction, a 2-cell between two words is uniquely determined by the "pairing" it induces on the generators occurring in its domain and codomain words: every generator is paired with exactly one other generator, either in the other word (a strand passing straight through, connecting two copies of the same generator) or in the same word (a strand that turns back).  An identity 2-cell pairs its domain with its codomain one-for-one; a counit pairs the △ and the □ in its domain; a unit pairs the □ and the △ in its codomain; horizontal composition takes disjoint unions of pairings; and vertical composition "follows the strings" through the middle word, "pulling zigzags straight" until it reaches either the new source or the new target word.  Two parallel 2-cells are equal exactly when they induce the same pairing.
 
    Concretely, listing the generators of each word in application order (first-applied first), the pairings arising from 2-cells m ⇒ n are exactly the following: some disjoint collection of *adjacent* pairs (□, △) in m are paired with each other (killed by counits), some disjoint collection of adjacent pairs (△, □) in n are paired with each other (created by units), and the remaining generators of m and n, which must form equal words, are paired with each other in order.  (Arcs connecting non-adjacent generators cannot occur: an arc can enclose no through-strands, by planarity, so the innermost arc under any arc would have to connect adjacent generators; but since the words alternate, the generators directly inside a domain arc (□, △) begin with △ and those directly inside a codomain arc (△, □) begin with □, so no arc can sit immediately inside another.  For the same reason, no closed loops can be created when composing pairings vertically: the source-most middle generator on such a loop would have to begin both a domain arc, as a □, and a codomain arc, as a △.) *)
 
@@ -83,29 +83,16 @@ struct
   let unit = Modalcell.of_gen unit_gen
   let counit = Modalcell.of_gen counit_gen
 
-  (* Compute the pairing induced by a 2-cell, as a list of paired endpoints (each strand listed once, in no particular normal form). *)
-  let rec pairs : type a m n b. (a, m, n, b) Modalcell.t -> (endpoint * endpoint) list = function
-    | Modalcell.Id m -> List.init (Modality.length m) (fun i -> (Dom i, Cod i))
-    | Modalcell.Gen g -> (
-        match Modalcell.Gen.compare g unit_gen with
-        | Eq -> [ (Cod 0, Cod 1) ]
-        | Neq -> (
-            match Modalcell.Gen.compare g counit_gen with
-            | Eq -> [ (Dom 0, Dom 1) ]
-            | Neq -> failwith "unrecognized generating 2-cell in adjunction mode theory"))
-    | Modalcell.Hcomp (_, _, y, x) ->
-        (* The generators of the inner cell x come first in application order; those of the outer cell y are shifted up by the lengths of x's domain and codomain words. *)
-        let dm = Modality.length (Modalcell.vsrc x) in
-        let cn = Modality.length (Modalcell.vtgt x) in
-        let shift = function
-          | Dom i -> Dom (i + dm)
-          | Cod i -> Cod (i + cn) in
-        pairs x @ List.map (fun (p, q) -> (shift p, shift q)) (pairs y)
-    | Modalcell.Vcomp (y, x) ->
-        (* As explained above, closed loops cannot occur in this theory. *)
-        compose ~allow_loops:false (Modality.length (Modalcell.vtgt x)) (pairs x) (pairs y)
+  let gen_pairs : type a m n b. (a, m, n, b) Modalcell.Gen.t -> (endpoint * endpoint) list =
+   fun g ->
+    match Modalcell.Gen.compare g unit_gen with
+    | Eq -> [ (Cod 0, Cod 1) ]
+    | Neq -> (
+        match Modalcell.Gen.compare g counit_gen with
+        | Eq -> [ (Dom 0, Dom 1) ]
+        | Neq -> failwith "unrecognized generating 2-cell in adjunction mode theory")
 
-  let pairing c = of_pairs (pairs c)
+  let pairing c = Pairing.of_pairs (Pairing.of_cell ~allow_loops:false { gen_pairs } c)
 
   (* Two parallel 2-cells are equal exactly when they induce the same pairing. *)
   let compare : type a m n b. (a, m, n, b) Modalcell.t -> (a, m, n, b) Modalcell.t -> bool =
@@ -223,7 +210,7 @@ struct
 
   (* Since parallel 2-cells can differ, we display a cell by its pairing. *)
   let to_string : type a m n b. (a, m, n, b) Modalcell.t -> string =
-   fun c -> Pairing.to_string (pairs c)
+   fun c -> Pairing.to_string (Pairing.of_cell ~allow_loops:false { gen_pairs } c)
 end
 
 module AdjunctionModalities

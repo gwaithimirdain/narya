@@ -186,23 +186,7 @@ struct
     else if is box_dia_gen || is tri_nab_gen then [ (Dom 0, Cod 0) ]
     else failwith "unrecognized generating 2-cell in gwpt mode theory"
 
-  (* Compute the pairing induced by a 2-cell, as a list of paired endpoints (each strand listed once, in no particular normal form). *)
-  let rec pairs : type a m n b. (a, m, n, b) Modalcell.t -> (endpoint * endpoint) list = function
-    | Modalcell.Id m -> List.init (Modality.length m) (fun i -> (Dom i, Cod i))
-    | Modalcell.Gen g -> gen_pairs g
-    | Modalcell.Hcomp (_, _, y, x) ->
-        (* The generators of the inner cell x come first in application order; those of the outer cell y are shifted up by the lengths of x's domain and codomain words. *)
-        let dm = Modality.length (Modalcell.vsrc x) in
-        let cn = Modality.length (Modalcell.vtgt x) in
-        let shift = function
-          | Dom i -> Dom (i + dm)
-          | Cod i -> Cod (i + cn) in
-        pairs x @ List.map (fun (p, q) -> (shift p, shift q)) (pairs y)
-    | Modalcell.Vcomp (y, x) ->
-        (* Closed loops (an isomorphism cancelling its formal inverse) are dropped. *)
-        compose ~allow_loops:true (Modality.length (Modalcell.vtgt x)) (pairs x) (pairs y)
-
-  let pairing c = of_pairs (pairs c)
+  let pairing c = Pairing.of_pairs (Pairing.of_cell ~allow_loops:true { gen_pairs } c)
 
   (* Two parallel 2-cells are equal exactly when they induce the same pairing. *)
   let compare : type a m n b. (a, m, n, b) Modalcell.t -> (a, m, n, b) Modalcell.t -> bool =
@@ -521,7 +505,7 @@ struct
 
   (* Since parallel 2-cells can differ, we display a cell by its pairing. *)
   let to_string : type a m n b. (a, m, n, b) Modalcell.t -> string =
-   fun c -> Pairing.to_string (pairs c)
+   fun c -> Pairing.to_string (Pairing.of_cell ~allow_loops:true { gen_pairs } c)
 
   (* The theory of modality properties is nested inside the cells module, so that installing both theories instantiates this functor -- and in particular Modalcell.generate, which allocates fresh generating 2-cells -- only once. *)
   module Modalities : Modality.Theory = struct
