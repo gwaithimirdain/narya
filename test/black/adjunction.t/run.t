@@ -101,3 +101,29 @@ The modality □ (or △) alone admits no 2-cell to the identity.
      ^ use of □ variable behind id lock requires a key
   
   [1]
+
+  $ narya -v -discrete-adjunction -parametric -external -direction p,rel,Br discrete_adjunction.ny
+   ￫ info[I0000]
+   ￮ constant △ defined
+  
+   ￫ info[I0000]
+   ￮ constant □ defined
+  
+   ￫ info[I0000]
+   ￮ constant eq defined
+  
+   ￫ info[I0000]
+   ￮ constant Br_△ defined
+  
+   ￫ info[I0000]
+   ￮ constant Br_to_eq defined
+  
+   ￫ info[I0000]
+   ￮ constant eq_to_Br defined
+  
+   ￫ info[I0000]
+   ￮ constant eq_to_Br_to_eq defined
+  
+   ￫ info[I0000]
+   ￮ constant Br_to_eq_to_Br defined
+  

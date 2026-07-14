@@ -12,12 +12,36 @@ open Pairing
 
    Concretely, listing the generators of each word in application order (first-applied first), the pairings arising from 2-cells m ⇒ n are exactly the following: some disjoint collection of *adjacent* pairs (□, △) in m are paired with each other (killed by counits), some disjoint collection of adjacent pairs (△, □) in n are paired with each other (created by units), and the remaining generators of m and n, which must form equal words, are paired with each other in order.  (Arcs connecting non-adjacent generators cannot occur: an arc can enclose no through-strands, by planarity, so the innermost arc under any arc would have to connect adjacent generators; but since the words alternate, the generators directly inside a domain arc (□, △) begin with △ and those directly inside a codomain arc (△, □) begin with □, so no arc can sit immediately inside another.  For the same reason, no closed loops can be created when composing pairings vertically: the source-most middle generator on such a loop would have to begin both a domain arc, as a □, and a codomain arc, as a △.) *)
 
-module DiscGen = struct
-  let name = ref "Disc"
+module type Variant = sig
+  type nonparametric
 
+  val nonparametric : nonparametric D.t
+  val name : string
+  val locker : bool
+end
+
+module Ordinary = struct
   type nonparametric = D.zero
 
   let nonparametric = D.zero
+  let name = "adjunction"
+  let locker = false
+end
+
+module Discrete = struct
+  type nonparametric = D.one
+
+  let nonparametric = D.one
+  let name = "discrete adjunction"
+  let locker = true
+end
+
+module DiscGen (V : Variant) = struct
+  let name = ref "Disc"
+
+  type nonparametric = V.nonparametric
+
+  let nonparametric = V.nonparametric
 end
 
 module TypeGen = struct
@@ -29,7 +53,8 @@ module TypeGen = struct
 end
 
 module TriangleGen
-    (Disc : Mode.Generated with module G := DiscGen)
+    (V : Variant)
+    (Disc : Mode.Generated with module G := DiscGen(V))
     (Type : Mode.Generated with module G := TypeGen) =
 struct
   type src = Disc.t
@@ -39,13 +64,14 @@ struct
   let tgt = Type.mode
   let name = ref "△"
 
-  type nonparametric = D.zero
+  type nonparametric = V.nonparametric
 
-  let nonparametric = D.zero
+  let nonparametric = V.nonparametric
 end
 
 module BoxGen
-    (Disc : Mode.Generated with module G := DiscGen)
+    (V : Variant)
+    (Disc : Mode.Generated with module G := DiscGen(V))
     (Type : Mode.Generated with module G := TypeGen) =
 struct
   type src = Type.t
@@ -55,16 +81,17 @@ struct
   let tgt = Disc.mode
   let name = ref "□"
 
-  type nonparametric = D.zero
+  type nonparametric = V.nonparametric
 
-  let nonparametric = D.zero
+  let nonparametric = V.nonparametric
 end
 
 module AdjunctionCells
-    (Disc : Mode.Generated with module G := DiscGen)
+    (V : Variant)
+    (Disc : Mode.Generated with module G := DiscGen(V))
     (Type : Mode.Generated with module G := TypeGen)
-    (Triangle : Modality.Generated with module G := TriangleGen(Disc)(Type))
-    (Box : Modality.Generated with module G := BoxGen(Disc)(Type)) =
+    (Triangle : Modality.Generated with module G := TriangleGen(V)(Disc)(Type))
+    (Box : Modality.Generated with module G := BoxGen(V)(Disc)(Type)) =
 struct
   let disc = Disc.mode
   let typ = Type.mode
@@ -206,7 +233,12 @@ struct
     | Zero_cells | Many_cells -> None
 
   let parametric_locker : type a. a Mode.t -> (a Modalcell.parametric_locker, string) Result.t =
-   fun _ -> Error "adjunction"
+   fun m ->
+    if V.locker then
+      match Mode.compare m Type.mode with
+      | Eq -> Ok (Modalcell.Locker (tribox, counit))
+      | Neq -> Ok (Locker (Modality.id m, Id (Modality.id m)))
+    else Error "adjunction"
 
   (* Since parallel 2-cells can differ, we display a cell by its pairing. *)
   let to_string : type a m n b. (a, m, n, b) Modalcell.t -> string =
@@ -214,10 +246,11 @@ struct
 end
 
 module AdjunctionModalities
-    (Disc : Mode.Generated with module G := DiscGen)
+    (V : Variant)
+    (Disc : Mode.Generated with module G := DiscGen(V))
     (Type : Mode.Generated with module G := TypeGen)
-    (Triangle : Modality.Generated with module G := TriangleGen(Disc)(Type))
-    (Box : Modality.Generated with module G := BoxGen(Disc)(Type)) : Modality.Theory = struct
+    (Triangle : Modality.Generated with module G := TriangleGen(V)(Disc)(Type))
+    (Box : Modality.Generated with module G := BoxGen(V)(Disc)(Type)) : Modality.Theory = struct
   let tangible _ = true
   let pellucid _ = false
 
@@ -232,26 +265,28 @@ module AdjunctionModalities
   let translucent _ = true
 end
 
-let install modes modalities =
+let install (module V : Variant) modes modalities =
+  let module Disc = DiscGen (V) in
   (match modes with
   | [ disc; ty ] ->
-      DiscGen.name := disc;
+      Disc.name := disc;
       TypeGen.name := ty
   | [] -> ()
-  | _ -> failwith "wrong number of mode names for adjunction mode theory");
-  let module Disc = Mode.Generate (DiscGen) in
+  | _ -> failwith ("wrong number of mode names for " ^ V.name ^ " mode theory"));
+  let module Disc = Mode.Generate (Disc) in
   let module Type = Mode.Generate (TypeGen) in
-  let module Tri = TriangleGen (Disc) (Type) in
-  let module Bx = BoxGen (Disc) (Type) in
+  let module Tri = TriangleGen (V) (Disc) (Type) in
+  let module Bx = BoxGen (V) (Disc) (Type) in
   (match modalities with
   | [ tri; box ] ->
       Tri.name := tri;
       Bx.name := box
   | [] -> ()
-  | _ -> failwith "wrong number of modality names for adjunction mode theory");
+  | _ -> failwith ("wrong number of modality names for " ^ V.name ^ " mode theory"));
   Modality.set_one_char true modalities;
   let module Triangle = Modality.Generate (Tri) in
   let module Box = Modality.Generate (Bx) in
-  Modalcell.choose_theory (module AdjunctionCells (Disc) (Type) (Triangle) (Box) : Modalcell.Theory);
+  Modalcell.choose_theory
+    (module AdjunctionCells (V) (Disc) (Type) (Triangle) (Box) : Modalcell.Theory);
   Modality.choose_theory
-    (module AdjunctionModalities (Disc) (Type) (Triangle) (Box) : Modality.Theory)
+    (module AdjunctionModalities (V) (Disc) (Type) (Triangle) (Box) : Modality.Theory)

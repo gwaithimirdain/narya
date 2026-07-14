@@ -31,12 +31,39 @@ open Pairing
 
    The enumeration in [count] below recurses on the source ends of the two words by case analysis on the fate of the source-most generator of m (killed by ε, or passed through after stripping unit-created arcs from the source end of n), together with the (◇, ∇) cap when m is exhausted; each pairing corresponds to exactly one recursion trace, so none is counted twice. *)
 
-module DiscGen = struct
-  let name = ref "Disc"
+module type Variant = sig
+  type nonparametric
 
+  val nonparametric : nonparametric D.t
+  val name : string
+  val locker : bool
+  val nabla_tangible : bool
+end
+
+module Ordinary = struct
   type nonparametric = D.zero
 
   let nonparametric = D.zero
+  let name = "adjunction"
+  let locker = false
+  let nabla_tangible = true
+end
+
+module Discrete = struct
+  type nonparametric = D.one
+
+  let nonparametric = D.one
+  let name = "discrete adjunction"
+  let locker = true
+  let nabla_tangible = false
+end
+
+module DiscGen (V : Variant) = struct
+  let name = ref "Disc"
+
+  type nonparametric = V.nonparametric
+
+  let nonparametric = V.nonparametric
 end
 
 module TypeGen = struct
@@ -48,7 +75,8 @@ module TypeGen = struct
 end
 
 module TriangleGen
-    (Disc : Mode.Generated with module G := DiscGen)
+    (V : Variant)
+    (Disc : Mode.Generated with module G := DiscGen(V))
     (Type : Mode.Generated with module G := TypeGen) =
 struct
   type src = Disc.t
@@ -58,13 +86,14 @@ struct
   let tgt = Type.mode
   let name = ref "△"
 
-  type nonparametric = D.zero
+  type nonparametric = V.nonparametric
 
-  let nonparametric = D.zero
+  let nonparametric = V.nonparametric
 end
 
 module BoxGen
-    (Disc : Mode.Generated with module G := DiscGen)
+    (V : Variant)
+    (Disc : Mode.Generated with module G := DiscGen(V))
     (Type : Mode.Generated with module G := TypeGen) =
 struct
   type src = Type.t
@@ -74,13 +103,14 @@ struct
   let tgt = Disc.mode
   let name = ref "□"
 
-  type nonparametric = D.zero
+  type nonparametric = V.nonparametric
 
-  let nonparametric = D.zero
+  let nonparametric = V.nonparametric
 end
 
 module DiamondGen
-    (Disc : Mode.Generated with module G := DiscGen)
+    (V : Variant)
+    (Disc : Mode.Generated with module G := DiscGen(V))
     (Type : Mode.Generated with module G := TypeGen) =
 struct
   type src = Type.t
@@ -90,13 +120,14 @@ struct
   let tgt = Disc.mode
   let name = ref "◇"
 
-  type nonparametric = D.zero
+  type nonparametric = V.nonparametric
 
-  let nonparametric = D.zero
+  let nonparametric = V.nonparametric
 end
 
 module NablaGen
-    (Disc : Mode.Generated with module G := DiscGen)
+    (V : Variant)
+    (Disc : Mode.Generated with module G := DiscGen(V))
     (Type : Mode.Generated with module G := TypeGen) =
 struct
   type src = Disc.t
@@ -106,18 +137,19 @@ struct
   let tgt = Type.mode
   let name = ref "∇"
 
-  type nonparametric = D.zero
+  type nonparametric = V.nonparametric
 
-  let nonparametric = D.zero
+  let nonparametric = V.nonparametric
 end
 
 module GwptCells
-    (Disc : Mode.Generated with module G := DiscGen)
+    (V : Variant)
+    (Disc : Mode.Generated with module G := DiscGen(V))
     (Type : Mode.Generated with module G := TypeGen)
-    (Triangle : Modality.Generated with module G := TriangleGen(Disc)(Type))
-    (Box : Modality.Generated with module G := BoxGen(Disc)(Type))
-    (Diamond : Modality.Generated with module G := DiamondGen(Disc)(Type))
-    (Nabla : Modality.Generated with module G := NablaGen(Disc)(Type)) =
+    (Triangle : Modality.Generated with module G := TriangleGen(V)(Disc)(Type))
+    (Box : Modality.Generated with module G := BoxGen(V)(Disc)(Type))
+    (Diamond : Modality.Generated with module G := DiamondGen(V)(Disc)(Type))
+    (Nabla : Modality.Generated with module G := NablaGen(V)(Disc)(Type)) =
 struct
   let disc = Disc.mode
   let typ = Type.mode
@@ -501,7 +533,12 @@ struct
     | Zero_cells | Many_cells -> None
 
   let parametric_locker : type a. a Mode.t -> (a Modalcell.parametric_locker, string) Result.t =
-   fun _ -> Error "gwpt"
+   fun m ->
+    if V.locker then
+      match Mode.compare m Type.mode with
+      | Eq -> Ok (Modalcell.Locker (tribox, tb_counit))
+      | Neq -> Ok (Locker (Modality.id m, Id (Modality.id m)))
+    else Error "gwpt"
 
   (* Since parallel 2-cells can differ, we display a cell by its pairing. *)
   let to_string : type a m n b. (a, m, n, b) Modalcell.t -> string =
@@ -509,7 +546,6 @@ struct
 
   (* The theory of modality properties is nested inside the cells module, so that installing both theories instantiates this functor -- and in particular Modalcell.generate, which allocates fresh generating 2-cells -- only once. *)
   module Modalities : Modality.Theory = struct
-    let tangible _ = true
     let pellucid _ = false
 
     (* The left adjoints (those whose normal forms contain no □ or ∇, namely the identities, △, ◇, and △◇) are transparent. *)
@@ -524,23 +560,31 @@ struct
       let (Normalize (m, _, _)) = normalize m in
       transparent_normal m
 
-    let translucent _ = true
+    (* In the discrete case, ∇ is not tangible or translucent, so that it doesn't become discrete (it should be codiscrete).  Since ◇ has no left adjoint, this means there is no way to define a composed modal operator ∇◇ directly, only a positive ◇ and a negative ∇.  *)
+    let tangible : type a m b. (a, m, b) Modality.t -> bool =
+     fun m ->
+      match Modality.compare m nab with
+      | Eq -> V.nabla_tangible
+      | Neq -> true
+
+    let translucent m = tangible m
   end
 end
 
-let install modes modalities =
+let install (module V : Variant) modes modalities =
+  let module Disc = DiscGen (V) in
   (match modes with
   | [ disc; ty ] ->
-      DiscGen.name := disc;
+      Disc.name := disc;
       TypeGen.name := ty
   | [] -> ()
   | _ -> failwith "wrong number of mode names for gwpt mode theory");
-  let module Disc = Mode.Generate (DiscGen) in
+  let module Disc = Mode.Generate (Disc) in
   let module Type = Mode.Generate (TypeGen) in
-  let module Tri = TriangleGen (Disc) (Type) in
-  let module Bx = BoxGen (Disc) (Type) in
-  let module Dia = DiamondGen (Disc) (Type) in
-  let module Nab = NablaGen (Disc) (Type) in
+  let module Tri = TriangleGen (V) (Disc) (Type) in
+  let module Bx = BoxGen (V) (Disc) (Type) in
+  let module Dia = DiamondGen (V) (Disc) (Type) in
+  let module Nab = NablaGen (V) (Disc) (Type) in
   (match modalities with
   | [ tri; box; dia; nab ] ->
       Tri.name := tri;
@@ -554,6 +598,6 @@ let install modes modalities =
   let module Box = Modality.Generate (Bx) in
   let module Diamond = Modality.Generate (Dia) in
   let module Nabla = Modality.Generate (Nab) in
-  let module Cells = GwptCells (Disc) (Type) (Triangle) (Box) (Diamond) (Nabla) in
+  let module Cells = GwptCells (V) (Disc) (Type) (Triangle) (Box) (Diamond) (Nabla) in
   Modalcell.choose_theory (module Cells : Modalcell.Theory);
   Modality.choose_theory (module Cells.Modalities : Modality.Theory)

@@ -157,13 +157,33 @@ let speclist =
     ( "-adjunction",
       Arg.Unit
         (fun () ->
-          install_mode_theory := Modal.Adjunction.install;
+          install_mode_theory :=
+            Modal.Adjunction.install (module Modal.Adjunction.Ordinary : Modal.Adjunction.Variant);
           mode_theories := !mode_theories + 1),
       "Select the adjunction mode theory" );
+    ( "-discrete-adjunction",
+      Arg.Unit
+        (fun () ->
+          hott_forbidden := Some "-discrete-adjunction";
+          external_ok := `Any;
+          install_mode_theory :=
+            Modal.Adjunction.install (module Modal.Adjunction.Discrete : Modal.Adjunction.Variant);
+          mode_theories := !mode_theories + 1),
+      "Select the discrete adjunction mode theory" );
     ( "-gwpt",
       Arg.Unit
         (fun () ->
-          install_mode_theory := Modal.Gwpt.install;
+          install_mode_theory :=
+            Modal.Gwpt.install (module Modal.Gwpt.Ordinary : Modal.Gwpt.Variant);
+          mode_theories := !mode_theories + 1),
+      "Select the geometrically well-pointed topos mode theory" );
+    ( "-discrete-gwpt",
+      Arg.Unit
+        (fun () ->
+          hott_forbidden := Some "-discrete-gwpt";
+          external_ok := `Any;
+          install_mode_theory :=
+            Modal.Gwpt.install (module Modal.Gwpt.Discrete : Modal.Gwpt.Variant);
           mode_theories := !mode_theories + 1),
       "Select the geometrically well-pointed topos mode theory" );
     ( "-coreflection",

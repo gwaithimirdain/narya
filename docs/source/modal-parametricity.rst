@@ -15,8 +15,10 @@ These features require ``-parametric``, and by default we will assume ``-directi
    "``-discrete-coreflector``", "``-coreflector``", "any", "``♭``", "``♭`` (arity 1)"
    "``-discrete-spatial``", "``-spatial``", "any", "``♭``", "--"
    "``-discrete-coreflection``", "``-coreflection``", "any", "``△``, ``Disc``", "``△□`` (arity 1)"
+   "``-discrete-adjunction``", "``-adjunction``", "any", "``△``, ``△□``, ``Disc``", "``△□``"
    "``-discrete-local``", "``-local``", "any", "``△``, ``△□``, ``Disc``", "--"
    "``-discrete-tconn``", "``-tconn``", "1 only", "``△``, ``△□``, ``△◇``, ``Disc``", "``△□`` (arity 1)"
+   "``-discrete-gwpt``", "``-gwpt``", "any", "``△``, ``△□``, ``△◇``, ``Disc``", "``△□``"
 
 
 Discrete modalities
@@ -28,7 +30,7 @@ A mode theory can declare any of its *modalities* to be *discrete* (a.k.a. *nonp
 
 In addition to modalities being discrete, a *mode* can also be declared as discrete.  This means that types at that mode have no higher-dimensional versions at all.
 
-For compatibility, it is required that a modality whose source *or* target mode is discrete must also be discrete.  There is also a further restriction that will be explained in the next section: if there are any 2-cells from a non-discrete modality (such as an identity) to a discrete modality, then the arity of parametricity must be 1.  This is why ``-discrete-tconn`` requires arity 1.
+For compatibility, it is required that a modality whose source *or* target mode is discrete must also be discrete.  There is also a further restriction that will be explained in the next section: if there are any 2-cells from a non-discrete modality (such as an identity) to a discrete modality, then the arity of parametricity must be 1.  This is the syntactic reason why ``-discrete-tconn`` requires arity 1, because of the reflector unit ``1 ⇒ △◇``.
 
 
 Discrete function-types
