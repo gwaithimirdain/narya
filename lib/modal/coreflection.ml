@@ -101,9 +101,9 @@ struct
        box_counit : △□ ⇒ id_Type
        box_unit : id_Disc ⇒ □△ (iso)        box_unit_inv : □△ ⇒ id_Disc
   *)
-  let box_counit = Modalcell.of_gen (Modalcell.generate tribox (Modality.id typ))
-  let box_unit = Modalcell.of_gen (Modalcell.generate (Modality.id disc) boxtri)
-  let box_unit_inv = Modalcell.of_gen (Modalcell.generate boxtri (Modality.id disc))
+  let box_counit = Modalcell.of_gen (Modalcell.generate "ε" tribox (Modality.id typ))
+  let box_unit = Modalcell.of_gen (Modalcell.generate "η" (Modality.id disc) boxtri)
+  let box_unit_inv = Modalcell.of_gen (Modalcell.generate "η⁻¹" boxtri (Modality.id disc))
 
   (* A modality is sinister (a declared left adjoint) if it is the identity or △ (left adjoint to □). *)
   let sinister : type a f b. (a, f, b) Modality.t -> (a, f, b) Modalcell.sinister option =

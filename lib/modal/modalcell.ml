@@ -1,13 +1,17 @@
+open Asai.Range
 open Util
 open Dim
+module StringMap = Map.Make (String)
 
 type ('a, 'm, 'n, 'b) gen =
   | PK : ('a, 'm, 'b) Modality.t * int * ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) gen
 
-let count = ref 0
-
 module Gen = struct
   type ('a, 'm, 'n, 'b) t = ('a, 'm, 'n, 'b) gen
+  type all_wrapped = Wrap : ('src, 'm, 'n, 'tgt) gen -> all_wrapped
+
+  let names : string Dynarray.t = Dynarray.create ()
+  let by_name : all_wrapped StringMap.t ref = ref StringMap.empty
 
   let compare : type dom1 mu1 nu1 cod1 dom2 mu2 nu2 cod2.
       (dom1, mu1, nu1, cod1) t ->
@@ -19,11 +23,13 @@ module Gen = struct
     | _ -> Neq
 end
 
-let generate : type a m n b. (a, m, b) Modality.t -> (a, n, b) Modality.t -> (a, m, n, b) gen =
- fun m n ->
-  let x = !count in
-  count := !count + 1;
-  PK (m, x, n)
+let generate : type a m n b.
+    string -> (a, m, b) Modality.t -> (a, n, b) Modality.t -> (a, m, n, b) gen =
+ fun name m n ->
+  let cell = PK (m, Dynarray.length Gen.names, n) in
+  Dynarray.add_last Gen.names name;
+  Gen.by_name := StringMap.add name (Wrap cell : Gen.all_wrapped) !Gen.by_name;
+  cell
 
 type (_, _, _, _) t =
   | Gen : ('a, 'm, 'n, 'b) gen -> ('a, 'm, 'n, 'b) t
@@ -263,6 +269,38 @@ let parametric_locker m =
     match T.parametric_locker m with
     | Ok l -> l
     | Error str -> failwith ("mode theory " ^ str ^ " doesn't support external parametricity")
+
+let rec of_name : type mode.
+    mode Mode.t ->
+    string located list ->
+    ( mode cod2_wrapped,
+      [ `Not_found of string located | `Wrong_src of Mode.wrapped * string located * Mode.wrapped ]
+    )
+    Result.t =
+ fun mode -> function
+  | [] -> Ok (Wrap (id2 mode))
+  | name :: rest -> (
+      let go_on : type a m n b.
+          (a, m, n, b) t ->
+          ( mode cod2_wrapped,
+            [ `Not_found of string located
+            | `Wrong_src of Mode.wrapped * string located * Mode.wrapped ] )
+          Result.t =
+       fun cell ->
+        match of_name mode rest with
+        | Ok (Wrap rest) -> (
+            match Mode.compare (hsrc cell) (htgt rest) with
+            | Eq ->
+                let (Wrap output) = hcomp_wrapped cell rest in
+                Ok (Wrap output)
+            | Neq -> Error (`Wrong_src (Wrap (hsrc cell), name, Wrap (htgt rest))))
+        | Error e -> Error e in
+      match StringMap.find_opt name.value !Gen.by_name with
+      | Some (Wrap cell) -> go_on (of_gen cell)
+      | None -> (
+          match Modality.of_name_src [ name ] mode with
+          | Ok (Wrap m) -> go_on (id m)
+          | Error e -> Error e))
 
 let to_string : type a m n b. (a, m, n, b) t -> string =
  fun m ->

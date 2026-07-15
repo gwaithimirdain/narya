@@ -77,30 +77,30 @@ struct
 
   let flat = Modality.of_gen Flat.modality
   let sharp = Modality.of_gen Sharp.modality
-  let flat_counit = Modalcell.of_gen (Modalcell.generate flat (Modality.id Testmode.mode))
+  let flat_counit = Modalcell.of_gen (Modalcell.generate "ε♭" flat (Modality.id Testmode.mode))
 
   let flat_comult =
     Modalcell.of_gen
-      (Modalcell.generate flat
+      (Modalcell.generate "Δ♭" flat
          (Path (Suc (Suc (Zero, Flat.modality), Flat.modality), Testmode.mode)))
 
-  let sharp_unit = Modalcell.of_gen (Modalcell.generate (Modality.id Testmode.mode) sharp)
+  let sharp_unit = Modalcell.of_gen (Modalcell.generate "η♯" (Modality.id Testmode.mode) sharp)
 
   let sharp_mult =
     Modalcell.of_gen
-      (Modalcell.generate
+      (Modalcell.generate "μ♯"
          (Path (Suc (Suc (Zero, Sharp.modality), Sharp.modality), Testmode.mode))
          sharp)
 
   (* Unit and counit of the adjunction ♭ ⊣ ♯: id ⇒ ♯∘♭ and ♭∘♯ ⇒ id. *)
   let adj_unit =
     Modalcell.of_gen
-      (Modalcell.generate (Modality.id Testmode.mode)
+      (Modalcell.generate "η♯♭" (Modality.id Testmode.mode)
          (Modality.Path (Suc (Suc (Zero, Sharp.modality), Flat.modality), Testmode.mode)))
 
   let adj_counit =
     Modalcell.of_gen
-      (Modalcell.generate
+      (Modalcell.generate "ε♭♯"
          (Modality.Path (Suc (Suc (Zero, Flat.modality), Sharp.modality), Testmode.mode))
          (Modality.id Testmode.mode))
 

@@ -98,14 +98,14 @@ struct
      and comultiplication, and (both directions of) the two given isomorphisms.  As elsewhere,
      both isomorphisms get an explicit inverse generator; since the theory is posetal, it does
      not matter that these are freely generated rather than literally inverse. *)
-  let sharp_unit = Modalcell.of_gen (Modalcell.generate (Modality.id typ) sharp)
-  let sharp_mult = Modalcell.of_gen (Modalcell.generate sharpsharp sharp)
-  let flat_counit = Modalcell.of_gen (Modalcell.generate flat (Modality.id typ))
-  let flat_comult = Modalcell.of_gen (Modalcell.generate flat flatflat)
-  let sf_to = Modalcell.of_gen (Modalcell.generate sharpflat flat) (* ♯♭ ⇒ ♭ *)
-  let sf_from = Modalcell.of_gen (Modalcell.generate flat sharpflat) (* ♭ ⇒ ♯♭ *)
-  let fs_to = Modalcell.of_gen (Modalcell.generate flatsharp sharp) (* ♭♯ ⇒ ♯ *)
-  let fs_from = Modalcell.of_gen (Modalcell.generate sharp flatsharp) (* ♯ ⇒ ♭♯ *)
+  let sharp_unit = Modalcell.of_gen (Modalcell.generate "η♯" (Modality.id typ) sharp)
+  let sharp_mult = Modalcell.of_gen (Modalcell.generate "μ♯" sharpsharp sharp)
+  let flat_counit = Modalcell.of_gen (Modalcell.generate "ε♭" flat (Modality.id typ))
+  let flat_comult = Modalcell.of_gen (Modalcell.generate "Δ♭" flat flatflat)
+  let sf_to = Modalcell.of_gen (Modalcell.generate "♯♭_to_♭" sharpflat flat) (* ♯♭ ⇒ ♭ *)
+  let sf_from = Modalcell.of_gen (Modalcell.generate "♭_to_♯♭" flat sharpflat) (* ♭ ⇒ ♯♭ *)
+  let fs_to = Modalcell.of_gen (Modalcell.generate "♭♯_to_♯" flatsharp sharp) (* ♭♯ ⇒ ♯ *)
+  let fs_from = Modalcell.of_gen (Modalcell.generate "♯_to_♭♯" sharp flatsharp) (* ♯ ⇒ ♭♯ *)
 
   (* The "other halves" of the idempotence isomorphisms ♯♯ ≅ ♯ and ♭♭ ≅ ♭, obtained (as usual for
      an idempotent monad/comonad) by whiskering the unit/counit rather than as separate

@@ -131,13 +131,15 @@ struct
        box_unit : id_Disc ⇒ □△ (iso)        box_unit_inv : □△ ⇒ id_Disc
        diamond_counit : ◇△ ⇒ id_Disc (iso)  diamond_counit_inv : id_Disc ⇒ ◇△
        box_to_dia : □ ⇒ ◇ *)
-  let box_counit = Modalcell.of_gen (Modalcell.generate tribox (Modality.id typ))
-  let diamond_unit = Modalcell.of_gen (Modalcell.generate (Modality.id typ) tridia)
-  let box_unit = Modalcell.of_gen (Modalcell.generate (Modality.id disc) boxtri)
-  let box_unit_inv = Modalcell.of_gen (Modalcell.generate boxtri (Modality.id disc))
-  let diamond_counit = Modalcell.of_gen (Modalcell.generate diatri (Modality.id disc))
-  let diamond_counit_inv = Modalcell.of_gen (Modalcell.generate (Modality.id disc) diatri)
-  let box_to_dia = Modalcell.of_gen (Modalcell.generate box dia)
+  let box_counit = Modalcell.of_gen (Modalcell.generate "ε△□" tribox (Modality.id typ))
+  let diamond_unit = Modalcell.of_gen (Modalcell.generate "η△◇" (Modality.id typ) tridia)
+  let box_unit = Modalcell.of_gen (Modalcell.generate "η□△" (Modality.id disc) boxtri)
+  let box_unit_inv = Modalcell.of_gen (Modalcell.generate "η□△⁻¹" boxtri (Modality.id disc))
+  let diamond_counit = Modalcell.of_gen (Modalcell.generate "ε◇△" diatri (Modality.id disc))
+
+  let diamond_counit_inv = Modalcell.of_gen (Modalcell.generate "ε◇△⁻¹" (Modality.id disc) diatri)
+
+  let box_to_dia = Modalcell.of_gen (Modalcell.generate "□_to_◇" box dia)
 
   (* A modality is sinister (a declared left adjoint) if it is the identity, △ (left adjoint to □), or ◇ (left adjoint to △), or △◇ (left adjoint to △□). *)
   let sinister : type a f b. (a, f, b) Modality.t -> (a, f, b) Modalcell.sinister option =

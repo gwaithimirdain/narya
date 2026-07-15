@@ -55,11 +55,11 @@ module CoreflectorCells
     (Coreflector : Modality.Generated with module G := CoreflectorGen(V)(Testmode)) =
 struct
   let comonad = Modality.of_gen Coreflector.modality
-  let counit = Modalcell.of_gen (Modalcell.generate comonad (Modality.id Testmode.mode))
+  let counit = Modalcell.of_gen (Modalcell.generate "ε" comonad (Modality.id Testmode.mode))
 
   let comult =
     Modalcell.of_gen
-      (Modalcell.generate comonad
+      (Modalcell.generate "Δ" comonad
          (Path (Suc (Suc (Zero, Coreflector.modality), Coreflector.modality), Testmode.mode)))
 
   let sinister : type a f b. (a, f, b) Modality.t -> (a, f, b) Modalcell.sinister option = function

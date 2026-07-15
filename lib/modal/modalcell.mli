@@ -1,3 +1,4 @@
+open Asai.Range
 open Util
 
 type ('a, 'm, 'n, 'b) gen
@@ -11,7 +12,7 @@ module Gen : sig
     ('dom1 * 'mu1 * 'nu1 * 'cod1, 'dom2 * 'mu2 * 'nu2 * 'cod2) Eq.compare
 end
 
-val generate : ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) gen
+val generate : string -> ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) gen
 
 type (_, _, _, _) t =
   | Gen : ('a, 'm, 'n, 'b) gen -> ('a, 'm, 'n, 'b) t
@@ -133,4 +134,13 @@ val vcomp_extending :
   ('a, 'm, 'b) cod_wrapped
 
 val parametric_locker : 'a Mode.t -> 'a parametric_locker
+
+val of_name :
+  'mode Mode.t ->
+  string located list ->
+  ( 'mode cod2_wrapped,
+    [ `Not_found of string located | `Wrong_src of Mode.wrapped * string located * Mode.wrapped ]
+  )
+  Result.t
+
 val to_string : ('a, 'm, 'n, 'b) t -> string

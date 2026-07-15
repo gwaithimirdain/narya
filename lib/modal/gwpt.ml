@@ -177,18 +177,20 @@ struct
        tb_unit : 1_Disc ⇒ □△                 tb_counit : △□ ⇒ 1_Type
        dn_unit : 1_Type ⇒ ∇◇                 dn_counit : ◇∇ ⇒ 1_Disc (iso)
        dt_iso : ◇△ ⇒ 1_Disc (iso)            bn_iso : □∇ ⇒ 1_Disc (iso)
-       box_dia : □ ⇒ ◇                       tri_nab : △ ⇒ ∇  *)
-  let tb_unit_gen = Modalcell.generate (Modality.id disc) boxtri
-  let tb_counit_gen = Modalcell.generate tribox (Modality.id typ)
-  let dn_unit_gen = Modalcell.generate (Modality.id typ) nabdia
-  let dn_counit_gen = Modalcell.generate dianab (Modality.id disc)
-  let dn_counit_inv_gen = Modalcell.generate (Modality.id disc) dianab
-  let dt_iso_gen = Modalcell.generate diatri (Modality.id disc)
-  let dt_iso_inv_gen = Modalcell.generate (Modality.id disc) diatri
-  let bn_iso_gen = Modalcell.generate boxnab (Modality.id disc)
-  let bn_iso_inv_gen = Modalcell.generate (Modality.id disc) boxnab
-  let box_dia_gen = Modalcell.generate box dia
-  let tri_nab_gen = Modalcell.generate tri nab
+       box_dia : □ ⇒ ◇                       tri_nab : △ ⇒ ∇
+
+     We have to be more careful in choosing the names of these cells than we would in a locally posetal theory, because the user may need to refer to them in manual key operations.  And since there are multiple adjunctions around, we can't just call them η and ε.  We choose to name them by their source and target with a ⇨ between. *)
+  let tb_unit_gen = Modalcell.generate "1⇨□△" (Modality.id disc) boxtri
+  let tb_counit_gen = Modalcell.generate "△□⇨1" tribox (Modality.id typ)
+  let dn_unit_gen = Modalcell.generate "1⇨∇◇" (Modality.id typ) nabdia
+  let dn_counit_gen = Modalcell.generate "◇∇⇨1" dianab (Modality.id disc)
+  let dn_counit_inv_gen = Modalcell.generate "1⇨◇∇" (Modality.id disc) dianab
+  let dt_iso_gen = Modalcell.generate "◇△⇨1" diatri (Modality.id disc)
+  let dt_iso_inv_gen = Modalcell.generate "1⇨◇△" (Modality.id disc) diatri
+  let bn_iso_gen = Modalcell.generate "□∇⇨1" boxnab (Modality.id disc)
+  let bn_iso_inv_gen = Modalcell.generate "1⇨□∇" (Modality.id disc) boxnab
+  let box_dia_gen = Modalcell.generate "□⇨◇" box dia
+  let tri_nab_gen = Modalcell.generate "△⇨∇" tri nab
   let tb_unit = Modalcell.of_gen tb_unit_gen
   let tb_counit = Modalcell.of_gen tb_counit_gen
   let dn_unit = Modalcell.of_gen dn_unit_gen

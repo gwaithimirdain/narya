@@ -131,13 +131,15 @@ struct
        box_unit : id_Disc ⇒ □△ (iso)        box_unit_inv : □△ ⇒ id_Disc
        nabla_counit : ◇△ ⇒ id_Disc (iso)  nabla_counit_inv : id_Disc ⇒ ◇△
        box_to_dia : □ ⇒ ◇ *)
-  let box_counit = Modalcell.of_gen (Modalcell.generate tribox (Modality.id typ))
-  let nabla_unit = Modalcell.of_gen (Modalcell.generate (Modality.id typ) nabbox)
-  let box_unit = Modalcell.of_gen (Modalcell.generate (Modality.id disc) boxtri)
-  let box_unit_inv = Modalcell.of_gen (Modalcell.generate boxtri (Modality.id disc))
-  let nabla_counit = Modalcell.of_gen (Modalcell.generate boxnab (Modality.id disc))
-  let nabla_counit_inv = Modalcell.of_gen (Modalcell.generate (Modality.id disc) boxnab)
-  let tri_to_nab = Modalcell.of_gen (Modalcell.generate tri nab)
+  let box_counit = Modalcell.of_gen (Modalcell.generate "ε△□" tribox (Modality.id typ))
+  let nabla_unit = Modalcell.of_gen (Modalcell.generate "η∇□" (Modality.id typ) nabbox)
+  let box_unit = Modalcell.of_gen (Modalcell.generate "η□△" (Modality.id disc) boxtri)
+  let box_unit_inv = Modalcell.of_gen (Modalcell.generate "η□△⁻¹" boxtri (Modality.id disc))
+  let nabla_counit = Modalcell.of_gen (Modalcell.generate "ε□∇" boxnab (Modality.id disc))
+
+  let nabla_counit_inv = Modalcell.of_gen (Modalcell.generate "ε□∇⁻¹" (Modality.id disc) boxnab)
+
+  let tri_to_nab = Modalcell.of_gen (Modalcell.generate "△_to_∇" tri nab)
 
   (* A modality is sinister (a declared left adjoint) if it is the identity, △ (left adjoint to □), or □ (left adjoint to ∇), or △□ (left adjoint to ∇□). *)
   let sinister : type a f b. (a, f, b) Modality.t -> (a, f, b) Modalcell.sinister option =

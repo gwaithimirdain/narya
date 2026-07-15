@@ -30,11 +30,11 @@ module ReflectorCells
     (Reflector : Modality.Generated with module G := ReflectorGen(Testmode)) =
 struct
   let monad = Modality.of_gen Reflector.modality
-  let unit = Modalcell.of_gen (Modalcell.generate (Modality.id Testmode.mode) monad)
+  let unit = Modalcell.of_gen (Modalcell.generate "η" (Modality.id Testmode.mode) monad)
 
   let mult =
     Modalcell.of_gen
-      (Modalcell.generate
+      (Modalcell.generate "μ"
          (Path (Suc (Suc (Zero, Reflector.modality), Reflector.modality), Testmode.mode))
          monad)
 

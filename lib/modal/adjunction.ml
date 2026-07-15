@@ -108,8 +108,8 @@ struct
   let boxtri = Modality.Path (Suc (Suc (Zero, Box.modality), Triangle.modality), disc)
 
   (* The generating 2-cells: unit : 1_Disc ⇒ □△ and counit : △□ ⇒ 1_Type. *)
-  let unit_gen = Modalcell.generate (Modality.id disc) boxtri
-  let counit_gen = Modalcell.generate tribox (Modality.id typ)
+  let unit_gen = Modalcell.generate "η" (Modality.id disc) boxtri
+  let counit_gen = Modalcell.generate "ε" tribox (Modality.id typ)
   let unit = Modalcell.of_gen unit_gen
   let counit = Modalcell.of_gen counit_gen
 
