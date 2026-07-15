@@ -380,6 +380,7 @@ module F = struct
                 "." ^ f ^ ".." ^ String.concat "." (List.map string_of_int p)
               else "." ^ f ^ "." ^ String.concat "" (List.map string_of_int p)
           | `Int i -> "." ^ string_of_int i)
+    | Key (tm, parts) -> fprintf ppf "Key(%a, #%s)" synth tm.value (String.concat "." parts)
     | Pi (_, _, _, _) -> fprintf ppf "Pi(?)"
     | HigherPi (_, _, _, _) -> fprintf ppf "HigherPi(?)"
     | InstHigherPi (_, _, _) -> fprintf ppf "InstHigherPi(?)"

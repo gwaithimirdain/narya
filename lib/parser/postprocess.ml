@@ -113,6 +113,9 @@ let rec process : type n lt ls rt rs.
   | Field _ ->
       (* This can happen if the user tries to project a field from a constructor. *)
       fatal (Parse_error "invalid location for field projection")
+  | Key _ ->
+      (* A key operation can only be applied postfix to a synthesizing term, never appear in head position. *)
+      fatal (Parse_error "invalid location for key operation")
   | Superscript (Some x, str, _) -> (
       match deg_of_string str.value with
       | Some (Any_deg s) ->
@@ -262,6 +265,12 @@ and process_apply : type n.
           | _ -> fatal (Nonsynthesizing "head of field application") in
         process_apply ctx { value = Synth (Field (fn, fld, None)); loc } args
       with Failure _ -> fatal (Invalid_field (String.concat "." ("" :: fld :: pbij))))
+  | (Wrap { value = Key (parts, _); _ }, loc) :: args ->
+      let fn =
+        match fn.value with
+        | Synth sfn -> { value = sfn; loc = fn.loc }
+        | _ -> fatal (Nonsynthesizing "head of key operation") in
+      process_apply ctx { value = Synth (Key (fn, parts)); loc } args
   | (Wrap { value = Notn ((Braces, _), n); loc = braceloc }, loc) :: rest -> (
       match args n with
       | [ Token (LBrace, _); Term arg; Token (RBrace, _) ] ->

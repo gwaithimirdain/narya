@@ -78,6 +78,7 @@ module rec Make : functor (I : Indices) -> sig
         * [ `Name of string * int list | `Int of int ]
         * string located list located option
         -> 'a synth
+    | Key : 'a synth located * string list -> 'a synth
     | Pi :
         I.name * string located list located * 'a check located * 'a I.suc check located
         -> 'a synth
@@ -258,6 +259,8 @@ functor
           * [ `Name of string * int list | `Int of int ]
           * string located list located option
           -> 'a synth
+      (* A modal key operation applied postfix to a synthesizing term, written "x #a.b.c".  The dot-separated pieces of the key name are stored as strings, to be resolved into a 2-cell at typechecking time. *)
+      | Key : 'a synth located * string list -> 'a synth
       | Pi :
           I.name * string located list located * 'a check located * 'a I.suc check located
           -> 'a synth
@@ -496,6 +499,7 @@ module Resolve (R : Resolver) = struct
           | Error e -> Fail e)
       | Const c -> Const c
       | Field (tm, fld, lock) -> Field (synth ctx tm, fld, lock)
+      | Key (tm, parts) -> Key (synth ctx tm, parts)
       | Pi (x, modality, dom, cod) ->
           Pi (R.rename ctx x, modality, check ctx dom, check (R.snoc ctx x) cod)
       | HigherPi (x, modality, dom, cod) ->
