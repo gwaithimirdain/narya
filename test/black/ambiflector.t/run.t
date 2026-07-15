@@ -50,15 +50,39 @@
    ￫ info[I0000]
    ￮ constant unmk_mk defined
   
+   ￫ info[I0000]
+   ￮ constant zero defined
+  
+   ￫ info[I0000]
+   ￮ constant zero♮ defined
+  
 
 
 The composite unit-then-counit, id ⇒ ♮ ⇒ id, is "zero", not the identity: applying counit to a
 genuinely plain value (which needs the unit inserted first) does not typecheck.
+Note the very bad error message, which will be improved when we can print keys.
 
   $ narya -ambiflector ambiflector.ny -e "def roundtrip_bad (A : Type) (x : A) : A ≔ counit A x"
    ￫ error[E0401]
    ￭ command-line exec string
    1 | def roundtrip_bad (A : Type) (x : A) : A ≔ counit A x
+     ^ term synthesized type
+         A
+       but is being checked against type
+         A
+       unequal head terms:
+         A
+       does not equal
+         A
+  
+  [1]
+
+We get the same error here:
+
+  $ narya -ambiflector -e "def zero (A : Type) (a : A) : A ≔ a #ø"
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def zero (A : Type) (a : A) : A ≔ a #ø
      ^ term synthesized type
          A
        but is being checked against type

@@ -35,7 +35,8 @@ def wss4 (x :♮♮♮♮| Type) : ss4 ≔ ss4. x
 ` value out to a plain value and back through counit again reduces to the original counit.
 def roundtrip_good (A :♮| Type) (x :♮| A) : A ≔ counit A (counit A x)
 
-def roundtrip_good_ok (A :♮| Type) (x :♮| A) : Id A (roundtrip_good A x) x ≔ refl x
+def roundtrip_good_ok (A :♮| Type) (x :♮| A) : Id A (roundtrip_good A x) x
+  ≔ refl x
 
 ` Composing the unit and then the counit, id ⇒ ♮ ⇒ id, is *not* the identity on id (it is
 ` "zero"): applying counit to a genuinely plain (unkeyed) value, which needs the unit inserted
@@ -52,3 +53,8 @@ def unmk (A :♮| Type) (u :♮| Neg A) : A ≔ (u :♮| _) .un
 
 ` unmk (mk a) reduces to a, with the (unique) key applied.
 def unmk_mk (A :♮| Type) (a :♮| A) : Id A (unmk A (mk A a)) a ≔ refl a
+
+` The zero map
+def zero (A : Type) (a : A) : A #ø ≔ a #ø
+
+def zero♮ (A :♮| Type) (a : A) : A ≔ a #ø
