@@ -52,6 +52,8 @@ module FlatGen (V : Variant) (Testmode : Mode.Generated with module G := Testmod
   let nonparametric = V.nonparametric
 end
 
+(* We don't make sharp nonparametric even in the discrete case, since its values are codiscrete rather than discrete.  However, in that case we also make it non-tangible and non-translucent, so its discreteness or not doesn't matter. *)
+
 module SharpGen (V : Variant) (Testmode : Mode.Generated with module G := TestmodeGen) = struct
   type src = Testmode.t
   type tgt = Testmode.t
@@ -60,9 +62,9 @@ module SharpGen (V : Variant) (Testmode : Mode.Generated with module G := Testmo
   let tgt = Testmode.mode
   let name = ref "♯"
 
-  type nonparametric = V.nonparametric
+  type nonparametric = D.zero
 
-  let nonparametric = V.nonparametric
+  let nonparametric = D.zero
 end
 
 module SpatialCells

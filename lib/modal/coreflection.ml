@@ -8,6 +8,7 @@ module type Variant = sig
   val nonparametric : nonparametric D.t
   val name : string
   val locker : bool
+  val tri_pellucid : bool
 end
 
 module Ordinary = struct
@@ -16,6 +17,7 @@ module Ordinary = struct
   let nonparametric = D.zero
   let name = "coreflection"
   let locker = false
+  let tri_pellucid = false
 end
 
 module Discrete = struct
@@ -24,6 +26,7 @@ module Discrete = struct
   let nonparametric = D.one
   let name = "discrete coreflection"
   let locker = true
+  let tri_pellucid = true
 end
 
 module DiscGen (V : Variant) = struct
@@ -223,7 +226,6 @@ struct
   (* The theory of modality properties is nested inside the cells module, so that installing both theories instantiates this functor -- and in particular Modalcell.generate, which allocates fresh generating 2-cells -- only once. *)
   module Modalities : Modality.Theory = struct
     let tangible _ = true
-    let pellucid _ = false
 
     (* Every modality that normalizes to △ is transparent. *)
     let transparent_normal : type a m b. (a, m, b) Modality.t -> bool = function
@@ -238,6 +240,15 @@ struct
       transparent_normal m
 
     let translucent _ = true
+
+    (* In the discrete case, where we have a specific semantics in mind, △ is pellucid since it has a left adjoint, so is the inverse image of a locally connected geometric morphism. *)
+    let pellucid : type a m b. (a, m, b) Modality.t -> bool =
+     fun m ->
+      if V.tri_pellucid then
+        match Modality.compare m tri with
+        | Eq -> true
+        | Neq -> false
+      else false
   end
 end
 

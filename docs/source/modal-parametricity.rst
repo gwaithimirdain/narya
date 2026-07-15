@@ -3,7 +3,7 @@ Modal parametricity
 
 As remarked under :ref:`Modal type theory`, in general modal features and observational higher-dimensional features "commute" past each other without interacting, e.g. the higher-dimensional versions of modal canonical types are again modal canonical types in the same way.  This section describes two ways that modal type theory can interact with parametricity, inspired by `displayed type theory <https://doi.org/10.1017/S096012952510025X>`_.
 
-These features require ``-parametric``, and by default we will assume ``-direction p,rel,Br``.  They also require choosing a modified mode theory called a "discrete" mode theory.  The built-in discrete mode theories, along with the ordinary mode theory they modify, their restrictions on arity, and their "discrete" modalities and modes and "parametricity locker" modalities (to be explained below), are:
+These features require ``-parametric``, and by default we will assume ``-direction p,rel,Br``.  They also require choosing a modified mode theory called a "discrete" mode theory.  The built-in discrete mode theories, along with the ordinary mode theory they modify, their restrictions on the :ref:`arity <Varying the arity of parametricity>`, and their "discrete" modalities and modes and potential "parametricity locker" modalities (to be explained below), are:
 
 .. csv-table:: Mode theories
    :widths: auto
@@ -14,11 +14,20 @@ These features require ``-parametric``, and by default we will assume ``-directi
    "``-discrete-functor``", "``-functor``", "any", "``○``, ``DomType``", "--"
    "``-discrete-coreflector``", "``-coreflector``", "any", "``♭``", "``♭`` (arity 1)"
    "``-discrete-spatial``", "``-spatial``", "any", "``♭``", "--"
+   "``-discrete-cospatial``", "``-spatial``", "1 only", "``♯``, ``♭``", "--"
    "``-discrete-coreflection``", "``-coreflection``", "any", "``△``, ``Disc``", "``△□`` (arity 1)"
    "``-discrete-adjunction``", "``-adjunction``", "any", "``△``, ``△□``, ``Disc``", "``△□``"
    "``-discrete-local``", "``-local``", "any", "``△``, ``△□``, ``Disc``", "--"
    "``-discrete-tconn``", "``-tconn``", "1 only", "``△``, ``△□``, ``△◇``, ``Disc``", "``△□`` (arity 1)"
    "``-discrete-gwpt``", "``-gwpt``", "any", "``△``, ``△□``, ``△◇``, ``Disc``", "``△□``"
+
+Some discrete mode theories also differ from their base theories by having more :ref:`pellucid <Windowed matches>` modalities:
+
+- ``△`` is pellucid in ``-discrete-coreflection``, ``-discrete-adjunction``, and ``-discrete-local``.
+- ``△`` is pellucid in ``-discrete-gwpt``, and in the :ref:`external <External parametricity>` case so are ``◇`` and ``△◇``.
+- Also in the external case, ``◇`` and ``△◇`` are pellucid in ``-discrete-tconn`` (as is ``△``, as inherited from ``-tconn``).
+
+The reasons for these changes, and for the other choices in the table, will be explained in :ref:`Semantics of modal parametricity`.
 
 
 Discrete modalities
@@ -30,7 +39,7 @@ A mode theory can declare any of its *modalities* to be *discrete* (a.k.a. *nonp
 
 In addition to modalities being discrete, a *mode* can also be declared as discrete.  This means that types at that mode have no higher-dimensional versions at all.
 
-For compatibility, it is required that a modality whose source *or* target mode is discrete must also be discrete.  There is also a further restriction that will be explained in the next section: if there are any 2-cells from a non-discrete modality (such as an identity) to a discrete modality, then the arity of parametricity must be 1.  This is the syntactic reason why ``-discrete-tconn`` requires arity 1, because of the reflector unit ``1 ⇒ △◇``.
+For compatibility, it is required that a modality whose source *or* target mode is discrete must also be discrete.  There is also a further restriction that will be explained :ref:`below <Discrete units and arity 1>`: if there are any 2-cells from a non-discrete modality (such as an identity) to a discrete modality, then the arity of parametricity must be 1.  This is the syntactic reason why ``-discrete-tconn`` and ``-discrete-cospatial`` require arity 1, because of the reflector units ``1 ⇒ △◇`` and ``1 ⇒ ♯``; a semantic reason will be given in :ref:`Semantics of modal parametricity`.
 
 
 Discrete function-types
@@ -58,7 +67,7 @@ Note that an equivalence between these two types is exactly what we would expect
 Discrete units and arity 1
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Now we can explain the arity-1 restriction on mode theories with a 2-cell from a non-discrete modality to a discrete one.  Suppose in ``-discrete-tconn`` we have ``f : (x : X) (y :△◇| A) → B`` and ``(x : X) → A``.  Then we can form
+Now we can explain the arity-1 restriction on mode theories with a 2-cell from a non-discrete modality to a discrete one, at least from a syntactic perspective.  Suppose in ``-discrete-tconn`` we have ``f : (x : X) (y :△◇| A) → B`` and ``(x : X) → A``.  Then we can form
 
 .. code-block:: none
 
@@ -85,6 +94,8 @@ By contrast, if the arity is 1 then ``rel (x ↦ f x (a x))`` has type
    {x₀ : X} (x₁ : Br X x₀) →⁽ᵖ⁾ Br B (f x₀ (a x₀))
 
 so it can (and does) compute consistently to ``{x₀} x₁ ↦ rel f x₁ (a x₀)``.
+
+See :ref:`Semantics of modal parametricity` for further discussion of this restriction.
 
 
 Discrete datatypes
@@ -128,9 +139,9 @@ However, this is nothing but ``x ↦ rel ((x :♭| ♯ A) .unsharp)``.  In parti
 
 In the particular case of a negative modal operator such as ``♯`` where the *only* field is modal, this means that ``Br (♯ A) u₀ u₁`` has *zero* fields, and therefore it is equivalent to the unit type ``⊤``.  That is, ``♯ A`` is *codiscrete*, the dual of discrete: all of its bridge-types are contractible (uniquely inhabited).  Similarly, ``∇ A`` is codiscrete in the ``-discrete-local`` mode theory, because ``□`` is discrete (as it has a discrete target ``Disc``).
 
-There is no direct way to declare a modality to "be codiscrete": codiscreteness only arises for right adjoints of discrete sinister modalities.  But a codiscrete modality cannot commute with parametricity either, nor can it be discrete (unless the arity is 1, in which case discreteness and codiscreteness coincide).  Thus, the modalities ``♯`` in ``-discrete-spatial`` and ``∇`` in ``-discrete-local`` are declared to be *intangible*, so that they do not admit positive modal operators or appear in modal function-types at all, as there is no consistent way to give behavior for such types.
+There is no direct way to declare a modality to "be codiscrete": codiscreteness only arises for right adjoints of discrete sinister modalities.  But a codiscrete modality cannot commute with parametricity either, nor can it be discrete (unless the arity is 1, in which case discreteness and codiscreteness coincide).  Thus, the modalities ``♯`` in ``-discrete-spatial``, and ``∇`` in ``-discrete-local`` and ``-discrete-gwpt``, are declared to be *intangible*, so that they do not admit positive modal operators or appear in modal function-types at all, as there is no consistent way to give behavior for such types.  (Note that this means in ``-discrete-gwpt`` it is impossible to define a modal operator ``∇◇`` directly: one can only define ``◇`` positively and ``∇`` negatively.)
 
-If a modality is neither tangible nor sinister, like ``♯`` and ``∇``, then that it cannot appear in function-types, datatypes, or record/codatatypes.  Thus, whether or not it is discrete is undetectable to the theory.
+If a modality is neither tangible nor sinister, like ``♯`` and ``∇``, then it cannot appear in function-types, datatypes, or record/codatatypes.  Thus, whether or not it is discrete is undetectable to the theory.  But for consistency, we call these modalities discrete when they have a discrete mode as their source or target.
 
 
 External parametricity
@@ -143,15 +154,27 @@ The type of parametricity described in :ref:`Parametricity` is *internal paramet
    def pid (f : (X : Type) → X → X) (A : Type) (a : A) : eq A a (f A a) ≔
      rel f (Gel A (eq A a)) {a} (rfl.,) .ungel
 
-(Results such as this are related to the origin of the term "parametricity": the idea is that any such ``f`` must be defined "parametrically" in the type ``X``.)  However, the flip side of that power is that it limits the additional axioms that can be assumed.  For instance, it is inconsistent with classical axioms such as the Law of Excluded Middle, since they could be used to define other elements of ``(X : Type) → X → X`` by dividing into cases based on, for instance, whether ``X`` is isomorphic to ``Bool``.  Or more directly to derive a contradiction:
+(Results such as this are related to the origin of the term "parametricity": the idea is that any such ``f`` must be defined "parametrically" in the type ``X``.)
+
+However, the flip side of that power is that it limits the additional axioms that can be assumed.  For instance, internal parametricity is inconsistent with classical axioms such as the Law of Excluded Middle, since they could be used to define other elements of ``(X : Type) → X → X`` by dividing into cases based on, for instance, whether ``X`` is isomorphic to ``Bool``.  Or more directly to derive a contradiction:
 
 .. code-block:: none
 
-   def oops (LEM : (X : Type) → X + ¬ X) : ⊥ ≔ match LEM⁽ᵖ⁾ (Gel ⊤ (_ ↦ ⊥)) [
+   def oops (LEM : (X : Type) → X + ¬ X) : ⊥
+     ≔ match LEM⁽ᵖ⁾ (Gel ⊤ (_ ↦ ⊥)) [
    | inl. x ⤇ x.1 .ungel
    | inr. x ⤇ x.0 ()]
 
-Historically prior to internal parametricity was *external* parametricity, in which operations such as ``⁽ᵖ⁾`` are meta-theoretic *operations on syntax*.  In particular, they could be applied only to *closed* terms and types (those defined in the empty context).  Of course, an object defined in a nonempty context (at least, in non-modal type theory) can be abstracted over that context to produce a closed one, for instance a term ``b(x) : B`` defined in the context of a variable ``x : A`` can be abstracted into ``x ↦ b(x) : A → B``; but applying parametricity to this then changes the (abstracted) context, as we have seen:
+Global parametricity
+^^^^^^^^^^^^^^^^^^^^
+
+Historically prior to internal parametricity was *external* parametricity, in which operations such as ``⁽ᵖ⁾`` are meta-theoretic *operations on syntax*.  In particular, they can be applied only to *closed* terms and types (those defined in the empty context).  Of course, an object defined in a nonempty context can be abstracted over that context to produce a closed one, for instance a term ``b(x) : B`` defined in the context of a variable ``x : A`` can be abstracted into
+
+.. code-block:: none
+
+   x ↦ b(x) : A → B
+
+But applying parametricity to this then changes the (abstracted) context, as we have seen:
 
 .. code-block:: none
 
@@ -159,11 +182,14 @@ Historically prior to internal parametricity was *external* parametricity, in wh
 
 Put differently, the external parametricity operations could also be applied in any context, but they would then degenerate the context like passing into a :ref:`higher field <Higher coinductive types>`.
 
-The flag ``-external`` switches Narya's parametricity from internal to external.  To first approximation, this change means simply that the parametricity operations such as ``rel`` and ``Br`` and ``⁽ᵖ⁾`` can only be applied to closed terms.  For instance, we can compute the bridges of any specific defined type, such as the type ``ℕ`` of natural numbers or the type ``Group`` of groups, but we can't compute the bridges of an assumed *variable* type, or the ``rel`` of an assumed variable.  This blocks proofs such as the uniqueness of polymorphic identity above, in which we must apply ``rel`` to the assumed variable ``f``.
+The flag ``-external`` switches Narya's parametricity from internal to external.  To first approximation, this change means simply that the parametricity operations such as ``rel`` and ``Br`` and ``⁽ᵖ⁾`` can only be applied to closed terms (you must abstract over the context yourself).  For instance, we can compute the bridges of any specific defined type, such as the type ``ℕ`` of natural numbers or the type ``Group`` of groups, but we can't compute the bridges of an assumed *variable* type, or the ``rel`` of an assumed variable.  This blocks proofs such as the uniqueness of polymorphic identity above, in which we must apply ``rel`` to the assumed variable ``f``.
 
 Since the parametricity operations also compute fully *on* closed terms (at least in the "up-to-definitional-isomorphism" sense), we can then more or less think of them as meta-operations on syntax, in line with the original meaning of external parametricity.  However, since parametricity of a closed term is *another* closed term, we can still iterate the parametricity translation, computing higher-dimensional bridges of closed types and their elements, and symmetries such as ``sym`` are still available on these higher-dimensional objects.
 
-In fact, Narya's ``-external`` flag is a little more permissive than this.  Following in the footsteps of :ref:`Displayed type theory`, Narya requires ``-external`` to be specified along with a suitable mode theory, and it then allows the parametricity operations to be applied to any suitably *modal* term, in other words a term defined in a suitably locked context.  The modality used for this is listed in the "Param. Locker" column in the table above.  Thus, for instance, under ``-external -coreflector -arity 1`` we can compute bridges of any ``△□``-modal object.
+Modally guarded parametricity
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In fact, Narya's ``-external`` flag is a little more permissive than this.  Following in the footsteps of :ref:`Displayed type theory`, Narya requires ``-external`` to be specified along with a suitable mode theory, and it then allows the parametricity operations to be applied to any suitably *modal* term, in other words a term defined in a suitably locked context.  The modality used for this is listed in the "Param. Locker" column in the table above.  (Mode theories without an entry in that column are incompatible with ``-external``; note that some also have arity restrictions, which will be explained under :ref:`semantics <Semantics of modal parametricity>`.)  Thus, for instance, under ``-external -adjunction`` we can compute bridges of any ``△□``-modal object.
 
 Intuitively, the parametric locker modalities allow us to "internalize the metatheory" to a certain degree and write things like "for any closed type ``X``" inside the theory as ``(X :△□| Type)``.  Note that this is different from "for any discrete type ``X``", i.e. ``(X :△| Disc)``: a discrete type *has no* higher-dimensional structure; while a closed type *has* higher-dimensional structure which we can access because it is defined in a context of only other closed and discrete types.  It's potentially confusing because ``△□`` is declared as a "discrete modality", but this means that types of the form ``△□ A`` are discrete, whereas ``X`` in ``(X :△□| Type)`` is rather (semantically) an *element of* such a type, namely ``△□ Type``.
 
@@ -180,7 +206,10 @@ We are then free to assume things such as excluded middle, at least as local hyp
 
    def my_theorem (LEM : (X : Type) → X + ¬ X) ...
 
-Although we can then use ``LEM`` to define exotic elements of ``(X : Type) → X → X``, we will not be able to apply ``pid`` to such an element, since in the ``△□``-locked context of the first argument of ``pid`` the ordinary variable ``LEM`` is not available.
+Although we can then use ``LEM`` to define exotic elements of ``(X : Type) → X → X``, we will not be able to apply ``pid`` to such an element, since in the ``△□``-locked context of the first argument of ``pid`` the ordinary variable ``LEM`` is not available.  Nor will we be able to derive a contradiction from ``LEM`` in a more direct way, since we cannot write ``LEM⁽ᵖ⁾``.
+
+Modal axioms
+^^^^^^^^^^^^
 
 Of course, if we want to prove a lot of theorems using excluded middle, it is tedious to assume it explicitly as a hypothesis of every one.  One solution would be to assume it as a "section variable", but such things have not been implemented in Narya yet.  A blunt alternative is to assert it globally as an ``axiom``, but this requires some modification since an axiom *can* have parametricity operations applied to it even under ``-external``.  Instead we can assert the axiom under a suitable modality, such as ``△◇`` in ``-discrete-tconn``:
 
@@ -219,16 +248,22 @@ When a definition contains :ref:`holes` but does not (yet) use any nonparametric
 Semantics of modal parametricity
 --------------------------------
 
-Each of the discrete mode theories listed above (except for ``-discrete-functor``, which is mainly for testing) has a specific intended class of semantic models.  As mentioned in :ref:`Parametricity`, internally parametric Narya has semantics in the topos of *n*-ary semicartesian cubical sets (or spaces, or objects of some other topos ℰ).  Narya's external parametricity similarly has semantics in the topos of *n*-ary semicartesian *semi-cubical* sets, which have faces and symmetries but no degeneracies.  In both cases, the intended semantics of discrete mode theories uses such a topos of (semi-)cubical objects as the interpretation of the mode ``Type``, while the underlying topos of sets (or whatever else) interprets the mode ``Disc``.
+While the ordinary mode theories described in :ref:`Modal type theory` are intended to be generic, with semantics in any diagram of toposes (or more general categories) of a suitable shape, each of the discrete mode theories listed above (except for ``-discrete-functor``, which is mainly for testing) has a *specific* intended class of semantic models.  These semantics justify the choices made for the behavior and restrictions of these theories.  Here we sketch these intended models; this is not important for using Narya, but it may be helpful to understand it.
 
-In all cases (that is, both internal and external parametricity of all arities) there is a geometric morphism from ``Type`` to ``Disc``.  This consists of an inverse image functor ``△ : Disc → Type``, which produces a constant (semi-)cubical object, and a right adjoint direct image functor ``□ : Type → Disc``, which computes the limit of a (semi-)cubical object regarded as a diagram.  The inverse image also has a left adjoint that computes the colimit; but this is not in general finite-limit-preserving, so it can't be represented by a modality.
+As mentioned in :ref:`Parametricity`, internally parametric Narya has semantics in the topos of *n*-ary semicartesian cubical sets (or spaces, or objects of some other topos ℰ).  Narya's external parametricity similarly has semantics in the topos of *n*-ary semicartesian *semi-cubical* sets, which have faces and symmetries but no degeneracies.  In both cases, the intended semantics of discrete mode theories uses such a topos of (semi-)cubical objects as the interpretation of the mode ``Type``, while the underlying topos of sets (or whatever else) interprets the mode ``Disc``.
+
+In all cases (that is, both internal and external parametricity of all arities) there is a geometric morphism from ``Type`` to ``Disc``.  This consists of an inverse image functor ``△ : Disc → Type``, which produces a constant (semi-)cubical object, and a right adjoint direct image functor ``□ : Type → Disc``, which computes the limit of a (semi-)cubical object regarded as a diagram.  Therefore, we can always use ``-discrete-adjunction``, with ``△`` discrete.
+
+The constant-diagram functor ``△`` also always has a left adjoint that computes the colimit.  This is not, in general, finite-limit-preserving, so it can't be represented by a modality.  However, the existence of this left adjoint does mean that the geometric morphism ``△ ⊣ □`` is locally connected, so that we can mark ``△`` as pellucid.
 
 In the case of *internal* parametricity, the object 0 is initial in the opposite of the cube category (a 0-cube has a unique degeneracy of every dimension).  This implies that the constant diagram functor ``△`` is fully faithful, so the adjunction ``△ ⊣ □`` is a coreflection.  This yields a model of the ``-discrete-coreflection`` mode theory, and we get ``-discrete-coreflector`` by defining ``♭ = △□``, so these theories are applicable to any arity of internal parametricity.
 
 Initiality of 0 also implies that the limit functor ``□`` is just evaluation at 0, so it has a further right adjoint ``∇ : Disc → Type`` that constructs a "coskeletal" cubical set.  Thus, the mode theory ``-discrete-local`` also applies to any arity of internal parametricity, as does ``-discrete-spatial`` where we restrict to the mode ``Type`` with the composites ``♭ = △□`` and ``♯ = ∇□``.
 
-On the other hand, in the case of arity 1 (with or without degeneracies), the object 0 is *terminal* in the opposite of the cube category (every unary cube has exactly one 0-dimensional vertex).  This *also* implies that the constant diagram functor ``△`` is fully faithful, so we can also use ``-discrete-coreflection`` and ``-discrete-coreflector`` for either kind of unary parametricity.  Terminality of 0 does not imply the existence of ``∇``, but it does imply that the *colimit* functor ``◇ : Type → Disc`` left adjoint to ``△`` is evaluation at 0, and hence finite-limit-preserving with a further left adjoint.  Thus, the mode theory ``-discrete-tconn`` is applicable to either kind of unary parametricity.
+On the other hand, in the case of arity 1 (with or without degeneracies), the object 0 is *terminal* in the opposite of the cube category (every unary cube has exactly one 0-dimensional vertex).  This *also* implies that the constant diagram functor ``△`` is fully faithful, so we can also use ``-discrete-coreflection`` and ``-discrete-coreflector`` for either kind of unary parametricity.
 
-In the overlapping case of *unary internal* parametricity, we have ``◇ = □`` and hence ``△ = ∇``, yielding two functors that are adjoint to each other on both sides.  However, this is no longer a locally posetal mode theory, so it is not yet provided.
+Terminality of 0 does not imply the existence of ``∇``, but it does imply that the *colimit* functor ``◇ : Type → Disc`` left adjoint to ``△`` is evaluation at 0, and hence finite-limit-preserving with a further left adjoint.  Thus, the mode theory ``-discrete-tconn`` is applicable to either kind of *unary* parametricity, as is ``-discrete-cospatial`` if we restrict to the mode ``Type`` with the composites ``♭ = △□`` and ``♯ = △◇``.  Note that in this case both ``♭`` and ``♯`` include ``△``, so both are discrete modalities, unlike the case of ``-discrete-spatial`` where ``♯ = ∇□`` is codiscrete.
 
-In the missing cases of external non-unary parametricity, the "evaluate at 0" functor is not part of any adjoint string including ``△ ⊣ □``, although it does have a right adjoint.  Moreover, ``△`` is not fully faithful in this case, so this mode theory is also not locally posetal, and hence not yet provided.
+In the overlapping case of *unary internal* parametricity, we have ``◇ = □`` and hence ``△ = ∇``, yielding two functors that are adjoint to each other on both sides.  This theory is not yet provided.
+
+Finally, in the case of *external non-unary* parametricity, there is still an "evaluate at 0" functor, but it is not part of any adjoint string including ``△ ⊣ □``.  But it does have a right adjoint, which we denote ``∇``, and we have ``◇△ = 1``, yielding the ``-discrete-gwpt`` mode theory.

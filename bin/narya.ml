@@ -170,28 +170,6 @@ let speclist =
             Modal.Adjunction.install (module Modal.Adjunction.Discrete : Modal.Adjunction.Variant);
           mode_theories := !mode_theories + 1),
       "Select the discrete adjunction mode theory" );
-    ( "-gwpt",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory :=
-            Modal.Gwpt.install (module Modal.Gwpt.Ordinary : Modal.Gwpt.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the geometrically well-pointed topos mode theory" );
-    ( "-discrete-gwpt",
-      Arg.Unit
-        (fun () ->
-          hott_forbidden := Some "-discrete-gwpt";
-          external_ok := `Any;
-          install_mode_theory :=
-            Modal.Gwpt.install (module Modal.Gwpt.Discrete : Modal.Gwpt.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the geometrically well-pointed topos mode theory" );
-    ( "-cospatial",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory := Modal.Cospatial.install;
-          mode_theories := !mode_theories + 1),
-      "Select the cospatial mode theory (reflector ♯ left adjoint to coreflector ♭)" );
     ( "-coreflection",
       Arg.Unit
         (fun () ->
@@ -244,6 +222,39 @@ let speclist =
           mode_theories := !mode_theories + 1),
       "Select the discrete tconn mode theory (requires -parametric and -arity 1, allows -external)"
     );
+    ( "-cospatial",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory :=
+            Modal.Cospatial.install (module Modal.Cospatial.Ordinary : Modal.Cospatial.Variant);
+          mode_theories := !mode_theories + 1),
+      "Select the cospatial mode theory (reflector ♯ left adjoint to coreflector ♭)" );
+    ( "-discrete-cospatial",
+      Arg.Unit
+        (fun () ->
+          hott_forbidden := Some "-discrete-tconn";
+          external_ok := `One "-discrete-tconn";
+          arity_ok := `One "-discrete-tconn";
+          install_mode_theory :=
+            Modal.Cospatial.install (module Modal.Cospatial.Discrete : Modal.Cospatial.Variant);
+          mode_theories := !mode_theories + 1),
+      "Select the cospatial mode theory (reflector ♯ left adjoint to coreflector ♭)" );
+    ( "-gwpt",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory :=
+            Modal.Gwpt.install (module Modal.Gwpt.Ordinary : Modal.Gwpt.Variant);
+          mode_theories := !mode_theories + 1),
+      "Select the geometrically well-pointed topos mode theory" );
+    ( "-discrete-gwpt",
+      Arg.Unit
+        (fun () ->
+          hott_forbidden := Some "-discrete-gwpt";
+          external_ok := `Any;
+          install_mode_theory :=
+            Modal.Gwpt.install (module Modal.Gwpt.Discrete : Modal.Gwpt.Variant);
+          mode_theories := !mode_theories + 1),
+      "Select the geometrically well-pointed topos mode theory" );
     ( "-dtt",
       Unit
         (fun () ->

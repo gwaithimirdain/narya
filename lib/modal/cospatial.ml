@@ -16,7 +16,31 @@ open Dim
    adjoint, it is sinister and (like the identity) transparent; ♭, the right adjoint, is
    neither. *)
 
-module TestmodeGen = struct
+module type Variant = sig
+  type nonparametric
+
+  val nonparametric : nonparametric D.t
+  val name : string
+  val locker : bool
+end
+
+module Ordinary = struct
+  type nonparametric = D.zero
+
+  let nonparametric = D.zero
+  let name = "cospatial"
+  let locker = false
+end
+
+module Discrete = struct
+  type nonparametric = D.one
+
+  let nonparametric = D.one
+  let name = "discrete cospatial"
+  let locker = true
+end
+
+module TypeGen = struct
   let name = ref "Type"
 
   type nonparametric = D.zero
@@ -24,38 +48,41 @@ module TestmodeGen = struct
   let nonparametric = D.zero
 end
 
-module SharpGen (Testmode : Mode.Generated with module G := TestmodeGen) = struct
-  type src = Testmode.t
-  type tgt = Testmode.t
+(* In the discrete case, both modalities are discrete/nonparametric, since they land in the same subcategory. *)
 
-  let src = Testmode.mode
-  let tgt = Testmode.mode
+module SharpGen (V : Variant) (Type : Mode.Generated with module G := TypeGen) = struct
+  type src = Type.t
+  type tgt = Type.t
+
+  let src = Type.mode
+  let tgt = Type.mode
   let name = ref "♯"
 
-  type nonparametric = D.zero
+  type nonparametric = V.nonparametric
 
-  let nonparametric = D.zero
+  let nonparametric = V.nonparametric
 end
 
-module FlatGen (Testmode : Mode.Generated with module G := TestmodeGen) = struct
-  type src = Testmode.t
-  type tgt = Testmode.t
+module FlatGen (V : Variant) (Type : Mode.Generated with module G := TypeGen) = struct
+  type src = Type.t
+  type tgt = Type.t
 
-  let src = Testmode.mode
-  let tgt = Testmode.mode
+  let src = Type.mode
+  let tgt = Type.mode
   let name = ref "♭"
 
-  type nonparametric = D.zero
+  type nonparametric = V.nonparametric
 
-  let nonparametric = D.zero
+  let nonparametric = V.nonparametric
 end
 
 module CospatialCells
-    (Testmode : Mode.Generated with module G := TestmodeGen)
-    (Sharp : Modality.Generated with module G := SharpGen(Testmode))
-    (Flat : Modality.Generated with module G := FlatGen(Testmode)) =
+    (V : Variant)
+    (Type : Mode.Generated with module G := TypeGen)
+    (Sharp : Modality.Generated with module G := SharpGen(V)(Type))
+    (Flat : Modality.Generated with module G := FlatGen(V)(Type)) =
 struct
-  let typ = Testmode.mode
+  let typ = Type.mode
   let sharp = Modality.of_gen Sharp.modality
   let flat = Modality.of_gen Flat.modality
 
@@ -237,14 +264,14 @@ struct
   end
 end
 
-let install modes modalities =
+let install (module V : Variant) modes modalities =
   (match modes with
-  | [ ty ] -> TestmodeGen.name := ty
+  | [ ty ] -> TypeGen.name := ty
   | [] -> ()
   | _ -> failwith "wrong number of mode names for cospatial mode theory");
-  let module Testmode = Mode.Generate (TestmodeGen) in
-  let module Sh = SharpGen (Testmode) in
-  let module Fl = FlatGen (Testmode) in
+  let module Type = Mode.Generate (TypeGen) in
+  let module Sh = SharpGen (V) (Type) in
+  let module Fl = FlatGen (V) (Type) in
   (match modalities with
   | [ sharp; flat ] ->
       Sh.name := sharp;
@@ -254,6 +281,6 @@ let install modes modalities =
   Modality.set_one_char true modalities;
   let module Sharp = Modality.Generate (Sh) in
   let module Flat = Modality.Generate (Fl) in
-  let module Cells = CospatialCells (Testmode) (Sharp) (Flat) in
+  let module Cells = CospatialCells (V) (Type) (Sharp) (Flat) in
   Modalcell.choose_theory (module Cells : Modalcell.Theory);
   Modality.choose_theory (module Cells.Modalities : Modality.Theory)

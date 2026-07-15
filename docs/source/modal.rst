@@ -32,31 +32,38 @@ The currently available mode theories are selected by command-line flags, and ar
    | ``CType``", "| ``○ : AType → BType``,
    | ``▱ : BType → CType``", "--"
    "| ``-coreflector``,
-   | a.k.a. ``-crisp``", "``Type``", "``♭ : Type → Type``", "``♭∘♭ ≅ ♭``, ``♭ ⇒ 1``"
-   "``-reflector``", "``Type``", "``♯ : Type → Type``", "``♯∘♯ ≅ ♯``, ``1 ⇒ ♯``"
+   | a.k.a. ``-crisp``", "``Type``", "``♭ : Type → Type``", "| ``♭∘♭ ≅ ♭``, ``♭ ⇒ 1``
+   | (locally posetal)"
+   "``-reflector``", "``Type``", "``♯ : Type → Type``", "| ``♯∘♯ ≅ ♯``, ``1 ⇒ ♯``
+   | (locally posetal)"
    "``-spatial``", "``Type``", "| ``♭ : Type → Type``
    | ``♯ : Type → Type``", "| ``♭∘♭ ≅ ♭``, ``♭ ⇒ 1``,
    | ``♯∘♯ ≅ ♯``, ``1 ⇒ ♯``,
-   | ``♭ ⊣ ♯``"
+   | ``♯♭ ≅ ♯``, ``♭♯ ≅ ♭``
+   | (locally posetal)"
    "``-cospatial``", "``Type``", "| ``♯ : Type → Type``
    | ``♭ : Type → Type``", "| ``♯∘♯ ≅ ♯``, ``1 ⇒ ♯``,
    | ``♭∘♭ ≅ ♭``, ``♭ ⇒ 1``,
-   | ``♯♭ ≅ ♭``, ``♭♯ ≅ ♯``"
+   | ``♯♭ ≅ ♭``, ``♭♯ ≅ ♯``
+   | (locally posetal)"
+   "``-adjunction``", "``Disc``, ``Type``", "| ``△ : Disc → Type``,
+   | ``□ : Type → Disc``", "``△ ⊣ □``"
    "``-coreflection``", "``Disc``, ``Type``", "| ``△ : Disc → Type``,
    | ``□ : Type → Disc``", "| ``△ ⊣ □`` with
-   | ``△□ ⇒ 1`` and ``□△ ≅ 1``"
+   | ``△□ ⇒ 1`` and ``□△ ≅ 1``
+   | (locally posetal)"
    "``-local``", "``Disc``, ``Type``", "| ``△ : Disc → Type``,
    | ``□ : Type → Disc``
    | ``∇ : Disc → Type``", "| ``△ ⊣ □ ⊣ ∇`` with
    | ``△□ ⇒ 1``, ``1 ≅ □△``,
-   | ``1 ⇒ ∇□``, and ``□∇ ≅ 1``"
+   | ``1 ⇒ ∇□``, and ``□∇ ≅ 1``
+   | (locally posetal)"
    "``-tconn``", "``Disc``, ``Type``", "| ``◇ : Type → Disc``,
    | ``△ : Disc → Type``,
    | ``□ : Type → Disc``", "| ``◇ ⊣ △ ⊣ □`` with
    | ``△□ ⇒ 1``, ``1 ≅ □△``,
-   | ``1 ⇒ △◇``, ``◇△ ≅ 1``"
-   "``-adjunction``", "``Disc``, ``Type``", "| ``△ : Disc → Type``,
-   | ``□ : Type → Disc``", "``△ ⊣ □``"
+   | ``1 ⇒ △◇``, ``◇△ ≅ 1``
+   | (locally posetal)"
    "``-gwpt``", "``Disc``, ``Type``", "| ``△ : Disc → Type``,
    | ``□ : Type → Disc``,
    | ``◇ : Type → Disc``,
@@ -68,12 +75,14 @@ Just as ordinary dependent type theory has semantics in any (∞-)topos, modal t
 
 On the names for these theories that may not be self-explanatory:
 
-* ``-spatial`` type theory was so-called in the paper `Brouwer's fixed-point theorem in real-cohesive homotopy type theory <https://arxiv.org/abs/1509.07584>`_ because its intended models were toposes of spaces, with ``♭`` assigning the discrete topology and ``♯`` the codiscrete one.
-* ``-cospatial`` is a dual variant of ``-spatial`` with the same reflector ``♯`` and coreflector ``♭``, but instead of a directly postulated adjunction ``♭ ⊣ ♯``, it postulates isomorphisms ``♯♭ ≅ ♭`` and ``♭♯ ≅ ♯`` (so that composing the two, in either order, is governed by whichever one was applied first), which induce an adjunction in the *other* direction, ``♯ ⊣ ♭``.
+* ``-spatial`` type theory was so-called in the paper `Brouwer's fixed-point theorem in real-cohesive homotopy type theory <https://arxiv.org/abs/1509.07584>`_ because its intended models were toposes of spaces, with ``♭`` assigning the discrete topology and ``♯`` the codiscrete one, and ``♭ ⊣ ♯``.
+* ``-cospatial`` is the dual of ``-spatial``, with ``♯ ⊣ ♭`` instead.
 * ``-crisp`` type theory was so-called in the paper `Internal Universes in Models of Homotopy Type Theory <https://arxiv.org/abs/1801.07664>`_ because its ``♭``-annotated variables (see below) were called "crisp" variables (taken from the previous paper).
-* ``-local`` indicates a "local geometric morphism", which is the name in topos theory for such an adjoint triple of finite-limit-preserving functors between toposes with the outer adjoints ``△`` and ``∇`` fully faithful.  Note that in this case the composites ``△□`` and ``∇□`` are an adjoint pair of a coreflector and a reflector on ``Type``, so this contains ``-spatial`` as a sub-theory.
-* ``-tconn`` is short for "totally connected geometric morphism", which is the name in topos theory for such an adjoint triple of finite-limit-preserving functors, with the inner adjoint ``△`` fully faithful.  (The mode theory ``-coreflection`` is also known as a merely *connected* geometric morphism.)
+* ``-local`` indicates a "local geometric morphism", which is the name in topos theory for such an adjoint triple of finite-limit-preserving functors between toposes with the outer adjoints ``△`` and ``∇`` fully faithful.  Note that ``△□`` and ``∇□`` are an adjoint pair of a coreflector and a reflector on ``Type``, so this contains ``-spatial`` as a sub-theory.
+* ``-tconn`` is short for "totally connected geometric morphism", which is the name in topos theory for such an adjoint triple of finite-limit-preserving functors, with the inner adjoint ``△`` fully faithful.  (The mode theory ``-coreflection`` is also known as a merely *connected* geometric morphism.)  Dually to ``-local``, here ``◇△`` and ``△□`` are an adjoint pair of a reflector and coreflector, so this contains ``-cospatial`` as a sub-theory.
 * ``-gwpt`` is short for "geometrically well-pointed topos", meaning a geometric morphism ``△ ⊣ □`` having a section ``◇ ⊣ ∇``, in the category of toposes and geometric morphisms, such that the section is a geometric embedding.
+
+The mode ``Disc`` reflects the common feature of many models in which types at that mode have "discrete" topological or higher structure.  One instance of this that can be turned on in Narya is Parametrically :ref:`Discrete modalities`.
 
 Requests for, or contributions of, new mode theories are very welcome.
 
@@ -83,9 +92,9 @@ Modes
 
 As noted above, the name of a mode is the same as the name of its universe of types.  You can override the above defaults with the ``-modes`` command-line flag, which should be passed a comma-separated list of names to be used in place of the defaults, in the order listed above for each mode theory.
 
-Because universes are types, their names inhabit the same namespace as keywords and constant names.  But they are not namespaced, and take precedence over user-defined constants.  For instance, in the trivial theory you cannot define a constant named ``Type``.
+Because universes are types, their names inhabit the same name domain as keywords and constant names.  But they are not namespaced, and take precedence over user-defined constants.  For instance, you cannot define a constant named ``Type`` unless you have renamed that mode.
 
-In general, the mode of a compound type or term is deduced automatically from those of its components.  It may occasionally happen that Narya is unable to do this and will report an error; in that case you can add an explicit ascription such as ``: Type``.
+In general, the mode of a compound type or term is deduced automatically from those of its components.  It may occasionally happen that Narya is unable to do this and will report an error; in that case you can add an explicit ascription such as ``: Type`` (this is one rare situation in which you may want to write ``a : A : Type``, although ``a : (A : Type)`` is still easier to read).
 
 
 Modalities
@@ -93,7 +102,7 @@ Modalities
 
 For technical reasons, the underlying category of a mode theory 2-category in Narya is always a *freely generated* category (such a 2-category is called *flexible* or *cofibrant*).  Thus, each mode theory specifies a "directed multigraph" or "quiver", whose vertices are the modes and whose edges are *generating modalities*.  General modalities are then free composites of generating ones.  (The identity modality at each mode is, of course, the composite of zero generators.)
 
-Each generating modality has a name, which must be a valid identifier but belongs to a separate namespace from keywords and user constants.  Thus, there can be both a modality named ``♭`` and a constant named ``♭``.  In fact, this sort of "punning" is actually recommended, with the constant ``♭`` being the internalized modal operator (see :ref:`Modal datatypes` and :ref:`Modal records and codata`) induced by the modality ``♭``.  You can override the above default names for modalities with the ``-modalities`` command-line flag, which should be passed a comma-separated list of names to be used in place of the defaults, in the order listed above for each mode theory.
+Each generating modality has a name, which must be a valid identifier but belongs to a separate name domain from keywords and user constants.  Thus, there can be both a modality named ``♭`` and a constant named ``♭``.  In fact, this sort of "punning" is actually recommended, with the constant ``♭`` being the internalized modal operator (see :ref:`Modal datatypes` and :ref:`Modal records and codata`) induced by the modality ``♭``.  You can override the above default names for modalities with the ``-modalities`` command-line flag, which should be passed a comma-separated list of names to be used in place of the defaults, in the order listed above for each mode theory.
 
 Composite modalities are named by a space-separated sequence of generators, in "applicative order": if ``μ`` is a modality from mode ``p`` to mode ``q``, and ``ν`` is a modality from mode ``q`` to mode ``r``, then ``ν μ`` is the composite modality from mode ``p`` to mode ``r``.  In addition, if *all* the modalities in a mode theory have single-unicode-character names (as is the case for all the defaults above), then they can be written without spaces in between, for instance ``△□`` in the coreflection theory.
 
@@ -218,7 +227,7 @@ For the exception, see :ref:`Discrete modalities`.
 Windowed matches
 ^^^^^^^^^^^^^^^^
 
-Ordinary matches on modal datatypes, however, are insufficient to prove basic facts like the functoriality of modal operators.  For instance, in the ``-composed-functors`` mode theory, if we define modal operators for both generating modalities and their composite:
+Ordinary matches on modal datatypes, however, are insufficient in general to prove basic facts like the functoriality of modal operators.  For instance, in the ``-composed-functors`` mode theory, if we define modal operators for both generating modalities and their composite:
 
 .. code-block:: none
 
@@ -278,23 +287,37 @@ Note, though, that even for a variable this is not always the *correct* choice: 
 
 In principle, a window modality can be applied to *any* match: the datatype doesn't have to have any modal constructors itself.  However, this has consequences for the semantics of the window modality: it necessarily "preserves" all datatypes that it can be a window for.  Since this may be undesired, Narya allows a mode theory to specify three levels of "transparency" for modalities governing their applicability as windows.  (These are unrelated to the similarly-named :ref:`attributes of record types <Eta-expansion and opacity>`.)
 
-* A *pellucid* modality can be a window for any match at all.  This is a very strong property: it implies, for instance, that the modal operator preserves recursive datatypes such as the natural numbers.  The only nonidentity pellucid modality in the standard mode theories is ``△`` in ``-tconn``; this is semantically justified because it is the inverse image of a locally connected geometric morphism, so it preserves both colimits and function-types, out of which inductive types are constructed by transfinite iteration.
+* A *pellucid* modality can be a window for any match at all.  This is a very strong property: it implies, for instance, that the modal operator preserves recursive datatypes such as the natural numbers.  The only nonidentity pellucid modality in the standard mode theories is ``△`` in ``-tconn``; this is semantically justified because it is the inverse image of a locally connected geometric morphism, so it preserves both colimits and function-types, out of which inductive types are constructed (at least in Grothendieck topoi) by transfinite iteration.  (Some additional modalities are pellucid in :ref:`discrete mode theories <Modal parametricity>`.)
 
-* A *transparent* modality can be a window for a match on any *non-recursive* datatype.  This means that the modal operator preserves finite colimits (or, at least, finite coproducts; other finite colimits must wait for :ref:`Higher inductive types`).  Since left adjoints preserve colimits, all the left adjoints in the standard mode theories are transparent: ``△`` in ``-adjunction`` and ``-coreflection``; ``♭`` in ``-spatial``; ``△``, ``□``, and ``△□`` in ``-local``; and ``△``, ``◇``, and ``△◇`` in ``-tconn``; and ``△``, ``◇``, and ``△◇`` in ``-gwpt``; and ``♯`` in ``-cospatial``.  In addition, there is a variant of ``-functor`` called ``-transparent-functor`` that makes the modality ``○`` transparent.
+* A *transparent* modality can be a window for a match on any *non-recursive* datatype.  This means that the modal operator preserves finite colimits (or, at least, finite coproducts; other finite colimits must wait for :ref:`Higher inductive types`).  Since left adjoints preserve colimits, all the left adjoints in the standard mode theories are transparent:
 
-* A *translucent* modality can be a window for a match on any *non-recursive single-constructor* datatype.  This is the minimum necessary to ensure we can prove functoriality of modal operators, as above.  All the modalities in the standard mode theories are translucent.
+  - ``△`` in ``-adjunction`` and ``-coreflection``
+  - ``♭`` in ``-spatial``
+  - ``♯`` in ``-cospatial``
+  - ``△``, ``□``, and ``△□`` in ``-local``
+  - ``△``, ``◇``, and ``△◇`` in ``-tconn`` and ``-gwpt``
 
-A translucent modality can also be a window for *indexed* single-constructor non-recursive datatypes, which in particular means it preserves the Martin-Löf identity type, and therefore preserves finite limits internally.  However, even a non-translucent modality preserves finite products, and in the standard categorical semantics it must preserve at least pullbacks of display maps.  Moreover, when :ref:`Higher Observational Type Theory` is on, all modal operators preserve the observational identity types; this follows from the remarks above about higher-dimensional versions of modal datatypes.  Thus, one should really think of modal operators as semantically corresponding to *finite-limit-preserving* functors.  This is particularly convenient for applications to topos theory, in which a geometric morphism is an adjoint pair of finite-limit-preserving functors.
+  In addition, there is a variant of ``-functor`` called ``-transparent-functor`` that makes the modality ``○`` transparent.
+
+* A *translucent* modality can be a window for a match on any *non-recursive single-constructor* datatype.  This is the minimum necessary to ensure we can prove functoriality of modal operators, as above.  All the modalities in the standard mode theories are translucent (though some in :ref:`discrete mode theories <Modal parametricity>` are not).
+
+A translucent modality can also be a window for *indexed* single-constructor non-recursive datatypes, which in particular means it preserves the Martin-Löf identity type, and therefore preserves finite limits internally.  However, even a non-translucent modality preserves finite products, and in the standard categorical semantics it must preserve at least pullbacks of display maps.  Moreover, when :ref:`Higher Observational Type Theory` is on, all modal operators preserve the observational identity types; this follows from the remarks above about higher-dimensional versions of modal datatypes.  Thus, one should really think of *all* modal operators as semantically corresponding to *finite-limit-preserving* functors.  (This is particularly convenient for applications to topos theory, in which a geometric morphism is an adjoint pair of finite-limit-preserving functors.)
 
 
 Modal records and codata
 ------------------------
 
-The "positive" modal operators obtained as a special case of modal datatypes are the only ones present in the original theory MTT.  Narya also implements an enhancement called `Multimodal Adjoint Type Theory <https://entics.episciences.org/paper/view/id/12300>`_ (based on an `earlier paper <https://dl.acm.org/doi/10.1145/3514241>`_) that adds "negative" modal operators, which are a special case of *modal records and codatatypes*.
+The "positive" modal operators obtained as a special case of modal datatypes are the only ones present in the original theory MTT.  Narya also implements an enhancement called `Multimodal Adjoint Type Theory <https://entics.episciences.org/paper/view/id/12300>`_ (based on an earlier paper on `Modalities and Parametric Adjoints <https://dl.acm.org/doi/10.1145/3514241>`_) that adds "negative" modal operators, which are a special case of *modal records and codatatypes*.
 
 Dually to modal constructors of datatypes, any record or codatatype can have *modal fields*.  And just as a modal constructor can be viewed as a modal function, so can a modal field.  But now since the domain of a field-qua-function is the record/codata type itself, that is what gets modally annotated.
 
-For technical reasons, the modality which is used in such an annotation is required to have a right adjoint (that is, to be a left adjoint) in the mode 2-category.  (Theoretically, it suffices for it to have a "parametric right adjoint", but ordinary right adjoints are much easier to implement and cover a wide range of applications, so Narya sticks to those.)  Each mode theory can mark some of its modalities as *sinister* by supplying a right adjoint to them; they can then annotate modal fields.  The sinister modalities in the standard mode theories are ``♭`` in ``-spatial``; ``△`` in ``-adjunction`` and ``-coreflection``; ``◇`` and ``△`` and ``△◇`` in ``-tconn``; ``△``, ``◇``, and ``△◇`` in ``-gwpt``; and ``♯`` in ``-cospatial``.
+For technical reasons, the modality which is used in such an annotation is required to have a right adjoint (that is, to be a left adjoint) in the mode 2-category.  Each mode theory can mark some of its modalities as *sinister* by supplying a right adjoint to them; they can then annotate modal fields.  The sinister modalities in the standard mode theories are the same as the transparent ones:
+
+  - ``△`` in ``-adjunction`` and ``-coreflection``
+  - ``♭`` in ``-spatial``
+  - ``♯`` in ``-cospatial``
+  - ``△``, ``□``, and ``△□`` in ``-local``
+  - ``△``, ``◇``, and ``△◇`` in ``-tconn`` and ``-gwpt``
 
 The simplest sort of modal codatatype has one field that is modally annotated.  For instance, in the mode theory ``-coreflection`` we have
 
@@ -310,7 +333,13 @@ The placeholder ``_`` stands for the codatatype being defined, which can be used
    def □ (A :□| Type) : Disc ≔ codata [
    | (x :△| □ A) .unbox : A ]
 
-Note that the ``△``-annotation appears on the self-variable ``x`` to which the field ``.unbox`` is applied.  We have named the modal operator ``□``, the right adjoint of ``△``, because it goes in that direction, and indeed is equivalent to the positive modal operator associated to ``□``.  (Thus, the modal operators that can be defined negatively in the supplied mode theories are ``♯`` in ``-spatial``; ``□`` in ``-adjunction`` and ``-coreflection``; ``△``, ``□``, and ``△□`` in ``-tconn``; ``□``, ``∇``, and ``∇□`` in ``-gwpt``; and ``♭`` in ``-cospatial``.)
+Note that the ``△``-annotation appears on the self-variable ``x`` to which the field ``.unbox`` is applied.  We have named the modal operator ``□``, the right adjoint of ``△``, because it goes in that direction, and indeed is equivalent to the positive modal operator associated to ``□``.  Thus, the modal operators that can be defined negatively in the supplied mode theories are the right adjoints:
+
+  - ``♯`` in ``-spatial``
+  - ``♭`` in ``-cospatial``
+  - ``□`` in ``-adjunction`` and ``-coreflection``
+  - ``△``, ``□``, and ``△□`` in ``-tconn``
+  - ``□``, ``∇``, and ``∇□`` in ``-local`` and ``-gwpt``
 
 Note also that ``A`` itself is ``□``-annotated and lives at the mode ``Type``, the domain of ``□``.  In general, the type of a modal field is typechecked in a context locked by the *right adjoint*, which in the above case is ``□`` so that we can use the ``□``-annotated variable ``A``.
 

@@ -16,6 +16,7 @@ module type Variant = sig
   val nonparametric : nonparametric D.t
   val name : string
   val locker : bool
+  val dia_pellucid : bool
 end
 
 module Ordinary = struct
@@ -24,6 +25,7 @@ module Ordinary = struct
   let nonparametric = D.zero
   let name = "tconn"
   let locker = false
+  let dia_pellucid = false
 end
 
 module Discrete = struct
@@ -32,6 +34,7 @@ module Discrete = struct
   let nonparametric = D.one
   let name = "discrete tconn"
   let locker = true
+  let dia_pellucid = true
 end
 
 module DiscGen (V : Variant) = struct
@@ -349,10 +352,10 @@ struct
       let (Normalize (m, _, _)) = normalize m in
       transparent_normal m
 
-    (* In the external case, every modality whose normalization doesn't contain a □ is pellucid (that is, identities, ◇, △, and △◇) -- although since they are nonparametric, they can't be used as windows for higher-dimensional matches (yet).  Otherwise, only △ is pellucid. *)
+    (* △ is always pellucid since it is the inverse image of a locally connected geometric morphism.  Additionally, in the discrete and external case, where we have a specific semantics in mind in *(EI-)inverse* diagrams with ◇ being evaluation at 0, it is also pellucid. *)
     let pellucid : type a m b. (a, m, b) Modality.t -> bool =
      fun m ->
-      if Endpoints.internal () then
+      if (not V.dia_pellucid) && Endpoints.internal () then
         match Modality.compare m tri with
         | Eq -> true
         | Neq -> false

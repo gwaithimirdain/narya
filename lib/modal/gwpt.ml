@@ -38,6 +38,7 @@ module type Variant = sig
   val name : string
   val locker : bool
   val nabla_tangible : bool
+  val tri_pellucid : bool
 end
 
 module Ordinary = struct
@@ -47,6 +48,7 @@ module Ordinary = struct
   let name = "adjunction"
   let locker = false
   let nabla_tangible = true
+  let tri_pellucid = false
 end
 
 module Discrete = struct
@@ -56,6 +58,7 @@ module Discrete = struct
   let name = "discrete adjunction"
   let locker = true
   let nabla_tangible = false
+  let tri_pellucid = true
 end
 
 module DiscGen (V : Variant) = struct
@@ -546,8 +549,6 @@ struct
 
   (* The theory of modality properties is nested inside the cells module, so that installing both theories instantiates this functor -- and in particular Modalcell.generate, which allocates fresh generating 2-cells -- only once. *)
   module Modalities : Modality.Theory = struct
-    let pellucid _ = false
-
     (* The left adjoints (those whose normal forms contain no □ or ∇, namely the identities, △, ◇, and △◇) are transparent. *)
     let rec transparent_normal : type a m b. (a, m, b) Modality.t -> bool = function
       | Path (Zero, _) -> true
@@ -568,6 +569,17 @@ struct
       | Neq -> true
 
     let translucent m = tangible m
+
+    (* In the discrete case, where we have a specific semantics in mind, △ is pellucid since it has a left adjoint, so is the inverse image of a locally connected geometric morphism.  In the additionally external case, the semantics is in *(EI-)inverse* diagrams with ◇ being evaluation at 0, so it is pellucid, hence so is the composite ◇△. *)
+    let pellucid : type a m b. (a, m, b) Modality.t -> bool =
+     fun m ->
+      if V.tri_pellucid then
+        if Endpoints.internal () then
+          match Modality.compare m tri with
+          | Eq -> true
+          | Neq -> false
+        else transparent m
+      else false
   end
 end
 

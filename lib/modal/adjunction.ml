@@ -18,6 +18,7 @@ module type Variant = sig
   val nonparametric : nonparametric D.t
   val name : string
   val locker : bool
+  val tri_pellucid : bool
 end
 
 module Ordinary = struct
@@ -26,6 +27,7 @@ module Ordinary = struct
   let nonparametric = D.zero
   let name = "adjunction"
   let locker = false
+  let tri_pellucid = false
 end
 
 module Discrete = struct
@@ -34,6 +36,7 @@ module Discrete = struct
   let nonparametric = D.one
   let name = "discrete adjunction"
   let locker = true
+  let tri_pellucid = true
 end
 
 module DiscGen (V : Variant) = struct
@@ -252,7 +255,6 @@ module AdjunctionModalities
     (Triangle : Modality.Generated with module G := TriangleGen(V)(Disc)(Type))
     (Box : Modality.Generated with module G := BoxGen(V)(Disc)(Type)) : Modality.Theory = struct
   let tangible _ = true
-  let pellucid _ = false
 
   (* The left adjoints (the identities and △) are transparent. *)
   let rec transparent : type a m b. (a, m, b) Modality.t -> bool = function
@@ -263,6 +265,15 @@ module AdjunctionModalities
         | Neq -> transparent (Path (m, mode)))
 
   let translucent _ = true
+
+  (* In the discrete case, where we have a specific semantics in mind, △ is pellucid since it has a left adjoint, so is the inverse image of a locally connected geometric morphism. *)
+  let pellucid : type a m b. (a, m, b) Modality.t -> bool =
+   fun m ->
+    if V.tri_pellucid then
+      match Modality.compare m (Path (Suc (Zero, Triangle.modality), Type.mode)) with
+      | Eq -> true
+      | Neq -> false
+    else false
 end
 
 let install (module V : Variant) modes modalities =

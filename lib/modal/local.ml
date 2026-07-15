@@ -16,6 +16,7 @@ module type Variant = sig
   val nonparametric : nonparametric D.t
   val name : string
   val nabla_tangible : bool
+  val tri_pellucid : bool
 end
 
 module Ordinary = struct
@@ -24,6 +25,7 @@ module Ordinary = struct
   let nonparametric = D.zero
   let name = "local"
   let nabla_tangible = true
+  let tri_pellucid = false
 end
 
 module Discrete = struct
@@ -32,6 +34,7 @@ module Discrete = struct
   let nonparametric = D.one
   let name = "local tconn"
   let nabla_tangible = false
+  let tri_pellucid = true
 end
 
 module DiscGen (V : Variant) = struct
@@ -347,8 +350,6 @@ struct
 
   (* The theory of modality properties is nested inside the cells module, so that installing both theories instantiates this functor -- and in particular Modalcell.generate, which allocates fresh generating 2-cells -- only once. *)
   module Modalities : Modality.Theory = struct
-    let pellucid _ = false
-
     (* Every modality whose normalization doesn't contain a ∇ is transparent (that is, identities, □, △, and △□). *)
     let rec transparent_normal : type a m b. (a, m, b) Modality.t -> bool = function
       | Path (Zero, _) -> true
@@ -369,6 +370,15 @@ struct
       | Neq -> true
 
     let translucent m = tangible m
+
+    (* In the discrete case, where we have a specific semantics in mind, △ is pellucid since it has a left adjoint, so is the inverse image of a locally connected geometric morphism. *)
+    let pellucid : type a m b. (a, m, b) Modality.t -> bool =
+     fun m ->
+      if V.tri_pellucid then
+        match Modality.compare m tri with
+        | Eq -> true
+        | Neq -> false
+      else false
   end
 end
 
