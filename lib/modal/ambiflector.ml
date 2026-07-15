@@ -69,6 +69,9 @@ struct
   let counit = Modalcell.of_gen (Modalcell.generate "ε" amb (Modality.id typ))
   let comult = Modalcell.of_gen (Modalcell.generate "Δ" amb ambamb)
 
+  (* We give this a special name since it's the only one the user will need to refer to explicitly. *)
+  let zero = Modalcell.of_gen (Modalcell.generate "ø" (Modality.id typ) (Modality.id typ))
+
   (* ♮ is adjoint to itself: unit id ⇒ ♮∘♮ (unit followed by comult) and counit ♮∘♮ ⇒ id
      (mult followed by counit). *)
   let adj_unit = Modalcell.vcomp comult unit
@@ -100,10 +103,7 @@ struct
     | Modalcell.Hcomp (_, _, f, g) -> contains_gen f || contains_gen g
     | Modalcell.Vcomp (f, g) -> contains_gen f || contains_gen g
 
-  (* Every hom-set is thin except the endomorphisms of the identity modality, which has
-     the two elements {id, zero}; those are distinguished by whether the cell's
-     expression contains a generator (zero, built from unit and counit, always does;
-     the identity never does). *)
+  (* Every hom-set is thin except the endomorphisms of the identity modality, which has the two elements {id, zero}; those are distinguished by whether the cell's expression contains a generator (zero, built from unit and counit or as its own generator, always does; the identity never does). *)
   let compare : type a m n b. (a, m, n, b) Modalcell.t -> (a, m, n, b) Modalcell.t -> bool =
    fun c1 c2 ->
     match (Modality.compare_id (Modalcell.vsrc c1), Modality.compare_id (Modalcell.vtgt c1)) with

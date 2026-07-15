@@ -102,7 +102,8 @@ let speclist =
             Modal.Coreflector.install
               (module Modal.Coreflector.Discrete : Modal.Coreflector.Variant);
           mode_theories := !mode_theories + 1),
-      "Select the nonparametric coreflector mode theory (requires -parametric, allows -external)" );
+      "Select the discrete coreflector mode theory (requires -parametric, allows -external with -arity 1)"
+    );
     ( "-reflector",
       Arg.Unit
         (fun () ->
@@ -167,7 +168,8 @@ let speclist =
           install_mode_theory :=
             Modal.Adjunction.install (module Modal.Adjunction.Discrete : Modal.Adjunction.Variant);
           mode_theories := !mode_theories + 1),
-      "Select the discrete adjunction mode theory" );
+      "Select the adjunction mode theory with discrete left adjoint (requires -parametric, allows -external)"
+    );
     ( "-coreflection",
       Arg.Unit
         (fun () ->
@@ -179,13 +181,13 @@ let speclist =
     ( "-discrete-coreflection",
       Arg.Unit
         (fun () ->
-          hott_forbidden := Some "-discrete-coreflector";
-          external_ok := `One "-discrete-coreflector";
+          hott_forbidden := Some "-discrete-coreflection";
+          external_ok := `One "-discrete-coreflection";
           install_mode_theory :=
             Modal.Coreflection.install
               (module Modal.Coreflection.Discrete : Modal.Coreflection.Variant);
           mode_theories := !mode_theories + 1),
-      "Select the nonparametric coreflection mode theory (requires -parametric, allows -external)"
+      "Select the discrete coreflection mode theory (requires -parametric, allows -external with -arity 1)"
     );
     ( "-local",
       Arg.Unit
@@ -236,12 +238,14 @@ let speclist =
           install_mode_theory :=
             Modal.Cospatial.install (module Modal.Cospatial.Discrete : Modal.Cospatial.Variant);
           mode_theories := !mode_theories + 1),
-      "Select the cospatial mode theory (reflector ♯ left adjoint to coreflector ♭)" );
+      "Select the cospatial mode theory with discrete coreflector (requires -parametric and -arity 1, allows -external)"
+    );
     ( "-ambiflector",
       Arg.Unit
         (fun () ->
           install_mode_theory :=
-            Modal.Ambiflector.install (module Modal.Ambiflector.Ordinary : Modal.Ambiflector.Variant);
+            Modal.Ambiflector.install
+              (module Modal.Ambiflector.Ordinary : Modal.Ambiflector.Variant);
           mode_theories := !mode_theories + 1),
       "Select the ambiflector mode theory (♮ is both a reflector and a coreflector)" );
     ( "-discrete-ambiflector",
@@ -250,9 +254,11 @@ let speclist =
           hott_forbidden := Some "-discrete-ambiflector";
           arity_ok := `One "-discrete-ambiflector";
           install_mode_theory :=
-            Modal.Ambiflector.install (module Modal.Ambiflector.Discrete : Modal.Ambiflector.Variant);
+            Modal.Ambiflector.install
+              (module Modal.Ambiflector.Discrete : Modal.Ambiflector.Variant);
           mode_theories := !mode_theories + 1),
-      "Select the ambiflector mode theory with nonparametric ♮ (requires -parametric)" );
+      "Select the ambiflector mode theory with nonparametric ♮ (requires -parametric and -arity 1)"
+    );
     ( "-gwpt",
       Arg.Unit
         (fun () ->
@@ -268,7 +274,7 @@ let speclist =
           install_mode_theory :=
             Modal.Gwpt.install (module Modal.Gwpt.Discrete : Modal.Gwpt.Variant);
           mode_theories := !mode_theories + 1),
-      "Select the geometrically well-pointed topos mode theory" );
+      "Select the discrete gwpt mode theory (requires -parametric, allows -external)" );
     ( "-dtt",
       Unit
         (fun () ->

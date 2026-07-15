@@ -48,10 +48,7 @@ The currently available mode theories are selected by command-line flags, and ar
    | (locally posetal)"
    "``-ambiflector``", "``Type``", "``♮ : Type → Type``", "| ``♮ ⊣ ♮``, ``♮∘♮ ≅ ♮``,
    | ``1 ⇒ ♮``, ``♮ ⇒ 1``,
-   | ``♮ ⇒ 1 ⇒ ♮ = 1_♮``
-   | (not locally posetal:
-   | ``1 ⇒ ♮ ⇒ 1`` is a nonidentity
-   | endomorphism ``zero`` of ``1``)"
+   | ``♮♮ ≅ ♮``, ``♮ ⊣ ♮``"
    "``-adjunction``", "``Disc``, ``Type``", "| ``△ : Disc → Type``,
    | ``□ : Type → Disc``", "``△ ⊣ □``"
    "``-coreflection``", "``Disc``, ``Type``", "| ``△ : Disc → Type``,
@@ -83,7 +80,7 @@ On the names for these theories that may not be self-explanatory:
 
 * ``-spatial`` type theory was so-called in the paper `Brouwer's fixed-point theorem in real-cohesive homotopy type theory <https://arxiv.org/abs/1509.07584>`_ because its intended models were toposes of spaces, with ``♭`` assigning the discrete topology and ``♯`` the codiscrete one, and ``♭ ⊣ ♯``.
 * ``-cospatial`` is the dual of ``-spatial``, with ``♯ ⊣ ♭`` instead.
-* ``-ambiflector`` has a single self-modality ``♮`` that is simultaneously a reflector and a coreflector, "ambi-" indicating that it flects in both directions at once.  Unlike ``-spatial``/``-cospatial``, its unit and counit belong to the *same* modality rather than to two different ones, and composing them the two possible ways gives different answers: ``♮ ⇒ 1 ⇒ ♮`` is the identity on ``♮`` (so ``♮`` is a retract of ``1``, split by the counit and unit), but ``1 ⇒ ♮ ⇒ 1`` is a different, nonidentity endomorphism of ``1``, called ``zero``.  (Composing the unit with the comultiplication, and the multiplication with the counit, also exhibits ``♮`` as adjoint to itself, ``♮ ⊣ ♮``, so it is sinister and transparent like the identity.)  Like ``-adjunction`` and ``-gwpt``, ``-ambiflector`` is therefore not locally posetal, but for a different reason: those theories have unboundedly many nonisomorphic modalities whose parallel 2-cells are distinguished by a Schanuel–Street pairing, whereas ``-ambiflector`` has only the two normal forms ``1`` and ``♮``, and it is only the endomorphisms of ``1`` that fail to be thin.
+* ``-ambiflector`` is a single functor that is both a reflector and a coreflector, adjoint to itself.
 * ``-crisp`` type theory was so-called in the paper `Internal Universes in Models of Homotopy Type Theory <https://arxiv.org/abs/1801.07664>`_ because its ``♭``-annotated variables (see below) were called "crisp" variables (taken from the previous paper).
 * ``-local`` indicates a "local geometric morphism", which is the name in topos theory for such an adjoint triple of finite-limit-preserving functors between toposes with the outer adjoints ``△`` and ``∇`` fully faithful.  Note that ``△□`` and ``∇□`` are an adjoint pair of a coreflector and a reflector on ``Type``, so this contains ``-spatial`` as a sub-theory.
 * ``-tconn`` is short for "totally connected geometric morphism", which is the name in topos theory for such an adjoint triple of finite-limit-preserving functors, with the inner adjoint ``△`` fully faithful.  (The mode theory ``-coreflection`` is also known as a merely *connected* geometric morphism.)  Dually to ``-local``, here ``◇△`` and ``△□`` are an adjoint pair of a reflector and coreflector, so this contains ``-cospatial`` as a sub-theory.
@@ -136,7 +133,7 @@ In addition, a mode theory can mark some modalities as having further properties
 Modal cells
 ^^^^^^^^^^^
 
-There is not yet a syntax for printing and referring to modal cells.  Thus, although internally Narya supports arbitrary (cofibrant) 2-categories as mode theories, at present a 2-cell can only be used when it is uniquely determined.  Each mode theory supplies an algorithm for finding such 2-cells automatically whenever needed; most of the supplied mode theories are *locally posetal*, meaning that any two parallel 2-cells are equal, while in ``-adjunction`` and ``-gwpt`` a required 2-cell that exists but is not unique is an error.
+There is not yet a syntax for printing and referring to modal cells.  Thus, although internally Narya supports arbitrary (cofibrant) 2-categories as mode theories, at present a 2-cell can only be used when it is uniquely determined.  Each mode theory supplies an algorithm for finding such 2-cells automatically whenever needed.  Many of the supplied mode theories are *locally posetal*, meaning that any two parallel 2-cells are equal and so any extant 2-cells can always be found uniquely.
 
 
 Modal contexts
@@ -303,7 +300,7 @@ In principle, a window modality can be applied to *any* match: the datatype does
   - ``♯`` in ``-cospatial``
   - ``△``, ``□``, and ``△□`` in ``-local``
   - ``△``, ``◇``, and ``△◇`` in ``-tconn`` and ``-gwpt``
-  - ``♮`` in ``-ambiflector``, since it is adjoint to itself
+  - ``♮`` in ``-ambiflector``
 
   In addition, there is a variant of ``-functor`` called ``-transparent-functor`` that makes the modality ``○`` transparent.
 
@@ -326,7 +323,7 @@ For technical reasons, the modality which is used in such an annotation is requi
   - ``♯`` in ``-cospatial``
   - ``△``, ``□``, and ``△□`` in ``-local``
   - ``△``, ``◇``, and ``△◇`` in ``-tconn`` and ``-gwpt``
-  - ``♮`` in ``-ambiflector``, since it is adjoint to itself
+  - ``♮`` in ``-ambiflector``
 
 The simplest sort of modal codatatype has one field that is modally annotated.  For instance, in the mode theory ``-coreflection`` we have
 
@@ -349,7 +346,7 @@ Note that the ``△``-annotation appears on the self-variable ``x`` to which the
   - ``□`` in ``-adjunction`` and ``-coreflection``
   - ``△``, ``□``, and ``△□`` in ``-tconn``
   - ``□``, ``∇``, and ``∇□`` in ``-local`` and ``-gwpt``
-  - ``♮`` in ``-ambiflector``, since it is adjoint to itself
+  - ``♮`` in ``-ambiflector``
 
 Note also that ``A`` itself is ``□``-annotated and lives at the mode ``Type``, the domain of ``□``.  In general, the type of a modal field is typechecked in a context locked by the *right adjoint*, which in the above case is ``□`` so that we can use the ``□``-annotated variable ``A``.
 
