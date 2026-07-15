@@ -107,7 +107,6 @@ module rec Term : sig
     | Const : Constant.t -> ('mode, 'a, kinetic) term
     | Meta : ('mode, 'x, 'b, 'l) Meta.t * 's energy -> ('mode, 'b, 's) term
     | MetaEnv : ('mode, 'x, 'b, 's) Meta.t * ('mode, 'a, 'n, 'b) env -> ('mode, 'a, kinetic) term
-    (* A field projection.  For a modal field, the term being projected lives behind a lock by the left adjoint of the field's adjunction; for ordinary fields that modality is the identity. *)
     | Field :
         ('mode, 'f, 'a, kinetic) modal_term * 'i Field.t * ('n, 't, 'i) insertion
         -> ('mode, 'a, kinetic) term
@@ -196,7 +195,6 @@ module rec Term : sig
         constrs : (Constr.t, ('mode, 'a, 'i) dataconstr) Abwd.t;
         discrete : [ `Yes | `Maybe | `No ];
         recursive : Positivity.recursion;
-        (* Variable-name hints, for displaying anonymous variables of this type. *)
         hints : hints;
       }
         -> ('mode, 'a) canonical
@@ -205,7 +203,6 @@ module rec Term : sig
   and ('mode, 'n, 'c, 'a, 'nh, 'ha, 'et) codata_args = {
     eta : (potential, 'et) eta;
     opacity : opacity;
-    (* Variable-name hints, for displaying anonymous variables of this type. *)
     hints : hints;
     dim : 'n D.t;
     termctx : ('mode, 'c, ('a, ('mode id, 'n) dim_entry) snoc) termctx option;
@@ -264,7 +261,6 @@ module rec Term : sig
         plus_src : ('b, 'cod, 'mu, 'mode, 'bmu) plus_lock;
       }
         -> ('mode, 'ac, 'n, 'bmu) env
-    (* A prekey acts by a key cell on all the values of a term environment (the term-level analogue of Value.Prekey).  It doesn't change the mode or the codomain context, but unlike its value-level analogue it does mediate the domain context: the environment inside is valid in a context locked by the cell's vertical source, while the whole is valid in a context locked by its vertical target (over a common base), as when a parametric locker's counit has discharged the locks that a metavariable was created behind. *)
     | Prekey : {
         env : ('mode, 'asrc, 'n, 'b) env;
         cell : ('mode, 'pmu, 'pnu, 'pcod) Modalcell.t;
@@ -313,7 +309,6 @@ module rec Term : sig
     | Lock :
         ('cod, 'a, 'b) ordered_termctx * ('dom, 'modality, 'cod) Modality.gen
         -> ('dom, 'a, ('b, 'modality lock_entry) snoc) ordered_termctx
-    (* A weakening entry increases the raw length by one but stores no checked variables, only a Code.t to raise on lookup of the dataless variable.  Mirrors Ctx.Ordered.Weaken. *)
     | Weaken :
         ('mode, 'a, 'b) ordered_termctx * Reporter.Code.t
         -> ('mode, 'a N.suc, 'b) ordered_termctx
@@ -593,6 +588,7 @@ end = struct
         plus_src : ('b, 'cod, 'mu, 'mode, 'bmu) plus_lock;
       }
         -> ('mode, 'ac, 'n, 'bmu) env
+    (* A prekey acts by a key cell on all the values of a term environment (the term-level analogue of Value.Prekey).  It doesn't change the mode or the codomain context, but unlike its value-level analogue it does mediate the domain context: the environment inside is valid in a context locked by the cell's vertical source, while the whole is valid in a context locked by its vertical target (over a common base), as when a parametric locker's counit has discharged the locks that a metavariable was created behind. *)
     | Prekey : {
         env : ('mode, 'asrc, 'n, 'b) env;
         cell : ('mode, 'pmu, 'pnu, 'pcod) Modalcell.t;
