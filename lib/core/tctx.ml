@@ -320,6 +320,44 @@ let plus_with_locks_concat : type an exc exl cod b nu dom bn.
   let (Comp (l3, _)) = Locks.comp l2 l1 c2_c1 in
   Wrap_plus_with_locks (Plus_with_locks (Tctx.comp_assocr e1 c2_c1 e2, l3))
 
+(* Given a Tctx and a modality, peel matching lock generators off the front of both, in lockstep, skipping over any dimension entries in the Tctx along the way (as long as the modality isn't empty yet).  If we use up the whole modality, we return the resulting plus_with_locks recording the entries we peeled off and what remains of the Tctx.  If instead a lock in the Tctx doesn't match the next generator of the modality, or the Tctx runs out (reaches its Proj base) before the modality does, we return None. *)
+
+type (_, _, _, _) found_plus_with_locks =
+  | Found_plus_with_locks :
+      ('a, 'mode, 'modality, 'dom, 'ac) plus_with_locks
+      -> ('ac, 'mode, 'modality, 'dom) found_plus_with_locks
+
+let rec find_plus_with_locks : type ac dom modality mode.
+    (dom, ac) Tctx.t ->
+    (dom, modality, mode) Modality.t ->
+    (ac, mode, modality, dom) found_plus_with_locks option =
+ fun ctx modality ->
+  match modality with
+  | Path (Zero, mode) -> Some (Found_plus_with_locks (plus_with_no_locks mode))
+  | Path (Suc (rest, gen), mode_obj) -> (
+      match ctx with
+      | Path (Zero, _) -> raise (Failure "find_plus_with_locks: empty Tctx")
+      | Path (Suc (ctx_rest, entry), unit_obj) -> (
+          match entry with
+          | Dim (n, f) -> (
+              match find_plus_with_locks (Path (ctx_rest, unit_obj)) modality with
+              | None -> None
+              | Some (Found_plus_with_locks plus) -> (
+                  match plus_with_locks_dim plus n f with
+                  | Some plus -> Some (Found_plus_with_locks plus)
+                  | None ->
+                      raise (Failure "find_plus_with_locks: plus_with_locks_dim returned None")))
+          | Lock l -> (
+              match Modality.Gen.compare gen l with
+              | Neq -> None
+              | Eq -> (
+                  match
+                    find_plus_with_locks (Path (ctx_rest, unit_obj)) (Path (rest, mode_obj))
+                  with
+                  | None -> None
+                  | Some (Found_plus_with_locks plus) ->
+                      Some (Found_plus_with_locks (plus_with_locks_lock plus l))))
+          | Proj _ -> None))
 
 (* Lists of variable-annotation modalities, at the same mode (their codomain), to be made into lists of variables by combining with a dimension. *)
 

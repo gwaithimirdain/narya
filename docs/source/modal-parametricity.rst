@@ -15,6 +15,7 @@ These features require ``-parametric``, and by default we will assume ``-directi
    "``-discrete-coreflector``", "``-coreflector``", "any", "``♭``", "``♭`` (arity 1)"
    "``-discrete-spatial``", "``-spatial``", "any", "``♭``", "--"
    "``-discrete-cospatial``", "``-spatial``", "1 only", "``♯``, ``♭``", "``♯`` (arity 1)"
+   "``-discrete-ambiflector``", "``-ambiflector``", "1 only", "``♮``", "--"
    "``-discrete-coreflection``", "``-coreflection``", "any", "``△``, ``Disc``", "``△□`` (arity 1)"
    "``-discrete-adjunction``", "``-adjunction``", "any", "``△``, ``△□``, ``Disc``", "``△□``"
    "``-discrete-local``", "``-local``", "any", "``△``, ``△□``, ``Disc``", "--"
@@ -39,7 +40,7 @@ A mode theory can declare any of its *modalities* to be *discrete* (a.k.a. *nonp
 
 In addition to modalities being discrete, a *mode* can also be declared as discrete.  This means that types at that mode have no higher-dimensional versions at all.
 
-For compatibility, it is required that a modality whose source *or* target mode is discrete must also be discrete.  There is also a further restriction that will be explained :ref:`below <Discrete units and arity 1>`: if there are any 2-cells from a non-discrete modality (such as an identity) to a discrete modality, then the arity of parametricity must be 1.  This is the syntactic reason why ``-discrete-tconn`` and ``-discrete-cospatial`` require arity 1, because of the reflector units ``1 ⇒ △◇`` and ``1 ⇒ ♯``; a semantic reason will be given in :ref:`Semantics of modal parametricity`.
+For compatibility, it is required that a modality whose source *or* target mode is discrete must also be discrete.  There is also a further restriction that will be explained :ref:`below <Discrete units and arity 1>`: if there are any 2-cells from a non-discrete modality (such as an identity) to a discrete modality, then the arity of parametricity must be 1.  This is the syntactic reason why ``-discrete-tconn``, ``-discrete-cospatial``, and ``-discrete-ambiflector`` require arity 1, because of the reflector units ``1 ⇒ △◇``, ``1 ⇒ ♯``, and ``1 ⇒ ♮`` respectively; a semantic reason will be given in :ref:`Semantics of modal parametricity`.
 
 
 Discrete function-types
