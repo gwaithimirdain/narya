@@ -221,12 +221,15 @@ let rec get_bwd : type mode n.
       | _ -> None)
   | _ -> None
 
+(* Whether we expect a given term to synthesize, after being unparsed. *)
 let rec synths : type mode n. (mode, n, kinetic) term -> bool = function
-  | Var _ | Const _ | Meta _ | MetaEnv _ | Field _ | UU _ | Inst _ | Pi _ | App _ | Act _ | Let _ ->
-      true
-  (* TODO: Verify this after we add raw syntax for Key *)
-  | Key _ -> true
+  | Var _ | Const _ | Meta _ | MetaEnv _ | Field _ | UU _ | Inst _ | Pi _ | Key _ -> true
   | Constr _ | Lam _ | Struct _ -> false
+  (* Applications, actions, and let-bindings can also check.  They only synthesize if the appropriate one of their subterms does.  *)
+  | App (fn, _, _, _) -> synths fn
+  | Act (tm, _, _) -> synths tm
+  | Let (_, _, body) -> synths body
+  (* These are just context-manipulating wrappers. *)
   | Unshift (_, _, tm) -> synths tm
   | Unact (_, tm) -> synths tm
   | Shift (_, _, tm) -> synths tm
