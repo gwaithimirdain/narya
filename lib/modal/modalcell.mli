@@ -144,3 +144,4 @@ val of_name :
   Result.t
 
 val to_string : ('a, 'm, 'n, 'b) t -> string
+val name : ('a, 'm, 'n, 'b) t -> string list list

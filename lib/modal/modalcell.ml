@@ -12,6 +12,7 @@ module Gen = struct
 
   let names : string Dynarray.t = Dynarray.create ()
   let by_name : all_wrapped StringMap.t ref = ref StringMap.empty
+  let name : type a m n b. (a, m, n, b) t -> string = fun (PK (_, i, _)) -> Dynarray.get names i
 
   let compare : type dom1 mu1 nu1 cod1 dom2 mu2 nu2 cod2.
       (dom1, mu1, nu1, cod1) t ->
@@ -309,3 +310,27 @@ let to_string : type a m n b. (a, m, n, b) t -> string =
  fun m ->
   let module T = (val !theory) in
   T.to_string m
+
+(* A "normal form" for a 2-cell, to be printed as a sequence of key applications: a vertical composite (outer list) of horizontal composites / whiskerings (inner list) of key and modality names. *)
+let rec hcomp_names : type a b c n s.
+    (b, s, c) Modality.t ->
+    (a, n, b) Modality.t ->
+    string list list ->
+    string list list ->
+    string list list =
+ fun xtgt ytgt xs ys ->
+  match (xs, ys) with
+  | [], [] -> []
+  | x :: xs, y :: ys -> (x @ y) :: hcomp_names xtgt ytgt xs ys
+  | _ :: _, [] ->
+      let ytgt = Modality.name ytgt in
+      List.map (fun x -> x @ ytgt) xs
+  | [], _ :: _ ->
+      let xtgt = Modality.name xtgt in
+      List.map (fun y -> xtgt @ y) ys
+
+let rec name : type a m n b. (a, m, n, b) t -> string list list = function
+  | Gen g -> [ [ Gen.name g ] ]
+  | Id m -> [ Modality.name m ]
+  | Hcomp (_, _, x, y) -> hcomp_names (vtgt x) (vtgt y) (name x) (name y)
+  | Vcomp (y, x) -> name x @ name y

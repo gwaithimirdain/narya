@@ -295,12 +295,13 @@ let rec get_spine : type mode a.
           `Field (head, Field.to_string fld, show_ins ins, Emp)
       (* A nonidentity modal projection is not folded into the spine; it is unparsed as an opaque head, which routes back to the modal-field case of 'unparse'. *)
       | Neq -> `App (tm, Emp))
-  (* We have to look through identity degeneracies and keys here. *)
+  (* We look through identity degeneracies and keys. *)
   | Act (body, s, _) -> (
       match is_id_deg s with
       | Some _ -> get_spine body
       | None -> `App (tm, Emp))
   | Key { tm = body; cell; plus_src; plus_tgt } -> (
+      (* MODALTODO: this only looks through identity keys of identity modalities.  Can/should we look through others?  Doing so alters the modes. *)
       match (Modalcell.compare_id cell, plus_tgt, plus_src) with
       | Eq, Plus_with_locks (Zero, Zero _), Plus_lock (Zero _, Zero) -> get_spine body
       | _ -> `App (tm, Emp))
@@ -353,19 +354,11 @@ let rec unparse : type mode n lt ls rt rs s.
             (`Field (head, fld, ins))
             (Bwd.map (make_unparser_implicit vars) args)
             li ri)
+  (* A nontrivial key is treated by get_spine as an opaque head, which routes back to here; we handle it directly rather than through get_spine (which would loop). *)
+  | Key { tm = body; cell; plus_tgt = Plus_with_locks (comp, _); plus_src } ->
+      unparse_key vars body cell comp plus_src li ri
   | Act (tm, s, sort) ->
       unparse_act ~sort vars { unparse = (fun li ri -> unparse vars tm li ri) } s li ri
-  | Key { tm; cell; plus_tgt = Plus_with_locks (comp, _); plus_src } -> (
-      (* We omit printing keys that are identities or unique, since they can be reconstructed on parse. *)
-      match
-        ( Modalcell.compare_id cell,
-          Modalcell.find_unique (Modalcell.vsrc cell) (Modalcell.vtgt cell) )
-      with
-      | Eq, _ | _, Some (Unique _) ->
-          unparse (Names.add_lock (Names.split vars comp) plus_src) tm li ri
-      | Neq, None ->
-          (* MODALTODO: Print keys *)
-          fatal (Unimplemented "printing keys"))
   | Let (x, Modal (modality, plus, tm), body) -> (
       (match Modality.compare_id modality with
       | Eq -> ()
@@ -636,6 +629,54 @@ and unparse_field_var : type mode n lt ls rt rs.
       | Eq -> unparse_field_var (Names.add_lock (Names.split vars comp) plus_src) tm fld
       | Neq -> None)
   | _ -> None
+
+(* Unparse a key operation applied postfix to a synthesizing term.  The body is unparsed in the context locked by the key's source, obtained from the ambient names by splitting off the target locks ('comp') and re-adding the source lock ('plus_src').  We omit printing keys that are identities or unique, since those can be reconstructed on parse.  Otherwise, we ask the mode theory for a normal form of the cell, as a vertical composite (outer list) of horizontal composites / whiskerings (inner list), and emit one syntactic key application "#a.b.c" for each entry of the vertical composite. *)
+and unparse_key : type mode n am mu nu cod b c lt ls rt rs.
+    n Names.t ->
+    (mode, am, kinetic) term ->
+    (mode, mu, nu, cod) Modalcell.t ->
+    (mode, c, cod, b, unit, n) Tctx.comp ->
+    (b, cod, mu, mode, am) plus_lock ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun vars body cell comp plus_src li ri ->
+  let vars = Names.add_lock (Names.split vars comp) plus_src in
+  match
+    (Modalcell.compare_id cell, Modalcell.find_unique (Modalcell.vsrc cell) (Modalcell.vtgt cell))
+  with
+  | Eq, _ | _, Some (Unique _) -> unparse vars body li ri
+  | Neq, None -> unparse_keys vars body (Bwd.of_list (Modalcell.name cell)) li ri
+
+(* Apply a sequence of syntactic key applications (the vertical composite, innermost first) to an unparsed body, as a postfix application spine at tightness +ω, mirroring the argument-application logic of unparse_spine. *)
+and unparse_keys : type mode n lt ls rt rs.
+    n Names.t ->
+    (mode, n, kinetic) term ->
+    string list Bwd.t ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun vars body keys li ri ->
+  match keys with
+  | Emp -> unparse vars body li ri
+  | Snoc (keys, parts) -> (
+      match (No.Interval.contains li No.plus_omega, No.Interval.contains ri No.plus_omega) with
+      | Some left_ok, Some right_ok ->
+          let fn = unparse_keys vars body keys li No.Interval.plus_omega_only in
+          (* The type annotation resolves the constructor to the parse-tree Key rather than the identically-named Builtins.Key that shadows it here. *)
+          let key_node : (No.plus_omega, No.strict, rt, rs) parse = Key (unlocated parts, []) in
+          let arg = unlocated key_node in
+          unlocated (App { fn; arg; left_ok; right_ok })
+      | _ ->
+          let fn =
+            unparse_keys vars body keys No.Interval.plus_omega_only No.Interval.plus_omega_only
+          in
+          let key_node : (No.plus_omega, No.strict, No.plus_omega, No.nonstrict) parse =
+            Key (unlocated parts, []) in
+          let arg = unlocated key_node in
+          let left_ok = No.le_refl No.plus_omega in
+          let right_ok = No.le_refl No.plus_omega in
+          parenthesize (unlocated (App { fn; arg; left_ok; right_ok })))
 
 and unparse_universe : type mode n k lt ls rt rs.
     n Names.t ->
