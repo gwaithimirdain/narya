@@ -426,7 +426,7 @@ and readback_at_tel : type mode n c a b ab z.
       | Neq -> fatal (Modality_mismatch (`Internal, "readback_at_tel", xmodality, tymodality))
       | Eq ->
           let (Locked (cplus, lctx)) = Ctx.lock ctx tymodality in
-          let lenv = key_env env (Modalcell.id tymodality) aplus in
+          let lenv = key_id_env env aplus in
           let x = CubeOf.find_top x in
           let ety = eval_term lenv ty in
           (* The argument is k-dimensional, where k is the modal filtering of the dimension n of the entire constructor.  We build k-cubes of read-back terms and values in parallel. *)
@@ -527,7 +527,7 @@ and readback_ordered_env : type mode n a b c d.
           (* We are reading back bindings that were defined under a modality, so they are defined in a locked context. *)
           let (Locked (bplus, lctx)) = Ctx.lock ctx modality in
           (* We also analogously key the environment we're reading back, for purposes of evaluating types. *)
-          let lenv = key_env aenv (Modalcell.id modality) dplus in
+          let lenv = key_id_env aenv dplus in
           (* We apply the accumulated operators, degeneracies, and any prekey action to the entry we found. *)
           let xs = act_cube { act } (CubeOf.subcube fc xs) fd pre in
           (* Now we read back all the terms and types in that environment entry.  We record the normal forms in a hashtbl as we go, to use as instantiation arguments to types of higher-dimensional terms. *)

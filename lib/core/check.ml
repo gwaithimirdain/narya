@@ -2067,7 +2067,7 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
            | Arg (rest, filter, xs, ins) ->
                let modality = Modality.filter_modality filter in
                let (Locked (plus, loldctx)) = Ctx.lock oldctx modality in
-               let lnewenv = key_env newenv (Modalcell.id modality) plus in
+               let lnewenv = key_id_env newenv plus in
                let erhead, errest = erapps oldctx newenv rest in
                ( erhead,
                  Arg
@@ -2087,7 +2087,7 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
                (* The spine inside a modal field projection lives behind a lock by the left adjoint. *)
                let fm = Modality.filter_modality filter in
                let (Locked (plus, loldctx)) = Ctx.lock oldctx fm in
-               let lnewenv = key_env newenv (Modalcell.id fm) plus in
+               let lnewenv = key_id_env newenv plus in
                let erhead, errest = erapps loldctx lnewenv rest in
                (erhead, Field (errest, filter, x, y, z))
            | Inst _ -> fatal (Anomaly "inst in make_match_status") in
@@ -2913,7 +2913,7 @@ and check_higher_field : type mode a b c d m i ic0.
                    let (Has_filter newfilter) = Modality.filter fm (cod_left_ins newins) in
                    (* The spine inside a modal field projection lives behind a lock by the left adjoint. *)
                    let (Locked (plus, lctx)) = Ctx.lock ctx fm in
-                   let ldegenv = key_env degenv (Modalcell.id fm) plus in
+                   let ldegenv = key_id_env degenv plus in
                    let head, newapps = erapps lctx ldegenv apps in
                    (head, Value.Field (newapps, newfilter, fldname, rn_k, newins))
                | Arg
@@ -2939,7 +2939,7 @@ and check_higher_field : type mode a b c d m i ic0.
                      CubeOf.pmap
                        { map = (fun _ [ x ] -> [ readback_nf lctx x; readback_val lctx x.ty ]) }
                        [ arg ] (Cons (Cons Nil)) in
-                   let ldegenv = key_env degenv (Modalcell.id modality) plus in
+                   let ldegenv = key_id_env degenv plus in
                    (* Now we evaluate them in degenv to increase the dimension.  *)
                    let sldegenv =
                      act_env ldegenv (opt_op_of_opt_sface (Modality.sface_of_filter r filter_sr))
@@ -4196,7 +4196,7 @@ and check_at_tel : type mode n a b c bc e.
       let filter_face = Modality.sface_of_filter n filter in
       (* We lock the context and environment, and act on the environment by the filter face before evaluating the type. *)
       let (Locked (eplus, lctx)) = Ctx.lock ctx modality in
-      let lenv = key_env env (Modalcell.id modality) bplus in
+      let lenv = key_id_env env bplus in
       let alenv = act_env lenv (opt_op_of_opt_sface filter_face) in
       let ety = eval_term alenv ty in
       (* Now we build the boundary tube for this type. *)

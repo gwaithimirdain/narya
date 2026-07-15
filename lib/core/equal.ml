@@ -425,7 +425,7 @@ module Equal = struct
         | Eq, Eq ->
             let Eq = Modality.filter_uniq xfilter yfilter in
             let (Locked (_, lctx)) = Ctx.lock ctx tymodality in
-            let lenv = key_env env (Modalcell.id tymodality) aplus in
+            let lenv = key_id_env env aplus in
             let x = CubeOf.find_top x in
             let y = CubeOf.find_top y in
             let ety = eval_term lenv ty in
@@ -529,7 +529,7 @@ module Equal = struct
             let xs2 = act_cube { act = act2 } (CubeOf.subcube fc2 xs2) fd2 pre2 in
             (* compare *)
             let (Locked (_, lctx)) = Ctx.lock ctx modality in
-            let lenv = key_env aenv1 (Modalcell.id modality) dplus in
+            let lenv = key_id_env aenv1 dplus in
             let env1' = remove_top env1 in
             let env2' = remove_top env2 in
             let* () = equal_ordered_env ctx env1' env2' envctx in

@@ -44,6 +44,15 @@
    ￫ info[I0000]
    ￮ constant box_eta defined
   
+   ￫ info[I0000]
+   ￮ constant needs_key1 defined
+  
+   ￫ info[I0000]
+   ￮ constant needs_key2 defined
+  
+   ￫ info[I0000]
+   ￮ constant needs_key3 defined
+  
 
 The reflector □△ is not invertible: there is no 2-cell □△ ⇒ 1.
 

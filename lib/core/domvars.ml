@@ -75,7 +75,7 @@ let rec ext_tel : type dom window mode a b c ac bc e n.
         { ctx; env; values = []; normals = []; annotate = Zero (Eq (Ctx.mode ctx)); comp = Zero }
   | x :: xs, Ext (x', Modal (annotation, plus, rty), rest) -> (
       let m = dim_env env in
-      let lenv = key_env env (Modalcell.id annotation) plus in
+      let lenv = key_id_env env plus in
       (* The dimension filter of the telescope annotation itself, at its (inner) codomain mode. *)
       let (Has_filter afilter) = Modality.filter annotation m in
       (* We compose the window modality with the telescope annotation to produce the eventual modality at the outer mode, and derive its dimension filter. *)
@@ -156,7 +156,7 @@ let constr_arg_hints : type mode m a p ap e b.
     | Emp -> acc
     | Ext (_, Modal (modality, plus_lock, rty), rest) ->
         let m = dim_env env in
-        let lenv = key_env env (Modalcell.id modality) plus_lock in
+        let lenv = key_id_env env plus_lock in
         let (Has_filter filter) = Modality.filter modality m in
         let k = Modality.filtered m filter in
         let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter m filter)) in
