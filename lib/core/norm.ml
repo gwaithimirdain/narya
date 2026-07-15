@@ -324,7 +324,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let (Plus l_n) = D.plus n in
       let ln = D.plus_out l l_n in
       (* Then we evaluate all the arguments, not just in the (filtered, keyed) environment, but in that environment acted on by all the strict faces of l.  Since the given arguments are indexed by strict faces of n, the result is a collection of values indexed by strict faces of l+n.  *)
-      let lenv = key_env env (Modalcell.id modality) al in
+      let lenv = key_id_env env al in
       let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter m filter_lm)) in
       let eargs = eval_args flenv l_n ln args in
       (* Having evaluated the function and its arguments, we now pass the job off to a helper function. *)
@@ -338,7 +338,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       | Eq ->
           (* An ordinary field (identity adjunction), including all higher fields, does no dimension filtering: the term being projected lives behind a (trivial) lock by the identity, evaluated in the environment keyed by the identity cell. *)
           let Plus m_n, Plus m_l = (D.plus n, D.plus l) in
-          let ltm = eval_term (key_env env (Modalcell.id fm) plus_lock) tm in
+          let ltm = eval_term (key_id_env env plus_lock) tm in
           field fm ltm fld (plus_ins m m_n m_l fldins)
       | Neq ->
           (* A genuinely modal field over a (possibly nonparametric) left adjoint fm.  The term being projected lives behind a lock by fm, hence at the dimension m filtered by fm; we evaluate it in the keyed, locked environment cut down to that filtered dimension k by a face.  We then project at dimension k and degenerate the result back up to the outer dimension m.  For a nonparametric fm at a dimension it filters nontrivially, the field "disappears": k < m, so this projection is genuinely a degeneracy of a lower-dimensional one.  (For a lower field, cod_left_ins fldins = 0, so k is the whole result dimension.) *)
@@ -346,7 +346,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
           let k = Modality.filtered m kfilter in
           let (Plus k_n) = D.plus n in
           let (Plus k_l) = D.plus l in
-          let lenv = key_env env (Modalcell.id fm) plus_lock in
+          let lenv = key_id_env env plus_lock in
           let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter m kfilter)) in
           let ltm = eval_term flenv tm in
           let proj = field fm ltm fld (plus_ins k k_n k_l fldins) in
@@ -371,7 +371,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
             let (Plus k_l) = D.plus (Modality.filtered n lfilter) in
             let kl = D.plus_out k k_l in
             let filter = Modality.filter_plus k_l m_n kfilter lfilter in
-            let lenv = key_env env (Modalcell.id modality) al in
+            let lenv = key_id_env env al in
             (* The dimension of the cube of arguments that we want should be filtered by the modality.  Thus, we need to filter the dimension of the environment we evaluate it in as well.  We do this by acting with a face: in the unary case this is the unique such face, in other cases it is a dummy face.  The mode theory used for the non-unary cases (the nonparametric modality is only a comonad) should ensure that the dummy endpoints in the non-unary case never actually get used; they should be canceled out by degeneracies. *)
             let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter m kfilter)) in
             Value.Modal (filter, eval_args flenv k_l kl tm))
@@ -394,7 +394,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let mn = D.plus_out m m_n in
       let filter = Modality.filter_plus k_l m_n kfilter lfilter in
       (* The basic thing we do is evaluate the cubes of domains and codomains. *)
-      let lenv = key_env env (Modalcell.id modality) al in
+      let lenv = key_id_env env al in
       let doms =
         CubeOf.build kl
           {
@@ -490,7 +490,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let m = dim_env env in
       let (Has_filter fm) = Modality.filter modality m in
       let k = Modality.filtered m fm in
-      let lenv = key_env env (Modalcell.id modality) al in
+      let lenv = key_id_env env al in
       let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter m fm)) in
       eval
         (Ext
@@ -524,7 +524,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       eval env tm
   | Match { tm; window; plus_lock; dim = match_dim; branches } -> (
       let env_dim = dim_env env in
-      let kenv = key_env env (Modalcell.id window) plus_lock in
+      let kenv = key_id_env env plus_lock in
       let (Has_filter fw) = Modality.filter window env_dim in
       let akenv = act_env kenv (opt_op_of_opt_sface (Modality.sface_of_filter env_dim fw)) in
       let (Plus plus_dim) = D.plus match_dim in
@@ -921,7 +921,7 @@ and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
     | Ok tm -> `Ok (TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
     | Error e -> `Error e in
   let amode = mode_env env in
-  let (Adjunction { left; right; counit; _ }) = adj in
+  let (Adjunction { left; counit; _ }) = adj in
   let env =
     Value.Ext
       {
@@ -932,7 +932,7 @@ and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
         values;
       } in
   (* The type of a modal field lives behind a lock by the right adjoint, so we key the environment by its identity cell. *)
-  let env = key_env env (Modalcell.id right) plus_lock in
+  let env = key_id_env env plus_lock in
   (* This type is m-dimensional, hence must be instantiated at a full m-tube. *)
   let insttm = eval_term env fldty in
   (* The type of a field projection is keyed by the adjunction counit, to put it in the ambient context (where the term being projected lives behind a lock by the left adjoint).  For ordinary fields the counit is the identity and this is a no-op. *)
@@ -1445,7 +1445,7 @@ and eval_env : type mode a q n qn b.
       let (Plus pm_k) = D.plus k in
       let p_mk = D.plus_assocr p_m m_k pm_k in
       let pmk = D.plus_out p p_mk in
-      let lenv = key_env env (Modalcell.id modality) al in
+      let lenv = key_id_env env al in
       let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter q filt_p_q)) in
       (* We make everything lazy, since we can, and not everything may end up being used. *)
       Value.Ext

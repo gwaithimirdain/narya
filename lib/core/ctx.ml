@@ -774,7 +774,7 @@ let lock : type dom modality cod a b.
     (cod, a, b) t -> (dom, modality, cod) Modality.t -> (cod, a, b, modality, dom) locked =
  fun (Permute { perm; env; level; ctx }) lock ->
   let (Locked (al, ctx)) = Ordered.lock ctx lock in
-  let env = key_env env (Modalcell.id lock) al in
+  let env = key_id_env env al in
   Locked (al, Permute { env; perm; level; ctx })
 
 let lock_to : type dom modality cod a b bm.
@@ -784,7 +784,7 @@ let lock_to : type dom modality cod a b bm.
     (dom, a, bm) t =
  fun (Permute { perm; env; level; ctx }) lock al ->
   let ctx = Ordered.lock_to ctx lock al in
-  let env = key_env env (Modalcell.id lock) al in
+  let env = key_id_env env al in
   Permute { env; perm; level; ctx }
 
 let raw_length (Permute { perm; ctx; _ }) = N.perm_dom perm (Ordered.raw_length ctx)

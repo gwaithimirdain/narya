@@ -571,6 +571,19 @@ let key_env : type dom mu nu cod m b bmu.
   | Eq, Plus_lock (Zero _, Zero) -> env
   | _ -> Key (env, key, al)
 
+(* Lock an environment by a modality using one *identity* key per generator, mirroring how the type-level context (Tctx) breaks a lock into its generators.  This keeps the environment's key structure aligned with the Tctx at generator granularity, so that operations like restrict_keys, which walk the environment key-by-key and must consume each key's entire lock domain, can peel off any *prefix* of a lock rather than being forced to swallow a whole atomic multi-generator key.  Every place that would lock an environment by an identity cell over a whole modality should use this instead of a single atomic key_env; there is no reason to want a single atomic identity key in an environment. *)
+let rec key_id_env : type dom mu cod m b bmu.
+    (cod, m, b) env -> (b, cod, mu, dom, bmu) plus_lock -> (dom, m, bmu) env =
+ fun env plus ->
+  match plus with
+  | Plus_lock (Zero _, Zero) -> env
+  | Plus_lock (Suc (lock, Lock_lock g, Suc (Zero, Lock _)), Suc (comp, Lock g')) ->
+      (* The Lock.t and the comp are indexed by separate existentials for the intermediate object left after peeling off the outer generator; reconcile them through the shared generator, as Ordered.lock_to does. *)
+      let Eq = Modality.Gen.src_uniq g g' in
+      let Eq = Modality.Gen.tgt_uniq g g' in
+      let env = key_id_env env (Plus_lock (lock, comp)) in
+      key_env env (Modalcell.id (Modality.of_gen g)) (plus_lock_suc (plus_no_lock (mode_env env)) g)
+
 (* Similarly, for prekeys all we can do is ignore identities. *)
 let prekey_env : type mode mu nu cod n b.
     (mode, n, b) env -> (mode, mu, nu, cod) Modalcell.t -> (mode, n, b) env =
@@ -789,9 +802,8 @@ let rec eval_structfield : type mode m n mn a status i et.
  fun env m m_n mn fld ->
   match fld with
   | Lower (adj, plus_lock, tm, lbl) ->
-      (* The term of a modal field lives behind a lock by the right adjoint, so we evaluate it in the environment keyed by the identity cell of the right adjoint. *)
-      let g = Modalcell.adj_right adj in
-      Lower (adj, lazy_eval (key_env env (Modalcell.id g) plus_lock) tm, lbl)
+      (* The term of a modal field lives behind a lock by the right adjoint, so we evaluate it in the environment keyed (by identity cells, per generator) by the right adjoint. *)
+      Lower (adj, lazy_eval (key_id_env env plus_lock) tm, lbl)
   | Higher terms -> Higher (lazy (eval_higher_structfield env m m_n mn terms))
   | LazyHigher terms -> Higher (lazy (eval_higher_structfield env m m_n mn (Lazy.force terms)))
 
