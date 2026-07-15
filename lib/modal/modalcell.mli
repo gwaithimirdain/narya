@@ -137,7 +137,7 @@ val parametric_locker : 'a Mode.t -> 'a parametric_locker
 
 val of_name :
   'mode Mode.t ->
-  string located list ->
+  string list located ->
   ( 'mode cod2_wrapped,
     [ `Not_found of string located | `Wrong_src of Mode.wrapped * string located * Mode.wrapped ]
   )

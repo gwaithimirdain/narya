@@ -3095,7 +3095,7 @@ and synth : type mode a b s.
         (* If this is a let-bound variable whose value contains occurrences of currently-being-defined constants, record that for any active occurrence-analysis scope. *)
         Positivity.record dirt;
         (* We extract the composite locking modality. *)
-        let (Removed (ctx, _, _)) = Ctx.remove_locks ctx plus_tgt in
+        let (Any_ctx ctx) = Ctx.remove_locks ctx plus_tgt in
         let (Plus_with_locks (_, locks)) = plus_tgt in
         let lock = Locks.cod locks in
         (* To produce its term as a variable (or illusory field access) we have to replace the lock-containing context by a single lock by its annotating modality. *)
@@ -3168,7 +3168,21 @@ and synth : type mode a b s.
             match Modality.of_name_tgt (Ctx.mode ctx) lockname.value with
             | Error e -> modality_fatal "field projection locking annotation" (e :> modality_error)
             | Ok (Wrap fm) -> synth_field fm))
-    | Key _, _ -> fatal (Unimplemented "modal key operation")
+    | Key (tm, keyname), _ -> (
+        match Modalcell.of_name (Ctx.mode ctx) keyname with
+        | Ok (Wrap cell) -> (
+            let src, tgt = (Modalcell.vsrc cell, Modalcell.vtgt cell) in
+            match find_plus_with_locks (Ctx.tctx ctx) tgt with
+            | Some (Found_plus_with_locks plus_tgt) ->
+                let (Replaced (newctx, plus_src)) =
+                  Ctx.replace_locks ctx Hidden_variable plus_tgt src in
+                let tm, sty = synth (Kinetic `Nolet) newctx tm in
+                ( realize status (Key { tm; cell; plus_tgt; plus_src }),
+                  act_value sty (deg_zero D.zero) cell )
+            | None ->
+                let (Wrap ctx_lock) = Ctx.total_locks ctx in
+                fatal ?loc:keyname.loc (Key_mismatch (cell, ctx_lock)))
+        | Error e -> modalcell_fatal "checking key" (e :> modality_error))
     | UU umode, _ -> (
         match Modal.Mode.compare umode mode with
         | Eq -> (realize status (Term.UU (mode, D.zero)), universe mode D.zero)

@@ -42,3 +42,9 @@ def □′ (A :□| Type) : Disc ≔ sig ( (x :△| _) .unbox : A )
 def box_unbox (A :□| Type) (u : □′ A) : □′ A ≔ (unbox ≔ (u :△| _) .unbox)
 
 def box_eta (A :□| Type) (u : □′ A) : Id (□′ A) (box_unbox A u) u ≔ refl u
+
+def needs_key1 (A : Disc) (x :□△| A) : □△□△ A ≔ t2. (x #η.□△)
+
+def needs_key2 (A : Disc) (x :□△| A) : □△□△ A ≔ t2. (x #□△.η)
+
+def needs_key3 (A : Disc) (x :□△| A) : □△□△ A ≔ t2. (x #η)

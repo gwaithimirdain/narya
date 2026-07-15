@@ -78,7 +78,7 @@ module rec Make : functor (I : Indices) -> sig
         * [ `Name of string * int list | `Int of int ]
         * string located list located option
         -> 'a synth
-    | Key : 'a synth located * string list -> 'a synth
+    | Key : 'a synth located * string list located -> 'a synth
     | Pi :
         I.name * string located list located * 'a check located * 'a I.suc check located
         -> 'a synth
@@ -260,7 +260,7 @@ functor
           * string located list located option
           -> 'a synth
       (* A modal key operation applied postfix to a synthesizing term, written "x #a.b.c".  The dot-separated pieces of the key name are stored as strings, to be resolved into a 2-cell at typechecking time. *)
-      | Key : 'a synth located * string list -> 'a synth
+      | Key : 'a synth located * string list located -> 'a synth
       | Pi :
           I.name * string located list located * 'a check located * 'a I.suc check located
           -> 'a synth

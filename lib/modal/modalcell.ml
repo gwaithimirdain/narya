@@ -270,14 +270,16 @@ let parametric_locker m =
     | Ok l -> l
     | Error str -> failwith ("mode theory " ^ str ^ " doesn't support external parametricity")
 
+(* Unfortunately, it's not easy for the parser/lexer to store the locations of the individual pieces, so we give them all the location of the entire key. *)
 let rec of_name : type mode.
     mode Mode.t ->
-    string located list ->
+    string list located ->
     ( mode cod2_wrapped,
       [ `Not_found of string located | `Wrong_src of Mode.wrapped * string located * Mode.wrapped ]
     )
     Result.t =
- fun mode -> function
+ fun mode names ->
+  match names.value with
   | [] -> Ok (Wrap (id2 mode))
   | name :: rest -> (
       let go_on : type a m n b.
@@ -287,18 +289,19 @@ let rec of_name : type mode.
             | `Wrong_src of Mode.wrapped * string located * Mode.wrapped ] )
           Result.t =
        fun cell ->
-        match of_name mode rest with
+        match of_name mode (locate_opt names.loc rest) with
         | Ok (Wrap rest) -> (
             match Mode.compare (hsrc cell) (htgt rest) with
             | Eq ->
                 let (Wrap output) = hcomp_wrapped cell rest in
                 Ok (Wrap output)
-            | Neq -> Error (`Wrong_src (Wrap (hsrc cell), name, Wrap (htgt rest))))
+            | Neq ->
+                Error (`Wrong_src (Wrap (hsrc cell), locate_opt names.loc name, Wrap (htgt rest))))
         | Error e -> Error e in
-      match StringMap.find_opt name.value !Gen.by_name with
+      match StringMap.find_opt name !Gen.by_name with
       | Some (Wrap cell) -> go_on (of_gen cell)
       | None -> (
-          match Modality.of_name_src [ name ] mode with
+          match Modality.of_name_src [ locate_opt names.loc name ] mode with
           | Ok (Wrap m) -> go_on (id m)
           | Error e -> Error e))
 

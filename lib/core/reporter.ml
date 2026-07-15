@@ -187,13 +187,15 @@ module Code = struct
         [ `User | `Internal ]
         * string
         * 'm1 Mode.t
-        * [ `Tgt of string | `Src of string ] option
+        * [ `Tgt of string | `Src of string | `Htgt of string | `Hsrc of string ] option
         * 'm2 Mode.t
         -> t
     | Modality_mismatch :
         [ `User | `Internal ] * string * ('a, 'm, 'b) Modality.t * ('c, 'n, 'd) Modality.t
         -> t
     | Unknown_modality : string -> t
+    | Unknown_modalcell : string -> t
+    | Key_mismatch : ('a, 'm, 'n, 'b) Modalcell.t * ('c, 'p, 'd) Modality.t -> t
     | Modalcell_mismatch : string * ('a, 'm, 'n, 'b) Modalcell.t * ('c, 'r, 's, 'd) Modalcell.t -> t
     | Intangible_modality : ('a, 'm, 'b) Modality.t -> t
     | Nontransparent_window_modality :
@@ -239,6 +241,7 @@ module Code = struct
     | Missing_constructor_type : Constr.t -> t
     | Locked_variable : t
     | Locked_constant : printable -> t
+    | Hidden_variable : t
     | Missing_key : ('dom1, 'mu1, 'cod1) Modality.t * ('dom2, 'mu2, 'cod2) Modality.t -> t
     | Axiom_in_parametric_definition : printable -> t
     | Modality_not_sinister : ('dom, 'mu, 'cod) Modality.t -> t
@@ -385,6 +388,8 @@ module Code = struct
     | Modality_mismatch (`Internal, _, _, _) -> Bug
     | Modality_mismatch (`User, _, _, _) -> Error
     | Unknown_modality _ -> Error
+    | Unknown_modalcell _ -> Error
+    | Key_mismatch _ -> Error
     | Modalcell_mismatch _ -> Error
     | Intangible_modality _ -> Error
     | Nontransparent_window_modality _ -> Error
@@ -419,6 +424,7 @@ module Code = struct
     | Missing_constructor_type _ -> Error
     | Locked_variable -> Error
     | Locked_constant _ -> Error
+    | Hidden_variable -> Error
     | Missing_key _ -> Error
     | Axiom_in_parametric_definition _ -> Error
     | Modality_not_sinister _ -> Error
@@ -506,6 +512,7 @@ module Code = struct
     | Locked_variable -> "E0310"
     | Locked_constant _ -> "E0311"
     | Axiom_in_parametric_definition _ -> "E0312"
+    | Hidden_variable -> "E0313"
     (* Bidirectional typechecking and case trees *)
     | Nonsynthesizing _ -> "E0400"
     | Unequal_synthesized_type _ -> "E0401"
@@ -602,6 +609,8 @@ module Code = struct
     | Non_mode_synthesizing _ -> "E1703"
     | Unknown_modality _ -> "E1704"
     | Missing_key _ -> "E1705"
+    | Unknown_modalcell _ -> "E1706"
+    | Key_mismatch _ -> "E1707"
     | Modality_not_sinister _ -> "E1711"
     | Wrong_locking_modality _ -> "E1712"
     | Modal_field_filtered_away _ -> "E1713"
@@ -935,7 +944,9 @@ module Code = struct
             match why with
             | None -> ""
             | Some (`Tgt s) -> " (target of " ^ s ^ ")"
-            | Some (`Src s) -> " (source of " ^ s ^ ")" in
+            | Some (`Src s) -> " (source of " ^ s ^ ")"
+            | Some (`Htgt s) -> " (horizontal target of " ^ s ^ ")"
+            | Some (`Hsrc s) -> " (horizontal source of " ^ s ^ ")" in
           textf "mode mismatch in %s (%s%s ≠ %s)" op (Mode.name a) why (Mode.name b)
       | Modality_mismatch (_, op, a, b) ->
           textf "modality mismatch in %s (%a ≠ %a)" op pp_printed
@@ -951,6 +962,11 @@ module Code = struct
           textf "degeneracy %s is not allowed at mode %s, which is nonparametric" name
             (Mode.name mode)
       | Unknown_modality c -> textf "unknown modality %s" c
+      | Unknown_modalcell c -> textf "unknown modal cell %s" c
+      | Key_mismatch (key, ctx_lock) ->
+          textf "vertical target %s of key %s doesn't match any suffix of context locks %s"
+            (Modality.to_string (Modalcell.vtgt key))
+            (Modalcell.to_string key) (Modality.to_string ctx_lock)
       | Intangible_modality m -> textf "modality %s is not tangible" (Modality.to_string m)
       | Nontransparent_window_modality (m, _, `Recursive) ->
           textf "window modality %s must be pellucid since the datatype has recursive constructors"
@@ -1096,6 +1112,7 @@ module Code = struct
           textf
             "constant %a is or uses a nonparametric axiom, can't appear inside an external degeneracy"
             pp_printed (print a)
+      | Hidden_variable -> text "variable hidden by key application"
       | Axiom_in_parametric_definition a ->
           textf
             "constant %a is or uses a nonparametric axiom, can't be used in a parametric command"
@@ -1308,3 +1325,13 @@ let modality_fatal : type a. string -> modality_error -> a =
   | `Wrong_src (Wrap a, m, Wrap b) ->
       fatal ?loc:m.loc ~severity:Asai.Diagnostic.Error
         (Mode_mismatch (`User, str, a, Some (`Src m.value), b))
+
+let modalcell_fatal : type a. string -> modality_error -> a =
+ fun str -> function
+  | `Not_found m -> fatal ?loc:m.loc (Unknown_modalcell m.value)
+  | `Wrong_tgt (Wrap a, m, Wrap b) ->
+      fatal ?loc:m.loc ~severity:Asai.Diagnostic.Error
+        (Mode_mismatch (`User, str, a, Some (`Htgt m.value), b))
+  | `Wrong_src (Wrap a, m, Wrap b) ->
+      fatal ?loc:m.loc ~severity:Asai.Diagnostic.Error
+        (Mode_mismatch (`User, str, a, Some (`Hsrc m.value), b))

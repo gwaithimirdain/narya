@@ -368,7 +368,7 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
                                                   | `Constr x -> Constr (x, w)
                                                   | `Placeholder -> Placeholder w
                                                   | `Field (x, p) -> Field (x, p, w)
-                                                  | `Key parts -> Key (parts, w)
+                                                  | `Key parts -> Key (locate arg_loc parts, w)
                                                   | `Hole (number, contents) ->
                                                       Hole
                                                         {

@@ -595,6 +595,15 @@ module Ordered = struct
     | Snoc (ctx, Invis e, af) ->
         Snoc (ctx, Invis { e with bindings = forget_bindings e.bindings }, af)
 
+  (* Weaken the raw length by any specified amount. *)
+  let rec weaken : type mode a x ax b.
+      (mode, a, b) t -> Code.t -> (a, x, ax) N.plus -> (mode, ax, b) t =
+   fun ctx code -> function
+    | Zero -> ctx
+    | Suc ax ->
+        let ctx = weaken ctx code ax in
+        Weaken (ctx, code)
+
   (* Peel off enough locks to make up a supplied modality, along with any entries between them. *)
 
   type (_, _, _, _) remove_lock =
@@ -649,6 +658,23 @@ module Ordered = struct
         let (Any (ctx, a_x)) = remove_locks ctx (Plus_with_locks (comp, locks)) in
         Any (Weaken (ctx, code), N.suc_plus_eq_suc a_x)
     | Suc (_, Proj _), Suc (_, _, _), _ -> .
+
+  type (_, _, _, _, _) replaced_locks =
+    | Replaced :
+        ('mode, 'a, 'bs) t * ('b, 'cod, 'src, 'mode, 'bs) plus_lock
+        -> ('mode, 'src, 'cod, 'a, 'b) replaced_locks
+
+  let replace_locks : type cod mode tgt src a b bt.
+      (mode, a, bt) t ->
+      Code.t ->
+      (b, cod, tgt, mode, bt) plus_with_locks ->
+      (mode, src, cod) Modality.t ->
+      (mode, src, cod, a, b) replaced_locks =
+   fun ctx code plus_tgt src ->
+    let (Any (removed_ctx, raw_plus)) = remove_locks ctx plus_tgt in
+    let (Locked (plus_src, relocked_ctx)) = lock removed_ctx src in
+    let weakened_ctx = weaken relocked_ctx code raw_plus in
+    Replaced (weakened_ctx, plus_src)
 end
 
 (* Now we define contexts that add a permutation of the raw indices.  For efficiency reasons we also precompute its environment as the context is built and store it.  We also store the next De Bruijn level (cube only, not internal face level) that may be added to the context; in most cases this equals the length of the context, but during bind_some we work temporarily with rearranged contexts containing old De Bruijn levels so it may be greater than the length.  The permutation acts only on variables, not on locks; it should only permute variables with other variables that have NO LOCKS IN BETWEEN, but we don't enforce that statically.  In particular, therefore, the mode of the permuted context is the same as the mode of its ordered version. *)
@@ -881,13 +907,23 @@ let remove_lock : type mode modality cod a bc.
   (* We save the level of the old, longer, context, so that when new level variables are created in the new shorter context there's no chance they'll conflict with level variables from the old context.  *)
   Remove_lock (of_ordered ~level ctx, bc)
 
-type (_, _, _) removed_locks =
-  | Removed :
-      ('mode, 'a, 'b) t * ('a, 'x, 'ax) N.plus * ('c, 'ax) N.permute
-      -> ('mode, 'c, 'b) removed_locks
-
 let remove_locks : type cod mode modality a b bc.
-    (mode, a, bc) t -> (b, cod, modality, mode, bc) plus_with_locks -> (cod, a, b) removed_locks =
- fun (Permute { ctx; level; perm; _ }) plus ->
-  let (Any (ctx, ax)) = Ordered.remove_locks ctx plus in
-  Removed (of_ordered ~level ctx, ax, perm)
+    (mode, a, bc) t -> (b, cod, modality, mode, bc) plus_with_locks -> (cod, b) any =
+ fun (Permute { ctx; level; _ }) plus ->
+  let (Any (ctx, _)) = Ordered.remove_locks ctx plus in
+  Any_ctx (of_ordered ~level ctx)
+
+type (_, _, _, _, _) replaced_locks =
+  | Replaced :
+      ('mode, 'a, 'bs) t * ('b, 'cod, 'src, 'mode, 'bs) plus_lock
+      -> ('mode, 'src, 'cod, 'a, 'b) replaced_locks
+
+let replace_locks : type cod mode tgt src a b bt.
+    (mode, a, bt) t ->
+    Code.t ->
+    (b, cod, tgt, mode, bt) plus_with_locks ->
+    (mode, src, cod) Modality.t ->
+    (mode, src, cod, a, b) replaced_locks =
+ fun (Permute { ctx; level; perm; _ }) code plus_tgt src ->
+  let (Replaced (ctx, plus_src)) = Ordered.replace_locks ctx code plus_tgt src in
+  Replaced (Permute { ctx; level; perm; env = Ordered.env ctx }, plus_src)
