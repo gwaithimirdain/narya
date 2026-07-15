@@ -28,7 +28,19 @@ def wss4 (x :♮♮♮♮| Type) : ss4 ≔ ss4. x
 
 ` Unlike an ordinary reflector or coreflector alone, ♮ having both a unit and a counit means
 ` every pair of ♮-words (id or ♮, the only two normal forms) has a key in both directions, so
-` there is no analogue of the usual "missing key" test here.
+` there is no analogue of the usual "missing key" test here.  But the two composites of the unit
+` and counit are genuinely different, and this is directly observable.
+
+` Composing the counit and then the unit, ♮ ⇒ id ⇒ ♮, is the identity on ♮: bouncing an already-♮
+` value out to a plain value and back through counit again reduces to the original counit.
+def roundtrip_good (A :♮| Type) (x :♮| A) : A ≔ counit A (counit A x)
+
+def roundtrip_good_ok (A :♮| Type) (x :♮| A) : Id A (roundtrip_good A x) x ≔ refl x
+
+` Composing the unit and then the counit, id ⇒ ♮ ⇒ id, is *not* the identity on id (it is
+` "zero"): applying counit to a genuinely plain (unkeyed) value, which needs the unit inserted
+` to supply counit's ♮-locked argument, does not typecheck.
+` def roundtrip_bad (A : Type) (x : A) : A ≔ counit A x
 
 ` ♮ is adjoint to itself (unit id ⇒ ♮∘♮ via unit-then-comult, counit ♮∘♮ ⇒ id via mult-then-counit),
 ` so it is sinister and can parametrize a modal (negative) field.

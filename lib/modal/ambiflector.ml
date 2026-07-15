@@ -6,7 +6,30 @@ open Dim
 
    The theory is "almost" locally posetal: every hom-set of 2-cells is thin (has at most one element) except the endomorphisms of the identity modality, which has exactly the two elements {id, zero}.  Modalities still have just two normal forms, id and ♮, since every nonempty word in ♮ collapses to ♮ via the multiplication/comultiplication iso; and find_unique never actually needs to choose between id and zero, since it only ever inserts the trivial identity key when the source and target modalities already coincide, or the unit/counit when they don't.  But `compare` must still be able to distinguish id from zero on identity-typed cells, which it does by checking whether the cell's expression contains any occurrence of a generator: the identity never does, while zero, being built from unit and counit, always does.
 
-   ♮ is also adjoint to itself, ♮ ⊣ ♮: composing the reflector unit id ⇒ ♮ with the comultiplication ♮ ⇒ ♮∘♮ gives a unit id ⇒ ♮∘♮, and composing the multiplication ♮∘♮ ⇒ ♮ with the coreflector counit ♮ ⇒ id gives a counit ♮∘♮ ⇒ id; the triangle identities hold automatically because the endomorphisms of ♮ are also thin (so any two parallel self-maps of ♮ are equal).  Thus ♮ is sinister and, like the identity, transparent. *)
+   ♮ is also adjoint to itself, ♮ ⊣ ♮: composing the reflector unit id ⇒ ♮ with the comultiplication ♮ ⇒ ♮∘♮ gives a unit id ⇒ ♮∘♮, and composing the multiplication ♮∘♮ ⇒ ♮ with the coreflector counit ♮ ⇒ id gives a counit ♮∘♮ ⇒ id; the triangle identities hold automatically because the endomorphisms of ♮ are also thin (so any two parallel self-maps of ♮ are equal).  Thus ♮ is sinister and, like the identity, transparent.
+
+   The discrete variant makes ♮ nonparametric.  There is no parametric locker (♮ does not become usable to strip external parametricity, unlike the discrete variants of some other mode theories), and -external is not allowed with it. *)
+
+module type Variant = sig
+  type nonparametric
+
+  val nonparametric : nonparametric D.t
+  val name : string
+end
+
+module Ordinary = struct
+  type nonparametric = D.zero
+
+  let nonparametric = D.zero
+  let name = "ambiflector"
+end
+
+module Discrete = struct
+  type nonparametric = D.one
+
+  let nonparametric = D.one
+  let name = "discrete ambiflector"
+end
 
 module TestmodeGen = struct
   let name = ref "Type"
@@ -16,7 +39,7 @@ module TestmodeGen = struct
   let nonparametric = D.zero
 end
 
-module AmbGen (Testmode : Mode.Generated with module G := TestmodeGen) = struct
+module AmbGen (V : Variant) (Testmode : Mode.Generated with module G := TestmodeGen) = struct
   type src = Testmode.t
   type tgt = Testmode.t
 
@@ -24,14 +47,15 @@ module AmbGen (Testmode : Mode.Generated with module G := TestmodeGen) = struct
   let tgt = Testmode.mode
   let name = ref "♮"
 
-  type nonparametric = D.zero
+  type nonparametric = V.nonparametric
 
-  let nonparametric = D.zero
+  let nonparametric = V.nonparametric
 end
 
 module AmbiflectorCells
+    (V : Variant)
     (Testmode : Mode.Generated with module G := TestmodeGen)
-    (Amb : Modality.Generated with module G := AmbGen(Testmode)) =
+    (Amb : Modality.Generated with module G := AmbGen(V)(Testmode)) =
 struct
   let typ = Testmode.mode
   let amb = Modality.of_gen Amb.modality
@@ -172,24 +196,23 @@ struct
     (* Every modality here (id or ♮, its only two normal forms) is a left adjoint, since ♮ is
        adjoint to itself. *)
     let transparent _ = true
-
     let translucent _ = true
   end
 end
 
-let install modes modalities =
+let install (module V : Variant) modes modalities =
   (match modes with
   | [ ty ] -> TestmodeGen.name := ty
   | [] -> ()
-  | _ -> failwith "wrong number of mode names for ambiflector mode theory");
+  | _ -> failwith ("wrong number of mode names for " ^ V.name ^ " mode theory"));
   let module Testmode = Mode.Generate (TestmodeGen) in
-  let module Nat = AmbGen (Testmode) in
+  let module Nat = AmbGen (V) (Testmode) in
   (match modalities with
   | [ amb ] -> Nat.name := amb
   | [] -> ()
-  | _ -> failwith "wrong number of modality names for ambiflector mode theory");
+  | _ -> failwith ("wrong number of modality names for " ^ V.name ^ " mode theory"));
   Modality.set_one_char true modalities;
   let module Amb = Modality.Generate (Nat) in
-  let module Cells = AmbiflectorCells (Testmode) (Amb) in
+  let module Cells = AmbiflectorCells (V) (Testmode) (Amb) in
   Modalcell.choose_theory (module Cells : Modalcell.Theory);
   Modality.choose_theory (module Cells.Modalities : Modality.Theory)

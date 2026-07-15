@@ -240,9 +240,19 @@ let speclist =
     ( "-ambiflector",
       Arg.Unit
         (fun () ->
-          install_mode_theory := Modal.Ambiflector.install;
+          install_mode_theory :=
+            Modal.Ambiflector.install (module Modal.Ambiflector.Ordinary : Modal.Ambiflector.Variant);
           mode_theories := !mode_theories + 1),
       "Select the ambiflector mode theory (♮ is both a reflector and a coreflector)" );
+    ( "-discrete-ambiflector",
+      Arg.Unit
+        (fun () ->
+          hott_forbidden := Some "-discrete-ambiflector";
+          arity_ok := `One "-discrete-ambiflector";
+          install_mode_theory :=
+            Modal.Ambiflector.install (module Modal.Ambiflector.Discrete : Modal.Ambiflector.Variant);
+          mode_theories := !mode_theories + 1),
+      "Select the ambiflector mode theory with nonparametric ♮ (requires -parametric)" );
     ( "-gwpt",
       Arg.Unit
         (fun () ->
