@@ -3095,7 +3095,7 @@ and synth : type mode a b s.
         (* If this is a let-bound variable whose value contains occurrences of currently-being-defined constants, record that for any active occurrence-analysis scope. *)
         Positivity.record dirt;
         (* We extract the composite locking modality. *)
-        let (Any_ctx ctx) = Ctx.remove_locks ctx plus_tgt in
+        let (Removed (ctx, _, _)) = Ctx.remove_locks ctx plus_tgt in
         let (Plus_with_locks (_, locks)) = plus_tgt in
         let lock = Locks.cod locks in
         (* To produce its term as a variable (or illusory field access) we have to replace the lock-containing context by a single lock by its annotating modality. *)

@@ -605,18 +605,21 @@ module Ordered = struct
 
   (* The same, but with a supplied plus_with_locks *)
 
-  type (_, _) any = Any : ('mode, 'a, 'b) t -> ('mode, 'b) any
+  type (_, _, _) any = Any : ('mode, 'a, 'b) t * ('a, 'x, 'ax) N.plus -> ('mode, 'ax, 'b) any
 
   let rec remove_locks : type cod mode modality a b bc.
-      (mode, a, bc) t -> (b, cod, modality, mode, bc) plus_with_locks -> (cod, b) any =
+      (mode, a, bc) t -> (b, cod, modality, mode, bc) plus_with_locks -> (cod, a, b) any =
    fun ctx (Plus_with_locks (comp, locks)) ->
     match (comp, locks, ctx) with
-    | Zero, Zero _, _ -> Any ctx
-    | Suc (comp, Dim _), Suc (locks, Locks_dim _, _), Snoc (ctx, _, _) ->
-        remove_locks ctx (Plus_with_locks (comp, locks))
+    | Zero, Zero _, _ -> Any (ctx, Zero)
+    | Suc (comp, Dim _), Suc (locks, Locks_dim _, _), Snoc (ctx, _, ax_y) ->
+        let (Any (ctx, a_x)) = remove_locks ctx (Plus_with_locks (comp, locks)) in
+        let (Plus x_y) = N.plus (N.plus_right ax_y) in
+        let a_xy = N.plus_assocr a_x x_y ax_y in
+        Any (ctx, a_xy)
     | Suc (Zero, Lock g1), Suc (Zero _, Locks_lock _, _), Lock (ctx, g3) ->
         let Eq = Modality.Gen.tgt_uniq g1 g3 in
-        Any ctx
+        Any (ctx, Zero)
     | Suc (comp, TEntry.Lock g1), Suc (locks, Locks_lock g2, _), Lock (ctx, g3) ->
         let Eq, Eq = (Modality.Gen.tgt_uniq g1 g2, Modality.Gen.tgt_uniq g2 g3) in
         remove_locks ctx (Plus_with_locks (comp, locks))
@@ -853,8 +856,13 @@ let remove_lock : type mode modality cod a bc.
   (* We save the level of the old, longer, context, so that when new level variables are created in the new shorter context there's no chance they'll conflict with level variables from the old context.  *)
   Remove_lock (of_ordered ~level ctx, bc)
 
+type (_, _, _) removed_locks =
+  | Removed :
+      ('mode, 'a, 'b) t * ('a, 'x, 'ax) N.plus * ('c, 'ax) N.permute
+      -> ('mode, 'c, 'b) removed_locks
+
 let remove_locks : type cod mode modality a b bc.
-    (mode, a, bc) t -> (b, cod, modality, mode, bc) plus_with_locks -> (cod, b) any =
- fun (Permute { ctx; level; _ }) plus ->
-  let (Any ctx) = Ordered.remove_locks ctx plus in
-  Any_ctx (of_ordered ~level ctx)
+    (mode, a, bc) t -> (b, cod, modality, mode, bc) plus_with_locks -> (cod, a, b) removed_locks =
+ fun (Permute { ctx; level; perm; _ }) plus ->
+  let (Any (ctx, ax)) = Ordered.remove_locks ctx plus in
+  Removed (of_ordered ~level ctx, ax, perm)
