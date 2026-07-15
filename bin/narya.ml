@@ -237,6 +237,12 @@ let speclist =
             Modal.Cospatial.install (module Modal.Cospatial.Discrete : Modal.Cospatial.Variant);
           mode_theories := !mode_theories + 1),
       "Select the cospatial mode theory (reflector ♯ left adjoint to coreflector ♭)" );
+    ( "-ambiflector",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Ambiflector.install;
+          mode_theories := !mode_theories + 1),
+      "Select the ambiflector mode theory (♮ is both a reflector and a coreflector)" );
     ( "-gwpt",
       Arg.Unit
         (fun () ->
