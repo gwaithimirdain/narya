@@ -11,6 +11,7 @@ and parse_tree =
   | Ident of string list
   | Constr of string
   | Field of string * string list
+  | Key of string list
   | Superscript of parse_tree option * string
   | Hole
 
@@ -28,6 +29,7 @@ and get_tree : type lt ls rt rs. (lt, ls, rt, rs) Notation.parse -> parse_tree =
   | Ident (x, _) -> Ident x
   | Constr (x, _) -> Constr x
   | Field (x, b, _) -> Field (x, b)
+  | Key (parts, _) -> Key parts
   | Superscript (None, s, _) -> Superscript (None, s.value)
   | Superscript (Some x, s, _) -> Superscript (Some (get_tree x.value), s.value)
   | Hole _ -> Hole

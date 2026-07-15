@@ -3168,6 +3168,7 @@ and synth : type mode a b s.
             match Modality.of_name_tgt (Ctx.mode ctx) lockname.value with
             | Error e -> modality_fatal "field projection locking annotation" (e :> modality_error)
             | Ok (Wrap fm) -> synth_field fm))
+    | Key _, _ -> fatal (Unimplemented "modal key operation")
     | UU umode, _ -> (
         match Modal.Mode.compare umode mode with
         | Eq -> (realize status (Term.UU (mode, D.zero)), universe mode D.zero)
@@ -4311,6 +4312,8 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
               | Ok (Wrap modality) -> Some (Wrap (Modality.tgt modality))
               | Error _ -> None)
           | None -> None)
+      (* Key operations are not yet implemented, so we can't synthesize their mode. *)
+      | Synth (Key (_, _)) -> None
       | Synth (Pi (_, modality, dom, cod)) -> (
           match synth_mode cod with
           | Some mode -> Some mode

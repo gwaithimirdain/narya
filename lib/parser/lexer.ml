@@ -434,10 +434,21 @@ let other : Token.t t =
   let* rng, parts = located dot_separated_token in
   return (canonicalize (Range.convert rng) parts)
 
+(* A Key is the character # followed immediately (no intervening space) by a dot-separated identifier.  If # is not immediately followed by an identifier, this backtracks and fails, so that # is instead lexed as an ordinary ASCII symbol (Op "#"), which is used e.g. for attributes. *)
+let key : Token.t t =
+  backtrack
+    (let* _ = char '#' in
+     let* parts = atomic_other_token () in
+     match get_ident parts with
+     | Some id -> return (Key id)
+     | None -> unexpected "key identifier")
+    "key"
+
 (* Finally, a token is either a quoted string, a single-character operator, an operator of special ASCII symbols, or something else.  Unlike the built-in 'lexer' function, we include whitespace *after* the token, so that we can save comments occurring after any code. *)
 let token : Located_token.t t =
   (let* loc, tok =
-     located (hole </> quoted_string </> onechar_op </> superscript </> ascii_op </> other) in
+     located (hole </> quoted_string </> onechar_op </> superscript </> key </> ascii_op </> other)
+   in
    let* ws = whitespace in
    return (loc, (tok, ws)))
   </> located (expect_end (Eof, []))

@@ -340,6 +340,7 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
                             | Constr (x, []) -> Some ((`Constr x, w), state)
                             | Underscore -> Some ((`Placeholder, w), state)
                             | Field (x, p) -> Some ((`Field (x, p), w), state)
+                            | Key parts -> Some ((`Key parts, w), state)
                             | Hole { number; contents } ->
                                 let open Monad.Ops (Monad.Maybe) in
                                 let* number = int_of_string_opt (Option.value ~default:"0" number) in
@@ -367,6 +368,7 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
                                                   | `Constr x -> Constr (x, w)
                                                   | `Placeholder -> Placeholder w
                                                   | `Field (x, p) -> Field (x, p, w)
+                                                  | `Key parts -> Key (parts, w)
                                                   | `Hole (number, contents) ->
                                                       Hole
                                                         {
