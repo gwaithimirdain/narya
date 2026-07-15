@@ -12,7 +12,7 @@ open Print
 open PPrint
 open Top
 
-type arity = [ `One of string | `Any | `None of string ]
+type arity = [ `One of string | `Any | `None ]
 
 let usage_msg = "narya [options] <file1> [<file2> ...]"
 let interactive = ref false
@@ -20,7 +20,7 @@ let proofgeneral = ref false
 let show_version = ref false
 let install_mode_theory = ref Modal.Trivial.install
 let hott_forbidden : string option ref = ref None
-let external_ok : arity ref = ref `Any
+let external_ok : arity ref = ref `None
 let arity_ok : arity ref = ref `Any
 let mode_theories = ref 0
 let old_discreteness = ref false
@@ -121,7 +121,6 @@ let speclist =
         (fun () ->
           install_mode_theory :=
             Modal.Spatial.install (module Modal.Spatial.Discrete : Modal.Spatial.Variant);
-          external_ok := `None "-discrete-spatial";
           hott_forbidden := Some "-discrete-spatial";
           mode_theories := !mode_theories + 1),
       "Select the spatial mode theory with discrete coreflector (requires -parametric)" );
@@ -144,7 +143,6 @@ let speclist =
         (fun () ->
           install_mode_theory :=
             Modal.Functor.install (module Modal.Functor.Discrete : Modal.Functor.Variant);
-          external_ok := `None "-discrete-functor";
           hott_forbidden := Some "-discrete-functor";
           mode_theories := !mode_theories + 1),
       "Select the functor mode theory with discrete domain mode (requires -parametric)" );
@@ -232,9 +230,9 @@ let speclist =
     ( "-discrete-cospatial",
       Arg.Unit
         (fun () ->
-          hott_forbidden := Some "-discrete-tconn";
-          external_ok := `One "-discrete-tconn";
-          arity_ok := `One "-discrete-tconn";
+          hott_forbidden := Some "-discrete-cospatial";
+          external_ok := `One "-discrete-cospatial";
+          arity_ok := `One "-discrete-cospatial";
           install_mode_theory :=
             Modal.Cospatial.install (module Modal.Cospatial.Discrete : Modal.Cospatial.Variant);
           mode_theories := !mode_theories + 1),
@@ -306,8 +304,8 @@ let () =
     exit 1);
   (if not !internal then
      match (!external_ok, !arity) with
-     | `None str, _ ->
-         Printf.fprintf stderr "%s is incompatible with -external" str;
+     | `None, _ ->
+         Printf.fprintf stderr "-external requires a compatible mode theory";
          exit 1
      | `One _, 1 -> ()
      | `One str, _ ->

@@ -14,7 +14,7 @@ These features require ``-parametric``, and by default we will assume ``-directi
    "``-discrete-functor``", "``-functor``", "any", "``○``, ``DomType``", "--"
    "``-discrete-coreflector``", "``-coreflector``", "any", "``♭``", "``♭`` (arity 1)"
    "``-discrete-spatial``", "``-spatial``", "any", "``♭``", "--"
-   "``-discrete-cospatial``", "``-spatial``", "1 only", "``♯``, ``♭``", "--"
+   "``-discrete-cospatial``", "``-spatial``", "1 only", "``♯``, ``♭``", "``♯`` (arity 1)"
    "``-discrete-coreflection``", "``-coreflection``", "any", "``△``, ``Disc``", "``△□`` (arity 1)"
    "``-discrete-adjunction``", "``-adjunction``", "any", "``△``, ``△□``, ``Disc``", "``△□``"
    "``-discrete-local``", "``-local``", "any", "``△``, ``△□``, ``Disc``", "--"
@@ -266,4 +266,4 @@ Terminality of 0 does not imply the existence of ``∇``, but it does imply that
 
 In the overlapping case of *unary internal* parametricity, we have ``◇ = □`` and hence ``△ = ∇``, yielding two functors that are adjoint to each other on both sides.  This theory is not yet provided.
 
-Finally, in the case of *external non-unary* parametricity, there is still an "evaluate at 0" functor, but it is not part of any adjoint string including ``△ ⊣ □``.  But it does have a right adjoint, which we denote ``∇``, and we have ``◇△ = 1``, yielding the ``-discrete-gwpt`` mode theory.
+Finally, in the case of *external non-unary* parametricity, there is still an "evaluate at 0" functor, but it is not part of any adjoint string including ``△ ⊣ □``.  But it does have a right adjoint, which we denote ``∇``, and we have ``◇△ = 1``, yielding the ``-discrete-gwpt`` mode theory.  This has no single-mode sub-theory because, as noted above, the composite ``∇◇`` cannot be defined directly syntactically: it should be codiscrete rather than discrete, but it has no left adjoint in the mode theory.

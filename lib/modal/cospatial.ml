@@ -236,7 +236,12 @@ struct
     | None -> None
 
   let parametric_locker : type a. a Mode.t -> (a Modalcell.parametric_locker, string) Result.t =
-   fun _ -> Error "cospatial"
+   fun m ->
+    if V.locker then
+      match Mode.compare m Type.mode with
+      | Eq -> Ok (Modalcell.Locker (flat, flat_counit))
+      | Neq -> Ok (Locker (Modality.id m, Id (Modality.id m)))
+    else Error "cospatial"
 
   let to_string : type a m n b. (a, m, n, b) Modalcell.t -> string =
    fun m ->
