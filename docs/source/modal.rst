@@ -73,6 +73,11 @@ The currently available mode theories are selected by command-line flags, and ar
    | ``∇ : Disc → Type``", "| ``△ ⊣ □`` and ``◇ ⊣ ∇``
    | with ``◇∇ ≅ 1``,
    | ``◇△ ≅ 1``, and ``□∇ ≅ 1``"
+   "``-ambiflection``", "``Disc``, ``Type``", "| ``△ : Disc → Type``,
+   | ``□ : Type → Disc``", "| ``△ ⊣ □`` and ``□ ⊣ △`` with
+   | ``□△ ≅ 1``, ``1 ⇒ △□``,
+   | ``△□ ⇒ 1`` (not mutually
+   | inverse)"
 
 Just as ordinary dependent type theory has semantics in any (∞-)topos, modal type theory has semantics in any *diagram* of (∞-)toposes indexed by its mode 2-category.  The functors between such toposes are required to preserve finite limits, but in general nothing more.  Thus, the ``-functor`` theory can be interpreted in any finite-limit-preserving functor between toposes, and so on.
 
@@ -85,6 +90,7 @@ On the names for these theories that may not be self-explanatory:
 * ``-local`` indicates a "local geometric morphism", which is the name in topos theory for such an adjoint triple of finite-limit-preserving functors between toposes with the outer adjoints ``△`` and ``∇`` fully faithful.  Note that ``△□`` and ``∇□`` are an adjoint pair of a coreflector and a reflector on ``Type``, so this contains ``-spatial`` as a sub-theory.
 * ``-tconn`` is short for "totally connected geometric morphism", which is the name in topos theory for such an adjoint triple of finite-limit-preserving functors, with the inner adjoint ``△`` fully faithful.  (The mode theory ``-coreflection`` is also known as a merely *connected* geometric morphism.)  Dually to ``-local``, here ``◇△`` and ``△□`` are an adjoint pair of a reflector and coreflector, so this contains ``-cospatial`` as a sub-theory.
 * ``-gwpt`` is short for "geometrically well-pointed topos", meaning a geometric morphism ``△ ⊣ □`` having a section ``◇ ⊣ ∇``, in the category of toposes and geometric morphisms, such that the section is a geometric embedding.
+* ``-ambiflection`` is the two-mode analogue of ``-ambiflector``: both ``△`` and ``□`` are simultaneously a reflector and a coreflector, since each is adjoint to the other on both sides.
 
 The mode ``Disc`` reflects the common feature of many models in which types at that mode have "discrete" topological or higher structure.  One instance of this that can be turned on in Narya is Parametrically :ref:`Discrete modalities`.
 
@@ -301,6 +307,7 @@ In principle, a window modality can be applied to *any* match: the datatype does
   - ``△``, ``□``, and ``△□`` in ``-local``
   - ``△``, ``◇``, and ``△◇`` in ``-tconn`` and ``-gwpt``
   - ``♮`` in ``-ambiflector``
+  - ``△``, ``□``, and ``△□`` in ``-ambiflection``
 
   In addition, there is a variant of ``-functor`` called ``-transparent-functor`` that makes the modality ``○`` transparent.
 
@@ -324,6 +331,7 @@ For technical reasons, the modality which is used in such an annotation is requi
   - ``△``, ``□``, and ``△□`` in ``-local``
   - ``△``, ``◇``, and ``△◇`` in ``-tconn`` and ``-gwpt``
   - ``♮`` in ``-ambiflector``
+  - ``△``, ``□``, and ``△□`` in ``-ambiflection``
 
 The simplest sort of modal codatatype has one field that is modally annotated.  For instance, in the mode theory ``-coreflection`` we have
 
@@ -347,6 +355,7 @@ Note that the ``△``-annotation appears on the self-variable ``x`` to which the
   - ``△``, ``□``, and ``△□`` in ``-tconn``
   - ``□``, ``∇``, and ``∇□`` in ``-local`` and ``-gwpt``
   - ``♮`` in ``-ambiflector``
+  - ``△``, ``□``, and ``△□`` in ``-ambiflection``
 
 Note also that ``A`` itself is ``□``-annotated and lives at the mode ``Type``, the domain of ``□``.  In general, the type of a modal field is typechecked in a context locked by the *right adjoint*, which in the above case is ``□`` so that we can use the ``□``-annotated variable ``A``.
 

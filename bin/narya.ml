@@ -259,6 +259,26 @@ let speclist =
           mode_theories := !mode_theories + 1),
       "Select the ambiflector mode theory with nonparametric ♮ (requires -parametric and -arity 1)"
     );
+    ( "-ambiflection",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory :=
+            Modal.Ambiflection.install
+              (module Modal.Ambiflection.Ordinary : Modal.Ambiflection.Variant);
+          mode_theories := !mode_theories + 1),
+      "Select the ambiflection mode theory (△ and □ are each both a reflector and a coreflector)"
+    );
+    ( "-discrete-ambiflection",
+      Arg.Unit
+        (fun () ->
+          hott_forbidden := Some "-discrete-ambiflection";
+          arity_ok := `One "-discrete-ambiflection";
+          install_mode_theory :=
+            Modal.Ambiflection.install
+              (module Modal.Ambiflection.Discrete : Modal.Ambiflection.Variant);
+          mode_theories := !mode_theories + 1),
+      "Select the ambiflection mode theory with nonparametric Disc (requires -parametric and -arity 1)"
+    );
     ( "-gwpt",
       Arg.Unit
         (fun () ->
