@@ -48,3 +48,7 @@ def needs_key1 (A : Disc) (x :□△| A) : □△□△ A ≔ t2. (x #η.□△)
 def needs_key2 (A : Disc) (x :□△| A) : □△□△ A ≔ t2. (x #□△.η)
 
 def needs_key3 (A : Disc) (x :□△| A) : □△□△ A ≔ t2. (x #η)
+
+def needs_key_23 (A : Disc) (x :□△| A)
+  : Id (□△□△ A) (needs_key2 A x) (needs_key3 A x)
+  ≔ refl _

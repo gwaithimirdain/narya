@@ -53,6 +53,9 @@
    ￫ info[I0000]
    ￮ constant needs_key3 defined
   
+   ￫ info[I0000]
+   ￮ constant needs_key_23 defined
+  
 
 The reflector □△ is not invertible: there is no 2-cell □△ ⇒ 1.
 
@@ -108,6 +111,29 @@ The modality □ (or △) alone admits no 2-cell to the identity.
    ￭ command-line exec string
    1 | def bad3 (A :□| Type) (x :□| A) : A ≔ x
      ^ use of □ variable behind id lock requires a key
+  
+  [1]
+
+Different keys are different.
+
+  $ narya -adjunction adjunction.ny -e "def needs_key_12 (A : Disc) (x :□△| A) : Id (□△□△ A) (needs_key1 A x) (needs_key2 A x) ≔ refl _"
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def needs_key_12 (A : Disc) (x :□△| A) : Id (□△□△ A) (needs_key1 A x) (needs_key2 A x) ≔ refl _
+     ^ term synthesized type
+         _UNPRINTABLE
+       but is being checked against type
+         _UNPRINTABLE
+       unequal head terms:
+         _UNPRINTABLE
+       does not equal
+         _UNPRINTABLE
+       
+       displaying this error encountered one or more terms that are unprintable; errors encountered were:
+       unimplemented: printing keys
+       unimplemented: printing keys
+       unimplemented: printing keys
+       unimplemented: printing keys
   
   [1]
 
