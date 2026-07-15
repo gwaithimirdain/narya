@@ -500,6 +500,8 @@ module Equal = struct
     (* Copied from readback_ordered_env *)
     match envctx with
     | Emp _ -> ok
+    (* A weakening entry contributes nothing to the environment, so we skip it. *)
+    | Weaken (envctx, _) -> equal_ordered_env ctx env1 env2 envctx
     | Ext (envctx, entry, _) -> (
         let open CubeOf.Monadic (Err) in
         match entry with

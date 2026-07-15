@@ -209,6 +209,9 @@ module Ordered = struct
                 Suc (Zero, Dim (D.plus_out k k_mn, filter_kmn)) ),
             Snoc (newctx', newentry, ax),
             newenv )
+    | Weaken (ctx, code) ->
+        let (Degctx (kb, newctx, env)) = degenerate ctx l in
+        Degctx (kb, Weaken (newctx, code), env)
     | Lock (ctx, lock) ->
         let (Degctx (kb, newctx, env)) = degenerate ctx l in
         Degctx

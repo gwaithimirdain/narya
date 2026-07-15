@@ -499,6 +499,8 @@ and readback_ordered_env : type mode n a b c d.
  fun ctx env envctx ->
   match envctx with
   | Emp mode -> Emp (mode, dim_env env)
+  (* A weakening entry contributes nothing to the environment, so we skip it. *)
+  | Weaken (envctx, _) -> readback_ordered_env ctx env envctx
   | Ext (envctx, entry, _) -> (
       match entry with
       | Vis { plus_lock = dplus; bindings; filter = filtered; _ }
@@ -655,6 +657,7 @@ let rec readback_ordered_ctx : type mode a b.
       let (Readback_entry re) = readback_entry (Ctx.of_ordered ctx) e in
       Ext (readback_ordered_ctx rest, re, af)
   | Lock (ctx, lock) -> Lock (readback_ordered_ctx ctx, lock)
+  | Weaken (ctx, code) -> Weaken (readback_ordered_ctx ctx, code)
 
 let readback_ctx : type mode a b. (mode, a, b) Ctx.t -> (mode, a, b) termctx = function
   | Permute { perm; ctx; _ } -> Permute (perm, readback_ordered_ctx ctx)

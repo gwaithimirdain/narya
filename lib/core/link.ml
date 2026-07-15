@@ -202,6 +202,7 @@ and termctx_ordered : type mode a b.
   | Emp mode -> Emp mode
   | Ext (ctx, e, ax) -> Ext (termctx_ordered f ctx, entry f e, ax)
   | Lock (ctx, lock) -> Lock (termctx_ordered f ctx, lock)
+  | Weaken (ctx, code) -> Weaken (termctx_ordered f ctx, code)
 
 and termctx : type mode a b. (File.t -> File.t) -> (mode, a, b) termctx -> (mode, a, b) termctx =
  fun f (Permute (p, ctx)) -> Permute (p, termctx_ordered f ctx)

@@ -1961,6 +1961,7 @@ let rec eval_ordered_ctx : type mode a b. (mode, a, b) ordered_termctx -> (mode,
       let ectx = eval_ordered_ctx ctx in
       Snoc (ectx, eval_entry ectx e, af)
   | Lock (ctx, lock) -> Lock (eval_ordered_ctx ctx, lock)
+  | Weaken (ctx, code) -> Weaken (eval_ordered_ctx ctx, code)
 
 let eval_ctx : type mode a b. (mode, a, b) termctx -> (mode, a, b) Ctx.t = function
   | Permute (perm, ctx) ->

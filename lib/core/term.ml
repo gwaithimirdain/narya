@@ -313,6 +313,10 @@ module rec Term : sig
     | Lock :
         ('cod, 'a, 'b) ordered_termctx * ('dom, 'modality, 'cod) Modality.gen
         -> ('dom, 'a, ('b, 'modality lock_entry) snoc) ordered_termctx
+    (* A weakening entry increases the raw length by one but stores no checked variables, only a Code.t to raise on lookup of the dataless variable.  Mirrors Ctx.Ordered.Weaken. *)
+    | Weaken :
+        ('mode, 'a, 'b) ordered_termctx * Reporter.Code.t
+        -> ('mode, 'a N.suc, 'b) ordered_termctx
 
   and ('mode, 'a, 'b) termctx =
     | Permute : ('a, 'i) N.permute * ('mode, 'i, 'b) ordered_termctx -> ('mode, 'a, 'b) termctx
@@ -640,6 +644,10 @@ end = struct
     | Lock :
         ('cod, 'a, 'b) ordered_termctx * ('dom, 'modality, 'cod) Modality.gen
         -> ('dom, 'a, ('b, 'modality lock_entry) snoc) ordered_termctx
+    (* A weakening entry increases the raw length by one but stores no checked variables, only a Code.t to raise on lookup of the dataless variable.  Mirrors Ctx.Ordered.Weaken. *)
+    | Weaken :
+        ('mode, 'a, 'b) ordered_termctx * Reporter.Code.t
+        -> ('mode, 'a N.suc, 'b) ordered_termctx
 
   and ('mode, 'a, 'b) termctx =
     | Permute : ('a, 'i) N.permute * ('mode, 'i, 'b) ordered_termctx -> ('mode, 'a, 'b) termctx
@@ -757,6 +765,7 @@ module Termctx = struct
     | Emp mode -> Path (Suc (Zero, Proj mode), Unit)
     | Ext (ctx, e, _) -> Tctx.suc (ordered_tctx ctx) (Dim (dim_entry e, filter_entry e))
     | Lock (ctx, modality) -> Tctx.suc (ordered_tctx ctx) (Lock modality)
+    | Weaken (ctx, _) -> ordered_tctx ctx
 
   let tctx (Permute (_, ctx)) = ordered_tctx ctx
 
@@ -795,6 +804,7 @@ module Termctx = struct
     | Emp mode -> mode
     | Ext (ctx, _, _) -> ordered_mode ctx
     | Lock (_, lock) -> Modality.Gen.src lock
+    | Weaken (ctx, _) -> ordered_mode ctx
 
   let mode (Permute (_, ctx)) = ordered_mode ctx
 
@@ -809,7 +819,8 @@ module Termctx = struct
       (mode, a, bc) ordered -> (mode, a, bc) ordered_remove_locks =
    fun ctx ->
     match ctx with
-    | Emp _ | Ext (_, _, _) -> Ordered_remove_locks (ctx, plus_no_lock (ordered_mode ctx))
+    | Emp _ | Ext (_, _, _) | Weaken (_, _) ->
+        Ordered_remove_locks (ctx, plus_no_lock (ordered_mode ctx))
     | Lock (ctx, g) ->
         let (Ordered_remove_locks (ctx, plus)) = ordered_remove_locks ctx in
         Ordered_remove_locks (ctx, plus_lock_suc plus g)
@@ -838,6 +849,10 @@ let rec ordered_hole_vars : type mode a b.
       let Emp = vars in
       Emp
   | Lock (ctx, _) -> ordered_hole_vars ctx vars
+  | Weaken (ctx, _) ->
+      (* The dataless weakening variable has no display name of its own; strip it and give it an anonymous hint. *)
+      let (Snoc (vars, x)) = vars in
+      Snoc (ordered_hole_vars ctx vars, binder_name_of_option x)
   | Ext (ctx, entry, af) -> (
       let vars, xs = Bwv.unappend af vars in
       let rest = ordered_hole_vars ctx vars in

@@ -155,12 +155,15 @@ module Ordered = struct
     | Lock :
         ('cod, 'a, 'b) t * ('dom, 'modality, 'cod) Modality.gen
         -> ('dom, 'a, ('b, 'modality lock_entry) snoc) t
+    (* A "weakening" entry increases the raw length by one, but stores no checked variables or bindings.  It records a Code.t; looking up the added (dataless) raw variable raises that fatal error.  To weaken by more than one, stack several of these. *)
+    | Weaken : ('mode, 'a, 'b) t * Reporter.Code.t -> ('mode, 'a N.suc, 'b) t
 
   let rec mode : type mode a b. (mode, a, b) t -> mode Mode.t = function
     | Emp mode -> mode
     | Snoc (ctx, Vis _, _) -> mode ctx
     | Snoc (ctx, Invis _, _) -> mode ctx
     | Lock (_, modality) -> Modality.src (Modality.of_gen modality)
+    | Weaken (ctx, _) -> mode ctx
 
   let vis : type dom modality mode a b f af m n mn.
       (mode, a, b) t ->
@@ -224,6 +227,7 @@ module Ordered = struct
     | Emp mode -> Tctx.emp mode
     | Snoc (ctx, e, _) -> Tctx.suc (checked_length ctx) (Dim (dim_entry e, filter_entry e))
     | Lock (ctx, l) -> Tctx.suc (checked_length ctx) (Lock l)
+    | Weaken (ctx, _) -> checked_length ctx
 
   let tctx = checked_length
 
@@ -231,17 +235,20 @@ module Ordered = struct
     | Emp _ -> N.zero
     | Snoc (ctx, _, ax) -> N.plus_out (raw_length ctx) ax
     | Lock (ctx, _) -> raw_length ctx
+    | Weaken (ctx, _) -> N.suc (raw_length ctx)
 
   let rec length : type mode a b. (mode, a, b) t -> int = function
     | Emp _ -> 0
     | Snoc (ctx, _, _) -> length ctx + 1
     | Lock (ctx, _) -> length ctx
+    | Weaken (ctx, _) -> length ctx
 
   let empty : type mode. mode Mode.t -> (mode, N.zero, mode emp) t = fun mode -> Emp mode
 
   let rec total_locks : type mode a b. (mode, a, b) t -> mode Modality.tgt_wrapped = function
     | Emp mode -> Wrap (Modality.id mode)
     | Snoc (ctx, _, _) -> total_locks ctx
+    | Weaken (ctx, _) -> total_locks ctx
     | Lock (ctx, g) ->
         let (Wrap (Path (m, mode))) = total_locks ctx in
         Wrap (Path (Modality.Suc (m, g), mode))
@@ -286,6 +293,7 @@ module Ordered = struct
   let rec apps : type mode a b. (mode, a, b) t -> (mode, mode, noninst) apps = function
     | Emp _ -> Emp
     | Snoc (ctx, e, _) -> app_entry (apps ctx) e
+    | Weaken (ctx, _) -> apps ctx
     | Lock _ -> fatal (Anomaly "context lock in Ctx.apps")
 
   (* When looking up a raw variable, we return either an ordinary value variable or an illusory field-access variable.  We also return its modal annotation, and the composite of all the locks to its right.  (These will later be forced to agree, but in the intermediate recursive calls to lookup they may not.) *)
@@ -331,6 +339,11 @@ module Ordered = struct
     | Emp _, _ -> .
     | Snoc (ctx, e, pf), _ -> lookup_entry ctx e pf k
     | Lock (ctx, mu), _ -> lock_lookup mu (lookup ctx k)
+    (* A weakening entry doesn't change the checked context.  If the raw index is the added (dataless) variable, we raise the stored fatal error; otherwise we skip past it. *)
+    | Weaken (ctx, code), _ -> (
+        match fst k with
+        | Top -> fatal code
+        | Pop j -> lookup ctx (j, snd k))
 
   (* For each entry, we iterate through the list of fields or the cube of names, as appropriate. *)
   and lookup_entry : type dom modality mode a b f af mn.
@@ -424,6 +437,7 @@ module Ordered = struct
     | Snoc (ctx, Vis { bindings; filter; _ }, _) -> find_level_in_cube ctx bindings filter i
     | Snoc (ctx, Invis { bindings; filter }, _) -> find_level_in_cube ctx bindings filter i
     | Lock (ctx, mu) -> Option.map (lock_lookup mu) (find_level ctx i)
+    | Weaken (ctx, _) -> find_level ctx i
 
   and find_level_in_cube : type dom modality mode a b n.
       (mode, a, b) t ->
@@ -496,6 +510,7 @@ module Ordered = struct
     | Lock (ctx, lock) ->
         let modality = Modality.of_gen lock in
         key_env (env ctx) (Modalcell.id modality) (plus_lock_suc (plus_no_lock (mode ctx)) lock)
+    | Weaken (ctx, _) -> env ctx
 
   (* Extend a context by one new variable, without a value but with an assigned type. *)
   let ext : type dom modality mode a b.
@@ -539,6 +554,7 @@ module Ordered = struct
    fun ctx tree ->
     match ctx with
     | Emp _ -> tree
+    | Weaken (ctx, _) -> lam ctx tree
     | Lock _ -> fatal (Anomaly "context lock in Ctx.lam")
     | Snoc (ctx, Vis { dim; plusdim; vars; filter; bindings; fplus = Zero; _ }, _)
       when all_free bindings ->
@@ -574,6 +590,7 @@ module Ordered = struct
     match ctx with
     | Emp mode -> Emp mode
     | Lock (ctx, lock) -> Lock (forget_levels ctx forget, lock)
+    | Weaken (ctx, code) -> Weaken (forget_levels ctx forget, code)
     | Snoc (ctx, Vis e, af) -> Snoc (ctx, Vis { e with bindings = forget_bindings e.bindings }, af)
     | Snoc (ctx, Invis e, af) ->
         Snoc (ctx, Invis { e with bindings = forget_bindings e.bindings }, af)
@@ -596,6 +613,10 @@ module Ordered = struct
         | Snoc (ctx, e, _) ->
             let (Remove_lock (ctx, plus)) = remove_lock ctx modality in
             Remove_lock (ctx, plus_with_locks_dim plus (dim_entry e) (filter_entry e))
+        | Weaken (ctx, code) ->
+            (* A weakening entry isn't a lock and doesn't appear in the checked context, so we skip past it and re-add it on the way out. *)
+            let (Remove_lock (ctx, plus)) = remove_lock ctx modality in
+            Remove_lock (Weaken (ctx, code), plus)
         | Lock (ctx, l) -> (
             match Modality.factor modality (Modality.of_gen l) with
             | Some (Factor (modality, Suc (Zero, _))) ->
@@ -623,6 +644,10 @@ module Ordered = struct
     | Suc (comp, TEntry.Lock g1), Suc (locks, Locks_lock g2, _), Lock (ctx, g3) ->
         let Eq, Eq = (Modality.Gen.tgt_uniq g1 g2, Modality.Gen.tgt_uniq g2 g3) in
         remove_locks ctx (Plus_with_locks (comp, locks))
+    (* A weakening entry doesn't appear in the checked context, so we skip past it and re-add it, absorbing its raw variable into the returned N.plus. *)
+    | _, _, Weaken (ctx, code) ->
+        let (Any (ctx, a_x)) = remove_locks ctx (Plus_with_locks (comp, locks)) in
+        Any (Weaken (ctx, code), N.suc_plus_eq_suc a_x)
     | Suc (_, Proj _), Suc (_, _, _), _ -> .
 end
 

@@ -454,6 +454,7 @@ module F = struct
     | Emp _ -> ()
     | Snoc (c, e, _) -> fprintf ppf "%a %a" ordered_ctx c entry e
     | Lock (c, _) -> fprintf ppf "%a Lock" ordered_ctx c
+    | Weaken (c, _) -> fprintf ppf "%a Weaken" ordered_ctx c
 
   let ctx : type mode a b. formatter -> (mode, a, b) Ctx.t -> unit =
    fun ppf (Permute { ctx; _ }) -> fprintf ppf "Ctx (?, ?, %a)" ordered_ctx ctx

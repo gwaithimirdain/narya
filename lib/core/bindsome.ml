@@ -93,6 +93,10 @@ module Ordered = struct
         ('lmode, 'modality, 'cod) Modality.gen * ('lmode, 'rmode, 'i, 'f, 'a) tel
         -> ('cod, 'rmode, 'i, 'f, ('modality lock_entry, 'a) cons) tel
     | Parametric_lock : ('lmode, 'rmode, 'x, 'f, 'b) tel -> ('lmode, 'rmode, 'x, 'f, 'b) tel
+    (* A weakening entry contributes one raw variable (its nat block is N.one) but no checked entry.  Dual to Lock, which contributes a checked entry but no raw variable. *)
+    | Weaken :
+        ('lmode, 'rmode, 'a, 'f, 'b) tel * Reporter.Code.t * (N.one, 'a, 'xa) Fwn.fplus
+        -> ('lmode, 'rmode, 'xa, (N.one, 'f) cons, 'b) tel
 
   (* The second index does in fact flatten to the first. *)
   let rec tel_flatten : type lmode rmode i f a. (lmode, rmode, i, f, a) tel -> (f, i) Flatten.fwd =
@@ -101,12 +105,14 @@ module Ordered = struct
     | Cons (e, tel, xa) -> Suc (Id (Ctx.raw_entry e), tel_flatten tel, xa)
     | Lock (_, tel) -> tel_flatten tel
     | Parametric_lock tel -> tel_flatten tel
+    | Weaken (tel, _, xa) -> Suc (Id (Fwn.fplus_left xa), tel_flatten tel, xa)
 
   let rec mode_tel : type lmode rmode i f a. (lmode, rmode, i, f, a) tel -> lmode Mode.t = function
     | Nil mode -> mode
     | Cons (_, tel, _) -> mode_tel tel
     | Lock (modality, _) -> Modality.Gen.tgt modality
     | Parametric_lock tel -> mode_tel tel
+    | Weaken (tel, _, _) -> mode_tel tel
 
   (* Convert a context to a telescope. *)
   type ('rmode, 'i, 'b) to_tel =
@@ -133,7 +139,10 @@ module Ordered = struct
             (Cons (e, tel, xf))
             (Fwn.bfplus_assocr ax xf ij)
             (Suc (Dim (Ctx.dim_entry e, Ctx.filter_entry e), bc))
-      | Lock (ctx, modality) -> go ctx (Lock (modality, tel)) ij (Suc (Lock modality, bc)) in
+      | Lock (ctx, modality) -> go ctx (Lock (modality, tel)) ij (Suc (Lock modality, bc))
+      | Weaken (ctx, code) ->
+          let (Fplus xf) = Fwn.fplus N.one in
+          go ctx (Weaken (tel, code, xf)) (Fwn.bfplus_assocr (Suc Zero) xf ij) bc in
     go ctx (Nil (mode ctx)) Zero Zero
 
   (* Now we begin the suite of helper functions for bind_some.  This is an operation that happens during typechecking a pattern match, when the match variable along with all its indices have to be replaced by values determined by the constructor of each branch.  This requires the context to be re-sorted at the same time to maintain a consistent dependency structure, with each type and value depending only on the variables to its left.  It also requires "substitution into values", which we do by reading back values into the old context and then evaluating them in the new context.  This readback also has the double purpose of checking which types make sense in a given context, to determine a correct permutation.
@@ -298,6 +307,9 @@ module Ordered = struct
     | Parametric_lock :
         ('ldom, 'rmode, 'i, 'cf, 'c) tel
         -> ('ldom, 'rmode, 'i, 'c, 'cf) go_go_bind_some
+    | Weaken :
+        ('lmode, 'rmode, 'a, 'f, 'c) tel * Reporter.Code.t * (N.one, 'a, 'xa) Fwn.fplus
+        -> ('lmode, 'rmode, 'xa, 'c, (N.one, 'f) cons) go_go_bind_some
     | Nil : ('mode, 'mode, Fwn.zero, 'mode id, nil) go_go_bind_some
     | None : ('lmode, 'rmode, 'i, 'c, 'cf) go_go_bind_some
 
@@ -334,9 +346,10 @@ module Ordered = struct
                     rest = Cons (entry, rest, newfaces);
                     fins = Later fins;
                   }
-            | Nil | None | Lock _ | Parametric_lock _ -> None))
+            | Nil | None | Lock _ | Parametric_lock _ | Weaken _ -> None))
     | Lock (lock, tel) -> Lock (lock, tel)
     | Parametric_lock tel -> Parametric_lock tel
+    | Weaken (tel, code, xf) -> Weaken (tel, code, xf)
 
   type ('rmode, 'lmode, 'i, 'j, 'a, 'af, 'b, 'bf) go_bind_some =
     | Go_bind_some : {
@@ -385,6 +398,15 @@ module Ordered = struct
         | Go_bind_some g -> Go_bind_some { g with checked_perm = Lock (modality, g.checked_perm) }
         | None -> None)
     | Parametric_lock tel -> go_bind_some ~level binder ~oldctx ~newctx af tel
+    | Weaken (rest, code, xf) -> (
+        (* A weakening entry adds a raw variable but no checked entry, so we insert its one-variable block into the raw permutation and leave the checked permutation unchanged.  Like a lock, it acts as a barrier: variables are not permuted across it. *)
+        let oldctx = Ctx.Ordered.Weaken (oldctx, code) in
+        let newctx = Ctx.Ordered.Weaken (newctx, code) in
+        match
+          go_bind_some ~level binder ~oldctx ~newctx (Suc (af, Id (Fwn.fplus_left xf), Suc Zero)) rest
+        with
+        | Go_bind_some g -> Go_bind_some { g with raw_perm = Ap_insert (Now, g.raw_perm) }
+        | None -> None)
 
   type (_, _, _) bind_some =
     | Bind_some : {
