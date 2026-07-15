@@ -300,9 +300,9 @@ let plus_with_locks_dim : type a cod modality mode dom ac annote n.
     (a, cod, modality, mode, ac) plus_with_locks ->
     n D.t ->
     (dom, annote, mode, n, n) Modality.filter_dim ->
-    (a, cod, modality, mode, (ac, (annote, n) dim_entry) suc) plus_with_locks option =
+    (a, cod, modality, mode, (ac, (annote, n) dim_entry) suc) plus_with_locks =
  fun (Plus_with_locks (c, l)) n f ->
-  Some (Plus_with_locks (Suc (c, Dim (n, f)), Suc (l, Locks_dim (n, f), Zero)))
+  Plus_with_locks (Suc (c, Dim (n, f)), Suc (l, Locks_dim (n, f), Zero))
 
 (* A plus_with_locks with existentially quantified composite modality. *)
 type (_, _, _, _) wrapped_plus_with_locks =
@@ -342,11 +342,8 @@ let rec find_plus_with_locks : type ac dom modality mode.
           | Dim (n, f) -> (
               match find_plus_with_locks (Path (ctx_rest, unit_obj)) modality with
               | None -> None
-              | Some (Found_plus_with_locks plus) -> (
-                  match plus_with_locks_dim plus n f with
-                  | Some plus -> Some (Found_plus_with_locks plus)
-                  | None ->
-                      raise (Failure "find_plus_with_locks: plus_with_locks_dim returned None")))
+              | Some (Found_plus_with_locks plus) ->
+                  Some (Found_plus_with_locks (plus_with_locks_dim plus n f)))
           | Lock l -> (
               match Modality.Gen.compare gen l with
               | Neq -> None

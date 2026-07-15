@@ -312,8 +312,7 @@ module Ordered = struct
    fun modality filter n -> function
     | Lookup v -> (
         match v.plus with
-        | Plus_with_locks (Suc _, _) ->
-            Lookup { v with plus = plus_with_locks_dim v.plus filter n <|> Anomaly "pop_lookup" }
+        | Plus_with_locks (Suc _, _) -> Lookup { v with plus = plus_with_locks_dim v.plus filter n }
         | Plus_with_locks (Zero, _) ->
             Lookup
               { v with insert = Later v.insert; plus = plus_with_no_locks (Modality.tgt modality) })
@@ -594,11 +593,9 @@ module Ordered = struct
     | Neq -> (
         match ctx with
         | Emp _ -> fatal (Anomaly "Ctx.remove_lock: empty context but nonidentity lock")
-        | Snoc (ctx, e, _) -> (
+        | Snoc (ctx, e, _) ->
             let (Remove_lock (ctx, plus)) = remove_lock ctx modality in
-            match plus_with_locks_dim plus (dim_entry e) (filter_entry e) with
-            | None -> fatal (Anomaly "Ctx.remove_lock: recursive return value is trivial")
-            | Some plus -> Remove_lock (ctx, plus))
+            Remove_lock (ctx, plus_with_locks_dim plus (dim_entry e) (filter_entry e))
         | Lock (ctx, l) -> (
             match Modality.factor modality (Modality.of_gen l) with
             | Some (Factor (modality, Suc (Zero, _))) ->
