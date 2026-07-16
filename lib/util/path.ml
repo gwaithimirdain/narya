@@ -569,9 +569,93 @@ module Hom2Check
   Quivermap2 with module Param = Param and module Dom = Make(Q) and module Cod = Cod =
   Hom2 (Param) (Q) (Cod) (F)
 
+(* Functoriality is the functor between two free categories induced by a map of their generating quivers, composed with the inclusion of generators into a free category. *)
+
+module Fmap (Dom : Quiver) (Cod : Quiver) (F : Quivermap with module Dom = Dom and module Cod = Cod) =
+struct
+  module CodCategory = Make (Cod)
+  module C = Cod
+
+  module FCategory = struct
+    module Dom = Dom
+    module Cod = CodCategory
+    module Obj = F.Obj
+
+    type (_, _, _, _, _, _) t =
+      | Inject :
+          ('a, 'g, 'b, 'x, 'n, 'y) F.t
+          -> ('a, 'g, 'b, 'x, ('y CodCategory.id, 'n) CodCategory.suc, 'y) t
+
+    let dom : type a g b x n y. (a, g, b, x, n, y) t -> (a, g, b) Dom.t = fun (Inject f) -> F.dom f
+
+    let cod : type a g b x n y. (a, g, b, x, n, y) t -> (x, n, y) Cod.t =
+     fun (Inject f) -> CodCategory.of_gen (F.cod f)
+
+    let src : type a g b x n y. (a, g, b, x, n, y) t -> (a, x) Obj.t = fun (Inject f) -> F.src f
+    let tgt : type a g b x n y. (a, g, b, x, n, y) t -> (b, y) Obj.t = fun (Inject f) -> F.tgt f
+
+    type (_, _, _) exists = Exists : ('a, 'g, 'b, 'x, 'n, 'y) t -> ('a, 'g, 'b) exists
+
+    let exists : type a g b. (a, g, b) Dom.t -> (a, g, b) exists =
+     fun path ->
+      let (Exists fx) = F.exists path in
+      Exists (Inject fx)
+
+    let uniq : type a g b x1 n1 y1 x2 n2 y2.
+        (a, g, b, x1, n1, y1) t -> (a, g, b, x2, n2, y2) t -> (x1 * n1 * y1, x2 * n2 * y2) Eq.t =
+     fun f1 f2 ->
+      match (f1, f2) with
+      | Inject f1, Inject f2 ->
+          let Eq = F.uniq f1 f2 in
+          Eq
+  end
+
+  include Hom (Dom) (CodCategory) (FCategory)
+
+  (* Free functors not only preserve composition but reflect it: if the image of a domain morphism factors as a composite in the codomain, then there is a unique corresponding factorization in the domain whose factors map to the given codomain factors.  These are the duals of Hom.comp and Hom.uncomp: those take dom composition evidence and produce cod composition evidence; these take cod composition evidence and produce dom composition evidence. *)
+
+  type (_, _, _, _, _, _, _, _) dom_comp =
+    | Dom_comp :
+        ('a, 'p, 'c, 'x, 'n3, 'z) t * ('a, 'm, 'b, 'n, 'c, 'p) Dom.comp
+        -> ('a, 'm, 'b, 'n, 'c, 'x, 'n3, 'z) dom_comp
+
+  let rec dom_comp : type a m b n c x y z n1 n2 n3.
+      (b, n, c, y, n1, z) t ->
+      (a, m, b, x, n2, y) t ->
+      (x, n2, y, n1, z, n3) Cod.comp ->
+      (a, m, b, n, c, x, n3, z) dom_comp =
+   fun fn fm cev ->
+    match (fm, cev) with
+    | Zero _, Zero -> Dom_comp (fn, Zero)
+    | Suc (fm_inner, Inject fg, Suc (Zero, edge_fg)), Suc (cev_inner, edge_cev) ->
+        let Eq = C.tgt_uniq edge_fg edge_cev in
+        let (Dom_comp (fp_inner, dom_ev_inner)) = dom_comp fn fm_inner cev_inner in
+        Dom_comp (Suc (fp_inner, Inject fg, Suc (Zero, F.cod fg)), Suc (dom_ev_inner, F.dom fg))
+
+  type (_, _, _, _, _, _, _, _) dom_uncomp =
+    | Dom_uncomp :
+        ('b, 'n, 'c, 'y, 'r, 'z) t
+        * ('a, 'm, 'b, 'x, 'q, 'y) t
+        * ('a, 'm, 'b, 'n, 'c, 'mn) Dom.comp
+        -> ('a, 'mn, 'c, 'x, 'q, 'y, 'r, 'z) dom_uncomp
+
+  let rec dom_uncomp : type a mn c x q y r z rq.
+      (x, q, y, r, z, rq) Cod.comp ->
+      (a, mn, c, x, rq, z) t ->
+      (a, mn, c, x, q, y, r, z) dom_uncomp =
+   fun cev fmn ->
+    match cev with
+    | Zero -> Dom_uncomp (fmn, Zero (src fmn), Zero)
+    | Suc (cev_inner, edge_cev) ->
+        let (Suc (fmn_rest, Inject fg, Suc (Zero, edge_fg))) = fmn in
+        let Eq = C.tgt_uniq edge_fg edge_cev in
+        let (Dom_uncomp (fn, fm_inner, dom_ev_rec)) = dom_uncomp cev_inner fmn_rest in
+        Dom_uncomp (fn, Suc (fm_inner, Inject fg, Suc (Zero, F.cod fg)), Suc (dom_ev_rec, F.dom fg))
+end
+
 (* (Parametrized) functoriality is the functor between two free categories induced by a map of their generating quivers, composed with the inclusion of generators into a free category. *)
 
-module Fmap
+module Fmap2
     (Dom : Quiver)
     (Cod : Quiver)
     (F : Quivermap2 with module Dom = Dom and module Cod = Cod) =

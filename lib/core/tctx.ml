@@ -443,7 +443,7 @@ module VarAnnotator = struct
     Eq
 end
 
-module VarAnnotate = Path.Fmap (VarAnnote) (TEntry) (VarAnnotator)
+module VarAnnotate = Path.Fmap2 (VarAnnote) (TEntry) (VarAnnotator)
 
 (* Insertions and permutations.  We only allow inserting and permuting dimensions in between locks; this makes sense because dimensions are all endomorphisms in this free category. *)
 
@@ -967,7 +967,7 @@ module Anyplus = struct
 end
 
 module Plusmap = struct
-  include Path.Fmap (TEntry) (TEntry) (Anyplus)
+  include Path.Fmap2 (TEntry) (TEntry) (Anyplus)
 
   (* let rec assocl : type a b ab cs bcs abcs x y.
          (a, b, ab) D.plus ->
