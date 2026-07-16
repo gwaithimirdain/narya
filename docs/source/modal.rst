@@ -75,9 +75,7 @@ The currently available mode theories are selected by command-line flags, and ar
    | ``◇△ ≅ 1``, and ``□∇ ≅ 1``"
    "``-ambiflection``", "``Disc``, ``Type``", "| ``△ : Disc → Type``,
    | ``□ : Type → Disc``", "| ``△ ⊣ □`` and ``□ ⊣ △`` with
-   | ``□△ ≅ 1``, ``1 ⇒ △□``,
-   | ``△□ ⇒ 1`` (not mutually
-   | inverse)"
+   | ``□△ ≅ 1``, ``1 ⇒ △□``, ``△□ ⇒ 1``"
 
 Just as ordinary dependent type theory has semantics in any (∞-)topos, modal type theory has semantics in any *diagram* of (∞-)toposes indexed by its mode 2-category.  The functors between such toposes are required to preserve finite limits, but in general nothing more.  Thus, the ``-functor`` theory can be interpreted in any finite-limit-preserving functor between toposes, and so on.
 
@@ -85,12 +83,12 @@ On the names for these theories that may not be self-explanatory:
 
 * ``-spatial`` type theory was so-called in the paper `Brouwer's fixed-point theorem in real-cohesive homotopy type theory <https://arxiv.org/abs/1509.07584>`_ because its intended models were toposes of spaces, with ``♭`` assigning the discrete topology and ``♯`` the codiscrete one, and ``♭ ⊣ ♯``.
 * ``-cospatial`` is the dual of ``-spatial``, with ``♯ ⊣ ♭`` instead.
-* ``-ambiflector`` is a single functor that is both a reflector and a coreflector, adjoint to itself.
 * ``-crisp`` type theory was so-called in the paper `Internal Universes in Models of Homotopy Type Theory <https://arxiv.org/abs/1801.07664>`_ because its ``♭``-annotated variables (see below) were called "crisp" variables (taken from the previous paper).
 * ``-local`` indicates a "local geometric morphism", which is the name in topos theory for such an adjoint triple of finite-limit-preserving functors between toposes with the outer adjoints ``△`` and ``∇`` fully faithful.  Note that ``△□`` and ``∇□`` are an adjoint pair of a coreflector and a reflector on ``Type``, so this contains ``-spatial`` as a sub-theory.
 * ``-tconn`` is short for "totally connected geometric morphism", which is the name in topos theory for such an adjoint triple of finite-limit-preserving functors, with the inner adjoint ``△`` fully faithful.  (The mode theory ``-coreflection`` is also known as a merely *connected* geometric morphism.)  Dually to ``-local``, here ``◇△`` and ``△□`` are an adjoint pair of a reflector and coreflector, so this contains ``-cospatial`` as a sub-theory.
 * ``-gwpt`` is short for "geometrically well-pointed topos", meaning a geometric morphism ``△ ⊣ □`` having a section ``◇ ⊣ ∇``, in the category of toposes and geometric morphisms, such that the section is a geometric embedding.
-* ``-ambiflection`` is the two-mode analogue of ``-ambiflector``: both ``△`` and ``□`` are simultaneously a reflector and a coreflector, since each is adjoint to the other on both sides.
+* ``-ambiflector`` is a single functor that is both a reflector and a coreflector, adjoint to itself.
+* ``-ambiflection`` is the two-mode analogue of ``-ambiflector``, both a reflection and a coreflection.
 
 The mode ``Disc`` reflects the common feature of many models in which types at that mode have "discrete" topological or higher structure.  One instance of this that can be turned on in Narya is Parametrically :ref:`Discrete modalities`.
 
