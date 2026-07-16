@@ -283,7 +283,7 @@ module Ordered = struct
         let Zero = al in
         ctx
     | Path (Suc (modality, mu), mode) ->
-        let (Suc (l, Lock_lock mu2, Suc (Zero, Lock _))) = l in
+        let (Suc (l, Inject (Lock_lock mu2), Suc (Zero, Lock _))) = l in
         let (Suc (al, Lock mu3)) = al in
         let Eq = Modality.Gen.tgt_uniq mu mu2 in
         let Eq = Modality.Gen.tgt_uniq mu mu3 in

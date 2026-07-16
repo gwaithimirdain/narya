@@ -577,7 +577,7 @@ let rec key_id_env : type dom mu cod m b bmu.
  fun env plus ->
   match plus with
   | Plus_lock (Zero _, Zero) -> env
-  | Plus_lock (Suc (lock, Lock_lock g, Suc (Zero, Lock _)), Suc (comp, Lock g')) ->
+  | Plus_lock (Suc (lock, Inject (Lock_lock g), Suc (Zero, Lock _)), Suc (comp, Lock g')) ->
       (* The Lock.t and the comp are indexed by separate existentials for the intermediate object left after peeling off the outer generator; reconcile them through the shared generator, as Ordered.lock_to does. *)
       let Eq = Modality.Gen.src_uniq g g' in
       let Eq = Modality.Gen.tgt_uniq g g' in
