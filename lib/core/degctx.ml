@@ -221,7 +221,10 @@ module Ordered = struct
               ( env,
                 Modalcell.id (Modality.of_gen lock),
                 Plus_lock
-                  ( Suc (Zero (Eq (Ctx.Ordered.mode ctx)), Lock_lock lock, Suc (Zero, Lock lock)),
+                  ( Suc
+                      ( Zero (Eq (Ctx.Ordered.mode ctx)),
+                        Inject (Lock_lock lock),
+                        Suc (Zero, Lock lock) ),
                     Suc (Zero, Lock lock) ) ) )
 end
 

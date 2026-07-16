@@ -196,7 +196,7 @@ let rec add_lock : type a dom modality mode am.
     a t -> (a, mode, modality, dom, am) plus_lock -> am t =
  fun ctx -> function
   | Plus_lock (Zero _, Zero) -> ctx
-  | Plus_lock (Suc (lock, Lock_lock _, Suc (Zero, Lock g1)), Suc (comp, Lock g2)) ->
+  | Plus_lock (Suc (lock, Inject (Lock_lock _), Suc (Zero, Lock g1)), Suc (comp, Lock g2)) ->
       let Eq = Modality.Gen.tgt_uniq g1 g2 in
       let { ctx; used } = add_lock ctx (Plus_lock (lock, comp)) in
       { ctx = Lock ctx; used }
