@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-composed-functors") -*- `}
+{` -*- narya-prog-args: ("-proofgeneral" "-composable-functors") -*- `}
 
 ` The modal operators associated to ○, ▱, and their composite ▱○.
 

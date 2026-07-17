@@ -1,6 +1,6 @@
 Composition of modal operators is preserved up to isomorphism:
 
-  $ narya -v -composed-functors compose.ny
+  $ narya -v -composable-functors compose.ny
    ￫ info[I0000]
    ￮ constant ○ defined
   
@@ -31,7 +31,7 @@ Composition of modal operators is preserved up to isomorphism:
 
 Matching with the wrong window modality is an error:
 
-  $ narya -composed-functors compose.ny -e "def fwd2 (X :▱○| AType) (u : ▱ (○ X)) : ▱○ X ≔ match u [ par. y ↦ match (y :▱○| _) [ circ. x ↦ parcirc. x ]]"
+  $ narya -composable-functors compose.ny -e "def fwd2 (X :▱○| AType) (u : ▱ (○ X)) : ▱○ X ≔ match u [ par. y ↦ match (y :▱○| _) [ circ. x ↦ parcirc. x ]]"
    ￫ error[E1701]
    ￭ command-line exec string
    1 | def fwd2 (X :▱○| AType) (u : ▱ (○ X)) : ▱○ X ≔ match u [ par. y ↦ match (y :▱○| _) [ circ. x ↦ parcirc. x ]]

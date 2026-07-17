@@ -147,12 +147,12 @@ let speclist =
           hott_forbidden := Some "-discrete-functor";
           mode_theories := !mode_theories + 1),
       "Select the functor mode theory with discrete domain mode (requires -parametric)" );
-    ( "-composed-functors",
+    ( "-composable-functors",
       Arg.Unit
         (fun () ->
-          install_mode_theory := Modal.Composed_functors.install;
+          install_mode_theory := Modal.Composable_functors.install;
           mode_theories := !mode_theories + 1),
-      "Select the composed functors mode theory" );
+      "Select the composable functors mode theory" );
     ( "-adjunction",
       Arg.Unit
         (fun () ->
@@ -266,8 +266,7 @@ let speclist =
             Modal.Ambiflection.install
               (module Modal.Ambiflection.Ordinary : Modal.Ambiflection.Variant);
           mode_theories := !mode_theories + 1),
-      "Select the ambiflection mode theory (△ and □ are each both a reflector and a coreflector)"
-    );
+      "Select the ambiflection mode theory (△ and □ are each both a reflector and a coreflector)" );
     ( "-discrete-ambiflection",
       Arg.Unit
         (fun () ->
