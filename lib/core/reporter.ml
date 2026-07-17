@@ -60,6 +60,7 @@ module Unequal = struct
     | Metas : ('m1, 'a1, 'b1, 's1) Meta.t * ('m2, 'a2, 'b2, 's2) Meta.t -> t
     | Fields : 'i1 Field.t * 'i2 Field.t -> t
     | Variables of printable * printable
+    | Cells : ('x1, 'm1, 'n1, 'y1) Modalcell.t * ('x2, 'm2, 'n2, 'y2) Modalcell.t -> t
     | Terms of printable * printable
     | Heads of t
 
@@ -69,6 +70,8 @@ module Unequal = struct
     | Metas (m1, m2) -> ("metavariables", PMeta m1, PMeta m2)
     | Fields (f1, f2) -> ("fields", PString (Field.to_string f1), PString (Field.to_string f2))
     | Variables (v1, v2) -> ("variables", v1, v2)
+    | Cells (mu1, mu2) ->
+        ("cells", PString (Modalcell.to_string mu1), PString (Modalcell.to_string mu2))
     | Terms (t1, t2) -> ("terms", t1, t2)
     | Heads p ->
         let str, p1, p2 = printables p in
