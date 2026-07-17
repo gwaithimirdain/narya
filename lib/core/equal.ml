@@ -558,14 +558,13 @@ module Equal = struct
                 [ xs1; xs2 ] in
             return ())
     | Lock _ -> (
-        let (Ordered_remove_locks (envctx, locks)) = Termctx.ordered_remove_locks envctx in
+        let (Ordered_remove_locks (envctx, locks, no_locks)) = Termctx.ordered_remove_locks envctx in
         let (Restrict_keys (env1, extra1, _, keys1, pre1)) = restrict_keys_plus_lock env1 locks in
         let (Restrict_keys (env2, extra2, _, keys2, pre2)) = restrict_keys_plus_lock env2 locks in
         (* Since we removed a maximal run of locks, and a key can only span locks, the split can never land in the middle of a key here, so there is nothing extra. *)
-        match (extra1, extra2) with
-        | Plus_lock (Suc _, _), _ | _, Plus_lock (Suc _, _) ->
-            fatal (Anomaly "restrict_keys split a key in equal_env")
-        | Plus_lock (Zero _, Zero), Plus_lock (Zero _, Zero) -> (
+        match (extra1, extra2, no_locks) with
+        | Plus_lock (Suc _, _), _, _ | _, Plus_lock (Suc _, _), _ -> .
+        | Plus_lock (Zero _, Zero), Plus_lock (Zero _, Zero), _ -> (
             match Modalcell.compare keys1 keys2 with
             | Neq -> Error (Unequal.Cells (keys1, keys2))
             | Eq ->

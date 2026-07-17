@@ -569,13 +569,14 @@ and readback_ordered_env : type mode n a b c d.
             })
   | Lock _ -> (
       (* We remove as many locks as there are at the end of the codomain context, since keys in the environment could have composite modalities as their domain. *)
-      let (Ordered_remove_locks (envctx, plus_src)) = Termctx.ordered_remove_locks envctx in
+      let (Ordered_remove_locks (envctx, plus_src, no_locks)) =
+        Termctx.ordered_remove_locks envctx in
       (* Then we remove all the corresponding keys from the environment being read back. *)
       let (Restrict_keys (env, extra, mu12, cell, pre)) = restrict_keys_plus_lock env plus_src in
       (* Since we removed a maximal run of locks, and a key can only span locks, the split can never land in the middle of a key here, so there is nothing extra. *)
-      match extra with
-      | Plus_lock (Suc _, _) -> fatal (Anomaly "restrict_keys split a key in readback")
-      | Plus_lock (Zero _, Zero) -> (
+      match (extra, no_locks) with
+      | Plus_lock (Suc _, _), _ -> .
+      | Plus_lock (Zero _, Zero), _ -> (
           let Eq = Modality.comp_uniq mu12 (Modality.id_comp (plus_lock_modality plus_src)) in
           match Modalcell.compare_id pre with
           | Eq ->

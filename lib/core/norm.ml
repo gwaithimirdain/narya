@@ -1483,11 +1483,9 @@ and eval_env : type mode a q n qn b.
       (* As in the Key branch of eval, if restrict_keys had to slurp up extra locks from the middle of a key, we postwhisker the cell by their composite modality so that its target matches the source of the composite keys, and extend the source locks of the resulting key by the extra.  (Here, unlike in the Key branch of eval_env, plus_src lies on the same base as plus_tgt, so this is possible.) *)
       let (Comp nu12) = Modality.comp (Modalcell.vsrc cell) in
       let extra_cell = Modalcell.postwhisker nu12 mu12 (plus_lock_modality extra) cell in
-      prekey_env
-        (eval_env
-           (key_env env (Modalcell.vcomp keys extra_cell) (plus_lock_comp extra plus_src nu12))
-           q_n tmenv)
-        pre
+      let kenv =
+        key_env env (Modalcell.vcomp keys extra_cell) (plus_lock_comp extra plus_src nu12) in
+      prekey_env (eval_env kenv q_n tmenv) pre
 
 and apply_term : type dom modality mode n m.
     (mode, kinetic) value ->
@@ -1655,10 +1653,10 @@ and lookup : type mode n b. (mode, n, b) env -> (mode, b) index -> (mode, kineti
   let n = dim_env env in
   (* We strip off the keys and prekeys corresponding to the locks to the right of the variable, composing them on the way out into a composite key cell (for the variable's own locks) and a prekey action, both to be applied to the looked-up value.  The prekeys encountered inside the environment by lookup_cube are transported to the value's mode by prewhiskering with the vertical target of the composite key. *)
   let (Restrict_keys (env, extra, _, keys, pre)) = restrict_keys env plus in
-  match extra with
+  match (extra, v) with
   (* The extension of an index includes all the locks to the right of the variable, and a key can only span locks, so the split can never land in the middle of a key here. *)
-  | Plus_lock (Suc _, _) -> fatal (Anomaly "restrict_keys split a key in lookup")
-  | Plus_lock (Zero _, Zero) -> (
+  | Plus_lock (Suc _, _), _ -> .
+  | Plus_lock (Zero _, Zero), _ -> (
       let mu = Locks.cod locks in
       match lookup_cube env n_k mu (Modalcell.vtgt keys) v (id_opt_op (D.plus_out n n_k)) with
       | Looked_up { act; op; entry; pre = inner_pre } -> (

@@ -227,6 +227,13 @@ let rec locks_lock : type a m b tm. (a, m, b, a, tm, b) Lock.t -> (a, tm, b, a, 
   | Suc (l, Inject (Lock_lock g), Suc (Zero, Lock _)) ->
       Suc (locks_lock l, Locks_lock g, Suc (Zero, g))
 
+(* Witness that a tctx doesn't end with a lock *)
+
+type _ ends_without_lock =
+  | Without_lock_id : 'x id ends_without_lock
+  | Without_lock_proj : ('x id, 'm proj) snoc ends_without_lock
+  | Without_lock_dim : ('b, ('m, 'k) dim_entry) snoc ends_without_lock
+
 (* We can append a modal lock to a tctx by making the modality into a tctx and then appending it. *)
 
 type (_, _, _, _, _) plus_lock =

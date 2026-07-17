@@ -808,18 +808,21 @@ module Termctx = struct
 
   type (_, _, _) ordered_remove_locks =
     | Ordered_remove_locks :
-        ('cod, 'a, 'b) ordered * ('b, 'cod, 'modality, 'mode, 'bc) plus_lock
+        ('cod, 'a, 'b) ordered * ('b, 'cod, 'modality, 'mode, 'bc) plus_lock * 'b ends_without_lock
         -> ('mode, 'a, 'bc) ordered_remove_locks
 
   let rec ordered_remove_locks : type mode a bc.
       (mode, a, bc) ordered -> (mode, a, bc) ordered_remove_locks =
    fun ctx ->
     match ctx with
-    | Emp _ | Ext (_, _, _) | Weaken (_, _) ->
-        Ordered_remove_locks (ctx, plus_no_lock (ordered_mode ctx))
+    | Emp _ -> Ordered_remove_locks (ctx, plus_no_lock (ordered_mode ctx), Without_lock_proj)
+    | Ext (_, _, _) -> Ordered_remove_locks (ctx, plus_no_lock (ordered_mode ctx), Without_lock_dim)
+    | Weaken (ctx, code) ->
+        let (Ordered_remove_locks (ctx, plus, wl)) = ordered_remove_locks ctx in
+        Ordered_remove_locks (Weaken (ctx, code), plus, wl)
     | Lock (ctx, g) ->
-        let (Ordered_remove_locks (ctx, plus)) = ordered_remove_locks ctx in
-        Ordered_remove_locks (ctx, plus_lock_suc plus g)
+        let (Ordered_remove_locks (ctx, plus, wl)) = ordered_remove_locks ctx in
+        Ordered_remove_locks (ctx, plus_lock_suc plus g, wl)
 
   type (_, _) remove_locks =
     | Remove_locks :
@@ -828,7 +831,7 @@ module Termctx = struct
 
   let remove_locks : type mode a bc. (mode, a, bc) t -> (mode, bc) remove_locks =
    fun (Permute (p, ctx)) ->
-    let (Ordered_remove_locks (ctx, plus)) = ordered_remove_locks ctx in
+    let (Ordered_remove_locks (ctx, plus, _)) = ordered_remove_locks ctx in
     Remove_locks (Permute (p, ctx), plus)
 
   (* let ext (Permute (p, ctx)) xs ty =
