@@ -207,6 +207,12 @@ let speclist =
           mode_theories := !mode_theories + 1),
       "Select the discrete coreflection mode theory (requires -parametric, allows -external with -arity 1)"
     );
+    ( "-guarded",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Guarded.install;
+          mode_theories := !mode_theories + 1),
+      "Select the guarded mode theory (coreflection plus a later modality on Type)" );
     ( "-local",
       Arg.Unit
         (fun () ->

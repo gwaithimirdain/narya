@@ -73,6 +73,12 @@ The currently available mode theories are selected by command-line flags, and ar
    | ``□ : Type → Disc``", "| ``△ ⊣ □`` with
    | ``△□ ⇒ 1`` and ``□△ ≅ 1``
    | (locally posetal)"
+   "``-guarded``", "``Disc``, ``Type``", "| ``△ : Disc → Type``,
+   | ``□ : Type → Disc``,
+   | ``▷ : Type → Type``", "| ``△ ⊣ □`` with
+   | ``△□ ⇒ 1`` and ``□△ ≅ 1``,
+   | ``1 ⇒ ▷``, ``□▷ ≅ □``
+   | (locally posetal)"
    "``-local``", "``Disc``, ``Type``", "| ``△ : Disc → Type``,
    | ``□ : Type → Disc``
    | ``∇ : Disc → Type``", "| ``△ ⊣ □ ⊣ ∇`` with
