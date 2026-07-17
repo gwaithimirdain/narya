@@ -1,5 +1,7 @@
 open Dim
 
+(* We call this module "Monad_theory" so it doesn't conflict with Util.Monad. *)
+
 (* A single mode Type with a single endomodality "sharp" equipped with a monad structure: a unit
    η : id ⇒ sharp and a multiplication μ : sharp∘sharp ⇒ sharp, satisfying the monad laws (unit
    laws and associativity) and nothing else -- in particular, sharp is *not* declared idempotent

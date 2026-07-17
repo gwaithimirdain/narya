@@ -85,7 +85,7 @@ end
 (* Test whether all the variables in a cube of bindings are free (none are let-bound). *)
 let all_free : type mode n. (n, mode Binding.t) CubeOf.t -> bool =
  fun b ->
-  let open CubeOf.Monadic (Util.Monad.Maybe) in
+  let open CubeOf.Monadic (Monad.Maybe) in
   Option.is_some (mmapM { map = (fun _ [ x ] -> Option.map (fun _ -> ()) (Binding.level x)) } [ b ])
 
 (* A context is a list of "entries", which can be either visible or invisible in the raw world.  An (f,n) entry contains f raw variables and an n-dimensional cube of checked variables. *)
@@ -447,7 +447,7 @@ module Ordered = struct
       (mode, (b, (modality, n) dim_entry) snoc, Empty.t) lookup option =
    fun ctx vars filter i ->
     let modality = Modality.filter_modality filter in
-    let open CubeOf.Monadic (Util.Monad.State (struct
+    let open CubeOf.Monadic (Monad.State (struct
       type t = (mode, (b, (modality, n) dim_entry) snoc, Empty.t) lookup option
     end))
     in

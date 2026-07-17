@@ -511,7 +511,7 @@ let rec insert_from_comp : type b m n a ab ac w x y z.
     (x, b, y, a, z, ab) Tctx.comp ->
     (x, y, a, z, ac, b, m, n) insert_from_comp option =
  fun n f i ab ->
-  let open Util.Monad.Ops (Util.Monad.Maybe) in
+  let open Monad.Ops (Monad.Maybe) in
   match i with
   | Now -> return (Insert_from_comp (Suc (ab, Dim (n, f)), Now))
   | Later i -> (
@@ -858,7 +858,7 @@ let rec unpermute_plus_locks : type a c ac bd mode mu dom p.
     (dom, c, mode, dom, mu, mode) Locks.t ->
     (a, dom, mu, mode, c, bd, p) unpermute_plus_locks option =
  fun p ac lc ->
-  let open Util.Monad.Ops (Util.Monad.Maybe) in
+  let open Monad.Ops (Monad.Maybe) in
   match (p, ac, lc) with
   | _, Zero, Zero x -> return (Unpermute (p, Zero, Zero x))
   | Id, _, _ -> return (Unpermute (Id, ac, lc))
@@ -887,7 +887,7 @@ type (_, _) index =
 let permute_index : type anm bnm mode.
     (anm, bnm) permute -> (mode, anm) index -> (mode, bnm) index option =
  fun permlock (Index (ia, fa, filt, Plus_with_locks (comp, locks))) ->
-  let open Util.Monad.Ops (Util.Monad.Maybe) in
+  let open Monad.Ops (Monad.Maybe) in
   let* (Unpermute (perm, comp, locks)) = unpermute_plus_locks permlock comp locks in
   let (Permute_insert (ib, _)) = permute_insert ia perm in
   return (Index (ib, fa, filt, Plus_with_locks (comp, locks)))

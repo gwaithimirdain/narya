@@ -1723,7 +1723,7 @@ and inst_fibrancy_fields : type mode m n mn.
     (m, n, mn, mode normal) TubeOf.t ->
     (mode * m * potential * no_eta) Value.StructfieldAbwd.t option =
  fun mode fields tyargs ->
-  let open Util.Monad.Ops (Util.Monad.Maybe) in
+  let open Monad.Ops (Monad.Maybe) in
   match Hott.faces () with
   | None -> None
   | Some (_, _, l) -> (
@@ -1884,7 +1884,7 @@ let apply_singletons : type dom modality mode n.
     (mode, kinetic) value =
  fun modality fn xs ->
   let filter = Modality.filter_zero modality in
-  let module MC = CubeOf.Monadic (Util.Monad.State (struct
+  let module MC = CubeOf.Monadic (Monad.State (struct
     type t = (mode, kinetic) value
   end))
   in
@@ -1900,7 +1900,7 @@ let apply_singleton_nfs : type dom modality mode n.
     (mode, kinetic) value =
  fun modality fn xs ->
   let filter = Modality.filter_zero modality in
-  let module MC = CubeOf.Monadic (Util.Monad.State (struct
+  let module MC = CubeOf.Monadic (Monad.State (struct
     type t = (mode, kinetic) value
   end))
   in
@@ -1916,7 +1916,7 @@ let apply_singleton_tube_nfs : type dom modality mode n.
     (mode, kinetic) value =
  fun modality fn xs ->
   let filter = Modality.filter_zero modality in
-  let module MC = TubeOf.Monadic (Util.Monad.State (struct
+  let module MC = TubeOf.Monadic (Monad.State (struct
     type t = (mode, kinetic) value
   end))
   in

@@ -208,8 +208,8 @@ module Ordered = struct
     let i = Ctx.Ordered.length newctx in
     let modality = Modality.filter_modality filter in
     let filtered = Modality.filter_idempotent filter in
-    let open Util.Monad.Ops (Util.Monad.Maybe) in
-    let open CubeOf.Monadic (Util.Monad.Maybe) in
+    let open Monad.Ops (Monad.Maybe) in
+    let open CubeOf.Monadic (Monad.Maybe) in
     (* The tricky thing we have to deal with is that in a *cube* of variables, when doing readback-eval on each variable, we should be allowed to use the *preceeding* variables in the dependency order of the cube, but not the *subsequent* ones.  Unfortunately we don't have a direct way for a context to contain only "some" of a cube of variables.  Thus, we use the ability of Binder.t to be Unknown or Delayed.  *)
     (* We start by creating two variable cubes from the given one.  In "oldentry" all the variables have the same values, but they are delayed so that we can't use them until we've gotten past them in iterating through the cube.  In "newentry" the variables all have unknown values, which we will specify later after eval-readback succeeds step by step. *)
     let [ oldentry; newentry ] =
@@ -270,7 +270,7 @@ module Ordered = struct
       (dom, modality, mode, f, n) Ctx.entry ->
       (dom, modality, mode, f, n) Ctx.entry option =
    fun ~level binder ~oldctx ~newctx e ->
-    let open Util.Monad.Ops (Util.Monad.Maybe) in
+    let open Monad.Ops (Monad.Maybe) in
     match e with
     | Vis ({ filter; bindings; fplus = Zero; _ } as v) ->
         let* bindings =

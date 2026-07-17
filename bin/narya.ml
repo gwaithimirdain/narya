@@ -123,7 +123,7 @@ let speclist =
     ( "-monad",
       Arg.Unit
         (fun () ->
-          install_mode_theory := Modal.Monad.install;
+          install_mode_theory := Modal.Monad_theory.install;
           mode_theories := !mode_theories + 1),
       "Select the monad mode theory (a non-idempotent monad ♯, not locally posetal)" );
     ( "-reflector",

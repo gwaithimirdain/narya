@@ -52,12 +52,8 @@ The currently available mode theories are selected by command-line flags, and ar
    "| ``-coreflector``,
    | a.k.a. ``-crisp``", "``Type``", "``♭ : Type → Type``", "| ``♭∘♭ ≅ ♭``, ``♭ ⇒ 1``
    | (locally posetal)"
-   "``-comonad``", "``Type``", "``♭ : Type → Type``", "| ``♭ ⇒ 1``, ``♭ ⇒ ♭∘♭``
-   | (comonad, not idempotent,
-   | not locally posetal)"
-   "``-monad``", "``Type``", "``♯ : Type → Type``", "| ``1 ⇒ ♯``, ``♯∘♯ ⇒ ♯``
-   | (monad, not idempotent,
-   | not locally posetal)"
+   "``-comonad``", "``Type``", "``♭ : Type → Type``", "| ``♭ ⇒ 1``, ``♭ ⇒ ♭∘♭``"
+   "``-monad``", "``Type``", "``♯ : Type → Type``", "| ``1 ⇒ ♯``, ``♯∘♯ ⇒ ♯``"
    "``-reflector``", "``Type``", "``♯ : Type → Type``", "| ``♯∘♯ ≅ ♯``, ``1 ⇒ ♯``
    | (locally posetal)"
    "``-spatial``", "``Type``", "| ``♭ : Type → Type``

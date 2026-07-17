@@ -1,3 +1,4 @@
+open Util
 open Dim
 
 module type Variant = sig
@@ -71,7 +72,7 @@ struct
   let rec find_unique : type a m n b.
       (a, m, b) Modality.t -> (a, n, b) Modality.t -> (a, m, n, b) Modalcell.t option =
    fun x y ->
-    let open Util.Monad.Ops (Util.Monad.Maybe) in
+    let open Monad.Ops (Monad.Maybe) in
     match (x, y) with
     | Path (Zero, _), Path (Zero, _) -> Some (Modalcell.id x)
     | Path (Suc (m, g), mode), Path (Zero, _) -> (
