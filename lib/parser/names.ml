@@ -85,7 +85,7 @@ let lookup_field : type mode a. a t -> (mode, a) index -> string -> string list 
     match (ctx, x) with
     | Snoc (ctx, _, _), Later x -> lookup ctx x fa
     | Snoc (_, Variables (_, mn, _), fields), Now ->
-        let open Monad.Ops (Monad.Maybe) in
+        let open Util.Monad.Ops (Util.Monad.Maybe) in
         let (SFace_of_plus (_, fb, fc)) = sface_of_plus mn fa in
         let* _ = is_id_sface fc in
         let* y = Abwd.find_opt f fields in
@@ -146,7 +146,7 @@ let uniquify_cube : type n left right a.
    fun (NFamOf name) used ->
     let name, _, used = uniquify_opt f name used in
     (NFamOf name, used) in
-  let open NICubeOf.Applicatic (Applicative.OfMonad (Monad.State (struct
+  let open NICubeOf.Applicatic (Applicative.OfMonad (Util.Monad.State (struct
     type t = StringSet.t
   end)))
   in
@@ -207,7 +207,7 @@ let rec of_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> b t = func
   | Snoc (ctx, Vis { dim; plusdim; vars; fields; _ }, _) ->
       let { ctx; used } = of_ordered_ctx ctx in
       let vars, used = uniquify_cube (fun x -> (x, "")) vars used in
-      let module M = Mbwd.Monadic (Monad.State (struct
+      let module M = Mbwd.Monadic (Util.Monad.State (struct
         type t = StringSet.t
       end))
       in

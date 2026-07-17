@@ -55,6 +55,9 @@ The currently available mode theories are selected by command-line flags, and ar
    "``-comonad``", "``Type``", "``♭ : Type → Type``", "| ``♭ ⇒ 1``, ``♭ ⇒ ♭∘♭``
    | (comonad, not idempotent,
    | not locally posetal)"
+   "``-monad``", "``Type``", "``♯ : Type → Type``", "| ``1 ⇒ ♯``, ``♯∘♯ ⇒ ♯``
+   | (monad, not idempotent,
+   | not locally posetal)"
    "``-reflector``", "``Type``", "``♯ : Type → Type``", "| ``♯∘♯ ≅ ♯``, ``1 ⇒ ♯``
    | (locally posetal)"
    "``-spatial``", "``Type``", "| ``♭ : Type → Type``

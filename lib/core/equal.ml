@@ -11,8 +11,8 @@ open Domvars
 open Norm
 open Act
 open Readback
-module Err = Monad.Error (Unequal)
-open Monad.Ops (Err)
+module Err = Util.Monad.Error (Unequal)
+open Util.Monad.Ops (Err)
 
 let guard test err = if test then Ok () else Error err
 let fail err = Error err
@@ -266,7 +266,7 @@ module Equal = struct
   (* Synthesizing equality check for heads.  Again equality of types is part of the conclusion, not a hypothesis.  If some sub-parts of the heads are unequal, such as arguments of a Pi, or variable or constant names (without degeneracies), we report that.  Otherwise, we return None, and the caller should report the entire heads as being unequal. *)
   and equal_head : type mode a b. (mode, a, b) Ctx.t -> mode head -> mode head -> unit ErrOpt.t =
    fun ctx x y ->
-    let open Monad.Ops (ErrOpt) in
+    let open Util.Monad.Ops (ErrOpt) in
     match (x, y) with
     | Var { level = l1; deg = d1; key = k1 }, Var { level = l2; deg = d2; key = k2 } ->
         (* Two equal variables with the same degeneracy and key applied are equal, including their types because that variable has only one type. *)
@@ -311,7 +311,7 @@ module Equal = struct
             let Eq = Modality.filter_uniq filter1 filter2 in
             let (Locked (_, lctx)) = Ctx.lock ctx modality1 in
             Some
-              (let open Monad.Ops (Err) in
+              (let open Util.Monad.Ops (Err) in
                let open CubeOf.Monadic (Err) in
                let* () = miterM { it = (fun _ [ x; y ] -> equal_val lctx x y) } [ dom1s; dom2s ] in
                (* We create variables for all the domains, in order to equality-check all the codomains.  The codomain boundary types only use some of those variables, but it doesn't hurt to have the others around. *)
@@ -342,7 +342,7 @@ module Equal = struct
       heads:(h1 head * h2 head) option ->
       unit ErrOpt.t =
    fun ctx apps1 apps2 ~heads ->
-    let open Monad.Ops (ErrOpt) in
+    let open Util.Monad.Ops (ErrOpt) in
     (* Iterating from left to right is important because it ensures that at the point of checking equality for any pair of arguments, we know that they have the same type, since they are valid arguments of equal functions with all previous arguments equal.  Thus each case *starts* with its recursive call. *)
     match (apps1, apps2) with
     | Emp, Emp -> (

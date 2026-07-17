@@ -9,7 +9,7 @@ open Core
 open Raw
 open Reporter
 open Notation
-open Monad.Ops (Monad.Maybe)
+open Util.Monad.Ops (Util.Monad.Maybe)
 open Range
 module StringSet = Set.Make (String)
 
@@ -817,7 +817,7 @@ type pi_dom =
 let get_pi_args : type lt ls rt rs.
     Token.t -> arrow_opt -> (lt, ls, rt, rs) parse located -> pi_dom list -> pi_dom list =
  fun tok wsarrow doms accum ->
-  let open Monad.Ops (Monad.Maybe) in
+  let open Util.Monad.Ops (Util.Monad.Maybe) in
   let rec go : type lt ls rt rs. (lt, ls, rt, rs) parse located -> pi_dom list -> pi_dom list option
       =
    fun { value; loc } accum ->

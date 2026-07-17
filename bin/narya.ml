@@ -120,6 +120,12 @@ let speclist =
             Modal.Comonad.install (module Modal.Comonad.Discrete : Modal.Comonad.Variant);
           mode_theories := !mode_theories + 1),
       "Select the discrete comonad mode theory (requires -parametric, allows -external)" );
+    ( "-monad",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Monad.install;
+          mode_theories := !mode_theories + 1),
+      "Select the monad mode theory (a non-idempotent monad ♯, not locally posetal)" );
     ( "-reflector",
       Arg.Unit
         (fun () ->

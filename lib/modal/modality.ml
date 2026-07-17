@@ -71,7 +71,7 @@ module Gen = struct
 
       let empty : type b. b t = SrcMap.empty
 
-      open Monad.Ops (Monad.Maybe)
+      open Util.Monad.Ops (Util.Monad.Maybe)
 
       let find_opt : type src g tgt b. (src, g, tgt) Key.t -> b t -> (b, src, g, tgt) F.t option =
        fun (PK (a, i, b)) m ->
