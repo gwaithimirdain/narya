@@ -104,6 +104,22 @@ let speclist =
           mode_theories := !mode_theories + 1),
       "Select the discrete coreflector mode theory (requires -parametric, allows -external with -arity 1)"
     );
+    ( "-comonad",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory :=
+            Modal.Comonad.install (module Modal.Comonad.Ordinary : Modal.Comonad.Variant);
+          mode_theories := !mode_theories + 1),
+      "Select the comonad mode theory (a non-idempotent comonad ♭, not locally posetal)" );
+    ( "-discrete-comonad",
+      Arg.Unit
+        (fun () ->
+          hott_forbidden := Some "-discrete-comonad";
+          external_ok := `Any;
+          install_mode_theory :=
+            Modal.Comonad.install (module Modal.Comonad.Discrete : Modal.Comonad.Variant);
+          mode_theories := !mode_theories + 1),
+      "Select the discrete comonad mode theory (requires -parametric, allows -external)" );
     ( "-reflector",
       Arg.Unit
         (fun () ->
