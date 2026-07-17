@@ -165,6 +165,12 @@ let speclist =
           install_mode_theory := Modal.Composable_transformations.install;
           mode_theories := !mode_theories + 1),
       "Select the composable transformations mode theory (2-cells ○ ⇒ ▱ ⇒ ▷)" );
+    ( "-interchange",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Interchange.install;
+          mode_theories := !mode_theories + 1),
+      "Select the interchange mode theory (2-cells ▹ ⇒ ◃ and ▸ ⇒ ◂ satisfying interchange)" );
     ( "-adjunction",
       Arg.Unit
         (fun () ->

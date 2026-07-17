@@ -42,6 +42,13 @@ The currently available mode theories are selected by command-line flags, and ar
    | ``β : ▱ ⇒ ▷``,
    | ``βα : ○ ⇒ ▷``
    | (locally posetal)"
+   "``-interchange``", "| ``AType``,
+   | ``BType``,
+   | ``CType``", "| ``▹, ◃ : AType → BType``,
+   | ``▸, ◂ : BType → CType``", "| ``α : ▹ ⇒ ◃``,
+   | ``β : ▸ ⇒ ◂``,
+   | interchange square
+   | (locally posetal)"
    "| ``-coreflector``,
    | a.k.a. ``-crisp``", "``Type``", "``♭ : Type → Type``", "| ``♭∘♭ ≅ ♭``, ``♭ ⇒ 1``
    | (locally posetal)"
