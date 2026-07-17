@@ -108,7 +108,7 @@ subdivisions."
     ("\\_<\\(Type\\|let\\|rec\\|in\\|and\\|match\\|return\\|sig\\|data\\|codata\\|Id\\|refl\\|sym\\)\\_>" 1 'font-lock-builtin-face)
 
     ;; Constants being defined.
-    ("\\_<\\(axiom\\|def\\)[[:space:]\n]+\\([[:word:]_.']+\\)\\_>" 2 'font-lock-function-name-face)
+    ("\\_<\\(axiom\\|def\\|and\\)[[:space:]\n]+\\([[:word:]_.']+\\)\\_>" 2 'font-lock-function-name-face)
 
     ;; Fields/methods
     ("\\_<\\.[[:word:]_.']+\\_>" . 'font-lock-property-name-face)
