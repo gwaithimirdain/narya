@@ -377,7 +377,7 @@ type (_, _, _, _, _) match_motive =
         (('dom, 'bc, kinetic) term, 'ij) Vec.t ->
         (* the environment in which the datatype was evaluated, extended by new pattern variables for the arguments of the constructor in this branch. *)
         ('dom, 'm, 'bc) env ->
-        (* The new pattern variables as values, along with their boundaries.  MODALTODO: should perhaps the modalities be recorded here to match those of the constructor arguments? *)
+        (* The new pattern variables as values, along with their boundaries. *)
         ('m, 'dom, kinetic) modal_value_cube list ->
         (* RETURN the actual motive type against which to typecheck this branch. *)
         ('mode, kinetic) value;
@@ -2582,7 +2582,6 @@ and check_record : type mode a f1 f2 f af d acd b n.
         | Error e -> modality_fatal "field annotation" (e :> modality_error)
         | Ok (Wrap modality) -> (
             match Modality.compare_id modality with
-            (* MODALTODO: Records with modal fields must currently be defined using self-variable syntax (which goes through check_codata).  An alternative would be to allow annotating a telescope-style record field with the *right* adjoint, testing that it is a declared right adjoint ("dextrous"); this is how we would get negative modalities. *)
             | Neq -> fatal (Unimplemented "modal record fields in telescope syntax")
             | Eq ->
                 let newctx = Ctx.vis_fields ctx vars domvars ctx_fields fplus af in

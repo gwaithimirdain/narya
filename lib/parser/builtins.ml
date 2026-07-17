@@ -2327,7 +2327,6 @@ let rec process_codata : type n.
   match obs with
   | [ Token (RBracket, _) ] -> { value = Raw.Codata (flds, hints); loc }
   | Token (Op "|", _) :: Term tm :: Token (Colon, _) :: Term ty :: obs ->
-      (* MODALTODO: Modal fields *)
       process_codata hints (Snoc (flds, process_codata_field Noeta flds ctx tm ty)) ctx obs loc
   | _ -> invalid "codata 1"
 
@@ -2444,7 +2443,6 @@ let rec process_tel : type a.
       if Lexer.valid_field name then (
         if StringSet.mem name seen then
           fatal ?loc (Duplicate_field_in_record (Field.intern name D.zero));
-        (* MODALTODO: Modal fields *)
         let ty = process ctx ty in
         let ctx = Bwv.snoc ctx (Some name) in
         let (Any_tel tel) = process_tel ctx (StringSet.add name seen) obs in
