@@ -1,4 +1,3 @@
-open Util
 open Dim
 
 (* We define all the "generator" modules at top-level, but don't call the generation code until the "install" function, so that only one mode theory actually gets installed at runtime.  Thus, each generator module has to be parametrized over the results of generation of the previous ones. *)
@@ -48,7 +47,7 @@ struct
   let rec find_unique : type a m n b.
       (a, m, b) Modality.t -> (a, n, b) Modality.t -> (a, m, n, b) Modalcell.t option =
    fun x y ->
-    let open Monad.Ops (Monad.Maybe) in
+    let open Util.Monad.Ops (Util.Monad.Maybe) in
     match (x, y) with
     | Path (Zero, _), Path (Zero, _) -> Some (Modalcell.id x)
     | Path (Zero, _), Path (Suc (n, h), nmode) -> (

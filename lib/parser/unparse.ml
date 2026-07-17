@@ -33,7 +33,7 @@ let sstok (tok : Token.t) (ss : string) = Either.Right ((tok, ([], None)), [ (un
 
 (* If the head of an application spine is a constant or constructor, and it has an associated notation, and there are enough of the supplied arguments to instantiate the notation, split off that many arguments and return the notation, those arguments permuted to match the order of the pattern variables in the notation, the symbols to intersperse with them, and the remaining arguments. *)
 let get_notation head args =
-  let open Monad.Ops (Monad.Maybe) in
+  let open Util.Monad.Ops (Util.Monad.Maybe) in
   let* { keys = _; notn; pat_vars; val_vars; inner_symbols } =
     match head with
     | `Term (Const c) -> Scope.Situation.unparse (`Constant c)
@@ -267,7 +267,7 @@ let rec get_spine : type mode a.
         (* Modalities are not printed with applications *)
         Modal (type am) ((_modality, plus, arg) : _ * _ * (_, (_, am, kinetic) Term.term) CubeOf.t)
       ) -> (
-      let module M = CubeOf.Monadic (Monad.State (struct
+      let module M = CubeOf.Monadic (Util.Monad.State (struct
         type t = (a, kinetic) spine_arg Bwd.t
       end))
       in
@@ -851,7 +851,7 @@ and unparse_named_inst : type mode n lt ls rt rs m k mk.
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
  fun vars ty tyargs li ri ->
-  let module M = TubeOf.Monadic (Monad.State (struct
+  let module M = TubeOf.Monadic (Util.Monad.State (struct
     type t = unparser Bwd.t
   end))
   in
@@ -1042,7 +1042,7 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
   let (Has_plus_lock xsplus) = plus_lock modality in
   let lockedvars = Names.add_lock newvars xsplus in
   (* Unparse each domain, instantiate it at the appropriate variables corresponding to its faces, and parenthesize or brace it to become a pi-type domain, adding them all to the accumulated list of domains. *)
-  let module S = Monad.State (struct
+  let module S = Util.Monad.State (struct
     type t = unparser Bwd.t
   end) in
   let module MOf = CubeOf.Monadic (S) in
@@ -1169,7 +1169,7 @@ let rec unparse_ctx : type dom modality mode a b.
   let module S = struct
     type t = Print.printed_entry Bwd.t
   end in
-  let module M = CubeOf.Monadic (Monad.State (S)) in
+  let module M = CubeOf.Monadic (Util.Monad.State (S)) in
   match ctx with
   | Emp _ -> (Names.of_uniquified_vars names, Emp)
   | Lock (ctx, newlock) ->
@@ -1262,7 +1262,7 @@ let rec unparse_ctx : type dom modality mode a b.
           let _, result =
             M.miterM { it = (fun fab [ b ] res -> do_binding fab b res) } [ bindings ] result in
           (* Finally, we iterate forwards through the fields as well, unparsing their types and adding them to the result also. *)
-          let module M = Bwv.Monadic (Monad.State (S)) in
+          let module M = Bwv.Monadic (Util.Monad.State (S)) in
           let _, result =
             M.miterM
               (fun [ (x, orig); (_, _, ty) ] res ->

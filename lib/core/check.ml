@@ -2232,7 +2232,7 @@ and is_empty : type mode. (mode, kinetic) value -> bool =
 
 and any_empty : type mode n. (n, mode) modal_binding_cube list -> bool =
  fun nfss ->
-  let module CM = CubeOf.Monadic (Monad.State (Bool)) in
+  let module CM = CubeOf.Monadic (Util.Monad.State (Bool)) in
   List.fold_left
     (fun s (Modal (_modality, nfs)) ->
       snd (CM.miterM { it = (fun _ [ x ] s -> ((), s || is_empty (Binding.value x).ty)) } [ nfs ] s))
@@ -3854,7 +3854,7 @@ and synth_arg_cube : type dom modality mode a b n c.
     | (_, { loc; _ }, { value = `Explicit; _ }) :: _, Pos _, false ->
         fatal ?loc (Nonsynthesizing ("primary argument with implicit " ^ which ^ " boundaries"))
   in
-  let module M = Monad.State (struct
+  let module M = Util.Monad.State (struct
     type t =
       Asai.Range.t option
       * a check located
@@ -3870,7 +3870,7 @@ and synth_arg_cube : type dom modality mode a b n c.
       {
         map =
           (fun fa [ dom ] ->
-            let open Monad.Ops (M) in
+            let open Util.Monad.Ops (M) in
             let* loc, f, ts = M.get in
             (* The type of this argument is obtained by instantiating the domain higher-dimensional type at the previous arguments. *)
             let ty =
@@ -3991,7 +3991,7 @@ and synth_inst : type mode a b n.
           [ TubeOf.pboundary (D.zero_plus m) msuc tyargs ] in
       let (Wrap l) = Endpoints.wrapped () in
       let doms = TubeOf.to_cube_bwv k l tyargs1 in
-      let module M = Monad.State (struct
+      let module M = Util.Monad.State (struct
         type t =
           Asai.Range.t option
           * a check located
@@ -4107,7 +4107,7 @@ and synth_lam : type mode a b c d n.
           let newctx = Ctx.ext ctx modality name.value edom in
           let xs = singleton_variables D.zero (View.hinted name.value edom) in
           (* Pull off either one explicit argument or a cube of mostly-implicit ones, of the correct dimension. *)
-          let module M = CubeOf.Monadic (Monad.State (struct
+          let module M = CubeOf.Monadic (Util.Monad.State (struct
             type t =
               (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located)
               list

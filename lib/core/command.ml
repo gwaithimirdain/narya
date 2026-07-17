@@ -93,7 +93,7 @@ let check_terms (defs : defined_const list) (discrete : unit Constant.Map.t opti
   let rec go defs defineds =
     match defs with
     | [] ->
-        let open Mbwd.Monadic (Monad.State (struct
+        let open Mbwd.Monadic (Util.Monad.State (struct
           type t = bool
         end))
         in
