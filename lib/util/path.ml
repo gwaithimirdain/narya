@@ -223,6 +223,12 @@ module Make (Q : Quiver) = struct
     | Zero -> Nil
     | Suc (g, nm) -> Cons (g, bcomp_right nm)
 
+  let rec bcomp_out : type x m y n z nm. (y, n, z) t -> (x, m, y, n, z, nm) bcomp -> (x, nm, z) t =
+   fun (Path (n, x)) mn ->
+    match mn with
+    | Zero -> Path (n, x)
+    | Suc (g, mn) -> bcomp_out (Path (Suc (n, g), x)) mn
+
   let rec bcomp_uniq : type x m y n z nm nm'.
       (x, m, y, n, z, nm) bcomp -> (x, m, y, n, z, nm') bcomp -> (nm, nm') Eq.t =
    fun nm1 nm2 ->
@@ -262,6 +268,11 @@ module Make (Q : Quiver) = struct
         let (Bcomp y) = bcomp x in
         Bcomp (Suc (g, y))
 
+  let of_fwd : type a m b. b Obj.t -> (a, m, b) fwd -> (a, b) wrapped =
+   fun b m ->
+    let (Bcomp m') = bcomp m in
+    Wrap (bcomp_out (id b) m')
+
   (* ********** Factoring and pushouts ********** *)
 
   type (_, _, _, _, _) factor =
@@ -284,8 +295,8 @@ module Make (Q : Quiver) = struct
   type (_, _, _, _, _) cofactor =
     | Cofactor : ('a, 'k, 'b) t * ('a, 'k, 'b, 'n, 'c, 'nk) comp -> ('a, 'b, 'c, 'nk, 'n) cofactor
 
-  let rec cofactor : type a b c nk n. (a, nk, c) t -> (b, n, c) t -> (a, b, c, nk, n) cofactor option
-      =
+  let rec cofactor : type a b c nk n.
+      (a, nk, c) t -> (b, n, c) t -> (a, b, c, nk, n) cofactor option =
    fun nk n ->
     let open Monad.Ops (Monad.Maybe) in
     match compare nk n with
@@ -634,15 +645,12 @@ struct
 
   type (_, _, _, _, _, _, _, _) dom_uncomp =
     | Dom_uncomp :
-        ('b, 'n, 'c, 'y, 'r, 'z) t
-        * ('a, 'm, 'b, 'x, 'q, 'y) t
-        * ('a, 'm, 'b, 'n, 'c, 'mn) Dom.comp
+        ('b, 'n, 'c, 'y, 'r, 'z) t * ('a, 'm, 'b, 'x, 'q, 'y) t * ('a, 'm, 'b, 'n, 'c, 'mn) Dom.comp
         -> ('a, 'mn, 'c, 'x, 'q, 'y, 'r, 'z) dom_uncomp
 
   let rec dom_uncomp : type a mn c x q y r z rq.
-      (x, q, y, r, z, rq) Cod.comp ->
-      (a, mn, c, x, rq, z) t ->
-      (a, mn, c, x, q, y, r, z) dom_uncomp =
+      (x, q, y, r, z, rq) Cod.comp -> (a, mn, c, x, rq, z) t -> (a, mn, c, x, q, y, r, z) dom_uncomp
+      =
    fun cev fmn ->
     match cev with
     | Zero -> Dom_uncomp (fmn, Zero (src fmn), Zero)

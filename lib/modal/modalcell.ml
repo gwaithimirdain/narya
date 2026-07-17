@@ -312,25 +312,180 @@ let to_string : type a m n b. (a, m, n, b) t -> string =
   T.to_string m
 
 (* A "normal form" for a 2-cell, to be printed as a sequence of key applications: a vertical composite (outer list) of horizontal composites / whiskerings (inner list) of key and modality names. *)
-let rec hcomp_names : type a b c n s.
-    (b, s, c) Modality.t ->
-    (a, n, b) Modality.t ->
-    string list list ->
-    string list list ->
-    string list list =
- fun xtgt ytgt xs ys ->
-  match (xs, ys) with
-  | [], [] -> []
-  | x :: xs, y :: ys -> (x @ y) :: hcomp_names xtgt ytgt xs ys
-  | _ :: _, [] ->
-      let ytgt = Modality.name ytgt in
-      List.map (fun x -> x @ ytgt) xs
-  | [], _ :: _ ->
-      let xtgt = Modality.name xtgt in
-      List.map (fun y -> xtgt @ y) ys
+type (_, _, _, _) necklace =
+  | Necklace_id : 'x Mode.t -> ('x, 'x Modality.id, 'x Modality.id, 'x) necklace
+  | Necklace_whisker :
+      ('b, 'r, 's, 'c) necklace * ('a, 'm, 'b) Modality.Gen.t
+      -> ('a, ('r, 'm) Modality.suc, ('s, 'm) Modality.suc, 'c) necklace
+  | Necklace_hcomp :
+      ('a, 'm, 'b, 'r, 'c, 'mr) Modality.comp
+      * ('a, 'n, 'b, 's, 'c, 'ns) Modality.comp
+      * ('b, 'r, 's, 'c) necklace
+      * ('a, 'm, 'n, 'b) Gen.t
+      -> ('a, 'mr, 'ns, 'c) necklace
 
-let rec name : type a m n b. (a, m, n, b) t -> string list list = function
-  | Gen g -> [ [ Gen.name g ] ]
-  | Id m -> [ Modality.name m ]
-  | Hcomp (_, _, x, y) -> hcomp_names (vtgt x) (vtgt y) (name x) (name y)
-  | Vcomp (y, x) -> name x @ name y
+let rec necklace_src : type a m n b. (a, m, n, b) necklace -> (a, m, b) Modality.t = function
+  | Necklace_id x -> Modality.id x
+  | Necklace_whisker (n, g) -> Modality.suc (necklace_src n) g
+  | Necklace_hcomp (doms, _, n, _) -> Modality.comp_out (necklace_src n) doms
+
+let rec necklace_tgt : type a m n b. (a, m, n, b) necklace -> (a, n, b) Modality.t = function
+  | Necklace_id x -> Modality.id x
+  | Necklace_whisker (n, g) -> Modality.suc (necklace_tgt n) g
+  | Necklace_hcomp (_, cods, n, _) -> Modality.comp_out (necklace_tgt n) cods
+
+let rec necklace_whisker : type a m b. (a, m, b) Modality.t -> (a, m, m, b) necklace =
+ fun m ->
+  match m with
+  | Path (Zero, x) -> Necklace_id x
+  | Path (Suc (m, g), x) -> Necklace_whisker (necklace_whisker (Path (m, x)), g)
+
+let rec necklace_hcomp : type a m n b r s c mr ns.
+    (a, m, b, r, c, mr) Modality.comp ->
+    (a, n, b, s, c, ns) Modality.comp ->
+    (b, r, s, c) necklace ->
+    (a, m, n, b) necklace ->
+    (a, mr, ns, c) necklace =
+ fun doms cods a b ->
+  match b with
+  | Necklace_id _ ->
+      let Zero, Zero = (doms, cods) in
+      a
+  | Necklace_whisker (b, g) ->
+      let Suc (doms, g1), Suc (cods, g2) = (doms, cods) in
+      let Eq = Modality.Gen.tgt_uniq g1 g2 in
+      let Eq = Modality.Gen.tgt_uniq g g2 in
+      Necklace_whisker (necklace_hcomp doms cods a b, g)
+  | Necklace_hcomp (bg_doms, bg_cods, b, c) ->
+      let (Comp ab_doms) = Modality.comp (necklace_src b) in
+      let (Comp ab_cods) = Modality.comp (necklace_tgt b) in
+      let ab_g_doms = Modality.comp_assocl ab_doms bg_doms doms in
+      let ab_g_cods = Modality.comp_assocl ab_cods bg_cods cods in
+      Necklace_hcomp (ab_g_doms, ab_g_cods, necklace_hcomp ab_doms ab_cods a b, c)
+
+let necklace_postwhisker : type a r s b m c mr ms.
+    (a, r, b, m, c, mr) Modality.comp ->
+    (a, s, b, m, c, ms) Modality.comp ->
+    (b, m, c) Modality.t ->
+    (a, r, s, b) necklace ->
+    (a, mr, ms, c) necklace =
+ fun doms cods m n -> necklace_hcomp doms cods (necklace_whisker m) n
+
+let necklace_prewhisker : type a r b m n c mr nr.
+    (a, r, b, m, c, mr) Modality.comp ->
+    (a, r, b, n, c, nr) Modality.comp ->
+    (b, m, n, c) necklace ->
+    (a, r, b) Modality.t ->
+    (a, mr, nr, c) necklace =
+ fun doms cods n m -> necklace_hcomp doms cods n (necklace_whisker m)
+
+let rec necklace_trivial : type a m n b. (a, m, n, b) necklace -> (m, n) Eq.t option = function
+  | Necklace_id _ -> Some Eq
+  | Necklace_whisker (n, _) -> (
+      match necklace_trivial n with
+      | Some Eq -> Some Eq
+      | None -> None)
+  | Necklace_hcomp (_, _, _, _) -> None
+
+(* As we inspect the necklace from right to left (source to target), we accumulate names but also a not-yet-named modality, so that we can pass a maximal modality to Modality.name at once (and get it concatenated to a single string in the one-character case). *)
+let rec necklace_name : type x m y n r z.
+    (y, n, r, z) necklace -> (x, m, y) Modality.fwd -> string list -> string list =
+ fun n m names ->
+  match n with
+  | Necklace_id _y ->
+      (* let (Wrap m) = Modality.of_fwd y m in
+         Modality.name m @ names *)
+      (* We omit any postwhiskering, since it isn't necessary for re-parsing. *)
+      names
+  | Necklace_whisker (n, g) -> necklace_name n (Cons (g, m)) names
+  | Necklace_hcomp (_, _, n, g) ->
+      let (Wrap m) = Modality.of_fwd (hsrc (of_gen g)) m in
+      necklace_name n Nil ((Gen.name g :: Modality.name m) @ names)
+
+type (_, _, _, _) nf =
+  | Nf_id : ('x, 'm, 'y) Modality.t -> ('x, 'm, 'm, 'y) nf
+  | Nf_vcomp : ('a, 'n, 'r, 'b) nf * ('a, 'm, 'n, 'b) necklace -> ('a, 'm, 'r, 'b) nf
+
+let rec nf_vcomp : type a m n r b. (a, n, r, b) nf -> (a, m, n, b) nf -> (a, m, r, b) nf =
+ fun a b ->
+  match b with
+  | Nf_id _ -> a
+  | Nf_vcomp (b, n) -> Nf_vcomp (nf_vcomp a b, n)
+
+let rec nf_postwhisker : type a r s b m c mr ms.
+    (a, r, b, m, c, mr) Modality.comp ->
+    (a, s, b, m, c, ms) Modality.comp ->
+    (b, m, c) Modality.t ->
+    (a, r, s, b) nf ->
+    (a, mr, ms, c) nf =
+ fun mr ms m x ->
+  match x with
+  | Nf_id _ ->
+      let Eq = Modality.comp_uniq mr ms in
+      Nf_id (Modality.comp_out m mr)
+  | Nf_vcomp (x, w) ->
+      let (Comp mids) = Modality.comp (necklace_tgt w) in
+      Nf_vcomp (nf_postwhisker mids ms m x, necklace_postwhisker mr mids m w)
+
+let rec nf_prewhisker : type a r b m n c mr nr.
+    (a, r, b, m, c, mr) Modality.comp ->
+    (a, r, b, n, c, nr) Modality.comp ->
+    (b, m, n, c) nf ->
+    (a, r, b) Modality.t ->
+    (a, mr, nr, c) nf =
+ fun doms cods a m ->
+  match a with
+  | Nf_id r ->
+      let Eq = Modality.comp_uniq doms cods in
+      Nf_id (Modality.comp_out r doms)
+  | Nf_vcomp (a, w) ->
+      let (Comp mids) = Modality.comp m in
+      Nf_vcomp (nf_prewhisker mids cods a m, necklace_prewhisker doms mids w m)
+
+let rec nf_hcomp : type a m n b r s c mr ns.
+    (a, m, b, r, c, mr) Modality.comp ->
+    (a, n, b, s, c, ns) Modality.comp ->
+    (b, r, s, c) nf ->
+    (a, m, n, b) nf ->
+    (a, mr, ns, c) nf =
+ fun doms cods a b ->
+  match (a, b) with
+  | Nf_id r, Nf_id _ ->
+      let Eq = Modality.comp_uniq doms cods in
+      Nf_id (Modality.comp_out r doms)
+  | Nf_vcomp _, Nf_id m -> nf_prewhisker doms cods a m
+  | Nf_id n, Nf_vcomp _ -> nf_postwhisker doms cods n b
+  | Nf_vcomp (a, x), Nf_vcomp (b, y) ->
+      let (Comp mids) = Modality.comp (necklace_tgt y) in
+      Nf_vcomp (nf_hcomp mids cods a b, necklace_hcomp doms mids x y)
+
+(* We call this a "pre-nf" because it hasn't yet had the trivial necklaces removed. *)
+let rec pre_nf : type x m n y. (x, m, n, y) t -> (x, m, n, y) nf = function
+  | Id m -> Nf_id m
+  | Gen g ->
+      let m, n = (vsrc (of_gen g), vtgt (of_gen g)) in
+      let y = Modality.tgt m in
+      Nf_vcomp (Nf_id n, Necklace_hcomp (Modality.id_comp m, Modality.id_comp n, Necklace_id y, g))
+  | Hcomp (doms, cods, a, b) ->
+      let a, b = (pre_nf a, pre_nf b) in
+      nf_hcomp doms cods a b
+  | Vcomp (a, b) -> nf_vcomp (pre_nf a) (pre_nf b)
+
+(* This function removes the trivial necklaces. *)
+let rec normalize : type x m n y. (x, m, n, y) nf -> (x, m, n, y) nf =
+ fun x ->
+  match x with
+  | Nf_id _ -> x
+  | Nf_vcomp (x, w) -> (
+      match necklace_trivial w with
+      | Some Eq -> normalize x
+      | None -> Nf_vcomp (normalize x, w))
+
+let rec nf_name : type x m n y. (x, m, n, y) nf -> string list list -> string list list =
+ fun x names ->
+  match x with
+  | Nf_id _ -> names
+  | Nf_vcomp (x, n) -> nf_name x (necklace_name n Nil [] :: names)
+
+let name : type a m n b. (a, m, n, b) t -> string list list =
+ fun x -> nf_name (normalize (pre_nf x)) []
