@@ -143,6 +143,9 @@ module Situation = struct
   let add : type left tight right. (left, tight, right) Notation.notation -> unit =
    fun notn -> modify @@ fun s -> ((), Situation.add notn s)
 
+  let add_with_print : User.notation -> unit =
+   fun notn -> modify @@ fun s -> ((), Situation.add_with_print notn s)
+
   let add_user : User.prenotation -> User.notation * User.key list =
    fun user -> modify @@ fun s -> Situation.add_user_to user s
 end
