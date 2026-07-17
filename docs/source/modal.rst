@@ -38,9 +38,9 @@ The currently available mode theories are selected by command-line flags, and ar
    "``-composable-transformations``", "| ``DomMode``,
    | ``CodMode``", "| ``○ : DomMode → CodMode``,
    | ``▱ : DomMode → CodMode``,
-   | ``▷ : DomMode → CodMode``", "| ``α : ○ ⇒ ▱``,
-   | ``β : ▱ ⇒ ▷``,
-   | ``βα : ○ ⇒ ▷``
+   | ``▹ : DomMode → CodMode``", "| ``α : ○ ⇒ ▱``,
+   | ``β : ▱ ⇒ ▹``,
+   | ``βα : ○ ⇒ ▹``
    | (locally posetal)"
    "``-interchange``", "| ``AType``,
    | ``BType``,
@@ -75,9 +75,9 @@ The currently available mode theories are selected by command-line flags, and ar
    | (locally posetal)"
    "``-guarded``", "``Disc``, ``Type``", "| ``△ : Disc → Type``,
    | ``□ : Type → Disc``,
-   | ``▷ : Type → Type``", "| ``△ ⊣ □`` with
+   | ``▹ : Type → Type``", "| ``△ ⊣ □`` with
    | ``△□ ⇒ 1`` and ``□△ ≅ 1``,
-   | ``1 ⇒ ▷``, ``□▷ ≅ □``
+   | ``1 ⇒ ▹``, ``□▹ ≅ □``
    | (locally posetal)"
    "``-local``", "``Disc``, ``Type``", "| ``△ : Disc → Type``,
    | ``□ : Type → Disc``

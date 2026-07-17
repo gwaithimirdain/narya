@@ -67,7 +67,7 @@ module LaterGen (Type : Mode.Generated with module G := TypeGen) = struct
 
   let src = Type.mode
   let tgt = Type.mode
-  let name = ref "▷"
+  let name = ref "▹"
 
   type nonparametric = D.zero
 
@@ -97,15 +97,15 @@ struct
   (* The generating 2-cells.
        box_counit : △□ ⇒ id_Type
        box_unit : id_Disc ⇒ □△ (iso)        box_unit_inv : □△ ⇒ id_Disc
-       next : id_Type ⇒ ▷
-       box_later_iso : □▷ ⇒ □ (iso)          box_later_iso_inv : □ ⇒ □▷
+       next : id_Type ⇒ ▹
+       box_later_iso : □▹ ⇒ □ (iso)          box_later_iso_inv : □ ⇒ □▹
   *)
   let box_counit = Modalcell.of_gen (Modalcell.generate "ε" tribox (Modality.id typ))
   let box_unit = Modalcell.of_gen (Modalcell.generate "η" (Modality.id disc) boxtri)
   let box_unit_inv = Modalcell.of_gen (Modalcell.generate "η⁻¹" boxtri (Modality.id disc))
   let next = Modalcell.of_gen (Modalcell.generate "next" (Modality.id typ) later)
-  let box_later_iso = Modalcell.of_gen (Modalcell.generate "ε▷" box_later box)
-  let box_later_iso_inv = Modalcell.of_gen (Modalcell.generate "ε▷⁻¹" box box_later)
+  let box_later_iso = Modalcell.of_gen (Modalcell.generate "ε▹" box_later box)
+  let box_later_iso_inv = Modalcell.of_gen (Modalcell.generate "ε▹⁻¹" box box_later)
 
   (* A modality is sinister (a declared left adjoint) if it is the identity or △ (left adjoint to
      □).  Later is not declared as an adjoint. *)
@@ -182,8 +182,7 @@ struct
                 | Neq ->
                     (* nf = laterᵃ (a≥1); △·laterᵃ = △·laterᵃ, no reduction *)
                     Normalize (Modality.suc nf Triangle.modality, g_to, g_from))
-            | Path (Zero, _) ->
-                failwith "guarded: unreachable (△·id_Type already handled)"))
+            | Path (Zero, _) -> failwith "guarded: unreachable (△·id_Type already handled)"))
     | _, Eq, _ -> (
         (* g = □ *)
         match Modality.compare nf (Modality.id disc) with
@@ -208,9 +207,11 @@ struct
                 let tc =
                   Modalcell.postwhisker
                     (Suc (Suc (Zero, Box.modality), Later.modality))
-                    (Suc (Zero, Box.modality)) rest box_later_iso in
+                    (Suc (Zero, Box.modality))
+                    rest box_later_iso in
                 let tcr =
-                  Modalcell.postwhisker (Suc (Zero, Box.modality))
+                  Modalcell.postwhisker
+                    (Suc (Zero, Box.modality))
                     (Suc (Suc (Zero, Box.modality), Later.modality))
                     rest box_later_iso_inv in
                 Normalize (nf, Modalcell.vcomp tc g_to, Modalcell.vcomp g_from tcr)
@@ -283,10 +284,10 @@ struct
                     | Path (Suc (n_rest, ng), _) -> (
                         match Modality.Gen.compare ng Triangle.modality with
                         | Neq -> None
-                        | Eq ->
+                        | Eq -> (
                             let m' = Modality.Path (m_rest, typ) in
                             let n' = Modality.Path (n_rest, typ) in
-                            (match later_run_bridge m' n' with
+                            match later_run_bridge m' n' with
                             | Some cell ->
                                 Some
                                   (Modalcell.prewhisker
@@ -303,14 +304,14 @@ struct
                         | Path (Suc (Suc (m_rest2, mg2), _), _) -> (
                             match Modality.Gen.compare mg2 Triangle.modality with
                             | Neq -> None
-                            | Eq ->
+                            | Eq -> (
                                 let m' = Modality.Path (m_rest2, typ) in
                                 (* m' is laterᵃ; box_counit postwhiskered by m' gives m ⇒ m' *)
                                 let to_later =
                                   Modalcell.postwhisker
                                     (Suc (Suc (Zero, Triangle.modality), Box.modality))
                                     Zero m' box_counit in
-                                (match n with
+                                match n with
                                 | Path (Suc (n_rest, ng), _) -> (
                                     match Modality.Gen.compare ng Box.modality with
                                     | Eq -> (
@@ -320,9 +321,9 @@ struct
                                         | Path (Suc (Suc (n_rest2, ng2), _), _) -> (
                                             match Modality.Gen.compare ng2 Triangle.modality with
                                             | Neq -> None
-                                            | Eq ->
+                                            | Eq -> (
                                                 let n' = Modality.Path (n_rest2, typ) in
-                                                (match later_run_bridge m' n' with
+                                                match later_run_bridge m' n' with
                                                 | Some cell ->
                                                     Some
                                                       (Modalcell.prewhisker
@@ -335,10 +336,10 @@ struct
                                                          cell tribox)
                                                 | None -> None))
                                         | _ -> None)
-                                    | Neq ->
+                                    | Neq -> (
                                         (* n is a pure later-run laterᵇ *)
                                         let n' = Modality.Path (Suc (n_rest, ng), typ) in
-                                        (match later_run_bridge m' n' with
+                                        match later_run_bridge m' n' with
                                         | Some cell -> Some (Modalcell.vcomp cell to_later)
                                         | None -> None))
                                 | Path (Zero, _) -> (
@@ -350,9 +351,9 @@ struct
                         (* m is a pure later-run laterᵃ (a≥1); its leading generator must be later *)
                         match Modality.Gen.compare mg Later.modality with
                         | Neq -> None
-                        | Eq ->
+                        | Eq -> (
                             let m' = m in
-                            (match n with
+                            match n with
                             | Path (Suc (_, ng), _) as np -> (
                                 match Modality.Gen.compare ng Box.modality with
                                 | Eq -> None (* laterᵃ ⇒ tribox·laterᵇ: no such cell *)

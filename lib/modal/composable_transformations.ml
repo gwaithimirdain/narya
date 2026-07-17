@@ -1,4 +1,4 @@
-(* A mode theory with two modes DomMode and CodMode and three modality generators ○, ▱, ▷ : DomMode → CodMode, together with two generating 2-cells alpha : ○ ⇒ ▱ and beta : ▱ ⇒ ▷ (and no others).  The theory is locally posetal (any two parallel 2-cells are equal), so the vertical composite beta∘alpha : ○ ⇒ ▷ is *the* unique 2-cell from ○ to ▷, without needing to be declared as a separate generator.  Since there is no modality from CodMode back to DomMode, the only modalities are the two identities, ○, ▱, and ▷: there are no nontrivial composite modalities to normalize. *)
+(* A mode theory with two modes DomMode and CodMode and three modality generators ○, ▱, ▹ : DomMode → CodMode, together with two generating 2-cells alpha : ○ ⇒ ▱ and beta : ▱ ⇒ ▹ (and no others).  The theory is locally posetal (any two parallel 2-cells are equal), so the vertical composite beta∘alpha : ○ ⇒ ▹ is *the* unique 2-cell from ○ to ▹, without needing to be declared as a separate generator.  Since there is no modality from CodMode back to DomMode, the only modalities are the two identities, ○, ▱, and ▹: there are no nontrivial composite modalities to normalize. *)
 
 open Dim
 
@@ -59,7 +59,7 @@ struct
 
   let src = DomMode.mode
   let tgt = CodMode.mode
-  let name = ref "▷"
+  let name = ref "▹"
 
   type nonparametric = D.zero
 
@@ -71,17 +71,16 @@ module ComposableTransformationsCell
     (CodMode : Mode.Generated with module G := CodGen)
     (Circle : Modality.Generated with module G := CircGen(DomMode)(CodMode))
     (Box : Modality.Generated with module G := BoxGen(DomMode)(CodMode))
-    (Tri : Modality.Generated with module G := TriGen(DomMode)(CodMode)) : Modalcell.Theory =
-struct
+    (Tri : Modality.Generated with module G := TriGen(DomMode)(CodMode)) : Modalcell.Theory = struct
   let circ = Modality.of_gen Circle.modality
   let box = Modality.of_gen Box.modality
   let tri = Modality.of_gen Tri.modality
 
-  (* The two generating 2-cells, ○ ⇒ ▱ and ▱ ⇒ ▷. *)
+  (* The two generating 2-cells, ○ ⇒ ▱ and ▱ ⇒ ▹. *)
   let alpha = Modalcell.of_gen (Modalcell.generate "α" circ box)
   let beta = Modalcell.of_gen (Modalcell.generate "β" box tri)
 
-  (* The derived composite ○ ⇒ ▷, obtained by vertically composing alpha and beta rather than by
+  (* The derived composite ○ ⇒ ▹, obtained by vertically composing alpha and beta rather than by
      a separate generator; since the theory is locally posetal this is automatically *the* unique
      cell of this source and target. *)
   let gamma = Modalcell.vcomp beta alpha
@@ -140,5 +139,5 @@ let install modes modalities =
   let module Box' = Modality.Generate (Box) in
   let module Tri' = Modality.Generate (Tri) in
   Modalcell.choose_theory
-    (module ComposableTransformationsCell (DomMode) (CodMode) (Circle) (Box') (Tri') :
-      Modalcell.Theory)
+    (module ComposableTransformationsCell (DomMode) (CodMode) (Circle) (Box') (Tri')
+    : Modalcell.Theory)

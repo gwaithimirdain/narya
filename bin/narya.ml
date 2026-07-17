@@ -164,7 +164,7 @@ let speclist =
         (fun () ->
           install_mode_theory := Modal.Composable_transformations.install;
           mode_theories := !mode_theories + 1),
-      "Select the composable transformations mode theory (2-cells ○ ⇒ ▱ ⇒ ▷)" );
+      "Select the composable transformations mode theory (2-cells ○ ⇒ ▱ ⇒ ▹)" );
     ( "-interchange",
       Arg.Unit
         (fun () ->
