@@ -52,3 +52,6 @@ def needs_key3 (A : Disc) (x :□△| A) : □△□△ A ≔ t2. (x #η)
 def needs_key_23 (A : Disc) (x :□△| A)
   : Id (□△□△ A) (needs_key2 A x) (needs_key3 A x)
   ≔ refl _
+
+{` We can put together multiple keys even if their boundaries don't match up (no factor failure) `}
+def needs_key1a (A : Disc) (x :□△| A) : □△□△ A ≔ t2. (x #△ #η.□△)

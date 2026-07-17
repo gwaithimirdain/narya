@@ -56,6 +56,9 @@
    ￫ info[I0000]
    ￮ constant needs_key_23 defined
   
+   ￫ info[I0000]
+   ￮ constant needs_key1a defined
+  
 
 The reflector □△ is not invertible: there is no 2-cell □△ ⇒ 1.
 
