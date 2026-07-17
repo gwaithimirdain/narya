@@ -27,10 +27,10 @@
 
 There is no cell in the reverse direction of next, so a ▹-locked value cannot be used directly.
 
-  $ narya -guarded guarded.ny -e "def backwards (A : Type) (x :▹| A) : A := x"
+  $ narya -guarded guarded.ny -e "def backwards (A : Timed) (x :▹| A) : A := x"
    ￫ error[E1705]
    ￭ command-line exec string
-   1 | def backwards (A : Type) (x :▹| A) : A := x
+   1 | def backwards (A : Timed) (x :▹| A) : A := x
      ^ use of ▹ variable behind id lock requires a key
   
   [1]
@@ -38,10 +38,10 @@ There is no cell in the reverse direction of next, so a ▹-locked value cannot 
 
 Nor is there a cell going from more laters to fewer.
 
-  $ narya -guarded guarded.ny -e "def backwards2 (A :▹| Type) (x :▹▹| A) : ▹ A := x"
+  $ narya -guarded guarded.ny -e "def backwards2 (A :▹| Timed) (x :▹▹| A) : ▹ A := x"
    ￫ error[E1705]
    ￭ command-line exec string
-   1 | def backwards2 (A :▹| Type) (x :▹▹| A) : ▹ A := x
+   1 | def backwards2 (A :▹| Timed) (x :▹▹| A) : ▹ A := x
      ^ use of ▹▹ variable behind id lock requires a key
   
   [1]

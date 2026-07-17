@@ -1,25 +1,17 @@
 open Dim
 
-(* A coreflection (as in Coreflection) with an added endomodality "later" on Type, a generating
+(* A coreflection (as in Coreflection) with an added endomodality "later" on Timed, a generating
    2-cell "next : id ⇒ later", and an isomorphism "box.later ≅ box" (i.e. □∘later ≅ □).  The theory
    is locally posetal.
 
-   Every composite modality is isomorphic to exactly one normal form: id_Disc, laterᵃ (a≥0,
-   Type→Type, a=0 being id_Type), a·laterᵃ (△ followed by a≥0 laters, Disc→Type), box (Type→Disc),
-   or ab·laterᵃ (tribox = □ then △, followed by a≥0 laters, Type→Type).  This is because: (1) the
-   only reduction not involving later is □∘△ ≅ id_Disc (as in Coreflection); (2) later can compose
+   Every composite modality is isomorphic to exactly one normal form: id_Type, laterᵃ (a≥0,
+   Timed→Timed, a=0 being id_Timed), a·laterᵃ (△ followed by a≥0 laters, Type→Timed), box (Timed→Type),
+   or ab·laterᵃ (tribox = □ then △, followed by a≥0 laters, Timed→Timed).  This is because: (1) the
+   only reduction not involving later is □∘△ ≅ id_Type (as in Coreflection); (2) later can compose
    with itself freely (no relation collapses laterᵃ for different a); and (3) any run of laters
    immediately followed by □ collapses entirely, via box.later≅box iterated -- so laters only
    survive at the very end of a normal form (after everything else), never immediately before a □.
    *)
-
-module DiscGen = struct
-  let name = ref "Disc"
-
-  type nonparametric = D.zero
-
-  let nonparametric = D.zero
-end
 
 module TypeGen = struct
   let name = ref "Type"
@@ -29,15 +21,23 @@ module TypeGen = struct
   let nonparametric = D.zero
 end
 
-module TriangleGen
-    (Disc : Mode.Generated with module G := DiscGen)
-    (Type : Mode.Generated with module G := TypeGen) =
-struct
-  type src = Disc.t
-  type tgt = Type.t
+module TimedGen = struct
+  let name = ref "Timed"
 
-  let src = Disc.mode
-  let tgt = Type.mode
+  type nonparametric = D.zero
+
+  let nonparametric = D.zero
+end
+
+module TriangleGen
+    (Type : Mode.Generated with module G := TypeGen)
+    (Timed : Mode.Generated with module G := TimedGen) =
+struct
+  type src = Type.t
+  type tgt = Timed.t
+
+  let src = Type.mode
+  let tgt = Timed.mode
   let name = ref "△"
 
   type nonparametric = D.zero
@@ -46,14 +46,14 @@ struct
 end
 
 module BoxGen
-    (Disc : Mode.Generated with module G := DiscGen)
-    (Type : Mode.Generated with module G := TypeGen) =
+    (Type : Mode.Generated with module G := TypeGen)
+    (Timed : Mode.Generated with module G := TimedGen) =
 struct
-  type src = Type.t
-  type tgt = Disc.t
+  type src = Timed.t
+  type tgt = Type.t
 
-  let src = Type.mode
-  let tgt = Disc.mode
+  let src = Timed.mode
+  let tgt = Type.mode
   let name = ref "□"
 
   type nonparametric = D.zero
@@ -61,12 +61,12 @@ struct
   let nonparametric = D.zero
 end
 
-module LaterGen (Type : Mode.Generated with module G := TypeGen) = struct
-  type src = Type.t
-  type tgt = Type.t
+module LaterGen (Timed : Mode.Generated with module G := TimedGen) = struct
+  type src = Timed.t
+  type tgt = Timed.t
 
-  let src = Type.mode
-  let tgt = Type.mode
+  let src = Timed.mode
+  let tgt = Timed.mode
   let name = ref "▹"
 
   type nonparametric = D.zero
@@ -75,14 +75,14 @@ module LaterGen (Type : Mode.Generated with module G := TypeGen) = struct
 end
 
 module GuardedCells
-    (Disc : Mode.Generated with module G := DiscGen)
     (Type : Mode.Generated with module G := TypeGen)
-    (Triangle : Modality.Generated with module G := TriangleGen(Disc)(Type))
-    (Box : Modality.Generated with module G := BoxGen(Disc)(Type))
-    (Later : Modality.Generated with module G := LaterGen(Type)) =
+    (Timed : Mode.Generated with module G := TimedGen)
+    (Triangle : Modality.Generated with module G := TriangleGen(Type)(Timed))
+    (Box : Modality.Generated with module G := BoxGen(Type)(Timed))
+    (Later : Modality.Generated with module G := LaterGen(Timed)) =
 struct
-  let disc = Disc.mode
-  let typ = Type.mode
+  let disc = Type.mode
+  let typ = Timed.mode
 
   (* The three generating modalities. *)
   let tri = Modality.of_gen Triangle.modality
@@ -95,9 +95,9 @@ struct
   let box_later = Modality.Path (Suc (Suc (Zero, Box.modality), Later.modality), disc)
 
   (* The generating 2-cells.
-       box_counit : △□ ⇒ id_Type
-       box_unit : id_Disc ⇒ □△ (iso)        box_unit_inv : □△ ⇒ id_Disc
-       next : id_Type ⇒ ▹
+       box_counit : △□ ⇒ id_Timed
+       box_unit : id_Type ⇒ □△ (iso)        box_unit_inv : □△ ⇒ id_Type
+       next : id_Timed ⇒ ▹
        box_later_iso : □▹ ⇒ □ (iso)          box_later_iso_inv : □ ⇒ □▹
   *)
   let box_counit = Modalcell.of_gen (Modalcell.generate "ε" tribox (Modality.id typ))
@@ -133,7 +133,7 @@ struct
    fun _ _ -> true
 
   (* The normalization of a modality: an isomorphic normal form together with the isomorphism (in
-     both directions).  Every modality is isomorphic to exactly one of: id_Disc, laterᵃ (a≥0),
+     both directions).  Every modality is isomorphic to exactly one of: id_Type, laterᵃ (a≥0),
      △·laterᵃ (a≥0), box, or (□△)·laterᵃ (a≥0). *)
   type (_, _, _) normalize =
     | Normalize :
@@ -142,10 +142,10 @@ struct
 
   (* Prepend a generator g (on the source side, i.e. applied first) to an already-normalized
      modality nf, and renormalize.  There are two kinds of reduction: △ meeting a leading □
-     (△·□ ≅ id_Disc, exactly as in Coreflection), and later meeting a leading □ (□·later ≅ □,
+     (△·□ ≅ id_Type, exactly as in Coreflection), and later meeting a leading □ (□·later ≅ □,
      absorbed).  In both cases, whatever follows the leading □ in nf (its "rest") is carried along
      unchanged by postwhiskering.  Prepending later onto anything that does NOT start with □ (i.e.
-     onto id_Type or an existing run of laters) simply extends the run by one, with no reduction
+     onto id_Timed or an existing run of laters) simply extends the run by one, with no reduction
      since laters never collapse into each other. *)
   let prepend : type c gg a nf b gm.
       (c, gg, a) Modality.Gen.t ->
@@ -162,7 +162,7 @@ struct
     | Eq, _, _ -> (
         (* g = △ *)
         match Modality.compare nf (Modality.id typ) with
-        | Eq -> Normalize (tri, g_to, g_from) (* △·id_Type = △ *)
+        | Eq -> Normalize (tri, g_to, g_from) (* △·id_Timed = △ *)
         | Neq -> (
             match nf with
             | Path (Suc (rest_comp, g'), tgt) -> (
@@ -182,11 +182,11 @@ struct
                 | Neq ->
                     (* nf = laterᵃ (a≥1); △·laterᵃ = △·laterᵃ, no reduction *)
                     Normalize (Modality.suc nf Triangle.modality, g_to, g_from))
-            | Path (Zero, _) -> failwith "guarded: unreachable (△·id_Type already handled)"))
+            | Path (Zero, _) -> failwith "guarded: unreachable (△·id_Timed already handled)"))
     | _, Eq, _ -> (
         (* g = □ *)
         match Modality.compare nf (Modality.id disc) with
-        | Eq -> Normalize (box, g_to, g_from) (* □·id_Disc = □ *)
+        | Eq -> Normalize (box, g_to, g_from) (* □·id_Type = □ *)
         | Neq -> (
             match nf with
             | Path (Suc (_, g'), _) -> (
@@ -195,7 +195,7 @@ struct
                     (* nf = △·laterᵃ; □·△·laterᵃ = (□△)·laterᵃ, no reduction *)
                     Normalize (Modality.suc nf Box.modality, g_to, g_from)
                 | Neq -> failwith "guarded: ill-typed modality composite in normalize (□ case)")
-            | Path (Zero, _) -> failwith "guarded: unreachable (□·id_Disc already handled)"))
+            | Path (Zero, _) -> failwith "guarded: unreachable (□·id_Type already handled)"))
     | _, _, Eq -> (
         (* g = later *)
         match nf with
@@ -219,7 +219,7 @@ struct
                 (* nf = laterᵃ (a≥1); extend to laterᵃ⁺¹ *)
                 Normalize (Modality.suc nf Later.modality, g_to, g_from))
         | Path (Zero, _) ->
-            (* nf = id_Type; extend to later¹ *)
+            (* nf = id_Timed; extend to later¹ *)
             Normalize (Modality.suc nf Later.modality, g_to, g_from))
     | _ -> failwith "guarded: unrecognized generator in normalize"
 
@@ -238,9 +238,9 @@ struct
      iteratively extending laterᵖ by one more later (via "next" postwhiskered by the
      already-reached run) until it reaches laterᵍ. *)
   let rec later_run_bridge : type p q.
-      (Type.t, p, Type.t) Modality.t ->
-      (Type.t, q, Type.t) Modality.t ->
-      (Type.t, p, q, Type.t) Modalcell.t option =
+      (Timed.t, p, Timed.t) Modality.t ->
+      (Timed.t, q, Timed.t) Modality.t ->
+      (Timed.t, p, q, Timed.t) Modalcell.t option =
    fun m n ->
     match Modality.compare m n with
     | Eq -> Some (Modalcell.id m)
@@ -259,7 +259,7 @@ struct
                 | None -> None)))
 
   (* The unique 2-cell between two *normal-form* modalities, if one exists.  The only nonidentity
-     bridges are: tribox ⇒ id_Type (box_counit), and, for the "later"-extended families, whatever
+     bridges are: tribox ⇒ id_Timed (box_counit), and, for the "later"-extended families, whatever
      is induced from that plus the later_run_bridge. *)
   let bridge : type a p q b.
       (a, p, b) Modality.t -> (a, q, b) Modality.t -> (a, p, q, b) Modalcell.t option =
@@ -269,17 +269,17 @@ struct
     | Neq -> (
         match Mode.compare (Modality.tgt m) typ with
         | Neq ->
-            (* target Disc: the only normal form is id_Disc, so m=n=id_Disc, already handled *)
+            (* target Type: the only normal form is id_Type, so m=n=id_Type, already handled *)
             None
         | Eq -> (
-            (* target Type: m,n are each either a pure later-run, △·laterᵃ (source Disc), or
-               (□△)·laterᵃ (source Type). *)
+            (* target Timed: m,n are each either a pure later-run, △·laterᵃ (source Type), or
+               (□△)·laterᵃ (source Timed). *)
             match m with
             | Path (Suc (m_rest, mg), _) -> (
                 match Modality.Gen.compare mg Triangle.modality with
                 | Eq -> (
-                    (* m = △·laterᵃ; n must be of the same shape (same source Disc), so its
-                       leading generator (the only one with source Disc) is also △ *)
+                    (* m = △·laterᵃ; n must be of the same shape (same source Type), so its
+                       leading generator (the only one with source Type) is also △ *)
                     match n with
                     | Path (Suc (n_rest, ng), _) -> (
                         match Modality.Gen.compare ng Triangle.modality with
@@ -360,7 +360,7 @@ struct
                                 | Neq -> later_run_bridge m' np)
                             | Path (Zero, _) -> None))))
             | Path (Zero, _) -> (
-                (* m = id_Type, a pure later-run with a=0 *)
+                (* m = id_Timed, a pure later-run with a=0 *)
                 match n with
                 | Path (Suc (_, ng), _) as np -> (
                     match Modality.Gen.compare ng Box.modality with
@@ -419,15 +419,15 @@ end
 let install modes modalities =
   (match modes with
   | [ disc; ty ] ->
-      DiscGen.name := disc;
-      TypeGen.name := ty
+      TypeGen.name := disc;
+      TimedGen.name := ty
   | [] -> ()
   | _ -> failwith "wrong number of mode names for guarded mode theory");
-  let module Disc = Mode.Generate (DiscGen) in
   let module Type = Mode.Generate (TypeGen) in
-  let module Triangle = TriangleGen (Disc) (Type) in
-  let module Box = BoxGen (Disc) (Type) in
-  let module Later = LaterGen (Type) in
+  let module Timed = Mode.Generate (TimedGen) in
+  let module Triangle = TriangleGen (Type) (Timed) in
+  let module Box = BoxGen (Type) (Timed) in
+  let module Later = LaterGen (Timed) in
   (match modalities with
   | [ tri; box; later ] ->
       Triangle.name := tri;
@@ -439,6 +439,6 @@ let install modes modalities =
   let module Triangle = Modality.Generate (Triangle) in
   let module Box = Modality.Generate (Box) in
   let module Later = Modality.Generate (Later) in
-  let module Cells = GuardedCells (Disc) (Type) (Triangle) (Box) (Later) in
+  let module Cells = GuardedCells (Type) (Timed) (Triangle) (Box) (Later) in
   Modalcell.choose_theory (module Cells : Modalcell.Theory);
   Modality.choose_theory (module Cells.Modalities : Modality.Theory)
