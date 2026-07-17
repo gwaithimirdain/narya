@@ -518,8 +518,10 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
         (act_value (eval_term (act_env env (opt_op_of_deg is)) x) p (Modalcell.id2 (mode_env env)))
   | Key { tm; cell; plus_src; plus_tgt } ->
       (* To evaluate a key, we strip off the part of the environment corresponding to the codomain of the key cell, then compose the keys we found there with the supplied key to make a new key on an environment for evaluating the body.  The resulting environment is back at the original mode, so any prekey action stripped along the way is re-applied as a prekey on top. *)
-      let (Restrict_keys (env, keys, pre)) = restrict_keys env plus_tgt in
-      let env = key_env env (Modalcell.vcomp keys cell) plus_src in
+      let (Restrict_keys (env, extra, mu12, keys, pre)) = restrict_keys env plus_tgt in
+      let (Comp nu12) = Modality.comp (Modalcell.vsrc cell) in
+      let extra_cell = Modalcell.postwhisker nu12 mu12 (plus_lock_modality extra) cell in
+      let env = key_env env (Modalcell.vcomp keys extra_cell) (plus_lock_comp extra plus_src nu12) in
       let env = prekey_env env pre in
       eval env tm
   | Match { tm; window; plus_lock; dim = match_dim; branches } -> (
@@ -1465,11 +1467,11 @@ and eval_env : type mode a q n qn b.
                  });
         }
   | Key { env = tmenv; cell; plus_src; plus_tgt } ->
-      let (Restrict_keys (env, keys, pre)) = restrict_keys env plus_tgt in
+      let (Restrict_keys (env, extra, mu12, keys, pre)) = restrict_keys env plus_tgt in
       prekey_env (Key (eval_env env q_n tmenv, Modalcell.vcomp keys cell, plus_src)) pre
   (* A term prekey is evaluated just like a key, except that the composite cell mediates the value environment on the domain side, before evaluating the inner term environment, rather than being wrapped around the result on the codomain side. *)
   | Prekey { env = tmenv; cell; plus_src; plus_tgt } ->
-      let (Restrict_keys (env, keys, pre)) = restrict_keys env plus_tgt in
+      let (Restrict_keys (env, extra, mu12, keys, pre)) = restrict_keys env plus_tgt in
       prekey_env (eval_env (key_env env (Modalcell.vcomp keys cell) plus_src) q_n tmenv) pre
 
 and apply_term : type dom modality mode n m.
@@ -1637,7 +1639,7 @@ and lookup : type mode n b. (mode, n, b) env -> (mode, b) index -> (mode, kineti
   let (Plus n_k) = D.plus (cod_sface fa) in
   let n = dim_env env in
   (* We strip off the keys and prekeys corresponding to the locks to the right of the variable, composing them on the way out into a composite key cell (for the variable's own locks) and a prekey action, both to be applied to the looked-up value.  The prekeys encountered inside the environment by lookup_cube are transported to the value's mode by prewhiskering with the vertical target of the composite key. *)
-  let (Restrict_keys (env, keys, pre)) = restrict_keys env plus in
+  let (Restrict_keys (env, extra, mu12, keys, pre)) = restrict_keys env plus in
   let mu = Locks.cod locks in
   match lookup_cube env n_k mu (Modalcell.vtgt keys) v (id_opt_op (D.plus_out n n_k)) with
   | Looked_up { act; op; entry; pre = inner_pre } -> (

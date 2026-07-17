@@ -264,6 +264,16 @@ let plus_lock_suc : type ctx mode modality dom newctx x m.
  fun (Plus_lock (lock, comp)) m ->
   Plus_lock (Suc (lock, Inject (Lock_lock m), Suc (Zero, Lock m)), Suc (comp, Lock m))
 
+let plus_lock_comp : type a x y z m n mn an anm.
+    (a, z, n, y, an) plus_lock ->
+    (an, y, m, x, anm) plus_lock ->
+    (x, m, y, n, z, mn) Modality.comp ->
+    (a, z, mn, x, anm) plus_lock =
+ fun (Plus_lock (ln, an)) (Plus_lock (lm, an_m)) mn ->
+  let (Comp (lmn, n_m)) = Lock.comp lm ln mn in
+  let an_m = Tctx.comp_assocr an n_m an_m in
+  Plus_lock (lmn, an_m)
+
 let plus_lock_out : type mode ctx modality dom newctx.
     (mode, ctx) Tctx.t -> (ctx, mode, modality, dom, newctx) plus_lock -> (dom, newctx) Tctx.t =
  fun ctx (Plus_lock (_, comp)) -> Tctx.comp_out ctx comp
