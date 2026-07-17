@@ -153,6 +153,24 @@ let speclist =
           install_mode_theory := Modal.Composable_functors.install;
           mode_theories := !mode_theories + 1),
       "Select the composable functors mode theory" );
+    ( "-transformation",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Transformation.install;
+          mode_theories := !mode_theories + 1),
+      "Select the transformation mode theory (a single 2-cell ○ ⇒ ▱)" );
+    ( "-composable-transformations",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Composable_transformations.install;
+          mode_theories := !mode_theories + 1),
+      "Select the composable transformations mode theory (2-cells ○ ⇒ ▱ ⇒ ▷)" );
+    ( "-interchange",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Interchange.install;
+          mode_theories := !mode_theories + 1),
+      "Select the interchange mode theory (2-cells ▹ ⇒ ◃ and ▸ ⇒ ◂ satisfying interchange)" );
     ( "-adjunction",
       Arg.Unit
         (fun () ->
@@ -189,6 +207,12 @@ let speclist =
           mode_theories := !mode_theories + 1),
       "Select the discrete coreflection mode theory (requires -parametric, allows -external with -arity 1)"
     );
+    ( "-guarded",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Guarded.install;
+          mode_theories := !mode_theories + 1),
+      "Select the guarded mode theory (coreflection plus a later modality on Type)" );
     ( "-local",
       Arg.Unit
         (fun () ->
