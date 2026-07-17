@@ -1,18 +1,18 @@
 open Dim
 
-(* A "cospatial" mode theory: one mode with two self-modality generators, a reflector ♯
+(* A "cospatial" mode theory: one mode with two self-modality generators, a reflector ʃ
    (idempotent monad) and a coreflector ♭ (idempotent comonad), together with isomorphisms
-   ♯♭ ≅ ♭ and ♭♯ ≅ ♯.  These isomorphisms say that composing ♯ and ♭ in either order collapses
-   to whichever generator was applied *first*: applying ♭ and then ♯ is the same as ♭ alone, and
-   applying ♯ and then ♭ is the same as ♯ alone.  Consequently every composite word in ♯ and ♭
+   ʃ♭ ≅ ♭ and ♭ʃ ≅ ʃ.  These isomorphisms say that composing ʃ and ♭ in either order collapses
+   to whichever generator was applied *first*: applying ♭ and then ʃ is the same as ♭ alone, and
+   applying ʃ and then ♭ is the same as ʃ alone.  Consequently every composite word in ʃ and ♭
    reduces to its single, source-most generator (or to the identity, if the word is empty): there
-   are only three normal forms, id, ♯, and ♭, and no two of them are isomorphic.
+   are only three normal forms, id, ʃ, and ♭, and no two of them are isomorphic.
 
    The theory is locally posetal (any two parallel 2-cells are declared equal), so we only need
    to decide *existence* of a 2-cell and exhibit *some* witness, not worry about coherence among
-   different witnesses.  Combining the reflector's unit id ⇒ ♯ with the isomorphism ♭♯ ≅ ♯, and
-   the coreflector's counit ♭ ⇒ id with the isomorphism ♯♭ ≅ ♭, produces a unit id ⇒ ♭♯ and a
-   counit ♯♭ ⇒ id, exhibiting an *induced* adjunction ♯ ⊣ ♭.  Since ♯ is thereby a declared left
+   different witnesses.  Combining the reflector's unit id ⇒ ʃ with the isomorphism ♭ʃ ≅ ʃ, and
+   the coreflector's counit ♭ ⇒ id with the isomorphism ʃ♭ ≅ ♭, produces a unit id ⇒ ♭ʃ and a
+   counit ʃ♭ ⇒ id, exhibiting an *induced* adjunction ʃ ⊣ ♭.  Since ʃ is thereby a declared left
    adjoint, it is sinister and (like the identity) transparent; ♭, the right adjoint, is
    neither. *)
 
@@ -50,13 +50,13 @@ end
 
 (* In the discrete case, both modalities are discrete/nonparametric, since they land in the same subcategory. *)
 
-module SharpGen (V : Variant) (Type : Mode.Generated with module G := TypeGen) = struct
+module ShapeGen (V : Variant) (Type : Mode.Generated with module G := TypeGen) = struct
   type src = Type.t
   type tgt = Type.t
 
   let src = Type.mode
   let tgt = Type.mode
-  let name = ref "♯"
+  let name = ref "ʃ"
 
   type nonparametric = V.nonparametric
 
@@ -79,58 +79,58 @@ end
 module CospatialCells
     (V : Variant)
     (Type : Mode.Generated with module G := TypeGen)
-    (Sharp : Modality.Generated with module G := SharpGen(V)(Type))
+    (Shape : Modality.Generated with module G := ShapeGen(V)(Type))
     (Flat : Modality.Generated with module G := FlatGen(V)(Type)) =
 struct
   let typ = Type.mode
-  let sharp = Modality.of_gen Sharp.modality
+  let shape = Modality.of_gen Shape.modality
   let flat = Modality.of_gen Flat.modality
 
   (* The two-generator composite modalities.  A modality Path (Suc (Suc (Zero, X), Y), tgt)
-     applies Y first (source side) and then X, i.e. it is X ∘ Y.  So sharpsharp = ♯∘♯, flatflat =
-     ♭∘♭, sharpflat = ♯∘♭ (i.e. "♯♭", ♭ first), and flatsharp = ♭∘♯ (i.e. "♭♯", ♯ first). *)
-  let sharpsharp = Modality.Path (Suc (Suc (Zero, Sharp.modality), Sharp.modality), typ)
+     applies Y first (source side) and then X, i.e. it is X ∘ Y.  So shapeshape = ʃ∘ʃ, flatflat =
+     ♭∘♭, shapeflat = ʃ∘♭ (i.e. "ʃ♭", ♭ first), and flatshape = ♭∘ʃ (i.e. "♭ʃ", ʃ first). *)
+  let shapeshape = Modality.Path (Suc (Suc (Zero, Shape.modality), Shape.modality), typ)
   let flatflat = Modality.Path (Suc (Suc (Zero, Flat.modality), Flat.modality), typ)
-  let sharpflat = Modality.Path (Suc (Suc (Zero, Sharp.modality), Flat.modality), typ)
-  let flatsharp = Modality.Path (Suc (Suc (Zero, Flat.modality), Sharp.modality), typ)
+  let shapeflat = Modality.Path (Suc (Suc (Zero, Shape.modality), Flat.modality), typ)
+  let flatshape = Modality.Path (Suc (Suc (Zero, Flat.modality), Shape.modality), typ)
 
   (* The generating 2-cells: the reflector's unit and multiplication, the coreflector's counit
      and comultiplication, and (both directions of) the two given isomorphisms.  As elsewhere,
      both isomorphisms get an explicit inverse generator; since the theory is posetal, it does
      not matter that these are freely generated rather than literally inverse. *)
-  let sharp_unit = Modalcell.of_gen (Modalcell.generate "η♯" (Modality.id typ) sharp)
-  let sharp_mult = Modalcell.of_gen (Modalcell.generate "μ♯" sharpsharp sharp)
+  let shape_unit = Modalcell.of_gen (Modalcell.generate "ηʃ" (Modality.id typ) shape)
+  let shape_mult = Modalcell.of_gen (Modalcell.generate "μʃ" shapeshape shape)
   let flat_counit = Modalcell.of_gen (Modalcell.generate "ε♭" flat (Modality.id typ))
   let flat_comult = Modalcell.of_gen (Modalcell.generate "Δ♭" flat flatflat)
-  let sf_to = Modalcell.of_gen (Modalcell.generate "♯♭_to_♭" sharpflat flat) (* ♯♭ ⇒ ♭ *)
-  let sf_from = Modalcell.of_gen (Modalcell.generate "♭_to_♯♭" flat sharpflat) (* ♭ ⇒ ♯♭ *)
-  let fs_to = Modalcell.of_gen (Modalcell.generate "♭♯_to_♯" flatsharp sharp) (* ♭♯ ⇒ ♯ *)
-  let fs_from = Modalcell.of_gen (Modalcell.generate "♯_to_♭♯" sharp flatsharp) (* ♯ ⇒ ♭♯ *)
+  let sf_to = Modalcell.of_gen (Modalcell.generate "ʃ♭_to_♭" shapeflat flat) (* ʃ♭ ⇒ ♭ *)
+  let sf_from = Modalcell.of_gen (Modalcell.generate "♭_to_ʃ♭" flat shapeflat) (* ♭ ⇒ ʃ♭ *)
+  let fs_to = Modalcell.of_gen (Modalcell.generate "♭ʃ_to_ʃ" flatshape shape) (* ♭ʃ ⇒ ʃ *)
+  let fs_from = Modalcell.of_gen (Modalcell.generate "ʃ_to_♭ʃ" shape flatshape) (* ʃ ⇒ ♭ʃ *)
 
-  (* The "other halves" of the idempotence isomorphisms ♯♯ ≅ ♯ and ♭♭ ≅ ♭, obtained (as usual for
+  (* The "other halves" of the idempotence isomorphisms ʃʃ ≅ ʃ and ♭♭ ≅ ♭, obtained (as usual for
      an idempotent monad/comonad) by whiskering the unit/counit rather than as separate
      generators. *)
-  let sharp_mult_inv = Modalcell.postwhisker Zero (Suc (Zero, Sharp.modality)) sharp sharp_unit
+  let shape_mult_inv = Modalcell.postwhisker Zero (Suc (Zero, Shape.modality)) shape shape_unit
   let flat_comult_inv = Modalcell.postwhisker (Suc (Zero, Flat.modality)) Zero flat flat_counit
 
-  (* The induced adjunction ♯ ⊣ ♭: unit id ⇒ ♯ ⇒ ♭♯ and counit ♯♭ ⇒ ♭ ⇒ id. *)
-  let adj_unit = Modalcell.vcomp fs_from sharp_unit
+  (* The induced adjunction ʃ ⊣ ♭: unit id ⇒ ʃ ⇒ ♭ʃ and counit ʃ♭ ⇒ ♭ ⇒ id. *)
+  let adj_unit = Modalcell.vcomp fs_from shape_unit
   let adj_counit = Modalcell.vcomp flat_counit sf_to
 
-  (* A modality is sinister (a declared left adjoint) if it is the identity or ♯ (left adjoint to
+  (* A modality is sinister (a declared left adjoint) if it is the identity or ʃ (left adjoint to
      ♭); ♭, the right adjoint, is not itself sinister. *)
   let sinister : type a f b. (a, f, b) Modality.t -> (a, f, b) Modalcell.sinister option =
    fun f ->
-    match (Modality.compare_id f, Modality.compare f sharp) with
+    match (Modality.compare_id f, Modality.compare f shape) with
     | Eq, _ -> Some (Modalcell.id_sinister (Modality.src f))
     | _, Eq ->
         Some
           (Sinister
              (Adjunction
                 {
-                  left = sharp;
+                  left = shape;
                   right = flat;
-                  right_left = Suc (Zero, Sharp.modality);
+                  right_left = Suc (Zero, Shape.modality);
                   unit = adj_unit;
                   left_right = Suc (Zero, Flat.modality);
                   counit = adj_counit;
@@ -141,9 +141,9 @@ struct
   let compare : type a m n b. (a, m, n, b) Modalcell.t -> (a, m, n, b) Modalcell.t -> bool =
    fun _ _ -> true
 
-  (* The unique 2-cell between two *normal-form* modalities (id, ♯, or ♭), if one exists: the
-     unit id ⇒ ♯, the counit ♭ ⇒ id, and their composite ♭ ⇒ ♯.  There is no cell id ⇒ ♭ or ♯ ⇒ id
-     or ♯ ⇒ ♭. *)
+  (* The unique 2-cell between two *normal-form* modalities (id, ʃ, or ♭), if one exists: the
+     unit id ⇒ ʃ, the counit ♭ ⇒ id, and their composite ♭ ⇒ ʃ.  There is no cell id ⇒ ♭ or ʃ ⇒ id
+     or ʃ ⇒ ♭. *)
   let bridge : type a p q b.
       (a, p, b) Modality.t -> (a, q, b) Modality.t -> (a, p, q, b) Modalcell.t option =
    fun m n ->
@@ -152,8 +152,8 @@ struct
     | Neq -> (
         match Modality.compare m (Modality.id typ) with
         | Eq -> (
-            match Modality.compare n sharp with
-            | Eq -> Some sharp_unit (* id ⇒ ♯ *)
+            match Modality.compare n shape with
+            | Eq -> Some shape_unit (* id ⇒ ʃ *)
             | Neq -> None)
         | Neq -> (
             match Modality.compare m flat with
@@ -161,20 +161,20 @@ struct
                 match Modality.compare n (Modality.id typ) with
                 | Eq -> Some flat_counit (* ♭ ⇒ id *)
                 | Neq -> (
-                    match Modality.compare n sharp with
-                    | Eq -> Some (Modalcell.vcomp sharp_unit flat_counit) (* ♭ ⇒ id ⇒ ♯ *)
+                    match Modality.compare n shape with
+                    | Eq -> Some (Modalcell.vcomp shape_unit flat_counit) (* ♭ ⇒ id ⇒ ʃ *)
                     | Neq -> None))
             | Neq -> None))
 
   (* The normalization of a modality: an isomorphic normal form together with the isomorphism (in
-     both directions).  Every modality is isomorphic to exactly one of id, ♯, ♭. *)
+     both directions).  Every modality is isomorphic to exactly one of id, ʃ, ♭. *)
   type (_, _, _) normalize =
     | Normalize :
         ('a, 'nf, 'b) Modality.t * ('a, 'm, 'nf, 'b) Modalcell.t * ('a, 'nf, 'm, 'b) Modalcell.t
         -> ('a, 'm, 'b) normalize
 
   (* Prepend a generator g (on the source side, i.e. applied first) to an already-normalized
-     modality, and renormalize.  Whatever nf is (id, ♯, or ♭), the result always collapses to g
+     modality, and renormalize.  Whatever nf is (id, ʃ, or ♭), the result always collapses to g
      alone: id absorbs trivially, a repeated generator collapses by idempotence, and a mixed pair
      collapses by one of the two given isomorphisms (with the newly-prepended, more source-side
      generator always the survivor).  We are given the isomorphisms g·rest ⇒ g·nf (g_to) and
@@ -188,24 +188,24 @@ struct
       (c, gm, b) normalize =
    fun g nf g_to g_from ->
     match
-      ( Modality.Gen.compare g Sharp.modality,
+      ( Modality.Gen.compare g Shape.modality,
         Modality.Gen.compare g Flat.modality,
         Modality.compare nf (Modality.id typ),
-        Modality.compare nf sharp,
+        Modality.compare nf shape,
         Modality.compare nf flat )
     with
-    (* g = ♯ *)
-    | Eq, _, Eq, _, _ -> Normalize (sharp, g_to, g_from) (* ♯·id = ♯ *)
+    (* g = ʃ *)
+    | Eq, _, Eq, _, _ -> Normalize (shape, g_to, g_from) (* ʃ·id = ʃ *)
     | Eq, _, _, Eq, _ ->
-        (* ♯·♯ = ♯♯ ≅ ♯ *)
-        Normalize (sharp, Modalcell.vcomp sharp_mult g_to, Modalcell.vcomp g_from sharp_mult_inv)
+        (* ʃ·ʃ = ʃʃ ≅ ʃ *)
+        Normalize (shape, Modalcell.vcomp shape_mult g_to, Modalcell.vcomp g_from shape_mult_inv)
     | Eq, _, _, _, Eq ->
-        (* ♯·♭ = ♭♯ ≅ ♯ *)
-        Normalize (sharp, Modalcell.vcomp fs_to g_to, Modalcell.vcomp g_from fs_from)
+        (* ʃ·♭ = ♭ʃ ≅ ʃ *)
+        Normalize (shape, Modalcell.vcomp fs_to g_to, Modalcell.vcomp g_from fs_from)
     (* g = ♭ *)
     | _, Eq, Eq, _, _ -> Normalize (flat, g_to, g_from) (* ♭·id = ♭ *)
     | _, Eq, _, Eq, _ ->
-        (* ♭·♯ = ♯♭ ≅ ♭ *)
+        (* ♭·ʃ = ʃ♭ ≅ ♭ *)
         Normalize (flat, Modalcell.vcomp sf_to g_to, Modalcell.vcomp g_from sf_from)
     | _, Eq, _, _, Eq ->
         (* ♭·♭ = ♭♭ ≅ ♭ *)
@@ -223,7 +223,7 @@ struct
           Modalcell.prewhisker (Suc (Zero, g)) (Suc (Zero, g)) from_nf (Modality.of_gen g) in
         prepend g nf g_to g_from
 
-  (* Every composite modality is isomorphic to a normal form (id, ♯, or ♭).  find_unique
+  (* Every composite modality is isomorphic to a normal form (id, ʃ, or ♭).  find_unique
      normalizes both modalities, looks up the bridge 2-cell between the normal forms, and
      composes with the isomorphisms. *)
   let find_unique : type a m n b.
@@ -257,7 +257,7 @@ struct
     let tangible _ = true
     let pellucid _ = false
 
-    (* The left adjoints (the identity and ♯) are transparent; ♭ is not. *)
+    (* The left adjoints (the identity and ʃ) are transparent; ♭ is not. *)
     let transparent : type a m b. (a, m, b) Modality.t -> bool =
      fun m ->
       let (Normalize (nf, _, _)) = normalize m in
@@ -275,17 +275,17 @@ let install (module V : Variant) modes modalities =
   | [] -> ()
   | _ -> failwith "wrong number of mode names for cospatial mode theory");
   let module Type = Mode.Generate (TypeGen) in
-  let module Sh = SharpGen (V) (Type) in
+  let module Sh = ShapeGen (V) (Type) in
   let module Fl = FlatGen (V) (Type) in
   (match modalities with
-  | [ sharp; flat ] ->
-      Sh.name := sharp;
+  | [ shape; flat ] ->
+      Sh.name := shape;
       Fl.name := flat
   | [] -> ()
   | _ -> failwith "wrong number of modality names for cospatial mode theory");
   Modality.set_one_char true modalities;
-  let module Sharp = Modality.Generate (Sh) in
+  let module Shape = Modality.Generate (Sh) in
   let module Flat = Modality.Generate (Fl) in
-  let module Cells = CospatialCells (V) (Type) (Sharp) (Flat) in
+  let module Cells = CospatialCells (V) (Type) (Shape) (Flat) in
   Modalcell.choose_theory (module Cells : Modalcell.Theory);
   Modality.choose_theory (module Cells.Modalities : Modality.Theory)

@@ -59,10 +59,10 @@ The currently available mode theories are selected by command-line flags, and ar
    | ``♯∘♯ ≅ ♯``, ``1 ⇒ ♯``,
    | ``♯♭ ≅ ♯``, ``♭♯ ≅ ♭``
    | (locally posetal)"
-   "``-cospatial``", "``Type``", "| ``♯ : Type → Type``
-   | ``♭ : Type → Type``", "| ``♯∘♯ ≅ ♯``, ``1 ⇒ ♯``,
+   "``-cospatial``", "``Type``", "| ``ʃ : Type → Type``
+   | ``♭ : Type → Type``", "| ``ʃ∘ʃ ≅ ʃ``, ``1 ⇒ ʃ``,
    | ``♭∘♭ ≅ ♭``, ``♭ ⇒ 1``,
-   | ``♯♭ ≅ ♭``, ``♭♯ ≅ ♯``
+   | ``ʃ♭ ≅ ♭``, ``♭ʃ ≅ ʃ``
    | (locally posetal)"
    "``-ambiflector``", "``Type``", "``♮ : Type → Type``", "| ``♮ ⊣ ♮``, ``♮∘♮ ≅ ♮``,
    | ``1 ⇒ ♮``, ``♮ ⇒ 1``,
@@ -106,7 +106,7 @@ Just as ordinary dependent type theory has semantics in any (∞-)topos, modal t
 On the names for these theories that may not be self-explanatory:
 
 * ``-spatial`` type theory was so-called in the paper `Brouwer's fixed-point theorem in real-cohesive homotopy type theory <https://arxiv.org/abs/1509.07584>`_ because its intended models were toposes of spaces, with ``♭`` assigning the discrete topology and ``♯`` the codiscrete one, and ``♭ ⊣ ♯``.
-* ``-cospatial`` is the dual of ``-spatial``, with ``♯ ⊣ ♭`` instead.
+* ``-cospatial`` is the dual of ``-spatial``, with ``ʃ ⊣ ♭`` instead.
 * ``-crisp`` type theory was so-called in the paper `Internal Universes in Models of Homotopy Type Theory <https://arxiv.org/abs/1801.07664>`_ because its ``♭``-annotated variables (see below) were called "crisp" variables (taken from the previous paper).
 * ``-local`` indicates a "local geometric morphism", which is the name in topos theory for such an adjoint triple of finite-limit-preserving functors between toposes with the outer adjoints ``△`` and ``∇`` fully faithful.  Note that ``△□`` and ``∇□`` are an adjoint pair of a coreflector and a reflector on ``Type``, so this contains ``-spatial`` as a sub-theory.
 * ``-tconn`` is short for "totally connected geometric morphism", which is the name in topos theory for such an adjoint triple of finite-limit-preserving functors, with the inner adjoint ``△`` fully faithful.  (The mode theory ``-coreflection`` is also known as a merely *connected* geometric morphism.)  Dually to ``-local``, here ``◇△`` and ``△□`` are an adjoint pair of a reflector and coreflector, so this contains ``-cospatial`` as a sub-theory.

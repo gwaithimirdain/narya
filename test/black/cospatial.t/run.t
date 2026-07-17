@@ -3,7 +3,7 @@
    ￮ constant counit defined
   
    ￫ info[I0000]
-   ￮ constant sharp defined
+   ￮ constant shape defined
   
    ￫ info[I0000]
    ￮ constant wsh defined
@@ -94,40 +94,40 @@ A plain value cannot supply a bare ♭-locked field, since ♭ has no unit of it
   
   [1]
 
-Nor does the reflector ♯ have a counit of its own.
+Nor does the reflector ʃ have a counit of its own.
 
-  $ narya -cospatial -e "def bad2 (A :♯| Type) (x :♯| A) : A ≔ x"
+  $ narya -cospatial -e "def bad2 (A :ʃ| Type) (x :ʃ| A) : A ≔ x"
    ￫ error[E1705]
    ￭ command-line exec string
-   1 | def bad2 (A :♯| Type) (x :♯| A) : A ≔ x
-     ^ use of ♯ variable behind id lock requires a key
+   1 | def bad2 (A :ʃ| Type) (x :ʃ| A) : A ≔ x
+     ^ use of ʃ variable behind id lock requires a key
   
   [1]
 
-The unit and counit of the induced adjunction ♯ ⊣ ♭ only go in that direction.
+The unit and counit of the induced adjunction ʃ ⊣ ♭ only go in that direction.
 
   $ narya -cospatial cospatial.ny -e "def wbad3 (x : Type) : bad3 ≔ bad3. x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def wbad3 (x : Type) : bad3 ≔ bad3. x
-     ^ use of id variable behind ♯♭ lock requires a key
+     ^ use of id variable behind ʃ♭ lock requires a key
   
   [1]
 
-  $ narya -cospatial -e "def bad4 (A :♭♯| Type) (x :♭♯| A) : A ≔ x"
+  $ narya -cospatial -e "def bad4 (A :♭ʃ| Type) (x :♭ʃ| A) : A ≔ x"
    ￫ error[E1705]
    ￭ command-line exec string
-   1 | def bad4 (A :♭♯| Type) (x :♭♯| A) : A ≔ x
-     ^ use of ♭♯ variable behind id lock requires a key
+   1 | def bad4 (A :♭ʃ| Type) (x :♭ʃ| A) : A ≔ x
+     ^ use of ♭ʃ variable behind id lock requires a key
   
   [1]
 
-And there are no 2-cells crossing directly between ♯ and ♭ in the "wrong" direction.
+And there are no 2-cells crossing directly between ʃ and ♭ in the "wrong" direction.
 
-  $ narya -cospatial -e "def bad5 (A :♯| Type) (x :♭| A) : A ≔ x"
+  $ narya -cospatial -e "def bad5 (A :ʃ| Type) (x :♭| A) : A ≔ x"
    ￫ error[E1705]
    ￭ command-line exec string
-   1 | def bad5 (A :♯| Type) (x :♭| A) : A ≔ x
-     ^ use of ♯ variable behind ♭ lock requires a key
+   1 | def bad5 (A :ʃ| Type) (x :♭| A) : A ≔ x
+     ^ use of ʃ variable behind ♭ lock requires a key
   
   [1]
