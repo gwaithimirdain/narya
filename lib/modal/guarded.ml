@@ -67,7 +67,7 @@ module LaterGen (Timed : Mode.Generated with module G := TimedGen) = struct
 
   let src = Timed.mode
   let tgt = Timed.mode
-  let name = ref "▹"
+  let name = ref "▸"
 
   type nonparametric = D.zero
 
@@ -97,15 +97,15 @@ struct
   (* The generating 2-cells.
        box_counit : △□ ⇒ id_Timed
        box_unit : id_Type ⇒ □△ (iso)        box_unit_inv : □△ ⇒ id_Type
-       next : id_Timed ⇒ ▹
-       box_later_iso : □▹ ⇒ □ (iso)          box_later_iso_inv : □ ⇒ □▹
+       next : id_Timed ⇒ ▸
+       box_later_iso : □▸ ⇒ □ (iso)          box_later_iso_inv : □ ⇒ □▸
   *)
   let box_counit = Modalcell.of_gen (Modalcell.generate "ε" tribox (Modality.id typ))
   let box_unit = Modalcell.of_gen (Modalcell.generate "η" (Modality.id disc) boxtri)
   let box_unit_inv = Modalcell.of_gen (Modalcell.generate "η⁻¹" boxtri (Modality.id disc))
   let next = Modalcell.of_gen (Modalcell.generate "next" (Modality.id typ) later)
-  let box_later_iso = Modalcell.of_gen (Modalcell.generate "ε▹" box_later box)
-  let box_later_iso_inv = Modalcell.of_gen (Modalcell.generate "ε▹⁻¹" box box_later)
+  let box_later_iso = Modalcell.of_gen (Modalcell.generate "ε▸" box_later box)
+  let box_later_iso_inv = Modalcell.of_gen (Modalcell.generate "ε▸⁻¹" box box_later)
 
   (* A modality is sinister (a declared left adjoint) if it is the identity or △ (left adjoint to
      □).  Later is not declared as an adjoint. *)
