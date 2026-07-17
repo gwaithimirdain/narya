@@ -159,6 +159,12 @@ let speclist =
           install_mode_theory := Modal.Transformation.install;
           mode_theories := !mode_theories + 1),
       "Select the transformation mode theory (a single 2-cell ○ ⇒ ▱)" );
+    ( "-composable-transformations",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Composable_transformations.install;
+          mode_theories := !mode_theories + 1),
+      "Select the composable transformations mode theory (2-cells ○ ⇒ ▱ ⇒ ▷)" );
     ( "-adjunction",
       Arg.Unit
         (fun () ->

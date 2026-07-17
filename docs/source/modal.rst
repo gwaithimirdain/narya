@@ -35,6 +35,13 @@ The currently available mode theories are selected by command-line flags, and ar
    | ``CodMode``", "| ``○ : DomMode → CodMode``,
    | ``▱ : DomMode → CodMode``", "| ``α : ○ ⇒ ▱``
    | (locally posetal)"
+   "``-composable-transformations``", "| ``DomMode``,
+   | ``CodMode``", "| ``○ : DomMode → CodMode``,
+   | ``▱ : DomMode → CodMode``,
+   | ``▷ : DomMode → CodMode``", "| ``α : ○ ⇒ ▱``,
+   | ``β : ▱ ⇒ ▷``,
+   | ``βα : ○ ⇒ ▷``
+   | (locally posetal)"
    "| ``-coreflector``,
    | a.k.a. ``-crisp``", "``Type``", "``♭ : Type → Type``", "| ``♭∘♭ ≅ ♭``, ``♭ ⇒ 1``
    | (locally posetal)"
