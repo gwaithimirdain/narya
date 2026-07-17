@@ -559,21 +559,27 @@ module Equal = struct
             return ())
     | Lock _ -> (
         let (Ordered_remove_locks (envctx, locks)) = Termctx.ordered_remove_locks envctx in
-        let (Restrict_keys (env1, keys1, pre1)) = restrict_keys_plus_lock env1 locks in
-        let (Restrict_keys (env2, keys2, pre2)) = restrict_keys_plus_lock env2 locks in
-        match Modalcell.compare keys1 keys2 with
-        | Neq -> fatal (Modalcell_mismatch ("equal_env", keys1, keys2))
-        | Eq ->
-            (* The composite lock keys are determined by the (shared) codomain context, so a mismatch is an anomaly; but the prekeys come from the actual values and can genuinely differ, so a mismatch there is an ordinary inequality. *)
-            let* () =
-              guard (prekey_equal pre1 pre2)
-                (Unequal.Variables
-                   (PString (Modalcell.to_string pre1), PString (Modalcell.to_string pre2))) in
-            (* The (equal) prekey actions mediate between a context locked by their vertical source and the actual ambient context, locked by their vertical target.  So we remove the prekey's target from the context and re-lock with its source (both no-ops when there was no prekey) before removing the target of the composite key cell as usual. *)
-            let (Remove_lock (ctx, _)) = Ctx.remove_lock ctx (Modalcell.vtgt pre1) in
-            let (Locked (_, ctx)) = Ctx.lock ctx (Modalcell.vsrc pre1) in
-            let (Remove_lock (ctx, _)) = Ctx.remove_lock ctx (Modalcell.vtgt keys1) in
-            equal_ordered_env ctx env1 env2 envctx)
+        let (Restrict_keys (env1, extra1, _, keys1, pre1)) = restrict_keys_plus_lock env1 locks in
+        let (Restrict_keys (env2, extra2, _, keys2, pre2)) = restrict_keys_plus_lock env2 locks in
+        (* Since we removed a maximal run of locks, and a key can only span locks, the split can never land in the middle of a key here, so there is nothing extra. *)
+        match (extra1, extra2) with
+        | Plus_lock (Suc _, _), _ | _, Plus_lock (Suc _, _) ->
+            fatal (Anomaly "restrict_keys split a key in equal_env")
+        | Plus_lock (Zero _, Zero), Plus_lock (Zero _, Zero) -> (
+            match Modalcell.compare keys1 keys2 with
+            | Neq -> fatal (Modalcell_mismatch ("equal_env", keys1, keys2))
+            | Eq ->
+                (* The composite lock keys are determined by the (shared) codomain context, so a mismatch is an anomaly; but the prekeys come from the actual values and can genuinely differ, so a mismatch there is an ordinary inequality. *)
+                let* () =
+                  guard (prekey_equal pre1 pre2)
+                    (Unequal.Variables
+                       (PString (Modalcell.to_string pre1), PString (Modalcell.to_string pre2)))
+                in
+                (* The (equal) prekey actions mediate between a context locked by their vertical source and the actual ambient context, locked by their vertical target.  So we remove the prekey's target from the context and re-lock with its source (both no-ops when there was no prekey) before removing the target of the composite key cell as usual. *)
+                let (Remove_lock (ctx, _)) = Ctx.remove_lock ctx (Modalcell.vtgt pre1) in
+                let (Locked (_, ctx)) = Ctx.lock ctx (Modalcell.vsrc pre1) in
+                let (Remove_lock (ctx, _)) = Ctx.remove_lock ctx (Modalcell.vtgt keys1) in
+                equal_ordered_env ctx env1 env2 envctx))
 end
 
 let fallback f =
