@@ -40,6 +40,18 @@ def roundtrip_good_ok (A :△□| Type) (x :△□| A)
 ` supply counit's △□-locked argument, does not typecheck.
 ` def roundtrip_bad (A : Type) (x : A) : A ≔ counit A x
 
+` △□ is also adjoint to itself (unit id ⇒ △□∘△□ via unit-then-tribox_insert, counit
+` △□∘△□ ⇒ id via tribox_extract-then-counit), so it too is sinister and can parametrize a modal
+` (negative) field, just as ♮ does in Ambiflector.
+def Neg (A :△□| Type) : Type ≔ codata [ (x :△□| _) .un : A ]
+
+def mk (A :△□| Type) (a :△□| A) : Neg A ≔ [ .un ↦ a ]
+
+def unmk (A :△□| Type) (u :△□| Neg A) : A ≔ (u :△□| _) .un
+
+` unmk (mk a) reduces to a, with the (unique) key applied.
+def unmk_mk (A :△□| Type) (a :△□| A) : Id A (unmk A (mk A a)) a ≔ refl a
+
 ` △ is sinister (△ ⊣ □), so it can parametrize a modal (negative) field.
 def □ (A :□| Type) : Disc ≔ codata [ (x :△| _) .unbox : A ]
 

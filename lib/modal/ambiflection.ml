@@ -26,7 +26,14 @@ open Dim
    the sub-theory of 2-cells whose source and target modes are both Type is thus identical to the
    whole of Ambiflector, with △□ playing the role of ♮.  Modalities have exactly five normal forms:
    id_Disc, id_Type, △, □, and △□ (every longer alternating word collapses via the □△ ≅ id_Disc
-   isomorphism, one adjacent pair at a time, down to one of these). *)
+   isomorphism, one adjacent pair at a time, down to one of these).
+
+   Just as ♮ is adjoint to itself in Ambiflector, △□ is adjoint to itself here: composing the
+   unit id_Type ⇒ △□ with △□ whiskered onto it gives a unit id_Type ⇒ △□∘△□, and composing △□
+   whiskered onto the counit △□ ⇒ id_Type with the counit again gives a counit △□∘△□ ⇒ id_Type;
+   the triangle identities hold automatically because the endomorphisms of △□ are also thin (so
+   any two parallel self-maps of △□ are equal).  Thus △□ is sinister and, like the identity, △,
+   and □, transparent. *)
 
 module type Variant = sig
   type nonparametric
@@ -131,13 +138,39 @@ struct
   let counit = Modalcell.of_gen (Modalcell.generate "ε△□" tribox (Modality.id typ))
   let zero = Modalcell.of_gen (Modalcell.generate "ø" (Modality.id typ) (Modality.id typ))
 
+  (* △□ is also adjoint to itself, exactly as ♮ is in Ambiflector.  We build the two cells
+     id_Type ⇒ △□∘△□ and △□∘△□ ⇒ id_Type needed for this by whiskering the ordinary unit/counit
+     with △□ itself (postwhisker "m∘-" by △□, using Modality.comp to compute the resulting
+     composite shape automatically) and then composing with the ordinary unit/counit again,
+     exactly as mult/comult would be used in Ambiflector if △□ were a separate generator instead
+     of a composite. *)
+  let tribox_insert =
+    Modalcell.postwhisker Zero
+      (Suc (Suc (Zero, Triangle.modality), Box.modality))
+      tribox unit
+  (* tribox_insert : △□ ⇒ △□∘△□ *)
+
+  let tribox_extract =
+    Modalcell.postwhisker
+      (Suc (Suc (Zero, Triangle.modality), Box.modality))
+      Zero tribox counit
+  (* tribox_extract : △□∘△□ ⇒ △□ *)
+
+  let self_unit = Modalcell.vcomp tribox_insert unit
+  let self_counit = Modalcell.vcomp counit tribox_extract
+
   (* A modality is sinister (a declared left adjoint) if it is an identity, △ (left adjoint to □,
-     via △ ⊣ □), or □ (left adjoint to △, via □ ⊣ △). *)
+     via △ ⊣ □), □ (left adjoint to △, via □ ⊣ △), or △□ (left adjoint to itself). *)
   let sinister : type a f b. (a, f, b) Modality.t -> (a, f, b) Modalcell.sinister option =
    fun f ->
-    match (Modality.compare_id f, Modality.compare f tri, Modality.compare f box) with
-    | Eq, _, _ -> Some (Modalcell.id_sinister (Modality.src f))
-    | _, Eq, _ ->
+    match
+      ( Modality.compare_id f,
+        Modality.compare f tri,
+        Modality.compare f box,
+        Modality.compare f tribox )
+    with
+    | Eq, _, _, _ -> Some (Modalcell.id_sinister (Modality.src f))
+    | _, Eq, _, _ ->
         (* △ ⊣ □ *)
         Some
           (Sinister
@@ -150,7 +183,7 @@ struct
                   left_right = Suc (Zero, Box.modality);
                   counit;
                 }))
-    | _, _, Eq ->
+    | _, _, Eq, _ ->
         (* □ ⊣ △ *)
         Some
           (Sinister
@@ -162,6 +195,19 @@ struct
                   unit;
                   left_right = Suc (Zero, Triangle.modality);
                   counit = box_unit_inv;
+                }))
+    | _, _, _, Eq ->
+        (* △□ ⊣ △□ *)
+        Some
+          (Sinister
+             (Adjunction
+                {
+                  left = tribox;
+                  right = tribox;
+                  right_left = Suc (Suc (Zero, Triangle.modality), Box.modality);
+                  unit = self_unit;
+                  left_right = Suc (Suc (Zero, Triangle.modality), Box.modality);
+                  counit = self_counit;
                 }))
     | _ -> None
 

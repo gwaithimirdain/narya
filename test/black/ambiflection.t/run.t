@@ -27,6 +27,18 @@
    ￮ constant roundtrip_good_ok defined
   
    ￫ info[I0000]
+   ￮ constant Neg defined
+  
+   ￫ info[I0000]
+   ￮ constant mk defined
+  
+   ￫ info[I0000]
+   ￮ constant unmk defined
+  
+   ￫ info[I0000]
+   ￮ constant unmk_mk defined
+  
+   ￫ info[I0000]
    ￮ constant □ defined
   
    ￫ info[I0000]
