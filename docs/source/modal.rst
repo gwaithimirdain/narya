@@ -31,6 +31,10 @@ The currently available mode theories are selected by command-line flags, and ar
    | ``BType``,
    | ``CType``", "| ``○ : AType → BType``,
    | ``▱ : BType → CType``", "--"
+   "``-transformation``", "| ``DomMode``,
+   | ``CodMode``", "| ``○ : DomMode → CodMode``,
+   | ``▱ : DomMode → CodMode``", "| ``α : ○ ⇒ ▱``
+   | (locally posetal)"
    "| ``-coreflector``,
    | a.k.a. ``-crisp``", "``Type``", "``♭ : Type → Type``", "| ``♭∘♭ ≅ ♭``, ``♭ ⇒ 1``
    | (locally posetal)"

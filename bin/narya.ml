@@ -153,6 +153,12 @@ let speclist =
           install_mode_theory := Modal.Composed_functors.install;
           mode_theories := !mode_theories + 1),
       "Select the composed functors mode theory" );
+    ( "-transformation",
+      Arg.Unit
+        (fun () ->
+          install_mode_theory := Modal.Transformation.install;
+          mode_theories := !mode_theories + 1),
+      "Select the transformation mode theory (a single 2-cell ○ ⇒ ▱)" );
     ( "-adjunction",
       Arg.Unit
         (fun () ->
