@@ -1,9 +1,9 @@
 Modal parametric discreteness
 =============================
 
-As remarked under :ref:`Modal type theory`, in general modal features and observational higher-dimensional features "commute" past each other without interacting, e.g. the higher-dimensional versions of modal canonical types are again modal canonical types in the same way.  This section describes two ways that modal type theory can interact with parametricity, inspired by `displayed type theory <https://doi.org/10.1017/S096012952510025X>`_.
+As remarked under :ref:`Modal type theory`, in general modal features and observational higher-dimensional features "commute" past each other without interacting, e.g. the higher-dimensional versions of modal canonical types are again modal canonical types in the same way.  This section describes one way that modal type theory can interact with parametricity, and the next section :ref:`External parametricity` describes another; both are inspired by (and generalize) `displayed type theory <https://doi.org/10.1017/S096012952510025X>`_.
 
-These features require ``-parametric``, and by default we will assume ``-direction p,rel,Br``.  They also require choosing a modified mode theory called a "discrete" mode theory.  The built-in discrete mode theories, along with the ordinary mode theory they modify, their restrictions on the :ref:`arity <Varying the arity of parametricity>`, and their "discrete" modalities and modes and potential "parametricity locker" modalities (to be explained below), are:
+These features require ``-parametric``, and by default we will assume ``-direction p,rel,Br``.  They also require choosing a modified mode theory called a "discrete" mode theory.  The built-in discrete mode theories, along with the ordinary mode theory they modify, their restrictions on the :ref:`arity <Varying the arity of parametricity>`, and their "discrete" modalities and modes (to be explained below) and potential "parametricity locker" modalities (to be explained in :ref:`Modally guarded parametricity`), are:
 
 .. csv-table:: Mode theories
    :widths: auto
@@ -15,7 +15,7 @@ These features require ``-parametric``, and by default we will assume ``-directi
    "``-discrete-coreflector``", "``-coreflector``", "any", "``♭``", "``♭`` (arity 1)"
    "``-discrete-comonad``", "``-comonad``", "any", "``♭``", "``△□``"
    "``-discrete-spatial``", "``-spatial``", "any", "``♭``", "--"
-   "``-discrete-cospatial``", "``-spatial``", "1 only", "``ʃ``, ``♭``", "``♯`` (arity 1)"
+   "``-discrete-cospatial``", "``-spatial``", "1 only", "``ʃ``, ``♭``", "``♭`` (arity 1)"
    "``-discrete-ambiflector``", "``-ambiflector``", "1 only", "``♮``", "--"
    "``-discrete-coreflection``", "``-coreflection``", "any", "``△``, ``Disc``", "``△□`` (arity 1)"
    "``-discrete-adjunction``", "``-adjunction``", "any", "``△``, ``△□``, ``Disc``", "``△□``"
