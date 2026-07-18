@@ -11,7 +11,7 @@ The comonad structure typechecks, and the modal type is parametrically trivial.
    ￮ constant f defined
   
    ￫ info[I0000]
-   ￮ constant ♭T defined
+   ￮ constant ♭ defined
   
    ￫ info[I0000]
    ￮ constant ♭map defined
@@ -20,7 +20,7 @@ The comonad structure typechecks, and the modal type is parametrically trivial.
    ￮ constant ε defined
   
    ￫ info[I0000]
-   ￮ constant △ defined
+   ￮ constant δ defined
   
    ￫ info[I0000]
    ￮ constant T defined
@@ -29,16 +29,16 @@ The comonad structure typechecks, and the modal type is parametrically trivial.
    ￮ constant eq defined
   
    ￫ info[I0000]
-   ￮ constant Br_♭T defined
+   ￮ constant Br_♭ defined
   
    ￫ info[I0000]
-   ￮ constant Br_♭T_trivial defined
+   ￮ constant Br_♭_trivial defined
   
    ￫ info[I0000]
    ￮ constant eqd defined
   
    ￫ info[I0000]
-   ￮ constant Br_♭T_trivial2 defined
+   ￮ constant Br_♭_trivial2 defined
   
 
 Using a ♭-locked variable without a key requires the counit key.
@@ -51,13 +51,13 @@ Using a ♭-locked variable without a key requires the counit key.
   
   [1]
 
-The reflexivity of the *modal* family ♭T has a *filtered* domain: instead of the
+The reflexivity of the *modal* family ♭ has a *filtered* domain: instead of the
 usual square of arguments, it takes a single (A :♭| Type), because ♭ removes the
 parametric dimension.
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel ♭T"
-  Br ♭T
-    : (A :♭| Type) →⁽ᵖ⁾ Type⁽ᵖ⁾ (♭T A) (♭T A)
+  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel ♭"
+  Br ♭
+    : (A :♭| Type) →⁽ᵖ⁾ Type⁽ᵖ⁾ (♭ A) (♭ A)
   
 
 By contrast, the reflexivity of the *non-modal* family T has the usual full
@@ -70,20 +70,20 @@ square domain {A₀} {A₁} (A₂).
 
 The filtered reflexivity computes correctly when applied to an argument.
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel ♭T Type"
-  ♭T⁽ᵖ⁾ Type
-    : Type⁽ᵖ⁾ (♭T Type) (♭T Type)
+  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel ♭ Type"
+  ♭⁽ᵖ⁾ Type
+    : Type⁽ᵖ⁾ (♭ Type) (♭ Type)
   
 
-The filtered higher pi-type can be written explicitly, and refl ♭T checks
+The filtered higher pi-type can be written explicitly, and refl ♭ checks
 against it.
 
-  $ narya -v -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "def rT : (A :♭| Type) →⁽ᵖ⁾ Type⁽ᵖ⁾ (♭T A) (♭T A) ≔ rel ♭T"
+  $ narya -v -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "def rT : (A :♭| Type) →⁽ᵖ⁾ Type⁽ᵖ⁾ (♭ A) (♭ A) ≔ rel ♭"
    ￫ info[I0000]
    ￮ constant f defined
   
    ￫ info[I0000]
-   ￮ constant ♭T defined
+   ￮ constant ♭ defined
   
    ￫ info[I0000]
    ￮ constant ♭map defined
@@ -92,7 +92,7 @@ against it.
    ￮ constant ε defined
   
    ￫ info[I0000]
-   ￮ constant △ defined
+   ￮ constant δ defined
   
    ￫ info[I0000]
    ￮ constant T defined
@@ -101,16 +101,16 @@ against it.
    ￮ constant eq defined
   
    ￫ info[I0000]
-   ￮ constant Br_♭T defined
+   ￮ constant Br_♭ defined
   
    ￫ info[I0000]
-   ￮ constant Br_♭T_trivial defined
+   ￮ constant Br_♭_trivial defined
   
    ￫ info[I0000]
    ￮ constant eqd defined
   
    ￫ info[I0000]
-   ￮ constant Br_♭T_trivial2 defined
+   ￮ constant Br_♭_trivial2 defined
   
    ￫ info[I0000]
    ￮ constant rT defined
@@ -118,9 +118,9 @@ against it.
 
 Iterated reflexivity keeps the filtered single-variable domain.
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel (rel ♭T)"
-  ♭T⁽ᵖᵖ⁾
-    : (A :♭| Type) →⁽ᵖᵖ⁾ Type⁽ᵖᵖ⁾ (♭T⁽ᵖ⁾ A) (♭T⁽ᵖ⁾ A) (♭T⁽ᵖ⁾ A) (♭T⁽ᵖ⁾ A)
+  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel (rel ♭)"
+  ♭⁽ᵖᵖ⁾
+    : (A :♭| Type) →⁽ᵖᵖ⁾ Type⁽ᵖᵖ⁾ (♭⁽ᵖ⁾ A) (♭⁽ᵖ⁾ A) (♭⁽ᵖ⁾ A) (♭⁽ᵖ⁾ A)
   
 
 
@@ -132,19 +132,19 @@ filtered domain, and computes when applied.
     : (A :♭| Type) →⁽ᵖ⁾ Type⁽ᵖ⁾ A A
   
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel ((A : ♭| Type) ↦ ♭T A)"
-  A ↦ ♭T⁽ᵖ⁾ A
-    : (A :♭| Type) →⁽ᵖ⁾ Type⁽ᵖ⁾ (♭T A) (♭T A)
+  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel ((A : ♭| Type) ↦ ♭ A)"
+  A ↦ ♭⁽ᵖ⁾ A
+    : (A :♭| Type) →⁽ᵖ⁾ Type⁽ᵖ⁾ (♭ A) (♭ A)
   
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel ((A : ♭| Type) ↦ ♭T A) Type"
-  ♭T⁽ᵖ⁾ Type
-    : Type⁽ᵖ⁾ (♭T Type) (♭T Type)
+  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel ((A : ♭| Type) ↦ ♭ A) Type"
+  ♭⁽ᵖ⁾ Type
+    : Type⁽ᵖ⁾ (♭ Type) (♭ Type)
   
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel (rel ((A : ♭| Type) ↦ ♭T A))"
-  A ↦ ♭T⁽ᵖᵖ⁾ A
-    : (A :♭| Type) →⁽ᵖᵖ⁾ Type⁽ᵖᵖ⁾ (♭T⁽ᵖ⁾ A) (♭T⁽ᵖ⁾ A) (♭T⁽ᵖ⁾ A) (♭T⁽ᵖ⁾ A)
+  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel (rel ((A : ♭| Type) ↦ ♭ A))"
+  A ↦ ♭⁽ᵖᵖ⁾ A
+    : (A :♭| Type) →⁽ᵖᵖ⁾ Type⁽ᵖᵖ⁾ (♭⁽ᵖ⁾ A) (♭⁽ᵖ⁾ A) (♭⁽ᵖ⁾ A) (♭⁽ᵖ⁾ A)
   
 
 If there is a 2-cell from a non-discrete modality (such as an identity) to a discrete one (such as △◇), then the arity of parametricity must be 1 in order to have a canonical result to compute expressions like this to.
