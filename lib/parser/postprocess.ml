@@ -175,6 +175,10 @@ and args_of_ascvar :
     observation list ->
     wrapped_parse * string located list located * wrapped_parse =
  fun ?loc -> function
+  | [ Token (ldelim, _); Term x; Token (Colon, _); Term ty; Token (rdelim, _) ] -> (
+      match (ldelim, rdelim) with
+      | LParen, RParen -> (Wrap x, locate_opt None [], Wrap ty)
+      | _ -> fatal ?loc (Parse_error "invalid braces"))
   | [
       Token (ldelim, _);
       Term x;
