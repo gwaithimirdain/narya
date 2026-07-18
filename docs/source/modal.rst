@@ -53,7 +53,7 @@ The primary place that modality names appear in code is as *annotations*, which 
 
 where ``x`` is a variable, or sometimes a term, and ``A`` is a type, or sometimes a placeholder ``_``.  (Modality names can also appear in the names of composite keys; see :ref:`Modal cells`.)
 
-Such annotations appear as the domains of :ref:`Modal function-types`, as the arguments of constructors of :ref:`Modal datatypes`, as discriminees in :ref:`Windowed matches`, and as self-variables and projection heads for :ref:`Modal records and codata`.  Since modality names are required to be valid identifiers, they are lexed separately from the symbols ``:`` and ``|``, so no spaces are required in ``:μ|`` no matter what the name of ``μ``.  However, if the modality is a composite and not all modality names are single characters, then spaces are required between the generators.
+Such annotations appear as the domains of :ref:`Modal function-types`, as the arguments of constructors of :ref:`Modal datatypes`, as discriminees in :ref:`Windowed matches`, as self-variables and projection heads for :ref:`Modal records and codata`, and in :ref:`Modal let-bindings`.  Since modality names are required to be valid identifiers, they are lexed separately from the symbols ``:`` and ``|``, so no spaces are required in ``:μ|`` no matter what the name of ``μ``.  However, if the modality is a composite and not all modality names are single characters, then spaces are required between the generators.
 
 In addition, a mode theory can mark some modalities as having further properties, which will be discussed below in appropriate sections.
 
@@ -135,7 +135,7 @@ The entire expression ``(x :μ| A) → B`` is then a type at mode ``q``.  And si
 Elements of the type ``(x :μ| A) → B``, called *modal functions*, are defined by abstraction and used by application, like ordinary functions.  However:
 
 * In an application ``f a`` where ``f : (x :μ| A) → B``, the argument ``a`` is typechecked in the current context locked by ``μ``.
-* In an abstraction ``(x ↦ M) : (x :μ| A) → B``, the body ``M`` is typechecked in the current context extended by a variable ``x`` of type ``A`` annotated by ``μ``.
+* In an abstraction ``(x ↦ M) : (x :μ| A) → B``, the body ``M`` is typechecked in the current context extended by a variable ``x`` of type ``A`` annotated by ``μ``.  Modally, ascribed abstractions such as ``(x :μ| A) ↦ M`` are also allowed, and synthesize if the body ``M`` synthesizes.
 
 Semantically, a modal function in ``(x :μ| A) → B`` is equivalent to a function ``(x : μ A) → B`` where ``μ A`` denotes application of the modal operator associated to the modality ``μ``.  However, syntactically modal functions are, in a sense, more basic, with the modal operator determined by a universal property using modal functions.
 
@@ -335,6 +335,26 @@ and ``Id □′ A₂`` behaves like a record type with a single field
 As before, for the exception see :ref:`Discrete modalities`.
 
 Currently, :ref:`higher fields <Higher coinductive types>` cannot also be modal.
+
+
+Modal let-bindings
+------------------
+
+The variable in a non-recursive let-binding can also be annotated with a modality, as in
+
+.. code-block:: none
+
+   let x :□| A ≔ M in N
+
+As with an ordinary let-binding, this is similar to writing a function redex
+
+.. code-block:: none
+
+   ((x :□| A) ↦ N) M
+
+In particular, therefore, the type ``A`` and the value ``M`` are typechecked in a ``□``-locked context, while the body ``N`` is checked (or synthesized) in a context extended by an annotated variable ``x :□| A``.  And also as in the non-modal case, the difference between a let-binding and a function redex is that ``x`` is bound to the *value* ``M``, not just the type ``A``, already when *checking* the body ``N``.
+
+Recursive let-bindings can not currently be modal.
 
 
 Modal HOTT
