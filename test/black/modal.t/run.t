@@ -476,10 +476,29 @@ adjunction counit.
   (sym s22 :♭| _) .root.1
     : Id A ((s02 :♭| _) .root) ((s12 :♭| _) .root)
   
+   ￫ info[I0001]
+   ￮ axiom a assumed
+  
+   ￫ info[I0000]
+   ￮ constant mk defined
+  
+  a
+    : A
+  
+   ￫ info[I0000]
+   ￮ constant mk_computes defined
+  
+   ￫ info[I0000]
+   ￮ constant mk2 defined
+  
+   ￫ info[I0000]
+   ￮ constant mk2_computes defined
+  
 
-Constructing a tuple/comatch of a modal higher field is not yet implemented.
+Supplying a component of a modal higher field in a comatch omitting its
+suffix (or at a wrong dimension) is an error, as for ordinary higher fields.
 
-  $ narya -spatial higherfields.ny -e "def mk : √♭A ≔ [ .root.e ↦ (mk :♭| _) .root ]"
+  $ narya -spatial higherfields.ny -e "def bad : √♭A ≔ [ .root ↦ a ]"
   (s2 :♭| _) .root
     : A
   
@@ -492,10 +511,13 @@ Constructing a tuple/comatch of a modal higher field is not yet implemented.
   (sym s22 :♭| _) .root.1
     : Id A ((s02 :♭| _) .root) ((s12 :♭| _) .root)
   
-   ￫ error[E0100]
+  a
+    : A
+  
+   ￫ error[E1402]
    ￭ command-line exec string
-   1 | def mk : √♭A ≔ [ .root.e ↦ (mk :♭| _) .root ]
-     ^ unimplemented: tuples/comatches of modal higher fields
+   1 | def bad : √♭A ≔ [ .root ↦ a ]
+     ^ codata method 'root.e' missing in comatch
   
   [1]
 
@@ -513,6 +535,9 @@ Projecting a modal higher field without the locking annotation is an error.
   
   (sym s22 :♭| _) .root.1
     : Id A ((s02 :♭| _) .root) ((s12 :♭| _) .root)
+  
+  a
+    : A
   
    ￫ error[E1712]
    ￭ command-line exec string

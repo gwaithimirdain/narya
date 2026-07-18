@@ -2855,31 +2855,32 @@ and check_field : type mode a b c d s m n mn i et.
           check_fields status eta ctx ty m mn codata_args fields tyargs tms ctms etms errs)
   | ( Higher
         (type f g gmode ian iag)
-        ((adj, ic0, plus_lock, fldty) :
+        ((adj, ic0, fld_plus_lock, fldty) :
           (mode, f, g, gmode) Modalcell.adjunction
           * (i, (c, (mode id, D.zero) dim_entry) snoc, ian, mode) plusmap
           * (ian, mode, g, gmode, iag) plus_lock
           * (gmode, iag, kinetic) term),
       Potential _,
       Noeta,
-      (lazy (Some termctx)) ) -> (
-      (* Constructing a tuple/comatch of a genuinely modal higher field requires checking its component behind a lock by the right adjoint, with a mode-crossing status; that is not yet implemented.  Non-modal (identity-adjunction) higher fields are handled by the existing machinery. *)
-      match Modalcell.compare_adjunction_id adj with
-      | Neq -> fatal (Unimplemented "tuples/comatches of modal higher fields")
-      | Eq ->
-          let Eq = plus_lock_id plus_lock in
-          let Eq = D.plus_uniq mn (D.plus_zero m) in
-          let i = Field.dim fld in
-          check_higher_field status ctx ty m i codata_args fields termctx tyargs tms ctms etms errs
-            fld
-            (PlusPbijmap.build m i { build = (fun _ -> None) })
-            (InsmapOf.build m i { build = (fun _ -> None) })
-            (all_pbij_between m i) prev_etm ic0 fldty)
+      (lazy (Some termctx)) ) ->
+      let Eq = D.plus_uniq mn (D.plus_zero m) in
+      let i = Field.dim fld in
+      (* Like a lower modal field, the components of a modal higher field are checked behind a lock by the right adjoint.  We create the lock of the checked context b once, outside the recursion over pbijs, so that all the accumulated components share the same locked context type. *)
+      let (Adjunction { right; _ }) = adj in
+      let (Has_plus_lock
+             (type bg)
+             (ctx_plus_lock : (b, mode, g, gmode, bg) plus_lock)) =
+        plus_lock right in
+      check_higher_field status ctx ty m i codata_args fields termctx tyargs tms ctms etms errs fld
+        adj ctx_plus_lock
+        (PlusPbijmap.build m i { build = (fun _ -> None) })
+        (InsmapOf.build m i { build = (fun _ -> None) })
+        (all_pbij_between m i) prev_etm ic0 fld_plus_lock fldty
   | Higher _, Potential _, _, (lazy None) ->
       fatal (Anomaly "missing termctx in codatatype with higher fields")
   | Higher _, Kinetic _, _, _ -> .
 
-and check_higher_field : type mode a b c d m i ic0.
+and check_higher_field : type mode f g gmode a b bg c d m i ian iag.
     (mode, b, potential) status ->
     (mode, a, b) Ctx.t ->
     (* Type being checked against and its data *)
@@ -2898,21 +2899,26 @@ and check_higher_field : type mode a b c d m i ic0.
     Code.t Asai.Diagnostic.t Bwd.t ->
     (* Field being checked *)
     i Field.t ->
+    (* Its adjunction, and the lock of the checked context b by the right adjoint, behind which its components live.  For an ordinary field these are the identity adjunction and the trivial lock. *)
+    (mode, f, g, gmode) Modalcell.adjunction ->
+    (b, mode, g, gmode, bg) plus_lock ->
     (* Values of this field checked so far, as terms *)
-    (m, i, mode * b) PlusPbijmap.t ->
+    (m, i, gmode * bg) PlusPbijmap.t ->
     (* Evaluated versions of those of them that are insertions (hence can be used) *)
-    (m, i, (mode, potential) lazy_eval option) InsmapOf.t ->
+    (m, i, (gmode, potential) lazy_eval option) InsmapOf.t ->
     (* Remaining pbijs to check *)
     (m, i) pbij_between Seq.t ->
     (* Term-up-until-now *)
     ((mode, kinetic) value, Code.t) Result.t ->
-    (* The unevaluated type of the current field being checked. *)
-    (i, (c, (mode id, D.zero) dim_entry) snoc, ic0, mode) plusmap ->
-    (mode, ic0, kinetic) term ->
+    (* The unevaluated type of the current field being checked, behind a lock by the right adjoint. *)
+    (i, (c, (mode id, D.zero) dim_entry) snoc, ian, mode) plusmap ->
+    (ian, mode, g, gmode, iag) plus_lock ->
+    (gmode, iag, kinetic) term ->
     ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t
     * (mode * (m * b * potential * no_eta)) Term.StructfieldAbwd.t =
  fun status ctx ty m intrinsic ({ env; _ } as codata_args) fields termctx tyargs tms ctms etms errs
-     fld cvals evals pbijs prev_etm ic0 fldty ->
+     fld adj ctx_plus_lock cvals evals pbijs prev_etm ic0 fld_plus_lock fldty ->
+  let (Adjunction { left; right; _ }) = adj in
   (* We recurse through all the partial bijections that could be associated to this field name. *)
   match Seq.uncons pbijs with
   | Some
@@ -2928,8 +2934,15 @@ and check_higher_field : type mode a b c d m i ic0.
              ((plusmap, degctx, degenv) :
                (r, b, rb, mode) plusmap * (mode, a, rb) Ctx.t * (mode, r, b) env)) =
         degctx ctx r in
+      (* Commute the degeneracy plusmap past the right-adjoint lock: this yields the corresponding degeneracy of the locked context bg together with the lock of the degenerated context rb, sharing the doubly-extended context rbg.  Then we lock the degenerated context to it: the component of a modal higher field is checked behind the lock by the right adjoint, like that of a lower field.  For an ordinary field all of this is trivial. *)
+      let (Shift
+             (type rbg)
+             ((plusmap_bg, deg_plus_lock) :
+               (r, bg, rbg, gmode) plusmap * (rb, mode, g, gmode, rbg) plus_lock)) =
+        shift_unplus_lock r plusmap ctx_plus_lock in
+      let lctx = Ctx.lock_to degctx right deg_plus_lock in
       (* To make a new status, the arguments need to be eval-readbacked into degctx, and for that to make sense the head needs to be higher-dimensional also. *)
-      let newstatus : (mode, rb, potential) status =
+      let newstatus : (gmode, rbg, potential) status =
         match status with
         | Potential
             (type hm aa any)
@@ -3035,18 +3048,16 @@ and check_higher_field : type mode a b c d m i ic0.
             (* We add the current field projection to the args, with an insertion obtained by incorporating the remaining dimensions into the evaluation. *)
             let (Plus rm) = D.plus m in
             let newins = ins_plus_of_pbij fldins fldshuf rm in
-            (* This function currently only handles non-modal (identity-adjunction) higher fields, so the projecting modality is the identity and its filter (at the result dimension) is trivial. *)
-            let (Has_filter idfilter) =
-              Modality.filter (Modality.id (Ctx.mode ctx)) (cod_left_ins newins) in
-            let args = Value.Field (args, idfilter, fld, ni, newins) in
-            (* To hypothesize a value for the current term, we insert the supposed value as the value of this field.  Note the context rb of the supposed value is the degenerated rb instead of the original b, but this is exactly right for the value that's supposed to go in at this pbij.  *)
-            let hyp (tm : (mode, rb, potential) term) : (hm, aa, potential) term =
-              (* This function only handles non-modal (identity-adjunction) higher fields. *)
+            (* The Field entry crosses modes: the inner spine lives at the codatatype's mode and the projection at the left adjoint's target, and it stores the filter of the left adjoint at the (outer) result dimension.  Since we require modal higher fields to be parametric, this filter is trivial; for an ordinary field the modality itself is the identity. *)
+            let (Has_filter lfilter) = Modality.filter left (cod_left_ins newins) in
+            let args = Value.Field (args, lfilter, fld, ni, newins) in
+            (* To hypothesize a value for the current term, we insert the supposed value as the value of this field.  Note the context rbg of the supposed value is the degenerated and locked rbg instead of the original b, but this is exactly right for the value that's supposed to go in at this pbij.  *)
+            let hyp (tm : (gmode, rbg, potential) term) : (hm, aa, potential) term =
               let hsf =
                 Term.Structfield.Higher
-                  ( Modalcell.id_adjunction (Ctx.mode ctx),
-                    plus_no_lock (Ctx.mode ctx),
-                    PlusPbijmap.set pbij (Some (PlusFam (plusmap, tm))) cvals ) in
+                  ( adj,
+                    ctx_plus_lock,
+                    PlusPbijmap.set pbij (Some (PlusFam (plusmap_bg, tm))) cvals ) in
               let ctms = Snoc (ctms, Entry (fld, hsf)) in
               hyp (Term.Struct { eta = Noeta; dim = m; fields = ctms; energy = energy status })
             in
@@ -3107,43 +3118,34 @@ and check_higher_field : type mode a b c d m i ic0.
                       } in
                   { tm; ty = inst ity tyargs });
             } in
-        (* Evaluate the type for this instance of the field, and check the user's term against it. *)
-        (* Non-modal higher field: identity adjunction and trivial lock, checked with no counit keying. *)
+        (* Evaluate the type for this instance of the field (behind the lock by the right adjoint, hence with no counit keying), and check the user's term against it in the locked degenerated context. *)
         let ety =
-          tyof_higher_codatafield prev_etm fld
-            (Modalcell.id_adjunction (Ctx.mode ctx))
-            env tyargs fldins ic0
-            (plus_no_lock (Ctx.mode ctx))
-            fldty ~shuf ~key:`Nokey in
-        let ctm = check newstatus degctx tm ety in
+          tyof_higher_codatafield prev_etm fld adj env tyargs fldins ic0 fld_plus_lock fldty ~shuf
+            ~key:`Nokey in
+        let ctm = check newstatus lctx tm ety in
         (* Add the typechecked term to the list *)
-        let cvals = PlusPbijmap.set pbij (Some (PlusFam (plusmap, ctm))) cvals in
+        let cvals = PlusPbijmap.set pbij (Some (PlusFam (plusmap_bg, ctm))) cvals in
         (* If there are no remaining dimensions, we can evaluate the term and add it to the list of evaluated fields. *)
         let evals =
           match D.compare_zero r with
           | Pos _ -> evals
           | Zero ->
               let Eq = eq_of_zero_shuffle fldshuf in
-              InsmapOf.set fldins (Some (lazy_eval (Ctx.env degctx) ctm)) evals in
+              InsmapOf.set fldins (Some (lazy_eval (Ctx.env lctx) ctm)) evals in
         (evals, cvals, errs) in
       check_higher_field status ctx ty m intrinsic codata_args fields termctx tyargs tms ctms etms
-        errs fld cvals evals pbijs prev_etm ic0 fldty
+        errs fld adj ctx_plus_lock cvals evals pbijs prev_etm ic0 fld_plus_lock fldty
   | None ->
       let plusdim = D.zero_plus m in
-      let env = Ctx.env ctx in
+      (* The stored environment and values of a modal higher field live behind the lock by the right adjoint, so we key the ambient environment by it (a no-op for ordinary fields). *)
+      let env = key_id_env (Ctx.env ctx) ctx_plus_lock in
       let deg = id_deg (D.plus_out (dim_env env) plusdim) in
-      (* This function only handles non-modal (identity-adjunction) higher fields. *)
-      let idadj = Modalcell.id_adjunction (Ctx.mode ctx) in
-      let idlock = plus_no_lock (Ctx.mode ctx) in
       let etms =
         Snoc
           ( etms,
-            Entry
-              ( fld,
-                Higher
-                  (lazy { adj = idadj; vals = evals; intrinsic; plusdim; env; deg; terms = cvals })
-              ) ) in
-      let ctms = Snoc (ctms, Entry (fld, Higher (idadj, idlock, cvals))) in
+            Entry (fld, Higher (lazy { adj; vals = evals; intrinsic; plusdim; env; deg; terms = cvals }))
+          ) in
+      let ctms = Snoc (ctms, Entry (fld, Higher (adj, ctx_plus_lock, cvals))) in
       check_fields status Noeta ctx ty m (D.plus_zero m) codata_args fields tyargs tms ctms etms
         errs
 
