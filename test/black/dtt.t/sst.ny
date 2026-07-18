@@ -126,10 +126,36 @@ def sst.sum (X Y : SST) : SST ≔ [
   | inl. x ↦ sst.sum⁽ᵈ⁾ (X .s x) (sst.const Y sst.∅)
   | inr. y ↦ sst.sum⁽ᵈ⁾ (sst.const X sst.∅) (Y .s y)]]
 
+{` The product of a family of SSTs indexed by a discrete type. `}
+def sst.discprod (A :△| Disc) (X : (a :△| A) → SST) : SST ≔ [
+| .z ↦ (a :△| A) → X a .z
+| .s ↦ p ↦ sst.discprod⁽ᵈ⁾ A {X} (a ↦ X a .s (p a))]
+
 {` Augmented SSTs are another displayed coinductive. `}
 def ASST : Type ≔ codata [ X .z : Type | X .s : ASST⁽ᵈ⁾ X ]
 
-{` As is pointedness of an SST. `}
+{` Every global type can be regarded as a synthetic augmented SST, hence an analytic one. `}
+def asst.Int (X :△□| Type) : ASST ≔ [ .z ↦ X | .s ↦ asst.Int⁽ᵈ⁾ X ]
+
+{` Every ASST has a fiber over a point that is an SST. `}
+def asst.Fib (X : ASST) (x : X .z) : SST ≔ [
+| .z ↦ X .s .z x
+| .s ↦ y ↦ asst.Fib⁽ᵈ⁾ (X .s) y]
+
+{` Combining the previous two, we get that every global type has a fiber over a point that is an SST.  To define this directly, we would need △□-guarded display rather than only fully external display. `}
+def sst.Fib (X :△□| Type) (x : X) : SST ≔ asst.Fib (asst.Int X) x
+
+{` However, the fact that we can do this combination means we can sneakily access △□-guarded display. `}
+def disp (X :△□| Type) (x : X) : Type ≔ asst.Int X .s .z x
+
+{` In fact, there is an easier way to access display, without using displayed coinductives: `}
+def disp′ (X :△□| Type) (x : X) : Type
+  ≔ ((Y ↦ Y) : ((_ :△□| Type) → Type))⁽ᵈ⁾ X x
+
+def d (X :△□| Type) (x :△□| X) : disp′ X x
+  ≔ ((Y y ↦ y) : ((X :△□| Type) (x :△□| X) → X))⁽ᵈ⁾ X x
+
+{` Pointedness of an SST is another displayed coinductive. `}
 def sst.pt (X : SST) : Type ≔ codata [
 | p .z : X .z
 | p .s : sst.pt⁽ᵈ⁾ (X .s (p .z)) p ]
@@ -144,7 +170,8 @@ def sst.id (X : SST) : sst.hom X X ≔ [
 | .z ↦ x ↦ x
 | .s ↦ x ↦ sst.id⁽ᵈ⁾ (X .s x)]
 
-def sst.comp (X Y Z : SST) (g : sst.hom Y Z) (f : sst.hom X Y) : sst.hom X Z
+def sst.comp (X Y Z : SST) (g : sst.hom Y Z) (f : sst.hom X Y)
+  : sst.hom X Z
   ≔ [
 | .z ↦ x ↦ g .z (f .z x)
 | .s ↦ x ↦

@@ -8,22 +8,22 @@ type (_, _) bwsface =
   | Mid : ('m, 'n) bwsface -> ('m D.suc, 'n D.suc) bwsface
 
 let rec dom_bwsface : type m n. (m, n) bwsface -> m D.t = function
-  | Zero -> Nat Zero
+  | Zero -> Word Zero
   | End (_, f) ->
-      let (Nat s) = dom_bwsface f in
-      Nat s
+      let (Word s) = dom_bwsface f in
+      Word s
   | Mid f ->
-      let (Nat s) = dom_bwsface f in
-      Nat (Suc s)
+      let (Word s) = dom_bwsface f in
+      Word (Suc (s, Unit))
 
 let rec cod_bwsface : type m n. (m, n) bwsface -> n D.t = function
-  | Zero -> Nat Zero
+  | Zero -> Word Zero
   | End (_, f) ->
-      let (Nat s) = cod_bwsface f in
-      Nat (Suc s)
+      let (Word s) = cod_bwsface f in
+      Word (Suc (s, Unit))
   | Mid f ->
-      let (Nat s) = cod_bwsface f in
-      Nat (Suc s)
+      let (Word s) = cod_bwsface f in
+      Word (Suc (s, Unit))
 
 let sface_of_bw : type m n. (m, n) bwsface -> (m, n) sface =
  fun bf ->

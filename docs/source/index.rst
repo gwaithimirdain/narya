@@ -31,6 +31,9 @@ Narya is very much a work in progress. Expect breaking changes, including even i
    parametricity
    higher-types
    hott
+   modal
+   discrete
+   external
    displayed
    nominal
    remarks

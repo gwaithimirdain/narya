@@ -9,15 +9,15 @@ type ('m, 'n) perm =
 
 let rec dom_perm : type m n. (m, n) perm -> m D.t = function
   | Zero -> D.zero
-  | Suc (p, i) -> D.insert_out (dom_perm p) i
+  | Suc (p, i) -> D.insert i (dom_perm p) Unit
 
 let rec cod_perm : type a b. (a, b) perm -> b D.t = function
   | Zero -> D.zero
   | Suc (p, _) -> D.suc (cod_perm p)
 
 let rec id_perm : type a. a D.t -> (a, a) perm = function
-  | Nat Zero -> Zero
-  | Nat (Suc a) -> Suc (id_perm (Nat a), Now)
+  | Word Zero -> Zero
+  | Word (Suc (a, Unit)) -> Suc (id_perm (Word a), Now)
 
 let rec is_id_perm : type a b. (a, b) perm -> (a, b) Eq.compare = function
   | Zero -> Eq
@@ -36,7 +36,7 @@ let rec deg_of_perm : type m n. (m, n) perm -> (m, n) deg = function
 
 (* Conversely, a degeneracy *might* be a permutation. *)
 let rec perm_of_deg : type m n. (m, n) deg -> (m, n) perm option = function
-  | Zero (Nat Zero) -> Some Zero
+  | Zero (Word Zero) -> Some Zero
   | Zero _ -> None
   | Suc (p, i) -> (
       match perm_of_deg p with
@@ -73,7 +73,7 @@ let rec perm_plus : type m n k mk nk.
  fun s nk mk ->
   match (nk, mk) with
   | Zero, Zero -> s
-  | Suc nk, Suc mk -> Suc (perm_plus s nk mk, Now)
+  | Suc (nk, Unit), Suc (mk, Unit) -> Suc (perm_plus s nk mk, Now)
 
 let rec perm_plus_perm : type m n mn k l kl.
     (k, m) perm -> (m, n, mn) D.plus -> (k, l, kl) D.plus -> (l, n) perm -> (kl, mn) perm =
@@ -83,7 +83,7 @@ let rec perm_plus_perm : type m n mn k l kl.
       let Zero, Zero = (mn, kl) in
       skm
   | Suc (sln', i) ->
-      let (Suc mn') = mn in
+      let (Suc (mn', Unit)) = mn in
       let (Plus kl') = D.plus (dom_perm sln') in
       Suc (perm_plus_perm skm mn' kl' sln', D.plus_insert kl' kl i)
 
@@ -110,12 +110,12 @@ let rec deg_perm_of_plus : type ml n k nk.
  fun nk s ->
   match nk with
   | Zero -> Deg_perm_of_plus (Zero, s, id_perm D.zero)
-  | Suc nk -> (
+  | Suc (nk, Unit) -> (
       let (Suc (s, i)) = s in
       match deg_perm_of_plus nk s with
       | None_deg_perm_of_plus -> None_deg_perm_of_plus
       | Deg_perm_of_plus (mk, s, p) -> (
-          match D.insert_into_plus mk i with
+          match D.insert_into_plus Unit mk i with
           | Left _ -> None_deg_perm_of_plus
           | Right (j, mk') -> Deg_perm_of_plus (mk', s, Suc (p, j))))
 

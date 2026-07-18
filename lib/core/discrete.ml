@@ -8,10 +8,11 @@ let enabled () = R.read ()
 let run = R.run
 
 (* Given a case tree definition, check whether it could be discrete, which means it's an abstracted datatype with all parameters/indices/constructor arguments discrete or currently being defined.  Return a version of it with discrete turned on for sure if possible, and a boolean indicating whether it could be discrete.  *)
-let rec discrete_def : type b. (b, potential) term -> (b, potential) term * bool = function
-  | Lam (x, body) ->
+let rec discrete_def : type mode b. (mode, b, potential) term -> (mode, b, potential) term * bool =
+  function
+  | Lam (x, p, filter, body) ->
       let t, d = discrete_def body in
-      (Lam (x, t), d)
-  | Canonical (Data { indices; constrs; discrete = `Maybe; hints }) ->
-      (Canonical (Data { indices; constrs; discrete = `Yes; hints }), true)
+      (Lam (x, p, filter, t), d)
+  | Canonical (Data { indices; constrs; discrete = `Maybe; recursive; hints }) ->
+      (Canonical (Data { indices; constrs; discrete = `Yes; recursive; hints }), true)
   | tm -> (tm, false)

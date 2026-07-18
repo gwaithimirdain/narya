@@ -156,6 +156,7 @@ let rec pp_term : type lt ls rt rs.
   | Ident (x, w) -> (separate_map (char '.') utf8string x, w)
   | Constr (c, w) -> (pp_constr c, w)
   | Field (f, p, w) -> (pp_field f p, w)
+  | Key (parts, w) -> (utf8string ("#" ^ String.concat "." parts.value), w)
   | Superscript (Some x, s, w) ->
       let px, wx = pp_term x in
       (px ^^ pp_ws `None wx ^^ pp_superscript s, w)
@@ -201,13 +202,19 @@ let pp_complete_term : wrapped_parse -> space -> document =
   let doc, ws = pp_term tm in
   doc ^^ pp_ws space ws
 
-let rec pp_ctx
-    (ctx :
-      (string * [ `Original | `Renamed | `Locked ] * wrapped_parse option * wrapped_parse) Bwd.t) :
-    document =
+type printed_entry = {
+  var : string;
+  modality : string list;
+  renamed : bool;
+  lock : string list;
+  tm : wrapped_parse option;
+  ty : wrapped_parse;
+}
+
+let rec pp_ctx (ctx : printed_entry Bwd.t) : document =
   match ctx with
   | Emp -> empty
-  | Snoc (ctx, (x, r, tm, Wrap ty)) ->
+  | Snoc (ctx, { var = x; modality; renamed; lock; tm; ty = Wrap ty }) ->
       let ptm, wtm =
         match tm with
         | Some (Wrap tm) ->
@@ -224,13 +231,27 @@ let rec pp_ctx
            (nest 2
               (wtm
               ^^ Token.pp Colon
+              ^^ (match modality with
+                | [] -> empty
+                | [ m ] -> utf8string m ^^ Token.pp (Op "|")
+                | _ ->
+                    blank 1
+                    ^^ separate_map (blank 1) utf8string modality
+                    ^^ blank 1
+                    ^^ Token.pp (Op "|"))
               ^^ blank 1
               ^^ align
-                   (match r with
-                   | `Original -> group (pty ^^ pp_ws `None wty)
-                   | `Renamed -> group (pty ^^ pp_ws `Break wty ^^ string "(not in scope)")
-                   | `Locked -> group (pty ^^ pp_ws `Break wty ^^ string "(blocked by modal lock)"))
-              ))
+                   (if renamed then group (pty ^^ pp_ws `Break wty ^^ string "(not in scope)")
+                    else
+                      match lock with
+                      | [] -> group (pty ^^ pp_ws `None wty)
+                      | _ :: _ ->
+                          group
+                            (pty
+                            ^^ pp_ws `Break wty
+                            ^^ utf8string "(locked: "
+                            ^^ separate_map (blank 1) utf8string lock
+                            ^^ utf8string ")"))))
 
 let pp_hole ctx ty =
   pp_ctx ctx ^^ hardline ^^ repeat 70 (char '-') ^^ hardline ^^ pp_complete_term ty `None

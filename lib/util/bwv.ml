@@ -100,7 +100,7 @@ let rec insert : type a n. n N.suc N.index -> a -> (a, n) t -> (a, n N.suc) t =
       | Snoc (xs, y) -> Snoc (insert i x xs, y))
 
 (* Apply a permutation *)
-let rec permute : type a m n. (a, m) t -> (m, n) N.perm -> (a, n) t =
+let rec permute : type a m n. (a, m) t -> (m, n) N.permute -> (a, n) t =
  fun xs p ->
   match (xs, p) with
   | _, Id -> xs

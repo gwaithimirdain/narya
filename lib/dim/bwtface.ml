@@ -78,7 +78,7 @@ let rec tface_of_bw_lt : type m1 m2 m n k1 k2 k nk nk1.
   match bf with
   | REnd (e, bf) -> tface_of_bw_r m12 (D.suc_plus k12) (D.suc_plus n12k) (End (f, nk12, e)) bf
   | RMid bf ->
-      tface_of_bw_lt (D.suc_plus m12) (D.suc_plus k12) (D.suc_plus n12k) (Suc nk12) (Mid f) bf
+      tface_of_bw_lt (D.suc_plus m12) (D.suc_plus k12) (D.suc_plus n12k) (Suc (nk12, Unit)) (Mid f) bf
 
 let rec tface_of_bw_ls : type m1 m2 m n1 n2 k n nk nk2.
     (m1, m2, m) D.plus ->
@@ -104,7 +104,7 @@ let rec tface_of_bw_ls : type m1 m2 m n1 n2 k n nk nk2.
       let Eq = D.plus_uniq n12 (D.plus_zero n1) in
       tface_of_bw_lt (D.suc_plus m12)
         (D.suc_plus_eq_suc (D.zero_plus (cod_bwtface bf)))
-        (D.suc_plus nk12) (Suc Zero) (Mid f) bf
+        (D.suc_plus nk12) (Suc (Zero, Unit)) (Mid f) bf
 
 let tface_of_bw : type m n k nk. (m, n, k, nk) bwtface -> (m, n, k, nk) tface =
  fun bf ->

@@ -109,7 +109,28 @@
    ￮ constant sst.sum defined
   
    ￫ info[I0000]
+   ￮ constant sst.discprod defined
+  
+   ￫ info[I0000]
    ￮ constant ASST defined
+  
+   ￫ info[I0000]
+   ￮ constant asst.Int defined
+  
+   ￫ info[I0000]
+   ￮ constant asst.Fib defined
+  
+   ￫ info[I0000]
+   ￮ constant sst.Fib defined
+  
+   ￫ info[I0000]
+   ￮ constant disp defined
+  
+   ￫ info[I0000]
+   ￮ constant disp′ defined
+  
+   ￫ info[I0000]
+   ￮ constant d defined
   
    ￫ info[I0000]
    ￮ constant sst.pt defined
@@ -142,7 +163,7 @@
    ￮ constant sst.copair defined
   
 
-  $ narya -parametric -arity 2 -direction p -external -v sct.ny
+  $ narya -parametric -arity 2 -direction p -v sct.ny
    ￫ info[I0000]
    ￮ constant SCT defined
   
@@ -156,10 +177,10 @@
    ￮ constant 2s defined
   
   $ narya -dtt -e "def foo (X:Type) : Type^^(d) X := X^^(d)"
-   ￫ error[E0310]
+   ￫ error[E1705]
    ￭ command-line exec string
    1 | def foo (X:Type) : Type^^(d) X := X^^(d)
-     ^ variable not available inside external degeneracy
+     ^ use of id variable behind △□ lock requires a key
   
   [1]
 
@@ -268,4 +289,92 @@ When a constant is defined containing a hole, it is allowed to be parametric, bu
    ￭ command line fake-interact
    1 | axiom #(nonparametric) A:Type def B:Type := ? echo B⁽ᵈ⁾ solve 0 := A
      ^ constant A is or uses a nonparametric axiom, can't be used in a parametric command
+  
+
+General displayed coinductives
+
+  $ narya -dtt -v dcoind.ny
+   ￫ info[I0000]
+   ￮ constant disp defined
+  
+   ￫ info[I0000]
+   ￮ constant dCoind defined
+  
+
+  $ narya -dtt -v discrete.ny
+   ￫ info[I0000]
+   ￮ constant disp defined
+  
+   ￫ info[I0000]
+   ￮ constant eq defined
+  
+   ￫ info[I0000]
+   ￮ constant △ defined
+  
+   ￫ info[I0000]
+   ￮ constant □ defined
+  
+   ￫ info[I0000]
+   ￮ constant △□ defined
+  
+   ￫ info[I0000]
+   ￮ constant △ᵈ defined
+  
+   ￫ info[I0000]
+   ￮ constant △ᵈ_eq defined
+  
+   ￫ info[I0000]
+   ￮ constant △□ᵈ defined
+  
+   ￫ info[I0000]
+   ￮ constant △□ᵈ_eq defined
+  
+   ￫ info[I0000]
+   ￮ constant ◇ defined
+  
+   ￫ info[I0000]
+   ￮ constant △◇ defined
+  
+   ￫ info[I0000]
+   ￮ constant △◇ᵈ defined
+  
+   ￫ info[I0000]
+   ￮ constant △◇ᵈ_eq defined
+  
+
+  $ narya -v -dtt higher-display.ny
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0000]
+   ￮ constants defined mutually:
+       ∂
+       d
+  
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0000]
+   ￮ constant ∂0 defined
+  
+   ￫ info[I0000]
+   ￮ constant d0 defined
+  
+   ￫ info[I0000]
+   ￮ constant ∂1 defined
+  
+   ￫ info[I0000]
+   ￮ constant d1 defined
+  
+   ￫ info[I0000]
+   ￮ constant ∂2 defined
+  
+   ￫ info[I0000]
+   ￮ constant d2 defined
+  
+   ￫ info[I0000]
+   ￮ constant ∂3 defined
+  
+   ￫ info[I0000]
+   ￮ constant d3 defined
   

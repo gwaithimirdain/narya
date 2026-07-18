@@ -1,5 +1,6 @@
 open Util
 open Tlist
+open Tbwd
 open Signatures
 open Singleton
 open Deg
@@ -34,9 +35,9 @@ let rec pbij_of_int_strings : type e.
   match strs with
   | [] -> Some (Pbij_of (Pbij (ins_zero e, Zero)))
   | `Int n :: strs -> (
-      match (e, N.index_of_int e (n + 1)) with
-      | Nat (Suc e), Some ix -> (
-          let e = N.Nat e in
+      match (e, D.insert_of_int e (n + 1)) with
+      | Word (Suc (e, Unit)), Some (Insert_of_int ix) -> (
+          let e = D.Word e in
           let strs =
             List.map
               (function
@@ -47,10 +48,9 @@ let rec pbij_of_int_strings : type e.
                 | `Str str -> `Str str)
               strs in
           match pbij_of_int_strings e strs with
-          | Some (Pbij_of (Pbij (ins, shuf))) ->
-              Some (Pbij_of (Pbij (Suc (ins, N.insert_of_index ix), Right shuf)))
+          | Some (Pbij_of (Pbij (ins, shuf))) -> Some (Pbij_of (Pbij (Suc (ins, ix), Right shuf)))
           | None -> None)
-      | Nat Zero, Some _ -> .
+      | Word Zero, Some _ -> .
       | _, None -> None)
   | `Str str :: strs when str = Endpoints.refl_string () -> (
       match pbij_of_int_strings e strs with
@@ -75,7 +75,7 @@ let rec int_strings_of_pbij : type n i r. (n, i, r) pbij -> [ `Int of int | `Str
   | Left shuf -> `Str (Endpoints.refl_string ()) :: int_strings_of_pbij (Pbij (ins, shuf))
   | Right shuf ->
       let (Suc (ins, ix)) = ins in
-      let x = N.int_of_index (N.index_of_insert ix) + 1 in
+      let x = Tbwd.int_of_insert ix + 1 in
       `Int x
       :: List.map
            (function
@@ -210,7 +210,7 @@ let rec unplus_ins : type m n mn s i.
   | Suc (ins', x) -> (
       match D.insert_in_plus mn x with
       | Left (x, mn') ->
-          let (Unplus_ins (nsh, rhi, mtr, ts)) = unplus_ins (D.insert_in m x) mn' ins' in
+          let (Unplus_ins (nsh, rhi, mtr, ts)) = unplus_ins (D.uninsert x m) mn' ins' in
           (* right-increment i and r, middle-increment m, keep s and h the same *)
           Unplus_ins (nsh, Left rhi, Suc (mtr, x), ts)
       | Right (x, mn') ->
@@ -248,7 +248,7 @@ let rec ins_plus_of_pbij : type n s h r i rn.
       ins
   | Right shuf' ->
       let (Suc (ins', x)) = ins in
-      let (Plus rn') = D.plus (D.insert_in (dom_ins ins) x) in
+      let (Plus rn') = D.plus (D.uninsert x (dom_ins ins)) in
       Suc (ins_plus_of_pbij ins' shuf' rn', D.plus_insert rn' rn x)
   | Left shuf' ->
       let (Insert_plus (rn', x)) = D.insert_plus Now rn in
@@ -266,7 +266,7 @@ module rec Internal_Pbijmap : functor (F : Fam2) -> sig
           -> ('evaluation, ('intrinsic * 'r) * 'v) t
   end
 
-  module Tup : module type of Tuple.Make (Param)
+  module Tup : module type of Tuple.Make (Unitcomparable) (Param)
 
   type (_, _, _, _) gt =
     | Zero : ('r, 'v) F.t -> ('evaluation, D.zero, 'r, 'v) gt
@@ -289,7 +289,7 @@ functor
             -> ('evaluation, ('intrinsic * 'r) * 'v) t
     end
 
-    module Tup = Tuple.Make (Param)
+    module Tup = Tuple.Make (Unitcomparable) (Param)
 
     (* An element of ('evaluation, 'intrinsic, 'v) t is an intrinsically well-typed map that associates to every partial bijection between 'evaluation and 'intrinsic, with remaining dimension 'r, an element of ('r, 'v) F.t.  As with cubes, we define this in terms of a more general type ('evaluation, 'intrinsic, 's, 'v) gt which associates to every such partial bijection an element of ('r+'s, 'v) F.t. *)
     type (_, _, _, _) gt =
@@ -384,31 +384,33 @@ module Pbijmap (F : Fam2) = struct
       (evaluation, intrinsic, remaining, v) gt =
    fun evaluation intrinsic f ->
     match intrinsic with
-    | Nat Zero -> Zero (f.build (Pbij (ins_zero evaluation, Zero)) (D.plus_zero f.remaining))
-    | Nat (Suc intrinsic) ->
+    | Word Zero -> Zero (f.build (Pbij (ins_zero evaluation, Zero)) (D.plus_zero f.remaining))
+    | Word (Suc (intrinsic, Unit)) ->
         Suc
           {
             left =
-              gbuild evaluation (Nat intrinsic)
+              gbuild evaluation (Word intrinsic)
                 {
                   remaining = D.suc f.remaining;
                   build =
                     (fun (Pbij (ins, shuf)) r12 -> f.build (Pbij (ins, Left shuf)) (D.plus_suc r12));
                 };
             right =
-              Tup.build evaluation
-                {
-                  build =
-                    (fun i ->
-                      Wrap
-                        (gbuild (D.insert_in evaluation i) (Nat intrinsic)
-                           {
-                             f with
-                             build =
-                               (fun (Pbij (ins, shuf)) r12 ->
-                                 f.build (Pbij (Suc (ins, i), Right shuf)) r12);
-                           }));
-                };
+              (let build : type b g.
+                   g Unitcomparable.t ->
+                   (b, g, evaluation) Tbwd.insert ->
+                   (b, (_ * remaining) * v) Param.t =
+                fun g i ->
+                 let Unit = g in
+                 Wrap
+                   (gbuild (D.uninsert i evaluation) (Word intrinsic)
+                      {
+                        f with
+                        build =
+                          (fun (Pbij (ins, shuf)) r12 ->
+                            f.build (Pbij (Suc (ins, i), Right shuf)) r12);
+                      }) in
+               Tup.build evaluation { build });
           }
 
   type ('evaluation, 'intrinsic, 'v) builder = {
@@ -465,7 +467,7 @@ module Pbijmap (F : Fam2) = struct
     let rec suc : type e i r vs irvs.
         (e, i, r D.suc, vs) hgt ->
         (i * r, vs, irvs) MapTimes.t ->
-        (e, Fwn.zero, irvs) Tup.Heter.hgt ->
+        (e, nil, irvs) Tup.Heter.hgt ->
         (e, i D.suc, r, vs) hgt =
      fun ls irvs rs ->
       match (ls, irvs, rs) with
@@ -481,8 +483,7 @@ module Pbijmap (F : Fam2) = struct
       | Suc { left = l; _ } :: ms -> l :: left ms
 
     let rec right : type e i r vs irvs.
-        (e, i D.suc, r, vs) hgt -> (i * r, vs, irvs) MapTimes.t -> (e, Fwn.zero, irvs) Tup.Heter.hgt
-        =
+        (e, i D.suc, r, vs) hgt -> (i * r, vs, irvs) MapTimes.t -> (e, nil, irvs) Tup.Heter.hgt =
      fun ms irvs ->
       match (ms, irvs) with
       | [], [] -> []
@@ -559,6 +560,22 @@ module Pbijmap (F : Fam2) = struct
           let module T = Tup.Applicatic (M) in
           let (Exists_cons irvs) = MapTimes.exists_cons (Heter.params ms) in
           let (Exists irws) = MapTimes.exists ws in
+          let map : type a g.
+              g Unitcomparable.t ->
+              (a, g, _) Tbwd.insert ->
+              (a, _) Tup.Heter.hft ->
+              (a, _) Tup.Heter.hft M.t =
+           fun g i x ->
+            let Unit = g in
+            M.apply
+              (gpmapM (D.uninsert i evaluation)
+                 {
+                   f with
+                   map =
+                     (fun (Pbij (ins, shuf)) r12 v -> f.map (Pbij (Suc (ins, i), Right shuf)) r12 v);
+                 }
+                 (Heter.unwrap x irvs) ws)
+            @@ fun res -> Heter.wrap res irws in
           M.apply
             (M.zip
                (fun () ->
@@ -570,23 +587,7 @@ module Pbijmap (F : Fam2) = struct
                          f.map (Pbij (ins, Left shuf)) (D.plus_suc r12) v);
                    }
                    (Heter.left ms) ws)
-               (fun () ->
-                 T.pmapM
-                   {
-                     map =
-                       (fun i x ->
-                         M.apply
-                           (gpmapM (D.insert_in evaluation i)
-                              {
-                                f with
-                                map =
-                                  (fun (Pbij (ins, shuf)) r12 v ->
-                                    f.map (Pbij (Suc (ins, i), Right shuf)) r12 v);
-                              }
-                              (Heter.unwrap x irvs) ws)
-                         @@ fun res -> Heter.wrap res irws);
-                   }
-                   (Heter.right ms irvs) (MapTimes.cod irws)))
+               (fun () -> T.pmapM { map } (Heter.right ms irvs) (MapTimes.cod irws)))
           @@ fun (lefts, rights) -> Heter.suc lefts irws rights
 
     type ('evaluation, 'intrinsic, 'vs, 'ws) pmapperM = {

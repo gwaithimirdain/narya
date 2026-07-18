@@ -58,10 +58,10 @@
   
 
   $ narya higherpi.ny -e "echo (x₂ : refl A x₀ x₁) →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)"
-   ￫ error[E0702]
+   ￫ error[E0300]
    ￭ command-line exec string
    1 | echo (x₂ : refl A x₀ x₁) →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)
-     ^ unexpected explicit domain: all boundary domains must be implicit and primary domain explicit
+     ^ unbound variable: x₀
   
   [1]
 
@@ -74,7 +74,7 @@
    ￫ error[E0702]
    ￭ command-line exec string
    1 | echo {x₀ x₁ : A} {x₂ : refl A x₀ x₁} →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)
-     ^ unexpected implicit domain: all boundary domains must be implicit and primary domain explicit
+     ^ unexpected implicit domain: the primary domain of a higher function-type must be explicit
   
   [1]
 
