@@ -48,23 +48,23 @@ For compatibility, it is required that a modality whose source *or* target mode 
 Discrete function-types
 -----------------------
 
-If ``○ : DomType → CodType`` is a tangible discrete modality, as in the mode theory ``-discrete-functor``, then ``Br ((x :○| A) → B x) f₀ f₁`` reduces to
+If ``△ : Disc → Type`` is a tangible discrete modality, as in the mode theory ``-discrete-adjunction`` (and many others), then ``Br ((x :△| A) → B x) f₀ f₁`` reduces to
 
 .. code-block:: none
 
-   (x :○| A) →⁽ᵖ⁾ Br B x (f₀ x) (f₁ x)
+   (x :△| A) →⁽ᵖ⁾ Br B x (f₀ x) (f₁ x)
 
 Note that the domain has *not* been degenerated: there is only one variable ``x``, in place of the triple variable we get for a non-discrete modality
 
 .. code-block:: none
 
-   {x₀ :○| A} {x₁ :○| A} (x₂ :○| Br A x₀ x₁) →⁽ᵖ⁾ Br B x₂ (f₀ x₀) (f₁ x₁)
+   {x₀ :△| A} {x₁ :△| A} (x₂ :△| Br A x₀ x₁) →⁽ᵖ⁾ Br B x₂ (f₀ x₀) (f₁ x₁)
 
-Note that an equivalence between these two types is exactly what we would expect if ``Br A`` is equivalent to ``eq A``.  In addition, in the codomain type ``Br B x (f₀ x) (f₁ x)`` the bridge argument ``x₂`` is replaced by the point argument ``x``; this is well-typed because the same principle applies to ``B : (x :○| A) → CodType``, so that
+Note that an equivalence between these two types is exactly what we would expect if ``Br A`` is equivalent to ``eq A``.  In addition, in the codomain type ``Br B x (f₀ x) (f₁ x)`` the bridge argument ``x₂`` is replaced by the point argument ``x``; this is well-typed because the same principle applies to ``B : (x :△| A) → Type``, so that
 
 .. code-block:: none
 
-   Br B : (x :○| A) → Br CodType (B x) (B x)
+   Br B : (x :△| A) → Br Type (B x) (B x)
 
 
 Discrete units and arity 1
@@ -108,15 +108,15 @@ The behavior of modal constructors annotated by discrete modalities can be deduc
 
 .. code-block:: none
 
-   def ○ (A :○| DomType) : CodType ≔ data [ circle. (_ :○| A) ]
+   def △ (A :△| Disc) : Type ≔ data [ circle. (_ :△| A) ]
 
-we have ``circle. : (_ :○| A) → ○ A``, and therefore for the bridge type we have a constructor
+we have ``circle. : (_ :△| A) → △ A``, and therefore for the bridge type we have a constructor
 
 .. code-block:: none
 
-   circle. : (x :○| A) →⁽ᵖ⁾ Br (○ A) (circle. x) (circle. x)
+   circle. : (x :△| A) →⁽ᵖ⁾ Br (△ A) (circle. x) (circle. x)
 
-In other words, ``Br (○ A)`` is a datatype indexed by two copies of ``○ A`` with one constructor of this type.  Using this, it's easy to prove that indeed ``Br (○ A) u₀ u₁`` is equivalent to ``eq (○ A) u₀ u₁``, in other words ``○ A`` is discrete as defined above.
+In other words, ``Br (△ A)`` is a datatype indexed by two copies of ``△ A`` with one constructor of this type.  Using this, it's easy to prove that indeed ``Br (△ A) u₀ u₁`` is equivalent to ``eq (△ A) u₀ u₁``, in other words ``△ A`` is discrete as defined above.
 
 Discrete modalities can also be pellucid, transparent, or translucent.  However, a discrete modality cannot currently be used as a window modality for a match against a higher-dimensional datatype.  This is not a semantic restriction, but a limitation of the structure of contexts in Narya; it would be possible to work around but we haven't done it yet.
 
