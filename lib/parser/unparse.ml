@@ -360,21 +360,46 @@ let rec unparse : type mode n lt ls rt rs s.
   | Act (tm, s, sort) ->
       unparse_act ~sort vars { unparse = (fun li ri -> unparse vars tm li ri) } s li ri
   | Let (x, Modal (modality, plus, tm), body) -> (
-      (match Modality.compare_id modality with
-      | Eq -> ()
-      (* MODALTODO: unparse modal let-bindings *)
-      | Neq -> fatal (Unimplemented "unparsing modal let-bindings"));
       let tm = unparse (Names.add_lock vars plus) tm No.Interval.entire No.Interval.entire in
       (* If a let-in doesn't fit in its interval, we have to parenthesize it. *)
       let x, vars = Names.add_cube D.zero vars (binder_name_of_option x) in
+      let binding =
+        match Modality.compare_id modality with
+        | Eq -> Emp <: Term (unparse_var x) <: mktok Coloneq <: Term tm
+        | Neq ->
+            (* A modal let-binding "let x : modality | _ := tm in body" prints the modality
+               that was used to lock the value, with the type left as a placeholder since
+               it isn't stored in the core syntax. *)
+            let modality_tm =
+              match Modality.name modality with
+              | [] -> unlocated (Placeholder [])
+              | m :: ms ->
+                  List.fold_left
+                    (fun fn m ->
+                      unlocated
+                        (App
+                           {
+                             fn;
+                             arg = unlocated (Ident ([ m ], []));
+                             left_ok = No.le_refl No.plus_omega;
+                             right_ok = No.le_refl No.plus_omega;
+                           }))
+                    (unlocated (Ident ([ m ], [])))
+                    ms in
+            Emp
+            <: Term (unparse_var x)
+            <: mktok Colon
+            <: Term modality_tm
+            <: mktok (Op "|")
+            <: Term (unlocated (Placeholder []))
+            <: mktok Coloneq
+            <: Term tm in
       match No.Interval.contains ri No.minus_omega_plus_one with
       | Some right_ok ->
           let body = unparse vars body (interval_right letin) ri in
           unlocated
             (prefix ~notn:letin
-               ~inner:
-                 (Multiple
-                    (wstok Let, Emp <: Term (unparse_var x) <: mktok Coloneq <: Term tm, wstok In))
+               ~inner:(Multiple (wstok Let, binding, wstok In))
                ~last:body ~right_ok)
       | None ->
           let body = unparse vars body (interval_right letin) No.Interval.entire in
@@ -382,9 +407,7 @@ let rec unparse : type mode n lt ls rt rs s.
           parenthesize
             (unlocated
                (prefix ~notn:letin
-                  ~inner:
-                    (Multiple
-                       (wstok Let, Emp <: Term (unparse_var x) <: mktok Coloneq <: Term tm, wstok In))
+                  ~inner:(Multiple (wstok Let, binding, wstok In))
                   ~last:body ~right_ok)))
   | Lam (Variables (m, _, _), _, _, _) ->
       (* Modalities aren't printed on abstractions *)
