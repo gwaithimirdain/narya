@@ -1157,10 +1157,11 @@ and synth_or_check_let : type mode a b s p.
     ((mode, kinetic) value, p) Perhaps.t ->
     (mode, b, s) term * ((mode, kinetic) value, p) Perhaps.not =
  fun ?nosynth status ctx name premod v body ty ->
-  (* A non-recursive let-binding can be modal. *)
+  (* A non-recursive let-binding can be modal, but the modality must be tangible. *)
   match Modality.of_name_tgt (Ctx.mode ctx) premod.value with
   | Error e -> modality_fatal "checking let-in" (e :> modality_error)
   | Ok (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) -> (
+      if not (Modality.tangible modality) then fatal (Intangible_modality modality);
       let (Locked (plus, lctx)) = Ctx.lock ctx modality in
       (* The bound value is checked in an occurrence-analysis scope, and the resulting verdict is stored as the "dirt" of the new variable's binding, so that references to the variable from datatype constructor types can detect occurrences of currently-being-defined constants hiding in its value. *)
       let (v, nf), dirt =
