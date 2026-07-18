@@ -109,6 +109,13 @@ unions up to isomorphism:
    ￮ constant vtest defined
   
 
+
+An empty (co)match "[]" checked directly against a pi-type can also refute a
+modal domain implicitly, with no explicit window syntax, using the domain's
+own (possibly nontrivial) modality as the window:
+
+  $ narya -transparent-functor preserve.ny -e "def zfwd3 : (x :○| ⊥) → ⊥' ≔ []"
+
 Refuting a modal variable requires a window modality:
 
   $ narya -transparent-functor preserve.ny -e "def zfwd2 (u : ○ ⊥) : ⊥' ≔ match u [ circle. x ↦ match x [ ] ]"

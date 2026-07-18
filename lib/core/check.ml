@@ -2150,52 +2150,57 @@ and check_empty_match_lam : type mode a b.
   match view_type ty "check_empty_match_lam" with
   | Canonical
       (type hmode kn k n)
-      ((_, Pi { x = _; filter; doms; cods }, ins, tyargs) :
+      (( _,
+         Pi
+           (type dom domodality dd)
+           ({ x = _; filter; doms; cods } : (dom, domodality, mode, dd, k) pi_args),
+         ins,
+         tyargs ) :
         hmode head
         * (mode, k, n) canonical
         * (kn, k, n) insertion
         * (D.zero, kn, kn, mode normal) TubeOf.t) -> (
+      let Eq = eq_of_ins_zero ins in
       let modality = Modality.filter_modality filter in
-      (* MODALTODO: allow nontrivial window modalities in empty matches. *)
-      match Modality.compare_id modality with
-      | Neq -> fatal (Unimplemented "nontrivial window modality in empty match")
-      | Eq -> (
-          let Eq = eq_of_ins_zero ins in
-          (* Since the modality is the identity, the filtered dimension equals the outer dimension. *)
-          let Eq = Modality.eq_of_filter_id filter in
-          let dim = CubeOf.dim doms in
-          let newargs, newnfs = dom_vars ctx modality doms in
-          let output = tyof_app cods tyargs filter newargs in
-          let module S = struct
-            type 'c t =
-              | Ok : (mode, kinetic) value option * (a, 'c, 'ac) N.plus * k sface_of option -> 'c t
-          end in
-          let module Build = NICubeOf.Traverse (S) in
-          match
-            Build.build_left dim
-              {
-                build =
-                  (fun fb -> function
-                    | Ok (firstty, ab, fa) ->
-                        let ty = (Binding.value (CubeOf.find newnfs fb)).ty in
-                        let firstty = Option.value firstty ~default:ty in
-                        if is_empty ty then
-                          Fwrap
-                            ( NFamOf (`Anon (View.hints_of_ty ty)),
-                              Ok (Some firstty, Suc ab, Some (SFace_of fb)) )
-                        else
-                          Fwrap (NFamOf (`Anon (View.hints_of_ty ty)), Ok (Some firstty, Suc ab, fa)));
-              }
-              (Ok (None, Zero, None))
-          with
-          | Wrap (names, Ok (firstty, af, fa)) -> (
-              let xs = Variables (D.zero, D.zero_plus dim, names) in
-              let ctx = Ctx.vis ctx filter D.zero (D.zero_plus dim) names newnfs af in
-              match (fa, first) with
-              | Some (SFace_of fa), _ ->
+      let outer_dim = BindCube.dim cods in
+      let dim = CubeOf.dim doms in
+      let newargs, newnfs = dom_vars ctx modality doms in
+      let output = tyof_app cods tyargs filter newargs in
+      let module S = struct
+        type 'c t =
+          | Ok : (dom, kinetic) value option * (a, 'c, 'ac) N.plus * dd sface_of option -> 'c t
+      end in
+      let module Build = NICubeOf.Traverse (S) in
+      match
+        Build.build_left dim
+          {
+            build =
+              (fun fb -> function
+                | Ok (firstty, ab, fa) ->
+                    let ty = (Binding.value (CubeOf.find newnfs fb)).ty in
+                    let firstty = Option.value firstty ~default:ty in
+                    if is_empty ty then
+                      Fwrap
+                        ( NFamOf (`Anon (View.hints_of_ty ty)),
+                          Ok (Some firstty, Suc ab, Some (SFace_of fb)) )
+                    else Fwrap (NFamOf (`Anon (View.hints_of_ty ty)), Ok (Some firstty, Suc ab, fa)));
+          }
+          (Ok (None, Zero, None))
+      with
+      | Wrap (names, Ok (firstty, af, fa)) -> (
+          let xs = Variables (D.zero, D.zero_plus dim, names) in
+          let newctx =
+            Ctx.vis ctx (Modality.filter_idempotent filter) D.zero (D.zero_plus dim) names newnfs af
+          in
+          (* Locking newctx by the domain's own modality gives a context at the domain mode in which the just-bound variable(s) can be referred to without any explicit key, since the lock exactly matches their own annotating modality; we use this both to check emptiness of the discriminee below and to report errors about the domain type. *)
+          let (Locked (plus_lock, wctx)) = Ctx.lock newctx modality in
+          match (fa, first) with
+          | Some (SFace_of fa), _ -> (
+              match Modality.compare_id modality with
+              | Eq ->
                   Lam
                     ( xs,
-                      dim,
+                      outer_dim,
                       filter,
                       Match
                         {
@@ -2203,25 +2208,49 @@ and check_empty_match_lam : type mode a b.
                           plus_lock = plus_no_lock (Modality.tgt modality);
                           tm =
                             Var
-                              (Index (Now, fa, filter, plus_with_no_locks (Modality.tgt modality)));
+                              (Index
+                                 ( Now,
+                                   fa,
+                                   Modality.filter_idempotent filter,
+                                   plus_with_no_locks (Modality.tgt modality) ));
                           dim;
                           branches = Constr.Map.empty;
                         } )
-              | None, `Notfirst ->
-                  Term.Lam (xs, dim, filter, check_empty_match_lam ctx output `Notfirst)
-              | None, `First ->
-                  Reporter.try_with
-                    (fun () ->
-                      Term.Lam (xs, dim, filter, check_empty_match_lam ctx output `Notfirst))
-                    ~fatal:(fun d ->
-                      match d.message with
-                      | Invalid_refutation -> (
-                          let firstty = firstty <|> Anomaly "missing firstty in checking []" in
-                          match view_type firstty "is_empty" with
-                          | Canonical (_, Data { constrs; _ }, _, _) ->
-                              fatal (Missing_constructor_in_match (fst (Bwd_extra.head constrs)))
-                          | _ -> fatal (Matching_on_nondatatype (PVal (ctx, firstty))))
-                      | _ -> fatal_diagnostic d))))
+              | Neq -> (
+                  (* The raw variable we just bound via Ctx.vis is at raw index "Top" of the extended context, i.e. af must be a successor. *)
+                  match af with
+                  | Zero -> fatal (Anomaly "check_empty_match_lam: empty cube of variables")
+                  | Suc _ ->
+                      let stm, _ =
+                        synth (Kinetic `Nolet) wctx
+                          (locate_opt None (Var (Top, Some (Any_sface fa)))) in
+                      Lam
+                        ( xs,
+                          outer_dim,
+                          filter,
+                          Match
+                            {
+                              window = modality;
+                              plus_lock;
+                              tm = stm;
+                              dim;
+                              branches = Constr.Map.empty;
+                            } )))
+          | None, `Notfirst ->
+              Term.Lam (xs, outer_dim, filter, check_empty_match_lam newctx output `Notfirst)
+          | None, `First ->
+              Reporter.try_with
+                (fun () ->
+                  Term.Lam (xs, outer_dim, filter, check_empty_match_lam newctx output `Notfirst))
+                ~fatal:(fun d ->
+                  match d.message with
+                  | Invalid_refutation -> (
+                      let firstty = firstty <|> Anomaly "missing firstty in checking []" in
+                      match view_type firstty "is_empty" with
+                      | Canonical (_, Data { constrs; _ }, _, _) ->
+                          fatal (Missing_constructor_in_match (fst (Bwd_extra.head constrs)))
+                      | _ -> fatal (Matching_on_nondatatype (PVal (wctx, firstty))))
+                  | _ -> fatal_diagnostic d)))
   | _ -> fatal Invalid_refutation
 
 and is_empty : type mode. (mode, kinetic) value -> bool =
