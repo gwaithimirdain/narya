@@ -79,7 +79,10 @@ module Composedcell : Modalcell.Theory = struct
   let to_string : type a m n b. (a, m, n, b) Modalcell.t -> string = fun _ -> "id"
 end
 
-let install modes modalities =
+let install modes modalities modalcells =
+  (match modalcells with
+  | [] -> ()
+  | _ -> failwith "wrong number of modal cell names for composed functors mode theory");
   (match modes with
   | [ a; b; c ] ->
       AGen.name := a;

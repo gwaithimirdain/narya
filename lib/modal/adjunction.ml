@@ -276,7 +276,7 @@ module AdjunctionModalities
     else false
 end
 
-let install (module V : Variant) modes modalities =
+let install (module V : Variant) modes modalities modalcells =
   let module Disc = DiscGen (V) in
   (match modes with
   | [ disc; ty ] ->
@@ -297,7 +297,13 @@ let install (module V : Variant) modes modalities =
   Modality.set_one_char true modalities;
   let module Triangle = Modality.Generate (Tri) in
   let module Box = Modality.Generate (Bx) in
-  Modalcell.choose_theory
-    (module AdjunctionCells (V) (Disc) (Type) (Triangle) (Box) : Modalcell.Theory);
+  let module Cells = AdjunctionCells (V) (Disc) (Type) (Triangle) (Box) in
+  (match modalcells with
+  | [] -> ()
+  | [ eta; eps ] ->
+      Modalcell.rename Cells.unit eta;
+      Modalcell.rename Cells.counit eps
+  | _ -> failwith ("wrong number of modal cell names for " ^ V.name ^ " mode theory"));
+  Modalcell.choose_theory (module Cells : Modalcell.Theory);
   Modality.choose_theory
     (module AdjunctionModalities (V) (Disc) (Type) (Triangle) (Box) : Modality.Theory)

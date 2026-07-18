@@ -26,6 +26,7 @@ let mode_theories = ref 0
 let old_discreteness = ref false
 let modes = ref ""
 let modalities = ref ""
+let modalcells = ref ""
 
 (* Undocumented flag used for testing: interpret a given file or command-line string as if it were entered in interactive mode. *)
 let fake_interacts : string Bwd.t ref = ref Emp
@@ -357,6 +358,7 @@ let speclist =
       "Abbreviation for -parametric -arity 1 -direction d -external -discrete-tconn" );
     ("-modes", Arg.Set_string modes, "set the names of modes");
     ("-modalities", Arg.Set_string modalities, "set the names of modalities");
+    ("-modalcells", Arg.Set_string modalcells, "set the names of modal cells");
     ("--help", Arg.Unit (fun () -> ()), "");
     ("-", Arg.Unit (fun () -> inputs := Snoc (!inputs, `Stdin)), "");
     ("-fake-interact", Arg.String (fun str -> fake_interacts := Snoc (!fake_interacts, str)), "");
@@ -561,7 +563,8 @@ let () =
   try
     let modes = List.filter (fun x -> x <> "") (String.split_on_char ',' !modes) in
     let modalities = List.filter (fun x -> x <> "") (String.split_on_char ',' !modalities) in
-    !install_mode_theory modes modalities;
+    let modalcells = List.filter (fun x -> x <> "") (String.split_on_char ',' !modalcells) in
+    !install_mode_theory modes modalities modalcells;
     let use_ansi = if !use_ansi then Some true else None in
     run_top ?use_ansi ~install_hott:Hott.install @@ fun () ->
     (* Note: run_top executes the input files, so here we only have to do the interaction. *)

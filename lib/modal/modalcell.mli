@@ -26,6 +26,7 @@ type (_, _, _, _) t =
   | Vcomp : ('a, 'n, 'r, 'b) t * ('a, 'm, 'n, 'b) t -> ('a, 'm, 'r, 'b) t
 
 val of_gen : ('a, 'm, 'n, 'b) gen -> ('a, 'm, 'n, 'b) t
+val rename : ('a, 'm, 'n, 'b) t -> string -> unit
 
 type (_, _, _, _) adjunction =
   | Adjunction : {

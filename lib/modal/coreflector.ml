@@ -115,7 +115,10 @@ struct
     ^ string_of_int (Modality.length (Modalcell.vtgt m))
 end
 
-let install (module V : Variant) modes modalities =
+let install (module V : Variant) modes modalities modalcells =
+  (match modalcells with
+  | [] -> ()
+  | _ -> failwith ("wrong number of modal cell names for " ^ V.name ^ " mode theory"));
   (match modes with
   | [ ty ] -> TestmodeGen.name := ty
   | [] -> ()

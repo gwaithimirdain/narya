@@ -45,6 +45,17 @@ type (_, _, _, _) t =
 
 let of_gen : type a m n b. (a, m, n, b) gen -> (a, m, n, b) t = fun x -> Gen x
 
+(* Change the name of a generating 2-cell, editing its entry in the global names dynarray and by_name map.  Called by the mode theory install functions to implement the command-line flag -modalcells.  Only generating cells can be renamed; passing a composite is a bug in the caller. *)
+let rename : type a m n b. (a, m, n, b) t -> string -> unit =
+ fun cell name ->
+  match cell with
+  | Gen (PK (_, i, _) as g) ->
+      let old = Dynarray.get Gen.names i in
+      Dynarray.set Gen.names i name;
+      Gen.by_name := StringMap.remove old !Gen.by_name;
+      Gen.by_name := StringMap.add name (Wrap g : Gen.all_wrapped) !Gen.by_name
+  | _ -> invalid_arg "Modalcell.rename: not a generating cell"
+
 type (_, _, _, _) adjunction =
   | Adjunction : {
       left : ('a, 'f, 'b) Modality.t;

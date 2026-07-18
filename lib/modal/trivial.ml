@@ -33,7 +33,10 @@ module Idcell (Testmode : Mode.Generated with module G := TestmodeGen) : Modalce
   let to_string : type a m n b. (a, m, n, b) Modalcell.t -> string = fun _ -> "id"
 end
 
-let install modes modalities =
+let install modes modalities modalcells =
+  (match modalcells with
+  | [] -> ()
+  | _ -> failwith "wrong number of modal cell names for trivial mode theory");
   (match modes with
   | [ name ] -> TestmodeGen.name := name
   | [] -> ()

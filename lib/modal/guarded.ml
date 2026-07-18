@@ -416,7 +416,10 @@ struct
   end
 end
 
-let install modes modalities =
+let install modes modalities modalcells =
+  (match modalcells with
+  | [] -> ()
+  | _ -> failwith "wrong number of modal cell names for guarded mode theory");
   (match modes with
   | [ disc; ty ] ->
       TypeGen.name := disc;

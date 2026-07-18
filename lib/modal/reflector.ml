@@ -86,7 +86,10 @@ struct
     ^ string_of_int (Modality.length (Modalcell.vtgt m))
 end
 
-let install modes modalities =
+let install modes modalities modalcells =
+  (match modalcells with
+  | [] -> ()
+  | _ -> failwith "wrong number of modal cell names for reflector mode theory");
   (match modes with
   | [ ty ] -> TestmodeGen.name := ty
   | [] -> ()

@@ -347,7 +347,7 @@ struct
   end
 end
 
-let install (module V : Variant) modes modalities =
+let install (module V : Variant) modes modalities modalcells =
   let module Disc = DiscGen (V) in
   (match modes with
   | [ disc; ty ] ->
@@ -369,5 +369,13 @@ let install (module V : Variant) modes modalities =
   let module Triangle = Modality.Generate (Tri) in
   let module Box = Modality.Generate (Bx) in
   let module Cells = AmbiflectionCells (V) (Disc) (Type) (Triangle) (Box) in
+  (* The invertible unit η□△ and its inverse never need to be named; the non-invertible adjunction cells η△□, ε△□ and the zero cell ø do. *)
+  (match modalcells with
+  | [] -> ()
+  | [ eta; eps; zero ] ->
+      Modalcell.rename Cells.unit eta;
+      Modalcell.rename Cells.counit eps;
+      Modalcell.rename Cells.zero zero
+  | _ -> failwith ("wrong number of modal cell names for " ^ V.name ^ " mode theory"));
   Modalcell.choose_theory (module Cells : Modalcell.Theory);
   Modality.choose_theory (module Cells.Modalities : Modality.Theory)

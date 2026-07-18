@@ -200,7 +200,7 @@ struct
   end
 end
 
-let install (module V : Variant) modes modalities =
+let install (module V : Variant) modes modalities modalcells =
   (match modes with
   | [ ty ] -> TestmodeGen.name := ty
   | [] -> ()
@@ -214,5 +214,10 @@ let install (module V : Variant) modes modalities =
   Modality.set_one_char true modalities;
   let module Amb = Modality.Generate (Nat) in
   let module Cells = AmbiflectorCells (V) (Testmode) (Amb) in
+  (* The only hom-set with more than one element (up to cell equality) is id ⇒ id, whose elements are id and ø(zero); so ø is the only cell that ever needs to be named. *)
+  (match modalcells with
+  | [] -> ()
+  | [ zero ] -> Modalcell.rename Cells.zero zero
+  | _ -> failwith ("wrong number of modal cell names for " ^ V.name ^ " mode theory"));
   Modalcell.choose_theory (module Cells : Modalcell.Theory);
   Modality.choose_theory (module Cells.Modalities : Modality.Theory)

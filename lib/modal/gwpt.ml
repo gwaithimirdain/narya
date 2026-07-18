@@ -585,7 +585,7 @@ struct
   end
 end
 
-let install (module V : Variant) modes modalities =
+let install (module V : Variant) modes modalities modalcells =
   let module Disc = DiscGen (V) in
   (match modes with
   | [ disc; ty ] ->
@@ -613,5 +613,14 @@ let install (module V : Variant) modes modalities =
   let module Diamond = Modality.Generate (Dia) in
   let module Nabla = Modality.Generate (Nab) in
   let module Cells = GwptCells (V) (Disc) (Type) (Triangle) (Box) (Diamond) (Nabla) in
+  (* The renameable generators are the units and counits of the two adjunctions △⊣□ and ◇⊣∇; the iso inverses and the induced maps □⇒◇, △⇒∇ never need to be named. *)
+  (match modalcells with
+  | [] -> ()
+  | [ tb_unit; tb_counit; dn_unit; dn_counit ] ->
+      Modalcell.rename Cells.tb_unit tb_unit;
+      Modalcell.rename Cells.tb_counit tb_counit;
+      Modalcell.rename Cells.dn_unit dn_unit;
+      Modalcell.rename Cells.dn_counit dn_counit
+  | _ -> failwith "wrong number of modal cell names for gwpt mode theory");
   Modalcell.choose_theory (module Cells : Modalcell.Theory);
   Modality.choose_theory (module Cells.Modalities : Modality.Theory)

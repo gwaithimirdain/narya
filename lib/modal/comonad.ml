@@ -176,7 +176,7 @@ struct
    fun c -> "[" ^ String.concat "," (List.map string_of_int (signature c)) ^ "]"
 end
 
-let install (module V : Variant) modes modalities =
+let install (module V : Variant) modes modalities modalcells =
   (match modes with
   | [ ty ] -> TestmodeGen.name := ty
   | [] -> ()
@@ -189,4 +189,11 @@ let install (module V : Variant) modes modalities =
   | _ -> failwith ("wrong number of modality names for " ^ V.name ^ " mode theory"));
   Modality.set_one_char true modalities;
   let module Flat = Modality.Generate (Flat) in
-  Modalcell.choose_theory (module ComonadCells (V) (Testmode) (Flat) : Modalcell.Theory)
+  let module Cells = ComonadCells (V) (Testmode) (Flat) in
+  (match modalcells with
+  | [] -> ()
+  | [ eps; delta ] ->
+      Modalcell.rename Cells.counit eps;
+      Modalcell.rename Cells.comult delta
+  | _ -> failwith ("wrong number of modal cell names for " ^ V.name ^ " mode theory"));
+  Modalcell.choose_theory (module Cells : Modalcell.Theory)

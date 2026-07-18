@@ -98,7 +98,10 @@ module FunctorModalities (V : Variant) : Modality.Theory = struct
   let translucent _ = true
 end
 
-let install (module V : Variant) modes modalities =
+let install (module V : Variant) modes modalities modalcells =
+  (match modalcells with
+  | [] -> ()
+  | _ -> failwith "wrong number of modal cell names for functor mode theory");
   let module Dom = DomGen (V) in
   (match modes with
   | [ dom; cod ] ->

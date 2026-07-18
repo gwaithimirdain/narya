@@ -252,7 +252,10 @@ struct
   end
 end
 
-let install (module V : Variant) modes modalities =
+let install (module V : Variant) modes modalities modalcells =
+  (match modalcells with
+  | [] -> ()
+  | _ -> failwith ("wrong number of modal cell names for " ^ V.name ^ " mode theory"));
   let module Disc = DiscGen (V) in
   (match modes with
   | [ disc; ty ] ->
