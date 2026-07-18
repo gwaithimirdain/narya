@@ -411,7 +411,7 @@ On the names for these theories that may not be self-explanatory:
 * ``-spatial`` type theory was so-called in the paper `Brouwer's fixed-point theorem in real-cohesive homotopy type theory <https://arxiv.org/abs/1509.07584>`_ because its intended models were toposes of spaces, with ``♭`` assigning the discrete topology and ``♯`` the codiscrete one, and ``♭ ⊣ ♯``.
 * ``-cospatial`` is the dual of ``-spatial``, with ``ʃ ⊣ ♭`` instead.
 * ``-crisp`` type theory was so-called in the paper `Internal Universes in Models of Homotopy Type Theory <https://arxiv.org/abs/1801.07664>`_ because its ``♭``-annotated variables (see below) were called "crisp" variables (taken from the previous paper).
-* ``-ambiflector`` is a single functor that is both a reflector and a coreflector, adjoint to itself.
+* ``-ambiflector`` is a single functor that is both a reflector and a coreflector, adjoint to itself, as used in the paper `Synthetic Spectra via a Monadic and Comonadic Modality <https://arxiv.org/abs/2102.04099>`_.
 
 
 Multi-mode theories
@@ -431,11 +431,6 @@ These mode theories have more than one mode, so we list the modes, as well as th
    "``-coreflection``", "``Disc``, ``Type``", "| ``△ : Disc → Type``,
    | ``□ : Type → Disc``", "| ``△□ ⇒ 1``, ``□△ ≅ 1``
    | ``△ ⊣ □``", "yes"
-   "``-guarded``", "``Type``, ``Timed``", "| ``△ : Type → Timed``,
-   | ``□ : Timed → Type``,
-   | ``▹ : Timed → Timed``", "| ``△ ⊣ □``,
-   | ``△□ ⇒ 1``, ``□△ ≅ 1``,
-   | ``1 ⇒ ▹``, ``□▹ ≅ □``", "yes"
    "``-local``", "``Disc``, ``Type``", "| ``△ : Disc → Type``,
    | ``□ : Type → Disc``
    | ``∇ : Disc → Type``", "| ``△ ⊣ □ ⊣ ∇``,
@@ -459,12 +454,18 @@ These mode theories have more than one mode, so we list the modes, as well as th
    | ``□ : Type → Disc``", "| ``η : 1 ⇒ △□``, ``ε : △□ ⇒ 1``,
    | ``ø : 1 ⇒ 1``,
    | ``△ ⊣ □``, ``□ ⊣ △``, ``□△ ≅ 1``", "no"
+   "``-guarded``", "``Type``, ``Timed``", "| ``△ : Type → Timed``,
+   | ``□ : Timed → Type``,
+   | ``▹ : Timed → Timed``", "| ``△ ⊣ □``,
+   | ``△□ ⇒ 1``, ``□△ ≅ 1``,
+   | ``1 ⇒ ▹``, ``□▹ ≅ □``", "yes"
 
 On the names for these theories that may not be self-explanatory:
 
 * ``-local`` indicates a "local geometric morphism", which is the name in topos theory for such an adjoint triple of finite-limit-preserving functors between toposes with the outer adjoints ``△`` and ``∇`` fully faithful.  Note that ``△□`` and ``∇□`` are an adjoint pair of a coreflector and a reflector on ``Type``, so this contains ``-spatial`` as a sub-theory.
 * ``-tconn`` is short for "totally connected geometric morphism", which is the name in topos theory for such an adjoint triple of finite-limit-preserving functors, with the inner adjoint ``△`` fully faithful.  (The mode theory ``-coreflection`` is also known as a merely *connected* geometric morphism.)  Dually to ``-local``, here ``◇△`` and ``△□`` are an adjoint pair of a reflector and coreflector, so this contains ``-cospatial`` as a sub-theory.
-* ``-gwpt`` is short for "geometrically well-pointed topos", meaning a geometric morphism ``△ ⊣ □`` having a section ``◇ ⊣ ∇``, in the category of toposes and geometric morphisms, such that the section is a geometric embedding.
+* ``-gwpt`` is short for "geometrically well-pointed topos", meaning a geometric morphism ``△ ⊣ □`` having a section ``◇ ⊣ ∇``, in the category of toposes and geometric morphisms, such that the section is a geometric embedding.  This may seem like a curious mode theory; its presence is explained in :ref:`Semantics of modal parametricity`.
 * ``-ambiflection`` is the two-mode analogue of ``-ambiflector``, both a reflection and a coreflection.
+* ``-guarded`` is a mode theory for "guarded recursion", with ``▸`` called "later" and ``□`` (or ``△□``) called "always"; its use is described in `the MTT paper <https://arxiv.org/abs/2011.15021>`_.
 
 Requests for, or contributions of, new mode theories are very welcome.
