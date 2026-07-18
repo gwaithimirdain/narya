@@ -2156,7 +2156,7 @@ and check_empty_match_lam : type mode a b.
         * (kn, k, n) insertion
         * (D.zero, kn, kn, mode normal) TubeOf.t) -> (
       let modality = Modality.filter_modality filter in
-      (* MODALTODO: If the modality is nonidentity, it would be a window modality. *)
+      (* MODALTODO: allow nontrivial window modalities in empty matches. *)
       match Modality.compare_id modality with
       | Neq -> fatal (Unimplemented "nontrivial window modality in empty match")
       | Eq -> (
@@ -4347,9 +4347,10 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
                   | Ok (Wrap modality) -> Some (Wrap (Modality.tgt modality))
                   | Error _ -> None)
               | None -> None))
-      | Synth (InstHigherPi (_, _doms, cod)) ->
-          (* MODALTODO: Try inspecting the domains too, if the codomain fails *)
-          synth_mode cod
+      | Synth (InstHigherPi (_, doms, cod)) -> (
+          match synth_mode cod with
+          | Some mode -> Some mode
+          | None -> synth_mode_tel doms)
       (* The mode of an application is always the mode of the function *)
       | Synth (App (fn, _, _)) -> synth_mode fn
       | Synth (Asc (tm, ty)) -> (
@@ -4390,7 +4391,7 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
       | Synth (SFirst (_, _)) -> None
       | Synth (Calc (_, _)) -> None)
 
-let rec synth_mode_tel : type a b ab. (a, b, ab) Raw.tel -> Modal.Mode.wrapped option = function
+and synth_mode_tel : type a b ab. (a, b, ab) Raw.tel -> Modal.Mode.wrapped option = function
   | Emp -> None
   | Ext (_, modality, ty, tel) -> (
       match synth_mode ty with

@@ -362,7 +362,7 @@ let rec unparse : type mode n lt ls rt rs s.
   | Let (x, Modal (modality, plus, tm), body) -> (
       (match Modality.compare_id modality with
       | Eq -> ()
-      (* MODALTODO:  *)
+      (* MODALTODO: unparse modal let-bindings *)
       | Neq -> fatal (Unimplemented "unparsing modal let-bindings"));
       let tm = unparse (Names.add_lock vars plus) tm No.Interval.entire No.Interval.entire in
       (* If a let-in doesn't fit in its interval, we have to parenthesize it. *)

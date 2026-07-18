@@ -1009,7 +1009,7 @@ and tyof_higher_codatafield : type mode c n h s r i ic.
     match tm with
     | Ok tm -> `Ok (TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
     | Error e -> `Error e in
-  (* MODALTODO: Allow nontrivial modalities *)
+  (* MODALTODO: Allow nontrivial modalities in higher fields *)
   let mode = mode_env codataenv in
   let env =
     Value.Ext

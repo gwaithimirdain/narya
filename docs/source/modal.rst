@@ -337,6 +337,12 @@ As before, for the exception see :ref:`Discrete modalities`.
 Currently, :ref:`higher fields <Higher coinductive types>` cannot also be modal.
 
 
+Modal HOTT
+----------
+
+The interaction of modal features with :ref:`Higher Observational Type Theory` is not yet fully implemented.  About all that can be relied on is that the HOTT primitives should work *in single-mode theories* for *types not involving modal features*.
+
+
 Mode theories
 -------------
 
