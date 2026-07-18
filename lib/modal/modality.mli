@@ -62,6 +62,8 @@ end
 
 val compare_id : ('x, 'm, 'y) t -> ('m * 'y, 'x id * 'x) Eq.compare
 val set_one_char : bool -> string list -> unit
+val one_char : unit -> bool
+val all_names : unit -> string list
 
 (* *)
 val name : ('a, 'm, 'b) t -> string list

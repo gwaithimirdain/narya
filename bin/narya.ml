@@ -559,12 +559,101 @@ let rec interact_pg () : unit =
     interact_pg ()
   with End_of_file -> ()
 
+(* Whether a user-supplied name is usable as a single identifier token: nonempty, not starting with an underscore or a digit, and containing no dots or whitespace (which the lexer would split into separate tokens). *)
+let valid_name s =
+  s <> ""
+  && s.[0] <> '_'
+  && (not (s.[0] >= '0' && s.[0] <= '9'))
+  && (not (String.contains s '.'))
+  && not (String.exists (fun c -> c = ' ' || c = '\t' || c = '\n' || c = '\r') s)
+
+(* The distinct elements that appear more than once in a list. *)
+let duplicates names =
+  let seen = Hashtbl.create 16 and dups = Hashtbl.create 16 in
+  List.iter
+    (fun n -> if Hashtbl.mem seen n then Hashtbl.replace dups n () else Hashtbl.add seen n ())
+    names;
+  Hashtbl.fold (fun n () acc -> n :: acc) dups []
+
+(* Whether the nonempty string [s] can be written as a concatenation of one or more of the strings in [parts]. *)
+let is_concatenation s parts =
+  let parts = List.filter (fun p -> p <> "") parts in
+  let n = String.length s in
+  let dp = Array.make (n + 1) false in
+  dp.(0) <- true;
+  for i = 1 to n do
+    List.iter
+      (fun p ->
+        let lp = String.length p in
+        if i >= lp && dp.(i - lp) && String.sub s (i - lp) lp = p then dp.(i) <- true)
+      parts
+  done;
+  n > 0 && dp.(n)
+
+(* Sanity-check the names supplied on the command line for renaming modes, modalities, and modal cells.  The three list arguments are the user-supplied names (empty if that kind was not renamed); the effective names of each kind (user-supplied ones plus any left at their defaults) are read back from the installed mode theory.  Because renaming is all-or-nothing per kind, checks that could be triggered by a theory's default names (which may deliberately not be identifiers, e.g. printed 2-cell names like "△□⇨1") are only run for the kinds the user actually renamed. *)
+let check_names modes modalities modalcells =
+  let errors = ref [] in
+  let err fmt = Printf.ksprintf (fun s -> errors := s :: !errors) fmt in
+  (* 6. All user-supplied names must be valid single identifiers. *)
+  List.iter
+    (fun (kind, names) ->
+      List.iter
+        (fun name ->
+          if not (valid_name name) then err "%s name '%s' is not a valid identifier" kind name)
+        names)
+    [ ("mode", modes); ("modality", modalities); ("modal cell", modalcells) ];
+  (* 1. No user-supplied name may be a reserved word.  This is essential for modes, which appear in term position; we apply it to modalities and cells too, since a keyword there would also confuse the lexer. *)
+  List.iter
+    (fun (kind, names) ->
+      List.iter
+        (fun name ->
+          if Option.is_some (Lexer.get_reserved_word name) then
+            err "%s name '%s' is a reserved word" kind name)
+        names)
+    [ ("mode", modes); ("modality", modalities); ("modal cell", modalcells) ];
+  let eff_modalities = Modal.Modality.all_names () in
+  let eff_cells = Modal.Modalcell.all_names () in
+  (* Deduplicated cell names, for the cross-checks below that would otherwise report a duplicated name once per occurrence. *)
+  let uniq_cells = List.sort_uniq compare eff_cells in
+  (* 7. No two modes may share a name. *)
+  if modes <> [] then
+    List.iter
+      (fun n -> err "duplicate mode name '%s'" n)
+      (duplicates (List.map fst (Modal.Mode.all ())));
+  (* 2. No two modalities may share a name. *)
+  if modalities <> [] then
+    List.iter (fun n -> err "duplicate modality name '%s'" n) (duplicates eff_modalities);
+  (* 3. No two modal cells may share a name. *)
+  if modalcells <> [] then
+    List.iter (fun n -> err "duplicate modal cell name '%s'" n) (duplicates eff_cells);
+  (* 4. No modal cell may share a name with a modality, since the two are mixed in the parsing and printing of keys. *)
+  if modalities <> [] || modalcells <> [] then
+    List.iter
+      (fun c ->
+        if List.mem c eff_modalities then err "modal cell name '%s' is also a modality name" c)
+      uniq_cells;
+  (* 5. When modalities are printed as single characters with no separators, a modal cell name that is a concatenation of modality names would be ambiguous. *)
+  if modalcells <> [] && Modal.Modality.one_char () then
+    List.iter
+      (fun c ->
+        if (not (List.mem c eff_modalities)) && is_concatenation c eff_modalities then
+          err
+            "modal cell name '%s' is a concatenation of modality names, which is ambiguous when modalities are single characters"
+            c)
+      uniq_cells;
+  match List.rev !errors with
+  | [] -> ()
+  | errs ->
+      List.iter (fun s -> Printf.fprintf stderr "invalid name: %s\n" s) errs;
+      exit 1
+
 let () =
   try
     let modes = List.filter (fun x -> x <> "") (String.split_on_char ',' !modes) in
     let modalities = List.filter (fun x -> x <> "") (String.split_on_char ',' !modalities) in
     let modalcells = List.filter (fun x -> x <> "") (String.split_on_char ',' !modalcells) in
     !install_mode_theory modes modalities modalcells;
+    check_names modes modalities modalcells;
     let use_ansi = if !use_ansi then Some true else None in
     run_top ?use_ansi ~install_hott:Hott.install @@ fun () ->
     (* Note: run_top executes the input files, so here we only have to do the interaction. *)

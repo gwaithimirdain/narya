@@ -24,6 +24,9 @@ module Gen = struct
     | _ -> Neq
 end
 
+(* All the generating 2-cell names currently in existence, i.e. those of the installed mode theory.  Used for command-line name sanity-checking. *)
+let all_names () = Dynarray.to_list Gen.names
+
 let generate : type a m n b.
     string -> (a, m, b) Modality.t -> (a, n, b) Modality.t -> (a, m, n, b) gen =
  fun name m n ->

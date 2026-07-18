@@ -259,6 +259,9 @@ let translucent m =
 let one_char_ref = ref true
 let one_char () = !one_char_ref
 
+(* All the generating modality names currently in existence, i.e. those of the installed mode theory.  Used for command-line name sanity-checking. *)
+let all_names () = Dynarray.to_list Gen.names
+
 let is_exactly_one_utf8_char s =
   let len = String.length s in
   if len = 0 then false
