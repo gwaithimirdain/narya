@@ -13,8 +13,9 @@ These features require ``-parametric``, and by default we will assume ``-directi
    "Command-line flag", "Base theory", "Arity", "Discretes", "Param. Locker"
    "``-discrete-functor``", "``-functor``", "any", "``○``, ``DomType``", "--"
    "``-discrete-coreflector``", "``-coreflector``", "any", "``♭``", "``♭`` (arity 1)"
+   "``-discrete-comonad``", "``-comonad``", "any", "``♭``", "``△□``"
    "``-discrete-spatial``", "``-spatial``", "any", "``♭``", "--"
-   "``-discrete-cospatial``", "``-spatial``", "1 only", "``♯``, ``♭``", "``♯`` (arity 1)"
+   "``-discrete-cospatial``", "``-spatial``", "1 only", "``ʃ``, ``♭``", "``♯`` (arity 1)"
    "``-discrete-ambiflector``", "``-ambiflector``", "1 only", "``♮``", "--"
    "``-discrete-coreflection``", "``-coreflection``", "any", "``△``, ``Disc``", "``△□`` (arity 1)"
    "``-discrete-adjunction``", "``-adjunction``", "any", "``△``, ``△□``, ``Disc``", "``△□``"
@@ -27,7 +28,7 @@ Some discrete mode theories also differ from their base theories by having more 
 
 - ``△`` is pellucid in ``-discrete-coreflection``, ``-discrete-adjunction``, and ``-discrete-local``.
 - ``△`` is pellucid in ``-discrete-gwpt``, and in the :ref:`external <External parametricity>` case so are ``◇`` and ``△◇``.
-- Also in the external case, ``◇`` and ``△◇`` are pellucid in ``-discrete-tconn`` (as is ``△``, as inherited from ``-tconn``).
+- Also in the external case, ``◇`` and ``△◇`` are pellucid in ``-discrete-tconn`` (as is ``△``, as in ``-tconn``).
 
 The reasons for these changes, and for the other choices in the table, will be explained in :ref:`Semantics of modal parametricity`.
 
@@ -41,7 +42,7 @@ A mode theory can declare any of its *modalities* to be *discrete* (a.k.a. *nonp
 
 In addition to modalities being discrete, a *mode* can also be declared as discrete.  This means that types at that mode have no higher-dimensional versions at all.
 
-For compatibility, it is required that a modality whose source *or* target mode is discrete must also be discrete.  There is also a further restriction that will be explained :ref:`below <Discrete units and arity 1>`: if there are any 2-cells from a non-discrete modality (such as an identity) to a discrete modality, then the arity of parametricity must be 1.  This is the syntactic reason why ``-discrete-tconn``, ``-discrete-cospatial``, ``-discrete-ambiflector``, and ``-discrete-ambiflection`` require arity 1, because of the reflector units ``1 ⇒ △◇``, ``1 ⇒ ♯``, ``1 ⇒ ♮``, and ``1 ⇒ △□`` respectively; a semantic reason will be given in :ref:`Semantics of modal parametricity`.
+For compatibility, it is required that a modality whose source *or* target mode is discrete must also be discrete.  There is also a further restriction that will be explained :ref:`below <Discrete units and arity 1>`: if there are any 2-cells from a non-discrete modality (such as an identity) to a discrete modality, then the arity of parametricity must be 1.  This is the syntactic reason why ``-discrete-tconn``, ``-discrete-cospatial``, ``-discrete-ambiflector``, and ``-discrete-ambiflection`` require arity 1, because of the reflector units ``1 ⇒ △◇``, ``1 ⇒ ʃ``, ``1 ⇒ ♮``, and ``1 ⇒ △□`` respectively; a semantic reason will be given in :ref:`Semantics of modal parametricity`.
 
 
 Discrete function-types
@@ -119,7 +120,7 @@ In other words, ``Br (○ A)`` is a datatype indexed by two copies of ``○ A`` 
 
 Discrete modalities can also be pellucid, transparent, or translucent.  However, a discrete modality cannot currently be used as a window modality for a match against a higher-dimensional datatype.  This is not a semantic restriction, but a limitation of the structure of contexts in Narya; it would be possible to work around but we haven't done it yet.
 
-In particular, the preferred replacement for the deprecated :ref:`strictly discrete datatypes <Strictly discrete datatypes (experimental and deprecated)>` is now to use a two-mode theory with discreteness such as ``-discrete-coreflection``, and work with ordinary datatypes at the ``Disc`` mode, under the discrete window ``△`` when working at the ``Type`` mode.  Thus, for instance, we can prove things at ``Type`` by induction over the ``Disc``-natural-numbers ``ℕ`` using a ``△`` window, and no higher-dimensional versions of ``ℕ`` appear even when recursing into higher dimensions.
+In particular, the preferred replacement for the deprecated :ref:`strictly discrete datatypes <Strictly discrete datatypes (experimental and deprecated)>` is now to use a two-mode theory with discreteness and work with ordinary datatypes at the ``Disc`` mode, under the discrete window ``△`` when working at the ``Type`` mode.  Thus, for instance, we can prove things at ``Type`` by induction over the ``Disc``-natural-numbers ``ℕ`` using a ``△`` window, and no higher-dimensional versions of ``ℕ`` appear even when recursing into higher dimensions.
 
 
 Codiscrete records and codata
@@ -141,7 +142,7 @@ However, this is nothing but ``x ↦ rel ((x :♭| ♯ A) .unsharp)``.  In parti
 
 In the particular case of a negative modal operator such as ``♯`` where the *only* field is modal, this means that ``Br (♯ A) u₀ u₁`` has *zero* fields, and therefore it is equivalent to the unit type ``⊤``.  That is, ``♯ A`` is *codiscrete*, the dual of discrete: all of its bridge-types are contractible (uniquely inhabited).  Similarly, ``∇ A`` is codiscrete in the ``-discrete-local`` mode theory, because ``□`` is discrete (as it has a discrete target ``Disc``).
 
-There is no direct way to declare a modality to "be codiscrete": codiscreteness only arises for right adjoints of discrete sinister modalities.  But a codiscrete modality cannot commute with parametricity either, nor can it be discrete (unless the arity is 1, in which case discreteness and codiscreteness coincide).  Thus, the modalities ``♯`` in ``-discrete-spatial``, and ``∇`` in ``-discrete-local`` and ``-discrete-gwpt``, are declared to be *intangible*, so that they do not admit positive modal operators or appear in modal function-types at all, as there is no consistent way to give behavior for such types.  (Note that this means in ``-discrete-gwpt`` it is impossible to define a modal operator ``∇◇`` directly: one can only define ``◇`` positively and ``∇`` negatively.)
+There is no direct way to declare a modality to "be codiscrete": codiscreteness only arises for right adjoints of discrete sinister modalities.  But a codiscrete modality cannot commute with parametricity either, nor can it be discrete (unless the arity is 1, in which case discreteness and codiscreteness coincide).  Thus, the modalities ``♯`` in ``-discrete-spatial``, and ``∇`` in ``-discrete-local`` and ``-discrete-gwpt``, are declared to be *intangible*, so that they do not admit positive modal operators or appear in modal function-types at all, as there is no consistent way to give behavior for such types.  (Note that this means in ``-discrete-gwpt`` it is impossible to define a modal operator ``∇◇`` directly: one can only define ``◇`` positively and ``∇`` negatively.  This is also why it has no single-mode version.)
 
 If a modality is neither tangible nor sinister, like ``♯`` and ``∇``, then it cannot appear in function-types, datatypes, or record/codatatypes.  Thus, whether or not it is discrete is undetectable to the theory.  But for consistency, we call these modalities discrete when they have a discrete mode as their source or target.
 

@@ -421,9 +421,9 @@ let install modes modalities modalcells =
   | [] -> ()
   | _ -> failwith "wrong number of modal cell names for guarded mode theory");
   (match modes with
-  | [ disc; ty ] ->
-      TypeGen.name := disc;
-      TimedGen.name := ty
+  | [ ty; timed ] ->
+      TypeGen.name := ty;
+      TimedGen.name := timed
   | [] -> ()
   | _ -> failwith "wrong number of mode names for guarded mode theory");
   let module Type = Mode.Generate (TypeGen) in

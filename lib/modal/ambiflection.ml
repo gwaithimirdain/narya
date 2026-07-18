@@ -134,8 +134,8 @@ struct
      explicitly. *)
   let box_unit = Modalcell.of_gen (Modalcell.generate "η□△" (Modality.id disc) boxtri)
   let box_unit_inv = Modalcell.of_gen (Modalcell.generate "η□△⁻¹" boxtri (Modality.id disc))
-  let unit = Modalcell.of_gen (Modalcell.generate "η△□" (Modality.id typ) tribox)
-  let counit = Modalcell.of_gen (Modalcell.generate "ε△□" tribox (Modality.id typ))
+  let unit = Modalcell.of_gen (Modalcell.generate "η" (Modality.id typ) tribox)
+  let counit = Modalcell.of_gen (Modalcell.generate "ε" tribox (Modality.id typ))
   let zero = Modalcell.of_gen (Modalcell.generate "ø" (Modality.id typ) (Modality.id typ))
 
   (* △□ is also adjoint to itself, exactly as ♮ is in Ambiflector.  We build the two cells
@@ -145,15 +145,11 @@ struct
      exactly as mult/comult would be used in Ambiflector if △□ were a separate generator instead
      of a composite. *)
   let tribox_insert =
-    Modalcell.postwhisker Zero
-      (Suc (Suc (Zero, Triangle.modality), Box.modality))
-      tribox unit
+    Modalcell.postwhisker Zero (Suc (Suc (Zero, Triangle.modality), Box.modality)) tribox unit
   (* tribox_insert : △□ ⇒ △□∘△□ *)
 
   let tribox_extract =
-    Modalcell.postwhisker
-      (Suc (Suc (Zero, Triangle.modality), Box.modality))
-      Zero tribox counit
+    Modalcell.postwhisker (Suc (Suc (Zero, Triangle.modality), Box.modality)) Zero tribox counit
   (* tribox_extract : △□∘△□ ⇒ △□ *)
 
   let self_unit = Modalcell.vcomp tribox_insert unit

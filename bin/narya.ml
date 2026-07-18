@@ -590,7 +590,7 @@ let is_concatenation s parts =
   done;
   n > 0 && dp.(n)
 
-(* Sanity-check the names supplied on the command line for renaming modes, modalities, and modal cells.  The three list arguments are the user-supplied names (empty if that kind was not renamed); the effective names of each kind (user-supplied ones plus any left at their defaults) are read back from the installed mode theory.  Because renaming is all-or-nothing per kind, checks that could be triggered by a theory's default names (which may deliberately not be identifiers, e.g. printed 2-cell names like "△□⇨1") are only run for the kinds the user actually renamed. *)
+(* Sanity-check the names supplied on the command line for renaming modes, modalities, and modal cells.  The three list arguments are the user-supplied names (empty if that kind was not renamed); the effective names of each kind (user-supplied ones plus any left at their defaults) are read back from the installed mode theory.  Because renaming is all-or-nothing per kind, checks that could be triggered by a theory's default names are only run for the kinds the user actually renamed. *)
 let check_names modes modalities modalcells =
   let errors = ref [] in
   let err fmt = Printf.ksprintf (fun s -> errors := s :: !errors) fmt in
