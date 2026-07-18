@@ -532,10 +532,15 @@ let rec get_abslets heads obs =
         | Token (Let, (wslet, _)) :: Term x :: rest -> ([ (Token.Let, wslet) ], Wrap x, rest)
         | Token (And, (wsand, _)) :: Term x :: rest -> ([ (Token.And, wsand) ], Wrap x, rest)
         | _ -> invalid "let" in
-      (* Then we pull off the ascribed type, if any. *)
+      (* Then we pull off the ascribed type, possibly with a modality, if any. *)
       let ty, obs =
         match obs with
-        | Token (Colon, (wscolon, _)) :: Term ty :: rest -> (Some (wscolon, Wrap ty), rest)
+        | Token (Colon, (wscolon, _))
+          :: Term modality
+          :: Token (Op "|", (wsbar, _))
+          :: Term ty
+          :: rest -> (Some (wscolon, Some (Wrap modality, wsbar), Wrap ty), rest)
+        | Token (Colon, (wscolon, _)) :: Term ty :: rest -> (Some (wscolon, None, Wrap ty), rest)
         | _ -> (None, obs) in
       (* Finally we pull the bound value. *)
       match obs with
@@ -585,9 +590,15 @@ let pp_abslets obs :
             (* This code should be as parallel as possible with the printing of "def" commands. *)
             let gty, wty =
               match ty with
-              | Some (wscolon, Wrap ty) ->
+              | Some (wscolon, modality, Wrap ty) ->
                   let pty, wty = pp_term ty in
-                  (group (pp_ws `Break wx ^^ Token.pp Colon ^^ pp_ws `Nobreak wscolon ^^ pty), wty)
+                  let pcolon =
+                    match modality with
+                    | Some (Wrap modality, wsbar) ->
+                        let m = (get_modality fst modality).value in
+                        Token.pp Colon ^^ pp_modality wscolon Fun.id m wsbar
+                    | None -> Token.pp Colon ^^ pp_ws `Nobreak wscolon in
+                  (group (pp_ws `Break wx ^^ pcolon ^^ pty), wty)
               | None -> (empty, wx) in
             let var_and_ty = group (hang 2 (kws ^^ px ^^ gty)) in
             let coloneq = pp_ws `Break wty ^^ Token.pp Coloneq ^^ pp_ws `Nobreak wscoloneq in
