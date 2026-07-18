@@ -40,11 +40,12 @@ These options are discussed under :ref:`Parametricity`.
 Modal type theory
 ^^^^^^^^^^^^^^^^^
 
-These options are discussed under :ref:`Modal type theory` and :ref:`Modal parametricity`.
+These options are discussed under :ref:`Modal type theory` and :ref:`Modal parametric discreteness`.
 
-- Mode theory selection flags (see :ref:`Modal type theory` and :ref:`Modal parametricity`)
+- Mode theory selection flags
 - ``-modes X``: Rename the modes (universes)
 - ``-modalities X``: Rename the modalities
+- ``-modalcells X``: Rename the modal cells
 
 - ``-dtt``: Poor man's dTT mode (``-parametric -arity 1 -direction d -external -discrete-tconn``)
 
