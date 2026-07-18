@@ -37,16 +37,17 @@ module rec Value : sig
           * [ `Labeled | `Unlabeled ]
           -> (D.zero, 'mode * 'n * 's * 'et) t
       | Higher :
-          ('mode, 'm, 'n, 'mn, 'p, 'i, 'a) higher_data Lazy.t
+          ('mode, 'f, 'g, 'gmode, 'm, 'n, 'mn, 'p, 'i, 'ag) higher_data Lazy.t
           -> ('i, 'mode * 'p * potential * no_eta) t
 
-    and ('mode, 'm, 'n, 'mn, 'p, 'i, 'a) higher_data = {
-      vals : ('p, 'i, ('mode, potential) Value.lazy_eval option) InsmapOf.t;
+    and ('mode, 'f, 'g, 'gmode, 'm, 'n, 'mn, 'p, 'i, 'ag) higher_data = {
+      adj : ('mode, 'f, 'g, 'gmode) Modalcell.adjunction;
+      vals : ('p, 'i, ('gmode, potential) Value.lazy_eval option) InsmapOf.t;
       intrinsic : 'i D.t;
       plusdim : ('m, 'n, 'mn) D.plus;
-      env : ('mode, 'm, 'a) Value.env;
+      env : ('gmode, 'm, 'ag) Value.env;
       deg : ('p, 'mn) deg;
-      terms : ('n, 'i, 'mode * 'a) PlusPbijmap.t;
+      terms : ('n, 'i, 'gmode * 'ag) PlusPbijmap.t;
     }
   end
 
@@ -252,16 +253,17 @@ end = struct
           -> (D.zero, 'mode * 'n * 's * 'et) t
       (* In the higher case, they are always labeled.  There are multiple values are indexed by insertions, regarded as partial bijections with zero remaining dimensions; the 'evaluation dimension is the substitution dimension 'n and the 'intrinsic dimension is associated to the field.  We also store the original terms as a closure, since they may be needed to evaluate fields of degeneracies. *)
       | Higher :
-          ('mode, 'm, 'n, 'mn, 'p, 'i, 'a) higher_data Lazy.t
+          ('mode, 'f, 'g, 'gmode, 'm, 'n, 'mn, 'p, 'i, 'ag) higher_data Lazy.t
           -> ('i, 'mode * 'p * potential * no_eta) t
 
-    and ('mode, 'm, 'n, 'mn, 'p, 'i, 'a) higher_data = {
-      vals : ('p, 'i, ('mode, potential) Value.lazy_eval option) InsmapOf.t;
+    and ('mode, 'f, 'g, 'gmode, 'm, 'n, 'mn, 'p, 'i, 'ag) higher_data = {
+      adj : ('mode, 'f, 'g, 'gmode) Modalcell.adjunction;
+      vals : ('p, 'i, ('gmode, potential) Value.lazy_eval option) InsmapOf.t;
       intrinsic : 'i D.t;
       plusdim : ('m, 'n, 'mn) D.plus;
-      env : ('mode, 'm, 'a) Value.env;
+      env : ('gmode, 'm, 'ag) Value.env;
       deg : ('p, 'mn) deg;
-      terms : ('n, 'i, 'mode * 'a) PlusPbijmap.t;
+      terms : ('n, 'i, 'gmode * 'ag) PlusPbijmap.t;
     }
   end
 
@@ -851,17 +853,22 @@ let rec eval_structfield : type mode m n mn a status i et.
   | Lower (adj, plus_lock, tm, lbl) ->
       (* The term of a modal field lives behind a lock by the right adjoint, so we evaluate it in the environment keyed (by identity cells, per generator) by the right adjoint. *)
       Lower (adj, lazy_eval (key_id_env env plus_lock) tm, lbl)
-  | Higher terms -> Higher (lazy (eval_higher_structfield env m m_n mn terms))
-  | LazyHigher terms -> Higher (lazy (eval_higher_structfield env m m_n mn (Lazy.force terms)))
+  | Higher (adj, plus_lock, terms) ->
+      (* Like a lower modal field, the terms of a higher modal field live behind a lock by the right adjoint, so we key the environment by it before storing. *)
+      Higher (lazy (eval_higher_structfield adj (key_id_env env plus_lock) m m_n mn terms))
+  | LazyHigher (adj, plus_lock, terms) ->
+      Higher
+        (lazy (eval_higher_structfield adj (key_id_env env plus_lock) m m_n mn (Lazy.force terms)))
 
-and eval_higher_structfield : type mode m n mn a i.
-    (mode, m, a) env ->
+and eval_higher_structfield : type mode f g gmode m n mn ag i.
+    (mode, f, g, gmode) Modalcell.adjunction ->
+    (gmode, m, ag) env ->
     m D.t ->
     (m, n, mn) D.plus ->
     mn D.t ->
-    (n, i, mode * a) PlusPbijmap.t ->
-    (mode, m, n, mn, mn, i, a) Structfield.higher_data =
- fun env m m_n mn terms ->
+    (n, i, gmode * ag) PlusPbijmap.t ->
+    (mode, f, g, gmode, m, n, mn, mn, i, ag) Structfield.higher_data =
+ fun adj env m m_n mn terms ->
   let intrinsic = PlusPbijmap.intrinsic terms in
   let vals =
     InsmapOf.build mn intrinsic
@@ -890,7 +897,7 @@ and eval_higher_structfield : type mode m n mn a i.
                 (* We don't need to further permute the result, as all the information about the permutation ins was captured in newpbij and mtr. *)
                 Some (lazy_eval env3 tm));
       } in
-  { intrinsic; plusdim = m_n; terms; env; deg = id_deg mn; vals }
+  { adj; intrinsic; plusdim = m_n; terms; env; deg = id_deg mn; vals }
 
 let eval_structfield_abwd : type mode m n mn a status et.
     (mode, m, a) env ->

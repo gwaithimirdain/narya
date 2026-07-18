@@ -56,8 +56,10 @@ module rec Term : sig
           * ('gmode, 'ag, kinetic) Term.term
           -> (D.zero, 'mode * 'a * 'n * 'et) t
       | Higher :
-          ('i, ('a, ('mode id, D.zero) dim_entry) snoc, 'ian, 'mode) plusmap
-          * ('mode, 'ian, kinetic) Term.term
+          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          * ('i, ('a, ('mode id, D.zero) dim_entry) snoc, 'ian, 'mode) plusmap
+          * ('ian, 'mode, 'g, 'gmode, 'iag) plus_lock
+          * ('gmode, 'iag, kinetic) Term.term
           -> ('i, 'mode * 'a * D.zero * no_eta) t
   end
 
@@ -72,10 +74,14 @@ module rec Term : sig
           * [ `Labeled | `Unlabeled ]
           -> (D.zero, 'mode * ('n * 'a * 's * 'et)) t
       | Higher :
-          ('n, 'i, 'mode * 'a) PlusPbijmap.t
+          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
+          * ('n, 'i, 'gmode * 'ag) PlusPbijmap.t
           -> ('i, 'mode * ('n * 'a * potential * no_eta)) t
       | LazyHigher :
-          ('n, 'i, 'mode * 'a) PlusPbijmap.t Lazy.t
+          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
+          * ('n, 'i, 'gmode * 'ag) PlusPbijmap.t Lazy.t
           -> ('i, 'mode * ('n * 'a * potential * no_eta)) t
   end
 
@@ -346,8 +352,10 @@ end = struct
           * ('gmode, 'ag, kinetic) Term.term
           -> (D.zero, 'mode * 'a * 'n * 'et) t
       | Higher :
-          ('i, ('a, ('mode id, D.zero) dim_entry) snoc, 'ian, 'mode) plusmap
-          * ('mode, 'ian, kinetic) Term.term
+          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          * ('i, ('a, ('mode id, D.zero) dim_entry) snoc, 'ian, 'mode) plusmap
+          * ('ian, 'mode, 'g, 'gmode, 'iag) plus_lock
+          * ('gmode, 'iag, kinetic) Term.term
           -> ('i, 'mode * 'a * D.zero * no_eta) t
   end
 
@@ -364,10 +372,14 @@ end = struct
           * [ `Labeled | `Unlabeled ]
           -> (D.zero, 'mode * ('n * 'a * 's * 'et)) t
       | Higher :
-          ('n, 'i, 'mode * 'a) PlusPbijmap.t
+          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
+          * ('n, 'i, 'gmode * 'ag) PlusPbijmap.t
           -> ('i, 'mode * ('n * 'a * potential * no_eta)) t
       | LazyHigher :
-          ('n, 'i, 'mode * 'a) PlusPbijmap.t Lazy.t
+          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
+          * ('n, 'i, 'gmode * 'ag) PlusPbijmap.t Lazy.t
           -> ('i, 'mode * ('n * 'a * potential * no_eta)) t
   end
 

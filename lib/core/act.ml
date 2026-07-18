@@ -199,20 +199,29 @@ module Act = struct
         | Neq ->
             let (Wrap cell) = Modalcell.prewhisker_wrapped cell (Modalcell.adj_right adj) in
             Lower (adj, act_lazy_eval v deg0 cell, lbl))
-    | Higher (lazy { vals; intrinsic; plusdim; env; deg = deg1; terms }) ->
-        Higher (lazy (act_higher_structfield deg0 cell vals intrinsic plusdim env deg1 terms))
+    (* For a higher modal field, whose stored data lives behind a lock by the right adjoint, the cell gets prewhiskered by that right adjoint, exactly as for a lower field. *)
+    | Higher (lazy { adj; vals; intrinsic; plusdim; env; deg = deg1; terms }) -> (
+        match Modalcell.compare_adjunction_id adj with
+        | Eq ->
+            Higher
+              (lazy (act_higher_structfield adj deg0 cell vals intrinsic plusdim env deg1 terms))
+        | Neq ->
+            let (Wrap cell) = Modalcell.prewhisker_wrapped cell (Modalcell.adj_right adj) in
+            Higher
+              (lazy (act_higher_structfield adj deg0 cell vals intrinsic plusdim env deg1 terms)))
 
-  and act_higher_structfield : type mode mu1 mu2 cod m n mn a p q i.
+  and act_higher_structfield : type mode f g gmode mu1 mu2 cod m n mn ag p q i.
+      (mode, f, g, gmode) Modalcell.adjunction ->
       (q, p) deg ->
-      (mode, mu1, mu2, cod) Modalcell.t ->
-      (p, i, (mode, potential) lazy_eval option) InsmapOf.t ->
+      (gmode, mu1, mu2, cod) Modalcell.t ->
+      (p, i, (gmode, potential) lazy_eval option) InsmapOf.t ->
       i D.t ->
       (m, n, mn) D.plus ->
-      (mode, m, a) env ->
+      (gmode, m, ag) env ->
       (p, mn) deg ->
-      (n, i, mode * a) PlusPbijmap.t ->
-      (mode, m, n, mn, q, i, a) Structfield.higher_data =
-   fun deg0 cell vals intrinsic plusdim env deg1 terms ->
+      (n, i, gmode * ag) PlusPbijmap.t ->
+      (mode, f, g, gmode, m, n, mn, q, i, ag) Structfield.higher_data =
+   fun adj deg0 cell vals intrinsic plusdim env deg1 terms ->
     (* Now we want to change p to q by acting by fa : (q, p) deg.  We'll keep almost everything the same and simply compose deg with fa.  The sticky bit is to update vals, which has to become an Insmap with evaluation dimension q rather than p. *)
     let deg = comp_deg deg1 deg0 in
     (* The modal key acts on the stored environment by prekeying it, so that values rebuilt from 'terms' (either below or by a later action) incorporate it.  The old 'vals' do not include this key, so we act on them by it separately below. *)
@@ -257,7 +266,7 @@ module Act = struct
                   | Some
                       (PlusFam
                          (type ra)
-                         ((ra, tm) : (r34, a, ra, mode) plusmap * (mode, ra, potential) term)) ->
+                         ((ra, tm) : (r34, ag, ra, gmode) plusmap * (gmode, ra, potential) term)) ->
                       (* Now the game is to build a degeneracy that we can apply to the m-dimensional environment 'env' so that we can shift it by the plusmap 'ra' and evaluate the term 'tm'.  (Note that 'tm' is s4-dimensional as that is the result dimension of the pbij that indexes it.)  That means we need to get an environment whose dimension is something+r34.  We start by adding r3, and then apply a bunch of permutations.
                              m + r3
                              ≅ (t + r4) + r3    (mtr)
@@ -296,7 +305,7 @@ module Act = struct
                         (act_lazy_eval (lazy_eval env5 tm) deg3
                            (Modalcell.id2 (Modalcell.hsrc cell)))));
         } in
-    { vals; intrinsic; plusdim; env; deg; terms }
+    { adj; vals; intrinsic; plusdim; env; deg; terms }
 
   and act_structfield_abwd : type mode mu1 mu2 cod p q status et.
       (q, p) deg ->

@@ -121,17 +121,19 @@ and structfield : type mode n a s i et.
  fun f fld ->
   match fld with
   | Lower (adj, plus_lock, tm, lbl) -> Lower (adj, plus_lock, term f tm, lbl)
-  | Higher m ->
+  | Higher (adj, plus_lock, m) ->
       Higher
-        (PlusPbijmap.mmap
-           {
-             map =
-               (fun _ [ x ] ->
-                 match x with
-                 | Some (PlusFam (rb, x)) -> Some (PlusFam (rb, term f x))
-                 | None -> None);
-           }
-           [ m ])
+        ( adj,
+          plus_lock,
+          PlusPbijmap.mmap
+            {
+              map =
+                (fun _ [ x ] ->
+                  match x with
+                  | Some (PlusFam (rb, x)) -> Some (PlusFam (rb, term f x))
+                  | None -> None);
+            }
+            [ m ] )
   | LazyHigher _ -> Reporter.fatal (Anomaly "lazy higher field can't be linked")
 
 and codatafield : type mode a n i et.
@@ -141,7 +143,7 @@ and codatafield : type mode a n i et.
  fun f fld ->
   match fld with
   | Lower (adj, plus_lock, ty) -> Lower (adj, plus_lock, term f ty)
-  | Higher (ka, tm) -> Higher (ka, term f tm)
+  | Higher (adj, ka, plus_lock, tm) -> Higher (adj, ka, plus_lock, term f tm)
 
 and dataconstr : type mode p i.
     (File.t -> File.t) -> (mode, p, i) dataconstr -> (mode, p, i) dataconstr =

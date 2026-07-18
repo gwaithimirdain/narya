@@ -171,7 +171,14 @@ let () =
         let fields =
           Bwd.map
             (function
-              | Term.StructfieldAbwd.Entry (f, Higher tms) ->
+              | Term.StructfieldAbwd.Entry
+                  ( f,
+                    Higher
+                      (type f g gmode ag)
+                      ((adj, plus_lock, tms) :
+                        (_, f, g, gmode) Modalcell.adjunction
+                        * (_, _, g, gmode, ag) plus_lock
+                        * (_, _, gmode * ag) Term.PlusPbijmap.t) ) ->
                   let tms =
                     Term.PlusPbijmap.mmap
                       {
@@ -207,9 +214,9 @@ let () =
                                                    Modal (modality, plus, tm) )) ) :
                                            k variables
                                            * kn D.t
-                                           * (dom, modality, mode, k, kn) Modality.filter_dim
+                                           * (dom, modality, gmode, k, kn) Modality.filter_dim
                                            * _) ) :
-                                      _ * (mode, a, potential) Term.term)
+                                      _ * (gmode, a, potential) Term.term)
                                   when c = eq_trr -> (
                                     match (Modality.compare_id modality, plus) with
                                     | Eq, Plus_lock (Zero _, Zero) ->
@@ -221,7 +228,7 @@ let () =
                                                 bm,
                                                 Realize
                                                   (CubeOf.find_top tm
-                                                    : ( mode,
+                                                    : ( gmode,
                                                         (a, (modality, k) dim_entry) Tbwd.snoc,
                                                         kinetic )
                                                       Term.term) ) )
@@ -230,7 +237,7 @@ let () =
                               x);
                       }
                       [ tms ] in
-                  Term.StructfieldAbwd.Entry (f, Higher tms)
+                  Term.StructfieldAbwd.Entry (f, Higher (adj, plus_lock, tms))
               | s -> s)
             fields in
         Global.set fib_rtr mode
@@ -606,7 +613,7 @@ let () =
             let fields =
               Bwd.map
                 (function
-                  | Term.StructfieldAbwd.Entry (f, Higher tms) ->
+                  | Term.StructfieldAbwd.Entry (f, Higher (adj, plus_lock, tms)) ->
                       let tms =
                         Term.PlusPbijmap.mmap
                           {
@@ -622,7 +629,7 @@ let () =
                                   x);
                           }
                           [ tms ] in
-                      Term.StructfieldAbwd.Entry (f, Higher tms)
+                      Term.StructfieldAbwd.Entry (f, Higher (adj, plus_lock, tms))
                   | s -> s)
                 fields in
             Fibrancy.pi :=

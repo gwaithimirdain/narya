@@ -415,3 +415,119 @@ And likewise in a record definition.
      ^ invalid self variable type for field unbox: unequal parameters
   
   [1]
+
+Modal higher fields: a ♭-modal higher codatatype (the amazing right adjoint √
+composed with ♭).  Since ♭ is parametric, it filters none of the field's
+intrinsic dimensions, so projections work at all dimensions, keyed by the
+adjunction counit.
+
+  $ narya -v -spatial higherfields.ny
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0000]
+   ￮ constant √♭A defined
+  
+   ￫ info[I0001]
+   ￮ axiom s0 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom s1 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom s2 assumed
+  
+  (s2 :♭| _) .root
+    : A
+  
+  (s2 :♭| _) .root
+    : A
+  
+   ￫ info[I0001]
+   ￮ axiom s00 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom s01 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom s10 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom s11 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom s02 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom s12 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom s20 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom s21 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom s22 assumed
+  
+  (s22 :♭| _) .root.1
+    : Id A ((s20 :♭| _) .root) ((s21 :♭| _) .root)
+  
+  (sym s22 :♭| _) .root.1
+    : Id A ((s02 :♭| _) .root) ((s12 :♭| _) .root)
+  
+
+Constructing a tuple/comatch of a modal higher field is not yet implemented.
+
+  $ narya -spatial higherfields.ny -e "def mk : √♭A ≔ [ .root.e ↦ (mk :♭| _) .root ]"
+  (s2 :♭| _) .root
+    : A
+  
+  (s2 :♭| _) .root
+    : A
+  
+  (s22 :♭| _) .root.1
+    : Id A ((s20 :♭| _) .root) ((s21 :♭| _) .root)
+  
+  (sym s22 :♭| _) .root.1
+    : Id A ((s02 :♭| _) .root) ((s12 :♭| _) .root)
+  
+   ￫ error[E0100]
+   ￭ command-line exec string
+   1 | def mk : √♭A ≔ [ .root.e ↦ (mk :♭| _) .root ]
+     ^ unimplemented: tuples/comatches of modal higher fields
+  
+  [1]
+
+Projecting a modal higher field without the locking annotation is an error.
+
+  $ narya -spatial higherfields.ny -e "echo s2 .root.1"
+  (s2 :♭| _) .root
+    : A
+  
+  (s2 :♭| _) .root
+    : A
+  
+  (s22 :♭| _) .root.1
+    : Id A ((s20 :♭| _) .root) ((s21 :♭| _) .root)
+  
+  (sym s22 :♭| _) .root.1
+    : Id A ((s02 :♭| _) .root) ((s12 :♭| _) .root)
+  
+   ￫ error[E1712]
+   ￭ command-line exec string
+   1 | echo s2 .root.1
+     ^ field root is modal with left adjoint ♭, so projecting it requires a locking annotation such as (_ : ♭ | _) .root
+  
+  [1]
+
+In the discrete spatial mode theory, ♭ is nonparametric, so it filters the
+field's intrinsic dimensions; modal higher fields there are not yet supported.
+
+  $ narya -discrete-spatial -parametric -arity 1 -direction d -e "axiom A : Type" -e "def R : Type ≔ codata [ (x :♭| _) .root.d : A ]"
+   ￫ error[E0100]
+   ￭ command-line exec string
+   1 | def R : Type ≔ codata [ (x :♭| _) .root.d : A ]
+     ^ unimplemented: nonparametric modal higher fields
+  
+  [1]
