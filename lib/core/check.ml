@@ -2171,7 +2171,7 @@ and check_empty_match_lam : type mode a b.
           | Ok : (dom, kinetic) value option * (a, 'c, 'ac) N.plus * dd sface_of option -> 'c t
       end in
       let module Build = NICubeOf.Traverse (S) in
-      match
+      let (Wrap (names, Ok (firstty, af, fa))) =
         Build.build_left dim
           {
             build =
@@ -2185,72 +2185,48 @@ and check_empty_match_lam : type mode a b.
                           Ok (Some firstty, Suc ab, Some (SFace_of fb)) )
                     else Fwrap (NFamOf (`Anon (View.hints_of_ty ty)), Ok (Some firstty, Suc ab, fa)));
           }
-          (Ok (None, Zero, None))
-      with
-      | Wrap (names, Ok (firstty, af, fa)) -> (
-          let xs = Variables (D.zero, D.zero_plus dim, names) in
-          let newctx =
-            Ctx.vis ctx (Modality.filter_idempotent filter) D.zero (D.zero_plus dim) names newnfs af
-          in
-          (* Locking newctx by the domain's own modality gives a context at the domain mode in which the just-bound variable(s) can be referred to without any explicit key, since the lock exactly matches their own annotating modality; we use this both to check emptiness of the discriminee below and to report errors about the domain type. *)
-          let (Locked (plus_lock, wctx)) = Ctx.lock newctx modality in
-          match (fa, first) with
-          | Some (SFace_of fa), _ -> (
-              match Modality.compare_id modality with
-              | Eq ->
-                  Lam
-                    ( xs,
-                      outer_dim,
-                      filter,
-                      Match
-                        {
-                          window = Modality.id (Modality.tgt modality);
-                          plus_lock = plus_no_lock (Modality.tgt modality);
-                          tm =
-                            Var
-                              (Index
-                                 ( Now,
-                                   fa,
-                                   Modality.filter_idempotent filter,
-                                   plus_with_no_locks (Modality.tgt modality) ));
-                          dim;
-                          branches = Constr.Map.empty;
-                        } )
-              | Neq -> (
-                  (* The raw variable we just bound via Ctx.vis is at raw index "Top" of the extended context, i.e. af must be a successor. *)
-                  match af with
-                  | Zero -> fatal (Anomaly "check_empty_match_lam: empty cube of variables")
-                  | Suc _ ->
-                      let stm, _ =
-                        synth (Kinetic `Nolet) wctx
-                          (locate_opt None (Var (Top, Some (Any_sface fa)))) in
-                      Lam
-                        ( xs,
-                          outer_dim,
-                          filter,
-                          Match
-                            {
-                              window = modality;
-                              plus_lock;
-                              tm = stm;
-                              dim;
-                              branches = Constr.Map.empty;
-                            } )))
-          | None, `Notfirst ->
-              Term.Lam (xs, outer_dim, filter, check_empty_match_lam newctx output `Notfirst)
-          | None, `First ->
-              Reporter.try_with
-                (fun () ->
-                  Term.Lam (xs, outer_dim, filter, check_empty_match_lam newctx output `Notfirst))
-                ~fatal:(fun d ->
-                  match d.message with
-                  | Invalid_refutation -> (
-                      let firstty = firstty <|> Anomaly "missing firstty in checking []" in
-                      match view_type firstty "is_empty" with
-                      | Canonical (_, Data { constrs; _ }, _, _) ->
-                          fatal (Missing_constructor_in_match (fst (Bwd_extra.head constrs)))
-                      | _ -> fatal (Matching_on_nondatatype (PVal (wctx, firstty))))
-                  | _ -> fatal_diagnostic d)))
+          (Ok (None, Zero, None)) in
+      let xs = Variables (D.zero, D.zero_plus dim, names) in
+      let newctx =
+        Ctx.vis ctx (Modality.filter_idempotent filter) D.zero (D.zero_plus dim) names newnfs af
+      in
+      (* Locking newctx by the domain's own modality gives a context at the domain mode in which the just-bound variable(s) can be referred to without any explicit key, since the lock exactly matches their own annotating modality; we use this both to check emptiness of the discriminee below and to report errors about the domain type. *)
+      let (Locked (plus_lock, wctx)) = Ctx.lock newctx modality in
+      match (fa, first) with
+      | Some (SFace_of fa), _ ->
+          Lam
+            ( xs,
+              outer_dim,
+              filter,
+              Match
+                {
+                  window = modality;
+                  plus_lock;
+                  tm =
+                    Var
+                      (Index
+                         ( Now,
+                           fa,
+                           Modality.filter_idempotent filter,
+                           plus_with_locks_of_plus_lock plus_lock ));
+                  dim;
+                  branches = Constr.Map.empty;
+                } )
+      | None, `Notfirst ->
+          Term.Lam (xs, outer_dim, filter, check_empty_match_lam newctx output `Notfirst)
+      | None, `First ->
+          Reporter.try_with
+            (fun () ->
+              Term.Lam (xs, outer_dim, filter, check_empty_match_lam newctx output `Notfirst))
+            ~fatal:(fun d ->
+              match d.message with
+              | Invalid_refutation -> (
+                  let firstty = firstty <|> Anomaly "missing firstty in checking []" in
+                  match view_type firstty "is_empty" with
+                  | Canonical (_, Data { constrs; _ }, _, _) ->
+                      fatal (Missing_constructor_in_match (fst (Bwd_extra.head constrs)))
+                  | _ -> fatal (Matching_on_nondatatype (PVal (wctx, firstty))))
+              | _ -> fatal_diagnostic d))
   | _ -> fatal Invalid_refutation
 
 and is_empty : type mode. (mode, kinetic) value -> bool =
@@ -2867,9 +2843,7 @@ and check_field : type mode a b c d s m n mn i et.
       let i = Field.dim fld in
       (* Like a lower modal field, the components of a modal higher field are checked behind a lock by the right adjoint.  We create the lock of the checked context b once, outside the recursion over pbijs, so that all the accumulated components share the same locked context type. *)
       let (Adjunction { right; _ }) = adj in
-      let (Has_plus_lock
-             (type bg)
-             (ctx_plus_lock : (b, mode, g, gmode, bg) plus_lock)) =
+      let (Has_plus_lock (type bg) (ctx_plus_lock : (b, mode, g, gmode, bg) plus_lock)) =
         plus_lock right in
       check_higher_field status ctx ty m i codata_args fields termctx tyargs tms ctms etms errs fld
         adj ctx_plus_lock
@@ -3055,9 +3029,8 @@ and check_higher_field : type mode f g gmode a b bg c d m i ian iag.
             let hyp (tm : (gmode, rbg, potential) term) : (hm, aa, potential) term =
               let hsf =
                 Term.Structfield.Higher
-                  ( adj,
-                    ctx_plus_lock,
-                    PlusPbijmap.set pbij (Some (PlusFam (plusmap_bg, tm))) cvals ) in
+                  (adj, ctx_plus_lock, PlusPbijmap.set pbij (Some (PlusFam (plusmap_bg, tm))) cvals)
+              in
               let ctms = Snoc (ctms, Entry (fld, hsf)) in
               hyp (Term.Struct { eta = Noeta; dim = m; fields = ctms; energy = energy status })
             in
@@ -3143,7 +3116,8 @@ and check_higher_field : type mode f g gmode a b bg c d m i ian iag.
       let etms =
         Snoc
           ( etms,
-            Entry (fld, Higher (lazy { adj; vals = evals; intrinsic; plusdim; env; deg; terms = cvals }))
+            Entry
+              (fld, Higher (lazy { adj; vals = evals; intrinsic; plusdim; env; deg; terms = cvals }))
           ) in
       let ctms = Snoc (ctms, Entry (fld, Higher (adj, ctx_plus_lock, cvals))) in
       check_fields status Noeta ctx ty m (D.plus_zero m) codata_args fields tyargs tms ctms etms
