@@ -1146,8 +1146,8 @@ let get_full_tube : type n k nk a any.
           let Eq = D.plus_uniq (TubeOf.plus args) (D.zero_plus (TubeOf.inst args)) in
           TubeOf.Full_tube args)
 
-(* Glued evaluation is basically implemented, but currently disabled by this flag.  It was originally disabled because it was very slow; the main culprit -- act_lazy_eval eagerly pushing degeneracy actions through the deferred argument spines of glued neutrals, duplicating the action on the neutral's own arguments and un-sharing the forced results -- has since been fixed by deferring such actions, bringing the overall test-suite overhead down to a few percent.  The remaining overhead (e.g. ~25% on hott.t/sigma2.ny) comes from the equality-checker's two-pass Rigid/Full structure, which on a rigid failure restarts the entire comparison in Full mode with everything unfolded; fixing that would mean restructuring equality to unfold glued neutrals locally on demand.  All the regular tests pass with the flag enabled (with one expected-output difference in modal.t, where an E1508 unequal-parameters message becomes more specific), and should continue to do so. *)
+(* Glued evaluation is enabled globally with this flag.  It was originally disabled because it was very slow; the two main culprits -- act_lazy_eval eagerly pushing degeneracy actions through the deferred argument spines of glued neutrals (duplicating the action on the neutral's own arguments and un-sharing the forced results), and the equality-checker's former two-pass Rigid/Full structure that restarted the entire comparison with everything unfolded whenever a rigid comparison failed -- have been fixed by deferring such actions and by unfolding glued neutrals locally on demand in the equality-checker.  With both fixes, the test suite runs as fast or slightly faster with this flag on than off. *)
 module GluedEval = struct
-  let toggle = false
+  let toggle = true
   let read () = toggle
 end
