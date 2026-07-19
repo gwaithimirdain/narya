@@ -124,14 +124,14 @@ module Act = struct
       (mode, status) value =
    fun v s c ->
     match v with
-    | Neu { head; args; value; ty = (lazy ty) } ->
+    | Neu { head; args; value; ty } ->
         (* We act on the applications from the outside (last) to the inside, since the degeneracy has to be factored and may leave neutral insertions behind.  The resulting inner degeneracy then acts on the head. *)
         let Any_deg s', Wrap hc, args = act_apps args s c in
         let head = act_head head s' hc in
         (* We act on the value separately with the original s, since it is a "value" of the entire application spine, not just the head. *)
         let value = act_lazy_eval value s c in
-        (* And we "act" on the type with the other kind of action that permutes the instantiated arguments, and by the original s since it is the type of the entire application spine. *)
-        let ty = lazy (act_ty v ty s c) in
+        (* And we "act" on the type with the other kind of action that permutes the instantiated arguments, and by the original s since it is the type of the entire application spine.  We are careful not to force the original type until the acted type is itself demanded, since computing types of acted terms can cascade (the type's own spine contains normals whose types are acted in turn) and the acted type is frequently never inspected. *)
+        let ty = lazy (act_ty v (Lazy.force ty) s c) in
         Neu { head; args; value; ty }
     | Lam (x, filter, body) ->
         let (Of fa) = deg_plus_to s (dim_binder body) ~on:"lambda" in
@@ -424,11 +424,12 @@ module Act = struct
           match D.compare_zero (TubeOf.inst new_inst_args) with
           | Zero -> Any base_args
           | Pos k -> Any (Inst (new_base_args, k, new_inst_args)) in
-        (* Since we've normalized the type already, its 'value' can't be a 'Realize'; it must be a Val Canonical or an Unrealized.  In the Canonical case, we act on its instantiation arguments (which should really be the same arguments) in the same way. *)
+        (* Since we've normalized the type already, its 'value' can't be a 'Realize'; it must be a Val Canonical or an Unrealized.  In the Canonical case, we act on its instantiation arguments (which should really be the same arguments) in the same way.  We defer this computation, since it forces the type's stored value and rebuilds its instantiation tube, and the acted type's value is frequently never inspected; any dimension errors were already reported by the eager action on the outer instantiation arguments above, which are the same arguments. *)
         let value =
+          defer (Modalcell.hsrc cell) @@ fun () ->
           match force_eval value with
           | Realize _ -> fatal (Anomaly "Realize in normalized type in act_ty")
-          | Unrealized -> ready Unrealized
+          | Unrealized -> Unrealized
           | Val
               (Canonical { mode; canonical = c; tyargs = ctyargs; ins; fields = _; inst_fields = _ })
             -> (
@@ -440,17 +441,16 @@ module Act = struct
                   let (Insfact_comp (fc, new_ins)) = insfact_comp ins fa in
                   let new_c = act_canonical c fc cell in
                   (* We drop all the fibrancy fields, since once something "is a type" we don't need it to be in Fib any more. *)
-                  ready
-                    (Val
-                       (Canonical
-                          {
-                            mode;
-                            canonical = new_c;
-                            tyargs = new_ctyargs;
-                            ins = new_ins;
-                            fields = Emp;
-                            inst_fields = None;
-                          }))
+                  Val
+                    (Canonical
+                       {
+                         mode;
+                         canonical = new_c;
+                         tyargs = new_ctyargs;
+                         ins = new_ins;
+                         fields = Emp;
+                         inst_fields = None;
+                       })
               | Pos _ -> fatal (Anomaly "non fully instantiated type in act_ty"))
           | Val _ -> fatal (Anomaly "non-canonical potential value in act_ty") in
         Neu { head; args; value; ty }
