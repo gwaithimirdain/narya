@@ -14,6 +14,9 @@ type 'mode definition_args = {
 
 type definition = Definition : 'mode definition_args -> definition
 
+(* Register a callback to be invoked whenever the global state of constants or metavariables is mutated, so that caches of evaluated values can be invalidated.  (Time-travel is not signaled by these callbacks; caches should be stored in an Origin.Versioned to deal with that.) *)
+val register_invalidator : (unit -> unit) -> unit
+
 val find : Constant.t -> definition
 val find_meta : ('mode, 'a, 'b, 's) Meta.t -> ('mode, 'a, 'b, 's) Metadef.t
 

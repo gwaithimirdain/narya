@@ -11,6 +11,34 @@ open Act
 open Printable
 open View
 
+(* The result of evaluating a constant depends only on its name, the dimension of the environment, its mode, and the global state.  Since constants are evaluated over and over (and evaluating one at dimension n recursively evaluates it at all lower dimensions to instantiate its type), we cache the results.  This is especially important for glued evaluation, where the neutral for a constant survives instead of being realized away, so that its lazy type and lazy value are forced (expensively) whenever some occurrence of it is applied or acted on; the cache shares those forcings among all occurrences.  The cache is stored per-origin in a Versioned so that undo and rewind discard it appropriately, and it is cleared by Global whenever the meaning of any constant or metavariable changes, since cached values may incorporate evaluations of other constants and metavariables. *)
+type cached_const = Cached_const : 'mode Mode.t * 'm D.t * ('mode, kinetic) value -> cached_const
+
+let const_cache : cached_const list Constant.Map.t Origin.Versioned.t =
+  Origin.Versioned.make ~default:(fun () -> Constant.Map.empty) ~inherit_values:false
+
+let () = Global.register_invalidator (fun () -> Origin.Versioned.set const_cache Constant.Map.empty)
+
+let find_cached_const : type mode m.
+    Constant.t -> m D.t -> mode Mode.t -> (mode, kinetic) value option =
+ fun name dim mode ->
+  match Constant.Map.find_opt name (Origin.Versioned.get const_cache) with
+  | None -> None
+  | Some entries ->
+      List.find_map
+        (fun (Cached_const (mode', dim', v)) ->
+          match (Mode.compare mode' mode, D.compare dim' dim) with
+          | Eq, Eq -> Some (v : (mode, kinetic) value)
+          | _ -> None)
+        entries
+
+let add_cached_const : type mode m.
+    Constant.t -> m D.t -> mode Mode.t -> (mode, kinetic) value -> unit =
+ fun name dim mode v ->
+  Origin.Versioned.modify const_cache
+    (Constant.Map.update name (fun e ->
+         Some (Cached_const (mode, dim, v) :: Option.value ~default:[] e)))
+
 (* Since some entries in an environment are lazy and some aren't, lookup_cube returns a cube whose entries belong to an existential type, along with a function to act on any element of that type and force it into a value.  It also returns an accumulated operator by which to act, first selecting an entry in the cube with a face and then acting on that value by a degeneracy.  Finally, it also returns an accumulated modal key substitution. *)
 type (_, _) looked_up_cube =
   | Looked_up : {
@@ -164,46 +192,54 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
   | Var v -> Val (lookup env v)
   | Const name -> (
       let dim = dim_env env in
-      let (Definition { mode; ty = cty; tm = defn; parametric = _ }) = Global.find name in
-      match Mode.compare mode (mode_env env) with
-      | Eq -> (
-          (* Its type must also be instantiated at the lower-dimensional versions of itself. *)
-          let ty =
-            lazy
-              (inst
-                 (eval_term (Emp (mode, dim)) cty)
-                 (TubeOf.build D.zero (D.zero_plus dim)
-                    {
-                      build =
-                        (fun fa ->
-                          (* To compute those lower-dimensional versions, we recursively evaluate the same constant in lower-dimensional contexts. *)
-                          let tm =
-                            eval_term
-                              (act_env env (opt_op_of_sface (sface_of_tface fa)))
-                              (Const name) in
-                          (* We need to know the type of each lower-dimensional version in order to annotate it as a "normal" instantiation argument.  But we already computed that type while evaluating the term itself, since as a neutral term it had to be annotated with its type. *)
-                          match tm with
-                          | Neu { ty = (lazy ty); _ } -> { tm; ty }
-                          | _ -> fatal (Anomaly "eval of lower-dim constant not neutral/canonical"));
-                    })) in
-          let head = Const { name; ins = ins_zero dim } in
-          match defn with
-          | `Defined tree -> (
-              if GluedEval.read () then
-                (* Glued evaluation: we evaluate the definition lazily and return a neutral with that lazy evaluation stored. *)
-                Val (Neu { head; args = Emp; value = lazy_eval (Emp (mode, dim)) tree; ty })
-              else
-                let value = eval (Emp (mode, dim)) tree in
-                let newtm = Neu { head; args = Emp; value = ready value; ty } in
-                match value with
-                | Realize x -> Val x
-                | Val (Canonical { canonical = Data d; _ }) ->
-                    if Option.is_none !(d.tyfam) then
-                      d.tyfam := Some (lazy { tm = newtm; ty = Lazy.force ty });
-                    Val newtm
-                | _ -> Val newtm)
-          | `Axiom -> Val (Neu { head; args = Emp; value = ready Unrealized; ty }))
-      | Neq -> fatal (Mode_mismatch (`Internal, "evaluating a constant", mode, None, mode_env env)))
+      match find_cached_const name dim (mode_env env) with
+      | Some v -> Val v
+      | None -> (
+          let (Definition { mode; ty = cty; tm = defn; parametric = _ }) = Global.find name in
+          match Mode.compare mode (mode_env env) with
+          | Eq ->
+              (* Its type must also be instantiated at the lower-dimensional versions of itself. *)
+              let ty =
+                lazy
+                  (inst
+                     (eval_term (Emp (mode, dim)) cty)
+                     (TubeOf.build D.zero (D.zero_plus dim)
+                        {
+                          build =
+                            (fun fa ->
+                              (* To compute those lower-dimensional versions, we recursively evaluate the same constant in lower-dimensional contexts.  We use a fresh empty environment of the appropriate dimension, rather than acting on the caller's environment, so that this (cached) lazy doesn't retain arbitrary environments; the constant is closed, so the result is the same (and itself cached). *)
+                              let tm =
+                                eval_term
+                                  (Emp (mode, dom_sface (sface_of_tface fa)))
+                                  (Const name) in
+                              (* We need to know the type of each lower-dimensional version in order to annotate it as a "normal" instantiation argument.  But we already computed that type while evaluating the term itself, since as a neutral term it had to be annotated with its type. *)
+                              match tm with
+                              | Neu { ty = (lazy ty); _ } -> { tm; ty }
+                              | _ ->
+                                  fatal (Anomaly "eval of lower-dim constant not neutral/canonical"));
+                        })) in
+              let head = Const { name; ins = ins_zero dim } in
+              let result =
+                match defn with
+                | `Defined tree -> (
+                    if GluedEval.read () then
+                      (* Glued evaluation: we evaluate the definition lazily and return a neutral with that lazy evaluation stored. *)
+                      Neu { head; args = Emp; value = lazy_eval (Emp (mode, dim)) tree; ty }
+                    else
+                      let value = eval (Emp (mode, dim)) tree in
+                      let newtm = Neu { head; args = Emp; value = ready value; ty } in
+                      match value with
+                      | Realize x -> x
+                      | Val (Canonical { canonical = Data d; _ }) ->
+                          if Option.is_none !(d.tyfam) then
+                            d.tyfam := Some (lazy { tm = newtm; ty = Lazy.force ty });
+                          newtm
+                      | _ -> newtm)
+                | `Axiom -> Neu { head; args = Emp; value = ready Unrealized; ty } in
+              add_cached_const name dim mode result;
+              Val result
+          | Neq ->
+              fatal (Mode_mismatch (`Internal, "evaluating a constant", mode, None, mode_env env))))
   | Meta (meta, ambient) -> (
       let dim = dim_env env in
       let head = Value.Meta { meta; env; ins = ins_zero dim } in
