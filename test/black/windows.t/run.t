@@ -116,6 +116,8 @@ own (possibly nontrivial) modality as the window:
 
   $ narya -transparent-functor preserve.ny -e "def zfwd3 : (x :○| ⊥) → ⊥' ≔ []"
 
+  $ narya -parametric -transparent-functor preserve-higher.ny
+
 Refuting a modal variable requires a window modality:
 
   $ narya -transparent-functor preserve.ny -e "def zfwd2 (u : ○ ⊥) : ⊥' ≔ match u [ circle. x ↦ match x [ ] ]"
