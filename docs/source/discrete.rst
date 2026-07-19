@@ -145,3 +145,35 @@ In the particular case of a negative modal operator such as ``♯`` where the *o
 There is no direct way to declare a modality to "be codiscrete": codiscreteness only arises for right adjoints of discrete sinister modalities.  But a codiscrete modality cannot commute with parametricity either, nor can it be discrete (unless the arity is 1, in which case discreteness and codiscreteness coincide).  Thus, the modalities ``♯`` in ``-discrete-spatial``, and ``∇`` in ``-discrete-local`` and ``-discrete-gwpt``, are declared to be *intangible*, so that they do not admit positive modal operators or appear in modal function-types at all, as there is no consistent way to give behavior for such types.  (Note that this means in ``-discrete-gwpt`` it is impossible to define a modal operator ``∇◇`` directly: one can only define ``◇`` positively and ``∇`` negatively.  This is also why it has no single-mode version.)
 
 If a modality is neither tangible nor sinister, like ``♯`` and ``∇``, then it cannot appear in function-types, datatypes, or record/codatatypes.  Thus, whether or not it is discrete is undetectable to the theory.  But for consistency, we call these modalities discrete when they have a discrete mode as their source or target.
+
+
+Higher codatatypes and discreteness
+-----------------------------------
+
+On one hand, :ref:`higher fields <Higher coinductive types>` can also be modal, but the modality annotating a higher field cannot be discrete.  This is a limitation of the current implementation.
+
+On the other hand, when the context is degenerated while checking the type of a higher field (even a non-modal one), or the value of a higher comatch, that degeneration does not apply to variables in the context annotated by discrete modalities.  This can be used to define higher coinductive types with parameters that don't get degenerated.  For example, we observed in :ref:`Higher coinductive types` that the "amazing right adjoint" cannot be defined parametrically: if we write
+
+.. code-block:: none
+
+   def √ (A : Type) : Type ≔ codata [
+   | x .root.e : ?
+   ]
+
+then we can't fill the hole with "``A``" in an obviously correct way, since in its context we don't have just ``A : Type`` any more, but ``A.0 : Type`` and ``A.1 : Type`` and ``A.2 : Id Type A.0 A.1``.  However, if we make the parameter discretely modal:
+
+.. code-block:: none
+
+   def √ (A :△□| Type) : Type ≔ codata [
+   | x .root.e : ?
+   ]
+
+then in the context of the hole we still have only ``A :△□| Type``, and so we can fill the hole with ``A``.
+
+.. code-block:: none
+
+   def √ (A :△□| Type) : Type ≔ codata [
+   | x .root.e : A
+   ]
+
+We can think of the discrete modality as allowing us to partially internalize an external statement such as "for any *closed* type ``A`` we can define ``√ A``".

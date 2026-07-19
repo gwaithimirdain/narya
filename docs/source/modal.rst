@@ -334,8 +334,6 @@ and ``Id □′ A₂`` behaves like a record type with a single field
 
 As before, for the exception see :ref:`Discrete modalities`.
 
-Currently, :ref:`higher fields <Higher coinductive types>` cannot also be modal.
-
 
 Modal HOTT
 ----------
