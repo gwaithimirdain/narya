@@ -366,6 +366,22 @@ Mode theories
 
 We organize the mode theories into groups to make them easier to look up.  The default names for the modes, modalities, and 2-cells shown in the table can be overridden by the command-line flags ``-modes``, ``-modalities``, and ``-modalcells``.  There are also some additional variant mode theories, such as ``-transparent-functor`` mentioned above, and a family of "discrete mode theories" discussed under :ref:`Modal parametric discreteness`.
 
+The unicode characters used as mode names can be obtained with the following backslash commands in the Agda and TeX input-modes for Emacs.  Remember that you can also rename them with the ``-modalities`` command-line flag.
+
+.. csv-table:: Mode names
+   :widths: auto
+   :header-rows: 1
+   :stub-columns: 1
+
+   "Character", "Agda input-mode", "TeX input-mode"
+   "``♭``", "``\flat``", "``\flat``"
+   "``♯``", "``\sharp``", "``\sharp``"
+   "``♮``", "``\natural``", "``\natural``"
+   "``△``", "``\T6``", "``\bigtriangleup``"
+   "``□``", "``\sq``", "``\square`` or ``\Box``"
+   "``◇``", "``\di2``", "``\Diamond``"
+   "``∇``", "``\nabla``", "``\nabla``"
+   "``○``", "``\ci2``", "--"
 
 
 Testing mode theories
