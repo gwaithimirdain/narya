@@ -93,8 +93,11 @@ module Equal = struct
       (mode, kinetic) value ->
       unit Err.t =
    fun ctx x y ty ->
-    (* The type must be fully instantiated. *)
-    match view_type ty "equal_at" with
+    (* Physically equal values are definitionally equal, and physical sharing is common (cached constants, shared let-bindings, shared forced values), so we short-circuit on it before any structural work. *)
+    if x == y then ok
+    else
+      (* The type must be fully instantiated. *)
+      match view_type ty "equal_at" with
     (* The only interesting thing here happens when the type is one with an eta-rule, such as a pi-type. *)
     | Canonical (_, Pi { x = name; filter; doms; cods }, ins, tyargs) ->
         let modality = Modality.filter_modality filter in
@@ -223,8 +226,10 @@ module Equal = struct
   and equal_val : type mode a b.
       (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> unit Err.t =
    fun ctx x y ->
-    match (x, y) with
-    | Neu _, Neu _ -> (
+    if x == y then ok
+    else
+      match (x, y) with
+      | Neu _, Neu _ -> (
         (* Two neutrals are first compared rigidly as spines.  With glued evaluation, a spine mismatch is inconclusive if either side unfolds (its stored value is Realized): in that case we retry on the unfoldings.  Since view_term unfolds Realized glued values all the way down, a second view is the physical identity, so there is at most one retry per node and subterms that match as spines are never unfolded. *)
         match equal_neu ctx x y with
         | Ok () -> ok
