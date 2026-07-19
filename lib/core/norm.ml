@@ -802,7 +802,8 @@ and field : type src f mode n k nk s.
           let (Has_filter filter) = Modality.filter fm n in
           let args = Field (args, filter, fld, fldplus, ins_zero n) in
           if GluedEval.read () then
-            let value = field_lazy fm value fld fldins in
+            (* As in the non-glued case below, the insertion was already pushed inside by acting on the whole neutral above, so the remaining insertion to project from its value is the identity. *)
+            let value = field_lazy fm value fld (ins_of_plus n fldplus) in
             Val (Neu { head; args; value; ty = newty })
           else
             match force_eval value with
