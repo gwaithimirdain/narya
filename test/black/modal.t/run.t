@@ -412,7 +412,8 @@ And likewise in a record definition.
    ￫ error[E1508]
    ￭ command-line exec string
    1 | def □′ (A :□| Type) : Disc ≔ sig ((x :△| □′ Type) .unbox : A)
-     ^ invalid self variable type for field unbox: unequal parameters
+     ^ invalid self variable type for field unbox: unequal head terms: 
+       Type does not equal A
   
   [1]
 
