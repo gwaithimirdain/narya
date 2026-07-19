@@ -101,7 +101,7 @@ When typechecking the type of a higher field in a `codata` definition, not only 
       ----------------------------------------------------------------------
       Type
 
-So we can't write ``A`` in this hole, since that would be interpreted as ``A.2``, which is not a (0-dimensional) type until it is instantiated with elements of ``A.0`` and ``A.1``.  Thus we see that ``√`` is not fully internalizable, as usual for an "amazing right adjoint".  This degeneration of the context is essential, however, for arguably the most important example of a higher coinductive type, namely the definition of fibrancy in :ref:`Higher Observational Type Theory` as encoded in a substrate of internal binary parametricity.
+So we can't write ``A`` in this hole, since that would be interpreted as ``A.2``, which is not a (0-dimensional) type until it is instantiated with elements of ``A.0`` and ``A.1``.  Thus we see that ``√`` is not fully internalizable, as usual for an "amazing right adjoint".  This degeneration of the context is essential, however, for arguably the most important example of a higher coinductive type, namely the definition of fibrancy in :ref:`Higher Observational Type Theory` as encoded in a substrate of internal binary parametricity.  In addition, it can be internalized using discrete modal annotations; see :ref:`Higher codatatypes and discreteness`.
 
 When comatching against a higher coinductive type, the context is also degenerated when defining values for the higher fields.  For instance:
 

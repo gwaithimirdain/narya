@@ -350,12 +350,15 @@ module Codata = struct
           (* Would also be only for glue. *)
           None in
     let id = lazy (PlusPbijmap.build glue Hott.dim { build = (fun p -> id p) }) in
+    (* Fibrancy fields are always non-modal, i.e. over the identity adjunction. *)
+    let idadj = Modalcell.id_adjunction mode in
+    let idlock = plus_no_lock mode in
     Emp
-    <: StructfieldAbwd.Entry (ftrr, Higher trr)
-    <: Entry (fliftr, Higher liftr)
-    <: Entry (ftrl, Higher trl)
-    <: Entry (fliftl, Higher liftl)
-    <: Entry (fid, LazyHigher id)
+    <: StructfieldAbwd.Entry (ftrr, Higher (idadj, idlock, trr))
+    <: Entry (fliftr, Higher (idadj, idlock, liftr))
+    <: Entry (ftrl, Higher (idadj, idlock, trl))
+    <: Entry (fliftl, Higher (idadj, idlock, liftl))
+    <: Entry (fid, LazyHigher (idadj, idlock, id))
 
   (* TODO: It would be nice to memoize the "finish" computation.  But we can't store it as a mutable field inside a Term, because it contains a LazyHigher and so is not marshalable.  Maybe we could use a hashtable, but it would be tricky to ensure the output types depend correctly on the input ones.  I guess we could have a mutable Map depending on 'n' and 'a' and then hashtables inside of that.  But then it starts to get questionable how much time would be saved.  Let's wait until we do some profiling and see if this is actually a pain point. *)
   let finished : type mode n c a nh ha et.

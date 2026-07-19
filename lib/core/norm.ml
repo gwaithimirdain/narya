@@ -842,15 +842,18 @@ and struct_field : type src f mode s et n k nk.
           (* The value supplied by the tuple/comatch is keyed by the adjunction counit, taking it from behind the composite lock (right adjoint inside, then left adjoint) to the ambient context.  For ordinary fields the counit is the identity and this is a no-op. *)
           let (Adjunction { counit; _ }) = adj in
           act_evaluation (force_eval v) (id_deg D.zero) counit)
-  | Found (Higher (lazy { vals; intrinsic; _ })) -> (
-      (* Higher fields cannot (yet) be modal, so the projecting modality must be the identity. *)
-      match Modality.compare_id fm with
+  | Found (Higher (lazy { adj; vals; intrinsic; _ })) -> (
+      (* Like a lower field, the projecting modality must be the left adjoint of the field's stored adjunction. *)
+      match Modality.compare (Modalcell.adj_left adj) fm with
       | Neq -> fatal (Anomaly ("modal projection of higher " ^ err ^ " field"))
       | Eq -> (
           match D.compare intrinsic (cod_right_ins fldins) with
           | Eq -> (
               match InsmapOf.find fldins vals with
-              | Some v -> force_eval v
+              (* As for lower fields, the stored value lives behind the composite lock and is keyed by the counit to bring it to the ambient context.  For ordinary fields the counit is the identity and this is a no-op. *)
+              | Some v ->
+                  let (Adjunction { counit; _ }) = adj in
+                  act_evaluation (force_eval v) (id_deg D.zero) counit
               | None ->
                   if unset_ok then Unrealized else fatal (Anomaly (err ^ " field value unset")))
           | Neq ->
@@ -894,13 +897,14 @@ and tyof_codatafield : type src f mode m n mn a k r s i et.
       match Modality.compare (Modalcell.adj_left adj) fm with
       | Neq -> fatal (Anomaly "wrong locking modality in tyof_codatafield")
       | Eq -> tyof_lower_codatafield tm fldname adj plus_lock fldty env tyargs m mn ~key:`Counit)
-  | Term.Codatafield.Higher (ic0, fldty) -> (
-      (* Higher fields cannot (yet) be modal. *)
-      match Modality.compare_id fm with
-      | Neq -> fatal (Anomaly "modal projection of higher field in tyof_codatafield")
+  | Term.Codatafield.Higher (adj, ic0, plus_lock, fldty) -> (
+      (* Like a lower field, the projecting modality must be the left adjoint of the field's adjunction. *)
+      match Modality.compare (Modalcell.adj_left adj) fm with
+      | Neq -> fatal (Anomaly "wrong locking modality of higher field in tyof_codatafield")
       | Eq ->
           let Eq = D.plus_uniq mn (D.plus_zero m) in
-          tyof_higher_codatafield tm fldname env tyargs fldins ic0 fldty ~shuf)
+          tyof_higher_codatafield tm fldname adj env tyargs fldins ic0 plus_lock fldty ~shuf
+            ~key:`Counit)
 
 (* We dispatch to separate helper functions for lower fields and higher fields that assume all the dimensions are correct.  These helper functions can be called directly by a caller who knows that all the dimensions are correct, such as check_field where the field is obtained by iterating directly through the codatatype.
 
@@ -976,9 +980,11 @@ and tyof_field_nokey : type amode.
   | _ -> fatal (Anomaly "non-codatatype in tyof_field_nokey")
 
 (* This function is also called directly from check_higher_field.  In that case, the field is determined by a partial bijection that may *not* be just an insertion, and we have to frobnicate the environment in which we evaluate the type.  Some of that frobnication involves an eval-readback cycle, which requires a callback from here since readback isn't defined yet. *)
-and tyof_higher_codatafield : type mode c n h s r i ic.
+and tyof_higher_codatafield : type mode f g gmode c n h s r i ic iag.
     ((mode, kinetic) value, Code.t) Result.t ->
     i Field.t ->
+    (* A higher field is modal over an adjunction, just like a lower field.  Its type is checked (and hence lives) behind a lock by the right adjoint, at the right adjoint's source mode; ordinary fields use the identity adjunction.  We currently require the modality to be fully parametric, so it filters no dimensions of the field. *)
+    (mode, f, g, gmode) Modalcell.adjunction ->
     (* The codatatype is in context of length c.  It has been evaluated at dimension n, in an (n, c) env. *)
     (mode, n, c) env ->
     (* And so it has a boundary n-tube. *)
@@ -989,11 +995,15 @@ and tyof_higher_codatafield : type mode c n h s r i ic.
     shuf:(mode, r, h, i, c) shuffleable ->
     (* We add i to all the dimensions in [c;0] to get i+[c;0]. *)
     (i, (c, (mode id, D.zero) dim_entry) snoc, ic, mode) plusmap ->
-    (* The unevaluated type of the field is a term in context of this length i+[c;0].  The extra 0 is for the 'self' variable, which is always 0-dimensional when *defining* the codatatype. *)
-    (mode, ic, kinetic) term ->
+    (* Then we lock by the right adjoint g to get the context iag at its source mode gmode. *)
+    (ic, mode, g, gmode, iag) plus_lock ->
+    (* The unevaluated type of the field is a term in context of this length i+[c;0], locked by g.  The extra 0 is for the 'self' variable, which is always 0-dimensional when *defining* the codatatype. *)
+    (gmode, iag, kinetic) term ->
+    (* As for lower fields, ~key:`Counit keys the result by the adjunction counit (for a projection) while ~key:`Nokey leaves it behind the g-lock (for checking/reading back a tuple component). *)
+    key:[ `Counit | `Nokey ] ->
     (* In the nontrivial case, the return value is also in the degenerated context. *)
-    (mode, kinetic) value =
- fun tm fldname codataenv tyargs fldins ~shuf ic0 fldty ->
+    (gmode, kinetic) value =
+ fun tm fldname adj codataenv tyargs fldins ~shuf ic0 plus_lock fldty ~key ->
   let n = dom_ins fldins in
   let s = cod_left_ins fldins in
   let h =
@@ -1009,8 +1019,8 @@ and tyof_higher_codatafield : type mode c n h s r i ic.
     match tm with
     | Ok tm -> `Ok (TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
     | Error e -> `Error e in
-  (* MODALTODO: Allow nontrivial modalities in higher fields *)
   let mode = mode_env codataenv in
+  let (Adjunction { left; counit; _ }) = adj in
   let env =
     Value.Ext
       {
@@ -1043,8 +1053,15 @@ and tyof_higher_codatafield : type mode c n h s r i ic.
         let env = Value.Act (env, opt_op_of_deg (comp_deg swapdeg shuffledeg)) in
         (* Finally, now we can shift this to get a (s, i+[c;0]) env. *)
         Shift (env, si, ic0) in
+  (* The field type lives behind a lock by the right adjoint, so we key the environment by it (by identity cells, per generator) before evaluating. *)
+  let env = key_id_env env plus_lock in
   (* Now this matches the context of fldty, so we can evaluate it. *)
   let insttm = eval_term env fldty in
+  (* The type of a field projection is keyed by the adjunction counit, to put it in the ambient context (where the term being projected lives behind a lock by the left adjoint).  For ordinary fields the counit is the identity and this is a no-op. *)
+  let insttm =
+    match key with
+    | `Counit -> act_value insttm (id_deg D.zero) counit
+    | `Nokey -> insttm in
   (* Since the result is s-dimensional, it has to be instantiated at a full s-tube. *)
   let instargs =
     TubeOf.build D.zero (D.zero_plus s)
@@ -1057,8 +1074,8 @@ and tyof_higher_codatafield : type mode c n h s r i ic.
             let arg = TubeOf.find tyargs faplus in
             match shuf with
             | Trivial ->
-                let tm = field_term (Modality.id mode) arg.tm fldname fains in
-                let ty = tyof_field (Modality.id mode) (Ok arg.tm) arg.ty fldname ~shuf fains in
+                let tm = field_term left arg.tm fldname fains in
+                let ty = tyof_field left (Ok arg.tm) arg.ty fldname ~shuf fains in
                 { tm; ty }
             | Nontrivial { dbwd = _; shuffle; deg_env = _; deg_nf } ->
                 (* In this case, we have to degenerate the arguments, since they depend on the context. *)
@@ -1066,10 +1083,8 @@ and tyof_higher_codatafield : type mode c n h s r i ic.
                 (* We also use these extra dimensions to make the pbij into an insertion. *)
                 let (Plus rm) = D.plus (dom_tface faplus) in
                 let arg_ins = ins_plus_of_pbij fains shuffle rm in
-                let tm = field_term (Modality.id mode) arg.tm fldname arg_ins in
-                let ty =
-                  tyof_field (Modality.id mode) (Ok arg.tm) arg.ty fldname ~shuf:Trivial arg_ins
-                in
+                let tm = field_term left arg.tm fldname arg_ins in
+                let ty = tyof_field left (Ok arg.tm) arg.ty fldname ~shuf:Trivial arg_ins in
                 { tm; ty });
       } in
   inst insttm instargs
@@ -1272,13 +1287,17 @@ and tyof_field_withname_giventype : type src f mode a b m n mn c et.
             match Modality.filter_is_trivial m left_filter with
             | Some Eq -> ()
             | None -> fatal (Modal_field_filtered_away (Field.to_string fld, left))))
-    | Higher _ -> (
-        match Modality.compare_id fm with
-        | Eq -> ()
-        | Neq ->
-            fatal
-              (Wrong_locking_modality
-                 { field = Field.to_string fld; expected = None; got = Some fm })) in
+    | Higher (adj, _, _, _) -> (
+        (* Like a lower field, a higher field's projecting modality must be the left adjoint. *)
+        let left = Modalcell.adj_left adj in
+        match Modality.compare left fm with
+        | Neq -> mismatch left
+        | Eq -> (
+            (* The field disappears if its nonparametric modality filters this dimension nontrivially.  (Currently unreachable, since we require modal higher fields to be parametric at definition time; but this keeps the check robust.) *)
+            let (Has_filter left_filter) = Modality.filter left m in
+            match Modality.filter_is_trivial m left_filter with
+            | Some Eq -> ()
+            | None -> fatal (Modal_field_filtered_away (Field.to_string fld, left)))) in
   let m = dim_env env in
   match infld with
   | `Name (fldname, ints) -> (
