@@ -1551,9 +1551,64 @@ and app_eval_apps : type hmode mode s any.
   match x with
   | Emp -> ev
   | Arg (rest, filter, xs, ins) -> (
-      let mode = Modality.tgt (Modality.filter_modality filter) in
+      let modality = Modality.filter_modality filter in
+      let mode = Modality.tgt modality in
       let (To p) = deg_of_ins ins in
       match app_eval_apps ev rest with
+      (* A datatype not yet applied to all its indices is a potential value that 'apply' can't handle, since the new index must be stored with its type; we deal with it here where we have the argument as a cube of normals. *)
+      | Val
+          (Canonical
+             {
+               mode = cmode;
+               canonical =
+                 Data
+                   {
+                     dim;
+                     tyfam;
+                     indices = Unfilled _ as indices;
+                     constrs;
+                     discrete;
+                     recursive;
+                     hints;
+                   };
+               tyargs;
+               ins = cins;
+               fields;
+               inst_fields = _;
+             }) -> (
+          let Eq = eq_of_ins_zero cins in
+          match
+            ( D.compare dim (CubeOf.dim xs),
+              D.compare_zero (TubeOf.inst tyargs),
+              (* Indices cannot have a nontrivial modal annotation *)
+              Modality.compare_id modality )
+          with
+          | Neq, _, _ -> fatal (Dimension_mismatch ("apply", dim, CubeOf.dim xs))
+          | _, Pos _, _ ->
+              fatal (Anomaly "datatype was instantiated before being applied to all its indices")
+          | _, _, Neq ->
+              fatal
+                (Modality_mismatch
+                   (`Internal, "apply", modality, Modality.id (Modality.tgt modality)))
+          | Eq, Zero, Eq ->
+              let indices = Fillvec.snoc indices xs in
+              let fields =
+                match fields with
+                | Emp -> Bwd.Emp
+                | Snoc _ -> fatal (Unimplemented "fibrancy of indexed datatypes") in
+              act_evaluation
+                (Val
+                   (Value.Canonical
+                      {
+                        mode = cmode;
+                        canonical =
+                          Data { dim; tyfam; indices; constrs; discrete; recursive; hints };
+                        tyargs = TubeOf.empty dim;
+                        ins = cins;
+                        fields;
+                        inst_fields = None;
+                      }))
+                p (Modalcell.id2 mode))
       | Val tm -> act_evaluation (apply tm filter (val_of_norm_cube xs)) p (Modalcell.id2 mode)
       | Realize tm ->
           let (Val v) =
