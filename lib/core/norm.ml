@@ -640,6 +640,49 @@ and eval_args : type mode m n mn a.
           eval_term (act_env env (opt_op_of_sface fa)) (CubeOf.find tms fb));
     }
 
+(* Append a new index argument to a datatype value that is not yet applied to all of its indices, given the argument as a cube of normals.  Used both by 'apply', for a neutral application spine being evaluated with a case tree, and by 'app_eval_apps', for a glued application spine being replayed. *)
+and apply_unfilled_data_index : type mode m j ij mk dom modl an k.
+    mode Mode.t ->
+    m D.t ->
+    mode normal Lazy.t option ref ->
+    ((m, mode normal) CubeOf.t, j Fwn.suc, ij) Fillvec.t ->
+    (Constr.t, (mode, m, ij) dataconstr) Abwd.t ->
+    [ `Yes | `Maybe | `No ] ->
+    Positivity.recursion ->
+    hints ->
+    k D.t ->
+    (mk, m, D.zero) insertion ->
+    (mode * mk * potential * no_eta) StructfieldAbwd.t ->
+    (dom, modl, mode) Modality.t ->
+    (an, dom normal) CubeOf.t ->
+    (mode, potential) evaluation =
+ fun mode dim tyfam indices constrs discrete recursive hints tyargs_inst ins fields modality xs ->
+  let Eq = eq_of_ins_zero ins in
+  match
+    (D.compare dim (CubeOf.dim xs), D.compare_zero tyargs_inst, Modality.compare_id modality)
+  with
+  | Neq, _, _ -> fatal (Dimension_mismatch ("apply", dim, CubeOf.dim xs))
+  | _, Pos _, _ ->
+      fatal (Anomaly "datatype was instantiated before being applied to all its indices")
+  | _, _, Neq ->
+      fatal (Modality_mismatch (`Internal, "apply", modality, Modality.id (Modality.tgt modality)))
+  | Eq, Zero, Eq ->
+      let indices = Fillvec.snoc indices xs in
+      let fields =
+        match fields with
+        | Emp -> Bwd.Emp
+        | Snoc _ -> fatal (Unimplemented "fibrancy of indexed datatypes") in
+      Val
+        (Value.Canonical
+           {
+             mode;
+             canonical = Data { dim; tyfam; indices; constrs; discrete; recursive; hints };
+             tyargs = TubeOf.empty dim;
+             ins;
+             fields;
+             inst_fields = None;
+           })
+
 (* Apply a function value to an argument (with its boundaries). *)
 and apply : type dom modality mode n m s.
     (mode, s) value ->
@@ -713,43 +756,12 @@ and apply : type dom modality mode n m s.
                          ins;
                          fields;
                          inst_fields = _;
-                       }) -> (
-                    let Eq = eq_of_ins_zero ins in
-                    match
-                      ( D.compare dim k,
-                        D.compare_zero (TubeOf.inst data_tyargs),
-                        (* Indices cannot have a nontrivial modal annotation *)
-                        Modality.compare_id modality )
-                    with
-                    | Neq, _, _ -> fatal (Dimension_mismatch ("apply", dim, k))
-                    | _, Pos _, _ ->
-                        fatal
-                          (Anomaly
-                             "datatype was instantiated before being applied to all its indices")
-                    | _, _, Neq ->
-                        fatal
-                          (Modality_mismatch
-                             (`Internal, "apply", modality, Modality.id (Modality.tgt modality)))
-                    | Eq, Zero, Eq ->
-                        let indices = Fillvec.snoc indices newarg in
-                        (* TODO: What happens to these?  What even are the fields of a not-fully-applied indexed datatype? *)
-                        let fields =
-                          match fields with
-                          | Emp -> Bwd.Emp
-                          | Snoc _ -> fatal (Unimplemented "fibrancy of indexed datatypes") in
-                        let value =
-                          Val
-                            (Value.Canonical
-                               {
-                                 mode;
-                                 canonical =
-                                   Data { dim; tyfam; indices; constrs; discrete; recursive; hints };
-                                 tyargs = TubeOf.empty dim;
-                                 ins;
-                                 fields;
-                                 inst_fields = None;
-                               }) in
-                        Val (Neu { head; args; value = ready value; ty = newty }))
+                       }) ->
+                    (* TODO: What happens to the fields?  What even are the fields of a not-fully-applied indexed datatype? *)
+                    let value =
+                      apply_unfilled_data_index mode dim tyfam indices constrs discrete recursive
+                        hints (TubeOf.inst data_tyargs) ins fields modality newarg in
+                    Val (Neu { head; args; value = ready value; ty = newty })
                 | Val tm -> (
                     let value = apply tm filter_nm arg in
                     let newtm = Neu { head; args; value = ready value; ty = newty } in
@@ -1612,40 +1624,11 @@ and app_eval_apps : type hmode mode s any.
                ins = cins;
                fields;
                inst_fields = _;
-             }) -> (
-          let Eq = eq_of_ins_zero cins in
-          match
-            ( D.compare dim (CubeOf.dim xs),
-              D.compare_zero (TubeOf.inst tyargs),
-              (* Indices cannot have a nontrivial modal annotation *)
-              Modality.compare_id modality )
-          with
-          | Neq, _, _ -> fatal (Dimension_mismatch ("apply", dim, CubeOf.dim xs))
-          | _, Pos _, _ ->
-              fatal (Anomaly "datatype was instantiated before being applied to all its indices")
-          | _, _, Neq ->
-              fatal
-                (Modality_mismatch
-                   (`Internal, "apply", modality, Modality.id (Modality.tgt modality)))
-          | Eq, Zero, Eq ->
-              let indices = Fillvec.snoc indices xs in
-              let fields =
-                match fields with
-                | Emp -> Bwd.Emp
-                | Snoc _ -> fatal (Unimplemented "fibrancy of indexed datatypes") in
-              act_evaluation
-                (Val
-                   (Value.Canonical
-                      {
-                        mode = cmode;
-                        canonical =
-                          Data { dim; tyfam; indices; constrs; discrete; recursive; hints };
-                        tyargs = TubeOf.empty dim;
-                        ins = cins;
-                        fields;
-                        inst_fields = None;
-                      }))
-                p (Modalcell.id2 mode))
+             }) ->
+          let value =
+            apply_unfilled_data_index cmode dim tyfam indices constrs discrete recursive hints
+              (TubeOf.inst tyargs) cins fields modality xs in
+          act_evaluation value p (Modalcell.id2 mode)
       | Val tm -> act_evaluation (apply tm filter (val_of_norm_cube xs)) p (Modalcell.id2 mode)
       | Realize tm ->
           let (Val v) =
