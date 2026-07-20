@@ -130,6 +130,7 @@ type (_, _, _, _, _) shuffleable =
     }
       -> ('mode, 'r, 'h, 'i, 'c) shuffleable
 
+(* If glued evaluation is off, then every value is fully normalized already, so there is nothing for viewing a term to do.  If glued evaluation is on, then the term might be a neutral with a lazy value waiting to be evaluated, in which case we force that value recursively.  Importantly, even under glued evaluation this function should be IDEMPOTENT up to PHYSICAL EQUALITY. *)
 let rec view_term : type mode s. (mode, s) value -> (mode, s) value =
  fun tm ->
   if GluedEval.read () then
@@ -209,9 +210,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                             (fun fa ->
                               (* To compute those lower-dimensional versions, we recursively evaluate the same constant in lower-dimensional contexts.  We use a fresh empty environment of the appropriate dimension, rather than acting on the caller's environment, so that this (cached) lazy doesn't retain arbitrary environments; the constant is closed, so the result is the same (and itself cached). *)
                               let tm =
-                                eval_term
-                                  (Emp (mode, dom_sface (sface_of_tface fa)))
-                                  (Const name) in
+                                eval_term (Emp (mode, dom_sface (sface_of_tface fa))) (Const name)
+                              in
                               (* We need to know the type of each lower-dimensional version in order to annotate it as a "normal" instantiation argument.  But we already computed that type while evaluating the term itself, since as a neutral term it had to be annotated with its type. *)
                               match tm with
                               | Neu { ty = (lazy ty); _ } -> { tm; ty }
