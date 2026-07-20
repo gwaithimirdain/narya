@@ -130,6 +130,18 @@ type (_, _, _, _, _) shuffleable =
     }
       -> ('mode, 'r, 'h, 'i, 'c) shuffleable
 
+(* The [tyfam] field of a datatype value is a memoized back-pointer to the enclosing neutral that this [Data] value is the unfolding of: the datatype applied to its *parameters* (with its indices abstracted), paired with that neutral's type.  It cannot be filled in when the [Data] value is first created (in [eval_canonical]) because at that point the enclosing spine of the neutral does not exist yet: it is assembled by [apply] (and friends) further out.  So instead we capture it lazily, the first time that enclosing neutral is observed.
+
+   There are two flavors of observation, and they handle disjoint cases, so despite the shared write-once cell there is no genuine race:
+
+   - When the family is still function-shaped (an *indexed* datatype not yet applied to its indices, e.g. [Vector A] of type [ℕ → Type]), it is captured in [view_term], which fires precisely when [apply] views the function before applying the next index.  By construction this happens before the further-applied value (e.g. [Vector A n]) can exist to be viewed.
+
+   - When the family is type-shaped (a *non-indexed* datatype, whose family equals its own fully-applied type), it is captured in [view_type] when the datatype is viewed as a type.  Such a value is never applied further, so [view_term] never fires for it.
+
+   [capture_tyfam] performs the write-once capture; the [Option.is_none] guard makes re-observation a no-op and lets the first (correct) writer win. *)
+let capture_tyfam : type mode m j ij. (mode, m, j, ij) data_args -> mode normal Lazy.t -> unit =
+ fun d fam -> if Option.is_none !(d.tyfam) then d.tyfam := Some fam
+
 let rec view_term : type mode s. (mode, s) value -> (mode, s) value =
  fun tm ->
   if GluedEval.read () then
@@ -138,8 +150,8 @@ let rec view_term : type mode s. (mode, s) value -> (mode, s) value =
         (* For glued evaluation, when viewing a term, we force its value and proceed to view that value instead. *)
         match force_eval value with
         | Realize v -> view_term v
-        | Val (Canonical { canonical = Data d; _ }) when Option.is_none !(d.tyfam) ->
-            d.tyfam := Some (lazy { tm; ty = Lazy.force ty });
+        | Val (Canonical { canonical = Data d; _ }) ->
+            capture_tyfam d (lazy { tm; ty = Lazy.force ty });
             tm
         | _ -> tm)
     | _ -> tm
@@ -156,9 +168,9 @@ and view_type : type mode.
       match force_eval value with
       | Val (Canonical { mode; canonical = c; tyargs; ins; fields = _; inst_fields = _ }) -> (
           (match c with
-          | Data d when Option.is_none !(d.tyfam) ->
-              d.tyfam :=
-                Some (lazy { tm = ty; ty = inst (universe mode (TubeOf.inst tyargs)) tyargs })
+          | Data d ->
+              capture_tyfam d
+                (lazy { tm = ty; ty = inst (universe mode (TubeOf.inst tyargs)) tyargs })
           | _ -> ());
           match D.compare_zero (TubeOf.uninst tyargs) with
           | Zero ->
@@ -231,8 +243,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                       match value with
                       | Realize x -> x
                       | Val (Canonical { canonical = Data d; _ }) ->
-                          if Option.is_none !(d.tyfam) then
-                            d.tyfam := Some (lazy { tm = newtm; ty = Lazy.force ty });
+                          capture_tyfam d (lazy { tm = newtm; ty = Lazy.force ty });
                           newtm
                       | _ -> newtm)
                 | `Axiom -> Neu { head; args = Emp; value = ready Unrealized; ty } in
@@ -768,8 +779,7 @@ and apply : type dom modality mode n m s.
                     match value with
                     | Realize x -> Val x
                     | Val (Canonical { canonical = Data d; _ }) ->
-                        if Option.is_none !(d.tyfam) then
-                          d.tyfam := Some (lazy { tm = newtm; ty = Lazy.force newty });
+                        capture_tyfam d (lazy { tm = newtm; ty = Lazy.force newty });
                         Val newtm
                     | _ -> Val newtm)
                 | _ -> fatal (Anomaly "invalid application of type")))
@@ -863,8 +873,7 @@ and field : type src f mode n k nk s.
                 match value with
                 | Realize x -> Val x
                 | Val (Canonical { canonical = Data d; _ }) ->
-                    if Option.is_none !(d.tyfam) then
-                      d.tyfam := Some (lazy { tm = newtm; ty = Lazy.force newty });
+                    capture_tyfam d (lazy { tm = newtm; ty = Lazy.force newty });
                     Val newtm
                 | _ -> Val newtm)
             | Realize _ -> fatal (Anomaly "realized neutral"))
