@@ -44,8 +44,6 @@ let if_known (test : 'a Err.t option) err =
   | None -> Error (err ())
   | Some x -> x
 
-let ok = Ok ()
-
 (* If an application spine crosses no modal field projection (every field has the identity left adjoint), then its head lives at the ambient mode; this returns a witness of that mode equality, or None if the spine is modal. *)
 let rec nonmodal_apps : type hmode mode any. (hmode, mode, any) apps -> (hmode, mode) Eq.t option =
   function
@@ -104,14 +102,14 @@ and equal_at : type mode a b.
     unit Err.t =
  fun ctx x y ty ->
   (* Physically equal values are definitionally equal, and physical sharing is common (cached constants, shared let-bindings, shared forced values), so we short-circuit on it before any structural work. *)
-  if x == y then ok
+  if x == y then Ok ()
   else
     (* The type must be fully instantiated. *)
     match view_type ty "equal_at" with
     (* The only interesting thing here happens when the type is one with an eta-rule, such as a pi-type. *)
     | Canonical (_, Pi { x = name; filter; doms; cods }, ins, tyargs) -> (
         match equal_at_eta_spines ctx x y with
-        | Some () -> ok
+        | Some () -> Ok ()
         | None ->
             let modality = Modality.filter_modality filter in
             let Eq = eq_of_ins_zero ins in
@@ -132,7 +130,7 @@ and equal_at : type mode a b.
         match eta with
         | Eta -> (
             match equal_at_eta_spines ctx x y with
-            | Some () -> ok
+            | Some () -> Ok ()
             | None ->
                 let (Perm_to p) = perm_of_ins ins in
                 let pinv = deg_of_perm (perm_inv p) in
@@ -220,7 +218,7 @@ and equal_at : type mode a b.
           | Neu _, Neu _ -> (
               (* Two neutrals are first compared as spines; a mismatch is inconclusive if either side unfolds, in which case we retry (once) on the unfoldings, which may now be constructors. *)
               match equal_neu ctx x y with
-              | Ok () -> ok
+              | Ok () -> Ok ()
               | Error err ->
                   let vx = view_term x in
                   let vy = view_term y in
@@ -243,13 +241,13 @@ and equal_at : type mode a b.
 and equal_val : type mode a b.
     (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> unit Err.t =
  fun ctx x y ->
-  if x == y then ok
+  if x == y then Ok ()
   else
     match (x, y) with
     | Neu _, Neu _ -> (
         (* Two neutrals are first compared rigidly as spines.  With glued evaluation, a spine mismatch is inconclusive if either side unfolds (its stored value is Realized): in that case we retry on the unfoldings.  Since view_term unfolds Realized glued values all the way down, a second view is the physical identity, so there is at most one retry per node and subterms that match as spines are never unfolded. *)
         match equal_neu ctx x y with
-        | Ok () -> ok
+        | Ok () -> Ok ()
         | Error err ->
             let vx = view_term x in
             let vy = view_term y in
@@ -447,7 +445,7 @@ and equal_at_tel : type mode n a b ab c d.
     unit Err.t =
  fun ctx env xs ys tys tyargs ->
   match (xs, ys, tys, tyargs) with
-  | [], [], Emp, [] -> ok
+  | [], [], Emp, [] -> Ok ()
   | ( Modal
         (type xdom xmodality xk)
         ((xfilter, x) :
@@ -537,7 +535,7 @@ and equal_ordered_env : type mode a b n c d.
  fun ctx env1 env2 envctx ->
   (* Copied from readback_ordered_env *)
   match envctx with
-  | Emp _ -> ok
+  | Emp _ -> Ok ()
   (* A weakening entry contributes nothing to the environment, so we skip it. *)
   | Weaken (envctx, _) -> equal_ordered_env ctx env1 env2 envctx
   | Ext (envctx, entry, _) -> (
