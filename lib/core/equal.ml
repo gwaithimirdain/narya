@@ -84,14 +84,14 @@ let rec equal_nf : type mode a b. (mode, a, b) Ctx.t -> mode normal -> mode norm
 
 (* At a type with an eta-rule, two neutrals with equal spines are nevertheless equal, and checking this first can avoid an eta-expansion.  This matters especially with glued evaluation, where parallel derivations produce equal retained spines that are not physically shared, and where eta-expanding compares (and hence unfolds and re-evaluates) their realizations instead.  A spine mismatch is inconclusive at an eta type, so callers fall back to eta-expanding. *)
 and equal_at_eta_spines : type mode a b.
-    (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> unit option =
+    (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> bool =
  fun ctx x y ->
   match (x, y) with
   | Neu _, Neu _ -> (
       match equal_neu ctx x y with
-      | Ok () -> Some ()
-      | Error _ -> None)
-  | _ -> None
+      | Ok () -> true
+      | Error _ -> false)
+  | _ -> false
 
 (* Compare two values at a type, which they are both assumed to belong to.  We do eta-expansion here if the type is one with an eta-rule, like a pi-type or a record type.  We also deal with the case of terms that don't synthesize, such as structs even in codatatypes without eta, and constructors in datatypes. *)
 and equal_at : type mode a b.
@@ -107,18 +107,17 @@ and equal_at : type mode a b.
     (* The type must be fully instantiated. *)
     match view_type ty "equal_at" with
     (* The only interesting thing here happens when the type is one with an eta-rule, such as a pi-type. *)
-    | Canonical (_, Pi { x = name; filter; doms; cods }, ins, tyargs) -> (
-        match equal_at_eta_spines ctx x y with
-        | Some () -> Ok ()
-        | None ->
-            let modality = Modality.filter_modality filter in
-            let Eq = eq_of_ins_zero ins in
-            let newargs, newnfs = dom_vars ctx modality doms in
-            let (Any_ctx newctx) =
-              Ctx.variables_vis ctx (Modality.filter_idempotent filter) name newnfs in
-            let output = tyof_app cods tyargs filter newargs in
-            (* If both terms have the given pi-type, then when applied to variables of the domains, they will both have the computed output-type, so we can recurse back to eta-expanding equality at that type. *)
-            equal_at newctx (apply_term x filter newargs) (apply_term y filter newargs) output)
+    | Canonical (_, Pi { x = name; filter; doms; cods }, ins, tyargs) ->
+        if equal_at_eta_spines ctx x y then Ok ()
+        else
+          let modality = Modality.filter_modality filter in
+          let Eq = eq_of_ins_zero ins in
+          let newargs, newnfs = dom_vars ctx modality doms in
+          let (Any_ctx newctx) =
+            Ctx.variables_vis ctx (Modality.filter_idempotent filter) name newnfs in
+          let output = tyof_app cods tyargs filter newargs in
+          (* If both terms have the given pi-type, then when applied to variables of the domains, they will both have the computed output-type, so we can recurse back to eta-expanding equality at that type. *)
+          equal_at newctx (apply_term x filter newargs) (apply_term y filter newargs) output
     (* Codatatypes (without eta) don't need to be dealt with here, even though structs can't be compared synthesizingly, since codatatypes aren't actually inhabited by (kinetic) structs, only neutral terms that are equal to potential structs.  In the case of record types with eta, if there is a nonidentity insertion outside, then the type isn't actually a record type, *but* it still has an eta-rule since it is *isomorphic* to a record type!  Thus, instead of checking whether the insertion is the identity, we apply its inverse permutation to the terms being compared.  And because we pass off to 'field' and 'tyof_field', we don't need to make explicit use of any of the other data here. *)
     | Canonical
         (type hmode mn m n)
@@ -128,40 +127,38 @@ and equal_at : type mode a b.
           * (mn, m, n) insertion
           * (D.zero, mn, mn, mode normal) TubeOf.t) -> (
         match eta with
-        | Eta -> (
-            match equal_at_eta_spines ctx x y with
-            | Some () -> Ok ()
-            | None ->
-                let (Perm_to p) = perm_of_ins ins in
-                let pinv = deg_of_perm (perm_inv p) in
-                let x, y, ty =
-                  let idc = Modalcell.id2 (Ctx.mode ctx) in
-                  (act_value x pinv idc, act_value y pinv idc, gact_ty None ty pinv idc) in
-                (* Now we take the projections and compare them at appropriate types.  It suffices to use the fields of x when computing the types of the fields, since we proceed to check the fields for equality *in order* and thus by the time we are checking equality of any particular field of x and y, the previous fields of x and y are already known to be equal, and the type of the current field can only depend on these.  (This latter is a semantic constraint on the kinds of generalized records that can sensibly admit eta-conversion.)  In addition, records with eta cannot have higher fields, so as field insertion it suffices to use ins_zero on the substitution dimension. *)
-                let fldins = ins_zero (cod_left_ins ins) in
-                BwdM.miterM
-                  (fun [
-                         CodatafieldAbwd.Entry
-                           (type i)
-                           ((fld, Lower (adj, _, _)) :
-                             i Field.t * (i, mode * a * n * has_eta) Codatafield.t);
-                       ] ->
-                    (* For a modal field, both terms are keyed by the adjunction unit to put them into a context where the modal field can be projected, and the projections are compared in the context locked by the right adjoint.  For ordinary fields the unit is the identity and the lock is trivial. *)
-                    let (Adjunction { left; right; unit; _ }) = adj in
-                    (* A modal field whose (left adjoint) modality is nonparametric disappears at a dimension it filters nontrivially, so it plays no role in checikng equality. *)
-                    let m = cod_left_ins ins in
-                    let (Has_filter left_filter) = Modality.filter left m in
-                    match Modality.filter_is_trivial m left_filter with
-                    | None -> return ()
-                    | Some Eq ->
-                        let xu = act_value x (id_deg D.zero) unit in
-                        let yu = act_value y (id_deg D.zero) unit in
-                        let tyu = gact_ty None ty (id_deg D.zero) unit in
-                        let (Locked (_, lctx)) = Ctx.lock ctx right in
-                        equal_at lctx (field_term left xu fld fldins)
-                          (field_term left yu fld fldins)
-                          (tyof_field left (Ok xu) tyu fld ~shuf:Trivial fldins))
-                  [ fields ])
+        | Eta ->
+            if equal_at_eta_spines ctx x y then Ok ()
+            else
+              let (Perm_to p) = perm_of_ins ins in
+              let pinv = deg_of_perm (perm_inv p) in
+              let x, y, ty =
+                let idc = Modalcell.id2 (Ctx.mode ctx) in
+                (act_value x pinv idc, act_value y pinv idc, gact_ty None ty pinv idc) in
+              (* Now we take the projections and compare them at appropriate types.  It suffices to use the fields of x when computing the types of the fields, since we proceed to check the fields for equality *in order* and thus by the time we are checking equality of any particular field of x and y, the previous fields of x and y are already known to be equal, and the type of the current field can only depend on these.  (This latter is a semantic constraint on the kinds of generalized records that can sensibly admit eta-conversion.)  In addition, records with eta cannot have higher fields, so as field insertion it suffices to use ins_zero on the substitution dimension. *)
+              let fldins = ins_zero (cod_left_ins ins) in
+              BwdM.miterM
+                (fun [
+                       CodatafieldAbwd.Entry
+                         (type i)
+                         ((fld, Lower (adj, _, _)) :
+                           i Field.t * (i, mode * a * n * has_eta) Codatafield.t);
+                     ] ->
+                  (* For a modal field, both terms are keyed by the adjunction unit to put them into a context where the modal field can be projected, and the projections are compared in the context locked by the right adjoint.  For ordinary fields the unit is the identity and the lock is trivial. *)
+                  let (Adjunction { left; right; unit; _ }) = adj in
+                  (* A modal field whose (left adjoint) modality is nonparametric disappears at a dimension it filters nontrivially, so it plays no role in checikng equality. *)
+                  let m = cod_left_ins ins in
+                  let (Has_filter left_filter) = Modality.filter left m in
+                  match Modality.filter_is_trivial m left_filter with
+                  | None -> return ()
+                  | Some Eq ->
+                      let xu = act_value x (id_deg D.zero) unit in
+                      let yu = act_value y (id_deg D.zero) unit in
+                      let tyu = gact_ty None ty (id_deg D.zero) unit in
+                      let (Locked (_, lctx)) = Ctx.lock ctx right in
+                      equal_at lctx (field_term left xu fld fldins) (field_term left yu fld fldins)
+                        (tyof_field left (Ok xu) tyu fld ~shuf:Trivial fldins))
+                [ fields ]
         (* At a codatatype without eta, there are no kinetic structs, only comatches, and those are not compared componentwise, only as neutrals, since they are generative. *)
         | Noeta -> equal_val ctx x y)
     (* At a higher-dimensional version of a discrete datatype, any two terms are equal.  Note that we do not check here whether discreteness is on: that affects datatypes when they are *defined*, not when they are used. *)
