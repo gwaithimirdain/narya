@@ -637,18 +637,17 @@ module Act = struct
       =
    fun lev s c ->
     match !lev with
+    (* When there are no accumulated pending arguments (apps = Emp), we compose the outer actions onto the environment and leave the term untouched. *)
     | Deferred_eval (env, tm, ins, key, Emp) ->
-        let Any_deg s, Wrap hc, apps = act_apps Emp s c in
         let (Insfact_comp_ext (fa, ins, _, _)) = insfact_comp_ext ins s in
         let acted_env = act_env env (opt_op_of_deg fa) in
         (* The stored key is applied to the evaluated value when forcing, and the new cell acts on the result of that, so the stored key is applied first in the composite.  We use the cell returned by act_apps, which lives at the mode inside the pending spine. *)
-        let (Wrap newkey) = key_vcomp hc key in
-        ref (Deferred_eval (acted_env, tm, ins, newkey, apps))
+        let (Wrap newkey) = key_vcomp c key in
+        ref (Deferred_eval (acted_env, tm, ins, newkey, Emp))
     | Deferred (tm, s', key, Emp) ->
-        let Any_deg s, Wrap hc, apps = act_apps Emp s c in
         let (DegExt (_, _, fa)) = comp_deg_extending s' s in
-        let (Wrap newkey) = key_vcomp hc key in
-        ref (Deferred (tm, fa, newkey, apps))
+        let (Wrap newkey) = key_vcomp c key in
+        ref (Deferred (tm, fa, newkey, Emp))
     (* When the deferral carries a pending argument spine (which happens only in glued evaluation), we do not push the action eagerly through the spine: that would duplicate the work of acting on the neutral's own arguments, and produce a fresh deferral not sharing its forced result with the original.  Instead we defer the action outside the whole spine, forcing the original (whose result is then cached and shared by all acted copies) and acting on the result. *)
     | Deferred_eval (_, _, _, _, (Arg _ | Field _ | Inst _))
     | Deferred (_, _, _, (Arg _ | Field _ | Inst _)) ->
