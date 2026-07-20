@@ -78,18 +78,23 @@ module BwdM = Mbwd.Monadic (Err)
 
 (* Eta-expanding equality checks.  In all functions, the integer is the current De Bruijn level, i.e. the length of the current context (we don't need any other information about the context). *)
 
-module Mode = Algaeff.Reader.Make (struct
-  type t = [ `Rigid | `Full ]
-end)
-
-let () = Mode.register_printer (function `Read -> Some "unhandled Equal.Mode.read effect")
-
 module Equal = struct
   (* Compare two normal forms that are *assumed* to have the same type, or at least that the type of the first is a subtype of the type of the second. *)
   let rec equal_nf : type mode a b. (mode, a, b) Ctx.t -> mode normal -> mode normal -> unit Err.t =
    fun n x y ->
     (* Thus, we can do an eta-expanding check at either one of their stored types, since they are assumed equal.  We check them at the type of the *second* argument, since this is also called as a subroutine of subtype checking, in which case the subtype comes first and then the supertype. *)
     equal_at n x.tm y.tm y.ty
+
+  (* At a type with an eta-rule, two neutrals with equal spines are nevertheless equal, and checking this first can avoid an eta-expansion.  This matters especially with glued evaluation, where parallel derivations produce equal retained spines that are not physically shared, and where eta-expanding compares (and hence unfolds and re-evaluates) their realizations instead.  A spine mismatch is inconclusive at an eta type, so callers fall back to eta-expanding. *)
+  and equal_at_eta_spines : type mode a b.
+      (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> unit option =
+   fun ctx x y ->
+    match (x, y) with
+    | Neu _, Neu _ -> (
+        match equal_neu ctx x y with
+        | Ok () -> Some ()
+        | Error _ -> None)
+    | _ -> None
 
   (* Compare two values at a type, which they are both assumed to belong to.  We do eta-expansion here if the type is one with an eta-rule, like a pi-type or a record type.  We also deal with the case of terms that don't synthesize, such as structs even in codatatypes without eta, and constructors in datatypes. *)
   and equal_at : type mode a b.
@@ -99,10 +104,16 @@ module Equal = struct
       (mode, kinetic) value ->
       unit Err.t =
    fun ctx x y ty ->
-    (* The type must be fully instantiated. *)
-    match view_type ty "equal_at" with
+    (* Physically equal values are definitionally equal, and physical sharing is common (cached constants, shared let-bindings, shared forced values), so we short-circuit on it before any structural work. *)
+    if x == y then ok
+    else
+      (* The type must be fully instantiated. *)
+      match view_type ty "equal_at" with
     (* The only interesting thing here happens when the type is one with an eta-rule, such as a pi-type. *)
-    | Canonical (_, Pi { x = name; filter; doms; cods }, ins, tyargs) ->
+    | Canonical (_, Pi { x = name; filter; doms; cods }, ins, tyargs) -> (
+        match equal_at_eta_spines ctx x y with
+        | Some () -> ok
+        | None ->
         let modality = Modality.filter_modality filter in
         let Eq = eq_of_ins_zero ins in
         let newargs, newnfs = dom_vars ctx modality doms in
@@ -110,7 +121,7 @@ module Equal = struct
           Ctx.variables_vis ctx (Modality.filter_idempotent filter) name newnfs in
         let output = tyof_app cods tyargs filter newargs in
         (* If both terms have the given pi-type, then when applied to variables of the domains, they will both have the computed output-type, so we can recurse back to eta-expanding equality at that type. *)
-        equal_at newctx (apply_term x filter newargs) (apply_term y filter newargs) output
+        equal_at newctx (apply_term x filter newargs) (apply_term y filter newargs) output)
     (* Codatatypes (without eta) don't need to be dealt with here, even though structs can't be compared synthesizingly, since codatatypes aren't actually inhabited by (kinetic) structs, only neutral terms that are equal to potential structs.  In the case of record types with eta, if there is a nonidentity insertion outside, then the type isn't actually a record type, *but* it still has an eta-rule since it is *isomorphic* to a record type!  Thus, instead of checking whether the insertion is the identity, we apply its inverse permutation to the terms being compared.  And because we pass off to 'field' and 'tyof_field', we don't need to make explicit use of any of the other data here. *)
     | Canonical
         (type hmode mn m n)
@@ -120,7 +131,10 @@ module Equal = struct
           * (mn, m, n) insertion
           * (D.zero, mn, mn, mode normal) TubeOf.t) -> (
         match eta with
-        | Eta ->
+        | Eta -> (
+            match equal_at_eta_spines ctx x y with
+            | Some () -> ok
+            | None ->
             let (Perm_to p) = perm_of_ins ins in
             let pinv = deg_of_perm (perm_inv p) in
             let x, y, ty =
@@ -149,65 +163,79 @@ module Equal = struct
                     let (Locked (_, lctx)) = Ctx.lock ctx right in
                     equal_at lctx (field_term left xu fld fldins) (field_term left yu fld fldins)
                       (tyof_field left (Ok xu) tyu fld ~shuf:Trivial fldins))
-              [ fields ]
+              [ fields ])
         (* At a codatatype without eta, there are no kinetic structs, only comatches, and those are not compared componentwise, only as neutrals, since they are generative. *)
         | Noeta -> equal_val ctx x y)
     (* At a higher-dimensional version of a discrete datatype, any two terms are equal.  Note that we do not check here whether discreteness is on: that affects datatypes when they are *defined*, not when they are used. *)
     | Canonical (_, Data { dim; discrete = `Yes; _ }, _, _) when is_pos dim -> return ()
     (* At an ordinary datatype, two constructors are equal if they are instances of the same constructor, with the same dimension and arguments.  We handle these cases here because we can use the datatype information to give types to the arguments of the constructor. *)
-    | Canonical (_, Data { constrs; _ }, ins, tyargs) -> (
+    | Canonical (_, Data { constrs; _ }, ins, tyargs) ->
         let Eq = eq_of_ins_zero ins in
-        let x, y =
-          match Mode.read () with
-          | `Rigid -> (x, y)
-          | `Full -> (view_term x, view_term y) in
-        match (x, y) with
-        | Constr (xconstr, xn, xargs), Constr (yconstr, yn, yargs) -> (
-            let (Dataconstr { env; args = argtys; indices = _ }) =
-              match Abwd.find_opt xconstr constrs with
-              | Some x -> x
-              | None -> fatal (Anomaly "constr not found in equality-check") in
-            let* () = guard (xconstr = yconstr) (Unequal.Constrs (xconstr, yconstr)) in
-            match (D.compare xn yn, D.compare xn (TubeOf.inst tyargs)) with
-            | Neq, _ -> fatal (Dimension_mismatch ("equality of constrs", xn, yn))
-            | _, Neq -> fatal (Dimension_mismatch ("equality of constrs", xn, TubeOf.inst tyargs))
-            | Eq, Eq ->
-                let lgth = Telescope.length argtys in
-                let xargs =
-                  Vec.of_list_length lgth xargs
-                  <|> Anomaly "wrong number of constructor arguments in readback_at" in
-                let yargs =
-                  Vec.of_list_length lgth yargs
-                  <|> Anomaly "wrong number of constructor arguments in readback_at" in
-                let (Conses (cs, bs)) = Tlist.conses lgth in
-                (* The instantiation must be at other instances of the same constructor; we take its arguments as in 'check'. *)
-                let tyarg_args =
-                  TubeOf.Heter.vec_of_hgt cs
-                  @@ TubeOf.pmap
-                       {
-                         map =
-                           (fun _ [ tm ] ->
-                             match view_term tm.tm with
-                             | Constr (tmname, _, tmargs) ->
-                                 if tmname = xconstr then
-                                   let ys =
-                                     Vec.of_list_length_map
-                                       (fun (Value.Modal (xfilt, x)) : (_, _) modal_value ->
-                                         Modal (Modality.filter_modality xfilt, CubeOf.find_top x))
-                                       lgth tmargs
-                                     <|> Anomaly "inst arg wrong num args in readback at datatype"
-                                   in
-                                   CubeOf.Heter.hft_of_vec cs ys
-                                 else
-                                   fatal (Anomaly "inst arg wrong constr in equality at datatype")
-                             | _ -> fatal (Anomaly "inst arg not constr in equality at datatype"));
-                       }
-                       [ tyargs ] bs in
-                (* It suffices to compare the top-dimensional faces of the cubes; the others are only there for evaluating case trees.  It would be nice to do this recursion directly on the Bwds, but equal_at_tel is expressed much more cleanly as an operation on lists. *)
-                equal_at_tel ctx env xargs yargs argtys tyarg_args)
-        | Constr _, _ | _, Constr _ ->
-            fail (Unequal.Terms (PNormal (ctx, { tm = x; ty }), PNormal (ctx, { tm = y; ty })))
-        | _ -> equal_val ctx x y)
+        (* With glued evaluation, terms at a datatype may be glued neutrals whose values unfold to constructors.  We compare the terms as given, and only if that is inconclusive (a neutral spine mismatch, or a shape mismatch) do we unfold with view_term and retry.  Since view_term unfolds Realized glued values all the way down, a second view is the physical identity and the retry recursion terminates. *)
+        let rec equal_at_data (x : (mode, kinetic) value) (y : (mode, kinetic) value) : unit Err.t =
+          match (x, y) with
+          | Constr (xconstr, xn, xargs), Constr (yconstr, yn, yargs) -> (
+              let (Dataconstr { env; args = argtys; indices = _ }) =
+                match Abwd.find_opt xconstr constrs with
+                | Some x -> x
+                | None -> fatal (Anomaly "constr not found in equality-check") in
+              let* () = guard (xconstr = yconstr) (Unequal.Constrs (xconstr, yconstr)) in
+              match (D.compare xn yn, D.compare xn (TubeOf.inst tyargs)) with
+              | Neq, _ -> fatal (Dimension_mismatch ("equality of constrs", xn, yn))
+              | _, Neq -> fatal (Dimension_mismatch ("equality of constrs", xn, TubeOf.inst tyargs))
+              | Eq, Eq ->
+                  let lgth = Telescope.length argtys in
+                  let xargs =
+                    Vec.of_list_length lgth xargs
+                    <|> Anomaly "wrong number of constructor arguments in readback_at" in
+                  let yargs =
+                    Vec.of_list_length lgth yargs
+                    <|> Anomaly "wrong number of constructor arguments in readback_at" in
+                  let (Conses (cs, bs)) = Tlist.conses lgth in
+                  (* The instantiation must be at other instances of the same constructor; we take its arguments as in 'check'. *)
+                  let tyarg_args =
+                    TubeOf.Heter.vec_of_hgt cs
+                    @@ TubeOf.pmap
+                         {
+                           map =
+                             (fun _ [ tm ] ->
+                               match view_term tm.tm with
+                               | Constr (tmname, _, tmargs) ->
+                                   if tmname = xconstr then
+                                     let ys =
+                                       Vec.of_list_length_map
+                                         (fun (Value.Modal (xfilt, x)) : (_, _) modal_value ->
+                                           Modal (Modality.filter_modality xfilt, CubeOf.find_top x))
+                                         lgth tmargs
+                                       <|> Anomaly "inst arg wrong num args in readback at datatype"
+                                     in
+                                     CubeOf.Heter.hft_of_vec cs ys
+                                   else
+                                     fatal (Anomaly "inst arg wrong constr in equality at datatype")
+                               | _ -> fatal (Anomaly "inst arg not constr in equality at datatype"));
+                         }
+                         [ tyargs ] bs in
+                  (* It suffices to compare the top-dimensional faces of the cubes; the others are only there for evaluating case trees.  It would be nice to do this recursion directly on the Bwds, but equal_at_tel is expressed much more cleanly as an operation on lists. *)
+                  equal_at_tel ctx env xargs yargs argtys tyarg_args)
+          | Neu _, Neu _ -> (
+              (* Two neutrals are first compared as spines; a mismatch is inconclusive if either side unfolds, in which case we retry (once) on the unfoldings, which may now be constructors. *)
+              match equal_neu ctx x y with
+              | Ok () -> ok
+              | Error err ->
+                  let vx = view_term x in
+                  let vy = view_term y in
+                  if vx == x && vy == y then Error err else equal_at_data vx vy)
+          | _ -> (
+              let vx = view_term x in
+              let vy = view_term y in
+              if vx != x || vy != y then equal_at_data vx vy
+              else
+                match (x, y) with
+                | Constr _, _ | _, Constr _ ->
+                    fail
+                      (Unequal.Terms (PNormal (ctx, { tm = x; ty }), PNormal (ctx, { tm = y; ty })))
+                | _ -> equal_val ctx x y) in
+        equal_at_data x y
     (* If the type is not one that has an eta-rule, then we pass off to a synthesizing equality-check, forgetting about our assumption that the two terms had the same type.  This is the equality-checking analogue of the conversion rule for checking a synthesizing term, but since equality requires no evidence we don't have to actually synthesize a type at which they are equal or verify that it equals the type we assumed them to have. *)
     | _ -> equal_val ctx x y
 
@@ -215,10 +243,27 @@ module Equal = struct
   and equal_val : type mode a b.
       (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> unit Err.t =
    fun ctx x y ->
-    let x, y =
-      match Mode.read () with
-      | `Rigid -> (x, y)
-      | `Full -> (view_term x, view_term y) in
+    if x == y then ok
+    else
+      match (x, y) with
+      | Neu _, Neu _ -> (
+        (* Two neutrals are first compared rigidly as spines.  With glued evaluation, a spine mismatch is inconclusive if either side unfolds (its stored value is Realized): in that case we retry on the unfoldings.  Since view_term unfolds Realized glued values all the way down, a second view is the physical identity, so there is at most one retry per node and subterms that match as spines are never unfolded. *)
+        match equal_neu ctx x y with
+        | Ok () -> ok
+        | Error err ->
+            let vx = view_term x in
+            let vy = view_term y in
+            if vx == x && vy == y then Error err else equal_val ctx vx vy)
+    | Lam _, _ | _, Lam _ -> fatal (Anomaly "unexpected lambda in synthesizing equality-check")
+    | Struct _, _ | _, Struct _ ->
+        fatal (Anomaly "unexpected struct in synthesizing equality-check")
+    | Constr _, _ | _, Constr _ ->
+        fatal (Anomaly "unexpected constr in synthesizing equality-check")
+
+  (* Rigid spine comparison of two neutrals: heads and applications, with no unfolding at this level (though the arguments are compared with the full equality including local unfolding). *)
+  and equal_neu : type mode a b.
+      (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> unit Err.t =
+   fun ctx x y ->
     match (x, y) with
     | ( Neu { head = head1; args = apps1; value = _; ty = _ },
         Neu { head = head2; args = apps2; value = _; ty = _ } ) -> (
@@ -576,19 +621,9 @@ module Equal = struct
                 equal_ordered_env ctx env1 env2 envctx))
 end
 
-let fallback f =
-  match Mode.run ~env:`Rigid f with
-  | Error err -> if GluedEval.read () then Mode.run ~env:`Full f else Error err
-  | Ok x -> Ok x
-
-let fallback_opt f =
-  let res = Mode.run ~env:`Rigid f in
-  match res with
-  | None | Some (Error _) -> if GluedEval.read () then Mode.run ~env:`Full f else None
-  | Some (Ok ()) -> Some (Ok ())
-
-let equal_at ctx x y ty = fallback @@ fun () -> Equal.equal_at ctx x y ty
-let equal_val ctx x y = fallback @@ fun () -> Equal.equal_val ctx x y
-let equal_nf ctx x y = fallback @@ fun () -> Equal.equal_nf ctx x y
-let equal_tyargs ctx a1 a2 = fallback_opt @@ fun () -> Equal.equal_tyargs ctx a1 a2
-let equal_apps ctx a1 a2 = fallback_opt @@ fun () -> Equal.equal_apps ctx a1 a2 ~heads:None
+(* Equality no longer needs a Rigid/Full two-pass structure: unfolding of glued neutrals happens locally on demand, inside equal_val and the datatype case of equal_at. *)
+let equal_at ctx x y ty = Equal.equal_at ctx x y ty
+let equal_val ctx x y = Equal.equal_val ctx x y
+let equal_nf ctx x y = Equal.equal_nf ctx x y
+let equal_tyargs ctx a1 a2 = Equal.equal_tyargs ctx a1 a2
+let equal_apps ctx a1 a2 = Equal.equal_apps ctx a1 a2 ~heads:None

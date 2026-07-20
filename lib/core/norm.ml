@@ -11,6 +11,34 @@ open Act
 open Printable
 open View
 
+(* The result of evaluating a constant depends only on its name, the dimension of the environment, its mode, and the global state.  Since constants are evaluated over and over (and evaluating one at dimension n recursively evaluates it at all lower dimensions to instantiate its type), we cache the results.  This is especially important for glued evaluation, where the neutral for a constant survives instead of being realized away, so that its lazy type and lazy value are forced (expensively) whenever some occurrence of it is applied or acted on; the cache shares those forcings among all occurrences.  The cache is stored per-origin in a Versioned so that undo and rewind discard it appropriately, and it is cleared by Global whenever the meaning of any constant or metavariable changes, since cached values may incorporate evaluations of other constants and metavariables. *)
+type cached_const = Cached_const : 'mode Mode.t * 'm D.t * ('mode, kinetic) value -> cached_const
+
+let const_cache : cached_const list Constant.Map.t Origin.Versioned.t =
+  Origin.Versioned.make ~default:(fun () -> Constant.Map.empty) ~inherit_values:false
+
+let () = Global.register_invalidator (fun () -> Origin.Versioned.set const_cache Constant.Map.empty)
+
+let find_cached_const : type mode m.
+    Constant.t -> m D.t -> mode Mode.t -> (mode, kinetic) value option =
+ fun name dim mode ->
+  match Constant.Map.find_opt name (Origin.Versioned.get const_cache) with
+  | None -> None
+  | Some entries ->
+      List.find_map
+        (fun (Cached_const (mode', dim', v)) ->
+          match (Mode.compare mode' mode, D.compare dim' dim) with
+          | Eq, Eq -> Some (v : (mode, kinetic) value)
+          | _ -> None)
+        entries
+
+let add_cached_const : type mode m.
+    Constant.t -> m D.t -> mode Mode.t -> (mode, kinetic) value -> unit =
+ fun name dim mode v ->
+  Origin.Versioned.modify const_cache
+    (Constant.Map.update name (fun e ->
+         Some (Cached_const (mode, dim, v) :: Option.value ~default:[] e)))
+
 (* Since some entries in an environment are lazy and some aren't, lookup_cube returns a cube whose entries belong to an existential type, along with a function to act on any element of that type and force it into a value.  It also returns an accumulated operator by which to act, first selecting an entry in the cube with a face and then acting on that value by a degeneracy.  Finally, it also returns an accumulated modal key substitution. *)
 type (_, _) looked_up_cube =
   | Looked_up : {
@@ -102,6 +130,18 @@ type (_, _, _, _, _) shuffleable =
     }
       -> ('mode, 'r, 'h, 'i, 'c) shuffleable
 
+(* The [tyfam] field of a datatype value is a memoized back-pointer to the enclosing neutral that this [Data] value is the unfolding of: the datatype applied to its *parameters* (with its indices abstracted), paired with that neutral's type.  It cannot be filled in when the [Data] value is first created (in [eval_canonical]) because at that point the enclosing spine of the neutral does not exist yet: it is assembled by [apply] (and friends) further out.  So instead we capture it lazily, the first time that enclosing neutral is observed.
+
+   There are two flavors of observation, and they handle disjoint cases, so despite the shared write-once cell there is no genuine race:
+
+   - When the family is still function-shaped (an *indexed* datatype not yet applied to its indices, e.g. [Vector A] of type [ℕ → Type]), it is captured in [view_term], which fires precisely when [apply] views the function before applying the next index.  By construction this happens before the further-applied value (e.g. [Vector A n]) can exist to be viewed.
+
+   - When the family is type-shaped (a *non-indexed* datatype, whose family equals its own fully-applied type), it is captured in [view_type] when the datatype is viewed as a type.  Such a value is never applied further, so [view_term] never fires for it.
+
+   [capture_tyfam] performs the write-once capture; the [Option.is_none] guard makes re-observation a no-op and lets the first (correct) writer win. *)
+let capture_tyfam : type mode m j ij. (mode, m, j, ij) data_args -> mode normal Lazy.t -> unit =
+ fun d fam -> if Option.is_none !(d.tyfam) then d.tyfam := Some fam
+
 let rec view_term : type mode s. (mode, s) value -> (mode, s) value =
  fun tm ->
   if GluedEval.read () then
@@ -110,8 +150,8 @@ let rec view_term : type mode s. (mode, s) value -> (mode, s) value =
         (* For glued evaluation, when viewing a term, we force its value and proceed to view that value instead. *)
         match force_eval value with
         | Realize v -> view_term v
-        | Val (Canonical { canonical = Data d; _ }) when Option.is_none !(d.tyfam) ->
-            d.tyfam := Some (lazy { tm; ty = Lazy.force ty });
+        | Val (Canonical { canonical = Data d; _ }) ->
+            capture_tyfam d (lazy { tm; ty = Lazy.force ty });
             tm
         | _ -> tm)
     | _ -> tm
@@ -128,9 +168,9 @@ and view_type : type mode.
       match force_eval value with
       | Val (Canonical { mode; canonical = c; tyargs; ins; fields = _; inst_fields = _ }) -> (
           (match c with
-          | Data d when Option.is_none !(d.tyfam) ->
-              d.tyfam :=
-                Some (lazy { tm = ty; ty = inst (universe mode (TubeOf.inst tyargs)) tyargs })
+          | Data d ->
+              capture_tyfam d
+                (lazy { tm = ty; ty = inst (universe mode (TubeOf.inst tyargs)) tyargs })
           | _ -> ());
           match D.compare_zero (TubeOf.uninst tyargs) with
           | Zero ->
@@ -164,46 +204,53 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
   | Var v -> Val (lookup env v)
   | Const name -> (
       let dim = dim_env env in
-      let (Definition { mode; ty = cty; tm = defn; parametric = _ }) = Global.find name in
-      match Mode.compare mode (mode_env env) with
-      | Eq -> (
-          (* Its type must also be instantiated at the lower-dimensional versions of itself. *)
-          let ty =
-            lazy
-              (inst
-                 (eval_term (Emp (mode, dim)) cty)
-                 (TubeOf.build D.zero (D.zero_plus dim)
-                    {
-                      build =
-                        (fun fa ->
-                          (* To compute those lower-dimensional versions, we recursively evaluate the same constant in lower-dimensional contexts. *)
-                          let tm =
-                            eval_term
-                              (act_env env (opt_op_of_sface (sface_of_tface fa)))
-                              (Const name) in
-                          (* We need to know the type of each lower-dimensional version in order to annotate it as a "normal" instantiation argument.  But we already computed that type while evaluating the term itself, since as a neutral term it had to be annotated with its type. *)
-                          match tm with
-                          | Neu { ty = (lazy ty); _ } -> { tm; ty }
-                          | _ -> fatal (Anomaly "eval of lower-dim constant not neutral/canonical"));
-                    })) in
-          let head = Const { name; ins = ins_zero dim } in
-          match defn with
-          | `Defined tree -> (
-              if GluedEval.read () then
-                (* Glued evaluation: we evaluate the definition lazily and return a neutral with that lazy evaluation stored. *)
-                Val (Neu { head; args = Emp; value = lazy_eval (Emp (mode, dim)) tree; ty })
-              else
-                let value = eval (Emp (mode, dim)) tree in
-                let newtm = Neu { head; args = Emp; value = ready value; ty } in
-                match value with
-                | Realize x -> Val x
-                | Val (Canonical { canonical = Data d; _ }) ->
-                    if Option.is_none !(d.tyfam) then
-                      d.tyfam := Some (lazy { tm = newtm; ty = Lazy.force ty });
-                    Val newtm
-                | _ -> Val newtm)
-          | `Axiom -> Val (Neu { head; args = Emp; value = ready Unrealized; ty }))
-      | Neq -> fatal (Mode_mismatch (`Internal, "evaluating a constant", mode, None, mode_env env)))
+      match find_cached_const name dim (mode_env env) with
+      | Some v -> Val v
+      | None -> (
+          let (Definition { mode; ty = cty; tm = defn; parametric = _ }) = Global.find name in
+          match Mode.compare mode (mode_env env) with
+          | Eq ->
+              (* Its type must also be instantiated at the lower-dimensional versions of itself. *)
+              let ty =
+                lazy
+                  (inst
+                     (eval_term (Emp (mode, dim)) cty)
+                     (TubeOf.build D.zero (D.zero_plus dim)
+                        {
+                          build =
+                            (fun fa ->
+                              (* To compute those lower-dimensional versions, we recursively evaluate the same constant in lower-dimensional contexts.  We use a fresh empty environment of the appropriate dimension, rather than acting on the caller's environment, so that this (cached) lazy doesn't retain arbitrary environments; the constant is closed, so the result is the same (and itself cached). *)
+                              let tm =
+                                eval_term
+                                  (Emp (mode, dom_sface (sface_of_tface fa)))
+                                  (Const name) in
+                              (* We need to know the type of each lower-dimensional version in order to annotate it as a "normal" instantiation argument.  But we already computed that type while evaluating the term itself, since as a neutral term it had to be annotated with its type. *)
+                              match tm with
+                              | Neu { ty = (lazy ty); _ } -> { tm; ty }
+                              | _ ->
+                                  fatal (Anomaly "eval of lower-dim constant not neutral/canonical"));
+                        })) in
+              let head = Const { name; ins = ins_zero dim } in
+              let result =
+                match defn with
+                | `Defined tree -> (
+                    if GluedEval.read () then
+                      (* Glued evaluation: we evaluate the definition lazily and return a neutral with that lazy evaluation stored. *)
+                      Neu { head; args = Emp; value = lazy_eval (Emp (mode, dim)) tree; ty }
+                    else
+                      let value = eval (Emp (mode, dim)) tree in
+                      let newtm = Neu { head; args = Emp; value = ready value; ty } in
+                      match value with
+                      | Realize x -> x
+                      | Val (Canonical { canonical = Data d; _ }) ->
+                          capture_tyfam d (lazy { tm = newtm; ty = Lazy.force ty });
+                          newtm
+                      | _ -> newtm)
+                | `Axiom -> Neu { head; args = Emp; value = ready Unrealized; ty } in
+              add_cached_const name dim mode result;
+              Val result
+          | Neq ->
+              fatal (Mode_mismatch (`Internal, "evaluating a constant", mode, None, mode_env env))))
   | Meta (meta, ambient) -> (
       let dim = dim_env env in
       let head = Value.Meta { meta; env; ins = ins_zero dim } in
@@ -604,6 +651,49 @@ and eval_args : type mode m n mn a.
           eval_term (act_env env (opt_op_of_sface fa)) (CubeOf.find tms fb));
     }
 
+(* Append a new index argument to a datatype value that is not yet applied to all of its indices, given the argument as a cube of normals.  Used both by 'apply', for a neutral application spine being evaluated with a case tree, and by 'app_eval_apps', for a glued application spine being replayed. *)
+and apply_unfilled_data_index : type mode m j ij mk dom modl an k.
+    mode Mode.t ->
+    m D.t ->
+    mode normal Lazy.t option ref ->
+    ((m, mode normal) CubeOf.t, j Fwn.suc, ij) Fillvec.t ->
+    (Constr.t, (mode, m, ij) dataconstr) Abwd.t ->
+    [ `Yes | `Maybe | `No ] ->
+    Positivity.recursion ->
+    hints ->
+    k D.t ->
+    (mk, m, D.zero) insertion ->
+    (mode * mk * potential * no_eta) StructfieldAbwd.t ->
+    (dom, modl, mode) Modality.t ->
+    (an, dom normal) CubeOf.t ->
+    (mode, potential) evaluation =
+ fun mode dim tyfam indices constrs discrete recursive hints tyargs_inst ins fields modality xs ->
+  let Eq = eq_of_ins_zero ins in
+  match
+    (D.compare dim (CubeOf.dim xs), D.compare_zero tyargs_inst, Modality.compare_id modality)
+  with
+  | Neq, _, _ -> fatal (Dimension_mismatch ("apply", dim, CubeOf.dim xs))
+  | _, Pos _, _ ->
+      fatal (Anomaly "datatype was instantiated before being applied to all its indices")
+  | _, _, Neq ->
+      fatal (Modality_mismatch (`Internal, "apply", modality, Modality.id (Modality.tgt modality)))
+  | Eq, Zero, Eq ->
+      let indices = Fillvec.snoc indices xs in
+      let fields =
+        match fields with
+        | Emp -> Bwd.Emp
+        | Snoc _ -> fatal (Unimplemented "fibrancy of indexed datatypes") in
+      Val
+        (Value.Canonical
+           {
+             mode;
+             canonical = Data { dim; tyfam; indices; constrs; discrete; recursive; hints };
+             tyargs = TubeOf.empty dim;
+             ins;
+             fields;
+             inst_fields = None;
+           })
+
 (* Apply a function value to an argument (with its boundaries). *)
 and apply : type dom modality mode n m s.
     (mode, s) value ->
@@ -677,51 +767,19 @@ and apply : type dom modality mode n m s.
                          ins;
                          fields;
                          inst_fields = _;
-                       }) -> (
-                    let Eq = eq_of_ins_zero ins in
-                    match
-                      ( D.compare dim k,
-                        D.compare_zero (TubeOf.inst data_tyargs),
-                        (* Indices cannot have a nontrivial modal annotation *)
-                        Modality.compare_id modality )
-                    with
-                    | Neq, _, _ -> fatal (Dimension_mismatch ("apply", dim, k))
-                    | _, Pos _, _ ->
-                        fatal
-                          (Anomaly
-                             "datatype was instantiated before being applied to all its indices")
-                    | _, _, Neq ->
-                        fatal
-                          (Modality_mismatch
-                             (`Internal, "apply", modality, Modality.id (Modality.tgt modality)))
-                    | Eq, Zero, Eq ->
-                        let indices = Fillvec.snoc indices newarg in
-                        (* TODO: What happens to these?  What even are the fields of a not-fully-applied indexed datatype? *)
-                        let fields =
-                          match fields with
-                          | Emp -> Bwd.Emp
-                          | Snoc _ -> fatal (Unimplemented "fibrancy of indexed datatypes") in
-                        let value =
-                          Val
-                            (Value.Canonical
-                               {
-                                 mode;
-                                 canonical =
-                                   Data { dim; tyfam; indices; constrs; discrete; recursive; hints };
-                                 tyargs = TubeOf.empty dim;
-                                 ins;
-                                 fields;
-                                 inst_fields = None;
-                               }) in
-                        Val (Neu { head; args; value = ready value; ty = newty }))
+                       }) ->
+                    (* TODO: What happens to the fields?  What even are the fields of a not-fully-applied indexed datatype? *)
+                    let value =
+                      apply_unfilled_data_index mode dim tyfam indices constrs discrete recursive
+                        hints (TubeOf.inst data_tyargs) ins fields modality newarg in
+                    Val (Neu { head; args; value = ready value; ty = newty })
                 | Val tm -> (
                     let value = apply tm filter_nm arg in
                     let newtm = Neu { head; args; value = ready value; ty = newty } in
                     match value with
                     | Realize x -> Val x
                     | Val (Canonical { canonical = Data d; _ }) ->
-                        if Option.is_none !(d.tyfam) then
-                          d.tyfam := Some (lazy { tm = newtm; ty = Lazy.force newty });
+                        capture_tyfam d (lazy { tm = newtm; ty = Lazy.force newty });
                         Val newtm
                     | _ -> Val newtm)
                 | _ -> fatal (Anomaly "invalid application of type")))
@@ -802,7 +860,8 @@ and field : type src f mode n k nk s.
           let (Has_filter filter) = Modality.filter fm n in
           let args = Field (args, filter, fld, fldplus, ins_zero n) in
           if GluedEval.read () then
-            let value = field_lazy fm value fld fldins in
+            (* As in the non-glued case below, the insertion was already pushed inside by acting on the whole neutral above, so the remaining insertion to project from its value is the identity. *)
+            let value = field_lazy fm value fld (ins_of_plus n fldplus) in
             Val (Neu { head; args; value; ty = newty })
           else
             match force_eval value with
@@ -814,8 +873,7 @@ and field : type src f mode n k nk s.
                 match value with
                 | Realize x -> Val x
                 | Val (Canonical { canonical = Data d; _ }) ->
-                    if Option.is_none !(d.tyfam) then
-                      d.tyfam := Some (lazy { tm = newtm; ty = Lazy.force newty });
+                    capture_tyfam d (lazy { tm = newtm; ty = Lazy.force newty });
                     Val newtm
                 | _ -> Val newtm)
             | Realize _ -> fatal (Anomaly "realized neutral"))
@@ -1551,9 +1609,35 @@ and app_eval_apps : type hmode mode s any.
   match x with
   | Emp -> ev
   | Arg (rest, filter, xs, ins) -> (
-      let mode = Modality.tgt (Modality.filter_modality filter) in
+      let modality = Modality.filter_modality filter in
+      let mode = Modality.tgt modality in
       let (To p) = deg_of_ins ins in
       match app_eval_apps ev rest with
+      (* A datatype not yet applied to all its indices is a potential value that 'apply' can't handle, since the new index must be stored with its type; we deal with it here where we have the argument as a cube of normals. *)
+      | Val
+          (Canonical
+             {
+               mode = cmode;
+               canonical =
+                 Data
+                   {
+                     dim;
+                     tyfam;
+                     indices = Unfilled _ as indices;
+                     constrs;
+                     discrete;
+                     recursive;
+                     hints;
+                   };
+               tyargs;
+               ins = cins;
+               fields;
+               inst_fields = _;
+             }) ->
+          let value =
+            apply_unfilled_data_index cmode dim tyfam indices constrs discrete recursive hints
+              (TubeOf.inst tyargs) cins fields modality xs in
+          act_evaluation value p (Modalcell.id2 mode)
       | Val tm -> act_evaluation (apply tm filter (val_of_norm_cube xs)) p (Modalcell.id2 mode)
       | Realize tm ->
           let (Val v) =

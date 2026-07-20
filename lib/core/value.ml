@@ -1146,8 +1146,8 @@ let get_full_tube : type n k nk a any.
           let Eq = D.plus_uniq (TubeOf.plus args) (D.zero_plus (TubeOf.inst args)) in
           TubeOf.Full_tube args)
 
-(* Glued evaluation is basically implemented, but currently disabled because it is very slow -- too much memory allocation, and OCaml 5 doesn't have memory profiling tools available yet to debug it.  So we disable it globally with this flag.  But all the regular tests pass with the flag enabled, and should continue to be run and to pass, so that once we are able to debug it it is still otherwise working. *)
+(* Glued evaluation is enabled globally with this flag.  It was originally disabled because it was very slow; the two main culprits -- act_lazy_eval eagerly pushing degeneracy actions through the deferred argument spines of glued neutrals (duplicating the action on the neutral's own arguments and un-sharing the forced results), and the equality-checker's former two-pass Rigid/Full structure that restarted the entire comparison with everything unfolded whenever a rigid comparison failed -- have been fixed by deferring such actions and by unfolding glued neutrals locally on demand in the equality-checker.  With both fixes, the test suite runs as fast or slightly faster with this flag on than off. *)
 module GluedEval = struct
-  let toggle = false
+  let toggle = true
   let read () = toggle
 end
