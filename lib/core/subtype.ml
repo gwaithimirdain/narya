@@ -16,7 +16,7 @@ let () =
     | `Set _ -> Some "unhandled Subtype set effect")
 
 let add subtype supertype =
-  match (Global.find subtype, Global.find supertype) with
+  match (Global.find_const subtype, Global.find_const supertype) with
   | Definition { ty = UU (_, subdim); _ }, Definition { ty = UU (_, superdim); _ } -> (
       match (D.compare_zero subdim, D.compare_zero superdim) with
       | Zero, Zero ->

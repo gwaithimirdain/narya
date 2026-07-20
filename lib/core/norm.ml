@@ -196,7 +196,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       match find_cached_const name dim (mode_env env) with
       | Some v -> Val v
       | None -> (
-          let (Definition { mode; ty = cty; tm = defn; parametric = _ }) = Global.find name in
+          let (Definition { mode; ty = cty; tm = defn; parametric = _ }) = Global.find_const name in
           match Mode.compare mode (mode_env env) with
           | Eq ->
               (* Its type must also be instantiated at the lower-dimensional versions of itself. *)

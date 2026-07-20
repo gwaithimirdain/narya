@@ -40,11 +40,13 @@ let holes : unit Holetable.t = Holetable.make ()
 
 (* Caches of evaluated values (e.g. the cache of evaluated constants in Norm) must be invalidated whenever the meaning of an existing constant or metavariable could change, since evaluation reads the global state.  (Additions of fresh constants and metavariables couldn't affect previously cached values, but we invalidate on them too, for safety; they are rare.)  Time-travel (undo and rewind) is not handled by these hooks; caches should be stored in an Origin.Versioned to deal with that. *)
 let invalidators : (unit -> unit) list ref = ref []
+
+(* Register a callback to be invoked whenever the global state of constants or metavariables is mutated, so that caches of evaluated values can be invalidated.  (Time-travel is not signaled by these callbacks; caches should be stored in an Origin.Versioned to deal with that.) *)
 let register_invalidator f = invalidators := f :: !invalidators
 let invalidate () = List.iter (fun f -> f ()) !invalidators
 
 (* Invalidating wrappers around the primitive mutations of the constant and metavariable tables.  All modifications of those tables should go through these. *)
-let table_add c v =
+let consttable_add c v =
   invalidate ();
   Constant.Table.add c v constants
 
@@ -53,7 +55,7 @@ let metatable_add m v =
   Metatable.add m v metas
 
 (* Look up a constant. *)
-let find c =
+let find_const c =
   match Constant.Table.find_opt c constants with
   | Some (Ok d) -> d
   | Some (Error e) -> fatal e
@@ -164,7 +166,7 @@ let from_istream_origin f chan i =
   (cs, ms)
 
 (* Add a new constant.  Only works on the current origin. *)
-let add c d = table_add c (Ok d)
+let add c d = consttable_add c (Ok d)
 
 (* Set the definition of an already-defined constant.  Only works on the current origin. *)
 let set : type mode.
@@ -180,12 +182,12 @@ let set : type mode.
       | Eq ->
           let tm = `Defined tm in
           let parametric = Option.value parametric ~default:p in
-          table_add c (Ok (Definition { mode; tm; ty; parametric }))
+          consttable_add c (Ok (Definition { mode; tm; ty; parametric }))
       | Neq -> fatal (Anomaly "Global.set: mode mismatch"))
   | _ -> fatal (Anomaly "Global.set: constant not defined")
 
 (* Add a new constant, but make it an error to access it. *)
-let add_error c e = table_add c (Error e)
+let add_error c e = consttable_add c (Error e)
 
 (* Add a new Global metavariable (e.g. local let-definition) to the new metas associated to the current command. *)
 let add_meta m ~termctx ~ty ~tm ~energy =
@@ -401,12 +403,12 @@ let with_definition : type mode a.
         | `Must_be_parametric | `Maybe_parametric -> `Maybe_parametric in
       match Mode.compare mode m with
       | Eq ->
-          table_add c (Ok (Definition { mode; ty; tm; parametric }));
-          Fun.protect ~finally:(fun () -> table_add c old) f
+          consttable_add c (Ok (Definition { mode; ty; tm; parametric }));
+          Fun.protect ~finally:(fun () -> consttable_add c old) f
       | Neq -> fatal (Anomaly "Global.set: mode mismatch"))
   | Some (Error _ as old) ->
       (* If the constant is currently unusable, we just retain that state. *)
-      Fun.protect ~finally:(fun () -> table_add c old) f
+      Fun.protect ~finally:(fun () -> consttable_add c old) f
   | _ -> fatal (Anomaly "missing definition in with_definition")
 
 (* Similarly, temporarily set the value of a global metavariable, which could be either permanent or current. *)
@@ -426,8 +428,8 @@ let with_meta_definition m tm f =
 let without_definition c err f =
   match Constant.Table.find_opt c constants with
   | Some old ->
-      table_add c (Error err);
-      Fun.protect ~finally:(fun () -> table_add c old) f
+      consttable_add c (Error err);
+      Fun.protect ~finally:(fun () -> consttable_add c old) f
   | _ -> fatal (Anomaly "missing definition in without_definition")
 
 (* Similarly, temporarily set the value of a global metavariable to produce an error. *)
