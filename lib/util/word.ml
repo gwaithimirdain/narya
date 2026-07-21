@@ -468,6 +468,49 @@ module Make (G : Comparable) = struct
     | Append_nil, Append_nil -> i
     | Append_cons ab, Append_cons asucb -> insert_bplus (Later i) ab asucb
 
+  (* Concatenation of two *forwards* words: (a, b, ab) fplus means the forwards word ab is a followed by b. *)
+  type (_, _, _) fplus =
+    | Nil : (nil, 'b, 'b) fplus
+    | Cons : ('a, 'b, 'ab) fplus -> (('g, 'a) cons, 'b, ('g, 'ab) cons) fplus
+
+  (* Appending two forwards words onto a backwards word, one after the other, is the same as appending their concatenation.  This is just associativity of word concatenation, so it holds for any generators. *)
+  let rec bplus_bplus : type z a za b ab zab.
+      (z, a, za) bplus -> (za, b, zab) bplus -> (a, b, ab) fplus -> (z, ab, zab) bplus =
+   fun za zab fp ->
+    match fp with
+    | Nil ->
+        let Append_nil = za in
+        zab
+    | Cons fp ->
+        let (Append_cons za) = za in
+        Append_cons (bplus_bplus za zab fp)
+
+  (* Conversely, if we know how to append a concatenation, we can strip off the second factor. *)
+  let rec unbplus_bplus : type z a b ab zab.
+      (z, ab, zab) bplus -> (a, b, ab) fplus -> (z, a) has_bplus =
+   fun zab fp ->
+    match fp with
+    | Nil -> Bplus Append_nil
+    | Cons fp ->
+        let (Append_cons zab) = zab in
+        let (Bplus za) = unbplus_bplus zab fp in
+        Bplus (Append_cons za)
+
+  (* Prepending a *backwards* word to a *forwards* one, giving a forwards word: (a, b, ab) bfplus means the forwards word ab is the backwards word a followed by the forwards word b.  Analogous to Fwn.fplus.  As with that, the induction moves generators one at a time from the inner (snoc) end of a to the head (cons) of b. *)
+  type (_, _, _) bfplus =
+    | Zero : (emp, 'b, 'b) bfplus
+    | Suc : ('a, ('g, 'b) cons, 'ab) bfplus -> (('a, 'g) snoc, 'b, 'ab) bfplus
+
+  type (_, _) has_bfplus = Bfplus : 'ab fwd * ('a, 'b, 'ab) bfplus -> ('a, 'b) has_bfplus
+
+  let rec bfplus : type a b. a t -> b fwd -> (a, b) has_bfplus =
+   fun a b ->
+    match a with
+    | Word Zero -> Bfplus (b, Zero)
+    | Word (Suc (a, g)) ->
+        let (Bfplus (ab, bfp)) = bfplus (Word a) (Cons (g, b)) in
+        Bfplus (ab, Suc bfp)
+
   (* ********** Positive words ********** *)
 
   (* A "positive" word is one that's not the identity, i.e. is a successor of something. *)

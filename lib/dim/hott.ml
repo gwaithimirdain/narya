@@ -19,16 +19,25 @@ let faces : unit -> ((D.zero, dim) sface * (D.zero, dim) sface * N.two Endpoints
     (fun two -> (End (Zero, D.deg, (two, Pop Top)), End (Zero, D.deg, (two, Top)), two))
     (Endpoints.hott ())
 
+(* In these hand-built cubes, each leaf carries the bplus realizing its forwards decided word: a leaf reached after [d] Mid steps has decided word [cons deg (... nil)] ([d] times), realized by [Append_cons] applied [d] times to [Append_nil]. *)
+
 let cube : type a. a -> a -> a -> (dim, a) CubeOf.t option =
  fun x0 x1 x2 ->
   Option.map
-    (fun two -> CubeOf.Branch (D.deg, Zero, two, Snoc (Snoc (Emp, Leaf x0), Leaf x1), Leaf x2))
+    (fun two ->
+      CubeOf.Branch
+        ( D.deg,
+          two,
+          Snoc (Snoc (Emp, Leaf (Append_nil, x0)), Leaf (Append_nil, x1)),
+          Leaf (Append_cons Append_nil, x2) ))
     (Endpoints.hott ())
 
 let tube : type a. a -> a -> (D.zero, dim, dim, a) TubeOf.t option =
  fun x0 x1 ->
   Option.map
-    (fun two -> TubeOf.Branch (D.deg, Zero, two, Snoc (Snoc (Emp, Leaf x0), Leaf x1), Leaf D.zero))
+    (fun two ->
+      TubeOf.Branch
+        (D.deg, two, Snoc (Snoc (Emp, Leaf (Append_nil, x0)), Leaf (Append_nil, x1)), Leaf D.zero))
     (Endpoints.hott ())
 
 let cube2 : type a b.
@@ -38,12 +47,27 @@ let cube2 : type a b.
     (fun two ->
       CubeOf.Branch
         ( D.deg,
-          Zero,
           two,
           Snoc
-            ( Snoc (Emp, Branch (D.deg, Zero, two, Snoc (Snoc (Emp, Leaf x00), Leaf x01), Leaf x02)),
-              Branch (D.deg, Zero, two, Snoc (Snoc (Emp, Leaf x10), Leaf x11), Leaf x12) ),
-          Branch (D.deg, Suc (Zero, D.deg), two, Snoc (Snoc (Emp, Leaf x20), Leaf x21), Leaf x22) ))
+            ( Snoc
+                ( Emp,
+                  Branch
+                    ( D.deg,
+                      two,
+                      Snoc (Snoc (Emp, Leaf (Append_nil, x00)), Leaf (Append_nil, x01)),
+                      Leaf (Append_cons Append_nil, x02) ) ),
+              Branch
+                ( D.deg,
+                  two,
+                  Snoc (Snoc (Emp, Leaf (Append_nil, x10)), Leaf (Append_nil, x11)),
+                  Leaf (Append_cons Append_nil, x12) ) ),
+          Branch
+            ( D.deg,
+              two,
+              Snoc
+                ( Snoc (Emp, Leaf (Append_cons Append_nil, x20)),
+                  Leaf (Append_cons Append_nil, x21) ),
+              Leaf (Append_cons (Append_cons Append_nil), x22) ) ))
     (Endpoints.hott ())
 
 let tube12 : type a b.
@@ -53,10 +77,19 @@ let tube12 : type a b.
     (fun two ->
       TubeOf.Branch
         ( D.deg,
-          Zero,
           two,
           Snoc
-            ( Snoc (Emp, Branch (D.deg, Zero, two, Snoc (Snoc (Emp, Leaf x00), Leaf x01), Leaf x02)),
-              Branch (D.deg, Zero, two, Snoc (Snoc (Emp, Leaf x10), Leaf x11), Leaf x12) ),
+            ( Snoc
+                ( Emp,
+                  Branch
+                    ( D.deg,
+                      two,
+                      Snoc (Snoc (Emp, Leaf (Append_nil, x00)), Leaf (Append_nil, x01)),
+                      Leaf (Append_cons Append_nil, x02) ) ),
+              Branch
+                ( D.deg,
+                  two,
+                  Snoc (Snoc (Emp, Leaf (Append_nil, x10)), Leaf (Append_nil, x11)),
+                  Leaf (Append_cons Append_nil, x12) ) ),
           Leaf dim ))
     (Endpoints.hott ())

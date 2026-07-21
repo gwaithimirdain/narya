@@ -5,7 +5,6 @@ open Tlist
 open Hlist
 open Singleton
 open Cube
-open Sface
 open Tface
 
 (* Tube data structures *)
@@ -19,10 +18,9 @@ module Tube (F : Fam2) = struct
     | Leaf : 'n D.t -> ('n, D.zero, 'n, 'w, 'b) gt
     | Branch :
         'g D.G.t
-        * ((D.zero, 'g) D.suc, 'w, 'gw) D.plus
         * 'l Endpoints.len
         * (('mk, 'w, 'b) C.gt, 'l) Bwv.t
-        * ('m, 'k, 'mk, 'gw, 'b) gt
+        * ('m, 'k, 'mk, ('g, 'w) cons, 'b) gt
         -> ('m, ('k, 'g) D.suc, ('mk, 'g) D.suc, 'w, 'b) gt
 
   (* This definition gives a cardinality F(k,m) for (m,k,m+k,w,b) gtube with recurrence relations
@@ -40,13 +38,13 @@ module Tube (F : Fam2) = struct
      F(k,m) = 3^(m+k) - 3^m
   *)
 
-  type ('n, 'k, 'nk, 'b) t = ('n, 'k, 'nk, D.zero, 'b) gt
+  type ('n, 'k, 'nk, 'b) t = ('n, 'k, 'nk, D.fwd_zero, 'b) gt
 
   (* In a tube we always have m + k = m+k. *)
 
   let rec gplus : type m k mk w b. (m, k, mk, w, b) gt -> (m, k, mk) D.plus = function
     | Leaf _ -> Zero
-    | Branch (g, _, _, _, mid) -> Suc (gplus mid, g)
+    | Branch (g, _, _, mid) -> Suc (gplus mid, g)
 
   let plus : type m k mk b. (m, k, mk, b) t -> (m, k, mk) D.plus = fun t -> gplus t
 
@@ -56,7 +54,7 @@ module Tube (F : Fam2) = struct
 
   let rec guninst : type m k mk w b. (m, k, mk, w, b) gt -> m D.t = function
     | Leaf m -> m
-    | Branch (_, _, _, _, mid) -> guninst mid
+    | Branch (_, _, _, mid) -> guninst mid
 
   let uninst : type m k mk b. (m, k, mk, b) t -> m D.t = fun t -> guninst t
   let out : type m k mk b. (m, k, mk, b) t -> mk D.t = fun t -> D.plus_out (uninst t) (plus t)
@@ -79,23 +77,23 @@ module Tube (F : Fam2) = struct
   (* Looking up with a tface.  The carried plus relation (j, w, p) is transported exactly as in Cube.gfind. *)
 
   let rec gfind : type m k mk w b j p.
-      (m, k, mk, w, b) gt -> (j, m, k, mk) tface -> (j, w, p) D.plus -> (p, b) F.t =
+      (m, k, mk, w, b) gt -> (j, m, k, mk) tface -> (j, w, p) D.bplus -> (p, b) F.t =
    fun tr d jw ->
     match (tr, d) with
     | Leaf _, _ -> .
-    | Branch (_, _, l1, ends, _), End (d, _, _, (l2, e)) ->
+    | Branch (_, l1, ends, _), End (d, _, _, (l2, e)) ->
         let Eq = Endpoints.uniq l1 l2 in
         C.gfind (Bwv.nth e ends) d jw
-    | Branch (_, pw, _, _, mid), Mid (d, g) -> gfind mid d (D.plus_assocr (Suc (Zero, g)) pw jw)
+    | Branch (_, _, _, mid), Mid (d, _) -> gfind mid d (Append_cons jw)
 
   let find : type m n k nk b. (n, k, nk, b) t -> (m, n, k, nk) tface -> (m, b) F.t =
-   fun tr d -> gfind tr d Zero
+   fun tr d -> gfind tr d Append_nil
 
   (* The boundary of a cube is a maximal tube. *)
 
   let rec gboundary : type m w b. (m, w, b) C.gt -> (D.zero, m, m, w, b) gt = function
     | Leaf _ -> Leaf D.zero
-    | Branch (g, pw, l, ends, mid) -> Branch (g, pw, l, ends, gboundary mid)
+    | Branch (g, l, ends, mid) -> Branch (g, l, ends, gboundary mid)
 
   let boundary : type n b. (n, b) C.t -> (D.zero, n, n, b) t = fun tr -> gboundary tr
 
@@ -108,7 +106,7 @@ module Tube (F : Fam2) = struct
     | Zero, _ ->
         let Eq = D.plus_uniq mk (gplus tr) in
         Leaf (D.plus_out (guninst tr) mk)
-    | Suc (kl, _), Branch (g, pw, l, ends, mid) -> Branch (g, pw, l, ends, gpboundary mk kl mid)
+    | Suc (kl, _), Branch (g, l, ends, mid) -> Branch (g, l, ends, gpboundary mk kl mid)
 
   let pboundary : type m k mk l kl mkl b.
       (m, k, mk) D.plus -> (k, l, kl) D.plus -> (m, kl, mkl, b) t -> (mk, l, mkl, b) t =
@@ -124,13 +122,13 @@ module Tube (F : Fam2) = struct
       (n, k, nk, b) t =
    fun n k nk l cubes ->
     let One, Suc (Zero, g) = (k, nk) in
-    Branch (g, Zero, l, cubes, Leaf n)
+    Branch (g, l, cubes, Leaf n)
 
   let to_cube_bwv : type n k nk b l.
       k is_singleton -> l Endpoints.len -> (n, k, nk, b) t -> ((n, b) C.t, l) Bwv.t =
    fun k l tube ->
     let One = k in
-    let (Branch (_, _, l', cubes, Leaf _)) = tube in
+    let (Branch (_, l', cubes, Leaf _)) = tube in
     let Eq = Endpoints.uniq l l' in
     cubes
 
@@ -151,7 +149,8 @@ module Tube (F : Fam2) = struct
 
     (* We can convert an hgt of (full, uninstantiated) tubes of constant lengths to a vector. *)
     let rec vec_of_hgt : type b k n bs.
-        (b, k, bs) Tlist.conses -> (D.zero, n, n, D.zero, bs) hgt -> ((D.zero, n, n, b) t, k) Vec.t =
+        (b, k, bs) Tlist.conses -> (D.zero, n, n, D.fwd_zero, bs) hgt -> ((D.zero, n, n, b) t, k) Vec.t
+        =
      fun bs xs ->
       match (bs, xs) with
       | Nil, [] -> []
@@ -164,21 +163,15 @@ module Tube (F : Fam2) = struct
       | [] ->
           let (Wrap l) = Endpoints.wrapped () in
           Ends (l, Nil, [])
-      | Branch (_, _, l1, es, _) :: xs ->
+      | Branch (_, l1, es, _) :: xs ->
           let (Ends (l2, hs, ess)) = ends xs in
           let Eq = Endpoints.uniq l1 l2 in
           Ends (l2, Cons hs, es :: ess)
 
-    let rec mid : type m k mk g w gw bs.
-        ((D.zero, g) D.suc, w, gw) D.plus ->
-        (m, (k, g) D.suc, (mk, g) D.suc, w, bs) hgt ->
-        (m, k, mk, gw, bs) hgt =
-     fun pw xss ->
-      match xss with
+    let rec mid : type m k mk g w bs.
+        (m, (k, g) D.suc, (mk, g) D.suc, w, bs) hgt -> (m, k, mk, (g, w) cons, bs) hgt = function
       | [] -> []
-      | Branch (_, pw', _, _, m) :: xs ->
-          let Eq = D.plus_uniq pw pw' in
-          m :: mid pw xs
+      | Branch (_, _, _, m) :: xs -> m :: mid xs
 
     let rec leaf : type n w bs. n D.t -> bs Tlist.t -> (n, D.zero, n, w, bs) hgt =
      fun n bs ->
@@ -186,19 +179,18 @@ module Tube (F : Fam2) = struct
       | Nil -> []
       | Cons bs -> Leaf n :: leaf n bs
 
-    let rec branch : type m k mk g w gw bs hs l.
+    let rec branch : type m k mk g w bs hs l.
         g D.G.t ->
-        ((D.zero, g) D.suc, w, gw) D.plus ->
         l Endpoints.len ->
         (mk, w, bs, hs) C.Heter.hgts ->
         (hs, l) Bwv.Heter.ht ->
-        (m, k, mk, gw, bs) hgt ->
+        (m, k, mk, (g, w) cons, bs) hgt ->
         (m, (k, g) D.suc, (mk, g) D.suc, w, bs) hgt =
-     fun g pw l hs endss mids ->
+     fun g l hs endss mids ->
       match (hs, endss, mids) with
       | Nil, [], [] -> []
       | Cons hs, ends :: endss, mid :: mids ->
-          Branch (g, pw, l, ends, mid) :: branch g pw l hs endss mids
+          Branch (g, l, ends, mid) :: branch g l hs endss mids
   end
 
   module Infix = C.Infix
@@ -208,81 +200,42 @@ module Tube (F : Fam2) = struct
   module Applicatic (M : Applicative.Plain) = struct
     open Applicative.Ops (M)
     module BwvM = Bwv.Applicatic (M)
+    module CM = C.Applicatic (M)
 
     type ('n, 'k, 'nk, 'bs, 'cs) pmapperM = {
       map : 'm. ('m, 'n, 'k, 'nk) tface -> ('m, 'bs) C.Heter.hft -> ('m, 'cs) C.Heter.hft M.t;
     }
 
-    (* The cube phase.  Fixed throughout: the tface End data (generator g0 and endpoint e0), the payload split nk1 : (n, k1, mk1), and the Mid-prefix relations pa and pnk recorded when the End was taken.  Maintained: the (m, c, mk1) plus relating the remaining height to the consumed part of the cube, the partial payload face s : (w, c) sface, and the witness wia : (w, a, wc) relating the payload domain to the decided word wc indexing the trees. *)
-    let rec gpmapM_cube : type m c w wc a g0 k1 mk1 n k nk b bs cs l0.
-        (m, c, mk1) D.plus ->
-        (w, c) sface ->
-        (w, a, wc) D.plus ->
+    (* The tube traversal walks only the instantiated dimensions (the tube Branches), accumulating the forwards word 'w of dimensions decided as Mid so far, with pa : (k1, w, k) and pnk : (mk1, w, nk) recording how it sits inside the instantiated and total dimensions.  As soon as we descend an End branch, everything below is an ordinary cube, over which we run the prefixed Cube traversal with 'w as the outer prefix.  The cube's mapper receives a cube face fa together with the bplus (m_fa, w, mb) exhibiting the prefix; we reassemble the full tface with sface_bplus, which prepends the 'w Mids and the one End. *)
+    let rec gpmapM_r : type n k1 mk1 w k nk b bs cs.
         (n, k1, mk1) D.plus ->
-        ((k1, g0) D.suc, a, k) D.plus ->
-        ((mk1, g0) D.suc, a, nk) D.plus ->
-        g0 D.G.t ->
-        l0 Endpoints.t ->
+        (k1, w, k) D.bplus ->
+        (mk1, w, nk) D.bplus ->
+        w D.fwd ->
         (n, k, nk, (b, bs) cons, cs) pmapperM ->
-        (m, wc, (b, bs) cons) C.Heter.hgt ->
-        cs Tlist.t ->
-        (m, wc, cs) C.Heter.hgt M.t =
-     fun mc s wia nk1 pa pnk g0 e0 g trs cst ->
-      match trs with
-      | Leaf _ :: _ ->
-          let Eq = D.zero_plus_uniq mc in
-          M.apply (g.map (tface_plus (End (s, nk1, g0, e0)) pa pnk wia) (C.Heter.lab trs))
-          @@ fun x -> C.Heter.leaf x
-      | Branch (g1, pw, _, _, _) :: _ ->
-          let (Ends (l, hs, ends)) = C.Heter.ends trs in
-          let mid = C.Heter.mid pw trs in
-          let (Hgts newhs) = C.Heter.hgts_of_tlist cst in
-          let (Plus plc) = D.plus (cod_sface s) in
-          let (Plus pwd) = D.plus (dom_sface s) in
-          let mc' = D.plus_assocr (Suc (Zero, g1)) plc mc in
-          M.apply
-            (M.zip
-               (fun () ->
-                 BwvM.pmapM
-                   (fun (e :: brs) ->
-                     M.apply
-                       (gpmapM_cube mc'
-                          (sface_plus_sface (End (Zero, g1, e)) plc (D.zero_plus (dom_sface s)) s)
-                          wia nk1 pa pnk g0 e0 g (C.Heter.hgt_of_hlist hs brs) cst)
-                     @@ fun xs -> C.Heter.hlist_of_hgt newhs xs)
-                   (Endpoints.indices l :: ends) (C.Heter.tlist_hgts newhs cst))
-               (fun () ->
-                 gpmapM_cube mc'
-                   (sface_plus_sface (Mid (Zero, g1)) plc pwd s)
-                   (D.plus_assocl pwd wia pw) nk1 pa pnk g0 e0 g mid cst))
-          @@ fun (newends, newmid) -> C.Heter.branch g1 pw l newhs newends newmid
-
-    (* The tube phase, walking the instantiated dimensions.  Maintained: the payload split nk1 : (n, k1, mk1) of the remaining dimensions, and the Mid-prefix relations pa : (k1, a, k) and pnk : (mk1, a, nk) recording how the decided word 'a sits inside the instantiated and total dimensions. *)
-    let rec gpmapM_r : type n k1 mk1 a k nk b bs cs.
-        (n, k1, mk1) D.plus ->
-        (k1, a, k) D.plus ->
-        (mk1, a, nk) D.plus ->
-        (n, k, nk, (b, bs) cons, cs) pmapperM ->
-        (n, k1, mk1, a, (b, bs) cons) Heter.hgt ->
+        (n, k1, mk1, w, (b, bs) cons) Heter.hgt ->
         (* A special Applicative action to take for dimensions that have zero arity *)
         ?ifzero:unit M.t ->
         cs Tlist.t ->
-        (n, k1, mk1, a, cs) Heter.hgt M.t =
-     fun nk1 pa pnk g trs ?ifzero cst ->
+        (n, k1, mk1, w, cs) Heter.hgt M.t =
+     fun nk1 pa pnk w g trs ?ifzero cst ->
       match (nk1, trs) with
       | Zero, Leaf n :: _ -> return (Heter.leaf n cst)
-      | Suc (nk1', g0), Branch (_, pw, _, _, _) :: _ ->
+      | Suc (nk1', g0), Branch (_, _, _, _) :: _ ->
           let (Ends (l, hs, ends)) = Heter.ends trs in
-          let mid = Heter.mid pw trs in
+          let mid = Heter.mid trs in
           let (Hgts newhs) = C.Heter.hgts_of_tlist cst in
-          let a_run = D.plus_right pa in
           M.apply
             (M.zip
                (fun () ->
                  BwvM.pmapM
                    (fun (e :: brs) ->
                      M.apply
-                       (gpmapM_cube Zero Zero (D.zero_plus a_run) nk1' pa pnk g0 e g
+                       (CM.gpmapM_pre w Nil Append_nil Fwsface.Zero
+                          {
+                            map =
+                              (fun fa mb x -> g.map (sface_bplus mb pa pnk fa nk1' g0 e w) x);
+                          }
                           (C.Heter.hgt_of_hlist hs brs) cst)
                      @@ fun xs -> C.Heter.hlist_of_hgt newhs xs)
                    (Endpoints.indices l :: ends) (C.Heter.tlist_hgts newhs cst))
@@ -293,21 +246,19 @@ module Tube (F : Fam2) = struct
                      | N.Nat Zero, Some ifzero -> ifzero
                      | _ -> return ())
                    (fun () ->
-                     gpmapM_r nk1'
-                       (D.plus_assocr (Suc (Zero, g0)) pw pa)
-                       (D.plus_assocr (Suc (Zero, g0)) pw pnk)
-                       g mid ?ifzero cst)))
-          @@ fun (newends, ((), newmid)) -> Heter.branch g0 pw l newhs newends newmid
+                     gpmapM_r nk1' (Append_cons pa) (Append_cons pnk) (Cons (g0, w)) g mid ?ifzero
+                       cst)))
+          @@ fun (newends, ((), newmid)) -> Heter.branch g0 l newhs newends newmid
 
     let pmapM : type n k nk b bs cs.
         (n, k, nk, (b, bs) cons, cs) pmapperM ->
-        (n, k, nk, D.zero, (b, bs) cons) Heter.hgt ->
+        (n, k, nk, D.fwd_zero, (b, bs) cons) Heter.hgt ->
         ?ifzero:unit M.t ->
         cs Tlist.t ->
-        (n, k, nk, D.zero, cs) Heter.hgt M.t =
+        (n, k, nk, D.fwd_zero, cs) Heter.hgt M.t =
      fun g trs ?ifzero cst ->
       let (tr :: _) = trs in
-      gpmapM_r (plus tr) Zero Zero g trs ?ifzero cst
+      gpmapM_r (plus tr) Append_nil Append_nil Nil g trs ?ifzero cst
 
     (* And now the more specialized versions. *)
 
@@ -318,7 +269,7 @@ module Tube (F : Fam2) = struct
     let mmapM : type n k nk b bs c.
         (n, k, nk, (b, bs) cons, c) mmapperM ->
         ?ifzero:unit M.t ->
-        (n, k, nk, D.zero, (b, bs) cons) Heter.hgt ->
+        (n, k, nk, D.fwd_zero, (b, bs) cons) Heter.hgt ->
         (n, k, nk, c) t M.t =
      fun g ?ifzero xs ->
       M.apply
@@ -334,7 +285,7 @@ module Tube (F : Fam2) = struct
     let miterM : type n k nk b bs.
         (n, k, nk, (b, bs) cons) miteratorM ->
         ?ifzero:unit M.t ->
-        (n, k, nk, D.zero, (b, bs) cons) Heter.hgt ->
+        (n, k, nk, D.fwd_zero, (b, bs) cons) Heter.hgt ->
         unit M.t =
      fun g ?ifzero xs ->
       M.apply (pmapM { map = (fun fa x -> M.apply (g.it fa x) @@ fun () -> hnil) } xs ?ifzero Nil)
@@ -344,78 +295,35 @@ module Tube (F : Fam2) = struct
 
     type ('n, 'k, 'nk, 'b) builderM = { build : 'm. ('m, 'n, 'k, 'nk) tface -> ('m, 'b) F.t M.t }
 
-    (* The cube phase of building, mirroring gpmapM_cube. *)
-    let rec gbuildM_cube : type m c w wc a g0 k1 mk1 n k nk b l0.
-        m D.t ->
-        (m, c, mk1) D.plus ->
-        (w, c) sface ->
-        (w, a, wc) D.plus ->
-        (n, k1, mk1) D.plus ->
-        ((k1, g0) D.suc, a, k) D.plus ->
-        ((mk1, g0) D.suc, a, nk) D.plus ->
-        g0 D.G.t ->
-        l0 Endpoints.t ->
-        (n, k, nk, b) builderM ->
-        (m, wc, b) C.gt M.t =
-     fun m mc s wia nk1 pa pnk g0 e0 g ->
-      match m with
-      | Word Zero ->
-          let Eq = D.zero_plus_uniq mc in
-          M.apply (g.build (tface_plus (End (s, nk1, g0, e0)) pa pnk wia)) @@ fun x -> C.Leaf x
-      | Word (Suc (m1, g1)) ->
-          let (Plus plc) = D.plus (cod_sface s) in
-          let (Plus pwd) = D.plus (dom_sface s) in
-          let (Plus pwc) = D.plus (D.plus_out (dom_sface s) wia) in
-          let mc' = D.plus_assocr (Suc (Zero, g1)) plc mc in
-          let (Wrap l) = Endpoints.wrapped () in
-          M.apply
-            (M.zip
-               (fun () ->
-                 BwvM.mapM
-                   (fun e ->
-                     gbuildM_cube (Word m1) mc'
-                       (sface_plus_sface (End (Zero, g1, e)) plc (D.zero_plus (dom_sface s)) s)
-                       wia nk1 pa pnk g0 e0 g)
-                   (Endpoints.indices l))
-               (fun () ->
-                 gbuildM_cube (Word m1) mc'
-                   (sface_plus_sface (Mid (Zero, g1)) plc pwd s)
-                   (D.plus_assocl pwd wia pwc) nk1 pa pnk g0 e0 g))
-          @@ fun (ends, mid) -> C.Branch (g1, pwc, l, ends, mid)
-
-    (* The tube phase of building, mirroring gpmapM_r. *)
-    let rec gbuildM_r : type n k1 mk1 a k nk b.
+    (* The tube builder walks only the instantiated dimensions; at each End it builds an ordinary cube via the prefixed Cube builder, reassembling the tface with sface_bplus exactly as in gpmapM_r. *)
+    let rec gbuildM_r : type n k1 mk1 w k nk b.
         n D.t ->
         (n, k1, mk1) D.plus ->
-        (k1, a, k) D.plus ->
-        (mk1, a, nk) D.plus ->
+        (k1, w, k) D.bplus ->
+        (mk1, w, nk) D.bplus ->
+        w D.fwd ->
         (n, k, nk, b) builderM ->
-        (n, k1, mk1, a, b) gt M.t =
-     fun n nk1 pa pnk g ->
+        (n, k1, mk1, w, b) gt M.t =
+     fun n nk1 pa pnk w g ->
       match nk1 with
       | Zero -> return (Leaf n)
       | Suc (nk1', g0) ->
-          let a_run = D.plus_right pa in
-          let (Plus pw) = D.plus a_run in
           let (Wrap l) = Endpoints.wrapped () in
           M.apply
             (M.zip
                (fun () ->
                  BwvM.mapM
                    (fun e ->
-                     gbuildM_cube (D.plus_out n nk1') Zero Zero (D.zero_plus a_run) nk1' pa pnk g0 e
-                       g)
+                     CM.gbuildM_pre (D.plus_out n nk1') w Nil Append_nil Fwsface.Zero
+                       { build = (fun fa mb -> g.build (sface_bplus mb pa pnk fa nk1' g0 e w)) })
                    (Endpoints.indices l))
                (fun () ->
-                 gbuildM_r n nk1'
-                   (D.plus_assocr (Suc (Zero, g0)) pw pa)
-                   (D.plus_assocr (Suc (Zero, g0)) pw pnk)
-                   g))
-          @@ fun (ends, mid) -> Branch (g0, pw, l, ends, mid)
+                 gbuildM_r n nk1' (Append_cons pa) (Append_cons pnk) (Cons (g0, w)) g))
+          @@ fun (ends, mid) -> Branch (g0, l, ends, mid)
 
     let buildM : type n k nk b.
         n D.t -> (n, k, nk) D.plus -> (n, k, nk, b) builderM -> (n, k, nk, b) t M.t =
-     fun n nk g -> gbuildM_r n nk Zero Zero g
+     fun n nk g -> gbuildM_r n nk Append_nil Append_nil Nil g
 
     (* TODO: Redefine buildM in terms of pbuildM *)
 
@@ -425,66 +333,20 @@ module Tube (F : Fam2) = struct
       build : 'm. ('m, 'n, 'k, 'nk) tface -> ('m, 'bs) C.Heter.hft M.t;
     }
 
-    (* The cube phase of the multi-output builder, mirroring gbuildM_cube. *)
-    let rec gpbuildM_cube : type m c w wc a g0 k1 mk1 n k nk bs l0.
-        m D.t ->
-        (m, c, mk1) D.plus ->
-        (w, c) sface ->
-        (w, a, wc) D.plus ->
-        (n, k1, mk1) D.plus ->
-        ((k1, g0) D.suc, a, k) D.plus ->
-        ((mk1, g0) D.suc, a, nk) D.plus ->
-        g0 D.G.t ->
-        l0 Endpoints.t ->
-        (n, k, nk, bs) pbuilderM ->
-        bs Tlist.t ->
-        (m, wc, bs) C.Heter.hgt M.t =
-     fun m mc s wia nk1 pa pnk g0 e0 g bs ->
-      match m with
-      | Word Zero ->
-          let Eq = D.zero_plus_uniq mc in
-          M.apply (g.build (tface_plus (End (s, nk1, g0, e0)) pa pnk wia)) @@ fun x ->
-          C.Heter.leaf x
-      | Word (Suc (m1, g1)) ->
-          let (Plus plc) = D.plus (cod_sface s) in
-          let (Plus pwd) = D.plus (dom_sface s) in
-          let (Plus pwc) = D.plus (D.plus_out (dom_sface s) wia) in
-          let mc' = D.plus_assocr (Suc (Zero, g1)) plc mc in
-          let (Wrap l) = Endpoints.wrapped () in
-          let (Hgts newhs) = C.Heter.hgts_of_tlist bs in
-          M.apply
-            (M.zip
-               (fun () ->
-                 BwvM.pmapM
-                   (fun [ e ] ->
-                     M.apply
-                       (gpbuildM_cube (Word m1) mc'
-                          (sface_plus_sface (End (Zero, g1, e)) plc (D.zero_plus (dom_sface s)) s)
-                          wia nk1 pa pnk g0 e0 g bs)
-                     @@ fun xs -> C.Heter.hlist_of_hgt newhs xs)
-                   [ Endpoints.indices l ]
-                   (C.Heter.tlist_hgts newhs bs))
-               (fun () ->
-                 gpbuildM_cube (Word m1) mc'
-                   (sface_plus_sface (Mid (Zero, g1)) plc pwd s)
-                   (D.plus_assocl pwd wia pwc) nk1 pa pnk g0 e0 g bs))
-          @@ fun (newends, newmid) -> C.Heter.branch g1 pwc l newhs newends newmid
-
-    (* The tube phase of the multi-output builder, mirroring gbuildM_r. *)
-    let rec gpbuildM_r : type n k1 mk1 a k nk bs.
+    (* The multi-output tube builder walks only the instantiated dimensions; at each End it builds a whole hlist of cubes via the prefixed multi-output Cube builder, reassembling the tface with sface_bplus as in gpmapM_r. *)
+    let rec gpbuildM_r : type n k1 mk1 w k nk bs.
         n D.t ->
         (n, k1, mk1) D.plus ->
-        (k1, a, k) D.plus ->
-        (mk1, a, nk) D.plus ->
+        (k1, w, k) D.bplus ->
+        (mk1, w, nk) D.bplus ->
+        w D.fwd ->
         (n, k, nk, bs) pbuilderM ->
         bs Tlist.t ->
-        (n, k1, mk1, a, bs) Heter.hgt M.t =
-     fun n nk1 pa pnk g bs ->
+        (n, k1, mk1, w, bs) Heter.hgt M.t =
+     fun n nk1 pa pnk w g bs ->
       match nk1 with
       | Zero -> return (Heter.leaf n bs)
       | Suc (nk1', g0) ->
-          let a_run = D.plus_right pa in
-          let (Plus pw) = D.plus a_run in
           let (Wrap l) = Endpoints.wrapped () in
           let (Hgts newhs) = C.Heter.hgts_of_tlist bs in
           M.apply
@@ -493,25 +355,23 @@ module Tube (F : Fam2) = struct
                  BwvM.pmapM
                    (fun [ e ] ->
                      M.apply
-                       (gpbuildM_cube (D.plus_out n nk1') Zero Zero (D.zero_plus a_run) nk1' pa pnk
-                          g0 e g bs)
+                       (CM.gpbuildM_pre (D.plus_out n nk1') w Nil Append_nil Fwsface.Zero
+                          { build = (fun fa mb -> g.build (sface_bplus mb pa pnk fa nk1' g0 e w)) }
+                          bs)
                      @@ fun xs -> C.Heter.hlist_of_hgt newhs xs)
                    [ Endpoints.indices l ]
                    (C.Heter.tlist_hgts newhs bs))
                (fun () ->
-                 gpbuildM_r n nk1'
-                   (D.plus_assocr (Suc (Zero, g0)) pw pa)
-                   (D.plus_assocr (Suc (Zero, g0)) pw pnk)
-                   g bs))
-          @@ fun (newends, newmid) -> Heter.branch g0 pw l newhs newends newmid
+                 gpbuildM_r n nk1' (Append_cons pa) (Append_cons pnk) (Cons (g0, w)) g bs))
+          @@ fun (newends, newmid) -> Heter.branch g0 l newhs newends newmid
 
     let pbuildM : type n k nk bs.
         n D.t ->
         (n, k, nk) D.plus ->
         (n, k, nk, bs) pbuilderM ->
         bs Tlist.t ->
-        (n, k, nk, D.zero, bs) Heter.hgt M.t =
-     fun n nk g bs -> gpbuildM_r n nk Zero Zero g bs
+        (n, k, nk, D.fwd_zero, bs) Heter.hgt M.t =
+     fun n nk g bs -> gpbuildM_r n nk Append_nil Append_nil Nil g bs
   end
 
   module Monadic (M : Monad.Plain) = struct
@@ -525,19 +385,19 @@ module Tube (F : Fam2) = struct
 
   let pmap : type n k nk b bs cs.
       (n, k, nk, (b, bs) cons, cs) IdM.pmapperM ->
-      (n, k, nk, D.zero, (b, bs) cons) Heter.hgt ->
+      (n, k, nk, D.fwd_zero, (b, bs) cons) Heter.hgt ->
       cs Tlist.t ->
-      (n, k, nk, D.zero, cs) Heter.hgt =
+      (n, k, nk, D.fwd_zero, cs) Heter.hgt =
    fun g trs cst -> IdM.pmapM g trs cst
 
   let mmap : type n k nk b bs c.
       (n, k, nk, (b, bs) cons, c) IdM.mmapperM ->
-      (n, k, nk, D.zero, (b, bs) cons) Heter.hgt ->
+      (n, k, nk, D.fwd_zero, (b, bs) cons) Heter.hgt ->
       (n, k, nk, c) t =
    fun g xs -> IdM.mmapM g xs
 
   let miter : type n k nk b bs.
-      (n, k, nk, (b, bs) cons) IdM.miteratorM -> (n, k, nk, D.zero, (b, bs) cons) Heter.hgt -> unit
+      (n, k, nk, (b, bs) cons) IdM.miteratorM -> (n, k, nk, D.fwd_zero, (b, bs) cons) Heter.hgt -> unit
       =
    fun g xs -> IdM.miterM g xs
 
@@ -550,7 +410,7 @@ module Tube (F : Fam2) = struct
       (n, k, nk) D.plus ->
       (n, k, nk, bs) IdM.pbuilderM ->
       bs Tlist.t ->
-      (n, k, nk, D.zero, bs) Heter.hgt =
+      (n, k, nk, D.fwd_zero, bs) Heter.hgt =
    fun n nk g bs -> IdM.pbuildM n nk g bs
 end
 
@@ -560,82 +420,82 @@ module TubeOf = struct
   (* We can lift and lower a tube too *)
 
   let rec glift : type m k mk w1 n2 w12 b.
-      (w1, n2, w12) D.plus -> (m, k, mk, w1, b) gt -> (m, k, mk, w12, b) gt =
-   fun w12 tr ->
+      n2 D.fwd -> (w1, n2, w12) D.fplus -> (m, k, mk, w1, b) gt -> (m, k, mk, w12, b) gt =
+   fun n2 fp tr ->
     match tr with
     | Leaf m -> Leaf m
-    | Branch (g, pw, l, ends, mid) ->
-        let (Plus q) = D.plus (D.plus_right w12) in
-        let pw' = D.plus_assocr pw w12 q in
-        Branch (g, pw', l, Bwv.map (fun t -> CubeOf.lift w12 t) ends, glift q mid)
+    | Branch (g, l, ends, mid) ->
+        Branch (g, l, Bwv.map (fun t -> CubeOf.lift n2 fp t) ends, glift n2 (Cons fp) mid)
 
   let rec glower : type m k mk w1 n2 w12 b.
-      (m, k, mk, w12, b) gt -> (w1, n2, w12) D.plus -> (m, k, mk, w1, b) gt =
-   fun tr w12 ->
+      (m, k, mk, w12, b) gt -> (w1, n2, w12) D.fplus -> (m, k, mk, w1, b) gt =
+   fun tr fp ->
     match tr with
     | Leaf m -> Leaf m
-    | Branch (g, pw, l, ends, mid) ->
-        let w1 = D.plus_left w12 (D.plus_right pw) in
-        let (Plus pw') = D.plus w1 in
-        let q = D.plus_assocl pw' w12 pw in
-        Branch (g, pw', l, Bwv.map (fun t -> CubeOf.lower t w12) ends, glower mid q)
+    | Branch (g, l, ends, mid) ->
+        Branch (g, l, Bwv.map (fun t -> CubeOf.lower t fp) ends, glower mid (Cons fp))
 
   (* We can fill in the missing pieces of a tube with a cube, yielding a cube.  The witness (l, w, lw) records how the decided word of the filling cube extends that of the tube. *)
 
   let rec gplus_gcube : type m l ml w lw b.
-      (l, w, lw) D.plus -> (m, l, ml, w, b) gt -> (m, lw, b) C.gt -> (ml, w, b) C.gt =
+      (l, w, lw) D.bfplus -> (m, l, ml, w, b) gt -> (m, lw, b) C.gt -> (ml, w, b) C.gt =
    fun lw tl tm ->
     match tl with
     | Leaf _ ->
-        let Eq = D.zero_plus_uniq lw in
+        let Zero = lw in
         tm
-    | Branch (g, pw, l, ends, mid) ->
-        Branch (g, pw, l, ends, gplus_gcube (D.plus_assocr (Suc (Zero, g)) pw lw) mid tm)
+    | Branch (g, l, ends, mid) ->
+        let (Suc lw') = lw in
+        Branch (g, l, ends, gplus_gcube lw' mid tm)
 
   let plus_cube : type m l ml b. (m, l, ml, b) t -> (m, b) C.t -> (ml, b) C.t =
    fun tl tm ->
     let l_run = D.plus_right (gplus tl) in
-    gplus_gcube Zero tl (CubeOf.lift (D.zero_plus l_run) tm)
+    let (Bfplus (lw, bfp)) = D.bfplus l_run D.fwd_zero in
+    gplus_gcube bfp tl (CubeOf.lift lw Nil tm)
 
   (* Or we can fill in some of those missing pieces with a tube instead, yielding another tube.  The witness (l, w, lw) records how the decided word of the inner tube extends that of the outer one. *)
 
   let rec gplus_gtube : type m k mk l kl mkl w lw b.
       (k, l, kl) D.plus ->
-      (l, w, lw) D.plus ->
+      (l, w, lw) D.bfplus ->
       (mk, l, mkl, w, b) gt ->
       (m, k, mk, lw, b) gt ->
       (m, kl, mkl, w, b) gt =
    fun kl lw tl tk ->
     match (kl, tl) with
     | Zero, Leaf _ ->
-        let Eq = D.zero_plus_uniq lw in
+        let Zero = lw in
         tk
-    | Suc (kl, g), Branch (g', pw, l, ends, mid) ->
-        Branch (g', pw, l, ends, gplus_gtube kl (D.plus_assocr (Suc (Zero, g)) pw lw) mid tk)
+    | Suc (kl, _), Branch (g', l, ends, mid) ->
+        let (Suc lw') = lw in
+        Branch (g', l, ends, gplus_gtube kl lw' mid tk)
 
   let plus_tube : type m k mk l kl mkl b.
       (k, l, kl) D.plus -> (mk, l, mkl, b) t -> (m, k, mk, b) t -> (m, kl, mkl, b) t =
    fun kl tl tk ->
     let l_run = D.plus_right kl in
-    gplus_gtube kl Zero tl (glift (D.zero_plus l_run) tk)
+    let (Bfplus (lw, bfp)) = D.bfplus l_run D.fwd_zero in
+    gplus_gtube kl bfp tl (glift lw Nil tk)
 
   (* We can also pick out a lower-dimensional part around the middle of a tube, as well as the outer tube around it.  The witness (l, w, lw) records the decided word of the inner part relative to the outer. *)
 
   let rec gsplit : type m k mk l kl mkl w lw b.
       (m, k, mk) D.plus ->
       (k, l, kl) D.plus ->
-      (l, w, lw) D.plus ->
+      (l, w, lw) D.bfplus ->
       (m, kl, mkl, w, b) gt ->
       (m, k, mk, lw, b) gt * (mk, l, mkl, w, b) gt =
    fun mk kl lw tr ->
     match (kl, tr) with
     | Zero, _ ->
         let Eq = D.plus_uniq mk (gplus tr) in
-        let Eq = D.zero_plus_uniq lw in
+        let Zero = lw in
         (tr, Leaf (D.plus_out (guninst tr) mk))
-    | Suc (kl, g), Branch (g', pw, l, ends, mid) ->
-        let middle, outer = gsplit mk kl (D.plus_assocr (Suc (Zero, g)) pw lw) mid in
-        (middle, Branch (g', pw, l, ends, outer))
+    | Suc (kl, _), Branch (g', l, ends, mid) ->
+        let (Suc lw') = lw in
+        let middle, outer = gsplit mk kl lw' mid in
+        (middle, Branch (g', l, ends, outer))
 
   let split : type m k mk l kl mkl b.
       (m, k, mk) D.plus ->
@@ -644,8 +504,9 @@ module TubeOf = struct
       (m, k, mk, b) t * (mk, l, mkl, b) t =
    fun mk kl tr ->
     let l_run = D.plus_right kl in
-    let middle, outer = gsplit mk kl Zero tr in
-    (glower middle (D.zero_plus l_run), outer)
+    let (Bfplus (_, bfp)) = D.bfplus l_run D.fwd_zero in
+    let middle, outer = gsplit mk kl bfp tr in
+    (glower middle Nil, outer)
 
   (* Append the elements of a tube, in order, to a given Bwd.t.  For each dimension with zero arity, append the specified element, if any, instead. *)
 

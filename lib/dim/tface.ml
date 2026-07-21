@@ -69,6 +69,34 @@ let rec tface_comp_sface : type m n k nk p.
   | Mid (a', _), Mid (b', g) -> Mid (tface_comp_sface b' a', g)
   | _, End (b', nk, g, e) -> End (comp_sface b' a, nk, g, e)
 
+let rec tface_bplus : type m n k nk b mb kb nkb.
+    (m, b, mb) D.bplus ->
+    (k, b, kb) D.bplus ->
+    (nk, b, nkb) D.bplus ->
+    (m, n, k, nk) tface ->
+    b D.fwd ->
+    (mb, n, kb, nkb) tface =
+ fun mb kb nkb f b ->
+  match b with
+  | Nil ->
+      let Append_nil, Append_nil, Append_nil = (mb, kb, nkb) in
+      f
+  | Cons (g, b) ->
+      let Append_cons mb, Append_cons kb, Append_cons nkb = (mb, kb, nkb) in
+      tface_bplus mb kb nkb (Mid (f, g)) b
+
+let sface_bplus : type m n k nk b mb kb nkb g l.
+    (m, b, mb) D.bplus ->
+    ((k, g) D.suc, b, kb) D.bplus ->
+    ((nk, g) D.suc, b, nkb) D.bplus ->
+    (m, nk) sface ->
+    (n, k, nk) D.plus ->
+    g D.G.t ->
+    l Endpoints.t ->
+    b D.fwd ->
+    (mb, n, kb, nkb) tface =
+ fun mb kb nkb f nk g l b -> tface_bplus mb kb nkb (End (f, nk, g, l)) b
+
 (* A "proper face" is a fully instantiated tube face. *)
 
 type ('m, 'n) pface = ('m, D.zero, 'n, 'n) tface
