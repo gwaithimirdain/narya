@@ -2653,6 +2653,7 @@ let rec constr_tel :
               constr_tel (Term fn) ((List.map fst vars, get_modality fst modality, Wrap ty) :: accum)
           | None -> fatal (Parse_error "invalid constructor argument variables"))
       | _ -> invalid "tel")
+  | Term { loc; _ } -> fatal ?loc (Parse_error "invalid constructor")
   | _ -> fatal (Parse_error "invalid constructor")
 
 let rec process_dataconstr : type n.

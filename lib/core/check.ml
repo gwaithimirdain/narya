@@ -28,6 +28,13 @@ end
 
 module Oracle = Query.Make (OracleData)
 
+(* Read the memoized "type family" of a datatype value: the datatype applied to its parameters, with indices abstracted (see [capture_tyfam] in Norm).  It is captured lazily the first time the enclosing neutral is observed, which for any datatype value reaching a match must have already happened (the discriminee's type was viewed to get here); hence [None] is an anomaly rather than a user error. *)
+let force_tyfam : type mode. mode normal Lazy.t option ref -> mode normal =
+ fun tyfam ->
+  match !tyfam with
+  | Some tyfam -> Lazy.force tyfam
+  | None -> fatal (Anomaly "tyfam unset")
+
 (* Check that a given value is a zero-dimensional non-modal type family (something where an indexed datatype could live) and return the length of its domain telescope (the number of indices).  Unfortunately I don't see an easy way to do this without essentially going through all the same steps of extending the context that we would do to check something at that type family.  Also check whether all of its domain types are either discrete or belong to the given set of constants. *)
 let rec typefam : type mode a b.
     ?discrete:unit Constant.Map.t -> (mode, a, b) Ctx.t -> (mode, kinetic) value -> int * bool =
@@ -1711,10 +1718,7 @@ and synth_dep_match : type mode a b.
                get =
                  (fun _ user_branches tyfam ->
                    (* We typecheck the motive against the type of type families over the datatype and its indices.  Constructing this type of type families is what "motive_of_family" does. *)
-                   let tyfam =
-                     match !tyfam with
-                     | Some tyfam -> Lazy.force tyfam
-                     | None -> fatal (Anomaly "tyfam unset") in
+                   let tyfam = force_tyfam tyfam in
                    let emotivety =
                      eval_term (Ctx.env ctx) (motive_of_family ctx window tyfam.tm tyfam.ty) in
                    let cmotive = check (Kinetic `Nolet) ctx motive emotivety in
@@ -1794,10 +1798,7 @@ and check_var_match : type dom modality mode a b bm.
         hmode head * (dom, m, n) canonical * (mn, m, n) insertion * _) -> (
       let Eq = eq_of_ins_zero ins in
       check_window_transparency window data_constrs recursive;
-      let tyfam =
-        match !tyfam with
-        | Some tyfam -> Lazy.force tyfam
-        | None -> fatal (Anomaly "tyfam unset") in
+      let tyfam = force_tyfam tyfam in
       let tyfam_args : (D.zero, m, m, dom normal) TubeOf.t =
         match view_type tyfam.ty "check_var_match tyfam" with
         | Canonical (_, Pi _, _, tyfam_args) -> (

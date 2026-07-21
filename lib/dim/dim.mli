@@ -1031,14 +1031,6 @@ type (_, _, _, _) except_of_plus =
 val except_of_plus :
   ('b, 'd, 'bd) D.plus -> ('e, 'ac, 'bd) except -> ('e, 'b, 'd, 'ac) except_of_plus
 
-type (_, _, _, _) except_of_plus' =
-  | Except_of_plus' :
-      ('b, 'c, 'bc) D.plus * ('bc, 'd) perm * ('e, 'a, 'b) except
-      -> ('e, 'a, 'c, 'd) except_of_plus'
-
-val except_of_plus' :
-  'd D.t -> ('a, 'c, 'ac) D.plus -> ('e, 'ac, 'd) except -> ('e, 'a, 'c, 'd) except_of_plus'
-
 type (_, _, _) except_sface =
   | Except_sface : ('d, 'a) sface * ('e, 'd, 'c) except -> ('e, 'a, 'c) except_sface
 
