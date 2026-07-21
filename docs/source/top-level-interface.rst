@@ -21,10 +21,10 @@ Formatting output
 - ``-unicode`` and ``-ascii``: Display and reformat code using Unicode (default) or ASCII
 - ``-no-reformat``: Do not automatically reformat source files (see :ref:`Code formatter`)
 - ``-show-function-boundaries``: Display boundaries of functions, when implicit (see :ref:`Implicit boundaries`)
-- ``-hide-function-boundaries``: Hide boundaries of functions, when implicit
+- ``-hide-function-boundaries``: Hide boundaries of functions, when implicit (default)
 - ``-show-type-boundaries``: Display boundaries of types, when implicit
-- ``-hide-type-boundaries``: Hide boundaries of types, when implicit
-- ``-show-unique-keys``: Display keys that are the unique one between their endpoints
+- ``-hide-type-boundaries``: Hide boundaries of types, when implicit (default)
+- ``-show-unique-keys``: Display keys that are the unique one between their endpoints (see :ref:`Keys`)
 - ``-hide-unique-keys``: Hide keys that are the unique one between their endpoints (default)
 - ``-variables X,Y,Z``: Set the default variable names (see :ref:`Default names`)
 
@@ -39,8 +39,8 @@ These options are discussed under :ref:`Parametricity`.
 - ``-internal`` and ``-external``: Set whether parametricity is internal (default) or external
 - ``-discreteness``: Enable strictly parametrically discrete types (deprecated)
 
-Modal type theory
-^^^^^^^^^^^^^^^^^
+Modal type theory options
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
 These options are discussed under :ref:`Modal type theory` and :ref:`Modal parametric discreteness`.
 
@@ -222,6 +222,8 @@ Set one of the display settings (that are also set by command-line flags).  Poss
     display unique keys ≔ off
     display unique keys ≔ toggle
     display variables ≔ X,Y,Z
+
+See :ref:`Implicit boundaries` for more information about function and type boundaries, and :ref:`Keys` for more information about unique keys.
 
 
 Chdir

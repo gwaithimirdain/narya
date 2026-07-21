@@ -17,7 +17,7 @@ Although Narya supports arbitrary mode theories, at present there is no way for 
 
 Fortunately, AI coding agents are quite good at implementing new mode theories, given a description of the 2-category and using the existing ones as templates.  So if you want a mode theory that Narya doesn't supply yet, just ask, and you may get it quickly.  (Although if your mode theory is complicated, you may need to do some work specifying an algorithm for computing with the 2-cells; AI can't always figure out such an algorithm itself.)
 
-The currently available mode theories are selected by command-line flags, and are summarized in a table under :ref:`Mode theories`, below.  For illustration purposes, in the rest of this section we will use the following example mode theories:
+The currently available mode theories are selected by command-line flags, and are summarized in the :ref:`List of mode theories`, below.  For illustration purposes, in the rest of this section we will use the following example mode theories:
 
 - ``-functor``, which has two modes ``DomType`` and ``CodType`` and a morphism ``○ : DomType → CodType``.
 - ``-composable-functors``, which has three modes ``AType``, ``BType``, and ``CType``, and morphisms ``○ : AType → BType`` and ``▱ : BType → CType``.
@@ -27,7 +27,7 @@ The currently available mode theories are selected by command-line flags, and ar
 Modes
 ^^^^^
 
-In Narya, the name of a mode is the same as the name of the *universe* whose elements are types at that mode.  In particular, the usual universe name ``Type`` is actually the name of the unique mode of the default trivial mode theory (as well as the mode of most single-moded theories).  Each mode theory specifies default names for its modes, as shown in the table at :ref:`Mode theories`.  But you can override these defaults with the ``-modes`` command-line flag; this should be passed a comma-separated list of names to be used in place of the defaults, in the order listed in the table for each mode theory.
+In Narya, the name of a mode is the same as the name of the *universe* whose elements are types at that mode.  In particular, the usual universe name ``Type`` is actually the name of the unique mode of the default trivial mode theory (as well as the mode of most single-moded theories).  Each mode theory specifies default names for its modes, as shown in the :ref:`List of mode theories`.  But you can override these defaults with the ``-modes`` command-line flag; this should be passed a comma-separated list of names to be used in place of the defaults, in the order listed in the table for each mode theory.
 
 Because universes are types, their names inhabit the same name domain as keywords and constant names.  But they are not namespaced, and take precedence over user-defined constants.  For instance, in a mode theory with a mode called ``Type``, you cannot also define a constant named ``Type`` unless you have renamed that mode.
 
@@ -41,7 +41,7 @@ For technical reasons, the underlying category of a mode theory 2-category in Na
 
 Thus, each mode theory specifies a "directed multigraph" or "quiver", whose vertices are the modes and whose edges are *generating modalities*.  General modalities are then free composites of generating ones.  (The identity modality at each mode is, of course, the composite of zero generators.)
 
-Each generating modality has a name, which must be a valid identifier but belongs to a separate name domain from keywords and user constants.  Thus, there can be both a modality named ``♭`` and a constant named ``♭``.  In fact, this sort of "punning" is actually recommended, with the constant ``♭`` being the internalized modal operator (see :ref:`Modal datatypes` and :ref:`Modal records and codata`) induced by the modality ``♭``.  Each mode theory specifies default names for its modalities, shown in the table at :ref:`Mode theories`; you can override these with the ``-modalities`` command-line flag, which should be passed a comma-separated list of names to be used in place of the defaults, in the order listed in the table for each mode theory.
+Each generating modality has a name, which must be a valid identifier but belongs to a separate name domain from keywords and user constants.  Thus, there can be both a modality named ``♭`` and a constant named ``♭``.  In fact, this sort of "punning" is actually recommended, with the constant ``♭`` being the internalized modal operator (see :ref:`Modal datatypes` and :ref:`Modal records and codata`) induced by the modality ``♭``.  Each mode theory specifies default names for its modalities, shown in the :ref:`List of mode theories`; you can override these with the ``-modalities`` command-line flag, which should be passed a comma-separated list of names to be used in place of the defaults, in the order listed in the table for each mode theory.
 
 Composite modalities are named by a space-separated sequence of generators, in "applicative order": if ``μ`` is a modality from mode ``p`` to mode ``q``, and ``ν`` is a modality from mode ``q`` to mode ``r``, then ``ν μ`` is the composite modality from mode ``p`` to mode ``r``.  In addition, if *all* the modalities in a mode theory have single-unicode-character names (as is the case for the default names of most mode theories), then they can be written without spaces in between, for instance ``△□`` in the coreflection theory.
 
@@ -71,7 +71,7 @@ Modal cells
 
 The 2-cells in the mode theory are also specified by generators.  For instance, in the ``-adjunction`` mode theory there are generating cells ``η : 1 ⇒ □△`` and ``ε : △□ ⇒ 1``.  "Horizontal" composites of these 2-cells (that is, composites along 0-cells, i.e. along modes), in applicative order (same order as modality composition) are named by combining them with a dot ``.``, so for instance ``η.η : 1 ⇒ □△□△``.  Horizontal composites with identity cells, a.k.a. "whiskering", are notated by combining generating cells with modality names, so for instance ``□△.η : □△ ⇒ □△□△``.
 
-Accordingly, cell names inhabit the same domain as modality names, and cannot conflict with them; and if all modalities are single characters, cell names cannot be concatenations of modality names.  Each mode theory gives names to all its generators; those that are "important" can be renamed appear in the tables at :ref:`Mode theories` and can be renamed with the command-line ``-modalcells`` flag.
+Accordingly, cell names inhabit the same domain as modality names, and cannot conflict with them; and if all modalities are single characters, cell names cannot be concatenations of modality names.  Each mode theory gives names to all its generators; those that are "important" can be renamed appear in the :ref:`List of mode theories` and can be renamed with the command-line ``-modalcells`` flag.
 
 There is no syntax for notating "vertical" composites (composites along 1-cells, i.e. along modalities), because the only place that 2-cell names appear in code is as *key* operations on terms, and keying by a vertical composite is the same as keying by each cell individually.  See :ref:`Keys`.
 
@@ -109,8 +109,7 @@ In full generality, the user must specify the 2-cell to use as a key.  The notat
 
 However, often it is not necessary to specify keys explicitly: if Narya can determine that there is a *unique* 2-cell that would work as a key, it will insert it automatically and silently.  Each mode theory supplies an algorithm for finding such unique 2-cells, and often this is all you need.  In particular, many of the supplied mode theories are *locally posetal*, meaning that any two parallel 2-cells are equal, and so *all* extant 2-cells can always be found uniquely.  And even for mode theories that are not locally posetal, in small cases keys are often unique.
 
-Correspondingly, when printing a term, Narya by default omits any key that is an identity or that is the unique 2-cell between its endpoints, since such keys can always be reconstructed automatically when re-parsing.  If you want to see these unique (but nonidentity) keys displayed explicitly anyway, you can enable this with ``display unique keys ≔ on`` (or the command-line flag ``-show-unique-keys``, or ProofGeneral's ``C-c C-d C-k``); identity keys are never displayed.  See :ref:`Implicit boundaries` for the analogous commands controlling display of other implicit data.
-
+By default, Narya also omits unique 2-cell keys when printing a term.  However, the option ``display unique keys ≔ on`` (equivalently, the command-line flag ``-show-unique-keys``, or ``C-c C-d C-k`` in ProofGeneral) instructs it to print (nonidentity) keys even if they are unique.  Identity keys are never printed.
 
 
 Modal function-types
@@ -363,8 +362,8 @@ Modal HOTT
 The interaction of modal features with :ref:`Higher Observational Type Theory` is not yet fully implemented.  About all that can be relied on is that the HOTT primitives should work *in single-mode theories* for *types not involving modal features*.
 
 
-Mode theories
--------------
+List of mode theories
+---------------------
 
 We organize the mode theories into groups to make them easier to look up.  The default names for the modes, modalities, and 2-cells shown in the table can be overridden by the command-line flags ``-modes``, ``-modalities``, and ``-modalcells``.  There are also some additional variant mode theories, such as ``-transparent-functor`` mentioned above, and a family of "discrete mode theories" discussed under :ref:`Modal parametric discreteness`.
 
