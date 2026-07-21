@@ -60,7 +60,7 @@ let () =
   let glue = get [ "glue" ] in
 
   (* Mark glue as being glue. *)
-  (match Global.find glue with
+  (match Global.find_const glue with
   | Definition
       {
         tm =
@@ -112,7 +112,7 @@ let () =
 
     (* Use this to compute the types of fibrancy fields. *)
     let isfibrant = get [ "isFibrant" ] in
-    match Global.find isfibrant with
+    match Global.find_const isfibrant with
     | Definition
         {
           tm = `Defined (Lam (x, _, modality, Canonical (Codata { eta = Noeta; dim; fields; _ })));
@@ -153,7 +153,7 @@ let () =
     let fib_glue = get [ "fib_glue" ] in
 
     (* We remove the eq.trr's from the definition of fib_rtr, and the eq.trr2's from id_rtr, since they are always unnecessary computationally.  This doesn't seem to materially affect performance, but it's cleaner. *)
-    (match Global.find fib_rtr with
+    (match Global.find_const fib_rtr with
     | Definition
         (type mode)
         ({
@@ -243,7 +243,7 @@ let () =
         Global.set fib_rtr mode
           (Lam (aa, aad, aam, Lam (bb, bbd, bbm, Lam (e, ed, em, Struct { s with fields }))))
     | _ -> ());
-    (match Global.find id_rtr with
+    (match Global.find_const id_rtr with
     | Definition
         (type mode)
         ({
@@ -424,7 +424,7 @@ let () =
     | _ -> ());
 
     (* We adjust the case tree boundary for id_pi_rtr to avoid exposing that constant to the user when a higher fibrancy field is applied only to a function but not a further argument. *)
-    (match Global.find id_pi_rtr with
+    (match Global.find_const id_pi_rtr with
     | Definition
         {
           tm =
@@ -517,7 +517,7 @@ let () =
     | _ -> fatal (Anomaly "id_pi_rtr undefined"));
 
     (* As with id_pi_rtr, so with glue_rtr *)
-    (match Global.find glue_rtr with
+    (match Global.find_const glue_rtr with
     | Definition
         {
           tm =
@@ -588,7 +588,7 @@ let () =
     | _ -> fatal (Anomaly "glue_rtr_rtr undefined"));
 
     (* Now we pull out the fields from the definition of fib_pi to insert them in Fibrancy.pi. *)
-    (match Global.find fib_pi with
+    (match Global.find_const fib_pi with
     | Definition
         {
           tm =
@@ -638,7 +638,7 @@ let () =
     | _ -> fatal (Anomaly "fib_pi has wrong shape"));
 
     (* And similarly for Fibrancy.glue. *)
-    match Global.find fib_glue with
+    match Global.find_const fib_glue with
     | Definition
         {
           tm =

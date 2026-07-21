@@ -3185,7 +3185,7 @@ and synth : type mode a b s.
     | Const name, _ -> (
         (* If this is one of the constants currently being defined, record the occurrence for any active occurrence-analysis scope (e.g. the argument telescope of a datatype constructor, or the value of a let binding). *)
         Positivity.record_const name;
-        let (Definition { mode; ty; parametric; _ }) = Global.find name in
+        let (Definition { mode; ty; parametric; _ }) = Global.find_const name in
         match Modal.Mode.compare mode (Ctx.mode ctx) with
         | Eq ->
             let (Wrap locks) = Ctx.total_locks ctx in
@@ -4362,7 +4362,7 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
       | Synth (Var (_, _)) -> None
       (* Each constant stores its mode. *)
       | Synth (Const name) ->
-          let (Definition { mode; _ }) = Global.find name in
+          let (Definition { mode; _ }) = Global.find_const name in
           Some (Wrap mode)
       (* A field projection's mode is the mode of the term being projected, unless there is a modal locking annotation, in which case it is the target of that modality (the annotation names the left adjoint, whose source is the term's mode and whose target is the projection's mode). *)
       | Synth (Field (x, _, None)) -> synth_mode (locate_opt tm.loc (Synth x.value))
