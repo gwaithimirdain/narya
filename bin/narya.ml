@@ -63,6 +63,12 @@ let speclist =
     ( "-show-type-boundaries",
       Arg.Set show_type_boundaries,
       "Display implicit boundaries of instantiations of higher-dimensional types" );
+    ( "-hide-unique-keys",
+      Arg.Clear show_unique_keys,
+      "Hide keys that are the unique one between their endpoints (default)" );
+    ( "-show-unique-keys",
+      Arg.Set show_unique_keys,
+      "Display keys that are the unique one between their endpoints" );
     ("-variables", Arg.String (fun str -> variables := Some str), "Default variable names");
     ("-arity", Arg.Set_int arity, "Arity of parametricity (default = 2)");
     ( "-direction",

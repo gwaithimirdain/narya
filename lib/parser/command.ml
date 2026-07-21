@@ -125,6 +125,8 @@ module Command = struct
             Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
           | `Type_boundaries of
             Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
+          | `Unique_keys of
+            Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
           | (* Each variable name is paired with the whitespace of the comma preceding it (empty for the first one) and the whitespace following it. *)
             `Variables of Whitespace.t list * (Whitespace.t list * string * Whitespace.t list) list
           ];
@@ -649,6 +651,7 @@ module Parse = struct
           | Ident [ "chars" ] -> Some ((`Chars, ws), state)
           | Ident [ "function" ] -> Some ((`Function, ws), state)
           | Ident [ "type" ] -> Some ((`Type, ws), state)
+          | Ident [ "unique" ] -> Some ((`Unique, ws), state)
           | Ident [ "variables" ] -> Some ((`Variables, ws), state)
           | _ -> None) in
     match what with
@@ -676,6 +679,14 @@ module Parse = struct
             return
               ( Display { wsdisplay; wscoloneq; what = `Type_boundaries (wswhat, wsb, show, ws) },
                 state ))
+    | `Unique ->
+        let* wsb = token (Ident [ "keys" ]) in
+        let* wscoloneq = token Coloneq in
+        step "" (fun state _ (tok, ws) ->
+            let open Monad.Ops (Monad.Maybe) in
+            let* show = show_of_token tok in
+            return
+              (Display { wsdisplay; wscoloneq; what = `Unique_keys (wswhat, wsb, show, ws) }, state))
     | `Variables ->
         let* wscoloneq = token Coloneq in
         let* x, wsx = display_variable in
@@ -1328,6 +1339,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       | `Type_boundaries (_, _, tb, _) ->
           let tb = Display.modify_type_boundaries tb in
           emit (Display_set ("type boundaries", Display.to_string (tb :> Display.values)))
+      | `Unique_keys (_, _, uk, _) ->
+          let uk = Display.modify_unique_keys uk in
+          emit (Display_set ("unique keys", Display.to_string (uk :> Display.values)))
       | `Variables (_, xs) ->
           let variables = List.map (fun (_, x, _) -> x) xs in
           Display.modify (fun s -> { s with variables });

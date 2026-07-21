@@ -24,6 +24,8 @@ Formatting output
 - ``-hide-function-boundaries``: Hide boundaries of functions, when implicit
 - ``-show-type-boundaries``: Display boundaries of types, when implicit
 - ``-hide-type-boundaries``: Hide boundaries of types, when implicit
+- ``-show-unique-keys``: Display keys that are the unique one between their endpoints
+- ``-hide-unique-keys``: Hide keys that are the unique one between their endpoints (default)
 - ``-variables X,Y,Z``: Set the default variable names (see :ref:`Default names`)
 
 Controlling parametricity
@@ -216,6 +218,9 @@ Set one of the display settings (that are also set by command-line flags).  Poss
     display type boundaries ≔ on
     display type boundaries ≔ off
     display type boundaries ≔ toggle
+    display unique keys ≔ on
+    display unique keys ≔ off
+    display unique keys ≔ toggle
     display variables ≔ X,Y,Z
 
 

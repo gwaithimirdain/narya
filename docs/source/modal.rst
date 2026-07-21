@@ -109,6 +109,8 @@ In full generality, the user must specify the 2-cell to use as a key.  The notat
 
 However, often it is not necessary to specify keys explicitly: if Narya can determine that there is a *unique* 2-cell that would work as a key, it will insert it automatically and silently.  Each mode theory supplies an algorithm for finding such unique 2-cells, and often this is all you need.  In particular, many of the supplied mode theories are *locally posetal*, meaning that any two parallel 2-cells are equal, and so *all* extant 2-cells can always be found uniquely.  And even for mode theories that are not locally posetal, in small cases keys are often unique.
 
+Correspondingly, when printing a term, Narya by default omits any key that is an identity or that is the unique 2-cell between its endpoints, since such keys can always be reconstructed automatically when re-parsing.  If you want to see these unique (but nonidentity) keys displayed explicitly anyway, you can enable this with ``display unique keys ≔ on`` (or the command-line flag ``-show-unique-keys``, or ProofGeneral's ``C-c C-d C-k``); identity keys are never displayed.  See :ref:`Implicit boundaries` for the analogous commands controlling display of other implicit data.
+
 
 
 Modal function-types
