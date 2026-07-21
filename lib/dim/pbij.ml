@@ -35,9 +35,8 @@ let rec pbij_of_int_strings : type e.
   match strs with
   | [] -> Some (Pbij_of (Pbij (ins_zero e, Zero)))
   | `Int n :: strs -> (
-      match (e, D.insert_of_int e (n + 1)) with
-      | Word (Suc (e, Unit)), Some (Insert_of_int ix) -> (
-          let e = D.Word e in
+      match D.insert_of_int e (n + 1) with
+      | Some (Into (g, ix)) -> (
           let strs =
             List.map
               (function
@@ -47,14 +46,15 @@ let rec pbij_of_int_strings : type e.
                     else raise (Invalid_argument "pbij_of_int_strings")
                 | `Str str -> `Str str)
               strs in
-          match pbij_of_int_strings e strs with
-          | Some (Pbij_of (Pbij (ins, shuf))) -> Some (Pbij_of (Pbij (Suc (ins, ix), Right shuf)))
+          match pbij_of_int_strings (D.uninsert ix e) strs with
+          | Some (Pbij_of (Pbij (ins, shuf))) ->
+              Some (Pbij_of (Pbij (Suc (ins, g, ix), Right (g, shuf))))
           | None -> None)
-      | Word Zero, Some _ -> .
-      | _, None -> None)
+      | Some _ -> .
+      | None -> None)
   | `Str str :: strs when str = Endpoints.refl_string () -> (
       match pbij_of_int_strings e strs with
-      | Some (Pbij_of (Pbij (ins, shuf))) -> Some (Pbij_of (Pbij (ins, Left shuf)))
+      | Some (Pbij_of (Pbij (ins, shuf))) -> Some (Pbij_of (Pbij (ins, Left (D.deg, shuf))))
       | None -> None)
   | `Str _ :: _ -> None
 
@@ -72,9 +72,9 @@ let rec int_strings_of_pbij : type n i r. (n, i, r) pbij -> [ `Int of int | `Str
  fun (Pbij (ins, shuf)) ->
   match shuf with
   | Zero -> []
-  | Left shuf -> `Str (Endpoints.refl_string ()) :: int_strings_of_pbij (Pbij (ins, shuf))
-  | Right shuf ->
-      let (Suc (ins, ix)) = ins in
+  | Left (_, shuf) -> `Str (Endpoints.refl_string ()) :: int_strings_of_pbij (Pbij (ins, shuf))
+  | Right (_, shuf) ->
+      let (Suc (ins, _, ix)) = ins in
       let x = Tbwd.int_of_insert ix + 1 in
       `Int x
       :: List.map
@@ -110,8 +110,8 @@ type (_, _, _) singleton_pbij =
 let singleton_pbij : type a i r. (a, i, r) pbij -> i is_singleton -> (a, i, r) singleton_pbij =
  fun p One ->
   match p with
-  | Pbij (_, Left Zero) -> Left
-  | Pbij (ins, Right Zero) -> Right ins
+  | Pbij (_, Left (_, Zero)) -> Left
+  | Pbij (ins, Right (_, Zero)) -> Right ins
 
 type (_, _) pbij_between =
   | Pbij_between :
@@ -141,14 +141,14 @@ let rec deg_comp_ins : type m n i res.
  fun deg ins ->
   match ins with
   | Zero _ -> Deg_comp_ins (Zero (cod_deg deg), Zero, deg)
-  | Suc (ins, i) -> (
+  | Suc (ins, g, i) -> (
       match deg_coresidual deg i with
       | Coresidual_zero deg ->
           let (Deg_comp_ins (ins, shuf, s)) = deg_comp_ins deg ins in
-          Deg_comp_ins (ins, Left shuf, s)
+          Deg_comp_ins (ins, Left (g, shuf), s)
       | Coresidual_suc (deg, j) ->
           let (Deg_comp_ins (ins, shuf, s)) = deg_comp_ins deg ins in
-          Deg_comp_ins (Suc (ins, j), Right shuf, s))
+          Deg_comp_ins (Suc (ins, g, j), Right (g, shuf), s))
 
 (* A partial bijection can be composed with a degeneracy on the evaluation dimension to produce another partial bijection, with an induced degeneracy on the results. *)
 
@@ -167,28 +167,28 @@ let rec deg_comp_pbij : type m n i res rem sh.
   | Zero ->
       let (Zero _) = ins in
       Deg_comp_pbij (ins_zero (cod_deg deg), Zero, deg, fun _ -> Eq)
-  | Left shuf ->
+  | Left (g, shuf) ->
       let (Deg_comp_pbij (ins, shuf, s, _)) = deg_comp_pbij deg ins shuf in
       Deg_comp_pbij
         ( ins,
-          Left shuf,
+          Left (g, shuf),
           s,
           function
           | _ -> . )
-  | Right shuf -> (
-      let (Suc (ins, i)) = ins in
+  | Right (g, shuf) -> (
+      let (Suc (ins, _, i)) = ins in
       match deg_coresidual deg i with
       | Coresidual_zero deg ->
           let (Deg_comp_pbij (ins, shuf, s, _)) = deg_comp_pbij deg ins shuf in
           Deg_comp_pbij
             ( ins,
-              Left shuf,
+              Left (g, shuf),
               s,
               function
               | _ -> . )
       | Coresidual_suc (deg, j) ->
           let (Deg_comp_pbij (ins, shuf, s, ifzero)) = deg_comp_pbij deg ins shuf in
-          Deg_comp_pbij (Suc (ins, j), Right shuf, s, ifzero))
+          Deg_comp_pbij (Suc (ins, g, j), Right (g, shuf), s, ifzero))
 
 (* This is like deg_comp_pbij (for the insertion only, so far), but for adding a constant on the left rather than acting by an arbitrary degeneracy (for evaluation rather that acting).  This allows it to return more detailed information.  The dimension 'r (new remaining) is the piece of 'i (intrinsic) that lands in 'm (new added dimension on the left), while 'h (new shared) is the part that lands in 'n, and 't is the part of 'm that doesn't come from 'r.  Note that the first two outputs together form an ('n, 'i, 'r) pbij; that's why this is in this file, even though it doesn't refer explicitly to pbij.  *)
 
@@ -207,16 +207,16 @@ let rec unplus_ins : type m n mn s i.
   | Zero _ ->
       (* i=0, r=0, h=0, t=m, tn=mn, s=n *)
       Unplus_ins (Zero (D.plus_right mn), Zero, Zero m, mn)
-  | Suc (ins', x) -> (
+  | Suc (ins', g, x) -> (
       match D.insert_in_plus mn x with
       | Left (x, mn') ->
           let (Unplus_ins (nsh, rhi, mtr, ts)) = unplus_ins (D.uninsert x m) mn' ins' in
           (* right-increment i and r, middle-increment m, keep s and h the same *)
-          Unplus_ins (nsh, Left rhi, Suc (mtr, x), ts)
+          Unplus_ins (nsh, Left (g, rhi), Suc (mtr, g, x), ts)
       | Right (x, mn') ->
           let (Unplus_ins (nsh, rhi, mtr, ts)) = unplus_ins m mn' ins' in
           (* right-increment i and h and s, middle-increment n, keep m and r the same *)
-          Unplus_ins (Suc (nsh, x), Right rhi, mtr, ts))
+          Unplus_ins (Suc (nsh, g, x), Right (g, rhi), mtr, ts))
 
 type (_, _, _, _, _, _) unplus_pbij =
   | Unplus_pbij :
@@ -246,13 +246,13 @@ let rec ins_plus_of_pbij : type n s h r i rn.
   | Zero ->
       let Eq = D.plus_uniq rn (D.zero_plus (dom_ins ins)) in
       ins
-  | Right shuf' ->
-      let (Suc (ins', x)) = ins in
+  | Right (g, shuf') ->
+      let (Suc (ins', _, x)) = ins in
       let (Plus rn') = D.plus (D.uninsert x (dom_ins ins)) in
-      Suc (ins_plus_of_pbij ins' shuf' rn', D.plus_insert rn' rn x)
-  | Left shuf' ->
+      Suc (ins_plus_of_pbij ins' shuf' rn', g, D.plus_insert rn' rn x)
+  | Left (g, shuf') ->
       let (Insert_plus (rn', x)) = D.insert_plus Now rn in
-      Suc (ins_plus_of_pbij ins shuf' rn', x)
+      Suc (ins_plus_of_pbij ins shuf' rn', g, x)
 
 (* Intrinsically well-typed maps with partial bijections as keys.  Each map has a fixed 'evaluation dimension and 'intrinsic dimension, but the 'result, 'shared, and 'remaining dimensions vary with the keys and values.  The values are parametrized by the 'remaining dimension as well as by an extra parameter that the map depends on; hence the whole notion of map is a functor parametrized by a Fam2.
 
@@ -260,21 +260,24 @@ let rec ins_plus_of_pbij : type n s h r i rn.
 
 module rec Internal_Pbijmap : functor (F : Fam2) -> sig
   module Param : sig
-    type (_, _) t =
-      | Wrap :
+    type (_, _, _) t =
+      | Match :
           ('evaluation, 'intrinsic, 'r, 'v) Internal_Pbijmap(F).gt
-          -> ('evaluation, ('intrinsic * 'r) * 'v) t
+          -> ('g, 'evaluation, (('g * 'intrinsic) * 'r) * 'v) t
+      | Mismatch : ('g, 'g0) D.G.apart -> ('g, 'evaluation, (('g0 * 'intrinsic) * 'r) * 'v) t
   end
 
-  module Tup : module type of Tuple.Make (Unitcomparable) (Param)
+  module Tup : module type of Tuple.Make (D.G) (Param)
 
   type (_, _, _, _) gt =
     | Zero : ('r, 'v) F.t -> ('evaluation, D.zero, 'r, 'v) gt
     | Suc : {
-        left : ('evaluation, 'intrinsic, 'r D.suc, 'v) gt;
-        right : ('evaluation, ('intrinsic * 'r) * 'v) Tup.t;
+        g : 'g D.G.t;
+        pw : ((D.zero, 'g) D.suc, 'r, 'gr) D.plus;
+        left : ('evaluation, 'intrinsic, 'gr, 'v) gt;
+        right : ('evaluation, (('g * 'intrinsic) * 'r) * 'v) Tup.t;
       }
-        -> ('evaluation, 'intrinsic D.suc, 'r, 'v) gt
+        -> ('evaluation, ('intrinsic, 'g) D.suc, 'r, 'v) gt
 
   type ('evaluation, 'intrinsic, 'v) t = ('evaluation, 'intrinsic, D.zero, 'v) gt * 'evaluation D.t
 end =
@@ -282,25 +285,29 @@ functor
   (F : Fam2)
   ->
   struct
+    (* The values stored in the tuple of subtrees are gated by the generator of the tuple position: a subtree exists only at positions whose generator matches that of the intrinsic dimension being shared there (as the Match constructor's index records), while mismatched positions store only an apartness witness, which lookups eliminate statically since their key types entail the contradictory equality.  This makes the maps marshallable, since no closures are stored. *)
     module Param = struct
-      type (_, _) t =
-        | Wrap :
+      type (_, _, _) t =
+        | Match :
             ('evaluation, 'intrinsic, 'r, 'v) Internal_Pbijmap(F).gt
-            -> ('evaluation, ('intrinsic * 'r) * 'v) t
+            -> ('g, 'evaluation, (('g * 'intrinsic) * 'r) * 'v) t
+        | Mismatch : ('g, 'g0) D.G.apart -> ('g, 'evaluation, (('g0 * 'intrinsic) * 'r) * 'v) t
     end
 
-    module Tup = Tuple.Make (Unitcomparable) (Param)
+    module Tup = Tuple.Make (D.G) (Param)
 
-    (* An element of ('evaluation, 'intrinsic, 'v) t is an intrinsically well-typed map that associates to every partial bijection between 'evaluation and 'intrinsic, with remaining dimension 'r, an element of ('r, 'v) F.t.  As with cubes, we define this in terms of a more general type ('evaluation, 'intrinsic, 's, 'v) gt which associates to every such partial bijection an element of ('r+'s, 'v) F.t. *)
+    (* An element of ('evaluation, 'intrinsic, 'v) t is an intrinsically well-typed map that associates to every partial bijection between 'evaluation and 'intrinsic, with remaining dimension 'r, an element of ('r, 'v) F.t.  As with cubes, we define this in terms of a more general type ('evaluation, 'intrinsic, 's, 'v) gt, where 's is the word of remaining dimensions accumulated so far along the path from the root.  The intrinsic dimensions are processed from the outside in, so a newly remaining generator is added at the *inner* end of 's; the witness for this is stored in the Suc node, exactly as in the Branches of Cube. *)
     type (_, _, _, _) gt =
       (* The definition is by induction on the intrinsic dimension.  If that's zero, then we are at a leaf and we just store something of the appropriate type. *)
       | Zero : ('r, 'v) F.t -> ('evaluation, D.zero, 'r, 'v) gt
       (* If it's a successor, then the shuffle acting on that last element either sends it into the remaining dimensions or the shared ones.  Thus, we store one subtree with incremented remaining dimension, and a tuple of subtrees with the same remaining dimension, indexed by where the new shared element ends up in the evaluation dimension (and with the image removed from the evaluation dimension; the intrinsically well-typed map Tuple takes care of that). *)
       | Suc : {
-          left : ('evaluation, 'intrinsic, 'r D.suc, 'v) gt;
-          right : ('evaluation, ('intrinsic * 'r) * 'v) Tup.t;
+          g : 'g D.G.t;
+          pw : ((D.zero, 'g) D.suc, 'r, 'gr) D.plus;
+          left : ('evaluation, 'intrinsic, 'gr, 'v) gt;
+          right : ('evaluation, (('g * 'intrinsic) * 'r) * 'v) Tup.t;
         }
-          -> ('evaluation, 'intrinsic D.suc, 'r, 'v) gt
+          -> ('evaluation, ('intrinsic, 'g) D.suc, 'r, 'v) gt
 
     type ('evaluation, 'intrinsic, 'v) t =
       ('evaluation, 'intrinsic, D.zero, 'v) gt * 'evaluation D.t
@@ -313,51 +320,69 @@ module Pbijmap (F : Fam2) = struct
   let rec gintrinsic : type evaluation intrinsic r v.
       (evaluation, intrinsic, r, v) gt -> intrinsic D.t = function
     | Zero _ -> D.zero
-    | Suc { left; _ } -> D.suc (gintrinsic left)
+    | Suc { g; left; _ } -> D.suc (gintrinsic left) g
 
   let intrinsic : type evaluation intrinsic v. (evaluation, intrinsic, v) t -> intrinsic D.t =
    fun (ms, _) -> gintrinsic ms
 
   type (_, _) wrapped = Wrap : ('evaluation, 'intrinsic, 'v) t -> ('evaluation, 'v) wrapped
 
-  let rec gfind : type evaluation intrinsic r1 r2 r v.
+  (* The carried plus relation (r2, s, r) records that the key's not-yet-processed remaining dimensions r2 sit inside the accumulated word s, with total remaining r.  At each Left step the newly remaining generator moves from r2 to s, transported by associativity using the witness stored in the Suc node. *)
+  let rec gfind : type evaluation intrinsic s r2 r v.
       (evaluation, intrinsic, r2) pbij ->
-      (evaluation, intrinsic, r1, v) gt ->
-      (r1, r2, r) D.plus ->
+      (evaluation, intrinsic, s, v) gt ->
+      (r2, s, r) D.plus ->
       (r, v) F.t =
    fun p m r12 ->
     match (p, m) with
     | Pbij (Zero _, Zero), Zero v ->
-        let Zero = r12 in
+        let Eq = D.zero_plus_uniq r12 in
         v
-    | Pbij (ins, Left shuf), Suc m -> gfind (Pbij (ins, shuf)) m.left (D.suc_plus r12)
-    | Pbij (Suc (ins, i), Right shuf), Suc m ->
-        let (Wrap m) = Tup.find i m.right in
-        gfind (Pbij (ins, shuf)) m r12
+    | Pbij (ins, Left (g_left, shuf)), Suc m ->
+        gfind (Pbij (ins, shuf)) m.left (D.plus_assocr (Suc (Zero, g_left)) m.pw r12)
+    | Pbij (Suc (ins, _, i), Right (_, shuf)), Suc m -> (
+        (* The Mismatch case is statically unreachable in the current single-generator instantiation (apart is empty), but is genuine multi-generator logic, so we keep it and silence the unreachability warning. *)
+        (match Tup.find i m.right with
+        | Match m -> gfind (Pbij (ins, shuf)) m r12
+        | Mismatch ap -> (
+            match D.G.apart_irrefl ap with
+            | _ -> .))
+        [@warning "-56"])
 
   let find : type evaluation intrinsic remaining v.
       (evaluation, intrinsic, remaining) pbij -> (evaluation, intrinsic, v) t -> (remaining, v) F.t
       =
-   fun p (m, _) -> gfind p m (D.zero_plus (remaining p))
+   fun p (m, _) -> gfind p m Zero
 
-  let rec gset : type evaluation intrinsic r1 r2 r v.
+  let rec gset : type evaluation intrinsic s r2 r v.
       (evaluation, intrinsic, r2) pbij ->
       (r, v) F.t ->
-      (evaluation, intrinsic, r1, v) gt ->
-      (r1, r2, r) D.plus ->
-      (evaluation, intrinsic, r1, v) gt =
+      (evaluation, intrinsic, s, v) gt ->
+      (r2, s, r) D.plus ->
+      (evaluation, intrinsic, s, v) gt =
    fun p v m r12 ->
     match (p, m) with
     | Pbij (Zero _, Zero), Zero _ ->
-        let Zero = r12 in
+        let Eq = D.zero_plus_uniq r12 in
         Zero v
-    | Pbij (ins, Left shuf), Suc m ->
-        Suc { m with left = gset (Pbij (ins, shuf)) v m.left (D.suc_plus r12) }
-    | Pbij (Suc (ins, i), Right shuf), Suc m ->
+    | Pbij (ins, Left (g_left, shuf)), Suc m ->
         Suc
           {
             m with
-            right = Tup.update i (fun (Wrap m) -> Wrap (gset (Pbij (ins, shuf)) v m r12)) m.right;
+            left = gset (Pbij (ins, shuf)) v m.left (D.plus_assocr (Suc (Zero, g_left)) m.pw r12);
+          }
+    | Pbij (Suc (ins, _, i), Right (_, shuf)), Suc m ->
+        Suc
+          {
+            m with
+            right =
+              Tup.update i
+                ((function
+                  | Match m -> Match (gset (Pbij (ins, shuf)) v m r12)
+                  | Mismatch ap -> (
+                      match D.G.apart_irrefl ap with
+                      | _ -> .)) [@warning "-56"])
+                m.right;
           }
 
   let set : type evaluation intrinsic remaining v.
@@ -365,51 +390,61 @@ module Pbijmap (F : Fam2) = struct
       (remaining, v) F.t ->
       (evaluation, intrinsic, v) t ->
       (evaluation, intrinsic, v) t =
-   fun p v (m, e) -> (gset p v m (D.zero_plus (remaining p)), e)
+   fun p v (m, e) -> (gset p v m Zero, e)
 
   let find_singleton : type evaluation intrinsic v.
       (evaluation, intrinsic, v) t -> (D.zero, v) F.t option = function
     | Zero v, _ -> Some v
     | Suc _, _ -> None
 
-  type ('evaluation, 'intrinsic, 'r1, 'v) gbuilder = {
-    remaining : 'r1 D.t;
-    build : 'r2 'r. ('evaluation, 'intrinsic, 'r2) pbij -> ('r1, 'r2, 'r) D.plus -> ('r, 'v) F.t;
+  type ('evaluation, 'intrinsic, 's, 'v) gbuilder = {
+    remaining : 's D.t;
+    build : 'r2 'r. ('evaluation, 'intrinsic, 'r2) pbij -> ('r2, 's, 'r) D.plus -> ('r, 'v) F.t;
   }
 
-  let rec gbuild : type evaluation intrinsic remaining v.
+  let rec gbuild : type evaluation intrinsic s v.
       evaluation D.t ->
       intrinsic D.t ->
-      (evaluation, intrinsic, remaining, v) gbuilder ->
-      (evaluation, intrinsic, remaining, v) gt =
+      (evaluation, intrinsic, s, v) gbuilder ->
+      (evaluation, intrinsic, s, v) gt =
    fun evaluation intrinsic f ->
     match intrinsic with
-    | Word Zero -> Zero (f.build (Pbij (ins_zero evaluation, Zero)) (D.plus_zero f.remaining))
-    | Word (Suc (intrinsic, Unit)) ->
+    | Word Zero -> Zero (f.build (Pbij (ins_zero evaluation, Zero)) (D.zero_plus f.remaining))
+    | Word (Suc (type i1 g0t) ((intrinsic, g_intrinsic) : (_, i1, _) D.plus * g0t D.G.t)) ->
+        let (Plus pw) = D.plus f.remaining in
         Suc
           {
+            g = g_intrinsic;
+            pw;
             left =
               gbuild evaluation (Word intrinsic)
                 {
-                  remaining = D.suc f.remaining;
+                  remaining = D.plus_out (D.suc D.zero g_intrinsic) pw;
                   build =
-                    (fun (Pbij (ins, shuf)) r12 -> f.build (Pbij (ins, Left shuf)) (D.plus_suc r12));
+                    (fun (Pbij (ins, shuf)) r12 ->
+                      f.build
+                        (Pbij (ins, Left (g_intrinsic, shuf)))
+                        (D.plus_assocl (Suc (Zero, g_intrinsic)) pw r12));
                 };
             right =
-              (let build : type b g.
-                   g Unitcomparable.t ->
-                   (b, g, evaluation) Tbwd.insert ->
-                   (b, (_ * remaining) * v) Param.t =
-                fun g i ->
-                 let Unit = g in
-                 Wrap
-                   (gbuild (D.uninsert i evaluation) (Word intrinsic)
-                      {
-                        f with
-                        build =
-                          (fun (Pbij (ins, shuf)) r12 ->
-                            f.build (Pbij (Suc (ins, i), Right shuf)) r12);
-                      }) in
+              (let build : type b h.
+                   h D.G.t -> (b, h, evaluation) Tbwd.insert -> (h, b, ((g0t * i1) * s) * v) Param.t
+                   =
+                fun h i ->
+                 (match D.G.decide h g_intrinsic with
+                 | Same ->
+                     Match
+                       (gbuild (D.uninsert i evaluation) (Word intrinsic)
+                          {
+                            f with
+                            build =
+                              (fun (Pbij (ins, shuf)) r12 ->
+                                f.build
+                                  (Pbij (Suc (ins, g_intrinsic, i), Right (g_intrinsic, shuf)))
+                                  r12);
+                          })
+                 | Distinct ap -> Mismatch ap)
+                 [@warning "-56"] in
                Tup.build evaluation { build });
           }
 
@@ -420,10 +455,10 @@ module Pbijmap (F : Fam2) = struct
   let gbuilder_of_builder : type evaluation intrinsic v r2 r.
       (evaluation, intrinsic, v) builder ->
       (evaluation, intrinsic, r2) pbij ->
-      (D.zero, r2, r) D.plus ->
+      (r2, D.zero, r) D.plus ->
       (r, v) F.t =
    fun f p r12 ->
-    let Eq = D.plus_uniq r12 (D.zero_plus (remaining p)) in
+    let Zero = r12 in
     f.build p
 
   let build : type evaluation intrinsic v.
@@ -464,44 +499,65 @@ module Pbijmap (F : Fam2) = struct
       | [] -> []
       | v :: vs -> Zero v :: zero vs
 
-    let rec suc : type e i r vs irvs.
-        (e, i, r D.suc, vs) hgt ->
-        (i * r, vs, irvs) MapTimes.t ->
+    let rec suc : type e i r gr g vs irvs.
+        g D.G.t ->
+        ((D.zero, g) D.suc, r, gr) D.plus ->
+        (e, i, gr, vs) hgt ->
+        ((g * i) * r, vs, irvs) MapTimes.t ->
         (e, nil, irvs) Tup.Heter.hgt ->
-        (e, i D.suc, r, vs) hgt =
-     fun ls irvs rs ->
+        (e, (i, g) D.suc, r, vs) hgt =
+     fun g pw ls irvs rs ->
       match (ls, irvs, rs) with
       | [], [], [] -> []
-      | left :: ls, Times :: irvs, right :: rs -> Suc { left; right } :: suc ls irvs rs
+      | left :: ls, Times :: irvs, right :: rs -> Suc { g; pw; left; right } :: suc g pw ls irvs rs
 
     let rec zeros : type e r vs. (e, D.zero, r, vs) hgt -> (r, vs) hft = function
       | [] -> []
       | Zero v :: ms -> v :: zeros ms
 
-    let rec left : type e i r vs. (e, i D.suc, r, vs) hgt -> (e, i, r D.suc, vs) hgt = function
+    let rec left : type e i r gr g vs.
+        ((D.zero, g) D.suc, r, gr) D.plus -> (e, (i, g) D.suc, r, vs) hgt -> (e, i, gr, vs) hgt =
+     fun pw ms ->
+      match ms with
       | [] -> []
-      | Suc { left = l; _ } :: ms -> l :: left ms
+      | Suc { pw = pw'; left = l; _ } :: ms ->
+          let Eq = D.plus_uniq pw pw' in
+          l :: left pw ms
 
-    let rec right : type e i r vs irvs.
-        (e, i D.suc, r, vs) hgt -> (i * r, vs, irvs) MapTimes.t -> (e, nil, irvs) Tup.Heter.hgt =
+    let rec right : type e i r g vs irvs.
+        (e, (i, g) D.suc, r, vs) hgt ->
+        ((g * i) * r, vs, irvs) MapTimes.t ->
+        (e, nil, irvs) Tup.Heter.hgt =
      fun ms irvs ->
       match (ms, irvs) with
       | [], [] -> []
       | Suc { right = r; _ } :: ms, Times :: irvs -> r :: right ms irvs
 
-    let rec wrap : type e i r vs irvs.
-        (e, i, r, vs) hgt -> (i * r, vs, irvs) MapTimes.t -> (e, irvs) Tup.Heter.hft =
+    let rec wrap : type e i r g vs irvs.
+        (e, i, r, vs) hgt -> ((g * i) * r, vs, irvs) MapTimes.t -> (g, e, irvs) Tup.Heter.hft =
      fun ms irvs ->
       match (ms, irvs) with
       | [], [] -> []
-      | m :: ms, Times :: irvs -> Wrap m :: wrap ms irvs
+      | m :: ms, Times :: irvs -> Match m :: wrap ms irvs
 
-    let rec unwrap : type e i r vs irvs.
-        (e, irvs) Tup.Heter.hft -> (i * r, vs, irvs) MapTimes.t -> (e, i, r, vs) hgt =
+    let rec unwrap : type e i r g vs irvs.
+        (g, e, irvs) Tup.Heter.hft -> ((g * i) * r, vs, irvs) MapTimes.t -> (e, i, r, vs) hgt =
      fun ms irvs ->
-      match (ms, irvs) with
+      (match (ms, irvs) with
       | [], [] -> []
-      | Wrap m :: ms, Times :: irvs -> m :: unwrap ms irvs
+      | Match m :: ms, Times :: irvs -> m :: unwrap ms irvs
+      | Mismatch ap :: _, Times :: _ -> (
+          match D.G.apart_irrefl ap with
+          | _ -> .))
+      [@warning "-56"]
+
+    (* For tuple positions whose generator is apart from the map's intrinsic generator, the values just record the apartness witness. *)
+    let rec mismatched : type e g g0 i r vs irvs.
+        (g, g0) D.G.apart -> ((g0 * i) * r, vs, irvs) MapTimes.t -> (g, e, irvs) Tup.Heter.hft =
+     fun ap irvs ->
+      match irvs with
+      | [] -> []
+      | Times :: irvs -> Mismatch ap :: mismatched ap irvs
 
     let rec params : type e i r vs. (e, i, r, vs) hgt -> vs Tlist.t = function
       | [] -> Nil
@@ -534,12 +590,12 @@ module Pbijmap (F : Fam2) = struct
   module Applicatic (M : Applicative.Plain) = struct
     open Applicative.Ops (M)
 
-    type ('evaluation, 'intrinsic, 'r1, 'vs, 'ws) gpmapperM = {
-      remaining : 'r1 D.t;
+    type ('evaluation, 'intrinsic, 's, 'vs, 'ws) gpmapperM = {
+      remaining : 's D.t;
       map :
         'r2 'r.
         ('evaluation, 'intrinsic, 'r2) pbij ->
-        ('r1, 'r2, 'r) D.plus ->
+        ('r2, 's, 'r) D.plus ->
         ('r, 'vs) Heter.hft ->
         ('r, 'ws) Heter.hft M.t;
     }
@@ -554,41 +610,63 @@ module Pbijmap (F : Fam2) = struct
       match ms with
       | Zero _ :: _ ->
           M.apply
-            (f.map (Pbij (ins_zero evaluation, Zero)) (D.plus_zero f.remaining) (Heter.zeros ms))
+            (f.map (Pbij (ins_zero evaluation, Zero)) (D.zero_plus f.remaining) (Heter.zeros ms))
           @@ fun res -> Heter.zero res
-      | Suc _ :: _ ->
-          let module T = Tup.Applicatic (M) in
-          let (Exists_cons irvs) = MapTimes.exists_cons (Heter.params ms) in
-          let (Exists irws) = MapTimes.exists ws in
-          let map : type a g.
-              g Unitcomparable.t ->
-              (a, g, _) Tbwd.insert ->
-              (a, _) Tup.Heter.hft ->
-              (a, _) Tup.Heter.hft M.t =
-           fun g i x ->
-            let Unit = g in
+      | Suc { g = g_outer; pw; _ } :: _ -> gpmapM_suc evaluation g_outer pw f ms ws
+
+    and gpmapM_suc : type evaluation i1 g0t s gs v vs ws.
+        evaluation D.t ->
+        g0t D.G.t ->
+        ((D.zero, g0t) D.suc, s, gs) D.plus ->
+        (evaluation, (i1, g0t) D.suc, s, (v, vs) cons, ws) gpmapperM ->
+        (evaluation, (i1, g0t) D.suc, s, (v, vs) cons) Heter.hgt ->
+        ws Tlist.t ->
+        (evaluation, (i1, g0t) D.suc, s, ws) Heter.hgt M.t =
+     fun evaluation g_outer pw f ms ws ->
+      let module T = Tup.Applicatic (M) in
+      let (Exists_cons irvs) = MapTimes.exists_cons (Heter.params ms) in
+      let irvs : ((g0t * i1) * s, (v, vs) cons, _) MapTimes.t = irvs in
+      let (Exists irws) = MapTimes.exists ws in
+      let irws : ((g0t * i1) * s, ws, _) MapTimes.t = irws in
+      let map : type a g.
+          g D.G.t ->
+          (a, g, evaluation) Tbwd.insert ->
+          (g, a, _) Tup.Heter.hft ->
+          (g, a, _) Tup.Heter.hft M.t =
+       fun g i x ->
+        (match D.G.decide g g_outer with
+        | Same ->
+            (* The equation g = g0t lets us view this position's data at the map's generator. *)
+            let x : (g0t, a, _) Tup.Heter.hft = x in
+            let i : (a, g0t, evaluation) Tbwd.insert = i in
             M.apply
               (gpmapM (D.uninsert i evaluation)
                  {
                    f with
                    map =
-                     (fun (Pbij (ins, shuf)) r12 v -> f.map (Pbij (Suc (ins, i), Right shuf)) r12 v);
+                     (fun (Pbij (ins, shuf)) r12 v ->
+                       f.map (Pbij (Suc (ins, g_outer, i), Right (g_outer, shuf))) r12 v);
                  }
                  (Heter.unwrap x irvs) ws)
-            @@ fun res -> Heter.wrap res irws in
-          M.apply
-            (M.zip
-               (fun () ->
-                 gpmapM evaluation
-                   {
-                     remaining = D.suc f.remaining;
-                     map =
-                       (fun (Pbij (ins, shuf)) r12 v ->
-                         f.map (Pbij (ins, Left shuf)) (D.plus_suc r12) v);
-                   }
-                   (Heter.left ms) ws)
-               (fun () -> T.pmapM { map } (Heter.right ms irvs) (MapTimes.cod irws)))
-          @@ fun (lefts, rights) -> Heter.suc lefts irws rights
+            @@ fun res -> Heter.wrap res irws
+        | Distinct ap -> return (Heter.mismatched ap irws))
+        [@warning "-56"] in
+      M.apply
+        (M.zip
+           (fun () ->
+             gpmapM evaluation
+               {
+                 remaining = D.plus_out (D.suc D.zero g_outer) pw;
+                 map =
+                   (fun (Pbij (ins, shuf)) r12 v ->
+                     f.map
+                       (Pbij (ins, Left (g_outer, shuf)))
+                       (D.plus_assocl (Suc (Zero, g_outer)) pw r12)
+                       v);
+               }
+               (Heter.left pw ms) ws)
+           (fun () -> T.pmapM { map } (Heter.right ms irvs) (MapTimes.cod irws)))
+      @@ fun (lefts, rights) -> Heter.suc g_outer pw lefts irws rights
 
     type ('evaluation, 'intrinsic, 'vs, 'ws) pmapperM = {
       map : 'r. ('evaluation, 'intrinsic, 'r) pbij -> ('r, 'vs) Heter.hft -> ('r, 'ws) Heter.hft M.t;
@@ -597,11 +675,11 @@ module Pbijmap (F : Fam2) = struct
     let gpmapper_of_pmapper : type evaluation intrinsic vs ws r2 r.
         (evaluation, intrinsic, vs, ws) pmapperM ->
         (evaluation, intrinsic, r2) pbij ->
-        (D.zero, r2, r) D.plus ->
+        (r2, D.zero, r) D.plus ->
         (r, vs) Heter.hft ->
         (r, ws) Heter.hft M.t =
      fun f p r12 ->
-      let Eq = D.plus_uniq r12 (D.zero_plus (remaining p)) in
+      let Zero = r12 in
       f.map p
 
     let pmapM : type evaluation intrinsic v vs ws.

@@ -65,6 +65,13 @@ module Make (G : Comparable) = struct
         let Eq = plus_uniq mn mn' in
         Eq
 
+  (* A plus with zero on the left is an equality. *)
+  let rec zero_plus_uniq : type n p. (zero, n, p) plus -> (n, p) Eq.t = function
+    | Zero -> Eq
+    | Suc (p, _) ->
+        let Eq = zero_plus_uniq p in
+        Eq
+
   (* Shifting successors *)
 
   type (_, _, _, _) plus_suc =
@@ -78,19 +85,6 @@ module Make (G : Comparable) = struct
     | Suc (x, h) ->
         let (Plus_suc (y, z)) = plus_suc g x in
         Plus_suc (Suc (y, h), Suc (z, h))
-
-  (* We postpone suc_plus_eq_suc until after we have insertions, to characterize its output value more correctly. *)
-
-  type (_, _, _, _) suc_plus =
-    | Suc_plus :
-        (('m, 'h) suc, 'q, 'p) plus * ((zero, 'h) suc, 'q, ('n, 'g) suc) plus
-        -> ('m, 'n, 'g, 'p) suc_plus
-
-  let rec suc_plus : type m n g p. (m, (n, g) suc, p) plus -> (m, n, g, p) suc_plus = function
-    | Suc (Zero, _) -> Suc_plus (Zero, Zero)
-    | Suc ((Suc _ as mn), g) ->
-        let (Suc_plus (mq, kq)) = suc_plus mn in
-        Suc_plus (Suc (mq, g), Suc (kq, g))
 
   (* Associativity *)
 
@@ -236,6 +230,25 @@ module Make (G : Comparable) = struct
         | Eq_inserts -> Eq_inserts
         | Neq_inserts (m', n') -> Neq_inserts (Later m', Later n'))
 
+  (* Compare two insertions into the same word whose removed elements may have different generator types.  If they remove the same position, the generators and smaller words agree; otherwise each insert transfers to the other's smaller word. *)
+  type (_, _, _, _, _) compare_gen_inserts =
+    | Eq_gen_inserts : ('a, 'g, 'a, 'g, 'p) compare_gen_inserts
+    | Neq_gen_inserts :
+        ('r, 'h, 'a) Tbwd.insert * ('r, 'g, 'b) Tbwd.insert
+        -> ('a, 'g, 'b, 'h, 'p) compare_gen_inserts
+
+  let rec compare_gen_inserts : type a g b h p.
+      (a, g, p) Tbwd.insert -> (b, h, p) Tbwd.insert -> (a, g, b, h, p) compare_gen_inserts =
+   fun j k ->
+    match (j, k) with
+    | Now, Now -> Eq_gen_inserts
+    | Now, Later k -> Neq_gen_inserts (k, Now)
+    | Later j, Now -> Neq_gen_inserts (Now, j)
+    | Later j, Later k -> (
+        match compare_gen_inserts j k with
+        | Eq_gen_inserts -> Eq_gen_inserts
+        | Neq_gen_inserts (k', j') -> Neq_gen_inserts (Later k', Later j'))
+
   let rec insert_equiv : type m n g p q.
       (p, g, m) Tbwd.insert -> (q, g, n) Tbwd.insert -> unit option =
    fun k l ->
@@ -267,17 +280,19 @@ module Make (G : Comparable) = struct
             | Eq -> Eq
             | Neq -> Neq))
 
-  (* Now we can define suc_plus_eq_suc in a way that correctly records the relationship between 'q and 'p.  *)
-  type (_, _, _, _) suc_plus_eq_suc =
-    | Suc_plus_eq_suc :
-        (('m, 'g) suc, 'n, 'q) plus * ('p, 'g, 'q) Tbwd.insert
-        -> ('m, 'g, 'n, 'p) suc_plus_eq_suc
+  (* Strip the leftmost generator from a [((m, g) suc, n, p) plus]: returns the inner [(m, n, p_inner) plus] and an insertion that recovers p as p_inner with g inserted at the appropriate position. *)
+  type (_, _, _, _) strip_plus_left =
+    | Strip_plus_left :
+        ('m, 'n, 'q) plus * ('q, 'g, 'p) Tbwd.insert
+        -> ('m, 'g, 'n, 'p) strip_plus_left
 
-  let rec suc_plus_eq_suc : type m g n p. (m, n, p) plus -> (m, g, n, p) suc_plus_eq_suc = function
-    | Zero -> Suc_plus_eq_suc (Zero, Now)
-    | Suc (x, g) ->
-        let (Suc_plus_eq_suc (y, i)) = suc_plus_eq_suc x in
-        Suc_plus_eq_suc (Suc (y, g), Later i)
+  let rec strip_plus_left : type m g n p.
+      g G.t -> ((m, g) suc, n, p) plus -> (m, g, n, p) strip_plus_left =
+   fun g -> function
+    | Zero -> Strip_plus_left (Zero, Now)
+    | Suc (ab, h) ->
+        let (Strip_plus_left (q, i)) = strip_plus_left g ab in
+        Strip_plus_left (Suc (q, h), Later i)
 
   (* ********** More about insertion ********** *)
 
@@ -522,6 +537,25 @@ module Make (G : Comparable) = struct
     | Word (Suc _), Word Zero -> return (Cofactor (plus_zero nk))
     | _ -> None
 
+  (* Trichotomy.  With multiple generators, two words need not be comparable, so there is a fourth case. *)
+
+  type (_, _) trichotomy =
+    | Eq : ('n, 'n) trichotomy
+    | Lt : ('m, ('n, 'g) suc, 'mn) plus -> ('m, 'mn) trichotomy
+    | Gt : ('m, ('n, 'g) suc, 'mn) plus -> ('mn, 'm) trichotomy
+    | Incomparable : ('m, 'n) trichotomy
+
+  let trichotomy : type m n. m t -> n t -> (m, n) trichotomy =
+   fun m n ->
+    match factor m n with
+    | Some (Factor Zero) -> Eq
+    | Some (Factor (Suc _ as k)) -> Gt k
+    | _ -> (
+        match factor n m with
+        | Some (Factor Zero) -> Eq
+        | Some (Factor (Suc _ as k)) -> Lt k
+        | _ -> Incomparable)
+
   type (_, _) pushout = Pushout : ('a, 'c, 'p) plus * ('b, 'd, 'p) plus -> ('a, 'b) pushout
 
   let pushout : type a b. a t -> b t -> (a, b) pushout =
@@ -557,23 +591,25 @@ module MakeDecidable (G : Decidable) = struct
 
   type (_, _) unoccurs =
     | Unoccurs_emp : ('g, emp) unoccurs
-    | Unoccurs_suc : ('g, 'm) unoccurs * ('g, 'h) Eq.neq -> ('g, ('m, 'h) suc) unoccurs
+    | Unoccurs_suc : ('g, 'm) unoccurs * ('g, 'h) G.apart -> ('g, ('m, 'h) suc) unoccurs
 
   let rec occurs : type g m. g G.t -> m t -> ((g, m) occurs, (g, m) unoccurs) Either.t =
    fun g -> function
     | Word Zero -> Right Unoccurs_emp
     | Word (Suc (m, h)) -> (
         match G.decide g h with
-        | Left Eq -> Left (Occurs Now)
-        | Right neq -> (
+        | Same -> Left (Occurs Now)
+        | Distinct ap -> (
             match occurs g (Word m) with
             | Left (Occurs o) -> Left (Occurs (Later o))
-            | Right u -> Right (Unoccurs_suc (u, neq))))
+            | Right u -> Right (Unoccurs_suc (u, ap))))
 
   let rec occurs_unoccurs : type g m r. (g, m) occurs -> (g, m) unoccurs -> r =
    fun o u ->
     match (o, u) with
-    | Occurs Now, Unoccurs_suc (_, neq) -> neq.abort Eq
+    | Occurs Now, Unoccurs_suc (_, ap) -> (
+        match G.apart_irrefl ap with
+        | _ -> .)
     | Occurs (Later i), Unoccurs_suc (u, _) -> occurs_unoccurs (Occurs i) u
 
   let rec occurs_plus_right : type g m n mn. (m, n, mn) plus -> (g, n) occurs -> (g, mn) occurs =
@@ -598,7 +634,7 @@ module MakeDecidable (G : Decidable) = struct
    fun mn um un ->
     match (mn, un) with
     | Zero, Unoccurs_emp -> um
-    | Suc (mn, _), Unoccurs_suc (un, neq) -> Unoccurs_suc (unoccurs_plus mn um un, neq)
+    | Suc (mn, _), Unoccurs_suc (un, ap) -> Unoccurs_suc (unoccurs_plus mn um un, ap)
 end
 
 module MakeExp (G : ComparableExp) = struct

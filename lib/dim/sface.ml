@@ -4,60 +4,60 @@ open Singleton
 
 (* ********** Strict faces ********** *)
 
-(* A strict face is an order-preserving partial map that is surjective and with an endpoint index assigned to each element not mapping to the codomain. A generalized strict face allows alternative notions of "endpoint".  *)
+(* A strict face is an order-preserving partial map that is surjective and with an endpoint index assigned to each element not mapping to the codomain.  A generalized strict face allows alternative notions of "endpoint". *)
 
 module GSFace (E : Fam) = struct
   type (_, _) sface =
     | Zero : (D.zero, D.zero) sface
-    | End : ('m, 'n) sface * 'l E.t -> ('m, 'n D.suc) sface
-    | Mid : ('m, 'n) sface -> ('m D.suc, 'n D.suc) sface
+    | End : ('m, 'n) sface * 'g D.G.t * 'l E.t -> ('m, ('n, 'g) D.suc) sface
+    | Mid : ('m, 'n) sface * 'g D.G.t -> (('m, 'g) D.suc, ('n, 'g) D.suc) sface
 
   let rec id_sface : type n. n D.t -> (n, n) sface = function
     | Word Zero -> Zero
-    | Word (Suc (n, Unit)) -> Mid (id_sface (Word n))
+    | Word (Suc (n, g)) -> Mid (id_sface (Word n), g)
 
   let rec dom_sface : type m n. (m, n) sface -> m D.t = function
     | Zero -> Word Zero
-    | End (f, _) ->
+    | End (f, _, _) ->
         let (Word s) = dom_sface f in
         Word s
-    | Mid f ->
+    | Mid (f, g) ->
         let (Word s) = dom_sface f in
-        Word (Suc (s, Unit))
+        Word (Suc (s, g))
 
   let rec comp_sface : type m n k. (n, k) sface -> (m, n) sface -> (m, k) sface =
    fun a b ->
     match (a, b) with
     | Zero, Zero -> Zero
-    | End (a', e), _ -> End (comp_sface a' b, e)
-    | Mid a', End (b', e) -> End (comp_sface a' b', e)
-    | Mid a', Mid b' -> Mid (comp_sface a' b')
+    | End (a', g, e), _ -> End (comp_sface a' b, g, e)
+    | Mid (a', _), End (b', g, e) -> End (comp_sface a' b', g, e)
+    | Mid (a', g), Mid (b', _) -> Mid (comp_sface a' b', g)
 
-  (* A "residual" of a strict face and an index picks out the image of that index and the strict face with that index and its image (if any) removed.  This is used to compose non-strict faces and operators. *)
+  (* A "residual" of a strict face and an index picks out the image of that index and the strict face with that index and its image (if any) removed.  This is used to compose non-strict faces and operators.  The residual is indexed by the generator of the extracted element, so that callers can see at the type level that it matches the generator they removed from the codomain. *)
 
-  type (_, _) sface_residual =
-    | Residual_End : ('m, 'n) sface * 'l E.t -> ('m, 'n) sface_residual
-    | Residual_Mid : ('m, 'n) sface * ('m, 'msuc) D.insert -> ('msuc, 'n) sface_residual
+  type (_, _, _) sface_residual =
+    | Residual_End : ('m, 'n) sface * 'l E.t -> ('m, 'g, 'n) sface_residual
+    | Residual_Mid : ('m, 'n) sface * ('m, 'g, 'msuc) D.insert -> ('msuc, 'g, 'n) sface_residual
 
-  let rec sface_residual : type m n npred.
-      (m, n) sface -> (npred, n) D.insert -> (m, npred) sface_residual =
+  let rec sface_residual : type m n g npred.
+      (m, n) sface -> (npred, g, n) D.insert -> (m, g, npred) sface_residual =
    fun f k ->
     match (k, f) with
-    | Now, End (f', e) -> Residual_End (f', e)
-    | Now, Mid f' -> Residual_Mid (f', Now)
-    | Later k', End (f', e) -> (
+    | Now, End (f', _, e) -> Residual_End (f', e)
+    | Now, Mid (f', _) -> Residual_Mid (f', Now)
+    | Later k', End (f', g, e) -> (
         match sface_residual f' k' with
-        | Residual_End (f'', e') -> Residual_End (End (f'', e), e')
-        | Residual_Mid (f'', l) -> Residual_Mid (End (f'', e), l))
-    | Later k', Mid f' -> (
+        | Residual_End (f'', e') -> Residual_End (End (f'', g, e), e')
+        | Residual_Mid (f'', l) -> Residual_Mid (End (f'', g, e), l))
+    | Later k', Mid (f', g) -> (
         match sface_residual f' k' with
-        | Residual_End (f'', e') -> Residual_End (Mid f'', e')
-        | Residual_Mid (f'', l) -> Residual_Mid (Mid f'', Later l))
+        | Residual_End (f'', e') -> Residual_End (Mid (f'', g), e')
+        | Residual_Mid (f'', l) -> Residual_Mid (Mid (f'', g), Later l))
 
   let rec is_id_sface : type m n. (m, n) sface -> (m, n) Eq.t option = function
     | Zero -> Some Eq
     | End _ -> None
-    | Mid f -> (
+    | Mid (f, _) -> (
         match is_id_sface f with
         | Some Eq -> Some Eq
         | None -> None)
@@ -68,8 +68,8 @@ module GSFace (E : Fam) = struct
    fun fkm mn kp fpn ->
     match (fpn, mn, kp) with
     | Zero, Zero, Zero -> fkm
-    | End (fpn, e), Suc (mn, Unit), kp -> End (sface_plus_sface fkm mn kp fpn, e)
-    | Mid fpn, Suc (mn, Unit), Suc (kp, Unit) -> Mid (sface_plus_sface fkm mn kp fpn)
+    | End (fpn, g, e), Suc (mn, _), kp -> End (sface_plus_sface fkm mn kp fpn, g, e)
+    | Mid (fpn, g), Suc (mn, _), Suc (kp, _) -> Mid (sface_plus_sface fkm mn kp fpn, g)
 
   (* In particular, we can extend by identities on the right or left. *)
 
@@ -98,32 +98,32 @@ let rec sface_of_opt : type a b. (a, b) opt_sface -> (a, b) sface option =
   let open Monad.Ops (Monad.Maybe) in
   match f with
   | Zero -> return Zero
-  | End (f, e) ->
+  | End (f, g, e) ->
       let* e = e in
       let* f = sface_of_opt f in
-      return (End (f, e))
-  | Mid f ->
+      return (End (f, g, e))
+  | Mid (f, g) ->
       let* f = sface_of_opt f in
-      return (Mid f)
+      return (Mid (f, g))
 
 let rec opt_of_sface : type a b. (a, b) sface -> (a, b) opt_sface =
  fun f ->
   match f with
   | Zero -> Zero
-  | End (f, e) -> End (opt_of_sface f, Some e)
-  | Mid f -> Mid (opt_of_sface f)
+  | End (f, g, e) -> End (opt_of_sface f, g, Some e)
+  | Mid (f, g) -> Mid (opt_of_sface f, g)
 
 let comp_opt_sface : type m n k. (n, k) opt_sface -> (m, n) opt_sface -> (m, k) opt_sface =
  fun x y -> Opt.comp_sface x y
 
 let rec cod_sface : type m n. (m, n) sface -> n D.t = function
   | Zero -> Word Zero
-  | End (f, _) ->
+  | End (f, g, _) ->
       let (Word s) = cod_sface f in
-      Word (Suc (s, Unit))
-  | Mid f ->
+      Word (Suc (s, g))
+  | Mid (f, g) ->
       let (Word s) = cod_sface f in
-      Word (Suc (s, Unit))
+      Word (Suc (s, g))
 
 (* Zero has only the trivial strict face *)
 let sface_zero : type n. (n, D.zero) sface -> (n, D.zero) Eq.t = function
@@ -133,21 +133,22 @@ type _ sface_of = SFace_of : ('m, 'n) sface -> 'n sface_of
 
 (* Insert an element in the codomain and domain of a strict face, with the same numerical De Bruijn index. *)
 
-type (_, _) insert_sface =
-  | Insert_sface : ('m, 'msuc) D.insert * ('msuc, 'nsuc) sface -> ('m, 'nsuc) insert_sface
+type (_, _, _) insert_sface =
+  | Insert_sface : ('m, 'g, 'msuc) D.insert * ('msuc, 'nsuc) sface -> ('m, 'g, 'nsuc) insert_sface
 
-let rec insert_sface : type m n nsuc. (m, n) sface -> (n, nsuc) D.insert -> (m, nsuc) insert_sface =
- fun f i ->
+let rec insert_sface : type m n g nsuc.
+    (m, n) sface -> g D.G.t -> (n, g, nsuc) D.insert -> (m, g, nsuc) insert_sface =
+ fun f g i ->
   match i with
-  | Now -> Insert_sface (Now, Mid f)
+  | Now -> Insert_sface (Now, Mid (f, g))
   | Later i -> (
       match f with
-      | End (f, e) ->
-          let (Insert_sface (i, f)) = insert_sface f i in
-          Insert_sface (i, End (f, e))
-      | Mid f ->
-          let (Insert_sface (i, f)) = insert_sface f i in
-          Insert_sface (Later i, Mid f))
+      | End (f, h, e) ->
+          let (Insert_sface (i, f)) = insert_sface f g i in
+          Insert_sface (i, End (f, h, e))
+      | Mid (f, h) ->
+          let (Insert_sface (i, f)) = insert_sface f g i in
+          Insert_sface (Later i, Mid (f, h)))
 
 (* Conversely, any strict face of a sum decomposes as a sum. *)
 
@@ -161,37 +162,26 @@ let rec sface_of_plus : type ml n k nk.
  fun nk f ->
   match nk with
   | Zero -> SFace_of_plus (D.Zero, f, Zero)
-  | Suc (nk, Unit) -> (
+  | Suc (nk, _) -> (
       match f with
-      | End (f, e) ->
+      | End (f, g, e) ->
           let (SFace_of_plus (ml, f1, f2)) = sface_of_plus nk f in
-          SFace_of_plus (ml, f1, End (f2, e))
-      | Mid f ->
+          SFace_of_plus (ml, f1, End (f2, g, e))
+      | Mid (f, g) ->
           let (SFace_of_plus (ml, f1, f2)) = sface_of_plus nk f in
-          SFace_of_plus (Suc (ml, Unit), f1, Mid f2))
-
-type (_, _) d_le = Le : ('m, 'n, 'mn) D.plus -> ('m, 'mn) d_le
-
-let rec plus_of_sface : type m mn. (m, mn) sface -> (m, mn) d_le = function
-  | Zero -> Le Zero
-  | End (d, _) ->
-      let (Le mn) = plus_of_sface d in
-      Le (Suc (mn, Unit))
-  | Mid d ->
-      let (Le mn) = plus_of_sface d in
-      Le (D.suc_plus_eq_suc mn)
+          SFace_of_plus (Suc (ml, g), f1, Mid (f2, g)))
 
 (* As long as there is at least one endpoint, any dimension has at least one zero-dimensional face. *)
 
 let rec vertex : type n. n D.t -> (D.zero, n) sface option = function
   | Word Zero -> Some Zero
-  | Word (Suc (n, Unit)) -> (
+  | Word (Suc (n, g)) -> (
       let open Monad.Ops (Monad.Maybe) in
       let (Wrap l) = Endpoints.wrapped () in
       match Endpoints.len l with
       | N.Nat (Suc _) ->
           let* s = vertex (Word n) in
-          Some (End (s, (l, Top)))
+          Some (End (s, g, (l, Top)))
       | N.Nat Zero -> None)
 
 (* A strict face of a singleton dimension is either the identity or an endpoint. *)
@@ -201,10 +191,10 @@ let singleton_sface : type m n l.
     =
  fun s One l ->
   match s with
-  | End (Zero, (l', i)) ->
+  | End (Zero, _, (l', i)) ->
       let Eq = Endpoints.uniq l l' in
       `End i
-  | Mid Zero -> `Mid Eq
+  | Mid (Zero, _) -> `Mid Eq
 
 (* Converting to and from strings *)
 
@@ -214,8 +204,8 @@ let rec string_of_sface : type n k. ?unicode:bool -> (n, k) sface -> string =
  fun ?(unicode = false) fa ->
   match fa with
   | Zero -> ""
-  | End (fa, e) -> Endpoints.to_string ~unicode (Some e) ^ string_of_sface ~unicode fa
-  | Mid fa -> Endpoints.to_string ~unicode None ^ string_of_sface ~unicode fa
+  | End (fa, _, e) -> Endpoints.to_string ~unicode (Some e) ^ string_of_sface ~unicode fa
+  | Mid (fa, _) -> Endpoints.to_string ~unicode None ^ string_of_sface ~unicode fa
 
 let sface_of_string : string -> any_sface option =
  fun str ->
@@ -224,6 +214,6 @@ let sface_of_string : string -> any_sface option =
     (fun x fa ->
       match (fa, Endpoints.of_char l x) with
       | None, _ | _, Error _ -> None
-      | Some (Any_sface fa), Ok (Some e) -> Some (Any_sface (End (fa, e)))
-      | Some (Any_sface fa), Ok None -> Some (Any_sface (Mid fa)))
+      | Some (Any_sface fa), Ok (Some e) -> Some (Any_sface (End (fa, D.deg, e)))
+      | Some (Any_sface fa), Ok None -> Some (Any_sface (Mid (fa, D.deg))))
     str (Some (Any_sface Zero))

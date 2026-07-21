@@ -22,14 +22,14 @@ module GOp (E : Fam) = struct
     | Zero _ ->
         let m = F.dom_sface b in
         Op (Zero, Zero m)
-    | Suc (p, k) -> (
+    | Suc (p, g_deg, k) -> (
         match F.sface_residual b k with
         | Residual_End (f, e) ->
             let (Op (f', p')) = deg_sface p f in
-            Op (End (f', e), p')
+            Op (End (f', g_deg, e), p')
         | Residual_Mid (f, l) ->
             let (Op (f', p')) = deg_sface p f in
-            Op (Mid f', Suc (p', l)))
+            Op (Mid (f', g_deg), Suc (p', g_deg, l)))
 
   let dom_op : type m n. (m, n) op -> m D.t = function
     | Op (_, s) -> dom_deg s

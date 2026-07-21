@@ -109,16 +109,16 @@ let rec except_sface : type e a b c. (e, a, b) except -> (c, b) sface -> (e, a, 
  fun e s ->
   match (e, s) with
   | Except_zero, Zero -> Except_sface (Zero, Except_zero)
-  | Except_occurs (e, _), End (s, _) -> except_sface e s
-  | Except_occurs (e, o), Mid s ->
+  | Except_occurs (e, _), End (s, _, _) -> except_sface e s
+  | Except_occurs (e, o), Mid (s, _) ->
       let (Except_sface (s, e)) = except_sface e s in
       Except_sface (s, Except_occurs (e, o))
-  | Except_unoccurs (e, _), End (s, l) ->
+  | Except_unoccurs (e, _), End (s, g, l) ->
       let (Except_sface (s, e)) = except_sface e s in
-      Except_sface (End (s, l), e)
-  | Except_unoccurs (e, u), Mid s ->
+      Except_sface (End (s, g, l), e)
+  | Except_unoccurs (e, u), Mid (s, g) ->
       let (Except_sface (s, e)) = except_sface e s in
-      Except_sface (Mid s, Except_unoccurs (e, u))
+      Except_sface (Mid (s, g), Except_unoccurs (e, u))
 
 let rec except_occurs_insert : type e a b g c.
     (e, a, b) except -> (b, g, c) Tbwd.insert -> (g, e) D.occurs -> (e, a, c) except =
@@ -161,13 +161,13 @@ let rec except_deg : type e a b c. e D.t -> (e, a, b) except -> (c, b) deg -> (e
   | Except_zero, Zero c ->
       let (Except ex) = except_dirs e c in
       Except_deg (Zero (excepted ex c), ex)
-  | Except_occurs (ex, o), Suc (s, i) ->
+  | Except_occurs (ex, o), Suc (s, _, i) ->
       let (Except_deg (s, ex)) = except_deg e ex s in
       Except_deg (s, except_occurs_insert ex i o)
-  | Except_unoccurs (ex, u), Suc (s, i) ->
+  | Except_unoccurs (ex, u), Suc (s, g, i) ->
       let (Except_deg (s, ex)) = except_deg e ex s in
       let (Except_unoccurs_insert (i, ex)) = except_unoccurs_insert ex i u in
-      Except_deg (Suc (s, i), ex)
+      Except_deg (Suc (s, g, i), ex)
 
 type (_, _, _) except_perm =
   | Except_perm : ('d, 'a) perm * ('e, 'd, 'c) except -> ('e, 'a, 'c) except_perm
@@ -177,13 +177,13 @@ let rec except_perm : type e a b c.
  fun e ex s ->
   match (ex, s) with
   | Except_zero, Zero -> Except_perm (Zero, ex)
-  | Except_occurs (ex, o), Suc (s, i) ->
+  | Except_occurs (ex, o), Suc (s, _, i) ->
       let (Except_perm (s, ex)) = except_perm e ex s in
       Except_perm (s, except_occurs_insert ex i o)
-  | Except_unoccurs (ex, u), Suc (s, i) ->
+  | Except_unoccurs (ex, u), Suc (s, g, i) ->
       let (Except_perm (s, ex)) = except_perm e ex s in
       let (Except_unoccurs_insert (i, ex)) = except_unoccurs_insert ex i u in
-      Except_perm (Suc (s, i), ex)
+      Except_perm (Suc (s, g, i), ex)
 
 (* We can also transfer faces, though not degeneracies, "upwards". *)
 
@@ -199,15 +199,15 @@ let rec sface_except : type e a b c.
       Sface_except (Except_zero, Zero)
   | Word (Suc (b, Unit)), Except_occurs (e, o) ->
       let (Sface_except (e, s)) = sface_except (Word b) s e in
-      Sface_except (Except_occurs (e, o), Mid s)
+      Sface_except (Except_occurs (e, o), Mid (s, D.deg))
   | Word (Suc (b, Unit)), Except_unoccurs (e, u) -> (
       match s with
-      | End (s, p) ->
+      | End (s, g, p) ->
           let (Sface_except (e, s)) = sface_except (Word b) s e in
-          Sface_except (e, End (s, p))
-      | Mid s ->
+          Sface_except (e, End (s, g, p))
+      | Mid (s, g) ->
           let (Sface_except (e, s)) = sface_except (Word b) s e in
-          Sface_except (Except_unoccurs (e, u), Mid s))
+          Sface_except (Except_unoccurs (e, u), Mid (s, g)))
 
 type (_, _, _) pface_except =
   | Pface_except : ('e, 'c, 'd) except * ('d, 'b) pface -> ('e, 'b, 'c) pface_except
@@ -221,15 +221,15 @@ let rec pface_except : type e a b c.
       | _ -> .)
   | Word (Suc (b, Unit)), Except_occurs (e, o) ->
       let (Pface_except (e, s)) = pface_except (Word b) s e in
-      Pface_except (Except_occurs (e, o), Mid s)
+      Pface_except (Except_occurs (e, o), Mid (s, D.deg))
   | Word (Suc (b, Unit)), Except_unoccurs (e, u) -> (
       match s with
-      | End (s, _, p) ->
+      | End (s, _, g, p) ->
           let (Sface_except (e, s)) = sface_except (Word b) s e in
-          Pface_except (e, End (s, D.zero_plus (cod_sface s), p))
-      | Mid s ->
+          Pface_except (e, End (s, D.zero_plus (cod_sface s), g, p))
+      | Mid (s, g) ->
           let (Pface_except (e, s)) = pface_except (Word b) s e in
-          Pface_except (Except_unoccurs (e, u), Mid s))
+          Pface_except (Except_unoccurs (e, u), Mid (s, g)))
 
 (* But every except does give rise to a degeneracy that adds in the excepted directions.  *)
 
@@ -241,7 +241,7 @@ let rec deg_of_except : type e a b. b D.t -> (e, a, b) except -> (b, a) deg =
       deg_plus_dom (deg_of_except (Word b) e) (Suc (Zero, Unit))
   | Except_unoccurs (e, _) ->
       let (Word (Suc (b, Unit))) = b in
-      Suc (deg_of_except (Word b) e, Now)
+      Suc (deg_of_except (Word b) e, D.deg, Now)
 
 (* In the unary case, the degeneracy deg_of_except has a section given by choosing the unique endpoint for each omitted direction.  This is convenient when formulating algorithms for pushing filtered dimensions through environments.  We therefore generalize it to other arities by using an "optional sface", trusting that the missing endpoints will be canceled out by a degeneracy at the other end.  Consistent mode/dimension theories will ensure this.  In particular, in the non-unary case there should not be any modal 2-cells from a less-nonparametric modality to a more non-parametric one.  *)
 let sface_of_except : type e a b. b D.t -> (e, a, b) except -> (a, b) opt_sface =
@@ -250,8 +250,8 @@ let sface_of_except : type e a b. b D.t -> (e, a, b) except -> (a, b) opt_sface 
    fun endpt b ex ->
     match (ex, b) with
     | Except_zero, _ -> Zero
-    | Except_occurs (ex, _), Word (Suc (b, Unit)) -> End (go endpt (Word b) ex, endpt)
-    | Except_unoccurs (ex, _), Word (Suc (b, Unit)) -> Mid (go endpt (Word b) ex) in
+    | Except_occurs (ex, _), Word (Suc (b, Unit)) -> End (go endpt (Word b) ex, D.deg, endpt)
+    | Except_unoccurs (ex, _), Word (Suc (b, Unit)) -> Mid (go endpt (Word b) ex, D.deg) in
   match Endpoints.unary () with
   | Some e -> go (Some (e, Top)) b ex
   | None -> go None b ex
