@@ -482,7 +482,7 @@ end
 
 module Icube (S : Suc) (F : Fam3) : sig
   type ('left, 'n, 'm, 'b, 'right) gt
-  type ('left, 'n, 'b, 'right) t = ('left, 'n, D.zero, 'b, 'right) gt
+  type ('left, 'n, 'b, 'right) t = ('left, 'n, nil, 'b, 'right) gt
 
   val dim : ('left, 'n, 'b, 'right) t -> 'n D.t
 
@@ -535,7 +535,7 @@ module Icube (S : Suc) (F : Fam3) : sig
     type (_, _, _, _) gwrap_left =
       | Wrap : ('left, 'm, 'mk, 'b, 'right) gt * 'right Acc.t -> ('left, 'm, 'mk, 'b) gwrap_left
 
-    type ('left, 'm, 'b) wrap_left = ('left, 'm, D.zero, 'b) gwrap_left
+    type ('left, 'm, 'b) wrap_left = ('left, 'm, nil, 'b) gwrap_left
 
     type ('n, 'b) builder_leftM = {
       build : 'left 'm. ('m, 'n) sface -> 'left Acc.t -> ('left, 'm, 'b) fwrap_left;
@@ -577,7 +577,7 @@ module IcubeTraverse2 (S1 : Suc) (S2 : Suc) (F1 : Fam3) (F2 : Fam3) (Acc : Fam2)
     ('n, 'b, 'c) left_folder ->
     ('left1, 'left2) Acc.t ->
     ('left1, 'n, 'b, 'right1) C1.t ->
-    ('left2, 'n, D.zero, 'c, 'right1) gfolded
+    ('left2, 'n, nil, 'c, 'right1) gfolded
 end
 
 module NFamOf : sig
