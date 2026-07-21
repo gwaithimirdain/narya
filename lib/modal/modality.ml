@@ -511,18 +511,6 @@ let filter_of_plus : type x m y b d ac bd.
   let (Except_of_plus (ac, eab, ecd)) = except_of_plus bd eacbd in
   Filter_of_plus (ac, Filter (e, eab), Filter (e, ecd))
 
-type (_, _, _, _, _, _) filter_of_plus' =
-  | Filter_of_plus' :
-      ('b, 'c, 'bc) D.plus * ('bc, 'd) perm * ('x, 'm, 'y, 'a, 'b) filter_dim
-      -> ('x, 'm, 'y, 'a, 'c, 'd) filter_of_plus'
-
-let filter_of_plus' : type a c ac x m y d.
-    d D.t -> (a, c, ac) D.plus -> (x, m, y, ac, d) filter_dim -> (x, m, y, a, c, d) filter_of_plus'
-    =
- fun d ac (Filter (e, eacd)) ->
-  let (Except_of_plus' (bc, p, eab)) = except_of_plus' d ac eacd in
-  Filter_of_plus' (bc, p, Filter (e, eab))
-
 type (_, _, _, _, _) filter_sface =
   | Filter_sface :
       ('d, 'a) sface * ('x, 'm, 'y, 'd, 'c) filter_dim

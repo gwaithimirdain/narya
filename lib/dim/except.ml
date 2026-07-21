@@ -100,24 +100,6 @@ let rec except_of_plus : type e b d ac bd.
       let (Except_of_plus (ac, eab, ecd)) = except_of_plus bd eacbd in
       Except_of_plus (Suc (ac, g), eab, Except_unoccurs (ecd, u))
 
-type (_, _, _, _) except_of_plus' =
-  | Except_of_plus' :
-      ('b, 'c, 'bc) D.plus * ('bc, 'd) perm * ('e, 'a, 'b) except
-      -> ('e, 'a, 'c, 'd) except_of_plus'
-
-let rec except_of_plus' : type a c ac e d.
-    d D.t -> (a, c, ac) D.plus -> (e, ac, d) except -> (e, a, c, d) except_of_plus' =
- fun d ac e ->
-  match (e, d, ac) with
-  | _, _, Zero -> Except_of_plus' (Zero, id_perm d, e)
-  | Except_unoccurs (e, _), Word (Suc (d, Unit)), Suc (ac, _) ->
-      let (Except_of_plus' (bc, p, e)) = except_of_plus' (Word d) ac e in
-      Except_of_plus' (Suc (bc, Unit), Suc (p, Now), e)
-  | Except_occurs (e, Occurs i), Word (Suc (d, Unit)), _ ->
-      let (Except_of_plus' (bc, p, e)) = except_of_plus' (Word d) ac e in
-      ignore (i, bc, p, e);
-      Sorry.e ()
-
 (* We can transfer faces, degeneracies and permutations "downwards" along an except. *)
 
 type (_, _, _) except_sface =
