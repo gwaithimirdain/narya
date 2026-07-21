@@ -260,11 +260,10 @@ let rec ins_plus_of_pbij : type n s h r i rn.
 
 module rec Internal_Pbijmap : functor (F : Fam2) -> sig
   module Param : sig
-    type (_, _, _) t =
-      | Match :
+    type (_, _) t =
+      | Sub :
           ('evaluation, 'intrinsic, 's, 'v) Internal_Pbijmap(F).gt
-          -> ('g, 'evaluation, (('g * 'intrinsic) * 's) * 'v) t
-      | Mismatch : ('g, 'g0) D.G.apart -> ('g, 'evaluation, (('g0 * 'intrinsic) * 's) * 'v) t
+          -> ('evaluation, ('intrinsic * 's) * 'v) t
   end
 
   module Tup : module type of Tuple.Make (D.G) (Param)
@@ -274,7 +273,7 @@ module rec Internal_Pbijmap : functor (F : Fam2) -> sig
     | Suc : {
         g : 'g D.G.t;
         left : ('evaluation, 'intrinsic, ('g, 's) cons, 'v) gt;
-        right : ('evaluation, (('g * 'intrinsic) * 's) * 'v) Tup.t;
+        right : ('evaluation, 'g, ('intrinsic * 's) * 'v) Tup.t;
       }
         -> ('evaluation, ('intrinsic, 'g) D.suc, 's, 'v) gt
 
@@ -284,13 +283,12 @@ functor
   (F : Fam2)
   ->
   struct
-    (* The values stored in the tuple of subtrees are gated by the generator of the tuple position: a subtree exists only at positions whose generator matches that of the intrinsic dimension being shared there (as the Match constructor's index records), while mismatched positions store only an apartness witness, which lookups eliminate statically since their key types entail the contradictory equality.  This makes the maps marshallable, since no closures are stored. *)
+    (* The tuple of subtrees is parametrized by the generator 'g of the intrinsic dimension being shared, so that (see Tuple) it stores an actual subtree only at those positions whose generator matches, and only an apartness witness elsewhere; the latter keeps the maps marshallable and is handled entirely inside Tuple. *)
     module Param = struct
-      type (_, _, _) t =
-        | Match :
+      type (_, _) t =
+        | Sub :
             ('evaluation, 'intrinsic, 's, 'v) Internal_Pbijmap(F).gt
-            -> ('g, 'evaluation, (('g * 'intrinsic) * 's) * 'v) t
-        | Mismatch : ('g, 'g0) D.G.apart -> ('g, 'evaluation, (('g0 * 'intrinsic) * 's) * 'v) t
+            -> ('evaluation, ('intrinsic * 's) * 'v) t
     end
 
     module Tup = Tuple.Make (D.G) (Param)
@@ -303,7 +301,7 @@ functor
       | Suc : {
           g : 'g D.G.t;
           left : ('evaluation, 'intrinsic, ('g, 's) cons, 'v) gt;
-          right : ('evaluation, (('g * 'intrinsic) * 's) * 'v) Tup.t;
+          right : ('evaluation, 'g, ('intrinsic * 's) * 'v) Tup.t;
         }
           -> ('evaluation, ('intrinsic, 'g) D.suc, 's, 'v) gt
 
@@ -337,14 +335,9 @@ module Pbijmap (F : Fam2) = struct
         let Eq = D.bplus_uniq bp r12 in
         v
     | Pbij (ins, Left (_, shuf)), Suc m -> gfind (Pbij (ins, shuf)) m.left (Append_cons r12)
-    | Pbij (Suc (ins, _, i), Right (_, shuf)), Suc m -> (
-        (* The Mismatch case is statically unreachable in the current single-generator instantiation (apart is empty), but is genuine multi-generator logic, so we keep it and silence the unreachability warning. *)
-        (match Tup.find i m.right with
-        | Match m -> gfind (Pbij (ins, shuf)) m r12
-        | Mismatch ap -> (
-            match D.G.apart_irrefl ap with
-            | _ -> .))
-        [@warning "-56"])
+    | Pbij (Suc (ins, _, i), Right (_, shuf)), Suc m ->
+        let (Sub m') = Tup.find i m.right in
+        gfind (Pbij (ins, shuf)) m' r12
 
   let find : type evaluation intrinsic remaining v.
       (evaluation, intrinsic, remaining) pbij -> (evaluation, intrinsic, v) t -> (remaining, v) F.t
@@ -367,13 +360,7 @@ module Pbijmap (F : Fam2) = struct
           {
             m with
             right =
-              Tup.update i
-                ((function
-                  | Match m -> Match (gset (Pbij (ins, shuf)) v m r12)
-                  | Mismatch ap -> (
-                      match D.G.apart_irrefl ap with
-                      | _ -> .)) [@warning "-56"])
-                m.right;
+              Tup.update i (fun (Sub m') -> Sub (gset (Pbij (ins, shuf)) v m' r12)) m.right;
           }
 
   let set : type evaluation intrinsic remaining v.
@@ -417,25 +404,20 @@ module Pbijmap (F : Fam2) = struct
                       f.build (Pbij (ins, Left (g_intrinsic, shuf))) r12');
                 };
             right =
-              (let build : type b h.
-                   h D.G.t -> (b, h, evaluation) Tbwd.insert -> (h, b, ((g0t * i1) * s) * v) Param.t
-                   =
-                fun h i ->
-                 (match D.G.decide h g_intrinsic with
-                 | Same ->
-                     Match
-                       (gbuild (D.uninsert i evaluation) (Word intrinsic)
-                          {
-                            f with
-                            build =
-                              (fun (Pbij (ins, shuf)) r12 ->
-                                f.build
-                                  (Pbij (Suc (ins, g_intrinsic, i), Right (g_intrinsic, shuf)))
-                                  r12);
-                          })
-                 | Distinct ap -> Mismatch ap)
-                 [@warning "-56"] in
-               Tup.build evaluation { build });
+              (let build : type b.
+                   (b, g0t, evaluation) Tbwd.insert -> (b, (i1 * s) * v) Param.t =
+                fun i ->
+                 Sub
+                   (gbuild (D.uninsert i evaluation) (Word intrinsic)
+                      {
+                        f with
+                        build =
+                          (fun (Pbij (ins, shuf)) r12 ->
+                            f.build
+                              (Pbij (Suc (ins, g_intrinsic, i), Right (g_intrinsic, shuf)))
+                              r12);
+                      }) in
+               Tup.build evaluation g_intrinsic { build });
           }
 
   type ('evaluation, 'intrinsic, 'v) builder = {
@@ -493,8 +475,8 @@ module Pbijmap (F : Fam2) = struct
     let rec suc : type e i s g vs irvs.
         g D.G.t ->
         (e, i, (g, s) cons, vs) hgt ->
-        ((g * i) * s, vs, irvs) MapTimes.t ->
-        (e, nil, irvs) Tup.Heter.hgt ->
+        (i * s, vs, irvs) MapTimes.t ->
+        (e, nil, g, irvs) Tup.Heter.hgt ->
         (e, (i, g) D.suc, s, vs) hgt =
      fun g ls irvs rs ->
       match (ls, irvs, rs) with
@@ -517,38 +499,26 @@ module Pbijmap (F : Fam2) = struct
 
     let rec right : type e i r g vs irvs.
         (e, (i, g) D.suc, r, vs) hgt ->
-        ((g * i) * r, vs, irvs) MapTimes.t ->
-        (e, nil, irvs) Tup.Heter.hgt =
+        (i * r, vs, irvs) MapTimes.t ->
+        (e, nil, g, irvs) Tup.Heter.hgt =
      fun ms irvs ->
       match (ms, irvs) with
       | [], [] -> []
       | Suc { right = r; _ } :: ms, Times :: irvs -> r :: right ms irvs
 
-    let rec wrap : type e i r g vs irvs.
-        (e, i, r, vs) hgt -> ((g * i) * r, vs, irvs) MapTimes.t -> (g, e, irvs) Tup.Heter.hft =
+    let rec wrap : type e i r vs irvs.
+        (e, i, r, vs) hgt -> (i * r, vs, irvs) MapTimes.t -> (e, irvs) Tup.Heter.hft =
      fun ms irvs ->
       match (ms, irvs) with
       | [], [] -> []
-      | m :: ms, Times :: irvs -> Match m :: wrap ms irvs
+      | m :: ms, Times :: irvs -> Sub m :: wrap ms irvs
 
-    let rec unwrap : type e i r g vs irvs.
-        (g, e, irvs) Tup.Heter.hft -> ((g * i) * r, vs, irvs) MapTimes.t -> (e, i, r, vs) hgt =
+    let rec unwrap : type e i r vs irvs.
+        (e, irvs) Tup.Heter.hft -> (i * r, vs, irvs) MapTimes.t -> (e, i, r, vs) hgt =
      fun ms irvs ->
-      (match (ms, irvs) with
+      match (ms, irvs) with
       | [], [] -> []
-      | Match m :: ms, Times :: irvs -> m :: unwrap ms irvs
-      | Mismatch ap :: _, Times :: _ -> (
-          match D.G.apart_irrefl ap with
-          | _ -> .))
-      [@warning "-56"]
-
-    (* For tuple positions whose generator is apart from the map's intrinsic generator, the values just record the apartness witness. *)
-    let rec mismatched : type e g g0 i r vs irvs.
-        (g, g0) D.G.apart -> ((g0 * i) * r, vs, irvs) MapTimes.t -> (g, e, irvs) Tup.Heter.hft =
-     fun ap irvs ->
-      match irvs with
-      | [] -> []
-      | Times :: irvs -> Mismatch ap :: mismatched ap irvs
+      | Sub m :: ms, Times :: irvs -> m :: unwrap ms irvs
 
     let rec params : type e i r vs. (e, i, r, vs) hgt -> vs Tlist.t = function
       | [] -> Nil
@@ -615,32 +585,24 @@ module Pbijmap (F : Fam2) = struct
      fun evaluation g_outer f ms ws ->
       let module T = Tup.Applicatic (M) in
       let (Exists_cons irvs) = MapTimes.exists_cons (Heter.params ms) in
-      let irvs : ((g0t * i1) * s, (v, vs) cons, _) MapTimes.t = irvs in
+      let irvs : (i1 * s, (v, vs) cons, _) MapTimes.t = irvs in
       let (Exists irws) = MapTimes.exists ws in
-      let irws : ((g0t * i1) * s, ws, _) MapTimes.t = irws in
-      let map : type a g.
-          g D.G.t ->
-          (a, g, evaluation) Tbwd.insert ->
-          (g, a, _) Tup.Heter.hft ->
-          (g, a, _) Tup.Heter.hft M.t =
-       fun g i x ->
-        (match D.G.decide g g_outer with
-        | Same ->
-            (* The equation g = g0t lets us view this position's data at the map's generator. *)
-            let x : (g0t, a, _) Tup.Heter.hft = x in
-            let i : (a, g0t, evaluation) Tbwd.insert = i in
-            M.apply
-              (gpmapM (D.uninsert i evaluation)
-                 {
-                   f with
-                   map =
-                     (fun (Pbij (ins, shuf)) r12 v ->
-                       f.map (Pbij (Suc (ins, g_outer, i), Right (g_outer, shuf))) r12 v);
-                 }
-                 (Heter.unwrap x irvs) ws)
-            @@ fun res -> Heter.wrap res irws
-        | Distinct ap -> return (Heter.mismatched ap irws))
-        [@warning "-56"] in
+      let irws : (i1 * s, ws, _) MapTimes.t = irws in
+      let map : type a.
+          (a, g0t, evaluation) Tbwd.insert ->
+          (a, _) Tup.Heter.hft ->
+          (a, _) Tup.Heter.hft M.t =
+       fun i x ->
+        M.apply
+          (gpmapM (D.uninsert i evaluation)
+             {
+               f with
+               map =
+                 (fun (Pbij (ins, shuf)) r12 v ->
+                   f.map (Pbij (Suc (ins, g_outer, i), Right (g_outer, shuf))) r12 v);
+             }
+             (Heter.unwrap x irvs) ws)
+        @@ fun res -> Heter.wrap res irws in
       M.apply
         (M.zip
            (fun () ->

@@ -249,11 +249,10 @@ let rec all_ins_of : type ab. ab D.t -> ab ins_of Seq.t =
 
 module rec Internal_Insmap : functor (F : Fam) -> sig
   module Param : sig
-    type (_, _, _) t =
-      | Match :
+    type (_, _) t =
+      | Sub :
           ('evaluation, 'intrinsic, 'v) Internal_Insmap(F).t
-          -> ('g, 'evaluation, ('g * 'intrinsic) * 'v) t
-      | Mismatch : ('g, 'g0) D.G.apart -> ('g, 'evaluation, ('g0 * 'intrinsic) * 'v) t
+          -> ('evaluation, 'intrinsic * 'v) t
   end
 
   module Tup : module type of Tuple.Make (D.G) (Param)
@@ -261,20 +260,19 @@ module rec Internal_Insmap : functor (F : Fam) -> sig
   type (_, _, _) t =
     | Zero : 'v F.t -> ('evaluation, D.zero, 'v) t
     | Suc :
-        'g D.G.t * ('evaluation, ('g * 'intrinsic) * 'v) Tup.t
+        'g D.G.t * ('evaluation, 'g, 'intrinsic * 'v) Tup.t
         -> ('evaluation, ('intrinsic, 'g) D.suc, 'v) t
 end =
 functor
   (F : Fam)
   ->
   struct
-    (* The values stored in the tuple of subtrees are gated by the generator of the tuple position: a subtree exists only at positions whose generator matches that of the intrinsic dimension being shared there (as the Match constructor's index records), while mismatched positions store only an apartness witness, which lookups eliminate statically since their key types entail the contradictory equality.  This makes the maps marshallable, since no closures are stored. *)
+    (* The tuple of subtrees is parametrized by the generator 'g of the intrinsic dimension being shared, so that (see Tuple) it stores an actual subtree only at those positions whose generator matches, and only an apartness witness elsewhere; the latter keeps the maps marshallable and is handled entirely inside Tuple. *)
     module Param = struct
-      type (_, _, _) t =
-        | Match :
+      type (_, _) t =
+        | Sub :
             ('evaluation, 'intrinsic, 'v) Internal_Insmap(F).t
-            -> ('g, 'evaluation, ('g * 'intrinsic) * 'v) t
-        | Mismatch : ('g, 'g0) D.G.apart -> ('g, 'evaluation, ('g0 * 'intrinsic) * 'v) t
+            -> ('evaluation, 'intrinsic * 'v) t
     end
 
     module Tup = Tuple.Make (D.G) (Param)
@@ -283,7 +281,7 @@ functor
     type (_, _, _) t =
       | Zero : 'v F.t -> ('evaluation, D.zero, 'v) t
       | Suc :
-          'g D.G.t * ('evaluation, ('g * 'intrinsic) * 'v) Tup.t
+          'g D.G.t * ('evaluation, 'g, 'intrinsic * 'v) Tup.t
           -> ('evaluation, ('intrinsic, 'g) D.suc, 'v) t
   end
 
@@ -297,14 +295,9 @@ module Insmap (F : Fam) = struct
    fun p m ->
     match (p, m) with
     | Zero _, Zero v -> v
-    | Suc (ins, _, i), Suc (_, m) -> (
-        (* The Mismatch case is statically unreachable in the current single-generator instantiation (apart is empty), but is genuine multi-generator logic, so we keep it and silence the unreachability warning. *)
-        (match Tup.find i m with
-        | Match m -> find ins m
-        | Mismatch ap -> (
-            match D.G.apart_irrefl ap with
-            | _ -> .))
-        [@warning "-56"])
+    | Suc (ins, _, i), Suc (_, m) ->
+        let (Sub m') = Tup.find i m in
+        find ins m'
 
   let rec set : type evaluation intrinsic shared v.
       (evaluation, shared, intrinsic) insertion ->
@@ -315,15 +308,7 @@ module Insmap (F : Fam) = struct
     match (p, m) with
     | Zero _, Zero _ -> Zero v
     | Suc (ins, _, i), Suc (g0, m) ->
-        Suc
-          ( g0,
-            Tup.update i
-              ((function
-                | Match m -> Match (set ins v m)
-                | Mismatch ap -> (
-                    match D.G.apart_irrefl ap with
-                    | _ -> .)) [@warning "-56"])
-              m )
+        Suc (g0, Tup.update i (fun (Sub m') -> Sub (set ins v m')) m)
 
   let find_singleton : type evaluation intrinsic v. (evaluation, intrinsic, v) t -> v F.t option =
     function
@@ -344,17 +329,12 @@ module Insmap (F : Fam) = struct
     match iplus with
     | Zero -> Zero (f.build (ins_zero evaluation))
     | Suc (type i1 g0t) ((intrinsic, g0) : (_, i1, _) D.plus * g0t D.G.t) ->
-        let f : type b h.
-            h D.G.t -> (b, h, evaluation) Tbwd.insert -> (h, b, (g0t * i1) * v) Param.t =
-         fun h i ->
-          (match D.G.decide h g0 with
-          | Same ->
-              Match
-                (build (D.uninsert i evaluation) (Word intrinsic)
-                   { build = (fun ins -> f.build (Suc (ins, g0, i))) })
-          | Distinct ap -> Mismatch ap)
-          [@warning "-56"] in
-        Suc (g0, Tup.build evaluation { build = f })
+        let f : type b. (b, g0t, evaluation) Tbwd.insert -> (b, i1 * v) Param.t =
+         fun i ->
+          Sub
+            (build (D.uninsert i evaluation) (Word intrinsic)
+               { build = (fun ins -> f.build (Suc (ins, g0, i))) }) in
+        Suc (g0, Tup.build evaluation g0 { build = f })
 
   let singleton : type evaluation v. v F.t -> (evaluation, D.zero, v) t = fun v -> Zero v
 
@@ -382,8 +362,8 @@ module Insmap (F : Fam) = struct
 
     let rec suc : type e i g vs irvs.
         g D.G.t ->
-        (g * i, vs, irvs) MapTimes.t ->
-        (e, nil, irvs) Tup.Heter.hgt ->
+        (i, vs, irvs) MapTimes.t ->
+        (e, nil, g, irvs) Tup.Heter.hgt ->
         (e, (i, g) D.suc, vs) ht =
      fun g irvs rs ->
       match (irvs, rs) with
@@ -395,37 +375,25 @@ module Insmap (F : Fam) = struct
       | Zero v :: ms -> v :: zeros ms
 
     let rec right : type e i g vs irvs.
-        (e, (i, g) D.suc, vs) ht -> (g * i, vs, irvs) MapTimes.t -> (e, nil, irvs) Tup.Heter.hgt =
+        (e, (i, g) D.suc, vs) ht -> (i, vs, irvs) MapTimes.t -> (e, nil, g, irvs) Tup.Heter.hgt =
      fun ms irvs ->
       match (ms, irvs) with
       | [], [] -> []
       | Suc (_, r) :: ms, Times :: irvs -> r :: right ms irvs
 
-    let rec wrap : type e i g vs irvs.
-        (e, i, vs) ht -> (g * i, vs, irvs) MapTimes.t -> (g, e, irvs) Tup.Heter.hft =
+    let rec wrap : type e i vs irvs.
+        (e, i, vs) ht -> (i, vs, irvs) MapTimes.t -> (e, irvs) Tup.Heter.hft =
      fun ms irvs ->
       match (ms, irvs) with
       | [], [] -> []
-      | m :: ms, Times :: irvs -> Match m :: wrap ms irvs
+      | m :: ms, Times :: irvs -> Sub m :: wrap ms irvs
 
-    let rec unwrap : type e i g vs irvs.
-        (g, e, irvs) Tup.Heter.hft -> (g * i, vs, irvs) MapTimes.t -> (e, i, vs) ht =
+    let rec unwrap : type e i vs irvs.
+        (e, irvs) Tup.Heter.hft -> (i, vs, irvs) MapTimes.t -> (e, i, vs) ht =
      fun ms irvs ->
-      (match (ms, irvs) with
+      match (ms, irvs) with
       | [], [] -> []
-      | Match m :: ms, Times :: irvs -> m :: unwrap ms irvs
-      | Mismatch ap :: _, Times :: _ -> (
-          match D.G.apart_irrefl ap with
-          | _ -> .))
-      [@warning "-56"]
-
-    (* For tuple positions whose generator is apart from the map's intrinsic generator, the values just record the apartness witness. *)
-    let rec mismatched : type e g g0 i vs irvs.
-        (g, g0) D.G.apart -> (g0 * i, vs, irvs) MapTimes.t -> (g, e, irvs) Tup.Heter.hft =
-     fun ap irvs ->
-      match irvs with
-      | [] -> []
-      | Times :: irvs -> Mismatch ap :: mismatched ap irvs
+      | Sub m :: ms, Times :: irvs -> m :: unwrap ms irvs
 
     let rec params : type e i vs. (e, i, vs) ht -> vs Tlist.t = function
       | [] -> Nil
@@ -469,27 +437,19 @@ module Insmap (F : Fam) = struct
      fun evaluation g0 f ms ws ->
       let module T = Tup.Applicatic (M) in
       let (Exists_cons irvs) = MapTimes.exists_cons (Heter.params ms) in
-      let irvs : (g0t * i1, (v, vs) cons, _) MapTimes.t = irvs in
+      let irvs : (i1, (v, vs) cons, _) MapTimes.t = irvs in
       let (Exists irws) = MapTimes.exists ws in
-      let irws : (g0t * i1, ws, _) MapTimes.t = irws in
-      let map : type a g.
-          g D.G.t ->
-          (a, g, evaluation) Tbwd.insert ->
-          (g, a, _) Tup.Heter.hft ->
-          (g, a, _) Tup.Heter.hft M.t =
-       fun g i x ->
-        (match D.G.decide g g0 with
-        | Same ->
-            (* The equation g = g0t lets us view this position's data at the map's generator. *)
-            let x : (g0t, a, _) Tup.Heter.hft = x in
-            let i : (a, g0t, evaluation) Tbwd.insert = i in
-            M.apply
-              (pmapM (D.uninsert i evaluation)
-                 { map = (fun ins v -> f.map (Suc (ins, g0, i)) v) }
-                 (Heter.unwrap x irvs) ws)
-            @@ fun res -> Heter.wrap res irws
-        | Distinct ap -> return (Heter.mismatched ap irws))
-        [@warning "-56"] in
+      let irws : (i1, ws, _) MapTimes.t = irws in
+      let map : type a.
+          (a, g0t, evaluation) Tbwd.insert ->
+          (a, _) Tup.Heter.hft ->
+          (a, _) Tup.Heter.hft M.t =
+       fun i x ->
+        M.apply
+          (pmapM (D.uninsert i evaluation)
+             { map = (fun ins v -> f.map (Suc (ins, g0, i)) v) }
+             (Heter.unwrap x irvs) ws)
+        @@ fun res -> Heter.wrap res irws in
       M.apply (T.pmapM { map } (Heter.right ms irvs) (MapTimes.cod irws)) @@ fun rights ->
       Heter.suc g0 irws rights
 
