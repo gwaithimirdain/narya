@@ -124,13 +124,7 @@
    ￮ constant sst.Fib defined
   
    ￫ info[I0000]
-   ￮ constant disp defined
-  
-   ￫ info[I0000]
-   ￮ constant disp′ defined
-  
-   ￫ info[I0000]
-   ￮ constant d defined
+   ￮ constant sst.Fib′ defined
   
    ￫ info[I0000]
    ￮ constant sst.pt defined
