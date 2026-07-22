@@ -14,7 +14,8 @@ type 'mode definition_args = {
 
 type definition = Definition : 'mode definition_args -> definition
 
-val find : Constant.t -> definition
+val register_invalidator : (unit -> unit) -> unit
+val find_const : Constant.t -> definition
 val find_meta : ('mode, 'a, 'b, 's) Meta.t -> ('mode, 'a, 'b, 's) Metadef.t
 
 type find_hole =

@@ -200,23 +200,16 @@ let make_user : prenotation -> notation =
           { value; loc });
       pattern =
         (fun obs loc ->
-          let open Mlist.Monadic (Monad.State (struct
-            type t = Matchpattern.t StringMap.t
-          end))
-          in
-          let (), args =
-            miterM
-              (fun [ k; (Wrap x : wrapped_parse) ] acc ->
-                ((), acc |> StringMap.add k (!global_processor.pattern x)))
-              [
-                pat_vars;
-                List.filter_map
-                  (function
-                    | Term x -> Some (Wrap x : wrapped_parse)
-                    | _ -> None)
-                  obs;
-              ]
-              StringMap.empty in
+          let args =
+            Mlist.fold_left2
+              (fun (acc : Matchpattern.t StringMap.t) k (Wrap x : wrapped_parse) ->
+                acc |> StringMap.add k (!global_processor.pattern x))
+              StringMap.empty pat_vars
+              (List.filter_map
+                 (function
+                   | Term x -> Some (Wrap x : wrapped_parse)
+                   | _ -> None)
+                 obs) in
           match key with
           | `Constr (c, _) ->
               let (Wrap args) = Vec.of_list_map (fun k -> StringMap.find k args) val_vars in

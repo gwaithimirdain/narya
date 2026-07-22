@@ -66,7 +66,7 @@ let check_term (def : defined_const) (discrete : unit Constant.Map.t option) : c
       let tm =
         Ctx.lam ctx
           (check ?discrete
-             (Potential (Constant (const, D.zero), Ctx.apps ctx, Ctx.lam ctx))
+             (Potential (Constant (const, Ctx.mode ctx, D.zero), Ctx.apps ctx, Ctx.lam ctx))
              ctx (Lazy.force tm) ety) in
       Global.set const mode ~parametric:`Maybe_parametric tm;
       Checked (const, mode, tm)
@@ -80,7 +80,8 @@ let check_term (def : defined_const) (discrete : unit Constant.Map.t option) : c
             | None -> fatal (Non_mode_synthesizing "synthesizing def")) in
       let Checked_tel (cparams, ctx), _ = check_tel (Ctx.empty mode) params in
       let ctm, ety =
-        synth (Potential (Constant (const, D.zero), Ctx.apps ctx, Ctx.lam ctx)) ctx tm in
+        synth (Potential (Constant (const, Ctx.mode ctx, D.zero), Ctx.apps ctx, Ctx.lam ctx)) ctx tm
+      in
       let cty = readback_val ctx ety in
       let ty = Telescope.pis cparams cty in
       let tm = Ctx.lam ctx ctm in
@@ -93,24 +94,22 @@ let check_terms (defs : defined_const list) (discrete : unit Constant.Map.t opti
   let rec go defs defineds =
     match defs with
     | [] ->
-        let open Mbwd.Monadic (Monad.State (struct
-          type t = bool
-        end))
-        in
-        let discrete_defineds, disc =
-          mmapM
-            (fun [ Checked (c, mode, def) ] disc ->
+        let disc = ref true in
+        let discrete_defineds =
+          Mbwd.map
+            (fun (Checked (c, mode, def)) ->
               let discrete_def, disc_def = Discrete.discrete_def def in
-              (Checked (c, mode, discrete_def), disc && disc_def))
-            [ defineds ] true in
+              disc := !disc && disc_def;
+              Checked (c, mode, discrete_def))
+            defineds in
         let p = Global.get_parametric () in
         let parametric = (p :> [ `Parametric | `Nonparametric | `Maybe_parametric ]) in
         ( Bwd_extra.to_list_map
             (fun (Checked (c, mode, def)) ->
               Global.set c mode ~parametric def;
               PConstant c)
-            (if disc then discrete_defineds else defineds),
-          disc,
+            (if !disc then discrete_defineds else defineds),
+          !disc,
           p = `Parametric )
     | d :: defs -> go defs (Snoc (defineds, check_term d discrete)) in
   go defs Emp

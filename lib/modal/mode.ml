@@ -1,5 +1,6 @@
 open Util
 open Signatures
+open Dim
 
 (* We want the caller to be able to add new types to the type family Mode.t dynamically, as it reads the user's mode theory.  We could use a generative functor to create those types and an extensible variant to add them to Mode.t, but extensible variants don't play well with Marshall.  Therefore, instead we just use unit all the time, with integers to distinguish modes, and pretend the types are different behind an abstraction barrier. *)
 
@@ -62,6 +63,7 @@ module MapCheck : MAP_MAKER with module Key = Mode = Map
 
 module Data = struct
   let names : string Dynarray.t = Dynarray.create ()
+  let nonparametric : D.wrapped Dynarray.t = Dynarray.create ()
   let all : (string * wrapped) list ref = ref []
   let unique : wrapped option ref = ref None
 end
@@ -69,9 +71,24 @@ end
 let all () = !Data.all
 let unique () = !Data.unique
 let name : type m. m t -> string = fun (PK i) -> Dynarray.get Data.names i
+let nonparametric : type m. m t -> D.wrapped = fun (PK i) -> Dynarray.get Data.nonparametric i
+
+let allows_deg : type m n a. a t -> (m, n) deg -> bool =
+ fun mode s ->
+  let (Wrap d) = degenerated_dims s in
+  let (Wrap np) = nonparametric mode in
+  let (Except ex) = except_dirs np d in
+  match D.compare (excepted ex d) d with
+  | Eq -> true
+  | Neq -> false
 
 module type Generator = sig
-  val name : string
+  val name : string ref
+
+  (* Which directions this mode forbids parametricity in *)
+  type nonparametric
+
+  val nonparametric : nonparametric D.t
 end
 
 module type Generated = sig
@@ -88,13 +105,8 @@ module Generate (G : Generator) = struct
   let mode : t Mode.t = PK (Dynarray.length Data.names)
 
   let () =
-    Dynarray.add_last Data.names G.name;
-    Data.all := (G.name, Wrap mode) :: !Data.all;
+    Dynarray.add_last Data.names !G.name;
+    Dynarray.add_last Data.nonparametric (Wrap G.nonparametric);
+    Data.all := (!G.name, Wrap mode) :: !Data.all;
     Data.unique := if Dynarray.length Data.names = 1 then Some (Wrap mode) else None
 end
-
-let generate str =
-  let module M = Generate (struct
-    let name = str
-  end) in
-  Wrap M.mode

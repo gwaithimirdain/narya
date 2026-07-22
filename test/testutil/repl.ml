@@ -59,8 +59,9 @@ let def (name : string) (ty : string) (tm : string) : unit =
       Global.add const
         (Definition { mode = test_mode; tm = `Axiom; parametric = `Parametric; ty = cty });
       let tree =
-        check (Potential (Constant (const, D.zero), Emp, fun x -> x)) (Ctx.empty test_mode) rtm ety
-      in
+        check
+          (Potential (Constant (const, test_mode, D.zero), Emp, fun x -> x))
+          (Ctx.empty test_mode) rtm ety in
       Global.add const
         (Definition { mode = test_mode; tm = `Defined tree; parametric = `Parametric; ty = cty })
   | _ -> fatal (Invalid_constant_name ([ name ], None))
@@ -124,8 +125,9 @@ let unparse_def (name : string) (ty : string) (tm : string) : string =
       Global.add const
         (Definition { mode = test_mode; tm = `Axiom; parametric = `Parametric; ty = cty });
       let tree =
-        check (Potential (Constant (const, D.zero), Emp, fun x -> x)) (Ctx.empty test_mode) rtm ety
-      in
+        check
+          (Potential (Constant (const, test_mode, D.zero), Emp, fun x -> x))
+          (Ctx.empty test_mode) rtm ety in
       Global.add const
         (Definition { mode = test_mode; tm = `Defined tree; parametric = `Parametric; ty = cty });
       Readback.Displaying.run ~env:true @@ fun () ->
@@ -143,7 +145,7 @@ let run f =
   Readback.Displaying.run ~env:false @@ fun () ->
   Discrete.run ~env:false @@ fun () ->
   Positivity.run @@ fun () ->
-  Dim.Endpoints.run ~arity:2 ~refl_char:'e' ~refl_names:[ "refl"; "Id" ] ~internal:true @@ fun () ->
+  Dim.Endpoints.set ~arity:2 ~refl_char:'e' ~refl_names:[ "refl"; "Id" ] ~internal:true ~hott:false;
   Reporter.run
     ~emit:(fun d -> Reporter.display d)
     ~fatal:(fun d ->

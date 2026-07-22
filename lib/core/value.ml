@@ -32,19 +32,22 @@ module rec Value : sig
   module Structfield : sig
     type (_, _) t =
       | Lower :
-          ('mode, 's) Value.lazy_eval * [ `Labeled | `Unlabeled ]
+          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          * ('gmode, 's) Value.lazy_eval
+          * [ `Labeled | `Unlabeled ]
           -> (D.zero, 'mode * 'n * 's * 'et) t
       | Higher :
-          ('mode, 'm, 'n, 'mn, 'p, 'i, 'a) higher_data Lazy.t
+          ('mode, 'f, 'g, 'gmode, 'm, 'n, 'mn, 'p, 'i, 'ag) higher_data Lazy.t
           -> ('i, 'mode * 'p * potential * no_eta) t
 
-    and ('mode, 'm, 'n, 'mn, 'p, 'i, 'a) higher_data = {
-      vals : ('p, 'i, ('mode, potential) Value.lazy_eval option) InsmapOf.t;
+    and ('mode, 'f, 'g, 'gmode, 'm, 'n, 'mn, 'p, 'i, 'ag) higher_data = {
+      adj : ('mode, 'f, 'g, 'gmode) Modalcell.adjunction;
+      vals : ('p, 'i, ('gmode, potential) Value.lazy_eval option) InsmapOf.t;
       intrinsic : 'i D.t;
       plusdim : ('m, 'n, 'mn) D.plus;
-      env : ('mode, 'm, 'a) Value.env;
+      env : ('gmode, 'm, 'ag) Value.env;
       deg : ('p, 'mn) deg;
-      terms : ('n, 'i, 'mode * 'a) PlusPbijmap.t;
+      terms : ('n, 'i, 'gmode * 'ag) PlusPbijmap.t;
     }
   end
 
@@ -80,20 +83,24 @@ module rec Value : sig
     cods : ('m, 'mode * 'modality * 'dom) BindCube.t;
   }
 
-  and (_, _) apps =
-    | Emp : ('mode, noninst) apps
+  and (_, _, _) apps =
+    | Emp : ('mode, 'mode, noninst) apps
     | Arg :
-        ('mode, 'any) apps
+        ('hmode, 'mode, 'any) apps
         * ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
         * ('n, 'dom normal) CubeOf.t
         * ('mk, 'm, 'k) insertion
-        -> ('mode, noninst) apps
+        -> ('hmode, 'mode, noninst) apps
     | Field :
-        ('mode, 'any) apps * 'i Field.t * ('t, 'i, 'n) D.plus * ('tk, 't, 'k) insertion
-        -> ('mode, noninst) apps
+        ('hmode, 'src, 'any) apps
+        * ('src, 'f, 'mode, 'ft, 't) Modality.filter_dim
+        * 'i Field.t
+        * ('t, 'i, 'n) D.plus
+        * ('tk, 't, 'k) insertion
+        -> ('hmode, 'mode, noninst) apps
     | Inst :
-        ('mode, noninst) apps * 'k D.pos * ('n, 'k, 'nk, 'mode normal) TubeOf.t
-        -> ('mode, inst) apps
+        ('hmode, 'mode, noninst) apps * 'k D.pos * ('n, 'k, 'nk, 'mode normal) TubeOf.t
+        -> ('hmode, 'mode, inst) apps
 
   and (_, _, _, _, _) binder =
     | Bind : {
@@ -107,8 +114,8 @@ module rec Value : sig
 
   and (_, _) value =
     | Neu : {
-        head : 'mode head;
-        args : ('mode, 'any) apps;
+        head : 'hmode head;
+        args : ('hmode, 'mode, 'any) apps;
         value : ('mode, potential) lazy_eval;
         ty : ('mode, kinetic) value Lazy.t;
       }
@@ -210,17 +217,17 @@ module rec Value : sig
 
   and ('mode, 's) lazy_state =
     | Deferred_eval :
-        ('mode, 'm, 'b) env
-        * ('mode, 'b, 's) term
+        ('hmode, 'm, 'b) env
+        * ('hmode, 'b, 's) term
         * ('mn, 'm, 'n) insertion
-        * ('mode, 'mu, 'nu, 'cod) Modalcell.t option
-        * ('mode, 'any) apps
+        * ('hmode, 'mu, 'nu, 'cod) Modalcell.t
+        * ('hmode, 'mode, 'any) apps
         -> ('mode, 's) lazy_state
     | Deferred :
-        (unit -> ('mode, 's) evaluation)
+        (unit -> ('hmode, 's) evaluation)
         * ('m, 'n) deg
-        * ('mode, 'mu, 'nu, 'cod) Modalcell.t option
-        * ('mode, 'any) apps
+        * ('hmode, 'mu, 'nu, 'cod) Modalcell.t
+        * ('hmode, 'mode, 'any) apps
         -> ('mode, 's) lazy_state
     | Ready : ('mode, 's) evaluation -> ('mode, 's) lazy_state
 
@@ -238,22 +245,25 @@ end = struct
 
   module Structfield = struct
     type (_, _) t =
-      (* We remember which fields are labeled, for readback purposes, and we store the value of each field lazily, so that corecursive definitions don't try to compute an entire infinite structure.  And since in the non-kinetic case, evaluation can produce more data than just a term (e.g. whether a case tree has yet reached a leaf), what we store lazily is the result of evaluation. *)
+      (* We remember which fields are labeled, for readback purposes, and we store the value of each field lazily, so that corecursive definitions don't try to compute an entire infinite structure.  And since in the non-kinetic case, evaluation can produce more data than just a term (e.g. whether a case tree has yet reached a leaf), what we store lazily is the result of evaluation.  A lower struct field also stores the adjunction of the field: the value lives at the source mode of the right adjoint (behind a lock by the right adjoint, but values don't track their contexts).  Ordinary fields use the identity adjunction. *)
       | Lower :
-          ('mode, 's) Value.lazy_eval * [ `Labeled | `Unlabeled ]
+          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          * ('gmode, 's) Value.lazy_eval
+          * [ `Labeled | `Unlabeled ]
           -> (D.zero, 'mode * 'n * 's * 'et) t
       (* In the higher case, they are always labeled.  There are multiple values are indexed by insertions, regarded as partial bijections with zero remaining dimensions; the 'evaluation dimension is the substitution dimension 'n and the 'intrinsic dimension is associated to the field.  We also store the original terms as a closure, since they may be needed to evaluate fields of degeneracies. *)
       | Higher :
-          ('mode, 'm, 'n, 'mn, 'p, 'i, 'a) higher_data Lazy.t
+          ('mode, 'f, 'g, 'gmode, 'm, 'n, 'mn, 'p, 'i, 'ag) higher_data Lazy.t
           -> ('i, 'mode * 'p * potential * no_eta) t
 
-    and ('mode, 'm, 'n, 'mn, 'p, 'i, 'a) higher_data = {
-      vals : ('p, 'i, ('mode, potential) Value.lazy_eval option) InsmapOf.t;
+    and ('mode, 'f, 'g, 'gmode, 'm, 'n, 'mn, 'p, 'i, 'ag) higher_data = {
+      adj : ('mode, 'f, 'g, 'gmode) Modalcell.adjunction;
+      vals : ('p, 'i, ('gmode, potential) Value.lazy_eval option) InsmapOf.t;
       intrinsic : 'i D.t;
       plusdim : ('m, 'n, 'mn) D.plus;
-      env : ('mode, 'm, 'a) Value.env;
+      env : ('gmode, 'm, 'ag) Value.env;
       deg : ('p, 'mn) deg;
-      terms : ('n, 'i, 'mode * 'a) PlusPbijmap.t;
+      terms : ('n, 'i, 'gmode * 'ag) PlusPbijmap.t;
     }
   end
 
@@ -296,23 +306,28 @@ end = struct
   }
 
   (* An application contains the data of an n-dimensional argument and its boundary, together with a neutral insertion applied outside that can't be pushed in.  This represents the *argument list* of a single application, not the function.  Thus, an application spine will be a head together with a list of apps.  Each application could be along a different modality. *)
-  and (_, _) apps =
-    | Emp : ('mode, noninst) apps
+  and (_, _, _) apps =
+    (* An apps has *two* mode parameters: the first is the mode at the head end of the spine, and the second is the mode of the whole spine.  These differ exactly when the spine crosses a modal field projection, whose left adjoint modality is stored in the Field entry. *)
+    | Emp : ('mode, 'mode, noninst) apps
     (* m is the dimension of the function being applied, n is the dimension of the arguments *)
     | Arg :
-        ('mode, 'any) apps
+        ('hmode, 'mode, 'any) apps
         * ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
         * ('n, 'dom normal) CubeOf.t
         * ('mk, 'm, 'k) insertion
-        -> ('mode, noninst) apps
-    (* For a higher field with ('n, 't, 'i) insertion, the actual evaluation dimension is 'n, but the result dimension is only 't.  So the dimension of the arg is 't, since that's the output dimension that a degeneracy acting on could be pushed through.  However, since a degeneracy of dimension up to 'n can act on the inside, we can push in the whole insertion and store only a plus outside. *)
+        -> ('hmode, 'mode, noninst) apps
+    (* For a higher field with ('n, 't, 'i) insertion, the actual evaluation dimension is 'n, but the result dimension is only 't.  So the dimension of the arg is 't, since that's the output dimension that a degeneracy acting on could be pushed through.  However, since a degeneracy of dimension up to 'n can act on the inside, we can push in the whole insertion and store only a plus outside.  The stored filter_dim is by the left adjoint of the field's adjunction: the spine inside lives at its source mode (behind a lock by it), and at the *filtered* dimension 'ft of the (outer) result dimension 't.  These differ when the field's modality is nonparametric and a degeneracy has acted, filtering some directions of 't away from the projected term; a fresh projection always has a trivial filter with 'ft = 't. *)
     | Field :
-        ('mode, 'any) apps * 'i Field.t * ('t, 'i, 'n) D.plus * ('tk, 't, 'k) insertion
-        -> ('mode, noninst) apps
+        ('hmode, 'src, 'any) apps
+        * ('src, 'f, 'mode, 'ft, 't) Modality.filter_dim
+        * 'i Field.t
+        * ('t, 'i, 'n) D.plus
+        * ('tk, 't, 'k) insertion
+        -> ('hmode, 'mode, noninst) apps
     (* An (m+n)-dimensional type is "instantiated" by applying it a "boundary tube" to get an m-dimensional type.  This operation is supposed to be functorial in dimensions, so it should not be applied more than once in a row.  So the dummy parameter of 'apps' tracks whether the last application was an instantiation, and here we verify that it wasn't before instantiating.  We also allow only nontrivial instantiations, to avoid cluttering up application spines with lots of empty instantiations and simplify equality-checking. *)
     | Inst :
-        ('mode, noninst) apps * 'k D.pos * ('n, 'k, 'nk, 'mode normal) TubeOf.t
-        -> ('mode, inst) apps
+        ('hmode, 'mode, noninst) apps * 'k D.pos * ('n, 'k, 'nk, 'mode normal) TubeOf.t
+        -> ('hmode, 'mode, inst) apps
 
   (* Lambdas and Pis both bind a variable, along with its dependencies.  These are recorded as defunctionalized closures.  Since they are produced by higher-dimensional substitutions and operator actions, the dimension of the binder can be different than the dimension of the environment that closes its body.  Accordingly, in addition to the environment and degeneracy to close its body, we store information about how to map the eventual arguments into the bound variables in the body; this is the insertion.  *)
   and (_, _, _, _, _) binder =
@@ -328,8 +343,9 @@ end = struct
   and (_, _) value =
     (* A neutral is an application spine: a head with a list of applications.  It also stores its type, and (lazily) the up-to-now result of evaluating that application spine.  The type is also lazy because the 0-dimensional universe is morally an infinite data structure Uninst (UU 0, (Uninst (UU 0, Uninst (UU 0, ... )))).  If that result is "Unrealized", then it is a "true neutral", the sort of neutral that is permanently stuck and usually appears in paper proofs of normalization.  If it is "Val" then the spine is still waiting for further arguments for its case tree to compute.  If it is "Realized" then the case tree has already evaluated to an ordinary value; this should only happen when glued evaluation is in effect. *)
     | Neu : {
-        head : 'mode head;
-        args : ('mode, 'any) apps;
+        (* The head lives at the mode at the head end of the spine, which differs from the mode of the whole neutral if the spine crosses a modal field projection. *)
+        head : 'hmode head;
+        args : ('hmode, 'mode, 'any) apps;
         value : ('mode, potential) lazy_eval;
         ty : ('mode, kinetic) value Lazy.t;
       }
@@ -464,17 +480,17 @@ end = struct
   (* An 's lazy_eval behaves from the outside like an 's evaluation Lazy.t.  But internally, in addition to being able to store an arbitrary thunk, it can also store a term and an environment in which to evaluate it (plus an outer insertion that can't be pushed into the environment).  This allows it to accept degeneracy actions and incorporate them into the environment, so that when it's eventually forced the term only has to be traversed once.  It can also accumulate degeneracies on an arbitrary thunk (which could, of course, be a constant value that was already forced, but now is deferred again until it's done accumulating degeneracy actions).  Both kinds of deferred values can also store more arguments and field projections for it to be applied to; this is only used in glued evaluation. *)
   and ('mode, 's) lazy_state =
     | Deferred_eval :
-        ('mode, 'm, 'b) env
-        * ('mode, 'b, 's) term
+        ('hmode, 'm, 'b) env
+        * ('hmode, 'b, 's) term
         * ('mn, 'm, 'n) insertion
-        * ('mode, 'mu, 'nu, 'cod) Modalcell.t option
-        * ('mode, 'any) apps
+        * ('hmode, 'mu, 'nu, 'cod) Modalcell.t
+        * ('hmode, 'mode, 'any) apps
         -> ('mode, 's) lazy_state
     | Deferred :
-        (unit -> ('mode, 's) evaluation)
+        (unit -> ('hmode, 's) evaluation)
         * ('m, 'n) deg
-        * ('mode, 'mu, 'nu, 'cod) Modalcell.t option
-        * ('mode, 'any) apps
+        * ('hmode, 'mu, 'nu, 'cod) Modalcell.t
+        * ('hmode, 'mode, 'any) apps
         -> ('mode, 's) lazy_state
     | Ready : ('mode, 's) evaluation -> ('mode, 's) lazy_state
 
@@ -557,6 +573,19 @@ let key_env : type dom mu nu cod m b bmu.
   | Eq, Plus_lock (Zero _, Zero) -> env
   | _ -> Key (env, key, al)
 
+(* Lock an environment by a modality using one *identity* key per generator, mirroring how the type-level context (Tctx) breaks a lock into its generators.  This keeps the environment's key structure aligned with the Tctx at generator granularity, so that operations like restrict_keys, which walk the environment key-by-key and must consume each key's entire lock domain, can peel off any *prefix* of a lock rather than being forced to swallow a whole atomic multi-generator key.  Every place that would lock an environment by an identity cell over a whole modality should use this instead of a single atomic key_env; there is no reason to want a single atomic identity key in an environment. *)
+let rec key_id_env : type dom mu cod m b bmu.
+    (cod, m, b) env -> (b, cod, mu, dom, bmu) plus_lock -> (dom, m, bmu) env =
+ fun env plus ->
+  match plus with
+  | Plus_lock (Zero _, Zero) -> env
+  | Plus_lock (Suc (lock, Inject (Lock_lock g), Suc (Zero, Lock _)), Suc (comp, Lock g')) ->
+      (* The Lock.t and the comp are indexed by separate existentials for the intermediate object left after peeling off the outer generator; reconcile them through the shared generator, as Ordered.lock_to does. *)
+      let Eq = Modality.Gen.src_uniq g g' in
+      let Eq = Modality.Gen.tgt_uniq g g' in
+      let env = key_id_env env (Plus_lock (lock, comp)) in
+      key_env env (Modalcell.id (Modality.of_gen g)) (plus_lock_suc (plus_no_lock (mode_env env)) g)
+
 (* Similarly, for prekeys all we can do is ignore identities. *)
 let prekey_env : type mode mu nu cod n b.
     (mode, n, b) env -> (mode, mu, nu, cod) Modalcell.t -> (mode, n, b) env =
@@ -620,10 +649,12 @@ let prekey_vcomp : type mode m n cod pm pn pcod.
 (* In addition to the residual environment and the composite key cell (which maps the looked-up value's own annotating modality, at the environment's mode, to the base after stripping the locks), we return a "prekey action" cell.  Prekeys act on the looked-up value at the environment's mode with a possibly-different vertical target than the composite locks, so they can't be folded into the same cell; instead we compose them separately (into this second cell) and apply them to the value after the composite key cell.  When no prekeys are encountered, this cell is an identity, and hence dropped by the smart constructor prekey_env. *)
 type (_, _, _, _, _) restrict_keys =
   | Restrict_keys :
-      ('cod, 'n, 'b) env
-      * ('mode, 'mu, 'nu, 'cod) Modalcell.t
+      ('cod2, 'k, 'b1) env
+      * ('b1, 'cod2, 'mu2, 'cod1, 'b2) plus_lock
+      * ('mode, 'mu1, 'cod1, 'mu2, 'cod2, 'mu12) Modality.comp
+      * ('mode, 'mu12, 'nu, 'cod2) Modalcell.t
       * ('mode, 'pmu, 'pnu, 'pcod) Modalcell.t
-      -> ('mode, 'mu, 'cod, 'n, 'b) restrict_keys
+      -> ('mode, 'mu1, 'cod1, 'k, 'b2) restrict_keys
 
 let rec restrict_keys : type mode mu cod k b bc.
     (mode, k, bc) env ->
@@ -631,28 +662,59 @@ let rec restrict_keys : type mode mu cod k b bc.
     (mode, mu, cod, k, b) restrict_keys =
  fun env (Plus_with_locks (bc, llc)) ->
   match (bc, llc, env) with
+  (* If the extension is exhausted but the top of the environment is a key over a nonidentity modality, that key corresponds to a lock in the base context itself (such as an ambient modal annotation), not to the extension, so we stop and leave it in the environment. *)
+  | Zero, Zero _, (Key (_, _, Plus_lock (Suc _, _)) as env) ->
+      Restrict_keys
+        ( env,
+          plus_no_lock (mode_env env),
+          Zero,
+          Modalcell.id2 (mode_env env),
+          Modalcell.id2 (mode_env env) )
   (* If we encounter a key, we accumulate it, consuming the corresponding locks from the codomain-context extension.  Note that the extension could be identity here: we continue accumulating keys until we run out of keys that we *could* include, not just until we run out of nonidentity locks in the codomain. *)
   | b_cn, llcn, Key (env, key, Plus_lock (ln, bc_n)) -> (
       let lln = locks_lock ln in
       let cn, n = (Locks.dom llcn, Lock.cod ln) in
       match Tctx.factor cn n with
-      | None ->
-          (* The type of this function doesn't rule this out: the decomposition of the length of the environment could land in the middle of the domain of a key.  We have to trust the caller to maintain the invariant. *)
-          fatal (Anomaly "restrict_keys: factor failure")
       | Some (Factor (_c, c_n)) ->
-          let (Uncomp (llc, lln', m_n)) = Locks.uncomp c_n llcn in
+          let (Uncomp (llc, lln', mu1_n)) = Locks.uncomp c_n llcn in
           let Eq = Locks.uniq lln lln' in
           let b_c = Tctx.comp_assoc_cancelr c_n b_cn bc_n in
-          let (Restrict_keys (e, keys, pre)) = restrict_keys env (Plus_with_locks (b_c, llc)) in
+          let (Restrict_keys (e, extra, mu12, keys, pre)) =
+            restrict_keys env (Plus_with_locks (b_c, llc)) in
           (* A key changes the mode: the prekey action accumulated inside it acts at the inner mode, so to carry it outward we prewhisker it by the key's vertical target, transporting its source to the outer mode. *)
           let (Prekey_action pre) = prekey_prewhisker pre (Modalcell.vtgt key) in
           let (Comp nus) = Modality.comp (Modalcell.vtgt key) in
-          Restrict_keys (e, Modalcell.hcomp m_n nus keys key, pre))
+          let (Comp mu12_n) =
+            Modality.comp (Modality.comp_right (Modality.src (Locks.cod llc)) mu1_n) in
+          let mu1_mu2n = Modality.comp_assocr mu12 mu1_n mu12_n in
+          Restrict_keys (e, extra, mu1_mu2n, Modalcell.hcomp mu12_n nus keys key, pre)
+      | None -> (
+          (* The decomposition of the length of the environment lands in the middle of the domain of a key.  This can actually happen, so in this case we incorporate the extra in the return value.  First we rename things:
+             - x is the context piece we were asked to remove
+             - y is the rest of the key domain
+             - z is the remaining context after that
+             - locks_x says that the locks in x compose to mu_x
+             - lock_xy says that xy is only locks of mu_xy
+          *)
+          let x_yz, xy, x, locks_x, lock_xy, xy_z = (bc, n, cn, llc, ln, bc_n) in
+          match Tctx.factor xy x with
+          | Some (Factor (_y, x_y)) ->
+              (* We have all the composites of Tctxs correct. *)
+              let y_z = Tctx.comp_assoc_cancelr x_y xy_z x_yz in
+              let (Dom_uncomp (lock_y, lock_x, mu_x_y)) = Lock.dom_uncomp x_y lock_xy in
+              let (Eq _) = Lock.src lock_y in
+              let Eq = Locks.uniq locks_x (locks_lock lock_x) in
+              Restrict_keys
+                (env, Plus_lock (lock_y, y_z), mu_x_y, key, Modalcell.id2 (Modalcell.hsrc key))
+          | None ->
+              (* I really seriously think this one should be impossible. *)
+              fatal (Anomaly "restrict_keys: pushout failure")))
   (* A prekey doesn't correspond to any locks in the codomain context, and its cell may have a different vertical target than the composite keys of the actual variable's locks (which is fixed by the codomain-context extension), so we can't fold it into that cell.  Instead we accumulate it into the separate prekey-action cell, which shares the environment's (unchanging) mode, composing it after any inner prekeys with the general key-cell composition. *)
   | bc, llc, Prekey (env, key) ->
-      let (Restrict_keys (env, keys, pre)) = restrict_keys env (Plus_with_locks (bc, llc)) in
+      let (Restrict_keys (env, extra, mu12, keys, pre)) =
+        restrict_keys env (Plus_with_locks (bc, llc)) in
       let (Prekey_action pre) = prekey_vcomp key pre in
-      Restrict_keys (env, keys, pre)
+      Restrict_keys (env, extra, mu12, keys, pre)
   (* If we encounter a dimension entry, we skip it. *)
   | Suc (bc, Dim _), Suc (llc, Locks_dim _, Zero), _ ->
       restrict_keys (remove_top env) (Plus_with_locks (bc, llc))
@@ -660,8 +722,10 @@ let rec restrict_keys : type mode mu cod k b bc.
   | _, _, Permute (p, env) -> (
       match unpermute_plus_locks p bc llc with
       | Some (Unpermute (p, ad, lld)) ->
-          let (Restrict_keys (env, keys, pre)) = restrict_keys env (Plus_with_locks (ad, lld)) in
-          Restrict_keys (Permute (p, env), keys, pre)
+          let (Restrict_keys (env, extra, mu12, keys, pre)) =
+            restrict_keys env (Plus_with_locks (ad, lld)) in
+          let (Unpermute (p, extra)) = unpermute_plus_lock (inv_perm p) extra in
+          Restrict_keys (Permute (inv_perm p, env), extra, mu12, keys, pre)
       | None ->
           (* This isn't ruled out either: the permutation could mix the two parts of the decomposition.  Again, we trust the caller to maintain the invariant. *)
           fatal (Anomaly "restrict_keys: unpermute failure"))
@@ -670,23 +734,38 @@ let rec restrict_keys : type mode mu cod k b bc.
       let (Dom_uncomp (nb, nc, b_c)) = Plusmap.dom_uncomp n nb_nc nbc in
       let (Eq _) = Plusmap.tgt nc in
       let ll_c = Plusmap.unlocks nc ll_nc in
-      let (Restrict_keys (env, keys, pre)) = restrict_keys env (Plus_with_locks (b_c, ll_c)) in
-      Restrict_keys (Shift (env, mn, nb), keys, pre)
+      let (Restrict_keys (env, extra, mu12, keys, pre)) =
+        restrict_keys env (Plus_with_locks (b_c, ll_c)) in
+      let (Unshift (nb, extra)) = unshift_plus_lock n nb extra in
+      Restrict_keys (Shift (env, mn, nb), extra, mu12, keys, pre)
   | b_c, ll_c, Unshift (env, mn, nbc) ->
       let n = D.plus_right mn in
       let (Uncomp (nb, nc, nb_nc)) = Plusmap.uncomp n b_c nbc in
       let (Eq _) = Plusmap.tgt nc in
       let ll_nc = Plusmap.locks n nc ll_c in
-      let (Restrict_keys (env, keys, pre)) = restrict_keys env (Plus_with_locks (nb_nc, ll_nc)) in
-      Restrict_keys (Unshift (env, mn, nb), keys, pre)
+      let (Restrict_keys (env, extra, mu12, keys, pre)) =
+        restrict_keys env (Plus_with_locks (nb_nc, ll_nc)) in
+      let (Shift (nb, extra)) = shift_plus_lock n nb extra in
+      Restrict_keys (Unshift (env, mn, nb), extra, mu12, keys, pre)
   | _, _, Act (env, op) ->
-      let (Restrict_keys (env, keys, pre)) = restrict_keys env (Plus_with_locks (bc, llc)) in
-      Restrict_keys (Act (env, op), keys, pre)
+      let (Restrict_keys (env, extra, mu12, keys, pre)) =
+        restrict_keys env (Plus_with_locks (bc, llc)) in
+      Restrict_keys (Act (env, op), extra, mu12, keys, pre)
   (* If we reach the end of the environment, or a value entry, we bottom out the recursion, returning identity key and prekey cells. *)
   | Zero, Zero _, Emp _ ->
-      Restrict_keys (env, Modalcell.id2 (mode_env env), Modalcell.id2 (mode_env env))
+      Restrict_keys
+        ( env,
+          plus_no_lock (mode_env env),
+          Zero,
+          Modalcell.id2 (mode_env env),
+          Modalcell.id2 (mode_env env) )
   | Zero, Zero _, Ext _ ->
-      Restrict_keys (env, Modalcell.id2 (mode_env env), Modalcell.id2 (mode_env env))
+      Restrict_keys
+        ( env,
+          plus_no_lock (mode_env env),
+          Zero,
+          Modalcell.id2 (mode_env env),
+          Modalcell.id2 (mode_env env) )
   (* Nothing else is possible, since if the tctx has a nonzero lock on it, the environment can't be empty or end with a value entry. *)
   | Suc (_, Lock _), Suc (_, Locks_lock _, Suc (_, _)), _ -> .
   | Suc (_, Proj _), Suc (_, _, _), _ -> .
@@ -697,10 +776,11 @@ let restrict_keys_plus_lock : type mode mu cod k b bm.
 
 (* Create a lazy evaluation *)
 let lazy_eval : type mode n b s. (mode, n, b) env -> (mode, b, s) term -> (mode, s) lazy_eval =
- fun env tm -> ref (Deferred_eval (env, tm, ins_zero (dim_env env), None, Emp))
+ fun env tm ->
+  ref (Deferred_eval (env, tm, ins_zero (dim_env env), Modalcell.id2 (mode_env env), Emp))
 
-let defer : type mode s. (unit -> (mode, s) evaluation) -> (mode, s) lazy_eval =
- fun tm -> ref (Deferred (tm, id_deg D.zero, None, Emp))
+let defer : type mode s. mode Mode.t -> (unit -> (mode, s) evaluation) -> (mode, s) lazy_eval =
+ fun mode tm -> ref (Deferred (tm, id_deg D.zero, Modalcell.id2 mode, Emp))
 
 let ready : type mode s. (mode, s) evaluation -> (mode, s) lazy_eval = fun ev -> ref (Ready ev)
 
@@ -716,7 +796,13 @@ let apply_lazy : type dom modality mode m n s.
   | Deferred_eval (env, tm, ins, cell, apps) ->
       ref (Deferred_eval (env, tm, ins, cell, Arg (apps, filter, xs, xins)))
   | Deferred (tm, ins, cell, apps) -> ref (Deferred (tm, ins, cell, Arg (apps, filter, xs, xins)))
-  | Ready tm -> ref (Deferred ((fun () -> tm), id_deg D.zero, None, Arg (Emp, filter, xs, xins)))
+  | Ready tm ->
+      ref
+        (Deferred
+           ( (fun () -> tm),
+             id_deg D.zero,
+             Modalcell.id2 (Modality.tgt (Modality.filter_modality filter)),
+             Arg (Emp, filter, xs, xins) ))
 
 (* We defer "field_lazy" to act.ml, since it requires pushing a permutation inside the apps. *)
 
@@ -764,18 +850,25 @@ let rec eval_structfield : type mode m n mn a status i et.
     (i, mode * mn * status * et) Value.Structfield.t =
  fun env m m_n mn fld ->
   match fld with
-  | Lower (tm, l) -> Lower (lazy_eval env tm, l)
-  | Higher terms -> Higher (lazy (eval_higher_structfield env m m_n mn terms))
-  | LazyHigher terms -> Higher (lazy (eval_higher_structfield env m m_n mn (Lazy.force terms)))
+  | Lower (adj, plus_lock, tm, lbl) ->
+      (* The term of a modal field lives behind a lock by the right adjoint, so we evaluate it in the environment keyed (by identity cells, per generator) by the right adjoint. *)
+      Lower (adj, lazy_eval (key_id_env env plus_lock) tm, lbl)
+  | Higher (adj, plus_lock, terms) ->
+      (* Like a lower modal field, the terms of a higher modal field live behind a lock by the right adjoint, so we key the environment by it before storing. *)
+      Higher (lazy (eval_higher_structfield adj (key_id_env env plus_lock) m m_n mn terms))
+  | LazyHigher (adj, plus_lock, terms) ->
+      Higher
+        (lazy (eval_higher_structfield adj (key_id_env env plus_lock) m m_n mn (Lazy.force terms)))
 
-and eval_higher_structfield : type mode m n mn a i.
-    (mode, m, a) env ->
+and eval_higher_structfield : type mode f g gmode m n mn ag i.
+    (mode, f, g, gmode) Modalcell.adjunction ->
+    (gmode, m, ag) env ->
     m D.t ->
     (m, n, mn) D.plus ->
     mn D.t ->
-    (n, i, mode * a) PlusPbijmap.t ->
-    (mode, m, n, mn, mn, i, a) Structfield.higher_data =
- fun env m m_n mn terms ->
+    (n, i, gmode * ag) PlusPbijmap.t ->
+    (mode, f, g, gmode, m, n, mn, mn, i, ag) Structfield.higher_data =
+ fun adj env m m_n mn terms ->
   let intrinsic = PlusPbijmap.intrinsic terms in
   let vals =
     InsmapOf.build mn intrinsic
@@ -804,7 +897,7 @@ and eval_higher_structfield : type mode m n mn a i.
                 (* We don't need to further permute the result, as all the information about the permutation ins was captured in newpbij and mtr. *)
                 Some (lazy_eval env3 tm));
       } in
-  { intrinsic; plusdim = m_n; terms; env; deg = id_deg mn; vals }
+  { adj; intrinsic; plusdim = m_n; terms; env; deg = id_deg mn; vals }
 
 let eval_structfield_abwd : type mode m n mn a status et.
     (mode, m, a) env ->
@@ -820,25 +913,43 @@ let eval_structfield_abwd : type mode m n mn a status et.
     [ fields ]
 
 (* The universe of any dimension belongs to an instantiation of itself.  Note that the result is not itself a type (i.e. in the 0-dimensional universe) unless n=0.  This is the universe itself as a term. *)
+(* Since the universe of a given mode and dimension depends on nothing else (Fibrancy.universe is fixed at startup), we memoize it. *)
+type cached_universe =
+  | Cached_universe : 'mode Mode.t * 'n D.t * ('mode, kinetic) value -> cached_universe
+
+let universe_cache : cached_universe list ref = ref []
+
 let rec universe : type mode n. mode Mode.t -> n D.t -> (mode, kinetic) value =
  fun mode n ->
-  let fields =
-    match Lazy.force (Fibrancy.universe mode) with
-    | None -> Bwd.Emp
-    | Some fields -> eval_structfield_abwd (Emp (mode, n)) n (D.plus_zero n) n fields in
-  let value =
-    ready
-      (Val
-         (Canonical
-            {
-              mode;
-              canonical = UU (mode, n);
-              tyargs = TubeOf.empty n;
-              ins = ins_zero n;
-              fields;
-              inst_fields = Some fields;
-            })) in
-  Neu { head = UU (mode, n); args = Emp; value; ty = lazy (universe_ty mode n) }
+  let found =
+    List.find_map
+      (fun (Cached_universe (mode', n', v)) ->
+        match (Mode.compare mode' mode, D.compare n' n) with
+        | Eq, Eq -> Some (v : (mode, kinetic) value)
+        | _ -> None)
+      !universe_cache in
+  match found with
+  | Some v -> v
+  | None ->
+      let fields =
+        match Lazy.force (Fibrancy.universe mode) with
+        | None -> Bwd.Emp
+        | Some fields -> eval_structfield_abwd (Emp (mode, n)) n (D.plus_zero n) n fields in
+      let value =
+        ready
+          (Val
+             (Canonical
+                {
+                  mode;
+                  canonical = UU (mode, n);
+                  tyargs = TubeOf.empty n;
+                  ins = ins_zero n;
+                  fields;
+                  inst_fields = Some fields;
+                })) in
+      let v = Neu { head = UU (mode, n); args = Emp; value; ty = lazy (universe_ty mode n) } in
+      universe_cache := Cached_universe (mode, n, v) :: !universe_cache;
+      v
 
 and universe_nf : type mode n. mode Mode.t -> n D.t -> mode normal =
  fun mode n -> { tm = universe mode n; ty = universe_ty mode n }
@@ -881,11 +992,11 @@ and universe_ty : type mode n. mode Mode.t -> n D.t -> (mode, kinetic) value =
           ty = lazy (universe mode D.zero);
         }
 
-type 'mode any_apps = Any : ('mode, 'any) apps -> 'mode any_apps
+type ('hmode, 'mode) any_apps = Any : ('hmode, 'mode, 'any) apps -> ('hmode, 'mode) any_apps
 
 (* Smart constructor that coalesces instantiations *)
-let inst_apps : type mode any m n mn.
-    (mode, any) apps -> (m, n, mn, mode normal) TubeOf.t -> mode any_apps =
+let inst_apps : type hmode mode any m n mn.
+    (hmode, mode, any) apps -> (m, n, mn, mode normal) TubeOf.t -> (hmode, mode) any_apps =
  fun apps args2 ->
   let n = TubeOf.inst args2 in
   match D.compare_zero n with
@@ -905,8 +1016,8 @@ let inst_apps : type mode any m n mn.
 
 (* Instantiate a lazy value *)
 let inst_lazy : type mode m n mn s.
-    (mode, s) lazy_eval -> (m, n, mn, mode normal) TubeOf.t -> (mode, s) lazy_eval =
- fun lev args ->
+    mode Mode.t -> (mode, s) lazy_eval -> (m, n, mn, mode normal) TubeOf.t -> (mode, s) lazy_eval =
+ fun mode lev args ->
   match D.compare_zero (TubeOf.inst args) with
   | Zero -> lev
   | Pos k -> (
@@ -917,7 +1028,8 @@ let inst_lazy : type mode m n mn s.
       | Deferred (tm, ins, cell, apps) ->
           let (Any newargs) = inst_apps apps args in
           ref (Deferred (tm, ins, cell, newargs))
-      | Ready tm -> ref (Deferred ((fun () -> tm), id_deg D.zero, None, Inst (Emp, k, args))))
+      | Ready tm ->
+          ref (Deferred ((fun () -> tm), id_deg D.zero, Modalcell.id2 mode, Inst (Emp, k, args))))
 
 let inst_tys : ('mode, kinetic) value -> ('mode, kinetic) value TubeOf.full = function
   | Neu { ty = (lazy (Neu { args = Inst (_, _, tys); _ })); _ } -> (
@@ -929,8 +1041,8 @@ let inst_tys : ('mode, kinetic) value -> ('mode, kinetic) value TubeOf.full = fu
   | _ -> fatal (Anomaly "invalid type, has no instantiation arguments")
 
 (* Split off an instantiation, if any, at the end of an apps *)
-let inst_of_apps : type mode any.
-    (mode, any) apps -> (mode, noninst) apps * mode normal TubeOf.any option =
+let inst_of_apps : type hmode mode any.
+    (hmode, mode, any) apps -> (hmode, mode, noninst) apps * mode normal TubeOf.any option =
  fun apps ->
   match apps with
   | Inst (base_args, _, args1) -> (base_args, Some (TubeOf.Any_tube args1))
@@ -938,11 +1050,14 @@ let inst_of_apps : type mode any.
   | Arg _ -> (apps, None)
   | Field _ -> (apps, None)
 
+(* A head together with an application spine ending at a given mode, with the mode at the head end existentially quantified. *)
+type _ head_apps = Head_apps : 'hmode head * ('hmode, 'mode) any_apps -> 'mode head_apps
+
 (* Split off a given positive dimension's worth of instantiation, putting the rest back on the apps.  The argument must be a neutral, so the return value is just the head and apps part of a neutral (which suffices to read it back with readback_neu). *)
 let split_inst : type mode m.
     m D.pos ->
     (mode, kinetic) value ->
-    (mode head * mode any_apps * (D.zero, m, m, mode normal) TubeOf.t) option =
+    (mode head_apps * (D.zero, m, m, mode normal) TubeOf.t) option =
  fun m tm ->
   let m = D.pos m in
   match tm with
@@ -952,46 +1067,67 @@ let split_inst : type mode m.
           let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (D.pos mk)) in
           let tyargs, rest = TubeOf.split (D.zero_plus m) m_k tyargs in
           match D.compare_zero (D.plus_right m_k) with
-          | Zero -> Some (head, Any args, tyargs)
-          | Pos k -> Some (head, Any (Inst (args, k, rest)), tyargs))
+          | Zero -> Some (Head_apps (head, Any args), tyargs)
+          | Pos k -> Some (Head_apps (head, Any (Inst (args, k, rest))), tyargs))
       | _ -> None)
   | _ -> None
 
 module Fwd_app = struct
-  (* Make an apps without instantiations into a forwards list *)
-  type 'mode t =
+  (* Make an apps without instantiations into a forwards type-aligned sequence.  A single entry takes a spine ending at its first mode parameter to one ending at its second; the two differ for modal field projections. *)
+  type (_, _) t =
     | Arg :
         ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
         * ('n, 'dom normal) CubeOf.t
         * ('mk, 'm, 'k) insertion
-        -> 'mode t
-    | Field : 'i Field.t * ('t, 'i, 'n) D.plus * ('tk, 't, 'k) insertion -> 'mode t
+        -> ('mode, 'mode) t
+    | Field :
+        ('src, 'f, 'mode, 'ft, 't) Modality.filter_dim
+        * 'i Field.t
+        * ('t, 'i, 'n) D.plus
+        * ('tk, 't, 'k) insertion
+        -> ('src, 'mode) t
 
-  let snoc : type mode any. (mode, any) apps -> mode t -> (mode, noninst) apps =
+  type (_, _) fwd = Nil : ('mode, 'mode) fwd | Cons : ('a, 'b) t * ('b, 'c) fwd -> ('a, 'c) fwd
+
+  let snoc : type hmode mode mode2 any.
+      (hmode, mode, any) apps -> (mode, mode2) t -> (hmode, mode2, noninst) apps =
    fun apps app ->
     match app with
     | Arg (filter, arg, ins) -> Arg (apps, filter, arg, ins)
-    | Field (fld, plus, ins) -> Field (apps, fld, plus, ins)
+    | Field (f, fld, plus, ins) -> Field (apps, f, fld, plus, ins)
 
-  let of_apps apps =
-    let rec go : type mode any. (mode, any) apps -> mode t list -> mode t list =
+  let of_apps : type hmode mode any. (hmode, mode, any) apps -> (hmode, mode) fwd =
+   fun apps ->
+    let rec go : type hmode mode mode2 any.
+        (hmode, mode, any) apps -> (mode, mode2) fwd -> (hmode, mode2) fwd =
      fun apps fwds ->
       match apps with
       | Emp -> fwds
-      | Arg (apps, filter, arg, ins) -> go apps (Arg (filter, arg, ins) :: fwds)
-      | Field (apps, fld, plus, ins) -> go apps (Field (fld, plus, ins) :: fwds)
+      | Arg (apps, filter, arg, ins) -> go apps (Cons (Arg (filter, arg, ins), fwds))
+      | Field (apps, f, fld, plus, ins) -> go apps (Cons (Field (f, fld, plus, ins), fwds))
       | Inst _ -> fatal (Anomaly "instantiation in fwd_of_apps") in
-    go apps []
+    go apps Nil
 end
 
+(* The result of splitting an application spine ending at a given mode: a prefix spine ending at some intermediate mode, and the rest as a forward sequence. *)
+type (_, _) split_apps =
+  | Split_apps :
+      ('hmode, 'mode2, noninst) apps * ('mode2, 'mode) Fwd_app.fwd
+      -> ('hmode, 'mode) split_apps
+
 (* Given two apps, the second longer, split the second into one of the same length and the rest. *)
-let split_apps_at_length : type mode any1 any2.
-    (mode, any1) apps -> (mode, any2) apps -> ((mode, noninst) apps * mode Fwd_app.t list) option =
+let split_apps_at_length : type hmode1 hmode2 mode1 mode2 any1 any2.
+    (hmode1, mode1, any1) apps -> (hmode2, mode2, any2) apps -> (hmode2, mode2) split_apps option =
  fun apps1 apps2 ->
-  let rec go apps2 fwd1 fwd2 =
+  let rec go : type h1 m1 m2 mode2.
+      (hmode2, m2, noninst) apps ->
+      (h1, m1) Fwd_app.fwd ->
+      (m2, mode2) Fwd_app.fwd ->
+      (hmode2, mode2) split_apps option =
+   fun apps2 fwd1 fwd2 ->
     match (fwd1, fwd2) with
-    | [], _ -> Some (apps2, fwd2)
-    | _ :: fwd1, app2 :: fwd2 -> go (Fwd_app.snoc apps2 app2) fwd1 fwd2
+    | Nil, _ -> Some (Split_apps (apps2, fwd2))
+    | Cons (_, fwd1), Cons (app2, fwd2) -> go (Fwd_app.snoc apps2 app2) fwd1 fwd2
     | _ -> None in
   go Emp (Fwd_app.of_apps apps1) (Fwd_app.of_apps apps2)
 
@@ -1010,8 +1146,8 @@ let get_full_tube : type n k nk a any.
           let Eq = D.plus_uniq (TubeOf.plus args) (D.zero_plus (TubeOf.inst args)) in
           TubeOf.Full_tube args)
 
-(* Glued evaluation is basically implemented, but currently disabled because it is very slow -- too much memory allocation, and OCaml 5 doesn't have memory profiling tools available yet to debug it.  So we disable it globally with this flag.  But all the regular tests pass with the flag enabled, and should continue to be run and to pass, so that once we are able to debug it it is still otherwise working. *)
+(* Glued evaluation is enabled globally with this flag.  It was originally disabled because it was very slow; the two main culprits -- act_lazy_eval eagerly pushing degeneracy actions through the deferred argument spines of glued neutrals (duplicating the action on the neutral's own arguments and un-sharing the forced results), and the equality-checker's former two-pass Rigid/Full structure that restarted the entire comparison with everything unfolded whenever a rigid comparison failed -- have been fixed by deferring such actions and by unfolding glued neutrals locally on demand in the equality-checker.  With both fixes, the test suite runs as fast or slightly faster with this flag on than off. *)
 module GluedEval = struct
-  let toggle = false
+  let toggle = true
   let read () = toggle
 end

@@ -12,7 +12,8 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
   | Const c -> Const (Constant.remake f c)
   | Meta (m, s) -> Meta (Meta.remake f m, s)
   | MetaEnv (m, e) -> MetaEnv (Meta.remake f m, env f e)
-  | Field (tm, fld, fldins) -> Field (term f tm, fld, fldins)
+  | Field (Modal (modality, al, tm), fld, fldins) ->
+      Field (Modal (modality, al, term f tm), fld, fldins)
   | UU (mode, n) -> UU (mode, n)
   | Inst (tm, args) -> Inst (term f tm, TubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ args ])
   | Pi { x; filter; doms = Modal (modality, al, doms); cods } ->
@@ -120,18 +121,20 @@ and structfield : type mode n a s i et.
     (i, mode * (n * a * s * et)) Term.Structfield.t =
  fun f fld ->
   match fld with
-  | Lower (x, l) -> Lower (term f x, l)
-  | Higher m ->
+  | Lower (adj, plus_lock, tm, lbl) -> Lower (adj, plus_lock, term f tm, lbl)
+  | Higher (adj, plus_lock, m) ->
       Higher
-        (PlusPbijmap.mmap
-           {
-             map =
-               (fun _ [ x ] ->
-                 match x with
-                 | Some (PlusFam (rb, x)) -> Some (PlusFam (rb, term f x))
-                 | None -> None);
-           }
-           [ m ])
+        ( adj,
+          plus_lock,
+          PlusPbijmap.mmap
+            {
+              map =
+                (fun _ [ x ] ->
+                  match x with
+                  | Some (PlusFam (rb, x)) -> Some (PlusFam (rb, term f x))
+                  | None -> None);
+            }
+            [ m ] )
   | LazyHigher _ -> Reporter.fatal (Anomaly "lazy higher field can't be linked")
 
 and codatafield : type mode a n i et.
@@ -140,8 +143,8 @@ and codatafield : type mode a n i et.
     (i, mode * a * n * et) Codatafield.t =
  fun f fld ->
   match fld with
-  | Lower tm -> Lower (term f tm)
-  | Higher (ka, tm) -> Higher (ka, term f tm)
+  | Lower (adj, plus_lock, ty) -> Lower (adj, plus_lock, term f ty)
+  | Higher (adj, ka, plus_lock, tm) -> Higher (adj, ka, plus_lock, term f tm)
 
 and dataconstr : type mode p. (File.t -> File.t) -> (mode, p) dataconstr -> (mode, p) dataconstr =
  fun f (Dataconstr { args; output }) -> Dataconstr { args = tel f args; output = term f output }
@@ -164,7 +167,7 @@ and env : type mode a n b. (File.t -> File.t) -> (mode, a, n, b) env -> (mode, a
           values = Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ xs ]);
         }
   | Key k -> Key { k with env = env f k.env }
-  | Prekey (e, cell) -> Prekey (env f e, cell)
+  | Prekey k -> Prekey { k with env = env f k.env }
 
 and entry : type dom modality mode b f mn bm.
     (File.t -> File.t) ->
@@ -200,7 +203,7 @@ and termctx_ordered : type mode a b.
   | Emp mode -> Emp mode
   | Ext (ctx, e, ax) -> Ext (termctx_ordered f ctx, entry f e, ax)
   | Lock (ctx, lock) -> Lock (termctx_ordered f ctx, lock)
-  | Parametric_lock ctx -> Parametric_lock (termctx_ordered f ctx)
+  | Weaken (ctx, code) -> Weaken (termctx_ordered f ctx, code)
 
 and termctx : type mode a b. (File.t -> File.t) -> (mode, a, b) termctx -> (mode, a, b) termctx =
  fun f (Permute (p, ctx)) -> Permute (p, termctx_ordered f ctx)

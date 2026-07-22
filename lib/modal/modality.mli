@@ -1,4 +1,4 @@
-open Bwd
+open Asai.Range
 open Util
 open Signatures
 open Dim
@@ -14,7 +14,7 @@ module type Generator = sig
 
   val src : src Mode.t
   val tgt : tgt Mode.t
-  val name : string
+  val name : string ref
 
   type nonparametric
 
@@ -33,20 +33,18 @@ module Generate : functor (G : Generator) -> Generated with module G := G
 
 type ('src, 'tgt) gen_wrapped = Wrap : ('src, 'morphism, 'tgt) Gen.t -> ('src, 'tgt) gen_wrapped
 
-val generate : 'a Mode.t -> 'b Mode.t -> string -> 'e D.t -> ('a, 'b) gen_wrapped
-
 include module type of Path.Make (Gen)
 module Map : MAP3_MAKER with module Key := Path.Make(Gen)
 
 module type Theory = sig
-  val sharp : ('a, 'm, 'b) t -> bool
+  val tangible : ('a, 'm, 'b) t -> bool
   val pellucid : ('a, 'm, 'b) t -> bool
   val transparent : ('a, 'm, 'b) t -> bool
   val translucent : ('a, 'm, 'b) t -> bool
 end
 
 val choose_theory : (module Theory) -> unit
-val sharp : ('a, 'm, 'b) t -> bool
+val tangible : ('a, 'm, 'b) t -> bool
 val pellucid : ('a, 'm, 'b) t -> bool
 val transparent : ('a, 'm, 'b) t -> bool
 val translucent : ('a, 'm, 'b) t -> bool
@@ -63,40 +61,39 @@ module Cube : (F : Signatures.Fam3) -> sig
 end
 
 val compare_id : ('x, 'm, 'y) t -> ('m * 'y, 'x id * 'x) Eq.compare
+val set_one_char : bool -> string list -> unit
+val one_char : unit -> bool
+val all_names : unit -> string list
 
 (* *)
-val name_bwd : ('a, 'm, 'b) t -> string Bwd.t
 val name : ('a, 'm, 'b) t -> string list
 
 val of_name_tgt :
-  ('s -> string) ->
   'a Mode.t ->
-  's list ->
-  ('a src_wrapped, [ `Not_found of 's | `Wrong_tgt of Mode.wrapped * 's * Mode.wrapped ]) result
-
-val of_name_src_bwd :
-  ('s -> string) ->
-  's Bwd.t ->
-  'a Mode.t ->
-  ('a tgt_wrapped, [ `Not_found of 's | `Wrong_src of Mode.wrapped * 's * Mode.wrapped ]) result
+  string located list ->
+  ( 'a src_wrapped,
+    [ `Not_found of string located | `Wrong_tgt of Mode.wrapped * string located * Mode.wrapped ]
+  )
+  result
 
 val of_name_src :
-  ('s -> string) ->
-  's list ->
+  string located list ->
   'a Mode.t ->
-  ('a tgt_wrapped, [ `Not_found of 's | `Wrong_src of Mode.wrapped * 's * Mode.wrapped ]) result
+  ( 'a tgt_wrapped,
+    [ `Not_found of string located | `Wrong_src of Mode.wrapped * string located * Mode.wrapped ]
+  )
+  result
 
 val to_string : ('a, 'm, 'b) t -> string
 
 (* *)
 val compare_name :
-  ('s -> string) ->
-  's list ->
+  string located list ->
   ('x, 'm, 'y) t ->
   ( unit,
     [ `Unequal of 'y src_wrapped
-    | `Not_found of 's
-    | `Wrong_tgt of Mode.wrapped * 's * Mode.wrapped ] )
+    | `Not_found of string located
+    | `Wrong_tgt of Mode.wrapped * string located * Mode.wrapped ] )
   result
 
 type ('x, 'm, 'y, 'a, 'b) filter_dim
@@ -136,17 +133,6 @@ val filter_of_plus :
   ('x, 'm, 'y, 'ac, 'bd) filter_dim ->
   ('x, 'm, 'y, 'b, 'd, 'ac) filter_of_plus
 
-type (_, _, _, _, _, _) filter_of_plus' =
-  | Filter_of_plus' :
-      ('b, 'c, 'bc) D.plus * ('bc, 'd) perm * ('x, 'm, 'y, 'a, 'b) filter_dim
-      -> ('x, 'm, 'y, 'a, 'c, 'd) filter_of_plus'
-
-val filter_of_plus' :
-  'd D.t ->
-  ('a, 'c, 'ac) D.plus ->
-  ('x, 'm, 'y, 'ac, 'd) filter_dim ->
-  ('x, 'm, 'y, 'a, 'c, 'd) filter_of_plus'
-
 type (_, _, _, _, _) filter_sface =
   | Filter_sface :
       ('d, 'a) sface * ('x, 'm, 'y, 'd, 'c) filter_dim
@@ -182,6 +168,7 @@ val pface_filter :
   'b D.t -> ('c, 'a) pface -> ('x, 'm, 'y, 'a, 'b) filter_dim -> ('x, 'm, 'y, 'b, 'c) pface_filter
 
 val deg_of_filter : 'b D.t -> ('x, 'm, 'y, 'a, 'b) filter_dim -> ('b, 'a) deg
+val filter_is_trivial : 'b D.t -> ('x, 'm, 'y, 'a, 'b) filter_dim -> ('a, 'b) Eq.t option
 val sface_of_filter : 'b D.t -> ('x, 'm, 'y, 'a, 'b) filter_dim -> ('a, 'b) opt_sface
 
 val filter_comp :

@@ -104,68 +104,84 @@ module Codata = struct
       (mode, g, n, b, et) t =
    fun mode (Fibrancy (type nh hb) (f : (mode, g, n, nh, b, hb, et) codata_fibrancy))
        (Entry (fld, fldty)) ->
-    (* x is the index-zero variable. *)
-    let x = Var (Index (Now, id_sface D.zero, Modality.filter_id mode D.zero, plus_with_no_locks mode)) in
-    let ins = zero_ins Hott.dim in
-    (* Compute terms that project each fibrancy field out of the codatatype and apply it to the index-zero variable 'x'. *)
-    let idm = Modality.id mode in
-    let idf = Modality.filter_id mode Hott.dim in
-    let onx : Hott.dim Field.t -> (mode, (hb, (mode id, D.zero) dim_entry) snoc, kinetic) term =
-     fun trlift ->
-      app
-        (Field (Weaken (Shift (Hott.dim, f.plusmap, f.ty)), trlift, ins))
-        idm (plus_no_lock mode) x in
-    let trr_x, liftr_x, trl_x, liftl_x = (onx ftrr, onx fliftr, onx ftrl, onx fliftl) in
-    (* xrcube and xlcube are 1-dimensional cubes consisting of the index-zero variable 'x' and its transports right or left. *)
-    match (Hott.cube x trr_x liftr_x, Hott.cube trl_x x liftl_x) with
-    | Some xrcube, Some xlcube ->
-        (* This generic functions computes the specified field projection 'fld' of any of the fibrancy fields, by applying that fibrancy field to the corresponding 'fld' of the input. *)
-        let trlift : type m.
-            Hott.dim Field.t ->
-            (Hott.dim, (mode, (hb, (mode id, D.zero) dim_entry) snoc, kinetic) term) CubeOf.t ->
-            (mode * (m * (hb, (mode id, D.zero) dim_entry) snoc * potential * et))
-            StructfieldAbwd.entry =
-         fun trlift xcube ->
-          match fldty with
-          | Lower ty ->
-              let sty =
-                Shift
-                  ( Hott.dim,
-                    f.plusmap,
-                    Lam
-                      ( singleton_variables f.glue (`Anon no_hints),
-                        f.glue,
-                        Modality.filter_id mode f.glue,
-                        ty ) ) in
-              StructfieldAbwd.Entry
-                ( fld,
-                  Lower
-                    ( Realize
-                        (app
-                           (Field
-                              ( App
-                                  (Weaken sty, Hott.dim, idf, Modal (idm, plus_no_lock mode, xcube)),
-                                trlift,
-                                ins ))
-                           idm (plus_no_lock mode)
-                           (Field (x, fld, ins_zero f.dim))),
-                      `Labeled ) )
-          | Higher _ ->
-              let open Reporter in
-              fatal ~severity:Asai.Diagnostic.Bug (Unimplemented "higher fields of transport")
-         (* TODO: Once it's written, call this from Check.check_codata too. *)
-         (* Entry (f, Higher _) *) in
-        let new_trr, new_liftr, new_trl, new_liftl =
-          (trlift ftrr xrcube, trlift fliftr xrcube, trlift ftrl xlcube, trlift fliftl xlcube) in
-        Fibrancy
-          {
-            f with
-            trr = Snoc (f.trr, new_trr);
-            liftr = Snoc (f.liftr, new_liftr);
-            trl = Snoc (f.trl, new_trl);
-            liftl = Snoc (f.liftl, new_liftl);
-          }
-    | _ -> Fibrancy f
+    match fldty with
+    | Higher _ ->
+        let open Reporter in
+        fatal ~severity:Asai.Diagnostic.Bug (Unimplemented "higher fields of transport")
+    (* MODALTODO: Fibrancy is not yet meaningful for modal fields, so we drop them from the fibrancy computation. *)
+    | Lower (adj, fld_plus_lock, fld_ty) -> (
+        match Modalcell.compare_adjunction_id adj with
+        | Neq -> Fibrancy f
+        | Eq -> (
+            let Eq = plus_lock_id fld_plus_lock in
+            (* x is the index-zero variable. *)
+            let x =
+              Var
+                (Index (Now, id_sface D.zero, Modality.filter_id mode D.zero, plus_with_no_locks mode))
+            in
+            let ins = zero_ins Hott.dim in
+            (* Compute terms that project each fibrancy field out of the codatatype and apply it to the index-zero variable 'x'. *)
+            let idm = Modality.id mode in
+            let idf = Modality.filter_id mode Hott.dim in
+            let onx : Hott.dim Field.t -> (mode, (hb, (mode id, D.zero) dim_entry) snoc, kinetic) term
+                =
+             fun trlift ->
+              app
+                (Field (modal_id mode (Weaken (Shift (Hott.dim, f.plusmap, f.ty))), trlift, ins))
+                idm (plus_no_lock mode) x in
+            let trr_x, liftr_x, trl_x, liftl_x = (onx ftrr, onx fliftr, onx ftrl, onx fliftl) in
+            (* xrcube and xlcube are 1-dimensional cubes consisting of the index-zero variable 'x' and its transports right or left. *)
+            match (Hott.cube x trr_x liftr_x, Hott.cube trl_x x liftl_x) with
+            | Some xrcube, Some xlcube ->
+                (* This generic functions computes the specified field projection 'fld' of any of the fibrancy fields, by applying that fibrancy field to the corresponding 'fld' of the input. *)
+                let trlift : type m.
+                    Hott.dim Field.t ->
+                    (Hott.dim, (mode, (hb, (mode id, D.zero) dim_entry) snoc, kinetic) term) CubeOf.t ->
+                    (mode * (m * (hb, (mode id, D.zero) dim_entry) snoc * potential * et))
+                    StructfieldAbwd.entry =
+                 fun trlift xcube ->
+                  let sty =
+                    Shift
+                      ( Hott.dim,
+                        f.plusmap,
+                        Lam
+                          ( singleton_variables f.glue (`Anon no_hints),
+                            f.glue,
+                            Modality.filter_id mode f.glue,
+                            fld_ty ) ) in
+                  StructfieldAbwd.Entry
+                    ( fld,
+                      Lower
+                        ( Modalcell.id_adjunction mode,
+                          plus_no_lock mode,
+                          Realize
+                            (app
+                               (Field
+                                  ( modal_id mode
+                                      (App
+                                         ( Weaken sty,
+                                           Hott.dim,
+                                           idf,
+                                           Modal (idm, plus_no_lock mode, xcube) )),
+                                    trlift,
+                                    ins ))
+                               idm (plus_no_lock mode)
+                               (Field (modal_id mode x, fld, ins_zero f.dim))),
+                          `Labeled ) )
+                 (* TODO: Once it's written, call this from Check.check_codata too. *)
+                 (* Entry (f, Higher _) *) in
+                let new_trr, new_liftr, new_trl, new_liftl =
+                  (trlift ftrr xrcube, trlift fliftr xrcube, trlift ftrl xlcube, trlift fliftl xlcube)
+                in
+                Fibrancy
+                  {
+                    f with
+                    trr = Snoc (f.trr, new_trr);
+                    liftr = Snoc (f.liftr, new_liftr);
+                    trl = Snoc (f.trl, new_trl);
+                    liftl = Snoc (f.liftl, new_liftl);
+                  }
+            | _ -> Fibrancy f))
 
   (* After all the codatafields have been added, we can "finish" the job at the time of evaluation, combining the StructfieldAbwds for the four user fibrancy fields, and a computation of the corecursive field id, to produce a single StructfieldAbwd whose fields are the five fibrancy fields. *)
   let rec finish : type mode g n nh b hb et.
@@ -263,33 +279,42 @@ module Codata = struct
                     t =
                fun (fields, fib) (CodatafieldAbwd.Entry (fld, fldty)) ->
                 match fldty with
-                | Lower fldty ->
-                    let xsname = singleton_variables D.zero (`Named "x") in
-                    let idm = Modality.id mode in
-                    let idf = Modality.filter_id mode Hott.dim in
-                    let field =
-                      CodatafieldAbwd.Entry
-                        ( fld,
-                          Lower
-                            (Inst
-                               ( App
-                                   ( Weaken
-                                       (Weaken
-                                          (Weaken
-                                             (Shift
-                                                ( Hott.dim,
-                                                  plusmap,
-                                                  Lam
-                                                    ( xsname,
-                                                      D.zero,
-                                                      Modality.filter_id mode D.zero,
-                                                      fldty ) )))),
-                                     Hott.dim,
-                                     idf,
-                                     Modal (idm, plus_no_lock mode, xcube) ),
-                                 TubeOf.mmap { map = (fun _ [ x ] -> field x fld) } [ xtube ] )) )
-                    in
-                    (Snoc (fields, field), add_field mode fib field)
+                | Lower (adj, plus_lock, fldty) -> (
+                    match Modalcell.compare_adjunction_id adj with
+                    | Neq ->
+                        (* MODALTODO: fibrancy of modal fields *)
+                        (fields, fib)
+                    | Eq ->
+                        let Eq = plus_lock_id plus_lock in
+                        let xsname = singleton_variables D.zero (`Named "x") in
+                        let idm = Modality.id mode in
+                        let idf = Modality.filter_id mode Hott.dim in
+                        let field =
+                          CodatafieldAbwd.Entry
+                            ( fld,
+                              Lower
+                                ( Modalcell.id_adjunction mode,
+                                  plus_no_lock mode,
+                                  Inst
+                                    ( App
+                                        ( Weaken
+                                            (Weaken
+                                               (Weaken
+                                                  (Shift
+                                                     ( Hott.dim,
+                                                       plusmap,
+                                                       Lam
+                                                         ( xsname,
+                                                           D.zero,
+                                                           Modality.filter_id mode D.zero,
+                                                           fldty ) )))),
+                                          Hott.dim,
+                                          idf,
+                                          Modal (idm, plus_no_lock mode, xcube) ),
+                                      TubeOf.mmap
+                                        { map = (fun _ [ x ] -> field mode x fld) }
+                                        [ xtube ] ) ) ) in
+                        (Snoc (fields, field), add_field mode fib field))
                 | Higher _ ->
                     (* TODO *)
                     (fields, fib) in
@@ -325,12 +350,15 @@ module Codata = struct
           (* Would also be only for glue. *)
           None in
     let id = lazy (PlusPbijmap.build glue Hott.dim { build = (fun p -> id p) }) in
+    (* Fibrancy fields are always non-modal, i.e. over the identity adjunction. *)
+    let idadj = Modalcell.id_adjunction mode in
+    let idlock = plus_no_lock mode in
     Emp
-    <: StructfieldAbwd.Entry (ftrr, Higher trr)
-    <: Entry (fliftr, Higher liftr)
-    <: Entry (ftrl, Higher trl)
-    <: Entry (fliftl, Higher liftl)
-    <: Entry (fid, LazyHigher id)
+    <: StructfieldAbwd.Entry (ftrr, Higher (idadj, idlock, trr))
+    <: Entry (fliftr, Higher (idadj, idlock, liftr))
+    <: Entry (ftrl, Higher (idadj, idlock, trl))
+    <: Entry (fliftl, Higher (idadj, idlock, liftl))
+    <: Entry (fid, LazyHigher (idadj, idlock, id))
 
   (* TODO: It would be nice to memoize the "finish" computation.  But we can't store it as a mutable field inside a Term, because it contains a LazyHigher and so is not marshalable.  Maybe we could use a hashtable, but it would be tricky to ensure the output types depend correctly on the input ones.  I guess we could have a mutable Map depending on 'n' and 'a' and then hashtables inside of that.  But then it starts to get questionable how much time would be saved.  Let's wait until we do some profiling and see if this is actually a pain point. *)
   let finished : type mode n c a nh ha et.

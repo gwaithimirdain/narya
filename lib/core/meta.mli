@@ -18,6 +18,7 @@ val make_def :
 
 val make_hole : 'mode Mode.t -> 'a N.t -> ('mode, 'b) Tctx.t -> 's energy -> ('mode, 'a, 'b, 's) t
 val remake : (File.t -> File.t) -> ('mode, 'a, 'b, 's) t -> ('mode, 'a, 'b, 's) t
+val mode : ('mode, 'a, 'b, 's) t -> 'mode Mode.t
 val name : ('mode, 'a, 'b, 's) t -> string
 val origin : ('mode, 'a, 'b, 's) t -> Origin.t
 

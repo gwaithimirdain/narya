@@ -30,6 +30,9 @@ Transparency and translucency
   > echo x3b
   > def y3b : prod3b ≔ (a,b)
   > echo y3b
+  > def prod2a_self : Type ≔ sig #(transparent) ( x .fst : A, x .snd : B)
+  > def y2a_self : prod2a_self ≔ (a,b)
+  > echo y2a_self
   > EOF
   x1
     : prod1
@@ -60,5 +63,8 @@ Transparency and translucency
   
   (a, b)
     : prod3b
+  
+  (fst ≔ a, snd ≔ b)
+    : prod2a_self
   
 

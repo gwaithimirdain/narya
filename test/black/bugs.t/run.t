@@ -658,3 +658,7 @@ This bug was in highlighting the whole degeneracy term rather than just its argu
        does not equal
          AESC[m
   
+  $ narya ascvar.ny
+  b
+    : B
+  

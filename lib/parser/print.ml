@@ -156,6 +156,7 @@ let rec pp_term : type lt ls rt rs.
   | Ident (x, w) -> (separate_map (char '.') utf8string x, w)
   | Constr (c, w) -> (pp_constr c, w)
   | Field (f, p, w) -> (pp_field f p, w)
+  | Key (parts, w) -> (utf8string ("#" ^ String.concat "." parts.value), w)
   | Superscript (Some x, s, w) ->
       let px, wx = pp_term x in
       (px ^^ pp_ws `None wx ^^ pp_superscript s, w)

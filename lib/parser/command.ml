@@ -125,6 +125,8 @@ module Command = struct
             Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
           | `Type_boundaries of
             Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
+          | `Unique_keys of
+            Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
           | (* Each variable name is paired with the whitespace of the comma preceding it (empty for the first one) and the whitespace following it. *)
             `Variables of Whitespace.t list * (Whitespace.t list * string * Whitespace.t list) list
           ];
@@ -651,6 +653,7 @@ module Parse = struct
           | Ident [ "chars" ] -> Some ((`Chars, ws), state)
           | Ident [ "function" ] -> Some ((`Function, ws), state)
           | Ident [ "type" ] -> Some ((`Type, ws), state)
+          | Ident [ "unique" ] -> Some ((`Unique, ws), state)
           | Ident [ "variables" ] -> Some ((`Variables, ws), state)
           | _ -> None) in
     match what with
@@ -678,6 +681,14 @@ module Parse = struct
             return
               ( Display { wsdisplay; wscoloneq; what = `Type_boundaries (wswhat, wsb, show, ws) },
                 state ))
+    | `Unique ->
+        let* wsb = token (Ident [ "keys" ]) in
+        let* wscoloneq = token Coloneq in
+        step "" (fun state _ (tok, ws) ->
+            let open Monad.Ops (Monad.Maybe) in
+            let* show = show_of_token tok in
+            return
+              (Display { wsdisplay; wscoloneq; what = `Unique_keys (wswhat, wsb, show, ws) }, state))
     | `Variables ->
         let* wscoloneq = token Coloneq in
         let* x, wsx = display_variable in
@@ -920,6 +931,8 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       | [ str ] ->
           if Option.is_some (deg_of_name str) then
             fatal (Invalid_constant_name (name, Some "that's a degeneracy name"))
+          else if List.mem_assoc str (Modal.Mode.all ()) then
+            fatal (Invalid_constant_name (name, Some "that's a mode name"))
       | _ -> ());
       Scope.check_name name loc;
       let const = Scope.define ?loc name in
@@ -935,6 +948,8 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
             | [ str ] ->
                 if Option.is_some (deg_of_name str) then
                   fatal (Invalid_constant_name (name, Some "that's a degeneracy name"))
+                else if List.mem_assoc str (Modal.Mode.all ()) then
+                  fatal (Invalid_constant_name (name, Some "that's a mode name"))
             | _ -> ());
             Scope.check_name name loc;
             ( lazy (Scope.define ?loc name),
@@ -1004,7 +1019,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                            match D.compare_zero (cod_left_ins ins) with
                            | Zero -> true
                            | Pos _ -> false -> (
-                        match Global.find name with
+                        match Global.find_const name with
                         | Definition { tm = `Defined tree; _ } ->
                             unparse Names.empty tree No.Interval.entire No.Interval.entire
                         | Definition { tm = `Axiom; _ } ->
@@ -1153,30 +1168,26 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                   | Zero -> (`Normal, Token.Mapsto, Builtins.abs)
                   | Pos _ -> (`Cube, Token.DblMapsto, Builtins.cubeabs) in
                 (* Uniquify the variable names relative to the context *)
-                let module NameState = Monad.State (struct
-                  type t = Names.wrapped
-                end) in
-                let module M = Mbwd.Monadic (NameState) in
-                let xs, _ =
-                  M.mmapM
-                    (fun [ x ] ->
-                      let open Monad.Ops (NameState) in
-                      let* (Wrap names) = NameState.get in
-                      let x, names = Names.add_cube dim names x in
-                      let* () = NameState.put (Wrap names) in
-                      return x)
-                    [ Domvars.get_pi_vars ctx cube Emp ety ]
-                    (Wrap names) in
+                let names = ref (Wrap names : Names.wrapped) in
+                let xs =
+                  Mbwd.map
+                    (fun x ->
+                      let (Wrap old_names) = !names in
+                      let x, new_names = Names.add_cube dim old_names x in
+                      names := Wrap new_names;
+                      x)
+                    (Domvars.get_pi_vars ctx cube Emp ety) in
                 let vars =
                   unparse_abs
                     (Bwd.map (fun x -> (x, `Explicit)) xs)
                     { strictness = No.Nonstrict; endpoint = No.minus_omega }
-                    (No.minusomega_le No.plus_omega) No.minusomega_lt_plusomega in
+                    (No.minusomega_le No.plus_omega) No.minusomegaplusone_lt_plusomega in
                 locate_opt None
                 @@ infix ~notn ~first:vars
                      ~inner:(Single (Left (mapsto, ([], None))))
-                     ~last:ehole ~left_ok:(No.le_refl No.minus_omega)
-                     ~right_ok:(No.le_refl No.minus_omega)
+                     ~last:(hole (interval_right notn) No.Interval.entire)
+                     ~left_ok:No.minusomega_lt_minusomegaplusone
+                     ~right_ok:No.minusomega_lt_minusomegaplusone
             | Canonical (_, Codata { eta; fields; _ }, ins, _) -> (
                 let m = cod_left_ins ins in
                 let do_field : type a n et.
@@ -1358,6 +1369,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       | `Type_boundaries (_, _, tb, _) ->
           let tb = Display.modify_type_boundaries tb in
           emit (Display_set ("type boundaries", Display.to_string (tb :> Display.values)))
+      | `Unique_keys (_, _, uk, _) ->
+          let uk = Display.modify_unique_keys uk in
+          emit (Display_set ("unique keys", Display.to_string (uk :> Display.values)))
       | `Variables (_, xs) ->
           let variables = List.map (fun (_, x, _) -> x) xs in
           Display.modify (fun s -> { s with variables });

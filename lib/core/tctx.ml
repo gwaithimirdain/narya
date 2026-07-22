@@ -169,7 +169,7 @@ module Locks = Path.Hom (TEntry) (Modality) (Locksmap)
 
 module Lockmap = struct
   module Dom = Modality.Gen
-  module Cod = Tctxcat
+  module Cod = TEntry
 
   module Obj = struct
     module Dom = Mode
@@ -191,15 +191,13 @@ module Lockmap = struct
   end
 
   type (_, _, _, _, _, _) t =
-    | Lock_lock :
-        ('x, 'm, 'y) Modality.gen
-        -> ('x, 'm, 'y, 'x, ('y Tctx.id, 'm lock_entry) snoc, 'y) t
+    | Lock_lock : ('x, 'm, 'y) Modality.gen -> ('x, 'm, 'y, 'x, 'm lock_entry, 'y) t
 
   let dom : type a m b x n y. (a, m, b, x, n, y) t -> (a, m, b) Dom.t = function
     | Lock_lock m -> m
 
   let cod : type a m b x n y. (a, m, b, x, n, y) t -> (x, n, y) Cod.t = function
-    | Lock_lock m -> Tctx.suc (Tctx.id (Mode (Modality.Gen.tgt m))) (Lock m)
+    | Lock_lock m -> Lock m
 
   let src : type a m b x n y. (a, m, b, x, n, y) t -> (a, x) Obj.t = function
     | Lock_lock m -> Eq (Modality.Gen.src m)
@@ -218,7 +216,7 @@ module Lockmap = struct
     | Lock_lock _, Lock_lock _ -> Eq
 end
 
-module Lock = Path.Hom (Modality.Gen) (Tctxcat) (Lockmap)
+module Lock = Path.Fmap (Modality.Gen) (TEntry) (Lockmap)
 open Tctx
 
 (* Making a modality into a context, and then extracting a modality, is the identity. *)
@@ -226,7 +224,15 @@ open Tctx
 let rec locks_lock : type a m b tm. (a, m, b, a, tm, b) Lock.t -> (a, tm, b, a, m, b) Locks.t =
   function
   | Zero (Eq a) -> Zero (Eq a)
-  | Suc (l, Lock_lock g, Suc (Zero, Lock _)) -> Suc (locks_lock l, Locks_lock g, Suc (Zero, g))
+  | Suc (l, Inject (Lock_lock g), Suc (Zero, Lock _)) ->
+      Suc (locks_lock l, Locks_lock g, Suc (Zero, g))
+
+(* Witness that a tctx doesn't end with a lock *)
+
+type _ ends_without_lock =
+  | Without_lock_id : 'x id ends_without_lock
+  | Without_lock_proj : ('x id, 'm proj) snoc ends_without_lock
+  | Without_lock_dim : ('b, ('m, 'k) dim_entry) snoc ends_without_lock
 
 (* We can append a modal lock to a tctx by making the modality into a tctx and then appending it. *)
 
@@ -253,12 +259,27 @@ let plus_no_lock : type ctx mode. mode Mode.t -> (ctx, mode, mode Modality.id, m
     =
  fun mode -> Plus_lock (Zero (Eq mode), Zero)
 
+(* A plus_lock for the identity modality doesn't actually extend the context. *)
+let plus_lock_id : type ctx mode newctx.
+    (ctx, mode, mode Modality.id, mode, newctx) plus_lock -> (ctx, newctx) Eq.t = function
+  | Plus_lock (Zero _, Zero) -> Eq
+
 let plus_lock_suc : type ctx mode modality dom newctx x m.
     (ctx, mode, modality, dom, newctx) plus_lock ->
     (x, m, dom) Modality.gen ->
     (ctx, mode, (modality, m) suc, x, (newctx, m lock_entry) suc) plus_lock =
  fun (Plus_lock (lock, comp)) m ->
-  Plus_lock (Suc (lock, Lock_lock m, Suc (Zero, Lock m)), Suc (comp, Lock m))
+  Plus_lock (Suc (lock, Inject (Lock_lock m), Suc (Zero, Lock m)), Suc (comp, Lock m))
+
+let plus_lock_comp : type a x y z m n mn an anm.
+    (a, z, n, y, an) plus_lock ->
+    (an, y, m, x, anm) plus_lock ->
+    (x, m, y, n, z, mn) Modality.comp ->
+    (a, z, mn, x, anm) plus_lock =
+ fun (Plus_lock (ln, an)) (Plus_lock (lm, an_m)) mn ->
+  let (Comp (lmn, n_m)) = Lock.comp lm ln mn in
+  let an_m = Tctx.comp_assocr an n_m an_m in
+  Plus_lock (lmn, an_m)
 
 let plus_lock_out : type mode ctx modality dom newctx.
     (mode, ctx) Tctx.t -> (ctx, mode, modality, dom, newctx) plus_lock -> (dom, newctx) Tctx.t =
@@ -295,9 +316,9 @@ let plus_with_locks_dim : type a cod modality mode dom ac annote n.
     (a, cod, modality, mode, ac) plus_with_locks ->
     n D.t ->
     (dom, annote, mode, n, n) Modality.filter_dim ->
-    (a, cod, modality, mode, (ac, (annote, n) dim_entry) suc) plus_with_locks option =
+    (a, cod, modality, mode, (ac, (annote, n) dim_entry) suc) plus_with_locks =
  fun (Plus_with_locks (c, l)) n f ->
-  Some (Plus_with_locks (Suc (c, Dim (n, f)), Suc (l, Locks_dim (n, f), Zero)))
+  Plus_with_locks (Suc (c, Dim (n, f)), Suc (l, Locks_dim (n, f), Zero))
 
 (* A plus_with_locks with existentially quantified composite modality. *)
 type (_, _, _, _) wrapped_plus_with_locks =
@@ -315,6 +336,41 @@ let plus_with_locks_concat : type an exc exl cod b nu dom bn.
   let (Comp (l3, _)) = Locks.comp l2 l1 c2_c1 in
   Wrap_plus_with_locks (Plus_with_locks (Tctx.comp_assocr e1 c2_c1 e2, l3))
 
+(* Given a Tctx and a modality, peel matching lock generators off the front of both, in lockstep, skipping over any dimension entries in the Tctx along the way (as long as the modality isn't empty yet).  If we use up the whole modality, we return the resulting plus_with_locks recording the entries we peeled off and what remains of the Tctx.  If instead a lock in the Tctx doesn't match the next generator of the modality, or the Tctx runs out (reaches its Proj base) before the modality does, we return None. *)
+
+type (_, _, _, _) found_plus_with_locks =
+  | Found_plus_with_locks :
+      ('a, 'mode, 'modality, 'dom, 'ac) plus_with_locks
+      -> ('ac, 'mode, 'modality, 'dom) found_plus_with_locks
+
+let rec find_plus_with_locks : type ac dom modality mode.
+    (dom, ac) Tctx.t ->
+    (dom, modality, mode) Modality.t ->
+    (ac, mode, modality, dom) found_plus_with_locks option =
+ fun ctx modality ->
+  match modality with
+  | Path (Zero, mode) -> Some (Found_plus_with_locks (plus_with_no_locks mode))
+  | Path (Suc (rest, gen), mode_obj) -> (
+      match ctx with
+      | Path (Zero, _) -> raise (Failure "find_plus_with_locks: empty Tctx")
+      | Path (Suc (ctx_rest, entry), unit_obj) -> (
+          match entry with
+          | Dim (n, f) -> (
+              match find_plus_with_locks (Path (ctx_rest, unit_obj)) modality with
+              | None -> None
+              | Some (Found_plus_with_locks plus) ->
+                  Some (Found_plus_with_locks (plus_with_locks_dim plus n f)))
+          | Lock l -> (
+              match Modality.Gen.compare gen l with
+              | Neq -> None
+              | Eq -> (
+                  match
+                    find_plus_with_locks (Path (ctx_rest, unit_obj)) (Path (rest, mode_obj))
+                  with
+                  | None -> None
+                  | Some (Found_plus_with_locks plus) ->
+                      Some (Found_plus_with_locks (plus_with_locks_lock plus l))))
+          | Proj _ -> None))
 
 (* Lists of variable-annotation modalities, at the same mode (their codomain), to be made into lists of variables by combining with a dimension. *)
 
@@ -405,7 +461,7 @@ module VarAnnotator = struct
     Eq
 end
 
-module VarAnnotate = Path.Fmap (VarAnnote) (TEntry) (VarAnnotator)
+module VarAnnotate = Path.Fmap2 (VarAnnote) (TEntry) (VarAnnotator)
 
 (* Insertions and permutations.  We only allow inserting and permuting dimensions in between locks; this makes sense because dimensions are all endomorphisms in this free category. *)
 
@@ -581,7 +637,7 @@ let rec perm_unlock : type a b c m n p mp np modality.
  fun p mp np mn ->
   match (p, mp, np) with
   | Zero _, Zero, Zero -> mn
-  | Suc (p, Lock_lock _, Suc (Zero, g0)), Suc (mp, g1), Suc (np, g2) -> (
+  | Suc (p, Inject (Lock_lock _), Suc (Zero, g0)), Suc (mp, g1), Suc (np, g2) -> (
       let Eq, Eq = (TEntry.tgt_uniq g0 g1, TEntry.tgt_uniq g1 g2) in
       match mn with
       | Id -> perm_unlock p mp np Id
@@ -600,7 +656,7 @@ let rec perm_unlock_dom : type a b c m p mp np modality.
  fun p mp mn ->
   match (p, mp) with
   | Zero _, Zero -> Perm_unlock_dom (Zero, mn)
-  | Suc (p, Lock_lock _, Suc (Zero, g0)), Suc (mp, g1) -> (
+  | Suc (p, Inject (Lock_lock _), Suc (Zero, g0)), Suc (mp, g1) -> (
       let Eq = TEntry.tgt_uniq g0 g1 in
       match mn with
       | Id ->
@@ -623,7 +679,7 @@ let rec perm_unlock_cod : type a b c n p mp np modality.
  fun p np mn ->
   match (p, np) with
   | Zero _, Zero -> Perm_unlock_cod (Zero, mn)
-  | Suc (p, Lock_lock _, Suc (Zero, g0)), Suc (np, g2) -> (
+  | Suc (p, Inject (Lock_lock _), Suc (Zero, g0)), Suc (np, g2) -> (
       let Eq = TEntry.tgt_uniq g0 g2 in
       match mn with
       | Insert (_, _) -> .
@@ -929,7 +985,7 @@ module Anyplus = struct
 end
 
 module Plusmap = struct
-  include Path.Fmap (TEntry) (TEntry) (Anyplus)
+  include Path.Fmap2 (TEntry) (TEntry) (Anyplus)
 
   (* let rec assocl : type a b ab cs bcs abcs x y.
          (a, b, ab) D.plus ->
@@ -995,7 +1051,8 @@ module Plusmap = struct
   (* Adding a dimension acts as the identity on pure locks. *)
   let rec lock : type a x m y l. (x, m, y, x, l, y) Lock.t -> (a, x, l, y, x, l, y) t = function
     | Zero (Eq mode) -> Zero (Eq (Mode mode))
-    | Suc (ml, Lock_lock m, Suc (Zero, l)) -> Suc (lock ml, Inject (Plus_lock m), Suc (Zero, l))
+    | Suc (ml, Inject (Lock_lock m), Suc (Zero, l)) ->
+        Suc (lock ml, Inject (Plus_lock m), Suc (Zero, l))
 
   (* And it preserves the composite of locks *)
   let rec locks : type n x y b nb m.
@@ -1089,12 +1146,13 @@ let rec shift_plus_lock : type n k nb bk nbk dom mode.
  fun n n_bk (Plus_lock (lk, nb_k)) ->
   match (lk, nb_k) with
   | Zero mode, Zero -> Shift (n_bk, Plus_lock (Zero mode, Zero))
-  | Suc (lk, Lock_lock g1, Suc (Zero, Lock g2)), Suc (nb_k, Lock g3) ->
+  | Suc (lk, Inject (Lock_lock g1), Suc (Zero, Lock g2)), Suc (nb_k, Lock g3) ->
       let (Suc (n_bk, Inject (Plus_lock g4), Suc (Zero, Lock _))) = n_bk in
       let Eq = Modality.Gen.tgt_uniq g2 g3 in
       let Eq = Modality.Gen.tgt_uniq g3 g4 in
       let (Shift (nb, Plus_lock (lk', bk))) = shift_plus_lock n n_bk (Plus_lock (lk, nb_k)) in
-      Shift (nb, Plus_lock (Suc (lk', Lock_lock g1, Suc (Zero, Lock g1)), Suc (bk, Lock g1)))
+      Shift
+        (nb, Plus_lock (Suc (lk', Inject (Lock_lock g1), Suc (Zero, Lock g1)), Suc (bk, Lock g1)))
 
 type (_, _, _, _, _, _) shift_unplus_lock =
   | Shift :

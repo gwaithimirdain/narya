@@ -16,7 +16,7 @@ let () =
     | `Set _ -> Some "unhandled Subtype set effect")
 
 let add subtype supertype =
-  match (Global.find subtype, Global.find supertype) with
+  match (Global.find_const subtype, Global.find_const supertype) with
   | Definition { ty = UU (_, subdim); _ }, Definition { ty = UU (_, superdim); _ } -> (
       match (D.compare_zero subdim, D.compare_zero superdim) with
       | Zero, Zero ->
@@ -47,6 +47,9 @@ let subtype_of ctx subtype supertype =
             let* () = Constant.Map.find_opt supername m in
             (* Higher-dimensional versions of subtypes are also subtypes, as long as they are instantiated at equal tubes. *)
             let* () = equal_ins subins superins in
-            equal_tyargs ctx subargs superargs -> Ok ()
+            (* Only a successful comparison counts: equal_tyargs can also return Some (Error _) for a definite inequality. *)
+            match equal_tyargs ctx subargs superargs with
+            | Some (Ok ()) -> Some ()
+            | _ -> None -> Ok ()
   (* If there is no subtyping relaton, we revert to checking type equality. *)
   | _ -> equal_val ctx subtype supertype

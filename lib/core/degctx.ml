@@ -60,7 +60,7 @@ module Ordered = struct
                         match Hashtbl.find_opt xstbl (SFace_of fab') with
                         | Some x -> ready (Val x.tm)
                         | None ->
-                            defer (fun () ->
+                            defer (Modality.src modality) (fun () ->
                                 fatal (Anomaly "variable out of scope in degenerate_binding")));
                   } in
               let env = Ext { env; plus = k_n; values = `Lazy prev_vals; filter; filtered } in
@@ -209,6 +209,9 @@ module Ordered = struct
                 Suc (Zero, Dim (D.plus_out k k_mn, filter_kmn)) ),
             Snoc (newctx', newentry, ax),
             newenv )
+    | Weaken (ctx, code) ->
+        let (Degctx (kb, newctx, env)) = degenerate ctx l in
+        Degctx (kb, Weaken (newctx, code), env)
     | Lock (ctx, lock) ->
         let (Degctx (kb, newctx, env)) = degenerate ctx l in
         Degctx
@@ -218,11 +221,11 @@ module Ordered = struct
               ( env,
                 Modalcell.id (Modality.of_gen lock),
                 Plus_lock
-                  ( Suc (Zero (Eq (Ctx.Ordered.mode ctx)), Lock_lock lock, Suc (Zero, Lock lock)),
+                  ( Suc
+                      ( Zero (Eq (Ctx.Ordered.mode ctx)),
+                        Inject (Lock_lock lock),
+                        Suc (Zero, Lock lock) ),
                     Suc (Zero, Lock lock) ) ) )
-    | Parametric_lock ctx ->
-        let (Degctx (kb, newctx, env)) = degenerate ctx l in
-        Degctx (kb, Parametric_lock newctx, env)
 end
 
 type (_, _, _, _) degctx =

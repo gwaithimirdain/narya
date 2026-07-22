@@ -152,6 +152,8 @@ and (_, _, _, _) parse =
   | Ident : string list * Whitespace.t list -> ('lt, 'ls, 'rt, 'rs) parse
   | Constr : string * Whitespace.t list -> ('lt, 'ls, 'rt, 'rs) parse
   | Field : string * string list * Whitespace.t list -> ('lt, 'ls, 'rt, 'rs) parse
+  (* A modal key operation "#a.b.c", applied postfix to a synthesizing term.  The dot-separated pieces of the key name are stored as strings, to be resolved into a 2-cell at typechecking time. *)
+  | Key : string list located * Whitespace.t list -> ('lt, 'ls, 'rt, 'rs) parse
   | Superscript :
       ('lt, 'ls, No.plus_omega, No.strict) parse located option * string located * Whitespace.t list
       -> ('lt, 'ls, 'rt, 'rs) parse
@@ -513,6 +515,9 @@ let rec split_ending_whitespace : type lt ls rt rs.
       | Field (f, b, ws) ->
           let first, rest = Whitespace.split ws in
           ({ value = Field (f, b, first); loc }, rest)
+      | Key (parts, ws) ->
+          let first, rest = Whitespace.split ws in
+          ({ value = Key (parts, first); loc }, rest)
       | Superscript (x, s, ws) ->
           let first, rest = Whitespace.split ws in
           ({ value = Superscript (x, s, first); loc }, rest)

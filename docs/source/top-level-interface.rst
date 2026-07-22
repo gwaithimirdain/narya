@@ -21,9 +21,11 @@ Formatting output
 - ``-unicode`` and ``-ascii``: Display and reformat code using Unicode (default) or ASCII
 - ``-no-reformat``: Do not automatically reformat source files (see :ref:`Code formatter`)
 - ``-show-function-boundaries``: Display boundaries of functions, when implicit (see :ref:`Implicit boundaries`)
-- ``-hide-function-boundaries``: Hide boundaries of functions, when implicit
+- ``-hide-function-boundaries``: Hide boundaries of functions, when implicit (default)
 - ``-show-type-boundaries``: Display boundaries of types, when implicit
-- ``-hide-type-boundaries``: Hide boundaries of types, when implicit
+- ``-hide-type-boundaries``: Hide boundaries of types, when implicit (default)
+- ``-show-unique-keys``: Display keys that are the unique one between their endpoints (see :ref:`Keys`)
+- ``-hide-unique-keys``: Hide keys that are the unique one between their endpoints (default)
 - ``-variables X,Y,Z``: Set the default variable names (see :ref:`Default names`)
 
 Controlling parametricity
@@ -35,8 +37,19 @@ These options are discussed under :ref:`Parametricity`.
 - ``-direction X``: Set the symbol and names for reflexivity
 - ``-arity N``: Set the arity of parametricity to N (1 ≤ N ≤ 9)
 - ``-internal`` and ``-external``: Set whether parametricity is internal (default) or external
-- ``-discreteness``: Enable strictly parametrically discrete types
-- ``-dtt``: Poor man's dTT mode (``-parametric -arity 1 -direction d -external``)
+- ``-discreteness``: Enable strictly parametrically discrete types (deprecated)
+
+Modal type theory options
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+These options are discussed under :ref:`Modal type theory` and :ref:`Modal parametric discreteness`.
+
+- Mode theory selection flags
+- ``-modes X``: Rename the modes (universes)
+- ``-modalities X``: Rename the modalities
+- ``-modalcells X``: Rename the modal cells
+
+- ``-dtt``: Poor man's dTT mode (``-parametric -arity 1 -direction d -external -discrete-tconn``)
 
 Execution
 ---------
@@ -215,7 +228,12 @@ Set one of the display settings (that are also set by command-line flags).  Poss
     display type boundaries ≔ on
     display type boundaries ≔ off
     display type boundaries ≔ toggle
+    display unique keys ≔ on
+    display unique keys ≔ off
+    display unique keys ≔ toggle
     display variables ≔ X,Y,Z
+
+See :ref:`Implicit boundaries` for more information about function and type boundaries, and :ref:`Keys` for more information about unique keys.
 
 
 Chdir
@@ -428,5 +446,5 @@ jsNarya
 
 jsNarya is a JavaScript version of Narya that runs in a browser.  Its functionality is limited to the equivalent of ``narya -e "STARTUP" -i``: you can specify a single startup "file" by copying and pasting it into a text box, and then you drop into interactive mode.  Also there is no real Unicode input-mode, although there is a palette of buttons that can be used to enter a number of common Unicode characters.  These limitations are not intrinsic; we just have not yet found or implemented an appropriate frontend for anything more complicated.
 
-jsNarya does accept customization of the arity, direction name, and internality of parametricity, plus discreteness, for :ref:`Observational higher dimensions`.  This can be done with input elements on the page before starting the interactive mode, or with appropriately-named URL parameters.  For instance, supplying the URL query string ``?arity=1&direction=d&external`` yields :ref:`Poor man's dTT<Internal versus external parametricity>`, and this special case admits the shortcut ``?dtt``.  The startup code can also be specified in the URL with the ``?startup=`` parameter.
+jsNarya does accept customization of the arity, direction name, and internality of parametricity, plus discreteness, for :ref:`Observational higher dimensions`.  This can be done with input elements on the page before starting the interactive mode, or with appropriately-named URL parameters, such as ``?arity=1&direction=p,rel,Br`` for unary :ref:`Parametricity`, or ``?dtt`` for :ref:`Displayed type theory`.  The startup code can also be specified in the URL with the ``?startup=`` parameter.
 

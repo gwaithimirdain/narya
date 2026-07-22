@@ -38,8 +38,24 @@ end)
 let metas : unit Metatable.t = Metatable.make ()
 let holes : unit Holetable.t = Holetable.make ()
 
+(* Caches of evaluated values (e.g. the cache of evaluated constants in Norm) must be invalidated whenever the meaning of an existing constant or metavariable could change, since evaluation reads the global state.  (Additions of fresh constants and metavariables couldn't affect previously cached values, but we invalidate on them too, for safety; they are rare.)  Time-travel (undo and rewind) is not handled by these hooks; caches should be stored in an Origin.Versioned to deal with that. *)
+let invalidators : (unit -> unit) list ref = ref []
+
+(* Register a callback to be invoked whenever the global state of constants or metavariables is mutated, so that caches of evaluated values can be invalidated.  (Time-travel is not signaled by these callbacks; caches should be stored in an Origin.Versioned to deal with that.) *)
+let register_invalidator f = invalidators := f :: !invalidators
+let invalidate () = List.iter (fun f -> f ()) !invalidators
+
+(* Invalidating wrappers around the primitive mutations of the constant and metavariable tables.  All modifications of those tables should go through these. *)
+let consttable_add c v =
+  invalidate ();
+  Constant.Table.add c v constants
+
+let metatable_add m v =
+  invalidate ();
+  Metatable.add m v metas
+
 (* Look up a constant. *)
-let find c =
+let find_const c =
   match Constant.Table.find_opt c constants with
   | Some (Ok d) -> d
   | Some (Error e) -> fatal e
@@ -128,11 +144,13 @@ type origin_entry =
 let find_file i = (Constant.Table.find_file i constants, Metatable.find_file i metas)
 
 let add_file i (c, m) =
+  invalidate ();
   Constant.Table.add_file i c constants;
   Metatable.add_file i m metas
 
 (* Returns the new file data for constants and metas. *)
 let from_istream_origin f chan i =
+  invalidate ();
   (* NB in a tuple (a,b), OCaml executes b before a!  But we have to unmarshal the constants before the metas, because that's the order we marshaled them in, so we control the order of execution with let.  *)
   let cs = Constant.Table.from_istream_origin chan (Result.map (link_definition f)) i constants in
   let ms =
@@ -148,7 +166,7 @@ let from_istream_origin f chan i =
   (cs, ms)
 
 (* Add a new constant.  Only works on the current origin. *)
-let add c d = Constant.Table.add c (Ok d) constants
+let add c d = consttable_add c (Ok d)
 
 (* Set the definition of an already-defined constant.  Only works on the current origin. *)
 let set : type mode.
@@ -164,17 +182,17 @@ let set : type mode.
       | Eq ->
           let tm = `Defined tm in
           let parametric = Option.value parametric ~default:p in
-          Constant.Table.add c (Ok (Definition { mode; tm; ty; parametric })) constants
+          consttable_add c (Ok (Definition { mode; tm; ty; parametric }))
       | Neq -> fatal (Anomaly "Global.set: mode mismatch"))
   | _ -> fatal (Anomaly "Global.set: constant not defined")
 
 (* Add a new constant, but make it an error to access it. *)
-let add_error c e = Constant.Table.add c (Error e) constants
+let add_error c e = consttable_add c (Error e)
 
 (* Add a new Global metavariable (e.g. local let-definition) to the new metas associated to the current command. *)
 let add_meta m ~termctx ~ty ~tm ~energy =
   let tm = (tm :> [ `Defined of ('mode, 'b, 's) term | `Axiom | `Undefined ]) in
-  Metatable.add m (Ok { tm; termctx; ty; energy; recursion = `Nonrecursive }) metas
+  metatable_add m (Ok { tm; termctx; ty; energy; recursion = `Nonrecursive })
 
 (* Set the definition of a Global metavariable, required to already exist but not be defined.  The optional ?recursion argument records whether the definition contains occurrences of constants that were being defined when the metavariable was created (used when solving holes). *)
 let set_meta m ?termctx ?recursion tm =
@@ -185,7 +203,7 @@ let set_meta m ?termctx ?recursion tm =
         match termctx with
         | Some termctx -> { d with termctx }
         | None -> d in
-      Metatable.add m (Ok d) metas
+      metatable_add m (Ok d)
   | _ -> fatal (Anomaly "Global.set_meta: metavariable not defined")
 
 (* Count all the unsolved holes, from all origins. *)
@@ -334,7 +352,7 @@ let add_hole m loc ~vars ~termctx ~ty ~status ~li ~ri =
         (No_holes_allowed (where :> [ `Command of string | `File of string | `Other of string ]))
   | _, Error msg -> fatal (No_holes_allowed (`Command msg))
   | Ok (), Ok () ->
-      Metatable.add m
+      metatable_add m
         (Ok
            {
              tm = `Undefined;
@@ -342,8 +360,7 @@ let add_hole m loc ~vars ~termctx ~ty ~status ~li ~ri =
              ty;
              energy = Status.energy status;
              recursion = `Nonrecursive;
-           })
-        metas;
+           });
       Holetable.add m
         {
           status;
@@ -386,23 +403,23 @@ let with_definition : type mode a.
         | `Must_be_parametric | `Maybe_parametric -> `Maybe_parametric in
       match Mode.compare mode m with
       | Eq ->
-          Constant.Table.add c (Ok (Definition { mode; ty; tm; parametric })) constants;
-          Fun.protect ~finally:(fun () -> Constant.Table.add c old constants) f
+          consttable_add c (Ok (Definition { mode; ty; tm; parametric }));
+          Fun.protect ~finally:(fun () -> consttable_add c old) f
       | Neq -> fatal (Anomaly "Global.set: mode mismatch"))
   | Some (Error _ as old) ->
       (* If the constant is currently unusable, we just retain that state. *)
-      Fun.protect ~finally:(fun () -> Constant.Table.add c old constants) f
+      Fun.protect ~finally:(fun () -> consttable_add c old) f
   | _ -> fatal (Anomaly "missing definition in with_definition")
 
 (* Similarly, temporarily set the value of a global metavariable, which could be either permanent or current. *)
 let with_meta_definition m tm f =
   match Metatable.find_opt m metas with
   | Some (Ok olddf as old) ->
-      Metatable.add m (Ok (Metadef.define tm olddf)) metas;
-      Fun.protect ~finally:(fun () -> Metatable.add m old metas) f
+      metatable_add m (Ok (Metadef.define tm olddf));
+      Fun.protect ~finally:(fun () -> metatable_add m old) f
   | Some (Error _ as old) ->
       (* If the metavariable is currently unusable, we just retain that state. *)
-      Fun.protect ~finally:(fun () -> Metatable.add m old metas) f
+      Fun.protect ~finally:(fun () -> metatable_add m old) f
   | None ->
       (* If the metavariable isn't found, that means that when we created it we didn't have a type for it.  That, in turn, means that the user doesn't have a name for it, since the metavariable is only bound to a user name in a "let rec".  So we don't need to do anything. *)
       f ()
@@ -411,14 +428,14 @@ let with_meta_definition m tm f =
 let without_definition c err f =
   match Constant.Table.find_opt c constants with
   | Some old ->
-      Constant.Table.add c (Error err) constants;
-      Fun.protect ~finally:(fun () -> Constant.Table.add c old constants) f
+      consttable_add c (Error err);
+      Fun.protect ~finally:(fun () -> consttable_add c old) f
   | _ -> fatal (Anomaly "missing definition in without_definition")
 
 (* Similarly, temporarily set the value of a global metavariable to produce an error. *)
 let without_meta_definition m err f =
   match Metatable.find_opt m metas with
   | Some old ->
-      Metatable.add m (Error err) metas;
-      Fun.protect ~finally:(fun () -> Metatable.add m old metas) f
+      metatable_add m (Error err);
+      Fun.protect ~finally:(fun () -> metatable_add m old) f
   | None -> f ()

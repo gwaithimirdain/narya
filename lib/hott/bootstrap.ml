@@ -46,7 +46,7 @@ let get name =
 (* MODALTODO: We need to do all of this separately for each mode, and in the case of pi-types separately for each modality.  At present, choosing the trivial mode theory here means that we at least get correct fibrancy behavior for any unimodal theory and non-modal pi-types. *)
 
 let () =
-  Modal.Trivial.install ();
+  Modal.Trivial.install [] [] [];
 
   (* Wrap everything in the standard effect handlers *)
   Top.hott := false;
@@ -60,7 +60,7 @@ let () =
   let glue = get [ "glue" ] in
 
   (* Mark glue as being glue. *)
-  (match Global.find glue with
+  (match Global.find_const glue with
   | Definition
       {
         tm =
@@ -112,7 +112,7 @@ let () =
 
     (* Use this to compute the types of fibrancy fields. *)
     let isfibrant = get [ "isFibrant" ] in
-    match Global.find isfibrant with
+    match Global.find_const isfibrant with
     | Definition
         {
           tm = `Defined (Lam (x, _, modality, Canonical (Codata { eta = Noeta; dim; fields; _ })));
@@ -153,7 +153,7 @@ let () =
     let fib_glue = get [ "fib_glue" ] in
 
     (* We remove the eq.trr's from the definition of fib_rtr, and the eq.trr2's from id_rtr, since they are always unnecessary computationally.  This doesn't seem to materially affect performance, but it's cleaner. *)
-    (match Global.find fib_rtr with
+    (match Global.find_const fib_rtr with
     | Definition
         (type mode)
         ({
@@ -171,7 +171,14 @@ let () =
         let fields =
           Bwd.map
             (function
-              | Term.StructfieldAbwd.Entry (f, Higher tms) ->
+              | Term.StructfieldAbwd.Entry
+                  ( f,
+                    Higher
+                      (type f g gmode ag)
+                      ((adj, plus_lock, tms) :
+                        (_, f, g, gmode) Modalcell.adjunction
+                        * (_, _, g, gmode, ag) plus_lock
+                        * (_, _, gmode * ag) Term.PlusPbijmap.t) ) ->
                   let tms =
                     Term.PlusPbijmap.mmap
                       {
@@ -207,9 +214,9 @@ let () =
                                                    Modal (modality, plus, tm) )) ) :
                                            k variables
                                            * kn D.t
-                                           * (dom, modality, mode, k, kn) Modality.filter_dim
+                                           * (dom, modality, gmode, k, kn) Modality.filter_dim
                                            * _) ) :
-                                      _ * (mode, a, potential) Term.term)
+                                      _ * (gmode, a, potential) Term.term)
                                   when c = eq_trr -> (
                                     match (Modality.compare_id modality, plus) with
                                     | Eq, Plus_lock (Zero _, Zero) ->
@@ -221,7 +228,7 @@ let () =
                                                 bm,
                                                 Realize
                                                   (CubeOf.find_top tm
-                                                    : ( mode,
+                                                    : ( gmode,
                                                         (a, (modality, k) dim_entry) Tbwd.snoc,
                                                         kinetic )
                                                       Term.term) ) )
@@ -230,13 +237,13 @@ let () =
                               x);
                       }
                       [ tms ] in
-                  Term.StructfieldAbwd.Entry (f, Higher tms)
+                  Term.StructfieldAbwd.Entry (f, Higher (adj, plus_lock, tms))
               | s -> s)
             fields in
         Global.set fib_rtr mode
           (Lam (aa, aad, aam, Lam (bb, bbd, bbm, Lam (e, ed, em, Struct { s with fields }))))
     | _ -> ());
-    (match Global.find id_rtr with
+    (match Global.find_const id_rtr with
     | Definition
         (type mode)
         ({
@@ -287,10 +294,14 @@ let () =
         let field_mapper : type mode n a s et.
             (mode * (n * a * s * et)) Term.StructfieldAbwd.entry ->
             (mode * (n * a * s * et)) Term.StructfieldAbwd.entry = function
-          | Term.StructfieldAbwd.Entry
-              ( fld,
-                Lower
-                  ( Lam
+          | Term.StructfieldAbwd.Entry (fld, Lower (fld_adj, fld_plus_lock, body, l)) as entry -> (
+              (* The HOTT fibrancy fields are always non-modal, so the adjunction is the identity; we establish that here so the field's term lives at the ambient mode. *)
+              match Modalcell.compare_adjunction_id fld_adj with
+              | Neq -> entry
+              | Eq -> (
+                  let Eq = plus_lock_id fld_plus_lock in
+                  match body with
+                  | Lam
                       (type k kn dom' modality')
                       (( b,
                          bd,
@@ -343,26 +354,28 @@ let () =
                         k variables
                         * kn D.t
                         * (dom', modality', mode, k, kn) Modality.filter_dim
-                        * _),
-                    l ) )
-            when c = eq_trr2 -> (
-              match (Modality.compare_id modality, plus) with
-              | Eq, Plus_lock (Zero _, Zero) ->
-                  Term.StructfieldAbwd.Entry
-                    ( fld,
-                      Lower
-                        ( Lam
-                            ( b,
-                              bd,
-                              bm,
-                              Realize
-                                (CubeOf.find_top tm
-                                  : ( mode,
-                                      (a, (modality', k) dim_entry) Tbwd.snoc,
-                                      kinetic )
-                                    Term.term) ),
-                          l ) )
-              | _ -> fatal (Anomaly "wrong modality in rtr"))
+                        * _)
+                    when c = eq_trr2 -> (
+                      match (Modality.compare_id modality, plus) with
+                      | Eq, Plus_lock (Zero _, Zero) ->
+                          Term.StructfieldAbwd.Entry
+                            ( fld,
+                              Lower
+                                ( fld_adj,
+                                  fld_plus_lock,
+                                  Lam
+                                    ( b,
+                                      bd,
+                                      bm,
+                                      Realize
+                                        (CubeOf.find_top tm
+                                          : ( mode,
+                                              (a, (modality', k) dim_entry) Tbwd.snoc,
+                                              kinetic )
+                                            Term.term) ),
+                                  l ) )
+                      | _ -> fatal (Anomaly "wrong modality in rtr"))
+                  | _ -> entry))
           | y -> y in
         let fields = Bwd.map field_mapper s.fields in
         Global.set id_rtr mode
@@ -411,7 +424,7 @@ let () =
     | _ -> ());
 
     (* We adjust the case tree boundary for id_pi_rtr to avoid exposing that constant to the user when a higher fibrancy field is applied only to a function but not a further argument. *)
-    (match Global.find id_pi_rtr with
+    (match Global.find_const id_pi_rtr with
     | Definition
         {
           tm =
@@ -446,12 +459,14 @@ let () =
           Bwd.map
             Term.StructfieldAbwd.(
               function
-              | Entry (fld, Lower (Lam (f, fd, fm, Lam (a, ad, am, Realize tm)), l)) ->
-                  Entry (fld, Lower (Lam (f, fd, fm, Realize (Lam (a, ad, am, tm))), l))
+              | Entry (fld, Lower (adj, plst, Lam (f, fd, fm, Lam (a, ad, am, Realize tm)), l)) ->
+                  Entry (fld, Lower (adj, plst, Lam (f, fd, fm, Realize (Lam (a, ad, am, tm))), l))
               | Entry
                   ( fld,
                     Lower
-                      ( Lam
+                      ( adj,
+                        plst,
+                        Lam
                           ( f,
                             fd,
                             fm,
@@ -461,7 +476,9 @@ let () =
                   Entry
                     ( fld,
                       Lower
-                        ( Lam
+                        ( adj,
+                          plst,
+                          Lam
                             ( f,
                               fd,
                               fm,
@@ -500,7 +517,7 @@ let () =
     | _ -> fatal (Anomaly "id_pi_rtr undefined"));
 
     (* As with id_pi_rtr, so with glue_rtr *)
-    (match Global.find glue_rtr with
+    (match Global.find_const glue_rtr with
     | Definition
         {
           tm =
@@ -527,19 +544,25 @@ let () =
               function
               | Entry
                   ( fld,
-                    Lower (Lam (r, rd, rm, Struct { dim; fields; eta = Eta; energy = Potential }), l)
-                  ) ->
+                    Lower
+                      ( adj,
+                        plst,
+                        Lam (r, rd, rm, Struct { dim; fields; eta = Eta; energy = Potential }),
+                        l ) ) ->
                   let fields =
                     Bwd.map
                       Term.StructfieldAbwd.(
                         function
-                        | Entry (stfld, Lower (Realize y, stl)) -> Entry (stfld, Lower (y, stl))
+                        | Entry (stfld, Lower (stadj, stplst, Realize y, stl)) ->
+                            Entry (stfld, Lower (stadj, stplst, y, stl))
                         | _ -> fatal (Anomaly "glue_rtr has wrong shape"))
                       fields in
                   Entry
                     ( fld,
                       Lower
-                        ( Lam
+                        ( adj,
+                          plst,
+                          Lam
                             ( r,
                               rd,
                               rm,
@@ -565,7 +588,7 @@ let () =
     | _ -> fatal (Anomaly "glue_rtr_rtr undefined"));
 
     (* Now we pull out the fields from the definition of fib_pi to insert them in Fibrancy.pi. *)
-    (match Global.find fib_pi with
+    (match Global.find_const fib_pi with
     | Definition
         {
           tm =
@@ -590,7 +613,7 @@ let () =
             let fields =
               Bwd.map
                 (function
-                  | Term.StructfieldAbwd.Entry (f, Higher tms) ->
+                  | Term.StructfieldAbwd.Entry (f, Higher (adj, plus_lock, tms)) ->
                       let tms =
                         Term.PlusPbijmap.mmap
                           {
@@ -606,7 +629,7 @@ let () =
                                   x);
                           }
                           [ tms ] in
-                      Term.StructfieldAbwd.Entry (f, Higher tms)
+                      Term.StructfieldAbwd.Entry (f, Higher (adj, plus_lock, tms))
                   | s -> s)
                 fields in
             Fibrancy.pi :=
@@ -615,7 +638,7 @@ let () =
     | _ -> fatal (Anomaly "fib_pi has wrong shape"));
 
     (* And similarly for Fibrancy.glue. *)
-    match Global.find fib_glue with
+    match Global.find_const fib_glue with
     | Definition
         {
           tm =

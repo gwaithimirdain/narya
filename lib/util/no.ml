@@ -7,8 +7,15 @@ type 'a plus = Dummy_plus
 type 'a minus = Dummy_minus
 type plus_omega = Dummy_plus_omega
 type minus_omega = Dummy_minus_omega
+type minus_omega_plus_one = Dummy_minus_omega_plus_one
 type _ fin = Zero : zero fin | Plus : 'a fin -> 'a plus fin | Minus : 'a fin -> 'a minus fin
-type _ t = Fin : 'a fin -> 'a t | Plus_omega : plus_omega t | Minus_omega : minus_omega t
+
+type _ t =
+  | Fin : 'a fin -> 'a t
+  | Plus_omega : plus_omega t
+  | Minus_omega : minus_omega t
+  | Minus_omega_plus_one : minus_omega_plus_one t
+
 type one = zero plus
 type two = one plus
 type three = two plus
@@ -51,6 +58,7 @@ let minus_three_fourths : minus_three_fourths t = Fin (Minus (Plus (Minus Zero))
 let minus_three_halves : minus_three_halves t = Fin (Minus (Minus (Plus Zero)))
 let minus_omega = Minus_omega
 let plus_omega = Plus_omega
+let minus_omega_plus_one = Minus_omega_plus_one
 
 (* Type-level indices for strict inequality < and non-strict inequality ≤. *)
 type strict = Dummy_strict
@@ -64,6 +72,10 @@ type (_, _, _) lt =
   | Fin_plusomega : 'a fin -> ('a, 's, plus_omega) lt
   | Minusomega_plusomega : (minus_omega, 's, plus_omega) lt
   | Minusomega_fin : 'b fin -> (minus_omega, 's, 'b) lt
+  | Minusomega_minusomegaplusone : (minus_omega, 's, minus_omega_plus_one) lt
+  | Minusomegaplusone_minusomegaplusone : (minus_omega_plus_one, nonstrict, minus_omega_plus_one) lt
+  | Minusomegaplusone_fin : 'b fin -> (minus_omega_plus_one, 's, 'b) lt
+  | Minusomegaplusone_plusomega : (minus_omega_plus_one, 's, plus_omega) lt
   | Zero_plus : 'b fin -> (zero, 's, 'b plus) lt
   | Minus_plus : 'a fin * 'b fin -> ('a minus, 's, 'b plus) lt
   | Minus_zero : 'a fin -> ('a minus, 's, zero) lt
@@ -75,6 +87,7 @@ type (_, _, _) lt =
 let rec le_refl : type a. a t -> (a, nonstrict, a) lt = function
   | Plus_omega -> Plusomega_plusomega
   | Minus_omega -> Minusomega_minusomega
+  | Minus_omega_plus_one -> Minusomegaplusone_minusomegaplusone
   | Fin Zero -> Zero_zero
   | Fin (Plus a) -> Plus_plus (a, a, le_refl (Fin a))
   | Fin (Minus a) -> Minus_minus (a, a, le_refl (Fin a))
@@ -84,17 +97,28 @@ let plusomega_nlt : type a b. (plus_omega, strict, a) lt -> b = function
 
 let le_plusomega : type a. a t -> (a, nonstrict, plus_omega) lt = function
   | Minus_omega -> Minusomega_plusomega
+  | Minus_omega_plus_one -> Minusomegaplusone_plusomega
   | Fin x -> Fin_plusomega x
   | Plus_omega -> Plusomega_plusomega
 
 let minusomega_le : type a. a t -> (minus_omega, nonstrict, a) lt = function
   | Minus_omega -> Minusomega_minusomega
+  | Minus_omega_plus_one -> Minusomega_minusomegaplusone
   | Fin x -> Minusomega_fin x
   | Plus_omega -> Minusomega_plusomega
 
 let minusomega_lt_plusomega : (minus_omega, strict, plus_omega) lt = Minusomega_plusomega
 let zero_lt_plusomega : type s. (zero, s, plus_omega) lt = Fin_plusomega Zero
 let minusomega_lt_zero : type s. (minus_omega, s, zero) lt = Minusomega_fin Zero
+
+let minusomega_lt_minusomegaplusone : type s. (minus_omega, s, minus_omega_plus_one) lt =
+  Minusomega_minusomegaplusone
+
+let minusomegaplusone_lt_zero : type s. (minus_omega_plus_one, s, zero) lt =
+  Minusomegaplusone_fin Zero
+
+let minusomegaplusone_lt_plusomega : (minus_omega_plus_one, strict, plus_omega) lt =
+  Minusomegaplusone_plusomega
 
 type (_, _, _) strict_trans =
   | Strict_any : (strict, 'a, 'b) strict_trans
@@ -117,6 +141,9 @@ let rec lt_to_le : type a b s. (a, strict, b) lt -> (a, s, b) lt =
   | Fin_plusomega x -> Fin_plusomega x
   | Minusomega_plusomega -> Minusomega_plusomega
   | Minusomega_fin x -> Minusomega_fin x
+  | Minusomega_minusomegaplusone -> Minusomega_minusomegaplusone
+  | Minusomegaplusone_fin x -> Minusomegaplusone_fin x
+  | Minusomegaplusone_plusomega -> Minusomegaplusone_plusomega
   | Zero_plus x -> Zero_plus x
   | Minus_plus (x, y) -> Minus_plus (x, y)
   | Minus_zero x -> Minus_zero x
@@ -161,6 +188,24 @@ let rec lt_trans : type a b c s1 s2 s3.
   | Minusomega_minusomega, Minusomega_minusomega, Nonstrict_nonstrict -> Minusomega_minusomega
   | Minusomega_minusomega, Minusomega_plusomega, _ -> Minusomega_plusomega
   | Minusomega_minusomega, Minusomega_fin b, _ -> Minusomega_fin b
+  | Minusomega_minusomega, Minusomega_minusomegaplusone, _ -> Minusomega_minusomegaplusone
+  | Minusomega_minusomegaplusone, Minusomegaplusone_minusomegaplusone, _ ->
+      Minusomega_minusomegaplusone
+  | Minusomega_minusomegaplusone, Minusomegaplusone_fin b, _ -> Minusomega_fin b
+  | Minusomega_minusomegaplusone, Minusomegaplusone_plusomega, _ -> Minusomega_plusomega
+  | Minusomegaplusone_fin _, Fin_plusomega _, _ -> Minusomegaplusone_plusomega
+  | Minusomegaplusone_fin _, Zero_plus b, _ -> Minusomegaplusone_fin (Plus b)
+  | Minusomegaplusone_fin _, Minus_plus (_, b), _ -> Minusomegaplusone_fin (Plus b)
+  | Minusomegaplusone_fin _, Minus_zero _, _ -> Minusomegaplusone_fin Zero
+  | Minusomegaplusone_fin _, Plus_plus (_, b, _), _ -> Minusomegaplusone_fin (Plus b)
+  | Minusomegaplusone_fin _, Minus_minus (_, b, _), _ -> Minusomegaplusone_fin (Minus b)
+  | Minusomegaplusone_fin _, Zero_zero, _ -> Minusomegaplusone_fin Zero
+  | Minusomegaplusone_minusomegaplusone, Minusomegaplusone_minusomegaplusone, Nonstrict_nonstrict ->
+      Minusomegaplusone_minusomegaplusone
+  | Minusomegaplusone_minusomegaplusone, Minusomegaplusone_fin b, _ -> Minusomegaplusone_fin b
+  | Minusomegaplusone_minusomegaplusone, Minusomegaplusone_plusomega, _ ->
+      Minusomegaplusone_plusomega
+  | Minusomegaplusone_plusomega, Plusomega_plusomega, _ -> Minusomegaplusone_plusomega
   | Zero_plus _, Fin_plusomega (Plus _), _ -> Fin_plusomega Zero
   | Minus_plus (a, _), Fin_plusomega _, _ -> Fin_plusomega (Minus a)
   | Minus_zero a, Fin_plusomega _, _ -> Fin_plusomega (Minus a)
@@ -192,6 +237,21 @@ let rec lt_trans : type a b c s1 s2 s3.
   | Minusomega_fin _, Minusomega_plusomega, _ -> .
   | Minusomega_fin _, Minusomega_fin _, _ -> .
   | Fin_plusomega _, Fin_plusomega _, _ -> .
+  | Minusomega_minusomegaplusone, Fin_plusomega _, _ -> .
+  | Minusomegaplusone_fin _, Plusomega_plusomega, _ -> .
+  | Minusomegaplusone_fin _, Minusomega_minusomega, _ -> .
+  | Minusomegaplusone_fin _, Minusomega_plusomega, _ -> .
+  | Minusomegaplusone_fin _, Minusomega_fin _, _ -> .
+  | Minusomegaplusone_fin _, Minusomega_minusomegaplusone, _ -> .
+  | Minusomegaplusone_fin _, Minusomegaplusone_minusomegaplusone, _ -> .
+  | Minusomegaplusone_fin _, Minusomegaplusone_plusomega, _ -> .
+  | Minusomegaplusone_fin _, Minusomegaplusone_fin _, _ -> .
+  | Minusomegaplusone_minusomegaplusone, Fin_plusomega _, _ -> .
+  | Minusomegaplusone_plusomega, Fin_plusomega _, _ -> .
+  | Minusomega_fin _, Minusomega_minusomegaplusone, _ -> .
+  | Minusomega_fin _, Minusomegaplusone_minusomegaplusone, _ -> .
+  | Minusomega_fin _, Minusomegaplusone_fin _, _ -> .
+  | Minusomega_fin _, Minusomegaplusone_plusomega, _ -> .
 
 let rec equal_fin : type a b. a fin -> b fin -> (a, b) Eq.compare =
  fun x y ->
@@ -213,6 +273,7 @@ let equal : type a b. a t -> b t -> (a, b) Eq.compare =
   | Fin x, Fin y -> equal_fin x y
   | Plus_omega, Plus_omega -> Eq
   | Minus_omega, Minus_omega -> Eq
+  | Minus_omega_plus_one, Minus_omega_plus_one -> Eq
   | _ -> Neq
 
 let equalb : type a b. a t -> b t -> bool =
@@ -231,6 +292,23 @@ let rec lt_trans1 : type a b c s1 s2. (a, s1, b) lt -> (b, s2, c) lt -> (a, s1, 
   | Minusomega_minusomega, Minusomega_minusomega -> Minusomega_minusomega
   | Minusomega_minusomega, Minusomega_plusomega -> Minusomega_plusomega
   | Minusomega_minusomega, Minusomega_fin b -> Minusomega_fin b
+  | Minusomega_minusomega, Minusomega_minusomegaplusone -> Minusomega_minusomegaplusone
+  | Minusomega_minusomegaplusone, Minusomegaplusone_minusomegaplusone ->
+      Minusomega_minusomegaplusone
+  | Minusomega_minusomegaplusone, Minusomegaplusone_fin b -> Minusomega_fin b
+  | Minusomega_minusomegaplusone, Minusomegaplusone_plusomega -> Minusomega_plusomega
+  | Minusomegaplusone_fin _, Fin_plusomega _ -> Minusomegaplusone_plusomega
+  | Minusomegaplusone_fin _, Zero_plus b -> Minusomegaplusone_fin (Plus b)
+  | Minusomegaplusone_fin _, Minus_plus (_, b) -> Minusomegaplusone_fin (Plus b)
+  | Minusomegaplusone_fin _, Minus_zero _ -> Minusomegaplusone_fin Zero
+  | Minusomegaplusone_fin _, Plus_plus (_, b, _) -> Minusomegaplusone_fin (Plus b)
+  | Minusomegaplusone_fin _, Minus_minus (_, b, _) -> Minusomegaplusone_fin (Minus b)
+  | Minusomegaplusone_fin _, Zero_zero -> Minusomegaplusone_fin Zero
+  | Minusomegaplusone_minusomegaplusone, Minusomegaplusone_minusomegaplusone ->
+      Minusomegaplusone_minusomegaplusone
+  | Minusomegaplusone_minusomegaplusone, Minusomegaplusone_fin b -> Minusomegaplusone_fin b
+  | Minusomegaplusone_minusomegaplusone, Minusomegaplusone_plusomega -> Minusomegaplusone_plusomega
+  | Minusomegaplusone_plusomega, Plusomega_plusomega -> Minusomegaplusone_plusomega
   | Zero_plus _, Fin_plusomega (Plus _) -> Fin_plusomega Zero
   | Minus_plus (a, _), Fin_plusomega _ -> Fin_plusomega (Minus a)
   | Minus_zero a, Fin_plusomega _ -> Fin_plusomega (Minus a)
@@ -266,6 +344,21 @@ let rec lt_trans1 : type a b c s1 s2. (a, s1, b) lt -> (b, s2, c) lt -> (a, s1, 
   | Minusomega_fin _, Minusomega_plusomega -> .
   | Minusomega_fin _, Minusomega_fin _ -> .
   | Fin_plusomega _, Fin_plusomega _ -> .
+  | Minusomega_minusomegaplusone, Fin_plusomega _ -> .
+  | Minusomegaplusone_fin _, Plusomega_plusomega -> .
+  | Minusomegaplusone_fin _, Minusomega_minusomega -> .
+  | Minusomegaplusone_fin _, Minusomega_plusomega -> .
+  | Minusomegaplusone_fin _, Minusomega_fin _ -> .
+  | Minusomegaplusone_fin _, Minusomega_minusomegaplusone -> .
+  | Minusomegaplusone_fin _, Minusomegaplusone_minusomegaplusone -> .
+  | Minusomegaplusone_fin _, Minusomegaplusone_plusomega -> .
+  | Minusomegaplusone_fin _, Minusomegaplusone_fin _ -> .
+  | Minusomegaplusone_minusomegaplusone, Fin_plusomega _ -> .
+  | Minusomegaplusone_plusomega, Fin_plusomega _ -> .
+  | Minusomega_fin _, Minusomega_minusomegaplusone -> .
+  | Minusomega_fin _, Minusomegaplusone_minusomegaplusone -> .
+  | Minusomega_fin _, Minusomegaplusone_fin _ -> .
+  | Minusomega_fin _, Minusomegaplusone_plusomega -> .
 
 (* Decidable test for inequality. *)
 
@@ -303,6 +396,16 @@ let rec compare : type a s b. s strictness -> a t -> b t -> (a, s, b) lt option 
       match s with
       | Strict -> None
       | Nonstrict -> Some Minusomega_minusomega)
+  | Minus_omega, Minus_omega_plus_one -> Some Minusomega_minusomegaplusone
+  | Minus_omega_plus_one, Minus_omega -> None
+  | Minus_omega_plus_one, Minus_omega_plus_one -> (
+      match s with
+      | Strict -> None
+      | Nonstrict -> Some Minusomegaplusone_minusomegaplusone)
+  | Minus_omega_plus_one, Fin y -> Some (Minusomegaplusone_fin y)
+  | Fin _, Minus_omega_plus_one -> None
+  | Minus_omega_plus_one, Plus_omega -> Some Minusomegaplusone_plusomega
+  | Plus_omega, Minus_omega_plus_one -> None
 
 (* Convert to rationals in ZArith.Q. *)
 
@@ -323,6 +426,7 @@ let to_rat : type a. a t -> Q.t =
   match x with
   | Plus_omega -> Q.inf
   | Minus_omega -> Q.minus_inf
+  | Minus_omega_plus_one -> Q.minus_inf
   | Fin Zero -> Q.zero
   | Fin (Plus x) -> fin_to_rat Q.one Q.one x
   | Fin (Minus x) -> fin_to_rat Q.minus_one Q.minus_one x
@@ -375,6 +479,7 @@ let of_rat (x : Q.t) : wrapped option =
 let to_string : type a. a t -> string = function
   | Plus_omega -> "+ω"
   | Minus_omega -> "-ω"
+  | Minus_omega_plus_one -> "-ω+1"
   | Fin _ as x ->
       let x = to_rat x in
       if Z.equal (Q.den x) Z.one then Z.to_string (Q.num x) else string_of_float (Q.to_float x)
@@ -476,11 +581,12 @@ module Map = struct
     type 'x t = {
       fin : ('x, then_zero) fin_t;
       minus_omega : ('x, minus_omega) F.t option;
+      minus_omega_plus_one : ('x, minus_omega_plus_one) F.t option;
       plus_omega : ('x, plus_omega) F.t option;
     }
 
     (* The empty map *)
-    let empty = { fin = Emp; minus_omega = None; plus_omega = None }
+    let empty = { fin = Emp; minus_omega = None; minus_omega_plus_one = None; plus_omega = None }
 
     (* 'find_opt' looks up a number in the map and returns its associated value, if any. *)
 
@@ -505,6 +611,7 @@ module Map = struct
       match x with
       | Fin x -> fin_find x map.fin Zero
       | Minus_omega -> map.minus_omega
+      | Minus_omega_plus_one -> map.minus_omega_plus_one
       | Plus_omega -> map.plus_omega
 
     (* 'add' adds an entry to the map, replacing any existing entry for that number. *)
@@ -525,6 +632,7 @@ module Map = struct
       match x with
       | Fin x -> { map with fin = fin_add map.fin x Zero y }
       | Minus_omega -> { map with minus_omega = Some y }
+      | Minus_omega_plus_one -> { map with minus_omega_plus_one = Some y }
       | Plus_omega -> { map with plus_omega = Some y }
 
     (* 'remove' removes an entry from the map. *)
@@ -544,6 +652,7 @@ module Map = struct
       match x with
       | Fin x -> { map with fin = fin_remove x map.fin }
       | Minus_omega -> { map with minus_omega = None }
+      | Minus_omega_plus_one -> { map with minus_omega_plus_one = None }
       | Plus_omega -> { map with plus_omega = None }
 
     (* 'update' updates an entry in the map. *)
@@ -579,6 +688,7 @@ module Map = struct
       match x with
       | Fin x -> { map with fin = fin_update map.fin x Zero f }
       | Minus_omega -> { map with minus_omega = f map.minus_omega }
+      | Minus_omega_plus_one -> { map with minus_omega_plus_one = f map.minus_omega_plus_one }
       | Plus_omega -> { map with plus_omega = f map.plus_omega }
 
     (* 'map' applies a function to all entries in the map. *)
@@ -600,11 +710,12 @@ module Map = struct
           Node (Some (ab, fz), mmap, pmap)
 
     let map : type x. x mapper -> x t -> x t =
-     fun f { fin; minus_omega; plus_omega } ->
+     fun f { fin; minus_omega; minus_omega_plus_one; plus_omega } ->
       let minus_omega = Option.map (f.map Minus_omega) minus_omega in
+      let minus_omega_plus_one = Option.map (f.map Minus_omega_plus_one) minus_omega_plus_one in
       let fin = fin_map f fin in
       let plus_omega = Option.map (f.map Plus_omega) plus_omega in
-      { fin; minus_omega; plus_omega }
+      { fin; minus_omega; minus_omega_plus_one; plus_omega }
 
     type 'a iterator = { it : 'g. 'g Key.t -> ('a, 'g) F.t -> unit }
 
@@ -621,8 +732,9 @@ module Map = struct
           fin_iter f pmap
 
     let iter : type x. x iterator -> x t -> unit =
-     fun f { fin; minus_omega; plus_omega } ->
+     fun f { fin; minus_omega; minus_omega_plus_one; plus_omega } ->
       Option.iter (f.it Minus_omega) minus_omega;
+      Option.iter (f.it Minus_omega_plus_one) minus_omega_plus_one;
       fin_iter f fin;
       Option.iter (f.it Plus_omega) plus_omega
 
@@ -690,6 +802,19 @@ module Map = struct
               fin_map_minusomega f mmap,
               fin_map_minusomega f pmap )
 
+    let rec fin_map_minusomegaplusone : type x a.
+        (x, minus_omega_plus_one) map_compare -> (x, a) fin_t -> (x, a) fin_t =
+     fun f map ->
+      match map with
+      | Emp -> Emp
+      | Node (z, mmap, pmap) ->
+          Node
+            ( (match z with
+              | None -> None
+              | Some (ab, y) -> Some (ab, f.map_gt (Minusomegaplusone_fin (prepend_fin Zero ab)) y)),
+              fin_map_minusomegaplusone f mmap,
+              fin_map_minusomegaplusone f pmap )
+
     let rec fin_map_compare : type x a b c.
         (x, c) map_compare -> b fin -> (a, b, c) prepend -> (x, a) fin_t -> (x, a) fin_t =
      fun f x ab map ->
@@ -732,18 +857,31 @@ module Map = struct
       | Minus_omega ->
           {
             minus_omega = Option.map f.map_eq map.minus_omega;
+            minus_omega_plus_one =
+              Option.map (f.map_gt Minusomega_minusomegaplusone) map.minus_omega_plus_one;
             fin = fin_map_minusomega f map.fin;
             plus_omega = Option.map (f.map_gt Minusomega_plusomega) map.plus_omega;
+          }
+      | Minus_omega_plus_one ->
+          {
+            minus_omega = Option.map (f.map_lt Minusomega_minusomegaplusone) map.minus_omega;
+            minus_omega_plus_one = Option.map f.map_eq map.minus_omega_plus_one;
+            fin = fin_map_minusomegaplusone f map.fin;
+            plus_omega = Option.map (f.map_gt Minusomegaplusone_plusomega) map.plus_omega;
           }
       | Fin x ->
           {
             minus_omega = Option.map (f.map_lt (Minusomega_fin x)) map.minus_omega;
+            minus_omega_plus_one =
+              Option.map (f.map_lt (Minusomegaplusone_fin x)) map.minus_omega_plus_one;
             fin = fin_map_compare f x Zero map.fin;
             plus_omega = Option.map (f.map_gt (Fin_plusomega x)) map.plus_omega;
           }
       | Plus_omega ->
           {
             minus_omega = Option.map (f.map_lt Minusomega_plusomega) map.minus_omega;
+            minus_omega_plus_one =
+              Option.map (f.map_lt Minusomegaplusone_plusomega) map.minus_omega_plus_one;
             fin = fin_map_plusomega f map.fin;
             plus_omega = Option.map f.map_eq map.plus_omega;
           }
@@ -860,9 +998,12 @@ module Map = struct
       match x with
       | Fin x ->
           let lower =
-            match map.minus_omega with
-            | None -> No_lower
-            | Some y -> Lower (Minusomega_fin x, y) in
+            match map.minus_omega_plus_one with
+            | Some y -> Lower (Minusomegaplusone_fin x, y)
+            | None -> (
+                match map.minus_omega with
+                | None -> No_lower
+                | Some y -> Lower (Minusomega_fin x, y)) in
           let upper =
             match map.plus_omega with
             | None -> No_upper
@@ -876,12 +1017,36 @@ module Map = struct
                 map with
                 minus_omega =
                   Some
-                    (match fin_least map.fin with
-                    | Value (Zero, b, y) -> f No_lower (Upper (Minusomega_fin b, y))
+                    (match map.minus_omega_plus_one with
+                    | Some y -> f No_lower (Upper (Minusomega_minusomegaplusone, y))
                     | None -> (
-                        match map.plus_omega with
-                        | Some y -> f No_lower (Upper (Minusomega_plusomega, y))
-                        | None -> f No_lower No_upper));
+                        match fin_least map.fin with
+                        | Value (Zero, b, y) -> f No_lower (Upper (Minusomega_fin b, y))
+                        | None -> (
+                            match map.plus_omega with
+                            | Some y -> f No_lower (Upper (Minusomega_plusomega, y))
+                            | None -> f No_lower No_upper)));
+              })
+      | Minus_omega_plus_one -> (
+          match map.minus_omega_plus_one with
+          | Some _ -> map
+          | None ->
+              {
+                map with
+                minus_omega_plus_one =
+                  Some
+                    (let lower =
+                       match map.minus_omega with
+                       | Some y -> Lower (Minusomega_minusomegaplusone, y)
+                       | None -> No_lower in
+                     let upper =
+                       match fin_least map.fin with
+                       | Value (Zero, b, y) -> Upper (Minusomegaplusone_fin b, y)
+                       | None -> (
+                           match map.plus_omega with
+                           | Some y -> Upper (Minusomegaplusone_plusomega, y)
+                           | None -> No_upper) in
+                     f lower upper);
               })
       | Plus_omega -> (
           match map.plus_omega with
@@ -894,9 +1059,12 @@ module Map = struct
                     (match fin_greatest map.fin with
                     | Value (Zero, b, y) -> f (Lower (Fin_plusomega b, y)) No_upper
                     | None -> (
-                        match map.minus_omega with
-                        | Some y -> f (Lower (Minusomega_plusomega, y)) No_upper
-                        | None -> f No_lower No_upper));
+                        match map.minus_omega_plus_one with
+                        | Some y -> f (Lower (Minusomegaplusone_plusomega, y)) No_upper
+                        | None -> (
+                            match map.minus_omega with
+                            | Some y -> f (Lower (Minusomega_plusomega, y)) No_upper
+                            | None -> f No_lower No_upper)));
               })
   end
 end

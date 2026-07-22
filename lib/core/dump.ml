@@ -22,7 +22,7 @@ type printable +=
   | Env : ('mode, 'n, 'b) Value.env -> printable
   | DeepEnv : ('mode, 'n, 'b) Value.env * int -> printable
   | Check : 'a check -> printable
-  | Apps : ('mode, 'any) apps -> printable
+  | Apps : ('hmode, 'mode, 'any) apps -> printable
   | Entry : ('dom, 'modality, 'mode, 'x, 'n) Ctx.entry -> printable
   | OrderedCtx : ('mode, 'a, 'b) Ctx.Ordered.t -> printable
   | Ctx : ('mode, 'a, 'b) Ctx.t -> printable
@@ -89,7 +89,7 @@ module F = struct
       int -> n D.t -> formatter -> (mode * n * s * et) Value.StructfieldAbwd.t -> unit =
    fun depth n ppf -> function
     | Emp -> fprintf ppf "Emp"
-    | Snoc (flds, Entry (f, Lower (v, l))) ->
+    | Snoc (flds, Entry (f, Lower (_, v, l))) ->
         fprintf ppf "%a <: " (fields depth n) flds;
         lazy_field depth ppf f "" v l
     | Snoc (flds, Entry (f, Higher (lazy { vals; _ }))) ->
@@ -130,9 +130,7 @@ module F = struct
             (string_of_dim (dim_env e))
             (Field.to_string f) p term tm (string_of_ins ins)
             (string_of_dim (dom_ins ins))
-            apps args
-            (Option.fold ~some:Modalcell.to_string ~none:"" cell)
-            l
+            apps args (Modalcell.to_string cell) l
 
   and lazy_eval : type mode s. int -> formatter -> (mode, s) lazy_eval -> unit =
    fun depth ppf v ->
@@ -150,12 +148,12 @@ module F = struct
     | Val v -> fprintf ppf "Val (%a)" (dvalue depth) v
 
   (* TODO: display the outer insertion *)
-  and apps : type mode any. formatter -> (mode, any) apps -> unit =
+  and apps : type hmode mode any. formatter -> (hmode, mode, any) apps -> unit =
    fun ppf args ->
     match args with
     | Emp -> fprintf ppf "Emp"
     | Arg (rest, _, xs, _) -> fprintf ppf "%a <: %a" apps rest (cubeof normal) xs
-    | Field (rest, fld, plus, ins) -> (
+    | Field (rest, _, fld, plus, ins) -> (
         (* 'ins' is an *outer* insertion, not the field insertion.  The field insertion has been pushed inside and become the 'plus'. *)
         apps ppf rest;
         fprintf ppf " <: ";
@@ -251,7 +249,7 @@ module F = struct
     | Const c -> fprintf ppf "Const %s" (print_to_string (PConstant c))
     | Meta (v, _) -> fprintf ppf "Meta %s" (print_to_string (PMeta v))
     | MetaEnv (v, _) -> fprintf ppf "MetaEnv (%s,?)" (print_to_string (PMeta v))
-    | Field (tm, fld, ins) ->
+    | Field (Modal (_, _, tm), fld, ins) ->
         fprintf ppf "Field (%a, %s%s(%s))" term tm (Field.to_string fld) (string_of_ins ins)
           (string_of_dim (dom_ins ins))
     | UU (_, n) -> fprintf ppf "UU %a" dim n
@@ -375,7 +373,7 @@ module F = struct
     match s with
     | Var (x, _) -> fprintf ppf "Var(%d)" (N.int_of_index x)
     | Const c -> fprintf ppf "Const(%a)" pp_printed (print (PConstant c))
-    | Field (tm, fld) ->
+    | Field (tm, fld, _) ->
         fprintf ppf "Field(%a, %s)" synth tm.value
           (match fld with
           | `Name (f, p) ->
@@ -383,6 +381,7 @@ module F = struct
                 "." ^ f ^ ".." ^ String.concat "." (List.map string_of_int p)
               else "." ^ f ^ "." ^ String.concat "" (List.map string_of_int p)
           | `Int i -> "." ^ string_of_int i)
+    | Key (tm, parts) -> fprintf ppf "Key(%a, #%s)" synth tm.value (String.concat "." parts.value)
     | Pi (_, _, _, _) -> fprintf ppf "Pi(?)"
     | HigherPi (_, _, _, _) -> fprintf ppf "HigherPi(?)"
     | InstHigherPi (_, _, _) -> fprintf ppf "InstHigherPi(?)"
@@ -456,7 +455,7 @@ module F = struct
     | Emp _ -> ()
     | Snoc (c, e, _) -> fprintf ppf "%a %a" ordered_ctx c entry e
     | Lock (c, _) -> fprintf ppf "%a Lock" ordered_ctx c
-    | Parametric_lock c -> fprintf ppf "%a PLock" ordered_ctx c
+    | Weaken (c, _) -> fprintf ppf "%a Weaken" ordered_ctx c
 
   let ctx : type mode a b. formatter -> (mode, a, b) Ctx.t -> unit =
    fun ppf (Permute { ctx; _ }) -> fprintf ppf "Ctx (?, ?, %a)" ordered_ctx ctx

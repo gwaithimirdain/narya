@@ -60,6 +60,7 @@ module Unequal = struct
     | Metas : ('m1, 'a1, 'b1, 's1) Meta.t * ('m2, 'a2, 'b2, 's2) Meta.t -> t
     | Fields : 'i1 Field.t * 'i2 Field.t -> t
     | Variables of printable * printable
+    | Cells : ('x1, 'm1, 'n1, 'y1) Modalcell.t * ('x2, 'm2, 'n2, 'y2) Modalcell.t -> t
     | Terms of printable * printable
     | Heads of t
 
@@ -69,6 +70,8 @@ module Unequal = struct
     | Metas (m1, m2) -> ("metavariables", PMeta m1, PMeta m2)
     | Fields (f1, f2) -> ("fields", PString (Field.to_string f1), PString (Field.to_string f2))
     | Variables (v1, v2) -> ("variables", v1, v2)
+    | Cells (mu1, mu2) ->
+        ("cells", PString (Modalcell.to_string mu1), PString (Modalcell.to_string mu2))
     | Terms (t1, t2) -> ("terms", t1, t2)
     | Heads p ->
         let str, p1, p2 = printables p in
@@ -187,20 +190,23 @@ module Code = struct
         [ `User | `Internal ]
         * string
         * 'm1 Mode.t
-        * [ `Tgt of string | `Src of string ] option
+        * [ `Tgt of string | `Src of string | `Htgt of string | `Hsrc of string ] option
         * 'm2 Mode.t
         -> t
     | Modality_mismatch :
         [ `User | `Internal ] * string * ('a, 'm, 'b) Modality.t * ('c, 'n, 'd) Modality.t
         -> t
     | Unknown_modality : string -> t
+    | Unknown_modalcell : string -> t
+    | Key_mismatch : ('a, 'm, 'n, 'b) Modalcell.t * ('c, 'p, 'd) Modality.t -> t
     | Modalcell_mismatch : string * ('a, 'm, 'n, 'b) Modalcell.t * ('c, 'r, 's, 'd) Modalcell.t -> t
-    | Nonsharp_modality : ('a, 'm, 'b) Modality.t -> t
+    | Intangible_modality : ('a, 'm, 'b) Modality.t -> t
     | Nontransparent_window_modality :
         ('a, 'm, 'b) Modality.t * bool * [ `Nonrecursive | `Recursive | `Unknown ]
         -> t
     | Non_mode_synthesizing : string -> t
-    | Invalid_mode_theory : t
+    | Invalid_mode_theory : string -> t
+    | Nonparametric_mode_degeneracy : string * 'a Mode.t -> t
     | Invalid_variable_face : 'a D.t * ('n, 'm) sface -> t
     | Anomaly : string -> t
     | No_such_level : printable -> t
@@ -236,11 +242,23 @@ module Code = struct
     | Bare_case_tree_construct : string -> t
     | Wrong_boundary_of_record : int -> t
     | Invalid_constructor_type : Constr.t * (string, Unequal.t) Either.t -> t
+    | Invalid_self_variable_type : 'i Field.t * (string, Unequal.t) Either.t -> t
     | Missing_constructor_type : Constr.t -> t
     | Locked_variable : t
     | Locked_constant : printable -> t
+    | Hidden_variable : t
     | Missing_key : ('dom1, 'mu1, 'cod1) Modality.t * ('dom2, 'mu2, 'cod2) Modality.t -> t
     | Axiom_in_parametric_definition : printable -> t
+    | Modality_not_sinister : ('dom, 'mu, 'cod) Modality.t -> t
+    | Wrong_locking_modality : {
+        field : string;
+        expected : ('dom1, 'mu1, 'cod1) Modality.t option;
+        got : ('dom2, 'mu2, 'cod2) Modality.t option;
+      }
+        -> t
+    (* A modal field whose modality is nonparametric "disappears" at a dimension it filters nontrivially: it cannot be projected there, nor supplied in a tuple/comatch at that dimension. *)
+    | Modal_field_filtered_away : string * ('dom, 'mu, 'cod) Modality.t -> t
+    | Extra_filtered_field_in_tuple : string * ('dom, 'mu, 'cod) Modality.t -> t
     | Hole : string * printable -> t
     | No_open_holes : t
     | Open_holes : int -> t
@@ -375,11 +393,14 @@ module Code = struct
     | Modality_mismatch (`Internal, _, _, _) -> Bug
     | Modality_mismatch (`User, _, _, _) -> Error
     | Unknown_modality _ -> Error
+    | Unknown_modalcell _ -> Error
+    | Key_mismatch _ -> Error
     | Modalcell_mismatch _ -> Error
-    | Nonsharp_modality _ -> Error
+    | Intangible_modality _ -> Error
     | Nontransparent_window_modality _ -> Error
     | Non_mode_synthesizing _ -> Error
-    | Invalid_mode_theory -> Bug
+    | Invalid_mode_theory _ -> Bug
+    | Nonparametric_mode_degeneracy _ -> Error
     | Anomaly _ -> Bug
     | No_such_level _ -> Bug
     | Self_used -> Bug
@@ -405,11 +426,17 @@ module Code = struct
     | Bare_case_tree_construct _ -> Hint
     | Wrong_boundary_of_record _ -> Error
     | Invalid_constructor_type _ -> Error
+    | Invalid_self_variable_type _ -> Error
     | Missing_constructor_type _ -> Error
     | Locked_variable -> Error
     | Locked_constant _ -> Error
+    | Hidden_variable -> Error
     | Missing_key _ -> Error
     | Axiom_in_parametric_definition _ -> Error
+    | Modality_not_sinister _ -> Error
+    | Wrong_locking_modality _ -> Error
+    | Modal_field_filtered_away _ -> Error
+    | Extra_filtered_field_in_tuple _ -> Error
     | Hole _ -> Info
     | No_open_holes -> Info
     | Open_holes _ -> Warning
@@ -492,6 +519,7 @@ module Code = struct
     | Locked_variable -> "E0310"
     | Locked_constant _ -> "E0311"
     | Axiom_in_parametric_definition _ -> "E0312"
+    | Hidden_variable -> "E0313"
     (* Bidirectional typechecking and case trees *)
     | Nonsynthesizing _ -> "E0400"
     | Unequal_synthesized_type _ -> "E0401"
@@ -577,6 +605,7 @@ module Code = struct
     | Invalid_constructor_type _ -> "E1505"
     | Missing_constructor_type _ -> "E1506"
     | Lower_and_higher_methods_in_codata _ -> "E1507"
+    | Invalid_self_variable_type _ -> "E1508"
     (* Tactics *)
     | Choice_mismatch _ -> "E1600"
     | Calc_error _ -> "E1601"
@@ -587,9 +616,16 @@ module Code = struct
     | Non_mode_synthesizing _ -> "E1703"
     | Unknown_modality _ -> "E1704"
     | Missing_key _ -> "E1705"
-    | Invalid_mode_theory -> "E1710"
-    | Nonsharp_modality _ -> "E1706"
+    | Unknown_modalcell _ -> "E1706"
+    | Key_mismatch _ -> "E1707"
+    | Modality_not_sinister _ -> "E1711"
+    | Wrong_locking_modality _ -> "E1712"
+    | Modal_field_filtered_away _ -> "E1713"
+    | Extra_filtered_field_in_tuple _ -> "E1714"
+    | Invalid_mode_theory _ -> "E1710"
+    | Intangible_modality _ -> "E1706"
     | Nontransparent_window_modality _ -> "E1707"
+    | Nonparametric_mode_degeneracy _ -> "E1708"
     (* Commands *)
     | Too_many_commands -> "E2000"
     | Forbidden_interactive_command _ -> "E2001"
@@ -915,7 +951,9 @@ module Code = struct
             match why with
             | None -> ""
             | Some (`Tgt s) -> " (target of " ^ s ^ ")"
-            | Some (`Src s) -> " (source of " ^ s ^ ")" in
+            | Some (`Src s) -> " (source of " ^ s ^ ")"
+            | Some (`Htgt s) -> " (horizontal target of " ^ s ^ ")"
+            | Some (`Hsrc s) -> " (horizontal source of " ^ s ^ ")" in
           textf "mode mismatch in %s (%s%s ≠ %s)" op (Mode.name a) why (Mode.name b)
       | Modality_mismatch (_, op, a, b) ->
           textf "modality mismatch in %s (%a ≠ %a)" op pp_printed
@@ -926,9 +964,17 @@ module Code = struct
           textf "modal cell mismatch in %s (%s ≠ %s)" op (Modalcell.to_string a)
             (Modalcell.to_string b)
       | Non_mode_synthesizing str -> textf "cannot synthesize a mode: %s" str
-      | Invalid_mode_theory -> text "invalid mode theory"
+      | Invalid_mode_theory str -> textf "invalid mode theory: %s" str
+      | Nonparametric_mode_degeneracy (name, mode) ->
+          textf "degeneracy %s is not allowed at mode %s, which is nonparametric" name
+            (Mode.name mode)
       | Unknown_modality c -> textf "unknown modality %s" c
-      | Nonsharp_modality m -> textf "modality %s is not sharp" (Modality.to_string m)
+      | Unknown_modalcell c -> textf "unknown modal cell %s" c
+      | Key_mismatch (key, ctx_lock) ->
+          textf "vertical target %s of key %s doesn't match any suffix of context locks %s"
+            (Modality.to_string (Modalcell.vtgt key))
+            (Modalcell.to_string key) (Modality.to_string ctx_lock)
+      | Intangible_modality m -> textf "modality %s is not tangible" (Modality.to_string m)
       | Nontransparent_window_modality (m, _, `Recursive) ->
           textf "window modality %s must be pellucid since the datatype has recursive constructors"
             (Modality.to_string m)
@@ -947,6 +993,32 @@ module Code = struct
             (print (PString (Modality.to_string vdom)))
             pp_printed
             (print (PString (Modality.to_string vcod)))
+      | Modality_not_sinister m ->
+          textf
+            "modality %s is not sinister: it has no declared right adjoint, so it cannot parametrize a modal field"
+            (Modality.to_string m)
+      | Wrong_locking_modality { field; expected; got } -> (
+          match (expected, got) with
+          | Some expected, Some got ->
+              textf
+                "field %s is modal with left adjoint %s, but was projected with locking modality %s"
+                field (Modality.to_string expected) (Modality.to_string got)
+          | Some expected, None ->
+              textf
+                "field %s is modal with left adjoint %s, so projecting it requires a locking annotation such as (_ : %s | _) .%s"
+                field (Modality.to_string expected) (Modality.to_string expected) field
+          | None, Some got ->
+              textf "field %s is not modal, but was projected with locking modality %s" field
+                (Modality.to_string got)
+          | None, None -> textf "field %s has mismatched locking modalities" field)
+      | Modal_field_filtered_away (field, m) ->
+          textf
+            "field %s does not exist at this dimension: its modality %s is nonparametric and filters this dimension away"
+            field (Modality.to_string m)
+      | Extra_filtered_field_in_tuple (field, m) ->
+          textf
+            "field %s must be omitted at this dimension: its modality %s is nonparametric and filters this dimension away"
+            field (Modality.to_string m)
       | Anomaly str -> textf "anomaly: %s" str
       | No_such_level i -> textf "@[<hov 2>no level variable@ %a@ in context@]" pp_printed (print i)
       | Self_used -> text "self-variable used directly in a field-variable record display"
@@ -1033,6 +1105,14 @@ module Code = struct
               textf
                 "invalid output type for constructor %s:@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a"
                 (Constr.to_string c) str pp_printed (print p1) pp_printed (print p2))
+      | Invalid_self_variable_type (f, why) -> (
+          match why with
+          | Left str -> textf "invalid self variable type for field %s:@ %s" (Field.to_string f) str
+          | Right why ->
+              let str, p1, p2 = Unequal.printables why in
+              textf
+                "invalid self variable type for field %s:@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a"
+                (Field.to_string f) str pp_printed (print p1) pp_printed (print p2))
       | Missing_constructor_type c ->
           textf "missing type for constructor %s of indexed datatype" (Constr.to_string c)
       | Locked_variable -> text "variable not available inside external degeneracy"
@@ -1040,6 +1120,7 @@ module Code = struct
           textf
             "constant %a is or uses a nonparametric axiom, can't appear inside an external degeneracy"
             pp_printed (print a)
+      | Hidden_variable -> text "variable hidden by key application"
       | Axiom_in_parametric_definition a ->
           textf
             "constant %a is or uses a nonparametric axiom, can't be used in a parametric command"
@@ -1252,3 +1333,13 @@ let modality_fatal : type a. string -> modality_error -> a =
   | `Wrong_src (Wrap a, m, Wrap b) ->
       fatal ?loc:m.loc ~severity:Asai.Diagnostic.Error
         (Mode_mismatch (`User, str, a, Some (`Src m.value), b))
+
+let modalcell_fatal : type a. string -> modality_error -> a =
+ fun str -> function
+  | `Not_found m -> fatal ?loc:m.loc (Unknown_modalcell m.value)
+  | `Wrong_tgt (Wrap a, m, Wrap b) ->
+      fatal ?loc:m.loc ~severity:Asai.Diagnostic.Error
+        (Mode_mismatch (`User, str, a, Some (`Htgt m.value), b))
+  | `Wrong_src (Wrap a, m, Wrap b) ->
+      fatal ?loc:m.loc ~severity:Asai.Diagnostic.Error
+        (Mode_mismatch (`User, str, a, Some (`Hsrc m.value), b))

@@ -93,6 +93,10 @@ module Ordered = struct
         ('lmode, 'modality, 'cod) Modality.gen * ('lmode, 'rmode, 'i, 'f, 'a) tel
         -> ('cod, 'rmode, 'i, 'f, ('modality lock_entry, 'a) cons) tel
     | Parametric_lock : ('lmode, 'rmode, 'x, 'f, 'b) tel -> ('lmode, 'rmode, 'x, 'f, 'b) tel
+    (* A weakening entry contributes one raw variable (its nat block is N.one) but no checked entry.  Dual to Lock, which contributes a checked entry but no raw variable. *)
+    | Weaken :
+        ('lmode, 'rmode, 'a, 'f, 'b) tel * Reporter.Code.t * (N.one, 'a, 'xa) Fwn.fplus
+        -> ('lmode, 'rmode, 'xa, (N.one, 'f) cons, 'b) tel
 
   (* The second index does in fact flatten to the first. *)
   let rec tel_flatten : type lmode rmode i f a. (lmode, rmode, i, f, a) tel -> (f, i) Flatten.fwd =
@@ -101,12 +105,14 @@ module Ordered = struct
     | Cons (e, tel, xa) -> Suc (Id (Ctx.raw_entry e), tel_flatten tel, xa)
     | Lock (_, tel) -> tel_flatten tel
     | Parametric_lock tel -> tel_flatten tel
+    | Weaken (tel, _, xa) -> Suc (Id (Fwn.fplus_left xa), tel_flatten tel, xa)
 
   let rec mode_tel : type lmode rmode i f a. (lmode, rmode, i, f, a) tel -> lmode Mode.t = function
     | Nil mode -> mode
     | Cons (_, tel, _) -> mode_tel tel
     | Lock (modality, _) -> Modality.Gen.tgt modality
     | Parametric_lock tel -> mode_tel tel
+    | Weaken (tel, _, _) -> mode_tel tel
 
   (* Convert a context to a telescope. *)
   type ('rmode, 'i, 'b) to_tel =
@@ -134,7 +140,9 @@ module Ordered = struct
             (Fwn.bfplus_assocr ax xf ij)
             (Suc (Dim (Ctx.dim_entry e, Ctx.filter_entry e), bc))
       | Lock (ctx, modality) -> go ctx (Lock (modality, tel)) ij (Suc (Lock modality, bc))
-      | Parametric_lock ctx -> go ctx (Parametric_lock tel) ij bc in
+      | Weaken (ctx, code) ->
+          let (Fplus xf) = Fwn.fplus N.one in
+          go ctx (Weaken (tel, code, xf)) (Fwn.bfplus_assocr (Suc Zero) xf ij) bc in
     go ctx (Nil (mode ctx)) Zero Zero
 
   (* Now we begin the suite of helper functions for bind_some.  This is an operation that happens during typechecking a pattern match, when the match variable along with all its indices have to be replaced by values determined by the constructor of each branch.  This requires the context to be re-sorted at the same time to maintain a consistent dependency structure, with each type and value depending only on the variables to its left.  It also requires "substitution into values", which we do by reading back values into the old context and then evaluating them in the new context.  This readback also has the double purpose of checking which types make sense in a given context, to determine a correct permutation.
@@ -200,8 +208,6 @@ module Ordered = struct
     let i = Ctx.Ordered.length newctx in
     let modality = Modality.filter_modality filter in
     let filtered = Modality.filter_idempotent filter in
-    let open Monad.Ops (Monad.Maybe) in
-    let open CubeOf.Monadic (Monad.Maybe) in
     (* The tricky thing we have to deal with is that in a *cube* of variables, when doing readback-eval on each variable, we should be allowed to use the *preceeding* variables in the dependency order of the cube, but not the *subsequent* ones.  Unfortunately we don't have a direct way for a context to contain only "some" of a cube of variables.  Thus, we use the ability of Binder.t to be Unknown or Delayed.  *)
     (* We start by creating two variable cubes from the given one.  In "oldentry" all the variables have the same values, but they are delayed so that we can't use them until we've gotten past them in iterating through the cube.  In "newentry" the variables all have unknown values, which we will specify later after eval-readback succeeds step by step. *)
     let [ oldentry; newentry ] =
@@ -214,45 +220,51 @@ module Ordered = struct
     let newctx = Ctx.Ordered.lock_to (Ctx.Ordered.invis newctx filtered newentry) modality plus in
     (* The integer k counts the second component of the new level variables we are creating. *)
     let k = ref 0 in
-    let* () =
-      miterM
+    (* We short-circuit out of the cube iteration with an exception if any variable's readback-eval fails (returns None). *)
+    let exception Short_circuit in
+    try
+      CubeOf.miter
         {
           it =
             (fun fa [ b; oldb; newb ] ->
               let new_level = (i, !k) in
               k := !k + 1;
               match Binding.level b with
-              | None ->
+              | None -> (
                   (* If the variable was let-bound in the original context, we readback-eval its (normal) value, which includes its type. *)
                   let oldnf = Binding.value b in
-                  let* newnf = eval_readback_nf ~level ~oldctx ~newctx oldnf in
-                  (* Now we allow this variable to be used when reading back other variables, and specify the newly evaluated version to be used in the new context. *)
-                  Binding.force oldb;
-                  Binding.specify newb None newnf;
-                  return ()
+                  match eval_readback_nf ~level ~oldctx ~newctx oldnf with
+                  | Some newnf ->
+                      (* Now we allow this variable to be used when reading back other variables, and specify the newly evaluated version to be used in the new context. *)
+                      Binding.force oldb;
+                      Binding.specify newb None newnf
+                  | None -> raise_notrace Short_circuit)
               | Some old_level -> (
                   (* For variables that were not let-bound in the old context, we first check whether we're newly binding them. *)
                   match bind_var binder old_level (Modality.src modality) with
                   (* `Nonbindable means only that the *top* variable is nonbindable. *)
-                  | Some oldnf when bindable = `Bindable || Option.is_none (is_id_sface fa) ->
+                  | Some oldnf when bindable = `Bindable || Option.is_none (is_id_sface fa) -> (
                       (* If so, then the value returned by the binder callback is in the old context, so we readback-eval it and proceed as before. *)
-                      let* newnf = eval_readback_nf ~level ~oldctx ~newctx oldnf in
-                      Binding.force oldb;
-                      Binding.specify newb None newnf;
-                      return ()
-                  | None ->
+                      match eval_readback_nf ~level ~oldctx ~newctx oldnf with
+                      | Some newnf ->
+                          Binding.force oldb;
+                          Binding.specify newb None newnf
+                      | None -> raise_notrace Short_circuit)
+                  | None -> (
                       (* Otherwise, we readback-eval only its type, and create a new De Bruijn level for the new context. *)
                       let oldnf = Binding.value b in
                       let oldty = oldnf.ty in
-                      let* newty = eval_readback_val ~level ~oldctx ~newctx oldty in
-                      let newnf = { tm = var modality new_level newty; ty = newty } in
-                      Binding.force oldb;
-                      Binding.specify newb (Some new_level) newnf;
-                      return ()
+                      match eval_readback_val ~level ~oldctx ~newctx oldty with
+                      | Some newty ->
+                          let newnf = { tm = var modality new_level newty; ty = newty } in
+                          Binding.force oldb;
+                          Binding.specify newb (Some new_level) newnf
+                      | None -> raise_notrace Short_circuit)
                   | _ -> fatal (Anomaly "attempt to bind variable with field views")));
         }
-        [ in_entry; oldentry; newentry ] in
-    return newentry
+        [ in_entry; oldentry; newentry ];
+      Some newentry
+    with Short_circuit -> None
 
   let bind_some_entry : type dom modality mode bindmode f i a n.
       level:int ->
@@ -299,6 +311,9 @@ module Ordered = struct
     | Parametric_lock :
         ('ldom, 'rmode, 'i, 'cf, 'c) tel
         -> ('ldom, 'rmode, 'i, 'c, 'cf) go_go_bind_some
+    | Weaken :
+        ('lmode, 'rmode, 'a, 'f, 'c) tel * Reporter.Code.t * (N.one, 'a, 'xa) Fwn.fplus
+        -> ('lmode, 'rmode, 'xa, 'c, (N.one, 'f) cons) go_go_bind_some
     | Nil : ('mode, 'mode, Fwn.zero, 'mode id, nil) go_go_bind_some
     | None : ('lmode, 'rmode, 'i, 'c, 'cf) go_go_bind_some
 
@@ -335,9 +350,10 @@ module Ordered = struct
                     rest = Cons (entry, rest, newfaces);
                     fins = Later fins;
                   }
-            | Nil | None | Lock _ | Parametric_lock _ -> None))
+            | Nil | None | Lock _ | Parametric_lock _ | Weaken _ -> None))
     | Lock (lock, tel) -> Lock (lock, tel)
     | Parametric_lock tel -> Parametric_lock tel
+    | Weaken (tel, code, xf) -> Weaken (tel, code, xf)
 
   type ('rmode, 'lmode, 'i, 'j, 'a, 'af, 'b, 'bf) go_bind_some =
     | Go_bind_some : {
@@ -386,6 +402,17 @@ module Ordered = struct
         | Go_bind_some g -> Go_bind_some { g with checked_perm = Lock (modality, g.checked_perm) }
         | None -> None)
     | Parametric_lock tel -> go_bind_some ~level binder ~oldctx ~newctx af tel
+    | Weaken (rest, code, xf) -> (
+        (* A weakening entry adds a raw variable but no checked entry, so we insert its one-variable block into the raw permutation and leave the checked permutation unchanged.  Like a lock, it acts as a barrier: variables are not permuted across it. *)
+        let oldctx = Ctx.Ordered.Weaken (oldctx, code) in
+        let newctx = Ctx.Ordered.Weaken (newctx, code) in
+        match
+          go_bind_some ~level binder ~oldctx ~newctx
+            (Suc (af, Id (Fwn.fplus_left xf), Suc Zero))
+            rest
+        with
+        | Go_bind_some g -> Go_bind_some { g with raw_perm = Ap_insert (Now, g.raw_perm) }
+        | None -> None)
 
   type (_, _, _) bind_some =
     | Bind_some : {

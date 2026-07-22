@@ -126,10 +126,31 @@ def sst.sum (X Y : SST) : SST ≔ [
   | inl. x ↦ sst.sum⁽ᵈ⁾ (X .s x) (sst.const Y sst.∅)
   | inr. y ↦ sst.sum⁽ᵈ⁾ (sst.const X sst.∅) (Y .s y)]]
 
+{` The product of a family of SSTs indexed by a discrete type. `}
+def sst.discprod (A :△| Disc) (X : (a :△| A) → SST) : SST ≔ [
+| .z ↦ (a :△| A) → X a .z
+| .s ↦ p ↦ sst.discprod⁽ᵈ⁾ A {X} (a ↦ X a .s (p a))]
+
 {` Augmented SSTs are another displayed coinductive. `}
 def ASST : Type ≔ codata [ X .z : Type | X .s : ASST⁽ᵈ⁾ X ]
 
-{` As is pointedness of an SST. `}
+{` Every global type can be regarded as a synthetic augmented SST, hence an analytic one. `}
+def asst.Int (X :△□| Type) : ASST ≔ [ .z ↦ X | .s ↦ asst.Int⁽ᵈ⁾ X ]
+
+{` Every ASST has a fiber over a point that is an SST. `}
+def asst.Fib (X : ASST) (x : X .z) : SST ≔ [
+| .z ↦ X .s .z x
+| .s ↦ y ↦ asst.Fib⁽ᵈ⁾ (X .s) y]
+
+{` Combining the previous two, we get that every global type has a fiber over a point that is an SST.  `}
+def sst.Fib (X :△□| Type) (x : X) : SST ≔ asst.Fib (asst.Int X) x
+
+{` We can also prove that directly, using modally-guarded display. `}
+def sst.Fib′ (X :△□| Type) (x : X) : SST ≔ [
+| .z ↦ X⁽ᵈ⁾ x
+| .s ↦ x' ↦ sst.Fib′⁽ᵈ⁾ X x']
+
+{` Pointedness of an SST is another displayed coinductive. `}
 def sst.pt (X : SST) : Type ≔ codata [
 | p .z : X .z
 | p .s : sst.pt⁽ᵈ⁾ (X .s (p .z)) p ]
@@ -144,7 +165,8 @@ def sst.id (X : SST) : sst.hom X X ≔ [
 | .z ↦ x ↦ x
 | .s ↦ x ↦ sst.id⁽ᵈ⁾ (X .s x)]
 
-def sst.comp (X Y Z : SST) (g : sst.hom Y Z) (f : sst.hom X Y) : sst.hom X Z
+def sst.comp (X Y Z : SST) (g : sst.hom Y Z) (f : sst.hom X Y)
+  : sst.hom X Z
   ≔ [
 | .z ↦ x ↦ g .z (f .z x)
 | .s ↦ x ↦

@@ -1,3 +1,4 @@
+open Bwd
 open Util
 open Modal
 open Tlist
@@ -82,17 +83,13 @@ and readback_eval : type mode a z s.
 
 (* Readback is energy-polymorphic: it reads back a value of any energy 's into an ('a, 's) term.  In practice it is only ever called on a *potential* value by "about" (which reads back the forced value of a neutral); that's the only way a comatch (a no-eta struct) reaches the Codata branch and gets eta-expanded.  All other callers read back kinetic values (neutrals, etc.) and get their application spines as before. *)
 and readback_at : type mode a z s.
-    ?eta:bool ->
-    (mode, z, a) Ctx.t ->
-    (mode, s) value ->
-    (mode, kinetic) value ->
-    (mode, a, s) term =
+    ?eta:bool -> (mode, z, a) Ctx.t -> (mode, s) value -> (mode, kinetic) value -> (mode, a, s) term
+    =
  fun ?(eta = false) ctx tm ty ->
   let view = if Displaying.read () then view_term tm else tm in
   let vty = view_type ty "readback_at" in
   match (vty, view) with
-  | ( Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs),
-      Lam (x, filter2, body) ) -> (
+  | Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs), Lam (x, filter2, body) -> (
       let Eq = eq_of_ins_zero ins in
       (* The instantiation of the type, and the dimension of the binder, are both the *outer* (unfiltered) dimension of the pi-type; the variable cube and the domains live at the filtered dimension. *)
       let n = BindCube.dim cods in
@@ -128,12 +125,9 @@ and readback_at : type mode a z s.
       let output = tyof_app cods tyargs filter newargs in
       (* We carry through the eta-expansion flag so that iterated pi-types will eta-expand fully. *)
       Term.Lam
-        ( name,
-          BindCube.dim cods,
-          filter,
-          readback_eval ~eta newctx (apply tm filter newargs) output )
+        (name, BindCube.dim cods, filter, readback_eval ~eta newctx (apply tm filter newargs) output)
   | ( Canonical
-        (type mn m n)
+        (type hmode mn m n)
         (( _,
            Codata
              (type c a et)
@@ -141,7 +135,7 @@ and readback_at : type mode a z s.
                (mode, m, n, c, a, et) codata_args),
            ins,
            _ ) :
-          mode head
+          hmode head
           * (mode, m, n) canonical
           * (mn, m, n) insertion
           * (D.zero, mn, mn, mode normal) TubeOf.t),
@@ -160,49 +154,65 @@ and readback_at : type mode a z s.
                 let fields =
                   Mbwd.map
                     (* We don't need to consider the Higher case since we are kinetic. *)
-                    (fun (Value.StructfieldAbwd.Entry (fld, Value.Structfield.Lower (fldtm, l))) ->
-                      Term.StructfieldAbwd.Entry
-                        ( fld,
-                          Term.Structfield.Lower
-                            ( readback_at ctx (force_eval_term fldtm)
-                                (tyof_field (Ok tm) ty fld ~shuf:Trivial fldins),
-                              l ) ))
+                    (fun (Value.StructfieldAbwd.Entry
+                            (fld, Value.Structfield.Lower (adj, fldtm, lbl))) ->
+                      (* The component of a modal field lives behind a lock by the right adjoint, so we read it back in the locked context, at the non-keyed component type. *)
+                      let (Tyof_modal_field (adj', ety)) = tyof_field_nokey (Ok tm) ty fld in
+                      match Modality.compare (Modalcell.adj_left adj') (Modalcell.adj_left adj) with
+                      | Neq -> fatal (Anomaly "adjunction mismatch in struct readback")
+                      | Eq ->
+                          let (Locked (plus_lock, lctx)) = Ctx.lock ctx (Modalcell.adj_right adj') in
+                          Term.StructfieldAbwd.Entry
+                            ( fld,
+                              Term.Structfield.Lower
+                                (adj', plus_lock, readback_at lctx (force_eval_term fldtm) ety, lbl)
+                            ))
                     tmflds in
                 Some (Term.Struct { eta = Eta; dim; fields; energy })
             (* In addition, if the record type is transparent, or if it's translucent and the term is a tuple in a case tree, and we are reading back for display (rather than for internal typechecking purposes), we do an eta-expanding readback. *)
-            | _, `Transparent l when Displaying.read () ->
+            | (_, `Transparent l | _, `Translucent l)
+              when Displaying.read ()
+                   &&
+                   match (tm, opacity) with
+                   | Neu { value; _ }, `Translucent _ -> (
+                       match force_eval value with
+                       | Val (Struct _) -> true
+                       | _ -> false)
+                   | _, `Transparent _ -> true
+                   | _ -> false ->
+                (* A modal field whose (left adjoint) modality is nonparametric disappears at a dimension it filters nontrivially, so it isn't read back. *)
+                let m = cod_left_ins ins in
+                let fields =
+                  Bwd.filter
+                    (fun (CodatafieldAbwd.Entry
+                            (type i)
+                            ((_, Lower (Adjunction { left; _ }, _, _)) :
+                              i Field.t * (i, mode * a * n * has_eta) Codatafield.t)) ->
+                      let (Has_filter left_filter) = Modality.filter left m in
+                      match Modality.filter_is_trivial m left_filter with
+                      | Some Eq -> true
+                      | None -> false)
+                    fields in
                 let fields =
                   Mbwd.map
                     (fun (CodatafieldAbwd.Entry
                             (type i)
-                            ((fld, Lower _) : i Field.t * (i, mode * a * n * has_eta) Codatafield.t))
-                       ->
+                            ((fld, Lower ((Adjunction { left; right; unit; _ } as adj), _, _)) :
+                              i Field.t * (i, mode * a * n * has_eta) Codatafield.t)) ->
+                      (* Eta-expansion of a modal field: key the term by the adjunction unit, project, and read back the component in the context locked by the right adjoint (as in the eta-rule for equality). *)
+                      let xu = act_value tm (id_deg D.zero) unit in
+                      let tyu = act_ty tm ty (id_deg D.zero) unit in
+                      let (Locked (plus_lock, lctx)) = Ctx.lock ctx right in
                       Term.StructfieldAbwd.Entry
                         ( fld,
                           Term.Structfield.Lower
-                            ( readback_at ctx (field_term tm fld fldins)
-                                (tyof_field (Ok tm) ty fld ~shuf:Trivial fldins),
+                            ( adj,
+                              plus_lock,
+                              readback_at lctx (field_term left xu fld fldins)
+                                (tyof_field left (Ok xu) tyu fld ~shuf:Trivial fldins),
                               l ) ))
                     fields in
                 Some (Struct { eta = Eta; dim; fields; energy = Kinetic })
-            | Neu { value; _ }, `Translucent l when Displaying.read () -> (
-                match force_eval value with
-                | Val (Struct _) ->
-                    let fields =
-                      Mbwd.map
-                        (fun (CodatafieldAbwd.Entry
-                                (type i)
-                                ((fld, Lower _) :
-                                  i Field.t * (i, mode * a * n * has_eta) Codatafield.t)) ->
-                          Term.StructfieldAbwd.Entry
-                            ( fld,
-                              Term.Structfield.Lower
-                                ( readback_at ctx (field_term tm fld fldins)
-                                    (tyof_field (Ok tm) ty fld ~shuf:Trivial fldins),
-                                  l ) ))
-                        fields in
-                    Some (Struct { eta = Eta; dim; fields; energy = Kinetic })
-                | _ -> None)
             (* If the term is not a struct and the record type is not transparent/translucent, we pass off to synthesizing readback. *)
             | _ -> None in
           let do_record (rtm : (mode, kinetic) value) =
@@ -215,8 +225,8 @@ and readback_at : type mode a z s.
                 (* A nontrivially permuted record is not a record type, but we can permute its arguments to find elements of a record type that we can then eta-expand and re-permute. *)
                 let (Perm_to p) = perm_of_ins ins in
                 let pinv = deg_of_perm (perm_inv p) in
-                let ptm = act_value rtm pinv None in
-                let pty = act_ty rtm ty pinv None in
+                let ptm = act_value rtm pinv (Modalcell.id2 (Ctx.mode ctx)) in
+                let pty = act_ty rtm ty pinv (Modalcell.id2 (Ctx.mode ctx)) in
                 match readback_at_record ptm pty with
                 | Some res -> Act (res, deg_of_perm p, (`Other, `Other))
                 | None -> readback_val_sorted ctx rtm vty) in
@@ -287,11 +297,11 @@ and readback_val : type mode a z s.
   | Constr _ -> fatal (Anomaly "unexpected constr in synthesizing readback")
   | Canonical _ -> fatal (Anomaly "unexpected canonical in synthesizing readback")
 
-and readback_neu : type mode a z any.
+and readback_neu : type hmode mode a z any.
     ?sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] ->
     (mode, z, a) Ctx.t ->
-    mode head ->
-    (mode, any) apps ->
+    hmode head ->
+    (hmode, mode, any) apps ->
     (mode, a, kinetic) term =
  fun ?(sort = (`Other, `Other)) ctx head apps ->
   match (apps, head) with
@@ -311,10 +321,25 @@ and readback_neu : type mode a z any.
                   CubeOf.mmap { map = (fun _ [ tm ] -> readback_nf lctx tm) } [ args ] ) ),
           p,
           sort )
-  | Field (apps, fld, fldplus, ins), _ ->
+  | Field (apps, filter, fld, fldplus, ins), _ -> (
+      let fm = Modality.filter_modality filter in
       let (To p) = deg_of_ins ins in
-      Term.Act
-        (Field (readback_neu ~sort ctx head apps, fld, id_ins (cod_left_ins ins) fldplus), p, sort)
+      (* The spine inside a modal field projection lives behind a lock by the left adjoint, so we read it back in the locked context, at the filtered dimension. *)
+      let (Locked (plus_lock, lctx)) = Ctx.lock ctx fm in
+      let t = cod_left_ins ins in
+      let inner = readback_neu ~sort lctx head apps in
+      match Modality.filter_is_trivial t filter with
+      | Some Eq ->
+          (* Trivial filter: the inner spine is at the full result dimension t, and we build the projection there directly. *)
+          Term.Act (Field (Modal (fm, plus_lock, inner), fld, id_ins t fldplus), p, sort)
+      | None ->
+          (* Nontrivial filter: the field's modality is nonparametric and a degeneracy has acted, so the inner spine lives at a strictly smaller filtered dimension ft than the result dimension t.  We read back the projection at ft and lift it to t by the filter's degeneracy, which reconstructs (and prints as) the acting degeneracy — this is exactly the "disappeared" projection viewed as a degeneracy of a lower-dimensional one, and it re-evaluates correctly since eval filters the environment dimension. *)
+          let ft = Modality.filtered t filter in
+          let (Plus new_fldplus) = D.plus (D.plus_right fldplus) in
+          let fieldterm : (_, _, kinetic) Term.term =
+            Term.Field (Modal (fm, plus_lock, inner), fld, id_ins ft new_fldplus) in
+          let liftdeg = Modality.deg_of_filter t filter in
+          Term.Act (Term.Act (fieldterm, liftdeg, sort), p, sort))
   | Inst (Emp, _, args), Pi _ when TubeOf.is_full args ->
       (* When reading back a fully instantiated higher-dimensional pi-type, we eta-expand the instantiation arguments so that it can be printed with a nice notation. *)
       let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ~eta:true ctx x) } [ args ] in
@@ -331,12 +356,19 @@ and readback_head : type mode c z.
  fun ?(sort = (`Other, `Other)) ctx h ->
   match h with
   | Var { level; deg; key } -> (
-      (* The source of the key is supposed to be the modal annotation of the variable, while its target is supposed to be the composite of all the locks in the context to its right.  So we remove its target from the context. *)
+      (* The source of the key is supposed to be the modal annotation of the variable, while its target is supposed to be the composite of all the locks in the context to its right (including any added by the degeneracy).  So we remove its target from the context. *)
       let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt key) in
       (* Now we look for the level variable in the remaining context. *)
       let (Lookup
-             { result; value = _; dirt = _; modality; filter; insert; plus = Plus_with_locks (c, _) })
-          =
+             {
+               result;
+               value = _;
+               dirt = _;
+               modality;
+               filter;
+               insert;
+               plus = Plus_with_locks (c, _);
+             }) =
         Ctx.find_level ctx level <|> No_such_level (PLevel level) in
       (* We check that (1) the modality annotating that variable is the source of the key, and (2) there are no more locks remaining to its right in the context. *)
       match (Modality.compare (Modalcell.vsrc key) modality, result, c) with
@@ -424,7 +456,7 @@ and readback_at_tel : type mode n c a b ab z.
       | Neq -> fatal (Modality_mismatch (`Internal, "readback_at_tel", xmodality, tymodality))
       | Eq ->
           let (Locked (cplus, lctx)) = Ctx.lock ctx tymodality in
-          let lenv = key_env env (Modalcell.id tymodality) aplus in
+          let lenv = key_id_env env aplus in
           let x = CubeOf.find_top x in
           let ety = eval_term lenv ty in
           (* The argument is k-dimensional, where k is the modal filtering of the dimension n of the entire constructor.  We build k-cubes of read-back terms and values in parallel. *)
@@ -497,6 +529,8 @@ and readback_ordered_env : type mode n a b c d.
  fun ctx env envctx ->
   match envctx with
   | Emp mode -> Emp (mode, dim_env env)
+  (* A weakening entry contributes nothing to the environment, so we skip it. *)
+  | Weaken (envctx, _) -> readback_ordered_env ctx env envctx
   | Ext (envctx, entry, _) -> (
       match entry with
       | Vis { plus_lock = dplus; bindings; filter = filtered; _ }
@@ -523,9 +557,9 @@ and readback_ordered_env : type mode n a b c d.
           (* We are reading back bindings that were defined under a modality, so they are defined in a locked context. *)
           let (Locked (bplus, lctx)) = Ctx.lock ctx modality in
           (* We also analogously key the environment we're reading back, for purposes of evaluating types. *)
-          let lenv = key_env aenv (Modalcell.id modality) dplus in
+          let lenv = key_id_env aenv dplus in
           (* We apply the accumulated operators, degeneracies, and any prekey action to the entry we found. *)
-          let xs = act_cube { act } (CubeOf.subcube fc xs) fd (Some pre) in
+          let xs = act_cube { act } (CubeOf.subcube fc xs) fd pre in
           (* Now we read back all the terms and types in that environment entry.  We record the normal forms in a hashtbl as we go, to use as instantiation arguments to types of higher-dimensional terms. *)
           let xtytbl = Hashtbl.create 10 in
           let tmxs =
@@ -565,16 +599,33 @@ and readback_ordered_env : type mode n a b c d.
             })
   | Lock _ -> (
       (* We remove as many locks as there are at the end of the codomain context, since keys in the environment could have composite modalities as their domain. *)
-      let (Ordered_remove_locks (envctx, plus_src)) = Termctx.ordered_remove_locks envctx in
-      (* Then we remove all the corresponding keys from the environment being read back, and their domain from the context we're reading back *into*. *)
-      let (Restrict_keys (env, cell, pre)) = restrict_keys_plus_lock env plus_src in
-      let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt cell) in
-      (* We read back the residual environment as a keyed term environment, and wrap it in a prekey carrying the accumulated prekey action, dropping the latter if it is an identity (as when no prekeys were present). *)
-      let keyed = Term.Key { env = readback_ordered_env ctx env envctx; cell; plus_src; plus_tgt } in
-      match Modalcell.compare_id pre with
-      | Eq -> keyed
-      | Neq -> Prekey (keyed, pre))
-  | Parametric_lock envctx -> readback_ordered_env ctx env envctx
+      let (Ordered_remove_locks (envctx, plus_src, no_locks)) =
+        Termctx.ordered_remove_locks envctx in
+      (* Then we remove all the corresponding keys from the environment being read back. *)
+      let (Restrict_keys (env, extra, mu12, cell, pre)) = restrict_keys_plus_lock env plus_src in
+      (* Since we removed a maximal run of locks, and a key can only span locks, the split can never land in the middle of a key here, so there is nothing extra. *)
+      match (extra, no_locks) with
+      | Plus_lock (Suc _, _), _ -> .
+      | Plus_lock (Zero _, Zero), _ -> (
+          let Eq = Modality.comp_uniq mu12 (Modality.id_comp (plus_lock_modality plus_src)) in
+          match Modalcell.compare_id pre with
+          | Eq ->
+              (* If there is no prekey action, we just remove the target of the composite key cell from the context we're reading back *into*, and read back the residual environment as a keyed term environment. *)
+              let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt cell) in
+              Term.Key { env = readback_ordered_env ctx env envctx; cell; plus_src; plus_tgt }
+          | Neq ->
+              (* A prekey action mediates between a context locked by its vertical source (where the keyed value was created, e.g. behind a parametric locker's locks) and one locked by its vertical target (the actual ambient context, e.g. after the locker's counit discharged those locks).  So before removing the target of the key cell, we remove the target of the prekey from the context and re-lock it with the prekey's source, recording both in the term-level Prekey. *)
+              let (Remove_lock (ctx, pre_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt pre) in
+              let (Locked (pre_src, ctx)) = Ctx.lock ctx (Modalcell.vsrc pre) in
+              let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt cell) in
+              Prekey
+                {
+                  env =
+                    Term.Key { env = readback_ordered_env ctx env envctx; cell; plus_src; plus_tgt };
+                  cell = pre;
+                  plus_src = pre_src;
+                  plus_tgt = pre_tgt;
+                }))
 
 (* Read back a context of values into a context of terms. *)
 
@@ -618,7 +669,8 @@ let readback_entry : type dom modality mode a b f n.
         Bwv.map
           (fun (f, x) ->
             let fldty =
-              readback_val ~sort:`Type lctx (tyof_field (Ok top.tm) top.ty f ~shuf:Trivial fins)
+              readback_val ~sort:`Type lctx
+                (tyof_field (Modality.id (Ctx.mode lctx)) (Ok top.tm) top.ty f ~shuf:Trivial fins)
             in
             (f, x, fldty))
           fields in
@@ -642,7 +694,7 @@ let rec readback_ordered_ctx : type mode a b.
       let (Readback_entry re) = readback_entry (Ctx.of_ordered ctx) e in
       Ext (readback_ordered_ctx rest, re, af)
   | Lock (ctx, lock) -> Lock (readback_ordered_ctx ctx, lock)
-  | Parametric_lock ctx -> Parametric_lock (readback_ordered_ctx ctx)
+  | Weaken (ctx, code) -> Weaken (readback_ordered_ctx ctx, code)
 
 let readback_ctx : type mode a b. (mode, a, b) Ctx.t -> (mode, a, b) termctx = function
   | Permute { perm; ctx; _ } -> Permute (perm, readback_ordered_ctx ctx)
@@ -779,7 +831,7 @@ let readback_degenerate_constr : type mode lev e m.
   let cty = Telescope.pis tel output_term in
   let cfun = Norm.eval_term (Ctx.env ctx) cfun in
   let cty = Norm.eval_term (Ctx.env ctx) cty in
-  let ft = Act.act_ty cfun cty (deg_zero m) None in
+  let ft = Act.act_ty cfun cty (deg_zero m) (Modalcell.id2 (Ctx.mode ctx)) in
   readback_val ~sort:`Type ctx ft
 
 (* Read back a degenerate constructor's function-type in a configuration with *no endpoints* (arity 0).  Then an m-cube has no proper faces, so we don't need the zero-dimensional base (which is unreachable anyway, as it would be a vertex of a faceless cube): we evaluate the constructor's function-type "(args) → output" directly in the degenerate (m-dimensional) environment that the constructor already carries.  There is still a (trivial, empty) instantiation, displayed as ".", so we instantiate the resulting m-dimensional function-type at the empty boundary tube before reading back.  Since the cube has no proper faces, the tube's builder is never called. *)

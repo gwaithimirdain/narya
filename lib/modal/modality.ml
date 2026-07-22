@@ -1,4 +1,5 @@
 open Bwd
+open Asai.Range
 open Util
 open Dim
 open Signatures
@@ -181,7 +182,7 @@ module type Generator = sig
 
   val src : src Mode.t
   val tgt : tgt Mode.t
-  val name : string
+  val name : string ref
 
   (* Which directions this generator forbids parametricity in *)
   type nonparametric
@@ -203,55 +204,45 @@ module Generate (G : Generator) = struct
   let modality : (G.src, t, G.tgt) gen = PK (G.src, Dynarray.length Gen.names, G.tgt)
 
   let () =
-    Dynarray.add_last Gen.names G.name;
+    Dynarray.add_last Gen.names !G.name;
     Dynarray.add_last Gen.nonparametric (Wrap G.nonparametric);
-    Gen.by_name := StringMap.add G.name (Wrap modality : Gen.all_wrapped) !Gen.by_name
+    Gen.by_name := StringMap.add !G.name (Wrap modality : Gen.all_wrapped) !Gen.by_name
 end
 
 type ('src, 'tgt) gen_wrapped = Wrap : ('src, 'morphism, 'tgt) Gen.t -> ('src, 'tgt) gen_wrapped
-
-let generate : type a b p. a Mode.t -> b Mode.t -> string -> p D.t -> (a, b) gen_wrapped =
- fun a b c p ->
-  let module G = struct
-    type src = a
-    type tgt = b
-
-    let src = a
-    let tgt = b
-    let name = c
-
-    type nonparametric = p
-
-    let nonparametric = p
-  end in
-  let module M = Generate (G) in
-  Wrap M.modality
 
 module Modality = Path.Make (Gen)
 include Modality
 module Map = Path.Map (Gen) (Mode.Map) (Gen.Map)
 
+let compare_id : type x m y. (x, m, y) t -> (m * y, x id * x) Eq.compare =
+ fun m ->
+  match compare m (id (src m)) with
+  | Eq -> Eq
+  | Neq -> Neq
+
 module type Theory = sig
-  val sharp : ('a, 'm, 'b) t -> bool
+  val tangible : ('a, 'm, 'b) t -> bool
   val pellucid : ('a, 'm, 'b) t -> bool
   val transparent : ('a, 'm, 'b) t -> bool
   val translucent : ('a, 'm, 'b) t -> bool
 end
 
+(* By default, all modalities are tangible and translucent, but none (except identities, which are special-cased in the typechecker) are pellucid or transparent. *)
 let theory : (module Theory) ref =
   ref
     (module struct
-      let sharp _ = true
-      let pellucid _ = true
-      let transparent _ = true
+      let tangible _ = true
+      let pellucid _ = false
+      let transparent _ = false
       let translucent _ = true
     end : Theory)
 
 let choose_theory (t : (module Theory)) = theory := t
 
-let sharp m =
+let tangible m =
   let module T = (val !theory) in
-  T.sharp m
+  T.tangible m
 
 let pellucid m =
   let module T = (val !theory) in
@@ -264,6 +255,23 @@ let transparent m =
 let translucent m =
   let module T = (val !theory) in
   T.translucent m
+
+let one_char_ref = ref true
+let one_char () = !one_char_ref
+
+(* All the generating modality names currently in existence, i.e. those of the installed mode theory.  Used for command-line name sanity-checking. *)
+let all_names () = Dynarray.to_list Gen.names
+
+let is_exactly_one_utf8_char s =
+  let len = String.length s in
+  if len = 0 then false
+  else
+    let dec = String.get_utf_8_uchar s 0 in
+    Uchar.utf_decode_is_valid dec && Uchar.utf_decode_length dec = len
+
+let set_one_char default modalities =
+  one_char_ref :=
+    if List.is_empty modalities then default else List.for_all is_exactly_one_utf8_char modalities
 
 module Cube (F : Fam3) = struct
   module Parent = struct
@@ -278,82 +286,93 @@ module Cube (F : Fam3) = struct
         -> ('n, 'mode, 'a, 'b) t
 end
 
-let compare_id : type x m y. (x, m, y) t -> (m * y, x id * x) Eq.compare =
- fun m ->
-  match compare m (id (src m)) with
-  | Eq -> Eq
-  | Neq -> Neq
-
-(* String names.  A modality is named by a string list of generator names.  Note that the empty list therefore represents the identity modality at *any* mode, so to convert such a name to a modality we need either the source or the target mode given. *)
+(* String names.  A modality is named by a string list of generator names.  Note that the empty list therefore represents the identity modality at *any* mode, so to convert such a name to a modality we need either the source or the target mode given.  Moreover, if one_char is true, then all generators are a single unicode character, and any strings that are longer than that are split into characters. *)
 
 let rec name_bwd : type a m b. (a, m, b) t -> string Bwd.t = function
   | Path (Zero, _) -> Emp
   | Path (Suc (Zero, g), _) -> Snoc (Emp, Gen.name g)
   | Path (Suc ((Suc (_, _) as gs), g), mode) -> Snoc (name_bwd (Path (gs, mode)), Gen.name g)
 
-let name : type a m b. (a, m, b) t -> string list = fun m -> Bwd.to_list (name_bwd m)
+let name : type a m b. (a, m, b) t -> string list =
+ fun m ->
+  let names = name_bwd m in
+  match (one_char (), names) with
+  | true, Snoc _ -> [ Bwd.fold_right (fun x y -> x ^ y) names "" ]
+  | _ -> Bwd.to_list names
 
-let of_name_tgt : type a s.
-    (s -> string) ->
+let split_names cs =
+  if one_char () then
+    List.flatten (List.map (fun x -> List.map (locate_opt x.loc) (Unicode.split_utf8 x.value)) cs)
+  else cs
+
+let of_name_tgt : type a.
     a Mode.t ->
-    s list ->
-    (a src_wrapped, [ `Not_found of s | `Wrong_tgt of Mode.wrapped * s * Mode.wrapped ]) result =
- fun get_string mode cs ->
+    string located list ->
+    ( a src_wrapped,
+      [ `Not_found of string located | `Wrong_tgt of Mode.wrapped * string located * Mode.wrapped ]
+    )
+    result =
+ fun mode cs ->
   let rec go (m : a src_wrapped) = function
     | [] -> Ok m
     | c :: cs -> (
-        match StringMap.find_opt (get_string c) !Gen.by_name with
+        match StringMap.find_opt c.value !Gen.by_name with
         | None -> Error (`Not_found c)
         | Some (Wrap n) -> (
             let (Wrap m) = m in
             match Mode.compare (Gen.tgt n) (src m) with
             | Eq -> go (Wrap (suc m n)) cs
             | Neq -> Error (`Wrong_tgt (Mode.Wrap (Gen.tgt n), c, Mode.Wrap (src m))))) in
-  go (Wrap (id mode)) cs
+  go (Wrap (id mode)) (split_names cs)
 
-let rec of_name_src_bwd : type a s.
-    (s -> string) ->
-    s Bwd.t ->
+let rec of_name_src_bwd : type a.
+    string located Bwd.t ->
     a Mode.t ->
-    (a tgt_wrapped, [ `Not_found of s | `Wrong_src of Mode.wrapped * s * Mode.wrapped ]) result =
- fun get_string cs mode ->
+    ( a tgt_wrapped,
+      [ `Not_found of string located | `Wrong_src of Mode.wrapped * string located * Mode.wrapped ]
+    )
+    result =
+ fun cs mode ->
   match cs with
   | Emp -> Ok (Wrap (id mode))
   | Snoc (cs, c) -> (
-      match StringMap.find_opt (get_string c) !Gen.by_name with
+      match StringMap.find_opt c.value !Gen.by_name with
       | None -> Error (`Not_found c)
       | Some (Wrap n) -> (
           match Mode.compare (Gen.src n) mode with
           | Eq -> (
-              match of_name_src_bwd get_string cs (Gen.tgt n) with
+              match of_name_src_bwd cs (Gen.tgt n) with
               | Ok (Wrap m) -> Ok (Wrap (suc m n) : a tgt_wrapped)
               | Error e -> Error e)
           | Neq -> Error (`Wrong_src (Wrap (Gen.src n), c, Wrap mode))))
 
-let of_name_src : type a s.
-    (s -> string) ->
-    s list ->
+let of_name_src : type a.
+    string located list ->
     a Mode.t ->
-    (a tgt_wrapped, [ `Not_found of s | `Wrong_src of Mode.wrapped * s * Mode.wrapped ]) result =
- fun get_string cs mode -> of_name_src_bwd get_string (Bwd.of_list cs) mode
+    ( a tgt_wrapped,
+      [ `Not_found of string located | `Wrong_src of Mode.wrapped * string located * Mode.wrapped ]
+    )
+    result =
+ fun cs mode -> of_name_src_bwd (Bwd.of_list (split_names cs)) mode
 
 let to_string : type a m b. (a, m, b) t -> string =
  fun m ->
   match name m with
   | [] -> "id"
-  | ms -> String.concat " " ms
+  | ms -> String.concat (if one_char () then "" else " ") ms
 
-let compare_name : type x m y s.
-    (s -> string) ->
-    s list ->
+let compare_name : type x m y.
+    string located list ->
     (x, m, y) t ->
     ( unit,
-      [ `Unequal of y src_wrapped | `Not_found of s | `Wrong_tgt of Mode.wrapped * s * Mode.wrapped ]
-    )
+      [ `Unequal of y src_wrapped
+      | `Not_found of string located
+      | `Wrong_tgt of Mode.wrapped * string located * Mode.wrapped ] )
     result =
- fun get_string name m ->
-  match of_name_tgt get_string (tgt m) name with
-  | Error e -> Error (e :> [ `Unequal of y src_wrapped | `Not_found of s | `Wrong_tgt of _ ])
+ fun name m ->
+  match of_name_tgt (tgt m) name with
+  | Error e ->
+      Error (e :> [ `Unequal of y src_wrapped | `Not_found of string located | `Wrong_tgt of _ ])
   | Ok (Wrap n) -> (
       match compare m n with
       | Eq -> Ok ()
@@ -492,18 +511,6 @@ let filter_of_plus : type x m y b d ac bd.
   let (Except_of_plus (ac, eab, ecd)) = except_of_plus bd eacbd in
   Filter_of_plus (ac, Filter (e, eab), Filter (e, ecd))
 
-type (_, _, _, _, _, _) filter_of_plus' =
-  | Filter_of_plus' :
-      ('b, 'c, 'bc) D.plus * ('bc, 'd) perm * ('x, 'm, 'y, 'a, 'b) filter_dim
-      -> ('x, 'm, 'y, 'a, 'c, 'd) filter_of_plus'
-
-let filter_of_plus' : type a c ac x m y d.
-    d D.t -> (a, c, ac) D.plus -> (x, m, y, ac, d) filter_dim -> (x, m, y, a, c, d) filter_of_plus'
-    =
- fun d ac (Filter (e, eacd)) ->
-  let (Except_of_plus' (bc, p, eab)) = except_of_plus' d ac eacd in
-  Filter_of_plus' (bc, p, Filter (e, eab))
-
 type (_, _, _, _, _) filter_sface =
   | Filter_sface :
       ('d, 'a) sface * ('x, 'm, 'y, 'd, 'c) filter_dim
@@ -560,6 +567,13 @@ let pface_filter : type x m y a b c.
 
 let deg_of_filter : type x m y a b. b D.t -> (x, m, y, a, b) filter_dim -> (b, a) deg =
  fun b (Filter (_, ex)) -> deg_of_except b ex
+
+(* A filter is "trivial" at a dimension if the modality doesn't actually remove any directions there, i.e. the filtered dimension equals the outer dimension.  This decides whether a modal field is present (projectable, and required/allowed in a tuple) at a given dimension: it is present exactly when its modality's filter is trivial there.  We detect triviality by checking whether the degeneracy from the outer to the filtered dimension is the identity, which also yields the type-level equality of the two dimensions. *)
+let filter_is_trivial : type x m y a b. b D.t -> (x, m, y, a, b) filter_dim -> (a, b) Eq.t option =
+ fun b filt ->
+  match is_id_deg (deg_of_filter b filt) with
+  | Some Eq -> Some Eq
+  | None -> None
 
 let sface_of_filter : type x m y a b. b D.t -> (x, m, y, a, b) filter_dim -> (a, b) opt_sface =
  fun b (Filter (_, ex)) -> sface_of_except b ex

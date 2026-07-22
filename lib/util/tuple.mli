@@ -2,79 +2,61 @@ open Signatures
 open Tlist
 open Tbwd
 
-module Make (G : Comparable) (F : Fam2) : sig
+module Make (G : Decidable) (F : Fam2) : sig
   module W : module type of Word.Make (G)
 
-  type ('a, 'b, 'p) gt
-  type ('a, 'p) t = ('a, nil, 'p) gt
+  type ('a, 'b, 'g0, 'p) gt
+  type ('a, 'g0, 'p) t = ('a, nil, 'g0, 'p) gt
 
-  val empty : (W.zero, 'p) t
-  val find : ('a, 'g, 'asuc) Tbwd.insert -> ('asuc, 'p) t -> ('a, 'p) F.t
-  val set : ('a, 'g, 'asuc) Tbwd.insert -> ('a, 'p) F.t -> ('asuc, 'p) t -> ('asuc, 'p) t
+  val empty : (W.zero, 'g0, 'p) t
+  val find : ('a, 'g0, 'asuc) Tbwd.insert -> ('asuc, 'g0, 'p) t -> ('a, 'p) F.t
+  val set : ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'p) F.t -> ('asuc, 'g0, 'p) t -> ('asuc, 'g0, 'p) t
 
   val update :
-    ('a, 'g, 'asuc) Tbwd.insert -> (('a, 'p) F.t -> ('a, 'p) F.t) -> ('asuc, 'p) t -> ('asuc, 'p) t
+    ('a, 'g0, 'asuc) Tbwd.insert ->
+    (('a, 'p) F.t -> ('a, 'p) F.t) ->
+    ('asuc, 'g0, 'p) t ->
+    ('asuc, 'g0, 'p) t
 
-  type ('asuc, 'p) builder = {
-    build : 'a 'g. 'g G.t -> ('a, 'g, 'asuc) Tbwd.insert -> ('a, 'p) F.t;
-  }
+  type ('asuc, 'g0, 'p) builder = { build : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'p) F.t }
 
-  val build : 'a W.t -> ('a, 'p) builder -> ('a, 'p) t
+  val build : 'a W.t -> 'g0 G.t -> ('a, 'g0, 'p) builder -> ('a, 'g0, 'p) t
 
   module Heter : sig
     type (_, _) hft =
       | [] : ('a, nil) hft
       | ( :: ) : ('a, 'p) F.t * ('a, 'ps) hft -> ('a, ('p, 'ps) cons) hft
 
-    type (_, _, _) hgt =
-      | [] : ('a, 'b, nil) hgt
-      | ( :: ) : ('a, 'b, 'p) gt * ('a, 'b, 'ps) hgt -> ('a, 'b, ('p, 'ps) cons) hgt
+    type (_, _, _, _) hgt =
+      | [] : ('a, 'b, 'g0, nil) hgt
+      | ( :: ) :
+          ('a, 'b, 'g0, 'p) gt * ('a, 'b, 'g0, 'ps) hgt
+          -> ('a, 'b, 'g0, ('p, 'ps) cons) hgt
   end
 
-  module Applicatic (M : Applicative.Plain) : sig
-    type ('asuc, 'ps, 'qs) pmapperM = {
-      map :
-        'a 'g.
-        'g G.t -> ('a, 'g, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> ('a, 'qs) Heter.hft M.t;
-    }
-
-    val pmapM :
-      ('a, ('p, 'ps) cons, 'qs) pmapperM ->
-      ('a, nil, ('p, 'ps) cons) Heter.hgt ->
-      'qs Tlist.t ->
-      ('a, nil, 'qs) Heter.hgt M.t
-
-    type ('asuc, 'ps, 'q) mmapperM = {
-      map : 'a 'g. 'g G.t -> ('a, 'g, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> ('a, 'q) F.t M.t;
-    }
-
-    val mmapM :
-      ('a, ('p, 'ps) cons, 'q) mmapperM ->
-      ('a, nil, ('p, 'ps) cons) Heter.hgt ->
-      ('a, nil, 'q) gt M.t
-
-    type ('asuc, 'ps) miteratorM = {
-      it : 'a 'g. 'g G.t -> ('a, 'g, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> unit M.t;
-    }
-
-    val miterM : ('a, ('p, 'ps) cons) miteratorM -> ('a, nil, ('p, 'ps) cons) Heter.hgt -> unit M.t
-  end
-
-  module Monadic (M : Monad.Plain) : sig
-    module A : module type of Applicative.OfMonad (M)
-    include module type of Applicatic (A)
-  end
-
-  module IdM : module type of Monadic (Monad.Identity)
+  type ('asuc, 'g0, 'ps, 'qs) pmapper = {
+    map : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> ('a, 'qs) Heter.hft;
+  }
 
   val pmap :
-    ('a, ('p, 'ps) cons, 'qs) IdM.pmapperM ->
-    ('a, nil, ('p, 'ps) cons) Heter.hgt ->
+    ('a, 'g0, ('p, 'ps) cons, 'qs) pmapper ->
+    ('a, nil, 'g0, ('p, 'ps) cons) Heter.hgt ->
     'qs Tlist.t ->
-    ('a, nil, 'qs) Heter.hgt
+    ('a, nil, 'g0, 'qs) Heter.hgt
+
+  type ('asuc, 'g0, 'ps, 'q) mmapper = {
+    map : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> ('a, 'q) F.t;
+  }
 
   val mmap :
-    ('a, ('p, 'ps) cons, 'q) IdM.mmapperM -> ('a, nil, ('p, 'ps) cons) Heter.hgt -> ('a, nil, 'q) gt
+    ('a, 'g0, ('p, 'ps) cons, 'q) mmapper ->
+    ('a, nil, 'g0, ('p, 'ps) cons) Heter.hgt ->
+    ('a, nil, 'g0, 'q) gt
 
-  val miter : ('a, ('p, 'ps) cons) IdM.miteratorM -> ('a, nil, ('p, 'ps) cons) Heter.hgt -> unit
+  type ('asuc, 'g0, 'ps) miterator = {
+    it : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> unit;
+  }
+
+  val miter :
+    ('a, 'g0, ('p, 'ps) cons) miterator -> ('a, nil, 'g0, ('p, 'ps) cons) Heter.hgt -> unit
 end

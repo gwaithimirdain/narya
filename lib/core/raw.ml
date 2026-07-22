@@ -73,7 +73,12 @@ module rec Make : functor (I : Indices) -> sig
   type _ synth =
     | Var : 'a index -> 'a synth
     | Const : Constant.t -> 'a synth
-    | Field : 'a synth located * [ `Name of string * int list | `Int of int ] -> 'a synth
+    | Field :
+        'a synth located
+        * [ `Name of string * int list | `Int of int ]
+        * string located list located option
+        -> 'a synth
+    | Key : 'a synth located * string list located -> 'a synth
     | Pi :
         I.name * string located list located * 'a check located * 'a I.suc check located
         -> 'a synth
@@ -133,7 +138,7 @@ module rec Make : functor (I : Indices) -> sig
     | Record :
         ('a, 'c, 'ac) Namevec.t located * ('ac, 'd, 'acd) tel * opacity * Variables.hints
         -> 'a check
-    | SelfRecord : (Field.wrapped, 'a codatafield) Abwd.t * Variables.hints -> 'a check
+    | SelfRecord : (Field.wrapped, 'a codatafield) Abwd.t * opacity * Variables.hints -> 'a check
     | Refute :
         ('a synth located * string located list located option) list * [ `Explicit | `Implicit ]
         -> 'a check
@@ -162,7 +167,15 @@ module rec Make : functor (I : Indices) -> sig
         -> 'a branch
 
   and _ dataconstr = Dataconstr : ('a, 'b, 'ab) tel * 'ab check located option -> 'a dataconstr
-  and _ codatafield = Codatafield : I.name * 'a I.suc check located -> 'a codatafield
+
+  and _ codatafield =
+    | Codatafield :
+        I.name
+        * string located list located option
+        * 'a check located option
+        * 'a I.suc check located
+        -> 'a codatafield
+
   and 'a refutables = { refutables : 'b 'ab. ('a, 'b, 'ab) bplus -> 'ab synth located list }
 
   and (_, _, _) tel =
@@ -240,7 +253,14 @@ functor
       | Var : 'a index -> 'a synth
       | Const : Constant.t -> 'a synth
       (* A field projection from a possibly-higher-coinductive type comes with a suffix that is a string of integers, denoting a partial bijection between n and m that is total on n.  This is the same as an injection from n to m, or equivalently an insertion of n into m∖l to produce m, where l = image(n). *)
-      | Field : 'a synth located * [ `Name of string * int list | `Int of int ] -> 'a synth
+      (* A modal field projection additionally records the name of the locking modality (the left adjoint of the field's adjunction), specified by the user with a modal variable ascription such as "(x : f | _) .fld". *)
+      | Field :
+          'a synth located
+          * [ `Name of string * int list | `Int of int ]
+          * string located list located option
+          -> 'a synth
+      (* A modal key operation applied postfix to a synthesizing term, written "x #a.b.c".  The dot-separated pieces of the key name are stored as strings, to be resolved into a 2-cell at typechecking time. *)
+      | Key : 'a synth located * string list located -> 'a synth
       | Pi :
           I.name * string located list located * 'a check located * 'a I.suc check located
           -> 'a synth
@@ -322,7 +342,7 @@ functor
           ('a, 'c, 'ac) Namevec.t located * ('ac, 'd, 'acd) tel * opacity * Variables.hints
           -> 'a check
       (* There's also a notation for record types that uses self variables like codata. *)
-      | SelfRecord : (Field.wrapped, 'a codatafield) Abwd.t * Variables.hints -> 'a check
+      | SelfRecord : (Field.wrapped, 'a codatafield) Abwd.t * opacity * Variables.hints -> 'a check
       (* Empty match against the first one of the arguments belonging to an empty type.  Each argument carries an optional window modality. *)
       | Refute :
           ('a synth located * string located list located option) list * [ `Explicit | `Implicit ]
@@ -364,7 +384,14 @@ functor
     and _ dataconstr = Dataconstr : ('a, 'b, 'ab) tel * 'ab check located option -> 'a dataconstr
 
     (* A field of a codatatype has a self variable and a type.  At the raw level we don't need any more information about higher fields. *)
-    and _ codatafield = Codatafield : I.name * 'a I.suc check located -> 'a codatafield
+    (* A codata field records the name of the locking modality (the left adjoint of its adjunction), if any, specified by the user with a modal ascription of the self variable such as "(x :f| _) .fld : A".  The type can be supplied instead of a placeholder. *)
+    and _ codatafield =
+      | Codatafield :
+          I.name
+          * string located list located option
+          * 'a check located option
+          * 'a I.suc check located
+          -> 'a codatafield
 
     (* A raw match stores the information about the pattern variables available from previous matches that could be used to refute missing cases.  But it can't store them as raw terms, since they have to be in the correct context extended by the new pattern variables generated in any such case.  So it stores them as a callback that puts them in any such extended context. *)
     and 'a refutables = { refutables : 'b 'ab. ('a, 'b, 'ab) bplus -> 'ab synth located list }
@@ -471,7 +498,8 @@ module Resolve (R : Resolver) = struct
           | Ok ix -> Var (ix, fa)
           | Error e -> Fail e)
       | Const c -> Const c
-      | Field (tm, fld) -> Field (synth ctx tm, fld)
+      | Field (tm, fld, lock) -> Field (synth ctx tm, fld, lock)
+      | Key (tm, parts) -> Key (synth ctx tm, parts)
       | Pi (x, modality, dom, cod) ->
           Pi (R.rename ctx x, modality, check ctx dom, check (R.snoc ctx x) cod)
       | HigherPi (x, modality, dom, cod) ->
@@ -547,16 +575,19 @@ module Resolve (R : Resolver) = struct
       | Codata (fields, hints) ->
           Codata
             ( Abwd.map
-                (fun (R.T1.Codatafield (x, fld)) ->
-                  R.T2.Codatafield (R.rename ctx x, check (R.snoc ctx x) fld))
+                (fun (R.T1.Codatafield (x, lock, ty, fld)) ->
+                  R.T2.Codatafield
+                    (R.rename ctx x, lock, Option.map (check ctx) ty, check (R.snoc ctx x) fld))
                 fields,
               hints )
-      | SelfRecord (fields, hints) ->
+      | SelfRecord (fields, opaq, hints) ->
           SelfRecord
             ( Abwd.map
-                (fun (R.T1.Codatafield (x, fld)) ->
-                  R.T2.Codatafield (R.rename ctx x, check (R.snoc ctx x) fld))
+                (fun (R.T1.Codatafield (x, lock, ty, fld)) ->
+                  R.T2.Codatafield
+                    (R.rename ctx x, lock, Option.map (check ctx) ty, check (R.snoc ctx x) fld))
                 fields,
+              opaq,
               hints )
       | Record (xs, fields, opaq, hints) ->
           let (Bplus ac2) = R.T2.bplus (R.T1.Namevec.length xs.value) in

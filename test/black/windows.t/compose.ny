@@ -1,24 +1,36 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-composed-functors") -*- `}
+{` -*- narya-prog-args: ("-proofgeneral" "-composable-functors") -*- `}
 
-` The modal operators associated to F, G, and their composite G∘F.
+` The modal operators associated to ○, ▱, and their composite ▱○.
 
-def F (X :F| AType) : BType ≔ data [ f. (_ :F| X) ]
+def ○ (X :○| AType) : BType ≔ data [ circ. (_ :○| X) ]
 
-def G (Y :G| BType) : CType ≔ data [ g. (_ :G| Y) ]
+def ▱ (Y :▱| BType) : CType ≔ data [ par. (_ :▱| Y) ]
 
-def GF (X :G F| AType) : CType ≔ data [ gf. (_ :G F| X) ]
+def ▱○ (X :▱○| AType) : CType ≔ data [ parcirc. (_ :▱○| X) ]
 
-` The composite of the modal operators F and G is the modal operator of the
+{` We can define one direction without windows. `}
+def colax (X :▱○| AType) (u : ▱○ X) : ▱ (○ X) ≔ match u [
+| parcirc. x ↦ par. (circ. x)]
+
+` The composite of the modal operators ○ and ▱ is the modal operator of the
 ` composite modality, up to isomorphism.  The forward map requires matching
-` under the window modality G to reach inside the datatype F.
+` under the window modality ▱ to reach inside the datatype ○.
 
-def fwd (X :G F| AType) (u : G (F X)) : GF X ≔ match u [
-| g. y ↦ match (y :G| _) [ f. x ↦ gf. x ]]
+def lax (X :▱○| AType) (u : ▱ (○ X)) : ▱○ X ≔ match u [
+| par. y ↦ match (y :▱| _) [ circ. x ↦ parcirc. x ]]
 
-def bwd (X :G F| AType) (u : GF X) : G (F X) ≔ match u [ gf. x ↦ g. (f. x) ]
+{` We can also give the type explicitly `}
+def lax′ (X :▱○| AType) (u : ▱ (○ X)) : ▱○ X ≔ match u [
+| par. y ↦ match (y :▱| ○ X) [ circ. x ↦ parcirc. x ]]
 
-def fwd∘bwd (X :G F| AType) (u : GF X) : Id (GF X) (fwd X (bwd X u)) u ≔ match u [
-| gf. x ↦ refl (gf. x)]
+{` Or, in fact, leave off the window annotation, since [y] is a variable whose annotation is known `}
+def lax″ (X :▱○| AType) (u : ▱ (○ X)) : ▱○ X ≔ match u [
+| par. y ↦ match y [ circ. x ↦ parcirc. x ]]
 
-def bwd∘fwd (X :G F| AType) (u : G (F X)) : Id (G (F X)) (bwd X (fwd X u)) u
-  ≔ match u [ g. y ↦ match (y :G| _) [ f. x ↦ refl (g. (f. x)) ]]
+def lax∘colax (X :▱○| AType) (u : ▱○ X) : Id (▱○ X) (lax X (colax X u)) u
+  ≔ match u [ parcirc. x ↦ refl (parcirc. x) ]
+
+def colax∘lax (X :▱○| AType) (u : ▱ (○ X))
+  : Id (▱ (○ X)) (colax X (lax X u)) u
+  ≔ match u [
+| par. y ↦ match (y :▱| _) [ circ. x ↦ refl (par. (circ. x)) ]]

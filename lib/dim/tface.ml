@@ -6,44 +6,34 @@ open Sface
 
 type (_, _, _, _) tface =
   | End :
-      ('m, 'nk) sface * ('n, 'k, 'nk) D.plus * 'l Endpoints.t
-      -> ('m, 'n, 'k D.suc, 'nk D.suc) tface
-  | Mid : ('m, 'n, 'k, 'nk) tface -> ('m D.suc, 'n, 'k D.suc, 'nk D.suc) tface
+      ('m, 'nk) sface * ('n, 'k, 'nk) D.plus * 'g D.G.t * 'l Endpoints.t
+      -> ('m, 'n, ('k, 'g) D.suc, ('nk, 'g) D.suc) tface
+  | Mid :
+      ('m, 'n, 'k, 'nk) tface * 'g D.G.t
+      -> (('m, 'g) D.suc, 'n, ('k, 'g) D.suc, ('nk, 'g) D.suc) tface
 
 let rec sface_of_tface : type m n k nk. (m, n, k, nk) tface -> (m, nk) sface = function
-  | End (d, _, e) -> End (d, e)
-  | Mid d -> Mid (sface_of_tface d)
-
-let rec plus_of_tface : type m n k nk. (m, n, k, nk) tface -> (m, nk) d_le = function
-  | End (d, _, _) ->
-      let (Le mn) = plus_of_sface d in
-      Le (Suc (mn, Unit))
-  | Mid d ->
-      let (Le mn) = plus_of_tface d in
-      Le (D.suc_plus_eq_suc mn)
+  | End (d, _, g, e) -> End (d, g, e)
+  | Mid (d, g) -> Mid (sface_of_tface d, g)
 
 let rec cod_plus_of_tface : type m n k nk. (m, n, k, nk) tface -> (n, k, nk) D.plus = function
-  | End (_, p, _) -> Suc (p, Unit)
-  | Mid d -> Suc (cod_plus_of_tface d, Unit)
+  | End (_, p, g, _) -> Suc (p, g)
+  | Mid (d, g) -> Suc (cod_plus_of_tface d, g)
 
 let rec dom_tface : type m n k nk. (m, n, k, nk) tface -> m D.t = function
-  | End (d, _, _) -> dom_sface d
-  | Mid d -> D.suc (dom_tface d)
+  | End (d, _, _, _) -> dom_sface d
+  | Mid (d, g) -> D.suc (dom_tface d) g
 
 let rec codl_tface : type m n k nk. (m, n, k, nk) tface -> n D.t = function
-  | End (d, p, _) -> D.minus (cod_sface d) p
-  | Mid d -> codl_tface d
+  | End (d, p, _, _) -> D.minus (cod_sface d) p
+  | Mid (d, _) -> codl_tface d
 
 let rec codr_tface : type m n k nk. (m, n, k, nk) tface -> k D.t = function
-  | End (_, nk, _) -> D.suc (D.plus_right nk)
-  | Mid d -> D.suc (codr_tface d)
+  | End (_, nk, g, _) -> D.suc (D.plus_right nk) g
+  | Mid (d, g) -> D.suc (codr_tface d) g
 
 let cod_tface : type m n k nk. (m, n, k, nk) tface -> nk D.t =
  fun d -> D.plus_out (codl_tface d) (cod_plus_of_tface d)
-
-let tface_end : type l m n k nk.
-    (m, n, k, nk) tface -> l Endpoints.t -> (m, n, k D.suc, nk D.suc) tface =
- fun d e -> End (sface_of_tface d, cod_plus_of_tface d, e)
 
 let rec tface_plus : type m n k nk l ml kl nkl.
     (m, n, k, nk) tface ->
@@ -54,7 +44,7 @@ let rec tface_plus : type m n k nk l ml kl nkl.
  fun d kl nkl ml ->
   match (kl, nkl, ml) with
   | Zero, Zero, Zero -> d
-  | Suc (kl, Unit), Suc (nkl, Unit), Suc (ml, Unit) -> Mid (tface_plus d kl nkl ml)
+  | Suc (kl, g), Suc (nkl, _), Suc (ml, _) -> Mid (tface_plus d kl nkl ml, g)
 
 let rec plus_tface : type m n k nk l lm ln lnk.
     l D.t ->
@@ -65,18 +55,47 @@ let rec plus_tface : type m n k nk l lm ln lnk.
     (lm, ln, k, lnk) tface =
  fun l lm ln l_nk d ->
   match (d, lm, l_nk) with
-  | Mid d, Suc (lm, Unit), Suc (l_nk, Unit) -> Mid (plus_tface l lm ln l_nk d)
-  | End (s, nk, ll), _, Suc (l_nk, Unit) ->
+  | Mid (d, g), Suc (lm, _), Suc (l_nk, _) -> Mid (plus_tface l lm ln l_nk d, g)
+  | End (s, nk, g, ll), _, Suc (l_nk, _) ->
       let ln_k = D.plus_assocl ln nk l_nk in
-      End (plus_sface l l_nk lm s, ln_k, ll)
+      End (plus_sface l l_nk lm s, ln_k, g, ll)
 
 let rec tface_comp_sface : type m n k nk p.
     (m, n, k, nk) tface -> (p, m) sface -> (p, n, k, nk) tface =
  fun b a ->
   match (a, b) with
-  | End (a', e), Mid b' -> End (sface_of_tface (tface_comp_sface b' a'), cod_plus_of_tface b', e)
-  | Mid a', Mid b' -> Mid (tface_comp_sface b' a')
-  | _, End (b', nk, e) -> End (comp_sface b' a, nk, e)
+  | End (a', _, e), Mid (b', g) ->
+      End (sface_of_tface (tface_comp_sface b' a'), cod_plus_of_tface b', g, e)
+  | Mid (a', _), Mid (b', g) -> Mid (tface_comp_sface b' a', g)
+  | _, End (b', nk, g, e) -> End (comp_sface b' a, nk, g, e)
+
+let rec tface_bplus : type m n k nk b mb kb nkb.
+    (m, b, mb) D.bplus ->
+    (k, b, kb) D.bplus ->
+    (nk, b, nkb) D.bplus ->
+    (m, n, k, nk) tface ->
+    b D.fwd ->
+    (mb, n, kb, nkb) tface =
+ fun mb kb nkb f b ->
+  match b with
+  | Nil ->
+      let Append_nil, Append_nil, Append_nil = (mb, kb, nkb) in
+      f
+  | Cons (g, b) ->
+      let Append_cons mb, Append_cons kb, Append_cons nkb = (mb, kb, nkb) in
+      tface_bplus mb kb nkb (Mid (f, g)) b
+
+let sface_bplus : type m n k nk b mb kb nkb g l.
+    (m, b, mb) D.bplus ->
+    ((k, g) D.suc, b, kb) D.bplus ->
+    ((nk, g) D.suc, b, nkb) D.bplus ->
+    (m, nk) sface ->
+    (n, k, nk) D.plus ->
+    g D.G.t ->
+    l Endpoints.t ->
+    b D.fwd ->
+    (mb, n, kb, nkb) tface =
+ fun mb kb nkb f nk g l b -> tface_bplus mb kb nkb (End (f, nk, g, l)) b
 
 (* A "proper face" is a fully instantiated tube face. *)
 
@@ -86,29 +105,30 @@ type ('m, 'n) pface = ('m, D.zero, 'n, 'n) tface
 let rec pface_of_sface : type m n. (m, n) sface -> [ `Proper of (m, n) pface | `Id of (m, n) Eq.t ]
     = function
   | Zero -> `Id Eq
-  | End (fa, e) -> `Proper (End (fa, D.zero_plus (cod_sface fa), e))
-  | Mid fa -> (
+  | End (fa, g, e) -> `Proper (End (fa, D.zero_plus (cod_sface fa), g, e))
+  | Mid (fa, g) -> (
       match pface_of_sface fa with
-      | `Proper fb -> `Proper (Mid fb)
+      | `Proper fb -> `Proper (Mid (fb, g))
       | `Id Eq -> `Id Eq)
 
 (* Like insert_sface but for pfaces instead.  (It should be possible to do this for general tfaces too, but trickier, and all we need is pfaces.) *)
 
-type (_, _) insert_pface =
-  | Insert_pface : ('m, 'msuc) D.insert * ('msuc, 'nsuc) pface -> ('m, 'nsuc) insert_pface
+type (_, _, _) insert_pface =
+  | Insert_pface : ('m, 'g, 'msuc) D.insert * ('msuc, 'nsuc) pface -> ('m, 'g, 'nsuc) insert_pface
 
-let rec insert_pface : type m n nsuc. (m, n) pface -> (n, nsuc) D.insert -> (m, nsuc) insert_pface =
- fun f i ->
+let rec insert_pface : type m n g nsuc.
+    (m, n) pface -> g D.G.t -> (n, g, nsuc) D.insert -> (m, g, nsuc) insert_pface =
+ fun f g i ->
   match i with
-  | Now -> Insert_pface (Now, Mid f)
+  | Now -> Insert_pface (Now, Mid (f, g))
   | Later i -> (
       match f with
-      | End (f, _, e) ->
-          let (Insert_sface (i, f)) = insert_sface f i in
-          Insert_pface (i, End (f, D.zero_plus (cod_sface f), e))
-      | Mid f ->
-          let (Insert_pface (i, f)) = insert_pface f i in
-          Insert_pface (Later i, Mid f))
+      | End (f, _, h, e) ->
+          let (Insert_sface (i, f)) = insert_sface f g i in
+          Insert_pface (i, End (f, D.zero_plus (cod_sface f), h, e))
+      | Mid (f, h) ->
+          let (Insert_pface (i, f)) = insert_pface f g i in
+          Insert_pface (Later i, Mid (f, h)))
 
 let pface_plus : type m n mn k kn.
     (k, m) pface -> (m, n, mn) D.plus -> (k, n, kn) D.plus -> (kn, mn) pface =
@@ -125,10 +145,10 @@ let rec sface_plus_tface : type m n mn l nl mnl k p kp.
     (kp, mn, l, mnl) tface =
  fun fkm mn m_nl kp fpnl ->
   match (fpnl, m_nl, kp) with
-  | End (fpn, nl, e), Suc (m_nl, Unit), kp ->
+  | End (fpn, nl, g, e), Suc (m_nl, _), kp ->
       let mn_l = D.plus_assocl mn nl m_nl in
-      End (sface_plus_sface fkm m_nl kp fpn, mn_l, e)
-  | Mid fpn, Suc (m_nl, Unit), Suc (kp, Unit) -> Mid (sface_plus_tface fkm mn m_nl kp fpn)
+      End (sface_plus_sface fkm m_nl kp fpn, mn_l, g, e)
+  | Mid (fpn, g), Suc (m_nl, _), Suc (kp, _) -> Mid (sface_plus_tface fkm mn m_nl kp fpn, g)
 
 let sface_plus_pface : type m n mn k p kp.
     (k, m) sface -> (m, n, mn) D.plus -> (k, p, kp) D.plus -> (p, n) pface -> (kp, m, n, mn) tface =
@@ -144,10 +164,11 @@ let rec tface_plus_sface : type m l ml ln n mln k p kp.
  fun fkm ml_n ln kp fpn ->
   match (fpn, ml_n, ln, kp) with
   | Zero, Zero, Zero, Zero -> fkm
-  | End (fpn, e), Suc (ml_n, Unit), Suc (ln, Unit), kp ->
+  | End (fpn, g, e), Suc (ml_n, _), Suc (ln, _), kp ->
       let m_ln = D.plus_assocr (cod_plus_of_tface fkm) ln ml_n in
-      End (sface_plus_sface (sface_of_tface fkm) ml_n kp fpn, m_ln, e)
-  | Mid fpn, Suc (ml_n, Unit), Suc (ln, Unit), Suc (kp, Unit) -> Mid (tface_plus_sface fkm ml_n ln kp fpn)
+      End (sface_plus_sface (sface_of_tface fkm) ml_n kp fpn, m_ln, g, e)
+  | Mid (fpn, g), Suc (ml_n, _), Suc (ln, _), Suc (kp, _) ->
+      Mid (tface_plus_sface fkm ml_n ln kp fpn, g)
 
 (* Conversely, every tube face decomposes as an ordinary strict face added to a tube face along a decomposition of its uninstantiated dimensions. *)
 
@@ -160,14 +181,14 @@ let rec tface_of_plus : type m n k nk l nkl.
     (n, k, nk) D.plus -> (m, nk, l, nkl) tface -> (m, n, k, l) tface_of_plus =
  fun nk d ->
   match d with
-  | End (d, nk_l, e) ->
+  | End (d, nk_l, g, e) ->
       let (Plus kl) = D.plus (D.plus_right nk_l) in
       let n_kl = D.plus_assocr nk kl nk_l in
       let (SFace_of_plus (pq, d1, d2)) = sface_of_plus n_kl d in
-      TFace_of_plus (pq, d1, End (d2, kl, e))
-  | Mid d ->
+      TFace_of_plus (pq, d1, End (d2, kl, g, e))
+  | Mid (d, g) ->
       let (TFace_of_plus (pq, d1, d2)) = tface_of_plus nk d in
-      TFace_of_plus (Suc (pq, Unit), d1, Mid d2)
+      TFace_of_plus (Suc (pq, g), d1, Mid (d2, g))
 
 (* In particular, any tube face decomposes as a strict face plus a proper face. *)
 
@@ -189,7 +210,7 @@ let singleton_tface : type m n k nk l.
  fun d k l ->
   let One = k in
   match d with
-  | End (s, n0, (l', i)) ->
+  | End (s, n0, _, (l', i)) ->
       let Zero = n0 in
       let Eq = Endpoints.uniq l l' in
       (s, i)
@@ -197,14 +218,14 @@ let singleton_tface : type m n k nk l.
 (* A tface is codimension-1 if it has exactly one endpoint. *)
 
 let rec is_codim1 : type m n k nk. (m, n, k, nk) tface -> unit option = function
-  | End (fa, _, _) -> Option.map (fun _ -> ()) (is_id_sface fa)
-  | Mid s -> is_codim1 s
+  | End (fa, _, _, _) -> Option.map (fun _ -> ()) (is_id_sface fa)
+  | Mid (s, _) -> is_codim1 s
 
 type (_, _, _) tface_of = Tface_of : ('m, 'n, 'k, 'nk) tface -> ('n, 'k, 'nk) tface_of
 
 (* Every tface belongs to a unique codimension-1 tface. *)
 let rec codim1_envelope : type m n k nk. (m, n, k, nk) tface -> (n, k, nk) tface_of = function
-  | End (fa, nk, l) -> Tface_of (End (id_sface (cod_sface fa), nk, l))
-  | Mid s ->
+  | End (fa, nk, g, l) -> Tface_of (End (id_sface (cod_sface fa), nk, g, l))
+  | Mid (s, g) ->
       let (Tface_of s1) = codim1_envelope s in
-      Tface_of (Mid s1)
+      Tface_of (Mid (s1, g))

@@ -51,11 +51,15 @@ module rec Term : sig
   module Codatafield : sig
     type (_, _) t =
       | Lower :
-          ('mode, ('a, ('mode id, 'n) dim_entry) snoc, kinetic) Term.term
+          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          * (('a, ('mode id, 'n) dim_entry) snoc, 'mode, 'g, 'gmode, 'ag) plus_lock
+          * ('gmode, 'ag, kinetic) Term.term
           -> (D.zero, 'mode * 'a * 'n * 'et) t
       | Higher :
-          ('i, ('a, ('mode id, D.zero) dim_entry) snoc, 'ian, 'mode) plusmap
-          * ('mode, 'ian, kinetic) Term.term
+          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          * ('i, ('a, ('mode id, D.zero) dim_entry) snoc, 'ian, 'mode) plusmap
+          * ('ian, 'mode, 'g, 'gmode, 'iag) plus_lock
+          * ('gmode, 'iag, kinetic) Term.term
           -> ('i, 'mode * 'a * D.zero * no_eta) t
   end
 
@@ -64,13 +68,20 @@ module rec Term : sig
   module Structfield : sig
     type (_, _) t =
       | Lower :
-          ('mode, 'a, 's) Term.term * [ `Labeled | `Unlabeled ]
+          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
+          * ('gmode, 'ag, 's) Term.term
+          * [ `Labeled | `Unlabeled ]
           -> (D.zero, 'mode * ('n * 'a * 's * 'et)) t
       | Higher :
-          ('n, 'i, 'mode * 'a) PlusPbijmap.t
+          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
+          * ('n, 'i, 'gmode * 'ag) PlusPbijmap.t
           -> ('i, 'mode * ('n * 'a * potential * no_eta)) t
       | LazyHigher :
-          ('n, 'i, 'mode * 'a) PlusPbijmap.t Lazy.t
+          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
+          * ('n, 'i, 'gmode * 'ag) PlusPbijmap.t Lazy.t
           -> ('i, 'mode * ('n * 'a * potential * no_eta)) t
   end
 
@@ -103,7 +114,7 @@ module rec Term : sig
     | Meta : ('mode, 'x, 'b, 'l) Meta.t * 's energy -> ('mode, 'b, 's) term
     | MetaEnv : ('mode, 'x, 'b, 's) Meta.t * ('mode, 'a, 'n, 'b) env -> ('mode, 'a, kinetic) term
     | Field :
-        ('mode, 'a, kinetic) term * 'i Field.t * ('n, 't, 'i) insertion
+        ('mode, 'f, 'a, kinetic) modal_term * 'i Field.t * ('n, 't, 'i) insertion
         -> ('mode, 'a, kinetic) term
     | UU : 'mode Mode.t * 'n D.t -> ('mode, 'a, kinetic) term
     | Inst :
@@ -193,7 +204,6 @@ module rec Term : sig
         constrs : (Constr.t, ('mode, 'a) dataconstr) Abwd.t;
         discrete : [ `Yes | `Maybe | `No ];
         recursive : Positivity.recursion;
-        (* Variable-name hints, for displaying anonymous variables of this type. *)
         hints : hints;
       }
         -> ('mode, 'a) canonical
@@ -202,7 +212,6 @@ module rec Term : sig
   and ('mode, 'n, 'c, 'a, 'nh, 'ha, 'et) codata_args = {
     eta : (potential, 'et) eta;
     opacity : opacity;
-    (* Variable-name hints, for displaying anonymous variables of this type. *)
     hints : hints;
     dim : 'n D.t;
     termctx : ('mode, 'c, ('a, ('mode id, 'n) dim_entry) snoc) termctx option;
@@ -297,10 +306,13 @@ module rec Term : sig
         plus_src : ('b, 'cod, 'mu, 'mode, 'bmu) plus_lock;
       }
         -> ('mode, 'ac, 'n, 'bmu) env
-    (* A prekey acts by a key cell on all the values of a term environment, without changing its mode or contexts (the term-level analogue of Value.Prekey). *)
-    | Prekey :
-        ('mode, 'a, 'n, 'b) env * ('mode, 'mu, 'nu, 'cod) Modalcell.t
-        -> ('mode, 'a, 'n, 'b) env
+    | Prekey : {
+        env : ('mode, 'asrc, 'n, 'b) env;
+        cell : ('mode, 'pmu, 'pnu, 'pcod) Modalcell.t;
+        plus_src : ('a, 'pcod, 'pmu, 'mode, 'asrc) plus_lock;
+        plus_tgt : ('a, 'pcod, 'pnu, 'mode, 'atgt) plus_with_locks;
+      }
+        -> ('mode, 'atgt, 'n, 'b) env
 
   and ('mode, 'b) binding = {
     ty : ('mode, 'b, kinetic) term;
@@ -342,7 +354,9 @@ module rec Term : sig
     | Lock :
         ('cod, 'a, 'b) ordered_termctx * ('dom, 'modality, 'cod) Modality.gen
         -> ('dom, 'a, ('b, 'modality lock_entry) snoc) ordered_termctx
-    | Parametric_lock : ('mode, 'a, 'b) ordered_termctx -> ('mode, 'a, 'b) ordered_termctx
+    | Weaken :
+        ('mode, 'a, 'b) ordered_termctx * Reporter.Code.t
+        -> ('mode, 'a N.suc, 'b) ordered_termctx
 
   and ('mode, 'a, 'b) termctx =
     | Permute : ('a, 'i) N.permute * ('mode, 'i, 'b) ordered_termctx -> ('mode, 'a, 'b) termctx
@@ -369,14 +383,18 @@ end = struct
   module PlusPbijmap = Pbijmap (PlusFam)
 
   module Codatafield = struct
-    (* MODALTODO: Allow modal fields *)
+    (* A lower codata field is parametrized by an adjunction in the mode 2-category.  Its type is a term in the context extended by the self variable and then locked by the right adjoint, hence lives at the right adjoint's source mode.  Ordinary non-modal fields are the special case of the identity adjunction.  (Higher fields are not yet allowed to be modal.) *)
     type (_, _) t =
       | Lower :
-          ('mode, ('a, ('mode id, 'n) dim_entry) snoc, kinetic) Term.term
+          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          * (('a, ('mode id, 'n) dim_entry) snoc, 'mode, 'g, 'gmode, 'ag) plus_lock
+          * ('gmode, 'ag, kinetic) Term.term
           -> (D.zero, 'mode * 'a * 'n * 'et) t
       | Higher :
-          ('i, ('a, ('mode id, D.zero) dim_entry) snoc, 'ian, 'mode) plusmap
-          * ('mode, 'ian, kinetic) Term.term
+          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          * ('i, ('a, ('mode id, D.zero) dim_entry) snoc, 'ian, 'mode) plusmap
+          * ('ian, 'mode, 'g, 'gmode, 'iag) plus_lock
+          * ('gmode, 'iag, kinetic) Term.term
           -> ('i, 'mode * 'a * D.zero * no_eta) t
   end
 
@@ -385,14 +403,22 @@ end = struct
   module Structfield = struct
     (* Lazy fields are not allowed in ordinary terms, because a term is supposed to be a completed data object that can be, for instance, serialized to a file and reloaded.  But when we use this to store fibrancy fields, which are recomputed on evaluation and are corecursively infinite, we have to allow laziness.  *)
     type (_, _) t =
+      (* Like a codata field, a lower struct field is parametrized by an adjunction: the supplied term lives behind a lock by the right adjoint.  Ordinary non-modal fields use the identity adjunction. *)
       | Lower :
-          ('mode, 'a, 's) Term.term * [ `Labeled | `Unlabeled ]
+          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
+          * ('gmode, 'ag, 's) Term.term
+          * [ `Labeled | `Unlabeled ]
           -> (D.zero, 'mode * ('n * 'a * 's * 'et)) t
       | Higher :
-          ('n, 'i, 'mode * 'a) PlusPbijmap.t
+          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
+          * ('n, 'i, 'gmode * 'ag) PlusPbijmap.t
           -> ('i, 'mode * ('n * 'a * potential * no_eta)) t
       | LazyHigher :
-          ('n, 'i, 'mode * 'a) PlusPbijmap.t Lazy.t
+          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
+          * ('n, 'i, 'gmode * 'ag) PlusPbijmap.t Lazy.t
           -> ('i, 'mode * ('n * 'a * potential * no_eta)) t
   end
 
@@ -429,8 +455,9 @@ end = struct
     | Meta : ('mode, 'x, 'b, 'l) Meta.t * 's energy -> ('mode, 'b, 's) term
     (* Normally, checked metavariables don't require an environment attached, but they do when they arise by readback from a value metavariable. *)
     | MetaEnv : ('mode, 'x, 'b, 's) Meta.t * ('mode, 'a, 'n, 'b) env -> ('mode, 'a, kinetic) term
+    (* A field projection.  For a modal field, the term being projected lives behind a lock by the left adjoint of the field's adjunction; for ordinary fields that modality is the identity. *)
     | Field :
-        ('mode, 'a, kinetic) term * 'i Field.t * ('n, 't, 'i) insertion
+        ('mode, 'f, 'a, kinetic) modal_term * 'i Field.t * ('n, 't, 'i) insertion
         -> ('mode, 'a, kinetic) term
     | UU : 'mode Mode.t * 'n D.t -> ('mode, 'a, kinetic) term
     | Inst :
@@ -644,9 +671,14 @@ end = struct
         plus_src : ('b, 'cod, 'mu, 'mode, 'bmu) plus_lock;
       }
         -> ('mode, 'ac, 'n, 'bmu) env
-    | Prekey :
-        ('mode, 'a, 'n, 'b) env * ('mode, 'mu, 'nu, 'cod) Modalcell.t
-        -> ('mode, 'a, 'n, 'b) env
+    (* A prekey acts by a key cell on all the values of a term environment (the term-level analogue of Value.Prekey).  It doesn't change the mode or the codomain context, but unlike its value-level analogue it does mediate the domain context: the environment inside is valid in a context locked by the cell's vertical source, while the whole is valid in a context locked by its vertical target (over a common base), as when a parametric locker's counit has discharged the locks that a metavariable was created behind. *)
+    | Prekey : {
+        env : ('mode, 'asrc, 'n, 'b) env;
+        cell : ('mode, 'pmu, 'pnu, 'pcod) Modalcell.t;
+        plus_src : ('a, 'pcod, 'pmu, 'mode, 'asrc) plus_lock;
+        plus_tgt : ('a, 'pcod, 'pnu, 'mode, 'atgt) plus_with_locks;
+      }
+        -> ('mode, 'atgt, 'n, 'b) env
 
   (* A termctx is a data structure analogous to a Ctx.t, but using terms rather than values (and thus we will not explain its structure here; see ctx.ml).  This is used to store the context of a metavariable, as the value context containing level variables is too volatile to store there.  We also store it (lazily) with a codatatype that has higher fields, so we can use it to read back the closure environment to degenerate it. *)
   and ('mode, 'b) binding = {
@@ -691,7 +723,10 @@ end = struct
     | Lock :
         ('cod, 'a, 'b) ordered_termctx * ('dom, 'modality, 'cod) Modality.gen
         -> ('dom, 'a, ('b, 'modality lock_entry) snoc) ordered_termctx
-    | Parametric_lock : ('mode, 'a, 'b) ordered_termctx -> ('mode, 'a, 'b) ordered_termctx
+    (* A weakening entry increases the raw length by one but stores no checked variables, only a Code.t to raise on lookup of the dataless variable.  Mirrors Ctx.Ordered.Weaken. *)
+    | Weaken :
+        ('mode, 'a, 'b) ordered_termctx * Reporter.Code.t
+        -> ('mode, 'a N.suc, 'b) ordered_termctx
 
   and ('mode, 'a, 'b) termctx =
     | Permute : ('a, 'i) N.permute * ('mode, 'i, 'b) ordered_termctx -> ('mode, 'a, 'b) termctx
@@ -738,7 +773,13 @@ let apps fn mode args =
   List.fold_left (fun f -> app f (Modality.id mode) (plus_no_lock mode)) fn args
 
 (* let constr name args = Constr (name, D.zero, List.map CubeOf.singleton args) *)
-let field tm f = Field (tm, f, ins_zero D.zero)
+
+(* A non-modal field projection, whose lock is the identity. *)
+let modal_id : type mode a s.
+    mode Mode.t -> (mode, a, s) term -> (mode, mode Modality.id, a, s) modal_term =
+ fun mode tm -> Modal (Modality.id mode, plus_no_lock mode, tm)
+
+let field mode tm f = Field (modal_id mode tm, f, ins_zero D.zero)
 
 module Telescope = struct
   type ('mode, 'a, 'b, 'ab) t = ('mode, 'a, 'b, 'ab) Term.tel
@@ -772,7 +813,7 @@ let rec dim_term_env : type mode a n b. (mode, a, n, b) env -> n D.t = function
   | Emp (_, n) -> n
   | Ext { env; _ } -> dim_term_env env
   | Key { env; _ } -> dim_term_env env
-  | Prekey (env, _) -> dim_term_env env
+  | Prekey { env; _ } -> dim_term_env env
 
 let dim_entry : type dom modality mode b f n bm. (dom, modality, mode, b, bm, f, n) entry -> n D.t =
   function
@@ -803,7 +844,7 @@ module Termctx = struct
     | Emp mode -> Path (Suc (Zero, Proj mode), Unit)
     | Ext (ctx, e, _) -> Tctx.suc (ordered_tctx ctx) (Dim (dim_entry e, filter_entry e))
     | Lock (ctx, modality) -> Tctx.suc (ordered_tctx ctx) (Lock modality)
-    | Parametric_lock ctx -> ordered_tctx ctx
+    | Weaken (ctx, _) -> ordered_tctx ctx
 
   let tctx (Permute (_, ctx)) = ordered_tctx ctx
 
@@ -842,7 +883,7 @@ module Termctx = struct
     | Emp mode -> mode
     | Ext (ctx, _, _) -> ordered_mode ctx
     | Lock (_, lock) -> Modality.Gen.src lock
-    | Parametric_lock ctx -> ordered_mode ctx
+    | Weaken (ctx, _) -> ordered_mode ctx
 
   let mode (Permute (_, ctx)) = ordered_mode ctx
 
@@ -850,20 +891,21 @@ module Termctx = struct
 
   type (_, _, _) ordered_remove_locks =
     | Ordered_remove_locks :
-        ('cod, 'a, 'b) ordered * ('b, 'cod, 'modality, 'mode, 'bc) plus_lock
+        ('cod, 'a, 'b) ordered * ('b, 'cod, 'modality, 'mode, 'bc) plus_lock * 'b ends_without_lock
         -> ('mode, 'a, 'bc) ordered_remove_locks
 
   let rec ordered_remove_locks : type mode a bc.
       (mode, a, bc) ordered -> (mode, a, bc) ordered_remove_locks =
    fun ctx ->
     match ctx with
-    | Emp _ | Ext (_, _, _) -> Ordered_remove_locks (ctx, plus_no_lock (ordered_mode ctx))
-    | Parametric_lock ctx ->
-        (* Not going to think about whether this is quite correct, since Parametric_lock is going away the first chance we get. *)
-        ordered_remove_locks ctx
+    | Emp _ -> Ordered_remove_locks (ctx, plus_no_lock (ordered_mode ctx), Without_lock_proj)
+    | Ext (_, _, _) -> Ordered_remove_locks (ctx, plus_no_lock (ordered_mode ctx), Without_lock_dim)
+    | Weaken (ctx, code) ->
+        let (Ordered_remove_locks (ctx, plus, wl)) = ordered_remove_locks ctx in
+        Ordered_remove_locks (Weaken (ctx, code), plus, wl)
     | Lock (ctx, g) ->
-        let (Ordered_remove_locks (ctx, plus)) = ordered_remove_locks ctx in
-        Ordered_remove_locks (ctx, plus_lock_suc plus g)
+        let (Ordered_remove_locks (ctx, plus, wl)) = ordered_remove_locks ctx in
+        Ordered_remove_locks (ctx, plus_lock_suc plus g, wl)
 
   type (_, _) remove_locks =
     | Remove_locks :
@@ -872,7 +914,7 @@ module Termctx = struct
 
   let remove_locks : type mode a bc. (mode, a, bc) t -> (mode, bc) remove_locks =
    fun (Permute (p, ctx)) ->
-    let (Ordered_remove_locks (ctx, plus)) = ordered_remove_locks ctx in
+    let (Ordered_remove_locks (ctx, plus, _)) = ordered_remove_locks ctx in
     Remove_locks (Permute (p, ctx), plus)
 
   (* let ext (Permute (p, ctx)) xs ty =
@@ -889,7 +931,10 @@ let rec ordered_hole_vars : type mode a b.
       let Emp = vars in
       Emp
   | Lock (ctx, _) -> ordered_hole_vars ctx vars
-  | Parametric_lock ctx -> ordered_hole_vars ctx vars
+  | Weaken (ctx, _) ->
+      (* The dataless weakening variable has no display name of its own; strip it and give it an anonymous hint. *)
+      let (Snoc (vars, x)) = vars in
+      Snoc (ordered_hole_vars ctx vars, binder_name_of_option x)
   | Ext (ctx, entry, af) -> (
       let vars, xs = Bwv.unappend af vars in
       let rest = ordered_hole_vars ctx vars in

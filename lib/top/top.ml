@@ -28,6 +28,7 @@ let parenthesize_arguments = ref false
 let extra_spaces = ref true
 let show_function_boundaries = ref false
 let show_type_boundaries = ref false
+let show_unique_keys = ref false
 let variables = ref None
 
 (* Marshal the current flags to a file. *)
@@ -95,6 +96,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
         spacing = (if !extra_spaces then `Wide else `Narrow);
         function_boundaries = (if !show_function_boundaries then `Show else `Hide);
         type_boundaries = (if !show_type_boundaries then `Show else `Hide);
+        unique_keys = (if !show_unique_keys then `Show else `Hide);
         holes = `Without_number;
         variables =
           (match !variables with
@@ -131,10 +133,9 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
             | _ -> Reporter.fatal (Invalid_variable [ x ]))
           (String.split_on_char ',' str)
     | None -> () );
-  Dim.Endpoints.run ~arity:!arity ~refl_char:!refl_char ~refl_names:!refl_names ~internal:!internal
-    ?hott:(if !hott then Some () else None)
-  @@ fun () ->
-  (* We have to put the main Reporter.run inside Endpoints.run, so we can display dimensions *)
+  Dim.Endpoints.set ~arity:!arity ~refl_char:!refl_char ~refl_names:!refl_names ~internal:!internal
+    ~hott:!hott;
+  (* We have to put the main Reporter.run after Endpoints.run, so we can display dimensions. *)
   Reporter.run
     ~emit:(fun d ->
       if !verbose || d.severity = Error || d.severity = Warning then

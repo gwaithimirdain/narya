@@ -35,7 +35,8 @@ let codata_display_value : type mode a b cm cn cc ca cet.
           let selfvars, selfnfs = dom_vars ctx self_modality dom in
           let self_top = CubeOf.find_top selfvars in
           let self_top_ty = (Ctx.Binding.value (CubeOf.find_top selfnfs)).ty in
-          let ctx = Ctx.cube_vis ctx (Modality.filter_id (Ctx.mode ctx) (CubeOf.dim dom)) None selfnfs in
+          let ctx =
+            Ctx.cube_vis ctx (Modality.filter_id (Ctx.mode ctx) (CubeOf.dim dom)) None selfnfs in
           let fields =
             Bwd.fold_left
               (fun acc
@@ -43,46 +44,57 @@ let codata_display_value : type mode a b cm cn cc ca cet.
                       (type i)
                       ((fld, cf) : i Field.t * (i, mode * ca * cn * cet) Term.Codatafield.t)) ->
                 match cf with
-                | Term.Codatafield.Lower _ ->
-                    let ety =
-                      tyof_field (Ok self_top) self_top_ty fld ~shuf:Trivial (ins_zero evaldim)
-                    in
-                    Bwd.Snoc (acc, Term.Cfd (fld, [], readback_val ~sort:`Type ctx ety))
-                | Term.Codatafield.Higher (_, _) ->
-                    Seq.fold_left
-                      (fun acc (Pbij_between (pbij : (cm, i, _) pbij)) ->
-                        let (Pbij (fldins, fldshuf)) = pbij in
-                        match D.compare_zero (left_shuffle fldshuf) with
-                        | Zero ->
-                            (* Projectable instance: read back in the self-variable context. *)
-                            let Eq = eq_of_zero_shuffle fldshuf in
-                            let ety =
-                              tyof_field (Ok self_top) self_top_ty fld ~shuf:Trivial fldins in
-                            Bwd.Snoc
-                              ( acc,
-                                Term.Cfd
-                                  (fld, strings_of_pbij pbij, readback_val ~sort:`Type ctx ety) )
-                        | Pos _ ->
-                            (* Non-projectable instance: degenerate the context by the remaining dimensions and compute the field type there, recording the degeneration plus-map. *)
-                            let r = left_shuffle fldshuf in
-                            let (Degctx (plusmap, dctx, denv)) = degctx ctx r in
-                            let termctx =
-                              Lazy.force codata_args.termctx
-                              <|> Anomaly "missing termctx for higher codata field" in
-                            let shuf =
-                              higher_codatafield_shuffleable ctx (length_env codata_args.env)
-                                termctx denv r fldshuf in
-                            let ety = tyof_field (Ok self_top) self_top_ty fld ~shuf fldins in
-                            Bwd.Snoc
-                              ( acc,
-                                Term.Cfd_deg
-                                  ( fld,
-                                    strings_of_pbij pbij,
-                                    r,
-                                    plusmap,
-                                    readback_val ~sort:`Type dctx ety ) ))
-                      acc
-                      (all_pbij_between evaldim (Field.dim fld)))
+                | Term.Codatafield.Lower (adj, _, _) -> (
+                    (* "about" only displays non-modal codata fields, whose type lives at the codatatype's own mode; a genuinely modal field's type lives at the right adjoint's source mode and is not yet displayable. *)
+                    match Modalcell.compare_adjunction_id adj with
+                    | Neq -> fatal (Unimplemented "displaying modal codata fields")
+                    | Eq ->
+                        let ety : (mode, kinetic) value =
+                          tyof_field (Modalcell.adj_left adj) (Ok self_top) self_top_ty fld
+                            ~shuf:Trivial (ins_zero evaldim) in
+                        Bwd.Snoc (acc, Term.Cfd (fld, [], readback_val ~sort:`Type ctx ety)))
+                | Term.Codatafield.Higher (adj, _, _, _) -> (
+                    match Modalcell.compare_adjunction_id adj with
+                    | Neq -> fatal (Unimplemented "displaying modal codata fields")
+                    | Eq ->
+                        Seq.fold_left
+                          (fun acc (Pbij_between (pbij : (cm, i, _) pbij)) ->
+                            let (Pbij (fldins, fldshuf)) = pbij in
+                            match D.compare_zero (left_shuffle fldshuf) with
+                            | Zero ->
+                                (* Projectable instance: read back in the self-variable context. *)
+                                let Eq = eq_of_zero_shuffle fldshuf in
+                                let ety : (mode, kinetic) value =
+                                  tyof_field (Modalcell.adj_left adj) (Ok self_top) self_top_ty fld
+                                    ~shuf:Trivial fldins in
+                                Bwd.Snoc
+                                  ( acc,
+                                    Term.Cfd
+                                      (fld, strings_of_pbij pbij, readback_val ~sort:`Type ctx ety)
+                                  )
+                            | Pos _ ->
+                                (* Non-projectable instance: degenerate the context by the remaining dimensions and compute the field type there, recording the degeneration plus-map. *)
+                                let r = left_shuffle fldshuf in
+                                let (Degctx (plusmap, dctx, denv)) = degctx ctx r in
+                                let termctx =
+                                  Lazy.force codata_args.termctx
+                                  <|> Anomaly "missing termctx for higher codata field" in
+                                let shuf =
+                                  higher_codatafield_shuffleable ctx (length_env codata_args.env)
+                                    termctx denv r fldshuf in
+                                let ety : (mode, kinetic) value =
+                                  tyof_field (Modalcell.adj_left adj) (Ok self_top) self_top_ty fld
+                                    ~shuf fldins in
+                                Bwd.Snoc
+                                  ( acc,
+                                    Term.Cfd_deg
+                                      ( fld,
+                                        strings_of_pbij pbij,
+                                        r,
+                                        plusmap,
+                                        readback_val ~sort:`Type dctx ety ) ))
+                          acc
+                          (all_pbij_between evaldim (Field.dim fld))))
               Bwd.Emp codata_args.fields in
           Term.Codata_display { eta; dim = mk; fields }
       | _ -> fatal (Anomaly "type of codatatype/record is not a universe"))
@@ -143,18 +155,17 @@ let rec readback_about : type mode a b.
 
 (* The forward-referenced implementation of comatch readback, type-directed by the codatatype, paralleling codata_display_value which reads back the field types.  It takes the *neutral* whose value is the comatch, and uses that neutral itself as the self-variable for computing each field's type with tyof_field (the neutral is already in the context, so no fresh self is needed; being Const-headed, it reads back without a context level).  A lower field is projected from the neutral directly.  A higher field's instances are read back from the comatch's stored terms, one per partial bijection: for each, we degenerate the readback context by the remaining dimensions, compute the field type there, evaluate the stored body term in the degenerated closure environment, and read it back.  For a top-level comatch the closure environment is empty, hence degeneration-invariant, so we evaluate directly in it; a non-empty closure environment (a partially-applied higher comatch) falls back to the stored case tree. *)
 let readback_comatch_impl : type mode a z.
-    (mode, z, a) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> (mode, a, potential) term
-    =
+    (mode, z, a) Ctx.t ->
+    (mode, kinetic) value ->
+    (mode, kinetic) value ->
+    (mode, a, potential) term =
  fun ctx neutral ty ->
   match (neutral, view_type ty "readback_comatch") with
   | ( Neu { value = nval; _ },
       Canonical
-        (type mn m n)
-        (( _,
-           Codata (type c aa et) (codata_args : (mode, m, n, c, aa, et) codata_args),
-           ins,
-           tyargs ) :
-          mode head
+        (type hmode mn m n)
+        ((_, Codata (type c aa et) (codata_args : (mode, m, n, c, aa, et) codata_args), ins, tyargs) :
+          hmode head
           * (mode, m, n) canonical
           * (mn, m, n) insertion
           * (D.zero, mn, mn, mode normal) TubeOf.t) ) -> (
@@ -167,10 +178,6 @@ let readback_comatch_impl : type mode a z.
               let dim = cod_left_ins ins in
               let evaldim = dim_env codata_args.env in
               (* Read back a lower field via the neutral-as-self: project the field out of the neutral, and use the neutral (a kinetic value, even though its potential value is this struct) to resolve the possibly-dependent field type. *)
-              let lower_field (fld : D.zero Field.t) : (mode, a, potential) term =
-                let ety = tyof_field (Ok neutral) ty fld ~shuf:Trivial (ins_zero evaldim) in
-                let body = field_term neutral fld (ins_zero dim) in
-                Term.Realize (readback_at ctx body ety) in
               (* The return-type annotation keeps the field-map's eta ('et) polymorphic.  The higher-field branch below constrains 'et = no_eta, but only locally where it is actually reached; so a record (where 'et = has_eta and there are no higher fields) reads back its (non-leaf) tuple value through exactly the same code.  This is what lets "about (Prod A B)⁽ᵉ⁾ .trr p" display the componentwise transport rather than the stuck spine. *)
               let fields =
                 Mbwd.map
@@ -179,65 +186,95 @@ let readback_comatch_impl : type mode a z.
                           ((fld, cf) : i Field.t * (i, mode * aa * n * et) Term.Codatafield.t)) :
                        (mode * (mn * a * potential * et)) Term.StructfieldAbwd.entry ->
                     match cf with
-                    | Term.Codatafield.Lower _ ->
+                    | Term.Codatafield.Lower ((Adjunction { left; right; unit; _ } as adj), _, _) ->
+                        (* Project the field from the neutral-as-self, keying by the adjunction unit and reading back the component behind the right-adjoint lock (all trivial for an ordinary non-modal field). *)
+                        let xu = Act.act_value neutral (id_deg D.zero) unit in
+                        let tyu = Act.act_ty neutral ty (id_deg D.zero) unit in
+                        let (Locked (plus_lock, lctx)) = Ctx.lock ctx right in
                         Term.StructfieldAbwd.Entry
-                          (fld, Term.Structfield.Lower (lower_field fld, `Labeled))
-                    | Term.Codatafield.Higher _ -> (
-                        match Value.StructfieldAbwd.find_opt comatch_fields fld with
-                        | Found (Value.Structfield.Higher (lazy hd)) -> (
-                            (* We handle only an undegenerated comatch (identity deg) with an empty closure environment (a top-level comatch), where the stored term can be evaluated directly in the empty environment.  A degenerate comatch (e.g. refl of a comatch) or a partially-applied one falls back to the stored case tree. *)
-                            match
-                              (hd.env, D.compare dim (D.plus_right hd.plusdim), is_id_deg hd.deg)
-                            with
-                            | Emp _, Eq, Some _ ->
-                                let pbm =
-                                  Term.PlusPbijmap.build dim (Field.dim fld)
-                                    {
-                                      build =
-                                        (fun (type r)
-                                          (pbij : (m, i, r) pbij)
-                                          :
-                                          (r, mode * a) Term.PlusFam.t
-                                        ->
-                                          match Term.PlusPbijmap.find pbij hd.terms with
-                                          | None -> raise Comatch_fallback
-                                          | Some (Term.PlusFam.PlusFam (stored_pm, term)) -> (
-                                              (* The closure environment is empty, so degenerating it leaves it empty: the stored plus-map is the proj-only one (matched below) and the stored term lives over the empty context, so it can be evaluated directly in hd.env. *)
-                                              match stored_pm with
-                                              | Suc
-                                                  ( Zero (Eq Unit),
-                                                    Inject (Plus_proj _),
-                                                    Suc (Zero, Proj _) ) ->
-                                                  let (Pbij (fldins, fldshuf)) = pbij in
-                                                  let r = left_shuffle fldshuf in
-                                                  let (Degctx (plusmap, dctx, denv)) = degctx ctx r in
-                                                  let ety =
-                                                    match D.compare_zero r with
-                                                    | Zero ->
-                                                        let Eq = eq_of_zero_shuffle fldshuf in
-                                                        tyof_field (Ok neutral) ty fld ~shuf:Trivial
-                                                          fldins
-                                                    | Pos _ ->
-                                                        let termctx =
-                                                          Lazy.force codata_args.termctx
-                                                          <|> Anomaly
-                                                                "missing termctx for higher comatch"
-                                                        in
-                                                        let shuf =
-                                                          higher_codatafield_shuffleable ctx
-                                                            (length_env codata_args.env) termctx denv
-                                                            r fldshuf in
-                                                        tyof_field (Ok neutral) ty fld ~shuf fldins
-                                                  in
-                                                  let body = eval hd.env term in
-                                                  Some
-                                                    (Term.PlusFam.PlusFam
-                                                       (plusmap, readback_eval dctx body ety))
-                                              | _ -> raise Comatch_fallback));
-                                    } in
-                                Term.StructfieldAbwd.Entry (fld, Term.Structfield.Higher pbm)
-                            | _ -> raise Comatch_fallback)
-                        | _ -> raise Comatch_fallback))
+                          ( fld,
+                            Term.Structfield.Lower
+                              ( adj,
+                                plus_lock,
+                                Term.Realize
+                                  (readback_at lctx
+                                     (field_term left xu fld (ins_zero dim))
+                                     (tyof_field left (Ok xu) tyu fld ~shuf:Trivial
+                                        (ins_zero evaldim))),
+                                `Labeled ) )
+                    | Term.Codatafield.Higher (adj, _, _, _) -> (
+                        match Modalcell.compare_adjunction_id adj with
+                        | Neq -> fatal (Unimplemented "displaying modal codata fields")
+                        | Eq -> (
+                            match Value.StructfieldAbwd.find_opt comatch_fields fld with
+                            | Found (Value.Structfield.Higher (lazy hd)) -> (
+                                (* "about" only reads back non-modal higher comatch fields, whose stored bodies live at the codatatype's own mode; a modal one falls back to the stored case tree. *)
+                                match Modalcell.compare_adjunction_id hd.adj with
+                                | Neq -> raise Comatch_fallback
+                                | Eq -> (
+                                    (* We handle only an undegenerated comatch (identity deg) with an empty closure environment (a top-level comatch), where the stored term can be evaluated directly in the empty environment.  A degenerate comatch (e.g. refl of a comatch) or a partially-applied one falls back to the stored case tree. *)
+                                    match
+                                      ( hd.env,
+                                        D.compare dim (D.plus_right hd.plusdim),
+                                        is_id_deg hd.deg )
+                                    with
+                                    | Emp _, Eq, Some _ ->
+                                        let pbm =
+                                          Term.PlusPbijmap.build dim (Field.dim fld)
+                                            {
+                                              build =
+                                                (fun (type r)
+                                                  (pbij : (m, i, r) pbij)
+                                                  :
+                                                  (r, mode * a) Term.PlusFam.t
+                                                ->
+                                                  match Term.PlusPbijmap.find pbij hd.terms with
+                                                  | None -> raise Comatch_fallback
+                                                  | Some (Term.PlusFam.PlusFam (stored_pm, term))
+                                                    -> (
+                                                      (* The closure environment is empty, so degenerating it leaves it empty: the stored plus-map is the proj-only one (matched below) and the stored term lives over the empty context, so it can be evaluated directly in hd.env. *)
+                                                      match stored_pm with
+                                                      | Suc
+                                                          ( Zero (Eq Unit),
+                                                            Inject (Plus_proj _),
+                                                            Suc (Zero, Proj _) ) ->
+                                                          let (Pbij (fldins, fldshuf)) = pbij in
+                                                          let r = left_shuffle fldshuf in
+                                                          let (Degctx (plusmap, dctx, denv)) =
+                                                            degctx ctx r in
+                                                          let ety : (mode, kinetic) value =
+                                                            match D.compare_zero r with
+                                                            | Zero ->
+                                                                let Eq =
+                                                                  eq_of_zero_shuffle fldshuf in
+                                                                tyof_field (Modalcell.adj_left adj)
+                                                                  (Ok neutral) ty fld ~shuf:Trivial
+                                                                  fldins
+                                                            | Pos _ ->
+                                                                let termctx =
+                                                                  Lazy.force codata_args.termctx
+                                                                  <|> Anomaly
+                                                                        "missing termctx for higher comatch"
+                                                                in
+                                                                let shuf =
+                                                                  higher_codatafield_shuffleable ctx
+                                                                    (length_env codata_args.env)
+                                                                    termctx denv r fldshuf in
+                                                                tyof_field (Modalcell.adj_left adj)
+                                                                  (Ok neutral) ty fld ~shuf fldins
+                                                          in
+                                                          let body = eval hd.env term in
+                                                          Some
+                                                            (Term.PlusFam.PlusFam
+                                                               (plusmap, readback_eval dctx body ety))
+                                                      | _ -> raise Comatch_fallback));
+                                            } in
+                                        Term.StructfieldAbwd.Entry
+                                          ( fld,
+                                            Term.Structfield.Higher
+                                              (hd.adj, Tctx.plus_no_lock (Ctx.mode ctx), pbm) )
+                                    | _ -> raise Comatch_fallback))
+                            | _ -> raise Comatch_fallback)))
                   codata_args.fields in
               Term.Struct { eta = codata_args.eta; dim; fields; energy = Potential })
       | _ -> fatal (Anomaly "comatch readback: neutral value is not a struct"))
