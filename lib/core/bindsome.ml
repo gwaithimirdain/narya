@@ -209,7 +209,6 @@ module Ordered = struct
     let modality = Modality.filter_modality filter in
     let filtered = Modality.filter_idempotent filter in
     let open Monad.Ops (Monad.Maybe) in
-    let open CubeOf.Monadic (Monad.Maybe) in
     (* The tricky thing we have to deal with is that in a *cube* of variables, when doing readback-eval on each variable, we should be allowed to use the *preceeding* variables in the dependency order of the cube, but not the *subsequent* ones.  Unfortunately we don't have a direct way for a context to contain only "some" of a cube of variables.  Thus, we use the ability of Binder.t to be Unknown or Delayed.  *)
     (* We start by creating two variable cubes from the given one.  In "oldentry" all the variables have the same values, but they are delayed so that we can't use them until we've gotten past them in iterating through the cube.  In "newentry" the variables all have unknown values, which we will specify later after eval-readback succeeds step by step. *)
     let [ oldentry; newentry ] =
@@ -222,45 +221,53 @@ module Ordered = struct
     let newctx = Ctx.Ordered.lock_to (Ctx.Ordered.invis newctx filtered newentry) modality plus in
     (* The integer k counts the second component of the new level variables we are creating. *)
     let k = ref 0 in
-    let* () =
-      miterM
+    (* We short-circuit out of the cube iteration with an exception if any variable's
+       readback-eval fails (returns None). *)
+    let exception Short_circuit in
+    try
+      CubeOf.miter
         {
           it =
             (fun fa [ b; oldb; newb ] ->
-              let new_level = (i, !k) in
-              k := !k + 1;
-              match Binding.level b with
-              | None ->
-                  (* If the variable was let-bound in the original context, we readback-eval its (normal) value, which includes its type. *)
-                  let oldnf = Binding.value b in
-                  let* newnf = eval_readback_nf ~level ~oldctx ~newctx oldnf in
-                  (* Now we allow this variable to be used when reading back other variables, and specify the newly evaluated version to be used in the new context. *)
-                  Binding.force oldb;
-                  Binding.specify newb None newnf;
-                  return ()
-              | Some old_level -> (
-                  (* For variables that were not let-bound in the old context, we first check whether we're newly binding them. *)
-                  match bind_var binder old_level (Modality.src modality) with
-                  (* `Nonbindable means only that the *top* variable is nonbindable. *)
-                  | Some oldnf when bindable = `Bindable || Option.is_none (is_id_sface fa) ->
-                      (* If so, then the value returned by the binder callback is in the old context, so we readback-eval it and proceed as before. *)
-                      let* newnf = eval_readback_nf ~level ~oldctx ~newctx oldnf in
-                      Binding.force oldb;
-                      Binding.specify newb None newnf;
-                      return ()
-                  | None ->
-                      (* Otherwise, we readback-eval only its type, and create a new De Bruijn level for the new context. *)
-                      let oldnf = Binding.value b in
-                      let oldty = oldnf.ty in
-                      let* newty = eval_readback_val ~level ~oldctx ~newctx oldty in
-                      let newnf = { tm = var modality new_level newty; ty = newty } in
-                      Binding.force oldb;
-                      Binding.specify newb (Some new_level) newnf;
-                      return ()
-                  | _ -> fatal (Anomaly "attempt to bind variable with field views")));
+              let result =
+                let new_level = (i, !k) in
+                k := !k + 1;
+                match Binding.level b with
+                | None ->
+                    (* If the variable was let-bound in the original context, we readback-eval its (normal) value, which includes its type. *)
+                    let oldnf = Binding.value b in
+                    let* newnf = eval_readback_nf ~level ~oldctx ~newctx oldnf in
+                    (* Now we allow this variable to be used when reading back other variables, and specify the newly evaluated version to be used in the new context. *)
+                    Binding.force oldb;
+                    Binding.specify newb None newnf;
+                    return ()
+                | Some old_level -> (
+                    (* For variables that were not let-bound in the old context, we first check whether we're newly binding them. *)
+                    match bind_var binder old_level (Modality.src modality) with
+                    (* `Nonbindable means only that the *top* variable is nonbindable. *)
+                    | Some oldnf when bindable = `Bindable || Option.is_none (is_id_sface fa) ->
+                        (* If so, then the value returned by the binder callback is in the old context, so we readback-eval it and proceed as before. *)
+                        let* newnf = eval_readback_nf ~level ~oldctx ~newctx oldnf in
+                        Binding.force oldb;
+                        Binding.specify newb None newnf;
+                        return ()
+                    | None ->
+                        (* Otherwise, we readback-eval only its type, and create a new De Bruijn level for the new context. *)
+                        let oldnf = Binding.value b in
+                        let oldty = oldnf.ty in
+                        let* newty = eval_readback_val ~level ~oldctx ~newctx oldty in
+                        let newnf = { tm = var modality new_level newty; ty = newty } in
+                        Binding.force oldb;
+                        Binding.specify newb (Some new_level) newnf;
+                        return ()
+                    | _ -> fatal (Anomaly "attempt to bind variable with field views")) in
+              match result with
+              | Some () -> ()
+              | None -> raise_notrace Short_circuit);
         }
-        [ in_entry; oldentry; newentry ] in
-    return newentry
+        [ in_entry; oldentry; newentry ];
+      return newentry
+    with Short_circuit -> None
 
   let bind_some_entry : type dom modality mode bindmode f i a n.
       level:int ->

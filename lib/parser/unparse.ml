@@ -267,24 +267,21 @@ let rec get_spine : type mode a.
         (* Modalities are not printed with applications *)
         Modal (type am) ((_modality, plus, arg) : _ * _ * (_, (_, am, kinetic) Term.term) CubeOf.t)
       ) -> (
-      let module M = CubeOf.Monadic (Monad.State (struct
-        type t = (a, kinetic) spine_arg Bwd.t
-      end))
-      in
-      (* To append the entries in a cube to a Bwd, we iterate through it with a Bwd state. *)
+      (* To append the entries in a cube to a Bwd, we iterate through it with a Bwd reference. *)
       let append_bwd args =
         let all_args = not (synths (CubeOf.find_top arg)) in
-        snd
-          (M.miterM
-             {
-               it =
-                 (fun fa [ (x : (_, am, kinetic) Term.term) ] s ->
-                   match (Display.function_boundaries (), is_id_sface fa, all_args) with
-                   | `Hide, None, false -> ((), s)
-                   | _, None, _ -> ((), Snoc (s, Spine_arg (Left plus, x, `Implicit)))
-                   | _ -> ((), Snoc (s, Spine_arg (Left plus, x, `Explicit))));
-             }
-             [ arg ] args) in
+        let s = ref args in
+        CubeOf.miter
+          {
+            it =
+              (fun fa [ (x : (_, am, kinetic) Term.term) ] ->
+                match (Display.function_boundaries (), is_id_sface fa, all_args) with
+                | `Hide, None, false -> ()
+                | _, None, _ -> s := Snoc (!s, Spine_arg (Left plus, x, `Implicit))
+                | _ -> s := Snoc (!s, Spine_arg (Left plus, x, `Explicit)));
+          }
+          [ arg ];
+        !s in
       match get_spine fn with
       | `App (head, args) -> `App (head, append_bwd args)
       | `Field (head, fld, ins, args) -> `Field (head, fld, ins, append_bwd args))
@@ -876,42 +873,37 @@ and unparse_named_inst : type mode n lt ls rt rs m k mk.
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
  fun vars ty tyargs li ri ->
-  let module M = TubeOf.Monadic (Monad.State (struct
-    type t = unparser Bwd.t
-  end))
-  in
-  (* To append the entries in a tube to a Bwd, we iterate through it with a Bwd state. *)
-  let (), args =
-    M.miterM
-      {
-        it =
-          (fun fa [ Names.Named (xvars, x) ] s ->
-            (* We include the argument explicitly if it is codimension-1. *)
-            match is_codim1 fa with
-            | Some () ->
-                ((), Snoc (s, make_unparser_implicit xvars (Spine_arg (Right Eq, x, `Explicit))))
-            | None -> (
-                (* We include it implicitly if display of type boundaries is on. *)
-                match Display.type_boundaries () with
-                | `Show ->
-                    ((), Snoc (s, make_unparser_implicit xvars (Spine_arg (Right Eq, x, `Implicit))))
-                | `Hide ->
-                    (* We also include it implicitly if its codimension-1 envelope is non-synthesizing *)
-                    let (Tface_of fa1) = codim1_envelope fa in
-                    let (Named (_, x1)) = TubeOf.find tyargs fa1 in
-                    if synths x1 then ((), s)
-                    else
-                      ( (),
-                        Snoc (s, make_unparser_implicit xvars (Spine_arg (Right Eq, x, `Implicit)))
-                      )));
-      }
-      ~ifzero:(fun acc ->
-        ( (),
-          Snoc
-            ( acc,
-              { unparse = (fun li ri -> unparse_notation Postprocess.dot [] (`Single Dot) li ri) }
-            ) ))
-      [ tyargs ] Emp in
+  (* To append the entries in a tube to a Bwd, we iterate through it with a Bwd reference. *)
+  let s : unparser Bwd.t ref = ref Bwd.Emp in
+  TubeOf.miter
+    {
+      it =
+        (fun fa [ Names.Named (xvars, x) ] ->
+          (* We include the argument explicitly if it is codimension-1. *)
+          match is_codim1 fa with
+          | Some () ->
+              s := Snoc (!s, make_unparser_implicit xvars (Spine_arg (Right Eq, x, `Explicit)))
+          | None -> (
+              (* We include it implicitly if display of type boundaries is on. *)
+              match Display.type_boundaries () with
+              | `Show ->
+                  s := Snoc (!s, make_unparser_implicit xvars (Spine_arg (Right Eq, x, `Implicit)))
+              | `Hide ->
+                  (* We also include it implicitly if its codimension-1 envelope is non-synthesizing *)
+                  let (Tface_of fa1) = codim1_envelope fa in
+                  let (Named (_, x1)) = TubeOf.find tyargs fa1 in
+                  if synths x1 then ()
+                  else
+                    s :=
+                      Snoc (!s, make_unparser_implicit xvars (Spine_arg (Right Eq, x, `Implicit)))));
+    }
+    ~ifzero:(fun () ->
+      s :=
+        Snoc
+          ( !s,
+            { unparse = (fun li ri -> unparse_notation Postprocess.dot [] (`Single Dot) li ri) } ))
+    [ tyargs ];
+  let args = !s in
   unparse_spine vars (`Term ty) args li ri
 
 (* We group together all the 0-dimensional or non-instantiated higher dependent pi-types in a notation, so we recursively descend through the term picking those up until we find a non-pi-type, a higher-dimensional pi-type, or a non-dependent pi-type, in which case we pass it off to unparse_pis_final. *)
@@ -1067,39 +1059,36 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
   let (Has_plus_lock xsplus) = plus_lock modality in
   let lockedvars = Names.add_lock newvars xsplus in
   (* Unparse each domain, instantiate it at the appropriate variables corresponding to its faces, and parenthesize or brace it to become a pi-type domain, adding them all to the accumulated list of domains. *)
-  let module S = Monad.State (struct
-    type t = unparser Bwd.t
-  end) in
-  let module MOf = CubeOf.Monadic (S) in
-  let (), accum =
-    MOf.miterM
-      {
-        it =
-          (fun s [ (dom : (dom, am, kinetic) term) ] accum ->
-            let k = dom_sface s in
-            let x = find_variable s xs in
-            let xargs =
-              TubeOf.build D.zero (D.zero_plus k)
-                {
-                  build =
-                    (fun fa ->
-                      Var
-                        (Index
-                           ( Now,
-                             comp_sface s (sface_of_tface fa),
-                             kfilter,
-                             plus_with_locks_of_plus_lock xsplus )));
-                } in
-            let implicit = Option.is_none (is_id_sface s) in
-            (* Here we use the flexibility allowed by unparse_inst to have the type and the instantiation arguments in different contexts, since the type is not in the context extended by the new variables.  However, it's important that we get the context for the type by *removing* those new variables from newvars, rather than using the original vars, since that retains the extra information stored in a Names.t about how many copies of a variable there have been, for future renaming use.  *)
-            let dom =
-              unparse_inst
-                (Names.add_lock (Names.remove newvars Now) plus)
-                dom lockedvars xargs No.Interval.entire No.Interval.entire in
-            let m = Modality.name modality in
-            ((), Snoc (accum, { unparse = (fun _ _ -> unparse_pi_dom ~implicit x m dom) })));
-      }
-      [ doms ] accum in
+  let accum = ref accum in
+  CubeOf.miter
+    {
+      it =
+        (fun s [ (dom : (dom, am, kinetic) term) ] ->
+          let k = dom_sface s in
+          let x = find_variable s xs in
+          let xargs =
+            TubeOf.build D.zero (D.zero_plus k)
+              {
+                build =
+                  (fun fa ->
+                    Var
+                      (Index
+                         ( Now,
+                           comp_sface s (sface_of_tface fa),
+                           kfilter,
+                           plus_with_locks_of_plus_lock xsplus )));
+              } in
+          let implicit = Option.is_none (is_id_sface s) in
+          (* Here we use the flexibility allowed by unparse_inst to have the type and the instantiation arguments in different contexts, since the type is not in the context extended by the new variables.  However, it's important that we get the context for the type by *removing* those new variables from newvars, rather than using the original vars, since that retains the extra information stored in a Names.t about how many copies of a variable there have been, for future renaming use.  *)
+          let dom =
+            unparse_inst
+              (Names.add_lock (Names.remove newvars Now) plus)
+              dom lockedvars xargs No.Interval.entire No.Interval.entire in
+          let m = Modality.name modality in
+          accum := Snoc (!accum, { unparse = (fun _ _ -> unparse_pi_dom ~implicit x m dom) }));
+    }
+    [ doms ];
+  let accum = !accum in
   (* The instantiation arguments 'tyargs' should already all be eta-expanded, since readback eta-expands the instantiation arguments of higher pi-types.  So we can descend into those abstractions and add the appropriate variables on which they depend to their unparsing contexts. *)
   let tyargs =
     let map : type kk. (kk, D.zero, n, n) tface -> mode Names.named_term -> mode Names.named_term =
@@ -1194,7 +1183,6 @@ let rec unparse_ctx : type dom modality mode a b.
   let module S = struct
     type t = Print.printed_entry Bwd.t
   end in
-  let module M = CubeOf.Monadic (Monad.State (S)) in
   match ctx with
   | Emp _ -> (Names.of_uniquified_vars names, Emp)
   | Lock (ctx, newlock) ->
@@ -1228,9 +1216,11 @@ let rec unparse_ctx : type dom modality mode a b.
             let lock = Modality.name lock in
             let var = top_variable x in
             ((), Snoc (res, { var; modality; renamed = true; lock; tm; ty })) in
-          let _, result =
-            M.miterM { it = (fun _ [ b ] res -> do_binding b res) } [ bindings ] result in
-          (names, result)
+          let result = ref result in
+          CubeOf.miter
+            { it = (fun _ [ b ] -> result := snd (do_binding b !result)) }
+            [ bindings ];
+          (names, !result)
       | Vis { dim; plusdim; vars; plus_lock; bindings; hasfields; fields; fplus; filter = _ } ->
           let modality = Modality.name (plus_lock_modality plus_lock) in
           (* First we split off the field variables, if any. *)
@@ -1284,22 +1274,21 @@ let rec unparse_ctx : type dom modality mode a b.
                   | `Original -> false in
                 let res = Snoc (res, { var = x; modality; renamed; lock; tm; ty }) in
                 ((), res) in
-          let _, result =
-            M.miterM { it = (fun fab [ b ] res -> do_binding fab b res) } [ bindings ] result in
+          let result = ref result in
+          CubeOf.miter
+            { it = (fun fab [ b ] -> result := snd (do_binding fab b !result)) }
+            [ bindings ];
           (* Finally, we iterate forwards through the fields as well, unparsing their types and adding them to the result also. *)
-          let module M = Bwv.Monadic (Monad.State (S)) in
-          let _, result =
-            M.miterM
-              (fun [ (x, orig); (_, _, ty) ] res ->
-                let ty = Wrap (unparse xnames ty No.Interval.entire No.Interval.entire) in
-                let renamed =
-                  match orig with
-                  | `Renamed -> true
-                  | `Original -> false in
-                let res = Snoc (res, { var = x; modality; renamed; lock; tm = None; ty }) in
-                ((), res))
-              [ fs; fields ] result in
-          (names, result))
+          Bwv.miter
+            (fun [ (x, orig); (_, _, ty) ] ->
+              let ty = Wrap (unparse xnames ty No.Interval.entire No.Interval.entire) in
+              let renamed =
+                match orig with
+                | `Renamed -> true
+                | `Original -> false in
+              result := Snoc (!result, { var = x; modality; renamed; lock; tm = None; ty }))
+            [ fs; fields ];
+          (names, !result))
 
 (* See the explanation of this function in Core.Reporter. *)
 let () =

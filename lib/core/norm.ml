@@ -1987,14 +1987,9 @@ let apply_singletons : type dom modality mode n.
     (mode, kinetic) value =
  fun modality fn xs ->
   let filter = Modality.filter_zero modality in
-  let module MC = CubeOf.Monadic (Monad.State (struct
-    type t = (mode, kinetic) value
-  end))
-  in
-  snd
-    (MC.miterM
-       { it = (fun _ [ x ] fn -> ((), apply_term fn filter (CubeOf.singleton x))) }
-       [ xs ] fn)
+  let fn = ref fn in
+  CubeOf.miter { it = (fun _ [ x ] -> fn := apply_term !fn filter (CubeOf.singleton x)) } [ xs ];
+  !fn
 
 let apply_singleton_nfs : type dom modality mode n.
     (dom, modality, mode) Modality.t ->
@@ -2003,14 +1998,11 @@ let apply_singleton_nfs : type dom modality mode n.
     (mode, kinetic) value =
  fun modality fn xs ->
   let filter = Modality.filter_zero modality in
-  let module MC = CubeOf.Monadic (Monad.State (struct
-    type t = (mode, kinetic) value
-  end))
-  in
-  snd
-    (MC.miterM
-       { it = (fun _ [ x ] fn -> ((), apply_term fn filter (CubeOf.singleton x.tm))) }
-       [ xs ] fn)
+  let fn = ref fn in
+  CubeOf.miter
+    { it = (fun _ [ x ] -> fn := apply_term !fn filter (CubeOf.singleton x.tm)) }
+    [ xs ];
+  !fn
 
 let apply_singleton_tube_nfs : type dom modality mode n.
     (dom, modality, mode) Modality.t ->
@@ -2019,14 +2011,11 @@ let apply_singleton_tube_nfs : type dom modality mode n.
     (mode, kinetic) value =
  fun modality fn xs ->
   let filter = Modality.filter_zero modality in
-  let module MC = TubeOf.Monadic (Monad.State (struct
-    type t = (mode, kinetic) value
-  end))
-  in
-  snd
-    (MC.miterM
-       { it = (fun _ [ x ] fn -> ((), apply_term fn filter (CubeOf.singleton x.tm))) }
-       [ xs ] fn)
+  let fn = ref fn in
+  TubeOf.miter
+    { it = (fun _ [ x ] -> fn := apply_term !fn filter (CubeOf.singleton x.tm)) }
+    [ xs ];
+  !fn
 
 (* Evaluate a term context to produce a value context. *)
 

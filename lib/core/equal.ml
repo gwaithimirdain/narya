@@ -17,6 +17,16 @@ open Monad.Ops (Err)
 let guard test err = if test then Ok () else Error err
 let fail err = Error err
 
+(* Run a short-circuiting iteration in the equality error monad.  The body is given a [check] function to apply to the [unit Err.t] result of comparing each pair of sub-objects; the first [Error] breaks out of the iteration (via a local exception) and becomes the overall result.  This replaces what used to be a traversal in the Err monad. *)
+let short_circuit_err (body : (unit Err.t -> unit) -> unit) : unit Err.t =
+  let exception Stop of Unequal.t in
+  try
+    body (function
+      | Ok () -> ()
+      | Error e -> raise_notrace (Stop e));
+    Ok ()
+  with Stop e -> Error e
+
 (* Whether one prekey action is a postwhiskering of another: there is a modality that, composed onto the vertical target of pre2, yields pre1.  Since a prekey acts on a value (which lies behind the appropriate modality) by extending its key with factoring, the extra target modality is absorbed, so a postwhiskering acts the same way.  In particular an identity 2-cell is a postwhiskering of an identity (id2), so the two are prekey-equal. *)
 let prekey_le : type mode m1 n1 c1 m2 n2 c2.
     (mode, m1, n1, c1) Modalcell.t -> (mode, m2, n2, c2) Modalcell.t -> bool =
@@ -295,9 +305,10 @@ and equal_tyargs : type mode n1 k1 nk1 n2 k2 nk2 a b.
   with
   | Eq, Eq ->
       let Eq = D.plus_uniq (TubeOf.plus a1) (TubeOf.plus a2) in
-      let open TubeOf.Monadic (Err) in
       (* Because instantiation arguments are stored as normals, we use type-sensitive equality to compare them. *)
-      Some (miterM { it = (fun _ [ x; y ] -> equal_nf n x y) } [ a1; a2 ])
+      Some
+        (short_circuit_err (fun check ->
+             TubeOf.miter { it = (fun _ [ x; y ] -> check (equal_nf n x y)) } [ a1; a2 ]))
   | Neq, _ -> None
   | _, Neq -> None
 
@@ -349,26 +360,27 @@ and equal_head : type mode a b. (mode, a, b) Ctx.t -> mode head -> mode head -> 
           let Eq = Modality.filter_uniq filter1 filter2 in
           let (Locked (_, lctx)) = Ctx.lock ctx modality1 in
           Some
-            (let open Monad.Ops (Err) in
-             let open CubeOf.Monadic (Err) in
-             let* () = miterM { it = (fun _ [ x; y ] -> equal_val lctx x y) } [ dom1s; dom2s ] in
-             (* We create variables for all the domains, in order to equality-check all the codomains.  The codomain boundary types only use some of those variables, but it doesn't hurt to have the others around. *)
-             let newargs, newnfs = dom_vars ctx modality1 dom1s in
-             let (Any_ctx newctx) =
-               Ctx.variables_vis ctx (Modality.filter_idempotent filter1) name newnfs in
-             (* We compare the two cubes of codomains with the binary iterator miter2M, which recurses directly on the two trees.  We cannot use the generic n-ary miterM [ cod1s; cod2s ] here: iterating two cubes whose element family (BindFam) is a multi-parameter GADT via the heterogeneous Tlist machinery sends type inference into a catastrophic blowup (~15s and 14GB to compile this one expression). *)
-             let open BindCube.Monadic (Err) in
-             miter2M
-               {
-                 it2 =
-                   (fun s (BindFam cod1) (BindFam cod2) ->
-                     let (Filter_sface (fb, kfilter)) = Modality.filter_sface filter1 s in
-                     let sargs = CubeOf.subcube fb newargs in
-                     equal_val newctx
-                       (apply_binder_term cod1 kfilter sargs)
-                       (apply_binder_term cod2 kfilter sargs));
-               }
-               cod1s cod2s)
+            (short_circuit_err (fun check ->
+                 CubeOf.miter
+                   { it = (fun _ [ x; y ] -> check (equal_val lctx x y)) }
+                   [ dom1s; dom2s ];
+                 (* We create variables for all the domains, in order to equality-check all the codomains.  The codomain boundary types only use some of those variables, but it doesn't hurt to have the others around. *)
+                 let newargs, newnfs = dom_vars ctx modality1 dom1s in
+                 let (Any_ctx newctx) =
+                   Ctx.variables_vis ctx (Modality.filter_idempotent filter1) name newnfs in
+                 (* We compare the two cubes of codomains with the binary iterator miter2, which recurses directly on the two trees.  We cannot use the generic n-ary miter [ cod1s; cod2s ] here: iterating two cubes whose element family (BindFam) is a multi-parameter GADT via the heterogeneous Tlist machinery sends type inference into a catastrophic blowup (~15s and 14GB to compile this one expression). *)
+                 BindCube.miter2
+                   {
+                     it2 =
+                       (fun s (BindFam cod1) (BindFam cod2) ->
+                         let (Filter_sface (fb, kfilter)) = Modality.filter_sface filter1 s in
+                         let sargs = CubeOf.subcube fb newargs in
+                         check
+                           (equal_val newctx
+                              (apply_binder_term cod1 kfilter sargs)
+                              (apply_binder_term cod2 kfilter sargs)));
+                   }
+                   cod1s cod2s))
       | Neq, _ | _, Neq -> None)
   | _, _ -> None
 
@@ -405,8 +417,11 @@ and equal_apps : type h1 h2 mode any1 any2 a b.
           let (Locked (_, lctx)) = Ctx.lock ctx modality1 in
           match D.compare (CubeOf.dim a1) (CubeOf.dim a2) with
           | Eq ->
-              let open CubeOf.Monadic (Err) in
-              Some (miterM { it = (fun _ [ x; y ] -> equal_nf lctx x y) } [ a1; a2 ])
+              Some
+                (short_circuit_err (fun check ->
+                     CubeOf.miter
+                       { it = (fun _ [ x; y ] -> check (equal_nf lctx x y)) }
+                       [ a1; a2 ]))
           (* If the dimensions don't match, it is a bug rather than a user error, since they are supposed to both be valid arguments of the same function, and any function has a unique dimension. *)
           | Neq ->
               fatal
@@ -536,7 +551,6 @@ and equal_ordered_env : type mode a b n c d.
   (* A weakening entry contributes nothing to the environment, so we skip it. *)
   | Weaken (envctx, _) -> equal_ordered_env ctx env1 env2 envctx
   | Ext (envctx, entry, _) -> (
-      let open CubeOf.Monadic (Err) in
       match entry with
       | Vis { plus_lock = dplus; bindings; _ } | Invis { plus_lock = dplus; bindings; _ } ->
           let modality = plus_lock_modality dplus in
@@ -567,28 +581,28 @@ and equal_ordered_env : type mode a b n c d.
           let env2' = remove_top env2 in
           let* () = equal_ordered_env ctx env1' env2' envctx in
           let xtytbl = Hashtbl.create 10 in
-          let* _ =
-            mmapM
-              {
-                map =
-                  (fun fab [ tm1; tm2 ] ->
-                    let (SFace_of_plus (_, fb, fa)) = sface_of_plus m_k fab in
-                    let ty = (CubeOf.find bindings fa).ty in
-                    let ety = eval_term (act_env lenv (opt_op_of_sface fb)) ty in
-                    let ty =
-                      inst ety
-                        (TubeOf.build D.zero
-                           (D.zero_plus (dom_sface fb))
-                           {
-                             build =
-                               (fun fc ->
-                                 Hashtbl.find xtytbl (SFace_of (comp_sface fb (sface_of_tface fc))));
-                           }) in
-                    Hashtbl.add xtytbl (SFace_of fb) { tm = tm1; ty };
-                    equal_at lctx tm1 tm2 ty);
-              }
-              [ xs1; xs2 ] in
-          return ())
+          short_circuit_err (fun check ->
+              CubeOf.miter
+                {
+                  it =
+                    (fun fab [ tm1; tm2 ] ->
+                      let (SFace_of_plus (_, fb, fa)) = sface_of_plus m_k fab in
+                      let ty = (CubeOf.find bindings fa).ty in
+                      let ety = eval_term (act_env lenv (opt_op_of_sface fb)) ty in
+                      let ty =
+                        inst ety
+                          (TubeOf.build D.zero
+                             (D.zero_plus (dom_sface fb))
+                             {
+                               build =
+                                 (fun fc ->
+                                   Hashtbl.find xtytbl
+                                     (SFace_of (comp_sface fb (sface_of_tface fc))));
+                             }) in
+                      Hashtbl.add xtytbl (SFace_of fb) { tm = tm1; ty };
+                      check (equal_at lctx tm1 tm2 ty));
+                }
+                [ xs1; xs2 ]))
   | Lock _ -> (
       let (Ordered_remove_locks (envctx, locks, no_locks)) = Termctx.ordered_remove_locks envctx in
       let (Restrict_keys (env1, extra1, _, keys1, pre1)) = restrict_keys_plus_lock env1 locks in

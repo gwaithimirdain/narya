@@ -39,63 +39,50 @@ module Icube (S : Suc) (F : Fam3) = struct
 
   let dim : type n b left right. (left, n, b, right) t -> n D.t = fun tr -> gdim tr
 
-  (* While we can't have a truly generic traversal, we can define some special cases.  The simplest one is "map" which applies some function to each entry, preserving all the indices on the nose.  Like the traversal of Cube, but unlike the others below, it makes sense in any applicative functor. *)
+  (* While we can't have a truly generic traversal, we can define some special cases.  The simplest one is "map" which applies some function to each entry, preserving all the indices on the nose. *)
 
-  module Applicatic (M : Applicative.Plain) = struct
-    open Applicative.Ops (M)
+  (* ********** Map ********** *)
 
-    (* ********** Map ********** *)
+  type ('n, 'b, 'c) mapper = {
+    map : 'left 'right 'm. ('m, 'n) sface -> ('left, 'm, 'b) F.t -> ('left, 'm, 'c) F.t;
+  }
 
-    type ('n, 'b, 'c) mapperM = {
-      map : 'left 'right 'm. ('m, 'n) sface -> ('left, 'm, 'b) F.t -> ('left, 'm, 'c) F.t M.t;
-    }
+  (* The traversal accumulates a forwards face, as in Cube: 'wf is the decided word (the fwsface domain) and 'cf the consumed word, related to the remaining height 'm and total dimension 'n by the bplus 'mc. *)
+  let rec gmap : type m wf cf n b cc left right.
+      (m, cf, n) D.bplus ->
+      (wf, cf) Fw.fwsface ->
+      (n, b, cc) mapper ->
+      (left, m, wf, b, right) gt ->
+      (left, m, wf, cc, right) gt =
+   fun mc d g tr ->
+    match tr with
+    | Leaf (bp, x) ->
+        let x = g.map (Fw.sface_of_fw bp mc d) x in
+        Leaf (bp, x)
+    | Branch (g0, l, ends, mid) ->
+        let newends = gmap_branches (Append_cons mc) d g0 g (Endpoints.indices l) ends in
+        let newmid = gmap (Append_cons mc) (Fw.Mid (g0, d)) g mid in
+        Branch (g0, l, newends, newmid)
 
-    (* The traversal accumulates a forwards face, as in Cube: 'wf is the decided word (the fwsface domain) and 'cf the consumed word, related to the remaining height 'm and total dimension 'n by the bplus 'mc. *)
-    let rec gmapM : type m wf cf n b cc left right.
-        (m, cf, n) D.bplus ->
-        (wf, cf) Fw.fwsface ->
-        (n, b, cc) mapperM ->
-        (left, m, wf, b, right) gt ->
-        (left, m, wf, cc, right) gt M.t =
-     fun mc d g tr ->
-      match tr with
-      | Leaf (bp, x) ->
-          M.apply (g.map (Fw.sface_of_fw bp mc d) x) @@ fun x -> Leaf (bp, x)
-      | Branch (g0, l, ends, mid) ->
-          M.apply
-            (M.zip
-               (fun () -> gmapM_branches (Append_cons mc) d g0 g (Endpoints.indices l) ends)
-               (fun () -> gmapM (Append_cons mc) (Fw.Mid (g0, d)) g mid))
-          @@ fun (newends, newmid) -> Branch (g0, l, newends, newmid)
-
-    and gmapM_branches : type m1 wf cf n b cc len len' left right g0.
-        (m1, (g0, cf) cons, n) D.bplus ->
-        (wf, cf) Fw.fwsface ->
-        g0 D.G.t ->
-        (n, b, cc) mapperM ->
-        (len Endpoints.t, len') Bwv.t ->
-        (left, len', m1, wf, b, right) branches ->
-        (left, len', m1, wf, cc, right) branches M.t =
-     fun mc d g0 g ixs brs ->
-      match (brs, ixs) with
-      | Emp, Emp -> return Emp
-      | Snoc (brs, br), Snoc (ixs, e) ->
-          M.apply
-            (M.zip
-               (fun () -> gmapM_branches mc d g0 g ixs brs)
-               (fun () -> gmapM mc (Fw.End (g0, e, d)) g br))
-          @@ fun (newbrs, newbr) -> Snoc (newbrs, newbr)
-
-    let mapM : type n b c left right.
-        (n, b, c) mapperM -> (left, n, b, right) t -> (left, n, c, right) t M.t =
-     fun g x -> gmapM Append_nil Fw.Zero g x
-  end
-
-  module IdM = Applicatic (Applicative.OfMonad (Monad.Identity))
+  and gmap_branches : type m1 wf cf n b cc len len' left right g0.
+      (m1, (g0, cf) cons, n) D.bplus ->
+      (wf, cf) Fw.fwsface ->
+      g0 D.G.t ->
+      (n, b, cc) mapper ->
+      (len Endpoints.t, len') Bwv.t ->
+      (left, len', m1, wf, b, right) branches ->
+      (left, len', m1, wf, cc, right) branches =
+   fun mc d g0 g ixs brs ->
+    match (brs, ixs) with
+    | Emp, Emp -> Emp
+    | Snoc (brs, br), Snoc (ixs, e) ->
+        let newbrs = gmap_branches mc d g0 g ixs brs in
+        let newbr = gmap mc (Fw.End (g0, e, d)) g br in
+        Snoc (newbrs, newbr)
 
   let map : type n b c left right.
-      (n, b, c) IdM.mapperM -> (left, n, b, right) t -> (left, n, c, right) t =
-   fun g x -> IdM.mapM g x
+      (n, b, c) mapper -> (left, n, b, right) t -> (left, n, c, right) t =
+   fun g x -> gmap Append_nil Fw.Zero g x
 
   (* ********** Traversals with indexed state ********** *)
 

@@ -172,240 +172,205 @@ module Cube (F : Fam2) = struct
 
   open Infix
 
-  module Applicatic (M : Applicative.Plain) = struct
-    open Applicative.Ops (M)
-    module BwvM = Bwv.Applicatic (M)
+  (* The function that we apply on a generic traversal must be polymorphic over the domain dimension of the face, so we wrap it in a record. *)
+  type ('n, 'bs, 'cs) pmapper = {
+    map : 'm. ('m, 'n) sface -> ('m, 'bs) Heter.hft -> ('m, 'cs) Heter.hft;
+  }
 
-    (* The function that we apply on a generic traversal must be polymorphic over the domain dimension of the face, so we wrap it in a record. *)
-    type ('n, 'bs, 'cs) pmapperM = {
-      map : 'm. ('m, 'n) sface -> ('m, 'bs) Heter.hft -> ('m, 'cs) Heter.hft M.t;
-    }
+  (* A "prefixed" mapper additionally receives a bplus ('m, 'p, 'mb) exhibiting an outer prefix 'p appended to the face domain 'm; its input and output hfts live at the prefixed dimension 'mb.  This is exactly what a Tube needs when it descends into an End branch and hands off to the Cube traversal: 'p is the word of Mid dimensions decided in the Tube above, and the cube's leaf values live at (cube face) + 'p. *)
+  type ('n, 'p, 'bs, 'cs) pmapper_pre = {
+    map :
+      'm 'mb.
+      ('m, 'n) sface -> ('m, 'p, 'mb) D.bplus -> ('mb, 'bs) Heter.hft -> ('mb, 'cs) Heter.hft;
+  }
 
-    (* A "prefixed" mapper additionally receives a bplus ('m, 'p, 'mb) exhibiting an outer prefix 'p appended to the face domain 'm; its input and output hfts live at the prefixed dimension 'mb.  This is exactly what a Tube needs when it descends into an End branch and hands off to the Cube traversal: 'p is the word of Mid dimensions decided in the Tube above, and the cube's leaf values live at (cube face) + 'p. *)
-    type ('n, 'p, 'bs, 'cs) pmapperM_pre = {
-      map :
-        'm 'mb.
-        ('m, 'n) sface ->
-        ('m, 'p, 'mb) D.bplus ->
-        ('mb, 'bs) Heter.hft ->
-        ('mb, 'cs) Heter.hft M.t;
-    }
+  (* The generic prefixed traversal.  'own is the decided word for the cube's own descent (the fwsface domain), 'p the fixed outer prefix, and 'w = 'own + 'p the gt's decided-word index, witnessed by the fplus 'fp.  'cf is the consumed codomain with 'mc : ('m, 'cf, 'n) bplus.  At each Branch the newly consumed generator is consed onto the fwsface and the bplus by Append_cons; a Mid additionally grows 'own (and 'fp). *)
+  let rec gpmap_pre : type m own p w cf n b bs cs.
+      p D.fwd ->
+      (own, p, w) D.fplus ->
+      (m, cf, n) D.bplus ->
+      (own, cf) Fw.fwsface ->
+      (n, p, (b, bs) cons, cs) pmapper_pre ->
+      (m, w, (b, bs) cons) Heter.hgt ->
+      cs Tlist.t ->
+      (m, w, cs) Heter.hgt =
+   fun p fp mc d g trs cst ->
+    match trs with
+    | Leaf _ :: _ ->
+        let (Bplus dbp) = D.bplus (Fw.dom_fwsface d) in
+        let (Bplus mb) = D.bplus p in
+        let dbp_full = D.bplus_bplus dbp mb fp in
+        let x = g.map (Fw.sface_of_fw dbp mc d) mb (Heter.lab dbp_full trs) in
+        Heter.leaf dbp_full x
+    | Branch (g0, _, _, _) :: _ ->
+        let (Ends (l, hs, ends)) = Heter.ends trs in
+        let mid = Heter.mid trs in
+        let (Hgts newhs) = Heter.hgts_of_tlist cst in
+        let newends =
+          Bwv.pmap
+            (fun (e :: brs) ->
+              let xs =
+                gpmap_pre p fp (Append_cons mc) (Fw.End (g0, e, d)) g (Heter.hgt_of_hlist hs brs)
+                  cst in
+              Heter.hlist_of_hgt newhs xs)
+            (Endpoints.indices l :: ends) (Heter.tlist_hgts newhs cst) in
+        let newmid = gpmap_pre p (Cons fp) (Append_cons mc) (Fw.Mid (g0, d)) g mid cst in
+        Heter.branch g0 l newhs newends newmid
 
-    (* The generic prefixed traversal.  'own is the decided word for the cube's own descent (the fwsface domain), 'p the fixed outer prefix, and 'w = 'own + 'p the gt's decided-word index, witnessed by the fplus 'fp.  'cf is the consumed codomain with 'mc : ('m, 'cf, 'n) bplus.  At each Branch the newly consumed generator is consed onto the fwsface and the bplus by Append_cons; a Mid additionally grows 'own (and 'fp). *)
-    let rec gpmapM_pre : type m own p w cf n b bs cs.
-        p D.fwd ->
-        (own, p, w) D.fplus ->
-        (m, cf, n) D.bplus ->
-        (own, cf) Fw.fwsface ->
-        (n, p, (b, bs) cons, cs) pmapperM_pre ->
-        (m, w, (b, bs) cons) Heter.hgt ->
-        cs Tlist.t ->
-        (m, w, cs) Heter.hgt M.t =
-     fun p fp mc d g trs cst ->
-      match trs with
-      | Leaf _ :: _ ->
-          let (Bplus dbp) = D.bplus (Fw.dom_fwsface d) in
-          let (Bplus mb) = D.bplus p in
-          let dbp_full = D.bplus_bplus dbp mb fp in
-          M.apply (g.map (Fw.sface_of_fw dbp mc d) mb (Heter.lab dbp_full trs)) @@ fun x ->
-          Heter.leaf dbp_full x
-      | Branch (g0, _, _, _) :: _ ->
-          let (Ends (l, hs, ends)) = Heter.ends trs in
-          let mid = Heter.mid trs in
-          let (Hgts newhs) = Heter.hgts_of_tlist cst in
-          M.apply
-            (M.zip
-               (fun () ->
-                 BwvM.pmapM
-                   (fun (e :: brs) ->
-                     M.apply
-                       (gpmapM_pre p fp (Append_cons mc) (Fw.End (g0, e, d)) g
-                          (Heter.hgt_of_hlist hs brs) cst)
-                     @@ fun xs -> Heter.hlist_of_hgt newhs xs)
-                   (Endpoints.indices l :: ends) (Heter.tlist_hgts newhs cst))
-               (fun () -> gpmapM_pre p (Cons fp) (Append_cons mc) (Fw.Mid (g0, d)) g mid cst))
-          @@ fun (newends, newmid) -> Heter.branch g0 l newhs newends newmid
-
-    (* And the actual one for a t, which we can henceforth restrict our attention to.  It is the empty-prefix special case, where the bplus handed to the mapper is trivial and the hfts live at the face domain itself. *)
-    let pmapM : type n b bs cs.
-        (n, (b, bs) cons, cs) pmapperM ->
-        (n, D.fwd_zero, (b, bs) cons) Heter.hgt ->
-        cs Tlist.t ->
-        (n, D.fwd_zero, cs) Heter.hgt M.t =
-     fun g xs cs ->
-      let g' : (n, nil, (b, bs) cons, cs) pmapperM_pre =
-        {
-          map =
-            (fun (type m mb) (fa : (m, n) sface) (mb : (m, nil, mb) D.bplus)
-                 (x : (mb, (b, bs) cons) Heter.hft) : (mb, cs) Heter.hft M.t ->
-              match mb with
-              | Append_nil -> g.map fa x);
-        } in
-      gpmapM_pre Nil Nil Append_nil Fw.Zero g' xs cs
-
-    type ('n, 'bs, 'c) mmapperM = {
-      map : 'm. ('m, 'n) sface -> ('m, 'bs) Heter.hft -> ('m, 'c) F.t M.t;
-    }
-
-    let mmapM : type n b bs c.
-        (n, (b, bs) cons, c) mmapperM -> (n, D.fwd_zero, (b, bs) cons) Heter.hgt -> (n, c) t M.t =
-     fun g xs ->
-      M.apply
-        (pmapM
-           {
-             map =
-               (fun fa x ->
-                 M.apply (g.map fa x) @@ fun y ->
-                 (* Apparently writing [y] is insufficiently polymorphic *)
-                 y @: []);
-           }
-           xs (Cons Nil))
-      @@ fun [ ys ] -> ys
-
-    type ('n, 'bs) miteratorM = { it : 'm. ('m, 'n) sface -> ('m, 'bs) Heter.hft -> unit M.t }
-
-    let miterM : type n b bs.
-        (n, (b, bs) cons) miteratorM -> (n, D.fwd_zero, (b, bs) cons) Heter.hgt -> unit M.t =
-     fun g xs ->
-      M.apply (pmapM { map = (fun fa x -> M.apply (g.it fa x) @@ fun () -> hnil) } xs Nil)
-      @@ fun [] -> ()
-
-    (* A binary iterator over two cubes of the *same* functor F (but possibly different parameters b1, b2).  It is defined in terms of the generic variadic miterM, but crucially the existential-opening of the element family (e.g. BindFam) happens in the *caller's* it2, checked against this plain fixed-arity-2 signature, NOT inside the rank-2 field passed to miterM (where x and y stay abstract and are merely forwarded).  So miterM is only ever instantiated at an abstract 2-element Tlist with no existential-opening in the rank-2 field, which is cheap.  Calling miterM [ c1; c2 ] *directly* on two GADT-family cubes, opening the existentials in its rank-2 field at the concrete Tlist, is what causes a catastrophic type-inference blowup (see the Pi arm of equal_head in core/equal.ml); this wrapper keeps the two ingredients apart. *)
-    type ('n, 'b1, 'b2) miterator2M = {
-      it2 : 'm. ('m, 'n) sface -> ('m, 'b1) F.t -> ('m, 'b2) F.t -> unit M.t;
-    }
-
-    let miter2M : type n b1 b2. (n, b1, b2) miterator2M -> (n, b1) t -> (n, b2) t -> unit M.t =
-     fun g xs ys -> miterM { it = (fun fa [ x; y ] -> g.it2 fa x y) } [ xs; ys ]
-
-    (* The builder function isn't quite a special case of the generic traversal, since it needs to maintain different information when constructing a cube from scratch. *)
-
-    type ('n, 'b) builderM = { build : 'm. ('m, 'n) sface -> ('m, 'b) F.t M.t }
-
-    (* The prefixed builder, exactly as gpmapM_pre is to gpmapM: the callback receives the outer-prefix bplus, and builds a value at the prefixed dimension. *)
-    type ('n, 'p, 'b) builderM_pre = {
-      build : 'm 'mb. ('m, 'n) sface -> ('m, 'p, 'mb) D.bplus -> ('mb, 'b) F.t M.t;
-    }
-
-    let rec gbuildM_pre : type m own p w cf n b.
-        m D.t ->
-        p D.fwd ->
-        (own, p, w) D.fplus ->
-        (m, cf, n) D.bplus ->
-        (own, cf) Fw.fwsface ->
-        (n, p, b) builderM_pre ->
-        (m, w, b) gt M.t =
-     fun m p fp mc d g ->
-      match m with
-      | Word Zero ->
-          let (Bplus dbp) = D.bplus (Fw.dom_fwsface d) in
-          let (Bplus mb) = D.bplus p in
-          let dbp_full = D.bplus_bplus dbp mb fp in
-          M.apply (g.build (Fw.sface_of_fw dbp mc d) mb) @@ fun x -> Leaf (dbp_full, x)
-      | Word (Suc (m1, g0)) ->
-          let (Wrap l) = Endpoints.wrapped () in
-          M.apply
-            (M.zip
-               (fun () ->
-                 BwvM.mapM
-                   (fun e -> gbuildM_pre (Word m1) p fp (Append_cons mc) (Fw.End (g0, e, d)) g)
-                   (Endpoints.indices l))
-               (fun () -> gbuildM_pre (Word m1) p (Cons fp) (Append_cons mc) (Fw.Mid (g0, d)) g))
-          @@ fun (ends, mid) -> Branch (g0, l, ends, mid)
-
-    let buildM : type n b. n D.t -> (n, b) builderM -> (n, b) t M.t =
-     fun n g ->
-      let g' : (n, nil, b) builderM_pre =
-        {
-          build =
-            (fun (type m mb) (fa : (m, n) sface) (mb : (m, nil, mb) D.bplus) : (mb, b) F.t M.t ->
-              match mb with
-              | Append_nil -> g.build fa);
-        } in
-      gbuildM_pre n Nil Nil Append_nil Fw.Zero g'
-
-    (* TODO: Redefine buildM in terms of pbuildM *)
-
-    (* The multi-output builder is to the single builder buildM as the multi-output traversal pmapM is to the single traversal mmapM: it produces a whole hlist of cubes at once, with no inputs.  It is thus gbuildM made plural, threading the same forwards decided word (see gbuildM and gpmapM) but producing an hgt of gt's rather than a single one. *)
-
-    type ('n, 'bs) pbuilderM = { build : 'm. ('m, 'n) sface -> ('m, 'bs) Heter.hft M.t }
-
-    type ('n, 'p, 'bs) pbuilderM_pre = {
-      build : 'm 'mb. ('m, 'n) sface -> ('m, 'p, 'mb) D.bplus -> ('mb, 'bs) Heter.hft M.t;
-    }
-
-    let rec gpbuildM_pre : type m own p w cf n bs.
-        m D.t ->
-        p D.fwd ->
-        (own, p, w) D.fplus ->
-        (m, cf, n) D.bplus ->
-        (own, cf) Fw.fwsface ->
-        (n, p, bs) pbuilderM_pre ->
-        bs Tlist.t ->
-        (m, w, bs) Heter.hgt M.t =
-     fun m p fp mc d g bs ->
-      match m with
-      | Word Zero ->
-          let (Bplus dbp) = D.bplus (Fw.dom_fwsface d) in
-          let (Bplus mb) = D.bplus p in
-          let dbp_full = D.bplus_bplus dbp mb fp in
-          M.apply (g.build (Fw.sface_of_fw dbp mc d) mb) @@ fun x -> Heter.leaf dbp_full x
-      | Word (Suc (m1, g0)) ->
-          let (Wrap l) = Endpoints.wrapped () in
-          let (Hgts newhs) = Heter.hgts_of_tlist bs in
-          M.apply
-            (M.zip
-               (fun () ->
-                 BwvM.pmapM
-                   (fun [ e ] ->
-                     M.apply (gpbuildM_pre (Word m1) p fp (Append_cons mc) (Fw.End (g0, e, d)) g bs)
-                     @@ fun xs -> Heter.hlist_of_hgt newhs xs)
-                   [ Endpoints.indices l ]
-                   (Heter.tlist_hgts newhs bs))
-               (fun () ->
-                 gpbuildM_pre (Word m1) p (Cons fp) (Append_cons mc) (Fw.Mid (g0, d)) g bs))
-          @@ fun (newends, newmid) -> Heter.branch g0 l newhs newends newmid
-
-    let pbuildM : type n bs.
-        n D.t -> (n, bs) pbuilderM -> bs Tlist.t -> (n, D.fwd_zero, bs) Heter.hgt M.t =
-     fun n g bs ->
-      let g' : (n, nil, bs) pbuilderM_pre =
-        {
-          build =
-            (fun (type m mb) (fa : (m, n) sface) (mb : (m, nil, mb) D.bplus) :
-                 (mb, bs) Heter.hft M.t ->
-              match mb with
-              | Append_nil -> g.build fa);
-        } in
-      gpbuildM_pre n Nil Nil Append_nil Fw.Zero g' bs
-  end
-
-  module Monadic (M : Monad.Plain) = struct
-    module A = Applicative.OfMonad (M)
-    include Applicatic (A)
-  end
-
-  (* Now we can specialize all of them to the identity monad. *)
-
-  module IdM = Monadic (Monad.Identity)
-
+  (* And the actual one for a t, which we can henceforth restrict our attention to.  It is the empty-prefix special case, where the bplus handed to the mapper is trivial and the hfts live at the face domain itself. *)
   let pmap : type n b bs cs.
-      (n, (b, bs) cons, cs) IdM.pmapperM ->
+      (n, (b, bs) cons, cs) pmapper ->
       (n, D.fwd_zero, (b, bs) cons) Heter.hgt ->
       cs Tlist.t ->
       (n, D.fwd_zero, cs) Heter.hgt =
-   fun g xs ys -> IdM.pmapM { map = (fun fa x -> g.map fa x) } xs ys
+   fun g xs cs ->
+    let g' : (n, nil, (b, bs) cons, cs) pmapper_pre =
+      {
+        map =
+          (fun (type m mb) (fa : (m, n) sface) (mb : (m, nil, mb) D.bplus)
+               (x : (mb, (b, bs) cons) Heter.hft) : (mb, cs) Heter.hft ->
+            match mb with
+            | Append_nil -> g.map fa x);
+      } in
+    gpmap_pre Nil Nil Append_nil Fw.Zero g' xs cs
+
+  type ('n, 'bs, 'c) mmapper = { map : 'm. ('m, 'n) sface -> ('m, 'bs) Heter.hft -> ('m, 'c) F.t }
 
   let mmap : type n b bs c.
-      (n, (b, bs) cons, c) IdM.mmapperM -> (n, D.fwd_zero, (b, bs) cons) Heter.hgt -> (n, c) t =
-   fun g xs -> IdM.mmapM { map = (fun fa x -> g.map fa x) } xs
+      (n, (b, bs) cons, c) mmapper -> (n, D.fwd_zero, (b, bs) cons) Heter.hgt -> (n, c) t =
+   fun g xs ->
+    let [ ys ] =
+      pmap
+        {
+          map =
+            (fun fa x ->
+              let y = g.map fa x in
+              (* Apparently writing [y] is insufficiently polymorphic *)
+              y @: []);
+        }
+        xs (Cons Nil) in
+    ys
+
+  type ('n, 'bs) miterator = { it : 'm. ('m, 'n) sface -> ('m, 'bs) Heter.hft -> unit }
 
   let miter : type n b bs.
-      (n, (b, bs) cons) IdM.miteratorM -> (n, D.fwd_zero, (b, bs) cons) Heter.hgt -> unit =
-   fun g xs -> IdM.miterM { it = (fun fa x -> g.it fa x) } xs
+      (n, (b, bs) cons) miterator -> (n, D.fwd_zero, (b, bs) cons) Heter.hgt -> unit =
+   fun g xs ->
+    let [] =
+      pmap
+        {
+          map =
+            (fun fa x ->
+              g.it fa x;
+              hnil);
+        }
+        xs Nil in
+    ()
 
-  let build : type n b. n D.t -> (n, b) IdM.builderM -> (n, b) t =
-   fun n g -> IdM.buildM n { build = (fun fa -> g.build fa) }
+  (* A binary iterator over two cubes of the *same* functor F (but possibly different parameters b1, b2).  It is defined in terms of the generic variadic miter, but crucially the existential-opening of the element family (e.g. BindFam) happens in the *caller's* it2, checked against this plain fixed-arity-2 signature, NOT inside the rank-2 field passed to miter (where x and y stay abstract and are merely forwarded).  So miter is only ever instantiated at an abstract 2-element Tlist with no existential-opening in the rank-2 field, which is cheap.  Calling miter [ c1; c2 ] *directly* on two GADT-family cubes, opening the existentials in its rank-2 field at the concrete Tlist, is what causes a catastrophic type-inference blowup (see the Pi arm of equal_head in core/equal.ml); this wrapper keeps the two ingredients apart. *)
+  type ('n, 'b1, 'b2) miterator2 = {
+    it2 : 'm. ('m, 'n) sface -> ('m, 'b1) F.t -> ('m, 'b2) F.t -> unit;
+  }
+
+  let miter2 : type n b1 b2. (n, b1, b2) miterator2 -> (n, b1) t -> (n, b2) t -> unit =
+   fun g xs ys -> miter { it = (fun fa [ x; y ] -> g.it2 fa x y) } [ xs; ys ]
+
+  (* The builder function isn't quite a special case of the generic traversal, since it needs to maintain different information when constructing a cube from scratch. *)
+
+  type ('n, 'b) builder = { build : 'm. ('m, 'n) sface -> ('m, 'b) F.t }
+
+  (* The prefixed builder, exactly as gpmap_pre is to gpmap: the callback receives the outer-prefix bplus, and builds a value at the prefixed dimension. *)
+  type ('n, 'p, 'b) builder_pre = {
+    build : 'm 'mb. ('m, 'n) sface -> ('m, 'p, 'mb) D.bplus -> ('mb, 'b) F.t;
+  }
+
+  let rec gbuild_pre : type m own p w cf n b.
+      m D.t ->
+      p D.fwd ->
+      (own, p, w) D.fplus ->
+      (m, cf, n) D.bplus ->
+      (own, cf) Fw.fwsface ->
+      (n, p, b) builder_pre ->
+      (m, w, b) gt =
+   fun m p fp mc d g ->
+    match m with
+    | Word Zero ->
+        let (Bplus dbp) = D.bplus (Fw.dom_fwsface d) in
+        let (Bplus mb) = D.bplus p in
+        let dbp_full = D.bplus_bplus dbp mb fp in
+        let x = g.build (Fw.sface_of_fw dbp mc d) mb in
+        Leaf (dbp_full, x)
+    | Word (Suc (m1, g0)) ->
+        let (Wrap l) = Endpoints.wrapped () in
+        let ends =
+          Bwv.map
+            (fun e -> gbuild_pre (Word m1) p fp (Append_cons mc) (Fw.End (g0, e, d)) g)
+            (Endpoints.indices l) in
+        let mid = gbuild_pre (Word m1) p (Cons fp) (Append_cons mc) (Fw.Mid (g0, d)) g in
+        Branch (g0, l, ends, mid)
+
+  let build : type n b. n D.t -> (n, b) builder -> (n, b) t =
+   fun n g ->
+    let g' : (n, nil, b) builder_pre =
+      {
+        build =
+          (fun (type m mb) (fa : (m, n) sface) (mb : (m, nil, mb) D.bplus) : (mb, b) F.t ->
+            match mb with
+            | Append_nil -> g.build fa);
+      } in
+    gbuild_pre n Nil Nil Append_nil Fw.Zero g'
+
+  (* TODO: Redefine build in terms of pbuild *)
+
+  (* The multi-output builder is to the single builder build as the multi-output traversal pmap is to the single traversal mmap: it produces a whole hlist of cubes at once, with no inputs.  It is thus gbuild made plural, threading the same forwards decided word (see gbuild and gpmap) but producing an hgt of gt's rather than a single one. *)
+
+  type ('n, 'bs) pbuilder = { build : 'm. ('m, 'n) sface -> ('m, 'bs) Heter.hft }
+
+  type ('n, 'p, 'bs) pbuilder_pre = {
+    build : 'm 'mb. ('m, 'n) sface -> ('m, 'p, 'mb) D.bplus -> ('mb, 'bs) Heter.hft;
+  }
+
+  let rec gpbuild_pre : type m own p w cf n bs.
+      m D.t ->
+      p D.fwd ->
+      (own, p, w) D.fplus ->
+      (m, cf, n) D.bplus ->
+      (own, cf) Fw.fwsface ->
+      (n, p, bs) pbuilder_pre ->
+      bs Tlist.t ->
+      (m, w, bs) Heter.hgt =
+   fun m p fp mc d g bs ->
+    match m with
+    | Word Zero ->
+        let (Bplus dbp) = D.bplus (Fw.dom_fwsface d) in
+        let (Bplus mb) = D.bplus p in
+        let dbp_full = D.bplus_bplus dbp mb fp in
+        let x = g.build (Fw.sface_of_fw dbp mc d) mb in
+        Heter.leaf dbp_full x
+    | Word (Suc (m1, g0)) ->
+        let (Wrap l) = Endpoints.wrapped () in
+        let (Hgts newhs) = Heter.hgts_of_tlist bs in
+        let newends =
+          Bwv.pmap
+            (fun [ e ] ->
+              let xs = gpbuild_pre (Word m1) p fp (Append_cons mc) (Fw.End (g0, e, d)) g bs in
+              Heter.hlist_of_hgt newhs xs)
+            [ Endpoints.indices l ]
+            (Heter.tlist_hgts newhs bs) in
+        let newmid = gpbuild_pre (Word m1) p (Cons fp) (Append_cons mc) (Fw.Mid (g0, d)) g bs in
+        Heter.branch g0 l newhs newends newmid
+
+  let pbuild : type n bs.
+      n D.t -> (n, bs) pbuilder -> bs Tlist.t -> (n, D.fwd_zero, bs) Heter.hgt =
+   fun n g bs ->
+    let g' : (n, nil, bs) pbuilder_pre =
+      {
+        build =
+          (fun (type m mb) (fa : (m, n) sface) (mb : (m, nil, mb) D.bplus) : (mb, bs) Heter.hft ->
+            match mb with
+            | Append_nil -> g.build fa);
+      } in
+    gpbuild_pre n Nil Nil Append_nil Fw.Zero g' bs
 
   (* A "subcube" of a cube of dimension n, determined by a face of n with dimension k, is the cube of dimension k consisting of the elements indexed by faces that factor through the given one. *)
   let subcube : type m n b. (m, n) sface -> (n, b) t -> (m, b) t =

@@ -150,83 +150,31 @@ end
 
 (* Now we can define the general heterogeneous traversal. *)
 
-module Applicatic (M : Applicative.Plain) = struct
-  open Applicative.Ops (M)
-
-  let rec pmapM : type x xs ys n.
-      ((x, xs) cons hlist -> ys hlist M.t) ->
-      ((x, xs) cons, n) Heter.ht ->
-      ys Tlist.t ->
-      (ys, n) Heter.ht M.t =
-   fun f xss ys ->
-    match xss with
-    | Emp :: _ -> return (Heter.emp ys)
-    | Snoc (xs, x) :: xss ->
-        M.apply
-          (M.zip (fun () -> pmapM f (xs :: Heter.head xss) ys) (fun () -> f (x :: Heter.tail xss)))
-        @@ fun (fxs, fx) -> Heter.snoc fxs fx
-
-  (* With specializations to simple arity possibly-monadic maps and iterators.  *)
-
-  let miterM : type x xs n.
-      ((x, xs) cons hlist -> unit M.t) -> ((x, xs) cons, n) Heter.ht -> unit M.t =
-   fun f xss -> M.apply (pmapM (fun x -> M.apply (f x) @@ fun () -> []) xss Nil) @@ fun [] -> ()
-
-  let mmapM : type x xs y n.
-      ((x, xs) cons hlist -> y M.t) -> ((x, xs) cons, n) Heter.ht -> (y, n) t M.t =
-   fun f xs ->
-    M.apply (pmapM (fun x -> M.apply (f x) (fun y -> [ y ])) xs (Cons Nil)) (fun [ ys ] -> ys)
-
-  let mapM : type x y n. (x -> y M.t) -> (x, n) t -> (y, n) t M.t =
-   fun f xs -> mmapM (fun [ x ] -> f x) [ xs ]
-
-  let mapM2 : type x y z n. (x -> y -> z M.t) -> (x, n) t -> (y, n) t -> (z, n) t M.t =
-   fun f xs ys -> mmapM (fun [ x; y ] -> f x y) [ xs; ys ]
-
-  let mapM1_2 : type x y z n. (x -> (y * z) M.t) -> (x, n) t -> ((y, n) t * (z, n) t) M.t =
-   fun f xs ->
-    let open Applicative.Ops (M) in
-    M.apply (pmapM (fun [ x ] -> M.apply (f x) @@ fun (y, z) -> [ y; z ]) [ xs ] (Cons (Cons Nil)))
-    @@ fun [ ys; zs ] -> (ys, zs)
-
-  let mapM1_3 : type x y z w n.
-      (x -> (y * z * w) M.t) -> (x, n) t -> ((y, n) t * (z, n) t * (w, n) t) M.t =
-   fun f xs ->
-    let open Applicative.Ops (M) in
-    M.apply
-      (pmapM
-         (fun [ x ] -> M.apply (f x) @@ fun (y, z, w) -> [ y; z; w ])
-         [ xs ] (Cons (Cons (Cons Nil))))
-    @@ fun [ ys; zs; ws ] -> (ys, zs, ws)
-
-  let iterM : type x n. (x -> unit M.t) -> (x, n) t -> unit M.t =
-   fun f xs -> miterM (fun [ x ] -> f x) [ xs ]
-
-  let iterM2 : type x y n. (x -> y -> unit M.t) -> (x, n) t -> (y, n) t -> unit M.t =
-   fun f xs ys -> miterM (fun [ x; y ] -> f x y) [ xs; ys ]
-end
-
-module Monadic (M : Monad.Plain) = struct
-  module A = Applicative.OfMonad (M)
-  include Applicatic (A)
-end
-
-let pmap : type x xs ys n.
+let rec pmap : type x xs ys n.
     ((x, xs) cons hlist -> ys hlist) -> ((x, xs) cons, n) Heter.ht -> ys Tlist.t -> (ys, n) Heter.ht
     =
  fun f xss ys ->
-  let open Monadic (Monad.Identity) in
-  pmapM f xss ys
-
-let mmap : type x xs y n. ((x, xs) cons hlist -> y) -> ((x, xs) cons, n) Heter.ht -> (y, n) t =
- fun f xs ->
-  let open Monadic (Monad.Identity) in
-  mmapM f xs
+  match xss with
+  | Emp :: _ -> Heter.emp ys
+  | Snoc (xs, x) :: xss ->
+      let fxs = pmap f (xs :: Heter.head xss) ys in
+      let fx = f (x :: Heter.tail xss) in
+      Heter.snoc fxs fx
 
 let miter : type x xs n. ((x, xs) cons hlist -> unit) -> ((x, xs) cons, n) Heter.ht -> unit =
  fun f xss ->
-  let open Monadic (Monad.Identity) in
-  miterM f xss
+  let [] =
+    pmap
+      (fun x ->
+        f x;
+        [])
+      xss Nil in
+  ()
+
+let mmap : type x xs y n. ((x, xs) cons hlist -> y) -> ((x, xs) cons, n) Heter.ht -> (y, n) t =
+ fun f xs ->
+  let [ ys ] = pmap (fun x -> [ f x ]) xs (Cons Nil) in
+  ys
 
 let map : type a b n. (a -> b) -> (a, n) t -> (b, n) t = fun f xs -> mmap (fun [ x ] -> f x) [ xs ]
 

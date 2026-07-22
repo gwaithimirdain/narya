@@ -2239,10 +2239,13 @@ and is_empty : type mode. (mode, kinetic) value -> bool =
 
 and any_empty : type mode n. (n, mode) modal_binding_cube list -> bool =
  fun nfss ->
-  let module CM = CubeOf.Monadic (Monad.State (Bool)) in
   List.fold_left
     (fun s (Modal (_modality, nfs)) ->
-      snd (CM.miterM { it = (fun _ [ x ] s -> ((), s || is_empty (Binding.value x).ty)) } [ nfs ] s))
+      let s = ref s in
+      CubeOf.miter
+        { it = (fun _ [ x ] -> if is_empty (Binding.value x).ty then s := true) }
+        [ nfs ];
+      !s)
     false nfss
 
 and check_data : type mode a b i.
@@ -3902,24 +3905,17 @@ and synth_arg_cube : type dom modality mode a b n c.
     | (_, { loc; _ }, { value = `Explicit; _ }) :: _, Pos _, false ->
         fatal ?loc (Nonsynthesizing ("primary argument with implicit " ^ which ^ " boundaries"))
   in
-  let module M = Monad.State (struct
-    type t =
-      Asai.Range.t option
-      * a check located
-      * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list
-  end) in
-  (* Pick up the right number of arguments for the dimension, leaving the others for a later call to synth_app.  Then check each argument against the corresponding type in "doms", instantiated at the appropriate evaluated previous arguments, and evaluate it, producing Cubes of checked terms and values.  Since each argument has to be checked against a type instantiated at the *values* of the previous ones, we also store those in a hashtable as we go. *)
+  (* Pick up the right number of arguments for the dimension, leaving the others for a later call to synth_app.  Then check each argument against the corresponding type in "doms", instantiated at the appropriate evaluated previous arguments, and evaluate it, producing Cubes of checked terms and values.  Since each argument has to be checked against a type instantiated at the *values* of the previous ones, we also store those in a hashtable as we go.  We thread the leftover arguments through the cube iteration in a mutable reference. *)
   let eargtbl = Hashtbl.create 10 in
-  let [ cargs; eargs ], (newloc, newfn, rest) =
-    let open CubeOf.Monadic (M) in
+  let state = ref (sfnloc, fn, args) in
+  let first = ref true in
+  let [ cargs; eargs ] =
     let open CubeOf.Infix in
-    let first = ref true in
-    pmapM
+    CubeOf.pmap
       {
         map =
           (fun fa [ dom ] ->
-            let open Monad.Ops (M) in
-            let* loc, f, ts = M.get in
+            let loc, f, ts = !state in
             (* The type of this argument is obtained by instantiating the domain higher-dimensional type at the previous arguments. *)
             let ty =
               inst dom
@@ -3930,7 +3926,7 @@ and synth_arg_cube : type dom modality mode a b n c.
                        (fun fc ->
                          Hashtbl.find eargtbl (SFace_of (comp_sface fa (sface_of_tface fc))));
                    }) in
-            let* ctm, tm =
+            let ctm, tm =
               match (pface_of_sface fa, taken_args) with
               (* If we are synthesizing the implicit boundary and this is a proper face, we look up the corresponding normal value, check that it has the correct type, and read it back to get the required checked term. *)
               | `Proper pfa, Given (toploc, nk, argtyargs) ->
@@ -3949,10 +3945,10 @@ and synth_arg_cube : type dom modality mode a b n c.
                                  why;
                                }));
                   let ctm = readback_at lctx etm ety in
-                  return (ctm, etm)
+                  (ctm, etm)
               (* Otherwise, we pull an argument of the appropriate implicitness, check it against the correct type. *)
               | _ ->
-                  let* tm =
+                  let tm =
                     match ts with
                     | [] -> with_loc loc @@ fun () -> fatal not_enough
                     | (l, t, ({ value = i; loc } as impl)) :: ts ->
@@ -3970,22 +3966,23 @@ and synth_arg_cube : type dom modality mode a b n c.
                                    "argument",
                                    "expecting implicit boundary " ^ which ^ " argument" ))
                         | _ -> ());
-                        let* () = M.put (l, locate_opt l (Synth (App (f, t, impl))), ts) in
-                        return t in
+                        state := (l, locate_opt l (Synth (App (f, t, impl))), ts);
+                        t in
                   let tm =
                     match tm.value with
                     | Some value -> { value; loc = tm.loc }
                     | None -> fatal ?loc:tm.loc Invalid_nullary_application in
                   let ctm = check (Kinetic `Nolet) lctx tm ty in
                   let etm = eval_term (Ctx.env lctx) ctm in
-                  return (ctm, etm) in
+                  (ctm, etm) in
             (* In both cases, we store the resulting value term as a normal in the hashtable of previous values, to use in instantiating later types. *)
             let ntm = { tm; ty } in
             Hashtbl.add eargtbl (SFace_of fa) ntm;
             first := false;
-            return (ctm @: [ choose tm ntm ]));
+            ctm @: [ choose tm ntm ]);
       }
-      [ doms ] (Cons (Cons Nil)) (sfnloc, fn, args) in
+      [ doms ] (Cons (Cons Nil)) in
+  let newloc, newfn, rest = !state in
   ((Modal (modality, plus, cargs), eargs), (newloc, newfn, rest))
 
 and synth_app : type dom modality mode a b k n.
@@ -4039,33 +4036,33 @@ and synth_inst : type mode a b n.
           [ TubeOf.pboundary (D.zero_plus m) msuc tyargs ] in
       let (Wrap l) = Endpoints.wrapped () in
       let doms = TubeOf.to_cube_bwv k l tyargs1 in
-      let module M = Monad.State (struct
-        type t =
-          Asai.Range.t option
-          * a check located
-          * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list
-      end) in
-      let open Bwv.Monadic (M) in
       let idm = Modality.id (Ctx.mode ctx) in
-      let (cargs, nargs), (newloc, newfn, rest) =
+      (* We thread the leftover arguments through the vector iteration in a mutable reference. *)
+      let state = ref (sfn.loc, fn, args) in
+      let cargs, nargs =
         match Bwv.length doms with
         | Nat (Suc _) ->
-            mapM1_2
-              (fun doms state ->
-                let (Modal (Path (Zero, _), Plus_lock (Zero _, Zero), cargs), eargs), state =
-                  synth_arg_cube ~not_enough:Not_enough_arguments_to_instantiation
-                    ~which:"instantiation" ctx idm
-                    (fun _ ntm -> ntm)
-                    doms state in
-                (((cargs : (nminusone, (mode, b, kinetic) term) CubeOf.t), eargs), state))
-              doms (sfn.loc, fn, args)
+            let [ cargs; nargs ] =
+              Bwv.pmap
+                (fun [ doms ] ->
+                  let (Modal (Path (Zero, _), Plus_lock (Zero _, Zero), cargs), eargs), s =
+                    synth_arg_cube ~not_enough:Not_enough_arguments_to_instantiation
+                      ~which:"instantiation" ctx idm
+                      (fun _ ntm -> ntm)
+                      doms !state in
+                  state := s;
+                  [ (cargs : (nminusone, (mode, b, kinetic) term) CubeOf.t); eargs ])
+                [ doms ] (Cons (Cons Nil)) in
+            (cargs, nargs)
         | Nat Zero -> (
             (* If instantiating a nullary dimension, we expect a single . argument. *)
             match args with
             | (l, ({ value = None; _ } as arg), i) :: rest ->
-                ((Emp, Emp), (l, locate_opt l (Synth (App (fn, arg, i))), rest))
+                state := (l, locate_opt l (Synth (App (fn, arg, i))), rest);
+                (Emp, Emp)
             | (_, { value = Some _; loc }, _) :: _ -> fatal ?loc Expected_nullary_application
             | [] -> fatal Not_enough_arguments_to_instantiation) in
+      let newloc, newfn, rest = !state in
       (* The synthesized type *of* the instantiation is itself a full instantiation of a universe, at the instantiations of the type arguments at the evaluated term arguments.  This is computed by tyof_inst. *)
       let cargs = TubeOf.of_cube_bwv m k msuc l cargs in
       let nargs = TubeOf.of_cube_bwv m k msuc l nargs in
@@ -4155,21 +4152,17 @@ and synth_lam : type mode a b c d n.
           let newctx = Ctx.ext ctx modality name.value edom in
           let xs = singleton_variables D.zero (View.hinted name.value edom) in
           (* Pull off either one explicit argument or a cube of mostly-implicit ones, of the correct dimension. *)
-          let module M = CubeOf.Monadic (Monad.State (struct
-            type t =
-              (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located)
-              list
-          end))
-          in
-          let _, rest =
-            M.buildM n
+          let state = ref args in
+          let (_ : (n, unit) CubeOf.t) =
+            CubeOf.build n
               {
                 build =
-                  (fun _ -> function
+                  (fun _ ->
+                    match !state with
                     | [] -> fatal Not_enough_arguments_to_function
-                    | _ :: xs -> ((), xs));
-              }
-              args in
+                    | _ :: xs -> state := xs);
+              } in
+          let rest = !state in
           (* Then we proceed recursively to check the body of the abstraction. *)
           let cbody, scod = synth_lam n newctx body argctx rest ty in
           let scod =

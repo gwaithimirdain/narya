@@ -85,8 +85,13 @@ end
 (* Test whether all the variables in a cube of bindings are free (none are let-bound). *)
 let all_free : type mode n. (n, mode Binding.t) CubeOf.t -> bool =
  fun b ->
-  let open CubeOf.Monadic (Monad.Maybe) in
-  Option.is_some (mmapM { map = (fun _ [ x ] -> Option.map (fun _ -> ()) (Binding.level x)) } [ b ])
+  let exception Bound in
+  try
+    CubeOf.miter
+      { it = (fun _ [ x ] -> if Option.is_none (Binding.level x) then raise_notrace Bound) }
+      [ b ];
+    true
+  with Bound -> false
 
 (* A context is a list of "entries", which can be either visible or invisible in the raw world.  An (f,n) entry contains f raw variables and an n-dimensional cube of checked variables. *)
 type (_, _, _, _, _) entry =
@@ -447,34 +452,29 @@ module Ordered = struct
       (mode, (b, (modality, n) dim_entry) snoc, Empty.t) lookup option =
    fun ctx vars filter i ->
     let modality = Modality.filter_modality filter in
-    let open CubeOf.Monadic (Monad.State (struct
-      type t = (mode, (b, (modality, n) dim_entry) snoc, Empty.t) lookup option
-    end))
-    in
-    match
-      miterM
-        {
-          it =
-            (fun fa [ x ] s ->
-              if Binding.level x = Some i then
-                ( (),
-                  Some
-                    (Lookup
-                       {
-                         insert = Now;
-                         result = `Var (Some i, fa);
-                         value = Binding.value x;
-                         dirt = Binding.dirt x;
-                         modality;
-                         filter;
-                         plus = plus_with_no_locks (Modality.tgt modality);
-                       }) )
-              else ((), s));
-        }
-        [ vars ] None
-    with
-    | (), Some v -> Some v
-    | (), None -> Option.map (pop_lookup modality (CubeOf.dim vars) filter) (find_level ctx i)
+    let result = ref None in
+    CubeOf.miter
+      {
+        it =
+          (fun fa [ x ] ->
+            if Binding.level x = Some i then
+              result :=
+                Some
+                  (Lookup
+                     {
+                       insert = Now;
+                       result = `Var (Some i, fa);
+                       value = Binding.value x;
+                       dirt = Binding.dirt x;
+                       modality;
+                       filter;
+                       plus = plus_with_no_locks (Modality.tgt modality);
+                     }));
+      }
+      [ vars ];
+    match !result with
+    | Some v -> Some v
+    | None -> Option.map (pop_lookup modality (CubeOf.dim vars) filter) (find_level ctx i)
 
   (* Every context has an underlying environment that substitutes each (level) variable for itself (index).  This environment ALWAYS HAS DIMENSION ZERO, and therefore in particular the variables don't need to come with any boundaries. *)
 
