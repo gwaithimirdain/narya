@@ -179,71 +179,69 @@ module Make (G : Decidable) (F : Fam2) = struct
 
   open Infix
 
-  module Applicatic (M : Applicative.Plain) = struct
-    open Applicative.Ops (M)
+  type ('asuc, 'g0, 'ps, 'qs) pmapper = {
+    map : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> ('a, 'qs) Heter.hft;
+  }
 
-    type ('asuc, 'g0, 'ps, 'qs) pmapperM = {
-      map : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> ('a, 'qs) Heter.hft M.t;
-    }
+  let rec gpmap : type a b ab g0 p ps qs.
+      (a, b, ab) W.bplus ->
+      (ab, g0, (p, ps) cons, qs) pmapper ->
+      (a, b, g0, (p, ps) cons) Heter.hgt ->
+      qs Tlist.t ->
+      (a, b, g0, qs) Heter.hgt =
+   fun ab f mss qs ->
+    match mss with
+    | Emp :: _ -> Heter.emp qs
+    | Match { bplus = ab'; now = v; later } :: mss ->
+        let fnow = f.map (W.insert_bplus Now ab' ab) (v :: Heter.nows ab' mss) in
+        let flater = gpmap (Append_cons ab) f (later :: Heter.later_match mss) qs in
+        Heter.map_match ab' fnow flater
+    | Miss { gen; apart; bplus = ab'; later } :: mss ->
+        let flater = gpmap (Append_cons ab) f (later :: Heter.later_miss apart mss) qs in
+        Heter.map_miss gen apart ab' flater
 
-    let rec gpmapM : type a b ab g0 p ps qs.
-        (a, b, ab) W.bplus ->
-        (ab, g0, (p, ps) cons, qs) pmapperM ->
-        (a, b, g0, (p, ps) cons) Heter.hgt ->
-        qs Tlist.t ->
-        (a, b, g0, qs) Heter.hgt M.t =
-     fun ab f mss qs ->
-      match mss with
-      | Emp :: _ -> return (Heter.emp qs)
-      | Match { bplus = ab'; now = v; later } :: mss ->
-          M.apply
-            (M.zip
-               (fun () -> f.map (W.insert_bplus Now ab' ab) (v :: Heter.nows ab' mss))
-               (fun () -> gpmapM (Append_cons ab) f (later :: Heter.later_match mss) qs))
-          @@ fun (fnow, flater) -> Heter.map_match ab' fnow flater
-      | Miss { gen; apart; bplus = ab'; later } :: mss ->
-          M.apply (gpmapM (Append_cons ab) f (later :: Heter.later_miss apart mss) qs)
-          @@ fun flater -> Heter.map_miss gen apart ab' flater
+  let pmap : type a g0 p ps qs.
+      (a, g0, (p, ps) cons, qs) pmapper ->
+      (a, nil, g0, (p, ps) cons) Heter.hgt ->
+      qs Tlist.t ->
+      (a, nil, g0, qs) Heter.hgt =
+   fun f mss qs -> gpmap Append_nil f mss qs
 
-    let pmapM : type a g0 p ps qs.
-        (a, g0, (p, ps) cons, qs) pmapperM ->
-        (a, nil, g0, (p, ps) cons) Heter.hgt ->
-        qs Tlist.t ->
-        (a, nil, g0, qs) Heter.hgt M.t =
-     fun f mss qs -> gpmapM Append_nil f mss qs
+  type ('asuc, 'g0, 'ps, 'q) mmapper = {
+    map : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> ('a, 'q) F.t;
+  }
 
-    type ('asuc, 'g0, 'ps, 'q) mmapperM = {
-      map : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> ('a, 'q) F.t M.t;
-    }
+  let mmap : type a g0 p ps q.
+      (a, g0, (p, ps) cons, q) mmapper ->
+      (a, nil, g0, (p, ps) cons) Heter.hgt ->
+      (a, nil, g0, q) gt =
+   fun f xs ->
+    let [ ys ] =
+      pmap
+        {
+          map =
+            (fun i x ->
+              let y = f.map i x in
+              y @: hnil);
+        }
+        xs (Cons Nil) in
+    ys
 
-    let mmapM : type a g0 p ps q.
-        (a, g0, (p, ps) cons, q) mmapperM ->
-        (a, nil, g0, (p, ps) cons) Heter.hgt ->
-        (a, nil, g0, q) gt M.t =
-     fun f xs ->
-      M.apply
-        (pmapM { map = (fun i x -> M.apply (f.map i x) @@ fun y -> y @: hnil) } xs (Cons Nil))
-      @@ fun [ ys ] -> ys
+  type ('asuc, 'g0, 'ps) miterator = {
+    it : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> unit;
+  }
 
-    type ('asuc, 'g0, 'ps) miteratorM = {
-      it : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> unit M.t;
-    }
-
-    let miterM : type a g0 p ps.
-        (a, g0, (p, ps) cons) miteratorM -> (a, nil, g0, (p, ps) cons) Heter.hgt -> unit M.t =
-     fun f xs ->
-      M.apply (pmapM { map = (fun i x -> M.apply (f.it i x) @@ fun () -> hnil) } xs Nil)
-      @@ fun [] -> ()
-  end
-
-  module Monadic (M : Monad.Plain) = struct
-    module A = Applicative.OfMonad (M)
-    include Applicatic (A)
-  end
-
-  module IdM = Monadic (Monad.Identity)
-
-  let pmap f xs qs = IdM.pmapM f xs qs
-  let mmap f xs = IdM.mmapM f xs
-  let miter f xs = IdM.miterM f xs
+  let miter : type a g0 p ps.
+      (a, g0, (p, ps) cons) miterator -> (a, nil, g0, (p, ps) cons) Heter.hgt -> unit =
+   fun f xs ->
+    let [] =
+      pmap
+        {
+          map =
+            (fun i x ->
+              f.it i x;
+              hnil);
+        }
+        xs Nil in
+    ()
 end

@@ -683,62 +683,33 @@ module Insmap (F : Fam) : sig
       | ( :: ) : ('e, 'i, 'v) t * ('e, 'i, 'vs) ht -> ('e, 'i, ('v, 'vs) cons) ht
   end
 
-  module Applicatic : functor (M : Applicative.Plain) -> sig
-    type ('evaluation, 'intrinsic, 'vs, 'ws) pmapperM = {
-      map :
-        'shared. ('evaluation, 'shared, 'intrinsic) insertion -> 'vs Heter.hft -> 'ws Heter.hft M.t;
-    }
-
-    val pmapM :
-      'a D.t ->
-      ('a, 'b, ('c, 'd) cons, 'e) pmapperM ->
-      ('a, 'b, ('c, 'd) cons) Heter.ht ->
-      'e Tlist.t ->
-      ('a, 'b, 'e) Heter.ht M.t
-
-    type ('evaluation, 'intrinsic, 'vs, 'w) mmapperM = {
-      map : 'shared. ('evaluation, 'shared, 'intrinsic) insertion -> 'vs Heter.hft -> 'w F.t M.t;
-    }
-
-    val mmapM :
-      'a D.t ->
-      ('a, 'b, ('c, 'd) cons, 'e) mmapperM ->
-      ('a, 'b, ('c, 'd) cons) Heter.ht ->
-      ('a, 'b, 'e) t M.t
-
-    type ('evaluation, 'intrinsic, 'vs) miteratorM = {
-      it : 'shared. ('evaluation, 'shared, 'intrinsic) insertion -> 'vs Heter.hft -> unit M.t;
-    }
-
-    val miterM :
-      'a D.t -> ('a, 'b, ('c, 'd) cons) miteratorM -> ('a, 'b, ('c, 'd) cons) Heter.ht -> unit M.t
-  end
-
-  module Monadic (M : Monad.Plain) : sig
-    module A : module type of Applicative.OfMonad (M)
-    include module type of Applicatic (A)
-  end
-
-  module IdM : module type of Monadic (Monad.Identity)
+  type ('evaluation, 'intrinsic, 'vs, 'ws) pmapper = {
+    map : 'shared. ('evaluation, 'shared, 'intrinsic) insertion -> 'vs Heter.hft -> 'ws Heter.hft;
+  }
 
   val pmap :
     'a D.t ->
-    ('a, 'b, ('c, 'd) cons, 'e) IdM.pmapperM ->
+    ('a, 'b, ('c, 'd) cons, 'e) pmapper ->
     ('a, 'b, ('c, 'd) cons) Heter.ht ->
     'e Tlist.t ->
-    ('a, 'b, 'e) Heter.ht IdM.A.t
+    ('a, 'b, 'e) Heter.ht
+
+  type ('evaluation, 'intrinsic, 'vs, 'w) mmapper = {
+    map : 'shared. ('evaluation, 'shared, 'intrinsic) insertion -> 'vs Heter.hft -> 'w F.t;
+  }
 
   val mmap :
     'a D.t ->
-    ('a, 'b, ('c, 'd) cons, 'e) IdM.mmapperM ->
+    ('a, 'b, ('c, 'd) cons, 'e) mmapper ->
     ('a, 'b, ('c, 'd) cons) Heter.ht ->
-    ('a, 'b, 'e) t IdM.A.t
+    ('a, 'b, 'e) t
+
+  type ('evaluation, 'intrinsic, 'vs) miterator = {
+    it : 'shared. ('evaluation, 'shared, 'intrinsic) insertion -> 'vs Heter.hft -> unit;
+  }
 
   val miter :
-    'a D.t ->
-    ('a, 'b, ('c, 'd) cons) IdM.miteratorM ->
-    ('a, 'b, ('c, 'd) cons) Heter.ht ->
-    unit IdM.A.t
+    'a D.t -> ('a, 'b, ('c, 'd) cons) miterator -> ('a, 'b, ('c, 'd) cons) Heter.ht -> unit
 end
 
 module InsmapOf : module type of Insmap (struct
@@ -888,51 +859,28 @@ module Pbijmap : functor (F : Fam2) -> sig
       | ( :: ) : ('e, 'i, 'v) t * ('e, 'i, 'vs) ht -> ('e, 'i, ('v, 'vs) cons) ht
   end
 
-  module Applicatic : functor (M : Applicative.Plain) -> sig
-    type ('evaluation, 'intrinsic, 'vs, 'ws) pmapperM = {
-      map : 'r. ('evaluation, 'intrinsic, 'r) pbij -> ('r, 'vs) Heter.hft -> ('r, 'ws) Heter.hft M.t;
-    }
-
-    val pmapM :
-      ('a, 'b, ('c, 'd) cons, 'e) pmapperM ->
-      ('a, 'b, ('c, 'd) cons) Heter.ht ->
-      'e Tlist.t ->
-      ('a, 'b, 'e) Heter.ht M.t
-
-    type ('evaluation, 'intrinsic, 'vs, 'w) mmapperM = {
-      map : 'r. ('evaluation, 'intrinsic, 'r) pbij -> ('r, 'vs) Heter.hft -> ('r, 'w) F.t M.t;
-    }
-
-    val mmapM :
-      ('a, 'b, ('c, 'd) cons, 'e) mmapperM -> ('a, 'b, ('c, 'd) cons) Heter.ht -> ('a, 'b, 'e) t M.t
-
-    type ('evaluation, 'intrinsic, 'vs) miteratorM = {
-      it : 'r. ('evaluation, 'intrinsic, 'r) pbij -> ('r, 'vs) Heter.hft -> unit M.t;
-    }
-
-    val miterM : ('a, 'b, ('c, 'd) cons) miteratorM -> ('a, 'b, ('c, 'd) cons) Heter.ht -> unit M.t
-  end
-
-  module Monadic (M : Monad.Plain) : sig
-    module A : module type of Applicative.OfMonad (M)
-    include module type of Applicatic (A)
-  end
-
-  module IdM : module type of Monadic (Monad.Identity)
+  type ('evaluation, 'intrinsic, 'vs, 'ws) pmapper = {
+    map : 'r. ('evaluation, 'intrinsic, 'r) pbij -> ('r, 'vs) Heter.hft -> ('r, 'ws) Heter.hft;
+  }
 
   val pmap :
-    ('a, 'b, ('c, 'd) cons, 'e) IdM.pmapperM ->
+    ('a, 'b, ('c, 'd) cons, 'e) pmapper ->
     ('a, 'b, ('c, 'd) cons) Heter.ht ->
     'e Tlist.t ->
-    ('a, 'b, 'e) Heter.ht IdM.A.t
+    ('a, 'b, 'e) Heter.ht
+
+  type ('evaluation, 'intrinsic, 'vs, 'w) mmapper = {
+    map : 'r. ('evaluation, 'intrinsic, 'r) pbij -> ('r, 'vs) Heter.hft -> ('r, 'w) F.t;
+  }
 
   val mmap :
-    ('a, 'b, ('c, 'd) cons, 'e) IdM.mmapperM ->
-    ('a, 'b, ('c, 'd) cons) Heter.ht ->
-    ('a, 'b, 'e) t IdM.A.t
+    ('a, 'b, ('c, 'd) cons, 'e) mmapper -> ('a, 'b, ('c, 'd) cons) Heter.ht -> ('a, 'b, 'e) t
 
-  val miter :
-    ('a, 'b, ('c, 'd) cons) IdM.miteratorM -> ('a, 'b, ('c, 'd) cons) Heter.ht -> unit IdM.A.t
+  type ('evaluation, 'intrinsic, 'vs) miterator = {
+    it : 'r. ('evaluation, 'intrinsic, 'r) pbij -> ('r, 'vs) Heter.hft -> unit;
+  }
+
+  val miter : ('a, 'b, ('c, 'd) cons) miterator -> ('a, 'b, ('c, 'd) cons) Heter.ht -> unit
 end
 
 module PbijmapOf : module type of Pbijmap (struct

@@ -34,52 +34,29 @@ module Make (G : Decidable) (F : Fam2) : sig
           -> ('a, 'b, 'g0, ('p, 'ps) cons) hgt
   end
 
-  module Applicatic (M : Applicative.Plain) : sig
-    type ('asuc, 'g0, 'ps, 'qs) pmapperM = {
-      map : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> ('a, 'qs) Heter.hft M.t;
-    }
-
-    val pmapM :
-      ('a, 'g0, ('p, 'ps) cons, 'qs) pmapperM ->
-      ('a, nil, 'g0, ('p, 'ps) cons) Heter.hgt ->
-      'qs Tlist.t ->
-      ('a, nil, 'g0, 'qs) Heter.hgt M.t
-
-    type ('asuc, 'g0, 'ps, 'q) mmapperM = {
-      map : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> ('a, 'q) F.t M.t;
-    }
-
-    val mmapM :
-      ('a, 'g0, ('p, 'ps) cons, 'q) mmapperM ->
-      ('a, nil, 'g0, ('p, 'ps) cons) Heter.hgt ->
-      ('a, nil, 'g0, 'q) gt M.t
-
-    type ('asuc, 'g0, 'ps) miteratorM = {
-      it : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> unit M.t;
-    }
-
-    val miterM :
-      ('a, 'g0, ('p, 'ps) cons) miteratorM -> ('a, nil, 'g0, ('p, 'ps) cons) Heter.hgt -> unit M.t
-  end
-
-  module Monadic (M : Monad.Plain) : sig
-    module A : module type of Applicative.OfMonad (M)
-    include module type of Applicatic (A)
-  end
-
-  module IdM : module type of Monadic (Monad.Identity)
+  type ('asuc, 'g0, 'ps, 'qs) pmapper = {
+    map : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> ('a, 'qs) Heter.hft;
+  }
 
   val pmap :
-    ('a, 'g0, ('p, 'ps) cons, 'qs) IdM.pmapperM ->
+    ('a, 'g0, ('p, 'ps) cons, 'qs) pmapper ->
     ('a, nil, 'g0, ('p, 'ps) cons) Heter.hgt ->
     'qs Tlist.t ->
     ('a, nil, 'g0, 'qs) Heter.hgt
 
+  type ('asuc, 'g0, 'ps, 'q) mmapper = {
+    map : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> ('a, 'q) F.t;
+  }
+
   val mmap :
-    ('a, 'g0, ('p, 'ps) cons, 'q) IdM.mmapperM ->
+    ('a, 'g0, ('p, 'ps) cons, 'q) mmapper ->
     ('a, nil, 'g0, ('p, 'ps) cons) Heter.hgt ->
     ('a, nil, 'g0, 'q) gt
 
+  type ('asuc, 'g0, 'ps) miterator = {
+    it : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> unit;
+  }
+
   val miter :
-    ('a, 'g0, ('p, 'ps) cons) IdM.miteratorM -> ('a, nil, 'g0, ('p, 'ps) cons) Heter.hgt -> unit
+    ('a, 'g0, ('p, 'ps) cons) miterator -> ('a, nil, 'g0, ('p, 'ps) cons) Heter.hgt -> unit
 end

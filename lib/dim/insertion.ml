@@ -407,80 +407,77 @@ module Insmap (F : Fam) = struct
 
   open Infix
 
-  module Applicatic (M : Applicative.Plain) = struct
-    open Applicative.Ops (M)
+  type ('evaluation, 'intrinsic, 'vs, 'ws) pmapper = {
+    map : 'shared. ('evaluation, 'shared, 'intrinsic) insertion -> 'vs Heter.hft -> 'ws Heter.hft;
+  }
 
-    type ('evaluation, 'intrinsic, 'vs, 'ws) pmapperM = {
-      map :
-        'shared. ('evaluation, 'shared, 'intrinsic) insertion -> 'vs Heter.hft -> 'ws Heter.hft M.t;
-    }
+  let rec pmap : type evaluation intrinsic v vs ws.
+      evaluation D.t ->
+      (evaluation, intrinsic, (v, vs) cons, ws) pmapper ->
+      (evaluation, intrinsic, (v, vs) cons) Heter.ht ->
+      ws Tlist.t ->
+      (evaluation, intrinsic, ws) Heter.ht =
+   fun evaluation f ms ws ->
+    match ms with
+    | Zero _ :: _ ->
+        let res = f.map (ins_zero evaluation) (Heter.zeros ms) in
+        Heter.zero res
+    | Suc (g0, _) :: _ -> pmap_suc evaluation g0 f ms ws
 
-    let rec pmapM : type evaluation intrinsic v vs ws.
-        evaluation D.t ->
-        (evaluation, intrinsic, (v, vs) cons, ws) pmapperM ->
-        (evaluation, intrinsic, (v, vs) cons) Heter.ht ->
-        ws Tlist.t ->
-        (evaluation, intrinsic, ws) Heter.ht M.t =
-     fun evaluation f ms ws ->
-      match ms with
-      | Zero _ :: _ ->
-          M.apply (f.map (ins_zero evaluation) (Heter.zeros ms)) @@ fun res -> Heter.zero res
-      | Suc (g0, _) :: _ -> pmapM_suc evaluation g0 f ms ws
+  and pmap_suc : type evaluation i1 g0t v vs ws.
+      evaluation D.t ->
+      g0t D.G.t ->
+      (evaluation, (i1, g0t) D.suc, (v, vs) cons, ws) pmapper ->
+      (evaluation, (i1, g0t) D.suc, (v, vs) cons) Heter.ht ->
+      ws Tlist.t ->
+      (evaluation, (i1, g0t) D.suc, ws) Heter.ht =
+   fun evaluation g0 f ms ws ->
+    let (Exists_cons irvs) = MapTimes.exists_cons (Heter.params ms) in
+    let irvs : (i1, (v, vs) cons, _) MapTimes.t = irvs in
+    let (Exists irws) = MapTimes.exists ws in
+    let irws : (i1, ws, _) MapTimes.t = irws in
+    let map : type a.
+        (a, g0t, evaluation) Tbwd.insert -> (a, _) Tup.Heter.hft -> (a, _) Tup.Heter.hft =
+     fun i x ->
+      let res =
+        pmap (D.uninsert i evaluation)
+          { map = (fun ins v -> f.map (Suc (ins, g0, i)) v) }
+          (Heter.unwrap x irvs) ws in
+      Heter.wrap res irws in
+    let rights = Tup.pmap { map } (Heter.right ms irvs) (MapTimes.cod irws) in
+    Heter.suc g0 irws rights
 
-    and pmapM_suc : type evaluation i1 g0t v vs ws.
-        evaluation D.t ->
-        g0t D.G.t ->
-        (evaluation, (i1, g0t) D.suc, (v, vs) cons, ws) pmapperM ->
-        (evaluation, (i1, g0t) D.suc, (v, vs) cons) Heter.ht ->
-        ws Tlist.t ->
-        (evaluation, (i1, g0t) D.suc, ws) Heter.ht M.t =
-     fun evaluation g0 f ms ws ->
-      let module T = Tup.Applicatic (M) in
-      let (Exists_cons irvs) = MapTimes.exists_cons (Heter.params ms) in
-      let irvs : (i1, (v, vs) cons, _) MapTimes.t = irvs in
-      let (Exists irws) = MapTimes.exists ws in
-      let irws : (i1, ws, _) MapTimes.t = irws in
-      let map : type a.
-          (a, g0t, evaluation) Tbwd.insert ->
-          (a, _) Tup.Heter.hft ->
-          (a, _) Tup.Heter.hft M.t =
-       fun i x ->
-        M.apply
-          (pmapM (D.uninsert i evaluation)
-             { map = (fun ins v -> f.map (Suc (ins, g0, i)) v) }
-             (Heter.unwrap x irvs) ws)
-        @@ fun res -> Heter.wrap res irws in
-      M.apply (T.pmapM { map } (Heter.right ms irvs) (MapTimes.cod irws)) @@ fun rights ->
-      Heter.suc g0 irws rights
+  type ('evaluation, 'intrinsic, 'vs, 'w) mmapper = {
+    map : 'shared. ('evaluation, 'shared, 'intrinsic) insertion -> 'vs Heter.hft -> 'w F.t;
+  }
 
-    type ('evaluation, 'intrinsic, 'vs, 'w) mmapperM = {
-      map : 'shared. ('evaluation, 'shared, 'intrinsic) insertion -> 'vs Heter.hft -> 'w F.t M.t;
-    }
+  let mmap e f xs =
+    let [ ys ] =
+      pmap e
+        {
+          map =
+            (fun i x ->
+              let y = f.map i x in
+              y @: hnil);
+        }
+        xs (Cons Nil) in
+    ys
 
-    let mmapM e f xs =
-      M.apply
-        (pmapM e { map = (fun i x -> M.apply (f.map i x) @@ fun y -> y @: hnil) } xs (Cons Nil))
-      @@ fun [ ys ] -> ys
+  type ('evaluation, 'intrinsic, 'vs) miterator = {
+    it : 'shared. ('evaluation, 'shared, 'intrinsic) insertion -> 'vs Heter.hft -> unit;
+  }
 
-    type ('evaluation, 'intrinsic, 'vs) miteratorM = {
-      it : 'shared. ('evaluation, 'shared, 'intrinsic) insertion -> 'vs Heter.hft -> unit M.t;
-    }
-
-    let miterM e f xs =
-      M.apply (pmapM e { map = (fun i x -> M.apply (f.it i x) @@ fun () -> hnil) } xs Nil)
-      @@ fun [] -> ()
-  end
-
-  module Monadic (M : Monad.Plain) = struct
-    module A = Applicative.OfMonad (M)
-    include Applicatic (A)
-  end
-
-  module IdM = Monadic (Monad.Identity)
-
-  let pmap f xs qs = IdM.pmapM f xs qs
-  let mmap f xs = IdM.mmapM f xs
-  let miter f xs = IdM.miterM f xs
+  let miter e f xs =
+    let [] =
+      pmap e
+        {
+          map =
+            (fun i x ->
+              f.it i x;
+              hnil);
+        }
+        xs Nil in
+    ()
 end
 
 module InsmapOf = Insmap (struct

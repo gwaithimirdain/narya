@@ -548,129 +548,125 @@ module Pbijmap (F : Fam2) = struct
 
   open Infix
 
-  module Applicatic (M : Applicative.Plain) = struct
-    open Applicative.Ops (M)
+  type ('evaluation, 'intrinsic, 's, 'vs, 'ws) gpmapper = {
+    remaining : 's D.fwd;
+    map :
+      'r2 'r.
+      ('evaluation, 'intrinsic, 'r2) pbij ->
+      ('r2, 's, 'r) D.bplus ->
+      ('r, 'vs) Heter.hft ->
+      ('r, 'ws) Heter.hft;
+  }
 
-    type ('evaluation, 'intrinsic, 's, 'vs, 'ws) gpmapperM = {
-      remaining : 's D.fwd;
-      map :
-        'r2 'r.
-        ('evaluation, 'intrinsic, 'r2) pbij ->
-        ('r2, 's, 'r) D.bplus ->
-        ('r, 'vs) Heter.hft ->
-        ('r, 'ws) Heter.hft M.t;
-    }
+  let rec gpmap : type evaluation intrinsic remaining v vs ws.
+      evaluation D.t ->
+      (evaluation, intrinsic, remaining, (v, vs) cons, ws) gpmapper ->
+      (evaluation, intrinsic, remaining, (v, vs) cons) Heter.hgt ->
+      ws Tlist.t ->
+      (evaluation, intrinsic, remaining, ws) Heter.hgt =
+   fun evaluation f ms ws ->
+    match ms with
+    | Zero _ :: _ ->
+        let (Bplus bp) = D.bplus f.remaining in
+        let res = f.map (Pbij (ins_zero evaluation, Zero)) bp (Heter.zeros bp ms) in
+        Heter.zero bp res
+    | Suc { g = g_outer; _ } :: _ -> gpmap_suc evaluation g_outer f ms ws
 
-    let rec gpmapM : type evaluation intrinsic remaining v vs ws.
-        evaluation D.t ->
-        (evaluation, intrinsic, remaining, (v, vs) cons, ws) gpmapperM ->
-        (evaluation, intrinsic, remaining, (v, vs) cons) Heter.hgt ->
-        ws Tlist.t ->
-        (evaluation, intrinsic, remaining, ws) Heter.hgt M.t =
-     fun evaluation f ms ws ->
-      match ms with
-      | Zero _ :: _ ->
-          let (Bplus bp) = D.bplus f.remaining in
-          M.apply (f.map (Pbij (ins_zero evaluation, Zero)) bp (Heter.zeros bp ms))
-          @@ fun res -> Heter.zero bp res
-      | Suc { g = g_outer; _ } :: _ -> gpmapM_suc evaluation g_outer f ms ws
+  and gpmap_suc : type evaluation i1 g0t s v vs ws.
+      evaluation D.t ->
+      g0t D.G.t ->
+      (evaluation, (i1, g0t) D.suc, s, (v, vs) cons, ws) gpmapper ->
+      (evaluation, (i1, g0t) D.suc, s, (v, vs) cons) Heter.hgt ->
+      ws Tlist.t ->
+      (evaluation, (i1, g0t) D.suc, s, ws) Heter.hgt =
+   fun evaluation g_outer f ms ws ->
+    let (Exists_cons irvs) = MapTimes.exists_cons (Heter.params ms) in
+    let irvs : (i1 * s, (v, vs) cons, _) MapTimes.t = irvs in
+    let (Exists irws) = MapTimes.exists ws in
+    let irws : (i1 * s, ws, _) MapTimes.t = irws in
+    let map : type a.
+        (a, g0t, evaluation) Tbwd.insert -> (a, _) Tup.Heter.hft -> (a, _) Tup.Heter.hft =
+     fun i x ->
+      let res =
+        gpmap (D.uninsert i evaluation)
+          {
+            f with
+            map =
+              (fun (Pbij (ins, shuf)) r12 v ->
+                f.map (Pbij (Suc (ins, g_outer, i), Right (g_outer, shuf))) r12 v);
+          }
+          (Heter.unwrap x irvs) ws in
+      Heter.wrap res irws in
+    let lefts =
+      gpmap evaluation
+        {
+          remaining = D.Cons (g_outer, f.remaining);
+          map =
+            (fun (Pbij (ins, shuf)) r12 v ->
+              let (Append_cons r12') = r12 in
+              f.map (Pbij (ins, Left (g_outer, shuf))) r12' v);
+        }
+        (Heter.left ms) ws in
+    let rights = Tup.pmap { map } (Heter.right ms irvs) (MapTimes.cod irws) in
+    Heter.suc g_outer lefts irws rights
 
-    and gpmapM_suc : type evaluation i1 g0t s v vs ws.
-        evaluation D.t ->
-        g0t D.G.t ->
-        (evaluation, (i1, g0t) D.suc, s, (v, vs) cons, ws) gpmapperM ->
-        (evaluation, (i1, g0t) D.suc, s, (v, vs) cons) Heter.hgt ->
-        ws Tlist.t ->
-        (evaluation, (i1, g0t) D.suc, s, ws) Heter.hgt M.t =
-     fun evaluation g_outer f ms ws ->
-      let module T = Tup.Applicatic (M) in
-      let (Exists_cons irvs) = MapTimes.exists_cons (Heter.params ms) in
-      let irvs : (i1 * s, (v, vs) cons, _) MapTimes.t = irvs in
-      let (Exists irws) = MapTimes.exists ws in
-      let irws : (i1 * s, ws, _) MapTimes.t = irws in
-      let map : type a.
-          (a, g0t, evaluation) Tbwd.insert ->
-          (a, _) Tup.Heter.hft ->
-          (a, _) Tup.Heter.hft M.t =
-       fun i x ->
-        M.apply
-          (gpmapM (D.uninsert i evaluation)
-             {
-               f with
-               map =
-                 (fun (Pbij (ins, shuf)) r12 v ->
-                   f.map (Pbij (Suc (ins, g_outer, i), Right (g_outer, shuf))) r12 v);
-             }
-             (Heter.unwrap x irvs) ws)
-        @@ fun res -> Heter.wrap res irws in
-      M.apply
-        (M.zip
-           (fun () ->
-             gpmapM evaluation
-               {
-                 remaining = D.Cons (g_outer, f.remaining);
-                 map =
-                   (fun (Pbij (ins, shuf)) r12 v ->
-                     let (Append_cons r12') = r12 in
-                     f.map (Pbij (ins, Left (g_outer, shuf))) r12' v);
-               }
-               (Heter.left ms) ws)
-           (fun () -> T.pmapM { map } (Heter.right ms irvs) (MapTimes.cod irws)))
-      @@ fun (lefts, rights) -> Heter.suc g_outer lefts irws rights
+  type ('evaluation, 'intrinsic, 'vs, 'ws) pmapper = {
+    map : 'r. ('evaluation, 'intrinsic, 'r) pbij -> ('r, 'vs) Heter.hft -> ('r, 'ws) Heter.hft;
+  }
 
-    type ('evaluation, 'intrinsic, 'vs, 'ws) pmapperM = {
-      map : 'r. ('evaluation, 'intrinsic, 'r) pbij -> ('r, 'vs) Heter.hft -> ('r, 'ws) Heter.hft M.t;
-    }
+  let gpmapper_of_pmapper : type evaluation intrinsic vs ws r2 r.
+      (evaluation, intrinsic, vs, ws) pmapper ->
+      (evaluation, intrinsic, r2) pbij ->
+      (r2, D.fwd_zero, r) D.bplus ->
+      (r, vs) Heter.hft ->
+      (r, ws) Heter.hft =
+   fun f p r12 ->
+    let Append_nil = r12 in
+    f.map p
 
-    let gpmapper_of_pmapper : type evaluation intrinsic vs ws r2 r.
-        (evaluation, intrinsic, vs, ws) pmapperM ->
-        (evaluation, intrinsic, r2) pbij ->
-        (r2, D.fwd_zero, r) D.bplus ->
-        (r, vs) Heter.hft ->
-        (r, ws) Heter.hft M.t =
-     fun f p r12 ->
-      let Append_nil = r12 in
-      f.map p
+  let pmap : type evaluation intrinsic v vs ws.
+      (evaluation, intrinsic, (v, vs) cons, ws) pmapper ->
+      (evaluation, intrinsic, (v, vs) cons) Heter.ht ->
+      ws Tlist.t ->
+      (evaluation, intrinsic, ws) Heter.ht =
+   fun f ((_, e) :: _ as ms) ws ->
+    let res =
+      gpmap e
+        { remaining = D.fwd_zero; map = (fun p r12 -> gpmapper_of_pmapper f p r12) }
+        (Heter.hgt_of_ht ms) ws in
+    Heter.ht_of_hgt res e
 
-    let pmapM : type evaluation intrinsic v vs ws.
-        (evaluation, intrinsic, (v, vs) cons, ws) pmapperM ->
-        (evaluation, intrinsic, (v, vs) cons) Heter.ht ->
-        ws Tlist.t ->
-        (evaluation, intrinsic, ws) Heter.ht M.t =
-     fun f ((_, e) :: _ as ms) ws ->
-      M.apply
-        (gpmapM e
-           { remaining = D.fwd_zero; map = (fun p r12 -> gpmapper_of_pmapper f p r12) }
-           (Heter.hgt_of_ht ms) ws)
-      @@ fun res -> Heter.ht_of_hgt res e
+  type ('evaluation, 'intrinsic, 'vs, 'w) mmapper = {
+    map : 'r. ('evaluation, 'intrinsic, 'r) pbij -> ('r, 'vs) Heter.hft -> ('r, 'w) F.t;
+  }
 
-    type ('evaluation, 'intrinsic, 'vs, 'w) mmapperM = {
-      map : 'r. ('evaluation, 'intrinsic, 'r) pbij -> ('r, 'vs) Heter.hft -> ('r, 'w) F.t M.t;
-    }
+  let mmap f xs =
+    let [ ys ] =
+      pmap
+        {
+          map =
+            (fun i x ->
+              let y = f.map i x in
+              y @: hnil);
+        }
+        xs (Cons Nil) in
+    ys
 
-    let mmapM f xs =
-      M.apply (pmapM { map = (fun i x -> M.apply (f.map i x) @@ fun y -> y @: hnil) } xs (Cons Nil))
-      @@ fun [ ys ] -> ys
+  type ('evaluation, 'intrinsic, 'vs) miterator = {
+    it : 'r. ('evaluation, 'intrinsic, 'r) pbij -> ('r, 'vs) Heter.hft -> unit;
+  }
 
-    type ('evaluation, 'intrinsic, 'vs) miteratorM = {
-      it : 'r. ('evaluation, 'intrinsic, 'r) pbij -> ('r, 'vs) Heter.hft -> unit M.t;
-    }
-
-    let miterM f xs =
-      M.apply (pmapM { map = (fun i x -> M.apply (f.it i x) @@ fun () -> hnil) } xs Nil)
-      @@ fun [] -> ()
-  end
-
-  module Monadic (M : Monad.Plain) = struct
-    module A = Applicative.OfMonad (M)
-    include Applicatic (A)
-  end
-
-  module IdM = Monadic (Monad.Identity)
-
-  let pmap f xs qs = IdM.pmapM f xs qs
-  let mmap f xs = IdM.mmapM f xs
-  let miter f xs = IdM.miterM f xs
+  let miter f xs =
+    let [] =
+      pmap
+        {
+          map =
+            (fun i x ->
+              f.it i x;
+              hnil);
+        }
+        xs Nil in
+    ()
 end
 
 module PbijmapOf = Pbijmap (struct
