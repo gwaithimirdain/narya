@@ -7,70 +7,71 @@ open Tbwd
 
 type (_, _) deg =
   | Zero : 'a D.t -> ('a, D.zero) deg
-  | Suc : ('a, 'b) deg * ('a, 'asuc) D.insert -> ('asuc, 'b D.suc) deg
+  | Suc : ('a, 'b) deg * 'g D.G.t * ('a, 'g, 'asuc) D.insert -> ('asuc, ('b, 'g) D.suc) deg
 
 (* Another possible definition, "inductive on the other side", is:
 
    type (_, _) deg =
      | Zero : (D.zero, D.zero) deg
-     | Deg : ('a, 'b) deg -> ('a D.suc, 'b) deg
-     | Perm : ('a, 'b) deg * ('b, 'bsuc) D.insert -> ('a D.suc, 'bsuc) deg
+     | Deg : ('a, 'b) deg -> (('a, unit) D.suc, 'b) deg
+     | Perm : ('a, 'b) deg * ('b, unit, 'bsuc) D.insert -> (('a, unit) D.suc, 'bsuc) deg
 *)
 
 let rec dom_deg : type m n. (m, n) deg -> m D.t = function
   | Zero a -> a
-  | Suc (s, i) -> D.insert i (dom_deg s) Unit
+  | Suc (s, g, i) -> D.insert i (dom_deg s) g
 
 let rec cod_deg : type m n. (m, n) deg -> n D.t = function
   | Zero _ -> D.zero
-  | Suc (s, _) -> D.suc (cod_deg s)
+  | Suc (s, g, _) -> D.suc (cod_deg s) g
 
 let rec id_deg : type n. n D.t -> (n, n) deg = function
   | Word Zero -> Zero D.zero
-  | Word (Suc (n, Unit)) -> Suc (id_deg (Word n), Now)
+  | Word (Suc (n, g)) -> Suc (id_deg (Word n), g, Now)
 
 (* By "residual" of a degeneracy, given an element of its codomain, we mean the image of that element together with the degeneracy obtained by removing that element from the codomain and its image from the domain. *)
 
-type (_, _) deg_residual =
-  | Residual : ('m, 'n) deg * ('m, 'msuc) D.insert -> ('msuc, 'n) deg_residual
+type (_, _, _) deg_residual =
+  | Residual : ('m, 'n) deg * 'g D.G.t * ('m, 'g, 'msuc) D.insert -> ('msuc, 'n, 'g) deg_residual
 
-let rec deg_residual : type m n npred. (m, n) deg -> (npred, n) D.insert -> (m, npred) deg_residual
-    =
+let rec deg_residual : type m n g npred.
+    (m, n) deg -> (npred, g, n) D.insert -> (m, npred, g) deg_residual =
  fun s k ->
   match (k, s) with
-  | Now, Suc (s, i) -> Residual (s, i)
-  | Later k, Suc (s, i) ->
-      let (Residual (s, j)) = deg_residual s k in
+  | Now, Suc (s, g, i) -> Residual (s, g, i)
+  | Later k, Suc (s, g, i) ->
+      let (Residual (s, g', j)) = deg_residual s k in
       let (Swap_inserts (i, j)) = D.swap_inserts i j in
-      Residual (Suc (s, j), i)
+      Residual (Suc (s, g, j), g', i)
 
 (* Using residuals, we can compose degeneracies. *)
 let rec comp_deg : type a b c. (b, c) deg -> (a, b) deg -> (a, c) deg =
  fun a b ->
   match a with
   | Zero _ -> Zero (dom_deg b)
-  | Suc (s, k) ->
-      let (Residual (t, i)) = deg_residual b k in
-      Suc (comp_deg s t, i)
+  | Suc (s, _, k) ->
+      let (Residual (t, g', i)) = deg_residual b k in
+      Suc (comp_deg s t, g', i)
 
 (* Dually, a "coresidual" of a degeneracy, given an element of its domain, is the coimage of that element, if any, together with the degeneracy obtained by removing that element from the domain and its coimage from the codomain. *)
 
-type (_, _) deg_coresidual =
-  | Coresidual_zero : ('m, 'n) deg -> ('m, 'n) deg_coresidual
-  | Coresidual_suc : ('m, 'n) deg * ('n, 'nsuc) D.insert -> ('m, 'nsuc) deg_coresidual
+(* The coresidual is indexed by the generator of the removed element, so that callers can see at the type level that the coimage has the same generator. *)
+type (_, _, _) deg_coresidual =
+  | Coresidual_zero : ('m, 'n) deg -> ('m, 'g, 'n) deg_coresidual
+  | Coresidual_suc : ('m, 'n) deg * ('n, 'g, 'nsuc) D.insert -> ('m, 'g, 'nsuc) deg_coresidual
 
-let rec deg_coresidual : type mpred m n.
-    (m, n) deg -> (mpred, m) D.insert -> (mpred, n) deg_coresidual =
+let rec deg_coresidual : type mpred g m n.
+    (m, n) deg -> (mpred, g, m) D.insert -> (mpred, g, n) deg_coresidual =
  fun s k ->
   match s with
   | Zero m -> Coresidual_zero (Zero (D.uninsert k m))
-  | Suc (s, j) -> (
-      match D.compare_inserts j k with
-      | Eq_inserts -> Coresidual_suc (s, Now)
-      | Neq_inserts (k', j') -> (
+  | Suc (s, g', j) -> (
+      match D.compare_gen_inserts j k with
+      | Eq_gen_inserts -> Coresidual_suc (s, Now)
+      | Neq_gen_inserts (k', j') -> (
           match deg_coresidual s k' with
-          | Coresidual_zero s' -> Coresidual_zero (Suc (s', j'))
-          | Coresidual_suc (s', i) -> Coresidual_suc (Suc (s', j'), Later i)))
+          | Coresidual_zero s' -> Coresidual_zero (Suc (s', g', j'))
+          | Coresidual_suc (s', i) -> Coresidual_suc (Suc (s', g', j'), Later i)))
 
 (* Extend a degeneracy by the identity on the right. *)
 let rec deg_plus : type m n k mk nk.
@@ -78,16 +79,16 @@ let rec deg_plus : type m n k mk nk.
  fun s nk mk ->
   match (nk, mk) with
   | Zero, Zero -> s
-  | Suc (nk, Unit), Suc (mk, Unit) -> Suc (deg_plus s nk mk, Now)
+  | Suc (nk, g), Suc (mk, _) -> Suc (deg_plus s nk mk, g, Now)
 
 (* Extend the domain of a codegeneracy by a number of degenerate points, leaving the codomain fixed. *)
 let rec deg_plus_dom : type m n k mk. (m, n) deg -> (m, k, mk) D.plus -> (mk, n) deg =
  fun s mk ->
   match s with
   | Zero m -> Zero (D.plus_out m mk)
-  | Suc (s, i) ->
+  | Suc (s, g, i) ->
       let (Insert_plus (mk', j)) = D.insert_plus i mk in
-      Suc (deg_plus_dom s mk', j)
+      Suc (deg_plus_dom s mk', g, j)
 
 (* Add together two degeneracies. *)
 let rec deg_plus_deg : type m n mn k l kl.
@@ -95,9 +96,9 @@ let rec deg_plus_deg : type m n mn k l kl.
  fun skm mn kl sln ->
   match (mn, sln) with
   | Zero, Zero _ -> deg_plus_dom skm kl
-  | Suc (mn', Unit), Suc (sln', i) ->
+  | Suc (mn', _), Suc (sln', g, i) ->
       let (Plus kl') = D.plus (dom_deg sln') in
-      Suc (deg_plus_deg skm mn' kl' sln', D.plus_insert kl' kl i)
+      Suc (deg_plus_deg skm mn' kl' sln', g, D.plus_insert kl' kl i)
 
 (* Extend a degeneracy by the identity on the left. *)
 let plus_deg : type m n mn l ml.
@@ -111,9 +112,19 @@ let rec swap_deg : type m n mn nm. (m, n, mn) D.plus -> (n, m, nm) D.plus -> (mn
   | Zero ->
       let Eq = D.plus_uniq mn (D.zero_plus (D.plus_right mn)) in
       id_deg (D.plus_right mn)
-  | Suc (nm', Unit) ->
+  | Suc (nm', g) ->
       let (Insert_plus (mn', i)) = D.insert_plus Now mn in
-      Suc (swap_deg mn' nm', i)
+      Suc (swap_deg mn' nm', g, i)
+
+(* Extend a deg [(c, ab) deg] by a new codomain element g inserted at a specified position in ab.  The new element corresponds to a new outermost domain element. *)
+let rec deg_with_extra : type c ab ab_suc g.
+    (c, ab) deg -> g D.G.t -> (ab, g, ab_suc) D.insert -> ((c, g) D.suc, ab_suc) deg =
+ fun d g i ->
+  match i with
+  | Now -> Suc (d, g, Now)
+  | Later j ->
+      let (Suc (d_inner, h, ins_d)) = d in
+      Suc (deg_with_extra d_inner g j, h, Later ins_d)
 
 (* ********** Comparing degeneracies ********** *)
 
@@ -123,17 +134,17 @@ let rec is_id_deg : type m n. (m, n) deg -> (m, n) Eq.t option = function
       match D.compare n D.zero with
       | Eq -> Some Eq
       | Neq -> None)
-  | Suc (p, Now) -> (
+  | Suc (p, _, Now) -> (
       match is_id_deg p with
       | Some Eq -> Some Eq
       | None -> None)
-  | Suc (_, Later _) -> None
+  | Suc (_, _, Later _) -> None
 
 (* A degeneracy of a positive dimension is still positive *)
 let pos_deg : type m n. n D.pos -> (m, n) deg -> m D.pos =
  fun n s ->
   match (n, s) with
-  | Pos _, Suc (s, i) -> D.insert_pos (dom_deg s) Unit i
+  | Pos _, Suc (s, g, i) -> D.insert_pos (dom_deg s) g i
 
 (* Are two degeneracies exactly equal? *)
 let deg_equal : type m n k l. (m, n) deg -> (k, l) deg -> unit option =
@@ -150,7 +161,7 @@ let rec deg_is_idext : type n l nl m k.
  fun nl s1 s2 ->
   match (nl, s2) with
   | Zero, _ -> deg_equal s1 s2
-  | Suc (nl, Unit), Suc (s2, Now) -> deg_is_idext nl s1 s2
+  | Suc (nl, _), Suc (s2, _, Now) -> deg_is_idext nl s1 s2
   | _ -> None
 
 (* We consider two degeneracies "equivalent" if they differ by an identity extension on the right (i.e. post-whiskering with an identity). *)
@@ -160,6 +171,7 @@ let deg_equiv : type m n k l. (m, n) deg -> (k, l) deg -> unit option =
   | Eq -> deg_equal s1 s2
   | Lt nl -> deg_is_idext nl s1 s2
   | Gt nl -> deg_is_idext nl s2 s1
+  | Incomparable -> None
 
 (* Every dimension is a degeneracy of zero. *)
 let deg_zero : type a. a D.t -> (a, D.zero) deg = fun a -> Zero a
@@ -198,7 +210,7 @@ type any_deg = Any_deg : ('m, 'n) deg -> any_deg
 let rec strings_of_deg : type a b. int -> (a, b) deg -> string list =
  fun i -> function
   | Zero a -> List.init (D.length a) (fun _ -> Endpoints.refl_string ())
-  | Suc (s, k) ->
+  | Suc (s, _, k) ->
       List_extra.insert (Tbwd.int_of_insert k) (string_of_int i) (strings_of_deg (i + 1) s)
 
 let string_of_deg : type a b. (a, b) deg -> string =
@@ -226,10 +238,13 @@ let rec deg_of_strings : type n a.
           (* IF we do find it, then what's left we can recurse into with an incremented expectation. *)
           match n with
           | Word Zero -> None
-          | Word (Suc (n_pred, Unit)) ->
-              let* (Insert_of_int j_idx) = D.insert_of_int n (N.int_of_index j) in
+          | Word (Suc (n_pred, _)) -> (
+              let* (Into (g, j_idx)) = D.insert_of_int n (N.int_of_index j) in
               let* (To s) = deg_of_strings (Word n_pred) xs (i + 1) in
-              return (To (Suc (s, j_idx)))))
+              (* Parsing user input requires a runtime check that the recursively-parsed degeneracy has the expected domain. *)
+              match D.compare (D.uninsert j_idx n) (dom_deg s) with
+              | Eq -> return (To (Suc (s, g, j_idx)))
+              | Neq -> None)))
 
 (* We could write the next function monadically to include the errors as options, but it's simpler to just raise a local exception. *)
 exception Invalid_direction_name of string
@@ -263,7 +278,7 @@ let deg_of_string : string -> any_deg option =
 
 (* A degeneracy is "locking" if it has degenerate external directions. *)
 let rec locking : type a b. (a, b) deg -> bool = function
-  | Suc (s, _) -> locking s
+  | Suc (s, _, _) -> locking s
   | Zero x -> (
       match D.compare x D.zero with
       | Eq -> false
@@ -271,5 +286,5 @@ let rec locking : type a b. (a, b) deg -> bool = function
 
 (* The word of dimensions degenerated by a degeneracy: those inserted into its domain that are not images of the codomain, i.e. the word at its base.  This is functorial: the degenerated word of a composite is the concatenation (up to permutation) of the degenerated words of the factors, and permutations degenerate nothing. *)
 let rec degenerated_dims : type a b. (a, b) deg -> D.wrapped = function
-  | Suc (s, _) -> degenerated_dims s
+  | Suc (s, _, _) -> degenerated_dims s
   | Zero x -> Wrap x

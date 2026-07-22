@@ -7,20 +7,20 @@ type (_, _) face = Face : ('m, 'n) sface * ('k, 'm) perm -> ('k, 'n) face
 
 let id_face : type n. n D.t -> (n, n) face = fun n -> Face (id_sface n, id_perm n)
 
-(* Faces are closed under composition, by way of a distributive law between permutations and strict faces. *)
+(* Faces are closed under composition, by way of a distributive law between permutations and strict faces, using the "residual" of a strict face and an index defined in Sface. *)
 
 let rec perm_sface : type m n k. (n, k) perm -> (m, n) sface -> (m, k) face =
  fun a b ->
   match a with
   | Zero -> Face (b, id_perm (dom_sface b))
-  | Suc (p, k) -> (
+  | Suc (p, g_perm, k) -> (
       match sface_residual b k with
       | Residual_End (f, e) ->
           let (Face (f', p')) = perm_sface p f in
-          Face (End (f', e), p')
+          Face (End (f', g_perm, e), p')
       | Residual_Mid (f, l) ->
           let (Face (f', p')) = perm_sface p f in
-          Face (Mid f', Suc (p', l)))
+          Face (Mid (f', g_perm), Suc (p', g_perm, l)))
 
 let comp_face : type m n k. (n, k) face -> (m, n) face -> (m, k) face =
  fun (Face (a, b)) (Face (c, d)) ->
