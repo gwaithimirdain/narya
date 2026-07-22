@@ -11,7 +11,6 @@ open Tface
 
 module Tube (F : Fam2) = struct
   module C = Cube (F)
-  open C.Infix
 
   (* An (n,k,n+k)-tube is like a (n+k)-cube but where the top k indices (the "instantiated" ones) are not all maximal.  Hence if k=0 it is empty, while if n=0 it contains everything except the top face.  An (m,k,m+k,w)-gtube is the part of such a tube with k dimensions left to be instantiated and m uninstantiated, m+k total dimensions left, and 'w the word of dimensions already decided (taken as Mid) on the path leading to it, as in Cube.  The ends of a Branch are complete cubes over the remaining dimensions; the mid adds its generator at the inner end of the decided word, with the witness stored in the Branch. *)
   type (_, _, _, _, _) gt =
@@ -149,8 +148,9 @@ module Tube (F : Fam2) = struct
 
     (* We can convert an hgt of (full, uninstantiated) tubes of constant lengths to a vector. *)
     let rec vec_of_hgt : type b k n bs.
-        (b, k, bs) Tlist.conses -> (D.zero, n, n, D.fwd_zero, bs) hgt -> ((D.zero, n, n, b) t, k) Vec.t
-        =
+        (b, k, bs) Tlist.conses ->
+        (D.zero, n, n, D.fwd_zero, bs) hgt ->
+        ((D.zero, n, n, b) t, k) Vec.t =
      fun bs xs ->
       match (bs, xs) with
       | Nil, [] -> []
@@ -189,11 +189,8 @@ module Tube (F : Fam2) = struct
      fun g l hs endss mids ->
       match (hs, endss, mids) with
       | Nil, [], [] -> []
-      | Cons hs, ends :: endss, mid :: mids ->
-          Branch (g, l, ends, mid) :: branch g l hs endss mids
+      | Cons hs, ends :: endss, mid :: mids -> Branch (g, l, ends, mid) :: branch g l hs endss mids
   end
-
-  module Infix = C.Infix
 
   (* Now the generic traversal.  There are two phases.  The first walks down the instantiated dimensions of the tube, accumulating the word 'a of dimensions decided as Mid so far.  Whenever it takes an End, everything below is an ordinary cube traversal; the second phase performs that traversal while accumulating the *inner* part of the eventual tface's payload strict face, and assembles the complete tface at each leaf using the End data and the Mid-prefix recorded by the first phase.  All the bookkeeping is associativity of word concatenation. *)
 
@@ -264,7 +261,7 @@ module Tube (F : Fam2) = struct
           map =
             (fun fa x ->
               let y = g.map fa x in
-              y @: []);
+              [ y ]);
         }
         xs ?ifzero (Cons Nil) in
     ys
@@ -285,7 +282,7 @@ module Tube (F : Fam2) = struct
           map =
             (fun fa x ->
               g.it fa x;
-              hnil);
+              []);
         }
         xs ?ifzero Nil in
     ()
@@ -317,8 +314,8 @@ module Tube (F : Fam2) = struct
         let mid = gbuild_r n nk1' (Append_cons pa) (Append_cons pnk) (Cons (g0, w)) g in
         Branch (g0, l, ends, mid)
 
-  let build : type n k nk b.
-      n D.t -> (n, k, nk) D.plus -> (n, k, nk, b) builder -> (n, k, nk, b) t =
+  let build : type n k nk b. n D.t -> (n, k, nk) D.plus -> (n, k, nk, b) builder -> (n, k, nk, b) t
+      =
    fun n nk g -> gbuild_r n nk Append_nil Append_nil Nil g
 
   (* TODO: Redefine build in terms of pbuild *)

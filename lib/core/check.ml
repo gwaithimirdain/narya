@@ -2239,14 +2239,12 @@ and is_empty : type mode. (mode, kinetic) value -> bool =
 
 and any_empty : type mode n. (n, mode) modal_binding_cube list -> bool =
  fun nfss ->
-  List.fold_left
-    (fun s (Modal (_modality, nfs)) ->
-      let s = ref s in
-      CubeOf.miter
-        { it = (fun _ [ x ] -> if is_empty (Binding.value x).ty then s := true) }
-        [ nfs ];
-      !s)
-    false nfss
+  let s = ref false in
+  List.iter
+    (fun (Modal (_modality, nfs)) ->
+      CubeOf.miter { it = (fun _ [ x ] -> if is_empty (Binding.value x).ty then s := true) } [ nfs ])
+    nfss;
+  !s
 
 and check_data : type mode a b i.
     discrete:unit Constant.Map.t option ->
@@ -3910,7 +3908,6 @@ and synth_arg_cube : type dom modality mode a b n c.
   let state = ref (sfnloc, fn, args) in
   let first = ref true in
   let [ cargs; eargs ] =
-    let open CubeOf.Infix in
     CubeOf.pmap
       {
         map =
@@ -3979,11 +3976,10 @@ and synth_arg_cube : type dom modality mode a b n c.
             let ntm = { tm; ty } in
             Hashtbl.add eargtbl (SFace_of fa) ntm;
             first := false;
-            ctm @: [ choose tm ntm ]);
+            [ ctm; choose tm ntm ]);
       }
       [ doms ] (Cons (Cons Nil)) in
-  let newloc, newfn, rest = !state in
-  ((Modal (modality, plus, cargs), eargs), (newloc, newfn, rest))
+  ((Modal (modality, plus, cargs), eargs), !state)
 
 and synth_app : type dom modality mode a b k n.
     (mode, a, b) Ctx.t ->
@@ -4162,9 +4158,8 @@ and synth_lam : type mode a b c d n.
                     | [] -> fatal Not_enough_arguments_to_function
                     | _ :: xs -> state := xs);
               } in
-          let rest = !state in
           (* Then we proceed recursively to check the body of the abstraction. *)
-          let cbody, scod = synth_lam n newctx body argctx rest ty in
+          let cbody, scod = synth_lam n newctx body argctx !state ty in
           let scod =
             eval_term (Ctx.env ctx)
               (pi

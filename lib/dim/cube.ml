@@ -12,10 +12,7 @@ module Cube (F : Fam2) = struct
   type (_, _, _) gt =
     | Leaf : (D.zero, 'w, 'r) D.bplus * ('r, 'b) F.t -> (D.zero, 'w, 'b) gt
     | Branch :
-        'g D.G.t
-        * 'l Endpoints.len
-        * (('m, 'w, 'b) gt, 'l) Bwv.t
-        * ('m, ('g, 'w) cons, 'b) gt
+        'g D.G.t * 'l Endpoints.len * (('m, 'w, 'b) gt, 'l) Bwv.t * ('m, ('g, 'w) cons, 'b) gt
         -> (('m, 'g) D.suc, 'w, 'b) gt
 
   (* A cube of dimension 'n is a gt of height 'n with nothing yet decided. *)
@@ -158,19 +155,8 @@ module Cube (F : Fam2) = struct
      fun g l hs endss mids ->
       match (hs, endss, mids) with
       | Nil, [], [] -> []
-      | Cons hs, ends :: endss, mid :: mids ->
-          Branch (g, l, ends, mid) :: branch g l hs endss mids
+      | Cons hs, ends :: endss, mid :: mids -> Branch (g, l, ends, mid) :: branch g l hs endss mids
   end
-
-  (* OCaml can't always tell from context what [x ; xs] should be; in particular it often fails to notice hfts.  So we also give a different syntax that is unambiguous.  *)
-  module Infix = struct
-    let hnil : type n. (n, nil) Heter.hft = []
-
-    let ( @: ) : type n x xs. (n, x) F.t -> (n, xs) Heter.hft -> (n, (x, xs) cons) Heter.hft =
-     fun x xs -> x :: xs
-  end
-
-  open Infix
 
   (* The function that we apply on a generic traversal must be polymorphic over the domain dimension of the face, so we wrap it in a record. *)
   type ('n, 'bs, 'cs) pmapper = {
@@ -210,8 +196,9 @@ module Cube (F : Fam2) = struct
           Bwv.pmap
             (fun (e :: brs) ->
               let xs =
-                gpmap_pre p fp (Append_cons mc) (Fw.End (g0, e, d)) g (Heter.hgt_of_hlist hs brs)
-                  cst in
+                gpmap_pre p fp (Append_cons mc)
+                  (Fw.End (g0, e, d))
+                  g (Heter.hgt_of_hlist hs brs) cst in
               Heter.hlist_of_hgt newhs xs)
             (Endpoints.indices l :: ends) (Heter.tlist_hgts newhs cst) in
         let newmid = gpmap_pre p (Cons fp) (Append_cons mc) (Fw.Mid (g0, d)) g mid cst in
@@ -227,8 +214,13 @@ module Cube (F : Fam2) = struct
     let g' : (n, nil, (b, bs) cons, cs) pmapper_pre =
       {
         map =
-          (fun (type m mb) (fa : (m, n) sface) (mb : (m, nil, mb) D.bplus)
-               (x : (mb, (b, bs) cons) Heter.hft) : (mb, cs) Heter.hft ->
+          (fun (type m mb)
+            (fa : (m, n) sface)
+            (mb : (m, nil, mb) D.bplus)
+            (x : (mb, (b, bs) cons) Heter.hft)
+            :
+            (mb, cs) Heter.hft
+          ->
             match mb with
             | Append_nil -> g.map fa x);
       } in
@@ -245,8 +237,7 @@ module Cube (F : Fam2) = struct
           map =
             (fun fa x ->
               let y = g.map fa x in
-              (* Apparently writing [y] is insufficiently polymorphic *)
-              y @: []);
+              [ y ]);
         }
         xs (Cons Nil) in
     ys
@@ -262,7 +253,7 @@ module Cube (F : Fam2) = struct
           map =
             (fun fa x ->
               g.it fa x;
-              hnil);
+              []);
         }
         xs Nil in
     ()
@@ -360,8 +351,7 @@ module Cube (F : Fam2) = struct
         let newmid = gpbuild_pre (Word m1) p (Cons fp) (Append_cons mc) (Fw.Mid (g0, d)) g bs in
         Heter.branch g0 l newhs newends newmid
 
-  let pbuild : type n bs.
-      n D.t -> (n, bs) pbuilder -> bs Tlist.t -> (n, D.fwd_zero, bs) Heter.hgt =
+  let pbuild : type n bs. n D.t -> (n, bs) pbuilder -> bs Tlist.t -> (n, D.fwd_zero, bs) Heter.hgt =
    fun n g bs ->
     let g' : (n, nil, bs) pbuilder_pre =
       {
@@ -397,8 +387,7 @@ module CubeOf = struct
     | Branch (g, l, ends, mid) ->
         Branch (g, l, Bwv.map (fun t -> lift n2 fp t) ends, lift n2 (Cons fp) mid)
 
-  let rec lower : type m w1 n2 w12 b.
-      (m, w12, b) gt -> (w1, n2, w12) D.fplus -> (m, w1, b) gt =
+  let rec lower : type m w1 n2 w12 b. (m, w12, b) gt -> (w1, n2, w12) D.fplus -> (m, w1, b) gt =
    fun tr fp ->
     match tr with
     | Leaf (bp, x) ->

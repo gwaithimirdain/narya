@@ -178,11 +178,6 @@ module Cube (F : Fam2) : sig
     (* val hft_cons : ('n, 'x) F.t -> ('n, 'xs) hft -> ('n, ('x, 'xs) Hlist.cons) hft *)
   end
 
-  module Infix : sig
-    val hnil : ('n, nil) Heter.hft
-    val ( @: ) : ('n, 'x) F.t -> ('n, 'xs) Heter.hft -> ('n, ('x, 'xs) cons) Heter.hft
-  end
-
   type ('n, 'bs, 'cs) pmapper = {
     map : 'm. ('m, 'n) sface -> ('m, 'bs) Heter.hft -> ('m, 'cs) Heter.hft;
   }
@@ -349,8 +344,6 @@ module Tube (F : Fam2) : sig
       ((D.zero, 'n, 'n, 'b) t, 'k) Vec.t
   end
 
-  module Infix : module type of C.Infix
-
   type ('n, 'k, 'nk, 'bs, 'cs) pmapper = {
     map : 'm. ('m, 'n, 'k, 'nk) tface -> ('m, 'bs) C.Heter.hft -> ('m, 'cs) C.Heter.hft;
   }
@@ -384,8 +377,7 @@ module Tube (F : Fam2) : sig
 
   type ('n, 'k, 'nk, 'b) builder = { build : 'm. ('m, 'n, 'k, 'nk) tface -> ('m, 'b) F.t }
 
-  val build :
-    'n D.t -> ('n, 'k, 'nk) D.plus -> ('n, 'k, 'nk, 'b) builder -> ('n, 'k, 'nk, 'b) t
+  val build : 'n D.t -> ('n, 'k, 'nk) D.plus -> ('n, 'k, 'nk, 'b) builder -> ('n, 'k, 'nk, 'b) t
 
   type ('n, 'k, 'nk, 'bs) pbuilder = {
     build : 'm. ('m, 'n, 'k, 'nk) tface -> ('m, 'bs) C.Heter.hft;

@@ -277,7 +277,8 @@ module rec Internal_Pbijmap : functor (F : Fam2) -> sig
       }
         -> ('evaluation, ('intrinsic, 'g) D.suc, 's, 'v) gt
 
-  type ('evaluation, 'intrinsic, 'v) t = ('evaluation, 'intrinsic, D.fwd_zero, 'v) gt * 'evaluation D.t
+  type ('evaluation, 'intrinsic, 'v) t =
+    ('evaluation, 'intrinsic, D.fwd_zero, 'v) gt * 'evaluation D.t
 end =
 functor
   (F : Fam2)
@@ -359,8 +360,7 @@ module Pbijmap (F : Fam2) = struct
         Suc
           {
             m with
-            right =
-              Tup.update i (fun (Sub m') -> Sub (gset (Pbij (ins, shuf)) v m' r12)) m.right;
+            right = Tup.update i (fun (Sub m') -> Sub (gset (Pbij (ins, shuf)) v m' r12)) m.right;
           }
 
   let set : type evaluation intrinsic remaining v.
@@ -404,8 +404,7 @@ module Pbijmap (F : Fam2) = struct
                       f.build (Pbij (ins, Left (g_intrinsic, shuf))) r12');
                 };
             right =
-              (let build : type b.
-                   (b, g0t, evaluation) Tbwd.insert -> (b, (i1 * s) * v) Param.t =
+              (let build : type b. (b, g0t, evaluation) Tbwd.insert -> (b, (i1 * s) * v) Param.t =
                 fun i ->
                  Sub
                    (gbuild (D.uninsert i evaluation) (Word intrinsic)
@@ -490,8 +489,7 @@ module Pbijmap (F : Fam2) = struct
           let Eq = D.bplus_uniq bp' bp in
           v :: zeros bp ms
 
-    let rec left : type e i s g vs.
-        (e, (i, g) D.suc, s, vs) hgt -> (e, i, (g, s) cons, vs) hgt =
+    let rec left : type e i s g vs. (e, (i, g) D.suc, s, vs) hgt -> (e, i, (g, s) cons, vs) hgt =
      fun ms ->
       match ms with
       | [] -> []
@@ -538,15 +536,6 @@ module Pbijmap (F : Fam2) = struct
       | [] -> []
       | m :: ms -> (m, e) :: ht_of_hgt ms e
   end
-
-  module Infix = struct
-    let hnil : type n. (n, nil) Heter.hft = []
-
-    let ( @: ) : type n x xs. (n, x) F.t -> (n, xs) Heter.hft -> (n, (x, xs) cons) Heter.hft =
-     fun x xs -> x :: xs
-  end
-
-  open Infix
 
   type ('evaluation, 'intrinsic, 's, 'vs, 'ws) gpmapper = {
     remaining : 's D.fwd;
@@ -647,7 +636,7 @@ module Pbijmap (F : Fam2) = struct
           map =
             (fun i x ->
               let y = f.map i x in
-              y @: hnil);
+              [ y ]);
         }
         xs (Cons Nil) in
     ys
@@ -663,7 +652,7 @@ module Pbijmap (F : Fam2) = struct
           map =
             (fun i x ->
               f.it i x;
-              hnil);
+              []);
         }
         xs Nil in
     ()

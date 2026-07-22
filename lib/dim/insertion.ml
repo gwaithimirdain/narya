@@ -250,9 +250,7 @@ let rec all_ins_of : type ab. ab D.t -> ab ins_of Seq.t =
 module rec Internal_Insmap : functor (F : Fam) -> sig
   module Param : sig
     type (_, _) t =
-      | Sub :
-          ('evaluation, 'intrinsic, 'v) Internal_Insmap(F).t
-          -> ('evaluation, 'intrinsic * 'v) t
+      | Sub : ('evaluation, 'intrinsic, 'v) Internal_Insmap(F).t -> ('evaluation, 'intrinsic * 'v) t
   end
 
   module Tup : module type of Tuple.Make (D.G) (Param)
@@ -307,8 +305,7 @@ module Insmap (F : Fam) = struct
    fun p v m ->
     match (p, m) with
     | Zero _, Zero _ -> Zero v
-    | Suc (ins, _, i), Suc (g0, m) ->
-        Suc (g0, Tup.update i (fun (Sub m') -> Sub (set ins v m')) m)
+    | Suc (ins, _, i), Suc (g0, m) -> Suc (g0, Tup.update i (fun (Sub m') -> Sub (set ins v m')) m)
 
   let find_singleton : type evaluation intrinsic v. (evaluation, intrinsic, v) t -> v F.t option =
     function
@@ -400,13 +397,6 @@ module Insmap (F : Fam) = struct
       | _ :: vs -> Cons (params vs)
   end
 
-  module Infix = struct
-    let hnil : nil Heter.hft = []
-    let ( @: ) : type x xs. x F.t -> xs Heter.hft -> (x, xs) cons Heter.hft = fun x xs -> x :: xs
-  end
-
-  open Infix
-
   type ('evaluation, 'intrinsic, 'vs, 'ws) pmapper = {
     map : 'shared. ('evaluation, 'shared, 'intrinsic) insertion -> 'vs Heter.hft -> 'ws Heter.hft;
   }
@@ -458,7 +448,7 @@ module Insmap (F : Fam) = struct
           map =
             (fun i x ->
               let y = f.map i x in
-              y @: hnil);
+              [ y ]);
         }
         xs (Cons Nil) in
     ys
@@ -474,7 +464,7 @@ module Insmap (F : Fam) = struct
           map =
             (fun i x ->
               f.it i x;
-              hnil);
+              []);
         }
         xs Nil in
     ()
