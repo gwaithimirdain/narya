@@ -197,10 +197,10 @@ let rec sface_except : type e a b c.
   | Word Zero, Except_zero ->
       let Zero = s in
       Sface_except (Except_zero, Zero)
-  | Word (Suc (b, Unit)), Except_occurs (e, o) ->
+  | Word (Suc (b, g)), Except_occurs (e, o) ->
       let (Sface_except (e, s)) = sface_except (Word b) s e in
-      Sface_except (Except_occurs (e, o), Mid (s, D.deg))
-  | Word (Suc (b, Unit)), Except_unoccurs (e, u) -> (
+      Sface_except (Except_occurs (e, o), Mid (s, g))
+  | Word (Suc (b, _)), Except_unoccurs (e, u) -> (
       match s with
       | End (s, g, p) ->
           let (Sface_except (e, s)) = sface_except (Word b) s e in
@@ -219,10 +219,10 @@ let rec pface_except : type e a b c.
   | Word Zero, Except_zero -> (
       match s with
       | _ -> .)
-  | Word (Suc (b, Unit)), Except_occurs (e, o) ->
+  | Word (Suc (b, g)), Except_occurs (e, o) ->
       let (Pface_except (e, s)) = pface_except (Word b) s e in
-      Pface_except (Except_occurs (e, o), Mid (s, D.deg))
-  | Word (Suc (b, Unit)), Except_unoccurs (e, u) -> (
+      Pface_except (Except_occurs (e, o), Mid (s, g))
+  | Word (Suc (b, _)), Except_unoccurs (e, u) -> (
       match s with
       | End (s, _, g, p) ->
           let (Sface_except (e, s)) = sface_except (Word b) s e in
@@ -237,11 +237,11 @@ let rec deg_of_except : type e a b. b D.t -> (e, a, b) except -> (b, a) deg =
  fun b -> function
   | Except_zero -> deg_zero D.zero
   | Except_occurs (e, _) ->
-      let (Word (Suc (b, Unit))) = b in
-      deg_plus_dom (deg_of_except (Word b) e) (Suc (Zero, Unit))
+      let (Word (Suc (b, g))) = b in
+      deg_plus_dom (deg_of_except (Word b) e) (Suc (Zero, g))
   | Except_unoccurs (e, _) ->
-      let (Word (Suc (b, Unit))) = b in
-      Suc (deg_of_except (Word b) e, D.deg, Now)
+      let (Word (Suc (b, g))) = b in
+      Suc (deg_of_except (Word b) e, g, Now)
 
 (* In the unary case, the degeneracy deg_of_except has a section given by choosing the unique endpoint for each omitted direction.  This is convenient when formulating algorithms for pushing filtered dimensions through environments.  We therefore generalize it to other arities by using an "optional sface", trusting that the missing endpoints will be canceled out by a degeneracy at the other end.  Consistent mode/dimension theories will ensure this.  In particular, in the non-unary case there should not be any modal 2-cells from a less-nonparametric modality to a more non-parametric one.  *)
 let sface_of_except : type e a b. b D.t -> (e, a, b) except -> (a, b) opt_sface =
@@ -250,8 +250,8 @@ let sface_of_except : type e a b. b D.t -> (e, a, b) except -> (a, b) opt_sface 
    fun endpt b ex ->
     match (ex, b) with
     | Except_zero, _ -> Zero
-    | Except_occurs (ex, _), Word (Suc (b, Unit)) -> End (go endpt (Word b) ex, D.deg, endpt)
-    | Except_unoccurs (ex, _), Word (Suc (b, Unit)) -> Mid (go endpt (Word b) ex, D.deg) in
+    | Except_occurs (ex, _), Word (Suc (b, g)) -> End (go endpt (Word b) ex, g, endpt)
+    | Except_unoccurs (ex, _), Word (Suc (b, g)) -> Mid (go endpt (Word b) ex, g) in
   match Endpoints.unary () with
   | Some e -> go (Some (e, Top)) b ex
   | None -> go None b ex
