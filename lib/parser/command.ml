@@ -1008,7 +1008,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                 unparse names (readback_at ctx etm ety) No.Interval.entire No.Interval.entire
             | `About -> (
                 let etm = Norm.eval_term (Ctx.env ctx) ctm in
-                match Canonical_display.readback_about ctx etm with
+                match readback_about ctx etm with
                 | Some tm -> unparse names tm No.Interval.entire No.Interval.entire
                 | None -> (
                     match etm with
