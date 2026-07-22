@@ -255,15 +255,7 @@ module Tube (F : Fam2) = struct
       (n, k, nk, D.fwd_zero, (b, bs) cons) Heter.hgt ->
       (n, k, nk, c) t =
    fun g ?ifzero xs ->
-    let [ ys ] =
-      pmap
-        {
-          map =
-            (fun fa x ->
-              let y = g.map fa x in
-              [ y ]);
-        }
-        xs ?ifzero (Cons Nil) in
+    let [ ys ] = pmap { map = (fun fa x -> [ g.map fa x ]) } xs ?ifzero (Cons Nil) in
     ys
 
   type ('n, 'k, 'nk, 'bs) miterator = {
@@ -287,40 +279,7 @@ module Tube (F : Fam2) = struct
         xs ?ifzero Nil in
     ()
 
-  (* We also have a builder function *)
-
-  type ('n, 'k, 'nk, 'b) builder = { build : 'm. ('m, 'n, 'k, 'nk) tface -> ('m, 'b) F.t }
-
-  (* The tube builder walks only the instantiated dimensions; at each End it builds an ordinary cube via the prefixed Cube builder, reassembling the tface with sface_bplus exactly as in gpmap_r. *)
-  let rec gbuild_r : type n k1 mk1 w k nk b.
-      n D.t ->
-      (n, k1, mk1) D.plus ->
-      (k1, w, k) D.bplus ->
-      (mk1, w, nk) D.bplus ->
-      w D.fwd ->
-      (n, k, nk, b) builder ->
-      (n, k1, mk1, w, b) gt =
-   fun n nk1 pa pnk w g ->
-    match nk1 with
-    | Zero -> Leaf n
-    | Suc (nk1', g0) ->
-        let (Wrap l) = Endpoints.wrapped () in
-        let ends =
-          Bwv.map
-            (fun e ->
-              C.gbuild_pre (D.plus_out n nk1') w Nil Append_nil Fwsface.Zero
-                { build = (fun fa mb -> g.build (sface_bplus mb pa pnk fa nk1' g0 e w)) })
-            (Endpoints.indices l) in
-        let mid = gbuild_r n nk1' (Append_cons pa) (Append_cons pnk) (Cons (g0, w)) g in
-        Branch (g0, l, ends, mid)
-
-  let build : type n k nk b. n D.t -> (n, k, nk) D.plus -> (n, k, nk, b) builder -> (n, k, nk, b) t
-      =
-   fun n nk g -> gbuild_r n nk Append_nil Append_nil Nil g
-
-  (* TODO: Redefine build in terms of pbuild *)
-
-  (* The multi-output builder is to the single builder build as the multi-output traversal pmap is to the single traversal mmap: it produces a whole hlist of tubes at once, with no inputs.  Like build, it has two phases (gpbuild_cube and gpbuild_r) mirroring gbuild_cube and gbuild_r; like the gpmap_* family, each one produces an hlist of (cube or tube) gt's rather than a single one. *)
+  (* The tube builder walks only the instantiated dimensions; at each End it builds an ordinary cube via the prefixed Cube builder, reassembling the tface with sface_bplus exactly as in gpmap_r.  And, as usual, the multi-output builder is to the single builder build as the multi-output traversal pmap is to the single traversal mmap: it produces a whole hlist of tubes at once, with no inputs.  *)
 
   type ('n, 'k, 'nk, 'bs) pbuilder = {
     build : 'm. ('m, 'n, 'k, 'nk) tface -> ('m, 'bs) C.Heter.hft;
@@ -362,6 +321,26 @@ module Tube (F : Fam2) = struct
       bs Tlist.t ->
       (n, k, nk, D.fwd_zero, bs) Heter.hgt =
    fun n nk g bs -> gpbuild_r n nk Append_nil Append_nil Nil g bs
+
+  (* We specialize to the one-output case *)
+
+  type ('n, 'k, 'nk, 'b) builder = { build : 'm. ('m, 'n, 'k, 'nk) tface -> ('m, 'b) F.t }
+
+  let gbuild_r : type n k1 mk1 w k nk b.
+      n D.t ->
+      (n, k1, mk1) D.plus ->
+      (k1, w, k) D.bplus ->
+      (mk1, w, nk) D.bplus ->
+      w D.fwd ->
+      (n, k, nk, b) builder ->
+      (n, k1, mk1, w, b) gt =
+   fun n nk1 pa pnk w g ->
+    let [ result ] = gpbuild_r n nk1 pa pnk w { build = (fun fa -> [ g.build fa ]) } (Cons Nil) in
+    result
+
+  let build : type n k nk b. n D.t -> (n, k, nk) D.plus -> (n, k, nk, b) builder -> (n, k, nk, b) t
+      =
+   fun n nk g -> gbuild_r n nk Append_nil Append_nil Nil g
 end
 
 module TubeOf = struct

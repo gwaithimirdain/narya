@@ -221,8 +221,8 @@ module Cube (F : Fam2) = struct
             :
             (mb, cs) Heter.hft
           ->
-            match mb with
-            | Append_nil -> g.map fa x);
+            let Append_nil = mb in
+            g.map fa x);
       } in
     gpmap_pre Nil Nil Append_nil Fw.Zero g' xs cs
 
@@ -231,15 +231,7 @@ module Cube (F : Fam2) = struct
   let mmap : type n b bs c.
       (n, (b, bs) cons, c) mmapper -> (n, D.fwd_zero, (b, bs) cons) Heter.hgt -> (n, c) t =
    fun g xs ->
-    let [ ys ] =
-      pmap
-        {
-          map =
-            (fun fa x ->
-              let y = g.map fa x in
-              [ y ]);
-        }
-        xs (Cons Nil) in
+    let [ ys ] = pmap { map = (fun fa x -> [ g.map fa x ]) } xs (Cons Nil) in
     ys
 
   type ('n, 'bs) miterator = { it : 'm. ('m, 'n) sface -> ('m, 'bs) Heter.hft -> unit }
@@ -266,56 +258,7 @@ module Cube (F : Fam2) = struct
   let miter2 : type n b1 b2. (n, b1, b2) miterator2 -> (n, b1) t -> (n, b2) t -> unit =
    fun g xs ys -> miter { it = (fun fa [ x; y ] -> g.it2 fa x y) } [ xs; ys ]
 
-  (* The builder function isn't quite a special case of the generic traversal, since it needs to maintain different information when constructing a cube from scratch. *)
-
-  type ('n, 'b) builder = { build : 'm. ('m, 'n) sface -> ('m, 'b) F.t }
-
-  (* The prefixed builder, exactly as gpmap_pre is to gpmap: the callback receives the outer-prefix bplus, and builds a value at the prefixed dimension. *)
-  type ('n, 'p, 'b) builder_pre = {
-    build : 'm 'mb. ('m, 'n) sface -> ('m, 'p, 'mb) D.bplus -> ('mb, 'b) F.t;
-  }
-
-  let rec gbuild_pre : type m own p w cf n b.
-      m D.t ->
-      p D.fwd ->
-      (own, p, w) D.fplus ->
-      (m, cf, n) D.bplus ->
-      (own, cf) Fw.fwsface ->
-      (n, p, b) builder_pre ->
-      (m, w, b) gt =
-   fun m p fp mc d g ->
-    match m with
-    | Word Zero ->
-        let (Bplus dbp) = D.bplus (Fw.dom_fwsface d) in
-        let (Bplus mb) = D.bplus p in
-        let dbp_full = D.bplus_bplus dbp mb fp in
-        let x = g.build (Fw.sface_of_fw dbp mc d) mb in
-        Leaf (dbp_full, x)
-    | Word (Suc (m1, g0)) ->
-        let (Wrap l) = Endpoints.wrapped () in
-        let ends =
-          Bwv.map
-            (fun e -> gbuild_pre (Word m1) p fp (Append_cons mc) (Fw.End (g0, e, d)) g)
-            (Endpoints.indices l) in
-        let mid = gbuild_pre (Word m1) p (Cons fp) (Append_cons mc) (Fw.Mid (g0, d)) g in
-        Branch (g0, l, ends, mid)
-
-  let build : type n b. n D.t -> (n, b) builder -> (n, b) t =
-   fun n g ->
-    let g' : (n, nil, b) builder_pre =
-      {
-        build =
-          (fun (type m mb) (fa : (m, n) sface) (mb : (m, nil, mb) D.bplus) : (mb, b) F.t ->
-            match mb with
-            | Append_nil -> g.build fa);
-      } in
-    gbuild_pre n Nil Nil Append_nil Fw.Zero g'
-
-  (* TODO: Redefine build in terms of pbuild *)
-
-  (* The multi-output builder is to the single builder build as the multi-output traversal pmap is to the single traversal mmap: it produces a whole hlist of cubes at once, with no inputs.  It is thus gbuild made plural, threading the same forwards decided word (see gbuild and gpmap) but producing an hgt of gt's rather than a single one. *)
-
-  type ('n, 'bs) pbuilder = { build : 'm. ('m, 'n) sface -> ('m, 'bs) Heter.hft }
+  (* The builder function isn't quite a special case of the generic traversal, since it needs to maintain different information when constructing a cube from scratch.  The prefixed builder is exactly as gpmap_pre is to gpmap: the callback receives the outer-prefix bplus, and builds a value at the prefixed dimension.   And the multi-output (prefixed) builder is to the single builder build as the multi-output traversal pmap is to the single traversal mmap: it produces a whole hlist of cubes at once, with no inputs. *)
 
   type ('n, 'p, 'bs) pbuilder_pre = {
     build : 'm 'mb. ('m, 'n) sface -> ('m, 'p, 'mb) D.bplus -> ('mb, 'bs) Heter.hft;
@@ -351,16 +294,50 @@ module Cube (F : Fam2) = struct
         let newmid = gpbuild_pre (Word m1) p (Cons fp) (Append_cons mc) (Fw.Mid (g0, d)) g bs in
         Heter.branch g0 l newhs newends newmid
 
+  type ('n, 'bs) pbuilder = { build : 'm. ('m, 'n) sface -> ('m, 'bs) Heter.hft }
+
   let pbuild : type n bs. n D.t -> (n, bs) pbuilder -> bs Tlist.t -> (n, D.fwd_zero, bs) Heter.hgt =
    fun n g bs ->
     let g' : (n, nil, bs) pbuilder_pre =
       {
         build =
           (fun (type m mb) (fa : (m, n) sface) (mb : (m, nil, mb) D.bplus) : (mb, bs) Heter.hft ->
-            match mb with
-            | Append_nil -> g.build fa);
+            let Append_nil = mb in
+            g.build fa);
       } in
     gpbuild_pre n Nil Nil Append_nil Fw.Zero g' bs
+
+  (* We specialize to the unary version *)
+
+  type ('n, 'p, 'b) builder_pre = {
+    build : 'm 'mb. ('m, 'n) sface -> ('m, 'p, 'mb) D.bplus -> ('mb, 'b) F.t;
+  }
+
+  let gbuild_pre : type m own p w cf n b.
+      m D.t ->
+      p D.fwd ->
+      (own, p, w) D.fplus ->
+      (m, cf, n) D.bplus ->
+      (own, cf) Fw.fwsface ->
+      (n, p, b) builder_pre ->
+      (m, w, b) gt =
+   fun m p fp mc d g ->
+    let [ result ] =
+      gpbuild_pre m p fp mc d { build = (fun fa mb -> [ g.build fa mb ]) } (Cons Nil) in
+    result
+
+  type ('n, 'b) builder = { build : 'm. ('m, 'n) sface -> ('m, 'b) F.t }
+
+  let build : type n b. n D.t -> (n, b) builder -> (n, b) t =
+   fun n g ->
+    let g' : (n, nil, b) builder_pre =
+      {
+        build =
+          (fun (type m mb) (fa : (m, n) sface) (mb : (m, nil, mb) D.bplus) : (mb, b) F.t ->
+            let Append_nil = mb in
+            g.build fa);
+      } in
+    gbuild_pre n Nil Nil Append_nil Fw.Zero g'
 
   (* A "subcube" of a cube of dimension n, determined by a face of n with dimension k, is the cube of dimension k consisting of the elements indexed by faces that factor through the given one. *)
   let subcube : type m n b. (m, n) sface -> (n, b) t -> (m, b) t =
