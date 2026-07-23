@@ -557,3 +557,8 @@ field's intrinsic dimensions; modal higher fields there are not yet supported.
      ^ unimplemented: nonparametric modal higher fields
   
   [1]
+
+Modal pi-types are fibrant.
+
+  $ narya -parametric -direction p,rel,Br -functor fib_modal_pi.ny
+
