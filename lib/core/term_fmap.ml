@@ -283,7 +283,7 @@ struct
         let flock_ev = Lock.Zero (Lockmap.Obj.Eq fm_mode) in
         let ft_mlock = FT.Zero (Mode_obj fab) in
         F_image_lock (fmod, flock_ev, ft_mlock)
-    | Suc (inner_lock, Lock_lock g_outer, Tctxcat.Suc (Tctxcat.Zero, Lock _)) ->
+    | Suc (inner_lock, Inject (Lock_lock g_outer), Tctxcat.Suc (Tctxcat.Zero, Lock _)) ->
         let (F_image_lock (fmod_inner, flock_inner, ft_mlock_inner)) = f_image_lock inner_lock in
         (* Per-gen F-image pieces. *)
         let (Exists fmod_g) = F.exists (Modality.of_gen g_outer) in
@@ -661,12 +661,7 @@ struct
         let new_ty = apply_term witness ty in
         let new_tube = TubeOf.mmap { map = (fun _ [ x ] -> apply_term witness x) } [ tube ] in
         Inst (new_ty, new_tube)
-    | Act { tm; deg; plus_lock; sort } ->
-        let (Plus_lock_image (fmod, new_plus_lock, new_witness)) =
-          apply_plus_lock witness plus_lock in
-        let Eq = F.Obj.uniq (F.src fmod) (F.tgt fmod) in
-        let new_tm = apply_term new_witness tm in
-        Act { tm = new_tm; deg; plus_lock = new_plus_lock; sort }
+    | Act (t, deg, sort) -> Act (apply_term witness t, deg, sort)
     | Lam (vars, n, filt, body) ->
         let k = dim_variables vars in
         let modality = Modality.filter_modality filt in
@@ -1151,7 +1146,7 @@ struct
    fun inner_perm lock_ev c_cev ab_cev ->
     match (lock_ev, c_cev, ab_cev) with
     | Zero _, Zero, Zero -> inner_perm
-    | ( Suc (inner_lock_ev, Lock_lock _, Tctxcat.Suc (Tctxcat.Zero, Lock g_lock_sub)),
+    | ( Suc (inner_lock_ev, Inject (Lock_lock _), Tctxcat.Suc (Tctxcat.Zero, Lock g_lock_sub)),
         Tctxcat.Suc (c_cev_inner, Lock g_c_outer),
         Tctxcat.Suc (ab_cev_inner, Lock g_ab_outer) ) ->
         let Eq = Modality.Gen.src_uniq g_c_outer g_lock_sub in
@@ -1249,8 +1244,20 @@ struct
         let Eq = F.uniq fmod_right fmod_pl in
         let new_tm = apply_term new_witness tm in
         Lower (new_adj, new_plus_lock, new_tm, label)
-    | Higher ppbm -> Higher (apply_plus_pbijmap witness ppbm)
-    | LazyHigher ppbm -> LazyHigher (lazy (apply_plus_pbijmap witness (Lazy.force ppbm)))
+    | Higher (adj, plus_lock_ev, ppbm) ->
+        let (Adjunction_image (_, fmod_right, new_adj)) = apply_adjunction adj in
+        let (Plus_lock_image (fmod_pl, new_plus_lock, new_witness)) =
+          apply_plus_lock witness plus_lock_ev in
+        let Eq = Modality.src_uniq (F.dom fmod_right) (F.dom fmod_pl) in
+        let Eq = F.uniq fmod_right fmod_pl in
+        Higher (new_adj, new_plus_lock, apply_plus_pbijmap new_witness ppbm)
+    | LazyHigher (adj, plus_lock_ev, ppbm) ->
+        let (Adjunction_image (_, fmod_right, new_adj)) = apply_adjunction adj in
+        let (Plus_lock_image (fmod_pl, new_plus_lock, new_witness)) =
+          apply_plus_lock witness plus_lock_ev in
+        let Eq = Modality.src_uniq (F.dom fmod_right) (F.dom fmod_pl) in
+        let Eq = F.uniq fmod_right fmod_pl in
+        LazyHigher (new_adj, new_plus_lock, lazy (apply_plus_pbijmap new_witness (Lazy.force ppbm)))
 
   (* Apply F to a PlusPbijmap (= Pbijmap of PlusFam.t). *)
   and apply_plus_pbijmap : type n i mode a fmode fa.
@@ -1338,11 +1345,12 @@ struct
         let new_tm = apply_term new_witness tm in
         ignore i;
         Lower (new_adj, new_plus_lock, new_tm)
-    | Higher (plusmap, body) -> (
+    | Higher (adj, plusmap, plus_lock_ev, body) -> (
         (* Higher's plusmap: ('i, (a, (mode id, D.zero) dim_entry) snoc, ian, mode) plusmap.
-           Body lives at [ian].  We extend the witness by [(mode id, D.zero) dim_entry], then
-           use [Plusmap.exists i] on the F-image extended tctx to derive the new plusmap; we
-           use [FT.exists ian_tctx] for the body's F-image witness. *)
+           The body lives at [ian] locked by the right adjoint of [adj].  We extend the witness
+           by [(mode id, D.zero) dim_entry], use [FT.exists ian_tctx] for the F-image witness of
+           [ian], then apply F to the adjunction and the plus_lock, threading the resulting
+           witness to the body. *)
         let fab =
           match FT.src witness with
           | Mode_obj f -> f
@@ -1360,9 +1368,14 @@ struct
               | Mode_obj f -> f
               | Unit_obj -> Mode.not_unit mode_value Eq in
             let Eq = F.Obj.uniq ft_ian_src fab in
-            let new_body = apply_term ft_ian body in
             let new_plusmap = plusmap_commute i ext_witness plusmap ft_ian in
-            Higher (new_plusmap, new_body))
+            let (Adjunction_image (_, fmod_right, new_adj)) = apply_adjunction adj in
+            let (Plus_lock_image (fmod_pl, new_plus_lock, new_witness)) =
+              apply_plus_lock ft_ian plus_lock_ev in
+            let Eq = Modality.src_uniq (F.dom fmod_right) (F.dom fmod_pl) in
+            let Eq = F.uniq fmod_right fmod_pl in
+            let new_body = apply_term new_witness body in
+            Higher (new_adj, new_plusmap, new_plus_lock, new_body))
 
   and apply_codata_fibrancy : type mode g n nh b hb et fmode fb.
       mode Mode.t ->
@@ -1503,7 +1516,7 @@ struct
    fun lock_ev acc comp ->
     match (lock_ev, comp) with
     | Zero _, Zero -> acc
-    | Suc (inner_lock_ev, Lock_lock g1, Suc (Zero, Lock _)), Suc (comp, Lock g3) ->
+    | Suc (inner_lock_ev, Inject (Lock_lock g1), Suc (Zero, Lock _)), Suc (comp, Lock g3) ->
         let Eq = Modality.Gen.tgt_uniq g1 g3 in
         let acc_after_inner = wrap_locks_around_ordered_termctx inner_lock_ev acc comp in
         Term.Lock (acc_after_inner, g1)
@@ -1548,6 +1561,10 @@ struct
         let new_inner = apply_ordered_termctx inner_witness inner in
         let result = wrap_locks_around_ordered_termctx flock_ev new_inner fb_fg in
         result
+    | Weaken (inner, code) ->
+        (* A [Weaken] increments the raw length without changing the tctx shape [b], so the
+           witness is unchanged. *)
+        Weaken (apply_ordered_termctx witness inner, code)
 
   and apply_entry : type dom modality mode b bm x n fmode fb.
       (mode, b, fmode, fb) tctx_fmap ->
