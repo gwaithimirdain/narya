@@ -59,7 +59,7 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
         { tm = term f tm; plus_lock; window; dim; branches = Constr.Map.map (branch f) branches }
   | Realize tm -> Realize (term f tm)
   | Canonical can -> Canonical (canonical f can)
-  | Canonical_display _ -> Reporter.fatal (Anomaly "Canonical_display in link")
+  | Data_display _ | Codata_display _ -> Reporter.fatal (Anomaly "Canonical_display in link")
   | Unshift (n, plusmap, tm) -> Unshift (n, plusmap, term f tm)
   | Unact (o, tm) -> Unact (o, term f tm)
   | Shift (n, plusmap, tm) -> Shift (n, plusmap, term f tm)

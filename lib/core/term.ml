@@ -164,14 +164,19 @@ module rec Term : sig
         -> ('mode, 'a, potential) term
     | Realize : ('mode, 'a, kinetic) term -> ('mode, 'a, potential) term
     | Canonical : ('mode, 'a) canonical -> ('mode, 'a, potential) term
-    (* A display-only leaf, produced by readback for the "about" command to render a canonical type as its declaration ("data [ … ]"/"codata [ … ]").  It carries already-read-back terms, never a value, and is never evaluated, serialized, or typechecked; all those paths raise an anomaly on it. *)
-    | Canonical_display : ('mode, 'a) canonical_display -> ('mode, 'a, 's) term
     | Unshift :
         'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'nb, 's) term
         -> ('mode, 'b, 's) term
     | Unact : ('m, 'n) op * ('mode, 'b, 's) term -> ('mode, 'b, 's) term
     | Shift : 'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'b, 's) term -> ('mode, 'nb, 's) term
     | Weaken : ('mode, 'b, 's) term -> ('mode, ('b, ('modality, 'n) dim_entry) snoc, 's) term
+    | Data_display : (Constr.t, ('mode, 'a) dataconstr_display) Abwd.t -> ('mode, 'a, 's) term
+    | Codata_display : {
+        eta : (potential, 'et) eta;
+        dim : 'n D.t;
+        fields : ('mode, 'a, 'n) codata_field_display Bwd.t;
+      }
+        -> ('mode, 'a, 's) term
 
   and ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args = {
     x : 'k variables;
@@ -245,18 +250,6 @@ module rec Term : sig
         output : ('mode, 'pa, kinetic) term;
       }
         -> ('mode, 'p) dataconstr
-
-  (* Display-only reflections of canonical types, produced by readback for the "about" command. *)
-  and (_, _) canonical_display =
-    | Data_display :
-        (Constr.t, ('mode, 'a) dataconstr_display) Abwd.t
-        -> ('mode, 'a) canonical_display
-    | Codata_display : {
-        eta : (potential, 'et) eta;
-        dim : 'n D.t;
-        fields : ('mode, 'a, 'n) codata_field_display Bwd.t;
-      }
-        -> ('mode, 'a) canonical_display
 
   and (_, _) dataconstr_display =
     (* A zero-dimensional constructor: a telescope of arguments, plus its output type for an indexed datatype. *)
@@ -513,8 +506,6 @@ end = struct
     (* A potential term is "realized" by kinetic terms, or canonical types, at its leaves. *)
     | Realize : ('mode, 'a, kinetic) term -> ('mode, 'a, potential) term
     | Canonical : ('mode, 'a) canonical -> ('mode, 'a, potential) term
-    (* A display-only leaf; see the signature above. *)
-    | Canonical_display : ('mode, 'a) canonical_display -> ('mode, 'a, 's) term
     (* These operations are easy to evaluate because they are dual to corresponding operations on environments.  They never appear in the output of typechecking, but they are useful when constructing terms "by hand" in OCaml code, such as in fibrancy witnesses. *)
     | Unshift :
         'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'nb, 's) term
@@ -522,6 +513,14 @@ end = struct
     | Unact : ('m, 'n) op * ('mode, 'b, 's) term -> ('mode, 'b, 's) term
     | Shift : 'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'b, 's) term -> ('mode, 'nb, 's) term
     | Weaken : ('mode, 'b, 's) term -> ('mode, ('b, ('modality, 'n) dim_entry) snoc, 's) term
+    (* Display-only leaves, produced by readback for the "about" command to render a canonical type as its declaration ("data [ … ]"/"codata [ … ]").  It carries already-read-back terms, never a value, and is never evaluated, serialized, or typechecked; all those paths raise an anomaly on it. *)
+    | Data_display : (Constr.t, ('mode, 'a) dataconstr_display) Abwd.t -> ('mode, 'a, 's) term
+    | Codata_display : {
+        eta : (potential, 'et) eta;
+        dim : 'n D.t;
+        fields : ('mode, 'a, 'n) codata_field_display Bwd.t;
+      }
+        -> ('mode, 'a, 's) term
 
   and ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args = {
     x : 'k variables;
@@ -613,17 +612,6 @@ end = struct
         output : ('mode, 'pa, kinetic) term;
       }
         -> ('mode, 'p) dataconstr
-
-  and (_, _) canonical_display =
-    | Data_display :
-        (Constr.t, ('mode, 'a) dataconstr_display) Abwd.t
-        -> ('mode, 'a) canonical_display
-    | Codata_display : {
-        eta : (potential, 'et) eta;
-        dim : 'n D.t;
-        fields : ('mode, 'a, 'n) codata_field_display Bwd.t;
-      }
-        -> ('mode, 'a) canonical_display
 
   and (_, _) dataconstr_display =
     | Tel_constr :

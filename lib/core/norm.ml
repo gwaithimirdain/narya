@@ -603,7 +603,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       | _ -> Unrealized)
   | Realize tm -> Realize (eval_term env tm)
   | Canonical c -> eval_canonical env c
-  | Canonical_display _ -> fatal (Anomaly "Canonical_display in eval")
+  | Data_display _ | Codata_display _ -> fatal (Anomaly "Canonical_display in eval")
   | Unshift (n, plusmap, tm) ->
       let (Cofactor mn) =
         D.cofactor (dim_env env) n
