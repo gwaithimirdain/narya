@@ -170,7 +170,6 @@ module rec Term : sig
     | Unact : ('m, 'n) op * ('mode, 'b, 's) term -> ('mode, 'b, 's) term
     | Shift : 'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'b, 's) term -> ('mode, 'nb, 's) term
     | Weaken : ('mode, 'b, 's) term -> ('mode, ('b, ('modality, 'n) dim_entry) snoc, 's) term
-    | Data_display : (Constr.t, ('mode, 'a) dataconstr_display) Abwd.t -> ('mode, 'a, 's) term
     | Codata_display : {
         eta : (potential, 'et) eta;
         dim : 'n D.t;
@@ -246,18 +245,10 @@ module rec Term : sig
   and (_, _) dataconstr =
     | Dataconstr : {
         args : ('mode, 'p, 'a, 'pa) tel;
-        (* The output type of the constructor, i.e. the datatype family applied to the parameters and indices.  The index *values* are the trailing arguments of this application; they are extracted on demand rather than stored separately.  For a non-indexed datatype, where the user need not write an output type, it is synthesized as the datatype applied to its parameters. *)
         output : ('mode, 'pa, kinetic) term;
       }
         -> ('mode, 'p) dataconstr
-
-  and (_, _) dataconstr_display =
-    (* A zero-dimensional constructor: a telescope of arguments, plus its output type for an indexed datatype. *)
-    | Tel_constr :
-        ('mode, 'a, 'b, 'ab) tel * ('mode, 'ab, kinetic) term option
-        -> ('mode, 'a) dataconstr_display
-    (* A constructor of a degenerate (higher-dimensional) datatype, displayed as its full function-type. *)
-    | Pi_constr : ('mode, 'a, kinetic) term -> ('mode, 'a) dataconstr_display
+    | Pi_dataconstr : ('mode, 'a, kinetic) term -> ('mode, 'a) dataconstr
 
   (* One field instance of a codatatype/record, as it must be provided in a comatch and displayed by "about".  The self-variable is a cube of the codatatype's dimension 'n. *)
   and (_, _, _) codata_field_display =
@@ -514,7 +505,6 @@ end = struct
     | Shift : 'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'b, 's) term -> ('mode, 'nb, 's) term
     | Weaken : ('mode, 'b, 's) term -> ('mode, ('b, ('modality, 'n) dim_entry) snoc, 's) term
     (* Display-only leaves, produced by readback for the "about" command to render a canonical type as its declaration ("data [ … ]"/"codata [ … ]").  It carries already-read-back terms, never a value, and is never evaluated, serialized, or typechecked; all those paths raise an anomaly on it. *)
-    | Data_display : (Constr.t, ('mode, 'a) dataconstr_display) Abwd.t -> ('mode, 'a, 's) term
     | Codata_display : {
         eta : (potential, 'et) eta;
         dim : 'n D.t;
@@ -605,19 +595,16 @@ end = struct
       ('mode * ('nh * ('hb, ('mode id, D.zero) dim_entry) snoc * potential * 'et)) StructfieldAbwd.t;
   }
 
-  (* A datatype constructor has a telescope of arguments and a list of index values depending on those arguments. *)
   and (_, _) dataconstr =
+    (* An ordinary datatype constructor has a telescope of arguments and an output type. *)
     | Dataconstr : {
         args : ('mode, 'p, 'a, 'pa) tel;
+        (* The output type of the constructor, i.e. the datatype family applied to the parameters and indices.  The index *values* are the trailing arguments of this application; they are extracted on demand rather than stored separately.  For a non-indexed datatype, where the user need not write an output type, it is synthesized as the datatype applied to its parameters. *)
         output : ('mode, 'pa, kinetic) term;
       }
         -> ('mode, 'p) dataconstr
-
-  and (_, _) dataconstr_display =
-    | Tel_constr :
-        ('mode, 'a, 'b, 'ab) tel * ('mode, 'ab, kinetic) term option
-        -> ('mode, 'a) dataconstr_display
-    | Pi_constr : ('mode, 'a, kinetic) term -> ('mode, 'a) dataconstr_display
+    (* Not used by ordinary checked terms, but when reading back a higher-dimensionally degenerated datatype. *)
+    | Pi_dataconstr : ('mode, 'a, kinetic) term -> ('mode, 'a) dataconstr
 
   and (_, _, _) codata_field_display =
     | Cfd :

@@ -59,7 +59,7 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
         { tm = term f tm; plus_lock; window; dim; branches = Constr.Map.map (branch f) branches }
   | Realize tm -> Realize (term f tm)
   | Canonical can -> Canonical (canonical f can)
-  | Data_display _ | Codata_display _ -> Reporter.fatal (Anomaly "Canonical_display in link")
+  | Codata_display _ -> Reporter.fatal (Anomaly "Canonical_display in link")
   | Unshift (n, plusmap, tm) -> Unshift (n, plusmap, term f tm)
   | Unact (o, tm) -> Unact (o, term f tm)
   | Shift (n, plusmap, tm) -> Shift (n, plusmap, term f tm)
@@ -147,7 +147,9 @@ and codatafield : type mode a n i et.
   | Higher (adj, ka, plus_lock, tm) -> Higher (adj, ka, plus_lock, term f tm)
 
 and dataconstr : type mode p. (File.t -> File.t) -> (mode, p) dataconstr -> (mode, p) dataconstr =
- fun f (Dataconstr { args; output }) -> Dataconstr { args = tel f args; output = term f output }
+ fun f -> function
+  | Dataconstr { args; output } -> Dataconstr { args = tel f args; output = term f output }
+  | Pi_dataconstr ty -> Pi_dataconstr (term f ty)
 
 and tel : type mode a b ab. (File.t -> File.t) -> (mode, a, b, ab) tel -> (mode, a, b, ab) tel =
  fun f t ->

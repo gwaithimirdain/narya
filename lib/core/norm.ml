@@ -603,7 +603,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       | _ -> Unrealized)
   | Realize tm -> Realize (eval_term env tm)
   | Canonical c -> eval_canonical env c
-  | Data_display _ | Codata_display _ -> fatal (Anomaly "Canonical_display in eval")
+  | Codata_display _ -> fatal (Anomaly "Canonical_display in eval")
   | Unshift (n, plusmap, tm) ->
       let (Cofactor mn) =
         D.cofactor (dim_env env) n
@@ -1453,7 +1453,9 @@ and eval_canonical : type mode m a.
       let tyfam = ref None in
       let constrs =
         Abwd.map
-          (fun (Term.Dataconstr { args; output }) -> Value.Dataconstr { env; args; output })
+          (function
+            | Term.Dataconstr { args; output } -> Value.Dataconstr { env; args; output }
+            | Pi_dataconstr _ -> fatal (Anomaly "Pi_dataconstr in norm"))
           constrs in
       let dim, mode = (dim_env env, mode_env env) in
       let canonical =

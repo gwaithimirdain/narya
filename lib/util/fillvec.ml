@@ -23,6 +23,10 @@ let remaining : type a n mn. (a, n, mn) t -> n Fwn.t = function
 let get : type a mn. (a, Fwn.zero, mn) t -> (a, mn) Vec.t = function
   | Filled xs -> xs
 
+let expected_length : type a n mn. (a, n, mn) t -> mn Fwn.t = function
+  | Filled xs -> Vec.length xs
+  | Unfilled (_, n, mn) -> Fwn.fplus_out mn (Suc n)
+
 (* Whether the intended length is positive, regardless of how much has been filled. *)
 let intended_pos : type a n mn. (a, n, mn) t -> bool = function
   | Filled [] -> false

@@ -224,7 +224,7 @@ let rec get_bwd : type mode n.
 (* Whether we expect a given term to synthesize, after being unparsed. *)
 let rec synths : type mode n. (mode, n, kinetic) term -> bool = function
   | Var _ | Const _ | Meta _ | MetaEnv _ | Field _ | UU _ | Inst _ | Pi _ | Key _ -> true
-  | Constr _ | Lam _ | Struct _ | Data_display _ | Codata_display _ -> false
+  | Constr _ | Lam _ | Struct _ | Codata_display _ -> false
   (* Applications, actions, and let-bindings can also check.  They only synthesize if the appropriate one of their subterms does.  *)
   | App (fn, _, _, _) -> synths fn
   | Act (tm, _, _) -> synths tm
@@ -480,7 +480,6 @@ let rec unparse : type mode n lt ls rt rs s.
           unparse_spine vars (`Constr c) args li ri)
   | Realize tm -> unparse vars tm li ri
   | Canonical c -> unparse_canonical vars c li ri
-  | Data_display d -> unparse_data_display vars d li ri
   | Codata_display { eta; dim; fields } -> unparse_codata_display vars eta dim fields li ri
   | Struct { eta = Noeta; dim; fields; energy = _ } -> unparse_comatch vars dim fields li ri
   | Match { window = _; plus_lock; tm; dim; branches } ->
@@ -674,39 +673,18 @@ and unparse_dataconstr : type mode a lt ls rt rs.
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun vars indexed c (Dataconstr { args; output }) li ri ->
-  let bcvars, argunps = unparse_tel_args vars args Emp in
-  (* Show the output type only for indexed datatypes; the stored output already includes the real datatype head and indices. *)
-  let output_display =
-    if indexed then Some { unparse = (fun li ri -> unparse bcvars output li ri) } else None in
-  unparse_constr_display c argunps output_display li ri
-
-(* Render a display-only canonical-declaration node (produced by readback for "about"): purely syntactic assembly of already-read-back constructor displays into "data [ … ]". *)
-and unparse_data_display : type mode a lt ls rt rs.
-    a Names.t ->
-    (Constr.t, (mode, a) dataconstr_display) Abwd.t ->
-    (lt, ls) No.iinterval ->
-    (rt, rs) No.iinterval ->
-    (lt, ls, rt, rs) parse located =
- fun vars constrs _li _ri ->
-  let inner =
-    Bwd.fold_left
-      (fun acc (c, dcd) ->
-        let cterm =
-          match dcd with
-          | Term.Tel_constr (tel, output) ->
-              let bcvars, argunps = unparse_tel_args vars tel Emp in
-              let output =
-                Option.map (fun out -> { unparse = (fun li ri -> unparse bcvars out li ri) }) output
-              in
-              unparse_constr_display c argunps output No.Interval.entire No.Interval.entire
-          | Term.Pi_constr fn ->
-              let output = { unparse = (fun li ri -> unparse vars fn li ri) } in
-              unparse_constr_display c Emp (Some output) No.Interval.entire No.Interval.entire in
-        acc <: mktok (Op "|") <: Term cterm)
-      (Snoc (Emp, mktok LBracket))
-      constrs in
-  unlocated (outfix ~notn:data ~inner:(Multiple (wstok Data, inner, wstok RBracket)))
+ fun vars indexed c dc li ri ->
+  match dc with
+  | Dataconstr { args; output } ->
+      let bcvars, argunps = unparse_tel_args vars args Emp in
+      (* Show the output type only for indexed datatypes; the stored output already includes the real datatype head and indices. *)
+      let output_display =
+        if indexed then Some { unparse = (fun li ri -> unparse bcvars output li ri) } else None
+      in
+      unparse_constr_display c argunps output_display li ri
+  | Pi_dataconstr fn ->
+      let output = { unparse = (fun li ri -> unparse vars fn li ri) } in
+      unparse_constr_display c Emp (Some output) li ri
 
 and unparse_codata_display : type mode a lt ls rt rs et n.
     a Names.t ->

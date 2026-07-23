@@ -281,7 +281,6 @@ module F = struct
     | Match _ -> fprintf ppf "Match ?"
     | Realize tm -> fprintf ppf "Realize (%a)" term tm
     | Canonical c -> fprintf ppf "Canonical (%a)" canonical c
-    | Data_display _ -> fprintf ppf "Data_display ?"
     | Codata_display _ -> fprintf ppf "Codata_display ?"
     | Unshift (n, _, tm) -> fprintf ppf "Unshift (%s, %a)" (string_of_dim n) term tm
     | Unact (_, tm) -> fprintf ppf "Unact (?, %a)" term tm
@@ -308,7 +307,9 @@ module F = struct
                 fields))
 
   and dataconstr : type mode p. formatter -> (mode, p) Term.dataconstr -> unit =
-   fun ppf (Dataconstr { args; output = _ }) -> fprintf ppf "%a : ?" tel args
+   fun ppf -> function
+    | Dataconstr { args; output } -> fprintf ppf "%a : %a" tel args term output
+    | Pi_dataconstr ty -> term ppf ty
 
   and tel : type mode a b ab. formatter -> (mode, a, b, ab) Term.tel -> unit =
    fun ppf -> function
