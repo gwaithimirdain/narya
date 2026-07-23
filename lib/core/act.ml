@@ -342,7 +342,7 @@ module Act = struct
         let (Act_pi (fb, filter, doms, cods)) = act_pi filter doms cods fa cell in
         Pi { x = act_variables x fb; filter; doms; cods }
     | Data { dim = _; tyfam; indices; constrs; discrete; recursive; hints } ->
-        let tyfam = lazy (act_normal (Lazy.force tyfam) fa cell) in
+        let tyfam = act_lazy_eval tyfam fa cell in
         let indices =
           Fillvec.map
             (fun ixs -> act_cube { act = (fun x s c -> act_normal x s c) } ixs fa cell)

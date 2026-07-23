@@ -354,7 +354,7 @@ type (_, _, _, _, _) match_motive =
         (* the list of branches remaining to be typechecked, and *)
         (Constr.t * ('dom, 'a, 'm, 'ij) checkable_branch) list ->
         (* the datatype family, applied to its parameters but not its indices, *)
-        'dom normal Lazy.t ->
+        ('dom, kinetic) lazy_eval ->
         (* RETURN *)
         (* the motive of the match (or failure) -- note this is an abstract type, only unpackable by "use" below. *)
         'motive option
@@ -1618,7 +1618,7 @@ and synth_nondep_match : type mode a b.
       let get : type m ij.
           m D.t ->
           (Constr.t * (dom, a, m, ij) checkable_branch) list ->
-          dom normal Lazy.t ->
+          (dom, kinetic) lazy_eval ->
           (mode, kinetic) value option
           * Code.t Asai.Diagnostic.t Bwd.t
           * (mode, b, m) Term.branch Constr.Map.t
@@ -1713,7 +1713,7 @@ and synth_dep_match : type mode a b.
                get =
                  (fun _ user_branches tyfam ->
                    (* We typecheck the motive against the type of type families over the datatype and its indices.  Constructing this type of type families is what "motive_of_family" does. *)
-                   let tyfam = Lazy.force tyfam in
+                   let tyfam = nf_of_neu (force_eval_term tyfam) "synth_dep_match" in
                    let emotivety =
                      eval_term (Ctx.env ctx) (motive_of_family ctx window tyfam.tm tyfam.ty) in
                    let cmotive = check (Kinetic `Nolet) ctx motive emotivety in
@@ -1793,7 +1793,7 @@ and check_var_match : type dom modality mode a b bm.
         hmode head * (dom, m, n) canonical * (mn, m, n) insertion * _) -> (
       let Eq = eq_of_ins_zero ins in
       check_window_transparency window data_constrs recursive;
-      let tyfam = Lazy.force tyfam in
+      let tyfam = nf_of_neu (force_eval_term tyfam) "check_var_match" in
       let tyfam_args : (D.zero, m, m, dom normal) TubeOf.t =
         match view_type tyfam.ty "check_var_match tyfam" with
         | Canonical (_, Pi _, _, tyfam_args) -> (

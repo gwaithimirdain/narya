@@ -160,7 +160,7 @@ module rec Value : sig
 
   and ('mode, 'm, 'j, 'ij) data_args = {
     dim : 'm D.t;
-    tyfam : 'mode normal Lazy.t;
+    tyfam : ('mode, kinetic) lazy_eval;
     indices : (('m, 'mode normal) CubeOf.t, 'j, 'ij) Fillvec.t;
     constrs : (Constr.t, ('mode, 'm, 'ij) dataconstr) Abwd.t;
     discrete : [ `Yes | `Maybe | `No ];
@@ -404,7 +404,7 @@ end = struct
     (* The dimension to which it is substituted *)
     dim : 'm D.t;
     (* The datatype family after being applied to the parameters but not the indices, e.g. "Vec A", together with its type.  Computed lazily at evaluation time by evaluating the [tyfam] term stored in the corresponding [Term.Data] (read back when the datatype was checked) and reading its type off the resulting neutral; see the comment there. *)
-    tyfam : 'mode normal Lazy.t;
+    tyfam : ('mode, kinetic) lazy_eval;
     (* The indices applied so far, and the number remaining *)
     indices : (('m, 'mode normal) CubeOf.t, 'j, 'ij) Fillvec.t;
     (* All the constructors *)
@@ -498,6 +498,13 @@ end = struct
 end
 
 include Value
+
+(* Any neutral is automatically a normal. *)
+let nf_of_neu : type mode. (mode, kinetic) value -> string -> mode normal =
+ fun tm str ->
+  match tm with
+  | Neu { ty; _ } -> { tm; ty = Lazy.force ty }
+  | _ -> fatal (Anomaly ("nf_of_neu: " ^ str))
 
 type (_, _) modal_value =
   | Modal : ('dom, 'modality, 'mode) Modality.t * ('dom, 's) value -> ('mode, 's) modal_value

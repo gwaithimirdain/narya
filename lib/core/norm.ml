@@ -632,7 +632,7 @@ and eval_args : type mode m n mn a.
 and apply_unfilled_data_index : type mode m j ij mk dom modl an k.
     mode Mode.t ->
     m D.t ->
-    mode normal Lazy.t ->
+    (mode, kinetic) lazy_eval ->
     ((m, mode normal) CubeOf.t, j Fwn.suc, ij) Fillvec.t ->
     (Constr.t, (mode, m, ij) dataconstr) Abwd.t ->
     [ `Yes | `Maybe | `No ] ->
@@ -1419,13 +1419,9 @@ and eval_canonical : type mode m a.
     (mode, m, a) env -> (mode, a) Term.canonical -> (mode, potential) evaluation =
  fun env can ->
   match can with
-  | Data { indices; constrs; discrete; recursive; hints; tyfam = tyfam_tm } ->
+  | Data { indices; constrs; discrete; recursive; hints; tyfam } ->
       (* The type family (the datatype applied to its parameters, e.g. "Vec A") was read back when this datatype was checked; we now evaluate it, lazily to avoid the circularity of re-entering this same evaluation eagerly.  Its type we take from the resulting neutral, since that is computed fully-instantiated at the current dimension (whereas re-evaluating a read-back type term would not be). *)
-      let tyfam =
-        lazy
-          (match eval_term env tyfam_tm with
-          | Neu { ty; _ } as tm -> { tm; ty = Lazy.force ty }
-          | _ -> fatal (Anomaly "datatype type family did not evaluate to a neutral")) in
+      let tyfam = lazy_eval env tyfam in
       let constrs =
         Abwd.map
           (fun (Term.Dataconstr { args; indices }) -> Value.Dataconstr { env; args; indices })
@@ -1975,9 +1971,7 @@ let apply_singleton_nfs : type dom modality mode n.
  fun modality fn xs ->
   let filter = Modality.filter_zero modality in
   let fn = ref fn in
-  CubeOf.miter
-    { it = (fun _ [ x ] -> fn := apply_term !fn filter (CubeOf.singleton x.tm)) }
-    [ xs ];
+  CubeOf.miter { it = (fun _ [ x ] -> fn := apply_term !fn filter (CubeOf.singleton x.tm)) } [ xs ];
   !fn
 
 let apply_singleton_tube_nfs : type dom modality mode n.
@@ -1988,9 +1982,7 @@ let apply_singleton_tube_nfs : type dom modality mode n.
  fun modality fn xs ->
   let filter = Modality.filter_zero modality in
   let fn = ref fn in
-  TubeOf.miter
-    { it = (fun _ [ x ] -> fn := apply_term !fn filter (CubeOf.singleton x.tm)) }
-    [ xs ];
+  TubeOf.miter { it = (fun _ [ x ] -> fn := apply_term !fn filter (CubeOf.singleton x.tm)) } [ xs ];
   !fn
 
 (* Evaluate a term context to produce a value context. *)
