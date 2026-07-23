@@ -289,7 +289,7 @@ module F = struct
   and canonical : type mode b. formatter -> (mode, b) canonical -> unit =
    fun ppf c ->
     match c with
-    | Data { indices; constrs; discrete = _; recursive = _; hints = _ } ->
+    | Data { indices; constrs; discrete = _; recursive = _; hints = _; tyfam = _ } ->
         fprintf ppf "Data (%d, (%a))" (Fwn.to_int indices)
           (pp_print_list
              ~pp_sep:(fun ppf () -> pp_print_string ppf " | ")

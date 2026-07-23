@@ -28,13 +28,6 @@ end
 
 module Oracle = Query.Make (OracleData)
 
-(* Read the memoized "type family" of a datatype value: the datatype applied to its parameters, with indices abstracted (see [capture_tyfam] in Norm).  It is captured lazily the first time the enclosing neutral is observed, which for any datatype value reaching a match must have already happened (the discriminee's type was viewed to get here); hence [None] is an anomaly rather than a user error. *)
-let force_tyfam : type mode. mode normal Lazy.t option ref -> mode normal =
- fun tyfam ->
-  match !tyfam with
-  | Some tyfam -> Lazy.force tyfam
-  | None -> fatal (Anomaly "tyfam unset")
-
 (* Check that a given value is a zero-dimensional non-modal type family (something where an indexed datatype could live) and return the length of its domain telescope (the number of indices).  Unfortunately I don't see an easy way to do this without essentially going through all the same steps of extending the context that we would do to check something at that type family.  Also check whether all of its domain types are either discrete or belong to the given set of constants. *)
 let rec typefam : type mode a b.
     ?discrete:unit Constant.Map.t -> (mode, a, b) Ctx.t -> (mode, kinetic) value -> int * bool =
@@ -361,7 +354,7 @@ type (_, _, _, _, _) match_motive =
         (* the list of branches remaining to be typechecked, and *)
         (Constr.t * ('dom, 'a, 'm, 'ij) checkable_branch) list ->
         (* the datatype family, applied to its parameters but not its indices, *)
-        'dom normal Lazy.t option ref ->
+        'dom normal Lazy.t ->
         (* RETURN *)
         (* the motive of the match (or failure) -- note this is an abstract type, only unpackable by "use" below. *)
         'motive option
@@ -938,14 +931,16 @@ let rec check : type mode a b s.
                      (readback_neu ctx (head_of_potential head) apps))
                   fields Emp)
         | _ -> fatal (Checking_canonical_at_nonuniverse ("record type", PVal (ctx, ty))))
-    | Data (constrs, hints), Potential _ ->
+    | Data (constrs, hints), Potential (head, apps, _) ->
         (* For a datatype, the type to check against might not be a universe, it could include indices.  We also check whether all the types of all the indices are discrete or a type being defined, to decide whether to keep evaluating the type for discreteness. *)
         let n, disc = typefam ?discrete ctx ty in
         let (Wrap num_indices) = Fwn.of_int n in
+        (* Read back the datatype's type family: the head applied to the parameters it has been given so far, e.g. "Vec A".  This is stored in the checked term so that at evaluation time the value-level tyfam can be filled in directly. *)
+        let tyfam = readback_neu ctx (head_of_potential head) apps in
         check_data
           ~discrete:(if disc then discrete else None)
-          ~recursive:`Nonrecursive ~hints status ctx ty num_indices Abwd.empty (Bwd.to_list constrs)
-          Emp
+          ~recursive:`Nonrecursive ~hints ~tyfam status ctx ty num_indices Abwd.empty
+          (Bwd.to_list constrs) Emp
     (* If we have a term that's not valid outside a case tree, we bind it to a global metavariable. *)
     | Struct (Noeta, _), Kinetic l -> kinetic_of_potential l ctx tm ty "comatch"
     | Synth (Match _), Kinetic l -> kinetic_of_potential l ctx tm ty "match"
@@ -1623,7 +1618,7 @@ and synth_nondep_match : type mode a b.
       let get : type m ij.
           m D.t ->
           (Constr.t * (dom, a, m, ij) checkable_branch) list ->
-          dom normal Lazy.t option ref ->
+          dom normal Lazy.t ->
           (mode, kinetic) value option
           * Code.t Asai.Diagnostic.t Bwd.t
           * (mode, b, m) Term.branch Constr.Map.t
@@ -1718,7 +1713,7 @@ and synth_dep_match : type mode a b.
                get =
                  (fun _ user_branches tyfam ->
                    (* We typecheck the motive against the type of type families over the datatype and its indices.  Constructing this type of type families is what "motive_of_family" does. *)
-                   let tyfam = force_tyfam tyfam in
+                   let tyfam = Lazy.force tyfam in
                    let emotivety =
                      eval_term (Ctx.env ctx) (motive_of_family ctx window tyfam.tm tyfam.ty) in
                    let cmotive = check (Kinetic `Nolet) ctx motive emotivety in
@@ -1798,7 +1793,7 @@ and check_var_match : type dom modality mode a b bm.
         hmode head * (dom, m, n) canonical * (mn, m, n) insertion * _) -> (
       let Eq = eq_of_ins_zero ins in
       check_window_transparency window data_constrs recursive;
-      let tyfam = force_tyfam tyfam in
+      let tyfam = Lazy.force tyfam in
       let tyfam_args : (D.zero, m, m, dom normal) TubeOf.t =
         match view_type tyfam.ty "check_var_match tyfam" with
         | Canonical (_, Pi _, _, tyfam_args) -> (
@@ -2250,6 +2245,7 @@ and check_data : type mode a b i.
     discrete:unit Constant.Map.t option ->
     recursive:Positivity.recursion ->
     hints:hints ->
+    tyfam:(mode, b, kinetic) term ->
     (mode, b, potential) status ->
     (mode, a, b) Ctx.t ->
     (mode, kinetic) value ->
@@ -2258,7 +2254,8 @@ and check_data : type mode a b i.
     (Constr.t * a Raw.dataconstr located) list ->
     Code.t Asai.Diagnostic.t Bwd.t ->
     (mode, b, potential) term =
- fun ~discrete ~recursive ~hints status ctx ty num_indices checked_constrs raw_constrs errs ->
+ fun ~discrete ~recursive ~hints ~tyfam status ctx ty num_indices checked_constrs raw_constrs
+     errs ->
   match (raw_constrs, status) with
   | [], Potential _ -> (
       match errs with
@@ -2267,7 +2264,15 @@ and check_data : type mode a b i.
           (* If we get to this point and discreteness is still a possibility, we mark it as "Maybe" discrete.  Later, after all the types in a mutual block are checked, if they're all discrete we go through and change the "Maybe"s to "Yes"es.  *)
           let discrete = Option.fold ~none:`No ~some:(fun _ -> `Maybe) discrete in
           Canonical
-            (Data { indices = num_indices; constrs = checked_constrs; discrete; recursive; hints }))
+            (Data
+               {
+                 indices = num_indices;
+                 constrs = checked_constrs;
+                 discrete;
+                 recursive;
+                 hints;
+                 tyfam;
+               }))
   | ( (c, { value = Dataconstr (args, output); loc }) :: raw_constrs,
       Potential (head, current_apps, hyp) ) -> (
       with_loc loc @@ fun () ->
@@ -2282,6 +2287,7 @@ and check_data : type mode a b i.
                    discrete = `No;
                    recursive = `Recursive;
                    hints;
+                   tyfam;
                  })))
         Emp
       @@ fun () ->
@@ -2321,7 +2327,7 @@ and check_data : type mode a b i.
             | _ -> fatal ?loc:output.loc err in
           check_data
             ~discrete:(if disc then discrete else None)
-            ~recursive:(Positivity.merge recursive crec) ~hints status ctx ty num_indices
+            ~recursive:(Positivity.merge recursive crec) ~hints ~tyfam status ctx ty num_indices
             checked_constrs raw_constrs errs
       | None, None -> (
           match num_indices with
@@ -2341,7 +2347,7 @@ and check_data : type mode a b i.
                   errs ) in
               check_data
                 ~discrete:(if disc then discrete else None)
-                ~recursive:(Positivity.merge recursive crec) ~hints status ctx ty Fwn.zero
+                ~recursive:(Positivity.merge recursive crec) ~hints ~tyfam status ctx ty Fwn.zero
                 checked_constrs raw_constrs errs
           | Suc _ -> fatal (Missing_constructor_type c)))
 

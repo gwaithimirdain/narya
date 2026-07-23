@@ -160,7 +160,7 @@ module rec Value : sig
 
   and ('mode, 'm, 'j, 'ij) data_args = {
     dim : 'm D.t;
-    tyfam : 'mode normal Lazy.t option ref;
+    tyfam : 'mode normal Lazy.t;
     indices : (('m, 'mode normal) CubeOf.t, 'j, 'ij) Fillvec.t;
     constrs : (Constr.t, ('mode, 'm, 'ij) dataconstr) Abwd.t;
     discrete : [ `Yes | `Maybe | `No ];
@@ -403,8 +403,8 @@ end = struct
   and ('mode, 'm, 'j, 'ij) data_args = {
     (* The dimension to which it is substituted *)
     dim : 'm D.t;
-    (* The datatype family after being applied to the parameters but not the indices, e.g. "Vec A".  This is an option ref because it gets set a little later than the rest of the fields are computed, since only when working with the embedding of neutrals into normals do we have the application spine and its type available.  *)
-    tyfam : 'mode normal Lazy.t option ref;
+    (* The datatype family after being applied to the parameters but not the indices, e.g. "Vec A", together with its type.  Computed lazily at evaluation time by evaluating the [tyfam] term stored in the corresponding [Term.Data] (read back when the datatype was checked) and reading its type off the resulting neutral; see the comment there. *)
+    tyfam : 'mode normal Lazy.t;
     (* The indices applied so far, and the number remaining *)
     indices : (('m, 'mode normal) CubeOf.t, 'j, 'ij) Fillvec.t;
     (* All the constructors *)

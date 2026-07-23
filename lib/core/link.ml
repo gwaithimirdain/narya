@@ -73,7 +73,7 @@ and branch : type mode a n. (File.t -> File.t) -> (mode, a, n) branch -> (mode, 
 and canonical : type mode a. (File.t -> File.t) -> (mode, a) canonical -> (mode, a) canonical =
  fun f can ->
   match can with
-  | Data { indices; constrs; discrete; recursive; hints } ->
+  | Data { indices; constrs; discrete; recursive; hints; tyfam } ->
       Data
         {
           indices;
@@ -81,6 +81,7 @@ and canonical : type mode a. (File.t -> File.t) -> (mode, a) canonical -> (mode,
           discrete;
           recursive = Positivity.link_recursion f recursive;
           hints;
+          tyfam = term f tyfam;
         }
   | Codata { eta; opacity; hints; dim; termctx = tc; fields; fibrancy = fib; is_glue } ->
       let trr =
