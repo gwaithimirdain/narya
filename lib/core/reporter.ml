@@ -1021,7 +1021,7 @@ module Code = struct
             field (Modality.to_string m)
       | Anomaly str -> textf "anomaly: %s" str
       | No_such_level i -> textf "@[<hov 2>no level variable@ %a@ in context@]" pp_printed (print i)
-      | Self_used -> text "self-variable used directly in a field-variable record display"
+      | Self_used -> text "uncaught use of self-variable in a field-variable record display"
       | Redefining_constant name ->
           textf "redefining constant: %a" pp_printed (print (PString (String.concat "." name)))
       | Invalid_constant_name (name, why) ->
