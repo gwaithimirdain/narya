@@ -209,6 +209,7 @@ module rec Term : sig
         discrete : [ `Yes | `Maybe | `No ];
         recursive : Positivity.recursion;
         hints : hints;
+        tyfam : ('mode, 'a, kinetic) term;
       }
         -> ('mode, 'a) canonical
     | Codata : ('mode, 'n, 'c, 'a, 'nh, 'ha, 'et) codata_args -> ('mode, 'a) canonical
@@ -550,6 +551,8 @@ end = struct
         recursive : Positivity.recursion;
         (* Variable-name hints, for displaying anonymous variables of this type. *)
         hints : hints;
+        (* The datatype applied to its parameters, with its indices abstracted (e.g. "Vec A").  This is read back at checking time, where the current head and its argument spine (the parameters) are available in the "potential" status; then at evaluation time it lets us fill in the value-level [tyfam] directly, rather than back-patching it once the enclosing neutral is observed.  (Its type is not stored: it is recovered from the neutral this evaluates to, which carries it fully-instantiated at the current dimension.) *)
+        tyfam : ('mode, 'a, kinetic) term;
       }
         -> ('mode, 'a) canonical
     | Codata : ('mode, 'n, 'c, 'a, 'nh, 'ha, 'et) codata_args -> ('mode, 'a) canonical

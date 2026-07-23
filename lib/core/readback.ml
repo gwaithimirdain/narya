@@ -760,7 +760,7 @@ let readback_data : type mode a b m j ij.
     (mode, kinetic) Value.value ->
     (mode, m, j, ij) Value.data_args ->
     (mode, b, potential) term =
- fun ctx indices tm { dim; constrs; discrete; recursive; hints; _ } ->
+ fun ctx indices tm { dim; constrs; discrete; recursive; tyfam; hints; indices = _ } ->
   let constrs =
     match (D.compare_zero dim, tm) with
     (* In the zero-dimensional case, we show each constructor with a telescope of arguments plus its output type.  The result ought to be re-evaluable, although we never need this. *)
@@ -822,7 +822,8 @@ let readback_data : type mode a b m j ij.
                   constrs)
         | _ -> fatal (Anomaly "type of degenerate datatype is not a universe"))
     | _ -> fatal (Anomaly "degenerate datatype value is not neutral") in
-  Canonical (Data { indices; constrs; discrete; recursive; hints })
+  let tyfam = readback_nf ctx (nf_of_neu (force_eval_term tyfam) "readback_data") in
+  Canonical (Data { indices; constrs; discrete; recursive; tyfam; hints })
 
 (* ------------------------------------------------------------------------- *)
 (* Reading back canonical types and (co)matches for the "about" command.      *)

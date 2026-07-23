@@ -130,30 +130,15 @@ type (_, _, _, _, _) shuffleable =
     }
       -> ('mode, 'r, 'h, 'i, 'c) shuffleable
 
-(* The [tyfam] field of a datatype value is a memoized back-pointer to the enclosing neutral that this [Data] value is the unfolding of: the datatype applied to its *parameters* (with its indices abstracted), paired with that neutral's type.  It cannot be filled in when the [Data] value is first created (in [eval_canonical]) because at that point the enclosing spine of the neutral does not exist yet: it is assembled by [apply] (and friends) further out.  So instead we capture it lazily, the first time that enclosing neutral is observed.
-
-   There are two flavors of observation, and they handle disjoint cases, so despite the shared write-once cell there is no genuine race:
-
-   - When the family is still function-shaped (an *indexed* datatype not yet applied to its indices, e.g. [Vector A] of type [ℕ → Type]), it is captured in [view_term], which fires precisely when [apply] views the function before applying the next index.  By construction this happens before the further-applied value (e.g. [Vector A n]) can exist to be viewed.
-
-   - When the family is type-shaped (a *non-indexed* datatype, whose family equals its own fully-applied type), it is captured in [view_type] when the datatype is viewed as a type.  Such a value is never applied further, so [view_term] never fires for it.
-
-   [capture_tyfam] performs the write-once capture; the [Option.is_none] guard makes re-observation a no-op and lets the first (correct) writer win. *)
-let capture_tyfam : type mode m j ij. (mode, m, j, ij) data_args -> mode normal Lazy.t -> unit =
- fun d fam -> if Option.is_none !(d.tyfam) then d.tyfam := Some fam
-
 (* If glued evaluation is off, then every value is fully normalized already, so there is nothing for viewing a term to do.  If glued evaluation is on, then the term might be a neutral with a lazy value waiting to be evaluated, in which case we force that value recursively.  Importantly, even under glued evaluation this function should be IDEMPOTENT up to PHYSICAL EQUALITY. *)
 let rec view_term : type mode s. (mode, s) value -> (mode, s) value =
  fun tm ->
   if GluedEval.read () then
     match tm with
-    | Neu { value; ty; _ } -> (
+    | Neu { value; _ } -> (
         (* For glued evaluation, when viewing a term, we force its value and proceed to view that value instead. *)
         match force_eval value with
         | Realize v -> view_term v
-        | Val (Canonical { canonical = Data d; _ }) ->
-            capture_tyfam d (lazy { tm; ty = Lazy.force ty });
-            tm
         | _ -> tm)
     | _ -> tm
   else tm
@@ -167,12 +152,7 @@ and view_type : type mode.
   | Neu { head; args; value; ty = _ } -> (
       (* Glued evaluation: when viewing a type, we force its value and proceed to view that value instead. *)
       match force_eval value with
-      | Val (Canonical { mode; canonical = c; tyargs; ins; fields = _; inst_fields = _ }) -> (
-          (match c with
-          | Data d ->
-              capture_tyfam d
-                (lazy { tm = ty; ty = inst (universe mode (TubeOf.inst tyargs)) tyargs })
-          | _ -> ());
+      | Val (Canonical { mode = _; canonical = c; tyargs; ins; fields = _; inst_fields = _ }) -> (
           match D.compare_zero (TubeOf.uninst tyargs) with
           | Zero ->
               let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (TubeOf.inst tyargs)) in
@@ -242,9 +222,6 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                       let newtm = Neu { head; args = Emp; value = ready value; ty } in
                       match value with
                       | Realize x -> x
-                      | Val (Canonical { canonical = Data d; _ }) ->
-                          capture_tyfam d (lazy { tm = newtm; ty = Lazy.force ty });
-                          newtm
                       | _ -> newtm)
                 | `Axiom -> Neu { head; args = Emp; value = ready Unrealized; ty } in
               add_cached_const name dim mode result;
@@ -656,7 +633,7 @@ and eval_args : type mode m n mn a.
 and apply_unfilled_data_index : type mode m j ij mk dom modl an k.
     mode Mode.t ->
     m D.t ->
-    mode normal Lazy.t option ref ->
+    (mode, kinetic) lazy_eval ->
     ((m, mode normal) CubeOf.t, j Fwn.suc, ij) Fillvec.t ->
     (Constr.t, (mode, m) dataconstr) Abwd.t ->
     [ `Yes | `Maybe | `No ] ->
@@ -779,9 +756,6 @@ and apply : type dom modality mode n m s.
                     let newtm = Neu { head; args; value = ready value; ty = newty } in
                     match value with
                     | Realize x -> Val x
-                    | Val (Canonical { canonical = Data d; _ }) ->
-                        capture_tyfam d (lazy { tm = newtm; ty = Lazy.force newty });
-                        Val newtm
                     | _ -> Val newtm)
                 | _ -> fatal (Anomaly "invalid application of type")))
       | _ -> fatal (Anomaly "invalid application by non-function"))
@@ -873,9 +847,6 @@ and field : type src f mode n k nk s.
                 let newtm = Neu { head; args; value = ready value; ty = newty } in
                 match value with
                 | Realize x -> Val x
-                | Val (Canonical { canonical = Data d; _ }) ->
-                    capture_tyfam d (lazy { tm = newtm; ty = Lazy.force newty });
-                    Val newtm
                 | _ -> Val newtm)
             | Realize _ -> fatal (Anomaly "realized neutral"))
       | _ ->
@@ -1449,8 +1420,9 @@ and eval_canonical : type mode m a.
     (mode, m, a) env -> (mode, a) Term.canonical -> (mode, potential) evaluation =
  fun env can ->
   match can with
-  | Data { indices; constrs; discrete; recursive; hints } ->
-      let tyfam = ref None in
+  | Data { indices; constrs; discrete; recursive; hints; tyfam } ->
+      (* The type family (the datatype applied to its parameters, e.g. "Vec A") was read back when this datatype was checked; we now evaluate it, lazily to avoid the circularity of re-entering this same evaluation eagerly.  Its type we take from the resulting neutral, since that is computed fully-instantiated at the current dimension (whereas re-evaluating a read-back type term would not be). *)
+      let tyfam = lazy_eval env tyfam in
       let constrs =
         Abwd.map
           (function

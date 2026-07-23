@@ -521,7 +521,7 @@ and unparse_canonical : type mode n lt ls rt rs.
     (lt, ls, rt, rs) parse located =
  fun vars c li ri ->
   match c with
-  | Data { indices; constrs; discrete = _; recursive = _; hints = _ } ->
+  | Data { indices; constrs; discrete = _; recursive = _; tyfam = _; hints = _ } ->
       let indexed =
         match indices with
         | Zero -> false
