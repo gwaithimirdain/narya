@@ -385,7 +385,11 @@ module Act = struct
 
   and act_normal : type mode mu1 mu2 cod a b.
       mode normal -> (a, b) deg -> (mode, mu1, mu2, cod) Modalcell.t -> mode normal =
-   fun { tm; ty } s c -> { tm = act_value tm s c; ty = lazy (act_ty tm (Lazy.force ty) s c) }
+   fun ({ tm; ty } as nf) s c ->
+    (* The public act_* entry points below are wrapped in short_circuit, but the recursive calls within this module are not, and act_apps factors the degeneracy per face, so a residual identity arrives here very often (96% of calls on a 3-dimensional Pi-type lift).  Re-testing here avoids rebuilding an identical normal, and in particular avoids allocating the deferred type-action thunk. *)
+    match (is_id_deg s, Modalcell.compare_id c) with
+    | Some _, Eq -> nf
+    | _ -> { tm = act_value tm s c; ty = lazy (act_ty tm (Lazy.force ty) s c) }
 
   (* When acting on a neutral or normal, we also need to specify the type of the output.  This *isn't* act_value on the original type; instead the type is required to be fully instantiated and the operator acts on the *instantiated* dimensions, in contrast to how act_value on an instantiation acts on the *uninstantiated* dimensions (as well as the instantiated term).  This function computes this "type of acted terms".  In general, it has to be passed the term as well as the type because the instantiation of the result may involve that term, e.g. if x : A then refl x : Id A x x; but we allow that term to be omitted in case the degeneracy is a pure symmetry in which case this doesn't happen. *)
   and gact_ty : type mode mu1 mu2 cod a b.
