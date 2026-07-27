@@ -206,7 +206,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                               in
                               (* We need to know the type of each lower-dimensional version in order to annotate it as a "normal" instantiation argument.  But we already computed that type while evaluating the term itself, since as a neutral term it had to be annotated with its type. *)
                               match tm with
-                              | Neu { ty = (lazy ty); _ } -> { tm; ty }
+                              | Neu { ty; _ } -> { tm; ty }
                               | _ ->
                                   fatal (Anomaly "eval of lower-dim constant not neutral/canonical"));
                         })) in
@@ -243,7 +243,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                        (act_env env (opt_op_of_sface (sface_of_tface fa)))
                        (Meta (meta, Kinetic)) in
                    match tm with
-                   | Neu { ty = (lazy ty); _ } -> { tm; ty }
+                   | Neu { ty; _ } -> { tm; ty }
                    | _ -> fatal (Anomaly "eval of lower-dim meta not neutral/canonical"));
              }) in
       match (Global.find_meta meta, ambient) with
@@ -316,7 +316,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                                  let faij = comp_sface fa (sface_of_tface fij) in
                                  Hashtbl.find newargstbl (SFace_of faij));
                            }) in
-                    let v = { tm; ty } in
+                    let v = { tm; ty = Lazy.from_val ty } in
                     Hashtbl.add newargstbl (SFace_of fa) v;
                     v);
               }
@@ -506,7 +506,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                     inst_fields = Some fields;
                   })) in
         let tm = Neu { head; args = Emp; value; ty = Lazy.from_val ty } in
-        Hashtbl.add pitbl (SFace_of fab) { tm; ty } in
+        Hashtbl.add pitbl (SFace_of fab) { tm; ty = Lazy.from_val ty } in
       let _ = CubeOf.build mn { build } in
       Val (Hashtbl.find pitbl (SFace_of (id_sface mn))).tm
   | Let (_, Modal (modality, al, v), body) ->
@@ -789,7 +789,7 @@ and tyof_app : type dom modality mode k n.
                        (fun fc ->
                          Hashtbl.find out_arg_tbl (SFace_of (comp_sface fa (sface_of_tface fc))));
                    }) in
-            let out_tm = { tm; ty } in
+            let out_tm = { tm; ty = Lazy.from_val ty } in
             Hashtbl.add out_arg_tbl (SFace_of fa) out_tm;
             out_tm);
       }
@@ -982,7 +982,7 @@ and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
           (fun fa [ arg ] ->
             let fains = ins_zero (dom_tface fa) in
             let tm = field_term left arg.tm fldname fains in
-            let ty = tyof_field left (Ok arg.tm) arg.ty fldname ~shuf:Trivial fains in
+            let ty = lazy (tyof_field left (Ok arg.tm) (Lazy.force arg.ty) fldname ~shuf:Trivial fains) in
             { tm; ty });
       }
       [ fst (TubeOf.split (D.zero_plus m) mn tyargs) ] in
@@ -1104,7 +1104,7 @@ and tyof_higher_codatafield : type mode f g gmode c n h s r i ic iag.
             match shuf with
             | Trivial ->
                 let tm = field_term left arg.tm fldname fains in
-                let ty = tyof_field left (Ok arg.tm) arg.ty fldname ~shuf fains in
+                let ty = lazy (tyof_field left (Ok arg.tm) (Lazy.force arg.ty) fldname ~shuf fains) in
                 { tm; ty }
             | Nontrivial { dbwd = _; shuffle; deg_env = _; deg_nf } ->
                 (* In this case, we have to degenerate the arguments, since they depend on the context. *)
@@ -1113,7 +1113,7 @@ and tyof_higher_codatafield : type mode f g gmode c n h s r i ic iag.
                 let (Plus rm) = D.plus (dom_tface faplus) in
                 let arg_ins = ins_plus_of_pbij fains shuffle rm in
                 let tm = field_term left arg.tm fldname arg_ins in
-                let ty = tyof_field left (Ok arg.tm) arg.ty fldname ~shuf:Trivial arg_ins in
+                let ty = lazy (tyof_field left (Ok arg.tm) (Lazy.force arg.ty) fldname ~shuf:Trivial arg_ins) in
                 { tm; ty });
       } in
   inst insttm instargs
@@ -1880,7 +1880,7 @@ and norm_of_val : type mode m n.
       {
         build = (fun fc -> Hashtbl.find new_tm_tbl (SFace_of (comp_sface fab (sface_of_tface fc))));
       } in
-  let ty = inst ty args in
+  let ty = lazy (inst ty args) in
   let newtm = { tm; ty } in
   Hashtbl.add new_tm_tbl (SFace_of fab) newtm;
   newtm
@@ -1946,7 +1946,7 @@ and tyof_inst : type mode m n mn.
                       Hashtbl.find tyargtbl (SFace_of (comp_sface fb (sface_of_tface fa))));
                 } in
             let tm = inst (TubeOf.find tyargs (tface_plus fe mn mn jn)).tm jnargs in
-            let ty = tyof_inst mode jntyargs jnargs in
+            let ty = lazy (tyof_inst mode jntyargs jnargs) in
             { tm; ty });
       } in
   inst (universe mode m) margs
@@ -2012,8 +2012,8 @@ let eval_bindings : type dom modality mode a b n bm.
             j := !j + 1;
             let lvl, v =
               match ctm with
-              | None -> (Some level, ({ tm = var modality level ety; ty = ety } : dom normal))
-              | Some ctm -> (None, { tm = eval_term (Ctx.Ordered.env tempctx) ctm; ty = ety }) in
+              | None -> (Some level, ({ tm = var modality level ety; ty = Lazy.from_val ety } : dom normal))
+              | Some ctm -> (None, { tm = eval_term (Ctx.Ordered.env tempctx) ctm; ty = Lazy.from_val ety }) in
             Hashtbl.add argtbl (SFace_of fa) v;
             Ctx.Binding.specify vb lvl v);
       }

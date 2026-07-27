@@ -53,7 +53,7 @@ module ModalValuePairCube = Modality.Cube (ValuePair)
 
 let rec readback_nf : type mode a z.
     ?eta:bool -> (mode, z, a) Ctx.t -> mode normal -> (mode, a, kinetic) term =
- fun ?(eta = false) n x -> readback_at ~eta n x.tm x.ty
+ fun ?(eta = false) n x -> readback_at ~eta n x.tm (Lazy.force x.ty)
 
 and readback_at : type mode a z.
     ?eta:bool ->
@@ -464,7 +464,7 @@ and readback_at_tel : type mode n c a b ab z.
                                      Hashtbl.find tyargtbl
                                        (SFace_of (comp_sface fb (sface_of_tface fc))));
                                }) in
-                        let argnorm : dom normal = { tm = argtm; ty = argty } in
+                        let argnorm : dom normal = { tm = argtm; ty = Lazy.from_val argty } in
                         let argtm = readback_at lctx argtm argty in
                         Hashtbl.add tyargtbl (SFace_of fb) argnorm;
                         [ argnorm; argtm ]);
@@ -552,7 +552,7 @@ and readback_ordered_env : type mode n a b c d.
                                  Hashtbl.find xtytbl (SFace_of (comp_sface fb (sface_of_tface fc))));
                            }) in
                     (* We use this computed type to make a normal form, and record it in the hashtbl. *)
-                    Hashtbl.add xtytbl (SFace_of fb) { tm; ty };
+                    Hashtbl.add xtytbl (SFace_of fb) { tm; ty = Lazy.from_val ty };
                     (* Finally, we read back the term in that instantiated type. *)
                     readback_at lctx tm ty);
               }
@@ -608,12 +608,12 @@ let readback_bindings : type mode a b n.
         (fun _ [ b ] ->
           match Binding.level b with
           | Some _ ->
-              ({ tm = None; ty = readback_val ~sort:`Type ctx (Binding.value b).ty }
+              ({ tm = None; ty = readback_val ~sort:`Type ctx (Lazy.force (Binding.value b).ty) }
                 : (mode, b) binding)
           | None ->
               {
                 tm = Some (readback_nf ctx (Binding.value b));
-                ty = readback_val ~sort:`Type ctx (Binding.value b).ty;
+                ty = readback_val ~sort:`Type ctx (Lazy.force (Binding.value b).ty);
               });
     }
     [ vbs ]
@@ -640,7 +640,7 @@ let readback_entry : type dom modality mode a b f n.
           (fun (f, x) ->
             let fldty =
               readback_val ~sort:`Type lctx
-                (tyof_field (Modality.id (Ctx.mode lctx)) (Ok top.tm) top.ty f ~shuf:Trivial fins)
+                (tyof_field (Modality.id (Ctx.mode lctx)) (Ok top.tm) (Lazy.force top.ty) f ~shuf:Trivial fins)
             in
             (f, x, fldty))
           fields in
@@ -652,7 +652,7 @@ let readback_entry : type dom modality mode a b f n.
       (* Invisible variables are anonymous, but we can still record display hints from their types, since after readback the types are terms and the hints can no longer be computed on demand.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints. *)
       let hints =
         Reporter.try_with ~fatal:(fun _ -> no_hints) @@ fun () ->
-        View.hints_of_ty (Binding.value (CubeOf.find_top bindings)).ty in
+        View.hints_of_ty (Lazy.force (Binding.value (CubeOf.find_top bindings)).ty) in
       let (Locked (plus_lock, lctx)) = Ctx.lock ctx modality in
       Readback_entry
         (Invis { plus_lock; filter; bindings = readback_bindings lctx bindings; hints })

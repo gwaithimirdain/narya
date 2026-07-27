@@ -385,7 +385,7 @@ module Act = struct
 
   and act_normal : type mode mu1 mu2 cod a b.
       mode normal -> (a, b) deg -> (mode, mu1, mu2, cod) Modalcell.t -> mode normal =
-   fun { tm; ty } s c -> { tm = act_value tm s c; ty = act_ty tm ty s c }
+   fun { tm; ty } s c -> { tm = act_value tm s c; ty = lazy (act_ty tm (Lazy.force ty) s c) }
 
   (* When acting on a neutral or normal, we also need to specify the type of the output.  This *isn't* act_value on the original type; instead the type is required to be fully instantiated and the operator acts on the *instantiated* dimensions, in contrast to how act_value on an instantiation acts on the *uninstantiated* dimensions (as well as the instantiated term).  This function computes this "type of acted terms".  In general, it has to be passed the term as well as the type because the instantiation of the result may involve that term, e.g. if x : A then refl x : Id A x x; but we allow that term to be omitted in case the degeneracy is a pure symmetry in which case this doesn't happen. *)
   and gact_ty : type mode mu1 mu2 cod a b.
@@ -479,7 +479,7 @@ module Act = struct
                 (* The arguments of a full instantiation are missing only the top face, which is filled in by the term belonging to it. *)
                 match (pface_of_sface fd, tm) with
                 | `Proper fd, _ -> TubeOf.find inst_args fd
-                | `Id Eq, Some tm -> { tm; ty = tmty }
+                | `Id Eq, Some tm -> { tm; ty = Lazy.from_val tmty }
                 | `Id Eq, None ->
                     fatal (Anomaly "term missing in instantiated act_ty by non-symmetry") in
               act_normal ftm fc cell);

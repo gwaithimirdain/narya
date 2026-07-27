@@ -17,5 +17,5 @@ let unact_ty : type mode n. err:Code.t -> (mode, kinetic) value -> n D.t -> (mod
       let s = vertex n <|> err in
       let sk = sface_plus s nk (D.zero_plus (D.plus_right nk)) in
       match pface_of_sface sk with
-      | `Proper fa -> (TubeOf.find tyargs fa).ty
+      | `Proper fa -> (Lazy.force (TubeOf.find tyargs fa).ty)
       | `Id Eq -> ty)

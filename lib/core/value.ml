@@ -185,7 +185,7 @@ module rec Value : sig
       }
         -> ('mode, 'm, 'ij) dataconstr
 
-  and 'mode normal = { tm : ('mode, kinetic) value; ty : ('mode, kinetic) value }
+  and 'mode normal = { tm : ('mode, kinetic) value; ty : ('mode, kinetic) value Lazy.t }
 
   and (_, _, _) env =
     | Emp : 'mode Mode.t * 'n D.t -> ('mode, 'n, 'mode emp) env
@@ -441,7 +441,7 @@ end = struct
         -> ('mode, 'm, 'ij) dataconstr
 
   (* A "normal form" is a value paired with its type.  The type is used for eta-expansion and equality-checking. *)
-  and 'mode normal = { tm : ('mode, kinetic) value; ty : ('mode, kinetic) value }
+  and 'mode normal = { tm : ('mode, kinetic) value; ty : ('mode, kinetic) value Lazy.t }
 
   (* An "environment" is a context morphism *from* a De Bruijn LEVEL context *to* a (typechecked) De Bruijn INDEX context.  Specifically, an ('n, 'a) env is an 'n-dimensional substitution from a level context to an index context indexed by the hctx 'a.  Since the index context could have some variables that are labeled by integers together with faces, the values also have to allow that.  The environment is NOT parametrized by a mode: the terms in it could belong to many modes, namely the domains of the modality annotations in the codomain context.  We don't enforce the validity of those modes here. *)
   and (_, _, _) env =
@@ -503,7 +503,7 @@ include Value
 let nf_of_neu : type mode. (mode, kinetic) value -> string -> mode normal =
  fun tm str ->
   match tm with
-  | Neu { ty; _ } -> { tm; ty = Lazy.force ty }
+  | Neu { ty; _ } -> { tm; ty }
   | _ -> fatal (Anomaly ("nf_of_neu: " ^ str))
 
 type (_, _) modal_value =
@@ -959,7 +959,7 @@ let rec universe : type mode n. mode Mode.t -> n D.t -> (mode, kinetic) value =
       v
 
 and universe_nf : type mode n. mode Mode.t -> n D.t -> mode normal =
- fun mode n -> { tm = universe mode n; ty = universe_ty mode n }
+ fun mode n -> { tm = universe mode n; ty = lazy (universe_ty mode n) }
 
 (* And this is the instantiation of itself that it belongs to.  This is a type (i.e. an element of the 0-dimensional universe), so it must be fully instantiated.  *)
 and universe_ty : type mode n. mode Mode.t -> n D.t -> (mode, kinetic) value =

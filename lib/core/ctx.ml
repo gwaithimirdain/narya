@@ -521,7 +521,7 @@ module Ordered = struct
       (mode, a N.suc, (b, (modality, D.zero) dim_entry) snoc) t * dom Binding.t =
    fun ctx modality x ty ->
     let n = length ctx in
-    let b = Binding.make (Some (n, 0)) { tm = var modality (n, 0) ty; ty } in
+    let b = Binding.make (Some (n, 0)) { tm = var modality (n, 0) ty; ty = Lazy.from_val ty } in
     (cube_vis ctx (Modality.filter_zero modality) x (CubeOf.singleton b), b)
 
   (* Extend a context by one new variable with an assigned value.  The optional ?dirt records whether that value contains occurrences of currently-being-defined constants. *)
@@ -563,7 +563,7 @@ module Ordered = struct
         (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints. *)
         let hints =
           Reporter.try_with ~fatal:(fun _ -> no_hints) @@ fun () ->
-          View.hints_of_ty (Binding.value (CubeOf.find_top bindings)).ty in
+          View.hints_of_ty (Lazy.force (Binding.value (CubeOf.find_top bindings)).ty) in
         lam ctx
           (Lam
              ( singleton_variables (CubeOf.dim bindings) (`Anon hints),
