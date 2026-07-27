@@ -552,32 +552,33 @@ module Make (G : Comparable) = struct
 
   type (_, _) factor = Factor : ('n, 'k, 'nk) plus -> ('nk, 'n) factor
 
+  (* This is a hot path: it is called from pushout, and thence from Deg.comp_deg_extending, many millions of times in higher-dimensional normalization.  So we match on the option explicitly rather than going through Monad.Maybe, whose let* allocates a closure at every level of the recursion. *)
   let rec factor : type nk n. nk t -> n t -> (nk, n) factor option =
    fun nk n ->
-    let open Monad.Ops (Monad.Maybe) in
     match compare nk n with
     | Eq -> Some (Factor Zero)
     | Neq -> (
         match nk with
         | Word Zero -> None
-        | Word (Suc (nk, g)) ->
-            let* (Factor n_k) = factor (Word nk) n in
-            return (Factor (Suc (n_k, g))))
+        | Word (Suc (nk, g)) -> (
+            match factor (Word nk) n with
+            | Some (Factor n_k) -> Some (Factor (Suc (n_k, g)))
+            | None -> None))
 
   type (_, _) cofactor = Cofactor : ('n, 'k, 'nk) plus -> ('nk, 'k) cofactor
 
   let rec cofactor : type nk k. nk t -> k t -> (nk, k) cofactor option =
    fun nk k ->
-    let open Monad.Ops (Monad.Maybe) in
     match (nk, k) with
     | Word Zero, Word Zero -> Some (Cofactor Zero)
     | Word (Suc (nk, g)), Word (Suc (k, h)) -> (
         match G.compare g h with
-        | Eq ->
-            let* (Cofactor n) = cofactor (Word nk) (Word k) in
-            return (Cofactor (Suc (n, g)))
+        | Eq -> (
+            match cofactor (Word nk) (Word k) with
+            | Some (Cofactor n) -> Some (Cofactor (Suc (n, g)))
+            | None -> None)
         | Neq -> None)
-    | Word (Suc _), Word Zero -> return (Cofactor (plus_zero nk))
+    | Word (Suc _), Word Zero -> Some (Cofactor (plus_zero nk))
     | _ -> None
 
   (* Trichotomy.  With multiple generators, two words need not be comparable, so there is a fourth case. *)
@@ -601,12 +602,15 @@ module Make (G : Comparable) = struct
 
   type (_, _) pushout = Pushout : ('a, 'c, 'p) plus * ('b, 'd, 'p) plus -> ('a, 'b) pushout
 
+  (* Building the pair (factor a b, factor b a) evaluated both factorizations even when only the first branch was taken.  Testing them in the order the branches consume them avoids that; measured effect is small (~0.5%), since the redundant call is usually cheap. *)
   let pushout : type a b. a t -> b t -> (a, b) pushout =
    fun a b ->
-    match (factor a b, factor b a) with
-    | _, Some (Factor ab) -> Pushout (ab, Zero)
-    | Some (Factor ba), _ -> Pushout (Zero, ba)
-    | _ -> raise (Failure "Word.pushout")
+    match factor b a with
+    | Some (Factor ab) -> Pushout (ab, Zero)
+    | None -> (
+        match factor a b with
+        | Some (Factor ba) -> Pushout (Zero, ba)
+        | None -> raise (Failure "Word.pushout"))
 end
 
 module MakeCheck (G : Comparable) : Monoid = Make (G)
