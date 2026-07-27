@@ -1130,3 +1130,42 @@ Gel is not allowed
   (_ ≔ ())
     : glue 𝔹 𝔹 flips (bisim_of_11 𝔹 𝔹 flips flips11) f. t.
   
+  $ narya pi3.ny
+  B222
+      (A222 (A022 (A002 .liftl a001) (A012 .liftl a011) .liftl a021)
+           (A122 (A102 .liftl a101) (A112 .liftl a111) .liftl a121)
+           (A202 (A002 .liftl a001) (A102 .liftl a101) .liftl a201)
+           (A212 (A012 .liftl a011) (A112 .liftl a111) .liftl a211)
+       .liftl a221)
+      (f022 (A022 (A002 .liftl a001) (A012 .liftl a011) .liftl a021))
+      (f122 (A122 (A102 .liftl a101) (A112 .liftl a111) .liftl a121))
+      (f202 (A202 (A002 .liftl a001) (A102 .liftl a101) .liftl a201))
+      (f212 (A212 (A012 .liftl a011) (A112 .liftl a111) .liftl a211))
+    .trr
+      (f220
+         (A222 (A022 (A002 .liftl a001) (A012 .liftl a011) .liftl a021)
+              (A122 (A102 .liftl a101) (A112 .liftl a111) .liftl a121)
+              (A202 (A002 .liftl a001) (A102 .liftl a101) .liftl a201)
+              (A212 (A012 .liftl a011) (A112 .liftl a111) .liftl a211)
+          .trl a221))
+    : B221 a221 (f021 a021) (f121 a121) (f201 a201) (f211 a211)
+  
+  B222
+      (A222 (A022 (A002 .liftr a000) (A012 .liftr a010) .liftr a020)
+           (A122 (A102 .liftr a100) (A112 .liftr a110) .liftr a120)
+           (A202 (A002 .liftr a000) (A102 .liftr a100) .liftr a200)
+           (A212 (A012 .liftr a010) (A112 .liftr a110) .liftr a210)
+       .liftr a220)
+      (f022 (A022 (A002 .liftr a000) (A012 .liftr a010) .liftr a020))
+      (f122 (A122 (A102 .liftr a100) (A112 .liftr a110) .liftr a120))
+      (f202 (A202 (A002 .liftr a000) (A102 .liftr a100) .liftr a200))
+      (f212 (A212 (A012 .liftr a010) (A112 .liftr a110) .liftr a210))
+    .trl
+      (f221
+         (A222 (A022 (A002 .liftr a000) (A012 .liftr a010) .liftr a020)
+              (A122 (A102 .liftr a100) (A112 .liftr a110) .liftr a120)
+              (A202 (A002 .liftr a000) (A102 .liftr a100) .liftr a200)
+              (A212 (A012 .liftr a010) (A112 .liftr a110) .liftr a210)
+          .trr a220))
+    : B220 a220 (f020 a020) (f120 a120) (f200 a200) (f210 a210)
+  
