@@ -909,6 +909,33 @@
          .trl (u21 .snd)) (u21 .snd)
   
 
+  $ narya sigma3.ny
+  Σ⁽ᵉᵉᵉ⁾ A222 B222 u022 u122 u202 u212 .trr u220
+    : Σ⁽ᵉᵉ⁾ A221 B221 u021 u121 u201 u211
+  
+  A222 (u022 .fst) (u122 .fst) (u202 .fst) (u212 .fst) .trr (u220 .fst)
+    : A221 (u021 .fst) (u121 .fst) (u201 .fst) (u211 .fst)
+  
+  B222
+      (A222 (u022 .fst) (u122 .fst) (u202 .fst) (u212 .fst)
+       .liftr (u220 .fst)) (u022 .snd) (u122 .snd) (u202 .snd) (u212 .snd)
+    .trr (u220 .snd)
+    : B221
+        (A222 (u022 .fst) (u122 .fst) (u202 .fst) (u212 .fst)
+         .trr (u220 .fst)) (u021 .snd) (u121 .snd) (u201 .snd) (u211 .snd)
+  
+  Σ⁽ᵉᵉᵉ⁾ A222 B222 u022 u122 u202 u212 .liftr u220
+    : Σ⁽ᵉᵉᵉ⁾ A222 B222 u022 u122 u202 u212 u220
+        (Σ⁽ᵉᵉᵉ⁾ A222 B222 u022 u122 u202 u212 .trr u220)
+  
+  Σ⁽ᵉᵉᵉ⁾ A222 B222 u022 u122 u202 u212 .trl u221
+    : Σ⁽ᵉᵉ⁾ A220 B220 u020 u120 u200 u210
+  
+  Σ⁽ᵉᵉᵉ⁾ A222 B222 u022 u122 u202 u212 .liftl u221
+    : Σ⁽ᵉᵉᵉ⁾ A222 B222 u022 u122 u202 u212
+        (Σ⁽ᵉᵉᵉ⁾ A222 B222 u022 u122 u202 u212 .trl u221) u221
+  
+
   $ narya 3sigma.ny
   refl Σ3 A₂ B₂ C₂ .trr u₀
     : Σ3 A₁ B₁ C₁
