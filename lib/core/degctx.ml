@@ -40,8 +40,8 @@ module Ordered = struct
             (fun _ [ x ] ->
               let nf = Binding.value x in
               match Binding.level x with
-              | None -> (Some (readback_nf lctx nf), readback_val lctx nf.ty)
-              | Some _ -> (None, readback_val lctx nf.ty));
+              | None -> (Some (readback_nf lctx nf), readback_val lctx (Lazy.force nf.ty))
+              | Some _ -> (None, readback_val lctx (Lazy.force nf.ty)));
         }
         [ xs ] in
     let j = ref 0 in
@@ -90,7 +90,7 @@ module Ordered = struct
                                        (comp_sface fa (sface_of_tface fc))
                                        k_n l_m fb)));
                          }) in
-                  let v = { tm = var modality level ty; ty } in
+                  let v = { tm = var modality level ty; ty = Lazy.from_val ty } in
                   Hashtbl.add xstbl (SFace_of fab) v;
                   Binding.make (Some level) v
               | Some tm, ty ->
@@ -112,7 +112,7 @@ module Ordered = struct
                                        (comp_sface fa (sface_of_tface fc))
                                        k_n l_m fb)));
                          }) in
-                  let v = { tm; ty } in
+                  let v = { tm; ty = Lazy.from_val ty } in
                   Hashtbl.add xstbl (SFace_of fab) v;
                   Binding.make None v);
         } in

@@ -87,7 +87,7 @@ end
 let rec equal_nf : type mode a b. (mode, a, b) Ctx.t -> mode normal -> mode normal -> unit Err.t =
  fun n x y ->
   (* Thus, we can do an eta-expanding check at either one of their stored types, since they are assumed equal.  We check them at the type of the *second* argument, since this is also called as a subroutine of subtype checking, in which case the subtype comes first and then the supertype. *)
-  equal_at n x.tm y.tm y.ty
+  equal_at n x.tm y.tm (Lazy.force y.ty)
 
 (* At a type with an eta-rule, two neutrals with equal spines are nevertheless equal, and checking this first can avoid an eta-expansion.  This matters especially with glued evaluation, where parallel derivations produce equal retained spines that are not physically shared, and where eta-expanding compares (and hence unfolds and re-evaluates) their realizations instead.  A spine mismatch is inconclusive at an eta type, so callers fall back to eta-expanding. *)
 and equal_at_eta_spines : type mode a b.
@@ -238,7 +238,7 @@ and equal_at : type mode a b.
                 match (x, y) with
                 | Constr _, _ | _, Constr _ ->
                     fail
-                      (Unequal.Terms (PNormal (ctx, { tm = x; ty }), PNormal (ctx, { tm = y; ty })))
+                      (Unequal.Terms (PNormal (ctx, { tm = x; ty = Lazy.from_val ty }), PNormal (ctx, { tm = y; ty = Lazy.from_val ty })))
                 | _ -> equal_val ctx x y) in
         equal_at_data x y
     (* If the type is not one that has an eta-rule, then we pass off to a synthesizing equality-check, forgetting about our assumption that the two terms had the same type.  This is the equality-checking analogue of the conversion rule for checking a synthesizing term, but since equality requires no evidence we don't have to actually synthesize a type at which they are equal or verify that it equals the type we assumed them to have. *)
@@ -514,7 +514,7 @@ and equal_at_tel : type mode n a b ab c d.
                                      Hashtbl.find tyargtbl
                                        (SFace_of (comp_sface fb (sface_of_tface fc))));
                                }) in
-                        let argnorm : xdom normal = { tm = argtm; ty = argty } in
+                        let argnorm : xdom normal = { tm = argtm; ty = (Lazy.from_val (argty)) } in
                         Hashtbl.add tyargtbl (SFace_of fb) argnorm;
                         argnorm);
               } in
@@ -599,7 +599,7 @@ and equal_ordered_env : type mode a b n c d.
                                    Hashtbl.find xtytbl
                                      (SFace_of (comp_sface fb (sface_of_tface fc))));
                              }) in
-                      Hashtbl.add xtytbl (SFace_of fb) { tm = tm1; ty };
+                      Hashtbl.add xtytbl (SFace_of fb) { tm = tm1; ty = Lazy.from_val ty };
                       check (equal_at lctx tm1 tm2 ty));
                 }
                 [ xs1; xs2 ]))

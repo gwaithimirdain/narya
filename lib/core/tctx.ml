@@ -255,9 +255,24 @@ let plus_lock : type ctx dom modality mode.
   let (Comp bm) = Tctx.comp (Lock.cod cm) in
   Has_plus_lock (Plus_lock (cm, bm))
 
+(* The identity plus_lock carries no data depending on the context: its content is determined by the mode alone.  It is built on essentially every Ctx.lock, and the results are stored in locked contexts that survive, which made it the largest single source of retained memory when reading back higher-dimensional terms.  So we build one per mode and share it.  The context parameter is handled by a universally quantified record field, so no unsafe coercion is needed, and Mode.compare supplies the type equality for the mode. *)
+module No_lock = struct
+  type ('x, 'mode) t = { nl : 'ctx. ('ctx, 'mode, 'mode Modality.id, 'mode, 'ctx) plus_lock }
+end
+
+module No_lock_map = Mode.Map.Make (No_lock)
+
+let no_lock_cache : unit No_lock_map.t ref = ref No_lock_map.empty
+
 let plus_no_lock : type ctx mode. mode Mode.t -> (ctx, mode, mode Modality.id, mode, ctx) plus_lock
     =
- fun mode -> Plus_lock (Zero (Eq mode), Zero)
+ fun mode ->
+  match No_lock_map.find_opt mode !no_lock_cache with
+  | Some c -> c.nl
+  | None ->
+      let c : _ No_lock.t = { nl = Plus_lock (Zero (Eq mode), Zero) } in
+      no_lock_cache := No_lock_map.add mode c !no_lock_cache;
+      c.nl
 
 (* A plus_lock for the identity modality doesn't actually extend the context. *)
 let plus_lock_id : type ctx mode newctx.

@@ -35,7 +35,7 @@ let dom_vars : type dom modality mode m a b.
                    }) in
             let level = (i, !j) in
             j := !j + 1;
-            let v = { tm = var modality level ty; ty } in
+            let v = { tm = var modality level ty; ty = Lazy.from_val ty } in
             Hashtbl.add argtbl (SFace_of fa) v;
             [ v.tm; Ctx.Binding.make (Some level) v ]);
       }

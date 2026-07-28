@@ -909,6 +909,33 @@
          .trl (u21 .snd)) (u21 .snd)
   
 
+  $ narya sigma3.ny
+  Σ⁽ᵉᵉᵉ⁾ A222 B222 u022 u122 u202 u212 .trr u220
+    : Σ⁽ᵉᵉ⁾ A221 B221 u021 u121 u201 u211
+  
+  A222 (u022 .fst) (u122 .fst) (u202 .fst) (u212 .fst) .trr (u220 .fst)
+    : A221 (u021 .fst) (u121 .fst) (u201 .fst) (u211 .fst)
+  
+  B222
+      (A222 (u022 .fst) (u122 .fst) (u202 .fst) (u212 .fst)
+       .liftr (u220 .fst)) (u022 .snd) (u122 .snd) (u202 .snd) (u212 .snd)
+    .trr (u220 .snd)
+    : B221
+        (A222 (u022 .fst) (u122 .fst) (u202 .fst) (u212 .fst)
+         .trr (u220 .fst)) (u021 .snd) (u121 .snd) (u201 .snd) (u211 .snd)
+  
+  Σ⁽ᵉᵉᵉ⁾ A222 B222 u022 u122 u202 u212 .liftr u220
+    : Σ⁽ᵉᵉᵉ⁾ A222 B222 u022 u122 u202 u212 u220
+        (Σ⁽ᵉᵉᵉ⁾ A222 B222 u022 u122 u202 u212 .trr u220)
+  
+  Σ⁽ᵉᵉᵉ⁾ A222 B222 u022 u122 u202 u212 .trl u221
+    : Σ⁽ᵉᵉ⁾ A220 B220 u020 u120 u200 u210
+  
+  Σ⁽ᵉᵉᵉ⁾ A222 B222 u022 u122 u202 u212 .liftl u221
+    : Σ⁽ᵉᵉᵉ⁾ A222 B222 u022 u122 u202 u212
+        (Σ⁽ᵉᵉᵉ⁾ A222 B222 u022 u122 u202 u212 .trl u221) u221
+  
+
   $ narya 3sigma.ny
   refl Σ3 A₂ B₂ C₂ .trr u₀
     : Σ3 A₁ B₁ C₁
@@ -1129,4 +1156,43 @@ Gel is not allowed
   
   (_ ≔ ())
     : glue 𝔹 𝔹 flips (bisim_of_11 𝔹 𝔹 flips flips11) f. t.
+  
+  $ narya pi3.ny
+  B222
+      (A222 (A022 (A002 .liftl a001) (A012 .liftl a011) .liftl a021)
+           (A122 (A102 .liftl a101) (A112 .liftl a111) .liftl a121)
+           (A202 (A002 .liftl a001) (A102 .liftl a101) .liftl a201)
+           (A212 (A012 .liftl a011) (A112 .liftl a111) .liftl a211)
+       .liftl a221)
+      (f022 (A022 (A002 .liftl a001) (A012 .liftl a011) .liftl a021))
+      (f122 (A122 (A102 .liftl a101) (A112 .liftl a111) .liftl a121))
+      (f202 (A202 (A002 .liftl a001) (A102 .liftl a101) .liftl a201))
+      (f212 (A212 (A012 .liftl a011) (A112 .liftl a111) .liftl a211))
+    .trr
+      (f220
+         (A222 (A022 (A002 .liftl a001) (A012 .liftl a011) .liftl a021)
+              (A122 (A102 .liftl a101) (A112 .liftl a111) .liftl a121)
+              (A202 (A002 .liftl a001) (A102 .liftl a101) .liftl a201)
+              (A212 (A012 .liftl a011) (A112 .liftl a111) .liftl a211)
+          .trl a221))
+    : B221 a221 (f021 a021) (f121 a121) (f201 a201) (f211 a211)
+  
+  B222
+      (A222 (A022 (A002 .liftr a000) (A012 .liftr a010) .liftr a020)
+           (A122 (A102 .liftr a100) (A112 .liftr a110) .liftr a120)
+           (A202 (A002 .liftr a000) (A102 .liftr a100) .liftr a200)
+           (A212 (A012 .liftr a010) (A112 .liftr a110) .liftr a210)
+       .liftr a220)
+      (f022 (A022 (A002 .liftr a000) (A012 .liftr a010) .liftr a020))
+      (f122 (A122 (A102 .liftr a100) (A112 .liftr a110) .liftr a120))
+      (f202 (A202 (A002 .liftr a000) (A102 .liftr a100) .liftr a200))
+      (f212 (A212 (A012 .liftr a010) (A112 .liftr a110) .liftr a210))
+    .trl
+      (f221
+         (A222 (A022 (A002 .liftr a000) (A012 .liftr a010) .liftr a020)
+              (A122 (A102 .liftr a100) (A112 .liftr a110) .liftr a120)
+              (A202 (A002 .liftr a000) (A102 .liftr a100) .liftr a200)
+              (A212 (A012 .liftr a010) (A112 .liftr a110) .liftr a210)
+          .trr a220))
+    : B220 a220 (f020 a020) (f120 a120) (f200 a200) (f210 a210)
   
