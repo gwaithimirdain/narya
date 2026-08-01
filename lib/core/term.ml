@@ -57,9 +57,11 @@ module rec Term : sig
           -> (D.zero, 'mode * 'a * 'n * 'et) t
       | Higher :
           ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
-          * ('i, 'a, 'ia, 'mode) plusmap
-          * ('ia, 'mode, 'g, 'gmode, 'iag) plus_lock
-          * ('gmode, ('iag, ('f, 'i) dim_entry) snoc, kinetic) Term.term
+          * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
+          (* The context in which the field's type is checked, as a termctx, needed to eval-readback environments when degenerating them to check the field at a nontrivial partial bijection. *)
+          * ('gmode, 'd, ('ag, ('f, D.zero) dim_entry) snoc) Term.termctx
+          * ('i, ('ag, ('f, D.zero) dim_entry) snoc, 'iagx, 'gmode) plusmap
+          * ('gmode, 'iagx, kinetic) Term.term
           -> ('i, 'mode * 'a * D.zero * no_eta) t
   end
 
@@ -205,14 +207,13 @@ module rec Term : sig
         tyfam : ('mode, 'a, kinetic) term;
       }
         -> ('mode, 'a) canonical
-    | Codata : ('mode, 'n, 'c, 'a, 'nh, 'ha, 'et) codata_args -> ('mode, 'a) canonical
+    | Codata : ('mode, 'n, 'a, 'nh, 'ha, 'et) codata_args -> ('mode, 'a) canonical
 
-  and ('mode, 'n, 'c, 'a, 'nh, 'ha, 'et) codata_args = {
+  and ('mode, 'n, 'a, 'nh, 'ha, 'et) codata_args = {
     eta : (potential, 'et) eta;
     opacity : opacity;
     hints : hints;
     dim : 'n D.t;
-    termctx : ('mode, 'c, 'a) termctx option;
     fields : ('mode * 'a * 'n * 'et) CodatafieldAbwd.t;
     fibrancy : ('mode, 'n, 'n, 'nh, 'a, 'ha, 'et) codata_fibrancy;
     is_glue : ('mode, 'n, 'a, 'et) is_glue option;
@@ -356,9 +357,11 @@ end = struct
           -> (D.zero, 'mode * 'a * 'n * 'et) t
       | Higher :
           ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
-          * ('i, 'a, 'ia, 'mode) plusmap
-          * ('ia, 'mode, 'g, 'gmode, 'iag) plus_lock
-          * ('gmode, ('iag, ('f, 'i) dim_entry) snoc, kinetic) Term.term
+          * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
+          (* The context in which the field's type is checked, as a termctx, needed to eval-readback environments when degenerating them to check the field at a nontrivial partial bijection. *)
+          * ('gmode, 'd, ('ag, ('f, D.zero) dim_entry) snoc) Term.termctx
+          * ('i, ('ag, ('f, D.zero) dim_entry) snoc, 'iagx, 'gmode) plusmap
+          * ('gmode, 'iagx, kinetic) Term.term
           -> ('i, 'mode * 'a * D.zero * no_eta) t
   end
 
@@ -526,9 +529,9 @@ end = struct
         tyfam : ('mode, 'a, kinetic) term;
       }
         -> ('mode, 'a) canonical
-    | Codata : ('mode, 'n, 'c, 'a, 'nh, 'ha, 'et) codata_args -> ('mode, 'a) canonical
+    | Codata : ('mode, 'n, 'a, 'nh, 'ha, 'et) codata_args -> ('mode, 'a) canonical
 
-  and ('mode, 'n, 'c, 'a, 'nh, 'ha, 'et) codata_args = {
+  and ('mode, 'n, 'a, 'nh, 'ha, 'et) codata_args = {
     (* An eta flag and its opacity *)
     eta : (potential, 'et) eta;
     opacity : opacity;
@@ -536,8 +539,6 @@ end = struct
     hints : hints;
     (* An intrinsic dimension (like Gel) *)
     dim : 'n D.t;
-    (* The termctx in which it was checked, since that is needed to eval-readback the env to degenerate it when checking higher fields. *)
-    termctx : ('mode, 'c, 'a) termctx option;
     (* A family of fields, each with a type that depends on one additional variable belonging to the codatatype itself (usually by way of its previous fields).  We retain the order of the fields by storing them in an Abwd rather than a Map so as to enable positional access as well as named access. *)
     fields : ('mode * 'a * 'n * 'et) CodatafieldAbwd.t;
     (* We partially compute the fibrancy fields at typechecking time, although we don't finish the computation until we need it.  Since the fibrancy fields include those of all the higher identity types, if we did all the computation eagerly it would be infinite, and if we made it Lazy in the naive way then it wouldn't be marshalable.  *)

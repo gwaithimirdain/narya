@@ -349,8 +349,6 @@ type (_, _) self_vars =
       self :
         'f 'g 'gmode.
         ('mode, 'f, 'g, 'gmode) Modalcell.adjunction -> ('n, 'mode Ctx.Binding.t) CubeOf.t;
-      (* A higher field has to build its own self variable, since that happens only after degenerating the context by the field's intrinsic dimension; so we also expose the types out of which "self" makes the variable. *)
-      tys : unit -> ('n, ('mode, kinetic) value) CubeOf.t;
     }
       -> ('mode, 'n) self_vars
 
@@ -887,20 +885,10 @@ let rec check : type mode a b s.
                 fatal (Unimplemented "general higher-dimensional types in HOTT: use glue")
             | _ ->
                 let Eq = eq_of_ins_zero ins in
-                let has_higher_fields =
-                  Bwd.fold_left
-                    (fun acc (Field.Wrap fld, _) ->
-                      match acc with
-                      | Some () -> Some ()
-                      | None -> (
-                          match D.compare (Field.dim fld) D.zero with
-                          | Eq -> None
-                          | Neq -> Some ()))
-                    None fields in
                 check_codata status ctx `Opaque Noeta hints tyargs Emp
                   (Fibrancy.Codata.empty dim dim (Ctx.tctx ctx) Noeta
                      (readback_neu ctx (head_of_potential head) apps))
-                  (Bwd.to_list fields) Emp ~has_higher_fields)
+                  (Bwd.to_list fields) Emp)
         | _ -> fatal (Checking_canonical_at_nonuniverse ("codatatype", PVal (ctx, ty))))
     | SelfRecord (fields, opacity, hints), Potential (head, apps, _) -> (
         match view_type ~severity ty "typechecking self-record" with
@@ -926,7 +914,7 @@ let rec check : type mode a b s.
                     check_codata status ctx opacity Eta hints tyargs Emp
                       (Fibrancy.Codata.empty dim dim (Ctx.tctx ctx) Eta
                          (readback_neu ctx (head_of_potential head) apps))
-                      (Bwd.to_list fields) Emp ~has_higher_fields))
+                      (Bwd.to_list fields) Emp))
         | _ -> fatal (Checking_canonical_at_nonuniverse ("codatatype", PVal (ctx, ty))))
     | Record (xs, fields, opacity, hints), Potential (head, apps, _) -> (
         match view_type ~severity ty "typechecking record" with
@@ -2416,26 +2404,22 @@ and with_codata_so_far : type mode a b n c et.
     (D.zero, n, n, mode normal) TubeOf.t ->
     (mode * b * n * et) Term.CodatafieldAbwd.t ->
     (mode, n, n, b, et) Fibrancy.Codata.t ->
-    has_higher_fields:unit option ->
     Code.t Asai.Diagnostic.t Bwd.t ->
     ((mode, n) self_vars -> (mode, b, potential) term -> c) ->
     c =
  fun (Potential (h, args, hyp)) eta ctx opacity hints dim tyargs checked_fields (Fibrancy fibrancy)
-     ~has_higher_fields errs cont ->
+     errs cont ->
   let mode = Ctx.mode ctx in
-  let domvars, termctx =
+  let domvars =
     match errs with
     | Emp ->
         (* We can always create a constant with the (0,0,0) insertion, even if its dimension is actually higher. *)
         let head = head_of_potential h in
         let fibrancy_fields = Fibrancy.Codata.finish mode checked_fields fibrancy in
-        (* The self variable is no longer part of the stored termctx: it is added to the context of a field's type only after that context is degenerated and locked, so the environments that get eval-readbacked when checking a higher field are those of the codatatype's own context.  We don't spend the effort to read it back unless the codatatype has higher fields, since that's the only thing it's used for. *)
-        let termctx = Option.map (fun () -> readback_ctx ctx) has_higher_fields in
         (* The types of the self variable and its boundary: the codatatype-so-far and the boundary of the type being checked against. *)
         let selftys () =
           let value =
-            eval_codata (Ctx.env ctx) eta opacity hints dim (Lazy.from_val termctx) checked_fields
-              fibrancy_fields in
+            eval_codata (Ctx.env ctx) eta opacity hints dim checked_fields fibrancy_fields in
           let prev_ety =
             Neu { head; args; value = ready value; ty = lazy (inst (universe mode dim) tyargs) }
           in
@@ -2453,25 +2437,19 @@ and with_codata_so_far : type mode a b n c et.
               { map = (fun _ [ ty ] -> act_value ty (id_deg D.zero) unit) }
               [ selftys () ] in
           snd (dom_vars lctx (Modalcell.adj_left adj) tys) in
-        (Self_vars { self = domvars; tys = selftys }, termctx)
+        Self_vars { self = domvars }
     | Snoc _ ->
         let msg =
           match eta with
           | Eta -> "record dependent"
           | Noeta -> "codata dependent" in
         let err = Ctx.Binding.error (Accumulated (msg, Emp)) in
-        ( Self_vars
-            {
-              self = (fun _ -> CubeOf.build dim { build = (fun _ -> err) });
-              (* Like an error binding, this raises the accumulated error if anything tries to use it. *)
-              tys = (fun () -> fatal (Accumulated (msg, Emp)));
-            },
-          None )
+        Self_vars { self = (fun _ -> CubeOf.build dim { build = (fun _ -> err) }) }
   in
   let codataterm =
     Term.Canonical
       (Codata
-         { eta; opacity; hints; dim; fields = checked_fields; termctx; fibrancy; is_glue = None })
+         { eta; opacity; hints; dim; fields = checked_fields; fibrancy; is_glue = None })
   in
   run_with_definition h (hyp codataterm) errs @@ fun () -> cont domvars codataterm
 
@@ -2486,23 +2464,19 @@ and check_codata : type mode a b n et.
     (mode, n, n, b, et) Fibrancy.Codata.t ->
     (Field.wrapped * a Raw.codatafield) list ->
     Code.t Asai.Diagnostic.t Bwd.t ->
-    has_higher_fields:unit option ->
     (mode, b, potential) term =
- fun status ctx opacity eta hints tyargs checked_fields fibrancy raw_fields errs
-     ~has_higher_fields ->
+ fun status ctx opacity eta hints tyargs checked_fields fibrancy raw_fields errs ->
   let dim = TubeOf.inst tyargs in
   match raw_fields with
   | [] -> (
       match errs with
       | Emp ->
-          with_codata_so_far status eta ctx opacity hints dim tyargs checked_fields fibrancy
-            ~has_higher_fields errs
+          with_codata_so_far status eta ctx opacity hints dim tyargs checked_fields fibrancy errs
           @@ fun _ codataterm -> codataterm
       | Snoc _ -> fatal (Accumulated ("check_codata", errs)))
   | (Wrap fld, Codatafield (x, lock, self_ty, rty)) :: raw_fields -> (
-      with_codata_so_far status eta ctx opacity hints dim tyargs checked_fields fibrancy
-        ~has_higher_fields errs
-      @@ fun (Self_vars { self; tys }) _ ->
+      with_codata_so_far status eta ctx opacity hints dim tyargs checked_fields fibrancy errs
+      @@ fun (Self_vars { self }) _ ->
       (* If a type was given for the self variable, it must be equal to the current codatatype with its parameters. *)
       (match self_ty with
       | Some self_ty -> (
@@ -2570,14 +2544,13 @@ and check_codata : type mode a b n et.
                   Fibrancy.Codata.add_field (Ctx.mode ctx) fibrancy entry,
                   errs ) in
           check_codata status ctx opacity eta hints tyargs checked_fields fibrancy raw_fields errs
-            ~has_higher_fields
       | Pos _, Zero, Noeta ->
           (* Higher-dimensional field, currently requires a zero-dimensional codatatype (non-Gel). *)
           let checked_fields, errs =
             Reporter.try_with ~fatal:(fun e -> (checked_fields, Snoc (errs, e))) @@ fun () ->
             check_name_clash ();
             let (Any_adjunction adj) = get_adjunction () in
-            let (Adjunction { left; right; unit; _ }) = adj in
+            let (Adjunction { left; right; _ }) = adj in
             let i = Field.dim fld in
             (* We currently only support fully parametric modalities on higher fields, so that the field's modality filters none of its intrinsic dimensions.  This keeps the interaction of the modal keying with the higher-dimensional degeneracies trivial. *)
             let (Has_filter left_filter) = Modality.filter left i in
@@ -2587,33 +2560,19 @@ and check_codata : type mode a b n et.
             with
             | None, _ | _, None -> fatal (Unimplemented "nonparametric modal higher fields")
             | Some Eq, Some Eq ->
-                (* As for a lower field, the type of a higher field is checked in a context locked by the right adjoint and then extended by the self variable, annotated by the left adjoint; but first that context is degenerated by the field's intrinsic dimension, so the self variable is an i-dimensional cube. *)
-                let (Degctx (plusmap, dctx, degenv)) = degctx ctx i in
-                let (Locked (plus_lock, lctx)) = Ctx.lock dctx right in
-                (* The degenerated context has *new* level variables, so we can't get the type of the self variable by acting on the codatatype-so-far with a degeneracy; as in degctx.ml, we have to eval-readback it.  Then, as for a lower field, we transport it behind the two locks along the adjunction unit.  (dom_vars instantiates each face of the resulting cube at the lower-dimensional variables, just as degenerate_binding does.) *)
-                let cself = readback_val ctx (CubeOf.find_top (tys ())) in
-                let selftys =
-                  CubeOf.build i
-                    {
-                      build =
-                        (fun fa ->
-                          act_value
-                            (eval_term (act_env degenv (opt_op_of_sface fa)) cself)
-                            (id_deg D.zero) unit);
-                    } in
-                let newctx =
-                  Ctx.cube_vis lctx
-                    (Modality.filter_idempotent left_filter)
-                    x
-                    (snd (dom_vars lctx left selftys)) in
+                (* Exactly as for a lower field, we lock the context by the right adjoint and extend it by the self variable, annotated by the left adjoint (whose type "self" transports there along the adjunction unit).  We save the readback of that context, since checking this field at a nontrivial partial bijection requires eval-readbacking environments over it. *)
+                let (Locked (plus_lock, lctx)) = Ctx.lock ctx right in
+                let newctx = Ctx.cube_vis lctx (Modality.filter_zero left) x (self adj) in
+                let fldtermctx = readback_ctx newctx in
+                (* Only then do we degenerate the whole thing by the field's intrinsic dimension, which makes the self variable into an i-dimensional cube along with the rest of the context. *)
+                let (Degctx (plusmap, degctx, _)) = degctx newctx i in
                 let cty =
-                  check (Kinetic `Nolet) newctx rty (universe (Modality.src right) D.zero) in
+                  check (Kinetic `Nolet) degctx rty (universe (Modality.src right) D.zero) in
                 let entry =
-                  CodatafieldAbwd.Entry (fld, Codatafield.Higher (adj, plusmap, plus_lock, cty))
-                in
+                  CodatafieldAbwd.Entry
+                    (fld, Codatafield.Higher (adj, plus_lock, fldtermctx, plusmap, cty)) in
                 (Snoc (checked_fields, entry), errs) in
           check_codata status ctx opacity eta hints tyargs checked_fields fibrancy raw_fields errs
-            ~has_higher_fields
       | Pos _, Zero, Eta -> fatal (Unimplemented "higher fields in record types")
       | Pos _, Pos _, _ -> fatal (Unimplemented "higher fields in higher-dimensional codatatypes"))
 
@@ -2643,13 +2602,12 @@ and check_record : type mode a f1 f2 f af d acd b n.
           let fields, Fibrancy fibrancy = (checked_fields, fibrancy) in
           Term.Canonical
             (Codata
-               { eta = Eta; opacity; hints; dim; fields; termctx = None; fibrancy; is_glue = None })
+               { eta = Eta; opacity; hints; dim; fields; fibrancy; is_glue = None })
       )
   | Ext (None, _, _, _) -> fatal (Anomaly "unnamed field in check_record")
   | Ext (Some name, modality, rty, raw_fields) ->
-      with_codata_so_far status Eta ctx opacity hints dim tyargs checked_fields fibrancy
-        ~has_higher_fields:None errs
-      @@ fun (Self_vars { self; _ }) _ ->
+      with_codata_so_far status Eta ctx opacity hints dim tyargs checked_fields fibrancy errs
+      @@ fun (Self_vars { self }) _ ->
       let fld = Field.intern name D.zero in
       let checked_fields, fibrancy, ctx_fields, errs =
         Reporter.try_with ~fatal:(fun e ->
@@ -2677,7 +2635,7 @@ and check_record : type mode a f1 f2 f af d acd b n.
       check_record status dim ctx opacity hints tyargs vars ctx_fields (Suc fplus) (Suc af)
         checked_fields fibrancy raw_fields errs
 
-and check_struct : type mode a b c d s m n mn et.
+and check_struct : type mode a b c s m n mn et.
     (mode, b, s) status ->
     (s, et) eta ->
     (mode, a, b) Ctx.t ->
@@ -2686,7 +2644,7 @@ and check_struct : type mode a b c d s m n mn et.
     (* m is the dimension to which that type has been substituted, and n is the Gel dimension of that type. *)
     m D.t ->
     (m, n, mn) D.plus ->
-    (mode, m, n, d, c, et) codata_args ->
+    (mode, m, n, c, et) codata_args ->
     (D.zero, mn, mn, mode normal) TubeOf.t ->
     (* The fields supplied by the user *)
     ((string * string list) option, [ `Normal | `Cube ] located * a check located) Abwd.t ->
@@ -2723,7 +2681,7 @@ and check_struct : type mode a b c d s m n mn et.
   | Emp -> Term.Struct { eta; dim = m; fields; energy = energy status }
   | Snoc _ -> fatal (Accumulated ("check_struct", errs))
 
-and check_fields : type mode a b c d s m n mn et.
+and check_fields : type mode a b c s m n mn et.
     (mode, b, s) status ->
     (s, et) eta ->
     (mode, a, b) Ctx.t ->
@@ -2731,7 +2689,7 @@ and check_fields : type mode a b c d s m n mn et.
     (mode, kinetic) value ->
     m D.t ->
     (m, n, mn) D.plus ->
-    (mode, m, n, d, c, et) codata_args ->
+    (mode, m, n, c, et) codata_args ->
     (* The fields from the codatatype, to be checked against *)
     (mode * c * n * et) Term.CodatafieldAbwd.entry list ->
     (D.zero, mn, mn, mode normal) TubeOf.t ->
@@ -2772,7 +2730,7 @@ and check_fields : type mode a b c d s m n mn et.
       check_field status eta ctx ty m mn codata_args fields tyargs fld cdf prev_etm tms ctms etms
         errs
 
-and check_field : type mode a b c d s m n mn i et.
+and check_field : type mode a b c s m n mn i et.
     (mode, b, s) status ->
     (s, et) eta ->
     (mode, a, b) Ctx.t ->
@@ -2780,7 +2738,7 @@ and check_field : type mode a b c d s m n mn i et.
     (mode, kinetic) value ->
     m D.t ->
     (m, n, mn) D.plus ->
-    (mode, m, n, d, c, et) codata_args ->
+    (mode, m, n, c, et) codata_args ->
     (mode * c * n * et) Term.CodatafieldAbwd.entry list ->
     (D.zero, mn, mn, mode normal) TubeOf.t ->
     (* The field being checked, by name and by data from the codatatype *)
@@ -2795,16 +2753,15 @@ and check_field : type mode a b c d s m n mn i et.
     Code.t Asai.Diagnostic.t Bwd.t ->
     ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t
     * (mode * (m * b * s * et)) Term.StructfieldAbwd.t =
- fun status eta ctx ty m mn ({ env; termctx; _ } as codata_args) fields tyargs fld cdf prev_etm tms
-     ctms etms errs ->
-  match (cdf, status, eta, termctx) with
+ fun status eta ctx ty m mn ({ env; _ } as codata_args) fields tyargs fld cdf prev_etm tms ctms
+     etms errs ->
+  match (cdf, status, eta) with
   | ( Lower
         (type f g gmode ag)
         ((adj, fld_plus_lock, fldty) :
           (mode, f, g, gmode) Modalcell.adjunction
           * (c, mode, g, gmode, ag) plus_lock
           * (gmode, (ag, (f, n) dim_entry) snoc, kinetic) term),
-      _,
       _,
       _ ) -> (
       let (Adjunction { left; right; _ }) = adj in
@@ -2892,31 +2849,29 @@ and check_field : type mode a b c d s m n mn i et.
             (etms, ctms, errs) in
           check_fields status eta ctx ty m mn codata_args fields tyargs tms ctms etms errs)
   | ( Higher
-        (type f g gmode ic iag)
-        ((adj, ic0, fld_plus_lock, fldty) :
+        (type f g gmode d ag iagx)
+        ((adj, fld_plus_lock, fldtermctx, ic0, fldty) :
           (mode, f, g, gmode) Modalcell.adjunction
-          * (i, c, ic, mode) plusmap
-          * (ic, mode, g, gmode, iag) plus_lock
-          * (gmode, (iag, (f, i) dim_entry) snoc, kinetic) term),
+          * (c, mode, g, gmode, ag) plus_lock
+          * (gmode, d, (ag, (f, D.zero) dim_entry) snoc) termctx
+          * (i, (ag, (f, D.zero) dim_entry) snoc, iagx, gmode) plusmap
+          * (gmode, iagx, kinetic) term),
       Potential _,
-      Noeta,
-      (lazy (Some termctx)) ) ->
+      Noeta ) ->
       let Eq = D.plus_uniq mn (D.plus_zero m) in
       let i = Field.dim fld in
       (* Like a lower modal field, the components of a modal higher field are checked behind a lock by the right adjoint.  We create the lock of the checked context b once, outside the recursion over pbijs, so that all the accumulated components share the same locked context type. *)
       let (Adjunction { right; _ }) = adj in
       let (Has_plus_lock (type bg) (ctx_plus_lock : (b, mode, g, gmode, bg) plus_lock)) =
         plus_lock right in
-      check_higher_field status ctx ty m i codata_args fields termctx tyargs tms ctms etms errs fld
-        adj ctx_plus_lock
+      check_higher_field status ctx ty m i codata_args fields tyargs tms ctms etms errs fld adj
+        ctx_plus_lock
         (PlusPbijmap.build m i { build = (fun _ -> None) })
         (InsmapOf.build m i { build = (fun _ -> None) })
-        (all_pbij_between m i) prev_etm ic0 fld_plus_lock fldty
-  | Higher _, Potential _, _, (lazy None) ->
-      fatal (Anomaly "missing termctx in codatatype with higher fields")
-  | Higher _, Kinetic _, _, _ -> .
+        (all_pbij_between m i) prev_etm fld_plus_lock fldtermctx ic0 fldty
+  | Higher _, Kinetic _, _ -> .
 
-and check_higher_field : type mode f g gmode a b bg c d m i ic iag.
+and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
     (mode, b, potential) status ->
     (mode, a, b) Ctx.t ->
     (* Type being checked against and its data *)
@@ -2924,9 +2879,8 @@ and check_higher_field : type mode f g gmode a b bg c d m i ic iag.
     (* m = substitution dimension, i = intrinsic dimension *)
     m D.t ->
     i D.t ->
-    (mode, m, D.zero, d, c, no_eta) codata_args ->
+    (mode, m, D.zero, c, no_eta) codata_args ->
     (mode * c * D.zero * no_eta) Term.CodatafieldAbwd.entry list ->
-    (mode, d, c) termctx ->
     (D.zero, m, m, mode normal) TubeOf.t ->
     (* As before, user terms, checked terms, value terms, and errors *)
     ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t ->
@@ -2946,14 +2900,15 @@ and check_higher_field : type mode f g gmode a b bg c d m i ic iag.
     (m, i) pbij_between Seq.t ->
     (* Term-up-until-now *)
     ((mode, kinetic) value, Code.t) Result.t ->
-    (* The unevaluated type of the current field being checked: the codatatype's context degenerated by the field's intrinsic dimension, locked by the right adjoint, and extended by the self variable annotated by the left adjoint. *)
-    (i, c, ic, mode) plusmap ->
-    (ic, mode, g, gmode, iag) plus_lock ->
-    (gmode, (iag, (f, i) dim_entry) snoc, kinetic) term ->
+    (* The unevaluated type of the current field being checked: the codatatype's context locked by the right adjoint, extended by the self variable annotated by the left adjoint (whose termctx is stored with the field), and degenerated by the field's intrinsic dimension. *)
+    (c, mode, g, gmode, ag) plus_lock ->
+    (gmode, d, (ag, (f, D.zero) dim_entry) snoc) termctx ->
+    (i, (ag, (f, D.zero) dim_entry) snoc, iagx, gmode) plusmap ->
+    (gmode, iagx, kinetic) term ->
     ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t
     * (mode * (m * b * potential * no_eta)) Term.StructfieldAbwd.t =
- fun status ctx ty m intrinsic ({ env; _ } as codata_args) fields termctx tyargs tms ctms etms errs
-     fld adj ctx_plus_lock cvals evals pbijs prev_etm ic0 fld_plus_lock fldty ->
+ fun status ctx ty m intrinsic ({ env; _ } as codata_args) fields tyargs tms ctms etms errs fld adj
+     ctx_plus_lock cvals evals pbijs prev_etm fld_plus_lock fldtermctx ic0 fldty ->
   let (Adjunction { left; right; _ }) = adj in
   (* We recurse through all the partial bijections that could be associated to this field name. *)
   match Seq.uncons pbijs with
@@ -3117,11 +3072,11 @@ and check_higher_field : type mode f g gmode a b bg c d m i ic iag.
         (* We trap any errors produced by 'tyof_field' or 'check', adding them instead to the list of accumulated errors and going on.  Note that if any previous fields that have already failed, then prev_etm will be bound to an error value, and so if the type of this field depends on the value of any previous one, tyof_field will raise that error, which we catch and add to the list; but it will be (Accumulated Emp) so it won't be displayed to the user. *)
         Reporter.try_with ~fatal:(fun e -> (evals, cvals, Snoc (errs, e))) @@ fun () ->
         let shuf : (mode, r, h, i, c) Norm.shuffleable =
-          higher_codatafield_shuffleable ctx (length_env env) termctx degenv r fldshuf in
+          higher_codatafield_shuffleable ctx (length_env env) degenv r fldshuf in
         (* Evaluate the type for this instance of the field (behind the lock by the right adjoint, hence with no counit keying), and check the user's term against it in the locked degenerated context. *)
         let ety =
-          tyof_higher_codatafield prev_etm ty fld adj env tyargs fldins ic0 fld_plus_lock fldty
-            ~shuf ~key:`Nokey in
+          tyof_higher_codatafield prev_etm fld adj env tyargs fldins ~shuf fld_plus_lock fldtermctx
+            ic0 fldty ~key:`Nokey in
         let ctm = check newstatus lctx tm ety in
         (* Add the typechecked term to the list *)
         let cvals = PlusPbijmap.set pbij (Some (PlusFam (plusmap_bg, ctm))) cvals in
@@ -3133,8 +3088,8 @@ and check_higher_field : type mode f g gmode a b bg c d m i ic iag.
               let Eq = eq_of_zero_shuffle fldshuf in
               InsmapOf.set fldins (Some (lazy_eval (Ctx.env lctx) ctm)) evals in
         (evals, cvals, errs) in
-      check_higher_field status ctx ty m intrinsic codata_args fields termctx tyargs tms ctms etms
-        errs fld adj ctx_plus_lock cvals evals pbijs prev_etm ic0 fld_plus_lock fldty
+      check_higher_field status ctx ty m intrinsic codata_args fields tyargs tms ctms etms errs fld
+        adj ctx_plus_lock cvals evals pbijs prev_etm fld_plus_lock fldtermctx ic0 fldty
   | None ->
       let plusdim = D.zero_plus m in
       (* The stored environment and values of a modal higher field live behind the lock by the right adjoint, so we key the ambient environment by it (a no-op for ordinary fields). *)

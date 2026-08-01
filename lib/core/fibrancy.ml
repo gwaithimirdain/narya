@@ -361,9 +361,9 @@ module Codata = struct
     <: Entry (fid, LazyHigher (idadj, idlock, id))
 
   (* TODO: It would be nice to memoize the "finish" computation.  But we can't store it as a mutable field inside a Term, because it contains a LazyHigher and so is not marshalable.  Maybe we could use a hashtable, but it would be tricky to ensure the output types depend correctly on the input ones.  I guess we could have a mutable Map depending on 'n' and 'a' and then hashtables inside of that.  But then it starts to get questionable how much time would be saved.  Let's wait until we do some profiling and see if this is actually a pain point. *)
-  let finished : type mode n c a nh ha et.
+  let finished : type mode n a nh ha et.
       mode Mode.t ->
-      (mode, n, c, a, nh, ha, et) codata_args ->
+      (mode, n, a, nh, ha, et) codata_args ->
       (mode * (n * a * potential * no_eta)) StructfieldAbwd.t =
    fun mode c ->
     (* Fibrancy of glue-types is bootstrapped later and saved to the ref above, so here we detect whether the type is glue and insert that value if so. *)
