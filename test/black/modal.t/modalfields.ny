@@ -58,3 +58,8 @@ def c2 : C2 ≔ [ .fst ↦ suc. zero. | .snd ↦ refl (suc. zero.) ]
 def c2_test : Id N ((c2 :♭| _) .fst) (suc. zero.) ≔ refl (suc. zero.)
 
 def c2_snd : Id N ((c2 :♭| _) .fst) ((c2 :♭| _) .fst) ≔ (c2 :♭| _) .snd
+
+` The self variable is transported into the doubly-locked context along the
+` adjunction unit, so a self-dependent modal field can be projected from a
+` *variable* (whose modal key matters), not just from a constant.
+def projsnd (z :♭| C2) : Id N ((z :♭| _) .fst) ((z :♭| _) .fst) ≔ (z :♭| _) .snd

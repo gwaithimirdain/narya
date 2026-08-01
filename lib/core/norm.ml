@@ -951,12 +951,17 @@ and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
     key:[ `Counit | `Nokey ] ->
     (gmode, kinetic) value =
  fun tm fldname adj plus_lock fldty env tyargs m mn ~key ->
+  let n = D.plus_right mn in
+  let (Adjunction { left; counit; unit; _ }) = adj in
+  (* The self variable now lies behind the locks by g and then f, whereas the supplied values live in the ambient context; so, exactly as for the *type* of the self variable when the codatatype is checked, we transport them along the adjunction unit 1 ⇒ gf.  This is what makes the new presentation agree with the old one: in the old one the value was looked up *through* the key by g, so it was acted on by a composite 1 ⇒ gν, whereas now it is looked up above that key and acted on only by f ⇒ ν; precomposing with the unit restores the former.  For an ordinary field the unit is an identity cell and this is a no-op. *)
   let values =
     match tm with
-    | Ok tm -> `Ok (TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
+    | Ok tm ->
+        `Ok
+          (CubeOf.mmap
+             { map = (fun _ [ v ] -> act_value v (id_deg D.zero) unit) }
+             [ TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm) ])
     | Error e -> `Error e in
-  let n = D.plus_right mn in
-  let (Adjunction { left; counit; _ }) = adj in
   (* The type of a modal field lives behind a lock by the right adjoint, so we first key the environment by its identity cell, and only then extend it by the self variable, which is annotated by the left adjoint. *)
   let env = key_id_env env plus_lock in
   (* Since the self variable is annotated by the left adjoint, its dimensions are filtered by it.  But a field whose left adjoint filters the substitution dimension m nontrivially "disappears" at that dimension, so all callers have already discarded it; and we reject at definition time a modal field of a codatatype whose own dimension n is filtered nontrivially.  Thus both filters here are trivial. *)

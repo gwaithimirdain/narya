@@ -237,6 +237,9 @@ the corresponding locks.
    ￫ info[I0000]
    ￮ constant c2_snd defined
   
+   ￫ info[I0000]
+   ￮ constant projsnd defined
+  
 
 A modal field projection computes on a comatch/tuple.
 
