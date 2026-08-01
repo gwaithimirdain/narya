@@ -673,7 +673,7 @@ let readback_ctx : type mode a b. (mode, a, b) Ctx.t -> (mode, a, b) termctx = f
 let higher_codatafield_shuffleable : type mode a b c d r h i.
     (mode, a, b) Ctx.t ->
     (mode, c) Tctx.t ->
-    (mode, d, (c, (mode id, D.zero) dim_entry) snoc) termctx ->
+    (mode, d, c) termctx ->
     (mode, r, b) env ->
     r D.t ->
     (r, h, i) shuffle ->
@@ -713,4 +713,18 @@ let higher_codatafield_shuffleable : type mode a b c d r h i.
                     nf);
               } in
           { tm; ty = Lazy.from_val (inst ity tyargs) });
+      deg_cube =
+        (fun gf r_k xs ->
+          (* The values of the self variable live behind the locks by the right and left adjoints, so, exactly as readback_env does for an environment entry, we read them back in the context locked by their composite and evaluate them in the environment keyed by it.  Both are trivial for an ordinary field. *)
+          let (Locked (plus, lctx)) = Ctx.lock ctx gf in
+          let lenv = key_id_env degenv plus in
+          let ctms = CubeOf.mmap { map = (fun _ [ nf ] -> readback_nf lctx nf) } [ xs ] in
+          (* And, exactly as eval_env does for an environment entry, the raised cube consists of the r-fold degeneracies of those terms. *)
+          CubeOf.build (D.plus_out r r_k)
+            {
+              build =
+                (fun fab ->
+                  let (SFace_of_plus (_, fa, fb)) = sface_of_plus r_k fab in
+                  eval_term (act_env lenv (opt_op_of_sface fa)) (CubeOf.find ctms fb));
+            });
     }
