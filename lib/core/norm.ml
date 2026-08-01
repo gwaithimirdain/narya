@@ -942,8 +942,8 @@ and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
     ((amode, kinetic) value, Code.t) Result.t ->
     D.zero Field.t ->
     (amode, f, g, gmode) Modalcell.adjunction ->
-    ((a, (amode id, n) dim_entry) snoc, amode, g, gmode, ag) plus_lock ->
-    (gmode, ag, kinetic) term ->
+    (a, amode, g, gmode, ag) plus_lock ->
+    (gmode, (ag, (f, n) dim_entry) snoc, kinetic) term ->
     (amode, m, a) env ->
     (D.zero, mn, mn, amode normal) TubeOf.t ->
     m D.t ->
@@ -955,38 +955,46 @@ and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
     match tm with
     | Ok tm -> `Ok (TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
     | Error e -> `Error e in
-  let amode = mode_env env in
+  let n = D.plus_right mn in
   let (Adjunction { left; counit; _ }) = adj in
-  let env =
-    Value.Ext
-      {
-        env;
-        plus = mn;
-        filter = Modality.filter_id amode m;
-        filtered = Modality.filter_id amode (D.plus_right mn);
-        values;
-      } in
-  (* The type of a modal field lives behind a lock by the right adjoint, so we key the environment by its identity cell. *)
+  (* The type of a modal field lives behind a lock by the right adjoint, so we first key the environment by its identity cell, and only then extend it by the self variable, which is annotated by the left adjoint. *)
   let env = key_id_env env plus_lock in
-  (* This type is m-dimensional, hence must be instantiated at a full m-tube. *)
-  let insttm = eval_term env fldty in
-  (* The type of a field projection is keyed by the adjunction counit, to put it in the ambient context (where the term being projected lives behind a lock by the left adjoint).  For ordinary fields the counit is the identity and this is a no-op. *)
-  let insttm =
-    match key with
-    | `Counit -> act_value insttm (id_deg D.zero) counit
-    | `Nokey -> insttm in
-  let instargs =
-    TubeOf.mmap
-      {
-        map =
-          (fun fa [ arg ] ->
-            let fains = ins_zero (dom_tface fa) in
-            let tm = field_term left arg.tm fldname fains in
-            let ty = lazy (tyof_field left (Ok arg.tm) (Lazy.force arg.ty) fldname ~shuf:Trivial fains) in
-            { tm; ty });
-      }
-      [ fst (TubeOf.split (D.zero_plus m) mn tyargs) ] in
-  inst insttm instargs
+  (* Since the self variable is annotated by the left adjoint, its dimensions are filtered by it.  But a field whose left adjoint filters the substitution dimension m nontrivially "disappears" at that dimension, so all callers have already discarded it; and we reject at definition time a modal field of a codatatype whose own dimension n is filtered nontrivially.  Thus both filters here are trivial. *)
+  let (Has_filter mfilter) = Modality.filter left m in
+  let (Has_filter nfilter) = Modality.filter left n in
+  match (Modality.filter_is_trivial m mfilter, Modality.filter_is_trivial n nfilter) with
+  | None, _ | _, None -> fatal (Anomaly "filtered self variable in tyof_lower_codatafield")
+  | Some Eq, Some Eq ->
+      let env =
+        Value.Ext
+          {
+            env;
+            plus = mn;
+            filter = mfilter;
+            filtered = Modality.filter_idempotent nfilter;
+            values;
+          } in
+      (* This type is m-dimensional, hence must be instantiated at a full m-tube. *)
+      let insttm = eval_term env fldty in
+      (* The type of a field projection is keyed by the adjunction counit, to put it in the ambient context (where the term being projected lives behind a lock by the left adjoint).  For ordinary fields the counit is the identity and this is a no-op. *)
+      let insttm =
+        match key with
+        | `Counit -> act_value insttm (id_deg D.zero) counit
+        | `Nokey -> insttm in
+      let instargs =
+        TubeOf.mmap
+          {
+            map =
+              (fun fa [ arg ] ->
+                let fains = ins_zero (dom_tface fa) in
+                let tm = field_term left arg.tm fldname fains in
+                let ty =
+                  lazy (tyof_field left (Ok arg.tm) (Lazy.force arg.ty) fldname ~shuf:Trivial fains)
+                in
+                { tm; ty });
+          }
+          [ fst (TubeOf.split (D.zero_plus m) mn tyargs) ] in
+      inst insttm instargs
 
 (* Compute the non-keyed component type of a lower field of a record type value, along with the field's adjunction: the type at which the stored component of a tuple lives, behind the lock by the right adjoint.  Used when reading back a struct at a record type. *)
 and tyof_field_nokey : type amode.

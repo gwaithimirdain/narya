@@ -52,8 +52,8 @@ module rec Term : sig
     type (_, _) t =
       | Lower :
           ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
-          * (('a, ('mode id, 'n) dim_entry) snoc, 'mode, 'g, 'gmode, 'ag) plus_lock
-          * ('gmode, 'ag, kinetic) Term.term
+          * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
+          * ('gmode, ('ag, ('f, 'n) dim_entry) snoc, kinetic) Term.term
           -> (D.zero, 'mode * 'a * 'n * 'et) t
       | Higher :
           ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
@@ -345,12 +345,12 @@ end = struct
   module PlusPbijmap = Pbijmap (PlusFam)
 
   module Codatafield = struct
-    (* A lower codata field is parametrized by an adjunction in the mode 2-category.  Its type is a term in the context extended by the self variable and then locked by the right adjoint, hence lives at the right adjoint's source mode.  Ordinary non-modal fields are the special case of the identity adjunction.  (Higher fields are not yet allowed to be modal.) *)
+    (* A lower codata field is parametrized by an adjunction in the mode 2-category.  Its type is a term in the context locked by the right adjoint and then extended by the self variable annotated by the left adjoint, hence lives at the right adjoint's source mode.  (By the adjunction, this is equivalent to extending by an identity-annotated self variable and then locking by the right adjoint: a key from the self variable's annotation to the locks to its right is 1 ⇒ g·ν in the latter presentation and f ⇒ ν in the former, and these are interderivable using the unit and counit.  We use this presentation since it is the one from Multimodal Adjoint Type Theory.)  Ordinary non-modal fields are the special case of the identity adjunction, where the lock is trivial and the annotation is the identity, so that the two presentations coincide on the nose.  Higher fields, by contrast, still extend by the (identity-annotated) self variable first and lock afterwards. *)
     type (_, _) t =
       | Lower :
           ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
-          * (('a, ('mode id, 'n) dim_entry) snoc, 'mode, 'g, 'gmode, 'ag) plus_lock
-          * ('gmode, 'ag, kinetic) Term.term
+          * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
+          * ('gmode, ('ag, ('f, 'n) dim_entry) snoc, kinetic) Term.term
           -> (D.zero, 'mode * 'a * 'n * 'et) t
       | Higher :
           ('mode, 'f, 'g, 'gmode) Modalcell.adjunction

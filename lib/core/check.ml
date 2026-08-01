@@ -343,6 +343,15 @@ type (_, _, _, _) meta_tel =
 (* In HOTT mode, the user isn't allowed to define gel-types, so we bail out at typechecking time if we detect one.  But in parametricity mode, and when bootstrapping the definition of glue, we set this flag to true. *)
 let gel_ok = ref false
 
+(* The self variable of a codatatype or record type belongs to the codatatype-so-far, but it is annotated by a modality that varies from field to field: the left adjoint of the field's adjunction (the identity for an ordinary field).  Since that annotation is recorded in the variable itself, with_codata_so_far hands its continuation this polymorphic function to create the self variable at whatever annotation the field in question requires. *)
+type (_, _) self_vars =
+  | Self_vars : {
+      self :
+        'f 'g 'gmode.
+        ('mode, 'f, 'g, 'gmode) Modalcell.adjunction -> ('n, 'mode Ctx.Binding.t) CubeOf.t;
+    }
+      -> ('mode, 'n) self_vars
+
 (* Polymorphic callback for computing the motive of a non-refining match.  See check_branches for general explanation.  (For thought: instead of callbacks that use an existential type wrapped in a GADT, this could perhaps also be modeled using multiple classes that implement the same interface, and that might be more ergonomic.) *)
 type (_, _, _, _, _) match_motive =
   | Motive : {
@@ -2407,7 +2416,7 @@ and with_codata_so_far : type mode a b n c et.
     (mode, n, n, b, et) Fibrancy.Codata.t ->
     has_higher_fields:unit option ->
     Code.t Asai.Diagnostic.t Bwd.t ->
-    ((n, mode Ctx.Binding.t) CubeOf.t -> (mode, b, potential) term -> c) ->
+    ((mode, n) self_vars -> (mode, b, potential) term -> c) ->
     c =
  fun (Potential (h, args, hyp)) eta ctx opacity hints dim tyargs checked_fields (Fibrancy fibrancy)
      ~has_higher_fields errs cont ->
@@ -2418,8 +2427,8 @@ and with_codata_so_far : type mode a b n c et.
         (* We can always create a constant with the (0,0,0) insertion, even if its dimension is actually higher. *)
         let head = head_of_potential h in
         let fibrancy_fields = Fibrancy.Codata.finish mode checked_fields fibrancy in
-        let idm = Modality.id (Ctx.mode ctx) in
-        let rec domvars () =
+        (* The types of the self variable and its boundary: the codatatype-so-far and the boundary of the type being checked against. *)
+        let rec selftys () =
           let value =
             eval_codata (Ctx.env ctx) eta opacity hints dim
               (lazy (termctx ()))
@@ -2427,22 +2436,35 @@ and with_codata_so_far : type mode a b n c et.
           let prev_ety =
             Neu { head; args; value = ready value; ty = lazy (inst (universe mode dim) tyargs) }
           in
-          snd
-            (dom_vars ctx idm
-               (TubeOf.plus_cube
-                  (TubeOf.mmap { map = (fun _ [ nf ] -> nf.tm) } [ tyargs ])
-                  (CubeOf.singleton prev_ety)))
+          TubeOf.plus_cube
+            (TubeOf.mmap { map = (fun _ [ nf ] -> nf.tm) } [ tyargs ])
+            (CubeOf.singleton prev_ety)
+        (* The self variable, annotated by the left adjoint f of a specified adjunction, in the context locked by the right adjoint g (which is where it will be added).  Only the level of that context matters to dom_vars, and locking doesn't change that.  But the *type* of such a variable lives in the context locked by g and then by f, whereas the codatatype-so-far lives in the unlocked context; we transport it there along the adjunction unit 1 ⇒ gf, which is exactly the substitution that MTT associates to that 2-cell.  For an ordinary field the unit is an identity cell and this is a no-op. *)
+        and domvars : type f g gmode.
+            (mode, f, g, gmode) Modalcell.adjunction -> (n, mode Ctx.Binding.t) CubeOf.t =
+         fun adj ->
+          let (Locked (_, lctx)) = Ctx.lock ctx (Modalcell.adj_right adj) in
+          let (Adjunction { unit; _ }) = adj in
+          let tys =
+            CubeOf.mmap
+              { map = (fun _ [ ty ] -> act_value ty (id_deg D.zero) unit) }
+              [ selftys () ] in
+          snd (dom_vars lctx (Modalcell.adj_left adj) tys)
         and termctx () =
-          let newctx = Ctx.cube_vis ctx (Modality.filter_id mode dim) None (domvars ()) in
+          (* The termctx is only used for higher fields, which still annotate their self variable by the identity and lock afterwards. *)
+          let newctx =
+            Ctx.cube_vis ctx (Modality.filter_id mode dim) None
+              (domvars (Modalcell.id_adjunction mode)) in
           (* We don't spend the effort to readback the termctx unless the codatatype has higher fields, since it's only needed in that case (to read back the environment). *)
           Option.map (fun () -> readback_ctx newctx) has_higher_fields in
-        (domvars (), termctx ())
+        (Self_vars { self = domvars }, termctx ())
     | Snoc _ ->
         let msg =
           match eta with
           | Eta -> "record dependent"
           | Noeta -> "codata dependent" in
-        (CubeOf.build dim { build = (fun _ -> Ctx.Binding.error (Accumulated (msg, Emp))) }, None)
+        let err = Ctx.Binding.error (Accumulated (msg, Emp)) in
+        (Self_vars { self = (fun _ -> CubeOf.build dim { build = (fun _ -> err) }) }, None)
   in
   let codataterm =
     Term.Canonical
@@ -2478,7 +2500,7 @@ and check_codata : type mode a b n et.
   | (Wrap fld, Codatafield (x, lock, self_ty, rty)) :: raw_fields -> (
       with_codata_so_far status eta ctx opacity hints dim tyargs checked_fields fibrancy
         ~has_higher_fields errs
-      @@ fun domvars _ ->
+      @@ fun (Self_vars { self }) _ ->
       (* If a type was given for the self variable, it must be equal to the current codatatype with its parameters. *)
       (match self_ty with
       | Some self_ty -> (
@@ -2499,7 +2521,6 @@ and check_codata : type mode a b n et.
               else fatal err
           | _ -> fatal err)
       | None -> ());
-      let newctx = Ctx.cube_vis ctx (Modality.filter_id (Ctx.mode ctx) dim) x domvars in
       (* A lower field and a higher field can't share a name, since projections at that name would be ambiguous. *)
       let check_name_clash () =
         match CodatafieldAbwd.find_string_opt checked_fields (Field.to_string fld) with
@@ -2528,15 +2549,24 @@ and check_codata : type mode a b n et.
             @@ fun () ->
             check_name_clash ();
             let (Any_adjunction adj) = get_adjunction () in
-            let (Adjunction { right; _ }) = adj in
-            (* The type of a modal field is checked in a context locked by the right adjoint. *)
-            let (Locked (plus_lock, lctx)) = Ctx.lock newctx right in
-            (* Note the type of each field is checked *kinetically*: it's not part of the case tree. *)
-            let cty = check (Kinetic `Nolet) lctx rty (universe (Modality.src right) D.zero) in
-            let entry = CodatafieldAbwd.Entry (fld, Codatafield.Lower (adj, plus_lock, cty)) in
-            ( Snoc (checked_fields, entry),
-              Fibrancy.Codata.add_field (Ctx.mode ctx) fibrancy entry,
-              errs ) in
+            let (Adjunction { left; right; _ }) = adj in
+            (* The type of a modal field is checked in a context locked by the right adjoint and then extended by the self variable, which is annotated by the left adjoint. *)
+            let (Locked (plus_lock, lctx)) = Ctx.lock ctx right in
+            (* Since the self variable is annotated by the left adjoint, its dimensions are filtered by it; but the self variable has the dimension of the codatatype, so for now we require that dimension to be unfiltered.  (A nonparametric modal field of a zero-dimensional codatatype is fine: it is at higher *substitution* dimensions that such a field disappears, which is handled elsewhere.) *)
+            let (Has_filter left_filter) = Modality.filter left dim in
+            match Modality.filter_is_trivial dim left_filter with
+            | None ->
+                fatal (Unimplemented "nonparametric modal fields of higher-dimensional codatatypes")
+            | Some Eq ->
+                let newctx =
+                  Ctx.cube_vis lctx (Modality.filter_idempotent left_filter) x (self adj) in
+                (* Note the type of each field is checked *kinetically*: it's not part of the case tree. *)
+                let cty =
+                  check (Kinetic `Nolet) newctx rty (universe (Modality.src right) D.zero) in
+                let entry = CodatafieldAbwd.Entry (fld, Codatafield.Lower (adj, plus_lock, cty)) in
+                ( Snoc (checked_fields, entry),
+                  Fibrancy.Codata.add_field (Ctx.mode ctx) fibrancy entry,
+                  errs ) in
           check_codata status ctx opacity eta hints tyargs checked_fields fibrancy raw_fields errs
             ~has_higher_fields
       | Pos _, Zero, Noeta ->
@@ -2555,7 +2585,12 @@ and check_codata : type mode a b n et.
              with
             | Some Eq, Some Eq -> ()
             | _ -> fatal (Unimplemented "nonparametric modal higher fields"));
-            (* We first degenerate the context by the field's intrinsic dimension, then lock by the right adjoint (at which the field's type lives, exactly as for a lower field). *)
+            (* Unlike a lower field, a higher field still extends by the self variable (annotated by the identity) first: we degenerate that context by the field's intrinsic dimension, and only then lock by the right adjoint (at which the field's type lives, as for a lower field). *)
+            let newctx =
+              Ctx.cube_vis ctx
+                (Modality.filter_id (Ctx.mode ctx) dim)
+                x
+                (self (Modalcell.id_adjunction (Ctx.mode ctx))) in
             let (Degctx (plusmap, degctx, _)) = degctx newctx (Field.dim fld) in
             let (Locked (plus_lock, lctx)) = Ctx.lock degctx right in
             let cty = check (Kinetic `Nolet) lctx rty (universe (Modality.src right) D.zero) in
@@ -2598,7 +2633,7 @@ and check_record : type mode a f1 f2 f af d acd b n.
   | Ext (Some name, modality, rty, raw_fields) ->
       with_codata_so_far status Eta ctx opacity hints dim tyargs checked_fields fibrancy
         ~has_higher_fields:None errs
-      @@ fun domvars _ ->
+      @@ fun (Self_vars { self }) _ ->
       let fld = Field.intern name D.zero in
       let checked_fields, fibrancy, ctx_fields, errs =
         Reporter.try_with ~fatal:(fun e ->
@@ -2610,7 +2645,8 @@ and check_record : type mode a f1 f2 f af d acd b n.
             match Modality.compare_id modality with
             | Neq -> fatal (Unimplemented "modal record fields in telescope syntax")
             | Eq ->
-                let newctx = Ctx.vis_fields ctx vars domvars ctx_fields fplus af in
+                let selfvars = self (Modalcell.id_adjunction (Ctx.mode ctx)) in
+                let newctx = Ctx.vis_fields ctx vars selfvars ctx_fields fplus af in
                 let cty = check (Kinetic `Nolet) newctx rty (universe (Ctx.mode ctx) D.zero) in
                 let entry =
                   CodatafieldAbwd.Entry
@@ -2750,8 +2786,8 @@ and check_field : type mode a b c d s m n mn i et.
         (type f g gmode ag)
         ((adj, fld_plus_lock, fldty) :
           (mode, f, g, gmode) Modalcell.adjunction
-          * ((c, (mode id, n) dim_entry) snoc, mode, g, gmode, ag) plus_lock
-          * (gmode, ag, kinetic) term),
+          * (c, mode, g, gmode, ag) plus_lock
+          * (gmode, (ag, (f, n) dim_entry) snoc, kinetic) term),
       _,
       _,
       _ ) -> (

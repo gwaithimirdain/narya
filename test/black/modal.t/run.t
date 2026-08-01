@@ -225,6 +225,18 @@ the corresponding locks.
    ￫ info[I0000]
    ￮ constant ♯_mult defined
   
+   ￫ info[I0000]
+   ￮ constant C2 defined
+  
+   ￫ info[I0000]
+   ￮ constant c2 defined
+  
+   ￫ info[I0000]
+   ￮ constant c2_test defined
+  
+   ￫ info[I0000]
+   ￮ constant c2_snd defined
+  
 
 A modal field projection computes on a comatch/tuple.
 
@@ -257,6 +269,27 @@ Projecting a modal field with the wrong locking modality is an error.
    ￭ command-line exec string
    1 | def bad2 : N ≔ (c :♯| _) .fld
      ^ field fld is modal with left adjoint ♭, but was projected with locking modality ♯
+  
+  [1]
+
+The type of a modal field is checked in a context that is first locked by the
+right adjoint and then extended by the self variable, annotated by the left
+adjoint.
+
+  $ narya -spatial -v -e "def C3 (A :♯| Type) : Type ≔ codata [ (x :♭| _) .fld : ? ]"
+   ￫ info[I0000]
+   ￮ constant C3 defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     A :♯| Type (locked: ♯)
+     x :♭| C3 A
+     ----------------------------------------------------------------------
+     Type
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
   
   [1]
 
