@@ -254,6 +254,49 @@ let rec ins_plus_of_pbij : type n s h r i rn.
       let (Insert_plus (rn', x)) = D.insert_plus Now rn in
       Suc (ins_plus_of_pbij ins shuf' rn', g, x)
 
+(* Two insertions, into dimensions 'e1 and 'e2 that are placed side by side as 'e12, can be combined into a single insertion into 'e12, once we are told how to shuffle together the two inserted dimensions 'sh1 and 'sh2.  The un-inserted dimension of the result is the concatenation of those of the inputs, but since it is existential anyway we don't bother to record that. *)
+
+type (_, _) plus_comp_ins =
+  | Plus_comp_ins : ('e12, 'res12, 'sh12) insertion -> ('e12, 'sh12) plus_comp_ins
+
+let rec plus_comp_ins : type e1 e2 e12 res1 res2 sh1 sh2 sh12.
+    (e1, e2, e12) D.plus ->
+    (e1, res1, sh1) insertion ->
+    (e2, res2, sh2) insertion ->
+    (sh1, sh2, sh12) shuffle ->
+    (e12, sh12) plus_comp_ins =
+ fun e12 ins1 ins2 shuf ->
+  match shuf with
+  (* If nothing is inserted, both insertions are identities, and so is the result. *)
+  | Zero ->
+      let (Zero e1) = ins1 in
+      let (Zero _) = ins2 in
+      Plus_comp_ins (Zero (D.plus_out e1 e12))
+  (* The outermost element of 'sh12 comes from 'sh1, hence is inserted into the 'e1 part of 'e12.  Removing it from 'e1 removes it from 'e12 too, in the corresponding place. *)
+  | Left (g, shuf) ->
+      let (Suc (ins1, _, x1)) = ins1 in
+      let (Insert_plus (e12', y)) = D.insert_plus x1 e12 in
+      let (Plus_comp_ins ins12) = plus_comp_ins e12' ins1 ins2 shuf in
+      Plus_comp_ins (Suc (ins12, g, y))
+  (* Or it comes from 'sh2, hence is inserted into the 'e2 part of 'e12. *)
+  | Right (g, shuf) ->
+      let (Suc (ins2, _, x2)) = ins2 in
+      let (Plus e12') = D.plus (dom_ins ins2) in
+      let y = D.plus_insert e12' e12 x2 in
+      let (Plus_comp_ins ins12) = plus_comp_ins e12' ins1 ins2 shuf in
+      Plus_comp_ins (Suc (ins12, g, y))
+
+(* Now we can compose partial bijections "in parallel".  Given a partial bijection p2 that matches part of 'e2 with part of 'i, leaving 'r2 of 'i unmatched, and a partial bijection p1 that matches part of 'e1 with part of that 'r2, leaving 'r12 unmatched, we can place 'e1 and 'e2 side by side as 'e12 and combine the two matchings into a partial bijection from 'e12 to 'i with 'r12 remaining. *)
+
+let plus_comp_pbij : type e1 e2 e12 i r2 r12.
+    (e1, e2, e12) D.plus -> (e2, i, r2) pbij -> (e1, r2, r12) pbij -> (e12, i, r12) pbij =
+ fun e12 (Pbij (ins2, shuf2)) (Pbij (ins1, shuf1)) ->
+  (* 'sh1 sits inside 'r2, which sits inside 'i complementarily to 'sh2; so 'sh1 and 'sh2 shuffle together inside 'i to a shared dimension 'sh12 whose complement is 'r12. *)
+  let (Comp_shuffle_left (sh12, shuf12)) = comp_shuffle_left shuf1 shuf2 in
+  (* And that same shuffle tells us how to combine the two insertions. *)
+  let (Plus_comp_ins ins12) = plus_comp_ins e12 ins1 ins2 sh12 in
+  Pbij (ins12, shuf12)
+
 (* Intrinsically well-typed maps with partial bijections as keys.  Each map has a fixed 'evaluation dimension and 'intrinsic dimension, but the 'result, 'shared, and 'remaining dimensions vary with the keys and values.  The values are parametrized by the 'remaining dimension as well as by an extra parameter that the map depends on; hence the whole notion of map is a functor parametrized by a Fam2.
 
    The definition of the map type involves itself recursively inside a Tuple, so we need a recursive module to tie that knot.  Recursive functors are not really implemented (in general they give "unsafe" errors), but there seems to be an exception that allows them as long as the recursive module call is never named or opened, though it can occur inline in a type definition (but not a function definition, since inline functor applications cannot appear in code).  Thus, it works to first define a recursive functor for just the necessary types and modules, and then another (non-recursive) functor that includes it and defines the operations. *)

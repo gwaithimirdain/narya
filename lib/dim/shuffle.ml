@@ -92,6 +92,37 @@ let rec comp_shuffle_right : type a b c bc abc.
       let (Comp_shuffle_right (ab, abc')) = comp_shuffle_right bc abc in
       Comp_shuffle_right (ab, Right (g, abc'))
 
+(* Conversely, if 'ab is a shuffle of 'a and 'b, and 'abc is a shuffle of that with 'c, then we can reassociate: 'b and 'c shuffle to some 'bc, which shuffles with 'a to give 'abc. *)
+
+type (_, _, _, _) comp_shuffle_left =
+  | Comp_shuffle_left :
+      ('b, 'c, 'bc) shuffle * ('a, 'bc, 'abc) shuffle
+      -> ('a, 'b, 'c, 'abc) comp_shuffle_left
+
+let rec comp_shuffle_left : type a b ab c abc.
+    (a, b, ab) shuffle -> (ab, c, abc) shuffle -> (a, b, c, abc) comp_shuffle_left =
+ fun ab abc ->
+  match abc with
+  (* If 'abc is empty, so are 'ab and 'c, hence also 'a and 'b. *)
+  | Zero ->
+      let Zero = ab in
+      Comp_shuffle_left (Zero, Zero)
+  (* If the outermost element of 'abc comes from 'c, it belongs to 'bc, and hence appears on the right in both output shuffles. *)
+  | Right (g, abc) ->
+      let (Comp_shuffle_left (bc, abc)) = comp_shuffle_left ab abc in
+      Comp_shuffle_left (Right (g, bc), Right (g, abc))
+  (* Otherwise it comes from 'ab, and we ask that shuffle where it came from. *)
+  | Left (g, abc) -> (
+      match ab with
+      (* If from 'a, it doesn't belong to 'bc, and appears on the left of the outer output shuffle. *)
+      | Left (_, ab) ->
+          let (Comp_shuffle_left (bc, abc)) = comp_shuffle_left ab abc in
+          Comp_shuffle_left (bc, Left (g, abc))
+      (* If from 'b, it belongs to 'bc on the left, and hence to the right of the outer output shuffle. *)
+      | Right (_, ab) ->
+          let (Comp_shuffle_left (bc, abc)) = comp_shuffle_left ab abc in
+          Comp_shuffle_left (Left (g, bc), Right (g, abc)))
+
 type (_, _) shuffle_right = Of_right : ('a, 'b, 'c) shuffle -> ('b, 'c) shuffle_right
 
 let rec all_shuffles_right : type b c. b D.t -> c D.t -> (b, c) shuffle_right Seq.t =

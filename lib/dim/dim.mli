@@ -809,6 +809,9 @@ val unplus_pbij :
 val ins_plus_of_pbij :
   ('n, 's, 'h) insertion -> ('r, 'h, 'i) shuffle -> ('r, 'n, 'rn) D.plus -> ('rn, 's, 'i) insertion
 
+val plus_comp_pbij :
+  ('e1, 'e2, 'e12) D.plus -> ('e2, 'i, 'r2) pbij -> ('e1, 'r2, 'r12) pbij -> ('e12, 'i, 'r12) pbij
+
 module Pbijmap : functor (F : Fam2) -> sig
   type ('evaluation, 'intrinsic, 'v) t
 
