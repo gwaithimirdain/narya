@@ -50,21 +50,19 @@ let rec cod_right_ins : type a b c. (a, b, c) insertion -> c D.t = function
 
 (* Are two insertions equal?  If so, all three of their parameters are identified. *)
 let rec equal_ins : type a1 b1 c1 a2 b2 c2.
-    (a1, b1, c1) insertion ->
-    (a2, b2, c2) insertion ->
-    ((a1, a2) Eq.t * (b1, b2) Eq.t * (c1, c2) Eq.t) option =
+    (a1, b1, c1) insertion -> (a2, b2, c2) insertion -> (a1 * b1 * c1, a2 * b2 * c2) Eq.t option =
  fun i1 i2 ->
   match (i1, i2) with
   | Zero a1, Zero a2 -> (
       match D.compare a1 a2 with
-      | Eq -> Some (Eq, Eq, Eq)
+      | Eq -> Some Eq
       | Neq -> None)
   | Suc (i1, g1, x1), Suc (i2, g2, x2) -> (
       (* Once the smaller insertions are equal and the generators agree, the two inserts have the same domain, so we can ask whether they insert in the same place. *)
       match (equal_ins i1 i2, D.G.compare g1 g2) with
-      | Some (Eq, Eq, Eq), Eq -> (
+      | Some Eq, Eq -> (
           match D.insert_equal x1 x2 with
-          | Eq -> Some (Eq, Eq, Eq)
+          | Eq -> Some Eq
           | Neq -> None)
       | _ -> None)
   | _ -> None

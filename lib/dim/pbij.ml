@@ -28,11 +28,10 @@ let pbij_of_ins : type a b c. (a, b, c) insertion -> (a, c, D.zero) pbij =
 
 (* Since the shared dimension of a partial bijection is determined by its underlying matching, two partial bijections are equal exactly when both their insertions and their shuffles are equal, and then all three of their parameters are identified.  (The insertion and the shuffle both identify the shared dimensions, redundantly.) *)
 let equal_pbij : type e1 i1 r1 e2 i2 r2.
-    (e1, i1, r1) pbij -> (e2, i2, r2) pbij -> ((e1, e2) Eq.t * (i1, i2) Eq.t * (r1, r2) Eq.t) option
-    =
+    (e1, i1, r1) pbij -> (e2, i2, r2) pbij -> (e1 * i1 * r1, e2 * i2 * r2) Eq.t option =
  fun (Pbij (ins1, shuf1)) (Pbij (ins2, shuf2)) ->
   match (equal_ins ins1 ins2, equal_shuffle shuf1 shuf2) with
-  | Some (Eq, Eq, Eq), Some (Eq, Eq, Eq) -> Some (Eq, Eq, Eq)
+  | Some Eq, Some Eq -> Some Eq
   | _ -> None
 
 type _ pbij_of = Pbij_of : ('evaluation, 'intrinsic, 'remaining) pbij -> 'evaluation pbij_of

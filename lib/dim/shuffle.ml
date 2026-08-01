@@ -72,19 +72,17 @@ let rec eq_of_shuffle_zero : type a b. (a, D.zero, b) shuffle -> (a, b) Eq.t = f
 
 (* Are two shuffles equal?  If so, all three of their parameters are identified. *)
 let rec equal_shuffle : type a1 b1 c1 a2 b2 c2.
-    (a1, b1, c1) shuffle ->
-    (a2, b2, c2) shuffle ->
-    ((a1, a2) Eq.t * (b1, b2) Eq.t * (c1, c2) Eq.t) option =
+    (a1, b1, c1) shuffle -> (a2, b2, c2) shuffle -> (a1 * b1 * c1, a2 * b2 * c2) Eq.t option =
  fun s1 s2 ->
   match (s1, s2) with
-  | Zero, Zero -> Some (Eq, Eq, Eq)
+  | Zero, Zero -> Some Eq
   | Left (g1, s1), Left (g2, s2) -> (
       match (equal_shuffle s1 s2, D.G.compare g1 g2) with
-      | Some (Eq, Eq, Eq), Eq -> Some (Eq, Eq, Eq)
+      | Some Eq, Eq -> Some Eq
       | _ -> None)
   | Right (g1, s1), Right (g2, s2) -> (
       match (equal_shuffle s1 s2, D.G.compare g1 g2) with
-      | Some (Eq, Eq, Eq), Eq -> Some (Eq, Eq, Eq)
+      | Some Eq, Eq -> Some Eq
       | _ -> None)
   | _ -> None
 

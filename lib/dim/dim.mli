@@ -590,7 +590,7 @@ val cod_right_ins : ('a, 'b, 'c) insertion -> 'c D.t
 val equal_ins :
   ('a1, 'b1, 'c1) insertion ->
   ('a2, 'b2, 'c2) insertion ->
-  (('a1, 'a2) Eq.t * ('b1, 'b2) Eq.t * ('c1, 'c2) Eq.t) option
+  ('a1 * 'b1 * 'c1, 'a2 * 'b2 * 'c2) Eq.t option
 
 val plus_ins :
   'a D.t ->
@@ -726,7 +726,7 @@ val eq_of_zero_shuffle : (D.zero, 'a, 'b) shuffle -> ('a, 'b) Eq.t
 val equal_shuffle :
   ('a1, 'b1, 'c1) shuffle ->
   ('a2, 'b2, 'c2) shuffle ->
-  (('a1, 'a2) Eq.t * ('b1, 'b2) Eq.t * ('c1, 'c2) Eq.t) option
+  ('a1 * 'b1 * 'c1, 'a2 * 'b2 * 'c2) Eq.t option
 
 type (_, _) shuffle_right = Of_right : ('a, 'b, 'c) shuffle -> ('b, 'c) shuffle_right
 
@@ -743,9 +743,7 @@ val remaining : ('e, 'i, 'r) pbij -> 'r D.t
 val pbij_of_ins : ('a, 'b, 'c) insertion -> ('a, 'c, D.zero) pbij
 
 val equal_pbij :
-  ('e1, 'i1, 'r1) pbij ->
-  ('e2, 'i2, 'r2) pbij ->
-  (('e1, 'e2) Eq.t * ('i1, 'i2) Eq.t * ('r1, 'r2) Eq.t) option
+  ('e1, 'i1, 'r1) pbij -> ('e2, 'i2, 'r2) pbij -> ('e1 * 'i1 * 'r1, 'e2 * 'i2 * 'r2) Eq.t option
 
 type _ pbij_of = Pbij_of : ('evaluation, 'intrinsic, 'remaining) pbij -> 'evaluation pbij_of
 

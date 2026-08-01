@@ -88,7 +88,7 @@ let () =
             && string_of_pbij p = string_of_pbij q in
           let actual =
             match equal_pbij p q with
-            | Some (Eq, Eq, Eq) ->
+            | Some Eq ->
                 (* The equations really do identify the parameters: with them in scope, the two partial bijections have the same type, so we can compare them with the built-in structural equality. *)
                 if p <> q then Printf.printf "  identified but unequal!\n";
                 true
@@ -105,7 +105,8 @@ let () =
               actual))
         all)
     all;
-  Printf.printf "compared %d pairs of partial bijections, %d failures\n" !count !bad
+  if !bad > 0 then
+    failwith (Printf.sprintf "compared %d pairs of partial bijections, %d failures\n" !count !bad)
 
 let () =
   let dims = List.init 4 dim in
@@ -134,4 +135,4 @@ let () =
             dims)
         dims)
     dims;
-  Printf.printf "checked %d compositions, %d failures\n" !count !bad
+  if !bad > 0 then failwith (Printf.sprintf "checked %d compositions, %d failures\n" !count !bad)
