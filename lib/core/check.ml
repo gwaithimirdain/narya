@@ -3065,42 +3065,7 @@ and check_higher_field : type mode f g gmode a b bg c d m i ian iag.
         (* We trap any errors produced by 'tyof_field' or 'check', adding them instead to the list of accumulated errors and going on.  Note that if any previous fields that have already failed, then prev_etm will be bound to an error value, and so if the type of this field depends on the value of any previous one, tyof_field will raise that error, which we catch and add to the list; but it will be (Accumulated Emp) so it won't be displayed to the user. *)
         Reporter.try_with ~fatal:(fun e -> (evals, cvals, Snoc (errs, e))) @@ fun () ->
         let shuf : (mode, r, h, i, c) Norm.shuffleable =
-          Nontrivial
-            {
-              dbwd = length_env env;
-              shuffle = fldshuf;
-              deg_env = (fun _sh r_sh e -> eval_env degenv r_sh (readback_env ctx e termctx));
-              deg_nf =
-                (fun nf ->
-                  let ctm = readback_nf ctx nf in
-                  let tm = eval_term degenv ctm in
-                  let cty = readback_val ctx (Lazy.force (nf.ty)) in
-                  let ity = eval_term degenv cty in
-                  let argstbl = Hashtbl.create 10 in
-                  let tyargs =
-                    TubeOf.build D.zero (D.zero_plus r)
-                      {
-                        build =
-                          (fun fa ->
-                            let faenv = act_env degenv (opt_op_of_sface (sface_of_tface fa)) in
-                            let fatm = eval_term faenv ctm in
-                            let faty =
-                              inst (eval_term faenv cty)
-                                (TubeOf.build D.zero
-                                   (D.zero_plus (dom_tface fa))
-                                   {
-                                     build =
-                                       (fun fb ->
-                                         Hashtbl.find argstbl
-                                           (SFace_of
-                                              (comp_sface (sface_of_tface fa) (sface_of_tface fb))));
-                                   }) in
-                            let nf = { tm = fatm; ty = (Lazy.from_val (faty)) } in
-                            Hashtbl.add argstbl (SFace_of (sface_of_tface fa)) nf;
-                            nf);
-                      } in
-                  { tm; ty = (Lazy.from_val (inst ity tyargs)) });
-            } in
+          higher_codatafield_shuffleable ctx (length_env env) termctx degenv r fldshuf in
         (* Evaluate the type for this instance of the field (behind the lock by the right adjoint, hence with no counit keying), and check the user's term against it in the locked degenerated context. *)
         let ety =
           tyof_higher_codatafield prev_etm fld adj env tyargs fldins ic0 fld_plus_lock fldty ~shuf
