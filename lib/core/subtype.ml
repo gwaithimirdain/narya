@@ -46,7 +46,7 @@ let subtype_of ctx subtype supertype =
          @@ let* m = Constant.Map.find_opt subname (S.get ()) in
             let* () = Constant.Map.find_opt supername m in
             (* Higher-dimensional versions of subtypes are also subtypes, as long as they are instantiated at equal tubes. *)
-            let* () = equal_ins subins superins in
+            let* _ = equal_ins subins superins in
             (* Only a successful comparison counts: equal_tyargs can also return Some (Error _) for a definite inequality. *)
             match equal_tyargs ctx subargs superargs with
             | Some (Ok ()) -> Some ()

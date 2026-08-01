@@ -8,6 +8,9 @@
 
 open Dim
 
+let () =
+  Endpoints.set ~arity:2 ~refl_char:'e' ~refl_names:[ "refl"; "Id" ] ~internal:true ~hott:false
+
 let dim : int -> D.wrapped =
  fun n ->
   let rec go n =
@@ -57,6 +60,52 @@ let check : type e1 e2 e12 i r2 r12.
   | _ ->
       Printf.printf "  expected %s, got %s\n" (string_of_deg expected) (string_of_deg actual);
       false
+
+(* A partial bijection is faithfully described by its evaluation dimension together with its string representation, which lists, for each element of the intrinsic dimension, either "refl" (if it is remaining) or the position in the evaluation dimension that it is matched with. *)
+
+type wrapped_pbij = Wrapped : ('e, 'i, 'r) pbij -> wrapped_pbij
+
+let () =
+  let dims = List.init 4 dim in
+  let all =
+    List.concat_map
+      (fun (D.Wrap e) ->
+        List.concat_map
+          (fun (D.Wrap i) ->
+            List.of_seq (Seq.map (fun (Pbij_between p) -> Wrapped p) (all_pbij_between e i)))
+          dims)
+      dims in
+  let count = ref 0 in
+  let bad = ref 0 in
+  List.iter
+    (fun (Wrapped p) ->
+      List.iter
+        (fun (Wrapped q) ->
+          incr count;
+          let expected =
+            string_of_dim (dom_pbij p) = string_of_dim (dom_pbij q)
+            && string_of_dim (cod_pbij p) = string_of_dim (cod_pbij q)
+            && string_of_pbij p = string_of_pbij q in
+          let actual =
+            match equal_pbij p q with
+            | Some (Eq, Eq, Eq) ->
+                (* The equations really do identify the parameters: with them in scope, the two partial bijections have the same type, so we can compare them with the built-in structural equality. *)
+                if p <> q then Printf.printf "  identified but unequal!\n";
+                true
+            | None -> false in
+          if expected <> actual then (
+            incr bad;
+            Printf.printf "FAIL equal_pbij (%s : %s -> %s) (%s : %s -> %s) = %b\n"
+              (string_of_pbij p)
+              (string_of_dim (dom_pbij p))
+              (string_of_dim (cod_pbij p))
+              (string_of_pbij q)
+              (string_of_dim (dom_pbij q))
+              (string_of_dim (cod_pbij q))
+              actual))
+        all)
+    all;
+  Printf.printf "compared %d pairs of partial bijections, %d failures\n" !count !bad
 
 let () =
   let dims = List.init 4 dim in

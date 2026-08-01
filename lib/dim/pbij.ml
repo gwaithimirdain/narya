@@ -26,6 +26,15 @@ let remaining : type e i r. (e, i, r) pbij -> r D.t = fun (Pbij (_, shuf)) -> le
 let pbij_of_ins : type a b c. (a, b, c) insertion -> (a, c, D.zero) pbij =
  fun ins -> Pbij (ins, zero_shuffle (cod_right_ins ins))
 
+(* Since the shared dimension of a partial bijection is determined by its underlying matching, two partial bijections are equal exactly when both their insertions and their shuffles are equal, and then all three of their parameters are identified.  (The insertion and the shuffle both identify the shared dimensions, redundantly.) *)
+let equal_pbij : type e1 i1 r1 e2 i2 r2.
+    (e1, i1, r1) pbij -> (e2, i2, r2) pbij -> ((e1, e2) Eq.t * (i1, i2) Eq.t * (r1, r2) Eq.t) option
+    =
+ fun (Pbij (ins1, shuf1)) (Pbij (ins2, shuf2)) ->
+  match (equal_ins ins1 ins2, equal_shuffle shuf1 shuf2) with
+  | Some (Eq, Eq, Eq), Some (Eq, Eq, Eq) -> Some (Eq, Eq, Eq)
+  | _ -> None
+
 type _ pbij_of = Pbij_of : ('evaluation, 'intrinsic, 'remaining) pbij -> 'evaluation pbij_of
 
 (* A partial bijection from a given 'evaluation dimension can be represented by a list of integers and direction strings.  The length of the list is the codomain 'intrinsic.  The integers in the list represent 'shared and the strings represent 'remaining, with their positions in the list giving the shuffle, and the values of the integers specifying where to insert them (into some dimension 'result) to produce 'evaluation. *)

@@ -249,6 +249,18 @@ module Make (G : Comparable) = struct
         | Eq_gen_inserts -> Eq_gen_inserts
         | Neq_gen_inserts (k', j') -> Neq_gen_inserts (Later k', Later j'))
 
+  (* Two insertions of the same generator into the same word are equal exactly when they insert it in the same place, in which case their outputs agree. *)
+  let rec insert_equal : type a g b1 b2.
+      (a, g, b1) Tbwd.insert -> (a, g, b2) Tbwd.insert -> (b1, b2) Eq.compare =
+   fun i1 i2 ->
+    match (i1, i2) with
+    | Now, Now -> Eq
+    | Later i1, Later i2 -> (
+        match insert_equal i1 i2 with
+        | Eq -> Eq
+        | Neq -> Neq)
+    | _ -> Neq
+
   let rec insert_equiv : type m n g p q.
       (p, g, m) Tbwd.insert -> (q, g, n) Tbwd.insert -> unit option =
    fun k l ->
