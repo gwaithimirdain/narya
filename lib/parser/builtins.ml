@@ -609,7 +609,8 @@ let pp_abslets obs :
             let head, wsin =
               if is_case tm then
                 (* If the term is a case tree, we display it in case mode.  In this case, the principal breaking points are those in the term's case tree, and we group its "intro" with the let and type. *)
-                let itm, ptm, wtm = pp_case `Nontrivial tm in
+                let itm, ptm, wtm =
+                  pp_case ~leading_break:(not (ws_ends_hard wscoloneq)) `Nontrivial tm in
                 let gin, wsin = get_in wtm in
                 ( optional (pp_ws `Break) prews
                   ^^ group
@@ -1157,7 +1158,8 @@ let () =
             match obs with
             | [ Term x; Token (Coloneq, (wscoloneq, _)); Term body ] ->
                 let px, wx = pp_term x in
-                let ibody, pbody, wbody = pp_case `Nontrivial body in
+                let ibody, pbody, wbody =
+                  pp_case ~leading_break:(not (ws_ends_hard wscoloneq)) `Nontrivial body in
                 ( group
                     (px ^^ pp_ws `Break wx ^^ Token.pp Coloneq ^^ pp_ws `Nobreak wscoloneq ^^ ibody),
                   pbody,
@@ -1307,7 +1309,8 @@ let pp_tuple_case triv obs =
           | `Trivial -> (Token.pp LParen, group (align (pp_ws `None wslparen ^^ doc)), ws)
           | `Nontrivial -> (Token.pp LParen, group (nest 2 (pp_ws `Cut wslparen ^^ doc)), ws)))
   | `Parens (wslparen, Wrap body, wsrparen) ->
-      let ibody, pbody, wbody = pp_case `Nontrivial body in
+      let ibody, pbody, wbody =
+        pp_case ~leading_break:(not (ws_ends_hard wslparen)) `Nontrivial body in
       ( Token.pp LParen ^^ pp_ws `None wslparen ^^ ibody,
         pbody ^^ pp_ws `None wbody ^^ Token.pp RParen,
         wsrparen )
@@ -1806,7 +1809,9 @@ let rec pp_branches first triv accum prews obs : document * Whitespace.t list =
       let ppats, wpats, obs = pp_patterns empty obs in
       match obs with
       | Token (mapsto, (wsmapsto, _)) :: Term body :: obs ->
-          let ibody, pbody, wbody = pp_case `Nontrivial body in
+          (* Comments after the arrow end with a newline of their own, so the body mustn't add another. *)
+          let ibody, pbody, wbody =
+            pp_case ~leading_break:(not (ws_ends_hard wsmapsto)) `Nontrivial body in
           pp_branches false triv
             (accum
             ^^ optional (pp_ws `Break) prews

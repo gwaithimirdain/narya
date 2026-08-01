@@ -732,3 +732,32 @@ The supplied files are symlinked into the directory where the test is run, and u
   
   notation(1.5) x "*+*" y ≔ binop x y
   
+  {` comments before case-tree bodies `}
+  
+  def commented_branches : ℕ → A ≔ [
+  | zero. ↦
+    {` first comment `}
+    {` second comment `}
+    blahblah (blahblah2 blahblah3) (blahblah2 (blahblah2 blahblah3))
+      (blahblah blahblah3 blahblah3 blahblah3)
+  | suc. _ ↦
+    {` a comment `}
+    blahblah3]
+  
+  def commented_field : prod A A ≔ (
+    fst
+    ≔
+    {` a comment `}
+    blahblah (blahblah2 blahblah3) (blahblah2 (blahblah2 blahblah3))
+      (blahblah blahblah3 blahblah3 blahblah3),
+    snd ≔ blahblah3)
+
+Reformatting must be idempotent: a second pass changes nothing.  In particular
+whitespace must not accumulate, as it did when a comment preceding a case-tree
+body gained an extra blank line on every pass.
+
+  $ cat reformat2.ny >reformat3.ny
+
+  $ narya reformat3.ny > /dev/null 2>&1
+
+  $ diff reformat2.ny reformat3.ny

@@ -83,6 +83,20 @@ let pp_ws ?(space_before_starting_comment = 1) (space : space) (ws : Whitespace.
   | `Newlines n :: ws -> repeat n hardline ^^ pp ws true
   | _ -> blank space_before_starting_comment ^^ pp ws false
 
+(* Whether pp_ws will end its output with a forced newline.  This must mirror the cases of pp_ws above; it assumes the caller's space isn't `Hard, which is the only one that forces a newline on its own.  A caller that follows pp_ws by something supplying its own linebreak (such as a `Nontrivial case-tree body) has to suppress that break when this is true, since otherwise the two newlines would combine into a blank line — which, being re-parsed as a blank line, would grow by one more line on every reformatting. *)
+let ws_ends_hard (ws : Whitespace.t list) : bool =
+  match ws with
+  | [] -> false
+  | [ `Newlines n ] -> n >= 2
+  | _ ->
+      let rec go hard = function
+        | [] -> hard
+        (* A comment is followed by a hardline only in the case of a line comment. *)
+        | `Block _ :: ws -> go false ws
+        | `Line _ :: ws -> go true ws
+        | `Newlines n :: ws -> go (hard || n > 0) ws in
+      go false ws
+
 (* We print an application spine, possibly containing field/method calls, with possible linebreaks as
      f a b c
          d e
@@ -175,12 +189,15 @@ and pp_superscript str =
       utf8string (Token.super_lparen_string ^ Token.to_super str.value ^ Token.super_rparen_string)
   | `ASCII -> utf8string ("^^(" ^ str.value ^ ")")
 
-(* Print a parse tree as a case tree.  Return the "intro" separately so that it can be grouped with any introductory code from a "def" or "let" so that the primary linebreaks are the case tree ones.  Deals with whitespace like pp_term; the whitespace that ends the intro goes into the main doc (including an allowed break).  The intro doesn't need to start with a break. *)
+(* Print a parse tree as a case tree.  Return the "intro" separately so that it can be grouped with any introductory code from a "def" or "let" so that the primary linebreaks are the case tree ones.  Deals with whitespace like pp_term; the whitespace that ends the intro goes into the main doc (including an allowed break).  The intro doesn't need to start with a break.
+
+   A `Nontrivial body that isn't itself a case-tree notation begins with a break of its own.  Pass ~leading_break:false to suppress that when the caller has already printed a forced newline just before it (see ws_ends_hard); otherwise the body would be preceded by a spurious blank line. *)
 let pp_case : type lt ls rt rs.
+    ?leading_break:bool ->
     [ `Trivial | `Nontrivial ] ->
     (lt, ls, rt, rs) parse Asai.Range.located ->
     PPrint.document * document * Whitespace.t list =
- fun triv tm ->
+ fun ?(leading_break = true) triv tm ->
   match
     match tm.value with
     | Notn (n, d) -> (
@@ -195,6 +212,7 @@ let pp_case : type lt ls rt rs.
   | Right (doc, ws) -> (
       match triv with
       | `Trivial -> (empty, hang 2 doc, ws)
+      | `Nontrivial when not leading_break -> (empty, hang 2 doc, ws)
       | `Nontrivial -> (empty, group (nest 2 (break 0 ^^ hang 2 doc)), ws))
 
 let pp_complete_term : wrapped_parse -> space -> document =
