@@ -73,12 +73,12 @@ The supplied files are symlinked into the directory where the test is run, and u
   echo A
   
   echo ` line comment
-    A
+  A
   
   echo A ` line comment
   
   echo {` block
-    comment`} A
+  comment`} A
   
   def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]
   

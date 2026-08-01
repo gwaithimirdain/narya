@@ -1498,17 +1498,16 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
     | Echo { wsecho; number; wsin; wsnumber; tm = Wrap tm; eval } ->
         let tm, rest = split_ending_whitespace tm in
         ( indent,
-          hang 2
-            (Token.pp (if eval then Echo else Synth)
-            ^^ pp_ws `Nobreak wsecho
-            ^^ optional
-                 (fun n ->
-                   Token.pp In
-                   ^^ pp_ws `Nobreak wsin
-                   ^^ string (string_of_int n)
-                   ^^ pp_ws `Nobreak wsnumber)
-                 number
-            ^^ pp_complete_term (Wrap tm) `None),
+          Token.pp (if eval then Echo else Synth)
+          ^^ pp_ws `Nobreak wsecho
+          ^^ optional
+               (fun n ->
+                 Token.pp In
+                 ^^ pp_ws `Nobreak wsin
+                 ^^ string (string_of_int n)
+                 ^^ pp_ws `Nobreak wsnumber)
+               number
+          ^^ align (hang 2 (pp_complete_term (Wrap tm) `None)),
           rest )
     | Notation
         {
