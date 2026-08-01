@@ -200,7 +200,7 @@ type ('left, 'tight, 'right) data = {
 
      In addition, we distinguish between "trivial" and "nontrivial" introductions.  A trivial introduction is a 0- or 1-character one, like the opening parenthesis of a tuple.  A trivial introduction is treated specially IF the form introducing the case tree is empty, so that there would literally be only 0 or 1 characters on the introduction line; in that case, there should be no linebreak after the introduction even when the body is being linebreaked.  Thus, the function to print a notation as a case tree must be told whether it is in a trivial context or not (which it may choose to ignore, if it is adding nontrivial introductions). *)
   print_case :
-    ([ `Trivial | `Nontrivial ] ->
+    ([ `Trivial | `Nontrivial of Whitespace.t list ] ->
     observation list ->
     PPrint.document * PPrint.document * Whitespace.t list)
     option;

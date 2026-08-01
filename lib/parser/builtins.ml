@@ -609,8 +609,7 @@ let pp_abslets obs :
             let head, wsin =
               if is_case tm then
                 (* If the term is a case tree, we display it in case mode.  In this case, the principal breaking points are those in the term's case tree, and we group its "intro" with the let and type. *)
-                let itm, ptm, wtm =
-                  pp_case ~leading_break:(not (ws_ends_hard wscoloneq)) `Nontrivial tm in
+                let itm, ptm, wtm = pp_case (`Nontrivial wscoloneq) tm in
                 let gin, wsin = get_in wtm in
                 ( optional (pp_ws `Break) prews
                   ^^ group
@@ -668,13 +667,13 @@ let pp_abslet_term obs =
        : type
        ≔ term in
 *)
-let pp_abslet_case triv obs =
+let pp_abslet_case (triv : [ `Trivial | `Nontrivial of Whitespace.t list ]) obs =
   let introabs, abslets, trailabs, ws, Wrap body = pp_abslets obs in
   match trailabs with
   | [] -> (
       match abslets with
       | [] ->
-          let ibody, pbody, wsbody = pp_case `Nontrivial body in
+          let ibody, pbody, wsbody = pp_case (`Nontrivial (Option.value ws ~default:[])) body in
           ( group
               (concat_map (fun (w, x) -> optional (pp_ws `Break) w ^^ x) introabs
               ^^ optional (pp_ws `Break) ws
@@ -686,7 +685,7 @@ let pp_abslet_case triv obs =
           let newbody = nest 2 (concat abslets ^^ optional (pp_ws `Break) ws ^^ ibody ^^ pbody) in
           match (introabs, triv) with
           | [], `Trivial -> (empty, newbody, wsbody)
-          | [], `Nontrivial ->
+          | [], `Nontrivial _ ->
               let doc = ifflat empty (hardline ^^ blank 2) ^^ newbody in
               (empty, (if List.is_empty abslets then group doc else doc), wsbody)
           | _ :: _, _ ->
@@ -694,7 +693,7 @@ let pp_abslet_case triv obs =
                 newbody,
                 wsbody )))
   | (absws, abs) :: trailabs -> (
-      let ibody, pbody, wsbody = pp_case `Nontrivial body in
+      let ibody, pbody, wsbody = pp_case (`Nontrivial (Option.value ws ~default:[])) body in
       let newbody =
         nest 2
           (concat abslets
@@ -707,7 +706,7 @@ let pp_abslet_case triv obs =
           ^^ pbody) in
       match (introabs, triv) with
       | [], `Trivial -> (empty, newbody, wsbody)
-      | [], `Nontrivial ->
+      | [], `Nontrivial _ ->
           let doc = ifflat empty (hardline ^^ blank 2) ^^ newbody in
           (empty, (if List.is_empty abslets then group doc else doc), wsbody)
       | (absws, abs) :: introabs, _ -> (
@@ -1158,8 +1157,7 @@ let () =
             match obs with
             | [ Term x; Token (Coloneq, (wscoloneq, _)); Term body ] ->
                 let px, wx = pp_term x in
-                let ibody, pbody, wbody =
-                  pp_case ~leading_break:(not (ws_ends_hard wscoloneq)) `Nontrivial body in
+                let ibody, pbody, wbody = pp_case (`Nontrivial wscoloneq) body in
                 ( group
                     (px ^^ pp_ws `Break wx ^^ Token.pp Coloneq ^^ pp_ws `Nobreak wscoloneq ^^ ibody),
                   pbody,
@@ -1296,7 +1294,7 @@ let pp_tuple_term obs =
           ^^ align (pp_ws `None wslparen ^^ pbody ^^ pp_ws `None wbody ^^ Token.pp RParen)),
         wsrparen )
 
-let pp_tuple_case triv obs =
+let pp_tuple_case (triv : [ `Trivial | `Nontrivial of Whitespace.t list ]) obs =
   match parens_case obs with
   | `Tuple (wslparen, obs) -> (
       match obs with
@@ -1307,10 +1305,9 @@ let pp_tuple_case triv obs =
           let doc, ws = pp_tuple_fields true None empty obs in
           match triv with
           | `Trivial -> (Token.pp LParen, group (align (pp_ws `None wslparen ^^ doc)), ws)
-          | `Nontrivial -> (Token.pp LParen, group (nest 2 (pp_ws `Cut wslparen ^^ doc)), ws)))
+          | `Nontrivial _ -> (Token.pp LParen, group (nest 2 (pp_ws `Cut wslparen ^^ doc)), ws)))
   | `Parens (wslparen, Wrap body, wsrparen) ->
-      let ibody, pbody, wbody =
-        pp_case ~leading_break:(not (ws_ends_hard wslparen)) `Nontrivial body in
+      let ibody, pbody, wbody = pp_case (`Nontrivial wslparen) body in
       ( Token.pp LParen ^^ pp_ws `None wslparen ^^ ibody,
         pbody ^^ pp_ws `None wbody ^^ Token.pp RParen,
         wsrparen )
@@ -1810,8 +1807,7 @@ let rec pp_branches first triv accum prews obs : document * Whitespace.t list =
       match obs with
       | Token (mapsto, (wsmapsto, _)) :: Term body :: obs ->
           (* Comments after the arrow end with a newline of their own, so the body mustn't add another. *)
-          let ibody, pbody, wbody =
-            pp_case ~leading_break:(not (ws_ends_hard wsmapsto)) `Nontrivial body in
+          let ibody, pbody, wbody = pp_case (`Nontrivial wsmapsto) body in
           pp_branches false triv
             (accum
             ^^ optional (pp_ws `Break) prews

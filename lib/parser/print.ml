@@ -191,13 +191,12 @@ and pp_superscript str =
 
 (* Print a parse tree as a case tree.  Return the "intro" separately so that it can be grouped with any introductory code from a "def" or "let" so that the primary linebreaks are the case tree ones.  Deals with whitespace like pp_term; the whitespace that ends the intro goes into the main doc (including an allowed break).  The intro doesn't need to start with a break.
 
-   A `Nontrivial body that isn't itself a case-tree notation begins with a break of its own.  Pass ~leading_break:false to suppress that when the caller has already printed a forced newline just before it (see ws_ends_hard); otherwise the body would be preceded by a spurious blank line. *)
+   A `Nontrivial body that isn't itself a case-tree notation begins with a break of its own.  But that should be suppressed when the caller has already printed a forced newline just before it because of ending whitespace, otherwise the body would be preceded by a spurious blank line; thus the caller must supply the whitespace that was just printed as the argument of [`Nontrivial].  Note that this whitespace is not printed *by* [pp_case], only inspected. *)
 let pp_case : type lt ls rt rs.
-    ?leading_break:bool ->
-    [ `Trivial | `Nontrivial ] ->
+    [ `Trivial | `Nontrivial of Whitespace.t list ] ->
     (lt, ls, rt, rs) parse Asai.Range.located ->
     PPrint.document * document * Whitespace.t list =
- fun ?(leading_break = true) triv tm ->
+ fun triv tm ->
   match
     match tm.value with
     | Notn (n, d) -> (
@@ -212,8 +211,8 @@ let pp_case : type lt ls rt rs.
   | Right (doc, ws) -> (
       match triv with
       | `Trivial -> (empty, hang 2 doc, ws)
-      | `Nontrivial when not leading_break -> (empty, hang 2 doc, ws)
-      | `Nontrivial -> (empty, group (nest 2 (break 0 ^^ hang 2 doc)), ws))
+      | `Nontrivial prews when ws_ends_hard prews -> (empty, hang 2 doc, ws)
+      | `Nontrivial _ -> (empty, group (nest 2 (break 0 ^^ hang 2 doc)), ws))
 
 let pp_complete_term : wrapped_parse -> space -> document =
  fun (Wrap tm) space ->
