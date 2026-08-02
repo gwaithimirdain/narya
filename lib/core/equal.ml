@@ -128,7 +128,7 @@ and equal_at : type mode a b.
     (* Codatatypes (without eta) don't need to be dealt with here, even though structs can't be compared synthesizingly, since codatatypes aren't actually inhabited by (kinetic) structs, only neutral terms that are equal to potential structs.  In the case of record types with eta, if there is a nonidentity insertion outside, then the type isn't actually a record type, *but* it still has an eta-rule since it is *isomorphic* to a record type!  Thus, instead of checking whether the insertion is the identity, we apply its inverse permutation to the terms being compared.  And because we pass off to 'field' and 'tyof_field', we don't need to make explicit use of any of the other data here. *)
     | Canonical
         (type hmode mn m n)
-        ((_, Codata (type c a et) ({ eta; fields; _ } : (mode, m, n, c, a, et) codata_args), ins, _) :
+        ((_, Codata (type a et) ({ eta; fields; _ } : (mode, m, n, a, et) codata_args), ins, _) :
           hmode head
           * (mode, m, n) canonical
           * (mn, m, n) insertion

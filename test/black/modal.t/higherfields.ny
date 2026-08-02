@@ -69,3 +69,24 @@ def mk_computes : Id A ((refl mk :♭| _) .root.1) a ≔ refl a
 def mk2 (b :♯| A) : √♭A ≔ [ .root.e ↦ b.0 ]
 
 def mk2_computes : Id A ((refl (mk2 a) :♭| _) .root.1) a ≔ refl a
+
+` The type of a modal higher field is checked in a context that is degenerated
+` by the field's intrinsic dimension, then locked by the right adjoint ♯, and
+` only then extended by the self variable annotated by ♭.  So the self variable
+` is available in the field's type, as a cube of that intrinsic dimension.
+
+def N : Type ≔ data [ zero. | suc. (_ : N) ]
+
+def C : Type ≔ codata [
+| (x :♭| _) .fst : N
+| (y :♭| _) .root.e : Id N ((y.0 :♭| _) .fst) ((y.1 :♭| _) .fst)
+]
+
+def c : C ≔ [ .fst ↦ suc. zero. | .root.e ↦ refl (suc. zero.) ]
+
+def cfst : Id N ((c :♭| _) .fst) (suc. zero.) ≔ refl (suc. zero.)
+
+` And the self-dependent type computes correctly when projected from a
+` variable, whose modal key matters (unlike that of a constant).
+
+def proot (z :♭| C) : Id N ((z :♭| _) .fst) ((z :♭| _) .fst) ≔ (refl z :♭| _) .root.1

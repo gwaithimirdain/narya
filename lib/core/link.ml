@@ -83,7 +83,7 @@ and canonical : type mode a. (File.t -> File.t) -> (mode, a) canonical -> (mode,
           hints;
           tyfam = term f tyfam;
         }
-  | Codata { eta; opacity; hints; dim; termctx = tc; fields; fibrancy = fib; is_glue } ->
+  | Codata { eta; opacity; hints; dim; fields; fibrancy = fib; is_glue } ->
       let trr =
         Mbwd.map
           (fun (StructfieldAbwd.Entry (fld, x)) -> StructfieldAbwd.Entry (fld, structfield f x))
@@ -106,7 +106,6 @@ and canonical : type mode a. (File.t -> File.t) -> (mode, a) canonical -> (mode,
           opacity;
           hints;
           dim;
-          termctx = Option.map (termctx f) tc;
           fields =
             Mbwd.map
               (fun (CodatafieldAbwd.Entry (fld, x)) -> CodatafieldAbwd.Entry (fld, codatafield f x))
@@ -144,7 +143,7 @@ and codatafield : type mode a n i et.
  fun f fld ->
   match fld with
   | Lower (adj, plus_lock, ty) -> Lower (adj, plus_lock, term f ty)
-  | Higher (adj, ka, plus_lock, tm) -> Higher (adj, ka, plus_lock, term f tm)
+  | Higher (adj, plus_lock, tc, ka, tm) -> Higher (adj, plus_lock, termctx f tc, ka, term f tm)
 
 and dataconstr : type mode p i.
     (File.t -> File.t) -> (mode, p, i) dataconstr -> (mode, p, i) dataconstr =

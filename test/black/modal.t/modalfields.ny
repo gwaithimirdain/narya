@@ -44,3 +44,22 @@ def ♯_unit (A :♯| Type) (x :♯| A) : ♯ A ≔ (unsharp ≔ x)
 
 def ♯_mult (A :♯| Type) (x : ♯ (♯ A)) : ♯ A ≔ (
   unsharp ≔ ((x :♭| _) .unsharp :♭| _) .unsharp)
+
+` The type of a modal field is checked in a context that is first locked by the
+` right adjoint ♯ and then extended by the self variable, annotated by the left
+` adjoint ♭.  Thus the self variable can be used in the types of later fields,
+` projected under a ♭-lock as usual.
+def C2 : Type ≔ codata [
+| (x :♭| _) .fst : N
+| (y :♭| _) .snd : Id N ((y :♭| _) .fst) ((y :♭| _) .fst) ]
+
+def c2 : C2 ≔ [ .fst ↦ suc. zero. | .snd ↦ refl (suc. zero.) ]
+
+def c2_test : Id N ((c2 :♭| _) .fst) (suc. zero.) ≔ refl (suc. zero.)
+
+def c2_snd : Id N ((c2 :♭| _) .fst) ((c2 :♭| _) .fst) ≔ (c2 :♭| _) .snd
+
+` The self variable is transported into the doubly-locked context along the
+` adjunction unit, so a self-dependent modal field can be projected from a
+` *variable* (whose modal key matters), not just from a constant.
+def projsnd (z :♭| C2) : Id N ((z :♭| _) .fst) ((z :♭| _) .fst) ≔ (z :♭| _) .snd

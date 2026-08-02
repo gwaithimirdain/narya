@@ -349,10 +349,10 @@ module Act = struct
             indices in
         let constrs = Abwd.map (fun con -> act_dataconstr con fa cell) constrs in
         Data { dim = dom_deg fa; tyfam; indices; constrs; discrete; recursive; hints }
-    | Codata { eta; opacity; hints; env; termctx; fields } ->
+    | Codata { eta; opacity; hints; env; fields } ->
         let env = act_env env (opt_op_of_deg fa) in
         let env = prekey_env env cell in
-        Codata { eta; opacity; hints; env; termctx; fields }
+        Codata { eta; opacity; hints; env; fields }
 
   and act_dataconstr : type mode mu1 mu2 cod m n i.
       (mode, n, i) dataconstr ->
