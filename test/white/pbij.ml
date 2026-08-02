@@ -61,6 +61,23 @@ let check : type e1 e2 e12 i r2 r12.
       Printf.printf "  expected %s, got %s\n" (string_of_deg expected) (string_of_deg actual);
       false
 
+(* Decomposing a composite with [pbij_of_plus] should give back its two factors. *)
+let check_split : type e1 e2 e12 i r2 r12.
+    (e1, e2, e12) D.plus -> (e2, i, r2) pbij -> (e1, r2, r12) pbij -> bool =
+ fun e1e2 p2 p1 ->
+  let (Pbij_of_plus (q2, q1)) = pbij_of_plus e1e2 (plus_comp_pbij e1e2 p2 p1) in
+  match (equal_pbij q2 p2, equal_pbij q1 p1) with
+  | Some Eq, Some Eq -> true
+  | _ -> false
+
+(* And recomposing a decomposition should give back the original. *)
+let check_join : type e1 e2 e12 i r12. (e1, e2, e12) D.plus -> (e12, i, r12) pbij -> bool =
+ fun e1e2 p12 ->
+  let (Pbij_of_plus (q2, q1)) = pbij_of_plus e1e2 p12 in
+  match equal_pbij (plus_comp_pbij e1e2 q2 q1) p12 with
+  | Some Eq -> true
+  | None -> false
+
 (* A partial bijection is faithfully described by its evaluation dimension together with its string representation, which lists, for each element of the intrinsic dimension, either "refl" (if it is remaining) or the position in the evaluation dimension that it is matched with. *)
 
 type wrapped_pbij = Wrapped : ('e, 'i, 'r) pbij -> wrapped_pbij
@@ -124,7 +141,7 @@ let () =
                   Seq.iter
                     (fun (Pbij_between p1) ->
                       incr count;
-                      if not (check e1e2 p2 p1) then (
+                      if not (check e1e2 p2 p1 && check_split e1e2 p2 p1) then (
                         incr bad;
                         Printf.printf "FAIL e1=%s e2=%s i=%s: p2=%s p1=%s gave %s\n"
                           (string_of_dim e1) (string_of_dim e2) (string_of_dim i)
@@ -136,3 +153,28 @@ let () =
         dims)
     dims;
   if !bad > 0 then failwith (Printf.sprintf "checked %d compositions, %d failures\n" !count !bad)
+
+let () =
+  let dims = List.init 4 dim in
+  let count = ref 0 in
+  let bad = ref 0 in
+  List.iter
+    (fun (D.Wrap e1) ->
+      List.iter
+        (fun (D.Wrap e2) ->
+          let (D.Plus e1e2) = D.plus e2 in
+          let e12 = D.plus_out e1 e1e2 in
+          List.iter
+            (fun (D.Wrap i) ->
+              Seq.iter
+                (fun (Pbij_between p12) ->
+                  incr count;
+                  if not (check_join e1e2 p12) then (
+                    incr bad;
+                    Printf.printf "FAIL e1=%s e2=%s i=%s: %s does not rejoin\n" (string_of_dim e1)
+                      (string_of_dim e2) (string_of_dim i) (string_of_pbij p12)))
+                (all_pbij_between e12 i))
+            dims)
+        dims)
+    dims;
+  if !bad > 0 then failwith (Printf.sprintf "checked %d decompositions, %d failures\n" !count !bad)

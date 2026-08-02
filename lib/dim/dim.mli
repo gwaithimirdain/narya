@@ -824,6 +824,12 @@ val ins_plus_of_pbij :
 val plus_comp_pbij :
   ('e1, 'e2, 'e12) D.plus -> ('e2, 'i, 'r2) pbij -> ('e1, 'r2, 'r12) pbij -> ('e12, 'i, 'r12) pbij
 
+type (_, _, _, _) pbij_of_plus =
+  | Pbij_of_plus : ('e2, 'i, 'r2) pbij * ('e1, 'r2, 'r12) pbij -> ('e1, 'e2, 'i, 'r12) pbij_of_plus
+
+val pbij_of_plus :
+  ('e1, 'e2, 'e12) D.plus -> ('e12, 'i, 'r12) pbij -> ('e1, 'e2, 'i, 'r12) pbij_of_plus
+
 module Pbijmap : functor (F : Fam2) -> sig
   type ('evaluation, 'intrinsic, 'v) t
 

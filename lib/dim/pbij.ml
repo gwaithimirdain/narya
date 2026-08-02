@@ -305,6 +305,18 @@ let plus_comp_pbij : type e1 e2 e12 i r2 r12.
   let (Plus_comp_ins ins12) = plus_comp_ins e12 ins1 ins2 sh12 in
   Pbij (ins12, shuf12)
 
+(* Conversely, a partial bijection whose evaluation dimension is a sum decomposes uniquely in that way: the part of 'i matched with 'e2 gives a partial bijection from 'e2, and the part matched with 'e1 lies in what remains of that one.  This is exactly the data produced by unplus_pbij: its first two outputs are the partial bijection from 'e2, and its second two are the partial bijection from 'e1 to that one's remaining dimension. *)
+
+type (_, _, _, _) pbij_of_plus =
+  | Pbij_of_plus : ('e2, 'i, 'r2) pbij * ('e1, 'r2, 'r12) pbij -> ('e1, 'e2, 'i, 'r12) pbij_of_plus
+
+let pbij_of_plus : type e1 e2 e12 i r12.
+    (e1, e2, e12) D.plus -> (e12, i, r12) pbij -> (e1, e2, i, r12) pbij_of_plus =
+ fun e12 (Pbij (ins, shuf)) ->
+  let e1 = D.plus_left e12 (dom_ins ins) in
+  let (Unplus_pbij (ins2, shuf2, shuf1, ins1, _)) = unplus_pbij e1 e12 ins shuf in
+  Pbij_of_plus (Pbij (ins2, shuf2), Pbij (ins1, shuf1))
+
 (* Intrinsically well-typed maps with partial bijections as keys.  Each map has a fixed 'evaluation dimension and 'intrinsic dimension, but the 'result, 'shared, and 'remaining dimensions vary with the keys and values.  The values are parametrized by the 'remaining dimension as well as by an extra parameter that the map depends on; hence the whole notion of map is a functor parametrized by a Fam2.
 
    The definition of the map type involves itself recursively inside a Tuple, so we need a recursive module to tie that knot.  Recursive functors are not really implemented (in general they give "unsafe" errors), but there seems to be an exception that allows them as long as the recursive module call is never named or opened, though it can occur inline in a type definition (but not a function definition, since inline functor applications cannot appear in code).  Thus, it works to first define a recursive functor for just the necessary types and modules, and then another (non-recursive) functor that includes it and defines the operations. *)
