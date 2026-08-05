@@ -1,6 +1,5 @@
 open Util
 open Tlist
-open Tbwd
 open Signatures
 open Singleton
 open Deg
@@ -83,7 +82,7 @@ let rec int_strings_of_pbij : type n i r. (n, i, r) pbij -> [ `Int of int | `Str
   | Left (_, shuf) -> `Str (Endpoints.refl_string ()) :: int_strings_of_pbij (Pbij (ins, shuf))
   | Right (_, shuf) ->
       let (Suc (ins, _, ix)) = ins in
-      let x = Tbwd.int_of_insert ix + 1 in
+      let x = D.int_of_insert ix + 1 in
       `Int x
       :: List.map
            (function
@@ -357,7 +356,7 @@ functor
 
     module Tup = Tuple.Make (D.G) (Param)
 
-    (* An element of ('evaluation, 'intrinsic, 'v) t is an intrinsically well-typed map that associates to every partial bijection between 'evaluation and 'intrinsic, with remaining dimension 'r, an element of ('r, 'v) F.t.  As with cubes, we define this in terms of a more general type ('evaluation, 'intrinsic, 's, 'v) gt, where 's is the word of remaining dimensions accumulated so far along the path from the root.  The intrinsic dimensions are processed from the outside in, so a newly remaining generator is added at the *inner* end of 's; since the accumulator is a *forwards* word, this is just a [cons] and the Suc node needs to store no witness for it (contrast the Branches of Cube).  At a leaf, the accumulated forwards word 's is finally reconciled with the actual backwards remaining dimension 'r via a bplus (i.e. Tbwd.append) onto the empty word, so that the stored value can live at the genuine dimension 'r. *)
+    (* An element of ('evaluation, 'intrinsic, 'v) t is an intrinsically well-typed map that associates to every partial bijection between 'evaluation and 'intrinsic, with remaining dimension 'r, an element of ('r, 'v) F.t.  As with cubes, we define this in terms of a more general type ('evaluation, 'intrinsic, 's, 'v) gt, where 's is the word of remaining dimensions accumulated so far along the path from the root.  The intrinsic dimensions are processed from the outside in, so a newly remaining generator is added at the *inner* end of 's; since the accumulator is a *forwards* word, this is just a [cons] and the Suc node needs to store no witness for it (contrast the Branches of Cube).  At a leaf, the accumulated forwards word 's is finally reconciled with the actual backwards remaining dimension 'r via a bplus onto the empty word, so that the stored value can live at the genuine dimension 'r. *)
     type (_, _, _, _) gt =
       (* The definition is by induction on the intrinsic dimension.  If that's zero, then we are at a leaf and we just store something of the appropriate type, together with the bplus reconciling the accumulated forwards word with the backwards dimension. *)
       | Zero : (D.zero, 's, 'r) D.bplus * ('r, 'v) F.t -> ('evaluation, D.zero, 's, 'v) gt
@@ -467,7 +466,7 @@ module Pbijmap (F : Fam2) = struct
                       f.build (Pbij (ins, Left (g_intrinsic, shuf))) r12');
                 };
             right =
-              (let build : type b. (b, g0t, evaluation) Tbwd.insert -> (b, (i1 * s) * v) Param.t =
+              (let build : type b. (b, g0t, evaluation) D.insert -> (b, (i1 * s) * v) Param.t =
                 fun i ->
                  Sub
                    (gbuild (D.uninsert i evaluation) (Word intrinsic)
@@ -636,8 +635,8 @@ module Pbijmap (F : Fam2) = struct
     let irvs : (i1 * s, (v, vs) cons, _) MapTimes.t = irvs in
     let (Exists irws) = MapTimes.exists ws in
     let irws : (i1 * s, ws, _) MapTimes.t = irws in
-    let map : type a.
-        (a, g0t, evaluation) Tbwd.insert -> (a, _) Tup.Heter.hft -> (a, _) Tup.Heter.hft =
+    let map : type a. (a, g0t, evaluation) D.insert -> (a, _) Tup.Heter.hft -> (a, _) Tup.Heter.hft
+        =
      fun i x ->
       let res =
         gpmap (D.uninsert i evaluation)

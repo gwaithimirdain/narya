@@ -1,6 +1,5 @@
 open Util
 open Tlist
-open Tbwd
 open Signatures
 open Sface
 open Tface
@@ -222,7 +221,7 @@ let rec ins_of_ints : type ab. ab D.t -> int list -> ab ins_of option =
 let rec ints_of_ins : type ab a b. (ab, a, b) insertion -> int list = function
   | Zero _ -> []
   | Suc (ins, _, ix) ->
-      let x = Tbwd.int_of_insert ix + 1 in
+      let x = D.int_of_insert ix + 1 in
       x :: List.map (fun i -> if i >= x then i + 1 else i) (ints_of_ins ins)
 
 let string_of_ins_ints : int list -> string =
@@ -328,7 +327,7 @@ module Insmap (F : Fam) = struct
     match iplus with
     | Zero -> Zero (f.build (ins_zero evaluation))
     | Suc (type i1 g0t) ((intrinsic, g0) : (_, i1, _) D.plus * g0t D.G.t) ->
-        let f : type b. (b, g0t, evaluation) Tbwd.insert -> (b, i1 * v) Param.t =
+        let f : type b. (b, g0t, evaluation) D.insert -> (b, i1 * v) Param.t =
          fun i ->
           Sub
             (build (D.uninsert i evaluation) (Word intrinsic)
@@ -428,8 +427,8 @@ module Insmap (F : Fam) = struct
     let irvs : (i1, (v, vs) cons, _) MapTimes.t = irvs in
     let (Exists irws) = MapTimes.exists ws in
     let irws : (i1, ws, _) MapTimes.t = irws in
-    let map : type a.
-        (a, g0t, evaluation) Tbwd.insert -> (a, _) Tup.Heter.hft -> (a, _) Tup.Heter.hft =
+    let map : type a. (a, g0t, evaluation) D.insert -> (a, _) Tup.Heter.hft -> (a, _) Tup.Heter.hft
+        =
      fun i x ->
       let res =
         pmap (D.uninsert i evaluation)

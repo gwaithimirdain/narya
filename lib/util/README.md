@@ -40,7 +40,7 @@ Here is a listing of the files in this directory, as of May 2, 2024, with brief 
 ## Lists and vectors
 
 - [Tlist](tlist.ml): Forward lists of types
-- [Tbwd](tbwd.ml): Backward lists of types
+- [Tbwd](tbwd.ml): Backward lists of types (just the type constructors: the operations on them belong to `Word` and `Path`)
 - [Hlist](hlist.ml): Heterogeneous (forward) lists, indexed by a tlist.
 - [Vec](vec.ml): Forward lists indexed by a forward natural number length ("vectors")
 - [Bwv](bwv.ml): Backward vectors indexed by a backward natural number length

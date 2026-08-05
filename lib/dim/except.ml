@@ -121,7 +121,7 @@ let rec except_sface : type e a b c. (e, a, b) except -> (c, b) sface -> (e, a, 
       Except_sface (Mid (s, g), Except_unoccurs (e, u))
 
 let rec except_occurs_insert : type e a b g c.
-    (e, a, b) except -> (b, g, c) Tbwd.insert -> (g, e) D.occurs -> (e, a, c) except =
+    (e, a, b) except -> (b, g, c) D.insert -> (g, e) D.occurs -> (e, a, c) except =
  fun e i occ ->
   match i with
   | Now -> Except_occurs (e, occ)
@@ -132,12 +132,12 @@ let rec except_occurs_insert : type e a b g c.
 
 type (_, _, _, _) except_unoccurs_insert =
   | Except_unoccurs_insert :
-      ('a, 'g, 'ag) Tbwd.insert * ('e, 'ag, 'c) except
+      ('a, 'g, 'ag) D.insert * ('e, 'ag, 'c) except
       -> ('e, 'a, 'g, 'c) except_unoccurs_insert
 
 let rec except_unoccurs_insert : type e a b g c.
     (e, a, b) except ->
-    (b, g, c) Tbwd.insert ->
+    (b, g, c) D.insert ->
     (g, e) D.unoccurs ->
     (e, a, g, c) except_unoccurs_insert =
  fun e i unocc ->

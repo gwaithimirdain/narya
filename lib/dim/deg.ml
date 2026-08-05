@@ -1,5 +1,4 @@
 open Util
-open Tbwd
 
 (* ********** Degeneracies ********** *)
 
@@ -211,7 +210,7 @@ let rec strings_of_deg : type a b. int -> (a, b) deg -> string list =
  fun i -> function
   | Zero a -> List.init (D.length a) (fun _ -> Endpoints.refl_string ())
   | Suc (s, _, k) ->
-      List_extra.insert (Tbwd.int_of_insert k) (string_of_int i) (strings_of_deg (i + 1) s)
+      List_extra.insert (D.int_of_insert k) (string_of_int i) (strings_of_deg (i + 1) s)
 
 let string_of_deg : type a b. (a, b) deg -> string =
  fun s -> String.concat (if D.length (cod_deg s) > 9 then "-" else "") (strings_of_deg 1 s)

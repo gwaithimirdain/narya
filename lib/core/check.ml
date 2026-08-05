@@ -1254,7 +1254,7 @@ and synth_or_check_letrec : type mode a b c ac s p.
     | Potential (c, args, hyp) -> Potential (c, args, fun x -> hyp (let_metas mode metas x))
     | Kinetic l -> Kinetic l in
   (* Make a context for it *)
-  let _, newctx = ext_metas ctx ac metas vtys Zero Zero Zero in
+  let _, newctx = ext_metas ctx ac metas vtys Zero Zero Snocs_zero in
   (* And synthesize or check the body in the extended context. *)
   Annotate.ctx status newctx body;
   match (ty, body) with
@@ -1279,7 +1279,7 @@ and check_letrec_bindings : type mode a xc b ac bc.
   let rec go : type x ax bx c.
       (a, x, ax) Fwn.bplus ->
       (x, c, xc) Fwn.plus ->
-      (b, x, (mode id, D.zero) dim_entry, bx) Tbwd.snocs ->
+      (b, x, (mode id, D.zero) dim_entry, bx) Tctx.snocs ->
       (* *)
       (ax, c, ac) Fwn.bplus ->
       (mode, bx, c, bc) meta_tel ->
@@ -1303,10 +1303,10 @@ and check_letrec_bindings : type mode a xc b ac bc.
             let cv, recursion = Positivity.scope @@ fun () -> check tmstatus tmctx v evty in
             Global.set_meta meta ~recursion (hyp cv);
             (* And recurse. *)
-            go (Fwn.bplus_suc_eq_suc ax) (Fwn.suc_plus xc) (Tbwd.snocs_suc_eq_snoc bx) ac metas vtys
+            go (Fwn.bplus_suc_eq_suc ax) (Fwn.suc_plus xc) (Tctx.snocs_suc_eq_snoc bx) ac metas vtys
               vs
         | _ -> fatal (Unimplemented "modal let-rec variables")) in
-  go Zero Zero Zero oac ometas ovtys vs
+  go Zero Zero Snocs_zero oac ometas ovtys vs
 
 (* Given a telescope of types for let-bound variables, create a global metavariable for each of them, and give it the correct type in Global. *)
 and make_letrec_metas : type mode x a b ab.
@@ -1358,7 +1358,7 @@ and ext_metas : type mode a b c ac bc d cd acd bcd.
     (mode, b, cd, bcd) Telescope.t ->
     (a, c, ac) Fwn.bplus ->
     (c, d, cd) Fwn.plus ->
-    (b, c, (mode id, D.zero) dim_entry, bc) Tbwd.snocs ->
+    (b, c, (mode id, D.zero) dim_entry, bc) Tctx.snocs ->
     (mode, ac, bc) Ctx.t * (mode, acd, bcd) Ctx.t =
  fun ctx acd metas vtys ac cd bc ->
   (* First we define a helper function that returns only the fully extended context. *)
@@ -1381,9 +1381,13 @@ and ext_metas : type mode a b c ac bc d cd acd bcd.
               acd metas vtys
         | _ -> fatal (Unimplemented "modal let-rec variables")) in
   match (ac, cd, bc, acd, metas, vtys) with
-  | Zero, Zero, Zero, _, _, _ -> (ctx, ext_metas' ctx acd metas vtys)
-  | Suc ac, Suc cd, Suc bc, Suc acd, Ext (_, meta, metas), Ext (x, Modal (modality, plus, vty), vtys)
-    -> (
+  | Zero, Zero, Snocs_zero, _, _, _ -> (ctx, ext_metas' ctx acd metas vtys)
+  | ( Suc ac,
+      Suc cd,
+      Snocs_suc bc,
+      Suc acd,
+      Ext (_, meta, metas),
+      Ext (x, Modal (modality, plus, vty), vtys) ) -> (
       match (Modality.compare_id modality, plus) with
       | Eq, Plus_lock (Zero _, Zero) ->
           let tm = eval_term (Ctx.env ctx) (Meta (meta, Kinetic)) in

@@ -6,13 +6,13 @@ open Monoid
 (* Type-level free monoids.  The type of generators is specified by a type family in a module parameter.  If there is exactly one generator, the result should be isomorphic to the type-level (backwards) natural numbers. *)
 
 module Make (G : Comparable) = struct
-  (* As the words themselves, we use type-level backwards lists (Tbwd) of generators.  TODO: Do we ever really use Tbwds, or should we just use Words?  *)
+  (* As the words themselves, we use type-level backwards lists (Tbwd) of generators. *)
   type zero = emp
   type ('n, 'g) suc = ('n, 'g) snoc
 
   (* ********** Addition ********** *)
 
-  (* Addition is appending two Tbwds.  Note that this is different from Tbwd.append, which appends a *forwards* list on the right of a backwards one.  It also ensures that the appended list consists of valid generators. *)
+  (* Addition is appending two words.  Note that this is different from bplus, below, which appends a *forwards* word on the right of a backwards one.  It also ensures that the appended list consists of valid generators. *)
 
   type (_, _, _) plus =
     | Zero : ('m, zero, 'm) plus
@@ -123,10 +123,32 @@ module Make (G : Comparable) = struct
 
   (* ********** Well-scoped De Bruijn indices ********** *)
 
-  (* The analogue of these for words is just Tbwd.insert. *)
+  (* ('a, 'g, 'b) insert says that the word 'b is obtained by inserting the generator 'g somewhere in the word 'a.  Or, put differently, 'a is obtained from 'b by deleting a generator 'g in a specified location.  Thus it is also a well-scoped De Bruijn index into 'b, pointing at an occurrence of 'g. *)
+  type (_, _, _) insert =
+    | Now : ('a, 'g, ('a, 'g) suc) insert
+    | Later : ('a, 'g, 'b) insert -> (('a, 'k) suc, 'g, ('b, 'k) suc) insert
+
+  let rec int_of_insert : type a g b. (a, g, b) insert -> int = function
+    | Now -> 0
+    | Later i -> 1 + int_of_insert i
+
+  (* Two successive insertions can be performed in the other order. *)
+  type (_, _, _, _) comp_insert =
+    | Comp_insert : ('a, 'k, 'd) insert * ('d, 'g, 'c) insert -> ('a, 'g, 'k, 'c) comp_insert
+
+  let rec comp_insert : type a g k b c.
+      (a, g, b) insert -> (b, k, c) insert -> (a, g, k, c) comp_insert =
+   fun ab bc ->
+    match (ab, bc) with
+    | Now, Now -> Comp_insert (Now, Later Now)
+    | Now, Later bc -> Comp_insert (bc, Now)
+    | Later ab, Now -> Comp_insert (Now, Later (Later ab))
+    | Later ab, Later bc ->
+        let (Comp_insert (ad, dc)) = comp_insert ab bc in
+        Comp_insert (Later ad, Later dc)
 
   let rec plus_insert : type a b c g ab ac.
-      (a, b, ab) plus -> (a, c, ac) plus -> (b, g, c) Tbwd.insert -> (ab, g, ac) Tbwd.insert =
+      (a, b, ab) plus -> (a, c, ac) plus -> (b, g, c) insert -> (ab, g, ac) insert =
    fun ab ac i ->
     match i with
     | Now ->
@@ -138,10 +160,10 @@ module Make (G : Comparable) = struct
         Later (plus_insert ab ac i)
 
   type (_, _, _, _) insert_plus =
-    | Insert_plus : ('p, 'n, 'pn) plus * ('pn, 'g, 'mn) Tbwd.insert -> ('p, 'n, 'mn, 'g) insert_plus
+    | Insert_plus : ('p, 'n, 'pn) plus * ('pn, 'g, 'mn) insert -> ('p, 'n, 'mn, 'g) insert_plus
 
   let rec insert_plus : type m n mn g p.
-      (p, g, m) Tbwd.insert -> (m, n, mn) plus -> (p, n, mn, g) insert_plus =
+      (p, g, m) insert -> (m, n, mn) plus -> (p, n, mn, g) insert_plus =
    fun i mn ->
     match mn with
     | Zero -> Insert_plus (Zero, i)
@@ -151,14 +173,14 @@ module Make (G : Comparable) = struct
 
   type (_, _, _, _) insert_in_plus =
     | Left :
-        ('pred_m, 'g, 'm) Tbwd.insert * ('pred_m, 'n, 'pred_mn) plus
+        ('pred_m, 'g, 'm) insert * ('pred_m, 'n, 'pred_mn) plus
         -> ('g, 'm, 'n, 'pred_mn) insert_in_plus
     | Right :
-        ('pred_n, 'g, 'n) Tbwd.insert * ('m, 'pred_n, 'pred_mn) plus
+        ('pred_n, 'g, 'n) insert * ('m, 'pred_n, 'pred_mn) plus
         -> ('g, 'm, 'n, 'pred_mn) insert_in_plus
 
   let rec insert_in_plus : type m n g pred_mn mn.
-      (m, n, mn) plus -> (pred_mn, g, mn) Tbwd.insert -> (g, m, n, pred_mn) insert_in_plus =
+      (m, n, mn) plus -> (pred_mn, g, mn) insert -> (g, m, n, pred_mn) insert_in_plus =
    fun mn i ->
     match mn with
     | Zero -> Left (i, Zero)
@@ -172,15 +194,14 @@ module Make (G : Comparable) = struct
 
   type (_, _, _, _) insert_into_plus =
     | Left :
-        ('m, 'g, 'msuc) Tbwd.insert * ('msuc, 'n, 'mn_suc) plus
+        ('m, 'g, 'msuc) insert * ('msuc, 'n, 'mn_suc) plus
         -> ('g, 'm, 'n, 'mn_suc) insert_into_plus
     | Right :
-        ('n, 'g, 'suc) Tbwd.insert * ('m, 'suc, 'mn_suc) plus
+        ('n, 'g, 'suc) insert * ('m, 'suc, 'mn_suc) plus
         -> ('g, 'm, 'n, 'mn_suc) insert_into_plus
 
   let rec insert_into_plus : type g m n mn mn_suc.
-      g G.t -> (m, n, mn) plus -> (mn, g, mn_suc) Tbwd.insert -> (g, m, n, mn_suc) insert_into_plus
-      =
+      g G.t -> (m, n, mn) plus -> (mn, g, mn_suc) insert -> (g, m, n, mn_suc) insert_into_plus =
    fun g mn i ->
     match i with
     | Now -> Right (Now, Suc (mn, g))
@@ -193,12 +214,10 @@ module Make (G : Comparable) = struct
             | Right (k, mn_suc) -> Right (Later k, Suc (mn_suc, h))))
 
   type (_, _, _, _) swap_inserts =
-    | Swap_inserts :
-        ('q, 'l, 'm) Tbwd.insert * ('p, 'k, 'q) Tbwd.insert
-        -> ('m, 'k, 'l, 'p) swap_inserts
+    | Swap_inserts : ('q, 'l, 'm) insert * ('p, 'k, 'q) insert -> ('m, 'k, 'l, 'p) swap_inserts
 
   let rec swap_inserts : type m n p k l.
-      (n, k, m) Tbwd.insert -> (p, l, n) Tbwd.insert -> (m, k, l, p) swap_inserts =
+      (n, k, m) insert -> (p, l, n) insert -> (m, k, l, p) swap_inserts =
    fun k l ->
     match k with
     | Now -> (
@@ -214,12 +233,10 @@ module Make (G : Comparable) = struct
 
   type (_, _, _) compare_inserts =
     | Eq_inserts : ('m, 'g, 'm) compare_inserts
-    | Neq_inserts :
-        ('r, 'g, 'm) Tbwd.insert * ('r, 'g, 'n) Tbwd.insert
-        -> ('m, 'g, 'n) compare_inserts
+    | Neq_inserts : ('r, 'g, 'm) insert * ('r, 'g, 'n) insert -> ('m, 'g, 'n) compare_inserts
 
   let rec compare_inserts : type m n g p.
-      (m, g, p) Tbwd.insert -> (n, g, p) Tbwd.insert -> (m, g, n) compare_inserts =
+      (m, g, p) insert -> (n, g, p) insert -> (m, g, n) compare_inserts =
    fun m n ->
     match (m, n) with
     | Now, Now -> Eq_inserts
@@ -234,11 +251,11 @@ module Make (G : Comparable) = struct
   type (_, _, _, _, _) compare_gen_inserts =
     | Eq_gen_inserts : ('a, 'g, 'a, 'g, 'p) compare_gen_inserts
     | Neq_gen_inserts :
-        ('r, 'h, 'a) Tbwd.insert * ('r, 'g, 'b) Tbwd.insert
+        ('r, 'h, 'a) insert * ('r, 'g, 'b) insert
         -> ('a, 'g, 'b, 'h, 'p) compare_gen_inserts
 
   let rec compare_gen_inserts : type a g b h p.
-      (a, g, p) Tbwd.insert -> (b, h, p) Tbwd.insert -> (a, g, b, h, p) compare_gen_inserts =
+      (a, g, p) insert -> (b, h, p) insert -> (a, g, b, h, p) compare_gen_inserts =
    fun j k ->
     match (j, k) with
     | Now, Now -> Eq_gen_inserts
@@ -251,7 +268,7 @@ module Make (G : Comparable) = struct
 
   (* Two insertions of the same generator into the same word are equal exactly when they insert it in the same place, in which case their outputs agree. *)
   let rec insert_equal : type a g b1 b2.
-      (a, g, b1) Tbwd.insert -> (a, g, b2) Tbwd.insert -> (b1, b2) Eq.compare =
+      (a, g, b1) insert -> (a, g, b2) insert -> (b1, b2) Eq.compare =
    fun i1 i2 ->
     match (i1, i2) with
     | Now, Now -> Eq
@@ -261,15 +278,14 @@ module Make (G : Comparable) = struct
         | Neq -> Neq)
     | _ -> Neq
 
-  let rec insert_equiv : type m n g p q.
-      (p, g, m) Tbwd.insert -> (q, g, n) Tbwd.insert -> unit option =
+  let rec insert_equiv : type m n g p q. (p, g, m) insert -> (q, g, n) insert -> unit option =
    fun k l ->
     match (k, l) with
     | Now, Now -> Some ()
     | Later k, Later l -> insert_equiv k l
     | _, _ -> None
 
-  type _ insert_into = Into : 'g G.t * ('m, 'g, 'msuc) Tbwd.insert -> 'msuc insert_into
+  type _ insert_into = Into : 'g G.t * ('m, 'g, 'msuc) insert -> 'msuc insert_into
 
   let rec all_inserts : type n. n t -> n insert_into Seq.t = function
     | Word Zero -> Seq.empty
@@ -294,9 +310,7 @@ module Make (G : Comparable) = struct
 
   (* Strip the leftmost generator from a [((m, g) suc, n, p) plus]: returns the inner [(m, n, p_inner) plus] and an insertion that recovers p as p_inner with g inserted at the appropriate position. *)
   type (_, _, _, _) strip_plus_left =
-    | Strip_plus_left :
-        ('m, 'n, 'q) plus * ('q, 'g, 'p) Tbwd.insert
-        -> ('m, 'g, 'n, 'p) strip_plus_left
+    | Strip_plus_left : ('m, 'n, 'q) plus * ('q, 'g, 'p) insert -> ('m, 'g, 'n, 'p) strip_plus_left
 
   let rec strip_plus_left : type m g n p.
       g G.t -> ((m, g) suc, n, p) plus -> (m, g, n, p) strip_plus_left =
@@ -308,7 +322,7 @@ module Make (G : Comparable) = struct
 
   (* ********** More about insertion ********** *)
 
-  let rec insert : type a n b. (a, n, b) Tbwd.insert -> a t -> n G.t -> b t =
+  let rec insert : type a n b. (a, n, b) insert -> a t -> n G.t -> b t =
    fun i (Word a) n ->
     match i with
     | Now -> Word (Suc (a, n))
@@ -317,7 +331,7 @@ module Make (G : Comparable) = struct
         let (Word ins) = insert i (Word a) n in
         Word (Suc (ins, k))
 
-  let rec uninsert : type a n b. (a, n, b) Tbwd.insert -> b t -> a t =
+  let rec uninsert : type a n b. (a, n, b) insert -> b t -> a t =
    fun i b ->
     match i with
     | Now ->
@@ -328,7 +342,7 @@ module Make (G : Comparable) = struct
         let (Word ins) = uninsert i (Word b) in
         Word (Suc (ins, n))
 
-  let rec inserted : type a n b. (a, n, b) Tbwd.insert -> b t -> n G.t =
+  let rec inserted : type a n b. (a, n, b) insert -> b t -> n G.t =
    fun i b ->
     match i with
     | Now ->
@@ -340,13 +354,20 @@ module Make (G : Comparable) = struct
 
   (* ********** Permutations ********** *)
 
-  (* A free monoid is not commutative, but it is the object set of a free symmetric strict monoidal category.  Here are the morphisms in that category.  *)
+  (* A free monoid is not commutative, but it is the object set of a free symmetric strict monoidal category.  Here are the morphisms in that category: ('a, 'b) permute says that the word 'a is a permutation of the word 'b. *)
 
-  type ('a, 'b) permute = ('a, 'b) Tbwd.permute
+  type (_, _) permute =
+    | Id : ('a, 'a) permute
+    | Insert : ('a, 'b) permute * ('b, 'g, 'c) insert -> (('a, 'g) suc, 'c) permute
 
-  (* TODO: The operations in Tbwd are not systematically named.  *)
+  (* There is some redundancy in the above presentation of permutations: Insert (Id, Now) is the same permutation as Id (of a longer word).  We could probably set up the data structures to exclude that possibility statically, but for now we are content to provide a "smart constructor" version of Insert that refuses to create Insert (Id, Now), returning Id instead.  (The latter is preferred for efficiency reasons, because when computing with a permutation we can sometimes short-circuit the rest of the computation if we know the rest of the permutation is an identity.)  *)
+  let perm_insert : type a b g c. (a, b) permute -> (b, g, c) insert -> ((a, g) suc, c) permute =
+   fun perm ins ->
+    match (perm, ins) with
+    | Id, Now -> Id
+    | _ -> Insert (perm, ins)
 
-  let perm_id : type a. a t -> (a, a) permute = fun _ -> Tbwd.id_perm
+  let perm_id : type a. a t -> (a, a) permute = fun _ -> Id
 
   let rec perm_dom : type a b. (a, b) permute -> b t -> a t =
    fun p b ->
@@ -356,11 +377,46 @@ module Make (G : Comparable) = struct
         let (Word permuted) = perm_dom p (uninsert i b) in
         Word (Suc (permuted, inserted i b))
 
-  let perm_comp = Tbwd.comp_permute
-  let perm_inv = Tbwd.permute_inv
+  (* Insertions can be transferred across a permutation, and when the image is removed produce a new permutation. *)
+  type (_, _, _) permute_insert =
+    | Permute_insert : ('d, 'g, 'c) insert * ('a, 'd) permute -> ('a, 'g, 'c) permute_insert
+
+  let rec permute_insert : type a g b c.
+      (a, g, b) insert -> (b, c) permute -> (a, g, c) permute_insert =
+   fun ab bc ->
+    match bc with
+    | Id -> Permute_insert (ab, Id)
+    | Insert (bc, ins) -> (
+        match ab with
+        | Now -> Permute_insert (ins, bc)
+        | Later ab ->
+            let (Permute_insert (res, p)) = permute_insert ab bc in
+            let (Comp_insert (x, y)) = comp_insert res ins in
+            Permute_insert (y, perm_insert p x))
+
+  let rec perm_comp : type a b c. (a, b) permute -> (b, c) permute -> (a, c) permute =
+   fun ab bc ->
+    match ab with
+    | Id -> bc
+    | Insert (ab, b) ->
+        let (Permute_insert (c, bc)) = permute_insert b bc in
+        perm_insert (perm_comp ab bc) c
+
+  let rec coinsert : type a b g c. (a, b) permute -> (a, g, c) insert -> (c, (b, g) suc) permute =
+   fun p i ->
+    match i with
+    | Now -> perm_insert p Now
+    | Later i -> (
+        match p with
+        | Insert (p, j) -> perm_insert (coinsert p i) (Later j)
+        | Id -> perm_insert (coinsert Id i) (Later Now))
+
+  let rec perm_inv : type a b. (a, b) permute -> (b, a) permute = function
+    | Id -> Id
+    | Insert (p, i) -> coinsert (perm_inv p) i
 
   let rec insert_of_plus : type b a ba bga g.
-      (b, a, ba) plus -> ((b, g) suc, a, bga) plus -> (ba, g, bga) Tbwd.insert =
+      (b, a, ba) plus -> ((b, g) suc, a, bga) plus -> (ba, g, bga) insert =
    fun ba bga ->
     match (ba, bga) with
     | Zero, Zero -> Now
@@ -432,13 +488,24 @@ module Make (G : Comparable) = struct
 
   let fwd_zero : fwd_zero fwd = Nil
 
-  type ('a, 'b, 'ab) bplus = ('a, 'b, 'ab) Tbwd.append
+  (* As with lists and backwards lists, a forwards word can naturally be appended to a backwards one. *)
+  type (_, _, _) bplus =
+    | Append_nil : ('a, nil, 'a) bplus
+    | Append_cons : (('a, 'x) suc, 'b, 'c) bplus -> ('a, ('x, 'b) cons, 'c) bplus
+
   type (_, _) has_bplus = Bplus : ('a, 'b, 'ab) bplus -> ('a, 'b) has_bplus
 
   let rec bplus : type a b. b fwd -> (a, b) has_bplus = function
     | Nil -> Bplus Append_nil
     | Cons (_, b) ->
         let (Bplus ab) = bplus b in
+        Bplus (Append_cons ab)
+
+  (* The generators of a forwards word are irrelevant to computing a bplus, so a Tlist of them suffices. *)
+  let rec bplus_of_tlist : type a b. b Tlist.t -> (a, b) has_bplus = function
+    | Nil -> Bplus Append_nil
+    | Cons xs ->
+        let (Bplus ab) = bplus_of_tlist xs in
         Bplus (Append_cons ab)
 
   type _ to_fwd = To_fwd : 'a fwd * (emp, 'a, 'b) bplus -> 'b to_fwd
@@ -451,12 +518,6 @@ module Make (G : Comparable) = struct
       | Word Zero -> To_fwd (b, abc)
       | Word (Suc (a, x)) -> go (Word a) (Cons (x, b)) (Append_cons abc) in
     go c Nil Append_nil
-
-  let rec of_snocs : type a b n ab. a t -> n G.t -> (a, b, n, ab) Tbwd.snocs -> ab t =
-   fun a n ab ->
-    match ab with
-    | Zero -> a
-    | Suc ab -> of_snocs (suc a n) n ab
 
   let rec bplus_right : type a b ab. (a, b, ab) bplus -> b Tlist.t = function
     | Append_nil -> Nil
@@ -471,14 +532,60 @@ module Make (G : Comparable) = struct
         Eq
 
   let rec insert_bplus : type a asuc g b ab asucb.
-      (a, g, asuc) Tbwd.insert ->
-      (a, b, ab) bplus ->
-      (asuc, b, asucb) bplus ->
-      (ab, g, asucb) Tbwd.insert =
+      (a, g, asuc) insert -> (a, b, ab) bplus -> (asuc, b, asucb) bplus -> (ab, g, asucb) insert =
    fun i ab asucb ->
     match (ab, asucb) with
     | Append_nil, Append_nil -> i
     | Append_cons ab, Append_cons asucb -> insert_bplus (Later i) ab asucb
+
+  (* Extend a permutation by the identity on an appended forwards word. *)
+  let rec perm_bplus : type a b c ac bc.
+      (a, b) permute -> (a, c, ac) bplus -> (b, c, bc) bplus -> (ac, bc) permute =
+   fun ab ac bc ->
+    match (ac, bc) with
+    | Append_nil, Append_nil -> ab
+    | Append_cons ac, Append_cons bc -> perm_bplus (perm_insert ab Now) ac bc
+
+  (* When appending a forwards word to a backwards one, if we insert the same generator on the left and on the right, the results are permuted. *)
+  let rec perm_of_ins_ins : type a b g c d ad bc.
+      (a, g, b) insert ->
+      (c, g, d) Tlist.insert ->
+      (b, c, bc) bplus ->
+      (a, d, ad) bplus ->
+      (bc, ad) permute =
+   fun ab cd bc ad ->
+    match cd with
+    | Now ->
+        let (Append_cons ad) = ad in
+        perm_bplus (coinsert Id ab) bc ad
+    | Later cd ->
+        let Append_cons ad, Append_cons bc = (ad, bc) in
+        perm_of_ins_ins (Later ab) cd bc ad
+
+  (* ('a, 'b, 'c) bplus_permute says that the backwards word 'c is obtained from the backwards word 'a by appending a permutation of the forwards word 'b.  In particular, (zero, 'b, 'c) says that the backwards word 'c is a permutation of the forwards word 'b. *)
+  type (_, _, _) bplus_permute =
+    | Bp_nil : ('a, nil, 'a) bplus_permute
+    | Bp_insert :
+        ('b, 'g, 'd) Tlist.insert * (('a, 'g) suc, 'b, 'c) bplus_permute
+        -> ('a, 'd, 'c) bplus_permute
+
+  let rec bplus_permute_right : type a b c. (a, b, c) bplus_permute -> b Tlist.t = function
+    | Bp_nil -> Nil
+    | Bp_insert (ins, b) -> Tlist.inserted ins (bplus_permute_right b)
+
+  (* If we bplus and also bplus_permute the same words, the two results are related by a permutation. *)
+  let rec perm_of_bplus_permute : type a b c d.
+      (a, b, d) bplus_permute -> (a, b, c) bplus -> (d, c) permute =
+   fun d c ->
+    match d with
+    | Bp_nil ->
+        let Append_nil = c in
+        Id
+    | Bp_insert (ins, d) ->
+        let (Bplus a) = bplus_of_tlist (bplus_permute_right d) in
+        let perm1 = perm_of_bplus_permute d a in
+        let perm2 = perm_of_ins_ins Now ins a c in
+        perm_comp perm1 perm2
 
   (* Concatenation of two *forwards* words: (a, b, ab) fplus means the forwards word ab is a followed by b. *)
   type (_, _, _) fplus =
@@ -543,7 +650,7 @@ module Make (G : Comparable) = struct
     let (Plus_suc (_, Suc (ab, h))) = plus_suc g ab in
     Pos (plus_out a ab, h)
 
-  let rec insert_pos : type m g n. m t -> g G.t -> (m, g, n) Tbwd.insert -> n pos =
+  let rec insert_pos : type m g n. m t -> g G.t -> (m, g, n) insert -> n pos =
    fun m g i ->
     match i with
     | Now -> Pos (m, g)
@@ -646,7 +753,7 @@ end
 module MakeDecidable (G : Decidable) = struct
   include Make (G)
 
-  type (_, _) occurs = Occurs : ('m, 'g, 'mg) Tbwd.insert -> ('g, 'mg) occurs
+  type (_, _) occurs = Occurs : ('m, 'g, 'mg) insert -> ('g, 'mg) occurs
 
   type (_, _) unoccurs =
     | Unoccurs_emp : ('g, emp) unoccurs
@@ -796,7 +903,7 @@ module Internal (G : Comparable) (GM : MAP_MAKER with module Key = G) (F : Fam2)
   module Map = Def (G) (GM) (F)
 
   let rec find_opt : type a b c bc.
-      (b, c, bc) Tbwd.append -> c W.fwd -> (a, b) Map.map -> (a, bc) F.t option =
+      (b, c, bc) W.bplus -> c W.fwd -> (a, b) Map.map -> (a, bc) F.t option =
    fun bc c map ->
     let open Monad.Ops (Monad.Maybe) in
     match map with
@@ -809,7 +916,7 @@ module Internal (G : Comparable) (GM : MAP_MAKER with module Key = G) (F : Fam2)
             find_opt bc c xs)
 
   let rec add : type a b c bc.
-      (b, c, bc) Tbwd.append -> c W.fwd -> (a, bc) F.t -> (a, b) Map.map -> (a, b) Map.map =
+      (b, c, bc) W.bplus -> c W.fwd -> (a, bc) F.t -> (a, b) Map.map -> (a, b) Map.map =
    fun bc c x map ->
     match (bc, c, map) with
     | Append_nil, Nil, Empty -> Entry (Some x, Map.DM.empty)
@@ -827,7 +934,7 @@ module Internal (G : Comparable) (GM : MAP_MAKER with module Key = G) (F : Fam2)
               xs )
 
   let rec update : type a b c bc.
-      (b, c, bc) Tbwd.append ->
+      (b, c, bc) W.bplus ->
       c W.fwd ->
       ((a, bc) F.t option -> (a, bc) F.t option) ->
       (a, b) Map.map ->
@@ -848,8 +955,8 @@ module Internal (G : Comparable) (GM : MAP_MAKER with module Key = G) (F : Fam2)
                 | None -> Some (Map.M.Wrapmap (update bc c f Empty)))
               xs )
 
-  let rec remove : type a b c bc.
-      (b, c, bc) Tbwd.append -> c W.fwd -> (a, b) Map.map -> (a, b) Map.map =
+  let rec remove : type a b c bc. (b, c, bc) W.bplus -> c W.fwd -> (a, b) Map.map -> (a, b) Map.map
+      =
    fun bc c map ->
     match (bc, c, map) with
     | _, _, Empty -> Empty
@@ -1014,7 +1121,7 @@ struct
         ('a, 'x) H.t * ('m, 'n) F.t * ('x, 'n, 'xn) Cod.plus * ('xn, 'y) Cod.permute
         -> ('a, 'm, 'b, 'y) uninsert
 
-  let rec uninsert : type a m b y. (a, m, b) Tbwd.insert -> (b, y) H.t -> (a, m, b, y) uninsert =
+  let rec uninsert : type a m b y. (a, m, b) Dom.insert -> (b, y) H.t -> (a, m, b, y) uninsert =
    fun i fb ->
     match i with
     | Now ->
@@ -1178,7 +1285,7 @@ struct
         -> ('param, 'a, 'm, 'b, 'y) uninsert
 
   let rec uninsert : type param a m b y.
-      param Param.t -> (a, m, b) Tbwd.insert -> (param, b, y) H.t -> (param, a, m, b, y) uninsert =
+      param Param.t -> (a, m, b) Dom.insert -> (param, b, y) H.t -> (param, a, m, b, y) uninsert =
    fun param i fb ->
     match i with
     | Now ->
@@ -1266,11 +1373,11 @@ struct
 
   type (_, _, _, _) uninsert =
     | Uninsert :
-        ('p, 'x, 'fx) F.t * ('zs, 'fx, 'ws) Tbwd.insert * ('p, 'xs, 'zs) t
+        ('p, 'x, 'fx) F.t * ('zs, 'fx, 'ws) CodMonoid.insert * ('p, 'xs, 'zs) t
         -> ('p, 'x, 'xs, 'ws) uninsert
 
   let rec uninsert : type p xs x ys ws.
-      (xs, x, ys) Tbwd.insert -> (p, ys, ws) t -> (p, x, xs, ws) uninsert =
+      (xs, x, ys) Dom.insert -> (p, ys, ws) t -> (p, x, xs, ws) uninsert =
    fun i fxs ->
     match (fxs, i) with
     | Suc (fxs, Inject fx, Suc (Zero, _)), Now -> Uninsert (fx, Now, fxs)
@@ -1281,11 +1388,11 @@ struct
 
   type (_, _, _, _) uncoinsert =
     | Uncoinsert :
-        ('p, 'x, 'z) F.t * ('xs, 'x, 'ys) Tbwd.insert * ('p, 'xs, 'zs) t
+        ('p, 'x, 'z) F.t * ('xs, 'x, 'ys) Dom.insert * ('p, 'xs, 'zs) t
         -> ('p, 'z, 'ys, 'zs) uncoinsert
 
   let rec uncoinsert : type p ys z zs ws.
-      (zs, z, ws) Tbwd.insert -> (p, ys, ws) t -> (p, z, ys, zs) uncoinsert =
+      (zs, z, ws) CodMonoid.insert -> (p, ys, ws) t -> (p, z, ys, zs) uncoinsert =
    fun i fxs ->
     match i with
     | Now ->

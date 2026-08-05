@@ -1,6 +1,5 @@
 open Util
 open Modal
-open Tbwd
 open Tlist
 open Dim
 open Tctx
@@ -290,11 +289,11 @@ module Ordered = struct
           bind_some_normal_cube ~level binder `Nonbindable ~oldctx ~newctx filter bindings in
         return (Ctx.Vis { v with bindings })
 
-  (* This seems an appropriate place to comment about the "insert" and "append_permute" data being returned from (go_)go_bind_some.  The issue is that in addition to a permuted context, we need to compute the permutation relating it to the original context.  In fact we need *two* permutations, one for the raw indices and one for the checked indices.
+  (* This seems an appropriate place to comment about the "insert" and "bplus_permute" data being returned from (go_)go_bind_some.  The issue is that in addition to a permuted context, we need to compute the permutation relating it to the original context.  In fact we need *two* permutations, one for the raw indices and one for the checked indices.
 
-     The one for the checked indices is more straightforward to compute, because the checked indices are a list of dimensions and we construct the permutation directly working with that list.  Our definition of permutations in terms of iterated insertions closely matches how we construct the permutation, picking out one entry at a time from the remaining ones.  The data structure Tbwd.append_permute is designed to capture the construction of a permutation in this way.
+     The one for the checked indices is more straightforward to compute, because the checked indices are a list of dimensions and we construct the permutation directly working with that list.  Our definition of permutations in terms of iterated insertions closely matches how we construct the permutation, picking out one entry at a time from the remaining ones.  The data structure Word.bplus_permute is designed to capture the construction of a permutation in this way.
 
-     The one for the raw indices is trickier because it acts as a "block" permutation, with all the raw variables in each Split entry being permuted as a group.  It seems that this permutation should be determined by the permutation of checked indices, but confusingly, that isn't quite true, because the number of raw indices corresponding to a single cube of variables (which is one entry in the checked-index dimension list) depends on what kind of entry it is -- visible, invisible, or split -- which is not recorded in the index *type*.  Our solution is to construct, as we go along, a parallel type list of *natural numbers*, which flattens to the raw index type, and a permutation of it.  Thus go_go_bind some returns *two* 'Tlist.insert's, and go_bind_some returns *two* 'Tbwd.append_permute's, while bind_some flattens and dices them to make a single N.perm and Tbwd.permute. *)
+     The one for the raw indices is trickier because it acts as a "block" permutation, with all the raw variables in each Split entry being permuted as a group.  It seems that this permutation should be determined by the permutation of checked indices, but confusingly, that isn't quite true, because the number of raw indices corresponding to a single cube of variables (which is one entry in the checked-index dimension list) depends on what kind of entry it is -- visible, invisible, or split -- which is not recorded in the index *type*.  Our solution is to construct, as we go along, a parallel type list of *natural numbers*, which flattens to the raw index type, and a permutation of it.  Thus go_go_bind some returns *two* 'Tlist.insert's, and go_bind_some returns *two* 'bplus_permute's, while bind_some flattens and dices them to make a single N.perm and Tctx.permute. *)
 
   type (_, _, _, _, _) go_go_bind_some =
     | Found : {
@@ -358,7 +357,7 @@ module Ordered = struct
   type ('rmode, 'lmode, 'i, 'j, 'a, 'af, 'b, 'bf) go_bind_some =
     | Go_bind_some : {
         raw_flat : ('cf, 'k) Flatten.t;
-        raw_perm : ('af, 'bf, 'cf) Tbwd.append_permute;
+        raw_perm : ('af, 'bf, 'cf) Nbwd.bplus_permute;
         checked_perm : ('rmode, 'b, 'lmode, 'a, unit, 'c) bcomp_permute;
         newctx : ('rmode, 'k, 'c) Ctx.Ordered.t;
         oldctx : ('rmode, 'k, 'c) Ctx.Ordered.t;
@@ -386,14 +385,14 @@ module Ordered = struct
             Go_bind_some
               {
                 raw_flat;
-                raw_perm = Ap_insert (fins, raw_perm);
+                raw_perm = Bp_insert (fins, raw_perm);
                 checked_perm = Insert (ins, checked_perm);
                 oldctx;
                 newctx;
               }
         | None -> None)
     | Nil ->
-        Go_bind_some { raw_flat = af; raw_perm = Ap_nil; checked_perm = Id Zero; oldctx; newctx }
+        Go_bind_some { raw_flat = af; raw_perm = Bp_nil; checked_perm = Id Zero; oldctx; newctx }
     | None -> None
     | Lock (modality, rest) -> (
         let oldctx = Ctx.Ordered.Lock (oldctx, modality) in
@@ -411,7 +410,7 @@ module Ordered = struct
             (Suc (af, Id (Fwn.fplus_left xf), Suc Zero))
             rest
         with
-        | Go_bind_some g -> Go_bind_some { g with raw_perm = Ap_insert (Now, g.raw_perm) }
+        | Go_bind_some g -> Go_bind_some { g with raw_perm = Bp_insert (Now, g.raw_perm) }
         | None -> None)
 
   type (_, _, _) bind_some =
@@ -442,7 +441,7 @@ module Ordered = struct
         (* The N.perm_inv here is absolutely essential.  Our choice to index N.perm by a separate domain and codomain, even though in concrete cases the two are always equal, means that if we leave it off, the typechecker complains.  (We could convince the typechecker to let us leave it off by destructing "perm_eq", but that would be stupid.) *)
         let raw_perm =
           N.perm_inv
-            (Flatten.permute raw_flat new_flat (Tbwd.append_append_permute raw_perm raw_append))
+            (Flatten.permute raw_flat new_flat (Nbwd.perm_of_bplus_permute raw_perm raw_append))
         in
         let Eq =
           Tctx.fwd_tgt_uniq (bcomp_permute_right checked_perm) (Tctx.bcomp_right checked_append)

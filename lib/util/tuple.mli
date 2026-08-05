@@ -1,6 +1,5 @@
 open Signatures
 open Tlist
-open Tbwd
 
 module Make (G : Decidable) (F : Fam2) : sig
   module W : module type of Word.Make (G)
@@ -9,16 +8,16 @@ module Make (G : Decidable) (F : Fam2) : sig
   type ('a, 'g0, 'p) t = ('a, nil, 'g0, 'p) gt
 
   val empty : (W.zero, 'g0, 'p) t
-  val find : ('a, 'g0, 'asuc) Tbwd.insert -> ('asuc, 'g0, 'p) t -> ('a, 'p) F.t
-  val set : ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'p) F.t -> ('asuc, 'g0, 'p) t -> ('asuc, 'g0, 'p) t
+  val find : ('a, 'g0, 'asuc) W.insert -> ('asuc, 'g0, 'p) t -> ('a, 'p) F.t
+  val set : ('a, 'g0, 'asuc) W.insert -> ('a, 'p) F.t -> ('asuc, 'g0, 'p) t -> ('asuc, 'g0, 'p) t
 
   val update :
-    ('a, 'g0, 'asuc) Tbwd.insert ->
+    ('a, 'g0, 'asuc) W.insert ->
     (('a, 'p) F.t -> ('a, 'p) F.t) ->
     ('asuc, 'g0, 'p) t ->
     ('asuc, 'g0, 'p) t
 
-  type ('asuc, 'g0, 'p) builder = { build : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'p) F.t }
+  type ('asuc, 'g0, 'p) builder = { build : 'a. ('a, 'g0, 'asuc) W.insert -> ('a, 'p) F.t }
 
   val build : 'a W.t -> 'g0 G.t -> ('a, 'g0, 'p) builder -> ('a, 'g0, 'p) t
 
@@ -35,7 +34,7 @@ module Make (G : Decidable) (F : Fam2) : sig
   end
 
   type ('asuc, 'g0, 'ps, 'qs) pmapper = {
-    map : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> ('a, 'qs) Heter.hft;
+    map : 'a. ('a, 'g0, 'asuc) W.insert -> ('a, 'ps) Heter.hft -> ('a, 'qs) Heter.hft;
   }
 
   val pmap :
@@ -45,7 +44,7 @@ module Make (G : Decidable) (F : Fam2) : sig
     ('a, nil, 'g0, 'qs) Heter.hgt
 
   type ('asuc, 'g0, 'ps, 'q) mmapper = {
-    map : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> ('a, 'q) F.t;
+    map : 'a. ('a, 'g0, 'asuc) W.insert -> ('a, 'ps) Heter.hft -> ('a, 'q) F.t;
   }
 
   val mmap :
@@ -54,7 +53,7 @@ module Make (G : Decidable) (F : Fam2) : sig
     ('a, nil, 'g0, 'q) gt
 
   type ('asuc, 'g0, 'ps) miterator = {
-    it : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> unit;
+    it : 'a. ('a, 'g0, 'asuc) W.insert -> ('a, 'ps) Heter.hft -> unit;
   }
 
   val miter :

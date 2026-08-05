@@ -1,5 +1,4 @@
 open Util
-open Tbwd
 
 (* We define "dimensions" to be type-level natural numbers.  However, in the interface we expose only that they are a type-level monoid with some extra structure.  Thus, the implementation is parametric over a specification of dimensions and their operators.  *)
 
@@ -19,8 +18,6 @@ type two = (one, unit) suc
 
 let one : one t = suc zero deg
 let two : two t = suc one deg
-
-type ('a, 'g, 'b) insert = ('a, 'g, 'b) Tbwd.insert
 
 (* Integer hackery, for converting from strings to degeneracies.  Should be replaced by something like a Bwv parametrized by a word, perhaps a version of a Tuple. *)
 

@@ -30,7 +30,7 @@ module Make (G : Decidable) (F : Fam2) = struct
   let empty : type b g0 p. (W.zero, b, g0, p) gt = Emp
 
   let rec gfind : type a asuc g0 b ab p.
-      (a, g0, asuc) Tbwd.insert -> (asuc, b, g0, p) gt -> (a, b, ab) W.bplus -> (ab, p) F.t =
+      (a, g0, asuc) W.insert -> (asuc, b, g0, p) gt -> (a, b, ab) W.bplus -> (ab, p) F.t =
    fun i m ab ->
     match (i, m) with
     | Now, Match { bplus; now; _ } ->
@@ -40,11 +40,11 @@ module Make (G : Decidable) (F : Fam2) = struct
     | Later i, Match { later; _ } -> gfind i later (Append_cons ab)
     | Later i, Miss { later; _ } -> gfind i later (Append_cons ab)
 
-  let find : type a asuc g0 p. (a, g0, asuc) Tbwd.insert -> (asuc, g0, p) t -> (a, p) F.t =
+  let find : type a asuc g0 p. (a, g0, asuc) W.insert -> (asuc, g0, p) t -> (a, p) F.t =
    fun i m -> gfind i m Append_nil
 
   let rec gset : type a asuc g0 b ab p.
-      (a, g0, asuc) Tbwd.insert ->
+      (a, g0, asuc) W.insert ->
       (ab, p) F.t ->
       (asuc, b, g0, p) gt ->
       (a, b, ab) W.bplus ->
@@ -59,11 +59,11 @@ module Make (G : Decidable) (F : Fam2) = struct
     | Later i, Miss m -> Miss { m with later = gset i v m.later (Append_cons ab) }
 
   let set : type a asuc g0 p.
-      (a, g0, asuc) Tbwd.insert -> (a, p) F.t -> (asuc, g0, p) t -> (asuc, g0, p) t =
+      (a, g0, asuc) W.insert -> (a, p) F.t -> (asuc, g0, p) t -> (asuc, g0, p) t =
    fun i v m -> gset i v m Append_nil
 
   let rec gupdate : type a asuc g0 b ab p.
-      (a, g0, asuc) Tbwd.insert ->
+      (a, g0, asuc) W.insert ->
       ((ab, p) F.t -> (ab, p) F.t) ->
       (asuc, b, g0, p) gt ->
       (a, b, ab) W.bplus ->
@@ -78,10 +78,10 @@ module Make (G : Decidable) (F : Fam2) = struct
     | Later i, Miss m -> Miss { m with later = gupdate i f m.later (Append_cons ab) }
 
   let update : type a asuc g0 p.
-      (a, g0, asuc) Tbwd.insert -> ((a, p) F.t -> (a, p) F.t) -> (asuc, g0, p) t -> (asuc, g0, p) t =
+      (a, g0, asuc) W.insert -> ((a, p) F.t -> (a, p) F.t) -> (asuc, g0, p) t -> (asuc, g0, p) t =
    fun i f m -> gupdate i f m Append_nil
 
-  type ('asuc, 'g0, 'p) builder = { build : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'p) F.t }
+  type ('asuc, 'g0, 'p) builder = { build : 'a. ('a, 'g0, 'asuc) W.insert -> ('a, 'p) F.t }
 
   let rec gbuild : type a b ab g0 p.
       a W.t -> g0 G.t -> (a, b, ab) W.bplus -> (ab, g0, p) builder -> (a, b, g0, p) gt =
@@ -89,7 +89,7 @@ module Make (G : Decidable) (F : Fam2) = struct
     match a with
     | Word Zero -> Emp
     | Word (Suc (a', g)) -> (
-        let (Append bplus) = Tbwd.append (W.bplus_right ab) in
+        let (Bplus bplus) = W.bplus_of_tlist (W.bplus_right ab) in
         match G.decide g g0 with
         | Same ->
             Match
@@ -180,7 +180,7 @@ module Make (G : Decidable) (F : Fam2) = struct
   open Infix
 
   type ('asuc, 'g0, 'ps, 'qs) pmapper = {
-    map : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> ('a, 'qs) Heter.hft;
+    map : 'a. ('a, 'g0, 'asuc) W.insert -> ('a, 'ps) Heter.hft -> ('a, 'qs) Heter.hft;
   }
 
   let rec gpmap : type a b ab g0 p ps qs.
@@ -208,7 +208,7 @@ module Make (G : Decidable) (F : Fam2) = struct
    fun f mss qs -> gpmap Append_nil f mss qs
 
   type ('asuc, 'g0, 'ps, 'q) mmapper = {
-    map : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> ('a, 'q) F.t;
+    map : 'a. ('a, 'g0, 'asuc) W.insert -> ('a, 'ps) Heter.hft -> ('a, 'q) F.t;
   }
 
   let mmap : type a g0 p ps q.
@@ -228,7 +228,7 @@ module Make (G : Decidable) (F : Fam2) = struct
     ys
 
   type ('asuc, 'g0, 'ps) miterator = {
-    it : 'a. ('a, 'g0, 'asuc) Tbwd.insert -> ('a, 'ps) Heter.hft -> unit;
+    it : 'a. ('a, 'g0, 'asuc) W.insert -> ('a, 'ps) Heter.hft -> unit;
   }
 
   let miter : type a g0 p ps.

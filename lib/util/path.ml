@@ -322,6 +322,21 @@ module Make (Q : Quiver) = struct
     | _, Some (Factor (k, ab)) -> Some (Pushout (k, id (tgt k), ab, id_comp b))
     | Some (Factor (k, ba)), _ -> Some (Pushout (id (tgt k), k, id_comp a, ba))
     | _ -> None
+
+  (* ********** Repeated endo-edges ********** *)
+
+  (* ('a, 'b, 'e, 'ab) snocs says that 'b is a Fwn.t and that the path 'ab is the path 'a precomposed with 'b copies of the edge 'e.  Since it is the *same* edge every time, and appending an edge on the right of a path precomposes it, this is only inhabited by paths when 'e is an *endomorphism* edge at the source object of 'a, i.e. 'e : ('o, 'e, 'o) Q.t with 'a : ('o, 'a, _) t.  Only the shapes are related here, so the objects don't appear; it is up to the producer of such a value to have an endo-edge in hand. *)
+  type (_, _, _, _) snocs =
+    | Snocs_zero : ('a, Fwn.zero, 'e, 'a) snocs
+    | Snocs_suc : (('a, 'e) suc, 'b, 'e, 'ab) snocs -> ('a, 'b Fwn.suc, 'e, 'ab) snocs
+
+  let rec snoc_snocs_eq_snoc : type a b c e.
+      (a, b, e, c) snocs -> ((a, e) suc, b, e, (c, e) suc) snocs = function
+    | Snocs_zero -> Snocs_zero
+    | Snocs_suc ab -> Snocs_suc (snoc_snocs_eq_snoc ab)
+
+  let snocs_suc_eq_snoc : type a b c e. (a, b, e, c) snocs -> (a, b Fwn.suc, e, (c, e) suc) snocs =
+   fun ab -> Snocs_suc (snoc_snocs_eq_snoc ab)
 end
 
 module MakeCheck (Q : Quiver) : Category = Make (Q)
@@ -768,7 +783,7 @@ end
 
 (* Intrinsically well-typed maps whose domains are paths in a free category.  This is the analogue of Word.Map for free categories: a recursive trie keyed by paths, with values parametrized by the path's source, morphism shape, and target (plus one ambient parameter), so the value family is a Fam4 rather than a Fam2.
 
-   Each internal map fixes its target object 'tgt; the keys are paths from any source to 'tgt.  The trie is walked target-side-first: the top-level edge-map (DM) is keyed by edges into 'tgt, and the accumulator path grows on the source side via snoc.  Concretely, converting an input path to a forward representation in target-first order via [to_fwd] then walking that with [Tbwd.append] evidence ties the recursion together. *)
+   Each internal map fixes its target object 'tgt; the keys are paths from any source to 'tgt.  The trie is walked target-side-first: the top-level edge-map (DM) is keyed by edges into 'tgt, and the accumulator path grows on the source side via snoc.  Concretely, converting an input path to a forward representation in target-first order via [to_fwd] then walking that with [Word.bplus]-style append evidence ties the recursion together. *)
 
 module rec PathMapDef : functor (Q : Quiver) (QM : MAP3_MAKER with module Key = Q) (F : Fam4) -> sig
   module M : sig
