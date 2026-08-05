@@ -2,6 +2,7 @@ open Util
 open Tbwd
 open Sface
 open Tface
+open Sdeg
 open Deg
 open Perm
 
@@ -152,25 +153,30 @@ let rec except_unoccurs_insert : type e a b g c.
           let (Except_unoccurs_insert (i, e)) = except_unoccurs_insert e i unocc in
           Except_unoccurs_insert (Later i, Except_unoccurs (e, u)))
 
-type (_, _, _) except_deg =
-  | Except_deg : ('d, 'a) deg * ('e, 'd, 'c) except -> ('e, 'a, 'c) except_deg
+(* A strict degeneracy transfers downwards with no commutation at all, since it reorders nothing.  Walking its domain from the outside in, a generator that survives is omitted or not according as its image is, while for one that is degenerated we have to ask whether it is itself an omitted direction. *)
+type (_, _, _) except_sdeg =
+  | Except_sdeg : ('d, 'a) sdeg * ('e, 'd, 'c) except -> ('e, 'a, 'c) except_sdeg
 
-let rec except_deg : type e a b c. e D.t -> (e, a, b) except -> (c, b) deg -> (e, a, c) except_deg =
+let rec except_sdeg : type e a b c.
+    e D.t -> (e, a, b) except -> (c, b) sdeg -> (e, a, c) except_sdeg =
  fun e ex s ->
-  match ex with
-  | Except_zero ->
-      let c = dom_deg s in
-      let (Except ex) = except_dirs e c in
-      Except_deg (deg_zero (excepted ex c), ex)
-  | Except_occurs (ex, o) ->
-      let (Residual (s, _, i)) = deg_residual s Now in
-      let (Except_deg (s, ex)) = except_deg e ex s in
-      Except_deg (s, except_occurs_insert ex i o)
-  | Except_unoccurs (ex, u) ->
-      let (Residual (s, g, i)) = deg_residual s Now in
-      let (Except_deg (s, ex)) = except_deg e ex s in
-      let (Except_unoccurs_insert (i, ex)) = except_unoccurs_insert ex i u in
-      Except_deg (deg_suc s g i, ex)
+  match s with
+  | Zero -> (
+      match ex with
+      | Except_zero -> Except_sdeg (Zero, Except_zero))
+  | Suc (s, g) -> (
+      match ex with
+      | Except_occurs (ex, o) ->
+          let (Except_sdeg (s, ex)) = except_sdeg e ex s in
+          Except_sdeg (s, Except_occurs (ex, o))
+      | Except_unoccurs (ex, u) ->
+          let (Except_sdeg (s, ex)) = except_sdeg e ex s in
+          Except_sdeg (Suc (s, g), Except_unoccurs (ex, u)))
+  | Degen (s, g) -> (
+      let (Except_sdeg (s, ex)) = except_sdeg e ex s in
+      match D.occurs g e with
+      | Left o -> Except_sdeg (s, Except_occurs (ex, o))
+      | Right u -> Except_sdeg (Degen (s, g), Except_unoccurs (ex, u)))
 
 type (_, _, _) except_perm =
   | Except_perm : ('d, 'a) perm * ('e, 'd, 'c) except -> ('e, 'a, 'c) except_perm
@@ -187,6 +193,16 @@ let rec except_perm : type e a b c.
       let (Except_perm (s, ex)) = except_perm e ex s in
       let (Except_unoccurs_insert (i, ex)) = except_unoccurs_insert ex i u in
       Except_perm (Suc (s, g, i), ex)
+
+(* Hence a degeneracy, being a strict degeneracy followed by a permutation, also transfers downwards with no commutation: we transfer the permutation first, and then the strict degeneracy along the resulting except. *)
+type (_, _, _) except_deg =
+  | Except_deg : ('d, 'a) deg * ('e, 'd, 'c) except -> ('e, 'a, 'c) except_deg
+
+let except_deg : type e a b c. e D.t -> (e, a, b) except -> (c, b) deg -> (e, a, c) except_deg =
+ fun e ex (Deg (s, p)) ->
+  let (Except_perm (p, ex)) = except_perm e ex p in
+  let (Except_sdeg (s, ex)) = except_sdeg e ex s in
+  Except_deg (Deg (s, p), ex)
 
 (* We can also transfer faces, though not degeneracies, "upwards". *)
 

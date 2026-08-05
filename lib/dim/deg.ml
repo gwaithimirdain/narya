@@ -66,6 +66,15 @@ let deg_coresidual : type mpred g m n.
       let (D.Coresidual (p, j)) = D.perm_coresidual p i in
       Coresidual_suc (Deg (s, p), j)
 
+(* Like deg_residual applied to the outermost generator of the codomain, but reporting only the numerical position of its preimage in the domain rather than an insertion of it.  Since nothing is moved, this needs no commutation. *)
+type _ deg_residual_index = Residual_index : ('m, 'n) deg * int -> 'n deg_residual_index
+
+let deg_residual_index : type m n g. (m, (n, g) D.suc) deg -> n deg_residual_index =
+ fun (Deg (s, p)) ->
+  let (D.Residual (p, _, i)) = D.perm_residual p Now in
+  let (Sdeg_uninsert_index (s, k)) = sdeg_uninsert_index s i in
+  Residual_index (Deg (s, p), k)
+
 (* ********** Composition ********** *)
 
 (* The distributive law: a permutation followed by a strict degeneracy is a strict degeneracy followed by a permutation.  The strict degeneracy peels the outermost generator of its domain, which the permutation's residual locates in *its* domain; the generator then survives or not in the new strict degeneracy according as it did in the old one. *)
@@ -127,19 +136,28 @@ type (_, _, _) deg_perm_of_plus =
       -> ('ml, 'n, 'k) deg_perm_of_plus
   | None_deg_perm_of_plus : ('mk, 'n, 'k) deg_perm_of_plus
 
+(* We walk the *domain* from the outside in rather than the codomain, taking one generator for each generator of 'k.  The decomposition exists just when each of those outermost generators survives with its image in the 'k part, and then that is the permutation.  Doing it this way needs no commutation: a coresidual only asks where a generator goes, without moving anything. *)
 let rec deg_perm_of_plus : type ml n k nk.
     (n, k, nk) D.plus -> (ml, nk) deg -> (ml, n, k) deg_perm_of_plus =
  fun nk s ->
   match nk with
   | Zero -> Deg_perm_of_plus (Zero, s, id_perm D.zero)
-  | Suc (nk, _) -> (
-      let (Residual (s, g, i)) = deg_residual s Now in
-      match deg_perm_of_plus nk s with
-      | None_deg_perm_of_plus -> None_deg_perm_of_plus
-      | Deg_perm_of_plus (mk, s, p) -> (
-          match D.insert_into_plus g mk i with
-          | Left _ -> None_deg_perm_of_plus
-          | Right (j, mk') -> Deg_perm_of_plus (mk', s, Suc (p, g, j))))
+  | Suc _ -> (
+      match dom_deg s with
+      | Word Zero -> None_deg_perm_of_plus
+      | Word (Suc (_, g)) -> (
+          match deg_coresidual s Now with
+          (* If the outermost generator of the domain is degenerated, it can't belong to the permuted part. *)
+          | Coresidual_zero _ -> None_deg_perm_of_plus
+          | Coresidual_suc (s, i) -> (
+              match D.insert_in_plus nk i with
+              (* Nor can it, if its image lies in the 'n part. *)
+              | Left _ -> None_deg_perm_of_plus
+              | Right (i, nk) -> (
+                  match deg_perm_of_plus nk s with
+                  | None_deg_perm_of_plus -> None_deg_perm_of_plus
+                  | Deg_perm_of_plus (mk, s, p) ->
+                      Deg_perm_of_plus (Suc (mk, g), s, perm_with_extra p g i)))))
 
 (* ********** Comparing degeneracies ********** *)
 
@@ -214,8 +232,8 @@ let rec strings_of_deg : type a b. int -> (a, b) deg -> string list =
   match D.compare_zero (cod_deg s) with
   | Zero -> List.init (D.length (dom_deg s)) (fun _ -> Endpoints.refl_string ())
   | Pos (Pos _) ->
-      let (Residual (s, _, k)) = deg_residual s Now in
-      List_extra.insert (D.int_of_insert k) (string_of_int i) (strings_of_deg (i + 1) s)
+      let (Residual_index (s, k)) = deg_residual_index s in
+      List_extra.insert k (string_of_int i) (strings_of_deg (i + 1) s)
 
 let string_of_deg : type a b. (a, b) deg -> string =
  fun s -> String.concat (if D.length (cod_deg s) > 9 then "-" else "") (strings_of_deg 1 s)

@@ -1,5 +1,7 @@
 open Util
 open Signatures
+open Sdeg
+open Perm
 open Deg
 open Sface
 
@@ -14,23 +16,53 @@ module GOp (E : Fam) = struct
 
   let id_op : type n. n D.t -> (n, n) op = fun n -> Op (F.id_sface n, id_deg n)
 
-  (* To compose operators, we use another distributive law. *)
+  (* To compose operators, we use another distributive law.  We do it in two stages, according to the factorization of a degeneracy into a strict degeneracy and a permutation, so that no commutation is needed: neither factor has to move anything past anything else. *)
 
-  let rec deg_sface : type m n k. (n, k) deg -> (m, n) F.sface -> (m, k) op =
+  (* A strict face and a strict degeneracy pass each other with no reordering at all. *)
+  type (_, _) sdeg_sface = Sdeg_sface : ('p, 'j) F.sface * ('m, 'p) sdeg -> ('m, 'j) sdeg_sface
+
+  let rec sdeg_sface : type m n j. (n, j) sdeg -> (m, n) F.sface -> (m, j) sdeg_sface =
+   fun s b ->
+    match s with
+    | Zero -> (
+        match b with
+        | Zero -> Sdeg_sface (Zero, Zero))
+    | Suc (s, g) -> (
+        match b with
+        (* The face kills this direction, so it doesn't appear in the domain at all. *)
+        | End (f, _, e) ->
+            let (Sdeg_sface (f, s)) = sdeg_sface s f in
+            Sdeg_sface (End (f, g, e), s)
+        | Mid (f, _) ->
+            let (Sdeg_sface (f, s)) = sdeg_sface s f in
+            Sdeg_sface (Mid (f, g), Suc (s, g)))
+    | Degen (s, g) -> (
+        match b with
+        | End (f, _, _) -> sdeg_sface s f
+        (* This direction survives the face but is degenerated, so it is degenerated in the domain. *)
+        | Mid (f, _) ->
+            let (Sdeg_sface (f, s)) = sdeg_sface s f in
+            Sdeg_sface (f, Degen (s, g)))
+
+  (* And a permutation past a strict face is Face.perm_sface, for generalized faces and landing in op rather than face.  Each of the permutation's own insertions carries the commutation it needs. *)
+  let rec perm_sface_op : type m n k. (n, k) perm -> (m, n) F.sface -> (m, k) op =
    fun a b ->
-    match D.compare_zero (cod_deg a) with
-    | Zero ->
-        let m = F.dom_sface b in
-        Op (Zero, deg_zero m)
-    | Pos (Pos _) -> (
-        let (Residual (p, g_deg, k)) = deg_residual a Now in
+    match a with
+    | Zero -> Op (b, id_deg (F.dom_sface b))
+    | Suc (p, g_perm, k) -> (
         match F.sface_residual b k with
         | Residual_End (f, e) ->
-            let (Op (f', p')) = deg_sface p f in
-            Op (End (f', g_deg, e), p')
+            let (Op (f', p')) = perm_sface_op p f in
+            Op (End (f', g_perm, e), p')
         | Residual_Mid (f, l) ->
-            let (Op (f', p')) = deg_sface p f in
-            Op (Mid (f', g_deg), deg_suc p' g_deg l))
+            let (Op (f', p')) = perm_sface_op p f in
+            Op (Mid (f', g_perm), deg_suc p' g_perm l))
+
+  let deg_sface : type m n k. (n, k) deg -> (m, n) F.sface -> (m, k) op =
+   fun (Deg (s, p)) b ->
+    let (Sdeg_sface (b, s)) = sdeg_sface s b in
+    let (Op (f, Deg (s', p'))) = perm_sface_op p b in
+    Op (f, Deg (comp_sdeg s' s, p'))
 
   let dom_op : type m n. (m, n) op -> m D.t = function
     | Op (_, s) -> dom_deg s

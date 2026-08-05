@@ -103,6 +103,21 @@ let rec sdeg_uninsert : type a b g bsuc.
       let (Sdeg_uninsert (s, j)) = sdeg_uninsert s i in
       Sdeg_uninsert (Degen (s, h), Later j)
 
+(* Like sdeg_uninsert, but reporting only the numerical position in the domain of the generator that survives to the removed one, rather than an insertion of it.  Since nothing is moved anywhere, this needs no commutation; but for the same reason there is nothing to relate the smaller domain to the original one, so it is existential. *)
+type _ sdeg_uninsert_index = Sdeg_uninsert_index : ('a, 'b) sdeg * int -> 'b sdeg_uninsert_index
+
+let rec sdeg_uninsert_index : type a b g bsuc.
+    (a, bsuc) sdeg -> (b, g, bsuc) D.insert -> b sdeg_uninsert_index =
+ fun s i ->
+  match (i, s) with
+  | Now, Suc (s, _) -> Sdeg_uninsert_index (s, 0)
+  | Later i, Suc (s, h) ->
+      let (Sdeg_uninsert_index (s, n)) = sdeg_uninsert_index s i in
+      Sdeg_uninsert_index (Suc (s, h), n + 1)
+  | _, Degen (s, h) ->
+      let (Sdeg_uninsert_index (s, n)) = sdeg_uninsert_index s i in
+      Sdeg_uninsert_index (Degen (s, h), n + 1)
+
 (* Dually to sdeg_uninsert, given a generator of the domain, say whether it survives to the codomain, and if so remove both it and its image. *)
 type (_, _, _) sdeg_coresidual =
   | Coresidual_degen : ('mpred, 'n) sdeg -> ('mpred, 'g, 'n) sdeg_coresidual
