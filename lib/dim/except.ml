@@ -157,17 +157,20 @@ type (_, _, _) except_deg =
 
 let rec except_deg : type e a b c. e D.t -> (e, a, b) except -> (c, b) deg -> (e, a, c) except_deg =
  fun e ex s ->
-  match (ex, s) with
-  | Except_zero, Zero c ->
+  match ex with
+  | Except_zero ->
+      let c = dom_deg s in
       let (Except ex) = except_dirs e c in
-      Except_deg (Zero (excepted ex c), ex)
-  | Except_occurs (ex, o), Suc (s, _, i) ->
+      Except_deg (deg_zero (excepted ex c), ex)
+  | Except_occurs (ex, o) ->
+      let (Residual (s, _, i)) = deg_residual s Now in
       let (Except_deg (s, ex)) = except_deg e ex s in
       Except_deg (s, except_occurs_insert ex i o)
-  | Except_unoccurs (ex, u), Suc (s, g, i) ->
+  | Except_unoccurs (ex, u) ->
+      let (Residual (s, g, i)) = deg_residual s Now in
       let (Except_deg (s, ex)) = except_deg e ex s in
       let (Except_unoccurs_insert (i, ex)) = except_unoccurs_insert ex i u in
-      Except_deg (Suc (s, g, i), ex)
+      Except_deg (deg_suc s g i, ex)
 
 type (_, _, _) except_perm =
   | Except_perm : ('d, 'a) perm * ('e, 'd, 'c) except -> ('e, 'a, 'c) except_perm
@@ -241,7 +244,7 @@ let rec deg_of_except : type e a b. b D.t -> (e, a, b) except -> (b, a) deg =
       deg_plus_dom (deg_of_except (Word b) e) (Suc (Zero, g))
   | Except_unoccurs (e, _) ->
       let (Word (Suc (b, g))) = b in
-      Suc (deg_of_except (Word b) e, g, Now)
+      deg_suc (deg_of_except (Word b) e) g Now
 
 (* In the unary case, the degeneracy deg_of_except has a section given by choosing the unique endpoint for each omitted direction.  This is convenient when formulating algorithms for pushing filtered dimensions through environments.  We therefore generalize it to other arities by using an "optional sface", trusting that the missing endpoints will be canceled out by a degeneracy at the other end.  Consistent mode/dimension theories will ensure this.  In particular, in the non-unary case there should not be any modal 2-cells from a less-nonparametric modality to a more non-parametric one.  *)
 let sface_of_except : type e a b. b D.t -> (e, a, b) except -> (a, b) opt_sface =

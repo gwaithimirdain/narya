@@ -9,19 +9,6 @@ type (_, _, _) shuffle =
   | Left : 'g D.G.t * ('a, 'b, 'ab) shuffle -> (('a, 'g) D.suc, 'b, ('ab, 'g) D.suc) shuffle
   | Right : 'g D.G.t * ('a, 'b, 'ab) shuffle -> ('a, ('b, 'g) D.suc, ('ab, 'g) D.suc) shuffle
 
-let rec deg_of_shuffle : type a b c ab. (a, b, c) shuffle -> (a, b, ab) D.plus -> (c, ab) deg =
- fun s ab ->
-  match s with
-  | Zero ->
-      let Zero = ab in
-      Zero D.zero
-  | Left (g, s) ->
-      let (Strip_plus_left (inner_plus, i)) = D.strip_plus_left g ab in
-      deg_with_extra (deg_of_shuffle s inner_plus) g i
-  | Right (g, s) ->
-      let (Suc (ab, _)) = ab in
-      Suc (deg_of_shuffle s ab, g, Now)
-
 let rec perm_of_shuffle : type a b c ab. (a, b, c) shuffle -> (a, b, ab) D.plus -> (c, ab) perm =
  fun s ab ->
   match s with
@@ -34,6 +21,10 @@ let rec perm_of_shuffle : type a b c ab. (a, b, c) shuffle -> (a, b, ab) D.plus 
   | Right (g, s) ->
       let (Suc (ab, _)) = ab in
       Suc (perm_of_shuffle s ab, g, Now)
+
+(* Hence a shuffle also induces a degeneracy. *)
+let deg_of_shuffle : type a b c ab. (a, b, c) shuffle -> (a, b, ab) D.plus -> (c, ab) deg =
+ fun s ab -> deg_of_perm (perm_of_shuffle s ab)
 
 let rec left_shuffle : type a b c. (a, b, c) shuffle -> a D.t = function
   | Zero -> D.zero

@@ -85,18 +85,6 @@ let rec ins_of_plus : type a b ab. a D.t -> (a, b, ab) D.plus -> (ab, a, b) inse
   | Zero -> Zero a
   | Suc (ab, g) -> Suc (ins_of_plus a ab, g, Now)
 
-(* An insertion induces a degeneracy, which is in fact a permutation. *)
-let rec deg_of_ins_plus : type a b c bc. (a, b, c) insertion -> (b, c, bc) D.plus -> (a, bc) deg =
- fun i bc ->
-  match (i, bc) with
-  | Zero a, Zero -> id_deg a
-  | Suc (i, g, e), Suc (bc, _) -> Suc (deg_of_ins_plus i bc, g, e)
-
-let deg_of_ins : type a b c. (a, b, c) insertion -> a deg_to =
- fun ins ->
-  let (Plus bc) = D.plus (cod_right_ins ins) in
-  To (deg_of_ins_plus ins bc)
-
 let rec perm_of_ins_plus : type a b c bc. (a, b, c) insertion -> (b, c, bc) D.plus -> (a, bc) perm =
  fun i bc ->
   match (i, bc) with
@@ -107,6 +95,15 @@ let perm_of_ins : type a b c. (a, b, c) insertion -> a perm_to =
  fun ins ->
   let (Plus bc) = D.plus (cod_right_ins ins) in
   Perm_to (perm_of_ins_plus ins bc)
+
+(* Hence it also induces a degeneracy. *)
+let deg_of_ins_plus : type a b c bc. (a, b, c) insertion -> (b, c, bc) D.plus -> (a, bc) deg =
+ fun i bc -> deg_of_perm (perm_of_ins_plus i bc)
+
+let deg_of_ins : type a b c. (a, b, c) insertion -> a deg_to =
+ fun ins ->
+  let (Plus bc) = D.plus (cod_right_ins ins) in
+  To (deg_of_ins_plus ins bc)
 
 let rec is_id_ins : type a b c. (a, b, c) insertion -> (b, c, a) D.plus option = function
   | Zero _ -> Some Zero
@@ -130,7 +127,7 @@ let rec insfact : type ac b c bc. (ac, bc) deg -> (b, c, bc) D.plus -> (ac, b, c
   match bc with
   | Zero -> Insfact (s, Zero (dom_deg s))
   | Suc (bc, _) ->
-      let (Suc (s, g, e)) = s in
+      let (Residual (s, g, e)) = deg_residual s Now in
       let (Insfact (s, i)) = insfact s bc in
       Insfact (s, Suc (i, g, e))
 

@@ -18,18 +18,19 @@ module GOp (E : Fam) = struct
 
   let rec deg_sface : type m n k. (n, k) deg -> (m, n) F.sface -> (m, k) op =
    fun a b ->
-    match a with
-    | Zero _ ->
+    match D.compare_zero (cod_deg a) with
+    | Zero ->
         let m = F.dom_sface b in
-        Op (Zero, Zero m)
-    | Suc (p, g_deg, k) -> (
+        Op (Zero, deg_zero m)
+    | Pos (Pos _) -> (
+        let (Residual (p, g_deg, k)) = deg_residual a Now in
         match F.sface_residual b k with
         | Residual_End (f, e) ->
             let (Op (f', p')) = deg_sface p f in
             Op (End (f', g_deg, e), p')
         | Residual_Mid (f, l) ->
             let (Op (f', p')) = deg_sface p f in
-            Op (Mid (f', g_deg), Suc (p', g_deg, l)))
+            Op (Mid (f', g_deg), deg_suc p' g_deg l))
 
   let dom_op : type m n. (m, n) op -> m D.t = function
     | Op (_, s) -> dom_deg s

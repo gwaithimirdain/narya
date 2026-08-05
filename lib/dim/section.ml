@@ -10,7 +10,7 @@ let rec section_of_deg : type m n. (m, n) deg -> (n, m) face option =
   let (Wrap l) = Endpoints.wrapped () in
   match (dom_deg s, Endpoints.len l) with
   | Word Zero, _ ->
-      let (Zero _) = s in
+      let Eq = deg_zero_dom s in
       return (Face (Zero, Zero))
   | Word (Suc (_, g_dom)), N.Nat (Suc _) -> (
       match deg_coresidual s Now with

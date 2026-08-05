@@ -1,5 +1,3 @@
-open Deg
-
 (* ********** Permutations ********** *)
 
 (* A permutation of dimensions is nothing but a permutation of the underlying dimension words, whose definition in Word deliberately matches the definition of degeneracies above.  So the general theory of permutations is inherited from Word, and what remains here is their relationship with degeneracies. *)
@@ -28,40 +26,11 @@ let perm_plus_perm : type m n mn k l kl.
 (* Add a dimension to the domain of a permutation, inserting it anywhere in the codomain. *)
 let perm_with_extra = D.coinsert
 
-(* Every permutation is a degeneracy. *)
-let rec deg_of_perm : type m n. (m, n) perm -> (m, n) deg = function
-  | Zero -> Zero D.zero
-  | Suc (p, g, i) -> Suc (deg_of_perm p, g, i)
+(* Two dimensions can be swapped past each other. *)
+let perm_swap = D.perm_swap
 
-(* Conversely, a degeneracy *might* be a permutation. *)
-let rec perm_of_deg : type m n. (m, n) deg -> (m, n) perm option = function
-  | Zero (Word Zero) -> Some Zero
-  | Zero _ -> None
-  | Suc (p, g, i) -> (
-      match perm_of_deg p with
-      | Some p -> Some (Suc (p, g, i))
-      | None -> None)
-
-(* A degeneracy with codomain a sum of dimensions might decompose as a sum of a degeneracy and a permutation. *)
-type (_, _, _) deg_perm_of_plus =
-  | Deg_perm_of_plus :
-      ('m, 'l, 'ml) D.plus * ('m, 'n) deg * ('l, 'k) perm
-      -> ('ml, 'n, 'k) deg_perm_of_plus
-  | None_deg_perm_of_plus : ('mk, 'n, 'k) deg_perm_of_plus
-
-let rec deg_perm_of_plus : type ml n k nk.
-    (n, k, nk) D.plus -> (ml, nk) deg -> (ml, n, k) deg_perm_of_plus =
- fun nk s ->
-  match nk with
-  | Zero -> Deg_perm_of_plus (Zero, s, id_perm D.zero)
-  | Suc (nk, _) -> (
-      let (Suc (s, g, i)) = s in
-      match deg_perm_of_plus nk s with
-      | None_deg_perm_of_plus -> None_deg_perm_of_plus
-      | Deg_perm_of_plus (mk, s, p) -> (
-          match D.insert_into_plus g mk i with
-          | Left _ -> None_deg_perm_of_plus
-          | Right (j, mk') -> Deg_perm_of_plus (mk', s, Suc (p, g, j))))
+(* A permutation of a positive dimension has positive domain. *)
+let perm_pos = D.perm_pos
 
 (* A permutation with specified domain only *)
 type _ perm_to = Perm_to : ('a, 'b) perm -> 'a perm_to

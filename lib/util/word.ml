@@ -396,6 +396,26 @@ module Make (G : Comparable) = struct
         let (Swap_inserts (i, j)) = swap_inserts i j in
         Residual (Suc (s, g, j), g', i)
 
+  (* Dually, by "coresidual" of a permutation, given an element of its domain, we mean the image of that element together with the permutation obtained by removing that element from the domain and its image from the codomain.  Unlike a degeneracy, a permutation always has such an image. *)
+  type (_, _, _) perm_coresidual =
+    | Coresidual :
+        ('mpred, 'npred) permute * ('npred, 'g, 'n) insert
+        -> ('mpred, 'g, 'n) perm_coresidual
+
+  let rec perm_coresidual : type mpred g m n.
+      (m, n) permute -> (mpred, g, m) insert -> (mpred, g, n) perm_coresidual =
+   fun s k ->
+    match s with
+    | Zero -> (
+        match k with
+        | _ -> .)
+    | Suc (s, g, j) -> (
+        match compare_gen_inserts j k with
+        | Eq_gen_inserts -> Coresidual (s, Now)
+        | Neq_gen_inserts (k, j) ->
+            let (Coresidual (s, i)) = perm_coresidual s k in
+            Coresidual (Suc (s, g, j), Later i))
+
   (* Using residuals, we can compose permutations. *)
   let rec perm_comp : type a b c. (a, b) permute -> (b, c) permute -> (a, c) permute =
    fun ab bc ->
@@ -691,6 +711,12 @@ module Make (G : Comparable) = struct
         Pos (suc mi k, h)
 
   let pos : type a. a pos -> a t = fun (Pos (Word a, g)) -> Word (Suc (a, g))
+
+  (* A permutation of a positive word has positive domain. *)
+  let perm_pos : type m n. n pos -> (m, n) permute -> m pos =
+   fun n s ->
+    match (n, s) with
+    | Pos _, Suc (s, g, i) -> insert_pos (perm_dom s) g i
 
   type _ compare_zero = Zero : zero compare_zero | Pos : 'n pos -> 'n compare_zero
 

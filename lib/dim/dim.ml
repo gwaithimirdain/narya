@@ -68,11 +68,11 @@ let string_of_dim : type n. n D.t -> string = fun n -> string_of_deg (deg_zero n
 
 (* ********** Special generators ********** *)
 
-let refl : (one, D.zero) deg = Zero D.one
+let refl : (one, D.zero) deg = deg_zero D.one
 
 type two = D.two
 
-let sym : (two, two) deg = Suc (Suc (Zero D.zero, D.deg, Now), D.deg, Later Now)
+let sym : (two, two) deg = deg_suc (deg_suc (deg_zero D.zero) D.deg Now) D.deg (Later Now)
 
 let deg_of_name : string -> any_deg option =
  fun str ->
@@ -82,13 +82,14 @@ let deg_of_name : string -> any_deg option =
 
 let name_of_deg : type a b.
     sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] -> (a, b) deg -> string option =
- fun ~sort -> function
-  | Zero (Word (Suc (Zero, Unit))) -> (
+ fun ~sort s ->
+  match (deg_equal s refl, deg_equal s sym) with
+  | Some (), _ -> (
       match (Endpoints.refl_names (), sort) with
       | [], _ -> None
       | _ :: name :: _, (`Type, `Other) -> Some name
       | _ :: _ :: name :: _, (`Function, _) -> Some name
       | _, (`Type, `Canonical) -> None
       | name :: _, _ -> Some name)
-  | Suc (Suc (Zero (Word Zero), _, Now), _, Later Now) -> Some "sym"
-  | _ -> None
+  | None, Some () -> Some "sym"
+  | None, None -> None
