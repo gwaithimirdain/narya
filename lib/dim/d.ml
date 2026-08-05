@@ -15,6 +15,20 @@ end
 
 include Word.MakeDecidable (G)
 
+(* TEMPORARY.  At present there is only one generator, and all generators have been declared to commute, so witnesses of commutation can be produced out of thin air.  The following functions do that.  Each use of them marks a place where the machinery of insertions and permutations demands a symmetry that we currently get for free; when commutation is weakened, these functions will go away and every use will have to be replaced by an actual witness (or the algorithm restructured to do without it). *)
+
+let free_commute : type g h. (g, h) G.commute = ()
+
+let rec free_gen_commute : type g n. n t -> (g, n) gen_commute = function
+  | Word Zero -> Commute_zero
+  | Word (Suc (n, _)) -> Commute_suc (free_gen_commute (Word n), free_commute)
+
+let rec free_word_commute : type m n. m t -> n t -> (m, n) commute =
+ fun m n ->
+  match m with
+  | Word Zero -> Zero_commute
+  | Word (Suc (m, _)) -> Suc_commute (free_word_commute (Word m) n, free_gen_commute n)
+
 (* The unique generator witness for the (currently single-generator) dimension theory.  To prepare for future multi-generator generalization, consumers should refer to this rather than writing the constructor [Unit] directly. *)
 let deg : unit G.t = G.Unit
 

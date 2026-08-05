@@ -9,22 +9,20 @@ type (_, _, _) shuffle =
   | Left : 'g D.G.t * ('a, 'b, 'ab) shuffle -> (('a, 'g) D.suc, 'b, ('ab, 'g) D.suc) shuffle
   | Right : 'g D.G.t * ('a, 'b, 'ab) shuffle -> ('a, ('b, 'g) D.suc, ('ab, 'g) D.suc) shuffle
 
-let rec perm_of_shuffle : type a b c ab. (a, b, c) shuffle -> (a, b, ab) D.plus -> (c, ab) perm =
- fun s ab ->
+(* Unshuffling means moving all of 'a past all of 'b, so the two shuffled words must commute. *)
+let rec go_perm_of_shuffle : type a b c ab.
+    (a, b) D.commute -> (a, b, c) shuffle -> (a, b, ab) D.plus -> (c, ab) perm =
+ fun comm s ab ->
   match s with
   | Zero ->
       let Zero = ab in
       Zero
   | Left (g, s) ->
-      let (Strip_plus_left (inner_plus, i)) = D.strip_plus_left g ab in
-      perm_with_extra (perm_of_shuffle s inner_plus) g i
+      let (Strip_plus_left (inner_plus, i)) = D.strip_plus_left (D.commute_gen comm) g ab in
+      perm_with_extra (go_perm_of_shuffle (D.commute_unsuc_left comm) s inner_plus) g i
   | Right (g, s) ->
       let (Suc (ab, _)) = ab in
-      Suc (perm_of_shuffle s ab, g, Now)
-
-(* Hence a shuffle also induces a degeneracy. *)
-let deg_of_shuffle : type a b c ab. (a, b, c) shuffle -> (a, b, ab) D.plus -> (c, ab) deg =
- fun s ab -> deg_of_perm (perm_of_shuffle s ab)
+      Suc (go_perm_of_shuffle (D.commute_unsuc_right comm) s ab, g, Now)
 
 let rec left_shuffle : type a b c. (a, b, c) shuffle -> a D.t = function
   | Zero -> D.zero
@@ -35,6 +33,14 @@ let rec right_shuffle : type a b c. (a, b, c) shuffle -> b D.t = function
   | Zero -> D.zero
   | Left (_, s) -> right_shuffle s
   | Right (g, s) -> D.suc (right_shuffle s) g
+
+(* Since all dimensions currently commute, we can always supply the required witness here; when that changes, the callers of these functions will have to justify unshuffling. *)
+let perm_of_shuffle : type a b c ab. (a, b, c) shuffle -> (a, b, ab) D.plus -> (c, ab) perm =
+ fun s ab -> go_perm_of_shuffle (D.free_word_commute (left_shuffle s) (right_shuffle s)) s ab
+
+(* Hence a shuffle also induces a degeneracy. *)
+let deg_of_shuffle : type a b c ab. (a, b, c) shuffle -> (a, b, ab) D.plus -> (c, ab) deg =
+ fun s ab -> deg_of_perm (perm_of_shuffle s ab)
 
 let rec out_shuffle : type a b c. (a, b, c) shuffle -> c D.t = function
   | Zero -> D.zero

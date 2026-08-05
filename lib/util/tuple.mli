@@ -19,7 +19,9 @@ module Make (G : DecidablePermutable) (F : Fam2) : sig
 
   type ('asuc, 'g0, 'p) builder = { build : 'a. ('a, 'g0, 'asuc) W.insert -> ('a, 'p) F.t }
 
-  val build : 'a W.t -> 'g0 G.t -> ('a, 'g0, 'p) builder -> ('a, 'g0, 'p) t
+  (* Building a tuple requires knowing that the target generator commutes with all of the word, since otherwise it could not be inserted at every position. *)
+  val build :
+    'a W.t -> 'g0 G.t -> ('g0, 'a) W.gen_commute -> ('a, 'g0, 'p) builder -> ('a, 'g0, 'p) t
 
   module Heter : sig
     type (_, _) hft =

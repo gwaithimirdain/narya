@@ -126,7 +126,7 @@ let rec except_occurs_insert : type e a b g c.
  fun e i occ ->
   match i with
   | Now -> Except_occurs (e, occ)
-  | Later i -> (
+  | Later (_, i) -> (
       match e with
       | Except_occurs (e, o) -> Except_occurs (except_occurs_insert e i occ, o)
       | Except_unoccurs (e, u) -> Except_unoccurs (except_occurs_insert e i occ, u))
@@ -144,14 +144,14 @@ let rec except_unoccurs_insert : type e a b g c.
  fun e i unocc ->
   match i with
   | Now -> Except_unoccurs_insert (Now, Except_unoccurs (e, unocc))
-  | Later i -> (
+  | Later (c, i) -> (
       match e with
       | Except_occurs (e, o) ->
           let (Except_unoccurs_insert (i, e)) = except_unoccurs_insert e i unocc in
           Except_unoccurs_insert (i, Except_occurs (e, o))
       | Except_unoccurs (e, u) ->
           let (Except_unoccurs_insert (i, e)) = except_unoccurs_insert e i unocc in
-          Except_unoccurs_insert (Later i, Except_unoccurs (e, u)))
+          Except_unoccurs_insert (Later (c, i), Except_unoccurs (e, u)))
 
 (* A strict degeneracy transfers downwards with no commutation at all, since it reorders nothing.  Walking its domain from the outside in, a generator that survives is omitted or not according as its image is, while for one that is degenerated we have to ask whether it is itself an omitted direction. *)
 type (_, _, _) except_sdeg =

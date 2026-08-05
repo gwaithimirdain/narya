@@ -72,7 +72,8 @@ let refl : (one, D.zero) deg = deg_zero D.one
 
 type two = D.two
 
-let sym : (two, two) deg = deg_suc (deg_suc (deg_zero D.zero) D.deg Now) D.deg (Later Now)
+let sym : (two, two) deg =
+  deg_suc (deg_suc (deg_zero D.zero) D.deg Now) D.deg (Later (D.free_commute, Now))
 
 let deg_of_name : string -> any_deg option =
  fun str ->

@@ -177,31 +177,92 @@ module Make (G : Permutable) = struct
         let (Word (Suc (m, g))) = m in
         commute_suc n g (commute_inv (Word m) n mn) gn
 
+  (* A generator that commutes with a word also commutes with that word minus its last generator, and more generally with any subword obtained by deleting a generator. *)
+  let gen_commute_unsuc : type g n h. (g, (n, h) suc) gen_commute -> (g, n) gen_commute = function
+    | Commute_suc (gn, _) -> gn
+
+  (* Likewise a word that commutes with a word commutes with any of its initial segments, and each of its generators commutes with the whole other word. *)
+  let commute_unsuc_left : type m n g. ((m, g) suc, n) commute -> (m, n) commute = function
+    | Suc_commute (mn, _) -> mn
+
+  let commute_gen : type m n g. ((m, g) suc, n) commute -> (g, n) gen_commute = function
+    | Suc_commute (_, gn) -> gn
+
+  let rec commute_unsuc_right : type m n g. (m, (n, g) suc) commute -> (m, n) commute = function
+    | Zero_commute -> Zero_commute
+    | Suc_commute (mn, gn) -> Suc_commute (commute_unsuc_right mn, gen_commute_unsuc gn)
+
+  (* Commutation restricts to the right-hand factors of sums. *)
+  let rec gen_commute_plus_right : type g k l kl.
+      (k, l, kl) plus -> (g, kl) gen_commute -> (g, l) gen_commute =
+   fun kl gc ->
+    match kl with
+    | Zero -> Commute_zero
+    | Suc (kl, _) ->
+        let (Commute_suc (gc, c)) = gc in
+        Commute_suc (gen_commute_plus_right kl gc, c)
+
+  let rec commute_plus_right : type m n mn k l kl.
+      (m, n, mn) plus -> (k, l, kl) plus -> (mn, kl) commute -> (n, l) commute =
+   fun mn kl c ->
+    match mn with
+    | Zero -> Zero_commute
+    | Suc (mn, _) ->
+        let (Suc_commute (c, gc)) = c in
+        Suc_commute (commute_plus_right mn kl c, gen_commute_plus_right kl gc)
+
+  (* A generator commuting with the generators of a *forwards* word.  This is the forwards analogue of gen_commute. *)
+  type (_, _) fwd_commute =
+    | Fwd_commute_nil : ('g, nil) fwd_commute
+    | Fwd_commute_cons :
+        ('g, 'h) G.commute * ('g, 'b) fwd_commute
+        -> ('g, ('h, 'b) cons) fwd_commute
+
   (* ********** Well-scoped De Bruijn indices ********** *)
 
-  (* ('a, 'g, 'b) insert says that the word 'b is obtained by inserting the generator 'g somewhere in the word 'a.  Or, put differently, 'a is obtained from 'b by deleting a generator 'g in a specified location.  Thus it is also a well-scoped De Bruijn index into 'b, pointing at an occurrence of 'g. *)
+  (* ('a, 'g, 'b) insert says that the word 'b is obtained by inserting the generator 'g somewhere in the word 'a.  Or, put differently, 'a is obtained from 'b by deleting a generator 'g in a specified location.  Thus it is also a well-scoped De Bruijn index into 'b, pointing at an occurrence of 'g.
+
+     Since a word is only determined up to commutation of its generators, inserting 'g at a position other than the outer end means moving it past the generators outside that position.  Thus each Later step records a witness that 'g commutes with the generator it passes.  In particular, an insertion is exactly the datum of an equality (b = a·g) in the partially commutative monoid. *)
   type (_, _, _) insert =
     | Now : ('a, 'g, ('a, 'g) suc) insert
-    | Later : ('a, 'g, 'b) insert -> (('a, 'k) suc, 'g, ('b, 'k) suc) insert
+    | Later : ('g, 'k) G.commute * ('a, 'g, 'b) insert -> (('a, 'k) suc, 'g, ('b, 'k) suc) insert
 
   let rec int_of_insert : type a g b. (a, g, b) insert -> int = function
     | Now -> 0
-    | Later i -> 1 + int_of_insert i
+    | Later (_, i) -> 1 + int_of_insert i
 
-  (* Two successive insertions can be performed in the other order. *)
+  (* Commutation also restricts along deletion of a generator from the right-hand word. *)
+  let rec gen_commute_uninsert : type g m h n.
+      (m, h, n) insert -> (g, n) gen_commute -> (g, m) gen_commute =
+   fun i gc ->
+    match i with
+    | Now ->
+        let (Commute_suc (gc, _)) = gc in
+        gc
+    | Later (_, i) ->
+        let (Commute_suc (gc, c)) = gc in
+        Commute_suc (gen_commute_uninsert i gc, c)
+
+  let rec commute_uninsert : type k m h n. (m, h, n) insert -> (k, n) commute -> (k, m) commute =
+   fun i c ->
+    match c with
+    | Zero_commute -> Zero_commute
+    | Suc_commute (c, gc) -> Suc_commute (commute_uninsert i c, gen_commute_uninsert i gc)
+
+  (* Two successive insertions can be performed in the other order.  Swapping the order in which the two generators are inserted requires them to commute. *)
   type (_, _, _, _) comp_insert =
     | Comp_insert : ('a, 'k, 'd) insert * ('d, 'g, 'c) insert -> ('a, 'g, 'k, 'c) comp_insert
 
   let rec comp_insert : type a g k b c.
-      (a, g, b) insert -> (b, k, c) insert -> (a, g, k, c) comp_insert =
-   fun ab bc ->
+      (g, k) G.commute -> (a, g, b) insert -> (b, k, c) insert -> (a, g, k, c) comp_insert =
+   fun gk ab bc ->
     match (ab, bc) with
-    | Now, Now -> Comp_insert (Now, Later Now)
-    | Now, Later bc -> Comp_insert (bc, Now)
-    | Later ab, Now -> Comp_insert (Now, Later (Later ab))
-    | Later ab, Later bc ->
-        let (Comp_insert (ad, dc)) = comp_insert ab bc in
-        Comp_insert (Later ad, Later dc)
+    | Now, Now -> Comp_insert (Now, Later (gk, Now))
+    | Now, Later (_, bc) -> Comp_insert (bc, Now)
+    | Later (c, ab), Now -> Comp_insert (Now, Later (gk, Later (c, ab)))
+    | Later (c, ab), Later (c', bc) ->
+        let (Comp_insert (ad, dc)) = comp_insert gk ab bc in
+        Comp_insert (Later (c', ad), Later (c, dc))
 
   let rec plus_insert : type a b c g ab ac.
       (a, b, ab) plus -> (a, c, ac) plus -> (b, g, c) insert -> (ab, g, ac) insert =
@@ -211,21 +272,22 @@ module Make (G : Permutable) = struct
         let (Suc (ac, _)) = ac in
         let Eq = plus_uniq ab ac in
         Now
-    | Later i ->
+    | Later (c, i) ->
         let Suc (ab, _), Suc (ac, _) = (ab, ac) in
-        Later (plus_insert ab ac i)
+        Later (c, plus_insert ab ac i)
 
   type (_, _, _, _) insert_plus =
     | Insert_plus : ('p, 'n, 'pn) plus * ('pn, 'g, 'mn) insert -> ('p, 'n, 'mn, 'g) insert_plus
 
+  (* Extending an insertion by a word on the right moves the inserted generator past that whole word, so it must commute with all of it. *)
   let rec insert_plus : type m n mn g p.
-      (p, g, m) insert -> (m, n, mn) plus -> (p, n, mn, g) insert_plus =
-   fun i mn ->
-    match mn with
-    | Zero -> Insert_plus (Zero, i)
-    | Suc (mn, g) ->
-        let (Insert_plus (pn, j)) = insert_plus i mn in
-        Insert_plus (Suc (pn, g), Later j)
+      (g, n) gen_commute -> (p, g, m) insert -> (m, n, mn) plus -> (p, n, mn, g) insert_plus =
+   fun gn i mn ->
+    match (mn, gn) with
+    | Zero, _ -> Insert_plus (Zero, i)
+    | Suc (mn, g), Commute_suc (gn, gh) ->
+        let (Insert_plus (pn, j)) = insert_plus gn i mn in
+        Insert_plus (Suc (pn, g), Later (gh, j))
 
   type (_, _, _, _) insert_in_plus =
     | Left :
@@ -243,10 +305,10 @@ module Make (G : Permutable) = struct
     | Suc (mn, g) -> (
         match i with
         | Now -> Right (Now, mn)
-        | Later i -> (
+        | Later (c, i) -> (
             match insert_in_plus mn i with
             | Left (j, pred_mn) -> Left (j, Suc (pred_mn, g))
-            | Right (k, pred_mn) -> Right (Later k, Suc (pred_mn, g))))
+            | Right (k, pred_mn) -> Right (Later (c, k), Suc (pred_mn, g))))
 
   type (_, _, _, _) insert_into_plus =
     | Left :
@@ -261,31 +323,29 @@ module Make (G : Permutable) = struct
    fun g mn i ->
     match i with
     | Now -> Right (Now, Suc (mn, g))
-    | Later i -> (
+    | Later (c, i') -> (
         match mn with
-        | Zero -> Left (Later i, Zero)
+        | Zero -> Left (Later (c, i'), Zero)
         | Suc (mn, h) -> (
-            match insert_into_plus g mn i with
+            match insert_into_plus g mn i' with
             | Left (j, mn_suc) -> Left (j, Suc (mn_suc, h))
-            | Right (k, mn_suc) -> Right (Later k, Suc (mn_suc, h))))
+            | Right (k, mn_suc) -> Right (Later (c, k), Suc (mn_suc, h))))
 
+  (* Two insertions into nested words can be performed in the other order, but as with comp_insert, this means moving the two inserted generators past each other, so they must commute. *)
   type (_, _, _, _) swap_inserts =
     | Swap_inserts : ('q, 'l, 'm) insert * ('p, 'k, 'q) insert -> ('m, 'k, 'l, 'p) swap_inserts
 
   let rec swap_inserts : type m n p k l.
-      (n, k, m) insert -> (p, l, n) insert -> (m, k, l, p) swap_inserts =
-   fun k l ->
+      (l, k) G.commute -> (n, k, m) insert -> (p, l, n) insert -> (m, k, l, p) swap_inserts =
+   fun lk k l ->
     match k with
-    | Now -> (
-        match l with
-        | Now -> Swap_inserts (Later l, Now)
-        | Later _ -> Swap_inserts (Later l, Now))
-    | Later k' -> (
+    | Now -> Swap_inserts (Later (lk, l), Now)
+    | Later (ck, k') -> (
         match l with
         | Now -> Swap_inserts (Now, k')
-        | Later l' ->
-            let (Swap_inserts (l'', k'')) = swap_inserts k' l' in
-            Swap_inserts (Later l'', Later k''))
+        | Later (cl, l') ->
+            let (Swap_inserts (l'', k'')) = swap_inserts lk k' l' in
+            Swap_inserts (Later (cl, l''), Later (ck, k'')))
 
   type (_, _, _) compare_inserts =
     | Eq_inserts : ('m, 'g, 'm) compare_inserts
@@ -296,31 +356,33 @@ module Make (G : Permutable) = struct
    fun m n ->
     match (m, n) with
     | Now, Now -> Eq_inserts
-    | Now, Later m -> Neq_inserts (m, Now)
-    | Later n, Now -> Neq_inserts (Now, n)
-    | Later m, Later n -> (
+    | Now, Later (_, m) -> Neq_inserts (m, Now)
+    | Later (_, n), Now -> Neq_inserts (Now, n)
+    | Later (cm, m), Later (cn, n) -> (
         match compare_inserts m n with
         | Eq_inserts -> Eq_inserts
-        | Neq_inserts (m', n') -> Neq_inserts (Later m', Later n'))
+        | Neq_inserts (m', n') -> Neq_inserts (Later (cm, m'), Later (cn, n')))
 
-  (* Compare two insertions into the same word whose removed elements may have different generator types.  If they remove the same position, the generators and smaller words agree; otherwise each insert transfers to the other's smaller word. *)
+  (* Compare two insertions into the same word whose removed elements may have different generator types.  If they remove the same position, the generators and smaller words agree; otherwise each insert transfers to the other's smaller word.  In the latter case the two generators are inserted at different places, so whichever is inserted further in passes the other one, and hence they commute; we report both orientations of that witness, since we know both generators. *)
   type (_, _, _, _, _) compare_gen_inserts =
     | Eq_gen_inserts : ('a, 'g, 'a, 'g, 'p) compare_gen_inserts
     | Neq_gen_inserts :
-        ('r, 'h, 'a) insert * ('r, 'g, 'b) insert
+        ('r, 'h, 'a) insert * ('r, 'g, 'b) insert * ('g, 'h) G.commute * ('h, 'g) G.commute
         -> ('a, 'g, 'b, 'h, 'p) compare_gen_inserts
 
   let rec compare_gen_inserts : type a g b h p.
-      (a, g, p) insert -> (b, h, p) insert -> (a, g, b, h, p) compare_gen_inserts =
-   fun j k ->
+      g G.t -> h G.t -> (a, g, p) insert -> (b, h, p) insert -> (a, g, b, h, p) compare_gen_inserts
+      =
+   fun g h j k ->
     match (j, k) with
     | Now, Now -> Eq_gen_inserts
-    | Now, Later k -> Neq_gen_inserts (k, Now)
-    | Later j, Now -> Neq_gen_inserts (Now, j)
-    | Later j, Later k -> (
-        match compare_gen_inserts j k with
+    | Now, Later (c, k) -> Neq_gen_inserts (k, Now, G.commute_inv h g c, c)
+    | Later (c, j), Now -> Neq_gen_inserts (Now, j, c, G.commute_inv g h c)
+    | Later (cj, j), Later (ck, k) -> (
+        match compare_gen_inserts g h j k with
         | Eq_gen_inserts -> Eq_gen_inserts
-        | Neq_gen_inserts (k', j') -> Neq_gen_inserts (Later k', Later j'))
+        | Neq_gen_inserts (k', j', gh, hg) ->
+            Neq_gen_inserts (Later (ck, k'), Later (cj, j'), gh, hg))
 
   (* Two insertions of the same generator into the same word are equal exactly when they insert it in the same place, in which case their outputs agree. *)
   let rec insert_equal : type a g b1 b2.
@@ -328,7 +390,7 @@ module Make (G : Permutable) = struct
    fun i1 i2 ->
     match (i1, i2) with
     | Now, Now -> Eq
-    | Later i1, Later i2 -> (
+    | Later (_, i1), Later (_, i2) -> (
         match insert_equal i1 i2 with
         | Eq -> Eq
         | Neq -> Neq)
@@ -338,17 +400,23 @@ module Make (G : Permutable) = struct
    fun k l ->
     match (k, l) with
     | Now, Now -> Some ()
-    | Later k, Later l -> insert_equiv k l
+    | Later (_, k), Later (_, l) -> insert_equiv k l
     | _, _ -> None
 
   type _ insert_into = Into : 'g G.t * ('m, 'g, 'msuc) insert -> 'msuc insert_into
 
+  (* A generator can only be inserted at positions past which it commutes, so the deeper insertions are filtered by commutation with the generators they pass. *)
   let rec all_inserts : type n. n t -> n insert_into Seq.t = function
     | Word Zero -> Seq.empty
     | Word (Suc (n, g)) ->
         Seq.cons
           (Into (g, Now))
-          (Seq.map (fun (Into (h, k)) -> Into (h, Later k)) (all_inserts (Word n)))
+          (Seq.filter_map
+             (fun (Into (h, k)) ->
+               match G.commute h g with
+               | Some c -> Some (Into (h, Later (c, k)))
+               | None -> None)
+             (all_inserts (Word n)))
 
   let rec compare : type m n. m t -> n t -> (m, n) Eq.compare =
    fun m n ->
@@ -368,13 +436,15 @@ module Make (G : Permutable) = struct
   type (_, _, _, _) strip_plus_left =
     | Strip_plus_left : ('m, 'n, 'q) plus * ('q, 'g, 'p) insert -> ('m, 'g, 'n, 'p) strip_plus_left
 
+  (* Stripping the leftmost generator moves it past the whole word appended to it, so it must commute with all of that. *)
   let rec strip_plus_left : type m g n p.
-      g G.t -> ((m, g) suc, n, p) plus -> (m, g, n, p) strip_plus_left =
-   fun g -> function
-    | Zero -> Strip_plus_left (Zero, Now)
-    | Suc (ab, h) ->
-        let (Strip_plus_left (q, i)) = strip_plus_left g ab in
-        Strip_plus_left (Suc (q, h), Later i)
+      (g, n) gen_commute -> g G.t -> ((m, g) suc, n, p) plus -> (m, g, n, p) strip_plus_left =
+   fun gn g ab ->
+    match (ab, gn) with
+    | Zero, _ -> Strip_plus_left (Zero, Now)
+    | Suc (ab, h), Commute_suc (gn, gh) ->
+        let (Strip_plus_left (q, i)) = strip_plus_left gn g ab in
+        Strip_plus_left (Suc (q, h), Later (gh, i))
 
   (* ********** More about insertion ********** *)
 
@@ -382,7 +452,7 @@ module Make (G : Permutable) = struct
    fun i (Word a) n ->
     match i with
     | Now -> Word (Suc (a, n))
-    | Later i ->
+    | Later (_, i) ->
         let (Suc (a, k)) = a in
         let (Word ins) = insert i (Word a) n in
         Word (Suc (ins, k))
@@ -393,7 +463,7 @@ module Make (G : Permutable) = struct
     | Now ->
         let (Word (Suc (b, _))) = b in
         Word b
-    | Later i ->
+    | Later (_, i) ->
         let (Word (Suc (b, n))) = b in
         let (Word ins) = uninsert i (Word b) in
         Word (Suc (ins, n))
@@ -404,7 +474,7 @@ module Make (G : Permutable) = struct
     | Now ->
         let (Word (Suc (_, n))) = b in
         n
-    | Later i ->
+    | Later (_, i) ->
         let (Word (Suc (b, _))) = b in
         inserted i (Word b)
 
@@ -447,9 +517,10 @@ module Make (G : Permutable) = struct
    fun s k ->
     match (k, s) with
     | Now, Suc (s, g, i) -> Residual (s, g, i)
-    | Later k, Suc (s, g, i) ->
+    (* The generator we are removing from the codomain is not the outermost one, so it must pass the outermost one; the insert tells us they commute, which is exactly what is needed to swap their preimages in the domain. *)
+    | Later (c, k), Suc (s, g, i) ->
         let (Residual (s, g', j)) = perm_residual s k in
-        let (Swap_inserts (i, j)) = swap_inserts i j in
+        let (Swap_inserts (i, j)) = swap_inserts c i j in
         Residual (Suc (s, g, j), g', i)
 
   (* Dually, by "coresidual" of a permutation, given an element of its domain, we mean the image of that element together with the permutation obtained by removing that element from the domain and its image from the codomain.  Unlike a degeneracy, a permutation always has such an image. *)
@@ -458,19 +529,20 @@ module Make (G : Permutable) = struct
         ('mpred, 'npred) permute * ('npred, 'g, 'n) insert
         -> ('mpred, 'g, 'n) perm_coresidual
 
+  (* We need to be told the generator being removed, since to place its image in the codomain we may have to move it past the outermost generator there, and the witness that they commute is only available in one orientation. *)
   let rec perm_coresidual : type mpred g m n.
-      (m, n) permute -> (mpred, g, m) insert -> (mpred, g, n) perm_coresidual =
-   fun s k ->
+      g G.t -> (m, n) permute -> (mpred, g, m) insert -> (mpred, g, n) perm_coresidual =
+   fun h s k ->
     match s with
     | Zero -> (
         match k with
         | _ -> .)
     | Suc (s, g, j) -> (
-        match compare_gen_inserts j k with
+        match compare_gen_inserts g h j k with
         | Eq_gen_inserts -> Coresidual (s, Now)
-        | Neq_gen_inserts (k, j) ->
-            let (Coresidual (s, i)) = perm_coresidual s k in
-            Coresidual (Suc (s, g, j), Later i))
+        | Neq_gen_inserts (k, j, _, hg) ->
+            let (Coresidual (s, i)) = perm_coresidual h s k in
+            Coresidual (Suc (s, g, j), Later (hg, i)))
 
   (* Using residuals, we can compose permutations. *)
   let rec perm_comp : type a b c. (a, b) permute -> (b, c) permute -> (a, c) permute =
@@ -488,24 +560,26 @@ module Make (G : Permutable) = struct
       (m, n) permute -> g G.t -> (n, g, nsuc) insert -> ((m, g) suc, nsuc) permute =
    fun p g -> function
     | Now -> Suc (p, g, Now)
-    | Later i ->
-        let Suc (p, h, j), _ = (p, i) in
-        Suc (coinsert p g i, h, Later j)
+    (* The new generator is inserted inside the outermost generator of the codomain, so in the domain, where it is outermost, the preimage of that generator must move past it instead. *)
+    | Later (c, i) ->
+        let (Suc (p, h, j)) = p in
+        Suc (coinsert p g i, h, Later (G.commute_inv g h c, j))
 
   let rec perm_inv : type m n. (m, n) permute -> (n, m) permute = function
     | Zero -> Zero
     | Suc (p, g, i) -> coinsert (perm_inv p) g i
 
   let rec insert_of_plus : type b a ba bga g.
-      (b, a, ba) plus -> ((b, g) suc, a, bga) plus -> (ba, g, bga) insert =
-   fun ba bga ->
-    match (ba, bga) with
-    | Zero, Zero -> Now
-    | Suc (ba, _), Suc (bga, _) -> Later (insert_of_plus ba bga)
+      (g, a) gen_commute -> (b, a, ba) plus -> ((b, g) suc, a, bga) plus -> (ba, g, bga) insert =
+   fun ga ba bga ->
+    match (ba, bga, ga) with
+    | Zero, Zero, _ -> Now
+    | Suc (ba, _), Suc (bga, _), Commute_suc (ga, gh) -> Later (gh, insert_of_plus ga ba bga)
 
-  (* Two words can be swapped past each other with a permutation. *)
-  let rec perm_swap : type a b ab ba. (a, b, ab) plus -> (b, a, ba) plus -> (ab, ba) permute =
-   fun ab ba ->
+  (* Two words can be swapped past each other with a permutation, provided of course that they commute. *)
+  let rec perm_swap : type a b ab ba.
+      (a, b) commute -> (a, b, ab) plus -> (b, a, ba) plus -> (ab, ba) permute =
+   fun c ab ba ->
     match ba with
     | Zero ->
         let b = plus_right ab in
@@ -513,7 +587,7 @@ module Make (G : Permutable) = struct
         perm_id b
     | Suc (ba, g) ->
         let (Plus ab') = plus (plus_right ab) in
-        Suc (perm_swap ab' ba, g, insert_of_plus ab' ab)
+        Suc (perm_swap (commute_unsuc_left c) ab' ba, g, insert_of_plus (commute_gen c) ab' ab)
 
   (* Extend a permutation by the identity on an additional word. *)
   let rec perm_plus : type m n k mk nk.
@@ -622,25 +696,46 @@ module Make (G : Permutable) = struct
         let Eq = bplus_uniq ab ab' in
         Eq
 
+  (* Transferring an insertion across an appended forwards word moves the inserted generator past all of that word, so it must commute with it. *)
   let rec insert_bplus : type a asuc g b ab asucb.
-      (a, g, asuc) insert -> (a, b, ab) bplus -> (asuc, b, asucb) bplus -> (ab, g, asucb) insert =
-   fun i ab asucb ->
-    match (ab, asucb) with
-    | Append_nil, Append_nil -> i
-    | Append_cons ab, Append_cons asucb -> insert_bplus (Later i) ab asucb
+      (g, b) fwd_commute ->
+      (a, g, asuc) insert ->
+      (a, b, ab) bplus ->
+      (asuc, b, asucb) bplus ->
+      (ab, g, asucb) insert =
+   fun gb i ab asucb ->
+    match (ab, asucb, gb) with
+    | Append_nil, Append_nil, _ -> i
+    | Append_cons ab, Append_cons asucb, Fwd_commute_cons (gh, gb) ->
+        insert_bplus gb (Later (gh, i)) ab asucb
+
+  (* Pulling a generator out of a forwards word and moving it to the front, past the generators that precede it there.  This is Tlist.insert decorated with the witnesses that those moves are allowed. *)
+  type (_, _, _) fwd_insert =
+    | Fwd_now : ('g, 'b, ('g, 'b) cons) fwd_insert
+    | Fwd_later :
+        ('g, 'h) G.commute * ('g, 'b, 'd) fwd_insert
+        -> ('g, ('h, 'b) cons, ('h, 'd) cons) fwd_insert
 
   (* The generator inserted at a given position of a forwards word, and the word with it removed. *)
-  let rec fwd_inserted : type a g b. (a, g, b) Tlist.insert -> b fwd -> g G.t =
+  let rec fwd_inserted : type a g b. (g, a, b) fwd_insert -> b fwd -> g G.t =
    fun i b ->
     match (i, b) with
-    | Now, Cons (g, _) -> g
-    | Later i, Cons (_, b) -> fwd_inserted i b
+    | Fwd_now, Cons (g, _) -> g
+    | Fwd_later (_, i), Cons (_, b) -> fwd_inserted i b
 
-  let rec fwd_uninsert : type a g b. (a, g, b) Tlist.insert -> b fwd -> a fwd =
+  let rec fwd_uninsert : type a g b. (g, a, b) fwd_insert -> b fwd -> a fwd =
    fun i b ->
     match (i, b) with
-    | Now, Cons (_, b) -> b
-    | Later i, Cons (g, b) -> Cons (g, fwd_uninsert i b)
+    | Fwd_now, Cons (_, b) -> b
+    | Fwd_later (_, i), Cons (g, b) -> Cons (g, fwd_uninsert i b)
+
+  let rec fwd_insert_tlist : type a g b. (g, a, b) fwd_insert -> a Tlist.t -> b Tlist.t =
+   fun i a ->
+    match i with
+    | Fwd_now -> Cons a
+    | Fwd_later (_, i) ->
+        let (Cons a) = a in
+        Cons (fwd_insert_tlist i a)
 
   (* Extend a permutation by the identity on an appended forwards word.  This is perm_plus for bplus rather than plus, and like it needs the generators of the appended word to grow the codomain. *)
   let rec perm_bplus : type a b c ac bc.
@@ -655,29 +750,30 @@ module Make (G : Permutable) = struct
       a t ->
       d fwd ->
       (a, g, b) insert ->
-      (c, g, d) Tlist.insert ->
+      (g, c, d) fwd_insert ->
       (b, c, bc) bplus ->
       (a, d, ad) bplus ->
       (bc, ad) permute =
    fun a d ab cd bc ad' ->
     match (cd, d) with
-    | Now, Cons (g, c) ->
+    | Fwd_now, Cons (g, c) ->
         let (Append_cons ad') = ad' in
         perm_bplus c (Suc (perm_id a, g, ab)) bc ad'
-    | Later cd, Cons (h, d) ->
+    (* Appending the generator on the left of h instead of on the right of it requires them to commute, which is exactly what the fwd_insert records. *)
+    | Fwd_later (gh, cd), Cons (h, d) ->
         let Append_cons ad', Append_cons bc = (ad', bc) in
-        perm_of_ins_ins (suc a h) d (Later ab) cd bc ad'
+        perm_of_ins_ins (suc a h) d (Later (gh, ab)) cd bc ad'
 
   (* ('a, 'b, 'c) bplus_permute says that the backwards word 'c is obtained from the backwards word 'a by appending a permutation of the forwards word 'b.  In particular, (zero, 'b, 'c) says that the backwards word 'c is a permutation of the forwards word 'b. *)
   type (_, _, _) bplus_permute =
     | Bp_nil : ('a, nil, 'a) bplus_permute
     | Bp_insert :
-        ('b, 'g, 'd) Tlist.insert * (('a, 'g) suc, 'b, 'c) bplus_permute
+        ('g, 'b, 'd) fwd_insert * (('a, 'g) suc, 'b, 'c) bplus_permute
         -> ('a, 'd, 'c) bplus_permute
 
   let rec bplus_permute_right : type a b c. (a, b, c) bplus_permute -> b Tlist.t = function
     | Bp_nil -> Nil
-    | Bp_insert (ins, b) -> Tlist.inserted ins (bplus_permute_right b)
+    | Bp_insert (ins, b) -> fwd_insert_tlist ins (bplus_permute_right b)
 
   (* If we bplus and also bplus_permute the same words, the two results are related by a permutation.  Since permutations record their generators, we need the backwards word being appended to and the generators of the forwards word appended. *)
   let rec perm_of_bplus_permute : type a b c d.
@@ -761,7 +857,7 @@ module Make (G : Permutable) = struct
    fun m g i ->
     match i with
     | Now -> Pos (m, g)
-    | Later i ->
+    | Later (_, i) ->
         let (Word (Suc (m, h))) = m in
         let (Pos (mi, k)) = insert_pos (Word m) g i in
         Pos (suc mi k, h)
@@ -866,7 +962,10 @@ end
 module MakeDecidable (G : DecidablePermutable) = struct
   include Make (G)
 
-  type (_, _) occurs = Occurs : ('m, 'g, 'mg) insert -> ('g, 'mg) occurs
+  (* Whether a generator occurs in a word.  This is a purely positional statement, unlike an insert, which also requires the generator to commute with everything outside its position. *)
+  type (_, _) occurs =
+    | Occurs_now : ('g, ('m, 'g) suc) occurs
+    | Occurs_later : ('g, 'm) occurs -> ('g, ('m, 'h) suc) occurs
 
   type (_, _) unoccurs =
     | Unoccurs_emp : ('g, emp) unoccurs
@@ -877,36 +976,32 @@ module MakeDecidable (G : DecidablePermutable) = struct
     | Word Zero -> Right Unoccurs_emp
     | Word (Suc (m, h)) -> (
         match G.decide g h with
-        | Same -> Left (Occurs Now)
+        | Same -> Left Occurs_now
         | Distinct ap -> (
             match occurs g (Word m) with
-            | Left (Occurs o) -> Left (Occurs (Later o))
+            | Left o -> Left (Occurs_later o)
             | Right u -> Right (Unoccurs_suc (u, ap))))
 
   let rec occurs_unoccurs : type g m r. (g, m) occurs -> (g, m) unoccurs -> r =
    fun o u ->
     match (o, u) with
-    | Occurs Now, Unoccurs_suc (_, ap) -> (
+    | Occurs_now, Unoccurs_suc (_, ap) -> (
         match G.apart_irrefl ap with
         | _ -> .)
-    | Occurs (Later i), Unoccurs_suc (u, _) -> occurs_unoccurs (Occurs i) u
+    | Occurs_later o, Unoccurs_suc (u, _) -> occurs_unoccurs o u
 
   let rec occurs_plus_right : type g m n mn. (m, n, mn) plus -> (g, n) occurs -> (g, mn) occurs =
-   fun mn (Occurs i) ->
-    match (mn, i) with
+   fun mn o ->
+    match (mn, o) with
     | Zero, _ -> .
-    | Suc _, Now -> Occurs Now
-    | Suc (mn, _), Later i ->
-        let (Occurs i) = occurs_plus_right mn (Occurs i) in
-        Occurs (Later i)
+    | Suc _, Occurs_now -> Occurs_now
+    | Suc (mn, _), Occurs_later o -> Occurs_later (occurs_plus_right mn o)
 
   let rec occurs_plus_left : type g m n mn. (m, n, mn) plus -> (g, m) occurs -> (g, mn) occurs =
    fun mn o ->
     match mn with
     | Zero -> o
-    | Suc (mn, _) ->
-        let (Occurs i) = occurs_plus_left mn o in
-        Occurs (Later i)
+    | Suc (mn, _) -> Occurs_later (occurs_plus_left mn o)
 
   let rec unoccurs_plus : type g m n mn.
       (m, n, mn) plus -> (g, m) unoccurs -> (g, n) unoccurs -> (g, mn) unoccurs =
@@ -1224,7 +1319,12 @@ module HomCheck
 module HomPerm
     (G : Permutable)
     (Cod : MonoidPerm)
-    (F : Function with module Dom = G and module Cod = Cod) =
+    (F :
+      PermFunction
+        with module Dom = G
+         and module Cod = Cod
+         and type ('a, 'b) dom_commute = ('a, 'b) G.commute
+         and type ('x, 'y) cod_commute = ('x, 'y) Cod.commute) =
 struct
   module H = Hom (G) (Cod) (F)
   module Dom = H.Dom
@@ -1240,12 +1340,14 @@ struct
     | Now ->
         let (Suc (fa, fm, xn)) = fb in
         Uninsert (fa, fm, xn, Cod.perm_id (Cod.plus_out (H.cod fa) xn))
-    | Later i ->
+    (* The generator being uninserted moves past the generator k here, so in the codomain their images l and n must be swapped, which is allowed because the homomorphism transports the witness that m and k commute. *)
+    | Later (c, i) ->
         let (Suc (fb, fk, yl)) = fb in
         let (Uninsert (fa, fm, xn, perm_xn_y)) = uninsert i fb in
         let x = H.cod fa in
         let l = Cod.plus_right yl in
         let n = Cod.plus_right xn in
+        let ln_commute = Cod.commute_inv n l (F.commute fm fk c) in
         let (Plus nl) = Cod.plus l in
         let (Plus ln) = Cod.plus n in
         let (Plus xl) = Cod.plus l in
@@ -1253,7 +1355,8 @@ struct
         let (Plus xl_n) = Cod.plus n in
         let x_ln = Cod.plus_assocr xl ln xl_n in
         let x_nl = Cod.plus_assocr xn nl xn_l in
-        let perm_xln_xnl = Cod.perm_plus_perm (Cod.perm_id x) x_ln x_nl (Cod.perm_swap ln nl) in
+        let perm_xln_xnl =
+          Cod.perm_plus_perm (Cod.perm_id x) x_ln x_nl (Cod.perm_swap ln_commute ln nl) in
         let perm_xnl_yl = Cod.perm_plus_perm perm_xn_y xn_l yl (Cod.perm_id l) in
         let perm_xln_yl = Cod.perm_comp perm_xln_xnl perm_xnl_yl in
         Uninsert (Suc (fa, fk, xl), fm, xl_n, perm_xln_yl)
@@ -1313,7 +1416,12 @@ end
 module HomPermFwd
     (G : Permutable)
     (Cod : MonoidPermFwd)
-    (F : Function with module Dom = G and module Cod = Cod) =
+    (F :
+      PermFunction
+        with module Dom = G
+         and module Cod = Cod
+         and type ('a, 'b) dom_commute = ('a, 'b) G.commute
+         and type ('x, 'y) cod_commute = ('x, 'y) Cod.commute) =
 struct
   include HomPerm (G) (Cod) (F)
   include HomFwd (G) (Cod) (F)
@@ -1388,7 +1496,12 @@ end
 module Hom2Perm
     (G : Permutable)
     (Cod : MonoidPerm)
-    (F : Function2 with module Dom = G and module Cod = Cod) =
+    (F :
+      PermFunction2
+        with module Dom = G
+         and module Cod = Cod
+         and type ('a, 'b) dom_commute = ('a, 'b) G.commute
+         and type ('x, 'y) cod_commute = ('x, 'y) Cod.commute) =
 struct
   module H = Hom2 (G) (Cod) (F)
   module Param = F.Param
@@ -1406,12 +1519,13 @@ struct
     | Now ->
         let (Suc (fa, fm, xn)) = fb in
         Uninsert (fa, fm, xn, Cod.perm_id (Cod.plus_out (H.cod param fa) xn))
-    | Later i ->
+    | Later (c, i) ->
         let (Suc (fb, fk, yl)) = fb in
         let (Uninsert (fa, fm, xn, perm_xn_y)) = uninsert param i fb in
         let x = H.cod param fa in
         let l = Cod.plus_right yl in
         let n = Cod.plus_right xn in
+        let ln_commute = Cod.commute_inv n l (F.commute param fm fk c) in
         let (Plus nl) = Cod.plus l in
         let (Plus ln) = Cod.plus n in
         let (Plus xl) = Cod.plus l in
@@ -1419,7 +1533,8 @@ struct
         let (Plus xl_n) = Cod.plus n in
         let x_ln = Cod.plus_assocr xl ln xl_n in
         let x_nl = Cod.plus_assocr xn nl xn_l in
-        let perm_xln_xnl = Cod.perm_plus_perm (Cod.perm_id x) x_ln x_nl (Cod.perm_swap ln nl) in
+        let perm_xln_xnl =
+          Cod.perm_plus_perm (Cod.perm_id x) x_ln x_nl (Cod.perm_swap ln_commute ln nl) in
         let perm_xnl_yl = Cod.perm_plus_perm perm_xn_y xn_l yl (Cod.perm_id l) in
         let perm_xln_yl = Cod.perm_comp perm_xln_xnl perm_xnl_yl in
         Uninsert (Suc (fa, fk, xl), fm, xl_n, perm_xln_yl)
@@ -1449,7 +1564,12 @@ end
 module Fmap
     (Dom : Permutable)
     (Cod : Permutable)
-    (F : Function2 with module Dom = Dom and module Cod = Cod) =
+    (F :
+      PermFunction2
+        with module Dom = Dom
+         and module Cod = Cod
+         and type ('a, 'b) dom_commute = ('a, 'b) Dom.commute
+         and type ('x, 'y) cod_commute = ('x, 'y) Cod.commute) =
 struct
   module CodMonoid = Make (Cod)
   module C = Cod
@@ -1493,13 +1613,14 @@ struct
         -> ('p, 'x, 'xs, 'ws) uninsert
 
   let rec uninsert : type p xs x ys ws.
-      (xs, x, ys) Dom.insert -> (p, ys, ws) t -> (p, x, xs, ws) uninsert =
-   fun i fxs ->
+      p Param.t -> (xs, x, ys) Dom.insert -> (p, ys, ws) t -> (p, x, xs, ws) uninsert =
+   fun p i fxs ->
     match (fxs, i) with
     | Suc (fxs, Inject fx, Suc (Zero, _)), Now -> Uninsert (fx, Now, fxs)
-    | Suc (fxs, fx, Suc (Zero, yy)), Later i ->
-        let (Uninsert (u, fi, fxs)) = uninsert i fxs in
-        Uninsert (u, Later fi, Suc (fxs, fx, Suc (Zero, yy)))
+    (* The removed generator moves past this one, and the homomorphism transports that commutation to their images. *)
+    | Suc (fxs, Inject fk, Suc (Zero, yy)), Later (c, i) ->
+        let (Uninsert (u, fi, fxs)) = uninsert p i fxs in
+        Uninsert (u, Later (F.commute p u fk c, fi), Suc (fxs, Inject fk, Suc (Zero, yy)))
     | Zero, _ -> .
 
   type (_, _, _, _) uncoinsert =
@@ -1514,8 +1635,9 @@ struct
     | Now ->
         let (Suc (fxs, Inject fx, Suc (Zero, _))) = fxs in
         Uncoinsert (fx, Now, fxs)
-    | Later i ->
-        let (Suc (fxs, fx, Suc (Zero, yy))) = fxs in
+    (* Dually to uninsert, we have to reflect the commutation of the images back to their preimages. *)
+    | Later (c, i) ->
+        let (Suc (fxs, Inject fk, Suc (Zero, yy))) = fxs in
         let (Uncoinsert (fx', fi, fxs)) = uncoinsert i fxs in
-        Uncoinsert (fx', Later fi, Suc (fxs, fx, Suc (Zero, yy)))
+        Uncoinsert (fx', Later (F.uncommute fx' fk c, fi), Suc (fxs, Inject fk, Suc (Zero, yy)))
 end

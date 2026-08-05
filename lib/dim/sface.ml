@@ -45,14 +45,15 @@ module GSFace (E : Fam) = struct
     match (k, f) with
     | Now, End (f', _, e) -> Residual_End (f', e)
     | Now, Mid (f', _) -> Residual_Mid (f', Now)
-    | Later k', End (f', g, e) -> (
+    | Later (_, k'), End (f', g, e) -> (
         match sface_residual f' k' with
         | Residual_End (f'', e') -> Residual_End (End (f'', g, e), e')
         | Residual_Mid (f'', l) -> Residual_Mid (End (f'', g, e), l))
-    | Later k', Mid (f', g) -> (
+    (* The removed generator has to move past this one in the domain as well as in the codomain, and the witness is the same. *)
+    | Later (c, k'), Mid (f', g) -> (
         match sface_residual f' k' with
         | Residual_End (f'', e') -> Residual_End (Mid (f'', g), e')
-        | Residual_Mid (f'', l) -> Residual_Mid (Mid (f'', g), Later l))
+        | Residual_Mid (f'', l) -> Residual_Mid (Mid (f'', g), Later (c, l)))
 
   let rec is_id_sface : type m n. (m, n) sface -> (m, n) Eq.t option = function
     | Zero -> Some Eq
@@ -141,14 +142,14 @@ let rec insert_sface : type m n g nsuc.
  fun f g i ->
   match i with
   | Now -> Insert_sface (Now, Mid (f, g))
-  | Later i -> (
+  | Later (c, i) -> (
       match f with
       | End (f, h, e) ->
           let (Insert_sface (i, f)) = insert_sface f g i in
           Insert_sface (i, End (f, h, e))
       | Mid (f, h) ->
           let (Insert_sface (i, f)) = insert_sface f g i in
-          Insert_sface (Later i, Mid (f, h)))
+          Insert_sface (Later (c, i), Mid (f, h)))
 
 (* Conversely, any strict face of a sum decomposes as a sum. *)
 

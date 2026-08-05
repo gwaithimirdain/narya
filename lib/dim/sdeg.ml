@@ -64,7 +64,7 @@ let rec sdeg_insert_degen : type a b g asuc.
  fun s g i ->
   match i with
   | Now -> Degen (s, g)
-  | Later i -> (
+  | Later (_, i) -> (
       match s with
       | Suc (s, h) -> Suc (sdeg_insert_degen s g i, h)
       | Degen (s, h) -> Degen (sdeg_insert_degen s g i, h))
@@ -78,11 +78,12 @@ let rec sdeg_insert : type a b g asuc.
  fun s g i ->
   match i with
   | Now -> Sdeg_insert (Suc (s, g), Now)
-  | Later i -> (
+  (* The generator being inserted moves past the domain generator h; if h survives, then in the codomain it must move past h there too, and the witness is the same. *)
+  | Later (c, i) -> (
       match s with
       | Suc (s, h) ->
           let (Sdeg_insert (s, j)) = sdeg_insert s g i in
-          Sdeg_insert (Suc (s, h), Later j)
+          Sdeg_insert (Suc (s, h), Later (c, j))
       | Degen (s, h) ->
           let (Sdeg_insert (s, j)) = sdeg_insert s g i in
           Sdeg_insert (Degen (s, h), j))
@@ -91,17 +92,18 @@ let rec sdeg_insert : type a b g asuc.
 type (_, _, _) sdeg_uninsert =
   | Sdeg_uninsert : ('a, 'b) sdeg * ('a, 'g, 'asuc) D.insert -> ('asuc, 'g, 'b) sdeg_uninsert
 
+(* The removed generator has to move to the outer end of the *domain*, past the degenerate generators there as well as the surviving ones.  The insert tells us it commutes with the latter, since they also appear in the codomain, but for the former we have to be told separately.  We ask for commutation with the whole domain, since the degenerate generators outside the insertion point are not visible in the type; only that outer part of the witness is used. *)
 let rec sdeg_uninsert : type a b g bsuc.
-    (a, bsuc) sdeg -> (b, g, bsuc) D.insert -> (a, g, b) sdeg_uninsert =
- fun s i ->
-  match (i, s) with
-  | Now, Suc (s, _) -> Sdeg_uninsert (s, Now)
-  | Later i, Suc (s, h) ->
-      let (Sdeg_uninsert (s, j)) = sdeg_uninsert s i in
-      Sdeg_uninsert (Suc (s, h), Later j)
-  | _, Degen (s, h) ->
-      let (Sdeg_uninsert (s, j)) = sdeg_uninsert s i in
-      Sdeg_uninsert (Degen (s, h), Later j)
+    (g, a) D.gen_commute -> (a, bsuc) sdeg -> (b, g, bsuc) D.insert -> (a, g, b) sdeg_uninsert =
+ fun ga s i ->
+  match (i, s, ga) with
+  | Now, Suc (s, _), _ -> Sdeg_uninsert (s, Now)
+  | Later (c, i), Suc (s, h), Commute_suc (ga, _) ->
+      let (Sdeg_uninsert (s, j)) = sdeg_uninsert ga s i in
+      Sdeg_uninsert (Suc (s, h), Later (c, j))
+  | _, Degen (s, h), Commute_suc (ga, gh) ->
+      let (Sdeg_uninsert (s, j)) = sdeg_uninsert ga s i in
+      Sdeg_uninsert (Degen (s, h), Later (gh, j))
 
 (* Like sdeg_uninsert, but reporting only the numerical position in the domain of the generator that survives to the removed one, rather than an insertion of it.  Since nothing is moved anywhere, this needs no commutation; but for the same reason there is nothing to relate the smaller domain to the original one, so it is existential. *)
 type _ sdeg_uninsert_index = Sdeg_uninsert_index : ('a, 'b) sdeg * int -> 'b sdeg_uninsert_index
@@ -111,7 +113,7 @@ let rec sdeg_uninsert_index : type a b g bsuc.
  fun s i ->
   match (i, s) with
   | Now, Suc (s, _) -> Sdeg_uninsert_index (s, 0)
-  | Later i, Suc (s, h) ->
+  | Later (_, i), Suc (s, h) ->
       let (Sdeg_uninsert_index (s, n)) = sdeg_uninsert_index s i in
       Sdeg_uninsert_index (Suc (s, h), n + 1)
   | _, Degen (s, h) ->
@@ -131,11 +133,12 @@ let rec sdeg_coresidual : type mpred g m n.
   match (k, s) with
   | Now, Suc (s, _) -> Coresidual_keep (s, Now)
   | Now, Degen (s, _) -> Coresidual_degen s
-  | Later k, Suc (s, h) -> (
+  (* Here the generator moves past the domain generator h, which survives, so the same witness lets its image move past h in the codomain. *)
+  | Later (c, k), Suc (s, h) -> (
       match sdeg_coresidual s k with
       | Coresidual_degen s -> Coresidual_degen (Suc (s, h))
-      | Coresidual_keep (s, i) -> Coresidual_keep (Suc (s, h), Later i))
-  | Later k, Degen (s, h) -> (
+      | Coresidual_keep (s, i) -> Coresidual_keep (Suc (s, h), Later (c, i)))
+  | Later (_, k), Degen (s, h) -> (
       match sdeg_coresidual s k with
       | Coresidual_degen s -> Coresidual_degen (Degen (s, h))
       | Coresidual_keep (s, i) -> Coresidual_keep (Degen (s, h), i))

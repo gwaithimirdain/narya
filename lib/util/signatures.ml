@@ -71,6 +71,16 @@ module type Function = sig
   val uniq : ('a, 'x1) t -> ('a, 'x2) t -> ('x1, 'x2) Eq.t
 end
 
+(* A function that also acts on permutable structure has to say how it transports witnesses of commutation.  The domain and codomain notions of commutation are left abstract here, since Dom and Cod are only Fams; users instantiate them with the appropriate ones. *)
+module type PermFunction = sig
+  include Function
+
+  type ('a, 'b) dom_commute
+  type ('x, 'y) cod_commute
+
+  val commute : ('a, 'x) t -> ('b, 'y) t -> ('a, 'b) dom_commute -> ('x, 'y) cod_commute
+end
+
 (* A parametrized family of functions. *)
 module type Function2 = sig
   module Param : Fam
@@ -86,6 +96,25 @@ module type Function2 = sig
 
   val exists : 'param Param.t -> 'a Dom.t -> ('param, 'a) exists
   val uniq : ('param, 'a, 'x1) t -> ('param, 'a, 'x2) t -> ('x1, 'x2) Eq.t
+end
+
+module type PermFunction2 = sig
+  include Function2
+
+  type ('a, 'b) dom_commute
+  type ('x, 'y) cod_commute
+
+  (* As with cod, computing the image commutation may need the parameter. *)
+  val commute :
+    'param Param.t ->
+    ('param, 'a, 'x) t ->
+    ('param, 'b, 'y) t ->
+    ('a, 'b) dom_commute ->
+    ('x, 'y) cod_commute
+
+  (* Some clients also need to reflect commutation backwards along the function, to transfer an insertion in the codomain to one in the domain. *)
+  val uncommute :
+    ('param, 'a, 'x) t -> ('param, 'b, 'y) t -> ('x, 'y) cod_commute -> ('a, 'b) dom_commute
 end
 
 (* We deal with several kinds of intrinsically well-typed maps, whose output type depends on their input value (which is a type).  They all share this common signature. *)

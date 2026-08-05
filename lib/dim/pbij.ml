@@ -149,7 +149,7 @@ let rec deg_comp_ins : type m n i res.
   match ins with
   | Zero _ -> Deg_comp_ins (Zero (cod_deg deg), Zero, deg)
   | Suc (ins, g, i) -> (
-      match deg_coresidual deg i with
+      match deg_coresidual g deg i with
       | Coresidual_zero deg ->
           let (Deg_comp_ins (ins, shuf, s)) = deg_comp_ins deg ins in
           Deg_comp_ins (ins, Left (g, shuf), s)
@@ -184,7 +184,7 @@ let rec deg_comp_pbij : type m n i res rem sh.
           | _ -> . )
   | Right (g, shuf) -> (
       let (Suc (ins, _, i)) = ins in
-      match deg_coresidual deg i with
+      match deg_coresidual g deg i with
       | Coresidual_zero deg ->
           let (Deg_comp_pbij (ins, shuf, s, _)) = deg_comp_pbij deg ins shuf in
           Deg_comp_pbij
@@ -245,10 +245,14 @@ let unplus_pbij : type m n mn s i r h.
   let (Comp_shuffle_right (rr, rhi)) = comp_shuffle_right rhi shuf in
   Unplus_pbij (nsh, rhi, rr, mtr, ts)
 
-(* Convert a pbij to an insertion by increasing the evaluation dimension on the left to include the remaining dimension. *)
-let rec ins_plus_of_pbij : type n s h r i rn.
-    (n, s, h) insertion -> (r, h, i) shuffle -> (r, n, rn) D.plus -> (rn, s, i) insertion =
- fun ins shuf rn ->
+(* Convert a pbij to an insertion by increasing the evaluation dimension on the left to include the remaining dimension.  The remaining dimensions have to move past the whole evaluation dimension to get there, so the two must commute. *)
+let rec go_ins_plus_of_pbij : type n s h r i rn.
+    (r, n) D.commute ->
+    (n, s, h) insertion ->
+    (r, h, i) shuffle ->
+    (r, n, rn) D.plus ->
+    (rn, s, i) insertion =
+ fun comm ins shuf rn ->
   match shuf with
   | Zero ->
       let Eq = D.plus_uniq rn (D.zero_plus (dom_ins ins)) in
@@ -256,10 +260,15 @@ let rec ins_plus_of_pbij : type n s h r i rn.
   | Right (g, shuf') ->
       let (Suc (ins', _, x)) = ins in
       let (Plus rn') = D.plus (D.uninsert x (dom_ins ins)) in
-      Suc (ins_plus_of_pbij ins' shuf' rn', g, D.plus_insert rn' rn x)
+      Suc (go_ins_plus_of_pbij (D.commute_uninsert x comm) ins' shuf' rn', g, D.plus_insert rn' rn x)
   | Left (g, shuf') ->
-      let (Insert_plus (rn', x)) = D.insert_plus Now rn in
-      Suc (ins_plus_of_pbij ins shuf' rn', g, x)
+      let (Insert_plus (rn', x)) = D.insert_plus (D.commute_gen comm) Now rn in
+      Suc (go_ins_plus_of_pbij (D.commute_unsuc_left comm) ins shuf' rn', g, x)
+
+let ins_plus_of_pbij : type n s h r i rn.
+    (n, s, h) insertion -> (r, h, i) shuffle -> (r, n, rn) D.plus -> (rn, s, i) insertion =
+ fun ins shuf rn ->
+  go_ins_plus_of_pbij (D.free_word_commute (left_shuffle shuf) (D.plus_right rn)) ins shuf rn
 
 (* Two insertions, into dimensions 'e1 and 'e2 that are placed side by side as 'e12, can be combined into a single insertion into 'e12, once we are told how to shuffle together the two inserted dimensions 'sh1 and 'sh2.  The un-inserted dimension of the result is the concatenation of those of the inputs, but since it is existential anyway we don't bother to record that. *)
 
@@ -282,7 +291,8 @@ let rec plus_comp_ins : type e1 e2 e12 res1 res2 sh1 sh2 sh12.
   (* The outermost element of 'sh12 comes from 'sh1, hence is inserted into the 'e1 part of 'e12.  Removing it from 'e1 removes it from 'e12 too, in the corresponding place. *)
   | Left (g, shuf) ->
       let (Suc (ins1, _, x1)) = ins1 in
-      let (Insert_plus (e12', y)) = D.insert_plus x1 e12 in
+      (* The generator inserted into 'e1 has to move past the whole of 'e2 to reach the outer end of 'e12. *)
+      let (Insert_plus (e12', y)) = D.insert_plus (D.free_gen_commute (dom_ins ins2)) x1 e12 in
       let (Plus_comp_ins ins12) = plus_comp_ins e12' ins1 ins2 shuf in
       Plus_comp_ins (Suc (ins12, g, y))
   (* Or it comes from 'sh2, hence is inserted into the 'e2 part of 'e12. *)
@@ -478,7 +488,8 @@ module Pbijmap (F : Fam2) = struct
                               (Pbij (Suc (ins, g_intrinsic, i), Right (g_intrinsic, shuf)))
                               r12);
                       }) in
-               Tup.build evaluation g_intrinsic { build });
+               (* As in Insmap, the keys here are insertions of the intrinsic generators into the evaluation dimension, which exist only insofar as those generators commute with it. *)
+               Tup.build evaluation g_intrinsic (D.free_gen_commute evaluation) { build });
           }
 
   type ('evaluation, 'intrinsic, 'v) builder = {

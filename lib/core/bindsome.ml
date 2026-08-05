@@ -54,6 +54,13 @@ module IdN = struct
    fun ix iy ->
     match (ix, iy) with
     | Id _, Id _ -> Eq
+
+  (* Natural numbers commute freely, both as generators and as elements of the monoid, so transporting commutation along the identity is trivial. *)
+  type ('a, 'b) dom_commute = ('a, 'b) N.commute
+  type ('x, 'y) cod_commute = ('x, 'y) NFwd.commute
+
+  let commute : type a x b y. (a, x) t -> (b, y) t -> (a, b) dom_commute -> (x, y) cod_commute =
+   fun (Id _) (Id _) () -> ()
 end
 
 (* Here is the monoid homomorphism. *)
@@ -300,7 +307,8 @@ module Ordered = struct
         oldentry : ('ldom, 'lmodality, 'lmode, 'f, 'n) Ctx.entry;
         newentry : ('ldom, 'lmodality, 'lmode, 'f, 'n) Ctx.entry;
         ins : ('b, 'lmodality, 'n, 'c, 'lmode) fwd_insert;
-        fins : ('bf, 'f, 'cf) Tlist.insert;
+        (* Moving this block of raw variables to the front of the list requires it to commute with the ones before it, which for natural numbers is free. *)
+        fins : ('f, 'bf, 'cf) Nbwd.fwd_insert;
         rest : ('lmode, 'rmode, 'i, 'bf, 'b) tel;
       }
         -> ('lmode, 'rmode, 'j, 'c, 'cf) go_go_bind_some
@@ -332,7 +340,7 @@ module Ordered = struct
             Found
               {
                 ins = Now (Ctx.dim_entry newentry, Ctx.filter_entry newentry);
-                fins = Now;
+                fins = Fwd_now;
                 oldentry = entry;
                 newentry;
                 rest;
@@ -347,7 +355,7 @@ module Ordered = struct
                     oldentry;
                     newentry;
                     rest = Cons (entry, rest, newfaces);
-                    fins = Later fins;
+                    fins = Fwd_later ((), fins);
                   }
             | Nil | None | Lock _ | Parametric_lock _ | Weaken _ -> None))
     | Lock (lock, tel) -> Lock (lock, tel)
@@ -410,7 +418,7 @@ module Ordered = struct
             (Suc (af, Id (Fwn.fplus_left xf), Suc Zero))
             rest
         with
-        | Go_bind_some g -> Go_bind_some { g with raw_perm = Bp_insert (Now, g.raw_perm) }
+        | Go_bind_some g -> Go_bind_some { g with raw_perm = Bp_insert (Fwd_now, g.raw_perm) }
         | None -> None)
 
   type (_, _, _) bind_some =

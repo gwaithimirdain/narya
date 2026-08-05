@@ -12,6 +12,8 @@ module Make (G : DecidablePermutable) (F : Fam2) = struct
     (* A key whose generator matches the target 'g0: we store an actual value. *)
     | Match : {
         bplus : ('a, 'b, 'ab) W.bplus;
+        (* A key can only be inserted here if it commutes with all the generators outside it, so we store those witnesses; they are needed to reconstruct the insert that indexes this entry. *)
+        commutes : ('g0, 'b) W.fwd_commute;
         now : ('ab, 'p) F.t;
         later : ('a, ('g0, 'b) cons, 'g0, 'p) gt;
       }
@@ -37,8 +39,8 @@ module Make (G : DecidablePermutable) (F : Fam2) = struct
         let Eq = W.bplus_uniq ab bplus in
         now
     | Now, Miss { apart; _ } -> ( match G.apart_irrefl apart with _ -> . )
-    | Later i, Match { later; _ } -> gfind i later (Append_cons ab)
-    | Later i, Miss { later; _ } -> gfind i later (Append_cons ab)
+    | Later (_, i), Match { later; _ } -> gfind i later (Append_cons ab)
+    | Later (_, i), Miss { later; _ } -> gfind i later (Append_cons ab)
 
   let find : type a asuc g0 p. (a, g0, asuc) W.insert -> (asuc, g0, p) t -> (a, p) F.t =
    fun i m -> gfind i m Append_nil
@@ -55,8 +57,8 @@ module Make (G : DecidablePermutable) (F : Fam2) = struct
         let Eq = W.bplus_uniq ab m.bplus in
         Match { m with now = v }
     | Now, Miss { apart; _ } -> ( match G.apart_irrefl apart with _ -> . )
-    | Later i, Match m -> Match { m with later = gset i v m.later (Append_cons ab) }
-    | Later i, Miss m -> Miss { m with later = gset i v m.later (Append_cons ab) }
+    | Later (_, i), Match m -> Match { m with later = gset i v m.later (Append_cons ab) }
+    | Later (_, i), Miss m -> Miss { m with later = gset i v m.later (Append_cons ab) }
 
   let set : type a asuc g0 p.
       (a, g0, asuc) W.insert -> (a, p) F.t -> (asuc, g0, p) t -> (asuc, g0, p) t =
@@ -74,8 +76,8 @@ module Make (G : DecidablePermutable) (F : Fam2) = struct
         let Eq = W.bplus_uniq ab m.bplus in
         Match { m with now = f m.now }
     | Now, Miss { apart; _ } -> ( match G.apart_irrefl apart with _ -> . )
-    | Later i, Match m -> Match { m with later = gupdate i f m.later (Append_cons ab) }
-    | Later i, Miss m -> Miss { m with later = gupdate i f m.later (Append_cons ab) }
+    | Later (_, i), Match m -> Match { m with later = gupdate i f m.later (Append_cons ab) }
+    | Later (_, i), Miss m -> Miss { m with later = gupdate i f m.later (Append_cons ab) }
 
   let update : type a asuc g0 p.
       (a, g0, asuc) W.insert -> ((a, p) F.t -> (a, p) F.t) -> (asuc, g0, p) t -> (asuc, g0, p) t =
@@ -83,26 +85,42 @@ module Make (G : DecidablePermutable) (F : Fam2) = struct
 
   type ('asuc, 'g0, 'p) builder = { build : 'a. ('a, 'g0, 'asuc) W.insert -> ('a, 'p) F.t }
 
+  (* The keys of a tuple over 'a are the insertions of 'g0 into 'a, and inserting 'g0 at a given position requires it to commute with the generators outside that position.  Thus we have to be told that 'g0 commutes with all of 'a, and we accumulate, as we descend, the witnesses for the part of it we have passed. *)
   let rec gbuild : type a b ab g0 p.
-      a W.t -> g0 G.t -> (a, b, ab) W.bplus -> (ab, g0, p) builder -> (a, b, g0, p) gt =
-   fun a g0 ab builder ->
-    match a with
-    | Word Zero -> Emp
-    | Word (Suc (a', g)) -> (
+      a W.t ->
+      g0 G.t ->
+      (g0, a) W.gen_commute ->
+      (g0, b) W.fwd_commute ->
+      (a, b, ab) W.bplus ->
+      (ab, g0, p) builder ->
+      (a, b, g0, p) gt =
+   fun a g0 g0a g0b ab builder ->
+    match (a, g0a) with
+    | Word Zero, _ -> Emp
+    | Word (Suc (a', g)), Commute_suc (g0a, g0g) -> (
         let (Bplus bplus) = W.bplus_of_tlist (W.bplus_right ab) in
+        let g0b' = W.Fwd_commute_cons (g0g, g0b) in
         match G.decide g g0 with
         | Same ->
             Match
               {
                 bplus;
-                now = builder.build (W.insert_bplus Now bplus ab);
-                later = gbuild (Word a') g0 (Append_cons ab) builder;
+                commutes = g0b;
+                now = builder.build (W.insert_bplus g0b Now bplus ab);
+                later = gbuild (Word a') g0 g0a g0b' (Append_cons ab) builder;
               }
         | Distinct apart ->
-            Miss { gen = g; apart; bplus; later = gbuild (Word a') g0 (Append_cons ab) builder })
+            Miss
+              {
+                gen = g;
+                apart;
+                bplus;
+                later = gbuild (Word a') g0 g0a g0b' (Append_cons ab) builder;
+              })
 
-  let build : type a g0 p. a W.t -> g0 G.t -> (a, g0, p) builder -> (a, g0, p) t =
-   fun a g0 builder -> gbuild a g0 Append_nil builder
+  let build : type a g0 p.
+      a W.t -> g0 G.t -> (g0, a) W.gen_commute -> (a, g0, p) builder -> (a, g0, p) t =
+   fun a g0 g0a builder -> gbuild a g0 g0a Fwd_commute_nil Append_nil builder
 
   (* Generic traversal *)
 
@@ -149,13 +167,15 @@ module Make (G : DecidablePermutable) (F : Fam2) = struct
     (* Reassemble a heterogeneous list of Match (resp. Miss) nodes. *)
     let rec map_match : type a b ab g0 ps.
         (a, b, ab) W.bplus ->
+        (g0, b) W.fwd_commute ->
         (ab, ps) hft ->
         (a, (g0, b) cons, g0, ps) hgt ->
         ((a, g0) snoc, b, g0, ps) hgt =
-     fun ab nows laters ->
+     fun ab commutes nows laters ->
       match (nows, laters) with
       | [], [] -> []
-      | now :: nows, later :: laters -> Match { bplus = ab; now; later } :: map_match ab nows laters
+      | now :: nows, later :: laters ->
+          Match { bplus = ab; commutes; now; later } :: map_match ab commutes nows laters
 
     let rec map_miss : type a b ab g g0 ps.
         g G.t ->
@@ -192,10 +212,10 @@ module Make (G : DecidablePermutable) (F : Fam2) = struct
    fun ab f mss qs ->
     match mss with
     | Emp :: _ -> Heter.emp qs
-    | Match { bplus = ab'; now = v; later } :: mss ->
-        let fnow = f.map (W.insert_bplus Now ab' ab) (v :: Heter.nows ab' mss) in
+    | Match { bplus = ab'; commutes; now = v; later } :: mss ->
+        let fnow = f.map (W.insert_bplus commutes Now ab' ab) (v :: Heter.nows ab' mss) in
         let flater = gpmap (Append_cons ab) f (later :: Heter.later_match mss) qs in
-        Heter.map_match ab' fnow flater
+        Heter.map_match ab' commutes fnow flater
     | Miss { gen; apart; bplus = ab'; later } :: mss ->
         let flater = gpmap (Append_cons ab) f (later :: Heter.later_miss apart mss) qs in
         Heter.map_miss gen apart ab' flater

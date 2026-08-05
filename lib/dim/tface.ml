@@ -121,14 +121,14 @@ let rec insert_pface : type m n g nsuc.
  fun f g i ->
   match i with
   | Now -> Insert_pface (Now, Mid (f, g))
-  | Later i -> (
+  | Later (c, i) -> (
       match f with
       | End (f, _, h, e) ->
           let (Insert_sface (i, f)) = insert_sface f g i in
           Insert_pface (i, End (f, D.zero_plus (cod_sface f), h, e))
       | Mid (f, h) ->
           let (Insert_pface (i, f)) = insert_pface f g i in
-          Insert_pface (Later i, Mid (f, h)))
+          Insert_pface (Later (c, i), Mid (f, h)))
 
 let pface_plus : type m n mn k kn.
     (k, m) pface -> (m, n, mn) D.plus -> (k, n, kn) D.plus -> (kn, mn) pface =

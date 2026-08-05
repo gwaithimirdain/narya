@@ -127,7 +127,7 @@ let rec insfact : type ac b c bc. (ac, bc) deg -> (b, c, bc) D.plus -> (ac, b, c
   match bc with
   | Zero -> Insfact (s, Zero (dom_deg s))
   | Suc (bc, _) ->
-      let (Residual (s, g, e)) = deg_residual s Now in
+      let (Residual (s, g, e)) = deg_residual (D.free_gen_commute (dom_deg s)) s Now in
       let (Insfact (s, i)) = insfact s bc in
       Insfact (s, Suc (i, g, e))
 
@@ -329,7 +329,8 @@ module Insmap (F : Fam) = struct
           Sub
             (build (D.uninsert i evaluation) (Word intrinsic)
                { build = (fun ins -> f.build (Suc (ins, g0, i))) }) in
-        Suc (g0, Tup.build evaluation g0 { build = f })
+        (* The keys of this map are the insertions of the intrinsic generators into the evaluation dimension, so they exist only insofar as those generators commute with the evaluation dimension. *)
+        Suc (g0, Tup.build evaluation g0 (D.free_gen_commute evaluation) { build = f })
 
   let singleton : type evaluation v. v F.t -> (evaluation, D.zero, v) t = fun v -> Zero v
 

@@ -43,11 +43,12 @@ let deg_suc : type a b g asuc.
 type (_, _, _) deg_residual =
   | Residual : ('m, 'n) deg * 'g D.G.t * ('m, 'g, 'msuc) D.insert -> ('msuc, 'n, 'g) deg_residual
 
+(* Removing a generator from the codomain moves its preimage to the outer end of the domain, past everything else there, so we have to be told that it commutes with the whole domain. *)
 let deg_residual : type m n g npred.
-    (m, n) deg -> (npred, g, n) D.insert -> (m, npred, g) deg_residual =
- fun (Deg (s, p)) k ->
+    (g, m) D.gen_commute -> (m, n) deg -> (npred, g, n) D.insert -> (m, npred, g) deg_residual =
+ fun gm (Deg (s, p)) k ->
   let (D.Residual (p, g, i)) = D.perm_residual p k in
-  let (Sdeg_uninsert (s, j)) = sdeg_uninsert s i in
+  let (Sdeg_uninsert (s, j)) = sdeg_uninsert gm s i in
   Residual (Deg (s, p), g, j)
 
 (* Dually, a "coresidual" of a degeneracy, given an element of its domain, is the coimage of that element, if any, together with the degeneracy obtained by removing that element from the domain and its coimage from the codomain.  The element has a coimage exactly when the strict part doesn't degenerate it. *)
@@ -58,12 +59,12 @@ type (_, _, _) deg_coresidual =
   | Coresidual_suc : ('m, 'n) deg * ('n, 'g, 'nsuc) D.insert -> ('m, 'g, 'nsuc) deg_coresidual
 
 let deg_coresidual : type mpred g m n.
-    (m, n) deg -> (mpred, g, m) D.insert -> (mpred, g, n) deg_coresidual =
- fun (Deg (s, p)) k ->
+    g D.G.t -> (m, n) deg -> (mpred, g, m) D.insert -> (mpred, g, n) deg_coresidual =
+ fun g (Deg (s, p)) k ->
   match sdeg_coresidual s k with
   | Coresidual_degen s -> Coresidual_zero (Deg (s, p))
   | Coresidual_keep (s, i) ->
-      let (D.Coresidual (p, j)) = D.perm_coresidual p i in
+      let (D.Coresidual (p, j)) = D.perm_coresidual g p i in
       Coresidual_suc (Deg (s, p), j)
 
 (* Like deg_residual applied to the outermost generator of the codomain, but reporting only the numerical position of its preimage in the domain rather than an insertion of it.  Since nothing is moved, this needs no commutation. *)
@@ -127,7 +128,8 @@ let plus_deg : type m n mn l ml.
 
 (* The degeneracy (which is a permutation) that swaps two dimensions. *)
 let swap_deg : type m n mn nm. (m, n, mn) D.plus -> (n, m, nm) D.plus -> (mn, nm) deg =
- fun mn nm -> deg_of_perm (perm_swap mn nm)
+ fun mn nm ->
+  deg_of_perm (perm_swap (D.free_word_commute (D.plus_right nm) (D.plus_right mn)) mn nm)
 
 (* A degeneracy with codomain a sum of dimensions might decompose as a sum of a degeneracy and a permutation. *)
 type (_, _, _) deg_perm_of_plus =
@@ -146,7 +148,7 @@ let rec deg_perm_of_plus : type ml n k nk.
       match dom_deg s with
       | Word Zero -> None_deg_perm_of_plus
       | Word (Suc (_, g)) -> (
-          match deg_coresidual s Now with
+          match deg_coresidual g s Now with
           (* If the outermost generator of the domain is degenerated, it can't belong to the permuted part. *)
           | Coresidual_zero _ -> None_deg_perm_of_plus
           | Coresidual_suc (s, i) -> (

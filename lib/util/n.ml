@@ -807,9 +807,15 @@ let rec perm_plus_perm : type a b ab c d cd.
       let (Suc cd) = cd in
       Insert (perm_plus_perm p ab cd q, i)
 
-(* Two natural numbers can be swapped with a permutation *)
+(* Natural numbers commute freely, both with each other and, when they are the *generators* of words, in that setting too. *)
+type ('a, 'b) commute = unit
 
-let rec perm_swap : type a b ab ba. (a, b, ab) plus -> (b, a, ba) plus -> (ab, ba) permute =
+let commute_inv _ _ () = ()
+let commute _ _ = Some ()
+
+(* Two natural numbers can be swapped with a permutation.  Since they always commute, the witness required by the Perm interface is trivial. *)
+
+let rec go_perm_swap : type a b ab ba. (a, b, ab) plus -> (b, a, ba) plus -> (ab, ba) permute =
  fun ab ba ->
   match ab with
   | Zero ->
@@ -818,7 +824,11 @@ let rec perm_swap : type a b ab ba. (a, b, ab) plus -> (b, a, ba) plus -> (ab, b
       perm_id a
   | Suc ab' ->
       let (Suc b'a) = plus_suc ba in
-      Insert (perm_swap ab' b'a, index_plus Top ba)
+      Insert (go_perm_swap ab' b'a, index_plus Top ba)
+
+let perm_swap : type a b ab ba.
+    (a, b) commute -> (a, b, ab) plus -> (b, a, ba) plus -> (ab, ba) permute =
+ fun () ab ba -> go_perm_swap ab ba
 
 (* To invert permutations, we first define the dual of "insert" that inserts the last element of the codomain into the domain. *)
 
@@ -864,9 +874,3 @@ let rec perm_comp : type a b c. (a, b) permute -> (b, c) permute -> (a, c) permu
   | Insert (s, k) ->
       let (Residual (t, i)) = perm_residual b k in
       insert (perm_comp s t) i
-
-(* When natural numbers are the *generators* of words, they can be permuted freely. *)
-type ('a, 'b) commute = unit
-
-let commute_inv _ _ () = ()
-let commute _ _ = Some ()

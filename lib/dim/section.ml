@@ -13,7 +13,7 @@ let rec section_of_deg : type m n. (m, n) deg -> (n, m) face option =
       let Eq = deg_zero_dom s in
       return (Face (Zero, Zero))
   | Word (Suc (_, g_dom)), N.Nat (Suc _) -> (
-      match deg_coresidual s Now with
+      match deg_coresidual g_dom s Now with
       | Coresidual_zero s' ->
           let* (Face (f, p)) = section_of_deg s' in
           return (Face (End (f, g_dom, (l, Top)), p))

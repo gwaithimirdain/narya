@@ -11,7 +11,8 @@ let dim : dim D.t = D.one
 let singleton : dim is_singleton = One
 
 let sym : type b. (dim, dim, b) D.plus -> (b, b) deg =
- fun (Suc (Zero, Unit)) -> deg_suc (deg_suc (deg_zero D.zero) D.deg Now) D.deg (Later Now)
+ fun (Suc (Zero, Unit)) ->
+  deg_suc (deg_suc (deg_zero D.zero) D.deg Now) D.deg (Later (D.free_commute, Now))
 
 let faces : unit -> ((D.zero, dim) sface * (D.zero, dim) sface * N.two Endpoints.len) option =
  fun () ->
