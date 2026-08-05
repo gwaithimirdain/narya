@@ -135,6 +135,7 @@ let rec insfact : type ac b c bc. (ac, bc) deg -> (b, c, bc) D.plus -> (ac, b, c
  fun s bc ->
   match bc with
   | Zero -> Insfact (s, Zero (dom_deg s))
+  (* Each dimension factored out is inserted by the resulting insertion, so nit has to be movable to the outer end of the domain, past the degenerate generators as well as the surviving ones.  Since this is called on insertions that don't index higher fields, we ask for commutation rather than centrality. *)
   | Suc (bc, _) ->
       let (Residual (s, g, e)) = deg_residual (D.free_gen_commute (dom_deg s)) s Now in
       let (Insfact (s, i)) = insfact s bc in
