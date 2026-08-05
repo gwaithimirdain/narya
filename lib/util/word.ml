@@ -184,6 +184,30 @@ module Make (G : Permutable) = struct
   let commute_gen : type m n g. ((m, g) suc, n) commute -> (g, n) gen_commute = function
     | Suc_commute (_, gn) -> gn
 
+  (* ********** Centrality ********** *)
+
+  (* A word is central if all of its generators are, i.e. if it commutes with every word whatsoever.  As with the words themselves, each step stores its generator, so that the word can be recovered from a centrality witness alone. *)
+  type _ central =
+    | Central_zero : zero central
+    | Central_suc : 'n central * 'g G.t * 'g G.central -> ('n, 'g) suc central
+
+  (* A central generator commutes with any word. *)
+  let rec gen_commute_central : type g n. g G.t -> g G.central -> n t -> (g, n) gen_commute =
+   fun g c -> function
+    | Word Zero -> Commute_zero
+    | Word (Suc (n, h)) -> Commute_suc (gen_commute_central g c (Word n), G.central_commute g h c)
+
+  (* And hence a central word commutes with any word. *)
+  let rec commute_central : type m n. m central -> n t -> (m, n) commute =
+   fun c n ->
+    match c with
+    | Central_zero -> Zero_commute
+    | Central_suc (c, g, gc) -> Suc_commute (commute_central c n, gen_commute_central g gc n)
+
+  (* This is the operation that makes Word itself Permutable when its words are used as generators; the word being central is recoverable from the witness, so it is ignored. *)
+  let central_commute : type m n. m t -> n t -> m central -> (m, n) commute =
+   fun _ n c -> commute_central c n
+
   (* ********** Subwords ********** *)
 
   (* ('a, 'b) subword says that the word 'a is obtained from the word 'b by deleting some generators, the rest being kept in their original order.  Each step stores its generator, so that both words can be recovered from a subword alone. *)

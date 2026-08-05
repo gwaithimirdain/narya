@@ -49,6 +49,11 @@ module type Permutable = sig
 
   val commute_inv : 'g t -> 'h t -> ('g, 'h) commute -> ('h, 'g) commute
   val commute : 'g t -> 'h t -> ('g, 'h) commute option
+
+  (* A generator is *central* if it commutes with every generator whatsoever.  This is stronger than commuting with any particular one, and is what is needed by structures indexed by all the ways of inserting a generator somewhere, which have to make sense of every position at once. *)
+  type 'g central
+
+  val central_commute : 'g t -> 'h t -> 'g central -> ('g, 'h) commute
 end
 
 module type DecidablePermutable = sig

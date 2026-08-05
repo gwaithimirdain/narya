@@ -338,8 +338,12 @@ module Insmap (F : Fam) = struct
           Sub
             (build (D.uninsert i evaluation) (Word intrinsic)
                { build = (fun ins -> f.build (Suc (ins, g0, i))) }) in
-        (* The keys of this map are the insertions of the intrinsic generators into the evaluation dimension, so they exist only insofar as those generators commute with the evaluation dimension. *)
-        Suc (g0, Tup.build evaluation g0 (D.free_gen_commute evaluation) { build = f })
+        (* The keys of this map are the insertions of the intrinsic generators into the evaluation dimension, at every position; such insertions exist at all positions only if the intrinsic generator is central. *)
+        Suc
+          ( g0,
+            Tup.build evaluation g0
+              (D.gen_commute_central g0 (D.free_central g0) evaluation)
+              { build = f } )
 
   let singleton : type evaluation v. v F.t -> (evaluation, D.zero, v) t = fun v -> Zero v
 

@@ -807,11 +807,13 @@ let rec perm_plus_perm : type a b ab c d cd.
       let (Suc cd) = cd in
       Insert (perm_plus_perm p ab cd q, i)
 
-(* Natural numbers commute freely, both with each other and, when they are the *generators* of words, in that setting too. *)
+(* Natural numbers commute freely, both with each other and, when they are the *generators* of words, in that setting too; in particular every one of them is central. *)
 type ('a, 'b) commute = unit
+type 'a central = unit
 
 let commute_inv _ _ () = ()
 let commute _ _ = Some ()
+let central_commute _ _ () = ()
 
 (* Two natural numbers can be swapped with a permutation.  Since they always commute, the witness required by the Perm interface is trivial. *)
 

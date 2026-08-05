@@ -8,9 +8,11 @@ module G = struct
   include Unitcomparable
 
   type ('a, 'b) commute = unit
+  type 'a central = unit
 
   let commute_inv : type a b. a t -> b t -> (a, b) commute -> (b, a) commute = fun _ _ () -> ()
   let commute : type a b. a t -> b t -> (a, b) commute option = fun _ _ -> Some ()
+  let central_commute : type a b. a t -> b t -> a central -> (a, b) commute = fun _ _ () -> ()
 end
 
 include Word.MakeDecidable (G)
@@ -18,6 +20,13 @@ include Word.MakeDecidable (G)
 (* TEMPORARY.  At present there is only one generator, and all generators have been declared to commute, so witnesses of commutation can be produced out of thin air.  The following functions do that.  Each use of them marks a place where the machinery of insertions and permutations demands a symmetry that we currently get for free; when commutation is weakened, these functions will go away and every use will have to be replaced by an actual witness (or the algorithm restructured to do without it). *)
 
 let free_commute : type g h. (g, h) G.commute = ()
+
+(* Similarly, every generator is currently central.  All the uses of this are on *intrinsic* dimensions, i.e. those matched with an evaluation dimension by an insertion or partial bijection: such a dimension has to be able to go anywhere, so it must commute with everything, and a map indexed by all such matchings needs that for all of them at once.  Eventually centrality of the intrinsic dimensions should be a hypothesis of those structures rather than a fact about all dimensions. *)
+let free_central : type g. g G.t -> g G.central = fun _ -> ()
+
+let rec free_word_central : type n. n t -> n central = function
+  | Word Zero -> Central_zero
+  | Word (Suc (n, g)) -> Central_suc (free_word_central (Word n), g, free_central g)
 
 let rec free_gen_commute : type g n. n t -> (g, n) gen_commute = function
   | Word Zero -> Commute_zero
