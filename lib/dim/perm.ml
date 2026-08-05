@@ -1,33 +1,32 @@
-open Util
 open Deg
 
 (* ********** Permutations ********** *)
 
-type ('m, 'n) perm =
+(* A permutation of dimensions is nothing but a permutation of the underlying dimension words, whose definition in Word deliberately matches the definition of degeneracies above.  So the general theory of permutations is inherited from Word, and what remains here is their relationship with degeneracies. *)
+
+type ('m, 'n) perm = ('m, 'n) D.permute =
   | Zero : (D.zero, D.zero) perm
   | Suc : ('a, 'b) perm * 'g D.G.t * ('a, 'g, 'c) D.insert -> ('c, ('b, 'g) D.suc) perm
 
-let rec dom_perm : type m n. (m, n) perm -> m D.t = function
-  | Zero -> D.zero
-  | Suc (p, g, i) -> D.insert i (dom_perm p) g
+let dom_perm = D.perm_dom
+let cod_perm = D.perm_cod
+let id_perm = D.perm_id
+let is_id_perm = D.perm_is_id
+let perm_inv = D.perm_inv
 
-let rec cod_perm : type a b. (a, b) perm -> b D.t = function
-  | Zero -> D.zero
-  | Suc (p, g, _) -> D.suc (cod_perm p) g
+(* Word composes permutations in diagrammatic order, but here, as for degeneracies, we prefer applicative order. *)
+let comp_perm : type a b c. (b, c) perm -> (a, b) perm -> (a, c) perm = fun a b -> D.perm_comp b a
 
-let rec id_perm : type a. a D.t -> (a, a) perm = function
-  | Word Zero -> Zero
-  | Word (Suc (a, g)) -> Suc (id_perm (Word a), g, Now)
+(* Extend a permutation by the identity on an additional dimension. *)
+let perm_plus = D.perm_plus
 
-let rec is_id_perm : type a b. (a, b) perm -> (a, b) Eq.compare = function
-  | Zero -> Eq
-  | Suc (p, _, i) -> (
-      match is_id_perm p with
-      | Neq -> Neq
-      | Eq -> (
-          match i with
-          | Now -> Eq
-          | Later _ -> Neq))
+(* Two permutations side by side.  Word takes the two sums in the other order. *)
+let perm_plus_perm : type m n mn k l kl.
+    (k, m) perm -> (m, n, mn) D.plus -> (k, l, kl) D.plus -> (l, n) perm -> (kl, mn) perm =
+ fun skm mn kl sln -> D.perm_plus_perm skm kl mn sln
+
+(* Add a dimension to the domain of a permutation, inserting it anywhere in the codomain. *)
+let perm_with_extra = D.coinsert
 
 (* Every permutation is a degeneracy. *)
 let rec deg_of_perm : type m n. (m, n) perm -> (m, n) deg = function
@@ -42,62 +41,6 @@ let rec perm_of_deg : type m n. (m, n) deg -> (m, n) perm option = function
       match perm_of_deg p with
       | Some p -> Some (Suc (p, g, i))
       | None -> None)
-
-(* Residuals of permutations are just like those for degeneracies *)
-
-type (_, _, _) perm_residual =
-  | Residual : ('m, 'n) perm * 'g D.G.t * ('m, 'g, 'msuc) D.insert -> ('msuc, 'n, 'g) perm_residual
-
-let rec perm_residual : type m n g npred.
-    (m, n) perm -> (npred, g, n) D.insert -> (m, npred, g) perm_residual =
- fun s k ->
-  match (k, s) with
-  | Now, Suc (s, g, i) -> Residual (s, g, i)
-  | Later k, Suc (s, g, i) ->
-      let (Residual (s, g', j)) = perm_residual s k in
-      let (Swap_inserts (i, j)) = D.swap_inserts i j in
-      Residual (Suc (s, g, j), g', i)
-
-let rec comp_perm : type a b c. (b, c) perm -> (a, b) perm -> (a, c) perm =
- fun a b ->
-  match a with
-  | Zero ->
-      let Zero = b in
-      Zero
-  | Suc (s, _, k) ->
-      let (Residual (t, g', i)) = perm_residual b k in
-      Suc (comp_perm s t, g', i)
-
-let rec perm_plus : type m n k mk nk.
-    (m, n) perm -> (n, k, nk) D.plus -> (m, k, mk) D.plus -> (mk, nk) perm =
- fun s nk mk ->
-  match (nk, mk) with
-  | Zero, Zero -> s
-  | Suc (nk, g), Suc (mk, _) -> Suc (perm_plus s nk mk, g, Now)
-
-let rec perm_plus_perm : type m n mn k l kl.
-    (k, m) perm -> (m, n, mn) D.plus -> (k, l, kl) D.plus -> (l, n) perm -> (kl, mn) perm =
- fun skm mn kl sln ->
-  match sln with
-  | Zero ->
-      let Zero, Zero = (mn, kl) in
-      skm
-  | Suc (sln', g, i) ->
-      let (Suc (mn', _)) = mn in
-      let (Plus kl') = D.plus (dom_perm sln') in
-      Suc (perm_plus_perm skm mn' kl' sln', g, D.plus_insert kl' kl i)
-
-let rec cosuc : type m n g nsuc.
-    (m, n) perm -> g D.G.t -> (n, g, nsuc) D.insert -> ((m, g) D.suc, nsuc) perm =
- fun p g -> function
-  | Now -> Suc (p, g, Now)
-  | Later i ->
-      let Suc (p, h, j), _ = (p, i) in
-      Suc (cosuc p g i, h, Later j)
-
-let rec perm_inv : type m n. (m, n) perm -> (n, m) perm = function
-  | Zero -> Zero
-  | Suc (p, g, i) -> cosuc (perm_inv p) g i
 
 (* A degeneracy with codomain a sum of dimensions might decompose as a sum of a degeneracy and a permutation. *)
 type (_, _, _) deg_perm_of_plus =
@@ -122,13 +65,3 @@ let rec deg_perm_of_plus : type ml n k nk.
 
 (* A permutation with specified domain only *)
 type _ perm_to = Perm_to : ('a, 'b) perm -> 'a perm_to
-
-(* Like deg_with_extra, but for permutations *)
-let rec perm_with_extra : type c ab ab_suc g.
-    (c, ab) perm -> g D.G.t -> (ab, g, ab_suc) D.insert -> ((c, g) D.suc, ab_suc) perm =
- fun p g i ->
-  match i with
-  | Now -> Suc (p, g, Now)
-  | Later j ->
-      let (Suc (p_inner, h, ins_p)) = p in
-      Suc (perm_with_extra p_inner g j, h, Later ins_p)

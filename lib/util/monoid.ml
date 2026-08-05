@@ -80,7 +80,7 @@ module type Perm = sig
   type ('a, 'b, 'ab) plus
   type ('a, 'b) permute
 
-  val perm_dom : ('a, 'b) permute -> 'b t -> 'a t
+  (* We do not require a way to compute the domain of a permutation: some implementations (e.g. Word) can do it from the permutation alone, while others (e.g. N) need to be told the codomain, and no generic code needs it. *)
   val perm_id : 'a t -> ('a, 'a) permute
   val perm_swap : ('a, 'b, 'ab) plus -> ('b, 'a, 'ba) plus -> ('ab, 'ba) permute
   val perm_comp : ('a, 'b) permute -> ('b, 'c) permute -> ('a, 'c) permute

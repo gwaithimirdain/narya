@@ -441,7 +441,8 @@ module Ordered = struct
         (* The N.perm_inv here is absolutely essential.  Our choice to index N.perm by a separate domain and codomain, even though in concrete cases the two are always equal, means that if we leave it off, the typechecker complains.  (We could convince the typechecker to let us leave it off by destructing "perm_eq", but that would be stupid.) *)
         let raw_perm =
           N.perm_inv
-            (Flatten.permute raw_flat new_flat (Nbwd.perm_of_bplus_permute raw_perm raw_append))
+            (Flatten.permute raw_flat new_flat
+               (Nbwd.perm_of_bplus_permute Nbwd.zero (Flatten.fwd_dom telf) raw_perm raw_append))
         in
         let Eq =
           Tctx.fwd_tgt_uniq (bcomp_permute_right checked_perm) (Tctx.bcomp_right checked_append)

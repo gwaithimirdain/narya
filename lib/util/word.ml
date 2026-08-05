@@ -354,66 +354,71 @@ module Make (G : Comparable) = struct
 
   (* ********** Permutations ********** *)
 
-  (* A free monoid is not commutative, but it is the object set of a free symmetric strict monoidal category.  Here are the morphisms in that category: ('a, 'b) permute says that the word 'a is a permutation of the word 'b. *)
-
+  (* A free monoid is not commutative, but it is the object set of a free symmetric strict monoidal category.  Here are the morphisms in that category: ('m, 'n) permute is a permutation with domain the word 'm and codomain the word 'n.  Like a degeneracy (see Dim.Deg, whose definition this deliberately matches, since every permutation of dimensions is a degeneracy), a permutation is defined inductively by insertion: the codomain grows on the right by a generator, and the domain records with an insert where the preimage of that generator lies in it.  As with degeneracies, each step stores its generator, so that both the domain and the codomain can be recovered from a permutation alone. *)
   type (_, _) permute =
-    | Id : ('a, 'a) permute
-    | Insert : ('a, 'b) permute * ('b, 'g, 'c) insert -> (('a, 'g) suc, 'c) permute
+    | Zero : (zero, zero) permute
+    | Suc : ('a, 'b) permute * 'g G.t * ('a, 'g, 'c) insert -> ('c, ('b, 'g) suc) permute
 
-  (* There is some redundancy in the above presentation of permutations: Insert (Id, Now) is the same permutation as Id (of a longer word).  We could probably set up the data structures to exclude that possibility statically, but for now we are content to provide a "smart constructor" version of Insert that refuses to create Insert (Id, Now), returning Id instead.  (The latter is preferred for efficiency reasons, because when computing with a permutation we can sometimes short-circuit the rest of the computation if we know the rest of the permutation is an identity.)  *)
-  let perm_insert : type a b g c. (a, b) permute -> (b, g, c) insert -> ((a, g) suc, c) permute =
-   fun perm ins ->
-    match (perm, ins) with
-    | Id, Now -> Id
-    | _ -> Insert (perm, ins)
+  let rec perm_dom : type m n. (m, n) permute -> m t = function
+    | Zero -> zero
+    | Suc (p, g, i) -> insert i (perm_dom p) g
 
-  let perm_id : type a. a t -> (a, a) permute = fun _ -> Id
+  let rec perm_cod : type m n. (m, n) permute -> n t = function
+    | Zero -> zero
+    | Suc (p, g, _) -> suc (perm_cod p) g
 
-  let rec perm_dom : type a b. (a, b) permute -> b t -> a t =
-   fun p b ->
-    match p with
-    | Id -> b
-    | Insert (p, i) ->
-        let (Word permuted) = perm_dom p (uninsert i b) in
-        Word (Suc (permuted, inserted i b))
+  let rec perm_id : type a. a t -> (a, a) permute = function
+    | Word Zero -> Zero
+    | Word (Suc (a, g)) -> Suc (perm_id (Word a), g, Now)
 
-  (* Insertions can be transferred across a permutation, and when the image is removed produce a new permutation. *)
-  type (_, _, _) permute_insert =
-    | Permute_insert : ('d, 'g, 'c) insert * ('a, 'd) permute -> ('a, 'g, 'c) permute_insert
+  (* A permutation is the identity exactly when every element is inserted at the far end. *)
+  let rec perm_is_id : type m n. (m, n) permute -> (m, n) Eq.compare = function
+    | Zero -> Eq
+    | Suc (p, _, i) -> (
+        match perm_is_id p with
+        | Neq -> Neq
+        | Eq -> (
+            match i with
+            | Now -> Eq
+            | Later _ -> Neq))
 
-  let rec permute_insert : type a g b c.
-      (a, g, b) insert -> (b, c) permute -> (a, g, c) permute_insert =
-   fun ab bc ->
-    match bc with
-    | Id -> Permute_insert (ab, Id)
-    | Insert (bc, ins) -> (
-        match ab with
-        | Now -> Permute_insert (ins, bc)
-        | Later ab ->
-            let (Permute_insert (res, p)) = permute_insert ab bc in
-            let (Comp_insert (x, y)) = comp_insert res ins in
-            Permute_insert (y, perm_insert p x))
+  (* By "residual" of a permutation, given an element of its codomain, we mean the preimage of that element together with the permutation obtained by removing that element from the codomain and its preimage from the domain. *)
+  type (_, _, _) perm_residual =
+    | Residual : ('m, 'n) permute * 'g G.t * ('m, 'g, 'msuc) insert -> ('msuc, 'n, 'g) perm_residual
 
+  let rec perm_residual : type m n g npred.
+      (m, n) permute -> (npred, g, n) insert -> (m, npred, g) perm_residual =
+   fun s k ->
+    match (k, s) with
+    | Now, Suc (s, g, i) -> Residual (s, g, i)
+    | Later k, Suc (s, g, i) ->
+        let (Residual (s, g', j)) = perm_residual s k in
+        let (Swap_inserts (i, j)) = swap_inserts i j in
+        Residual (Suc (s, g, j), g', i)
+
+  (* Using residuals, we can compose permutations. *)
   let rec perm_comp : type a b c. (a, b) permute -> (b, c) permute -> (a, c) permute =
    fun ab bc ->
-    match ab with
-    | Id -> bc
-    | Insert (ab, b) ->
-        let (Permute_insert (c, bc)) = permute_insert b bc in
-        perm_insert (perm_comp ab bc) c
+    match bc with
+    | Zero ->
+        let Zero = ab in
+        Zero
+    | Suc (s, _, k) ->
+        let (Residual (t, g', i)) = perm_residual ab k in
+        Suc (perm_comp t s, g', i)
 
-  let rec coinsert : type a b g c. (a, b) permute -> (a, g, c) insert -> (c, (b, g) suc) permute =
-   fun p i ->
-    match i with
-    | Now -> perm_insert p Now
-    | Later i -> (
-        match p with
-        | Insert (p, j) -> perm_insert (coinsert p i) (Later j)
-        | Id -> perm_insert (coinsert Id i) (Later Now))
+  (* To invert permutations, we first define the dual of Suc that adds a generator to the domain and inserts it anywhere in the codomain. *)
+  let rec coinsert : type m n g nsuc.
+      (m, n) permute -> g G.t -> (n, g, nsuc) insert -> ((m, g) suc, nsuc) permute =
+   fun p g -> function
+    | Now -> Suc (p, g, Now)
+    | Later i ->
+        let Suc (p, h, j), _ = (p, i) in
+        Suc (coinsert p g i, h, Later j)
 
-  let rec perm_inv : type a b. (a, b) permute -> (b, a) permute = function
-    | Id -> Id
-    | Insert (p, i) -> coinsert (perm_inv p) i
+  let rec perm_inv : type m n. (m, n) permute -> (n, m) permute = function
+    | Zero -> Zero
+    | Suc (p, g, i) -> coinsert (perm_inv p) g i
 
   let rec insert_of_plus : type b a ba bga g.
       (b, a, ba) plus -> ((b, g) suc, a, bga) plus -> (ba, g, bga) insert =
@@ -422,29 +427,39 @@ module Make (G : Comparable) = struct
     | Zero, Zero -> Now
     | Suc (ba, _), Suc (bga, _) -> Later (insert_of_plus ba bga)
 
+  (* Two words can be swapped past each other with a permutation. *)
   let rec perm_swap : type a b ab ba. (a, b, ab) plus -> (b, a, ba) plus -> (ab, ba) permute =
    fun ab ba ->
-    match ab with
+    match ba with
     | Zero ->
-        let a = plus_right ba in
-        let Eq = plus_uniq ba (zero_plus a) in
-        perm_id a
-    | Suc (ab', _) ->
-        let (Plus b'a) = plus (plus_right ba) in
-        Insert (perm_swap ab' b'a, insert_of_plus b'a ba)
+        let b = plus_right ab in
+        let Eq = plus_uniq ab (zero_plus b) in
+        perm_id b
+    | Suc (ba, g) ->
+        let (Plus ab') = plus (plus_right ab) in
+        Suc (perm_swap ab' ba, g, insert_of_plus ab' ab)
 
+  (* Extend a permutation by the identity on an additional word. *)
+  let rec perm_plus : type m n k mk nk.
+      (m, n) permute -> (n, k, nk) plus -> (m, k, mk) plus -> (mk, nk) permute =
+   fun s nk mk ->
+    match (nk, mk) with
+    | Zero, Zero -> s
+    | Suc (nk, g), Suc (mk, _) -> Suc (perm_plus s nk mk, g, Now)
+
+  (* Two permutations can be placed side by side. *)
   let rec perm_plus_perm : type a b ab c d cd.
       (a, c) permute -> (a, b, ab) plus -> (c, d, cd) plus -> (b, d) permute -> (ab, cd) permute =
    fun p ab cd q ->
-    match (ab, q) with
-    | Zero, Id ->
+    match q with
+    | Zero ->
         let Zero = cd in
+        let Zero = ab in
         p
-    | Suc _, Id -> perm_plus_perm p ab cd (Insert (Id, Now))
-    | Suc (ab, _), Insert (q, i) ->
-        let (Plus cd') = plus (uninsert i (plus_right cd)) in
-        let i = plus_insert cd' cd i in
-        Insert (perm_plus_perm p ab cd' q, i)
+    | Suc (q, g, i) ->
+        let (Suc (cd', _)) = cd in
+        let (Plus ab') = plus (perm_dom q) in
+        Suc (perm_plus_perm p ab' cd' q, g, plus_insert ab' ab i)
 
   (* ********** Subtraction ********** *)
 
@@ -538,29 +553,44 @@ module Make (G : Comparable) = struct
     | Append_nil, Append_nil -> i
     | Append_cons ab, Append_cons asucb -> insert_bplus (Later i) ab asucb
 
-  (* Extend a permutation by the identity on an appended forwards word. *)
-  let rec perm_bplus : type a b c ac bc.
-      (a, b) permute -> (a, c, ac) bplus -> (b, c, bc) bplus -> (ac, bc) permute =
-   fun ab ac bc ->
-    match (ac, bc) with
-    | Append_nil, Append_nil -> ab
-    | Append_cons ac, Append_cons bc -> perm_bplus (perm_insert ab Now) ac bc
+  (* The generator inserted at a given position of a forwards word, and the word with it removed. *)
+  let rec fwd_inserted : type a g b. (a, g, b) Tlist.insert -> b fwd -> g G.t =
+   fun i b ->
+    match (i, b) with
+    | Now, Cons (g, _) -> g
+    | Later i, Cons (_, b) -> fwd_inserted i b
 
-  (* When appending a forwards word to a backwards one, if we insert the same generator on the left and on the right, the results are permuted. *)
+  let rec fwd_uninsert : type a g b. (a, g, b) Tlist.insert -> b fwd -> a fwd =
+   fun i b ->
+    match (i, b) with
+    | Now, Cons (_, b) -> b
+    | Later i, Cons (g, b) -> Cons (g, fwd_uninsert i b)
+
+  (* Extend a permutation by the identity on an appended forwards word.  This is perm_plus for bplus rather than plus, and like it needs the generators of the appended word to grow the codomain. *)
+  let rec perm_bplus : type a b c ac bc.
+      c fwd -> (a, b) permute -> (a, c, ac) bplus -> (b, c, bc) bplus -> (ac, bc) permute =
+   fun c p ac bc ->
+    match (c, ac, bc) with
+    | Nil, Append_nil, Append_nil -> p
+    | Cons (g, c), Append_cons ac, Append_cons bc -> perm_bplus c (Suc (p, g, Now)) ac bc
+
+  (* When appending a forwards word to a backwards one, if we insert the same generator on the left and on the right, the results are permuted.  The forwards word passed is the one *containing* the inserted generator, so that it supplies both that generator and those of the part appended after it. *)
   let rec perm_of_ins_ins : type a b g c d ad bc.
+      a t ->
+      d fwd ->
       (a, g, b) insert ->
       (c, g, d) Tlist.insert ->
       (b, c, bc) bplus ->
       (a, d, ad) bplus ->
       (bc, ad) permute =
-   fun ab cd bc ad ->
-    match cd with
-    | Now ->
-        let (Append_cons ad) = ad in
-        perm_bplus (coinsert Id ab) bc ad
-    | Later cd ->
-        let Append_cons ad, Append_cons bc = (ad, bc) in
-        perm_of_ins_ins (Later ab) cd bc ad
+   fun a d ab cd bc ad' ->
+    match (cd, d) with
+    | Now, Cons (g, c) ->
+        let (Append_cons ad') = ad' in
+        perm_bplus c (Suc (perm_id a, g, ab)) bc ad'
+    | Later cd, Cons (h, d) ->
+        let Append_cons ad', Append_cons bc = (ad', bc) in
+        perm_of_ins_ins (suc a h) d (Later ab) cd bc ad'
 
   (* ('a, 'b, 'c) bplus_permute says that the backwards word 'c is obtained from the backwards word 'a by appending a permutation of the forwards word 'b.  In particular, (zero, 'b, 'c) says that the backwards word 'c is a permutation of the forwards word 'b. *)
   type (_, _, _) bplus_permute =
@@ -573,18 +603,19 @@ module Make (G : Comparable) = struct
     | Bp_nil -> Nil
     | Bp_insert (ins, b) -> Tlist.inserted ins (bplus_permute_right b)
 
-  (* If we bplus and also bplus_permute the same words, the two results are related by a permutation. *)
+  (* If we bplus and also bplus_permute the same words, the two results are related by a permutation.  Since permutations record their generators, we need the backwards word being appended to and the generators of the forwards word appended. *)
   let rec perm_of_bplus_permute : type a b c d.
-      (a, b, d) bplus_permute -> (a, b, c) bplus -> (d, c) permute =
-   fun d c ->
+      a t -> b fwd -> (a, b, d) bplus_permute -> (a, b, c) bplus -> (d, c) permute =
+   fun a b d c ->
     match d with
     | Bp_nil ->
         let Append_nil = c in
-        Id
+        perm_id a
     | Bp_insert (ins, d) ->
-        let (Bplus a) = bplus_of_tlist (bplus_permute_right d) in
-        let perm1 = perm_of_bplus_permute d a in
-        let perm2 = perm_of_ins_ins Now ins a c in
+        let g = fwd_inserted ins b in
+        let (Bplus a') = bplus_of_tlist (bplus_permute_right d) in
+        let perm1 = perm_of_bplus_permute (suc a g) (fwd_uninsert ins b) d a' in
+        let perm2 = perm_of_ins_ins a b Now ins a' c in
         perm_comp perm1 perm2
 
   (* Concatenation of two *forwards* words: (a, b, ab) fplus means the forwards word ab is a followed by b. *)
@@ -1145,19 +1176,21 @@ struct
         let perm_xln_yl = Cod.perm_comp perm_xln_xnl perm_xnl_yl in
         Uninsert (Suc (fa, fk, xl), fm, xl_n, perm_xln_yl)
 
+  (* A permutation grows its codomain by a generator and its domain by an insertion, so we peel a generator off the homomorphism on the codomain and uninsert the one on the domain. *)
   let rec permute : type a x b y.
       (a, x) H.t -> (b, y) H.t -> (a, b) Dom.permute -> (x, y) Cod.permute =
    fun fa fb p ->
     match p with
-    | Id ->
+    | Zero ->
         let Eq = H.uniq fa fb in
         Cod.perm_id (H.cod fa)
-    | Insert (p, i) ->
-        let (Suc (fa, fg, xy)) = fa in
-        let (Uninsert (fb, fg', wy, wy_z)) = uninsert i fb in
-        let Eq = F.uniq fg fg' in
+    | Suc (p, _, i) ->
+        let (Suc (fb, fg, wy)) = fb in
+        let (Uninsert (fa, fg', xn, xn_x)) = uninsert i fa in
+        let Eq = F.uniq fg' fg in
         let x_w = permute fa fb p in
-        Cod.perm_comp (Cod.perm_plus_perm x_w xy wy (Cod.perm_id (Cod.plus_right xy))) wy_z
+        Cod.perm_comp (Cod.perm_inv xn_x)
+          (Cod.perm_plus_perm x_w xn wy (Cod.perm_id (Cod.plus_right xn)))
 end
 
 (* Homomorphisms with forwards-ness *)
@@ -1317,15 +1350,16 @@ struct
       (x, y) Cod.permute =
    fun param fa fb p ->
     match p with
-    | Id ->
+    | Zero ->
         let Eq = H.uniq fa fb in
         Cod.perm_id (H.cod param fa)
-    | Insert (p, i) ->
-        let (Suc (fa, fg, xy)) = fa in
-        let (Uninsert (fb, fg', wy, wy_z)) = uninsert param i fb in
-        let Eq = F.uniq fg fg' in
+    | Suc (p, _, i) ->
+        let (Suc (fb, fg, wy)) = fb in
+        let (Uninsert (fa, fg', xn, xn_x)) = uninsert param i fa in
+        let Eq = F.uniq fg' fg in
         let x_w = permute param fa fb p in
-        Cod.perm_comp (Cod.perm_plus_perm x_w xy wy (Cod.perm_id (Cod.plus_right xy))) wy_z
+        Cod.perm_comp (Cod.perm_inv xn_x)
+          (Cod.perm_plus_perm x_w xn wy (Cod.perm_id (Cod.plus_right xn)))
 end
 
 (* (Parametrized) functoriality is the homomorphism induced by a function composed with the monad unit. *)
