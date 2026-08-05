@@ -184,6 +184,37 @@ module Make (G : Permutable) = struct
   let commute_gen : type m n g. ((m, g) suc, n) commute -> (g, n) gen_commute = function
     | Suc_commute (_, gn) -> gn
 
+  (* ********** Subwords ********** *)
+
+  (* ('a, 'b) subword says that the word 'a is obtained from the word 'b by deleting some generators, the rest being kept in their original order.  Each step stores its generator, so that both words can be recovered from a subword alone. *)
+  type (_, _) subword =
+    | Sub_zero : (zero, zero) subword
+    | Sub_keep : ('a, 'b) subword * 'g G.t -> (('a, 'g) suc, ('b, 'g) suc) subword
+    | Sub_drop : ('a, 'b) subword * 'g G.t -> ('a, ('b, 'g) suc) subword
+
+  let rec subword_in : type a b. (a, b) subword -> a t = function
+    | Sub_zero -> zero
+    | Sub_keep (s, g) -> suc (subword_in s) g
+    | Sub_drop (s, _) -> subword_in s
+
+  let rec subword_out : type a b. (a, b) subword -> b t = function
+    | Sub_zero -> zero
+    | Sub_keep (s, g) -> suc (subword_out s) g
+    | Sub_drop (s, g) -> suc (subword_out s) g
+
+  (* A generator that commutes with a word also commutes with any subword of it. *)
+  let rec gen_commute_subword : type g a b.
+      (a, b) subword -> (g, b) gen_commute -> (g, a) gen_commute =
+   fun s gc ->
+    match s with
+    | Sub_zero -> Commute_zero
+    | Sub_keep (s, _) ->
+        let (Commute_suc (gc, c)) = gc in
+        Commute_suc (gen_commute_subword s gc, c)
+    | Sub_drop (s, _) ->
+        let (Commute_suc (gc, _)) = gc in
+        gen_commute_subword s gc
+
   (* Commutation restricts to the right-hand factors of sums. *)
   let rec gen_commute_plus_right : type g k l kl.
       (k, l, kl) plus -> (g, kl) gen_commute -> (g, l) gen_commute =
@@ -235,6 +266,18 @@ module Make (G : Permutable) = struct
         let (Commute_suc (gc, c)) = gc in
         Commute_suc (gen_commute_uninsert i gc, c)
 
+  (* And it commutes in particular with the generator at any given insertion position. *)
+  let rec gen_commute_inserted : type g m h n.
+      (m, h, n) insert -> (g, n) gen_commute -> (g, h) G.commute =
+   fun i gc ->
+    match i with
+    | Now ->
+        let (Commute_suc (_, c)) = gc in
+        c
+    | Later (_, i) ->
+        let (Commute_suc (gc, _)) = gc in
+        gen_commute_inserted i gc
+
   let rec commute_uninsert : type k m h n. (m, h, n) insert -> (k, n) commute -> (k, m) commute =
    fun i c ->
     match c with
@@ -281,9 +324,10 @@ module Make (G : Permutable) = struct
         let (Insert_plus (pn, j)) = insert_plus gn i mn in
         Insert_plus (Suc (pn, g), Later (gh, j))
 
+  (* If the inserted generator lies in the left factor, then it has to move past the whole right factor to reach the outer end, so the insertion's own witnesses tell us it commutes with all of that. *)
   type (_, _, _, _) insert_in_plus =
     | Left :
-        ('pred_m, 'g, 'm) insert * ('pred_m, 'n, 'pred_mn) plus
+        ('pred_m, 'g, 'm) insert * ('pred_m, 'n, 'pred_mn) plus * ('g, 'n) gen_commute
         -> ('g, 'm, 'n, 'pred_mn) insert_in_plus
     | Right :
         ('pred_n, 'g, 'n) insert * ('m, 'pred_n, 'pred_mn) plus
@@ -293,13 +337,13 @@ module Make (G : Permutable) = struct
       (m, n, mn) plus -> (pred_mn, g, mn) insert -> (g, m, n, pred_mn) insert_in_plus =
    fun mn i ->
     match mn with
-    | Zero -> Left (i, Zero)
+    | Zero -> Left (i, Zero, Commute_zero)
     | Suc (mn, g) -> (
         match i with
         | Now -> Right (Now, mn)
         | Later (c, i) -> (
             match insert_in_plus mn i with
-            | Left (j, pred_mn) -> Left (j, Suc (pred_mn, g))
+            | Left (j, pred_mn, gn) -> Left (j, Suc (pred_mn, g), Commute_suc (gn, c))
             | Right (k, pred_mn) -> Right (Later (c, k), Suc (pred_mn, g))))
 
   type (_, _, _, _) insert_into_plus =

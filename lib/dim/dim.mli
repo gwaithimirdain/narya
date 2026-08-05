@@ -12,6 +12,8 @@ module D : sig
   val minus_uniq : ('m1, 'n, 'mn) plus -> ('m2, 'n, 'mn) plus -> ('m1, 'm2) Eq.t
   val minus_uniq' : 'm t -> ('m, 'n1, 'mn) plus -> ('m, 'n2, 'mn) plus -> ('n1, 'n2) Eq.t
 
+  (* One word is a subword of another if it is obtained from it by deleting some generators.  The constructors are not exported, since nothing outside needs to build or inspect one; it appears only as evidence in deg_comp_pbij. *)
+  type (_, _) subword
   type (_, _) factor = Factor : ('n, 'k, 'nk) plus -> ('nk, 'n) factor
 
   val factor : 'nk t -> 'n t -> ('nk, 'n) factor option
@@ -778,19 +780,20 @@ type (_, _, _) deg_comp_ins =
 
 val deg_comp_ins : ('m, 'n) deg -> ('m, 'res, 'i) insertion -> ('n, 'res, 'i) deg_comp_ins
 
-type (_, _, _, _) deg_comp_pbij =
+type (_, _, _, _, _) deg_comp_pbij =
   | Deg_comp_pbij :
       ('evaluation, 'result, 'shared) insertion
       * ('remaining, 'shared, 'intrinsic) shuffle
       * ('old_result, 'result) deg
+      * ('shared, 'old_shared) D.subword
       * (('remaining, D.zero) Eq.t -> ('r, D.zero) Eq.t)
-      -> ('evaluation, 'old_result, 'intrinsic, 'r) deg_comp_pbij
+      -> ('evaluation, 'old_result, 'intrinsic, 'r, 'old_shared) deg_comp_pbij
 
 val deg_comp_pbij :
   ('m, 'n) deg ->
   ('m, 'res, 'sh) insertion ->
   ('rem, 'sh, 'i) shuffle ->
-  ('n, 'res, 'i, 'rem) deg_comp_pbij
+  ('n, 'res, 'i, 'rem, 'sh) deg_comp_pbij
 
 type (_, _, _, _) unplus_ins =
   | Unplus_ins :

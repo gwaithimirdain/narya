@@ -164,45 +164,52 @@ let rec deg_comp_ins : type m n i res.
 
 (* A partial bijection can be composed with a degeneracy on the evaluation dimension to produce another partial bijection, with an induced degeneracy on the results. *)
 
-type (_, _, _, _) deg_comp_pbij =
+(* The new shared dimensions are a subword of the old ones, namely those that survive the degeneracy; we report that so that witnesses of commutation with the old ones can be restricted to the new ones. *)
+type (_, _, _, _, _) deg_comp_pbij =
   | Deg_comp_pbij :
       ('evaluation, 'result, 'shared) insertion
       * ('remaining, 'shared, 'intrinsic) shuffle
       * ('old_result, 'result) deg
+      * ('shared, 'old_shared) D.subword
       * (('remaining, D.zero) Eq.t -> ('r, D.zero) Eq.t)
-      -> ('evaluation, 'old_result, 'intrinsic, 'r) deg_comp_pbij
+      -> ('evaluation, 'old_result, 'intrinsic, 'r, 'old_shared) deg_comp_pbij
 
 let rec deg_comp_pbij : type m n i res rem sh.
-    (m, n) deg -> (m, res, sh) insertion -> (rem, sh, i) shuffle -> (n, res, i, rem) deg_comp_pbij =
+    (m, n) deg ->
+    (m, res, sh) insertion ->
+    (rem, sh, i) shuffle ->
+    (n, res, i, rem, sh) deg_comp_pbij =
  fun deg ins shuf ->
   match shuf with
   | Zero ->
       let (Zero _) = ins in
-      Deg_comp_pbij (ins_zero (cod_deg deg), Zero, deg, fun _ -> Eq)
-  | Left (g, _, shuf) ->
-      let (Deg_comp_pbij (ins, shuf, s, _)) = deg_comp_pbij deg ins shuf in
-      (* This generator was already remaining, and commuted with the old shared dimensions; the new ones are a subword of those, but we have no witness of that to restrict along. *)
+      Deg_comp_pbij (ins_zero (cod_deg deg), Zero, deg, Sub_zero, fun _ -> Eq)
+  (* This generator was already remaining, and commuted with the old shared dimensions, hence also with the new ones. *)
+  | Left (g, gsh, shuf) ->
+      let (Deg_comp_pbij (ins, shuf, s, sub, _)) = deg_comp_pbij deg ins shuf in
       Deg_comp_pbij
         ( ins,
-          Left (g, D.free_gen_commute (right_shuffle shuf), shuf),
+          Left (g, D.gen_commute_subword sub gsh, shuf),
           s,
+          sub,
           function
           | _ -> . )
   | Right (g, shuf) -> (
       let (Suc (ins, _, i)) = ins in
       match deg_coresidual g deg i with
       | Coresidual_zero deg ->
-          let (Deg_comp_pbij (ins, shuf, s, _)) = deg_comp_pbij deg ins shuf in
+          let (Deg_comp_pbij (ins, shuf, s, sub, _)) = deg_comp_pbij deg ins shuf in
           (* As in deg_comp_ins, a degenerated generator moves from shared to remaining, passing the surviving shared ones. *)
           Deg_comp_pbij
             ( ins,
               Left (g, D.free_gen_commute (right_shuffle shuf), shuf),
               s,
+              Sub_drop (sub, g),
               function
               | _ -> . )
       | Coresidual_suc (deg, j) ->
-          let (Deg_comp_pbij (ins, shuf, s, ifzero)) = deg_comp_pbij deg ins shuf in
-          Deg_comp_pbij (Suc (ins, g, j), Right (g, shuf), s, ifzero))
+          let (Deg_comp_pbij (ins, shuf, s, sub, ifzero)) = deg_comp_pbij deg ins shuf in
+          Deg_comp_pbij (Suc (ins, g, j), Right (g, shuf), s, Sub_keep (sub, g), ifzero))
 
 (* This is like deg_comp_pbij (for the insertion only, so far), but for adding a constant on the left rather than acting by an arbitrary degeneracy (for evaluation rather that acting).  This allows it to return more detailed information.  The dimension 'r (new remaining) is the piece of 'i (intrinsic) that lands in 'm (new added dimension on the left), while 'h (new shared) is the part that lands in 'n, and 't is the part of 'm that doesn't come from 'r.  Note that the first two outputs together form an ('n, 'i, 'r) pbij; that's why this is in this file, even though it doesn't refer explicitly to pbij.  *)
 
@@ -223,11 +230,10 @@ let rec unplus_ins : type m n mn s i.
       Unplus_ins (Zero (D.plus_right mn), Zero, Zero m, mn)
   | Suc (ins', g, x) -> (
       match D.insert_in_plus mn x with
-      | Left (x, mn') ->
+      | Left (x, mn', gn) ->
           let (Unplus_ins (nsh, rhi, mtr, ts)) = unplus_ins (D.uninsert x m) mn' ins' in
-          (* right-increment i and r, middle-increment m, keep s and h the same.  This generator lands in 'm, so it has to pass all the shared generators, which land in 'n.  Its own insert does witness that it commutes with the whole of 'n, since 'n lies entirely outside it; what we lack is a witness that 'h is a subword of 'n, to restrict that along. *)
-          Unplus_ins
-            (nsh, Left (g, D.free_gen_commute (right_shuffle rhi), rhi), Suc (mtr, g, x), ts)
+          (* right-increment i and r, middle-increment m, keep s and h the same.  This generator lands in 'm, so it has to pass all the shared generators; but those are inserted into 'n, and 'n lies entirely outside it, so its own insert witnesses that it commutes with all of them. *)
+          Unplus_ins (nsh, Left (g, gen_commute_of_ins nsh gn, rhi), Suc (mtr, g, x), ts)
       | Right (x, mn') ->
           let (Unplus_ins (nsh, rhi, mtr, ts)) = unplus_ins m mn' ins' in
           (* right-increment i and h and s, middle-increment n, keep m and r the same *)
@@ -471,6 +477,8 @@ module Pbijmap (F : Fam2) = struct
         let (Bplus bp) = D.bplus f.remaining in
         Zero (bp, f.build (Pbij (ins_zero evaluation, Zero)) bp)
     | Word (Suc (type i1 g0t) ((intrinsic, g_intrinsic) : (_, i1, _) D.plus * g0t D.G.t)) ->
+        (* The keys of this map are the partial bijections between the intrinsic and evaluation dimensions, so they exist only insofar as this generator commutes with the evaluation dimension.  Everything else it has to commute with, namely the shared dimensions of a key, is inserted into the evaluation dimension, so that one assumption suffices. *)
+        let ge = D.free_gen_commute evaluation in
         Suc
           {
             g = g_intrinsic;
@@ -481,10 +489,7 @@ module Pbijmap (F : Fam2) = struct
                   build =
                     (fun (Pbij (ins, shuf)) r12 ->
                       let (Append_cons r12') = r12 in
-                      f.build
-                        (Pbij
-                           (ins, Left (g_intrinsic, D.free_gen_commute (right_shuffle shuf), shuf)))
-                        r12');
+                      f.build (Pbij (ins, Left (g_intrinsic, gen_commute_of_ins ins ge, shuf))) r12');
                 };
             right =
               (let build : type b. (b, g0t, evaluation) D.insert -> (b, (i1 * s) * v) Param.t =
@@ -499,8 +504,7 @@ module Pbijmap (F : Fam2) = struct
                               (Pbij (Suc (ins, g_intrinsic, i), Right (g_intrinsic, shuf)))
                               r12);
                       }) in
-               (* As in Insmap, the keys here are insertions of the intrinsic generators into the evaluation dimension, which exist only insofar as those generators commute with it. *)
-               Tup.build evaluation g_intrinsic (D.free_gen_commute evaluation) { build });
+               Tup.build evaluation g_intrinsic ge { build });
           }
 
   type ('evaluation, 'intrinsic, 'v) builder = {
@@ -670,6 +674,8 @@ module Pbijmap (F : Fam2) = struct
           }
           (Heter.unwrap x irvs) ws in
       Heter.wrap res irws in
+    (* As in gbuild, this map only exists insofar as the outer intrinsic generator commutes with the evaluation dimension; the commutations needed for the keys all follow from that. *)
+    let ge = D.free_gen_commute evaluation in
     let lefts =
       gpmap evaluation
         {
@@ -677,9 +683,7 @@ module Pbijmap (F : Fam2) = struct
           map =
             (fun (Pbij (ins, shuf)) r12 v ->
               let (Append_cons r12') = r12 in
-              f.map
-                (Pbij (ins, Left (g_outer, D.free_gen_commute (right_shuffle shuf), shuf)))
-                r12' v);
+              f.map (Pbij (ins, Left (g_outer, gen_commute_of_ins ins ge, shuf))) r12' v);
         }
         (Heter.left ms) ws in
     let rights = Tup.pmap { map } (Heter.right ms irvs) (MapTimes.cod irws) in

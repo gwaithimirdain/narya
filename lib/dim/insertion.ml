@@ -47,6 +47,15 @@ let rec cod_right_ins : type a b c. (a, b, c) insertion -> c D.t = function
   | Zero _ -> D.zero
   | Suc (ins, g, _) -> D.suc (cod_right_ins ins) g
 
+(* The generators inserted by an insertion are among those of its domain, so a generator commuting with the whole domain commutes with all of them. *)
+let rec gen_commute_of_ins : type a b c g.
+    (a, b, c) insertion -> (g, a) D.gen_commute -> (g, c) D.gen_commute =
+ fun ins ga ->
+  match ins with
+  | Zero _ -> Commute_zero
+  | Suc (ins, _, x) ->
+      Commute_suc (gen_commute_of_ins ins (D.gen_commute_uninsert x ga), D.gen_commute_inserted x ga)
+
 (* Are two insertions equal?  If so, all three of their parameters are identified. *)
 let rec equal_ins : type a1 b1 c1 a2 b2 c2.
     (a1, b1, c1) insertion -> (a2, b2, c2) insertion -> (a1 * b1 * c1, a2 * b2 * c2) Eq.t option =
