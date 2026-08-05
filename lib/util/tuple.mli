@@ -1,7 +1,7 @@
 open Signatures
 open Tlist
 
-module Make (G : Decidable) (F : Fam2) : sig
+module Make (G : DecidablePermutable) (F : Fam2) : sig
   module W : module type of Word.Make (G)
 
   type ('a, 'b, 'g0, 'p) gt

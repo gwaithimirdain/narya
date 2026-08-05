@@ -3,7 +3,7 @@ module D = D
 
 module Dmap =
   Word.Map
-    (Unitcomparable)
+    (D.G)
     (struct
       module Key = Unitcomparable
 

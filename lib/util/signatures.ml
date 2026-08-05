@@ -42,6 +42,20 @@ module type Decidable = sig
   val apart_irrefl : ('g, 'g) apart -> Empty.t
 end
 
+module type Permutable = sig
+  include Comparable
+
+  type ('g, 'h) commute
+
+  val commute_inv : 'g t -> 'h t -> ('g, 'h) commute -> ('h, 'g) commute
+  val commute : 'g t -> 'h t -> ('g, 'h) commute option
+end
+
+module type DecidablePermutable = sig
+  include Permutable
+  include Decidable with type 'a t := 'a t
+end
+
 module type Function = sig
   module Dom : Fam
   module Cod : Fam

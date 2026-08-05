@@ -6,6 +6,7 @@ open Monoid
 
 module D : sig
   include MonoidPos
+  include Permutable with type 'a t := 'a t
 
   val minus : 'mn t -> ('m, 'n, 'mn) plus -> 'm t
   val minus_uniq : ('m1, 'n, 'mn) plus -> ('m2, 'n, 'mn) plus -> ('m1, 'm2) Eq.t

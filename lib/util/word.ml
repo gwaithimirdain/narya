@@ -5,7 +5,7 @@ open Monoid
 
 (* Type-level free monoids.  The type of generators is specified by a type family in a module parameter.  If there is exactly one generator, the result should be isomorphic to the type-level (backwards) natural numbers. *)
 
-module Make (G : Comparable) = struct
+module Make (G : Permutable) = struct
   (* As the words themselves, we use type-level backwards lists (Tbwd) of generators. *)
   type zero = emp
   type ('n, 'g) suc = ('n, 'g) snoc
@@ -120,6 +120,62 @@ module Make (G : Comparable) = struct
   let plus_zero : type n. n t -> (n, zero, n) plus = fun _ -> Zero
 
   (* Addition in the free monoid on more than one generator is NOT commutative! *)
+
+  (* ********** Commutation of words ********** *)
+
+  (* A generator commutes with a word if it commutes with each generator in that word. *)
+  type (_, _) gen_commute =
+    | Commute_zero : ('g, zero) gen_commute
+    | Commute_suc : ('g, 'n) gen_commute * ('g, 'h) G.commute -> ('g, ('n, 'h) suc) gen_commute
+
+  let rec gen_commute : type g n. g G.t -> n t -> (g, n) gen_commute option =
+   fun g -> function
+    | Word Zero -> Some Commute_zero
+    | Word (Suc (n, h)) -> (
+        match gen_commute g (Word n) with
+        | None -> None
+        | Some gn -> (
+            match G.commute g h with
+            | Some gh -> Some (Commute_suc (gn, gh))
+            | None -> None))
+
+  (* Two words commute if each generator in one commutes with each generator in the other. *)
+  type (_, _) commute =
+    | Zero_commute : (zero, 'n) commute
+    | Suc_commute : ('m, 'n) commute * ('g, 'n) gen_commute -> (('m, 'g) suc, 'n) commute
+
+  let rec commute : type m n. m t -> n t -> (m, n) commute option =
+   fun m n ->
+    match m with
+    | Word Zero -> Some Zero_commute
+    | Word (Suc (m, g)) -> (
+        match commute (Word m) n with
+        | None -> None
+        | Some mn -> (
+            match gen_commute g n with
+            | Some gn -> Some (Suc_commute (mn, gn))
+            | None -> None))
+
+  let rec commute_zero : type m. m t -> (m, zero) commute = function
+    | Word Zero -> Zero_commute
+    | Word (Suc (m, _)) -> Suc_commute (commute_zero (Word m), Commute_zero)
+
+  let rec commute_suc : type m n g.
+      m t -> g G.t -> (m, n) commute -> (g, m) gen_commute -> (m, (n, g) suc) commute =
+   fun m g mn gm ->
+    match mn with
+    | Zero_commute -> Zero_commute
+    | Suc_commute (mn, hn) ->
+        let (Word (Suc (m, h))) = m in
+        let (Commute_suc (gm, gh)) = gm in
+        Suc_commute (commute_suc (Word m) g mn gm, Commute_suc (hn, G.commute_inv g h gh))
+
+  let rec commute_inv : type m n. m t -> n t -> (m, n) commute -> (n, m) commute =
+   fun m n -> function
+    | Zero_commute -> commute_zero n
+    | Suc_commute (mn, gn) ->
+        let (Word (Suc (m, g))) = m in
+        commute_suc n g (commute_inv (Word m) n mn) gn
 
   (* ********** Well-scoped De Bruijn indices ********** *)
 
@@ -789,12 +845,12 @@ module Make (G : Comparable) = struct
         | None -> raise (Failure "Word.pushout"))
 end
 
-module MakeCheck (G : Comparable) : Monoid = Make (G)
-module MakeCheckPos (G : Comparable) : MonoidPos = Make (G)
-module MakeCheckPerm (G : Comparable) : MonoidPerm = Make (G)
+module MakeCheck (G : Permutable) : Monoid = Make (G)
+module MakeCheckPos (G : Permutable) : MonoidPos = Make (G)
+module MakeCheckPerm (G : Permutable) : MonoidPerm = Make (G)
 
-module type ComparableExp = sig
-  include Comparable
+module type PermutableExp = sig
+  include Permutable
 
   type ('g, 'n) endpoints
   type _ has_endpoints = Endpoints : ('g, 'n) endpoints -> 'g has_endpoints
@@ -807,7 +863,7 @@ end
 
 (* ********** Occurrence ********** *)
 
-module MakeDecidable (G : Decidable) = struct
+module MakeDecidable (G : DecidablePermutable) = struct
   include Make (G)
 
   type (_, _) occurs = Occurs : ('m, 'g, 'mg) insert -> ('g, 'mg) occurs
@@ -860,7 +916,7 @@ module MakeDecidable (G : Decidable) = struct
     | Suc (mn, _), Unoccurs_suc (un, ap) -> Unoccurs_suc (unoccurs_plus mn um un, ap)
 end
 
-module MakeExp (G : ComparableExp) = struct
+module MakeExp (G : PermutableExp) = struct
   include Make (G)
 
   (* ********** Exponentiation ********** *)
@@ -955,7 +1011,7 @@ functor
     type ('a, 'b) map = Empty | Entry of ('a, 'b) F.t option * ('a * 'b) DM.t
   end
 
-module Internal (G : Comparable) (GM : MAP_MAKER with module Key = G) (F : Fam2) = struct
+module Internal (G : Permutable) (GM : MAP_MAKER with module Key = G) (F : Fam2) = struct
   module W = Make (G)
   module Map = Def (G) (GM) (F)
 
@@ -1047,7 +1103,7 @@ module Internal (G : Comparable) (GM : MAP_MAKER with module Key = G) (F : Fam2)
         Map.DM.iter { it = (fun w (Wrapmap x) -> iter f (W.suc b w) x) } xs
 end
 
-module Map (G : Comparable) (GM : MAP_MAKER with module Key := G) :
+module Map (G : Permutable) (GM : MAP_MAKER with module Key := G) :
   MAP_MAKER with module Key := Make(G) = struct
   module Make (F : Fam2) = struct
     module GM2 = struct
@@ -1107,7 +1163,7 @@ module WMap3 = Map (W2) (WMap2)
 
 (* Monoid homomorphisms determined by a map on generators *)
 
-module Hom (G : Comparable) (Cod : Monoid) (F : Function with module Dom = G and module Cod = Cod) =
+module Hom (G : Permutable) (Cod : Monoid) (F : Function with module Dom = G and module Cod = Cod) =
 struct
   module Dom = Make (G)
   module Cod = Cod
@@ -1160,13 +1216,13 @@ struct
 end
 
 module HomCheck
-    (G : Comparable)
+    (G : Permutable)
     (Cod : Monoid)
     (F : Function with module Dom = G and module Cod = Cod) : Function with module Cod = Cod =
   Hom (G) (Cod) (F)
 
 module HomPerm
-    (G : Comparable)
+    (G : Permutable)
     (Cod : MonoidPerm)
     (F : Function with module Dom = G and module Cod = Cod) =
 struct
@@ -1222,7 +1278,7 @@ end
 (* Homomorphisms with forwards-ness *)
 
 module HomFwd
-    (G : Comparable)
+    (G : Permutable)
     (Cod : MonoidFwd)
     (F : Function with module Dom = G and module Cod = Cod) =
 struct
@@ -1255,7 +1311,7 @@ end
 (* Homomorphisms with permutations AND forwardsness *)
 
 module HomPermFwd
-    (G : Comparable)
+    (G : Permutable)
     (Cod : MonoidPermFwd)
     (F : Function with module Dom = G and module Cod = Cod) =
 struct
@@ -1265,7 +1321,7 @@ end
 
 (* Parametrized homomorphisms *)
 
-module Hom2 (G : Comparable) (Cod : Monoid) (F : Function2 with module Dom = G and module Cod = Cod) =
+module Hom2 (G : Permutable) (Cod : Monoid) (F : Function2 with module Dom = G and module Cod = Cod) =
 struct
   module Param = F.Param
   module Dom = Make (G)
@@ -1330,7 +1386,7 @@ struct
 end
 
 module Hom2Perm
-    (G : Comparable)
+    (G : Permutable)
     (Cod : MonoidPerm)
     (F : Function2 with module Dom = G and module Cod = Cod) =
 struct
@@ -1391,8 +1447,8 @@ end
 (* (Parametrized) functoriality is the homomorphism induced by a function composed with the monad unit. *)
 
 module Fmap
-    (Dom : Comparable)
-    (Cod : Comparable)
+    (Dom : Permutable)
+    (Cod : Permutable)
     (F : Function2 with module Dom = Dom and module Cod = Cod) =
 struct
   module CodMonoid = Make (Cod)

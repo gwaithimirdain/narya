@@ -4,7 +4,7 @@ open Tbwd
 
 (* A "tuple" is an intrinsically well-typed map whose keys are insertions into some Word over a chosen generator type.  It is parametrized by an explicit "target" generator 'g0, and stores a value only at those keys whose inserted generator equals 'g0; at keys with any other generator it stores only an apartness witness (no closures, hence marshallable).  Callers therefore need not deal with the mismatched case themselves. *)
 
-module Make (G : Decidable) (F : Fam2) = struct
+module Make (G : DecidablePermutable) (F : Fam2) = struct
   module W = Word.Make (G)
 
   type (_, _, _, _) gt =

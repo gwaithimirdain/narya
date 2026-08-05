@@ -4,10 +4,16 @@ open Util
 
 (* Moreover, instead of using the literal natural numbers N, we use the isomorphic type Word(Unit).  In the future we will generalize this to words over multiple directions of parametricity. *)
 
-include Word.MakeDecidable (Unitcomparable)
+module G = struct
+  include Unitcomparable
 
-(* Re-export the generator module so consumers can refer to ['g D.G.t] rather than naming Unitcomparable directly.  When generators eventually become multi-direction, only this alias changes. *)
-module G = Unitcomparable
+  type ('a, 'b) commute = unit
+
+  let commute_inv : type a b. a t -> b t -> (a, b) commute -> (b, a) commute = fun _ _ () -> ()
+  let commute : type a b. a t -> b t -> (a, b) commute option = fun _ _ -> Some ()
+end
+
+include Word.MakeDecidable (G)
 
 (* The unique generator witness for the (currently single-generator) dimension theory.  To prepare for future multi-generator generalization, consumers should refer to this rather than writing the constructor [Unit] directly. *)
 let deg : unit G.t = G.Unit

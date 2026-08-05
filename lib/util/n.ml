@@ -864,3 +864,9 @@ let rec perm_comp : type a b c. (a, b) permute -> (b, c) permute -> (a, c) permu
   | Insert (s, k) ->
       let (Residual (t, i)) = perm_residual b k in
       insert (perm_comp s t) i
+
+(* When natural numbers are the *generators* of words, they can be permuted freely. *)
+type ('a, 'b) commute = unit
+
+let commute_inv _ _ () = ()
+let commute _ _ = Some ()
