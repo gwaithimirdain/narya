@@ -177,20 +177,12 @@ module Make (G : Permutable) = struct
         let (Word (Suc (m, g))) = m in
         commute_suc n g (commute_inv (Word m) n mn) gn
 
-  (* A generator that commutes with a word also commutes with that word minus its last generator, and more generally with any subword obtained by deleting a generator. *)
-  let gen_commute_unsuc : type g n h. (g, (n, h) suc) gen_commute -> (g, n) gen_commute = function
-    | Commute_suc (gn, _) -> gn
-
-  (* Likewise a word that commutes with a word commutes with any of its initial segments, and each of its generators commutes with the whole other word. *)
+  (* A word that commutes with another commutes with any of its own initial segments, and each of its generators commutes with the whole other word.  (For restricting the *other* word, see commute_uninsert and commute_plus_right below.) *)
   let commute_unsuc_left : type m n g. ((m, g) suc, n) commute -> (m, n) commute = function
     | Suc_commute (mn, _) -> mn
 
   let commute_gen : type m n g. ((m, g) suc, n) commute -> (g, n) gen_commute = function
     | Suc_commute (_, gn) -> gn
-
-  let rec commute_unsuc_right : type m n g. (m, (n, g) suc) commute -> (m, n) commute = function
-    | Zero_commute -> Zero_commute
-    | Suc_commute (mn, gn) -> Suc_commute (commute_unsuc_right mn, gen_commute_unsuc gn)
 
   (* Commutation restricts to the right-hand factors of sums. *)
   let rec gen_commute_plus_right : type g k l kl.
