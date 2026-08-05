@@ -208,6 +208,18 @@ module Make (G : Permutable) = struct
   let central_commute : type m n. m t -> n t -> m central -> (m, n) commute =
    fun _ n c -> commute_central c n
 
+  (* A word is central just when all of its generators are, so we can decide it by asking the generator theory about each of them in turn. *)
+  let rec centrality : type n. n t -> n central option = function
+    | Word Zero -> Some Central_zero
+    | Word (Suc (n, g)) -> (
+        match (centrality (Word n), G.centrality g) with
+        | Some c, Some gc -> Some (Central_suc (c, g, gc))
+        | _ -> None)
+
+  let rec central_word : type n. n central -> n t = function
+    | Central_zero -> zero
+    | Central_suc (c, g, _) -> suc (central_word c) g
+
   (* ********** Subwords ********** *)
 
   (* ('a, 'b) subword says that the word 'a is obtained from the word 'b by deleting some generators, the rest being kept in their original order.  Each step stores its generator, so that both words can be recovered from a subword alone. *)
@@ -238,6 +250,14 @@ module Make (G : Permutable) = struct
     | Sub_drop (s, _) ->
         let (Commute_suc (gc, _)) = gc in
         gen_commute_subword s gc
+
+  (* Centrality restricts to subwords, in particular along deletion of a generator and to the factors of a sum. *)
+  let rec central_subword : type a b. (a, b) subword -> b central -> a central =
+   fun s c ->
+    match (s, c) with
+    | Sub_zero, _ -> Central_zero
+    | Sub_keep (s, g), Central_suc (c, _, gc) -> Central_suc (central_subword s c, g, gc)
+    | Sub_drop (s, _), Central_suc (c, _, _) -> central_subword s c
 
   (* Commutation restricts to the right-hand factors of sums. *)
   let rec gen_commute_plus_right : type g k l kl.

@@ -21,23 +21,31 @@ let dim : int -> D.wrapped =
       D.Wrap (D.plus_out m p) in
   go n
 
+(* Everything in sight is an intrinsic dimension of the partial bijections being composed, so it has to be central; with a single generator that is automatic. *)
+let central : type n. n D.t -> n D.central =
+ fun n ->
+  match D.centrality n with
+  | Some c -> c
+  | None -> raise (Failure "noncentral dimension in test")
+
 let check : type e1 e2 e12 i r2 r12.
     (e1, e2, e12) D.plus -> (e2, i, r2) pbij -> (e1, r2, r12) pbij -> bool =
  fun e1e2 p2 p1 ->
   let (Pbij (ins1, shuf1)) = p1 in
   let (Pbij (ins2, shuf2)) = p2 in
-  let p12 = plus_comp_pbij e1e2 p2 p1 in
+  let icentral = central (cod_pbij p2) in
+  let p12 = plus_comp_pbij icentral e1e2 p2 p1 in
   let (Pbij (ins12, shuf12)) = p12 in
   let e2dim = D.plus_right e1e2 in
   (* p1 induces a degeneracy (r12+e1) -> (res1+r2). *)
   let (D.Plus r12e1) = D.plus (dom_pbij p1) in
-  let tins1 = ins_plus_of_pbij ins1 shuf1 r12e1 in
+  let tins1 = ins_plus_of_pbij (central (cod_pbij p1)) ins1 shuf1 r12e1 in
   let res1 = cod_left_ins tins1 in
   let (D.Plus res1r2) = D.plus (cod_pbij p1) in
   let deg1 = deg_of_ins_plus tins1 res1r2 in
   (* p2 induces a degeneracy (r2+e2) -> (res2+i). *)
   let (D.Plus r2e2) = D.plus (dom_pbij p2) in
-  let tins2 = ins_plus_of_pbij ins2 shuf2 r2e2 in
+  let tins2 = ins_plus_of_pbij icentral ins2 shuf2 r2e2 in
   let (D.Plus res2i) = D.plus (cod_pbij p2) in
   let deg2 = deg_of_ins_plus tins2 res2i in
   let res2idim = D.plus_out (cod_left_ins tins2) res2i in
@@ -52,7 +60,7 @@ let check : type e1 e2 e12 i r2 r12.
   let expected = comp_deg second first in
   (* And compare with the degeneracy induced by the composite, whose domain r12+(e1+e2) is the same as (r12+e1)+e2. *)
   let r12_e12 = D.plus_assocr r12e1 e1e2 r12e1_e2 in
-  let tins12 = ins_plus_of_pbij ins12 shuf12 r12_e12 in
+  let tins12 = ins_plus_of_pbij icentral ins12 shuf12 r12_e12 in
   let (D.Plus res12i) = D.plus (cod_pbij p12) in
   let actual = deg_of_ins_plus tins12 res12i in
   match (D.compare (cod_deg expected) (cod_deg actual), deg_equiv expected actual) with
@@ -65,7 +73,8 @@ let check : type e1 e2 e12 i r2 r12.
 let check_split : type e1 e2 e12 i r2 r12.
     (e1, e2, e12) D.plus -> (e2, i, r2) pbij -> (e1, r2, r12) pbij -> bool =
  fun e1e2 p2 p1 ->
-  let (Pbij_of_plus (q2, q1)) = pbij_of_plus e1e2 (plus_comp_pbij e1e2 p2 p1) in
+  let (Pbij_of_plus (q2, q1)) =
+    pbij_of_plus e1e2 (plus_comp_pbij (central (cod_pbij p2)) e1e2 p2 p1) in
   match (equal_pbij q2 p2, equal_pbij q1 p1) with
   | Some Eq, Some Eq -> true
   | _ -> false
@@ -74,7 +83,7 @@ let check_split : type e1 e2 e12 i r2 r12.
 let check_join : type e1 e2 e12 i r12. (e1, e2, e12) D.plus -> (e12, i, r12) pbij -> bool =
  fun e1e2 p12 ->
   let (Pbij_of_plus (q2, q1)) = pbij_of_plus e1e2 p12 in
-  match equal_pbij (plus_comp_pbij e1e2 q2 q1) p12 with
+  match equal_pbij (plus_comp_pbij (central (cod_pbij p12)) e1e2 q2 q1) p12 with
   | Some Eq -> true
   | None -> false
 
@@ -146,7 +155,7 @@ let () =
                         Printf.printf "FAIL e1=%s e2=%s i=%s: p2=%s p1=%s gave %s\n"
                           (string_of_dim e1) (string_of_dim e2) (string_of_dim i)
                           (string_of_pbij p2) (string_of_pbij p1)
-                          (string_of_pbij (plus_comp_pbij e1e2 p2 p1))))
+                          (string_of_pbij (plus_comp_pbij (central (cod_pbij p2)) e1e2 p2 p1))))
                     (all_pbij_between e1 (remaining p2)))
                 (all_pbij_between e2 i))
             dims)

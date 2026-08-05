@@ -58,6 +58,8 @@ module rec Term : sig
       | Higher :
           ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
           * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
+          (* The field's values are indexed by all the ways of matching its intrinsic dimension with an evaluation dimension, so that dimension has to be able to go anywhere: we store the witness, verified when the codatatype was defined, that it is central. *)
+          * 'i D.central
           (* The context in which the field's type is checked, as a termctx, needed to eval-readback environments when degenerating them to check the field at a nontrivial partial bijection. *)
           * ('gmode, 'd, ('ag, ('f, D.zero) dim_entry) snoc) Term.termctx
           * ('i, ('ag, ('f, D.zero) dim_entry) snoc, 'iagx, 'gmode) plusmap
@@ -358,6 +360,8 @@ end = struct
       | Higher :
           ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
           * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
+          (* The field's values are indexed by all the ways of matching its intrinsic dimension with an evaluation dimension, so that dimension has to be able to go anywhere: we store the witness, verified when the codatatype was defined, that it is central. *)
+          * 'i D.central
           (* The context in which the field's type is checked, as a termctx, needed to eval-readback environments when degenerating them to check the field at a nontrivial partial bijection. *)
           * ('gmode, 'd, ('ag, ('f, D.zero) dim_entry) snoc) Term.termctx
           * ('i, ('ag, ('f, D.zero) dim_entry) snoc, 'iagx, 'gmode) plusmap

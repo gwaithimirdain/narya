@@ -226,8 +226,10 @@ module Act = struct
     let deg = comp_deg deg1 deg0 in
     (* The modal key acts on the stored environment by prekeying it, so that values rebuilt from 'terms' (either below or by a later action) incorporate it.  The old 'vals' do not include this key, so we act on them by it separately below. *)
     let env = prekey_env env cell in
+    (* The intrinsic dimension of a higher field is central, as was checked when the codatatype was defined; the witness is recorded in the map of terms. *)
+    let central = PlusPbijmap.central terms in
     let vals =
-      InsmapOf.build (dom_deg deg0) intrinsic
+      InsmapOf.build (dom_deg deg0) central
         {
           build =
             (fun (type s) (ins : (q, s, i) insertion) ->
@@ -236,7 +238,7 @@ module Act = struct
                      (type s2 r2 h2)
                      ((ins2, shuf2, deg2) :
                        (p, s2, h2) insertion * (r2, h2, i) shuffle * (s, s2) deg)) =
-                deg_comp_ins deg0 ins in
+                deg_comp_ins central deg0 ins in
               let r2 = left_shuffle shuf2 in
               (* If this partial bijection is itself just an insertion, then we can simply use it as an index into the old vals and act in a simple way, as we did for lower structfields. *)
               match D.compare_zero r2 with
@@ -250,7 +252,7 @@ module Act = struct
                          (type s3 r3 h3)
                          ((ins3, shuf3, deg3) :
                            (mn, s3, h3) insertion * (r3, h3, i) shuffle * (s, s3) deg)) =
-                    deg_comp_ins deg ins in
+                    deg_comp_ins central deg ins in
                   (* The dimensions that disappear in this degeneracy, and hence will have to be added back in, are those added by the degeneracy deg3 (s - s3) and those in the remaining dimensions r3. *)
                   let (Unplus_pbij
                          (type s4 h4 r4 r34 t)
@@ -290,7 +292,9 @@ module Act = struct
                       let (Plus r3r4) = D.plus r4 in
                       let t_r4r3 = D.plus_assocr tr4 r4r3 tr4_r3 in
                       let (Plus t_r3r4) = D.plus (D.plus_out r3 r3r4) in
-                      let rrswap = swap_deg r3r4 r4r3 in
+                      (* The dimensions being swapped are both pieces of the intrinsic dimension, hence central. *)
+                      let rrswap =
+                        swap_deg (right_central rr (left_central shuf4 central)) r3r4 r4r3 in
                       let t = cod_left_ins mtr in
                       let env3 = act_env env2 (opt_op_of_deg (plus_deg t t_r4r3 t_r3r4 rrswap)) in
                       (* env3 has dimension t + (r3 + r4). *)

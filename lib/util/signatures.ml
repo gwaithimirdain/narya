@@ -54,6 +54,7 @@ module type Permutable = sig
   type 'g central
 
   val central_commute : 'g t -> 'h t -> 'g central -> ('g, 'h) commute
+  val centrality : 'g t -> 'g central option
 end
 
 module type DecidablePermutable = sig

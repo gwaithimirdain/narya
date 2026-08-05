@@ -814,6 +814,7 @@ type 'a central = unit
 let commute_inv _ _ () = ()
 let commute _ _ = Some ()
 let central_commute _ _ () = ()
+let centrality _ = Some ()
 
 (* Two natural numbers can be swapped with a permutation.  Since they always commute, the witness required by the Perm interface is trivial. *)
 

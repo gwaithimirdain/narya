@@ -190,6 +190,10 @@ module Codata = struct
       (mode, g, n, nh, b, hb, et) codata_fibrancy ->
       (mode * (g * b * potential * no_eta)) StructfieldAbwd.t =
    fun mode fields { glue; dim; length; plusmap; ty; eta; dimh; trr; trl; liftr; liftl } ->
+    (* The fibrancy fields are higher fields whose intrinsic dimension is the glue dimension, so they exist only if that is central. *)
+    let hcentral =
+      let open Reporter in
+      Hott.central <|> Unimplemented "fibrancy with a noncentral glue dimension" in
     let idm = Modality.id mode in
     let xname = singleton_variables D.zero (`Named "x") in
     let yname = singleton_variables D.zero (`Named "y") in
@@ -213,8 +217,8 @@ module Codata = struct
                  Struct { dim; eta; energy = Potential; fields } ))
       (* This is the tr.1/tr.2 case when we should use the bisimulation data supplied.  The insertion is an insertion into g, the glue dimension.  Currently we don't do anything here, however, because the only case when this could happen is for a glue type, and we deal with those specially by bootstrapping their fibrancy and insesrting it using the is_glue marker.  *)
       | Right _ins -> None in
-    let trr = PlusPbijmap.build glue Hott.dim { build = (fun p -> tr `Right trr p) } in
-    let trl = PlusPbijmap.build glue Hott.dim { build = (fun p -> tr `Left trl p) } in
+    let trr = PlusPbijmap.build glue hcentral { build = (fun p -> tr `Right trr p) } in
+    let trl = PlusPbijmap.build glue hcentral { build = (fun p -> tr `Left trl p) } in
     let dimh = D.plus_out dim dimh in
     (* Generic function combining liftr and liftl. *)
     let lift : type r.
@@ -232,8 +236,8 @@ module Codata = struct
                  Modality.filter_id mode D.zero,
                  Struct { dim = dimh; eta; energy = Potential; fields } ))
       | Right _ins -> None in
-    let liftr = PlusPbijmap.build glue Hott.dim { build = (fun p -> lift `Right liftr p) } in
-    let liftl = PlusPbijmap.build glue Hott.dim { build = (fun p -> lift `Left liftl p) } in
+    let liftr = PlusPbijmap.build glue hcentral { build = (fun p -> lift `Right liftr p) } in
+    let liftl = PlusPbijmap.build glue hcentral { build = (fun p -> lift `Left liftl p) } in
     let id : type r. (g, Hott.dim, r) pbij -> (r, mode * b) PlusFam.t =
      fun p ->
       match singleton_pbij p Hott.singleton with
@@ -349,7 +353,7 @@ module Codata = struct
       | Right _ins ->
           (* Would also be only for glue. *)
           None in
-    let id = lazy (PlusPbijmap.build glue Hott.dim { build = (fun p -> id p) }) in
+    let id = lazy (PlusPbijmap.build glue hcentral { build = (fun p -> id p) }) in
     (* Fibrancy fields are always non-modal, i.e. over the identity adjunction. *)
     let idadj = Modalcell.id_adjunction mode in
     let idlock = plus_no_lock mode in

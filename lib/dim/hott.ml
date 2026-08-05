@@ -10,6 +10,9 @@ type dim = D.one
 let dim : dim D.t = D.one
 let singleton : dim is_singleton = One
 
+(* The glue dimension is the intrinsic dimension of the higher fields of a glue type, and of the fibrancy fields of any codatatype, so those exist only if it is central. *)
+let central : dim D.central option = D.centrality dim
+
 let sym : type b. (dim, dim, b) D.plus -> (b, b) deg =
  fun (Suc (Zero, Unit)) ->
   deg_suc (deg_suc (deg_zero D.zero) D.deg Now) D.deg (Later (D.free_commute, Now))

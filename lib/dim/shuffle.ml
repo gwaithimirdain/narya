@@ -66,6 +66,21 @@ let rec right_gen_commute : type g a b c.
       let (Commute_suc (gc, x)) = gc in
       Commute_suc (right_gen_commute s gc, x)
 
+(* Likewise, if the shuffled word is central, so are its factors. *)
+let rec left_central : type a b c. (a, b, c) shuffle -> c D.central -> a D.central =
+ fun s c ->
+  match (s, c) with
+  | Zero, _ -> Central_zero
+  | Left (g, _, s), Central_suc (c, _, gc) -> Central_suc (left_central s c, g, gc)
+  | Right (_, s), Central_suc (c, _, _) -> left_central s c
+
+let rec right_central : type a b c. (a, b, c) shuffle -> c D.central -> b D.central =
+ fun s c ->
+  match (s, c) with
+  | Zero, _ -> Central_zero
+  | Left (_, _, s), Central_suc (c, _, _) -> right_central s c
+  | Right (g, s), Central_suc (c, _, gc) -> Central_suc (right_central s c, g, gc)
+
 let rec shuffle_gen_commute : type g a b c.
     (a, b, c) shuffle -> (g, a) D.gen_commute -> (g, b) D.gen_commute -> (g, c) D.gen_commute =
  fun s ga gb ->

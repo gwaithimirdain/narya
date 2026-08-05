@@ -126,12 +126,13 @@ let plus_deg : type m n mn l ml.
     m D.t -> (m, n, mn) D.plus -> (m, l, ml) D.plus -> (l, n) deg -> (ml, mn) deg =
  fun m mn ml s -> deg_plus_deg (id_deg m) mn ml s
 
-(* The degeneracy (which is a permutation) that swaps two dimensions.  Of course they have to commute; we get that from centrality of the *second* one, which at both call sites (in act and norm) is the intrinsic dimension of a higher field. *)
-let swap_deg : type m n mn nm. (m, n, mn) D.plus -> (n, m, nm) D.plus -> (mn, nm) deg =
- fun mn nm ->
+(* The degeneracy (which is a permutation) that swaps two dimensions.  Of course they have to commute; we get that from centrality of the second one, which at both call sites (in act and norm) is a piece of the intrinsic dimension of a higher field. *)
+let swap_deg : type m n mn nm. n D.central -> (m, n, mn) D.plus -> (n, m, nm) D.plus -> (mn, nm) deg
+    =
+ fun nc mn nm ->
   let m = D.plus_right nm in
   let n = D.plus_right mn in
-  deg_of_perm (perm_swap (D.commute_inv n m (D.commute_central (D.free_word_central n) m)) mn nm)
+  deg_of_perm (perm_swap (D.commute_inv n m (D.commute_central nc m)) mn nm)
 
 (* A degeneracy with codomain a sum of dimensions might decompose as a sum of a degeneracy and a permutation. *)
 type (_, _, _) deg_perm_of_plus =

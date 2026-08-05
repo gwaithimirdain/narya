@@ -143,7 +143,8 @@ and codatafield : type mode a n i et.
  fun f fld ->
   match fld with
   | Lower (adj, plus_lock, ty) -> Lower (adj, plus_lock, term f ty)
-  | Higher (adj, plus_lock, tc, ka, tm) -> Higher (adj, plus_lock, termctx f tc, ka, term f tm)
+  | Higher (adj, plus_lock, ic, tc, ka, tm) ->
+      Higher (adj, plus_lock, ic, termctx f tc, ka, term f tm)
 
 and dataconstr : type mode p i.
     (File.t -> File.t) -> (mode, p, i) dataconstr -> (mode, p, i) dataconstr =

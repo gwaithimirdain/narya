@@ -929,14 +929,14 @@ and tyof_codatafield : type src f mode m n mn a k r s i et.
       match Modality.compare (Modalcell.adj_left adj) fm with
       | Neq -> fatal (Anomaly "wrong locking modality in tyof_codatafield")
       | Eq -> tyof_lower_codatafield tm fldname adj plus_lock fldty env tyargs m mn ~key:`Counit)
-  | Term.Codatafield.Higher (adj, plus_lock, fldtermctx, ic0, fldty) -> (
+  | Term.Codatafield.Higher (adj, plus_lock, icentral, fldtermctx, ic0, fldty) -> (
       (* Like a lower field, the projecting modality must be the left adjoint of the field's adjunction. *)
       match Modality.compare (Modalcell.adj_left adj) fm with
       | Neq -> fatal (Anomaly "wrong locking modality of higher field in tyof_codatafield")
       | Eq ->
           let Eq = D.plus_uniq mn (D.plus_zero m) in
-          tyof_higher_codatafield tm fldname adj env tyargs fldins ~shuf plus_lock fldtermctx ic0
-            fldty ~key:`Counit)
+          tyof_higher_codatafield tm fldname adj env tyargs fldins ~shuf ~icentral plus_lock
+            fldtermctx ic0 fldty ~key:`Counit)
 
 (* We dispatch to separate helper functions for lower fields and higher fields that assume all the dimensions are correct.  These helper functions can be called directly by a caller who knows that all the dimensions are correct, such as check_field where the field is obtained by iterating directly through the codatatype.
 
@@ -1038,6 +1038,8 @@ and tyof_higher_codatafield : type mode f g gmode c n h s r i d ag iagx.
     (n, s, h) insertion ->
     (* It's very important that these callbacks be called on *all values* before they are used, including tm, env, and tyargs, since they start out in the non-degenerated context but everything has to actually happen in the degenerated one. *)
     shuf:(mode, r, h, i, c) shuffleable ->
+    (* The intrinsic dimension is central, as was checked when the codatatype was defined; we need that to move the remaining dimensions past the result ones. *)
+    icentral:i D.central ->
     (* We lock the context c by the right adjoint g, getting the context ag at its source mode gmode. *)
     (c, mode, g, gmode, ag) plus_lock ->
     (* Then we extend it by the self variable, annotated by the left adjoint f.  The termctx of the resulting context is stored with the field, so that we can eval-readback environments over it. *)
@@ -1050,7 +1052,7 @@ and tyof_higher_codatafield : type mode f g gmode c n h s r i d ag iagx.
     key:[ `Counit | `Nokey ] ->
     (* In the nontrivial case, the return value is also in the degenerated context. *)
     (gmode, kinetic) value =
- fun tm fldname adj codataenv tyargs fldins ~shuf plus_lock fldtermctx ic0 fldty ~key ->
+ fun tm fldname adj codataenv tyargs fldins ~shuf ~icentral plus_lock fldtermctx ic0 fldty ~key ->
   let n = dom_ins fldins in
   let s = cod_left_ins fldins in
   let h =
@@ -1104,7 +1106,8 @@ and tyof_higher_codatafield : type mode f g gmode c n h s r i d ag iagx.
             (* Then we eval-readback to get an (r+s+h, agx) env.  Since that environment lies behind the lock by the right adjoint and is extended by the self variable, we supply that modality and the stored termctx of its codomain. *)
             let env = deg_env right fldtermctx sh r_sh env in
             (* Then we permute it to get an (s+r+h, agx) env, and act by the shuffle to get (s+i, agx) *)
-            let swapdeg = deg_plus (swap_deg sr rs) rs_h sr_h in
+            (* The remaining dimensions, being part of the intrinsic dimension, are central. *)
+            let swapdeg = deg_plus (swap_deg (left_central shuffle icentral) sr rs) rs_h sr_h in
             let shuffledeg = plus_deg s s_rh si (deg_of_shuffle shuffle rh) in
             let env = Value.Act (env, opt_op_of_deg (comp_deg swapdeg shuffledeg)) in
             (* Finally, now we can shift this to get a (s, i+agx) env. *)
@@ -1139,7 +1142,7 @@ and tyof_higher_codatafield : type mode f g gmode c n h s r i d ag iagx.
                     let arg = deg_nf arg in
                     (* We also use these extra dimensions to make the pbij into an insertion. *)
                     let (Plus rm) = D.plus (dom_tface faplus) in
-                    let arg_ins = ins_plus_of_pbij fains shuffle rm in
+                    let arg_ins = ins_plus_of_pbij icentral fains shuffle rm in
                     let tm = field_term left arg.tm fldname arg_ins in
                     let ty =
                       lazy
@@ -1346,7 +1349,7 @@ and tyof_field_withname_giventype : type src f mode a b m n mn c et.
             match Modality.filter_is_trivial m left_filter with
             | Some Eq -> ()
             | None -> fatal (Modal_field_filtered_away (Field.to_string fld, left))))
-    | Higher (adj, _, _, _, _) -> (
+    | Higher (adj, _, _, _, _, _) -> (
         (* Like a lower field, a higher field's projecting modality must be the left adjoint. *)
         let left = Modalcell.adj_left adj in
         match Modality.compare left fm with

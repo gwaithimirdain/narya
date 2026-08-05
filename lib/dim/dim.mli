@@ -74,7 +74,8 @@ val deg_plus_deg :
 val plus_deg :
   'm D.t -> ('m, 'n, 'mn) D.plus -> ('m, 'l, 'ml) D.plus -> ('l, 'n) deg -> ('ml, 'mn) deg
 
-val swap_deg : ('m, 'n, 'mn) D.plus -> ('n, 'm, 'nm) D.plus -> ('mn, 'nm) deg
+(* Swapping two dimensions requires them to commute; we ask for the second one to be central, which is what holds when it is (part of) the intrinsic dimension of a higher field. *)
+val swap_deg : 'n D.central -> ('m, 'n, 'mn) D.plus -> ('n, 'm, 'nm) D.plus -> ('mn, 'nm) deg
 val is_id_deg : ('m, 'n) deg -> ('m, 'n) Eq.t option
 val pos_deg : 'n D.pos -> ('m, 'n) deg -> 'm D.pos
 val deg_equiv : ('m, 'n) deg -> ('k, 'l) deg -> unit option
@@ -666,9 +667,10 @@ module Insmap (F : Fam) : sig
     build : 'shared. ('evaluation, 'shared, 'intrinsic) insertion -> 'v F.t;
   }
 
+  (* Building a map indexed by all the ways of matching the intrinsic dimensions with the evaluation ones requires the intrinsic dimensions to be central; we take the witness in place of the dimension, which can be read off from it. *)
   val build :
     'evaluation D.t ->
-    'intrinsic D.t ->
+    'intrinsic D.central ->
     ('evaluation, 'intrinsic, 'v) builder ->
     ('evaluation, 'intrinsic, 'v) t
 
@@ -721,6 +723,10 @@ val deg_of_shuffle : ('a, 'b, 'c) shuffle -> ('a, 'b, 'ab) D.plus -> ('c, 'ab) d
 val perm_of_shuffle : ('a, 'b, 'c) shuffle -> ('a, 'b, 'ab) D.plus -> ('c, 'ab) perm
 val left_shuffle : ('a, 'b, 'c) shuffle -> 'a D.t
 val right_shuffle : ('a, 'b, 'c) shuffle -> 'b D.t
+
+(* If the shuffled dimension is central, so are both of its factors. *)
+val left_central : ('a, 'b, 'c) shuffle -> 'c D.central -> 'a D.central
+val right_central : ('a, 'b, 'c) shuffle -> 'c D.central -> 'b D.central
 val out_shuffle : ('a, 'b, 'c) shuffle -> 'c D.t
 val shuffle_zero : 'a D.t -> ('a, D.zero, 'a) shuffle
 val zero_shuffle : 'a D.t -> (D.zero, 'a, 'a) shuffle
@@ -778,7 +784,8 @@ type (_, _, _) deg_comp_ins =
       * ('old_result, 'result) deg
       -> ('evaluation, 'old_result, 'intrinsic) deg_comp_ins
 
-val deg_comp_ins : ('m, 'n) deg -> ('m, 'res, 'i) insertion -> ('n, 'res, 'i) deg_comp_ins
+val deg_comp_ins :
+  'i D.central -> ('m, 'n) deg -> ('m, 'res, 'i) insertion -> ('n, 'res, 'i) deg_comp_ins
 
 type (_, _, _, _, _) deg_comp_pbij =
   | Deg_comp_pbij :
@@ -790,6 +797,7 @@ type (_, _, _, _, _) deg_comp_pbij =
       -> ('evaluation, 'old_result, 'intrinsic, 'r, 'old_shared) deg_comp_pbij
 
 val deg_comp_pbij :
+  'i D.central ->
   ('m, 'n) deg ->
   ('m, 'res, 'sh) insertion ->
   ('rem, 'sh, 'i) shuffle ->
@@ -823,10 +831,18 @@ val unplus_pbij :
   ('m, 'n, 's, 'r, 'h, 'i) unplus_pbij
 
 val ins_plus_of_pbij :
-  ('n, 's, 'h) insertion -> ('r, 'h, 'i) shuffle -> ('r, 'n, 'rn) D.plus -> ('rn, 's, 'i) insertion
+  'i D.central ->
+  ('n, 's, 'h) insertion ->
+  ('r, 'h, 'i) shuffle ->
+  ('r, 'n, 'rn) D.plus ->
+  ('rn, 's, 'i) insertion
 
 val plus_comp_pbij :
-  ('e1, 'e2, 'e12) D.plus -> ('e2, 'i, 'r2) pbij -> ('e1, 'r2, 'r12) pbij -> ('e12, 'i, 'r12) pbij
+  'i D.central ->
+  ('e1, 'e2, 'e12) D.plus ->
+  ('e2, 'i, 'r2) pbij ->
+  ('e1, 'r2, 'r12) pbij ->
+  ('e12, 'i, 'r12) pbij
 
 type (_, _, _, _) pbij_of_plus =
   | Pbij_of_plus : ('e2, 'i, 'r2) pbij * ('e1, 'r2, 'r12) pbij -> ('e1, 'e2, 'i, 'r12) pbij_of_plus
@@ -838,6 +854,9 @@ module Pbijmap : functor (F : Fam2) -> sig
   type ('evaluation, 'intrinsic, 'v) t
 
   val intrinsic : ('evaluation, 'intrinsic, 'v) t -> 'intrinsic D.t
+
+  (* The intrinsic dimension of such a map is automatically central, since that is what it took to build it. *)
+  val central : ('evaluation, 'intrinsic, 'v) t -> 'intrinsic D.central
 
   type (_, _) wrapped = Wrap : ('evaluation, 'intrinsic, 'v) t -> ('evaluation, 'v) wrapped
 
@@ -860,7 +879,7 @@ module Pbijmap : functor (F : Fam2) -> sig
 
   val build :
     'evaluation D.t ->
-    'intrinsic D.t ->
+    'intrinsic D.central ->
     ('evaluation, 'intrinsic, 'v) builder ->
     ('evaluation, 'intrinsic, 'v) t
 
@@ -975,6 +994,7 @@ module Hott : sig
 
   val dim : dim D.t
   val singleton : dim is_singleton
+  val central : dim D.central option
   val sym : (dim, dim, 'b) D.plus -> ('b, 'b) deg
   val faces : unit -> ((D.zero, dim) sface * (D.zero, dim) sface * N.two Endpoints.len) option
   val cube : 'a -> 'a -> 'a -> (dim, 'a) CubeOf.t option

@@ -875,8 +875,10 @@ and eval_higher_structfield : type mode f g gmode m n mn ag i.
     (mode, f, g, gmode, m, n, mn, mn, i, ag) Structfield.higher_data =
  fun adj env m m_n mn terms ->
   let intrinsic = PlusPbijmap.intrinsic terms in
+  (* The centrality of the intrinsic dimension was checked when the codatatype was defined, and is recorded in the map of terms. *)
+  let central = PlusPbijmap.central terms in
   let vals =
-    InsmapOf.build mn intrinsic
+    InsmapOf.build mn central
       {
         build =
           (fun (type olds) (ins : (mn, olds, i) insertion) ->

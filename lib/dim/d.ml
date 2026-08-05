@@ -13,6 +13,9 @@ module G = struct
   let commute_inv : type a b. a t -> b t -> (a, b) commute -> (b, a) commute = fun _ _ () -> ()
   let commute : type a b. a t -> b t -> (a, b) commute option = fun _ _ -> Some ()
   let central_commute : type a b. a t -> b t -> a central -> (a, b) commute = fun _ _ () -> ()
+
+  (* With only one generator, everything is central. *)
+  let centrality : type a. a t -> a central option = fun _ -> Some ()
 end
 
 include Word.MakeDecidable (G)
@@ -20,13 +23,6 @@ include Word.MakeDecidable (G)
 (* TEMPORARY.  At present there is only one generator, and all generators have been declared to commute, so witnesses of commutation can be produced out of thin air.  The following functions do that.  Each use of them marks a place where the machinery of insertions and permutations demands a symmetry that we currently get for free; when commutation is weakened, these functions will go away and every use will have to be replaced by an actual witness (or the algorithm restructured to do without it). *)
 
 let free_commute : type g h. (g, h) G.commute = ()
-
-(* Similarly, every generator is currently central.  This is meant to stand in for the eventual requirement, imposed at typechecking time, that the intrinsic dimension of a higher field of a codatatype be central: such a dimension has to be able to go anywhere, and a map indexed by all the ways of matching it with an evaluation dimension needs that for all of them at once.  So it may be used only where the dimension in question is the intrinsic dimension of a higher field: partial bijections only ever index those, as does Insmap, but insertions in general do not, so insertion operations that are also called from elsewhere in core keep plain commutation. *)
-let free_central : type g. g G.t -> g G.central = fun _ -> ()
-
-let rec free_word_central : type n. n t -> n central = function
-  | Word Zero -> Central_zero
-  | Word (Suc (n, g)) -> Central_suc (free_word_central (Word n), g, free_central g)
 
 let rec free_gen_commute : type g n. n t -> (g, n) gen_commute = function
   | Word Zero -> Commute_zero

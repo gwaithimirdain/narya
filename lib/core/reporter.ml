@@ -159,6 +159,7 @@ module Code = struct
         * 'intrinsic D.t
         * [ `Ins of ('n, 't, 'h) insertion | `Pbij of ('n, 'i2, 'r) pbij | `Ints of int list ]
         -> t
+    | Noncentral_higher_field : 'i Field.t * 'i D.t -> t
     | Invalid_field_suffix : printable * string * int list * 'evaluation D.t -> t
     | Missing_instantiation_constructor :
         Constr.t * [ `Constr of Constr.t | `Nonconstr of printable ]
@@ -479,6 +480,7 @@ module Code = struct
     | No_holes_allowed _ -> Error
     | Invalid_instant _ -> Bug
     | Wrong_dimension_of_field _ -> Error
+    | Noncentral_higher_field _ -> Error
     | Invalid_field_suffix _ -> Error
     | Cyclic_term -> Error
     | Oracle_failed _ -> Error
@@ -552,6 +554,7 @@ module Code = struct
     (* Record fields *)
     | No_such_field _ -> "E0800"
     | Wrong_dimension_of_field _ -> "E0801"
+    | Noncentral_higher_field _ -> "E0803"
     | Invalid_field_suffix _ -> "E0802"
     (* Tuples *)
     | Checking_tuple_at_nonrecord _ -> "E0900"
@@ -848,6 +851,10 @@ module Code = struct
             "@[<hv 0>field %s of %s type@;<1 2>%a@ has intrinsic dimension %s and used at dimension %s, can't have %s@]"
             fldname (record_or_codata eta) pp_printed (print ~sort:`Type d)
             (string_of_dim0 intrinsic) (string_of_dim0 used_at) err
+      | Noncentral_higher_field (fld, intrinsic) ->
+          textf
+            "@[<hv 0>higher field %s has intrinsic dimension %s, which does not commute with all other dimensions@]"
+            (Field.to_string fld) (string_of_dim0 intrinsic)
       | Invalid_field_suffix (ty, f, p, evaldim) ->
           textf "invalid suffix %s for field %s of %s-dimensional type %a" (string_of_ins_ints p) f
             (string_of_dim0 evaldim) pp_printed (print ty)

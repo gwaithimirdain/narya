@@ -324,27 +324,23 @@ module Insmap (F : Fam) = struct
     build : 'shared. ('evaluation, 'shared, 'intrinsic) insertion -> 'v F.t;
   }
 
+  (* The keys of this map are the insertions of the intrinsic generators into the evaluation dimension, at every position; such insertions exist at all positions only if those generators are central.  So we take the centrality witness in place of the dimension, which can be read off from it. *)
   let rec build : type evaluation intrinsic v.
       evaluation D.t ->
-      intrinsic D.t ->
+      intrinsic D.central ->
       (evaluation, intrinsic, v) builder ->
       (evaluation, intrinsic, v) t =
    fun evaluation intrinsic f ->
-    let (Word iplus) = intrinsic in
-    match iplus with
-    | Zero -> Zero (f.build (ins_zero evaluation))
-    | Suc (type i1 g0t) ((intrinsic, g0) : (_, i1, _) D.plus * g0t D.G.t) ->
+    match intrinsic with
+    | Central_zero -> Zero (f.build (ins_zero evaluation))
+    | Central_suc (type i1 g0t) ((intrinsic, g0, g0c) : i1 D.central * g0t D.G.t * g0t D.G.central)
+      ->
         let f : type b. (b, g0t, evaluation) D.insert -> (b, i1 * v) Param.t =
          fun i ->
           Sub
-            (build (D.uninsert i evaluation) (Word intrinsic)
+            (build (D.uninsert i evaluation) intrinsic
                { build = (fun ins -> f.build (Suc (ins, g0, i))) }) in
-        (* The keys of this map are the insertions of the intrinsic generators into the evaluation dimension, at every position; such insertions exist at all positions only if the intrinsic generator is central. *)
-        Suc
-          ( g0,
-            Tup.build evaluation g0
-              (D.gen_commute_central g0 (D.free_central g0) evaluation)
-              { build = f } )
+        Suc (g0, Tup.build evaluation g0 (D.gen_commute_central g0 g0c evaluation) { build = f })
 
   let singleton : type evaluation v. v F.t -> (evaluation, D.zero, v) t = fun v -> Zero v
 
