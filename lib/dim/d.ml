@@ -21,7 +21,7 @@ include Word.MakeDecidable (G)
 
 let free_commute : type g h. (g, h) G.commute = ()
 
-(* Similarly, every generator is currently central.  All the uses of this are on *intrinsic* dimensions, i.e. those matched with an evaluation dimension by an insertion or partial bijection: such a dimension has to be able to go anywhere, so it must commute with everything, and a map indexed by all such matchings needs that for all of them at once.  Eventually centrality of the intrinsic dimensions should be a hypothesis of those structures rather than a fact about all dimensions. *)
+(* Similarly, every generator is currently central.  This is meant to stand in for the eventual requirement, imposed at typechecking time, that the intrinsic dimension of a higher field of a codatatype be central: such a dimension has to be able to go anywhere, and a map indexed by all the ways of matching it with an evaluation dimension needs that for all of them at once.  So it may be used only where the dimension in question is the intrinsic dimension of a higher field: partial bijections only ever index those, as does Insmap, but insertions in general do not, so insertion operations that are also called from elsewhere in core keep plain commutation. *)
 let free_central : type g. g G.t -> g G.central = fun _ -> ()
 
 let rec free_word_central : type n. n t -> n central = function
