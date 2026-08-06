@@ -556,7 +556,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let env = key_env env (Modalcell.vcomp keys extra_cell) (plus_lock_comp extra plus_src nu12) in
       let env = prekey_env env pre in
       eval env tm
-  | Match { tm; window; plus_lock; dim = match_dim; branches } as match_tm -> (
+  | Match { tm; window; plus_lock; dim = match_dim; branches; motive = _ } as match_tm -> (
       let env_dim = dim_env env in
       let kenv = key_id_env env plus_lock in
       let (Has_filter fw) = Modality.filter window env_dim in

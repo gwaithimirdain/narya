@@ -56,9 +56,21 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
               flds;
           energy;
         }
-  | Match { tm; plus_lock; window; dim; branches } ->
+  | Match { tm; plus_lock; window; dim; motive; branches } ->
       Match
-        { tm = term f tm; plus_lock; window; dim; branches = Constr.Map.map (branch f) branches }
+        {
+          tm = term f tm;
+          plus_lock;
+          window;
+          dim;
+          motive =
+            Option.map
+              (function
+                | Motive_family t -> Motive_family (term f t)
+                | Motive_type t -> Motive_type (term f t))
+              motive;
+          branches = Constr.Map.map (branch f) branches;
+        }
   | Realize tm -> Realize (term f tm)
   | Canonical can -> Canonical (canonical f can)
   | Unshift (n, plusmap, tm) -> Unshift (n, plusmap, term f tm)
