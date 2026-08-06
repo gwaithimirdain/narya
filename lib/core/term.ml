@@ -198,12 +198,27 @@ module rec Term : sig
         tm : ('mode, 'c, potential) term;
       }
         -> ('mode, 'a, 'n) branch
-    | Refute
+    | Refute : {
+        annotate : ('n, 'mode, 'annotations, 'mode, 'mode, 'b, 'mode) VarAnnotate.fwd_t;
+        comp : ('mode, 'b, 'mode, 'a, unit, 'ab) Tctx.bcomp;
+        perm : ('c, 'ab) permute;
+        tm : ('mode, 'c) refutation;
+      }
+        -> ('mode, 'a, 'n) branch
 
+  (* What justified refuting a branch: a term of empty type, at whatever mode its modal annotation puts it, together with that modality.  This is exactly the data a match takes for its discriminee, so a refutation displays as an empty match with this modality as its window. *)
   (* What a match records of its type, so that readback can recover it when the match is stuck and something has been done to its result -- applied to an argument, or projected -- so that the type readback is handed is that of the whole spine rather than of the match.  A match with an explicit motive stores that motive, a type family over the datatype's indices and the datatype itself, to be applied to a branch's indices and constructor.  A non-dependent match checks all its branches at one type and stores that, which is both the type of the match and the type of every branch.  A variable match refines the context instead, and stores neither. *)
   and (_, _) match_motive =
     | Motive_family : ('mode, 'a, kinetic) term -> ('mode, 'a) match_motive
     | Motive_type : ('mode, 'a, kinetic) term -> ('mode, 'a) match_motive
+
+  and (_, _) refutation =
+    | Refutation : {
+        window : ('dom, 'window, 'mode) Modality.t;
+        plus_lock : ('c, 'mode, 'window, 'dom, 'cw) plus_lock;
+        tm : ('dom, 'cw, kinetic) term;
+      }
+        -> ('mode, 'c) refutation
 
   and (_, _) canonical =
     | Data : {
@@ -511,13 +526,28 @@ end = struct
         tm : ('mode, 'c, potential) term;
       }
         -> ('mode, 'a, 'n) branch
-    (* A branch that was refuted during typechecking doesn't need a body to compute with, but we still mark its presence as a signal that it should be stuck (this can occur when normalizing in an inconsistent context). *)
-    | Refute
+    (* A branch that was refuted during typechecking doesn't need a body to compute with, but we still mark its presence as a signal that it should be stuck (this can occur when normalizing in an inconsistent context).  It stores the term of empty type that justified the refutation, in the same context that a branch body would live in, so that if we do reach it -- which takes an inconsistent context -- we can display the refutation of that term rather than giving up.  The term is never evaluated in the course of ordinary computation.  The variable may be modally annotated, in which case the refutation is a match through that modality as a window, just as an ordinary match on a modal discriminee is.  The annotation must be one a match could use as a window, for refuting a variable *is* matching against it with no branches; a variable that could not be matched on does not refute the branch either. *)
+    | Refute : {
+        annotate : ('n, 'mode, 'annotations, 'mode, 'mode, 'b, 'mode) VarAnnotate.fwd_t;
+        comp : ('mode, 'b, 'mode, 'a, unit, 'ab) Tctx.bcomp;
+        perm : ('c, 'ab) permute;
+        tm : ('mode, 'c) refutation;
+      }
+        -> ('mode, 'a, 'n) branch
 
+  (* What justified refuting a branch: a term of empty type, at whatever mode its modal annotation puts it, together with that modality.  This is exactly the data a match takes for its discriminee, so a refutation displays as an empty match with this modality as its window. *)
   (* What a match records of its type, so that readback can recover it when the match is stuck and something has been done to its result -- applied to an argument, or projected -- so that the type readback is handed is that of the whole spine rather than of the match.  A match with an explicit motive stores that motive, a type family over the datatype's indices and the datatype itself, to be applied to a branch's indices and constructor.  A non-dependent match checks all its branches at one type and stores that, which is both the type of the match and the type of every branch.  A variable match refines the context instead, and stores neither. *)
   and (_, _) match_motive =
     | Motive_family : ('mode, 'a, kinetic) term -> ('mode, 'a) match_motive
     | Motive_type : ('mode, 'a, kinetic) term -> ('mode, 'a) match_motive
+
+  and (_, _) refutation =
+    | Refutation : {
+        window : ('dom, 'window, 'mode) Modality.t;
+        plus_lock : ('c, 'mode, 'window, 'dom, 'cw) plus_lock;
+        tm : ('dom, 'cw, kinetic) term;
+      }
+        -> ('mode, 'c) refutation
 
   (* A canonical type is either a datatype or a codatatype/record. *)
   and (_, _) canonical =
