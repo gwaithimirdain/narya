@@ -583,7 +583,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                   (* Then we proceed recursively with the body of that branch. *)
                   eval (Permute (perm, env)) tm)
           (* If this constructor belongs to a refuted case, it must be that we are in an inconsistent context with some neutral belonging to an empty type.  In that case, the match must be stuck. *)
-          | Some Refute ->
+          | Some (Refute _) ->
               Unrealized (Some (Stuck { env; tm = match_tm; ins = ins_zero (dim_env env) }, Emp)))
       (* Otherwise, the case tree doesn't reduce.  We remember the match itself, unevaluated, along with the environment it was to be evaluated in, so that it can be read back as a match rather than as an opaque application spine. *)
       | _ -> Unrealized (Some (Stuck { env; tm = match_tm; ins = ins_zero (dim_env env) }, Emp)))
