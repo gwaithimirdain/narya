@@ -35,6 +35,35 @@ let rec remove_ctx : type a x n b. b ctx -> (a, x, n, b) insert -> a ctx =
 let remove : type a x n b. b t -> (a, x, n, b) insert -> a t =
  fun { ctx; used } i -> { ctx = remove_ctx ctx i; used }
 
+(* Extract the entry at an insertion position from a name-context, returning the rest of the context and the extracted variable-cube and field-map.  Mirrors "remove_ctx" but also returns the removed entry; used by "permute_ctx" below. *)
+let rec extract_ctx : type a x n b.
+    b ctx ->
+    (a, x, n, b) insert ->
+    a ctx * ((n, string) gvariables * (string, string) Abwd.t) =
+ fun ctx i ->
+  match (ctx, i) with
+  | Snoc (ctx, vars, flds), Now -> (ctx, (vars, flds))
+  | Snoc (ctx, vars, flds), Later i ->
+      let rest, e = extract_ctx ctx i in
+      (Snoc (rest, vars, flds), e)
+  | Emp, _ -> .
+  | Lock _, _ -> .
+
+(* Permute a name-context, e.g. to match the permutation stored in a match branch (which moves the new pattern variables before the existing variables now defined in terms of them).  Mirrors Tctx.perm_dom over the name context. *)
+let rec permute_ctx : type a b. (a, b) permute -> b ctx -> a ctx =
+ fun p ctx ->
+  match p with
+  | Id -> ctx
+  | Insert (p, i) ->
+      let rest, (vars, flds) = extract_ctx ctx i in
+      Snoc (permute_ctx p rest, vars, flds)
+  | Lock p ->
+      let (Lock ctx) = ctx in
+      Lock (permute_ctx p ctx)
+
+let permute : type a b. (a, b) permute -> b t -> a t =
+ fun p { ctx; used } -> { ctx = permute_ctx p ctx; used }
+
 (* let rec bsplit_ctx : type a b ab x y z. ab ctx -> (x, b, y, a, z, ab) Tctx.bcomp -> a ctx =
     fun ctx ab ->
      match ab with
@@ -70,7 +99,11 @@ let lookup : type mode a. a t -> (mode, a) index -> string list =
    fun ctx x fa ->
     match (ctx, x) with
     | Snoc (ctx, _, _), Later x -> lookup ctx x fa
-    | Snoc (_, Variables (_, mn, xs), _), Now ->
+    | Snoc (_, Variables (_, mn, xs), fields), Now ->
+        (* A self-variable with associated fields (added by "add_fields" for field-variable record display) being looked up directly, rather than through a field (which goes through "lookup_field"), cannot be displayed with field-variable syntax.  We signal this with the Self_used bug, which the unparser catches to fall back to self-variable syntax. *)
+        (match fields with
+        | Emp -> ()
+        | Snoc _ -> Reporter.fatal Reporter.Code.Self_used);
         let (SFace_of_plus (_, fb, fc)) = sface_of_plus mn fa in
         cubevar (NICubeOf.find xs fc) fb
     | Emp, _ | Lock _, _ -> . in
@@ -166,6 +199,43 @@ let add_cube : type m n b. n D.t -> b t -> binder_name -> string * (b, (m, n) di
   ( name,
     { ctx = Snoc (ctx, Variables (n, D.plus_zero n, NICubeOf.singleton name), Abwd.empty); used } )
 
+(* Extend a name-context by the pattern variables of a match branch, using the names stored in the branch's "annotate" witness (one per variable) and the dimensions stored in its "comp" witness.  Returns the extended name-context (for the branch's pre-permutation context) together with the variable names in order, for displaying the constructor pattern.  Mirrors Norm.take_args, which does the same for the value environment. *)
+let rec add_match_vars : type n mode annotations a b ab.
+    a t ->
+    (n, mode, annotations, mode, mode, b, mode) VarAnnotate.fwd_t ->
+    (mode, b, mode, a, unit, ab) Tctx.bcomp ->
+    ab t * string list =
+ fun names annotate comp ->
+  match (annotate, comp) with
+  | Zero _, Zero -> (names, [])
+  | Suc (Annotate (name, _), annotate), Suc (Dim (m, _), comp) ->
+      let x, names = add_cube m names (Variables.binder_name_of_option name) in
+      let names, xs = add_match_vars names annotate comp in
+      (names, x :: xs)
+
+(* Add a single (cube) self-variable for a record type, with its fields exposed as named variables (mirroring Ctx.vis_fields and of_ordered_ctx).  The self-variable itself is anonymous: its fields are exposed so that field-projections of the self read back as field variables.  Unlike other bound variables, the field variables are NOT uniquified: their names are exactly the record's field names, which cannot be renamed without changing the meaning.  Hence if any field name clashes with a name already in scope (so that displaying it as a field variable would shadow that name), we return None, and the caller falls back to self-variable syntax.  On success, returns the field variable names (= the field names, in order) for use as the field patterns. *)
+let add_fields : type b n m.
+    n D.t -> b t -> string list -> ((b, (m, n) dim_entry) snoc t * string list) option =
+ fun n { ctx; used } field_names ->
+  let rec go used = function
+    | [] -> Some (Abwd.empty, used)
+    | f :: fs -> (
+        if StringSet.mem f used then None
+        else
+          match go (StringSet.add f used) fs with
+          | None -> None
+          | Some (fields, used) -> Some (Snoc (fields, (f, f)), used)) in
+  match go used field_names with
+  | None -> None
+  | Some (fields, used) ->
+      let self_name, _, used = uniquify_opt (fun x -> (x, "")) (`Anon no_hints) used in
+      Some
+        ( {
+            ctx = Snoc (ctx, Variables (n, D.plus_zero n, NICubeOf.singleton self_name), fields);
+            used;
+          },
+          field_names )
+
 (* Add a cube of variables, generating a fresh version of each of their names, and assigning autogenerated names to unnamed ones. *)
 let add : type b m n. b t -> n variables -> (n, string) gvariables * (b, (m, n) dim_entry) snoc t =
  fun { ctx; used } (Variables (m, mn, names)) ->
@@ -237,6 +307,28 @@ let rec of_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> b t = func
 
 let of_ctx : type mode a b. (mode, a, b) Ctx.t -> b t = function
   | Permute { ctx; _ } -> of_ordered_ctx ctx
+
+(* Degenerate a name-context by a dimension r, mirroring Degctx.degctx: each variable cube is re-dimensioned from its intrinsic n-cube up to a (r+n)-cube, keeping the same base names (Variables.plus_variables changes only the substitution dimension, not the stored name cube).  This reproduces exactly the names that "of_ctx" would produce for the degenerated context, so it lets the renderer name the (degenerated) variables of a non-projectable higher codata field instance without rebuilding the value-level degenerate context.  We drive the transformation by walking the plus-map (a Tctx.Plusmap.t = Path.Fmap, whose entries are Plus_proj at the empty base, Plus_dim for a variable, Plus_lock for a lock) in parallel with the name-context. *)
+let degenerate : type r b kb mode. r D.t -> (r, b, kb, mode) plusmap -> b t -> kb t =
+ fun r pm { ctx; used } ->
+  (* The name-context is mode-agnostic, but the plus-map's mode changes across a lock, so we quantify over the mode in the recursion.  We drive the recursion by the name-context, which pins down the dom object 'c and hence the outermost plus-map edge. *)
+  let rec go : type c kc m. (r, c, kc, m) plusmap -> c ctx -> kc ctx =
+   fun pm ctx ->
+    match ctx with
+    | Emp -> (
+        match pm with
+        | Suc (Zero (Eq Unit), Inject (Plus_proj _), Suc (Zero, Proj _)) -> Emp
+        (* Mode.t is abstract here, so the empty base's object can't be seen to be "unit"; refute the spurious "Mode" alternative. *)
+        | Suc (Zero (Eq (Mode m)), Inject (Plus_proj _), _) -> Mode.not_unit m Eq)
+    | Snoc (ctx, vars, flds) -> (
+        match pm with
+        (* The degenerating dimension r is filtered by the variable's modality (witnessed by the third component of Plus_dim) before being added to its cube dimension. *)
+        | Suc (pm, Inject (Plus_dim (k_mn, _, fq)), Suc (Zero, Dim _)) ->
+            Snoc (go pm ctx, plus_variables (Modality.filtered r fq) k_mn vars, flds))
+    | Lock ctx -> (
+        match pm with
+        | Suc (pm, Inject (Plus_lock _), Suc (Zero, Lock _)) -> Lock (go pm ctx)) in
+  { ctx = go pm ctx; used }
 
 (* Add a cube of variables WITHOUT replacing them by fresh versions.  Should only be used when the variables have already been so replaced, as in the output of uniquify_vars below. *)
 let unsafe_add : type k n b.

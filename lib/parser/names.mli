@@ -11,9 +11,21 @@ type wrapped = Wrap : 'n t -> wrapped
 val empty : 'mode emp t
 val remove : 'b t -> ('a, 'modality, 'n, 'b) insert -> 'a t
 val split : 'ab t -> ('x, 'b, 'y, 'a, 'z, 'ab) Tctx.comp -> 'a t
+val permute : ('a, 'b) permute -> 'b t -> 'a t
+
+val add_match_vars :
+  'a t ->
+  ('n, 'mode, 'annotations, 'mode, 'mode, 'b, 'mode) VarAnnotate.fwd_t ->
+  ('mode, 'b, 'mode, 'a, unit, 'ab) Tctx.bcomp ->
+  'ab t * string list
+
 val lookup : 'n t -> ('mode, 'n) index -> string list
 val lookup_field : 'n t -> ('mode, 'n) index -> string -> string list option
 val add_cube : 'n D.t -> 'b t -> binder_name -> string * ('b, ('m, 'n) dim_entry) snoc t
+
+val add_fields :
+  'n D.t -> 'b t -> string list -> (('b, ('m, 'n) dim_entry) snoc t * string list) option
+
 val add : 'b t -> 'n variables -> ('n, string) gvariables * ('b, ('m, 'n) dim_entry) snoc t
 
 val add_strings :
@@ -24,6 +36,7 @@ val add_full :
 
 val add_lock : 'a t -> ('a, 'mode, 'modality, 'dom, 'am) plus_lock -> 'am t
 val of_ctx : ('mode, 'a, 'b) Ctx.t -> 'b t
+val degenerate : 'r D.t -> ('r, 'b, 'kb, 'mode) plusmap -> 'b t -> 'kb t
 
 type uniquified_vars
 

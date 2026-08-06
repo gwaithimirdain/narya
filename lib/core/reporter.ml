@@ -212,6 +212,8 @@ module Code = struct
     | Invalid_variable_face : 'a D.t * ('n, 'm) sface -> t
     | Anomaly : string -> t
     | No_such_level : printable -> t
+    (* Raised by Names.lookup when an anonymous self-variable of a record being displayed with field-variable syntax is used directly rather than through a field; caught by the unparser to fall back to self-variable syntax.  A Bug because it should always be caught. *)
+    | Self_used : t
     | Redefining_constant : string list -> t
     | Invalid_constant_name : string list * string option -> t
     | Too_many_commands : t
@@ -236,6 +238,10 @@ module Code = struct
     | Hole_solved : int -> t
     | Split_term : PPrint.document -> t
     | Notation_defined : string -> t
+    (* Something in a stuck case tree could not be displayed as the case-tree construct it came from, so its application spine is shown instead.  The string says which case it was. *)
+    | Case_tree_not_displayed : string -> t
+    (* A value did not fit the type it was being read back at.  This is a bug wherever readback is given a value and its own type; but readback of a stuck case tree, for display, may read a branch body back at a type it only approximates, and it catches this specific code to fall back rather than reporting a bug. *)
+    | Readback_at_wrong_type : string -> t
     | Show : string * printable -> t
     | Comment_end_in_string : t
     | Checking_canonical_at_nonuniverse : string * printable -> t
@@ -404,6 +410,8 @@ module Code = struct
     | Nonparametric_mode_degeneracy _ -> Error
     | Anomaly _ -> Bug
     | No_such_level _ -> Bug
+    | Readback_at_wrong_type _ -> Bug
+    | Self_used -> Bug
     | Redefining_constant _ -> Warning
     | Invalid_constant_name _ -> Error
     | Too_many_commands -> Error
@@ -468,6 +476,7 @@ module Code = struct
     | Invalid_split _ -> Error
     | Hole_solved _ -> Info
     | Split_term _ -> Info
+    | Case_tree_not_displayed _ -> Info
     | Forbidden_interactive_command _ -> Error
     | Not_enough_to_undo -> Error
     | Commands_undone _ -> Info
@@ -492,6 +501,8 @@ module Code = struct
     (* Usually bugs *)
     | Anomaly _ -> "E0000"
     | No_such_level _ -> "E0001"
+    | Readback_at_wrong_type _ -> "E0005"
+    | Self_used -> "E0004"
     | Accumulated (_msg, _errs) -> "E0002"
     | Invalid_degeneracy_action _ -> "E0003"
     (* Past and future features *)
@@ -682,6 +693,7 @@ module Code = struct
     | Section_opened _ -> "I0007"
     | Section_closed _ -> "I0008"
     | Split_term _ -> "I0009"
+    | Case_tree_not_displayed _ -> "I0010"
     | Option_set _ -> "I0100"
     | Display_set _ -> "I0101"
     (* Control of execution *)
@@ -1025,6 +1037,7 @@ module Code = struct
             field (Modality.to_string m)
       | Anomaly str -> textf "anomaly: %s" str
       | No_such_level i -> textf "@[<hov 2>no level variable@ %a@ in context@]" pp_printed (print i)
+      | Self_used -> text "uncaught use of self-variable in a field-variable record display"
       | Redefining_constant name ->
           textf "redefining constant: %a" pp_printed (print (PString (String.concat "." name)))
       | Invalid_constant_name (name, why) ->
@@ -1079,6 +1092,9 @@ module Code = struct
                 (fun ppf names -> pp_print_list (fun ppf name -> pp_printed ppf name) ppf names)
                 (List.map (fun name -> print name) names))
       | Notation_defined name -> textf "notation %s defined" name
+      | Readback_at_wrong_type str -> textf "reading back %s at the wrong type" str
+      | Case_tree_not_displayed str ->
+          textf "not displaying %s; showing an application spine instead" str
       | Show (str, x) -> textf "%s: %a" str pp_printed (print x)
       | Comment_end_in_string ->
           text "comment-end sequence `} in quoted string: cannot be commented out"

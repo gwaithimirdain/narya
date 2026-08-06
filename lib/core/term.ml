@@ -175,6 +175,12 @@ module rec Term : sig
     | Unact : ('m, 'n) op * ('mode, 'b, 's) term -> ('mode, 'b, 's) term
     | Shift : 'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'b, 's) term -> ('mode, 'nb, 's) term
     | Weaken : ('mode, 'b, 's) term -> ('mode, ('b, ('modality, 'n) dim_entry) snoc, 's) term
+    | Codata_display : {
+        eta : (potential, 'et) eta;
+        dim : 'n D.t;
+        fields : ('mode, 'a, 'n) codata_field_display Bwd.t;
+      }
+        -> ('mode, 'a, 's) term
 
   and ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args = {
     x : 'k variables;
@@ -259,6 +265,24 @@ module rec Term : sig
     liftl :
       ('mode * ('nh * ('hb, ('mode id, D.zero) dim_entry) snoc * potential * 'et)) StructfieldAbwd.t;
   }
+
+  and (_, _, _) codata_field_display =
+    | Cfd :
+        ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+        * 'i Field.t
+        * string list
+        * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
+        * ('gmode, ('ag, ('f, 'n) dim_entry) snoc, kinetic) term
+        -> ('mode, 'a, 'n) codata_field_display
+    | Cfd_deg :
+        ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+        * 'i Field.t
+        * string list
+        * 'r D.t
+        * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
+        * ('r, ('ag, ('f, 'n) dim_entry) snoc, 'kb, 'gmode) plusmap
+        * ('gmode, 'kb, kinetic) term
+        -> ('mode, 'a, 'n) codata_field_display
 
   and (_, _, _, _) env =
     | Emp : 'mode Mode.t * 'n D.t -> ('mode, 'a, 'n, 'mode emp) env
@@ -501,6 +525,13 @@ end = struct
     | Unact : ('m, 'n) op * ('mode, 'b, 's) term -> ('mode, 'b, 's) term
     | Shift : 'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'b, 's) term -> ('mode, 'nb, 's) term
     | Weaken : ('mode, 'b, 's) term -> ('mode, ('b, ('modality, 'n) dim_entry) snoc, 's) term
+    (* Display-only output of Readback.codata_display_value; it cannot be an ordinary Canonical (Codata …), for the reasons in the comment on codata_field_display below.  Produced by readback for the "about" command to render a canonical type as its declaration ("data [ … ]"/"codata [ … ]").  It carries already-read-back terms, never a value, and is never evaluated, serialized, or typechecked; all those paths raise an anomaly on it.  Unlike a degenerate datatype, which does read back into an ordinary Canonical (Data …), a degenerate codatatype cannot be a Canonical (Codata …); see the comment on codata_field_display in the signature above. *)
+    | Codata_display : {
+        eta : (potential, 'et) eta;
+        dim : 'n D.t;
+        fields : ('mode, 'a, 'n) codata_field_display Bwd.t;
+      }
+        -> ('mode, 'a, 's) term
 
   and ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args = {
     x : 'k variables;
@@ -517,6 +548,7 @@ end = struct
   }
 
   (* A branch of a match binds a number of new variables.  If it is a higher-dimensional match, then each of those "variables" is actually a full cube of variables.  In addition, its context must be permuted to put those new variables before the existing variables that are now defined in terms of them.  Finally, each of the variables might be annotated by a different modality, so we include a list of such modalities and make it into a tctx extension that all have the same dimension. *)
+  (* The pattern-variable display names are carried inside the "annotate" witness (one per variable, in VarAnnote/VarAnnotator), so unparse.ml can recover them when displaying a match branch ("about pred"). *)
   and (_, _, _) branch =
     | Branch : {
         (* The annotations must be those given to the constructor arguments, postcomposed by the window modality *)
@@ -604,6 +636,29 @@ end = struct
     liftl :
       ('mode * ('nh * ('hb, ('mode id, D.zero) dim_entry) snoc * potential * 'et)) StructfieldAbwd.t;
   }
+
+  (* One field instance of a codatatype/record, as it must be provided in a comatch and displayed by "about".  The self-variable is a cube of the codatatype's dimension 'n.
+
+     This is indexed by field *instance* — one entry per pair of a field and a partial bijection between the codatatype's evaluation dimension and the field's intrinsic dimension — rather than by field, as a CodatafieldAbwd is.  That is why the readback of a codatatype can't be an ordinary Canonical (Codata …), the way the readback of a datatype is an ordinary Canonical (Data …).  The two agree whenever there is exactly one instance per field, namely when the evaluation dimension is zero (a codatatype as declared, including a Gel-like intrinsically higher one) or when all the fields are lower; but a *degenerate* codatatype with a *higher* field, e.g. "about (refl √N)", breaks both ways at once.  It has several instances of the same field (the declaration form ".root.e" and the projectable ".root.1"), which a field-keyed map cannot hold and for which a projectable instance has no Codatafield encoding at all; and even keeping only the declaration form would not typecheck, since Codatafield.Higher pins the codatatype's dimension to zero — not cosmetically, as tyof_codatafield's higher branch (Norm) relies on that equation and check_codata (Check) rejects higher fields in higher-dimensional codatatypes outright. *)
+  and (_, _, _) codata_field_display =
+    (* A field instance displayed in the self-extended base context: the field's adjunction, the field, its field-application suffix (e.g. ["1"]/["2"] for projectable higher fields, [] for lower fields), and the field's type referring to the self-variable.  As in Codatafield, that type is the one that was declared, in the context locked by the adjunction's right adjoint and then extended by the self-variable, annotated by the left adjoint (both trivial for an ordinary non-modal field, which is modal over the identity adjunction); the left adjoint is also what the display annotates the self-variable with, as in "(x :♭| _) .fld : A".  This order is what makes a *degenerate* modal codatatype displayable: its field types are instantiated at projections of the self-variable's boundary faces, and projecting a ♭-modal field from x.0 requires a key from x.0's annotation to ♭, which is the identity when x is annotated by ♭ but would be the nonexistent cell "1 ⇒ ♭" if x were annotated by the identity. *)
+    | Cfd :
+        ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+        * 'i Field.t
+        * string list
+        * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
+        * ('gmode, ('ag, ('f, 'n) dim_entry) snoc, kinetic) term
+        -> ('mode, 'a, 'n) codata_field_display
+    (* A non-projectable higher field instance, displayed in a context degenerated by the remaining dimension 'r: the adjunction, the field, its suffix, that dimension, the right-adjoint lock, the degeneration plus-map from the locked and self-extended context, and the field's type there.  As when a higher field is checked, the degeneration is applied last, to the whole locked and extended context. *)
+    | Cfd_deg :
+        ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+        * 'i Field.t
+        * string list
+        * 'r D.t
+        * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
+        * ('r, ('ag, ('f, 'n) dim_entry) snoc, 'kb, 'gmode) plusmap
+        * ('gmode, 'kb, kinetic) term
+        -> ('mode, 'a, 'n) codata_field_display
 
   (* A version of an environment that involves terms rather than values.  Used mainly when reading back metavariables.  The first argument is the mode, the second is the checked-length of the context *in* which the environment is defined (its domain, as a context morphism), the third is its dimension, and the fourth is the checked-length of the context of types of the values in the environment (its codomain, as a context morphism).  *)
   and (_, _, _, _) env =

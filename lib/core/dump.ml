@@ -283,6 +283,7 @@ module F = struct
     | Match _ -> fprintf ppf "Match ?"
     | Realize tm -> fprintf ppf "Realize (%a)" term tm
     | Canonical c -> fprintf ppf "Canonical (%a)" canonical c
+    | Codata_display _ -> fprintf ppf "Codata_display ?"
     | Unshift (n, _, tm) -> fprintf ppf "Unshift (%s, %a)" (string_of_dim n) term tm
     | Unact (_, tm) -> fprintf ppf "Unact (?, %a)" term tm
     | Shift (n, _, tm) -> fprintf ppf "Shift (%s, %a)" (string_of_dim n) term tm

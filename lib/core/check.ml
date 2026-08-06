@@ -2930,7 +2930,7 @@ and check_field : type mode a b c s m n mn i et.
             (* We don't need the error-checking of tyof_field, since we are getting our fields directly from the codatatype definition and so we already know that they have the right dimensions.  So we can call directly into the helper function tyof_lower_codatafield.  Note that we pass it prev_etm, env, and tyargs that consist of values in the old context, but the return value ety is in the new degenerated context. *)
             let ety =
               tyof_lower_codatafield prev_etm fld adj fld_plus_lock fldty env tyargs m mn
-                ~key:`Nokey in
+                ~key:`Nokey ~self:`Ambient in
             let ctm = check (mkstatus lbl status) lctx tm ety in
             let etms =
               Snoc
@@ -3172,11 +3172,11 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
         (* We trap any errors produced by 'tyof_field' or 'check', adding them instead to the list of accumulated errors and going on.  Note that if any previous fields that have already failed, then prev_etm will be bound to an error value, and so if the type of this field depends on the value of any previous one, tyof_field will raise that error, which we catch and add to the list; but it will be (Accumulated Emp) so it won't be displayed to the user. *)
         Reporter.try_with ~fatal:(fun e -> (evals, cvals, Snoc (errs, e))) @@ fun () ->
         let shuf : (mode, r, h, i, c) Norm.shuffleable =
-          higher_codatafield_shuffleable ctx (length_env env) degenv r fldshuf in
+          higher_codatafield_shuffleable ctx (length_env env) (Ambient degenv) r fldshuf in
         (* Evaluate the type for this instance of the field (behind the lock by the right adjoint, hence with no counit keying), and check the user's term against it in the locked degenerated context. *)
         let ety =
           tyof_higher_codatafield prev_etm fld adj env tyargs fldins ~shuf fld_plus_lock fldtermctx
-            ic0 fldty ~key:`Nokey in
+            ic0 fldty ~key:`Nokey ~self:`Ambient in
         let ctm = check newstatus lctx tm ety in
         (* Add the typechecked term to the list *)
         let cvals = PlusPbijmap.set pbij (Some (PlusFam (plusmap_bg, ctm))) cvals in
@@ -3608,7 +3608,7 @@ and synth : type mode a b s.
                           Ctx.variables_vis ctx
                             (Modality.filter_idempotent sfilter)
                             codxs (CubeOf.subcube fb binds) in
-                        let body = readback_at codctx tm (Lazy.force ty) in
+                        let body = readback_at Kinetic codctx tm (Lazy.force ty) in
                         [ cod; Term.Lam (codxs, dom_sface s, sfilter, body) ] in
                       TubeOf.pmap { map } [ tyargs ] (Cons (Cons Nil)) in
                     (* We build the cube of codomains by reading back the lower-dimensional ones in a context extended by the appropriate partial cube of variables, and adding the top-dimensional one. *)
@@ -4029,7 +4029,7 @@ and synth_arg_cube : type dom modality mode a b n c.
                                  expected = PVal (lctx, ty);
                                  why;
                                }));
-                  let ctm = readback_at lctx etm (Lazy.force ety) in
+                  let ctm = readback_at Kinetic lctx etm (Lazy.force ety) in
                   (ctm, etm)
               (* Otherwise, we pull an argument of the appropriate implicitness, check it against the correct type. *)
               | _ ->
