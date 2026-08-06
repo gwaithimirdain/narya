@@ -284,8 +284,8 @@ def Gel_ee (A00 A01 : Type) (A02 : Br Type A00 A01) (A10 A11 : Type)
        (a12 : A12 a10 a11) (a20 : A20 a00 a10) (a21 : A21 a01 a11)
        → Type)
   : Type⁽ᵖᵖ⁾ A02 A12 A20 A21
-  ≔ sig a00 a01 a02 a10 a11 a12 a20 a21 ↦ (
-  ungel : R a00 a01 a02 a10 a11 a12 a20 a21 )
+  ≔ sig (
+  a .ungel : R a.00 a.01 a.02 a.10 a.11 a.12 a.20 a.21 )
 
 def Gel_ee_iso (A00 A01 : Type) (A02 : Br Type A00 A01) (A10 A11 : Type)
   (A12 : Br Type A10 A11) (A20 : Br Type A00 A10) (A21 : Br Type A01 A11)

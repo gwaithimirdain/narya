@@ -15,8 +15,8 @@ axiom B : A → Type
 axiom s : Σ A B
 
 {`To test degeneracies on records we have to set up a bunch of stuff, since the simplest case this happens is with Id Gel and squares in the universe.`}
-def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig a b ↦ (
-  ungel : R a b )
+def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig (
+  a .ungel : R a.0 a.1 )
 
 axiom A0 : Type
 axiom B0 : Type
