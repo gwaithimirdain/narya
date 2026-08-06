@@ -118,7 +118,7 @@ let rec ext_tel : type dom window mode a b c ac bc e n.
               env;
               values = Modal (afilter, newvars) :: vars;
               normals = Modal (filter_k_m, newnfs) :: nfs;
-              annotate = Suc (Annotate filter_k_m, annotate);
+              annotate = Suc (Annotate (x, filter_k_m), annotate);
               comp = Suc (Dim (k, filter_k_k), comp);
             })
 
