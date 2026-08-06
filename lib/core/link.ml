@@ -79,7 +79,7 @@ and canonical : type mode a. (File.t -> File.t) -> (mode, a) canonical -> (mode,
       Data
         {
           indices;
-          constrs = Abwd.map (dataconstr f) constrs;
+          constrs = Abwd.map (term f) constrs;
           discrete;
           recursive = Positivity.link_recursion f recursive;
           hints;
@@ -146,17 +146,6 @@ and codatafield : type mode a n i et.
   match fld with
   | Lower (adj, plus_lock, ty) -> Lower (adj, plus_lock, term f ty)
   | Higher (adj, plus_lock, tc, ka, tm) -> Higher (adj, plus_lock, termctx f tc, ka, term f tm)
-
-and dataconstr : type mode p i.
-    (File.t -> File.t) -> (mode, p, i) dataconstr -> (mode, p, i) dataconstr =
- fun f (Dataconstr { args; indices }) ->
-  Dataconstr { args = tel f args; indices = Vec.mmap (fun [ x ] -> term f x) [ indices ] }
-
-and tel : type mode a b ab. (File.t -> File.t) -> (mode, a, b, ab) tel -> (mode, a, b, ab) tel =
- fun f t ->
-  match t with
-  | Emp -> Emp
-  | Ext (x, Modal (modality, al, ty), t) -> Ext (x, Modal (modality, al, term f ty), tel f t)
 
 and env : type mode a n b. (File.t -> File.t) -> (mode, a, n, b) env -> (mode, a, n, b) env =
  fun f e ->

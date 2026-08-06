@@ -180,7 +180,7 @@ and equal_at : type mode a b.
         let rec equal_at_data (x : (mode, kinetic) value) (y : (mode, kinetic) value) : unit Err.t =
           match (x, y) with
           | Constr (xconstr, xn, xargs), Constr (yconstr, yn, yargs) -> (
-              let (Dataconstr { env; args = argtys; indices = _ }) =
+              let (Dataconstr { env; ty }) =
                 match Abwd.find_opt xconstr constrs with
                 | Some x -> x
                 | None -> fatal (Anomaly "constr not found in equality-check") in
@@ -189,13 +189,11 @@ and equal_at : type mode a b.
               | Neq, _ -> fatal (Dimension_mismatch ("equality of constrs", xn, yn))
               | _, Neq -> fatal (Dimension_mismatch ("equality of constrs", xn, TubeOf.inst tyargs))
               | Eq, Eq ->
-                  let lgth = Telescope.length argtys in
-                  let xargs =
-                    Vec.of_list_length lgth xargs
-                    <|> Anomaly "wrong number of constructor arguments in readback_at" in
+                  let (Wrap xargs) = Vec.of_list xargs in
+                  let lgth = Vec.length xargs in
                   let yargs =
                     Vec.of_list_length lgth yargs
-                    <|> Anomaly "wrong number of constructor arguments in readback_at" in
+                    <|> Anomaly "wrong number of constructor arguments in equality-check" in
                   let (Conses (cs, bs)) = Tlist.conses lgth in
                   (* The instantiation must be at other instances of the same constructor; we take its arguments as in 'check'. *)
                   let tyarg_args =
@@ -220,8 +218,8 @@ and equal_at : type mode a b.
                                | _ -> fatal (Anomaly "inst arg not constr in equality at datatype"));
                          }
                          [ tyargs ] bs in
-                  (* It suffices to compare the top-dimensional faces of the cubes; the others are only there for evaluating case trees.  It would be nice to do this recursion directly on the Bwds, but equal_at_tel is expressed much more cleanly as an operation on lists. *)
-                  equal_at_tel ctx env xargs yargs argtys tyarg_args)
+                  (* It suffices to compare the top-dimensional faces of the cubes; the others are only there for evaluating case trees. *)
+                  equal_at_pi ctx xn (lazy (eval_term env ty)) xargs yargs tyarg_args)
           | Neu _, Neu _ -> (
               (* Two neutrals are first compared as spines; a mismatch is inconclusive if either side unfolds, in which case we retry (once) on the unfoldings, which may now be constructors. *)
               match equal_neu ctx x y with
@@ -448,91 +446,39 @@ and equal_apps : type h1 h2 mode any1 any2 a b.
       equal_tyargs ctx a1 a2
   | _, _ -> None
 
-and equal_at_tel : type mode n a b ab c d.
+and equal_at_pi : type mode n b c d.
     (mode, c, d) Ctx.t ->
-    (mode, n, a) env ->
+    n D.t ->
+    (mode, kinetic) value Lazy.t ->
     ((n, mode, kinetic) modal_value_cube, b) Vec.t ->
     ((n, mode, kinetic) modal_value_cube, b) Vec.t ->
-    (mode, a, b, ab) Telescope.t ->
     ((D.zero, n, n, (mode, kinetic) modal_value) TubeOf.t, b) Vec.t ->
     unit Err.t =
- fun ctx env xs ys tys tyargs ->
-  match (xs, ys, tys, tyargs) with
-  | [], [], Emp, [] -> Ok ()
-  | ( Modal
-        (type xdom xmodality xk)
-        ((xfilter, x) :
-          (xdom, xmodality, mode, xk, n) Modality.filter_dim * (xk, (xdom, kinetic) value) CubeOf.t)
-      :: xs,
-      Modal
-        (type ydom ymodality yk)
-        ((yfilter, y) :
-          (ydom, ymodality, mode, yk, n) Modality.filter_dim * (yk, (ydom, kinetic) value) CubeOf.t)
-      :: ys,
-      Ext (_, Modal (tymodality, aplus, ty), tys),
-      tyargs :: tyargs_rest ) -> (
+ fun ctx n fnty xs ys tyargs ->
+  match (xs, ys, tyargs) with
+  | [], [], [] -> Ok ()
+  | Modal (xfilter, x) :: xs, Modal (yfilter, y) :: ys, tyargs :: tyargs_rest -> (
+      (* The constructor's function-type value must be a pi-type; we compare the arguments at its domain (instantiated at the corresponding arguments of the lower-dimensional constructors) and continue with the codomain applied to the argument cube. *)
+      let (Viewed_pi { x = _; filter; doms; cods }) =
+        view_constr_pi "equal_at_pi" n (Lazy.force fnty) in
+      let pimod = Modality.filter_modality filter in
       let xmodality = Modality.filter_modality xfilter in
       let ymodality = Modality.filter_modality yfilter in
-      match (Modality.compare xmodality tymodality, Modality.compare ymodality tymodality) with
+      match (Modality.compare xmodality pimod, Modality.compare ymodality pimod) with
       | Eq, Eq ->
-          let Eq = Modality.filter_uniq xfilter yfilter in
-          let (Locked (_, lctx)) = Ctx.lock ctx tymodality in
-          let lenv = key_id_env env aplus in
+          let Eq = Modality.filter_uniq xfilter filter in
+          let Eq = Modality.filter_uniq yfilter filter in
+          let (Locked (_, lctx)) = Ctx.lock ctx pimod in
           let x = CubeOf.find_top x in
           let y = CubeOf.find_top y in
-          let ety = eval_term lenv ty in
-          let n = dim_env env in
-          let k = Modality.filtered n xfilter in
-          let tyargtbl = Hashtbl.create 10 in
-          let tyarg =
-            TubeOf.build D.zero (D.zero_plus k)
-              {
-                build =
-                  (fun fa ->
-                    (* The value associated to some face of k in the cube of arguments is derived from the corresponding argument of the n-dimensional constructor associated to the corresponding face of n lifted along the filter.  This makes sense because when a constructor is evaluated, the modally filtered arguments are degenerated to obtain values for the boundary constructors, and the face and degeneracy cancel out. *)
-                    let (Pface_filter (_, fb)) = Modality.pface_filter n fa xfilter in
-                    let (Modal (argmod, argtm)) = TubeOf.find tyargs fb in
-                    match Modality.compare argmod xmodality with
-                    | Neq ->
-                        fatal (Modality_mismatch (`Internal, "equal_at_tel", argmod, tymodality))
-                    | Eq ->
-                        let fa = sface_of_tface fa in
-                        let fb = sface_of_tface fb in
-                        let argty : (xdom, kinetic) value =
-                          inst
-                            (eval_term
-                               (act_env lenv
-                                  (opt_op_of_opt_sface
-                                     (comp_opt_sface
-                                        (Modality.sface_of_filter n xfilter)
-                                        (opt_of_sface fa))))
-                               ty)
-                            (TubeOf.build D.zero
-                               (D.zero_plus (dom_sface fb))
-                               {
-                                 build =
-                                   (fun fc ->
-                                     Hashtbl.find tyargtbl
-                                       (SFace_of (comp_sface fb (sface_of_tface fc))));
-                               }) in
-                        let argnorm : xdom normal = { tm = argtm; ty = Lazy.from_val argty } in
-                        Hashtbl.add tyargtbl (SFace_of fb) argnorm;
-                        argnorm);
-              } in
-          let ity = inst ety tyarg in
+          let tyarg = constr_boundary_tube "equal_at_pi" n filter doms tyargs in
+          let ity = inst (CubeOf.find_top doms) tyarg in
           let* () = equal_at lctx x y ity in
-          equal_at_tel ctx
-            (Ext
-               {
-                 env;
-                 plus = D.plus_zero (TubeOf.inst tyarg);
-                 filter = xfilter;
-                 filtered = Modality.filter_zero xmodality;
-                 values = `Ok (TubeOf.plus_cube (val_of_norm_tube tyarg) (CubeOf.singleton x));
-               })
-            xs ys tys tyargs_rest
-      | Neq, _ -> fatal (Modality_mismatch (`Internal, "equal_at_tel", xmodality, tymodality))
-      | _, Neq -> fatal (Modality_mismatch (`Internal, "equal_at_tel", ymodality, tymodality)))
+          let argcube = TubeOf.plus_cube (val_of_norm_tube tyarg) (CubeOf.singleton x) in
+          let (BindFam b) = BindCube.find_top cods in
+          equal_at_pi ctx n (lazy (apply_binder_term b filter argcube)) xs ys tyargs_rest
+      | Neq, _ -> fatal (Modality_mismatch (`Internal, "equal_at_pi", xmodality, pimod))
+      | _, Neq -> fatal (Modality_mismatch (`Internal, "equal_at_pi", ymodality, pimod)))
 
 and equal_env : type mode a b n c d.
     (mode, c, d) Ctx.t -> (mode, n, b) env -> (mode, n, b) env -> (mode, a, b) termctx -> unit Err.t

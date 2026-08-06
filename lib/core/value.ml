@@ -166,7 +166,7 @@ module rec Value : sig
     dim : 'm D.t;
     tyfam : ('mode, kinetic) lazy_eval;
     indices : (('m, 'mode normal) CubeOf.t, 'j, 'ij) Fillvec.t;
-    constrs : (Constr.t, ('mode, 'm, 'ij) dataconstr) Abwd.t;
+    constrs : (Constr.t, ('mode, 'm) dataconstr) Abwd.t;
     discrete : [ `Yes | `Maybe | `No ];
     recursive : Positivity.recursion;
     hints : hints;
@@ -180,13 +180,12 @@ module rec Value : sig
     fields : ('mode * 'a * 'n * 'et) Term.CodatafieldAbwd.t;
   }
 
-  and (_, _, _) dataconstr =
+  and (_, _) dataconstr =
     | Dataconstr : {
         env : ('mode, 'm, 'a) env;
-        args : ('mode, 'a, 'p, 'ap) Telescope.t;
-        indices : (('mode, 'ap, kinetic) term, 'ij) Vec.t;
+        ty : ('mode, 'a, kinetic) term;
       }
-        -> ('mode, 'm, 'ij) dataconstr
+        -> ('mode, 'm) dataconstr
 
   and 'mode normal = { tm : ('mode, kinetic) value; ty : ('mode, kinetic) value Lazy.t }
 
@@ -418,7 +417,7 @@ end = struct
     (* The indices applied so far, and the number remaining *)
     indices : (('m, 'mode normal) CubeOf.t, 'j, 'ij) Fillvec.t;
     (* All the constructors *)
-    constrs : (Constr.t, ('mode, 'm, 'ij) dataconstr) Abwd.t;
+    constrs : (Constr.t, ('mode, 'm) dataconstr) Abwd.t;
     (* Whether it is discrete.  The value `Maybe means that it could be discrete based on its own parameters, indices, and constructor arguments, but either is waiting for its mutual companions to be typechecked, or at least one of them failed to be discrete.  Thus for equality-testing purposes, `Maybe is treated like `No. *)
     discrete : [ `Yes | `Maybe | `No ];
     (* Whether it has recursive constructors. *)
@@ -440,14 +439,13 @@ end = struct
     fields : ('mode * 'a * 'n * 'et) Term.CodatafieldAbwd.t;
   }
 
-  (* Each constructor stores the telescope of types of its arguments, as a closure, and the index values as function values taking its arguments. *)
-  and (_, _, _) dataconstr =
+  (* Each constructor stores its function-type (the iterated pi-type over its argument telescope with the datatype applied to the parameters and indices as codomain) as a closure over the datatype's environment.  It is walked on demand — e.g. by ext_pi in match typechecking — evaluating and introducing the arguments to reach the output type, whose trailing arguments are the index values. *)
+  and (_, _) dataconstr =
     | Dataconstr : {
         env : ('mode, 'm, 'a) env;
-        args : ('mode, 'a, 'p, 'ap) Telescope.t;
-        indices : (('mode, 'ap, kinetic) term, 'ij) Vec.t;
+        ty : ('mode, 'a, kinetic) term;
       }
-        -> ('mode, 'm, 'ij) dataconstr
+        -> ('mode, 'm) dataconstr
 
   (* A "normal form" is a value paired with its type.  The type is used for eta-expansion and equality-checking. *)
   and 'mode normal = { tm : ('mode, kinetic) value; ty : ('mode, kinetic) value Lazy.t }

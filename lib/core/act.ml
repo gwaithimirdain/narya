@@ -380,16 +380,16 @@ module Act = struct
         let env = prekey_env env cell in
         Codata { eta; opacity; hints; env; fields }
 
-  and act_dataconstr : type mode mu1 mu2 cod m n i.
-      (mode, n, i) dataconstr ->
+  and act_dataconstr : type mode mu1 mu2 cod m n.
+      (mode, n) dataconstr ->
       (m, n) deg ->
       (mode, mu1, mu2, cod) Modalcell.t ->
-      (mode, m, i) dataconstr =
-   fun (Dataconstr { env; args; indices }) s cell ->
+      (mode, m) dataconstr =
+   fun (Dataconstr { env; ty }) s cell ->
     (* We key on the environment without changing its mode by prekeying it. *)
     let env = act_env env (opt_op_of_deg s) in
     let env = prekey_env env cell in
-    Dataconstr { env; args; indices }
+    Dataconstr { env; ty }
 
   (* act_closure and act_binder assume that the degeneracy has exactly the correct codomain.  So if it doesn't, the caller should call deg_plus_to first. *)
   and act_closure : type mode mn m n a kn.

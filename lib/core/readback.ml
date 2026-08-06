@@ -208,16 +208,13 @@ and readback_at : type mode a z.
   | Canonical (_, Data { constrs; _ }, ins, tyargs), Constr (xconstr, xn, xargs) -> (
       let Eq = eq_of_ins_zero ins in
       (* Pick out the constructor of the datatype that matches the one we're reading back *)
-      let (Dataconstr { env; args = argtys; indices = _ }) =
+      let (Dataconstr { env; ty }) =
         Abwd.find_opt xconstr constrs <|> Anomaly "constr not found in readback" in
       match D.compare xn (TubeOf.inst tyargs) with
       | Neq -> fatal (Dimension_mismatch ("reading back constrs", xn, TubeOf.inst tyargs))
       | Eq ->
-          (* We need the same number of arguments as there are types in the telescope. *)
-          let lgth = Telescope.length argtys in
-          let xargs =
-            Vec.of_list_length lgth xargs
-            <|> Anomaly "wrong number of constructor arguments in readback_at" in
+          let (Wrap xargs) = Vec.of_list xargs in
+          let lgth = Vec.length xargs in
           (* If a higher-dimensional constructor belongs to a higher version of a datatype, the instantiation arguments of the latter must be lower-dimensional versions of the same constructor.  We extract their arguments to form the boundaries of the types of the arguments of our current constructor. Specifically, tyargs is a tube of normals, each of which is expected to be a lower-dimensional instance of the same constructor, which therefore has a list of modal cubes as arguments.  We want to extract the top element of each of those cubes to form a *list of tubes* of modal values, whereas what we naturally have, after peeling off the constructors, is a *tube of lists*.  We do the conversion with our multiple-output traversal with a variable number of outputs, specifically the length of the telescope. *)
           let (Conses (cs, bs)) = Tlist.conses lgth in
           let tyarg_args =
@@ -240,8 +237,11 @@ and readback_at : type mode a z.
                        | _ -> fatal (Anomaly "inst arg not constr in readback at datatype"));
                  }
                  [ tyargs ] bs in
-          (* Now xargs, argtys, and tyarg_args are all guaranteed to have the same length, so readback_at_tel doesn't have to worry. *)
-          Constr (xconstr, dim_env env, readback_at_tel ctx env xargs argtys tyarg_args))
+          (* Now xargs and tyarg_args are guaranteed to have the same length, so readback_at_pi doesn't have to worry. *)
+          Constr
+            ( xconstr,
+              dim_env env,
+              readback_at_pi ctx (dim_env env) (lazy (eval_term env ty)) xargs tyarg_args ))
   | _ -> readback_val_sorted ctx tm vty
 
 and readback_val_sorted : type mode a z.
@@ -405,85 +405,36 @@ and readback_head : type mode c z.
           cods = CodCube.build n { build };
         }
 
-(* Read back a vector of values, with their types specified in a term telescope.  The environment is used for evaluating each type at the previous values, for use in reading back the later values.  Each type also has to be instantiated at a boundary, supplied as a vector of tubes. *)
-and readback_at_tel : type mode n c a b ab z.
+(* Read back a vector of values, whose types are the domains of the constructor's function-type.  That function-type is walked one argument at a time, applying its codomain to each argument as it is read back.  Each domain also has to be instantiated at a boundary, supplied as a vector of tubes. *)
+and readback_at_pi : type mode n c b z.
     (mode, z, c) Ctx.t ->
-    (mode, n, a) env ->
+    n D.t ->
+    (mode, kinetic) value Lazy.t ->
     ((n, mode, kinetic) modal_value_cube, b) Vec.t ->
-    (mode, a, b, ab) Telescope.t ->
     ((D.zero, n, n, (mode, kinetic) modal_value) TubeOf.t, b) Vec.t ->
     (n, mode, c, kinetic) any_modal_term_cube list =
- fun ctx env xs tys tyargs ->
-  match (xs, tys, tyargs) with
-  | [], Emp, [] -> []
-  | ( Modal
-        (type dom modality k)
-        ((filter, x) :
-          (dom, modality, mode, k, n) Modality.filter_dim * (k, (dom, kinetic) value) CubeOf.t)
-      :: xs,
-      Ext (_, Modal (tymodality, aplus, ty), tys),
-      tyargs :: tyargs_rest ) -> (
-      let xmodality = Modality.filter_modality filter in
-      match Modality.compare xmodality tymodality with
-      | Neq -> fatal (Modality_mismatch (`Internal, "readback_at_tel", xmodality, tymodality))
+ fun ctx n fnty xs tyargs ->
+  match (xs, tyargs) with
+  | [], [] -> []
+  | Modal (xfilter, x) :: xs, tyargs :: tyargs_rest -> (
+      (* The constructor's function-type value must be a pi-type; we read back the argument at its domain (instantiated at the corresponding arguments of the lower-dimensional constructors, which are also read back to form the boundary of the argument cube) and continue with the codomain applied to the argument cube. *)
+      let (Viewed_pi { x = _; filter; doms; cods }) =
+        view_constr_pi "readback_at_pi" n (Lazy.force fnty) in
+      let pimod = Modality.filter_modality filter in
+      let xmodality = Modality.filter_modality xfilter in
+      match Modality.compare xmodality pimod with
+      | Neq -> fatal (Modality_mismatch (`Internal, "readback_at_pi", xmodality, pimod))
       | Eq ->
-          let (Locked (cplus, lctx)) = Ctx.lock ctx tymodality in
-          let lenv = key_id_env env aplus in
+          let Eq = Modality.filter_uniq xfilter filter in
+          let (Locked (cplus, lctx)) = Ctx.lock ctx pimod in
           let x = CubeOf.find_top x in
-          let ety = eval_term lenv ty in
-          (* The argument is k-dimensional, where k is the modal filtering of the dimension n of the entire constructor.  We build k-cubes of read-back terms and values in parallel. *)
-          let n = dim_env env in
-          let k = Modality.filtered n filter in
-          let tyargtbl = Hashtbl.create 10 in
-          let [ tyarg; tms ] =
-            TubeOf.pbuild D.zero (D.zero_plus k)
-              {
-                build =
-                  (fun fa ->
-                    (* The value associated to some face of k in the cube of arguments is derived from the corresponding argument of the n-dimensional constructor associated to the corresponding face of n lifted along the filter.  This makes sense because when a constructor is evaluated, the modally filtered arguments are degenerated to obtain values for the boundary constructors, and the face and degeneracy cancel out. *)
-                    let (Pface_filter (_, fb)) = Modality.pface_filter n fa filter in
-                    let (Modal (argmod, argtm)) = TubeOf.find tyargs fb in
-                    match Modality.compare argmod xmodality with
-                    | Neq ->
-                        fatal (Modality_mismatch (`Internal, "readback_at_tel", argmod, tymodality))
-                    | Eq ->
-                        let fa = sface_of_tface fa in
-                        let fb = sface_of_tface fb in
-                        let argty : (dom, kinetic) value =
-                          inst
-                            (eval_term
-                               (act_env lenv
-                                  (opt_op_of_opt_sface
-                                     (comp_opt_sface
-                                        (Modality.sface_of_filter n filter)
-                                        (opt_of_sface fa))))
-                               ty)
-                            (TubeOf.build D.zero
-                               (D.zero_plus (dom_sface fb))
-                               {
-                                 build =
-                                   (fun fc ->
-                                     Hashtbl.find tyargtbl
-                                       (SFace_of (comp_sface fb (sface_of_tface fc))));
-                               }) in
-                        let argnorm : dom normal = { tm = argtm; ty = Lazy.from_val argty } in
-                        let argtm = readback_at lctx argtm argty in
-                        Hashtbl.add tyargtbl (SFace_of fb) argnorm;
-                        [ argnorm; argtm ]);
-              }
-              (Cons (Cons Nil)) in
-          let ity = inst ety tyarg in
-          Modal (filter, cplus, TubeOf.plus_cube tms (CubeOf.singleton (readback_at lctx x ity)))
-          :: readback_at_tel ctx
-               (Ext
-                  {
-                    env;
-                    plus = D.plus_zero (TubeOf.inst tyarg);
-                    values = `Ok (TubeOf.plus_cube (val_of_norm_tube tyarg) (CubeOf.singleton x));
-                    filter;
-                    filtered = Modality.filter_zero xmodality;
-                  })
-               xs tys tyargs_rest)
+          let tyarg = constr_boundary_tube "readback_at_pi" n filter doms tyargs in
+          let tms = TubeOf.mmap { map = (fun _ [ arg ] -> readback_nf lctx arg) } [ tyarg ] in
+          let ity = inst (CubeOf.find_top doms) tyarg in
+          let argcube = TubeOf.plus_cube (val_of_norm_tube tyarg) (CubeOf.singleton x) in
+          let (BindFam b) = BindCube.find_top cods in
+          Modal (xfilter, cplus, TubeOf.plus_cube tms (CubeOf.singleton (readback_at lctx x ity)))
+          :: readback_at_pi ctx n (lazy (apply_binder_term b filter argcube)) xs tyargs_rest)
 
 (* To readback an environment, since readback is type-directed we need the types of *all* the terms in it, which is to say its codomain context.  We store this as a Termctx since we need to evaluate and instantiate the types at the previous terms in the environment as we go. *)
 and readback_env : type mode n a b c d.
