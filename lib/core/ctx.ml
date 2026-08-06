@@ -136,6 +136,21 @@ let filter_entry : type dom modality mode f n.
     (dom, modality, mode, f, n) entry -> (dom, modality, mode, n, n) Modality.filter_dim = function
   | Vis { filter; _ } | Invis { filter; _ } -> filter
 
+let bindings_entry : type dom modality mode f n.
+    (dom, modality, mode, f, n) entry -> (n, dom Binding.t) CubeOf.t = function
+  | Vis { bindings; _ } -> bindings
+  | Invis { bindings; _ } -> bindings
+
+let variables_entry : type dom modality mode f n. (dom, modality, mode, f, n) entry -> n variables =
+  function
+  | Vis { dim; plusdim; vars; _ } -> Variables (dim, plusdim, vars)
+  | Invis { bindings; _ } ->
+      (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints. *)
+      let hints =
+        Reporter.try_with ~fatal:(fun _ -> no_hints) @@ fun () ->
+        View.hints_of_ty (Lazy.force (Binding.value (CubeOf.find_top bindings)).ty) in
+      singleton_variables (CubeOf.dim bindings) (`Anon hints)
+
 (* Given an entry containing no let-bound variables, produce an "app" that says how to apply a function to its cube of (free) variables. *)
 let app_entry : type hmode dom modality mode f n any.
     (hmode, mode, any) apps -> (dom, modality, mode, f, n) entry -> (hmode, mode, noninst) apps =
