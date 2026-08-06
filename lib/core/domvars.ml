@@ -130,7 +130,7 @@ let rec ext_pi : type dom window mode a b c ac e n.
                   env;
                   values = Modal (afilter, newvars) :: vars;
                   normals = Modal (filter_k_m, newnfs) :: nfs;
-                  annotate = Suc (Annotate filter_k_m, annotate);
+                  annotate = Suc (Annotate (x, filter_k_m), annotate);
                   comp = Suc (Dim (Modality.filtered m filter_k_m, filter_k_k), comp);
                   out;
                 }))

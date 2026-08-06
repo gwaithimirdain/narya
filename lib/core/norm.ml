@@ -69,7 +69,7 @@ let rec take_args : type dom window mode annotations m n k kn a b ab.
         (type mdom mmod pq)
         ((filter_constr_pq_kn, arg) : (mdom, mmod, dom, pq, kn) Modality.filter_dim * _)
       :: args,
-      Suc (Annotate filter_window_constr_q_n, annotate),
+      Suc (Annotate (_, filter_window_constr_q_n), annotate),
       Suc (Dim _, comp) ) -> (
       (* The value's stored filter is that of its constructor annotation mu, whose codomain is the (inner) mode of the datatype, while the context annotation is the composite of the window modality with mu, whose codomain is the outer mode.  So we compose mu with the window before comparing. *)
       let _m = dim_env env in
