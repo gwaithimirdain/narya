@@ -401,6 +401,8 @@ type (_, _, _, _, _) match_motive =
         'motive ->
         (* RETURN the type of the match term, i.e. the motive evaluated (if it is dependent) at these indices, boundary, and the discriminee itself.  (The discriminee doesn't have to be passed as an argument to this callback explicitly because it is available when the callback is defined as a closure.)  *)
         ('mode, kinetic) value;
+      (* GIVEN a match motive, RETURN the checked term it came from, if the user wrote one explicitly.  This is stored in the Match so that readback of a stuck match can recover the type of each branch by replaying "use"; a motive that was supplied or synthesized rather than written is None, since then every branch has the same type as the match itself. *)
+      motive_term : 'motive -> ('mode, 'b) Term.match_motive option;
     }
       -> ('dom, 'window, 'mode, 'a, 'b) match_motive
 
@@ -1530,6 +1532,8 @@ and check_match_branches : type dom window mode a b bm.
       let user_branches = merge_branches name brs data_constrs in
       (* We use the callback to get the motive and other data.  This might typecheck some of the branches, if it is a synthesizing match. *)
       let motive, errs, branches, check_branches = callbacks.get dim user_branches tyfam in
+      (* The checked motive term, if the user wrote one, to be stored in the match for readback. *)
+      let motive_tm = Option.bind motive callbacks.motive_term in
       (* Now we iterate through the remaining constructors, typechecking the corresponding branches and inserting them in the match tree. *)
       let branches, errs =
         List.fold_left
@@ -1550,8 +1554,8 @@ and check_match_branches : type dom window mode a b bm.
               ext_tel ctx window env xs argtys in
             let perm = id_perm in
             let status =
-              make_match_status status window plus_lock tm dim branches annotate comp None perm
-                constr in
+              make_match_status status window plus_lock tm dim motive_tm branches annotate comp None
+                perm constr in
             (* Recurse into the "body" of the branch.  We catch errors and accumulate them so that later branches can continue to be checked and produce their own errors even if earlier ones fail, but we pass through the errors that are getting caught elsewhere. *)
             Reporter.try_with ~fatal:(fun e ->
                 match e.message with
@@ -1582,7 +1586,7 @@ and check_match_branches : type dom window mode a b bm.
             (fun b ->
               if not !(b.value) then fatal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
             highers;
-          ( Match { tm; window; plus_lock; dim; branches },
+          ( Match { tm; window; plus_lock; dim; motive = motive_tm; branches },
             Option.map (callbacks.return indices inst_args) motive ))
   | _ ->
       let (Locked (_, lctx)) = Ctx.lock ctx window in
@@ -1611,6 +1615,8 @@ and check_nondep_match : type dom window mode a b bm.
            get = (fun _ user_branches _ -> (Some motive, Emp, Constr.Map.empty, user_branches));
            use = (fun x _ _ _ _ _ -> x);
            return = (fun _ _ x -> x);
+           (* A non-dependent match checks every branch at one type, which is also the type of the match; storing it lets readback recover that type when the match is stuck and further eliminated.  It costs a readback per match at checking time, for display only. *)
+           motive_term = (fun x -> Some (Term.Motive_type (readback_val ctx x)));
          }) in
   result
 
@@ -1667,8 +1673,8 @@ and synth_nondep_match : type mode a b.
               let (Ext_tel { ctx = newctx; annotate; comp; _ }) = ext_tel ctx window env xs argtys in
               let perm = id_perm in
               let status =
-                make_match_status status window plus_lock tm dim Constr.Map.empty annotate comp None
-                  perm constr in
+                make_match_status status window plus_lock tm dim None Constr.Map.empty annotate comp
+                  None perm constr in
               Annotate.ctx status newctx (locate_opt body.loc (Synth body.value));
               (* Trap errors and accumulate them, going on to look for other synthesizing branches. *)
               Reporter.try_with ~fatal:(fun e -> find_synthing_branch (Snoc (errs, e)) brs)
@@ -1700,7 +1706,13 @@ and synth_nondep_match : type mode a b.
       (* Now using that callback, we pass off to the subroutine.  Since this match is non-dependent, the "use" and "return" callbacks can just return the type we have computed by synthesizing a branch. *)
       let result, motive =
         check_match_branches status ctx tm varty window plus_lock brs i highers loc
-          (Motive { get; use = (fun x _ _ _ _ _ -> x); return = (fun _ _ x -> x) }) in
+          (Motive
+             {
+               get;
+               use = (fun x _ _ _ _ _ -> x);
+               return = (fun _ _ x -> x);
+               motive_term = (fun x -> Some (Term.Motive_type (readback_val ctx x)));
+             }) in
       match motive with
       | None -> fatal (Anomaly "synth_nondep_match: no synthesized type of match but no errors")
       | Some motive -> (result, motive))
@@ -1735,10 +1747,10 @@ and synth_dep_match : type mode a b.
                        (motive_of_family ctx window tyfam.tm (Lazy.force tyfam.ty)) in
                    let cmotive = check (Kinetic `Nolet) ctx motive emotivety in
                    let emotive = eval_term (Ctx.env ctx) cmotive in
-                   (* Note that the motive object here is a *type family* value, not a single type.  Therefore, the "use" and "return" callbacks have to apply that function to appropriate arguments.  *)
-                   (Some emotive, Emp, Constr.Map.empty, user_branches));
+                   (* Note that the motive object here is a *type family* value, not a single type.  Therefore, the "use" and "return" callbacks have to apply that function to appropriate arguments.  We keep the checked term alongside it, to be stored in the Match for readback. *)
+                   (Some (cmotive, emotive), Emp, Constr.Map.empty, user_branches));
                use =
-                 (fun emotive constr dim index_terms newenv newvars ->
+                 (fun (_, emotive) constr dim index_terms newenv newvars ->
                    (* To get the type at which to typecheck the body of a branch, we have to apply the general dependent motive to the indices of this constructor, its boundaries, and itself.  First we compute the indices. *)
                    let index_vals =
                      Vec.mmap (fun [ ixtm ] -> eval_with_boundary newenv ixtm) [ index_terms ] in
@@ -1761,12 +1773,13 @@ and synth_dep_match : type mode a b.
                    let result = Vec.fold_left (apply_singletons window) emotive index_vals in
                    apply_singletons window result constr_vals);
                return =
-                 (fun indices inst_args emotive ->
+                 (fun indices inst_args (_, emotive) ->
                    (* We compute the output type of the match by applying the dependent motive to the discriminee's indices, boundary, and itself. *)
                    let result = Vec.fold_left (apply_singleton_nfs window) emotive indices in
                    let result = apply_singleton_tube_nfs window result inst_args in
                    apply_term result (Modality.filter_zero window)
                      (CubeOf.singleton (eval_term (Ctx.env lctx) tm)));
+               motive_term = (fun (cmotive, _) -> Some (Term.Motive_family cmotive));
              }) in
       match result_ty with
       | None -> fatal (Anomaly "synth_dep_match: no type of match but no errors")
@@ -1985,7 +1998,7 @@ and check_var_match : type dom modality mode a b bm.
                         let newty = eval_term (Ctx.env newctx) (readback_val oldctx motive) in
                         (* Now we have to modify the "status" data by readback-eval on the arguments and adding a hypothesized current branch to the match.  *)
                         let status =
-                          make_match_status status window plus (Term.Var index) dim branches
+                          make_match_status status window plus (Term.Var index) dim None branches
                             annotate comp
                             (Some (oldctx, newctx))
                             checked_perm constr in
@@ -2032,7 +2045,8 @@ and check_var_match : type dom modality mode a b bm.
             (fun b ->
               if not !(b.value) then fatal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
             highers;
-          Match { window; plus_lock = plus; tm = Term.Var index; dim; branches })
+          (* A variable match refines the context in each branch rather than applying a motive, so there is no motive to store; readback falls back on the type of the match itself. *)
+          Match { window; plus_lock = plus; tm = Term.Var index; dim; motive = None; branches })
   | _ ->
       let (Locked (_, lctx)) = Ctx.lock ctx window in
       fatal ?loc (Matching_on_nondatatype (PVal (lctx, varty)))
@@ -2043,6 +2057,7 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
     (a, mode, window, dom, am) plus_lock ->
     (dom, am, kinetic) term ->
     n D.t ->
+    (mode, a) Term.match_motive option ->
     (mode, a, n) Term.branch Constr.Map.t ->
     (n, mode, annotations, mode, mode, b, mode) VarAnnotate.fwd_t ->
     (mode, b, mode, a, unit, ab) Tctx.bcomp ->
@@ -2050,7 +2065,7 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
     (c, ab) permute ->
     Constr.t ->
     (mode, c, potential) status =
- fun status window plus_lock newtm dim branches annotate comp eval_readback perm constr ->
+ fun status window plus_lock newtm dim motive branches annotate comp eval_readback perm constr ->
   let (Potential
          (type hm d any)
          ((head, args, hyp) :
@@ -2110,7 +2125,7 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
     | None -> (head, args) in
   let hyp tm =
     let branches = branches |> Constr.Map.add constr (Term.Branch { annotate; comp; perm; tm }) in
-    hyp (Term.Match { window; plus_lock; tm = newtm; dim; branches }) in
+    hyp (Term.Match { window; plus_lock; tm = newtm; dim; motive; branches }) in
   Potential (head, apps, hyp)
 
 (* Try matching against all the supplied terms with zero branches, producing an empty match if any succeeds and raising an error if none succeed.  Each term carries its own optional window modality. *)
@@ -2228,6 +2243,7 @@ and check_empty_match_lam : type mode a b.
                            Modality.filter_idempotent filter,
                            plus_with_locks_of_plus_lock plus_lock ));
                   dim;
+                  motive = None;
                   branches = Constr.Map.empty;
                 } )
       | None, `Notfirst ->
