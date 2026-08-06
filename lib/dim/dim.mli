@@ -783,7 +783,8 @@ type (_, _, _, _) deg_comp_pbij =
       ('evaluation, 'result, 'shared) insertion
       * ('remaining, 'shared, 'intrinsic) shuffle
       * ('old_result, 'result) deg
-      * (('remaining, D.zero) Eq.t -> ('r, D.zero) Eq.t)
+      (* How the new remaining dimensions split into the old ones and those shared dimensions that the degeneracy degenerates. *)
+      * ('r, 'extra, 'remaining) shuffle
       -> ('evaluation, 'old_result, 'intrinsic, 'r) deg_comp_pbij
 
 val deg_comp_pbij :

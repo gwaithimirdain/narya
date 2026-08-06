@@ -164,7 +164,8 @@ type (_, _, _, _) deg_comp_pbij =
       ('evaluation, 'result, 'shared) insertion
       * ('remaining, 'shared, 'intrinsic) shuffle
       * ('old_result, 'result) deg
-      * (('remaining, D.zero) Eq.t -> ('r, D.zero) Eq.t)
+      (* The new remaining dimensions comprise the old ones together with those shared dimensions that the degeneracy degenerates, and this records how the two interleave.  A caller that must treat them differently -- readback keeps the old ones free, since they are genuine remaining dimensions of the pbij it started from, while the new ones are degenerate -- needs to know which is which. *)
+      * ('r, 'extra, 'remaining) shuffle
       -> ('evaluation, 'old_result, 'intrinsic, 'r) deg_comp_pbij
 
 let rec deg_comp_pbij : type m n i res rem sh.
@@ -173,29 +174,21 @@ let rec deg_comp_pbij : type m n i res rem sh.
   match shuf with
   | Zero ->
       let (Zero _) = ins in
-      Deg_comp_pbij (ins_zero (cod_deg deg), Zero, deg, fun _ -> Eq)
+      Deg_comp_pbij (ins_zero (cod_deg deg), Zero, deg, Zero)
   | Left (g, shuf) ->
-      let (Deg_comp_pbij (ins, shuf, s, _)) = deg_comp_pbij deg ins shuf in
-      Deg_comp_pbij
-        ( ins,
-          Left (g, shuf),
-          s,
-          function
-          | _ -> . )
+      (* An already-remaining dimension stays remaining, and is one of the old ones. *)
+      let (Deg_comp_pbij (ins, shuf, s, old)) = deg_comp_pbij deg ins shuf in
+      Deg_comp_pbij (ins, Left (g, shuf), s, Left (g, old))
   | Right (g, shuf) -> (
       let (Suc (ins, _, i)) = ins in
       match deg_coresidual deg i with
       | Coresidual_zero deg ->
-          let (Deg_comp_pbij (ins, shuf, s, _)) = deg_comp_pbij deg ins shuf in
-          Deg_comp_pbij
-            ( ins,
-              Left (g, shuf),
-              s,
-              function
-              | _ -> . )
+          (* A shared dimension whose evaluation dimension the degeneracy degenerates becomes remaining, and is one of the new ones. *)
+          let (Deg_comp_pbij (ins, shuf, s, old)) = deg_comp_pbij deg ins shuf in
+          Deg_comp_pbij (ins, Left (g, shuf), s, Right (g, old))
       | Coresidual_suc (deg, j) ->
-          let (Deg_comp_pbij (ins, shuf, s, ifzero)) = deg_comp_pbij deg ins shuf in
-          Deg_comp_pbij (Suc (ins, g, j), Right (g, shuf), s, ifzero))
+          let (Deg_comp_pbij (ins, shuf, s, old)) = deg_comp_pbij deg ins shuf in
+          Deg_comp_pbij (Suc (ins, g, j), Right (g, shuf), s, old))
 
 (* This is like deg_comp_pbij (for the insertion only, so far), but for adding a constant on the left rather than acting by an arbitrary degeneracy (for evaluation rather that acting).  This allows it to return more detailed information.  The dimension 'r (new remaining) is the piece of 'i (intrinsic) that lands in 'm (new added dimension on the left), while 'h (new shared) is the part that lands in 'n, and 't is the part of 'm that doesn't come from 'r.  Note that the first two outputs together form an ('n, 'i, 'r) pbij; that's why this is in this file, even though it doesn't refer explicitly to pbij.  *)
 
