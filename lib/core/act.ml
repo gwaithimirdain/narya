@@ -42,6 +42,60 @@ let key_vcomp : type a b c m n p q.
                (Modalcell.hcomp dom13 cod13 (Modalcell.id mu3) cell1))
       | None -> fatal (Anomaly "incompatible keys"))
 
+(* Degenerate and shift the stored environment of a higher structfield so that one of its stored terms can be evaluated in it.  The data comes from decomposing a partial bijection on the field's evaluation dimension through 'plusdim' (unplus_pbij): 'rr' shuffles the remaining dimensions 'r3 of the outer decomposition with the dimensions 'r4 consumed from the environment dimension 'm, and 'mtr' splits 'm into the kept dimensions 't and the consumed ones 'r4.  The game is to build a degeneracy that we can apply to the m-dimensional environment 'env' so that we can shift it by the plusmap 'ra' and evaluate the corresponding stored term.  That means we need to get an environment whose dimension is something+r34.  We start by adding r3, and then apply a bunch of permutations.
+       m + r3
+       ≅ (t + r4) + r3    (mtr)
+       ≅ t + (r4 + r3)
+       ≅ t + (r3 + r4)
+       ≅ t + r34          (rr)
+   The stored term indexed by the term-level pbij is s4-dimensional (its result dimension), so evaluating it in the resulting t-dimensional environment yields an object of dimension t + s4. *)
+let rec degenerate_shift_env : type gmode m ag t r3 r4 r34 ra.
+    (gmode, m, ag) env ->
+    (r3, r4, r34) shuffle ->
+    (m, t, r4) insertion ->
+    (r34, ag, ra, gmode) plusmap ->
+    (gmode, t, ra) env =
+ fun env rr mtr ra ->
+  let m = dim_env env in
+  let r3 = left_shuffle rr in
+  let (Plus mr3) = D.plus r3 in
+  let plusr3 = plus_deg m (D.plus_zero m) mr3 (deg_zero r3) in
+  let env1 = act_env env (opt_op_of_deg plusr3) in
+  (* env1 has dimension m + r3 *)
+  shift_env_after_plus env1 m mr3 rr mtr ra
+
+(* The tail of degenerate_shift_env, from the point where the environment already carries the 'r3 extra dimensions.  Split out because readback supplies those dimensions from a degenerated *context* (where they are fresh variables) rather than by degenerating the ambient environment. *)
+and shift_env_after_plus : type gmode m ag t r3 r4 r34 ra mr3.
+    (gmode, mr3, ag) env ->
+    m D.t ->
+    (m, r3, mr3) D.plus ->
+    (r3, r4, r34) shuffle ->
+    (m, t, r4) insertion ->
+    (r34, ag, ra, gmode) plusmap ->
+    (gmode, t, ra) env =
+ fun env1 _m mr3 rr mtr ra ->
+  let r3 = left_shuffle rr in
+  let r4 = cod_right_ins mtr in
+  let (Plus tr4) = D.plus r4 in
+  let mtrp = deg_of_perm (perm_inv (perm_of_ins_plus mtr tr4)) in
+  let (Plus tr4_r3) = D.plus r3 in
+  let env2 = act_env env1 (opt_op_of_deg (deg_plus mtrp mr3 tr4_r3)) in
+  (* env2 has dimension (t + r4) + r3 *)
+  let (Plus r4r3) = D.plus r3 in
+  let (Plus r3r4) = D.plus r4 in
+  let t_r4r3 = D.plus_assocr tr4 r4r3 tr4_r3 in
+  let (Plus t_r3r4) = D.plus (D.plus_out r3 r3r4) in
+  let rrswap = swap_deg r3r4 r4r3 in
+  let t = cod_left_ins mtr in
+  let env3 = act_env env2 (opt_op_of_deg (plus_deg t t_r4r3 t_r3r4 rrswap)) in
+  (* env3 has dimension t + (r3 + r4). *)
+  let r34 = out_shuffle rr in
+  let (Plus t_r34) = D.plus r34 in
+  let drr = plus_deg t t_r3r4 t_r34 (deg_of_shuffle rr r3r4) in
+  let env4 = act_env env3 (opt_op_of_deg drr) in
+  (* env4 has dimension t + r34 *)
+  Shift (env4, t_r34, ra)
+
 type ('mode, _, _) act_inst_canonical =
   | Act_inst_canonical :
       ('mode, 'm, 'k, 'mk, 'e, 'n) inst_canonical
@@ -267,40 +321,8 @@ module Act = struct
                       (PlusFam
                          (type ra)
                          ((ra, tm) : (r34, ag, ra, gmode) plusmap * (gmode, ra, potential) term)) ->
-                      (* Now the game is to build a degeneracy that we can apply to the m-dimensional environment 'env' so that we can shift it by the plusmap 'ra' and evaluate the term 'tm'.  (Note that 'tm' is s4-dimensional as that is the result dimension of the pbij that indexes it.)  That means we need to get an environment whose dimension is something+r34.  We start by adding r3, and then apply a bunch of permutations.
-                             m + r3
-                             ≅ (t + r4) + r3    (mtr)
-                             ≅ t + (r4 + r3)
-                             ≅ t + (r3 + r4)
-                             ≅ t + r34          (rr)
-                          *)
-                      let m = dim_env env in
-                      let r3 = left_shuffle rr in
-                      let (Plus mr3) = D.plus r3 in
-                      let plusr3 = plus_deg m (D.plus_zero m) mr3 (deg_zero r3) in
-                      let env1 = act_env env (opt_op_of_deg plusr3) in
-                      (* env1 has dimension m + r3 *)
-                      let r4 = cod_right_ins mtr in
-                      let (Plus tr4) = D.plus r4 in
-                      let mtrp = deg_of_perm (perm_inv (perm_of_ins_plus mtr tr4)) in
-                      let (Plus tr4_r3) = D.plus r3 in
-                      let env2 = act_env env1 (opt_op_of_deg (deg_plus mtrp mr3 tr4_r3)) in
-                      (* env2 has dimension (t + r4) + r3 *)
-                      let (Plus r4r3) = D.plus r3 in
-                      let (Plus r3r4) = D.plus r4 in
-                      let t_r4r3 = D.plus_assocr tr4 r4r3 tr4_r3 in
-                      let (Plus t_r3r4) = D.plus (D.plus_out r3 r3r4) in
-                      let rrswap = swap_deg r3r4 r4r3 in
-                      let t = cod_left_ins mtr in
-                      let env3 = act_env env2 (opt_op_of_deg (plus_deg t t_r4r3 t_r3r4 rrswap)) in
-                      (* env3 has dimension t + (r3 + r4). *)
-                      let r34 = out_shuffle rr in
-                      let (Plus t_r34) = D.plus r34 in
-                      let drr = plus_deg t t_r3r4 t_r34 (deg_of_shuffle rr r3r4) in
-                      let env4 = act_env env3 (opt_op_of_deg drr) in
-                      (* env4 has dimension t + r34 *)
-                      let env5 = Shift (env4, t_r34, ra) in
-                      (* env5 has dimension t.  So when we evaluate the s4-dimensional term 'tm' in this environment, we get an object of dimension t + s4, which is equal to s3.  Therefore, we can act on it by deg3 to get an s-dimensional object, which is what we want.  The current key cell is already incorporated in env5 by the prekey above, so we act by only an identity cell here. *)
+                      (* We degenerate and shift the environment so that the term 'tm' can be evaluated in it.  (Note that 'tm' is s4-dimensional as that is the result dimension of the pbij that indexes it.)  The resulting environment env5 has dimension t, so when we evaluate 'tm' in it, we get an object of dimension t + s4, which is equal to s3.  Therefore, we can act on it by deg3 to get an s-dimensional object, which is what we want.  The current key cell is already incorporated in env5 by the prekey above, so we act by only an identity cell here. *)
+                      let env5 = degenerate_shift_env env rr mtr ra in
                       Some
                         (act_lazy_eval (lazy_eval env5 tm) deg3
                            (Modalcell.id2 (Modalcell.hsrc cell)))));
