@@ -103,6 +103,16 @@ Normalize ``TERM`` and print its value and its type to standard output.  Note th
 
 Like ``echo``, but does not normalize the term, only computes its type.
 
+.. code-block:: none
+
+   about TERM
+
+Like ``echo``, but if the normalized result is a neutral, it tries to display the term's *potential value* instead of just its name.  In particular, if the result is (or is an application reducing to) a :ref:`canonical type<Canonical types defined by case trees>`, the canonical type declaration is read back and displayed; for instance, if ``List`` is defined as ``A ↦ data [ nil. | cons. (x : A) (xs : List A) ]``, then ``about (List N)`` displays ``data [ nil. | cons. (x : N) (xs : List N) ]``.  For an indexed datatype, each constructor's output type is shown as well, e.g. ``about (Vec N 1)`` displays the constructors ``nil. : Vec N 0`` and ``cons. (n : N) … : Vec N (suc. n)``.  For a codatatype or record (including higher-dimensional ones), each field is shown with its in-practice type, including, for higher fields, all the instances that a comatch would have to provide.  If instead the result is itself a *comatch* (a value of a no-eta codatatype), it is read back and displayed by projecting each field; this works even when the comatch is only partially applied, and hence is not a stored case tree that could be displayed by name (e.g. ``about (const N 0)`` for ``const : (A : Type) → A → Stream A`` displays ``[ .head ↦ 0 | .tail ↦ const N 0 ]``).  Failing all that, if the result is a bare defined constant, its stored case tree is displayed; and if nothing applies, ``about`` behaves exactly like ``echo``.
+
+A degenerate (higher-dimensional) datatype, such as ``refl (List X)`` or ``Id N``, is also displayed, with each constructor shown as its higher-dimensional function type whose codomain is instantiated at the lower-dimensional constructors; for instance ``about (refl (List X))`` shows ``cons.`` with type ``{x₀ x₁ : X} (x₂ : Id X x₀ x₁) {xs₀ xs₁ : List X} (xs₂ : List⁽ᵉ⁾ (Id X) xs₀ xs₁) →⁽ᵉ⁾ List⁽ᵉ⁾ (Id X) (cons. x₀ xs₀) (cons. x₁ xs₁)``.  Indexed degenerate datatypes are handled too, with the indices degenerated as well.  (When the arity is positive, this works by recovering the underlying zero-dimensional datatype as a boundary face of the degenerate one and instantiating each codomain at the lower-dimensional constructors.  In a configuration with no endpoints, an arity-zero cube has no boundary face, but it also has no boundary to instantiate, so each constructor's function type is read back directly in its degenerate environment.)
+
+If a datatype is defined nested inside a ``match`` or comatch (so that it is reached through the case tree rather than as a top-level canonical type), ``about`` displays the stored case tree, with the nested ``data`` shown in place; each constructor's output type is shown correctly, since it is stored with the constructor.
+
 Notation
 ^^^^^^^^
 
@@ -196,7 +206,7 @@ Undo
 
    undo N
 
-Undo the last ``N`` commands that modify the global state, rewinding to a previous situation.  This includes all commands except ``echo``, ``synth``, ``show``, ``solve``, ``split``, and ``display``: those commands are skipped over when undoing.  (Of course ``solve`` does modify the global state, but it is not undoable because it doesn't affect the "processed position" in ProofGeneral; it exists "outside the timestream".)  The command ``undo`` itself is also not "undoable" and there is no "redo": after a command is undone, it is lost permanently from Narya's memory (although you can press Up-arrow or Meta+P to find it in the interactive history and re-execute it).  Following an ``undo`` with another ``undo`` will just undo additional commands: ``undo 1`` followed by ``undo 1`` is the same as ``undo 2``.
+Undo the last ``N`` commands that modify the global state, rewinding to a previous situation.  This includes all commands except ``echo``, ``synth``, ``about``, ``show``, ``solve``, ``split``, and ``display``: those commands are skipped over when undoing.  (Of course ``solve`` does modify the global state, but it is not undoable because it doesn't affect the "processed position" in ProofGeneral; it exists "outside the timestream".)  The command ``undo`` itself is also not "undoable" and there is no "redo": after a command is undone, it is lost permanently from Narya's memory (although you can press Up-arrow or Meta+P to find it in the interactive history and re-execute it).  Following an ``undo`` with another ``undo`` will just undo additional commands: ``undo 1`` followed by ``undo 1`` is the same as ``undo 2``.
 
 Display
 ^^^^^^^
@@ -305,7 +315,7 @@ The most useful ProofGeneral key commands for Narya are the following.
 - ``C-c C-.`` : Move the cursor to the end of the processed region.
 - ``C-M-a`` : Move the cursor to the beginning of the command it is inside.
 - ``C-M-e`` : Move the cursor to the end of the command it is inside.
-- ``C-c C-v`` : Read a "state-preserving" command from the minibuffer and execute it, displaying its output in the result buffer.  Currently the only state-preserving commands are ``echo``, ``synth``, ``show``, and ``display``.
+- ``C-c C-v`` : Read a "state-preserving" command from the minibuffer and execute it, displaying its output in the result buffer.  Currently the only state-preserving commands are ``echo``, ``synth``, ``about``, ``show``, and ``display``.
 - ``C-c C-c`` : Interrupt Narya if a command is taking too long.  Narya attempts to recover, but its state may be unreliable afterwards.
 - ``C-c C-x`` : Retract the buffer and kill the Narya subprocess.
 - ``M-;`` : Insert a comment, remove a comment, or comment out a region.  This is a standard Emacs command, but is customized to use line comments on code lines and block comments elsewhere.

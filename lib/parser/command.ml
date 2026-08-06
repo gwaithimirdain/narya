@@ -59,14 +59,14 @@ module Command = struct
         ty : wrapped_parse;
       }
     | Def of def list
-    (* "synth" is almost just like "echo", so we implement them as one command distinguished by an "eval" flag. *)
+    (* "synth", "echo", and "about" are almost the same command, so we implement them as one, distinguished by a "mode": "synth" only typechecks the term, "echo" also normalizes it, and "about" additionally displays the potential value (canonical type or case tree) of a neutral result. *)
     | Echo of {
         wsecho : Whitespace.t list;
         number : int option;
         wsin : Whitespace.t list;
         wsnumber : Whitespace.t list;
         tm : wrapped_parse;
-        eval : bool;
+        mode : [ `Synth | `Echo | `About ];
       }
     | Notation : {
         fixity : ('left, 'tight, 'right) fixity;
@@ -259,11 +259,13 @@ module Parse = struct
     | _ -> fatal ?severity (Invalid_instant (Origin.to_string (Instant past)))
 
   let echo =
-    let* wsecho, eval =
+    let* wsecho, mode =
       (let* wsecho = token Echo in
-       return (wsecho, true))
-      </> let* wsecho = token Synth in
-          return (wsecho, false) in
+       return (wsecho, `Echo))
+      </> (let* wsecho = token Synth in
+           return (wsecho, `Synth))
+      </> let* wsecho = token About in
+          return (wsecho, `About) in
     let* number, wsin, wsnumber, tm =
       (let* wsin = token In in
        let* number, wsnumber = integer in
@@ -273,7 +275,7 @@ module Parse = struct
        return (Some number, wsin, wsnumber, tm))
       </> let* tm = C.term [] in
           return (None, [], [], tm) in
-    return (Command.Echo { wsecho; number; wsin; wsnumber; tm; eval })
+    return (Command.Echo { wsecho; number; wsin; wsnumber; tm; mode })
 
   let tightness : (Whitespace.t list * No.wrapped option * Whitespace.t list * Whitespace.t list) t
       =
@@ -766,7 +768,7 @@ module Parse = struct
     command ()
     </> let* tm = C.term [] in
         return
-          (Command.Echo { wsecho = []; number = None; wsin = []; wsnumber = []; tm; eval = true })
+          (Command.Echo { wsecho = []; number = None; wsin = []; wsnumber = []; tm; mode = `Echo })
 
   type open_source = Range.Data.t * [ `String of int * string | `File of In_channel.t ]
 
@@ -834,8 +836,9 @@ let show_hole = function
 let to_string : Command.t -> string = function
   | Axiom _ -> "axiom"
   | Def _ -> "def"
-  | Echo { eval = true; _ } -> "echo"
-  | Echo { eval = false; _ } -> "synth"
+  | Echo { mode = `Echo; _ } -> "echo"
+  | Echo { mode = `Synth; _ } -> "synth"
+  | Echo { mode = `About; _ } -> "about"
   | Notation _ -> "notation"
   | Import _ -> "import"
   | Chdir _ -> "chdir"
@@ -962,7 +965,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                      | _ -> fatal (Nonsynthesizing "body of def without specified type"))) ))
           defs in
       Core.Command.execute (Def cdefs)
-  | Echo { tm = Wrap tm; eval; number; _ } -> (
+  | Echo { tm = Wrap tm; mode; number; _ } -> (
       let module Scope_and_ctx = struct
         type _ ctx_of_raw = Of_raw : ('mode, 'a, 'b) Ctx.t -> 'a ctx_of_raw
 
@@ -994,14 +997,40 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
           let (Of_raw ctx) = ctx rtm in
           Readback.Displaying.run ~env:true @@ fun () ->
           let ctm, ety = Check.synth (Kinetic `Nolet) ctx { value = stm; loc = rtm.loc } in
-          let btm =
-            if eval then
-              let etm = Norm.eval_term (Ctx.env ctx) ctm in
-              readback_at Kinetic ctx etm ety
-            else ctm in
+          let names = Names.of_ctx ctx in
+          (* In "echo" and "about" mode we normalize the term.  In "about" mode, if the result is a neutral, we additionally try to display its potential value: first, if it reduces (possibly under parameter abstractions) to a canonical type, displaying that declaration; failing that, if it is a bare defined constant, displaying that constant's stored case tree. *)
+          let utm =
+            match mode with
+            | `Synth -> unparse names ctm No.Interval.entire No.Interval.entire
+            | `Echo ->
+                let etm = Norm.eval_term (Ctx.env ctx) ctm in
+                unparse names (readback_at Kinetic ctx etm ety) No.Interval.entire
+                  No.Interval.entire
+            | `About -> (
+                let etm = Norm.eval_term (Ctx.env ctx) ctm in
+                match etm with
+                (* A defined *zero-dimensional* constant is displayed as its stored case tree, which shows the definition as written rather than as it computes -- in particular the matches, which a value retains no trace of.  We require dimension zero so that a degeneracy of such a constant isn't shown as the undegenerated stored tree, which would be wrong. *)
+                | Value.Neu { head = Value.Const { name; ins }; args = Value.Emp; _ }
+                  when Option.is_some (is_id_ins ins)
+                       &&
+                       match D.compare_zero (cod_left_ins ins) with
+                       | Zero -> true
+                       | Pos _ -> false -> (
+                    match Global.find_const name with
+                    | Definition { tm = `Defined tree; _ } ->
+                        unparse Names.empty tree No.Interval.entire No.Interval.entire
+                    | Definition { tm = `Axiom; _ } ->
+                        unparse names (readback_at Kinetic ctx etm ety) No.Interval.entire
+                          No.Interval.entire)
+                (* Otherwise we read back the neutral's potential value, which displays a canonical type as its declaration and a comatch as itself.  If it has no potential value at all we show its normal form. *)
+                | _ -> (
+                    match readback_about ctx etm with
+                    | Some tm -> unparse names tm No.Interval.entire No.Interval.entire
+                    | None ->
+                        unparse names (readback_at Kinetic ctx etm ety) No.Interval.entire
+                          No.Interval.entire)) in
           let bty = readback_at Kinetic ctx ety (Value.universe (Ctx.mode ctx) D.zero) in
-          let utm = unparse (Names.of_ctx ctx) btm No.Interval.entire No.Interval.entire in
-          let uty = unparse (Names.of_ctx ctx) bty No.Interval.entire No.Interval.entire in
+          let uty = unparse names bty No.Interval.entire No.Interval.entire in
           PPrint.(
             ToChannel.pretty 1.0 (Display.columns ()) stdout
               (hang 2
@@ -1013,7 +1042,15 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
           print_newline ();
           print_newline ();
           (None, fun _ -> None)
-      | _ -> fatal (Nonsynthesizing ("argument of " ^ if eval then "echo" else "synth")))
+      | _ ->
+          fatal
+            (Nonsynthesizing
+               ("argument of "
+               ^
+               match mode with
+               | `Echo -> "echo"
+               | `Synth -> "synth"
+               | `About -> "about")))
   | Notation { fixity; loc; pattern; head; args; _ } ->
       Global.run_command ~holes_allowed:(Error (to_string cmd)) @@ fun () ->
       let name = "«" ^ User.Pattern.to_string pattern ^ "»" in
@@ -1495,10 +1532,14 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
     | Def defs ->
         let doc, ws = pp_defs Def None defs empty in
         (indent, doc, ws)
-    | Echo { wsecho; number; wsin; wsnumber; tm = Wrap tm; eval } ->
+    | Echo { wsecho; number; wsin; wsnumber; tm = Wrap tm; mode } ->
         let tm, rest = split_ending_whitespace tm in
         ( indent,
-          Token.pp (if eval then Echo else Synth)
+          Token.pp
+            (match mode with
+            | `Echo -> Echo
+            | `Synth -> Synth
+            | `About -> About)
           ^^ pp_ws `Nobreak wsecho
           ^^ optional
                (fun n ->
