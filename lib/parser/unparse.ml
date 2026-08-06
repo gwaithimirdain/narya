@@ -894,14 +894,13 @@ and unparse_named_inst : type mode n lt ls rt rs m k mk.
                   let (Named (_, x1)) = TubeOf.find tyargs fa1 in
                   if synths x1 then ()
                   else
-                    s :=
-                      Snoc (!s, make_unparser_implicit xvars (Spine_arg (Right Eq, x, `Implicit)))));
+                    s := Snoc (!s, make_unparser_implicit xvars (Spine_arg (Right Eq, x, `Implicit)))
+              ));
     }
     ~ifzero:(fun () ->
       s :=
         Snoc
-          ( !s,
-            { unparse = (fun li ri -> unparse_notation Postprocess.dot [] (`Single Dot) li ri) } ))
+          (!s, { unparse = (fun li ri -> unparse_notation Postprocess.dot [] (`Single Dot) li ri) }))
     [ tyargs ];
   let args = !s in
   unparse_spine vars (`Term ty) args li ri
@@ -1217,9 +1216,7 @@ let rec unparse_ctx : type dom modality mode a b.
             let var = top_variable x in
             ((), Snoc (res, { var; modality; renamed = true; lock; tm; ty })) in
           let result = ref result in
-          CubeOf.miter
-            { it = (fun _ [ b ] -> result := snd (do_binding b !result)) }
-            [ bindings ];
+          CubeOf.miter { it = (fun _ [ b ] -> result := snd (do_binding b !result)) } [ bindings ];
           (names, !result)
       | Vis { dim; plusdim; vars; plus_lock; bindings; hasfields; fields; fplus; filter = _ } ->
           let modality = Modality.name (plus_lock_modality plus_lock) in

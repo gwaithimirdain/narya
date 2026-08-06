@@ -445,7 +445,8 @@ module F = struct
             fprintf ppf "(%s%a : %a)" x
               (pp_print_option (fun ppf l ->
                    fprintf ppf "(%a)" (fun ppf lvl -> level ppf lvl (Modalcell.id modality)) l))
-              (Ctx.Binding.level b) value (Lazy.force (Ctx.Binding.value b).ty)
+              (Ctx.Binding.level b) value
+              (Lazy.force (Ctx.Binding.value b).ty)
         | _ -> fprintf ppf "(?)")
     | _ -> fprintf ppf "(?)"
 

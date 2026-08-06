@@ -639,8 +639,9 @@ let readback_entry : type dom modality mode a b f n.
           (fun (f, x) ->
             let fldty =
               readback_val ~sort:`Type lctx
-                (tyof_field (Modality.id (Ctx.mode lctx)) (Ok top.tm) (Lazy.force top.ty) f ~shuf:Trivial fins)
-            in
+                (tyof_field
+                   (Modality.id (Ctx.mode lctx))
+                   (Ok top.tm) (Lazy.force top.ty) f ~shuf:Trivial fins) in
             (f, x, fldty))
           fields in
       let bindings = readback_bindings lctx bindings in

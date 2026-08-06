@@ -1275,9 +1275,7 @@ and tyof_field_withname : type src f mode a b.
     | Ok tm -> PVal (ctx, tm)
     | Error _err -> PString "[ERROR]" in
   match view_type ~severity:Asai.Diagnostic.Error ty "tyof_field" with
-  | Canonical
-      (head, Codata { env; fields; opacity = _; eta; hints = _ }, codatains, tyargs)
-    -> (
+  | Canonical (head, Codata { env; fields; opacity = _; eta; hints = _ }, codatains, tyargs) -> (
       (* The type cannot have a nonidentity degeneracy applied to it (though it can be at a higher dimension). *)
       match is_id_ins codatains with
       | None -> fatal (No_such_field (`Degenerated_record eta, errfld))
@@ -2041,8 +2039,12 @@ let eval_bindings : type dom modality mode a b n bm.
             j := !j + 1;
             let lvl, v =
               match ctm with
-              | None -> (Some level, ({ tm = var modality level ety; ty = Lazy.from_val ety } : dom normal))
-              | Some ctm -> (None, { tm = eval_term (Ctx.Ordered.env tempctx) ctm; ty = Lazy.from_val ety }) in
+              | None ->
+                  ( Some level,
+                    ({ tm = var modality level ety; ty = Lazy.from_val ety } : dom normal) )
+              | Some ctm ->
+                  (None, { tm = eval_term (Ctx.Ordered.env tempctx) ctm; ty = Lazy.from_val ety })
+            in
             Hashtbl.add argtbl (SFace_of fa) v;
             Ctx.Binding.specify vb lvl v);
       }

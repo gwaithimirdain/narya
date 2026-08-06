@@ -117,14 +117,15 @@ module Codata = struct
             (* x is the index-zero variable. *)
             let x =
               Var
-                (Index (Now, id_sface D.zero, Modality.filter_id mode D.zero, plus_with_no_locks mode))
+                (Index
+                   (Now, id_sface D.zero, Modality.filter_id mode D.zero, plus_with_no_locks mode))
             in
             let ins = zero_ins Hott.dim in
             (* Compute terms that project each fibrancy field out of the codatatype and apply it to the index-zero variable 'x'. *)
             let idm = Modality.id mode in
             let idf = Modality.filter_id mode Hott.dim in
-            let onx : Hott.dim Field.t -> (mode, (hb, (mode id, D.zero) dim_entry) snoc, kinetic) term
-                =
+            let onx :
+                Hott.dim Field.t -> (mode, (hb, (mode id, D.zero) dim_entry) snoc, kinetic) term =
              fun trlift ->
               app
                 (Field (modal_id mode (Weaken (Shift (Hott.dim, f.plusmap, f.ty))), trlift, ins))
@@ -136,7 +137,9 @@ module Codata = struct
                 (* This generic functions computes the specified field projection 'fld' of any of the fibrancy fields, by applying that fibrancy field to the corresponding 'fld' of the input. *)
                 let trlift : type m.
                     Hott.dim Field.t ->
-                    (Hott.dim, (mode, (hb, (mode id, D.zero) dim_entry) snoc, kinetic) term) CubeOf.t ->
+                    ( Hott.dim,
+                      (mode, (hb, (mode id, D.zero) dim_entry) snoc, kinetic) term )
+                    CubeOf.t ->
                     (mode * (m * (hb, (mode id, D.zero) dim_entry) snoc * potential * et))
                     StructfieldAbwd.entry =
                  fun trlift xcube ->
@@ -171,8 +174,10 @@ module Codata = struct
                  (* TODO: Once it's written, call this from Check.check_codata too. *)
                  (* Entry (f, Higher _) *) in
                 let new_trr, new_liftr, new_trl, new_liftl =
-                  (trlift ftrr xrcube, trlift fliftr xrcube, trlift ftrl xlcube, trlift fliftl xlcube)
-                in
+                  ( trlift ftrr xrcube,
+                    trlift fliftr xrcube,
+                    trlift ftrl xlcube,
+                    trlift fliftl xlcube ) in
                 Fibrancy
                   {
                     f with
@@ -246,7 +251,9 @@ module Codata = struct
                   (Plusmap.Dom.suc hlength (Dim (D.zero, Modality.filter_zero idm)))
                   (Dim (D.zero, Modality.filter_zero idm)) in
               let makeidx v =
-                Var (Index (v, id_sface D.zero, Modality.filter_id mode D.zero, plus_with_no_locks mode))
+                Var
+                  (Index
+                     (v, id_sface D.zero, Modality.filter_id mode D.zero, plus_with_no_locks mode))
               in
               let x0 = makeidx (Later (Later Now)) in
               let x1 = makeidx (Later Now) in

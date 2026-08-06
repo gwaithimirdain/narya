@@ -238,7 +238,9 @@ and equal_at : type mode a b.
                 match (x, y) with
                 | Constr _, _ | _, Constr _ ->
                     fail
-                      (Unequal.Terms (PNormal (ctx, { tm = x; ty = Lazy.from_val ty }), PNormal (ctx, { tm = y; ty = Lazy.from_val ty })))
+                      (Unequal.Terms
+                         ( PNormal (ctx, { tm = x; ty = Lazy.from_val ty }),
+                           PNormal (ctx, { tm = y; ty = Lazy.from_val ty }) ))
                 | _ -> equal_val ctx x y) in
         equal_at_data x y
     (* If the type is not one that has an eta-rule, then we pass off to a synthesizing equality-check, forgetting about our assumption that the two terms had the same type.  This is the equality-checking analogue of the conversion rule for checking a synthesizing term, but since equality requires no evidence we don't have to actually synthesize a type at which they are equal or verify that it equals the type we assumed them to have. *)
@@ -419,9 +421,7 @@ and equal_apps : type h1 h2 mode any1 any2 a b.
           | Eq ->
               Some
                 (short_circuit_err (fun check ->
-                     CubeOf.miter
-                       { it = (fun _ [ x; y ] -> check (equal_nf lctx x y)) }
-                       [ a1; a2 ]))
+                     CubeOf.miter { it = (fun _ [ x; y ] -> check (equal_nf lctx x y)) } [ a1; a2 ]))
           (* If the dimensions don't match, it is a bug rather than a user error, since they are supposed to both be valid arguments of the same function, and any function has a unique dimension. *)
           | Neq ->
               fatal
@@ -514,7 +514,7 @@ and equal_at_tel : type mode n a b ab c d.
                                      Hashtbl.find tyargtbl
                                        (SFace_of (comp_sface fb (sface_of_tface fc))));
                                }) in
-                        let argnorm : xdom normal = { tm = argtm; ty = (Lazy.from_val (argty)) } in
+                        let argnorm : xdom normal = { tm = argtm; ty = Lazy.from_val argty } in
                         Hashtbl.add tyargtbl (SFace_of fb) argnorm;
                         argnorm);
               } in
