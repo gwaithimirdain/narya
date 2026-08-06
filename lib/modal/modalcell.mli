@@ -51,6 +51,11 @@ val adj_right : ('a, 'f, 'g, 'b) adjunction -> ('b, 'g, 'a) Modality.t
 val compare_adjunction_id :
   ('a, 'f, 'g, 'b) adjunction -> ('f * 'g * 'b, 'a Modality.id * 'a Modality.id * 'a) Eq.compare
 
+val compare_adjunction :
+  ('a, 'f, 'g, 'b) adjunction ->
+  ('a, 'f2, 'g2, 'b2) adjunction ->
+  ('f * 'g * 'b, 'f2 * 'g2 * 'b2) Eq.compare
+
 type _ parametric_locker =
   | Locker : ('a, 'm, 'a) Modality.t * ('a, 'm, 'a Modality.id, 'a) t -> 'a parametric_locker
 

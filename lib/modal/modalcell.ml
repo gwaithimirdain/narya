@@ -109,6 +109,17 @@ let compare_adjunction_id : type a f g b.
           | Neq -> Neq
           | Eq -> Eq))
 
+(* Decide whether two adjunctions with the same source mode are the same, giving type-level equations if so.  An adjunction is determined by its two modalities, so it suffices to compare those.  This is used to match up the adjunction stored in a codatatype's field declaration with the one stored in a comatch's field, whose existential types are a priori unrelated. *)
+let compare_adjunction : type a f g b f2 g2 b2.
+    (a, f, g, b) adjunction -> (a, f2, g2, b2) adjunction -> (f * g * b, f2 * g2 * b2) Eq.compare =
+ fun (Adjunction { left; right; _ }) (Adjunction { left = left2; right = right2; _ }) ->
+  match Modality.compare left left2 with
+  | Neq -> Neq
+  | Eq -> (
+      match Modality.compare right right2 with
+      | Neq -> Neq
+      | Eq -> Eq)
+
 type _ parametric_locker =
   | Locker : ('a, 'm, 'a) Modality.t * ('a, 'm, 'a Modality.id, 'a) t -> 'a parametric_locker
 
