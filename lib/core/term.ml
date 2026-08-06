@@ -116,27 +116,29 @@ module rec Term : sig
     | Meta : ('mode, 'x, 'b, 'l) Meta.t * 's energy -> ('mode, 'b, 's) term
     | MetaEnv : ('mode, 'x, 'b, 's) Meta.t * ('mode, 'a, 'n, 'b) env -> ('mode, 'a, kinetic) term
     | Field :
-        ('mode, 'f, 'a, kinetic) modal_term * 'i Field.t * ('n, 't, 'i) insertion
-        -> ('mode, 'a, kinetic) term
+        's energy * ('mode, 'f, 'a, 's) modal_term * 'i Field.t * ('n, 't, 'i) insertion
+        -> ('mode, 'a, 's) term
     | UU : 'mode Mode.t * 'n D.t -> ('mode, 'a, kinetic) term
     | Inst :
-        ('mode, 'a, kinetic) term * ('m, 'n, 'mn, ('mode, 'a, kinetic) term) TubeOf.t
-        -> ('mode, 'a, kinetic) term
+        's energy * ('mode, 'a, 's) term * ('m, 'n, 'mn, ('mode, 'a, kinetic) term) TubeOf.t
+        -> ('mode, 'a, 's) term
     | Pi : ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args -> ('mode, 'a, kinetic) term
     | App :
-        ('mode, 'a, kinetic) term
+        's energy
+        * ('mode, 'a, 's) term
         * 'm D.t
         * ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
         * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
-        -> ('mode, 'a, kinetic) term
+        -> ('mode, 'a, 's) term
     | Constr :
         Constr.t * 'n D.t * ('n, 'mode, 'a, kinetic) any_modal_term_cube list
         -> ('mode, 'a, kinetic) term
     | Act :
-        ('mode, 'a, kinetic) term
+        's energy
+        * ('mode, 'a, 's) term
         * ('m, 'n) deg
         * ([ `Type | `Function | `Other ] * [ `Canonical | `Other ])
-        -> ('mode, 'a, kinetic) term
+        -> ('mode, 'a, 's) term
     | Key : {
         tm : ('mode, 'am, kinetic) term;
         cell : ('mode, 'mu, 'nu, 'cod) Modalcell.t;
@@ -424,27 +426,31 @@ end = struct
     | MetaEnv : ('mode, 'x, 'b, 's) Meta.t * ('mode, 'a, 'n, 'b) env -> ('mode, 'a, kinetic) term
     (* A field projection.  For a modal field, the term being projected lives behind a lock by the left adjoint of the field's adjunction; for ordinary fields that modality is the identity. *)
     | Field :
-        ('mode, 'f, 'a, kinetic) modal_term * 'i Field.t * ('n, 't, 'i) insertion
-        -> ('mode, 'a, kinetic) term
+        's energy * ('mode, 'f, 'a, 's) modal_term * 'i Field.t * ('n, 't, 'i) insertion
+        -> ('mode, 'a, 's) term
     | UU : 'mode Mode.t * 'n D.t -> ('mode, 'a, kinetic) term
+    (* Normally an instantiation can only be kinetic, but we permit potential ones to be the values of display-only readback of instantiated canonicals. *)
     | Inst :
-        ('mode, 'a, kinetic) term * ('m, 'n, 'mn, ('mode, 'a, kinetic) term) TubeOf.t
-        -> ('mode, 'a, kinetic) term
+        's energy * ('mode, 'a, 's) term * ('m, 'n, 'mn, ('mode, 'a, kinetic) term) TubeOf.t
+        -> ('mode, 'a, 's) term
     | Pi : ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args -> ('mode, 'a, kinetic) term
+    (* Normally an application can only be kinetic, but we permit potential ones to be the values of display-only readback of indexed datatypes applied to their indices. *)
     | App :
-        ('mode, 'a, kinetic) term
+        's energy
+        * ('mode, 'a, 's) term
         * 'm D.t
         * ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
         * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
-        -> ('mode, 'a, kinetic) term
+        -> ('mode, 'a, 's) term
     | Constr :
         Constr.t * 'n D.t * ('n, 'mode, 'a, kinetic) any_modal_term_cube list
         -> ('mode, 'a, kinetic) term
     | Act :
-        ('mode, 'a, kinetic) term
+        's energy
+        * ('mode, 'a, 's) term
         * ('m, 'n) deg
         * ([ `Type | `Function | `Other ] * [ `Canonical | `Other ])
-        -> ('mode, 'a, kinetic) term
+        -> ('mode, 'a, 's) term
     (* A keyed term strips off part of the context that contains locks adding up to the codomain of the key cell, then replaces them by the domain of that cell for the body term. *)
     | Key : {
         tm : ('mode, 'am, kinetic) term;
@@ -695,11 +701,13 @@ let pi : type mode modality a.
     }
 
 let app fn modality al arg =
-  App (fn, D.zero, Modality.filter_zero modality, Modal (modality, al, CubeOf.singleton arg))
+  App
+    (Kinetic, fn, D.zero, Modality.filter_zero modality, Modal (modality, al, CubeOf.singleton arg))
 
 let appid fn mode arg =
   App
-    ( fn,
+    ( Kinetic,
+      fn,
       D.zero,
       Modality.filter_id mode D.zero,
       Modal (Modality.id mode, plus_no_lock mode, CubeOf.singleton arg) )
@@ -714,7 +722,7 @@ let modal_id : type mode a s.
     mode Mode.t -> (mode, a, s) term -> (mode, mode Modality.id, a, s) modal_term =
  fun mode tm -> Modal (Modality.id mode, plus_no_lock mode, tm)
 
-let field mode tm f = Field (modal_id mode tm, f, ins_zero D.zero)
+let field mode tm f = Field (Kinetic, modal_id mode tm, f, ins_zero D.zero)
 
 module Telescope = struct
   type ('mode, 'a, 'b, 'ab) t = ('mode, 'a, 'b, 'ab) Term.tel

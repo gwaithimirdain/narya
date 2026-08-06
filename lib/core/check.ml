@@ -495,7 +495,8 @@ let rec check : type mode a b s.
                 (* A pure permutation is never locking.  *)
                 let cx = check (Kinetic `Nolet) ctx x ty_fainv in
                 realize status
-                  (Term.Act (cx, fa, (sort_of_ty ctx (view_type ty "checking act"), `Other))))
+                  (Term.Act (Kinetic, cx, fa, (sort_of_ty ctx (view_type ty "checking act"), `Other)))
+            )
         | Some _, None -> fatal (Nonsynthesizing "pure symmetry of placeholder")
         | None, _ -> (
             (* It can also check if it is *not* a permutation and the arity is positive, since then we can extract the needed type of its argument from the boundary of the type it is checking against. *)
@@ -542,7 +543,10 @@ let rec check : type mode a b s.
                         | Ok () ->
                             realize status
                               (Term.Act
-                                 (cx, fa, (sort_of_ty ctx (view_type ty "checking act"), `Other)))
+                                 ( Kinetic,
+                                   cx,
+                                   fa,
+                                   (sort_of_ty ctx (view_type ty "checking act"), `Other) ))
                         | Error why ->
                             fatal
                               (Unequal_synthesized_type
@@ -992,7 +996,8 @@ let rec check : type mode a b s.
                     let new_sfn =
                       locate_opt fn.loc
                         (Term.App
-                           ( sfn,
+                           ( Kinetic,
+                             sfn,
                              D.zero,
                              Modality.filter_id mode D.zero,
                              Modal (idm, plus_no_lock mode, CubeOf.singleton cty) )) in
@@ -3150,7 +3155,8 @@ and synth : type mode a b s.
               (* The self-variable and its field projection live at the variable's own mode (its annotating modality's source); the ambient Key later transports to the context mode. *)
               let dmode = Modality.src modality in
               ( Term.Field
-                  ( modal_id dmode
+                  ( Kinetic,
+                    modal_id dmode
                       (Var
                          (Index (insert, id_sface n, filter, plus_with_locks_of_plus_lock plus_src))),
                     field,
@@ -3200,7 +3206,7 @@ and synth : type mode a b s.
           let stm, sty = synth (Kinetic `Nolet) lctx tm in
           let etm = eval_term (Ctx.env lctx) stm in
           let WithIns (fld, ins), newty = tyof_field_withname fm lctx (Ok etm) sty fld in
-          (realize status (Field (Modal (fm, plus_lock, stm), fld, ins)), newty) in
+          (realize status (Field (Kinetic, Modal (fm, plus_lock, stm), fld, ins)), newty) in
         match lock with
         | None -> synth_field (Modality.id (Ctx.mode ctx))
         | Some lockname -> (
@@ -3539,7 +3545,8 @@ and synth : type mode a b s.
                       CodCube.build n { build } in
                     ( realize status
                         (Inst
-                           ( Pi
+                           ( Kinetic,
+                             Pi
                                {
                                  x = xsv;
                                  filter = nfilter;
@@ -3567,7 +3574,8 @@ and synth : type mode a b s.
           with_loc x.loc @@ fun () -> act_ty ex ety fa cell ~err:(low_dim_arg_err str.value) in
         ( realize status
             (Term.Act
-               ( Term.Key { tm = sx; cell; plus_tgt = plus_with_no_locks mode; plus_src },
+               ( Kinetic,
+                 Term.Key { tm = sx; cell; plus_tgt = plus_with_no_locks mode; plus_src },
                  fa,
                  (sort_of_ty ctx (view_type sty "synth act"), `Other) )),
           sty )
@@ -3675,7 +3683,8 @@ and synth : type mode a b s.
                 let new_sfn =
                   locate_opt fn.loc
                     (Term.App
-                       ( sfn,
+                       ( Kinetic,
+                         sfn,
                          BindCube.dim cods,
                          filter,
                          Modal (Modality.id mode, plus_no_lock mode, CubeOf.singleton cargty) ))
@@ -3748,11 +3757,12 @@ and synth : type mode a b s.
         let env = Ctx.env ctx in
         let ex = eval_term env cx in
         let nx : mode normal = { tm = ex; ty = Lazy.from_val ty } in
-        let creflx = Term.Act (cx, deg_zero Hott.dim, (`Other, `Other)) in
+        let creflx = Term.Act (Kinetic, cx, deg_zero Hott.dim, (`Other, `Other)) in
         let idty = act_value ty (deg_zero Hott.dim) (Modalcell.id2 mode) in
         let ididcty =
           Term.Act
-            ( Term.Act (cty, deg_zero Hott.dim, (`Other, `Other)),
+            ( Kinetic,
+              Term.Act (Kinetic, cty, deg_zero Hott.dim, (`Other, `Other)),
               deg_zero Hott.dim,
               (`Other, `Other) ) in
         let (Plus hh) = D.plus Hott.dim in
@@ -3777,7 +3787,8 @@ and synth : type mode a b s.
                         nz,
                         app
                           (Field
-                             ( modal_id mode (Inst (ididcty, pqtube)),
+                             ( Kinetic,
+                               modal_id mode (Inst (Kinetic, ididcty, pqtube)),
                                Field.intern "trr" Hott.dim,
                                id_ins D.zero (D.zero_plus Hott.dim) ))
                           idm (plus_no_lock mode) xeqy ))
@@ -3797,7 +3808,8 @@ and synth : type mode a b s.
                         nz,
                         app
                           (Field
-                             ( modal_id mode (Inst (ididcty, pqtube)),
+                             ( Kinetic,
+                               modal_id mode (Inst (Kinetic, ididcty, pqtube)),
                                Field.intern "trl" Hott.dim,
                                id_ins D.zero (D.zero_plus Hott.dim) ))
                           idm (plus_no_lock mode) xeqy ))
@@ -3993,7 +4005,7 @@ and synth_app : type dom modality mode a b k n.
       doms (sfn.loc, fn, args) in
   (* Evaluate cod at these evaluated arguments and instantiate it at the appropriate values of tyargs. *)
   let output = tyof_app cods tyargs filter eargs in
-  ( { value = Term.App (sfn.value, BindCube.dim cods, filter, cargs); loc = newloc },
+  ( { value = Term.App (Kinetic, sfn.value, BindCube.dim cods, filter, cargs); loc = newloc },
     output,
     newfn,
     rest )
@@ -4053,7 +4065,7 @@ and synth_inst : type mode a b n.
       (* The synthesized type *of* the instantiation is itself a full instantiation of a universe, at the instantiations of the type arguments at the evaluated term arguments.  This is computed by tyof_inst. *)
       let cargs = TubeOf.of_cube_bwv m k msuc l cargs in
       let nargs = TubeOf.of_cube_bwv m k msuc l nargs in
-      ( { value = Term.Inst (sfn.value, cargs); loc = newloc },
+      ( { value = Term.Inst (Kinetic, sfn.value, cargs); loc = newloc },
         tyof_inst (Ctx.mode ctx) tyargs nargs,
         newfn,
         rest )
@@ -4088,7 +4100,8 @@ and synth_or_check_apps : type mode a b.
           synth_apps ctx
             (locate_opt fn.loc
                (Term.Act
-                  ( Term.Key { tm = cfn; cell; plus_tgt = plus_with_no_locks mode; plus_src },
+                  ( Kinetic,
+                    Term.Key { tm = cfn; cell; plus_tgt = plus_with_no_locks mode; plus_src },
                     s,
                     (`Function, `Other) )))
             (act_ty efn sty s cell) fn args

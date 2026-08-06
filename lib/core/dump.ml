@@ -249,11 +249,11 @@ module F = struct
     | Const c -> fprintf ppf "Const %s" (print_to_string (PConstant c))
     | Meta (v, _) -> fprintf ppf "Meta %s" (print_to_string (PMeta v))
     | MetaEnv (v, _) -> fprintf ppf "MetaEnv (%s,?)" (print_to_string (PMeta v))
-    | Field (Modal (_, _, tm), fld, ins) ->
+    | Field (_, Modal (_, _, tm), fld, ins) ->
         fprintf ppf "Field (%a, %s%s(%s))" term tm (Field.to_string fld) (string_of_ins ins)
           (string_of_dim (dom_ins ins))
     | UU (_, n) -> fprintf ppf "UU %a" dim n
-    | Inst (tm, args) -> fprintf ppf "Inst (%a, %a)" term tm (tubeof term) args
+    | Inst (_, tm, args) -> fprintf ppf "Inst (%a, %a)" term tm (tubeof term) args
     | Pi
         (type k n dom modality)
         ({ x; filter; doms = Modal (_modality, _, doms); cods; _ } :
@@ -266,7 +266,7 @@ module F = struct
           (let (Cod (filt, t)) = CodCube.find_top cods in
            let Eq = Modality.filter_uniq filter filt in
            (t : (mode, (b, (modality, k) Tctx.dim_entry) Tctx.suc, s) term))
-    | App (fn, _, _, Modal (_modality, _al, arg)) ->
+    | App (_, fn, _, _, Modal (_modality, _al, arg)) ->
         fprintf ppf "App (%a, %a)" term fn (cubeof term) arg
     | Lam (x, _, filter, body) ->
         fprintf ppf "Lam^(%s) (?, %s, %a)"
@@ -274,7 +274,7 @@ module F = struct
           (Modality.to_string (Modality.filter_modality filter))
           term body
     | Constr (c, _, _) -> fprintf ppf "Constr (%s, ?, ?)" (Constr.to_string c)
-    | Act (tm, s, _) -> fprintf ppf "Act (%a, %s)" term tm (string_of_deg s)
+    | Act (_, tm, s, _) -> fprintf ppf "Act (%a, %s)" term tm (string_of_deg s)
     | Key { tm; cell; _ } -> fprintf ppf "Key (%a, %s)" term tm (Modalcell.to_string cell)
     | Let (_, _, _) -> fprintf ppf "Let ?"
     | Struct _ -> fprintf ppf "Struct ?"

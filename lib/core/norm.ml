@@ -276,7 +276,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let m = dim_env env in
       let (Plus mn) = D.plus n in
       Val (universe mode (D.plus_out m mn))
-  | Inst (tm, args) -> (
+  | Inst (Potential, _, _) -> fatal (Anomaly "potential inst in eval")
+  | Inst (Kinetic, tm, args) -> (
       (* The arguments are an (n,k) tube, with k dimensions instantiated and n dimensions uninstantiated. *)
       let n = TubeOf.uninst args in
       let k = TubeOf.inst args in
@@ -340,7 +341,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
            ( Variables (D.plus_out l l_n, ln_k, vars),
              Modality.filter_plus l_nk m_p filter_lm filter,
              eval_binder env m_p modality filter body ))
-  | App (fn, k, filter_nk, Modal (modality, al, args)) ->
+  | App (Potential, _, _, _, _) -> fatal (Anomaly "potential app in eval")
+  | App (Kinetic, fn, k, filter_nk, Modal (modality, al, args)) ->
       (* First we evaluate the function. *)
       let efn = eval_term env fn in
       (* The environment is m-dimensional and the original application is n-dimensional, so the *substituted* application is m+n dimensional.  However, the stored cube of arguments is at the *filtered* dimension of the original application, and likewise the arguments of the substituted application must be at *its* filtered dimension, which is (filtered m)+n.  So, as in the Constr case below, we filter the dimension m of the environment by the modality, acting on the environment by a face to cut it down to the filtered dimension. *)
@@ -358,7 +360,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let (Plus m_k) = D.plus k in
       let filter_total = Modality.filter_plus l_n m_k filter_lm filter_nk in
       apply efn filter_total eargs
-  | Field (Modal (fm, plus_lock, tm), fld, fldins) -> (
+  | Field (Potential, _, _, _) -> fatal (Anomaly "potential field in eval")
+  | Field (Kinetic, Modal (fm, plus_lock, tm), fld, fldins) -> (
       let m = dim_env env in
       let n, l = (dom_ins fldins, cod_left_ins fldins) in
       match Modality.compare_id fm with
@@ -533,7 +536,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
            })
         body
   (* It's tempting to write just "act_value (eval env x) s" here, but that is WRONG!  Pushing a substitution through an operator action requires whiskering the operator by the dimension of the substitution. *)
-  | Act (x, s, _) ->
+  | Act (_, x, s, _) ->
       let k = dim_env env in
       let (Plus km) = D.plus (dom_deg s) in
       let (Plus kn) = D.plus (cod_deg s) in
@@ -541,8 +544,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       (* We push as much of the resulting degeneracy into the environment as possible, in hopes that the remaining insertion outside will be trivial and act_value will be able to short-circuit.  (Ideally, the insertion would be carried through by eval for a single traversal in all cases.) *)
       let (Insfact (is, ins)) = insfact ks kn in
       let (To p) = deg_of_ins ins in
-      Val
-        (act_value (eval_term (act_env env (opt_op_of_deg is)) x) p (Modalcell.id2 (mode_env env)))
+      act_evaluation (eval (act_env env (opt_op_of_deg is)) x) p (Modalcell.id2 (mode_env env))
   | Key { tm; cell; plus_src; plus_tgt } ->
       (* To evaluate a key, we strip off the part of the environment corresponding to the codomain of the key cell, then compose the keys we found there with the supplied key to make a new key on an environment for evaluating the body.  The resulting environment is back at the original mode, so any prekey action stripped along the way is re-applied as a prekey on top. *)
       let (Restrict_keys (env, extra, mu12, keys, pre)) = restrict_keys env plus_tgt in
