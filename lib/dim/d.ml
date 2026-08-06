@@ -32,12 +32,6 @@ let rec free_gen_commute : type g n. n t -> (g, n) gen_commute = function
   | Word Zero -> Commute_zero
   | Word (Suc (n, _)) -> Commute_suc (free_gen_commute (Word n), free_commute)
 
-let rec free_word_commute : type m n. m t -> n t -> (m, n) commute =
- fun m n ->
-  match m with
-  | Word Zero -> Zero_commute
-  | Word (Suc (m, _)) -> Suc_commute (free_word_commute (Word m) n, free_gen_commute n)
-
 (* The unique generator witness for the (currently single-generator) dimension theory.  To prepare for future multi-generator generalization, consumers should refer to this rather than writing the constructor [Unit] directly. *)
 let deg : unit G.t = G.Unit
 
