@@ -17,7 +17,8 @@ type (_, _) potential_head =
   | Constant : Constant.t * 'mode Mode.t * 'n D.t -> ('mode, 'mode emp) potential_head
   | Meta : ('mode, 'x, 'a, potential) Meta.t * ('mode, 'n, 'a) env -> ('mode, 'a) potential_head
 
-let head_of_potential : type mode a. (mode, a) potential_head -> mode Value.head = function
+let head_of_potential : type mode a. (mode, a) potential_head -> (mode, kinetic) Value.head =
+  function
   | Constant (name, _, n) -> Const { name; ins = ins_zero n }
   | Meta (meta, env) -> Meta { meta; env; ins = ins_zero (dim_env env) }
 

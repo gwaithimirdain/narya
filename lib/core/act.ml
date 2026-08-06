@@ -347,7 +347,11 @@ module Act = struct
       (mode, s) evaluation =
    fun tm s c ->
     match tm with
-    | Unrealized -> Unrealized
+    | Unrealized None -> Unrealized None
+    (* A stuck case tree is acted on just like a neutral: outside-in through the spine, with the resulting inner degeneracy and cell acting on the head. *)
+    | Unrealized (Some (Potential_neu (head, args))) ->
+        let Any_deg s', Wrap hc, args = act_apps args s c in
+        Unrealized (Some (Potential_neu (act_head head s' hc, args)))
     | Realize tm -> Realize (act_value tm s c)
     | Val tm -> Val (act_value tm s c)
 
@@ -455,7 +459,8 @@ module Act = struct
           defer (Modalcell.hsrc cell) @@ fun () ->
           match force_eval value with
           | Realize _ -> fatal (Anomaly "Realize in normalized type in act_ty")
-          | Unrealized -> Unrealized
+          (* We discard any stuck case tree recorded in the value of a type.  Its spine mirrors the spine of the type itself, which here is acted on by the type-action that permutes instantiation arguments rather than by the plain action, so simply acting on the payload would be inconsistent with the spine we just built.  The payload is only an aid to readback, so dropping it costs nothing but display quality. *)
+          | Unrealized _ -> Unrealized None
           | Val
               (Canonical { mode; canonical = c; tyargs = ctyargs; ins; fields = _; inst_fields = _ })
             -> (
@@ -523,8 +528,8 @@ module Act = struct
    fun ?err tm tmty s c -> gact_ty ?err (Some tm) tmty s c
 
   (* Action on a head *)
-  and act_head : type mode mu1 mu2 cod a b.
-      mode head -> (a, b) deg -> (mode, mu1, mu2, cod) Modalcell.t -> mode head =
+  and act_head : type mode mu1 mu2 cod a b s.
+      (mode, s) head -> (a, b) deg -> (mode, mu1, mu2, cod) Modalcell.t -> (mode, s) head =
    fun ne s c ->
     match ne with
     (* To act on a variable, we accumulate the delayed actions, extending if necessary to match. *)
@@ -561,6 +566,12 @@ module Act = struct
         let (Of fa) = deg_plus_to s (BindCube.dim cods) ~on:"pi-type head" in
         let (Act_pi (fb, filter, doms, cods)) = act_pi filter doms cods fa c in
         Pi { x = act_variables x fb; filter; doms; cods }
+    (* Acting on a stuck case tree is free: we only compose the actions onto the stored environment, exactly as for a metavariable, leaving the unevaluated case tree alone. *)
+    | Stuck (env, tm) ->
+        let (Of fa) = deg_plus_to s (dim_env env) ~on:"stuck case tree head" in
+        let env = act_env env (opt_op_of_deg fa) in
+        let env = prekey_env env c in
+        Stuck (env, tm)
 
   and act_pi : type dom modality mode mu1 mu2 cod m n k.
       (dom, modality, mode, k, n) Modality.filter_dim ->

@@ -113,7 +113,7 @@ and readback_at : type mode a z.
              ({ eta; opacity; fields; env = _; hints = _ } : (mode, m, n, a, et) codata_args),
            ins,
            _ ) :
-          hmode head
+          (hmode, kinetic) head
           * (mode, m, n) canonical
           * (mn, m, n) insertion
           * (D.zero, mn, mn, mode normal) TubeOf.t),
@@ -269,7 +269,7 @@ and readback_val : type mode a z.
 and readback_neu : type hmode mode a z any.
     ?sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] ->
     (mode, z, a) Ctx.t ->
-    hmode head ->
+    (hmode, kinetic) head ->
     (hmode, mode, any) apps ->
     (mode, a, kinetic) term =
  fun ?(sort = (`Other, `Other)) ctx head apps ->
@@ -323,7 +323,7 @@ and readback_neu : type hmode mode a z any.
 and readback_head : type mode c z.
     ?sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] ->
     (mode, z, c) Ctx.t ->
-    mode head ->
+    (mode, kinetic) head ->
     (mode, c, kinetic) term =
  fun ?(sort = (`Other, `Other)) ctx h ->
   match h with

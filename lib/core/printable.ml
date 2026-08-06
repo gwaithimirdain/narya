@@ -4,7 +4,7 @@ open Value
 open Reporter
 open Origin
 
-let phead : 'mode head -> printable = function
+let phead : type mode s. (mode, s) head -> printable = function
   | Const { name; _ } -> PConstant name
   | Meta { meta; _ } -> PMeta meta
   | _ -> PString "(variable)"

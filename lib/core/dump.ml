@@ -15,7 +15,7 @@ open Raw
 type printable +=
   | Val : ('mode, 's) value -> printable
   | DeepVal : ('mode, 's) value * int -> printable
-  | Head : 'mode head -> printable
+  | Head : ('mode, 's) head -> printable
   | Binder : ('mode, 'modality, 'dom, 'b, 's) binder -> printable
   | Term : ('mode, 'b, 's) term -> printable
   | Tel : ('mode, 'a, 'b, 'ab) Telescope.t -> printable
@@ -143,7 +143,8 @@ module F = struct
   and evaluation : type mode s. int -> formatter -> (mode, s) evaluation -> unit =
    fun depth ppf v ->
     match v with
-    | Unrealized -> fprintf ppf "Unrealized"
+    | Unrealized None -> fprintf ppf "Unrealized"
+    | Unrealized (Some (Potential_neu (h, a))) -> fprintf ppf "Unrealized (%a, %a)" head h apps a
     | Realize v -> fprintf ppf "Realize (%a)" (dvalue depth) v
     | Val v -> fprintf ppf "Val (%a)" (dvalue depth) v
 
@@ -177,7 +178,7 @@ module F = struct
   and level : type a b m n. formatter -> level -> (a, m, n, b) Modalcell.t -> unit =
    fun ppf l key -> fprintf ppf "LVar (%d,%d,%s)" (fst l) (snd l) (Modalcell.to_string key)
 
-  and head : type mode. formatter -> mode head -> unit =
+  and head : type mode s. formatter -> (mode, s) head -> unit =
    fun ppf h ->
     match h with
     | Var { level = l; key; _ } -> level ppf l key
@@ -196,6 +197,7 @@ module F = struct
           | `Named x -> x
           | `Anon _ -> "_")
           (cubeof value) doms binder b
+    | Stuck (e, tm) -> fprintf ppf "Stuck (%a, %a)" env e term tm
 
   and binder : type mode modality dom b s. formatter -> (mode, modality, dom, b, s) binder -> unit =
    fun ppf (Bind { env = e; modality; filter = _; ins = i; body }) ->

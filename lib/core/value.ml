@@ -59,22 +59,23 @@ module rec Value : sig
         * ('k, ('dom, 'a) Value.value) Dim.CubeOf.t
         -> ('n, 'mode, 'a) modal_value_cube
 
-  type 'mode head =
+  type (_, _) head =
     | Var : {
         level : level;
         deg : ('m, 'n) deg;
         key : ('mode, 'modality, 'lock, 'cod) Modalcell.t;
       }
-        -> 'mode head
-    | Const : { name : Constant.t; ins : ('a, 'b, 'c) insertion } -> 'mode head
+        -> ('mode, kinetic) head
+    | Const : { name : Constant.t; ins : ('a, 'b, 'c) insertion } -> ('mode, kinetic) head
     | Meta : {
         meta : ('mode, 'a, 'b, 's) Meta.t;
         env : ('mode, 'm, 'b) env;
         ins : ('mn, 'm, 'n) insertion;
       }
-        -> 'mode head
-    | UU : 'mode Mode.t * 'n D.t -> 'mode head
-    | Pi : ('dom, 'modality, 'mode, 'n, 'm) pi_args -> 'mode head
+        -> ('mode, kinetic) head
+    | UU : 'mode Mode.t * 'n D.t -> ('mode, kinetic) head
+    | Pi : ('dom, 'modality, 'mode, 'n, 'm) pi_args -> ('mode, kinetic) head
+    | Stuck : ('mode, 'm, 'b) env * ('mode, 'b, potential) term -> ('mode, potential) head
 
   and ('dom, 'modality, 'mode, 'n, 'm) pi_args = {
     x : 'n variables;
@@ -114,7 +115,7 @@ module rec Value : sig
 
   and (_, _) value =
     | Neu : {
-        head : 'hmode head;
+        head : ('hmode, kinetic) head;
         args : ('hmode, 'mode, 'any) apps;
         value : ('mode, potential) lazy_eval;
         ty : ('mode, kinetic) value Lazy.t;
@@ -150,7 +151,10 @@ module rec Value : sig
   and (_, _) evaluation =
     | Val : ('mode, 's) value -> ('mode, 's) evaluation
     | Realize : ('mode, kinetic) value -> ('mode, potential) evaluation
-    | Unrealized : ('mode, potential) evaluation
+    | Unrealized : 'mode potential_neu option -> ('mode, potential) evaluation
+
+  and _ potential_neu =
+    | Potential_neu : ('hmode, potential) head * ('hmode, 'mode, 'any) apps -> 'mode potential_neu
 
   and (_, _, _) canonical =
     | UU : 'mode Mode.t * 'm D.t -> ('mode, 'm, D.zero) canonical
@@ -274,28 +278,30 @@ end = struct
         * ('k, ('dom, 'a) Value.value) Dim.CubeOf.t
         -> ('n, 'mode, 'a) modal_value_cube
 
-  (* The head of an elimination spine is a variable, a constant, or a substituted metavariable.  *)
-  type 'mode head =
+  (* The head of an elimination spine is a variable, a constant, or a substituted metavariable.  All of those are kinetic: they have a value in their own right, which the spine eliminates.  A *potential* head is instead an unrealized case tree, a match or a metavariable that is stuck rather than merely waiting for arguments; such a head has no value at all, and appears only inside the payload of an Unrealized. *)
+  type (_, _) head =
     (* A variable is determined by a De Bruijn LEVEL, and stores a neutral degeneracy applied to it, as well as a modal key 2-cell.  The vertical domain of the key is the modality annotating the variable in the context, and the vertical codomain is the composite of all the locks between that variable and the (rightmost) end of the context.  Accordingly, the horizontal codomain is the mode of the context at the time when the variable was added, and the horizontal domain is the mode of the current context. *)
     | Var : {
         level : level;
         deg : ('m, 'n) deg;
         key : ('mode, 'modality, 'lock, 'cod) Modalcell.t;
       }
-        -> 'mode head
+        -> ('mode, kinetic) head
     (* A constant also stores a dimension that it is substituted to and a neutral insertion applied to it.  Many constants are zero-dimensional, meaning that 'c' is zero, and hence a=b is just a dimension and the insertion is trivial.  The dimension of a constant is its dimension as a term standing on its own; so in particular if it has any parameters, then it belongs to an ordinary, 0-dimensional, pi-type and therefore is 0-dimensional, even if the eventual codomain of the pi-type is higher-dimensional.  Note also that when nonidentity insertions end up getting stored here, e.g. by Act, the dimension 'c gets extended as necessary; so it is always okay to create a constant with the (0,0,0) insertion to start with, even if you don't know what its actual dimension is. *)
-    | Const : { name : Constant.t; ins : ('a, 'b, 'c) insertion } -> 'mode head
+    | Const : { name : Constant.t; ins : ('a, 'b, 'c) insertion } -> ('mode, kinetic) head
     (* A metavariable (i.e. flexible) head stores the metavariable along with a delayed substitution applied to it. *)
     | Meta : {
         meta : ('mode, 'a, 'b, 's) Meta.t;
         env : ('mode, 'm, 'b) env;
         ins : ('mn, 'm, 'n) insertion;
       }
-        -> 'mode head
+        -> ('mode, kinetic) head
     (* Universes are parametrized by a mode and a dimension. *)
-    | UU : 'mode Mode.t * 'n D.t -> 'mode head
+    | UU : 'mode Mode.t * 'n D.t -> ('mode, kinetic) head
     (* Pis must store not just the domain type but all its boundary types.  These domain and boundary types are not fully instantiated.  Note the codomains are stored in a cube of binders. *)
-    | Pi : ('dom, 'modality, 'mode, 'n, 'm) pi_args -> 'mode head
+    | Pi : ('dom, 'modality, 'mode, 'n, 'm) pi_args -> ('mode, kinetic) head
+    (* A stuck case tree: a match that can't reduce, or a metavariable that has no definition yet.  We store the case tree term unevaluated, together with the environment it was to be evaluated in, so that it can be read back. *)
+    | Stuck : ('mode, 'm, 'b) env * ('mode, 'b, potential) term -> ('mode, potential) head
 
   and ('dom, 'modality, 'mode, 'n, 'm) pi_args = {
     x : 'n variables;
@@ -343,7 +349,7 @@ end = struct
     (* A neutral is an application spine: a head with a list of applications.  It also stores its type, and (lazily) the up-to-now result of evaluating that application spine.  The type is also lazy because the 0-dimensional universe is morally an infinite data structure Uninst (UU 0, (Uninst (UU 0, Uninst (UU 0, ... )))).  If that result is "Unrealized", then it is a "true neutral", the sort of neutral that is permanently stuck and usually appears in paper proofs of normalization.  If it is "Val" then the spine is still waiting for further arguments for its case tree to compute.  If it is "Realized" then the case tree has already evaluated to an ordinary value; this should only happen when glued evaluation is in effect. *)
     | Neu : {
         (* The head lives at the mode at the head end of the spine, which differs from the mode of the whole neutral if the spine crosses a modal field projection. *)
-        head : 'hmode head;
+        head : ('hmode, kinetic) head;
         args : ('hmode, 'mode, 'any) apps;
         value : ('mode, potential) lazy_eval;
         ty : ('mode, kinetic) value Lazy.t;
@@ -387,7 +393,12 @@ end = struct
     (* When 's = potential, a Val means the case tree is not yet fully applied; while when 's = kinetic, it is the only possible kind of result.  Collapsing these two together seems to unify the code for Lam and Struct as much as possible. *)
     | Val : ('mode, 's) value -> ('mode, 's) evaluation
     | Realize : ('mode, kinetic) value -> ('mode, potential) evaluation
-    | Unrealized : ('mode, potential) evaluation
+    (* An Unrealized may carry the stuck case tree that it got stuck on, together with the spine of arguments that were applied to it; this is what lets it be read back as a match rather than as an opaque application spine.  The payload is optional because an axiom also evaluates to Unrealized, with no case tree behind it at all; in that case the enclosing kinetic neutral supplies its own head and spine for readback. *)
+    | Unrealized : 'mode potential_neu option -> ('mode, potential) evaluation
+
+  (* A potential head together with the spine of arguments applied to it: a "potential neutral", the potential analogue of the Neu constructor of 'value'.  Unlike Neu, it stores neither a type nor an up-to-now value, since a stuck case tree has neither. *)
+  and _ potential_neu =
+    | Potential_neu : ('hmode, potential) head * ('hmode, 'mode, 'any) apps -> 'mode potential_neu
 
   (* A canonical type value is either a universe, a function-type, a datatype, or a codatatype/record.  It is parametrized by its dimension as a type, which might be larger than its evaluation dimension if it has an intrinsic dimension (e.g. Gel), and by that intrinsic dimension. *)
   and (_, _, _) canonical =
@@ -819,7 +830,7 @@ let var : type dom modality mode.
     {
       head = Var { level; deg = id_deg D.zero; key = Modalcell.id modality };
       args = Emp;
-      value = ready Unrealized;
+      value = ready (Unrealized None);
       ty = Lazy.from_val ty;
     }
 
@@ -1056,7 +1067,8 @@ let inst_of_apps : type hmode mode any.
   | Field _ -> (apps, None)
 
 (* A head together with an application spine ending at a given mode, with the mode at the head end existentially quantified. *)
-type _ head_apps = Head_apps : 'hmode head * ('hmode, 'mode) any_apps -> 'mode head_apps
+type _ head_apps =
+  | Head_apps : ('hmode, kinetic) head * ('hmode, 'mode) any_apps -> 'mode head_apps
 
 (* Split off a given positive dimension's worth of instantiation, putting the rest back on the apps.  The argument must be a neutral, so the return value is just the head and apps part of a neutral (which suffices to read it back with readback_neu). *)
 let split_inst : type mode m.

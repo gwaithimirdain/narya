@@ -226,7 +226,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                       match value with
                       | Realize x -> x
                       | _ -> newtm)
-                | `Axiom -> Neu { head; args = Emp; value = ready Unrealized; ty } in
+                | `Axiom -> Neu { head; args = Emp; value = ready (Unrealized None); ty } in
               add_cached_const name dim mode result;
               Val result
           | Neq ->
@@ -264,11 +264,13 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
             | Realize tm -> Val tm
             | value ->
                 Val (Neu { head; args = Emp; value = ready value; ty = lazy (make_ty meta ty) }))
-      (* If an undefined potential metavariable appears in a case tree, then that branch of the case tree is stuck.  We don't need to return the metavariable itself; it suffices to know that that branch of the case tree is stuck, as the constant whose definition it is should handle all identity/equality checks correctly. *)
-      | _, Potential -> Unrealized
+      (* If an undefined potential metavariable appears in a case tree, then that branch of the case tree is stuck.  The identity and equality checks are all handled correctly by the constant whose definition it is, so the only reason to remember the metavariable is so that we can read it back and display it; we record it as a stuck head with an empty spine. *)
+      | _, Potential -> Unrealized (Some (Potential_neu (Stuck (env, tm), Emp)))
       (* To evaluate an undefined kinetic metavariable, we have to build a neutral. *)
       | { ty; _ }, Kinetic ->
-          Val (Neu { head; args = Emp; value = ready Unrealized; ty = lazy (make_ty meta ty) }))
+          Val
+            (Neu { head; args = Emp; value = ready (Unrealized None); ty = lazy (make_ty meta ty) })
+      )
   | MetaEnv (meta, metaenv) ->
       let (Plus m_n) = D.plus (dim_term_env metaenv) in
       eval (eval_env env m_n metaenv) (Term.Meta (meta, Kinetic))
@@ -467,7 +469,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
         let (SFace_of_plus (ab, fa', fb')) = sface_of_plus k_l fab' in
         let subdoms, subcods = (CubeOf.subcube fab' doms, BindCube.subcube fab cods) in
         let subx = plus_variables (dom_sface fa') ab (sub_variables fb' x) in
-        let head : mode head = Pi { x = subx; filter = ufilter; doms = subdoms; cods = subcods } in
+        let head : (mode, kinetic) head =
+          Pi { x = subx; filter = ufilter; doms = subdoms; cods = subcods } in
         (* We don't need fibrancy fields for all the boundary types, since once something "is a type" we don't need it to be in Fib any more. *)
         let fields : (mode * u * potential * no_eta) Value.StructfieldAbwd.t =
           match (is_id_sface fab, Fibrancy.PiValuesMap.find_opt modality !Fibrancy.pi) with
@@ -553,7 +556,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let env = key_env env (Modalcell.vcomp keys extra_cell) (plus_lock_comp extra plus_src nu12) in
       let env = prekey_env env pre in
       eval env tm
-  | Match { tm; window; plus_lock; dim = match_dim; branches } -> (
+  | Match { tm; window; plus_lock; dim = match_dim; branches } as match_tm -> (
       let env_dim = dim_env env in
       let kenv = key_id_env env plus_lock in
       let (Has_filter fw) = Modality.filter window env_dim in
@@ -580,9 +583,9 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                   (* Then we proceed recursively with the body of that branch. *)
                   eval (Permute (perm, env)) tm)
           (* If this constructor belongs to a refuted case, it must be that we are in an inconsistent context with some neutral belonging to an empty type.  In that case, the match must be stuck. *)
-          | Some Refute -> Unrealized)
-      (* Otherwise, the case tree doesn't reduce. *)
-      | _ -> Unrealized)
+          | Some Refute -> Unrealized (Some (Potential_neu (Stuck (env, match_tm), Emp))))
+      (* Otherwise, the case tree doesn't reduce.  We remember the match itself, unevaluated, along with the environment it was to be evaluated in, so that it can be read back as a match rather than as an opaque application spine. *)
+      | _ -> Unrealized (Some (Potential_neu (Stuck (env, match_tm), Emp))))
   | Realize tm -> Realize (eval_term env tm)
   | Canonical c -> eval_canonical env c
   | Unshift (n, plusmap, tm) ->
@@ -728,7 +731,14 @@ and apply : type dom modality mode n m s.
               else
                 (* We evaluate further with a case tree. *)
                 match force_eval value with
-                | Unrealized -> Val (Neu { head; args; value = ready Unrealized; ty = newty })
+                (* If the case tree is stuck, the new argument is applied to the stuck case tree as well, since it is what a readback of that stuck case tree will have to be applied to. *)
+                | Unrealized stuck ->
+                    let stuck =
+                      match stuck with
+                      | None -> None
+                      | Some (Potential_neu (h, sp)) ->
+                          Some (Potential_neu (h, Arg (sp, filter, newarg, ins_zero m))) in
+                    Val (Neu { head; args; value = ready (Unrealized stuck); ty = newty })
                 (* It could be an indexed datatype waiting to be applied to more indices. *)
                 | Val
                     (Canonical
@@ -844,7 +854,14 @@ and field : type src f mode n k nk s.
             Val (Neu { head; args; value; ty = newty })
           else
             match force_eval value with
-            | Unrealized -> Val (Neu { head; args; value = ready Unrealized; ty = newty })
+            (* As with an application, the field projection is also applied to the stuck case tree, if any.  Note that this is where a stuck spine crosses modes, which is why the stuck case tree has to remember an apps rather than just its arguments. *)
+            | Unrealized stuck ->
+                let stuck =
+                  match stuck with
+                  | None -> None
+                  | Some (Potential_neu (h, sp)) ->
+                      Some (Potential_neu (h, Field (sp, filter, fld, fldplus, ins_zero n))) in
+                Val (Neu { head; args; value = ready (Unrealized stuck); ty = newty })
             | Val tm -> (
                 (* At this point we've already pushed the insertion inside in computing our neutral, so the remaining insertion on the field to compute of its value is "the identity" of appropriate dimensions *)
                 let value = field fm tm fld (ins_of_plus n fldplus) in
@@ -889,13 +906,14 @@ and struct_field : type src f mode s et n k nk.
                   let (Adjunction { counit; _ }) = adj in
                   act_evaluation (force_eval v) (id_deg D.zero) counit
               | None ->
-                  if unset_ok then Unrealized else fatal (Anomaly (err ^ " field value unset")))
+                  if unset_ok then Unrealized None else fatal (Anomaly (err ^ " field value unset"))
+              )
           | Neq ->
               fatal (Dimension_mismatch (err ^ " field intrinsic", intrinsic, cod_right_ins fldins))
           ))
   | _ -> (
       match energy with
-      | Potential -> Unrealized
+      | Potential -> Unrealized None
       | Kinetic -> fatal (Anomaly ("missing field in eval struct: " ^ Field.to_string fld)))
 
 and field_term : type src f mode n k nk.
@@ -1180,7 +1198,7 @@ and tyof_field : type src f mode m h s r i c.
            ({ env; fields; opacity = _; eta; hints = _ } : (src, m, n, a, et) codata_args),
          codatains,
          tyargs ) :
-        hmode head
+        (hmode, kinetic) head
         * (src, m, n) canonical
         * (mn, m, n) insertion
         * (D.zero, mn, mn, src normal) TubeOf.t) -> (
@@ -1218,7 +1236,7 @@ and tyof_field : type src f mode m h s r i c.
 and tyof_field_giventype : type src f mode m n mn h s r i c et a k hmode.
     (src, f, mode) Modality.t ->
     ((src, kinetic) value, Code.t) Result.t ->
-    hmode head ->
+    (hmode, kinetic) head ->
     (potential, et) eta ->
     (src, m, a) env ->
     (m, n, mn) D.plus ->
@@ -1644,7 +1662,10 @@ and app_eval_apps : type hmode mode s any.
           let (Val v) =
             act_evaluation (apply tm filter (val_of_norm_cube xs)) p (Modalcell.id2 mode) in
           Realize v
-      | Unrealized -> Unrealized)
+      (* A spine entry appended to a stuck case tree denotes exactly the action taken by this function on the entry, so replaying the rest of the spine onto a stuck case tree is just re-appending it. *)
+      | Unrealized None -> Unrealized None
+      | Unrealized (Some (Potential_neu (h, sp))) ->
+          Unrealized (Some (Potential_neu (h, Arg (sp, filter, xs, ins)))))
   | Field (rest, filter, fld, fldplus, ins) -> (
       let fm = Modality.filter_modality filter in
       let mode = Modality.tgt fm in
@@ -1660,12 +1681,18 @@ and app_eval_apps : type hmode mode s any.
               (field fm tm fld (id_ins (cod_left_ins ins) fldplus))
               p (Modalcell.id2 mode) in
           Realize v
-      | Unrealized -> Unrealized)
+      | Unrealized None -> Unrealized None
+      | Unrealized (Some (Potential_neu (h, sp))) ->
+          Unrealized (Some (Potential_neu (h, Field (sp, filter, fld, fldplus, ins)))))
   | Inst (rest, _, args) -> (
       match app_eval_apps ev rest with
       | Val tm -> Val (inst tm args)
       | Realize tm -> Realize (inst tm args)
-      | Unrealized -> Unrealized)
+      | Unrealized None -> Unrealized None
+      | Unrealized (Some (Potential_neu (h, sp))) ->
+          (* Instantiations are coalesced by the smart constructor, just as 'inst' does for a neutral. *)
+          let (Any sp) = inst_apps sp args in
+          Unrealized (Some (Potential_neu (h, sp))))
 
 (* Look up a cube of values in an environment by variable index, accumulating operator actions, shifts, and keys as we go.  At the end, we usually use the operator to select a value from the cubes (with its face part) and act on it (with its degeneracy part).  We assume all the keys on the end of the environment have already been stripped off, even though the input types don't statically rule out a key with identity domain. *)
 and lookup_cube : type dom mu munu mode n a b k mk nk.

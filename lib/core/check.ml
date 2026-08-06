@@ -276,7 +276,7 @@ type (_, _, _, _) synthable_branch =
 
 (* This preprocesssing step pairs each user-provided branch with the corresponding constructor information from the datatype.  Curiously, the only mode parameter that appears here is the *source* of the window modality, i.e. the mode at which the datatype and discriminee live. *)
 let merge_branches : type hmode dom a m ij.
-    hmode head ->
+    (hmode, kinetic) head ->
     (Constr.t, a branch) Abwd.t ->
     (Constr.t, (dom, m, ij) Value.dataconstr) Abwd.t ->
     (Constr.t * (dom, a, m, ij) checkable_branch) list =
@@ -742,7 +742,10 @@ let rec check : type mode a b s.
                  },
                ins,
                tyargs ) :
-              hmode head * _ * (mn, m, n) insertion * (D.zero, mn, mn, mode normal) TubeOf.t) -> (
+              (hmode, kinetic) head
+              * _
+              * (mn, m, n) insertion
+              * (D.zero, mn, mn, mode normal) TubeOf.t) -> (
             let Eq = eq_of_ins_zero ins in
             (* We don't need the *types* of the parameters or indices, which are stored in the type of the constant name.  The variable ty_indices (defined above) contains the *values* of the indices of this instance of the datatype, while tyargs (defined by view_type, above) contains the instantiation arguments of this instance of the datatype.  We check that the dimensions agree, and find our current constructor in the datatype definition. *)
             match Abwd.find_opt constr constrs with
@@ -1334,7 +1337,8 @@ and make_letrec_metas : type mode x a b ab.
           (* Extend the context by it, as an unrealized neutral.  TODO: It's annoying that we have to evaluate the types here to extend the value-context, when the only use we're making of it is to readback that extended value-context into a termctx at each step to save with the global metavariable.  It would make more sense, and be more efficient, to just carry along the termctx and extend it directly at each step with "Term.Meta (meta, Kinetic)" at the term-type "vty".  Unfortunately, termctxs store terms and types in a one-longer context, so that would require directly weakening vty, or perhaps parsing and checking it in a one-longer context originally. *)
           let evty = eval_term (Ctx.env ctx) vty in
           let head = Value.Meta { meta; env = Ctx.env ctx; ins = zero_ins D.zero } in
-          let neutm = Neu { head; args = Emp; value = ready Unrealized; ty = Lazy.from_val evty } in
+          let neutm =
+            Neu { head; args = Emp; value = ready (Unrealized None); ty = Lazy.from_val evty } in
           let ctx =
             Ctx.ext_let ~dirt:(dirt_of_meta meta) ctx modality x
               { tm = neutm; ty = Lazy.from_val evty } in
@@ -1508,7 +1512,7 @@ and check_match_branches : type dom window mode a b bm.
              (_, _, j, ij) data_args),
          ins,
          inst_args ) :
-        hmode head
+        (hmode, kinetic) head
         * (dom, m, d_zero) canonical
         * (m', m, d_zero) insertion
         * (D.zero, m', m', dom normal) TubeOf.t) -> (
@@ -1803,7 +1807,7 @@ and check_var_match : type dom modality mode a b bm.
              (_, _, j, ij) data_args),
          ins,
          inst_args ) :
-        hmode head * (dom, m, n) canonical * (mn, m, n) insertion * _) -> (
+        (hmode, kinetic) head * (dom, m, n) canonical * (mn, m, n) insertion * _) -> (
       let Eq = eq_of_ins_zero ins in
       check_window_transparency window data_constrs recursive;
       let tyfam = nf_of_neu (force_eval_term tyfam) "check_var_match" in
@@ -1828,7 +1832,7 @@ and check_var_match : type dom modality mode a b bm.
         match view_term x.tm with
         | Neu { head = Var { level; deg; key = _ }; args = Emp; value; ty = _ } -> (
             match force_eval value with
-            | Unrealized ->
+            | Unrealized _ ->
                 (if Option.is_none (is_id_deg deg) then
                    let (Locked (_, lctx)) = Ctx.lock ctx window in
                    fatal
@@ -2167,7 +2171,7 @@ and check_empty_match_lam : type mode a b.
            ({ x = _; filter; doms; cods } : (dom, domodality, mode, dd, k) pi_args),
          ins,
          tyargs ) :
-        hmode head
+        (hmode, kinetic) head
         * (mode, k, n) canonical
         * (kn, k, n) insertion
         * (D.zero, kn, kn, mode normal) TubeOf.t) -> (
@@ -3260,7 +3264,7 @@ and synth : type mode a b s.
             | Canonical
                 (type hmode m k km)
                 ((_, UU (_dmode, k), ins, edoms) :
-                  hmode head
+                  (hmode, kinetic) head
                   * (dom, k, m) canonical
                   * (km, k, m) insertion
                   * (D.zero, km, km, dom normal) TubeOf.t) -> (
@@ -3282,7 +3286,7 @@ and synth : type mode a b s.
                     | Canonical
                         (type hmode n2 m2 nm2)
                         ((_, UU (codmode, n), ins', ecodt) :
-                          hmode head
+                          (hmode, kinetic) head
                           * (mode, n2, m2) canonical
                           * (nm2, n2, m2) insertion
                           * (D.zero, nm2, nm2, mode normal) TubeOf.t) -> (

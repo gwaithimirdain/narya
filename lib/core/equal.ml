@@ -129,7 +129,7 @@ and equal_at : type mode a b.
     | Canonical
         (type hmode mn m n)
         ((_, Codata (type a et) ({ eta; fields; _ } : (mode, m, n, a, et) codata_args), ins, _) :
-          hmode head
+          (hmode, kinetic) head
           * (mode, m, n) canonical
           * (mn, m, n) insertion
           * (D.zero, mn, mn, mode normal) TubeOf.t) -> (
@@ -315,7 +315,8 @@ and equal_tyargs : type mode n1 k1 nk1 n2 k2 nk2 a b.
   | _, Neq -> None
 
 (* Synthesizing equality check for heads.  Again equality of types is part of the conclusion, not a hypothesis.  If some sub-parts of the heads are unequal, such as arguments of a Pi, or variable or constant names (without degeneracies), we report that.  Otherwise, we return None, and the caller should report the entire heads as being unequal. *)
-and equal_head : type mode a b. (mode, a, b) Ctx.t -> mode head -> mode head -> unit ErrOpt.t =
+and equal_head : type mode a b.
+    (mode, a, b) Ctx.t -> (mode, kinetic) head -> (mode, kinetic) head -> unit ErrOpt.t =
  fun ctx x y ->
   let open Monad.Ops (ErrOpt) in
   match (x, y) with
@@ -389,7 +390,7 @@ and equal_head : type mode a b. (mode, a, b) Ctx.t -> mode head -> mode head -> 
 (* Check that the arguments of two entire application spines of equal functions are equal.  This is basically a left fold, but we make sure to iterate from left to right, and fail rather than raising an exception if the lists have different lengths.  As noted above, here we can go back to *assuming* that they have equal types, and thus passing off to the eta-expanding equality check.  If heads are supplied, they are compared at the bottom of the recursion, where the context has been locked by the left adjoints of any modal field projections crossed on the way in, so that it lives at the heads' mode. *)
 and equal_apps : type h1 h2 mode any1 any2 a b.
     (mode, a, b) Ctx.t ->
-    ?heads:h1 head * h2 head ->
+    ?heads:(h1, kinetic) head * (h2, kinetic) head ->
     (h1, mode, any1) apps ->
     (h2, mode, any2) apps ->
     unit ErrOpt.t =
