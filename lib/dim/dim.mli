@@ -247,6 +247,7 @@ val tface_comp_sface : ('m, 'n, 'k, 'nk) tface -> ('p, 'm) sface -> ('p, 'n, 'k,
 type ('m, 'n) pface = ('m, D.zero, 'n, 'n) tface
 
 val pface_of_sface : ('m, 'n) sface -> [ `Proper of ('m, 'n) pface | `Id of ('m, 'n) Eq.t ]
+val pface_vertex : 'n D.pos -> (D.zero, 'n) pface option
 val pface_plus : ('k, 'm) pface -> ('m, 'n, 'mn) D.plus -> ('k, 'n, 'kn) D.plus -> ('kn, 'mn) pface
 
 val sface_plus_tface :

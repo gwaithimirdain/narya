@@ -176,12 +176,12 @@ let rec sface_of_plus : type ml n k nk.
 let rec vertex : type n. n D.t -> (D.zero, n) sface option = function
   | Word Zero -> Some Zero
   | Word (Suc (n, g)) -> (
-      let open Monad.Ops (Monad.Maybe) in
       let (Wrap l) = Endpoints.wrapped () in
       match Endpoints.len l with
-      | N.Nat (Suc _) ->
-          let* s = vertex (Word n) in
-          Some (End (s, g, (l, Top)))
+      | N.Nat (Suc _) -> (
+          match vertex (Word n) with
+          | Some s -> Some (End (s, g, (l, Top)))
+          | None -> None)
       | N.Nat Zero -> None)
 
 (* A strict face of a singleton dimension is either the identity or an endpoint. *)

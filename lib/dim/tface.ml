@@ -111,6 +111,18 @@ let rec pface_of_sface : type m n. (m, n) sface -> [ `Proper of (m, n) pface | `
       | `Proper fb -> `Proper (Mid (fb, g))
       | `Id Eq -> `Id Eq)
 
+(* As long as there is at least one endpoint, any positive dimension has at least one zero-dimensional proper face. *)
+
+let pface_vertex : type n. n D.pos -> (D.zero, n) pface option = function
+  | Pos (n, g) -> (
+      let (Wrap l) = Endpoints.wrapped () in
+      match Endpoints.len l with
+      | N.Nat (Suc _) -> (
+          match vertex n with
+          | Some s -> Some (End (s, D.zero_plus n, g, (l, Top)))
+          | None -> None)
+      | N.Nat Zero -> None)
+
 (* Like insert_sface but for pfaces instead.  (It should be possible to do this for general tfaces too, but trickier, and all we need is pfaces.) *)
 
 type (_, _, _) insert_pface =
