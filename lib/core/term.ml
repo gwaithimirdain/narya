@@ -58,7 +58,6 @@ module rec Term : sig
       | Higher :
           ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
           * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
-          (* The context in which the field's type is checked, as a termctx, needed to eval-readback environments when degenerating them to check the field at a nontrivial partial bijection. *)
           * ('gmode, 'd, ('ag, ('f, D.zero) dim_entry) snoc) Term.termctx
           * ('i, ('ag, ('f, D.zero) dim_entry) snoc, 'iagx, 'gmode) plusmap
           * ('gmode, 'iagx, kinetic) Term.term
@@ -212,8 +211,6 @@ module rec Term : sig
       }
         -> ('mode, 'a, 'n) branch
 
-  (* What justified refuting a branch: a term of empty type, at whatever mode its modal annotation puts it, together with that modality.  This is exactly the data a match takes for its discriminee, so a refutation displays as an empty match with this modality as its window. *)
-  (* What a match records of its type, so that readback can recover it when the match is stuck and something has been done to its result -- applied to an argument, or projected -- so that the type readback is handed is that of the whole spine rather than of the match.  A match with an explicit motive stores that motive, a type family over the datatype's indices and the datatype itself, to be applied to a branch's indices and constructor.  A non-dependent match checks all its branches at one type and stores that, which is both the type of the match and the type of every branch.  A variable match refines the context instead, and stores neither. *)
   and (_, _) match_motive =
     | Motive_family : ('mode, 'a, kinetic) term -> ('mode, 'a) match_motive
     | Motive_type : ('mode, 'a, kinetic) term -> ('mode, 'a) match_motive
@@ -567,12 +564,12 @@ end = struct
       }
         -> ('mode, 'a, 'n) branch
 
-  (* What justified refuting a branch: a term of empty type, at whatever mode its modal annotation puts it, together with that modality.  This is exactly the data a match takes for its discriminee, so a refutation displays as an empty match with this modality as its window. *)
   (* What a match records of its type, so that readback can recover it when the match is stuck and something has been done to its result -- applied to an argument, or projected -- so that the type readback is handed is that of the whole spine rather than of the match.  A match with an explicit motive stores that motive, a type family over the datatype's indices and the datatype itself, to be applied to a branch's indices and constructor.  A non-dependent match checks all its branches at one type and stores that, which is both the type of the match and the type of every branch.  A variable match refines the context instead, and stores neither. *)
   and (_, _) match_motive =
     | Motive_family : ('mode, 'a, kinetic) term -> ('mode, 'a) match_motive
     | Motive_type : ('mode, 'a, kinetic) term -> ('mode, 'a) match_motive
 
+  (* What justified refuting a branch: a term of empty type, at whatever mode its modal annotation puts it, together with that modality.  This is exactly the data a match takes for its discriminee, so a refutation displays as an empty match with this modality as its window. *)
   and (_, _) refutation =
     | Refutation : {
         window : ('dom, 'window, 'mode) Modality.t;
