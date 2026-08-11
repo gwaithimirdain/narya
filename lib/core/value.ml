@@ -75,7 +75,12 @@ module rec Value : sig
         -> ('mode, kinetic) head
     | UU : 'mode Mode.t * 'n D.t -> ('mode, kinetic) head
     | Pi : ('dom, 'modality, 'mode, 'n, 'm) pi_args -> ('mode, kinetic) head
-    | Stuck : ('mode, 'm, 'b) env * ('mode, 'b, potential) term -> ('mode, potential) head
+    | Stuck : {
+        env : ('mode, 'm, 'b) env;
+        tm : ('mode, 'b, potential) term;
+        ins : ('mn, 'm, 'n) insertion;
+      }
+        -> ('mode, potential) head
 
   and ('dom, 'modality, 'mode, 'n, 'm) pi_args = {
     x : 'n variables;
@@ -299,8 +304,13 @@ end = struct
     | UU : 'mode Mode.t * 'n D.t -> ('mode, kinetic) head
     (* Pis must store not just the domain type but all its boundary types.  These domain and boundary types are not fully instantiated.  Note the codomains are stored in a cube of binders. *)
     | Pi : ('dom, 'modality, 'mode, 'n, 'm) pi_args -> ('mode, kinetic) head
-    (* A stuck case tree: a match that can't reduce, or a metavariable that has no definition yet.  We store the case tree term unevaluated, together with the environment it was to be evaluated in, so that it can be read back.  *)
-    | Stuck : ('mode, 'm, 'b) env * ('mode, 'b, potential) term -> ('mode, potential) head
+    (* A stuck case tree: a match that can't reduce, or a metavariable that has no definition yet.  We store the case tree term unevaluated, together with the environment it was to be evaluated in, so that it can be read back, and an insertion to take care of its original dimension (as with a constant or metavariable).  *)
+    | Stuck : {
+        env : ('mode, 'm, 'b) env;
+        tm : ('mode, 'b, potential) term;
+        ins : ('mn, 'm, 'n) insertion;
+      }
+        -> ('mode, potential) head
 
   and ('dom, 'modality, 'mode, 'n, 'm) pi_args = {
     x : 'n variables;

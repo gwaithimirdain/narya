@@ -567,11 +567,11 @@ module Act = struct
         let (Act_pi (fb, filter, doms, cods)) = act_pi filter doms cods fa c in
         Pi { x = act_variables x fb; filter; doms; cods }
     (* Similarly, to act on a stuck case tree, we compose the actions onto the stored environment, exactly as for a metavariable, leaving the unevaluated case tree alone. *)
-    | Stuck (env, tm) ->
-        let (Of fa) = deg_plus_to s (dim_env env) ~on:"stuck case tree head" in
-        let env = act_env env (opt_op_of_deg fa) in
+    | Stuck { env; tm; ins } ->
+        let (Insfact_comp_ext (deg, ins, _, _)) = insfact_comp_ext ins s in
+        let env = act_env env (opt_op_of_deg deg) in
         let env = prekey_env env c in
-        Stuck (env, tm)
+        Stuck { env; tm; ins }
 
   and act_pi : type dom modality mode mu1 mu2 cod m n k.
       (dom, modality, mode, k, n) Modality.filter_dim ->

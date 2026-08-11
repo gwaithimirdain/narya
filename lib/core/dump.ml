@@ -197,7 +197,9 @@ module F = struct
           | `Named x -> x
           | `Anon _ -> "_")
           (cubeof value) doms binder b
-    | Stuck (e, tm) -> fprintf ppf "Stuck (%a, %a)" env e term tm
+    | Stuck { env = e; tm; ins } ->
+        let (To p) = deg_of_ins ins in
+        fprintf ppf "Stuck (%a, %a, %s)" env e term tm (string_of_deg p)
 
   and binder : type mode modality dom b s. formatter -> (mode, modality, dom, b, s) binder -> unit =
    fun ppf (Bind { env = e; modality; filter = _; ins = i; body }) ->

@@ -265,7 +265,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
             | value ->
                 Val (Neu { head; args = Emp; value = ready value; ty = lazy (make_ty meta ty) }))
       (* If an undefined potential metavariable appears in a case tree, then that branch of the case tree is stuck.  The identity and equality checks are all handled correctly by the constant whose definition it is, so the only reason to remember the metavariable is so that we can read it back and display it; we record it as a stuck head with an empty spine. *)
-      | _, Potential -> Unrealized (Some (Stuck (env, tm), Emp))
+      | _, Potential -> Unrealized (Some (Stuck { env; tm; ins = ins_zero (dim_env env) }, Emp))
       (* To evaluate an undefined kinetic metavariable, we have to build a neutral. *)
       | { ty; _ }, Kinetic ->
           Val
@@ -583,9 +583,10 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                   (* Then we proceed recursively with the body of that branch. *)
                   eval (Permute (perm, env)) tm)
           (* If this constructor belongs to a refuted case, it must be that we are in an inconsistent context with some neutral belonging to an empty type.  In that case, the match must be stuck. *)
-          | Some Refute -> Unrealized (Some (Stuck (env, match_tm), Emp)))
+          | Some Refute ->
+              Unrealized (Some (Stuck { env; tm = match_tm; ins = ins_zero (dim_env env) }, Emp)))
       (* Otherwise, the case tree doesn't reduce.  We remember the match itself, unevaluated, along with the environment it was to be evaluated in, so that it can be read back as a match rather than as an opaque application spine. *)
-      | _ -> Unrealized (Some (Stuck (env, match_tm), Emp)))
+      | _ -> Unrealized (Some (Stuck { env; tm = match_tm; ins = ins_zero (dim_env env) }, Emp)))
   | Realize tm -> Realize (eval_term env tm)
   | Canonical c -> eval_canonical env c
   | Unshift (n, plusmap, tm) ->
