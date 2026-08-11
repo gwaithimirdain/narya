@@ -349,9 +349,9 @@ module Act = struct
     match tm with
     | Unrealized None -> Unrealized None
     (* A stuck case tree is acted on just like a neutral: outside-in through the spine, with the resulting inner degeneracy and cell acting on the head. *)
-    | Unrealized (Some (Potential_neu (head, args))) ->
+    | Unrealized (Some (head, args)) ->
         let Any_deg s', Wrap hc, args = act_apps args s c in
-        Unrealized (Some (Potential_neu (act_head head s' hc, args)))
+        Unrealized (Some (act_head head s' hc, args))
     | Realize tm -> Realize (act_value tm s c)
     | Val tm -> Val (act_value tm s c)
 
@@ -549,11 +549,11 @@ module Act = struct
                      ^ Modalcell.to_string key
                      ^ " doesn't factor through domain of "
                      ^ Modalcell.to_string c))))
-    (* To act on a constant, we push as much of the degeneracy through the insertion as possible.  The actual degeneracy that gets pushed through doesn't matter, since it just raises the constant to an even higher dimension, and that dimension is stored in the insertion.  The key is actually completely ignored. *)
+    (* To act on a constant, we push as much of the degeneracy through the insertion as possible.  The actual degeneracy that gets pushed through doesn't matter, since it just raises the constant to an even higher dimension, and that dimension is stored in the insertion.  The key is actually completely ignored, since keys act by simply pushing through to variables, and constant have no variables in them. *)
     | Const { name; ins } ->
         let (Insfact_comp_ext (_, ins, _, _)) = insfact_comp_ext ins s in
         Const { name; ins }
-    (* Acting on a metavariable is similar to a constant, but now the inner degeneracy acts on the stored environment. *)
+    (* Acting on a metavariable is similar to a constant, but now the inner degeneracy acts on the stored environment, as does the key. *)
     | Meta { meta; env; ins } ->
         let (Insfact_comp_ext (deg, ins, _, _)) = insfact_comp_ext ins s in
         let env = act_env env (opt_op_of_deg deg) in
@@ -566,7 +566,7 @@ module Act = struct
         let (Of fa) = deg_plus_to s (BindCube.dim cods) ~on:"pi-type head" in
         let (Act_pi (fb, filter, doms, cods)) = act_pi filter doms cods fa c in
         Pi { x = act_variables x fb; filter; doms; cods }
-    (* Acting on a stuck case tree is free: we only compose the actions onto the stored environment, exactly as for a metavariable, leaving the unevaluated case tree alone. *)
+    (* Similarly, to act on a stuck case tree, we compose the actions onto the stored environment, exactly as for a metavariable, leaving the unevaluated case tree alone. *)
     | Stuck (env, tm) ->
         let (Of fa) = deg_plus_to s (dim_env env) ~on:"stuck case tree head" in
         let env = act_env env (opt_op_of_deg fa) in

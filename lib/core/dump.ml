@@ -144,7 +144,7 @@ module F = struct
    fun depth ppf v ->
     match v with
     | Unrealized None -> fprintf ppf "Unrealized"
-    | Unrealized (Some (Potential_neu (h, a))) -> fprintf ppf "Unrealized (%a, %a)" head h apps a
+    | Unrealized (Some (h, a)) -> fprintf ppf "Unrealized (%a, %a)" head h apps a
     | Realize v -> fprintf ppf "Realize (%a)" (dvalue depth) v
     | Val v -> fprintf ppf "Val (%a)" (dvalue depth) v
 

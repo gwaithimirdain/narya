@@ -3431,7 +3431,7 @@ and synth : type mode a b s.
                     (* If the dimension of this domain is supposed to be positive, the supplied domain must be fully instantiated by at least that dimension (perhaps more, since it could come from something higher-dimensional).  We pull off those instantiation arguments. *)
                     | Pos m -> (
                         match split_inst m (view_term edom) with
-                        | Some (Head_apps (head, Any args), tyargs) ->
+                        | Some (Head_apps (head, args), tyargs) ->
                             (* After spliting off those instantiation arguments, we read back the rest of the type in the *original* context, to make sure it makes sense there and yield the term domain. *)
                             (readback_neu lctx head args, tyargs)
                         | None -> fatal (Invalid_higher_function "invalid domain")) in
@@ -3492,7 +3492,7 @@ and synth : type mode a b s.
                 (* It must also be fully instantiated at at least the total dimension. *)
                 match split_inst n' (eval_term (Ctx.env newctx) ccod) with
                 | None -> fatal (Invalid_higher_function "invalid codomain")
-                | Some (Head_apps (head, Any args), tyargs) ->
+                | Some (Head_apps (head, args), tyargs) ->
                     (* After spliting off those instantiation arguments, we read back the rest of the type to yield the top-dimensional codomain. *)
                     let cod = readback_neu newctx head args in
                     (* To get the lower-dimensional codomains, and the instantation arguments of the whole pi-type, we iterate through the split-off tyargs. *)
@@ -3542,7 +3542,7 @@ and synth : type mode a b s.
                                 (Modality.filter_idempotent sfilter)
                                 (sub_variables fb xsv) (CubeOf.subcube fb binds) in
                             match TubeOf.find ecods t with
-                            | `Neu (Head_apps (head, Any args)) ->
+                            | `Neu (Head_apps (head, args)) ->
                                 Cod (sfilter, readback_neu codctx head args)
                             | `Val ty -> Cod (sfilter, readback_val codctx ty))
                         | `Id Eq -> Cod (nfilter, cod) in

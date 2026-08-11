@@ -151,10 +151,9 @@ module rec Value : sig
   and (_, _) evaluation =
     | Val : ('mode, 's) value -> ('mode, 's) evaluation
     | Realize : ('mode, kinetic) value -> ('mode, potential) evaluation
-    | Unrealized : 'mode potential_neu option -> ('mode, potential) evaluation
-
-  and _ potential_neu =
-    | Potential_neu : ('hmode, potential) head * ('hmode, 'mode, 'any) apps -> 'mode potential_neu
+    | Unrealized :
+        (('hmode, potential) head * ('hmode, 'mode, 'any) apps) option
+        -> ('mode, potential) evaluation
 
   and (_, _, _) canonical =
     | UU : 'mode Mode.t * 'm D.t -> ('mode, 'm, D.zero) canonical
@@ -278,7 +277,7 @@ end = struct
         * ('k, ('dom, 'a) Value.value) Dim.CubeOf.t
         -> ('n, 'mode, 'a) modal_value_cube
 
-  (* The head of an elimination spine is a variable, a constant, or a substituted metavariable.  All of those are kinetic: they have a value in their own right, which the spine eliminates.  A *potential* head is instead an unrealized case tree, a match or a metavariable that is stuck rather than merely waiting for arguments; such a head has no value at all, and appears only inside the payload of an Unrealized. *)
+  (* The head of an elimination spine is a variable, a constant, or a substituted metavariable.  All of those are kinetic: they have a value in their own right, which the spine eliminates.  A *potential* head is instead an unrealized case tree, a match or a metavariable that is stuck rather than merely waiting for arguments; such a head has no value at all, and appears only inside the payload of an Unrealized.  Potential heads are used in entirely different places than kinetic heads -- they appear only as a readback payload in Unrealized -- and are only included as values of head because they are manipulated in similar ways to neutrals along with an application spine, so that the code for doing that can be shared by making it energy-polymorphic. *)
   type (_, _) head =
     (* A variable is determined by a De Bruijn LEVEL, and stores a neutral degeneracy applied to it, as well as a modal key 2-cell.  The vertical domain of the key is the modality annotating the variable in the context, and the vertical codomain is the composite of all the locks between that variable and the (rightmost) end of the context.  Accordingly, the horizontal codomain is the mode of the context at the time when the variable was added, and the horizontal domain is the mode of the current context. *)
     | Var : {
@@ -300,7 +299,7 @@ end = struct
     | UU : 'mode Mode.t * 'n D.t -> ('mode, kinetic) head
     (* Pis must store not just the domain type but all its boundary types.  These domain and boundary types are not fully instantiated.  Note the codomains are stored in a cube of binders. *)
     | Pi : ('dom, 'modality, 'mode, 'n, 'm) pi_args -> ('mode, kinetic) head
-    (* A stuck case tree: a match that can't reduce, or a metavariable that has no definition yet.  We store the case tree term unevaluated, together with the environment it was to be evaluated in, so that it can be read back. *)
+    (* A stuck case tree: a match that can't reduce, or a metavariable that has no definition yet.  We store the case tree term unevaluated, together with the environment it was to be evaluated in, so that it can be read back.  *)
     | Stuck : ('mode, 'm, 'b) env * ('mode, 'b, potential) term -> ('mode, potential) head
 
   and ('dom, 'modality, 'mode, 'n, 'm) pi_args = {
@@ -393,12 +392,10 @@ end = struct
     (* When 's = potential, a Val means the case tree is not yet fully applied; while when 's = kinetic, it is the only possible kind of result.  Collapsing these two together seems to unify the code for Lam and Struct as much as possible. *)
     | Val : ('mode, 's) value -> ('mode, 's) evaluation
     | Realize : ('mode, kinetic) value -> ('mode, potential) evaluation
-    (* An Unrealized may carry the stuck case tree that it got stuck on, together with the spine of arguments that were applied to it; this is what lets it be read back as a match rather than as an opaque application spine.  The payload is optional because an axiom also evaluates to Unrealized, with no case tree behind it at all; in that case the enclosing kinetic neutral supplies its own head and spine for readback. *)
-    | Unrealized : 'mode potential_neu option -> ('mode, potential) evaluation
-
-  (* A potential head together with the spine of arguments applied to it: a "potential neutral", the potential analogue of the Neu constructor of 'value'.  Unlike Neu, it stores neither a type nor an up-to-now value, since a stuck case tree has neither. *)
-  and _ potential_neu =
-    | Potential_neu : ('hmode, potential) head * ('hmode, 'mode, 'any) apps -> 'mode potential_neu
+    (* An Unrealized may carry the stuck case tree that it got stuck on, together with the spine of arguments that it was applied to.  This is what lets it be read back, for display only, as a match rather than as an opaque application spine.  The payload is optional because an axiom also evaluates to Unrealized, with no case tree behind it at all; in that case the enclosing kinetic neutral supplies its own head and spine for readback.  The payload is a "potential neutral", the potential analogue of the Neu constructor of 'value'; unlike Neu, it stores neither a type nor an up-to-now value, since a stuck case tree has neither. *)
+    | Unrealized :
+        (('hmode, potential) head * ('hmode, 'mode, 'any) apps) option
+        -> ('mode, potential) evaluation
 
   (* A canonical type value is either a universe, a function-type, a datatype, or a codatatype/record.  It is parametrized by its dimension as a type, which might be larger than its evaluation dimension if it has an intrinsic dimension (e.g. Gel), and by that intrinsic dimension. *)
   and (_, _, _) canonical =
@@ -1068,7 +1065,7 @@ let inst_of_apps : type hmode mode any.
 
 (* A head together with an application spine ending at a given mode, with the mode at the head end existentially quantified. *)
 type _ head_apps =
-  | Head_apps : ('hmode, kinetic) head * ('hmode, 'mode) any_apps -> 'mode head_apps
+  | Head_apps : ('hmode, kinetic) head * ('hmode, 'mode, 'any) apps -> 'mode head_apps
 
 (* Split off a given positive dimension's worth of instantiation, putting the rest back on the apps.  The argument must be a neutral, so the return value is just the head and apps part of a neutral (which suffices to read it back with readback_neu). *)
 let split_inst : type mode m.
@@ -1084,8 +1081,8 @@ let split_inst : type mode m.
           let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (D.pos mk)) in
           let tyargs, rest = TubeOf.split (D.zero_plus m) m_k tyargs in
           match D.compare_zero (D.plus_right m_k) with
-          | Zero -> Some (Head_apps (head, Any args), tyargs)
-          | Pos k -> Some (Head_apps (head, Any (Inst (args, k, rest))), tyargs))
+          | Zero -> Some (Head_apps (head, args), tyargs)
+          | Pos k -> Some (Head_apps (head, Inst (args, k, rest)), tyargs))
       | _ -> None)
   | _ -> None
 
