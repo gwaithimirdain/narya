@@ -1035,10 +1035,10 @@
 
 Gel is not allowed
 
-  $ narya -e "def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig x y ↦ ( ungel : R x y )"
+  $ narya -e "def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( x .ungel : R x.0 x.1 )"
    ￫ error[E0100]
    ￭ command-line exec string
-   1 | def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig x y ↦ ( ungel : R x y )
+   1 | def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( x .ungel : R x.0 x.1 )
      ^ unimplemented: general higher-dimensional types in HOTT: use glue
   
   [1]

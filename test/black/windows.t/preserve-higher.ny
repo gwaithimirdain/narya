@@ -1,8 +1,8 @@
 {` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-transparent-functor") -*- `}
 
 def Gel (A B : DomType) (R : A → B → DomType) : Id DomType A B
-  ≔ sig a b ↦ (
-  ungel : R a b )
+  ≔ sig (
+  a .ungel : R a.0 a.1 )
 
 def ⊥ : DomType ≔ data []
 
