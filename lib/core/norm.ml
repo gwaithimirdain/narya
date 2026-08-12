@@ -581,10 +581,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                   (* If we have a branch with a matching constructor, then our constructor must be applied to exactly the right number of elements (in dargs).  In that case, we pick them out and add them to the environment. *)
                   let env = take_args env plus_dim dargs window fw annotate comp in
                   (* Then we proceed recursively with the body of that branch. *)
-                  eval (Permute (perm, env)) tm)
-          (* If this constructor belongs to a refuted case, it must be that we are in an inconsistent context with some neutral belonging to an empty type.  In that case, the match must be stuck. *)
-          | Some (Refute _) ->
-              Unrealized (Some (Stuck { env; tm = match_tm; ins = ins_zero (dim_env env) }, Emp)))
+                  eval (Permute (perm, env)) tm))
       (* Otherwise, the case tree doesn't reduce.  We remember the match itself, unevaluated, along with the environment it was to be evaluated in, so that it can be read back as a match rather than as an opaque application spine. *)
       | _ -> Unrealized (Some (Stuck { env; tm = match_tm; ins = ins_zero (dim_env env) }, Emp)))
   | Realize tm -> Realize (eval_term env tm)

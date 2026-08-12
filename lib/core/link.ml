@@ -82,16 +82,6 @@ and branch : type mode a n. (File.t -> File.t) -> (mode, a, n) branch -> (mode, 
  fun f br ->
   match br with
   | Branch b -> Branch { b with tm = term f b.tm }
-  | Refute { annotate; comp; perm; tm } ->
-      Refute
-        {
-          annotate;
-          comp;
-          perm;
-          tm =
-            (let (Refutation { window; plus_lock; tm }) = tm in
-             Refutation { window; plus_lock; tm = term f tm });
-        }
 
 and canonical : type mode a. (File.t -> File.t) -> (mode, a) canonical -> (mode, a) canonical =
  fun f can ->
