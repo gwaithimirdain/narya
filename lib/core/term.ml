@@ -200,10 +200,8 @@ module rec Term : sig
         -> ('mode, 'a, 'n) branch
     | Refute
 
-  (* What a match records of its type, so that readback can recover it when the match is stuck and something has been done to its result -- applied to an argument, or projected -- so that the type readback is handed is that of the whole spine rather than of the match.  A match with an explicit motive stores that motive, a type family over the datatype's indices and the datatype itself, to be applied to a branch's indices and constructor.  A non-dependent match checks all its branches at one type and stores that, which is both the type of the match and the type of every branch.  A variable match refines the context instead, and stores neither. *)
-  and (_, _) match_motive =
-    | Motive_family : ('mode, 'a, kinetic) term -> ('mode, 'a) match_motive
-    | Motive_type : ('mode, 'a, kinetic) term -> ('mode, 'a) match_motive
+  and ('mode, 'a) match_motive =
+    [ `Family of ('mode, 'a, kinetic) term | `Type of ('mode, 'a, kinetic) term ]
 
   and (_, _) canonical =
     | Data : {
@@ -529,10 +527,9 @@ end = struct
     (* A branch that was refuted during typechecking doesn't need a body to compute with, but we still mark its presence as a signal that it should be stuck (this can occur when normalizing in an inconsistent context). *)
     | Refute
 
-  (* What a match records of its type, so that readback can recover it when the match is stuck and something has been done to its result -- applied to an argument, or projected -- so that the type readback is handed is that of the whole spine rather than of the match.  A match with an explicit motive stores that motive, a type family over the datatype's indices and the datatype itself, to be applied to a branch's indices and constructor.  A non-dependent match checks all its branches at one type and stores that, which is both the type of the match and the type of every branch.  A variable match refines the context instead, and stores neither. *)
-  and (_, _) match_motive =
-    | Motive_family : ('mode, 'a, kinetic) term -> ('mode, 'a) match_motive
-    | Motive_type : ('mode, 'a, kinetic) term -> ('mode, 'a) match_motive
+  (* What a match records of its type, so that readback can recover it when the match is stuck and something has been done to its result -- applied to an argument, or projected -- so that the type readback is handed is that of the whole spine rather than of the match.  A match with an explicit dependent motive stores that motive, a type family over the datatype's indices and the datatype itself, to be applied to a branch's indices and constructor.  A non-dependent match checks all its branches at one type (perhaps synthesizing the type from one of them) and stores that, which is both the type of the match and the type of every branch.  A variable match refines the context instead, and stores neither. *)
+  and ('mode, 'a) match_motive =
+    [ `Family of ('mode, 'a, kinetic) term | `Type of ('mode, 'a, kinetic) term ]
 
   (* A canonical type is either a datatype or a codatatype/record. *)
   and (_, _) canonical =

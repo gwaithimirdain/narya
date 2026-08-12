@@ -401,8 +401,12 @@ type (_, _, _, _, _) match_motive =
         'motive ->
         (* RETURN the type of the match term, i.e. the motive evaluated (if it is dependent) at these indices, boundary, and the discriminee itself.  (The discriminee doesn't have to be passed as an argument to this callback explicitly because it is available when the callback is defined as a closure.)  *)
         ('mode, kinetic) value;
-      (* GIVEN a match motive, RETURN the checked term it came from, if the user wrote one explicitly.  This is stored in the Match so that readback of a stuck match can recover the type of each branch by replaying "use"; a motive that was supplied or synthesized rather than written is None, since then every branch has the same type as the match itself. *)
-      motive_term : 'motive -> ('mode, 'b) Term.match_motive option;
+      (* GIVEN *)
+      motive_term :
+        (* a match motive *)
+        'motive ->
+        (* RETURN the checked term it came from, either as a family or as a non-dependent type.  This is stored in the Match so that readback of a stuck match can recover the type of each branch by replaying "use"; a variable match stores None. *)
+        ('mode, 'b) Term.match_motive option;
     }
       -> ('dom, 'window, 'mode, 'a, 'b) match_motive
 
@@ -1616,7 +1620,7 @@ and check_nondep_match : type dom window mode a b bm.
            use = (fun x _ _ _ _ _ -> x);
            return = (fun _ _ x -> x);
            (* A non-dependent match checks every branch at one type, which is also the type of the match; storing it lets readback recover that type when the match is stuck and further eliminated.  It costs a readback per match at checking time, for display only. *)
-           motive_term = (fun x -> Some (Term.Motive_type (readback_val ctx x)));
+           motive_term = (fun x -> Some (`Type (readback_val ctx x)));
          }) in
   result
 
@@ -1711,7 +1715,7 @@ and synth_nondep_match : type mode a b.
                get;
                use = (fun x _ _ _ _ _ -> x);
                return = (fun _ _ x -> x);
-               motive_term = (fun x -> Some (Term.Motive_type (readback_val ctx x)));
+               motive_term = (fun x -> Some (`Type (readback_val ctx x)));
              }) in
       match motive with
       | None -> fatal (Anomaly "synth_nondep_match: no synthesized type of match but no errors")
@@ -1779,7 +1783,7 @@ and synth_dep_match : type mode a b.
                    let result = apply_singleton_tube_nfs window result inst_args in
                    apply_term result (Modality.filter_zero window)
                      (CubeOf.singleton (eval_term (Ctx.env lctx) tm)));
-               motive_term = (fun (cmotive, _) -> Some (Term.Motive_family cmotive));
+               motive_term = (fun (cmotive, _) -> Some (`Family cmotive));
              }) in
       match result_ty with
       | None -> fatal (Anomaly "synth_dep_match: no type of match but no errors")
@@ -2045,7 +2049,7 @@ and check_var_match : type dom modality mode a b bm.
             (fun b ->
               if not !(b.value) then fatal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
             highers;
-          (* A variable match refines the context in each branch rather than applying a motive, so there is no motive to store; readback falls back on the type of the match itself. *)
+          (* A variable match refines the context in each branch rather than applying a motive, so there is no motive to store. *)
           Match { window; plus_lock = plus; tm = Term.Var index; dim; motive = None; branches })
   | _ ->
       let (Locked (_, lctx)) = Ctx.lock ctx window in

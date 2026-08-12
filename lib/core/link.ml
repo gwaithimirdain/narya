@@ -66,8 +66,8 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
           motive =
             Option.map
               (function
-                | Motive_family t -> Motive_family (term f t)
-                | Motive_type t -> Motive_type (term f t))
+                | `Family t -> `Family (term f t)
+                | `Type t -> `Type (term f t))
               motive;
           branches = Constr.Map.map (branch f) branches;
         }
