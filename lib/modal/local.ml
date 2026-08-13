@@ -32,7 +32,7 @@ module Discrete = struct
   type nonparametric = D.one
 
   let nonparametric = D.one
-  let name = "local tconn"
+  let name = "discrete local"
   let nabla_tangible = false
   let tri_pellucid = true
 end
@@ -317,7 +317,7 @@ struct
               (Modalcell.postwhisker Zero
                  (Suc (Suc (Zero, Box.modality), Nabla.modality))
                  nab nabla_counit_inv) )
-    | _ -> failwith "dtt: ill-typed or unrecognized modality composite in normalize"
+    | _ -> failwith (V.name ^ ": ill-typed or unrecognized modality composite in normalize")
 
   let rec normalize : type a m b. (a, m, b) Modality.t -> (a, m, b) normalize =
    fun md ->

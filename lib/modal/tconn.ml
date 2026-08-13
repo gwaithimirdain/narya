@@ -300,7 +300,7 @@ struct
     (* g = ◇ *)
     | _, _, Eq, _, _, _, Eq, _, _, _ -> Normalize (dia, g_to, g_from) (* ◇·id = ◇ *)
     | _, _, Eq, _, _, _, _, Eq, _, _ -> Normalize (tridia, g_to, g_from) (* ◇·△ = △◇ *)
-    | _ -> failwith "dtt: ill-typed or unrecognized modality composite in normalize"
+    | _ -> failwith (V.name ^ ": ill-typed or unrecognized modality composite in normalize")
 
   let rec normalize : type a m b. (a, m, b) Modality.t -> (a, m, b) normalize =
    fun md ->
