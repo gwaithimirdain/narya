@@ -37,6 +37,15 @@ module Discrete = struct
   let tri_pellucid = true
 end
 
+module Inconsistent = struct
+  type nonparametric = D.one
+
+  let nonparametric = D.one
+  let name = "inconsistent local"
+  let nabla_tangible = true
+  let tri_pellucid = true
+end
+
 module DiscGen (V : Variant) = struct
   let name = ref "Disc"
 
