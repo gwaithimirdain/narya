@@ -112,6 +112,7 @@ module Code = struct
     | Noncube_abstraction_in_higher_dimensional_match : 'n D.t -> t
     | Not_enough_arguments_to_function : t
     | Not_enough_arguments_to_instantiation : t
+    | Not_enough_arguments_to_constructor : t
     | Type_not_fully_instantiated : string * 'n D.pos -> t
     | Instantiating_zero_dimensional_type : printable -> t
     | Unequal_synthesized_type : {
@@ -182,6 +183,13 @@ module Code = struct
         Constr.t * [ `Constr of Constr.t | `Nonconstr of printable ]
         -> t
     | Unequal_indices : printable * printable * Unequal.t -> t
+    | Unequal_boundary_argument : {
+        face : ('a, 'b) sface;
+        got : printable;
+        expected : printable;
+        why : Unequal.t;
+      }
+        -> t
     | Unbound_variable : string * (string list * string list) list -> t
     | Undefined_constant : printable -> t
     | Undefined_metavariable : printable -> t
@@ -382,6 +390,7 @@ module Code = struct
     | No_such_constructor _ -> Error
     | Missing_instantiation_constructor _ -> Error
     | Unequal_indices _ -> Error
+    | Unequal_boundary_argument _ -> Error
     | Unbound_variable _ -> Error
     | Undefined_constant _ -> Bug
     | Undefined_metavariable _ -> Bug
@@ -394,6 +403,7 @@ module Code = struct
     | Instantiating_zero_dimensional_type _ -> Error
     | Invalid_variable_face _ -> Error
     | Not_enough_arguments_to_instantiation -> Error
+    | Not_enough_arguments_to_constructor -> Error
     | Applying_nonfunction_nontype _ -> Error
     | Unexpected_implicitness _ -> Error
     | Insufficient_dimension _ -> Error
@@ -557,6 +567,7 @@ module Code = struct
     | Type_not_fully_instantiated _ -> "E0504"
     | Instantiating_zero_dimensional_type _ -> "E0505"
     | Invalid_variable_face _ -> "E0506"
+    | Not_enough_arguments_to_constructor -> "E0507"
     | Zero_dimensional_cube_abstraction _ -> "E0508"
     | Mismatched_dimensions_in_cube_abstraction _ -> "E0509"
     | Noncube_abstraction_in_higher_dimensional_match _ -> "E0510"
@@ -591,6 +602,7 @@ module Code = struct
     | Wrong_number_of_arguments_to_constructor _ -> "E1001"
     | Missing_instantiation_constructor _ -> "E1002"
     | Unequal_indices _ -> "E1003"
+    | Unequal_boundary_argument _ -> "E1004"
     (* Matches *)
     (* - Match variable *)
     | Unnamed_variable_in_match -> "E1100"
@@ -758,6 +770,8 @@ module Code = struct
           text "not enough arguments for a higher-dimensional function application"
       | Not_enough_arguments_to_instantiation ->
           text "not enough arguments to instantiate a higher-dimensional type"
+      | Not_enough_arguments_to_constructor ->
+          text "not enough arguments to a higher-dimensional constructor application"
       | Type_not_fully_instantiated (str, n) ->
           textf "type not fully instantiated in %s (need %s more dimensions)" str
             (string_of_dim0 (D.pos n))
@@ -896,6 +910,12 @@ module Code = struct
             "@[<hv 0>index@;<1 2>%a@ of constructor application doesn't match the corresponding index@;<1 2>%a@ of datatype instance: unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a@]"
             pp_printed (print t1) pp_printed (print t2) str pp_printed (print p1) pp_printed
             (print p2)
+      | Unequal_boundary_argument { face; got; expected; why } ->
+          let str, p1, p2 = Unequal.printables why in
+          textf
+            "@[<hv 0>supplied %s-boundary argument@;<1 2>%a@ doesn't match the one determined by the type@;<1 2>%a@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a@]"
+            (string_of_sface face) pp_printed (print got) pp_printed (print expected) str pp_printed
+            (print p1) pp_printed (print p2)
       | Unbound_variable (c, alt) -> (
           match alt with
           | [] -> textf "unbound variable: %s" c

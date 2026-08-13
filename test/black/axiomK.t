@@ -15,14 +15,14 @@ Using the Martin-Löf "Jdentity type" as an indexed datatype, we can try to prov
    1 | def USIP (A:Type) (a:A) (e:Jd A a a) : Jd (Jd A a a) e rfl. := match e [ rfl. |-> rfl. ]
      ^ match will not refine the goal or context (no consistent permutation of context)
   
-   ￫ error[E1003]
+   ￫ error[E0401]
    ￭ command-line exec string
    1 | def USIP (A:Type) (a:A) (e:Jd A a a) : Jd (Jd A a a) e rfl. := match e [ rfl. |-> rfl. ]
-     ^ index
-         e
-       of constructor application doesn't match the corresponding index
-         rfl.
-       of datatype instance: unequal terms:
+     ^ term synthesized type
+         Jd (Jd A a a) e e
+       but is being checked against type
+         Jd (Jd A a a) e rfl.
+       unequal terms:
          e
        does not equal
          rfl.
@@ -106,14 +106,14 @@ The following indexed datatype appears in Agda bug #1025.
      ^ match will not refine the goal or context (index is not a free variable):
          foo.
   
-   ￫ error[E1003]
+   ￫ error[E0401]
    ￭ command-line exec string
    1 | def test (e : Jd A a a) (f : Foo e) (i : Jd (Foo e) f f) : Jd (Jd (Foo e) f f) i rfl. ≔ match f [ foo. ↦ match i [ rfl. ↦ rfl. ]]
-     ^ index
-         i
-       of constructor application doesn't match the corresponding index
-         rfl.
-       of datatype instance: unequal terms:
+     ^ term synthesized type
+         Jd (Jd (Foo rfl.) foo. foo.) i i
+       but is being checked against type
+         Jd (Jd (Foo rfl.) foo. foo.) i rfl.
+       unequal terms:
          i
        does not equal
          rfl.

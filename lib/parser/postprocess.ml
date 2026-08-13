@@ -227,13 +227,20 @@ and process_apps_head : type n lt ls rt rs.
   | `Constr c ->
       let c = { value = c; loc = tm.loc } in
       let loc = ref None in
-      let args =
+      (* A constructor argument in braces is an implicit boundary argument of a higher-dimensional constructor, supplied redundantly as documentation; see Raw.Constr. *)
+      let cargs =
         List.map
           (fun (Wrap x, l) ->
             loc := l;
-            process ctx x)
+            match x.value with
+            | Notn ((Braces, _), n) -> (
+                match notation_args n with
+                | [ Token (LBrace, _); Term arg; Token (RBrace, _) ] ->
+                    (process ctx arg, locate_opt x.loc `Implicit)
+                | _ -> fatal (Anomaly "invalid notation arguments for braces"))
+            | _ -> (process ctx x, locate_opt x.loc `Explicit))
           args in
-      { value = Raw.Constr (c, args); loc = !loc }
+      { value = Raw.Constr (c, cargs); loc = !loc }
   | `Fn fn -> process_apply ctx fn args
 
 and process_head : type n lt ls rt rs.
