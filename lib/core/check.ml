@@ -624,17 +624,23 @@ let rec check : type mode a b s.
         let one = { value = Constr.intern "one"; loc = tm.loc } in
         let suc = { value = Constr.intern "suc"; loc = tm.loc } in
         let quot = { value = Constr.intern "quot"; loc = tm.loc } in
+        let expl tm : _ * [ `Implicit | `Explicit ] located = (tm, locate_opt tm.loc `Explicit) in
         let rec process_nat (n : Z.t) =
           if n = Z.zero then { value = Raw.Constr (zero, []); loc = tm.loc }
-          else { value = Raw.Constr (suc, [ process_nat (Z.sub n Z.one) ]); loc = tm.loc } in
+          else { value = Raw.Constr (suc, [ expl (process_nat (Z.sub n Z.one)) ]); loc = tm.loc }
+        in
         let rec process_pos (n : Z.t) =
           if n = Z.one then { value = Raw.Constr (one, []); loc = tm.loc }
-          else { value = Raw.Constr (suc, [ process_pos (Z.sub n Z.one) ]); loc = tm.loc } in
+          else { value = Raw.Constr (suc, [ expl (process_pos (Z.sub n Z.one)) ]); loc = tm.loc }
+        in
         let numeral =
           if n.den = Z.one then
             if use_one && n.num > Z.zero then process_pos n.num else process_nat n.num
-          else { value = Raw.Constr (quot, [ process_nat n.num; process_pos n.den ]); loc = tm.loc }
-        in
+          else
+            {
+              value = Raw.Constr (quot, [ expl (process_nat n.num); expl (process_pos n.den) ]);
+              loc = tm.loc;
+            } in
         check ?discrete status ctx numeral ty
     | Synth (Match { tm; window; sort = `Implicit; branches; refutables; highers }), Potential _ ->
         check_implicit_match status ctx tm window branches refutables highers ty
@@ -866,7 +872,7 @@ and check_constr : type mode a b s.
     (* The location of the entire constructor application, used for eta-expansion. *)
     Asai.Range.t option ->
     Constr.t located ->
-    a check located list ->
+    (a check located * [ `Implicit | `Explicit ] located) list ->
     (mode, kinetic) value ->
     (mode, b, s) term =
  fun ?discrete status ctx loc { value = constr; loc = constr_loc } args ty ->
@@ -894,7 +900,7 @@ and check_constr : type mode a b s.
           (* Now we walk the evaluation of the constructor's function-type, checking each user-supplied argument against the current domain (instantiated at the corresponding arguments of the lower-dimensional constructors, from tyarg_args) and applying the codomain to the checked argument to continue.  The final codomain is then the constructor's output type (the datatype applied to the parameters and indices) evaluated at all the checked arguments. *)
           let out, newargs =
             check_at_pi constr ctx (dim_env env) (eval_term env constr_ty) args tyarg_args in
-          (* The last thing to do is check that this output type is the type we are checking against.  Since the constructor's function-type came from that very type, the parameters agree automatically, so this amounts to comparing the indices; thus a constructor application "checks against the parameters but synthesizes the indices" in some sense.  The output is uninstantiated, a "vertex" of the higher-dimensional type, so we instantiate it at the same arguments before comparing. *)
+          (* The last thing to do is check that this output type is the type we are checking against.  Since the constructor's function-type came from that very type, the parameters agree automatically, so this amounts to comparing the indices; thus a constructor application "checks against the parameters but synthesizes the indices" in some sense.  The output is uninstantiated, a "vertex" of the higher-dimensional type, so we instantiate it at the same arguments before comparing; this means those arguments will be unnecessarily compared against themselves, but they should always be physically (==) equal, so equality-checking will short-circuit and return instantly. *)
           let outty = inst out tyargs in
           (match equal_val ctx outty ty with
           | Ok () -> ()
@@ -914,9 +920,9 @@ and check_constr : type mode a b s.
       in
       let args =
         List.fold_right
-          (fun arg acc -> locate_opt arg.loc (Weaken (arg.value, Eq)) :: acc)
+          (fun (arg, i) acc -> (locate_opt arg.loc (Weaken (arg.value, Eq)), i) :: acc)
           args
-          [ locate_opt None (Synth (Var (Top, fa))) ] in
+          [ (locate_opt None (Synth (Var (Top, fa))), locate_opt None `Explicit) ] in
       let body = locate_opt loc (Constr ({ value = constr; loc = constr_loc }, args)) in
       check ?discrete status ctx
         (locate_opt loc (Lam { name; cube; implicit = `Explicit; dom = None; body }))
@@ -4068,28 +4074,77 @@ and check_at_pi : type mode n a c e.
     n D.t ->
     (* The constructor's function-type, applied to the arguments checked so far. *)
     (mode, kinetic) value ->
-    (* This list of terms to check must have the same length *)
-    a check located list ->
+    (* This list of arguments to check, each a top-dimensional term preceded by the boundary terms supplied for it (if any), must have the same length *)
+    (a check located * [ `Explicit | `Implicit ] located) list ->
     (* as this vector of tubes. *)
     ((D.zero, n, n, (mode, kinetic) modal_value) TubeOf.t, c) Vec.t ->
     (mode, kinetic) value * (n, mode, e, kinetic) any_modal_term_cube list =
  fun c ctx n fnty tms tyargs ->
   match (tms, tyargs) with
   | [], [] -> (fnty, [])
-  | tm :: tms, tyargs :: tyargs_rest ->
+  | (_, impl) :: _, tyargs :: tyargs_rest -> (
       (* The constructor's function-type value must be a pi-type.  Its domain cube contains the argument type of the constructor already evaluated at the parameters and the previously checked argument values (at all the faces of the modally filtered dimension k of the ambient dimension n); we instantiate its top at the corresponding arguments of the lower-dimensional versions of the constructor, check the user-supplied argument value against it in the modally locked context, and continue with the codomain applied to the checked argument cube. *)
       let (Viewed_pi { x = _; filter; doms; cods }) = view_pi "check_at_pi" n fnty in
       let modality = Modality.filter_modality filter in
       let (Locked (eplus, lctx)) = Ctx.lock ctx modality in
       let tyarg = modal_boundary_tube "check_at_pi" n filter doms tyargs in
+      (* The user may have supplied the redundant boundary arguments as documentation.  If so, there must be exactly one for each face, and we check each against the type of the corresponding boundary value and verify that it agrees with that value.  We consume them from a mutable reference as the tube traversal below visits the faces in order, exactly as synth_arg_cube consumes the boundary arguments of a higher-dimensional function application. *)
+      let args = ref tms in
+      let ctms =
+        TubeOf.mmap
+          {
+            map =
+              (fun fa [ t ] ->
+                (match impl.value with
+                | `Explicit -> ()
+                | `Implicit -> (
+                    match !args with
+                    | [] -> fatal Not_enough_arguments_to_constructor
+                    | (_, { value = `Explicit; loc }) :: _ ->
+                        fatal ?loc
+                          (Unexpected_implicitness
+                             ( `Explicit,
+                               "argument",
+                               "expecting implicit argument of constructor " ^ Constr.to_string c ))
+                    | (utm, { value = `Implicit; _ }) :: rest -> (
+                        args := rest;
+                    let uty = Lazy.force t.ty in
+                    let uctm = check (Kinetic `Nolet) lctx utm uty in
+                    let uetm = eval_term (Ctx.env lctx) uctm in
+                    match equal_at lctx uetm t.tm uty with
+                    | Ok () -> ()
+                    | Error why ->
+                        fatal ?loc:utm.loc
+                          (Unequal_boundary_argument
+                             {
+                               face = sface_of_tface fa;
+                               got = PNormal (lctx, { tm = uetm; ty = t.ty });
+                               expected = PNormal (lctx, t);
+                               why;
+                                 }))));
+                (* Either way, the checked term keeps the boundary read back from the type, so that supplying it as documentation can't change the elaborated term. *)
+                readback_nf lctx t);
+          }
+          [ tyarg ] in
+      match !args with
+      | [] ->
+          fatal
+            (Wrong_number_of_arguments_to_constructor (c, -Fwn.to_int (Vec.length tyargs_rest) - 1))
+      | (_, { value = `Implicit; loc }) :: _ ->
+          fatal ?loc
+            (Unexpected_implicitness
+               ( `Implicit,
+                 "argument",
+                 "expecting explicit primary argument of constructor " ^ Constr.to_string c ))
+      | (tm, { value = `Explicit; _ }) :: rest ->
       let ity = inst (CubeOf.find_top doms) tyarg in
       let ctm = check (Kinetic `Nolet) lctx tm ity in
-      let ctms = TubeOf.mmap { map = (fun _ [ t ] -> readback_nf lctx t) } [ tyarg ] in
       let etm = eval_term (Ctx.env lctx) ctm in
       let argcube = TubeOf.plus_cube (val_of_norm_tube tyarg) (CubeOf.singleton etm) in
       let (BindFam b) = BindCube.find_top cods in
-      let out, newargs = check_at_pi c ctx n (apply_binder_term b filter argcube) tms tyargs_rest in
-      (out, Modal (filter, eplus, TubeOf.plus_cube ctms (CubeOf.singleton ctm)) :: newargs)
+          let out, newargs =
+            check_at_pi c ctx n (apply_binder_term b filter argcube) rest tyargs_rest in
+          (out, Modal (filter, eplus, TubeOf.plus_cube ctms (CubeOf.singleton ctm)) :: newargs))
   | _ ->
       fatal
         (Wrong_number_of_arguments_to_constructor

@@ -335,7 +335,10 @@ module F = struct
     | Constr (c, args) ->
         fprintf ppf "Constr(%s,(%a))" (Constr.to_string c.value)
           (fun ppf ->
-            List.iter (fun (x : a check Asai.Range.located) -> fprintf ppf "%a, " check x.value))
+            List.iter (fun ((x : a check Asai.Range.located), (i : _ Asai.Range.located)) ->
+                match i.value with
+                | `Implicit -> fprintf ppf "{%a}, " check x.value
+                | `Explicit -> fprintf ppf "%a, " check x.value))
           args
     | Numeral x -> fprintf ppf "Numeral(%s)" (Q.to_string x)
     | Empty_co_match -> fprintf ppf "Emptycomatch(?)"

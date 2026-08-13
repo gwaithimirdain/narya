@@ -186,7 +186,13 @@ Then ``Id (Sum A B) u v`` reduces to ``Sum⁽ᵉ⁾ (Id A) (Id B) u v``, whose d
 
 As before, if we ignore the ``⁽ᵉ⁾``'s, this tells us how ``Id (Sum A B) u v`` behaves.  First notice that it is *applied* to ``u`` and ``v`` at the end.  Actually this is an "instantiation" (see :ref:`Id of the universe`) but for now we can think of it as like application.  Thus, the datatype definition itself behaves like an *indexed* datatype, with ``u`` and ``v`` the indices.  Indeed, we can see that their occurrences ``(left. a₀) (left. a₁)`` and ``(right. b₀) (right. b₁)`` in the outputs of the constructors are not fully general, but are determined by the inputs.  (The arguments ``Id A`` and ``Id B`` are also not fully general, but they are the same as those given to ``Sum⁽ᵉ⁾``, and when we give the general type of ``Sum⁽ᵉ⁾`` below it will be clear that these arguments are actually parameters.)  But aside from this indexing, ``Id (Sum A B) u v`` is, intuitively, *a* sum type: the sum of all the identity types of ``A`` and those of ``B``.
 
-The input endpoints such as ``a₀ a₁`` are written with curly braces to indicate that they are implicit, as with the endpoint arguments of ``ap f``.  However, in this case it is *not* possible to give these arguments explicitly when applying the constructors ``left.`` and ``right.``.  But there is unlikely to be any need to, since constructors *and* their arguments always check rather than needing to synthesize.
+The input endpoints such as ``a₀ a₁`` are written with curly braces to indicate that they are implicit, as with the endpoint arguments of ``ap f``.  As in that case, it is possible to supply them explicitly when applying a constructor:
+
+.. code-block:: none
+
+   def s₂ : Id ℕ (suc. n₀) (suc. n₁) ≔ suc. {n₀} {n₁} n₂
+
+However, unlike for ``ap``, it is never *necessary* to give these arguments explicitly, since a constructor only checks rather than synthesizing, and thus these boundary arguments can always be extracted from the type it checks against.  If supplied explicitly, they must match the ones in the checking type exactly, so the only purpose of this would be for readability and "checked documentation".  For each top-dimensional argument, either all of its implicit boundary arguments must be supplied or none of them.
 
 It is possible, however, to omit some of the arguments of a higher constructor and check it at a higher function-type.  For instance, for any fixed types ``A`` and ``B``, the constructor ``left.`` checks at type ``{a₀ a₁ : A} (a₂ : Id A a₀ a₁) →⁽ᵉ⁾ Sum⁽ᵉ⁾ (Id A) (Id B) (left. a₀) (left. a₁)`` (see :ref:`Id of function types`, below).
 

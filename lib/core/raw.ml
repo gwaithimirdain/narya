@@ -130,7 +130,9 @@ module rec Make : functor (I : Indices) -> sig
         ('s, 'et) eta
         * ((string * string list) option, [ `Normal | `Cube ] located * 'a check located) Abwd.t
         -> 'a check
-    | Constr : Constr.t located * 'a check located list -> 'a check
+    | Constr :
+        Constr.t located * ('a check located * [ `Implicit | `Explicit ] located) list
+        -> 'a check
     | Numeral : Q.t -> 'a check
     | Empty_co_match : 'a check
     | Data : (Constr.t, 'a dataconstr located) Abwd.t * Variables.hints -> 'a check
@@ -330,7 +332,10 @@ functor
           ('s, 'et) eta
           * ((string * string list) option, [ `Normal | `Cube ] located * 'a check located) Abwd.t
           -> 'a check
-      | Constr : Constr.t located * 'a check located list -> 'a check
+      (* The arguments of a constructor application.  In the higher-dimensional case the user may optionally supply the redundant boundary arguments of each argument's cube, as implicit arguments preceding the explicit top-dimensional one; they are then checked against the boundary extracted from the type being checked against. *)
+      | Constr :
+          Constr.t located * ('a check located * [ `Implicit | `Explicit ] located) list
+          -> 'a check
       | Numeral : Q.t -> 'a check
       (* "[]", which could be either an empty pattern-matching lambda or an empty comatch *)
       | Empty_co_match : 'a check
@@ -568,7 +573,7 @@ module Resolve (R : Resolver) = struct
             }
       | Struct (eta, fields) ->
           Struct (eta, Abwd.map (fun (cube, tm) -> (cube, check ctx tm)) fields)
-      | Constr (c, args) -> Constr (c, List.map (check ctx) args)
+      | Constr (c, args) -> Constr (c, List.map (fun (tm, i) -> (check ctx tm, i)) args)
       | Numeral x -> Numeral x
       | Empty_co_match -> Empty_co_match
       | Data (constrs, hints) -> Data (Abwd.map (locate_map (dataconstr ctx)) constrs, hints)

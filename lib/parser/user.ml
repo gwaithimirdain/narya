@@ -196,7 +196,12 @@ let make_user : prenotation -> notation =
                 Raw.Synth spine
             | `Constr (c, _) ->
                 let args = List.map (fun k -> StringMap.find k args) val_vars in
-                Raw.Constr ({ value = c; loc }, args) in
+                Raw.Constr
+                  ( { value = c; loc },
+                    List.map
+                      (fun (arg : _ Raw.check Asai.Range.located) ->
+                        (arg, Asai.Range.locate_opt arg.loc `Explicit))
+                      args ) in
           { value; loc });
       pattern =
         (fun obs loc ->
