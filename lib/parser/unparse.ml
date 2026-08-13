@@ -1207,23 +1207,10 @@ let rec unparse_ctx : type dom modality mode a b.
       let vars, xs = Bwv.unappend af vars in
       let names, result = unparse_ctx names lock vars ctx in
       match entry with
-      | Invis { plus_lock; bindings; hints; _ } ->
-          let modality = Modality.name (plus_lock_modality plus_lock) in
-          (* We treat an invisible binding as consisting of all nameless variables, and autogenerate names for them all, using any display hints recorded from their types at readback time. *)
-          let x, names = Names.add names (singleton_variables (CubeOf.dim bindings) (`Anon hints)) in
-          let xnames = Names.add_lock names plus_lock in
-          let do_binding (b : (edom, bm) binding) (res : S.t) : unit * S.t =
-            let ty = Wrap (unparse xnames b.ty No.Interval.entire No.Interval.entire) in
-            let tm =
-              Option.map
-                (fun t -> Wrap (unparse xnames t No.Interval.entire No.Interval.entire))
-                b.tm in
-            let lock = Modality.name lock in
-            let var = top_variable x in
-            ((), Snoc (res, { var; modality; renamed = true; lock; tm; ty })) in
-          let result = ref result in
-          CubeOf.miter { it = (fun _ [ b ] -> result := snd (do_binding b !result)) } [ bindings ];
-          (names, !result)
+      | Invis { bindings; hints; _ } ->
+          (* An invisible entry takes no raw variable, so it is not anything the user wrote but an internal device: the self-variable of a datatype's constructors, or a variable of one of the scratch contexts that readback, evaluation of a term context, and bind_some build.  So we display nothing for it.  But it must still take its place in the name context, since the variable indices of everything after it count it, and if a displayed term ever did mention such a variable, that is where its name would come from.  As elsewhere, we treat it as consisting of all nameless variables, using any display hints recorded from their types at readback time. *)
+          let _, names = Names.add names (singleton_variables (CubeOf.dim bindings) (`Anon hints)) in
+          (names, result)
       | Vis { dim; plusdim; vars; plus_lock; bindings; hasfields; fields; fplus; filter = _ } ->
           let modality = Modality.name (plus_lock_modality plus_lock) in
           (* First we split off the field variables, if any. *)
