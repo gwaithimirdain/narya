@@ -727,113 +727,7 @@ let rec check : type mode a b s.
             let mn = is_id_ins ins <|> Checking_tuple_at_degenerated_record (phead name) in
             check_struct status Eta ctx ty (cod_left_ins ins) mn codata_args tyargs tms
         | _ -> fatal (Checking_tuple_at_nonrecord (PVal (ctx, ty))))
-    | Constr ({ value = constr; loc = constr_loc }, args), _ -> (
-        (* TODO: Move this into a helper function, it's too long to go in here. *)
-        match view_type ~severity ty "typechecking constr" with
-        | Canonical
-            (type hmode mn m n)
-            ((name, Data { dim; indices = Filled ty_indices; constrs; _ }, ins, tyargs) :
-              (hmode, kinetic) head
-              * _
-              * (mn, m, n) insertion
-              * (D.zero, mn, mn, mode normal) TubeOf.t) -> (
-            let Eq = eq_of_ins_zero ins in
-            (* We don't need the *types* of the parameters or indices, which are stored in the type of the constant name.  The variable ty_indices (defined above) contains the *values* of the indices of this instance of the datatype, while tyargs (defined by view_type, above) contains the instantiation arguments of this instance of the datatype.  We check that the dimensions agree, and find our current constructor in the datatype definition. *)
-            match Abwd.find_opt constr constrs with
-            | None -> fatal ?loc:constr_loc (No_such_constructor (`Data (phead name), constr))
-            | Some (Dataconstr { env; ty = constr_ty }) ->
-                (* We recover the constructor's arity from the pi-depth of its stored function-type, to drive the conversion of the instantiation arguments below. *)
-                let (Wrap lgth) = pi_arity constr_ty in
-                (* To typecheck a higher-dimensional instance of our constructor constr at the datatype, all the instantiation arguments must also be applications of lower-dimensional versions of that same constructor.  We check this, and extract the arguments of those lower-dimensional constructors.  What we naturally have is a *tube of lists*, but what check_at_pi wants is a *vector of tubes*, one per constructor argument; we do the conversion with a multiple-output traversal, as in readback and equality. *)
-                let (Conses (cs, bs)) = Tlist.Tlist.conses lgth in
-                let tyarg_args =
-                  TubeOf.Heter.vec_of_hgt cs
-                  @@ TubeOf.pmap
-                       {
-                         map =
-                           (fun (type k)
-                             (fa : (k, D.zero, mn, mn) tface)
-                             ([ tm ] : (k, (mode normal, Tlist.nil) Tlist.cons) CubeOf.Heter.hft)
-                           ->
-                             match view_term tm.tm with
-                             | Constr (tmname, n, tmargs) ->
-                                 if tmname = constr then
-                                   match D.compare n (dom_tface fa) with
-                                   | Eq ->
-                                       let ys =
-                                         Vec.of_list_length_map
-                                           (fun (Value.Modal (xfilt, a)) : (_, _) modal_value ->
-                                             Modal
-                                               (Modality.filter_modality xfilt, CubeOf.find_top a))
-                                           lgth tmargs
-                                         <|> Anomaly "inst arg wrong num args in checking constr"
-                                       in
-                                       CubeOf.Heter.hft_of_vec cs ys
-                                   | Neq ->
-                                       fatal
-                                         (Dimension_mismatch ("checking constr", n, dom_tface fa))
-                                 else
-                                   fatal
-                                     (Missing_instantiation_constructor (constr, `Constr tmname))
-                             | _ ->
-                                 fatal
-                                   (Missing_instantiation_constructor
-                                      (constr, `Nonconstr (PNormal (ctx, tm)))));
-                       }
-                       [ tyargs ] bs in
-                (* Now we walk the evaluation of the constructor's function-type, checking each user-supplied argument against the current domain (instantiated at the corresponding arguments of the lower-dimensional constructors, from tyarg_args) and applying the codomain to the checked argument to continue.  The final codomain is then the constructor's output type (the datatype applied to the parameters and indices) evaluated at all the checked arguments. *)
-                let out, newargs =
-                  check_at_pi constr ctx (dim_env env) (eval_term env constr_ty) args tyarg_args
-                in
-                (* The last thing to do is check that the indices of the output type are equal to those of the type we are checking against.  (So a constructor application "checks against the parameters but synthesizes the indices" in some sense.)  We extract them directly from the evaluated output, which is the datatype fully applied to its indices; this evaluation is skipped for non-indexed datatypes, where there is nothing to compare.  I *think* it should suffice to check the top-dimensional ones, the lower-dimensional ones being automatic.  For now, we check all of them, raising an anomaly in case I was wrong about that.  *)
-                (match ty_indices with
-                | [] -> ()
-                | _ :: _ ->
-                    let constr_indices =
-                      indices_of_out "checking constr" out (dim_env env) (Vec.length ty_indices)
-                    in
-                    Vec.miter
-                      (fun [ t1s; t2s ] ->
-                        CubeOf.miter
-                          {
-                            it =
-                              (fun fa [ t1; t2 ] ->
-                                match equal_at ctx t1.tm t2.tm (Lazy.force t2.ty) with
-                                | Ok () -> ()
-                                | Error err -> (
-                                    match is_id_sface fa with
-                                    | Some _ ->
-                                        fatal
-                                          (Unequal_indices
-                                             ( PNormal (ctx, { tm = t1.tm; ty = t2.ty }),
-                                               PNormal (ctx, t2),
-                                               err ))
-                                    | None ->
-                                        fatal (Anomaly "mismatching lower-dimensional constructors")
-                                    ));
-                          }
-                          [ t1s; t2s ])
-                      [ constr_indices; ty_indices ]);
-                realize status (Term.Constr (constr, dim, newargs)))
-        (* A constructor can also check at a function-type by eta-expansion. *)
-        | Canonical (_, Pi { x; _ }, _, _) ->
-            let name = locate_opt None (option_of_binder_name (top_variable x)) in
-            let cube, fa =
-              match D.compare_zero (dim_variables x) with
-              | Zero -> (locate_opt None `Normal, None)
-              | Pos _ ->
-                  (locate_opt None (`Cube (ref None)), Some (Any_sface (id_sface (dim_variables x))))
-            in
-            let args =
-              List.fold_right
-                (fun arg acc -> locate_opt arg.loc (Weaken (arg.value, Eq)) :: acc)
-                args
-                [ locate_opt None (Synth (Var (Top, fa))) ] in
-            let body = locate_opt tm.loc (Constr ({ value = constr; loc = constr_loc }, args)) in
-            check ?discrete status ctx
-              (locate_opt tm.loc (Lam { name; cube; implicit = `Explicit; dom = None; body }))
-              ty
-        | _ -> fatal (No_such_constructor (`Other (PVal (ctx, ty)), constr)))
+    | Constr (constr, args), _ -> check_constr ?discrete status ctx tm.loc constr args ty
     | Numeral n, _ ->
         if n.num < Z.zero then fatal (Anomaly "negative numeral");
         if n.den <= Z.zero then fatal (Anomaly "negative denominator");
@@ -1080,6 +974,114 @@ let rec check : type mode a b s.
   let result = go () in
   Annotate.tm ctx result;
   result
+
+(* Check an application of a constructor, against a datatype having that constructor or (by eta-expansion) against a function-type. *)
+and check_constr : type mode a b s.
+    ?discrete:unit Constant.Map.t ->
+    (mode, b, s) status ->
+    (mode, a, b) Ctx.t ->
+    (* The location of the entire constructor application, used for eta-expansion. *)
+    Asai.Range.t option ->
+    Constr.t located ->
+    a check located list ->
+    (mode, kinetic) value ->
+    (mode, b, s) term =
+ fun ?discrete status ctx loc { value = constr; loc = constr_loc } args ty ->
+  match view_type ~severity:Asai.Diagnostic.Error ty "typechecking constr" with
+  | Canonical
+      (type hmode mn m n)
+      ((name, Data { dim; indices = Filled ty_indices; constrs; _ }, ins, tyargs) :
+        (hmode, kinetic) head * _ * (mn, m, n) insertion * (D.zero, mn, mn, mode normal) TubeOf.t)
+    -> (
+      let Eq = eq_of_ins_zero ins in
+      (* We don't need the *types* of the parameters or indices, which are stored in the type of the constant name.  The variable ty_indices (defined above) contains the *values* of the indices of this instance of the datatype, while tyargs (defined by view_type, above) contains the instantiation arguments of this instance of the datatype.  We check that the dimensions agree, and find our current constructor in the datatype definition. *)
+      match Abwd.find_opt constr constrs with
+      | None -> fatal ?loc:constr_loc (No_such_constructor (`Data (phead name), constr))
+      | Some (Dataconstr { env; ty = constr_ty }) ->
+          (* We recover the constructor's arity from the pi-depth of its stored function-type, to drive the conversion of the instantiation arguments below. *)
+          let (Wrap lgth) = pi_arity constr_ty in
+          (* To typecheck a higher-dimensional instance of our constructor constr at the datatype, all the instantiation arguments must also be applications of lower-dimensional versions of that same constructor.  We check this, and extract the arguments of those lower-dimensional constructors.  What we naturally have is a *tube of lists*, but what check_at_pi wants is a *vector of tubes*, one per constructor argument; we do the conversion with a multiple-output traversal, as in readback and equality. *)
+          let (Conses (cs, bs)) = Tlist.Tlist.conses lgth in
+          let tyarg_args =
+            TubeOf.Heter.vec_of_hgt cs
+            @@ TubeOf.pmap
+                 {
+                   map =
+                     (fun (type k)
+                       (fa : (k, D.zero, mn, mn) tface)
+                       ([ tm ] : (k, (mode normal, Tlist.nil) Tlist.cons) CubeOf.Heter.hft)
+                     ->
+                       match view_term tm.tm with
+                       | Constr (tmname, n, tmargs) ->
+                           if tmname = constr then
+                             match D.compare n (dom_tface fa) with
+                             | Eq ->
+                                 let ys =
+                                   Vec.of_list_length_map
+                                     (fun (Value.Modal (xfilt, a)) : (_, _) modal_value ->
+                                       Modal (Modality.filter_modality xfilt, CubeOf.find_top a))
+                                     lgth tmargs
+                                   <|> Anomaly "inst arg wrong num args in checking constr" in
+                                 CubeOf.Heter.hft_of_vec cs ys
+                             | Neq ->
+                                 fatal (Dimension_mismatch ("checking constr", n, dom_tface fa))
+                           else fatal (Missing_instantiation_constructor (constr, `Constr tmname))
+                       | _ ->
+                           fatal
+                             (Missing_instantiation_constructor
+                                (constr, `Nonconstr (PNormal (ctx, tm)))));
+                 }
+                 [ tyargs ] bs in
+          (* Now we walk the evaluation of the constructor's function-type, checking each user-supplied argument against the current domain (instantiated at the corresponding arguments of the lower-dimensional constructors, from tyarg_args) and applying the codomain to the checked argument to continue.  The final codomain is then the constructor's output type (the datatype applied to the parameters and indices) evaluated at all the checked arguments. *)
+          let out, newargs =
+            check_at_pi constr ctx (dim_env env) (eval_term env constr_ty) args tyarg_args in
+          (* The last thing to do is check that the indices of the output type are equal to those of the type we are checking against.  (So a constructor application "checks against the parameters but synthesizes the indices" in some sense.)  We extract them directly from the evaluated output, which is the datatype fully applied to its indices; this evaluation is skipped for non-indexed datatypes, where there is nothing to compare.  I *think* it should suffice to check the top-dimensional ones, the lower-dimensional ones being automatic.  For now, we check all of them, raising an anomaly in case I was wrong about that.  *)
+          (match ty_indices with
+          | [] -> ()
+          | _ :: _ ->
+              let constr_indices =
+                indices_of_out "checking constr" out (dim_env env) (Vec.length ty_indices) in
+              Vec.miter
+                (fun [ t1s; t2s ] ->
+                  CubeOf.miter
+                    {
+                      it =
+                        (fun fa [ t1; t2 ] ->
+                          match equal_at ctx t1.tm t2.tm (Lazy.force t2.ty) with
+                          | Ok () -> ()
+                          | Error err -> (
+                              match is_id_sface fa with
+                              | Some _ ->
+                                  fatal
+                                    (Unequal_indices
+                                       ( PNormal (ctx, { tm = t1.tm; ty = t2.ty }),
+                                         PNormal (ctx, t2),
+                                         err ))
+                              | None -> fatal (Anomaly "mismatching lower-dimensional constructors")
+                              ));
+                    }
+                    [ t1s; t2s ])
+                [ constr_indices; ty_indices ]);
+          realize status (Term.Constr (constr, dim, newargs)))
+  (* A constructor can also check at a function-type by eta-expansion. *)
+  | Canonical (_, Pi { x; _ }, _, _) ->
+      let name = locate_opt None (option_of_binder_name (top_variable x)) in
+      let cube, fa =
+        match D.compare_zero (dim_variables x) with
+        | Zero -> (locate_opt None `Normal, None)
+        | Pos _ ->
+            (locate_opt None (`Cube (ref None)), Some (Any_sface (id_sface (dim_variables x))))
+      in
+      let args =
+        List.fold_right
+          (fun arg acc -> locate_opt arg.loc (Weaken (arg.value, Eq)) :: acc)
+          args
+          [ locate_opt None (Synth (Var (Top, fa))) ] in
+      let body = locate_opt loc (Constr ({ value = constr; loc = constr_loc }, args)) in
+      check ?discrete status ctx
+        (locate_opt loc (Lam { name; cube; implicit = `Explicit; dom = None; body }))
+        ty
+  | _ -> fatal (No_such_constructor (`Other (PVal (ctx, ty)), constr))
 
 (* Deal with a synthesizing term in checking position. *)
 and check_of_synth : type mode a b s.
