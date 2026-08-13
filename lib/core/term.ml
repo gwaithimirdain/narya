@@ -204,7 +204,7 @@ module rec Term : sig
   and (_, _) canonical =
     | Data : {
         indices : 'i Fwn.t;
-        constrs : (Constr.t, ('mode, 'a, 'i) dataconstr) Abwd.t;
+        constrs : (Constr.t, ('mode, 'a, kinetic) term) Abwd.t;
         discrete : [ `Yes | `Maybe | `No ];
         recursive : Positivity.recursion;
         hints : hints;
@@ -240,21 +240,6 @@ module rec Term : sig
     liftl :
       ('mode * ('nh * ('hb, ('mode id, D.zero) dim_entry) snoc * potential * 'et)) StructfieldAbwd.t;
   }
-
-  and (_, _, _) dataconstr =
-    | Dataconstr : {
-        args : ('mode, 'p, 'a, 'pa) tel;
-        indices : (('mode, 'pa, kinetic) term, 'i) Vec.t;
-      }
-        -> ('mode, 'p, 'i) dataconstr
-
-  and ('mode, 'a, 'b, 'ab) tel =
-    | Emp : ('mode, 'a, Fwn.zero, 'a) tel
-    | Ext :
-        string option
-        * ('mode, 'modality, 'a, kinetic) modal_term
-        * ('mode, ('a, ('modality, D.zero) dim_entry) snoc, 'b, 'ab) tel
-        -> ('mode, 'a, 'b Fwn.suc, 'ab) tel
 
   and (_, _, _, _) env =
     | Emp : 'mode Mode.t * 'n D.t -> ('mode, 'a, 'n, 'mode emp) env
@@ -532,7 +517,8 @@ end = struct
     (* A datatype stores its family of constructors, whether it is discrete, whether it has recursive constructors, and also its number of indices.  (The former two are not determined in the latter if there happen to be zero constructors). *)
     | Data : {
         indices : 'i Fwn.t;
-        constrs : (Constr.t, ('mode, 'a, 'i) dataconstr) Abwd.t;
+        (* Each constructor is stored as its full function-type: the iterated (modal, zero-dimensional) pi-type over its argument telescope whose codomain is the datatype family applied to the parameters and indices.  It is walked on demand, evaluating and introducing the arguments (e.g. by ext_pi in match typechecking) to reach the codomain, off which the index values are read; its arity and argument names alone are available more cheaply via Telescope.pi_arity and Telescope.pi_names.  For a non-indexed datatype, where the user need not write an output type, the codomain is synthesized as the datatype applied to its parameters.  The readback of a higher-dimensionally degenerated datatype stores a higher-dimensional pi-type here; that is used only for display and is not re-evaluable. *)
+        constrs : (Constr.t, ('mode, 'a, kinetic) term) Abwd.t;
         discrete : [ `Yes | `Maybe | `No ];
         recursive : Positivity.recursion;
         (* Variable-name hints, for displaying anonymous variables of this type. *)
@@ -581,23 +567,6 @@ end = struct
     liftl :
       ('mode * ('nh * ('hb, ('mode id, D.zero) dim_entry) snoc * potential * 'et)) StructfieldAbwd.t;
   }
-
-  (* A datatype constructor has a telescope of arguments and a list of index values depending on those arguments. *)
-  and (_, _, _) dataconstr =
-    | Dataconstr : {
-        args : ('mode, 'p, 'a, 'pa) tel;
-        indices : (('mode, 'pa, kinetic) term, 'i) Vec.t;
-      }
-        -> ('mode, 'p, 'i) dataconstr
-
-  (* A telescope is a list of types, each dependent on the previous ones.  Note that 'a and 'ab are lists of dimensions, but 'b is just a forwards natural number counting the number of *zero-dimensional* variables added to 'a to get 'ab.  The variables bound in a telescope are all zero-dimensional, but they can be nontrivially modally annotated.  *)
-  and ('mode, 'a, 'b, 'ab) tel =
-    | Emp : ('mode, 'a, Fwn.zero, 'a) tel
-    | Ext :
-        string option
-        * ('mode, 'modality, 'a, kinetic) modal_term
-        * ('mode, ('a, ('modality, D.zero) dim_entry) snoc, 'b, 'ab) tel
-        -> ('mode, 'a, 'b Fwn.suc, 'ab) tel
 
   (* A version of an environment that involves terms rather than values.  Used mainly when reading back metavariables.  The first argument is the mode, the second is the checked-length of the context *in* which the environment is defined (its domain, as a context morphism), the third is its dimension, and the fourth is the checked-length of the context of types of the values in the environment (its codomain, as a context morphism).  *)
   and (_, _, _, _) env =
@@ -730,12 +699,15 @@ let modal_id : type mode a s.
 
 let field mode tm f = Field (Kinetic, modal_id mode tm, f, ins_zero D.zero)
 
+(* A telescope is a list of types, each dependent on the previous ones.  Note that 'a and 'ab are lists of dimensions, but 'b is just a forwards natural number counting the number of *zero-dimensional* variables added to 'a to get 'ab.  The variables bound in a telescope are all zero-dimensional, but they can be nontrivially modally annotated.  *)
 module Telescope = struct
-  type ('mode, 'a, 'b, 'ab) t = ('mode, 'a, 'b, 'ab) Term.tel
-
-  let rec length : type mode a b ab. (mode, a, b, ab) t -> b Fwn.t = function
-    | Emp -> Zero
-    | Ext (_, _, tel) -> Suc (length tel)
+  type ('mode, 'a, 'b, 'ab) t =
+    | Emp : ('mode, 'a, Fwn.zero, 'a) t
+    | Ext :
+        string option
+        * ('mode, 'modality, 'a, kinetic) modal_term
+        * ('mode, ('a, ('modality, D.zero) dim_entry) snoc, 'b, 'ab) t
+        -> ('mode, 'a, 'b Fwn.suc, 'ab) t
 
   let rec pis : type mode a b ab.
       (mode, a, b, ab) t -> (mode, ab, kinetic) term -> (mode, a, kinetic) term =
@@ -744,19 +716,32 @@ module Telescope = struct
     | Emp -> cod
     | Ext (x, dom, doms) ->
         pi (singleton_variables D.zero (binder_name_of_option x)) dom (pis doms cod)
-
-  let rec lams : type mode a b ab.
-      (mode, a, b, ab) t -> (mode, ab, kinetic) term -> (mode, a, kinetic) term =
-   fun doms body ->
-    match doms with
-    | Emp -> body
-    | Ext (x, Modal (modality, _, _), doms) ->
-        Lam
-          ( singleton_variables D.zero (binder_name_of_option x),
-            D.zero,
-            Modality.filter_zero modality,
-            lams doms body )
 end
+
+(* Count the number of zero-dimensional pi-types on the front of a term, i.e. the length of the argument telescope of the constructor whose function-type this is, without reconstructing the telescope.  Used to determine a datatype constructor's arity from its stored function-type.  We peel only zero-dimensional pis: a dimension-killing modality can have a zero-dimensional domain cube on a positive-dimensional pi, which must not be counted, and the codomain of a higher pi is not a constructor argument. *)
+let rec pi_arity : type mode a. (mode, a, kinetic) term -> Fwn.wrapped = function
+  | Pi { x = _; filter; doms = Modal (modality, _, _); cods } -> (
+      match D.compare_zero (CodCube.dim cods) with
+      | Pos _ -> Wrap Zero
+      | Zero ->
+          let Eq = Modality.filter_uniq filter (Modality.filter_zero modality) in
+          let (Cod (cfilter, cod)) = CodCube.find_top cods in
+          let Eq = Modality.filter_uniq cfilter (Modality.filter_zero modality) in
+          let (Wrap n) = pi_arity cod in
+          Wrap (Suc n))
+  | _ -> Wrap Zero
+
+(* Collect the binder names of the zero-dimensional pi-types on the front of a term, in order, as a plain list — the names of the argument telescope of the constructor whose function-type this is, without reconstructing the telescope.  Used to name the pattern variables when displaying a "split". *)
+let rec pi_names : type mode a. (mode, a, kinetic) term -> string option list = function
+  | Pi { x; filter; doms = Modal (modality, _, _); cods } -> (
+      match D.compare_zero (CodCube.dim cods) with
+      | Pos _ -> []
+      | Zero ->
+          let Eq = Modality.filter_uniq filter (Modality.filter_zero modality) in
+          let (Cod (cfilter, cod)) = CodCube.find_top cods in
+          let Eq = Modality.filter_uniq cfilter (Modality.filter_zero modality) in
+          option_of_binder_name (top_variable x) :: pi_names cod)
+  | _ -> []
 
 let rec dim_term_env : type mode a n b. (mode, a, n, b) env -> n D.t = function
   | Emp (_, n) -> n

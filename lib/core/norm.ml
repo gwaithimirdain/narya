@@ -640,7 +640,7 @@ and apply_unfilled_data_index : type mode m j ij mk dom modl an k.
     m D.t ->
     (mode, kinetic) lazy_eval ->
     ((m, mode normal) CubeOf.t, j Fwn.suc, ij) Fillvec.t ->
-    (Constr.t, (mode, m, ij) dataconstr) Abwd.t ->
+    (Constr.t, (mode, m) dataconstr) Abwd.t ->
     [ `Yes | `Maybe | `No ] ->
     Positivity.recursion ->
     hints ->
@@ -1464,13 +1464,10 @@ and eval_canonical : type mode m a.
  fun env can ->
   match can with
   | Data { indices; constrs; discrete; recursive; hints; tyfam } ->
+      let dim, mode = (dim_env env, mode_env env) in
       (* The type family (the datatype applied to its parameters, e.g. "Vec A") was read back when this datatype was checked; we now evaluate it, lazily to avoid the circularity of re-entering this same evaluation eagerly.  Its type we take from the resulting neutral, since that is computed fully-instantiated at the current dimension (whereas re-evaluating a read-back type term would not be). *)
       let tyfam = lazy_eval env tyfam in
-      let constrs =
-        Abwd.map
-          (fun (Term.Dataconstr { args; indices }) -> Value.Dataconstr { env; args; indices })
-          constrs in
-      let dim, mode = (dim_env env, mode_env env) in
+      let constrs = Abwd.map (fun ty -> Value.Dataconstr { env; ty }) constrs in
       let canonical =
         Data { dim; tyfam; indices = Fillvec.empty indices; constrs; discrete; recursive; hints }
       in
@@ -2140,3 +2137,58 @@ let () =
   View.term_viewer := { view = view_term };
   View.type_viewer := { view = view_type };
   View.eval_forcer := { force = force_eval }
+
+(* Extract the pi-type data from an uninstantiated pi-type value. *)
+type (_, _) viewed_pi =
+  | Viewed_pi : ('dom, 'modality, 'mode, 'k, 'n) Value.pi_args -> ('mode, 'n) viewed_pi
+
+let view_pi : type mode n. string -> n D.t -> (mode, kinetic) value -> (mode, n) viewed_pi =
+ fun err n ty ->
+  match view_term ty with
+  | Neu { value; _ } -> (
+      match force_eval value with
+      | Val (Canonical { canonical = Pi pi; ins; tyargs; _ }) -> (
+          let Eq = eq_of_ins_zero ins in
+          match (D.compare_zero (TubeOf.inst tyargs), D.compare (BindCube.dim pi.cods) n) with
+          | Zero, Eq -> Viewed_pi pi
+          | Pos _, _ -> fatal (Anomaly ("instantiated constructor pi-type in " ^ err))
+          | _, Neq -> fatal (Dimension_mismatch (err, BindCube.dim pi.cods, n)))
+      | _ -> fatal (Anomaly ("constructor type is not a pi-type in " ^ err)))
+  | _ -> fatal (Anomaly ("constructor type is not neutral in " ^ err))
+
+(* Given the evaluated domain cube of one (modal) argument of a datatype constructor of dimension n, and the corresponding arguments of the lower-dimensional versions of the constructor (extracted from the instantiation of the datatype), build the boundary tube of the top-dimensional argument.  The argument is k-dimensional, where k is the modal filtering of n; the value associated to a face of k is the argument of the lower-dimensional constructor at the corresponding face of n lifted along the filter.  (This makes sense because when a constructor is evaluated, the modally filtered arguments are degenerated to obtain values for the boundary constructors, and the face and degeneracy cancel out.)  Its type is the corresponding face of the domain cube, instantiated at the previously built faces. *)
+let modal_boundary_tube : type dom modality mode k n.
+    string ->
+    n D.t ->
+    (dom, modality, mode, k, n) Modality.filter_dim ->
+    (k, (dom, kinetic) value) CubeOf.t ->
+    (D.zero, n, n, (mode, kinetic) modal_value) TubeOf.t ->
+    (D.zero, k, k, dom normal) TubeOf.t =
+ fun err n filter doms tyargs ->
+  let modality = Modality.filter_modality filter in
+  let tyargtbl = Hashtbl.create 10 in
+  TubeOf.build D.zero
+    (D.zero_plus (CubeOf.dim doms))
+    {
+      build =
+        (fun fa ->
+          let (Pface_filter (_, fb)) = Modality.pface_filter n fa filter in
+          let (Modal (argmod, argtm)) = TubeOf.find tyargs fb in
+          match Modality.compare argmod modality with
+          | Neq -> fatal (Modality_mismatch (`Internal, err, argmod, modality))
+          | Eq ->
+              let fa = sface_of_tface fa in
+              let fb = sface_of_tface fb in
+              let argty : (dom, kinetic) value =
+                inst (CubeOf.find doms fa)
+                  (TubeOf.build D.zero
+                     (D.zero_plus (dom_sface fb))
+                     {
+                       build =
+                         (fun fc ->
+                           Hashtbl.find tyargtbl (SFace_of (comp_sface fb (sface_of_tface fc))));
+                     }) in
+              let argnorm : dom normal = { tm = argtm; ty = Lazy.from_val argty } in
+              Hashtbl.add tyargtbl (SFace_of fb) argnorm;
+              argnorm);
+    }

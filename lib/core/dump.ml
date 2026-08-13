@@ -297,7 +297,7 @@ module F = struct
         fprintf ppf "Data (%d, (%a))" (Fwn.to_int indices)
           (pp_print_list
              ~pp_sep:(fun ppf () -> pp_print_string ppf " | ")
-             (fun ppf (c, d) -> fprintf ppf "%s %a" (Constr.to_string c) dataconstr d))
+             (fun ppf (c, d) -> fprintf ppf "%s %a" (Constr.to_string c) term d))
           (Bwd.to_list constrs)
     | Codata { eta; fields; _ } ->
         fprintf ppf "Codata (%s, (%s))"
@@ -308,18 +308,6 @@ module F = struct
              (Bwd_extra.to_list_map
                 (fun (CodatafieldAbwd.Entry (f, _)) -> Field.to_string f)
                 fields))
-
-  and dataconstr : type mode p i. formatter -> (mode, p, i) Term.dataconstr -> unit =
-   fun ppf (Dataconstr { args; indices = _ }) -> fprintf ppf "%a : ?" tel args
-
-  and tel : type mode a b ab. formatter -> (mode, a, b, ab) Term.tel -> unit =
-   fun ppf -> function
-    | Emp -> ()
-    | Ext (x, Modal (_, _, ty), rest) ->
-        fprintf ppf "(%a : %a)"
-          (pp_print_option ~none:(fun ppf () -> pp_print_string ppf "_") pp_print_string)
-          x term ty;
-        tel ppf rest
 
   let rec check : type a. formatter -> a check -> unit =
    fun ppf c ->
@@ -474,7 +462,6 @@ let binder v = PPrint.utf8string (Format.asprintf "%a" F.binder v)
 let env v = PPrint.utf8string (Format.asprintf "%a" F.env v)
 let denv depth v = PPrint.utf8string (Format.asprintf "%a" (F.denv depth) v)
 let term v = PPrint.utf8string (Format.asprintf "%a" F.term v)
-let tel v = PPrint.utf8string (Format.asprintf "%a" F.tel v)
 let check v = PPrint.utf8string (Format.asprintf "%a" F.check v)
 let synth v = PPrint.utf8string (Format.asprintf "%a" F.synth v)
 let apps v = PPrint.utf8string (Format.asprintf "%a" F.apps v)

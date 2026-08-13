@@ -874,14 +874,13 @@ let split_match_cases : type mode a b.
   let module S = Monad.State (Bool) in
   let module LS = Monad.ListT (S) in
   let open Monad.Ops (LS) in
-  let rec do_args : type a p ap.
-      (mode, a, p, ap) Term.Telescope.t ->
+  let do_args (names : string option list) :
       (No.plus_omega, No.strict, No.plus_omega, No.nonstrict) parse located list =
-   fun args ->
-    match args with
-    | Emp -> []
-    | Ext (None, _, args) -> locate_opt None (Placeholder []) :: do_args args
-    | Ext (Some x, _, args) -> locate_opt None (Ident ([ x ], [])) :: do_args args in
+    List.map
+      (function
+        | None -> locate_opt None (Placeholder [])
+        | Some x -> locate_opt None (Ident ([ x ], [])))
+      names in
   let rec go = function
     | [] ->
         let* higher = LS.lift S.get in
@@ -899,7 +898,7 @@ let split_match_cases : type mode a b.
                   match D.compare_zero dim with
                   | Zero -> return ()
                   | Pos _ -> LS.lift (S.put true) in
-                let* c, Dataconstr { args; _ } = S.return (Bwd.to_list constrs) in
+                let* c, Dataconstr { ty; _ } = S.return (Bwd.to_list constrs) in
                 let left_ok = No.le_refl No.plus_omega in
                 let right_ok = No.le_refl No.plus_omega in
                 let first =
@@ -907,7 +906,7 @@ let split_match_cases : type mode a b.
                     (List.fold_left
                        (fun fn arg -> locate_opt None (App { fn; arg; left_ok; right_ok }))
                        (locate_opt None (Constr (Constr.to_string c, [])))
-                       (do_args args)) in
+                       (do_args (Term.pi_names ty))) in
                 let* rest = go tms in
                 if List.length rest = 2 then return (first :: rest)
                 else return (first :: tok (Op ",") :: rest)
@@ -1208,9 +1207,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                             Emp fields,
                           Left (RBracket, ([], None)) ) in
                     locate_opt None @@ outfix ~notn:Builtins.comatch ~inner)
-            | Canonical (_, Data { constrs = Snoc (Emp, (constr, Dataconstr { args; _ })); _ }, _, _)
+            | Canonical (_, Data { constrs = Snoc (Emp, (constr, Dataconstr { ty; _ })); _ }, _, _)
               ->
-                let nargs = Fwn.to_int (Term.Telescope.length args) in
+                let nargs = List.length (Term.pi_names ty) in
                 unparse_spine names (`Constr constr)
                   (Bwd.init nargs (fun _ -> { unparse = (fun li ri -> hole li ri) }))
                   No.Interval.entire No.Interval.entire
@@ -1237,16 +1236,16 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                   type t = Names.wrapped
                 end) in
             let open Monad.Ops (NameBranches) in
-            let rec constr_args : type a p ap n k.
+            let rec constr_args : type n k.
                 n Names.t ->
                 k D.t ->
                 Variables.hints list ->
                 ?acc:unparser Bwd.t ->
-                (_, a, p, ap) Term.Telescope.t ->
+                string option list ->
                 unparser Bwd.t * Names.wrapped =
              fun names dim hints ?(acc = Emp) -> function
-               | Emp -> (acc, Wrap names)
-               | Ext (x, _, args) ->
+               | [] -> (acc, Wrap names)
+               | x :: args ->
                    (* If the argument is anonymous, use any display hints from its type. *)
                    let hint, hints =
                      match hints with
@@ -1276,13 +1275,14 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                             | Zero -> return ()
                             | Pos _ ->
                                 NameBranches.stateless (Branches.lift (HigherBranch.put true)) in
-                          let* c, Dataconstr { env; args; _ } =
+                          let* c, Dataconstr { env; ty } =
                             NameBranches.stateless (HigherBranch.return (Bwd.to_list constrs)) in
                           let* (Wrap names) = NameBranches.get in
                           let arg_hints =
                             Reporter.try_with ~fatal:(fun _ -> Emp) @@ fun () ->
-                            Domvars.constr_arg_hints ctx env args in
-                          let cargs, newnames = constr_args names dim (Bwd.to_list arg_hints) args in
+                            Domvars.constr_arg_hints ctx env ty in
+                          let cargs, newnames =
+                            constr_args names dim (Bwd.to_list arg_hints) (Term.pi_names ty) in
                           let* () = NameBranches.put newnames in
                           let first =
                             Term
