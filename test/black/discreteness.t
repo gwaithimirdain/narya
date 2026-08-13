@@ -11,14 +11,14 @@ Arbitrary types are not discrete:
   > EOF
 
   $ narya -source-only -parametric -arity 1 -direction d arb.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
-   ￫ error[E1003]
+   ￫ error[E0401]
    ￭ command-line exec string
    1 | def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.
-     ^ index
-         t1
-       of constructor application doesn't match the corresponding index
-         t2
-       of datatype instance: unequal head variables:
+     ^ term synthesized type
+         Jd (A⁽ᵈ⁾ a) t1 t1
+       but is being checked against type
+         Jd (A⁽ᵈ⁾ a) t1 t2
+       unequal head variables:
          t1
        does not equal
          t2
@@ -28,14 +28,14 @@ Arbitrary types are not discrete:
 They remain so even when discreteness is on:
 
   $ narya -source-only -parametric -arity 1 -direction d -deprecated-discreteness arb.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
-   ￫ error[E1003]
+   ￫ error[E0401]
    ￭ command-line exec string
    1 | def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.
-     ^ index
-         t1
-       of constructor application doesn't match the corresponding index
-         t2
-       of datatype instance: unequal head variables:
+     ^ term synthesized type
+         Jd (A⁽ᵈ⁾ a) t1 t1
+       but is being checked against type
+         Jd (A⁽ᵈ⁾ a) t1 t2
+       unequal head variables:
          t1
        does not equal
          t2
@@ -63,14 +63,14 @@ There are no discrete datatypes if discreteness is off:
    ￫ info[I0000]
    ￮ constant Jd defined
   
-   ￫ error[E1003]
+   ￫ error[E0401]
    ￭ command-line exec string
    1 | def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.
-     ^ index
-         t1
-       of constructor application doesn't match the corresponding index
-         t2
-       of datatype instance: unequal head variables:
+     ^ term synthesized type
+         Jd (ℕ⁽ᵈ⁾ n) t1 t1
+       but is being checked against type
+         Jd (ℕ⁽ᵈ⁾ n) t1 t2
+       unequal head variables:
          t1
        does not equal
          t2
@@ -90,14 +90,14 @@ Discrete datatypes are not themselves propositions:
    ￫ info[I0000]
    ￮ constant Jd defined
   
-   ￫ error[E1003]
+   ￫ error[E0401]
    ￭ command-line exec string
    1 | def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.
-     ^ index
-         t1
-       of constructor application doesn't match the corresponding index
-         t2
-       of datatype instance: unequal head variables:
+     ^ term synthesized type
+         Jd T t1 t1
+       but is being checked against type
+         Jd T t1 t2
+       unequal head variables:
          t1
        does not equal
          t2
@@ -154,14 +154,14 @@ Datatypes with nondiscrete parameters are not discrete:
    ￫ info[I0000]
    ￮ constant Jd defined
   
-   ￫ error[E1003]
+   ￫ error[E0401]
    ￭ command-line exec string
    1 | def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.
-     ^ index
-         t1
-       of constructor application doesn't match the corresponding index
-         t2
-       of datatype instance: unequal head variables:
+     ^ term synthesized type
+         Jd (List⁽ᵈ⁾ A⁽ᵈ⁾ l) t1 t1
+       but is being checked against type
+         Jd (List⁽ᵈ⁾ A⁽ᵈ⁾ l) t1 t2
+       unequal head variables:
          t1
        does not equal
          t2
@@ -193,14 +193,14 @@ Even trivial parameters:
    ￫ info[I0000]
    ￮ constant Jd defined
   
-   ￫ error[E1003]
+   ￫ error[E0401]
    ￭ command-line exec string
    1 | def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.
-     ^ index
-         t1
-       of constructor application doesn't match the corresponding index
-         t2
-       of datatype instance: unequal head variables:
+     ^ term synthesized type
+         Jd (param_empty⁽ᵈ⁾ A⁽ᵈ⁾ l) t1 t1
+       but is being checked against type
+         Jd (param_empty⁽ᵈ⁾ A⁽ᵈ⁾ l) t1 t2
+       unequal head variables:
          t1
        does not equal
          t2
@@ -300,14 +300,14 @@ But datatypes with nondiscrete indices, even trivial ones, are not discrete:
    ￫ info[I0000]
    ￮ constant Jd defined
   
-   ￫ error[E1003]
+   ￫ error[E0401]
    ￭ command-line exec string
    1 | def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.
-     ^ index
-         t1
-       of constructor application doesn't match the corresponding index
-         t2
-       of datatype instance: unequal head variables:
+     ^ term synthesized type
+         Jd (index_unit⁽ᵈ⁾ n⁽ᵈ⁾ z) t1 t1
+       but is being checked against type
+         Jd (index_unit⁽ᵈ⁾ n⁽ᵈ⁾ z) t1 t2
+       unequal head variables:
          t1
        does not equal
          t2
@@ -336,14 +336,14 @@ Datatypes with constructors having non-discrete arguments are not discrete:
    ￫ info[I0000]
    ￮ constant Jd defined
   
-   ￫ error[E1003]
+   ￫ error[E0401]
    ￭ command-line exec string
    1 | def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.
-     ^ index
-         t1
-       of constructor application doesn't match the corresponding index
-         t2
-       of datatype instance: unequal head variables:
+     ^ term synthesized type
+         Jd (foo⁽ᵈ⁾ f) t1 t1
+       but is being checked against type
+         Jd (foo⁽ᵈ⁾ f) t1 t2
+       unequal head variables:
          t1
        does not equal
          t2
@@ -465,14 +465,14 @@ But nondiscreteness of any of them throws the others off:
    ￫ info[I0000]
    ￮ constant Jd defined
   
-   ￫ error[E1003]
+   ￫ error[E0401]
    ￭ command-line exec string
    1 | def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.
-     ^ index
-         t1
-       of constructor application doesn't match the corresponding index
-         t2
-       of datatype instance: unequal head variables:
+     ^ term synthesized type
+         Jd (empty2⁽ᵈ⁾ e) t1 t1
+       but is being checked against type
+         Jd (empty2⁽ᵈ⁾ e) t1 t2
+       unequal head variables:
          t1
        does not equal
          t2

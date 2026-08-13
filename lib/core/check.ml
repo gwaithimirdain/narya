@@ -990,11 +990,11 @@ and check_constr : type mode a b s.
   match view_type ~severity:Asai.Diagnostic.Error ty "typechecking constr" with
   | Canonical
       (type hmode mn m n)
-      ((name, Data { dim; indices = Filled ty_indices; constrs; _ }, ins, tyargs) :
+      ((name, Data { dim; indices = Filled _; constrs; _ }, ins, tyargs) :
         (hmode, kinetic) head * _ * (mn, m, n) insertion * (D.zero, mn, mn, mode normal) TubeOf.t)
     -> (
       let Eq = eq_of_ins_zero ins in
-      (* We don't need the *types* of the parameters or indices, which are stored in the type of the constant name.  The variable ty_indices (defined above) contains the *values* of the indices of this instance of the datatype, while tyargs (defined by view_type, above) contains the instantiation arguments of this instance of the datatype.  We check that the dimensions agree, and find our current constructor in the datatype definition. *)
+      (* We don't need the *types* of the parameters or indices, which are stored in the type of the constant name; the parameters are baked into the constructor's stored function-type, and the indices are compared at the end.  The variable tyargs (defined by view_type, above) contains the instantiation arguments of this instance of the datatype.  We check that the dimensions agree, and find our current constructor in the datatype definition. *)
       match Abwd.find_opt constr constrs with
       | None -> fatal ?loc:constr_loc (No_such_constructor (`Data (phead name), constr))
       | Some (Dataconstr { env; ty = constr_ty }) ->
@@ -1035,33 +1035,14 @@ and check_constr : type mode a b s.
           (* Now we walk the evaluation of the constructor's function-type, checking each user-supplied argument against the current domain (instantiated at the corresponding arguments of the lower-dimensional constructors, from tyarg_args) and applying the codomain to the checked argument to continue.  The final codomain is then the constructor's output type (the datatype applied to the parameters and indices) evaluated at all the checked arguments. *)
           let out, newargs =
             check_at_pi constr ctx (dim_env env) (eval_term env constr_ty) args tyarg_args in
-          (* The last thing to do is check that the indices of the output type are equal to those of the type we are checking against.  (So a constructor application "checks against the parameters but synthesizes the indices" in some sense.)  We extract them directly from the evaluated output, which is the datatype fully applied to its indices; this evaluation is skipped for non-indexed datatypes, where there is nothing to compare.  I *think* it should suffice to check the top-dimensional ones, the lower-dimensional ones being automatic.  For now, we check all of them, raising an anomaly in case I was wrong about that.  *)
-          (match ty_indices with
-          | [] -> ()
-          | _ :: _ ->
-              let constr_indices =
-                indices_of_out "checking constr" out (dim_env env) (Vec.length ty_indices) in
-              Vec.miter
-                (fun [ t1s; t2s ] ->
-                  CubeOf.miter
-                    {
-                      it =
-                        (fun fa [ t1; t2 ] ->
-                          match equal_at ctx t1.tm t2.tm (Lazy.force t2.ty) with
-                          | Ok () -> ()
-                          | Error err -> (
-                              match is_id_sface fa with
-                              | Some _ ->
-                                  fatal
-                                    (Unequal_indices
-                                       ( PNormal (ctx, { tm = t1.tm; ty = t2.ty }),
-                                         PNormal (ctx, t2),
-                                         err ))
-                              | None -> fatal (Anomaly "mismatching lower-dimensional constructors")
-                              ));
-                    }
-                    [ t1s; t2s ])
-                [ constr_indices; ty_indices ]);
+          (* The last thing to do is check that this output type is the type we are checking against.  Since the constructor's function-type came from that very type, the parameters agree automatically, so this amounts to comparing the indices; thus a constructor application "checks against the parameters but synthesizes the indices" in some sense.  The output is uninstantiated, a "vertex" of the higher-dimensional type, so we instantiate it at the same arguments before comparing. *)
+          let outty = inst out tyargs in
+          (match equal_val ctx outty ty with
+          | Ok () -> ()
+          | Error why ->
+              fatal
+                (Unequal_synthesized_type
+                   { got = PVal (ctx, outty); expected = PVal (ctx, ty); which = None; why }));
           realize status (Term.Constr (constr, dim, newargs)))
   (* A constructor can also check at a function-type by eta-expansion. *)
   | Canonical (_, Pi { x; _ }, _, _) ->

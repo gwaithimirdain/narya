@@ -707,13 +707,16 @@ As noted above, such local case trees are generative: textually identical defini
 
    def fails : dec1_is_dec2 ≔ rfl.
    
-      ￫ error[E1003]
+      ￫ error[E0401]
     1 | def fails : dec1_is_dec2 ≔ rfl.
-      ^ index
-          _let.1.dec{…}
-        of constructor application doesn't match the corresponding index
-          _let.2.dec{…}
-        of datatype instance
+      ^ term synthesized type
+          Jd (ℕ → ℕ) _let.1.dec{…} _let.1.dec{…}
+        but is being checked against type
+          Jd (ℕ → ℕ) _let.1.dec{…} _let.2.dec{…}
+        unequal head metavariables:
+          _let.1.dec
+        does not equal
+          _let.2.dec
 
 Note that both local functions are called ``_let.N.dec`` based on their name when defined, but their metavariable counters are different, and they are unequal.
 

@@ -163,7 +163,6 @@ module Code = struct
     | Missing_instantiation_constructor :
         Constr.t * [ `Constr of Constr.t | `Nonconstr of printable ]
         -> t
-    | Unequal_indices : printable * printable * Unequal.t -> t
     | Unbound_variable : string * (string list * string list) list -> t
     | Ill_scoped_connection : t
     | Undefined_constant : printable -> t
@@ -365,7 +364,6 @@ module Code = struct
     | Comatching_at_degenerated_codata _ -> Error
     | No_such_constructor _ -> Error
     | Missing_instantiation_constructor _ -> Error
-    | Unequal_indices _ -> Error
     | Unbound_variable _ -> Error
     | Ill_scoped_connection -> Error
     | Undefined_constant _ -> Bug
@@ -578,7 +576,6 @@ module Code = struct
     | No_such_constructor _ -> "E1000"
     | Wrong_number_of_arguments_to_constructor _ -> "E1001"
     | Missing_instantiation_constructor _ -> "E1002"
-    | Unequal_indices _ -> "E1003"
     (* Matches *)
     (* - Match variable *)
     | Unnamed_variable_in_match -> "E1100"
@@ -878,12 +875,6 @@ module Code = struct
               (Constr.to_string exp);
             pp_printed ppf pp_got;
             pp_close_box ppf ()
-      | Unequal_indices (t1, t2, why) ->
-          let str, p1, p2 = Unequal.printables why in
-          textf
-            "@[<hv 0>index@;<1 2>%a@ of constructor application doesn't match the corresponding index@;<1 2>%a@ of datatype instance: unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a@]"
-            pp_printed (print t1) pp_printed (print t2) str pp_printed (print p1) pp_printed
-            (print p2)
       | Unbound_variable (c, alt) -> (
           match alt with
           | [] -> textf "unbound variable: %s" c
