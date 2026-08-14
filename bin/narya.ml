@@ -35,7 +35,10 @@ let theory_flags =
           note_deprecated_flag ("-" ^ e.flag);
           set_theory e.name;
           mode_theories := !mode_theories + 1 in
-        ("-" ^ e.flag, Arg.Unit set, "Select " ^ String.uncapitalize_ascii e.doc)
+        (* A theory with no description is hidden from the usage message. *)
+        ( "-" ^ e.flag,
+          Arg.Unit set,
+          if e.doc = "" then "" else "Select " ^ String.uncapitalize_ascii e.doc )
         :: List.map
              (fun alias -> ("-" ^ String.concat "-" alias, Arg.Unit set, "alias of -" ^ e.flag))
              e.aliases)

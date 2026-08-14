@@ -212,6 +212,15 @@ let all : entry list =
     };
     {
       default with
+      name = [ "inconsistent"; "local" ];
+      flag = "inconsistent-local";
+      install = Local.install (module Local.Inconsistent : Local.Variant);
+      requires_parametric = true;
+      (* Hidden: this variant exists only to exhibit the inconsistency that the discrete local mode theory avoids, so it is deliberately left out of the usage message. *)
+      doc = "";
+    };
+    {
+      default with
       name = [ "tconn" ];
       flag = "tconn";
       install = Tconn.install (module Tconn.Ordinary : Tconn.Variant);
