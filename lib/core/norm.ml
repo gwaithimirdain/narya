@@ -2219,9 +2219,9 @@ let modal_boundary_tube : type dom modality mode k n.
               argnorm);
     }
 
-(* To typecheck, equality-check, or read back a higher-dimensional instance of a datatype constructor, its instantiation arguments (a tube of lower-dimensional terms) must all be applications of the same constructor; we extract their arguments to use as the boundaries of the arguments of the constructor being checked/compared/read back.  What we naturally have is a *tube of lists* (one list of arguments for each face of the tube), but what the callers want is a *vector of tubes*, one tube of boundary arguments for each of the constructor's own arguments; we do the conversion with a multiple-output traversal.  The three "wrong_*" callbacks build the errors to report for a mismatched constructor, an instantiation argument that isn't a constructor application at all, or one with the wrong number of arguments; ~check_dim additionally requests a sanity check that each instantiation argument has the dimension appropriate to its face of the tube, reporting a mismatch (labeled by the given string) as a bug. *)
+(* To typecheck, equality-check, or read back a higher-dimensional instance of a datatype constructor, its instantiation arguments (a tube of lower-dimensional terms) must all be applications of the same constructor, at the dimension appropriate to their face of the tube.  We extract their arguments to use as the boundaries of the arguments of the constructor being checked/compared/read back.  What we naturally have is a *tube of lists* (one list of arguments for each face of the tube), but what the callers want is a *vector of tubes*, one tube of boundary arguments for each of the constructor's own arguments; we do the conversion with a multiple-output traversal.  The three "wrong_*" callbacks build the errors to report for a mismatched constructor, an instantiation argument that isn't a constructor application at all, or one with the wrong number of arguments; check_dim labels the (bug-level) error for a dimension mismatch. *)
 let find_tyarg_args : type mode mn b.
-    ?check_dim:string ->
+    check_dim:string ->
     Constr.t ->
     b Fwn.t ->
     (D.zero, mn, mn, mode normal) TubeOf.t ->
@@ -2229,7 +2229,7 @@ let find_tyarg_args : type mode mn b.
     wrong_constr:(Constr.t -> Code.t) ->
     not_constr:(mode normal -> Code.t) ->
     ((D.zero, mn, mn, (mode, kinetic) modal_value) TubeOf.t, b) Vec.t =
- fun ?check_dim constr lgth tyargs ~wrong_arity ~wrong_constr ~not_constr ->
+ fun ~check_dim constr lgth tyargs ~wrong_arity ~wrong_constr ~not_constr ->
   let (Conses (cs, bs)) = Tlist.Tlist.conses lgth in
   TubeOf.Heter.vec_of_hgt cs
   @@ TubeOf.pmap
@@ -2241,21 +2241,18 @@ let find_tyarg_args : type mode mn b.
            ->
              match view_term tm.tm with
              | Constr (tmname, n, tmargs) ->
-                 if tmname = constr then (
-                   (match check_dim with
-                   | None -> ()
-                   | Some err -> (
-                       match D.compare n (dom_tface fa) with
-                       | Eq -> ()
-                       | Neq -> fatal (Dimension_mismatch (err, n, dom_tface fa))));
-                   match
-                     Vec.of_list_length_map
-                       (fun (Value.Modal (xfilt, x)) : (_, _) modal_value ->
-                         Modal (Modality.filter_modality xfilt, CubeOf.find_top x))
-                       lgth tmargs
-                   with
-                   | Some ys -> CubeOf.Heter.hft_of_vec cs ys
-                   | None -> fatal (wrong_arity ()))
+                 if tmname = constr then
+                   match D.compare n (dom_tface fa) with
+                   | Neq -> fatal (Dimension_mismatch (check_dim, n, dom_tface fa))
+                   | Eq -> (
+                       match
+                         Vec.of_list_length_map
+                           (fun (Value.Modal (xfilt, x)) : (_, _) modal_value ->
+                             Modal (Modality.filter_modality xfilt, CubeOf.find_top x))
+                           lgth tmargs
+                       with
+                       | Some ys -> CubeOf.Heter.hft_of_vec cs ys
+                       | None -> fatal (wrong_arity ()))
                  else fatal (wrong_constr tmname)
              | _ -> fatal (not_constr tm));
        }

@@ -400,7 +400,7 @@ and readback_at : type mode a z s.
           let lgth = Vec.length xargs in
           (* If a higher-dimensional constructor belongs to a higher version of a datatype, the instantiation arguments of the latter must be lower-dimensional versions of the same constructor.  We extract their arguments to form the boundaries of the types of the arguments of our current constructor. Specifically, tyargs is a tube of normals, each of which is expected to be a lower-dimensional instance of the same constructor, which therefore has a list of modal cubes as arguments.  We want to extract the top element of each of those cubes to form a *list of tubes* of modal values, whereas what we naturally have, after peeling off the constructors, is a *tube of lists*.  We do the conversion with our multiple-output traversal with a variable number of outputs, specifically the length of the telescope. *)
           let tyarg_args =
-            find_tyarg_args xconstr lgth tyargs
+            find_tyarg_args ~check_dim:"reading back constrs" xconstr lgth tyargs
               ~wrong_arity:(fun () ->
                 Readback_at_wrong_type
                   "a constructor whose instantiation argument has the wrong number of arguments")

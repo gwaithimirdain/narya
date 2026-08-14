@@ -207,7 +207,7 @@ and equal_at_data : type mode m a b.
             <|> Anomaly "wrong number of constructor arguments in equality-check" in
           (* The instantiation must be at other instances of the same constructor; we take its arguments as in 'check'. *)
           let tyarg_args =
-            find_tyarg_args xconstr lgth tyargs
+            find_tyarg_args ~check_dim:"equality of constrs" xconstr lgth tyargs
               ~wrong_arity:(fun () -> Anomaly "inst arg wrong num args in readback at datatype")
               ~wrong_constr:(fun _ -> Anomaly "inst arg wrong constr in equality at datatype")
               ~not_constr:(fun _ -> Anomaly "inst arg not constr in equality at datatype") in
