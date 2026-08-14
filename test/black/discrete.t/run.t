@@ -1,6 +1,6 @@
 The nonparametric comonad mode theory currently requires -parametric.
 
-  $ narya -discrete-coreflector -e "echo 1"
+  $ narya -e "option modal ≔ discrete coreflector echo 1"
    ￫ error[E2322]
    ￮ invalid type theory options:
      the discrete coreflector mode theory requires 'option parametric'

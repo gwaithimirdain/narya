@@ -10,7 +10,7 @@ where a plain one is expected.
 
 By default, the key is not displayed:
 
-  $ narya -adjunction -e "$COUNIT" -e "$BAD"
+  $ narya -e "option modal ≔ adjunction $COUNIT" -e "$BAD"
    ￫ error[E0401]
    ￭ command-line exec string
    1 | def bad (A :△□△□| Type) (x :△□△□| A) (y :△□△□| A) : Id A (counit22 A x) y ≔ refl y
@@ -28,7 +28,7 @@ By default, the key is not displayed:
 
 With -show-unique-keys, it is displayed explicitly:
 
-  $ narya -adjunction -show-unique-keys -e "$COUNIT" -e "$BAD"
+  $ narya -show-unique-keys -e "option modal ≔ adjunction $COUNIT" -e "$BAD"
    ￫ error[E0401]
    ￭ command-line exec string
    1 | def bad (A :△□△□| Type) (x :△□△□| A) (y :△□△□| A) : Id A (counit22 A x) y ≔ refl y
@@ -46,7 +46,7 @@ With -show-unique-keys, it is displayed explicitly:
 
 -hide-unique-keys is the same as the default:
 
-  $ narya -adjunction -hide-unique-keys -e "$COUNIT" -e "$BAD"
+  $ narya -hide-unique-keys -e "option modal ≔ adjunction $COUNIT" -e "$BAD"
    ￫ error[E0401]
    ￭ command-line exec string
    1 | def bad (A :△□△□| Type) (x :△□△□| A) (y :△□△□| A) : Id A (counit22 A x) y ≔ refl y
@@ -65,7 +65,7 @@ With -show-unique-keys, it is displayed explicitly:
 The interactive "display unique keys := on" command has the same effect as
 the command-line flag:
 
-  $ narya -adjunction -e "display unique keys := on" -e "$COUNIT" -e "$BAD"
+  $ narya -e "option modal ≔ adjunction display unique keys := on" -e "$COUNIT" -e "$BAD"
    ￫ error[E0401]
    ￭ command-line exec string
    1 | def bad (A :△□△□| Type) (x :△□△□| A) (y :△□△□| A) : Id A (counit22 A x) y ≔ refl y
@@ -83,7 +83,7 @@ the command-line flag:
 
 Toggling it twice restores the default (hidden):
 
-  $ narya -adjunction -e "display unique keys := toggle" -e "display unique keys := toggle" -e "$COUNIT" -e "$BAD"
+  $ narya -e "option modal ≔ adjunction display unique keys := toggle" -e "display unique keys := toggle" -e "$COUNIT" -e "$BAD"
    ￫ error[E0401]
    ￭ command-line exec string
    1 | def bad (A :△□△□| Type) (x :△□△□| A) (y :△□△□| A) : Id A (counit22 A x) y ≔ refl y
@@ -103,4 +103,4 @@ Identity keys are never displayed, even with -show-unique-keys: a
 △□△□-locked variable used where a △□△□-locked one is expected needs no key
 at all, and none is ever printed.
 
-  $ narya -adjunction -show-unique-keys -e "def idkey (A :△□△□| Type) (x :△□△□| A) : A ≔ x"
+  $ narya -show-unique-keys -e "option modal ≔ adjunction def idkey (A :△□△□| Type) (x :△□△□| A) : A ≔ x"

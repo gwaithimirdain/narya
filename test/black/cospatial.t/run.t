@@ -96,10 +96,10 @@ A plain value cannot supply a bare ♭-locked field, since ♭ has no unit of it
 
 Nor does the reflector ʃ have a counit of its own.
 
-  $ narya -cospatial -e "def bad2 (A :ʃ| Type) (x :ʃ| A) : A ≔ x"
+  $ narya -e "option modal ≔ cospatial def bad2 (A :ʃ| Type) (x :ʃ| A) : A ≔ x"
    ￫ error[E1705]
    ￭ command-line exec string
-   1 | def bad2 (A :ʃ| Type) (x :ʃ| A) : A ≔ x
+   1 | option modal ≔ cospatial def bad2 (A :ʃ| Type) (x :ʃ| A) : A ≔ x
      ^ use of ʃ variable behind id lock requires a key
   
   [1]
@@ -114,20 +114,20 @@ The unit and counit of the induced adjunction ʃ ⊣ ♭ only go in that directi
   
   [1]
 
-  $ narya -cospatial -e "def bad4 (A :♭ʃ| Type) (x :♭ʃ| A) : A ≔ x"
+  $ narya -e "option modal ≔ cospatial def bad4 (A :♭ʃ| Type) (x :♭ʃ| A) : A ≔ x"
    ￫ error[E1705]
    ￭ command-line exec string
-   1 | def bad4 (A :♭ʃ| Type) (x :♭ʃ| A) : A ≔ x
+   1 | option modal ≔ cospatial def bad4 (A :♭ʃ| Type) (x :♭ʃ| A) : A ≔ x
      ^ use of ♭ʃ variable behind id lock requires a key
   
   [1]
 
 And there are no 2-cells crossing directly between ʃ and ♭ in the "wrong" direction.
 
-  $ narya -cospatial -e "def bad5 (A :ʃ| Type) (x :♭| A) : A ≔ x"
+  $ narya -e "option modal ≔ cospatial def bad5 (A :ʃ| Type) (x :♭| A) : A ≔ x"
    ￫ error[E1705]
    ￭ command-line exec string
-   1 | def bad5 (A :ʃ| Type) (x :♭| A) : A ≔ x
+   1 | option modal ≔ cospatial def bad5 (A :ʃ| Type) (x :♭| A) : A ≔ x
      ^ use of ʃ variable behind ♭ lock requires a key
   
   [1]

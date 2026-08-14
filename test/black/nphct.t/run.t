@@ -44,10 +44,10 @@ Without the modality, an ordinary parameter IS degenerated in the higher field's
 context, so the same field type fails to check: the parameter A becomes a square
 of type Type⁽ᵉ⁾ A.0 A.1, which is not a Type.
 
-  $ narya -parametric -discrete-coreflector -e "def sqrt (A : Type) : Type ≔ codata [ x .root.e : A ]"
+  $ narya -e "option parametric ≔ arity 2, letter e option modal ≔ discrete coreflector def sqrt (A : Type) : Type ≔ codata [ x .root.e : A ]"
    ￫ error[E0401]
    ￭ command-line exec string
-   1 | def sqrt (A : Type) : Type ≔ codata [ x .root.e : A ]
+   1 | option parametric ≔ arity 2, letter e option modal ≔ discrete coreflector def sqrt (A : Type) : Type ≔ codata [ x .root.e : A ]
      ^ term synthesized type
          Type⁽ᵉ⁾ A.0 A.1
        but is being checked against type

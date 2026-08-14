@@ -170,17 +170,17 @@
    ￫ info[I0000]
    ￮ constant 2s defined
   
-  $ narya -dtt -e "def foo (X:Type) : Type^^(d) X := X^^(d)"
+  $ narya -e "option dtt def foo (X:Type) : Type^^(d) X := X^^(d)"
    ￫ error[E1705]
    ￭ command-line exec string
-   1 | def foo (X:Type) : Type^^(d) X := X^^(d)
+   1 | option dtt def foo (X:Type) : Type^^(d) X := X^^(d)
      ^ use of id variable behind △□ lock requires a key
   
   [1]
 
 Can't take external degeneracies of nonparametric axioms.
 
-  $ narya -dtt -v -e "axiom #(nonparametric) A : Type" -e "echo A⁽ᵈ⁾"
+  $ narya -v -e "option dtt axiom #(nonparametric) A : Type" -e "echo A⁽ᵈ⁾"
    ￫ info[I0001]
    ￮ nonparametric axiom A assumed
   
@@ -193,7 +193,7 @@ Can't take external degeneracies of nonparametric axioms.
 
 Or of anything that uses a nonparametric axiom.
 
-  $ narya -dtt -v -e "axiom #(nonparametric) A : Type def f : A → A ≔ x ↦ x echo f⁽ᵈ⁾"
+  $ narya -v -e "option dtt axiom #(nonparametric) A : Type def f : A → A ≔ x ↦ x echo f⁽ᵈ⁾"
    ￫ info[I0001]
    ￮ nonparametric axiom A assumed
   
@@ -202,14 +202,14 @@ Or of anything that uses a nonparametric axiom.
   
    ￫ error[E0311]
    ￭ command-line exec string
-   1 | axiom #(nonparametric) A : Type def f : A → A ≔ x ↦ x echo f⁽ᵈ⁾
+   1 | option dtt axiom #(nonparametric) A : Type def f : A → A ≔ x ↦ x echo f⁽ᵈ⁾
      ^ constant f is or uses a nonparametric axiom, can't appear inside an external degeneracy
   
   [1]
 
 All axioms using a nonparametric axiom must also be nonparametric
 
-  $ narya -dtt -v -e "axiom #(nonparametric) A : Type axiom #(nonparametric) a : A axiom a' : A"
+  $ narya -v -e "option dtt axiom #(nonparametric) A : Type axiom #(nonparametric) a : A axiom a' : A"
    ￫ info[I0001]
    ￮ nonparametric axiom A assumed
   
@@ -218,7 +218,7 @@ All axioms using a nonparametric axiom must also be nonparametric
   
    ￫ error[E0312]
    ￭ command-line exec string
-   1 | axiom #(nonparametric) A : Type axiom #(nonparametric) a : A axiom a' : A
+   1 | option dtt axiom #(nonparametric) A : Type axiom #(nonparametric) a : A axiom a' : A
      ^ constant A is or uses a nonparametric axiom, can't be used in a parametric command
   
   [1]
@@ -226,7 +226,7 @@ All axioms using a nonparametric axiom must also be nonparametric
 
 We check that a family of mutual definitions can apply external degeneracies to each other.  This was an issue once because they are temporarily defined as "axioms" during definition, and by default axioms don't admit external degeneracies.
 
-  $ narya -dtt -v -e "def X : Type ≔ Type and Y : (x : X) → X⁽ᵈ⁾ x ≔ ?"
+  $ narya -v -e "option dtt def X : Type ≔ Type and Y : (x : X) → X⁽ᵈ⁾ x ≔ ?"
    ￫ info[I0000]
    ￮ constants defined mutually, containing 1 hole:
        X
@@ -245,7 +245,7 @@ We check that a family of mutual definitions can apply external degeneracies to 
 
 But if one of them uses an axiom, the others don't have external degeneracies either.
 
-  $ narya -dtt -v -e "axiom #(nonparametric) A:Type def f : Type := A and g : Type := sig () echo g⁽ᵈ⁾"
+  $ narya -v -e "option dtt axiom #(nonparametric) A:Type def f : Type := A and g : Type := sig () echo g⁽ᵈ⁾"
    ￫ info[I0001]
    ￮ nonparametric axiom A assumed
   
@@ -256,14 +256,14 @@ But if one of them uses an axiom, the others don't have external degeneracies ei
   
    ￫ error[E0311]
    ￭ command-line exec string
-   1 | axiom #(nonparametric) A:Type def f : Type := A and g : Type := sig () echo g⁽ᵈ⁾
+   1 | option dtt axiom #(nonparametric) A:Type def f : Type := A and g : Type := sig () echo g⁽ᵈ⁾
      ^ constant g is or uses a nonparametric axiom, can't appear inside an external degeneracy
   
   [1]
 
 When a constant is defined containing a hole, it is allowed to be parametric, but then the hole cannot be filled by any term that uses an axiom.
 
-  $ narya -dtt -v -fake-interact "axiom #(nonparametric) A:Type def B:Type := ? echo B⁽ᵈ⁾ solve 0 := A"
+  $ narya -v -fake-interact "option dtt axiom #(nonparametric) A:Type def B:Type := ? echo B⁽ᵈ⁾ solve 0 := A"
    ￫ info[I0001]
    ￮ nonparametric axiom A assumed
   
@@ -281,7 +281,7 @@ When a constant is defined containing a hole, it is allowed to be parametric, bu
   
    ￫ error[E0312]
    ￭ command line fake-interact
-   1 | axiom #(nonparametric) A:Type def B:Type := ? echo B⁽ᵈ⁾ solve 0 := A
+   1 | option dtt axiom #(nonparametric) A:Type def B:Type := ? echo B⁽ᵈ⁾ solve 0 := A
      ^ constant A is or uses a nonparametric axiom, can't be used in a parametric command
   
 

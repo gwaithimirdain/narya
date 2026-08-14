@@ -48,10 +48,15 @@ Two files given on the command line must agree with each other.
   
   [1]
 
-Command-line flags specify only a *partial* set of options: they constrain what they mention
-and say nothing else.  So they may agree with a file...
+Setting the type theory on the command line is deprecated: the type theory is a property of
+the code, so it belongs in the source.  The flags still work, and still specify only a
+*partial* set of options -- they constrain what they mention and say nothing else -- so they
+may agree with a file...
 
   $ narya -parametric param.ny
+   ￫ warning[E0110]
+   ￮ deprecated: setting the type theory on the command line (-parametric); use 'option' commands in the source file instead, or -e "option ..." when there is no file
+  
   Id A
     : Type⁽ᵉ⁾ A A
   
@@ -59,6 +64,9 @@ and say nothing else.  So they may agree with a file...
 ...or conflict with it, including by conflicting with what the file's silence asserts.
 
   $ narya -parametric hott.ny
+   ￫ warning[E0110]
+   ￮ deprecated: setting the type theory on the command line (-parametric); use 'option' commands in the source file instead, or -e "option ..." when there is no file
+  
    ￫ error[E2321]
    ￮ conflicting type theory options between file 'hott.ny' and
      the command line:
@@ -67,11 +75,17 @@ and say nothing else.  So they may agree with a file...
   [1]
 
   $ narya -arity 1 -direction d unary.ny
+   ￫ warning[E0110]
+   ￮ deprecated: setting the type theory on the command line (-arity -direction); use 'option' commands in the source file instead, or -e "option ..." when there is no file
+  
   A⁽ᵈ⁾
     : Type⁽ᵈ⁾ A
   
 
   $ narya -arity 2 unary.ny
+   ￫ warning[E0110]
+   ￮ deprecated: setting the type theory on the command line (-arity); use 'option' commands in the source file instead, or -e "option ..." when there is no file
+  
    ￫ error[E2321]
    ￮ conflicting type theory options between file 'unary.ny' and
      the command line: arity (2 vs. 1)
@@ -156,9 +170,14 @@ defaults: they are properties of the direction rather than of the theory as a wh
   [1]
 
 Strings executed with -e are not complete artifacts, so like the command line they specify
-only a partial set of options, and may be combined with command-line flags.
+only a partial set of options.  A run with no source file at all can therefore still set the
+type theory, by putting an "option" command at the head of the string -- which is what the
+deprecated flags should be replaced by.
 
   $ narya -parametric -e 'axiom A : Type echo Id A'
+   ￫ warning[E0110]
+   ￮ deprecated: setting the type theory on the command line (-parametric); use 'option' commands in the source file instead, or -e "option ..." when there is no file
+  
   Id A
     : Type⁽ᵉ⁾ A A
   

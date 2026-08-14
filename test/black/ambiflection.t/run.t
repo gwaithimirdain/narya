@@ -89,10 +89,10 @@ counit to a genuinely plain value (which needs the unit inserted first) does not
 
 We get the same error here:
 
-  $ narya -ambiflection -e "def zero (A : Type) (a : A) : A ≔ a #ø"
+  $ narya -e "option modal ≔ ambiflection def zero (A : Type) (a : A) : A ≔ a #ø"
    ￫ error[E0401]
    ￭ command-line exec string
-   1 | def zero (A : Type) (a : A) : A ≔ a #ø
+   1 | option modal ≔ ambiflection def zero (A : Type) (a : A) : A ≔ a #ø
      ^ term synthesized type
          A
        but is being checked against type
@@ -106,7 +106,7 @@ We get the same error here:
 
 The nonparametric ambiflection mode theory currently requires -parametric.
 
-  $ narya -discrete-ambiflection -e "echo 1"
+  $ narya -e "option modal ≔ discrete ambiflection echo 1"
    ￫ error[E2322]
    ￮ invalid type theory options:
      the discrete ambiflection mode theory requires 'option parametric', the discrete ambiflection mode theory requires arity 1
@@ -115,7 +115,7 @@ The nonparametric ambiflection mode theory currently requires -parametric.
 
 And -external is not allowed with it.
 
-  $ narya -parametric -direction p,rel,Br -arity 1 -discrete-ambiflection -external -e "echo 1"
+  $ narya -e "option parametric ≔ arity 1, letter p, name rel Br, external option modal ≔ discrete ambiflection echo 1"
    ￫ error[E2322]
    ￮ invalid type theory options:
      external parametricity requires a compatible mode theory, not discrete ambiflection
@@ -125,7 +125,7 @@ And -external is not allowed with it.
 Since there is a 2-cell (the □ ⊣ △ unit) from the non-discrete identity modality to the discrete
 modality △□, the arity of parametricity must be 1.
 
-  $ narya -parametric -direction p,rel,Br -discrete-ambiflection -e "echo 1"
+  $ narya -e "option parametric ≔ arity 2, letter p, name rel Br option modal ≔ discrete ambiflection echo 1"
    ￫ error[E2322]
    ￮ invalid type theory options:
      the discrete ambiflection mode theory requires arity 1

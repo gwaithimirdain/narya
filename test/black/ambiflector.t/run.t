@@ -79,10 +79,10 @@ Note the very bad error message, which will be improved when we can print keys.
 
 We get the same error here:
 
-  $ narya -ambiflector -e "def zero (A : Type) (a : A) : A ≔ a #ø"
+  $ narya -e "option modal ≔ ambiflector def zero (A : Type) (a : A) : A ≔ a #ø"
    ￫ error[E0401]
    ￭ command-line exec string
-   1 | def zero (A : Type) (a : A) : A ≔ a #ø
+   1 | option modal ≔ ambiflector def zero (A : Type) (a : A) : A ≔ a #ø
      ^ term synthesized type
          A
        but is being checked against type
@@ -96,7 +96,7 @@ We get the same error here:
 
 The nonparametric ambiflector mode theory currently requires -parametric.
 
-  $ narya -discrete-ambiflector -e "echo 1"
+  $ narya -e "option modal ≔ discrete ambiflector echo 1"
    ￫ error[E2322]
    ￮ invalid type theory options:
      the discrete ambiflector mode theory requires 'option parametric', the discrete ambiflector mode theory requires arity 1
@@ -105,7 +105,7 @@ The nonparametric ambiflector mode theory currently requires -parametric.
 
 And -external is not allowed with it.
 
-  $ narya -parametric -direction p,rel,Br -arity 1 -discrete-ambiflector -external -e "echo 1"
+  $ narya -e "option parametric ≔ arity 1, letter p, name rel Br, external option modal ≔ discrete ambiflector echo 1"
    ￫ error[E2322]
    ￮ invalid type theory options:
      external parametricity requires a compatible mode theory, not discrete ambiflector
@@ -115,7 +115,7 @@ And -external is not allowed with it.
 Since there is a 2-cell (the reflector unit) from the non-discrete identity modality to the
 discrete modality ♮, the arity of parametricity must be 1.
 
-  $ narya -parametric -direction p,rel,Br -discrete-ambiflector -e "echo 1"
+  $ narya -e "option parametric ≔ arity 2, letter p, name rel Br option modal ≔ discrete ambiflector echo 1"
    ￫ error[E2322]
    ￮ invalid type theory options:
      the discrete ambiflector mode theory requires arity 1

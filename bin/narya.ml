@@ -32,6 +32,7 @@ let theory_flags =
       if e.name = Modal.Theories.trivial then []
       else
         let set () =
+          note_deprecated_flag ("-" ^ e.flag);
           set_theory e.name;
           mode_theories := !mode_theories + 1 in
         ("-" ^ e.flag, Arg.Unit set, "Select " ^ String.uncapitalize_ascii e.doc)
@@ -76,14 +77,35 @@ let speclist =
       Arg.Set show_unique_keys,
       "Display keys that are the unique one between their endpoints" );
     ("-variables", Arg.String (fun str -> variables := Some str), "Default variable names");
-    ("-arity", Arg.Int set_arity, "Arity of parametricity (default = 2)");
+    ( "-arity",
+      Arg.Int
+        (fun n ->
+          note_deprecated_flag "-arity";
+          set_arity n),
+      "Arity of parametricity (default = 2)" );
     ( "-direction",
-      Arg.String set_refls,
+      Arg.String
+        (fun str ->
+          note_deprecated_flag "-direction";
+          set_refls str),
       "Names for parametricity direction and reflexivity (default = e,refl,Id)" );
-    ("-internal", Arg.Unit (fun () -> set_internal true), "Set parametricity to internal (default)");
-    ("-external", Arg.Unit (fun () -> set_internal false), "Set parametricity to external");
+    ( "-internal",
+      Arg.Unit
+        (fun () ->
+          note_deprecated_flag "-internal";
+          set_internal true),
+      "Set parametricity to internal (default)" );
+    ( "-external",
+      Arg.Unit
+        (fun () ->
+          note_deprecated_flag "-external";
+          set_internal false),
+      "Set parametricity to external" );
     ( "-parametric",
-      Arg.Unit (fun () -> set_hott false),
+      Arg.Unit
+        (fun () ->
+          note_deprecated_flag "-parametric";
+          set_hott false),
       "Switch from higher observational type theory (fibrancy) to parametricity" );
     ("-hott", Arg.Set hott_deprecated, "");
     ("-deprecated-discreteness", Arg.Set discreteness, "Enable discrete datatypes (deprecated)");
@@ -92,6 +114,7 @@ let speclist =
     ( "-dtt",
       Arg.Unit
         (fun () ->
+          note_deprecated_flag "-dtt";
           set_hott false;
           set_arity 1;
           set_refls "d";
@@ -100,13 +123,22 @@ let speclist =
           mode_theories := !mode_theories + 1),
       "Abbreviation for -parametric -arity 1 -direction d -external -discrete-tconn" );
     ( "-modes",
-      Arg.String (set_names (fun o xs -> { o with pmodes = Some xs })),
+      Arg.String
+        (fun str ->
+          note_deprecated_flag "-modes";
+          set_names (fun o xs -> { o with pmodes = Some xs }) str),
       "set the names of modes" );
     ( "-modalities",
-      Arg.String (set_names (fun o xs -> { o with pmodalities = Some xs })),
+      Arg.String
+        (fun str ->
+          note_deprecated_flag "-modalities";
+          set_names (fun o xs -> { o with pmodalities = Some xs }) str),
       "set the names of modalities" );
     ( "-modalcells",
-      Arg.String (set_names (fun o xs -> { o with pmodalcells = Some xs })),
+      Arg.String
+        (fun str ->
+          note_deprecated_flag "-modalcells";
+          set_names (fun o xs -> { o with pmodalcells = Some xs }) str),
       "set the names of modal cells" );
     ("--help", Arg.Unit (fun () -> ()), "");
     ("-", Arg.Unit (fun () -> inputs := Snoc (!inputs, `Stdin)), "");

@@ -43,6 +43,9 @@ could be compiled under several different type theories, one after another; now 
 compiled under exactly the one it declares.)
 
   $ narya -dtt -v two.ny
+   ￫ warning[E0110]
+   ￮ deprecated: setting the type theory on the command line (-dtt); use 'option' commands in the source file instead, or -e "option ..." when there is no file
+  
    ￫ error[E2321]
    ￮ conflicting type theory options between file 'two.ny' and
      the command line:

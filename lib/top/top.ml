@@ -20,6 +20,13 @@ let unicode = ref true
 let cmdline_options : Options.partial ref = ref Options.empty
 let hott_deprecated = ref false
 
+(* Which type theory flags were given on the command line, in the order they were written.  Setting the type theory from the command line is deprecated in favor of "option" commands in the source, which is where the type theory belongs: it is a property of the code, not of an invocation.  A run with no source file at all can still set it, either with -e "option ..." or, in interactive and ProofGeneral mode, by entering the "option" command before anything else. *)
+let deprecated_flags : string Bwd.t ref = ref Emp
+
+let note_deprecated_flag f =
+  if not (Bwd.exists (fun x -> x = f) !deprecated_flags) then
+    deprecated_flags := Snoc (!deprecated_flags, f)
+
 (* The deprecated strict parametric discreteness is not one of the type theory options proper (see Core.Options): it is set only from the command line and is not subject to the agreement check, so that a library can still be loaded both with and without it while old code is ported. *)
 let discreteness = ref false
 let source_only = ref false
@@ -198,6 +205,14 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
         raise Exit)
   @@ fun () ->
     if !hott_deprecated then Reporter.emit (Deprecated "-hott (this is now the default)");
+    (match !deprecated_flags with
+    | Emp -> ()
+    | flags ->
+        Reporter.emit
+          (Deprecated
+             (Printf.sprintf
+                "setting the type theory on the command line (%s); use 'option' commands in the source file instead, or -e \"option ...\" when there is no file"
+                (String.concat " " (Bwd.to_list flags)))));
     (* The argument of -variables must be a nonempty comma-separated list of valid variable names. *)
     match !variables with
     | Some str ->
