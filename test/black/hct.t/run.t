@@ -116,10 +116,10 @@
    ￫ info[I0001]
    ￮ axiom t22 assumed
   
-  refl f t20 t21 (sym t22)
+  ap f t20 t21 (sym t22)
     : Id A (f t00 t01 t02) (f t10 t11 t12)
   
-  refl f t02 t12 t22
+  ap f t02 t12 t22
     : Id A (f t00 t10 t20) (f t01 t11 t21)
   
    ￫ info[I0001]
@@ -143,7 +143,7 @@
   a
     : A
   
-  refl f b2 b2 b2⁽ᵉ¹⁾
+  ap f b2 b2 b2⁽ᵉ¹⁾
     : Id A (f b0 b0 (refl b0)) (f b1 b1 (refl b1))
   
   refl a
@@ -195,7 +195,7 @@
    ￮ hole ?0:
      
      ----------------------------------------------------------------------
-     refl ID (Id A) (refl u0 .root) (refl u1 .root)
+     ID⁽ᵉ⁾ (Id A) (refl u0 .root) (refl u1 .root)
   
    ￫ info[I3003]
    ￮ hole ?1:
@@ -250,13 +250,13 @@
    ￮ hole ?3:
      
      ----------------------------------------------------------------------
-     refl ID (Id A) (u20 .root) (u21 .root)
+     ID⁽ᵉ⁾ (Id A) (u20 .root) (u21 .root)
   
    ￫ info[I3003]
    ￮ hole ?4:
      
      ----------------------------------------------------------------------
-     refl ID (Id A) (u02 .root) (u12 .root)
+     ID⁽ᵉ⁾ (Id A) (u02 .root) (u12 .root)
   
    ￫ error[E3002]
    ￮ file sqrt.ny contains open holes

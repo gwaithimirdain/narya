@@ -495,7 +495,8 @@ let rec check : type mode a b s.
                 (* A pure permutation is never locking.  *)
                 let cx = check (Kinetic `Nolet) ctx x ty_fainv in
                 realize status
-                  (Term.Act (cx, fa, (sort_of_ty ctx (view_type ty "checking act"), `Other))))
+                  (Term.Act
+                     (cx, fa, (sort_of_ty ctx (view_type ty "checking act"), canonical_head cx))))
         | Some _, None -> fatal (Nonsynthesizing "pure symmetry of placeholder")
         | None, _ -> (
             (* It can also check if it is *not* a permutation and the arity is positive, since then we can extract the needed type of its argument from the boundary of the type it is checking against. *)
@@ -542,7 +543,10 @@ let rec check : type mode a b s.
                         | Ok () ->
                             realize status
                               (Term.Act
-                                 (cx, fa, (sort_of_ty ctx (view_type ty "checking act"), `Other)))
+                                 ( cx,
+                                   fa,
+                                   (sort_of_ty ctx (view_type ty "checking act"), canonical_head cx)
+                                 ))
                         | Error why ->
                             fatal
                               (Unequal_synthesized_type
@@ -3569,7 +3573,7 @@ and synth : type mode a b s.
             (Term.Act
                ( Term.Key { tm = sx; cell; plus_tgt = plus_with_no_locks mode; plus_src },
                  fa,
-                 (sort_of_ty ctx (view_type sty "synth act"), `Other) )),
+                 (sort_of_ty ctx (view_type sty "synth act"), canonical_head sx) )),
           sty )
     | Act _, _ -> fatal_or nosynth (Nonsynthesizing "argument of degeneracy")
     | Asc (tm, ty), _ ->

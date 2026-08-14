@@ -195,7 +195,7 @@
   ap (x ↦ f x)
     : {x₀ : A} {x₁ : A} (x₂ : Id A x₀ x₁) →⁽ᵉ⁾ Id B x₂ (f x₀) (f x₁)
   
-  x ⤇ refl f x.2
+  x ⤇ ap f x.2
     : {x₀ : A} {x₁ : A} (x₂ : Id A x₀ x₁) →⁽ᵉ⁾ Id B x₂ (f x₀) (f x₁)
   
 
@@ -204,14 +204,14 @@
     : {x₀ : A} {x₁ : A} (x₂ : Id A x₀ x₁)
       →⁽ᵉ⁾ Prod⁽ᵉ⁾ (Id B x₂) (Id C x₂) (f x₀, g x₀) (f x₁, g x₁)
   
-  x ⤇ (refl f x.2, refl g x.2)
+  x ⤇ (ap f x.2, ap g x.2)
     : {x₀ : A} {x₁ : A} (x₂ : Id A x₀ x₁)
       →⁽ᵉ⁾ Prod⁽ᵉ⁾ (Id B x₂) (Id C x₂) (f x₀, g x₀) (f x₁, g x₁)
   
   refl (x ↦ f x, x ↦ g x)
     : Prod⁽ᵉ⁾ ((x : Id A) ⇒ Id B x.2) ((x : Id A) ⇒ Id C x.2) (f, g) (f, g)
   
-  (x ⤇ refl f x.2, x ⤇ refl g x.2)
+  (x ⤇ ap f x.2, x ⤇ ap g x.2)
     : Prod⁽ᵉ⁾ ((x : Id A) ⇒ Id B x.2) ((x : Id A) ⇒ Id C x.2) (f, g) (f, g)
   
 
