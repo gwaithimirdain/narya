@@ -1,4 +1,4 @@
-option parametric ≔ arity 2, letter e, name refl Id ap
+option parametric ≔ arity 2, letter p, name rel Br
 
 axiom A : Type
 
@@ -63,13 +63,13 @@ def foo : Type ≔ sig (
 
 def foo' : Type ≔ sig ( bar : Type, baz : (x : bar) → ? )
 
-def gel0 (A B : Type) : Id Type A B ≔ sig ( x .one : ? )
+def gel0 (A B : Type) : Br Type A B ≔ sig ( x .one : ? )
 
-def gel1 (A B : Type) : Id Type A B ≔ sig ( x .one : Type, x .two : ? )
+def gel1 (A B : Type) : Br Type A B ≔ sig ( x .one : Type, x .two : ? )
 
-def gel2 (A B : Type) : Id Type A B ≔ sig ( x .one : ?, x .two : ? )
+def gel2 (A B : Type) : Br Type A B ≔ sig ( x .one : ?, x .two : ? )
 
-def gel3 (A B : Type) : Id Type A B ≔ codata [
+def gel3 (A B : Type) : Br Type A B ≔ codata [
 | x .one : ?
 | x .two : ? ]
 
@@ -81,19 +81,19 @@ def ac : AC ≔ (a ≔ ?, c ≔ ?)
 
 def ida : A → A ≔ x ↦ x
 
-def ideqid : Id (A → A) ida ida
-  ≔ ((x ↦ x) : Id (A → A) ida ida → Id (A → A) ida ida) ({u} {u} u ↦ u)
+def ideqid : Br (A → A) ida ida
+  ≔ ((x ↦ x) : Br (A → A) ida ida → Br (A → A) ida ida) ({u} {u} u ↦ u)
 
 echo ideqid
 
 {` TODO: Ideally, the user's "u′" should not be shadowed by an auto-generated one (although this matters a bit less than the one for contexts, since the user won't be using it to enter terms).  (This isn't about holes.) `}
-def ideqid' : Id (A → A) ida ida
-  ≔ ((x ↦ x) : Id (A → A) ida ida → Id (A → A) ida ida) ({u} {u} u′ ↦ u′)
+def ideqid' : Br (A → A) ida ida
+  ≔ ((x ↦ x) : Br (A → A) ida ida → Br (A → A) ida ida) ({u} {u} u′ ↦ u′)
 
 echo ideqid'
 
-def ideqid'' : Id (A → A) ida ida
-  ≔ ((x ↦ x) : Id (A → A) ida ida → Id (A → A) ida ida) ({u} {u} u ↦ ?)
+def ideqid'' : Br (A → A) ida ida
+  ≔ ((x ↦ x) : Br (A → A) ida ida → Br (A → A) ida ida) ({u} {u} u ↦ ?)
 
 {` A kinetic hole `}
 def afam : Type → Type ≔ X ↦ id ?
@@ -104,13 +104,13 @@ def idafam (X : Type) : afam X → afam X ≔ x ↦ x
 {` For testing hole splitting `}
 
 axiom f0 : A → B
-def f2 : Id ((x : A) → B) f0 f0 ≔ x ⤇ ?
+def f2 : Br ((x : A) → B) f0 f0 ≔ x ⤇ ?
 
 def prod : Type ≔ sig ( fst : A, snd : B )
 def p : prod ≔ ?
 
 axiom p0 : prod
-def p2 : Id prod p0 p0 ≔ ?
+def p2 : Br prod p0 p0 ≔ ?
 
 def prod' : Type ≔ codata [ x .fst : A | x .snd : B ]
 def p : prod' ≔ ?

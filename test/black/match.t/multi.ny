@@ -1,4 +1,4 @@
-option parametric ≔ arity 2, letter e, name refl Id ap
+option parametric ≔ arity 2, letter p, name rel Br
 
 def bool : Type ≔ data [ true. | false. ]
 def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]
@@ -71,10 +71,10 @@ def abort1 : ⊥ → Type → ⊥ ≔ [ ]
 def abort2 : Type → ⊥ → ⊥ ≔ [ ]
 
 {` Matching lambdas can be higher-dimensional `}
-def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig (
+def Gel (A B : Type) (R : A → B → Type) : Br Type A B ≔ sig (
   a .ungel : R a.0 a.1 )
 def ⊤ : Type ≔ sig ()
-def ⊤eq⊥ : Id Type ⊤ ⊥ ≔ Gel ⊤ ⊥ [ ]
+def ⊤eq⊥ : Br Type ⊤ ⊥ ≔ Gel ⊤ ⊥ [ ]
 
 def foo : (⊤eq⊥ ⇒ ⊤eq⊥) (x ↦ x) (x ↦ x) ≔ [ ]
 
@@ -114,43 +114,43 @@ def sum⊥''' (A : Type) (a : sum A ⊥) : A ≔ match a return _ ↦ _ [
 def is_zero : ℕ → Type ≔ [ zero. ↦ ⊤ | suc. _ ↦ ⊥ ]
 
 {` We can refute a later argument `}
-def is_zero_eq_zero (n : ℕ) (z : is_zero n) : Id ℕ n 0 ≔ match n, z [
-| zero., _ ↦ refl (0 : ℕ)
+def is_zero_eq_zero (n : ℕ) (z : is_zero n) : Br ℕ n 0 ≔ match n, z [
+| zero., _ ↦ rel (0 : ℕ)
 | suc. _, _ ↦ .]
 
 {` And we can omit the refutation case if at least one constructor of the necessary split is given. `}
-def is_zero_eq_zero' (n : ℕ) (z : is_zero n) : Id ℕ n 0 ≔ match n, z [
-| zero., _ ↦ refl (0 : ℕ)]
+def is_zero_eq_zero' (n : ℕ) (z : is_zero n) : Br ℕ n 0 ≔ match n, z [
+| zero., _ ↦ rel (0 : ℕ)]
 
 {` We can also refute an *earlier* argument. `}
-def is_zero_eq_zero_rev (n : ℕ) (z : is_zero n) : Id ℕ n 0 ≔ match z, n [
-| _, zero. ↦ refl (0 : ℕ)
+def is_zero_eq_zero_rev (n : ℕ) (z : is_zero n) : Br ℕ n 0 ≔ match z, n [
+| _, zero. ↦ rel (0 : ℕ)
 | _, suc. _ ↦ .]
 
 {` And we can similarly omit its case `}
-def is_zero_eq_zero_rev' (n : ℕ) (z : is_zero n) : Id ℕ n 0 ≔ match z, n [
-| _, zero. ↦ refl (0 : ℕ)]
+def is_zero_eq_zero_rev' (n : ℕ) (z : is_zero n) : Br ℕ n 0 ≔ match z, n [
+| _, zero. ↦ rel (0 : ℕ)]
 
 {` Higher-dimensional matches use ⤇ `}
-def bar (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : Type ≔ match y2 [
+def bar (y0 y1 : ℕ) (y2 : Br ℕ y0 y1) : Type ≔ match y2 [
 | zero. ⤇ ℕ
 | suc. n ⤇ bar n.0 n.1 n.2 ]
 
 {` Multiple matches use ⤇ if any of them are higher-dimensional `}
-def bar' (x : ℕ) (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : Type ≔ match x, y2 [
+def bar' (x : ℕ) (y0 y1 : ℕ) (y2 : Br ℕ y0 y1) : Type ≔ match x, y2 [
 | zero., zero. ⤇ ℕ
 | zero., suc. n ⤇ bar' x n.0 n.1 n.2
 | suc. _, zero. ⤇ ℕ
 | suc. _, suc. n ⤇ bar' x n.0 n.1 n.2 ]
 
 {` But it's only required in the branches that include any higher-dimensional matches. `}
-def bar'' (x : ℕ) (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : Type ≔ match x, y2 [
+def bar'' (x : ℕ) (y0 y1 : ℕ) (y2 : Br ℕ y0 y1) : Type ≔ match x, y2 [
 | zero., _ ↦ ℕ
 | suc. _, zero. ⤇ ℕ
 | suc. _, suc. n ⤇ bar'' x n.0 n.1 n.2 ]
 
 {` Same for deep matches `}
-def baz : Type ≔ data [ baz. (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) ]
+def baz : Type ≔ data [ baz. (y0 y1 : ℕ) (y2 : Br ℕ y0 y1) ]
 
 def bazzz (x : baz) : Type ≔ match x [
 | baz. _ _ zero. ⤇ ℕ

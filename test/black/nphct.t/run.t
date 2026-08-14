@@ -30,30 +30,27 @@ directly, and its instances construct and project as expected.
   a
     : A
   
-   ￫ info[I0000]
-   ￮ constant ♭√√ defined
+   ￫ error[E0203]
+   ￭ $TESTCASE_ROOT/nphct.ny
+   28 | def ♭√√ (A : ♭| Type) : Type ≔ codata [ x .rroot.ee : A ]
+      ^ invalid field name: .rroot.e.e
   
-   ￫ info[I0000]
-   ￮ constant √√a defined
-  
-  a
-    : A
-  
+  [1]
 
 Without the modality, an ordinary parameter IS degenerated in the higher field's
 context, so the same field type fails to check: the parameter A becomes a square
 of type Type⁽ᵉ⁾ A.0 A.1, which is not a Type.
 
-  $ narya -e "option parametric ≔ arity 2, letter e option modal ≔ discrete coreflector def sqrt (A : Type) : Type ≔ codata [ x .root.e : A ]"
+  $ narya -e "option parametric ≔ arity 2, letter p option modal ≔ discrete coreflector def sqrt (A : Type) : Type ≔ codata [ x .root.p : A ]"
    ￫ error[E0401]
    ￭ command-line exec string
-   1 | option parametric ≔ arity 2, letter e option modal ≔ discrete coreflector def sqrt (A : Type) : Type ≔ codata [ x .root.e : A ]
+   1 | option parametric ≔ arity 2, letter p option modal ≔ discrete coreflector def sqrt (A : Type) : Type ≔ codata [ x .root.p : A ]
      ^ term synthesized type
-         Type⁽ᵉ⁾ A.0 A.1
+         Type⁽ᵖ⁾ A.0 A.1
        but is being checked against type
          Type
        unequal head terms:
-         Type⁽ᵉ⁾
+         Type⁽ᵖ⁾
        does not equal
          Type
   

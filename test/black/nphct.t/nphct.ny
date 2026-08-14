@@ -1,4 +1,4 @@
-option parametric ≔ arity 2, letter e, name refl Id ap
+option parametric ≔ arity 2, letter p, name rel Br
 option modal ≔ discrete coreflector
 
 ` The types of the higher fields of a higher coinductive type are checked in a
@@ -6,25 +6,25 @@ option modal ≔ discrete coreflector
 ` however, is nonparametric with respect to that dimension, so it is NOT
 ` degenerated: the field type can mention such a parameter directly.
 
-def ♭√ (A : ♭| Type) : Type ≔ codata [ x .root.e : A ]
+def ♭√ (A : ♭| Type) : Type ≔ codata [ x .root.p : A ]
 
 axiom A : Type
 
 ` Projecting the higher field of a degenerate instance yields the un-degenerated
-` A, rather than a square A⁽ᵉ⁾.
+` A, rather than a square A⁽ᵖ⁾.
 axiom s0 : ♭√ A
 axiom s1 : ♭√ A
-axiom s2 : Id (♭√ A) s0 s1
+axiom s2 : Br (♭√ A) s0 s1
 echo s2 .root.1
 
 ` Dually, we can construct an element by supplying an un-degenerated field value,
 ` and project it back out.
 axiom a : A
-def √a : ♭√ A ≔ [ .root.e ↦ a ]
-echo refl √a .root.1
+def √a : ♭√ A ≔ [ .root.p ↦ a ]
+echo rel √a .root.1
 
 ` A two-dimensional higher field behaves the same way: the ♭ parameter is not
 ` degenerated even by the 2-dimensional degeneracy of the field context.
 def ♭√√ (A : ♭| Type) : Type ≔ codata [ x .rroot.ee : A ]
 def √√a : ♭√√ A ≔ [ .rroot.ee ↦ a ]
-echo refl (refl √√a) .rroot.12
+echo rel (rel √√a) .rroot.12

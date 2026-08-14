@@ -1,3 +1,3 @@
 axiom A : Type
 
-option parametric ≔ arity 2, letter e
+option parametric ≔ arity 2, letter p

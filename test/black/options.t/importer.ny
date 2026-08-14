@@ -1,4 +1,4 @@
-option parametric ≔ arity 2, letter e, name refl Id ap
+option parametric ≔ arity 2, letter p, name rel Br
 
 import "param"
 

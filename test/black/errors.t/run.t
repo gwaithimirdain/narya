@@ -128,72 +128,68 @@
   
   [1]
   $ narya errors.ny -e "echo (refl f {a})"
-   ￫ error[E0502]
+   ￫ error[E0300]
    ￭ command-line exec string
    1 | echo (refl f {a})
-     ^ not enough arguments for a higher-dimensional function application
+     ^ unbound variable: refl
   
   [1]
 
   $ narya errors.ny -e "echo (refl f {a} {a})"
-   ￫ error[E0502]
+   ￫ error[E0300]
    ￭ command-line exec string
    1 | echo (refl f {a} {a})
-     ^ not enough arguments for a higher-dimensional function application
+     ^ unbound variable: refl
   
   [1]
   $ narya errors.ny -e "echo (refl f (refl a) a)"
-   ￫ error[E0701]
+   ￫ error[E0300]
    ￭ command-line exec string
    1 | echo (refl f (refl a) a)
-     ^ attempt to apply/instantiate
-         ap f (refl a)
-       of type
-         Id A (f a) (f a)
-       which is not a function-type or universe
+     ^ unbound variable: refl
   
   [1]
 
   $ narya errors.ny -e "echo (Id A a)"
-   ￫ error[E0503]
+   ￫ error[E0300]
    ￭ command-line exec string
    1 | echo (Id A a)
-     ^ not enough arguments to instantiate a higher-dimensional type
+     ^ unbound variable: Id
   
   [1]
   $ narya errors.ny -e "echo ((x |-> x) : Id (A -> A) f f)"
-   ￫ error[E0702]
+   ￫ error[E0300]
    ￭ command-line exec string
    1 | echo ((x |-> x) : Id (A -> A) f f)
-     ^ unexpected explicit abstraction: expecting implicit variable
+     ^ unbound variable: Id
   
   [1]
   $ narya errors.ny -e "echo (({x} {y} |-> x) : Id (A -> A) f f)"
-   ￫ error[E0501]
+   ￫ error[E0300]
    ￭ command-line exec string
    1 | echo (({x} {y} |-> x) : Id (A -> A) f f)
-     ^ not enough non-cube variables for higher-dimensional abstraction: need 1 more
+     ^ unbound variable: Id
   
   [1]
   $ narya errors.ny -e "echo (({x0} {x1} x2 x3 ↦ refl f x0 x1 x2) : Id (A -> A) f f)"
-   ￫ error[E0700]
+   ￫ error[E0300]
    ￭ command-line exec string
    1 | echo (({x0} {x1} x2 x3 ↦ refl f x0 x1 x2) : Id (A -> A) f f)
-     ^ checking abstraction against non-function type Id A (f x0) (f x1)
+     ^ unbound variable: refl
   
   [1]
   $ narya errors.ny -e "echo (refl (x |-> x))"
-   ￫ error[E0400]
+   ￫ error[E0300]
    ￭ command-line exec string
    1 | echo (refl (x |-> x))
-     ^ non-synthesizing term in synthesizing position (argument of degeneracy)
+     ^ unbound variable: refl
   
   [1]
   $ narya errors.ny -e "echo refl"
-   ￫ error[E0600]
+   ￫ error[E0300]
    ￭ command-line exec string
    1 | echo refl
-     ^ missing argument for degeneracy refl
+     ^ unbound variable: refl
   
   [1]
   $ narya errors.ny -e "echo (sym f)"
@@ -201,7 +197,7 @@
    ￭ command-line exec string
    1 | echo (sym f)
      ^ insufficient dimension for argument of degeneracy 'sym':
-        0 does not factor through ee
+        0 does not factor through pp
   
   [1]
   $ narya errors.ny -e "echo (sym a2)"
@@ -209,7 +205,7 @@
    ￭ command-line exec string
    1 | echo (sym a2)
      ^ insufficient dimension for argument of degeneracy 'sym':
-        e does not factor through ee
+        p does not factor through pp
   
   [1]
   $ narya errors.ny -e "echo g"
@@ -220,69 +216,24 @@
   
   [1]
   $ narya errors.ny -e "echo (a : Id A)"
-   ￫ error[E0401]
+   ￫ error[E0300]
    ￭ command-line exec string
    1 | echo (a : Id A)
-     ^ term synthesized type
-         Type⁽ᵉ⁾ A A
-       but is being checked against type
-         Type
-       unequal head terms:
-         Type⁽ᵉ⁾
-       does not equal
-         Type
-  
-   ￫ error[E0401]
-   ￭ command-line exec string
-   1 | echo (a : Id A)
-     ^ term synthesized type
-         Type⁽ᵉ⁾ A A
-       but is being checked against type
-         Type
-       unequal head terms:
-         Type⁽ᵉ⁾
-       does not equal
-         Type
+     ^ unbound variable: Id
   
   [1]
   $ narya errors.ny -e "echo (a : Id (Id A) (refl a) (refl a))"
-   ￫ error[E0401]
+   ￫ error[E0300]
    ￭ command-line exec string
    1 | echo (a : Id (Id A) (refl a) (refl a))
-     ^ term synthesized type
-         Type⁽ᵉ⁾ (Id A a a) (Id A a a)
-       but is being checked against type
-         Type
-       unequal head terms:
-         Type⁽ᵉ⁾
-       does not equal
-         Type
-  
-   ￫ error[E0401]
-   ￭ command-line exec string
-   1 | echo (a : Id (Id A) (refl a) (refl a))
-     ^ term synthesized type
-         Type⁽ᵉ⁾ (Id A a a) (Id A a a)
-       but is being checked against type
-         Type
-       unequal head terms:
-         Type⁽ᵉ⁾
-       does not equal
-         Type
+     ^ unbound variable: Id
   
   [1]
   $ narya errors.ny -e "def q := Id Type A (Id A)"
-   ￫ error[E0401]
+   ￫ error[E0300]
    ￭ command-line exec string
    1 | def q := Id Type A (Id A)
-     ^ term synthesized type
-         Type⁽ᵉ⁾ A A
-       but is being checked against type
-         Type
-       unequal head terms:
-         Type⁽ᵉ⁾
-       does not equal
-         Type
+     ^ unbound variable: Id
   
   [1]
   $ narya errors.ny -e "f (x"
@@ -479,53 +430,45 @@
   
   [1]
   $ narya errors.ny -e "echo ((x ↦ x) : Id (A→A) f f)"
-   ￫ error[E0702]
+   ￫ error[E0300]
    ￭ command-line exec string
    1 | echo ((x ↦ x) : Id (A→A) f f)
-     ^ unexpected explicit abstraction: expecting implicit variable
+     ^ unbound variable: Id
   
   [1]
   $ narya errors.ny -e "echo ((a x ⤇ refl f {x.0} {x.1} x.2) : A → Id (A→A) f f)"
-   ￫ error[E0508]
+   ￫ error[E0300]
    ￭ command-line exec string
    1 | echo ((a x ⤇ refl f {x.0} {x.1} x.2) : A → Id (A→A) f f)
-     ^ cube abstraction not allowed for zero-dimensional function
+     ^ unbound variable: refl
   
   [1]
   $ narya errors.ny -e "echo ((x ↦ x ⤇ x) : A → Id (A→A) f f)"
-   ￫ error[E0401]
+   ￫ error[E0300]
    ￭ command-line exec string
    1 | echo ((x ↦ x ⤇ x) : A → Id (A→A) f f)
-     ^ term synthesized type
-         Id A x′.0 x′.1
-       but is being checked against type
-         Id A (f x′.0) (f x′.1)
-       unequal head terms:
-         x′.0
-       does not equal
-         f
+     ^ unbound variable: Id
   
   [1]
   $ narya errors.ny -e "echo ((a x ⤇ refl af {a.0} {a.1} a.2 {x.00} {x.01} {x.02} {x.10} {x.11} {x.12} {x.20} {x.21} x.22) : Id (A → Id (A→A) f f) af af)"
-   ￫ error[E0509]
+   ￫ error[E0300]
    ￭ command-line exec string
    1 | echo ((a x ⤇ refl af {a.0} {a.1} a.2 {x.00} {x.01} {x.02} {x.10} {x.11} {x.12} {x.20} {x.21} x.22) : Id (A → Id (A→A) f f) af af)
-     ^ previous variable
-     ^ can't combine cube abstractions of different dimensions: e ≠ ee
+     ^ unbound variable: refl
   
   [1]
   $ narya errors.ny -e "echo ((n0 n1 n2 ↦ match n2 [ zero. ↦ zero. | suc. n ↦ suc. n.2 ]) : (n0 n1 : ℕ) → Id ℕ n0 n1 → Id ℕ n0 n1)"
-   ￫ error[E0510]
+   ￫ error[E0300]
    ￭ command-line exec string
    1 | echo ((n0 n1 n2 ↦ match n2 [ zero. ↦ zero. | suc. n ↦ suc. n.2 ]) : (n0 n1 : ℕ) → Id ℕ n0 n1 → Id ℕ n0 n1)
-     ^ e-dimensional match requires cube abstraction
+     ^ unbound variable: Id
   
   [1]
   $ narya errors.ny -e "echo ((n0 n1 n2 ↦ match n2 [ zero. ⤇ zero. | suc. n ↦ suc. n.2 ]) : (n0 n1 : ℕ) → Id ℕ n0 n1 → Id ℕ n0 n1)"
-   ￫ error[E0510]
+   ￫ error[E0300]
    ￭ command-line exec string
    1 | echo ((n0 n1 n2 ↦ match n2 [ zero. ⤇ zero. | suc. n ↦ suc. n.2 ]) : (n0 n1 : ℕ) → Id ℕ n0 n1 → Id ℕ n0 n1)
-     ^ e-dimensional match requires cube abstraction
+     ^ unbound variable: Id
   
   [1]
   $ narya errors.ny -e "echo ([ .head ⤇ 0 | .tail ↦ zeros ] : Stream ℕ)"

@@ -15,25 +15,25 @@ A file declaring nothing gets the default theory.
 A file declaring parametricity gets that instead.
 
   $ narya param.ny
-  Id A
-    : Type⁽ᵉ⁾ A A
+  Br A
+    : Type⁽ᵖ⁾ A A
   
 
 Two files given on the command line must agree with each other.
 
   $ narya param.ny param2.ny
-  Id A
-    : Type⁽ᵉ⁾ A A
+  Br A
+    : Type⁽ᵖ⁾ A A
   
 
   $ narya param.ny hott.ny
-  Id A
-    : Type⁽ᵉ⁾ A A
+  Br A
+    : Type⁽ᵖ⁾ A A
   
    ￫ error[E2321]
    ￮ conflicting type theory options between file 'hott.ny' and
      the options already in force:
-     theory (higher observational type theory vs. parametricity)
+     theory (higher observational type theory vs. parametricity), direction letter (e vs. p), reflexivity names (refl,Id,ap vs. rel,Br)
   
   [1]
 
@@ -44,7 +44,7 @@ Two files given on the command line must agree with each other.
    ￫ error[E2321]
    ￮ conflicting type theory options between file 'param.ny' and
      the options already in force:
-     theory (parametricity vs. higher observational type theory)
+     theory (parametricity vs. higher observational type theory), direction letter (p vs. e), reflexivity names (rel,Br vs. refl,Id,ap)
   
   [1]
 
@@ -57,8 +57,8 @@ may agree with a file...
    ￫ warning[E0110]
    ￮ deprecated: setting the type theory on the command line (-parametric); use 'option' commands in the source file instead, or -e "option ..." when there is no file
   
-  Id A
-    : Type⁽ᵉ⁾ A A
+  Br A
+    : Type⁽ᵖ⁾ A A
   
 
 ...or conflict with it, including by conflicting with what the file's silence asserts.
@@ -97,8 +97,8 @@ An imported file must agree with the file importing it.
   $ rm -f *.nyo
 
   $ narya importer.ny
-  Id A
-    : Type⁽ᵉ⁾ A A
+  Br A
+    : Type⁽ᵖ⁾ A A
   
   A
     : Type
@@ -108,7 +108,7 @@ An imported file must agree with the file importing it.
    ￫ error[E2321]
    ￮ conflicting type theory options between file 'hott.ny' and
      the options already in force:
-     theory (higher observational type theory vs. parametricity)
+     theory (higher observational type theory vs. parametricity), direction letter (e vs. p), reflexivity names (refl,Id,ap vs. rel,Br)
   
   [1]
 
@@ -182,7 +182,7 @@ deprecated flags should be replaced by.
     : Type⁽ᵉ⁾ A A
   
 
-  $ narya -e 'option parametric ≔ arity 2, letter e, name refl Id ap axiom A : Type echo Id A'
-  Id A
-    : Type⁽ᵉ⁾ A A
+  $ narya -e 'option parametric ≔ arity 2, letter p, name rel Br axiom A : Type echo Br A'
+  Br A
+    : Type⁽ᵖ⁾ A A
   

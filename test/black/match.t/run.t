@@ -140,7 +140,7 @@
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/multi.ny
-   77 | def ⊤eq⊥ : Id Type ⊤ ⊥ ≔ Gel ⊤ ⊥ [ ]
+   77 | def ⊤eq⊥ : Br Type ⊤ ⊥ ≔ Gel ⊤ ⊥ [ ]
       ^ matching lambda encountered outside case tree, wrapping in implicit let-binding
   
    ￫ info[I0000]

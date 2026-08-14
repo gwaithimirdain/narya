@@ -1,4 +1,4 @@
-option parametric ≔ arity 2, letter e, name refl Id ap
+option parametric ≔ arity 2, letter p, name rel Br
 
 axiom A : Type
 axiom a : A
@@ -6,7 +6,7 @@ axiom f : A → A
 
 axiom x : A
 axiom y : A
-axiom xy : Id A x y
+axiom xy : Br A x y
 
 {`Records and datatypes`}
 def Σ : (A : Type) → (A → Type) → Type ≔ A B ↦ sig ( fst : A, snd : B fst )
@@ -16,8 +16,8 @@ def Nat : Type ≔ ℕ
 axiom B : A → Type
 axiom s : Σ A B
 
-{`To test degeneracies on records we have to set up a bunch of stuff, since the simplest case this happens is with Id Gel and squares in the universe.`}
-def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig (
+{`To test degeneracies on records we have to set up a bunch of stuff, since the simplest case this happens is with Br Gel and squares in the universe.`}
+def Gel (A B : Type) (R : A → B → Type) : Br Type A B ≔ sig (
   a .ungel : R a.0 a.1 )
 
 axiom A0 : Type
@@ -26,9 +26,9 @@ axiom R0 : A0 → B0 → Type
 axiom A1 : Type
 axiom B1 : Type
 axiom R1 : A1 → B1 → Type
-axiom A2 : Id Type A0 A1
-axiom B2 : Id Type B0 B1
-axiom R2 : refl ((X ↦ Y ↦ (X → Y → Type)) : Type → Type → Type) A2 B2 R0 R1
+axiom A2 : Br Type A0 A1
+axiom B2 : Br Type B0 B1
+axiom R2 : rel ((X ↦ Y ↦ (X → Y → Type)) : Type → Type → Type) A2 B2 R0 R1
 axiom a0 : A0
 axiom a1 : A1
 axiom a2 : A2 a0 a1
@@ -40,10 +40,10 @@ axiom r1 : R1 a1 b1
 axiom r2 : R2 a2 b2 r0 r1
 
 
-def r2ty ≔ refl Gel A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1)
+def r2ty ≔ rel Gel A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1)
 
 def symr2ty
-  ≔ sym (refl Gel A2 B2 R2) {a0} {b0} (ungel ≔ r0) {a1} {b1} (ungel ≔ r1) a2
+  ≔ sym (rel Gel A2 B2 R2) {a0} {b0} (ungel ≔ r0) {a1} {b1} (ungel ≔ r1) a2
       b2
 
 axiom gg : r2ty
@@ -51,11 +51,11 @@ axiom gg : r2ty
 axiom gg' : symr2ty
 
 {`Cube variables`}
-axiom af : A → Id (A → A) f f
+axiom af : A → Br (A → A) f f
 
 {`Stream`}
 def Stream : (A : Type) → Type ≔ A ↦ codata [
 | _ .head : A
 | _ .tail : Stream A ]
 def zeros : Stream ℕ ≔ [ .head ↦ 0 | .tail ↦ zeros ]
-axiom idz : Id (Stream ℕ) zeros zeros
+axiom idz : Br (Stream ℕ) zeros zeros

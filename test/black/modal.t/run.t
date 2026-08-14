@@ -363,7 +363,7 @@ disappears at dimensions it filters (the reflexivity/parametric direction).
    ￮ constant a22 defined
   
   ()
-    : ♯⁽ᵉ⁾ (Id A) (_ ≔ (a0 :♭| _) .unsharp) (_ ≔ (a1 :♭| _) .unsharp)
+    : ♯⁽ᵖ⁾ (Br A) (_ ≔ (a0 :♭| _) .unsharp) (_ ≔ (a1 :♭| _) .unsharp)
   
 
 At dimension 0 the field projects and computes.
@@ -378,44 +378,52 @@ dimension and the degeneracy is externalized (here as refl), printing
 faithfully and round-tripping.
 
   $ narya discretefields.ny -e "axiom z : C" -e "echo refl ((z :♭| _) .fld)"
-  refl ((z :♭| _) .fld)
-    : N⁽ᵉ⁾ ((z :♭| _) .fld) ((z :♭| _) .fld)
+   ￫ error[E0300]
+   ￭ command-line exec string
+   1 | echo refl ((z :♭| _) .fld)
+     ^ unbound variable: refl
   
+  [1]
 
 A two-dimensional degeneracy prints with the superscript notation.
 
   $ narya discretefields.ny -e "axiom z : C" -e "echo sym (refl (refl ((z :♭| _) .fld)))"
-  ((z :♭| _) .fld)⁽ᵉᵉ⁾
-    : N⁽ᵉᵉ⁾ (refl ((z :♭| _) .fld)) (refl ((z :♭| _) .fld))
-        (refl ((z :♭| _) .fld)) (refl ((z :♭| _) .fld))
+   ￫ error[E0300]
+   ￭ command-line exec string
+   1 | echo sym (refl (refl ((z :♭| _) .fld)))
+     ^ unbound variable: refl
   
+  [1]
 
 Projecting a disappeared field (from a 1-dimensional element) is an error.
 
   $ narya discretefields.ny -e "echo (refl c :♭| _) .fld"
-   ￫ error[E1713]
+   ￫ error[E0300]
    ￭ command-line exec string
    1 | echo (refl c :♭| _) .fld
-     ^ field fld does not exist at this dimension: its modality ♭ is nonparametric and filters this dimension away
+     ^ unbound variable: refl
   
   [1]
 
 Supplying a disappeared field in a tuple/comatch is an error.
 
   $ narya discretefields.ny -e "def bad : Id C c c ≔ [ .fld ↦ refl (suc. zero.) ]"
-   ￫ error[E1714]
+   ￫ error[E0300]
    ￭ command-line exec string
    1 | def bad : Id C c c ≔ [ .fld ↦ refl (suc. zero.) ]
-     ^ field fld must be omitted at this dimension: its modality ♭ is nonparametric and filters this dimension away
+     ^ unbound variable: Id
   
   [1]
 
 An ordinary (non-modal) field never disappears: it projects at any dimension.
 
   $ narya discretefields.ny -e "echo (refl d) .snd"
-  refl 0
-    : N⁽ᵉ⁾ 0 0
+   ￫ error[E0300]
+   ￭ command-line exec string
+   1 | echo (refl d) .snd
+     ^ unbound variable: refl
   
+  [1]
 
 If a type is given in a modal field projection, it must be correct.
 

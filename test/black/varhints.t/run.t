@@ -3,7 +3,7 @@ variable-name hints to a canonical type, which are used when generating
 names for unnamed variables belonging to that type.
 
   $ cat - >hints.ny <<EOF
-  > option parametric ≔ arity 2, letter e, name refl Id ap
+  > option parametric ≔ arity 2, letter p, name rel Br
   > def ℕ : Type ≔ data #(variables ≔ n,m,k) [ zero. | pair. (_ : ℕ) (_ : ℕ) ]
   > def kpair : ℕ → ℕ → ℕ ≔ ((x : ℕ → ℕ → ℕ) ↦ (x : ℕ → ℕ → ℕ)) pair.
   > echo kpair
@@ -12,28 +12,28 @@ names for unnamed variables belonging to that type.
   > axiom A : Type
   > axiom f : prod A A → ℕ
   > axiom g : Stream A → ℕ
-  > echo Id (prod A A → ℕ) f f
-  > echo Id (Stream A → ℕ) g g
+  > echo Br (prod A A → ℕ) f f
+  > echo Br (Stream A → ℕ) g g
   > EOF
 
   $ narya hints.ny
   n m ↦ pair. n m
     : ℕ → ℕ → ℕ
   
-  {u₀ : prod A A} {u₁ : prod A A} (u₂ : prod⁽ᵉ⁾ (Id A) (Id A) u₀ u₁)
-  →⁽ᵉ⁾ ℕ⁽ᵉ⁾ (f (fst ≔ u₀ .fst, snd ≔ u₀ .snd))
+  {u₀ : prod A A} {u₁ : prod A A} (u₂ : prod⁽ᵖ⁾ (Br A) (Br A) u₀ u₁)
+  →⁽ᵖ⁾ ℕ⁽ᵖ⁾ (f (fst ≔ u₀ .fst, snd ≔ u₀ .snd))
          (f (fst ≔ u₁ .fst, snd ≔ u₁ .snd))
     : Type
   
-  {s₀ : Stream A} {s₁ : Stream A} (s₂ : Stream⁽ᵉ⁾ (Id A) s₀ s₁)
-  →⁽ᵉ⁾ ℕ⁽ᵉ⁾ (g s₀) (g s₁)
+  {s₀ : Stream A} {s₁ : Stream A} (s₂ : Stream⁽ᵖ⁾ (Br A) s₀ s₁)
+  →⁽ᵖ⁾ ℕ⁽ᵖ⁾ (g s₀) (g s₁)
     : Type
   
 
 The file is reformatted with the attributes preserved.
 
   $ cat hints.ny
-  option parametric ≔ arity 2, letter e, name refl Id ap
+  option parametric ≔ arity 2, letter p, name rel Br
   
   def ℕ : Type ≔ data #(variables ≔ n, m, k) [
   | zero.
@@ -57,9 +57,9 @@ The file is reformatted with the attributes preserved.
   
   axiom g : Stream A → ℕ
   
-  echo Id (prod A A → ℕ) f f
+  echo Br (prod A A → ℕ) f f
   
-  echo Id (Stream A → ℕ) g g
+  echo Br (Stream A → ℕ) g g
 
 When the hints are given with ≔, they replace the global default names, so if
 there are more unnamed variables than hints, primed versions of the hints are

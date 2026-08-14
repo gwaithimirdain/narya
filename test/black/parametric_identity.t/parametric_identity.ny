@@ -1,6 +1,6 @@
-option parametric ≔ arity 2, letter e, name refl Id ap
+option parametric ≔ arity 2, letter p, name rel Br
 
-def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( a .ungel : R a.0 a.1 )
+def Gel (A B : Type) (R : A → B → Type) : Br Type A B ≔ sig ( a .ungel : R a.0 a.1 )
 
 {` First we define an equality type `}
 def eq (X:Type) (x:X) : X → Type ≔ data [ rfl. : eq X x x ]
@@ -9,4 +9,4 @@ def eq (X:Type) (x:X) : X → Type ≔ data [ rfl. : eq X x x ]
 axiom f : (X:Type) → X → X
 
 def f_is_id (X:Type) (x:X) : eq X x (f X x) ≔
-  refl f (Gel X X (a b ↦ eq X x b)) {x} {x} (_ ≔ rfl.) .ungel
+  rel f (Gel X X (a b ↦ eq X x b)) {x} {x} (_ ≔ rfl.) .ungel

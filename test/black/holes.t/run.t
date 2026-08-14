@@ -296,13 +296,13 @@
    ￮ constant ideqid defined
   
   {u} {u′} u″ ↦ u″
-    : {𝑥₀ : A} {𝑥₁ : A} (𝑥₂ : Id A 𝑥₀ 𝑥₁) →⁽ᵉ⁾ Id A 𝑥₀ 𝑥₁
+    : {𝑥₀ : A} {𝑥₁ : A} (𝑥₂ : Br A 𝑥₀ 𝑥₁) →⁽ᵖ⁾ Br A 𝑥₀ 𝑥₁
   
    ￫ info[I0000]
    ￮ constant ideqid' defined
   
   {u} {u′} u′′ ↦ u′′
-    : {𝑥₀ : A} {𝑥₁ : A} (𝑥₂ : Id A 𝑥₀ 𝑥₁) →⁽ᵉ⁾ Id A 𝑥₀ 𝑥₁
+    : {𝑥₀ : A} {𝑥₁ : A} (𝑥₂ : Br A 𝑥₀ 𝑥₁) →⁽ᵖ⁾ Br A 𝑥₀ 𝑥₁
   
    ￫ info[I0000]
    ￮ constant ideqid'' defined, containing 1 hole
@@ -312,9 +312,9 @@
      
      u″ : A (not in scope)
      u′ : A (not in scope)
-     u : Id A u″ u′
+     u : Br A u″ u′
      ----------------------------------------------------------------------
-     refl A u″ u′
+     rel A u″ u′
   
    ￫ info[I0000]
    ￮ constant afam defined, containing 1 hole
@@ -340,9 +340,9 @@
      
      x.0 : A
      x.1 : A
-     x.2 : Id A x.0 x.1
+     x.2 : Br A x.0 x.1
      ----------------------------------------------------------------------
-     refl B (f0 x.0) (f0 x.1)
+     rel B (f0 x.0) (f0 x.1)
   
    ￫ info[I0000]
    ￮ constant prod defined
@@ -366,7 +366,7 @@
    ￮ hole ?27:
      
      ----------------------------------------------------------------------
-     refl prod p0 p0
+     rel prod p0 p0
   
    ￫ info[I0000]
    ￮ constant prod' defined

@@ -1,11 +1,11 @@
-option parametric ≔ arity 2, letter e, name refl Id ap
+option parametric ≔ arity 2, letter p, name rel Br
 
 {` Uniqueness of iteration for Church encoded Nat from parametricity (from Thorsten) `}
 
 def prod (A B : Type) : Type ≔ sig ( fst : A, snd : B )
 notation(0) A "><" B ≔ prod A B
 def Σ (A : Type) (B : A → Type) : Type ≔ sig ( fst : A, snd : B fst )
-def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig (
+def Gel (A B : Type) (R : A → B → Type) : Br Type A B ≔ sig (
   x .ungel : R x.0 x.1 )
 
 {` First we define a Martin-Lof equality type, with congruence, transitivity, reversal, and transport. `}
@@ -58,7 +58,7 @@ def itecnat
   (f : A → B) (zf : eq B (f zA) zB)
   (sf : (a : A) → eq B (f (sA a)) (sB (f a))) (n : cnat)
   : eq B (f (ite A zA sA n)) (ite B zB sB n)
-  ≔ refl n (Gel A B (a b ↦ eq B (f a) b)) {zA} {zB} (_ ≔ zf) {sA} {sB}
+  ≔ rel n (Gel A B (a b ↦ eq B (f a) b)) {zA} {zB} (_ ≔ zf) {sA} {sB}
       ({a} {b} r ↦
        (_ ≔
           trans B (f (sA a)) (sB (f a)) (sB b) (sf a)
@@ -68,7 +68,7 @@ def itecnat
 
       ite_X (ite_Nat n) = ite_X n
 
-    i.e.
+    i.p.
 
       n Nat zero suc X z_X s_X = n X z_X s_X
 
