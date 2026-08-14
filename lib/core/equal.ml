@@ -1,5 +1,4 @@
 open Util
-open Tlist
 open Modal
 open Reporter
 open Printable
@@ -206,29 +205,12 @@ and equal_at_data : type mode m a b.
           let yargs =
             Vec.of_list_length lgth yargs
             <|> Anomaly "wrong number of constructor arguments in equality-check" in
-          let (Conses (cs, bs)) = Tlist.conses lgth in
           (* The instantiation must be at other instances of the same constructor; we take its arguments as in 'check'. *)
           let tyarg_args =
-            TubeOf.Heter.vec_of_hgt cs
-            @@ TubeOf.pmap
-                 {
-                   map =
-                     (fun _ [ tm ] ->
-                       match view_term tm.tm with
-                       | Constr (tmname, _, tmargs) ->
-                           if tmname = xconstr then
-                             let ys =
-                               Vec.of_list_length_map
-                                 (fun (Value.Modal (xfilt, x)) : (_, _) modal_value ->
-                                   Modal (Modality.filter_modality xfilt, CubeOf.find_top x))
-                                 lgth tmargs
-                               <|> Anomaly "inst arg wrong num args in readback at datatype"
-                             in
-                             CubeOf.Heter.hft_of_vec cs ys
-                           else fatal (Anomaly "inst arg wrong constr in equality at datatype")
-                       | _ -> fatal (Anomaly "inst arg not constr in equality at datatype"));
-                 }
-                 [ tyargs ] bs in
+            find_tyarg_args xconstr lgth tyargs
+              ~wrong_arity:(fun () -> Anomaly "inst arg wrong num args in readback at datatype")
+              ~wrong_constr:(fun _ -> Anomaly "inst arg wrong constr in equality at datatype")
+              ~not_constr:(fun _ -> Anomaly "inst arg not constr in equality at datatype") in
           (* It suffices to compare the top-dimensional faces of the cubes; the others are only there for evaluating case trees. *)
           equal_at_pi ctx xn (lazy (eval_term env ty)) xargs yargs tyarg_args)
   | Neu _, Neu _ -> (

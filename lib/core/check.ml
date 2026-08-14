@@ -1001,37 +1001,13 @@ and check_constr : type mode a b s.
           (* We recover the constructor's arity from the pi-depth of its stored function-type, to drive the conversion of the instantiation arguments below. *)
           let (Wrap lgth) = pi_arity constr_ty in
           (* To typecheck a higher-dimensional instance of our constructor constr at the datatype, all the instantiation arguments must also be applications of lower-dimensional versions of that same constructor.  We check this, and extract the arguments of those lower-dimensional constructors.  What we naturally have is a *tube of lists*, but what check_at_pi wants is a *vector of tubes*, one per constructor argument; we do the conversion with a multiple-output traversal, as in readback and equality. *)
-          let (Conses (cs, bs)) = Tlist.Tlist.conses lgth in
           let tyarg_args =
-            TubeOf.Heter.vec_of_hgt cs
-            @@ TubeOf.pmap
-                 {
-                   map =
-                     (fun (type k)
-                       (fa : (k, D.zero, mn, mn) tface)
-                       ([ tm ] : (k, (mode normal, Tlist.nil) Tlist.cons) CubeOf.Heter.hft)
-                     ->
-                       match view_term tm.tm with
-                       | Constr (tmname, n, tmargs) ->
-                           if tmname = constr then
-                             match D.compare n (dom_tface fa) with
-                             | Eq ->
-                                 let ys =
-                                   Vec.of_list_length_map
-                                     (fun (Value.Modal (xfilt, a)) : (_, _) modal_value ->
-                                       Modal (Modality.filter_modality xfilt, CubeOf.find_top a))
-                                     lgth tmargs
-                                   <|> Anomaly "inst arg wrong num args in checking constr" in
-                                 CubeOf.Heter.hft_of_vec cs ys
-                             | Neq ->
-                                 fatal (Dimension_mismatch ("checking constr", n, dom_tface fa))
-                           else fatal (Missing_instantiation_constructor (constr, `Constr tmname))
-                       | _ ->
-                           fatal
-                             (Missing_instantiation_constructor
-                                (constr, `Nonconstr (PNormal (ctx, tm)))));
-                 }
-                 [ tyargs ] bs in
+            find_tyarg_args ~check_dim:"checking constr" constr lgth tyargs
+              ~wrong_arity:(fun () -> Anomaly "inst arg wrong num args in checking constr")
+              ~wrong_constr:(fun tmname ->
+                Missing_instantiation_constructor (constr, `Constr tmname))
+              ~not_constr:(fun tm ->
+                Missing_instantiation_constructor (constr, `Nonconstr (PNormal (ctx, tm)))) in
           (* Now we walk the evaluation of the constructor's function-type, checking each user-supplied argument against the current domain (instantiated at the corresponding arguments of the lower-dimensional constructors, from tyarg_args) and applying the codomain to the checked argument to continue.  The final codomain is then the constructor's output type (the datatype applied to the parameters and indices) evaluated at all the checked arguments. *)
           let out, newargs =
             check_at_pi constr ctx (dim_env env) (eval_term env constr_ty) args tyarg_args in
