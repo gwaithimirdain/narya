@@ -37,29 +37,20 @@ Modified files are recompiled
    ￮ axiom a0 assumed
   
 
-Files are recompiled if the flags change
+A file declares its own type theory, so a command-line flag that disagrees with it is an
+error rather than a reason to recompile.  (Under the old flag-based scheme the same library
+could be compiled under several different type theories, one after another; now a file is
+compiled under exactly the one it declares.)
 
   $ narya -dtt -v two.ny
-   ￫ warning[W2303]
-   ￮ file '$TESTCASE_ROOT/one.ny' was compiled with incompatible flags -arity 2 -direction e,refl,Id,ap -internal, recompiling
+   ￫ error[E2321]
+   ￮ conflicting type theory options between file 'two.ny' and
+     the command line:
+     theory (parametricity vs. higher observational type theory), arity (1 vs. 2), direction letter (d vs. e), reflexivity names ((none) vs. refl,Id,ap), parametricity (external vs. internal), mode theory (discrete tconn vs. trivial)
   
-   ￫ info[I0003]
-   ￮ loading file: $TESTCASE_ROOT/one.ny
-  
-   ￫ info[I0001]
-   ￮ axiom A assumed
-  
-   ￫ info[I0004]
-   ￮ file loaded: $TESTCASE_ROOT/one.ny (source)
-  
-   ￫ info[I0001]
-   ￮ axiom a0 assumed
-  
+  [1]
 
   $ narya two.ny
-   ￫ warning[W2303]
-   ￮ file '$TESTCASE_ROOT/one.ny' was compiled with incompatible flags -parametric -arity 1 -direction d -external, recompiling
-  
 
 Requiring a file multiple times
 

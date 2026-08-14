@@ -12,27 +12,33 @@ open Print
 open PPrint
 open Top
 
-type arity = [ `One of string | `Any | `None ]
-
 let usage_msg = "narya [options] <file1> [<file2> ...]"
 let interactive = ref false
 let proofgeneral = ref false
 let show_version = ref false
-let install_mode_theory = ref Modal.Trivial.install
-let hott_forbidden : string option ref = ref None
-let external_ok : arity ref = ref `None
-let arity_ok : arity ref = ref `Any
 let mode_theories = ref 0
 let old_discreteness = ref false
-let modes = ref ""
-let modalities = ref ""
-let modalcells = ref ""
 
 (* Undocumented flag used for testing: interpret a given file or command-line string as if it were entered in interactive mode. *)
 let fake_interacts : string Bwd.t ref = ref Emp
 
 (* Undocumented flag used for testing: always display ANSI colors even if the terminal doesn't support them. *)
 let use_ansi = ref false
+
+(* The mode theory selection flags, generated from the registry in Modal.Theories.  That registry records each theory's compatibility requirements (whether it needs parametricity, whether it permits externality, whether it restricts the arity) as data, so that they can all be checked at once by Options.validate rather than by replaying mutable references in the order the flags happened to be written. *)
+let theory_flags =
+  List.concat_map
+    (fun (e : Modal.Theories.entry) ->
+      if e.name = Modal.Theories.trivial then []
+      else
+        let set () =
+          set_theory e.name;
+          mode_theories := !mode_theories + 1 in
+        ("-" ^ e.flag, Arg.Unit set, "Select " ^ String.uncapitalize_ascii e.doc)
+        :: List.map
+             (fun alias -> ("-" ^ String.concat "-" alias, Arg.Unit set, "alias of -" ^ e.flag))
+             e.aliases)
+    Modal.Theories.all
 
 let speclist =
   [
@@ -70,301 +76,38 @@ let speclist =
       Arg.Set show_unique_keys,
       "Display keys that are the unique one between their endpoints" );
     ("-variables", Arg.String (fun str -> variables := Some str), "Default variable names");
-    ("-arity", Arg.Set_int arity, "Arity of parametricity (default = 2)");
+    ("-arity", Arg.Int set_arity, "Arity of parametricity (default = 2)");
     ( "-direction",
       Arg.String set_refls,
       "Names for parametricity direction and reflexivity (default = e,refl,Id)" );
-    ("-internal", Arg.Set internal, "Set parametricity to internal (default)");
-    ("-external", Arg.Clear internal, "Set parametricity to external");
+    ("-internal", Arg.Unit (fun () -> set_internal true), "Set parametricity to internal (default)");
+    ("-external", Arg.Unit (fun () -> set_internal false), "Set parametricity to external");
     ( "-parametric",
-      Arg.Clear hott,
+      Arg.Unit (fun () -> set_hott false),
       "Switch from higher observational type theory (fibrancy) to parametricity" );
     ("-hott", Arg.Set hott_deprecated, "");
     ("-deprecated-discreteness", Arg.Set discreteness, "Enable discrete datatypes (deprecated)");
     ("-discreteness", Arg.Set old_discreteness, "");
     ("-source-only", Arg.Set source_only, "Load all files from source (ignore compiled versions)");
-    (* Mode theories *)
-    ( "-coreflector",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory :=
-            Modal.Coreflector.install
-              (module Modal.Coreflector.Ordinary : Modal.Coreflector.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the coreflector mode theory" );
-    ( "-crisp",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory :=
-            Modal.Coreflector.install
-              (module Modal.Coreflector.Ordinary : Modal.Coreflector.Variant);
-          mode_theories := !mode_theories + 1),
-      "alias of -coreflector" );
-    ( "-discrete-coreflector",
-      Arg.Unit
-        (fun () ->
-          hott_forbidden := Some "-discrete-coreflector";
-          external_ok := `One "-discrete-coreflector";
-          install_mode_theory :=
-            Modal.Coreflector.install
-              (module Modal.Coreflector.Discrete : Modal.Coreflector.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the discrete coreflector mode theory (requires -parametric, allows -external with -arity 1)"
-    );
-    ( "-comonad",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory :=
-            Modal.Comonad.install (module Modal.Comonad.Ordinary : Modal.Comonad.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the comonad mode theory (a non-idempotent comonad ♭, not locally posetal)" );
-    ( "-discrete-comonad",
-      Arg.Unit
-        (fun () ->
-          hott_forbidden := Some "-discrete-comonad";
-          external_ok := `Any;
-          install_mode_theory :=
-            Modal.Comonad.install (module Modal.Comonad.Discrete : Modal.Comonad.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the discrete comonad mode theory (requires -parametric, allows -external)" );
-    ( "-monad",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory := Modal.Monad_theory.install;
-          mode_theories := !mode_theories + 1),
-      "Select the monad mode theory (a non-idempotent monad ♯, not locally posetal)" );
-    ( "-reflector",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory := Modal.Reflector.install;
-          mode_theories := !mode_theories + 1),
-      "Select the reflector mode theory" );
-    ( "-spatial",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory :=
-            Modal.Spatial.install (module Modal.Spatial.Ordinary : Modal.Spatial.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the spatial mode theory (coreflector ♭ left adjoint to reflector ♯)" );
-    ( "-discrete-spatial",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory :=
-            Modal.Spatial.install (module Modal.Spatial.Discrete : Modal.Spatial.Variant);
-          hott_forbidden := Some "-discrete-spatial";
-          mode_theories := !mode_theories + 1),
-      "Select the spatial mode theory with discrete coreflector (requires -parametric)" );
-    ( "-functor",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory :=
-            Modal.Functor.install (module Modal.Functor.Ordinary : Modal.Functor.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the functor mode theory" );
-    ( "-transparent-functor",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory :=
-            Modal.Functor.install (module Modal.Functor.Transparent : Modal.Functor.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the transparent functor mode theory" );
-    ( "-discrete-functor",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory :=
-            Modal.Functor.install (module Modal.Functor.Discrete : Modal.Functor.Variant);
-          hott_forbidden := Some "-discrete-functor";
-          mode_theories := !mode_theories + 1),
-      "Select the functor mode theory with discrete domain mode (requires -parametric)" );
-    ( "-composable-functors",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory := Modal.Composable_functors.install;
-          mode_theories := !mode_theories + 1),
-      "Select the composable functors mode theory" );
-    ( "-transformation",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory := Modal.Transformation.install;
-          mode_theories := !mode_theories + 1),
-      "Select the transformation mode theory (a single 2-cell ○ ⇒ ▱)" );
-    ( "-composable-transformations",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory := Modal.Composable_transformations.install;
-          mode_theories := !mode_theories + 1),
-      "Select the composable transformations mode theory (2-cells ○ ⇒ ▱ ⇒ ▹)" );
-    ( "-interchange",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory := Modal.Interchange.install;
-          mode_theories := !mode_theories + 1),
-      "Select the interchange mode theory (2-cells ▹ ⇒ ◃ and ▸ ⇒ ◂ satisfying interchange)" );
-    ( "-adjunction",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory :=
-            Modal.Adjunction.install (module Modal.Adjunction.Ordinary : Modal.Adjunction.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the adjunction mode theory" );
-    ( "-discrete-adjunction",
-      Arg.Unit
-        (fun () ->
-          hott_forbidden := Some "-discrete-adjunction";
-          external_ok := `Any;
-          install_mode_theory :=
-            Modal.Adjunction.install (module Modal.Adjunction.Discrete : Modal.Adjunction.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the adjunction mode theory with discrete left adjoint (requires -parametric, allows -external)"
-    );
-    ( "-coreflection",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory :=
-            Modal.Coreflection.install
-              (module Modal.Coreflection.Ordinary : Modal.Coreflection.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the coreflection mode theory" );
-    ( "-discrete-coreflection",
-      Arg.Unit
-        (fun () ->
-          hott_forbidden := Some "-discrete-coreflection";
-          external_ok := `One "-discrete-coreflection";
-          install_mode_theory :=
-            Modal.Coreflection.install
-              (module Modal.Coreflection.Discrete : Modal.Coreflection.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the discrete coreflection mode theory (requires -parametric, allows -external with -arity 1)"
-    );
-    ( "-guarded",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory := Modal.Guarded.install;
-          mode_theories := !mode_theories + 1),
-      "Select the guarded mode theory (coreflection plus a later modality on Type)" );
-    ( "-local",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory :=
-            Modal.Local.install (module Modal.Local.Ordinary : Modal.Local.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the local geometric morphism mode theory" );
-    ( "-discrete-local",
-      Arg.Unit
-        (fun () ->
-          hott_forbidden := Some "-discrete-local";
-          install_mode_theory :=
-            Modal.Local.install (module Modal.Local.Discrete : Modal.Local.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the discrete local mode theory (requires -parametric)" );
-    ( "-tconn",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory :=
-            Modal.Tconn.install (module Modal.Tconn.Ordinary : Modal.Tconn.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the totally connected geometric morphism mode theory" );
-    ( "-discrete-tconn",
-      Arg.Unit
-        (fun () ->
-          hott_forbidden := Some "-discrete-tconn";
-          external_ok := `One "-discrete-tconn";
-          arity_ok := `One "-discrete-tconn";
-          install_mode_theory :=
-            Modal.Tconn.install (module Modal.Tconn.Discrete : Modal.Tconn.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the discrete tconn mode theory (requires -parametric and -arity 1, allows -external)"
-    );
-    ( "-cospatial",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory :=
-            Modal.Cospatial.install (module Modal.Cospatial.Ordinary : Modal.Cospatial.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the cospatial mode theory (reflector ♯ left adjoint to coreflector ♭)" );
-    ( "-discrete-cospatial",
-      Arg.Unit
-        (fun () ->
-          hott_forbidden := Some "-discrete-cospatial";
-          external_ok := `One "-discrete-cospatial";
-          arity_ok := `One "-discrete-cospatial";
-          install_mode_theory :=
-            Modal.Cospatial.install (module Modal.Cospatial.Discrete : Modal.Cospatial.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the cospatial mode theory with discrete coreflector (requires -parametric and -arity 1, allows -external)"
-    );
-    ( "-ambiflector",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory :=
-            Modal.Ambiflector.install
-              (module Modal.Ambiflector.Ordinary : Modal.Ambiflector.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the ambiflector mode theory (♮ is both a reflector and a coreflector)" );
-    ( "-discrete-ambiflector",
-      Arg.Unit
-        (fun () ->
-          hott_forbidden := Some "-discrete-ambiflector";
-          arity_ok := `One "-discrete-ambiflector";
-          install_mode_theory :=
-            Modal.Ambiflector.install
-              (module Modal.Ambiflector.Discrete : Modal.Ambiflector.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the ambiflector mode theory with nonparametric ♮ (requires -parametric and -arity 1)"
-    );
-    ( "-ambiflection",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory :=
-            Modal.Ambiflection.install
-              (module Modal.Ambiflection.Ordinary : Modal.Ambiflection.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the ambiflection mode theory (△ and □ are each both a reflector and a coreflector)" );
-    ( "-discrete-ambiflection",
-      Arg.Unit
-        (fun () ->
-          hott_forbidden := Some "-discrete-ambiflection";
-          arity_ok := `One "-discrete-ambiflection";
-          install_mode_theory :=
-            Modal.Ambiflection.install
-              (module Modal.Ambiflection.Discrete : Modal.Ambiflection.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the ambiflection mode theory with nonparametric Disc (requires -parametric and -arity 1)"
-    );
-    ( "-gwpt",
-      Arg.Unit
-        (fun () ->
-          install_mode_theory :=
-            Modal.Gwpt.install (module Modal.Gwpt.Ordinary : Modal.Gwpt.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the geometrically well-pointed topos mode theory" );
-    ( "-discrete-gwpt",
-      Arg.Unit
-        (fun () ->
-          hott_forbidden := Some "-discrete-gwpt";
-          external_ok := `Any;
-          install_mode_theory :=
-            Modal.Gwpt.install (module Modal.Gwpt.Discrete : Modal.Gwpt.Variant);
-          mode_theories := !mode_theories + 1),
-      "Select the discrete gwpt mode theory (requires -parametric, allows -external)" );
     ( "-dtt",
-      Unit
+      Arg.Unit
         (fun () ->
-          hott := false;
-          arity := 1;
-          refl_char := 'd';
-          refl_names := [];
-          internal := false;
-          external_ok := `One "-dtt";
-          arity_ok := `One "-dtt";
-          hott_forbidden := Some "-dtt";
-          install_mode_theory :=
-            Modal.Tconn.install (module Modal.Tconn.Discrete : Modal.Tconn.Variant);
+          set_hott false;
+          set_arity 1;
+          set_refls "d";
+          set_internal false;
+          set_theory [ "discrete"; "tconn" ];
           mode_theories := !mode_theories + 1),
       "Abbreviation for -parametric -arity 1 -direction d -external -discrete-tconn" );
-    ("-modes", Arg.Set_string modes, "set the names of modes");
-    ("-modalities", Arg.Set_string modalities, "set the names of modalities");
-    ("-modalcells", Arg.Set_string modalcells, "set the names of modal cells");
+    ( "-modes",
+      Arg.String (set_names (fun o xs -> { o with pmodes = Some xs })),
+      "set the names of modes" );
+    ( "-modalities",
+      Arg.String (set_names (fun o xs -> { o with pmodalities = Some xs })),
+      "set the names of modalities" );
+    ( "-modalcells",
+      Arg.String (set_names (fun o xs -> { o with pmodalcells = Some xs })),
+      "set the names of modal cells" );
     ("--help", Arg.Unit (fun () -> ()), "");
     ("-", Arg.Unit (fun () -> inputs := Snoc (!inputs, `Stdin)), "");
     ("-fake-interact", Arg.String (fun str -> fake_interacts := Snoc (!fake_interacts, str)), "");
@@ -375,6 +118,7 @@ let speclist =
     ("-remove-spaces", Arg.Clear extra_spaces, "");
     ("-use-ansi", Arg.Set use_ansi, "");
   ]
+  @ theory_flags
 
 (* Parse the command-line arguments and ensure that we have something to do. *)
 let () =
@@ -389,30 +133,7 @@ let () =
   if !mode_theories > 1 then (
     Printf.fprintf stderr "too many mode theories! specify only one.";
     exit 1);
-  (match (!hott, !hott_forbidden) with
-  | true, Some thy ->
-      Printf.fprintf stderr "%s requires -parametric\n" thy;
-      exit 1
-  | _ -> ());
-  if (not !internal) && !hott then (
-    Printf.fprintf stderr "-external requires -parametric\n";
-    exit 1);
-  (if not !internal then
-     match (!external_ok, !arity) with
-     | `None, _ ->
-         Printf.fprintf stderr "-external requires a compatible mode theory";
-         exit 1
-     | `One _, 1 -> ()
-     | `One str, _ ->
-         Printf.fprintf stderr "%s and -external require -arity 1" str;
-         exit 1
-     | `Any, _ -> ());
-  (match (!arity_ok, !arity) with
-  | `One _, 1 -> ()
-  | `One str, _ ->
-      Printf.fprintf stderr "%s requires -arity 1\n" str;
-      exit 1
-  | _ -> ());
+  (* The remaining compatibility checks between the type theory flags are performed by Options.validate, once the complete set of options is known.  The command line only constrains them: a source file supplies the rest. *)
   if
     Bwd.is_empty !inputs
     && (not !interactive)
@@ -464,6 +185,8 @@ let rec repl terminal history buf =
               | Quit _ -> exit 0
               | _ -> ())
         @@ fun () ->
+          (* Fix the type theory before parsing, if this command isn't itself an "option". *)
+          Execute.interactive_options str;
           match Command.parse_single str with
           | _, Some cmd ->
               (* We ignore the hole data, which is only for ProofGeneral. *)
@@ -538,6 +261,8 @@ let rec interact_pg () : unit =
         print_error_locs d)
       (fun () ->
         try
+          (* Fix the type theory before parsing, if this command isn't itself an "option". *)
+          Execute.interactive_options cmd;
           match Command.parse_single cmd with
           | _, None -> ()
           | prews, Some cmd ->
@@ -565,101 +290,9 @@ let rec interact_pg () : unit =
     interact_pg ()
   with End_of_file -> ()
 
-(* Whether a user-supplied name is usable as a single identifier token: nonempty, not starting with an underscore or a digit, and containing no dots or whitespace (which the lexer would split into separate tokens). *)
-let valid_name s =
-  s <> ""
-  && s.[0] <> '_'
-  && (not (s.[0] >= '0' && s.[0] <= '9'))
-  && (not (String.contains s '.'))
-  && not (String.exists (fun c -> c = ' ' || c = '\t' || c = '\n' || c = '\r') s)
-
-(* The distinct elements that appear more than once in a list. *)
-let duplicates names =
-  let seen = Hashtbl.create 16 and dups = Hashtbl.create 16 in
-  List.iter
-    (fun n -> if Hashtbl.mem seen n then Hashtbl.replace dups n () else Hashtbl.add seen n ())
-    names;
-  Hashtbl.fold (fun n () acc -> n :: acc) dups []
-
-(* Whether the nonempty string [s] can be written as a concatenation of one or more of the strings in [parts]. *)
-let is_concatenation s parts =
-  let parts = List.filter (fun p -> p <> "") parts in
-  let n = String.length s in
-  let dp = Array.make (n + 1) false in
-  dp.(0) <- true;
-  for i = 1 to n do
-    List.iter
-      (fun p ->
-        let lp = String.length p in
-        if i >= lp && dp.(i - lp) && String.sub s (i - lp) lp = p then dp.(i) <- true)
-      parts
-  done;
-  n > 0 && dp.(n)
-
-(* Sanity-check the names supplied on the command line for renaming modes, modalities, and modal cells.  The three list arguments are the user-supplied names (empty if that kind was not renamed); the effective names of each kind (user-supplied ones plus any left at their defaults) are read back from the installed mode theory.  Because renaming is all-or-nothing per kind, checks that could be triggered by a theory's default names are only run for the kinds the user actually renamed. *)
-let check_names modes modalities modalcells =
-  let errors = ref [] in
-  let err fmt = Printf.ksprintf (fun s -> errors := s :: !errors) fmt in
-  (* 6. All user-supplied names must be valid single identifiers. *)
-  List.iter
-    (fun (kind, names) ->
-      List.iter
-        (fun name ->
-          if not (valid_name name) then err "%s name '%s' is not a valid identifier" kind name)
-        names)
-    [ ("mode", modes); ("modality", modalities); ("modal cell", modalcells) ];
-  (* 1. No user-supplied name may be a reserved word.  This is essential for modes, which appear in term position; we apply it to modalities and cells too, since a keyword there would also confuse the lexer. *)
-  List.iter
-    (fun (kind, names) ->
-      List.iter
-        (fun name ->
-          if Option.is_some (Lexer.get_reserved_word name) then
-            err "%s name '%s' is a reserved word" kind name)
-        names)
-    [ ("mode", modes); ("modality", modalities); ("modal cell", modalcells) ];
-  let eff_modalities = Modal.Modality.all_names () in
-  let eff_cells = Modal.Modalcell.all_names () in
-  (* Deduplicated cell names, for the cross-checks below that would otherwise report a duplicated name once per occurrence. *)
-  let uniq_cells = List.sort_uniq compare eff_cells in
-  (* 7. No two modes may share a name. *)
-  if modes <> [] then
-    List.iter
-      (fun n -> err "duplicate mode name '%s'" n)
-      (duplicates (List.map fst (Modal.Mode.all ())));
-  (* 2. No two modalities may share a name. *)
-  if modalities <> [] then
-    List.iter (fun n -> err "duplicate modality name '%s'" n) (duplicates eff_modalities);
-  (* 3. No two modal cells may share a name. *)
-  if modalcells <> [] then
-    List.iter (fun n -> err "duplicate modal cell name '%s'" n) (duplicates eff_cells);
-  (* 4. No modal cell may share a name with a modality, since the two are mixed in the parsing and printing of keys. *)
-  if modalities <> [] || modalcells <> [] then
-    List.iter
-      (fun c ->
-        if List.mem c eff_modalities then err "modal cell name '%s' is also a modality name" c)
-      uniq_cells;
-  (* 5. When modalities are printed as single characters with no separators, a modal cell name that is a concatenation of modality names would be ambiguous. *)
-  if modalcells <> [] && Modal.Modality.one_char () then
-    List.iter
-      (fun c ->
-        if (not (List.mem c eff_modalities)) && is_concatenation c eff_modalities then
-          err
-            "modal cell name '%s' is a concatenation of modality names, which is ambiguous when modalities are single characters"
-            c)
-      uniq_cells;
-  match List.rev !errors with
-  | [] -> ()
-  | errs ->
-      List.iter (fun s -> Printf.fprintf stderr "invalid name: %s\n" s) errs;
-      exit 1
-
 let () =
   try
-    let modes = List.filter (fun x -> x <> "") (String.split_on_char ',' !modes) in
-    let modalities = List.filter (fun x -> x <> "") (String.split_on_char ',' !modalities) in
-    let modalcells = List.filter (fun x -> x <> "") (String.split_on_char ',' !modalcells) in
-    !install_mode_theory modes modalities modalcells;
-    check_names modes modalities modalcells;
+    (* Note that the mode theory is not installed here: the type theory isn't fixed until the leading "option" commands of the first source have been read.  See Top.install_options. *)
     let use_ansi = if !use_ansi then Some true else None in
     run_top ?use_ansi ~install_hott:Hott.install @@ fun () ->
     (* Note: run_top executes the input files, so here we only have to do the interaction. *)
@@ -668,6 +301,8 @@ let () =
         let source : Asai.Range.source =
           if try FileUtil.test Is_file file with _ -> false then `File file
           else `String { title = Some "command line fake-interact"; content = file } in
+        (* A fake-interact source is treated as interactive input, so its "option" block, if any, fixes the type theory before we parse anything else. *)
+        Execute.interactive_options_source source;
         let p, src = Parser.Command.Parse.start_parse source in
         Reporter.try_with ~emit:(Reporter.display ?use_ansi ~output:stdout)
           ~fatal:(Reporter.display ?use_ansi ~output:stdout) (fun () ->

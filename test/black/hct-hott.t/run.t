@@ -1,6 +1,6 @@
   $ rm -f *.nyo
 
-  $ narya -v -parametric -direction p,rel,Br univalence.ny
+  $ narya -v univalence.ny
    ￫ info[I0003]
    ￮ loading file: $TESTCASE_ROOT/isfibrant.ny
   
@@ -562,7 +562,7 @@
    ￮ constant univalence_is_right_definitional defined
   
 
-  $ narya -v -parametric -direction p,rel,Br univalence_ee.ny
+  $ narya -v univalence_ee.ny
    ￫ info[I0004]
    ￮ file loaded: $TESTCASE_ROOT/isfibrant.ny (compiled)
   
@@ -603,7 +603,7 @@
    ￮ constant univalence_ee defined
   
 
-  $ narya -parametric -direction p,rel,Br 2dpitr.ny
+  $ narya 2dpitr.ny
   B22 (A22 .f .liftl.1 a12) .f .trr.1 (f02 (A22 .f .trl.1 a12))
     : B12 a12
     .t (B20 (A20 .f .liftl a10) .f .trr (f00 (A20 .f .trl a10)))
@@ -648,7 +648,7 @@
     .t (B02 (A02 .f .liftl a01) .f .trr (f00 (A02 .f .trl a01)))
       (B12 (A12 .f .liftl a11) .f .trr (f10 (A12 .f .trl a11)))
   
-  $ narya -v -parametric -direction p,rel,Br fibrant_sqrt.ny
+  $ narya -v fibrant_sqrt.ny
    ￫ info[I0004]
    ￮ file loaded: $TESTCASE_ROOT/isfibrant.ny (compiled)
   

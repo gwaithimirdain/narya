@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-monad") -*- `}
+option modal ≔ monad
 
 def ♯ (A :♯| Type) : Type ≔ data [ box. (_ :♯| A) ]
 

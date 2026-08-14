@@ -284,6 +284,11 @@ module Code = struct
     | Cant_write_compiled_file : string -> t
     | Incompatible_flags : string * string -> t
     | Actions_in_compiled_file : string -> t
+    (* Type theory options *)
+    | Invalid_option : string * string -> t
+    | Conflicting_options : string * string * string list -> t
+    | Invalid_options : string list -> t
+    | Option_not_at_start : t
     | No_such_hole : int -> t
     | Invalid_split : [ `Term | `Goal ] * string -> t
     | Forbidden_interactive_command : string -> t
@@ -461,6 +466,10 @@ module Code = struct
     | Cant_write_compiled_file _ -> Warning
     | Incompatible_flags _ -> Warning
     | Actions_in_compiled_file _ -> Warning
+    | Invalid_option _ -> Error
+    | Conflicting_options _ -> Error
+    | Invalid_options _ -> Error
+    | Option_not_at_start -> Error
     | No_such_hole _ -> Error
     | Invalid_split _ -> Error
     | Hole_solved _ -> Info
@@ -649,6 +658,11 @@ module Code = struct
     | No_such_file _ -> "E2304"
     | Cant_write_compiled_file _ -> "W2305"
     | Library_modified _ -> "E2306"
+    (* option *)
+    | Invalid_option _ -> "E2320"
+    | Conflicting_options _ -> "E2321"
+    | Invalid_options _ -> "E2322"
+    | Option_not_at_start -> "E2323"
     (* chdir *)
     | Directory_changed _ -> "I2310"
     (* echo *)
@@ -1174,6 +1188,14 @@ module Code = struct
           textf "file '%s' was compiled with incompatible flags %s, recompiling" file flags
       | Actions_in_compiled_file file ->
           textf "not re-executing echo/synth/show commands when loading compiled file %s" file
+      | Invalid_option (what, msg) -> textf "invalid 'option %s':@ %s" what msg
+      | Conflicting_options (src1, src2, diffs) ->
+          textf "conflicting type theory options between@ %s@ and@ %s:@ %s" src1 src2
+            (String.concat ", " diffs)
+      | Invalid_options msgs -> textf "invalid type theory options:@ %s" (String.concat ", " msgs)
+      | Option_not_at_start ->
+          textf
+            "'option' commands must come at the beginning of a file,@ before any other command:@ the@ type@ theory@ can't@ change@ partway@ through@ a@ run"
       | No_such_hole i -> textf "no open hole numbered %d" i
       | Invalid_split (which, str) ->
           textf "invalid split: %s belongs to a %s"

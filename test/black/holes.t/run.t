@@ -1,4 +1,4 @@
-  $ narya -parametric -v holes.ny
+  $ narya -v holes.ny
    ￫ info[I0001]
    ￮ axiom A assumed
   
@@ -392,7 +392,7 @@
   
   [1]
 
-  $ narya -v -dtt dtt-holes.ny
+  $ narya -v dtt-holes.ny
    ￫ info[I0000]
    ￮ constant f defined
   

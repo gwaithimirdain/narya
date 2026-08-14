@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-spatial") -*- `}
+option modal ≔ spatial
 
 ` The coreflector ♭ can be unlocked directly (comonad counit).
 def f (A :♭| Type) (x :♭| A) : A ≔ x

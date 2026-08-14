@@ -1,4 +1,4 @@
-  $ narya -v -adjunction adjunction.ny
+  $ narya -v adjunction.ny
    ￫ info[I0000]
    ￮ constant counit defined
   
@@ -62,7 +62,7 @@
 
 The reflector □△ is not invertible: there is no 2-cell □△ ⇒ 1.
 
-  $ narya -adjunction adjunction.ny -e "def bad (A :□△| Disc) (x :□△| A) : A ≔ x"
+  $ narya adjunction.ny -e "def bad (A :□△| Disc) (x :□△| A) : A ≔ x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def bad (A :□△| Disc) (x :□△| A) : A ≔ x
@@ -72,7 +72,7 @@ The reflector □△ is not invertible: there is no 2-cell □△ ⇒ 1.
 
 Nor is there a 2-cell 1 ⇒ △□.
 
-  $ narya -adjunction adjunction.ny -e "def bad2 (A : Type) : Type ≔ data [ bad2. (_ :△□| A) ]"
+  $ narya adjunction.ny -e "def bad2 (A : Type) : Type ≔ data [ bad2. (_ :△□| A) ]"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def bad2 (A : Type) : Type ≔ data [ bad2. (_ :△□| A) ]
@@ -83,7 +83,7 @@ Nor is there a 2-cell 1 ⇒ △□.
 There are two distinct 2-cells □△ ⇒ □△□△ (whiskering the unit on either
 side), so an implicit key cannot be inserted.
 
-  $ narya -adjunction adjunction.ny -e "def amb (A : Disc) (x :□△| A) : □△□△ A ≔ t2. x"
+  $ narya adjunction.ny -e "def amb (A : Disc) (x :□△| A) : □△□△ A ≔ t2. x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def amb (A : Disc) (x :□△| A) : □△□△ A ≔ t2. x
@@ -94,7 +94,7 @@ side), so an implicit key cannot be inserted.
 Likewise there are two distinct 2-cells △□△□ ⇒ △□ (whiskering the counit on
 either side).
 
-  $ narya -adjunction adjunction.ny -e "def amb2 (A :△□| Type) (x :△□△□| A) : △□ A ≔ s. x"
+  $ narya adjunction.ny -e "def amb2 (A :△□| Type) (x :△□△□| A) : △□ A ≔ s. x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def amb2 (A :△□| Type) (x :△□△□| A) : △□ A ≔ s. x
@@ -105,11 +105,11 @@ either side).
 But △□△□ ⇒ 1 is unique, since the two whiskered counits have the same pairing
 after composing with the outer counit.
 
-  $ narya -adjunction adjunction.ny -e "def counit22 (A :△□△□| Type) (x :△□△□| A) : A ≔ x"
+  $ narya adjunction.ny -e "def counit22 (A :△□△□| Type) (x :△□△□| A) : A ≔ x"
 
 The modality □ (or △) alone admits no 2-cell to the identity.
 
-  $ narya -adjunction adjunction.ny -e "def bad3 (A :□| Type) (x :□| A) : A ≔ x"
+  $ narya adjunction.ny -e "def bad3 (A :□| Type) (x :□| A) : A ≔ x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def bad3 (A :□| Type) (x :□| A) : A ≔ x
@@ -119,7 +119,7 @@ The modality □ (or △) alone admits no 2-cell to the identity.
 
 Different keys are different.
 
-  $ narya -adjunction adjunction.ny -e "def needs_key_12 (A : Disc) (x :□△| A) : Id (□△□△ A) (needs_key1 A x) (needs_key2 A x) ≔ refl _"
+  $ narya adjunction.ny -e "def needs_key_12 (A : Disc) (x :□△| A) : Id (□△□△ A) (needs_key1 A x) (needs_key2 A x) ≔ refl _"
    ￫ error[E0401]
    ￭ command-line exec string
    1 | def needs_key_12 (A : Disc) (x :□△| A) : Id (□△□△ A) (needs_key1 A x) (needs_key2 A x) ≔ refl _
@@ -134,7 +134,7 @@ Different keys are different.
   
   [1]
 
-  $ narya -v -discrete-adjunction -parametric -external -direction p,rel,Br discrete_adjunction.ny
+  $ narya -v discrete_adjunction.ny
    ￫ info[I0000]
    ￮ constant △ defined
   

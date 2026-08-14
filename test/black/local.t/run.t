@@ -1,4 +1,4 @@
-  $ narya -v -local local.ny
+  $ narya -v local.ny
    ￫ info[I0000]
    ￮ constant counit defined
   
@@ -93,7 +93,7 @@
    ￮ constant unmk_mk defined
   
 
-  $ narya -v -discrete-local -parametric discrete_local.ny
+  $ narya -v discrete_local.ny
    ￫ info[I0000]
    ￮ constant counit defined
   

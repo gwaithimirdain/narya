@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-guarded") -*- `}
+option modal ≔ guarded
 
 def ▸ (A :▸| Timed) : Timed ≔ data [ next. (_ :▸| A) ]
 

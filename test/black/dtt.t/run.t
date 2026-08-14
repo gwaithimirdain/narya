@@ -1,4 +1,4 @@
-  $ narya -dtt -v sst.ny
+  $ narya -v sst.ny
    ￫ info[I0000]
    ￮ constant Gel defined
   
@@ -157,7 +157,7 @@
    ￮ constant sst.copair defined
   
 
-  $ narya -parametric -arity 2 -direction p -v sct.ny
+  $ narya -v sct.ny
    ￫ info[I0000]
    ￮ constant SCT defined
   
@@ -287,7 +287,7 @@ When a constant is defined containing a hole, it is allowed to be parametric, bu
 
 General displayed coinductives
 
-  $ narya -dtt -v dcoind.ny
+  $ narya -v dcoind.ny
    ￫ info[I0000]
    ￮ constant disp defined
   
@@ -295,7 +295,7 @@ General displayed coinductives
    ￮ constant dCoind defined
   
 
-  $ narya -dtt -v discrete.ny
+  $ narya -v discrete.ny
    ￫ info[I0000]
    ￮ constant disp defined
   
@@ -336,7 +336,7 @@ General displayed coinductives
    ￮ constant △◇ᵈ_eq defined
   
 
-  $ narya -v -dtt higher-display.ny
+  $ narya -v higher-display.ny
    ￫ info[I0000]
    ￮ constant ℕ defined
   

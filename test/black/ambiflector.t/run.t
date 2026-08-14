@@ -1,4 +1,4 @@
-  $ narya -v -ambiflector ambiflector.ny
+  $ narya -v ambiflector.ny
    ￫ info[I0000]
    ￮ constant counit defined
   
@@ -62,7 +62,7 @@ The composite unit-then-counit, id ⇒ ♮ ⇒ id, is "zero", not the identity: 
 genuinely plain value (which needs the unit inserted first) does not typecheck.
 Note the very bad error message, which will be improved when we can print keys.
 
-  $ narya -ambiflector ambiflector.ny -e "def roundtrip_bad (A : Type) (x : A) : A ≔ counit A x"
+  $ narya ambiflector.ny -e "def roundtrip_bad (A : Type) (x : A) : A ≔ counit A x"
    ￫ error[E0401]
    ￭ command-line exec string
    1 | def roundtrip_bad (A : Type) (x : A) : A ≔ counit A x
@@ -96,27 +96,36 @@ We get the same error here:
 
 The nonparametric ambiflector mode theory currently requires -parametric.
 
-  $ narya -discrete-ambiflector discrete_ambiflector.ny
-  -discrete-ambiflector requires -parametric
+  $ narya -discrete-ambiflector -e "echo 1"
+   ￫ error[E2322]
+   ￮ invalid type theory options:
+     the discrete ambiflector mode theory requires 'option parametric', the discrete ambiflector mode theory requires arity 1
+  
   [1]
 
 And -external is not allowed with it.
 
-  $ narya -parametric -direction p,rel,Br -arity 1 -discrete-ambiflector -external discrete_ambiflector.ny
-  -external requires a compatible mode theory
+  $ narya -parametric -direction p,rel,Br -arity 1 -discrete-ambiflector -external -e "echo 1"
+   ￫ error[E2322]
+   ￮ invalid type theory options:
+     external parametricity requires a compatible mode theory, not discrete ambiflector
+  
   [1]
 
 Since there is a 2-cell (the reflector unit) from the non-discrete identity modality to the
 discrete modality ♮, the arity of parametricity must be 1.
 
-  $ narya -parametric -direction p,rel,Br -discrete-ambiflector discrete_ambiflector.ny
-  -discrete-ambiflector requires -arity 1
+  $ narya -parametric -direction p,rel,Br -discrete-ambiflector -e "echo 1"
+   ￫ error[E2322]
+   ￮ invalid type theory options:
+     the discrete ambiflector mode theory requires arity 1
+  
   [1]
 
 Under arity 1, using a ♮-locked argument filters out the parametric dimension, exactly as for
 -discrete-tconn's △◇.
 
-  $ narya -v -parametric -direction p,rel,Br -arity 1 -discrete-ambiflector discrete_ambiflector.ny
+  $ narya -v discrete_ambiflector.ny
    ￫ info[I0001]
    ￮ axiom X assumed
   

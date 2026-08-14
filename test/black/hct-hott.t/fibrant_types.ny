@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-direction" "p,rel,Br") -*- `}
+option parametric ≔ arity 2, letter p, name rel Br
 
 import "isfibrant"
 import "bookhott"
@@ -980,7 +980,7 @@ def 𝕄_encode_decode (s0 s1 : 𝕄_spec) (s2 : Br 𝕄_spec s0 s1) (r0 : s0 .R
          (𝕄_decode s0 s1 s2 r0 r1 r2 x0 x1 y2)) y2
       (𝕄_encode_decode_bisim s0 s1 s2 r0 r1 r2 x0 x1 y2)
 
-{` For the other direction we need a version of this for rel 𝕄. `}
+{` For the other letter w, namee need a version of this for rel 𝕄. `}
 
 def refl_𝕄_bisim (s0 s1 : 𝕄_spec) (s2 : Br 𝕄_spec s0 s1) (r0 : s0 .R)
   (r1 : s1 .R) (r20 : s2 .R r0 r1) (r21 : s2 .R r0 r1)

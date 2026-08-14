@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-coreflector") -*- `}
+option modal ≔ coreflector
 
 def f (A :♭| Type) (x :♭| A) : A ≔ x
 

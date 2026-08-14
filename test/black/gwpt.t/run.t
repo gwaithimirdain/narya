@@ -1,4 +1,4 @@
-  $ narya -v -gwpt gwpt.ny
+  $ narya -v gwpt.ny
    ￫ info[I0000]
    ￮ constant counit defined
   
@@ -98,7 +98,7 @@
 
 The unit of ◇ ⊣ ∇ is not invertible: there is no 2-cell ∇◇ ⇒ 1.
 
-  $ narya -gwpt gwpt.ny -e "def bad (A : Type) (x : ∇◇ | A) : A ≔ x"
+  $ narya gwpt.ny -e "def bad (A : Type) (x : ∇◇ | A) : A ≔ x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def bad (A : Type) (x : ∇◇ | A) : A ≔ x
@@ -108,7 +108,7 @@ The unit of ◇ ⊣ ∇ is not invertible: there is no 2-cell ∇◇ ⇒ 1.
 
 Nor are there 2-cells □△ ⇒ 1 or 1 ⇒ △□ (the adjunction △ ⊣ □ is free).
 
-  $ narya -gwpt gwpt.ny -e "def bad2 (A : □△ | Disc) (x : □△ | A) : A ≔ x"
+  $ narya gwpt.ny -e "def bad2 (A : □△ | Disc) (x : □△ | A) : A ≔ x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def bad2 (A : □△ | Disc) (x : □△ | A) : A ≔ x
@@ -116,7 +116,7 @@ Nor are there 2-cells □△ ⇒ 1 or 1 ⇒ △□ (the adjunction △ ⊣ □ i
   
   [1]
 
-  $ narya -gwpt gwpt.ny -e "def bad3 (A : Type) : Type ≔ data [ bad3. (_ : △□ | A) ]"
+  $ narya gwpt.ny -e "def bad3 (A : Type) : Type ≔ data [ bad3. (_ : △□ | A) ]"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def bad3 (A : Type) : Type ≔ data [ bad3. (_ : △□ | A) ]
@@ -126,7 +126,7 @@ Nor are there 2-cells □△ ⇒ 1 or 1 ⇒ △□ (the adjunction △ ⊣ □ i
 
 The induced 2-cells go from □ to ◇ and from △ to ∇, not the other way.
 
-  $ narya -gwpt gwpt.ny -e "def bad4 (X :◇| Type) : Disc ≔ data [ bad4. (_ : □ | X) ]"
+  $ narya gwpt.ny -e "def bad4 (X :◇| Type) : Disc ≔ data [ bad4. (_ : □ | X) ]"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def bad4 (X :◇| Type) : Disc ≔ data [ bad4. (_ : □ | X) ]
@@ -134,7 +134,7 @@ The induced 2-cells go from □ to ◇ and from △ to ∇, not the other way.
   
   [1]
 
-  $ narya -gwpt gwpt.ny -e "def bad5 (X :∇| Disc) : Type ≔ data [ bad5. (_ : △ | X) ]"
+  $ narya gwpt.ny -e "def bad5 (X :∇| Disc) : Type ≔ data [ bad5. (_ : △ | X) ]"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def bad5 (X :∇| Disc) : Type ≔ data [ bad5. (_ : △ | X) ]
@@ -146,7 +146,7 @@ There are two distinct 2-cells △□ ⇒ ∇◇: the counit ε followed by the 
 or the two induced strands □ ⇒ ◇ and △ ⇒ ∇ side by side.  So an implicit key
 cannot be inserted.
 
-  $ narya -gwpt gwpt.ny -e "def amb (A :△□| Type) (x : △□ | A) : ∇◇ A ≔ c. x"
+  $ narya gwpt.ny -e "def amb (A :△□| Type) (x : △□ | A) : ∇◇ A ≔ c. x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def amb (A :△□| Type) (x : △□ | A) : ∇◇ A ≔ c. x
@@ -156,7 +156,7 @@ cannot be inserted.
 
 Likewise there are two distinct 2-cells △□ ⇒ ∇□△◇.
 
-  $ narya -gwpt gwpt.ny -e "def amb2 (A :△□| Type) (x :△□| A) : ∇□△◇ A ≔ c2. x"
+  $ narya gwpt.ny -e "def amb2 (A :△□| Type) (x :△□| A) : ∇□△◇ A ≔ c2. x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def amb2 (A :△□| Type) (x :△□| A) : ∇□△◇ A ≔ c2. x
@@ -167,7 +167,7 @@ Likewise there are two distinct 2-cells △□ ⇒ ∇□△◇.
 And the walking-adjunction ambiguity of the two whiskered units □△ ⇒ □△□△ is
 still present.
 
-  $ narya -gwpt gwpt.ny -e "def amb3 (A : Disc) (x :□△| A) : □△ (□△ A) ≔ t. (t. x)"
+  $ narya gwpt.ny -e "def amb3 (A : Disc) (x :□△| A) : □△ (□△ A) ≔ t. (t. x)"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def amb3 (A : Disc) (x :□△| A) : □△ (□△ A) ≔ t. (t. x)

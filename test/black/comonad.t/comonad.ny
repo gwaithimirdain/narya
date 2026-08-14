@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-comonad") -*- `}
+option modal ≔ comonad
 
 def ♭ (A :♭| Type) : Type ≔ data [ box. (_ :♭| A) ]
 

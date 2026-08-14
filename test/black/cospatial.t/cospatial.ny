@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-cospatial") -*- `}
+option modal ≔ cospatial
 
 ` The counit of the coreflector ♭: a ♭-locked variable can be used directly.
 def counit (A :♭| Type) (x :♭| A) : A ≔ x

@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-spatial") -*- `}
+option modal ≔ spatial
 
 def N : Type ≔ data [ zero. | suc. (_ : N) ]
 

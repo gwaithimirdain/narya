@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-parametric") -*- `}
+option parametric ≔ arity 2, letter e, name refl Id ap
 
 def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig (
   a .ungel : R a.0 a.1 )

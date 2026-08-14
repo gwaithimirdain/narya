@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-dtt") -*- `}
+option dtt
 
 def f : Type → Type ≔ X ↦ X
 

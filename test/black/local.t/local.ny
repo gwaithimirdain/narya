@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-local") -*- `}
+option modal ≔ local
 
 ` The counit of △ ⊣ □: a △□-locked variable can be used directly.
 def counit (A :△□| Type) (x :△□| A) : A ≔ x

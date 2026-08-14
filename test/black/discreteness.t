@@ -1,16 +1,18 @@
   $ cat >jd.ny <<EOF
+  > option parametric ≔ arity 1, letter d
   > def Jd (X:Type) (x:X) : X → Type ≔ data [ rfl. : Jd X x x ]
   > EOF
 
 Arbitrary types are not discrete:
 
   $ cat >arb.ny <<EOF
+  > option parametric ≔ arity 1, letter d
   > axiom A : Type
   > axiom a : A
   > def T ≔ A⁽ᵈ⁾ a
   > EOF
 
-  $ narya -source-only -parametric -arity 1 -direction d arb.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
+  $ narya -source-only arb.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
    ￫ error[E1003]
    ￭ command-line exec string
    1 | def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.
@@ -27,7 +29,7 @@ Arbitrary types are not discrete:
 
 They remain so even when discreteness is on:
 
-  $ narya -source-only -parametric -arity 1 -direction d -deprecated-discreteness arb.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
+  $ narya -source-only -deprecated-discreteness arb.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
    ￫ error[E1003]
    ￭ command-line exec string
    1 | def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.
@@ -45,12 +47,13 @@ They remain so even when discreteness is on:
 There are no discrete datatypes if discreteness is off:
 
   $ cat >natd.ny <<EOF
+  > option parametric ≔ arity 1, letter d
   > def ℕ : Type ≔ data [ zero. | suc. (_:ℕ) ]
   > axiom n : ℕ
   > def T ≔ ℕ⁽ᵈ⁾ n
   > EOF
 
-  $ narya -source-only -v -parametric -arity 1 -direction d natd.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
+  $ narya -source-only -v natd.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
    ￫ info[I0000]
    ￮ constant ℕ defined
   
@@ -80,10 +83,11 @@ There are no discrete datatypes if discreteness is off:
 Discrete datatypes are not themselves propositions:
 
   $ cat >nat.ny <<EOF
+  > option parametric ≔ arity 1, letter d
   > def T : Type ≔ data [ zero. | suc. (_:T) ]
   > EOF
 
-  $ narya -source-only -v -parametric -arity 1 -direction d -deprecated-discreteness nat.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
+  $ narya -source-only -v -deprecated-discreteness nat.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
    ￫ info[I0000]
    ￮ discrete constant T defined
   
@@ -107,12 +111,13 @@ Discrete datatypes are not themselves propositions:
 But their degenerate versions are:
 
   $ cat >natd.ny <<EOF
+  > option parametric ≔ arity 1, letter d
   > def ℕ : Type ≔ data [ zero. | suc. (_:ℕ) ]
   > axiom n : ℕ
   > def T ≔ ℕ⁽ᵈ⁾ n
   > EOF
 
-  $ narya -source-only -v -parametric -arity 1 -direction d -deprecated-discreteness natd.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
+  $ narya -source-only -v -deprecated-discreteness natd.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
    ￫ info[I0000]
    ￮ discrete constant ℕ defined
   
@@ -132,13 +137,14 @@ But their degenerate versions are:
 Datatypes with nondiscrete parameters are not discrete:
 
   $ cat >param.ny <<EOF
+  > option parametric ≔ arity 1, letter d
   > def List (A:Type) : Type ≔ data [ nil. | cons. (_:A) (_:List A) ]
   > axiom A : Type
   > axiom l : List A
   > def T ≔ (List A)⁽ᵈ⁾ l
   > EOF
 
-  $ narya -source-only -v -parametric -arity 1 -direction d -deprecated-discreteness param.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
+  $ narya -source-only -v -deprecated-discreteness param.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
    ￫ info[I0000]
    ￮ constant List defined
   
@@ -171,13 +177,14 @@ Datatypes with nondiscrete parameters are not discrete:
 Even trivial parameters:
 
   $ cat >param2.ny <<EOF
+  > option parametric ≔ arity 1, letter d
   > def param_empty (A:Type) : Type ≔ data [ ]
   > axiom A : Type
   > axiom l : param_empty A
   > def T ≔ (param_empty A)⁽ᵈ⁾ l
   > EOF
 
-  $ narya -source-only -v -parametric -arity 1 -direction d -deprecated-discreteness param2.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
+  $ narya -source-only -v -deprecated-discreteness param2.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
    ￫ info[I0000]
    ￮ constant param_empty defined
   
@@ -211,13 +218,14 @@ Even trivial parameters:
 But datatypes with discrete parameters are discrete:
 
   $ cat >param3.ny <<EOF
+  > option parametric ≔ arity 1, letter d
   > def ℕ : Type ≔ data [ zero. | suc. (_:ℕ) ]
   > def param_empty (n:ℕ) : Type ≔ data [ ]
   > axiom l : param_empty zero.
   > def T ≔ (param_empty zero.)⁽ᵈ⁾ l
   > EOF
 
-  $ narya -source-only -v -parametric -arity 1 -direction d -deprecated-discreteness param3.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
+  $ narya -source-only -v -deprecated-discreteness param3.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
    ￫ info[I0000]
    ￮ discrete constant ℕ defined
   
@@ -241,6 +249,7 @@ But datatypes with discrete parameters are discrete:
 Datatypes with discrete indices are discrete:
 
   $ cat >index.ny <<EOF
+  > option parametric ≔ arity 1, letter d
   > def ℕ : Type ≔ data [ zero. | suc. (_:ℕ) ]
   > def iszero : ℕ → Type ≔ data [ iszero. : iszero zero. ]
   > axiom n : ℕ
@@ -248,7 +257,7 @@ Datatypes with discrete indices are discrete:
   > def T ≔ (iszero n)⁽ᵈ⁾ z
   > EOF
 
-  $ narya -source-only -v -parametric -arity 1 -direction d -deprecated-discreteness index.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
+  $ narya -source-only -v -deprecated-discreteness index.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
    ￫ info[I0000]
    ￮ discrete constant ℕ defined
   
@@ -274,6 +283,7 @@ Datatypes with discrete indices are discrete:
 But datatypes with nondiscrete indices, even trivial ones, are not discrete:
 
   $ cat >index2.ny <<EOF
+  > option parametric ≔ arity 1, letter d
   > axiom N : Type
   > axiom n : N
   > def index_unit : N → Type ≔ data [ foo. : index_unit n ]
@@ -281,7 +291,7 @@ But datatypes with nondiscrete indices, even trivial ones, are not discrete:
   > def T ≔ (index_unit n)⁽ᵈ⁾ z
   > EOF
 
-  $ narya -source-only -v -parametric -arity 1 -direction d -deprecated-discreteness index2.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
+  $ narya -source-only -v -deprecated-discreteness index2.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
    ￫ info[I0001]
    ￮ axiom N assumed
   
@@ -318,12 +328,13 @@ But datatypes with nondiscrete indices, even trivial ones, are not discrete:
 Datatypes with constructors having non-discrete arguments are not discrete:
 
   $ cat >constr.ny <<EOF
+  > option parametric ≔ arity 1, letter d
   > def foo : Type ≔ data [ foo. (_:Type) ]
   > axiom f : foo
   > def T ≔ foo⁽ᵈ⁾ f
   > EOF
 
-  $ narya -source-only -v -parametric -arity 1 -direction d -deprecated-discreteness constr.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
+  $ narya -source-only -v -deprecated-discreteness constr.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
    ￫ info[I0000]
    ￮ constant foo defined
   
@@ -354,13 +365,14 @@ Datatypes with constructors having non-discrete arguments are not discrete:
 Trivially mutually datatypes are discrete:
 
   $ cat >mutual2.ny <<EOF
+  > option parametric ≔ arity 1, letter d
   > def empty : Type ≔ data [ ]
   > and unit : Type ≔ data [ ]
   > axiom e : unit
   > def T ≔ unit⁽ᵈ⁾ e
   > EOF
 
-  $ narya -source-only -v -parametric -arity 1 -direction d -deprecated-discreteness mutual2.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
+  $ narya -source-only -v -deprecated-discreteness mutual2.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
    ￫ info[I0000]
    ￮ discrete constants defined mutually:
        empty
@@ -383,13 +395,14 @@ Trivially mutually datatypes are discrete:
 Nontrivially mutual datatypes can also be discrete, if treating them all as discrete validates all of their discreteness:
 
   $ cat >mutual3.ny <<EOF
+  > option parametric ≔ arity 1, letter d
   > def even : Type ≔ data [ zero. | suc. (_ : odd) ]
   > and odd : Type ≔ data [ suc. (_:even) ]
   > axiom e : even
   > def T ≔ even⁽ᵈ⁾ e
   > EOF
 
-  $ narya -source-only -v -parametric -arity 1 -direction d -deprecated-discreteness mutual3.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
+  $ narya -source-only -v -deprecated-discreteness mutual3.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
    ￫ info[I0000]
    ￮ discrete constants defined mutually:
        even
@@ -412,6 +425,7 @@ Nontrivially mutual datatypes can also be discrete, if treating them all as disc
 Including if they have discrete indices:
 
   $ cat >mutual4.ny <<EOF
+  > option parametric ≔ arity 1, letter d
   > def ℕ : Type ≔ data [ zero. | suc. (_:ℕ) ]
   > def even : ℕ → Type ≔ data [ zero. : even zero. | suc. (n : ℕ) (_ : odd n) : even (suc. n) ]
   > and odd : ℕ → Type ≔ data [ suc. (n:ℕ) (_ : even n) : odd (suc. n) ]
@@ -419,7 +433,7 @@ Including if they have discrete indices:
   > def T ≔ even⁽ᵈ⁾ {2} 2 e
   > EOF
 
-  $ narya -source-only -v -parametric -arity 1 -direction d -deprecated-discreteness mutual4.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
+  $ narya -source-only -v -deprecated-discreteness mutual4.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
    ￫ info[I0000]
    ￮ discrete constant ℕ defined
   
@@ -444,13 +458,14 @@ Including if they have discrete indices:
 But nondiscreteness of any of them throws the others off:
 
   $ cat >mutual5.ny <<EOF
+  > option parametric ≔ arity 1, letter d
   > def empty1 (A : Type) : Type ≔ data []
   > and empty2 : Type ≔ data [ ]
   > axiom e : empty2
   > def T ≔ empty2⁽ᵈ⁾ e
   > EOF
 
-  $ narya -source-only -v -parametric -arity 1 -direction d -deprecated-discreteness mutual5.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
+  $ narya -source-only -v -deprecated-discreteness mutual5.ny jd.ny -e 'def test (t1 : T) (t2 : T) : Jd T t1 t2 ≔ rfl.'
    ￫ info[I0000]
    ￮ constants defined mutually:
        empty1
@@ -481,7 +496,7 @@ But nondiscreteness of any of them throws the others off:
 
 Some other discrete types:
 
-  $ narya -source-only -v -parametric -arity 1 -direction d -deprecated-discreteness -e 'def ℕ : Type ≔ data [ zero. | suc. (_:ℕ) ]' -e 'def ℤ : Type ≔ data [ zero. | suc. (_:ℕ) | negsuc. (_:ℕ) ]' -e 'def btree : Type ≔ data [ leaf. | node. (_:btree) (_:btree) ]'
+  $ narya -source-only -v -deprecated-discreteness -e 'def ℕ : Type ≔ data [ zero. | suc. (_:ℕ) ]' -e 'def ℤ : Type ≔ data [ zero. | suc. (_:ℕ) | negsuc. (_:ℕ) ]' -e 'def btree : Type ≔ data [ leaf. | node. (_:btree) (_:btree) ]'
    ￫ info[I0000]
    ￮ discrete constant ℕ defined
   
@@ -494,7 +509,7 @@ Some other discrete types:
 
 Discreteness is deprecated:
 
-  $ narya -v -parametric -arity 1 -direction d -discreteness -e 'def ℕ : Type ≔ data [ zero. | suc. (_:ℕ) ]'
+  $ narya -v -discreteness -e 'def ℕ : Type ≔ data [ zero. | suc. (_:ℕ) ]'
   -discreteness is deprecated; use discrete modalities instead.
   You can use -deprecated-discreteness while porting old code.
   [1]

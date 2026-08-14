@@ -1,4 +1,5 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-discrete-adjunction" "-parametric" "-external" "-direction" "p,rel,Br") -*- `}
+option parametric ≔ arity 2, letter p, name rel Br, external
+option modal ≔ discrete adjunction
 
 def △ (A :△| Disc) : Type ≔ data [ tri. (_ :△| A) ]
 

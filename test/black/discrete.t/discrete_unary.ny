@@ -1,4 +1,5 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-direction" "p,rel,Br" "-arity" "1" "-discrete-tconn") -*- `}
+option parametric ≔ arity 1, letter p, name rel Br
+option modal ≔ discrete tconn
 
 axiom X : Type
 axiom A : Type

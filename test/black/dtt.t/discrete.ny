@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-dtt") -*- `}
+option dtt
 
 {` A hack to access display of △□-annotated variables. `}
 

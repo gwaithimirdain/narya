@@ -1,6 +1,6 @@
 Composition of modal operators is preserved up to isomorphism:
 
-  $ narya -v -composable-functors compose.ny
+  $ narya -v compose.ny
    ￫ info[I0000]
    ￮ constant ○ defined
   
@@ -31,7 +31,7 @@ Composition of modal operators is preserved up to isomorphism:
 
 Matching with the wrong window modality is an error:
 
-  $ narya -composable-functors compose.ny -e "def fwd2 (X :▱○| AType) (u : ▱ (○ X)) : ▱○ X ≔ match u [ par. y ↦ match (y :▱○| _) [ circ. x ↦ parcirc. x ]]"
+  $ narya compose.ny -e "def fwd2 (X :▱○| AType) (u : ▱ (○ X)) : ▱○ X ≔ match u [ par. y ↦ match (y :▱○| _) [ circ. x ↦ parcirc. x ]]"
    ￫ error[E1701]
    ￭ command-line exec string
    1 | def fwd2 (X :▱○| AType) (u : ▱ (○ X)) : ▱○ X ≔ match u [ par. y ↦ match (y :▱○| _) [ circ. x ↦ parcirc. x ]]
@@ -42,7 +42,7 @@ Matching with the wrong window modality is an error:
 A transparent modal operator preserves the empty type and binary disjoint
 unions up to isomorphism:
 
-  $ narya -v -transparent-functor preserve.ny
+  $ narya -v preserve.ny
    ￫ info[I0000]
    ￮ constant ○ defined
   
@@ -114,13 +114,13 @@ An empty (co)match "[]" checked directly against a pi-type can also refute a
 modal domain implicitly, with no explicit window syntax, using the domain's
 own (possibly nontrivial) modality as the window:
 
-  $ narya -transparent-functor preserve.ny -e "def zfwd3 : (x :○| ⊥) → ⊥' ≔ []"
+  $ narya preserve.ny -e "def zfwd3 : (x :○| ⊥) → ⊥' ≔ []"
 
-  $ narya -parametric -transparent-functor preserve-higher.ny
+  $ narya preserve-higher.ny
 
 Refuting a modal variable requires a window modality:
 
-  $ narya -transparent-functor preserve.ny -e "def zfwd2 (u : ○ ⊥) : ⊥' ≔ match u [ circle. x ↦ match x [ ] ]"
+  $ narya preserve.ny -e "def zfwd2 (u : ○ ⊥) : ⊥' ≔ match u [ circle. x ↦ match x [ ] ]"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def zfwd2 (u : ○ ⊥) : ⊥' ≔ match u [ circle. x ↦ match x [ ] ]
@@ -132,7 +132,7 @@ Since ○ is transparent but not pellucid, it cannot be used as a window for
 recursive datatypes, even ones with a single constructor, or datatypes that
 mention their mutual companions:
 
-  $ narya -transparent-functor preserve.ny -e "def nbad (u : ○ ℕ) : ○ ℕ ≔ match u [ circle. w ↦ match (w :○| _) [ zero. ↦ u | suc. n ↦ u ] ]"
+  $ narya preserve.ny -e "def nbad (u : ○ ℕ) : ○ ℕ ≔ match u [ circle. w ↦ match (w :○| _) [ zero. ↦ u | suc. n ↦ u ] ]"
    ￫ error[E1707]
    ￭ command-line exec string
    1 | def nbad (u : ○ ℕ) : ○ ℕ ≔ match u [ circle. w ↦ match (w :○| _) [ zero. ↦ u | suc. n ↦ u ] ]
@@ -140,7 +140,7 @@ mention their mutual companions:
   
   [1]
 
-  $ narya -transparent-functor preserve.ny -e "def rbad (u : ○ R) : ⊥' ≔ match u [ circle. w ↦ match (w :○| _) [ r. y ↦ rbad (circle. y) ] ]"
+  $ narya preserve.ny -e "def rbad (u : ○ R) : ⊥' ≔ match u [ circle. w ↦ match (w :○| _) [ r. y ↦ rbad (circle. y) ] ]"
    ￫ error[E1707]
    ￭ command-line exec string
    1 | def rbad (u : ○ R) : ⊥' ≔ match u [ circle. w ↦ match (w :○| _) [ r. y ↦ rbad (circle. y) ] ]
@@ -148,7 +148,7 @@ mention their mutual companions:
   
   [1]
 
-  $ narya -transparent-functor preserve.ny -e "def xbad (u : ○ X) : ○ Y ≔ match u [ circle. w ↦ match (w :○| _) [ x. v ↦ circle. v ] ]"
+  $ narya preserve.ny -e "def xbad (u : ○ X) : ○ Y ≔ match u [ circle. w ↦ match (w :○| _) [ x. v ↦ circle. v ] ]"
    ￫ error[E1707]
    ￭ command-line exec string
    1 | def xbad (u : ○ X) : ○ Y ≔ match u [ circle. w ↦ match (w :○| _) [ x. v ↦ circle. v ] ]
@@ -159,7 +159,7 @@ mention their mutual companions:
 Recursion is detected in datatypes defined by let rec, but a non-recursive
 let rec datatype is still non-recursive:
 
-  $ narya -transparent-functor preserve.ny -e "def LT : DomType ≔ let rec T : DomType ≔ data [ t. (_ : T) ] in T" -e "def lbad (u : ○ LT) : ○ LT ≔ match u [ circle. w ↦ match (w :○| _) [ t. y ↦ circle. y ] ]"
+  $ narya preserve.ny -e "def LT : DomType ≔ let rec T : DomType ≔ data [ t. (_ : T) ] in T" -e "def lbad (u : ○ LT) : ○ LT ≔ match u [ circle. w ↦ match (w :○| _) [ t. y ↦ circle. y ] ]"
    ￫ error[E1707]
    ￭ command-line exec string
    1 | def lbad (u : ○ LT) : ○ LT ≔ match u [ circle. w ↦ match (w :○| _) [ t. y ↦ circle. y ] ]
@@ -167,7 +167,7 @@ let rec datatype is still non-recursive:
   
   [1]
 
-  $ narya -v -transparent-functor preserve.ny -e "def LN : DomType ≔ let rec T : DomType ≔ data [ n. ] in T" -e "def lgood (u : ○ LN) : ○ LN ≔ match u [ circle. w ↦ match (w :○| _) [ n. ↦ circle. (n.) ] ]" 2>&1 | tail -4
+  $ narya -v preserve.ny -e "def LN : DomType ≔ let rec T : DomType ≔ data [ n. ] in T" -e "def lgood (u : ○ LN) : ○ LN ≔ match u [ circle. w ↦ match (w :○| _) [ n. ↦ circle. (n.) ] ]" 2>&1 | tail -4
   
    ￫ info[I0000]
    ￮ constant lgood defined
@@ -176,7 +176,7 @@ let rec datatype is still non-recursive:
 Recursion hiding in the value of a let-bound variable is also detected, while
 a clean let-bound variable is fine:
 
-  $ narya -transparent-functor preserve.ny -e "def DD : DomType ≔ let Z ≔ ((DD → DD) : DomType) in data [ d. (_ : Z) ]" -e "def dbad (u : ○ DD) : ○ DD ≔ match u [ circle. w ↦ match (w :○| _) [ d. y ↦ u ] ]"
+  $ narya preserve.ny -e "def DD : DomType ≔ let Z ≔ ((DD → DD) : DomType) in data [ d. (_ : Z) ]" -e "def dbad (u : ○ DD) : ○ DD ≔ match u [ circle. w ↦ match (w :○| _) [ d. y ↦ u ] ]"
    ￫ error[E1707]
    ￭ command-line exec string
    1 | def dbad (u : ○ DD) : ○ DD ≔ match u [ circle. w ↦ match (w :○| _) [ d. y ↦ u ] ]
@@ -184,7 +184,7 @@ a clean let-bound variable is fine:
   
   [1]
 
-  $ narya -v -transparent-functor preserve.ny -e "def DN : DomType ≔ let Z ≔ (ℕ : DomType) in data [ d. (_ : Z) ]" -e "def dgood (u : ○ DN) : ○ DN ≔ match u [ circle. w ↦ match (w :○| _) [ d. y ↦ u ] ]" 2>&1 | tail -4
+  $ narya -v preserve.ny -e "def DN : DomType ≔ let Z ≔ (ℕ : DomType) in data [ d. (_ : Z) ]" -e "def dgood (u : ○ DN) : ○ DN ≔ match u [ circle. w ↦ match (w :○| _) [ d. y ↦ u ] ]" 2>&1 | tail -4
   
    ￫ info[I0000]
    ￮ constant dgood defined
@@ -195,7 +195,7 @@ recursive, so it conservatively rejects non-pellucid windows; solving the hole
 with something non-recursive lifts the restriction, while solving it
 recursively makes it permanent:
 
-  $ narya -transparent-functor preserve.ny -fake-interact "def H : DomType ≔ data [ h. (_ : ?) ] def hbad (u : ○ H) : ○ H ≔ match u [ circle. w ↦ match (w :○| _) [ h. y ↦ circle. (h. y) ] ]"
+  $ narya preserve.ny -fake-interact "def H : DomType ≔ data [ h. (_ : ?) ] def hbad (u : ○ H) : ○ H ≔ match u [ circle. w ↦ match (w :○| _) [ h. y ↦ circle. (h. y) ] ]"
    ￫ info[I0000]
    ￮ constant H defined, containing 1 hole
   
@@ -211,7 +211,7 @@ recursively makes it permanent:
      ^ window modality ○ must be pellucid since it is not yet known whether the datatype has recursive constructors, due to unsolved holes in its constructor types
   
 
-  $ narya -transparent-functor preserve.ny -fake-interact "def H : DomType ≔ data [ h. (_ : ?) ] solve 0 ≔ ⊥ def hgood (u : ○ H) : ○ H ≔ match u [ circle. w ↦ match (w :○| _) [ h. y ↦ circle. (h. y) ] ]"
+  $ narya preserve.ny -fake-interact "def H : DomType ≔ data [ h. (_ : ?) ] solve 0 ≔ ⊥ def hgood (u : ○ H) : ○ H ≔ match u [ circle. w ↦ match (w :○| _) [ h. y ↦ circle. (h. y) ] ]"
    ￫ info[I0000]
    ￮ constant H defined, containing 1 hole
   
@@ -228,7 +228,7 @@ recursively makes it permanent:
    ￮ constant hgood defined
   
 
-  $ narya -transparent-functor preserve.ny -fake-interact "def H : DomType ≔ data [ h. (_ : ?) ] solve 0 ≔ H def hbad (u : ○ H) : ○ H ≔ match u [ circle. w ↦ match (w :○| _) [ h. y ↦ circle. (h. y) ] ]"
+  $ narya preserve.ny -fake-interact "def H : DomType ≔ data [ h. (_ : ?) ] solve 0 ≔ H def hbad (u : ○ H) : ○ H ≔ match u [ circle. w ↦ match (w :○| _) [ h. y ↦ circle. (h. y) ] ]"
    ￫ info[I0000]
    ￮ constant H defined, containing 1 hole
   
@@ -250,7 +250,7 @@ recursively makes it permanent:
 A datatype defined inside a hole solution that mentions its enclosing constant
 is recursive:
 
-  $ narya -transparent-functor preserve.ny -fake-interact "def K : DomType ≔ ? solve 0 ≔ data [ k. (_ : K) ] def kbad (u : ○ K) : ○ K ≔ match u [ circle. w ↦ match (w :○| _) [ k. y ↦ circle. (k. y) ] ]"
+  $ narya preserve.ny -fake-interact "def K : DomType ≔ ? solve 0 ≔ data [ k. (_ : K) ] def kbad (u : ○ K) : ○ K ≔ match u [ circle. w ↦ match (w :○| _) [ k. y ↦ circle. (k. y) ] ]"
    ￫ info[I0000]
    ￮ constant K defined, containing 1 hole
   
@@ -269,7 +269,7 @@ is recursive:
      ^ window modality ○ must be pellucid since the datatype has recursive constructors
   
 
-  $ narya -transparent-functor preserve.ny -fake-interact "def L : DomType ≔ ? solve 0 ≔ data [ l. ] def lgood (u : ○ L) : ○ L ≔ match u [ circle. w ↦ match (w :○| _) [ l. ↦ circle. (l.) ] ]"
+  $ narya preserve.ny -fake-interact "def L : DomType ≔ ? solve 0 ≔ data [ l. ] def lgood (u : ○ L) : ○ L ≔ match u [ circle. w ↦ match (w :○| _) [ l. ↦ circle. (l.) ] ]"
    ￫ info[I0000]
    ￮ constant L defined, containing 1 hole
   

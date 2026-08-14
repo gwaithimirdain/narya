@@ -1,4 +1,4 @@
-The -discrete-functor mode theory is like -functor, but its domain mode DomType is nonparametric: no degeneracy that adds dimensions (such as refl, sym, or Id) is allowed on a term directly at mode DomType, since that mode's nonparametricity forbids the direction such degeneracies would degenerate.  The codomain mode CodType is unrestricted, as in -functor.
+The -discrete-functor mode theory is like -functor, but its domain mode DomType is nonparametric: no degeneracy that adds dimensions (such as refl, sym, or Id) is allowed on a term directly at mode DomType, since that mode's nonparametricity forbids the letter s, nameuch degeneracies would degenerate.  The codomain mode CodType is unrestricted, as in -functor.
 
   $ narya -discrete-functor -parametric -e "axiom A : DomType axiom a : A synth refl a"
    ￫ error[E1708]

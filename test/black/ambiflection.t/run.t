@@ -1,4 +1,4 @@
-  $ narya -v -ambiflection ambiflection.ny
+  $ narya -v ambiflection.ny
    ￫ info[I0000]
    ￮ constant □△ defined
   
@@ -72,7 +72,7 @@
 Composing the unit and then the counit, id ⇒ △□ ⇒ id, is "zero", not the identity: applying
 counit to a genuinely plain value (which needs the unit inserted first) does not typecheck.
 
-  $ narya -ambiflection ambiflection.ny -e "def roundtrip_bad (A : Type) (x : A) : A ≔ counit A x"
+  $ narya ambiflection.ny -e "def roundtrip_bad (A : Type) (x : A) : A ≔ counit A x"
    ￫ error[E0401]
    ￭ command-line exec string
    1 | def roundtrip_bad (A : Type) (x : A) : A ≔ counit A x
@@ -106,27 +106,36 @@ We get the same error here:
 
 The nonparametric ambiflection mode theory currently requires -parametric.
 
-  $ narya -discrete-ambiflection discrete_ambiflection.ny
-  -discrete-ambiflection requires -parametric
+  $ narya -discrete-ambiflection -e "echo 1"
+   ￫ error[E2322]
+   ￮ invalid type theory options:
+     the discrete ambiflection mode theory requires 'option parametric', the discrete ambiflection mode theory requires arity 1
+  
   [1]
 
 And -external is not allowed with it.
 
-  $ narya -parametric -direction p,rel,Br -arity 1 -discrete-ambiflection -external discrete_ambiflection.ny
-  -external requires a compatible mode theory
+  $ narya -parametric -direction p,rel,Br -arity 1 -discrete-ambiflection -external -e "echo 1"
+   ￫ error[E2322]
+   ￮ invalid type theory options:
+     external parametricity requires a compatible mode theory, not discrete ambiflection
+  
   [1]
 
 Since there is a 2-cell (the □ ⊣ △ unit) from the non-discrete identity modality to the discrete
 modality △□, the arity of parametricity must be 1.
 
-  $ narya -parametric -direction p,rel,Br -discrete-ambiflection discrete_ambiflection.ny
-  -discrete-ambiflection requires -arity 1
+  $ narya -parametric -direction p,rel,Br -discrete-ambiflection -e "echo 1"
+   ￫ error[E2322]
+   ￮ invalid type theory options:
+     the discrete ambiflection mode theory requires arity 1
+  
   [1]
 
 Under arity 1, using a △□-locked argument filters out the parametric dimension, exactly as for
 -discrete-ambiflector's ♮ and -discrete-tconn's △◇.
 
-  $ narya -v -parametric -direction p,rel,Br -arity 1 -discrete-ambiflection discrete_ambiflection.ny
+  $ narya -v discrete_ambiflection.ny
    ￫ info[I0001]
    ￮ axiom X assumed
   

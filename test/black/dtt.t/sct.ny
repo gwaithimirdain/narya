@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-arity" "2" "-direction" "p") -*- `}
+option parametric ≔ arity 2, letter p
 
 ` This should be -external, but we don't yet have a mode theory that supports external for arity≠1.
 

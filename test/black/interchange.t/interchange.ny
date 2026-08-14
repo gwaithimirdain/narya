@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-interchange") -*- `}
+option modal ≔ interchange
 
 def ▹ (A :▹| AType) : BType ≔ data [ rt. (_ :▹| A) ]
 def ◃ (A :◃| AType) : BType ≔ data [ lt. (_ :◃| A) ]

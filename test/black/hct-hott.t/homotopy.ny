@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-direction" "p,rel,Br") -*- `}
+option parametric ≔ arity 2, letter p, name rel Br
 
 import "isfibrant"
 import "fibrant_types"

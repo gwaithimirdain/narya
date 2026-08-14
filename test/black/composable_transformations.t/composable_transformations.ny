@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-composable-transformations") -*- `}
+option modal ≔ composable transformations
 
 def ○ (A :○| DomMode) : CodMode ≔ data [ circle. (_ :○| A) ]
 def ▱ (A :▱| DomMode) : CodMode ≔ data [ box. (_ :▱| A) ]

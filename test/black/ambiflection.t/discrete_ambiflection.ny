@@ -1,4 +1,5 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-direction" "p,rel,Br" "-arity" "1" "-discrete-ambiflection") -*- `}
+option parametric ≔ arity 1, letter p, name rel Br
+option modal ≔ discrete ambiflection
 
 ` △□ is a *discrete* self-adjoint (co)monad on Type: working under a △□ lock filters out the
 ` parametric dimension, exactly like -discrete-ambiflector's ♮ (of which △□ here is the two-mode

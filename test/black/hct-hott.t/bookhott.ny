@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-direction" "p,rel,Br") -*- `}
+option parametric ≔ arity 2, letter p, name rel Br
 
 {` Basic facts from Book HoTT using the Martin-Lof identity type.  We are treating this as the outer layer of 2LTT used in Orton-Pitts style to build an inner HOTT layer. `}
 

@@ -2,7 +2,7 @@ Higher coinductive types with filtering-modal (♭) parameters: the ♭ paramete
 not degenerated in the contexts of higher fields, so field types can refer to it
 directly, and its instances construct and project as expected.
 
-  $ narya -v -parametric -discrete-coreflector nphct.ny
+  $ narya -v nphct.ny
    ￫ info[I0000]
    ￮ constant ♭√ defined
   
@@ -59,7 +59,7 @@ of type Type⁽ᵉ⁾ A.0 A.1, which is not a Type.
   
   [1]
 
-  $ narya -v -parametric -discrete-coreflector -direction p,rel,Br param_sqrt.ny
+  $ narya -v param_sqrt.ny
    ￫ info[I0000]
    ￮ constant eq defined
   
@@ -110,7 +110,7 @@ of type Type⁽ᵉ⁾ A.0 A.1, which is not a Type.
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/param_sqrt.ny
-   108 |       [ .fst.p ↦ rfl. | .snd ↦ rfl. ],
+   109 |       [ .fst.p ↦ rfl. | .snd ↦ rfl. ],
        ^ comatch encountered outside case tree, wrapping in implicit let-binding
   
    ￫ info[I0000]

@@ -1,4 +1,5 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-direction" "p,rel,Br" "-discrete-coreflector") -*- `}
+option parametric ≔ arity 2, letter p, name rel Br
+option modal ≔ discrete coreflector
 
 def eq (A : Type) (a : A) : A → Type ≔ data [ rfl. : eq A a a ]
 

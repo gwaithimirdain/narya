@@ -1,4 +1,5 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-discrete-spatial" "-parametric") -*- `}
+option parametric ≔ arity 2, letter e, name refl Id ap
+option modal ≔ discrete spatial
 
 ` In the discrete spatial mode theory, the left adjoint ♭ is *nonparametric*: it
 ` filters away the (single) parametric/reflexivity direction.  So a ♭-modal field

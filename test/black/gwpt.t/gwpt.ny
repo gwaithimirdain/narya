@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-gwpt") -*- `}
+option modal ≔ gwpt
 
 ` The counit of △ ⊣ □: a △□-locked variable can be used directly.
 def counit (A :△□| Type) (x :△□| A) : A ≔ x

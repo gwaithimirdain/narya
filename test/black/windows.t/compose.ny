@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-composable-functors") -*- `}
+option modal ≔ composable functors
 
 ` The modal operators associated to ○, ▱, and their composite ▱○.
 
@@ -8,7 +8,7 @@ def ▱ (Y :▱| BType) : CType ≔ data [ par. (_ :▱| Y) ]
 
 def ▱○ (X :▱○| AType) : CType ≔ data [ parcirc. (_ :▱○| X) ]
 
-{` We can define one direction without windows. `}
+{` We can define one letter w, nameithout windows. `}
 def colax (X :▱○| AType) (u : ▱○ X) : ▱ (○ X) ≔ match u [
 | parcirc. x ↦ par. (circ. x)]
 

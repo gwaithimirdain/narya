@@ -1,4 +1,4 @@
-  $ narya -v -interchange interchange.ny
+  $ narya -v interchange.ny
    ￫ info[I0000]
    ￮ constant ▹ defined
   
@@ -36,7 +36,7 @@
 
 There is no 2-cell in the reverse direction, so there is no induced function ◃ A → ▹ A.
 
-  $ narya -interchange interchange.ny -e "def backwards (A :◃| AType) (u : ◃ A) : ▹ A := match u [ lt. x ↦ rt. x ]"
+  $ narya interchange.ny -e "def backwards (A :◃| AType) (u : ◃ A) : ▹ A := match u [ lt. x ↦ rt. x ]"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def backwards (A :◃| AType) (u : ◃ A) : ▹ A := match u [ lt. x ↦ rt. x ]

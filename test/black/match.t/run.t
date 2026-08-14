@@ -65,7 +65,7 @@
    ￮ constant idvec_nil_or_cons defined
   
 
-  $ narya -v -parametric multi.ny
+  $ narya -v multi.ny
    ￫ info[I0000]
    ￮ constant bool defined
   
@@ -140,7 +140,7 @@
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/multi.ny
-   75 | def ⊤eq⊥ : Id Type ⊤ ⊥ ≔ Gel ⊤ ⊥ [ ]
+   77 | def ⊤eq⊥ : Id Type ⊤ ⊥ ≔ Gel ⊤ ⊥ [ ]
       ^ matching lambda encountered outside case tree, wrapping in implicit let-binding
   
    ￫ info[I0000]

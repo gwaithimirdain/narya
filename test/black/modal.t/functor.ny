@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-functor") -*- `}
+option modal ≔ functor
 
 def ○ (A :○| DomType) : CodType ≔ data [ circle. (_ :○| A) ]
 

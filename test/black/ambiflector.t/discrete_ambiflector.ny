@@ -1,4 +1,5 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-direction" "p,rel,Br" "-arity" "1" "-discrete-ambiflector") -*- `}
+option parametric ≔ arity 1, letter p, name rel Br
+option modal ≔ discrete ambiflector
 
 ` ♮ is a *discrete* self-adjoint (co)monad: working under a ♮ lock filters out the parametric
 ` dimension, exactly like -discrete-tconn's △◇ (which also has a reflector unit 1 ⇒ △◇, hence

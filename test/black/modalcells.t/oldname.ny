@@ -1,3 +1,5 @@
+option modal ≔ adjunction, modalcells myeta myeps
+
 def □△ (A : Disc) : Disc ≔ data [ t. (_ :□△| A) ]
 def □△□△ (A : Disc) : Disc ≔ data [ t2. (_ :□△□△| A) ]
 

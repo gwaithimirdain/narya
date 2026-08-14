@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-reflector") -*- `}
+option modal ≔ reflector
 
 def diamond (A :♯| Type) : Type ≔ data [ diamond. (x :♯| A) ]
 

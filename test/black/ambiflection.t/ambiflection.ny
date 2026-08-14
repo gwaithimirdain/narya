@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-ambiflection") -*- `}
+option modal ≔ ambiflection
 
 ` The unit of △ ⊣ □: a plain Disc value can supply a □△-locked field.
 def □△ (A : Disc) : Disc ≔ data [ t. (_ :□△| A) ]

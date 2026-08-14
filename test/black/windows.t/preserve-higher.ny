@@ -1,4 +1,5 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-transparent-functor") -*- `}
+option parametric ≔ arity 2, letter e, name refl Id ap
+option modal ≔ transparent functor
 
 def Gel (A B : DomType) (R : A → B → DomType) : Id DomType A B
   ≔ sig (

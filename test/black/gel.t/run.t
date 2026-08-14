@@ -1,4 +1,4 @@
-  $ narya -parametric -v gel.ny
+  $ narya -v gel.ny
    ￫ info[I0000]
    ￮ constant Gel defined
   
@@ -142,7 +142,7 @@
    ￮ constant symsym_r2'_eq_r2' defined
   
 
-  $ narya -parametric gel.ny -e "def r2ty_eq_sym_r2ty : Id Type r2ty sym_r2ty := refl r2ty"
+  $ narya gel.ny -e "def r2ty_eq_sym_r2ty : Id Type r2ty sym_r2ty := refl r2ty"
   sym M
     : Gel⁽ᵉ⁾ (Id A) (Id B) (Id R) a₂ b₂ (_ ≔ r₀) (_ ≔ r₁)
   

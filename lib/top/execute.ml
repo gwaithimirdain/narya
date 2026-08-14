@@ -25,6 +25,16 @@ module Loadstate = struct
     imports : (File.t * FilePath.filename) Bwd.t;
     (* Whether the current file has performed any effectual actions like 'echo'.  Stored in compiled files to produce a warning. *)
     actions : bool;
+    (* A description of the current source, for error messages about conflicting options. *)
+    source : string;
+    (* The type theory options declared so far by the leading "option" commands of the current source. *)
+    options : Options.partial;
+    (* Whether the options of the current source have been fixed, so that its "option" block is over. *)
+    options_fixed : bool;
+    (* Whether the current source has executed a command that isn't an "option", after which a further "option" command is an error. *)
+    started : bool;
+    (* Whether the current source specifies a *total* set of options, i.e. whether its silence about an option is an assertion of the default.  True for files, which are complete self-describing artifacts; false for the command line, -e strings, and interactive input, which only constrain the options they mention.  See Core.Options. *)
+    total : bool;
   }
 end
 
@@ -48,10 +58,10 @@ let () =
 (* This reader module is for data that's supplied by the executable, mostly from the command-line, and doesn't change. *)
 module FlagData = struct
   type t = {
-    (* Marshal all the command-line type theory flags to disk. *)
-    marshal : Out_channel.t -> unit;
-    (* Unmarshal all the command-line type theory flags from a disk file and check that they agree with the current ones, returning the unmarshaled ones if not. *)
-    unmarshal : In_channel.t -> (unit, string) Result.t;
+    (* The type theory options specified by command-line flags.  Unlike a source file, the command line specifies only a *partial* set of options: it constrains the ones it mentions and says nothing about the rest.  So when a file is loaded, these can only agree with the file or conflict with it; they determine the type theory only when there is no file, as with -e, stdin, or interactive mode. *)
+    cmdline : Options.partial;
+    (* Fix the type theory to the given options.  This is a callback because installing higher observational type theory means loading its bootstrap, which lives in a library that depends on this one. *)
+    install : Options.t -> unit;
     (* Load files from source only (not compiled versions). *)
     source_only : bool;
     (* All the filenames given explicitly on the command line. *)
@@ -108,14 +118,120 @@ module Loaded = struct
     Effect.perform (Add_to_files (filename, { trie; globals; file; old_imports; explicit }))
 end
 
-(* Save all the definitions from a given loaded file to a compiled disk file, along with other data such as the command-line type theory flags, the imported files, and the (supplied) export namespace. *)
+(* Add the declarations of one "option" command to those of the current source.  Called when the command is executed; the prescan below has normally already recorded the same thing, and merging is idempotent, so declaring it twice is harmless. *)
+let declare_option opts =
+  let st = Loading.get () in
+  if st.started then fatal Option_not_at_start;
+  match Options.installed () with
+  (* If the options have already been fixed -- by the prescan of this very source, by an earlier source, or by the command line -- then all we can do is check that this declaration agrees with them. *)
+  | Some current -> (
+      match Options.agree current opts with
+      | Ok () -> ()
+      | Error ds -> fatal (Conflicting_options (st.source, "the options already in force", ds)))
+  | None -> (
+      match Options.merge st.options opts with
+      | Ok options -> Loading.modify (fun s -> { s with options })
+      | Error ds -> fatal (Conflicting_options (st.source, "an earlier 'option' command in it", ds))
+      )
+
+(* Read the leading "option" commands of a source, without executing anything else, and return what they declare.
+
+   This has to be a separate pass because the notations for the universes are named after the modes of the mode theory, so they can't be installed until the options are fixed; but the parser needs them for the very first command that isn't an "option", which is parsed before it is executed.  Parsing the "option" commands themselves needs no notations, so this pass can run with no type theory installed at all.
+
+   Any error here is ignored: the real pass re-parses and re-executes these same commands, and will report it then with a proper location. *)
+let prescan_options (source : Asai.Range.source) : Options.partial * bool =
+  let opts = ref Options.empty in
+  (* Whether there is anything after the option block. *)
+  let more = ref false in
+  ( Reporter.try_with ~fatal:(fun _ -> ()) @@ fun () ->
+    let p, src = Parser.Command.Parse.start_parse source in
+    let rec go p src =
+      match Parser.Command.Parse.final p with
+      | Bof _ ->
+          let p, src = Parser.Command.Parse.restart_parse p src in
+          go p src
+      | Option { options; _ } ->
+          (match Options.merge !opts options with
+          | Ok o -> opts := o
+          (* A conflict between two "option" commands in the same source is reported by the real pass. *)
+          | Error _ -> ());
+          let p, src = Parser.Command.Parse.restart_parse p src in
+          go p src
+      | Eof -> src
+      (* Anything else ends the option block, and we abandon this parse. *)
+      | _ ->
+          more := true;
+          src in
+    match go p src with
+    | _, `File ic -> In_channel.close ic
+    | _, `String _ -> () );
+  (!opts, !more)
+
+(* Fix the type theory options, if they haven't been fixed already.  This happens just before the first command of a source that isn't an "option" command, so that the leading "option" commands of that source -- its "option block" -- have all been accumulated by then.
+
+   A *file* specifies a total set of options: the absence of an "option parametric" command asserts higher observational type theory just as positively as its presence asserts parametricity, and the absence of an "option modal" command asserts the trivial mode theory.  So if a file is the first source to fix the options, its completed set becomes the options in force, and the command-line flags, which are only partial, must agree with it.  If the options have already been fixed, the file's completed set must agree with them exactly.
+
+   A string executed with -e, or input entered interactively or in ProofGeneral, is not a complete artifact in the same way, so it specifies only a partial set: it is merged with the command-line flags rather than checked against them. *)
+let fix_source_options ~(source : string) ~(total : bool) (declared : Options.partial) =
+  let flags = Flags.read () in
+  let conflict other ds = fatal (Conflicting_options (source, other, ds)) in
+  match Options.installed () with
+  | None ->
+      let opts =
+        if total then (
+          let opts = Options.complete declared in
+          (match Options.agree opts flags.cmdline with
+          | Ok () -> ()
+          | Error ds -> conflict "the command line" ds);
+          opts)
+        else
+          match Options.merge flags.cmdline declared with
+          | Ok p -> Options.complete p
+          | Error ds -> conflict "the command line" ds in
+      (match Options.validate ~discreteness:(Discrete.enabled ()) opts with
+      | Ok () -> ()
+      | Error msgs -> fatal (Invalid_options msgs));
+      flags.install opts
+  | Some current -> (
+      (* The options are already in force, so all we can do is check that this source agrees with them.  A file has to agree on everything, since its silence is an assertion; other sources only on what they mention. *)
+      let declared = if total then Options.to_partial (Options.complete declared) else declared in
+      match Options.agree current declared with
+      | Ok () -> ()
+      | Error ds -> conflict "the options already in force" ds)
+
+(* Fix the options of the current source from what it has declared so far.  Normally its whole option block has already been prescanned and fixed by its caller, before the source was given a file identifier; this is the fallback for interactive and ProofGeneral input. *)
+let fix_options () =
+  let st = Loading.get () in
+  if not st.options_fixed then begin
+    Loading.modify (fun s -> { s with options_fixed = true });
+    fix_source_options ~source:st.source ~total:st.total st.options
+  end
+
+(* Interactive and ProofGeneral input arrives one command at a time, and doesn't go through load_file or load_string, so it needs its own hook for the "option" block at the top of the buffer being processed.  This must be called *before* each command is parsed, not merely before it is executed, because parsing the first command that isn't an "option" needs the notations for the universes, which are named after the modes of the mode theory.
+
+   Like the command line, interactive input constrains only the options it mentions.  We fix the options as soon as a command arrives that isn't an "option" command; until then the theory stays open, so that editing and re-processing the option block at the top of a buffer works.  Retracting back past it, though, cannot un-install a theory: ProofGeneral has to restart Narya for that. *)
+let interactive_options_source (source : Asai.Range.source) =
+  if Options.installed () = None then begin
+    let opts, more = prescan_options source in
+    (match Options.merge (Loading.get ()).options opts with
+    | Ok options -> Loading.modify (fun s -> { s with options })
+    (* A conflict is reported when the command itself is executed. *)
+    | Error _ -> ());
+    if more then fix_options ()
+  end
+
+let interactive_options (content : string) =
+  interactive_options_source (`String { title = Some "interactive input"; content })
+
+(* Save all the definitions from a given loaded file to a compiled disk file, along with other data such as the type theory options, the imported files, and the (supplied) export namespace. *)
 let marshal (file : File.t) (filename : FilePath.filename) (trie : Scope.trie) =
   if __COMPILE_VERSION__ > 0 then
     let ofile = FilePath.replace_extension filename "nyo" in
     try
       Out_channel.with_open_bin ofile @@ fun chan ->
       Marshal.to_channel chan __COMPILE_VERSION__ [];
-      (Flags.read ()).marshal chan;
+      Options.marshal chan (Options.get ());
+      Marshal.to_channel chan (Discrete.enabled ()) [];
       Marshal.to_channel chan file [];
       Marshal.to_channel chan (Loading.get ()).imports [];
       Global.to_channel_origin chan (File file) [];
@@ -139,8 +255,16 @@ let rec unmarshal (file : File.t) (lookup : FilePath.filename -> File.t)
     (* We check it was compiled with the same version as us. *)
     let old_version = (Marshal.from_channel chan : int) in
     if __COMPILE_VERSION__ > 0 && old_version = __COMPILE_VERSION__ then (
-      (* We also check it was compiled with the same type theory flags as us. *)
-      match (Flags.read ()).unmarshal chan with
+      (* We also check it was compiled with the same type theory options as us.  Note that these include the mode theory: a compiled file contains marshaled modalities whose representation is specific to the theory it was compiled under, so loading it under a different one would be unsound. *)
+      let old_options = Options.unmarshal chan in
+      let old_discreteness = (Marshal.from_channel chan : bool) in
+      match
+        if old_options = Options.get () && old_discreteness = Discrete.enabled () then Ok ()
+        else
+          Error
+            (Options.to_string old_options
+            ^ if old_discreteness then " -deprecated-discreteness" else "")
+      with
       | Ok () ->
           let old_file = (Marshal.from_channel chan : File.t) in
           (* Now we make sure none of the files *it* imports (transitively) have been modified more recently than the compilation, and that they have all been compiled. *)
@@ -211,6 +335,10 @@ and load_file filename top =
       (let parents = (Loading.get ()).parents in
        if Bwd.exists (fun x -> x = filename) parents then
          fatal (Circular_import (Bwd.to_list (Snoc (parents, filename)))));
+      (* Read this file's option block and fix the type theory, before we give the file an identifier.  The identifier has to come afterwards because installing higher observational type theory allocates identifiers for its own bootstrap files, and the fibrancy data it unmarshals refers to constants by those identifiers without relinking them; so the bootstrap files must be the first ones created in any run that uses them. *)
+      let source = Printf.sprintf "file '%s'" (FilePath.basename filename) in
+      let file_options, _ = prescan_options (`File filename) in
+      fix_source_options ~source ~total:true file_options;
       (* We make a name for it *)
       let file = File.make (`File filename) in
       (* Now we record it as a file that was imported by the current file. *)
@@ -225,6 +353,12 @@ and load_file filename top =
               parents = Snoc ((Loading.get ()).parents, filename);
               imports = Emp;
               actions = false;
+              source;
+              options = file_options;
+              options_fixed = true;
+              started = false;
+              (* A file specifies a total set of options; see fix_options. *)
+              total = true;
             }
         @@ fun () ->
         (* If there's a compiled version, and we aren't in source-only mode, and this file wasn't specified explicitly on the command-line, we try loading the compiled version. *)
@@ -285,6 +419,13 @@ and load_file filename top =
 (* Load an -e string or stdin. *)
 and load_string ?init_visible title content =
   (* There is no caching and no change of state, since it can't be "required" from another file.  The caller specifies whether to use a special initial namespace. *)
+  (* As in load_file, the option block is read and the type theory fixed before any file identifier is allocated.  Unlike a file, a string constrains only the options it mentions. *)
+  let source = Printf.sprintf "the string '%s'" title in
+  let str_options, _ = prescan_options (`String { title = Some title; content }) in
+  (match Options.merge (Loading.get ()).options str_options with
+  | Ok options -> Loading.modify (fun s -> { s with options })
+  | Error ds -> fatal (Conflicting_options (source, "an earlier 'option' command", ds)));
+  fix_options ();
   let file = File.make (`Other title) in
   let trie, _ =
     execute_source ~holes_allowed:true ?init_visible file (`String { title = Some title; content })
@@ -309,6 +450,8 @@ and execute_source ~holes_allowed ?init_visible ?renderer file (source : Asai.Ra
             | `String { title; _ } -> title in
           Reporter.emit (Quit src)
       | _ -> Reporter.fatal_diagnostic d);
+  (* A source consisting only of "option" commands (or of nothing at all) still fixes the options, since its silence about the rest of them is an assertion just as much as its declarations are. *)
+  fix_options ();
   (Scope.get_export (), Global.current_unsolved_holes ())
 
 (* Parse, execute (if requested by Flags), and reformat (if requested by Flags) all the commands in a source. *)
@@ -345,5 +488,11 @@ and batch renderer p src cdns ws =
 and execute_command cmd =
   let action_taken () = Loading.modify (fun s -> { s with actions = true }) in
   let get_file file = load_file file false in
-  try Parser.Command.execute ~action_taken ~get_file cmd
+  (* Anything that isn't an "option" command ends the source's option block and fixes the type theory.  Normally the prescan has already done that, but interactive and ProofGeneral input doesn't go through it. *)
+  (match cmd with
+  | Option _ -> ()
+  | _ ->
+      fix_options ();
+      Loading.modify (fun s -> { s with started = true }));
+  try Parser.Command.execute ~action_taken ~get_file ~declare_option cmd
   with Failure str -> fatal (Anomaly ("failure: " ^ str))

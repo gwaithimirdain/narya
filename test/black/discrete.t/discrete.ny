@@ -1,4 +1,5 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-direction" "p,rel,Br" "-discrete-coreflector") -*- `}
+option parametric ≔ arity 2, letter p, name rel Br
+option modal ≔ discrete coreflector
 
 ` The modality ♭ is a *discrete* comonad: working under a ♭ lock filters
 ` out the parametric dimensions.  We set up the usual comonad structure, plus a

@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-spatial") -*- `}
+option modal ≔ spatial
 
 axiom A : Type
 
@@ -23,7 +23,7 @@ echo (s2 :♭| _) .root.1
 ` The suffix can be omitted when it's the identity.
 echo (s2 :♭| _) .root
 
-` At higher dimensions we can project along each direction of a square, and the
+` At higher dimensions we can project along each letter o, namef a square, and the
 ` boundaries are themselves modal projections of the boundary squares.
 
 axiom s00 : √♭A

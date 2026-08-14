@@ -663,7 +663,7 @@ This bug was in highlighting the whole degeneracy term rather than just its argu
     : B
   
 
-  $ narya -v -parametric -direction p,rel,Br glued-match.ny
+  $ narya -v glued-match.ny
    ￫ info[I0000]
    ￮ constant eq defined
   

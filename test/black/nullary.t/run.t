@@ -1,4 +1,4 @@
-  $ narya -parametric -arity 0 -direction w,wk nullary.ny
+  $ narya nullary.ny
   wk A
     : Type⁽ʷ⁾ .
   
@@ -59,7 +59,7 @@
   c⁽²¹ʷ⁾
     : C⁽²¹ʷ⁾ . . .
   
-  $ narya -parametric -arity 0 -direction w,wk functions.ny
+  $ narya functions.ny
   (x : wk A) ⇒ wk B x.0
     : Type⁽ʷ⁾ .
   
@@ -82,7 +82,7 @@
     : (x₀₀ : A⁽ʷʷ⁾ . .) →⁽ʷʷ⁾ B⁽ʷʷ⁾ x₀₀ . .
   
 
-  $ narya -parametric -arity 0 -direction w,wk nominal.ny
+  $ narya nominal.ny
   a .subst
     : wk A .
   

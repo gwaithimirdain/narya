@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-arity" "0" "-direction" "w,wk") -*- `}
+option parametric ≔ arity 0, letter w, name wk
 
 axiom A : Type
 echo wk A

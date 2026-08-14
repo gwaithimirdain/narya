@@ -1,4 +1,4 @@
-  $ narya -v -cospatial cospatial.ny
+  $ narya -v cospatial.ny
    ￫ info[I0000]
    ￮ constant counit defined
   
@@ -86,7 +86,7 @@
 
 A plain value cannot supply a bare ♭-locked field, since ♭ has no unit of its own.
 
-  $ narya -cospatial cospatial.ny -e "def wbad1 (x : Type) : bad1 ≔ bad1. x"
+  $ narya cospatial.ny -e "def wbad1 (x : Type) : bad1 ≔ bad1. x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def wbad1 (x : Type) : bad1 ≔ bad1. x
@@ -106,7 +106,7 @@ Nor does the reflector ʃ have a counit of its own.
 
 The unit and counit of the induced adjunction ʃ ⊣ ♭ only go in that direction.
 
-  $ narya -cospatial cospatial.ny -e "def wbad3 (x : Type) : bad3 ≔ bad3. x"
+  $ narya cospatial.ny -e "def wbad3 (x : Type) : bad3 ≔ bad3. x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def wbad3 (x : Type) : bad3 ≔ bad3. x

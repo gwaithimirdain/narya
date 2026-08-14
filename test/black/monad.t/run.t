@@ -1,4 +1,4 @@
-  $ narya -v -monad monad.ny
+  $ narya -v monad.ny
    ￫ info[I0000]
    ￮ constant ♯ defined
   
@@ -14,7 +14,7 @@ Since ♯ is not idempotent, the theory is not locally posetal: there are two di
 ♯ ⇒ ♯∘♯ (place the input in the first slot and create the second fresh with the unit, or vice
 versa), so neither is picked automatically and this requires an explicit key.
 
-  $ narya -monad monad.ny -e "def ambiguous (A :♯| Type) (x :♯| A) : ♯ (♯ A) := x"
+  $ narya monad.ny -e "def ambiguous (A :♯| Type) (x :♯| A) : ♯ (♯ A) := x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def ambiguous (A :♯| Type) (x :♯| A) : ♯ (♯ A) := x
@@ -26,7 +26,7 @@ versa), so neither is picked automatically and this requires an explicit key.
 Dually to Comonad (whose counit deletes but has no way to create), a monad's unit creates but
 never deletes, so there is no cell ♯ ⇒ id either.
 
-  $ narya -monad monad.ny -e "def no_counit (A :♯| Type) (x :♯| A) : A := x"
+  $ narya monad.ny -e "def no_counit (A :♯| Type) (x :♯| A) : A := x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def no_counit (A :♯| Type) (x :♯| A) : A := x

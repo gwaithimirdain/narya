@@ -1,4 +1,5 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-discrete-local" "-parametric") -*- `}
+option parametric ≔ arity 2, letter e, name refl Id ap
+option modal ≔ discrete local
 
 ` In the discrete variant, ∇ is not tangible, so it can't appear in the
 ` argument of a datatype; but the rest of the normalization is the same.

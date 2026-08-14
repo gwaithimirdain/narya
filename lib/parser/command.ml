@@ -131,7 +131,18 @@ module Command = struct
             `Variables of Whitespace.t list * (Whitespace.t list * string * Whitespace.t list) list
           ];
       }
-    | Option of { wsoption : Whitespace.t list; wscoloneq : Whitespace.t list; what : Empty.t }
+    (* An "option" command sets part of the type theory (see Core.Options).  Unlike a "display" command, it can only appear at the very beginning of a file, before any command that checks anything, since the internal design doesn't allow the type theory to change partway through a run.  Its clauses are stored as the raw words that were parsed, together with their whitespace, so that the command can be reformatted faithfully; the meaning extracted from them is stored alongside in [options]. *)
+    | Option of {
+        wsoption : Whitespace.t list;
+        (* The name of the option: "parametric", "modal", "discreteness", or an abbreviation like "dtt". *)
+        what : string;
+        wswhat : Whitespace.t list;
+        (* Empty if there was no ≔, in which case [clauses] is empty too. *)
+        wscoloneq : Whitespace.t list;
+        clauses : option_clause list;
+        (* What this command contributes to the options in force. *)
+        options : Options.partial;
+      }
     | Undo of { wsundo : Whitespace.t list; count : int; wscount : Whitespace.t list }
     | Section of {
         wssection : Whitespace.t list;
@@ -150,9 +161,78 @@ module Command = struct
     | Quit of Whitespace.t list
     | Bof of Whitespace.t list
     | Eof
+
+  (* One comma-separated clause of an "option" command, such as "arity 1" or "modalities △ □".  Each word is stored with the whitespace that followed it, and the clause with the whitespace that followed the comma introducing it (empty for the first clause). *)
+  and option_clause = { wscomma : Whitespace.t list; words : (string * Whitespace.t list) list }
 end
 
 include Command
+
+(* Interpret the name and clauses of an "option" command as a partial specification of the type theory (see Core.Options).  The settings are bundled into packages rather than being individually selectable: a single "option parametric" specifies the arity, the direction names, and internality all at once, and a single "option modal" specifies the mode theory together with any renaming of its modes, modalities, and cells.  This is because those settings are not independent -- some mode theories are compatible only with certain arities, or only with external parametricity -- so allowing a file to specify one without the others would suggest a polymorphism that doesn't exist. *)
+let interpret_option (what : string) (clauses : option_clause list) : Options.partial =
+  let invalid msg = fatal (Invalid_option (what, msg)) in
+  (* For interpretation we only need the words, not their whitespace. *)
+  let clauses = List.map (fun (c : option_clause) -> List.map fst c.words) clauses in
+  match what with
+  | "parametric" ->
+      (* The absence of an "option parametric" command asserts higher observational type theory, so its presence is what turns parametricity on.
+
+         The arity and the letter are both required, with no defaults, because they are properties of a *direction* of parametricity rather than of the theory as a whole.  Once parametricity is multidirectional, an "option parametric" command will add a direction on top of the fibrant one rather than configuring the unique one, and each added direction will carry its own arity and letter; there would be nothing sensible for them to default to.  The reflexivity names, by contrast, may reasonably be left out, in which case the direction gets the default ones. *)
+      let opts = ref { Options.empty with phott = Some false; pinternal = Some true } in
+      List.iter
+        (fun clause ->
+          match clause with
+          | [ "arity"; n ] -> (
+              match int_of_string_opt n with
+              | Some n -> opts := { !opts with parity = Some n }
+              | None -> invalid (Printf.sprintf "arity '%s' is not a number" n))
+          | [ "letter"; c ] ->
+              if String.length c <> 1 || c.[0] < 'a' || c.[0] > 'z' then
+                invalid "the letter of a direction must be a single lowercase letter";
+              opts := { !opts with prefl_char = Some c.[0] }
+          (* A bare "name" clause, with no names after it, means that this direction has no reflexivity names at all. *)
+          | "name" :: names -> opts := { !opts with prefl_names = Some names }
+          | [ "internal" ] -> opts := { !opts with pinternal = Some true }
+          | [ "external" ] -> opts := { !opts with pinternal = Some false }
+          | ws -> invalid (Printf.sprintf "unknown clause '%s'" (String.concat " " ws)))
+        clauses;
+      if !opts.parity = None then invalid "an 'arity' clause is required";
+      if !opts.prefl_char = None then invalid "a 'letter' clause is required";
+      (* A direction with no "name" clause has no reflexivity names at all, exactly as if it had a bare "name" clause.  There is no default set of names to fall back on: names like refl/Id/ap belong to the fibrant direction, not to an arbitrary added one. *)
+      if !opts.prefl_names = None then opts := { !opts with prefl_names = Some [] };
+      !opts
+  | "modal" ->
+      (* The first clause is the name of the mode theory; the rest rename its modes, modalities, and cells.  The absence of an "option modal" command asserts the trivial mode theory, so there is no point in a bare "option modal" with no theory named. *)
+      let opts = ref Options.empty in
+      List.iteri
+        (fun i clause ->
+          match (i, clause) with
+          | 0, name -> (
+              match Options.Theories.find name with
+              | Some e -> opts := { !opts with ptheory = Some e.name }
+              | None ->
+                  invalid
+                    (Printf.sprintf "unknown mode theory '%s'" (Options.Theories.to_string name)))
+          | _, "modes" :: xs -> opts := { !opts with pmodes = Some xs }
+          | _, "modalities" :: xs -> opts := { !opts with pmodalities = Some xs }
+          | _, "modalcells" :: xs -> opts := { !opts with pmodalcells = Some xs }
+          | _, ws -> invalid (Printf.sprintf "unknown clause '%s'" (String.concat " " ws)))
+        clauses;
+      if clauses = [] then invalid "expected the name of a mode theory";
+      !opts
+  (* Abbreviations, which expand to a combination of the above. *)
+  | "dtt" ->
+      if clauses <> [] then invalid "expected no clauses";
+      {
+        Options.empty with
+        phott = Some false;
+        parity = Some 1;
+        prefl_char = Some 'd';
+        prefl_names = Some [];
+        pinternal = Some false;
+        ptheory = Some [ "discrete"; "tconn" ];
+      }
+  | _ -> fatal (Invalid_option (what, "unknown option"))
 
 module Parse = struct
   open Parse
@@ -702,9 +782,33 @@ module Parse = struct
     | Ident [ "explicit" ] -> Some `Explicit
     | _ -> None
 
+  (* A single word in an "option" command.  Anything that lexes as an atomic identifier is allowed, including numerals (for "arity") and the unicode names of modes and modalities. *)
+  let option_word =
+    step "" (fun state _ (tok, ws) ->
+        match tok with
+        | Ident [ x ] -> Some ((x, ws), state)
+        | _ -> None)
+
+  let option_words =
+    let* w = option_word in
+    let* ws = zero_or_more option_word in
+    return (w :: ws)
+
   let option =
-    let* _ = token Option in
-    fatal (Parse_error "option command not implemented")
+    let* wsoption = token Option in
+    let* what, wswhat = option_word in
+    let* wscoloneq, clauses =
+      (let* wscoloneq = token Coloneq in
+       let* words = option_words in
+       let* rest =
+         zero_or_more
+           (let* wscomma = token (Op ",") in
+            let* words = option_words in
+            return { Command.wscomma; words }) in
+       return (wscoloneq, { Command.wscomma = []; words } :: rest))
+      </> return ([], []) in
+    let options = interpret_option what clauses in
+    return (Command.Option { wsoption; what; wswhat; wscoloneq; clauses; options })
 
   let undo =
     let* wsundo = token Undo in
@@ -854,7 +958,7 @@ let to_string : Command.t -> string = function
   | Split _ -> "split"
   | Show _ -> "show"
   | Display _ -> "display"
-  | Option _ -> .
+  | Option _ -> "option"
   | Quit _ -> "quit"
   | Undo _ -> "undo"
   | Section _ -> "section"
@@ -870,7 +974,7 @@ let needs_interactive : Command.t -> bool = function
 
 let condense : Command.t -> [ `Import | `Option | `None | `Bof ] = function
   | Import _ -> `Import
-  | Option _ -> .
+  | Option _ -> `Option
   | _ -> `None
 
 let tok t : observation = Token (t, ([], None))
@@ -926,8 +1030,9 @@ let split_match_cases : type mode a b.
         | _ -> fatal (Nonsynthesizing "splitting term")) in
   fst (go tms false)
 
-(* Most execution of commands we can do here, but there are a couple things where we need to call out to the executable: noting when an effectual action like 'echo' is taken (for recording warnings in compiled files), and loading another file.  So this function takes a couple of callbacks as arguments. *)
-let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (cmd : Command.t) :
+(* Most execution of commands we can do here, but there are a few things where we need to call out to the executable: noting when an effectual action like 'echo' is taken (for recording warnings in compiled files), loading another file, and recording a type theory option (whose accumulated value is per-file state belonging to the loader).  So this function takes a few callbacks as arguments. *)
+let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie)
+    ~(declare_option : Options.partial -> unit) (cmd : Command.t) :
     int option * (int * int * int) list =
   (match (Origin.current (), needs_interactive cmd) with
   | Top, true | File _, true -> fatal (Forbidden_interactive_command (to_string cmd))
@@ -1353,7 +1458,10 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
           Display.modify (fun s -> { s with variables });
           emit (Display_set ("variables", String.concat "," variables)));
       (None, [])
-  | Option _ -> .
+  | Option { options; _ } ->
+      (* The loader accumulates the options declared by each source and fixes the type theory just before the first command that isn't an "option"; see Execute.fix_options. *)
+      declare_option options;
+      (None, [])
   | Undo { count; _ } ->
       for _ = 1 to count do
         match Origin.undo () with
@@ -1626,7 +1734,39 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
     | Split data ->
         (* Same with split, except here we've already done the printing. *)
         (0, data.printed_term, [])
-    | Option _ -> .
+    (* Unlike "display", "option" commands belong in source files, so they have to be reformatted faithfully.  We print the words exactly as they were parsed, each followed by its own whitespace, with the whitespace of the very last word split off and returned for the next command. *)
+    | Option { wsoption; what; wswhat; wscoloneq; clauses; _ } ->
+        let items =
+          [ (Token.pp Option, wsoption); (utf8string what, wswhat) ]
+          @
+          match clauses with
+          | [] -> []
+          | _ ->
+              let n = List.length clauses in
+              (Token.pp Coloneq, wscoloneq)
+              :: List.concat
+                   (List.mapi
+                      (fun i (c : option_clause) ->
+                        let m = List.length c.words in
+                        List.mapi
+                          (fun j (w, ws) ->
+                            (* A comma separates the clauses, and binds tightly to the last word of the one before it; the whitespace that follows the comma is stored with the clause after it. *)
+                            if j = m - 1 && i < n - 1 then
+                              ( utf8string w ^^ pp_ws `None ws ^^ Token.pp (Op ","),
+                                (List.nth clauses (i + 1)).wscomma )
+                            else (utf8string w, ws))
+                          c.words)
+                      clauses) in
+        let rec go = function
+          | [] -> (empty, [])
+          | [ (d, ws) ] ->
+              let ws, rest = Whitespace.split ws in
+              (d ^^ pp_ws `None ws, rest)
+          | (d, ws) :: items ->
+              let doc, rest = go items in
+              (d ^^ pp_ws `Nobreak ws ^^ doc, rest) in
+        let doc, rest = go items in
+        (indent, group (nest 2 doc), rest)
     | Section { wssection; prefix; wsprefix; wscoloneq } ->
         let ws, rest = Whitespace.split wscoloneq in
         (* Since we pp a command *after* executing it, the indent is too large for the 'section' command. *)

@@ -1,4 +1,4 @@
-  $ narya -parametric -v churchnat_uniqueness.ny
+  $ narya -v churchnat_uniqueness.ny
    ￫ info[I0000]
    ￮ constant prod defined
   

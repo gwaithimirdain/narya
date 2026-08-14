@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-direction" "p,rel,Br") -*- `}
+option parametric ≔ arity 2, letter p, name rel Br
 
 {` Fibrancy is a higher coinductive predicate: an identification of fibrant types comes with transport and lifting functions in both directions, and its underlying correspondence is also fibrant. `}
 def isFibrant (A : Type) : Type ≔ codata [

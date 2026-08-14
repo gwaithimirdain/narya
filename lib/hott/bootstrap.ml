@@ -28,6 +28,7 @@ let rec batch p src =
         Parser.Command.execute
           ~action_taken:(fun _ -> ())
           ~get_file:(fun _ -> fatal (Anomaly "can't load files during bootstrapping"))
+          ~declare_option:(fun _ -> fatal (Anomaly "can't set options during bootstrapping"))
           cmd in
       let p, src = Parser.Command.Parse.restart_parse p src in
       batch p src
@@ -46,10 +47,8 @@ let get name =
 (* MODALTODO: We need to do all of this separately for each mode, and in the case of pi-types separately for each modality.  At present, choosing the trivial mode theory here means that we at least get correct fibrancy behavior for any unimodal theory and non-modal pi-types. *)
 
 let () =
-  Modal.Trivial.install [] [] [];
-
-  (* Wrap everything in the standard effect handlers *)
-  Top.hott := false;
+  (* Wrap everything in the standard effect handlers.  The trivial mode theory and the rest of the type theory are installed by run_top itself, once these options have been recorded. *)
+  Top.set_hott false;
   Top.run_top ~install_hott:(fun () -> ()) ~interactive:false @@ fun () ->
   (* *)
 

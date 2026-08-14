@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-dtt") -*- `}
+option dtt
 
 {` Unary Gel-types `}
 def Gel (A : Type) (A' : A → Type) : Type⁽ᵈ⁾ A ≔ sig ( x .ungel : A' x.0 )

@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-direction" "p,rel,Br") -*- `}
+option parametric ≔ arity 2, letter p, name rel Br
 
 def eq (A : Type) (a : A) : A → Type ≔ data [ rfl. : eq A a a ]
 

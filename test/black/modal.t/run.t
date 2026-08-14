@@ -1,4 +1,4 @@
-  $ narya -v -coreflector box.ny
+  $ narya -v box.ny
    ￫ info[I0000]
    ￮ constant f defined
   
@@ -21,7 +21,7 @@
    ￮ constant ε♭∘△ defined
   
 
-  $ narya -coreflector box.ny -e "def g (A : Type) (x : A) : A := f A x"
+  $ narya box.ny -e "def g (A : Type) (x : A) : A := f A x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def g (A : Type) (x : A) : A := f A x
@@ -29,7 +29,7 @@
   
   [1]
 
-  $ narya -coreflector box.ny -e "def η (A :♭| Type) (x : A) : ♭ A := box. x"
+  $ narya box.ny -e "def η (A :♭| Type) (x : A) : ♭ A := box. x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def η (A :♭| Type) (x : A) : ♭ A := box. x
@@ -37,7 +37,7 @@
   
   [1]
 
-  $ narya -v -functor functor.ny
+  $ narya -v functor.ny
    ￫ info[I0000]
    ￮ constant ○ defined
   
@@ -77,7 +77,7 @@
   
 
 
-  $ narya -v -reflector reflector.ny
+  $ narya -v reflector.ny
    ￫ info[I0000]
    ￮ constant diamond defined
   
@@ -100,7 +100,7 @@
 
 Unlike the coreflector, the reflector has no counit, so a ♯-locked variable cannot be used directly at its unlocked type.
 
-  $ narya -reflector reflector.ny -e "def ε (A :♯| Type) (x :♯| A) : A := x"
+  $ narya reflector.ny -e "def ε (A :♯| Type) (x :♯| A) : A := x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def ε (A :♯| Type) (x :♯| A) : A := x
@@ -109,7 +109,7 @@ Unlike the coreflector, the reflector has no counit, so a ♯-locked variable ca
   [1]
 
 
-  $ narya -v -spatial spatial.ny
+  $ narya -v spatial.ny
    ￫ info[I0000]
    ￮ constant f defined
   
@@ -132,7 +132,7 @@ Unlike the coreflector, the reflector has no counit, so a ♯-locked variable ca
 
 The reflector ♯ has no counit of its own, unlike the coreflector ♭.
 
-  $ narya -spatial spatial.ny -e "def ε (A :♯| Type) (x :♯| A) : A := x"
+  $ narya spatial.ny -e "def ε (A :♯| Type) (x :♯| A) : A := x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def ε (A :♯| Type) (x :♯| A) : A := x
@@ -143,7 +143,7 @@ The reflector ♯ has no counit of its own, unlike the coreflector ♭.
 
 The coreflector ♭ has no unit of its own, unlike the reflector ♯.
 
-  $ narya -spatial spatial.ny -e "def wfl (x : Type) : (data [ flat. (_ :♭| Type) ]) := flat. x"
+  $ narya spatial.ny -e "def wfl (x : Type) : (data [ flat. (_ :♭| Type) ]) := flat. x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def wfl (x : Type) : (data [ flat. (_ :♭| Type) ]) := flat. x
@@ -154,7 +154,7 @@ The coreflector ♭ has no unit of its own, unlike the reflector ♯.
 
 The adjunction ♭ ⊣ ♯ only gives cells ♭∘♯ ⇒ id and id ⇒ ♯∘♭, not the other way around.
 
-  $ narya -spatial spatial.ny -e "def nocounit (A :♯♭| Type) (x :♯♭| A) : A := x"
+  $ narya spatial.ny -e "def nocounit (A :♯♭| Type) (x :♯♭| A) : A := x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def nocounit (A :♯♭| Type) (x :♯♭| A) : A := x
@@ -163,7 +163,7 @@ The adjunction ♭ ⊣ ♯ only gives cells ♭∘♯ ⇒ id and id ⇒ ♯∘�
   [1]
 
 
-  $ narya -spatial spatial.ny -e "def wu2 (x : Type) : (data [ unit2. (_ :♭♯| Type) ]) := unit2. x"
+  $ narya spatial.ny -e "def wu2 (x : Type) : (data [ unit2. (_ :♭♯| Type) ]) := unit2. x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def wu2 (x : Type) : (data [ unit2. (_ :♭♯| Type) ]) := unit2. x
@@ -176,7 +176,7 @@ Modal fields of records and codata: a field parametrized by the sinister
 modality ♭ (with right adjoint ♯) is checked, supplied, and projected behind
 the corresponding locks.
 
-  $ narya -v -spatial modalfields.ny
+  $ narya -v modalfields.ny
    ￫ info[I0000]
    ￮ constant N defined
   
@@ -243,21 +243,21 @@ the corresponding locks.
 
 A modal field projection computes on a comatch/tuple.
 
-  $ narya -spatial modalfields.ny -e "echo p"
+  $ narya modalfields.ny -e "echo p"
   1
     : N
   
 
 A stuck modal projection prints with its locking annotation.
 
-  $ narya -spatial modalfields.ny -e "axiom cc : C" -e "echo (cc :♭| _) .fld"
+  $ narya modalfields.ny -e "axiom cc : C" -e "echo (cc :♭| _) .fld"
   (cc :♭| _) .fld
     : N
   
 
 Projecting a modal field with no annotation is an error.
 
-  $ narya -spatial modalfields.ny -e "def bad : N ≔ c .fld"
+  $ narya modalfields.ny -e "def bad : N ≔ c .fld"
    ￫ error[E1712]
    ￭ command-line exec string
    1 | def bad : N ≔ c .fld
@@ -267,7 +267,7 @@ Projecting a modal field with no annotation is an error.
 
 Projecting a modal field with the wrong locking modality is an error.
 
-  $ narya -spatial modalfields.ny -e "def bad2 : N ≔ (c :♯| _) .fld"
+  $ narya modalfields.ny -e "def bad2 : N ≔ (c :♯| _) .fld"
    ￫ error[E1712]
    ￭ command-line exec string
    1 | def bad2 : N ≔ (c :♯| _) .fld
@@ -310,7 +310,7 @@ not sinister.
 In the discrete spatial mode theory, ♭ is nonparametric, so a ♭-modal field
 disappears at dimensions it filters (the reflexivity/parametric direction).
 
-  $ narya -v -discrete-spatial -parametric discretefields.ny -e 'echo a2'
+  $ narya -v discretefields.ny -e 'echo a2'
    ￫ info[I0000]
    ￮ constant N defined
   
@@ -368,7 +368,7 @@ disappears at dimensions it filters (the reflexivity/parametric direction).
 
 At dimension 0 the field projects and computes.
 
-  $ narya -discrete-spatial -parametric discretefields.ny -e "echo p"
+  $ narya discretefields.ny -e "echo p"
   1
     : N
   
@@ -377,14 +377,14 @@ Degenerating a stuck modal projection: the projected term stays at the filtered
 dimension and the degeneracy is externalized (here as refl), printing
 faithfully and round-tripping.
 
-  $ narya -discrete-spatial -parametric discretefields.ny -e "axiom z : C" -e "echo refl ((z :♭| _) .fld)"
+  $ narya discretefields.ny -e "axiom z : C" -e "echo refl ((z :♭| _) .fld)"
   refl ((z :♭| _) .fld)
     : N⁽ᵉ⁾ ((z :♭| _) .fld) ((z :♭| _) .fld)
   
 
 A two-dimensional degeneracy prints with the superscript notation.
 
-  $ narya -discrete-spatial -parametric discretefields.ny -e "axiom z : C" -e "echo sym (refl (refl ((z :♭| _) .fld)))"
+  $ narya discretefields.ny -e "axiom z : C" -e "echo sym (refl (refl ((z :♭| _) .fld)))"
   ((z :♭| _) .fld)⁽ᵉᵉ⁾
     : N⁽ᵉᵉ⁾ (refl ((z :♭| _) .fld)) (refl ((z :♭| _) .fld))
         (refl ((z :♭| _) .fld)) (refl ((z :♭| _) .fld))
@@ -392,7 +392,7 @@ A two-dimensional degeneracy prints with the superscript notation.
 
 Projecting a disappeared field (from a 1-dimensional element) is an error.
 
-  $ narya -discrete-spatial -parametric discretefields.ny -e "echo (refl c :♭| _) .fld"
+  $ narya discretefields.ny -e "echo (refl c :♭| _) .fld"
    ￫ error[E1713]
    ￭ command-line exec string
    1 | echo (refl c :♭| _) .fld
@@ -402,7 +402,7 @@ Projecting a disappeared field (from a 1-dimensional element) is an error.
 
 Supplying a disappeared field in a tuple/comatch is an error.
 
-  $ narya -discrete-spatial -parametric discretefields.ny -e "def bad : Id C c c ≔ [ .fld ↦ refl (suc. zero.) ]"
+  $ narya discretefields.ny -e "def bad : Id C c c ≔ [ .fld ↦ refl (suc. zero.) ]"
    ￫ error[E1714]
    ￭ command-line exec string
    1 | def bad : Id C c c ≔ [ .fld ↦ refl (suc. zero.) ]
@@ -412,7 +412,7 @@ Supplying a disappeared field in a tuple/comatch is an error.
 
 An ordinary (non-modal) field never disappears: it projects at any dimension.
 
-  $ narya -discrete-spatial -parametric discretefields.ny -e "echo (refl d) .snd"
+  $ narya discretefields.ny -e "echo (refl d) .snd"
   refl 0
     : N⁽ᵉ⁾ 0 0
   
@@ -458,7 +458,7 @@ composed with ♭).  Since ♭ is parametric, it filters none of the field's
 intrinsic dimensions, so projections work at all dimensions, keyed by the
 adjunction counit.
 
-  $ narya -v -spatial higherfields.ny
+  $ narya -v higherfields.ny
    ￫ info[I0001]
    ￮ axiom A assumed
   
@@ -550,7 +550,7 @@ adjunction counit.
 Supplying a component of a modal higher field in a comatch omitting its
 suffix (or at a wrong dimension) is an error, as for ordinary higher fields.
 
-  $ narya -spatial higherfields.ny -e "def bad : √♭A ≔ [ .root ↦ a ]"
+  $ narya higherfields.ny -e "def bad : √♭A ≔ [ .root ↦ a ]"
   (s2 :♭| _) .root
     : A
   
@@ -600,7 +600,7 @@ then extended by the self variable, annotated by the left adjoint.
 
 Projecting a modal higher field without the locking annotation is an error.
 
-  $ narya -spatial higherfields.ny -e "echo s2 .root.1"
+  $ narya higherfields.ny -e "echo s2 .root.1"
   (s2 :♭| _) .root
     : A
   

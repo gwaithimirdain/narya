@@ -2923,7 +2923,8 @@ let () =
    Generating the state
  ******************** *)
 
-let install () =
+(* The universe notations are the only builtins that depend on the mode theory, which isn't known until the type theory options have been fixed (see Options).  So they are installed separately, by Options.install, rather than along with the rest of the builtins at startup. *)
+let install_universes () =
   universes :=
     List.map
       (fun (name, Mode.Wrap mode) ->
@@ -2950,6 +2951,9 @@ let install () =
           };
         (name, Mode.Wrap mode, universe))
       (Mode.all ());
+  Scope.(List.iter (fun (_, _, u) -> Situation.add u) !universes)
+
+let install () =
   Scope.(
     Situation.add Postprocess.parens;
     Situation.add Postprocess.braces;
@@ -2961,7 +2965,6 @@ let install () =
     Situation.add cubeabs;
     Situation.add arrow;
     Situation.add dblarrow;
-    List.iter (fun (_, _, u) -> Situation.add u) !universes;
     Situation.add coloneq;
     Situation.add comatch;
     Situation.add Postprocess.dot;

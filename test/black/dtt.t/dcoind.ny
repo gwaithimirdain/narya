@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-dtt") -*- `}
+option dtt
 
 def disp (X :△□| Type) (x : X) : Type
   ≔ ((Y ↦ Y) : ((_ :△□| Type) → Type))⁽ᵈ⁾ X x

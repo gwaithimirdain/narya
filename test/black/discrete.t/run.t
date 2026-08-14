@@ -1,12 +1,15 @@
 The nonparametric comonad mode theory currently requires -parametric.
 
-  $ narya -discrete-coreflector discrete.ny
-  -discrete-coreflector requires -parametric
+  $ narya -discrete-coreflector -e "echo 1"
+   ￫ error[E2322]
+   ￮ invalid type theory options:
+     the discrete coreflector mode theory requires 'option parametric'
+  
   [1]
 
 The comonad structure typechecks, and the modal type is parametrically trivial.
 
-  $ narya -v -parametric -direction p,rel,Br -discrete-coreflector discrete.ny
+  $ narya -v discrete.ny
    ￫ info[I0000]
    ￮ constant f defined
   
@@ -43,7 +46,7 @@ The comonad structure typechecks, and the modal type is parametrically trivial.
 
 Using a ♭-locked variable without a key requires the counit key.
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "def g (A : Type) (x : A) : A ≔ f A x"
+  $ narya discrete.ny -e "def g (A : Type) (x : A) : A ≔ f A x"
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def g (A : Type) (x : A) : A ≔ f A x
@@ -55,7 +58,7 @@ The reflexivity of the *modal* family ♭ has a *filtered* domain: instead of th
 usual square of arguments, it takes a single (A :♭| Type), because ♭ removes the
 parametric dimension.
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel ♭"
+  $ narya discrete.ny -e "echo rel ♭"
   Br ♭
     : (A :♭| Type) →⁽ᵖ⁾ Type⁽ᵖ⁾ (♭ A) (♭ A)
   
@@ -63,14 +66,14 @@ parametric dimension.
 By contrast, the reflexivity of the *non-modal* family T has the usual full
 square domain {A₀} {A₁} (A₂).
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel T"
+  $ narya discrete.ny -e "echo rel T"
   Br T
     : {A₀ : Type} {A₁ : Type} (A₂ : Type⁽ᵖ⁾ A₀ A₁) →⁽ᵖ⁾ Type⁽ᵖ⁾ (T A₀) (T A₁)
   
 
 The filtered reflexivity computes correctly when applied to an argument.
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel ♭ Type"
+  $ narya discrete.ny -e "echo rel ♭ Type"
   ♭⁽ᵖ⁾ Type
     : Type⁽ᵖ⁾ (♭ Type) (♭ Type)
   
@@ -78,7 +81,7 @@ The filtered reflexivity computes correctly when applied to an argument.
 The filtered higher pi-type can be written explicitly, and refl ♭ checks
 against it.
 
-  $ narya -v -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "def rT : (A :♭| Type) →⁽ᵖ⁾ Type⁽ᵖ⁾ (♭ A) (♭ A) ≔ rel ♭"
+  $ narya -v discrete.ny -e "def rT : (A :♭| Type) →⁽ᵖ⁾ Type⁽ᵖ⁾ (♭ A) (♭ A) ≔ rel ♭"
    ￫ info[I0000]
    ￮ constant f defined
   
@@ -118,7 +121,7 @@ against it.
 
 Iterated reflexivity keeps the filtered single-variable domain.
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel (rel ♭)"
+  $ narya discrete.ny -e "echo rel (rel ♭)"
   ♭⁽ᵖᵖ⁾
     : (A :♭| Type) →⁽ᵖᵖ⁾ Type⁽ᵖᵖ⁾ (♭⁽ᵖ⁾ A) (♭⁽ᵖ⁾ A) (♭⁽ᵖ⁾ A) (♭⁽ᵖ⁾ A)
   
@@ -127,29 +130,29 @@ Iterated reflexivity keeps the filtered single-variable domain.
 Reflexivity of modal *lambdas* (not just constants) also reads back with a
 filtered domain, and computes when applied.
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel ((A : ♭| Type) ↦ A)"
+  $ narya discrete.ny -e "echo rel ((A : ♭| Type) ↦ A)"
   A ↦ Br A
     : (A :♭| Type) →⁽ᵖ⁾ Type⁽ᵖ⁾ A A
   
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel ((A : ♭| Type) ↦ ♭ A)"
+  $ narya discrete.ny -e "echo rel ((A : ♭| Type) ↦ ♭ A)"
   A ↦ ♭⁽ᵖ⁾ A
     : (A :♭| Type) →⁽ᵖ⁾ Type⁽ᵖ⁾ (♭ A) (♭ A)
   
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel ((A : ♭| Type) ↦ ♭ A) Type"
+  $ narya discrete.ny -e "echo rel ((A : ♭| Type) ↦ ♭ A) Type"
   ♭⁽ᵖ⁾ Type
     : Type⁽ᵖ⁾ (♭ Type) (♭ Type)
   
 
-  $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel (rel ((A : ♭| Type) ↦ ♭ A))"
+  $ narya discrete.ny -e "echo rel (rel ((A : ♭| Type) ↦ ♭ A))"
   A ↦ ♭⁽ᵖᵖ⁾ A
     : (A :♭| Type) →⁽ᵖᵖ⁾ Type⁽ᵖᵖ⁾ (♭⁽ᵖ⁾ A) (♭⁽ᵖ⁾ A) (♭⁽ᵖ⁾ A) (♭⁽ᵖ⁾ A)
   
 
 If there is a 2-cell from a non-discrete modality (such as an identity) to a discrete one (such as △◇), then the arity of parametricity must be 1 in order to have a canonical result to compute expressions like this to.
 
-  $ narya -parametric -direction p,rel,Br -arity 1 -discrete-tconn discrete_unary.ny
+  $ narya discrete_unary.ny
   rel (x ↦ f x (a x)) x₁
     : Br B (f x₀ (a x₀))
   

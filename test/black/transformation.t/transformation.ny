@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-transformation") -*- `}
+option modal ≔ transformation
 
 def ○ (A :○| DomMode) : CodMode ≔ data [ circle. (_ :○| A) ]
 def ▱ (A :▱| DomMode) : CodMode ≔ data [ box. (_ :▱| A) ]

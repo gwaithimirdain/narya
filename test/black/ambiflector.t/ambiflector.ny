@@ -1,4 +1,4 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-ambiflector") -*- `}
+option modal ≔ ambiflector
 
 ` The counit: a ♮-locked variable can be used directly.
 def counit (A :♮| Type) (x :♮| A) : A ≔ x
