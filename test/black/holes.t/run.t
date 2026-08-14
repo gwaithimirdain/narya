@@ -314,7 +314,7 @@
      u′ : A (not in scope)
      u : Id A u″ u′
      ----------------------------------------------------------------------
-     refl A u″ u′
+     Id A u″ u′
   
    ￫ info[I0000]
    ￮ constant afam defined, containing 1 hole
@@ -342,7 +342,7 @@
      x.1 : A
      x.2 : Id A x.0 x.1
      ----------------------------------------------------------------------
-     refl B (f0 x.0) (f0 x.1)
+     Id B (f0 x.0) (f0 x.1)
   
    ￫ info[I0000]
    ￮ constant prod defined
@@ -366,7 +366,7 @@
    ￮ hole ?27:
      
      ----------------------------------------------------------------------
-     refl prod p0 p0
+     prod⁽ᵉ⁾ p0 p0
   
    ￫ info[I0000]
    ￮ constant prod' defined
