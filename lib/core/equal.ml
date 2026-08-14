@@ -171,9 +171,7 @@ and equal_at : type mode a b.
               do_fields fields
         (* At a codatatype without eta, there are no kinetic structs, only comatches, and those are not compared componentwise, only as neutrals, since they are generative. *)
         | Noeta -> equal_val ctx x y)
-    (* At a higher-dimensional version of a discrete datatype, any two terms are equal.  Note that we do not check here whether discreteness is on: that affects datatypes when they are *defined*, not when they are used. *)
-    | Canonical (_, Data { dim; discrete = `Yes; _ }, _, _) when is_pos dim -> return ()
-    (* At an ordinary datatype, two constructors are equal if they are instances of the same constructor, with the same dimension and arguments.  We handle these cases here because we can use the datatype information to give types to the arguments of the constructor. *)
+    (* At a datatype, two constructors are equal if they are instances of the same constructor, with the same dimension and arguments.  We handle these cases here because we can use the datatype information to give types to the arguments of the constructor. *)
     | Canonical (_, Data { constrs; _ }, ins, tyargs) ->
         let Eq = eq_of_ins_zero ins in
         (* With glued evaluation, terms at a datatype may be glued neutrals whose values unfold to constructors.  We compare the terms as given, and only if that is inconclusive (a neutral spine mismatch, or a shape mismatch) do we unfold with view_term and retry.  Since view_term unfolds Realized glued values all the way down, a second view is the physical identity and the retry recursion terminates. *)

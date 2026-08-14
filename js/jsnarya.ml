@@ -30,22 +30,21 @@ let interact_js : string -> string =
 (* We interface with JavaScript by exporting an object called 'Narya' with methods. *)
 let _ =
   Js.export "Narya"
-    (object%js
-       (* The 'start' method gets things started by setting up the configuration flags and calling the initializer function. *)
-       method start ar dir intr disc startup =
-         arity := ar;
-         set_refls dir;
-         internal := intr;
-         discreteness := disc;
-         inputs := Snoc (Emp, `String (Js.to_string startup));
-         try
-           let _ = Pauser.init ~use_ansi:true ~install_hott:(fun () -> ()) (fun () -> "") in
-           Js.null
-         with Top.Exit ->
-           (* If executing the extra startup code raises an error, we catch that error in the error buffer and return it. *)
-           Out_channel.flush stderr;
-           Js.some (Js.string (Buffer.contents errbuf))
+    object%js
+      (* The 'start' method gets things started by setting up the configuration flags and calling the initializer function. *)
+      method start ar dir intr startup =
+        arity := ar;
+        set_refls dir;
+        internal := intr;
+        inputs := Snoc (Emp, `String (Js.to_string startup));
+        try
+          let _ = Pauser.init ~use_ansi:true ~install_hott:(fun () -> ()) (fun () -> "") in
+          Js.null
+        with Top.Exit ->
+          (* If executing the extra startup code raises an error, we catch that error in the error buffer and return it. *)
+          Out_channel.flush stderr;
+          Js.some (Js.string (Buffer.contents errbuf))
 
-       (* To execute a new command, we continue the stored continuation and return its result. *)
-       method execute cmd = Js.string (Pauser.next (fun () -> interact_js (Js.to_string cmd)))
-    end)
+      (* To execute a new command, we continue the stored continuation and return its result. *)
+      method execute cmd = Js.string (Pauser.next (fun () -> interact_js (Js.to_string cmd)))
+    end

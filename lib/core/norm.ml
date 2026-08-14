@@ -638,7 +638,6 @@ and apply_unfilled_data_index : type mode m j ij mk dom modl an k.
     (mode, kinetic) lazy_eval ->
     ((m, mode normal) CubeOf.t, j Fwn.suc, ij) Fillvec.t ->
     (Constr.t, (mode, m, ij) dataconstr) Abwd.t ->
-    [ `Yes | `Maybe | `No ] ->
     Positivity.recursion ->
     hints ->
     k D.t ->
@@ -647,7 +646,7 @@ and apply_unfilled_data_index : type mode m j ij mk dom modl an k.
     (dom, modl, mode) Modality.t ->
     (an, dom normal) CubeOf.t ->
     (mode, potential) evaluation =
- fun mode dim tyfam indices constrs discrete recursive hints tyargs_inst ins fields modality xs ->
+ fun mode dim tyfam indices constrs recursive hints tyargs_inst ins fields modality xs ->
   let Eq = eq_of_ins_zero ins in
   match
     (D.compare dim (CubeOf.dim xs), D.compare_zero tyargs_inst, Modality.compare_id modality)
@@ -667,7 +666,7 @@ and apply_unfilled_data_index : type mode m j ij mk dom modl an k.
         (Value.Canonical
            {
              mode;
-             canonical = Data { dim; tyfam; indices; constrs; discrete; recursive; hints };
+             canonical = Data { dim; tyfam; indices; constrs; recursive; hints };
              tyargs = TubeOf.empty dim;
              ins;
              fields;
@@ -739,7 +738,6 @@ and apply : type dom modality mode n m s.
                                tyfam;
                                indices = Unfilled _ as indices;
                                constrs;
-                               discrete;
                                recursive;
                                hints;
                              };
@@ -750,8 +748,8 @@ and apply : type dom modality mode n m s.
                        }) ->
                     (* TODO: What happens to the fields?  What even are the fields of a not-fully-applied indexed datatype? *)
                     let value =
-                      apply_unfilled_data_index mode dim tyfam indices constrs discrete recursive
-                        hints (TubeOf.inst data_tyargs) ins fields modality newarg in
+                      apply_unfilled_data_index mode dim tyfam indices constrs recursive hints
+                        (TubeOf.inst data_tyargs) ins fields modality newarg in
                     Val (Neu { head; args; value = ready value; ty = newty })
                 | Val tm -> (
                     let value = apply tm filter_nm arg in
@@ -1447,7 +1445,7 @@ and eval_canonical : type mode m a.
     (mode, m, a) env -> (mode, a) Term.canonical -> (mode, potential) evaluation =
  fun env can ->
   match can with
-  | Data { indices; constrs; discrete; recursive; hints; tyfam } ->
+  | Data { indices; constrs; recursive; hints; tyfam } ->
       (* The type family (the datatype applied to its parameters, e.g. "Vec A") was read back when this datatype was checked; we now evaluate it, lazily to avoid the circularity of re-entering this same evaluation eagerly.  Its type we take from the resulting neutral, since that is computed fully-instantiated at the current dimension (whereas re-evaluating a read-back type term would not be). *)
       let tyfam = lazy_eval env tyfam in
       let constrs =
@@ -1456,8 +1454,7 @@ and eval_canonical : type mode m a.
           constrs in
       let dim, mode = (dim_env env, mode_env env) in
       let canonical =
-        Data { dim; tyfam; indices = Fillvec.empty indices; constrs; discrete; recursive; hints }
-      in
+        Data { dim; tyfam; indices = Fillvec.empty indices; constrs; recursive; hints } in
       let tyargs = TubeOf.empty (dim_env env) in
       let fields =
         match Lazy.force Fibrancy.data with
@@ -1618,23 +1615,14 @@ and app_eval_apps : type hmode mode s any.
              {
                mode = cmode;
                canonical =
-                 Data
-                   {
-                     dim;
-                     tyfam;
-                     indices = Unfilled _ as indices;
-                     constrs;
-                     discrete;
-                     recursive;
-                     hints;
-                   };
+                 Data { dim; tyfam; indices = Unfilled _ as indices; constrs; recursive; hints };
                tyargs;
                ins = cins;
                fields;
                inst_fields = _;
              }) ->
           let value =
-            apply_unfilled_data_index cmode dim tyfam indices constrs discrete recursive hints
+            apply_unfilled_data_index cmode dim tyfam indices constrs recursive hints
               (TubeOf.inst tyargs) cins fields modality xs in
           act_evaluation value p (Modalcell.id2 mode)
       | Val tm -> act_evaluation (apply tm filter (val_of_norm_cube xs)) p (Modalcell.id2 mode)
@@ -2100,19 +2088,6 @@ let get_tyargs : type mode.
   match view_type ~severity ty err with
   | Canonical (_, _, _, tyargs) -> Full_tube tyargs
   | Neutral (_, _, tyargs) -> Full_tube tyargs
-
-(* Check whether a given type is discrete, or has one of the the supplied constant heads (since for testing whether a newly defined datatype can be discrete, it and members of its mutual families can appear in its own parameters and arguments). *)
-let is_discrete : type mode. ?discrete:unit Constant.Map.t -> (mode, kinetic) value -> bool =
- fun ?discrete ty ->
-  match (view_type ty "is_discrete", discrete) with
-  | Canonical (_, Data { discrete = `Yes; _ }, _, _), _ -> true
-  (* The currently-being-defined types may not be known to be discrete yet, but we treat them as discrete if they are one of the given heads. *)
-  | Canonical (Const { name; ins }, _, _, _), Some consts ->
-      Option.is_some (is_id_ins ins) && Constant.Map.mem name consts
-  | Neutral (Const { name; ins }, _, _), Some consts ->
-      Option.is_some (is_id_ins ins) && Constant.Map.mem name consts
-      (* In theory, pi-types with discrete codomain, and record types with discrete fields, could also be discrete.  But that would be trickier to check as it would require evaluating their codomain and fields under binders, and eta-conversion for those types should implement direct discreteness automatically.  So the only thing we're missing is that they can't appear as arguments to a constructor of some other discrete datatype. *)
-  | _ -> false
 
 let () =
   View.term_viewer := { view = view_term };

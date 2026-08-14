@@ -21,7 +21,6 @@ let refl_names = ref [ "refl"; "Id"; "ap" ]
 let internal = ref true
 let hott = ref true
 let hott_deprecated = ref false
-let discreteness = ref false
 let source_only = ref false
 let number_metas = ref true
 let parenthesize_arguments = ref false
@@ -37,7 +36,6 @@ let marshal_flags chan =
   Marshal.to_channel chan !refl_char [];
   Marshal.to_channel chan !refl_names [];
   Marshal.to_channel chan !internal [];
-  Marshal.to_channel chan !discreteness [];
   Marshal.to_channel chan !hott []
 
 (* Unmarshal saved flags from a file and check that they agree with the current ones. *)
@@ -46,24 +44,15 @@ let unmarshal_flags chan =
   let rc = (Marshal.from_channel chan : char) in
   let rs = (Marshal.from_channel chan : string list) in
   let int = (Marshal.from_channel chan : bool) in
-  let disc = (Marshal.from_channel chan : bool) in
   let ho = (Marshal.from_channel chan : bool) in
-  if
-    ar = !arity
-    && rc = !refl_char
-    && rs = !refl_names
-    && int = !internal
-    && disc = !discreteness
-    && ho = !hott
-  then Ok ()
+  if ar = !arity && rc = !refl_char && rs = !refl_names && int = !internal && ho = !hott then Ok ()
   else
     Error
-      (Printf.sprintf "%s-arity %d -direction %s %s%s"
+      (Printf.sprintf "%s-arity %d -direction %s %s"
          (if ho then "" else "-parametric ")
          ar
          (String.concat "," (String.make 1 rc :: rs))
-         (if int then "-internal" else "-external")
-         (if disc then " -discreteness" else ""))
+         (if int then "-internal" else "-external"))
 
 (* Given a string like "r,refl,Id" as in a command-line "-direction" argument, set refl_char and refl_names *)
 let set_refls str =
@@ -106,7 +95,6 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
   @@ fun () ->
   Annotate.run @@ fun () ->
   Readback.Displaying.run ~env:false @@ fun () ->
-  Core.Discrete.run ~env:!discreteness @@ fun () ->
   Core.Positivity.run @@ fun () ->
   (* A temporary Reporter.run to report these errors *)
   ( Reporter.run
@@ -118,8 +106,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
         raise Exit)
   @@ fun () ->
     if !arity < 0 || !arity > 9 then Reporter.fatal (Unimplemented "arities outside [0,9]");
-    if !discreteness && !arity > 1 then Reporter.fatal (Unimplemented "discreteness with arity > 1");
-    if !hott && (!arity <> 2 || !discreteness || not !internal) then Reporter.fatal Invalid_flags;
+    if !hott && (!arity <> 2 || not !internal) then Reporter.fatal Invalid_flags;
     if !hott_deprecated then Reporter.emit (Deprecated "-hott (this is now the default)");
     (* The argument of -variables must be a nonempty comma-separated list of valid variable names. *)
     match !variables with

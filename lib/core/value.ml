@@ -163,7 +163,6 @@ module rec Value : sig
     tyfam : ('mode, kinetic) lazy_eval;
     indices : (('m, 'mode normal) CubeOf.t, 'j, 'ij) Fillvec.t;
     constrs : (Constr.t, ('mode, 'm, 'ij) dataconstr) Abwd.t;
-    discrete : [ `Yes | `Maybe | `No ];
     recursive : Positivity.recursion;
     hints : hints;
   }
@@ -408,8 +407,6 @@ end = struct
     indices : (('m, 'mode normal) CubeOf.t, 'j, 'ij) Fillvec.t;
     (* All the constructors *)
     constrs : (Constr.t, ('mode, 'm, 'ij) dataconstr) Abwd.t;
-    (* Whether it is discrete.  The value `Maybe means that it could be discrete based on its own parameters, indices, and constructor arguments, but either is waiting for its mutual companions to be typechecked, or at least one of them failed to be discrete.  Thus for equality-testing purposes, `Maybe is treated like `No. *)
-    discrete : [ `Yes | `Maybe | `No ];
     (* Whether it has recursive constructors. *)
     recursive : Positivity.recursion;
     (* Variable-name hints, for displaying anonymous variables of this type. *)

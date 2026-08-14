@@ -37,7 +37,6 @@ These options are discussed under :ref:`Parametricity`.
 - ``-direction X``: Set the symbol and names for reflexivity
 - ``-arity N``: Set the arity of parametricity to N (1 ≤ N ≤ 9)
 - ``-internal`` and ``-external``: Set whether parametricity is internal (default) or external
-- ``-discreteness``: Enable strictly parametrically discrete types (deprecated)
 
 Modal type theory options
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -436,5 +435,5 @@ jsNarya
 
 jsNarya is a JavaScript version of Narya that runs in a browser.  Its functionality is limited to the equivalent of ``narya -e "STARTUP" -i``: you can specify a single startup "file" by copying and pasting it into a text box, and then you drop into interactive mode.  Also there is no real Unicode input-mode, although there is a palette of buttons that can be used to enter a number of common Unicode characters.  These limitations are not intrinsic; we just have not yet found or implemented an appropriate frontend for anything more complicated.
 
-jsNarya does accept customization of the arity, direction name, and internality of parametricity, plus discreteness, for :ref:`Observational higher dimensions`.  This can be done with input elements on the page before starting the interactive mode, or with appropriately-named URL parameters, such as ``?arity=1&direction=p,rel,Br`` for unary :ref:`Parametricity`, or ``?dtt`` for :ref:`Displayed type theory`.  The startup code can also be specified in the URL with the ``?startup=`` parameter.
+jsNarya does accept customization of the arity, direction name, and internality of parametricity, for :ref:`Observational higher dimensions`.  This can be done with input elements on the page before starting the interactive mode, or with appropriately-named URL parameters, such as ``?arity=1&direction=p,rel,Br`` for unary :ref:`Parametricity`, or ``?dtt`` for :ref:`Displayed type theory`.  The startup code can also be specified in the URL with the ``?startup=`` parameter.
 

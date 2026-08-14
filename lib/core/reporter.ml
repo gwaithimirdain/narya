@@ -224,13 +224,7 @@ module Code = struct
     | Unbound_variable_in_notation : string list -> t
     | Head_already_has_notation : string -> t
     | Constant_assumed : { name : printable; parametric : bool; holes : int } -> t
-    | Constant_defined : {
-        names : printable list;
-        discrete : bool;
-        parametric : bool;
-        holes : int;
-      }
-        -> t
+    | Constant_defined : { names : printable list; parametric : bool; holes : int } -> t
     | Hole_solved : int -> t
     | Split_term : PPrint.document -> t
     | Notation_defined : string -> t
@@ -1047,11 +1041,8 @@ module Code = struct
           else if holes = 1 then
             textf "%saxiom %a assumed, containing 1 hole" p pp_printed (print name)
           else textf "%saxiom %a assumed" p pp_printed (print name)
-      | Constant_defined { names; discrete; parametric; holes } -> (
-          (* Nonparametricity trumps discreteness *)
-          let prefix =
-            if parametric || Dim.Endpoints.internal () then if discrete then "discrete " else ""
-            else "nonparametric " in
+      | Constant_defined { names; parametric; holes } -> (
+          let prefix = if parametric || Dim.Endpoints.internal () then "" else "nonparametric " in
           match names with
           | [] -> textf "anomaly: no constant defined"
           | [ name ] ->
