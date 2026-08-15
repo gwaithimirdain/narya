@@ -456,77 +456,6 @@ and readback_val : type mode a z s.
   | Constr _ -> fatal (Readback_at_wrong_type "a constructor, which does not synthesize")
   | Canonical _ -> fatal (Readback_at_wrong_type "a canonical type, which does not synthesize")
 
-(* Read back the term that justified refuting a branch, given an environment for the branch's context: evaluate it through its own window modality, exactly as evaluation evaluates a match's discriminee, and read the result back in the context locked by that modality.  The result carries the same data a match takes for its discriminee, which is what a refutation displays as. *)
-and stuck_spine : type hmode mode a z any.
-    (mode, z, a) Ctx.t -> (hmode, mode, any) apps -> (hmode, mode, a) stuck_spine =
- fun ctx -> function
-  | Emp -> Stuck_spine (ctx, fun tm -> tm)
-  | Arg (rest, filter, args, ins) ->
-      let modality = Modality.filter_modality filter in
-      let (To p) = deg_of_ins ins in
-      let (Locked (plus, lctx)) = Ctx.lock ctx modality in
-      let (Stuck_spine (hctx, rewrap)) = stuck_spine ctx rest in
-      Stuck_spine
-        ( hctx,
-          fun tm ->
-            Term.Act
-              ( Potential,
-                App
-                  ( Potential,
-                    rewrap tm,
-                    cod_left_ins ins,
-                    filter,
-                    Modal
-                      ( modality,
-                        plus,
-                        CubeOf.mmap { map = (fun _ [ x ] -> readback_nf lctx x) } [ args ] ) ),
-                p,
-                (`Other, `Other) ) )
-  | Inst (rest, _, args) ->
-      let (Stuck_spine (hctx, rewrap)) = stuck_spine ctx rest in
-      Stuck_spine
-        ( hctx,
-          fun tm ->
-            Inst
-              ( Potential,
-                rewrap tm,
-                TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ args ] ) )
-  (* A field projection crosses to the mode the field's left adjoint comes from, so the rest of the spine, and the match at its end, live in our context locked by it. *)
-  | Field (rest, filter, fld, fldplus, ins) -> (
-      let fm = Modality.filter_modality filter in
-      let (To p) = deg_of_ins ins in
-      let (Locked (plus_lock, lctx)) = Ctx.lock ctx fm in
-      let t = cod_left_ins ins in
-      let (Stuck_spine (hctx, rewrap)) = stuck_spine lctx rest in
-      match Modality.filter_is_trivial t filter with
-      | Some Eq ->
-          Stuck_spine
-            ( hctx,
-              fun tm ->
-                Term.Act
-                  ( Potential,
-                    Field (Potential, Modal (fm, plus_lock, rewrap tm), fld, id_ins t fldplus),
-                    p,
-                    (`Other, `Other) ) )
-      | None ->
-          (* As in readback_neu: a nonparametric field at a dimension its modality filters is read back at the filtered dimension and lifted by the filter's degeneracy. *)
-          let ft = Modality.filtered t filter in
-          let (Plus new_fldplus) = D.plus (D.plus_right fldplus) in
-          let liftdeg = Modality.deg_of_filter t filter in
-          Stuck_spine
-            ( hctx,
-              fun tm ->
-                Term.Act
-                  ( Potential,
-                    Term.Act
-                      ( Potential,
-                        Field
-                          (Potential, Modal (fm, plus_lock, rewrap tm), fld, id_ins ft new_fldplus),
-                        liftdeg,
-                        (`Other, `Other) ),
-                    p,
-                    (`Other, `Other) ) ))
-
 and readback_neu : type hmode mode a z any.
     ?sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] ->
     (mode, z, a) Ctx.t ->
@@ -1243,6 +1172,77 @@ and readback_stuck : type mode a z hmode any.
           no_display (Printf.sprintf "a stuck match with a branch body that is %s" str)
       | _ -> fatal_diagnostic d)
   @@ fun () -> readback_stuck_match status ctx pn ty
+
+(* Read back the term that justified refuting a branch, given an environment for the branch's context: evaluate it through its own window modality, exactly as evaluation evaluates a match's discriminee, and read the result back in the context locked by that modality.  The result carries the same data a match takes for its discriminee, which is what a refutation displays as. *)
+and stuck_spine : type hmode mode a z any.
+    (mode, z, a) Ctx.t -> (hmode, mode, any) apps -> (hmode, mode, a) stuck_spine =
+ fun ctx -> function
+  | Emp -> Stuck_spine (ctx, fun tm -> tm)
+  | Arg (rest, filter, args, ins) ->
+      let modality = Modality.filter_modality filter in
+      let (To p) = deg_of_ins ins in
+      let (Locked (plus, lctx)) = Ctx.lock ctx modality in
+      let (Stuck_spine (hctx, rewrap)) = stuck_spine ctx rest in
+      Stuck_spine
+        ( hctx,
+          fun tm ->
+            Term.Act
+              ( Potential,
+                App
+                  ( Potential,
+                    rewrap tm,
+                    cod_left_ins ins,
+                    filter,
+                    Modal
+                      ( modality,
+                        plus,
+                        CubeOf.mmap { map = (fun _ [ x ] -> readback_nf lctx x) } [ args ] ) ),
+                p,
+                (`Other, `Other) ) )
+  | Inst (rest, _, args) ->
+      let (Stuck_spine (hctx, rewrap)) = stuck_spine ctx rest in
+      Stuck_spine
+        ( hctx,
+          fun tm ->
+            Inst
+              ( Potential,
+                rewrap tm,
+                TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ args ] ) )
+  (* A field projection crosses to the mode the field's left adjoint comes from, so the rest of the spine, and the match at its end, live in our context locked by it. *)
+  | Field (rest, filter, fld, fldplus, ins) -> (
+      let fm = Modality.filter_modality filter in
+      let (To p) = deg_of_ins ins in
+      let (Locked (plus_lock, lctx)) = Ctx.lock ctx fm in
+      let t = cod_left_ins ins in
+      let (Stuck_spine (hctx, rewrap)) = stuck_spine lctx rest in
+      match Modality.filter_is_trivial t filter with
+      | Some Eq ->
+          Stuck_spine
+            ( hctx,
+              fun tm ->
+                Term.Act
+                  ( Potential,
+                    Field (Potential, Modal (fm, plus_lock, rewrap tm), fld, id_ins t fldplus),
+                    p,
+                    (`Other, `Other) ) )
+      | None ->
+          (* As in readback_neu: a nonparametric field at a dimension its modality filters is read back at the filtered dimension and lifted by the filter's degeneracy. *)
+          let ft = Modality.filtered t filter in
+          let (Plus new_fldplus) = D.plus (D.plus_right fldplus) in
+          let liftdeg = Modality.deg_of_filter t filter in
+          Stuck_spine
+            ( hctx,
+              fun tm ->
+                Term.Act
+                  ( Potential,
+                    Term.Act
+                      ( Potential,
+                        Field
+                          (Potential, Modal (fm, plus_lock, rewrap tm), fld, id_ins ft new_fldplus),
+                        liftdeg,
+                        (`Other, `Other) ),
+                    p,
+                    (`Other, `Other) ) ))
 
 and readback_stuck_match : type mode a z hmode any.
     (mode, potential) readback_status ->
