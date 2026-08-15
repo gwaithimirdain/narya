@@ -997,9 +997,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
           let btm =
             if eval then
               let etm = Norm.eval_term (Ctx.env ctx) ctm in
-              readback_at ctx etm ety
+              readback_at Kinetic ctx etm ety
             else ctm in
-          let bty = readback_at ctx ety (Value.universe (Ctx.mode ctx) D.zero) in
+          let bty = readback_at Kinetic ctx ety (Value.universe (Ctx.mode ctx) D.zero) in
           let utm = unparse (Names.of_ctx ctx) btm No.Interval.entire No.Interval.entire in
           let uty = unparse (Names.of_ctx ctx) bty No.Interval.entire No.Interval.entire in
           PPrint.(

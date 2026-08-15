@@ -104,11 +104,38 @@ let print (tm : string) : unit =
       let ctm, ety = synth (Kinetic `Nolet) (Ctx.empty test_mode) { value = rtm; loc } in
       let etm = eval_term (Emp (test_mode, D.zero)) ctm in
       Readback.Displaying.run ~env:true @@ fun () ->
-      let btm = readback_at (Ctx.empty test_mode) etm ety in
+      let btm = readback_at Kinetic (Ctx.empty test_mode) etm ety in
       let utm = unparse Names.empty btm No.Interval.entire No.Interval.entire in
       PPrint.ToChannel.pretty 1.0 (Display.columns ()) stdout (pp_complete_term (Wrap utm) `None);
       print_newline ()
   | _ -> fatal (Nonsynthesizing "argument of print")
+
+(* Define a constant and return its stored case tree, unparsed back to a string.  This exercises the unparsing of canonical types, matches, and comatches. *)
+let unparse_def (name : string) (ty : string) (tm : string) : string =
+  Global.run @@ fun () ->
+  let p = Parse.Term.parse (`String { title = Some "constant name"; content = name }) in
+  match Parse.Term.final p with
+  | Wrap { value = Ident (name, _); _ } ->
+      Scope.check_name name None;
+      let const = Scope.define name in
+      let rty = parse_term ty in
+      let rtm = parse_term tm in
+      let cty = check_type rty in
+      let ety = eval_term (Emp (test_mode, D.zero)) cty in
+      Global.add const
+        (Definition { mode = test_mode; tm = `Axiom; parametric = `Parametric; ty = cty });
+      let tree =
+        check
+          (Potential (Constant (const, test_mode, D.zero), Emp, fun x -> x))
+          (Ctx.empty test_mode) rtm ety in
+      Global.add const
+        (Definition { mode = test_mode; tm = `Defined tree; parametric = `Parametric; ty = cty });
+      Readback.Displaying.run ~env:true @@ fun () ->
+      let utm = unparse Names.empty tree No.Interval.entire No.Interval.entire in
+      let buf = Buffer.create 64 in
+      PPrint.ToBuffer.pretty 1.0 (Display.columns ()) buf (pp_complete_term (Wrap utm) `None);
+      Buffer.contents buf
+  | _ -> fatal (Invalid_constant_name ([ name ], None))
 
 let run f =
   Lexer.Specials.run @@ fun () ->
