@@ -478,6 +478,12 @@ end
 
 module VarAnnotate = Path.Fmap2 (VarAnnote) (TEntry) (VarAnnotator)
 
+(* The list of names in an annotation. *)
+let rec annotate_names : type n mode annotations b.
+    (n, mode, annotations, mode, mode, b, mode) VarAnnotate.fwd_t -> string option list = function
+  | Zero _ -> []
+  | Suc (Annotate (name, _), annotate) -> name :: annotate_names annotate
+
 (* Insertions and permutations.  We only allow inserting and permuting dimensions in between locks; this makes sense because dimensions are all endomorphisms in this free category. *)
 
 type (_, _, _, _) insert =

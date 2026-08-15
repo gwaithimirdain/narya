@@ -80,12 +80,6 @@ let apply_status : type mode s dom modality k n.
   | Kinetic -> Kinetic
   | Potential neutral -> Potential (apply_term neutral filter args)
 
-(* The display names of a match branch's pattern variables, in order, recovered from its stored annotations.  This is what those names are stored for: it lets readback reconstruct a branch with the names the user wrote. *)
-let rec annotate_names : type n mode annotations b.
-    (n, mode, annotations, mode, mode, b, mode) VarAnnotate.fwd_t -> string option list = function
-  | Zero _ -> []
-  | Suc (Annotate (name, _), annotate) -> name :: annotate_names annotate
-
 (* Report, as information rather than an error, that some piece of a stuck case tree could not be displayed as the construct it came from, and return None so the caller shows its application spine.  These are all display-only shortfalls: the spine is always a correct thing to show, just a less informative one. *)
 let no_display : type a. string -> a option =
  fun str ->
