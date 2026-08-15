@@ -216,7 +216,11 @@ module FamOf : sig
   type ('a, 'b) t = 'b
 end
 
-module CubeOf : module type of Cube (FamOf)
+module CubeOf : sig
+  include module type of Cube (FamOf)
+
+  val slice : 'k D.t -> ('k, 'n, 'kn) D.plus -> ('kn, 'a) t -> ('p, 'n) sface -> ('k, 'a) t
+end
 
 type (_, _, _, _) tface
 

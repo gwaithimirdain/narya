@@ -372,4 +372,15 @@ module CubeOf = struct
         Leaf (bp', x)
     | Branch (g, l, ends, mid) ->
         Branch (g, l, Bwv.map (fun t -> lower t fp) ends, lower mid (Cons fp))
+
+  (* The cube of entries of a cube of dimension k+n that sit over a given face of the n part: for each face of k, the entry at the two combined. *)
+  let slice : type k n kn p a. k D.t -> (k, n, kn) D.plus -> (kn, a) t -> (p, n) sface -> (k, a) t =
+   fun k plus vals fn ->
+    build k
+      {
+        build =
+          (fun fk ->
+            let (Plus kp) = D.plus (dom_sface fn) in
+            find vals (sface_plus_sface fk plus kp fn));
+      }
 end

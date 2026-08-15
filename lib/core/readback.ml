@@ -110,18 +110,6 @@ type (_, _, _) stuck_spine =
       ('hmode, 'z, 'c) Ctx.t * (('hmode, 'c, potential) term -> ('mode, 'a, potential) term)
       -> ('hmode, 'mode, 'a) stuck_spine
 
-(* The cube of entries of a cube of dimension k+n that sit over a given face of the n part: for each face of k, the entry at the two combined.  Readback of a stuck match uses this to take a constructor, or an index, at the dimension a match is stuck at and distribute it over the variables of the branch's context, which are cubes of only the environment's dimension k. *)
-let slice_cube : type k n kn p a.
-    k D.t -> (k, n, kn) D.plus -> (kn, a) CubeOf.t -> (p, n) sface -> (k, a) CubeOf.t =
- fun k plus vals fn ->
-  CubeOf.build k
-    {
-      build =
-        (fun fk ->
-          let (Plus kp) = D.plus (dom_sface fn) in
-          CubeOf.find vals (sface_plus_sface fk plus kp fn));
-    }
-
 (* A constructor applied to a branch's pattern variables, as the cube of its instances at each face -- the same cube that check_match_branches applies the motive to, and that a match's discriminee is rebound to when we refine its branches. *)
 let constr_cube : type mode n.
     Constr.t ->
@@ -419,7 +407,7 @@ and readback_stuck_match : type mode a z hmode any.
                                                       Option.iter
                                                         (fun l ->
                                                           acc :=
-                                                            (l, slice_cube envdim plus_dim vals fn)
+                                                            (l, CubeOf.slice envdim plus_dim vals fn)
                                                             :: !acc)
                                                         (level_of_free_var window v.tm));
                                               }
@@ -464,7 +452,7 @@ and readback_stuck_match : type mode a z hmode any.
                                                   (List.append index_rebindings
                                                      (face_rebindings ~skip_top:true disc_vars ccube))
                                                   ( disc_level,
-                                                    slice_cube envdim plus_dim ccube
+                                                    CubeOf.slice envdim plus_dim ccube
                                                       (id_sface match_dim) )
                                               with
                                               | Some (renv, rctxenv) -> (
