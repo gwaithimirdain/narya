@@ -1131,6 +1131,12 @@ module Fwd_app = struct
     go apps Nil
 end
 
+(* If an apps is empty, then its two modes agree. *)
+let empty_apps : type hmode mode any. (hmode, mode, any) apps -> (hmode, mode) Eq.t option =
+  function
+  | Emp -> Some Eq
+  | Arg _ | Field _ | Inst _ -> None
+
 (* The result of splitting an application spine ending at a given mode: a prefix spine ending at some intermediate mode, and the rest as a forward sequence. *)
 type (_, _) split_apps =
   | Split_apps :
@@ -1152,6 +1158,20 @@ let split_apps_at_length : type hmode1 hmode2 mode1 mode2 any1 any2.
     | Cons (_, fwd1), Cons (app2, fwd2) -> go (Fwd_app.snoc apps2 app2) fwd1 fwd2
     | _ -> None in
   go Emp (Fwd_app.of_apps apps1) (Fwd_app.of_apps apps2)
+
+(* Given two apps, if the second is a tail of the first, remove it. *)
+let rec strip_apps : type h hmode mode any1 any2.
+    (h, mode, any1) apps -> (hmode, mode, any2) apps -> (h, hmode) any_apps option =
+ fun args apps ->
+  match (args, apps) with
+  | _, Emp -> Some (Any args)
+  | Arg (args, _, _, _), Arg (apps, _, _, _) -> strip_apps args apps
+  | Inst (args, _, _), Inst (apps, _, _) -> strip_apps args apps
+  | Field (args, f1, _, _, _), Field (apps, f2, _, _, _) -> (
+      match Modality.compare (Modality.filter_modality f1) (Modality.filter_modality f2) with
+      | Eq -> strip_apps args apps
+      | Neq -> None)
+  | _ -> None
 
 let get_full_tube : type n k nk a any.
     err:(n D.pos -> Code.t) ->
