@@ -69,18 +69,6 @@ module ModalValuePairCube = Modality.Cube (ValuePair)
    1. When reading back at a record type that the user has marked as transparent, we eta-expand tuples.  This is chosen based on the readback type.
    2. When reading back a higher-dimensional pi-type, we eta-expand its instantiation arguments so that we can display it prettily.  This is controlled by the flag ~eta. *)
 
-(* The per-field display context of readback_codata below: the ambient context locked by a field's right adjoint and extended by the self variable annotated by its left adjoint, together with that variable's cube, its top face, and the type of that face. *)
-type (_, _, _) self_display =
-  | Self_display : {
-      adj : ('mode, 'f, 'g, 'gmode) Modalcell.adjunction;
-      plus_lock : ('b, 'mode, 'g, 'gmode, 'bg) plus_lock;
-      selfnfs : ('n, 'mode Ctx.Binding.t) CubeOf.t;
-      sctx : ('gmode, 'raw, ('bg, ('f, 'n) dim_entry) snoc) Ctx.t;
-      self_top : ('mode, kinetic) value;
-      self_top_ty : ('mode, kinetic) value;
-    }
-      -> ('mode, 'b, 'n) self_display
-
 (* Where the values of the environment being degenerated live.  Ordinarily they are ambient, and we are given the degeneration of the ambient context: this is the case when checking a higher field, and when reading back a comatch.  But when displaying a codatatype, the environment's self entry is the displayed context's own self variable; we are then given that variable's cube, from which deg_env rebuilds the context it lives in, along with that context locked by the field's left adjoint and its degeneration, where the field type's instantiation arguments -- projections of that same self variable -- are read back. *)
 type (_, _, _) deg_source =
   | Ambient : ('mode, 'r, 'b) env -> ('mode, 'r, 'b) deg_source
@@ -1440,30 +1428,42 @@ and readback_codata : type mode a b cm cn ca cet.
           let Eq = eq_of_ins_zero ins0 in
           let dom = TubeOf.plus_cube (val_of_norm_tube boundary) (CubeOf.singleton tm) in
           (* Exactly as check_codata does, each field's type is displayed in the ambient context locked by the field's right adjoint and then extended by the self variable, annotated by its left adjoint; so we build that context per field.  The self variable's *type* is the codatatype transported behind those locks along the adjunction unit, which is where a variable annotated by the left adjoint has its type.  But the type we hand to tyof_field, to compute the field's type in, must be the untransported one, since tyof_field keys the codatatype's own parameters behind the right-adjoint lock itself; so we create the variables twice, from the transported and untransported types.  Both calls assign the same levels, so these are the same variables.  (For an ordinary non-modal field the unit is an identity cell and the two coincide.) *)
+          let module Self_display = struct
+            type (_, _, _) t =
+              | Self_display : {
+                  adj : ('mode, 'f, 'g, 'gmode) Modalcell.adjunction;
+                  plus_lock : ('b, 'mode, 'g, 'gmode, 'bg) plus_lock;
+                  selfnfs : ('n, 'mode Ctx.Binding.t) CubeOf.t;
+                  sctx : ('gmode, 'raw, ('bg, ('f, 'n) dim_entry) snoc) Ctx.t;
+                  self_top : ('mode, kinetic) value;
+                  self_top_ty : ('mode, kinetic) value;
+                }
+                  -> ('mode, 'b, 'n) t
+              | No_display : ('mode, 'b, 'n) t
+          end in
           let self_display : type f g gmode.
-              (mode, f, g, gmode) Modalcell.adjunction -> (mode, b, m) self_display option =
+              (mode, f, g, gmode) Modalcell.adjunction -> (mode, b, m) Self_display.t =
            fun (Adjunction { left; right; unit; _ } as adj) ->
             let (Locked (plus_lock, lctx)) = Ctx.lock ctx right in
             let (Has_filter lfilter) = Modality.filter left mk in
             (* A field whose left adjoint filters this dimension nontrivially disappears here, exactly as it does for projection and equality-checking, so it is not displayed at all. *)
             match Modality.filter_is_trivial mk lfilter with
-            | None -> None
+            | None -> No_display
             | Some Eq ->
                 let tys =
                   CubeOf.mmap { map = (fun _ [ v ] -> act_value v (id_deg D.zero) unit) } [ dom ]
                 in
                 let _, selfnfs = dom_vars lctx left tys in
                 let _, ambnfs = dom_vars lctx left dom in
-                Some
-                  (Self_display
-                     {
-                       adj;
-                       plus_lock;
-                       selfnfs;
-                       sctx = Ctx.cube_vis lctx (Modality.filter_idempotent lfilter) None selfnfs;
-                       self_top = (Ctx.Binding.value (CubeOf.find_top ambnfs)).tm;
-                       self_top_ty = Lazy.force (Ctx.Binding.value (CubeOf.find_top ambnfs)).ty;
-                     }) in
+                Self_display
+                  {
+                    adj;
+                    plus_lock;
+                    selfnfs;
+                    sctx = Ctx.cube_vis lctx (Modality.filter_idempotent lfilter) None selfnfs;
+                    self_top = (Ctx.Binding.value (CubeOf.find_top ambnfs)).tm;
+                    self_top_ty = Lazy.force (Ctx.Binding.value (CubeOf.find_top ambnfs)).ty;
+                  } in
           let fields =
             Bwd.fold_left
               (fun (acc : (mode * b * mn * mn * cet) Term.CodatafieldAbwd.t)
@@ -1474,8 +1474,8 @@ and readback_codata : type mode a b cm cn ca cet.
                 match cf with
                 | Term.Codatafield.Lower (adj, _, _) -> (
                     match self_display adj with
-                    | None -> acc
-                    | Some (Self_display { adj; plus_lock; sctx; self_top; self_top_ty; _ }) ->
+                    | No_display -> acc
+                    | Self_display { adj; plus_lock; sctx; self_top; self_top_ty; _ } ->
                         (* We display the type as it was *declared*: un-keyed, and in the locked, self-extended context, exactly as check_codata checked it.  Hence ~key:`Nokey, and ~self:`Declared, since the self value we supply is that context's own self variable rather than an ambient one. *)
                         let ety =
                           tyof_field ~key:`Nokey ~self:`Declared (Modalcell.adj_left adj)
@@ -1487,9 +1487,8 @@ and readback_codata : type mode a b cm cn ca cet.
                               (fld, Term.Codatafield.Lower (adj, plus_lock, ty)) ))
                 | Term.Codatafield.Higher (adj, _, _, _) -> (
                     match self_display adj with
-                    | None -> acc
-                    | Some (Self_display { adj; plus_lock; selfnfs; sctx; self_top; self_top_ty })
-                      -> (
+                    | No_display -> acc
+                    | Self_display { adj; plus_lock; selfnfs; sctx; self_top; self_top_ty } -> (
                         (* A codatatype with a higher field has intrinsic dimension zero, so its total dimension, at which the self variable lives, is its evaluation dimension, at which the instances of the field live. *)
                         match D.compare evaldim mk with
                         | Neq ->
