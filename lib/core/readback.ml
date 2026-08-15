@@ -198,286 +198,6 @@ and readback_eval : type mode a z s.
       | None -> Realize (readback_val ctx neutral))
   | Unrealized None, Potential neutral -> Realize (readback_val ctx neutral)
 
-(* Read back a stuck case tree: check_match_branches run backwards.  For each constructor we invent fresh pattern variables from its stored function-type, with ext_pi, exactly as typechecking does; extend the stored environment by them, with take_args, exactly as evaluation does; evaluate the branch body there; and read it back in the context extended by the same variables.  The reconstructed branch carries ext_pi's own annotate and comp -- which name the pattern variables after the constructor's arguments -- and the identity permutation, rather than the stored ones, which are relative to the original checking context.
-
-   We reconstruct only when the stuck spine is empty, which is exactly when the type we were handed is the type of the match itself rather than of something the match was applied to; with a nonempty spine there would be no type at which to read back the branch bodies.  We also reconstruct only a match: a stuck metavariable has no branches to show.  In every other case we return None and the caller falls back to the application spine.
-
-   The pattern variables are *not* substituted into the type or the context, so for a match that refines its motive the branch bodies are read back at the unrefined type rather than at the refined one that typechecking used.  The two are definitionally equal in the branch, so where the unrefined type still exposes the canonical form that readback needs -- which is everything except a motive that is itself a stuck match -- the display is right.  Where it doesn't, readback raises, and we catch that and fall back to the application spine, exactly as if there had been no payload at all.  Note this is display-only output, like the readback of a canonical type: it is never re-typechecked or re-evaluated. *)
-and readback_stuck : type mode a z hmode any.
-    (mode, potential) readback_status ->
-    (mode, z, a) Ctx.t ->
-    (hmode, potential) head * (hmode, mode, any) apps ->
-    (mode, kinetic) value ->
-    (mode, a, potential) term option =
- fun status ctx pn ty ->
-  (* Reading a branch body back can legitimately fail, because the type we read it at only approximates the type it was checked at; that is Readback_at_wrong_type, which we catch and turn into the fallback.  Everything else, including the anomalies below that state invariants which should hold, is a real bug and passes through as one rather than being absorbed silently. *)
-  Reporter.try_with ~fatal:(fun d ->
-      match d.message with
-      (* The one thing that can legitimately go wrong here: the type we read a branch body back at only approximates the type it was checked at, so the body may not fit it.  Anything else is a real bug and is passed through as one. *)
-      | Readback_at_wrong_type str ->
-          no_display (Printf.sprintf "a stuck match with a branch body that is %s" str)
-      | _ -> fatal_diagnostic d)
-  @@ fun () -> readback_stuck_match status ctx pn ty
-
-and readback_stuck_match : type mode a z hmode any.
-    (mode, potential) readback_status ->
-    (mode, z, a) Ctx.t ->
-    (hmode, potential) head * (hmode, mode, any) apps ->
-    (mode, kinetic) value ->
-    (mode, a, potential) term option =
- fun status ctx (Stuck { env; tm = ctm; ins }, apps) ty ->
-  match ctm with
-  | Match { tm; window; plus_lock; dim = match_dim; motive; branches } -> (
-      (* The match at the head end of the spine is displayed in our context locked by the field projections the spine crosses, and the spine is put back around it afterwards. *)
-      let (Stuck_spine (ctx, rewrap)) = stuck_spine ctx apps in
-      let rewrap x =
-        match is_id_ins ins with
-        | Some _ -> rewrap x
-        | None ->
-            let (To p) = deg_of_ins ins in
-            rewrap (Term.Act (Potential, x, p, (`Other, `Other))) in
-      (* The discriminee is evaluated exactly as eval does it, in the environment keyed and filtered by the window modality. *)
-      let env_dim = dim_env env in
-      let (Has_filter fw) = Modality.filter window env_dim in
-      let akenv =
-        act_env (key_id_env env plus_lock)
-          (opt_op_of_opt_sface (Modality.sface_of_filter env_dim fw)) in
-      let (Plus plus_dim) = D.plus match_dim in
-      let total_dim = D.plus_out (Modality.filtered env_dim fw) plus_dim in
-      let disc = eval_term akenv tm in
-      match disc with
-      | Lam _ | Struct _ | Constr _ ->
-          fatal (Anomaly "discriminee of a stuck match is not a neutral")
-      | Neu { ty = (lazy discty); _ } -> (
-          match view_type discty "readback_stuck" with
-          | Canonical
-              (_, Data { dim = data_dim; constrs; indices = data_indices; _ }, disc_ins, disc_tyargs)
-            -> (
-              (* The dimension of the datatype the discriminee actually evaluated to must be the total dimension: the stored match dimension plus the dimension of the environment we are stuck in.  Evaluation checks the same thing of the constructor it reduces with, and likewise treats a mismatch as an error rather than a reason to give up. *)
-              match D.compare data_dim total_dim with
-              | Neq -> fatal (Dimension_mismatch ("readback of stuck match", data_dim, total_dim))
-              | Eq -> (
-                  (* A datatype has intrinsic dimension zero, so its instantiation tube is at its substitution dimension. *)
-                  let Eq = eq_of_ins_zero disc_ins in
-                  let (Locked (new_plus_lock, lctx)) = Ctx.lock ctx window in
-                  let disc_tm = readback_val lctx disc in
-                  (* The self a branch body is read back against must live at the mode of the match, not of the whole spine, so we take the neutral we were given and strip the spine's eliminations back off it. *)
-                  let (Potential outer_neutral) = status in
-                  match outer_neutral with
-                  | Neu { head = head_head; args; _ } -> (
-                      match strip_apps args apps with
-                      | Some (Any head_args) -> (
-                          (* An explicit motive is a type family over the datatype's indices and the datatype itself; evaluated in the environment we are stuck in, it gives the type of each branch when applied to that branch's indices and constructor.  A non-dependent match instead records one type, which is that of the match and of every branch alike. *)
-                          let emotive =
-                            match motive with
-                            | Some (`Family t) -> Some (eval_term env t)
-                            | Some (`Type _) | None -> None in
-                          let stored_ty =
-                            match motive with
-                            | Some (`Type t) -> Some (eval_term env t)
-                            | Some (`Family _) | None -> None in
-                          (* The type we were handed is the type of the whole stuck spine, which is the match's own type only when the spine is empty.  Otherwise we need the motive, which gives it as check_match_branches computes the type of the match itself: applied to the discriminee's indices, then its instantiation arguments, then the discriminee. *)
-                          let motive_ty =
-                            match (emotive, data_indices) with
-                            | Some emotive, Filled var_indices ->
-                                let r =
-                                  Vec.fold_left (apply_singleton_nfs window) emotive var_indices
-                                in
-                                let r = apply_singleton_tube_nfs window r disc_tyargs in
-                                Some
-                                  (apply_term r (Modality.filter_zero window)
-                                     (CubeOf.singleton disc))
-                            | _ -> None in
-                          let match_ty =
-                            match (motive_ty, stored_ty, empty_apps apps) with
-                            | Some t, _, _ -> Some t
-                            | None, Some t, _ -> Some t
-                            | None, None, Some Eq -> Some ty
-                            | None, None, None -> None in
-                          match match_ty with
-                          | None ->
-                              no_display
-                                "a stuck match applied to further arguments, with no motive to give the type of the match itself"
-                          | Some match_ty ->
-                              let new_branches =
-                                Constr.Map.mapi
-                                  (fun constr br ->
-                                    match br with
-                                    | Term.Branch { annotate; comp; perm; tm = body } ->
-                                        let (Dataconstr { env = cenv; ty = cty }) =
-                                          Abwd.find_opt constr constrs
-                                          <|> Anomaly
-                                                "constructor missing from stuck match in readback"
-                                        in
-                                        (* Fresh pattern variables, named as the user named them in the branch (that is what the stored annotations carry the names for); ext_pi fills in the constructor's own argument name for any that were anonymous. *)
-                                        let (Wrap arity) = pi_arity cty in
-                                        let (Bplus plus_args) = Raw.Indexed.bplus arity in
-                                        let xs =
-                                          match
-                                            Vec.of_list_length arity (annotate_names annotate)
-                                          with
-                                          | Some names -> Raw.Indexed.Namevec.of_vec plus_args names
-                                          | None ->
-                                              fatal (Anomaly "constructor argument length mismatch")
-                                        in
-                                        let (Ext_pi
-                                               {
-                                                 ctx = newctx;
-                                                 values = newvars;
-                                                 annotate = new_annotate;
-                                                 comp = new_comp;
-                                                 out;
-                                                 normals = _;
-                                               }) =
-                                          ext_pi ctx window cenv xs (Norm.eval_term cenv cty) in
-                                        (* The type at which to read this branch back, computed from the motive exactly as check_match_branches computes the type at which to check it: apply the motive to this branch's indices, read off the constructor's residual output type, and then to the constructor itself with its boundary. *)
-                                        let branch_ty =
-                                          match (emotive, data_indices) with
-                                          | None, _ -> match_ty
-                                          | Some _, Unfilled _ ->
-                                              fatal
-                                                (Anomaly
-                                                   "unsaturated datatype in stuck match readback")
-                                          | Some emotive, Filled var_indices ->
-                                              apply_singletons window
-                                                (Vec.fold_left (apply_singleton_nfs window) emotive
-                                                   (indices_of_out "match branch" out total_dim
-                                                      (Vec.length var_indices)))
-                                                (constr_cube constr total_dim newvars) in
-                                        (* The body is evaluated with the *stored* annotate/comp/perm, which are the ones that match the stored environment and the body's own context. *)
-                                        let branch bhead bargs bodyenv branch_ty =
-                                          let bodyev = eval (Permute (perm, bodyenv)) body in
-                                          (* A branch body that is a comatch, a tuple, or a canonical type is read back against a "self": readback_comatch and readback_codata want a neutral whose forced value is the very struct they are displaying, since they compute the field types against it and project the components out of it.  The enclosing neutral is that, under this branch's hypothesis -- so we hand them it with this branch's value and type in place of the stuck match's.  This is why such a body no longer has to be given up on, and it needs no refinement, so it works for a non-variable discriminee too.  The self never reaches the output: readback_codata binds a fresh self variable, readback_data takes its constructors' output types from the stored tyfam, and a projection out of the self reduces to the component the comatch stores. *)
-                                          let bstatus =
-                                            Potential
-                                              (Neu
-                                                 {
-                                                   head = bhead;
-                                                   args = bargs;
-                                                   value = ready bodyev;
-                                                   ty = lazy branch_ty;
-                                                 }) in
-                                          Term.Branch
-                                            {
-                                              annotate = new_annotate;
-                                              comp = new_comp;
-                                              perm = id_perm;
-                                              tm = readback_eval bstatus newctx bodyev branch_ty;
-                                            } in
-                                        (* A variable match refines the context rather than applying a motive, so neither the type we were handed nor any stored motive is the type its branches were checked at.  What we can do instead is rebind the discriminee to this branch's constructor, in the environment the body is evaluated in and in the one the type is re-evaluated in.  That refines the *value* as well as the type, which is what keeps the two in step: the body evaluates to what it was checked to be, and occurrences of the discriminee in it display as the constructor.  This needs a non-modal match on a bare variable at dimension zero, in environments that rebind_level can push a value back into; when any of that fails we let the error through, and the caller reads the branch back unrefined instead. *)
-                                        let refined () =
-                                          let envdim = Modality.filtered env_dim fw in
-                                          (* The dimension we are stuck at splits as the environment's dimension plus the match's own.  Each variable of the branch's context is a cube of the *environment's* dimension, while the constructor and the indices are cubes of the total one; so over each face of the match's own dimension there sits one variable, holding the cube of instances at that face.  For the top face that variable is the discriminee, and for the others they are the instantiation arguments of its type -- which is exactly the cube of variables check_var_match rebinds.  Slicing this way covers both ways the dimension can arise, and their combination: a degenerated definition has no match dimension, a match on a variable of higher-dimensional type has no environment dimension, and a degenerated definition containing such a match has both. *)
-                                          (* The variables sitting over each face of the match's own dimension, paired with the values that replace them.  The top face is the discriminee, which the caller passes separately, so we can skip it. *)
-                                          let face_rebindings ~skip_top vars vals =
-                                            let acc = ref [] in
-                                            CubeOf.miter
-                                              {
-                                                it =
-                                                  (fun fn [ v ] ->
-                                                    if skip_top && Option.is_some (is_id_sface fn)
-                                                    then ()
-                                                    else
-                                                      Option.iter
-                                                        (fun l ->
-                                                          acc :=
-                                                            (l, CubeOf.slice envdim plus_dim vals fn)
-                                                            :: !acc)
-                                                        (level_of_free_var window v.tm));
-                                              }
-                                              [
-                                                CubeOf.build match_dim
-                                                  {
-                                                    build =
-                                                      (fun fn ->
-                                                        let (Plus kp) = D.plus (dom_sface fn) in
-                                                        CubeOf.find vars
-                                                          (sface_plus_sface (id_sface envdim)
-                                                             plus_dim kp fn));
-                                                  };
-                                              ];
-                                            !acc in
-                                          match level_of_free_var window disc with
-                                          | Some disc_level -> (
-                                              let ccube = constr_cube constr total_dim newvars in
-                                              let disc_vars =
-                                                TubeOf.plus_cube disc_tyargs
-                                                  (CubeOf.singleton
-                                                     { tm = disc; ty = Lazy.from_val discty }) in
-                                              let index_rebindings =
-                                                match data_indices with
-                                                | Unfilled _ -> []
-                                                | Filled var_indices ->
-                                                    List.concat
-                                                      (Vec.to_list
-                                                         (Vec.mmap
-                                                            (fun [ old; nw ] ->
-                                                              face_rebindings ~skip_top:false old
-                                                                (CubeOf.mmap
-                                                                   { map = (fun _ [ x ] -> x.tm) }
-                                                                   [ nw ]))
-                                                            [
-                                                              var_indices;
-                                                              indices_of_out "match branch" out
-                                                                total_dim (Vec.length var_indices);
-                                                            ])) in
-                                              match
-                                                rebind_branch ctx env window
-                                                  (List.append index_rebindings
-                                                     (face_rebindings ~skip_top:true disc_vars ccube))
-                                                  ( disc_level,
-                                                    CubeOf.slice envdim plus_dim ccube
-                                                      (id_sface match_dim) )
-                                              with
-                                              | Some (renv, rctxenv) -> (
-                                                  (* Re-evaluating the self across the rebinding makes its spine reduce, which is what a higher field's instances need in order to survive being degenerated. *)
-                                                  match
-                                                    eval_term rctxenv
-                                                      (readback_neu ctx head_head head_args)
-                                                  with
-                                                  | Neu { head = rhead; args = rargs; _ } ->
-                                                      branch rhead rargs
-                                                        (take_args renv plus_dim newvars window fw
-                                                           annotate comp)
-                                                        (eval_term rctxenv
-                                                           (readback_val ctx match_ty))
-                                                  | _ ->
-                                                      fatal
-                                                        (Anomaly
-                                                           "refined self of a stuck match is not neutral")
-                                                  )
-                                              | None ->
-                                                  fatal
-                                                    (Anomaly "can't rebind stuck match discriminee")
-                                              )
-                                          | None ->
-                                              fatal (Anomaly "can't rebind stuck match discriminee")
-                                        in
-                                        (* We try to refine first, and read the branch back unrefined only if that fails -- as typechecking tries a variable match before falling back to a non-dependent one.  When the discriminee is a variable, refining is the reading that matches what was checked; when it isn't, there is nothing to rebind and the type we were handed (or the one the motive gives) is already the type of every branch. *)
-                                        Reporter.try_with ~fatal:(fun _ ->
-                                            branch head_head head_args
-                                              (take_args env plus_dim newvars window fw annotate
-                                                 comp)
-                                              branch_ty)
-                                        @@ fun () -> refined ())
-                                  branches in
-                              Some
-                                (rewrap
-                                   (Term.Match
-                                      {
-                                        tm = disc_tm;
-                                        window;
-                                        plus_lock = new_plus_lock;
-                                        dim = total_dim;
-                                        (* The output is display-only and the unparser doesn't show a motive, so we don't read one back. *)
-                                        motive = None;
-                                        branches = new_branches;
-                                      })))
-                      | None -> no_display "a stuck match whose own neutral could not be recovered")
-                  | _ -> no_display "a stuck match that is not a neutral"))
-          | _ -> fatal (Anomaly "discriminee of a stuck match is not of a datatype")))
-  | _ -> no_display "a stuck metavariable"
-
 (* Readback is energy-polymorphic: it reads back a value of any energy 's into an ('a, 's) term.  In practice it is only ever called on a *potential* value for display (reading back the forced value of a neutral); that's the only way a comatch (a no-eta struct) reaches the Codata branch and gets eta-expanded.  All other callers read back kinetic values (neutrals, etc.) and get their application spines as before. *)
 and readback_at : type mode a z s.
     ?eta:bool ->
@@ -1502,6 +1222,286 @@ and readback_higher_codatafield : type mode a b ca m i f g gmode bg raw.
                   fldins in
               Fieldtype (plusmap, readback_val ~sort:`Type dsctx ety));
     }
+
+(* Read back a stuck case tree: check_match_branches run backwards.  For each constructor we invent fresh pattern variables from its stored function-type, with ext_pi, exactly as typechecking does; extend the stored environment by them, with take_args, exactly as evaluation does; evaluate the branch body there; and read it back in the context extended by the same variables.  The reconstructed branch carries ext_pi's own annotate and comp -- which name the pattern variables after the constructor's arguments -- and the identity permutation, rather than the stored ones, which are relative to the original checking context.
+
+   We reconstruct only when the stuck spine is empty, which is exactly when the type we were handed is the type of the match itself rather than of something the match was applied to; with a nonempty spine there would be no type at which to read back the branch bodies.  We also reconstruct only a match: a stuck metavariable has no branches to show.  In every other case we return None and the caller falls back to the application spine.
+
+   The pattern variables are *not* substituted into the type or the context, so for a match that refines its motive the branch bodies are read back at the unrefined type rather than at the refined one that typechecking used.  The two are definitionally equal in the branch, so where the unrefined type still exposes the canonical form that readback needs -- which is everything except a motive that is itself a stuck match -- the display is right.  Where it doesn't, readback raises, and we catch that and fall back to the application spine, exactly as if there had been no payload at all.  Note this is display-only output, like the readback of a canonical type: it is never re-typechecked or re-evaluated. *)
+and readback_stuck : type mode a z hmode any.
+    (mode, potential) readback_status ->
+    (mode, z, a) Ctx.t ->
+    (hmode, potential) head * (hmode, mode, any) apps ->
+    (mode, kinetic) value ->
+    (mode, a, potential) term option =
+ fun status ctx pn ty ->
+  (* Reading a branch body back can legitimately fail, because the type we read it at only approximates the type it was checked at; that is Readback_at_wrong_type, which we catch and turn into the fallback.  Everything else, including the anomalies below that state invariants which should hold, is a real bug and passes through as one rather than being absorbed silently. *)
+  Reporter.try_with ~fatal:(fun d ->
+      match d.message with
+      (* The one thing that can legitimately go wrong here: the type we read a branch body back at only approximates the type it was checked at, so the body may not fit it.  Anything else is a real bug and is passed through as one. *)
+      | Readback_at_wrong_type str ->
+          no_display (Printf.sprintf "a stuck match with a branch body that is %s" str)
+      | _ -> fatal_diagnostic d)
+  @@ fun () -> readback_stuck_match status ctx pn ty
+
+and readback_stuck_match : type mode a z hmode any.
+    (mode, potential) readback_status ->
+    (mode, z, a) Ctx.t ->
+    (hmode, potential) head * (hmode, mode, any) apps ->
+    (mode, kinetic) value ->
+    (mode, a, potential) term option =
+ fun status ctx (Stuck { env; tm = ctm; ins }, apps) ty ->
+  match ctm with
+  | Match { tm; window; plus_lock; dim = match_dim; motive; branches } -> (
+      (* The match at the head end of the spine is displayed in our context locked by the field projections the spine crosses, and the spine is put back around it afterwards. *)
+      let (Stuck_spine (ctx, rewrap)) = stuck_spine ctx apps in
+      let rewrap x =
+        match is_id_ins ins with
+        | Some _ -> rewrap x
+        | None ->
+            let (To p) = deg_of_ins ins in
+            rewrap (Term.Act (Potential, x, p, (`Other, `Other))) in
+      (* The discriminee is evaluated exactly as eval does it, in the environment keyed and filtered by the window modality. *)
+      let env_dim = dim_env env in
+      let (Has_filter fw) = Modality.filter window env_dim in
+      let akenv =
+        act_env (key_id_env env plus_lock)
+          (opt_op_of_opt_sface (Modality.sface_of_filter env_dim fw)) in
+      let (Plus plus_dim) = D.plus match_dim in
+      let total_dim = D.plus_out (Modality.filtered env_dim fw) plus_dim in
+      let disc = eval_term akenv tm in
+      match disc with
+      | Lam _ | Struct _ | Constr _ ->
+          fatal (Anomaly "discriminee of a stuck match is not a neutral")
+      | Neu { ty = (lazy discty); _ } -> (
+          match view_type discty "readback_stuck" with
+          | Canonical
+              (_, Data { dim = data_dim; constrs; indices = data_indices; _ }, disc_ins, disc_tyargs)
+            -> (
+              (* The dimension of the datatype the discriminee actually evaluated to must be the total dimension: the stored match dimension plus the dimension of the environment we are stuck in.  Evaluation checks the same thing of the constructor it reduces with, and likewise treats a mismatch as an error rather than a reason to give up. *)
+              match D.compare data_dim total_dim with
+              | Neq -> fatal (Dimension_mismatch ("readback of stuck match", data_dim, total_dim))
+              | Eq -> (
+                  (* A datatype has intrinsic dimension zero, so its instantiation tube is at its substitution dimension. *)
+                  let Eq = eq_of_ins_zero disc_ins in
+                  let (Locked (new_plus_lock, lctx)) = Ctx.lock ctx window in
+                  let disc_tm = readback_val lctx disc in
+                  (* The self a branch body is read back against must live at the mode of the match, not of the whole spine, so we take the neutral we were given and strip the spine's eliminations back off it. *)
+                  let (Potential outer_neutral) = status in
+                  match outer_neutral with
+                  | Neu { head = head_head; args; _ } -> (
+                      match strip_apps args apps with
+                      | Some (Any head_args) -> (
+                          (* An explicit motive is a type family over the datatype's indices and the datatype itself; evaluated in the environment we are stuck in, it gives the type of each branch when applied to that branch's indices and constructor.  A non-dependent match instead records one type, which is that of the match and of every branch alike. *)
+                          let emotive =
+                            match motive with
+                            | Some (`Family t) -> Some (eval_term env t)
+                            | Some (`Type _) | None -> None in
+                          let stored_ty =
+                            match motive with
+                            | Some (`Type t) -> Some (eval_term env t)
+                            | Some (`Family _) | None -> None in
+                          (* The type we were handed is the type of the whole stuck spine, which is the match's own type only when the spine is empty.  Otherwise we need the motive, which gives it as check_match_branches computes the type of the match itself: applied to the discriminee's indices, then its instantiation arguments, then the discriminee. *)
+                          let motive_ty =
+                            match (emotive, data_indices) with
+                            | Some emotive, Filled var_indices ->
+                                let r =
+                                  Vec.fold_left (apply_singleton_nfs window) emotive var_indices
+                                in
+                                let r = apply_singleton_tube_nfs window r disc_tyargs in
+                                Some
+                                  (apply_term r (Modality.filter_zero window)
+                                     (CubeOf.singleton disc))
+                            | _ -> None in
+                          let match_ty =
+                            match (motive_ty, stored_ty, empty_apps apps) with
+                            | Some t, _, _ -> Some t
+                            | None, Some t, _ -> Some t
+                            | None, None, Some Eq -> Some ty
+                            | None, None, None -> None in
+                          match match_ty with
+                          | None ->
+                              no_display
+                                "a stuck match applied to further arguments, with no motive to give the type of the match itself"
+                          | Some match_ty ->
+                              let new_branches =
+                                Constr.Map.mapi
+                                  (fun constr br ->
+                                    match br with
+                                    | Term.Branch { annotate; comp; perm; tm = body } ->
+                                        let (Dataconstr { env = cenv; ty = cty }) =
+                                          Abwd.find_opt constr constrs
+                                          <|> Anomaly
+                                                "constructor missing from stuck match in readback"
+                                        in
+                                        (* Fresh pattern variables, named as the user named them in the branch (that is what the stored annotations carry the names for); ext_pi fills in the constructor's own argument name for any that were anonymous. *)
+                                        let (Wrap arity) = pi_arity cty in
+                                        let (Bplus plus_args) = Raw.Indexed.bplus arity in
+                                        let xs =
+                                          match
+                                            Vec.of_list_length arity (annotate_names annotate)
+                                          with
+                                          | Some names -> Raw.Indexed.Namevec.of_vec plus_args names
+                                          | None ->
+                                              fatal (Anomaly "constructor argument length mismatch")
+                                        in
+                                        let (Ext_pi
+                                               {
+                                                 ctx = newctx;
+                                                 values = newvars;
+                                                 annotate = new_annotate;
+                                                 comp = new_comp;
+                                                 out;
+                                                 normals = _;
+                                               }) =
+                                          ext_pi ctx window cenv xs (Norm.eval_term cenv cty) in
+                                        (* The type at which to read this branch back, computed from the motive exactly as check_match_branches computes the type at which to check it: apply the motive to this branch's indices, read off the constructor's residual output type, and then to the constructor itself with its boundary. *)
+                                        let branch_ty =
+                                          match (emotive, data_indices) with
+                                          | None, _ -> match_ty
+                                          | Some _, Unfilled _ ->
+                                              fatal
+                                                (Anomaly
+                                                   "unsaturated datatype in stuck match readback")
+                                          | Some emotive, Filled var_indices ->
+                                              apply_singletons window
+                                                (Vec.fold_left (apply_singleton_nfs window) emotive
+                                                   (indices_of_out "match branch" out total_dim
+                                                      (Vec.length var_indices)))
+                                                (constr_cube constr total_dim newvars) in
+                                        (* The body is evaluated with the *stored* annotate/comp/perm, which are the ones that match the stored environment and the body's own context. *)
+                                        let branch bhead bargs bodyenv branch_ty =
+                                          let bodyev = eval (Permute (perm, bodyenv)) body in
+                                          (* A branch body that is a comatch, a tuple, or a canonical type is read back against a "self": readback_comatch and readback_codata want a neutral whose forced value is the very struct they are displaying, since they compute the field types against it and project the components out of it.  The enclosing neutral is that, under this branch's hypothesis -- so we hand them it with this branch's value and type in place of the stuck match's.  This is why such a body no longer has to be given up on, and it needs no refinement, so it works for a non-variable discriminee too.  The self never reaches the output: readback_codata binds a fresh self variable, readback_data takes its constructors' output types from the stored tyfam, and a projection out of the self reduces to the component the comatch stores. *)
+                                          let bstatus =
+                                            Potential
+                                              (Neu
+                                                 {
+                                                   head = bhead;
+                                                   args = bargs;
+                                                   value = ready bodyev;
+                                                   ty = lazy branch_ty;
+                                                 }) in
+                                          Term.Branch
+                                            {
+                                              annotate = new_annotate;
+                                              comp = new_comp;
+                                              perm = id_perm;
+                                              tm = readback_eval bstatus newctx bodyev branch_ty;
+                                            } in
+                                        (* A variable match refines the context rather than applying a motive, so neither the type we were handed nor any stored motive is the type its branches were checked at.  What we can do instead is rebind the discriminee to this branch's constructor, in the environment the body is evaluated in and in the one the type is re-evaluated in.  That refines the *value* as well as the type, which is what keeps the two in step: the body evaluates to what it was checked to be, and occurrences of the discriminee in it display as the constructor.  This needs a non-modal match on a bare variable at dimension zero, in environments that rebind_level can push a value back into; when any of that fails we let the error through, and the caller reads the branch back unrefined instead. *)
+                                        let refined () =
+                                          let envdim = Modality.filtered env_dim fw in
+                                          (* The dimension we are stuck at splits as the environment's dimension plus the match's own.  Each variable of the branch's context is a cube of the *environment's* dimension, while the constructor and the indices are cubes of the total one; so over each face of the match's own dimension there sits one variable, holding the cube of instances at that face.  For the top face that variable is the discriminee, and for the others they are the instantiation arguments of its type -- which is exactly the cube of variables check_var_match rebinds.  Slicing this way covers both ways the dimension can arise, and their combination: a degenerated definition has no match dimension, a match on a variable of higher-dimensional type has no environment dimension, and a degenerated definition containing such a match has both. *)
+                                          (* The variables sitting over each face of the match's own dimension, paired with the values that replace them.  The top face is the discriminee, which the caller passes separately, so we can skip it. *)
+                                          let face_rebindings ~skip_top vars vals =
+                                            let acc = ref [] in
+                                            CubeOf.miter
+                                              {
+                                                it =
+                                                  (fun fn [ v ] ->
+                                                    if skip_top && Option.is_some (is_id_sface fn)
+                                                    then ()
+                                                    else
+                                                      Option.iter
+                                                        (fun l ->
+                                                          acc :=
+                                                            (l, CubeOf.slice envdim plus_dim vals fn)
+                                                            :: !acc)
+                                                        (level_of_free_var window v.tm));
+                                              }
+                                              [
+                                                CubeOf.build match_dim
+                                                  {
+                                                    build =
+                                                      (fun fn ->
+                                                        let (Plus kp) = D.plus (dom_sface fn) in
+                                                        CubeOf.find vars
+                                                          (sface_plus_sface (id_sface envdim)
+                                                             plus_dim kp fn));
+                                                  };
+                                              ];
+                                            !acc in
+                                          match level_of_free_var window disc with
+                                          | Some disc_level -> (
+                                              let ccube = constr_cube constr total_dim newvars in
+                                              let disc_vars =
+                                                TubeOf.plus_cube disc_tyargs
+                                                  (CubeOf.singleton
+                                                     { tm = disc; ty = Lazy.from_val discty }) in
+                                              let index_rebindings =
+                                                match data_indices with
+                                                | Unfilled _ -> []
+                                                | Filled var_indices ->
+                                                    List.concat
+                                                      (Vec.to_list
+                                                         (Vec.mmap
+                                                            (fun [ old; nw ] ->
+                                                              face_rebindings ~skip_top:false old
+                                                                (CubeOf.mmap
+                                                                   { map = (fun _ [ x ] -> x.tm) }
+                                                                   [ nw ]))
+                                                            [
+                                                              var_indices;
+                                                              indices_of_out "match branch" out
+                                                                total_dim (Vec.length var_indices);
+                                                            ])) in
+                                              match
+                                                rebind_branch ctx env window
+                                                  (List.append index_rebindings
+                                                     (face_rebindings ~skip_top:true disc_vars ccube))
+                                                  ( disc_level,
+                                                    CubeOf.slice envdim plus_dim ccube
+                                                      (id_sface match_dim) )
+                                              with
+                                              | Some (renv, rctxenv) -> (
+                                                  (* Re-evaluating the self across the rebinding makes its spine reduce, which is what a higher field's instances need in order to survive being degenerated. *)
+                                                  match
+                                                    eval_term rctxenv
+                                                      (readback_neu ctx head_head head_args)
+                                                  with
+                                                  | Neu { head = rhead; args = rargs; _ } ->
+                                                      branch rhead rargs
+                                                        (take_args renv plus_dim newvars window fw
+                                                           annotate comp)
+                                                        (eval_term rctxenv
+                                                           (readback_val ctx match_ty))
+                                                  | _ ->
+                                                      fatal
+                                                        (Anomaly
+                                                           "refined self of a stuck match is not neutral")
+                                                  )
+                                              | None ->
+                                                  fatal
+                                                    (Anomaly "can't rebind stuck match discriminee")
+                                              )
+                                          | None ->
+                                              fatal (Anomaly "can't rebind stuck match discriminee")
+                                        in
+                                        (* We try to refine first, and read the branch back unrefined only if that fails -- as typechecking tries a variable match before falling back to a non-dependent one.  When the discriminee is a variable, refining is the reading that matches what was checked; when it isn't, there is nothing to rebind and the type we were handed (or the one the motive gives) is already the type of every branch. *)
+                                        Reporter.try_with ~fatal:(fun _ ->
+                                            branch head_head head_args
+                                              (take_args env plus_dim newvars window fw annotate
+                                                 comp)
+                                              branch_ty)
+                                        @@ fun () -> refined ())
+                                  branches in
+                              Some
+                                (rewrap
+                                   (Term.Match
+                                      {
+                                        tm = disc_tm;
+                                        window;
+                                        plus_lock = new_plus_lock;
+                                        dim = total_dim;
+                                        (* The output is display-only and the unparser doesn't show a motive, so we don't read one back. *)
+                                        motive = None;
+                                        branches = new_branches;
+                                      })))
+                      | None -> no_display "a stuck match whose own neutral could not be recovered")
+                  | _ -> no_display "a stuck match that is not a neutral"))
+          | _ -> fatal (Anomaly "discriminee of a stuck match is not of a datatype")))
+  | _ -> no_display "a stuck metavariable"
 
 (* Read back one higher field of a comatch, as the PlusPbijmap of instances that Structfield.Higher stores: one entry per partial bijection between the comatch's dimension and the field's intrinsic dimension.
 
