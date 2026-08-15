@@ -64,11 +64,6 @@ end
 
 module ModalValuePairCube = Modality.Cube (ValuePair)
 
-(* Readback of values to terms.  Closely follows equality-testing in equal.ml, so most comments are omitted.  However, unlike equality-testing and the "readback" in theoretical NbE, this readback does *not* eta-expand functions and tuples.  It is used for (1) displaying terms to the user, who will usually prefer not to see things eta-expanded, and (2) turning values into terms so that we can re-evaluate them in a new environment, for which purpose eta-expansion is irrelevant.  There are two exceptions:
-
-   1. When reading back at a record type that the user has marked as transparent, we eta-expand tuples.  This is chosen based on the readback type.
-   2. When reading back a higher-dimensional pi-type, we eta-expand its instantiation arguments so that we can display it prettily.  This is controlled by the flag ~eta. *)
-
 (* An argument to readback that is present precisely when the energy is potential: the neutral whose potential value is being read back.  Reading back a comatch, or a canonical type, needs that neutral as the self-variable for computing its field or constructor types, and no other kind of value needs anything -- a potential value is a Lam, a Struct or a Canonical, never a Neu, so a neutral is never forced recursively and the display stays one-shot.  Like the status of type checking, it is rebuilt as readback descends through parameter abstractions. *)
 type (_, _) readback_status =
   | Kinetic : ('mode, kinetic) readback_status
@@ -102,16 +97,11 @@ let level_of_free_var : type mode dom mu.
     (dom, mu, mode) Modality.t -> (dom, kinetic) value -> level option =
  fun mu v ->
   match view_term v with
-  | Neu { head = Var { level; deg; key }; args = Emp; _ } ->
-      if
-        Option.is_some (is_id_deg deg)
-        &&
-        (* Rebinding a variable's slot rebinds what an *unkeyed* use of it evaluates to: a lookup applies the key to whatever it finds, so a keyed use would see the branch's constructor acted on by that key rather than the constructor.  Unkeyed means an identity 2-cell on the variable's own annotation, which for a discriminee is the match's window; an annotation that isn't the window shows up here as the key not being that cell. *)
-        match Modalcell.compare key (Modalcell.id mu) with
-        | Eq -> true
-        | Neq -> false
-      then Some level
-      else None
+  | Neu { head = Var { level; deg; key }; args = Emp; _ } -> (
+      (* Unkeyed means an identity 2-cell on the variable's own annotation, which for a discriminee is the match's window. *)
+      match (is_id_deg deg, Modalcell.compare key (Modalcell.id mu)) with
+      | Some _, Eq -> Some level
+      | _ -> None)
   | _ -> None
 
 (* The head and spine of the neutral that a stuck case tree belonged to, before the eliminations its stuck spine records were applied: what serves as the self for a comatch in one of its branches, which must live at the mode of the match rather than of the whole spine. *)
@@ -238,6 +228,11 @@ let rebind_branch : type mode dom window z a n b k.
              | _ -> (env, ctxenv))
            (env, ctxenv) indices)
   | _ -> None
+
+(* Readback of values to terms.  Closely follows equality-testing in equal.ml, so most comments are omitted.  However, unlike equality-testing and the "readback" in theoretical NbE, this readback does *not* eta-expand functions and tuples.  It is used for (1) displaying terms to the user, who will usually prefer not to see things eta-expanded, and (2) turning values into terms so that we can re-evaluate them in a new environment, for which purpose eta-expansion is irrelevant.  There are two exceptions:
+
+   1. When reading back at a record type that the user has marked as transparent, we eta-expand tuples.  This is chosen based on the readback type.
+   2. When reading back a higher-dimensional pi-type, we eta-expand its instantiation arguments so that we can display it prettily.  This is controlled by the flag ~eta. *)
 
 let rec readback_nf : type mode a z.
     ?eta:bool -> (mode, z, a) Ctx.t -> mode normal -> (mode, a, kinetic) term =
