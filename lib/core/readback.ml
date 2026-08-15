@@ -169,13 +169,16 @@ let rebind_branch : type mode dom window z a n b k.
 (* Readback of values to terms.  Closely follows equality-testing in equal.ml, so most comments are omitted.  However, unlike equality-testing and the "readback" in theoretical NbE, this readback does *not* eta-expand functions and tuples.  It is used for (1) displaying terms to the user, who will usually prefer not to see things eta-expanded, and (2) turning values into terms so that we can re-evaluate them in a new environment, for which purpose eta-expansion is irrelevant.  There are two exceptions:
 
    1. When reading back at a record type that the user has marked as transparent, we eta-expand tuples.  This is chosen based on the readback type.
-   2. When reading back a higher-dimensional pi-type, we eta-expand its instantiation arguments so that we can display it prettily.  This is controlled by the flag ~eta. *)
+   2. When reading back a higher-dimensional pi-type, we eta-expand its instantiation arguments so that we can display it prettily.  This is controlled by the flag ~eta.
 
+   In typechecking we only ever read back kinetic terms.  But reading back potential terms is useful for displaying definitions to the user, so we work as energy-polymorphically as possible.  At present we allow ourselves to fail sometimes on potential terms, in which case display falls back to just showing a stuck spine; but readback on a kinetic term should never fail. *)
+
+(* To read back a normal form, we simply dispatch to type-directed readback at its stored type.  *)
 let rec readback_nf : type mode a z.
     ?eta:bool -> (mode, z, a) Ctx.t -> mode normal -> (mode, a, kinetic) term =
  fun ?(eta = false) n x -> readback_at ~eta Kinetic n x.tm (Lazy.force x.ty)
 
-(* Read back an evaluation: a Val recurses, a Realize wraps the (kinetic) realization in Realize, and an Unrealized (a genuinely stuck case tree) can't be read back as a value.  This is how we read back the result of *applying* a potential value (a case-tree lambda); for a kinetic value, apply always returns Val, so only that arm is live. *)
+(* Read back an evaluation at a specified type.  Recall that a kinetic evaluation is always a Val, so in that case we are just passing off to readback_at.  In the potential case, this is how we read back the result of *applying* a potential value (a case-tree lambda). *)
 and readback_eval : type mode a z s.
     ?eta:bool ->
     (mode, s) readback_status ->
@@ -184,18 +187,16 @@ and readback_eval : type mode a z s.
     (mode, kinetic) value ->
     (mode, a, s) term =
  fun ?(eta = false) status ctx ev ty ->
-  match ev with
-  | Val v -> readback_at ~eta status ctx v ty
-  (* A Realize holds a kinetic value, so whatever self the caller had does not apply to it. *)
-  | Realize v -> Realize (readback_at ~eta Kinetic ctx v ty)
+  match (ev, status) with
+  | Val v, _ -> readback_at ~eta status ctx v ty
+  (* In the realize case the value is kinetic, so the stored self-term in the Potential status is discarded. *)
+  | Realize v, _ -> Realize (readback_at ~eta Kinetic ctx v ty)
   (* A genuinely stuck case tree may record the match it got stuck on, in which case we display that match.  If it doesn't, or if we can't reconstruct it, we fall back on the neutral that the status carries -- only a potential readback can meet an Unrealized, so that neutral is always available -- and show its application spine for this component. *)
-  | Unrealized stuck -> (
-      match (stuck, status) with
-      | Some pn, Potential neutral -> (
-          match readback_stuck status ctx ty pn with
-          | Some tm -> tm
-          | None -> Realize (readback_val ctx neutral))
-      | None, Potential neutral -> Realize (readback_val ctx neutral))
+  | Unrealized (Some pn), Potential neutral -> (
+      match readback_stuck status ctx pn ty with
+      | Some tm -> tm
+      | None -> Realize (readback_val ctx neutral))
+  | Unrealized None, Potential neutral -> Realize (readback_val ctx neutral)
 
 (* Read back a stuck case tree: check_match_branches run backwards.  For each constructor we invent fresh pattern variables from its stored function-type, with ext_pi, exactly as typechecking does; extend the stored environment by them, with take_args, exactly as evaluation does; evaluate the branch body there; and read it back in the context extended by the same variables.  The reconstructed branch carries ext_pi's own annotate and comp -- which name the pattern variables after the constructor's arguments -- and the identity permutation, rather than the stored ones, which are relative to the original checking context.
 
@@ -205,10 +206,10 @@ and readback_eval : type mode a z s.
 and readback_stuck : type mode a z hmode any.
     (mode, potential) readback_status ->
     (mode, z, a) Ctx.t ->
-    (mode, kinetic) value ->
     (hmode, potential) head * (hmode, mode, any) apps ->
+    (mode, kinetic) value ->
     (mode, a, potential) term option =
- fun status ctx ty pn ->
+ fun status ctx pn ty ->
   (* Reading a branch body back can legitimately fail, because the type we read it at only approximates the type it was checked at; that is Readback_at_wrong_type, which we catch and turn into the fallback.  Everything else, including the anomalies below that state invariants which should hold, is a real bug and passes through as one rather than being absorbed silently. *)
   Reporter.try_with ~fatal:(fun d ->
       match d.message with
@@ -216,15 +217,15 @@ and readback_stuck : type mode a z hmode any.
       | Readback_at_wrong_type str ->
           no_display (Printf.sprintf "a stuck match with a branch body that is %s" str)
       | _ -> fatal_diagnostic d)
-  @@ fun () -> readback_stuck_match status ctx ty pn
+  @@ fun () -> readback_stuck_match status ctx pn ty
 
 and readback_stuck_match : type mode a z hmode any.
     (mode, potential) readback_status ->
     (mode, z, a) Ctx.t ->
-    (mode, kinetic) value ->
     (hmode, potential) head * (hmode, mode, any) apps ->
+    (mode, kinetic) value ->
     (mode, a, potential) term option =
- fun status ctx ty (Stuck { env; tm = ctm; ins }, apps) ->
+ fun status ctx (Stuck { env; tm = ctm; ins }, apps) ty ->
   match ctm with
   | Match { tm; window; plus_lock; dim = match_dim; motive; branches } -> (
       (* The match at the head end of the spine is displayed in our context locked by the field projections the spine crosses, and the spine is put back around it afterwards. *)
@@ -1675,6 +1676,6 @@ let readback_about : type mode a b.
       match force_eval v with
       | Val v -> Some (readback_at (Potential value) ctx v (Lazy.force ty))
       (* A neutral whose case tree got stuck on a match displays as that match. *)
-      | Unrealized (Some pn) -> readback_stuck (Potential value) ctx (Lazy.force ty) pn
+      | Unrealized (Some pn) -> readback_stuck (Potential value) ctx pn (Lazy.force ty)
       | _ -> None)
   | _ -> None
