@@ -104,27 +104,6 @@ type (_, _, _) stuck_spine =
       ('hmode, 'z, 'c) Ctx.t * (('hmode, 'c, potential) term -> ('mode, 'a, potential) term)
       -> ('hmode, 'mode, 'a) stuck_spine
 
-(* A constructor applied to a branch's pattern variables, as the cube of its instances at each face -- the same cube that check_match_branches applies the motive to, and that a match's discriminee is rebound to when we refine its branches. *)
-let constr_cube : type mode n.
-    Constr.t ->
-    n D.t ->
-    (n, mode, kinetic) modal_value_cube list ->
-    (n, (mode, kinetic) value) CubeOf.t =
- fun constr dim newvars ->
-  CubeOf.build dim
-    {
-      build =
-        (fun fa ->
-          Value.Constr
-            ( constr,
-              dom_sface fa,
-              List.map
-                (fun (Value.Modal (mu, s)) ->
-                  let (Filter_sface (fb, mu')) = Modality.filter_sface mu fa in
-                  Value.Modal (mu', CubeOf.subcube fb s))
-                newvars ));
-    }
-
 (* Rebind a variable of an environment, identified by its level, to a given value.  This is a partial dual of lookup: a lookup accumulates the operator actions, shifts and keys it passes on the way in and applies them to the value it finds on the way out, and those actions cannot in general be undone in order to push a *new* value back in.  So we look only through the forms that arise in the environment of a case tree -- extensions and permutations -- and return None otherwise, leaving the caller to fall back.  We check the cheap conditions on an entry before forcing its value to see whether it is the variable we want, since a lambda stores its argument lazily; this runs only on the display path, and only once an unrefined readback has already failed. *)
 let rec rebind_level : type mode vdom vmod vk n b.
     (mode, n, b) env ->

@@ -1717,21 +1717,8 @@ and synth_dep_match : type mode a b.
                    (Some (cmotive, emotive), Emp, Constr.Map.empty, user_branches));
                use =
                  (fun (_, emotive) constr dim index_vals newvars ->
-                   (* To get the type at which to typecheck the body of a branch, we apply the general dependent motive to the indices of this constructor (read off from its output type by the caller), its boundaries, and itself.  We compute the constructor and its boundaries.  TODO: Rather than building a cube and then immediately traversing it, it would be more efficient to call a function that just traverses all faces of some dimension. *)
-                   let constr_vals =
-                     CubeOf.build dim
-                       {
-                         build =
-                           (fun fa ->
-                             Value.Constr
-                               ( constr,
-                                 dom_sface fa,
-                                 List.map
-                                   (fun (Value.Modal (mu, s)) ->
-                                     let (Filter_sface (fb, mu')) = Modality.filter_sface mu fa in
-                                     Value.Modal (mu', CubeOf.subcube fb s))
-                                   newvars ));
-                       } in
+                   (* To get the type at which to typecheck the body of a branch, we apply the general dependent motive to the indices of this constructor (read off from its output type by the caller), its boundaries, and itself.  We compute the constructor and its boundaries. *)
+                   let constr_vals = constr_cube constr dim newvars in
                    (* Finally, we apply the motive to all of these arguments. *)
                    let result = Vec.fold_left (apply_singleton_nfs window) emotive index_vals in
                    apply_singletons window result constr_vals);
