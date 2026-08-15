@@ -818,9 +818,69 @@ and readback_ctx : type mode a b. (mode, a, b) Ctx.t -> (mode, a, b) termctx = f
 
 (* ********** Readback of data types (for display only) ********** *)
 
-(* Build the term of the eta-long constructor "λ⁽ⁿ⁾ args. c⁽ⁿ⁾ args" at dimension n, over the display context, given the n-dimensional function-type value ft of the constructor.  For a nullary constructor (or once all arguments have been abstracted) ft is the datatype instance itself and the result is just the (n-dimensional) constructor applied to the abstracted argument variables.  The pi-type is walked exactly as in the eta-expanding readback of a term at a pi-type (readback_at, ~eta case), introducing a cube of fresh variables for each argument; the accumulated argument variables are read back at the fully-extended context to form the constructor's argument spine.
+(* Read back a datatype definition.  Each constructor's stored function-type is evaluated in its (appropriately-dimensional) environment and read back.
 
-   This is used to construct the boundary of a degenerate (higher-dimensional) datatype's constructor type; see readback_data.  It builds the constructor honestly at dimension n, using no vertex and no degeneracy, so that evaluating the result yields a value of type ft directly.  In particular each face of a degenerate datatype builds its own constructor-function at its own type, which matters because the abstracted constructors have genuinely different types at different faces (e.g. the two endpoints of "refl List {X} {Y} A2" abstract to X → List X → List X and Y → List Y → List Y). *)
+   For a degenerate (higher-dimensional) datatype, the resulting higher-dimensional pi-type is first instantiated at the lower-dimensional versions of the constructor itself, so that the display shows what the higher-dimensional constructor can actually be applied to and what its output is, e.g. "{x₀ : X} {x₁ : X} (x₂ : Id X x₀ x₁) … →⁽ᵉ⁾ List⁽ᵉ⁾ (Id X) (cons. x₀ xs₀) (cons. x₁ xs₁)".  Likewise a nullary constructor displays its instantiated output "List⁽ᵉ⁾ (Id X) nil. nil.": the boundary of a higher-dimensional datatype behaves like indices, so it should be displayed.
+
+   The boundary is built separately at each proper face fa of the substitution dimension m: the constructor's function-type there is the function-type evaluated in the fa-faced environment (instantiated at the yet-lower faces, so the boundary types can differ across faces), and the constructor-function there is built honestly at that dimension by readback_constr_function.  No vertex or degeneracy is involved, so an arity-0 configuration — an m-cube with no proper faces — is handled uniformly: the boundary tube is simply empty (displayed as "."). *)
+and readback_data : type mode a b m j ij.
+    (mode, a, b) Ctx.t -> (mode, m, j, ij) Value.data_args -> (mode, b, potential) term =
+ fun ctx { constrs; discrete; recursive; tyfam; hints; dim; indices } ->
+  let ij = Fillvec.expected_length indices in
+  let constrs = Abwd.mapi (readback_dataconstr ctx) constrs in
+  let tyfam = readback_nf ctx (nf_of_neu (force_eval_term tyfam) "readback_data") in
+  let data : (mode, b, potential) term =
+    Canonical (Data { indices = ij; constrs; discrete; recursive; tyfam; hints }) in
+  (* Now we apply it to all the saved indices.  This requires the Potential form of App, which is not re-evaluable. *)
+  let mode = Ctx.mode ctx in
+  List.fold_left
+    (fun t i ->
+      App
+        ( Potential,
+          t,
+          dim,
+          Modality.filter_id mode dim,
+          Modal
+            ( Modality.id mode,
+              plus_no_lock mode,
+              CubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ i ] ) ))
+    data (Fillvec.to_list indices)
+
+and readback_dataconstr : type mode m a b.
+    (mode, a, b) Ctx.t -> Constr.t -> (mode, m) dataconstr -> (mode, b, kinetic) term =
+ fun ctx c (Dataconstr { env; ty }) ->
+  let m = dim_env env in
+  (* The evaluated, but uninstantiated, type. *)
+  let ft = Norm.eval_term env ty in
+  (* Now we compute the boundary at which to instantiate it. *)
+  let tbl = Hashtbl.create 10 in
+  let boundary =
+    TubeOf.build D.zero (D.zero_plus m)
+      {
+        build =
+          (fun fa ->
+            let fa = sface_of_tface fa in
+            (* The constructor's function-type at this face, obtained by evaluating the same term in a faced environment, instantiated at the lower faces of the constructor that we have already computed. *)
+            let fty =
+              Norm.inst
+                (Norm.eval_term (act_env env (opt_op_of_sface fa)) ty)
+                (TubeOf.build D.zero
+                   (D.zero_plus (dom_sface fa))
+                   {
+                     build =
+                       (fun fc -> Hashtbl.find tbl (SFace_of (comp_sface fa (sface_of_tface fc))));
+                   }) in
+            (* The constructor-function at this face, built at this face's dimension and type by eta-expanding the constructor. *)
+            let tm =
+              Norm.eval_term (Ctx.env ctx) (readback_constr_function ctx (dom_sface fa) c Emp fty)
+            in
+            let nf = { tm; ty = Lazy.from_val fty } in
+            Hashtbl.add tbl (SFace_of fa) nf;
+            nf);
+      } in
+  readback_val ~sort:`Type ctx (Norm.inst ft boundary)
+
+(* Build the term of the eta-long constructor "λ⁽ⁿ⁾ args. c⁽ⁿ⁾ args" at dimension n, over the display context, given the n-dimensional function-type value ft of the constructor.  For a nullary constructor (or once all arguments have been abstracted) ft is the datatype instance itself and the result is just the (n-dimensional) constructor applied to the abstracted argument variables.  The pi-type is walked exactly as in the eta-expanding readback of a term at a pi-type (readback_at, ~eta case), introducing a cube of fresh variables for each argument; the accumulated argument variables are read back at the fully-extended context to form the constructor's argument spine.  In particular, each face of a degenerate datatype builds its own constructor-function at its own type, which matters because the abstracted constructors have genuinely different types at different faces (e.g. the two endpoints of "refl List {X} {Y} A2" abstract to X → List X → List X and Y → List Y → List Y). *)
 and readback_constr_function : type mode lev e n.
     (mode, lev, e) Ctx.t ->
     n D.t ->
@@ -841,11 +901,9 @@ and readback_constr_function : type mode lev e n.
           let (Any_ctx newctx) =
             Ctx.variables_vis ctx (Modality.filter_idempotent filter) name newnfs in
           let output = tyof_app cods tyargs filter newargs in
-          Term.Lam
-            ( name,
-              n,
-              filter,
-              readback_constr_function newctx n c (Snoc (args, Modal (filter, newargs))) output ))
+          let body =
+            readback_constr_function newctx n c (Snoc (args, Modal (filter, newargs))) output in
+          Term.Lam (name, n, filter, body))
   | _ ->
       (* ft is now the datatype instance; the constructor applied to all the abstracted argument variables, read back at this fully-extended context. *)
       let cargs =
@@ -857,65 +915,6 @@ and readback_constr_function : type mode lev e n.
               (filter, plus, CubeOf.mmap { map = (fun _ [ v ] -> readback_val lctx v) } [ argcube ]))
           args in
       Term.Constr (c, n, cargs)
-
-(* Read back a datatype definition.  Each constructor's stored function-type is evaluated in its (appropriately-dimensional) environment and read back.
-
-   For a degenerate (higher-dimensional) datatype, the resulting higher-dimensional pi-type is first instantiated at the lower-dimensional versions of the constructor itself, so that the display shows what the higher-dimensional constructor can actually be applied to and what its output is, e.g. "{x₀ : X} {x₁ : X} (x₂ : Id X x₀ x₁) … →⁽ᵉ⁾ List⁽ᵉ⁾ (Id X) (cons. x₀ xs₀) (cons. x₁ xs₁)".  Likewise a nullary constructor displays its instantiated output "List⁽ᵉ⁾ (Id X) nil. nil.": the boundary of a higher-dimensional datatype behaves like indices, so it should be displayed.
-
-   The boundary is built separately at each proper face fa of the substitution dimension m: the constructor's function-type there is the function-type evaluated in the fa-faced environment (instantiated at the yet-lower faces, so the boundary types can differ across faces), and the constructor-function there is built honestly at that dimension by readback_constr_function.  No vertex or degeneracy is involved, so an arity-0 configuration — an m-cube with no proper faces — is handled uniformly: the boundary tube is simply empty (displayed as "."). *)
-and readback_data : type mode a b m j ij.
-    (mode, a, b) Ctx.t -> (mode, m, j, ij) Value.data_args -> (mode, b, potential) term =
- fun ctx { constrs; discrete; recursive; tyfam; hints; dim; indices } ->
-  let ij = Fillvec.expected_length indices in
-  let readback_constr : Constr.t -> (mode, m) dataconstr -> (mode, b, kinetic) term =
-   fun c (Dataconstr { env; ty }) ->
-    let m = dim_env env in
-    let ft = Norm.eval_term env ty in
-    let tbl = Hashtbl.create 10 in
-    let boundary =
-      TubeOf.build D.zero (D.zero_plus m)
-        {
-          build =
-            (fun fa ->
-              let fa = sface_of_tface fa in
-              (* The constructor's function-type at this face, instantiated at the lower faces. *)
-              let fty =
-                Norm.inst
-                  (Norm.eval_term (act_env env (opt_op_of_sface fa)) ty)
-                  (TubeOf.build D.zero
-                     (D.zero_plus (dom_sface fa))
-                     {
-                       build =
-                         (fun fc -> Hashtbl.find tbl (SFace_of (comp_sface fa (sface_of_tface fc))));
-                     }) in
-              (* The constructor-function at this face, built honestly at this face's dimension and type. *)
-              let tm =
-                Norm.eval_term (Ctx.env ctx) (readback_constr_function ctx (dom_sface fa) c Emp fty)
-              in
-              let nf = { tm; ty = Lazy.from_val fty } in
-              Hashtbl.add tbl (SFace_of fa) nf;
-              nf);
-        } in
-    (* The self-variable's stored value is the datatype's type family, which is what the display should show as the constructor's output, so we read the type back as it stands; the result simply doesn't mention the self-variable. *)
-    readback_val ~sort:`Type ctx (Norm.inst ft boundary) in
-  let constrs = Abwd.mapi readback_constr constrs in
-  let tyfam = readback_nf ctx (nf_of_neu (force_eval_term tyfam) "readback_data") in
-  let data : (mode, b, potential) term =
-    Canonical (Data { indices = ij; constrs; discrete; recursive; tyfam; hints }) in
-  (* Now we apply it to all the saved indices. *)
-  let mode = Ctx.mode ctx in
-  List.fold_left
-    (fun t i ->
-      App
-        ( Potential,
-          t,
-          dim,
-          Modality.filter_id mode dim,
-          Modal
-            ( Modality.id mode,
-              plus_no_lock mode,
-              CubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ i ] ) ))
-    data (Fillvec.to_list indices)
 
 (* ********** Readback of codata types (for display only) ********** *)
 
@@ -988,7 +987,7 @@ and higher_codatafield_shuffleable : type mode a b c r h i n raw fb.
           | `Display (_, fctx, fdegenv) -> degenerate_normal fctx fdegenv r nf);
     }
 
-(* Building the display node for a value-level codatatype or record type.  This is the codata analogue of readback_data above.  Non-projectable higher-field instances are displayed in a context degenerated by their remaining dimensions (Degctx.degctx), which is why this file has a forward reference to Degctx (see the top of the file).
+(* Read back a codatatype or record type.  Non-projectable higher-field instances are displayed in a context degenerated by their remaining dimensions (Degctx.degctx), which is why this file has a forward reference to Degctx (see the top of the file).
 
    The result is an ordinary Canonical (Codata …), but at the *evaluation dimension* of the value being displayed rather than at zero: its fields are the field instances of a possibly-degenerated codatatype, one per partial bijection between that dimension and the field's intrinsic dimension, whereas a codatatype produced by typechecking has evaluation dimension zero and one instance per field.  It carries no fibrancy (see Term.codata_fibrancy_option), so it is display-only: evaluating it is an anomaly.
 
