@@ -972,7 +972,7 @@ and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
     m D.t ->
     (m, n, mn) D.plus ->
     key:[ `Counit | `Nokey ] ->
-    (* Whether the supplied self value lives in the ambient context, and so must be transported behind the locks along the adjunction unit, or is already the declared self variable there (as when "about" displays a codatatype). *)
+    (* Whether the supplied self value lives in the ambient context, and so must be transported behind the locks along the adjunction unit, or is already the declared self variable there (as when displaying a codatatype). *)
     self:[ `Ambient | `Declared ] ->
     (gmode, kinetic) value =
  fun tm fldname adj plus_lock fldty env tyargs m mn ~key ~self ->

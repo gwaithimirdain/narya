@@ -228,11 +228,10 @@ module Ordered = struct
                     Suc (Zero, Lock lock) ) ) )
 end
 
-(* The degctx type and its forward-reference hook live in Readback (opened above), because the "about" display code that consumes a degenerated context lives there. *)
+(* The degctx type and its forward-reference hook live in Readback (opened above), because the display code that consumes a degenerated context lives there. *)
 let degctx : type mode a b k. (mode, a, b) Ctx.t -> k D.t -> (mode, a, b, k) degctx =
  fun (Permute { perm; ctx; level; _ }) k ->
   let (Degctx (kb, newctx, env)) = Ordered.degenerate ctx k in
   Degctx (kb, Permute { perm; env = Ctx.Ordered.env newctx; level; ctx = newctx }, env)
 
-(* Set the forward reference in Readback so that "about" can degenerate contexts. *)
 let () = set_degctx { degctx }
