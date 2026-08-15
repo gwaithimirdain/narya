@@ -120,15 +120,15 @@ type (_, _, _, _, _) shuffleable =
   | Nontrivial : {
       dbwd : ('mode, 'c) Tctx.t;
       shuffle : ('r, 'h, 'i) shuffle;
-      (* The environment to be degenerated is that of a codatafield's type, so it lies behind a lock by the field's right adjoint and is extended by the field's self variable.  We therefore pass in that modality, to lock the ambient context and key the degenerating environment by it, and the termctx describing the environment's codomain, at which its values are read back. *)
+      (* The environment to be degenerated is that of a codatafield's type, so it lies behind a lock by the field's right adjoint and is extended by the field's self variable.  We therefore pass in the field's adjunction, from which the callback reconstructs the context that environment's values live in -- the ambient one locked by the right adjoint, and, when the self value is that context's own self variable rather than an ambient one, extended by it -- along with the termctx describing the environment's codomain, at which its values are read back.  The adjunction must be passed rather than stored, since it is existential at the point of use. *)
       deg_env :
-        'dom 'mu 'b 'd 's 'sh 'r_sh.
-        ('dom, 'mu, 'mode) Modality.t ->
-        ('dom, 'd, 'b) termctx ->
+        'f 'g 'gmode 'b 'd 's 'sh 'r_sh.
+        ('mode, 'f, 'g, 'gmode) Modalcell.adjunction ->
+        ('gmode, 'd, 'b) termctx ->
         ('s, 'h, 'sh) D.plus ->
         ('r, 'sh, 'r_sh) D.plus ->
-        ('dom, 'sh, 'b) env ->
-        ('dom, 'r_sh, 'b) env;
+        ('gmode, 'sh, 'b) env ->
+        ('gmode, 'r_sh, 'b) env;
       deg_nf : 'mode normal -> 'mode normal;
     }
       -> ('mode, 'r, 'h, 'i, 'c) shuffleable
@@ -928,7 +928,7 @@ and tyof_codatafield : type src f mode m n mn a k r s i et.
     (src, f, mode) Modality.t ->
     ((src, kinetic) value, Code.t) Result.t ->
     i Field.t ->
-    (i, src * a * n * et) Codatafield.t ->
+    (i, src * a * D.zero * n * et) Codatafield.t ->
     (src, m, a) env ->
     (D.zero, mn, mn, src normal) TubeOf.t ->
     m D.t ->
@@ -945,11 +945,13 @@ and tyof_codatafield : type src f mode m n mn a k r s i et.
       match Modality.compare (Modalcell.adj_left adj) fm with
       | Neq -> fatal (Anomaly "wrong locking modality in tyof_codatafield")
       | Eq -> tyof_lower_codatafield tm fldname adj plus_lock fldty env tyargs m mn ~key:`Counit)
-  | Term.Codatafield.Higher (adj, plus_lock, fldtermctx, ic0, fldty) -> (
+  | Term.Codatafield.Higher (adj, plus_lock, fldtermctx, fldtys) -> (
       (* Like a lower field, the projecting modality must be the left adjoint of the field's adjunction. *)
       match Modality.compare (Modalcell.adj_left adj) fm with
       | Neq -> fatal (Anomaly "wrong locking modality of higher field in tyof_codatafield")
       | Eq ->
+          (* The codatatype was produced by typechecking, so it has evaluation dimension zero and the field has just its declared type. *)
+          let (Fieldtype (ic0, fldty)) = declared_fieldtype fldtys in
           let Eq = D.plus_uniq mn (D.plus_zero m) in
           tyof_higher_codatafield tm fldname adj env tyargs fldins ~shuf plus_lock fldtermctx ic0
             fldty ~key:`Counit)
@@ -1077,7 +1079,7 @@ and tyof_higher_codatafield : type mode f g gmode c n h s r i d ag iagx.
   let (Plus sh) = D.plus h in
   let (Plus r_sh) = D.plus (D.plus_out s sh) in
   let rs_h = D.plus_assocl rs sh r_sh in
-  let (Adjunction { left; right; counit; unit; _ }) = adj in
+  let (Adjunction { left; right = _; counit; unit; _ }) = adj in
   (* The self variable lies behind the locks by the right and then the left adjoint, whereas the supplied values live in the ambient context, so we transport them there along the adjunction unit, exactly as for a lower field.  (For an ordinary field the unit is an identity cell and this is a no-op.) *)
   let values =
     match tm with
@@ -1118,7 +1120,7 @@ and tyof_higher_codatafield : type mode f g gmode c n h s r i d ag iagx.
             let (Plus sr_h) = D.plus h in
             let s_rh = D.plus_assocr sr rh sr_h in
             (* Then we eval-readback to get an (r+s+h, agx) env.  Since that environment lies behind the lock by the right adjoint and is extended by the self variable, we supply that modality and the stored termctx of its codomain. *)
-            let env = deg_env right fldtermctx sh r_sh env in
+            let env = deg_env adj fldtermctx sh r_sh env in
             (* Then we permute it to get an (s+r+h, agx) env, and act by the shuffle to get (s+i, agx) *)
             let swapdeg = deg_plus (swap_deg sr rs) rs_h sr_h in
             let shuffledeg = plus_deg s s_rh si (deg_of_shuffle shuffle rh) in
@@ -1236,7 +1238,7 @@ and tyof_field_giventype : type src f mode m n mn h s r i c et a k hmode.
     (potential, et) eta ->
     (src, m, a) env ->
     (m, n, mn) D.plus ->
-    (src * a * n * et) Term.CodatafieldAbwd.t ->
+    (src * a * D.zero * n * et) Term.CodatafieldAbwd.t ->
     (D.zero, mn, mn, src normal) TubeOf.t ->
     i Field.t ->
     shuf:(src, r, h, i, c) shuffleable ->
@@ -1330,7 +1332,7 @@ and tyof_field_withname_giventype : type src f mode a b m n mn c et.
     (potential, et) eta ->
     (src, m, c) env ->
     (m, n, mn) D.plus ->
-    (src * c * n * et) Term.CodatafieldAbwd.t ->
+    (src * c * D.zero * n * et) Term.CodatafieldAbwd.t ->
     (D.zero, mn, mn, src normal) TubeOf.t ->
     [ `Name of string * int list | `Int of int ] ->
     Code.t ->
@@ -1338,7 +1340,8 @@ and tyof_field_withname_giventype : type src f mode a b m n mn c et.
  fun fm ctx tm ty eta env mn fields tyargs infld err ->
   let m = dim_env env in
   (* Check that the locking modality supplied by the user (or the identity, if none) agrees with the left adjoint of the adjunction stored with the field, and that the field is present (not filtered away by a nonparametric modality) at the current dimension. *)
-  let check_modality : type i. i Field.t -> (i, src * c * n * et) Term.Codatafield.t -> unit =
+  let check_modality : type i.
+      i Field.t -> (i, src * c * D.zero * n * et) Term.Codatafield.t -> unit =
    fun fld fldty ->
     let mismatch : type d1 m1 c1. (d1, m1, c1) Modality.t -> unit =
      fun left ->
@@ -1360,7 +1363,7 @@ and tyof_field_withname_giventype : type src f mode a b m n mn c et.
             match Modality.filter_is_trivial m left_filter with
             | Some Eq -> ()
             | None -> fatal (Modal_field_filtered_away (Field.to_string fld, left))))
-    | Higher (adj, _, _, _, _) -> (
+    | Higher (adj, _, _, _) -> (
         (* Like a lower field, a higher field's projecting modality must be the left adjoint. *)
         let left = Modalcell.adj_left adj in
         match Modality.compare left fm with
@@ -1479,9 +1482,15 @@ and eval_canonical : type mode m a.
       Val
         (Canonical
            { mode; canonical; tyargs; ins = ins_zero dim; fields; inst_fields = Some fields })
-  | Codata c ->
-      eval_codata env c.eta c.opacity c.hints c.dim c.fields
-        (Fibrancy.Codata.finished (mode_env env) c)
+  | Codata c -> (
+      (* Typechecking only produces codatatypes of evaluation dimension zero, which carry a fibrancy.  A positive evaluation dimension, or a missing fibrancy, means this codatatype is the readback of a codatatype *value*, which is display-only and is never evaluated. *)
+      match c.fibrancy with
+      | Some fibrancy ->
+          let Eq = fibrancy.evaldim in
+          let Eq = D.plus_uniq c.plusdim (D.zero_plus c.dim) in
+          eval_codata env c.eta c.opacity c.hints c.dim c.fields
+            (Fibrancy.Codata.finished (mode_env env) c.fields fibrancy c.is_glue)
+      | _ -> fatal (Anomaly "evaluating a display codatatype"))
 
 (* We split out this subroutine so it can be called from Check.with_codata_so_far.  *)
 and eval_codata : type mode m a n et.
@@ -1490,7 +1499,7 @@ and eval_codata : type mode m a n et.
     opacity ->
     hints ->
     n D.t ->
-    (mode * a * n * et) CodatafieldAbwd.t ->
+    (mode * a * D.zero * n * et) CodatafieldAbwd.t ->
     (mode * (n * a * potential * no_eta)) Term.StructfieldAbwd.t ->
     (mode, potential) evaluation =
  fun env eta opacity hints n fields fibrancy_fields ->

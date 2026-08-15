@@ -96,34 +96,38 @@ and canonical : type mode a. (File.t -> File.t) -> (mode, a) canonical -> (mode,
           hints;
           tyfam = term f tyfam;
         }
-  | Codata { eta; opacity; hints; dim; fields; fibrancy = fib; is_glue } ->
-      let trr =
-        Mbwd.map
-          (fun (StructfieldAbwd.Entry (fld, x)) -> StructfieldAbwd.Entry (fld, structfield f x))
-          fib.trr in
-      let liftr =
-        Mbwd.map
-          (fun (StructfieldAbwd.Entry (fld, x)) -> StructfieldAbwd.Entry (fld, structfield f x))
-          fib.liftr in
-      let trl =
-        Mbwd.map
-          (fun (StructfieldAbwd.Entry (fld, x)) -> StructfieldAbwd.Entry (fld, structfield f x))
-          fib.trl in
-      let liftl =
-        Mbwd.map
-          (fun (StructfieldAbwd.Entry (fld, x)) -> StructfieldAbwd.Entry (fld, structfield f x))
-          fib.liftl in
+  | Codata { eta; opacity; hints; evaldim; dim; plusdim; fields; fibrancy; is_glue } ->
+      let fibrancy =
+        match fibrancy with
+        | None -> None
+        | Some fib ->
+            let structfields flds =
+              Mbwd.map
+                (fun (StructfieldAbwd.Entry (fld, x)) ->
+                  StructfieldAbwd.Entry (fld, structfield f x))
+                flds in
+            Some
+              {
+                fib with
+                ty = term f fib.ty;
+                trr = structfields fib.trr;
+                trl = structfields fib.trl;
+                liftr = structfields fib.liftr;
+                liftl = structfields fib.liftl;
+              } in
       Codata
         {
           eta;
           opacity;
           hints;
+          evaldim;
           dim;
+          plusdim;
           fields =
             Mbwd.map
               (fun (CodatafieldAbwd.Entry (fld, x)) -> CodatafieldAbwd.Entry (fld, codatafield f x))
               fields;
-          fibrancy = { fib with ty = term f fib.ty; trr; trl; liftr; liftl };
+          fibrancy;
           is_glue;
         }
 
@@ -149,14 +153,21 @@ and structfield : type mode n a s i et.
             [ m ] )
   | LazyHigher _ -> Reporter.fatal (Anomaly "lazy higher field can't be linked")
 
-and codatafield : type mode a n i et.
+and codatafield : type mode a m n i et.
     (File.t -> File.t) ->
-    (i, mode * a * n * et) Codatafield.t ->
-    (i, mode * a * n * et) Codatafield.t =
+    (i, mode * a * m * n * et) Codatafield.t ->
+    (i, mode * a * m * n * et) Codatafield.t =
  fun f fld ->
   match fld with
   | Lower (adj, plus_lock, ty) -> Lower (adj, plus_lock, term f ty)
-  | Higher (adj, plus_lock, tc, ka, tm) -> Higher (adj, plus_lock, termctx f tc, ka, term f tm)
+  | Higher (adj, plus_lock, tc, tys) ->
+      Higher
+        ( adj,
+          plus_lock,
+          termctx f tc,
+          FieldtypePbijmap.mmap
+            { map = (fun _ [ Fieldtype (rb, ty) ] -> FieldtypeFam.Fieldtype (rb, term f ty)) }
+            [ tys ] )
 
 and env : type mode a n b. (File.t -> File.t) -> (mode, a, n, b) env -> (mode, a, n, b) env =
  fun f e ->

@@ -1155,7 +1155,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
             | Canonical (_, Codata { eta; fields; _ }, ins, _) -> (
                 let m = cod_left_ins ins in
                 let do_field : type a n et.
-                    (_ * a * n * et) Term.CodatafieldAbwd.entry ->
+                    (_ * a * D.zero * n * et) Term.CodatafieldAbwd.entry ->
                     (string * string list) list ->
                     (string * string list) list =
                  fun (Term.CodatafieldAbwd.Entry (fld, cdf)) acc ->

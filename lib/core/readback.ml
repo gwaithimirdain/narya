@@ -118,8 +118,11 @@ and readback_at : type mode a z.
           * (mn, m, n) insertion
           * (D.zero, mn, mn, mode normal) TubeOf.t),
       _ ) -> (
-      match (eta, fields) with
-      | Eta, (fields : (mode * a * n * has_eta) Term.CodatafieldAbwd.t) -> (
+      match eta with
+      (* A no-eta codatatype: an ordinary readback of a (kinetic) neutral here yields its application spine.  Displaying a comatch as a comatch is done by "about" via readback_comatch, which forces the neutral's potential value; it is not reached through readback_at. *)
+      | Noeta -> readback_val_sorted ctx tm vty
+      | Eta -> (
+          (* An eta-record type.  Only kinetic values are ever read back here (records, and tuples reached via their neutral); a tuple in a case tree (a potential eta-struct) is never passed to readback for display. *)
           let dim = cod_left_ins ins in
           let fldins = ins_zero dim in
           let readback_at_record (tm : (mode, kinetic) value) ty =
@@ -162,7 +165,7 @@ and readback_at : type mode a z.
                     (fun (CodatafieldAbwd.Entry
                             (type i)
                             ((_, Lower (Adjunction { left; _ }, _, _)) :
-                              i Field.t * (i, mode * a * n * has_eta) Codatafield.t)) ->
+                              i Field.t * (i, mode * a * D.zero * n * has_eta) Codatafield.t)) ->
                       let (Has_filter left_filter) = Modality.filter left m in
                       match Modality.filter_is_trivial m left_filter with
                       | Some Eq -> true
@@ -173,7 +176,7 @@ and readback_at : type mode a z.
                     (fun (CodatafieldAbwd.Entry
                             (type i)
                             ((fld, Lower ((Adjunction { left; right; unit; _ } as adj), _, _)) :
-                              i Field.t * (i, mode * a * n * has_eta) Codatafield.t)) ->
+                              i Field.t * (i, mode * a * D.zero * n * has_eta) Codatafield.t)) ->
                       (* Eta-expansion of a modal field: key the term by the adjunction unit, project, and read back the component in the context locked by the right adjoint (as in the eta-rule for equality). *)
                       let xu = act_value tm (id_deg D.zero) unit in
                       let tyu = act_ty tm ty (id_deg D.zero) unit in
@@ -203,8 +206,7 @@ and readback_at : type mode a z.
               let pty = act_ty tm ty pinv (Modalcell.id2 (Ctx.mode ctx)) in
               match readback_at_record ptm pty with
               | Some res -> Act (Kinetic, res, deg_of_perm p, (`Other, `Other))
-              | None -> readback_val_sorted ctx tm vty))
-      | Noeta, _ -> readback_val_sorted ctx tm vty)
+              | None -> readback_val_sorted ctx tm vty)))
   | Canonical (_, Data { constrs; _ }, ins, tyargs), Constr (xconstr, xn, xargs) -> (
       let Eq = eq_of_ins_zero ins in
       (* Pick out the constructor of the datatype that matches the one we're reading back *)
@@ -637,8 +639,8 @@ let higher_codatafield_shuffleable : type mode a b c r h i.
       shuffle = fldshuf;
       (* The environment being degenerated is that of a codatafield's type, so it lies behind a lock by the field's right adjoint (and is extended by its self variable, which the supplied termctx accounts for).  We therefore lock the ambient context by that modality, and key the degenerating environment by it, before reading back and re-evaluating. *)
       deg_env =
-        (fun mu tctx _sh r_sh e ->
-          let (Locked (plus, lctx)) = Ctx.lock ctx mu in
+        (fun adj tctx _sh r_sh e ->
+          let (Locked (plus, lctx)) = Ctx.lock ctx (Modalcell.adj_right adj) in
           let ldegenv = key_id_env degenv plus in
           eval_env ldegenv r_sh (readback_env lctx e tctx));
       deg_nf =

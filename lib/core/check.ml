@@ -2482,7 +2482,7 @@ and with_codata_so_far : type mode a b n c et.
     hints ->
     n D.t ->
     (D.zero, n, n, mode normal) TubeOf.t ->
-    (mode * b * n * et) Term.CodatafieldAbwd.t ->
+    (mode * b * D.zero * n * et) Term.CodatafieldAbwd.t ->
     (mode, n, n, b, et) Fibrancy.Codata.t ->
     Code.t Asai.Diagnostic.t Bwd.t ->
     ((mode, n) self_vars -> (mode, b, potential) term -> c) ->
@@ -2526,7 +2526,19 @@ and with_codata_so_far : type mode a b n c et.
         Self_vars { self = (fun _ -> CubeOf.build dim { build = (fun _ -> err) }) } in
   let codataterm =
     Term.Canonical
-      (Codata { eta; opacity; hints; dim; fields = checked_fields; fibrancy; is_glue = None }) in
+      (Codata
+         {
+           eta;
+           opacity;
+           hints;
+           (* Typechecking a codatatype declaration produces one of evaluation dimension zero: its self variable has just the intrinsic dimension, and each higher field has just its declared type. *)
+           evaldim = D.zero;
+           dim;
+           plusdim = D.zero_plus dim;
+           fields = checked_fields;
+           fibrancy = Some fibrancy;
+           is_glue = None;
+         }) in
   run_with_definition h (hyp codataterm) errs @@ fun () -> cont domvars codataterm
 
 and check_codata : type mode a b n et.
@@ -2536,7 +2548,7 @@ and check_codata : type mode a b n et.
     (potential, et) eta ->
     hints ->
     (D.zero, n, n, mode normal) TubeOf.t ->
-    (mode * b * n * et) Term.CodatafieldAbwd.t ->
+    (mode * b * D.zero * n * et) Term.CodatafieldAbwd.t ->
     (mode, n, n, b, et) Fibrancy.Codata.t ->
     (Field.wrapped * a Raw.codatafield) list ->
     Code.t Asai.Diagnostic.t Bwd.t ->
@@ -2642,9 +2654,12 @@ and check_codata : type mode a b n et.
                 (* Only then do we degenerate the whole thing by the field's intrinsic dimension, which makes the self variable into an i-dimensional cube along with the rest of the context. *)
                 let (Degctx (plusmap, degctx, _)) = degctx newctx i in
                 let cty = check (Kinetic `Nolet) degctx rty (universe (Modality.src right) D.zero) in
+                (* Since the codatatype has evaluation dimension zero, that declared type is the field's only instance. *)
                 let entry =
                   CodatafieldAbwd.Entry
-                    (fld, Codatafield.Higher (adj, plus_lock, fldtermctx, plusmap, cty)) in
+                    ( fld,
+                      Codatafield.Higher
+                        (adj, plus_lock, fldtermctx, singleton_fieldtype i plusmap cty) ) in
                 (Snoc (checked_fields, entry), errs) in
           check_codata status ctx opacity eta hints tyargs checked_fields fibrancy raw_fields errs
       | Pos _, Zero, Eta -> fatal (Unimplemented "higher fields in record types")
@@ -2661,7 +2676,7 @@ and check_record : type mode a f1 f2 f af d acd b n.
     (D.zero Field.t * string, f2) Bwv.t ->
     (f1, f2, f) N.plus ->
     (a, f, af) N.plus ->
-    (mode * b * n * has_eta) Term.CodatafieldAbwd.t ->
+    (mode * b * D.zero * n * has_eta) Term.CodatafieldAbwd.t ->
     (mode, n, n, b, has_eta) Fibrancy.Codata.t ->
     (af, d, acd) Raw.tel ->
     Code.t Asai.Diagnostic.t Bwd.t ->
@@ -2675,7 +2690,18 @@ and check_record : type mode a f1 f2 f af d acd b n.
       | Emp ->
           let fields, Fibrancy fibrancy = (checked_fields, fibrancy) in
           Term.Canonical
-            (Codata { eta = Eta; opacity; hints; dim; fields; fibrancy; is_glue = None }))
+            (Codata
+               {
+                 eta = Eta;
+                 opacity;
+                 hints;
+                 evaldim = D.zero;
+                 dim;
+                 plusdim = D.zero_plus dim;
+                 fields;
+                 fibrancy = Some fibrancy;
+                 is_glue = None;
+               }))
   | Ext (None, _, _, _) -> fatal (Anomaly "unnamed field in check_record")
   | Ext (Some name, modality, rty, raw_fields) ->
       with_codata_so_far status Eta ctx opacity hints dim tyargs checked_fields fibrancy errs
@@ -2763,7 +2789,7 @@ and check_fields : type mode a b c s m n mn et.
     (m, n, mn) D.plus ->
     (mode, m, n, c, et) codata_args ->
     (* The fields from the codatatype, to be checked against *)
-    (mode * c * n * et) Term.CodatafieldAbwd.entry list ->
+    (mode * c * D.zero * n * et) Term.CodatafieldAbwd.entry list ->
     (D.zero, mn, mn, mode normal) TubeOf.t ->
     (* The fields supplied by the user *)
     ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t ->
@@ -2811,11 +2837,11 @@ and check_field : type mode a b c s m n mn i et.
     m D.t ->
     (m, n, mn) D.plus ->
     (mode, m, n, c, et) codata_args ->
-    (mode * c * n * et) Term.CodatafieldAbwd.entry list ->
+    (mode * c * D.zero * n * et) Term.CodatafieldAbwd.entry list ->
     (D.zero, mn, mn, mode normal) TubeOf.t ->
     (* The field being checked, by name and by data from the codatatype *)
     i Field.t ->
-    (i, mode * c * n * et) Term.Codatafield.t ->
+    (i, mode * c * D.zero * n * et) Term.Codatafield.t ->
     (* The up-until-now term being checked *)
     ((mode, kinetic) value, Code.t) Result.t ->
     (* As before, user terms, checked terms, value terms, and errors *)
@@ -2921,15 +2947,19 @@ and check_field : type mode a b c s m n mn i et.
             (etms, ctms, errs) in
           check_fields status eta ctx ty m mn codata_args fields tyargs tms ctms etms errs)
   | ( Higher
-        (type f g gmode d ag iagx)
-        ((adj, fld_plus_lock, fldtermctx, ic0, fldty) :
+        (type f g gmode d ag)
+        ((adj, fld_plus_lock, fldtermctx, fldtys) :
           (mode, f, g, gmode) Modalcell.adjunction
           * (c, mode, g, gmode, ag) plus_lock
           * (gmode, d, (ag, (f, D.zero) dim_entry) snoc) termctx
-          * (i, (ag, (f, D.zero) dim_entry) snoc, iagx, gmode) plusmap
-          * (gmode, iagx, kinetic) term),
+          * (D.zero, i, gmode * (ag, (f, D.zero) dim_entry) snoc) FieldtypePbijmap.t),
       Potential _,
       Noeta ) ->
+      (* The codatatype was produced by typechecking, so the field has just its declared type. *)
+      let (Fieldtype
+             (type iagx)
+             ((ic0, fldty) : (i, _, iagx, gmode) plusmap * (gmode, iagx, _) term)) =
+        declared_fieldtype fldtys in
       let Eq = D.plus_uniq mn (D.plus_zero m) in
       let i = Field.dim fld in
       (* Like a lower modal field, the components of a modal higher field are checked behind a lock by the right adjoint.  We create the lock of the checked context b once, outside the recursion over pbijs, so that all the accumulated components share the same locked context type. *)
@@ -2952,7 +2982,7 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
     m D.t ->
     i D.t ->
     (mode, m, D.zero, c, no_eta) codata_args ->
-    (mode * c * D.zero * no_eta) Term.CodatafieldAbwd.entry list ->
+    (mode * c * D.zero * D.zero * no_eta) Term.CodatafieldAbwd.entry list ->
     (D.zero, m, m, mode normal) TubeOf.t ->
     (* As before, user terms, checked terms, value terms, and errors *)
     ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t ->
