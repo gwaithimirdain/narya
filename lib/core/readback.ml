@@ -403,7 +403,7 @@ and readback_stuck_match : type mode a z hmode any.
                                                   (Vec.length var_indices)))
                                             (constr_cube constr total_dim newvars) in
                                     (* The body is evaluated with the *stored* annotate/comp/perm, which are the ones that match the stored environment and the body's own context. *)
-                                    let branch (Stuck_head (bhead, bargs)) bodyenv branch_ty =
+                                    let branch bhead bargs bodyenv branch_ty =
                                       let bodyev = eval (Permute (perm, bodyenv)) body in
                                       (* A branch body that is a comatch, a tuple, or a canonical type is read back against a "self": readback_comatch and readback_codata want a neutral whose forced value is the very struct they are displaying, since they compute the field types against it and project the components out of it.  The enclosing neutral is that, under this branch's hypothesis -- so we hand them it with this branch's value and type in place of the stuck match's.  This is why such a body no longer has to be given up on, and it needs no refinement, so it works for a non-variable discriminee too.  The self never reaches the output: readback_codata binds a fresh self variable, readback_data takes its constructors' output types from the stored tyfam, and a projection out of the self reduces to the component the comatch stores. *)
                                       let bstatus =
@@ -494,8 +494,7 @@ and readback_stuck_match : type mode a z hmode any.
                                                   (readback_neu ctx head_head head_args)
                                               with
                                               | Neu { head = rhead; args = rargs; _ } ->
-                                                  branch
-                                                    (Stuck_head (rhead, rargs))
+                                                  branch rhead rargs
                                                     (take_args renv plus_dim newvars window fw
                                                        annotate comp)
                                                     (eval_term rctxenv (readback_val ctx match_ty))
@@ -512,8 +511,7 @@ and readback_stuck_match : type mode a z hmode any.
                                     in
                                     (* We try to refine first, and read the branch back unrefined only if that fails -- as typechecking tries a variable match before falling back to a non-dependent one.  When the discriminee is a variable, refining is the reading that matches what was checked; when it isn't, there is nothing to rebind and the type we were handed (or the one the motive gives) is already the type of every branch. *)
                                     Reporter.try_with ~fatal:(fun _ ->
-                                        branch
-                                          (Stuck_head (head_head, head_args))
+                                        branch head_head head_args
                                           (take_args env plus_dim newvars window fw annotate comp)
                                           branch_ty)
                                     @@ fun () -> refined ())
