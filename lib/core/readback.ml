@@ -69,11 +69,6 @@ module ModalValuePairCube = Modality.Cube (ValuePair)
    1. When reading back at a record type that the user has marked as transparent, we eta-expand tuples.  This is chosen based on the readback type.
    2. When reading back a higher-dimensional pi-type, we eta-expand its instantiation arguments so that we can display it prettily.  This is controlled by the flag ~eta. *)
 
-type (_, _, _, _, _, _) readback_entry =
-  | Readback_entry :
-      ('dom, 'modality, 'mode, 'b, 'bm, 'f, 'n) entry
-      -> ('dom, 'modality, 'mode, 'b, 'f, 'n) readback_entry
-
 (* The per-field display context of readback_codata below: the ambient context locked by a field's right adjoint and extended by the self variable annotated by its left adjoint, together with that variable's cube, its top face, and the type of that face. *)
 type (_, _, _) self_display =
   | Self_display : {
@@ -1204,47 +1199,44 @@ and readback_bindings : type mode a b n.
     }
     [ vbs ]
 
-and readback_entry : type dom modality mode a b f n.
-    (mode, a, (b, (modality, n) dim_entry) snoc) Ctx.t ->
-    (dom, modality, mode, f, n) Ctx.entry ->
-    (dom, modality, mode, b, f, n) readback_entry =
- fun ctx e ->
-  match e with
-  | Vis { dim; plusdim; vars; bindings; hasfields; fields; fplus; filter } ->
-      let modality = Modality.filter_modality filter in
-      let top = Binding.value (CubeOf.find_top bindings) in
-      (* Fields as illusory variables are only used when typechecking records, which have substitution dimension 0 and can have no higher fields, so as field insertion we can use the identity on zero. *)
-      let fins = ins_zero D.zero in
-      let (Locked (plus_lock, lctx)) = Ctx.lock ctx modality in
-      let fields =
-        Bwv.map
-          (fun (f, x) ->
-            let fldty =
-              readback_val ~sort:`Type lctx
-                (tyof_field
-                   (Modality.id (Ctx.mode lctx))
-                   (Ok top.tm) (Lazy.force top.ty) f ~shuf:Trivial fins) in
-            (f, x, fldty))
-          fields in
-      let bindings = readback_bindings lctx bindings in
-      Readback_entry
-        (Vis { dim; plusdim; plus_lock; vars; bindings; hasfields; fields; fplus; filter })
-  | Invis { filter; bindings; _ } ->
-      let modality = Modality.filter_modality filter in
-      (* Invisible variables are anonymous, but we can still record display hints from their types, since after readback the types are terms and the hints can no longer be computed on demand.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints. *)
-      let hints =
-        Reporter.try_with ~fatal:(fun _ -> no_hints) @@ fun () ->
-        View.hints_of_ty (Lazy.force (Binding.value (CubeOf.find_top bindings)).ty) in
-      let (Locked (plus_lock, lctx)) = Ctx.lock ctx modality in
-      Readback_entry
-        (Invis { plus_lock; filter; bindings = readback_bindings lctx bindings; hints })
-
 and readback_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> (mode, a, b) ordered_termctx
     = function
   | Emp mode -> Emp mode
-  | Snoc (rest, e, af) as ctx ->
-      let (Readback_entry re) = readback_entry (Ctx.of_ordered ctx) e in
-      Ext (readback_ordered_ctx rest, re, af)
+  | Snoc (rest, e, af) as ctx -> (
+      let ctx = Ctx.of_ordered ctx in
+      match e with
+      | Vis { dim; plusdim; vars; bindings; hasfields; fields; fplus; filter } ->
+          let modality = Modality.filter_modality filter in
+          let top = Binding.value (CubeOf.find_top bindings) in
+          (* Fields as illusory variables are only used when typechecking records, which have substitution dimension 0 and can have no higher fields, so as field insertion we can use the identity on zero. *)
+          let fins = ins_zero D.zero in
+          let (Locked (plus_lock, lctx)) = Ctx.lock ctx modality in
+          let fields =
+            Bwv.map
+              (fun (f, x) ->
+                let fldty =
+                  readback_val ~sort:`Type lctx
+                    (tyof_field
+                       (Modality.id (Ctx.mode lctx))
+                       (Ok top.tm) (Lazy.force top.ty) f ~shuf:Trivial fins) in
+                (f, x, fldty))
+              fields in
+          let bindings = readback_bindings lctx bindings in
+          Ext
+            ( readback_ordered_ctx rest,
+              Vis { dim; plusdim; plus_lock; vars; bindings; hasfields; fields; fplus; filter },
+              af )
+      | Invis { filter; bindings; _ } ->
+          let modality = Modality.filter_modality filter in
+          (* Invisible variables are anonymous, but we can still record display hints from their types, since after readback the types are terms and the hints can no longer be computed on demand.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints. *)
+          let hints =
+            Reporter.try_with ~fatal:(fun _ -> no_hints) @@ fun () ->
+            View.hints_of_ty (Lazy.force (Binding.value (CubeOf.find_top bindings)).ty) in
+          let (Locked (plus_lock, lctx)) = Ctx.lock ctx modality in
+          Ext
+            ( readback_ordered_ctx rest,
+              Invis { plus_lock; filter; bindings = readback_bindings lctx bindings; hints },
+              af ))
   | Lock (ctx, lock) -> Lock (readback_ordered_ctx ctx, lock)
   | Weaken (ctx, code) -> Weaken (readback_ordered_ctx ctx, code)
 
