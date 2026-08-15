@@ -198,7 +198,7 @@ and readback_eval : type mode a z s.
       | None -> Realize (readback_val ctx neutral))
   | Unrealized None, Potential neutral -> Realize (readback_val ctx neutral)
 
-(* Readback is energy-polymorphic: it reads back a value of any energy 's into an ('a, 's) term.  In practice it is only ever called on a *potential* value for display (reading back the forced value of a neutral); that's the only way a comatch (a no-eta struct) reaches the Codata branch and gets eta-expanded.  All other callers read back kinetic values (neutrals, etc.) and get their application spines as before. *)
+(* Readback is energy-polymorphic: it reads back a value of any energy 's into an ('a, 's) term.  In practice it is only ever called on a *potential* value for display (reading back the forced value of a neutral); in particular, that's the only way a comatch (a no-eta struct) reaches the readback-at-Codata branch.  All other callers read back only kinetic values, with neutral resulting in application spines. *)
 and readback_at : type mode a z s.
     ?eta:bool ->
     (mode, s) readback_status ->
@@ -210,7 +210,7 @@ and readback_at : type mode a z s.
   let view = if Displaying.read () then view_term tm else tm in
   let vty = view_type ty "readback_at" in
   match (vty, view, status) with
-  (* For potential values, we read back comatches, tuples, and canonical types against the neutral the status carries, which serves as their self-variable. *)
+  (* For potential values, we read back comatches, tuples, and canonical types against the neutral the status carries, which serves as their self-variable.  By contrast, matches never occur as values directly: instead they are stuck heads of evaluations (the Unrealized case of readback_eval). *)
   | _, Struct _, Potential neutral -> (
       match readback_comatch ctx neutral ty with
       | Some res -> res
@@ -228,7 +228,7 @@ and readback_at : type mode a z s.
       (* Codatatypes and records are handled uniformly whether 0-dimensional, intrinsically higher (Gel-like), or degenerate, and whether or not their fields are modal. *)
       | Codata codata_args -> readback_codata ctx neutral codata_args
       | UU _ | Pi _ -> Realize (readback_val ctx neutral))
-  (* Abstractions are read back by extending the context using their pi-type. *)
+  (* Abstractions (kinetic or potential) are read back uniformly by extending the context using their pi-type. *)
   | Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs), Lam (x, filter2, body), _ -> (
       let Eq = eq_of_ins_zero ins in
       (* The instantiation of the type, and the dimension of the binder, are both the *outer* (unfiltered) dimension of the pi-type; the variable cube and the domains live at the filtered dimension. *)
@@ -257,7 +257,7 @@ and readback_at : type mode a z s.
             readback_eval ~eta (apply_status status filter args) newctx (apply tm filter args)
               output in
           Term.Lam (x, n, filter, body))
-  (* If eta-expansion is enabled, we do an eta-expanding readback of any term at a pi-type. *)
+  (* If eta-expansion of functions is enabled, we do an eta-expanding readback of any term at a pi-type. *)
   | Canonical (_, Pi { x = name; filter; doms; cods }, ins, tyargs), tm, _ when eta ->
       let modality = Modality.filter_modality filter in
       let Eq = eq_of_ins_zero ins in
@@ -273,7 +273,7 @@ and readback_at : type mode a z s.
           readback_eval ~eta
             (apply_status status filter newargs)
             newctx (apply tm filter newargs) output )
-  (* Similarly at an eta-expanding record type. *)
+  (* Similarly at an eta-expanding record type, but controlled by the type's eta and opacity rather than the eta argument passed to readback_at. *)
   | ( Canonical
         (type hmode mn m n)
         (( _,
@@ -289,7 +289,7 @@ and readback_at : type mode a z s.
       _,
       _ ) -> (
       match eta with
-      (* A no-eta codatatype: an ordinary readback of a (kinetic) neutral here yields its application spine.  Displaying a comatch as a comatch is done by readback_comatch, which forces the neutral's potential value; it is not reached through readback_at. *)
+      (* A no-eta codatatype: an ordinary readback of a (kinetic) neutral here yields its application spine.  Displaying a comatch as a comatch is done by readback_comatch, which forces the neutral's potential value; that was caught earlier by the Struct/Potential case. *)
       | Noeta -> readback_val_sorted ctx tm vty
       | Eta -> (
           (* An eta-record type.  Only kinetic values are ever read back here (records, and tuples reached via their neutral); a tuple in a case tree (a potential eta-struct) is never passed to readback for display. *)
@@ -384,7 +384,7 @@ and readback_at : type mode a z s.
           | Struct { energy = Kinetic; _ } -> do_record view
           | Neu _ -> do_record view
           | _ -> readback_val_sorted ctx tm vty))
-  (* To read back constructors, we also need their data type. *)
+  (* Datatypes are not eta-expanding, but we still need the datatype in order to read back a constructor at that type. *)
   | Canonical (_, Data { constrs; _ }, ins, tyargs), Constr (xconstr, xn, xargs), _ -> (
       let Eq = eq_of_ins_zero ins in
       (* Pick out the constructor of the datatype that matches the one we're reading back *)
@@ -438,7 +438,7 @@ and readback_val_sorted : type mode a z s.
   let sort = sort_of_ty ctx vty in
   readback_val ~sort ctx tm
 
-(* The synthesizing readback only ever applies to neutrals (a kinetic value); any other value reaching it (which can only be a potential value, since other callers pass kinetic neutrals) is an anomaly. *)
+(* The synthesizing readback only ever applies to neutrals (a kinetic value).  Any other value reaching it (which can only be a potential value, since other callers pass kinetic neutrals) is an anomaly. *)
 and readback_val : type mode a z s.
     ?sort:[ `Type | `Function | `Other ] ->
     (mode, z, a) Ctx.t ->
