@@ -74,7 +74,7 @@ type (_, _) readback_status =
   | Kinetic : ('mode, kinetic) readback_status
   | Potential : ('mode, kinetic) value -> ('mode, potential) readback_status
 
-(* Descending through a parameter abstraction applies the self to the new variable, so that e.g. "about Vec" reads its datatype back against "Vec A" rather than "Vec".  This is what check's status does when it extends its argument spine. *)
+(* Descending through a parameter abstraction applies the self to the new variable, so that for instance "about Vec" reads its datatype back against "Vec A" rather than "Vec".  This is analogous to what check's status does when it extends its argument spine. *)
 let apply_status : type mode s dom modality k n.
     (mode, s) readback_status ->
     (dom, modality, mode, k, n) Modality.filter_dim ->
@@ -90,9 +90,6 @@ let rec annotate_names : type n mode annotations b.
     (n, mode, annotations, mode, mode, b, mode) VarAnnotate.fwd_t -> string option list = function
   | Zero _ -> []
   | Suc (Annotate (name, _), annotate) -> name :: annotate_names annotate
-
-(* Raised when the self a comatch is being read back against does not survive being degenerated for a higher field's instance; see readback_higher_comatch_field. *)
-exception Unprojectable_self
 
 (* Report, as information rather than an error, that some piece of a stuck case tree could not be displayed as the construct it came from, and return None so the caller shows its application spine.  These are all display-only shortfalls: the spine is always a correct thing to show, just a less informative one. *)
 let no_display : type a. string -> a option =
@@ -1584,6 +1581,7 @@ and readback_higher_comatch_field : type mode a z m i f g gmode aa hm hn hmn ag.
     (i, mode * (m * a * potential * no_eta)) Term.Structfield.t option =
  fun ctx codata_args neutral ty dim fld adj hd ->
   ignore (codata_args, hd);
+  let exception Unprojectable_self in
   try
     let (Adjunction { left; right; unit; _ }) = adj in
     let (Locked
