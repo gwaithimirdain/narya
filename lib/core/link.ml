@@ -157,17 +157,18 @@ and codatafield : type mode a m n i et.
     (File.t -> File.t) ->
     (i, mode * a * m * n * et) Codatafield.t ->
     (i, mode * a * m * n * et) Codatafield.t =
- fun f fld ->
+ fun f (Codatafield (adj, plus_lock, fld)) ->
   match fld with
-  | Lower (adj, plus_lock, ty) -> Lower (adj, plus_lock, term f ty)
-  | Higher (adj, plus_lock, tc, tys) ->
-      Higher
+  | Lower ty -> Codatafield (adj, plus_lock, Lower (term f ty))
+  | Higher (tc, tys) ->
+      Codatafield
         ( adj,
           plus_lock,
-          termctx f tc,
-          FieldtypePbijmap.mmap
-            { map = (fun _ [ Fieldtype (rb, ty) ] -> FieldtypeFam.Fieldtype (rb, term f ty)) }
-            [ tys ] )
+          Higher
+            ( termctx f tc,
+              FieldtypePbijmap.mmap
+                { map = (fun _ [ Fieldtype (rb, ty) ] -> FieldtypeFam.Fieldtype (rb, term f ty)) }
+                [ tys ] ) )
 
 and env : type mode a n b. (File.t -> File.t) -> (mode, a, n, b) env -> (mode, a, n, b) env =
  fun f e ->

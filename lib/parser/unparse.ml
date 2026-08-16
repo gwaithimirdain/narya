@@ -623,7 +623,7 @@ and unparse_codata : type mode m n a et lt ls rt rs.
               (type i)
               ((fld, cf) : i Field.t * (i, mode * a * m * n * et) Term.Codatafield.t)) ->
         match cf with
-        | Term.Codatafield.Lower (adj, plus_lock, tm) ->
+        | Codatafield (adj, plus_lock, Lower tm) ->
             acc
             <: {
                  Instance.adj = Any_adjunction adj;
@@ -635,7 +635,7 @@ and unparse_codata : type mode m n a et lt ls rt rs.
                        (self.Self.ext (Names.add_lock vars plus_lock))
                        tm No.Interval.entire No.Interval.entire);
                }
-        | Term.Codatafield.Higher (adj, plus_lock, _, tys) ->
+        | Codatafield (adj, plus_lock, Higher (_, tys)) ->
             Seq.fold_left
               (fun acc (Pbij_between pbij) ->
                 let (Term.FieldtypeFam.Fieldtype (plusmap, cty)) =

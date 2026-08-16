@@ -951,17 +951,18 @@ and tyof_codatafield : type src f mode m n mn a s i et.
     (m, n, mn) D.plus ->
     (m, s, i) insertion ->
     (mode, kinetic) value =
- fun ?(key = `Counit) ?(self = `Ambient) fm tm fldname fldty env tyargs m mn fldins ->
+ fun ?(key = `Counit) ?(self = `Ambient) fm tm fldname (Codatafield (adj, plus_lock, fldty)) env
+     tyargs m mn fldins ->
   (* The type of the field projection comes from the type associated to that field name in general, evaluated at the stored environment extended by the term itself and its boundaries. *)
   match fldty with
-  | Term.Codatafield.Lower (adj, plus_lock, fldty) -> (
+  | Lower fldty -> (
       (* The projecting modality must be the left adjoint of the field's adjunction; the caller is responsible for having checked this with a user-facing error when synthesizing. *)
       match Modality.compare (Modalcell.adj_left adj) fm with
       | Neq -> fatal (Anomaly "wrong locking modality in tyof_codatafield")
       | Eq ->
           tyof_lower_codatafield (self_values ~self adj tm tyargs) tyargs fldname adj plus_lock
             fldty env m mn ~key)
-  | Term.Codatafield.Higher (adj, plus_lock, fldtermctx, fldtys) -> (
+  | Higher (fldtermctx, fldtys) -> (
       (* Like a lower field, the projecting modality must be the left adjoint of the field's adjunction. *)
       match Modality.compare (Modalcell.adj_left adj) fm with
       | Neq -> fatal (Anomaly "wrong locking modality of higher field in tyof_codatafield")
@@ -1044,7 +1045,7 @@ and tyof_field_nokey : type amode.
       | Some mn -> (
           let m = dim_env env in
           match Term.CodatafieldAbwd.find_opt fields fld with
-          | Found (Lower (adj, plus_lock, fldty)) ->
+          | Found (Codatafield (adj, plus_lock, Lower fldty)) ->
               Tyof_modal_field
                 ( adj,
                   tyof_lower_codatafield
@@ -1336,7 +1337,7 @@ and tyof_field_withname_giventype : type src f mode a b m n mn c et.
   (* Check that the locking modality supplied by the user (or the identity, if none) agrees with the left adjoint of the adjunction stored with the field, and that the field is present (not filtered away by a nonparametric modality) at the current dimension. *)
   let check_modality : type i.
       i Field.t -> (i, src * c * D.zero * n * et) Term.Codatafield.t -> unit =
-   fun fld fldty ->
+   fun fld (Codatafield (adj, _, _)) ->
     let mismatch : type d1 m1 c1. (d1, m1, c1) Modality.t -> unit =
      fun left ->
       let field = Field.to_string fld in
@@ -1346,28 +1347,15 @@ and tyof_field_withname_giventype : type src f mode a b m n mn c et.
       | Neq, Eq -> fatal (Wrong_locking_modality { field; expected = Some left; got = None })
       | Neq, Neq -> fatal (Wrong_locking_modality { field; expected = Some left; got = Some fm })
     in
-    match fldty with
-    | Lower (adj, _, _) -> (
-        let left = Modalcell.adj_left adj in
-        match Modality.compare left fm with
-        | Neq -> mismatch left
-        | Eq -> (
-            (* The field disappears if its nonparametric modality filters this dimension nontrivially. *)
-            let (Has_filter left_filter) = Modality.filter left m in
-            match Modality.filter_is_trivial m left_filter with
-            | Some Eq -> ()
-            | None -> fatal (Modal_field_filtered_away (Field.to_string fld, left))))
-    | Higher (adj, _, _, _) -> (
-        (* Like a lower field, a higher field's projecting modality must be the left adjoint. *)
-        let left = Modalcell.adj_left adj in
-        match Modality.compare left fm with
-        | Neq -> mismatch left
-        | Eq -> (
-            (* The field disappears if its nonparametric modality filters this dimension nontrivially.  (Currently unreachable, since we require modal higher fields to be parametric at definition time; but this keeps the check robust.) *)
-            let (Has_filter left_filter) = Modality.filter left m in
-            match Modality.filter_is_trivial m left_filter with
-            | Some Eq -> ()
-            | None -> fatal (Modal_field_filtered_away (Field.to_string fld, left)))) in
+    let left = Modalcell.adj_left adj in
+    match Modality.compare left fm with
+    | Neq -> mismatch left
+    | Eq -> (
+        (* The field disappears if its nonparametric modality filters this dimension nontrivially. *)
+        let (Has_filter left_filter) = Modality.filter left m in
+        match Modality.filter_is_trivial m left_filter with
+        | Some Eq -> ()
+        | None -> fatal (Modal_field_filtered_away (Field.to_string fld, left))) in
   let m = dim_env env in
   match infld with
   | `Name (fldname, ints) -> (

@@ -353,7 +353,7 @@ and readback_at : type mode a z s.
                   Bwd.filter
                     (fun (CodatafieldAbwd.Entry
                             (type i)
-                            ((_, Lower (Adjunction { left; _ }, _, _)) :
+                            ((_, Codatafield (Adjunction { left; _ }, _, _)) :
                               i Field.t * (i, mode * a * D.zero * n * has_eta) Codatafield.t)) ->
                       let (Has_filter left_filter) = Modality.filter left m in
                       match Modality.filter_is_trivial m left_filter with
@@ -364,7 +364,9 @@ and readback_at : type mode a z s.
                   Mbwd.map
                     (fun (CodatafieldAbwd.Entry
                             (type i)
-                            ((fld, Lower ((Adjunction { left; right; unit; _ } as adj), _, _)) :
+                            (( fld,
+                               Codatafield ((Adjunction { left; right; unit; _ } as adj), _, Lower _)
+                             ) :
                               i Field.t * (i, mode * a * D.zero * n * has_eta) Codatafield.t)) ->
                       (* Eta-expansion of a modal field: key the term by the adjunction unit, project, and read back the component in the context locked by the right adjoint (as in the eta-rule for equality). *)
                       let xu = act_value tm (id_deg D.zero) unit in
@@ -1040,12 +1042,13 @@ and readback_codata : type mode a b cm cn ca cet iu ii iout.
       (fun (acc : (mode * b * iout * iout * cet) Term.CodatafieldAbwd.t)
            (Term.CodatafieldAbwd.Entry
               (type i)
-              ((fld, cf) : i Field.t * (i, mode * ca * D.zero * cn * cet) Term.Codatafield.t)) ->
-        match cf with
-        | Term.Codatafield.Lower (adj, _, _) -> (
-            match self_display adj with
-            | No_display -> acc
-            | Self_display { plus_lock; sctx; ambnfs; _ } ->
+              ((fld, Codatafield (adj, fld_plus_lock, cf)) :
+                i Field.t * (i, mode * ca * D.zero * cn * cet) Term.Codatafield.t)) ->
+        match self_display adj with
+        | No_display -> acc
+        | Self_display { plus_lock; lctx; sctx; ambnfs } -> (
+            match cf with
+            | Lower _ ->
                 let self = Ctx.Binding.value (CubeOf.find_top ambnfs) in
                 (* We display the type as it was *declared*: un-keyed, and in the locked, self-extended context, exactly as check_codata checked it.  Hence ~key:`Nokey, and ~self:`Declared, since the self value we supply is that context's own self variable rather than an ambient one. *)
                 let ety =
@@ -1053,12 +1056,8 @@ and readback_codata : type mode a b cm cn ca cet iu ii iout.
                     (Lazy.force self.ty) fld (ins_zero evaldim) in
                 let ty = readback_val ~sort:`Type sctx ety in
                 Bwd.Snoc
-                  ( acc,
-                    Term.CodatafieldAbwd.Entry (fld, Term.Codatafield.Lower (adj, plus_lock, ty)) ))
-        | Term.Codatafield.Higher (adj, fld_plus_lock, fldtermctx, fldtys) -> (
-            match self_display adj with
-            | No_display -> acc
-            | Self_display { plus_lock; lctx; sctx; ambnfs } -> (
+                  (acc, Term.CodatafieldAbwd.Entry (fld, Codatafield (adj, plus_lock, Lower ty)))
+            | Higher (fldtermctx, fldtys) -> (
                 (* A codatatype with a higher field has intrinsic dimension zero, so its whole dimension, at which the self-variable cube lives and at which the instances of the field are indexed, is its evaluation dimension. *)
                 match D.compare evaldim (CubeOf.dim ambnfs) with
                 | Neq ->
@@ -1071,8 +1070,7 @@ and readback_codata : type mode a b cm cn ca cet iu ii iout.
                     Bwd.Snoc
                       ( acc,
                         Term.CodatafieldAbwd.Entry
-                          (fld, Term.Codatafield.Higher (adj, plus_lock, readback_ctx lctx, tys)) ))
-            ))
+                          (fld, Codatafield (adj, plus_lock, Higher (readback_ctx lctx, tys))) ))))
       Bwd.Emp codata_args.fields in
   (* The displayed codatatype records its whole dimension as its evaluation dimension: its fields are already the instances at that dimension, so the intrinsic part of the split, which matters only to evaluation, plays no further role. *)
   Term.Canonical
@@ -1611,18 +1609,16 @@ and readback_comatch : type mode a z.
                   (fun acc
                        (Term.CodatafieldAbwd.Entry
                           (type i)
-                          ((fld, cf) :
+                          ((fld, Codatafield ((Adjunction { left; right; unit; _ } as adj), _, cf)) :
                             i Field.t * (i, mode * aa * D.zero * n * et) Term.Codatafield.t)) :
                        (mode * (m * a * potential * et)) Term.StructfieldAbwd.t option ->
-                    match (acc, cf) with
-                    | None, _ -> None
-                    | ( Some acc,
-                        Term.Codatafield.Lower ((Adjunction { left; right; unit; _ } as adj), _, _)
-                      ) -> (
-                        let (Has_filter lfilter) = Modality.filter left dim in
-                        match Modality.filter_is_trivial dim lfilter with
-                        | None -> Some acc
-                        | Some Eq ->
+                    let (Has_filter lfilter) = Modality.filter left dim in
+                    match Modality.filter_is_trivial dim lfilter with
+                    | None -> acc
+                    | Some Eq -> (
+                        match (acc, cf) with
+                        | None, _ -> None
+                        | Some acc, Lower _ ->
                             (* Project the field from the neutral-as-self, keying by the adjunction unit and reading back the component behind the right-adjoint lock. *)
                             let xu = Act.act_value neutral (id_deg D.zero) unit in
                             let tyu = Act.act_ty neutral ty (id_deg D.zero) unit in
@@ -1639,13 +1635,8 @@ and readback_comatch : type mode a z.
                                              (readback_at Kinetic lctx
                                                 (field_term left xu fld (ins_zero dim))
                                                 (tyof_field left (Ok xu) tyu fld (ins_zero evaldim))),
-                                           `Labeled ) ) )))
-                    | Some acc, Term.Codatafield.Higher ((Adjunction { left; _ } as adj), _, _, _)
-                      -> (
-                        let (Has_filter lfilter) = Modality.filter left dim in
-                        match Modality.filter_is_trivial dim lfilter with
-                        | None -> Some acc
-                        | Some Eq -> (
+                                           `Labeled ) ) ))
+                        | Some acc, Higher _ -> (
                             match Value.StructfieldAbwd.find_opt comatch_fields fld with
                             | Found (Value.Structfield.Higher (lazy hd)) -> (
                                 (* The comatch stores its own copy of the field's adjunction, whose existential types are a priori unrelated to those of the declaration; match them up so the stored bodies can be read back at the declared field type.  A value checked against this declaration must carry the declared adjunction, so a mismatch is a bug. *)

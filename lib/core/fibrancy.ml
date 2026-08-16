@@ -119,13 +119,13 @@ module Codata = struct
       (mode * b * D.zero * g * et) CodatafieldAbwd.entry ->
       (mode, g, n, b, et) t =
    fun mode (Fibrancy (type nh hb) (f : (mode, D.zero, g, n, nh, b, hb, et) codata_fibrancy))
-       (Entry (fld, fldty)) ->
+       (Entry (fld, Codatafield (adj, fld_plus_lock, fldty))) ->
     match fldty with
     | Higher _ ->
         let open Reporter in
         fatal ~severity:Asai.Diagnostic.Bug (Unimplemented "higher fields of transport")
     (* MODALTODO: Fibrancy is not yet meaningful for modal fields, so we drop them from the fibrancy computation. *)
-    | Lower (adj, fld_plus_lock, fld_ty) -> (
+    | Lower fld_ty -> (
         match Modalcell.compare_adjunction_id adj with
         | Neq -> Fibrancy f
         | Eq -> (
@@ -306,9 +306,10 @@ module Codata = struct
                       ((hb, (mode id, D.zero) dim_entry) snoc, (mode id, D.zero) dim_entry) snoc,
                       et )
                     t =
-               fun (fields, fib) (CodatafieldAbwd.Entry (fld, fldty)) ->
+               fun (fields, fib) (CodatafieldAbwd.Entry (fld, Codatafield (adj, plus_lock, fldty)))
+                 ->
                 match fldty with
-                | Lower (adj, plus_lock, fldty) -> (
+                | Lower fldty -> (
                     match Modalcell.compare_adjunction_id adj with
                     | Neq ->
                         (* MODALTODO: fibrancy of modal fields *)
@@ -321,30 +322,31 @@ module Codata = struct
                         let field =
                           CodatafieldAbwd.Entry
                             ( fld,
-                              Lower
+                              Codatafield
                                 ( Modalcell.id_adjunction mode,
                                   plus_no_lock mode,
-                                  Inst
-                                    ( Kinetic,
-                                      App
-                                        ( Kinetic,
-                                          Weaken
-                                            (Weaken
+                                  Lower
+                                    (Inst
+                                       ( Kinetic,
+                                         App
+                                           ( Kinetic,
+                                             Weaken
                                                (Weaken
-                                                  (Shift
-                                                     ( Hott.dim,
-                                                       plusmap,
-                                                       Lam
-                                                         ( xsname,
-                                                           D.zero,
-                                                           Modality.filter_id mode D.zero,
-                                                           fldty ) )))),
-                                          Hott.dim,
-                                          idf,
-                                          Modal (idm, plus_no_lock mode, xcube) ),
-                                      TubeOf.mmap
-                                        { map = (fun _ [ x ] -> field mode x fld) }
-                                        [ xtube ] ) ) ) in
+                                                  (Weaken
+                                                     (Shift
+                                                        ( Hott.dim,
+                                                          plusmap,
+                                                          Lam
+                                                            ( xsname,
+                                                              D.zero,
+                                                              Modality.filter_id mode D.zero,
+                                                              fldty ) )))),
+                                             Hott.dim,
+                                             idf,
+                                             Modal (idm, plus_no_lock mode, xcube) ),
+                                         TubeOf.mmap
+                                           { map = (fun _ [ x ] -> field mode x fld) }
+                                           [ xtube ] )) ) ) in
                         (Snoc (fields, field), add_field mode fib field))
                 | Higher _ ->
                     (* TODO *)
