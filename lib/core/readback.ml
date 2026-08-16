@@ -986,67 +986,43 @@ and readback_codata : type mode a b cm cn ca cet iu ii iout.
   let evaldim = dim_env codata_args.env in
   let dom = TubeOf.plus_cube (val_of_norm_tube boundary) (CubeOf.singleton tm) in
   (* Exactly as check_codata does, each field's type is displayed in the ambient context locked by the field's right adjoint and then extended by the self variable, annotated by its left adjoint; so we build that context per field.  The self variable's *type* is the codatatype transported behind those locks along the adjunction unit, which is where a variable annotated by the left adjoint has its type.  But the type we hand to tyof_field, to compute the field's type in, must be the untransported one, since tyof_field keys the codatatype's own parameters behind the right-adjoint lock itself; so we create the variables twice, from the transported and untransported types.  Both calls assign the same levels, so these are the same variables.  (For an ordinary non-modal field the unit is an identity cell and the two coincide.) *)
-  let module Self_display = struct
-    (* This is parametrized by the field's adjunction rather than existentially quantifying over it, so that the locked context here is the same one that the field's own stored data lives over. *)
-    type (_, _, _, _, _, _) t =
-      | Self_display : {
-          plus_lock : ('b, 'mode, 'g, 'gmode, 'bg) plus_lock;
-          lctx : ('gmode, 'raw, 'bg) Ctx.t;
-          sctx : ('gmode, 'sraw, ('bg, ('f, 'n) dim_entry) snoc) Ctx.t;
-          (* The self variable, with its *untransported* types. *)
-          ambnfs : ('n, 'mode Ctx.Binding.t) CubeOf.t;
-        }
-          -> ('mode, 'b, 'n, 'f, 'g, 'gmode) t
-      | No_display : ('mode, 'b, 'n, 'f, 'g, 'gmode) t
-  end in
-  let self_display : type f g gmode.
-      (mode, f, g, gmode) Modalcell.adjunction -> (mode, b, iout, f, g, gmode) Self_display.t =
-   fun (Adjunction { left; right; unit; _ }) ->
-    let (Locked (plus_lock, lctx)) = Ctx.lock ctx right in
-    let (Has_filter lfilter) = Modality.filter left (D.plus_out mk (TubeOf.plus insargs)) in
-    (* A field whose left adjoint filters this dimension nontrivially disappears here, exactly as it does for projection and equality-checking, so it is not displayed at all. *)
-    match Modality.filter_is_trivial (D.plus_out mk (TubeOf.plus insargs)) lfilter with
-    | None -> No_display
-    | Some Eq ->
-        (* The instantiation arguments are the boundary faces of the self, in the dimensions the instantiation supplied; they are bound as values rather than as fresh variables, so that the field types display in terms of them.  Only the remaining dimensions get a fresh variable cube, whose top face has the fully instantiated codatatype as its type. *)
-        let tys = CubeOf.mmap { map = (fun _ [ v ] -> act_value v (id_deg D.zero) unit) } [ dom ] in
-        let _, freshself = dom_vars lctx left tys in
-        let _, freshamb = dom_vars lctx left dom in
-        let selfnfs =
-          TubeOf.plus_cube
-            (TubeOf.mmap
-               {
-                 map =
-                   (fun _ [ nf ] ->
-                     Ctx.Binding.make None
-                       {
-                         tm = act_value nf.tm (id_deg D.zero) unit;
-                         ty = lazy (act_value (Lazy.force nf.ty) (id_deg D.zero) unit);
-                       });
-               }
-               [ insargs ])
-            freshself in
-        let ambnfs =
-          TubeOf.plus_cube
-            (TubeOf.mmap { map = (fun _ [ nf ] -> Ctx.Binding.make None nf) } [ insargs ])
-            freshamb in
-        Self_display
-          {
-            plus_lock;
-            lctx;
-            sctx = Ctx.cube_vis lctx (Modality.filter_idempotent lfilter) None selfnfs;
-            ambnfs;
-          } in
   let fields =
     Bwd.fold_left
       (fun (acc : (mode * b * iout * iout * cet) Term.CodatafieldAbwd.t)
            (Term.CodatafieldAbwd.Entry
               (type i)
-              ((fld, Codatafield (adj, fld_plus_lock, cf)) :
+              ((fld, Codatafield ((Adjunction { left; right; unit; _ } as adj), fld_plus_lock, cf)) :
                 i Field.t * (i, mode * ca * D.zero * cn * cet) Term.Codatafield.t)) ->
-        match self_display adj with
-        | No_display -> acc
-        | Self_display { plus_lock; lctx; sctx; ambnfs } -> (
+        let (Locked (plus_lock, lctx)) = Ctx.lock ctx right in
+        let (Has_filter lfilter) = Modality.filter left (D.plus_out mk (TubeOf.plus insargs)) in
+        (* A field whose left adjoint filters this dimension nontrivially disappears here, exactly as it does for projection and equality-checking, so it is not displayed at all. *)
+        match Modality.filter_is_trivial (D.plus_out mk (TubeOf.plus insargs)) lfilter with
+        | None -> acc
+        | Some Eq -> (
+            (* The instantiation arguments are the boundary faces of the self, in the dimensions the instantiation supplied; they are bound as values rather than as fresh variables, so that the field types display in terms of them.  Only the remaining dimensions get a fresh variable cube, whose top face has the fully instantiated codatatype as its type. *)
+            let tys =
+              CubeOf.mmap { map = (fun _ [ v ] -> act_value v (id_deg D.zero) unit) } [ dom ] in
+            let _, freshself = dom_vars lctx left tys in
+            let _, freshamb = dom_vars lctx left dom in
+            let selfnfs =
+              TubeOf.plus_cube
+                (TubeOf.mmap
+                   {
+                     map =
+                       (fun _ [ nf ] ->
+                         Ctx.Binding.make None
+                           {
+                             tm = act_value nf.tm (id_deg D.zero) unit;
+                             ty = lazy (act_value (Lazy.force nf.ty) (id_deg D.zero) unit);
+                           });
+                   }
+                   [ insargs ])
+                freshself in
+            let ambnfs =
+              TubeOf.plus_cube
+                (TubeOf.mmap { map = (fun _ [ nf ] -> Ctx.Binding.make None nf) } [ insargs ])
+                freshamb in
+            let sctx = Ctx.cube_vis lctx (Modality.filter_idempotent lfilter) None selfnfs in
             match cf with
             | Lower _ ->
                 let self = Ctx.Binding.value (CubeOf.find_top ambnfs) in
@@ -1087,7 +1063,7 @@ and readback_codata : type mode a b cm cn ca cet iu ii iout.
          is_glue = None;
        })
 
-(* Read back the instances of one higher field of a codatatype value being displayed, as the pbijmap of types that Codatafield.Higher stores: one entry per partial bijection between the codatatype's dimension m and the field's intrinsic dimension.  The self variable, its cube, and the context they live in are those built by readback_codata's self_display, while the environment, lock, termctx and stored types are those of the codatatype value being displayed; the ambient context is needed only to degenerate for a non-projectable instance. *)
+(* Read back the instances of one higher field of a codatatype value being displayed, as the pbijmap of types that Codatafield.Higher stores: one entry per partial bijection between the codatatype's dimension m and the field's intrinsic dimension.  The self variable, its cube, and the context they live in are those built by readback_codata, while the environment, lock, termctx and stored types are those of the codatatype value being displayed; the ambient context is needed only to degenerate for a non-projectable instance. *)
 and readback_higher_codatafield : type mode a b ca m i f g gmode ag bg d raw.
     (mode, a, b) Ctx.t ->
     (mode, m, ca) env ->
