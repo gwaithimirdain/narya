@@ -763,3 +763,65 @@ The reconstruction is display-only.  What remains unreadable is a dependent matc
   plus ax bx
     : N
   
+
+The boundary of a degenerate codatatype behaves like parameters, not like the indices that the boundary of a degenerate datatype behaves like: it is the *instantiated* form that one defines elements of by comatching.  So it is that form which displays as a codatatype, showing the types of the fields such a comatch must supply -- one instance of each higher field per partial bijection.  The uninstantiated form displays as a codatatype too, in terms of a self-variable cube whose faces the instantiation replaces.
+
+  $ narya -e 'axiom A : Type' -e 'def √A : Type ≔ codata [ x .root.e : A ]' -e 'axiom s0 : √A' -e 'axiom s1 : √A' -e 'about √A' -e 'about √A⁽ᵉ⁾' -e 'about √A⁽ᵉ⁾ s0 s1'
+  codata [
+  | 𝑥 .root.e : A ]
+    : Type
+  
+  codata [
+  | 𝑥 .root.e : Id A (𝑥.02 .root) (𝑥.12 .root)
+  | 𝑥 .root.1 : A ]
+    : Type⁽ᵉ⁾ √A √A
+  
+  codata [
+  | 𝑥 .root.e : Id A (refl s0 .root) (refl s1 .root)
+  | 𝑥 .root.1 : A ]
+    : Type
+  
+
+The types displayed for the instantiated form are exactly the ones a comatch into it has to supply, as the holes show.
+
+  $ narya -v -e 'axiom A : Type' -e 'def √A : Type ≔ codata [ x .root.e : A ]' -e 'axiom s0 : √A' -e 'axiom s1 : √A' -e 'def p : √A⁽ᵉ⁾ s0 s1 ≔ [ .root.e ↦ ? | .root.1 ↦ ? ]'
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0000]
+   ￮ constant √A defined
+  
+   ￫ info[I0001]
+   ￮ axiom s0 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom s1 assumed
+  
+   ￫ info[I0000]
+   ￮ constant p defined, containing 2 holes
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     ----------------------------------------------------------------------
+     refl A (refl s0 .root) (refl s1 .root)
+  
+   ￫ info[I3003]
+   ￮ hole ?1:
+     
+     ----------------------------------------------------------------------
+     A
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
+  
+  [1]
+
+A record type has no higher fields, so its instantiation is displayed with a self variable of the lowered dimension, letting it come out in the field-variable syntax.
+
+  $ narya -e 'axiom A : Type' -e 'def R : Type ≔ sig ( a : A, b : A )' -e 'axiom r0 : R' -e 'axiom r1 : R' -e 'about R⁽ᵉ⁾ r0 r1'
+  sig (
+    a : Id A (r0 .a) (r1 .a),
+    b : Id A (r0 .b) (r1 .b) )
+    : Type
+  
