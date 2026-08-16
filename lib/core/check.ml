@@ -3125,7 +3125,14 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
         (* We trap any errors produced by 'tyof_field' or 'check', adding them instead to the list of accumulated errors and going on.  Note that if any previous fields that have already failed, then prev_etm will be bound to an error value, and so if the type of this field depends on the value of any previous one, tyof_field will raise that error, which we catch and add to the list; but it will be (Accumulated Emp) so it won't be displayed to the user. *)
         Reporter.try_with ~fatal:(fun e -> (evals, cvals, Snoc (errs, e))) @@ fun () ->
         let shuf : (mode, r, h, i) Norm.shuffleable =
-          higher_codatafield_shuffleable ctx degenv fldshuf in
+          Nontrivial
+            {
+              shuffle = fldshuf;
+              deg_env =
+                (fun adj tctx r_k e ->
+                  let (Locked (plus, lctx)) = Ctx.lock ctx (Modalcell.adj_right adj) in
+                  eval_env (key_id_env degenv plus) r_k (readback_env lctx e tctx));
+            } in
         (* The shuffleable degenerates the codatatype's parameters; the self value and its boundary we degenerate here, since the field type is applied to them only after that degeneration.  The boundary is used to instantiate the field type, by projecting this field from it, so it stays in the ambient context; but the self value is substituted for the self *variable*, which lies behind the locks by the right and then the left adjoint, so we transport it there along the adjunction unit first and degenerate it in that doubly locked context.  (For an ordinary field the unit is an identity cell and both locks are trivial.) *)
         let dtyargs =
           TubeOf.mmap { map = (fun _ [ nf ] -> degenerate_normal ctx degenv r nf) } [ tyargs ] in
