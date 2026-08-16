@@ -1182,12 +1182,9 @@ and readback_higher_codatafield : type mode a b ca m i f g gmode ag bg d raw.
                   (degenerate_value_cube flctx fdegenv r_m
                      (CubeOf.mmap { map = (fun _ [ nf ] -> nf.tm) } [ selfnfs ])) in
               let tyargs =
-                TubeOf.build D.zero (D.zero_plus m)
-                  {
-                    build =
-                      (fun fa ->
-                        degenerate_normal flctx fdegenv r (CubeOf.find selfnfs (sface_of_tface fa)));
-                  } in
+                TubeOf.mmap
+                  { map = (fun _ [ nf ] -> degenerate_normal flctx fdegenv r nf) }
+                  [ TubeOf.boundary selfnfs ] in
               let ety =
                 tyof_higher_codatafield values tyargs r_m fld adj codataenv fldins ~shuf plus_lock
                   fldtermctx ic0 fldty ~key:`Nokey in
