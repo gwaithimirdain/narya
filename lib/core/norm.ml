@@ -1008,10 +1008,7 @@ and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
             plus = mn;
             filter = mfilter;
             filtered = Modality.filter_idempotent nfilter;
-            values =
-              (match values with
-              | `Ok values -> `Ok values
-              | `Error e -> `Error e);
+            values :> (mn, amode) env_binding;
           } in
       (* This type is m-dimensional, hence must be instantiated at a full m-tube. *)
       let insttm = eval_term env fldty in
@@ -1120,10 +1117,7 @@ and tyof_higher_codatafield : type mode f g gmode c n rn h s r i d ag iagx.
             plus = D.plus_zero rn;
             filter = rnfilter;
             filtered = Modality.filter_zero left;
-            values =
-              (match values with
-              | `Ok values -> `Ok values
-              | `Error e -> `Error e);
+            values :> (rn, mode) env_binding;
           } in
       (* Now we act by the inverse of the insertion, in the last n of the r+n dimensions, to get an (r+s+h, agx) env. *)
       let insdeg = plus_deg r r_n r_sh (deg_of_perm (perm_inv (perm_of_ins_plus fldins sh))) in
