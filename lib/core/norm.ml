@@ -1092,19 +1092,16 @@ and tyof_higher_codatafield : type mode f g gmode c n rn h s r i d ag iagx.
   let (Adjunction { left; counit; _ }) = adj in
   (* The field type lives behind a lock by the right adjoint, so we key the environment by it (by identity cells, per generator), getting an (n, ag) env.  Note that we do *not* extend it by the self variable yet: the degeneration below must be applied to the parameters alone, so that its eval-readback happens in the ambient context locked by the right adjoint, whether the self is an ambient value or the self variable of a codatatype being displayed. *)
   let env = key_id_env codataenv plus_lock in
-  let r : r D.t =
-    match shuf with
-    | Trivial -> D.zero
-    | Nontrivial { shuffle; _ } -> left_shuffle shuffle in
-  let rn = D.plus_out r r_n in
   (* Degenerate the parameters by the remaining dimensions, if there are any, getting an (r+n, ag) env. *)
-  let env : (gmode, rn, ag) env =
+  let (r, env) : r D.t * (gmode, rn, ag) env =
     match shuf with
     | Trivial ->
         let Eq = D.plus_uniq r_n (D.zero_plus n) in
-        env
-    (* Since that environment lies behind the lock by the right adjoint, we supply that modality and the stored termctx of its codomain. *)
-    | Nontrivial { deg_env; _ } -> deg_env adj fldtermctx r_n env in
+        (D.zero, env)
+    | Nontrivial { shuffle; deg_env } ->
+        (* Since that environment lies behind the lock by the right adjoint, we supply that modality and the stored termctx of its codomain. *)
+        (left_shuffle shuffle, deg_env adj fldtermctx r_n env) in
+  let rn = D.plus_out r r_n in
   (* Then extend by the self, which the caller has already degenerated to match, getting an (r+n, agx) env.  Since we require modal higher fields to be parametric, the left adjoint filters no dimensions. *)
   let (Has_filter rnfilter) = Modality.filter left rn in
   match Modality.filter_is_trivial rn rnfilter with
@@ -1129,7 +1126,7 @@ and tyof_higher_codatafield : type mode f g gmode c n rn h s r i d ag iagx.
             Shift (Act (env, opt_op_of_deg insdeg), sh, ic0)
         (* In the general case... *)
         | Nontrivial { shuffle; _ } ->
-            (* First we do some dimension arithemetic. *)
+            (* First we do some dimension arithmetic. *)
             let i = out_shuffle shuffle in
             let (Plus si) = D.plus i in
             let (Plus sr) = D.plus r in
