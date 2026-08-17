@@ -104,6 +104,33 @@ A *partially* instantiated one is read back the same way, and there it is the on
 
 
 
+Under glued evaluation, a definition that is an ordinary term rather than a case tree evaluates to a neutral whose value *realizes* that term.  Such a neutral has no potential value of its own, but the one it realizes to may, so we look there; thus a degeneracy of such a constant displays the same as the degeneracy of its definition.
+
+  $ narya -parametric -e 'def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig a b ↦ ( ungel : R a b )' -e 'axiom A : Type' -e 'axiom B : Type' -e 'axiom R : A → B → Type' -e 'axiom a₀ : A' -e 'axiom a₁ : A' -e 'axiom b₀ : B' -e 'axiom b₁ : B' -e 'axiom r₀ : R a₀ b₀' -e 'axiom r₁ : R a₁ b₁' -e 'def Z ≔ (Gel A B R)⁽ᵉ¹⁾ {a₀} {b₀} (r₀,) {a₁} {b₁} (r₁,)' -e 'about Z⁽ᵉ⁾'
+  sig (
+    𝑥 .ungel : R⁽ᵉᵉ⁾ 𝑥.022 𝑥.122 (𝑥.202 .ungel) (𝑥.212 .ungel) (𝑥.220 .ungel)
+                 (𝑥.221 .ungel) )⁽²¹³⁾ {a₀} {a₀} {refl a₀} {b₀} {b₀}
+    {refl b₀} {(_ ≔ r₀)} {(_ ≔ r₀)} (_ ≔ refl r₀) {a₁} {a₁} {refl a₁} {b₁}
+    {b₁} {refl b₁} {(_ ≔ r₁)} {(_ ≔ r₁)} (_ ≔ refl r₁)
+    : Type⁽ᵉᵉ⁾ (A⁽ᵉᵉ⁾ (refl a₀) (refl a₁)) (B⁽ᵉᵉ⁾ (refl b₀) (refl b₁))
+        (sym (Gel⁽ᵉ⁾ (Id A) (Id B) (Id R)) {a₀} {b₀} (_ ≔ r₀) {a₁} {b₁}
+           (_ ≔ r₁))
+        (sym (Gel⁽ᵉ⁾ (Id A) (Id B) (Id R)) {a₀} {b₀} (_ ≔ r₀) {a₁} {b₁}
+           (_ ≔ r₁))
+  
+
+
+
+The field-variable record syntax names the fields of the *whole* self-variable only.  A record whose field types project a proper face of a cube self-variable has no such display -- the projection would have to be written as a cube variable, "ungel.20", which is nonsense -- so it falls back to the self-variable syntax.
+
+  $ narya -parametric -e 'def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig a b ↦ ( ungel : R a b )' -e 'axiom A : Type' -e 'axiom B : Type' -e 'axiom R : A → B → Type' -e 'axiom a₀ : A' -e 'axiom a₁ : A' -e 'axiom a₂ : Id A a₀ a₁' -e 'axiom b₀ : B' -e 'axiom b₁ : B' -e 'axiom b₂ : Id B b₀ b₁' -e 'about (refl Gel (Id A) (Id B) (Id R) a₂ b₂)'
+  sig (
+    𝑥 .ungel : Id R a₂ b₂ (𝑥.20 .ungel) (𝑥.21 .ungel) )
+    : Type⁽ᵉ⁾ (Gel A B R a₀ b₀) (Gel A B R a₁ b₁)
+  
+
+
+
 A degenerate codatatype or record is read back at its full dimension, showing the in-practice (higher-dimensional) field types, including higher-pi field types with their boundary faces.  It is *not* explicitly applied to any instantiation arguments, since those behave like (non-uniform) parameters rather than indices, appearing (through their fields, as instantiation arguments) in the types of the fields.
 
   $ narya -e 'axiom X : Type' -e 'def Stream : Type → Type ≔ A ↦ codata [ x .head : A | x .tail : Stream A ]' -e 'def R : Type ≔ sig ( a : Type, b : (a → Type) )' -e 'about (refl (Stream X))' -e 'about (refl R)' -e 'axiom x0 : Stream X' -e 'axiom x1 : Stream X' -e 'about (Id (Stream X) x0 x1)'
@@ -113,8 +140,9 @@ A degenerate codatatype or record is read back at its full dimension, showing th
     : Type⁽ᵉ⁾ (Stream X) (Stream X)
   
   sig (
-    a : Type⁽ᵉ⁾ a.0 a.1,
-    b : {𝑥₀ : a.0} {𝑥₁ : a.1} (𝑥₂ : a.2 𝑥₀ 𝑥₁) →⁽ᵉ⁾ Type⁽ᵉ⁾ (b.0 𝑥₀) (b.1 𝑥₁) )
+    𝑥 .a : Type⁽ᵉ⁾ (𝑥.0 .a) (𝑥.1 .a),
+    𝑥 .b : {𝑥₀ : 𝑥.0 .a} {𝑥₁ : 𝑥.1 .a} (𝑥₂ : 𝑥.2 .a 𝑥₀ 𝑥₁)
+           →⁽ᵉ⁾ Type⁽ᵉ⁾ (𝑥.0 .b 𝑥₀) (𝑥.1 .b 𝑥₁) )
     : Type⁽ᵉ⁾ R R
   
   codata [

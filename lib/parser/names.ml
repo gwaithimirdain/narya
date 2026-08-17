@@ -122,6 +122,8 @@ let lookup_field : type mode a. a t -> (mode, a) index -> string -> string list 
         let (SFace_of_plus (_, fb, fc)) = sface_of_plus mn fa in
         let* _ = is_id_sface fc in
         let* y = Abwd.find_opt f fields in
+        (* The field-variable names stand for the fields of the *whole* self-variable only.  A projection of one of its proper faces has no field-variable name: writing it as a cube variable ("ungel.20") would be nonsense, since the field variables are ordinary variables rather than a cube.  Returning None here makes the unparser fall back on the self-variable, which then reports Self_used and re-displays the record with self-variable syntax. *)
+        let* _ = is_id_sface fb in
         return (cubevar y fb)
     | Emp, _ | Lock _, _ -> . in
   lookup (split_ctx ctx comp) x fa
