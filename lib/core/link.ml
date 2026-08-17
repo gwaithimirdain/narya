@@ -86,10 +86,11 @@ and branch : type mode a n. (File.t -> File.t) -> (mode, a, n) branch -> (mode, 
 and canonical : type mode a. (File.t -> File.t) -> (mode, a) canonical -> (mode, a) canonical =
  fun f can ->
   match can with
-  | Data { indices; constrs; discrete; recursive; hints; tyfam } ->
+  | Data { indices; evaldim; constrs; discrete; recursive; hints; tyfam } ->
       Data
         {
           indices;
+          evaldim;
           constrs = Abwd.map (term f) constrs;
           discrete;
           recursive = Positivity.link_recursion f recursive;

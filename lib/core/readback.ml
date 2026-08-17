@@ -828,7 +828,8 @@ and readback_data : type mode a b m j ij.
   let constrs = Abwd.mapi (readback_dataconstr ctx) constrs in
   let tyfam = readback_nf ctx (nf_of_neu (force_eval_term tyfam) "readback_data") in
   let data : (mode, b, potential) term =
-    Canonical (Data { indices = ij; constrs; discrete; recursive; tyfam; hints }) in
+    Canonical (Data { indices = ij; evaldim = dim; constrs; discrete; recursive; tyfam; hints })
+  in
   (* Now we apply it to all the saved indices.  This requires the Potential form of App, which is not re-evaluable. *)
   let mode = Ctx.mode ctx in
   List.fold_left

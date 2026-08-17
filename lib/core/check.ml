@@ -2295,6 +2295,8 @@ and check_data : type mode a b i.
             (Data
                {
                  indices = num_indices;
+                 (* Typechecking a datatype declaration produces one of evaluation dimension zero. *)
+                 evaldim = D.zero;
                  constrs = checked_constrs;
                  discrete;
                  recursive;
@@ -2311,6 +2313,7 @@ and check_data : type mode a b i.
               (Data
                  {
                    indices = num_indices;
+                   evaldim = D.zero;
                    constrs = checked_constrs;
                    discrete = `No;
                    recursive = `Recursive;

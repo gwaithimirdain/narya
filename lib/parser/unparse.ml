@@ -31,6 +31,13 @@ let mktok (tok : Token.t) = Token (tok, ([], None))
 let wstok (tok : Token.t) = Either.Left (tok, ([], None))
 let sstok (tok : Token.t) (ss : string) = Either.Right ((tok, ([], None)), [ (unlocated ss, []) ])
 
+(* A canonical type read back from a value of positive evaluation dimension is displayed with that dimension superscripted on its introducing keyword, as "data⁽ᵉ⁾ [ … ]".  This is display-only syntax: the parser doesn't accept a superscript there, since the only way to write such a type is to degenerate an undegenerated one. *)
+let dimtok : type n. Token.t -> n D.t -> (token_ws, ss_token_ws) Either.t =
+ fun tok dim ->
+  match D.compare_zero dim with
+  | Zero -> wstok tok
+  | Pos _ -> sstok tok (string_of_dim dim)
+
 (* If the head of an application spine is a constant or constructor, and it has an associated notation, and there are enough of the supplied arguments to instantiate the notation, split off that many arguments and return the notation, those arguments permuted to match the order of the pattern variables in the notation, the symbols to intersperse with them, and the remaining arguments. *)
 let get_notation : type mode n s. [> `Term of (mode, n, s) term | `Constr of Constr.t ] -> _ -> _ =
  fun head args ->
@@ -585,8 +592,8 @@ and unparse_canonical : type mode n lt ls rt rs.
     (lt, ls, rt, rs) parse located =
  fun vars c li ri ->
   match c with
-  | Data { indices = _; constrs; discrete = _; recursive = _; tyfam = _; hints = _ } ->
-      unparse_data vars constrs li ri
+  | Data { indices = _; evaldim; constrs; discrete = _; recursive = _; tyfam = _; hints = _ } ->
+      unparse_data vars evaldim constrs li ri
   | Codata { eta; evaldim; plusdim; fields; _ } ->
       (* The self-variable has the sum of the evaluation and intrinsic dimensions; the instances of a higher field are indexed by the evaluation dimension alone. *)
       unparse_codata vars eta evaldim (D.plus_out evaldim plusdim) fields li ri
@@ -679,7 +686,8 @@ and unparse_codata : type mode m n a et lt ls rt rs.
               acc <: mktok (Op "|") <: Term pat <: mktok Colon <: Term (ty self))
             (Snoc (Emp, mktok LBracket))
             instances in
-        unlocated (outfix ~notn:codata ~inner:(Multiple (wstok Codata, inner, wstok RBracket)))
+        unlocated
+          (outfix ~notn:codata ~inner:(Multiple (dimtok Codata evaldim, inner, wstok RBracket)))
     | Eta ->
         let inner, _ =
           Bwd.fold_left
@@ -692,7 +700,8 @@ and unparse_codata : type mode m n a et lt ls rt rs.
                 false ))
             (Snoc (Emp, mktok LParen), true)
             instances in
-        unlocated (outfix ~notn:record ~inner:(Multiple (wstok Sig, inner, wstok RParen))) in
+        unlocated (outfix ~notn:record ~inner:(Multiple (dimtok Sig evaldim, inner, wstok RParen)))
+  in
   match (eta, has_modal_field) with
   | Noeta, _ | Eta, true -> self_var_render ()
   | Eta, false -> (
@@ -730,7 +739,8 @@ and unparse_codata : type mode m n a et lt ls rt rs.
                   var_names ))
               (Snoc (Emp, mktok LParen), true, var_names)
               instances in
-          unlocated (outfix ~notn:record ~inner:(Multiple (wstok Sig, inner, wstok RParen))))
+          unlocated
+            (outfix ~notn:record ~inner:(Multiple (dimtok Sig evaldim, inner, wstok RParen))))
 
 (* Assemble the display of a constructor "constr. (x:A) ...", optionally ascribed by an output type "constr. (x:A) ... : OUT". *)
 and unparse_constr_display : type lt ls rt rs.
@@ -753,13 +763,14 @@ and unparse_constr_display : type lt ls rt rs.
       | _ -> fatal (Anomaly "impossible interval unparsing datatype constructor"))
 
 (* Unparse a datatype "data [ | constr. (x : A) : ... | ... ]" from a term-level datatype. *)
-and unparse_data : type mode a lt ls rt rs.
+and unparse_data : type mode a m lt ls rt rs.
     a Names.t ->
+    m D.t ->
     (Constr.t, (mode, a, kinetic) term) Abwd.t ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun vars constrs _li _ri ->
+ fun vars evaldim constrs _li _ri ->
   let inner =
     Bwd.fold_left
       (fun acc (c, ty) ->
@@ -767,7 +778,7 @@ and unparse_data : type mode a lt ls rt rs.
         acc <: mktok (Op "|") <: Term cterm)
       (Snoc (Emp, mktok LBracket))
       constrs in
-  unlocated (outfix ~notn:data ~inner:(Multiple (wstok Data, inner, wstok RBracket)))
+  unlocated (outfix ~notn:data ~inner:(Multiple (dimtok Data evaldim, inner, wstok RBracket)))
 
 (* Display a constructor from its stored function-type: its arguments as pi-domains, "constr. (x : A) (y : B) : D …", with the output type after the colon.  A constructor that declares no output type stores the self-variable as its codomain, and displays without an ascription, as "constr. (x : A)": that output can only be the datatype applied to its parameters, so it carries no information.  Each domain displays exactly as the domain of a dependent pi-type does. *)
 and unparse_dataconstr : type mode a lt ls rt rs.

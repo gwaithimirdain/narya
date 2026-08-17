@@ -2238,6 +2238,26 @@ let process_record_attributes :
       | _ -> fatal ?loc Unrecognized_attribute)
     (`Opaque, Variables.no_hints) attrs
 
+(* Print the keyword introducing a "case" notation ("sig", "codata", or "data"), which begins its observation list.  Returns the printed keyword, the whitespace pending after it, and the remaining observations, or None if the observations don't start with that keyword.
+
+   The keyword can carry a superscripted dimension, which the unparser emits to display a canonical type read back from a value of positive evaluation dimension, as "data⁽ᵉ⁾ [ … ]".  That is display-only syntax: the notation trees mark these keywords `Noss, so parsing a superscript there is a parse error, and hence a superscripted observation can only have come from the unparser. *)
+let pp_case_keyword (tok : Token.t) (obs : observation list) :
+    (document * Whitespace.t list * observation list) option =
+  match obs with
+  | Token (tok', (ws, _)) :: obs when tok' = tok -> Some (Token.pp tok, ws, obs)
+  | Ss_token ((tok', (ws, _)), sups) :: obs when tok' = tok -> (
+      match sups with
+      | [] -> Some (Token.pp tok, ws, obs)
+      | [ (dim, wsdim) ] ->
+          Some
+            ( Token.pp tok
+              ^^ pp_ws (if Display.chars () = `Unicode then `None else `Nobreak) ws
+              ^^ pp_superscript dim,
+              wsdim,
+              obs )
+      | _ -> None)
+  | _ -> None
+
 (* Print the attribute groups at the beginning of an observation list, appended to the given document with the given whitespace pending before them.  Returns the extended document, the pending whitespace after it, and the remaining observations. *)
 let rec pp_attributes (accum : document) (prews : Whitespace.t list) (obs : observation list) :
     document * Whitespace.t list * observation list =
@@ -2373,9 +2393,10 @@ let rec pp_codata_fields first prews accum obs : document * Whitespace.t list =
         obs
   | _ -> invalid "codata 2"
 
-let pp_codata _triv = function
-  | Token (Codata, (wscodata, _)) :: obs -> (
-      let withattr, wsattr, obs = pp_attributes (Token.pp Codata) wscodata obs in
+let pp_codata _triv obs =
+  match pp_case_keyword Codata obs with
+  | Some (pcodata, wscodata, obs) -> (
+      let withattr, wsattr, obs = pp_attributes pcodata wscodata obs in
       match obs with
       (* The empty codatatype fits all on one line *)
       | [ Token (LBracket, (wslbrack, _)); Token (RBracket, (wsrbrack, _)) ] ->
@@ -2392,7 +2413,7 @@ let pp_codata _triv = function
             pp_ws `Break wslbrack ^^ fields,
             ws )
       | _ -> invalid "codata 3")
-  | _ -> invalid "codata 3"
+  | None -> invalid "codata 3"
 
 let () =
   make codata
@@ -2544,9 +2565,9 @@ let rec pp_record_fields prews accum obs =
 
 let pp_record _triv obs =
   let withattr, wsattr, obs =
-    match obs with
-    | Token (Sig, (wssig, _)) :: obs -> pp_attributes (Token.pp Sig) wssig obs
-    | _ -> invalid "record" in
+    match pp_case_keyword Sig obs with
+    | Some (psig, wssig, obs) -> pp_attributes psig wssig obs
+    | None -> invalid "record" in
   let withlparen, wslparen, obs =
     match obs with
     | Term x :: Token (Mapsto, (wsmapsto, _)) :: Token (LParen, (wslparen, _)) :: obs ->
@@ -2748,9 +2769,10 @@ let rec pp_data_constrs first prews accum obs =
         obs
   | _ -> invalid "data"
 
-let pp_data _triv = function
-  | Token (Data, (wsdata, _)) :: obs -> (
-      let withattr, wsattr, obs = pp_attributes (Token.pp Data) wsdata obs in
+let pp_data _triv obs =
+  match pp_case_keyword Data obs with
+  | Some (pdata, wsdata, obs) -> (
+      let withattr, wsattr, obs = pp_attributes pdata wsdata obs in
       match obs with
       (* The empty datatype fits all on one line *)
       | [ Token (LBracket, (wslbrack, _)); Token (RBracket, (wsrbrack, _)) ] ->
@@ -2765,7 +2787,7 @@ let pp_data _triv = function
           let doc, ws = pp_data_constrs true None empty (must_start_with (Op "|") obs) in
           (withattr ^^ pp_ws `Nobreak wsattr ^^ Token.pp LBracket, pp_ws `Break wslbrack ^^ doc, ws)
       | _ -> invalid "data")
-  | _ -> invalid "data"
+  | None -> invalid "data"
 
 let () =
   make data

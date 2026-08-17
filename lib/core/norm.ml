@@ -1437,7 +1437,7 @@ and eval_canonical : type mode m a.
     (mode, m, a) env -> (mode, a) Term.canonical -> (mode, potential) evaluation =
  fun env can ->
   match can with
-  | Data { indices; constrs; discrete; recursive; hints; tyfam } ->
+  | Data { indices; evaldim = _; constrs; discrete; recursive; hints; tyfam } ->
       let dim, mode = (dim_env env, mode_env env) in
       (* The type family (the datatype applied to its parameters, e.g. "Vec A") was read back when this datatype was checked; we now evaluate it, lazily to avoid the circularity of re-entering this same evaluation eagerly.  Its type we take from the resulting neutral, since that is computed fully-instantiated at the current dimension (whereas re-evaluating a read-back type term would not be). *)
       let tyfam = lazy_eval env tyfam in
