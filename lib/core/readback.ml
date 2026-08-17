@@ -242,45 +242,9 @@ and readback_at : type mode a z s.
  fun ?(eta = false) status ctx tm ty ->
   let view = if Displaying.read () then view_term tm else tm in
   let vty = view_type ty "readback_at" in
-  match (vty, view, status) with
-  (* For potential values, we read back comatches, tuples, and canonical types against the neutral the status carries, which serves as their self-variable.  By contrast, matches never occur as values directly: instead they are stuck heads of evaluations (the Unrealized case of readback_eval). *)
-  | _, Struct _, Potential neutral -> (
-      match readback_comatch ctx neutral ty with
-      | Some res -> res
-      (* A comatch with a genuinely stuck instance retains no trace of what it is stuck on, so we fall back to the neutral's application spine. *)
-      | None -> Realize (readback_val ctx neutral))
-  | ( Canonical
-        (type hmode m n mn)
-        ((_, UU (_, mk), ins0, boundary) :
-          (hmode, kinetic) head
-          * (mode, m, n) canonical
-          * (mn, m, n) insertion
-          * (D.zero, mn, mn, mode normal) TubeOf.t),
-      Canonical { canonical; ins; tyargs; _ },
-      Potential neutral ) -> (
-      (* The universe has intrinsic dimension zero, so its substitution dimension equals its total dimension mk. *)
-      let Eq = eq_of_ins_zero ins0 in
-      (* The uninstantiated part of the value's dimension is the dimension of the universe it belongs to. *)
-      match D.compare (TubeOf.uninst tyargs) mk with
-      | Neq -> fatal (Anomaly "uninst dim of canonical is not that of its universe")
-      | Eq -> (
-          match canonical with
-          | Data data_args ->
-              (* Datatypes never have a Gel dimension, so the insertion is always trivial. *)
-              let Eq = eq_of_ins_zero ins in
-              Inst
-                ( Potential,
-                  readback_data ctx data_args,
-                  TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ tyargs ] )
-          (* Codatatypes and records are handled uniformly whether 0-dimensional, intrinsically higher (Gel-like), or degenerate, instantiated or not, and whether or not their fields are modal.  Unlike a datatype, an instantiated one is *not* read back uninstantiated and re-instantiated: the boundary of a degenerate codatatype behaves like parameters rather than like indices, so it is the instantiated form that behaves like a codatatype, and it is displayed as one.  Hence the instantiation arguments are passed along rather than read back separately here.
-             The insertion splits the value's total dimension into its evaluation dimension and its intrinsic (Gel) dimension, which are the two dimensions the displayed codatatype records.  When the insertion is the identity, the two are in that order and the value is displayed directly; otherwise the value is not a record type at all (its fields can't even be projected), but it is a permutation of one, so we un-permute it, display that, and wrap the result in the permutation as a degeneracy action. *)
-          | Codata codata_args -> (
-              match is_id_ins ins with
-              | Some cm_cn -> readback_codata ctx neutral tyargs codata_args boundary cm_cn
-              | None -> readback_permuted_codata ctx neutral tyargs ins)
-          | UU _ | Pi _ -> Realize (readback_val ctx neutral)))
+  match (vty, view) with
   (* Abstractions (kinetic or potential) are read back uniformly by extending the context using their pi-type. *)
-  | Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs), Lam (x, filter2, body), _ -> (
+  | Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs), Lam (x, filter2, body) -> (
       let Eq = eq_of_ins_zero ins in
       (* The instantiation of the type, and the dimension of the binder, are both the *outer* (unfiltered) dimension of the pi-type; the variable cube and the domains live at the filtered dimension. *)
       let n = BindCube.dim cods in
@@ -309,7 +273,7 @@ and readback_at : type mode a z s.
               output in
           Term.Lam (x, n, filter, body))
   (* If eta-expansion of functions is enabled, we do an eta-expanding readback of any term at a pi-type. *)
-  | Canonical (_, Pi { x = name; filter; doms; cods }, ins, tyargs), tm, _ when eta ->
+  | Canonical (_, Pi { x = name; filter; doms; cods }, ins, tyargs), tm when eta ->
       let modality = Modality.filter_modality filter in
       let Eq = eq_of_ins_zero ins in
       let name = View.fill_hints doms name in
@@ -337,12 +301,17 @@ and readback_at : type mode a z s.
           * (mode, m, n) canonical
           * (mn, m, n) insertion
           * (D.zero, mn, mn, mode normal) TubeOf.t),
-      _,
-      Kinetic ) -> (
-      match eta with
+      _ ) -> (
+      match (eta, status) with
       (* A no-eta codatatype: an ordinary readback of a (kinetic) neutral here yields its application spine.  Displaying a comatch as a comatch is done by readback_comatch, which forces the neutral's potential value; that was caught earlier by the Struct/Potential case. *)
-      | Noeta -> readback_val ctx tm
-      | Eta -> (
+      | Noeta, Kinetic -> readback_val ctx tm
+      (* If reading back a potential comatch, we pass off to readback_comatch. *)
+      | _, Potential neutral -> (
+          match readback_comatch ctx neutral ty with
+          | Some res -> res
+          (* A comatch with a genuinely stuck instance retains no trace of what it is stuck on, so we fall back to the neutral's application spine. *)
+          | None -> Realize (readback_val ctx neutral))
+      | Eta, Kinetic -> (
           (* An eta-record type.  Only kinetic values are ever read back here (records, and tuples reached via their neutral); a tuple in a case tree (a potential eta-struct) is never passed to readback for display. *)
           let dim = cod_left_ins ins in
           let fldins = ins_zero dim in
@@ -426,7 +395,7 @@ and readback_at : type mode a z s.
           (* If the term is not a struct and the record type is not transparent/translucent, we pass off to synthesizing readback. *)
           | _ -> readback_val ctx view))
   (* Datatypes are not eta-expanding, but we still need the datatype in order to read back a constructor at that type. *)
-  | Canonical (_, Data { constrs; _ }, ins, tyargs), Constr (xconstr, xn, xargs), _ -> (
+  | Canonical (_, Data { constrs; _ }, ins, tyargs), Constr (xconstr, xn, xargs) -> (
       let Eq = eq_of_ins_zero ins in
       (* Pick out the constructor of the datatype that matches the one we're reading back *)
       let (Dataconstr { env; ty }) =
@@ -453,6 +422,37 @@ and readback_at : type mode a z s.
             ( xconstr,
               dim_env env,
               readback_at_pi ctx (dim_env env) (lazy (eval_term env ty)) xargs tyarg_args ))
+  (* Reading back canonical types themselves (data, codata, record), *at* a universe, happens only for potential terms. *)
+  | ( Canonical
+        (type hmode m n mn)
+        ((_, UU (_, mk), ins0, boundary) :
+          (hmode, kinetic) head
+          * (mode, m, n) canonical
+          * (mn, m, n) insertion
+          * (D.zero, mn, mn, mode normal) TubeOf.t),
+      Canonical { canonical; ins; tyargs; _ } ) -> (
+      let (Potential neutral) = status in
+      (* The universe has intrinsic dimension zero, so its substitution dimension equals its total dimension mk. *)
+      let Eq = eq_of_ins_zero ins0 in
+      (* The uninstantiated part of the value's dimension is the dimension of the universe it belongs to. *)
+      match D.compare (TubeOf.uninst tyargs) mk with
+      | Neq -> fatal (Anomaly "uninst dim of canonical is not that of its universe")
+      | Eq -> (
+          match canonical with
+          | Data data_args ->
+              (* Datatypes never have a Gel dimension, so the insertion is always trivial. *)
+              let Eq = eq_of_ins_zero ins in
+              Inst
+                ( Potential,
+                  readback_data ctx data_args,
+                  TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ tyargs ] )
+          (* Codatatypes and records are handled uniformly whether 0-dimensional, intrinsically higher (Gel-like), or degenerate, instantiated or not, and whether or not their fields are modal.  Unlike a datatype, an instantiated one is *not* read back uninstantiated and re-instantiated: the boundary of a degenerate codatatype behaves like parameters rather than like indices, so it is the instantiated form that behaves like a codatatype, and it is displayed as one.  Hence the instantiation arguments are passed along rather than read back separately here.
+             The insertion splits the value's total dimension into its evaluation dimension and its intrinsic (Gel) dimension, which are the two dimensions the displayed codatatype records.  When the insertion is the identity, the two are in that order and the value is displayed directly; otherwise the value is not a record type at all (its fields can't even be projected), but it is a permutation of one, so we un-permute it, display that, and wrap the result in the permutation as a degeneracy action. *)
+          | Codata codata_args -> (
+              match is_id_ins ins with
+              | Some cm_cn -> readback_codata ctx neutral tyargs codata_args boundary cm_cn
+              | None -> readback_permuted_codata ctx neutral tyargs ins)
+          | UU _ | Pi _ -> Realize (readback_val ctx neutral)))
   | _ -> readback_val ctx tm
 
 (* The synthesizing readback only ever applies to neutrals (a kinetic value).  Any other value reaching it (which can only be a potential value, since other callers pass kinetic neutrals) is an anomaly. *)
