@@ -1743,7 +1743,7 @@ and readback_comatch : type mode a z.
   | _ -> fatal (Anomaly "comatch readback: not a neutral at a codatatype")
 
 (* The "about" command reads back the *potential* value of a neutral, passing the neutral itself as readback's status so that a canonical type displays as its declaration and a comatch as itself; readback_at handles the rest, including descending through parameter abstractions.  None means the neutral has no potential value at all to display -- an axiom, or a permanently stuck case tree -- so the caller shows its normal form instead. *)
-let readback_about : type mode a b.
+let rec readback_about : type mode a b.
     (mode, a, b) Ctx.t -> (mode, kinetic) Value.value -> (mode, b, potential) Term.term option =
  fun ctx value ->
   match value with
@@ -1752,5 +1752,7 @@ let readback_about : type mode a b.
       | Val v -> Some (readback_at (Potential value) ctx v (Lazy.force ty))
       (* A neutral whose case tree got stuck on a match displays as that match. *)
       | Unrealized (Some pn) -> readback_stuck (Potential value) ctx pn (Lazy.force ty)
+      (* Under glued evaluation, a constant whose definition is an ordinary term rather than a case tree is a neutral whose value realizes that term.  It has no potential value of its own, but the neutral it realizes to may, so we look there. *)
+      | Realize v -> readback_about ctx v
       | _ -> None)
   | _ -> None
