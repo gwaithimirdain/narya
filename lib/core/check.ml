@@ -2881,9 +2881,8 @@ and check_field : type mode a b c s m n mn i et.
                 Reporter.try_with ~fatal:(fun e -> (etms, ctms, Snoc (errs, e))) @@ fun () ->
                 (* We don't need the error-checking of tyof_field, since we are getting our fields directly from the codatatype definition and so we already know that they have the right dimensions.  So we can call directly into the helper function tyof_lower_codatafield.  Note that we pass it prev_etm, env, and tyargs that consist of values in the old context, but the return value ety is in the new degenerated context. *)
                 let ety =
-                  tyof_lower_codatafield
-                    (self_values ~self:`Ambient adj prev_etm tyargs)
-                    tyargs fld adj fld_plus_lock fldty env m mn ~key:`Nokey in
+                  tyof_lower_codatafield (self_values adj prev_etm tyargs) tyargs fld adj
+                    fld_plus_lock fldty env m mn ~key:`Nokey in
                 let ctm = check (mkstatus lbl status) lctx tm ety in
                 let etms =
                   Snoc

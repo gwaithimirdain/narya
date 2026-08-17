@@ -921,26 +921,21 @@ and field_term : type src f mode n k nk.
 
 (* Given a term and its record type, compute the type of a field projection, and the substitution dimension it was evaluated at.  There are two versions of this function, one for when we already know the insertion associated to the field, and one for when we are synthesizing it from the user's integer sequence.  First we define the shared part of both, where we have already found the codatafield from the codata type.  We allow the term to be an error, in case typechecking failed earlier but we are continuing on; this can nevertheless succeed (or fail in more interesting ways) if the type doesn't actually depend on that value. *)
 
-(* Assemble the self value that a codatafield's type is applied to, from the term being projected and the boundary of its type.  The self variable lies behind the locks by the right and then the left adjoint, whereas an ambient value being projected from lives in the ambient context; so, exactly as for the *type* of the self variable when the codatatype is checked, we transport it and its boundary along the adjunction unit 1 ⇒ gf.  This is what makes the new presentation agree with the old one: in the old one the value was looked up *through* the key by g, so it was acted on by a composite 1 ⇒ gν, whereas now it is looked up above that key and acted on only by f ⇒ ν; precomposing with the unit restores the former.  For an ordinary field the unit is an identity cell and this is a no-op.  With ~self:`Declared the value supplied is instead the self *variable* of a codatatype being displayed, whose type was created behind those locks to begin with, so it needs no transport. *)
+(* Assemble the self value that a codatafield's type is applied to, from the term being projected and the boundary of its type.  The self variable lies behind the locks by the right and then the left adjoint, whereas an ambient value being projected from lives in the ambient context; so, exactly as for the *type* of the self variable when the codatatype is checked, we transport it and its boundary along the adjunction unit 1 ⇒ gf.  This is what makes the new presentation agree with the old one: in the old one the value was looked up *through* the key by g, so it was acted on by a composite 1 ⇒ gν, whereas now it is looked up above that key and acted on only by f ⇒ ν; precomposing with the unit restores the former.  For an ordinary field the unit is an identity cell and this is a no-op.  (A caller that already has the self *variable* of a self-extended context, such as readback_codata, has no ambient term to transport, and calls tyof_lower_codatafield or tyof_higher_codatafield directly with that variable instead.) *)
 and self_values : type amode f g gmode mn.
-    self:[ `Ambient | `Declared ] ->
     (amode, f, g, gmode) Modalcell.adjunction ->
     ((amode, kinetic) value, Code.t) Result.t ->
     (D.zero, mn, mn, amode normal) TubeOf.t ->
     [ `Ok of (mn, (amode, kinetic) value) CubeOf.t | `Error of Code.t ] =
- fun ~self (Adjunction { unit; _ }) tm tyargs ->
+ fun (Adjunction { unit; _ }) tm tyargs ->
   match tm with
-  | Ok tm -> (
+  | Ok tm ->
       let vs = TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm) in
-      match self with
-      | `Ambient ->
-          `Ok (CubeOf.mmap { map = (fun _ [ v ] -> act_value v (id_deg D.zero) unit) } [ vs ])
-      | `Declared -> `Ok vs)
+      `Ok (CubeOf.mmap { map = (fun _ [ v ] -> act_value v (id_deg D.zero) unit) } [ vs ])
   | Error e -> `Error e
 
 and tyof_codatafield : type src f mode m n mn a s i et.
     ?key:[ `Counit | `Nokey ] ->
-    ?self:[ `Ambient | `Declared ] ->
     (src, f, mode) Modality.t ->
     ((src, kinetic) value, Code.t) Result.t ->
     i Field.t ->
@@ -951,8 +946,7 @@ and tyof_codatafield : type src f mode m n mn a s i et.
     (m, n, mn) D.plus ->
     (m, s, i) insertion ->
     (mode, kinetic) value =
- fun ?(key = `Counit) ?(self = `Ambient) fm tm fldname (Codatafield (adj, plus_lock, fldty)) env
-     tyargs m mn fldins ->
+ fun ?(key = `Counit) fm tm fldname (Codatafield (adj, plus_lock, fldty)) env tyargs m mn fldins ->
   (* The type of the field projection comes from the type associated to that field name in general, evaluated at the stored environment extended by the term itself and its boundaries. *)
   match fldty with
   | Lower fldty -> (
@@ -960,8 +954,8 @@ and tyof_codatafield : type src f mode m n mn a s i et.
       match Modality.compare (Modalcell.adj_left adj) fm with
       | Neq -> fatal (Anomaly "wrong locking modality in tyof_codatafield")
       | Eq ->
-          tyof_lower_codatafield (self_values ~self adj tm tyargs) tyargs fldname adj plus_lock
-            fldty env m mn ~key)
+          tyof_lower_codatafield (self_values adj tm tyargs) tyargs fldname adj plus_lock fldty env
+            m mn ~key)
   | Higher (fldtermctx, fldtys) -> (
       (* Like a lower field, the projecting modality must be the left adjoint of the field's adjunction. *)
       match Modality.compare (Modalcell.adj_left adj) fm with
@@ -971,16 +965,16 @@ and tyof_codatafield : type src f mode m n mn a s i et.
           let (Fieldtype (ic0, fldty)) = declared_fieldtype fldtys in
           let Eq = D.plus_uniq mn (D.plus_zero m) in
           (* A projection has no remaining dimensions, so the self value and its boundary are used as they are. *)
-          tyof_higher_codatafield (self_values ~self adj tm tyargs) tyargs (D.zero_plus m) fldname
-            adj env fldins ~shuf:Trivial plus_lock fldtermctx ic0 fldty ~key)
+          tyof_higher_codatafield (self_values adj tm tyargs) tyargs (D.zero_plus m) fldname adj env
+            fldins ~shuf:Trivial plus_lock fldtermctx ic0 fldty ~key)
 
 (* We dispatch to separate helper functions for lower fields and higher fields that assume all the dimensions are correct.  These helper functions can be called directly by a caller who knows that all the dimensions are correct, such as check_field where the field is obtained by iterating directly through the codatatype.
 
    The ~key flag distinguishes two uses.  `Counit computes the type of a *projection* x .fld, which is keyed by the adjunction counit to put it in the ambient context (rule 3 of modal fields).  `Nokey computes the type at which the *component* of a tuple/comatch is checked or read back, which lives behind the lock by the right adjoint and is not keyed (rule 2).  For ordinary fields the two agree, since the counit is the identity. *)
 and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
-    (* As for a higher field, the self value and its boundary, already transported behind the locks along the adjunction unit if need be (self_values does that), or an error if typechecking of the term whose field this is failed earlier. *)
+    (* As for a higher field, the self value and its boundary, in the context behind the locks where the field's type lives: an ambient value being projected from is transported there along the adjunction unit (self_values does that), while a caller displaying a codatatype supplies the self variable of its self-extended context, which is already there.  It can be an error, if typechecking of the term whose field this is failed earlier; the type may still not depend on it. *)
     [ `Ok of (mn, (amode, kinetic) value) CubeOf.t | `Error of Code.t ] ->
-    (* And its boundary again, untransported: the terms whose field projections instantiate the field type. *)
+    (* The boundary of the self, as its type presents it in the context where it lives: an ambient term's untransported boundary, or the boundary of the self variable's own type.  These are the terms whose field projections instantiate the field type. *)
     (D.zero, mn, mn, amode normal) TubeOf.t ->
     D.zero Field.t ->
     (amode, f, g, gmode) Modalcell.adjunction ->
@@ -1048,17 +1042,16 @@ and tyof_field_nokey : type amode.
           | Found (Codatafield (adj, plus_lock, Lower fldty)) ->
               Tyof_modal_field
                 ( adj,
-                  tyof_lower_codatafield
-                    (self_values ~self:`Ambient adj tm tyargs)
-                    tyargs fld adj plus_lock fldty env m mn ~key:`Nokey )
+                  tyof_lower_codatafield (self_values adj tm tyargs) tyargs fld adj plus_lock fldty
+                    env m mn ~key:`Nokey )
           | _ -> fatal (Anomaly "field not found in tyof_field_nokey")))
   | _ -> fatal (Anomaly "non-codatatype in tyof_field_nokey")
 
 (* This function is also called directly from check_higher_field.  In that case, the field is determined by a partial bijection that may *not* be just an insertion, and we have to frobnicate the environment in which we evaluate the type.  Some of that frobnication involves an eval-readback cycle, which requires a callback from here since readback isn't defined yet. *)
 and tyof_higher_codatafield : type mode f g gmode c n rn h s r i d ag iagx.
-    (* The self value and its boundary, *already* transported behind the locks along the adjunction unit and degenerated into the context where this instance of the field lives.  The value is an (r+n)-cube: for a projection (r=0) that is just the ambient self and its boundary, while for a nonprojectable instance it is their degeneration by the remaining dimensions.  It can be an error, if typechecking of the term whose field this is failed earlier; the type may still not depend on it. *)
+    (* The self value and its boundary, *already* in the context where this instance of the field lives: transported behind the locks along the adjunction unit if it is an ambient value (self_values does that), or the self variable of a self-extended context if the caller is displaying a codatatype, and degenerated by the remaining dimensions either way.  The value is an (r+n)-cube: for a projection (r=0) that is just the self and its boundary, while for a nonprojectable instance it is their degeneration.  It can be an error, if typechecking of the term whose field this is failed earlier; the type may still not depend on it. *)
     [ `Ok of (rn, (mode, kinetic) value) CubeOf.t | `Error of Code.t ] ->
-    (* The boundary faces of the self, untransported and indexed by the faces of n, each degenerated by the remaining dimensions as above (so the face at an n-face of dimension k is (r+k)-dimensional).  These are the terms whose field projections instantiate the field type. *)
+    (* The boundary faces of the self as its type presents them (see tyof_lower_codatafield), indexed by the faces of n, each degenerated by the remaining dimensions as above (so the face at an n-face of dimension k is (r+k)-dimensional).  These are the terms whose field projections instantiate the field type. *)
     (D.zero, n, n, mode normal) TubeOf.t ->
     (r, n, rn) D.plus ->
     i Field.t ->
@@ -1180,14 +1173,13 @@ and tyof_higher_codatafield : type mode f g gmode c n rn h s r i d ag iagx.
    ~key defaults to `Counit, computing the type of a field *projection*, keyed by the adjunction counit into the ambient context.  A caller displaying a codatatype's declaration asks instead for `Nokey, the type as declared, behind the lock by the right adjoint.  For an ordinary non-modal field the two coincide. *)
 and tyof_field : type src f mode m s i.
     ?key:[ `Counit | `Nokey ] ->
-    ?self:[ `Ambient | `Declared ] ->
     (src, f, mode) Modality.t ->
     ((src, kinetic) value, Code.t) Result.t ->
     (src, kinetic) value ->
     i Field.t ->
     (m, s, i) insertion ->
     (mode, kinetic) value =
- fun ?(key = `Counit) ?(self = `Ambient) fm tm ty fld fldins ->
+ fun ?(key = `Counit) fm tm ty fld fldins ->
   let errtm =
     match tm with
     | Ok tm -> Dump.Val tm
@@ -1210,7 +1202,7 @@ and tyof_field : type src f mode m s i.
       (* The type cannot have a nonidentity degeneracy applied to it (though it can be at a higher dimension). *)
       match is_id_ins codatains with
       | None -> fatal ~severity (No_such_field (`Degenerated_record eta, errfld))
-      | Some mn -> tyof_field_giventype ~key ~self fm tm head eta env mn fields tyargs fld fldins)
+      | Some mn -> tyof_field_giventype ~key fm tm head eta env mn fields tyargs fld fldins)
   | Canonical (head, UU (srcmode, m), ins, tyargs) -> (
       let Eq = eq_of_ins_zero ins in
       let err = Code.No_such_field (`Type errtm, errfld) in
@@ -1230,8 +1222,7 @@ and tyof_field : type src f mode m s i.
                 filtered = Modality.filter_zero (Modality.id srcmode);
                 values;
               } in
-          tyof_field_giventype ~key ~self fm tm head Noeta env (D.plus_zero m) fields tyargs fld
-            fldins)
+          tyof_field_giventype ~key fm tm head Noeta env (D.plus_zero m) fields tyargs fld fldins)
   | _ ->
       let p =
         match tm with
@@ -1241,7 +1232,6 @@ and tyof_field : type src f mode m s i.
 
 and tyof_field_giventype : type src f mode m n mn s i et a k hmode.
     ?key:[ `Counit | `Nokey ] ->
-    ?self:[ `Ambient | `Declared ] ->
     (src, f, mode) Modality.t ->
     ((src, kinetic) value, Code.t) Result.t ->
     (hmode, kinetic) head ->
@@ -1253,7 +1243,7 @@ and tyof_field_giventype : type src f mode m n mn s i et a k hmode.
     i Field.t ->
     (k, s, i) insertion ->
     (mode, kinetic) value =
- fun ?(key = `Counit) ?(self = `Ambient) fm tm head eta env mn fields tyargs fld fldins ->
+ fun ?(key = `Counit) fm tm head eta env mn fields tyargs fld fldins ->
   let severity = Asai.Diagnostic.Bug in
   let errfld = `Ins (fld, fldins) in
   let m = dim_env env in
@@ -1264,7 +1254,7 @@ and tyof_field_giventype : type src f mode m n mn s i et a k hmode.
         (Dimension_mismatch ("tyof_field evaluation " ^ Field.to_string fld, m, dom_ins fldins))
   | Eq -> (
       match Term.CodatafieldAbwd.find_opt fields fld with
-      | Found fldty -> tyof_codatafield ~key ~self fm tm fld fldty env tyargs m mn fldins
+      | Found fldty -> tyof_codatafield ~key fm tm fld fldty env tyargs m mn fldins
       | Not_found -> fatal ~severity (No_such_field (`Record (eta, phead head), errfld))
       | Wrong_dimension (i, _) ->
           fatal ~severity

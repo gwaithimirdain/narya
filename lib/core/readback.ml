@@ -986,7 +986,7 @@ and readback_codata : type mode a b cm cn ca cet iu ii iout.
   let fields =
     Bwd.fold_left
       (fun (acc : (mode * b * cm * iout * cet) Term.CodatafieldAbwd.t) entry ->
-        match readback_codatafield ctx mk dom evaldim insargs codata_args.env entry with
+        match readback_codatafield ctx mk dom evaldim insargs codata_args.env cm_cn entry with
         | None -> acc
         | Some entry -> Bwd.Snoc (acc, entry))
       Bwd.Emp codata_args.fields in
@@ -1004,7 +1004,7 @@ and readback_codata : type mode a b cm cn ca cet iu ii iout.
          is_glue = None;
        })
 
-(* Read back one field of a codatatype value being displayed, as an entry of readback_codata's result, or None if the field disappears because its left adjoint filters the instantiated dimension nontrivially (exactly as it does for projection and equality-checking).  ctx, mk, dom, evaldim, insargs and codataenv are those built by readback_codata: dom is the self-variable's boundary cube (the instantiation arguments plus the displayed value on top), evaldim is the codatatype's evaluation dimension, and codataenv is codata_args.env, needed only to pass on to readback_higher_codatafield. *)
+(* Read back one field of a codatatype value being displayed, as an entry of readback_codata's result, or None if the field disappears because its left adjoint filters the instantiated dimension nontrivially (exactly as it does for projection and equality-checking).  ctx, mk, dom, evaldim, insargs, codataenv and cm_cn are those built by readback_codata: dom is the self-variable's boundary cube (the instantiation arguments plus the displayed value on top), evaldim is the codatatype's evaluation dimension, and codataenv and cm_cn are the codatatype's own environment and dimension splitting, which the field's stored type is evaluated over. *)
 and readback_codatafield : type mode a b cm cn ca cet iu ii iout.
     (mode, a, b) Ctx.t ->
     iu D.t ->
@@ -1012,9 +1012,10 @@ and readback_codatafield : type mode a b cm cn ca cet iu ii iout.
     cm D.t ->
     (iu, ii, iout, mode normal) TubeOf.t ->
     (mode, cm, ca) env ->
+    (cm, cn, iout) D.plus ->
     (mode * ca * D.zero * cn * cet) Term.CodatafieldAbwd.entry ->
     (mode * b * cm * iout * cet) Term.CodatafieldAbwd.entry option =
- fun ctx mk dom evaldim insargs codataenv
+ fun ctx mk dom evaldim insargs codataenv cm_cn
      (Term.CodatafieldAbwd.Entry
         (type i)
         ((fld, Codatafield ((Adjunction { left; right; unit; _ } as adj), fld_plus_lock, cf)) :
@@ -1024,14 +1025,12 @@ and readback_codatafield : type mode a b cm cn ca cet iu ii iout.
   match Modality.filter_is_trivial (D.plus_out mk (TubeOf.plus insargs)) lfilter with
   | None -> None
   | Some Eq ->
-      (* The instantiation arguments are the boundary faces of the self, in the dimensions the instantiation supplied; they are bound as values rather than as fresh variables, so that the field types display in terms of them.  Only the remaining dimensions get a fresh variable cube, whose top face has the fully instantiated codatatype as its type. *)
+      (* As in check_codata, each field's type is displayed in the ambient context locked by the field's right adjoint and then extended by the self variable, annotated by its left adjoint; so we build that context per field.  The self variable's *type* is the codatatype transported behind those locks along the adjunction unit, which is where a variable annotated by the left adjoint has its type; and the instantiation arguments, being its boundary faces there, are transported along with it.  (For an ordinary non-modal field the unit is an identity cell and this is a no-op.)  So the entire self cube, variables and instantiation arguments alike, consists of values of that self-extended context, which is also where the field's type is computed and read back. *)
       Some
         (let tys = CubeOf.mmap { map = (fun _ [ v ] -> act_value v (id_deg D.zero) unit) } [ dom ] in
-         (* As in check_codata, each field's type is displayed in the ambient context locked by the field's right adjoint and then extended by the self variable, annotated by its left adjoint; so we build that context per field.  The self variable's *type* is the codatatype transported behind those locks along the adjunction unit, which is where a variable annotated by the left adjoint has its type.  But the type we hand to tyof_field, to compute the field's type in, must be the untransported one, since tyof_field keys the codatatype's own parameters behind the right-adjoint lock itself; so we create the variables twice, from the transported and untransported types.  Both calls assign the same levels, so these are the same variables.  (For an ordinary non-modal field the unit is an identity cell and the two coincide.) *)
          let _, freshself = dom_vars lctx left tys in
-         let _, freshamb = dom_vars lctx left dom in
-         (* The boundary of a degenerate codatatype behaves like parameters, not indices as for a degenerate datatype: it is the *instantiated* form that one defines elements of by comatching.  So a codatatype value that has been instantiated is displayed as it is, showing the types of the fields such a comatch must supply.  Thus we assemble the self-variable cube from the instantiation arguments, which are its boundary faces exactly as they are for the self value of a comatch being checked, together with a fresh variable cube for the uninstantiated dimensions on top. *)
-         let selfnfs =
+         (* The boundary of a degenerate codatatype behaves like parameters, not indices as for a degenerate datatype: it is the *instantiated* form that one defines elements of by comatching.  So a codatatype value that has been instantiated is displayed as it is, showing the types of the fields such a comatch must supply.  Thus the self cube's boundary faces, in the dimensions the instantiation supplied, are the instantiation arguments themselves, bound as values rather than as fresh variables exactly as they are for the self value of a comatch being checked, so that the field types display in terms of them; only the remaining dimensions get fresh variables, whose top face has the fully instantiated codatatype as its type. *)
+         let selfbindings =
            TubeOf.plus_cube
              (TubeOf.mmap
                 {
@@ -1045,29 +1044,27 @@ and readback_codatafield : type mode a b cm cn ca cet iu ii iout.
                 }
                 [ insargs ])
              freshself in
-         let ambnfs =
-           TubeOf.plus_cube
-             (TubeOf.mmap { map = (fun _ [ nf ] -> Ctx.Binding.make None nf) } [ insargs ])
-             freshamb in
-         let sctx = Ctx.cube_vis lctx (Modality.filter_idempotent lfilter) None selfnfs in
+         let sctx = Ctx.cube_vis lctx (Modality.filter_idempotent lfilter) None selfbindings in
+         let selfnfs = CubeOf.mmap { map = (fun _ [ b ] -> Ctx.Binding.value b) } [ selfbindings ] in
          match cf with
-         | Lower _ ->
-             let self = Ctx.Binding.value (CubeOf.find_top ambnfs) in
-             (* We display the type as it was *declared*: un-keyed, and in the locked, self-extended context, exactly as check_codata checked it.  Hence ~key:`Nokey, and ~self:`Declared, since the self value we supply is that context's own self variable rather than an ambient one. *)
+         (* We display the type as it was *declared*: evaluated over the codatatype's own environment, keyed behind the right-adjoint lock and left there un-keyed (~key:`Nokey), exactly as check_codata checked it.  Hence we call tyof_lower_codatafield directly, supplying that environment and the self cube, rather than going through tyof_field, which recovers both from the *type* of an ambient term being projected; here there is no ambient term, only the self variable of the context we are displaying in. *)
+         | Lower fldty ->
              let ety =
-               tyof_field ~key:`Nokey ~self:`Declared (Modalcell.adj_left adj) (Ok self.tm)
-                 (Lazy.force self.ty) fld (ins_zero evaldim) in
+               tyof_lower_codatafield
+                 (`Ok (val_of_norm_cube selfnfs))
+                 (TubeOf.boundary selfnfs) fld adj fld_plus_lock fldty codataenv evaldim cm_cn
+                 ~key:`Nokey in
              let ty = readback_val ~sort:`Type sctx ety in
              Term.CodatafieldAbwd.Entry (fld, Codatafield (adj, plus_lock, Lower ty))
          | Higher (fldtermctx, fldtys) -> (
              (* A codatatype with a higher field has intrinsic dimension zero, so its whole dimension, at which the self-variable cube lives and at which the instances of the field are indexed, is its evaluation dimension. *)
-             match D.compare evaldim (CubeOf.dim ambnfs) with
+             match D.compare evaldim (CubeOf.dim selfnfs) with
              | Neq ->
                  fatal (Anomaly "higher field of a codatatype with positive intrinsic dimension")
              | Eq ->
                  let tys =
                    readback_higher_codatafield ctx codataenv fld_plus_lock fldtermctx fldtys
-                     (CubeOf.dim ambnfs) fld adj ambnfs sctx in
+                     (CubeOf.dim selfnfs) fld adj selfnfs sctx in
                  (* The context that the displayed field's types are evaluated over is also stored, as it is for a declared higher field, so that it could be degenerated further. *)
                  Term.CodatafieldAbwd.Entry
                    (fld, Codatafield (adj, plus_lock, Higher (readback_ctx lctx, tys)))))
@@ -1082,15 +1079,13 @@ and readback_higher_codatafield : type mode a b ca m i f g gmode ag bg d raw.
     m D.t ->
     i Field.t ->
     (mode, f, g, gmode) Modalcell.adjunction ->
-    (m, mode Ctx.Binding.t) CubeOf.t ->
+    (m, mode normal) CubeOf.t ->
     (gmode, raw, (bg, (f, m) dim_entry) snoc) Ctx.t ->
     (m, i, gmode * (bg, (f, m) dim_entry) snoc) Term.FieldtypePbijmap.t =
- fun ctx codataenv plus_lock fldtermctx fldtys m fld adj ambnfs sctx ->
+ fun ctx codataenv plus_lock fldtermctx fldtys m fld adj selfnfs sctx ->
   let left = Modalcell.adj_left adj in
   (* The codatatype whose value we are displaying was produced by typechecking, so it has evaluation dimension zero and its field has just its declared type. *)
   let (Fieldtype (ic0, fldty)) = declared_fieldtype fldtys in
-  let selfnfs = CubeOf.mmap { map = (fun _ [ b ] -> Ctx.Binding.value b) } [ ambnfs ] in
-  let self = CubeOf.find_top selfnfs in
   Term.FieldtypePbijmap.build m (Field.dim fld)
     {
       build =
@@ -1102,11 +1097,13 @@ and readback_higher_codatafield : type mode a b ca m i f g gmode ag bg d raw.
           let (Pbij (fldins, fldshuf)) = pbij in
           match D.compare_zero (left_shuffle fldshuf) with
           | Zero ->
-              (* Projectable instance: read back in the locked, self-extended context, as for a lower field, with a trivial degeneration.  As there, we display the type as it was *declared*: un-keyed (~key:`Nokey), against that context's own self variable (~self:`Declared). *)
+              (* Projectable instance: read back in the locked, self-extended context, as for a lower field, with a trivial degeneration and hence no remaining dimensions for the self cube to be degenerated by.  As there, we display the type as it was *declared*, computed from the codatatype's own environment and left un-keyed (~key:`Nokey). *)
               let Eq = eq_of_zero_shuffle fldshuf in
               let ety =
-                tyof_field ~key:`Nokey ~self:`Declared left (Ok self.tm) (Lazy.force self.ty) fld
-                  fldins in
+                tyof_higher_codatafield
+                  (`Ok (val_of_norm_cube selfnfs))
+                  (TubeOf.boundary selfnfs) (D.zero_plus m) fld adj codataenv fldins ~shuf:Trivial
+                  plus_lock fldtermctx ic0 fldty ~key:`Nokey in
               Fieldtype (Plusmap.zerol (Ctx.tctx sctx), readback_val ~sort:`Type sctx ety)
           | Pos _ ->
               (* Non-projectable instance: degenerate by the remaining dimensions and compute the field type there, recording the degeneration plus-map.  The codatatype's parameters are degenerated by the shuffleable, in the ambient context; the self variable and its boundary we degenerate here, in the self-extended context locked by the left adjoint, which is where a variable annotated by that adjoint is accessible.  Both degenerations assign the same levels to the ambient variables, since degctx assigns levels by position. *)
