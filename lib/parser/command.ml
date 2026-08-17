@@ -829,8 +829,19 @@ let parse_single (content : string) : Whitespace.t list * Command.t option =
       else (ws, None)
   | _ -> Core.Reporter.fatal (Anomaly "interactive parse doesn't start with Bof")
 
+(* The context and type of a hole are stored as terms, read back at the moment the hole was created.  Since then, other holes appearing in them may have been solved, and constants that were being defined may have acquired definitions.  Thus, before displaying a hole we re-evaluate its context and type in the current global state and read them back again, so that the user sees an up-to-date goal.  (This is also what happens when the hole is actually solved: "solve" evaluates the stored context and type in the current state, so the type displayed here is the one that a solution will be checked against.) *)
 let show_hole = function
   | Global.Found_hole { instant; meta; termctx; ty; vars; _ } ->
+      let termctx, ty =
+        Reporter.try_with
+          ~fatal:(fun _ ->
+            (* If anything goes wrong with the re-evaluation, we fall back on displaying the stored context and type. *)
+            (termctx, ty))
+          (fun () ->
+            let ctx = Norm.eval_ctx termctx in
+            let ety = Norm.eval_term (Ctx.env ctx) ty in
+            Readback.Displaying.run ~env:true @@ fun () -> (readback_ctx ctx, readback_val ctx ety))
+      in
       emit (Hole (Meta.name meta, PHole (Instant instant, vars, termctx, ty)))
 
 let to_string : Command.t -> string = function

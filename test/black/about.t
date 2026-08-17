@@ -108,7 +108,7 @@ These superscripts are display-only: there is no way to write a degenerated cano
 
 A higher-dimensional (Gel-like) codatatype is read back at its intrinsic dimension.
 
-  $ narya -dtt -e 'axiom A : Type' -e 'axiom Aʹ : A → Type' -e 'def Gel (A : Type) (Aʹ : A → Type) : Type⁽ᵈ⁾ A ≔ sig x ↦ ( ungel : Aʹ x )' -e 'about (Gel A Aʹ)'
+  $ narya -dtt -e 'axiom A : Type' -e 'axiom Aʹ : A → Type' -e 'def Gel (A : Type) (Aʹ : A → Type) : Type⁽ᵈ⁾ A ≔ sig ( x .ungel : Aʹ x.0 )' -e 'about (Gel A Aʹ)'
   sig (
     𝑥 .ungel : Aʹ 𝑥.0 )
     : Type⁽ᵈ⁾ A
@@ -118,7 +118,7 @@ A higher-dimensional (Gel-like) codatatype is read back at its intrinsic dimensi
 
 A permuted Gel-like codatatype is not a record type at all, since its fields can't be projected.  But it is the permutation of one, so it is read back by un-permuting it and applying the permutation to the result as a degeneracy.  Here it is uninstantiated, at permutations of two and of three dimensions.
 
-  $ narya -parametric -e 'def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig a b ↦ ( ungel : R a b )' -e 'axiom A : Type' -e 'axiom B : Type' -e 'axiom R : A → B → Type' -e 'about ((Gel A B R)⁽ᵉ¹⁾)' -e 'about ((Gel A B R)⁽ᵉᵉ¹⁾)'
+  $ narya -parametric -e 'def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( a .ungel : R a.0 a.1 )' -e 'axiom A : Type' -e 'axiom B : Type' -e 'axiom R : A → B → Type' -e 'about ((Gel A B R)⁽ᵉ¹⁾)' -e 'about ((Gel A B R)⁽ᵉᵉ¹⁾)'
   sym sig⁽ᵉ⁾ ( 𝑥 .ungel : Id R 𝑥.02 𝑥.12 (𝑥.20 .ungel) (𝑥.21 .ungel) )
     : Type⁽ᵉᵉ⁾ (Gel A B R) (Gel A B R) (Id A) (Id B)
   
@@ -135,7 +135,7 @@ A permuted Gel-like codatatype is not a record type at all, since its fields can
 
 An instantiated one is un-instantiated first, permuted as the uninstantiated codatatype it then is, and re-instantiated, like an instantiated datatype.  This is necessary even when it is *fully* instantiated, although such a one could be un-permuted where it stands by a symmetry of its instantiation arguments: the readback of a codatatype absorbs its instantiation arguments into the self variable, so it would then read as a record type of the lower dimension, which is not something the permutation could be applied to.
 
-  $ narya -parametric -e 'def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig a b ↦ ( ungel : R a b )' -e 'axiom A : Type' -e 'axiom B : Type' -e 'axiom R : A → B → Type' -e 'axiom a₀ : A' -e 'axiom a₁ : A' -e 'axiom a₂ : Id A a₀ a₁' -e 'axiom b₀ : B' -e 'axiom b₁ : B' -e 'axiom b₂ : Id B b₀ b₁' -e 'axiom r₀ : R a₀ b₀' -e 'axiom r₁ : R a₁ b₁' -e 'about ((Gel A B R)⁽ᵉ¹⁾ {a₀} {b₀} (r₀,) {a₁} {b₁} (r₁,) a₂ b₂)'
+  $ narya -parametric -e 'def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( a .ungel : R a.0 a.1 )' -e 'axiom A : Type' -e 'axiom B : Type' -e 'axiom R : A → B → Type' -e 'axiom a₀ : A' -e 'axiom a₁ : A' -e 'axiom a₂ : Id A a₀ a₁' -e 'axiom b₀ : B' -e 'axiom b₁ : B' -e 'axiom b₂ : Id B b₀ b₁' -e 'axiom r₀ : R a₀ b₀' -e 'axiom r₁ : R a₁ b₁' -e 'about ((Gel A B R)⁽ᵉ¹⁾ {a₀} {b₀} (r₀,) {a₁} {b₁} (r₁,) a₂ b₂)'
   sym sig⁽ᵉ⁾ ( 𝑥 .ungel : Id R 𝑥.02 𝑥.12 (𝑥.20 .ungel) (𝑥.21 .ungel) ) {a₀}
     {b₀} (_ ≔ r₀) {a₁} {b₁} (_ ≔ r₁) a₂ b₂
     : Type
@@ -144,7 +144,7 @@ An instantiated one is un-instantiated first, permuted as the uninstantiated cod
 
 A *partially* instantiated one is read back the same way, and there it is the only option: a permutation mixes its instantiated and uninstantiated dimensions, while an instantiation can only instantiate the last ones, so it has no un-permuted form where it stands.
 
-  $ narya -parametric -e 'def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig a b ↦ ( ungel : R a b )' -e 'axiom A : Type' -e 'axiom B : Type' -e 'axiom R : A → B → Type' -e 'axiom a₀ : A' -e 'axiom a₁ : A' -e 'axiom b₀ : B' -e 'axiom b₁ : B' -e 'axiom r₀ : R a₀ b₀' -e 'axiom r₁ : R a₁ b₁' -e 'about ((Gel A B R)⁽ᵉ¹⁾ {a₀} {b₀} (r₀,) {a₁} {b₁} (r₁,))'
+  $ narya -parametric -e 'def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( a .ungel : R a.0 a.1 )' -e 'axiom A : Type' -e 'axiom B : Type' -e 'axiom R : A → B → Type' -e 'axiom a₀ : A' -e 'axiom a₁ : A' -e 'axiom b₀ : B' -e 'axiom b₁ : B' -e 'axiom r₀ : R a₀ b₀' -e 'axiom r₁ : R a₁ b₁' -e 'about ((Gel A B R)⁽ᵉ¹⁾ {a₀} {b₀} (r₀,) {a₁} {b₁} (r₁,))'
   sym sig⁽ᵉ⁾ ( 𝑥 .ungel : Id R 𝑥.02 𝑥.12 (𝑥.20 .ungel) (𝑥.21 .ungel) ) {a₀}
     {b₀} (_ ≔ r₀) {a₁} {b₁} (_ ≔ r₁)
     : Type⁽ᵉ⁾ (Id A a₀ a₁) (Id B b₀ b₁)
@@ -154,7 +154,7 @@ A *partially* instantiated one is read back the same way, and there it is the on
 
 Under glued evaluation, a definition that is an ordinary term rather than a case tree evaluates to a neutral whose value *realizes* that term.  Such a neutral has no potential value of its own, but the one it realizes to may, so we look there; thus a degeneracy of such a constant displays the same as the degeneracy of its definition.
 
-  $ narya -parametric -e 'def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig a b ↦ ( ungel : R a b )' -e 'axiom A : Type' -e 'axiom B : Type' -e 'axiom R : A → B → Type' -e 'axiom a₀ : A' -e 'axiom a₁ : A' -e 'axiom b₀ : B' -e 'axiom b₁ : B' -e 'axiom r₀ : R a₀ b₀' -e 'axiom r₁ : R a₁ b₁' -e 'def Z ≔ (Gel A B R)⁽ᵉ¹⁾ {a₀} {b₀} (r₀,) {a₁} {b₁} (r₁,)' -e 'about Z⁽ᵉ⁾'
+  $ narya -parametric -e 'def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( a .ungel : R a.0 a.1 )' -e 'axiom A : Type' -e 'axiom B : Type' -e 'axiom R : A → B → Type' -e 'axiom a₀ : A' -e 'axiom a₁ : A' -e 'axiom b₀ : B' -e 'axiom b₁ : B' -e 'axiom r₀ : R a₀ b₀' -e 'axiom r₁ : R a₁ b₁' -e 'def Z ≔ (Gel A B R)⁽ᵉ¹⁾ {a₀} {b₀} (r₀,) {a₁} {b₁} (r₁,)' -e 'about Z⁽ᵉ⁾'
   sig⁽ᵉᵉ⁾ (
     𝑥 .ungel : R⁽ᵉᵉ⁾ 𝑥.022 𝑥.122 (𝑥.202 .ungel) (𝑥.212 .ungel) (𝑥.220 .ungel)
                  (𝑥.221 .ungel) )⁽²¹³⁾ {a₀} {a₀} {refl a₀} {b₀} {b₀}
@@ -171,7 +171,7 @@ Under glued evaluation, a definition that is an ordinary term rather than a case
 
 The field-variable record syntax names the fields of the *whole* self-variable only.  A record whose field types project a proper face of a cube self-variable has no such display -- the projection would have to be written as a cube variable, "ungel.20", which is nonsense -- so it falls back to the self-variable syntax.
 
-  $ narya -parametric -e 'def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig a b ↦ ( ungel : R a b )' -e 'axiom A : Type' -e 'axiom B : Type' -e 'axiom R : A → B → Type' -e 'axiom a₀ : A' -e 'axiom a₁ : A' -e 'axiom a₂ : Id A a₀ a₁' -e 'axiom b₀ : B' -e 'axiom b₁ : B' -e 'axiom b₂ : Id B b₀ b₁' -e 'about (refl Gel (Id A) (Id B) (Id R) a₂ b₂)'
+  $ narya -parametric -e 'def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( a .ungel : R a.0 a.1 )' -e 'axiom A : Type' -e 'axiom B : Type' -e 'axiom R : A → B → Type' -e 'axiom a₀ : A' -e 'axiom a₁ : A' -e 'axiom a₂ : Id A a₀ a₁' -e 'axiom b₀ : B' -e 'axiom b₁ : B' -e 'axiom b₂ : Id B b₀ b₁' -e 'about (refl Gel (Id A) (Id B) (Id R) a₂ b₂)'
   sig⁽ᵉ⁾ (
     𝑥 .ungel : Id R a₂ b₂ (𝑥.20 .ungel) (𝑥.21 .ungel) )
     : Type⁽ᵉ⁾ (Gel A B R a₀ b₀) (Gel A B R a₁ b₁)
@@ -404,7 +404,7 @@ A comatch can mix lower and higher fields; all are read back, degenerate or not.
 
 A struct at a codatatype with a nonzero intrinsic (Gel-like) dimension is read back too, rather than showing its application spine.
 
-  $ narya -dtt -e 'axiom A : Type' -e 'axiom Aʹ : A → Type' -e 'def Gel (A : Type) (Aʹ : A → Type) : Type⁽ᵈ⁾ A ≔ sig x ↦ ( ungel : Aʹ x )' -e 'axiom a : A' -e 'axiom aʹ : Aʹ a' -e 'def h (x : A) (xʹ : Aʹ x) : Gel A Aʹ x ≔ (xʹ,)' -e 'about (h a aʹ)'
+  $ narya -dtt -e 'axiom A : Type' -e 'axiom Aʹ : A → Type' -e 'def Gel (A : Type) (Aʹ : A → Type) : Type⁽ᵈ⁾ A ≔ sig ( x .ungel : Aʹ x.0 )' -e 'axiom a : A' -e 'axiom aʹ : Aʹ a' -e 'def h (x : A) (xʹ : Aʹ x) : Gel A Aʹ x ≔ (xʹ,)' -e 'about (h a aʹ)'
   (ungel ≔ aʹ)
     : Gel A Aʹ a
   
@@ -456,7 +456,7 @@ A comatch with an instance that is a genuinely stuck case tree, such as an unfil
      ----------------------------------------------------------------------
      N
   
-  [ .root.e ↦ refl cst {1} {1} (refl 1) .root ]
+  [ .root.e ↦ ap cst {1} {1} (refl 1) .root ]
     : √N
   
 
@@ -704,8 +704,7 @@ Or it can come from the environment the case tree is stuck in, as when a definit
     : {𝑥₀₀ : N} {𝑥₀₁ : N} {𝑥₀₂ : N⁽ᵉ⁾ 𝑥₀₀ 𝑥₀₁} {𝑥₁₀ : N} {𝑥₁₁ : N}
       {𝑥₁₂ : N⁽ᵉ⁾ 𝑥₁₀ 𝑥₁₁} {𝑥₂₀ : N⁽ᵉ⁾ 𝑥₀₀ 𝑥₁₀} {𝑥₂₁ : N⁽ᵉ⁾ 𝑥₀₁ 𝑥₁₁}
       (𝑥₂₂ : N⁽ᵉᵉ⁾ 𝑥₀₂ 𝑥₁₂ 𝑥₂₀ 𝑥₂₁)
-      →⁽ᵉᵉ⁾ N⁽ᵉᵉ⁾ (refl pred 𝑥₀₂) (refl pred 𝑥₁₂) (refl pred 𝑥₂₀)
-              (refl pred 𝑥₂₁)
+      →⁽ᵉᵉ⁾ N⁽ᵉᵉ⁾ (ap pred 𝑥₀₂) (ap pred 𝑥₁₂) (ap pred 𝑥₂₀) (ap pred 𝑥₂₁)
   
   A n v ⤇ match v.2 [ cons. k x w ⤇ suc. k.2 | nil. ⤇ refl 0 ]
     : {A₀ : Type} {A₁ : Type} (A₂ : Type⁽ᵉ⁾ A₀ A₁) {n₀ : N} {n₁ : N}
@@ -917,7 +916,7 @@ The types displayed for the instantiated form are exactly the ones a comatch int
    ￮ hole ?0:
      
      ----------------------------------------------------------------------
-     refl A (refl s0 .root) (refl s1 .root)
+     Id A (refl s0 .root) (refl s1 .root)
   
    ￫ info[I3003]
    ￮ hole ?1:

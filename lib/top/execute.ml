@@ -341,8 +341,9 @@ and batch renderer p src cdns ws =
       let p, src = Parser.Command.Parse.restart_parse p src in
       batch renderer p src new_cdns ws
 
-(* Wrapper around Parser.Command.execute that passes it the correct callbacks.  Does NOT check flags or reformat. *)
+(* Wrapper around Parser.Command.execute that passes it the correct callbacks.  Does NOT check flags or reformat.  An uncaught "Failure" from anywhere inside a command (e.g. an internal invariant checked with "failwith") is a bug, so we convert it here into an ordinary fatal Anomaly.  This way it is reported like any other bug, and the caller -- an interactive loop, or the loading of another input file -- can carry on afterwards, rather than the exception escaping all the way out to the handler in Top.run_top and killing the whole session. *)
 and execute_command cmd =
   let action_taken () = Loading.modify (fun s -> { s with actions = true }) in
   let get_file file = load_file file false in
-  Parser.Command.execute ~action_taken ~get_file cmd
+  try Parser.Command.execute ~action_taken ~get_file cmd
+  with Failure str -> fatal (Anomaly ("failure: " ^ str))

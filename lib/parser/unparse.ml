@@ -1667,7 +1667,7 @@ let () =
   let open PPrint in
   let open Print in
   Reporter.printer :=
-    fun ~sort pr ->
+    fun pr ->
       Reporter.try_with ~fatal:(fun d ->
           Reporter.Code.PrintingError.read () d.message;
           string "_UNPRINTABLE")
@@ -1688,7 +1688,7 @@ let () =
       | PVal (ctx, tm) ->
           pp_complete_term
             (Wrap
-               (unparse (Names.of_ctx ctx) (readback_val ~sort ctx tm) No.Interval.entire
+               (unparse (Names.of_ctx ctx) (readback_val ctx tm) No.Interval.entire
                   No.Interval.entire))
             `None
       | PNormal (ctx, tm) ->

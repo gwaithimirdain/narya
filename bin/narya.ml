@@ -257,6 +257,14 @@ let speclist =
             Modal.Local.install (module Modal.Local.Discrete : Modal.Local.Variant);
           mode_theories := !mode_theories + 1),
       "Select the discrete local mode theory (requires -parametric)" );
+    ( "-inconsistent-local",
+      Arg.Unit
+        (fun () ->
+          hott_forbidden := Some "-discrete-local";
+          install_mode_theory :=
+            Modal.Local.install (module Modal.Local.Inconsistent : Modal.Local.Variant);
+          mode_theories := !mode_theories + 1),
+      "" );
     ( "-tconn",
       Arg.Unit
         (fun () ->

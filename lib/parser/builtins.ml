@@ -2510,7 +2510,8 @@ let process_record ctx obs loc =
     | _ -> invalid "record" in
   let opacity, hints = process_record_attributes attrs in
   match obs with
-  | Term x :: Token (Mapsto, _) :: Token (LParen, _) :: obs ->
+  | Term x :: Token (Mapsto, (_, mapstoloc)) :: Token (LParen, _) :: obs ->
+      emit ?loc:mapstoloc (Deprecated "'sig … ↦' for higher records: use self variables");
       with_loc x.loc @@ fun () ->
       let vars =
         process_var_list x [ (None, []) ] <|> Parse_error "invalid higher record specification"

@@ -37,3 +37,37 @@ def invol2 : Σ (𝔹 → 𝔹) (f ↦ (x : 𝔹) → Jd 𝔹 x (f (f x))) ≔ ?
 solve 6 ≔ let not : 𝔹 → 𝔹 ≔ [ false. ↦ true. | true. ↦ false. ] in (not, ?)
 
 solve 7 ≔ [ true. ↦ rfl. | false. ↦ rfl. ]
+
+{` the displayed context and type of a hole are updated when the holes they depend on are solved `}
+
+def El (X : Type) : Type ≔ X
+
+{` here the type of the second hole is the first hole, and the type of the third is a variable whose type is the first hole `}
+
+def dep : Σ Type (X ↦ Σ X (_ ↦ X → 𝔹)) ≔ (El ?, (?, x ↦ ?))
+
+show hole 9
+
+show hole 10
+
+solve 8 ≔ 𝔹
+
+show hole 9
+
+show hole 10
+
+solve 9 ≔ true.
+
+solve 10 ≔ x
+
+{` the same happens for a dependency through the constant currently being defined `}
+
+def dep' : Σ Type (X ↦ X) ≔ (?, ?)
+
+show hole 12
+
+solve 11 ≔ 𝔹
+
+show hole 12
+
+solve 12 ≔ false.

@@ -1,7 +1,7 @@
 {` -*- narya-prog-args: ("-proofgeneral" "-parametric") -*- `}
 
-def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig a b ↦ (
-  ungel : R a b )
+def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig (
+  a .ungel : R a.0 a.1 )
 
 axiom A : Type
 axiom B : Type

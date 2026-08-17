@@ -32,8 +32,17 @@ module Discrete = struct
   type nonparametric = D.one
 
   let nonparametric = D.one
-  let name = "local tconn"
+  let name = "discrete local"
   let nabla_tangible = false
+  let tri_pellucid = true
+end
+
+module Inconsistent = struct
+  type nonparametric = D.one
+
+  let nonparametric = D.one
+  let name = "inconsistent local"
+  let nabla_tangible = true
   let tri_pellucid = true
 end
 
@@ -240,7 +249,7 @@ struct
         ('a, 'nf, 'b) Modality.t * ('a, 'm, 'nf, 'b) Modalcell.t * ('a, 'nf, 'm, 'b) Modalcell.t
         -> ('a, 'm, 'b) normalize
 
-  (* Prepend a generator g (on the source side, i.e. applied first) to an already-normalized modality, and renormalize.  The only reductions are □∇ ≅ id and □△ ≅ id, which fire when g = ∇ or g = △ are prepended to a normal form beginning with □.  We are given the isomorphisms g_to : g·rest ⇒ g·nf and g_from : g·nf ⇒ g·rest obtained by prewhiskering the sub-isomorphisms by g, and we postcompose the reduction cell between g·nf and its normal form nf'. *)
+  (* Prepend a generator g (on the source side, i.e. applied first) to an already-normalized modality, and renormalize.  The only reductions are □∇ ≅ id and □△ ≅ id, which fire when g = ∇ or g = △ are prepended to a normal form beginning with □; in all the other (well-typed) cases the composite g·nf is already a normal form and is returned unchanged.  We are given the isomorphisms g_to : g·rest ⇒ g·nf and g_from : g·nf ⇒ g·rest obtained by prewhiskering the sub-isomorphisms by g, and we postcompose the reduction cell between g·nf and its normal form nf'. *)
   let prepend : type c gg a nf b gm.
       (c, gg, a) Modality.Gen.t ->
       (a, nf, b) Modality.t ->
@@ -250,23 +259,34 @@ struct
    fun g nf g_to g_from ->
     match
       ( Modality.Gen.compare g Triangle.modality,
+        Modality.Gen.compare g Box.modality,
         Modality.Gen.compare g Nabla.modality,
+        Modality.compare nf (Modality.id typ),
         Modality.compare nf box,
         Modality.compare nf tribox,
-        Modality.compare nf nabbox )
+        Modality.compare nf nabbox,
+        Modality.compare nf (Modality.id disc),
+        Modality.compare nf tri,
+        Modality.compare nf nab )
     with
+    (* The non-reducing cases, where the composite g·nf is already a normal form. *)
+    | Eq, _, _, Eq, _, _, _, _, _, _ -> Normalize (tri, g_to, g_from) (* △·id_Type = △ *)
+    | _, Eq, _, _, _, _, _, Eq, _, _ -> Normalize (box, g_to, g_from) (* □·id_Disc = □ *)
+    | _, Eq, _, _, _, _, _, _, Eq, _ -> Normalize (tribox, g_to, g_from) (* □·△ = △□ *)
+    | _, Eq, _, _, _, _, _, _, _, Eq -> Normalize (nabbox, g_to, g_from) (* □·∇ = ∇□ *)
+    | _, _, Eq, Eq, _, _, _, _, _, _ -> Normalize (nab, g_to, g_from) (* ∇·id_Type = ∇ *)
     (* □△ ≅ id *)
-    | Eq, _, Eq, _, _ ->
+    | Eq, _, _, _, Eq, _, _, _, _, _ ->
         Normalize
           (Modality.id disc, Modalcell.vcomp box_unit_inv g_to, Modalcell.vcomp g_from box_unit)
     (* □∇ ≅ id *)
-    | _, Eq, Eq, _, _ ->
+    | _, _, Eq, _, Eq, _, _, _, _, _ ->
         Normalize
           ( Modality.id disc,
             Modalcell.vcomp nabla_counit g_to,
             Modalcell.vcomp g_from nabla_counit_inv )
     (* △□△ ≅ △ *)
-    | Eq, _, _, Eq, _ ->
+    | Eq, _, _, _, _, Eq, _, _, _, _ ->
         Normalize
           ( tri,
             Modalcell.vcomp
@@ -279,7 +299,7 @@ struct
                  (Suc (Suc (Zero, Box.modality), Triangle.modality))
                  tri box_unit) )
     (* ∇□△ ≅ ∇ *)
-    | Eq, _, _, _, Eq ->
+    | Eq, _, _, _, _, _, Eq, _, _, _ ->
         Normalize
           ( nab,
             Modalcell.vcomp
@@ -292,7 +312,7 @@ struct
                  (Suc (Suc (Zero, Box.modality), Triangle.modality))
                  nab box_unit) )
     (* △□∇ ≅ △ *)
-    | _, Eq, _, Eq, _ ->
+    | _, _, Eq, _, _, Eq, _, _, _, _ ->
         Normalize
           ( tri,
             Modalcell.vcomp
@@ -305,7 +325,7 @@ struct
                  (Suc (Suc (Zero, Box.modality), Nabla.modality))
                  tri nabla_counit_inv) )
     (* ∇□∇ ≅ ∇ *)
-    | _, Eq, _, _, Eq ->
+    | _, _, Eq, _, _, _, Eq, _, _, _ ->
         Normalize
           ( nab,
             Modalcell.vcomp
@@ -317,7 +337,7 @@ struct
               (Modalcell.postwhisker Zero
                  (Suc (Suc (Zero, Box.modality), Nabla.modality))
                  nab nabla_counit_inv) )
-    | _ -> failwith "dtt: ill-typed or unrecognized modality composite in normalize"
+    | _ -> failwith (V.name ^ ": ill-typed or unrecognized modality composite in normalize")
 
   let rec normalize : type a m b. (a, m, b) Modality.t -> (a, m, b) normalize =
    fun md ->

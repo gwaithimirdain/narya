@@ -289,16 +289,10 @@ General displayed coinductives
 
   $ narya -dtt -v dcoind.ny
    ￫ info[I0000]
-   ￮ constant disp defined
-  
-   ￫ info[I0000]
    ￮ constant dCoind defined
   
 
   $ narya -dtt -v discrete.ny
-   ￫ info[I0000]
-   ￮ constant disp defined
-  
    ￫ info[I0000]
    ￮ constant eq defined
   

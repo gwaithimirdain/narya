@@ -1,7 +1,7 @@
 {` -*- narya-prog-args: ("-proofgeneral" "-dtt") -*- `}
 
 {` Unary Gel-types `}
-def Gel (A : Type) (A' : A → Type) : Type⁽ᵈ⁾ A ≔ sig x ↦ ( ungel : A' x )
+def Gel (A : Type) (A' : A → Type) : Type⁽ᵈ⁾ A ≔ sig ( x .ungel : A' x.0 )
 
 {` The definition of semi-simplicial types `}
 def SST : Type ≔ codata [ X .z : Type | X .s : (X .z) → SST⁽ᵈ⁾ X ]
@@ -113,8 +113,8 @@ So the type of "Y .s⁽ᵈ⁾ (xy .fst) (xy .snd)" is indeed symmetrized from wh
 
 {` Constant displayed SSTs also require symmetry, as noted in the paper. `}
 def sst.const (X Y : SST) : SST⁽ᵈ⁾ X ≔ [
-| .z ↦ sig _ ↦ (
-    ungel : Y .z )
+| .z ↦ sig (
+    _ .ungel : Y .z )
 | .s ↦ {x} y ↦ sym (sst.const⁽ᵈ⁾ (X .s x) (Y .s (y .ungel)))]
 
 {` Using constant displayed SSTs, we can define binary sum SSTs. `}

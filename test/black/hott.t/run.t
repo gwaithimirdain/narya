@@ -273,9 +273,9 @@
     : B₀ a₀
   
   B₂⁽¹ᵉ⁾ (sym (A₂⁽ᵉ¹⁾ a₂ (A₂ .liftl a₁) .liftl (refl a₁)))
-      (refl f₀ (A₂⁽ᵉ¹⁾ a₂ (A₂ .liftl a₁) .trl (refl a₁)))
+      (ap f₀ (A₂⁽ᵉ¹⁾ a₂ (A₂ .liftl a₁) .trl (refl a₁)))
       (B₂⁽¹ᵉ⁾ (A₂⁽¹ᵉ⁾ .liftl.1 (refl a₁))
-       .trr.1 (refl f₀ (A₂⁽¹ᵉ⁾ .trl.1 (refl a₁))))
+       .trr.1 (ap f₀ (A₂⁽¹ᵉ⁾ .trl.1 (refl a₁))))
     .trl (B₂ (A₂ .liftl a₁) .liftr (f₀ (A₂ .trl a₁)))
     : B₂ a₂ (f₀ a₀) (B₂ (A₂ .liftl a₁) .trr (f₀ (A₂ .trl a₁)))
   
@@ -288,8 +288,8 @@
   
   B₂⁽¹ᵉ⁾ (sym (A₂⁽ᵉ¹⁾ a₂ (A₂ .liftr a₀) .liftr (refl a₀)))
       (B₂⁽¹ᵉ⁾ (A₂⁽¹ᵉ⁾ .liftr.1 (refl a₀))
-       .trl.1 (refl f₁ (A₂⁽¹ᵉ⁾ .trr.1 (refl a₀))))
-      (refl f₁ (A₂⁽ᵉ¹⁾ a₂ (A₂ .liftr a₀) .trr (refl a₀)))
+       .trl.1 (ap f₁ (A₂⁽¹ᵉ⁾ .trr.1 (refl a₀))))
+      (ap f₁ (A₂⁽ᵉ¹⁾ a₂ (A₂ .liftr a₀) .trr (refl a₀)))
     .trl (B₂ (A₂ .liftr a₀) .liftl (f₁ (A₂ .trr a₀)))
     : B₂ a₂ (B₂ (A₂ .liftr a₀) .trl (f₁ (A₂ .trr a₀))) (f₁ a₁)
   
@@ -324,216 +324,208 @@
   
   B22⁽¹²ᵉ⁾
       (A22⁽¹²ᵉ⁾ (sym (A02⁽ᵉ¹⁾ a02 (A02 .liftl a01) .liftl (refl a01)))
-           (A12⁽¹ᵉ⁾ (refl A10 .liftr a10) (refl A11 .liftr a11) .liftr a12)
+           (A12⁽¹ᵉ⁾ (Id A10 .liftr a10) (Id A11 .liftr a11) .liftr a12)
            (A20⁽¹ᵉ⁾ (A02⁽ᵉ¹⁾ a02 (A02 .liftl a01) .trl (refl a01))
-                (refl A10 .liftr a10)
-            .liftr a20) (A21⁽¹ᵉ⁾ (refl a01) (refl A11 .liftr a11) .liftr a21)
+                (Id A10 .liftr a10)
+            .liftr a20) (A21⁽¹ᵉ⁾ (refl a01) (Id A11 .liftr a11) .liftr a21)
        .liftr a22)
       (f02⁽¹ᵉ⁾ (sym (A02⁽ᵉ¹⁾ a02 (A02 .liftl a01) .liftl (refl a01))))
-      (f12⁽¹ᵉ⁾
-         (A12⁽¹ᵉ⁾ (refl A10 .liftr a10) (refl A11 .liftr a11) .liftr a12))
-      (refl f20
+      (f12⁽¹ᵉ⁾ (A12⁽¹ᵉ⁾ (Id A10 .liftr a10) (Id A11 .liftr a11) .liftr a12))
+      (ap f20
          (A20⁽¹ᵉ⁾ (A02⁽ᵉ¹⁾ a02 (A02 .liftl a01) .trl (refl a01))
-              (refl A10 .liftr a10)
+              (Id A10 .liftr a10)
           .liftr a20))
       (B22⁽¹²ᵉ⁾
            (A22⁽¹²ᵉ⁾ (A02⁽¹ᵉ⁾ .liftl.1 (refl a01))
-                (A12⁽¹ᵉ⁾ .liftl.1 (refl A11 .liftr a11))
-            .liftl.1 (A21⁽¹ᵉ⁾ (refl a01) (refl A11 .liftr a11) .liftr a21))
+                (A12⁽¹ᵉ⁾ .liftl.1 (Id A11 .liftr a11))
+            .liftl.1 (A21⁽¹ᵉ⁾ (refl a01) (Id A11 .liftr a11) .liftr a21))
            (f02⁽¹ᵉ⁾ (A02⁽¹ᵉ⁾ .liftl.1 (refl a01)))
-           (f12⁽¹ᵉ⁾ (A12⁽¹ᵉ⁾ .liftl.1 (refl A11 .liftr a11)))
+           (f12⁽¹ᵉ⁾ (A12⁽¹ᵉ⁾ .liftl.1 (Id A11 .liftr a11)))
        .trr.1
-         (refl f20
+         (ap f20
             (A22⁽¹²ᵉ⁾ (A02⁽¹ᵉ⁾ .liftl.1 (refl a01))
-                 (A12⁽¹ᵉ⁾ .liftl.1 (refl A11 .liftr a11))
-             .trl.1 (A21⁽¹ᵉ⁾ (refl a01) (refl A11 .liftr a11) .liftr a21))))
+                 (A12⁽¹ᵉ⁾ .liftl.1 (Id A11 .liftr a11))
+             .trl.1 (A21⁽¹ᵉ⁾ (refl a01) (Id A11 .liftr a11) .liftr a21))))
     .trl
       (B22⁽¹²ᵉ⁾
-           (A22⁽¹²ᵉ⁾ (refl A02 .liftl.1 (refl a01))
+           (A22⁽¹²ᵉ⁾ (Id A02 .liftl.1 (refl a01))
                 (sym
                    (A12⁽ᵉ¹⁾
-                        (A12⁽¹ᵉ⁾ (refl A10 .liftr a10) (refl A11 .liftr a11)
-                         .trr a12) (A12 .liftl (refl A11 .trr a11))
+                        (A12⁽¹ᵉ⁾ (Id A10 .liftr a10) (Id A11 .liftr a11)
+                         .trr a12) (A12 .liftl (Id A11 .trr a11))
                     .liftl (A11⁽ᵉᵉ⁾ .trr.1 (refl a11))))
-                (A20⁽¹ᵉ⁾ (refl A02 .trl.1 (refl a01))
+                (A20⁽¹ᵉ⁾ (Id A02 .trl.1 (refl a01))
                      (A12⁽ᵉ¹⁾
-                          (A12⁽¹ᵉ⁾ (refl A10 .liftr a10)
-                               (refl A11 .liftr a11)
-                           .trr a12) (A12 .liftl (refl A11 .trr a11))
+                          (A12⁽¹ᵉ⁾ (Id A10 .liftr a10) (Id A11 .liftr a11)
+                           .trr a12) (A12 .liftl (Id A11 .trr a11))
                       .trl (A11⁽ᵉᵉ⁾ .trr.1 (refl a11)))
                  .liftr
                    (A20⁽¹ᵉ⁾ (A02⁽ᵉ¹⁾ a02 (A02 .liftl a01) .trl (refl a01))
-                        (refl A10 .liftr a10)
+                        (Id A10 .liftr a10)
                     .trr a20))
                 (A21⁽¹ᵉ⁾ (refl a01) (A11⁽ᵉᵉ⁾ .trr.1 (refl a11))
-                 .liftr (A21⁽¹ᵉ⁾ (refl a01) (refl A11 .liftr a11) .trr a21))
+                 .liftr (A21⁽¹ᵉ⁾ (refl a01) (Id A11 .liftr a11) .trr a21))
             .liftr
               (A22⁽¹²ᵉ⁾
                    (sym (A02⁽ᵉ¹⁾ a02 (A02 .liftl a01) .liftl (refl a01)))
-                   (A12⁽¹ᵉ⁾ (refl A10 .liftr a10) (refl A11 .liftr a11)
+                   (A12⁽¹ᵉ⁾ (Id A10 .liftr a10) (Id A11 .liftr a11)
                     .liftr a12)
                    (A20⁽¹ᵉ⁾ (A02⁽ᵉ¹⁾ a02 (A02 .liftl a01) .trl (refl a01))
-                        (refl A10 .liftr a10)
+                        (Id A10 .liftr a10)
                     .liftr a20)
-                   (A21⁽¹ᵉ⁾ (refl a01) (refl A11 .liftr a11) .liftr a21)
-               .trr a22)) (f02⁽¹ᵉ⁾ (refl A02 .liftl.1 (refl a01)))
+                   (A21⁽¹ᵉ⁾ (refl a01) (Id A11 .liftr a11) .liftr a21)
+               .trr a22)) (f02⁽¹ᵉ⁾ (Id A02 .liftl.1 (refl a01)))
            (f12⁽¹ᵉ⁾
               (sym
                  (A12⁽ᵉ¹⁾
-                      (A12⁽¹ᵉ⁾ (refl A10 .liftr a10) (refl A11 .liftr a11)
-                       .trr a12) (A12 .liftl (refl A11 .trr a11))
+                      (A12⁽¹ᵉ⁾ (Id A10 .liftr a10) (Id A11 .liftr a11)
+                       .trr a12) (A12 .liftl (Id A11 .trr a11))
                   .liftl (A11⁽ᵉᵉ⁾ .trr.1 (refl a11)))))
-           (refl f20
-              (A20⁽¹ᵉ⁾ (refl A02 .trl.1 (refl a01))
+           (ap f20
+              (A20⁽¹ᵉ⁾ (Id A02 .trl.1 (refl a01))
                    (A12⁽ᵉ¹⁾
-                        (A12⁽¹ᵉ⁾ (refl A10 .liftr a10) (refl A11 .liftr a11)
-                         .trr a12) (A12 .liftl (refl A11 .trr a11))
+                        (A12⁽¹ᵉ⁾ (Id A10 .liftr a10) (Id A11 .liftr a11)
+                         .trr a12) (A12 .liftl (Id A11 .trr a11))
                     .trl (A11⁽ᵉᵉ⁾ .trr.1 (refl a11)))
                .liftr
                  (A20⁽¹ᵉ⁾ (A02⁽ᵉ¹⁾ a02 (A02 .liftl a01) .trl (refl a01))
-                      (refl A10 .liftr a10)
+                      (Id A10 .liftr a10)
                   .trr a20)))
            (B22⁽¹²ᵉ⁾
-                (A22⁽¹²ᵉ⁾ (refl A02 .liftl.1 (refl a01))
+                (A22⁽¹²ᵉ⁾ (Id A02 .liftl.1 (refl a01))
                      (A12⁽¹ᵉ⁾ .liftl.1 (A11⁽ᵉᵉ⁾ .trr.1 (refl a11)))
                  .liftl.1
                    (A21⁽¹ᵉ⁾ (refl a01) (A11⁽ᵉᵉ⁾ .trr.1 (refl a11))
-                    .liftr
-                      (A21⁽¹ᵉ⁾ (refl a01) (refl A11 .liftr a11) .trr a21)))
-                (f02⁽¹ᵉ⁾ (refl A02 .liftl.1 (refl a01)))
+                    .liftr (A21⁽¹ᵉ⁾ (refl a01) (Id A11 .liftr a11) .trr a21)))
+                (f02⁽¹ᵉ⁾ (Id A02 .liftl.1 (refl a01)))
                 (f12⁽¹ᵉ⁾ (A12⁽¹ᵉ⁾ .liftl.1 (A11⁽ᵉᵉ⁾ .trr.1 (refl a11))))
             .trr.1
-              (refl f20
-                 (A22⁽¹²ᵉ⁾ (refl A02 .liftl.1 (refl a01))
+              (ap f20
+                 (A22⁽¹²ᵉ⁾ (Id A02 .liftl.1 (refl a01))
                       (A12⁽¹ᵉ⁾ .liftl.1 (A11⁽ᵉᵉ⁾ .trr.1 (refl a11)))
                   .trl.1
                     (A21⁽¹ᵉ⁾ (refl a01) (A11⁽ᵉᵉ⁾ .trr.1 (refl a11))
-                     .liftr
-                       (A21⁽¹ᵉ⁾ (refl a01) (refl A11 .liftr a11) .trr a21)))))
+                     .liftr (A21⁽¹ᵉ⁾ (refl a01) (Id A11 .liftr a11) .trr a21)))))
        .trl
          (B22⁽¹²ᵉ⁾
               (sym
-                 (A22⁽ᵉ¹⁾ (sym (refl A02 .liftl.1 (refl a01)))
-                      (sym (refl A12 .liftl.1 (A11⁽ᵉᵉ⁾ .trr.1 (refl a11))))
-                      (A22⁽¹²ᵉ⁾ (refl A02 .liftl.1 (refl a01))
+                 (A22⁽ᵉ¹⁾ (sym (Id A02 .liftl.1 (refl a01)))
+                      (sym (Id A12 .liftl.1 (A11⁽ᵉᵉ⁾ .trr.1 (refl a11))))
+                      (A22⁽¹²ᵉ⁾ (Id A02 .liftl.1 (refl a01))
                            (sym
                               (A12⁽ᵉ¹⁾
-                                   (A12⁽¹ᵉ⁾ (refl A10 .liftr a10)
-                                        (refl A11 .liftr a11)
-                                    .trr a12)
-                                   (A12 .liftl (refl A11 .trr a11))
+                                   (A12⁽¹ᵉ⁾ (Id A10 .liftr a10)
+                                        (Id A11 .liftr a11)
+                                    .trr a12) (A12 .liftl (Id A11 .trr a11))
                                .liftl (A11⁽ᵉᵉ⁾ .trr.1 (refl a11))))
-                           (A20⁽¹ᵉ⁾ (refl A02 .trl.1 (refl a01))
+                           (A20⁽¹ᵉ⁾ (Id A02 .trl.1 (refl a01))
                                 (A12⁽ᵉ¹⁾
-                                     (A12⁽¹ᵉ⁾ (refl A10 .liftr a10)
-                                          (refl A11 .liftr a11)
+                                     (A12⁽¹ᵉ⁾ (Id A10 .liftr a10)
+                                          (Id A11 .liftr a11)
                                       .trr a12)
-                                     (A12 .liftl (refl A11 .trr a11))
+                                     (A12 .liftl (Id A11 .trr a11))
                                  .trl (A11⁽ᵉᵉ⁾ .trr.1 (refl a11)))
                             .liftr
                               (A20⁽¹ᵉ⁾
                                    (A02⁽ᵉ¹⁾ a02 (A02 .liftl a01)
-                                    .trl (refl a01)) (refl A10 .liftr a10)
+                                    .trl (refl a01)) (Id A10 .liftr a10)
                                .trr a20))
                            (A21⁽¹ᵉ⁾ (refl a01) (A11⁽ᵉᵉ⁾ .trr.1 (refl a11))
                             .liftr
-                              (A21⁽¹ᵉ⁾ (refl a01) (refl A11 .liftr a11)
+                              (A21⁽¹ᵉ⁾ (refl a01) (Id A11 .liftr a11)
                                .trr a21))
                        .trr
                          (A22⁽¹²ᵉ⁾
                               (sym
                                  (A02⁽ᵉ¹⁾ a02 (A02 .liftl a01)
                                   .liftl (refl a01)))
-                              (A12⁽¹ᵉ⁾ (refl A10 .liftr a10)
-                                   (refl A11 .liftr a11)
+                              (A12⁽¹ᵉ⁾ (Id A10 .liftr a10)
+                                   (Id A11 .liftr a11)
                                .liftr a12)
                               (A20⁽¹ᵉ⁾
                                    (A02⁽ᵉ¹⁾ a02 (A02 .liftl a01)
-                                    .trl (refl a01)) (refl A10 .liftr a10)
+                                    .trl (refl a01)) (Id A10 .liftr a10)
                                .liftr a20)
-                              (A21⁽¹ᵉ⁾ (refl a01) (refl A11 .liftr a11)
+                              (A21⁽¹ᵉ⁾ (refl a01) (Id A11 .liftr a11)
                                .liftr a21)
                           .trr a22))
-                      (A22 (A02 .liftl a01) (A12 .liftl (refl A11 .trr a11))
+                      (A22 (A02 .liftl a01) (A12 .liftl (Id A11 .trr a11))
                        .liftl
                          (A21⁽¹ᵉ⁾ (refl a01) (A11⁽ᵉᵉ⁾ .trr.1 (refl a11))
                           .trr
-                            (A21⁽¹ᵉ⁾ (refl a01) (refl A11 .liftr a11)
-                             .trr a21)))
+                            (A21⁽¹ᵉ⁾ (refl a01) (Id A11 .liftr a11) .trr a21)))
                   .liftl
                     (A21⁽¹ᵉᵉ⁾ a01⁽ᵉᵉ⁾ (A11⁽ᵉᵉᵉ⁾ .trr.1 a11⁽ᵉᵉ⁾)
                      .trr.1
                        (A21⁽¹ᵉᵉ⁾ a01⁽ᵉᵉ⁾ (A11⁽ᵉᵉ⁾ .liftr.1 (refl a11))
                         .trr.1 (refl a21)))))
-              (f02⁽¹ᵉ⁾ (refl A02 .liftl.1 (refl a01)))
-              (f12⁽¹ᵉ⁾ (refl A12 .liftl.1 (A11⁽ᵉᵉ⁾ .trr.1 (refl a11))))
-              (refl f20
-                 (A22⁽ᵉ¹⁾ (sym (refl A02 .liftl.1 (refl a01)))
-                      (sym (refl A12 .liftl.1 (A11⁽ᵉᵉ⁾ .trr.1 (refl a11))))
-                      (A22⁽¹²ᵉ⁾ (refl A02 .liftl.1 (refl a01))
+              (f02⁽¹ᵉ⁾ (Id A02 .liftl.1 (refl a01)))
+              (f12⁽¹ᵉ⁾ (Id A12 .liftl.1 (A11⁽ᵉᵉ⁾ .trr.1 (refl a11))))
+              (ap f20
+                 (A22⁽ᵉ¹⁾ (sym (Id A02 .liftl.1 (refl a01)))
+                      (sym (Id A12 .liftl.1 (A11⁽ᵉᵉ⁾ .trr.1 (refl a11))))
+                      (A22⁽¹²ᵉ⁾ (Id A02 .liftl.1 (refl a01))
                            (sym
                               (A12⁽ᵉ¹⁾
-                                   (A12⁽¹ᵉ⁾ (refl A10 .liftr a10)
-                                        (refl A11 .liftr a11)
-                                    .trr a12)
-                                   (A12 .liftl (refl A11 .trr a11))
+                                   (A12⁽¹ᵉ⁾ (Id A10 .liftr a10)
+                                        (Id A11 .liftr a11)
+                                    .trr a12) (A12 .liftl (Id A11 .trr a11))
                                .liftl (A11⁽ᵉᵉ⁾ .trr.1 (refl a11))))
-                           (A20⁽¹ᵉ⁾ (refl A02 .trl.1 (refl a01))
+                           (A20⁽¹ᵉ⁾ (Id A02 .trl.1 (refl a01))
                                 (A12⁽ᵉ¹⁾
-                                     (A12⁽¹ᵉ⁾ (refl A10 .liftr a10)
-                                          (refl A11 .liftr a11)
+                                     (A12⁽¹ᵉ⁾ (Id A10 .liftr a10)
+                                          (Id A11 .liftr a11)
                                       .trr a12)
-                                     (A12 .liftl (refl A11 .trr a11))
+                                     (A12 .liftl (Id A11 .trr a11))
                                  .trl (A11⁽ᵉᵉ⁾ .trr.1 (refl a11)))
                             .liftr
                               (A20⁽¹ᵉ⁾
                                    (A02⁽ᵉ¹⁾ a02 (A02 .liftl a01)
-                                    .trl (refl a01)) (refl A10 .liftr a10)
+                                    .trl (refl a01)) (Id A10 .liftr a10)
                                .trr a20))
                            (A21⁽¹ᵉ⁾ (refl a01) (A11⁽ᵉᵉ⁾ .trr.1 (refl a11))
                             .liftr
-                              (A21⁽¹ᵉ⁾ (refl a01) (refl A11 .liftr a11)
+                              (A21⁽¹ᵉ⁾ (refl a01) (Id A11 .liftr a11)
                                .trr a21))
                        .trr
                          (A22⁽¹²ᵉ⁾
                               (sym
                                  (A02⁽ᵉ¹⁾ a02 (A02 .liftl a01)
                                   .liftl (refl a01)))
-                              (A12⁽¹ᵉ⁾ (refl A10 .liftr a10)
-                                   (refl A11 .liftr a11)
+                              (A12⁽¹ᵉ⁾ (Id A10 .liftr a10)
+                                   (Id A11 .liftr a11)
                                .liftr a12)
                               (A20⁽¹ᵉ⁾
                                    (A02⁽ᵉ¹⁾ a02 (A02 .liftl a01)
-                                    .trl (refl a01)) (refl A10 .liftr a10)
+                                    .trl (refl a01)) (Id A10 .liftr a10)
                                .liftr a20)
-                              (A21⁽¹ᵉ⁾ (refl a01) (refl A11 .liftr a11)
+                              (A21⁽¹ᵉ⁾ (refl a01) (Id A11 .liftr a11)
                                .liftr a21)
                           .trr a22))
-                      (A22 (A02 .liftl a01) (A12 .liftl (refl A11 .trr a11))
+                      (A22 (A02 .liftl a01) (A12 .liftl (Id A11 .trr a11))
                        .liftl
                          (A21⁽¹ᵉ⁾ (refl a01) (A11⁽ᵉᵉ⁾ .trr.1 (refl a11))
                           .trr
-                            (A21⁽¹ᵉ⁾ (refl a01) (refl A11 .liftr a11)
-                             .trr a21)))
+                            (A21⁽¹ᵉ⁾ (refl a01) (Id A11 .liftr a11) .trr a21)))
                   .trl
                     (A21⁽¹ᵉᵉ⁾ a01⁽ᵉᵉ⁾ (A11⁽ᵉᵉᵉ⁾ .trr.1 a11⁽ᵉᵉ⁾)
                      .trr.1
                        (A21⁽¹ᵉᵉ⁾ a01⁽ᵉᵉ⁾ (A11⁽ᵉᵉ⁾ .liftr.1 (refl a11))
                         .trr.1 (refl a21)))))
               (B22⁽¹²ᵉ⁾
-                   (A22⁽¹ᵉ⁾ (refl A02 .liftl.1 (refl a01))
-                        (refl A12 .liftl.1 (A11⁽ᵉᵉ⁾ .trr.1 (refl a11)))
+                   (A22⁽¹ᵉ⁾ (Id A02 .liftl.1 (refl a01))
+                        (Id A12 .liftl.1 (A11⁽ᵉᵉ⁾ .trr.1 (refl a11)))
                     .liftl.1
                       (A21⁽¹ᵉᵉ⁾ a01⁽ᵉᵉ⁾ (A11⁽ᵉᵉᵉ⁾ .trr.1 a11⁽ᵉᵉ⁾)
                        .trr.1
                          (A21⁽¹ᵉᵉ⁾ a01⁽ᵉᵉ⁾ (A11⁽ᵉᵉ⁾ .liftr.1 (refl a11))
                           .trr.1 (refl a21))))
-                   (f02⁽¹ᵉ⁾ (refl A02 .liftl.1 (refl a01)))
-                   (f12⁽¹ᵉ⁾ (refl A12 .liftl.1 (A11⁽ᵉᵉ⁾ .trr.1 (refl a11))))
+                   (f02⁽¹ᵉ⁾ (Id A02 .liftl.1 (refl a01)))
+                   (f12⁽¹ᵉ⁾ (Id A12 .liftl.1 (A11⁽ᵉᵉ⁾ .trr.1 (refl a11))))
                .trr.1
-                 (refl f20
-                    (A22⁽¹ᵉ⁾ (refl A02 .liftl.1 (refl a01))
-                         (refl A12 .liftl.1 (A11⁽ᵉᵉ⁾ .trr.1 (refl a11)))
+                 (ap f20
+                    (A22⁽¹ᵉ⁾ (Id A02 .liftl.1 (refl a01))
+                         (Id A12 .liftl.1 (A11⁽ᵉᵉ⁾ .trr.1 (refl a11)))
                      .trl.1
                        (A21⁽¹ᵉᵉ⁾ a01⁽ᵉᵉ⁾ (A11⁽ᵉᵉᵉ⁾ .trr.1 a11⁽ᵉᵉ⁾)
                         .trr.1
@@ -541,19 +533,17 @@
                            .trr.1 (refl a21))))))
           .trl
             (B22
-                 (A22 (A02 .liftl a01) (A12 .liftl (refl A11 .trr a11))
+                 (A22 (A02 .liftl a01) (A12 .liftl (Id A11 .trr a11))
                   .liftl
                     (A21⁽¹ᵉ⁾ (refl a01) (A11⁽ᵉᵉ⁾ .trr.1 (refl a11))
-                     .trr (A21⁽¹ᵉ⁾ (refl a01) (refl A11 .liftr a11) .trr a21)))
-                 (f02 (A02 .liftl a01))
-                 (f12 (A12 .liftl (refl A11 .trr a11)))
+                     .trr (A21⁽¹ᵉ⁾ (refl a01) (Id A11 .liftr a11) .trr a21)))
+                 (f02 (A02 .liftl a01)) (f12 (A12 .liftl (Id A11 .trr a11)))
              .liftr
                (f20
-                  (A22 (A02 .liftl a01) (A12 .liftl (refl A11 .trr a11))
+                  (A22 (A02 .liftl a01) (A12 .liftl (Id A11 .trr a11))
                    .trl
                      (A21⁽¹ᵉ⁾ (refl a01) (A11⁽ᵉᵉ⁾ .trr.1 (refl a11))
-                      .trr
-                        (A21⁽¹ᵉ⁾ (refl a01) (refl A11 .liftr a11) .trr a21)))))))
+                      .trr (A21⁽¹ᵉ⁾ (refl a01) (Id A11 .liftr a11) .trr a21)))))))
     : B22 a22 (f02 a02) (f12 a12) (f20 a20)
         (B22 (A22 (A02 .liftl a01) (A12 .liftl a11) .liftl a21)
              (f02 (A02 .liftl a01)) (f12 (A12 .liftl a11))
@@ -561,217 +551,209 @@
   
   B22⁽¹²ᵉ⁾
       (A22⁽¹²ᵉ⁾ (sym (A02⁽ᵉ¹⁾ a02 (A02 .liftr a00) .liftr (refl a00)))
-           (A12⁽¹ᵉ⁾ (refl A10 .liftr a10) (refl A11 .liftr a11) .liftr a12)
-           (A20⁽¹ᵉ⁾ (refl a00) (refl A10 .liftr a10) .liftr a20)
+           (A12⁽¹ᵉ⁾ (Id A10 .liftr a10) (Id A11 .liftr a11) .liftr a12)
+           (A20⁽¹ᵉ⁾ (refl a00) (Id A10 .liftr a10) .liftr a20)
            (A21⁽¹ᵉ⁾ (A02⁽ᵉ¹⁾ a02 (A02 .liftr a00) .trr (refl a00))
-                (refl A11 .liftr a11)
+                (Id A11 .liftr a11)
             .liftr a21)
        .liftr a22)
       (f02⁽¹ᵉ⁾ (sym (A02⁽ᵉ¹⁾ a02 (A02 .liftr a00) .liftr (refl a00))))
-      (f12⁽¹ᵉ⁾
-         (A12⁽¹ᵉ⁾ (refl A10 .liftr a10) (refl A11 .liftr a11) .liftr a12))
+      (f12⁽¹ᵉ⁾ (A12⁽¹ᵉ⁾ (Id A10 .liftr a10) (Id A11 .liftr a11) .liftr a12))
       (B22⁽¹²ᵉ⁾
            (A22⁽¹²ᵉ⁾ (A02⁽¹ᵉ⁾ .liftr.1 (refl a00))
-                (A12⁽¹ᵉ⁾ .liftr.1 (refl A10 .liftr a10))
-            .liftr.1 (A20⁽¹ᵉ⁾ (refl a00) (refl A10 .liftr a10) .liftr a20))
+                (A12⁽¹ᵉ⁾ .liftr.1 (Id A10 .liftr a10))
+            .liftr.1 (A20⁽¹ᵉ⁾ (refl a00) (Id A10 .liftr a10) .liftr a20))
            (f02⁽¹ᵉ⁾ (A02⁽¹ᵉ⁾ .liftr.1 (refl a00)))
-           (f12⁽¹ᵉ⁾ (A12⁽¹ᵉ⁾ .liftr.1 (refl A10 .liftr a10)))
+           (f12⁽¹ᵉ⁾ (A12⁽¹ᵉ⁾ .liftr.1 (Id A10 .liftr a10)))
        .trl.1
-         (refl f21
+         (ap f21
             (A22⁽¹²ᵉ⁾ (A02⁽¹ᵉ⁾ .liftr.1 (refl a00))
-                 (A12⁽¹ᵉ⁾ .liftr.1 (refl A10 .liftr a10))
-             .trr.1 (A20⁽¹ᵉ⁾ (refl a00) (refl A10 .liftr a10) .liftr a20))))
-      (refl f21
+                 (A12⁽¹ᵉ⁾ .liftr.1 (Id A10 .liftr a10))
+             .trr.1 (A20⁽¹ᵉ⁾ (refl a00) (Id A10 .liftr a10) .liftr a20))))
+      (ap f21
          (A21⁽¹ᵉ⁾ (A02⁽ᵉ¹⁾ a02 (A02 .liftr a00) .trr (refl a00))
-              (refl A11 .liftr a11)
+              (Id A11 .liftr a11)
           .liftr a21))
     .trl
       (B22⁽¹²ᵉ⁾
-           (A22⁽¹²ᵉ⁾ (refl A02 .liftr.1 (refl a00))
+           (A22⁽¹²ᵉ⁾ (Id A02 .liftr.1 (refl a00))
                 (sym
                    (A12⁽ᵉ¹⁾
-                        (A12⁽¹ᵉ⁾ (refl A10 .liftr a10) (refl A11 .liftr a11)
-                         .trr a12) (A12 .liftr (refl A10 .trr a10))
+                        (A12⁽¹ᵉ⁾ (Id A10 .liftr a10) (Id A11 .liftr a11)
+                         .trr a12) (A12 .liftr (Id A10 .trr a10))
                     .liftr (A10⁽ᵉᵉ⁾ .trr.1 (refl a10))))
                 (A20⁽¹ᵉ⁾ (refl a00) (A10⁽ᵉᵉ⁾ .trr.1 (refl a10))
-                 .liftr (A20⁽¹ᵉ⁾ (refl a00) (refl A10 .liftr a10) .trr a20))
-                (A21⁽¹ᵉ⁾ (refl A02 .trr.1 (refl a00))
+                 .liftr (A20⁽¹ᵉ⁾ (refl a00) (Id A10 .liftr a10) .trr a20))
+                (A21⁽¹ᵉ⁾ (Id A02 .trr.1 (refl a00))
                      (A12⁽ᵉ¹⁾
-                          (A12⁽¹ᵉ⁾ (refl A10 .liftr a10)
-                               (refl A11 .liftr a11)
-                           .trr a12) (A12 .liftr (refl A10 .trr a10))
+                          (A12⁽¹ᵉ⁾ (Id A10 .liftr a10) (Id A11 .liftr a11)
+                           .trr a12) (A12 .liftr (Id A10 .trr a10))
                       .trr (A10⁽ᵉᵉ⁾ .trr.1 (refl a10)))
                  .liftr
                    (A21⁽¹ᵉ⁾ (A02⁽ᵉ¹⁾ a02 (A02 .liftr a00) .trr (refl a00))
-                        (refl A11 .liftr a11)
+                        (Id A11 .liftr a11)
                     .trr a21))
             .liftr
               (A22⁽¹²ᵉ⁾
                    (sym (A02⁽ᵉ¹⁾ a02 (A02 .liftr a00) .liftr (refl a00)))
-                   (A12⁽¹ᵉ⁾ (refl A10 .liftr a10) (refl A11 .liftr a11)
+                   (A12⁽¹ᵉ⁾ (Id A10 .liftr a10) (Id A11 .liftr a11)
                     .liftr a12)
-                   (A20⁽¹ᵉ⁾ (refl a00) (refl A10 .liftr a10) .liftr a20)
+                   (A20⁽¹ᵉ⁾ (refl a00) (Id A10 .liftr a10) .liftr a20)
                    (A21⁽¹ᵉ⁾ (A02⁽ᵉ¹⁾ a02 (A02 .liftr a00) .trr (refl a00))
-                        (refl A11 .liftr a11)
+                        (Id A11 .liftr a11)
                     .liftr a21)
-               .trr a22)) (f02⁽¹ᵉ⁾ (refl A02 .liftr.1 (refl a00)))
+               .trr a22)) (f02⁽¹ᵉ⁾ (Id A02 .liftr.1 (refl a00)))
            (f12⁽¹ᵉ⁾
               (sym
                  (A12⁽ᵉ¹⁾
-                      (A12⁽¹ᵉ⁾ (refl A10 .liftr a10) (refl A11 .liftr a11)
-                       .trr a12) (A12 .liftr (refl A10 .trr a10))
+                      (A12⁽¹ᵉ⁾ (Id A10 .liftr a10) (Id A11 .liftr a11)
+                       .trr a12) (A12 .liftr (Id A10 .trr a10))
                   .liftr (A10⁽ᵉᵉ⁾ .trr.1 (refl a10)))))
            (B22⁽¹²ᵉ⁾
-                (A22⁽¹²ᵉ⁾ (refl A02 .liftr.1 (refl a00))
+                (A22⁽¹²ᵉ⁾ (Id A02 .liftr.1 (refl a00))
                      (A12⁽¹ᵉ⁾ .liftr.1 (A10⁽ᵉᵉ⁾ .trr.1 (refl a10)))
                  .liftr.1
                    (A20⁽¹ᵉ⁾ (refl a00) (A10⁽ᵉᵉ⁾ .trr.1 (refl a10))
-                    .liftr
-                      (A20⁽¹ᵉ⁾ (refl a00) (refl A10 .liftr a10) .trr a20)))
-                (f02⁽¹ᵉ⁾ (refl A02 .liftr.1 (refl a00)))
+                    .liftr (A20⁽¹ᵉ⁾ (refl a00) (Id A10 .liftr a10) .trr a20)))
+                (f02⁽¹ᵉ⁾ (Id A02 .liftr.1 (refl a00)))
                 (f12⁽¹ᵉ⁾ (A12⁽¹ᵉ⁾ .liftr.1 (A10⁽ᵉᵉ⁾ .trr.1 (refl a10))))
             .trl.1
-              (refl f21
-                 (A22⁽¹²ᵉ⁾ (refl A02 .liftr.1 (refl a00))
+              (ap f21
+                 (A22⁽¹²ᵉ⁾ (Id A02 .liftr.1 (refl a00))
                       (A12⁽¹ᵉ⁾ .liftr.1 (A10⁽ᵉᵉ⁾ .trr.1 (refl a10)))
                   .trr.1
                     (A20⁽¹ᵉ⁾ (refl a00) (A10⁽ᵉᵉ⁾ .trr.1 (refl a10))
-                     .liftr
-                       (A20⁽¹ᵉ⁾ (refl a00) (refl A10 .liftr a10) .trr a20)))))
-           (refl f21
-              (A21⁽¹ᵉ⁾ (refl A02 .trr.1 (refl a00))
+                     .liftr (A20⁽¹ᵉ⁾ (refl a00) (Id A10 .liftr a10) .trr a20)))))
+           (ap f21
+              (A21⁽¹ᵉ⁾ (Id A02 .trr.1 (refl a00))
                    (A12⁽ᵉ¹⁾
-                        (A12⁽¹ᵉ⁾ (refl A10 .liftr a10) (refl A11 .liftr a11)
-                         .trr a12) (A12 .liftr (refl A10 .trr a10))
+                        (A12⁽¹ᵉ⁾ (Id A10 .liftr a10) (Id A11 .liftr a11)
+                         .trr a12) (A12 .liftr (Id A10 .trr a10))
                     .trr (A10⁽ᵉᵉ⁾ .trr.1 (refl a10)))
                .liftr
                  (A21⁽¹ᵉ⁾ (A02⁽ᵉ¹⁾ a02 (A02 .liftr a00) .trr (refl a00))
-                      (refl A11 .liftr a11)
+                      (Id A11 .liftr a11)
                   .trr a21)))
        .trl
          (B22⁽¹²ᵉ⁾
               (sym
-                 (A22⁽ᵉ¹⁾ (sym (refl A02 .liftr.1 (refl a00)))
-                      (sym (refl A12 .liftr.1 (A10⁽ᵉᵉ⁾ .trr.1 (refl a10))))
-                      (A22⁽¹²ᵉ⁾ (refl A02 .liftr.1 (refl a00))
+                 (A22⁽ᵉ¹⁾ (sym (Id A02 .liftr.1 (refl a00)))
+                      (sym (Id A12 .liftr.1 (A10⁽ᵉᵉ⁾ .trr.1 (refl a10))))
+                      (A22⁽¹²ᵉ⁾ (Id A02 .liftr.1 (refl a00))
                            (sym
                               (A12⁽ᵉ¹⁾
-                                   (A12⁽¹ᵉ⁾ (refl A10 .liftr a10)
-                                        (refl A11 .liftr a11)
-                                    .trr a12)
-                                   (A12 .liftr (refl A10 .trr a10))
+                                   (A12⁽¹ᵉ⁾ (Id A10 .liftr a10)
+                                        (Id A11 .liftr a11)
+                                    .trr a12) (A12 .liftr (Id A10 .trr a10))
                                .liftr (A10⁽ᵉᵉ⁾ .trr.1 (refl a10))))
                            (A20⁽¹ᵉ⁾ (refl a00) (A10⁽ᵉᵉ⁾ .trr.1 (refl a10))
                             .liftr
-                              (A20⁽¹ᵉ⁾ (refl a00) (refl A10 .liftr a10)
+                              (A20⁽¹ᵉ⁾ (refl a00) (Id A10 .liftr a10)
                                .trr a20))
-                           (A21⁽¹ᵉ⁾ (refl A02 .trr.1 (refl a00))
+                           (A21⁽¹ᵉ⁾ (Id A02 .trr.1 (refl a00))
                                 (A12⁽ᵉ¹⁾
-                                     (A12⁽¹ᵉ⁾ (refl A10 .liftr a10)
-                                          (refl A11 .liftr a11)
+                                     (A12⁽¹ᵉ⁾ (Id A10 .liftr a10)
+                                          (Id A11 .liftr a11)
                                       .trr a12)
-                                     (A12 .liftr (refl A10 .trr a10))
+                                     (A12 .liftr (Id A10 .trr a10))
                                  .trr (A10⁽ᵉᵉ⁾ .trr.1 (refl a10)))
                             .liftr
                               (A21⁽¹ᵉ⁾
                                    (A02⁽ᵉ¹⁾ a02 (A02 .liftr a00)
-                                    .trr (refl a00)) (refl A11 .liftr a11)
+                                    .trr (refl a00)) (Id A11 .liftr a11)
                                .trr a21))
                        .trr
                          (A22⁽¹²ᵉ⁾
                               (sym
                                  (A02⁽ᵉ¹⁾ a02 (A02 .liftr a00)
                                   .liftr (refl a00)))
-                              (A12⁽¹ᵉ⁾ (refl A10 .liftr a10)
-                                   (refl A11 .liftr a11)
+                              (A12⁽¹ᵉ⁾ (Id A10 .liftr a10)
+                                   (Id A11 .liftr a11)
                                .liftr a12)
-                              (A20⁽¹ᵉ⁾ (refl a00) (refl A10 .liftr a10)
+                              (A20⁽¹ᵉ⁾ (refl a00) (Id A10 .liftr a10)
                                .liftr a20)
                               (A21⁽¹ᵉ⁾
                                    (A02⁽ᵉ¹⁾ a02 (A02 .liftr a00)
-                                    .trr (refl a00)) (refl A11 .liftr a11)
+                                    .trr (refl a00)) (Id A11 .liftr a11)
                                .liftr a21)
                           .trr a22))
-                      (A22 (A02 .liftr a00) (A12 .liftr (refl A10 .trr a10))
+                      (A22 (A02 .liftr a00) (A12 .liftr (Id A10 .trr a10))
                        .liftr
                          (A20⁽¹ᵉ⁾ (refl a00) (A10⁽ᵉᵉ⁾ .trr.1 (refl a10))
                           .trr
-                            (A20⁽¹ᵉ⁾ (refl a00) (refl A10 .liftr a10)
-                             .trr a20)))
+                            (A20⁽¹ᵉ⁾ (refl a00) (Id A10 .liftr a10) .trr a20)))
                   .liftr
                     (A20⁽¹ᵉᵉ⁾ a00⁽ᵉᵉ⁾ (A10⁽ᵉᵉᵉ⁾ .trr.1 a10⁽ᵉᵉ⁾)
                      .trr.1
                        (A20⁽¹ᵉᵉ⁾ a00⁽ᵉᵉ⁾ (A10⁽ᵉᵉ⁾ .liftr.1 (refl a10))
                         .trr.1 (refl a20)))))
-              (f02⁽¹ᵉ⁾ (refl A02 .liftr.1 (refl a00)))
-              (f12⁽¹ᵉ⁾ (refl A12 .liftr.1 (A10⁽ᵉᵉ⁾ .trr.1 (refl a10))))
+              (f02⁽¹ᵉ⁾ (Id A02 .liftr.1 (refl a00)))
+              (f12⁽¹ᵉ⁾ (Id A12 .liftr.1 (A10⁽ᵉᵉ⁾ .trr.1 (refl a10))))
               (B22⁽¹²ᵉ⁾
-                   (A22⁽¹ᵉ⁾ (refl A02 .liftr.1 (refl a00))
-                        (refl A12 .liftr.1 (A10⁽ᵉᵉ⁾ .trr.1 (refl a10)))
+                   (A22⁽¹ᵉ⁾ (Id A02 .liftr.1 (refl a00))
+                        (Id A12 .liftr.1 (A10⁽ᵉᵉ⁾ .trr.1 (refl a10)))
                     .liftr.1
                       (A20⁽¹ᵉᵉ⁾ a00⁽ᵉᵉ⁾ (A10⁽ᵉᵉᵉ⁾ .trr.1 a10⁽ᵉᵉ⁾)
                        .trr.1
                          (A20⁽¹ᵉᵉ⁾ a00⁽ᵉᵉ⁾ (A10⁽ᵉᵉ⁾ .liftr.1 (refl a10))
                           .trr.1 (refl a20))))
-                   (f02⁽¹ᵉ⁾ (refl A02 .liftr.1 (refl a00)))
-                   (f12⁽¹ᵉ⁾ (refl A12 .liftr.1 (A10⁽ᵉᵉ⁾ .trr.1 (refl a10))))
+                   (f02⁽¹ᵉ⁾ (Id A02 .liftr.1 (refl a00)))
+                   (f12⁽¹ᵉ⁾ (Id A12 .liftr.1 (A10⁽ᵉᵉ⁾ .trr.1 (refl a10))))
                .trl.1
-                 (refl f21
-                    (A22⁽¹ᵉ⁾ (refl A02 .liftr.1 (refl a00))
-                         (refl A12 .liftr.1 (A10⁽ᵉᵉ⁾ .trr.1 (refl a10)))
+                 (ap f21
+                    (A22⁽¹ᵉ⁾ (Id A02 .liftr.1 (refl a00))
+                         (Id A12 .liftr.1 (A10⁽ᵉᵉ⁾ .trr.1 (refl a10)))
                      .trr.1
                        (A20⁽¹ᵉᵉ⁾ a00⁽ᵉᵉ⁾ (A10⁽ᵉᵉᵉ⁾ .trr.1 a10⁽ᵉᵉ⁾)
                         .trr.1
                           (A20⁽¹ᵉᵉ⁾ a00⁽ᵉᵉ⁾ (A10⁽ᵉᵉ⁾ .liftr.1 (refl a10))
                            .trr.1 (refl a20))))))
-              (refl f21
-                 (A22⁽ᵉ¹⁾ (sym (refl A02 .liftr.1 (refl a00)))
-                      (sym (refl A12 .liftr.1 (A10⁽ᵉᵉ⁾ .trr.1 (refl a10))))
-                      (A22⁽¹²ᵉ⁾ (refl A02 .liftr.1 (refl a00))
+              (ap f21
+                 (A22⁽ᵉ¹⁾ (sym (Id A02 .liftr.1 (refl a00)))
+                      (sym (Id A12 .liftr.1 (A10⁽ᵉᵉ⁾ .trr.1 (refl a10))))
+                      (A22⁽¹²ᵉ⁾ (Id A02 .liftr.1 (refl a00))
                            (sym
                               (A12⁽ᵉ¹⁾
-                                   (A12⁽¹ᵉ⁾ (refl A10 .liftr a10)
-                                        (refl A11 .liftr a11)
-                                    .trr a12)
-                                   (A12 .liftr (refl A10 .trr a10))
+                                   (A12⁽¹ᵉ⁾ (Id A10 .liftr a10)
+                                        (Id A11 .liftr a11)
+                                    .trr a12) (A12 .liftr (Id A10 .trr a10))
                                .liftr (A10⁽ᵉᵉ⁾ .trr.1 (refl a10))))
                            (A20⁽¹ᵉ⁾ (refl a00) (A10⁽ᵉᵉ⁾ .trr.1 (refl a10))
                             .liftr
-                              (A20⁽¹ᵉ⁾ (refl a00) (refl A10 .liftr a10)
+                              (A20⁽¹ᵉ⁾ (refl a00) (Id A10 .liftr a10)
                                .trr a20))
-                           (A21⁽¹ᵉ⁾ (refl A02 .trr.1 (refl a00))
+                           (A21⁽¹ᵉ⁾ (Id A02 .trr.1 (refl a00))
                                 (A12⁽ᵉ¹⁾
-                                     (A12⁽¹ᵉ⁾ (refl A10 .liftr a10)
-                                          (refl A11 .liftr a11)
+                                     (A12⁽¹ᵉ⁾ (Id A10 .liftr a10)
+                                          (Id A11 .liftr a11)
                                       .trr a12)
-                                     (A12 .liftr (refl A10 .trr a10))
+                                     (A12 .liftr (Id A10 .trr a10))
                                  .trr (A10⁽ᵉᵉ⁾ .trr.1 (refl a10)))
                             .liftr
                               (A21⁽¹ᵉ⁾
                                    (A02⁽ᵉ¹⁾ a02 (A02 .liftr a00)
-                                    .trr (refl a00)) (refl A11 .liftr a11)
+                                    .trr (refl a00)) (Id A11 .liftr a11)
                                .trr a21))
                        .trr
                          (A22⁽¹²ᵉ⁾
                               (sym
                                  (A02⁽ᵉ¹⁾ a02 (A02 .liftr a00)
                                   .liftr (refl a00)))
-                              (A12⁽¹ᵉ⁾ (refl A10 .liftr a10)
-                                   (refl A11 .liftr a11)
+                              (A12⁽¹ᵉ⁾ (Id A10 .liftr a10)
+                                   (Id A11 .liftr a11)
                                .liftr a12)
-                              (A20⁽¹ᵉ⁾ (refl a00) (refl A10 .liftr a10)
+                              (A20⁽¹ᵉ⁾ (refl a00) (Id A10 .liftr a10)
                                .liftr a20)
                               (A21⁽¹ᵉ⁾
                                    (A02⁽ᵉ¹⁾ a02 (A02 .liftr a00)
-                                    .trr (refl a00)) (refl A11 .liftr a11)
+                                    .trr (refl a00)) (Id A11 .liftr a11)
                                .liftr a21)
                           .trr a22))
-                      (A22 (A02 .liftr a00) (A12 .liftr (refl A10 .trr a10))
+                      (A22 (A02 .liftr a00) (A12 .liftr (Id A10 .trr a10))
                        .liftr
                          (A20⁽¹ᵉ⁾ (refl a00) (A10⁽ᵉᵉ⁾ .trr.1 (refl a10))
                           .trr
-                            (A20⁽¹ᵉ⁾ (refl a00) (refl A10 .liftr a10)
-                             .trr a20)))
+                            (A20⁽¹ᵉ⁾ (refl a00) (Id A10 .liftr a10) .trr a20)))
                   .trr
                     (A20⁽¹ᵉᵉ⁾ a00⁽ᵉᵉ⁾ (A10⁽ᵉᵉᵉ⁾ .trr.1 a10⁽ᵉᵉ⁾)
                      .trr.1
@@ -779,19 +761,17 @@
                         .trr.1 (refl a20)))))
           .trl
             (B22
-                 (A22 (A02 .liftr a00) (A12 .liftr (refl A10 .trr a10))
+                 (A22 (A02 .liftr a00) (A12 .liftr (Id A10 .trr a10))
                   .liftr
                     (A20⁽¹ᵉ⁾ (refl a00) (A10⁽ᵉᵉ⁾ .trr.1 (refl a10))
-                     .trr (A20⁽¹ᵉ⁾ (refl a00) (refl A10 .liftr a10) .trr a20)))
-                 (f02 (A02 .liftr a00))
-                 (f12 (A12 .liftr (refl A10 .trr a10)))
+                     .trr (A20⁽¹ᵉ⁾ (refl a00) (Id A10 .liftr a10) .trr a20)))
+                 (f02 (A02 .liftr a00)) (f12 (A12 .liftr (Id A10 .trr a10)))
              .liftl
                (f21
-                  (A22 (A02 .liftr a00) (A12 .liftr (refl A10 .trr a10))
+                  (A22 (A02 .liftr a00) (A12 .liftr (Id A10 .trr a10))
                    .trr
                      (A20⁽¹ᵉ⁾ (refl a00) (A10⁽ᵉᵉ⁾ .trr.1 (refl a10))
-                      .trr
-                        (A20⁽¹ᵉ⁾ (refl a00) (refl A10 .liftr a10) .trr a20)))))))
+                      .trr (A20⁽¹ᵉ⁾ (refl a00) (Id A10 .liftr a10) .trr a20)))))))
     : B22 a22 (f02 a02) (f12 a12)
         (B22 (A22 (A02 .liftr a00) (A12 .liftr a10) .liftr a20)
              (f02 (A02 .liftr a00)) (f12 (A12 .liftr a10))
@@ -800,7 +780,7 @@
   
 
   $ narya sigma.ny
-  refl Σ A₂ B₂ .trr u₀
+  Σ⁽ᵉ⁾ A₂ B₂ .trr u₀
     : Σ A₁ B₁
   
   A₂ .trr (u₀ .fst)
@@ -815,8 +795,8 @@
   B₂ (A₂ .liftr (u₀ .fst)) .trr (u₀ .snd)
     : B₁ (A₂ .trr (u₀ .fst))
   
-  refl Σ A₂ B₂ .liftr u₀
-    : Σ⁽ᵉ⁾ A₂ B₂ u₀ (refl Σ A₂ B₂ .trr u₀)
+  Σ⁽ᵉ⁾ A₂ B₂ .liftr u₀
+    : Σ⁽ᵉ⁾ A₂ B₂ u₀ (Σ⁽ᵉ⁾ A₂ B₂ .trr u₀)
   
   A₂ .liftr (u₀ .fst)
     : A₂ (u₀ .fst) (A₂ .trr (u₀ .fst))
@@ -832,7 +812,7 @@
     : B₂ (A₂ .liftr (u₀ .fst)) (u₀ .snd)
         (B₂ (A₂ .liftr (u₀ .fst)) .trr (u₀ .snd))
   
-  refl Σ A₂ B₂ .trl u₁
+  Σ⁽ᵉ⁾ A₂ B₂ .trl u₁
     : Σ A₀ B₀
   
   A₂ .trl (u₁ .fst)
@@ -841,8 +821,8 @@
   B₂ (A₂ .liftl (u₁ .fst)) .trl (u₁ .snd)
     : B₀ (A₂ .trl (u₁ .fst))
   
-  refl Σ A₂ B₂ .liftl u₁
-    : Σ⁽ᵉ⁾ A₂ B₂ (refl Σ A₂ B₂ .trl u₁) u₁
+  Σ⁽ᵉ⁾ A₂ B₂ .liftl u₁
+    : Σ⁽ᵉ⁾ A₂ B₂ (Σ⁽ᵉ⁾ A₂ B₂ .trl u₁) u₁
   
   A₂ .liftl (u₁ .fst)
     : A₂ (A₂ .trl (u₁ .fst)) (u₁ .fst)
@@ -937,7 +917,7 @@
   
 
   $ narya 3sigma.ny
-  refl Σ3 A₂ B₂ C₂ .trr u₀
+  Σ3⁽ᵉ⁾ A₂ B₂ C₂ .trr u₀
     : Σ3 A₁ B₁ C₁
   
   A₂ .trr (u₀ .fst)
@@ -950,8 +930,8 @@
     .trr (u₀ .thd)
     : C₁ (A₂ .trr (u₀ .fst)) (B₂ (A₂ .liftr (u₀ .fst)) .trr (u₀ .snd))
   
-  refl Σ3 A₂ B₂ C₂ .liftr u₀
-    : Σ3⁽ᵉ⁾ A₂ B₂ C₂ u₀ (refl Σ3 A₂ B₂ C₂ .trr u₀)
+  Σ3⁽ᵉ⁾ A₂ B₂ C₂ .liftr u₀
+    : Σ3⁽ᵉ⁾ A₂ B₂ C₂ u₀ (Σ3⁽ᵉ⁾ A₂ B₂ C₂ .trr u₀)
   
   A₂ .liftr (u₀ .fst)
     : A₂ (u₀ .fst) (A₂ .trr (u₀ .fst))
@@ -969,7 +949,7 @@
   
 
   $ narya prod.ny
-  refl prod A₂ B₂ .trr u₀
+  prod⁽ᵉ⁾ A₂ B₂ .trr u₀
     : prod A₁ B₁
   
   A₂ .trr (u₀ .fst)
@@ -978,8 +958,8 @@
   B₂ .trr (u₀ .snd)
     : B₁
   
-  refl prod A₂ B₂ .liftr u₀
-    : prod⁽ᵉ⁾ A₂ B₂ u₀ (refl prod A₂ B₂ .trr u₀)
+  prod⁽ᵉ⁾ A₂ B₂ .liftr u₀
+    : prod⁽ᵉ⁾ A₂ B₂ u₀ (prod⁽ᵉ⁾ A₂ B₂ .trr u₀)
   
   A₂ .liftr (u₀ .fst)
     : A₂ (u₀ .fst) (A₂ .trr (u₀ .fst))
@@ -989,34 +969,20 @@
   
 
   $ narya m.ny
-  refl M A₂ B₂ .trr u₀
+  M⁽ᵉ⁾ A₂ B₂ .trr u₀
     : M A₁ B₁
   
   A₂ .trr (u₀ .recv)
     : A₁
   
-  refl M A₂ B₂ .trr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁))
+  M⁽ᵉ⁾ A₂ B₂ .trr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁))
     : M A₁ B₁
   
-  refl M A₂ B₂ .liftr u₀
-    : M⁽ᵉ⁾ A₂ B₂ u₀ (refl M A₂ B₂ .trr u₀)
+  M⁽ᵉ⁾ A₂ B₂ .liftr u₀
+    : M⁽ᵉ⁾ A₂ B₂ u₀ (M⁽ᵉ⁾ A₂ B₂ .trr u₀)
   
   A₂ .liftr (u₀ .recv)
     : A₂ (u₀ .recv) (A₂ .trr (u₀ .recv))
-  
-  M⁽ᵉᵉ⁾ A₂⁽¹ᵉ⁾ B₂⁽¹ᵉ⁾
-      (refl u₀
-       .send
-         (B₂⁽ᵉ¹⁾ (sym (refl A₂ .liftr.1 (refl u₀ .recv))) b₂
-              (B₂ (A₂ .liftr (u₀ .recv)) .liftl b₁)
-          .trl (refl b₁)))
-      (M⁽ᵉᵉ⁾ A₂⁽¹ᵉ⁾ B₂⁽¹ᵉ⁾
-       .trr.1
-         (refl u₀
-          .send (B₂⁽¹ᵉ⁾ (refl A₂ .liftr.1 (refl u₀ .recv)) .trl.1 (refl b₁))))
-    .trl (refl M A₂ B₂ .liftr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁)))
-    : M⁽ᵉ⁾ A₂ B₂ (u₀ .send b₀)
-        (refl M A₂ B₂ .trr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁)))
   
   M⁽ᵉᵉ⁾ A₂⁽¹ᵉ⁾ B₂⁽¹ᵉ⁾
       (refl u₀
@@ -1028,17 +994,31 @@
        .trr.1
          (refl u₀
           .send (B₂⁽¹ᵉ⁾ (Id A₂ .liftr.1 (refl u₀ .recv)) .trl.1 (refl b₁))))
-    .trl (Id M A₂ B₂ .liftr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁)))
+    .trl (M⁽ᵉ⁾ A₂ B₂ .liftr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁)))
     : M⁽ᵉ⁾ A₂ B₂ (u₀ .send b₀)
-        (refl M A₂ B₂ .trr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁)))
+        (M⁽ᵉ⁾ A₂ B₂ .trr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁)))
+  
+  M⁽ᵉᵉ⁾ A₂⁽¹ᵉ⁾ B₂⁽¹ᵉ⁾
+      (refl u₀
+       .send
+         (B₂⁽ᵉ¹⁾ (sym (Id A₂ .liftr.1 (refl u₀ .recv))) b₂
+              (B₂ (A₂ .liftr (u₀ .recv)) .liftl b₁)
+          .trl (refl b₁)))
+      (M⁽ᵉᵉ⁾ A₂⁽¹ᵉ⁾ B₂⁽¹ᵉ⁾
+       .trr.1
+         (refl u₀
+          .send (B₂⁽¹ᵉ⁾ (Id A₂ .liftr.1 (refl u₀ .recv)) .trl.1 (refl b₁))))
+    .trl (M⁽ᵉ⁾ A₂ B₂ .liftr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁)))
+    : M⁽ᵉ⁾ A₂ B₂ (u₀ .send b₀)
+        (M⁽ᵉ⁾ A₂ B₂ .trr (u₀ .send (B₂ (A₂ .liftr (u₀ .recv)) .trl b₁)))
   
 
 Gel is not allowed
 
-  $ narya -e "def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig x y ↦ ( ungel : R x y )"
+  $ narya -e "def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( x .ungel : R x.0 x.1 )"
    ￫ error[E0100]
    ￭ command-line exec string
-   1 | def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig x y ↦ ( ungel : R x y )
+   1 | def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( x .ungel : R x.0 x.1 )
      ^ unimplemented: general higher-dimensional types in HOTT: use glue
   
   [1]
@@ -1077,68 +1057,68 @@ Gel is not allowed
 
 
   $ narya glue2.ny
-  ap glue A₂ B₂ R₂ Rb₂ .trr.1
+  glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂ .trr.1
     : {𝑥₀ : A₀} {𝑥₁ : A₁} (𝑥₂ : A₂ 𝑥₀ 𝑥₁) →⁽ᵉ⁾ B₂ (Rb₀ .trr 𝑥₀) (Rb₁ .trr 𝑥₁)
   
-  ap glue A₂ B₂ R₂ Rb₂ .trl.1
+  glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂ .trl.1
     : {𝑥₀ : B₀} {𝑥₁ : B₁} (𝑥₂ : B₂ 𝑥₀ 𝑥₁) →⁽ᵉ⁾ A₂ (Rb₀ .trl 𝑥₀) (Rb₁ .trl 𝑥₁)
   
-  ap glue A₂ B₂ R₂ Rb₂ .liftr.1
+  glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂ .liftr.1
     : {x₀₀ : A₀} {x₀₁ : A₁} (x₀₂ : A₂ x₀₀ x₀₁)
       →⁽ᵉ⁾ glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂ x₀₂ (Rb₂ .trr x₀₂) (_ ≔ Rb₀ .liftr x₀₀)
              (_ ≔ Rb₁ .liftr x₀₁)
   
-  ap glue A₂ B₂ R₂ Rb₂ .liftl.1
+  glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂ .liftl.1
     : {x₁₀ : B₀} {x₁₁ : B₁} (x₁₂ : B₂ x₁₀ x₁₁)
       →⁽ᵉ⁾ glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂ (Rb₂ .trl x₁₂) x₁₂ (_ ≔ Rb₀ .liftl x₁₀)
              (_ ≔ Rb₁ .liftl x₁₁)
   
-  sym (ap glue A₂ B₂ R₂ Rb₂) .trr.1
+  sym (glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂) .trr.1
     : {𝑥₀ : A₀} {𝑥₁ : B₀} (𝑥₂ : glue A₀ B₀ R₀ Rb₀ 𝑥₀ 𝑥₁)
       →⁽ᵉ⁾ glue A₁ B₁ R₁ Rb₁ (A₂ .trr 𝑥₀) (B₂ .trr 𝑥₁)
   
-  sym (ap glue A₂ B₂ R₂ Rb₂) .trl.1
+  sym (glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂) .trl.1
     : {𝑥₀ : A₁} {𝑥₁ : B₁} (𝑥₂ : glue A₁ B₁ R₁ Rb₁ 𝑥₀ 𝑥₁)
       →⁽ᵉ⁾ glue A₀ B₀ R₀ Rb₀ (A₂ .trl 𝑥₀) (B₂ .trl 𝑥₁)
   
-  sym (ap glue A₂ B₂ R₂ Rb₂) .liftr.1
+  sym (glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂) .liftr.1
     : {x₀₀ : A₀} {x₀₁ : B₀} (x₀₂ : glue A₀ B₀ R₀ Rb₀ x₀₀ x₀₁)
       →⁽ᵉ⁾ sym (glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂) x₀₂ {A₂ .trr x₀₀} {B₂ .trr x₀₁}
              (_ ≔ R₂ (A₂ .liftr x₀₀) (B₂ .liftr x₀₁) .trr (x₀₂ .unglue))
              (A₂ .liftr x₀₀) (B₂ .liftr x₀₁)
   
-  sym (ap glue A₂ B₂ R₂ Rb₂) .liftl.1
+  sym (glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂) .liftl.1
     : {x₁₀ : A₁} {x₁₁ : B₁} (x₁₂ : glue A₁ B₁ R₁ Rb₁ x₁₀ x₁₁)
       →⁽ᵉ⁾ sym (glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂) {A₂ .trl x₁₀} {B₂ .trl x₁₁}
              (_ ≔ R₂ (A₂ .liftl x₁₀) (B₂ .liftl x₁₁) .trl (x₁₂ .unglue)) x₁₂
              (A₂ .liftl x₁₀) (B₂ .liftl x₁₁)
   
-  ap glue A₂ B₂ R₂ Rb₂ a₂ b₂ .trr
+  glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂ a₂ b₂ .trr
     : glue A₀ B₀ R₀ Rb₀ a₀ b₀ → glue A₁ B₁ R₁ Rb₁ a₁ b₁
   
-  ap glue A₂ B₂ R₂ Rb₂ a₂ b₂ .trl
+  glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂ a₂ b₂ .trl
     : glue A₁ B₁ R₁ Rb₁ a₁ b₁ → glue A₀ B₀ R₀ Rb₀ a₀ b₀
   
-  ap glue A₂ B₂ R₂ Rb₂ a₂ b₂ .liftr
+  glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂ a₂ b₂ .liftr
     : (x₀ : glue A₀ B₀ R₀ Rb₀ a₀ b₀)
       → glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂ a₂ b₂ x₀ (_ ≔ R₂ a₂ b₂ .trr (x₀ .unglue))
   
-  ap glue A₂ B₂ R₂ Rb₂ a₂ b₂ .liftl
+  glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂ a₂ b₂ .liftl
     : (x₁ : glue A₁ B₁ R₁ Rb₁ a₁ b₁)
       → glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂ a₂ b₂ (_ ≔ R₂ a₂ b₂ .trl (x₁ .unglue)) x₁
   
-  sym (ap glue A₂ B₂ R₂ Rb₂) g₀ g₁ .trr
+  sym (glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂) g₀ g₁ .trr
     : A₂ a₀ a₁ → B₂ b₀ b₁
   
-  sym (ap glue A₂ B₂ R₂ Rb₂) g₀ g₁ .trl
+  sym (glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂) g₀ g₁ .trl
     : B₂ b₀ b₁ → A₂ a₀ a₁
   
-  sym (ap glue A₂ B₂ R₂ Rb₂) g₀ g₁ .liftr
+  sym (glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂) g₀ g₁ .liftr
     : (x₀ : A₂ a₀ a₁)
       → sym (glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂) g₀ g₁ x₀
           (Rb₂ .id a₀ b₀ r₀ a₁ b₁ r₁ .trr x₀)
   
-  sym (ap glue A₂ B₂ R₂ Rb₂) g₀ g₁ .liftl
+  sym (glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂) g₀ g₁ .liftl
     : (x₁ : B₂ b₀ b₁)
       → sym (glue⁽ᵉ⁾ A₂ B₂ R₂ Rb₂) g₀ g₁ (Rb₂ .id a₀ b₀ r₀ a₁ b₁ r₁ .trl x₁)
           x₁
