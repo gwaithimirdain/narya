@@ -242,8 +242,12 @@ and readback_at : type mode a z s.
                 ( Potential,
                   readback_data ctx data_args,
                   TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ tyargs ] )
-          (* Codatatypes and records are handled uniformly whether 0-dimensional, intrinsically higher (Gel-like), or degenerate, instantiated or not, and whether or not their fields are modal.  Unlike a datatype, an instantiated one is *not* read back uninstantiated and re-instantiated: the boundary of a degenerate codatatype behaves like parameters rather than like indices, so it is the instantiated form that behaves like a codatatype, and it is displayed as one.  Hence the instantiation arguments are passed along rather than read back separately here. *)
-          | Codata codata_args -> readback_codata ctx neutral tyargs codata_args boundary
+          (* Codatatypes and records are handled uniformly whether 0-dimensional, intrinsically higher (Gel-like), or degenerate, instantiated or not, and whether or not their fields are modal.  Unlike a datatype, an instantiated one is *not* read back uninstantiated and re-instantiated: the boundary of a degenerate codatatype behaves like parameters rather than like indices, so it is the instantiated form that behaves like a codatatype, and it is displayed as one.  Hence the instantiation arguments are passed along rather than read back separately here.
+             The insertion splits the value's total dimension into its evaluation dimension and its intrinsic (Gel) dimension, which are the two dimensions the displayed codatatype records.  When the insertion is the identity, the two are in that order and the value is displayed directly; otherwise the value is not a record type at all (its fields can't even be projected), but it is a permutation of one, so we un-permute it, display that, and wrap the result in the permutation as a degeneracy action. *)
+          | Codata codata_args -> (
+              match is_id_ins ins with
+              | Some cm_cn -> readback_codata ctx neutral tyargs codata_args boundary cm_cn
+              | None -> readback_permuted_codata ctx neutral tyargs ins)
           | UU _ | Pi _ -> Realize (readback_val ctx neutral)))
   (* Abstractions (kinetic or potential) are read back uniformly by extending the context using their pi-type. *)
   | Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs), Lam (x, filter2, body), _ -> (
@@ -965,9 +969,105 @@ and degenerate_value_cube : type mode a b r n rn.
           eval_term (act_env degenv (opt_op_of_sface fa)) (CubeOf.find ctms fb));
     }
 
+(* Read back a codatatype value whose insertion is *not* the identity, i.e. one to which a nontrivial permutation of its dimensions has been applied.  Such a value is no longer a record type at all: its fields can't be projected, and there is no self-variable cube in the order in which the fields were declared.  But it is the permutation of a value that is one, so we un-permute it, read that back as a codatatype, and apply the permutation to the result as a degeneracy.
+
+   That works directly only when the codatatype is uninstantiated, for then it is a higher-dimensional *term* of a universe, whose dimensions a degeneracy acts on. An instantiated one we first un-instantiate entirely (uninstantiate), permute as the uninstantiated codatatype it then is, and re-instantiate, the way readback_data displays an instantiated datatype.
+
+   Both halves of that are necessary.  A *partially* instantiated codatatype, such as "(Gel A B R)⁽ᵉ¹⁾ {a₀} {b₀} (r₀,) {a₁} {b₁} (r₁,)", has no un-permuted form at all, since a permutation generally mixes its instantiated and uninstantiated dimensions while an instantiation tube instantiates the *last* dimensions.  And although a *fully* instantiated one can be un-permuted where it stands, by a symmetry permuting its instantiation arguments, displaying it that way would be wrong: readback_codata absorbs the instantiation arguments into the self variable, so its result reads as a record type of the lower dimension -- "sig ( ungel : Id R a₂ b₂ r₀ r₁ )" -- which denotes nothing that the permutation could be applied to.  Un-instantiating puts the arguments back outside, where the permutation has a higher-dimensional codatatype to act on.
+
+   Since this is display-only, anything unexpected along the way -- an un-permuted value that is somehow still permuted, or an un-instantiation that doesn't produce the type we expect -- falls back on the application spine of the neutral rather than failing. *)
+and readback_permuted_codata : type mode a b m k mk e n.
+    (mode, a, b) Ctx.t ->
+    (mode, kinetic) value ->
+    (m, k, mk, mode normal) TubeOf.t ->
+    (mk, e, n) insertion ->
+    (mode, b, potential) term =
+ fun ctx neutral tyargs ins ->
+  let mode = Ctx.mode ctx in
+  let spine () : (mode, b, potential) term = Realize (readback_val ctx neutral) in
+  (* Un-instantiating rebuilds a type, and so can report a bug if the value is not shaped as it expects.  As this is display-only, we catch that, along with our own failures below, and show the spine instead.  The guard has to cover the whole function rather than just the call: the rebuilt type is lazy, and is not forced until the recursive call acts on it. *)
+  Reporter.try_with ~fatal:(fun _ -> spine ()) @@ fun () ->
+  match D.compare_zero (TubeOf.inst tyargs) with
+  (* Instantiated, wholly or partly: un-instantiate, permute that, and re-instantiate.  The insertion is unchanged by instantiation, so it is still the one to un-permute by, now at a value whose instantiation is empty; hence the recursive call lands in the uninstantiated case below. *)
+  | Pos _ ->
+      let uninst = uninstantiate mode neutral in
+      Inst
+        ( Potential,
+          readback_permuted_codata ctx uninst.tm (TubeOf.empty (TubeOf.out tyargs)) ins,
+          TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ tyargs ] )
+  | Zero -> (
+      let (Perm_to p) = perm_of_ins ins in
+      let pinv = deg_of_perm (perm_inv p) in
+      let cell = Modalcell.id2 mode in
+      match act_value neutral pinv cell with
+      | Neu { value; ty = pty; _ } as pneutral -> (
+          match (force_eval value, view_type (Lazy.force pty) "readback_permuted_codata") with
+          | ( Val (Canonical { canonical = Codata pargs; ins = pins; tyargs = ptyargs; _ }),
+              Canonical (_, UU (_, pmk), pins0, pboundary) ) -> (
+              let Eq = eq_of_ins_zero pins0 in
+              match (D.compare (TubeOf.uninst ptyargs) pmk, is_id_ins pins) with
+              | Eq, Some cm_cn ->
+                  Act
+                    ( Potential,
+                      readback_codata ctx pneutral ptyargs pargs pboundary cm_cn,
+                      deg_of_perm p,
+                      (`Type, `Canonical) )
+              | _ -> spine ())
+          | _ -> spine ())
+      | _ -> spine ())
+
+(* Un-instantiate a type value: strip the instantiation off the end of its neutral spine, and off its canonical value, returning the whole-dimensional type that was instantiated, as a normal.  A value carrying no instantiation is returned unchanged, which is what bottoms out the recursion below.
+
+   The uninstantiated type's own type is not stored anywhere -- inst computes the instantiated type from it and keeps only the spine -- so we rebuild it: a universe of the whole dimension, instantiated at the uninstantiated type's boundary.  That boundary is exactly what we are stripping off, in the two halves that a full tube splits into: its outer part is the *types* of the instantiation arguments, and its inner part (empty unless the instantiation was partial) is the arguments of the universe that the instantiated type itself belongs to.  Both arrive instantiated in their turn -- what we have of the boundary of "(Gel A B R)⁽ᵉ¹⁾ {a₀} {b₀} (r₀,) {a₁} {b₁} (r₁,)" is "Gel A B R a₀ b₀" and "Id A a₀ a₁", where we want "Gel A B R" and "Id A" -- so we un-instantiate them recursively.  The recursion is on dimension, since each of them is lower-dimensional than the whole. *)
+and uninstantiate : type mode. mode Mode.t -> (mode, kinetic) value -> mode normal =
+ fun mode ty ->
+  match view_term ty with
+  | Neu { head; args = Inst (base_args, _, insargs); value; ty = instty } -> (
+      match view_type (Lazy.force instty) "uninstantiate" with
+      | Canonical (_, UU (_, umk), uins, uargs) -> (
+          let Eq = eq_of_ins_zero uins in
+          (* The universe the instantiated type belongs to has exactly its uninstantiated dimensions. *)
+          match D.compare umk (TubeOf.uninst insargs) with
+          | Neq -> fatal (Anomaly "uninstantiating a type not in its own universe")
+          | Eq ->
+              let outer =
+                TubeOf.mmap
+                  { map = (fun _ [ nf ] -> uninstantiate mode (Lazy.force nf.ty)) }
+                  [ insargs ] in
+              let inner =
+                TubeOf.mmap { map = (fun _ [ nf ] -> uninstantiate mode nf.tm) } [ uargs ] in
+              let boundary = TubeOf.plus_tube (TubeOf.plus insargs) outer inner in
+              let uty = lazy (inst (universe mode (TubeOf.out insargs)) boundary) in
+              {
+                tm = Neu { head; args = base_args; value = uninstantiate_value value; ty = uty };
+                ty = uty;
+              })
+      | _ -> fatal (Anomaly "uninstantiating a type whose type is not a universe"))
+  (* Nothing to strip: the value is already uninstantiated, and carries its own type. *)
+  | Neu { ty = uty; _ } -> { tm = ty; ty = uty }
+  | _ -> fatal (Anomaly "uninstantiating a non-neutral type")
+
+(* The value of an un-instantiated neutral: a canonical type with its instantiation arguments emptied out, as eval_codata and friends produce it.  Anything else -- an axiom's Unrealized, say -- is unchanged by instantiation and so is left alone. *)
+and uninstantiate_value : type mode. (mode, potential) lazy_eval -> (mode, potential) lazy_eval =
+ fun value ->
+  match force_eval value with
+  | Val (Canonical { mode; canonical; ins; tyargs; fields; inst_fields = _ }) ->
+      ready
+        (Val
+           (Canonical
+              {
+                mode;
+                canonical;
+                ins;
+                tyargs = TubeOf.empty (TubeOf.out tyargs);
+                fields;
+                inst_fields = Some fields;
+              }))
+  | _ -> value
+
 (* Read back a codatatype or record type.  Non-projectable higher-field instances are displayed in a context degenerated by their remaining dimensions (Degctx.degctx), which is why this file has a forward reference to Degctx (see the top of the file).
 
-   The result is an ordinary Canonical (Codata …), but at the *evaluation dimension* of the value being displayed rather than at zero: its fields are the field instances of a possibly-degenerated codatatype, one per partial bijection between that dimension and the field's intrinsic dimension, whereas a codatatype produced by typechecking has evaluation dimension zero and one instance per field.  It carries no fibrancy (see Term.codata_fibrancy_option), so it is display-only: evaluating it is an anomaly.
+   The result is an ordinary Canonical (Codata …), but at the *evaluation dimension* of the value being displayed rather than at zero: its fields are the field instances of a possibly-degenerated codatatype, one per partial bijection between that dimension and the field's intrinsic dimension, whereas a codatatype produced by typechecking has evaluation dimension zero and one instance per field.  Its intrinsic (Gel) dimension is that of the value being displayed, which is generally *not* zero: the caller supplies the splitting of the total dimension into the two, which is the identity insertion of the value (a value with any other insertion is not a record type at all, and is handled by readback_permuted_codata).  Only the sum of the two matters to the self variable and the field types, but a higher field forces the intrinsic dimension to be zero, exactly as it does for a declared codatatype.  The result carries no fibrancy (see Term.codata_fibrancy_option), so it is display-only: evaluating it is an anomaly.
 
    We introduce a single self-variable cube of the codatatype's dimension (via dom_vars, which gives its top face the fully-instantiated codatatype as its type), and read back the type of each field instance referring to it.  A lower field has exactly one instance; a higher field of intrinsic dimension i has one for each partial bijection.  Projectable instances (zero remaining dimensions) are read back in the self-variable context; non-projectable ones (the declaration form ".e" and intermediate forms) are read back in a context degenerated by the remaining dimensions, and the degeneration plus-map is stored with the type so the renderer can reconstruct the degenerated variable names.  The self-variable is added anonymously: readback ignores names (it produces de Bruijn terms), and the renderer chooses the displayed self-name itself.
 
@@ -981,29 +1081,31 @@ and readback_codata : type mode a b cm cn ca cet iu ii iout.
     (iu, ii, iout, mode normal) TubeOf.t ->
     (mode, cm, cn, ca, cet) Value.codata_args ->
     (D.zero, iu, iu, mode normal) TubeOf.t ->
+    (* The splitting of the value's total dimension into its evaluation dimension and its intrinsic (Gel) dimension, i.e. the fact that its insertion is the identity. *)
+    (cm, cn, iout) D.plus ->
     (mode, b, potential) term =
- fun ctx tm insargs codata_args boundary ->
+ fun ctx tm insargs codata_args boundary cm_cn ->
   let mk = TubeOf.uninst insargs in
   let evaldim = dim_env codata_args.env in
   let dom = TubeOf.plus_cube (val_of_norm_tube boundary) (CubeOf.singleton tm) in
   (* Exactly as check_codata does, each field's type is displayed in the ambient context locked by the field's right adjoint and then extended by the self variable, annotated by its left adjoint; so we build that context per field.  The self variable's *type* is the codatatype transported behind those locks along the adjunction unit, which is where a variable annotated by the left adjoint has its type.  But the type we hand to tyof_field, to compute the field's type in, must be the untransported one, since tyof_field keys the codatatype's own parameters behind the right-adjoint lock itself; so we create the variables twice, from the transported and untransported types.  Both calls assign the same levels, so these are the same variables.  (For an ordinary non-modal field the unit is an identity cell and the two coincide.) *)
   let fields =
     Bwd.fold_left
-      (fun (acc : (mode * b * iout * iout * cet) Term.CodatafieldAbwd.t) entry ->
+      (fun (acc : (mode * b * cm * iout * cet) Term.CodatafieldAbwd.t) entry ->
         match readback_codatafield ctx mk dom evaldim insargs codata_args.env entry with
         | None -> acc
         | Some entry -> Bwd.Snoc (acc, entry))
       Bwd.Emp codata_args.fields in
-  (* The displayed codatatype records its whole dimension as its evaluation dimension: its fields are already the instances at that dimension, so the intrinsic part of the split, which matters only to evaluation, plays no further role. *)
+  (* The displayed codatatype keeps the value's own split of its whole dimension: the evaluation dimension it was substituted to, and the intrinsic (Gel) dimension it was declared with.  Its fields are already the instances at the former, so the latter plays no further role here; but the renderer needs both, indexing a higher field's instances by the evaluation dimension while giving the self variable their sum. *)
   Term.Canonical
     (Codata
        {
          eta = codata_args.eta;
          opacity = codata_args.opacity;
          hints = codata_args.hints;
-         evaldim = D.plus_out mk (TubeOf.plus insargs);
-         dim = D.zero;
-         plusdim = D.plus_zero (D.plus_out mk (TubeOf.plus insargs));
+         evaldim;
+         dim = D.plus_right cm_cn;
+         plusdim = cm_cn;
          fields;
          fibrancy = None;
          is_glue = None;
@@ -1018,7 +1120,7 @@ and readback_codatafield : type mode a b cm cn ca cet iu ii iout.
     (iu, ii, iout, mode normal) TubeOf.t ->
     (mode, cm, ca) env ->
     (mode * ca * D.zero * cn * cet) Term.CodatafieldAbwd.entry ->
-    (mode * b * iout * iout * cet) Term.CodatafieldAbwd.entry option =
+    (mode * b * cm * iout * cet) Term.CodatafieldAbwd.entry option =
  fun ctx mk dom evaldim insargs codataenv
      (Term.CodatafieldAbwd.Entry
         (type i)
