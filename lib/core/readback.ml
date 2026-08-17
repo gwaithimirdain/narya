@@ -360,9 +360,7 @@ and readback_at : type mode a z s.
                             ((_, Codatafield (Adjunction { left; _ }, _, _)) :
                               i Field.t * (i, mode * a * D.zero * n * has_eta) Codatafield.t)) ->
                       let (Has_filter left_filter) = Modality.filter left m in
-                      match Modality.filter_is_trivial m left_filter with
-                      | Some Eq -> true
-                      | None -> false)
+                      Option.is_some (Modality.filter_is_trivial m left_filter))
                     fields in
                 let fields =
                   Mbwd.map
@@ -1670,6 +1668,15 @@ and readback_comatch : type mode a z.
           match D.compare (cod_left_ins value_ins) dim with
           | Neq -> fatal (Anomaly "comatch readback: struct dimension does not match its type")
           | Eq ->
+              let codata_fields =
+                Bwd.filter
+                  (fun (CodatafieldAbwd.Entry
+                          (type i)
+                          ((_, Codatafield (Adjunction { left; _ }, _, _)) :
+                            i Field.t * (i, mode * aa * D.zero * n * et) Term.Codatafield.t)) ->
+                    let (Has_filter lfilter) = Modality.filter left dim in
+                    Option.is_some (Modality.filter_is_trivial dim lfilter))
+                  codata_args.fields in
               let fields =
                 Bwd.fold_left
                   (fun acc
@@ -1678,51 +1685,46 @@ and readback_comatch : type mode a z.
                           ((fld, Codatafield ((Adjunction { left; right; unit; _ } as adj), _, cf)) :
                             i Field.t * (i, mode * aa * D.zero * n * et) Term.Codatafield.t)) :
                        (mode * (m * a * potential * et)) Term.StructfieldAbwd.t option ->
-                    let (Has_filter lfilter) = Modality.filter left dim in
-                    match Modality.filter_is_trivial dim lfilter with
-                    | None -> acc
-                    | Some Eq -> (
-                        match (acc, cf) with
-                        | None, _ -> None
-                        | Some acc, Lower _ ->
-                            (* Project the field from the neutral-as-self, keying by the adjunction unit and reading back the component behind the right-adjoint lock. *)
-                            let xu = Act.act_value neutral (id_deg D.zero) unit in
-                            let tyu = Act.act_ty neutral ty (id_deg D.zero) unit in
-                            let (Locked (plus_lock, lctx)) = Ctx.lock ctx right in
-                            Some
-                              (Snoc
-                                 ( acc,
-                                   Term.StructfieldAbwd.Entry
-                                     ( fld,
-                                       Term.Structfield.Lower
-                                         ( adj,
-                                           plus_lock,
-                                           Term.Realize
-                                             (readback_at Kinetic lctx
-                                                (field_term left xu fld (ins_zero dim))
-                                                (tyof_field left (Ok xu) tyu fld (ins_zero evaldim))),
-                                           `Labeled ) ) ))
-                        | Some acc, Higher _ -> (
-                            match Value.StructfieldAbwd.find_opt comatch_fields fld with
-                            | Found (Value.Structfield.Higher (lazy hd)) -> (
-                                (* The comatch stores its own copy of the field's adjunction, whose existential types are a priori unrelated to those of the declaration; match them up so the stored bodies can be read back at the declared field type.  A value checked against this declaration must carry the declared adjunction, so a mismatch is a bug. *)
-                                match Modalcell.compare_adjunction hd.adj adj with
-                                | Neq ->
-                                    fatal
-                                      (Anomaly
-                                         "comatch readback: field adjunction does not match its declaration")
-                                | Eq -> (
-                                    match
-                                      readback_higher_comatch_field ctx codata_args neutral ty dim
-                                        fld adj hd
-                                    with
-                                    | None -> None
-                                    | Some sf ->
-                                        Some (Snoc (acc, Term.StructfieldAbwd.Entry (fld, sf)))))
-                            | _ ->
+                    match (acc, cf) with
+                    | None, _ -> None
+                    | Some acc, Lower _ ->
+                        (* Project the field from the neutral-as-self, keying by the adjunction unit and reading back the component behind the right-adjoint lock. *)
+                        let xu = act_value neutral (id_deg D.zero) unit in
+                        let tyu = act_ty neutral ty (id_deg D.zero) unit in
+                        let (Locked (plus_lock, lctx)) = Ctx.lock ctx right in
+                        Some
+                          (Snoc
+                             ( acc,
+                               Term.StructfieldAbwd.Entry
+                                 ( fld,
+                                   Term.Structfield.Lower
+                                     ( adj,
+                                       plus_lock,
+                                       Term.Realize
+                                         (readback_at Kinetic lctx
+                                            (field_term left xu fld (ins_zero dim))
+                                            (tyof_field left (Ok xu) tyu fld (ins_zero evaldim))),
+                                       `Labeled ) ) ))
+                    | Some acc, Higher _ -> (
+                        match Value.StructfieldAbwd.find_opt comatch_fields fld with
+                        | Found (Value.Structfield.Higher (lazy hd)) -> (
+                            (* The comatch stores its own copy of the field's adjunction, whose existential types are a priori unrelated to those of the declaration; match them up so the stored bodies can be read back at the declared field type.  A value checked against this declaration must carry the declared adjunction, so a mismatch is a bug. *)
+                            match Modalcell.compare_adjunction hd.adj adj with
+                            | Neq ->
                                 fatal
-                                  (Anomaly "comatch readback: higher field missing from comatch"))))
-                  (Some Emp) codata_args.fields in
+                                  (Anomaly
+                                     "comatch readback: field adjunction does not match its declaration")
+                            | Eq -> (
+                                match
+                                  readback_higher_comatch_field ctx codata_args neutral ty dim fld
+                                    adj hd
+                                with
+                                | None -> None
+                                | Some sf -> Some (Snoc (acc, Term.StructfieldAbwd.Entry (fld, sf)))
+                                ))
+                        | _ -> fatal (Anomaly "comatch readback: higher field missing from comatch")
+                        ))
+                  (Some Emp) codata_fields in
               Option.map
                 (fun fields ->
                   Term.Struct { eta = codata_args.eta; dim; fields; energy = Potential })
