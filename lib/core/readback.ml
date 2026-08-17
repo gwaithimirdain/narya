@@ -1017,7 +1017,7 @@ and readback_codatafield : type mode a b cm cn ca cet iu ii iout.
     (mode * ca * D.zero * cn * cet) Term.CodatafieldAbwd.entry ->
     (mode * b * cm * iout * cet) Term.CodatafieldAbwd.entry option =
  fun ctx mk dom evaldim insargs codataenv cm_cn
-     (Term.CodatafieldAbwd.Entry
+     (Entry
         (type i)
         ((fld, Codatafield ((Adjunction { left; right; unit; _ } as adj), fld_plus_lock, cf)) :
           i Field.t * (i, mode * ca * D.zero * cn * cet) Term.Codatafield.t)) ->
@@ -1056,19 +1056,14 @@ and readback_codatafield : type mode a b cm cn ca cet iu ii iout.
                  (TubeOf.boundary selfnfs) fld adj fld_plus_lock fldty codataenv evaldim cm_cn
                  ~key:`Nokey in
              let ty = readback_val ~sort:`Type sctx ety in
-             Term.CodatafieldAbwd.Entry (fld, Codatafield (adj, plus_lock, Lower ty))
-         | Higher (fldtermctx, fldtys) -> (
+             Entry (fld, Codatafield (adj, plus_lock, Lower ty))
+         | Higher (fldtermctx, fldtys) ->
              (* A codatatype with a higher field has intrinsic dimension zero, so its whole dimension, at which the self-variable cube lives and at which the instances of the field are indexed, is its evaluation dimension. *)
-             match D.compare evaldim (CubeOf.dim selfnfs) with
-             | Neq ->
-                 fatal (Anomaly "higher field of a codatatype with positive intrinsic dimension")
-             | Eq ->
-                 let tys =
-                   readback_higher_codatafield ctx codataenv fld_plus_lock fldtermctx fldtys
-                     (CubeOf.dim selfnfs) fld adj selfnfs sctx in
-                 (* The context that the displayed field's types are evaluated over is also stored, as it is for a declared higher field, so that it could be degenerated further. *)
-                 Term.CodatafieldAbwd.Entry
-                   (fld, Codatafield (adj, plus_lock, Higher (readback_ctx lctx, tys)))))
+             let Eq = D.plus_uniq cm_cn (D.plus_zero evaldim) in
+             let tys =
+               readback_higher_codatafield ctx codataenv fld_plus_lock fldtermctx fldtys
+                 (CubeOf.dim selfnfs) fld adj selfnfs sctx in
+             Entry (fld, Codatafield (adj, plus_lock, Higher (readback_ctx lctx, tys))))
 
 (* Read back the instances of one higher field of a codatatype value being displayed, as the pbijmap of types that Codatafield.Higher stores: one entry per partial bijection between the codatatype's dimension m and the field's intrinsic dimension.  The self variable, its cube, and the context they live in are those built by readback_codata, while the environment, lock, termctx and stored types are those of the codatatype value being displayed; the ambient context is needed only to degenerate for a non-projectable instance. *)
 and readback_higher_codatafield : type mode a b ca m i f g gmode ag bg d raw.
