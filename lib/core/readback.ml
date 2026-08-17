@@ -338,7 +338,7 @@ and readback_at : type mode a z s.
           * (mn, m, n) insertion
           * (D.zero, mn, mn, mode normal) TubeOf.t),
       _,
-      _ ) -> (
+      Kinetic ) -> (
       match eta with
       (* A no-eta codatatype: an ordinary readback of a (kinetic) neutral here yields its application spine.  Displaying a comatch as a comatch is done by readback_comatch, which forces the neutral's potential value; that was caught earlier by the Struct/Potential case. *)
       | Noeta -> readback_val ctx tm
@@ -346,95 +346,85 @@ and readback_at : type mode a z s.
           (* An eta-record type.  Only kinetic values are ever read back here (records, and tuples reached via their neutral); a tuple in a case tree (a potential eta-struct) is never passed to readback for display. *)
           let dim = cod_left_ins ins in
           let fldins = ins_zero dim in
-          let readback_at_record (tm : (mode, kinetic) value) ty =
-            match (tm, opacity) with
-            (* If the term is a struct, we read back its fields.  Even though this is not technically an eta-expansion, we have to do it here rather than in readback_val because we need the record type to determine the types at which to read back the fields. *)
-            | Struct { fields = tmflds; energy; ins = _; eta = _ }, _ ->
-                let fields =
-                  Mbwd.map
-                    (* We don't need to consider the Higher case since we are kinetic. *)
-                    (fun (Value.StructfieldAbwd.Entry
-                            (fld, Value.Structfield.Lower (adj, fldtm, lbl))) ->
-                      (* The component of a modal field lives behind a lock by the right adjoint, so we read it back in the locked context, at the non-keyed component type. *)
-                      let (Tyof_modal_field (adj', ety)) = tyof_field_nokey (Ok tm) ty fld in
-                      match Modality.compare (Modalcell.adj_left adj') (Modalcell.adj_left adj) with
-                      | Neq -> fatal (Anomaly "adjunction mismatch in struct readback")
-                      | Eq ->
-                          let (Locked (plus_lock, lctx)) = Ctx.lock ctx (Modalcell.adj_right adj') in
-                          Term.StructfieldAbwd.Entry
-                            ( fld,
-                              Term.Structfield.Lower
-                                ( adj',
-                                  plus_lock,
-                                  readback_at Kinetic lctx (force_eval_term fldtm) ety,
-                                  lbl ) ))
-                    tmflds in
-                Some (Term.Struct { eta = Eta; dim; fields; energy })
-            (* In addition, if the record type is transparent, or if it's translucent and the term is a tuple in a case tree, and we are reading back for display (rather than for internal typechecking purposes), we do an eta-expanding readback. *)
-            | (_, `Transparent l | _, `Translucent l)
-              when Displaying.read ()
-                   &&
-                   match (tm, opacity) with
-                   | Neu { value; _ }, `Translucent _ -> (
-                       match force_eval value with
-                       | Val (Struct _) -> true
-                       | _ -> false)
-                   | _, `Transparent _ -> true
-                   | _ -> false ->
-                (* A modal field whose (left adjoint) modality is nonparametric disappears at a dimension it filters nontrivially, so it isn't read back. *)
-                let m = cod_left_ins ins in
-                let fields =
-                  Bwd.filter
-                    (fun (CodatafieldAbwd.Entry
-                            (type i)
-                            ((_, Codatafield (Adjunction { left; _ }, _, _)) :
-                              i Field.t * (i, mode * a * D.zero * n * has_eta) Codatafield.t)) ->
-                      let (Has_filter left_filter) = Modality.filter left m in
-                      Option.is_some (Modality.filter_is_trivial m left_filter))
-                    fields in
-                let fields =
-                  Mbwd.map
-                    (fun (CodatafieldAbwd.Entry
-                            (type i)
-                            (( fld,
-                               Codatafield ((Adjunction { left; right; unit; _ } as adj), _, Lower _)
-                             ) :
-                              i Field.t * (i, mode * a * D.zero * n * has_eta) Codatafield.t)) ->
-                      (* Eta-expansion of a modal field: key the term by the adjunction unit, project, and read back the component in the context locked by the right adjoint (as in the eta-rule for equality). *)
-                      let xu = act_value tm (id_deg D.zero) unit in
-                      let tyu = act_ty tm ty (id_deg D.zero) unit in
-                      let (Locked (plus_lock, lctx)) = Ctx.lock ctx right in
-                      Term.StructfieldAbwd.Entry
-                        ( fld,
-                          Term.Structfield.Lower
-                            ( adj,
-                              plus_lock,
-                              readback_at Kinetic lctx (field_term left xu fld fldins)
-                                (tyof_field left (Ok xu) tyu fld fldins),
-                              l ) ))
-                    fields in
-                Some (Struct { eta = Eta; dim; fields; energy = Kinetic })
-            (* If the term is not a struct and the record type is not transparent/translucent, we pass off to synthesizing readback. *)
-            | _ -> None in
-          let do_record (rtm : (mode, kinetic) value) =
+          (* A nontrivially permuted record is not a record type, but we can permute its arguments to find elements of a record type that we can then eta-expand and re-permute. *)
+          let tm, ty, wrap =
             match is_id_ins ins with
-            | Some _ -> (
-                match readback_at_record rtm ty with
-                | Some res -> res
-                | None -> readback_val ctx rtm)
-            | None -> (
-                (* A nontrivially permuted record is not a record type, but we can permute its arguments to find elements of a record type that we can then eta-expand and re-permute. *)
+            | Some _ -> (view, ty, fun res -> res)
+            | None ->
                 let (Perm_to p) = perm_of_ins ins in
                 let pinv = deg_of_perm (perm_inv p) in
-                let ptm = act_value rtm pinv (Modalcell.id2 (Ctx.mode ctx)) in
-                let pty = act_ty rtm ty pinv (Modalcell.id2 (Ctx.mode ctx)) in
-                match readback_at_record ptm pty with
-                | Some res -> Act (Kinetic, res, deg_of_perm p, (`Other, `Other))
-                | None -> readback_val ctx rtm) in
-          match view with
-          | Struct { energy = Kinetic; _ } -> do_record view
-          | Neu _ -> do_record view
-          | _ -> readback_val ctx tm))
+                ( act_value view pinv (Modalcell.id2 (Ctx.mode ctx)),
+                  act_ty view ty pinv (Modalcell.id2 (Ctx.mode ctx)),
+                  fun res -> Term.Act (Kinetic, res, deg_of_perm p, (`Other, `Other)) ) in
+          match (tm, opacity) with
+          (* If the term is a struct, we read back its fields.  Even though this is not technically an eta-expansion, we have to do it here rather than in readback_val because we need the record type to determine the types at which to read back the fields. *)
+          | Struct { fields = tmflds; energy; ins = _; eta = _ }, _ ->
+              let fields =
+                Mbwd.map
+                  (* We don't need to consider the Higher case since we are kinetic. *)
+                  (fun (Value.StructfieldAbwd.Entry (fld, Value.Structfield.Lower (adj, fldtm, lbl)))
+                     ->
+                    (* The component of a modal field lives behind a lock by the right adjoint, so we read it back in the locked context, at the non-keyed component type. *)
+                    let (Tyof_modal_field (adj', ety)) = tyof_field_nokey (Ok tm) ty fld in
+                    match Modality.compare (Modalcell.adj_left adj') (Modalcell.adj_left adj) with
+                    | Neq -> fatal (Anomaly "adjunction mismatch in struct readback")
+                    | Eq ->
+                        let (Locked (plus_lock, lctx)) = Ctx.lock ctx (Modalcell.adj_right adj') in
+                        Term.StructfieldAbwd.Entry
+                          ( fld,
+                            Term.Structfield.Lower
+                              ( adj',
+                                plus_lock,
+                                readback_at Kinetic lctx (force_eval_term fldtm) ety,
+                                lbl ) ))
+                  tmflds in
+              wrap (Term.Struct { eta = Eta; dim; fields; energy })
+          (* In addition, if the record type is transparent, or if it's translucent and the term is a tuple in a case tree, and we are reading back for display (rather than for internal typechecking purposes), we do an eta-expanding readback. *)
+          | (_, `Transparent l | _, `Translucent l)
+            when Displaying.read ()
+                 &&
+                 match (tm, opacity) with
+                 | Neu { value; _ }, `Translucent _ -> (
+                     match force_eval value with
+                     | Val (Struct _) -> true
+                     | _ -> false)
+                 | _, `Transparent _ -> true
+                 | _ -> false ->
+              (* A modal field whose (left adjoint) modality is nonparametric disappears at a dimension it filters nontrivially, so it isn't read back. *)
+              let m = cod_left_ins ins in
+              let fields =
+                Bwd.filter
+                  (fun (CodatafieldAbwd.Entry
+                          (type i)
+                          ((_, Codatafield (Adjunction { left; _ }, _, _)) :
+                            i Field.t * (i, mode * a * D.zero * n * has_eta) Codatafield.t)) ->
+                    let (Has_filter left_filter) = Modality.filter left m in
+                    Option.is_some (Modality.filter_is_trivial m left_filter))
+                  fields in
+              let fields =
+                Mbwd.map
+                  (fun (CodatafieldAbwd.Entry
+                          (type i)
+                          (( fld,
+                             Codatafield ((Adjunction { left; right; unit; _ } as adj), _, Lower _)
+                           ) :
+                            i Field.t * (i, mode * a * D.zero * n * has_eta) Codatafield.t)) ->
+                    (* Eta-expansion of a modal field: key the term by the adjunction unit, project, and read back the component in the context locked by the right adjoint (as in the eta-rule for equality). *)
+                    let xu = act_value tm (id_deg D.zero) unit in
+                    let tyu = act_ty tm ty (id_deg D.zero) unit in
+                    let (Locked (plus_lock, lctx)) = Ctx.lock ctx right in
+                    Term.StructfieldAbwd.Entry
+                      ( fld,
+                        Term.Structfield.Lower
+                          ( adj,
+                            plus_lock,
+                            readback_at Kinetic lctx (field_term left xu fld fldins)
+                              (tyof_field left (Ok xu) tyu fld fldins),
+                            l ) ))
+                  fields in
+              wrap (Struct { eta = Eta; dim; fields; energy = Kinetic })
+          (* If the term is not a struct and the record type is not transparent/translucent, we pass off to synthesizing readback. *)
+          | _ -> readback_val ctx view))
   (* Datatypes are not eta-expanding, but we still need the datatype in order to read back a constructor at that type. *)
   | Canonical (_, Data { constrs; _ }, ins, tyargs), Constr (xconstr, xn, xargs), _ -> (
       let Eq = eq_of_ins_zero ins in
