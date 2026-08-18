@@ -156,7 +156,7 @@
         (ap h ab20) (ap h ab21)
   
 
-  $ narya -v -show-function-boundaries -fake-interact=implicit-boundaries.ny
+  $ narya -v -show-implicits -fake-interact=implicit-boundaries.ny
    ￫ info[I0001]
    ￮ axiom A assumed
   
@@ -206,19 +206,19 @@
    ￮ axiom a22 assumed
   
   f⁽ᵉᵉ⁾ {a00} {a01} {a02} {a10} {a11} {a12} {a20} {a21} a22
-    : B⁽ᵉᵉ⁾ (ap f {a00} {a01} a02) (ap f {a10} {a11} a12)
-        (ap f {a00} {a10} a20) (ap f {a01} {a11} a21)
+    : B⁽ᵉᵉ⁾ {f a00} {f a01} (ap f {a00} {a01} a02) {f a10} {f a11}
+        (ap f {a10} {a11} a12) (ap f {a00} {a10} a20) (ap f {a01} {a11} a21)
   
-  A⁽ᵉᵉ⁾ a02 a12 a20 a21
+  A⁽ᵉᵉ⁾ {a00} {a01} a02 {a10} {a11} a12 a20 a21
     : Type
   
-  A⁽ᵉᵉ⁾ a02 a12 a20 a21
+  A⁽ᵉᵉ⁾ {a00} {a01} a02 {a10} {a11} a12 a20 a21
     : Type
   
-  A⁽ᵉᵉ⁾ a02 a12 a20 a21
+  A⁽ᵉᵉ⁾ {a00} {a01} a02 {a10} {a11} a12 a20 a21
     : Type
   
-  A⁽ᵉᵉ⁾ a02 a12 a20 a21
+  A⁽ᵉᵉ⁾ {a00} {a01} a02 {a10} {a11} a12 a20 a21
     : Type
   
    ￫ info[I0001]
@@ -277,15 +277,17 @@
   
   h⁽ᵉᵉ⁾ {(a00, b00)} {(a01, b01)} {(a02, b02)} {(a10, b10)} {(a11, b11)}
     {(a12, b12)} {(a20, b20)} {(a21, b21)} (a22, b22)
-    : C⁽ᵉᵉ⁾ (ap h {(a00, b00)} {(a01, b01)} (a02, b02))
-        (ap h {(a10, b10)} {(a11, b11)} (a12, b12))
+    : C⁽ᵉᵉ⁾ {h (a00, b00)} {h (a01, b01)}
+        (ap h {(a00, b00)} {(a01, b01)} (a02, b02)) {h (a10, b10)}
+        {h (a11, b11)} (ap h {(a10, b10)} {(a11, b11)} (a12, b12))
         (ap h {(a00, b00)} {(a10, b10)} (a20, b20))
         (ap h {(a01, b01)} {(a11, b11)} (a21, b21))
   
   h⁽ᵉᵉ⁾ {(a00, b00)} {(a01, b01)} {(a02, b02)} {(a10, b10)} {(a11, b11)}
     {(a12, b12)} {(a20, b20)} {(a21, b21)} (a22, b22)
-    : C⁽ᵉᵉ⁾ (ap h {(a00, b00)} {(a01, b01)} (a02, b02))
-        (ap h {(a10, b10)} {(a11, b11)} (a12, b12))
+    : C⁽ᵉᵉ⁾ {h (a00, b00)} {h (a01, b01)}
+        (ap h {(a00, b00)} {(a01, b01)} (a02, b02)) {h (a10, b10)}
+        {h (a11, b11)} (ap h {(a10, b10)} {(a11, b11)} (a12, b12))
         (ap h {(a00, b00)} {(a10, b10)} (a20, b20))
         (ap h {(a01, b01)} {(a11, b11)} (a21, b21))
   
@@ -308,11 +310,13 @@
    ￮ axiom ab22 assumed
   
   ab22
-    : A×B⁽ᵉᵉ⁾ {(a00, b00)} {(a01, b01)} (a02, b02) ab12 ab20 ab21
+    : A×B⁽ᵉᵉ⁾ {(a00, b00)} {(a01, b01)} (a02, b02) {ab10} {ab11} ab12 ab20
+        ab21
   
   h⁽ᵉᵉ⁾ {(a00, b00)} {(a01, b01)} {(a02, b02)} {ab10} {ab11} {ab12} {ab20}
     {ab21} ab22
-    : C⁽ᵉᵉ⁾ (ap h {(a00, b00)} {(a01, b01)} (a02, b02))
+    : C⁽ᵉᵉ⁾ {h (a00, b00)} {h (a01, b01)}
+        (ap h {(a00, b00)} {(a01, b01)} (a02, b02)) {h ab10} {h ab11}
         (ap h {ab10} {ab11} ab12) (ap h {(a00, b00)} {ab10} ab20)
         (ap h {(a01, b01)} {ab11} ab21)
   
@@ -475,7 +479,7 @@
         (ap h ab20) (ap h ab21)
   
 
-  $ narya -v -show-function-boundaries implicit-boundaries.ny
+  $ narya -v -show-implicits implicit-boundaries.ny
    ￫ info[I0001]
    ￮ axiom A assumed
   
@@ -525,186 +529,25 @@
    ￮ axiom a22 assumed
   
   f⁽ᵉᵉ⁾ {a00} {a01} {a02} {a10} {a11} {a12} {a20} {a21} a22
-    : B⁽ᵉᵉ⁾ (ap f {a00} {a01} a02) (ap f {a10} {a11} a12)
-        (ap f {a00} {a10} a20) (ap f {a01} {a11} a21)
+    : B⁽ᵉᵉ⁾ {f a00} {f a01} (ap f {a00} {a01} a02) {f a10} {f a11}
+        (ap f {a10} {a11} a12) (ap f {a00} {a10} a20) (ap f {a01} {a11} a21)
   
-  A⁽ᵉᵉ⁾ a02 a12 a20 a21
+  A⁽ᵉᵉ⁾ {a00} {a01} a02 {a10} {a11} a12 a20 a21
     : Type
   
-  A⁽ᵉᵉ⁾ a02 a12 a20 a21
+  A⁽ᵉᵉ⁾ {a00} {a01} a02 {a10} {a11} a12 a20 a21
     : Type
   
-  A⁽ᵉᵉ⁾ a02 a12 a20 a21
+  A⁽ᵉᵉ⁾ {a00} {a01} a02 {a10} {a11} a12 a20 a21
     : Type
   
-  A⁽ᵉᵉ⁾ a02 a12 a20 a21
+  A⁽ᵉᵉ⁾ {a00} {a01} a02 {a10} {a11} a12 a20 a21
     : Type
   
    ￫ info[I0001]
    ￮ axiom g assumed
   
   ap g {a00} {a01} a02 {a10} {a11} a12 {a20} {a21} a22
-    : Id B (g a00 a10 a20) (g a01 a11 a21)
-  
-   ￫ info[I0001]
-   ￮ axiom C assumed
-  
-   ￫ info[I0000]
-   ￮ constant A×B defined
-  
-   ￫ info[I0001]
-   ￮ axiom h assumed
-  
-   ￫ info[I0001]
-   ￮ axiom b0 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom b1 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom b2 assumed
-  
-  ap h {(a0, b0)} {(a1, b1)} (a2, b2)
-    : Id C (h (a0, b0)) (h (a1, b1))
-  
-   ￫ info[I0001]
-   ￮ axiom b00 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom b01 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom b02 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom b10 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom b11 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom b12 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom b20 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom b21 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom b22 assumed
-  
-  h⁽ᵉᵉ⁾ {(a00, b00)} {(a01, b01)} {(a02, b02)} {(a10, b10)} {(a11, b11)}
-    {(a12, b12)} {(a20, b20)} {(a21, b21)} (a22, b22)
-    : C⁽ᵉᵉ⁾ (ap h {(a00, b00)} {(a01, b01)} (a02, b02))
-        (ap h {(a10, b10)} {(a11, b11)} (a12, b12))
-        (ap h {(a00, b00)} {(a10, b10)} (a20, b20))
-        (ap h {(a01, b01)} {(a11, b11)} (a21, b21))
-  
-  h⁽ᵉᵉ⁾ {(a00, b00)} {(a01, b01)} {(a02, b02)} {(a10, b10)} {(a11, b11)}
-    {(a12, b12)} {(a20, b20)} {(a21, b21)} (a22, b22)
-    : C⁽ᵉᵉ⁾ (ap h {(a00, b00)} {(a01, b01)} (a02, b02))
-        (ap h {(a10, b10)} {(a11, b11)} (a12, b12))
-        (ap h {(a00, b00)} {(a10, b10)} (a20, b20))
-        (ap h {(a01, b01)} {(a11, b11)} (a21, b21))
-  
-   ￫ info[I0001]
-   ￮ axiom ab10 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom ab11 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom ab12 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom ab20 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom ab21 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom ab22 assumed
-  
-  ab22
-    : A×B⁽ᵉᵉ⁾ {(a00, b00)} {(a01, b01)} (a02, b02) ab12 ab20 ab21
-  
-  h⁽ᵉᵉ⁾ {(a00, b00)} {(a01, b01)} {(a02, b02)} {ab10} {ab11} {ab12} {ab20}
-    {ab21} ab22
-    : C⁽ᵉᵉ⁾ (ap h {(a00, b00)} {(a01, b01)} (a02, b02))
-        (ap h {ab10} {ab11} ab12) (ap h {(a00, b00)} {ab10} ab20)
-        (ap h {(a01, b01)} {ab11} ab21)
-  
-
-  $ narya -v -show-type-boundaries -fake-interact=implicit-boundaries.ny
-   ￫ info[I0001]
-   ￮ axiom A assumed
-  
-   ￫ info[I0001]
-   ￮ axiom B assumed
-  
-   ￫ info[I0001]
-   ￮ axiom f assumed
-  
-   ￫ info[I0001]
-   ￮ axiom a0 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom a1 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom a2 assumed
-  
-  ap f a2
-    : Id B (f a0) (f a1)
-  
-   ￫ info[I0001]
-   ￮ axiom a00 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom a01 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom a02 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom a10 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom a11 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom a12 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom a20 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom a21 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom a22 assumed
-  
-  f⁽ᵉᵉ⁾ a22
-    : B⁽ᵉᵉ⁾ {f a00} {f a01} (ap f a02) {f a10} {f a11} (ap f a12) (ap f a20)
-        (ap f a21)
-  
-  A⁽ᵉᵉ⁾ {a00} {a01} a02 {a10} {a11} a12 a20 a21
-    : Type
-  
-  A⁽ᵉᵉ⁾ {a00} {a01} a02 {a10} {a11} a12 a20 a21
-    : Type
-  
-  A⁽ᵉᵉ⁾ {a00} {a01} a02 {a10} {a11} a12 a20 a21
-    : Type
-  
-  A⁽ᵉᵉ⁾ {a00} {a01} a02 {a10} {a11} a12 a20 a21
-    : Type
-  
-   ￫ info[I0001]
-   ￮ axiom g assumed
-  
-  ap g a02 a12 a22
     : Id B (g a00 a10 a20) (g a01 a11 a21)
   
    ￫ info[I0001]
@@ -793,8 +636,10 @@
     : A×B⁽ᵉᵉ⁾ {(a00, b00)} {(a01, b01)} (a02, b02) {ab10} {ab11} ab12 ab20
         ab21
   
-  h⁽ᵉᵉ⁾ ab22
+  h⁽ᵉᵉ⁾ {(a00, b00)} {(a01, b01)} {(a02, b02)} {ab10} {ab11} {ab12} {ab20}
+    {ab21} ab22
     : C⁽ᵉᵉ⁾ {h (a00, b00)} {h (a01, b01)}
         (ap h {(a00, b00)} {(a01, b01)} (a02, b02)) {h ab10} {h ab11}
-        (ap h ab12) (ap h ab20) (ap h ab21)
+        (ap h {ab10} {ab11} ab12) (ap h {(a00, b00)} {ab10} ab20)
+        (ap h {(a01, b01)} {ab11} ab21)
   
