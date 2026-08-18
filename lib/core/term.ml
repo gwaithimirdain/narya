@@ -338,6 +338,7 @@ end = struct
 
   module CodCube = Cube (CodFam)
 
+  (* A Pbijmap is a total map, storing exactly one element for every partial bijection.  Here we wrap the result types in an option so that it becomes a partial map.  We do this mainly to handle incremental checking: when only some of the instances have been successfully typechecked, we insert only those into the pbijmap while checking later ones. *)
   module PlusFam = struct
     type (_, _) some =
       | PlusFam :
