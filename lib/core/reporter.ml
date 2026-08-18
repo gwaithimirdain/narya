@@ -241,6 +241,7 @@ module Code = struct
     | Case_tree_not_displayed : string -> t
     (* A value did not fit the type it was being read back at.  This is a bug wherever readback is given a value and its own type; but readback of a stuck case tree, for display, may read a branch body back at a type it only approximates, and it catches this specific code to fall back rather than reporting a bug. *)
     | Readback_at_wrong_type : string -> t
+    | Degenerated_neutral_not_a_struct : t
     | Show : string * printable -> t
     | Comment_end_in_string : t
     | Checking_canonical_at_nonuniverse : string * printable -> t
@@ -409,6 +410,7 @@ module Code = struct
     | Anomaly _ -> Bug
     | No_such_level _ -> Bug
     | Readback_at_wrong_type _ -> Bug
+    | Degenerated_neutral_not_a_struct -> Bug
     | Self_used -> Bug
     | Redefining_constant _ -> Warning
     | Invalid_constant_name _ -> Error
@@ -499,10 +501,11 @@ module Code = struct
     (* Usually bugs *)
     | Anomaly _ -> "E0000"
     | No_such_level _ -> "E0001"
-    | Readback_at_wrong_type _ -> "E0005"
-    | Self_used -> "E0004"
     | Accumulated (_msg, _errs) -> "E0002"
     | Invalid_degeneracy_action _ -> "E0003"
+    | Self_used -> "E0004"
+    | Readback_at_wrong_type _ -> "E0005"
+    | Degenerated_neutral_not_a_struct -> "E0006"
     (* Past and future features *)
     | Unimplemented _ -> "E0100"
     | Deprecated _ -> "E0110"
@@ -1079,6 +1082,7 @@ module Code = struct
                 (List.map (fun name -> print name) names))
       | Notation_defined name -> textf "notation %s defined" name
       | Readback_at_wrong_type str -> textf "reading back %s at the wrong type" str
+      | Degenerated_neutral_not_a_struct -> text "degenerated neutral is not a struct"
       | Case_tree_not_displayed str ->
           textf "not displaying %s; showing an application spine instead" str
       | Show (str, x) -> textf "%s: %a" str pp_printed (print x)

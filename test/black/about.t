@@ -680,9 +680,7 @@ A higher field needs more: its instances are read back by degenerating the self,
 When it doesn't -- a higher field in a branch whose discriminee could not be refined -- projecting from the degenerated self computes nothing, and displaying it would give an instance body that is not the one the comatch stores.  We detect that and give up on the branch instead.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def √N : Type ≔ codata [ x .root.e : N ]' -e 'axiom ax : N' -e 'about (let u : N → √N ≔ [ zero. ↦ [ .root.e ↦ zero. ] | suc. n ↦ [ .root.e ↦ suc. zero. ] ] in u ax)'
-  match ax [
-  | suc. n ↦ [ .root.e ↦ _let.F5.0.u{…} (refl ax) .root ]
-  | zero. ↦ [ .root.e ↦ _let.F5.0.u{…} (refl ax) .root ]]
+  _let.F5.0.u{…} ax
     : √N
   
 
@@ -829,9 +827,10 @@ Whenever a piece of a stuck case tree can't be displayed as the construct it cam
    ￫ info[I0001]
    ￮ axiom ax assumed
   
-  match ax [
-  | suc. n ↦ [ .root.e ↦ _let.F5.0.u{…} (refl ax) .root ]
-  | zero. ↦ [ .root.e ↦ _let.F5.0.u{…} (refl ax) .root ]]
+   ￫ info[I0010]
+   ￮ not displaying a stuck match with a branch that reaches a higher field; showing an application spine instead
+  
+  _let.F5.0.u{…} ax
     : √N
   
 

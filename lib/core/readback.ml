@@ -405,7 +405,13 @@ and readback_at : type mode a z s.
                                       let dlctx = Ctx.lock_to dctx right deg_plus_lock in
                                       (* Raise the self into that context, where the remaining dimensions are genuine dimensions and this instance is therefore *projectable*: ins_plus_of_pbij absorbs them into the evaluation dimension, turning the partial bijection into an insertion.  This is the move check_higher_field makes to carry its status into a component.  The body is then just a field projection read back like a lower field's -- the comatch's closure environment never has to be transported, and no shuffleable is needed, since at this dimension nothing remains. *)
                                       let dself = degenerate_normal ctx denv r selfnf in
-                                      (* Degenerating the self reads it back and re-evaluates it.  This may not be a struct again; if not, then field_term below will just produce the projected neutral. *)
+                                      (* Degenerating the self reads it back and re-evaluates it, so it survives that round trip only if its spine really does evaluate to the comatch.  An ordinary self does; the one readback_stuck_match supplies in a match branch does not, when it could not refine the discriminee -- there the spine is still a stuck match, so projecting from it computes nothing and we would show an instance body that is not the one the comatch stores.  We detect that and abandon back to the match. *)
+                                      (match dself.tm with
+                                      | Neu { value; _ } -> (
+                                          match force_eval value with
+                                          | Val (Struct _) -> ()
+                                          | _ -> fatal Degenerated_neutral_not_a_struct)
+                                      | _ -> fatal Degenerated_neutral_not_a_struct);
                                       let (Plus rm) = D.plus dim in
                                       let newins = ins_plus_of_pbij fldins fldshuf rm in
                                       let ety =
@@ -1334,6 +1340,8 @@ and readback_stuck : type mode a z hmode any.
       (* The one thing that can legitimately go wrong here: the type we read a branch body back at only approximates the type it was checked at, so the body may not fit it.  Anything else is a real bug and is passed through as one. *)
       | Readback_at_wrong_type str ->
           no_display (Printf.sprintf "a stuck match with a branch body that is %s" str)
+      | Degenerated_neutral_not_a_struct ->
+          no_display "a stuck match with a branch that reaches a higher field"
       | _ -> fatal_diagnostic d)
   @@ fun () -> readback_stuck_match status ctx pn ty
 
