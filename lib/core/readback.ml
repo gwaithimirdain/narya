@@ -1449,26 +1449,6 @@ and readback_stuck_match : type mode a z hmode any.
                                  normals = _;
                                }) =
                           ext_pi ctx window cenv xs (Norm.eval_term cenv cty) in
-                        (* This function reads back the branch, given the head, its arguments (not including those to which the stuck match is further applied), an environment including the new pattern variables, and the type at which to read back. *)
-                        let branch head args er bodyenv branch_ty =
-                          let ebody = eval (Permute (perm, bodyenv)) body in
-                          let bstatus =
-                            Potential
-                              (Neu { head; args; value = ready ebody; ty = Lazy.from_val branch_ty })
-                          in
-                          let ebody2 = er bstatus ebody in
-                          let bstatus2 =
-                            Potential
-                              (Neu
-                                 { head; args; value = ready ebody2; ty = Lazy.from_val branch_ty })
-                          in
-                          Term.Branch
-                            {
-                              annotate = new_annotate;
-                              comp = new_comp;
-                              perm = id_perm;
-                              tm = readback_eval bstatus2 branch_ctx ebody branch_ty;
-                            } in
                         (* We first try to refine the context and return type by rebinding the variable discriminee to the constructor, as when typechecking a variable match, except in environments rather than contexts.  This is not always possible, even for a match that was originally a variable, since a discriminee (or its indices or boundary) that was originally a free variable might have been substituted by something else. *)
                         Reporter.try_with
                           (fun () ->
@@ -1513,32 +1493,102 @@ and readback_stuck_match : type mode a z hmode any.
                             match bind_some (Modality.src window, new_vals) branch_ctx with
                             | Bind_none ->
                                 fatal (Matching_wont_refine ("no consistent permutation", None))
-                            | Bind_some { checked_perm = _; oldctx; newctx } -> (
+                            | Bind_some { checked_perm; oldctx; newctx } -> (
+                                (* Everything about the branch is now obtained by the same eval-readback cycle: read back in the old context, where the pattern variables still carry their pre-refinement levels, and re-evaluate in the new one, where the discriminee and the index variables are bound to the values this branch's constructor gives them. *)
+                                let (Locked (lplus, oldlctx)) = Ctx.lock oldctx window in
+                                let newlctx = Ctx.lock_to newctx window lplus in
+                                (* The rebinding is only a refinement of *this* branch if it really did replace the discriminee by this branch's constructor.  It might not have, for instance if the discriminee lives at a different mode than the values we bound; and then the self below would not reduce and we would come straight back here, so we check first and fall back instead. *)
+                                (match
+                                   view_term
+                                     (eval_term (Ctx.env newlctx) (readback_val oldlctx disc))
+                                 with
+                                | Constr (c, _, _) when c = constr -> ()
+                                | _ ->
+                                    fatal
+                                      (Matching_wont_refine
+                                         ( "a discriminee that does not refine to its constructor",
+                                           None )));
                                 let new_match_ty =
                                   eval_term (Ctx.env newctx) (readback_val oldctx match_ty) in
-                                (* Re-evaluating the self in the rebound environment should make its spine reduce. *)
+                                (* We need that same refined type back in the *old* levels too, since that is where the branch body starts out: the body is evaluated in the environment the match is stuck in, which sends the discriminee to a variable rather than to the constructor, so it is at the old levels but already at the refined type -- that is exactly the sense in which the branch typechecks.  Running the type through the cycle in the other direction gives it: the rebound variables have been substituted away, so all that remains to translate are the pattern variables. *)
+                                let old_match_ty =
+                                  eval_term (Ctx.env oldctx) (readback_val newctx new_match_ty)
+                                in
+                                let ebody =
+                                  eval
+                                    (Permute
+                                       (perm, take_args env plus_dim newvars window fw annotate comp))
+                                    body in
+                                (* The self a branch body is read back against must be refined too, so that a comatch in the body has a self whose spine really does evaluate to it.  Re-evaluating it in the rebound context does that; and since the refinement puts the constructor itself into its spine rather than a variable, running it back through the cycle the other way gives the same refined self at the old levels, which is the one the body starts out at. *)
                                 match
                                   eval_term (Ctx.env newctx)
                                     (readback_neu oldctx head_head head_args)
                                 with
-                                | Neu { head = rhead; args = rargs; _ } ->
-                                    (* If it's still a neutral, we use it to read back the potential branch term. *)
-                                    branch rhead rargs
-                                      (fun status tm ->
-                                        eval (Ctx.env newctx)
-                                          (readback_eval status oldctx tm match_ty))
-                                      (take_args env plus_dim newvars window fw annotate comp)
-                                      new_match_ty
+                                | Neu { head = new_head; args = new_args; _ } -> (
+                                    match
+                                      eval_term (Ctx.env oldctx)
+                                        (readback_neu newctx new_head new_args)
+                                    with
+                                    | Neu { head = old_head; args = old_args; _ } -> (
+                                        let old_status =
+                                          Potential
+                                            (Neu
+                                               {
+                                                 head = old_head;
+                                                 args = old_args;
+                                                 value = ready ebody;
+                                                 ty = Lazy.from_val old_match_ty;
+                                               }) in
+                                        match ebody with
+                                        (* A canonical type reads back only as a display-only declaration, which cannot be evaluated again, so it can't go through the cycle.  But its own refinement comes entirely from the self, which we have already refined, so we read it back in the old context instead; the two contexts have the same indices, so either is a context for this branch. *)
+                                        | Val (Canonical _) ->
+                                            Term.Branch
+                                              {
+                                                annotate = new_annotate;
+                                                comp = new_comp;
+                                                perm = checked_perm;
+                                                tm =
+                                                  readback_eval old_status oldctx ebody old_match_ty;
+                                              }
+                                        (* Everything else goes through the cycle: read back at the refined type in the old context and re-evaluated in the new one.  This is what refines the *value*: a body that mentions the discriminee reads back as that variable and re-evaluates to the constructor.  Refining the value and the type by the same rebinding is what keeps the two in step. *)
+                                        | _ ->
+                                            let new_ebody =
+                                              eval (Ctx.env newctx)
+                                                (readback_eval old_status oldctx ebody old_match_ty)
+                                            in
+                                            let new_status =
+                                              Potential
+                                                (Neu
+                                                   {
+                                                     head = new_head;
+                                                     args = new_args;
+                                                     value = ready new_ebody;
+                                                     ty = Lazy.from_val new_match_ty;
+                                                   }) in
+                                            (* The branch records the permutation relating the rebound context to the one the pattern variables were added to, exactly as a variable match does when typechecking. *)
+                                            Term.Branch
+                                              {
+                                                annotate = new_annotate;
+                                                comp = new_comp;
+                                                perm = checked_perm;
+                                                tm =
+                                                  readback_eval new_status newctx new_ebody
+                                                    new_match_ty;
+                                              })
+                                    | _ ->
+                                        fatal
+                                          (Matching_wont_refine
+                                             ("a self that does not survive the rebinding", None)))
                                 | kbody ->
                                     (* TODO: I think this could happen if the branch body is kinetic, maybe if glued eval is off.  But in that case we can just read back the resulting kinetic value, which should *be* the value of this body. *)
                                     let tm =
-                                      Term.Realize
-                                        (readback_at Kinetic branch_ctx kbody new_match_ty) in
+                                      Term.Realize (readback_at Kinetic newctx kbody new_match_ty)
+                                    in
                                     Term.Branch
                                       {
                                         annotate = new_annotate;
                                         comp = new_comp;
-                                        perm = id_perm;
+                                        perm = checked_perm;
                                         tm;
                                       })
                             (* If we can't or won't refine, the remaining approach is to read back the branch using the head, arguments, environment, and a type computed from an explicit motive or from the type of the whole branch. *))
@@ -1554,10 +1604,28 @@ and readback_stuck_match : type mode a z hmode any.
                                            (indices_of_out "match branch" out total_dim
                                               (Vec.length data_indices)))
                                         (constr_val_cube constr total_dim newvars) in
-                                branch head_head head_args
-                                  (fun _ x -> x)
-                                  (take_args env plus_dim newvars window fw annotate comp)
-                                  branch_ty
+                                (* The body is evaluated in the environment the match is stuck in, extended by the new pattern variables, exactly as evaluation does it; but that environment still sends the discriminee to a variable rather than to this branch's constructor, so the value and the type are both the unrefined ones. *)
+                                let ebody =
+                                  eval
+                                    (Permute
+                                       (perm, take_args env plus_dim newvars window fw annotate comp))
+                                    body in
+                                let bstatus =
+                                  Potential
+                                    (Neu
+                                       {
+                                         head = head_head;
+                                         args = head_args;
+                                         value = ready ebody;
+                                         ty = Lazy.from_val branch_ty;
+                                       }) in
+                                Term.Branch
+                                  {
+                                    annotate = new_annotate;
+                                    comp = new_comp;
+                                    perm = id_perm;
+                                    tm = readback_eval bstatus branch_ctx ebody branch_ty;
+                                  }
                             | _ -> fatal_diagnostic d))
                   branches in
               return
