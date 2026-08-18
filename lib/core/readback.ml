@@ -1495,19 +1495,6 @@ and readback_stuck_match : type mode a z hmode any.
                                 fatal (Matching_wont_refine ("no consistent permutation", None))
                             | Bind_some { checked_perm; oldctx; newctx } -> (
                                 (* Everything about the branch is now obtained by the same eval-readback cycle: read back in the old context, where the pattern variables still carry their pre-refinement levels, and re-evaluate in the new one, where the discriminee and the index variables are bound to the values this branch's constructor gives them. *)
-                                let (Locked (lplus, oldlctx)) = Ctx.lock oldctx window in
-                                let newlctx = Ctx.lock_to newctx window lplus in
-                                (* The rebinding is only a refinement of *this* branch if it really did replace the discriminee by this branch's constructor.  It might not have, for instance if the discriminee lives at a different mode than the values we bound; and then the self below would not reduce and we would come straight back here, so we check first and fall back instead. *)
-                                (match
-                                   view_term
-                                     (eval_term (Ctx.env newlctx) (readback_val oldlctx disc))
-                                 with
-                                | Constr (c, _, _) when c = constr -> ()
-                                | _ ->
-                                    fatal
-                                      (Matching_wont_refine
-                                         ( "a discriminee that does not refine to its constructor",
-                                           None )));
                                 let new_match_ty =
                                   eval_term (Ctx.env newctx) (readback_val oldctx match_ty) in
                                 (* We need that same refined type back in the *old* levels too, since that is where the branch body starts out: the body is evaluated in the environment the match is stuck in, which sends the discriminee to a variable rather than to the constructor, so it is at the old levels but already at the refined type -- that is exactly the sense in which the branch typechecks.  Running the type through the cycle in the other direction gives it: the rebound variables have been substituted away, so all that remains to translate are the pattern variables. *)
