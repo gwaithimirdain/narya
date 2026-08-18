@@ -476,7 +476,7 @@ module Code = struct
     | Invalid_split _ -> Error
     | Hole_solved _ -> Info
     | Split_term _ -> Info
-    | Case_tree_not_displayed _ -> Info
+    | Case_tree_not_displayed _ -> Warning
     | Forbidden_interactive_command _ -> Error
     | Not_enough_to_undo -> Error
     | Commands_undone _ -> Info
