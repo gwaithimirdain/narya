@@ -150,13 +150,19 @@ let is_fresh : type dom modality mode a b.
  fun ctx window seen x ->
   (* With glued evaluation, an index can be a glued neutral whose stored value unfolds to a free variable, e.g. a transport along a variable that has been refined to reflexivity.  Such an index refines just as well as a bare variable, so we look through the unfolding.  (With glued evaluation off, view_term is the identity.) *)
   match view_term x.tm with
-  | Neu { head = Var { level; deg; key = _ }; args = Emp; value; ty = _ } -> (
+  | Neu { head = Var { level; deg; key }; args = Emp; value; ty = _ } -> (
       match force_eval value with
       | Unrealized _ ->
           (if Option.is_none (is_id_deg deg) then
              let (Locked (_, lctx)) = Ctx.lock ctx window in
              fatal
                (Matching_wont_refine ("index variable has degeneracy", Some (PNormal (lctx, x)))));
+          (* Rebinding a variable rebinds what its *unkeyed* uses evaluate to, so a keyed use is not refined by binding its slot.  Unkeyed means an identity 2-cell on the variable's own annotation, which for a discriminee or an index is the match's window. *)
+          (match Modalcell.compare key (Modalcell.id window) with
+          | Eq -> ()
+          | Neq ->
+              let (Locked (_, lctx)) = Ctx.lock ctx window in
+              fatal (Matching_wont_refine ("index variable is keyed", Some (PNormal (lctx, x)))));
           (if Hashtbl.mem seen level then
              let (Locked (_, lctx)) = Ctx.lock ctx window in
              fatal
