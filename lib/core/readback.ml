@@ -149,30 +149,23 @@ let is_fresh : type dom modality mode a b.
     level =
  fun ctx window seen x ->
   (* With glued evaluation, an index can be a glued neutral whose stored value unfolds to a free variable, e.g. a transport along a variable that has been refined to reflexivity.  Such an index refines just as well as a bare variable, so we look through the unfolding.  (With glued evaluation off, view_term is the identity.) *)
+  let (Locked (_, lctx)) = Ctx.lock ctx window in
+  let err str =
+    fatal (Matching_wont_refine ("index/boundary variable " ^ str, Some (PNormal (lctx, x)))) in
   match view_term x.tm with
   | Neu { head = Var { level; deg; key }; args = Emp; value; ty = _ } -> (
       match force_eval value with
       | Unrealized _ ->
-          (if Option.is_none (is_id_deg deg) then
-             let (Locked (_, lctx)) = Ctx.lock ctx window in
-             fatal
-               (Matching_wont_refine ("index variable has degeneracy", Some (PNormal (lctx, x)))));
+          if Option.is_none (is_id_deg deg) then err "has degeneracy";
           (* Rebinding a variable rebinds what its *unkeyed* uses evaluate to, so a keyed use is not refined by binding its slot.  Unkeyed means an identity 2-cell on the variable's own annotation, which for a discriminee or an index is the match's window. *)
           (match Modalcell.compare key (Modalcell.id window) with
           | Eq -> ()
-          | Neq ->
-              let (Locked (_, lctx)) = Ctx.lock ctx window in
-              fatal (Matching_wont_refine ("index variable is keyed", Some (PNormal (lctx, x)))));
-          (if Hashtbl.mem seen level then
-             let (Locked (_, lctx)) = Ctx.lock ctx window in
-             fatal
-               (Matching_wont_refine ("duplicate variable in indices", Some (PNormal (lctx, x)))));
+          | Neq -> err "is keyed");
+          if Hashtbl.mem seen level then err "is a duplicate";
           Hashtbl.add seen level ();
           level
       | _ -> fatal (Anomaly "local variable bound to a potential term"))
-  | _ ->
-      let (Locked (_, lctx)) = Ctx.lock ctx window in
-      fatal (Matching_wont_refine ("index is not a free variable", Some (PNormal (lctx, x))))
+  | _ -> err "is not free"
 
 type (_, _, _, _) readback_apps =
   | Readback_apps :
@@ -1460,7 +1453,7 @@ and readback_stuck_match : type mode a z hmode any.
                           (fun () ->
                             (* Skip refining right away if we have an explicit motive or a non-dependent match. *)
                             (match motive with
-                            | Some _ -> fatal (Matching_wont_refine ("explicit motive", None))
+                            | Some _ -> fatal (Matching_wont_refine ("explicit/nondep", None))
                             | None -> ());
                             (* We assemble a table of the variables to rebind to new values, checking along the way that they are all distinct and free. *)
                             let seen = Hashtbl.create 10 in
@@ -1569,9 +1562,8 @@ and readback_stuck_match : type mode a z hmode any.
                                                     new_match_ty;
                                               })
                                     | _ ->
-                                        fatal
-                                          (Matching_wont_refine
-                                             ("a self that does not survive the rebinding", None)))
+                                        fatal (Matching_wont_refine ("rebinding killed self", None))
+                                    )
                                 | kbody ->
                                     (* TODO: I think this could happen if the branch body is kinetic, maybe if glued eval is off.  But in that case we can just read back the resulting kinetic value, which should *be* the value of this body. *)
                                     let tm =
