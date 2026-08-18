@@ -286,7 +286,7 @@ let rec get_spine : type mode a s.
           {
             it =
               (fun fa [ (x : (_, am, kinetic) Term.term) ] ->
-                match (Display.function_boundaries (), is_id_sface fa, all_args) with
+                match (Display.implicits (), is_id_sface fa, all_args) with
                 | `Hide, None, false -> ()
                 | _, None, _ -> s := Snoc (!s, Spine_arg (Left plus, x, `Implicit))
                 | _ -> s := Snoc (!s, Spine_arg (Left plus, x, `Explicit)));
@@ -1282,8 +1282,8 @@ and unparse_named_inst : type mode n lt ls rt rs m k mk s.
           | Some () ->
               s := Snoc (!s, make_unparser_implicit xvars (Spine_arg (Right Eq, x, `Explicit)))
           | None -> (
-              (* We include it implicitly if display of type boundaries is on. *)
-              match Display.type_boundaries () with
+              (* We include it implicitly if display of implicits is on. *)
+              match Display.implicits () with
               | `Show ->
                   s := Snoc (!s, make_unparser_implicit xvars (Spine_arg (Right Eq, x, `Implicit)))
               | `Hide ->

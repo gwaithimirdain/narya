@@ -537,16 +537,15 @@ However, the alternative of :ref:`Cubes of variables` is also available and ofte
 Implicit boundaries
 -------------------
 
-We have noted above that many parts of the boundary of a cube are treated as implicit arguments.  Normally, Narya also hides these arguments when printing such terms and types.  However, you can tell it to print these arguments explicitly with the commands
+We have noted above that many parts of the boundary of a cube are treated as implicit arguments.  Normally, Narya also hides these arguments when printing such terms and types.  However, you can tell it to print these arguments explicitly with the command
 
 .. code-block:: none
 
-   display function boundaries ≔ on
-   display type boundaries ≔ on
+   display implicits ≔ on
 
-(and switch back with ``≔ off``).  These commands are not available in source files, since they should not be part of the "time stream" of undoables.  They can be given in interactive mode, or with the ProofGeneral commands ``C-c C-d C-f`` and ``C-c C-d C-t``, or you can use the corresponding command-line flags such as ``-show-function-boundaries``.  When these options are ``on``, Narya prints *all* the lower-dimensional arguments explicitly, with curly braces around them.  There are (currently) no half measures here, for functions or for types.
+(and switch back with ``≔ off``).  This command is not available in source files, since it should not be part of the "time stream" of undoables.  It can be given in interactive mode, or with the ProofGeneral command ``C-c C-d C-i``, or you can use the corresponding command-line flag ``-show-implicits``.  When this option is ``on``, Narya prints *all* the lower-dimensional arguments explicitly, with curly braces around them, for both functions and types.  There are (currently) no half measures here.
 
-In addition, even when printing implicit boundaries is off, Narya attempts to be smart and print those boundaries when it thinks that they would be necessary in order to re-parse the printed term because the corresponding explicit argument isn't synthesizing.  In this case it can do half measures, the way you can when writing type boundaries: the implicit arguments in each "block" are printed only if the primary argument of that block is nonsynthesizing.
+In addition, even when printing implicits is off, Narya attempts to be smart and print those boundaries when it thinks that they would be necessary in order to re-parse the printed term because the corresponding explicit argument isn't synthesizing.  In this case it can do half measures, the way you can when writing type boundaries: the implicit arguments in each "block" are printed only if the primary argument of that block is nonsynthesizing.
 
 
 Symmetries and degeneracies

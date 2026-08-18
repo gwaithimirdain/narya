@@ -968,31 +968,29 @@ With a negative prefix argument, set display to ASCII."
          "display chars := ascii")
      "display chars := toggle")))
 
-(defun narya-display-function-boundaries (arg)
-  "Set, unset, or toggle display of function boundaries.
-With no prefix argument, toggle display of function boundaries.
-With a positive prefix argument, set display of function boundaries on.
-With a negative prefix argument,set display of function boundaries off."
+(defun narya-display-implicits (arg)
+  "Set, unset, or toggle display of implicit arguments.
+With no prefix argument, toggle display of implicit arguments.
+With a positive prefix argument, set display of implicit arguments on.
+With a negative prefix argument,set display of implicit arguments off."
   (interactive "P")
   (proof-shell-invisible-command
    (if arg
        (if (> (prefix-numeric-value arg) 0)
-           "display function boundaries := on"
-         "display function boundaries := off")
-     "display function boundaries := toggle")))
+           "display implicits := on"
+         "display implicits := off")
+     "display implicits := toggle")))
 
-(defun narya-display-type-boundaries (arg)
-  "Set, unset, or toggle display of type boundaries.
-With no prefix argument, toggle display of type boundaries.
-With a positive prefix argument, set display of type boundaries on.
-With a negative prefix argument,set display of type boundaries off."
+(defun narya-display-boundaries-deprecated (arg)
+  "Deprecated alias for `narya-display-implicits'.
+The separate commands for function and type boundaries have been
+merged into a single command for all implicit arguments, bound to
+\\[narya-display-implicits]."
   (interactive "P")
-  (proof-shell-invisible-command
-   (if arg
-       (if (> (prefix-numeric-value arg) 0)
-           "display type boundaries := on"
-         "display type boundaries := off")
-     "display type boundaries := toggle")))
+  (display-warning
+   'narya
+   "C-c C-d C-f and C-c C-d C-t are deprecated; use C-c C-d C-i instead")
+  (narya-display-implicits arg))
 
 (defun narya-display-unique-keys (arg)
   "Set, unset, or toggle display of unique keys.
@@ -1008,10 +1006,7 @@ With a negative prefix argument, set display of unique keys off."
      "display unique keys := toggle")))
 
 (defun narya-display-variables (vars)
-  "Set, unset, or toggle display of type boundaries.
-With no prefix argument, toggle display of type boundaries.
-With a positive prefix argument, set display of type boundaries on.
-With a negative prefix argument,set display of type boundaries off."
+  "Set the default variable names used when displaying terms."
   (interactive "MDefault variables: ")
   (proof-shell-invisible-command
    (concat "display variables := " vars)))
@@ -1024,10 +1019,8 @@ With a negative prefix argument,set display of type boundaries off."
     "show holes"
     "display chars ≔ unicode"
     "display chars ≔ ascii"
-    "display function boundaries ≔ on"
-    "display function boundaries ≔ off"
-    "display type boundaries ≔ on"
-    "display type boundaries ≔ off"
+    "display implicits ≔ on"
+    "display implicits ≔ off"
     "display unique keys ≔ on"
     "display unique keys ≔ off"))
 
@@ -1136,8 +1129,9 @@ With a negative prefix argument,set display of type boundaries off."
 (keymap-set narya-mode-map "C-c C-a" 'narya-about)
 (keymap-set narya-mode-map "C-c C-v" 'narya-minibuffer-cmd)
 (keymap-set narya-mode-map "C-c C-d C-u" 'narya-display-chars)
-(keymap-set narya-mode-map "C-c C-d C-f" 'narya-display-function-boundaries)
-(keymap-set narya-mode-map "C-c C-d C-t" 'narya-display-type-boundaries)
+(keymap-set narya-mode-map "C-c C-d C-i" 'narya-display-implicits)
+(keymap-set narya-mode-map "C-c C-d C-f" 'narya-display-boundaries-deprecated)
+(keymap-set narya-mode-map "C-c C-d C-t" 'narya-display-boundaries-deprecated)
 (keymap-set narya-mode-map "C-c C-d C-k" 'narya-display-unique-keys)
 (keymap-set narya-mode-map "C-c C-d C-v" 'narya-display-variables)
 (keymap-set narya-mode-map "C-M-q" 'narya-reformat-command)

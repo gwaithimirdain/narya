@@ -121,10 +121,7 @@ module Command = struct
         wscoloneq : Whitespace.t list;
         what :
           [ `Chars of Whitespace.t list * Display.chars Display.toggle * Whitespace.t list
-          | `Function_boundaries of
-            Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
-          | `Type_boundaries of
-            Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
+          | `Implicits of Whitespace.t list * Display.show Display.toggle * Whitespace.t list
           | `Unique_keys of
             Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
           | (* Each variable name is paired with the whitespace of the comma preceding it (empty for the first one) and the whitespace following it. *)
@@ -651,8 +648,7 @@ module Parse = struct
       step "" (fun state _ (tok, ws) ->
           match tok with
           | Ident [ "chars" ] -> Some ((`Chars, ws), state)
-          | Ident [ "function" ] -> Some ((`Function, ws), state)
-          | Ident [ "type" ] -> Some ((`Type, ws), state)
+          | Ident [ "implicits" ] -> Some ((`Implicits, ws), state)
           | Ident [ "unique" ] -> Some ((`Unique, ws), state)
           | Ident [ "variables" ] -> Some ((`Variables, ws), state)
           | _ -> None) in
@@ -663,24 +659,12 @@ module Parse = struct
             let open Monad.Ops (Monad.Maybe) in
             let* chars = chars_of_token tok in
             return (Display { wsdisplay; wscoloneq; what = `Chars (wswhat, chars, ws) }, state))
-    | `Function ->
-        let* wsb = token (Ident [ "boundaries" ]) in
+    | `Implicits ->
         let* wscoloneq = token Coloneq in
         step "" (fun state _ (tok, ws) ->
             let open Monad.Ops (Monad.Maybe) in
             let* show = show_of_token tok in
-            return
-              ( Display { wsdisplay; wscoloneq; what = `Function_boundaries (wswhat, wsb, show, ws) },
-                state ))
-    | `Type ->
-        let* wsb = token (Ident [ "boundaries" ]) in
-        let* wscoloneq = token Coloneq in
-        step "" (fun state _ (tok, ws) ->
-            let open Monad.Ops (Monad.Maybe) in
-            let* show = show_of_token tok in
-            return
-              ( Display { wsdisplay; wscoloneq; what = `Type_boundaries (wswhat, wsb, show, ws) },
-                state ))
+            return (Display { wsdisplay; wscoloneq; what = `Implicits (wswhat, show, ws) }, state))
     | `Unique ->
         let* wsb = token (Ident [ "keys" ]) in
         let* wscoloneq = token Coloneq in
@@ -1371,12 +1355,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       | `Chars (_, chars, _) ->
           let chars = Display.modify_chars chars in
           emit (Display_set ("chars", Display.to_string (chars :> Display.values)))
-      | `Function_boundaries (_, _, fb, _) ->
-          let fb = Display.modify_function_boundaries fb in
-          emit (Display_set ("function boundaries", Display.to_string (fb :> Display.values)))
-      | `Type_boundaries (_, _, tb, _) ->
-          let tb = Display.modify_type_boundaries tb in
-          emit (Display_set ("type boundaries", Display.to_string (tb :> Display.values)))
+      | `Implicits (_, im, _) ->
+          let im = Display.modify_implicits im in
+          emit (Display_set ("implicits", Display.to_string (im :> Display.values)))
       | `Unique_keys (_, _, uk, _) ->
           let uk = Display.modify_unique_keys uk in
           emit (Display_set ("unique keys", Display.to_string (uk :> Display.values)))

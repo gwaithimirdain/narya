@@ -20,10 +20,8 @@ Formatting output
 - ``-verbose`` or ``-v``: Show verbose messages
 - ``-unicode`` and ``-ascii``: Display and reformat code using Unicode (default) or ASCII
 - ``-no-reformat``: Do not automatically reformat source files (see :ref:`Code formatter`)
-- ``-show-function-boundaries``: Display boundaries of functions, when implicit (see :ref:`Implicit boundaries`)
-- ``-hide-function-boundaries``: Hide boundaries of functions, when implicit (default)
-- ``-show-type-boundaries``: Display boundaries of types, when implicit
-- ``-hide-type-boundaries``: Hide boundaries of types, when implicit (default)
+- ``-show-implicits``: Display implicit arguments, such as boundaries of functions and types (see :ref:`Implicit boundaries`)
+- ``-hide-implicits``: Hide implicit arguments (default)
 - ``-show-unique-keys``: Display keys that are the unique one between their endpoints (see :ref:`Keys`)
 - ``-hide-unique-keys``: Hide keys that are the unique one between their endpoints (default)
 - ``-variables X,Y,Z``: Set the default variable names (see :ref:`Default names`)
@@ -219,18 +217,15 @@ Set one of the display settings (that are also set by command-line flags).  Poss
     display chars ≔ unicode
     display chars ≔ ascii
     display chars ≔ toggle
-    display function boundaries ≔ on
-    display function boundaries ≔ off
-    display function boundaries ≔ toggle
-    display type boundaries ≔ on
-    display type boundaries ≔ off
-    display type boundaries ≔ toggle
+    display implicits ≔ on
+    display implicits ≔ off
+    display implicits ≔ toggle
     display unique keys ≔ on
     display unique keys ≔ off
     display unique keys ≔ toggle
     display variables ≔ X,Y,Z
 
-See :ref:`Implicit boundaries` for more information about function and type boundaries, and :ref:`Keys` for more information about unique keys.
+See :ref:`Implicit boundaries` for more information about implicit boundaries of functions and types, and :ref:`Keys` for more information about unique keys.
 
 
 Chdir
@@ -331,8 +326,7 @@ Narya's ProofGeneral mode also defines the following additional key commands.
 - ``C-c C-SPC`` : Fill the hole under point with a specified term, without retracting any code.
 - ``C-c C-y`` : Split in the hole under point based on its type.
 - ``C-c C-d C-u``: Toggle display of unicode characters.
-- ``C-c C-d C-f``: Toggle display of function boundaries.
-- ``C-c C-d C-t``: Toggle display of type boundaries.
+- ``C-c C-d C-i``: Toggle display of implicit arguments.
 - ``C-c C-d C-v``: Set the default variable names.
 
 For Agda users
