@@ -811,7 +811,7 @@ Whenever a piece of a stuck case tree can't be displayed as the construct it cam
    ￮ constant plus defined
   
    ￫ info[I0010]
-   ￮ not displaying a stuck match applied to further arguments, with no motive to give the type of the match itself; showing an application spine instead
+   ￮ not displaying an implicit stuck match applied to arguments; showing an application spine instead
   
   plus ax bx
     : N
