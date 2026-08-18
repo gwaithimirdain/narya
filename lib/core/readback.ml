@@ -127,11 +127,10 @@ let level_of_free_var : type mode dom mu.
       | _ -> None)
   | _ -> None
 
-(* A stuck spine taken apart: the context the match at its head end must be displayed in -- ours, locked by the left adjoint of every field projection the spine crosses -- together with the function that puts the spine back around a term displayed there.  This is the walk readback_neu makes over a neutral's spine, but starting from a term rather than a head and at whatever energy that term has, which is what App, Inst, Act and Field are energy-polymorphic for. *)
-type (_, _, _) stuck_spine =
-  | Stuck_spine :
-      ('hmode, 'z, 'c) Ctx.t * (('hmode, 'c, potential) term -> ('mode, 'a, potential) term)
-      -> ('hmode, 'mode, 'a) stuck_spine
+type (_, _, _, _) readback_apps =
+  | Readback_apps :
+      ('hmode, 'z, 'c) Ctx.t * (('hmode, 'c, 's) term -> ('mode, 'a, 's) term)
+      -> ('hmode, 'mode, 'a, 's) readback_apps
 
 (* Rebind a variable of an environment, identified by its level, to a given value.  This is a partial dual of lookup: a lookup accumulates the operator actions, shifts and keys it passes on the way in and applies them to the value it finds on the way out, and those actions cannot in general be undone in order to push a *new* value back in.  So we look only through the forms that arise in the environment of a case tree -- extensions and permutations -- and return None otherwise, leaving the caller to fall back.  We check the cheap conditions on an entry before forcing its value to see whether it is the variable we want, since a lambda stores its argument lazily; this runs only on the display path, and only once an unrefined readback has already failed. *)
 let rec rebind_level : type mode vdom vmod vk n b.
@@ -554,6 +553,83 @@ and readback_val : type mode a z s. (mode, z, a) Ctx.t -> (mode, s) value -> (mo
   | Constr _ -> fatal (Readback_at_wrong_type "a constructor, which does not synthesize")
   | Canonical _ -> fatal (Readback_at_wrong_type "a canonical type, which does not synthesize")
 
+(* Read back an application spine, yielding the context its head must be displayed in (the outer context locked by the left adjoint of every field projection the spine crosses) together with the function that puts the spine back around a term displayed there. *)
+and readback_apps : type hmode mode a z any s.
+    s energy ->
+    ?pi:bool ->
+    (mode, z, a) Ctx.t ->
+    (hmode, mode, any) apps ->
+    (hmode, mode, a, s) readback_apps =
+ fun energy ?(pi = false) ctx -> function
+  | Emp -> Readback_apps (ctx, fun tm -> tm)
+  | Arg (rest, filter, args, ins) ->
+      let modality = Modality.filter_modality filter in
+      let (To p) = deg_of_ins ins in
+      let (Locked (plus, lctx)) = Ctx.lock ctx modality in
+      let (Readback_apps (hctx, rewrap)) = readback_apps energy ~pi ctx rest in
+      Readback_apps
+        ( hctx,
+          fun tm ->
+            Term.Act
+              ( energy,
+                App
+                  ( energy,
+                    rewrap tm,
+                    cod_left_ins ins,
+                    filter,
+                    Modal
+                      ( modality,
+                        plus,
+                        CubeOf.mmap { map = (fun _ [ x ] -> readback_nf lctx x) } [ args ] ) ),
+                p,
+                (`Other, `Other) ) )
+  | Inst (rest, _, args) ->
+      let (Readback_apps (hctx, rewrap)) = readback_apps energy ~pi ctx rest in
+      (* When reading back a fully instantiated higher-dimensional pi-type, we eta-expand the instantiation arguments so that it can be printed with a nice notation. *)
+      let eta = pi && TubeOf.is_full args in
+      Readback_apps
+        ( hctx,
+          fun tm ->
+            Inst
+              ( energy,
+                rewrap tm,
+                TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ~eta ctx x) } [ args ] ) )
+  (* A field projection crosses to the mode the field's left adjoint comes from, so the rest of the spine, and the match at its end, live in our context locked by it. *)
+  | Field (rest, filter, fld, fldplus, ins) -> (
+      let fm = Modality.filter_modality filter in
+      let (To p) = deg_of_ins ins in
+      let (Locked (plus_lock, lctx)) = Ctx.lock ctx fm in
+      let t = cod_left_ins ins in
+      let (Readback_apps (hctx, rewrap)) = readback_apps energy ~pi lctx rest in
+      match Modality.filter_is_trivial t filter with
+      | Some Eq ->
+          (* Trivial filter: the inner spine is at the full result dimension t, and we build the projection there directly. *)
+          Readback_apps
+            ( hctx,
+              fun tm ->
+                Term.Act
+                  ( energy,
+                    Field (energy, Modal (fm, plus_lock, rewrap tm), fld, id_ins t fldplus),
+                    p,
+                    (`Other, `Other) ) )
+      | None ->
+          (* Nontrivial filter: the field's modality is nonparametric and a degeneracy has acted, so the inner spine lives at a strictly smaller filtered dimension ft than the result dimension t.  We read back the projection at ft and lift it to t by the filter's degeneracy, which reconstructs (and prints as) the acting degeneracy.  This is exactly the "disappeared" projection viewed as a degeneracy of a lower-dimensional one, and it re-evaluates correctly since eval filters the environment dimension. *)
+          let ft = Modality.filtered t filter in
+          let (Plus new_fldplus) = D.plus (D.plus_right fldplus) in
+          let liftdeg = Modality.deg_of_filter t filter in
+          Readback_apps
+            ( hctx,
+              fun tm ->
+                Term.Act
+                  ( energy,
+                    Term.Act
+                      ( energy,
+                        Field (energy, Modal (fm, plus_lock, rewrap tm), fld, id_ins ft new_fldplus),
+                        liftdeg,
+                        (`Other, `Other) ),
+                    p,
+                    (`Other, `Other) ) ))
+
 and readback_neu : type hmode mode a z any.
     ?canonical:[ `Canonical | `Other ] ->
     (mode, z, a) Ctx.t ->
@@ -561,54 +637,13 @@ and readback_neu : type hmode mode a z any.
     (hmode, mode, any) apps ->
     (mode, a, kinetic) term =
  fun ?(canonical = `Other) ctx head apps ->
+  let pi =
+    match head with
+    | Pi _ -> true
+    | _ -> false in
+  let (Readback_apps (hctx, rewrap)) = readback_apps Kinetic ~pi ctx apps in
   (* The degeneracies appearing on the spine of a neutral are all *permutations*, which are never displayed with a name like "refl" or "Id" that depends on the sort of their argument.  Thus the only place the sort matters is at the head, where it is computed from the type of the head itself (see readback_head).  Here we only pass along whether the whole neutral is a canonical type, which determines whether a reflexivity at the head is displayed as a superscript. *)
-  let sort = (`Other, canonical) in
-  match (apps, head) with
-  | Emp, _ -> readback_head ~canonical ctx head
-  | Arg (apps, filter, args, ins), _ ->
-      let modality = Modality.filter_modality filter in
-      let (To p) = deg_of_ins ins in
-      let (Locked (plus, lctx)) = Ctx.lock ctx modality in
-      Term.Act
-        ( Kinetic,
-          App
-            ( Kinetic,
-              readback_neu ~canonical ctx head apps,
-              cod_left_ins ins,
-              filter,
-              Modal
-                ( modality,
-                  plus,
-                  CubeOf.mmap { map = (fun _ [ tm ] -> readback_nf lctx tm) } [ args ] ) ),
-          p,
-          sort )
-  | Field (apps, filter, fld, fldplus, ins), _ -> (
-      let fm = Modality.filter_modality filter in
-      let (To p) = deg_of_ins ins in
-      (* The spine inside a modal field projection lives behind a lock by the left adjoint, so we read it back in the locked context, at the filtered dimension. *)
-      let (Locked (plus_lock, lctx)) = Ctx.lock ctx fm in
-      let t = cod_left_ins ins in
-      let inner = readback_neu ~canonical lctx head apps in
-      match Modality.filter_is_trivial t filter with
-      | Some Eq ->
-          (* Trivial filter: the inner spine is at the full result dimension t, and we build the projection there directly. *)
-          Term.Act
-            (Kinetic, Field (Kinetic, Modal (fm, plus_lock, inner), fld, id_ins t fldplus), p, sort)
-      | None ->
-          (* Nontrivial filter: the field's modality is nonparametric and a degeneracy has acted, so the inner spine lives at a strictly smaller filtered dimension ft than the result dimension t.  We read back the projection at ft and lift it to t by the filter's degeneracy, which reconstructs (and prints as) the acting degeneracy — this is exactly the "disappeared" projection viewed as a degeneracy of a lower-dimensional one, and it re-evaluates correctly since eval filters the environment dimension. *)
-          let ft = Modality.filtered t filter in
-          let (Plus new_fldplus) = D.plus (D.plus_right fldplus) in
-          let fieldterm : (_, _, kinetic) Term.term =
-            Term.Field (Kinetic, Modal (fm, plus_lock, inner), fld, id_ins ft new_fldplus) in
-          let liftdeg = Modality.deg_of_filter t filter in
-          Term.Act (Kinetic, Term.Act (Kinetic, fieldterm, liftdeg, sort), p, sort))
-  | Inst (Emp, _, args), Pi _ when TubeOf.is_full args ->
-      (* When reading back a fully instantiated higher-dimensional pi-type, we eta-expand the instantiation arguments so that it can be printed with a nice notation. *)
-      let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ~eta:true ctx x) } [ args ] in
-      Inst (Kinetic, readback_head ~canonical ctx head, args)
-  | Inst (apps, _, args), _ ->
-      let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ args ] in
-      Inst (Kinetic, readback_neu ~canonical ctx head apps, args)
+  rewrap (readback_head ~canonical hctx head)
 
 and readback_head : type mode c z.
     ?canonical:[ `Canonical | `Other ] ->
@@ -1340,77 +1375,6 @@ and readback_stuck : type mode a z hmode any.
       | _ -> fatal_diagnostic d)
   @@ fun () -> readback_stuck_match status ctx pn ty
 
-(* Read back the application spine of a stuck term, yielding the context the match at its head end must be displayed in (the outer context locked by the left adjoint of every field projection the spine crosses) together with the function that puts the spine back around a term displayed there. *)
-and stuck_spine : type hmode mode a z any.
-    (mode, z, a) Ctx.t -> (hmode, mode, any) apps -> (hmode, mode, a) stuck_spine =
- fun ctx -> function
-  | Emp -> Stuck_spine (ctx, fun tm -> tm)
-  | Arg (rest, filter, args, ins) ->
-      let modality = Modality.filter_modality filter in
-      let (To p) = deg_of_ins ins in
-      let (Locked (plus, lctx)) = Ctx.lock ctx modality in
-      let (Stuck_spine (hctx, rewrap)) = stuck_spine ctx rest in
-      Stuck_spine
-        ( hctx,
-          fun tm ->
-            Term.Act
-              ( Potential,
-                App
-                  ( Potential,
-                    rewrap tm,
-                    cod_left_ins ins,
-                    filter,
-                    Modal
-                      ( modality,
-                        plus,
-                        CubeOf.mmap { map = (fun _ [ x ] -> readback_nf lctx x) } [ args ] ) ),
-                p,
-                (`Other, `Other) ) )
-  | Inst (rest, _, args) ->
-      let (Stuck_spine (hctx, rewrap)) = stuck_spine ctx rest in
-      Stuck_spine
-        ( hctx,
-          fun tm ->
-            Inst
-              ( Potential,
-                rewrap tm,
-                TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ args ] ) )
-  (* A field projection crosses to the mode the field's left adjoint comes from, so the rest of the spine, and the match at its end, live in our context locked by it. *)
-  | Field (rest, filter, fld, fldplus, ins) -> (
-      let fm = Modality.filter_modality filter in
-      let (To p) = deg_of_ins ins in
-      let (Locked (plus_lock, lctx)) = Ctx.lock ctx fm in
-      let t = cod_left_ins ins in
-      let (Stuck_spine (hctx, rewrap)) = stuck_spine lctx rest in
-      match Modality.filter_is_trivial t filter with
-      | Some Eq ->
-          Stuck_spine
-            ( hctx,
-              fun tm ->
-                Term.Act
-                  ( Potential,
-                    Field (Potential, Modal (fm, plus_lock, rewrap tm), fld, id_ins t fldplus),
-                    p,
-                    (`Other, `Other) ) )
-      | None ->
-          (* As in readback_neu: a nonparametric field at a dimension its modality filters is read back at the filtered dimension and lifted by the filter's degeneracy. *)
-          let ft = Modality.filtered t filter in
-          let (Plus new_fldplus) = D.plus (D.plus_right fldplus) in
-          let liftdeg = Modality.deg_of_filter t filter in
-          Stuck_spine
-            ( hctx,
-              fun tm ->
-                Term.Act
-                  ( Potential,
-                    Term.Act
-                      ( Potential,
-                        Field
-                          (Potential, Modal (fm, plus_lock, rewrap tm), fld, id_ins ft new_fldplus),
-                        liftdeg,
-                        (`Other, `Other) ),
-                    p,
-                    (`Other, `Other) ) ))
-
 (* For each constructor we invent fresh pattern variables from its stored function-type, with ext_pi, exactly as typechecking does; extend the stored environment by them, with take_args, exactly as evaluation does; evaluate the branch body there; and read it back in the context extended by the same variables.  The reconstructed branch carries ext_pi's own annotate and comp -- which name the pattern variables after the constructor's arguments -- and the identity permutation, rather than the stored ones, which are relative to the original checking context.
 
    We reconstruct only when the stuck spine is empty, which is exactly when the type we were handed is the type of the match itself rather than of something the match was applied to; with a nonempty spine there would be no type at which to read back the branch bodies.  We also reconstruct only a match: a stuck metavariable has no branches to show.  In every other case we return None and the caller falls back to the application spine.
@@ -1426,7 +1390,7 @@ and readback_stuck_match : type mode a z hmode any.
   match ctm with
   | Match { tm; window; plus_lock; dim = match_dim; motive; branches } -> (
       (* The match at the head end of the spine is displayed in our context locked by the field projections the spine crosses, and the spine is put back around it afterwards. *)
-      let (Stuck_spine (ctx, rewrap)) = stuck_spine ctx apps in
+      let (Readback_apps (ctx, rewrap)) = readback_apps Potential ctx apps in
       let rewrap x =
         match is_id_ins ins with
         | Some _ -> rewrap x
