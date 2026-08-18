@@ -155,6 +155,37 @@
     : C⁽ᵉᵉ⁾ (ap h {(a00, b00)} {(a01, b01)} (a02, b02)) (ap h ab12)
         (ap h ab20) (ap h ab21)
   
+   ￫ info[I0000]
+   ￮ constant N defined
+  
+   ￫ info[I0000]
+   ￮ constant P defined
+  
+   ￫ info[I0001]
+   ￮ axiom n0 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom n1 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom n2 assumed
+  
+   ￫ info[I0000]
+   ￮ constant sn2 defined
+  
+   ￫ info[I0000]
+   ￮ constant pn2 defined
+  
+  suc. n2
+    : N⁽ᵉ⁾ (suc. n0) (suc. n1)
+  
+  suc. (refl n2)
+    : N⁽ᵉᵉ⁾ {suc. n0} {suc. n0} (suc. (refl n0)) {suc. n1} {suc. n1}
+        (suc. (refl n1)) (suc. n2) (suc. n2)
+  
+  pair. n2 n2
+    : P⁽ᵉ⁾ (pair. n0 n0) (pair. n1 n1)
+  
 
   $ narya -v -show-implicits -fake-interact=implicit-boundaries.ny
    ￫ info[I0001]
@@ -320,6 +351,38 @@
         (ap h {ab10} {ab11} ab12) (ap h {(a00, b00)} {ab10} ab20)
         (ap h {(a01, b01)} {ab11} ab21)
   
+   ￫ info[I0000]
+   ￮ constant N defined
+  
+   ￫ info[I0000]
+   ￮ constant P defined
+  
+   ￫ info[I0001]
+   ￮ axiom n0 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom n1 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom n2 assumed
+  
+   ￫ info[I0000]
+   ￮ constant sn2 defined
+  
+   ￫ info[I0000]
+   ￮ constant pn2 defined
+  
+  suc. {n0} {n1} n2
+    : N⁽ᵉ⁾ (suc. n0) (suc. n1)
+  
+  suc. {n0} {n0} {refl n0} {n1} {n1} {refl n1} {n2} {n2} (refl n2)
+    : N⁽ᵉᵉ⁾ {suc. n0} {suc. n0} (suc. {n0} {n0} (refl n0)) {suc. n1}
+        {suc. n1} (suc. {n1} {n1} (refl n1)) (suc. {n0} {n1} n2)
+        (suc. {n0} {n1} n2)
+  
+  pair. {n0} {n1} n2 {n0} {n1} n2
+    : P⁽ᵉ⁾ (pair. n0 n0) (pair. n1 n1)
+  
 
   $ narya -v implicit-boundaries.ny
    ￫ info[I0001]
@@ -477,6 +540,37 @@
   h⁽ᵉᵉ⁾ ab22
     : C⁽ᵉᵉ⁾ (ap h {(a00, b00)} {(a01, b01)} (a02, b02)) (ap h ab12)
         (ap h ab20) (ap h ab21)
+  
+   ￫ info[I0000]
+   ￮ constant N defined
+  
+   ￫ info[I0000]
+   ￮ constant P defined
+  
+   ￫ info[I0001]
+   ￮ axiom n0 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom n1 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom n2 assumed
+  
+   ￫ info[I0000]
+   ￮ constant sn2 defined
+  
+   ￫ info[I0000]
+   ￮ constant pn2 defined
+  
+  suc. n2
+    : N⁽ᵉ⁾ (suc. n0) (suc. n1)
+  
+  suc. (refl n2)
+    : N⁽ᵉᵉ⁾ {suc. n0} {suc. n0} (suc. (refl n0)) {suc. n1} {suc. n1}
+        (suc. (refl n1)) (suc. n2) (suc. n2)
+  
+  pair. n2 n2
+    : P⁽ᵉ⁾ (pair. n0 n0) (pair. n1 n1)
   
 
   $ narya -v -show-implicits implicit-boundaries.ny
@@ -642,4 +736,36 @@
         (ap h {(a00, b00)} {(a01, b01)} (a02, b02)) {h ab10} {h ab11}
         (ap h {ab10} {ab11} ab12) (ap h {(a00, b00)} {ab10} ab20)
         (ap h {(a01, b01)} {ab11} ab21)
+  
+   ￫ info[I0000]
+   ￮ constant N defined
+  
+   ￫ info[I0000]
+   ￮ constant P defined
+  
+   ￫ info[I0001]
+   ￮ axiom n0 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom n1 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom n2 assumed
+  
+   ￫ info[I0000]
+   ￮ constant sn2 defined
+  
+   ￫ info[I0000]
+   ￮ constant pn2 defined
+  
+  suc. {n0} {n1} n2
+    : N⁽ᵉ⁾ (suc. n0) (suc. n1)
+  
+  suc. {n0} {n0} {refl n0} {n1} {n1} {refl n1} {n2} {n2} (refl n2)
+    : N⁽ᵉᵉ⁾ {suc. n0} {suc. n0} (suc. {n0} {n0} (refl n0)) {suc. n1}
+        {suc. n1} (suc. {n1} {n1} (refl n1)) (suc. {n0} {n1} n2)
+        (suc. {n0} {n1} n2)
+  
+  pair. {n0} {n1} n2 {n0} {n1} n2
+    : P⁽ᵉ⁾ (pair. n0 n0) (pair. n1 n1)
   

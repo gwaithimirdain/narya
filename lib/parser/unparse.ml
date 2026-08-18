@@ -546,11 +546,31 @@ let rec unparse : type mode n lt ls rt rs s.
       | Some tm -> tm.unparse li ri
       | None ->
           let args =
-            of_list_map
-              (* The modality isn't printed for constructor applications. *)
-              (fun (Modal (_modality, plus, x)) ->
-                make_unparser (Names.add_lock vars plus) (CubeOf.find_top x))
-              args in
+            match Display.implicits () with
+            (* The modality isn't printed for constructor applications. *)
+            | `Hide ->
+                of_list_map
+                  (fun (Modal (_modality, plus, x)) ->
+                    make_unparser (Names.add_lock vars plus) (CubeOf.find_top x))
+                  args
+            (* When displaying implicits, we print the whole boundary of each argument, with the strict faces in braces. *)
+            | `Show ->
+                List.fold_left
+                  (fun s (Modal (_modality, plus, x)) ->
+                    let s = ref s in
+                    CubeOf.miter
+                      {
+                        it =
+                          (fun fa [ x ] ->
+                            let i =
+                              match is_id_sface fa with
+                              | Some _ -> `Explicit
+                              | None -> `Implicit in
+                            s := Snoc (!s, make_unparser_implicit vars (Spine_arg (Left plus, x, i))));
+                      }
+                      [ x ];
+                    !s)
+                  Emp args in
           unparse_spine vars (`Constr c) args li ri)
   | Realize tm -> unparse vars tm li ri
   (* A corealized case tree displays as the case tree it wraps; the wrapper exists only to put it in a kinetic position, which is always inside a larger term, so we parenthesize it. *)
