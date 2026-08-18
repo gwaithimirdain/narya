@@ -1756,29 +1756,6 @@ and check_var_match : type dom modality mode a b bm.
       let tyfam = nf_of_neu (force_eval_term tyfam) "check_var_match" in
       (* In our simple version of pattern-matching against a variable, the "indices" and all their boundaries must be distinct free variables with no degeneracies, so that in the branch for each constructor they can be set equal to the computed value of that index for that constructor (and in which they cannot occur).  This is a special case of the unification algorithm described in CDP "Pattern-matching without K" where the only allowed rule is "Solution".  Later we can try to enhance it with their full unification algorithm, at least for non-higher datatypes.  In addition, for a higher-dimensional match, the instantiation arguments must also all be distinct variables, distinct from the indices.  If any of these conditions fail, we raise an exception, catch it, emit a hint, and revert to doing a non-dependent match. *)
       let seen = Hashtbl.create 10 in
-      let is_fresh (x : dom normal) =
-        (* With glued evaluation, an index can be a glued neutral whose stored value unfolds to a free variable, e.g. a transport along a variable that has been refined to reflexivity.  Such an index refines just as well as a bare variable, so we look through the unfolding.  (With glued evaluation off, view_term is the identity.) *)
-        match view_term x.tm with
-        | Neu { head = Var { level; deg; key = _ }; args = Emp; value; ty = _ } -> (
-            match force_eval value with
-            | Unrealized _ ->
-                (if Option.is_none (is_id_deg deg) then
-                   let (Locked (_, lctx)) = Ctx.lock ctx window in
-                   fatal
-                     (Matching_wont_refine
-                        ("index variable has degeneracy", Some (PNormal (lctx, x)))));
-                (if Hashtbl.mem seen level then
-                   let (Locked (_, lctx)) = Ctx.lock ctx window in
-                   fatal
-                     (Matching_wont_refine
-                        ("duplicate variable in indices", Some (PNormal (lctx, x)))));
-                Hashtbl.add seen level ();
-                level
-            | _ -> fatal (Anomaly "local variable bound to a potential term"))
-        | _ ->
-            let (Locked (_, lctx)) = Ctx.lock ctx window in
-            fatal (Matching_wont_refine ("index is not a free variable", Some (PNormal (lctx, x))))
-      in
       Reporter.try_with ~fatal:(fun d ->
           match d.message with
           | Matching_wont_refine (str, x) ->
@@ -1794,9 +1771,10 @@ and check_var_match : type dom modality mode a b bm.
       @@ fun () ->
       let index_vars =
         Vec.mmap
-          (fun [ tm ] -> CubeOf.mmap { map = (fun _ [ x ] -> is_fresh x) } [ tm ])
+          (fun [ tm ] -> CubeOf.mmap { map = (fun _ [ x ] -> is_fresh ctx window seen x) } [ tm ])
           [ var_indices ] in
-      let inst_vars = TubeOf.mmap { map = (fun _ [ x ] -> is_fresh x) } [ inst_args ] in
+      let inst_vars =
+        TubeOf.mmap { map = (fun _ [ x ] -> is_fresh ctx window seen x) } [ inst_args ] in
       let constr_vars = TubeOf.plus_cube inst_vars (CubeOf.singleton level) in
       (* Now we also check that none of these free variables occur in the parameters.  We do this by altering the context to replace all these level variables with unknowns and doing a readback of the pre-indices type family into that context.  If the readback encounters one of the missing level variables, it fails with No_such_level; above we catch that, emit a hint, and fall back to matching against a term. *)
       (* TODO: This doesn't seem to be catching things it should, like attempted proofs of Axiom K; they go on and get caught by No_permutation instead. *)
@@ -1832,7 +1810,8 @@ and check_var_match : type dom modality mode a b bm.
               [ index_vars; index_nfs ];
             (* Now we let-bind the match variable to the constructor applied to these new variables, the "index_vars" to the index values, and the inst_vars to the boundary constructor values.  The operation bind_some automatically substitutes these new values into the types and values of other variables in the context, and reorders it if necessary so that each variable only depends on previous ones. *)
             match Bindsome.bind_some (ctxmode, new_vals) newctx with
-            | None -> fatal (Matching_wont_refine ("no consistent permutation of context", None))
+            | Bind_none ->
+                fatal (Matching_wont_refine ("no consistent permutation of context", None))
             | Bind_some { checked_perm; oldctx; newctx } -> (
                 (* We readback the index and instantiation values into this new context and discard the result, catching No_such_level to turn it into a user Error.  This has the effect of doing an occurs-check that none of the index variables occur in any of the index values.  This is a bit less general than the CDP Solution rule, which (when applied one variable at a time) prohibits only cycles of occurrence.  Note that this exception is still caught by check_var_match, above, causing a fallback to term matching. *)
                 ( Reporter.try_with ~fatal:(fun d ->

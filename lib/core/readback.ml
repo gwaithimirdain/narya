@@ -42,6 +42,31 @@ let set_degctx (impl : degctx_impl) = degctx_hook := impl
 let degctx : type mode a b k. (mode, a, b) Ctx.t -> k D.t -> (mode, a, b, k) degctx =
  fun ctx k -> !degctx_hook.degctx ctx k
 
+(* Similarly for bindsome. *)
+type (_, _, _) bind_some =
+  | Bind_some : {
+      checked_perm : ('c, 'b) permute;
+      oldctx : ('mode, 'a, 'c) Ctx.t;
+      newctx : ('mode, 'a, 'c) Ctx.t;
+    }
+      -> ('mode, 'a, 'b) bind_some
+  | Bind_none : ('mode, 'a, 'b) bind_some
+
+type bind_some_impl = {
+  bind_some :
+    'mode 'b 'c 'd.
+    'mode Mode.t * (level, 'mode normal) Hashtbl.t -> ('b, 'c, 'd) Ctx.t -> ('b, 'c, 'd) bind_some;
+}
+
+let bind_some_hook : bind_some_impl ref =
+  ref { bind_some = (fun _ _ -> fatal (Anomaly "bind_some not set")) }
+
+let set_bind_some (impl : bind_some_impl) = bind_some_hook := impl
+
+let bind_some : type mode b c d.
+    mode Mode.t * (level, mode normal) Hashtbl.t -> (b, c, d) Ctx.t -> (b, c, d) bind_some =
+ fun v ctx -> !bind_some_hook.bind_some v ctx
+
 (* Given a (viewed) type, compute whether its elements are type families, functions of another sort, or neither.  Right now, we do this by descending through Pi binders, extending the context. *)
 let rec sort_of_ty : type mode a z.
     ?isfunc:bool -> (mode, z, a) Ctx.t -> mode View.view_type -> [ `Type | `Function | `Other ] =
@@ -115,78 +140,38 @@ let no_display : type a. string -> a option =
   emit (Case_tree_not_displayed str);
   None
 
-(* The level of a value that is a bare free variable with no degeneracy applied, which is the case in which a match's discriminee can be rebound to refine a branch. *)
-let level_of_free_var : type mode dom mu.
-    (dom, mu, mode) Modality.t -> (dom, kinetic) value -> level option =
- fun mu v ->
-  match view_term v with
-  | Neu { head = Var { level; deg; key }; args = Emp; _ } -> (
-      (* Unkeyed means an identity 2-cell on the variable's own annotation, which for a discriminee is the match's window. *)
-      match (is_id_deg deg, Modalcell.compare key (Modalcell.id mu)) with
-      | Some _, Eq -> Some level
-      | _ -> None)
-  | _ -> None
+(* Check whether a given normal is a free variable distinct from those already seen. *)
+let is_fresh : type dom modality mode a b.
+    (mode, a, b) Ctx.t ->
+    (dom, modality, mode) Modality.t ->
+    (level, unit) Hashtbl.t ->
+    dom normal ->
+    level =
+ fun ctx window seen x ->
+  (* With glued evaluation, an index can be a glued neutral whose stored value unfolds to a free variable, e.g. a transport along a variable that has been refined to reflexivity.  Such an index refines just as well as a bare variable, so we look through the unfolding.  (With glued evaluation off, view_term is the identity.) *)
+  match view_term x.tm with
+  | Neu { head = Var { level; deg; key = _ }; args = Emp; value; ty = _ } -> (
+      match force_eval value with
+      | Unrealized _ ->
+          (if Option.is_none (is_id_deg deg) then
+             let (Locked (_, lctx)) = Ctx.lock ctx window in
+             fatal
+               (Matching_wont_refine ("index variable has degeneracy", Some (PNormal (lctx, x)))));
+          (if Hashtbl.mem seen level then
+             let (Locked (_, lctx)) = Ctx.lock ctx window in
+             fatal
+               (Matching_wont_refine ("duplicate variable in indices", Some (PNormal (lctx, x)))));
+          Hashtbl.add seen level ();
+          level
+      | _ -> fatal (Anomaly "local variable bound to a potential term"))
+  | _ ->
+      let (Locked (_, lctx)) = Ctx.lock ctx window in
+      fatal (Matching_wont_refine ("index is not a free variable", Some (PNormal (lctx, x))))
 
 type (_, _, _, _) readback_apps =
   | Readback_apps :
       ('hmode, 'z, 'c) Ctx.t * (('hmode, 'c, 's) term -> ('mode, 'a, 's) term)
       -> ('hmode, 'mode, 'a, 's) readback_apps
-
-(* Rebind a variable of an environment, identified by its level, to a given value.  This is a partial dual of lookup: a lookup accumulates the operator actions, shifts and keys it passes on the way in and applies them to the value it finds on the way out, and those actions cannot in general be undone in order to push a *new* value back in.  So we look only through the forms that arise in the environment of a case tree -- extensions and permutations -- and return None otherwise, leaving the caller to fall back.  We check the cheap conditions on an entry before forcing its value to see whether it is the variable we want, since a lambda stores its argument lazily; this runs only on the display path, and only once an unrefined readback has already failed. *)
-let rec rebind_level : type mode vdom vmod vk n b.
-    (mode, n, b) env ->
-    (vdom, vmod, mode) Modality.t ->
-    level ->
-    (vk, (vdom, kinetic) value) CubeOf.t ->
-    (mode, n, b) env option =
- fun env mu lvl v ->
-  match env with
-  | Ext { env; plus; filter; filtered; values } -> (
-      let unchanged () =
-        Option.map
-          (fun env -> Ext { env; plus; filter; filtered; values })
-          (rebind_level env mu lvl v) in
-      (* The entry must be annotated by the modality the new value lives at -- which for a match's discriminee is its window -- and be a cube of the same dimension, so that the new values fit where the old ones were.  At a positive dimension that means rebinding the whole cube, boundary faces and all, which is right: in the branch the entire cube is the constructor's. *)
-      match
-        ( Modality.compare (Modality.filter_modality filter) mu,
-          D.compare (D.plus_out (Modality.filtered (dim_env env) filter) plus) (CubeOf.dim v) )
-      with
-      | Eq, Eq -> (
-          let entry =
-            match values with
-            | `Ok cube -> Some (CubeOf.find_top cube)
-            | `Lazy cube -> Some (force_eval_term (CubeOf.find_top cube))
-            | `Error _ -> None in
-          match entry with
-          | Some (Neu { head = Var { level; deg; key }; args = Emp; _ })
-            when level = lvl
-                 && Option.is_some (is_id_deg deg)
-                 &&
-                 match Modalcell.compare key (Modalcell.id mu) with
-                 | Eq -> true
-                 | Neq -> false -> Some (Ext { env; plus; filter; filtered; values = `Ok v })
-          | _ -> unchanged ())
-      | _ -> unchanged ())
-  | Permute (p, env) -> Option.map (fun env -> Permute (p, env)) (rebind_level env mu lvl v)
-  | _ -> None
-
-(* Rebind, in both the environment the match is stuck in and the environment of the readback context, the discriminee and any of the datatype's index variables that are themselves free variables, to the values they take in a given branch.  Applying the *same* rebindings to both is what keeps the branch body and the type it is read back at in step: the body evaluates to what it was checked to be, and the type refines with it.  A rebinding that either environment can't take is dropped from both, leaving that variable unrefined in both.  The discriminee's own rebinding is required, so None if that one fails. *)
-let rebind_branch : type mode dom window z a n b k.
-    (mode, z, a) Ctx.t ->
-    (mode, n, b) env ->
-    (dom, window, mode) Modality.t ->
-    (level * (k, (dom, kinetic) value) CubeOf.t) list ->
-    (mode, n, b) env * (mode, D.zero, a) env =
- fun ctx env window indices ->
-  List.fold_left
-    (fun (env, ctxenv) (lvl, v) ->
-      match (rebind_level env window lvl v, rebind_level ctxenv window lvl v) with
-      | Some env, Some ctxenv -> (env, ctxenv)
-      | _ ->
-          (* TODO: This should probably be an error?  Claude made it only an error for the discriminee itself. *)
-          (env, ctxenv))
-    (env, Ctx.env ctx)
-    indices
 
 (* Readback of values to terms.  Closely follows equality-testing in equal.ml, so most comments are omitted.  However, unlike equality-testing and the "readback" in theoretical NbE, this readback does *not* eta-expand functions and tuples.  It is used for (1) displaying terms to the user, who will usually prefer not to see things eta-expanded, and (2) turning values into terms so that we can re-evaluate them in a new environment, for which purpose eta-expansion is irrelevant.  There are two exceptions:
 
@@ -1366,6 +1351,7 @@ and readback_stuck : type mode a z hmode any.
           no_display (Printf.sprintf "a stuck match with a branch body that is %s" str)
       | Degenerated_neutral_not_a_struct ->
           no_display "a stuck match with a branch that reaches a higher field"
+      | Matching_wont_refine (str, _) -> no_display ("a stuck match with " ^ str)
       | _ -> fatal_diagnostic d)
   @@ fun () -> readback_stuck_match status ctx pn ty
 
@@ -1410,12 +1396,15 @@ and readback_stuck_match : type mode a z hmode any.
       let (Any head_args) = strip_apps args apps <|> Anomaly "stuck match spine mismatch" in
       match view_type (Lazy.force disc_nf.ty) "readback_stuck_match" with
       | Canonical
-          ( _,
-            Data { dim = data_dim; constrs; indices = Filled data_indices; _ },
-            disc_ins,
-            disc_tyargs ) -> (
+          (type hmode mn m n)
+          (( _,
+             Data { dim = data_dim; constrs; indices = Filled data_indices; tyfam; _ },
+             disc_ins,
+             disc_tyargs ) :
+            (hmode, kinetic) head * (_, m, n) canonical * (mn, m, n) insertion * _) -> (
           (* A datatype has intrinsic dimension zero, so its instantiation tube is at its substitution dimension. *)
           let Eq = eq_of_ins_zero disc_ins in
+          let tyfam = nf_of_neu (force_eval_term tyfam) "check_var_match" in
           (* The dimension of the discriminee's datatype must be the stored match dimension plus the dimension of the environment we are stuck in. *)
           match D.compare data_dim total_dim with
           | Eq ->
@@ -1439,7 +1428,7 @@ and readback_stuck_match : type mode a z hmode any.
                 Constr.Map.mapi
                   (fun constr br ->
                     match br with
-                    | Term.Branch { annotate; comp; perm; tm = body } -> (
+                    | Term.Branch { annotate; comp; perm; tm = body } ->
                         let (Dataconstr { env = cenv; ty = cty }) =
                           Abwd.find_opt constr constrs
                           <|> Anomaly "constructor missing from stuck match in readback" in
@@ -1452,7 +1441,7 @@ and readback_stuck_match : type mode a z hmode any.
                           | None -> fatal (Anomaly "constructor argument length mismatch") in
                         let (Ext_pi
                                {
-                                 ctx = newctx;
+                                 ctx = branch_ctx;
                                  values = newvars;
                                  annotate = new_annotate;
                                  comp = new_comp;
@@ -1461,93 +1450,115 @@ and readback_stuck_match : type mode a z hmode any.
                                }) =
                           ext_pi ctx window cenv xs (Norm.eval_term cenv cty) in
                         (* This function reads back the branch, given the head, its arguments (not including those to which the stuck match is further applied), an environment including the new pattern variables, and the type at which to read back. *)
-                        let branch head args bodyenv branch_ty =
+                        let branch head args er bodyenv branch_ty =
                           let ebody = eval (Permute (perm, bodyenv)) body in
                           let bstatus =
                             Potential
                               (Neu { head; args; value = ready ebody; ty = Lazy.from_val branch_ty })
+                          in
+                          let ebody2 = er bstatus ebody in
+                          let bstatus2 =
+                            Potential
+                              (Neu
+                                 { head; args; value = ready ebody2; ty = Lazy.from_val branch_ty })
                           in
                           Term.Branch
                             {
                               annotate = new_annotate;
                               comp = new_comp;
                               perm = id_perm;
-                              tm = readback_eval bstatus newctx ebody branch_ty;
+                              tm = readback_eval bstatus2 branch_ctx ebody branch_ty;
                             } in
                         (* We first try to refine the context and return type by rebinding the variable discriminee to the constructor, as when typechecking a variable match, except in environments rather than contexts.  This is not always possible, even for a match that was originally a variable, since a discriminee (or its indices or boundary) that was originally a free variable might have been substituted by something else. *)
-                        let exception Cant_rebind in
-                        try
-                          (* Skip refining right away if we have an explicit motive or a non-dependent match. *)
-                          (match motive with
-                          | Some _ -> raise_notrace Cant_rebind
-                          | None -> ());
-                          let envdim = Modality.filtered env_dim fw in
-                          (* We assemble a list of the variables to rebind to new values, checking along the way that they are all distinct and free. *)
-                          let seen = Hashtbl.create 10 in
-                          let rebindings = ref [] in
-                          let rebind vars vals =
-                            let _ =
-                              CubeOf.build match_dim
-                                {
-                                  build =
-                                    (fun fn ->
-                                      let (Plus kp) = D.plus (dom_sface fn) in
-                                      (* The dimension we are stuck at splits as the environment's dimension plus the match's own.  Each variable of the branch's context is a cube of the *environment's* dimension, while the constructor and the indices are cubes of the total one; so over each face of the match's own dimension there sits one variable, holding the cube of instances at that face.  For the top face, that variable is the discriminee, and for the others they are the instantiation arguments of its type -- which is exactly the cube of variables check_var_match rebinds.  Slicing this way covers both ways the dimension can arise, and their combination: a degenerated definition has no match dimension, a match on a variable of higher-dimensional type has no environment dimension, and a degenerated definition containing such a match has both. *)
-                                      let v = CubeOf.find vars (plus_sface envdim plus_dim kp fn) in
-                                      match level_of_free_var window v.tm with
-                                      | Some l -> (
-                                          match Hashtbl.find_opt seen l with
-                                          | None ->
-                                              Hashtbl.add seen l true;
-                                              rebindings :=
-                                                (l, CubeOf.slice envdim plus_dim vals fn)
-                                                :: !rebindings
-                                          | Some _ -> raise_notrace Cant_rebind)
-                                      | None -> raise_notrace Cant_rebind);
-                                } in
-                            () in
-                          (* First we accumulate the index variables, rebinding them to their values from the discriminee's type. *)
-                          Vec.miter
-                            (fun [ vars; nfs ] -> rebind vars (val_of_norm_cube nfs))
-                            [
-                              data_indices;
-                              indices_of_out "match branch" out total_dim (Vec.length data_indices);
-                            ];
-                          (* We add to the list the discriminee and its boundary variables, and the constructor values to rebind them to. *)
-                          rebind
-                            (TubeOf.plus_cube disc_tyargs (CubeOf.singleton disc_nf))
-                            (constr_val_cube constr total_dim newvars);
-                          (* Do the rebinding. *)
-                          let renv, rctxenv = rebind_branch ctx env window !rebindings in
-                          (* Re-evaluating the self in the rebound environment should make its spine reduce. *)
-                          match eval_term rctxenv (readback_neu ctx head_head head_args) with
-                          | Neu { head = rhead; args = rargs; _ } ->
-                              (* If it's still a neutral, we use it to read back the potential branch term. *)
-                              branch rhead rargs
-                                (take_args renv plus_dim newvars window fw annotate comp)
-                                (eval_term rctxenv (readback_val ctx match_ty))
-                          | kbody ->
-                              (* TODO: I think this could happen if the branch body is kinetic, maybe if glued eval is off.  But in that case we can just read back the resulting kinetic value, which should *be* the value of this body. *)
-                              let tm =
-                                Term.Realize
-                                  (readback_at Kinetic newctx kbody
-                                     (eval_term rctxenv (readback_val ctx match_ty))) in
-                              Term.Branch
-                                { annotate = new_annotate; comp = new_comp; perm = id_perm; tm }
-                          (* If we can't or won't refine, the remaining approach is to read back the branch using the head, arguments, environment, and a type computed from an explicit motive or from the type of the whole branch. *)
-                        with Cant_rebind ->
-                          let branch_ty =
-                            match emotive with
-                            | None -> match_ty
-                            | Some emotive ->
-                                apply_singletons window
-                                  (Vec.fold_left (apply_singleton_nfs window) emotive
-                                     (indices_of_out "match branch" out total_dim
-                                        (Vec.length data_indices)))
-                                  (constr_val_cube constr total_dim newvars) in
-                          branch head_head head_args
-                            (take_args env plus_dim newvars window fw annotate comp)
-                            branch_ty))
+                        Reporter.try_with
+                          (fun () ->
+                            (* Skip refining right away if we have an explicit motive or a non-dependent match. *)
+                            (match motive with
+                            | Some _ -> fatal (Matching_wont_refine ("explicit motive", None))
+                            | None -> ());
+                            (* We assemble a table of the variables to rebind to new values, checking along the way that they are all distinct and free. *)
+                            let seen = Hashtbl.create 10 in
+                            let new_vals = Hashtbl.create 10 in
+                            (* First we add the index variables, rebinding them to their values from the discriminee's type. *)
+                            let index_nfs =
+                              indices_of_out "match branch" out total_dim (Vec.length data_indices)
+                            in
+                            let index_vals = Vec.map val_of_norm_cube index_nfs in
+                            Vec.miter
+                              (fun [ vs; cs ] ->
+                                CubeOf.miter
+                                  {
+                                    it =
+                                      (fun _ [ x; c ] ->
+                                        let v = is_fresh ctx window seen x in
+                                        Hashtbl.add new_vals v c);
+                                  }
+                                  [ vs; cs ])
+                              [ data_indices; index_nfs ];
+                            (* Then we add the discriminee and its boundary variables, and the constructor values to rebind them to. *)
+                            let constr_vars =
+                              TubeOf.plus_cube disc_tyargs (CubeOf.singleton disc_nf) in
+                            let constr_nfs =
+                              constr_norm_cube (Modality.src window) constr data_dim tyfam
+                                index_vals newvars in
+                            CubeOf.miter
+                              {
+                                it =
+                                  (fun _ [ x; c ] ->
+                                    let v = is_fresh ctx window seen x in
+                                    Hashtbl.add new_vals v c);
+                              }
+                              [ constr_vars; constr_nfs ];
+                            (* Do the rebinding. *)
+                            match bind_some (Modality.src window, new_vals) branch_ctx with
+                            | Bind_none ->
+                                fatal (Matching_wont_refine ("no consistent permutation", None))
+                            | Bind_some { checked_perm = _; oldctx; newctx } -> (
+                                let new_match_ty =
+                                  eval_term (Ctx.env newctx) (readback_val oldctx match_ty) in
+                                (* Re-evaluating the self in the rebound environment should make its spine reduce. *)
+                                match
+                                  eval_term (Ctx.env newctx)
+                                    (readback_neu oldctx head_head head_args)
+                                with
+                                | Neu { head = rhead; args = rargs; _ } ->
+                                    (* If it's still a neutral, we use it to read back the potential branch term. *)
+                                    branch rhead rargs
+                                      (fun status tm ->
+                                        eval (Ctx.env newctx)
+                                          (readback_eval status oldctx tm match_ty))
+                                      (take_args env plus_dim newvars window fw annotate comp)
+                                      new_match_ty
+                                | kbody ->
+                                    (* TODO: I think this could happen if the branch body is kinetic, maybe if glued eval is off.  But in that case we can just read back the resulting kinetic value, which should *be* the value of this body. *)
+                                    let tm =
+                                      Term.Realize
+                                        (readback_at Kinetic branch_ctx kbody new_match_ty) in
+                                    Term.Branch
+                                      {
+                                        annotate = new_annotate;
+                                        comp = new_comp;
+                                        perm = id_perm;
+                                        tm;
+                                      })
+                            (* If we can't or won't refine, the remaining approach is to read back the branch using the head, arguments, environment, and a type computed from an explicit motive or from the type of the whole branch. *))
+                          ~fatal:(fun d ->
+                            match d.message with
+                            | Matching_wont_refine _ ->
+                                let branch_ty =
+                                  match emotive with
+                                  | None -> match_ty
+                                  | Some emotive ->
+                                      apply_singletons window
+                                        (Vec.fold_left (apply_singleton_nfs window) emotive
+                                           (indices_of_out "match branch" out total_dim
+                                              (Vec.length data_indices)))
+                                        (constr_val_cube constr total_dim newvars) in
+                                branch head_head head_args
+                                  (fun _ x -> x)
+                                  (take_args env plus_dim newvars window fw annotate comp)
+                                  branch_ty
+                            | _ -> fatal_diagnostic d))
                   branches in
               return
               @@ rewrap

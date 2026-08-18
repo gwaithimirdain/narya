@@ -456,15 +456,15 @@ module Ordered = struct
     | None -> None
 end
 
-(* Note the different return type of this bind_some and of Ordered.bind_some.  The latter returns a new ordered context and two permutations, one for the raw indices and one for the checked indices.  This one incorporates the raw permutation into the permutation stored in the context and returns only the checked permutation to the caller. *)
-type (_, _, _) bind_some =
+(* This is the same type defined at the place of the forward reference in Readback.  Note the different return type of this bind_some and of Ordered.bind_some.  The latter returns a new ordered context and two permutations, one for the raw indices and one for the checked indices.  This one incorporates the raw permutation into the permutation stored in the context and returns only the checked permutation to the caller. *)
+type ('mode, 'a, 'b) my_bind_some = ('mode, 'a, 'b) bind_some =
   | Bind_some : {
       checked_perm : ('c, 'b) permute;
       oldctx : ('mode, 'a, 'c) Ctx.t;
       newctx : ('mode, 'a, 'c) Ctx.t;
     }
-      -> ('mode, 'a, 'b) bind_some
-  | None : ('mode, 'a, 'b) bind_some
+      -> ('mode, 'a, 'b) my_bind_some
+  | Bind_none : ('mode, 'a, 'b) my_bind_some
 
 let bind_some g (Ctx.Permute { perm; ctx; level; _ }) =
   match Ordered.bind_some g ~level ctx with
@@ -490,4 +490,6 @@ let bind_some g (Ctx.Permute { perm; ctx; level; _ }) =
                 ctx = newctx;
               };
         }
-  | None -> None
+  | None -> Bind_none
+
+let () = set_bind_some { bind_some }
