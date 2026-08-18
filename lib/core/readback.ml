@@ -288,13 +288,14 @@ and readback_at : type mode a z s.
           readback_eval ~eta
             (apply_status status filter newargs)
             newctx (apply tm filter newargs) output )
-  (* Similarly at an eta-expanding record type, but controlled by the type's eta and opacity rather than the eta argument passed to readback_at. *)
+  (* At a record type, eta-expansion is controlled by the type's eta and opacity rather than the eta argument passed to readback_at.  We also read back explicit structs (tuples and comatches) here even at non-eta-expanding codatatypes. *)
   | ( Canonical
         (type hmode mn m n)
         (( _,
            Codata
              (type a et)
-             ({ eta; opacity; fields; env = _; hints = _ } : (mode, m, n, a, et) codata_args),
+             ({ eta; opacity; fields = codata_fields; _ } as codata_args :
+               (mode, m, n, a, et) codata_args),
            ins,
            _ ) :
           (hmode, kinetic) head
@@ -302,98 +303,185 @@ and readback_at : type mode a z s.
           * (mn, m, n) insertion
           * (D.zero, mn, mn, mode normal) TubeOf.t),
       _ ) -> (
-      match (eta, status) with
-      (* A no-eta codatatype: an ordinary readback of a (kinetic) neutral here yields its application spine.  Displaying a comatch as a comatch is done by readback_comatch, which forces the neutral's potential value; that was caught earlier by the Struct/Potential case. *)
-      | Noeta, Kinetic -> readback_val ctx tm
-      (* If reading back a potential comatch, we pass off to readback_comatch. *)
-      | _, Potential neutral -> (
-          match readback_comatch ctx neutral ty with
-          | Some res -> res
-          (* A comatch with a genuinely stuck instance retains no trace of what it is stuck on, so we fall back to the neutral's application spine. *)
-          | None -> Realize (readback_val ctx neutral))
-      | Eta, Kinetic -> (
-          (* An eta-record type.  Only kinetic values are ever read back here (records, and tuples reached via their neutral); a tuple in a case tree (a potential eta-struct) is never passed to readback for display. *)
+      (* The term 'view' has the polymorphic energy 's'.  We also need a uniformly kinetic version of this term; if the energy is kinetic this is the same term, otherwise it is the stored neutral in the potential status. *)
+      match
+        match (eta, status) with
+        | _, Potential neutral -> Some (neutral, (Potential : s energy), (eta : (s, et) eta))
+        | Eta, Kinetic -> Some (view, Kinetic, Eta)
+        | Noeta, Kinetic -> None
+      with
+      (* A readback of a kinetic term (necessarily a neutral) at a no-eta codatatype just yields its application spine. *)
+      | None -> readback_val ctx tm
+      (* In other cases, we might read back a struct. *)
+      | Some (ktm, energy, eta) -> (
           let dim = cod_left_ins ins in
           let fldins = ins_zero dim in
+          let evaldim = dim_env codata_args.env in
           (* A nontrivially permuted record is not a record type, but we can permute its arguments to find elements of a record type that we can then eta-expand and re-permute. *)
-          let tm, ty, wrap =
+          let ktm, tm, ty, wrap =
             match is_id_ins ins with
-            | Some _ -> (view, ty, fun res -> res)
+            | Some _ -> (ktm, view, ty, fun res -> res)
             | None ->
                 let (Perm_to p) = perm_of_ins ins in
                 let pinv = deg_of_perm (perm_inv p) in
-                ( act_value view pinv (Modalcell.id2 (Ctx.mode ctx)),
-                  act_ty view ty pinv (Modalcell.id2 (Ctx.mode ctx)),
-                  fun res -> Term.Act (Kinetic, res, deg_of_perm p, (`Other, `Other)) ) in
-          match (tm, opacity) with
-          (* If the term is a struct, we read back its fields.  Even though this is not technically an eta-expansion, we have to do it here rather than in readback_val because we need the record type to determine the types at which to read back the fields. *)
-          | Struct { fields = tmflds; energy; ins = _; eta = _ }, _ ->
-              let fields =
-                Mbwd.map
-                  (* We don't need to consider the Higher case since we are kinetic. *)
-                  (fun (Value.StructfieldAbwd.Entry (fld, Value.Structfield.Lower (adj, fldtm, lbl)))
-                     ->
-                    (* The component of a modal field lives behind a lock by the right adjoint, so we read it back in the locked context, at the non-keyed component type. *)
-                    let (Tyof_modal_field (adj', ety)) = tyof_field_nokey (Ok tm) ty fld in
-                    match Modality.compare (Modalcell.adj_left adj') (Modalcell.adj_left adj) with
-                    | Neq -> fatal (Anomaly "adjunction mismatch in struct readback")
-                    | Eq ->
-                        let (Locked (plus_lock, lctx)) = Ctx.lock ctx (Modalcell.adj_right adj') in
-                        Term.StructfieldAbwd.Entry
-                          ( fld,
-                            Term.Structfield.Lower
-                              ( adj',
-                                plus_lock,
-                                readback_at Kinetic lctx (force_eval_term fldtm) ety,
-                                lbl ) ))
-                  tmflds in
-              wrap (Term.Struct { eta = Eta; dim; fields; energy })
-          (* In addition, if the record type is transparent, or if it's translucent and the term is a tuple in a case tree, and we are reading back for display (rather than for internal typechecking purposes), we do an eta-expanding readback. *)
-          | (_, `Transparent l | _, `Translucent l)
-            when Displaying.read ()
-                 &&
-                 match (tm, opacity) with
-                 | Neu { value; _ }, `Translucent _ -> (
-                     match force_eval value with
-                     | Val (Struct _) -> true
-                     | _ -> false)
-                 | _, `Transparent _ -> true
-                 | _ -> false ->
-              (* A modal field whose (left adjoint) modality is nonparametric disappears at a dimension it filters nontrivially, so it isn't read back. *)
-              let m = cod_left_ins ins in
-              let fields =
-                Bwd.filter
-                  (fun (CodatafieldAbwd.Entry
-                          (type i)
-                          ((_, Codatafield (Adjunction { left; _ }, _, _)) :
-                            i Field.t * (i, mode * a * D.zero * n * has_eta) Codatafield.t)) ->
-                    let (Has_filter left_filter) = Modality.filter left m in
-                    Option.is_some (Modality.filter_is_trivial m left_filter))
-                  fields in
-              let fields =
-                Mbwd.map
-                  (fun (CodatafieldAbwd.Entry
-                          (type i)
-                          (( fld,
-                             Codatafield ((Adjunction { left; right; unit; _ } as adj), _, Lower _)
-                           ) :
-                            i Field.t * (i, mode * a * D.zero * n * has_eta) Codatafield.t)) ->
-                    (* Eta-expansion of a modal field: key the term by the adjunction unit, project, and read back the component in the context locked by the right adjoint (as in the eta-rule for equality). *)
-                    let xu = act_value tm (id_deg D.zero) unit in
-                    let tyu = act_ty tm ty (id_deg D.zero) unit in
-                    let (Locked (plus_lock, lctx)) = Ctx.lock ctx right in
-                    Term.StructfieldAbwd.Entry
-                      ( fld,
-                        Term.Structfield.Lower
-                          ( adj,
-                            plus_lock,
-                            readback_at Kinetic lctx (field_term left xu fld fldins)
-                              (tyof_field left (Ok xu) tyu fld fldins),
-                            l ) ))
-                  fields in
-              wrap (Struct { eta = Eta; dim; fields; energy = Kinetic })
-          (* If the term is not a struct and the record type is not transparent/translucent, we pass off to synthesizing readback. *)
-          | _ -> readback_val ctx view))
+                let ptm = act_value view pinv (Modalcell.id2 (Ctx.mode ctx)) in
+                let pty = act_ty ktm ty pinv (Modalcell.id2 (Ctx.mode ctx)) in
+                let pktm : (mode, kinetic) value =
+                  match energy with
+                  | Kinetic -> ptm
+                  | Potential -> act_value ktm pinv (Modalcell.id2 (Ctx.mode ctx)) in
+                (pktm, ptm, pty, fun res -> Term.Act (energy, res, deg_of_perm p, (`Other, `Other)))
+          in
+          let m = cod_left_ins ins in
+          let codata_fields =
+            Bwd.filter
+              (fun (CodatafieldAbwd.Entry
+                      (type i)
+                      ((_, Codatafield (Adjunction { left; _ }, _, _)) :
+                        i Field.t * (i, mode * a * D.zero * n * _) Codatafield.t)) ->
+                let (Has_filter left_filter) = Modality.filter left m in
+                Option.is_some (Modality.filter_is_trivial m left_filter))
+              codata_fields in
+          match tm with
+          (* If the term is a struct, we read back its fields.  Even though this is not technically an eta-expansion, we have to do it here rather than in readback_val because we need the codata type to determine the types at which to read back the fields. *)
+          | Struct { fields = comatch_fields; energy; ins = value_ins; eta = _ } -> (
+              match D.compare (cod_left_ins value_ins) dim with
+              | Neq -> fatal (Anomaly "comatch readback: struct dimension does not match its type")
+              | Eq ->
+                  let fields =
+                    Bwd.map
+                      (fun (Term.CodatafieldAbwd.Entry
+                              (type i)
+                              (( fld,
+                                 Codatafield
+                                   (type f g gmode ag)
+                                   (((Adjunction { left; right; unit; _ } as adj), _, cf) :
+                                     (mode, f, g, gmode) Modalcell.adjunction
+                                     * (_, mode, g, gmode, ag) plus_lock
+                                     * _) ) :
+                                i Field.t * (i, mode * _ * D.zero * n * et) Term.Codatafield.t)) :
+                           (mode * (_ * _ * s * et)) Term.StructfieldAbwd.entry ->
+                        match cf with
+                        | Lower _ ->
+                            (* Project the field from the neutral-as-self, keying by the adjunction unit and reading back the component behind the right-adjoint lock. *)
+                            let xu = act_value ktm (id_deg D.zero) unit in
+                            let tyu = act_ty ktm ty (id_deg D.zero) unit in
+                            let (Locked (plus_lock, lctx)) = Ctx.lock ctx right in
+                            (* Build a status and an acted term at energy 's' for energy-polymorphic readback of the body. *)
+                            let ((status, sxu) : (gmode, s) readback_status * (mode, s) value) =
+                              match status with
+                              | Kinetic -> (Kinetic, xu)
+                              | Potential neutral ->
+                                  let (Val fneu) = field left neutral fld fldins in
+                                  (Potential fneu, act_value tm (id_deg D.zero) unit) in
+                            let rtm =
+                              readback_eval status lctx
+                                (field left sxu fld (ins_zero dim))
+                                (tyof_field left (Ok xu) tyu fld (ins_zero evaldim)) in
+                            let l =
+                              match Value.StructfieldAbwd.find_opt comatch_fields fld with
+                              | Found (Lower (_, _, l)) -> l
+                              | _ -> `Labeled in
+                            Term.StructfieldAbwd.Entry
+                              (fld, Term.Structfield.Lower (adj, plus_lock, rtm, l))
+                        | Higher _ -> (
+                            match Value.StructfieldAbwd.find_opt comatch_fields fld with
+                            | Found (Value.Structfield.Higher (lazy hd)) -> (
+                                (* The comatch stores its own copy of the field's adjunction, whose existential types are a priori unrelated to those of the declaration; match them up so the stored bodies can be read back at the declared field type.  A value checked against this declaration must carry the declared adjunction, so a mismatch is a bug. *)
+                                match Modalcell.compare_adjunction hd.adj adj with
+                                | Neq ->
+                                    fatal (Anomaly "comatch readback: field adjunction mismatch")
+                                | Eq ->
+                                    let (Locked (ctx_plus_lock, _)) = Ctx.lock ctx right in
+                                    (* The self, keyed by the adjunction unit, and its type, exactly as for a lower field. *)
+                                    let selfnf =
+                                      {
+                                        tm = act_value ktm (id_deg D.zero) unit;
+                                        ty = lazy (act_ty ktm ty (id_deg D.zero) unit);
+                                      } in
+                                    let pbm =
+                                      Term.PlusPbijmap.build dim (Field.dim fld)
+                                        {
+                                          build =
+                                            (fun pbij ->
+                                              let (Pbij (fldins, fldshuf)) = pbij in
+                                              let r = left_shuffle fldshuf in
+                                              (* The instance's body lives in the context degenerated by its remaining dimensions, so we build it there, as check_higher_field does: degenerate the context, commute the degeneracy past the right-adjoint lock, and lock the degenerated context to it. *)
+                                              let (Degctx (plusmap, dctx, denv)) = degctx ctx r in
+                                              let (Shift (plusmap_bg, deg_plus_lock)) =
+                                                shift_unplus_lock r plusmap ctx_plus_lock in
+                                              let dlctx = Ctx.lock_to dctx right deg_plus_lock in
+                                              (* Raise the self into that context, where the remaining dimensions are genuine dimensions and this instance is therefore *projectable*: ins_plus_of_pbij absorbs them into the evaluation dimension, turning the partial bijection into an insertion.  This is the move check_higher_field makes to carry its status into a component.  The body is then just a field projection read back like a lower field's -- the comatch's closure environment never has to be transported, and no shuffleable is needed, since at this dimension nothing remains. *)
+                                              let dself = degenerate_normal ctx denv r selfnf in
+                                              (* Degenerating the self reads it back and re-evaluates it.  This may not be a struct again; if not, then field_term below will just produce the projected neutral. *)
+                                              let (Plus rm) = D.plus dim in
+                                              let newins = ins_plus_of_pbij fldins fldshuf rm in
+                                              let ety =
+                                                tyof_field left (Ok dself.tm) (Lazy.force dself.ty)
+                                                  fld newins in
+                                              let rtm =
+                                                readback_at Kinetic dlctx
+                                                  (field_term left dself.tm fld newins)
+                                                  ety in
+                                              Some (PlusFam.PlusFam (plusmap_bg, Realize rtm)));
+                                        } in
+                                    let sf = Term.Structfield.Higher (adj, ctx_plus_lock, pbm) in
+                                    Term.StructfieldAbwd.Entry (fld, sf))
+                            | _ ->
+                                fatal
+                                  (Anomaly "comatch readback: higher field missing from comatch")))
+                      codata_fields in
+                  wrap (Term.Struct { eta; dim; fields; energy }))
+          (* In addition, if a record type is transparent, or if it's translucent and the term is a tuple in a case tree, and we are reading back for display (rather than for internal typechecking purposes), we do an eta-expanding readback. *)
+          | _ -> (
+              match eta with
+              | Eta -> (
+                  match opacity with
+                  | (`Transparent l | `Translucent l)
+                    when Displaying.read ()
+                         &&
+                         match (tm, opacity) with
+                         | Neu { value; _ }, `Translucent _ -> (
+                             match force_eval value with
+                             | Val (Struct _) -> true
+                             | _ -> false)
+                         | _, `Transparent _ -> true
+                         | _ -> false ->
+                      (* A modal field whose (left adjoint) modality is nonparametric disappears at a dimension it filters nontrivially, so it isn't read back. *)
+                      let fields =
+                        Mbwd.map
+                          (fun (CodatafieldAbwd.Entry
+                                  (type i)
+                                  (( fld,
+                                     Codatafield
+                                       (type f g gmode ag)
+                                       (((Adjunction { left; right; unit; _ } as adj), _, Lower _) :
+                                         (mode, f, g, gmode) Modalcell.adjunction
+                                         * (_, mode, g, gmode, ag) plus_lock
+                                         * _) ) :
+                                    i Field.t * (i, mode * a * D.zero * n * has_eta) Codatafield.t))
+                             ->
+                            (* Eta-expansion of a modal field: key the term by the adjunction unit, project, and read back the component in the context locked by the right adjoint (as in the eta-rule for equality). *)
+                            let xu = act_value ktm (id_deg D.zero) unit in
+                            let tyu = act_ty ktm ty (id_deg D.zero) unit in
+                            let (Locked (plus_lock, lctx)) = Ctx.lock ctx right in
+                            (* Build a status and an acted term at energy 's' for energy-polymorphic readback of the body. *)
+                            let ((status, sxu) : (gmode, s) readback_status * (mode, s) value) =
+                              match status with
+                              | Kinetic -> (Kinetic, xu)
+                              | Potential neutral ->
+                                  let (Val fneu) = field left neutral fld fldins in
+                                  (Potential fneu, act_value tm (id_deg D.zero) unit) in
+                            let rtm =
+                              readback_eval status lctx (field left sxu fld fldins)
+                                (tyof_field left (Ok xu) tyu fld fldins) in
+                            Term.StructfieldAbwd.Entry
+                              (fld, Term.Structfield.Lower (adj, plus_lock, rtm, l)))
+                          codata_fields in
+                      wrap (Struct { eta = Eta; dim; fields; energy })
+                  (* If the term is not a struct and the record type is not transparent/translucent, we pass off to synthesizing readback. *)
+                  | _ -> readback_val ctx view)
+              | _ -> readback_val ctx view)))
   (* Datatypes are not eta-expanding, but we still need the datatype in order to read back a constructor at that type. *)
   | Canonical (_, Data { constrs; _ }, ins, tyargs), Constr (xconstr, xn, xargs) -> (
       let Eq = eq_of_ins_zero ins in
@@ -1587,182 +1675,6 @@ and readback_stuck_match : type mode a z hmode any.
                   | _ -> no_display "a stuck match that is not a neutral"))
           | _ -> fatal (Anomaly "discriminee of a stuck match is not of a datatype")))
   | _ -> no_display "a stuck metavariable"
-
-(* ********** Readback of comatches (for display only) ********** *)
-
-(* Read back one higher field of a comatch, as the PlusPbijmap of instances that Structfield.Higher stores: one entry per partial bijection between the comatch's dimension and the field's intrinsic dimension.
-
-   The entry at a pbij with 'r remaining dimensions must be a term over the ambient context *degenerated by 'r*, since that is where such a component is checked and where its type lives.  So, exactly as check_higher_field does, we degenerate the context by those dimensions, commute the degeneracy past the right-adjoint lock, and lock the degenerated context to it.  The body is then the comatch's stored term for the corresponding term-level pbij, evaluated in its closure environment transported into that degenerated context -- an eval-readback through the stored termctx, which is why Structfield.Higher records one.
-
-   The whole field gives up (None) if the comatch carries no termctx (a hand-built fibrancy field) or if some instance is a genuinely stuck case tree. *)
-and readback_higher_comatch_field : type mode a z m i f g gmode aa hm hn hmn ag.
-    (mode, z, a) Ctx.t ->
-    (mode, m, D.zero, aa, no_eta) Value.codata_args ->
-    (* The neutral whose potential value is the comatch, serving as the self-variable, and its type. *)
-    (mode, kinetic) value ->
-    (mode, kinetic) value ->
-    m D.t ->
-    i Field.t ->
-    (mode, f, g, gmode) Modalcell.adjunction ->
-    (mode, f, g, gmode, hm, hn, hmn, m, i, ag) Value.Structfield.higher_data ->
-    (i, mode * (m * a * potential * no_eta)) Term.Structfield.t option =
- fun ctx codata_args neutral ty dim fld adj hd ->
-  ignore (codata_args, hd);
-  let exception Unprojectable_self in
-  try
-    let (Adjunction { left; right; unit; _ }) = adj in
-    let (Locked
-           (type ag2)
-           ((ctx_plus_lock, _) : (a, mode, g, gmode, ag2) plus_lock * (gmode, z, ag2) Ctx.t)) =
-      Ctx.lock ctx right in
-    (* The self, keyed by the adjunction unit, and its type, exactly as for a lower field. *)
-    let selfnf =
-      {
-        tm = Act.act_value neutral (id_deg D.zero) unit;
-        ty = lazy (Act.act_ty neutral ty (id_deg D.zero) unit);
-      } in
-    let pbm =
-      Term.PlusPbijmap.build dim (Field.dim fld)
-        {
-          build =
-            (fun (type r) (pbij : (m, i, r) pbij) : (r, gmode * ag2) Term.PlusFam.t ->
-              let (Pbij (fldins, fldshuf)) = pbij in
-              let r = left_shuffle fldshuf in
-              (* The instance's body lives in the context degenerated by its remaining dimensions, so we build it there, as check_higher_field does: degenerate the context, commute the degeneracy past the right-adjoint lock, and lock the degenerated context to it. *)
-              let (Degctx (plusmap, dctx, denv)) = degctx ctx r in
-              let (Shift (plusmap_bg, deg_plus_lock)) = shift_unplus_lock r plusmap ctx_plus_lock in
-              let dlctx = Ctx.lock_to dctx right deg_plus_lock in
-              (* Raise the self into that context, where the remaining dimensions are genuine dimensions and this instance is therefore *projectable*: ins_plus_of_pbij absorbs them into the evaluation dimension, turning the partial bijection into an insertion.  This is the move check_higher_field makes to carry its status into a component.  The body is then just a field projection read back like a lower field's -- the comatch's closure environment never has to be transported, and no shuffleable is needed, since at this dimension nothing remains. *)
-              let dself = degenerate_normal ctx denv r selfnf in
-              (* Degenerating the self reads it back and re-evaluates it, so it survives that round trip only if its spine really does evaluate to the comatch.  An ordinary self does; the one readback_stuck_match supplies in a match branch does not, when it could not refine the discriminee -- there the spine is still a stuck match, so projecting from it computes nothing and we would show an instance body that is not the one the comatch stores.  We detect that and abandon the whole field, rather than returning None, which would mean the weaker thing that this *instance* is absent. *)
-              (match dself.tm with
-              | Neu { value; _ } -> (
-                  match force_eval value with
-                  | Val (Struct _) -> ()
-                  | _ -> raise_notrace Unprojectable_self)
-              | _ -> raise_notrace Unprojectable_self);
-              let (Plus rm) = D.plus dim in
-              let newins = ins_plus_of_pbij fldins fldshuf rm in
-              let ety = tyof_field left (Ok dself.tm) (Lazy.force dself.ty) fld newins in
-              Some
-                (Term.PlusFam.PlusFam
-                   ( plusmap_bg,
-                     Term.Realize
-                       (readback_at Kinetic dlctx (field_term left dself.tm fld newins) ety) )));
-        } in
-    Some (Term.Structfield.Higher (adj, ctx_plus_lock, pbm))
-  with Unprojectable_self ->
-    no_display "a higher field of a comatch in a match branch whose discriminee was not refined"
-
-(* To read back a comatch, we need the *neutral* whose value is the comatch, so as to use that neutral itself as the self-variable for computing each field's type with tyof_field (the neutral is already in the context, so no fresh self is needed; being Const-headed, it reads back without a context level).  A lower field is projected from the neutral directly, keying by the adjunction unit and reading the component back behind the right-adjoint lock (all trivial for an ordinary non-modal field).  A higher field's instances are read back by readback_higher_comatch_field above.
-
-   The eta and no-eta cases go through the same code: the return-type annotation keeps the field-map's eta ('et) polymorphic, and the higher-field branch constrains 'et = no_eta only locally where it is actually reached.  So a record, which has no higher fields, reads back its (non-leaf) tuple value here too, which is what lets "about (Prod A B)⁽ᵉ⁾ .trr p" display the componentwise transport rather than the stuck spine.
-
-   A field whose left adjoint filters this dimension nontrivially disappears here, exactly as it does for projection and for the codatatype display, so it is not displayed at all.  The result is None if a higher field could not be read back. *)
-and readback_comatch : type mode a z.
-    (mode, z, a) Ctx.t ->
-    (mode, kinetic) value ->
-    (mode, kinetic) value ->
-    (mode, a, potential) term option =
- fun ctx neutral ty ->
-  match view_type ty "readback_comatch" with
-  | Canonical
-      (type hmode mn m n)
-      ((_, Codata (type aa et) (codata_args : (mode, m, n, aa, et) codata_args), ins, _) :
-        (hmode, kinetic) head
-        * (mode, m, n) canonical
-        * (mn, m, n) insertion
-        * (D.zero, mn, mn, mode normal) TubeOf.t) -> (
-      (* A nontrivially permuted record is not a record type, but we can permute its arguments to find elements of a record type that we can then eta-expand and re-permute. *)
-      let neutral, ty, wrap =
-        match is_id_ins ins with
-        | Some _ -> (neutral, ty, fun res -> res)
-        | None ->
-            let (Perm_to p) = perm_of_ins ins in
-            let pinv = deg_of_perm (perm_inv p) in
-            ( act_value neutral pinv (Modalcell.id2 (Ctx.mode ctx)),
-              act_ty neutral ty pinv (Modalcell.id2 (Ctx.mode ctx)),
-              fun res -> Term.Act (Potential, res, deg_of_perm p, (`Other, `Other)) ) in
-      match neutral with
-      | Neu { value = nval; _ } -> (
-          match force_eval nval with
-          | Val
-              (Struct
-                 (type p k pk vet)
-                 ({ fields = comatch_fields; ins = value_ins; _ } :
-                   (mode, p, k, pk, potential, vet) Value.struct_args)) -> (
-              let dim = cod_left_ins ins in
-              let evaldim = dim_env codata_args.env in
-              match D.compare (cod_left_ins value_ins) dim with
-              | Neq -> fatal (Anomaly "comatch readback: struct dimension does not match its type")
-              | Eq ->
-                  let codata_fields =
-                    Bwd.filter
-                      (fun (CodatafieldAbwd.Entry
-                              (type i)
-                              ((_, Codatafield (Adjunction { left; _ }, _, _)) :
-                                i Field.t * (i, mode * aa * D.zero * n * et) Term.Codatafield.t)) ->
-                        let (Has_filter lfilter) = Modality.filter left dim in
-                        Option.is_some (Modality.filter_is_trivial dim lfilter))
-                      codata_args.fields in
-                  let fields =
-                    Bwd.fold_left
-                      (fun acc
-                           (Term.CodatafieldAbwd.Entry
-                              (type i)
-                              (( fld,
-                                 Codatafield ((Adjunction { left; right; unit; _ } as adj), _, cf)
-                               ) :
-                                i Field.t * (i, mode * aa * D.zero * n * et) Term.Codatafield.t)) :
-                           (mode * (m * a * potential * et)) Term.StructfieldAbwd.t option ->
-                        match (acc, cf) with
-                        | None, _ -> None
-                        | Some acc, Lower _ ->
-                            (* Project the field from the neutral-as-self, keying by the adjunction unit and reading back the component behind the right-adjoint lock. *)
-                            let xu = act_value neutral (id_deg D.zero) unit in
-                            let tyu = act_ty neutral ty (id_deg D.zero) unit in
-                            let (Locked (plus_lock, lctx)) = Ctx.lock ctx right in
-                            Some
-                              (Snoc
-                                 ( acc,
-                                   Term.StructfieldAbwd.Entry
-                                     ( fld,
-                                       Term.Structfield.Lower
-                                         ( adj,
-                                           plus_lock,
-                                           Term.Realize
-                                             (readback_at Kinetic lctx
-                                                (field_term left xu fld (ins_zero dim))
-                                                (tyof_field left (Ok xu) tyu fld (ins_zero evaldim))),
-                                           `Labeled ) ) ))
-                        | Some acc, Higher _ -> (
-                            match Value.StructfieldAbwd.find_opt comatch_fields fld with
-                            | Found (Value.Structfield.Higher (lazy hd)) -> (
-                                (* The comatch stores its own copy of the field's adjunction, whose existential types are a priori unrelated to those of the declaration; match them up so the stored bodies can be read back at the declared field type.  A value checked against this declaration must carry the declared adjunction, so a mismatch is a bug. *)
-                                match Modalcell.compare_adjunction hd.adj adj with
-                                | Neq ->
-                                    fatal
-                                      (Anomaly
-                                         "comatch readback: field adjunction does not match its declaration")
-                                | Eq -> (
-                                    match
-                                      readback_higher_comatch_field ctx codata_args neutral ty dim
-                                        fld adj hd
-                                    with
-                                    | None -> None
-                                    | Some sf ->
-                                        Some (Snoc (acc, Term.StructfieldAbwd.Entry (fld, sf)))))
-                            | _ ->
-                                fatal
-                                  (Anomaly "comatch readback: higher field missing from comatch")))
-                      (Some Emp) codata_fields in
-                  Option.map
-                    (fun fields ->
-                      wrap (Term.Struct { eta = codata_args.eta; dim; fields; energy = Potential }))
-                    fields)
-          | _ -> fatal (Anomaly "comatch readback: neutral value is not a struct"))
-      | _ -> fatal (Anomaly "comatch readback: not a neutral"))
-  | _ -> fatal (Anomaly "comatch readback: type is not a codatatype")
 
 (* The "about" command reads back the *potential* value of a neutral, passing the neutral itself as readback's status so that a canonical type displays as its declaration and a comatch as itself; readback_at handles the rest, including descending through parameter abstractions.  None means the neutral has no potential value at all to display -- an axiom, or a permanently stuck case tree -- so the caller shows its normal form instead. *)
 let rec readback_about : type mode a b.

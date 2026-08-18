@@ -405,7 +405,7 @@ A comatch can mix lower and higher fields; all are read back, degenerate or not.
 A struct at a codatatype with a nonzero intrinsic (Gel-like) dimension is read back too, rather than showing its application spine.
 
   $ narya -dtt -e 'axiom A : Type' -e 'axiom Aʹ : A → Type' -e 'def Gel (A : Type) (Aʹ : A → Type) : Type⁽ᵈ⁾ A ≔ sig ( x .ungel : Aʹ x.0 )' -e 'axiom a : A' -e 'axiom aʹ : Aʹ a' -e 'def h (x : A) (xʹ : Aʹ x) : Gel A Aʹ x ≔ (xʹ,)' -e 'about (h a aʹ)'
-  (ungel ≔ aʹ)
+  (_ ≔ aʹ)
     : Gel A Aʹ a
   
 
@@ -626,10 +626,10 @@ Refining outward-in is what lets a match nested inside a branch of another one b
 A branch body that is a tuple, a comatch, or a canonical type is read back against a "self": a neutral whose value is that very struct, which supplies the field types and the components.  The enclosing neutral is that self under the branch's hypothesis, so we hand it over with this branch's value and type in place of the stuck match's.  That needs no refinement, so it works for a non-variable discriminee too.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def R : Type ≔ sig ( a : N, b : N )' -e 'axiom ax : N' -e 'about (let g : N → R ≔ [ zero. ↦ (zero., zero.) | suc. n ↦ (n, n) ] in g)' -e 'about (let h : N → R ≔ [ zero. ↦ (zero., zero.) | suc. n ↦ (n, n) ] in h ax)'
-  𝑥 ↦ match 𝑥 [ suc. n ↦ (a ≔ n, b ≔ n) | zero. ↦ (a ≔ 0, b ≔ 0) ]
+  𝑥 ↦ match 𝑥 [ suc. n ↦ (n, n) | zero. ↦ (0, 0) ]
     : N → R
   
-  match ax [ suc. n ↦ (a ≔ n, b ≔ n) | zero. ↦ (a ≔ 0, b ≔ 0) ]
+  match ax [ suc. n ↦ (n, n) | zero. ↦ (0, 0) ]
     : R
   
 
@@ -680,7 +680,9 @@ A higher field needs more: its instances are read back by degenerating the self,
 When it doesn't -- a higher field in a branch whose discriminee could not be refined -- projecting from the degenerated self computes nothing, and displaying it would give an instance body that is not the one the comatch stores.  We detect that and give up on the branch instead.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def √N : Type ≔ codata [ x .root.e : N ]' -e 'axiom ax : N' -e 'about (let u : N → √N ≔ [ zero. ↦ [ .root.e ↦ zero. ] | suc. n ↦ [ .root.e ↦ suc. zero. ] ] in u ax)'
-  match ax [ suc. n ↦ _let.F5.0.u{…} ax | zero. ↦ _let.F5.0.u{…} ax ]
+  match ax [
+  | suc. n ↦ [ .root.e ↦ _let.F5.0.u{…} (refl ax) .root ]
+  | zero. ↦ [ .root.e ↦ _let.F5.0.u{…} (refl ax) .root ]]
     : √N
   
 
@@ -827,13 +829,9 @@ Whenever a piece of a stuck case tree can't be displayed as the construct it cam
    ￫ info[I0001]
    ￮ axiom ax assumed
   
-   ￫ info[I0010]
-   ￮ not displaying a higher field of a comatch in a match branch whose discriminee was not refined; showing an application spine instead
-  
-   ￫ info[I0010]
-   ￮ not displaying a higher field of a comatch in a match branch whose discriminee was not refined; showing an application spine instead
-  
-  match ax [ suc. n ↦ _let.F5.0.u{…} ax | zero. ↦ _let.F5.0.u{…} ax ]
+  match ax [
+  | suc. n ↦ [ .root.e ↦ _let.F5.0.u{…} (refl ax) .root ]
+  | zero. ↦ [ .root.e ↦ _let.F5.0.u{…} (refl ax) .root ]]
     : √N
   
 
@@ -847,7 +845,7 @@ A stuck match can also be eliminated further, when what it computes to is a func
 That includes field projections, which cross to the mode the field's left adjoint comes from: the match is then displayed in our context locked by it, and the self a branch body is read back against is the neutral we were given with the spine's eliminations stripped back off, so that it too lives at the match's mode.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def R : Type ≔ sig ( a : N, b : N )' -e 'axiom b : Bool' -e 'def g : Bool → R ≔ b ↦ match b return _ ↦ R [ true. ↦ (zero., zero.) | false. ↦ (suc. zero., zero.) ]' -e 'about (g b .a)'
-  match b [ false. ↦ (a ≔ 1, b ≔ 0) | true. ↦ (a ≔ 0, b ≔ 0) ] .a
+  match b [ false. ↦ (1, 0) | true. ↦ (0, 0) ] .a
     : N
   
 
@@ -862,7 +860,7 @@ A non-dependent match needs no motive written down; here the discriminee is an a
   match b [ false. ↦ n ↦ 0 | true. ↦ n ↦ n ] ax
     : N
   
-  match b [ false. ↦ (a ≔ 1, b ≔ 0) | true. ↦ (a ≔ 0, b ≔ 0) ] .a
+  match b [ false. ↦ (1, 0) | true. ↦ (0, 0) ] .a
     : N
   
 
