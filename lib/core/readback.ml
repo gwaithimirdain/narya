@@ -1565,7 +1565,7 @@ and readback_stuck_match : type mode a z hmode any.
                                         fatal (Matching_wont_refine ("rebinding killed self", None))
                                     )
                                 | kbody ->
-                                    (* TODO: I think this could happen if the branch body is kinetic, maybe if glued eval is off.  But in that case we can just read back the resulting kinetic value, which should *be* the value of this body. *)
+                                    (* This can only happen if glued evaluation is off.  In that case, we can just read back the resulting kinetic value, which is the value of this body. *)
                                     let tm =
                                       Term.Realize (readback_at Kinetic newctx kbody new_match_ty)
                                     in

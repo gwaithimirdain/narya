@@ -102,7 +102,7 @@ unions up to isomorphism:
    ￫ hint[E1101]
    ￭ $TESTCASE_ROOT/preserve.ny
    80 | | circle. w ↦ match (w :○| _) [ vnil. ↦ circle. (vnil.) ]]
-      ^ match will not refine the goal or context (index is not a free variable):
+      ^ match will not refine the goal or context (index/boundary variable is not free):
           0
   
    ￫ info[I0000]

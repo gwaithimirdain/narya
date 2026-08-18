@@ -190,7 +190,8 @@ counit of ♭, so the match falls back to a non-dependent one.
    ￫ hint[E1101]
    ￭ command-line exec string
    1 | def len (n :♭| N) (v : Vec N n) : N ≔ match v [ nil. ↦ zero. | cons. k x w ↦ suc. k ]
-     ^ match will not refine the goal or context (index variable is keyed): n
+     ^ match will not refine the goal or context (index/boundary variable is keyed):
+         n
   
    ￫ info[I0000]
    ￮ constant len defined

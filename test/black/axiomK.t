@@ -61,7 +61,7 @@ This "weak K" is mentioned in the "Pattern-matching without K" paper as justifyi
    ￫ hint[E1101]
    ￭ command-line exec string
    1 | def weakK (A:Type) (a:A) (P : Jd (Jd A a a) rfl. rfl. -> Type) (p : P rfl.) (e : Jd (Jd A a a) rfl. rfl.) : P e := match e [ rfl. |-> p ]
-     ^ match will not refine the goal or context (index is not a free variable):
+     ^ match will not refine the goal or context (index/boundary variable is not free):
          rfl.
   
    ￫ error[E0401]
@@ -103,7 +103,7 @@ The following indexed datatype appears in Agda bug #1025.
    ￫ hint[E1101]
    ￭ command-line exec string
    1 | def test (e : Jd A a a) (f : Foo e) (i : Jd (Foo e) f f) : Jd (Jd (Foo e) f f) i rfl. ≔ match f [ foo. ↦ match i [ rfl. ↦ rfl. ]]
-     ^ match will not refine the goal or context (index is not a free variable):
+     ^ match will not refine the goal or context (index/boundary variable is not free):
          foo.
   
    ￫ error[E0401]
