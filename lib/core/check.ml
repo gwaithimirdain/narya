@@ -1698,7 +1698,7 @@ and synth_dep_match : type mode a b.
                use =
                  (fun (_, emotive) constr dim index_vals newvars ->
                    (* To get the type at which to typecheck the body of a branch, we apply the general dependent motive to the indices of this constructor (read off from its output type by the caller), its boundaries, and itself.  We compute the constructor and its boundaries. *)
-                   let constr_vals = constr_cube constr dim newvars in
+                   let constr_vals = constr_val_cube constr dim newvars in
                    (* Finally, we apply the motive to all of these arguments. *)
                    let result = Vec.fold_left (apply_singleton_nfs window) emotive index_vals in
                    apply_singletons window result constr_vals);
@@ -1754,20 +1754,6 @@ and check_var_match : type dom modality mode a b bm.
       let Eq = eq_of_ins_zero ins in
       check_window_transparency window data_constrs recursive;
       let tyfam = nf_of_neu (force_eval_term tyfam) "check_var_match" in
-      let tyfam_args : (D.zero, m, m, dom normal) TubeOf.t =
-        match view_type (Lazy.force tyfam.ty) "check_var_match tyfam" with
-        | Canonical (_, Pi _, _, tyfam_args) -> (
-            match D.compare dim (TubeOf.inst tyfam_args) with
-            | Neq -> fatal (Dimension_mismatch ("check_var_match", dim, TubeOf.inst tyfam_args))
-            | Eq -> tyfam_args)
-        | Canonical (_, UU (_mode, n), ins, tyfam_args) -> (
-            let Eq = eq_of_ins_zero ins in
-            match D.compare dim n with
-            | Neq -> fatal (Dimension_mismatch ("check_var_match", dim, n))
-            | Eq -> tyfam_args)
-        | _ ->
-            let (Locked (_, lctx)) = Ctx.lock ctx window in
-            fatal (Show ("tyfam is not a type family", PVal (lctx, Lazy.force tyfam.ty))) in
       (* In our simple version of pattern-matching against a variable, the "indices" and all their boundaries must be distinct free variables with no degeneracies, so that in the branch for each constructor they can be set equal to the computed value of that index for that constructor (and in which they cannot occur).  This is a special case of the unification algorithm described in CDP "Pattern-matching without K" where the only allowed rule is "Solution".  Later we can try to enhance it with their full unification algorithm, at least for non-higher datatypes.  In addition, for a higher-dimensional match, the instantiation arguments must also all be distinct variables, distinct from the indices.  If any of these conditions fail, we raise an exception, catch it, emit a hint, and revert to doing a non-dependent match. *)
       let seen = Hashtbl.create 10 in
       let is_fresh (x : dom normal) =
@@ -1829,156 +1815,102 @@ and check_var_match : type dom modality mode a b bm.
             let (Ext_pi { ctx = newctx; values = newvars; normals = newnfs; annotate; comp; out }) =
               ext_pi ctx window env xs (eval_term env ty) in
             (* Read the indices of the new term that replaces the match variable in the match body off the residual output type, as the values of the type indices at the new pattern variables. *)
-            let index_vals =
-              Vec.map
-                (fun c -> CubeOf.mmap { map = (fun _ [ nf ] -> nf.tm) } [ c ])
-                (indices_of_out "match branch" out dim (Vec.length var_indices)) in
-            (* Assemble a term consisting of the constructor applied to the new variables, along with its boundary, and their types.  To compute their types, we have to extract the datatype applied to its parameters only, pass to boundaries if necessary, and then re-apply it to the new indices. *)
-            let constr_tys = TubeOf.plus_cube tyfam_args (CubeOf.singleton tyfam) in
-            let argtbl = Hashtbl.create 10 in
+            let index_nfs = indices_of_out "match branch" out dim (Vec.length var_indices) in
+            let index_vals = Vec.map val_of_norm_cube index_nfs in
+            (* Assemble a term consisting of the constructor applied to the new variables, along with its boundary, and their types. *)
             let constr_nfs =
-              CubeOf.mmap
-                {
-                  map =
-                    (fun fa [ constrty ] ->
-                      let k = dom_sface fa in
-                      let tm =
-                        Value.Constr
-                          ( constr,
-                            k,
-                            List.map
-                              (fun (Value.Modal (mu, s)) ->
-                                let (Filter_sface (fb, mu')) = Modality.filter_sface mu fa in
-                                Value.Modal (mu', CubeOf.subcube fb s))
-                              newvars ) in
-                      let ty =
-                        inst
-                          (Vec.fold_left
-                             (fun f a ->
-                               apply_term f
-                                 (* Indices cannot have nontrivial modal dependence. *)
-                                 (Modality.filter_id (Modality.src window) (dom_sface fa))
-                                 (CubeOf.subcube fa a))
-                             constrty.tm index_vals)
-                          (TubeOf.build D.zero (D.zero_plus k)
-                             {
-                               build =
-                                 (fun fb ->
-                                   Hashtbl.find argtbl
-                                     (SFace_of (comp_sface fa (sface_of_tface fb))));
-                             }) in
-                      let x = { tm; ty = Lazy.from_val ty } in
-                      Hashtbl.add argtbl (SFace_of fa) x;
-                      x);
-                }
-                [ constr_tys ] in
-            let constr_nf = CubeOf.find_top constr_nfs in
-            (* Since "index_vals" is just a Bwv of Cubes of *values*, we extract the corresponding collection of *normals* from the type.  The main use of this will be to substitute for the index variables, so instead of assembling them into another Bwv of Cubes, we make a hashtable associating those index variables to the corresponding normals.  We also include in the same hashtable the lower-dimensional applications of the same constructor, to be substituted for the instantiation variables. *)
-            match view_type (Lazy.force constr_nf.ty) "check_var_match (inner)" with
-            | Canonical (_, Data { dim = constrdim; indices = Filled indices; _ }, ins, _) -> (
-                let Eq = eq_of_ins_zero ins in
-                match
-                  ( D.compare constrdim dim,
-                    Fwn.compare (Vec.length var_indices) (Vec.length indices) )
-                with
-                | Neq, _ -> fatal (Anomaly "created datatype has wrong dimension")
-                | _, Neq -> fatal (Anomaly "created datatype has wrong number of indices")
-                | Eq, Eq -> (
-                    (* The values being bound live at the domain mode of the window modality. *)
-                    let ctxmode = Modality.src window in
-                    let new_vals = Hashtbl.create 10 in
-                    CubeOf.miter
-                      { it = (fun _ [ v; c ] -> Hashtbl.add new_vals v c) }
-                      [ constr_vars; constr_nfs ];
-                    Vec.miter
-                      (fun [ vs; cs ] ->
-                        CubeOf.miter
-                          { it = (fun _ [ v; c ] -> Hashtbl.add new_vals v c) }
-                          [ vs; cs ])
-                      [ index_vars; indices ];
-                    (* Now we let-bind the match variable to the constructor applied to these new variables, the "index_vars" to the index values, and the inst_vars to the boundary constructor values.  The operation bind_some automatically substitutes these new values into the types and values of other variables in the context, and reorders it if necessary so that each variable only depends on previous ones. *)
-                    match Bindsome.bind_some (ctxmode, new_vals) newctx with
-                    | None ->
-                        fatal (Matching_wont_refine ("no consistent permutation of context", None))
-                    | Bind_some { checked_perm; oldctx; newctx } -> (
-                        (* We readback the index and instantiation values into this new context and discard the result, catching No_such_level to turn it into a user Error.  This has the effect of doing an occurs-check that none of the index variables occur in any of the index values.  This is a bit less general than the CDP Solution rule, which (when applied one variable at a time) prohibits only cycles of occurrence.  Note that this exception is still caught by check_var_match, above, causing a fallback to term matching. *)
-                        ( Reporter.try_with ~fatal:(fun d ->
-                              match d.message with
-                              | No_such_level x ->
-                                  fatal ?loc:d.explanation.loc
-                                    (Matching_wont_refine
-                                       ("free index variable occurs in inferred index value", Some x))
-                              | _ -> fatal_diagnostic d)
-                        @@ fun () ->
-                          let (Locked (_, oldlctx)) = Ctx.lock oldctx window in
-                          Hashtbl.iter (fun _ v -> ignore (readback_nf oldlctx v)) new_vals );
-                        (* The type of the match must be specialized in the branches by substituting different constructors for the match variable, as well as the index values for the index variables, and lower-dimensional versions of each constructor for the instantiation variables.  Thus, we readback-eval this type into the new context, to obtain the type at which the branch body will be checked. *)
-                        let newty = eval_term (Ctx.env newctx) (readback_val oldctx motive) in
-                        (* Now we have to modify the "status" data by readback-eval on the arguments and adding a hypothesized current branch to the match.  *)
-                        let status =
-                          make_match_status status window plus (Term.Var index) dim None branches
-                            annotate comp
-                            (Some (oldctx, newctx))
-                            checked_perm constr in
-                        (* Finally, we typecheck the "body" of the branch, if the user supplied one. *)
-                        match body with
-                        | Some body ->
-                            (* We catch and accumulate errors so that later branches can continue to be checked and produce their own errors even if earlier ones fail, but we pass through the errors that are getting caught elsewhere. *)
-                            Reporter.try_with ~fatal:(fun e ->
-                                match e.message with
-                                | Missing_constructor_in_match _ -> fatal_diagnostic e
-                                | _ -> (branches, Snoc (errs, e)))
-                            @@ fun () ->
-                            let branch = check status newctx body newty in
-                            ( branches
-                              |> Constr.Map.add constr
-                                   (Term.Branch { annotate; comp; perm = checked_perm; tm = branch }),
-                              errs )
-                        (* If not, then we look for something to refute. *)
-                        | None -> (
-                            (* First we check whether any of the new pattern variables created by this match belong to an empty datatype. *)
-                            (* The pattern variables still have their pre-refinement levels, so we look for the witness in oldctx, just as the motive is read back there; the resulting term is over the same context either way. *)
-                            let result =
-                              match empty_witness oldctx newnfs with
-                              | Ok _ as ok -> ok
-                              | Error _ as err ->
-                                  (* Otherwise, we check the stored "refutables", which include all the previous and succeeding pattern variables. *)
-                                  let s = ref err in
-                                  List.iter
-                                    (fun x ->
-                                      match !s with
-                                      | Ok _ -> ()
-                                      | Error _ -> (
-                                          let stm, sty = synth (Kinetic `Nolet) newctx x in
-                                          match is_empty sty with
-                                          | None -> ()
-                                          | Some (Wrap dim) ->
-                                              (* A refutable is synthesized in the ambient context, so its refutation needs no window. *)
-                                              s :=
-                                                Ok
-                                                  (Term.Match
-                                                     {
-                                                       window = Modality.id (Ctx.mode newctx);
-                                                       plus_lock = plus_no_lock (Ctx.mode newctx);
-                                                       tm = stm;
-                                                       dim;
-                                                       motive = None;
-                                                       branches = Constr.Map.empty;
-                                                     })))
-                                    (Option.fold
-                                       ~some:(fun r -> r.refutables (Namevec.bplus xs))
-                                       ~none:[] refutables);
-                                  !s in
-                            match result with
-                            | Ok tm ->
-                                ( branches
-                                  |> Constr.Map.add constr
-                                       (Term.Branch { annotate; comp; perm = checked_perm; tm }),
-                                  errs )
-                            | Error err ->
-                                List.iter emit err;
-                                fatal (Missing_constructor_in_match constr)))))
-            | _ -> fatal (Anomaly "created datatype is not a datatype with all its indices"))
+              constr_norm_cube (Modality.src window) constr dim tyfam index_vals newvars in
+            (* The values being bound live at the domain mode of the window modality. *)
+            let ctxmode = Modality.src window in
+            let new_vals = Hashtbl.create 10 in
+            CubeOf.miter
+              { it = (fun _ [ v; c ] -> Hashtbl.add new_vals v c) }
+              [ constr_vars; constr_nfs ];
+            Vec.miter
+              (fun [ vs; cs ] ->
+                CubeOf.miter { it = (fun _ [ v; c ] -> Hashtbl.add new_vals v c) } [ vs; cs ])
+              [ index_vars; index_nfs ];
+            (* Now we let-bind the match variable to the constructor applied to these new variables, the "index_vars" to the index values, and the inst_vars to the boundary constructor values.  The operation bind_some automatically substitutes these new values into the types and values of other variables in the context, and reorders it if necessary so that each variable only depends on previous ones. *)
+            match Bindsome.bind_some (ctxmode, new_vals) newctx with
+            | None -> fatal (Matching_wont_refine ("no consistent permutation of context", None))
+            | Bind_some { checked_perm; oldctx; newctx } -> (
+                (* We readback the index and instantiation values into this new context and discard the result, catching No_such_level to turn it into a user Error.  This has the effect of doing an occurs-check that none of the index variables occur in any of the index values.  This is a bit less general than the CDP Solution rule, which (when applied one variable at a time) prohibits only cycles of occurrence.  Note that this exception is still caught by check_var_match, above, causing a fallback to term matching. *)
+                ( Reporter.try_with ~fatal:(fun d ->
+                      match d.message with
+                      | No_such_level x ->
+                          fatal ?loc:d.explanation.loc
+                            (Matching_wont_refine
+                               ("free index variable occurs in inferred index value", Some x))
+                      | _ -> fatal_diagnostic d)
+                @@ fun () ->
+                  let (Locked (_, oldlctx)) = Ctx.lock oldctx window in
+                  Hashtbl.iter (fun _ v -> ignore (readback_nf oldlctx v)) new_vals );
+                (* The type of the match must be specialized in the branches by substituting different constructors for the match variable, as well as the index values for the index variables, and lower-dimensional versions of each constructor for the instantiation variables.  Thus, we readback-eval this type into the new context, to obtain the type at which the branch body will be checked. *)
+                let newty = eval_term (Ctx.env newctx) (readback_val oldctx motive) in
+                (* Now we have to modify the "status" data by readback-eval on the arguments and adding a hypothesized current branch to the match.  *)
+                let status =
+                  make_match_status status window plus (Term.Var index) dim None branches annotate
+                    comp
+                    (Some (oldctx, newctx))
+                    checked_perm constr in
+                (* Finally, we typecheck the "body" of the branch, if the user supplied one. *)
+                match body with
+                | Some body ->
+                    (* We catch and accumulate errors so that later branches can continue to be checked and produce their own errors even if earlier ones fail, but we pass through the errors that are getting caught elsewhere. *)
+                    Reporter.try_with ~fatal:(fun e ->
+                        match e.message with
+                        | Missing_constructor_in_match _ -> fatal_diagnostic e
+                        | _ -> (branches, Snoc (errs, e)))
+                    @@ fun () ->
+                    let branch = check status newctx body newty in
+                    ( branches
+                      |> Constr.Map.add constr
+                           (Term.Branch { annotate; comp; perm = checked_perm; tm = branch }),
+                      errs )
+                (* If not, then we look for something to refute. *)
+                | None -> (
+                    (* First we check whether any of the new pattern variables created by this match belong to an empty datatype. *)
+                    (* The pattern variables still have their pre-refinement levels, so we look for the witness in oldctx, just as the motive is read back there; the resulting term is over the same context either way. *)
+                    let result =
+                      match empty_witness oldctx newnfs with
+                      | Ok _ as ok -> ok
+                      | Error _ as err ->
+                          (* Otherwise, we check the stored "refutables", which include all the previous and succeeding pattern variables. *)
+                          let s = ref err in
+                          List.iter
+                            (fun x ->
+                              match !s with
+                              | Ok _ -> ()
+                              | Error _ -> (
+                                  let stm, sty = synth (Kinetic `Nolet) newctx x in
+                                  match is_empty sty with
+                                  | None -> ()
+                                  | Some (Wrap dim) ->
+                                      (* A refutable is synthesized in the ambient context, so its refutation needs no window. *)
+                                      s :=
+                                        Ok
+                                          (Term.Match
+                                             {
+                                               window = Modality.id (Ctx.mode newctx);
+                                               plus_lock = plus_no_lock (Ctx.mode newctx);
+                                               tm = stm;
+                                               dim;
+                                               motive = None;
+                                               branches = Constr.Map.empty;
+                                             })))
+                            (Option.fold
+                               ~some:(fun r -> r.refutables (Namevec.bplus xs))
+                               ~none:[] refutables);
+                          !s in
+                    match result with
+                    | Ok tm ->
+                        ( branches
+                          |> Constr.Map.add constr
+                               (Term.Branch { annotate; comp; perm = checked_perm; tm }),
+                          errs )
+                    | Error err ->
+                        List.iter emit err;
+                        fatal (Missing_constructor_in_match constr))))
           (Constr.Map.empty, Emp) user_branches in
       match errs with
       | Snoc _ -> fatal (Accumulated ("check_var_match", errs))

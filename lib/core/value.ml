@@ -1192,27 +1192,6 @@ let get_full_tube : type n k nk a any.
           let Eq = D.plus_uniq (TubeOf.plus args) (D.zero_plus (TubeOf.inst args)) in
           TubeOf.Full_tube args)
 
-(* Apply a constructor at some dimension to a list of cubes of variables, as well as all its lower-dimensional versions, producing a cube of its instances at each face. *)
-let constr_cube : type mode n.
-    Constr.t ->
-    n D.t ->
-    (n, mode, kinetic) modal_value_cube list ->
-    (n, (mode, kinetic) value) CubeOf.t =
- fun constr dim newvars ->
-  CubeOf.build dim
-    {
-      build =
-        (fun fa ->
-          Value.Constr
-            ( constr,
-              dom_sface fa,
-              List.map
-                (fun (Value.Modal (mu, s)) ->
-                  let (Filter_sface (fb, mu')) = Modality.filter_sface mu fa in
-                  Value.Modal (mu', CubeOf.subcube fb s))
-                newvars ));
-    }
-
 (* Glued evaluation is enabled globally with this flag.  It was originally disabled because it was very slow; the two main culprits -- act_lazy_eval eagerly pushing degeneracy actions through the deferred argument spines of glued neutrals (duplicating the action on the neutral's own arguments and un-sharing the forced results), and the equality-checker's former two-pass Rigid/Full structure that restarted the entire comparison with everything unfolded whenever a rigid comparison failed -- have been fixed by deferring such actions and by unfolding glued neutrals locally on demand in the equality-checker.  With both fixes, the test suite runs as fast or slightly faster with this flag on than off. *)
 module GluedEval = struct
   let toggle = true

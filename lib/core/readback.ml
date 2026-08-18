@@ -1516,7 +1516,7 @@ and readback_stuck_match : type mode a z hmode any.
                           (* We add to the list the discriminee and its boundary variables, and the constructor values to rebind them to. *)
                           rebind
                             (TubeOf.plus_cube disc_tyargs (CubeOf.singleton disc_nf))
-                            (constr_cube constr total_dim newvars);
+                            (constr_val_cube constr total_dim newvars);
                           (* Do the rebinding. *)
                           let renv, rctxenv = rebind_branch ctx env window !rebindings in
                           (* Re-evaluating the self in the rebound environment should make its spine reduce. *)
@@ -1544,7 +1544,7 @@ and readback_stuck_match : type mode a z hmode any.
                                   (Vec.fold_left (apply_singleton_nfs window) emotive
                                      (indices_of_out "match branch" out total_dim
                                         (Vec.length data_indices)))
-                                  (constr_cube constr total_dim newvars) in
+                                  (constr_val_cube constr total_dim newvars) in
                           branch head_head head_args
                             (take_args env plus_dim newvars window fw annotate comp)
                             branch_ty))

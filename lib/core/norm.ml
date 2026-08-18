@@ -2011,6 +2011,85 @@ let apply_singleton_tube_nfs : type dom modality mode n.
   TubeOf.miter { it = (fun _ [ x ] -> fn := apply_term !fn filter (CubeOf.singleton x.tm)) } [ xs ];
   !fn
 
+(* Apply a constructor at some dimension to a list of cubes of variables, as well as all its lower-dimensional versions, producing a cube of its instances at each face. *)
+let constr_val_cube : type mode n.
+    Constr.t ->
+    n D.t ->
+    (n, mode, kinetic) modal_value_cube list ->
+    (n, (mode, kinetic) value) CubeOf.t =
+ fun constr dim newvars ->
+  CubeOf.build dim
+    {
+      build =
+        (fun fa ->
+          Value.Constr
+            ( constr,
+              dom_sface fa,
+              List.map
+                (fun (Value.Modal (mu, s)) ->
+                  let (Filter_sface (fb, mu')) = Modality.filter_sface mu fa in
+                  Value.Modal (mu', CubeOf.subcube fb s))
+                newvars ));
+    }
+
+(* The same, but also computing the types, given the dimension and type family of the datatype (the head applied to its parameters only, as a normal) and the values of its indices at the new variables.  Reading the boundary of the family off of its own type gives a cube of families, one for each face; the type at a face is then that family applied to the indices and instantiated at the lower-dimensional constructor instances at the proper faces.  The 'err' callback supplies the error to report if the supposed family isn't a type family at all. *)
+let constr_norm_cube : type mode n i.
+    mode Mode.t ->
+    Constr.t ->
+    n D.t ->
+    mode normal ->
+    ((n, (mode, kinetic) value) CubeOf.t, i) Vec.t ->
+    (n, mode, kinetic) modal_value_cube list ->
+    (n, mode normal) CubeOf.t =
+ fun mode constr dim tyfam index_vals newvars ->
+  let tyfam_args : (D.zero, n, n, mode normal) TubeOf.t =
+    match view_type (Lazy.force tyfam.ty) "constr_norm_cube tyfam" with
+    | Canonical (_, Pi _, _, tyfam_args) -> (
+        match D.compare dim (TubeOf.inst tyfam_args) with
+        | Neq -> fatal (Dimension_mismatch ("constr_norm_cube", dim, TubeOf.inst tyfam_args))
+        | Eq -> tyfam_args)
+    | Canonical (_, UU (_mode, uun), ins, tyfam_args) -> (
+        let Eq = eq_of_ins_zero ins in
+        match D.compare dim uun with
+        | Neq -> fatal (Dimension_mismatch ("constr_norm_cube", dim, uun))
+        | Eq -> tyfam_args)
+    | _ -> fatal (Anomaly "tyfam is not a type family") in
+  let constr_tys = TubeOf.plus_cube tyfam_args (CubeOf.singleton tyfam) in
+  let argtbl = Hashtbl.create 10 in
+  CubeOf.mmap
+    {
+      map =
+        (fun fa [ constrty ] ->
+          let k = dom_sface fa in
+          let tm =
+            Value.Constr
+              ( constr,
+                k,
+                List.map
+                  (fun (Value.Modal (mu, s)) ->
+                    let (Filter_sface (fb, mu')) = Modality.filter_sface mu fa in
+                    Value.Modal (mu', CubeOf.subcube fb s))
+                  newvars ) in
+          let ty =
+            inst
+              (Vec.fold_left
+                 (fun f a ->
+                   apply_term f
+                     (* Indices cannot have nontrivial modal dependence. *)
+                     (Modality.filter_id mode k)
+                     (CubeOf.subcube fa a))
+                 constrty.tm index_vals)
+              (TubeOf.build D.zero (D.zero_plus k)
+                 {
+                   build =
+                     (fun fb -> Hashtbl.find argtbl (SFace_of (comp_sface fa (sface_of_tface fb))));
+                 }) in
+          let x = { tm; ty = Lazy.from_val ty } in
+          Hashtbl.add argtbl (SFace_of fa) x;
+          x);
+    }
+    [ constr_tys ]
+
 (* Evaluate a term context to produce a value context. *)
 
 let eval_bindings : type dom modality mode a b n bm.
