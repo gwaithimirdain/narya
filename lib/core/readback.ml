@@ -1322,11 +1322,7 @@ and uninstantiate_value : type mode. (mode, potential) lazy_eval -> (mode, poten
 
 (* ********** Readback of stuck matches (for display only) ********** *)
 
-(* Read back a stuck case tree: check_match_branches run backwards.  For each constructor we invent fresh pattern variables from its stored function-type, with ext_pi, exactly as typechecking does; extend the stored environment by them, with take_args, exactly as evaluation does; evaluate the branch body there; and read it back in the context extended by the same variables.  The reconstructed branch carries ext_pi's own annotate and comp -- which name the pattern variables after the constructor's arguments -- and the identity permutation, rather than the stored ones, which are relative to the original checking context.
-
-   We reconstruct only when the stuck spine is empty, which is exactly when the type we were handed is the type of the match itself rather than of something the match was applied to; with a nonempty spine there would be no type at which to read back the branch bodies.  We also reconstruct only a match: a stuck metavariable has no branches to show.  In every other case we return None and the caller falls back to the application spine.
-
-   The pattern variables are *not* substituted into the type or the context, so for a match that refines its motive the branch bodies are read back at the unrefined type rather than at the refined one that typechecking used.  The two are definitionally equal in the branch, so where the unrefined type still exposes the canonical form that readback needs -- which is everything except a motive that is itself a stuck match -- the display is right.  Where it doesn't, readback raises, and we catch that and fall back to the application spine, exactly as if there had been no payload at all.  Note this is display-only output, like the readback of a canonical type: it is never re-typechecked or re-evaluated. *)
+(* Read back a stuck case tree, possibly applied to arguments: check_match_branches run backwards.  This is display-only output, like the readback of a canonical type: it is never re-typechecked or re-evaluated.  Reading back a stuck term can legitimately fail; in that case we return None here, causing the caller to fall back to showing the neutral spine.  *)
 and readback_stuck : type mode a z hmode any.
     (mode, potential) readback_status ->
     (mode, z, a) Ctx.t ->
@@ -1334,10 +1330,9 @@ and readback_stuck : type mode a z hmode any.
     (mode, kinetic) value ->
     (mode, a, potential) term option =
  fun status ctx pn ty ->
-  (* Reading a branch body back can legitimately fail, because the type we read it at only approximates the type it was checked at; that is Readback_at_wrong_type, which we catch and turn into the fallback.  Everything else, including the anomalies below that state invariants which should hold, is a real bug and passes through as one rather than being absorbed silently. *)
+  (* Some failure modes are apparent immediately and cause readback_stuck_match to return None itself.  Others are noticed only later in reading back the bodies of match clauses, because the type we read them back at may only approximate the type it was checked at.  Those errors would be bugs otherwise, so they raise these fatal errors; but in this case we catch them and return None, leading to a fallback. *)
   Reporter.try_with ~fatal:(fun d ->
       match d.message with
-      (* The one thing that can legitimately go wrong here: the type we read a branch body back at only approximates the type it was checked at, so the body may not fit it.  Anything else is a real bug and is passed through as one. *)
       | Readback_at_wrong_type str ->
           no_display (Printf.sprintf "a stuck match with a branch body that is %s" str)
       | Degenerated_neutral_not_a_struct ->
@@ -1345,7 +1340,7 @@ and readback_stuck : type mode a z hmode any.
       | _ -> fatal_diagnostic d)
   @@ fun () -> readback_stuck_match status ctx pn ty
 
-(* Read back the term that justified refuting a branch, given an environment for the branch's context: evaluate it through its own window modality, exactly as evaluation evaluates a match's discriminee, and read the result back in the context locked by that modality.  The result carries the same data a match takes for its discriminee, which is what a refutation displays as. *)
+(* Read back the application spine of a stuck term, yielding the context the match at its head end must be displayed in (the outer context locked by the left adjoint of every field projection the spine crosses) together with the function that puts the spine back around a term displayed there. *)
 and stuck_spine : type hmode mode a z any.
     (mode, z, a) Ctx.t -> (hmode, mode, any) apps -> (hmode, mode, a) stuck_spine =
  fun ctx -> function
@@ -1416,6 +1411,11 @@ and stuck_spine : type hmode mode a z any.
                     p,
                     (`Other, `Other) ) ))
 
+(* For each constructor we invent fresh pattern variables from its stored function-type, with ext_pi, exactly as typechecking does; extend the stored environment by them, with take_args, exactly as evaluation does; evaluate the branch body there; and read it back in the context extended by the same variables.  The reconstructed branch carries ext_pi's own annotate and comp -- which name the pattern variables after the constructor's arguments -- and the identity permutation, rather than the stored ones, which are relative to the original checking context.
+
+   We reconstruct only when the stuck spine is empty, which is exactly when the type we were handed is the type of the match itself rather than of something the match was applied to; with a nonempty spine there would be no type at which to read back the branch bodies.  We also reconstruct only a match: a stuck metavariable has no branches to show.  In every other case we return None and the caller falls back to the application spine.
+
+   The pattern variables are *not* substituted into the type or the context, so for a match that refines its motive the branch bodies are read back at the unrefined type rather than at the refined one that typechecking used.  The two are definitionally equal in the branch, so where the unrefined type still exposes the canonical form that readback needs -- which is everything except a motive that is itself a stuck match -- the display is right.  Where it doesn't, readback raises, and we catch that and fall back to the application spine, exactly as if there had been no payload at all. *)
 and readback_stuck_match : type mode a z hmode any.
     (mode, potential) readback_status ->
     (mode, z, a) Ctx.t ->
