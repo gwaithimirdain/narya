@@ -1333,6 +1333,128 @@ and uninstantiate_value : type mode. (mode, potential) lazy_eval -> (mode, poten
               }))
   | _ -> value
 
+(* Given a multi-argument type family, and the type *of* that type family, both as values, and a context for them, compute the type of type families dependent *on* that family, as a term.  For example, if the arguments are
+
+   x y z ↦ D x y z
+   (x : A) (y : B x) (z : C x y) → Type
+
+(as values), then the output will be
+
+   (x : A) (y : B x) (z : C x y) (w : D x y z) → Type
+
+(as a term).  However, although the indices of a datatype family themselves must be zero-dimensional, the type families involved here could be higher-dimensional, because they come from an *evaluation* of that datatype family which could be a higher-dimensional version of it.  In that case, the arguments are flattened out to a zero-dimensional family in the return value, so for instance if given
+
+   x ⤇ B₂ x.2
+   (x₀ : A₀) (x₁ : A₁) (x₂ : A₂ x₀ x₁) ⇒ Id Type (B₀ x₀) (B₁ x₁)
+
+then the output will be
+
+   (x₀ : A₀) (x₁ : A₁) (x₂ : A₂ x₀ x₁) (y₀ : B₀ x₀) (y₁ : B₁ x₁) (y₂ : B₂ x₂) → Type
+
+In the modal case, there is a window modality, say μ : p → q, the inputs are at mode p, with all arguments NON-MODAL because in the context of use this is a datatype family with its indices, and indices cannot be modal.  However, the output is at mode q, depending modally on its arguments, since that is the motive of a match with window μ:
+
+   (x :μ| A) (y :μ| B x) (z :μ| C x y) (w :μ| D x y z) → Type_q
+   
+   
+*)
+(* This function belongs morally to typechecking -- it computes the type at which the motive of a dependent match is checked -- but it lives here, in the recursive readback chain, because it reads back the types of the family's arguments, and because the readback of a stuck match needs it too, to read back the stored motive. *)
+and motive_of_family : type dom window mode a b.
+    (mode, a, b) Ctx.t ->
+    (dom, window, mode) Modality.t ->
+    (dom, kinetic) value ->
+    (dom, kinetic) value ->
+    (mode, b, kinetic) term =
+ fun ctx window tm ty ->
+  (* The motive's pi-type domains are window-modal, so their dimension filter is the (zero-dimensional) filter of the window modality. *)
+  let filter = Modality.filter_zero window in
+  (* First we define some auxiliary modules and traversal functions. *)
+  let module S = struct
+    type 'a suc = ('a, (window, D.zero) dim_entry) snoc
+  end in
+  let module F = struct
+    type ('left, 'c, 'any) t =
+      | Ftm :
+          ('left, mode, window, dom, 'lw) plus_lock * (dom, 'lw, kinetic) term
+          -> ('left, 'c, 'any) t
+  end in
+  let module FCube = Icube (S) (F) in
+  let module C = struct
+    type 'b t = (mode, 'b) Ctx.any
+  end in
+  let module T = struct
+    type 'c t = (mode, 'c, kinetic) term
+  end in
+  let module MC = FCube.Traverse (C) in
+  let module MT = FCube.Traverse (T) in
+  let folder : type left m any.
+      (left, m, any) F.t ->
+      (left, (window, D.zero) dim_entry) snoc T.t ->
+      left T.t * (left, m, any) F.t =
+   fun (Ftm (left_plus, dom)) cod ->
+    ( Pi
+        {
+          x = singleton_variables D.zero (`Anon no_hints);
+          filter;
+          doms = Modal (window, left_plus, CubeOf.singleton dom);
+          cods = CodCube.singleton (Cod (filter, cod));
+        },
+      Ftm (left_plus, dom) ) in
+  let builder : type left n m.
+      n variables ->
+      (n, dom Binding.t) CubeOf.t ->
+      (m, n) sface ->
+      left C.t ->
+      (left, m, b) MC.fwrap_left =
+   fun x newnfs fa (Any_ctx ctx) ->
+    let (Locked (plus_window, wctx)) = Ctx.lock ctx window in
+    let v = CubeOf.find newnfs fa in
+    let cv = readback_val wctx (Lazy.force (Binding.value v).ty) in
+    let name =
+      match find_variable fa x with
+      | `Named _ as x -> x
+      | `Anon _ -> `Anon (View.hints_of_ty (Lazy.force (Binding.value v).ty)) in
+    let (Any_ctx newctx) =
+      (* TODO: In the case of a cube variable, should we be annotating the variable names by their face somehow?  *)
+      Ctx.variables_vis ctx filter (singleton_variables D.zero name) (CubeOf.singleton v) in
+    Fwrap (Ftm (plus_window, cv), Any_ctx newctx) in
+  (* We start by inspecting the type of the family passed. *)
+  match view_type ty "motive_of_family" with
+  | Canonical (_, Pi { x; filter = ffilter; doms; cods }, ins, tyargs) -> (
+      (* The type family itself must be non-modal (any modal window is carried separately). *)
+      match Modality.compare_id (Modality.filter_modality ffilter) with
+      | Neq -> fatal (Anomaly "modal family in motive_of_family")
+      | Eq ->
+          let Eq = eq_of_ins_zero ins in
+          let newvars, newnfs = dom_vars ctx window doms in
+          (* We extend the context, not by the cube of types of newnfs, but by its elements one at a time as singletons.  This is because we want eventually to construct a 0-dimensional pi-type.  As we go, we also read back these types and store them to later take the pi-type over.  Since they are all in different contexts, and we need to keep track of the type-indexed checked length of those contexts to ensure the later pis are well-typed, we use an indexed cube indexed over Tctxs. *)
+          let (Wrap (newdoms, Any_ctx newctx)) =
+            MC.build_left (CubeOf.dim newnfs)
+              { build = (fun fa ctx -> builder x newnfs fa ctx) }
+              (Any_ctx ctx) in
+          (* Now we recurse into the codomain of the pi-type, having applied the type family itself to the new variables we introduced. *)
+          let newtm = apply_term tm ffilter newvars in
+          let motive = motive_of_family newctx window newtm (tyof_app cods tyargs ffilter newvars) in
+          (* Finally, we postprocess that result by adding the pi-type domains we computed for this argument. *)
+          let motive, _ = MT.fold_map_right { foldmap = (fun _ x y -> folder x y) } newdoms motive in
+          motive)
+  | Canonical (_, UU _, _, tyargs) ->
+      (* We've reached the end of the function domains in the type of our type family.  We thus have one more domain to abstract over: the datatype itself, which is now the *term* we were passed in this version, along with all its boundaries, which are the instantiation arguments of the universe it belongs to. *)
+      let doms = TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm) in
+      let _, newnfs = dom_vars ctx window doms in
+      let m = CubeOf.dim newnfs in
+      let (Wrap (newdoms, _)) =
+        MC.build_left m
+          { build = (fun fa ctx -> builder (singleton_variables m (`Anon no_hints)) newnfs fa ctx) }
+          (Any_ctx ctx) in
+      (* The result is a pi-type over all those domains, whose codomain is just the universe. *)
+      let motive, _ =
+        MT.fold_map_right
+          { foldmap = (fun _ x y -> folder x y) }
+          newdoms
+          (UU (Ctx.mode ctx, D.zero)) in
+      motive
+  | _ -> fatal (Anomaly "non-family in motive_of_family")
+
 (* ********** Readback of stuck matches (for display only) ********** *)
 
 (* Read back a stuck case tree, possibly applied to arguments: check_match_branches run backwards.  This is display-only output, like the readback of a canonical type: it is never re-typechecked or re-evaluated.  Reading back a stuck term can legitimately fail; in that case we return None here, causing the caller to fall back to showing the neutral spine.  *)
@@ -1408,20 +1530,24 @@ and readback_stuck_match : type mode a z hmode any.
           match D.compare data_dim total_dim with
           | Eq ->
               let open Monad.Ops (Monad.Maybe) in
-              let* emotive, match_ty =
+              let* emotive, new_motive, match_ty =
                 match (motive, empty_apps apps) with
-                (* An explicit motive is a type family over the datatype's indices and the datatype itself.  Evaluated in the environment we are stuck in, it gives the type of each branch, when applied to that discriminee's indices, instantiation arguments, and itself. *)
+                (* An explicit motive is a type family over the datatype's indices and the datatype itself.  Evaluated in the environment we are stuck in, it gives the type of each branch, when applied to that discriminee's indices, instantiation arguments, and itself.  We also read it back, at the same type of type families that it was checked against, so that the displayed match shows it again in a "return" clause. *)
                 | Some (`Family t), _ ->
                     let emotive = eval_term env t in
+                    let motive_ty =
+                      eval_term (Ctx.env ctx)
+                        (motive_of_family ctx window tyfam.tm (Lazy.force tyfam.ty)) in
                     let r = Vec.fold_left (apply_singleton_nfs window) emotive data_indices in
                     let r = apply_singleton_tube_nfs window r disc_tyargs in
                     Some
                       ( Some emotive,
+                        Some (`Family (readback_at Kinetic ctx emotive motive_ty)),
                         apply_term r (Modality.filter_zero window) (CubeOf.singleton disc) )
-                (* A non-dependent match instead records one type, which is that of the match and of every branch alike. *)
-                | Some (`Type t), _ -> Some (None, eval_term env t)
+                (* A non-dependent match instead records one type, which is that of the match and of every branch alike.  There is no surface syntax for such a match other than the placeholder "return _ … _ ↦ _", which says nothing about the type, so we don't read it back. *)
+                | Some (`Type t), _ -> Some (None, None, eval_term env t)
                 (* If the stuck match isn't applied to any arguments, then the overall type is also the type of the match. *)
-                | _, Some Eq -> Some (None, ty)
+                | _, Some Eq -> Some (None, None, ty)
                 | _ -> no_display "an implicit stuck match applied to arguments" in
               let new_branches =
                 Constr.Map.mapi
@@ -1608,8 +1734,7 @@ and readback_stuck_match : type mode a z hmode any.
                      window;
                      plus_lock = new_plus_lock;
                      dim = total_dim;
-                     (* The output is display-only and the unparser doesn't show a motive, so we don't read one back. *)
-                     motive = None;
+                     motive = new_motive;
                      branches = new_branches;
                    }
           | Neq -> fatal (Dimension_mismatch ("readback of stuck match", data_dim, total_dim)))

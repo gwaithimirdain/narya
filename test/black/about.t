@@ -558,24 +558,25 @@ A match on an indexed datatype, and one with a refuted (omitted) branch, are rea
     : A
   
 
-When the user supplies an explicit motive, it is stored in the match and readback applies it to each branch's indices and constructor, exactly as check_match_branches applies it to compute the type at which to check that branch.  So a dependent match displays its branches at their own specialized types.
+When the user supplies an explicit motive, it is stored in the match and readback applies it to each branch's indices and constructor, exactly as check_match_branches applies it to compute the type at which to check that branch.  So a dependent match displays its branches at their own specialized types.  The motive itself is read back too, at the same type of type families it was checked against, and displayed in a "return" clause.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'about (let g : (b : Bool) → T b ≔ b ↦ match b return x ↦ T x [ true. ↦ zero. | false. ↦ true. ] in g)'
-  b ↦ match b [ false. ↦ true. | true. ↦ 0 ]
+  b ↦ match b return x ↦ T x [ false. ↦ true. | true. ↦ 0 ]
     : (b : Bool) → T b
   
 
 This works whatever the discriminee is, since the motive is applied to the constructor rather than substituted for a variable; here it is an axiom.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom ax : Bool' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'about (let k : T ax ≔ match ax return x ↦ T x [ true. ↦ zero. | false. ↦ true. ] in k)'
-  match ax [ false. ↦ true. | true. ↦ 0 ]
+  match ax
+  return x ↦ T x [ false. ↦ true. | true. ↦ 0 ]
     : T ax
   
 
 The motive is applied to the branch's indices too, so a motive that depends on the index of an indexed datatype specializes correctly in each branch.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def Vec (A : Type) : N → Type ≔ data [ nil. : Vec A zero. | cons. : (n : N) → A → Vec A n → Vec A (suc. n) ]' -e 'def P : N → Type ≔ [ zero. ↦ Bool | suc. _ ↦ N ]' -e 'about (let f : (n : N) (v : Vec Bool n) → P n ≔ n ↦ v ↦ match v return m _ ↦ P m [ nil. ↦ true. | cons. k x w ↦ zero. ] in f)'
-  n v ↦ match v [ cons. k x w ↦ 0 | nil. ↦ true. ]
+  n v ↦ match v return m 𝑥 ↦ P m [ cons. k x w ↦ 0 | nil. ↦ true. ]
     : (n : N) (v : Vec Bool n) → P n
   
 
@@ -739,7 +740,7 @@ That includes a dependent one, whose branches are refined by rebinding the modal
   b ↦ match b [ false. ↦ true. | true. ↦ 0 ]
     : (b :♭| Bool) → T b
   
-  b ↦ match b [ false. ↦ true. | true. ↦ 0 ]
+  b ↦ match b return x ↦ T x [ false. ↦ true. | true. ↦ 0 ]
     : (b :♭| Bool) → T b
   
 
@@ -837,19 +838,21 @@ Whenever a piece of a stuck case tree can't be displayed as the construct it cam
 A stuck match can also be eliminated further, when what it computes to is a function or a record.  Then the type we are handed is the type of the whole spine rather than of the match, so the match records its own type for us: an explicit motive is a type family to apply to a branch's indices and constructor, while a non-dependent match checks every branch at one type and stores that.  The match is read back at whichever it has, and the eliminations go back on the outside.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom b : Bool' -e 'axiom ax : N' -e 'def g : Bool → (N → N) ≔ b ↦ match b return _ ↦ N → N [ true. ↦ n ↦ n | false. ↦ n ↦ zero. ]' -e 'about (g b ax)'
-  match b [ false. ↦ n ↦ 0 | true. ↦ n ↦ n ] ax
+  match b return 𝑥 ↦ N → N [ false. ↦ n ↦ 0 | true. ↦ n ↦ n ] ax
     : N
   
 
 That includes field projections, which cross to the mode the field's left adjoint comes from: the match is then displayed in our context locked by it, and the self a branch body is read back against is the neutral we were given with the spine's eliminations stripped back off, so that it too lives at the match's mode.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def R : Type ≔ sig ( a : N, b : N )' -e 'axiom b : Bool' -e 'def g : Bool → R ≔ b ↦ match b return _ ↦ R [ true. ↦ (zero., zero.) | false. ↦ (suc. zero., zero.) ]' -e 'about (g b .a)'
-  match b [ false. ↦ (1, 0) | true. ↦ (0, 0) ] .a
+  match b return 𝑥 ↦ R [ false. ↦ (1, 0) | true. ↦ (0, 0) ] .a
     : N
   
 
   $ narya -spatial -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def C : Type ≔ codata [ (x :♭| _) .fld : N ]' -e 'axiom b : Bool' -e 'def g : Bool → C ≔ b ↦ match b return _ ↦ C [ true. ↦ [ .fld ↦ zero. ] | false. ↦ [ .fld ↦ suc. zero. ] ]' -e 'about ((g b :♭| _) .fld)'
-  (match b [ false. ↦ [ .fld ↦ 1 ] | true. ↦ [ .fld ↦ 0 ] ] :♭| _) .fld
+  (match b
+   return 𝑥 ↦ C [ false. ↦ [ .fld ↦ 1 ] | true. ↦ [ .fld ↦ 0 ] ]
+   :♭| _) .fld
     : N
   
 
