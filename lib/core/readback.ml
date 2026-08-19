@@ -1455,6 +1455,68 @@ and motive_of_family : type dom window mode a b.
       motive
   | _ -> fatal (Anomaly "non-family in motive_of_family")
 
+(* The type at which to read back the body of one branch of a stuck match, computed from the match's stored motive.  Typechecking applied that motive to the branch's indices and constructor as zero-dimensional arguments, one for each face of the match dimension; but here it is evaluated in the environment the match is stuck in, so each of those argument positions instead takes a cube of that environment's dimension, namely the slice of the (total-dimensional) argument cube lying over that face.  A non-dependent motive is the type of every branch alike and takes no arguments at all.
+
+   Evaluated in a degenerated environment, the motive computes a *family* of that dimension rather than a type, so we instantiate it at the boundary of the branch body, which we get by evaluating that body in the corresponding faces of its own environment; the type of each such face is the same family at that face, instantiated in turn at its boundary, so we build them up face by face as dom_vars does for the domains of a pi-type.  In a zero-dimensional environment the boundary is empty and the instantiation does nothing, leaving exactly the application of a zero-dimensional motive to singletons that typechecking performed.
+
+   A branch body is a case tree, so its value at a face may be a case tree too rather than a term; then there is nothing to instantiate at and we give up on displaying the match (the caller catches this and falls back to the application spine). *)
+and motive_branch_ty : type mode dom window a c k n kn.
+    (dom, window, mode) Modality.t ->
+    (mode, k, a) env ->
+    (mode, a) Term.match_motive ->
+    (k, n, kn) D.plus ->
+    n D.t ->
+    (kn, (dom, kinetic) value) CubeOf.t list ->
+    (mode, k, c) env ->
+    (mode, c, potential) term ->
+    (mode, kinetic) value =
+ fun window env motive plus_dim match_dim args benv body ->
+  let env_dim = dim_env env in
+  (* The motive evaluated at a face of that environment, applied to the faces of the arguments lying over it. *)
+  let family : type j. (j, k) sface -> (mode, kinetic) value =
+   fun fe ->
+    let j = dom_sface fe in
+    let fenv = act_env env (opt_op_of_sface fe) in
+    match motive with
+    | `Type t -> eval_term fenv t
+    | `Family t -> (
+        let (Has_filter fj) = Modality.filter window j in
+        match D.compare (Modality.filtered j fj) j with
+        | Neq ->
+            fatal
+              (Readback_at_wrong_type
+                 "read back at a motive whose window modality filters dimensions away")
+        | Eq ->
+            let (Plus jplus) = D.plus match_dim in
+            let fa = sface_plus_sface fe plus_dim jplus (id_sface match_dim) in
+            List.fold_left
+              (fun f arg -> apply_slices fj j jplus match_dim f (CubeOf.subcube fa arg))
+              (eval_term fenv t) args) in
+  let tbl = Hashtbl.create 10 in
+  let boundary =
+    TubeOf.build D.zero (D.zero_plus env_dim)
+      {
+        build =
+          (fun fe ->
+            let fs = sface_of_tface fe in
+            let tm =
+              match eval (act_env benv (opt_op_of_sface fs)) body with
+              | Realize v -> v
+              | _ -> fatal (Readback_at_wrong_type "a case tree at one of its boundary faces") in
+            let ty =
+              inst (family fs)
+                (TubeOf.build D.zero
+                   (D.zero_plus (dom_sface fs))
+                   {
+                     build =
+                       (fun fc -> Hashtbl.find tbl (SFace_of (comp_sface fs (sface_of_tface fc))));
+                   }) in
+            let nf = { tm; ty = Lazy.from_val ty } in
+            Hashtbl.add tbl (SFace_of fs) nf;
+            nf);
+      } in
+  inst (family (id_sface env_dim)) boundary
+
 (* ********** Readback of stuck matches (for display only) ********** *)
 
 (* Read back a stuck case tree, possibly applied to arguments: check_match_branches run backwards.  This is display-only output, like the readback of a canonical type: it is never re-typechecked or re-evaluated.  Reading back a stuck term can legitimately fail; in that case we return None here, causing the caller to fall back to showing the neutral spine.  *)
@@ -1530,16 +1592,11 @@ and readback_stuck_match : type mode a z hmode any.
           match D.compare data_dim total_dim with
           | Eq ->
               let open Monad.Ops (Monad.Maybe) in
-              (* The stored motive is a term in the context of the match, so evaluating it in the environment we are stuck in degenerates it: if that environment has positive dimension, we get a function expecting cubes of arguments rather than the flattened zero-dimensional ones that typechecking applied it to, and the type it computes is an uninstantiated degeneracy rather than a type.  So the motive is usable only in a zero-dimensional environment; when it isn't, we ignore it, falling back on the type we were handed and on refining the branches, exactly as for a match that stores no motive at all. *)
-              let degenerated_motive =
-                match (motive, D.compare_zero env_dim) with
-                | Some _, Pos _ -> true
-                | _ -> false in
-              let motive = if degenerated_motive then None else motive in
-              let* emotive, new_motive, match_ty =
-                match (motive, empty_apps apps) with
-                (* An explicit motive is a type family over the datatype's indices and the datatype itself.  Evaluated in the environment we are stuck in, it gives the type of each branch, when applied to that discriminee's indices, instantiation arguments, and itself.  We also read it back, at the same type of type families that it was checked against, so that the displayed match shows it again in a "return" clause. *)
-                | Some (`Family t), _ ->
+              (* The type of the match itself.  The motive computes it, but only in a zero-dimensional environment: evaluated in a degenerated one it computes an uninstantiated family instead, and the boundary to instantiate it at consists of the matches at the faces of that environment, which are stuck case trees rather than values.  So a degenerated match takes the type it was handed, which is that of the match itself exactly when the spine is empty.  (Each *branch* type is still computed from the motive, since the boundary there consists of the branch bodies, which we can evaluate; see motive_branch_ty.) *)
+              let* new_motive, match_ty =
+                match (motive, empty_apps apps, D.compare_zero env_dim) with
+                (* An explicit motive is a type family over the datatype's indices and the datatype itself.  Evaluated in the environment we are stuck in, it gives the type of the match, when applied to the discriminee's indices, instantiation arguments, and itself.  We also read it back, at the same type of type families that it was checked against, so that the displayed match shows it again in a "return" clause. *)
+                | Some (`Family t), _, Zero ->
                     let emotive = eval_term env t in
                     let motive_ty =
                       eval_term (Ctx.env ctx)
@@ -1547,18 +1604,16 @@ and readback_stuck_match : type mode a z hmode any.
                     let r = Vec.fold_left (apply_singleton_nfs window) emotive data_indices in
                     let r = apply_singleton_tube_nfs window r disc_tyargs in
                     Some
-                      ( Some emotive,
-                        Some (`Family (readback_at Kinetic ctx emotive motive_ty)),
+                      ( Some (`Family (readback_at Kinetic ctx emotive motive_ty)),
                         apply_term r (Modality.filter_zero window) (CubeOf.singleton disc) )
                 (* A non-dependent match instead records one type, which is that of the match and of every branch alike.  There is no surface syntax for such a match other than the placeholder "return _ … _ ↦ _", which says nothing about the type, so we don't read it back. *)
-                | Some (`Type t), _ -> Some (None, None, eval_term env t)
+                | Some (`Type t), _, Zero -> Some (None, eval_term env t)
                 (* If the stuck match isn't applied to any arguments, then the overall type is also the type of the match. *)
-                | _, Some Eq -> Some (None, None, ty)
-                | _ ->
-                    no_display
-                      (if degenerated_motive then
-                         "a stuck match whose motive is degenerated, applied to arguments"
-                       else "an implicit stuck match applied to arguments") in
+                | _, Some Eq, _ -> Some (None, ty)
+                | _, _, Zero -> no_display "an implicit stuck match applied to arguments"
+                | _, _, Pos _ ->
+                    no_display "a stuck match in a degenerated environment applied to arguments"
+              in
               let new_branches =
                 Constr.Map.mapi
                   (fun constr br ->
@@ -1703,21 +1758,30 @@ and readback_stuck_match : type mode a z hmode any.
                           ~fatal:(fun d ->
                             match d.message with
                             | Matching_wont_refine _ | Evaluating_display_term _ ->
-                                let branch_ty =
-                                  match emotive with
-                                  | None -> match_ty
-                                  | Some emotive ->
-                                      apply_singletons window
-                                        (Vec.fold_left (apply_singleton_nfs window) emotive
-                                           (indices_of_out "match branch" out total_dim
-                                              (Vec.length data_indices)))
-                                        (constr_val_cube constr total_dim newvars) in
                                 (* The body is evaluated in the environment the match is stuck in, extended by the new pattern variables, exactly as evaluation does it; but that environment still sends the discriminee to a variable rather than to this branch's constructor, so the value and the type are both the unrefined ones. *)
-                                let ebody =
-                                  eval
-                                    (Permute
-                                       (perm, take_args env plus_dim newvars window fw annotate comp))
-                                    body in
+                                let benv =
+                                  Permute
+                                    (perm, take_args env plus_dim newvars window fw annotate comp)
+                                in
+                                let ebody = eval benv body in
+                                (* The motive is applied to this branch's indices and constructor, in that order, exactly as check_match_branches applies it to compute the type at which to check the branch. *)
+                                let branch_ty =
+                                  match motive with
+                                  | None -> match_ty
+                                  | Some mot -> (
+                                      (* Slicing the arguments, which live at the total dimension, over the faces of the environment requires the window modality not to have filtered any of the latter away.  If it did, we fall back on the type of the match, the same approximation we use for a match that stores no motive at all. *)
+                                      match D.compare (Modality.filtered env_dim fw) env_dim with
+                                      | Neq -> match_ty
+                                      | Eq ->
+                                          let args =
+                                            Vec.fold_left
+                                              (fun acc c -> acc @ [ val_of_norm_cube c ])
+                                              []
+                                              (indices_of_out "match branch" out total_dim
+                                                 (Vec.length data_indices))
+                                            @ [ constr_val_cube constr total_dim newvars ] in
+                                          motive_branch_ty window env mot plus_dim match_dim args
+                                            benv body) in
                                 let bstatus =
                                   Potential
                                     (Neu

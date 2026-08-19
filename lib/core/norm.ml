@@ -2011,6 +2011,22 @@ let apply_singleton_tube_nfs : type dom modality mode n.
   TubeOf.miter { it = (fun _ [ x ] -> fn := apply_term !fn filter (CubeOf.singleton x.tm)) } [ xs ];
   !fn
 
+(* Apply a function to the slices of a cube of dimension k+n lying over each face of the n part: one application per face of n, in the same order in which apply_singletons applies the elements of an n-dimensional cube.  When k is zero the slices are singletons and this *is* apply_singletons; positive k arises for the motive of a match that is stuck in a k-dimensional environment, whose evaluation there takes a k-dimensional cube in each of the argument positions that typechecking gave a single element.  The filter must therefore be one whose filtered dimension is k. *)
+let apply_slices : type dom modality mode k m n kn.
+    (dom, modality, mode, k, m) Modality.filter_dim ->
+    k D.t ->
+    (k, n, kn) D.plus ->
+    n D.t ->
+    (mode, kinetic) value ->
+    (kn, (dom, kinetic) value) CubeOf.t ->
+    (mode, kinetic) value =
+ fun filter k plus n fn xs ->
+  let fn = ref fn in
+  CubeOf.miter
+    { it = (fun fa [ () ] -> fn := apply_term !fn filter (CubeOf.slice k plus xs fa)) }
+    [ CubeOf.build n { build = (fun _ -> ()) } ];
+  !fn
+
 (* Apply a constructor at some dimension to a list of cubes of variables, as well as all its lower-dimensional versions, producing a cube of its instances at each face. *)
 let constr_val_cube : type mode n.
     Constr.t ->
