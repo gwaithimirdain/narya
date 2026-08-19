@@ -684,7 +684,36 @@ When a face of the environment is not stuck -- here the discriminee is a path be
     : Id T p 0 true.
   
 
-The motive still cannot give the type of the match itself, that boundary consisting of stuck case trees rather than values.  So when the spine is nonempty, leaving us with no other type for the match, we fall back on that spine.
+None of this gives the type of the match itself, which we need when the spine is nonempty, the type we are handed then being that of the spine.  The motive supplies only the uninstantiated family there, and the instantiation is again the matches at the faces of the environment -- but as *values* this time, since what we are computing is a type rather than a term.  In the empty-spine case those values are handed to us, in the instantiation arguments of the type of the match; with a nonempty spine nothing has computed them, and Corealize is no help, since it makes a match into a kinetic term and evaluating one is exactly what it refuses to do (and what, in the elaborator, defines a metavariable).  So we fall back on the application spine.
+
+  $ narya -v -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom b0 : Bool' -e 'axiom b1 : Bool' -e 'axiom b2 : Id Bool b0 b1' -e 'axiom ax : N' -e 'def g : Bool → (N → N) ≔ b ↦ match b return _ ↦ N → N [ true. ↦ n ↦ n | false. ↦ n ↦ zero. ]' -e 'about (refl g b2 (refl ax))'
+   ￫ info[I0000]
+   ￮ constant N defined
+  
+   ￫ info[I0000]
+   ￮ constant Bool defined
+  
+   ￫ info[I0001]
+   ￮ axiom b0 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b1 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b2 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom ax assumed
+  
+   ￫ info[I0000]
+   ￮ constant g defined
+  
+   ￫ info[I0010]
+   ￮ not displaying a stuck match in a degenerated environment applied to arguments; showing an application spine instead
+  
+  ap g b2 (refl ax)
+    : N⁽ᵉ⁾ (g b0 ax) (g b1 ax)
+  
 
 A variable match refines the context instead of applying a motive, so neither the type of the match nor any motive is the type its branches were checked at.  Instead we rebind the discriminee, and any of the datatype's index variables, to the values this branch's constructor gives them -- in the environment the body is evaluated in and in the environment the type is re-evaluated in.  Refining the value along with the type is what keeps the two in step.  We try that first and read the branch back unrefined only if it fails, as typechecking tries a variable match before falling back to a non-dependent one.
 
