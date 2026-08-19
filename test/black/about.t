@@ -804,7 +804,7 @@ That includes a dependent one, whose branches are refined by rebinding the modal
   b ↦ match (b :♭| _) [ false. ↦ true. | true. ↦ 0 ]
     : (b :♭| Bool) → T b
   
-n  b ↦ match (b :♭| _) return x ↦ T x [ false. ↦ true. | true. ↦ 0 ]
+  b ↦ match (b :♭| _) return x ↦ T x [ false. ↦ true. | true. ↦ 0 ]
     : (b :♭| Bool) → T b
   
 
