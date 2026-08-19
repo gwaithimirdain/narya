@@ -1530,6 +1530,12 @@ and readback_stuck_match : type mode a z hmode any.
           match D.compare data_dim total_dim with
           | Eq ->
               let open Monad.Ops (Monad.Maybe) in
+              (* The stored motive is a term in the context of the match, so evaluating it in the environment we are stuck in degenerates it: if that environment has positive dimension, we get a function expecting cubes of arguments rather than the flattened zero-dimensional ones that typechecking applied it to, and the type it computes is an uninstantiated degeneracy rather than a type.  So the motive is usable only in a zero-dimensional environment; when it isn't, we ignore it, falling back on the type we were handed and on refining the branches, exactly as for a match that stores no motive at all. *)
+              let degenerated_motive =
+                match (motive, D.compare_zero env_dim) with
+                | Some _, Pos _ -> true
+                | _ -> false in
+              let motive = if degenerated_motive then None else motive in
               let* emotive, new_motive, match_ty =
                 match (motive, empty_apps apps) with
                 (* An explicit motive is a type family over the datatype's indices and the datatype itself.  Evaluated in the environment we are stuck in, it gives the type of each branch, when applied to that discriminee's indices, instantiation arguments, and itself.  We also read it back, at the same type of type families that it was checked against, so that the displayed match shows it again in a "return" clause. *)
@@ -1548,7 +1554,11 @@ and readback_stuck_match : type mode a z hmode any.
                 | Some (`Type t), _ -> Some (None, None, eval_term env t)
                 (* If the stuck match isn't applied to any arguments, then the overall type is also the type of the match. *)
                 | _, Some Eq -> Some (None, None, ty)
-                | _ -> no_display "an implicit stuck match applied to arguments" in
+                | _ ->
+                    no_display
+                      (if degenerated_motive then
+                         "a stuck match whose motive is degenerated, applied to arguments"
+                       else "an implicit stuck match applied to arguments") in
               let new_branches =
                 Constr.Map.mapi
                   (fun constr br ->

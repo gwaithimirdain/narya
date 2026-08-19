@@ -580,6 +580,44 @@ The motive is applied to the branch's indices too, so a motive that depends on t
     : (n : N) (v : Vec Bool n) → P n
   
 
+A stored motive is a term in the context of the match, so it is evaluated in the environment we are stuck in.  If that environment is degenerated, the result is a degeneracy of the motive, expecting cubes of arguments rather than the flattened zero-dimensional ones that typechecking applied it to, and the type it would compute is an uninstantiated degeneracy rather than a type.  So a match stuck in a degenerated environment ignores its stored motive, displaying no "return" clause and refining its branches as if it had none, exactly like a match that stores no motive at all.
+
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom b0 : Bool' -e 'axiom b1 : Bool' -e 'axiom b2 : Id Bool b0 b1' -e 'axiom n0 : N' -e 'axiom n1 : N' -e 'def h : Bool → N ≔ b ↦ match b return _ ↦ N [ true. ↦ n0 | false. ↦ n1 ]' -e 'about (refl h b2)'
+  match b2 [ false. ⤇ refl n1 | true. ⤇ refl n0 ]
+    : N⁽ᵉ⁾ (h b0) (h b1)
+  
+
+And when the branches can't be read back at that type either, the whole match falls back on the application spine, rather than reporting the mismatched dimensions as a bug.
+
+  $ narya -v -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom b0 : Bool' -e 'axiom b1 : Bool' -e 'axiom b2 : Id Bool b0 b1' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'def g : (b : Bool) → T b ≔ b ↦ match b return x ↦ T x [ true. ↦ zero. | false. ↦ true. ]' -e 'about (refl g b2)'
+   ￫ info[I0000]
+   ￮ constant N defined
+  
+   ￫ info[I0000]
+   ￮ constant Bool defined
+  
+   ￫ info[I0001]
+   ￮ axiom b0 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b1 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b2 assumed
+  
+   ￫ info[I0000]
+   ￮ constant T defined
+  
+   ￫ info[I0000]
+   ￮ constant g defined
+  
+   ￫ info[I0010]
+   ￮ not displaying a stuck match with a branch body that is a constructor, which does not synthesize; showing an application spine instead
+  
+  ap g b2
+    : Id T b2 (g b0) (g b1)
+  
+
 A variable match refines the context instead of applying a motive, so neither the type of the match nor any motive is the type its branches were checked at.  Instead we rebind the discriminee, and any of the datatype's index variables, to the values this branch's constructor gives them -- in the environment the body is evaluated in and in the environment the type is re-evaluated in.  Refining the value along with the type is what keeps the two in step.  We try that first and read the branch back unrefined only if it fails, as typechecking tries a variable match before falling back to a non-dependent one.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'about (let g : (b : Bool) → T b ≔ b ↦ match b [ true. ↦ zero. | false. ↦ true. ] in g)'
