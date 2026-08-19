@@ -452,7 +452,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       (* However, because the result will be a Neu, we need to know its type as well.  The starting n-dimensional pi-type (which is itself uninstantiated) lies in a full instantiation of the n-dimensional universe at lower-dimensional pi-types formed from subcubes of its domains and codomains.  Accordingly, the resulting (m+n)-dimensional pi-type will like in a full instantiation of the (m+n)-dimensional universe at lower-dimensional pi-types obtained by evaluating these at appropriately split faces.  Since each of them *also* belongs to a universe instantiated similarly, and needs to know its type not just because it is an uninst but because it is a normal, we build the whole cube at once and then take its top. *)
       let pitbl = Hashtbl.create 10 in
       (* Since we only care about the hashtbl and the top, and we can get that from the hashtbl at the end anyway, we don't bother actually putting the normals into a meaningful cube. *)
-      let build : type u. (u, mn) sface -> unit =
+      let it : type u. (u, mn) sface -> unit =
        fun fab ->
         let kl = dom_sface fab in
         let codmode = mode_env env in
@@ -514,7 +514,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                   })) in
         let tm = Neu { head; args = Emp; value; ty = Lazy.from_val ty } in
         Hashtbl.add pitbl (SFace_of fab) { tm; ty = Lazy.from_val ty } in
-      let _ = CubeOf.build mn { build } in
+      CubeOf.iter_faces mn { it };
       Val (Hashtbl.find pitbl (SFace_of (id_sface mn))).tm
   | Let (_, Modal (modality, al, v), body) ->
       (* We evaluate let-bindings lazily, on the chance they aren't actually used. *)
@@ -2024,9 +2024,7 @@ let apply_slices : type dom modality mode k m n kn.
     (mode, kinetic) value =
  fun filter k plus n fn xs ->
   let fn = ref fn in
-  CubeOf.miter
-    { it = (fun fa [ () ] -> fn := apply_term !fn filter (CubeOf.slice k plus xs fa)) }
-    [ CubeOf.build n { build = (fun _ -> ()) } ];
+  CubeOf.iter_faces n { it = (fun fa -> fn := apply_term !fn filter (CubeOf.slice k plus xs fa)) };
   !fn
 
 (* Apply a constructor at some dimension to a list of cubes of variables, as well as all its lower-dimensional versions, producing a cube of its instances at each face. *)

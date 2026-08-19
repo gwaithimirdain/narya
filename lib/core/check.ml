@@ -4010,15 +4010,14 @@ and synth_lam : type mode a b c d n.
           let xs = singleton_variables D.zero (View.hinted name.value edom) in
           (* Pull off either one explicit argument or a cube of mostly-implicit ones, of the correct dimension. *)
           let state = ref args in
-          let (_ : (n, unit) CubeOf.t) =
-            CubeOf.build n
-              {
-                build =
-                  (fun _ ->
-                    match !state with
-                    | [] -> fatal Not_enough_arguments_to_function
-                    | _ :: xs -> state := xs);
-              } in
+          CubeOf.iter_faces n
+            {
+              it =
+                (fun _ ->
+                  match !state with
+                  | [] -> fatal Not_enough_arguments_to_function
+                  | _ :: xs -> state := xs);
+            };
           (* Then we proceed recursively to check the body of the abstraction. *)
           let cbody, scod = synth_lam n newctx body argctx !state ty in
           let scod =

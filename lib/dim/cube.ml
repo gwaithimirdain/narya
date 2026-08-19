@@ -339,6 +339,23 @@ module Cube (F : Fam2) = struct
       } in
     gbuild_pre n Nil Nil Append_nil Fw.Zero g'
 
+  (* By building zero cubes, we achieve the effect of simply iterating over the faces of a cube of some dimension, in the same order that we do when traversing a cube. *)
+
+  type 'n face_iterator = { it : 'm. ('m, 'n) sface -> unit }
+
+  let iter_faces : type n. n D.t -> n face_iterator -> unit =
+   fun n f ->
+    let [] =
+      pbuild n
+        {
+          build =
+            (fun fa ->
+              f.it fa;
+              []);
+        }
+        Nil in
+    ()
+
   (* A "subcube" of a cube of dimension n, determined by a face of n with dimension k, is the cube of dimension k consisting of the elements indexed by faces that factor through the given one. *)
   let subcube : type m n b. (m, n) sface -> (n, b) t -> (m, b) t =
    fun fa tr -> build (dom_sface fa) { build = (fun fb -> find tr (comp_sface fa fb)) }

@@ -209,6 +209,10 @@ module Cube (F : Fam2) : sig
   type ('n, 'bs) pbuilder = { build : 'm. ('m, 'n) sface -> ('m, 'bs) Heter.hft }
 
   val pbuild : 'n D.t -> ('n, 'bs) pbuilder -> 'bs Tlist.t -> ('n, nil, 'bs) Heter.hgt
+
+  type 'n face_iterator = { it : 'm. ('m, 'n) sface -> unit }
+
+  val iter_faces : 'n D.t -> 'n face_iterator -> unit
   val subcube : ('m, 'n) sface -> ('n, 'b) t -> ('m, 'b) t
 end
 
