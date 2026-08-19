@@ -275,7 +275,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let m = dim_env env in
       let (Plus mn) = D.plus n in
       Val (universe mode (D.plus_out m mn))
-  | Inst (Potential, _, _) -> fatal (Anomaly "potential inst in eval")
+  | Inst (Potential, _, _) -> fatal (Evaluating_display_term "potential instantiation")
   | Inst (Kinetic, tm, args) -> (
       (* The arguments are an (n,k) tube, with k dimensions instantiated and n dimensions uninstantiated. *)
       let n = TubeOf.uninst args in
@@ -340,7 +340,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
            ( Variables (D.plus_out l l_n, ln_k, vars),
              Modality.filter_plus l_nk m_p filter_lm filter,
              eval_binder env m_p modality filter body ))
-  | App (Potential, _, _, _, _) -> fatal (Anomaly "potential app in eval")
+  | App (Potential, _, _, _, _) -> fatal (Evaluating_display_term "potential application")
   | App (Kinetic, fn, k, filter_nk, Modal (modality, al, args)) ->
       (* First we evaluate the function. *)
       let efn = eval_term env fn in
@@ -359,7 +359,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let (Plus m_k) = D.plus k in
       let filter_total = Modality.filter_plus l_n m_k filter_lm filter_nk in
       apply efn filter_total eargs
-  | Field (Potential, _, _, _) -> fatal (Anomaly "potential field in eval")
+  | Field (Potential, _, _, _) -> fatal (Evaluating_display_term "potential field")
   | Field (Kinetic, Modal (fm, plus_lock, tm), fld, fldins) -> (
       let m = dim_env env in
       let n, l = (dom_ins fldins, cod_left_ins fldins) in
@@ -1461,7 +1461,7 @@ and eval_canonical : type mode m a.
           let Eq = D.plus_uniq c.plusdim (D.zero_plus c.dim) in
           eval_codata env c.eta c.opacity c.hints c.dim c.fields
             (Fibrancy.Codata.finished (mode_env env) c.fields fibrancy c.is_glue)
-      | _ -> fatal (Anomaly "evaluating a display codatatype"))
+      | _ -> fatal (Evaluating_display_term "codata"))
 
 (* We split out this subroutine so it can be called from Check.with_codata_so_far.  *)
 and eval_codata : type mode m a n et.

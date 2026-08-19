@@ -1515,7 +1515,7 @@ and readback_stuck_match : type mode a z hmode any.
                                       eval_term (Ctx.env oldctx)
                                         (readback_neu newctx new_head new_args)
                                     with
-                                    | Neu { head = old_head; args = old_args; _ } -> (
+                                    | Neu { head = old_head; args = old_args; _ } ->
                                         let old_status =
                                           Potential
                                             (Neu
@@ -1525,42 +1525,29 @@ and readback_stuck_match : type mode a z hmode any.
                                                  value = ready ebody;
                                                  ty = Lazy.from_val old_match_ty;
                                                }) in
-                                        match ebody with
-                                        (* A canonical type reads back only as a display-only declaration, which cannot be evaluated again, so it can't go through the cycle.  But its own refinement comes entirely from the self, which we have already refined, so we read it back in the old context instead; the two contexts have the same indices, so either is a context for this branch. *)
-                                        | Val (Canonical _) ->
-                                            Term.Branch
-                                              {
-                                                annotate = new_annotate;
-                                                comp = new_comp;
-                                                perm = checked_perm;
-                                                tm =
-                                                  readback_eval old_status oldctx ebody old_match_ty;
-                                              }
-                                        (* Everything else goes through the cycle: read back at the refined type in the old context and re-evaluated in the new one.  This is what refines the *value*: a body that mentions the discriminee reads back as that variable and re-evaluates to the constructor.  Refining the value and the type by the same rebinding is what keeps the two in step. *)
-                                        | _ ->
-                                            let new_ebody =
-                                              eval (Ctx.env newctx)
-                                                (readback_eval old_status oldctx ebody old_match_ty)
-                                            in
-                                            let new_status =
-                                              Potential
-                                                (Neu
-                                                   {
-                                                     head = new_head;
-                                                     args = new_args;
-                                                     value = ready new_ebody;
-                                                     ty = Lazy.from_val new_match_ty;
-                                                   }) in
-                                            (* The branch records the permutation relating the rebound context to the one the pattern variables were added to, exactly as a variable match does when typechecking. *)
-                                            Term.Branch
-                                              {
-                                                annotate = new_annotate;
-                                                comp = new_comp;
-                                                perm = checked_perm;
-                                                tm =
-                                                  readback_eval new_status newctx new_ebody
-                                                    new_match_ty;
-                                              })
+                                        (* If the body contains display-only canonical types, this eval of a readback raises an error that we catch below and fall back. *)
+                                        let new_ebody =
+                                          eval (Ctx.env newctx)
+                                            (readback_eval old_status oldctx ebody old_match_ty)
+                                        in
+                                        let new_status =
+                                          Potential
+                                            (Neu
+                                               {
+                                                 head = new_head;
+                                                 args = new_args;
+                                                 value = ready new_ebody;
+                                                 ty = Lazy.from_val new_match_ty;
+                                               }) in
+                                        (* The branch records the permutation relating the rebound context to the one the pattern variables were added to, exactly as a variable match does when typechecking. *)
+                                        Term.Branch
+                                          {
+                                            annotate = new_annotate;
+                                            comp = new_comp;
+                                            perm = checked_perm;
+                                            tm =
+                                              readback_eval new_status newctx new_ebody new_match_ty;
+                                          }
                                     | _ ->
                                         fatal (Matching_wont_refine ("rebinding killed self", None))
                                     )
@@ -1575,11 +1562,11 @@ and readback_stuck_match : type mode a z hmode any.
                                         comp = new_comp;
                                         perm = checked_perm;
                                         tm;
-                                      })
-                            (* If we can't or won't refine, the remaining approach is to read back the branch using the head, arguments, environment, and a type computed from an explicit motive or from the type of the whole branch. *))
+                                      }))
+                            (* If we can't or won't refine, the remaining approach is to read back the branch using the head, arguments, environment, and a type computed from an explicit motive or from the type of the whole branch. *)
                           ~fatal:(fun d ->
                             match d.message with
-                            | Matching_wont_refine _ ->
+                            | Matching_wont_refine _ | Evaluating_display_term _ ->
                                 let branch_ty =
                                   match emotive with
                                   | None -> match_ty
