@@ -1629,5 +1629,5 @@ let rec readback_about : type mode a b.
       | Unrealized (Some pn) -> readback_stuck (Potential value) ctx pn (Lazy.force ty)
       (* Under glued evaluation, a constant whose definition is an ordinary term rather than a case tree is a neutral whose value realizes that term.  It has no potential value of its own, but the neutral it realizes to may, so we look there. *)
       | Realize v -> readback_about ctx v
-      | _ -> None)
+      | Unrealized None -> None)
   | _ -> None
