@@ -613,7 +613,9 @@ Both dimensions can be positive at once: here a one-dimensional match, whose mot
         (apprec x y p)
   
 
-The motive is not read back in a degenerated environment, so no "return" clause is displayed there: reading it back would require its type, and the type of type families that typechecking checked it against is the undegenerated one.  Nor can the motive give the type of the match *itself* there, since that would have to be instantiated at the matches at the faces of the environment, which are stuck case trees rather than values.  So when the spine is nonempty, leaving us with no other type for the match, we fall back on that spine.
+No "return" clause is displayed in a degenerated environment, since there is none to display.  The match we reconstruct is at the total dimension, and the motive of a match at that dimension is a flat family of all the faces of its discriminee whose values are types: that is what a "return" clause is checked against.  But the type of a degenerated match at a given discriminee is its motive instantiated at the *matches* on that discriminee's faces -- in the first example above, at "g b0" and "g b1" -- so a flat family computing it would have to contain the match itself.  The degeneracy of the stored motive is not one.
+
+For the same reason the motive cannot give the type of the match itself there, that boundary consisting of stuck case trees rather than values.  So when the spine is nonempty, leaving us with no other type for the match, we fall back on that spine.
 
   $ narya -v -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom b0 : Bool' -e 'axiom b1 : Bool' -e 'axiom b2 : Id Bool b0 b1' -e 'axiom ax : N' -e 'def g : Bool → (N → N) ≔ b ↦ match b return _ ↦ N → N [ true. ↦ n ↦ n | false. ↦ n ↦ zero. ]' -e 'about (refl g b2 (refl ax))'
    ￫ info[I0000]
