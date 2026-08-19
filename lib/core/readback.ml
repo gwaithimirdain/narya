@@ -517,6 +517,14 @@ and readback_at : type mode a z s.
               | Some cm_cn -> readback_codata ctx neutral tyargs codata_args boundary cm_cn
               | None -> readback_permuted_codata ctx neutral tyargs ins)
           | UU _ | Pi _ -> Realize (readback_val ctx neutral)))
+  (* An indexed datatype that hasn't yet been applied to all of its indices is a canonical type whose type is a pi-type, the remaining indices being still to come, so it isn't caught by the case above.  Such a value is necessarily uninstantiated, since instantiating a datatype before it has all its indices is an anomaly (see apply_unfilled_data_index); thus, unlike the universe case, there is no instantiation to reattach.  The indices supplied so far are restored by readback_data as a potential application spine. *)
+  | ( Canonical (_, Pi _, _, _),
+      Canonical { canonical = Data ({ indices = Fillvec.Unfilled _; _ } as data_args); tyargs; _ } )
+    -> (
+      let (Potential _) = status in
+      match D.compare_zero (TubeOf.inst tyargs) with
+      | Zero -> readback_data ctx data_args
+      | Pos _ -> fatal (Anomaly "instantiated datatype is missing indices"))
   | _ -> readback_val ctx tm
 
 (* The synthesizing readback only ever applies to neutrals (a kinetic value).  Any other value reaching it (which can only be a potential value, since other callers pass kinetic neutrals) is an anomaly. *)
