@@ -844,8 +844,13 @@ and unparse_match : type mode window dom n aw m lt ls rt rs.
     match D.compare_zero dim with
     | Zero -> Token.Mapsto
     | Pos _ -> Token.DblMapsto in
-  (* The discriminee lives in the context locked by the window modality.  (The window annotation itself is not currently displayed.) *)
+  (* The discriminee lives in the context locked by the window modality. *)
   let disc = unparse (Names.add_lock vars plus_lock) tm No.Interval.entire No.Interval.entire in
+  let window = plus_lock_modality plus_lock in
+  let disc =
+    match Modality.compare_id window with
+    | Eq -> disc
+    | Neq -> unparse_modal_ascription disc window in
   let inner =
     Constr.Map.fold
       (fun c br acc ->

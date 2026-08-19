@@ -726,20 +726,20 @@ Both at once -- a degenerated definition containing a match on a variable of hig
 A match with a window modality reads back like any other: the reconstruction locks the context by the window, extends the environment through it, and rebinds the discriminee against it, exactly as checking and evaluation do.
 
   $ narya -spatial -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom ax : Bool' -e 'def f (b :♭| Bool) : N ≔ match (b :♭| _) [ true. ↦ zero. | false. ↦ suc. zero. ]' -e 'about (f ax)' -e 'about (let p : (b :♭| Bool) → N ≔ b ↦ match (b :♭| _) [ true. ↦ zero. | false. ↦ suc. zero. ] in p)'
-  match ax [ false. ↦ 1 | true. ↦ 0 ]
+  match (ax :♭| _) [ false. ↦ 1 | true. ↦ 0 ]
     : N
   
-  b ↦ match b [ false. ↦ 1 | true. ↦ 0 ]
+  b ↦ match (b :♭| _) [ false. ↦ 1 | true. ↦ 0 ]
     : (b :♭| Bool) → N
   
 
 That includes a dependent one, whose branches are refined by rebinding the modal discriminee.  A use of the discriminee is unkeyed exactly when its key is the identity two-cell on the window, which is what makes rebinding its slot rebind what that use evaluates to.
 
   $ narya -spatial -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'about (let p : (b :♭| Bool) → T b ≔ b ↦ match (b :♭| _) [ true. ↦ zero. | false. ↦ true. ] in p)' -e 'about (let q : (b :♭| Bool) → T b ≔ b ↦ match (b :♭| _) return x ↦ T x [ true. ↦ zero. | false. ↦ true. ] in q)'
-  b ↦ match b [ false. ↦ true. | true. ↦ 0 ]
+  b ↦ match (b :♭| _) [ false. ↦ true. | true. ↦ 0 ]
     : (b :♭| Bool) → T b
   
-  b ↦ match b [ false. ↦ true. | true. ↦ 0 ]
+  b ↦ match (b :♭| _) [ false. ↦ true. | true. ↦ 0 ]
     : (b :♭| Bool) → T b
   
 
@@ -768,7 +768,7 @@ The refuting variable can be modally annotated, in which case the refutation is 
    ￫ info[I0001]
    ￮ axiom bad assumed
   
-  match bad [ ]
+  match (bad :♭| _) [ ]
     : N
   
 

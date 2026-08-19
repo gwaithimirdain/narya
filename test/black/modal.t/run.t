@@ -376,6 +376,12 @@ the projection carry the locking annotation.
     : R
   
 
+Projections are displayed with the modal annotation.
+
+  $ narya -spatial modalfields.ny -e "about p"
+  (c :♭| _) .fld
+    : N
+  
 
 
 A *degeneracy* of a modal codatatype has no declaration form: its field types
