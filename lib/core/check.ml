@@ -2145,8 +2145,10 @@ and check_data : type mode a b i.
                               checked_constrs |> Abwd.add c (Telescope.pis args coutput),
                               errs )
                         | _ ->
-                            (* I think this shouldn't ever happen, no matter what the user writes, since we know at this point that the output is a full application of the correct constant, so it must have the right number of arguments. *)
-                            fatal (Anomaly "length of indices mismatch")))
+                            (* This can happen if the number of indices expected, which is computed from the type the datatype is being checked against, differs from the number of arguments the current constant actually takes.  For instance, if a 'match' with an explicit motive is used to define an indexed family, the motive could specify fewer indices than the constant has. *)
+                            fatal ?loc:output.loc
+                              (Invalid_constructor_type (c, Left "wrong number of index arguments"))
+                        ))
                 | _ -> fatal ?loc:output.loc err)
             | _ -> fatal ?loc:output.loc err in
           check_data

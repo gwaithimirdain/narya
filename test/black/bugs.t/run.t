@@ -620,3 +620,32 @@ This bug was in highlighting the whole degeneracy term rather than just its argu
    ￫ info[I0000]
    ￮ constant Id_eq_rfl defined
   
+
+A 'match' motive that disagrees with the number of indices of the constant
+being defined used to produce an anomaly when checking the constructor outputs.
+
+  $ narya data_in_match_motive.ny
+   ￫ error[E1505]
+   ￭ $TESTCASE_ROOT/data_in_match_motive.ny
+   7 | | zero. ↦ data [ w0. : W n zero. ]
+     ^ invalid output type for constructor w0: wrong number of index arguments
+  
+   ￫ error[E1505]
+   ￭ $TESTCASE_ROOT/data_in_match_motive.ny
+   8 | | suc. m ↦ data [ w1. : W n (suc. m) ]
+     ^ invalid output type for constructor w1: wrong number of index arguments
+  
+  [1]
+
+  $ narya data_in_match_motive2.ny
+   ￫ error[E1505]
+   ￭ $TESTCASE_ROOT/data_in_match_motive2.ny
+   6 | | zero. ↦ data [ v0. : V n ]
+     ^ invalid output type for constructor v0: wrong number of index arguments
+  
+   ￫ error[E1505]
+   ￭ $TESTCASE_ROOT/data_in_match_motive2.ny
+   7 | | suc. m ↦ data [ v1. : V n ]
+     ^ invalid output type for constructor v1: wrong number of index arguments
+  
+  [1]
