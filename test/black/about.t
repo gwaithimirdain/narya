@@ -677,6 +677,19 @@ That family is not merely well-formed but well-typed, and the branches do check 
     : Id T b2 _match.F9.1{…} _match.F9.2{…}
   
 
+A window modality that filters dimensions away shrinks the discriminee without shrinking the environment: here the match is stuck in a one-dimensional environment, but its discriminee, being flat-modal in the discrete spatial mode theory, is zero-dimensional.  So the motive takes one variable rather than three, and the matches in its boundary -- still one for each face of the environment -- are all on that same variable, differing only in what the environment gives their bodies.  The faces of the arguments are the images of those of the environment under the filter, which is what Modality.filter_sface computes.
+
+  $ narya -discrete-spatial -parametric -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'def r : N → (b :♭| Bool) → T b ≔ n ↦ b ↦ match (b :♭| _) return x ↦ T x [ true. ↦ n | false. ↦ true. ]' -e 'axiom n0 : N' -e 'axiom n1 : N' -e 'axiom n2 : Id N n0 n1' -e 'axiom b : Bool' -e 'about (refl r n2 b)'
+  match (b :♭| _)
+  return 𝑥 ↦
+         Id T (refl 𝑥)
+           (match (𝑥 :♭| _) return x ↦ T x [ false. ↦ true. | true. ↦ n0 ])
+           (match (𝑥 :♭| _) return x ↦ T x [ false. ↦ true. | true. ↦ n1 ]) [
+  | false. ↦ true.
+  | true. ↦ n2]
+    : Id T (refl b) (r n0 b) (r n1 b)
+  
+
 When a face of the environment is not stuck -- here the discriminee is a path between two constructors, so the match at each endpoint reduces to a branch body -- there is no match there to display, and we fall back on showing no "return" clause rather than nothing at all.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'def g : (b : Bool) → T b ≔ b ↦ match b return x ↦ T x [ true. ↦ zero. | false. ↦ true. ]' -e 'axiom p : Id Bool true. false.' -e 'about (refl g p)'

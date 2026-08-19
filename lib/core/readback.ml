@@ -1474,38 +1474,32 @@ and motive_of_family : type dom window mode a b.
    Evaluated in a degenerated environment, the motive computes a *family* of that dimension rather than a type, so we instantiate it at the boundary of the branch body, which we get by evaluating that body in the corresponding faces of its own environment; the type of each such face is the same family at that face, instantiated in turn at its boundary, so we build them up face by face as dom_vars does for the domains of a pi-type.  In a zero-dimensional environment the boundary is empty and the instantiation does nothing, leaving exactly the application of a zero-dimensional motive to singletons that typechecking performed.
 
    A branch body is a case tree, so its value at a face may be a case tree too rather than a term; then there is nothing to instantiate at and we give up on displaying the match (the caller catches this and falls back to the application spine). *)
-and motive_branch_ty : type mode dom window a c k n kn.
-    (dom, window, mode) Modality.t ->
-    (mode, k, a) env ->
+and motive_branch_ty : type mode dom window a c k m n kn.
+    (dom, window, mode, k, m) Modality.filter_dim ->
+    (mode, m, a) env ->
     (mode, a) Term.match_motive ->
     (k, n, kn) D.plus ->
     n D.t ->
     (kn, (dom, kinetic) value) CubeOf.t list ->
-    (mode, k, c) env ->
+    (mode, m, c) env ->
     (mode, c, potential) term ->
     (mode, kinetic) value =
- fun window env motive plus_dim match_dim args benv body ->
+ fun fw env motive plus_dim match_dim args benv body ->
   let env_dim = dim_env env in
-  (* The motive evaluated at a face of that environment, applied to the faces of the arguments lying over it. *)
-  let family : type j. (j, k) sface -> (mode, kinetic) value =
+  (* The motive evaluated at a face of that environment, applied to the faces of the arguments lying over it.  The arguments live at the *filtered* dimension of the environment plus the match dimension, so the face of them we want is the image of this one under the filter, which also tells us the filter to apply the motive at there. *)
+  let family : type j. (j, m) sface -> (mode, kinetic) value =
    fun fe ->
-    let j = dom_sface fe in
     let fenv = act_env env (opt_op_of_sface fe) in
     match motive with
     | `Type t -> eval_term fenv t
-    | `Family t -> (
-        let (Has_filter fj) = Modality.filter window j in
-        match D.compare (Modality.filtered j fj) j with
-        | Neq ->
-            fatal
-              (Readback_at_wrong_type
-                 "read back at a motive whose window modality filters dimensions away")
-        | Eq ->
-            let (Plus jplus) = D.plus match_dim in
-            let fa = sface_plus_sface fe plus_dim jplus (id_sface match_dim) in
-            List.fold_left
-              (fun f arg -> apply_slices fj j jplus match_dim f (CubeOf.subcube fa arg))
-              (eval_term fenv t) args) in
+    | `Family t ->
+        let (Filter_sface (fk, fj)) = Modality.filter_sface fw fe in
+        let j = dom_sface fk in
+        let (Plus jplus) = D.plus match_dim in
+        let fa = sface_plus_sface fk plus_dim jplus (id_sface match_dim) in
+        List.fold_left
+          (fun f arg -> apply_slices fj j jplus match_dim f (CubeOf.subcube fa arg))
+          (eval_term fenv t) args in
   let tbl = Hashtbl.create 10 in
   let boundary =
     TubeOf.build D.zero (D.zero_plus env_dim)
@@ -1536,20 +1530,23 @@ and motive_branch_ty : type mode dom window a c k n kn.
    The body is the type the match has at those variables.  Applying the motive to them by slices (see apply_slices) gives only a family of the environment's dimension, so we instantiate it -- and here, unlike in motive_branch_ty, we must do so *as a function of the variables*, at the matches on them at each face of the environment.  Those we get by reading back the match at that face, which the type of the match hands us in its own instantiation arguments, with its discriminee overridden by the variable at the corresponding face.  Since a match is a potential term and a motive is a kinetic one, each is wrapped in Corealize, the display-only coercion.
 
    Failure to display any of those boundary matches raises Readback_at_wrong_type, which the caller catches to display the match without a "return" clause. *)
-and readback_motive : type dom window mode a b k n kn.
+and readback_motive : type dom window mode a b j k m n kn mj.
     (mode, a, b) Ctx.t ->
     (dom, window, mode) Modality.t ->
     (dom, kinetic) value ->
     (dom, kinetic) value ->
-    (dom, window, mode, k, k) Modality.filter_dim ->
+    (dom, window, mode, k, m) Modality.filter_dim ->
+    m D.t ->
     k D.t ->
     (k, n, kn) D.plus ->
     n D.t ->
     (mode, kinetic) value ->
-    (D.zero, kn, kn, mode normal) TubeOf.t ->
+    (D.zero, mj, mj, mode normal) TubeOf.t ->
+    (m, j, mj) D.plus ->
+    j D.t ->
     (kn, (dom, kinetic) value) CubeOf.t list ->
     (mode, b, kinetic) term =
- fun ctx window tm ty fw k plus_dim match_dim emotive bdry args ->
+ fun ctx window tm ty fw env_dim k plus_dim match_dim emotive bdry bdry_plus inst_dim args ->
   let total_dim = D.plus_out k plus_dim in
   let filter = Modality.filter_zero window in
   let module S = struct
@@ -1610,7 +1607,7 @@ and readback_motive : type dom window mode a b k n kn.
           let body =
             readback_motive newctx window newtm
               (tyof_app cods tyargs ffilter newvars)
-              fw k plus_dim match_dim emotive bdry
+              fw env_dim k plus_dim match_dim emotive bdry bdry_plus inst_dim
               (args @ [ total_cube newvars ]) in
           let body, _ = MT.fold_map_right { foldmap = (fun _ x y -> folder x y) } newdoms body in
           body)
@@ -1629,15 +1626,20 @@ and readback_motive : type dom window mode a b k n kn.
         List.fold_left
           (fun f c -> apply_slices fw k plus_dim match_dim f c)
           emotive (args @ [ dvars ]) in
+      (* The motive computes a family of the environment's dimension, so its boundary is indexed by the faces of that dimension; but the variables to be matched on there are those at the *filtered* image of each such face, since that is where the discriminee lives. *)
       let boundary =
-        TubeOf.build D.zero (D.zero_plus k)
+        TubeOf.build D.zero (D.zero_plus env_dim)
           {
             build =
               (fun fe ->
                 let fs = sface_of_tface fe in
+                let (Filter_sface (fk, _)) = Modality.filter_sface fw fs in
                 let (Plus jplus) = D.plus match_dim in
-                let fa = sface_plus_sface fs plus_dim jplus (id_sface match_dim) in
-                match pface_of_sface fa with
+                let fa = sface_plus_sface fk plus_dim jplus (id_sface match_dim) in
+                (* The type instantiates the family over the dimensions the environment adds, on top of whatever the motive's own value was already instantiated at, so the match at this face is the entry lying over it in the former. *)
+                let (Plus iplus) = D.plus inst_dim in
+                let fb = sface_plus_sface fs bdry_plus iplus (id_sface inst_dim) in
+                match pface_of_sface fb with
                 | `Id _ -> fatal (Anomaly "identity face in readback_motive boundary")
                 | `Proper fd -> (
                     let nf = TubeOf.find bdry fd in
@@ -1769,7 +1771,7 @@ and readback_stuck_match : type mode a z hmode any.
                         apply_term r (Modality.filter_zero window) (CubeOf.singleton disc) )
                 (* A non-dependent match instead records one type, which is that of the match and of every branch alike.  There is no surface syntax for such a match other than the placeholder "return _ … _ ↦ _", which says nothing about the type, so we don't read it back. *)
                 | Some (`Type t), _, Zero -> Some (None, eval_term env t)
-                (* In a degenerated environment the type of the match is the one we were handed, but the motive can still be displayed, as a family of the total dimension whose boundary is the matches at the faces of that environment.  Those come from the type's own instantiation arguments, so we need it to be a fully instantiated neutral of the total dimension; and relating the faces of the motive's arguments to those of the environment requires the window modality not to filter any of the latter away.  If any of that fails, or a boundary match can't be displayed, we show the match without a "return" clause. *)
+                (* In a degenerated environment the type of the match is the one we were handed, but the motive can still be displayed, as a family of the total dimension whose boundary is the matches at the faces of that environment.  Those come from the type's own instantiation arguments, so we need it to be a fully instantiated neutral whose instantiation includes those dimensions.  If it isn't, or a boundary match can't be displayed, we show the match without a "return" clause. *)
                 | Some (`Family t), Some Eq, Pos _ ->
                     let emotive = eval_term env t in
                     let motive : (_, _) Term.match_motive option =
@@ -1779,22 +1781,25 @@ and readback_stuck_match : type mode a z hmode any.
                           | Readback_at_wrong_type _ -> None
                           | _ -> fatal_diagnostic d)
                         (fun () ->
-                          match (ty, D.compare (Modality.filtered env_dim fw) env_dim) with
-                          | Neu { args = tyapps; _ }, Eq -> (
+                          match ty with
+                          | Neu { args = tyapps; _ } -> (
                               match inst_of_apps tyapps with
                               | _, Some (Any_tube bdry) -> (
+                                  (* The type must be fully instantiated, and its instantiation must include the dimensions the environment adds, which are the ones whose faces the matches we need lie over. *)
                                   match
                                     ( D.compare_zero (TubeOf.uninst bdry),
-                                      D.compare (TubeOf.inst bdry) total_dim )
+                                      D.factor (TubeOf.inst bdry) env_dim )
                                   with
-                                  | Zero, Eq ->
+                                  | Zero, Some (Factor bdry_plus) ->
                                       let Eq =
-                                        D.plus_uniq (TubeOf.plus bdry) (D.zero_plus total_dim) in
+                                        D.plus_uniq (TubeOf.plus bdry)
+                                          (D.zero_plus (TubeOf.inst bdry)) in
                                       Some
                                         (`Family
                                            (readback_motive ctx window tyfam.tm
-                                              (Lazy.force tyfam.ty) fw env_dim plus_dim match_dim
-                                              emotive bdry []))
+                                              (Lazy.force tyfam.ty) fw env_dim
+                                              (Modality.filtered env_dim fw) plus_dim match_dim
+                                              emotive bdry bdry_plus (D.plus_right bdry_plus) []))
                                   | _ -> None)
                               | _ -> None)
                           | _ -> None) in
@@ -1960,20 +1965,16 @@ and readback_stuck_match : type mode a z hmode any.
                                 let branch_ty =
                                   match motive with
                                   | None -> match_ty
-                                  | Some mot -> (
-                                      (* Slicing the arguments, which live at the total dimension, over the faces of the environment requires the window modality not to have filtered any of the latter away.  If it did, we fall back on the type of the match, the same approximation we use for a match that stores no motive at all. *)
-                                      match D.compare (Modality.filtered env_dim fw) env_dim with
-                                      | Neq -> match_ty
-                                      | Eq ->
-                                          let args =
-                                            Vec.fold_left
-                                              (fun acc c -> acc @ [ val_of_norm_cube c ])
-                                              []
-                                              (indices_of_out "match branch" out total_dim
-                                                 (Vec.length data_indices))
-                                            @ [ constr_val_cube constr total_dim newvars ] in
-                                          motive_branch_ty window env mot plus_dim match_dim args
-                                            benv body) in
+                                  | Some mot ->
+                                      let args =
+                                        Vec.fold_left
+                                          (fun acc c -> acc @ [ val_of_norm_cube c ])
+                                          []
+                                          (indices_of_out "match branch" out total_dim
+                                             (Vec.length data_indices))
+                                        @ [ constr_val_cube constr total_dim newvars ] in
+                                      motive_branch_ty fw env mot plus_dim match_dim args benv body
+                                in
                                 let bstatus =
                                   Potential
                                     (Neu
