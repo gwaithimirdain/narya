@@ -118,6 +118,10 @@ end
 
 module ModalValuePairCube = Modality.Cube (ValuePair)
 
+(* A value to display in place of a stuck match's actual discriminee, together with the window modality it belongs to, which identifies its mode with that of the discriminee it replaces.  Readback of the motive of a degenerated match uses this to show the matches at the faces of the environment as matches on the motive's own variables, which is what they have to be for the motive to be a function of those variables. *)
+type _ disc_override =
+  | Disc_override : ('dom, 'window, 'mode) Modality.t * ('dom, kinetic) value -> 'mode disc_override
+
 (* An argument to readback that is present precisely when the energy is potential: the neutral whose potential value is being read back.  Reading back a comatch, or a canonical type, needs that neutral as the self-variable for computing its field or constructor types, and no other kind of value needs anything -- a potential value is a Lam, a Struct or a Canonical, never a Neu, so a neutral is never forced recursively and the display stays one-shot.  Like the status of type checking, it is rebuilt as readback descends through parameter abstractions. *)
 type (_, _) readback_status =
   | Kinetic : ('mode, kinetic) readback_status
@@ -1527,16 +1531,153 @@ and motive_branch_ty : type mode dom window a c k n kn.
       } in
   inst (family (id_sface env_dim)) boundary
 
+(* Read back the motive of a match that is stuck in a degenerated environment, at the total dimension the match is displayed at.  The shape is that of motive_of_family, whose pi-type this is the corresponding lambda-abstraction for: we walk the type of the datatype family, introducing one variable for each face of each of its (total-dimensional) arguments and finally for each face of the datatype itself, exactly as that function introduces one pi-domain for each.
+
+   The body is the type the match has at those variables.  Applying the motive to them by slices (see apply_slices) gives only a family of the environment's dimension, so we instantiate it -- and here, unlike in motive_branch_ty, we must do so *as a function of the variables*, at the matches on them at each face of the environment.  Those we get by reading back the match at that face, which the type of the match hands us in its own instantiation arguments, with its discriminee overridden by the variable at the corresponding face.  Since a match is a potential term and a motive is a kinetic one, each is wrapped in Corealize, the display-only coercion.
+
+   Failure to display any of those boundary matches raises Readback_at_wrong_type, which the caller catches to display the match without a "return" clause. *)
+and readback_motive : type dom window mode a b k n kn.
+    (mode, a, b) Ctx.t ->
+    (dom, window, mode) Modality.t ->
+    (dom, kinetic) value ->
+    (dom, kinetic) value ->
+    (dom, window, mode, k, k) Modality.filter_dim ->
+    k D.t ->
+    (k, n, kn) D.plus ->
+    n D.t ->
+    (mode, kinetic) value ->
+    (D.zero, kn, kn, mode normal) TubeOf.t ->
+    (kn, (dom, kinetic) value) CubeOf.t list ->
+    (mode, b, kinetic) term =
+ fun ctx window tm ty fw k plus_dim match_dim emotive bdry args ->
+  let total_dim = D.plus_out k plus_dim in
+  let filter = Modality.filter_zero window in
+  let module S = struct
+    type 'a suc = ('a, (window, D.zero) dim_entry) snoc
+  end in
+  let module F = struct
+    type ('left, 'c, 'any) t = Fname : D.zero variables -> ('left, 'c, 'any) t
+  end in
+  let module FCube = Icube (S) (F) in
+  let module C = struct
+    type 'b t = (mode, 'b) Ctx.any
+  end in
+  let module T = struct
+    type 'c t = (mode, 'c, kinetic) term
+  end in
+  let module MC = FCube.Traverse (C) in
+  let module MT = FCube.Traverse (T) in
+  (* Each variable is abstracted over by a zero-dimensional lambda, matching the zero-dimensional pi-type motive_of_family took over its domain. *)
+  let folder : type left m any.
+      (left, m, any) F.t ->
+      (left, (window, D.zero) dim_entry) snoc T.t ->
+      left T.t * (left, m, any) F.t =
+   fun (Fname x) body -> (Lam (x, D.zero, filter, body), Fname x) in
+  let builder : type left nn m.
+      nn variables ->
+      (nn, dom Binding.t) CubeOf.t ->
+      (m, nn) sface ->
+      left C.t ->
+      (left, m, b) MC.fwrap_left =
+   fun x newnfs fa (Any_ctx ctx) ->
+    let v = CubeOf.find newnfs fa in
+    let name =
+      match find_variable fa x with
+      | `Named _ as x -> x
+      | `Anon _ -> `Anon (View.hints_of_ty (Lazy.force (Binding.value v).ty)) in
+    let xs = singleton_variables D.zero name in
+    let (Any_ctx newctx) = Ctx.variables_vis ctx filter xs (CubeOf.singleton v) in
+    Fwrap (Fname xs, Any_ctx newctx) in
+  (* The variables for one argument are a cube at the total dimension, which is where the motive expects them. *)
+  let total_cube : type nn.
+      (nn, (dom, kinetic) value) CubeOf.t -> (kn, (dom, kinetic) value) CubeOf.t =
+   fun vars ->
+    match D.compare (CubeOf.dim vars) total_dim with
+    | Eq -> vars
+    | Neq -> fatal (Anomaly "wrong dimension of motive argument in readback_motive") in
+  match view_type ty "readback_motive" with
+  | Canonical (_, Pi { x; filter = ffilter; doms; cods }, ins, tyargs) -> (
+      match Modality.compare_id (Modality.filter_modality ffilter) with
+      | Neq -> fatal (Anomaly "modal family in readback_motive")
+      | Eq ->
+          let Eq = eq_of_ins_zero ins in
+          let newvars, newnfs = dom_vars ctx window doms in
+          let (Wrap (newdoms, Any_ctx newctx)) =
+            MC.build_left (CubeOf.dim newnfs)
+              { build = (fun fa ctx -> builder x newnfs fa ctx) }
+              (Any_ctx ctx) in
+          let newtm = apply_term tm ffilter newvars in
+          let body =
+            readback_motive newctx window newtm
+              (tyof_app cods tyargs ffilter newvars)
+              fw k plus_dim match_dim emotive bdry
+              (args @ [ total_cube newvars ]) in
+          let body, _ = MT.fold_map_right { foldmap = (fun _ x y -> folder x y) } newdoms body in
+          body)
+  | Canonical (_, UU _, _, tyargs) ->
+      (* The last arguments are the datatype itself and all its boundaries. *)
+      let doms = TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm) in
+      let dvars, newnfs = dom_vars ctx window doms in
+      let m = CubeOf.dim newnfs in
+      let (Wrap (newdoms, Any_ctx newctx)) =
+        MC.build_left m
+          { build = (fun fa ctx -> builder (singleton_variables m (`Anon no_hints)) newnfs fa ctx) }
+          (Any_ctx ctx) in
+      let dvars = total_cube dvars in
+      (* The motive applied to all of them, and then instantiated at the matches on them. *)
+      let r =
+        List.fold_left
+          (fun f c -> apply_slices fw k plus_dim match_dim f c)
+          emotive (args @ [ dvars ]) in
+      let boundary =
+        TubeOf.build D.zero (D.zero_plus k)
+          {
+            build =
+              (fun fe ->
+                let fs = sface_of_tface fe in
+                let (Plus jplus) = D.plus match_dim in
+                let fa = sface_plus_sface fs plus_dim jplus (id_sface match_dim) in
+                match pface_of_sface fa with
+                | `Id _ -> fatal (Anomaly "identity face in readback_motive boundary")
+                | `Proper fd -> (
+                    let nf = TubeOf.find bdry fd in
+                    match nf.tm with
+                    | Neu { value; _ } -> (
+                        match force_eval value with
+                        | Unrealized (Some pn) -> (
+                            match
+                              readback_stuck
+                                ~disc:(Disc_override (window, CubeOf.find dvars fa))
+                                (Potential nf.tm) newctx pn (Lazy.force nf.ty)
+                            with
+                            | Some mtch -> Term.Corealize mtch
+                            | None ->
+                                fatal
+                                  (Readback_at_wrong_type
+                                     "a motive with an undisplayable boundary match"))
+                        | _ ->
+                            fatal
+                              (Readback_at_wrong_type "a motive whose boundary is not a stuck match")
+                        )
+                    | _ -> fatal (Readback_at_wrong_type "a motive whose boundary is not a neutral")
+                    ));
+          } in
+      let body = Term.Inst (Kinetic, readback_val newctx r, boundary) in
+      let body, _ = MT.fold_map_right { foldmap = (fun _ x y -> folder x y) } newdoms body in
+      body
+  | _ -> fatal (Anomaly "non-family in readback_motive")
+
 (* ********** Readback of stuck matches (for display only) ********** *)
 
 (* Read back a stuck case tree, possibly applied to arguments: check_match_branches run backwards.  This is display-only output, like the readback of a canonical type: it is never re-typechecked or re-evaluated.  Reading back a stuck term can legitimately fail; in that case we return None here, causing the caller to fall back to showing the neutral spine.  *)
 and readback_stuck : type mode a z hmode any.
+    ?disc:mode disc_override ->
     (mode, potential) readback_status ->
     (mode, z, a) Ctx.t ->
     (hmode, potential) head * (hmode, mode, any) apps ->
     (mode, kinetic) value ->
     (mode, a, potential) term option =
- fun status ctx pn ty ->
+ fun ?disc status ctx pn ty ->
   (* Some failure modes are apparent immediately and cause readback_stuck_match to return None itself.  Others are noticed only later in reading back the bodies of match clauses, because the type we read them back at may only approximate the type it was checked at.  Those errors would be bugs otherwise, so they raise these fatal errors; but in this case we catch them and return None, leading to a fallback. *)
   Reporter.try_with ~fatal:(fun d ->
       match d.message with
@@ -1546,7 +1687,7 @@ and readback_stuck : type mode a z hmode any.
           no_display "a stuck match with a branch that reaches a higher field"
       | Matching_wont_refine (str, _) -> no_display ("a stuck match with " ^ str)
       | _ -> fatal_diagnostic d)
-  @@ fun () -> readback_stuck_match status ctx pn ty
+  @@ fun () -> readback_stuck_match ?disc status ctx pn ty
 
 (* For each constructor we invent fresh pattern variables from its stored function-type, with ext_pi, exactly as typechecking does; extend the stored environment by them, with take_args, exactly as evaluation does; evaluate the branch body there; and read it back in the context extended by the same variables.  The reconstructed branch carries ext_pi's own annotate and comp -- which name the pattern variables after the constructor's arguments -- and the identity permutation, rather than the stored ones, which are relative to the original checking context.
 
@@ -1554,12 +1695,13 @@ and readback_stuck : type mode a z hmode any.
 
    The pattern variables are *not* substituted into the type or the context, so for a match that refines its motive the branch bodies are read back at the unrefined type rather than at the refined one that typechecking used.  The two are definitionally equal in the branch, so where the unrefined type still exposes the canonical form that readback needs -- which is everything except a motive that is itself a stuck match -- the display is right.  Where it doesn't, readback raises, and we catch that and fall back to the application spine, exactly as if there had been no payload at all. *)
 and readback_stuck_match : type mode a z hmode any.
+    ?disc:mode disc_override ->
     (mode, potential) readback_status ->
     (mode, z, a) Ctx.t ->
     (hmode, potential) head * (hmode, mode, any) apps ->
     (mode, kinetic) value ->
     (mode, a, potential) term option =
- fun status ctx (Stuck { env; tm = ctm; ins }, apps) ty ->
+ fun ?disc:disc_ov status ctx (Stuck { env; tm = ctm; ins }, apps) ty ->
   match (status, ctm) with
   | ( Potential (Neu { head = head_head; args; _ }),
       Match { tm; window; plus_lock; dim = match_dim; motive; branches } ) -> (
@@ -1584,7 +1726,14 @@ and readback_stuck_match : type mode a z hmode any.
       let disc_nf = nf_of_neu disc "discriminee of stuck match" in
       (* Similarly, the discriminee is read back in a context locked by the window modality. *)
       let (Locked (new_plus_lock, lctx)) = Ctx.lock ctx window in
-      let disc_tm = readback_val lctx disc in
+      let disc_tm =
+        match disc_ov with
+        | None -> readback_val lctx disc
+        (* The override belongs to the same window modality, hence the same mode, as the discriminee it replaces; anything else is a bug in the caller. *)
+        | Some (Disc_override (owindow, ov)) -> (
+            match Modality.compare window owindow with
+            | Eq -> readback_val lctx ov
+            | Neq -> fatal (Anomaly "discriminee override at the wrong window")) in
       (* The self a branch body is read back against must live at the mode of the match, not of the whole spine, so we take the neutral we were given and strip the spine's eliminations back off it. *)
       let (Any head_args) = strip_apps args apps <|> Anomaly "stuck match spine mismatch" in
       match view_type (Lazy.force disc_nf.ty) "readback_stuck_match" with
@@ -1602,12 +1751,10 @@ and readback_stuck_match : type mode a z hmode any.
           match D.compare data_dim total_dim with
           | Eq ->
               let open Monad.Ops (Monad.Maybe) in
-              (* The motive and the type of the match itself.  Both are available only in a zero-dimensional environment.
+              (* The type of the match itself is available from the motive only in a zero-dimensional environment: evaluated in a degenerated one the motive computes an uninstantiated family instead, and the boundary to instantiate it at consists of the matches at the faces of that environment, which are stuck case trees rather than values.  So a degenerated match takes the type it was handed, which is that of the match itself exactly when the spine is empty.  (Each *branch* type is still computed from the motive, since the boundary there consists of the branch bodies, which we can evaluate; see motive_branch_ty.)
 
-                 For the type: evaluated in a degenerated environment the motive computes an uninstantiated family instead of a type, and the boundary to instantiate it at consists of the matches at the faces of that environment, which are stuck case trees rather than values.  So a degenerated match takes the type it was handed, which is that of the match itself exactly when the spine is empty.  (Each *branch* type is still computed from the motive, since the boundary there consists of the branch bodies, which we can evaluate; see motive_branch_ty.)
-
-                 For the motive: the match we reconstruct is at the total dimension, and the motive of a match at that dimension is a flat family of all the faces of its discriminee whose values are types -- that is what typechecking checks a "return" clause against, and it is what motive_of_family describes.  A degenerated match does have such a family, but it contains matches: its type at a given discriminee is the degenerated motive instantiated at the *matches* on that discriminee's faces.  Those we could get, by evaluating the match at the faces of the environment and reading it back, and then replacing the discriminee of each with the family's own variable at that face -- a legitimate discriminee, since motive_of_family gives the family one variable per face, of that face's own instantiated type, exactly the higher-dimensional thing a match takes.  What stops us is that a motive is a *kinetic* term while a match is a potential one: the elaborator admits an inline match in a kinetic position only by defining a fresh metavariable to it (see synth of Match at Kinetic in check.ml), which a display-only readback must not do.  So a degenerated match shows no "return" clause. *)
-              let* new_motive, match_ty =
+                 The motive is displayed in both cases, but they are different families: the match we reconstruct is at the total dimension, and the motive of a match at that dimension is a flat family of all the faces of its discriminee whose values are types, which is what motive_of_family describes and what typechecking checks a "return" clause against.  In a zero-dimensional environment the stored motive is already one.  In a degenerated one it is not, and readback_motive builds the one that is. *)
+              let motive_and_ty : ((_, _) Term.match_motive option * (_, kinetic) value) option =
                 match (motive, empty_apps apps, D.compare_zero env_dim) with
                 (* An explicit motive is a type family over the datatype's indices and the datatype itself.  Evaluated in the environment we are stuck in, it gives the type of the match, when applied to the discriminee's indices, instantiation arguments, and itself.  We also read it back, at the same type of type families that it was checked against, so that the displayed match shows it again in a "return" clause. *)
                 | Some (`Family t), _, Zero ->
@@ -1622,12 +1769,43 @@ and readback_stuck_match : type mode a z hmode any.
                         apply_term r (Modality.filter_zero window) (CubeOf.singleton disc) )
                 (* A non-dependent match instead records one type, which is that of the match and of every branch alike.  There is no surface syntax for such a match other than the placeholder "return _ … _ ↦ _", which says nothing about the type, so we don't read it back. *)
                 | Some (`Type t), _, Zero -> Some (None, eval_term env t)
+                (* In a degenerated environment the type of the match is the one we were handed, but the motive can still be displayed, as a family of the total dimension whose boundary is the matches at the faces of that environment.  Those come from the type's own instantiation arguments, so we need it to be a fully instantiated neutral of the total dimension; and relating the faces of the motive's arguments to those of the environment requires the window modality not to filter any of the latter away.  If any of that fails, or a boundary match can't be displayed, we show the match without a "return" clause. *)
+                | Some (`Family t), Some Eq, Pos _ ->
+                    let emotive = eval_term env t in
+                    let motive : (_, _) Term.match_motive option =
+                      Reporter.try_with
+                        ~fatal:(fun d ->
+                          match d.message with
+                          | Readback_at_wrong_type _ -> None
+                          | _ -> fatal_diagnostic d)
+                        (fun () ->
+                          match (ty, D.compare (Modality.filtered env_dim fw) env_dim) with
+                          | Neu { args = tyapps; _ }, Eq -> (
+                              match inst_of_apps tyapps with
+                              | _, Some (Any_tube bdry) -> (
+                                  match
+                                    ( D.compare_zero (TubeOf.uninst bdry),
+                                      D.compare (TubeOf.inst bdry) total_dim )
+                                  with
+                                  | Zero, Eq ->
+                                      let Eq =
+                                        D.plus_uniq (TubeOf.plus bdry) (D.zero_plus total_dim) in
+                                      Some
+                                        (`Family
+                                           (readback_motive ctx window tyfam.tm
+                                              (Lazy.force tyfam.ty) fw env_dim plus_dim match_dim
+                                              emotive bdry []))
+                                  | _ -> None)
+                              | _ -> None)
+                          | _ -> None) in
+                    Some (motive, ty)
                 (* If the stuck match isn't applied to any arguments, then the overall type is also the type of the match. *)
                 | _, Some Eq, _ -> Some (None, ty)
                 | _, _, Zero -> no_display "an implicit stuck match applied to arguments"
                 | _, _, Pos _ ->
                     no_display "a stuck match in a degenerated environment applied to arguments"
               in
+              let* new_motive, match_ty = motive_and_ty in
               let new_branches =
                 Constr.Map.mapi
                   (fun constr br ->

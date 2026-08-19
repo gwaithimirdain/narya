@@ -275,6 +275,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let m = dim_env env in
       let (Plus mn) = D.plus n in
       Val (universe mode (D.plus_out m mn))
+  | Corealize _ -> fatal (Evaluating_display_term "corealized case tree")
   | Inst (Potential, _, _) -> fatal (Evaluating_display_term "potential instantiation")
   | Inst (Kinetic, tm, args) -> (
       (* The arguments are an (n,k) tube, with k dimensions instantiated and n dimensions uninstantiated. *)

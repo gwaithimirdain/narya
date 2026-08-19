@@ -72,6 +72,7 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
           branches = Constr.Map.map (branch f) branches;
         }
   | Realize tm -> Realize (term f tm)
+  | Corealize tm -> Corealize (term f tm)
   | Canonical can -> Canonical (canonical f can)
   | Unshift (n, plusmap, tm) -> Unshift (n, plusmap, term f tm)
   | Unact (o, tm) -> Unact (o, term f tm)

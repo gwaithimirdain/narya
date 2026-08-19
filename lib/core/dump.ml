@@ -284,6 +284,7 @@ module F = struct
     | Struct _ -> fprintf ppf "Struct ?"
     | Match _ -> fprintf ppf "Match ?"
     | Realize tm -> fprintf ppf "Realize (%a)" term tm
+    | Corealize tm -> fprintf ppf "Corealize (%a)" term tm
     | Canonical c -> fprintf ppf "Canonical (%a)" canonical c
     | Unshift (n, _, tm) -> fprintf ppf "Unshift (%s, %a)" (string_of_dim n) term tm
     | Unact (_, tm) -> fprintf ppf "Unact (?, %a)" term tm

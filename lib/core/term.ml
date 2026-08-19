@@ -179,6 +179,7 @@ module rec Term : sig
       }
         -> ('mode, 'a, potential) term
     | Realize : ('mode, 'a, kinetic) term -> ('mode, 'a, potential) term
+    | Corealize : ('mode, 'a, potential) term -> ('mode, 'a, kinetic) term
     | Canonical : ('mode, 'a) canonical -> ('mode, 'a, potential) term
     | Unshift :
         'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'nb, 's) term
@@ -509,6 +510,8 @@ end = struct
         -> ('mode, 'a, potential) term
     (* A potential term is "realized" by kinetic terms, or canonical types, at its leaves. *)
     | Realize : ('mode, 'a, kinetic) term -> ('mode, 'a, potential) term
+    (* Dually, and for display only, a potential term can be "corealized" into a kinetic one.  Typechecking never produces this: a case tree construct in a kinetic position is elaborated instead by defining a metavariable to it, which readback cannot do.  Readback of a stuck match uses it to put the matches at the faces of a degenerated environment into the instantiation arguments of its motive, which is a kinetic term.  Like the other display-only term forms (potential instantiations, applications, and fields), evaluating it raises Evaluating_display_term. *)
+    | Corealize : ('mode, 'a, potential) term -> ('mode, 'a, kinetic) term
     | Canonical : ('mode, 'a) canonical -> ('mode, 'a, potential) term
     (* These operations are easy to evaluate because they are dual to corresponding operations on environments.  They never appear in the output of typechecking, but they are useful when constructing terms "by hand" in OCaml code, such as in fibrancy witnesses. *)
     | Unshift :

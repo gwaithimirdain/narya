@@ -233,6 +233,8 @@ let rec get_bwd : type mode n.
 let rec synths : type mode n. (mode, n, kinetic) term -> bool = function
   | Var _ | Const _ | Meta _ | MetaEnv _ | Field _ | UU _ | Inst _ | Pi _ | Key _ -> true
   | Constr _ | Lam _ | Struct _ -> false
+  (* A case tree written in a kinetic position is elaborated to a metavariable, which synthesizes; so the boundary arguments around a corealized one can be left implicit, which matters since it is usually a whole match. *)
+  | Corealize _ -> true
   (* Applications, actions, and let-bindings can also check.  They only synthesize if the appropriate one of their subterms does.  *)
   | App (_, fn, _, _, _) -> synths fn
   | Act (_, tm, _, _) -> synths tm
@@ -551,6 +553,8 @@ let rec unparse : type mode n lt ls rt rs s.
               args in
           unparse_spine vars (`Constr c) args li ri)
   | Realize tm -> unparse vars tm li ri
+  (* A corealized case tree displays as the case tree it wraps; the wrapper exists only to put it in a kinetic position, which is always inside a larger term, so we parenthesize it. *)
+  | Corealize tm -> parenthesize (unparse vars tm No.Interval.entire No.Interval.entire)
   | Canonical c -> unparse_canonical vars c li ri
   | Struct { eta = Noeta; dim; fields; energy = _ } -> unparse_comatch vars dim fields li ri
   | Match { window = _; plus_lock; tm; dim; motive; branches } ->

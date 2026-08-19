@@ -593,14 +593,49 @@ The motive is applied to the branch's indices too, so a motive that depends on t
 A stored motive is a term in the context of the match, so it is evaluated in the environment we are stuck in.  If that environment is degenerated, the result is a degeneracy of the motive: it takes a cube of that environment's dimension in each of the argument positions that typechecking gave a single element, namely the slice of the (total-dimensional) argument cube lying over the corresponding face of the match dimension.  What it computes is then a type *family* of that dimension rather than a type, so we instantiate it at the boundary of the branch body, which we get by evaluating that body in the corresponding faces of its own environment.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom b0 : Bool' -e 'axiom b1 : Bool' -e 'axiom b2 : Id Bool b0 b1' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'def g : (b : Bool) → T b ≔ b ↦ match b return x ↦ T x [ true. ↦ zero. | false. ↦ true. ]' -e 'about (refl g b2)'
-  match b2 [ false. ⤇ true. | true. ⤇ refl 0 ]
+  match b2
+  return 𝑥 𝑦 𝑧 ↦
+         Id T 𝑧 (match 𝑥 return x ↦ T x [ false. ↦ true. | true. ↦ 0 ])
+           (match 𝑦 return x ↦ T x [ false. ↦ true. | true. ↦ 0 ]) [
+  | false. ⤇ true.
+  | true. ⤇ refl 0]
     : Id T b2 (g b0) (g b1)
   
 
 The faces of the boundary have boundaries of their own, so with a two-dimensional environment the instantiations are built up face by face.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom b0 : Bool' -e 'axiom b1 : Bool' -e 'axiom b2 : Id Bool b0 b1' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'def g : (b : Bool) → T b ≔ b ↦ match b return x ↦ T x [ true. ↦ zero. | false. ↦ true. ]' -e 'about (refl (refl g) (refl b2))'
-  match refl b2 [ false. ⤇ true. | true. ⤇ 0⁽ᵉᵉ⁾ ]
+  match refl b2
+  return 𝑥 𝑦 𝑧 𝑤 𝑢 𝑣 𝑥′ 𝑦′ 𝑧′ ↦
+         T⁽ᵉᵉ⁾ 𝑧′
+           (match 𝑧
+            return 𝑤′ 𝑢′ 𝑣′ ↦
+                   Id T 𝑣′
+                     (match 𝑤′ return x ↦ T x [ false. ↦ true. | true. ↦ 0 ])
+                     (match 𝑢′ return x ↦ T x [ false. ↦ true. | true. ↦ 0 ]) [
+            | false. ⤇ true.
+            | true. ⤇ refl 0])
+           (match 𝑣
+            return 𝑤′ 𝑢′ 𝑣′ ↦
+                   Id T 𝑣′
+                     (match 𝑤′ return x ↦ T x [ false. ↦ true. | true. ↦ 0 ])
+                     (match 𝑢′ return x ↦ T x [ false. ↦ true. | true. ↦ 0 ]) [
+            | false. ⤇ true.
+            | true. ⤇ refl 0])
+           (match 𝑥′
+            return 𝑤′ 𝑢′ 𝑣′ ↦
+                   Id T 𝑣′
+                     (match 𝑤′ return x ↦ T x [ false. ↦ true. | true. ↦ 0 ])
+                     (match 𝑢′ return x ↦ T x [ false. ↦ true. | true. ↦ 0 ]) [
+            | false. ⤇ true.
+            | true. ⤇ refl 0])
+           (match 𝑦′
+            return 𝑤′ 𝑢′ 𝑣′ ↦
+                   Id T 𝑣′
+                     (match 𝑤′ return x ↦ T x [ false. ↦ true. | true. ↦ 0 ])
+                     (match 𝑢′ return x ↦ T x [ false. ↦ true. | true. ↦ 0 ]) [
+            | false. ⤇ true.
+            | true. ⤇ refl 0]) [ false. ⤇ true. | true. ⤇ 0⁽ᵉᵉ⁾ ]
     : T⁽ᵉᵉ⁾ (refl b2) (ap g (refl b0)) (ap g (refl b1)) (ap g b2) (ap g b2)
   
 
@@ -618,62 +653,38 @@ Both dimensions can be positive at once: here a one-dimensional match, whose mot
   return a b c ↦ N⁽ᵉ⁾ (prec a) (prec b) [ suc. q ⤇ q.2 | zero. ⤇ refl 0 ]
     : N⁽ᵉ⁾ (prec x) (prec y)
   
-  match refl p [ suc. q ⤇ q.22 | zero. ⤇ 0⁽ᵉᵉ⁾ ]
+  match refl p
+  return 𝑥 𝑦 𝑧 𝑤 𝑢 𝑣 𝑥′ 𝑦′ 𝑧′ ↦
+         N⁽ᵉᵉ⁾ (ap prec 𝑧) (ap prec 𝑣)
+           (match 𝑥′
+            return a b c ↦ N⁽ᵉ⁾ (prec a) (prec b) [
+            | suc. q ⤇ q.2
+            | zero. ⤇ refl 0])
+           (match 𝑦′
+            return a b c ↦ N⁽ᵉ⁾ (prec a) (prec b) [
+            | suc. q ⤇ q.2
+            | zero. ⤇ refl 0]) [ suc. q ⤇ q.22 | zero. ⤇ 0⁽ᵉᵉ⁾ ]
     : N⁽ᵉᵉ⁾ (ap prec (refl x)) (ap prec (refl y)) (apprec x y p)
         (apprec x y p)
   
 
-No "return" clause is displayed in a degenerated environment.  The match we reconstruct is at the total dimension, and the motive of a match at that dimension is a flat family of all the faces of its discriminee whose values are types: that is what a "return" clause is checked against.  The type of a degenerated match at a given discriminee is its motive instantiated at the *matches* on that discriminee's faces -- in the first example above, at "g b0" and "g b1" -- so such a family does exist, but it contains matches.  We could even get them, by evaluating the match at the faces of the environment and reading it back, then replacing each discriminee by the family's own variable at that face, which is a variable of that face's instantiated type and so a discriminee of the right dimension.  But a motive is a kinetic term and a match is a potential one, and the only way to write a match in a kinetic position is the implicit let-binding that the elaborator makes for it:
+The motive of the reconstructed match is a flat family of all the faces of the discriminee whose values are types, which is what a "return" clause is checked against, and at the total dimension.  So it is not the stored motive, nor its degeneracy: the type of a degenerated match at a given discriminee is that degeneracy instantiated at the *matches* on that discriminee's faces, so the family we display has to contain those matches.  We get them by reading back the match at each face of the environment, which the type of the match hands us among its own instantiation arguments, and overriding the discriminee of each with the family's own variable at that face -- a variable of that face's instantiated type, and so a discriminee of the right dimension.  Since a motive is a kinetic term and a match is a potential one, each is wrapped in the display-only coercion Corealize, which is why the ones displayed above have no "return" clause of their own to be checked against.
 
-  $ narya -v -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom b : Bool' -e 'echo (match b [ true. ↦ N | false. ↦ Bool ] : Type)'
-   ￫ info[I0000]
-   ￮ constant N defined
-  
-   ￫ info[I0000]
-   ￮ constant Bool defined
-  
-   ￫ info[I0001]
-   ￮ axiom b assumed
-  
-   ￫ hint[H0403]
-   ￭ command-line exec string
-   1 | echo (match b [ true. ↦ N | false. ↦ Bool ] : Type)
-     ^ match encountered outside case tree, wrapping in implicit let-binding
-  
-  _match.F5.0{…}
-    : Type
+That family is not merely well-formed but well-typed, and the branches do check against it: here is the first example's displayed motive, written back as source (with the anonymous variables named).  It synthesizes the same type, up to the fresh metavariables that the elaborator makes for the matches inside it, which no longer unfold to the constant they came from.
+
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom b0 : Bool' -e 'axiom b1 : Bool' -e 'axiom b2 : Id Bool b0 b1' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'def g : (b : Bool) → T b ≔ b ↦ match b return x ↦ T x [ true. ↦ zero. | false. ↦ true. ]' -e 'echo match b2 return a b c ↦ Id T c (match a return x ↦ T x [ false. ↦ true. | true. ↦ 0 ]) (match b return x ↦ T x [ false. ↦ true. | true. ↦ 0 ]) [ | false. ⤇ true. | true. ⤇ refl 0 ]'
+  _match.F9.0{…}
+    : Id T b2 _match.F9.1{…} _match.F9.2{…}
   
 
-Defining a metavariable is not something a display-only readback can do, so there is no motive term to show.  The same boundary is why the motive cannot give the type of the match itself there, that one consisting of stuck case trees rather than values.  So when the spine is nonempty, leaving us with no other type for the match, we fall back on that spine.
+When a face of the environment is not stuck -- here the discriminee is a path between two constructors, so the match at each endpoint reduces to a branch body -- there is no match there to display, and we fall back on showing no "return" clause rather than nothing at all.
 
-  $ narya -v -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom b0 : Bool' -e 'axiom b1 : Bool' -e 'axiom b2 : Id Bool b0 b1' -e 'axiom ax : N' -e 'def g : Bool → (N → N) ≔ b ↦ match b return _ ↦ N → N [ true. ↦ n ↦ n | false. ↦ n ↦ zero. ]' -e 'about (refl g b2 (refl ax))'
-   ￫ info[I0000]
-   ￮ constant N defined
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'def g : (b : Bool) → T b ≔ b ↦ match b return x ↦ T x [ true. ↦ zero. | false. ↦ true. ]' -e 'axiom p : Id Bool true. false.' -e 'about (refl g p)'
+  match p [ false. ⤇ true. | true. ⤇ refl 0 ]
+    : Id T p 0 true.
   
-   ￫ info[I0000]
-   ￮ constant Bool defined
-  
-   ￫ info[I0001]
-   ￮ axiom b0 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom b1 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom b2 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom ax assumed
-  
-   ￫ info[I0000]
-   ￮ constant g defined
-  
-   ￫ info[I0010]
-   ￮ not displaying a stuck match in a degenerated environment applied to arguments; showing an application spine instead
-  
-  ap g b2 (refl ax)
-    : N⁽ᵉ⁾ (g b0 ax) (g b1 ax)
-  
+
+The motive still cannot give the type of the match itself, that boundary consisting of stuck case trees rather than values.  So when the spine is nonempty, leaving us with no other type for the match, we fall back on that spine.
 
 A variable match refines the context instead of applying a motive, so neither the type of the match nor any motive is the type its branches were checked at.  Instead we rebind the discriminee, and any of the datatype's index variables, to the values this branch's constructor gives them -- in the environment the body is evaluated in and in the environment the type is re-evaluated in.  Refining the value along with the type is what keeps the two in step.  We try that first and read the branch back unrefined only if it fails, as typechecking tries a variable match before falling back to a non-dependent one.
 
