@@ -677,39 +677,27 @@ and unparse_codata : type mode m n a et lt ls rt rs.
       false instances in
   (* Self-variable ("self record") rendering, with explicit field projections: used for codatatypes, and as a fallback for records whose field types reference the self-variable directly. *)
   let self_var_render () =
-    match eta with
-    | Noeta ->
-        let inner =
-          Bwd.fold_left
-            (fun acc { self_var; Instance.adj = Any_adjunction adj; name; suffix; ty } ->
-              let self_hints =
-                Option.fold self_var ~some:(fun x -> `Named x) ~none:(`Anon no_hints) in
-              let x, _ = Names.add_cube selfdim vars self_hints in
-              let self = { Self.ext = (fun v -> snd (Names.add_cube selfdim v self_hints)) } in
-              let pat = unparse_field_decl x adj name suffix in
-              acc <: mktok (Op "|") <: Term pat <: mktok Colon <: Term (ty self))
-            (Snoc (Emp, mktok LBracket))
-            instances in
-        unlocated
-          (outfix ~notn:codata ~inner:(Multiple (dimtok Codata evaldim, inner, wstok RBracket)))
-    | Eta ->
-        let inner, _ =
-          Bwd.fold_left
-            (fun (acc, first) { self_var; Instance.adj = Any_adjunction adj; name; suffix; ty } ->
-              let self_hints =
-                Option.fold self_var ~some:(fun x -> `Named x) ~none:(`Anon no_hints) in
-              let x, _ = Names.add_cube selfdim vars self_hints in
-              let self = { Self.ext = (fun v -> snd (Names.add_cube selfdim v self_hints)) } in
-              let pat = unparse_field_decl x adj name suffix in
-              ( (if first then acc else acc <: mktok (Op ","))
-                <: Term pat
-                <: mktok Colon
-                <: Term (ty self),
-                false ))
-            (Snoc (Emp, mktok LParen), true)
-            instances in
-        unlocated (outfix ~notn:record ~inner:(Multiple (dimtok Sig evaldim, inner, wstok RParen)))
-  in
+    let keyword, notn, ldelim, rdelim =
+      match eta with
+      | Noeta -> (Token.Codata, codata, mktok LBracket, wstok RBracket)
+      | Eta -> (Token.Sig, record, mktok LParen, wstok RParen) in
+    let inner, _ =
+      Bwd.fold_left
+        (fun (acc, tok) { self_var; Instance.adj = Any_adjunction adj; name; suffix; ty } ->
+          let self_hints = Option.fold self_var ~some:(fun x -> `Named x) ~none:(`Anon no_hints) in
+          let x, _ = Names.add_cube selfdim vars self_hints in
+          let self = { Self.ext = (fun v -> snd (Names.add_cube selfdim v self_hints)) } in
+          let pat = unparse_field_decl x adj name suffix in
+          ( acc <@ tok <: Term pat <: mktok Colon <: Term (ty self),
+            match tok with
+            | [] -> [ mktok (Op ",") ]
+            | _ :: _ -> tok ))
+        ( Snoc (Emp, ldelim),
+          match eta with
+          | Noeta -> [ mktok (Op "|") ]
+          | Eta -> [] )
+        instances in
+    unlocated (outfix ~notn ~inner:(Multiple (dimtok keyword evaldim, inner, rdelim))) in
   match (eta, has_modal_field) with
   | Noeta, _ | Eta, true -> self_var_render ()
   | Eta, false -> (
