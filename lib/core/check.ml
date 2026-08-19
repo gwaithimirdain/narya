@@ -2490,7 +2490,8 @@ and check_codata : type mode a b n et.
                   Ctx.cube_vis lctx (Modality.filter_idempotent left_filter) x (self adj) in
                 (* Note the type of each field is checked *kinetically*: it's not part of the case tree. *)
                 let cty = check (Kinetic `Nolet) newctx rty (universe (Modality.src right) D.zero) in
-                let entry = CodatafieldAbwd.Entry (fld, Codatafield (adj, plus_lock, Lower cty)) in
+                let entry =
+                  CodatafieldAbwd.Entry (fld, Codatafield (x, adj, plus_lock, Lower cty)) in
                 ( Snoc (checked_fields, entry),
                   Fibrancy.Codata.add_field (Ctx.mode ctx) fibrancy entry,
                   errs ) in
@@ -2523,8 +2524,8 @@ and check_codata : type mode a b n et.
                   CodatafieldAbwd.Entry
                     ( fld,
                       Codatafield
-                        (adj, plus_lock, Higher (fldtermctx, singleton_fieldtype i plusmap cty)) )
-                in
+                        (x, adj, plus_lock, Higher (fldtermctx, singleton_fieldtype i plusmap cty))
+                    ) in
                 (Snoc (checked_fields, entry), errs) in
           check_codata status ctx opacity eta hints tyargs checked_fields fibrancy raw_fields errs
       | Pos _, Zero, Eta -> fatal (Unimplemented "higher fields in record types")
@@ -2589,7 +2590,8 @@ and check_record : type mode a f1 f2 f af d acd b n.
                   CodatafieldAbwd.Entry
                     ( fld,
                       Codatafield
-                        ( Modalcell.id_adjunction (Ctx.mode ctx),
+                        ( None,
+                          Modalcell.id_adjunction (Ctx.mode ctx),
                           plus_no_lock (Ctx.mode ctx),
                           Lower cty ) ) in
                 ( Snoc (checked_fields, entry),
@@ -2722,8 +2724,8 @@ and check_field : type mode a b c s m n mn i et.
   match cdf with
   | Codatafield
       (type f g gmode ag)
-      (((Adjunction { left; right; _ } as adj), fld_plus_lock, fldty) :
-        (mode, f, g, gmode) Modalcell.adjunction * (c, mode, g, gmode, ag) plus_lock * _) -> (
+      ((_, (Adjunction { left; right; _ } as adj), fld_plus_lock, fldty) :
+        _ * (mode, f, g, gmode) Modalcell.adjunction * (c, mode, g, gmode, ag) plus_lock * _) -> (
       (* A modal field whose (left adjoint) modality is nonparametric disappears at a dimension it filters nontrivially: it must be omitted from the tuple/comatch (an explicit occurrence is an error) and we skip it.  Otherwise its filter at the result dimension m is trivial and we check it normally. *)
       let (Has_filter left_filter) = Modality.filter left m in
       match Modality.filter_is_trivial m left_filter with

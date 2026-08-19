@@ -314,7 +314,7 @@ and readback_at : type mode a z s.
             Bwd.filter
               (fun (CodatafieldAbwd.Entry
                       (type i)
-                      ((_, Codatafield (Adjunction { left; _ }, _, _)) :
+                      ((_, Codatafield (_, Adjunction { left; _ }, _, _)) :
                         i Field.t * (i, mode * a * D.zero * n * _) Codatafield.t)) ->
                 let (Has_filter left_filter) = Modality.filter left m in
                 Option.is_some (Modality.filter_is_trivial m left_filter))
@@ -329,7 +329,8 @@ and readback_at : type mode a z s.
                       (mode * (_ * _ * s * et)) Term.StructfieldAbwd.entry =
                     match Term.CodatafieldAbwd.find_opt codata_fields fld with
                     (* Lower field *)
-                    | Found (Codatafield ((Adjunction { left; right; unit; _ } as adj), _, Lower _))
+                    | Found
+                        (Codatafield (_, (Adjunction { left; right; unit; _ } as adj), _, Lower _))
                       ->
                         (* We project the field from the neutral-as-self, keying by the adjunction unit and reading back the component behind the right-adjoint lock. *)
                         let xu = act_value ktm (id_deg D.zero) unit in
@@ -354,7 +355,7 @@ and readback_at : type mode a z s.
                         Entry (fld, Lower (adj, plus_lock, rtm, l))
                     (* Higher field *)
                     | Found
-                        (Codatafield ((Adjunction { left; right; unit; _ } as adj), _, Higher _))
+                        (Codatafield (_, (Adjunction { left; right; unit; _ } as adj), _, Higher _))
                       -> (
                         match Value.StructfieldAbwd.find_opt comatch_fields fld with
                         | Found (Higher (lazy hd)) ->
@@ -429,8 +430,9 @@ and readback_at : type mode a z s.
                                   (( fld,
                                      Codatafield
                                        (type f g gmode ag)
-                                       (((Adjunction { left; right; unit; _ } as adj), _, Lower _) :
-                                         (mode, f, g, gmode) Modalcell.adjunction
+                                       ((_, (Adjunction { left; right; unit; _ } as adj), _, Lower _) :
+                                         _
+                                         * (mode, f, g, gmode) Modalcell.adjunction
                                          * (_, mode, g, gmode, ag) plus_lock
                                          * _) ) :
                                     i Field.t * (i, mode * a * D.zero * n * has_eta) Codatafield.t))
@@ -1132,7 +1134,7 @@ and readback_codatafield : type mode a b cm cn ca cet iu ii iout.
  fun ctx mk dom evaldim insargs codataenv cm_cn
      (Entry
         (type i)
-        ((fld, Codatafield ((Adjunction { left; right; unit; _ } as adj), fld_plus_lock, cf)) :
+        ((fld, Codatafield (self, (Adjunction { left; right; unit; _ } as adj), fld_plus_lock, cf)) :
           i Field.t * (i, mode * ca * D.zero * cn * cet) Term.Codatafield.t)) ->
   let (Locked (plus_lock, lctx)) = Ctx.lock ctx right in
   let (Has_filter lfilter) = Modality.filter left (D.plus_out mk (TubeOf.plus insargs)) in
@@ -1169,14 +1171,14 @@ and readback_codatafield : type mode a b cm cn ca cet iu ii iout.
                  (TubeOf.boundary selfnfs) fld adj fld_plus_lock fldty codataenv evaldim cm_cn
                  ~key:`Nokey in
              let ty = readback_val sctx ety in
-             Entry (fld, Codatafield (adj, plus_lock, Lower ty))
+             Entry (fld, Codatafield (self, adj, plus_lock, Lower ty))
          | Higher (fldtermctx, fldtys) ->
              (* A codatatype with a higher field has intrinsic dimension zero, so its whole dimension, at which the self-variable cube lives and at which the instances of the field are indexed, is its evaluation dimension. *)
              let Eq = D.plus_uniq cm_cn (D.plus_zero evaldim) in
              let tys =
                readback_higher_codatafield ctx codataenv fld_plus_lock fldtermctx fldtys
                  (CubeOf.dim selfnfs) fld adj selfnfs sctx in
-             Entry (fld, Codatafield (adj, plus_lock, Higher (readback_ctx lctx, tys))))
+             Entry (fld, Codatafield (self, adj, plus_lock, Higher (readback_ctx lctx, tys))))
 
 (* Read back the instances of one higher field of a codatatype value being displayed, as the pbijmap of types that Codatafield.Higher stores: one entry per partial bijection between the codatatype's evaluation dimension m and the field's intrinsic dimension i.  The self variable, its cube, and the context they live in are those built by readback_codata, while the environment, lock, termctx and stored types are those of the codatatype value being displayed; the ambient context is needed only to degenerate for a non-projectable instance. *)
 and readback_higher_codatafield : type mode a b ca m i f g gmode ag bg d raw.

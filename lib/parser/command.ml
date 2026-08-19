@@ -1201,7 +1201,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                     (_ * a * D.zero * n * et) Term.CodatafieldAbwd.entry ->
                     (string * string list) list ->
                     (string * string list) list =
-                 fun (Term.CodatafieldAbwd.Entry (fld, Codatafield (_, _, cdf))) acc ->
+                 fun (Term.CodatafieldAbwd.Entry (fld, Codatafield (_, _, _, cdf))) acc ->
                   match cdf with
                   | Lower _ -> (Field.to_string fld, []) :: acc
                   | Higher _ ->

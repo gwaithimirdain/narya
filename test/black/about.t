@@ -9,7 +9,7 @@ About: display the potential value (canonical type or case tree) of a neutral
   | suc. (𝑥 : N) : N ]
     : Type
   
-  A ↦ codata [ 𝑥 .head : A | 𝑥 .tail : Stream A ]
+  A ↦ codata [ x .head : A | x .tail : Stream A ]
     : Type → Type
   
   sig (
@@ -36,8 +36,8 @@ A neutral that is an applied canonical type is read back and displayed as the co
     : Type
   
   codata [
-  | 𝑥 .head : N
-  | 𝑥 .tail : Stream N ]
+  | x .head : N
+  | x .tail : Stream N ]
     : Type
   
   data [
@@ -71,7 +71,7 @@ A canonical type read back at a positive dimension shows that dimension as a sup
     : Type⁽ᵉ⁾ R R
   
   codata⁽ᵉᵉ⁾ [
-  | 𝑥 .head : N⁽ᵉᵉ⁾ (𝑥.02 .head) (𝑥.12 .head) (𝑥.20 .head) (𝑥.21 .head) ]
+  | x .head : N⁽ᵉᵉ⁾ (x.02 .head) (x.12 .head) (x.20 .head) (x.21 .head) ]
     : Type⁽ᵉᵉ⁾ S⁽ᵉ⁾ S⁽ᵉ⁾ S⁽ᵉ⁾ S⁽ᵉ⁾
   
 
@@ -110,7 +110,7 @@ A higher-dimensional (Gel-like) codatatype is read back at its intrinsic dimensi
 
   $ narya -dtt -e 'axiom A : Type' -e 'axiom Aʹ : A → Type' -e 'def Gel (A : Type) (Aʹ : A → Type) : Type⁽ᵈ⁾ A ≔ sig ( x .ungel : Aʹ x.0 )' -e 'about (Gel A Aʹ)'
   sig (
-    𝑥 .ungel : Aʹ 𝑥.0 )
+    x .ungel : Aʹ x.0 )
     : Type⁽ᵈ⁾ A
   
 
@@ -119,12 +119,12 @@ A higher-dimensional (Gel-like) codatatype is read back at its intrinsic dimensi
 A permuted Gel-like codatatype is not a record type at all, since its fields can't be projected.  But it is the permutation of one, so it is read back by un-permuting it and applying the permutation to the result as a degeneracy.  Here it is uninstantiated, at permutations of two and of three dimensions.
 
   $ narya -parametric -e 'def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( a .ungel : R a.0 a.1 )' -e 'axiom A : Type' -e 'axiom B : Type' -e 'axiom R : A → B → Type' -e 'about ((Gel A B R)⁽ᵉ¹⁾)' -e 'about ((Gel A B R)⁽ᵉᵉ¹⁾)'
-  sym sig⁽ᵉ⁾ ( 𝑥 .ungel : Id R 𝑥.02 𝑥.12 (𝑥.20 .ungel) (𝑥.21 .ungel) )
+  sym sig⁽ᵉ⁾ ( a .ungel : Id R a.02 a.12 (a.20 .ungel) (a.21 .ungel) )
     : Type⁽ᵉᵉ⁾ (Gel A B R) (Gel A B R) (Id A) (Id B)
   
   sig⁽ᵉᵉ⁾ (
-    𝑥 .ungel : R⁽ᵉᵉ⁾ 𝑥.022 𝑥.122 (𝑥.202 .ungel) (𝑥.212 .ungel) (𝑥.220 .ungel)
-                 (𝑥.221 .ungel) )⁽²³¹⁾
+    a .ungel : R⁽ᵉᵉ⁾ a.022 a.122 (a.202 .ungel) (a.212 .ungel) (a.220 .ungel)
+                 (a.221 .ungel) )⁽²³¹⁾
     : Type⁽ᵉᵉᵉ⁾ (sym (Gel⁽ᵉ⁾ (Id A) (Id B) (Id R)))
         (sym (Gel⁽ᵉ⁾ (Id A) (Id B) (Id R)))
         (sym (Gel⁽ᵉ⁾ (Id A) (Id B) (Id R)))
@@ -136,7 +136,7 @@ A permuted Gel-like codatatype is not a record type at all, since its fields can
 An instantiated one is un-instantiated first, permuted as the uninstantiated codatatype it then is, and re-instantiated, like an instantiated datatype.  This is necessary even when it is *fully* instantiated, although such a one could be un-permuted where it stands by a symmetry of its instantiation arguments: the readback of a codatatype absorbs its instantiation arguments into the self variable, so it would then read as a record type of the lower dimension, which is not something the permutation could be applied to.
 
   $ narya -parametric -e 'def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( a .ungel : R a.0 a.1 )' -e 'axiom A : Type' -e 'axiom B : Type' -e 'axiom R : A → B → Type' -e 'axiom a₀ : A' -e 'axiom a₁ : A' -e 'axiom a₂ : Id A a₀ a₁' -e 'axiom b₀ : B' -e 'axiom b₁ : B' -e 'axiom b₂ : Id B b₀ b₁' -e 'axiom r₀ : R a₀ b₀' -e 'axiom r₁ : R a₁ b₁' -e 'about ((Gel A B R)⁽ᵉ¹⁾ {a₀} {b₀} (r₀,) {a₁} {b₁} (r₁,) a₂ b₂)'
-  sym sig⁽ᵉ⁾ ( 𝑥 .ungel : Id R 𝑥.02 𝑥.12 (𝑥.20 .ungel) (𝑥.21 .ungel) ) {a₀}
+  sym sig⁽ᵉ⁾ ( a .ungel : Id R a.02 a.12 (a.20 .ungel) (a.21 .ungel) ) {a₀}
     {b₀} (_ ≔ r₀) {a₁} {b₁} (_ ≔ r₁) a₂ b₂
     : Type
   
@@ -145,7 +145,7 @@ An instantiated one is un-instantiated first, permuted as the uninstantiated cod
 A *partially* instantiated one is read back the same way, and there it is the only option: a permutation mixes its instantiated and uninstantiated dimensions, while an instantiation can only instantiate the last ones, so it has no un-permuted form where it stands.
 
   $ narya -parametric -e 'def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( a .ungel : R a.0 a.1 )' -e 'axiom A : Type' -e 'axiom B : Type' -e 'axiom R : A → B → Type' -e 'axiom a₀ : A' -e 'axiom a₁ : A' -e 'axiom b₀ : B' -e 'axiom b₁ : B' -e 'axiom r₀ : R a₀ b₀' -e 'axiom r₁ : R a₁ b₁' -e 'about ((Gel A B R)⁽ᵉ¹⁾ {a₀} {b₀} (r₀,) {a₁} {b₁} (r₁,))'
-  sym sig⁽ᵉ⁾ ( 𝑥 .ungel : Id R 𝑥.02 𝑥.12 (𝑥.20 .ungel) (𝑥.21 .ungel) ) {a₀}
+  sym sig⁽ᵉ⁾ ( a .ungel : Id R a.02 a.12 (a.20 .ungel) (a.21 .ungel) ) {a₀}
     {b₀} (_ ≔ r₀) {a₁} {b₁} (_ ≔ r₁)
     : Type⁽ᵉ⁾ (Id A a₀ a₁) (Id B b₀ b₁)
   
@@ -156,8 +156,8 @@ Under glued evaluation, a definition that is an ordinary term rather than a case
 
   $ narya -parametric -e 'def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( a .ungel : R a.0 a.1 )' -e 'axiom A : Type' -e 'axiom B : Type' -e 'axiom R : A → B → Type' -e 'axiom a₀ : A' -e 'axiom a₁ : A' -e 'axiom b₀ : B' -e 'axiom b₁ : B' -e 'axiom r₀ : R a₀ b₀' -e 'axiom r₁ : R a₁ b₁' -e 'def Z ≔ (Gel A B R)⁽ᵉ¹⁾ {a₀} {b₀} (r₀,) {a₁} {b₁} (r₁,)' -e 'about Z⁽ᵉ⁾'
   sig⁽ᵉᵉ⁾ (
-    𝑥 .ungel : R⁽ᵉᵉ⁾ 𝑥.022 𝑥.122 (𝑥.202 .ungel) (𝑥.212 .ungel) (𝑥.220 .ungel)
-                 (𝑥.221 .ungel) )⁽²¹³⁾ {a₀} {a₀} {refl a₀} {b₀} {b₀}
+    a .ungel : R⁽ᵉᵉ⁾ a.022 a.122 (a.202 .ungel) (a.212 .ungel) (a.220 .ungel)
+                 (a.221 .ungel) )⁽²¹³⁾ {a₀} {a₀} {refl a₀} {b₀} {b₀}
     {refl b₀} {(_ ≔ r₀)} {(_ ≔ r₀)} (_ ≔ refl r₀) {a₁} {a₁} {refl a₁} {b₁}
     {b₁} {refl b₁} {(_ ≔ r₁)} {(_ ≔ r₁)} (_ ≔ refl r₁)
     : Type⁽ᵉᵉ⁾ (A⁽ᵉᵉ⁾ (refl a₀) (refl a₁)) (B⁽ᵉᵉ⁾ (refl b₀) (refl b₁))
@@ -173,7 +173,7 @@ The field-variable record syntax names the fields of the *whole* self-variable o
 
   $ narya -parametric -e 'def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( a .ungel : R a.0 a.1 )' -e 'axiom A : Type' -e 'axiom B : Type' -e 'axiom R : A → B → Type' -e 'axiom a₀ : A' -e 'axiom a₁ : A' -e 'axiom a₂ : Id A a₀ a₁' -e 'axiom b₀ : B' -e 'axiom b₁ : B' -e 'axiom b₂ : Id B b₀ b₁' -e 'about (refl Gel (Id A) (Id B) (Id R) a₂ b₂)'
   sig⁽ᵉ⁾ (
-    𝑥 .ungel : Id R a₂ b₂ (𝑥.20 .ungel) (𝑥.21 .ungel) )
+    a .ungel : Id R a₂ b₂ (a.20 .ungel) (a.21 .ungel) )
     : Type⁽ᵉ⁾ (Gel A B R a₀ b₀) (Gel A B R a₁ b₁)
   
 
@@ -183,8 +183,8 @@ A degenerate codatatype or record is read back at its full dimension, showing th
 
   $ narya -e 'axiom X : Type' -e 'def Stream : Type → Type ≔ A ↦ codata [ x .head : A | x .tail : Stream A ]' -e 'def R : Type ≔ sig ( a : Type, b : (a → Type) )' -e 'about (refl (Stream X))' -e 'about (refl R)' -e 'axiom x0 : Stream X' -e 'axiom x1 : Stream X' -e 'about (Id (Stream X) x0 x1)'
   codata⁽ᵉ⁾ [
-  | 𝑥 .head : Id X (𝑥.0 .head) (𝑥.1 .head)
-  | 𝑥 .tail : Stream⁽ᵉ⁾ (Id X) (𝑥.0 .tail) (𝑥.1 .tail) ]
+  | x .head : Id X (x.0 .head) (x.1 .head)
+  | x .tail : Stream⁽ᵉ⁾ (Id X) (x.0 .tail) (x.1 .tail) ]
     : Type⁽ᵉ⁾ (Stream X) (Stream X)
   
   sig⁽ᵉ⁾ (
@@ -194,8 +194,8 @@ A degenerate codatatype or record is read back at its full dimension, showing th
     : Type⁽ᵉ⁾ R R
   
   codata⁽ᵉ⁾ [
-  | 𝑥 .head : Id X (x0 .head) (x1 .head)
-  | 𝑥 .tail : Stream⁽ᵉ⁾ (Id X) (x0 .tail) (x1 .tail) ]
+  | x .head : Id X (x0 .head) (x1 .head)
+  | x .tail : Stream⁽ᵉ⁾ (Id X) (x0 .tail) (x1 .tail) ]
     : Type
   
 
@@ -204,20 +204,20 @@ For a codatatype with a higher field, every instance of that field that a comatc
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def √N : Type ≔ codata [ x .root.e : N ]' -e 'about √N' -e 'about (refl √N)' -e 'about (refl (refl √N))'
   codata [
-  | 𝑥 .root.e : N ]
+  | x .root.e : N ]
     : Type
   
   codata⁽ᵉ⁾ [
-  | 𝑥 .root.e : N⁽ᵉ⁾ (𝑥.02 .root) (𝑥.12 .root)
-  | 𝑥 .root.1 : N ]
+  | x .root.e : N⁽ᵉ⁾ (x.02 .root) (x.12 .root)
+  | x .root.1 : N ]
     : Type⁽ᵉ⁾ √N √N
   
   codata⁽ᵉᵉ⁾ [
-  | 𝑥 .root.e
-    : N⁽ᵉᵉ⁾ (sym 𝑥.022 .root.1) (sym 𝑥.122 .root.1) (sym 𝑥.202 .root.1)
-        (sym 𝑥.212 .root.1)
-  | 𝑥 .root.1 : N⁽ᵉ⁾ (𝑥.20 .root) (𝑥.21 .root)
-  | 𝑥 .root.2 : N⁽ᵉ⁾ (𝑥.02 .root) (𝑥.12 .root) ]
+  | x .root.e
+    : N⁽ᵉᵉ⁾ (sym x.022 .root.1) (sym x.122 .root.1) (sym x.202 .root.1)
+        (sym x.212 .root.1)
+  | x .root.1 : N⁽ᵉ⁾ (x.20 .root) (x.21 .root)
+  | x .root.2 : N⁽ᵉ⁾ (x.02 .root) (x.12 .root) ]
     : Type⁽ᵉᵉ⁾ √N⁽ᵉ⁾ √N⁽ᵉ⁾ √N⁽ᵉ⁾ √N⁽ᵉ⁾
   
 
@@ -414,8 +414,8 @@ In a parametricity configuration with no endpoints (arity 0), a degenerate highe
 
   $ narya -arity 0 -parametric -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def √N : Type ≔ codata [ x .root.e : N ]' -e 'def r : √N ≔ [ .root.e ↦ 0 ]' -e 'about (√N⁽ᵉ⁾)' -e 'about (r⁽ᵉ⁾)'
   codata⁽ᵉ⁾ [
-  | 𝑥 .root.e : N⁽ᵉ⁾ .
-  | 𝑥 .root.1 : N ]
+  | x .root.e : N⁽ᵉ⁾ .
+  | x .root.1 : N ]
     : Type⁽ᵉ⁾ .
   
   [ .root.e ↦ refl 0 | .root.1 ↦ 0 ]
@@ -642,7 +642,7 @@ The same holds for a comatch at a codatatype, for a branch body that is a canoni
   | zero. ↦ [ .head ↦ 0 | .tail ↦ z ]]
     : N → Stream N
   
-  𝑥 ↦ match 𝑥 [ false. ↦ codata [ 𝑦 .hd : N ] | true. ↦ sig ( a : N ) ]
+  𝑥 ↦ match 𝑥 [ false. ↦ codata [ x .hd : N ] | true. ↦ sig ( a : N ) ]
     : Bool → Type
   
   𝑥 ↦
@@ -877,17 +877,17 @@ The boundary of a degenerate codatatype behaves like parameters, not like the in
 
   $ narya -e 'axiom A : Type' -e 'def √A : Type ≔ codata [ x .root.e : A ]' -e 'axiom s0 : √A' -e 'axiom s1 : √A' -e 'about √A' -e 'about √A⁽ᵉ⁾' -e 'about √A⁽ᵉ⁾ s0 s1'
   codata [
-  | 𝑥 .root.e : A ]
+  | x .root.e : A ]
     : Type
   
   codata⁽ᵉ⁾ [
-  | 𝑥 .root.e : Id A (𝑥.02 .root) (𝑥.12 .root)
-  | 𝑥 .root.1 : A ]
+  | x .root.e : Id A (x.02 .root) (x.12 .root)
+  | x .root.1 : A ]
     : Type⁽ᵉ⁾ √A √A
   
   codata⁽ᵉ⁾ [
-  | 𝑥 .root.e : Id A (refl s0 .root) (refl s1 .root)
-  | 𝑥 .root.1 : A ]
+  | x .root.e : Id A (refl s0 .root) (refl s1 .root)
+  | x .root.1 : A ]
     : Type
   
 

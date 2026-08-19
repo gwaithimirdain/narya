@@ -149,7 +149,7 @@ and equal_at : type mode a b.
                     ( fields,
                       CodatafieldAbwd.Entry
                         (type i)
-                        ((fld, Codatafield (adj, _, Lower _)) :
+                        ((fld, Codatafield (_, adj, _, Lower _)) :
                           i Field.t * (i, mode * a * D.zero * n * has_eta) Codatafield.t) ) -> (
                     let* () = do_fields fields in
                     (* For a modal field, both terms are keyed by the adjunction unit to put them into a context where the modal field can be projected, and the projections are compared in the context locked by the right adjoint.  For ordinary fields the unit is the identity and the lock is trivial. *)

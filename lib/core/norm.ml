@@ -946,7 +946,8 @@ and tyof_codatafield : type src f mode m n mn a s i et.
     (m, n, mn) D.plus ->
     (m, s, i) insertion ->
     (mode, kinetic) value =
- fun ?(key = `Counit) fm tm fldname (Codatafield (adj, plus_lock, fldty)) env tyargs m mn fldins ->
+ fun ?(key = `Counit) fm tm fldname (Codatafield (_, adj, plus_lock, fldty)) env tyargs m mn
+     fldins ->
   (* The type of the field projection comes from the type associated to that field name in general, evaluated at the stored environment extended by the term itself and its boundaries. *)
   match fldty with
   | Lower fldty -> (
@@ -1039,7 +1040,7 @@ and tyof_field_nokey : type amode.
       | Some mn -> (
           let m = dim_env env in
           match Term.CodatafieldAbwd.find_opt fields fld with
-          | Found (Codatafield (adj, plus_lock, Lower fldty)) ->
+          | Found (Codatafield (_, adj, plus_lock, Lower fldty)) ->
               Tyof_modal_field
                 ( adj,
                   tyof_lower_codatafield (self_values adj tm tyargs) tyargs fld adj plus_lock fldty
@@ -1327,7 +1328,7 @@ and tyof_field_withname_giventype : type src f mode a b m n mn c et.
   (* Check that the locking modality supplied by the user (or the identity, if none) agrees with the left adjoint of the adjunction stored with the field, and that the field is present (not filtered away by a nonparametric modality) at the current dimension. *)
   let check_modality : type i.
       i Field.t -> (i, src * c * D.zero * n * et) Term.Codatafield.t -> unit =
-   fun fld (Codatafield (adj, _, _)) ->
+   fun fld (Codatafield (_, adj, _, _)) ->
     let mismatch : type d1 m1 c1. (d1, m1, c1) Modality.t -> unit =
      fun left ->
       let field = Field.to_string fld in
