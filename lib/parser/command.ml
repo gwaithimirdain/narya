@@ -59,7 +59,7 @@ module Command = struct
         ty : wrapped_parse;
       }
     | Def of def list
-    (* "synth", "echo", and "about" are almost the same command, so we implement them as one, distinguished by a "mode": "synth" only typechecks the term, "echo" also normalizes it, and "about" additionally displays the potential value (canonical type or case tree) of a neutral result. *)
+    (* "synth", "echo", and "about" are almost the same command, so we implement them as one, distinguished by a "mode". *)
     | Echo of {
         wsecho : Whitespace.t list;
         number : int option;
@@ -844,12 +844,15 @@ let show_hole = function
       in
       emit (Hole (Meta.name meta, PHole (Instant instant, vars, termctx, ty)))
 
+let string_of_mode = function
+  | `Echo -> "echo"
+  | `Synth -> "synth"
+  | `About -> "about"
+
 let to_string : Command.t -> string = function
   | Axiom _ -> "axiom"
   | Def _ -> "def"
-  | Echo { mode = `Echo; _ } -> "echo"
-  | Echo { mode = `Synth; _ } -> "synth"
-  | Echo { mode = `About; _ } -> "about"
+  | Echo { mode; _ } -> string_of_mode mode
   | Notation _ -> "notation"
   | Import _ -> "import"
   | Chdir _ -> "chdir"
@@ -1020,7 +1023,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
             | `About -> (
                 let etm = Norm.eval_term (Ctx.env ctx) ctm in
                 match etm with
-                (* A defined *zero-dimensional* constant is displayed as its stored case tree, which shows the definition as written rather than as it computes -- in particular the matches, which a value retains no trace of.  We require dimension zero so that a degeneracy of such a constant isn't shown as the undegenerated stored tree, which would be wrong. *)
+                (* A defined *zero-dimensional* constant is displayed as its stored case tree, which shows the definition as written rather than as it computes.  This is more informative when possible, since readback of potential terms can sometimes fallback to a neutral spine.  We require dimension zero so that a degeneracy of such a constant isn't shown as the undegenerated stored tree, which would be wrong. *)
                 | Value.Neu { head = Value.Const { name; ins }; args = Value.Emp; _ }
                   when Option.is_some (is_id_ins ins)
                        &&
@@ -1053,15 +1056,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
           print_newline ();
           print_newline ();
           (None, fun _ -> None)
-      | _ ->
-          fatal
-            (Nonsynthesizing
-               ("argument of "
-               ^
-               match mode with
-               | `Echo -> "echo"
-               | `Synth -> "synth"
-               | `About -> "about")))
+      | _ -> fatal (Nonsynthesizing ("argument of " ^ string_of_mode mode)))
   | Notation { fixity; loc; pattern; head; args; _ } ->
       Global.run_command ~holes_allowed:(Error (to_string cmd)) @@ fun () ->
       let name = "«" ^ User.Pattern.to_string pattern ^ "»" in
