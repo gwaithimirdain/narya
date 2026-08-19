@@ -17,7 +17,7 @@ A record type is defined by a number of *fields*, each with a declared type.  A 
 
 The trailing comma after the last field is optional.  (By the lexing rules for :ref:`tokens`, no space is required around the commas, unless they follow a type that is expressed using a notation that ends with another special ASCII character.)  Note that later fields can depend on the values of previous fields, by name.  The names of fields must be valid local variable names, i.e. identifiers not containing periods.
 
-Although this command may look like it is defining ``Magma`` to equal a pre-existing type denoted ``sig (t:Type, op:t→t→t)``, in fact it declares ``Magma`` to be a *new* type that didn't previously exist and doesn't reduce to anything else.  In particular, therefore, declaring another identical-looking type:
+Although this command may look like it is defining ``Magma`` to equal a pre-existing type denoted ``sig (t:Type, op:t→t→t)``, in fact it declares ``Magma`` to be a *new* type that didn't previously exist and doesn't reduce to anything else.  We say that the syntax form ``sig`` is *generative*, or that record types are *nominal*.  In particular, therefore, declaring another identical-looking type:
 
 .. code-block:: none
 
@@ -179,7 +179,7 @@ In addition, tuples are allowed as nodes in a case tree.  Thus, a constant that 
 
    def pair (a:A) (b:B a) : Σ A B ≔ (a,b)
 
-then ``pair a b`` doesn't reduce to ``(a,b)``.  But ``pair a b .fst`` does reduce to ``a`` and ``pair a b .snd`` does reduce to ``b``, which in turn means (by η-conversion) that ``pair a b`` is *convertible* with ``(a,b)``.  Similarly, abstractions *inside* a tuple are also still part of the case tree, and block reduction until applied to all their arguments: if we have
+then ``pair a b`` doesn't reduce to ``(a,b)``.  But ``pair a b .fst`` does reduce to ``a`` and ``pair a b .snd`` does reduce to ``b``, which in turn means (by η-conversion) that ``pair a b`` is *convertible* with ``(a,b)``.  And, as usual, we can display the definition with ``about``.  Similarly, abstractions *inside* a tuple are also still part of the case tree, and block reduction until applied to all their arguments: if we have
 
 .. code-block:: none
 
@@ -246,3 +246,5 @@ There is an alternative notation for defining record types, using the same synta
      x .snd : B (x .fst))
 
 Note that this is just a different notation for record types, not anything like a "codatatype with eta-conversion".  (At present there is no practical difference, but in the future recursion will be forbidden in record types, even those that use the self-variable notation.)  In addition, self-variable syntax cannot be mixed with the usual syntax for defining record types: any given record type declaration must use one or the other consistently for all of its fields.
+
+Arguably, self variable syntax is actually more fundamental.  It's a more faithful representation of what Narya uses internally; it's required when defining :ref:`Gel-types<Bridge types of the universe>` and :ref:`Modal records<Modal records and codata>`; and it's used when printing certain constructions that would be impossible with ordinary field-variable syntax.  So it's good to be aware of it and familiar with it, even if you choose to stick with the usual syntax most of the time.

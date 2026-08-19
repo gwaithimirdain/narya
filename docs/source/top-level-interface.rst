@@ -88,8 +88,8 @@ Axiom
 
 Assert a global constant called ``NAME`` having type ``TYPE``, without any definition (an axiom).  Parameters and names are treated as for ``def``.
 
-Echo/Synth
-^^^^^^^^^^
+Echo/Synth/About
+^^^^^^^^^^^^^^^^
 
 .. code-block:: none
 
@@ -102,6 +102,12 @@ Normalize ``TERM`` and print its value and its type to standard output.  Note th
    synth TERM
 
 Like ``echo``, but does not normalize the term, only computes its type.
+
+.. code-block:: none
+
+   about TERM
+
+Like ``echo``, but after normalizing ``TERM``, display its definition rather than its value.  In particular, since functions do not evaluate until applied to arguments. if ``TERM`` is just the name of a function ``f``, then ``echo f`` will simply return ``f`` back again, while ``about f`` will display the *definition* of ``f``.  See :ref:`Eta-conversion and case trees` for further discussion.
 
 
 Notation
@@ -315,10 +321,11 @@ As noted above, Narya's ProofGeneral mode is enhanced to deal with open holes (s
 
 Narya's ProofGeneral mode also defines the following additional key commands.
 
-- ``C-c ;`` : Read a term from the minibuffer and normalize it (like ``C-c C-v`` with ``echo``), perhaps in the context of the current hole.
-- ``C-c :`` : Read a term from the minibuffer and synthesize its type (like ``C-c C-v`` with ``synth``), perhaps in the context of the current hole.
-- ``C-c C-?`` : Show the contexts and types of all open holes (like ``C-c C-v`` with ``show holes``).
-- ``C-c C-,`` : Show the context and type of the hole under point (like ``C-c C-v`` with ``show hole``, except that you don't need to know the hole number).
+- ``C-c ;`` : Read a term from the minibuffer and normalize it with ``echo``, perhaps in the context of the current hole.
+- ``C-c :`` : Read a term from the minibuffer and synthesize its type with ``synth``, perhaps in the context of the current hole.
+- ``C-c C-a`` : Read a term from the minibuffer and display its definition with ``about``, perhaps in the context of the current hole.
+- ``C-c C-?`` : Show the contexts and types of all open holes, with ``show holes``.
+- ``C-c C-,`` : Show the context and type of the hole under point, like ``show hole`` except that you don't need to know the hole number.
 - ``C-c C-j`` : Move the cursor to the position of the next open hole.
 - ``C-c C-k`` : Move the cursor to the position of the previous open hole.
 - ``C-c C-SPC`` : Fill the hole under point with a specified term, without retracting any code.

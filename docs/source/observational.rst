@@ -67,14 +67,16 @@ In this case, the identity type ``Id (Prod A B) u v`` reduces to a record type t
 
    Prod⁽ᵉ⁾ (Id A) (Id B) u v
 
-The superscript ``⁽ᵉ⁾`` indicates that this is a higher-dimensional version of ``Prod``.  This type is a record type with two fields of the following types:
+The superscript ``⁽ᵉ⁾`` indicates that this is a higher-dimensional version of ``Prod``.  This is what Narya will print if you ask it to ``echo Id (Prod A B) u v`` (with ``u`` and ``v`` axioms, say).  If instead you ask it to display the definition of this type with ``about``, it will print
 
 .. code-block:: none
 
-   fst : Id A (u .fst) (v .fst)
-   snd : Id B (u .snd) (v .snd)
+   sig⁽ᵉ⁾ (
+     fst : Id A (u .fst) (v .fst),
+     snd : Id B (u .snd) (v .snd) )
+     : Type
 
-That is, if we have ``p : Prod⁽ᵉ⁾ (Id A) (Id B) u v``, then
+Again, the superscript ``⁽ᵉ⁾`` indicates that this is a higher-dimensional kind of record type.  The ``sig⁽ᵉ⁾`` notation is not re-parseable (although ``Prod⁽ᵉ⁾`` is), but ignoring the ``⁽ᵉ⁾`` tells us how ``Id (Prod A B) u v`` behaves: it is a record type with two fields ``fst`` and ``snd`` of the types shown.  That is, if we have ``p : Prod⁽ᵉ⁾ (Id A) (Id B) u v``, then
 
 .. code-block:: none
 
@@ -92,9 +94,24 @@ then ``(r,s) : Prod⁽ᵉ⁾ (Id A) (Id B) u v``.
 
 In general, the rule is that the identity types of a record type are again record types, with the same number of fields *with the same names*, whose types are the identity types of those of the original record type.  We will return later to what this means when the types of some fields are dependent on others.
 
-Since ``Prod⁽ᵉ⁾ (Id A) (Id B) u v`` satisfies η-conversion, it is "definitionally isomorphic" to ``Prod (Id A (u .fst) (v .fst)) (Id B (u .snd) (v .snd))``, i.e. there are functions in both directions whose composites in both orders are definitionally equal to identities.  This further justifies the notation ``Prod⁽ᵉ⁾``: this is *a* product type, though not definitionally equal to an ordinary product type.  (However, for a general record type it may not be possible to say something quite like this.)
+Since ``Prod⁽ᵉ⁾ (Id A) (Id B) u v`` satisfies η-conversion, it is "definitionally isomorphic" to
 
-The notation suggests that ``Id A`` and ``Id B`` as well as ``u`` and ``v`` are *parameters* of the record type ``Prod⁽ᵉ⁾``.  This is in fact true, but we postpone discussing it until later after we talk about what type ``Id A`` and ``Id B`` have.
+.. code-block:: none
+
+   Prod (Id A (u .fst) (v .fst)) (Id B (u .snd) (v .snd))
+
+whose definition is
+
+.. code-block:: none
+
+   sig (
+     fst : Id A (u .fst) (v .fst),
+     snd : Id B (u .snd) (v .snd) )
+     : Type
+
+that is, the same without the ``⁽ᵉ⁾`` on the ``sig``.  By "definitionally isomorphic" we mean there are functions in both directions whose composites in both orders are definitionally equal to (i.e. convertible with) identities.  This further justifies the notation ``Prod⁽ᵉ⁾``: this is *a* product type, though not definitionally equal to an ordinary product type.  (However, for a general record type it may not be possible to say something quite like this.)
+
+The notation also suggests that ``Id A`` and ``Id B`` as well as ``u`` and ``v`` are *parameters* of the record type ``Prod⁽ᵉ⁾``.  This is in fact true, but we postpone discussing it until :ref:`Id of the universe`, when we will talk about what type ``Id A`` and ``Id B`` have.
 
 The other operations ``refl`` and ``ap`` also compute when applied to terms associated to records (projections and tuples).  For instance:
 
@@ -116,14 +133,15 @@ Similarly, identity types of codatatypes compute to types of bisimulations.  For
    | _ .head : A
    | _ .tail : Stream A ]
 
-Then ``Id (Stream A) s t`` reduces to ``Stream⁽ᵉ⁾ (Id A) s t``, which is a codatatype with fields
+Then ``Id (Stream A) s t`` reduces to ``Stream⁽ᵉ⁾ (Id A) s t``, which is defined as
 
 .. code-block:: none
 
-   | _ .head : Id A (s .head) (t .head)
-   | _ .tail : Id (Stream A) (s. tail) (t .tail)
+   codata⁽ᵉ⁾ [
+   | 𝑥 .head : Id A (s .head) (t .head)
+   | 𝑥 .tail : Stream⁽ᵉ⁾ (Id A) (s .tail) (t .tail) ]
 
-In other words, an element of ``Stream⁽ᵉ⁾ (Id A) s t`` is a *stream of equalities*, again justifying the notation ``Stream⁽ᵉ⁾``.  Individual bisimulations, i.e. elements of ``Stream⁽ᵉ⁾ (Id A) s t``, can then be constructed by comatching and corecursion.
+Again, the superscript ``⁽ᵉ⁾`` on the ``codata`` is not re-parseable, but if we ignore it, we can see that an element of ``Stream⁽ᵉ⁾ (Id A) s t`` is a *stream of equalities*, again justifying the notation ``Stream⁽ᵉ⁾``.  Individual bisimulations, i.e. elements of ``Stream⁽ᵉ⁾ (Id A) s t``, can then be constructed by comatching and corecursion.
 
 Just as for record types, ``refl`` and ``ap`` compute straightforwardly on field projections for codatatypes.  However, since a comatch is always part of a case tree, which never computes until a field projection is applied, the same is true for ``refl`` and ``ap`` of it.  For instance, if we define a stream of natural numbers:
 
@@ -133,7 +151,14 @@ Just as for record types, ``refl`` and ``ap`` compute straightforwardly on field
    | .head ↦ n
    | .tail ↦ nats (suc. n) ]
 
-then ``refl (nats 0)`` does not reduce to anything.  However, if we apply some destructors to it, such as ``refl (nats 0) .tail .tail .head``, then it does compute in the expected way (in this case, to ``refl 2``).
+then ``refl (nats 0)`` does not reduce to anything.  However, if we apply some destructors to it, such as ``refl (nats 0) .tail .tail .head``, then it does compute in the expected way (in this case, to ``refl 2``).  And if we use ``about`` to print the definition of ``refl (nats n)``, with ``n`` an axiom, we get
+
+.. code-block:: none
+
+   [ .head ↦ refl n | .tail ↦ ap nats {suc. n} {suc. n} (suc. (refl n)) ]
+     : Stream⁽ᵉ⁾ ℕ⁽ᵉ⁾ (nats n) (nats n)
+
+Thus, we can see that it is defined as a comatch similarly to ``nats`` itself.  In :ref:`Id of function types` we'll see that the corecursive case ``ap nats {suc. n} {suc. n} (suc. (refl n))`` is equal to ``refl (nats (suc. n))``, as we would expect.
 
 
 Id of datatypes
@@ -147,16 +172,21 @@ As with records and codatatypes, the identity types of a datatype are again data
    | left. (a : A) : Sum A B
    | right. (b : B) : Sum A B ]
 
-Then ``Id (Sum A B) u v`` reduces to ``Sum⁽ᵉ⁾ (Id A) (Id B) u v``, which is a datatype with constructors
+Then ``Id (Sum A B) u v`` reduces to ``Sum⁽ᵉ⁾ (Id A) (Id B) u v``, whose definition is
 
 .. code-block:: none
 
-   | left. {a₀ a₁ : A} (a₂ : Id A a₀ a₁) : Sum⁽ᵉ⁾ (Id A) (Id B) (left. a₀) (left. a₁)
-   | right. {b₀ b₁ : B} (b₂ : Id B b₀ b₁) : Sum⁽ᵉ⁾ (Id A) (Id B) (right. b₀) (right. b₁)
+   data⁽ᵉ⁾ [
+   | left.
+     : {a₀ : A} {a₁ : A} (a₂ : Id A a₀ a₁)
+       →⁽ᵉ⁾ Sum⁽ᵉ⁾ (Id A) (Id B) (left. a₀) (left. a₁)
+   | right.
+     : {b₀ : B} {b₁ : B} (b₂ : Id B b₀ b₁)
+       →⁽ᵉ⁾ Sum⁽ᵉ⁾ (Id A) (Id B) (right. b₀) (right. b₁) ] u v
 
-Thus, as before, ``Sum⁽ᵉ⁾ (Id A) (Id B) u v`` is again *a* sum type.  The endpoints are indices because their occurrences ``(left. a₀) (left. a₁)`` and ``(right. b₀) (right. b₁)`` in the outputs of the constructors are not fully general, but are determined by the inputs.  (The arguments ``Id A`` and ``Id B`` are also not fully general, but they are the same as those given to ``Sum⁽ᵉ⁾``, and when we give the general type of ``Sum⁽ᵉ⁾`` below it will be clear that these arguments are actually parameters.)
+As before, if we ignore the ``⁽ᵉ⁾``'s, this tells us how ``Id (Sum A B) u v`` behaves.  First notice that it is *applied* to ``u`` and ``v`` at the end.  Actually this is an "instantiation" (see :ref:`Id of the universe`) but for now we can think of it as like application.  Thus, the datatype definition itself behaves like an *indexed* datatype, with ``u`` and ``v`` the indices.  Indeed, we can see that their occurrences ``(left. a₀) (left. a₁)`` and ``(right. b₀) (right. b₁)`` in the outputs of the constructors are not fully general, but are determined by the inputs.  (The arguments ``Id A`` and ``Id B`` are also not fully general, but they are the same as those given to ``Sum⁽ᵉ⁾``, and when we give the general type of ``Sum⁽ᵉ⁾`` below it will be clear that these arguments are actually parameters.)  But aside from this indexing, ``Id (Sum A B) u v`` is, intuitively, *a* sum type: the sum of all the identity types of ``A`` and those of ``B``.
 
-We have written the input endpoints such as ``a₀ a₁`` with curly braces to indicate that they are implicit, as with the endpoint arguments of ``ap f``.  However, in this case it is *not* possible to give these arguments explicitly when applying the constructors ``left.`` and ``right.``.  But there is unlikely to be any need to, since constructors *and* their arguments always check rather than needing to synthesize.
+The input endpoints such as ``a₀ a₁`` are written with curly braces to indicate that they are implicit, as with the endpoint arguments of ``ap f``.  However, in this case it is *not* possible to give these arguments explicitly when applying the constructors ``left.`` and ``right.``.  But there is unlikely to be any need to, since constructors *and* their arguments always check rather than needing to synthesize.
 
 It is possible, however, to omit some of the arguments of a higher constructor and check it at a higher function-type.  For instance, for any fixed types ``A`` and ``B``, the constructor ``left.`` checks at type ``{a₀ a₁ : A} (a₂ : Id A a₀ a₁) →⁽ᵉ⁾ Sum⁽ᵉ⁾ (Id A) (Id B) (left. a₀) (left. a₁)`` (see :ref:`Id of function types`, below).
 
@@ -168,13 +198,16 @@ Recursive cases are similar, e.g. for lists
    | nil. : List A
    | cons. (x : A) (xs : List A) : List A ]
 
-the identity type ``Id (List A) p q`` reduces to ``List⁽ᵉ⁾ (Id A) p q``, which is again a type of *lists of equalities*, with constructors
+the identity type ``Id (List A) p q`` reduces to ``List⁽ᵉ⁾ (Id A) p q``, which is a type of *lists of equalities*, with definition
 
 .. code-block:: none
 
+   data⁽ᵉ⁾ [
    | nil. : List⁽ᵉ⁾ (Id A) nil. nil.
-   | cons. {x₀ x₁ : A} (x₂ : Id A x₀ x₁) {xs₀ xs₁ : List A} (xs₂ : List⁽ᵉ⁾ (Id A) xs₀ xs₁)
-       : List⁽ᵉ⁾ (Id A) (cons. x₀ xs₀) (cons. x₁ xs₁)
+   | cons.
+     : {x₀ : A} {x₁ : A} (x₂ : Id A x₀ x₁) {xs₀ : List A} {xs₁ : List A}
+       (xs₂ : List⁽ᵉ⁾ (Id A) xs₀ xs₁)
+       →⁽ᵉ⁾ List⁽ᵉ⁾ (Id A) (cons. x₀ xs₀) (cons. x₁ xs₁) ] p q
 
 As with record types, the other primitives ``refl`` and ``ap`` compute on terms associated to datatypes (constructors and matches).  In the case of constructors, we have for example
 
@@ -190,12 +223,18 @@ Since matches (like comatches) are case tree constructs, ``refl`` and ``ap`` of 
    | zero. ↦ n
    | suc. m ↦ suc. (plus m n) ]
 
-then ``refl plus`` doesn't compute to anything, until we apply it to something involving a constructor.  For instance,
+then ``ap plus`` doesn't compute to anything, until we apply it to something involving a constructor.  For instance,
 
-1. ``refl plus (suc. m₂) n₂``, where ``m₂ : Id ℕ⁽ᵉ⁾ m₀ m₁`` and ``n₂ : Id ℕ⁽ᵉ⁾ n₀ n₁``, computes to ``suc. (refl plus m₂ n₂)``.
-2. Similarly but more simply, ``refl plus zero. n₂`` computes to ``n₂``.
+1. ``ap plus (suc. m₂) n₂``, where ``m₂ : Id ℕ⁽ᵉ⁾ m₀ m₁`` and ``n₂ : Id ℕ⁽ᵉ⁾ n₀ n₁``, computes to ``suc. (ap plus m₂ n₂)``.
+2. Similarly but more simply, ``ap plus zero. n₂`` computes to ``n₂``.
 
-It is also, of course, possible to match directly on a higher-dimensional datatype such as ``List⁽ᵉ⁾ (Id A)``.  However, this requires a new notation which we discuss below in :ref:`Cubes of variables`.
+If we print the definition of ``ap plus``, we get
+
+.. code-block:: none
+
+   m n ⤇ match m.2 [ suc. m′ ⤇ suc. (ap plus m′.2 n.2) | zero. ⤇ n.2 ]
+
+This uses a new syntax for matching directly on a higher-dimensional datatype, which which we will discuss below in :ref:`Cubes of variables`.
 
 
 Id of function types
@@ -207,7 +246,7 @@ Unsurprisingly, the identity types of function types are again function types; b
 
   {x₀ x₁ : A} (x₂ : Id A x₀ x₁) →⁽ᵉ⁾ Id B (f x₀) (g x₁)
 
-As before, the superscript ``⁽ᵉ⁾`` indicates that this is a higher-dimensional type; but in terms of behavior it can be ignored.  Thus, an element ``h``  of this type is a function that can be applied to two arguments ``x₀`` and ``x₁`` of type ``A`` and a third argument ``x₂`` of type ``Id A x₀ x₁`` to produce an element of ``Id B (f x₀) (g x₁)``.
+As before, the superscript ``⁽ᵉ⁾`` indicates that this is a higher-dimensional type (although in this case it *is* re-parseable); but in terms of behavior it can be ignored.  Thus, an element ``h``  of this type is a function that can be applied to two arguments ``x₀`` and ``x₁`` of type ``A`` and a third argument ``x₂`` of type ``Id A x₀ x₁`` to produce an element of ``Id B (f x₀) (g x₁)``.
 
 The curly braces around ``x₀`` and ``x₁`` indicate that they are "implicit arguments", not written by default in applications, so in the above situation we write ``h x₂ : Id B (f x₀) (g x₁)``.  Narya does not yet have general implicit arguments, but in this specific case it does, because they can be inferred in a consistent way: if ``x₂`` synthesizes (as it often does), then ``x₀`` and ``x₁`` are determined by its type.  However, if needed or desired (such as if ``x₂`` does not synthesize), the first two arguments can be supplied explicitly by putting curly braces around them, as in ``h {x₀} {x₁} x₂``.  Such an ``h`` cannot be "partially applied" to only one or two of the implicit arguments, however: all three arguments must be given at once.
 
@@ -269,6 +308,12 @@ Cubes of variables also appear automatically when matching against a higher-dime
 
 Here in the definition of ``encode``, the pattern variable ``p`` of the ``suc.`` branch is automatically made into a 1-dimensional cube of variables since we are matching against an element of ``Id ℕ``, so in the body we can refer to ``p.0``, ``p.1``, and ``p.2``.  And because of this, we are required to use ``⤇`` rather than ``↦`` to introduce the bodies of branches in that ``match``.
 
+This notation for higher-dimensional matches is also used by Narya when printing the definitions of ``refl`` of ordinary matches.  For instance, we saw above that the definition of ``ap plus`` is printed as
+
+.. code-block:: none
+
+   m n ⤇ match m.2 [ suc. m′ ⤇ suc. (ap plus m′.2 n.2) | zero. ⤇ n.2 ]
+
 Unlike for abstractions, for higher-dimensional matches there is no option to write ``↦`` and name all the variables explicitly (e.g. ``| suc. {p0} {p1} p2 ↦``).  We deem this would be too confusing, because higher-dimensional constructors can never be *applied* explicitly to all their boundaries, and a "pattern" in a ``match`` should look as much as possible like the constructor that it matches against.
 
 It is possible to do :ref:`Multiple matches and deep matches` that combine zero- and higher-dimensional matches.  In this case the match symbol is ``⤇``, which we can think of as indicating that at least *some* of the pattern variables are nontrivial cubes.
@@ -294,7 +339,13 @@ Understanding ``Id Type`` also makes sense of the notation ``Prod⁽ᵉ⁾ (Id A
 
 This suggests that ``⁽ᵉ⁾`` is just *another* notational variant of ``refl``.  For then ``Prod⁽ᵉ⁾`` (that is, ``refl Prod``) has exactly the correct type to be applied to two (explicit) arguments ``Id A : Id Type A A`` and ``Id B : Id Type B B`` to obtain an element of ``Id Type (Prod A B) (Prod A B)``, which can then be instantiated at ``u`` and ``v`` to produce a type.
 
-In particular, this makes sense of un-applied ``Prod⁽ᵉ⁾``, and un-instantiated higher-dimensional types such as ``Prod⁽ᵉ⁾ (Id A) (Id B)`` (the reduct of un-instantiated ``Id (Prod A B)``).  We can also consider un-instantiated ``Id (A → B)``, but in this case we need a new notation for what it reduces to, since the previously introduced notation ``{x₀ x₁ : A} (x₂ : Id A x₀ x₁) →⁽ᵉ⁾ Id B (f x₀) (g x₁)`` doesn't make sense without an ``f`` and a ``g``.  The new notation we use for this is ``Id A ⇒ Id B``.  In particular, therefore, the fully instantiated version ``Id (A → B) f g`` can also be written as ``(Id A ⇒ Id B) f g``.
+In particular, this makes sense of un-applied ``Prod⁽ᵉ⁾``, and un-instantiated higher-dimensional types such as ``Prod⁽ᵉ⁾ (Id A) (Id B)`` (the reduct of un-instantiated ``Id (Prod A B)``).  We can also consider un-instantiated ``Id (A → B)``, but in this case we need a new notation for what it reduces to, since the previously introduced notation ``{x₀ x₁ : A} (x₂ : Id A x₀ x₁) →⁽ᵉ⁾ Id B (f x₀) (g x₁)`` doesn't make sense without an ``f`` and a ``g``.  The notation we use for this is
+
+.. code-block:: none
+
+   Id A ⇒ Id B
+
+In particular, the instantiated version ``Id (A → B) f g`` can also be written as ``(Id A ⇒ Id B) f g``.
 
 
 Heterogeneous identity types
@@ -316,12 +367,13 @@ Such heterogeneous identity types are used in the computation of identity types 
      fst : A,
      snd : B fst )
 
-then ``Id (Σ A B) u v`` reduces to ``Σ⁽ᵉ⁾ (Id A) (Id B) u v``, which is a record type with fields
+then ``Id (Σ A B) u v`` reduces to ``Σ⁽ᵉ⁾ (Id A) (Id B) u v``, which is defined as
 
 .. code-block:: none
 
-   fst : Id A (u .fst) (v .fst)
-   snd : Id B fst (u .snd) (v .snd)
+   sig⁽ᵉ⁾ (
+     fst : Id A (u .fst) (v .fst),
+     snd : Id B fst.2 (u .snd) (v .snd) )
 
 Similarly, ``Id ((x:A) → B x) f g`` reduces to a higher-dimensional function type
 
@@ -331,7 +383,13 @@ Similarly, ``Id ((x:A) → B x) f g`` reduces to a higher-dimensional function t
 
 whose behavior generalizes that described for non-dependent function types in :ref:`Id of function types`.  Since heterogeneous ``Id`` of a constant family reduces to ordinary ``Id``, this is consistent with the definition above of ``Id`` for non-dependent function types.
 
-The un-instantiated version ``Id ((x:A) → B x)`` likewise reduces to a dependently typed version of the previously introduced notation, ``(x : Id A) ⇒ Id B x.2``.  Here ``x`` is a cube of variables, and the symbol ``⇒`` is of course intentionally reminiscent of ``⤇``.
+The un-instantiated version ``Id ((x:A) → B x)`` likewise reduces to a dependently typed version of the previously introduced notation:
+
+.. code-block:: none
+
+   (x : Id A) ⇒ Id B x.2
+
+Here ``x`` is a cube of variables, and the symbol ``⇒`` is of course intentionally reminiscent of ``⤇``.
 
 In particular, since ``Σ : (A : Type) (B : A → Type) → Type``, the type of ``Id Σ`` is
 
@@ -429,12 +487,13 @@ Higher identity types compute on canonical types in a similar way to the 1-dimen
 
    Prod⁽ᵉᵉ⁾ (Id (Id A)) (Id (Id B)) u₀₂ u₁₂ u₂₀ u₂₁
 
-which is a product of the two types
+which is defined as
 
 .. code-block:: none
 
-   Id (Id A) (u₀₂ .fst) (u₁₂ .fst) (u₂₀ .fst) (u₂₁ .fst)
-   Id (Id B) (u₀₂ .snd) (u₁₂ .snd) (u₂₀ .snd) (u₂₁ .snd)
+   sig⁽ᵉᵉ⁾ (
+     fst : A⁽ᵉᵉ⁾ (u₀₂ .fst) (u₁₂ .fst) (u₂₀ .fst) (u₂₁ .fst),
+     snd : B⁽ᵉᵉ⁾ (u₀₂ .snd) (u₁₂ .snd) (u₂₀ .snd) (u₂₁ .snd) )
 
 Notationally, since repeated ``Id`` gets cumbersome, in higher dimensions Narya prints all identity types with the superscript syntax; thus the above would actually be printed
 

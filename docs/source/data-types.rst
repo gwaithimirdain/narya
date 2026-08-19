@@ -232,6 +232,8 @@ However, unlike the other types and constructs we have discussed so far, matches
 
 then ``neg1`` and ``neg2`` are not convertible.  By η-expansion, when trying to convert them we do automatically introduce a new variable ``x`` and try to compare ``neg1 x`` with ``neg2 x``, but neither of these terms reduce since ``x`` is not a constructor.  In particular, datatypes do not satisfy any kind of η-conversion themselves.
 
+As usual, you can use ``about`` to see the definition of a function defined by matching, even if it is partially applied.  However, there are certain situations in which ``about`` is unable to display a match and will fall back to behaving like ``echo``.  One of these is that if a function is defined using a :ref:`variable match<Variable matches>` in a way that depends on the context and/or output type being refined in the branches, and you apply that function to a non-variable term, then there is no way to give a consistent type to the branches, and the match cannot be read back.  Another is that if the output of a variable match is a function and it is applied to further arguments, the type of the match cannot in general be recovered in order to to display it.  :ref:`Canonical types defined by case trees` inside of matches also interfere with ``about``.  In general, :ref:`Non-dependent matches` and :ref:`Explicitly dependent matches` are easier for ``about`` to display, but even they are not completely supported.
+
 
 Recursion
 ---------
