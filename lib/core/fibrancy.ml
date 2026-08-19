@@ -119,7 +119,7 @@ module Codata = struct
       (mode * b * D.zero * g * et) CodatafieldAbwd.entry ->
       (mode, g, n, b, et) t =
    fun mode (Fibrancy (type nh hb) (f : (mode, D.zero, g, n, nh, b, hb, et) codata_fibrancy))
-       (Entry (fld, Codatafield (adj, fld_plus_lock, fldty))) ->
+       (Entry (fld, Codatafield (_, adj, fld_plus_lock, fldty))) ->
     match fldty with
     | Higher _ ->
         let open Reporter in
@@ -306,8 +306,8 @@ module Codata = struct
                       ((hb, (mode id, D.zero) dim_entry) snoc, (mode id, D.zero) dim_entry) snoc,
                       et )
                     t =
-               fun (fields, fib) (CodatafieldAbwd.Entry (fld, Codatafield (adj, plus_lock, fldty)))
-                 ->
+               fun (fields, fib)
+                   (CodatafieldAbwd.Entry (fld, Codatafield (selfvar, adj, plus_lock, fldty))) ->
                 match fldty with
                 | Lower fldty -> (
                     match Modalcell.compare_adjunction_id adj with
@@ -323,7 +323,8 @@ module Codata = struct
                           CodatafieldAbwd.Entry
                             ( fld,
                               Codatafield
-                                ( Modalcell.id_adjunction mode,
+                                ( selfvar,
+                                  Modalcell.id_adjunction mode,
                                   plus_no_lock mode,
                                   Lower
                                     (Inst

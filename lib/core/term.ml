@@ -69,7 +69,8 @@ module rec Term : sig
 
     type (_, _) t =
       | Codatafield :
-          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          string option
+          * ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
           * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
           * ('i, 'mode, 'f, 'gmode, 'a, 'ag, 'm, 'n, 'et) data
           -> ('i, 'mode * 'a * 'm * 'n * 'et) t
@@ -381,7 +382,8 @@ end = struct
 
     type (_, _) t =
       | Codatafield :
-          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          string option
+          * ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
           * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
           * ('i, 'mode, 'f, 'gmode, 'a, 'ag, 'm, 'n, 'et) data
           -> ('i, 'mode * 'a * 'm * 'n * 'et) t
