@@ -884,6 +884,12 @@ If cursor is over a hole, the term is interpreted in the context of that hole."
   (interactive)
   (narya-echo-or-synth "synth" "Term to synthesize: "))
 
+(defun narya-about ()
+  "Display the definition of a term, if possible.
+If cursor is over a hole, the term is interpreted in the context of that hole."
+  (interactive)
+  (narya-echo-or-synth "about" "Term to explicate: "))
+
 (defun narya-insert-hole-numbers (start end)
   "Insert hole-number labels ⁇n in front of hole overlays from START to END."
   (save-excursion
@@ -1127,6 +1133,7 @@ With a negative prefix argument,set display of type boundaries off."
 (keymap-set narya-mode-map "C-c C-;" 'narya-echo)
 (keymap-set narya-mode-map "C-c :" 'narya-synth)
 (keymap-set narya-mode-map "C-c C-:" 'narya-synth)
+(keymap-set narya-mode-map "C-c C-a" 'narya-about)
 (keymap-set narya-mode-map "C-c C-v" 'narya-minibuffer-cmd)
 (keymap-set narya-mode-map "C-c C-d C-u" 'narya-display-chars)
 (keymap-set narya-mode-map "C-c C-d C-f" 'narya-display-function-boundaries)
