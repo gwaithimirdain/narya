@@ -254,7 +254,7 @@ III. Implicit matches only
 
 An implicit match stores no motive, so the only way to get the type at which a branch body was checked is to refine: rebind the discriminee, and the datatype's index and boundary variables, to the values this branch's constructor gives them.  When that fails the body is read back at the *unrefined* type of the match, which is definitionally equal to the refined one but need not expose the canonical form the body has.  Then readback raises and we fall back.
 
-Refinement can fail because the discriminee, an index, or a boundary variable is not a free variable, carries a degeneracy, is keyed, or is a duplicate; because no consistent permutation of the context rebinds them; or because rebinding kills the self that a comatch in the body would be read back against.  None of these is reported on its own -- each just means we read the branch back unrefined -- so what one sees is the failure that follows, if any.
+Refinement can fail because the discriminee, an index, or a boundary variable is not a free variable, carries a degeneracy, is keyed, or is a duplicate; because no consistent permutation of the context rebinds them; because rebinding kills the self that a comatch in the body would be read back against; or because the branch body does not survive the eval-readback cycle that refining its *value* puts it through (see IV).  None of these is reported on its own -- each just means we read the branch back unrefined -- so what one sees is the failure that follows, if any.
 
 Here the discriminee is an axiom rather than a variable, so nothing rebinds, and the branch bodies do not synthesize at the unrefined type "T x", which is itself a stuck match rather than the pi-type and datatype that the bodies need.
 
@@ -341,6 +341,22 @@ A match in a degenerated environment displays without a "return" clause, rather 
   
   match p [ false. ⤇ true. | true. ⤇ refl 0 ]
     : Id T p 0 true.
+  
+
+Refining a branch refines its *value* as well as its type, by reading the body back at the refined type in the old context and re-evaluating it in the new one.  A body that reads back as a display-only term does not survive that cycle: an anonymous canonical type in a branch reads back as a declaration, which readback marks unevaluable -- a codatatype or record by carrying no fibrancy, a datatype by the potential instantiation wrapped around it -- and evaluating one raises.  We catch that and read the branch back unrefined, which displays but shows the discriminee where the constructor would be.
+
+Note that these have to be reached through readback: "about" on a zero-dimensional constant with a stored definition unparses that definition directly, without reading anything back, so a bare constant will not exercise this.
+
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'about (let F : Bool → Type ≔ b ↦ match b [ true. ↦ Id Bool b b | false. ↦ N ] in F)'
+  b ↦ match b [ false. ↦ N | true. ↦ Bool⁽ᵉ⁾ true. true. ]
+    : Bool → Type
+  
+
+An anonymous record in the same position keeps the unrefined "b" instead.
+
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'about (let F : Bool → Type ≔ b ↦ match b [ true. ↦ sig ( a : Id Bool b b ) | false. ↦ N ] in F)'
+  b ↦ match b [ false. ↦ N | true. ↦ sig ( a : Bool⁽ᵉ⁾ b b ) ]
+    : Bool → Type
   
 
 A non-dependent match records one type, which is that of the match and of every branch alike, and never displays a motive: there is no surface syntax for such a match other than the placeholder "return _ … _ ↦ _", which says nothing about the type.  Such a match arises when the discriminee is not a variable to refine and the user gives no motive, and the stored type is what lets its branches be read back when it is eliminated further.
