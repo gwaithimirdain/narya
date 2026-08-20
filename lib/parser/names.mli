@@ -13,11 +13,16 @@ val remove : 'b t -> ('a, 'modality, 'n, 'b) insert -> 'a t
 val split : 'ab t -> ('x, 'b, 'y, 'a, 'z, 'ab) Tctx.comp -> 'a t
 val permute : ('a, 'b) permute -> 'b t -> 'a t
 
+(* The variables bound by one argument of a constructor in a match branch, as they are to be displayed: either a single (cube) variable, or a cube of variables naming all the faces of its boundary. *)
+type pattern_var =
+  | Cube_var : string -> pattern_var
+  | Boundary_var : ('n, string) gvariables -> pattern_var
+
 val add_match_vars :
   'a t ->
   ('n, 'mode, 'annotations, 'mode, 'mode, 'b, 'mode) VarAnnotate.fwd_t ->
   ('mode, 'b, 'mode, 'a, unit, 'ab) Tctx.bcomp ->
-  'ab t * string list
+  'ab t * pattern_var list
 
 val lookup : 'n t -> ('mode, 'n) index -> string list
 val lookup_field : 'n t -> ('mode, 'n) index -> string -> string list option

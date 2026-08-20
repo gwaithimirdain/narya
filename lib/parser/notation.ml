@@ -179,9 +179,12 @@ and ('left, 'tight, 'right) notation =
 
 type wrapped_identity = Wrap : ('left, 'tight, 'right) identity -> wrapped_identity
 
-(* A match pattern is either a variable name or a constructor with some number of pattern arguments. *)
+(* A match pattern is either a variable name or a constructor with some number of pattern arguments.  Each argument of a constructor can also be preceded by explicit names, in braces, for the faces of the boundary of a higher-dimensional pattern variable; the argument pattern itself is then the top face. *)
 module Matchpattern = struct
-  type t = Var : string option located -> t | Constr : Constr.t located * (t, 'n) Vec.t -> t
+  type t = Var : string option located -> t | Constr : Constr.t located * (arg, 'n) Vec.t -> t
+  and arg = { boundary : string option located list; pat : t }
+
+  let explicit (pat : t) : arg = { boundary = []; pat }
 end
 
 (* The definition of a notation *)
