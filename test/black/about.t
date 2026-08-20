@@ -697,7 +697,21 @@ When a face of the environment is not stuck -- here the discriminee is a path be
     : Id T p 0 true.
   
 
-None of this gives the type of the match itself, which we need when the spine is nonempty, the type we are handed then being that of the spine.  The motive supplies only the uninstantiated family there, and the instantiation is again the matches at the faces of the environment -- but as *values* this time, since what we are computing is a type rather than a term.  In the empty-spine case those values are handed to us, in the instantiation arguments of the type of the match; with a nonempty spine nothing has computed them, and Corealize is no help, since it makes a match into a kinetic term and evaluating one is exactly what it refuses to do (and what, in the elaborator, defines a metavariable).  So we fall back on the application spine.
+None of this gives the type of the match itself, which we need when the spine is nonempty, the type we are handed then being that of the spine.  The motive supplies only the uninstantiated family there, and the instantiation is again the matches at the faces of the environment -- but as *values* this time, since what we are computing is a type rather than a term.  Those values are the boundary of the match, and the boundary of a term is recorded nowhere but in its type: there is no face operator on values, since the face of a variable is a different variable that the value doesn't record.  So we need the type of the match, and with a nonempty spine nothing has stored it -- a neutral records only the type of the whole of itself.  But evaluation annotates every neutral it builds with its own type, so we recover it by stripping the spine's eliminations back off and running the result through the readback/eval cycle.
+
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom b0 : Bool' -e 'axiom b1 : Bool' -e 'axiom b2 : Id Bool b0 b1' -e 'axiom ax : N' -e 'def idn : N → N ≔ n ↦ n' -e 'def zer : N → N ≔ n ↦ zero.' -e 'def g : Bool → (N → N) ≔ b ↦ match b return _ ↦ N → N [ true. ↦ idn | false. ↦ zer ]' -e 'about (refl g b2 (refl ax))'
+  match b2
+  return 𝑥 𝑦 𝑧 ↦
+         {𝑥₀ : N} {𝑥₁ : N} (𝑥₂ : N⁽ᵉ⁾ 𝑥₀ 𝑥₁)
+         →⁽ᵉ⁾ N⁽ᵉ⁾
+                ((match 𝑥 return 𝑤 ↦ N → N [ false. ↦ zer | true. ↦ idn ]) 𝑥₀)
+                ((match 𝑦 return 𝑤 ↦ N → N [ false. ↦ zer | true. ↦ idn ]) 𝑥₁) [
+  | false. ⤇ ap zer
+  | true. ⤇ ap idn] (refl ax)
+    : N⁽ᵉ⁾ (g b0 ax) (g b1 ax)
+  
+
+What can still stop such a match from displaying is the *other* boundary, the one motive_branch_ty needs: the type at which to read back a branch body is the motive instantiated at the faces of that body, and a branch body is a case tree, whose value at a face may be a case tree too rather than a term.  Here the bodies are lambdas, so they are, and we fall back on the application spine.
 
   $ narya -v -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom b0 : Bool' -e 'axiom b1 : Bool' -e 'axiom b2 : Id Bool b0 b1' -e 'axiom ax : N' -e 'def g : Bool → (N → N) ≔ b ↦ match b return _ ↦ N → N [ true. ↦ n ↦ n | false. ↦ n ↦ zero. ]' -e 'about (refl g b2 (refl ax))'
    ￫ info[I0000]
@@ -722,7 +736,7 @@ None of this gives the type of the match itself, which we need when the spine is
    ￮ constant g defined
   
    ￫ info[I0010]
-   ￮ not displaying a stuck match in a degenerated environment applied to arguments; showing an application spine instead
+   ￮ not displaying a stuck match with a branch body that is a case tree at one of its boundary faces; showing an application spine instead
   
   ap g b2 (refl ax)
     : N⁽ᵉ⁾ (g b0 ax) (g b1 ax)
@@ -957,26 +971,6 @@ The refuting variable can be modally annotated, in which case the refutation is 
 Whenever a piece of a stuck case tree can't be displayed as the construct it came from, we say so as information -- visible with -v -- and show the application spine instead.
 
 
-  $ narya -v -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'axiom ax : N' -e 'axiom bx : N' -e 'def plus : N → N → N ≔ [ zero. ↦ m ↦ m | suc. n ↦ m ↦ suc. (plus n m) ]' -e 'about (plus ax bx)'
-   ￫ info[I0000]
-   ￮ constant N defined
-  
-   ￫ info[I0001]
-   ￮ axiom ax assumed
-  
-   ￫ info[I0001]
-   ￮ axiom bx assumed
-  
-   ￫ info[I0000]
-   ￮ constant plus defined
-  
-   ￫ info[I0010]
-   ￮ not displaying an implicit stuck match applied to arguments; showing an application spine instead
-  
-  plus ax bx
-    : N
-  
-
   $ narya -v -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def √N : Type ≔ codata [ x .root.e : N ]' -e 'axiom ax : N' -e 'about (let u : N → √N ≔ [ zero. ↦ [ .root.e ↦ zero. ] | suc. n ↦ [ .root.e ↦ suc. zero. ] ] in u ax)'
    ￫ info[I0000]
    ￮ constant N defined
@@ -1025,13 +1019,13 @@ A non-dependent match needs no motive written down; here the discriminee is an a
     : N
   
 
-The reconstruction is display-only.  What remains unreadable is a dependent match with no explicit motive whose discriminee is not a variable, so that there is nothing to rebind and no motive to apply; and a *variable* match eliminated further, which records no type because it refines the context instead -- and which we may not be able to display even on its own.  In each case we fall back to displaying the application spine, as before.
+The reconstruction is display-only.  What remains unreadable is a dependent match with no explicit motive whose discriminee is not a variable, so that there is nothing to rebind and no motive to apply; there we fall back to displaying the application spine, as before.  A *variable* match records no type, refining the context instead, but eliminated further it does not need one of its own: the type of the match is recovered from the stripped neutral, and the refinement happens in the branches as usual.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom b : Bool' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'def f (b : Bool) : T b ≔ match b [ true. ↦ zero. | false. ↦ true. ]' -e 'about (f b)' -e 'axiom ax : N' -e 'def plus : N → N → N ≔ [ zero. ↦ m ↦ m | suc. n ↦ m ↦ suc. (plus n m) ]' -e 'axiom bx : N' -e 'about (plus ax bx)'
   f b
     : T b
   
-  plus ax bx
+  match ax [ suc. n ↦ m ↦ suc. (plus n m) | zero. ↦ m ↦ m ] bx
     : N
   
 
