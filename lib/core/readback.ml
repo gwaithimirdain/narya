@@ -1152,7 +1152,16 @@ and readback_codatafield : type mode a b cm cn ca cet iu ii iout.
   let (Has_filter lfilter) = Modality.filter left (D.plus_out mk (TubeOf.plus insargs)) in
   match Modality.filter_is_trivial (D.plus_out mk (TubeOf.plus insargs)) lfilter with
   | None -> None
-  | Some Eq ->
+  | Some Eq -> (
+      (* A degenerate codatatype's field type is its declared type instantiated at that same field projected from the self variable at the proper faces of the self cube.  Those faces are the boundary of the value we are displaying, which we read off the instantiation arguments of its type, so they are only *definitionally* equal to it: an anonymous degenerate codatatype in a branch of a stuck match has for its faces the match itself, which exposes no fields at all.  Since this is display-only, we catch the failure to project and let the caller fall back to an application spine.  (We can't rule it out in advance by asking whether every face is a codatatype: an intrinsically higher, Gel-like codatatype has for its boundary the endpoint types of the path it is, which are arbitrary types that its field types take as arguments rather than project from.) *)
+      Reporter.try_with ~fatal:(fun d ->
+          match d.message with
+          | No_such_field _ ->
+              fatal
+                (Readback_at_wrong_type
+                   "a codatatype whose fields cannot be projected at its boundary")
+          | _ -> fatal_diagnostic d)
+      @@ fun () : (mode * b * cm * iout * cet) Term.CodatafieldAbwd.entry option ->
       (* As in check_codata, each field's type is displayed in the ambient context locked by the field's right adjoint and then extended by the self variable, annotated by its left adjoint; so we build that context per field.  The self variable's *type* is the codatatype transported behind those locks along the adjunction unit, which is where a variable annotated by the left adjoint has its type; and the instantiation arguments, being its boundary faces there, are transported along with it.  (For an ordinary non-modal field the unit is an identity cell and this is a no-op.)  So the entire self cube, variables and instantiation arguments alike, consists of values of that self-extended context, which is also where the field's type is computed and read back. *)
       Some
         (let tys = CubeOf.mmap { map = (fun _ [ v ] -> act_value v (id_deg D.zero) unit) } [ dom ] in
@@ -1190,7 +1199,7 @@ and readback_codatafield : type mode a b cm cn ca cet iu ii iout.
              let tys =
                readback_higher_codatafield ctx codataenv fld_plus_lock fldtermctx fldtys
                  (CubeOf.dim selfnfs) fld adj selfnfs sctx in
-             Entry (fld, Codatafield (self, adj, plus_lock, Higher (readback_ctx lctx, tys))))
+             Entry (fld, Codatafield (self, adj, plus_lock, Higher (readback_ctx lctx, tys)))))
 
 (* Read back the instances of one higher field of a codatatype value being displayed, as the pbijmap of types that Codatafield.Higher stores: one entry per partial bijection between the codatatype's evaluation dimension m and the field's intrinsic dimension i.  The self variable, its cube, and the context they live in are those built by readback_codata, while the environment, lock, termctx and stored types are those of the codatatype value being displayed; the ambient context is needed only to degenerate for a non-projectable instance. *)
 and readback_higher_codatafield : type mode a b ca m i f g gmode ag bg d raw.
