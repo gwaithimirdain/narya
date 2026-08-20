@@ -1819,12 +1819,22 @@ and readback_stuck_match : type mode a z hmode any.
                         let (Dataconstr { env = cenv; ty = cty }) =
                           Abwd.find_opt constr constrs
                           <|> Anomaly "constructor missing from stuck match in readback" in
-                        (* Fresh pattern variables, named as in the branch; ext_pi fills in the constructor's argument names for anonymous ones. *)
+                        (* Fresh pattern variables, named as in the branch; ext_pi fills in the constructor's argument names for anonymous ones.  If the environment is degenerated, the pattern variables are cubes of a larger dimension than the ones the branch was checked with, so any explicit boundary names it stored are no longer enough to name all their faces; in that case we fall back on displaying them as cube variables, named by the top face. *)
                         let (Wrap arity) = pi_arity cty in
-                        let (Bplus plus_args) = Raw.Indexed.bplus arity in
-                        let xs =
-                          match Vec.of_list_length arity (annotate_names annotate) with
-                          | Some names -> Raw.Indexed.Namevec.of_vec plus_args names
+                        let nfaces = ref 0 in
+                        CubeOf.iter_faces (dim_env cenv) { it = (fun _ -> nfaces := !nfaces + 1) };
+                        let names =
+                          List.map
+                            (fun (name : Variables.pattern_name) ->
+                              match name with
+                              | `Boundary ns when List.length ns <> !nfaces ->
+                                  `Cube
+                                    (Option.fold ~none:None ~some:snd (List_extra.split_last ns))
+                              | name -> name)
+                            (annotate_names annotate) in
+                        let (Patternvars xs) =
+                          match Vec.of_list_length arity names with
+                          | Some names -> Raw.patternvars_of_vec names
                           | None -> fatal (Anomaly "constructor argument length mismatch") in
                         let (Ext_pi
                                {

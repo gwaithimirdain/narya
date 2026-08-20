@@ -43,6 +43,39 @@ let dom_vars : type dom modality mode m a b.
       [ doms ] (Cons (Cons Nil)) in
   (args, nfs)
 
+(* Assemble a Namevec of user-supplied names into a cube of names of a specified dimension, one for each face, along with the (N.plus) witness for the corresponding extension of the raw context.  The caller supplies the error to report if the number of names doesn't match the number of faces, as the positive or negative discrepancy. *)
+
+type (_, _, _) vars_of_names =
+  | Vars :
+      ('a, 'b, 'abc) N.plus * (N.zero, 'n, binder_name, 'b) NICubeOf.t
+      -> ('a, 'abc, 'n) vars_of_names
+
+let vars_of_names : type a c abc n.
+    (int -> Code.t) ->
+    Asai.Range.t option ->
+    n D.t ->
+    (a, c, abc) Raw.Namevec.t ->
+    (a, abc, n) vars_of_names =
+ fun err loc dim xs ->
+  let module S = struct
+    type 'b t = Ok : (a, 'b, 'ab) N.plus * ('ab, 'c, abc) Raw.Namevec.t -> 'b t | Missing of int
+  end in
+  let module Build = NICubeOf.Traverse (S) in
+  match
+    Build.build_left dim
+      {
+        build =
+          (fun _ -> function
+            | Ok (ab, x :: xs) -> Fwrap (NFamOf (binder_name_of_option x), Ok (Suc ab, xs))
+            | Ok _ -> Fwrap (NFamOf (`Anon no_hints), Missing (-1))
+            | Missing j -> Fwrap (NFamOf (`Anon no_hints), Missing (j - 1)));
+      }
+      (Ok (Zero, xs))
+  with
+  | Wrap (names, Ok (ab, [])) -> Vars (ab, names)
+  | Wrap (_, Ok (_, xs)) -> fatal ?loc (err (Fwn.to_int (Raw.Namevec.length xs)))
+  | Wrap (_, Missing j) -> fatal ?loc (err j)
+
 (* Extend a context by a finite number of cubes of new visible variables at some dimension, with boundaries, whose types are specified by the evaluation of some telescope in some (possibly higher-dimensional) environment (and hence may depend on the earlier ones).  Also return the new variables in a list of Cubes, and the new environment extended by the *top-dimensional variables only*. *)
 
 type (_, _) modal_binding_cube =
@@ -62,17 +95,48 @@ type ('dom, 'window, 'mode, 'n, 'ac, 'e) ext_pi =
     }
       -> ('dom, 'window, 'mode, 'n, 'ac, 'e) ext_pi
 
+(* The extension of the context by the pattern variables of one argument: either a single cube variable, or one variable for each face of its boundary.  We also return the names, to be recorded in the branch's annotation so that it can be displayed as the user wrote it. *)
+type (_, _, _, _) ext_pattern_var =
+  | Ext_pattern_var :
+      ('mode, 'ac, ('e, ('modality, 'k) dim_entry) Tbwd.snoc) Ctx.t * pattern_name
+      -> ('mode, 'ac, 'e, ('modality, 'k) dim_entry) ext_pattern_var
+
+let ext_pattern_var : type dom modality mode a ac e k.
+    (mode, a, e) Ctx.t ->
+    (dom, modality, mode, k, k) Modality.filter_dim ->
+    (a, ac) Raw.Patternvars.arg ->
+    string option ->
+    (k, dom Ctx.Binding.t) CubeOf.t ->
+    (mode, ac, e, (modality, k) dim_entry) ext_pattern_var =
+ fun ctx filter x pix newnfs ->
+  match x with
+  (* A single variable becomes a cube variable, whose boundary is accessed with face suffixes.  If it is anonymous, we fall back on the name of the constructor's argument. *)
+  | Cube_arg x ->
+      let x =
+        match x with
+        | Some x -> Some x
+        | None -> pix in
+      Ext_pattern_var (Ctx.cube_vis ctx filter x newnfs, `Cube x)
+  (* Explicit boundary variables must be exactly one for each face of the cube, the last of them being the top face. *)
+  | Boundary_arg ns ->
+      let k = CubeOf.dim newnfs in
+      let (Vars (af, names)) =
+        vars_of_names (fun j -> Wrong_boundary_of_pattern_variable j) ns.loc k ns.value in
+      Ext_pattern_var
+        ( Ctx.vis ctx filter D.zero (D.zero_plus k) names newnfs af,
+          `Boundary (Raw.Namevec.to_list ns.value) )
+
 let rec ext_pi : type dom window mode a b c ac e n.
     (mode, a, e) Ctx.t ->
     (dom, window, mode) Modality.t ->
     (dom, n, b) env ->
-    (a, c, ac) Raw.Namevec.t ->
+    (a, c, ac) Raw.Patternvars.t ->
     (dom, kinetic) value ->
     (dom, window, mode, n, ac, e) ext_pi =
  fun ctx window env xs ft ->
-  match xs with
+  match Raw.Patternvars.view xs with
   (* The residual output type: the datatype applied to its parameters and this branch's indices.  It is uninstantiated (a "vertex" of the higher-dimensional type), which is exactly what indices_of_out expects. *)
-  | [] ->
+  | Nil ->
       Ext_pi
         {
           ctx;
@@ -82,7 +146,7 @@ let rec ext_pi : type dom window mode a b c ac e n.
           comp = Zero;
           out = ft;
         }
-  | x :: xs -> (
+  | Cons (x, xs) -> (
       let m = dim_env env in
       (* The constructor's function-type is an uninstantiated m-dimensional pi-type; we view it as in check_at_pi (view_type would demand full instantiation). *)
       let (Viewed_pi { x = pix; filter = pifilter; doms; cods }) = view_pi "ext_pi" m ft in
@@ -100,17 +164,13 @@ let rec ext_pi : type dom window mode a b c ac e n.
           | Neq -> fatal (Anomaly "ext_pi domain dimension mismatch")
           | Eq ->
               let newvars, newnfs = dom_vars ctx modality doms in
-              let x =
-                match x with
-                | Some x -> Some x
-                | None -> option_of_binder_name (top_variable pix) in
               let filter_k_k = Modality.filter_idempotent filter_k_m in
+              let pixname = option_of_binder_name (top_variable pix) in
+              let (Ext_pattern_var (newctx, x)) = ext_pattern_var ctx filter_k_k x pixname newnfs in
               let (BindFam b) = BindCube.find_top cods in
               let output = apply_binder_term b pifilter newvars in
               let (Ext_pi { ctx; values = vars; normals = nfs; annotate; comp; out }) =
-                ext_pi
-                  (Ctx.cube_vis ctx filter_k_k x newnfs)
-                  window
+                ext_pi newctx window
                   (Ext
                      {
                        env;

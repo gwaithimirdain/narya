@@ -186,6 +186,7 @@ module Code = struct
     | Deprecated : string -> t
     | Matching_datatype_has_degeneracy : printable -> t
     | Wrong_number_of_arguments_to_pattern : Constr.t * int -> t
+    | Wrong_boundary_of_pattern_variable : int -> t
     | Wrong_number_of_arguments_to_motive : int -> t
     | No_such_constructor_in_match : printable * Constr.t -> t
     | Duplicate_constructor_in_match : Constr.t -> t
@@ -397,6 +398,7 @@ module Code = struct
     | Deprecated _ -> Warning
     | Matching_datatype_has_degeneracy _ -> Error
     | Wrong_number_of_arguments_to_pattern _ -> Error
+    | Wrong_boundary_of_pattern_variable _ -> Error
     | Wrong_number_of_arguments_to_motive _ -> Error
     | No_such_constructor_in_match _ -> Error
     | Duplicate_constructor_in_match _ -> Error
@@ -607,6 +609,7 @@ module Code = struct
     | No_such_constructor_in_match _ -> "E1301"
     | Duplicate_constructor_in_match _ -> "E1302"
     | Wrong_number_of_arguments_to_pattern _ -> "E1303"
+    | Wrong_boundary_of_pattern_variable _ -> "E1310"
     | Duplicate_pattern_variable _ -> "E1304"
     | Wrong_number_of_patterns -> "E1305"
     | Inconsistent_patterns -> "E1306"
@@ -953,6 +956,14 @@ module Code = struct
           else
             textf "not enough arguments to constructor %s in match pattern (need %d more)"
               (Constr.to_string c) (abs n)
+      | Wrong_boundary_of_pattern_variable n ->
+          if n > 0 then
+            textf "too many variables in boundary of higher-dimensional pattern variable (%d extra)"
+              n
+          else
+            textf
+              "not enough variables in boundary of higher-dimensional pattern variable (need %d more)"
+              (abs n)
       | Wrong_number_of_arguments_to_motive n ->
           textf "wrong number of arguments for match motive: should be %d" n
       | No_such_constructor_in_match (d, c) ->

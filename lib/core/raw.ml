@@ -66,6 +66,30 @@ module rec Make : functor (I : Indices) -> sig
     val bplus : ('a, 'b, 'ab) t -> ('a, 'b, 'ab) bplus
     val none : ('a, 'b, 'ab) bplus -> ('a, 'b, 'ab) t
     val of_vec : ('a, 'b, 'ab) bplus -> (I.name, 'b) Vec.t -> ('a, 'b, 'ab) t
+    val to_list : ('a, 'b, 'ab) t -> I.name list
+  end
+
+  module Patternvars : sig
+    type (_, _, _) t =
+      | [] : ('a, Fwn.zero, 'a) t
+      | Cube : I.name * ('a I.suc, 'b, 'ab) t -> ('a, 'b Fwn.suc, 'ab) t
+      | Boundary : ('a, 'c, 'ac) Namevec.t located * ('ac, 'b, 'ab) t -> ('a, 'b Fwn.suc, 'ab) t
+
+    type ('a, 'ab) has_bplus_to = Bplus_to : ('a, 'b, 'ab) bplus -> ('a, 'ab) has_bplus_to
+
+    type (_, _) arg =
+      | Cube_arg : I.name -> ('a, 'a I.suc) arg
+      | Boundary_arg : ('a, 'c, 'ac) Namevec.t located -> ('a, 'ac) arg
+
+    type (_, _, _) view =
+      | Nil : ('a, Fwn.zero, 'a) view
+      | Cons : ('a, 'a1) arg * ('a1, 'b, 'ab) t -> ('a, 'b Fwn.suc, 'ab) view
+
+    val view : ('a, 'b, 'ab) t -> ('a, 'b, 'ab) view
+    val length : ('a, 'b, 'ab) t -> 'b Fwn.t
+    val bplus : ('a, 'b, 'ab) t -> ('a, 'ab) has_bplus_to
+    val none : ('a, 'b, 'ab) bplus -> ('a, 'b, 'ab) t
+    val all_boundary : ('a, 'b, 'ab) t -> bool
   end
 
   type 'a index = 'a I.index * any_sface option
@@ -163,7 +187,7 @@ module rec Make : functor (I : Indices) -> sig
 
   and _ branch =
     | Branch :
-        ('a, 'b, 'ab) Namevec.t located
+        ('a, 'b, 'ab) Patternvars.t located
         * [ `Normal of Asai.Range.t option | `Cube of bool ref located list ]
         * 'ab check located
         -> 'a branch
@@ -245,6 +269,73 @@ functor
         match (ab, xs) with
         | Zero, [] -> []
         | Suc ab, x :: xs -> x :: of_vec ab xs
+
+      let rec to_list : type a b ab. (a, b, ab) t -> I.name list = function
+        | [] -> []
+        | x :: xs -> x :: to_list xs
+    end
+
+    (* The pattern variables of one branch of a match: one entry for each argument of the constructor, which is either a single variable (which for a higher-dimensional match is a cube variable, with its boundary accessed by face suffixes) or an explicit list of variables naming all the faces of its boundary, the last of which is the top face.  The middle index counts the *arguments*, hence is the arity of the constructor, while the last index is the raw context extended by all the variables actually bound. *)
+    module Patternvars = struct
+      type (_, _, _) t =
+        | [] : ('a, Fwn.zero, 'a) t
+        | Cube : I.name * ('a I.suc, 'b, 'ab) t -> ('a, 'b Fwn.suc, 'ab) t
+        | Boundary : ('a, 'c, 'ac) Namevec.t located * ('ac, 'b, 'ab) t -> ('a, 'b Fwn.suc, 'ab) t
+
+      type ('a, 'ab) has_bplus_to = Bplus_to : ('a, 'b, 'ab) bplus -> ('a, 'ab) has_bplus_to
+
+      (* The pattern variables of a single argument, forgetting how many arguments remain. *)
+      type (_, _) arg =
+        | Cube_arg : I.name -> ('a, 'a I.suc) arg
+        | Boundary_arg : ('a, 'c, 'ac) Namevec.t located -> ('a, 'ac) arg
+
+      type (_, _, _) view =
+        | Nil : ('a, Fwn.zero, 'a) view
+        | Cons : ('a, 'a1) arg * ('a1, 'b, 'ab) t -> ('a, 'b Fwn.suc, 'ab) view
+
+      let view : type a b ab. (a, b, ab) t -> (a, b, ab) view = function
+        | [] -> Nil
+        | Cube (x, xs) -> Cons (Cube_arg x, xs)
+        | Boundary (ns, xs) -> Cons (Boundary_arg ns, xs)
+
+      let rec length : type a b ab. (a, b, ab) t -> b Fwn.t = function
+        | [] -> Zero
+        | Cube (_, xs) -> Suc (length xs)
+        | Boundary (_, xs) -> Suc (length xs)
+
+      (* Prepend the variables counted by a bplus to another bplus, forgetting the total count. *)
+      let rec prepend_bplus : type a c ac ab.
+          (a, c, ac) bplus -> (ac, ab) has_bplus_to -> (a, ab) has_bplus_to =
+       fun ac rest ->
+        match ac with
+        | Zero -> rest
+        | Suc ac ->
+            let (Bplus_to b) = prepend_bplus ac rest in
+            Bplus_to (Suc b)
+
+      (* The total number of variables bound, which is more than the number of arguments if any of them have explicit boundaries. *)
+      let rec bplus : type a b ab. (a, b, ab) t -> (a, ab) has_bplus_to = function
+        | [] -> Bplus_to Zero
+        | Cube (_, xs) ->
+            let (Bplus_to ab) = bplus xs in
+            Bplus_to (Suc ab)
+        | Boundary (ns, xs) -> prepend_bplus (Namevec.bplus ns.value) (bplus xs)
+
+      let rec none : type a b ab. (a, b, ab) bplus -> (a, b, ab) t =
+       fun ab ->
+        match bplus_right ab with
+        | Zero ->
+            let Eq = bplus_zero ab in
+            []
+        | Suc _ ->
+            let ab = bplus_suc ab in
+            Cube (I.none, none ab)
+
+      (* Whether every argument has its boundary given explicitly, so that no cube variables are bound.  (Vacuously true for a constructor with no arguments.) *)
+      let rec all_boundary : type a b ab. (a, b, ab) t -> bool = function
+        | [] -> true
+        | Cube _ -> false
+        | Boundary (_, xs) -> all_boundary xs
     end
 
     (* A raw De Bruijn index is a well-scoped (backwards) natural number (or, more generally, an element of I.index) together with a possible face.  During typechecking we will verify that the face, if given, is applicable to the variable as a "cube variable", and compile the combination into a more strongly well-scoped kind of index. *)
@@ -376,10 +467,10 @@ functor
       (* Lift a term to a longer context *)
       | Weaken : 'a check * ('a I.suc, 'b) Eq.t -> 'b check
 
-    (* The location of the namevec is that of the whole pattern.  The location of the cube flag is that of the mapsto. *)
+    (* The location of the pattern variables is that of the whole pattern.  The location of the cube flag is that of the mapsto. *)
     and _ branch =
       | Branch :
-          ('a, 'b, 'ab) Namevec.t located
+          ('a, 'b, 'ab) Patternvars.t located
           (* The ref argument to `Cube records whether any of the matches in this ⤇ group are *actually* higher-dimensional, so we can raise an error if they're not. *)
           * [ `Normal of Asai.Range.t option | `Cube of bool ref located list ]
           * 'ab check located
@@ -464,6 +555,12 @@ module Resolve (R : Resolver) = struct
   (* We can't make things more concise with aliases like
        module I1 = R.I1
      because module aliases are not preserved by functors: F(I1) will not be equal to F(R.I1). *)
+
+  (* The result of renaming the pattern variables of a match branch: the renamed variables, in the target index type, along with the scope extended by them. *)
+  type (_, _, _) resolve_pv =
+    | Resolve_pv :
+        ('a2, 'b, 'ab2) R.T2.Patternvars.t * ('ab1, 'ab2) R.scope
+        -> ('a2, 'b, 'ab1) resolve_pv
 
   let rec append : type a1 a2 b ab1 ab2.
       (a1, a2) R.scope ->
@@ -622,10 +719,24 @@ module Resolve (R : Resolver) = struct
 
   and branch : type a1 a2. (a1, a2) R.scope -> a1 R.T1.branch -> a2 R.T2.branch =
    fun ctx (Branch (xs, cube, body)) ->
-    let (Bplus ab) = R.T2.bplus (R.T1.Namevec.length xs.value) in
-    let xs2 = renames ctx xs.value ab in
-    let ctx2 = append ctx xs.value ab in
+    let (Resolve_pv (xs2, ctx2)) = patternvars ctx xs.value in
     Branch (locate_opt xs.loc xs2, cube, check ctx2 body)
+
+  (* Renaming the pattern variables of a match branch, unlike a Namevec, doesn't have a bplus supplied by the caller, since the extended context depends on how many of the arguments have explicit boundaries.  So we compute the renamed pattern variables and the extended scope together, with the extended index existential. *)
+  and patternvars : type a1 a2 b ab1.
+      (a1, a2) R.scope -> (a1, b, ab1) R.T1.Patternvars.t -> (a2, b, ab1) resolve_pv =
+   fun ctx xs ->
+    match xs with
+    | [] -> Resolve_pv ([], ctx)
+    | Cube (x, xs) ->
+        let x2 = R.rename ctx x in
+        let (Resolve_pv (xs2, ctx2)) = patternvars (R.snoc ctx x) xs in
+        Resolve_pv (Cube (x2, xs2), ctx2)
+    | Boundary (ns, xs) ->
+        let (Bplus ac) = R.T2.bplus (R.T1.Namevec.length ns.value) in
+        let ns2 = renames ctx ns.value ac in
+        let (Resolve_pv (xs2, ctx2)) = patternvars (append ctx ns.value ac) xs in
+        Resolve_pv (Boundary (locate_opt ns.loc ns2, xs2), ctx2)
 
   and dataconstr : type a1 a2. (a1, a2) R.scope -> a1 R.T1.dataconstr -> a2 R.T2.dataconstr =
    fun ctx (Dataconstr (args, body)) ->
@@ -670,6 +781,22 @@ let rec namevec_of_vec : type a b ab.
   match (ab, xs) with
   | Zero, [] -> []
   | Suc ab, x :: xs -> x :: namevec_of_vec ab xs
+
+type (_, _) has_patternvars =
+  | Patternvars : ('a, 'b, 'ab) Patternvars.t -> ('a, 'b) has_patternvars
+
+(* Reassemble the pattern variables of a match branch from the names stored in its annotation. *)
+let rec patternvars_of_vec : type a b. (Variables.pattern_name, b) Vec.t -> (a, b) has_patternvars =
+  function
+  | [] -> Patternvars []
+  | `Cube x :: xs ->
+      let (Patternvars ys) = patternvars_of_vec xs in
+      Patternvars (Cube (x, ys))
+  | `Boundary ns :: xs ->
+      let (Wrap ns) = Vec.of_list ns in
+      let (Bplus ac) = bplus (Vec.length ns) in
+      let (Patternvars ys) = patternvars_of_vec xs in
+      Patternvars (Boundary (locate_opt None (Namevec.of_vec ac ns), ys))
 
 (* We end with some useful lemmas. *)
 

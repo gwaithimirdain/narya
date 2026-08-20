@@ -60,33 +60,6 @@ let rec typefam : type mode a b.
                (`Internal, "indices of datatype", modality, Modality.id (Modality.tgt modality))))
   | _ -> fatal (Checking_canonical_at_nonuniverse ("datatype", PVal (ctx, ty)))
 
-type (_, _, _) vars_of_names =
-  | Vars :
-      ('a, 'b, 'abc) N.plus * (N.zero, 'n, binder_name, 'b) NICubeOf.t
-      -> ('a, 'abc, 'n) vars_of_names
-
-let vars_of_names : type a c abc n.
-    Asai.Range.t option -> n D.t -> (a, c, abc) Namevec.t -> (a, abc, n) vars_of_names =
- fun loc dim xs ->
-  let module S = struct
-    type 'b t = Ok : (a, 'b, 'ab) N.plus * ('ab, 'c, abc) Namevec.t -> 'b t | Missing of int
-  end in
-  let module Build = NICubeOf.Traverse (S) in
-  match
-    Build.build_left dim
-      {
-        build =
-          (fun _ -> function
-            | Ok (ab, x :: xs) -> Fwrap (NFamOf (binder_name_of_option x), Ok (Suc ab, xs))
-            | Ok _ -> Fwrap (NFamOf (`Anon no_hints), Missing (-1))
-            | Missing j -> Fwrap (NFamOf (`Anon no_hints), Missing (j - 1)));
-      }
-      (Ok (Zero, xs))
-  with
-  | Wrap (names, Ok (ab, [])) -> Vars (ab, names)
-  | Wrap (_, Ok (_, xs)) -> fatal ?loc (Wrong_boundary_of_record (Fwn.to_int (Namevec.length xs)))
-  | Wrap (_, Missing j) -> fatal ?loc (Wrong_boundary_of_record j)
-
 (* Slurp up an entire application spine.  Returns the function, and all the arguments, where each argument is paired with the location of its application.  So spine "f x y" would return "f" (located) along with [(location of "f x", "x" (located)); (location of "f x y", "y" (located))]. *)
 let spine : type a.
     a check located ->
@@ -133,7 +106,7 @@ let unless_error (v : 'a) (err : 'b Bwd.t) : ('a, Code.t) Result.t =
 (* A "checkable branch" stores all the information about a branch in a match, both that coming from what the user wrote in the match and what is stored as properties of the datatype.  The constructor's argument types and output are stored together as its function-type "ty" (as in a Value.dataconstr); the argument variables are introduced, and the type indices of this branch read off, by ext_pi at typechecking time.  *)
 type (_, _, _) checkable_branch =
   | Checkable_branch : {
-      xs : ('a, 'c, 'ac) Namevec.t;
+      xs : ('a, 'c, 'ac) Patternvars.t;
       (* If the body is None, that means the user omitted this branch.  (That might be ok, if it can be refuted by a pattern variable belonging to an empty type.) *)
       body : 'ac check located option;
       env : ('mode, 'm, 'b) env;
@@ -144,7 +117,7 @@ type (_, _, _) checkable_branch =
 (* A "synthable branch" is similar, but records the fact that the user gave a synthesizing term.  *)
 type (_, _, _) synthable_branch =
   | Synthable_branch : {
-      xs : ('a, 'c, 'ac) Namevec.t;
+      xs : ('a, 'c, 'ac) Patternvars.t;
       body : 'ac synth located;
       env : ('mode, 'm, 'b) env;
       ty : ('mode, 'b, kinetic) term;
@@ -171,21 +144,22 @@ let merge_branches : type hmode dom a m.
           match databr with
           | Some db -> db
           | None -> fatal ?loc (No_such_constructor_in_match (phead head, constr)) in
-        (* Check that the abstraction symbol matches the dimension of the discriminee. *)
+        (* Check that the abstraction symbol matches the dimension of the discriminee.  A non-cube abstraction ↦ is allowed in a higher-dimensional match as long as none of the pattern variables it binds is a cube variable, i.e. all of them come with explicit boundaries. *)
         (match (cube, D.compare_zero (dim_env env)) with
         | `Normal loc, Pos _ ->
-            fatal ?loc (Noncube_abstraction_in_higher_dimensional_match (dim_env env))
+            if not (Patternvars.all_boundary xs) then
+              fatal ?loc (Noncube_abstraction_in_higher_dimensional_match (dim_env env))
         | `Normal _, Zero -> ()
         (* Cube abstractions ⤇ can be used with 0-dimensional discriminees if they're generated as part of a multiple/deep match clause that also includes some higher discriminess.  We check for errors in that when the outer match finishes. *)
         | `Cube _, Zero -> ()
         | `Cube bs, Pos _ -> List.iter (fun b -> b.value := true) bs);
         (* We also check during preprocessing that the user has supplied the right number of pattern variable arguments to the constructor, which is the constructor's arity (the pi-depth of its stored function-type). *)
         let (Wrap arity) = pi_arity ty in
-        match Fwn.compare (Namevec.length xs) arity with
+        match Fwn.compare (Patternvars.length xs) arity with
         | Neq ->
             fatal ?loc
               (Wrong_number_of_arguments_to_pattern
-                 (constr, Fwn.to_int (Namevec.length xs) - Fwn.to_int arity))
+                 (constr, Fwn.to_int (Patternvars.length xs) - Fwn.to_int arity))
         | Eq ->
             let br = Checkable_branch { xs; body = Some body; env; ty } in
             (Snoc (userbrs, (constr, br)), databrs))
@@ -196,7 +170,7 @@ let merge_branches : type hmode dom a m.
        (fun (c, Value.Dataconstr { env; ty }) ->
          let (Wrap arity) = pi_arity ty in
          let (Bplus plus_args) = Raw.Indexed.bplus arity in
-         let xs = Namevec.none plus_args in
+         let xs = Patternvars.none plus_args in
          (c, Checkable_branch { xs; body = None; env; ty }))
        leftovers)
 
@@ -706,7 +680,8 @@ let rec check : type mode a b s.
                 fatal (Unimplemented "general higher-dimensional types in HOTT: use glue")
             | _ ->
                 let Eq = eq_of_ins_zero ins in
-                let (Vars (af, vars)) = vars_of_names xs.loc dim xs.value in
+                let (Vars (af, vars)) =
+                  vars_of_names (fun j -> Wrong_boundary_of_record j) xs.loc dim xs.value in
                 check_record status dim ctx opacity hints tyargs vars Emp Zero af Emp
                   (Fibrancy.Codata.empty dim dim (Ctx.tctx ctx) Eta
                      (readback_neu ctx (head_of_potential head) apps))
@@ -1763,7 +1738,9 @@ and check_var_match : type dom modality mode a b bm.
                                                branches = Constr.Map.empty;
                                              })))
                             (Option.fold
-                               ~some:(fun r -> r.refutables (Namevec.bplus xs))
+                               ~some:(fun r ->
+                                 let (Bplus_to bplus) = Patternvars.bplus xs in
+                                 r.refutables bplus)
                                ~none:[] refutables);
                           !s in
                     match result with

@@ -24,6 +24,8 @@ let option_of_binder_name : binder_name -> string option = function
   | `Named x -> Some x
   | `Anon _ -> None
 
+(* The names given to the pattern variables bound by one argument of a constructor in a match branch: either a single variable, which for a higher-dimensional match is a cube variable whose boundary is accessed with face suffixes, or an explicit name for each face of its boundary, the last of which is the top face.  This is stored in a checked match branch so that the branch can be displayed as the user wrote it. *)
+type pattern_name = [ `Cube of string option | `Boundary of string option list ]
 type 'mn variables = ('mn, binder_name) gvariables
 type any_variables = Any : 'n variables -> any_variables
 

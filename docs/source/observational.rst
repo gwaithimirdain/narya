@@ -320,9 +320,21 @@ This notation for higher-dimensional matches is also used by Narya when printing
 
    m n ⤇ match m.2 [ suc. m′ ⤇ suc. (ap plus m′.2 n.2) | zero. ⤇ n.2 ]
 
-Unlike for abstractions, for higher-dimensional matches there is no option to write ``↦`` and name all the variables explicitly (e.g. ``| suc. {p0} {p1} p2 ↦``).  We deem this would be too confusing, because higher-dimensional constructors can never be *applied* explicitly to all their boundaries, and a "pattern" in a ``match`` should look as much as possible like the constructor that it matches against.
+As for abstractions, there is also the option to write ``↦`` and name all the boundary variables explicitly, in braces:
 
-It is possible to do :ref:`Multiple matches and deep matches` that combine zero- and higher-dimensional matches.  In this case the match symbol is ``⤇``, which we can think of as indicating that at least *some* of the pattern variables are nontrivial cubes.
+.. code-block:: none
+
+   def encode (m n : ℕ) : Id ℕ m n → code m n ≔ [
+   | zero. ↦ ()
+   | suc. {p₀} {p₁} p₂ ↦ (_ ≔ encode p₀ p₁ p₂)]
+
+This is consistent with the fact that a higher-dimensional constructor can also be *applied* explicitly to all of its boundary arguments (see :ref:`Id of datatypes`), so that a "pattern" in a ``match`` still looks like the constructor that it matches against.  There must be exactly one boundary variable for each face of the pattern variable's cube, with the last of them, written without braces, being the top face; and as for abstractions, ``↦`` is used only when *none* of the pattern variables in the branch is left as a cube, while ``⤇`` is used whenever any of them is (so the two can be mixed in one pattern, as in ``| pair. {a₀} {a₁} a₂ b ⤇``).  A branch whose constructor takes no arguments at all, such as ``zero.`` above, binds no variables and can therefore use either symbol.
+
+Since all the branches for a single constructor extend the context in the same way, they must all name the same number of variables for each argument; thus, in a :ref:`deep match <Multiple matches and deep matches>` that matches twice against the same constructor, either all or none of those branches must give it explicit boundaries.
+
+Narya displays a higher-dimensional match with explicit boundary variables if it was written that way, and with cube variables otherwise.  (An exception is a definition that has been degenerated, such as when displaying ``refl`` of it: then its pattern variables are cubes of a larger dimension than the boundary variables that were named, so they are displayed as cube variables named after their top faces.)
+
+It is possible to do :ref:`Multiple matches and deep matches` that combine zero- and higher-dimensional matches.  In this case the match symbol is ``⤇``, which we can think of as indicating that at least *some* of the pattern variables are nontrivial cubes, unless all of them have been given explicit boundaries.
 
 
 Id of the universe

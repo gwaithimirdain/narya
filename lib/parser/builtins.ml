@@ -1422,6 +1422,13 @@ module Matchscope : sig
   val ext : 'a t -> string option -> 'a N.suc t
   val last_num : 'a t -> int
   val exts : ('a, 'm, 'am) Raw.Indexed.bplus -> 'a t -> 'am t * (int, 'm) Vec.t
+
+  val exts_pattern :
+    ('a, 'm, 'am) Raw.Indexed.Patternvars.t ->
+    (Matchpattern.arg, 'm) Vec.t option ->
+    'a t ->
+    'am t * (int, 'm) Vec.t
+
   val make : (string option, 'a) Bwv.t -> 'a t
   val names : 'a t -> (string option, 'a) Bwv.t
   val give_name : int -> string option -> 'a t -> 'a t
@@ -1465,6 +1472,49 @@ end = struct
         let newscope, levels = exts am (Matchscope (base, Suc ab, Snoc (scope, (None, i)), i + 1)) in
         (newscope, i :: levels)
 
+  (* Extend the scope by the variables naming the faces of the boundary of one higher-dimensional pattern variable, whose names in this branch are supplied by the caller.  The last variable of the cube is the top face, which is the one that can be matched on further, so like an ordinary pattern variable it is added anonymously and named later (by give_name) from the pattern it's matched against. *)
+  let rec ext_boundary : type a c ac.
+      (a, c, ac) Raw.Indexed.Namevec.t -> string option located list option -> a t -> ac t =
+   fun ns bdry scope ->
+    match ns with
+    | [] -> fatal (Anomaly "empty boundary of match pattern variable")
+    | [ _ ] -> (
+        match bdry with
+        | None | Some [] -> ext scope None
+        | Some (x :: _) -> fatal ?loc:x.loc Inconsistent_patterns)
+    | _ :: ns -> (
+        match bdry with
+        | None -> ext_boundary ns None (ext scope None)
+        | Some [] -> fatal Inconsistent_patterns
+        | Some (x :: bdry) -> ext_boundary ns (Some bdry) (ext scope x.value))
+
+  (* Extend the scope by the pattern variables of one constructor, whose shape is given by a Patternvars (computed from the first branch for this constructor), and return the levels of the variables that can be matched on further (one for each argument).  The names of any explicit boundary variables are supplied separately, as the arguments of this branch's pattern, since each branch can name them differently; if they are omitted, all the new variables are anonymous.  A branch whose boundary variables don't match the shape of the first one is an error, since all the branches for a single constructor must extend the scope by the same number of variables. *)
+  let rec exts_pattern : type a m am.
+      (a, m, am) Raw.Indexed.Patternvars.t ->
+      (Matchpattern.arg, m) Vec.t option ->
+      a t ->
+      am t * (int, m) Vec.t =
+   fun xs args scope ->
+    match Raw.Indexed.Patternvars.view xs with
+    | Nil -> (scope, [])
+    | Cons
+        (type a1)
+        ((x, xs) : (a, a1) Raw.Indexed.Patternvars.arg * (a1, _, am) Raw.Indexed.Patternvars.t) ->
+        let bdry, args =
+          match args with
+          | None -> (None, None)
+          | Some (arg :: args) -> (Some arg.boundary, Some args) in
+        let scope : a1 t =
+          match x with
+          | Cube_arg _ -> (
+              match bdry with
+              | None | Some [] -> ext scope None
+              | Some (x :: _) -> fatal ?loc:x.loc Inconsistent_patterns)
+          | Boundary_arg ns -> ext_boundary ns.value bdry scope in
+        let i = last_num scope in
+        let scope, levels = exts_pattern xs args scope in
+        (scope, i :: levels)
+
   let make : type a. (string option, a) Bwv.t -> a t = fun base -> Matchscope (base, Zero, Emp, 0)
 
   let names : type a. a t -> (string option, a) Bwv.t =
@@ -1494,10 +1544,10 @@ type ('a, 'n) branch =
   * [ `Normal of Asai.Range.t option | `Cube of bool ref located list ]
   * wrapped_parse
 
-(* An ('a, 'm, 'n) cbranch is a branch, with scope of 'a variables, that starts with a constructor (unspecified) having 'm arguments and proceeds with 'n other patterns.  *)
+(* An ('a, 'm, 'n) cbranch is a branch, with scope of 'a variables, that starts with a constructor (unspecified) having 'm arguments and proceeds with 'n other patterns.  The arguments of the constructor, unlike the other patterns, can carry explicit boundary variables.  *)
 type ('a, 'm, 'n) cbranch =
   'a Matchscope.t
-  * (pattern, 'm) Vec.t
+  * (Matchpattern.arg, 'm) Vec.t
   * (pattern, 'n) Vec.t
   * [ `Normal of Asai.Range.t option | `Cube of bool ref located list ]
   * wrapped_parse
@@ -1556,6 +1606,29 @@ let process_obs_or_ix : type a.
       match Matchscope.lookup_num i ctx with
       | Some k -> (unlocated (Raw.Var (k, None)), None)
       | None -> fatal (Anomaly "invalid parse-level in processing match"))
+
+(* The name that a pattern gives to the variable it matches: only a variable pattern names it, while a constructor pattern (which will be matched against further) leaves it anonymous. *)
+let name_of_pattern : pattern -> string option = function
+  | Var name -> name.value
+  | Constr _ -> None
+
+type (_, _) has_patternvars =
+  | Patternvars : ('a, 'm, 'am) Raw.Indexed.Patternvars.t -> ('a, 'm) has_patternvars
+
+(* Assemble the pattern variables bound by the arguments of a constructor pattern.  An argument with no explicit boundary binds a single (cube) variable, while one with an explicit boundary binds one variable for each face, the last being the top face, which is the argument pattern itself. *)
+let rec patternvars_of_args : type a m. (Matchpattern.arg, m) Vec.t -> (a, m) has_patternvars =
+ fun args ->
+  match args with
+  | [] -> Patternvars []
+  | { boundary = []; pat } :: args ->
+      let (Patternvars xs) = patternvars_of_args args in
+      Patternvars (Cube (name_of_pattern pat, xs))
+  | { boundary = x :: _ as boundary; pat } :: args ->
+      let bdry = List.map (fun (y : string option located) -> y.value) boundary in
+      let (Wrap ns) = Vec.of_list (bdry @ [ name_of_pattern pat ]) in
+      let (Bplus ac) = Raw.Indexed.bplus (Vec.length ns) in
+      let (Patternvars xs) = patternvars_of_args args in
+      Patternvars (Boundary (locate_opt x.loc (Indexed.Namevec.of_vec ac ns), xs))
 
 (* Given a scope of 'a variables, a vector of 'n not-yet-processed discriminees or previous match variables, and a list of branches with 'n patterns each, compile them into a nested match.  The scope given as an argument to this function is used only for the discriminees; it is the original scope extended by unnamed variables (since the discriminees can't actually depend on the pattern variables).  The scopes used for the branches, which also include pattern variables, are stored in the branch data structures. *)
 let rec process_branches : type a n.
@@ -1673,22 +1746,20 @@ let rec process_branches : type a n.
             | [] -> fatal (Anomaly "empty list of branches for constructor")
             | (_, pats, _, cube, _) :: _ as brs ->
                 let m = Vec.length pats in
-                let (Bplus am) = Raw.Indexed.bplus m in
-                let names =
-                  Indexed.Namevec.of_vec am
-                    (Vec.mmap
-                       (function
-                         (* Anywhere that the first pattern for this constructor has a name, we take it. *)
-                         | [ Matchpattern.Var name ] -> name.value
-                         | [ _ ] -> None)
-                       [ pats ]) in
+                (* The pattern variables of this constructor.  Their names, and also which of them have explicit boundaries and how many faces those boundaries have, are taken from the first branch for this constructor; the other branches must bind the same number of variables, but can name them differently in their own scopes. *)
+                let (Patternvars names) = patternvars_of_args pats in
                 let (Plus mn) = Fwn.plus m in
-                let newxctx, newnums = Matchscope.exts am xctx in
+                let newxctx, newnums = Matchscope.exts_pattern names None xctx in
                 let newxs = Vec.append mn (Vec.mmap (fun [ n ] -> Either.Right n) [ newnums ]) xs in
                 let newbrs =
                   List.map
-                    (fun (bodyctx, (cpats : (pattern, m) Vec.t), pats, cube, body) ->
-                      (fst (Matchscope.exts am bodyctx), Vec.append mn cpats pats, cube, body))
+                    (fun (bodyctx, (cpats : (Matchpattern.arg, m) Vec.t), pats, cube, body) ->
+                      ( fst (Matchscope.exts_pattern names (Some cpats) bodyctx),
+                        Vec.append mn
+                          (Vec.mmap (fun [ (arg : Matchpattern.arg) ] -> arg.pat) [ cpats ])
+                          pats,
+                        cube,
+                        body ))
                     brs in
                 Reporter.try_with ~fatal:(fun d ->
                     match d.message with

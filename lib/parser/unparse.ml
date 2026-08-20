@@ -853,10 +853,6 @@ and unparse_match : type mode window dom n aw m lt ls rt rs.
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
  fun vars plus_lock tm dim motive branches _li _ri ->
-  let mapsto =
-    match D.compare_zero dim with
-    | Zero -> Token.Mapsto
-    | Pos _ -> Token.DblMapsto in
   (* The discriminee lives in the context locked by the window modality. *)
   let disc = unparse (Names.add_lock vars plus_lock) tm No.Interval.entire No.Interval.entire in
   let window = plus_lock_modality plus_lock in
@@ -871,7 +867,8 @@ and unparse_match : type mode window dom n aw m lt ls rt rs.
         let umotive = unparse vars motive No.Interval.entire No.Interval.entire in
         (explicit_mtch, Snoc (Emp, Term disc) <: mktok Return <: Term umotive <: mktok LBracket)
     | Some (`Type _) | None -> (implicit_mtch, Snoc (Emp, Term disc) <: mktok LBracket) in
-  let inner =
+  (* We unparse all the branches first, since the abstraction symbol to use depends on all of them.  We also record whether each branch binds any cube variables and whether any of its pattern variables have explicit boundaries. *)
+  let ubranches =
     Constr.Map.fold
       (fun c br acc ->
         match br with
@@ -879,13 +876,51 @@ and unparse_match : type mode window dom n aw m lt ls rt rs.
             (* Extend the name context by the branch's pattern variables (named via the stored "annotate" witness), then permute it to the body's context. *)
             let abvars, xs = Names.add_match_vars vars annotate comp in
             let bodyvars = Names.permute perm abvars in
-            let args =
-              Bwd.of_list (List.map (fun x -> { unparse = (fun _ _ -> unparse_var x) }) xs) in
+            let args = List.fold_left unparse_pattern_var Emp xs in
             let pat = unparse_spine vars (`Constr c) args No.Interval.entire No.Interval.entire in
             let ubody = unparse bodyvars body No.Interval.entire No.Interval.entire in
-            acc <: mktok (Op "|") <: Term pat <: mktok mapsto <: Term ubody)
-      branches start in
+            let is_cube = function
+              | Names.Cube_var _ -> true
+              | Names.Boundary_var _ -> false in
+            acc <: (pat, ubody, List.exists is_cube xs, List.exists (fun x -> not (is_cube x)) xs))
+      branches Emp in
+  (* A higher-dimensional match displays with the cube abstraction ⤇, unless some of its pattern variables were given explicit boundaries and none of them are cube variables, in which case it displays with the ordinary abstraction ↦.  (A branch with no pattern variables at all, such as that of a constant constructor, says nothing about which of these to use, so it follows the other branches.) *)
+  let mapsto =
+    match D.compare_zero dim with
+    | Zero -> Token.Mapsto
+    | Pos _ ->
+        if
+          Bwd.exists (fun (_, _, _, boundary) -> boundary) ubranches
+          && not (Bwd.exists (fun (_, _, cube, _) -> cube) ubranches)
+        then Token.Mapsto
+        else Token.DblMapsto in
+  let inner =
+    Bwd.fold_left
+      (fun acc (pat, ubody, _, _) ->
+        acc <: mktok (Op "|") <: Term pat <: mktok mapsto <: Term ubody)
+      start ubranches in
   unlocated (outfix ~notn ~inner:(Multiple (wstok Match, inner, wstok RBracket)))
+
+(* Add the pattern variables bound by one argument of a constructor in a match branch to the argument spine of the pattern.  A cube variable is a single explicit argument, while an explicit boundary is one argument for each face, with the strict faces in braces and the top face explicit, exactly as in a non-cube abstraction. *)
+and unparse_pattern_var : unparser Bwd.t -> Names.pattern_var -> unparser Bwd.t =
+ fun args -> function
+  | Cube_var x -> Snoc (args, { unparse = (fun _ _ -> unparse_var x) })
+  | Boundary_var (Variables (_, _, xs)) ->
+      let module Fold = NICubeOf.Traverse (struct
+        type 'acc t = unparser Bwd.t
+      end) in
+      let folder : type left k m.
+          (k, m) sface ->
+          unparser Bwd.t ->
+          (left, k, string) NFamOf.t ->
+          (left, k, unit) NFamOf.t * unparser Bwd.t =
+       fun s acc (NFamOf x) ->
+        let arg =
+          match is_id_sface s with
+          | Some _ -> { unparse = (fun _ _ -> unparse_var x) }
+          | None -> { unparse = (fun _ _ -> braceize (unparse_var x)) } in
+        (NFamOf (), Snoc (acc, arg)) in
+      snd (Fold.fold_map_left { foldmap = (fun s acc x -> folder s acc x) } args xs)
 
 (* Unparse a comatch "[ .fld |-> body | ... ]".  An empty comatch prints with the empty (co)match notation. *)
 and unparse_comatch : type mode n a s et lt ls rt rs.

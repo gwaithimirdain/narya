@@ -105,7 +105,10 @@ and ('left, 'tight, 'right) notation =
   ('left, 'tight, 'right) identity * ('left, 'tight, 'right) fixity
 
 module Matchpattern : sig
-  type t = Var : string option located -> t | Constr : Constr.t located * (t, 'n) Vec.t -> t
+  type t = Var : string option located -> t | Constr : Constr.t located * (arg, 'n) Vec.t -> t
+  and arg = { boundary : string option located list; pat : t }
+
+  val explicit : t -> arg
 end
 
 type ('left, 'tight, 'right) data = {

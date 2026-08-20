@@ -370,3 +370,146 @@
      ^ e-dimensional match requires cube abstraction
   
   [1]
+
+The pattern variables of a higher-dimensional match can be given explicit boundaries, in braces, like the variables of a non-cube higher-dimensional abstraction.
+
+  $ narya -v -parametric pattern-boundary.ny
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0000]
+   ￮ constant P defined
+  
+   ￫ info[I0000]
+   ￮ constant bar defined
+  
+   ￫ info[I0000]
+   ￮ constant bar′ defined
+  
+  bar′
+    : (y0 : ℕ) (y1 : ℕ) (y2 : ℕ⁽ᵉ⁾ y0 y1) → ℕ
+  
+  y0 y1 y2 ↦ match y2 [ suc. {m0} {m1} m2 ↦ m0 | zero. ↦ 0 ]
+    : (y0 : ℕ) (y1 : ℕ) (y2 : ℕ⁽ᵉ⁾ y0 y1) → ℕ
+  
+   ￫ info[I0001]
+   ￮ axiom a0 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a1 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a2 assumed
+  
+  match a2 [ suc. n ⤇ n.0 | zero. ⤇ 0 ]
+    : ℕ
+  
+  match a2 [ suc. {m0} {m1} m2 ↦ m0 | zero. ↦ 0 ]
+    : ℕ
+  
+  y0 y1 y2 ⤇ match y2.2 [ suc. m2 ⤇ m2.02 | zero. ⤇ refl 0 ]
+    : {y0₀ : ℕ} {y0₁ : ℕ} (y0₂ : ℕ⁽ᵉ⁾ y0₀ y0₁) {y1₀ : ℕ} {y1₁ : ℕ}
+      (y1₂ : ℕ⁽ᵉ⁾ y1₀ y1₁) {y2₀ : ℕ⁽ᵉ⁾ y0₀ y1₀} {y2₁ : ℕ⁽ᵉ⁾ y0₁ y1₁}
+      (y2₂ : ℕ⁽ᵉᵉ⁾ y0₂ y1₂ y2₀ y2₁)
+      →⁽ᵉ⁾ ℕ⁽ᵉ⁾ (bar′ y0₀ y1₀ y2₀) (bar′ y0₁ y1₁ y2₁)
+  
+   ￫ info[I0000]
+   ￮ constant baz defined
+  
+  y0 y1 y2 ↦
+  match y2 [
+  | suc. {m0} {𝑥} m2 ↦ match m0 [ suc. k ↦ k | zero. ↦ 1 ]
+  | zero. ↦ 0]
+    : (y0 : ℕ) (y1 : ℕ) (y2 : ℕ⁽ᵉ⁾ y0 y1) → ℕ
+  
+   ￫ info[I0000]
+   ￮ constant qux defined
+  
+  y0 y1 y2 ↦ match y2 [ pair. {a0} {a1} a2 b ⤇ b.0 ]
+    : (y0 : P) (y1 : P) (y2 : P⁽ᵉ⁾ y0 y1) → ℕ
+  
+   ￫ info[I0000]
+   ￮ constant quux defined
+  
+  y0 y1 y2 ↦
+  match refl y2 [
+  | suc. {m00} {m01} {m02} {m10} {m11} {m12} {m20} {m21} m22 ↦ m00
+  | zero. ↦ 0]
+    : (y0 : ℕ) (y1 : ℕ) (y2 : ℕ⁽ᵉ⁾ y0 y1) → ℕ
+  
+   ￫ info[I0000]
+   ￮ constant deep defined
+  
+  y0 y1 y2 ↦
+  match y2 [
+  | suc. {m0} {m1} 𝑥 ↦ match 𝑥 [ suc. {k0} {k1} k2 ↦ k1 | zero. ↦ m0 ]
+  | zero. ↦ 0]
+    : (y0 : ℕ) (y1 : ℕ) (y2 : ℕ⁽ᵉ⁾ y0 y1) → ℕ
+  
+   ￫ info[I0000]
+   ￮ constant multi defined
+  
+  x y0 y1 y2 ↦
+  match x [
+  | suc. 𝑥 ↦ match y2 [ suc. {n0} {n1} n2 ↦ n1 | zero. ↦ 1 ]
+  | zero. ↦ match y2 [ suc. {m0} {m1} m2 ↦ m0 | zero. ↦ 0 ]]
+    : (x : ℕ) (y0 : ℕ) (y1 : ℕ) (y2 : ℕ⁽ᵉ⁾ y0 y1) → ℕ
+  
+
+They must be exactly one for each face of the pattern variable's cube.
+
+  $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m0} m2 ↦ m0 ]'
+   ￫ error[E1310]
+   ￭ command-line exec string
+   1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m0} m2 ↦ m0 ]
+     ^ not enough variables in boundary of higher-dimensional pattern variable (need 1 more)
+  
+  [1]
+
+  $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m0} {m1} {m2} m3 ↦ m0 ]'
+   ￫ error[E1310]
+   ￭ command-line exec string
+   1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m0} {m1} {m2} m3 ↦ m0 ]
+     ^ too many variables in boundary of higher-dimensional pattern variable (1 extra)
+  
+  [1]
+
+In particular, a zero-dimensional match has no boundary variables to name.
+
+  $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (n : ℕ) : ℕ ≔ match n [ zero. ↦ 0 | suc. {m0} m ↦ m0 ]'
+   ￫ error[E1310]
+   ￭ command-line exec string
+   1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (n : ℕ) : ℕ ≔ match n [ zero. ↦ 0 | suc. {m0} m ↦ m0 ]
+     ^ too many variables in boundary of higher-dimensional pattern variable (1 extra)
+  
+  [1]
+
+Boundary variables must be followed by the pattern variable they belong to.
+
+  $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m0} {m1} ↦ 0 ]'
+   ￫ error[E0200]
+   ￭ command-line exec string
+   1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m0} {m1} ↦ 0 ]
+     ^ parse error: boundary pattern variable must be followed by the pattern variable it belongs to
+  
+  [1]
+
+A branch that leaves any of its pattern variables as a cube still requires the cube abstraction.
+
+  $ narya -parametric -e 'def P : Type ≔ data [ pair. (x : P) (y : P) ] def bad (y0 y1 : P) (y2 : Id P y0 y1) : P ≔ match y2 [ pair. {a0} {a1} a2 b ↦ a0 ]'
+   ￫ error[E0510]
+   ￭ command-line exec string
+   1 | def P : Type ≔ data [ pair. (x : P) (y : P) ] def bad (y0 y1 : P) (y2 : Id P y0 y1) : P ≔ match y2 [ pair. {a0} {a1} a2 b ↦ a0 ]
+     ^ e-dimensional match requires cube abstraction
+  
+  [1]
+
+And all the branches for a single constructor must name the same number of variables, since they all extend the context in the same way.
+
+  $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m0} {m1} (zero.) ↦ m0 | suc. n ⤇ n.0 ]'
+   ￫ error[E1306]
+   ￭ command-line exec string
+   1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m0} {m1} (zero.) ↦ m0 | suc. n ⤇ n.0 ]
+     ^ inconsistent patterns in match
+  
+  [1]
