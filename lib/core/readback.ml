@@ -1152,7 +1152,11 @@ and specialize_boundary : type mode k.
                   map =
                     (fun fa [ nf ] ->
                       match nf.tm with
-                      | Neu { head; args; value; ty } ->
+                      (* Only a boundary that is itself a stuck match with an empty spine can be specialized, that being what the reduction needs.  With an explicit motive the boundary has already been specialized, by motive_branch_ty, and its value is the branch body rather than a match; specializing again would have nothing to reduce. *)
+                      | Neu { head; args; value; ty }
+                        when match force_eval value with
+                             | Unrealized (Some (_, sp)) -> Option.is_some (empty_apps sp)
+                             | _ -> false ->
                           let cnf =
                             {
                               tm = CubeOf.find cube (sface_of_tface fa);
@@ -1804,6 +1808,9 @@ and readback_stuck : type mode a z hmode any.
       | Degenerated_neutral_not_a_struct ->
           no_display "a stuck match with a branch that reaches a higher field"
       | Matching_wont_refine (str, _) -> no_display ("a stuck match with " ^ str)
+      (* A specialization carries the type of its branch rather than computing it, and evaluating that stored type in a degenerated environment -- which degenerating a self to reach a higher codata field does -- gives a type that is not instantiated at the faces the degeneration adds.  Every other term form computes its type instead (tyof_app and its kin), which is why this is the only one that can be wrong; until it computes its own, we catch the resulting failure rather than let a display raise. *)
+      | Type_not_fully_instantiated _ ->
+          no_display "a stuck match with a branch whose specialized type is not fully instantiated" 
       | _ -> fatal_diagnostic d)
   @@ fun () -> readback_stuck_match ?disc status ctx pn ty
 
