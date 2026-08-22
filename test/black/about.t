@@ -1014,10 +1014,10 @@ Whenever a piece of a stuck case tree can't be displayed as the construct it cam
    ￫ info[I0000]
    ￮ constant F defined
   
-   ￫ info[I0010]
-   ￮ not displaying a stuck match with a branch body that is a codatatype whose fields cannot be projected at its boundary; showing an application spine instead
-  
-  Id F b2
+  match b2 [
+  | false. ⤇ N⁽ᵉ⁾
+  | true. ⤇ codata⁽ᵉ⁾ [
+    | x .head : N⁽ᵉ⁾ (x.0 .head) (x.1 .head) ]]
     : Type⁽ᵉ⁾ (F b0) (F b1)
   
 
