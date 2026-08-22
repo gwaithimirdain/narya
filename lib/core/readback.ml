@@ -1990,6 +1990,14 @@ and readback_stuck_match : type mode a z hmode any.
                                     (perm, take_args env plus_dim newvars window fw annotate comp)
                                 in
                                 let ebody = eval benv body in
+                                (* This branch's constructor, at every face, with the type each has: the datatype instantiated at the constructors below it, not at the discriminee's own boundary.  Reading a higher-dimensional constructor back demands exactly that, so the self's specialization needs it as much as the boundary supply does. *)
+                                let constr_nfs =
+                                  lazy
+                                    (constr_norm_cube (Modality.src window) constr total_dim tyfam
+                                       (Vec.map val_of_norm_cube
+                                          (indices_of_out "match branch" out total_dim
+                                             (Vec.length data_indices)))
+                                       newvars) in
                                 (* The motive is applied to this branch's indices and constructor, in that order, exactly as check_match_branches applies it to compute the type at which to check the branch. *)
                                 let branch_ty =
                                   match motive with
@@ -2028,15 +2036,7 @@ and readback_stuck_match : type mode a z hmode any.
                                                                bdry_plus;
                                                                inst_dim = D.plus_right bdry_plus;
                                                                window;
-                                                               constrs =
-                                                                 constr_norm_cube
-                                                                   (Modality.src window) constr
-                                                                   total_dim tyfam
-                                                                   (Vec.map val_of_norm_cube
-                                                                      (indices_of_out "match branch"
-                                                                         out total_dim
-                                                                         (Vec.length data_indices)))
-                                                                   newvars;
+                                                               constrs = Lazy.force constr_nfs;
                                                              })
                                                     | _ -> None)
                                                 | _ -> None)
@@ -2057,12 +2057,7 @@ and readback_stuck_match : type mode a z hmode any.
                                            Value.Specialize
                                              ( head_args,
                                                window,
-                                               {
-                                                 tm =
-                                                   CubeOf.find_top
-                                                     (constr_val_cube constr total_dim newvars);
-                                                 ty = disc_nf.ty;
-                                               } );
+                                               CubeOf.find_top (Lazy.force constr_nfs) );
                                          value = ready ebody;
                                          ty = Lazy.from_val branch_ty;
                                        }) in
