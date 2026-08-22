@@ -108,7 +108,7 @@ The self now carries a specialization, a display-only spine entry that reduces t
 
 Every branch is specialized, not only the ones that need it: inside a branch the match is not stuck any more, and nothing treats the self as though it were.  Every dispatch on a stuck case tree is on an *evaluation* rather than on the self, which is only ever applied, projected from, or read back as a spine; and the higher-field instance above, the one place that does inspect the self's value, requires it *not* to be stuck.  A neutral whose value computes rather than being unrealized is just a glued neutral, which the evaluator handles everywhere.
 
-In a degenerated environment, the type at which a branch body is read back is the motive instantiated at the boundary of that body, which we get by evaluating it in the faces of its own environment.  A branch body is a case tree, so its value at a face may be a case tree too, and then there is nothing to instantiate at.  Here the bodies are lambdas, so they are.
+In a degenerated environment, the type at which a branch body is read back is the motive instantiated at the boundary of that body, which we get by evaluating it in the faces of its own environment.  A branch body is a case tree, so its value at a face may be a case tree too, and then there is no term of its own to instantiate at.  There we take the match at that face, which the match's own type records among its instantiation arguments, and specialize it at this branch's constructor there: it denotes the same thing and is a neutral, so it is a term.  Here the bodies are lambdas, and it is what lets them display.
 
   $ narya -v -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom b0 : Bool' -e 'axiom b1 : Bool' -e 'axiom b2 : Id Bool b0 b1' -e 'axiom ax : N' -e 'def g : Bool → (N → N) ≔ b ↦ match b return _ ↦ N → N [ true. ↦ n ↦ n | false. ↦ n ↦ zero. ]' -e 'about (refl g b2 (refl ax))'
    ￫ info[I0000]
@@ -132,10 +132,16 @@ In a degenerated environment, the type at which a branch body is read back is th
    ￫ info[I0000]
    ￮ constant g defined
   
-   ￫ info[I0010]
-   ￮ not displaying a stuck match with a branch body that is a case tree at one of its boundary faces; showing an application spine instead
-  
-  ap g b2 (refl ax)
+  match b2
+  return 𝑥 𝑦 𝑧 ↦
+         {𝑥₀ : N} {𝑥₁ : N} (𝑥₂ : N⁽ᵉ⁾ 𝑥₀ 𝑥₁)
+         →⁽ᵉ⁾ N⁽ᵉ⁾
+                ((match 𝑥
+                  return 𝑤 ↦ N → N [ false. ↦ n ↦ 0 | true. ↦ n ↦ n ]) 𝑥₀)
+                ((match 𝑦
+                  return 𝑤 ↦ N → N [ false. ↦ n ↦ 0 | true. ↦ n ↦ n ]) 𝑥₁) [
+  | false. ⤇ n ⤇ refl 0
+  | true. ⤇ n ⤇ n.2] (refl ax)
     : N⁽ᵉ⁾ (g b0 ax) (g b1 ax)
   
 

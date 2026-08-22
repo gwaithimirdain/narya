@@ -123,6 +123,16 @@ module ModalValuePairCube = Modality.Cube (ValuePair)
 type _ disc_override =
   | Disc_override : ('dom, 'window, 'mode) Modality.t * ('dom, kinetic) value -> 'mode disc_override
 
+(* What lets a branch body's boundary be supplied when its own value at a face is a case tree rather than a term.  The branch at a face of the environment is the *match* at that face, specialized at this branch's constructor there; the matches come from the instantiation arguments of the match's own type, which is the only place a neutral's faces are recorded, and the constructors from the cube the motive is applied to.  Since a specialization is a neutral, it is a kinetic value and so can instantiate a type where the case tree could not. *)
+type (_, _, _) branch_spec =
+  | Branch_spec : {
+      bdry : (D.zero, 'i, 'i, 'mode normal) TubeOf.t;
+      bdry_plus : ('m, 'inst, 'i) D.plus;
+      inst_dim : 'inst D.t;
+      constrs : ('kn, 'mode normal) CubeOf.t;
+    }
+      -> ('mode, 'm, 'kn) branch_spec
+
 (* An argument to readback that is present precisely when the energy is potential: the neutral whose potential value is being read back.  Reading back a comatch, or a canonical type, needs that neutral as the self-variable for computing its field or constructor types, and no other kind of value needs anything -- a potential value is a Lam, a Struct or a Canonical, never a Neu, so a neutral is never forced recursively and the display stays one-shot.  Like the status of type checking, it is rebuilt as readback descends through parameter abstractions. *)
 type (_, _) readback_status =
   | Kinetic : ('mode, kinetic) readback_status
@@ -1501,6 +1511,7 @@ and motive_of_family : type dom window mode a b.
 
    A branch body is a case tree, so its value at a face may be a case tree too rather than a term; then there is nothing to instantiate at and we give up on displaying the match (the caller catches this and falls back to the application spine). *)
 and motive_branch_ty : type mode dom window a c k m n kn.
+    ?spec:(mode, m, kn) branch_spec ->
     (dom, window, mode, k, m) Modality.filter_dim ->
     (mode, m, a) env ->
     (mode, a) Term.match_motive ->
@@ -1510,7 +1521,7 @@ and motive_branch_ty : type mode dom window a c k m n kn.
     (mode, m, c) env ->
     (mode, c, potential) term ->
     (mode, kinetic) value =
- fun fw env motive plus_dim match_dim args benv body ->
+ fun ?spec fw env motive plus_dim match_dim args benv body ->
   let env_dim = dim_env env in
   (* The motive evaluated at a face of that environment, applied to the faces of the arguments lying over it.  The arguments live at the *filtered* dimension of the environment plus the match dimension, so the face of them we want is the image of this one under the filter, which also tells us the filter to apply the motive at there. *)
   let family : type j. (j, m) sface -> (mode, kinetic) value =
@@ -1533,10 +1544,7 @@ and motive_branch_ty : type mode dom window a c k m n kn.
         build =
           (fun fe ->
             let fs = sface_of_tface fe in
-            let tm =
-              match eval (act_env benv (opt_op_of_sface fs)) body with
-              | Realize v -> v
-              | _ -> fatal (Readback_at_wrong_type "a case tree at one of its boundary faces") in
+            (* The type does not depend on the term, so we build it first and can then hand it to a specialization built below. *)
             let ty =
               inst (family fs)
                 (TubeOf.build D.zero
@@ -1545,6 +1553,35 @@ and motive_branch_ty : type mode dom window a c k m n kn.
                      build =
                        (fun fc -> Hashtbl.find tbl (SFace_of (comp_sface fs (sface_of_tface fc))));
                    }) in
+            let ev = eval (act_env benv (opt_op_of_sface fs)) body in
+            let tm =
+              match (ev, spec) with
+              | Realize v, _ -> v
+              (* The body's value here is a case tree, so there is no term of its own to instantiate at; we take the match at this face and specialize it, which denotes the same thing and is a neutral. *)
+              | _, Some (Branch_spec { bdry; bdry_plus; inst_dim; constrs }) -> (
+                  let (Plus iplus) = D.plus inst_dim in
+                  let fb = sface_plus_sface fs bdry_plus iplus (id_sface inst_dim) in
+                  match pface_of_sface fb with
+                  | `Id _ -> fatal (Anomaly "identity face in motive_branch_ty boundary")
+                  | `Proper fd -> (
+                      match (TubeOf.find bdry fd).tm with
+                      | Neu { head; args = margs; _ } ->
+                          let (Filter_sface (fk, _)) = Modality.filter_sface fw fs in
+                          let (Plus jplus) = D.plus match_dim in
+                          let fa = sface_plus_sface fk plus_dim jplus (id_sface match_dim) in
+                          Neu
+                            {
+                              head;
+                              args = Specialize (margs, CubeOf.find constrs fa, Lazy.from_val ty);
+                              value = ready ev;
+                              ty = Lazy.from_val ty;
+                            }
+                      | _ ->
+                          fatal
+                            (Readback_at_wrong_type "a branch whose boundary match is not a neutral")
+                      ))
+              | _, None -> fatal (Readback_at_wrong_type "a case tree at one of its boundary faces")
+            in
             let nf = { tm; ty = Lazy.from_val ty } in
             Hashtbl.add tbl (SFace_of fs) nf;
             nf);
@@ -2005,8 +2042,46 @@ and readback_stuck_match : type mode a z hmode any.
                                           (indices_of_out "match branch" out total_dim
                                              (Vec.length data_indices))
                                         @ [ constr_val_cube constr total_dim newvars ] in
-                                      motive_branch_ty fw env mot plus_dim match_dim args benv body
-                                in
+                                      (* When a branch body's value at a face of the environment is a case tree, its boundary comes instead from the match at that face, specialized at this branch's constructor there.  The matches are the instantiation arguments of the match's own type, exactly as readback_motive gets them; the constructors are the cube we just applied the motive to.  If the type is not fully instantiated over those dimensions, we pass nothing and motive_branch_ty gives up on a case-tree face as before. *)
+                                      let spec =
+                                        Reporter.try_with ~fatal:(fun _ -> None) @@ fun () ->
+                                        (* As for the self, only an identity window puts the constructors at the mode of the match. *)
+                                        match
+                                          (Modality.compare_id window, Lazy.force match_self_ty)
+                                        with
+                                        | Neq, _ -> None
+                                        | Eq, Neu { args = tyapps; _ } -> (
+                                            match inst_of_apps tyapps with
+                                            | _, Some (Any_tube bdry) -> (
+                                                match
+                                                  ( D.compare_zero (TubeOf.uninst bdry),
+                                                    D.factor (TubeOf.inst bdry) env_dim )
+                                                with
+                                                | Zero, Some (Factor bdry_plus) ->
+                                                    let Eq =
+                                                      D.plus_uniq (TubeOf.plus bdry)
+                                                        (D.zero_plus (TubeOf.inst bdry)) in
+                                                    Some
+                                                      (Branch_spec
+                                                         {
+                                                           bdry;
+                                                           bdry_plus;
+                                                           inst_dim = D.plus_right bdry_plus;
+                                                           constrs =
+                                                             (constr_norm_cube (Modality.src window)
+                                                                constr total_dim tyfam
+                                                                (Vec.map val_of_norm_cube
+                                                                   (indices_of_out "match branch"
+                                                                      out total_dim
+                                                                      (Vec.length data_indices)))
+                                                                newvars
+                                                               : (_, hmode normal) CubeOf.t);
+                                                         })
+                                                | _ -> None)
+                                            | _ -> None)
+                                        | Eq, _ -> None in
+                                      motive_branch_ty ?spec fw env mot plus_dim match_dim args benv
+                                        body in
                                 (* The self a branch body is read back against is the neutral we were given, specialized at this branch's constructor.  Without that, the self's *value* is this body but its *spine* is still the unspecialized match, so anything that puts the self through an eval-readback cycle -- degenerating it to reach a higher codata field -- loses the body and computes nothing.  A Specialize survives the cycle, since reading it back emits a Term.Specialize that evaluates to the same specialization again.
 
                                    Every branch is specialized, not only the ones that need it: inside a branch the match is not stuck any more, and nothing treats the self as though it were.  Every dispatch on Unrealized -- here in readback_eval, in readback_about, and in readback_motive's boundary -- is on an *evaluation*, never on the self, which is only ever applied, projected from, or read back as a spine; and the one place that does inspect the self's value, the higher-field instance below, requires it *not* to be stuck.  A neutral whose value computes rather than being Unrealized is just a glued neutral, which the evaluator handles everywhere.
