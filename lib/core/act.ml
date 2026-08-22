@@ -629,7 +629,13 @@ module Act = struct
         let (Acted_instargs (fa, new_args, None)) = act_instargs args s c None in
         let new_s, new_c, new_rest = act_apps rest fa c in
         (new_s, new_c, Inst (new_rest, dim, new_args))
-    (* A specialization neither crosses a mode nor carries an insertion, so the degeneracy passes straight through to the rest of the spine, and the constructor it stores is acted by that same degeneracy.  The stored type is acted as a value, which is not in general the type of the acted term -- that would be act_ty, which needs the term -- but the neutral's own ty field is computed by act_value's Neu case, and this copy is used only to read the specialization back. *)
+    (* A specialization neither crosses a mode nor carries an insertion, so the degeneracy passes straight through to the rest of the spine, and the constructor it stores is acted by that same degeneracy.
+
+       The stored type, though, is acted WRONGLY, and this is a bug rather than an approximation.  act_value gives the degeneracy of the type, which for a dimension-adding degeneracy is not fully instantiated: act_instargs only acts the instantiation arguments already there, whereas the acted term needs more of them, namely its own new faces.  Computing those is exactly what act_ty does, via gact_ty_instargs, from the term -- which act_apps does not have, since a spine entry is acted without the value it belongs to.  So a specialization acted by anything but an identity degeneracy carries a type that the next view_type of it will reject with E0504.
+
+       The neutral's own ty field is unaffected: act_value's Neu case computes it with act_ty.  It is this copy, which exists only so that readback_apps can emit the type term, that goes wrong.
+
+       It appears to be unreachable, and the search for an input was this.  Across the whole test suite every action on a specialization is the identity degeneracy carrying a modality cell (the modal-field readbacks in about.t), where act_value and act_ty agree.  The one site that acts a self by anything else is readback_at's permuted-record case, which un-permutes a struct at a codatatype whose insertion is not the identity -- and it acts the *self* only at potential energy, whereas a branch body at such a type is never a potential struct: a tuple there realizes, so the body is read back kinetically, and an inline comatch is lifted to a metavariable by the elaborator, so the body is a reference rather than a struct.  Constructed both, with a Gel and a no-eta Gel over a symmetrized instantiation; neither reaches here.  If something later acts a self by a real degeneracy, the fix is to stop storing the type rather than to patch here, since act_apps will still have no term to hand act_ty. *)
     | Specialize (rest, cval, ty) ->
         specializing "act";
         let new_s, new_c, new_rest = act_apps rest s c in
