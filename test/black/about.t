@@ -841,7 +841,7 @@ A modal field works the same way, since keying the self by the adjunction unit a
     : N → R
   
 
-A higher field needs more: its instances are read back by degenerating the self, which reads it back and re-evaluates it, so the value we substituted in survives only if the self's spine really does evaluate to the comatch.  It does when the discriminee was refined away, since then the match reduces.
+A higher field needs more: its instances are read back by degenerating the self, which reads it back and re-evaluates it, so the value we substituted in survives only if the self's spine really does evaluate to the comatch.  The self carries a specialization for that: a display-only spine entry that reduces the match at the head end as if its discriminee were this branch's constructor, and that survives the cycle because reading it back emits a term that evaluates to the same specialization again.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def √N : Type ≔ codata [ x .root.e : N ]' -e 'about (let t : N → √N ≔ [ zero. ↦ [ .root.e ↦ zero. ] | suc. n ↦ [ .root.e ↦ suc. zero. ] ] in t)' -e 'about (let v : N → √N ≔ [ zero. ↦ [ .root.e ↦ zero. ] | suc. n ↦ [ .root.e ↦ n.0 ] ] in v)'
   𝑥 ↦ match 𝑥 [ suc. n ↦ [ .root.e ↦ 1 ] | zero. ↦ [ .root.e ↦ 0 ] ]
@@ -851,10 +851,10 @@ A higher field needs more: its instances are read back by degenerating the self,
     : N → √N
   
 
-When it doesn't -- a higher field in a branch whose discriminee could not be refined -- projecting from the degenerated self computes nothing, and displaying it would give an instance body that is not the one the comatch stores.  We detect that and give up on the branch instead.
+So a higher field displays whether or not the discriminee could be refined, and whether or not there is a motive -- refinement is skipped when there is one, so before the specialization these were the cases that could not project.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def √N : Type ≔ codata [ x .root.e : N ]' -e 'axiom ax : N' -e 'about (let u : N → √N ≔ [ zero. ↦ [ .root.e ↦ zero. ] | suc. n ↦ [ .root.e ↦ suc. zero. ] ] in u ax)'
-  _let.F5.0.u{…} ax
+  match ax [ suc. n ↦ [ .root.e ↦ 1 ] | zero. ↦ [ .root.e ↦ 0 ] ]
     : √N
   
 
@@ -971,21 +971,30 @@ The refuting variable can be modally annotated, in which case the refutation is 
 Whenever a piece of a stuck case tree can't be displayed as the construct it came from, we say so as information -- visible with -v -- and show the application spine instead.
 
 
-  $ narya -v -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def √N : Type ≔ codata [ x .root.e : N ]' -e 'axiom ax : N' -e 'about (let u : N → √N ≔ [ zero. ↦ [ .root.e ↦ zero. ] | suc. n ↦ [ .root.e ↦ suc. zero. ] ] in u ax)'
+  $ narya -v -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom b0 : Bool' -e 'axiom b1 : Bool' -e 'axiom b2 : Id Bool b0 b1' -e 'def F : Bool → Type ≔ [ true. ↦ codata [ x .head : N ] | false. ↦ N ]' -e 'about (refl F b2)'
    ￫ info[I0000]
    ￮ constant N defined
   
    ￫ info[I0000]
-   ￮ constant √N defined
+   ￮ constant Bool defined
   
    ￫ info[I0001]
-   ￮ axiom ax assumed
+   ￮ axiom b0 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b1 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b2 assumed
+  
+   ￫ info[I0000]
+   ￮ constant F defined
   
    ￫ info[I0010]
-   ￮ not displaying a stuck match with a branch that reaches a higher field; showing an application spine instead
+   ￮ not displaying a stuck match with a branch body that is a codatatype whose fields cannot be projected at its boundary; showing an application spine instead
   
-  _let.F5.0.u{…} ax
-    : √N
+  Id F b2
+    : Type⁽ᵉ⁾ (F b0) (F b1)
   
 
 A stuck match can also be eliminated further, when what it computes to is a function or a record.  Then the type we are handed is the type of the whole spine rather than of the match, so the match records its own type for us: an explicit motive is a type family to apply to a branch's indices and constructor, while a non-dependent match checks every branch at one type and stores that.  The match is read back at whichever it has, and the eliminations go back on the outside.

@@ -2007,13 +2007,13 @@ and readback_stuck_match : type mode a z hmode any.
                                         @ [ constr_val_cube constr total_dim newvars ] in
                                       motive_branch_ty fw env mot plus_dim match_dim args benv body
                                 in
-                                (* The self a branch body is read back against is the neutral we were given, specialized at this branch's constructor.  Without that, the self's *value* is this body but its *spine* is still the unspecialized match, so anything that puts the self through an eval-readback cycle -- degenerating it to reach a higher codata field -- loses the body and computes nothing.  A Specialize survives the cycle, since reading it back emits a Term.Specialize that evaluates to the same specialization again.  We only build one for a match whose window modality is the identity; a modal match keeps the unspecialized self, as before. *)
+                                (* The self a branch body is read back against is the neutral we were given, specialized at this branch's constructor.  Without that, the self's *value* is this body but its *spine* is still the unspecialized match, so anything that puts the self through an eval-readback cycle -- degenerating it to reach a higher codata field -- loses the body and computes nothing.  A Specialize survives the cycle, since reading it back emits a Term.Specialize that evaluates to the same specialization again.
+
+                                   Every branch is specialized, not only the ones that need it: inside a branch the match is not stuck any more, and nothing treats the self as though it were.  Every dispatch on Unrealized -- here in readback_eval, in readback_about, and in readback_motive's boundary -- is on an *evaluation*, never on the self, which is only ever applied, projected from, or read back as a spine; and the one place that does inspect the self's value, the higher-field instance below, requires it *not* to be stuck.  A neutral whose value computes rather than being Unrealized is just a glued neutral, which the evaluator handles everywhere.
+
+                                   We build one only for a match whose window modality is the identity, which is what puts the constructor at the ambient mode; a modal match keeps the unspecialized self, as before. *)
                                 let bstatus =
-                                  match
-                                    match ebody with
-                                    | Val (Struct _) -> Modality.compare_id window
-                                    | _ -> Neq
-                                  with
+                                  match Modality.compare_id window with
                                   | Eq ->
                                       Potential
                                         (Neu
