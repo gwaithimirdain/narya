@@ -864,6 +864,24 @@ So a higher field displays whether or not the discriminee could be refined, and 
     : √N
   
 
+The specialization carries the window modality its constructor lives behind, so a match whose discriminee is modal is specialized like any other, and its higher fields display too.
+
+  $ narya -v -spatial -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def √N : Type ≔ codata [ x .root.e : N ]' -e 'about (let g : (b :♭| Bool) → √N ≔ b ↦ match (b :♭| _) return _ ↦ √N [ true. ↦ [ .root.e ↦ zero. ] | false. ↦ [ .root.e ↦ suc. zero. ] ] in g)'
+   ￫ info[I0000]
+   ￮ constant N defined
+  
+   ￫ info[I0000]
+   ￮ constant Bool defined
+  
+   ￫ info[I0000]
+   ￮ constant √N defined
+  
+  b ↦
+  match (b :♭| _)
+  return 𝑥 ↦ √N [ false. ↦ [ .root.e ↦ 1 ] | true. ↦ [ .root.e ↦ 0 ] ]
+    : (b :♭| Bool) → √N
+  
+
 A higher-dimensional match reads back at its own dimension, with cube abstractions for its pattern variables.  Refining its branches means rebinding the discriminee to the whole cube of the constructor's instances, so a dependent one works too.  The dimension can come from the match itself, in which case the discriminee is an ordinary variable of a higher-dimensional type whose boundary is the separate variables that instantiate that type, and they are rebound to the constructor's corresponding faces.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom b0 : Bool' -e 'axiom b1 : Bool' -e 'axiom b2 : Id Bool b0 b1' -e 'def f (x0 x1 : Bool) (x2 : Id Bool x0 x1) : N ≔ match x2 [ true. ⤇ zero. | false. ⤇ suc. zero. ]' -e 'about (f b0 b1 b2)' -e 'def U (x0 x1 : Bool) (x2 : Id Bool x0 x1) : Type ≔ match x2 [ true. ⤇ N | false. ⤇ Bool ]' -e 'about (let p : (x0 x1 : Bool) (x2 : Id Bool x0 x1) → U x0 x1 x2 ≔ x0 ↦ x1 ↦ x2 ↦ match x2 [ true. ⤇ zero. | false. ⤇ true. ] in p)'
