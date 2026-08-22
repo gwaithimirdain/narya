@@ -2086,12 +2086,6 @@ and readback_stuck_match : type mode a z hmode any.
                                                     | _ -> None)
                                                 | _ -> None)
                                             | Eq, _ -> None) in
-                                      (match (spec, D.compare_zero env_dim) with
-                                      | None, Pos _ ->
-                                          prerr_endline
-                                            ("PROBE: no spec at env_dim " ^ string_of_dim env_dim)
-                                      | None, Zero -> prerr_endline "PROBE: no spec at env_dim 0"
-                                      | Some _, _ -> prerr_endline "PROBE: spec supplied");
                                       motive_branch_ty ?spec fw env mot plus_dim match_dim args benv
                                         body in
                                 (* The self a branch body is read back against is the neutral we were given, specialized at this branch's constructor.  Without that, the self's *value* is this body but its *spine* is still the unspecialized match, so anything that puts the self through an eval-readback cycle -- degenerating it to reach a higher codata field -- loses the body and computes nothing.  A Specialize survives the cycle, since reading it back emits a Term.Specialize that evaluates to the same specialization again.
