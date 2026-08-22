@@ -2042,44 +2042,56 @@ and readback_stuck_match : type mode a z hmode any.
                                           (indices_of_out "match branch" out total_dim
                                              (Vec.length data_indices))
                                         @ [ constr_val_cube constr total_dim newvars ] in
-                                      (* When a branch body's value at a face of the environment is a case tree, its boundary comes instead from the match at that face, specialized at this branch's constructor there.  The matches are the instantiation arguments of the match's own type, exactly as readback_motive gets them; the constructors are the cube we just applied the motive to.  If the type is not fully instantiated over those dimensions, we pass nothing and motive_branch_ty gives up on a case-tree face as before. *)
+                                      (* When a branch body's value at a face of the environment is a case tree, its boundary comes instead from the match at that face, specialized at this branch's constructor there.  The matches are the instantiation arguments of the match's own type, exactly as readback_motive gets them; the constructors are the cube we just applied the motive to.  A modal match is not specialized, so it supplies nothing and motive_branch_ty gives up on a case-tree face as before; the type's own instantiation is checked defensively, a value's type being always fully instantiated at its own dimension. *)
                                       let spec =
                                         Reporter.try_with ~fatal:(fun _ -> None) @@ fun () ->
-                                        (* As for the self, only an identity window puts the constructors at the mode of the match. *)
-                                        match
-                                          (Modality.compare_id window, Lazy.force match_self_ty)
-                                        with
-                                        | Neq, _ -> None
-                                        | Eq, Neu { args = tyapps; _ } -> (
-                                            match inst_of_apps tyapps with
-                                            | _, Some (Any_tube bdry) -> (
-                                                match
-                                                  ( D.compare_zero (TubeOf.uninst bdry),
-                                                    D.factor (TubeOf.inst bdry) env_dim )
-                                                with
-                                                | Zero, Some (Factor bdry_plus) ->
-                                                    let Eq =
-                                                      D.plus_uniq (TubeOf.plus bdry)
-                                                        (D.zero_plus (TubeOf.inst bdry)) in
-                                                    Some
-                                                      (Branch_spec
-                                                         {
-                                                           bdry;
-                                                           bdry_plus;
-                                                           inst_dim = D.plus_right bdry_plus;
-                                                           constrs =
-                                                             (constr_norm_cube (Modality.src window)
-                                                                constr total_dim tyfam
-                                                                (Vec.map val_of_norm_cube
-                                                                   (indices_of_out "match branch"
-                                                                      out total_dim
-                                                                      (Vec.length data_indices)))
-                                                                newvars
-                                                               : (_, hmode normal) CubeOf.t);
-                                                         })
+                                        match D.compare_zero env_dim with
+                                        (* A zero-dimensional environment gives an empty boundary, so there is nothing to supply.  We check that before forcing the match's type, which with a nonempty spine costs an eval-readback cycle. *)
+                                        | Zero -> None
+                                        | Pos _ -> (
+                                            (* As for the self, only an identity window puts the constructors at the mode of the match; a modal match is the one way this is absent when the boundary is not empty. *)
+                                            match
+                                              (Modality.compare_id window, Lazy.force match_self_ty)
+                                            with
+                                            | Neq, _ -> None
+                                            | Eq, Neu { args = tyapps; _ } -> (
+                                                match inst_of_apps tyapps with
+                                                | _, Some (Any_tube bdry) -> (
+                                                    match
+                                                      ( D.compare_zero (TubeOf.uninst bdry),
+                                                        D.factor (TubeOf.inst bdry) env_dim )
+                                                    with
+                                                    | Zero, Some (Factor bdry_plus) ->
+                                                        let Eq =
+                                                          D.plus_uniq (TubeOf.plus bdry)
+                                                            (D.zero_plus (TubeOf.inst bdry)) in
+                                                        Some
+                                                          (Branch_spec
+                                                             {
+                                                               bdry;
+                                                               bdry_plus;
+                                                               inst_dim = D.plus_right bdry_plus;
+                                                               constrs =
+                                                                 (constr_norm_cube
+                                                                    (Modality.src window) constr
+                                                                    total_dim tyfam
+                                                                    (Vec.map val_of_norm_cube
+                                                                       (indices_of_out
+                                                                          "match branch" out
+                                                                          total_dim
+                                                                          (Vec.length data_indices)))
+                                                                    newvars
+                                                                   : (_, hmode normal) CubeOf.t);
+                                                             })
+                                                    | _ -> None)
                                                 | _ -> None)
-                                            | _ -> None)
-                                        | Eq, _ -> None in
+                                            | Eq, _ -> None) in
+                                      (match (spec, D.compare_zero env_dim) with
+                                      | None, Pos _ ->
+                                          prerr_endline
+                                            ("PROBE: no spec at env_dim " ^ string_of_dim env_dim)
+                                      | None, Zero -> prerr_endline "PROBE: no spec at env_dim 0"
+                                      | Some _, _ -> prerr_endline "PROBE: spec supplied");
                                       motive_branch_ty ?spec fw env mot plus_dim match_dim args benv
                                         body in
                                 (* The self a branch body is read back against is the neutral we were given, specialized at this branch's constructor.  Without that, the self's *value* is this body but its *spine* is still the unspecialized match, so anything that puts the self through an eval-readback cycle -- degenerating it to reach a higher codata field -- loses the body and computes nothing.  A Specialize survives the cycle, since reading it back emits a Term.Specialize that evaluates to the same specialization again.
