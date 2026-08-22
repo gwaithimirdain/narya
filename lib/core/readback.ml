@@ -16,7 +16,8 @@ module Binding = Ctx.Binding
 (* The "Displaying" reader records whether we're reading back for printing to the user or for internal purposes.  For instance, when printing we do more eta-expansion if the user requested it.  Wrapping the "Displaying" module in another module called "Readback" and opening that module allows us to refer to the module as just "Displaying" here, but exports it as "Readback.Displaying" to other files even when they open this file. *)
 
 module Readback = struct
-  module Displaying = Algaeff.Reader.Make (Bool)
+  (* The reader itself lives in Value, so that modules upstream of this one can consult it too; we re-export it here under the name other files already use. *)
+  module Displaying = Displaying
 end
 
 open Readback
@@ -554,6 +555,22 @@ and readback_apps : type hmode mode a z any s.
     (hmode, mode, a, s) readback_apps =
  fun energy ?(pi = false) ctx -> function
   | Emp -> Readback_apps (ctx, fun tm -> tm)
+  (* A specialization crosses no modes and takes no dimensions, so it just wraps the spine so far.  Reading one back is what carries it through the eval-readback cycle that a self is put through to degenerate it. *)
+  | Specialize (rest, cval, ty) -> (
+      specializing "reading back";
+      (* A specialized neutral is kinetic: readback attaches one to the self of a branch body, and every use of that self reads it back kinetically. *)
+      match energy with
+      | Potential -> fatal (Anomaly "reading back a specialized neutral at potential energy")
+      | Kinetic ->
+          let (Readback_apps (hctx, rewrap)) = readback_apps energy ~pi ctx rest in
+          Readback_apps
+            ( hctx,
+              fun tm ->
+                Term.Specialize
+                  ( rewrap tm,
+                    readback_nf ctx cval,
+                    readback_val ctx (Lazy.force cval.ty),
+                    readback_val ctx (Lazy.force ty) ) ))
   | Arg (rest, filter, args, ins) ->
       let modality = Modality.filter_modality filter in
       let (To p) = deg_of_ins ins in
@@ -1759,12 +1776,12 @@ and readback_stuck_match : type mode a z hmode any.
               | _ -> fatal (Anomaly "stuck match prefix is not a neutral"))) in
       match view_type (Lazy.force disc_nf.ty) "readback_stuck_match" with
       | Canonical
-          (type hmode mn m n)
+          (type dhmode mn m n)
           (( _,
              Data { dim = data_dim; constrs; indices = Filled data_indices; tyfam; _ },
              disc_ins,
              disc_tyargs ) :
-            (hmode, kinetic) head * (_, m, n) canonical * (mn, m, n) insertion * _) -> (
+            (dhmode, kinetic) head * (_, m, n) canonical * (mn, m, n) insertion * _) -> (
           (* A datatype has intrinsic dimension zero, so its instantiation tube is at its substitution dimension. *)
           let Eq = eq_of_ins_zero disc_ins in
           let tyfam = nf_of_neu (force_eval_term tyfam) "check_var_match" in
@@ -1990,15 +2007,42 @@ and readback_stuck_match : type mode a z hmode any.
                                         @ [ constr_val_cube constr total_dim newvars ] in
                                       motive_branch_ty fw env mot plus_dim match_dim args benv body
                                 in
+                                (* The self a branch body is read back against is the neutral we were given, specialized at this branch's constructor.  Without that, the self's *value* is this body but its *spine* is still the unspecialized match, so anything that puts the self through an eval-readback cycle -- degenerating it to reach a higher codata field -- loses the body and computes nothing.  A Specialize survives the cycle, since reading it back emits a Term.Specialize that evaluates to the same specialization again.  We only build one for a match whose window modality is the identity; a modal match keeps the unspecialized self, as before. *)
                                 let bstatus =
-                                  Potential
-                                    (Neu
-                                       {
-                                         head = head_head;
-                                         args = head_args;
-                                         value = ready ebody;
-                                         ty = Lazy.from_val branch_ty;
-                                       }) in
+                                  match
+                                    match ebody with
+                                    | Val (Struct _) -> Modality.compare_id window
+                                    | _ -> Neq
+                                  with
+                                  | Eq ->
+                                      Potential
+                                        (Neu
+                                           {
+                                             head = head_head;
+                                             args =
+                                               (* The annotation is what puts the constructor at the mode of the spine: compare_id gives that equation, and without naming it here the existential mode of the match's window would escape. *)
+                                               Value.Specialize
+                                                 ( head_args,
+                                                   ({
+                                                      tm =
+                                                        CubeOf.find_top
+                                                          (constr_val_cube constr total_dim newvars);
+                                                      ty = disc_nf.ty;
+                                                    }
+                                                     : hmode normal),
+                                                   Lazy.from_val branch_ty );
+                                             value = ready ebody;
+                                             ty = Lazy.from_val branch_ty;
+                                           })
+                                  | Neq ->
+                                      Potential
+                                        (Neu
+                                           {
+                                             head = head_head;
+                                             args = head_args;
+                                             value = ready ebody;
+                                             ty = Lazy.from_val branch_ty;
+                                           }) in
                                 Term.Branch
                                   {
                                     annotate = new_annotate;

@@ -276,6 +276,16 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let (Plus mn) = D.plus n in
       Val (universe mode (D.plus_out m mn))
   | Corealize _ -> fatal (Evaluating_display_term "corealized case tree")
+  (* A specialization must evaluate, unlike the other display-only terms, since readback puts the self it builds through an eval-readback cycle.  We rebuild the spine entry and let app_eval_apps perform the reduction. *)
+  | Specialize (tm, cval, cty, ty) -> (
+      specializing "evaluating a specialized term";
+      let ety = lazy (eval_term env ty) in
+      match eval_term env tm with
+      | Neu { head; args; value; ty = _ } ->
+          let ecval = { tm = eval_term env cval; ty = lazy (eval_term env cty) } in
+          let value = ready (app_eval_apps (force_eval value) (Specialize (Emp, ecval, ety))) in
+          Val (Neu { head; args = Specialize (args, ecval, ety); value; ty = ety })
+      | _ -> fatal (Anomaly "specializing a non-neutral"))
   | Inst (Potential, _, _) -> fatal (Evaluating_display_term "potential instantiation")
   | Inst (Kinetic, tm, args) -> (
       (* The arguments are an (n,k) tube, with k dimensions instantiated and n dimensions uninstantiated. *)
@@ -1665,6 +1675,38 @@ and app_eval_apps : type hmode mode s any.
       | Unrealized (Some (h, sp)) ->
           let (Any sp) = inst_apps sp args in
           Unrealized (Some (h, sp)))
+  (* Specializing reduces a stuck match as if its discriminee were the stored constructor: exactly the reduction that eval performs when a match's discriminee *is* a constructor, with that value supplied instead of evaluated.  We require the stuck spine to be empty, which is what identifies the match's mode with ours, and the window to be the identity, which is what puts the constructor at that same mode; readback only builds a Specialize when both hold. *)
+  | Specialize (rest, cval, _) -> (
+      specializing "evaluating";
+      match app_eval_apps ev rest with
+      | Unrealized
+          (Some
+             ( Stuck { env; tm = Match { window; dim = match_dim; branches; _ }; ins = _ },
+               (Emp : (_, _, _) apps) )) -> (
+          match Modality.compare window (Modality.id (mode_env env)) with
+          | Neq -> fatal (Anomaly "specializing a modal match")
+          | Eq -> (
+              let env_dim = dim_env env in
+              let (Has_filter fw) = Modality.filter window env_dim in
+              let (Plus plus_dim) = D.plus match_dim in
+              match view_term cval.tm with
+              | Constr (name, constr_dim, dargs) -> (
+                  match Constr.Map.find_opt name branches with
+                  | None ->
+                      fatal
+                        (Anomaly
+                           (Printf.sprintf "constructor %s missing from specialized match"
+                              (Constr.to_string name)))
+                  | Some (Branch { annotate; comp; perm; tm }) -> (
+                      let total_dim = D.plus_out (Modality.filtered env_dim fw) plus_dim in
+                      match D.compare constr_dim total_dim with
+                      | Neq ->
+                          fatal (Dimension_mismatch ("specializing match", constr_dim, total_dim))
+                      | Eq ->
+                          let env = take_args env plus_dim dargs window fw annotate comp in
+                          eval (Permute (perm, env)) tm))
+              | _ -> fatal (Anomaly "specializing at a non-constructor")))
+      | _ -> fatal (Anomaly "specializing a term that is not a stuck match"))
 
 (* Look up a cube of values in an environment by variable index, accumulating operator actions, shifts, and keys as we go.  At the end, we usually use the operator to select a value from the cubes (with its face part) and act on it (with its degeneracy part).  We assume all the keys on the end of the environment have already been stripped off, even though the input types don't statically rule out a key with identity domain. *)
 and lookup_cube : type dom mu munu mode n a b k mk nk.

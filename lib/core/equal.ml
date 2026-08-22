@@ -59,6 +59,7 @@ let rec nonmodal_apps : type hmode mode any. (hmode, mode, any) apps -> (hmode, 
   | Emp -> Some Eq
   | Arg (rest, _, _, _) -> nonmodal_apps rest
   | Inst (rest, _, _) -> nonmodal_apps rest
+  | Specialize (rest, _, _) -> nonmodal_apps rest
   | Field (rest, filter, _, _, _) -> (
       match Modality.compare_id (Modality.filter_modality filter) with
       | Eq -> nonmodal_apps rest
@@ -386,6 +387,10 @@ and equal_apps : type h1 h2 mode any1 any2 a b.
   let open Monad.Ops (ErrOpt) in
   (* Iterating from left to right is important because it ensures that at the point of checking equality for any pair of arguments, we know that they have the same type, since they are valid arguments of equal functions with all previous arguments equal.  Thus each case *starts* with its recursive call. *)
   match (apps1, apps2) with
+  (* A specialized neutral is a display-only fiction: it asserts the type its match has at a constructor while its spine still says the discriminee.  Comparing one would be comparing a term against a claim about a context it may not be in, so we refuse rather than force it, and assert that we are displaying, which no equality check ever is. *)
+  | Specialize _, _ | _, Specialize _ ->
+      specializing "comparing";
+      fatal (Anomaly "comparing a specialized neutral")
   | Emp, Emp -> (
       match heads with
       | None -> return ()

@@ -107,6 +107,10 @@ module rec Value : sig
     | Inst :
         ('hmode, 'mode, noninst) apps * 'k D.pos * ('n, 'k, 'nk, 'mode normal) TubeOf.t
         -> ('hmode, 'mode, inst) apps
+    (* A display-only spine entry, never produced by typechecking: it specializes a stuck match at the head end of the spine, reducing it as if its discriminee were the stored constructor value.  Readback attaches one to the self it hands a branch body, so that the self's spine really does evaluate to that body -- which projecting a higher codata field from it, and hence degenerating it, requires.  It stores the constructor as a normal -- a constructor does not synthesize, so reading one back needs its type -- and the type of the specialized match, which is the type the branch was checked at.  Only a match whose window modality is the identity is specialized, so the constructor lives at the ambient mode; a modal match keeps the older refinement path.  Since it is not an elimination, it does not change the mode.  Nothing outside a readback for display may construct, evaluate, or compare one; see Displaying.specializing. *)
+    | Specialize :
+        ('hmode, 'mode, 'any) apps * 'mode normal * ('mode, kinetic) value Lazy.t
+        -> ('hmode, 'mode, noninst) apps
 
   and (_, _, _, _, _) binder =
     | Bind : {
@@ -343,6 +347,10 @@ end = struct
     | Inst :
         ('hmode, 'mode, noninst) apps * 'k D.pos * ('n, 'k, 'nk, 'mode normal) TubeOf.t
         -> ('hmode, 'mode, inst) apps
+    (* A display-only spine entry, never produced by typechecking: it specializes a stuck match at the head end of the spine, reducing it as if its discriminee were the stored constructor value.  Readback attaches one to the self it hands a branch body, so that the self's spine really does evaluate to that body -- which projecting a higher codata field from it, and hence degenerating it, requires.  It stores the constructor as a normal -- a constructor does not synthesize, so reading one back needs its type -- and the type of the specialized match, which is the type the branch was checked at.  Only a match whose window modality is the identity is specialized, so the constructor lives at the ambient mode; a modal match keeps the older refinement path.  Since it is not an elimination, it does not change the mode.  Nothing outside a readback for display may construct, evaluate, or compare one; see Displaying.specializing. *)
+    | Specialize :
+        ('hmode, 'mode, 'any) apps * 'mode normal * ('mode, kinetic) value Lazy.t
+        -> ('hmode, 'mode, noninst) apps
 
   (* Lambdas and Pis both bind a variable, along with its dependencies.  These are recorded as defunctionalized closures.  Since they are produced by higher-dimensional substitutions and operator actions, the dimension of the binder can be different than the dimension of the environment that closes its body.  Accordingly, in addition to the environment and degeneracy to close its body, we store information about how to map the eventual arguments into the bound variables in the body; this is the insertion.  *)
   and (_, _, _, _, _) binder =
@@ -1037,7 +1045,8 @@ let inst_apps : type hmode mode any m n mn.
               Any (Inst (apps, D.plus_pos n k nk, args)))
       | Emp -> Any (Inst (apps, n', args2))
       | Arg _ -> Any (Inst (apps, n', args2))
-      | Field _ -> Any (Inst (apps, n', args2)))
+      | Field _ -> Any (Inst (apps, n', args2))
+      | Specialize _ -> Any (Inst (apps, n', args2)))
 
 (* Instantiate a lazy value *)
 let inst_lazy : type mode m n mn s.
@@ -1074,6 +1083,7 @@ let inst_of_apps : type hmode mode any.
   | Emp -> (apps, None)
   | Arg _ -> (apps, None)
   | Field _ -> (apps, None)
+  | Specialize _ -> (apps, None)
 
 (* A head together with an application spine ending at a given mode, with the mode at the head end existentially quantified. *)
 type _ head_apps =
@@ -1112,6 +1122,7 @@ module Fwd_app = struct
         * ('t, 'i, 'n) D.plus
         * ('tk, 't, 'k) insertion
         -> ('src, 'mode) t
+    | Specialize : 'mode normal * ('mode, kinetic) value Lazy.t -> ('mode, 'mode) t
 
   type (_, _) fwd = Nil : ('mode, 'mode) fwd | Cons : ('a, 'b) t * ('b, 'c) fwd -> ('a, 'c) fwd
 
@@ -1121,6 +1132,7 @@ module Fwd_app = struct
     match app with
     | Arg (filter, arg, ins) -> Arg (apps, filter, arg, ins)
     | Field (f, fld, plus, ins) -> Field (apps, f, fld, plus, ins)
+    | Specialize (c, ty) -> Specialize (apps, c, ty)
 
   let of_apps : type hmode mode any. (hmode, mode, any) apps -> (hmode, mode) fwd =
    fun apps ->
@@ -1131,6 +1143,7 @@ module Fwd_app = struct
       | Emp -> fwds
       | Arg (apps, filter, arg, ins) -> go apps (Cons (Arg (filter, arg, ins), fwds))
       | Field (apps, f, fld, plus, ins) -> go apps (Cons (Field (f, fld, plus, ins), fwds))
+      | Specialize (apps, c, ty) -> go apps (Cons (Specialize (c, ty), fwds))
       | Inst _ -> fatal (Anomaly "instantiation in fwd_of_apps") in
     go apps Nil
 end
@@ -1139,7 +1152,7 @@ end
 let empty_apps : type hmode mode any. (hmode, mode, any) apps -> (hmode, mode) Eq.t option =
   function
   | Emp -> Some Eq
-  | Arg _ | Field _ | Inst _ -> None
+  | Arg _ | Field _ | Inst _ | Specialize _ -> None
 
 (* The result of splitting an application spine ending at a given mode: a prefix spine ending at some intermediate mode, and the rest as a forward sequence. *)
 type (_, _) split_apps =
@@ -1171,6 +1184,7 @@ let rec strip_apps : type h hmode mode any1 any2.
   | _, Emp -> Some (Any args)
   | Arg (args, _, _, _), Arg (apps, _, _, _) -> strip_apps args apps
   | Inst (args, _, _), Inst (apps, _, _) -> strip_apps args apps
+  | Specialize (args, _, _), Specialize (apps, _, _) -> strip_apps args apps
   | Field (args, f1, _, _, _), Field (apps, f2, _, _, _) -> (
       match Modality.compare (Modality.filter_modality f1) (Modality.filter_modality f2) with
       | Eq -> strip_apps args apps
@@ -1193,6 +1207,15 @@ let get_full_tube : type n k nk a any.
           TubeOf.Full_tube args)
 
 (* Glued evaluation is enabled globally with this flag.  It was originally disabled because it was very slow; the two main culprits -- act_lazy_eval eagerly pushing degeneracy actions through the deferred argument spines of glued neutrals (duplicating the action on the neutral's own arguments and un-sharing the forced results), and the equality-checker's former two-pass Rigid/Full structure that restarted the entire comparison with everything unfolded whenever a rigid comparison failed -- have been fixed by deferring such actions and by unfolding glued neutrals locally on demand in the equality-checker.  With both fixes, the test suite runs as fast or slightly faster with this flag on than off. *)
+(* The "Displaying" reader records whether we are reading back for printing to the user or for internal purposes; it lives here, rather than in Readback where it is used, so that the modules upstream of readback can consult it too.  Readback re-exports it as Readback.Displaying.  Its second use is to confine the display-only Specialize spine entry: constructing, evaluating, reading back, or comparing one outside a display is a bug, and specializing asserts that. *)
+module Displaying = Algaeff.Reader.Make (Bool)
+
+let specializing : string -> unit =
+ fun str ->
+  match Displaying.read () with
+  | true -> ()
+  | false -> fatal (Anomaly ("specialized neutral outside a display: " ^ str))
+
 module GluedEval = struct
   let toggle = true
   let read () = toggle

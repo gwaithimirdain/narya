@@ -434,6 +434,7 @@ module Act = struct
               | Pos _ -> fatal (Dimension_mismatch ("act_ty", TubeOf.uninst inst_args, D.zero)))
           | Arg _ -> (args, TubeOf.Full_tube (TubeOf.empty D.zero))
           | Field _ -> (args, TubeOf.Full_tube (TubeOf.empty D.zero))
+          | Specialize _ -> (args, TubeOf.Full_tube (TubeOf.empty D.zero))
           | Emp -> (args, TubeOf.Full_tube (TubeOf.empty D.zero)) in
         let (Ty_acted_instargs (fa, new_inst_args)) =
           gact_ty_instargs ?err tm tmty inst_args s cell in
@@ -628,6 +629,13 @@ module Act = struct
         let (Acted_instargs (fa, new_args, None)) = act_instargs args s c None in
         let new_s, new_c, new_rest = act_apps rest fa c in
         (new_s, new_c, Inst (new_rest, dim, new_args))
+    (* A specialization neither crosses a mode nor carries an insertion, so the degeneracy passes straight through to the rest of the spine, and the constructor it stores is acted by that same degeneracy.  The stored type is acted as a value, which is not in general the type of the acted term -- that would be act_ty, which needs the term -- but the neutral's own ty field is computed by act_value's Neu case, and this copy is used only to read the specialization back. *)
+    | Specialize (rest, cval, ty) ->
+        specializing "act";
+        let new_s, new_c, new_rest = act_apps rest s c in
+        ( new_s,
+          new_c,
+          Specialize (new_rest, act_normal cval s c, lazy (act_value (Lazy.force ty) s c)) )
 
   and act_instargs : type mode mu1 mu2 cod a b n j nj p.
       (n, j, nj, mode normal) TubeOf.t ->
@@ -675,8 +683,8 @@ module Act = struct
         let (Wrap newkey) = key_vcomp c key in
         ref (Deferred (tm, fa, newkey, Emp))
     (* When the deferral carries a pending argument spine (which happens only in glued evaluation), we do not push the action eagerly through the spine: that would duplicate the work of acting on the neutral's own arguments, and produce a fresh deferral not sharing its forced result with the original.  Instead we defer the action outside the whole spine, forcing the original (whose result is then cached and shared by all acted copies) and acting on the result. *)
-    | Deferred_eval (_, _, _, _, (Arg _ | Field _ | Inst _))
-    | Deferred (_, _, _, (Arg _ | Field _ | Inst _)) ->
+    | Deferred_eval (_, _, _, _, (Arg _ | Field _ | Inst _ | Specialize _))
+    | Deferred (_, _, _, (Arg _ | Field _ | Inst _ | Specialize _)) ->
         ref (Deferred ((fun () -> force_eval lev), s, c, Emp))
     | Ready tm -> ref (Deferred ((fun () -> tm), s, c, Emp))
 end
