@@ -53,6 +53,21 @@ type (_, _) looked_up_cube =
       -> ('mode, 'm) looked_up_cube
 
 (* Require that the supplied list contains exactly one argument for each annotated variable being added, and add all of those cubes to the given environment. *)
+(* What lets a branch body's boundary be supplied when its own value at a face is a case tree rather than a term.  The branch at a face of the environment is the *match* at that face, specialized at this branch's constructor there; the matches come from the instantiation arguments of the match's own type, which is the only place a neutral's faces are recorded, and the constructors from the cube the motive is applied to.  Since a specialization is a neutral, it is a kinetic value and so can instantiate a type where the case tree could not. *)
+type (_, _, _) branch_spec =
+  | Branch_spec : {
+      bdry : (D.zero, 'i, 'i, 'mode normal) TubeOf.t;
+      bdry_plus : ('m, 'inst, 'i) D.plus;
+      inst_dim : 'inst D.t;
+      window : ('dom, 'window, 'mode) Modality.t;
+      constrs : ('kn, 'dom normal) CubeOf.t;
+    }
+      -> ('mode, 'm, 'kn) branch_spec
+
+(* Extract the pi-type data from an uninstantiated pi-type value. *)
+type (_, _) viewed_pi =
+  | Viewed_pi : ('dom, 'modality, 'mode, 'k, 'n) Value.pi_args -> ('mode, 'n) viewed_pi
+
 let rec take_args : type dom window mode annotations m n k kn a b ab.
     (mode, m, a) env ->
     (k, n, kn) D.plus ->
@@ -277,9 +292,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       Val (universe mode (D.plus_out m mn))
   | Corealize _ -> fatal (Evaluating_display_term "corealized case tree")
   (* A specialization must evaluate, unlike the other display-only terms, since readback puts the self it builds through an eval-readback cycle.  We rebuild the spine entry and let app_eval_apps perform the reduction. *)
-  | Specialize { tm; window; plus_lock; constr; constr_ty; ty } -> (
+  | Specialize { tm; window; plus_lock; constr; constr_ty } -> (
       specializing "evaluating a specialized term";
-      let ety = lazy (eval_term env ty) in
       (* The constructor lives behind a lock by the window modality, so it is evaluated in the environment keyed by that lock and filtered by the window, exactly as a match evaluates its own discriminee. *)
       let env_dim = dim_env env in
       let (Has_filter fw) = Modality.filter window env_dim in
@@ -287,11 +301,12 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
         act_env (key_id_env env plus_lock)
           (opt_op_of_opt_sface (Modality.sface_of_filter env_dim fw)) in
       match eval_term env tm with
-      | Neu { head; args; value; ty = _ } ->
+      | Neu { head; args; value; _ } as neu ->
           let ecval = { tm = eval_term akenv constr; ty = lazy (eval_term akenv constr_ty) } in
-          let value =
-            ready (app_eval_apps (force_eval value) (Specialize (Emp, window, ecval, ety))) in
-          Val (Neu { head; args = Specialize (args, window, ecval, ety); value; ty = ety })
+          (* The type is computed from the match, here and at every dimension it is asked for, rather than carried along and re-evaluated. *)
+          let ety = lazy (tyof_specialize neu window ecval) in
+          let value = ready (app_eval_apps (force_eval value) (Specialize (Emp, window, ecval))) in
+          Val (Neu { head; args = Specialize (args, window, ecval); value; ty = ety })
       | _ -> fatal (Anomaly "specializing a non-neutral"))
   | Inst (Potential, _, _) -> fatal (Evaluating_display_term "potential instantiation")
   | Inst (Kinetic, tm, args) -> (
@@ -1683,7 +1698,7 @@ and app_eval_apps : type hmode mode s any.
           let (Any sp) = inst_apps sp args in
           Unrealized (Some (h, sp)))
   (* Specializing reduces a stuck match as if its discriminee were the stored constructor: exactly the reduction that eval performs when a match's discriminee *is* a constructor, with that value supplied instead of evaluated.  We require the stuck spine to be empty, which is what identifies the match's mode with ours, ; readback only builds a Specialize when it is. *)
-  | Specialize (rest, swindow, cval, _) -> (
+  | Specialize (rest, swindow, cval) -> (
       specializing "evaluating";
       match app_eval_apps ev rest with
       | Unrealized
@@ -2030,7 +2045,7 @@ and tyof_inst : type mode m n mn.
   inst (universe mode m) margs
 
 (* Apply a function to all the values in a cube one by one as 0-dimensional applications, rather than as one n-dimensional application. *)
-let apply_singletons : type dom modality mode n.
+and apply_singletons : type dom modality mode n.
     (dom, modality, mode) Modality.t ->
     (mode, kinetic) value ->
     (n, (dom, kinetic) value) CubeOf.t ->
@@ -2041,7 +2056,7 @@ let apply_singletons : type dom modality mode n.
   CubeOf.miter { it = (fun _ [ x ] -> fn := apply_term !fn filter (CubeOf.singleton x)) } [ xs ];
   !fn
 
-let apply_singleton_nfs : type dom modality mode n.
+and apply_singleton_nfs : type dom modality mode n.
     (dom, modality, mode) Modality.t ->
     (mode, kinetic) value ->
     (n, dom normal) CubeOf.t ->
@@ -2052,7 +2067,7 @@ let apply_singleton_nfs : type dom modality mode n.
   CubeOf.miter { it = (fun _ [ x ] -> fn := apply_term !fn filter (CubeOf.singleton x.tm)) } [ xs ];
   !fn
 
-let apply_singleton_tube_nfs : type dom modality mode n.
+and apply_singleton_tube_nfs : type dom modality mode n.
     (dom, modality, mode) Modality.t ->
     (mode, kinetic) value ->
     (D.zero, n, n, dom normal) TubeOf.t ->
@@ -2064,7 +2079,7 @@ let apply_singleton_tube_nfs : type dom modality mode n.
   !fn
 
 (* Apply a function to the slices of a cube of dimension k+n lying over each face of the n part: one application per face of n, in the same order in which apply_singletons applies the elements of an n-dimensional cube.  When k is zero the slices are singletons and this *is* apply_singletons; positive k arises for the motive of a match that is stuck in a k-dimensional environment, whose evaluation there takes a k-dimensional cube in each of the argument positions that typechecking gave a single element.  The filter must therefore be one whose filtered dimension is k. *)
-let apply_slices : type dom modality mode k m n kn.
+and apply_slices : type dom modality mode k m n kn.
     (dom, modality, mode, k, m) Modality.filter_dim ->
     k D.t ->
     (k, n, kn) D.plus ->
@@ -2078,7 +2093,7 @@ let apply_slices : type dom modality mode k m n kn.
   !fn
 
 (* Apply a constructor at some dimension to a list of cubes of variables, as well as all its lower-dimensional versions, producing a cube of its instances at each face. *)
-let constr_val_cube : type mode n.
+and constr_val_cube : type mode n.
     Constr.t ->
     n D.t ->
     (n, mode, kinetic) modal_value_cube list ->
@@ -2099,7 +2114,7 @@ let constr_val_cube : type mode n.
     }
 
 (* The same, but also computing the types, given the dimension and type family of the datatype (the head applied to its parameters only, as a normal) and the values of its indices at the new variables.  Reading the boundary of the family off of its own type gives a cube of families, one for each face; the type at a face is then that family applied to the indices and instantiated at the lower-dimensional constructor instances at the proper faces.  The 'err' callback supplies the error to report if the supposed family isn't a type family at all. *)
-let constr_norm_cube : type mode n i.
+and constr_norm_cube : type mode n i.
     mode Mode.t ->
     Constr.t ->
     n D.t ->
@@ -2157,6 +2172,239 @@ let constr_norm_cube : type mode n i.
     [ constr_tys ]
 
 (* Evaluate a term context to produce a value context. *)
+
+(* Extract the pi-type data from an uninstantiated pi-type value. *)
+and view_pi : type mode n. string -> n D.t -> (mode, kinetic) value -> (mode, n) viewed_pi =
+ fun err n ty ->
+  match view_term ty with
+  | Neu { value; _ } -> (
+      match force_eval value with
+      | Val (Canonical { canonical = Pi pi; ins; tyargs; _ }) -> (
+          let Eq = eq_of_ins_zero ins in
+          match (D.compare_zero (TubeOf.inst tyargs), D.compare (BindCube.dim pi.cods) n) with
+          | Zero, Eq -> Viewed_pi pi
+          | Pos _, _ -> fatal (Anomaly ("instantiated constructor pi-type in " ^ err))
+          | _, Neq -> fatal (Dimension_mismatch (err, BindCube.dim pi.cods, n)))
+      | _ -> fatal (Anomaly ("constructor type is not a pi-type in " ^ err)))
+  | _ -> fatal (Anomaly ("constructor type is not neutral in " ^ err))
+
+(* Read the type indices off the output type value of a constructor (the datatype applied to its parameters and this branch's indices), checking that it is a datatype at the expected dimension with the expected number of indices.  The output is an uninstantiated ("vertex") datatype value, so we force its glued value rather than view_type it. *)
+and indices_of_out : type dom m ij.
+    string -> (dom, kinetic) value -> m D.t -> ij Fwn.t -> ((m, dom normal) CubeOf.t, ij) Vec.t =
+ fun why out dim nindices ->
+  match view_term out with
+  | Neu { value; _ } -> (
+      match force_eval value with
+      | Val (Canonical { canonical = Data { dim = outdim; indices = Filled idx; _ }; _ }) -> (
+          match (D.compare outdim dim, Fwn.compare (Vec.length idx) nindices) with
+          | Eq, Eq -> idx
+          | Neq, _ -> fatal (Dimension_mismatch (why, outdim, dim))
+          | _, Neq -> fatal (Anomaly ("wrong number of indices in " ^ why)))
+      | _ -> fatal (Anomaly ("constructor output type not a datatype in " ^ why)))
+  | _ -> fatal (Anomaly ("constructor output type not neutral in " ^ why))
+
+(* The type at which to read back the body of one branch of a stuck match, computed from the match's stored motive.  Typechecking applied that motive to the branch's indices and constructor as zero-dimensional arguments, one for each face of the match dimension; but here it is evaluated in the environment the match is stuck in, so each of those argument positions instead takes a cube of that environment's dimension, namely the slice of the (total-dimensional) argument cube lying over that face.  A non-dependent motive is the type of every branch alike and takes no arguments at all.
+
+   Evaluated in a degenerated environment, the motive computes a *family* of that dimension rather than a type, so we instantiate it at the boundary of the branch body, which we get by evaluating that body in the corresponding faces of its own environment; the type of each such face is the same family at that face, instantiated in turn at its boundary, so we build them up face by face as dom_vars does for the domains of a pi-type.  In a zero-dimensional environment the boundary is empty and the instantiation does nothing, leaving exactly the application of a zero-dimensional motive to singletons that typechecking performed.
+
+   A branch body is a case tree, so its value at a face may be a case tree too rather than a term; then there is nothing to instantiate at and we give up on displaying the match (the caller catches this and falls back to the application spine). *)
+and motive_branch_ty : type mode dom window a c k m n kn.
+    ?spec:(mode, m, kn) branch_spec ->
+    (dom, window, mode, k, m) Modality.filter_dim ->
+    (mode, m, a) env ->
+    (mode, a) Term.match_motive ->
+    (k, n, kn) D.plus ->
+    n D.t ->
+    (kn, (dom, kinetic) value) CubeOf.t list ->
+    (mode, m, c) env ->
+    (mode, c, potential) term ->
+    (mode, kinetic) value =
+ fun ?spec fw env motive plus_dim match_dim args benv body ->
+  let env_dim = dim_env env in
+  (* The motive evaluated at a face of that environment, applied to the faces of the arguments lying over it.  The arguments live at the *filtered* dimension of the environment plus the match dimension, so the face of them we want is the image of this one under the filter, which also tells us the filter to apply the motive at there. *)
+  let family : type j. (j, m) sface -> (mode, kinetic) value =
+   fun fe ->
+    let fenv = act_env env (opt_op_of_sface fe) in
+    match motive with
+    | `Type t -> eval_term fenv t
+    | `Family t ->
+        let (Filter_sface (fk, fj)) = Modality.filter_sface fw fe in
+        let j = dom_sface fk in
+        let (Plus jplus) = D.plus match_dim in
+        let fa = sface_plus_sface fk plus_dim jplus (id_sface match_dim) in
+        List.fold_left
+          (fun f arg -> apply_slices fj j jplus match_dim f (CubeOf.subcube fa arg))
+          (eval_term fenv t) args in
+  let tbl = Hashtbl.create 10 in
+  let boundary =
+    TubeOf.build D.zero (D.zero_plus env_dim)
+      {
+        build =
+          (fun fe ->
+            let fs = sface_of_tface fe in
+            (* The type does not depend on the term, so we build it first and can then hand it to a specialization built below. *)
+            let ty =
+              inst (family fs)
+                (TubeOf.build D.zero
+                   (D.zero_plus (dom_sface fs))
+                   {
+                     build =
+                       (fun fc -> Hashtbl.find tbl (SFace_of (comp_sface fs (sface_of_tface fc))));
+                   }) in
+            let ev = eval (act_env benv (opt_op_of_sface fs)) body in
+            let tm =
+              match (ev, spec) with
+              | Realize v, _ -> v
+              (* The body's value here is a case tree, so there is no term of its own to instantiate at; we take the match at this face and specialize it, which denotes the same thing and is a neutral. *)
+              | _, Some (Branch_spec { bdry; bdry_plus; inst_dim; window; constrs }) -> (
+                  let (Plus iplus) = D.plus inst_dim in
+                  let fb = sface_plus_sface fs bdry_plus iplus (id_sface inst_dim) in
+                  match pface_of_sface fb with
+                  | `Id _ -> fatal (Anomaly "identity face in motive_branch_ty boundary")
+                  | `Proper fd -> (
+                      match (TubeOf.find bdry fd).tm with
+                      | Neu { head; args = margs; _ } ->
+                          let (Filter_sface (fk, _)) = Modality.filter_sface fw fs in
+                          let (Plus jplus) = D.plus match_dim in
+                          let fa = sface_plus_sface fk plus_dim jplus (id_sface match_dim) in
+                          Neu
+                            {
+                              head;
+                              args = Specialize (margs, window, CubeOf.find constrs fa);
+                              value = ready ev;
+                              ty = Lazy.from_val ty;
+                            }
+                      | _ ->
+                          fatal
+                            (Readback_at_wrong_type "a branch whose boundary match is not a neutral")
+                      ))
+              | _, None -> fatal (Readback_at_wrong_type "a case tree at one of its boundary faces")
+            in
+            let nf = { tm; ty = Lazy.from_val ty } in
+            Hashtbl.add tbl (SFace_of fs) nf;
+            nf);
+      } in
+  inst (family (id_sface env_dim)) boundary
+
+(* Apply a constructor's stored function-type to the actual arguments the constructor was applied to, reaching its output type: the datatype at this branch's indices.  This is what ext_pi does when typechecking a match, except that there the arguments are fresh variables and here they are the values a specialization supplies.  Like ext_pi we view the pi-type and apply its top binder rather than going through apply, since for a degenerate datatype the constructor's function-type is an uninstantiated higher-dimensional pi, which apply's view_type would reject. *)
+and apply_dargs : type mode n.
+    n D.t ->
+    (mode, kinetic) value ->
+    (n, mode, kinetic) modal_value_cube list ->
+    (mode, kinetic) value =
+ fun m ft -> function
+  | [] -> ft
+  | Modal (afilter, arg) :: rest -> (
+      let (Viewed_pi { filter = pifilter; cods; _ }) = view_pi "apply_dargs" m ft in
+      let (BindFam b) = BindCube.find_top cods in
+      (* The argument's stored filter and the pi's own are separate existentials, so we reconcile them: equal modalities have a unique filter at each dimension. *)
+      match
+        Modality.compare (Modality.filter_modality afilter) (Modality.filter_modality pifilter)
+      with
+      | Neq -> fatal (Anomaly "constructor argument modality mismatch in apply_dargs")
+      | Eq ->
+          let Eq = Modality.filter_uniq afilter pifilter in
+          apply_dargs m (apply_binder_term b pifilter arg) rest)
+
+(* The type of a specialized neutral: the type the match has when its discriminee is the given constructor, which is the type the corresponding branch was checked at.  It is computed here rather than carried on the specialization, so that it comes out right at whatever dimension it is asked for -- evaluating a stored one in a degenerated environment leaves it uninstantiated at the faces the degeneration adds, which is what every other term form avoids by computing its type too (tyof_app and its kin).
+
+   A dependent match applies its motive to the branch's indices and constructor, exactly as check_match_branches does; the indices come from the output type of the constructor's own function-type, applied to the arguments the specialization supplies.  A non-dependent match records one type for every branch, which motive_branch_ty returns unchanged.  An implicit match records nothing, refining the context instead, and there the branch is read back at the type of the match itself, which the unspecialized neutral already carries. *)
+and tyof_specialize : type dom window mode.
+    (mode, kinetic) value -> (dom, window, mode) Modality.t -> dom normal -> (mode, kinetic) value =
+ fun neu swindow cval ->
+  match neu with
+  | Neu { value; ty = unrefined; _ } -> (
+      match force_eval value with
+      | Unrealized
+          (Some
+             ( Stuck
+                 {
+                   env;
+                   tm = Match { tm = disc_tm; window; plus_lock; dim = match_dim; motive; branches };
+                   ins = _;
+                 },
+               (Emp : (_, _, _) apps) )) -> (
+          match motive with
+          | None -> Lazy.force unrefined
+          | Some mot -> (
+              match Modality.compare window swindow with
+              | Neq -> fatal (Anomaly "specialized type at the wrong window")
+              | Eq -> (
+                  let env_dim = dim_env env in
+                  let (Has_filter fw) = Modality.filter window env_dim in
+                  let (Plus plus_dim) = D.plus match_dim in
+                  let total_dim = D.plus_out (Modality.filtered env_dim fw) plus_dim in
+                  let akenv =
+                    act_env (key_id_env env plus_lock)
+                      (opt_op_of_opt_sface (Modality.sface_of_filter env_dim fw)) in
+                  let disc_nf =
+                    nf_of_neu (eval_term akenv disc_tm) "discriminee of specialized match" in
+                  match
+                    (view_type (Lazy.force disc_nf.ty) "tyof_specialize", view_term cval.tm)
+                  with
+                  | ( Canonical
+                        ( _,
+                          Data { dim = data_dim; constrs; indices = Filled data_indices; tyfam; _ },
+                          _,
+                          _ ),
+                      Constr (constr, constr_dim, dargs) ) -> (
+                      match
+                        ( Constr.Map.find_opt constr branches,
+                          Abwd.find_opt constr constrs,
+                          D.compare constr_dim total_dim,
+                          D.compare data_dim total_dim )
+                      with
+                      | ( Some (Branch { annotate; comp; perm; tm = body }),
+                          Some (Dataconstr { env = cenv; ty = cty }),
+                          Eq,
+                          Eq ) ->
+                          let benv =
+                            Permute (perm, take_args env plus_dim dargs window fw annotate comp)
+                          in
+                          let out = apply_dargs total_dim (eval_term cenv cty) dargs in
+                          let index_nfs =
+                            indices_of_out "tyof_specialize" out total_dim (Vec.length data_indices)
+                          in
+                          let index_vals = Vec.map val_of_norm_cube index_nfs in
+                          let args =
+                            Vec.fold_left (fun acc c -> acc @ [ c ]) [] index_vals
+                            @ [ constr_val_cube constr total_dim dargs ] in
+                          (* The branch's own boundary, for the faces at which the body's value is a case tree: the match at that face, specialized.  The matches are the instantiation arguments of the match's type, which is what the unspecialized neutral carries. *)
+                          let spec =
+                            match (D.compare_zero env_dim, Lazy.force unrefined) with
+                            | Pos _, Neu { args = tyapps; _ } -> (
+                                match inst_of_apps tyapps with
+                                | _, Some (Any_tube bdry) -> (
+                                    match
+                                      ( D.compare_zero (TubeOf.uninst bdry),
+                                        D.factor (TubeOf.inst bdry) env_dim )
+                                    with
+                                    | Zero, Some (Factor bdry_plus) ->
+                                        let Eq =
+                                          D.plus_uniq (TubeOf.plus bdry)
+                                            (D.zero_plus (TubeOf.inst bdry)) in
+                                        Some
+                                          (Branch_spec
+                                             {
+                                               bdry;
+                                               bdry_plus;
+                                               inst_dim = D.plus_right bdry_plus;
+                                               window;
+                                               constrs =
+                                                 constr_norm_cube (Modality.src window) constr
+                                                   total_dim
+                                                   (nf_of_neu (force_eval_term tyfam)
+                                                      "tyof_specialize tyfam")
+                                                   index_vals dargs;
+                                             })
+                                    | _ -> None)
+                                | _ -> None)
+                            | _ -> None in
+                          motive_branch_ty ?spec fw env mot plus_dim match_dim args benv body
+                      | _ -> fatal (Anomaly "constructor missing from specialized match"))
+                  | _ -> fatal (Anomaly "specialized match is not at a datatype constructor"))))
+      | _ -> fatal (Anomaly "computing the type of a specialization of a non-match"))
+  | _ -> fatal (Anomaly "computing the type of a specialization of a non-neutral")
 
 let eval_bindings : type dom modality mode a b n bm.
     (mode, a, b) Ctx.Ordered.t ->
@@ -2262,24 +2510,6 @@ let () =
   View.term_viewer := { view = view_term };
   View.type_viewer := { view = view_type };
   View.eval_forcer := { force = force_eval }
-
-(* Extract the pi-type data from an uninstantiated pi-type value. *)
-type (_, _) viewed_pi =
-  | Viewed_pi : ('dom, 'modality, 'mode, 'k, 'n) Value.pi_args -> ('mode, 'n) viewed_pi
-
-let view_pi : type mode n. string -> n D.t -> (mode, kinetic) value -> (mode, n) viewed_pi =
- fun err n ty ->
-  match view_term ty with
-  | Neu { value; _ } -> (
-      match force_eval value with
-      | Val (Canonical { canonical = Pi pi; ins; tyargs; _ }) -> (
-          let Eq = eq_of_ins_zero ins in
-          match (D.compare_zero (TubeOf.inst tyargs), D.compare (BindCube.dim pi.cods) n) with
-          | Zero, Eq -> Viewed_pi pi
-          | Pos _, _ -> fatal (Anomaly ("instantiated constructor pi-type in " ^ err))
-          | _, Neq -> fatal (Dimension_mismatch (err, BindCube.dim pi.cods, n)))
-      | _ -> fatal (Anomaly ("constructor type is not a pi-type in " ^ err)))
-  | _ -> fatal (Anomaly ("constructor type is not neutral in " ^ err))
 
 (* Given the evaluated domain cube of one (modal) argument of a datatype constructor of dimension n, and the corresponding arguments of the lower-dimensional versions of the constructor (extracted from the instantiation of the datatype), build the boundary tube of the top-dimensional argument.  The argument is k-dimensional, where k is the modal filtering of n; the value associated to a face of k is the argument of the lower-dimensional constructor at the corresponding face of n lifted along the filter.  (This makes sense because when a constructor is evaluated, the modally filtered arguments are degenerated to obtain values for the boundary constructors, and the face and degeneracy cancel out.)  Its type is the corresponding face of the domain cube, instantiated at the previously built faces. *)
 let modal_boundary_tube : type dom modality mode k n.

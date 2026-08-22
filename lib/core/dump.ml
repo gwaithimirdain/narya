@@ -174,7 +174,7 @@ module F = struct
         apps ppf rest;
         fprintf ppf " <: ";
         fprintf ppf "Inst (%a, %a)" dim (D.pos d) (tubeof normal) args
-    | Specialize (rest, _, c, _) ->
+    | Specialize (rest, _, c) ->
         apps ppf rest;
         fprintf ppf " <: ";
         fprintf ppf "Specialize (%a)" normal c

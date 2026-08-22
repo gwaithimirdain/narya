@@ -107,18 +107,11 @@ module rec Value : sig
     | Inst :
         ('hmode, 'mode, noninst) apps * 'k D.pos * ('n, 'k, 'nk, 'mode normal) TubeOf.t
         -> ('hmode, 'mode, inst) apps
-    (* A display-only spine entry, never produced by typechecking: it specializes a stuck match at the head end of the spine, reducing it as if its discriminee were the stored constructor value.  Readback attaches one to the self it hands a branch body, so that the self's spine really does evaluate to that body -- which projecting a higher codata field from it, and hence degenerating it, requires.  It stores the constructor as a normal -- a constructor does not synthesize, so reading one back needs its type -- and the type of the specialized match, which is the type the branch was checked at.
-
-       The type is carried rather than computed from the match because that is simpler, and for no deeper reason: readback computes it once, where it is reading the branch back and where it is therefore both cheapest and always to hand.  Computing it instead was implemented and discarded.  It costs a forward reference from Norm into Readback, inverting the layering; a walk of the constructor's stored function-type, which for a degenerate datatype is an uninstantiated higher pi and so has to be viewed rather than applied; and putting motive_branch_ty back into the degenerated environment, where it can fail.  It buys no measured performance, on typechecking or on display, and nothing structural except that act_apps would then have no stored type to act on -- which matters only because act_apps acts it wrongly, a bug documented there and better fixed there.
-
-       (An earlier version of this comment claimed the storing was load-bearing, because a branch body's boundary could not be supplied at a face.  It can: motive_branch_ty now takes it from the match's own instantiation arguments, specialized.  That reason is gone; the simplicity one is what remains.)
+    (* A display-only spine entry, never produced by typechecking: it specializes a stuck match at the head end of the spine, reducing it as if its discriminee were the stored constructor value.  Readback attaches one to the self it hands a branch body, so that the self's spine really does evaluate to that body -- which projecting a higher codata field from it, and hence degenerating it, requires.  It stores the constructor as a normal -- a constructor does not synthesize, so reading one back needs its type.  It does *not* store the type of the specialized match: Norm.tyof_specialize computes that from the match, as every other elimination's type is computed, so that it comes out right at whatever dimension it is asked for.
 
        The constructor lives at the window modality's source, not at the mode of the spine, so the entry carries the window as well -- exactly as Term.Match carries the one its discriminee is evaluated behind.  Since a specialization is not an elimination, it does not itself change the mode.  Nothing outside a readback for display may construct, evaluate, or compare one; see Displaying.specializing. *)
     | Specialize :
-        ('hmode, 'mode, 'any) apps
-        * ('dom, 'window, 'mode) Modality.t
-        * 'dom normal
-        * ('mode, kinetic) value Lazy.t
+        ('hmode, 'mode, 'any) apps * ('dom, 'window, 'mode) Modality.t * 'dom normal
         -> ('hmode, 'mode, noninst) apps
 
   and (_, _, _, _, _) binder =
@@ -356,7 +349,7 @@ end = struct
     | Inst :
         ('hmode, 'mode, noninst) apps * 'k D.pos * ('n, 'k, 'nk, 'mode normal) TubeOf.t
         -> ('hmode, 'mode, inst) apps
-    (* A display-only spine entry, never produced by typechecking: it specializes a stuck match at the head end of the spine, reducing it as if its discriminee were the stored constructor value.  Readback attaches one to the self it hands a branch body, so that the self's spine really does evaluate to that body -- which projecting a higher codata field from it, and hence degenerating it, requires.  It stores the constructor as a normal -- a constructor does not synthesize, so reading one back needs its type -- and the type of the specialized match, which is the type the branch was checked at.
+    (* A display-only spine entry, never produced by typechecking: it specializes a stuck match at the head end of the spine, reducing it as if its discriminee were the stored constructor value.  Readback attaches one to the self it hands a branch body, so that the self's spine really does evaluate to that body -- which projecting a higher codata field from it, and hence degenerating it, requires.  It stores the constructor as a normal -- a constructor does not synthesize, so reading one back needs its type.  It does *not* store the type of the specialized match: Norm.tyof_specialize computes that from the match, as every other elimination's type is computed, so that it comes out right at whatever dimension it is asked for.
 
        The type is carried rather than computed from the match because that is simpler, and for no deeper reason: readback computes it once, where it is reading the branch back and where it is therefore both cheapest and always to hand.  Computing it instead was implemented and discarded.  It costs a forward reference from Norm into Readback, inverting the layering; a walk of the constructor's stored function-type, which for a degenerate datatype is an uninstantiated higher pi and so has to be viewed rather than applied; and putting motive_branch_ty back into the degenerated environment, where it can fail.  It buys no measured performance, on typechecking or on display, and nothing structural except that act_apps would then have no stored type to act on -- which matters only because act_apps acts it wrongly, a bug documented there and better fixed there.
 
@@ -364,10 +357,7 @@ end = struct
 
        The constructor lives at the window modality's source, not at the mode of the spine, so the entry carries the window as well -- exactly as Term.Match carries the one its discriminee is evaluated behind.  Since a specialization is not an elimination, it does not itself change the mode.  Nothing outside a readback for display may construct, evaluate, or compare one; see Displaying.specializing. *)
     | Specialize :
-        ('hmode, 'mode, 'any) apps
-        * ('dom, 'window, 'mode) Modality.t
-        * 'dom normal
-        * ('mode, kinetic) value Lazy.t
+        ('hmode, 'mode, 'any) apps * ('dom, 'window, 'mode) Modality.t * 'dom normal
         -> ('hmode, 'mode, noninst) apps
 
   (* Lambdas and Pis both bind a variable, along with its dependencies.  These are recorded as defunctionalized closures.  Since they are produced by higher-dimensional substitutions and operator actions, the dimension of the binder can be different than the dimension of the environment that closes its body.  Accordingly, in addition to the environment and degeneracy to close its body, we store information about how to map the eventual arguments into the bound variables in the body; this is the insertion.  *)
@@ -1140,9 +1130,7 @@ module Fwd_app = struct
         * ('t, 'i, 'n) D.plus
         * ('tk, 't, 'k) insertion
         -> ('src, 'mode) t
-    | Specialize :
-        ('dom, 'window, 'mode) Modality.t * 'dom normal * ('mode, kinetic) value Lazy.t
-        -> ('mode, 'mode) t
+    | Specialize : ('dom, 'window, 'mode) Modality.t * 'dom normal -> ('mode, 'mode) t
 
   type (_, _) fwd = Nil : ('mode, 'mode) fwd | Cons : ('a, 'b) t * ('b, 'c) fwd -> ('a, 'c) fwd
 
@@ -1152,7 +1140,7 @@ module Fwd_app = struct
     match app with
     | Arg (filter, arg, ins) -> Arg (apps, filter, arg, ins)
     | Field (f, fld, plus, ins) -> Field (apps, f, fld, plus, ins)
-    | Specialize (w, c, ty) -> Specialize (apps, w, c, ty)
+    | Specialize (w, c) -> Specialize (apps, w, c)
 
   let of_apps : type hmode mode any. (hmode, mode, any) apps -> (hmode, mode) fwd =
    fun apps ->
@@ -1163,7 +1151,7 @@ module Fwd_app = struct
       | Emp -> fwds
       | Arg (apps, filter, arg, ins) -> go apps (Cons (Arg (filter, arg, ins), fwds))
       | Field (apps, f, fld, plus, ins) -> go apps (Cons (Field (f, fld, plus, ins), fwds))
-      | Specialize (apps, w, c, ty) -> go apps (Cons (Specialize (w, c, ty), fwds))
+      | Specialize (apps, w, c) -> go apps (Cons (Specialize (w, c), fwds))
       | Inst _ -> fatal (Anomaly "instantiation in fwd_of_apps") in
     go apps Nil
 end
@@ -1204,7 +1192,7 @@ let rec strip_apps : type h hmode mode any1 any2.
   | _, Emp -> Some (Any args)
   | Arg (args, _, _, _), Arg (apps, _, _, _) -> strip_apps args apps
   | Inst (args, _, _), Inst (apps, _, _) -> strip_apps args apps
-  | Specialize (args, _, _, _), Specialize (apps, _, _, _) -> strip_apps args apps
+  | Specialize (args, _, _), Specialize (apps, _, _) -> strip_apps args apps
   | Field (args, f1, _, _, _), Field (apps, f2, _, _, _) -> (
       match Modality.compare (Modality.filter_modality f1) (Modality.filter_modality f2) with
       | Eq -> strip_apps args apps

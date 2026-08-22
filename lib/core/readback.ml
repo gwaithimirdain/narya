@@ -123,17 +123,6 @@ module ModalValuePairCube = Modality.Cube (ValuePair)
 type _ disc_override =
   | Disc_override : ('dom, 'window, 'mode) Modality.t * ('dom, kinetic) value -> 'mode disc_override
 
-(* What lets a branch body's boundary be supplied when its own value at a face is a case tree rather than a term.  The branch at a face of the environment is the *match* at that face, specialized at this branch's constructor there; the matches come from the instantiation arguments of the match's own type, which is the only place a neutral's faces are recorded, and the constructors from the cube the motive is applied to.  Since a specialization is a neutral, it is a kinetic value and so can instantiate a type where the case tree could not. *)
-type (_, _, _) branch_spec =
-  | Branch_spec : {
-      bdry : (D.zero, 'i, 'i, 'mode normal) TubeOf.t;
-      bdry_plus : ('m, 'inst, 'i) D.plus;
-      inst_dim : 'inst D.t;
-      window : ('dom, 'window, 'mode) Modality.t;
-      constrs : ('kn, 'dom normal) CubeOf.t;
-    }
-      -> ('mode, 'm, 'kn) branch_spec
-
 (* An argument to readback that is present precisely when the energy is potential: the neutral whose potential value is being read back.  Reading back a comatch, or a canonical type, needs that neutral as the self-variable for computing its field or constructor types, and no other kind of value needs anything -- a potential value is a Lam, a Struct or a Canonical, never a Neu, so a neutral is never forced recursively and the display stays one-shot.  Like the status of type checking, it is rebuilt as readback descends through parameter abstractions. *)
 type (_, _) readback_status =
   | Kinetic : ('mode, kinetic) readback_status
@@ -567,7 +556,7 @@ and readback_apps : type hmode mode a z any s.
  fun energy ?(pi = false) ctx -> function
   | Emp -> Readback_apps (ctx, fun tm -> tm)
   (* A specialization takes no dimensions and does not itself cross a mode, so it just wraps the spine so far.  Reading one back is what carries it through the eval-readback cycle that a self is put through to degenerate it.  Its constructor does live behind the window modality, so that is read back in the context locked by it, as a match's discriminee is. *)
-  | Specialize (rest, window, cval, ty) -> (
+  | Specialize (rest, window, cval) -> (
       specializing "reading back";
       (* A specialized neutral is kinetic: readback attaches one to the self of a branch body, and every use of that self reads it back kinetically. *)
       match energy with
@@ -585,7 +574,6 @@ and readback_apps : type hmode mode a z any s.
                     plus_lock;
                     constr = readback_nf lctx cval;
                     constr_ty = readback_val lctx (Lazy.force cval.ty);
-                    ty = readback_val ctx (Lazy.force ty);
                   } ))
   | Arg (rest, filter, args, ins) ->
       let modality = Modality.filter_modality filter in
@@ -1138,7 +1126,7 @@ and specialize_boundary : type mode k.
     (D.zero, k, k, (mode, kinetic) value) TubeOf.t =
  fun tm boundary ->
   match tm with
-  | Neu { args = Specialize (_, window, cval, _); _ } -> (
+  | Neu { args = Specialize (_, window, cval); _ } -> (
       match (view_term cval.tm, view_type (Lazy.force cval.ty) "specialize_boundary") with
       | Constr (c, cdim, cargs), Canonical (_, _, _, dtyargs) -> (
           match
@@ -1165,11 +1153,10 @@ and specialize_boundary : type mode k.
                           Neu
                             {
                               head;
-                              args = Specialize (args, window, cnf, ty);
+                              args = Specialize (args, window, cnf);
                               value =
                                 ready
-                                  (app_eval_apps (force_eval value)
-                                     (Specialize (Emp, window, cnf, ty)));
+                                  (app_eval_apps (force_eval value) (Specialize (Emp, window, cnf)));
                               ty;
                             }
                       | _ -> nf.tm);
@@ -1561,90 +1548,6 @@ and motive_of_family : type dom window mode a b.
       motive
   | _ -> fatal (Anomaly "non-family in motive_of_family")
 
-(* The type at which to read back the body of one branch of a stuck match, computed from the match's stored motive.  Typechecking applied that motive to the branch's indices and constructor as zero-dimensional arguments, one for each face of the match dimension; but here it is evaluated in the environment the match is stuck in, so each of those argument positions instead takes a cube of that environment's dimension, namely the slice of the (total-dimensional) argument cube lying over that face.  A non-dependent motive is the type of every branch alike and takes no arguments at all.
-
-   Evaluated in a degenerated environment, the motive computes a *family* of that dimension rather than a type, so we instantiate it at the boundary of the branch body, which we get by evaluating that body in the corresponding faces of its own environment; the type of each such face is the same family at that face, instantiated in turn at its boundary, so we build them up face by face as dom_vars does for the domains of a pi-type.  In a zero-dimensional environment the boundary is empty and the instantiation does nothing, leaving exactly the application of a zero-dimensional motive to singletons that typechecking performed.
-
-   A branch body is a case tree, so its value at a face may be a case tree too rather than a term; then there is nothing to instantiate at and we give up on displaying the match (the caller catches this and falls back to the application spine). *)
-and motive_branch_ty : type mode dom window a c k m n kn.
-    ?spec:(mode, m, kn) branch_spec ->
-    (dom, window, mode, k, m) Modality.filter_dim ->
-    (mode, m, a) env ->
-    (mode, a) Term.match_motive ->
-    (k, n, kn) D.plus ->
-    n D.t ->
-    (kn, (dom, kinetic) value) CubeOf.t list ->
-    (mode, m, c) env ->
-    (mode, c, potential) term ->
-    (mode, kinetic) value =
- fun ?spec fw env motive plus_dim match_dim args benv body ->
-  let env_dim = dim_env env in
-  (* The motive evaluated at a face of that environment, applied to the faces of the arguments lying over it.  The arguments live at the *filtered* dimension of the environment plus the match dimension, so the face of them we want is the image of this one under the filter, which also tells us the filter to apply the motive at there. *)
-  let family : type j. (j, m) sface -> (mode, kinetic) value =
-   fun fe ->
-    let fenv = act_env env (opt_op_of_sface fe) in
-    match motive with
-    | `Type t -> eval_term fenv t
-    | `Family t ->
-        let (Filter_sface (fk, fj)) = Modality.filter_sface fw fe in
-        let j = dom_sface fk in
-        let (Plus jplus) = D.plus match_dim in
-        let fa = sface_plus_sface fk plus_dim jplus (id_sface match_dim) in
-        List.fold_left
-          (fun f arg -> apply_slices fj j jplus match_dim f (CubeOf.subcube fa arg))
-          (eval_term fenv t) args in
-  let tbl = Hashtbl.create 10 in
-  let boundary =
-    TubeOf.build D.zero (D.zero_plus env_dim)
-      {
-        build =
-          (fun fe ->
-            let fs = sface_of_tface fe in
-            (* The type does not depend on the term, so we build it first and can then hand it to a specialization built below. *)
-            let ty =
-              inst (family fs)
-                (TubeOf.build D.zero
-                   (D.zero_plus (dom_sface fs))
-                   {
-                     build =
-                       (fun fc -> Hashtbl.find tbl (SFace_of (comp_sface fs (sface_of_tface fc))));
-                   }) in
-            let ev = eval (act_env benv (opt_op_of_sface fs)) body in
-            let tm =
-              match (ev, spec) with
-              | Realize v, _ -> v
-              (* The body's value here is a case tree, so there is no term of its own to instantiate at; we take the match at this face and specialize it, which denotes the same thing and is a neutral. *)
-              | _, Some (Branch_spec { bdry; bdry_plus; inst_dim; window; constrs }) -> (
-                  let (Plus iplus) = D.plus inst_dim in
-                  let fb = sface_plus_sface fs bdry_plus iplus (id_sface inst_dim) in
-                  match pface_of_sface fb with
-                  | `Id _ -> fatal (Anomaly "identity face in motive_branch_ty boundary")
-                  | `Proper fd -> (
-                      match (TubeOf.find bdry fd).tm with
-                      | Neu { head; args = margs; _ } ->
-                          let (Filter_sface (fk, _)) = Modality.filter_sface fw fs in
-                          let (Plus jplus) = D.plus match_dim in
-                          let fa = sface_plus_sface fk plus_dim jplus (id_sface match_dim) in
-                          Neu
-                            {
-                              head;
-                              args =
-                                Specialize (margs, window, CubeOf.find constrs fa, Lazy.from_val ty);
-                              value = ready ev;
-                              ty = Lazy.from_val ty;
-                            }
-                      | _ ->
-                          fatal
-                            (Readback_at_wrong_type "a branch whose boundary match is not a neutral")
-                      ))
-              | _, None -> fatal (Readback_at_wrong_type "a case tree at one of its boundary faces")
-            in
-            let nf = { tm; ty = Lazy.from_val ty } in
-            Hashtbl.add tbl (SFace_of fs) nf;
-            nf);
-      } in
-  inst (family (id_sface env_dim)) boundary
-
 (* Read back the motive of a match that is stuck in a degenerated environment, at the total dimension the match is displayed at.  The shape is that of motive_of_family, whose pi-type this is the corresponding lambda-abstraction for: we walk the type of the datatype family, introducing one variable for each face of each of its (total-dimensional) arguments and finally for each face of the datatype itself, exactly as that function introduces one pi-domain for each.
 
    The body is the type the match has at those variables.  Applying the motive to them by slices (see apply_slices) gives only a family of the environment's dimension, so we instantiate it -- and here, unlike in motive_branch_ty, we must do so *as a function of the variables*, at the matches on them at each face of the environment.  Those we get by reading back the match at that face, which the type of the match hands us in its own instantiation arguments, with its discriminee overridden by the variable at the corresponding face.  Since a match is a potential term and a motive is a kinetic one, each is wrapped in Corealize, the display-only coercion.
@@ -1808,9 +1711,6 @@ and readback_stuck : type mode a z hmode any.
       | Degenerated_neutral_not_a_struct ->
           no_display "a stuck match with a branch that reaches a higher field"
       | Matching_wont_refine (str, _) -> no_display ("a stuck match with " ^ str)
-      (* A specialization carries the type of its branch rather than computing it, and evaluating that stored type in a degenerated environment -- which degenerating a self to reach a higher codata field does -- gives a type that is not instantiated at the faces the degeneration adds.  Every other term form computes its type instead (tyof_app and its kin), which is why this is the only one that can be wrong; until it computes its own, we catch the resulting failure rather than let a display raise. *)
-      | Type_not_fully_instantiated _ ->
-          no_display "a stuck match with a branch whose specialized type is not fully instantiated"
       | _ -> fatal_diagnostic d)
   @@ fun () -> readback_stuck_match ?disc status ctx pn ty
 
@@ -2162,8 +2062,7 @@ and readback_stuck_match : type mode a z hmode any.
                                                    CubeOf.find_top
                                                      (constr_val_cube constr total_dim newvars);
                                                  ty = disc_nf.ty;
-                                               },
-                                               Lazy.from_val branch_ty );
+                                               } );
                                          value = ready ebody;
                                          ty = Lazy.from_val branch_ty;
                                        }) in

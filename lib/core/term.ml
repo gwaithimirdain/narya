@@ -187,7 +187,6 @@ module rec Term : sig
         plus_lock : ('a, 'mode, 'window, 'dom, 'aw) plus_lock;
         constr : ('dom, 'aw, kinetic) term;
         constr_ty : ('dom, 'aw, kinetic) term;
-        ty : ('mode, 'a, kinetic) term;
       }
         -> ('mode, 'a, kinetic) term
     | Canonical : ('mode, 'a) canonical -> ('mode, 'a, potential) term
@@ -529,7 +528,6 @@ end = struct
         plus_lock : ('a, 'mode, 'window, 'dom, 'aw) plus_lock;
         constr : ('dom, 'aw, kinetic) term;
         constr_ty : ('dom, 'aw, kinetic) term;
-        ty : ('mode, 'a, kinetic) term;
       }
         -> ('mode, 'a, kinetic) term
     | Canonical : ('mode, 'a) canonical -> ('mode, 'a, potential) term

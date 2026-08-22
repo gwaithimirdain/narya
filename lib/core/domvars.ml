@@ -1,5 +1,4 @@
 open Bwd
-open Util
 open Modal
 open Reporter
 open Dim
@@ -129,21 +128,6 @@ let rec ext_pi : type dom window mode a b c ac e n.
                   comp = Suc (Dim (Modality.filtered m filter_k_m, filter_k_k), comp);
                   out;
                 }))
-
-(* Read the type indices off the output type value of a constructor (the datatype applied to its parameters and this branch's indices), checking that it is a datatype at the expected dimension with the expected number of indices.  The output is an uninstantiated ("vertex") datatype value, so we force its glued value rather than view_type it. *)
-let indices_of_out : type dom m ij.
-    string -> (dom, kinetic) value -> m D.t -> ij Fwn.t -> ((m, dom normal) CubeOf.t, ij) Vec.t =
- fun why out dim nindices ->
-  match view_term out with
-  | Neu { value; _ } -> (
-      match force_eval value with
-      | Val (Canonical { canonical = Data { dim = outdim; indices = Filled idx; _ }; _ }) -> (
-          match (D.compare outdim dim, Fwn.compare (Vec.length idx) nindices) with
-          | Eq, Eq -> idx
-          | Neq, _ -> fatal (Dimension_mismatch (why, outdim, dim))
-          | _, Neq -> fatal (Anomaly ("wrong number of indices in " ^ why)))
-      | _ -> fatal (Anomaly ("constructor output type not a datatype in " ^ why)))
-  | _ -> fatal (Anomaly ("constructor output type not neutral in " ^ why))
 
 (* Extract a list of all the variables of a given kind in an iterated pi-type. *)
 let rec get_pi_vars : type mode a b.
