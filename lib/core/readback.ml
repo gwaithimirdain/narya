@@ -129,7 +129,8 @@ type (_, _, _) branch_spec =
       bdry : (D.zero, 'i, 'i, 'mode normal) TubeOf.t;
       bdry_plus : ('m, 'inst, 'i) D.plus;
       inst_dim : 'inst D.t;
-      constrs : ('kn, 'mode normal) CubeOf.t;
+      window : ('dom, 'window, 'mode) Modality.t;
+      constrs : ('kn, 'dom normal) CubeOf.t;
     }
       -> ('mode, 'm, 'kn) branch_spec
 
@@ -565,22 +566,27 @@ and readback_apps : type hmode mode a z any s.
     (hmode, mode, a, s) readback_apps =
  fun energy ?(pi = false) ctx -> function
   | Emp -> Readback_apps (ctx, fun tm -> tm)
-  (* A specialization crosses no modes and takes no dimensions, so it just wraps the spine so far.  Reading one back is what carries it through the eval-readback cycle that a self is put through to degenerate it. *)
-  | Specialize (rest, cval, ty) -> (
+  (* A specialization takes no dimensions and does not itself cross a mode, so it just wraps the spine so far.  Reading one back is what carries it through the eval-readback cycle that a self is put through to degenerate it.  Its constructor does live behind the window modality, so that is read back in the context locked by it, as a match's discriminee is. *)
+  | Specialize (rest, window, cval, ty) -> (
       specializing "reading back";
       (* A specialized neutral is kinetic: readback attaches one to the self of a branch body, and every use of that self reads it back kinetically. *)
       match energy with
       | Potential -> fatal (Anomaly "reading back a specialized neutral at potential energy")
       | Kinetic ->
+          let (Locked (plus_lock, lctx)) = Ctx.lock ctx window in
           let (Readback_apps (hctx, rewrap)) = readback_apps energy ~pi ctx rest in
           Readback_apps
             ( hctx,
               fun tm ->
                 Term.Specialize
-                  ( rewrap tm,
-                    readback_nf ctx cval,
-                    readback_val ctx (Lazy.force cval.ty),
-                    readback_val ctx (Lazy.force ty) ) ))
+                  {
+                    tm = rewrap tm;
+                    window;
+                    plus_lock;
+                    constr = readback_nf lctx cval;
+                    constr_ty = readback_val lctx (Lazy.force cval.ty);
+                    ty = readback_val ctx (Lazy.force ty);
+                  } ))
   | Arg (rest, filter, args, ins) ->
       let modality = Modality.filter_modality filter in
       let (To p) = deg_of_ins ins in
@@ -1558,7 +1564,7 @@ and motive_branch_ty : type mode dom window a c k m n kn.
               match (ev, spec) with
               | Realize v, _ -> v
               (* The body's value here is a case tree, so there is no term of its own to instantiate at; we take the match at this face and specialize it, which denotes the same thing and is a neutral. *)
-              | _, Some (Branch_spec { bdry; bdry_plus; inst_dim; constrs }) -> (
+              | _, Some (Branch_spec { bdry; bdry_plus; inst_dim; window; constrs }) -> (
                   let (Plus iplus) = D.plus inst_dim in
                   let fb = sface_plus_sface fs bdry_plus iplus (id_sface inst_dim) in
                   match pface_of_sface fb with
@@ -1572,7 +1578,8 @@ and motive_branch_ty : type mode dom window a c k m n kn.
                           Neu
                             {
                               head;
-                              args = Specialize (margs, CubeOf.find constrs fa, Lazy.from_val ty);
+                              args =
+                                Specialize (margs, window, CubeOf.find constrs fa, Lazy.from_val ty);
                               value = ready ev;
                               ty = Lazy.from_val ty;
                             }
@@ -2049,12 +2056,8 @@ and readback_stuck_match : type mode a z hmode any.
                                         (* A zero-dimensional environment gives an empty boundary, so there is nothing to supply.  We check that before forcing the match's type, which with a nonempty spine costs an eval-readback cycle. *)
                                         | Zero -> None
                                         | Pos _ -> (
-                                            (* As for the self, only an identity window puts the constructors at the mode of the match; a modal match is the one way this is absent when the boundary is not empty. *)
-                                            match
-                                              (Modality.compare_id window, Lazy.force match_self_ty)
-                                            with
-                                            | Neq, _ -> None
-                                            | Eq, Neu { args = tyapps; _ } -> (
+                                            match Lazy.force match_self_ty with
+                                            | Neu { args = tyapps; _ } -> (
                                                 match inst_of_apps tyapps with
                                                 | _, Some (Any_tube bdry) -> (
                                                     match
@@ -2071,59 +2074,46 @@ and readback_stuck_match : type mode a z hmode any.
                                                                bdry;
                                                                bdry_plus;
                                                                inst_dim = D.plus_right bdry_plus;
+                                                               window;
                                                                constrs =
-                                                                 (constr_norm_cube
-                                                                    (Modality.src window) constr
-                                                                    total_dim tyfam
-                                                                    (Vec.map val_of_norm_cube
-                                                                       (indices_of_out
-                                                                          "match branch" out
-                                                                          total_dim
-                                                                          (Vec.length data_indices)))
-                                                                    newvars
-                                                                   : (_, hmode normal) CubeOf.t);
+                                                                 constr_norm_cube
+                                                                   (Modality.src window) constr
+                                                                   total_dim tyfam
+                                                                   (Vec.map val_of_norm_cube
+                                                                      (indices_of_out "match branch"
+                                                                         out total_dim
+                                                                         (Vec.length data_indices)))
+                                                                   newvars;
                                                              })
                                                     | _ -> None)
                                                 | _ -> None)
-                                            | Eq, _ -> None) in
+                                            | _ -> None) in
                                       motive_branch_ty ?spec fw env mot plus_dim match_dim args benv
                                         body in
                                 (* The self a branch body is read back against is the neutral we were given, specialized at this branch's constructor.  Without that, the self's *value* is this body but its *spine* is still the unspecialized match, so anything that puts the self through an eval-readback cycle -- degenerating it to reach a higher codata field -- loses the body and computes nothing.  A Specialize survives the cycle, since reading it back emits a Term.Specialize that evaluates to the same specialization again.
 
                                    Every branch is specialized, not only the ones that need it: inside a branch the match is not stuck any more, and nothing treats the self as though it were.  Every dispatch on Unrealized -- here in readback_eval, in readback_about, and in readback_motive's boundary -- is on an *evaluation*, never on the self, which is only ever applied, projected from, or read back as a spine; and the one place that does inspect the self's value, the higher-field instance below, requires it *not* to be stuck.  A neutral whose value computes rather than being Unrealized is just a glued neutral, which the evaluator handles everywhere.
 
-                                   We build one only for a match whose window modality is the identity, which is what puts the constructor at the ambient mode; a modal match keeps the unspecialized self, as before. *)
+                                   The constructor lives at the window modality's source rather than at the mode of the spine, so the entry carries the window along with it, as Term.Match does for the discriminee this constructor stands in for. *)
                                 let bstatus =
-                                  match Modality.compare_id window with
-                                  | Eq ->
-                                      Potential
-                                        (Neu
-                                           {
-                                             head = head_head;
-                                             args =
-                                               (* The annotation is what puts the constructor at the mode of the spine: compare_id gives that equation, and without naming it here the existential mode of the match's window would escape. *)
-                                               Value.Specialize
-                                                 ( head_args,
-                                                   ({
-                                                      tm =
-                                                        CubeOf.find_top
-                                                          (constr_val_cube constr total_dim newvars);
-                                                      ty = disc_nf.ty;
-                                                    }
-                                                     : hmode normal),
-                                                   Lazy.from_val branch_ty );
-                                             value = ready ebody;
-                                             ty = Lazy.from_val branch_ty;
-                                           })
-                                  | Neq ->
-                                      Potential
-                                        (Neu
-                                           {
-                                             head = head_head;
-                                             args = head_args;
-                                             value = ready ebody;
-                                             ty = Lazy.from_val branch_ty;
-                                           }) in
+                                  Potential
+                                    (Neu
+                                       {
+                                         head = head_head;
+                                         args =
+                                           Value.Specialize
+                                             ( head_args,
+                                               window,
+                                               {
+                                                 tm =
+                                                   CubeOf.find_top
+                                                     (constr_val_cube constr total_dim newvars);
+                                                 ty = disc_nf.ty;
+                                               },
+                                               Lazy.from_val branch_ty );
+                                         value = ready ebody;
+                                         ty = Lazy.from_val branch_ty;
+                                       }) in
                                 Term.Branch
                                   {
                                     annotate = new_annotate;

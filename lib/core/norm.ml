@@ -277,14 +277,21 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       Val (universe mode (D.plus_out m mn))
   | Corealize _ -> fatal (Evaluating_display_term "corealized case tree")
   (* A specialization must evaluate, unlike the other display-only terms, since readback puts the self it builds through an eval-readback cycle.  We rebuild the spine entry and let app_eval_apps perform the reduction. *)
-  | Specialize (tm, cval, cty, ty) -> (
+  | Specialize { tm; window; plus_lock; constr; constr_ty; ty } -> (
       specializing "evaluating a specialized term";
       let ety = lazy (eval_term env ty) in
+      (* The constructor lives behind a lock by the window modality, so it is evaluated in the environment keyed by that lock and filtered by the window, exactly as a match evaluates its own discriminee. *)
+      let env_dim = dim_env env in
+      let (Has_filter fw) = Modality.filter window env_dim in
+      let akenv =
+        act_env (key_id_env env plus_lock)
+          (opt_op_of_opt_sface (Modality.sface_of_filter env_dim fw)) in
       match eval_term env tm with
       | Neu { head; args; value; ty = _ } ->
-          let ecval = { tm = eval_term env cval; ty = lazy (eval_term env cty) } in
-          let value = ready (app_eval_apps (force_eval value) (Specialize (Emp, ecval, ety))) in
-          Val (Neu { head; args = Specialize (args, ecval, ety); value; ty = ety })
+          let ecval = { tm = eval_term akenv constr; ty = lazy (eval_term akenv constr_ty) } in
+          let value =
+            ready (app_eval_apps (force_eval value) (Specialize (Emp, window, ecval, ety))) in
+          Val (Neu { head; args = Specialize (args, window, ecval, ety); value; ty = ety })
       | _ -> fatal (Anomaly "specializing a non-neutral"))
   | Inst (Potential, _, _) -> fatal (Evaluating_display_term "potential instantiation")
   | Inst (Kinetic, tm, args) -> (
@@ -1675,16 +1682,17 @@ and app_eval_apps : type hmode mode s any.
       | Unrealized (Some (h, sp)) ->
           let (Any sp) = inst_apps sp args in
           Unrealized (Some (h, sp)))
-  (* Specializing reduces a stuck match as if its discriminee were the stored constructor: exactly the reduction that eval performs when a match's discriminee *is* a constructor, with that value supplied instead of evaluated.  We require the stuck spine to be empty, which is what identifies the match's mode with ours, and the window to be the identity, which is what puts the constructor at that same mode; readback only builds a Specialize when both hold. *)
-  | Specialize (rest, cval, _) -> (
+  (* Specializing reduces a stuck match as if its discriminee were the stored constructor: exactly the reduction that eval performs when a match's discriminee *is* a constructor, with that value supplied instead of evaluated.  We require the stuck spine to be empty, which is what identifies the match's mode with ours, ; readback only builds a Specialize when it is. *)
+  | Specialize (rest, swindow, cval, _) -> (
       specializing "evaluating";
       match app_eval_apps ev rest with
       | Unrealized
           (Some
              ( Stuck { env; tm = Match { window; dim = match_dim; branches; _ }; ins = _ },
                (Emp : (_, _, _) apps) )) -> (
-          match Modality.compare window (Modality.id (mode_env env)) with
-          | Neq -> fatal (Anomaly "specializing a modal match")
+          (* The stored window identifies the mode the constructor lives at with the one the match's own discriminee does; anything else is a specialization built for a different match. *)
+          match Modality.compare window swindow with
+          | Neq -> fatal (Anomaly "specializing at the wrong window")
           | Eq -> (
               let env_dim = dim_env env in
               let (Has_filter fw) = Modality.filter window env_dim in

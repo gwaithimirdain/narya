@@ -634,12 +634,15 @@ module Act = struct
        The type it stores is acted by gact_ty with *no* term.  Acting it as a value would be wrong: act_instargs only acts the instantiation arguments already there, whereas the type of an acted term needs more of them, namely that term's own new faces, which is what gact_ty_instargs computes from the term -- and act_apps has no term, a spine entry being acted without the value it belongs to.  Passing None is exactly right rather than a compromise: a degeneracy needs the top face only when it is degenerate, since a symmetry carries proper faces to proper faces, so gact_ty None computes the honest type for a permutation and raises an anomaly for anything else.  The invariant that a specialization is only ever acted by a permutation is thereby checked rather than assumed -- when the type is forced, which is where a wrong one would do harm and nowhere else; an acted specialization whose type is never read back cannot hurt anyone, and forcing it eagerly is what the laziness is here to avoid.
 
        That it holds: the only site that acts a self by other than an identity is readback_at's permuted-record case, which un-permutes a struct at a codatatype whose insertion is not the identity, and it acts the self only at *potential* energy.  But a potential struct is a comatch node of a case tree, and check refuses both a comatch and a tuple against a codatatype carrying a nonidentity degeneracy (Comatching_at_degenerated_codata and Checking_tuple_at_degenerated_record, in check_struct).  So a permuted struct is only ever a kinetic value, obtained by acting an unpermuted one -- "sym (ungel ≔ …)" -- and is read back at kinetic energy, where the self is not touched. *)
-    | Specialize (rest, cval, ty) ->
+    | Specialize (rest, window, cval, ty) ->
         specializing "act";
         let new_s, new_c, new_rest = act_apps rest s c in
+        (* The constructor lives behind a lock by the window modality, so the cell acting on it is prewhiskered by that modality, exactly as an argument's is by its own. *)
+        let (Wrap cc) = Modalcell.prewhisker_wrapped c window in
         ( new_s,
           new_c,
-          Specialize (new_rest, act_normal cval s c, lazy (gact_ty None (Lazy.force ty) s c)) )
+          Specialize
+            (new_rest, window, act_normal cval s cc, lazy (gact_ty None (Lazy.force ty) s c)) )
 
   and act_instargs : type mode mu1 mu2 cod a b n j nj p.
       (n, j, nj, mode normal) TubeOf.t ->

@@ -59,7 +59,7 @@ let rec nonmodal_apps : type hmode mode any. (hmode, mode, any) apps -> (hmode, 
   | Emp -> Some Eq
   | Arg (rest, _, _, _) -> nonmodal_apps rest
   | Inst (rest, _, _) -> nonmodal_apps rest
-  | Specialize (rest, _, _) -> nonmodal_apps rest
+  | Specialize (rest, _, _, _) -> nonmodal_apps rest
   | Field (rest, filter, _, _, _) -> (
       match Modality.compare_id (Modality.filter_modality filter) with
       | Eq -> nonmodal_apps rest

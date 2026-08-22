@@ -174,7 +174,7 @@ module F = struct
         apps ppf rest;
         fprintf ppf " <: ";
         fprintf ppf "Inst (%a, %a)" dim (D.pos d) (tubeof normal) args
-    | Specialize (rest, c, _) ->
+    | Specialize (rest, _, c, _) ->
         apps ppf rest;
         fprintf ppf " <: ";
         fprintf ppf "Specialize (%a)" normal c
@@ -294,7 +294,7 @@ module F = struct
     | Unact (_, tm) -> fprintf ppf "Unact (?, %a)" term tm
     | Shift (n, _, tm) -> fprintf ppf "Shift (%s, %a)" (string_of_dim n) term tm
     | Weaken tm -> fprintf ppf "Weaken (%a)" term tm
-    | Specialize (tm, c, _, _) -> fprintf ppf "Specialize (%a, %a)" term tm term c
+    | Specialize { tm; constr; _ } -> fprintf ppf "Specialize (%a, %a)" term tm term constr
 
   and canonical : type mode b. formatter -> (mode, b) canonical -> unit =
    fun ppf c ->

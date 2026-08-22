@@ -236,7 +236,7 @@ let rec synths : type mode n. (mode, n, kinetic) term -> bool = function
   (* A case tree written in a kinetic position is elaborated to a metavariable, which synthesizes; so the boundary arguments around a corealized one can be left implicit, which matters since it is usually a whole match. *)
   | Corealize _ -> true
   (* A specialization wraps a neutral spine, which synthesizes. *)
-  | Specialize (tm, _, _, _) -> synths tm
+  | Specialize { tm; _ } -> synths tm
   (* Applications, actions, and let-bindings can also check.  They only synthesize if the appropriate one of their subterms does.  *)
   | App (_, fn, _, _, _) -> synths fn
   | Act (_, tm, _, _) -> synths tm
@@ -558,7 +558,7 @@ let rec unparse : type mode n lt ls rt rs s.
   (* A corealized case tree displays as the case tree it wraps; the wrapper exists only to put it in a kinetic position, which is always inside a larger term, so we parenthesize it. *)
   | Corealize tm -> parenthesize (unparse vars tm No.Interval.entire No.Interval.entire)
   (* A specialization is a display-only refinement marker with no surface syntax: what it denotes is its own spine, specialized, and we show that spine.  It reaches here only if something inside the branch it refines is itself stuck, since otherwise projecting or applying it reduces and the marker disappears. *)
-  | Specialize (tm, _, _, _) -> unparse vars tm li ri
+  | Specialize { tm; _ } -> unparse vars tm li ri
   | Canonical c -> unparse_canonical vars c li ri
   | Struct { eta = Noeta; dim; fields; energy = _ } -> unparse_comatch vars dim fields li ri
   | Match { window = _; plus_lock; tm; dim; motive; branches } ->

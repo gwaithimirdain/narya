@@ -106,6 +106,24 @@ The self now carries a specialization, a display-only spine entry that reduces t
     : √N
   
 
+The specialization carries the window modality its constructor lives behind, so a match whose discriminee is modal is specialized too, and its higher fields display like any other's.
+
+  $ narya -v -spatial -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def √N : Type ≔ codata [ x .root.e : N ]' -e 'about (let g : (b :♭| Bool) → √N ≔ b ↦ match (b :♭| _) return _ ↦ √N [ true. ↦ [ .root.e ↦ zero. ] | false. ↦ [ .root.e ↦ suc. zero. ] ] in g)'
+   ￫ info[I0000]
+   ￮ constant N defined
+  
+   ￫ info[I0000]
+   ￮ constant Bool defined
+  
+   ￫ info[I0000]
+   ￮ constant √N defined
+  
+  b ↦
+  match (b :♭| _)
+  return 𝑥 ↦ √N [ false. ↦ [ .root.e ↦ 1 ] | true. ↦ [ .root.e ↦ 0 ] ]
+    : (b :♭| Bool) → √N
+  
+
 Every branch is specialized, not only the ones that need it: inside a branch the match is not stuck any more, and nothing treats the self as though it were.  Every dispatch on a stuck case tree is on an *evaluation* rather than on the self, which is only ever applied, projected from, or read back as a spine; and the higher-field instance above, the one place that does inspect the self's value, requires it *not* to be stuck.  A neutral whose value computes rather than being unrealized is just a glued neutral, which the evaluator handles everywhere.
 
 In a degenerated environment, the type at which a branch body is read back is the motive instantiated at the boundary of that body, which we get by evaluating it in the faces of its own environment.  A branch body is a case tree, so its value at a face may be a case tree too, and then there is no term of its own to instantiate at.  There we take the match at that face, which the match's own type records among its instantiation arguments, and specialize it at this branch's constructor there: it denotes the same thing and is a neutral, so it is a term.  Here the bodies are lambdas, and it is what lets them display.
