@@ -177,6 +177,11 @@ type (_, _, _, _) readback_apps =
       ('hmode, 'z, 'c) Ctx.t * (('hmode, 'c, 's) term -> ('mode, 'a, 's) term)
       -> ('hmode, 'mode, 'a, 's) readback_apps
 
+(* The reduction that specialize_boundary performs at each proper face of a value being displayed, packaged so that it can be applied to other cubes of values living at those same faces.  What makes a face specializable depends only on the match being reduced, not on what is being specialized. *)
+type ('mode, 'k) specializer = {
+  specialize : 'm. ('m, 'k) pface -> ('mode, kinetic) value -> ('mode, kinetic) value;
+}
+
 (* Readback of values to terms.  Closely follows equality-testing in equal.ml, so most comments are omitted.  However, unlike equality-testing and the "readback" in theoretical NbE, this readback does *not* eta-expand functions and tuples.  It is used for (1) displaying terms to the user, who will usually prefer not to see things eta-expanded, and (2) turning values into terms so that we can re-evaluate them in a new environment, for which purpose eta-expansion is irrelevant.  There are two exceptions:
 
    1. When reading back at a record type that the user has marked as transparent, we eta-expand tuples.  This is chosen based on the readback type.
@@ -1117,30 +1122,22 @@ and degenerate_value_cube : type mode a b r n rn.
           eval_term (act_env degenv (opt_op_of_sface fa)) (CubeOf.find ctms fb));
     }
 
-(* The boundary of the self cube, specialized if the value we are displaying is a branch body.  The self we were handed is then specialized at that branch's constructor, but the boundary comes from the type we are reading back at, which is the *match's* type: its faces are the match at the faces of the environment, not the branch's.  A degenerate codatatype's field type projects that field from the self variable at each proper face, and a stuck match exposes no fields, so those faces have to be specialized too -- at the corresponding faces of the same constructor, which a constructor, unlike a neutral, does have.  The types of those faces are the boundary of the discriminee's own type, which the constructor carries with it.
-
-   Anything that does not line up leaves the boundary alone, and the projection fails as before: this is display-only, and the caller falls back. *)
-and specialize_boundary : type mode k.
-    (mode, kinetic) value ->
-    (D.zero, k, k, mode normal) TubeOf.t ->
-    (D.zero, k, k, (mode, kinetic) value) TubeOf.t =
- fun tm boundary ->
+(* If the value we are displaying is a branch body, so that the self we were handed is specialized at that branch's constructor, then the reduction that specializes any *other* value living at a proper face of the same dimension, at the corresponding face of the same constructor -- which a constructor, unlike a neutral, does have.  The types of those faces are the boundary of the discriminee's own type, which the constructor carries with it.  None if the value is not a branch body, or if anything does not line up: this is display-only, and the caller falls back. *)
+and specializer : type mode k. (mode, kinetic) value -> k D.t -> (mode, k) specializer option =
+ fun tm k ->
   match tm with
   | Neu { args = Specialize (_, window, cval); _ } -> (
-      match (view_term cval.tm, view_type (Lazy.force cval.ty) "specialize_boundary") with
+      match (view_term cval.tm, view_type (Lazy.force cval.ty) "specializer") with
       | Constr (c, cdim, cargs), Canonical (_, _, _, dtyargs) -> (
-          match
-            ( D.compare cdim (TubeOf.inst boundary),
-              D.compare (TubeOf.inst dtyargs) (TubeOf.inst boundary) )
-          with
+          match (D.compare cdim k, D.compare (TubeOf.inst dtyargs) k) with
           | Eq, Eq ->
               let cube = constr_val_cube c cdim cargs in
-              TubeOf.mmap
+              Some
                 {
-                  map =
-                    (fun fa [ nf ] ->
-                      match nf.tm with
-                      (* Only a boundary that is itself a stuck match with an empty spine can be specialized, that being what the reduction needs.  With an explicit motive the boundary has already been specialized, by motive_branch_ty, and its value is the branch body rather than a match; specializing again would have nothing to reduce. *)
+                  specialize =
+                    (fun fa v ->
+                      match v with
+                      (* Only a value that is itself a stuck match with an empty spine can be specialized, that being what the reduction needs.  With an explicit motive the type's boundary has already been specialized, by motive_branch_ty, and its value is the branch body rather than a match; specializing again would have nothing to reduce. *)
                       | Neu { head; args; value; ty }
                         when match force_eval value with
                              | Unrealized (Some (_, sp)) -> Option.is_some (empty_apps sp)
@@ -1159,12 +1156,21 @@ and specialize_boundary : type mode k.
                                   (app_eval_apps (force_eval value) (Specialize (Emp, window, cnf)));
                               ty;
                             }
-                      | _ -> nf.tm);
+                      | _ -> v);
                 }
-                [ boundary ]
-          | _ -> val_of_norm_tube boundary)
-      | _ -> val_of_norm_tube boundary)
-  | _ -> val_of_norm_tube boundary
+          | _ -> None)
+      | _ -> None)
+  | _ -> None
+
+(* The boundary of a codatatype's self cube, specialized if the value we are displaying is a branch body.  The boundary comes from the type we are reading back at, which is the *match's* type: its faces are the match at the faces of the environment, not the branch's.  A degenerate codatatype's field type projects that field from the self variable at each proper face, and a stuck match exposes no fields, so those faces have to be specialized too. *)
+and specialize_boundary : type mode k.
+    (mode, kinetic) value ->
+    (D.zero, k, k, mode normal) TubeOf.t ->
+    (D.zero, k, k, (mode, kinetic) value) TubeOf.t =
+ fun tm boundary ->
+  match specializer tm (TubeOf.inst boundary) with
+  | Some { specialize } -> TubeOf.mmap { map = (fun fa [ nf ] -> specialize fa nf.tm) } [ boundary ]
+  | None -> val_of_norm_tube boundary
 
 (* Read back a codatatype or record type.  Non-projectable higher-field instances are displayed in a context degenerated by their remaining dimensions.  The result is a Canonical (Codata …), but at the evaluation dimension of the value rather than zero: its fields are the field instances of a possibly-degenerated codatatype, one per partial bijection between that dimension and the field's intrinsic dimension, whereas a codatatype produced by typechecking always has evaluation dimension zero and one instance per field.  Its intrinsic (Gel) dimension is that of the value being displayed.  The result carries no fibrancy (see Term.codata_fibrancy_option), so it is display-only: evaluating it is an anomaly. *)
 and readback_codata : type mode a b cm cn ca cet iu ii iout.
