@@ -390,7 +390,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
              Modality.filter_plus l_nk m_p filter_lm filter,
              eval_binder env m_p modality filter body ))
   (* An application is energy-polymorphic.  A kinetic one is ordinary.  A potential one arises in two ways: readback emits one to restore the indices of an indexed datatype, and typechecking emits one for a convoy -- a match whose branches abstract over the pattern variables following the discriminee, applied back to them, so that its motive can say how their types depend on it.  The arguments are evaluated the same way in both cases; only what we do with the function differs, since a potential function is an evaluation rather than a value. *)
-  | App (energy, fn, k, filter_nk, Modal (modality, al, args)) -> (
+  | App (energy, fn, k, filter_nk, Modal (modality, al, args), arg_tys) -> (
       (* The environment is m-dimensional and the original application is n-dimensional, so the *substituted* application is m+n dimensional.  However, the stored cube of arguments is at the *filtered* dimension of the original application, and likewise the arguments of the substituted application must be at *its* filtered dimension, which is (filtered m)+n.  So, as in the Constr case below, we filter the dimension m of the environment by the modality, acting on the environment by a face to cut it down to the filtered dimension. *)
       let m = dim_env env in
       let n = CubeOf.dim args in
@@ -415,31 +415,18 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
               Realize v
           (* An axiom, or anything else stuck with no case tree recorded, has nothing to record the application on either. *)
           | Unrealized None -> Unrealized None
-          (* A stuck case tree keeps the application in its spine rather than stopping the stuckness here, exactly as app_eval_apps replays a spine entry onto one.  The spine entry stores normals, so we need the function's type, which tyof_stuck recovers from the match's motive; we can't go through "apply", whose input is a value and which would wrap the result in a neutral, stopping the stuckness. *)
-          | Unrealized (Some (h, sp)) -> (
-              match view_type (tyof_stuck env fn) "applying a stuck case tree" with
-              | Canonical (_, Pi { filter; doms; cods; _ }, ins, _) -> (
-                  let Eq = eq_of_ins_zero ins in
-                  match
-                    ( D.compare (CubeOf.dim eargs) (CubeOf.dim doms),
-                      Modality.compare (Modality.filter_modality filter)
-                        (Modality.filter_modality filter_total) )
-                  with
-                  | Eq, Eq ->
-                      Unrealized
-                        (Some
-                           ( h,
-                             Arg
-                               ( sp,
-                                 filter,
-                                 norm_of_vals_cube eargs doms,
-                                 ins_zero (BindCube.dim cods) ) ))
-                  | Neq, _ ->
-                      fatal
-                        (Dimension_mismatch
-                           ("applying a stuck case tree", CubeOf.dim eargs, CubeOf.dim doms))
-                  | _, Neq -> fatal (Anomaly "modality mismatch applying a stuck case tree"))
-              | _ -> fatal (Anomaly "applying a stuck case tree at a non-function type"))))
+          (* A stuck case tree keeps the application in its spine rather than stopping the stuckness here, exactly as app_eval_apps replays a spine entry onto one.  We can't go through "apply", whose input is a value and which would wrap the result in a neutral, stopping the stuckness.  The spine entry stores normals, and a stuck case tree has no type to read their types off, which is why a potential application records them: we evaluate them in the same environment as the arguments themselves. *)
+          | Unrealized (Some (h, sp)) ->
+              let (Arg_tys (Modal (_, tal, tys))) = arg_tys in
+              let tlenv = key_id_env env tal in
+              let ftlenv =
+                act_env tlenv (opt_op_of_opt_sface (Modality.sface_of_filter m filter_lm)) in
+              let etys = eval_args ftlenv l_n ln tys in
+              let nfs =
+                CubeOf.mmap
+                  { map = (fun _ [ tm; ty ] -> { tm; ty = Lazy.from_val ty }) }
+                  [ eargs; etys ] in
+              Unrealized (Some (h, Arg (sp, filter_total, nfs, ins_zero (D.plus_out m m_k))))))
   | Field (Potential, _, _, _) -> fatal (Evaluating_display_term "potential field")
   | Field (Kinetic, Modal (fm, plus_lock, tm), fld, fldins) -> (
       let m = dim_env env in
@@ -2358,71 +2345,6 @@ and apply_dargs : type mode n.
       | Eq ->
           let Eq = Modality.filter_uniq afilter pifilter in
           apply_dargs m (apply_binder_term b pifilter arg) rest)
-
-(* The type of a potential term whose evaluation got stuck, needed only to annotate the arguments of a potential application that joins its spine.  A stuck case tree carries no type of its own -- Unrealized stores none, since in general there is none to store -- but a stuck *match* determines one from the motive it records: the motive applied to the discriminee's indices, instantiation arguments, and the discriminee, exactly as check does when it synthesizes a dependent match and as readback does when it displays one.  A convoy's application then computes its own type from that, as any application does.
-
-   As in readback, this works only in a zero-dimensional environment.  Evaluated in a degenerated one the motive computes an uninstantiated family instead, and instantiating it would mean supplying the matches at the faces of that environment as values, which nothing has computed. *)
-and tyof_stuck : type mode m b.
-    (mode, m, b) env -> (mode, b, potential) term -> (mode, kinetic) value =
- fun env tm ->
-  match tm with
-  | Match { tm = disc_tm; window; plus_lock; dim = _; motive; branches = _ } -> (
-      match motive with
-      | None -> fatal (Anomaly "no motive on a stuck match under an application")
-      (* A non-dependent match records one type, which is that of the match and of every branch alike. *)
-      | Some (`Type t) -> eval_term env t
-      | Some (`Family t) -> (
-          let env_dim = dim_env env in
-          match D.compare_zero env_dim with
-          | Pos _ -> fatal (Unimplemented "applying a stuck match in a degenerated environment")
-          | Zero -> (
-              let kenv = key_id_env env plus_lock in
-              let (Has_filter fw) = Modality.filter window env_dim in
-              let akenv = act_env kenv (opt_op_of_opt_sface (Modality.sface_of_filter env_dim fw)) in
-              let disc = eval_term akenv disc_tm in
-              (* The match is stuck, so its discriminee is not a constructor; evaluation annotates the neutral it must therefore be with its own type. *)
-              match disc with
-              | Neu { ty = disc_ty; _ } -> (
-                  match view_type (Lazy.force disc_ty) "tyof_stuck" with
-                  | Canonical (_, Data { indices = Filled data_indices; _ }, disc_ins, disc_tyargs)
-                    ->
-                      let Eq = eq_of_ins_zero disc_ins in
-                      let emotive = eval_term env t in
-                      let r = Vec.fold_left (apply_singleton_nfs window) emotive data_indices in
-                      let r = apply_singleton_tube_nfs window r disc_tyargs in
-                      apply_term r (Modality.filter_zero window) (CubeOf.singleton disc)
-                  | _ -> fatal (Anomaly "stuck match discriminee is not at a datatype"))
-              | _ -> fatal (Anomaly "stuck match discriminee is not a neutral"))))
-  (* A convoy applied to more than one argument nests potential applications, so the type of the function is that of the inner application. *)
-  | App (Potential, fn, k, filter_nk, Modal (modality, al, args)) -> (
-      let fnty = tyof_stuck env fn in
-      let m = dim_env env in
-      let n = CubeOf.dim args in
-      let (Has_filter filter_lm) = Modality.filter modality m in
-      let l = Modality.filtered m filter_lm in
-      let (Plus l_n) = D.plus n in
-      let ln = D.plus_out l l_n in
-      let lenv = key_id_env env al in
-      let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter m filter_lm)) in
-      let eargs = eval_args flenv l_n ln args in
-      let (Plus m_k) = D.plus k in
-      let filter_total = Modality.filter_plus l_n m_k filter_lm filter_nk in
-      match view_type fnty "tyof_stuck application" with
-      | Canonical (_, Pi { filter; doms; cods; _ }, ins, tyargs) -> (
-          let Eq = eq_of_ins_zero ins in
-          (* As in "apply", we check the argument dimension and the modality against the pi-type's own, and then use the pi's filter, the two being equal. *)
-          match
-            ( D.compare (CubeOf.dim eargs) (CubeOf.dim doms),
-              Modality.compare (Modality.filter_modality filter)
-                (Modality.filter_modality filter_total) )
-          with
-          | Eq, Eq -> tyof_app cods tyargs filter eargs
-          | Neq, _ ->
-              fatal
-                (Dimension_mismatch ("applying a stuck case tree", CubeOf.dim eargs, CubeOf.dim doms))
-          | _, Neq -> fatal (Anomaly "modality mismatch in tyof_stuck application"))
-      | _ -> fatal (Anomaly "applying a stuck case tree at a non-function type"))
-  | _ -> fatal (Anomaly "no type for a stuck case tree")
 
 (* The type of a specialized neutral: the type the match has when its discriminee is the given constructor, which is the type the corresponding branch was checked at.  It is computed here rather than carried on the specialization, so that it comes out right at whatever dimension it is asked for -- evaluating a stored one in a degenerated environment leaves it uninstantiated at the faces the degeneration adds, which is what every other term form avoids by computing its type too (tyof_app and its kin).
 

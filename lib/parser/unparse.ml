@@ -238,7 +238,7 @@ let rec synths : type mode n. (mode, n, kinetic) term -> bool = function
   (* A specialization wraps a neutral spine, which synthesizes. *)
   | Specialize { tm; _ } -> synths tm
   (* Applications, actions, and let-bindings can also check.  They only synthesize if the appropriate one of their subterms does.  *)
-  | App (_, fn, _, _, _) -> synths fn
+  | App (_, fn, _, _, _, _) -> synths fn
   | Act (_, tm, _, _) -> synths tm
   | Let (_, _, body) -> synths body
   (* These are just context-manipulating wrappers. *)
@@ -278,8 +278,8 @@ let rec get_spine : type mode a s.
         _,
         _,
         (* Modalities are not printed with applications *)
-        Modal (type am) ((_modality, plus, arg) : _ * _ * (_, (_, am, kinetic) Term.term) CubeOf.t)
-      ) -> (
+        Modal (type am) ((_modality, plus, arg) : _ * _ * (_, (_, am, kinetic) Term.term) CubeOf.t),
+        _ ) -> (
       (* To append the entries in a cube to a Bwd, we iterate through it with a Bwd reference. *)
       let append_bwd args =
         let all_args = not (synths (CubeOf.find_top arg)) in
@@ -1550,8 +1550,12 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
               Named
                 ( lamvars,
                   App
-                    (Kinetic, Weaken nonlam, dom_tface s, sfilter, Modal (modality, plusm, lamargs))
-                )) in
+                    ( Kinetic,
+                      Weaken nonlam,
+                      dom_tface s,
+                      sfilter,
+                      Modal (modality, plusm, lamargs),
+                      No_arg_tys ) )) in
     TubeOf.mmap { map = (fun s [ lam ] -> map s lam) } [ tyargs ] in
   (* We only need the top codomain. *)
   match cod_top filter cods with

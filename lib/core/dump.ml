@@ -274,7 +274,7 @@ module F = struct
           (let (Cod (filt, t)) = CodCube.find_top cods in
            let Eq = Modality.filter_uniq filter filt in
            (t : (mode, (b, (modality, k) Tctx.dim_entry) Tctx.suc, s) term))
-    | App (_, fn, _, _, Modal (_modality, _al, arg)) ->
+    | App (_, fn, _, _, Modal (_modality, _al, arg), _) ->
         fprintf ppf "App (%a, %a)" term fn (cubeof term) arg
     | Lam (x, _, filter, body) ->
         fprintf ppf "Lam^(%s) (?, %s, %a)"

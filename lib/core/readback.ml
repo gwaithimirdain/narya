@@ -107,7 +107,7 @@ let is_canonical_const : Constant.t -> [ `Canonical | `Other ] =
 (* The same question for a term rather than a value, by looking at the head of its application spine.  This is used when annotating a degeneracy at typechecking time, so that a term displayed without being read back (e.g. by the "synth" command) is displayed the same way as one that is read back. *)
 let rec canonical_head : type mode a s. (mode, a, s) term -> [ `Canonical | `Other ] = function
   | Const c -> is_canonical_const c
-  | App (_, fn, _, _, _) -> canonical_head fn
+  | App (_, fn, _, _, _, _) -> canonical_head fn
   | Inst (_, tm, _) -> canonical_head tm
   | Act (_, tm, _, _) -> canonical_head tm
   | Key { tm; _ } -> canonical_head tm
@@ -600,7 +600,18 @@ and readback_apps : type hmode mode a z any s.
                     Modal
                       ( modality,
                         plus,
-                        CubeOf.mmap { map = (fun _ [ x ] -> readback_nf lctx x) } [ args ] ) ),
+                        CubeOf.mmap { map = (fun _ [ x ] -> readback_nf lctx x) } [ args ] ),
+                    (* A potential application records its arguments' types, which a spine entry has to hand, being a cube of normals. *)
+                    match energy with
+                    | Kinetic -> No_arg_tys
+                    | Potential ->
+                        Arg_tys
+                          (Modal
+                             ( modality,
+                               plus,
+                               CubeOf.mmap
+                                 { map = (fun _ [ x ] -> readback_val lctx (Lazy.force x.ty)) }
+                                 [ args ] )) ),
                 p,
                 (`Other, `Other) ) )
   | Inst (rest, _, args) ->
@@ -1003,7 +1014,13 @@ and readback_data : type mode a b m j ij.
           Modal
             ( Modality.id mode,
               plus_no_lock mode,
-              CubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ i ] ) ))
+              CubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ i ] ),
+          Arg_tys
+            (Modal
+               ( Modality.id mode,
+                 plus_no_lock mode,
+                 CubeOf.mmap { map = (fun _ [ x ] -> readback_val ctx (Lazy.force x.ty)) } [ i ] ))
+        ))
     data (Fillvec.to_list indices)
 
 (* Read back the type of a constructor, over the self-type variable its codomain names the datatype by.  Only the *top* face of that variable's entry is a fresh variable of the displayed context, so that the top-dimensional codomain reads back as that variable, which the unparser then shows as the datatype's type family.  The lower faces are bound to the lower-dimensional type families themselves, as the Dataconstr carries them (for a branch of a stuck match, that branch's own datatype): they are what the boundary instantiation arguments are computed from, and reading one of those lower-dimensional constructor-functions back needs its type to expose the datatype it belongs to, which a variable does not.

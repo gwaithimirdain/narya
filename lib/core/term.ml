@@ -121,6 +121,13 @@ module rec Term : sig
         * ('k, ('dom, 'am, 's) Term.term) CubeOf.t
         -> ('n, 'mode, 'a, 's) any_modal_term_cube
 
+  (* The types of an application's arguments, recorded exactly when the application is potential.  A kinetic application needs none: its function evaluates to a value carrying its own type, off which "apply" reads the domains to annotate the arguments.  A potential one's function can evaluate to a *stuck case tree*, which has no type at all -- Unrealized stores none, because in general there is none to store -- and yet a stuck spine records its arguments as normals.  So the types are recorded here, by whoever builds the node and already knows them: the checker has the pi-type's domains, and readback is reading back normals.  Indexing by the energy makes them present exactly when they are needed. *)
+  type (_, _, _, _, _, _) app_arg_tys =
+    | No_arg_tys : ('n, 'dom, 'modality, 'mode, 'a, kinetic) app_arg_tys
+    | Arg_tys :
+        ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
+        -> ('n, 'dom, 'modality, 'mode, 'a, potential) app_arg_tys
+
   type (_, _, _) term =
     | Var : ('mode, 'a) index -> ('mode, 'a, kinetic) term
     | Const : Constant.t -> ('mode, 'a, kinetic) term
@@ -140,6 +147,7 @@ module rec Term : sig
         * 'm D.t
         * ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
         * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
+        * ('n, 'dom, 'modality, 'mode, 'a, 's) app_arg_tys
         -> ('mode, 'a, 's) term
     | Constr :
         Constr.t * 'n D.t * ('n, 'mode, 'a, kinetic) any_modal_term_cube list
@@ -450,6 +458,13 @@ end = struct
         * ('k, ('dom, 'am, 's) Term.term) CubeOf.t
         -> ('n, 'mode, 'a, 's) any_modal_term_cube
 
+  (* The types of an application's arguments, recorded exactly when the application is potential.  A kinetic application needs none: its function evaluates to a value carrying its own type, off which "apply" reads the domains to annotate the arguments.  A potential one's function can evaluate to a *stuck case tree*, which has no type at all -- Unrealized stores none, because in general there is none to store -- and yet a stuck spine records its arguments as normals.  So the types are recorded here, by whoever builds the node and already knows them: the checker has the pi-type's domains, and readback is reading back normals.  Indexing by the energy makes them present exactly when they are needed. *)
+  type (_, _, _, _, _, _) app_arg_tys =
+    | No_arg_tys : ('n, 'dom, 'modality, 'mode, 'a, kinetic) app_arg_tys
+    | Arg_tys :
+        ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
+        -> ('n, 'dom, 'modality, 'mode, 'a, potential) app_arg_tys
+
   type (_, _, _) term =
     (* Most term-formers only appear in kinetic (ordinary) terms. *)
     | Var : ('mode, 'a) index -> ('mode, 'a, kinetic) term
@@ -474,6 +489,7 @@ end = struct
         * 'm D.t
         * ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
         * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
+        * ('n, 'dom, 'modality, 'mode, 'a, 's) app_arg_tys
         -> ('mode, 'a, 's) term
     | Constr :
         Constr.t * 'n D.t * ('n, 'mode, 'a, kinetic) any_modal_term_cube list
@@ -763,7 +779,12 @@ let pi : type mode modality a.
 
 let app fn modality al arg =
   App
-    (Kinetic, fn, D.zero, Modality.filter_zero modality, Modal (modality, al, CubeOf.singleton arg))
+    ( Kinetic,
+      fn,
+      D.zero,
+      Modality.filter_zero modality,
+      Modal (modality, al, CubeOf.singleton arg),
+      No_arg_tys )
 
 let appid fn mode arg =
   App
@@ -771,7 +792,8 @@ let appid fn mode arg =
       fn,
       D.zero,
       Modality.filter_id mode D.zero,
-      Modal (Modality.id mode, plus_no_lock mode, CubeOf.singleton arg) )
+      Modal (Modality.id mode, plus_no_lock mode, CubeOf.singleton arg),
+      No_arg_tys )
 
 let apps fn mode args =
   List.fold_left (fun f -> app f (Modality.id mode) (plus_no_lock mode)) fn args

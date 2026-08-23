@@ -228,7 +228,8 @@ let self_codomain : type mode a b.
           t,
           D.zero,
           Modality.filter_id mode D.zero,
-          Modal (Modality.id mode, plus_no_lock mode, CubeOf.singleton i) ))
+          Modal (Modality.id mode, plus_no_lock mode, CubeOf.singleton i),
+          No_arg_tys ))
     (readback_val ctx selfval) indices
 
 exception Case_tree_construct_in_let
@@ -801,7 +802,8 @@ let rec check : type mode a b s.
                              sfn,
                              D.zero,
                              Modality.filter_id mode D.zero,
-                             Modal (idm, plus_no_lock mode, CubeOf.singleton cty) )) in
+                             Modal (idm, plus_no_lock mode, CubeOf.singleton cty),
+                             No_arg_tys )) in
                     let new_sty = tyof_app cods tyargs filter (CubeOf.singleton ty) in
                     (* And then proceed applying to the rest of the arguments, if any. *)
                     let stm, sty =
@@ -3598,8 +3600,8 @@ and synth : type mode a b s.
                          sfn,
                          BindCube.dim cods,
                          filter,
-                         Modal (Modality.id mode, plus_no_lock mode, CubeOf.singleton cargty) ))
-                in
+                         Modal (Modality.id mode, plus_no_lock mode, CubeOf.singleton cargty),
+                         No_arg_tys )) in
                 let new_sty = tyof_app cods tyargs filter (CubeOf.singleton sargty) in
                 (* And then apply to the argument. *)
                 let stm, sty =
@@ -3922,7 +3924,27 @@ and synth_app : type dom modality mode a b k n s.
       doms (sfn.loc, fn, args) in
   (* Evaluate cod at these evaluated arguments and instantiate it at the appropriate values of tyargs. *)
   let output = tyof_app cods tyargs filter eargs in
-  ( { value = Term.App (energy, sfn.value, BindCube.dim cods, filter, cargs); loc = newloc },
+  ( {
+      value =
+        Term.App
+          ( energy,
+            sfn.value,
+            BindCube.dim cods,
+            filter,
+            cargs,
+            (* A potential application records its arguments' types, since its function may evaluate to a stuck case tree, which has none to read them off.  They are the pi-type's domains, which we have right here. *)
+            match energy with
+            | Kinetic -> No_arg_tys
+            | Potential ->
+                let modality = Modality.filter_modality filter in
+                let (Locked (plus, lctx)) = Ctx.lock ctx modality in
+                Arg_tys
+                  (Modal
+                     ( modality,
+                       plus,
+                       CubeOf.mmap { map = (fun _ [ dom ] -> readback_val lctx dom) } [ doms ] )) );
+      loc = newloc;
+    },
     output,
     newfn,
     rest )

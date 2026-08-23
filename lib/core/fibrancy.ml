@@ -184,7 +184,8 @@ module Codata = struct
                                            Weaken sty,
                                            Hott.dim,
                                            idf,
-                                           Modal (idm, plus_no_lock mode, xcube) )),
+                                           Modal (idm, plus_no_lock mode, xcube),
+                                           No_arg_tys )),
                                     trlift,
                                     ins ))
                                idm (plus_no_lock mode)
@@ -344,7 +345,8 @@ module Codata = struct
                                                               fldty ) )))),
                                              Hott.dim,
                                              idf,
-                                             Modal (idm, plus_no_lock mode, xcube) ),
+                                             Modal (idm, plus_no_lock mode, xcube),
+                                             No_arg_tys ),
                                          TubeOf.mmap
                                            { map = (fun _ [ x ] -> field mode x fld) }
                                            [ xtube ] )) ) ) in

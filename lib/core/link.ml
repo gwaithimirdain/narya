@@ -25,13 +25,18 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
           doms = Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ doms ]);
           cods = CodCube.mmap { map = (fun _ [ Cod (filt, x) ] -> Cod (filt, term f x)) } [ cods ];
         }
-  | App (energy, fn, m, filter, Modal (modality, al, args)) ->
+  | App (energy, fn, m, filter, Modal (modality, al, args), arg_tys) ->
       App
         ( energy,
           term f fn,
           m,
           filter,
-          Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ args ]) )
+          Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ args ]),
+          match arg_tys with
+          | No_arg_tys -> No_arg_tys
+          | Arg_tys (Modal (tmodality, tal, tys)) ->
+              Arg_tys
+                (Modal (tmodality, tal, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ tys ])) )
   | Constr (c, n, args) ->
       Constr
         ( c,

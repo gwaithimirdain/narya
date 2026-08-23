@@ -213,22 +213,27 @@ let () =
                                                              ( Kinetic,
                                                                App
                                                                  ( Kinetic,
-                                                                   App (Kinetic, Const c, _, _, _),
+                                                                   App (Kinetic, Const c, _, _, _, _),
+                                                                   _,
                                                                    _,
                                                                    _,
                                                                    _ ),
                                                                _,
                                                                _,
+                                                               _,
                                                                _ ),
+                                                           _,
                                                            _,
                                                            _,
                                                            _ ),
                                                        _,
                                                        _,
+                                                       _,
                                                        _ ),
                                                    _,
                                                    _,
-                                                   Modal (modality, plus, tm) )) ) :
+                                                   Modal (modality, plus, tm),
+                                                   No_arg_tys )) ) :
                                            k variables
                                            * kn D.t
                                            * (dom, modality, gmode, k, kn) Modality.filter_dim
@@ -343,34 +348,43 @@ let () =
                                                            ( Kinetic,
                                                              App
                                                                ( Kinetic,
-                                                                 App (Kinetic, Const c, _, _, _),
+                                                                 App (Kinetic, Const c, _, _, _, _),
+                                                                 _,
                                                                  _,
                                                                  _,
                                                                  _ ),
                                                              _,
                                                              _,
+                                                             _,
                                                              _ ),
+                                                         _,
                                                          _,
                                                          _,
                                                          _ ),
                                                      _,
                                                      _,
+                                                     _,
                                                      _ ),
+                                                 _,
                                                  _,
                                                  _,
                                                  _ ),
                                              _,
                                              _,
+                                             _,
                                              _ ),
+                                         _,
                                          _,
                                          _,
                                          _ ),
                                      _,
                                      _,
-                                     _ ),
+                                     _,
+                                     No_arg_tys ),
                                  _,
                                  _,
-                                 Modal (modality, plus, tm) ) :
+                                 Modal (modality, plus, tm),
+                                 _ ) :
                                 _
                                 * _
                                 * m D.t
@@ -381,7 +395,8 @@ let () =
                                     mode,
                                     (a, (modality', k) dim_entry) Tbwd.snoc,
                                     kinetic )
-                                  Term.modal_term_cube)) ) :
+                                  Term.modal_term_cube
+                                * _)) ) :
                         k variables
                         * kn D.t
                         * (dom', modality', mode, k, kn) Modality.filter_dim
