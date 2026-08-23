@@ -389,10 +389,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
            ( Variables (D.plus_out l l_n, ln_k, vars),
              Modality.filter_plus l_nk m_p filter_lm filter,
              eval_binder env m_p modality filter body ))
-  | App (Potential, _, _, _, _) -> fatal (Evaluating_display_term "potential application")
-  | App (Kinetic, fn, k, filter_nk, Modal (modality, al, args)) ->
-      (* First we evaluate the function. *)
-      let efn = eval_term env fn in
+  (* An application is energy-polymorphic.  A kinetic one is ordinary.  A potential one arises in two ways: readback emits one to restore the indices of an indexed datatype, and typechecking emits one for a convoy -- a match whose branches abstract over the pattern variables following the discriminee, applied back to them, so that its motive can say how their types depend on it.  The arguments are evaluated the same way in both cases; only what we do with the function differs, since a potential function is an evaluation rather than a value. *)
+  | App (energy, fn, k, filter_nk, Modal (modality, al, args)) -> (
       (* The environment is m-dimensional and the original application is n-dimensional, so the *substituted* application is m+n dimensional.  However, the stored cube of arguments is at the *filtered* dimension of the original application, and likewise the arguments of the substituted application must be at *its* filtered dimension, which is (filtered m)+n.  So, as in the Constr case below, we filter the dimension m of the environment by the modality, acting on the environment by a face to cut it down to the filtered dimension. *)
       let m = dim_env env in
       let n = CubeOf.dim args in
@@ -404,10 +402,21 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let lenv = key_id_env env al in
       let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter m filter_lm)) in
       let eargs = eval_args flenv l_n ln args in
-      (* Having evaluated the function and its arguments, we now pass the job off to a helper function. *)
       let (Plus m_k) = D.plus k in
       let filter_total = Modality.filter_plus l_n m_k filter_lm filter_nk in
-      apply efn filter_total eargs
+      (* Having evaluated the arguments, we evaluate the function and pass the job off to a helper. *)
+      match energy with
+      | Kinetic -> apply (eval_term env fn) filter_total eargs
+      | Potential -> (
+          match eval env fn with
+          | Val tm -> apply tm filter_total eargs
+          | Realize tm ->
+              let (Val v) = apply tm filter_total eargs in
+              Realize v
+          (* An axiom, or anything else stuck with no case tree recorded, has nothing to record the application on either. *)
+          | Unrealized None -> Unrealized None
+          (* A stuck case tree keeps the application in its spine rather than stopping the stuckness here, exactly as app_eval_apps replays a spine entry onto one. *)
+          | Unrealized (Some _) -> fatal (Unimplemented "applying a stuck case tree")))
   | Field (Potential, _, _, _) -> fatal (Evaluating_display_term "potential field")
   | Field (Kinetic, Modal (fm, plus_lock, tm), fld, fldins) -> (
       let m = dim_env env in
