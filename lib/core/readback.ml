@@ -1794,8 +1794,12 @@ and readback_stuck_match : type mode a z hmode any.
             match Modality.compare window owindow with
             | Eq -> readback_val lctx ov
             | Neq -> fatal (Anomaly "discriminee override at the wrong window")) in
-      (* The self a branch body is read back against must live at the mode of the match, not of the whole spine, so we take the neutral we were given and strip the spine's eliminations back off it. *)
-      let (Any head_args) = strip_apps args apps <|> Anomaly "stuck match spine mismatch" in
+      (* The self a branch body is read back against must live at the mode of the match, not of the whole spine, so we take the neutral we were given and strip the spine's eliminations back off it.
+
+         That assumes the stuck spine is a tail of the neutral's, which holds when the eliminations were applied to the case tree from outside.  A convoy breaks it: the match is applied to arguments *inside* the case tree, so those entries are in the stuck spine but not in the enclosing neutral's, and there is no neutral in that spine whose value is the unapplied match.  Until that has a self of its own to be read back against, such a match falls back on its application spine. *)
+      let (Any head_args) =
+        strip_apps args apps
+        <|> Readback_at_wrong_type "a match applied to arguments inside a case tree" in
       (* The type of the match itself, as opposed to that of the spine it may be applied to.  With an empty spine the type we were handed is already it (an empty spine also identifies the two modes).  With a nonempty spine it is the type of the *stripped* neutral, which nothing has stored, since a neutral records only the type of the whole of itself; but evaluation annotates every neutral it builds with its own type -- the head's declared type at the head end, and tyof_app or tyof_field at each elimination -- so running the stripped neutral through the readback/eval cycle recomputes it.  We need it because its instantiation arguments are the faces of the match: there is no face operator on values (the face of a variable is a different variable, which the value doesn't record), so the boundary of a term is recoverable only from its type, exactly as dom_vars establishes it for a variable and Norm.self_values reads it back off for a field projection.  It is lazy because the motive computes the type by itself when the environment is zero-dimensional, which is the common case. *)
       let match_self_ty : (hmode, kinetic) value Lazy.t =
         lazy
